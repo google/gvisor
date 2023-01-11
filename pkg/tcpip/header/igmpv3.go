@@ -24,6 +24,14 @@ import (
 )
 
 const (
+	// IGMPv3RoutersAddress is the address to send IGMPv3 reports to.
+	//
+	// As per RFC 3376 section 4.2.14,
+	//
+	//   Version 3 Reports are sent with an IP destination address of
+	//   224.0.0.22, to which all IGMPv3-capable multicast routers listen.
+	IGMPv3RoutersAddress tcpip.Address = "\xe0\x00\x00\x16"
+
 	// IGMPv3QueryMinimumSize is the mimum size of a valid IGMPv3 query,
 	// as per RFC 3376 section 4.1.
 	IGMPv3QueryMinimumSize = 12
@@ -64,6 +72,46 @@ type IGMPv3Query IGMP
 // MaximumResponseCode returns the Maximum Response Code.
 func (i IGMPv3Query) MaximumResponseCode() uint8 {
 	return i[igmpv3QueryMaxRespCodeOffset]
+}
+
+// IGMPv3MaximumResponseDelay returns the Maximum Response Delay in an IGMPv3
+// Maximum Response Code.
+//
+// As per RFC 3376 section 4.1.1,
+//
+//	The Max Resp Code field specifies the maximum time allowed before
+//	sending a responding report.  The actual time allowed, called the Max
+//	Resp Time, is represented in units of 1/10 second and is derived from
+//	the Max Resp Code as follows:
+//
+//	If Max Resp Code < 128, Max Resp Time = Max Resp Code
+//
+//	If Max Resp Code >= 128, Max Resp Code represents a floating-point
+//	value as follows:
+//
+//	    0 1 2 3 4 5 6 7
+//	  +-+-+-+-+-+-+-+-+
+//	   |1| exp | mant  |
+//	   +-+-+-+-+-+-+-+-+
+//
+//	Max Resp Time = (mant | 0x10) << (exp + 3)
+//
+//	Small values of Max Resp Time allow IGMPv3 routers to tune the "leave
+//	latency" (the time between the moment the last host leaves a group
+//	and the moment the routing protocol is notified that there are no
+//	more members).  Larger values, especially in the exponential range,
+//	allow tuning of the burstiness of IGMP traffic on a network.
+func IGMPv3MaximumResponseDelay(codeRaw uint8) time.Duration {
+	code := uint16(codeRaw)
+	if code < 128 {
+		return DecisecondToDuration(code)
+	}
+
+	const mantBits = 4
+	const expMask = 0b111
+	exp := (code >> mantBits) & expMask
+	mant := code & ((1 << mantBits) - 1)
+	return DecisecondToDuration((mant | 0x10) << (exp + 3))
 }
 
 // GroupAddress returns the group address.

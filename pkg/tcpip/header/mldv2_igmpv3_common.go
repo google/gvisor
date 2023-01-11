@@ -82,6 +82,11 @@ func mldv2AndIGMPv3QuerierQueryCodeToInterval(code uint8) time.Duration {
 	return (mant | 0x10) << (exp + 3) * time.Second
 }
 
+// MakeAddressIterator returns an AddressIterator.
+func MakeAddressIterator(addressSize int, buf *bytes.Buffer) AddressIterator {
+	return AddressIterator{addressSize: addressSize, buf: buf}
+}
+
 // AddressIterator is an iterator over IPv6 addresses.
 type AddressIterator struct {
 	addressSize int
@@ -115,5 +120,5 @@ func makeAddressIterator(b []byte, expectedAddresses uint16, addressSize int) (A
 	if len(b) < expectedLen {
 		return AddressIterator{}, false
 	}
-	return AddressIterator{addressSize: addressSize, buf: bytes.NewBuffer(b[:expectedLen])}, true
+	return MakeAddressIterator(addressSize, bytes.NewBuffer(b[:expectedLen])), true
 }

@@ -24,6 +24,16 @@ import (
 )
 
 const (
+	// MLDv2RoutersAddress is the address to send MLDv2 reports to.
+	//
+	// As per RFC 3810 section 5.2.14,
+	//
+	//   Version 2 Multicast Listener Reports are sent with an IP destination
+	//   address of FF02:0:0:0:0:0:0:16, to which all MLDv2-capable multicast
+	//   routers listen (see section 11 for IANA considerations related to
+	//   this special destination address).
+	MLDv2RoutersAddress tcpip.Address = "\xff\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x16"
+
 	// MLDv2QueryMinimumSize is the minimum size for an MLDv2 message.
 	MLDv2QueryMinimumSize = 24
 
@@ -34,6 +44,9 @@ const (
 	// mldv2QueryNumberOfSourcesOffset is the offset to the Number of Sources
 	// field within MLDv2Query.
 	mldv2QueryNumberOfSourcesOffset = 22
+
+	// MLDv2ReportMinimumSize is the minimum size of an MLDv2 report.
+	MLDv2ReportMinimumSize = 24
 
 	// mldv2QuerySourcesOffset is the offset to the Sources field within
 	// MLDv2Query.
@@ -140,7 +153,6 @@ func MLDv2MaximumResponseDelay(codeRaw uint16) time.Duration {
 	exp := (code >> mantBits) & expMask
 	mant := code & ((1 << mantBits) - 1)
 	return (mant | 0x1000) << (exp + 3) * time.Millisecond
-
 }
 
 // MulticastAddress returns the Multicast Address.

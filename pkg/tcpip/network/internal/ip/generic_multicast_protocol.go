@@ -21,6 +21,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
 const (
@@ -68,6 +69,38 @@ const (
 	//   address and any multicast addresses of scope 0 (reserved) or 1
 	//   (node-local).
 	minQueryResponseTransmissionCount = 1
+
+	// DefaultRobustnessVariable is the default robustness variable
+	//
+	// As per RFC 3810 section 9.1 (for MLDv2),
+	//
+	//   The Robustness Variable allows tuning for the expected packet loss on
+	//   a link.  If a link is expected to be lossy, the value of the
+	//   Robustness Variable may be increased.  MLD is robust to [Robustness
+	//   Variable] - 1 packet losses.  The value of the Robustness Variable
+	//   MUST NOT be zero, and SHOULD NOT be one.  Default value: 2.
+	//
+	// As per RFC 3376 section 8.1 (for IGMPv3),
+	//
+	//   The Robustness Variable allows tuning for the expected packet loss on
+	//   a network.  If a network is expected to be lossy, the Robustness
+	//   Variable may be increased.  IGMP is robust to (Robustness Variable -
+	//   1) packet losses.  The Robustness Variable MUST NOT be zero, and
+	//   SHOULD NOT be one.  Default: 2
+	DefaultRobustnessVariable = 2
+
+	// DefaultQueryInterval is the default query interval.
+	//
+	// As per RFC 3810 section 9.2 (for MLDv2),
+	//
+	//   The Query Interval variable denotes the interval between General
+	//   Queries sent by the Querier.  Default value: 125 seconds.
+	//
+	// As per RFC 3376 section 8.2 (for IGMPv3),
+	//
+	//   The Query Interval is the interval between General Queries sent by
+	//   the Querier.  Default: 125 seconds.
+	DefaultQueryInterval = 125 * time.Second
 )
 
 // multicastGroupState holds the Generic Multicast Protocol state for a
@@ -77,7 +110,7 @@ type multicastGroupState struct {
 	joins uint64
 
 	// transmissionLeft is the number of transmissions left to send.
-	transmissionLeft uint
+	transmissionLeft uint8
 
 	// lastToSendReport is true if we sent the last report for the group. It is
 	// used to track whether there are other hosts on the subnet that are also
@@ -98,12 +131,26 @@ type multicastGroupState struct {
 	//
 	// A zero value indicates that the job is not scheduled.
 	delayedReportJobFiresAt time.Time
+
+	// queriedIncludeSources holds sources that were queried for.
+	//
+	// Indicates that there is a pending source-specific query response for the
+	// multicast address.
+	queriedIncludeSources map[tcpip.Address]struct{}
+
+	deleteScheduled bool
 }
 
 func (m *multicastGroupState) cancelDelayedReportJob() {
 	m.delayedReportJob.Cancel()
 	m.delayedReportJobFiresAt = time.Time{}
 	m.transmissionLeft = 0
+}
+
+func (m *multicastGroupState) clearQueriedIncludeSources() {
+	for source := range m.queriedIncludeSources {
+		delete(m.queriedIncludeSources, source)
+	}
 }
 
 // GenericMulticastProtocolOptions holds options for the generic multicast
@@ -124,6 +171,32 @@ type GenericMulticastProtocolOptions struct {
 	//
 	// Unsolicited reports are transmitted when a group is newly joined.
 	MaxUnsolicitedReportDelay time.Duration
+}
+
+// MulticastGroupProtocolV2ReportRecordType is the type of a
+// MulticastGroupProtocolv2 multicast address record.
+type MulticastGroupProtocolV2ReportRecordType int
+
+// MulticastGroupProtocolv2 multicast address record types.
+const (
+	_ MulticastGroupProtocolV2ReportRecordType = iota
+	MulticastGroupProtocolV2ReportRecordModeIsInclude
+	MulticastGroupProtocolV2ReportRecordModeIsExclude
+	MulticastGroupProtocolV2ReportRecordChangeToIncludeMode
+	MulticastGroupProtocolV2ReportRecordChangeToExcludeMode
+	MulticastGroupProtocolV2ReportRecordAllowNewSources
+	MulticastGroupProtocolV2ReportRecordBlockOldSources
+)
+
+// MulticastGroupProtocolV2ReportBuilder is a builder for a V2 report.
+type MulticastGroupProtocolV2ReportBuilder interface {
+	// AddRecord adds a record to the report.
+	AddRecord(recordType MulticastGroupProtocolV2ReportRecordType, groupAddress tcpip.Address)
+
+	// Send sends the report.
+	//
+	// It is invalid to use this builder after this method is called.
+	Send() (sent bool, err tcpip.Error)
 }
 
 // MulticastGroupProtocol is a multicast group protocol whose core state machine
@@ -152,7 +225,25 @@ type MulticastGroupProtocol interface {
 	// ShouldPerformProtocol returns true iff the protocol should be performed for
 	// the specified group.
 	ShouldPerformProtocol(tcpip.Address) bool
+
+	// NewReportV2Builder creates a new V2 builder.
+	NewReportV2Builder() MulticastGroupProtocolV2ReportBuilder
+
+	// V2QueryMaxRespCodeToV2Delay takes a V2 query's maximum response code and
+	// returns the V2 delay.
+	V2QueryMaxRespCodeToV2Delay(code uint16) time.Duration
+
+	// V2QueryMaxRespCodeToV1Delay takes a V2 query's maximum response code and
+	// returns the V1 delay.
+	V2QueryMaxRespCodeToV1Delay(code uint16) time.Duration
 }
+
+type protocolMode int
+
+const (
+	protocolModeV2 protocolMode = iota
+	protocolModeV1Compatibility
+)
 
 // GenericMulticastProtocolState is the per interface generic multicast protocol
 // state.
@@ -184,6 +275,30 @@ type GenericMulticastProtocolState struct {
 
 	// protocolMU is the mutex used to protect the protocol.
 	protocolMU *sync.RWMutex
+
+	// V2 state.
+	robustnessVariable uint8
+	queryInterval      time.Duration
+	mode               protocolMode
+	modeTimer          tcpip.Timer
+
+	generalQueryV2Timer        tcpip.Timer
+	generalQueryV2TimerFiresAt time.Time
+
+	stateChangedReportV2Timer    tcpip.Timer
+	stateChangedReportV2TimerSet bool
+}
+
+func (g *GenericMulticastProtocolState) cancelV2ReportTimers() {
+	if g.generalQueryV2Timer != nil {
+		g.generalQueryV2Timer.Stop()
+		g.generalQueryV2TimerFiresAt = time.Time{}
+	}
+
+	if g.stateChangedReportV2Timer != nil {
+		g.stateChangedReportV2Timer.Stop()
+		g.stateChangedReportV2TimerSet = false
+	}
 }
 
 // Init initializes the Generic Multicast Protocol state.
@@ -202,9 +317,12 @@ func (g *GenericMulticastProtocolState) Init(protocolMU *sync.RWMutex, opts Gene
 	}
 
 	*g = GenericMulticastProtocolState{
-		opts:        opts,
-		memberships: make(map[tcpip.Address]multicastGroupState),
-		protocolMU:  protocolMU,
+		opts:               opts,
+		memberships:        make(map[tcpip.Address]multicastGroupState),
+		protocolMU:         protocolMU,
+		robustnessVariable: DefaultRobustnessVariable,
+		queryInterval:      DefaultQueryInterval,
+		mode:               protocolModeV2,
 	}
 }
 
@@ -220,9 +338,47 @@ func (g *GenericMulticastProtocolState) MakeAllNonMemberLocked() {
 		return
 	}
 
+	if g.modeTimer != nil {
+		g.modeTimer.Stop()
+	}
+	g.cancelV2ReportTimers()
+
+	var handler func(tcpip.Address, *multicastGroupState)
+	switch g.mode {
+	case protocolModeV2:
+		handler = func(groupAddress tcpip.Address, _ *multicastGroupState) {
+			// Send a report immediately to announce us leaving the group.
+			reportBuilder := g.opts.Protocol.NewReportV2Builder()
+			reportBuilder.AddRecord(
+				MulticastGroupProtocolV2ReportRecordChangeToIncludeMode,
+				groupAddress,
+			)
+			// Nothing meaningful we can do with the error here - this method may be
+			// called when an interface is being disabled when we expect sends to
+			// fail.
+			_, _ = reportBuilder.Send()
+		}
+	case protocolModeV1Compatibility:
+		handler = g.transitionToNonMemberLocked
+	default:
+		panic(fmt.Sprintf("unrecognized mode = %d", g.mode))
+	}
+
+	g.mode = protocolModeV2
+
 	for groupAddress, info := range g.memberships {
-		g.transitionToNonMemberLocked(groupAddress, &info)
-		g.memberships[groupAddress] = info
+		if !g.shouldPerformForGroup(groupAddress) {
+			continue
+		}
+
+		handler(groupAddress, &info)
+
+		if info.deleteScheduled {
+			delete(g.memberships, groupAddress)
+		} else {
+			info.transmissionLeft = 0
+			g.memberships[groupAddress] = info
+		}
 	}
 }
 
@@ -249,9 +405,21 @@ func (g *GenericMulticastProtocolState) InitializeGroupsLocked() {
 //
 // Precondition: g.protocolMU must be locked.
 func (g *GenericMulticastProtocolState) SendQueuedReportsLocked() {
+	if g.stateChangedReportV2TimerSet {
+		return
+	}
+
 	for groupAddress, info := range g.memberships {
 		if info.delayedReportJobFiresAt.IsZero() {
-			g.maybeSendReportLocked(groupAddress, &info)
+			switch g.mode {
+			case protocolModeV2:
+				g.sendV2ReportAndMaybeScheduleChangedTimer(groupAddress, &info, MulticastGroupProtocolV2ReportRecordChangeToExcludeMode)
+			case protocolModeV1Compatibility:
+				g.maybeSendReportLocked(groupAddress, &info)
+			default:
+				panic(fmt.Sprintf("unrecognized mode = %d", g.mode))
+			}
+
 			g.memberships[groupAddress] = info
 		}
 	}
@@ -261,37 +429,56 @@ func (g *GenericMulticastProtocolState) SendQueuedReportsLocked() {
 //
 // Precondition: g.protocolMU must be locked.
 func (g *GenericMulticastProtocolState) JoinGroupLocked(groupAddress tcpip.Address) {
-	if info, ok := g.memberships[groupAddress]; ok {
-		// The group has already been joined.
+	info, ok := g.memberships[groupAddress]
+	if ok {
 		info.joins++
-		g.memberships[groupAddress] = info
-		return
-	}
-
-	info := multicastGroupState{
-		// Since we just joined the group, its count is 1.
-		joins:            1,
-		lastToSendReport: false,
-		delayedReportJob: tcpip.NewJob(g.opts.Clock, g.protocolMU, func() {
-			if !g.opts.Protocol.Enabled() {
-				panic(fmt.Sprintf("delayed report job fired for group %s while the multicast group protocol is disabled", groupAddress))
-			}
-
-			info, ok := g.memberships[groupAddress]
-			if !ok {
-				panic(fmt.Sprintf("expected to find group state for group = %s", groupAddress))
-			}
-
-			info.delayedReportJobFiresAt = time.Time{}
-			g.maybeSendReportLocked(groupAddress, &info)
+		if info.joins > 1 {
+			// The group has already been joined.
 			g.memberships[groupAddress] = info
-		}),
+			return
+		}
+	} else {
+		info = multicastGroupState{
+			// Since we just joined the group, its count is 1.
+			joins:            1,
+			lastToSendReport: false,
+			delayedReportJob: tcpip.NewJob(g.opts.Clock, g.protocolMU, func() {
+				if !g.opts.Protocol.Enabled() {
+					panic(fmt.Sprintf("delayed report job fired for group %s while the multicast group protocol is disabled", groupAddress))
+				}
+
+				info, ok := g.memberships[groupAddress]
+				if !ok {
+					panic(fmt.Sprintf("expected to find group state for group = %s", groupAddress))
+				}
+
+				info.delayedReportJobFiresAt = time.Time{}
+
+				switch g.mode {
+				case protocolModeV2:
+					reportBuilder := g.opts.Protocol.NewReportV2Builder()
+					reportBuilder.AddRecord(MulticastGroupProtocolV2ReportRecordModeIsExclude, groupAddress)
+					// Nothing meaningful we can do with the error here - we only try to
+					// send a delayed report once.
+					_, _ = reportBuilder.Send()
+				case protocolModeV1Compatibility:
+					g.maybeSendReportLocked(groupAddress, &info)
+				default:
+					panic(fmt.Sprintf("unrecognized mode = %d", g.mode))
+				}
+
+				info.clearQueriedIncludeSources()
+				g.memberships[groupAddress] = info
+			}),
+			queriedIncludeSources: make(map[tcpip.Address]struct{}),
+		}
 	}
 
-	if g.opts.Protocol.Enabled() {
-		g.initializeNewMemberLocked(groupAddress, &info)
-	}
-
+	info.deleteScheduled = false
+	info.clearQueriedIncludeSources()
+	info.delayedReportJobFiresAt = time.Time{}
+	info.lastToSendReport = false
+	g.initializeNewMemberLocked(groupAddress, &info)
 	g.memberships[groupAddress] = info
 }
 
@@ -299,8 +486,78 @@ func (g *GenericMulticastProtocolState) JoinGroupLocked(groupAddress tcpip.Addre
 //
 // Precondition: g.protocolMU must be read locked.
 func (g *GenericMulticastProtocolState) IsLocallyJoinedRLocked(groupAddress tcpip.Address) bool {
-	_, ok := g.memberships[groupAddress]
-	return ok
+	info, ok := g.memberships[groupAddress]
+	return ok && !info.deleteScheduled
+}
+
+func (g *GenericMulticastProtocolState) sendV2ReportAndMaybeScheduleChangedTimer(groupAddress tcpip.Address, info *multicastGroupState, recordType MulticastGroupProtocolV2ReportRecordType) bool {
+	if info.transmissionLeft == 0 {
+		return false
+	}
+
+	successfullySentAndHasMore := false
+
+	// Send a report immediately to announce us leaving the group.
+	reportBuilder := g.opts.Protocol.NewReportV2Builder()
+	reportBuilder.AddRecord(recordType, groupAddress)
+	if sent, err := reportBuilder.Send(); sent && err == nil {
+		info.transmissionLeft--
+
+		successfullySentAndHasMore = info.transmissionLeft != 0
+
+		// Use the interface-wide state changed report for further transmissions.
+		if successfullySentAndHasMore && !g.stateChangedReportV2TimerSet {
+			delay := g.calculateDelayTimerDuration(g.opts.MaxUnsolicitedReportDelay)
+			if g.stateChangedReportV2Timer == nil {
+				// TODO(https://issuetracker.google.com/264799098): Create timer on
+				// initialization instead of lazily creating the timer since the timer
+				// does not change after being created.
+				g.stateChangedReportV2Timer = g.opts.Clock.AfterFunc(delay, func() {
+					g.protocolMU.Lock()
+					defer g.protocolMU.Unlock()
+
+					nonEmptyReport := false
+					for groupAddress, info := range g.memberships {
+						if info.transmissionLeft == 0 || !g.shouldPerformForGroup(groupAddress) {
+							continue
+						}
+
+						info.transmissionLeft--
+						nonEmptyReport = true
+
+						reportBuilder := g.opts.Protocol.NewReportV2Builder()
+						mode := MulticastGroupProtocolV2ReportRecordChangeToExcludeMode
+						if info.deleteScheduled {
+							mode = MulticastGroupProtocolV2ReportRecordChangeToIncludeMode
+						}
+						reportBuilder.AddRecord(mode, groupAddress)
+						// Nothing meaningful we can do with the error here. We will retry
+						// sending a state changed report again anyways.
+						_, _ = reportBuilder.Send()
+
+						if info.deleteScheduled && info.transmissionLeft == 0 {
+							// No more transmissions left so we can actually delete the
+							// membership.
+							delete(g.memberships, groupAddress)
+						} else {
+							g.memberships[groupAddress] = info
+						}
+					}
+
+					if nonEmptyReport {
+						g.stateChangedReportV2Timer.Reset(g.calculateDelayTimerDuration(g.opts.MaxUnsolicitedReportDelay))
+					} else {
+						g.stateChangedReportV2TimerSet = false
+					}
+				})
+			} else {
+				g.stateChangedReportV2Timer.Reset(delay)
+			}
+			g.stateChangedReportV2TimerSet = true
+		}
+	}
+
+	return successfullySentAndHasMore
 }
 
 // LeaveGroupLocked handles leaving the group.
@@ -310,13 +567,10 @@ func (g *GenericMulticastProtocolState) IsLocallyJoinedRLocked(groupAddress tcpi
 // Precondition: g.protocolMU must be locked.
 func (g *GenericMulticastProtocolState) LeaveGroupLocked(groupAddress tcpip.Address) bool {
 	info, ok := g.memberships[groupAddress]
-	if !ok {
+	if !ok || info.joins == 0 {
 		return false
 	}
 
-	if info.joins == 0 {
-		panic(fmt.Sprintf("tried to leave group %s with a join count of 0", groupAddress))
-	}
 	info.joins--
 	if info.joins != 0 {
 		// If we still have outstanding joins, then do nothing further.
@@ -324,9 +578,208 @@ func (g *GenericMulticastProtocolState) LeaveGroupLocked(groupAddress tcpip.Addr
 		return true
 	}
 
-	g.transitionToNonMemberLocked(groupAddress, &info)
-	delete(g.memberships, groupAddress)
+	info.deleteScheduled = true
+	info.cancelDelayedReportJob()
+
+	if !g.shouldPerformForGroup(groupAddress) {
+		delete(g.memberships, groupAddress)
+		return true
+	}
+
+	switch g.mode {
+	case protocolModeV2:
+		info.transmissionLeft = g.robustnessVariable
+		if g.sendV2ReportAndMaybeScheduleChangedTimer(groupAddress, &info, MulticastGroupProtocolV2ReportRecordChangeToIncludeMode) {
+			g.memberships[groupAddress] = info
+		} else {
+			delete(g.memberships, groupAddress)
+		}
+	case protocolModeV1Compatibility:
+		g.transitionToNonMemberLocked(groupAddress, &info)
+		delete(g.memberships, groupAddress)
+	default:
+		panic(fmt.Sprintf("unrecognized mode = %d", g.mode))
+	}
+
 	return true
+}
+
+// HandleQueryV2Locked handles a V2 query.
+//
+// Precondition: g.protocolMU must be locked.
+func (g *GenericMulticastProtocolState) HandleQueryV2Locked(groupAddress tcpip.Address, maxResponseCode uint16, sources header.AddressIterator, robustnessVariable uint8, queryInterval time.Duration) {
+	if !g.opts.Protocol.Enabled() {
+		return
+	}
+
+	switch g.mode {
+	case protocolModeV1Compatibility:
+		g.handleQueryInnerLocked(groupAddress, g.opts.Protocol.V2QueryMaxRespCodeToV1Delay(maxResponseCode))
+		return
+	case protocolModeV2:
+	default:
+		panic(fmt.Sprintf("unrecognized mode = %d", g.mode))
+	}
+
+	if robustnessVariable != 0 {
+		g.robustnessVariable = robustnessVariable
+	}
+
+	if queryInterval != 0 {
+		g.queryInterval = queryInterval
+	}
+
+	maxResponseTime := g.calculateDelayTimerDuration(g.opts.Protocol.V2QueryMaxRespCodeToV2Delay(maxResponseCode))
+
+	// As per RFC 3376 section 5.2,
+	//
+	//   1. If there is a pending response to a previous General Query
+	//      scheduled sooner than the selected delay, no additional response
+	//      needs to be scheduled.
+	//
+	//   2. If the received Query is a General Query, the interface timer is
+	//      used to schedule a response to the General Query after the
+	//      selected delay.  Any previously pending response to a General
+	//      Query is canceled.
+	//
+	//   3. If the received Query is a Group-Specific Query or a Group-and-
+	//      Source-Specific Query and there is no pending response to a
+	//      previous Query for this group, then the group timer is used to
+	//      schedule a report.  If the received Query is a Group-and-Source-
+	//      Specific Query, the list of queried sources is recorded to be used
+	//      when generating a response.
+	//
+	//   4. If there already is a pending response to a previous Query
+	//      scheduled for this group, and either the new Query is a Group-
+	//      Specific Query or the recorded source-list associated with the
+	//      group is empty, then the group source-list is cleared and a single
+	//      response is scheduled using the group timer.  The new response is
+	//      scheduled to be sent at the earliest of the remaining time for the
+	//      pending report and the selected delay.
+	//
+	//   5. If the received Query is a Group-and-Source-Specific Query and
+	//      there is a pending response for this group with a non-empty
+	//      source-list, then the group source list is augmented to contain
+	//      the list of sources in the new Query and a single response is
+	//      scheduled using the group timer.  The new response is scheduled to
+	//      be sent at the earliest of the remaining time for the pending
+	//      report and the selected delay.
+	//
+	// As per RFC 3810 section 6.2,
+	//
+	//   1. If there is a pending response to a previous General Query
+	//      scheduled sooner than the selected delay, no additional response
+	//      needs to be scheduled.
+	//
+	//   2. If the received Query is a General Query, the Interface Timer is
+	//      used to schedule a response to the General Query after the
+	//      selected delay.  Any previously pending response to a General
+	//      Query is canceled.
+	//
+	//   3. If the received Query is a Multicast Address Specific Query or a
+	//      Multicast Address and Source Specific Query and there is no
+	//      pending response to a previous Query for this multicast address,
+	//      then the Multicast Address Timer is used to schedule a report.  If
+	//      the received Query is a Multicast Address and Source Specific
+	//      Query, the list of queried sources is recorded to be used when
+	//      generating a response.
+	//
+	//   4. If there is already a pending response to a previous Query
+	//      scheduled for this multicast address, and either the new Query is
+	//      a Multicast Address Specific Query or the recorded source list
+	//      associated with the multicast address is empty, then the multicast
+	//      address source list is cleared and a single response is scheduled,
+	//      using the Multicast Address Timer.  The new response is scheduled
+	//      to be sent at the earliest of the remaining time for the pending
+	//      report and the selected delay.
+	//
+	//   5. If the received Query is a Multicast Address and Source Specific
+	//      Query and there is a pending response for this multicast address
+	//      with a non-empty source list, then the multicast address source
+	//      list is augmented to contain the list of sources in the new Query,
+	//      and a single response is scheduled using the Multicast Address
+	//      Timer.  The new response is scheduled to be sent at the earliest
+	//      of the remaining time for the pending report and the selected
+	//      delay.
+	now := g.opts.Clock.Now()
+	if !g.generalQueryV2TimerFiresAt.IsZero() && g.generalQueryV2TimerFiresAt.Sub(now) <= maxResponseTime {
+		return
+	}
+
+	if groupAddress.Unspecified() {
+		if g.generalQueryV2Timer == nil {
+			// TODO(https://issuetracker.google.com/264799098): Create timer on
+			// initialization instead of lazily creating the timer since the timer
+			// does not change after being created.
+			g.generalQueryV2Timer = g.opts.Clock.AfterFunc(maxResponseTime, func() {
+				g.protocolMU.Lock()
+				defer g.protocolMU.Unlock()
+
+				g.generalQueryV2TimerFiresAt = time.Time{}
+
+				// As per RFC 3810 section 6.3,
+				//
+				//      If the expired timer is the Interface Timer (i.e., there is a
+				//      pending response to a General Query), then one Current State
+				//      Record is sent for each multicast address for which the specified
+				//      interface has listening state, as described in section 4.2.  The
+				//      Current State Record carries the multicast address and its
+				//      associated filter mode (MODE_IS_INCLUDE or MODE_IS_EXCLUDE) and
+				//      Source list.  Multiple Current State Records are packed into
+				//      individual Report messages, to the extent possible.
+				//
+				// As per RFC 3376 section 5.2,
+				//
+				//      If the expired timer is the interface timer (i.e., it is a pending
+				//      response to a General Query), then one Current-State Record is
+				//      sent for each multicast address for which the specified interface
+				//      has reception state, as described in section 3.2.  The Current-
+				//      State Record carries the multicast address and its associated
+				//      filter mode (MODE_IS_INCLUDE or MODE_IS_EXCLUDE) and source list.
+				//      Multiple Current-State Records are packed into individual Report
+				//      messages, to the extent possible.
+				reportBuilder := g.opts.Protocol.NewReportV2Builder()
+				for groupAddress, info := range g.memberships {
+					if info.deleteScheduled || !g.shouldPerformForGroup(groupAddress) {
+						continue
+					}
+
+					// A MODE_IS_EXCLUDE record without any sources indicates that we are
+					// interested in traffic from all sources for the group.
+					//
+					// We currently only hold groups if we have an active interest in the
+					// group.
+					reportBuilder.AddRecord(
+						MulticastGroupProtocolV2ReportRecordModeIsExclude,
+						groupAddress,
+					)
+				}
+
+				_, _ = reportBuilder.Send()
+			})
+		} else {
+			g.generalQueryV2Timer.Reset(maxResponseTime)
+		}
+		g.generalQueryV2TimerFiresAt = now.Add(maxResponseTime)
+		return
+	}
+
+	if info, ok := g.memberships[groupAddress]; ok && !info.deleteScheduled && g.shouldPerformForGroup(groupAddress) {
+		if info.delayedReportJobFiresAt.IsZero() || (!sources.Done() && len(info.queriedIncludeSources) != 0) {
+			for {
+				source, ok := sources.Next()
+				if !ok {
+					break
+				}
+
+				info.queriedIncludeSources[source] = struct{}{}
+			}
+		} else {
+			info.clearQueriedIncludeSources()
+		}
+		g.setDelayTimerForAddressLocked(groupAddress, &info, maxResponseTime)
+		g.memberships[groupAddress] = info
+	}
 }
 
 // HandleQueryLocked handles a query message with the specified maximum response
@@ -343,6 +796,48 @@ func (g *GenericMulticastProtocolState) HandleQueryLocked(groupAddress tcpip.Add
 	if !g.opts.Protocol.Enabled() {
 		return
 	}
+
+	// As per 3376 section 8.12 (for IGMPv3),
+	//
+	//   The Older Version Querier Interval is the time-out for transitioning
+	//   a host back to IGMPv3 mode once an older version query is heard.
+	//   When an older version query is received, hosts set their Older
+	//   Version Querier Present Timer to Older Version Querier Interval.
+	//
+	//   This value MUST be ((the Robustness Variable) times (the Query
+	//   Interval in the last Query received)) plus (one Query Response
+	//   Interval).
+	//
+	// As per RFC 3810 section 9.12 (for MLDv2),
+	//
+	//   The Older Version Querier Present Timeout is the time-out for
+	//   transitioning a host back to MLDv2 Host Compatibility Mode.  When an
+	//   MLDv1 query is received, MLDv2 hosts set their Older Version Querier
+	//   Present Timer to [Older Version Querier Present Timeout].
+	//
+	//   This value MUST be ([Robustness Variable] times (the [Query Interval]
+	//   in the last Query received)) plus ([Query Response Interval]).
+	modeRevertDelay := time.Duration(g.robustnessVariable) * g.queryInterval
+	if g.modeTimer == nil {
+		// TODO(https://issuetracker.google.com/264799098): Create timer on
+		// initialization instead of lazily creating the timer since the timer
+		// does not change after being created.
+		g.modeTimer = g.opts.Clock.AfterFunc(modeRevertDelay, func() {
+			g.protocolMU.Lock()
+			defer g.protocolMU.Unlock()
+			g.mode = protocolModeV2
+		})
+	} else {
+		g.modeTimer.Reset(modeRevertDelay)
+	}
+	g.mode = protocolModeV1Compatibility
+	g.cancelV2ReportTimers()
+
+	g.handleQueryInnerLocked(groupAddress, maxResponseTime)
+}
+
+func (g *GenericMulticastProtocolState) handleQueryInnerLocked(groupAddress tcpip.Address, maxResponseTime time.Duration) {
+	maxResponseTime = g.calculateDelayTimerDuration(maxResponseTime)
 
 	// As per RFC 2236 section 2.4 (for IGMPv2),
 	//
@@ -361,7 +856,7 @@ func (g *GenericMulticastProtocolState) HandleQueryLocked(groupAddress tcpip.Add
 			g.setDelayTimerForAddressLocked(groupAddress, &info, maxResponseTime)
 			g.memberships[groupAddress] = info
 		}
-	} else if info, ok := g.memberships[groupAddress]; ok {
+	} else if info, ok := g.memberships[groupAddress]; ok && !info.deleteScheduled {
 		g.setDelayTimerForAddressLocked(groupAddress, &info, maxResponseTime)
 		g.memberships[groupAddress] = info
 	}
@@ -401,10 +896,21 @@ func (g *GenericMulticastProtocolState) HandleReportLocked(groupAddress tcpip.Ad
 //
 // Precondition: g.protocolMU must be locked.
 func (g *GenericMulticastProtocolState) initializeNewMemberLocked(groupAddress tcpip.Address, info *multicastGroupState) {
+	if !g.shouldPerformForGroup(groupAddress) {
+		return
+	}
+
 	info.lastToSendReport = false
-	if g.shouldPerformForGroup(groupAddress) {
+
+	switch g.mode {
+	case protocolModeV2:
+		info.transmissionLeft = g.robustnessVariable
+		g.sendV2ReportAndMaybeScheduleChangedTimer(groupAddress, info, MulticastGroupProtocolV2ReportRecordChangeToExcludeMode)
+	case protocolModeV1Compatibility:
 		info.transmissionLeft = unsolicitedTransmissionCount
 		g.maybeSendReportLocked(groupAddress, info)
+	default:
+		panic(fmt.Sprintf("unrecognized mode = %d", g.mode))
 	}
 }
 
@@ -443,7 +949,11 @@ func (g *GenericMulticastProtocolState) maybeSendReportLocked(groupAddress tcpip
 
 		info.transmissionLeft--
 		if info.transmissionLeft > 0 {
-			g.setDelayTimerForAddressLocked(groupAddress, info, g.opts.MaxUnsolicitedReportDelay)
+			g.setDelayTimerForAddressLocked(
+				groupAddress,
+				info,
+				g.calculateDelayTimerDuration(g.opts.MaxUnsolicitedReportDelay),
+			)
 		}
 	}
 }
@@ -509,10 +1019,6 @@ func (g *GenericMulticastProtocolState) maybeSendLeave(groupAddress tcpip.Addres
 //
 // Precondition: g.protocolMU must be locked.
 func (g *GenericMulticastProtocolState) transitionToNonMemberLocked(groupAddress tcpip.Address, info *multicastGroupState) {
-	if !g.shouldPerformForGroup(groupAddress) {
-		return
-	}
-
 	info.cancelDelayedReportJob()
 	g.maybeSendLeave(groupAddress, info.lastToSendReport)
 	info.lastToSendReport = false
@@ -548,7 +1054,6 @@ func (g *GenericMulticastProtocolState) setDelayTimerForAddressLocked(groupAddre
 		return
 	}
 
-	maxResponseTime = g.calculateDelayTimerDuration(maxResponseTime)
 	info.delayedReportJob.Cancel()
 	info.delayedReportJob.Schedule(maxResponseTime)
 	info.delayedReportJobFiresAt = now.Add(maxResponseTime)

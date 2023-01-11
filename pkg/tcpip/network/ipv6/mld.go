@@ -99,6 +99,103 @@ func (mld *mldState) ShouldPerformProtocol(groupAddress tcpip.Address) bool {
 	return scope != header.IPv6Reserved0MulticastScope && scope != header.IPv6InterfaceLocalMulticastScope
 }
 
+type mldv2ReportBuilder struct {
+	mld *mldState
+
+	records []header.MLDv2ReportMulticastAddressRecordSerializer
+}
+
+// AddRecord implements ip.MulticastGroupProtocolV2ReportBuilder.
+func (b *mldv2ReportBuilder) AddRecord(genericRecordType ip.MulticastGroupProtocolV2ReportRecordType, groupAddress tcpip.Address) {
+	var recordType header.MLDv2ReportRecordType
+	switch genericRecordType {
+	case ip.MulticastGroupProtocolV2ReportRecordModeIsInclude:
+		recordType = header.MLDv2ReportRecordModeIsInclude
+	case ip.MulticastGroupProtocolV2ReportRecordModeIsExclude:
+		recordType = header.MLDv2ReportRecordModeIsExclude
+	case ip.MulticastGroupProtocolV2ReportRecordChangeToIncludeMode:
+		recordType = header.MLDv2ReportRecordChangeToIncludeMode
+	case ip.MulticastGroupProtocolV2ReportRecordChangeToExcludeMode:
+		recordType = header.MLDv2ReportRecordChangeToExcludeMode
+	case ip.MulticastGroupProtocolV2ReportRecordAllowNewSources:
+		recordType = header.MLDv2ReportRecordAllowNewSources
+	case ip.MulticastGroupProtocolV2ReportRecordBlockOldSources:
+		recordType = header.MLDv2ReportRecordBlockOldSources
+	default:
+		panic(fmt.Sprintf("unrecognied genericRecordType = %d", genericRecordType))
+	}
+
+	b.records = append(b.records, header.MLDv2ReportMulticastAddressRecordSerializer{
+		RecordType:       recordType,
+		MulticastAddress: groupAddress,
+		Sources:          nil,
+	})
+}
+
+// Send implements ip.MulticastGroupProtocolV2ReportBuilder.
+func (b *mldv2ReportBuilder) Send() (sent bool, err tcpip.Error) {
+	extensionHeaders := header.IPv6ExtHdrSerializer{
+		header.IPv6SerializableHopByHopExtHdr{
+			&header.IPv6RouterAlertOption{Value: header.IPv6RouterAlertMLD},
+		},
+	}
+	mtu := int(b.mld.ep.MTU()) - extensionHeaders.Length()
+
+	allSentWithSpecifiedAddress := true
+	var firstErr tcpip.Error
+	for records := b.records; len(records) != 0; {
+		spaceLeft := mtu
+		maxRecords := 0
+
+		for ; maxRecords < len(records); maxRecords++ {
+			tmp := spaceLeft - records[maxRecords].Length()
+			if tmp > 0 {
+				spaceLeft = tmp
+			} else {
+				break
+			}
+		}
+
+		serializer := header.MLDv2ReportSerializer{Records: records[:maxRecords]}
+		records = records[maxRecords:]
+
+		icmpView := bufferv2.NewViewSize(header.ICMPv6HeaderSize + serializer.Length())
+		icmp := header.ICMPv6(icmpView.AsSlice())
+		serializer.SerializeInto(icmp.MessageBody())
+		if sentWithSpecifiedAddress, err := b.mld.writePacketInner(
+			icmpView,
+			header.ICMPv6MulticastListenerV2Report,
+			b.mld.ep.stats.icmp.packetsSent.multicastListenerReportV2,
+			extensionHeaders,
+			header.MLDv2RoutersAddress,
+		); err != nil {
+			if firstErr != nil {
+				firstErr = nil
+			}
+			allSentWithSpecifiedAddress = false
+		} else if !sentWithSpecifiedAddress {
+			allSentWithSpecifiedAddress = false
+		}
+	}
+
+	return allSentWithSpecifiedAddress, firstErr
+}
+
+// NewReportV2Builder implements ip.MulticastGroupProtocol.
+func (mld *mldState) NewReportV2Builder() ip.MulticastGroupProtocolV2ReportBuilder {
+	return &mldv2ReportBuilder{mld: mld}
+}
+
+// V2QueryMaxRespCodeToV2Delay implements ip.MulticastGroupProtocol.
+func (*mldState) V2QueryMaxRespCodeToV2Delay(code uint16) time.Duration {
+	return header.MLDv2MaximumResponseDelay(code)
+}
+
+// V2QueryMaxRespCodeToV1Delay implements ip.MulticastGroupProtocol.
+func (*mldState) V2QueryMaxRespCodeToV1Delay(code uint16) time.Duration {
+	return time.Duration(code) * time.Millisecond
+}
+
 // init sets up an mldState struct, and is required to be called before using
 // a new mldState.
 //
@@ -118,6 +215,24 @@ func (mld *mldState) init(ep *endpoint) {
 // Precondition: mld.ep.mu must be locked.
 func (mld *mldState) handleMulticastListenerQuery(mldHdr header.MLD) {
 	mld.genericMulticastProtocol.HandleQueryLocked(mldHdr.MulticastAddress(), mldHdr.MaximumResponseDelay())
+}
+
+// handleMulticastListenerQueryV2 handles a V2 query message.
+//
+// Precondition: mld.ep.mu must be locked.
+func (mld *mldState) handleMulticastListenerQueryV2(mldHdr header.MLDv2Query) {
+	sources, ok := mldHdr.Sources()
+	if !ok {
+		return
+	}
+
+	mld.genericMulticastProtocol.HandleQueryV2Locked(
+		mldHdr.MulticastAddress(),
+		mldHdr.MaximumResponseCode(),
+		sources,
+		mldHdr.QuerierRobustnessVariable(),
+		mldHdr.QuerierQueryInterval(),
+	)
 }
 
 // handleMulticastListenerReport handles a report message.
@@ -199,8 +314,26 @@ func (mld *mldState) writePacket(destAddress, groupAddress tcpip.Address, mldTyp
 	icmpView := bufferv2.NewViewSize(header.ICMPv6HeaderSize + header.MLDMinimumSize)
 
 	icmp := header.ICMPv6(icmpView.AsSlice())
-	icmp.SetType(mldType)
 	header.MLD(icmp.MessageBody()).SetMulticastAddress(groupAddress)
+	extensionHeaders := header.IPv6ExtHdrSerializer{
+		header.IPv6SerializableHopByHopExtHdr{
+			&header.IPv6RouterAlertOption{Value: header.IPv6RouterAlertMLD},
+		},
+	}
+
+	return mld.writePacketInner(
+		icmpView,
+		mldType,
+		mldStat,
+		extensionHeaders,
+		destAddress,
+	)
+}
+
+func (mld *mldState) writePacketInner(buf *bufferv2.View, mldType header.ICMPv6Type, reportStat tcpip.MultiCounterStat, extensionHeaders header.IPv6ExtHdrSerializer, destAddress tcpip.Address) (bool, tcpip.Error) {
+	icmp := header.ICMPv6(buf.AsSlice())
+	icmp.SetType(mldType)
+
 	// As per RFC 2710 section 3,
 	//
 	//   All MLD messages described in this document are sent with a link-local
@@ -262,15 +395,9 @@ func (mld *mldState) writePacket(destAddress, groupAddress tcpip.Address, mldTyp
 		Dst:    destAddress,
 	}))
 
-	extensionHeaders := header.IPv6ExtHdrSerializer{
-		header.IPv6SerializableHopByHopExtHdr{
-			&header.IPv6RouterAlertOption{Value: header.IPv6RouterAlertMLD},
-		},
-	}
-
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(mld.ep.MaxHeaderLength()) + extensionHeaders.Length(),
-		Payload:            bufferv2.MakeWithView(icmpView),
+		Payload:            bufferv2.MakeWithView(buf),
 	})
 	defer pkt.DecRef()
 
@@ -281,9 +408,9 @@ func (mld *mldState) writePacket(destAddress, groupAddress tcpip.Address, mldTyp
 		panic(fmt.Sprintf("failed to add IP header: %s", err))
 	}
 	if err := mld.ep.nic.WritePacketToRemote(header.EthernetAddressFromMulticastIPv6Address(destAddress), pkt); err != nil {
-		sentStats.dropped.Increment()
+		mld.ep.stats.icmp.packetsSent.dropped.Increment()
 		return false, err
 	}
-	mldStat.Increment()
+	reportStat.Increment()
 	return localAddress != header.IPv6Any, nil
 }
