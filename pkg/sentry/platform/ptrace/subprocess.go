@@ -30,6 +30,14 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
+var (
+	// maximumUserAddress is the largest possible user address.
+	maximumUserAddress = linux.TaskSize
+
+	// stubInitAddress is the initial attempt link address for the stub.
+	stubInitAddress = linux.TaskSize
+)
+
 // Linux kernel errnos which "should never be seen by user programs", but will
 // be revealed to ptrace syscall exit tracing.
 //
