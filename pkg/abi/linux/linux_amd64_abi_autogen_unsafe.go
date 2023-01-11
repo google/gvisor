@@ -6,8 +6,8 @@
 // is filtered based on pre-defined file suffixes related to build constraints,
 // see tools/defs.bzl:calculate_sets().
 
-//go:build amd64 && amd64 && amd64 && amd64 && amd64
-// +build amd64,amd64,amd64,amd64,amd64
+//go:build amd64 && amd64 && amd64 && amd64 && amd64 && amd64
+// +build amd64,amd64,amd64,amd64,amd64,amd64
 
 package linux
 

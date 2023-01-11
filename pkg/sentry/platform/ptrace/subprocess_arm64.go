@@ -28,13 +28,6 @@ import (
 )
 
 const (
-	// maximumUserAddress is the largest possible user address.
-	maximumUserAddress = 0xfffffffff000
-
-	// stubInitAddress is the initial attempt link address for the stub.
-	// Only support 48bits VA currently.
-	stubInitAddress = 0xffffffff0000
-
 	// initRegsRipAdjustment is the size of the svc instruction.
 	initRegsRipAdjustment = 4
 )

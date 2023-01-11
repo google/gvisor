@@ -28,12 +28,6 @@ import (
 )
 
 const (
-	// maximumUserAddress is the largest possible user address.
-	maximumUserAddress = 0x7ffffffff000
-
-	// stubInitAddress is the initial attempt link address for the stub.
-	stubInitAddress = 0x7fffffff0000
-
 	// initRegsRipAdjustment is the size of the syscall instruction.
 	initRegsRipAdjustment = 2
 )
