@@ -246,9 +246,8 @@ func newSocket(ioFD int) *unet.Socket {
 
 func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string) subcommands.ExitStatus {
 	type connectionConfig struct {
-		sock      *unet.Socket
-		mountPath string
-		readonly  bool
+		sock     *unet.Socket
+		readonly bool
 	}
 	cfgs := make([]connectionConfig, 0, len(spec.Mounts)+1)
 	server := fsgofer.NewLisafsServer(fsgofer.Config{
@@ -261,9 +260,8 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string) subcom
 
 	// Start with root mount, then add any other additional mount as needed.
 	cfgs = append(cfgs, connectionConfig{
-		sock:      newSocket(g.ioFDs[0]),
-		mountPath: "/", // fsgofer process is always chroot()ed. So serve root.
-		readonly:  spec.Root.Readonly || overlay2.RootMount,
+		sock:     newSocket(g.ioFDs[0]),
+		readonly: spec.Root.Readonly || overlay2.RootMount,
 	})
 	log.Infof("Serving %q mapped to %q on FD %d (ro: %t)", "/", root, g.ioFDs[0], cfgs[0].readonly)
 
@@ -281,9 +279,8 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string) subcom
 		}
 
 		cfgs = append(cfgs, connectionConfig{
-			sock:      newSocket(g.ioFDs[mountIdx]),
-			mountPath: m.Destination,
-			readonly:  isReadonlyMount(m.Options) || overlay2.SubMounts,
+			sock:     newSocket(g.ioFDs[mountIdx]),
+			readonly: isReadonlyMount(m.Options) || overlay2.SubMounts,
 		})
 
 		log.Infof("Serving %q mapped on FD %d (ro: %t)", m.Destination, g.ioFDs[mountIdx], cfgs[mountIdx].readonly)
@@ -296,7 +293,9 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string) subcom
 	cfgs = cfgs[:mountIdx]
 
 	for _, cfg := range cfgs {
-		conn, err := server.CreateConnection(cfg.sock, cfg.mountPath, cfg.readonly)
+		// fsgofer process is always chroot()ed. So we can serve root. The gofer
+		// client should walk to the right mount point from the root.
+		conn, err := server.CreateConnection(cfg.sock, "/", cfg.readonly)
 		if err != nil {
 			util.Fatalf("starting connection on FD %d for gofer mount failed: %v", cfg.sock.FD(), err)
 		}
