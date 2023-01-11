@@ -19,6 +19,7 @@ package testutil
 import (
 	"fmt"
 	"math/rand"
+	"testing"
 
 	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -123,4 +124,62 @@ func MakeRandPkt(transportHeaderLength int, extraHeaderReserveLength int, viewSi
 		panic(fmt.Sprintf("rand.Read: %s", err))
 	}
 	return pkt
+}
+
+func checkIGMPStats(t *testing.T, s *stack.Stack, reports, leaves, reportsV2 uint64) {
+	t.Helper()
+
+	if got := s.Stats().IGMP.PacketsSent.V2MembershipReport.Value(); got != reports {
+		t.Errorf("got s.Stats().IGMP.PacketsSent.V2MembershipReport.Value() = %d, want = %d", got, reports)
+	}
+	if got := s.Stats().IGMP.PacketsSent.V3MembershipReport.Value(); got != reportsV2 {
+		t.Errorf("got s.Stats().IGMP.PacketsSent.V3MembershipReport.Value() = %d, want = %d", got, reportsV2)
+	}
+	if got := s.Stats().IGMP.PacketsSent.LeaveGroup.Value(); got != leaves {
+		t.Errorf("got s.Stats().IGMP.PacketsSent.LeaveGroup.Value() = %d, want = %d", got, leaves)
+	}
+}
+
+// CheckIGMPv2Stats checks IGMPv2 stats.
+func CheckIGMPv2Stats(t *testing.T, s *stack.Stack, reports, leaves, reportsV2 uint64) {
+	t.Helper()
+	// We still check V3 stats in V2 compatibility tests because the test may send
+	// V3 reports before we drop into compatibility mode.
+	checkIGMPStats(t, s, reports, leaves, reportsV2)
+}
+
+// CheckIGMPv3Stats checks IGMPv3 stats.
+func CheckIGMPv3Stats(t *testing.T, s *stack.Stack, reports, leaves, reportsV2 uint64) {
+	t.Helper()
+	// In IGMPv3 tests, reports/leaves are just IGMPv3 reports.
+	checkIGMPStats(t, s, 0 /* reports */, 0 /* leaves */, reports+leaves+reportsV2)
+}
+
+func checkMLDStats(t *testing.T, s *stack.Stack, reports, leaves, reportsV2 uint64) {
+	t.Helper()
+
+	if got := s.Stats().ICMP.V6.PacketsSent.MulticastListenerReport.Value(); got != reports {
+		t.Errorf("got s.Stats().ICMP.V6.PacketsSent.MulticastListenerReport.Value() = %d, want = %d", got, reports)
+	}
+	if got := s.Stats().ICMP.V6.PacketsSent.MulticastListenerReportV2.Value(); got != reportsV2 {
+		t.Errorf("got s.Stats().ICMP.V6.PacketsSent.MulticastListenerReportV2.Value() = %d, want = %d", got, reportsV2)
+	}
+	if got := s.Stats().ICMP.V6.PacketsSent.MulticastListenerDone.Value(); got != leaves {
+		t.Errorf("got s.Stats().ICMP.V6.PacketsSent.MulticastListenerDone.Value() = %d, want = %d", got, leaves)
+	}
+}
+
+// CheckMLDv1Stats checks MLDv1 stats.
+func CheckMLDv1Stats(t *testing.T, s *stack.Stack, reports, leaves, reportsV2 uint64) {
+	t.Helper()
+	// We still check V2 stats in V1 compatibility tests because the test may send
+	// V2 reports before we drop into compatibility mode.
+	checkMLDStats(t, s, reports, leaves, reportsV2)
+}
+
+// CheckMLDv2Stats checks MLDv2 stats.
+func CheckMLDv2Stats(t *testing.T, s *stack.Stack, reports, leaves, reportsV2 uint64) {
+	t.Helper()
+	// In MLDv2 tests, reports/leaves are just MLDv2 reports.
+	checkMLDStats(t, s, 0 /* reports */, 0 /* leaves */, reports+leaves+reportsV2)
 }

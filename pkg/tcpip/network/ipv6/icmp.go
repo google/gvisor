@@ -852,12 +852,18 @@ func (e *endpoint) handleICMP(pkt stack.PacketBufferPtr, hasFragmentHeader bool,
 			return
 		}
 
-	case header.ICMPv6MulticastListenerQuery, header.ICMPv6MulticastListenerReport, header.ICMPv6MulticastListenerDone:
+	case header.ICMPv6MulticastListenerQuery,
+		header.ICMPv6MulticastListenerReport,
+		header.ICMPv6MulticastListenerV2Report,
+		header.ICMPv6MulticastListenerDone:
+		icmpBody := h.MessageBody()
 		switch icmpType {
 		case header.ICMPv6MulticastListenerQuery:
 			received.multicastListenerQuery.Increment()
 		case header.ICMPv6MulticastListenerReport:
 			received.multicastListenerReport.Increment()
+		case header.ICMPv6MulticastListenerV2Report:
+			received.multicastListenerReportV2.Increment()
 		case header.ICMPv6MulticastListenerDone:
 			received.multicastListenerDone.Increment()
 		default:
@@ -872,13 +878,17 @@ func (e *endpoint) handleICMP(pkt stack.PacketBufferPtr, hasFragmentHeader bool,
 		switch icmpType {
 		case header.ICMPv6MulticastListenerQuery:
 			e.mu.Lock()
-			e.mu.mld.handleMulticastListenerQuery(header.MLD(h.MessageBody()))
+			if len(icmpBody) >= header.MLDv2QueryMinimumSize {
+				e.mu.mld.handleMulticastListenerQueryV2(header.MLDv2Query(icmpBody))
+			} else {
+				e.mu.mld.handleMulticastListenerQuery(header.MLD(icmpBody))
+			}
 			e.mu.Unlock()
 		case header.ICMPv6MulticastListenerReport:
 			e.mu.Lock()
-			e.mu.mld.handleMulticastListenerReport(header.MLD(h.MessageBody()))
+			e.mu.mld.handleMulticastListenerReport(header.MLD(icmpBody))
 			e.mu.Unlock()
-		case header.ICMPv6MulticastListenerDone:
+		case header.ICMPv6MulticastListenerDone, header.ICMPv6MulticastListenerV2Report:
 		default:
 			panic(fmt.Sprintf("unrecognized MLD message = %d", icmpType))
 		}

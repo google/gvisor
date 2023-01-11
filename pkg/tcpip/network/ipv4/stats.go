@@ -131,6 +131,7 @@ type multiCounterIGMPPacketStats struct {
 	membershipQuery    tcpip.MultiCounterStat
 	v1MembershipReport tcpip.MultiCounterStat
 	v2MembershipReport tcpip.MultiCounterStat
+	v3MembershipReport tcpip.MultiCounterStat
 	leaveGroup         tcpip.MultiCounterStat
 }
 
@@ -138,6 +139,7 @@ func (m *multiCounterIGMPPacketStats) init(a, b *tcpip.IGMPPacketStats) {
 	m.membershipQuery.Init(a.MembershipQuery, b.MembershipQuery)
 	m.v1MembershipReport.Init(a.V1MembershipReport, b.V1MembershipReport)
 	m.v2MembershipReport.Init(a.V2MembershipReport, b.V2MembershipReport)
+	m.v3MembershipReport.Init(a.V3MembershipReport, b.V3MembershipReport)
 	m.leaveGroup.Init(a.LeaveGroup, b.LeaveGroup)
 }
 

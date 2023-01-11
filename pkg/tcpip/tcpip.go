@@ -1563,6 +1563,10 @@ type ICMPv6PacketStats struct {
 	// counted.
 	MulticastListenerReport *StatCounter
 
+	// MulticastListenerReportV2 is the number of Multicast Listener Report
+	// messages counted.
+	MulticastListenerReportV2 *StatCounter
+
 	// MulticastListenerDone is the number of Multicast Listener Done messages
 	// counted.
 	MulticastListenerDone *StatCounter
@@ -1642,6 +1646,10 @@ type IGMPPacketStats struct {
 	// V2MembershipReport is the number of Version 2 Membership Report messages
 	// counted.
 	V2MembershipReport *StatCounter
+
+	// V3MembershipReport is the number of Version 3 Membership Report messages
+	// counted.
+	V3MembershipReport *StatCounter
 
 	// LeaveGroup is the number of Leave Group messages counted.
 	LeaveGroup *StatCounter

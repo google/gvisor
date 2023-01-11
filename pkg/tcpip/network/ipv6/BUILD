@@ -75,6 +75,7 @@ go_test(
         "//pkg/tcpip/faketime",
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/channel",
+        "//pkg/tcpip/network/internal/testutil",
         "//pkg/tcpip/stack",
         "//pkg/tcpip/testutil",
     ],

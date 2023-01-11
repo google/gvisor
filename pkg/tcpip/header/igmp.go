@@ -114,7 +114,7 @@ func (b IGMP) MaxRespTime() time.Duration {
 	//  messages, and specifies the maximum allowed time before sending a
 	//  responding report in units of 1/10 second.  In all other messages, it
 	//  is set to zero by the sender and ignored by receivers.
-	return DecisecondToDuration(b[igmpMaxRespTimeOffset])
+	return DecisecondToDuration(uint16(b[igmpMaxRespTimeOffset]))
 }
 
 // SetMaxRespTime sets the MaxRespTimeField.
@@ -179,6 +179,6 @@ func IGMPCalculateChecksum(h IGMP) uint16 {
 
 // DecisecondToDuration converts a value representing deci-seconds to a
 // time.Duration.
-func DecisecondToDuration(ds uint8) time.Duration {
+func DecisecondToDuration(ds uint16) time.Duration {
 	return time.Duration(ds) * time.Second / 10
 }
