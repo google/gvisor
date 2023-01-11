@@ -52,20 +52,21 @@ type sharedStats struct {
 // LINT.IfChange(multiCounterICMPv6PacketStats)
 
 type multiCounterICMPv6PacketStats struct {
-	echoRequest             tcpip.MultiCounterStat
-	echoReply               tcpip.MultiCounterStat
-	dstUnreachable          tcpip.MultiCounterStat
-	packetTooBig            tcpip.MultiCounterStat
-	timeExceeded            tcpip.MultiCounterStat
-	paramProblem            tcpip.MultiCounterStat
-	routerSolicit           tcpip.MultiCounterStat
-	routerAdvert            tcpip.MultiCounterStat
-	neighborSolicit         tcpip.MultiCounterStat
-	neighborAdvert          tcpip.MultiCounterStat
-	redirectMsg             tcpip.MultiCounterStat
-	multicastListenerQuery  tcpip.MultiCounterStat
-	multicastListenerReport tcpip.MultiCounterStat
-	multicastListenerDone   tcpip.MultiCounterStat
+	echoRequest               tcpip.MultiCounterStat
+	echoReply                 tcpip.MultiCounterStat
+	dstUnreachable            tcpip.MultiCounterStat
+	packetTooBig              tcpip.MultiCounterStat
+	timeExceeded              tcpip.MultiCounterStat
+	paramProblem              tcpip.MultiCounterStat
+	routerSolicit             tcpip.MultiCounterStat
+	routerAdvert              tcpip.MultiCounterStat
+	neighborSolicit           tcpip.MultiCounterStat
+	neighborAdvert            tcpip.MultiCounterStat
+	redirectMsg               tcpip.MultiCounterStat
+	multicastListenerQuery    tcpip.MultiCounterStat
+	multicastListenerReport   tcpip.MultiCounterStat
+	multicastListenerReportV2 tcpip.MultiCounterStat
+	multicastListenerDone     tcpip.MultiCounterStat
 }
 
 func (m *multiCounterICMPv6PacketStats) init(a, b *tcpip.ICMPv6PacketStats) {
@@ -82,6 +83,7 @@ func (m *multiCounterICMPv6PacketStats) init(a, b *tcpip.ICMPv6PacketStats) {
 	m.redirectMsg.Init(a.RedirectMsg, b.RedirectMsg)
 	m.multicastListenerQuery.Init(a.MulticastListenerQuery, b.MulticastListenerQuery)
 	m.multicastListenerReport.Init(a.MulticastListenerReport, b.MulticastListenerReport)
+	m.multicastListenerReportV2.Init(a.MulticastListenerReportV2, b.MulticastListenerReportV2)
 	m.multicastListenerDone.Init(a.MulticastListenerDone, b.MulticastListenerDone)
 }
 

@@ -65,7 +65,7 @@ func TestIGMPHeader(t *testing.T) {
 
 	respTime := byte(0x02)
 	igmpHeader.SetMaxRespTime(respTime)
-	if got, want := igmpHeader.MaxRespTime(), header.DecisecondToDuration(respTime); got != want {
+	if got, want := igmpHeader.MaxRespTime(), header.DecisecondToDuration(uint16(respTime)); got != want {
 		t.Errorf("got igmpHeader.MaxRespTime() = %s, want = %s", got, want)
 	}
 

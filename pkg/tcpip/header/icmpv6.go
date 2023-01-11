@@ -121,6 +121,10 @@ const (
 	ICMPv6MulticastListenerQuery  ICMPv6Type = 130
 	ICMPv6MulticastListenerReport ICMPv6Type = 131
 	ICMPv6MulticastListenerDone   ICMPv6Type = 132
+
+	// Multicast Listener Discovert Version 2 (MLDv2) messages, see RFC 3810.
+
+	ICMPv6MulticastListenerV2Report ICMPv6Type = 143
 )
 
 // IsErrorType returns true if the receiver is an ICMP error type.

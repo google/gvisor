@@ -1761,7 +1761,19 @@ func TestUpdateCachedNeighborEntry(t *testing.T) {
 		host2NICID = 4
 	)
 	stackOpts := stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocolFactory{arp.NewProtocol, ipv4.NewProtocol, ipv6.NewProtocol},
+		NetworkProtocols: []stack.NetworkProtocolFactory{
+			arp.NewProtocol,
+			ipv4.NewProtocolWithOptions(ipv4.Options{
+				IGMP: ipv4.IGMPOptions{
+					Enabled: false,
+				},
+			}),
+			ipv6.NewProtocolWithOptions(ipv6.Options{
+				MLD: ipv6.MLDOptions{
+					Enabled: false,
+				},
+			}),
+		},
 		TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 	}
 

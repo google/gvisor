@@ -16,6 +16,7 @@ package ipv4
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -136,6 +137,104 @@ func (igmp *igmpState) ShouldPerformProtocol(groupAddress tcpip.Address) bool {
 	return groupAddress != header.IPv4AllSystems
 }
 
+type igmpv3ReportBuilder struct {
+	igmp *igmpState
+
+	records []header.IGMPv3ReportGroupAddressRecordSerializer
+}
+
+// AddRecord implements ip.MulticastGroupProtocolV2ReportBuilder.
+func (b *igmpv3ReportBuilder) AddRecord(genericRecordType ip.MulticastGroupProtocolV2ReportRecordType, groupAddress tcpip.Address) {
+	var recordType header.IGMPv3ReportRecordType
+	switch genericRecordType {
+	case ip.MulticastGroupProtocolV2ReportRecordModeIsInclude:
+		recordType = header.IGMPv3ReportRecordModeIsInclude
+	case ip.MulticastGroupProtocolV2ReportRecordModeIsExclude:
+		recordType = header.IGMPv3ReportRecordModeIsExclude
+	case ip.MulticastGroupProtocolV2ReportRecordChangeToIncludeMode:
+		recordType = header.IGMPv3ReportRecordChangeToIncludeMode
+	case ip.MulticastGroupProtocolV2ReportRecordChangeToExcludeMode:
+		recordType = header.IGMPv3ReportRecordChangeToExcludeMode
+	case ip.MulticastGroupProtocolV2ReportRecordAllowNewSources:
+		recordType = header.IGMPv3ReportRecordAllowNewSources
+	case ip.MulticastGroupProtocolV2ReportRecordBlockOldSources:
+		recordType = header.IGMPv3ReportRecordBlockOldSources
+	default:
+		panic(fmt.Sprintf("unrecognied genericRecordType = %d", genericRecordType))
+	}
+
+	b.records = append(b.records, header.IGMPv3ReportGroupAddressRecordSerializer{
+		RecordType:   recordType,
+		GroupAddress: groupAddress,
+		Sources:      nil,
+	})
+}
+
+// Send implements ip.MulticastGroupProtocolV2ReportBuilder.
+//
+// +checklocksread:b.igmp.ep.mu
+func (b *igmpv3ReportBuilder) Send() (sent bool, err tcpip.Error) {
+	options := header.IPv4OptionsSerializer{
+		&header.IPv4SerializableRouterAlertOption{},
+	}
+	mtu := int(b.igmp.ep.MTU()) - int(options.Length())
+
+	allSentWithSpecifiedAddress := true
+	var firstErr tcpip.Error
+	for records := b.records; len(records) != 0; {
+		spaceLeft := mtu
+		maxRecords := 0
+
+		for ; maxRecords < len(records); maxRecords++ {
+			tmp := spaceLeft - records[maxRecords].Length()
+			if tmp > 0 {
+				spaceLeft = tmp
+			} else {
+				break
+			}
+		}
+
+		serializer := header.IGMPv3ReportSerializer{Records: records[:maxRecords]}
+		records = records[maxRecords:]
+
+		icmpView := bufferv2.NewViewSize(serializer.Length())
+		serializer.SerializeInto(icmpView.AsSlice())
+		if sentWithSpecifiedAddress, err := b.igmp.writePacketInner(
+			icmpView,
+			b.igmp.ep.stats.igmp.packetsSent.v3MembershipReport,
+			options,
+			header.IGMPv3RoutersAddress,
+		); err != nil {
+			if firstErr != nil {
+				firstErr = nil
+			}
+			allSentWithSpecifiedAddress = false
+		} else if !sentWithSpecifiedAddress {
+			allSentWithSpecifiedAddress = false
+		}
+	}
+
+	return allSentWithSpecifiedAddress, firstErr
+}
+
+// NewReportV2Builder implements ip.MulticastGroupProtocol.
+func (igmp *igmpState) NewReportV2Builder() ip.MulticastGroupProtocolV2ReportBuilder {
+	return &igmpv3ReportBuilder{igmp: igmp}
+}
+
+// V2QueryMaxRespCodeToV2Delay implements ip.MulticastGroupProtocol.
+func (*igmpState) V2QueryMaxRespCodeToV2Delay(code uint16) time.Duration {
+	if code > math.MaxUint8 {
+		panic(fmt.Sprintf("got IGMPv3 MaxRespCode = %d, want <= %d", code, math.MaxUint8))
+	}
+	return header.IGMPv3MaximumResponseDelay(uint8(code))
+}
+
+// V2QueryMaxRespCodeToV1Delay implements ip.MulticastGroupProtocol.
+func (*igmpState) V2QueryMaxRespCodeToV1Delay(code uint16) time.Duration {
+	return time.Duration(code) * time.Millisecond
+}
+
 // init sets up an igmpState struct, and is required to be called before using
 // a new igmpState.
 //
@@ -206,12 +305,16 @@ func (igmp *igmpState) isPacketValidLocked(pkt stack.PacketBufferPtr, messageTyp
 // +checklocks:igmp.ep.mu
 func (igmp *igmpState) handleIGMP(pkt stack.PacketBufferPtr, hasRouterAlertOption bool) {
 	received := igmp.ep.stats.igmp.packetsReceived
-	hdr, ok := pkt.Data().PullUp(header.IGMPMinimumSize)
+	hdr, ok := pkt.Data().PullUp(pkt.Data().Size())
 	if !ok {
 		received.invalid.Increment()
 		return
 	}
 	h := header.IGMP(hdr)
+	if len(h) < header.IGMPMinimumSize {
+		received.invalid.Increment()
+		return
+	}
 
 	// As per RFC 1071 section 1.3,
 	//
@@ -231,7 +334,14 @@ func (igmp *igmpState) handleIGMP(pkt stack.PacketBufferPtr, hasRouterAlertOptio
 	switch h.Type() {
 	case header.IGMPMembershipQuery:
 		received.membershipQuery.Increment()
-		if !isValid(header.IGMPQueryMinimumSize) {
+		if len(h) >= header.IGMPv3QueryMinimumSize {
+			if isValid(header.IGMPv3QueryMinimumSize) {
+				igmp.handleMembershipQueryV3(header.IGMPv3Query(h))
+			} else {
+				received.invalid.Increment()
+			}
+			return
+		} else if !isValid(header.IGMPQueryMinimumSize) {
 			received.invalid.Increment()
 			return
 		}
@@ -301,6 +411,24 @@ func (igmp *igmpState) handleMembershipQuery(groupAddress tcpip.Address, maxResp
 	igmp.genericMulticastProtocol.HandleQueryLocked(groupAddress, maxRespTime)
 }
 
+// handleMembershipQueryV3 handles a membership query.
+//
+// +checklocks:igmp.ep.mu
+func (igmp *igmpState) handleMembershipQueryV3(igmpHdr header.IGMPv3Query) {
+	sources, ok := igmpHdr.Sources()
+	if !ok {
+		return
+	}
+
+	igmp.genericMulticastProtocol.HandleQueryV2Locked(
+		igmpHdr.GroupAddress(),
+		uint16(igmpHdr.MaximumResponseCode()),
+		sources,
+		igmpHdr.QuerierRobustnessVariable(),
+		igmpHdr.QuerierQueryInterval(),
+	)
+}
+
 // handleMembershipReport handles a membership report.
 //
 // +checklocks:igmp.ep.mu
@@ -318,9 +446,34 @@ func (igmp *igmpState) writePacket(destAddress tcpip.Address, groupAddress tcpip
 	igmpData.SetGroupAddress(groupAddress)
 	igmpData.SetChecksum(header.IGMPCalculateChecksum(igmpData))
 
+	var reportType tcpip.MultiCounterStat
+	sentStats := igmp.ep.stats.igmp.packetsSent
+	switch igmpType {
+	case header.IGMPv1MembershipReport:
+		reportType = sentStats.v1MembershipReport
+	case header.IGMPv2MembershipReport:
+		reportType = sentStats.v2MembershipReport
+	case header.IGMPLeaveGroup:
+		reportType = sentStats.leaveGroup
+	default:
+		panic(fmt.Sprintf("unrecognized igmp type = %d", igmpType))
+	}
+
+	return igmp.writePacketInner(
+		igmpView,
+		reportType,
+		header.IPv4OptionsSerializer{
+			&header.IPv4SerializableRouterAlertOption{},
+		},
+		destAddress,
+	)
+}
+
+// +checklocksread:igmp.ep.mu
+func (igmp *igmpState) writePacketInner(buf *bufferv2.View, reportStat tcpip.MultiCounterStat, options header.IPv4OptionsSerializer, destAddress tcpip.Address) (bool, tcpip.Error) {
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(igmp.ep.MaxHeaderLength()),
-		Payload:            bufferv2.MakeWithView(igmpView),
+		Payload:            bufferv2.MakeWithView(buf),
 	})
 	defer pkt.DecRef()
 
@@ -335,9 +488,7 @@ func (igmp *igmpState) writePacket(destAddress tcpip.Address, groupAddress tcpip
 		Protocol: header.IGMPProtocolNumber,
 		TTL:      header.IGMPTTL,
 		TOS:      stack.DefaultTOS,
-	}, header.IPv4OptionsSerializer{
-		&header.IPv4SerializableRouterAlertOption{},
-	}); err != nil {
+	}, options); err != nil {
 		panic(fmt.Sprintf("failed to add IP header: %s", err))
 	}
 
@@ -346,16 +497,7 @@ func (igmp *igmpState) writePacket(destAddress tcpip.Address, groupAddress tcpip
 		sentStats.dropped.Increment()
 		return false, err
 	}
-	switch igmpType {
-	case header.IGMPv1MembershipReport:
-		sentStats.v1MembershipReport.Increment()
-	case header.IGMPv2MembershipReport:
-		sentStats.v2MembershipReport.Increment()
-	case header.IGMPLeaveGroup:
-		sentStats.leaveGroup.Increment()
-	default:
-		panic(fmt.Sprintf("unrecognized igmp type = %d", igmpType))
-	}
+	reportStat.Increment()
 	return true, nil
 }
 

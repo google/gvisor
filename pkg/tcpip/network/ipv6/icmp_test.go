@@ -349,6 +349,12 @@ func TestICMPCounts(t *testing.T) {
 			size:               header.MLDMinimumSize + header.ICMPv6HeaderSize,
 		},
 		{
+			typ:                header.ICMPv6MulticastListenerV2Report,
+			hopLimit:           header.MLDHopLimit,
+			includeRouterAlert: true,
+			size:               header.MLDv2ReportMinimumSize + header.ICMPv6HeaderSize,
+		},
+		{
 			typ:                header.ICMPv6MulticastListenerDone,
 			hopLimit:           header.MLDHopLimit,
 			includeRouterAlert: true,
