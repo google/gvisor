@@ -137,7 +137,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&b.setUpRoot, "setup-root", false, "if true, set up an empty root for the process")
 	f.BoolVar(&b.pidns, "pidns", false, "if true, the sandbox is in its own PID namespace")
 	f.IntVar(&b.cpuNum, "cpu-num", 0, "number of CPUs to create inside the sandbox")
-	f.IntVar(&b.procMountSyncFD, "proc-mount-sync-fd", -1, "file descriptor that has to be closed when /proc isn't needed")
+	f.IntVar(&b.procMountSyncFD, "proc-mount-sync-fd", -1, "file descriptor that has to be written to when /proc isn't needed anymore and can be unmounted")
 	f.Uint64Var(&b.totalMem, "total-memory", 0, "sets the initial amount of total memory to report back to the container")
 	f.BoolVar(&b.attached, "attached", false, "if attached is true, kills the sandbox process when the parent process terminates")
 	f.StringVar(&b.productName, "product-name", "", "value to show in /sys/devices/virtual/dmi/id/product_name")
@@ -196,7 +196,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 			util.Fatalf("error setting up chroot: %v", err)
 		}
 
-		if !b.applyCaps && !conf.Rootless {
+		if !conf.Rootless {
 			// /proc is umounted from a forked process, because the
 			// current one is going to re-execute itself without
 			// capabilities.
@@ -208,19 +208,23 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 			}
 			b.procMountSyncFD = int(w.Fd())
 
-			// Remove --apply-caps arg to call myself. It has already been done.
-			args := b.prepareArgs("setup-root")
-
-			// Clear FD_CLOEXEC.
+			// Clear FD_CLOEXEC. Regardless of b.applyCaps, this process will be
+			// re-executed. procMountSyncFD should remain open.
 			if _, _, errno := unix.RawSyscall(unix.SYS_FCNTL, w.Fd(), unix.F_SETFD, 0); errno != 0 {
 				util.Fatalf("error clearing CLOEXEC: %v", errno)
 			}
-			// Note that we've already read the spec from the spec FD, and
-			// we will read it again after the exec call. This works
-			// because the ReadSpecFromFile function seeks to the beginning
-			// of the file before reading.
-			util.Fatalf("callSelfAsNobody(%v): %v", args, callSelfAsNobody(args))
-			panic("unreachable")
+
+			if !b.applyCaps {
+				// Remove --setup-root arg to call myself. It has already been done.
+				args := b.prepareArgs("setup-root")
+
+				// Note that we've already read the spec from the spec FD, and
+				// we will read it again after the exec call. This works
+				// because the ReadSpecFromFile function seeks to the beginning
+				// of the file before reading.
+				util.Fatalf("callSelfAsNobody(%v): %v", args, callSelfAsNobody(args))
+				panic("unreachable")
+			}
 		}
 	}
 
