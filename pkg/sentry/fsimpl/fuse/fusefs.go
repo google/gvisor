@@ -397,6 +397,10 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentr
 	if !isDir && opts.Mode.IsDir() {
 		return nil, linuxerr.ENOTDIR
 	}
+	ats := vfs.AccessTypesForOpenFlags(&opts)
+	if ats.MayWrite() && isDir {
+		return nil, linuxerr.EISDIR
+	}
 	if opts.Flags&linux.O_LARGEFILE == 0 && i.size.Load() > linux.MAX_NON_LFS {
 		return nil, linuxerr.EOVERFLOW
 	}
@@ -714,6 +718,7 @@ func statFromFUSEAttr(attr linux.FUSEAttr, mask, devMinor uint32) linux.Statx {
 	var stat linux.Statx
 	stat.Blksize = attr.BlkSize
 	stat.DevMajor, stat.DevMinor = linux.UNNAMED_MAJOR, devMinor
+	stat.Mask = mask
 
 	rdevMajor, rdevMinor := linux.DecodeDeviceID(attr.Rdev)
 	stat.RdevMajor, stat.RdevMinor = uint32(rdevMajor), rdevMinor
@@ -808,14 +813,17 @@ func (i *inode) getAttr(ctx context.Context, fs *vfs.Filesystem, opts vfs.StatOp
 	}
 
 	// Set the metadata of kernfs.InodeAttrs.
+	inodeMask := opts.Mask & (linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID | linux.STATX_ATIME | linux.STATX_MTIME | linux.STATX_SIZE)
 	if err := i.InodeAttrs.SetStat(ctx, fs, creds, vfs.SetStatOptions{
-		Stat: statFromFUSEAttr(out.Attr, linux.STATX_ALL, i.fs.devMinor),
+		Stat: statFromFUSEAttr(out.Attr, inodeMask, i.fs.devMinor),
 	}); err != nil {
 		return linux.FUSEAttr{}, err
 	}
 
 	// Set the size if no error (after SetStat() check).
-	i.size.Store(out.Attr.Size)
+	if opts.Mask&linux.STATX_SIZE != 0 {
+		i.size.Store(out.Attr.Size)
+	}
 
 	return out.Attr, nil
 }
@@ -951,10 +959,14 @@ func (i *inode) setAttr(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 	}
 
 	// Set the metadata of kernfs.InodeAttrs.
+	inodeMask := opts.Stat.Mask & (linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID | linux.STATX_ATIME | linux.STATX_MTIME | linux.STATX_SIZE)
 	if err := i.InodeAttrs.SetStat(ctx, fs, creds, vfs.SetStatOptions{
-		Stat: statFromFUSEAttr(out.Attr, linux.STATX_ALL, i.fs.devMinor),
+		Stat: statFromFUSEAttr(out.Attr, inodeMask, i.fs.devMinor),
 	}); err != nil {
 		return err
+	}
+	if opts.Stat.Mask&linux.STATX_SIZE != 0 {
+		i.size.Store(out.Attr.Size)
 	}
 
 	return nil

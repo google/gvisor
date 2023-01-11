@@ -114,6 +114,27 @@ func (fd *regularFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 	return copied, nil
 }
 
+// Seek implements vfs.FileDescriptionImpl.Seek.
+func (fd *regularFileFD) Seek(ctx context.Context, offset int64, whence int32) (int64, error) {
+	fd.offMu.Lock()
+	defer fd.offMu.Unlock()
+	switch whence {
+	case linux.SEEK_SET:
+		// use offset as specified
+	case linux.SEEK_CUR:
+		offset += fd.off
+	case linux.SEEK_END:
+		offset += int64(fd.inode().size.Load())
+	default:
+		return 0, linuxerr.EINVAL
+	}
+	if offset < 0 {
+		return 0, linuxerr.EINVAL
+	}
+	fd.off = offset
+	return offset, nil
+}
+
 // Read implements vfs.FileDescriptionImpl.Read.
 func (fd *regularFileFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
 	fd.offMu.Lock()
@@ -132,15 +153,15 @@ func (fd *regularFileFD) PWrite(ctx context.Context, src usermem.IOSequence, off
 // Write implements vfs.FileDescriptionImpl.Write.
 func (fd *regularFileFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
 	fd.offMu.Lock()
+	defer fd.offMu.Unlock()
 	n, off, err := fd.pwrite(ctx, src, fd.off, opts)
 	fd.off = off
-	fd.offMu.Unlock()
 	return n, err
 }
 
 // pwrite returns the number of bytes written, final offset and error. The
 // final offset should be ignored by PWrite.
-func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (written, finalOff int64, err error) {
+func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, int64, error) {
 	if offset < 0 {
 		return 0, offset, linuxerr.EINVAL
 	}
@@ -177,7 +198,7 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 		return 0, offset, linuxerr.EINVAL
 	}
 
-	srclen, err = vfs.CheckLimit(ctx, offset, srclen)
+	srclen, err := vfs.CheckLimit(ctx, offset, srclen)
 	if err != nil {
 		return 0, offset, err
 	}
@@ -217,13 +238,13 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 		return 0, offset, linuxerr.EIO
 	}
 
-	written = int64(n)
-	finalOff = offset + written
+	written := int64(n)
+	finalOff := offset + written
 
 	if finalOff > int64(inode.size.Load()) {
 		inode.size.Store(uint64(finalOff))
 		inode.fs.conn.attributeVersion.Add(1)
 	}
 
-	return
+	return written, finalOff, nil
 }

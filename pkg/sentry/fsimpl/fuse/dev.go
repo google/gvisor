@@ -90,7 +90,7 @@ type DeviceFD struct {
 	// writeBuf is the memory buffer used to copy in the FUSE out header from
 	// userspace.
 	// +checklocks:mu
-	writeBuf []byte
+	writeBuf [headerLength]byte
 
 	// writeCursorFR current FR being copied from server.
 	// +checklocks:mu
@@ -269,95 +269,33 @@ func (fd *DeviceFD) writeLocked(ctx context.Context, src usermem.IOSequence, opt
 		return 0, linuxerr.EPERM
 	}
 
-	var cn, n int64
-	hdrLen := uint32((*linux.FUSEHeaderOut)(nil).SizeBytes())
+	if _, err := src.CopyIn(ctx, fd.writeBuf[:]); err != nil {
+		return 0, err
+	}
+	var hdr linux.FUSEHeaderOut
+	hdr.UnmarshalBytes(fd.writeBuf[:])
 
-	for src.NumBytes() > 0 {
-		if fd.writeCursorFR != nil {
-			// Already have common header, and we're now copying the payload.
-			wantBytes := fd.writeCursorFR.hdr.Len
-
-			// Note that the FR data doesn't have the header. Copy it over if its necessary.
-			if fd.writeCursorFR.data == nil {
-				fd.writeCursorFR.data = make([]byte, wantBytes)
-			}
-
-			bytesCopied, err := src.CopyIn(ctx, fd.writeCursorFR.data[fd.writeCursor:wantBytes])
-			if err != nil {
-				return 0, err
-			}
-			src = src.DropFirst(bytesCopied)
-
-			cn = int64(bytesCopied)
-			n += cn
-			fd.writeCursor += uint32(cn)
-			if fd.writeCursor == wantBytes {
-				// Done reading this full response. Clean up and unblock the
-				// initiator.
-				break
-			}
-
-			// Check if we have more data in src.
-			continue
-		}
-
-		// Assert that the header isn't read into the writeBuf yet.
-		if fd.writeCursor >= hdrLen {
-			return 0, linuxerr.EINVAL
-		}
-
-		// We don't have the full common response header yet.
-		wantBytes := hdrLen - fd.writeCursor
-		bytesCopied, err := src.CopyIn(ctx, fd.writeBuf[fd.writeCursor:wantBytes])
-		if err != nil {
-			return 0, err
-		}
-		src = src.DropFirst(bytesCopied)
-
-		cn = int64(bytesCopied)
-		n += cn
-		fd.writeCursor += uint32(cn)
-		if fd.writeCursor == hdrLen {
-			// Have full header in the writeBuf. Use it to fetch the actual futureResponse
-			// from the device's completions map.
-			var hdr linux.FUSEHeaderOut
-			hdr.UnmarshalBytes(fd.writeBuf)
-
-			// We have the header now and so the writeBuf has served its purpose.
-			// We could reset it manually here but instead of doing that, at the
-			// end of the write, the writeCursor will be set to 0 thereby allowing
-			// the next request to overwrite whats in the buffer,
-
-			fut, ok := fd.completions[hdr.Unique]
-			if !ok {
-				// Server sent us a response for a request we never sent,
-				// or for which we already received a reply (e.g. aborted), an unlikely event.
-				return 0, linuxerr.EINVAL
-			}
-
-			delete(fd.completions, hdr.Unique)
-
-			// Copy over the header into the future response. The rest of the payload
-			// will be copied over to the FR's data in the next iteration.
-			fut.hdr = &hdr
-			fd.writeCursorFR = fut
-
-			// Next iteration will now try read the complete request, if src has
-			// any data remaining. Otherwise we're done.
-		}
+	fut, ok := fd.completions[hdr.Unique]
+	if !ok {
+		// Server sent us a response for a request we never sent,
+		// or for which we already received a reply (e.g. aborted), an unlikely event.
+		return 0, linuxerr.EINVAL
 	}
 
-	if fd.writeCursorFR != nil {
-		if err := fd.sendResponse(ctx, fd.writeCursorFR); err != nil {
-			return 0, err
-		}
+	delete(fd.completions, hdr.Unique)
 
-		// Ready the device for the next request.
-		fd.writeCursorFR = nil
-		fd.writeCursor = 0
+	// Copy over the header into the future response. The rest of the payload
+	// will be copied over to the FR's data in the next iteration.
+	fut.hdr = &hdr
+	fut.data = make([]byte, fut.hdr.Len)
+	bytesCopied, err := src.CopyIn(ctx, fut.data)
+	if err != nil {
+		return 0, err
 	}
-
-	return n, nil
+	if err := fd.sendResponse(ctx, fut); err != nil {
+		return 0, err
+	}
+	return int64(bytesCopied), nil
 }
 
 // Readiness implements vfs.FileDescriptionImpl.Readiness.

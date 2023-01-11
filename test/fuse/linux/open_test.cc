@@ -100,7 +100,7 @@ TEST_F(OpenTest, OpenFail) {
 
   auto iov_out = FuseGenerateIovecs(out_header, out_payload_);
   SetServerResponse(FUSE_OPENDIR, iov_out);
-  ASSERT_THAT(open(mount_point_.path().c_str(), O_RDWR),
+  ASSERT_THAT(open(mount_point_.path().c_str(), O_RDONLY),
               SyscallFailsWithErrno(ENOENT));
 
   struct fuse_in_header in_header;
@@ -110,7 +110,7 @@ TEST_F(OpenTest, OpenFail) {
 
   EXPECT_EQ(in_header.len, sizeof(in_header) + sizeof(in_payload));
   EXPECT_EQ(in_header.opcode, FUSE_OPENDIR);
-  EXPECT_EQ(in_payload.flags, O_RDWR);
+  EXPECT_EQ(in_payload.flags, O_RDONLY);
 }
 
 TEST_F(OpenTest, DirectoryFlagOnRegularFile) {

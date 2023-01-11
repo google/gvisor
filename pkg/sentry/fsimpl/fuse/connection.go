@@ -210,8 +210,6 @@ func newFUSEConnection(_ context.Context, fuseFD *DeviceFD, opts *filesystemOpti
 	// mount another filesystem.
 
 	// Create the writeBuf for the header to be stored in.
-	hdrLen := uint32((*linux.FUSEHeaderOut)(nil).SizeBytes())
-	fuseFD.writeBuf = make([]byte, hdrLen)
 	fuseFD.completions = make(map[linux.FUSEOpID]*futureResponse)
 	fuseFD.fullQueueCh = make(chan struct{}, opts.maxActiveRequests)
 	fuseFD.writeCursor = 0

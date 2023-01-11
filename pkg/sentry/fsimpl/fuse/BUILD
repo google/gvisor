@@ -35,6 +35,7 @@ go_library(
         "dev_state.go",
         "directory.go",
         "file.go",
+        "fuse_unsafe.go",
         "fusefs.go",
         "inode_refs.go",
         "read_write.go",
