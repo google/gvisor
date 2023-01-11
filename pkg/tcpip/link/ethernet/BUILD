@@ -26,5 +26,6 @@ go_test(
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/channel",
         "//pkg/tcpip/stack",
+        "@com_github_google_go_cmp//cmp:go_default_library",
     ],
 )
