@@ -56,6 +56,8 @@ go_library(
         "linux.go",
         "membarrier.go",
         "mm.go",
+        "mm_amd64.go",
+        "mm_arm64.go",
         "mqueue.go",
         "msgqueue.go",
         "netdevice.go",
@@ -99,6 +101,7 @@ go_library(
         "//pkg/hostarch",
         "//pkg/marshal",
         "//pkg/marshal/primitive",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 
