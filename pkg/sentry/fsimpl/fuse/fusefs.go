@@ -476,15 +476,20 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentr
 		fd.Nonseekable = true
 	}
 
-	// If we don't send SETATTR before open (which is indicated by atomicOTrunc)
-	// and O_TRUNC is set, update the inode's version number and clean existing data
-	// by setting the file size to 0.
-	if i.fs.conn.atomicOTrunc && opts.Flags&linux.O_TRUNC != 0 {
-		i.fs.conn.mu.Lock()
-		i.attributeVersion.Store(i.fs.conn.attributeVersion.Add(1))
-		i.size.Store(0)
-		i.fs.conn.mu.Unlock()
-		i.attributeTime = 0
+	// If atomicOTrunc and O_TRUNC are set, just update the inode's version number
+	// and set its size to 0 since the truncation is handled by the FUSE daemon.
+	// Otherwise send a separate SETATTR to truncate the file size.
+	if opts.Flags&linux.O_TRUNC != 0 {
+		if i.fs.conn.atomicOTrunc {
+			i.fs.conn.mu.Lock()
+			i.attributeVersion.Store(i.fs.conn.attributeVersion.Add(1))
+			i.size.Store(0)
+			i.fs.conn.mu.Unlock()
+			i.attributeTime = 0
+		} else {
+			opts := vfs.SetStatOptions{Stat: linux.Statx{Size: 0, Mask: linux.STATX_SIZE}}
+			i.setAttr(ctx, i.fs.VFSFilesystem(), auth.CredentialsFromContext(ctx), opts, true, i.newFhData.fh)
+		}
 	}
 
 	if err := fd.vfsfd.Init(fdImpl, opts.Flags, rp.Mount(), d.VFSDentry(), fdOptions); err != nil {

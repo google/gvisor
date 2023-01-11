@@ -141,6 +141,7 @@ func (conn *connection) initProcessReply(out *linux.FUSEInitOut, hasSysAdminCap 
 		conn.bigWrites = out.Flags&linux.FUSE_BIG_WRITES != 0
 		conn.dontMask = out.Flags&linux.FUSE_DONT_MASK != 0
 		conn.writebackCache = out.Flags&linux.FUSE_WRITEBACK_CACHE != 0
+		conn.atomicOTrunc = out.Flags&linux.FUSE_ATOMIC_O_TRUNC != 0
 
 		// TODO(gvisor.dev/issue/3195): figure out how to use TimeGran (0 < TimeGran <= fuseMaxTimeGranNs).
 
