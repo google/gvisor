@@ -128,6 +128,7 @@ syscall_test(
 syscall_test(
     add_overlay = True,
     test = "//test/syscalls/linux:creat_test",
+    use_fusefs = True,
 )
 
 syscall_test(

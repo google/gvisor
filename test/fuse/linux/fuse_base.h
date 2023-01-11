@@ -35,7 +35,8 @@ namespace testing {
 
 constexpr char kMountOpts[] = "rootmode=755,user_id=0,group_id=0";
 
-constexpr struct fuse_init_out kDefaultFUSEInitOutPayload = {.major = 7};
+constexpr struct fuse_init_out kDefaultFUSEInitOutPayload = {
+    .major = 7, .minor = 14, .flags = FUSE_ATOMIC_O_TRUNC};
 
 // Internal commands used to communicate between testing thread and the FUSE
 // server. See test/fuse/README.md for further detail.
