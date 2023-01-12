@@ -62,19 +62,11 @@ func validateMLDPacket(t *testing.T, v *bufferv2.View, localAddress, remoteAddre
 	)
 }
 
-func validateMLDv2ReportPacket(t *testing.T, v *bufferv2.View, localAddress tcpip.Address, report header.MLDv2ReportSerializer) {
+func validateMLDv2ReportPacket(t *testing.T, v *bufferv2.View, localAddress tcpip.Address, groupAddress tcpip.Address, recordType header.MLDv2ReportRecordType) {
 	t.Helper()
 
 	defer v.Release()
-	checker.IPv6WithExtHdr(t, v,
-		checker.IPv6ExtHdr(
-			checker.IPv6HopByHopExtensionHeader(checker.IPv6RouterAlert(header.IPv6RouterAlertMLD)),
-		),
-		checker.SrcAddr(localAddress),
-		checker.DstAddr(header.MLDv2RoutersAddress),
-		checker.TTL(header.MLDHopLimit),
-		checker.MLDv2Report(report),
-	)
+	iptestutil.ValidateMLDv2Report(t, v, localAddress, []tcpip.Address{groupAddress}, recordType)
 }
 
 type mldTestContext struct {
@@ -132,15 +124,7 @@ func TestIPv6JoinLeaveSolicitedNodeAddressPerformsMLD(t *testing.T) {
 					recordType = header.MLDv2ReportRecordChangeToIncludeMode
 				}
 
-				validateMLDv2ReportPacket(t, v, localAddress, header.MLDv2ReportSerializer{
-					Records: []header.MLDv2ReportMulticastAddressRecordSerializer{
-						{
-							RecordType:       recordType,
-							MulticastAddress: groupAddress,
-							Sources:          nil,
-						},
-					},
-				})
+				validateMLDv2ReportPacket(t, v, localAddress, groupAddress, recordType)
 			},
 		},
 	}
@@ -366,15 +350,7 @@ func TestSendQueuedMLDReports(t *testing.T) {
 					recordType = header.MLDv2ReportRecordChangeToIncludeMode
 				}
 
-				validateMLDv2ReportPacket(t, v, localAddress, header.MLDv2ReportSerializer{
-					Records: []header.MLDv2ReportMulticastAddressRecordSerializer{
-						{
-							RecordType:       recordType,
-							MulticastAddress: groupAddress,
-							Sources:          nil,
-						},
-					},
-				})
+				validateMLDv2ReportPacket(t, v, localAddress, groupAddress, recordType)
 			},
 			checkStats:              iptestutil.CheckMLDv2Stats,
 			getAndCheckGroupAddress: getAndCheckMLDv2MulticastAddress,
@@ -869,15 +845,7 @@ func TestMLDSkipProtocol(t *testing.T) {
 			v1Compatibility: false,
 			validate: func(t *testing.T, v *bufferv2.View, localAddress tcpip.Address, groupAddress tcpip.Address) {
 				t.Helper()
-				validateMLDv2ReportPacket(t, v, localAddress, header.MLDv2ReportSerializer{
-					Records: []header.MLDv2ReportMulticastAddressRecordSerializer{
-						{
-							RecordType:       header.MLDv2ReportRecordChangeToExcludeMode,
-							MulticastAddress: groupAddress,
-							Sources:          nil,
-						},
-					},
-				})
+				validateMLDv2ReportPacket(t, v, localAddress, groupAddress, header.MLDv2ReportRecordChangeToExcludeMode)
 			},
 		},
 	}

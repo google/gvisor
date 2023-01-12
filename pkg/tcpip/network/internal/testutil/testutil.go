@@ -23,6 +23,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -182,4 +183,54 @@ func CheckMLDv2Stats(t *testing.T, s *stack.Stack, reports, leaves, reportsV2 ui
 	t.Helper()
 	// In MLDv2 tests, reports/leaves are just MLDv2 reports.
 	checkMLDStats(t, s, 0 /* reports */, 0 /* leaves */, reports+leaves+reportsV2)
+}
+
+// ValidateIGMPv3Report validates an IGMPv3 report.
+func ValidateIGMPv3Report(t *testing.T, v *bufferv2.View, srcAddr tcpip.Address, addrs []tcpip.Address, recordType header.IGMPv3ReportRecordType) {
+	t.Helper()
+
+	var records []header.IGMPv3ReportGroupAddressRecordSerializer
+	for _, addr := range addrs {
+		records = append(records, header.IGMPv3ReportGroupAddressRecordSerializer{
+			RecordType:   recordType,
+			GroupAddress: addr,
+			Sources:      nil,
+		})
+	}
+
+	checker.IPv4(t, v,
+		checker.SrcAddr(srcAddr),
+		checker.DstAddr(header.IGMPv3RoutersAddress),
+		checker.TTL(header.IGMPTTL),
+		checker.IPv4RouterAlert(),
+		checker.IGMPv3Report(header.IGMPv3ReportSerializer{
+			Records: records,
+		}),
+	)
+}
+
+// ValidateMLDv2Report validates an MLDv2 report.
+func ValidateMLDv2Report(t *testing.T, v *bufferv2.View, srcAddr tcpip.Address, addrs []tcpip.Address, recordType header.MLDv2ReportRecordType) {
+	t.Helper()
+
+	var records []header.MLDv2ReportMulticastAddressRecordSerializer
+	for _, addr := range addrs {
+		records = append(records, header.MLDv2ReportMulticastAddressRecordSerializer{
+			RecordType:       recordType,
+			MulticastAddress: addr,
+			Sources:          nil,
+		})
+	}
+
+	checker.IPv6WithExtHdr(t, v,
+		checker.IPv6ExtHdr(
+			checker.IPv6HopByHopExtensionHeader(checker.IPv6RouterAlert(header.IPv6RouterAlertMLD)),
+		),
+		checker.SrcAddr(srcAddr),
+		checker.DstAddr(header.MLDv2RoutersAddress),
+		checker.TTL(header.MLDHopLimit),
+		checker.MLDv2Report(header.MLDv2ReportSerializer{
+			Records: records,
+		}),
+	)
 }
