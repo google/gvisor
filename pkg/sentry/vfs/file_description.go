@@ -276,6 +276,7 @@ func (fd *FileDescription) SetStatusFlags(ctx context.Context, creds *auth.Crede
 	// TODO(gvisor.dev/issue/1035): FileDescriptionImpl.SetOAsync()?
 	const settableFlags = linux.O_APPEND | linux.O_ASYNC | linux.O_DIRECT | linux.O_NOATIME | linux.O_NONBLOCK
 	fd.flagsMu.Lock()
+	defer fd.flagsMu.Unlock()
 	if fd.asyncHandler != nil {
 		// Use fd.statusFlags instead of oldFlags, which may have become outdated,
 		// to avoid double registering/unregistering.
@@ -288,7 +289,6 @@ func (fd *FileDescription) SetStatusFlags(ctx context.Context, creds *auth.Crede
 		}
 	}
 	fd.statusFlags.Store((oldFlags &^ settableFlags) | (flags & settableFlags))
-	fd.flagsMu.Unlock()
 	return nil
 }
 
@@ -944,7 +944,7 @@ func (fd *FileDescription) SetAsyncHandler(newHandler func() FileAsync) (FileAsy
 	if fd.asyncHandler == nil {
 		fd.asyncHandler = newHandler()
 		if fd.statusFlags.RacyLoad()&linux.O_ASYNC != 0 {
-			if err := fd.asyncHandler.Register(fd); err != nil {
+			if err := fd.impl.RegisterFileAsyncHandler(fd); err != nil {
 				return nil, err
 			}
 		}
