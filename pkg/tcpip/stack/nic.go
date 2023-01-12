@@ -386,6 +386,8 @@ func (n *nic) writePacket(pkt PacketBufferPtr) tcpip.Error {
 }
 
 func (n *nic) writeRawPacket(pkt PacketBufferPtr) tcpip.Error {
+	// Always an outgoing packet.
+	pkt.PktType = tcpip.PacketOutgoing
 	if err := n.qDisc.WritePacket(pkt); err != nil {
 		if _, ok := err.(*tcpip.ErrNoBufferSpace); ok {
 			n.stats.txPacketsDroppedNoBufferSpace.Increment()
@@ -738,7 +740,7 @@ func (n *nic) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt Pac
 	n.gro.dispatch(pkt, protocol, networkEndpoint)
 }
 
-func (n *nic) DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt PacketBufferPtr, incoming bool) {
+func (n *nic) DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt PacketBufferPtr) {
 	// Deliver to interested packet endpoints without holding NIC lock.
 	var packetEPPkt PacketBufferPtr
 	defer func() {
@@ -764,11 +766,13 @@ func (n *nic) DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt Packet
 			// populate it in the packet buffer we provide to packet endpoints as
 			// packet endpoints inspect link headers.
 			packetEPPkt.LinkHeader().Consume(len(pkt.LinkHeader().Slice()))
-
-			if incoming {
+			packetEPPkt.PktType = pkt.PktType
+			// Assume the packet is for us if the packet type is unset.
+			// The packet type is set to PacketOutgoing when sending packets so
+			// this may only be unset for incoming packets where link endpoints
+			// have not set it.
+			if packetEPPkt.PktType == 0 {
 				packetEPPkt.PktType = tcpip.PacketHost
-			} else {
-				packetEPPkt.PktType = tcpip.PacketOutgoing
 			}
 		}
 
@@ -785,7 +789,7 @@ func (n *nic) DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt Packet
 	n.packetEPsMu.Unlock()
 
 	// On Linux, only ETH_P_ALL endpoints get outbound packets.
-	if incoming && protoEPsOK {
+	if pkt.PktType != tcpip.PacketOutgoing && protoEPsOK {
 		protoEPs.forEach(deliverPacketEPs)
 	}
 	if anyEPsOK {

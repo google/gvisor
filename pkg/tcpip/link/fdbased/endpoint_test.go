@@ -137,7 +137,7 @@ func (c *context) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt
 	c.ch <- packetInfo{protocol, pkt}
 }
 
-func (c *context) DeliverLinkPacket(tcpip.NetworkProtocolNumber, stack.PacketBufferPtr, bool) {
+func (c *context) DeliverLinkPacket(tcpip.NetworkProtocolNumber, stack.PacketBufferPtr) {
 	c.t.Fatal("DeliverLinkPacket not implemented")
 }
 
@@ -575,7 +575,7 @@ func (d *fakeNetworkDispatcher) DeliverNetworkPacket(_ tcpip.NetworkProtocolNumb
 	d.pkts = append(d.pkts, pkt)
 }
 
-func (*fakeNetworkDispatcher) DeliverLinkPacket(tcpip.NetworkProtocolNumber, stack.PacketBufferPtr, bool) {
+func (*fakeNetworkDispatcher) DeliverLinkPacket(tcpip.NetworkProtocolNumber, stack.PacketBufferPtr) {
 	panic("not implemented")
 }
 

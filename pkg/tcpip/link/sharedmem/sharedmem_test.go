@@ -154,7 +154,7 @@ func (c *testContext) DeliverNetworkPacket(proto tcpip.NetworkProtocolNumber, pk
 	c.packetCh <- struct{}{}
 }
 
-func (c *testContext) DeliverLinkPacket(tcpip.NetworkProtocolNumber, stack.PacketBufferPtr, bool) {
+func (c *testContext) DeliverLinkPacket(tcpip.NetworkProtocolNumber, stack.PacketBufferPtr) {
 	c.t.Fatal("DeliverLinkPacket not implemented")
 }
 

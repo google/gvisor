@@ -57,7 +57,7 @@ func (d *counterDispatcher) DeliverNetworkPacket(tcpip.NetworkProtocolNumber, st
 	d.count++
 }
 
-func (*counterDispatcher) DeliverLinkPacket(tcpip.NetworkProtocolNumber, stack.PacketBufferPtr, bool) {
+func (*counterDispatcher) DeliverLinkPacket(tcpip.NetworkProtocolNumber, stack.PacketBufferPtr) {
 	panic("not implemented")
 }
 
