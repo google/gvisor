@@ -343,20 +343,17 @@ func (g *GenericMulticastProtocolState) MakeAllNonMemberLocked() {
 	}
 	g.cancelV2ReportTimers()
 
+	var v2ReportBuilder MulticastGroupProtocolV2ReportBuilder
 	var handler func(tcpip.Address, *multicastGroupState)
 	switch g.mode {
 	case protocolModeV2:
+		v2ReportBuilder = g.opts.Protocol.NewReportV2Builder()
 		handler = func(groupAddress tcpip.Address, _ *multicastGroupState) {
 			// Send a report immediately to announce us leaving the group.
-			reportBuilder := g.opts.Protocol.NewReportV2Builder()
-			reportBuilder.AddRecord(
+			v2ReportBuilder.AddRecord(
 				MulticastGroupProtocolV2ReportRecordChangeToIncludeMode,
 				groupAddress,
 			)
-			// Nothing meaningful we can do with the error here - this method may be
-			// called when an interface is being disabled when we expect sends to
-			// fail.
-			_, _ = reportBuilder.Send()
 		}
 	case protocolModeV1Compatibility:
 		handler = g.transitionToNonMemberLocked
@@ -379,6 +376,13 @@ func (g *GenericMulticastProtocolState) MakeAllNonMemberLocked() {
 			info.transmissionLeft = 0
 			g.memberships[groupAddress] = info
 		}
+	}
+
+	if v2ReportBuilder != nil {
+		// Nothing meaningful we can do with the error here - this method may be
+		// called when an interface is being disabled when we expect sends to
+		// fail.
+		_, _ = v2ReportBuilder.Send()
 	}
 }
 
