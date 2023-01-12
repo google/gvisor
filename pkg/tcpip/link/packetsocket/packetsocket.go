@@ -41,7 +41,7 @@ func New(lower stack.LinkEndpoint) stack.LinkEndpoint {
 
 // DeliverNetworkPacket implements stack.NetworkDispatcher.
 func (e *endpoint) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr) {
-	e.Endpoint.DeliverLinkPacket(protocol, pkt, true /* incoming */)
+	e.Endpoint.DeliverLinkPacket(protocol, pkt)
 
 	e.Endpoint.DeliverNetworkPacket(protocol, pkt)
 }
@@ -49,7 +49,7 @@ func (e *endpoint) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pk
 // WritePackets implements stack.LinkEndpoint.
 func (e *endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
 	for _, pkt := range pkts.AsSlice() {
-		e.Endpoint.DeliverLinkPacket(pkt.NetworkProtocolNumber, pkt, false /* incoming */)
+		e.Endpoint.DeliverLinkPacket(pkt.NetworkProtocolNumber, pkt)
 	}
 
 	return e.Endpoint.WritePackets(pkts)

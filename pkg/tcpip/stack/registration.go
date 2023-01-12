@@ -1034,7 +1034,7 @@ type NetworkDispatcher interface {
 	// This method should be called with both incoming and outgoing packets.
 	//
 	// If the link-layer has a header, the packet's link header must be populated.
-	DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt PacketBufferPtr, incoming bool)
+	DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt PacketBufferPtr)
 }
 
 // LinkEndpointCapabilities is the type associated with the capabilities

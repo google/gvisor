@@ -59,7 +59,6 @@ var _ stack.NetworkDispatcher = (*testNetworkDispatcher)(nil)
 type linkPacketInfo struct {
 	pkt      stack.PacketBufferPtr
 	protocol tcpip.NetworkProtocolNumber
-	incoming bool
 }
 
 type networkPacketInfo struct {
@@ -99,11 +98,10 @@ func (t *testNetworkDispatcher) DeliverNetworkPacket(protocol tcpip.NetworkProto
 	t.networkPacket = networkPacket
 }
 
-func (t *testNetworkDispatcher) DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr, incoming bool) {
+func (t *testNetworkDispatcher) DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr) {
 	linkPacket := linkPacketInfo{
 		pkt:      pkt.IncRef(),
 		protocol: protocol,
-		incoming: incoming,
 	}
 
 	if t.linkPacket != (linkPacketInfo{}) {
@@ -128,6 +126,7 @@ func TestPacketDispatch(t *testing.T) {
 	pkt.NetworkProtocolNumber = protocol
 
 	{
+		pkt.PktType = tcpip.PacketOutgoing
 		var pkts stack.PacketBufferList
 		pkts.PushBack(pkt)
 		if n, err := ep.WritePackets(pkts); err != nil {
@@ -139,18 +138,19 @@ func TestPacketDispatch(t *testing.T) {
 		if want := (networkPacketInfo{}); d.networkPacket != want {
 			t.Errorf("got d.networkPacket = %#v, want = %#v", d.networkPacket, want)
 		}
-		if want := (linkPacketInfo{pkt: pkt, protocol: protocol, incoming: false}); d.linkPacket != want {
+		if want := (linkPacketInfo{pkt: pkt, protocol: protocol}); d.linkPacket != want {
 			t.Errorf("got d.linkPacket = %#v, want = %#v", d.linkPacket, want)
 		}
 	}
 
 	d.reset()
 	{
+		pkt.PktType = tcpip.PacketHost
 		nullEP.disp.DeliverNetworkPacket(protocol, pkt)
 		if want := (networkPacketInfo{pkt: pkt, protocol: protocol}); d.networkPacket != want {
 			t.Errorf("got d.networkPacket = %#v, want = %#v", d.networkPacket, want)
 		}
-		if want := (linkPacketInfo{pkt: pkt, protocol: protocol, incoming: true}); d.linkPacket != want {
+		if want := (linkPacketInfo{pkt: pkt, protocol: protocol}); d.linkPacket != want {
 			t.Errorf("got d.linkPacket = %#v, want = %#v", d.linkPacket, want)
 		}
 	}
