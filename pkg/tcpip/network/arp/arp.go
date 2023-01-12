@@ -230,12 +230,11 @@ func (e *endpoint) HandlePacket(pkt stack.PacketBufferPtr) {
 		e.dad.StopLocked(addr, &stack.DADDupAddrDetected{HolderLinkAddress: linkAddr})
 		e.mu.Unlock()
 
-		// The solicited, override, and isRouter flags are not available for ARP;
-		// they are only available for IPv6 Neighbor Advertisements.
 		switch err := e.nic.HandleNeighborConfirmation(header.IPv4ProtocolNumber, addr, linkAddr, stack.ReachabilityConfirmationFlags{
-			// Solicited and unsolicited (also referred to as gratuitous) ARP Replies
-			// are handled equivalently to a solicited Neighbor Advertisement.
-			Solicited: true,
+			// Only unicast ARP replies are considered solicited. Broadcast replies
+			// are gratuitous ARP replies and should not move neighbor entries to the
+			// reachable state.
+			Solicited: pkt.PktType == tcpip.PacketHost,
 			// If a different link address is received than the one cached, the entry
 			// should always go to Stale.
 			Override: false,
