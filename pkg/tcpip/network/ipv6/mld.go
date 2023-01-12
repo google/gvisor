@@ -134,6 +134,10 @@ func (b *mldv2ReportBuilder) AddRecord(genericRecordType ip.MulticastGroupProtoc
 
 // Send implements ip.MulticastGroupProtocolV2ReportBuilder.
 func (b *mldv2ReportBuilder) Send() (sent bool, err tcpip.Error) {
+	if len(b.records) == 0 {
+		return false, err
+	}
+
 	extensionHeaders := header.IPv6ExtHdrSerializer{
 		header.IPv6SerializableHopByHopExtHdr{
 			&header.IPv6RouterAlertOption{Value: header.IPv6RouterAlertMLD},
