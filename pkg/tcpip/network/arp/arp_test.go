@@ -420,6 +420,100 @@ func TestDirectRequest(t *testing.T) {
 	}
 }
 
+func TestReplyPacketType(t *testing.T) {
+	for _, testCase := range []struct {
+		name             string
+		packetType       tcpip.PacketType
+		becomesReachable bool
+	}{
+		{
+			name:             "unicast",
+			packetType:       tcpip.PacketHost,
+			becomesReachable: true,
+		},
+		{
+			name:             "broadcast",
+			packetType:       tcpip.PacketBroadcast,
+			becomesReachable: false,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			c := makeTestContext(t, 1, 1)
+			defer c.cleanup()
+
+			// Inject an incoming ARP request first.
+			v := make([]byte, header.ARPSize)
+			h := header.ARP(v)
+			h.SetIPv4OverEthernet()
+			h.SetOp(header.ARPRequest)
+			if got, want := copy(h.HardwareAddressSender(), remoteLinkAddr), header.EthernetAddressSize; got != want {
+				t.Fatalf("got copy(_, _) = %d, want = %d", got, want)
+			}
+			if got, want := copy(h.ProtocolAddressSender(), remoteAddr), header.IPv4AddressSize; got != want {
+				t.Fatalf("got copy(_, _) = %d, want = %d", got, want)
+			}
+			if got, want := copy(h.ProtocolAddressTarget(), stackAddr), header.IPv4AddressSize; got != want {
+				t.Fatalf("got copy(_, _) = %d, want = %d", got, want)
+			}
+			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+				Payload: bufferv2.MakeWithData(v),
+			})
+			pkt.PktType = tcpip.PacketBroadcast
+			c.linkEP.InjectInbound(arp.ProtocolNumber, pkt)
+			pkt.DecRef()
+
+			if got, ok := c.nudDisp.nextEvent(); ok {
+				want := eventInfo{
+					eventType: entryAdded,
+					nicID:     nicID,
+					entry: stack.NeighborEntry{
+						Addr:     remoteAddr,
+						LinkAddr: remoteLinkAddr,
+						State:    stack.Stale,
+					},
+				}
+				if diff := cmp.Diff(want, got, cmp.AllowUnexported(eventInfo{}), cmpopts.IgnoreFields(stack.NeighborEntry{}, "UpdatedAt")); diff != "" {
+					t.Errorf("got invalid event (-want +got):\n%s", diff)
+				}
+			} else {
+				t.Fatal("event didn't arrive")
+			}
+
+			// Then inject replies with different packet types.
+			h.SetIPv4OverEthernet()
+			h.SetOp(header.ARPReply)
+			pkt = stack.NewPacketBuffer(stack.PacketBufferOptions{
+				Payload: bufferv2.MakeWithData(v),
+			})
+			pkt.PktType = testCase.packetType
+			c.linkEP.InjectInbound(arp.ProtocolNumber, pkt)
+			pkt.DecRef()
+
+			got, ok := c.nudDisp.nextEvent()
+			// If the entry doesn't become reachable we're not supposed to see a new
+			// event.
+			if got, want := ok, testCase.becomesReachable; got != want {
+				t.Errorf("got c.nudDisp.nextEvent() = %t, want %t", got, want)
+			}
+			if ok {
+				want := eventInfo{
+					eventType: entryChanged,
+					nicID:     nicID,
+					entry: stack.NeighborEntry{
+						Addr:     remoteAddr,
+						LinkAddr: remoteLinkAddr,
+						State:    stack.Reachable,
+					},
+				}
+				if diff := cmp.Diff(want, got, cmp.AllowUnexported(eventInfo{}), cmpopts.IgnoreFields(stack.NeighborEntry{}, "UpdatedAt")); diff != "" {
+					t.Errorf("got invalid event (-want +got):\n%s", diff)
+				}
+			}
+		})
+	}
+
+}
+
 var _ stack.LinkEndpoint = (*testLinkEndpoint)(nil)
 
 type testLinkEndpoint struct {
