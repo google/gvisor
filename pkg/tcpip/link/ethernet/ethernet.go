@@ -64,10 +64,21 @@ func (e *Endpoint) DeliverNetworkPacket(_ tcpip.NetworkProtocolNumber, pkt stack
 	if !ok {
 		return
 	}
+	eth := header.Ethernet(hdr)
+	dst := eth.DestinationAddress()
+	if dst == header.EthernetBroadcastAddress {
+		pkt.PktType = tcpip.PacketBroadcast
+	} else if header.IsMulticastEthernetAddress(dst) {
+		pkt.PktType = tcpip.PacketMulticast
+	} else if dst == e.LinkAddress() {
+		pkt.PktType = tcpip.PacketHost
+	} else {
+		pkt.PktType = tcpip.PacketOtherHost
+	}
 
 	// Note, there is no need to check the destination link address here since
 	// the ethernet hardware filters frames based on their destination addresses.
-	e.Endpoint.DeliverNetworkPacket(header.Ethernet(hdr).Type() /* protocol */, pkt)
+	e.Endpoint.DeliverNetworkPacket(eth.Type() /* protocol */, pkt)
 }
 
 // Capabilities implements stack.LinkEndpoint.

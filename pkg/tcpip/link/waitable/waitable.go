@@ -63,12 +63,12 @@ func (e *Endpoint) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pk
 }
 
 // DeliverLinkPacket implements stack.NetworkDispatcher.
-func (e *Endpoint) DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr, incoming bool) {
+func (e *Endpoint) DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr) {
 	if !e.dispatchGate.Enter() {
 		return
 	}
 
-	e.dispatcher.DeliverLinkPacket(protocol, pkt, incoming)
+	e.dispatcher.DeliverLinkPacket(protocol, pkt)
 	e.dispatchGate.Leave()
 }
 
