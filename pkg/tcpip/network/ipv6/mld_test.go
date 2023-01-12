@@ -192,111 +192,6 @@ func TestSendQueuedMLDReports(t *testing.T) {
 		maxReports = 2
 	)
 
-	getAndCheckMLDv1MulticastAddress := func(t *testing.T, seen map[tcpip.Address]bool, p stack.PacketBufferPtr) tcpip.Address {
-		t.Helper()
-		payload := stack.PayloadSince(p.NetworkHeader())
-		defer payload.Release()
-		ipv6 := header.IPv6(payload.AsSlice())
-
-		ipv6HeaderIter := header.MakeIPv6PayloadIterator(
-			header.IPv6ExtensionHeaderIdentifier(ipv6.NextHeader()),
-			bufferv2.MakeWithData(ipv6.Payload()),
-		)
-
-		var transport header.IPv6RawPayloadHeader
-		for {
-			h, done, err := ipv6HeaderIter.Next()
-			if err != nil {
-				t.Fatalf("ipv6HeaderIter.Next(): %s", err)
-			}
-			if done {
-				t.Fatalf("ipv6HeaderIter.Next() = (%T, %t, _), want = (_, false, _)", h, done)
-			}
-			defer h.Release()
-			if t, ok := h.(header.IPv6RawPayloadHeader); ok {
-				transport = t
-				break
-			}
-		}
-
-		if got := tcpip.TransportProtocolNumber(transport.Identifier); got != header.ICMPv6ProtocolNumber {
-			t.Fatalf("got ipv6.NextHeader() = %d, want = %d", got, header.ICMPv6ProtocolNumber)
-		}
-		icmpv6 := header.ICMPv6(transport.Buf.Flatten())
-		if got := icmpv6.Type(); got != header.ICMPv6MulticastListenerReport && got != header.ICMPv6MulticastListenerDone {
-			t.Fatalf("got icmpv6.Type() = %d, want = %d or %d", got, header.ICMPv6MulticastListenerReport, header.ICMPv6MulticastListenerDone)
-		}
-		addr := header.MLD(icmpv6.MessageBody()).MulticastAddress()
-		s, ok := seen[addr]
-		if !ok {
-			t.Fatalf("unexpectedly got a packet for group %s", addr)
-		}
-		if s {
-			t.Fatalf("already saw packet for group %s", addr)
-		}
-		seen[addr] = true
-		return addr
-	}
-
-	getAndCheckMLDv2MulticastAddress := func(t *testing.T, seen map[tcpip.Address]bool, p stack.PacketBufferPtr) tcpip.Address {
-		t.Helper()
-		payload := stack.PayloadSince(p.NetworkHeader())
-		defer payload.Release()
-		ipv6 := header.IPv6(payload.AsSlice())
-
-		ipv6HeaderIter := header.MakeIPv6PayloadIterator(
-			header.IPv6ExtensionHeaderIdentifier(ipv6.NextHeader()),
-			bufferv2.MakeWithData(ipv6.Payload()),
-		)
-
-		var transport header.IPv6RawPayloadHeader
-		for {
-			h, done, err := ipv6HeaderIter.Next()
-			if err != nil {
-				t.Fatalf("ipv6HeaderIter.Next(): %s", err)
-			}
-			if done {
-				t.Fatalf("ipv6HeaderIter.Next() = (%T, %t, _), want = (_, false, _)", h, done)
-			}
-			defer h.Release()
-			if t, ok := h.(header.IPv6RawPayloadHeader); ok {
-				transport = t
-				break
-			}
-		}
-
-		if got := tcpip.TransportProtocolNumber(transport.Identifier); got != header.ICMPv6ProtocolNumber {
-			t.Fatalf("got ipv6.NextHeader() = %d, want = %d", got, header.ICMPv6ProtocolNumber)
-		}
-		icmpv6 := header.ICMPv6(transport.Buf.Flatten())
-		if got := icmpv6.Type(); got != header.ICMPv6MulticastListenerV2Report {
-			t.Fatalf("got icmpv6.Type() = %d, want = %d", got, header.ICMPv6MulticastListenerV2Report)
-		}
-
-		report := header.MLDv2Report(icmpv6.MessageBody())
-		records := report.MulticastAddressRecords()
-		record, res := records.Next()
-		if res != header.MLDv2ReportMulticastAddressRecordIteratorNextOk {
-			t.Fatalf("got records.Next() = %d, want = %d", res, header.MLDv2ReportMulticastAddressRecordIteratorNextOk)
-		}
-		addr := record.MulticastAddress()
-
-		s, ok := seen[addr]
-		if !ok {
-			t.Fatalf("unexpectedly got a packet for group %s", addr)
-		}
-		if s {
-			t.Fatalf("already saw packet for group %s", addr)
-		}
-		seen[addr] = true
-
-		if _, res := records.Next(); res != header.MLDv2ReportMulticastAddressRecordIteratorNextDone {
-			t.Errorf("got records.Next() = %d, want = %d", res, header.MLDv2ReportMulticastAddressRecordIteratorNextDone)
-		}
-
-		return addr
-	}
-
 	tests := []struct {
 		name            string
 		dadTransmits    uint8
@@ -315,34 +210,21 @@ func TestSendQueuedMLDReports(t *testing.T) {
 	}
 
 	subTests := []struct {
-		name                    string
-		v1Compatibility         bool
-		validate                func(t *testing.T, v *bufferv2.View, localAddress tcpip.Address, groupAddress tcpip.Address, leave bool)
-		checkStats              func(*testing.T, *stack.Stack, uint64, uint64, uint64)
-		getAndCheckGroupAddress func(*testing.T, map[tcpip.Address]bool, stack.PacketBufferPtr) tcpip.Address
+		name            string
+		v1Compatibility bool
+		validate        func(t *testing.T, e *channel.Endpoint, localAddress tcpip.Address, groupAddresses []tcpip.Address, leave bool)
+		checkStats      func(*testing.T, *stack.Stack, uint64, uint64, uint64)
 	}{
 		{
 			name:            "V1 Compatibility",
 			v1Compatibility: true,
-			validate: func(t *testing.T, v *bufferv2.View, localAddress tcpip.Address, groupAddress tcpip.Address, leave bool) {
-				t.Helper()
-
-				remoteAddress := groupAddress
-				icmpType := header.ICMPv6MulticastListenerReport
-				if leave {
-					remoteAddress = header.IPv6AllRoutersLinkLocalMulticastAddress
-					icmpType = header.ICMPv6MulticastListenerDone
-				}
-
-				validateMLDPacket(t, v, localAddress, remoteAddress, icmpType, groupAddress)
-			},
-			checkStats:              iptestutil.CheckMLDv1Stats,
-			getAndCheckGroupAddress: getAndCheckMLDv1MulticastAddress,
+			validate:        iptestutil.ValidMultipleMLDv1ReportLeaves,
+			checkStats:      iptestutil.CheckMLDv1Stats,
 		},
 		{
 			name:            "V2",
 			v1Compatibility: false,
-			validate: func(t *testing.T, v *bufferv2.View, localAddress tcpip.Address, groupAddress tcpip.Address, leave bool) {
+			validate: func(t *testing.T, e *channel.Endpoint, localAddress tcpip.Address, groupAddresses []tcpip.Address, leave bool) {
 				t.Helper()
 
 				recordType := header.MLDv2ReportRecordChangeToExcludeMode
@@ -350,10 +232,9 @@ func TestSendQueuedMLDReports(t *testing.T) {
 					recordType = header.MLDv2ReportRecordChangeToIncludeMode
 				}
 
-				validateMLDv2ReportPacket(t, v, localAddress, groupAddress, recordType)
+				iptestutil.ValidateMLDv2RecordsAcrossReports(t, e, localAddress, groupAddresses, recordType)
 			},
-			checkStats:              iptestutil.CheckMLDv2Stats,
-			getAndCheckGroupAddress: getAndCheckMLDv2MulticastAddress,
+			checkStats: iptestutil.CheckMLDv2Stats,
 		},
 	}
 
@@ -452,12 +333,7 @@ func TestSendQueuedMLDReports(t *testing.T) {
 					}
 					reportCounter++
 					subTest.checkStats(t, s, reportCounter, doneCounter, reportV2Counter)
-					if p := e.Read(); p.IsNil() {
-						t.Errorf("expected MLD report for %s", globalMulticastAddr)
-					} else {
-						subTest.validate(t, stack.PayloadSince(p.NetworkHeader()), header.IPv6Any, globalMulticastAddr, false /* leave */)
-						p.DecRef()
-					}
+					subTest.validate(t, e, header.IPv6Any, []tcpip.Address{globalMulticastAddr}, false /* leave */)
 					clock.Advance(time.Hour)
 					checkVersion()
 					if p := e.Read(); !p.IsNil() {
@@ -485,12 +361,7 @@ func TestSendQueuedMLDReports(t *testing.T) {
 					}
 					reportCounter++
 					subTest.checkStats(t, s, reportCounter, doneCounter, reportV2Counter)
-					if p := e.Read(); p.IsNil() {
-						t.Errorf("expected MLD report for %s", globalAddrSNMC)
-					} else {
-						subTest.validate(t, stack.PayloadSince(p.NetworkHeader()), header.IPv6Any, globalAddrSNMC, false /* leave */)
-						p.DecRef()
-					}
+					subTest.validate(t, e, header.IPv6Any, []tcpip.Address{globalAddrSNMC}, false /* leave */)
 					if dadResolutionTime != 0 {
 						// Reports should not be sent when the address resolves.
 						resolveDAD(globalAddr, globalAddrSNMC)
@@ -504,12 +375,7 @@ func TestSendQueuedMLDReports(t *testing.T) {
 					if !subTest.v1Compatibility {
 						doneCounter++
 						subTest.checkStats(t, s, reportCounter, doneCounter, reportV2Counter)
-						if p := e.Read(); p.IsNil() {
-							t.Errorf("expected MLD report for %s", globalAddrSNMC)
-						} else {
-							subTest.validate(t, stack.PayloadSince(p.NetworkHeader()), header.IPv6Any, globalAddrSNMC, true /* leave */)
-							p.DecRef()
-						}
+						subTest.validate(t, e, header.IPv6Any, []tcpip.Address{globalAddrSNMC}, true /* leave */)
 					}
 					subTest.checkStats(t, s, reportCounter, doneCounter, reportV2Counter)
 					if p := e.Read(); !p.IsNil() {
@@ -531,12 +397,7 @@ func TestSendQueuedMLDReports(t *testing.T) {
 					}
 					if dadResolutionTime != 0 {
 						reportCounter++
-						if p := e.Read(); p.IsNil() {
-							t.Errorf("expected MLD report for %s", linkLocalAddrSNMC)
-						} else {
-							subTest.validate(t, stack.PayloadSince(p.NetworkHeader()), header.IPv6Any, linkLocalAddrSNMC, false /* leave */)
-							p.DecRef()
-						}
+						subTest.validate(t, e, header.IPv6Any, []tcpip.Address{linkLocalAddrSNMC}, false /* leave */)
 						resolveDAD(linkLocalAddr, linkLocalAddrSNMC)
 					}
 
@@ -549,28 +410,15 @@ func TestSendQueuedMLDReports(t *testing.T) {
 						reportCounter += maxReports
 						subTest.checkStats(t, s, reportCounter, doneCounter, reportV2Counter)
 
-						addrs := map[tcpip.Address]bool{
-							globalMulticastAddr: false,
-							linkLocalAddrSNMC:   false,
-						}
-						for range addrs {
-							p := e.Read()
-							if p.IsNil() {
-								t.Fatalf("expected MLD report for %s and %s; addrs = %#v", globalMulticastAddr, linkLocalAddrSNMC, addrs)
-							}
+						subTest.validate(
+							t,
+							e,
+							linkLocalAddr,
+							[]tcpip.Address{globalMulticastAddr, linkLocalAddrSNMC},
+							false, /* leave */
+						)
 
-							subTest.validate(
-								t,
-								stack.PayloadSince(p.NetworkHeader()),
-								linkLocalAddr,
-								subTest.getAndCheckGroupAddress(t, addrs, p),
-								false, /* leave */
-							)
-
-							p.DecRef()
-
-							clock.Advance(ipv6.UnsolicitedReportIntervalMax)
-						}
+						clock.Advance(ipv6.UnsolicitedReportIntervalMax)
 					}
 
 					// Should not send any more reports.
