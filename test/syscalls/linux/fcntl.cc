@@ -1510,6 +1510,25 @@ TEST_F(FcntlSignalTest, SignalFD) {
   syscall(SYS_tkill, tid, SIGIO);
 }
 
+TEST_F(FcntlSignalTest, SignalFDSetSigAfterASYNC) {
+  // Create the signalfd.
+  sigset_t mask;
+  sigemptyset(&mask);
+  sigaddset(&mask, SIGIO);
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NewSignalFD(&mask, 0));
+
+  const auto signal_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(RegisterSignalHandler(SIGIO));
+  ASSERT_THAT(fcntl(fd.get(), F_SETOWN, getpid()), SyscallSucceeds());
+  int old_flags;
+  ASSERT_THAT(old_flags = fcntl(fd.get(), F_GETFL), SyscallSucceeds());
+  ASSERT_THAT(fcntl(fd.get(), F_SETFL, old_flags | O_ASYNC), SyscallSucceeds());
+  ASSERT_THAT(fcntl(fd.get(), F_SETSIG, 0), SyscallSucceeds());
+
+  int tid = syscall(SYS_gettid);
+  syscall(SYS_tkill, tid, SIGIO);
+}
+
 TEST_F(FcntlSignalTest, SetSigCustom) {
   const auto signal_cleanup =
       ASSERT_NO_ERRNO_AND_VALUE(RegisterSignalHandler(SIGUSR1));
