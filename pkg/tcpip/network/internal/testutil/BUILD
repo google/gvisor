@@ -4,6 +4,7 @@ package(licenses = ["notice"])
 
 go_library(
     name = "testutil",
+    testonly = True,
     srcs = ["testutil.go"],
     visibility = [
         "//pkg/tcpip/network:__pkg__",
@@ -16,6 +17,7 @@ go_library(
     deps = [
         "//pkg/bufferv2",
         "//pkg/tcpip",
+        "//pkg/tcpip/checker",
         "//pkg/tcpip/header",
         "//pkg/tcpip/stack",
     ],

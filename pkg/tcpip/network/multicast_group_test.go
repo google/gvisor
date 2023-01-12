@@ -101,21 +101,11 @@ func validateMLDPacket(t *testing.T, p stack.PacketBufferPtr, remoteAddress tcpi
 	)
 }
 
-func validateMLDv2ReportPacket(t *testing.T, p stack.PacketBufferPtr, report header.MLDv2ReportSerializer) {
+func validateMLDv2ReportPacket(t *testing.T, p stack.PacketBufferPtr, addrs []tcpip.Address, recordType header.MLDv2ReportRecordType) {
 	t.Helper()
-
 	payload := stack.PayloadSince(p.NetworkHeader())
 	defer payload.Release()
-
-	checker.IPv6WithExtHdr(t, payload,
-		checker.IPv6ExtHdr(
-			checker.IPv6HopByHopExtensionHeader(checker.IPv6RouterAlert(header.IPv6RouterAlertMLD)),
-		),
-		checker.SrcAddr(linkLocalIPv6Addr1),
-		checker.DstAddr(header.MLDv2RoutersAddress),
-		checker.TTL(header.MLDHopLimit),
-		checker.MLDv2Report(report),
-	)
+	iptestutil.ValidateMLDv2Report(t, payload, linkLocalIPv6Addr1, addrs, recordType)
 }
 
 // validateIGMPPacket checks that a passed PacketInfo is an IPv4 IGMP packet
@@ -139,18 +129,12 @@ func validateIGMPPacket(t *testing.T, p stack.PacketBufferPtr, remoteAddress tcp
 	)
 }
 
-func validateIGMPv3ReportPacket(t *testing.T, p stack.PacketBufferPtr, report header.IGMPv3ReportSerializer) {
+func validateIGMPv3ReportPacket(t *testing.T, p stack.PacketBufferPtr, addrs []tcpip.Address, recordType header.IGMPv3ReportRecordType) {
 	t.Helper()
 
 	payload := stack.PayloadSince(p.NetworkHeader())
 	defer payload.Release()
-	checker.IPv4(t, payload,
-		checker.SrcAddr(stackIPv4Addr),
-		checker.DstAddr(header.IGMPv3RoutersAddress),
-		checker.TTL(header.IGMPTTL),
-		checker.IPv4RouterAlert(),
-		checker.IGMPv3Report(report),
-	)
+	iptestutil.ValidateIGMPv3Report(t, payload, stackIPv4Addr, addrs, recordType)
 }
 
 type multicastTestContext struct {
@@ -240,15 +224,9 @@ func checkInitialIPv6Groups(t *testing.T, e *channel.Endpoint, s *stack.Stack, c
 	if p := e.Read(); p.IsNil() {
 		t.Fatal("expected a report message to be sent")
 	} else {
-		validateMLDv2ReportPacket(t, p, header.MLDv2ReportSerializer{
-			Records: []header.MLDv2ReportMulticastAddressRecordSerializer{
-				{
-					RecordType:       header.MLDv2ReportRecordChangeToExcludeMode,
-					MulticastAddress: ipv6AddrSNMC,
-					Sources:          nil,
-				},
-			},
-		})
+		v := stack.PayloadSince(p.NetworkHeader())
+		iptestutil.ValidateMLDv2Report(t, v, linkLocalIPv6Addr1, []tcpip.Address{ipv6AddrSNMC}, header.MLDv2ReportRecordChangeToExcludeMode)
+		v.Release()
 		p.DecRef()
 	}
 
@@ -263,15 +241,9 @@ func checkInitialIPv6Groups(t *testing.T, e *channel.Endpoint, s *stack.Stack, c
 		if p := e.Read(); p.IsNil() {
 			t.Fatal("expected a report message to be sent")
 		} else {
-			validateMLDv2ReportPacket(t, p, header.MLDv2ReportSerializer{
-				Records: []header.MLDv2ReportMulticastAddressRecordSerializer{
-					{
-						RecordType:       header.MLDv2ReportRecordChangeToIncludeMode,
-						MulticastAddress: ipv6AddrSNMC,
-						Sources:          nil,
-					},
-				},
-			})
+			v := stack.PayloadSince(p.NetworkHeader())
+			iptestutil.ValidateMLDv2Report(t, v, linkLocalIPv6Addr1, []tcpip.Address{ipv6AddrSNMC}, header.MLDv2ReportRecordChangeToIncludeMode)
+			v.Release()
 			p.DecRef()
 		}
 
@@ -587,15 +559,7 @@ func TestMGPJoinGroup(t *testing.T) {
 					validateReport: func(t *testing.T, p stack.PacketBufferPtr) {
 						t.Helper()
 
-						validateIGMPv3ReportPacket(t, p, header.IGMPv3ReportSerializer{
-							Records: []header.IGMPv3ReportGroupAddressRecordSerializer{
-								{
-									RecordType:   header.IGMPv3ReportRecordChangeToExcludeMode,
-									GroupAddress: ipv4MulticastAddr1,
-									Sources:      nil,
-								},
-							},
-						})
+						validateIGMPv3ReportPacket(t, p, []tcpip.Address{ipv4MulticastAddr1}, header.IGMPv3ReportRecordChangeToExcludeMode)
 					},
 					checkStats: iptestutil.CheckIGMPv3Stats,
 				},
@@ -630,15 +594,7 @@ func TestMGPJoinGroup(t *testing.T) {
 					validateReport: func(t *testing.T, p stack.PacketBufferPtr) {
 						t.Helper()
 
-						validateMLDv2ReportPacket(t, p, header.MLDv2ReportSerializer{
-							Records: []header.MLDv2ReportMulticastAddressRecordSerializer{
-								{
-									RecordType:       header.MLDv2ReportRecordChangeToExcludeMode,
-									MulticastAddress: ipv6MulticastAddr1,
-									Sources:          nil,
-								},
-							},
-						})
+						validateMLDv2ReportPacket(t, p, []tcpip.Address{ipv6MulticastAddr1}, header.MLDv2ReportRecordChangeToExcludeMode)
 					},
 					checkStats: iptestutil.CheckMLDv2Stats,
 				},
@@ -758,28 +714,12 @@ func TestMGPLeaveGroup(t *testing.T) {
 					validateReport: func(t *testing.T, p stack.PacketBufferPtr) {
 						t.Helper()
 
-						validateIGMPv3ReportPacket(t, p, header.IGMPv3ReportSerializer{
-							Records: []header.IGMPv3ReportGroupAddressRecordSerializer{
-								{
-									RecordType:   header.IGMPv3ReportRecordChangeToExcludeMode,
-									GroupAddress: ipv4MulticastAddr1,
-									Sources:      nil,
-								},
-							},
-						})
+						validateIGMPv3ReportPacket(t, p, []tcpip.Address{ipv4MulticastAddr1}, header.IGMPv3ReportRecordChangeToExcludeMode)
 					},
 					validateLeave: func(t *testing.T, p stack.PacketBufferPtr) {
 						t.Helper()
 
-						validateIGMPv3ReportPacket(t, p, header.IGMPv3ReportSerializer{
-							Records: []header.IGMPv3ReportGroupAddressRecordSerializer{
-								{
-									RecordType:   header.IGMPv3ReportRecordChangeToIncludeMode,
-									GroupAddress: ipv4MulticastAddr1,
-									Sources:      nil,
-								},
-							},
-						})
+						validateIGMPv3ReportPacket(t, p, []tcpip.Address{ipv4MulticastAddr1}, header.IGMPv3ReportRecordChangeToIncludeMode)
 					},
 					leaveCount: 2,
 					checkStats: iptestutil.CheckIGMPv3Stats,
@@ -818,28 +758,12 @@ func TestMGPLeaveGroup(t *testing.T) {
 					validateReport: func(t *testing.T, p stack.PacketBufferPtr) {
 						t.Helper()
 
-						validateMLDv2ReportPacket(t, p, header.MLDv2ReportSerializer{
-							Records: []header.MLDv2ReportMulticastAddressRecordSerializer{
-								{
-									RecordType:       header.MLDv2ReportRecordChangeToExcludeMode,
-									MulticastAddress: ipv6MulticastAddr1,
-									Sources:          nil,
-								},
-							},
-						})
+						validateMLDv2ReportPacket(t, p, []tcpip.Address{ipv6MulticastAddr1}, header.MLDv2ReportRecordChangeToExcludeMode)
 					},
 					validateLeave: func(t *testing.T, p stack.PacketBufferPtr) {
 						t.Helper()
 
-						validateMLDv2ReportPacket(t, p, header.MLDv2ReportSerializer{
-							Records: []header.MLDv2ReportMulticastAddressRecordSerializer{
-								{
-									RecordType:       header.MLDv2ReportRecordChangeToIncludeMode,
-									MulticastAddress: ipv6MulticastAddr1,
-									Sources:          nil,
-								},
-							},
-						})
+						validateMLDv2ReportPacket(t, p, []tcpip.Address{ipv6MulticastAddr1}, header.MLDv2ReportRecordChangeToIncludeMode)
 					},
 					leaveCount: 2,
 					checkStats: iptestutil.CheckMLDv2Stats,
@@ -965,15 +889,7 @@ func TestMGPQueryMessages(t *testing.T) {
 							recordType = header.IGMPv3ReportRecordModeIsExclude
 						}
 
-						validateIGMPv3ReportPacket(t, p, header.IGMPv3ReportSerializer{
-							Records: []header.IGMPv3ReportGroupAddressRecordSerializer{
-								{
-									RecordType:   recordType,
-									GroupAddress: ipv4MulticastAddr1,
-									Sources:      nil,
-								},
-							},
-						})
+						validateIGMPv3ReportPacket(t, p, []tcpip.Address{ipv4MulticastAddr1}, recordType)
 					},
 					rxQuery: func(e *channel.Endpoint, maxRespTime uint8, groupAddress tcpip.Address) {
 						createAndInjectIGMPPacket(e, igmpMembershipQuery, maxRespTime, groupAddress, header.IGMPv3QueryMinimumSize-header.IGMPQueryMinimumSize /* extraLength */)
@@ -1022,15 +938,7 @@ func TestMGPQueryMessages(t *testing.T) {
 							recordType = header.MLDv2ReportRecordModeIsExclude
 						}
 
-						validateMLDv2ReportPacket(t, p, header.MLDv2ReportSerializer{
-							Records: []header.MLDv2ReportMulticastAddressRecordSerializer{
-								{
-									RecordType:       recordType,
-									MulticastAddress: ipv6MulticastAddr1,
-									Sources:          nil,
-								},
-							},
-						})
+						validateMLDv2ReportPacket(t, p, []tcpip.Address{ipv6MulticastAddr1}, recordType)
 					},
 					rxQuery: func(e *channel.Endpoint, maxRespTime uint8, groupAddress tcpip.Address) {
 						createAndInjectMLDPacket(e, mldQuery, maxRespTime, groupAddress, header.MLDv2QueryMinimumSize-header.MLDMinimumSize /* extraLength */)
@@ -1194,28 +1102,12 @@ func TestMGPReportMessages(t *testing.T) {
 					validateReport: func(t *testing.T, p stack.PacketBufferPtr) {
 						t.Helper()
 
-						validateIGMPv3ReportPacket(t, p, header.IGMPv3ReportSerializer{
-							Records: []header.IGMPv3ReportGroupAddressRecordSerializer{
-								{
-									RecordType:   header.IGMPv3ReportRecordChangeToExcludeMode,
-									GroupAddress: ipv4MulticastAddr1,
-									Sources:      nil,
-								},
-							},
-						})
+						validateIGMPv3ReportPacket(t, p, []tcpip.Address{ipv4MulticastAddr1}, header.IGMPv3ReportRecordChangeToExcludeMode)
 					},
 					validateLeave: func(t *testing.T, p stack.PacketBufferPtr) {
 						t.Helper()
 
-						validateIGMPv3ReportPacket(t, p, header.IGMPv3ReportSerializer{
-							Records: []header.IGMPv3ReportGroupAddressRecordSerializer{
-								{
-									RecordType:   header.IGMPv3ReportRecordChangeToIncludeMode,
-									GroupAddress: ipv4MulticastAddr1,
-									Sources:      nil,
-								},
-							},
-						})
+						validateIGMPv3ReportPacket(t, p, []tcpip.Address{ipv4MulticastAddr1}, header.IGMPv3ReportRecordChangeToIncludeMode)
 					},
 					leaveCount: 2,
 					checkStats: iptestutil.CheckIGMPv3Stats,
@@ -1252,28 +1144,12 @@ func TestMGPReportMessages(t *testing.T) {
 					validateReport: func(t *testing.T, p stack.PacketBufferPtr) {
 						t.Helper()
 
-						validateMLDv2ReportPacket(t, p, header.MLDv2ReportSerializer{
-							Records: []header.MLDv2ReportMulticastAddressRecordSerializer{
-								{
-									RecordType:       header.MLDv2ReportRecordChangeToExcludeMode,
-									MulticastAddress: ipv6MulticastAddr1,
-									Sources:          nil,
-								},
-							},
-						})
+						validateMLDv2ReportPacket(t, p, []tcpip.Address{ipv6MulticastAddr1}, header.MLDv2ReportRecordChangeToExcludeMode)
 					},
 					validateLeave: func(t *testing.T, p stack.PacketBufferPtr) {
 						t.Helper()
 
-						validateMLDv2ReportPacket(t, p, header.MLDv2ReportSerializer{
-							Records: []header.MLDv2ReportMulticastAddressRecordSerializer{
-								{
-									RecordType:       header.MLDv2ReportRecordChangeToIncludeMode,
-									MulticastAddress: ipv6MulticastAddr1,
-									Sources:          nil,
-								},
-							},
-						})
+						validateMLDv2ReportPacket(t, p, []tcpip.Address{ipv6MulticastAddr1}, header.MLDv2ReportRecordChangeToIncludeMode)
 					},
 					leaveCount: 2,
 					checkStats: iptestutil.CheckMLDv2Stats,
@@ -1560,31 +1436,12 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 			validateReport: func(t *testing.T, p stack.PacketBufferPtr, addrs []tcpip.Address) {
 				t.Helper()
 
-				var records []header.IGMPv3ReportGroupAddressRecordSerializer
-				for _, addr := range addrs {
-					records = append(records, header.IGMPv3ReportGroupAddressRecordSerializer{
-						RecordType:   header.IGMPv3ReportRecordChangeToExcludeMode,
-						GroupAddress: addr,
-						Sources:      nil,
-					})
-				}
-
-				validateIGMPv3ReportPacket(t, p, header.IGMPv3ReportSerializer{
-					Records: records,
-				})
+				validateIGMPv3ReportPacket(t, p, addrs, header.IGMPv3ReportRecordChangeToExcludeMode)
 			},
 			validateLeave: func(t *testing.T, p stack.PacketBufferPtr, addr tcpip.Address) {
 				t.Helper()
 
-				validateIGMPv3ReportPacket(t, p, header.IGMPv3ReportSerializer{
-					Records: []header.IGMPv3ReportGroupAddressRecordSerializer{
-						{
-							RecordType:   header.IGMPv3ReportRecordChangeToIncludeMode,
-							GroupAddress: addr,
-							Sources:      nil,
-						},
-					},
-				})
+				validateIGMPv3ReportPacket(t, p, []tcpip.Address{addr}, header.IGMPv3ReportRecordChangeToIncludeMode)
 			},
 			getAndCheckGroupAddress: getAndCheckIGMPv3GroupAddress,
 			checkStats:              iptestutil.CheckIGMPv3Stats,
@@ -1616,30 +1473,12 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 					validateReport: func(t *testing.T, p stack.PacketBufferPtr, addr tcpip.Address) {
 						t.Helper()
 
-						validateIGMPv3ReportPacket(t, p, header.IGMPv3ReportSerializer{
-							Records: []header.IGMPv3ReportGroupAddressRecordSerializer{
-								{
-									RecordType:   header.IGMPv3ReportRecordChangeToExcludeMode,
-									GroupAddress: addr,
-									Sources:      nil,
-								},
-							},
-						})
+						validateIGMPv3ReportPacket(t, p, []tcpip.Address{addr}, header.IGMPv3ReportRecordChangeToExcludeMode)
 					},
 					validateLeave: func(t *testing.T, p stack.PacketBufferPtr, addrs []tcpip.Address) {
 						t.Helper()
 
-						var records []header.IGMPv3ReportGroupAddressRecordSerializer
-						for _, addr := range addrs {
-							records = append(records, header.IGMPv3ReportGroupAddressRecordSerializer{
-								RecordType:   header.IGMPv3ReportRecordChangeToIncludeMode,
-								GroupAddress: addr,
-								Sources:      nil,
-							})
-						}
-						validateIGMPv3ReportPacket(t, p, header.IGMPv3ReportSerializer{
-							Records: records,
-						})
+						validateIGMPv3ReportPacket(t, p, addrs, header.IGMPv3ReportRecordChangeToIncludeMode)
 					},
 					checkStats:              iptestutil.CheckIGMPv3Stats,
 					getAndCheckGroupAddress: getAndCheckIGMPv3GroupAddress,
@@ -1660,31 +1499,12 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 			},
 			validateReport: func(t *testing.T, p stack.PacketBufferPtr, addrs []tcpip.Address) {
 				t.Helper()
-
-				var records []header.MLDv2ReportMulticastAddressRecordSerializer
-				for _, addr := range addrs {
-					records = append(records, header.MLDv2ReportMulticastAddressRecordSerializer{
-						RecordType:       header.MLDv2ReportRecordChangeToExcludeMode,
-						MulticastAddress: addr,
-						Sources:          nil,
-					})
-				}
-				validateMLDv2ReportPacket(t, p, header.MLDv2ReportSerializer{
-					Records: records,
-				})
+				validateMLDv2ReportPacket(t, p, addrs, header.MLDv2ReportRecordChangeToExcludeMode)
 			},
 			validateLeave: func(t *testing.T, p stack.PacketBufferPtr, addr tcpip.Address) {
 				t.Helper()
 
-				validateMLDv2ReportPacket(t, p, header.MLDv2ReportSerializer{
-					Records: []header.MLDv2ReportMulticastAddressRecordSerializer{
-						{
-							RecordType:       header.MLDv2ReportRecordChangeToIncludeMode,
-							MulticastAddress: addr,
-							Sources:          nil,
-						},
-					},
-				})
+				validateMLDv2ReportPacket(t, p, []tcpip.Address{addr}, header.MLDv2ReportRecordChangeToIncludeMode)
 			},
 			getAndCheckGroupAddress: getAndCheckMLDv2MulticastAddress,
 			checkInitialGroups:      checkInitialIPv6Groups,
@@ -1717,30 +1537,12 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 					validateReport: func(t *testing.T, p stack.PacketBufferPtr, addr tcpip.Address) {
 						t.Helper()
 
-						validateMLDv2ReportPacket(t, p, header.MLDv2ReportSerializer{
-							Records: []header.MLDv2ReportMulticastAddressRecordSerializer{
-								{
-									RecordType:       header.MLDv2ReportRecordChangeToExcludeMode,
-									MulticastAddress: addr,
-									Sources:          nil,
-								},
-							},
-						})
+						validateMLDv2ReportPacket(t, p, []tcpip.Address{addr}, header.MLDv2ReportRecordChangeToExcludeMode)
 					},
 					validateLeave: func(t *testing.T, p stack.PacketBufferPtr, addrs []tcpip.Address) {
 						t.Helper()
 
-						var records []header.MLDv2ReportMulticastAddressRecordSerializer
-						for _, addr := range addrs {
-							records = append(records, header.MLDv2ReportMulticastAddressRecordSerializer{
-								RecordType:       header.MLDv2ReportRecordChangeToIncludeMode,
-								MulticastAddress: addr,
-								Sources:          nil,
-							})
-						}
-						validateMLDv2ReportPacket(t, p, header.MLDv2ReportSerializer{
-							Records: records,
-						})
+						validateMLDv2ReportPacket(t, p, addrs, header.MLDv2ReportRecordChangeToIncludeMode)
 					},
 					checkStats:              iptestutil.CheckMLDv2Stats,
 					getAndCheckGroupAddress: getAndCheckMLDv2MulticastAddress,
@@ -2009,15 +1811,7 @@ func TestMGPCoalescedQueryResponseRecords(t *testing.T) {
 			validateReport: func(t *testing.T, p stack.PacketBufferPtr, addr tcpip.Address) {
 				t.Helper()
 
-				validateIGMPv3ReportPacket(t, p, header.IGMPv3ReportSerializer{
-					Records: []header.IGMPv3ReportGroupAddressRecordSerializer{
-						{
-							RecordType:   header.IGMPv3ReportRecordChangeToExcludeMode,
-							GroupAddress: addr,
-							Sources:      nil,
-						},
-					},
-				})
+				validateIGMPv3ReportPacket(t, p, []tcpip.Address{addr}, header.IGMPv3ReportRecordChangeToExcludeMode)
 			},
 			checkStats: func(t *testing.T, s *stack.Stack, reports uint64) {
 				t.Helper()
@@ -2080,15 +1874,7 @@ func TestMGPCoalescedQueryResponseRecords(t *testing.T) {
 			validateReport: func(t *testing.T, p stack.PacketBufferPtr, addr tcpip.Address) {
 				t.Helper()
 
-				validateMLDv2ReportPacket(t, p, header.MLDv2ReportSerializer{
-					Records: []header.MLDv2ReportMulticastAddressRecordSerializer{
-						{
-							RecordType:       header.MLDv2ReportRecordChangeToExcludeMode,
-							MulticastAddress: addr,
-							Sources:          nil,
-						},
-					},
-				})
+				validateMLDv2ReportPacket(t, p, []tcpip.Address{addr}, header.MLDv2ReportRecordChangeToExcludeMode)
 			},
 			checkStats: func(t *testing.T, s *stack.Stack, reports uint64) {
 				t.Helper()

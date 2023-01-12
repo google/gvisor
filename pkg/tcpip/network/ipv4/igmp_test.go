@@ -72,22 +72,7 @@ func validateIgmpv3ReportPacket(t *testing.T, pkt stack.PacketBufferPtr, srcAddr
 
 	payload := stack.PayloadSince(pkt.NetworkHeader())
 	defer payload.Release()
-	checker.IPv4(t, payload,
-		checker.SrcAddr(srcAddr),
-		checker.DstAddr(header.IGMPv3RoutersAddress),
-		// TTL for an IGMP message must be 1 as per RFC 2236 section 2.
-		checker.TTL(1),
-		checker.IPv4RouterAlert(),
-		checker.IGMPv3Report(header.IGMPv3ReportSerializer{
-			Records: []header.IGMPv3ReportGroupAddressRecordSerializer{
-				{
-					RecordType:   header.IGMPv3ReportRecordChangeToExcludeMode,
-					GroupAddress: groupAddress,
-					Sources:      nil,
-				},
-			},
-		}),
-	)
+	iptestutil.ValidateIGMPv3Report(t, payload, srcAddr, []tcpip.Address{groupAddress}, header.IGMPv3ReportRecordChangeToExcludeMode)
 }
 
 type igmpTestContext struct {
