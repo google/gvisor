@@ -405,9 +405,16 @@ func TestSendQueuedMLDReports(t *testing.T) {
 					// link-local address is assigned, and another after the maximum
 					// unsolicited report interval.
 					for i := 0; i < 2; i++ {
-						// We expect reports to be sent (one for globalMulticastAddr and another
-						// for linkLocalAddrSNMC).
-						reportCounter += maxReports
+						// MLDv1 always sends a single message per group.
+						//
+						// MLDv2 sends a single message per group when we first get an
+						// IPv6 link-local address assigned, but later reports (sent by
+						// the state changed timer) coalesce records for groups.
+						if subTest.v1Compatibility || i == 0 {
+							reportCounter += maxReports
+						} else {
+							reportCounter++
+						}
 						subTest.checkStats(t, s, reportCounter, doneCounter, reportV2Counter)
 
 						subTest.validate(
