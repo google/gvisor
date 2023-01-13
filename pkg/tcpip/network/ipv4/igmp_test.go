@@ -332,7 +332,16 @@ func TestSendQueuedIGMPReports(t *testing.T) {
 			// We expect two batches of reports to be sent (1 batch when the address
 			// is assigned, and another after the maximum unsolicited report interval.
 			for i := 0; i < 2; i++ {
-				reportCounter += uint64(len(multicastAddrs))
+				// IGMPv2 always sends a single message per group.
+				//
+				// IGMPv3 sends a single message per group when we first get an
+				// address assigned, but later reports (sent by the state changed
+				// timer) coalesce records for groups.
+				if test.v2Compatibility || i == 0 {
+					reportCounter += uint64(len(multicastAddrs))
+				} else {
+					reportCounter++
+				}
 				test.checkStats(t, s, reportCounter, doneCounter, reportV2Counter)
 				test.validate(t, e, stackAddr, multicastAddrs)
 
