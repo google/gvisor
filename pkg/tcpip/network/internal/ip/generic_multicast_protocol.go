@@ -195,6 +195,8 @@ type MulticastGroupProtocolV2ReportBuilder interface {
 
 	// Send sends the report.
 	//
+	// Does nothing if no records were added.
+	//
 	// It is invalid to use this builder after this method is called.
 	Send() (sent bool, err tcpip.Error)
 }
@@ -398,9 +400,40 @@ func (g *GenericMulticastProtocolState) InitializeGroupsLocked() {
 		return
 	}
 
+	var v2ReportBuilder MulticastGroupProtocolV2ReportBuilder
+	switch g.mode {
+	case protocolModeV2:
+		v2ReportBuilder = g.opts.Protocol.NewReportV2Builder()
+	case protocolModeV1Compatibility:
+	default:
+		panic(fmt.Sprintf("unrecognized mode = %d", g.mode))
+	}
+
 	for groupAddress, info := range g.memberships {
-		g.initializeNewMemberLocked(groupAddress, &info)
+		g.initializeNewMemberLocked(groupAddress, &info, v2ReportBuilder)
 		g.memberships[groupAddress] = info
+	}
+
+	if v2ReportBuilder == nil {
+		return
+	}
+
+	if sent, err := v2ReportBuilder.Send(); sent && err == nil {
+		g.scheduleStateChangedTimer()
+	} else {
+		// Nothing meaningful we could do with the error here - the interface may
+		// not yet have an address. This is okay because we would either schedule a
+		// report to be sent later or we will be notified when an address is added,
+		// at which point we will try to send messages again.
+		for groupAddress, info := range g.memberships {
+			if !g.shouldPerformForGroup(groupAddress) {
+				continue
+			}
+
+			// Revert the transmissions count since we did not successfully send.
+			info.transmissionLeft++
+			g.memberships[groupAddress] = info
+		}
 	}
 }
 
@@ -482,7 +515,7 @@ func (g *GenericMulticastProtocolState) JoinGroupLocked(groupAddress tcpip.Addre
 	info.clearQueriedIncludeSources()
 	info.delayedReportJobFiresAt = time.Time{}
 	info.lastToSendReport = false
-	g.initializeNewMemberLocked(groupAddress, &info)
+	g.initializeNewMemberLocked(groupAddress, &info, nil /* callersV2ReportBuilder */)
 	g.memberships[groupAddress] = info
 }
 
@@ -494,7 +527,11 @@ func (g *GenericMulticastProtocolState) IsLocallyJoinedRLocked(groupAddress tcpi
 	return ok && !info.deleteScheduled
 }
 
-func (g *GenericMulticastProtocolState) sendV2ReportAndMaybeScheduleChangedTimer(groupAddress tcpip.Address, info *multicastGroupState, recordType MulticastGroupProtocolV2ReportRecordType) bool {
+func (g *GenericMulticastProtocolState) sendV2ReportAndMaybeScheduleChangedTimer(
+	groupAddress tcpip.Address,
+	info *multicastGroupState,
+	recordType MulticastGroupProtocolV2ReportRecordType,
+) bool {
 	if info.transmissionLeft == 0 {
 		return false
 	}
@@ -510,59 +547,67 @@ func (g *GenericMulticastProtocolState) sendV2ReportAndMaybeScheduleChangedTimer
 		successfullySentAndHasMore = info.transmissionLeft != 0
 
 		// Use the interface-wide state changed report for further transmissions.
-		if successfullySentAndHasMore && !g.stateChangedReportV2TimerSet {
-			delay := g.calculateDelayTimerDuration(g.opts.MaxUnsolicitedReportDelay)
-			if g.stateChangedReportV2Timer == nil {
-				// TODO(https://issuetracker.google.com/264799098): Create timer on
-				// initialization instead of lazily creating the timer since the timer
-				// does not change after being created.
-				g.stateChangedReportV2Timer = g.opts.Clock.AfterFunc(delay, func() {
-					g.protocolMU.Lock()
-					defer g.protocolMU.Unlock()
-
-					reportBuilder := g.opts.Protocol.NewReportV2Builder()
-					nonEmptyReport := false
-					for groupAddress, info := range g.memberships {
-						if info.transmissionLeft == 0 || !g.shouldPerformForGroup(groupAddress) {
-							continue
-						}
-
-						info.transmissionLeft--
-						nonEmptyReport = true
-
-						mode := MulticastGroupProtocolV2ReportRecordChangeToExcludeMode
-						if info.deleteScheduled {
-							mode = MulticastGroupProtocolV2ReportRecordChangeToIncludeMode
-						}
-						reportBuilder.AddRecord(mode, groupAddress)
-
-						if info.deleteScheduled && info.transmissionLeft == 0 {
-							// No more transmissions left so we can actually delete the
-							// membership.
-							delete(g.memberships, groupAddress)
-						} else {
-							g.memberships[groupAddress] = info
-						}
-					}
-
-					// Nothing meaningful we can do with the error here. We will retry
-					// sending a state changed report again anyways.
-					_, _ = reportBuilder.Send()
-
-					if nonEmptyReport {
-						g.stateChangedReportV2Timer.Reset(g.calculateDelayTimerDuration(g.opts.MaxUnsolicitedReportDelay))
-					} else {
-						g.stateChangedReportV2TimerSet = false
-					}
-				})
-			} else {
-				g.stateChangedReportV2Timer.Reset(delay)
-			}
-			g.stateChangedReportV2TimerSet = true
+		if successfullySentAndHasMore {
+			g.scheduleStateChangedTimer()
 		}
 	}
 
 	return successfullySentAndHasMore
+}
+
+func (g *GenericMulticastProtocolState) scheduleStateChangedTimer() {
+	if g.stateChangedReportV2TimerSet {
+		return
+	}
+
+	delay := g.calculateDelayTimerDuration(g.opts.MaxUnsolicitedReportDelay)
+	if g.stateChangedReportV2Timer == nil {
+		// TODO(https://issuetracker.google.com/264799098): Create timer on
+		// initialization instead of lazily creating the timer since the timer
+		// does not change after being created.
+		g.stateChangedReportV2Timer = g.opts.Clock.AfterFunc(delay, func() {
+			g.protocolMU.Lock()
+			defer g.protocolMU.Unlock()
+
+			reportBuilder := g.opts.Protocol.NewReportV2Builder()
+			nonEmptyReport := false
+			for groupAddress, info := range g.memberships {
+				if info.transmissionLeft == 0 || !g.shouldPerformForGroup(groupAddress) {
+					continue
+				}
+
+				info.transmissionLeft--
+				nonEmptyReport = true
+
+				mode := MulticastGroupProtocolV2ReportRecordChangeToExcludeMode
+				if info.deleteScheduled {
+					mode = MulticastGroupProtocolV2ReportRecordChangeToIncludeMode
+				}
+				reportBuilder.AddRecord(mode, groupAddress)
+
+				if info.deleteScheduled && info.transmissionLeft == 0 {
+					// No more transmissions left so we can actually delete the
+					// membership.
+					delete(g.memberships, groupAddress)
+				} else {
+					g.memberships[groupAddress] = info
+				}
+			}
+
+			// Nothing meaningful we can do with the error here. We will retry
+			// sending a state changed report again anyways.
+			_, _ = reportBuilder.Send()
+
+			if nonEmptyReport {
+				g.stateChangedReportV2Timer.Reset(g.calculateDelayTimerDuration(g.opts.MaxUnsolicitedReportDelay))
+			} else {
+				g.stateChangedReportV2TimerSet = false
+			}
+		})
+	} else {
+		g.stateChangedReportV2Timer.Reset(delay)
+	}
+	g.stateChangedReportV2TimerSet = true
 }
 
 // LeaveGroupLocked handles leaving the group.
@@ -900,7 +945,7 @@ func (g *GenericMulticastProtocolState) HandleReportLocked(groupAddress tcpip.Ad
 // initializeNewMemberLocked initializes a new group membership.
 //
 // Precondition: g.protocolMU must be locked.
-func (g *GenericMulticastProtocolState) initializeNewMemberLocked(groupAddress tcpip.Address, info *multicastGroupState) {
+func (g *GenericMulticastProtocolState) initializeNewMemberLocked(groupAddress tcpip.Address, info *multicastGroupState, callersV2ReportBuilder MulticastGroupProtocolV2ReportBuilder) {
 	if !g.shouldPerformForGroup(groupAddress) {
 		return
 	}
@@ -910,7 +955,12 @@ func (g *GenericMulticastProtocolState) initializeNewMemberLocked(groupAddress t
 	switch g.mode {
 	case protocolModeV2:
 		info.transmissionLeft = g.robustnessVariable
-		g.sendV2ReportAndMaybeScheduleChangedTimer(groupAddress, info, MulticastGroupProtocolV2ReportRecordChangeToExcludeMode)
+		if callersV2ReportBuilder == nil {
+			g.sendV2ReportAndMaybeScheduleChangedTimer(groupAddress, info, MulticastGroupProtocolV2ReportRecordChangeToExcludeMode)
+		} else {
+			callersV2ReportBuilder.AddRecord(MulticastGroupProtocolV2ReportRecordChangeToExcludeMode, groupAddress)
+			info.transmissionLeft--
+		}
 	case protocolModeV1Compatibility:
 		info.transmissionLeft = unsolicitedTransmissionCount
 		g.maybeSendReportLocked(groupAddress, info)

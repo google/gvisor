@@ -174,6 +174,10 @@ func (b *igmpv3ReportBuilder) AddRecord(genericRecordType ip.MulticastGroupProto
 //
 // +checklocksread:b.igmp.ep.mu
 func (b *igmpv3ReportBuilder) Send() (sent bool, err tcpip.Error) {
+	if len(b.records) == 0 {
+		return false, err
+	}
+
 	options := header.IPv4OptionsSerializer{
 		&header.IPv4SerializableRouterAlertOption{},
 	}
