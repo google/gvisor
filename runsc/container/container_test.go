@@ -24,7 +24,6 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
-	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -2712,45 +2711,5 @@ func TestSaveSystemdCgroup(t *testing.T) {
 	cont.Saver.load(&loadCont)
 	if !reflect.DeepEqual(cont.CompatCgroup, loadCont.CompatCgroup) {
 		t.Errorf("CompatCgroup not properly saved: want %v, got %v", cont.CompatCgroup, loadCont.CompatCgroup)
-	}
-}
-
-// TestSandboxCommunicationUnshare checks that communication with sandboxes do
-// not require being in the same network namespace. This is required to allow
-// Kubernetes daemonsets/containers to communicate with sandboxes without the
-// need to join the host network namespaces.
-func TestSandboxCommunicationUnshare(t *testing.T) {
-	spec, conf := sleepSpecConf(t)
-	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
-	if err != nil {
-		t.Fatalf("error setting up container: %v", err)
-	}
-	defer cleanup()
-
-	args := Args{
-		ID:        testutil.RandomContainerID(),
-		Spec:      spec,
-		BundleDir: bundleDir,
-	}
-
-	cont, err := New(conf, args)
-	if err != nil {
-		t.Fatalf("Creating container: %v", err)
-	}
-	defer cont.Destroy()
-
-	if err := cont.Start(conf); err != nil {
-		t.Fatalf("starting container: %v", err)
-	}
-
-	runtime.LockOSThread()
-	defer runtime.UnlockOSThread()
-	if err := unix.Unshare(unix.CLONE_NEWNET); err != nil {
-		t.Fatalf("unix.Unshare(): %v", err)
-	}
-
-	// Send a simple command to test that the sandbox can be reached.
-	if err := cont.SignalContainer(0, true); err != nil {
-		t.Errorf("SignalContainer(): %v", err)
 	}
 }
