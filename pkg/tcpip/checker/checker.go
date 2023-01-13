@@ -1223,27 +1223,47 @@ func MLDMaxRespDelay(want time.Duration) TransportChecker {
 	}
 }
 
-// MLDMulticastAddress creates a checker that checks the Multicast Address
-// field of a MLD message.
+// MLDMulticastAddressUnordered creates a checker that checks that the multicast
+// address in the MLD message is expected to be seen.
+//
+// The seen address is removed from the expected groups map.
 //
 // The returned TransportChecker assumes that a valid ICMPv6 is passed to it
 // containing a valid MLD message as far as the size is concerned.
-func MLDMulticastAddress(want tcpip.Address) TransportChecker {
+func MLDMulticastAddressUnordered(expectedGroups map[tcpip.Address]struct{}) TransportChecker {
 	return func(t *testing.T, h header.Transport) {
 		t.Helper()
 
 		icmp := h.(header.ICMPv6)
 		ns := header.MLD(icmp.MessageBody())
 
-		if got := ns.MulticastAddress(); got != want {
-			t.Errorf("got %T.MulticastAddress() = %s, want = %s", ns, got, want)
+		addr := ns.MulticastAddress()
+
+		if _, ok := expectedGroups[addr]; !ok {
+			t.Errorf("unexpected multicast group %s", addr)
+		} else {
+			delete(expectedGroups, addr)
 		}
 	}
 }
 
+// MLDMulticastAddress creates a checker that checks the Multicast Address
+// field of a MLD message.
+//
+// The returned TransportChecker assumes that a valid ICMPv6 is passed to it
+// containing a valid MLD message as far as the size is concerned.
+func MLDMulticastAddress(want tcpip.Address) TransportChecker {
+	return MLDMulticastAddressUnordered(map[tcpip.Address]struct{}{
+		want: struct{}{},
+	})
+}
+
 // MLDv2Report creates a checker that checks that the packet contains a valid
 // MLDv2 report with the specified records.
-func MLDv2Report(expectedReport header.MLDv2ReportSerializer) NetworkChecker {
+//
+// Note that observed records are removed from expectedRecords. No error is
+// logged if the report does not have all the records expected.
+func MLDv2Report(expectedRecords map[tcpip.Address]header.MLDv2ReportRecordType) NetworkChecker {
 	return func(t *testing.T, h []header.Network) {
 		t.Helper()
 
@@ -1255,25 +1275,31 @@ func MLDv2Report(expectedReport header.MLDv2ReportSerializer) NetworkChecker {
 		last := h[len(h)-1]
 		icmp := header.ICMPv6(last.Payload())
 		report := header.MLDv2Report(icmp.MessageBody())
-		expectedRecords := expectedReport.Records
 
 		records := report.MulticastAddressRecords()
 		for len(expectedRecords) != 0 {
 			record, res := records.Next()
-			if res != header.MLDv2ReportMulticastAddressRecordIteratorNextOk {
-				t.Fatalf("got records.Next() = (%#v, %d), want = (_, %d)", record, res, header.MLDv2ReportMulticastAddressRecordIteratorNextOk)
+			switch res {
+			case header.MLDv2ReportMulticastAddressRecordIteratorNextOk:
+			case header.MLDv2ReportMulticastAddressRecordIteratorNextDone:
+				return
+			default:
+				t.Fatalf("unhandled res = %d", res)
 			}
 
-			if got, want := record.RecordType(), expectedRecords[0].RecordType; got != want {
+			addr := record.MulticastAddress()
+			expectedRecordType, ok := expectedRecords[addr]
+			if !ok {
+				t.Errorf("unexpected record for address %s", addr)
+				continue
+			}
+
+			if got, want := record.RecordType(), expectedRecordType; got != want {
 				t.Errorf("got record.RecordType() = %d, want = %d", got, want)
 			}
 
 			if got := record.AuxDataLen(); got != 0 {
 				t.Errorf("got record.AuxDataLen() = %d, want = 0", got)
-			}
-
-			if got, want := record.MulticastAddress(), expectedRecords[0].MulticastAddress; got != want {
-				t.Errorf("got record.MulticastAddress() = %s, want = %s", got, want)
 			}
 
 			sources, ok := record.Sources()
@@ -1282,20 +1308,11 @@ func MLDv2Report(expectedReport header.MLDv2ReportSerializer) NetworkChecker {
 				continue
 			}
 
-			expectedSources := expectedRecords[0].Sources
-			for len(expectedSources) != 0 {
-				source, ok := sources.Next()
-				if !ok {
-					t.Fatal("got sources.Next() = (_, false), want = (_, true)")
-				}
-				if source != expectedSources[0] {
-					t.Errorf("got sources.Next() = %s, want = %s", source, expectedSources[0])
-				}
-
-				expectedSources = expectedSources[1:]
+			if source, ok := sources.Next(); ok {
+				t.Fatalf("got sources.Next() = (%s, true), want = (_, false)", source)
 			}
 
-			expectedRecords = expectedRecords[1:]
+			delete(expectedRecords, addr)
 		}
 
 		if record, res := records.Next(); res != header.MLDv2ReportMulticastAddressRecordIteratorNextDone {
@@ -1580,8 +1597,14 @@ func IGMPMaxRespTime(want time.Duration) TransportChecker {
 	}
 }
 
-// IGMPGroupAddress creates a checker that checks the IGMP Group Address field.
-func IGMPGroupAddress(want tcpip.Address) TransportChecker {
+// IGMPGroupAddressUnordered creates a checker that checks that the group
+// address in the IGMP message is expected to be seen.
+//
+// The seen address is removed from the expected groups map.
+//
+// The returned TransportChecker assumes that a valid IGMP is passed to it
+// containing a valid IGMP message as far as the size is concerned.
+func IGMPGroupAddressUnordered(expectedGroups map[tcpip.Address]struct{}) TransportChecker {
 	return func(t *testing.T, h header.Transport) {
 		t.Helper()
 
@@ -1589,15 +1612,30 @@ func IGMPGroupAddress(want tcpip.Address) TransportChecker {
 		if !ok {
 			t.Fatalf("got transport header = %T, want = header.IGMP", h)
 		}
-		if got := igmp.GroupAddress(); got != want {
-			t.Errorf("got igmp.GroupAddress() = %s, want = %s", got, want)
+
+		addr := igmp.GroupAddress()
+
+		if _, ok := expectedGroups[addr]; !ok {
+			t.Errorf("unexpected multicast group %s", addr)
+		} else {
+			delete(expectedGroups, addr)
 		}
 	}
 }
 
+// IGMPGroupAddress creates a checker that checks the IGMP Group Address field.
+func IGMPGroupAddress(want tcpip.Address) TransportChecker {
+	return IGMPGroupAddressUnordered(map[tcpip.Address]struct{}{
+		want: struct{}{},
+	})
+}
+
 // IGMPv3Report creates a checker that checks that the packet contains a valid
 // IGMPv3 report with the specified records.
-func IGMPv3Report(expectedReport header.IGMPv3ReportSerializer) NetworkChecker {
+//
+// Note that observed records are removed from expectedRecords. No error is
+// logged if the report does not have all the records expected.
+func IGMPv3Report(expectedRecords map[tcpip.Address]header.IGMPv3ReportRecordType) NetworkChecker {
 	return func(t *testing.T, h []header.Network) {
 		t.Helper()
 
@@ -1612,25 +1650,31 @@ func IGMPv3Report(expectedReport header.IGMPv3ReportSerializer) NetworkChecker {
 		}
 
 		report := header.IGMPv3Report(igmp)
-		expectedRecords := expectedReport.Records
 
 		records := report.GroupAddressRecords()
 		for len(expectedRecords) != 0 {
 			record, res := records.Next()
-			if res != header.IGMPv3ReportGroupAddressRecordIteratorNextOk {
-				t.Fatalf("got records.Next() = (%#v, %d), want = (_, %d)", record, res, header.IGMPv3ReportGroupAddressRecordIteratorNextOk)
+			switch res {
+			case header.IGMPv3ReportGroupAddressRecordIteratorNextOk:
+			case header.IGMPv3ReportGroupAddressRecordIteratorNextDone:
+				return
+			default:
+				t.Fatalf("unhandled res = %d", res)
 			}
 
-			if got, want := record.RecordType(), expectedRecords[0].RecordType; got != want {
+			addr := record.GroupAddress()
+			expectedRecordType, ok := expectedRecords[addr]
+			if !ok {
+				t.Errorf("unexpected record for address %s", addr)
+				continue
+			}
+
+			if got, want := record.RecordType(), expectedRecordType; got != want {
 				t.Errorf("got record.RecordType() = %d, want = %d", got, want)
 			}
 
 			if got := record.AuxDataLen(); got != 0 {
 				t.Errorf("got record.AuxDataLen() = %d, want = 0", got)
-			}
-
-			if got, want := record.GroupAddress(), expectedRecords[0].GroupAddress; got != want {
-				t.Errorf("got record.GroupAddress() = %s, want = %s", got, want)
 			}
 
 			sources, ok := record.Sources()
@@ -1639,20 +1683,11 @@ func IGMPv3Report(expectedReport header.IGMPv3ReportSerializer) NetworkChecker {
 				continue
 			}
 
-			expectedSources := expectedRecords[0].Sources
-			for len(expectedSources) != 0 {
-				source, ok := sources.Next()
-				if !ok {
-					t.Fatal("got sources.Next() = (_, false), want = (_, true)")
-				}
-				if source != expectedSources[0] {
-					t.Errorf("got sources.Next() = %s, want = %s", source, expectedSources[0])
-				}
-
-				expectedSources = expectedSources[1:]
+			if source, ok := sources.Next(); ok {
+				t.Fatalf("got sources.Next() = (%s, true), want = (_, false)", source)
 			}
 
-			expectedRecords = expectedRecords[1:]
+			delete(expectedRecords, addr)
 		}
 
 		if record, res := records.Next(); res != header.IGMPv3ReportGroupAddressRecordIteratorNextDone {

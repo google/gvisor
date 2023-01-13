@@ -21,10 +21,12 @@ import (
 	"math/rand"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -185,42 +187,110 @@ func CheckMLDv2Stats(t *testing.T, s *stack.Stack, reports, leaves, reportsV2 ui
 	checkMLDStats(t, s, 0 /* reports */, 0 /* leaves */, reports+leaves+reportsV2)
 }
 
-// ValidateIGMPv3Report validates an IGMPv3 report.
-func ValidateIGMPv3Report(t *testing.T, v *bufferv2.View, srcAddr tcpip.Address, addrs []tcpip.Address, recordType header.IGMPv3ReportRecordType) {
+// ValidateIGMPv3ReportWithRecords validates an IGMPv3 report.
+//
+// Note that observed records are removed from expectedRecords. No error is
+// logged if the report does not have all the records expected.
+func ValidateIGMPv3ReportWithRecords(t *testing.T, v *bufferv2.View, srcAddr tcpip.Address, expectedRecords map[tcpip.Address]header.IGMPv3ReportRecordType) {
 	t.Helper()
-
-	var records []header.IGMPv3ReportGroupAddressRecordSerializer
-	for _, addr := range addrs {
-		records = append(records, header.IGMPv3ReportGroupAddressRecordSerializer{
-			RecordType:   recordType,
-			GroupAddress: addr,
-			Sources:      nil,
-		})
-	}
 
 	checker.IPv4(t, v,
 		checker.SrcAddr(srcAddr),
 		checker.DstAddr(header.IGMPv3RoutersAddress),
 		checker.TTL(header.IGMPTTL),
 		checker.IPv4RouterAlert(),
-		checker.IGMPv3Report(header.IGMPv3ReportSerializer{
-			Records: records,
-		}),
+		checker.IGMPv3Report(expectedRecords),
 	)
 }
 
-// ValidateMLDv2Report validates an MLDv2 report.
-func ValidateMLDv2Report(t *testing.T, v *bufferv2.View, srcAddr tcpip.Address, addrs []tcpip.Address, recordType header.MLDv2ReportRecordType) {
+// ValidateIGMPv3Report validates an IGMPv3 report.
+func ValidateIGMPv3Report(t *testing.T, v *bufferv2.View, srcAddr tcpip.Address, addrs []tcpip.Address, recordType header.IGMPv3ReportRecordType) {
 	t.Helper()
 
-	var records []header.MLDv2ReportMulticastAddressRecordSerializer
+	records := make(map[tcpip.Address]header.IGMPv3ReportRecordType)
 	for _, addr := range addrs {
-		records = append(records, header.MLDv2ReportMulticastAddressRecordSerializer{
-			RecordType:       recordType,
-			MulticastAddress: addr,
-			Sources:          nil,
-		})
+		records[addr] = recordType
 	}
+
+	ValidateIGMPv3ReportWithRecords(t, v, srcAddr, records)
+
+	if diff := cmp.Diff(map[tcpip.Address]header.IGMPv3ReportRecordType{}, records); diff != "" {
+		t.Errorf("post-validation records map mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// ValidateIGMPv3RecordsAcrossReports validates IGMPv3 records across one or
+// more reports.
+func ValidateIGMPv3RecordsAcrossReports(t *testing.T, e *channel.Endpoint, srcAddr tcpip.Address, addrs []tcpip.Address, recordType header.IGMPv3ReportRecordType) {
+	t.Helper()
+
+	expectedRecords := make(map[tcpip.Address]header.IGMPv3ReportRecordType)
+	for _, addr := range addrs {
+		expectedRecords[addr] = recordType
+	}
+
+	for len(expectedRecords) != 0 {
+		p := e.Read()
+		if p.IsNil() {
+			t.Fatalf("expected IGMP message with expectedRecords = %#v", expectedRecords)
+		}
+		v := stack.PayloadSince(p.NetworkHeader())
+		ValidateIGMPv3ReportWithRecords(t, v, srcAddr, expectedRecords)
+		v.Release()
+		p.DecRef()
+	}
+
+	if diff := cmp.Diff(map[tcpip.Address]header.IGMPv3ReportRecordType{}, expectedRecords); diff != "" {
+		t.Errorf("post-validation records map mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// ValidMultipleIGMPv2ReportLeaves validates the reception of multiple IGMPv2
+// report/leave messages.
+func ValidMultipleIGMPv2ReportLeaves(t *testing.T, e *channel.Endpoint, srcAddr tcpip.Address, addrs []tcpip.Address, leave bool) {
+	t.Helper()
+
+	expectedGroups := make(map[tcpip.Address]struct{})
+	for _, addr := range addrs {
+		expectedGroups[addr] = struct{}{}
+	}
+
+	igmpType := header.IGMPv2MembershipReport
+	if leave {
+		igmpType = header.IGMPLeaveGroup
+	}
+
+	for len(expectedGroups) != 0 {
+		p := e.Read()
+		if p.IsNil() {
+			t.Fatalf("expected IGMP message with expectedGroups = %#v", expectedGroups)
+		}
+		v := stack.PayloadSince(p.NetworkHeader())
+		checker.IPv4(t, v,
+			checker.SrcAddr(srcAddr),
+			checker.TTL(header.IGMPTTL),
+			checker.IPv4RouterAlert(),
+			checker.IGMP(
+				checker.IGMPType(igmpType),
+				checker.IGMPMaxRespTime(0),
+				checker.IGMPGroupAddressUnordered(expectedGroups),
+			),
+		)
+		v.Release()
+		p.DecRef()
+	}
+
+	if diff := cmp.Diff(map[tcpip.Address]struct{}{}, expectedGroups); diff != "" {
+		t.Errorf("post-validation groups map mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// ValidateMLDv2ReportWithRecords validates an MLDv2 report.
+//
+// Note that observed records are removed from expectedRecords. No error is
+// logged if the report does not have all the records expected.
+func ValidateMLDv2ReportWithRecords(t *testing.T, v *bufferv2.View, srcAddr tcpip.Address, expectedRecords map[tcpip.Address]header.MLDv2ReportRecordType) {
+	t.Helper()
 
 	checker.IPv6WithExtHdr(t, v,
 		checker.IPv6ExtHdr(
@@ -229,8 +299,89 @@ func ValidateMLDv2Report(t *testing.T, v *bufferv2.View, srcAddr tcpip.Address, 
 		checker.SrcAddr(srcAddr),
 		checker.DstAddr(header.MLDv2RoutersAddress),
 		checker.TTL(header.MLDHopLimit),
-		checker.MLDv2Report(header.MLDv2ReportSerializer{
-			Records: records,
-		}),
+		checker.MLDv2Report(expectedRecords),
 	)
+}
+
+// ValidateMLDv2Report validates an MLDv2 report.
+func ValidateMLDv2Report(t *testing.T, v *bufferv2.View, srcAddr tcpip.Address, addrs []tcpip.Address, recordType header.MLDv2ReportRecordType) {
+	t.Helper()
+
+	records := make(map[tcpip.Address]header.MLDv2ReportRecordType)
+	for _, addr := range addrs {
+		records[addr] = recordType
+	}
+
+	ValidateMLDv2ReportWithRecords(t, v, srcAddr, records)
+
+	if diff := cmp.Diff(map[tcpip.Address]header.MLDv2ReportRecordType{}, records); diff != "" {
+		t.Errorf("post-validation records map mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// ValidateMLDv2RecordsAcrossReports validates MLDv2 records across one or more
+// reports.
+func ValidateMLDv2RecordsAcrossReports(t *testing.T, e *channel.Endpoint, srcAddr tcpip.Address, addrs []tcpip.Address, recordType header.MLDv2ReportRecordType) {
+	t.Helper()
+
+	expectedRecords := make(map[tcpip.Address]header.MLDv2ReportRecordType)
+	for _, addr := range addrs {
+		expectedRecords[addr] = recordType
+	}
+
+	for len(expectedRecords) != 0 {
+		p := e.Read()
+		if p.IsNil() {
+			t.Fatalf("expected MLD Message with expectedRecords = %#v", expectedRecords)
+		}
+		v := stack.PayloadSince(p.NetworkHeader())
+		ValidateMLDv2ReportWithRecords(t, v, srcAddr, expectedRecords)
+		v.Release()
+		p.DecRef()
+	}
+
+	if diff := cmp.Diff(map[tcpip.Address]header.MLDv2ReportRecordType{}, expectedRecords); diff != "" {
+		t.Errorf("post-validation records map mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// ValidMultipleMLDv1ReportLeaves validates the reception of multiple MLDv1
+// report/leave messages.
+func ValidMultipleMLDv1ReportLeaves(t *testing.T, e *channel.Endpoint, srcAddr tcpip.Address, addrs []tcpip.Address, leave bool) {
+	t.Helper()
+
+	expectedGroups := make(map[tcpip.Address]struct{})
+	for _, addr := range addrs {
+		expectedGroups[addr] = struct{}{}
+	}
+
+	mldType := header.ICMPv6MulticastListenerReport
+	if leave {
+		mldType = header.ICMPv6MulticastListenerDone
+	}
+
+	for len(expectedGroups) != 0 {
+		p := e.Read()
+		if p.IsNil() {
+			t.Fatalf("expected MLD Message with expectedGroups = %#v", expectedGroups)
+		}
+		v := stack.PayloadSince(p.NetworkHeader())
+		checker.IPv6WithExtHdr(t, v,
+			checker.IPv6ExtHdr(
+				checker.IPv6HopByHopExtensionHeader(checker.IPv6RouterAlert(header.IPv6RouterAlertMLD)),
+			),
+			checker.SrcAddr(srcAddr),
+			checker.TTL(header.MLDHopLimit),
+			checker.MLD(mldType, header.MLDMinimumSize,
+				checker.MLDMaxRespDelay(0),
+				checker.MLDMulticastAddressUnordered(expectedGroups),
+			),
+		)
+		v.Release()
+		p.DecRef()
+	}
+
+	if diff := cmp.Diff(map[tcpip.Address]struct{}{}, expectedGroups); diff != "" {
+		t.Errorf("post-validation groups map mismatch (-want +got):\n%s", diff)
+	}
 }
