@@ -1434,7 +1434,7 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 					if err := s.EnableNIC(nicID); err != nil {
 						t.Fatalf("EnableNIC(%d): %s", nicID, err)
 					}
-					reportV2Counter += uint64(len(test.multicastAddrs))
+					reportV2Counter++
 					subTest.checkStats(t, s, reportCounter, leaveCounter, reportV2Counter)
 					test.validateReport(t, e, test.multicastAddrs)
 					if t.Failed() {
