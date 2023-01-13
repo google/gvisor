@@ -520,6 +520,7 @@ func (g *GenericMulticastProtocolState) sendV2ReportAndMaybeScheduleChangedTimer
 					g.protocolMU.Lock()
 					defer g.protocolMU.Unlock()
 
+					reportBuilder := g.opts.Protocol.NewReportV2Builder()
 					nonEmptyReport := false
 					for groupAddress, info := range g.memberships {
 						if info.transmissionLeft == 0 || !g.shouldPerformForGroup(groupAddress) {
@@ -529,15 +530,11 @@ func (g *GenericMulticastProtocolState) sendV2ReportAndMaybeScheduleChangedTimer
 						info.transmissionLeft--
 						nonEmptyReport = true
 
-						reportBuilder := g.opts.Protocol.NewReportV2Builder()
 						mode := MulticastGroupProtocolV2ReportRecordChangeToExcludeMode
 						if info.deleteScheduled {
 							mode = MulticastGroupProtocolV2ReportRecordChangeToIncludeMode
 						}
 						reportBuilder.AddRecord(mode, groupAddress)
-						// Nothing meaningful we can do with the error here. We will retry
-						// sending a state changed report again anyways.
-						_, _ = reportBuilder.Send()
 
 						if info.deleteScheduled && info.transmissionLeft == 0 {
 							// No more transmissions left so we can actually delete the
@@ -547,6 +544,10 @@ func (g *GenericMulticastProtocolState) sendV2ReportAndMaybeScheduleChangedTimer
 							g.memberships[groupAddress] = info
 						}
 					}
+
+					// Nothing meaningful we can do with the error here. We will retry
+					// sending a state changed report again anyways.
+					_, _ = reportBuilder.Send()
 
 					if nonEmptyReport {
 						g.stateChangedReportV2Timer.Reset(g.calculateDelayTimerDuration(g.opts.MaxUnsolicitedReportDelay))
