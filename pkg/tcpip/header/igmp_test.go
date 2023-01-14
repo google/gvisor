@@ -336,6 +336,11 @@ func TestIGMPv3Report(t *testing.T) {
 			test.serializer.SerializeInto(b)
 
 			report := header.IGMPv3Report(b)
+
+			if got, want := report.Checksum(), header.IGMPCalculateChecksum(header.IGMP(report)); got != want {
+				t.Errorf("got report.Checksum() = %d, want = %d", got, want)
+			}
+
 			expectedRecords := test.serializer.Records
 
 			records := report.GroupAddressRecords()

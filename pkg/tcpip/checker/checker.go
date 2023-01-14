@@ -1650,6 +1650,9 @@ func IGMPv3Report(expectedRecords map[tcpip.Address]header.IGMPv3ReportRecordTyp
 		}
 
 		report := header.IGMPv3Report(igmp)
+		if got, want := report.Checksum(), header.IGMPCalculateChecksum(igmp); got != want {
+			t.Errorf("got report.Checksum() = %d, want = %d", got, want)
+		}
 
 		records := report.GroupAddressRecords()
 		for len(expectedRecords) != 0 {
