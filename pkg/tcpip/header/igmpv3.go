@@ -309,12 +309,13 @@ func (s *IGMPv3ReportSerializer) SerializeInto(b []byte) {
 	b[igmpv3ReportReserved1Offset] = 0
 	binary.BigEndian.PutUint16(b[igmpv3ReportReserved2Offset:], 0)
 	binary.BigEndian.PutUint16(b[igmpv3ReportNumberOfGroupAddressRecordsOffset:], uint16(len(s.Records)))
-	b = b[igmpv3ReportGroupAddressRecordsOffset:]
+	recordsBytes := b[igmpv3ReportGroupAddressRecordsOffset:]
 	for _, record := range s.Records {
 		len := record.Length()
-		record.SerializeInto(b[:len])
-		b = b[len:]
+		record.SerializeInto(recordsBytes[:len])
+		recordsBytes = recordsBytes[len:]
 	}
+	binary.BigEndian.PutUint16(b[igmpChecksumOffset:], IGMPCalculateChecksum(b))
 }
 
 // IGMPv3ReportGroupAddressRecord is an IGMPv3 record.
@@ -435,6 +436,11 @@ func (r IGMPv3ReportGroupAddressRecord) Sources() (AddressIterator, bool) {
 //	|                                                               |
 //	+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 type IGMPv3Report []byte
+
+// Checksum returns the checksum.
+func (i IGMPv3Report) Checksum() uint16 {
+	return binary.BigEndian.Uint16(i[igmpChecksumOffset:])
+}
 
 // IGMPv3ReportGroupAddressRecordIterator is an iterator over IGMPv3 Multicast
 // Address Records.
