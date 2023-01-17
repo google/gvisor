@@ -54,6 +54,8 @@ type endpoint struct {
 	// its end of the communication pipe.
 	closed func(tcpip.Error)
 
+	mu sync.RWMutex
+	// +checkloks:mu
 	networkDispatcher stack.NetworkDispatcher
 
 	// wg keeps track of running goroutines.
@@ -169,6 +171,8 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 //
 // Attach implements stack.LinkEndpoint.Attach.
 func (ep *endpoint) Attach(networkDispatcher stack.NetworkDispatcher) {
+	ep.mu.Lock()
+	defer ep.mu.Unlock()
 	// nil means the NIC is being removed.
 	if networkDispatcher == nil && ep.IsAttached() {
 		ep.stopFD.Stop()
@@ -199,6 +203,8 @@ func (ep *endpoint) Attach(networkDispatcher stack.NetworkDispatcher) {
 
 // IsAttached implements stack.LinkEndpoint.IsAttached.
 func (ep *endpoint) IsAttached() bool {
+	ep.mu.RLock()
+	defer ep.mu.RUnlock()
 	return ep.networkDispatcher != nil
 }
 
@@ -341,6 +347,9 @@ func (ep *endpoint) dispatch() (bool, tcpip.Error) {
 			ep.control.UMEM.Unlock()
 
 			// Process each packet.
+			ep.mu.RLock()
+			d := ep.networkDispatcher
+			ep.mu.RUnlock()
 			for i := uint32(0); i < nReceived; i++ {
 				view := views[i]
 				data := view.AsSlice()
@@ -355,7 +364,7 @@ func (ep *endpoint) dispatch() (bool, tcpip.Error) {
 				if _, ok := pkt.LinkHeader().Consume(header.EthernetMinimumSize); !ok {
 					panic(fmt.Sprintf("LinkHeader().Consume(%d) must succeed", header.EthernetMinimumSize))
 				}
-				ep.networkDispatcher.DeliverNetworkPacket(netProto, pkt)
+				d.DeliverNetworkPacket(netProto, pkt)
 				pkt.DecRef()
 			}
 			// Tell the kernel that we're done with these

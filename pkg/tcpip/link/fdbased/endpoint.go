@@ -135,7 +135,10 @@ type endpoint struct {
 	closed func(tcpip.Error)
 
 	inboundDispatchers []linkDispatcher
-	dispatcher         stack.NetworkDispatcher
+
+	mu sync.RWMutex
+	// +checklocks:mu
+	dispatcher stack.NetworkDispatcher
 
 	// packetDispatchMode controls the packet dispatcher used by this
 	// endpoint.
@@ -405,6 +408,8 @@ func isSocketFD(fd int) (bool, error) {
 //
 // Attach implements stack.LinkEndpoint.Attach.
 func (e *endpoint) Attach(dispatcher stack.NetworkDispatcher) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	// nil means the NIC is being removed.
 	if dispatcher == nil && e.dispatcher != nil {
 		for _, dispatcher := range e.inboundDispatchers {
@@ -431,6 +436,8 @@ func (e *endpoint) Attach(dispatcher stack.NetworkDispatcher) {
 
 // IsAttached implements stack.LinkEndpoint.IsAttached.
 func (e *endpoint) IsAttached() bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	return e.dispatcher != nil
 }
 
@@ -765,18 +772,25 @@ func (e *endpoint) ARPHardwareType() header.ARPHardwareType {
 type InjectableEndpoint struct {
 	endpoint
 
+	mu sync.RWMutex
+	// +checklocks:mu
 	dispatcher stack.NetworkDispatcher
 }
 
 // Attach saves the stack network-layer dispatcher for use later when packets
 // are injected.
 func (e *InjectableEndpoint) Attach(dispatcher stack.NetworkDispatcher) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	e.dispatcher = dispatcher
 }
 
 // InjectInbound injects an inbound packet.
 func (e *InjectableEndpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr) {
-	e.dispatcher.DeliverNetworkPacket(protocol, pkt)
+	e.mu.RLock()
+	d := e.dispatcher
+	e.mu.RUnlock()
+	d.DeliverNetworkPacket(protocol, pkt)
 }
 
 // NewInjectable creates a new fd-based InjectableEndpoint.

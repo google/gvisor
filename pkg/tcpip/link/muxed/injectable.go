@@ -16,6 +16,8 @@
 package muxed
 
 import (
+	"sync"
+
 	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -27,7 +29,10 @@ import (
 // will be written to. Note that HandleLocal works differently for this
 // endpoint (see WritePacket).
 type InjectableEndpoint struct {
-	routes     map[tcpip.Address]stack.InjectableLinkEndpoint
+	routes map[tcpip.Address]stack.InjectableLinkEndpoint
+
+	mu sync.RWMutex
+	// +checklocks:mu
 	dispatcher stack.NetworkDispatcher
 }
 
@@ -72,17 +77,24 @@ func (m *InjectableEndpoint) Attach(dispatcher stack.NetworkDispatcher) {
 	for _, endpoint := range m.routes {
 		endpoint.Attach(dispatcher)
 	}
+	m.mu.Lock()
 	m.dispatcher = dispatcher
+	m.mu.Unlock()
 }
 
 // IsAttached implements stack.LinkEndpoint.
 func (m *InjectableEndpoint) IsAttached() bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	return m.dispatcher != nil
 }
 
 // InjectInbound implements stack.InjectableLinkEndpoint.
 func (m *InjectableEndpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr) {
-	m.dispatcher.DeliverNetworkPacket(protocol, pkt)
+	m.mu.RLock()
+	d := m.dispatcher
+	m.mu.RUnlock()
+	d.DeliverNetworkPacket(protocol, pkt)
 }
 
 // WritePackets writes outbound packets to the appropriate

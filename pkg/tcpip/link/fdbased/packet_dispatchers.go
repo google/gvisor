@@ -212,7 +212,10 @@ func (d *readVDispatcher) dispatch() (bool, tcpip.Error) {
 		}
 	}
 
-	d.e.dispatcher.DeliverNetworkPacket(p, pkt)
+	d.e.mu.RLock()
+	dsp := d.e.dispatcher
+	d.e.mu.RUnlock()
+	dsp.DeliverNetworkPacket(p, pkt)
 
 	return true, nil
 }
@@ -291,6 +294,10 @@ func (d *recvMMsgDispatcher) dispatch() (bool, tcpip.Error) {
 	// Keep a list of packets so we can DecRef outside of the loop.
 	var pkts stack.PacketBufferList
 
+	d.e.mu.RLock()
+	dsp := d.e.dispatcher
+	d.e.mu.RUnlock()
+
 	defer func() { pkts.DecRef() }()
 	for k := 0; k < nMsgs; k++ {
 		n := int(d.msgHdrs[k].Len)
@@ -329,7 +336,7 @@ func (d *recvMMsgDispatcher) dispatch() (bool, tcpip.Error) {
 			}
 		}
 
-		d.e.dispatcher.DeliverNetworkPacket(p, pkt)
+		dsp.DeliverNetworkPacket(p, pkt)
 	}
 
 	return true, nil

@@ -198,6 +198,9 @@ func (d *packetMMapDispatcher) dispatch() (bool, tcpip.Error) {
 			panic(fmt.Sprintf("LinkHeader().Consume(%d) must succeed", d.e.hdrSize))
 		}
 	}
-	d.e.dispatcher.DeliverNetworkPacket(p, pbuf)
+	d.e.mu.RLock()
+	dsp := d.e.dispatcher
+	d.e.mu.RUnlock()
+	dsp.DeliverNetworkPacket(p, pbuf)
 	return true, nil
 }
