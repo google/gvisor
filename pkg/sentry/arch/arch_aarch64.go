@@ -196,6 +196,9 @@ func (s *State) PtraceSetRegs(src io.Reader) (int, error) {
 		return 0, err
 	}
 	regs.UnmarshalUnsafe(buf)
+	if !regs.validRegs() {
+		return 0, linuxerr.EINVAL
+	}
 	s.Regs = regs
 	return ptraceRegistersSize, nil
 }
