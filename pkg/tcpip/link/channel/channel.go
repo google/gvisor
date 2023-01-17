@@ -135,11 +135,14 @@ var _ stack.GSOEndpoint = (*Endpoint)(nil)
 // Endpoint is link layer endpoint that stores outbound packets in a channel
 // and allows injection of inbound packets.
 type Endpoint struct {
-	dispatcher         stack.NetworkDispatcher
 	mtu                uint32
 	linkAddr           tcpip.LinkAddress
 	LinkEPCapabilities stack.LinkEndpointCapabilities
 	SupportedGSOKind   stack.SupportedGSO
+
+	mu sync.RWMutex
+	// +checklocks:mu
+	dispatcher stack.NetworkDispatcher
 
 	// Outbound packet queue.
 	q *queue
@@ -191,17 +194,24 @@ func (e *Endpoint) NumQueued() int {
 
 // InjectInbound injects an inbound packet.
 func (e *Endpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr) {
-	e.dispatcher.DeliverNetworkPacket(protocol, pkt)
+	e.mu.RLock()
+	d := e.dispatcher
+	e.mu.RUnlock()
+	d.DeliverNetworkPacket(protocol, pkt)
 }
 
 // Attach saves the stack network-layer dispatcher for use later when packets
 // are injected.
 func (e *Endpoint) Attach(dispatcher stack.NetworkDispatcher) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	e.dispatcher = dispatcher
 }
 
 // IsAttached implements stack.LinkEndpoint.IsAttached.
 func (e *Endpoint) IsAttached() bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	return e.dispatcher != nil
 }
 
