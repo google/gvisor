@@ -103,15 +103,12 @@ var _ vfs.FileDescriptionImpl = (*readerWriter)(nil)
 // Read implements vfs.FileDescriptionImpl.Read details for the parent mockFileDescription.
 func (rw *readerWriter) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
 	if rw.released {
-		return 0, nil
-	}
-	if rw.buf.Len() == 0 {
 		return 0, io.EOF
 	}
 	buf := make([]byte, dst.NumBytes())
 	_, err := rw.buf.Read(buf)
 	if err != nil {
-		return 0, err
+		return 0, nil
 	}
 	n, err := dst.CopyOut(ctx, buf)
 	return int64(n), err
@@ -135,7 +132,9 @@ func (rw *readerWriter) EventRegister(we *waiter.Entry) error { return fmt.Error
 func (rw *readerWriter) EventUnregister(we *waiter.Entry) { panic("not implemented") }
 
 // Release implements vfs.FileDescriptionImpl.Release details for the parent mockFileDescription.
-func (rw *readerWriter) Release(context.Context) { rw.released = true }
+func (rw *readerWriter) Release(context.Context) {
+	rw.released = true
+}
 
 // waiterRW implements mockFileDescriptionRWImpl. waiterRW works the same way as readerWriter above,
 // but it interleaves blocks in between Read and Write calls.
@@ -168,7 +167,7 @@ func (w *waiterRW) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.Re
 	w.waitMu.Lock()
 	defer w.waitMu.Unlock()
 	if w.closed {
-		return 0, nil
+		return 0, io.EOF
 	}
 	if w.shouldWait {
 		return 0, linuxerr.ErrWouldBlock
@@ -298,8 +297,14 @@ func TestReaderWriter(t *testing.T) {
 			got := []byte{}
 			buf := make([]byte, 4)
 			for {
-				_, err := readerWriter.Read(buf)
+				n, err := readerWriter.Read(buf)
 				if err == io.EOF {
+					break
+				}
+				if err != nil {
+					t.Fatalf("read failed: %v", err)
+				}
+				if n == 0 {
 					break
 				}
 				got = append(got, buf...)
