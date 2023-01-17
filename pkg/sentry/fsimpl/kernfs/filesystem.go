@@ -479,12 +479,6 @@ func (fs *Filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 
 // OpenAt implements vfs.FilesystemImpl.OpenAt.
 func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	// Filter out flags that are not supported by kernfs. O_DIRECTORY and
-	// O_NOFOLLOW have no effect here (they're handled by VFS by setting
-	// appropriate bits in rp), but are returned by
-	// FileDescriptionImpl.StatusFlags().
-	opts.Flags &= linux.O_ACCMODE | linux.O_CREAT | linux.O_EXCL | linux.O_TRUNC |
-		linux.O_DIRECTORY | linux.O_NOFOLLOW | linux.O_NONBLOCK | linux.O_NOCTTY
 	ats := vfs.AccessTypesForOpenFlags(&opts)
 
 	// Do not create new file.
