@@ -138,6 +138,29 @@ func (c *Context64) SignalSetup(st *Stack, act *linux.SigAction, info *linux.Sig
 	return nil
 }
 
+// SPSR_ELx bits which are always architecturally RES0 per ARM DDI 0487D.a.
+const _SPSR_EL1_AARCH64_RES0_BITS = uint64(0xffffffff0cdfe020)
+
+func (regs *Registers) userMode() bool {
+	return (regs.Pstate & linux.PSR_MODE_MASK) == linux.PSR_MODE_EL0t
+}
+
+func (regs *Registers) validRegs() bool {
+	regs.Pstate &= ^_SPSR_EL1_AARCH64_RES0_BITS
+
+	if regs.userMode() && (regs.Pstate&linux.PSR_MODE32_BIT) == 0 &&
+		(regs.Pstate&linux.PSR_D_BIT) == 0 &&
+		(regs.Pstate&linux.PSR_A_BIT) == 0 &&
+		(regs.Pstate&linux.PSR_I_BIT) == 0 &&
+		(regs.Pstate&linux.PSR_F_BIT) == 0 {
+		return true
+	}
+
+	// Force PSR to a valid 64-bit EL0t
+	regs.Pstate &= linux.PSR_N_BIT | linux.PSR_Z_BIT | linux.PSR_C_BIT | linux.PSR_V_BIT
+	return false
+}
+
 // SignalRestore implements Context.SignalRestore.
 func (c *Context64) SignalRestore(st *Stack, rt bool, featureSet cpuid.FeatureSet) (linux.SignalSet, linux.SignalStack, error) {
 	// Copy out the stack frame.
@@ -156,6 +179,10 @@ func (c *Context64) SignalRestore(st *Stack, rt bool, featureSet cpuid.FeatureSe
 	c.Regs.Sp = uc.MContext.Sp
 	c.Regs.Pstate = uc.MContext.Pstate
 
+	if !c.Regs.validRegs() {
+		return 0, linux.SignalStack{}, unix.EFAULT
+	}
+
 	// Restore floating point state.
 	l := len(c.sigFPState)
 	if l > 0 {
@@ -170,6 +197,7 @@ func (c *Context64) SignalRestore(st *Stack, rt bool, featureSet cpuid.FeatureSe
 		// don't bother to do anything fancy with the floating point
 		// state.
 		log.Warningf("sigreturn unable to restore application fpstate")
+		return 0, linux.SignalStack{}, unix.EFAULT
 	}
 
 	return uc.Sigset, uc.Stack, nil
