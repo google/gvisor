@@ -14,3 +14,18 @@
 
 // Package portforward holds the infrastructure to support the port forward command.
 package portforward
+
+import (
+	"gvisor.dev/gvisor/pkg/context"
+)
+
+// portForwardConn is a port forwarding connection. It is used to manage the
+// lifecycle of the connection and clean it up if necessary.
+type portForwardConn interface {
+	// start starts the connection goroutines and returns.
+	start(ctx context.Context) error
+	// close closes and cleans up the connection.
+	close(ctx context.Context) error
+	// cleanup registers a callback for when the connection closes.
+	cleanup(func())
+}
