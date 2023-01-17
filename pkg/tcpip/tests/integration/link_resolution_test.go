@@ -1828,7 +1828,7 @@ func TestUpdateCachedNeighborEntry(t *testing.T) {
 	// Send packet to neighbor (start link resolution & resolve, then send
 	// packet). Send twice to use cached address the second time.
 	for i := 0; i < 2; i++ {
-		writePacket(t, r)
+		go writePacket(t, r)
 		if err := host1NICMonitorable.waitForLinkAddress(utils.LinkAddr2, time.Second); err != nil {
 			t.Fatalf("host1NIC.waitForLinkAddress(%s): %s", utils.LinkAddr2, err)
 		}
@@ -1838,8 +1838,8 @@ func TestUpdateCachedNeighborEntry(t *testing.T) {
 	host1Stack.RemoveNeighbor(host1NICID, header.IPv4ProtocolNumber, neighborAddr)
 	host2Stack.DisableNIC(host2NICID)
 
-	// Send packet to neighbor that's no longer reachable (should fail).
-	writePacket(t, r)
+	// Send a packet to the neighbor that's no longer reachable (should fail).
+	go writePacket(t, r)
 	if err := host1NICMonitorable.waitForLinkAddress(utils.LinkAddr2, time.Second); err == nil {
 		t.Fatalf("got host1NIC.waitForLinkAddress(%s) = nil, want err", utils.LinkAddr2)
 	}
@@ -1848,8 +1848,7 @@ func TestUpdateCachedNeighborEntry(t *testing.T) {
 	host2Stack.EnableNIC(host2NICID)
 	host2NICSettable.setLinkAddress(utils.LinkAddr3)
 
-	// Send packet to neighbor (start link resolution and then send packet).
-	writePacket(t, r)
+	// Pending packet should eventually reach the new neighbor.
 	if err := host1NICMonitorable.waitForLinkAddress(utils.LinkAddr3, 5*time.Second); err != nil {
 		t.Fatalf("host1NIC.waitForLinkAddress(%s): %s", utils.LinkAddr3, err)
 	}
