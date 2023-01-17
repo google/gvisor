@@ -34,7 +34,10 @@ var _ stack.LinkEndpoint = (*Endpoint)(nil)
 // Endpoint is a waitable link-layer endpoint.
 type Endpoint struct {
 	dispatchGate sync.Gate
-	dispatcher   stack.NetworkDispatcher
+
+	mu sync.RWMutex
+	// +checklocks:mu
+	dispatcher stack.NetworkDispatcher
 
 	writeGate sync.Gate
 	lower     stack.LinkEndpoint
@@ -57,8 +60,10 @@ func (e *Endpoint) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pk
 	if !e.dispatchGate.Enter() {
 		return
 	}
-
-	e.dispatcher.DeliverNetworkPacket(protocol, pkt)
+	e.mu.RLock()
+	d := e.dispatcher
+	e.mu.RUnlock()
+	d.DeliverNetworkPacket(protocol, pkt)
 	e.dispatchGate.Leave()
 }
 
@@ -67,8 +72,10 @@ func (e *Endpoint) DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt s
 	if !e.dispatchGate.Enter() {
 		return
 	}
-
-	e.dispatcher.DeliverLinkPacket(protocol, pkt)
+	e.mu.RLock()
+	d := e.dispatcher
+	e.mu.RUnlock()
+	d.DeliverLinkPacket(protocol, pkt)
 	e.dispatchGate.Leave()
 }
 
@@ -76,12 +83,16 @@ func (e *Endpoint) DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt s
 // registers with the lower endpoint as its dispatcher so that "e" is called
 // for inbound packets.
 func (e *Endpoint) Attach(dispatcher stack.NetworkDispatcher) {
+	e.mu.Lock()
 	e.dispatcher = dispatcher
+	e.mu.Unlock()
 	e.lower.Attach(e)
 }
 
 // IsAttached implements stack.LinkEndpoint.IsAttached.
 func (e *Endpoint) IsAttached() bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	return e.dispatcher != nil
 }
 

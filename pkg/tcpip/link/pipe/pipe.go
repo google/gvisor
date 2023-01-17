@@ -17,6 +17,8 @@
 package pipe
 
 import (
+	"sync"
+
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -41,10 +43,13 @@ func New(linkAddr1, linkAddr2 tcpip.LinkAddress, mtu uint32) (*Endpoint, *Endpoi
 
 // Endpoint is one end of a pipe.
 type Endpoint struct {
+	linked   *Endpoint
+	linkAddr tcpip.LinkAddress
+	mtu      uint32
+
+	mu sync.RWMutex
+	// +checklocks:mu
 	dispatcher stack.NetworkDispatcher
-	linked     *Endpoint
-	linkAddr   tcpip.LinkAddress
-	mtu        uint32
 }
 
 func (e *Endpoint) deliverPackets(pkts stack.PacketBufferList) {
@@ -59,7 +64,10 @@ func (e *Endpoint) deliverPackets(pkts stack.PacketBufferList) {
 		newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Payload: pkt.ToBuffer(),
 		})
-		e.linked.dispatcher.DeliverNetworkPacket(pkt.NetworkProtocolNumber, newPkt)
+		e.linked.mu.RLock()
+		d := e.linked.dispatcher
+		e.linked.mu.RUnlock()
+		d.DeliverNetworkPacket(pkt.NetworkProtocolNumber, newPkt)
 		newPkt.DecRef()
 	}
 }
@@ -73,11 +81,15 @@ func (e *Endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) 
 
 // Attach implements stack.LinkEndpoint.
 func (e *Endpoint) Attach(dispatcher stack.NetworkDispatcher) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
 	e.dispatcher = dispatcher
 }
 
 // IsAttached implements stack.LinkEndpoint.
 func (e *Endpoint) IsAttached() bool {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
 	return e.dispatcher != nil
 }
 
