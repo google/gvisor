@@ -1400,6 +1400,93 @@ TEST(PtraceTest, GetRegSet) {
   EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
       << " status " << status;
 }
+#if defined(__x86_64__)
+#define SYSNO_STR1(x) #x
+#define SYSNO_STR(x) SYSNO_STR1(x)
+
+// Check that ptrace works properly when a target process is stopped on a
+// system call that is handled via the fast path.
+TEST(PtraceTest, ChangeRegSetInOptSyscall) {
+  constexpr uint64_t kTestRet = 0x111;
+  constexpr uint64_t kTestRbx1 = 0x333;
+  constexpr uint64_t kTestRbx2 = 0x333;
+  constexpr uint64_t kTestRdi = 0x555;
+
+  pid_t const child_pid = fork();
+  if (child_pid == 0) {
+    // In child process.
+    uint64_t ret, rbx = 0, rdi = kTestRdi;
+
+    // Enable tracing.
+    TEST_PCHECK(ptrace(PTRACE_TRACEME, 0, 0, 0) == 0);
+    MaybeSave();
+
+    // Use kill explicitly because we check the syscall argument register below.
+    kill(getpid(), SIGSTOP);
+
+    // A tested syscall has to be triggered twice, because the first call
+    // doesn't trigger the fast path.
+    for (int i = 0; i < 2; i++) {
+      if (i == 1) rbx = kTestRbx1;
+      __asm__ __volatile__(
+                         "movl $" SYSNO_STR(SYS_getpid) ", %%eax\n"
+                         "syscall\n"
+                       : "=a"(ret), "=b"(rbx)
+                       : "b"(rbx), "D"(rdi)
+                       : "rcx", "r11", "memory");
+    }
+
+    TEST_CHECK(ret == kTestRet);
+    TEST_CHECK(rbx == kTestRbx2);
+
+    _exit(0);
+  }
+  // In parent process.
+  ASSERT_THAT(child_pid, SyscallSucceeds());
+
+  // Wait for the child to send itself SIGSTOP and enter signal-delivery-stop.
+  int status;
+  ASSERT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_TRUE(WIFSTOPPED(status) && WSTOPSIG(status) == SIGSTOP)
+      << " status " << status;
+
+  // Stop the child in the second getpid syscall.
+  for (int i = 0; i < 2; i++) {
+    ASSERT_THAT(ptrace(PTRACE_SYSEMU, child_pid, 0, 0), SyscallSucceeds());
+    ASSERT_THAT(waitpid(child_pid, &status, 0),
+                SyscallSucceedsWithValue(child_pid));
+  }
+
+  // Get the general registers.
+  struct user_regs_struct regs;
+  struct iovec iov;
+  iov.iov_base = &regs;
+  iov.iov_len = sizeof(regs);
+  EXPECT_THAT(ptrace(PTRACE_GETREGSET, child_pid, NT_PRSTATUS, &iov),
+              SyscallSucceeds());
+
+  // Read exactly the full register set.
+  EXPECT_EQ(iov.iov_len, sizeof(regs));
+
+  EXPECT_EQ(regs.rax, -ENOSYS);
+  EXPECT_EQ(regs.orig_rax, SYS_getpid);
+  EXPECT_EQ(regs.rdi, kTestRdi);
+  EXPECT_EQ(regs.rbx, kTestRbx1);
+
+  regs.rbx = kTestRbx2;
+  regs.rax = kTestRet;
+  EXPECT_THAT(ptrace(PTRACE_SETREGSET, child_pid, NT_PRSTATUS, &iov),
+              SyscallSucceeds());
+
+  ASSERT_THAT(ptrace(PTRACE_CONT, child_pid, 0, 0), SyscallSucceeds());
+  ASSERT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  // Let's see that process exited normally.
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0)
+      << " status " << status;
+}
+#endif
 
 TEST(PtraceTest, AttachingConvertsGroupStopToPtraceStop) {
   pid_t const child_pid = fork();
