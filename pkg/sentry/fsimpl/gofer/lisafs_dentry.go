@@ -526,3 +526,84 @@ func (d *lisafsDentry) restoreFile(ctx context.Context, inode *lisafs.Inode, opt
 
 	return nil
 }
+
+// doRevalidationLisafs stats all dentries in `state`. It will update or
+// invalidate dentries in the cache based on the result.
+//
+// Preconditions:
+//   - fs.renameMu must be locked.
+//   - InteropModeShared is in effect.
+func doRevalidationLisafs(ctx context.Context, vfsObj *vfs.VirtualFilesystem, state *revalidateState, ds **[]*dentry) error {
+	start := state.start.impl.(*lisafsDentry)
+
+	// Populate state.names.
+	state.names = state.names[:0] // For sanity.
+	if state.refreshStart {
+		state.names = append(state.names, "")
+	}
+	for _, d := range state.dentries {
+		state.names = append(state.names, d.name)
+	}
+
+	// Lock metadata on all dentries *before* getting attributes for them.
+	if state.refreshStart {
+		start.metadataMu.Lock()
+		defer start.metadataMu.Unlock()
+	}
+	for _, d := range state.dentries {
+		d.metadataMu.Lock()
+	}
+	// lastUnlockedDentry keeps track of the dentries in state.dentries that have
+	// already had their metadataMu unlocked. Avoid defer unlock in the loop
+	// above to avoid heap allocation.
+	lastUnlockedDentry := -1
+	defer func() {
+		// Advance to the first unevaluated dentry and unlock the remaining
+		// dentries.
+		for lastUnlockedDentry++; lastUnlockedDentry < len(state.dentries); lastUnlockedDentry++ {
+			state.dentries[lastUnlockedDentry].metadataMu.Unlock()
+		}
+	}()
+
+	// Make WalkStat RPC.
+	stats, err := start.controlFD.WalkStat(ctx, state.names)
+	if err != nil {
+		return err
+	}
+
+	if state.refreshStart {
+		if len(stats) > 0 {
+			// First dentry is where the search is starting, just update attributes
+			// since it cannot be replaced.
+			start.updateMetadataFromStatxLocked(&stats[0]) // +checklocksforce: see above.
+			stats = stats[1:]
+		}
+	}
+
+	for i := 0; i < len(state.dentries); i++ {
+		d := state.dentries[i]
+		found := i < len(stats)
+		// Advance lastUnlockedDentry. It is the responsibility of this for loop
+		// block to unlock d.metadataMu.
+		lastUnlockedDentry = i
+
+		// Note that synthetic dentries will always fail this comparison check.
+		if !found || d.inoKey != inoKeyFromStatx(&stats[i]) {
+			d.metadataMu.Unlock()
+			if !found && d.isSynthetic() {
+				// We have a synthetic file, and no remote file has arisen to replace
+				// it.
+				return nil
+			}
+			// The file at this path has changed or no longer exists. Mark the
+			// dentry invalidated.
+			d.invalidate(ctx, vfsObj, ds)
+			return nil
+		}
+
+		// The file at this path hasn't changed. Just update cached metadata.
+		d.impl.(*lisafsDentry).updateMetadataFromStatxLocked(&stats[i]) // +checklocksforce: see above.
+		d.metadataMu.Unlock()
+	}
+	return nil
+}
