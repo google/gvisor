@@ -113,6 +113,26 @@ func List(rootDir string) ([]FullID, error) {
 	return listMatch(rootDir, FullID{})
 }
 
+// ListSandboxes returns all sandbox ids in the given root directory.
+func ListSandboxes(rootDir string) ([]FullID, error) {
+	log.Debugf("List containers %q", rootDir)
+	ids, err := List(rootDir)
+	if err != nil {
+		return nil, err
+	}
+
+	sandboxes := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		sandboxes[id.SandboxID] = struct{}{}
+	}
+	// Reset ids to list only sandboxes.
+	ids = nil
+	for id := range sandboxes {
+		ids = append(ids, FullID{SandboxID: id, ContainerID: id})
+	}
+	return ids, nil
+}
+
 // listMatch returns all container ids that match the provided id.
 func listMatch(rootDir string, id FullID) ([]FullID, error) {
 	id.SandboxID += "*"

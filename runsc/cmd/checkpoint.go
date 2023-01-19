@@ -66,7 +66,6 @@ func (c *Checkpoint) SetFlags(f *flag.FlagSet) {
 
 // Execute implements subcommands.Command.Execute.
 func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
-
 	if f.NArg() != 1 {
 		f.Usage()
 		return subcommands.ExitUsageError

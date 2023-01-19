@@ -43,7 +43,8 @@ func (*Usage) Synopsis() string {
 
 // Usage implements subcommands.Command.Usage.
 func (*Usage) Usage() string {
-	return `usage [flags] <container id> - print memory usages to standard output.`
+	return `usage [flags] <container id> - print memory usages to standard output.
+`
 }
 
 // SetFlags implements subcommands.Command.SetFlags.
@@ -62,7 +63,7 @@ func (u *Usage) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 	id := f.Arg(0)
 	conf := args[0].(*config.Config)
 
-	cont, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
+	cont, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{SkipCheck: true})
 	if err != nil {
 		util.Fatalf("loading container: %v", err)
 	}
