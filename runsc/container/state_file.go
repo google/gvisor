@@ -374,6 +374,12 @@ func (s *StateFile) SaveLocked(v any) error {
 	return nil
 }
 
+// Stat returns the result of calling stat() on the state file.
+// Doing so does not require locking.
+func (s *StateFile) Stat() (os.FileInfo, error) {
+	return os.Stat(s.statePath())
+}
+
 func (s *StateFile) load(v any, opts LoadOpts) error {
 	if err := s.lock(opts.TryLock); err != nil {
 		return err

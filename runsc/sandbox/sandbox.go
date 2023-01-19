@@ -140,6 +140,12 @@ type Sandbox struct {
 	// This is a textproto string of metricpb.MetricRegistration.
 	RegisteredMetrics string `json:"registeredMetrics"`
 
+	// MetricServerAddress is the address of the metric server that this sandbox
+	// intends to export metrics for.
+	// Only populated if exporting metrics was requested when the sandbox was
+	// created.
+	MetricServerAddress string `json:"metricServerAddress"`
+
 	// child is set if a sandbox process is a child of the current process.
 	//
 	// This field isn't saved to json, because only a creator of sandbox
@@ -213,8 +219,9 @@ func New(conf *config.Config, args *Args) (*Sandbox, error) {
 		CgroupJSON: cgroup.CgroupJSON{
 			Cgroup: args.Cgroup,
 		},
-		UID: -1, // prevent usage before it's set.
-		GID: -1, // prevent usage before it's set.
+		UID:                 -1, // prevent usage before it's set.
+		GID:                 -1, // prevent usage before it's set.
+		MetricServerAddress: conf.MetricServer,
 	}
 	if args.Spec != nil && args.Spec.Annotations != nil {
 		s.PodName = args.Spec.Annotations[podNameAnnotation]
