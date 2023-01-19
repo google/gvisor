@@ -2670,7 +2670,7 @@ func TestSaveSystemdCgroup(t *testing.T) {
 	defer cont.Destroy()
 
 	cont.CompatCgroup = cgroup.CgroupJSON{Cgroup: cgroup.CreateMockSystemdCgroup()}
-	if err := cont.Saver.lock(); err != nil {
+	if err := cont.Saver.lock(BlockAcquire); err != nil {
 		t.Fatalf("cannot lock container metadata file: %v", err)
 	}
 	if err := cont.saveLocked(); err != nil {
@@ -2678,7 +2678,7 @@ func TestSaveSystemdCgroup(t *testing.T) {
 	}
 	cont.Saver.unlock()
 	loadCont := Container{}
-	cont.Saver.load(&loadCont)
+	cont.Saver.load(&loadCont, LoadOpts{})
 	if !reflect.DeepEqual(cont.CompatCgroup, loadCont.CompatCgroup) {
 		t.Errorf("CompatCgroup not properly saved: want %v, got %v", cont.CompatCgroup, loadCont.CompatCgroup)
 	}

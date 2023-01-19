@@ -139,6 +139,17 @@ type Config struct {
 	// If unset, a sane platform-specific default will be used.
 	PlatformDevicePath string `flag:"platform_device_path"`
 
+	// MetricServer, if set, indicates that metrics should be exported on this address.
+	// This may either be 1) "addr:port" to export metrics on a specific network interface address,
+	// 2) ":port" for exporting metrics on all addresses, or 3) an absolute path to a Unix Domain
+	// Socket.
+	// The substring "%ID%" will be replaced by the container ID, and "%RUNTIME_ROOT%" by the root.
+	// This flag must be specified *both* as part of the `runsc metric-server` arguments (so that the
+	// metric server knows which address to bind to), and as part of the `runsc create` arguments (as
+	// an indication that the container being created wishes that its metrics should be exported).
+	// The value of this flag must also match across the two command lines.
+	MetricServer string `flag:"metric-server"`
+
 	// MetricExporterPrefix is added as prefix to all metric names.
 	// It is used to follow Prometheus's exporter convention, whereby all metric names should be
 	// prefixed by a name meaningfully identifying the software exporting the metric.
