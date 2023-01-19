@@ -200,14 +200,13 @@ TEST_P(ProcSelfUidGidMapTest, IdentityMapOwnID) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
   uint32_t id = CurrentID();
   std::string line = absl::StrCat(id, " ", id, " 1");
-  EXPECT_THAT(
-      InNewUserNamespaceWithMapFD([&](int fd) {
-        DenySelfSetgroups();
-        ssize_t n;
-        TEST_PCHECK((n = write(fd, line.c_str(), line.size())) != -1);
-        TEST_CHECK(n == ssize_t(line.size()));
-      }),
-      IsPosixErrorOkAndHolds(0));
+  EXPECT_THAT(InNewUserNamespaceWithMapFD([&](int fd) {
+                DenySelfSetgroups();
+                ssize_t n;
+                TEST_PCHECK((n = write(fd, line.c_str(), line.size())) != -1);
+                TEST_CHECK(n == ssize_t(line.size()));
+              }),
+              IsPosixErrorOkAndHolds(0));
 }
 
 TEST_P(ProcSelfUidGidMapTest, TrailingNewlineAndNULIgnored) {
@@ -217,16 +216,15 @@ TEST_P(ProcSelfUidGidMapTest, TrailingNewlineAndNULIgnored) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(CanCreateUserNamespace()));
   uint32_t id = CurrentID();
   std::string line = absl::StrCat(id, " ", id, " 1\n\0 4 3");
-  EXPECT_THAT(
-      InNewUserNamespaceWithMapFD([&](int fd) {
-        DenySelfSetgroups();
-        // The write should return the full size of the write, even though
-        // characters after the NUL were ignored.
-        ssize_t n;
-        TEST_PCHECK((n = write(fd, line.c_str(), line.size())) != -1);
-        TEST_CHECK(n == ssize_t(line.size()));
-      }),
-      IsPosixErrorOkAndHolds(0));
+  EXPECT_THAT(InNewUserNamespaceWithMapFD([&](int fd) {
+                DenySelfSetgroups();
+                // The write should return the full size of the write, even
+                // though characters after the NUL were ignored.
+                ssize_t n;
+                TEST_PCHECK((n = write(fd, line.c_str(), line.size())) != -1);
+                TEST_CHECK(n == ssize_t(line.size()));
+              }),
+              IsPosixErrorOkAndHolds(0));
 }
 
 TEST_P(ProcSelfUidGidMapTest, NonIdentityMapOwnID) {
@@ -234,13 +232,12 @@ TEST_P(ProcSelfUidGidMapTest, NonIdentityMapOwnID) {
   uint32_t id = CurrentID();
   uint32_t id2 = another_id(id);
   std::string line = absl::StrCat(id2, " ", id, " 1");
-  EXPECT_THAT(
-      InNewUserNamespaceWithMapFD([&](int fd) {
-        DenySelfSetgroups();
-        TEST_PCHECK(static_cast<long unsigned int>(
-                        write(fd, line.c_str(), line.size())) == line.size());
-      }),
-      IsPosixErrorOkAndHolds(0));
+  EXPECT_THAT(InNewUserNamespaceWithMapFD([&](int fd) {
+                DenySelfSetgroups();
+                TEST_PCHECK(static_cast<long unsigned int>(write(
+                                fd, line.c_str(), line.size())) == line.size());
+              }),
+              IsPosixErrorOkAndHolds(0));
 }
 
 TEST_P(ProcSelfUidGidMapTest, MapOtherID) {
