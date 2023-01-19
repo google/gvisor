@@ -207,13 +207,20 @@ func (vfs *VirtualFilesystem) NewMountNamespace(ctx context.Context, creds *auth
 	if err != nil {
 		return nil, err
 	}
+	return vfs.NewMountNamespaceFrom(ctx, creds, fs, root, opts), nil
+}
+
+// NewMountNamespaceFrom constructs a new mount namespace from an existing
+// filesystem and its root dentry. This is similar to NewMountNamespace, but
+// uses an existing filesystem instead of constructing a new one.
+func (vfs *VirtualFilesystem) NewMountNamespaceFrom(ctx context.Context, creds *auth.Credentials, fs *Filesystem, root *Dentry, opts *MountOptions) *MountNamespace {
 	mntns := &MountNamespace{
 		Owner:       creds.UserNamespace,
 		mountpoints: make(map[*Dentry]uint32),
 	}
 	mntns.InitRefs()
 	mntns.root = newMount(vfs, fs, root, mntns, opts)
-	return mntns, nil
+	return mntns
 }
 
 // NewFilesystem creates a new filesystem object not yet associated with any
