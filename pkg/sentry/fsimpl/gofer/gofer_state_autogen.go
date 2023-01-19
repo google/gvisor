@@ -401,6 +401,7 @@ func (d *dentry) StateFields() []string {
 		"pipe",
 		"locks",
 		"watches",
+		"impl",
 	}
 }
 
@@ -446,6 +447,7 @@ func (d *dentry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(36, &d.pipe)
 	stateSinkObject.Save(37, &d.locks)
 	stateSinkObject.Save(38, &d.watches)
+	stateSinkObject.Save(39, &d.impl)
 }
 
 // +checklocksignore
@@ -489,6 +491,7 @@ func (d *dentry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(36, &d.pipe)
 	stateSourceObject.Load(37, &d.locks)
 	stateSourceObject.Load(38, &d.watches)
+	stateSourceObject.Load(39, &d.impl)
 	stateSourceObject.AfterLoad(d.afterLoad)
 }
 
@@ -577,6 +580,31 @@ func (fd *fileDescription) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fd.vfsfd)
 	stateSourceObject.Load(1, &fd.FileDescriptionDefaultImpl)
 	stateSourceObject.Load(2, &fd.LockFD)
+}
+
+func (d *lisafsDentry) StateTypeName() string {
+	return "pkg/sentry/fsimpl/gofer.lisafsDentry"
+}
+
+func (d *lisafsDentry) StateFields() []string {
+	return []string{
+		"dentry",
+	}
+}
+
+func (d *lisafsDentry) beforeSave() {}
+
+// +checklocksignore
+func (d *lisafsDentry) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.dentry)
+}
+
+func (d *lisafsDentry) afterLoad() {}
+
+// +checklocksignore
+func (d *lisafsDentry) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.dentry)
 }
 
 func (fd *regularFileFD) StateTypeName() string {
@@ -872,6 +900,7 @@ func init() {
 	state.Register((*stringListElem)(nil))
 	state.Register((*dentryListElem)(nil))
 	state.Register((*fileDescription)(nil))
+	state.Register((*lisafsDentry)(nil))
 	state.Register((*regularFileFD)(nil))
 	state.Register((*dentryPlatformFile)(nil))
 	state.Register((*savedDentryRW)(nil))

@@ -26,7 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
-	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
 	"gvisor.dev/gvisor/pkg/sentry/fsmetric"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -224,105 +223,6 @@ func (fs *filesystem) stepLocked(ctx context.Context, rp *vfs.ResolvingPath, d *
 	return child, false, nil
 }
 
-// Preconditions:
-//   - fs.renameMu must be locked.
-//   - parent.dirMu must be locked.
-//   - parent.isDir().
-//   - parent and the dentry at name have been revalidated.
-func (fs *filesystem) getChildAndWalkPathLocked(ctx context.Context, parent *dentry, rp *vfs.ResolvingPath, ds **[]*dentry) (*dentry, error) {
-	// Note that pit is a copy of the iterator that does not affect rp.
-	pit := rp.Pit()
-	first := pit.String()
-	if len(first) > MaxFilenameLen {
-		return nil, linuxerr.ENAMETOOLONG
-	}
-	if child, ok := parent.children[first]; ok || parent.isSynthetic() {
-		if child == nil {
-			return nil, linuxerr.ENOENT
-		}
-		return child, nil
-	}
-
-	if parent.childrenSet != nil {
-		// Is the first child even there? Don't make RPC if not.
-		if _, ok := parent.childrenSet[first]; !ok {
-			return nil, linuxerr.ENOENT
-		}
-	}
-
-	// Walk as much of the path as possible in 1 RPC.
-	names := []string{first}
-	for pit = pit.Next(); pit.Ok(); pit = pit.Next() {
-		name := pit.String()
-		if name == "." {
-			continue
-		}
-		if name == ".." {
-			break
-		}
-		names = append(names, name)
-	}
-	status, inodes, err := parent.controlFDLisa.WalkMultiple(ctx, names)
-	if err != nil {
-		return nil, err
-	}
-	if len(inodes) == 0 {
-		parent.cacheNegativeLookupLocked(first)
-		return nil, linuxerr.ENOENT
-	}
-
-	// Add the walked inodes into the dentry tree.
-	curParent := parent
-	curParentDirMuLock := func() {
-		if curParent != parent {
-			curParent.dirMu.Lock()
-		}
-	}
-	curParentDirMuUnlock := func() {
-		if curParent != parent {
-			curParent.dirMu.Unlock() // +checklocksforce: locked via curParentDirMuLock().
-		}
-	}
-	var ret *dentry
-	var dentryCreationErr error
-	for i := range inodes {
-		if dentryCreationErr != nil {
-			fs.client.CloseFD(ctx, inodes[i].ControlFD, false /* flush */)
-			continue
-		}
-
-		child, err := fs.newDentry(ctx, &inodes[i])
-		if err != nil {
-			fs.client.CloseFD(ctx, inodes[i].ControlFD, false /* flush */)
-			dentryCreationErr = err
-			continue
-		}
-		curParentDirMuLock()
-		curParent.cacheNewChildLocked(child, names[i])
-		curParentDirMuUnlock()
-		// For now, child has 0 references, so our caller should call
-		// child.checkCachingLocked(). curParent gained a ref so we should also
-		// call curParent.checkCachingLocked() so it can be removed from the cache
-		// if needed. We only do that for the first iteration because all
-		// subsequent parents would have already been added to ds.
-		if i == 0 {
-			*ds = appendDentry(*ds, curParent)
-		}
-		*ds = appendDentry(*ds, child)
-		curParent = child
-		if i == 0 {
-			ret = child
-		}
-	}
-
-	if status == lisafs.WalkComponentDoesNotExist && curParent.isDir() {
-		curParentDirMuLock()
-		curParent.cacheNegativeLookupLocked(names[len(inodes)])
-		curParentDirMuUnlock()
-	}
-	return ret, dentryCreationErr
-}
-
 // getChildLocked returns a dentry representing the child of parent with the
 // given name. Returns ENOENT if the child doesn't exist.
 //
@@ -333,39 +233,65 @@ func (fs *filesystem) getChildAndWalkPathLocked(ctx context.Context, parent *den
 //   - name is not "." or "..".
 //   - parent and the dentry at name have been revalidated.
 func (fs *filesystem) getChildLocked(ctx context.Context, parent *dentry, name string, ds **[]*dentry) (*dentry, error) {
-	if len(name) > MaxFilenameLen {
-		return nil, linuxerr.ENAMETOOLONG
+	if child, err := parent.getCachedChildLocked(name); child != nil || err != nil {
+		return child, err
 	}
-	if child, ok := parent.children[name]; ok || parent.isSynthetic() {
-		if child == nil {
-			return nil, linuxerr.ENOENT
-		}
-		return child, nil
-	}
+	return fs.getRemoteChildLocked(ctx, parent, name, ds)
+}
 
-	if parent.childrenSet != nil {
-		// Is the child even there? Don't make RPC if not.
-		if _, ok := parent.childrenSet[name]; !ok {
-			return nil, linuxerr.ENOENT
-		}
-	}
-
-	childInode, err := parent.controlFDLisa.Walk(ctx, name)
+// getRemoteChildLocked is similar to getChildLocked, with the additional
+// precondition that the child identified by name does not exist in cache.
+func (fs *filesystem) getRemoteChildLocked(ctx context.Context, parent *dentry, name string, ds **[]*dentry) (*dentry, error) {
+	child, err := parent.getRemoteChild(ctx, name)
+	// Cache the result appropriately in the dentry tree.
 	if err != nil {
 		if linuxerr.Equals(linuxerr.ENOENT, err) {
 			parent.cacheNegativeLookupLocked(name)
 		}
 		return nil, err
 	}
-	// Create a new dentry representing the file.
-	child, err := fs.newDentry(ctx, &childInode)
-	if err != nil {
-		fs.client.CloseFD(ctx, childInode.ControlFD, false /* flush */)
-		return nil, err
-	}
 	parent.cacheNewChildLocked(child, name)
 	appendNewChildDentry(ds, parent, child)
 	return child, nil
+}
+
+// getChildAndWalkPathLocked is the same as getChildLocked, except that it
+// may prefetch the entire path represented by rp.
+func (fs *filesystem) getChildAndWalkPathLocked(ctx context.Context, parent *dentry, rp *vfs.ResolvingPath, ds **[]*dentry) (*dentry, error) {
+	if child, err := parent.getCachedChildLocked(rp.Component()); child != nil || err != nil {
+		return child, err
+	}
+	// dentry.getRemoteChildAndWalkPathLocked already handles dentry caching.
+	return parent.getRemoteChildAndWalkPathLocked(ctx, rp, ds)
+}
+
+// getCachedChildLocked returns a child dentry if it was cached earlier. If no
+// cached child dentry exists, (nil, nil) is returned.
+//
+// Preconditions:
+//   - fs.renameMu must be locked.
+//   - d.dirMu must be locked.
+//   - d.isDir().
+//   - name is not "." or "..".
+//   - d and the dentry at name have been revalidated.
+func (d *dentry) getCachedChildLocked(name string) (*dentry, error) {
+	if len(name) > MaxFilenameLen {
+		return nil, linuxerr.ENAMETOOLONG
+	}
+	if child, ok := d.children[name]; ok || d.isSynthetic() {
+		if child == nil {
+			return nil, linuxerr.ENOENT
+		}
+		return child, nil
+	}
+
+	if d.childrenSet != nil {
+		// Is the child even there? Don't make RPC if not.
+		if _, ok := d.childrenSet[name]; !ok {
+			return nil, linuxerr.ENOENT
+		}
+	}
+	return nil, nil
 }
 
 // walkParentDirLocked resolves all but the last path component of rp to an
@@ -437,7 +363,7 @@ func (fs *filesystem) resolveLocked(ctx context.Context, rp *vfs.ResolvingPath, 
 // Preconditions:
 //   - !rp.Done().
 //   - For the final path component in rp, !rp.ShouldFollowSymlink().
-func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir bool, createInRemoteDir func(parent *dentry, name string, ds **[]*dentry) error, createInSyntheticDir func(parent *dentry, name string) error) error {
+func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir bool, createInRemoteDir func(parent *dentry, name string, ds **[]*dentry) (*dentry, error), createInSyntheticDir func(parent *dentry, name string) (*dentry, error)) error {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
 	defer fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
@@ -514,9 +440,12 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 		if createInSyntheticDir == nil {
 			return linuxerr.EPERM
 		}
-		if err := createInSyntheticDir(parent, name); err != nil {
+		child, err := createInSyntheticDir(parent, name)
+		if err != nil {
 			return err
 		}
+		parent.cacheNewChildLocked(child, name)
+		parent.syntheticChildren++
 		parent.touchCMtime()
 		parent.clearDirentsLocked()
 		ev := linux.IN_CREATE
@@ -529,8 +458,16 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 	// No cached dentry exists; however, in InteropModeShared there might still be
 	// an existing file at name. Just attempt the file creation RPC anyways. If a
 	// file does exist, the RPC will fail with EEXIST like we would have.
-	if err := createInRemoteDir(parent, name, &ds); err != nil {
+	child, err := createInRemoteDir(parent, name, &ds)
+	if err != nil {
 		return err
+	}
+	parent.cacheNewChildLocked(child, name)
+	if child.isSynthetic() {
+		parent.syntheticChildren++
+		ds = appendDentry(ds, parent)
+	} else {
+		appendNewChildDentry(&ds, parent, child)
 	}
 	if fs.opts.interop != InteropModeShared {
 		if child, ok := parent.children[name]; ok && child == nil {
@@ -686,7 +623,7 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 			return linuxerr.ENOENT
 		}
 	} else if child == nil || !child.isSynthetic() {
-		if err := parent.controlFDLisa.UnlinkAt(ctx, name, flags); err != nil {
+		if err := parent.unlink(ctx, name, flags); err != nil {
 			if child != nil {
 				vfsObj.AbortDeleteDentry(&child.vfsd) // +checklocksforce: see above.
 			}
@@ -784,31 +721,27 @@ func (fs *filesystem) GetParentDentryAt(ctx context.Context, rp *vfs.ResolvingPa
 
 // LinkAt implements vfs.FilesystemImpl.LinkAt.
 func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.VirtualDentry) error {
-	err := fs.doCreateAt(ctx, rp, false /* dir */, func(parent *dentry, childName string, ds **[]*dentry) error {
+	err := fs.doCreateAt(ctx, rp, false /* dir */, func(parent *dentry, name string, ds **[]*dentry) (*dentry, error) {
 		if rp.Mount() != vd.Mount() {
-			return linuxerr.EXDEV
+			return nil, linuxerr.EXDEV
 		}
 		d := vd.Dentry().Impl().(*dentry)
 		if d.isDir() {
-			return linuxerr.EPERM
+			return nil, linuxerr.EPERM
 		}
 		gid := auth.KGID(d.gid.Load())
 		uid := auth.KUID(d.uid.Load())
 		mode := linux.FileMode(d.mode.Load())
 		if err := vfs.MayLink(rp.Credentials(), mode, uid, gid); err != nil {
-			return err
+			return nil, err
 		}
 		if d.nlink.Load() == 0 {
-			return linuxerr.ENOENT
+			return nil, linuxerr.ENOENT
 		}
 		if d.nlink.Load() == math.MaxUint32 {
-			return linuxerr.EMLINK
+			return nil, linuxerr.EMLINK
 		}
-		linkInode, err := parent.controlFDLisa.LinkAt(ctx, d.controlFDLisa.ID(), childName)
-		if err != nil {
-			return err
-		}
-		return parent.insertCreatedChildLocked(ctx, &linkInode, childName, nil, ds)
+		return parent.link(ctx, d, name)
 	}, nil)
 
 	if err == nil {
@@ -821,7 +754,7 @@ func (fs *filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 // MkdirAt implements vfs.FilesystemImpl.MkdirAt.
 func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.MkdirOptions) error {
 	creds := rp.Credentials()
-	return fs.doCreateAt(ctx, rp, true /* dir */, func(parent *dentry, name string, ds **[]*dentry) error {
+	return fs.doCreateAt(ctx, rp, true /* dir */, func(parent *dentry, name string, ds **[]*dentry) (*dentry, error) {
 		// If the parent is a setgid directory, use the parent's GID
 		// rather than the caller's and enable setgid.
 		kgid := creds.EffectiveKGID
@@ -830,56 +763,53 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 			kgid = auth.KGID(parent.gid.Load())
 			mode |= linux.S_ISGID
 		}
-		childDirInode, err := parent.controlFDLisa.MkdirAt(ctx, name, mode, lisafs.UID(creds.EffectiveKUID), lisafs.GID(kgid))
+
+		child, err := parent.mkdir(ctx, name, mode, creds.EffectiveKUID, kgid)
 		if err == nil {
-			if err = parent.insertCreatedChildLocked(ctx, &childDirInode, name, nil, ds); err != nil {
-				return err
-			}
 			if fs.opts.interop != InteropModeShared {
 				parent.incLinks()
 			}
-			return nil
+			return child, nil
 		}
 
 		if !opts.ForSyntheticMountpoint || linuxerr.Equals(linuxerr.EEXIST, err) {
-			return err
+			return nil, err
 		}
 		ctx.Infof("Failed to create remote directory %q: %v; falling back to synthetic directory", name, err)
-		parent.createSyntheticChildLocked(&createSyntheticOpts{
+		child = fs.newSyntheticDentry(&createSyntheticOpts{
 			name: name,
 			mode: linux.S_IFDIR | opts.Mode,
 			kuid: creds.EffectiveKUID,
 			kgid: creds.EffectiveKGID,
 		})
-		*ds = appendDentry(*ds, parent)
 		if fs.opts.interop != InteropModeShared {
 			parent.incLinks()
 		}
-		return nil
-	}, func(parent *dentry, name string) error {
+		return child, nil
+	}, func(parent *dentry, name string) (*dentry, error) {
 		if !opts.ForSyntheticMountpoint {
 			// Can't create non-synthetic files in synthetic directories.
-			return linuxerr.EPERM
+			return nil, linuxerr.EPERM
 		}
-		parent.createSyntheticChildLocked(&createSyntheticOpts{
+		child := fs.newSyntheticDentry(&createSyntheticOpts{
 			name: name,
 			mode: linux.S_IFDIR | opts.Mode,
 			kuid: creds.EffectiveKUID,
 			kgid: creds.EffectiveKGID,
 		})
 		parent.incLinks()
-		return nil
+		return child, nil
 	})
 }
 
 // MknodAt implements vfs.FilesystemImpl.MknodAt.
 func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts vfs.MknodOptions) error {
-	return fs.doCreateAt(ctx, rp, false /* dir */, func(parent *dentry, name string, ds **[]*dentry) error {
+	return fs.doCreateAt(ctx, rp, false /* dir */, func(parent *dentry, name string, ds **[]*dentry) (*dentry, error) {
 		creds := rp.Credentials()
-		if err := parent.mknodLocked(ctx, name, creds, opts, ds); err == nil {
-			return nil
+		if child, err := parent.mknod(ctx, name, creds, &opts); err == nil {
+			return child, nil
 		} else if !linuxerr.Equals(linuxerr.EPERM, err) {
-			return err
+			return nil, err
 		}
 
 		// EPERM means that gofer does not allow creating a socket or pipe. Fallback
@@ -890,36 +820,32 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		switch {
 		case err == nil:
 			// Step succeeded, another file exists.
-			return linuxerr.EEXIST
+			return nil, linuxerr.EEXIST
 		case !linuxerr.Equals(linuxerr.ENOENT, err):
 			// Unexpected error.
-			return err
+			return nil, err
 		}
 
 		switch opts.Mode.FileType() {
 		case linux.S_IFSOCK:
-			parent.createSyntheticChildLocked(&createSyntheticOpts{
+			return fs.newSyntheticDentry(&createSyntheticOpts{
 				name:     name,
 				mode:     opts.Mode,
 				kuid:     creds.EffectiveKUID,
 				kgid:     creds.EffectiveKGID,
 				endpoint: opts.Endpoint,
-			})
-			*ds = appendDentry(*ds, parent)
-			return nil
+			}), nil
 		case linux.S_IFIFO:
-			parent.createSyntheticChildLocked(&createSyntheticOpts{
+			return fs.newSyntheticDentry(&createSyntheticOpts{
 				name: name,
 				mode: opts.Mode,
 				kuid: creds.EffectiveKUID,
 				kgid: creds.EffectiveKGID,
 				pipe: pipe.NewVFSPipe(true /* isNamed */, pipe.DefaultPipeSize),
-			})
-			*ds = appendDentry(*ds, parent)
-			return nil
+			}), nil
 		}
 		// Retain error from gofer if synthetic file cannot be created internally.
-		return linuxerr.EPERM
+		return nil, linuxerr.EPERM
 	}, nil)
 }
 
@@ -957,7 +883,7 @@ func (fs *filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		}
 		if !start.cachedMetadataAuthoritative() {
 			// Refresh dentry's attributes before opening.
-			if err := start.updateMetadata(ctx, nil); err != nil {
+			if err := start.updateMetadata(ctx); err != nil {
 				return nil, err
 			}
 		}
@@ -1128,7 +1054,7 @@ func (d *dentry) openSocketByConnecting(ctx context.Context, opts *vfs.OpenOptio
 	}
 	// Note that special value of linux.SockType = 0 is interpreted by lisafs
 	// as "do not care about the socket type". Analogous to p9.AnonymousSocket.
-	sockFD, err := d.controlFDLisa.Connect(ctx, 0 /* sockType */)
+	sockFD, err := d.connect(ctx, 0 /* sockType */)
 	if err != nil {
 		return nil, err
 	}
@@ -1158,7 +1084,7 @@ func (d *dentry) openSpecialFile(ctx context.Context, mnt *vfs.Mount, opts *vfs.
 	// since closed its end.
 	isBlockingOpenOfNamedPipe := d.fileType() == linux.S_IFIFO && opts.Flags&linux.O_NONBLOCK == 0
 retry:
-	h, err := openHandle(ctx, d.controlFDLisa, ats.MayRead(), ats.MayWrite(), opts.Flags&linux.O_TRUNC != 0)
+	h, err := d.openHandle(ctx, ats.MayRead(), ats.MayWrite(), opts.Flags&linux.O_TRUNC != 0)
 	if err != nil {
 		if isBlockingOpenOfNamedPipe && ats == vfs.MayWrite && linuxerr.Equals(linuxerr.ENXIO, err) {
 			// An attempt to open a named pipe with O_WRONLY|O_NONBLOCK fails
@@ -1211,35 +1137,28 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 		kgid = auth.KGID(d.gid.Load())
 	}
 
-	ino, openFD, hostFD, err := d.controlFDLisa.OpenCreateAt(ctx, name, opts.Flags&linux.O_ACCMODE, opts.Mode, lisafs.UID(creds.EffectiveKUID), lisafs.GID(kgid))
+	child, h, err := d.openCreate(ctx, name, opts.Flags&linux.O_ACCMODE, opts.Mode, creds.EffectiveKUID, kgid)
 	if err != nil {
 		return nil, err
 	}
 
-	child, err := d.fs.newDentry(ctx, &ino)
-	if err != nil {
-		d.fs.client.CloseFD(ctx, ino.ControlFD, false /* flush */)
-		d.fs.client.CloseFD(ctx, openFD, false /* flush */)
-		if hostFD >= 0 {
-			unix.Close(hostFD)
-		}
-		return nil, err
-	}
 	// Incorporate the fid that was opened by lcreate.
 	useRegularFileFD := child.fileType() == linux.S_IFREG && !d.fs.opts.regularFilesUseSpecialFileFD
 	if useRegularFileFD {
+		var readable, writable bool
 		child.handleMu.Lock()
 		if vfs.MayReadFileWithOpenFlags(opts.Flags) {
-			child.readFDLisa = d.fs.client.NewFD(openFD)
-			if hostFD != -1 {
-				child.readFD = atomicbitops.FromInt32(int32(hostFD))
-				child.mmapFD = atomicbitops.FromInt32(int32(hostFD))
+			readable = true
+			if h.fd != -1 {
+				child.readFD = atomicbitops.FromInt32(h.fd)
+				child.mmapFD = atomicbitops.FromInt32(h.fd)
 			}
 		}
 		if vfs.MayWriteFileWithOpenFlags(opts.Flags) {
-			child.writeFDLisa = d.fs.client.NewFD(openFD)
-			child.writeFD = atomicbitops.FromInt32(int32(hostFD))
+			writable = true
+			child.writeFD = atomicbitops.FromInt32(h.fd)
 		}
+		child.updateHandles(ctx, h, readable, writable)
 		child.handleMu.Unlock()
 	}
 	// Insert the dentry into the tree.
@@ -1259,10 +1178,6 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 		}
 		childVFSFD = &fd.vfsfd
 	} else {
-		h := handle{
-			fdLisa: d.fs.client.NewFD(openFD),
-			fd:     int32(hostFD),
-		}
 		fd, err := newSpecialFileFD(h, mnt, child, opts.Flags)
 		if err != nil {
 			h.close(ctx)
@@ -1330,7 +1245,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 
 	oldParent := oldParentVD.Dentry().Impl().(*dentry)
 	if !oldParent.cachedMetadataAuthoritative() {
-		if err := oldParent.updateMetadata(ctx, nil); err != nil {
+		if err := oldParent.updateMetadata(ctx); err != nil {
 			return err
 		}
 	}
@@ -1418,7 +1333,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 
 	// Update the remote filesystem.
 	if !renamed.isSynthetic() {
-		if err := oldParent.controlFDLisa.RenameAt(ctx, oldName, newParent.controlFDLisa.ID(), newName); err != nil {
+		if err := oldParent.rename(ctx, oldName, newParent, newName); err != nil {
 			vfsObj.AbortRenameDentry(&renamed.vfsd, replacedVFSD)
 			return err
 		}
@@ -1429,7 +1344,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		if replaced.isDir() {
 			flags = linux.AT_REMOVEDIR
 		}
-		if err := newParent.controlFDLisa.UnlinkAt(ctx, newName, flags); err != nil {
+		if err := newParent.unlink(ctx, newName, flags); err != nil {
 			vfsObj.AbortRenameDentry(&renamed.vfsd, replacedVFSD)
 			return err
 		}
@@ -1536,45 +1451,37 @@ func (fs *filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linu
 	for d.isSynthetic() {
 		d = d.parent
 	}
-	var statFS lisafs.StatFS
-	if err := d.controlFDLisa.StatFSTo(ctx, &statFS); err != nil {
+	statfs, err := d.statfs(ctx)
+	if err != nil {
 		return linux.Statfs{}, err
 	}
-	if statFS.NameLength == 0 || statFS.NameLength > MaxFilenameLen {
-		statFS.NameLength = MaxFilenameLen
+	if statfs.NameLength == 0 || statfs.NameLength > MaxFilenameLen {
+		statfs.NameLength = MaxFilenameLen
 	}
-	return linux.Statfs{
-		// This is primarily for distinguishing a gofer file system in
-		// tests. Testing is important, so instead of defining
-		// something completely random, use a standard value.
-		Type:            linux.V9FS_MAGIC,
-		BlockSize:       statFS.BlockSize,
-		FragmentSize:    statFS.BlockSize,
-		Blocks:          statFS.Blocks,
-		BlocksFree:      statFS.BlocksFree,
-		BlocksAvailable: statFS.BlocksAvailable,
-		Files:           statFS.Files,
-		FilesFree:       statFS.FilesFree,
-		NameLength:      statFS.NameLength,
-	}, nil
+	// This is primarily for distinguishing a gofer file system in
+	// tests. Testing is important, so instead of defining
+	// something completely random, use a standard value.
+	statfs.Type = linux.V9FS_MAGIC
+	return statfs, nil
 }
 
 // SymlinkAt implements vfs.FilesystemImpl.SymlinkAt.
 func (fs *filesystem) SymlinkAt(ctx context.Context, rp *vfs.ResolvingPath, target string) error {
-	return fs.doCreateAt(ctx, rp, false /* dir */, func(parent *dentry, name string, ds **[]*dentry) error {
-		creds := rp.Credentials()
-		symlinkInode, err := parent.controlFDLisa.SymlinkAt(ctx, name, target, lisafs.UID(creds.EffectiveKUID), lisafs.GID(creds.EffectiveKGID))
+	return fs.doCreateAt(ctx, rp, false /* dir */, func(parent *dentry, name string, ds **[]*dentry) (*dentry, error) {
+		child, err := parent.symlink(ctx, name, target, rp.Credentials())
 		if err != nil {
-			return err
+			return nil, err
 		}
-		return parent.insertCreatedChildLocked(ctx, &symlinkInode, name, func(child *dentry) {
-			if fs.opts.interop != InteropModeShared {
-				// Cache the symlink target on creation. In practice, this
-				// helps avoid a lot of ReadLink RPCs.
-				child.haveTarget = true
-				child.target = target
-			}
-		}, ds)
+		if parent.fs.opts.interop != InteropModeShared {
+			// Cache the symlink target on creation. In practice, this helps avoid a
+			// lot of ReadLink RPCs. Note that when InteropModeShared is in effect,
+			// we are forced to make Readlink RPCs. Because in this mode, we use host
+			// timestamps, not timestamps based on our internal clock. And readlink
+			// updates the atime on the host.
+			child.haveTarget = true
+			child.target = target
+		}
+		return child, nil
 	}, nil)
 }
 

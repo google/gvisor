@@ -35,7 +35,7 @@ func (d *dentry) readlink(ctx context.Context, mnt *vfs.Mount) (string, error) {
 			return target, nil
 		}
 	}
-	target, err := d.controlFDLisa.ReadLinkAt(ctx)
+	target, err := d.readlinkImpl(ctx)
 	if d.fs.opts.interop != InteropModeShared {
 		if err == nil {
 			d.haveTarget = true
