@@ -42,7 +42,7 @@ func TestDestroyIdempotent(t *testing.T) {
 			Mode: linux.S_IFDIR | 0666,
 		},
 	}
-	parent, err := fs.newDentry(ctx, &parentInode)
+	parent, err := fs.newLisafsDentry(ctx, &parentInode)
 	if err != nil {
 		t.Fatalf("fs.newDentry(): %v", err)
 	}
@@ -55,7 +55,7 @@ func TestDestroyIdempotent(t *testing.T) {
 			Size: 0,
 		},
 	}
-	child, err := fs.newDentry(ctx, &childInode)
+	child, err := fs.newLisafsDentry(ctx, &childInode)
 	if err != nil {
 		t.Fatalf("fs.newDentry(): %v", err)
 	}

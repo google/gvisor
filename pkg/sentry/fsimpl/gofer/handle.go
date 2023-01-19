@@ -18,11 +18,15 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/lisafs"
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/hostfd"
 	"gvisor.dev/gvisor/pkg/sync"
 )
+
+var noHandle = handle{
+	fdLisa: lisafs.ClientFD{}, // zero value is fine.
+	fd:     -1,
+}
 
 // handle represents a remote "open file descriptor", consisting of an opened
 // lisafs FD and optionally a host file descriptor.
@@ -33,39 +37,10 @@ type handle struct {
 	fd     int32 // -1 if unavailable
 }
 
-// Preconditions: read || write.
-func openHandle(ctx context.Context, fdLisa lisafs.ClientFD, read, write, trunc bool) (handle, error) {
-	flags := uint32(unix.O_RDONLY)
-	switch {
-	case read && write:
-		flags = unix.O_RDWR
-	case read:
-		flags = unix.O_RDONLY
-	case write:
-		flags = unix.O_WRONLY
-	default:
-		log.Debugf("openHandle called with read = write = false. Falling back to read only FD.")
-	}
-	if trunc {
-		flags |= unix.O_TRUNC
-	}
-	openFD, hostFD, err := fdLisa.OpenAt(ctx, flags)
-	if err != nil {
-		return handle{fd: -1}, err
-	}
-	h := handle{
-		fdLisa: fdLisa.Client().NewFD(openFD),
-		fd:     int32(hostFD),
-	}
-	return h, nil
-}
-
-func (h *handle) isOpen() bool {
-	return h.fdLisa.Ok()
-}
-
 func (h *handle) close(ctx context.Context) {
-	h.fdLisa.Close(ctx, true /* flush */)
+	if h.fdLisa.Ok() {
+		h.fdLisa.Close(ctx, true /* flush */)
+	}
 	if h.fd >= 0 {
 		unix.Close(int(h.fd))
 		h.fd = -1
@@ -100,6 +75,31 @@ func (h *handle) writeFromBlocksAt(ctx context.Context, srcs safemem.BlockSeq, o
 	rw := getHandleReadWriter(ctx, h, int64(offset))
 	defer putHandleReadWriter(rw)
 	return safemem.FromIOWriter{rw}.WriteFromBlocks(srcs)
+}
+
+func (h *handle) allocate(ctx context.Context, mode, offset, length uint64) error {
+	if h.fdLisa.Ok() {
+		return h.fdLisa.Allocate(ctx, mode, offset, length)
+	}
+	if h.fd >= 0 {
+		return unix.Fallocate(int(h.fd), uint32(mode), int64(offset), int64(length))
+	}
+	return nil
+}
+
+func (h *handle) sync(ctx context.Context) error {
+	// If we have a host FD, fsyncing it is likely to be faster than an fsync
+	// RPC.
+	if h.fd >= 0 {
+		ctx.UninterruptibleSleepStart(false)
+		err := unix.Fsync(int(h.fd))
+		ctx.UninterruptibleSleepFinish(false)
+		return err
+	}
+	if h.fdLisa.Ok() {
+		return h.fdLisa.Sync(ctx)
+	}
+	return nil
 }
 
 type handleReadWriter struct {
