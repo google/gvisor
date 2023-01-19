@@ -71,7 +71,7 @@ void ExitGroup32(const char instruction[2], int code) {
       "iretl\n"
       "int $3\n"
       :
-      : [ code ] "m"(code), [ ip ] "d"(m.ptr())
+      : [code] "m"(code), [ip] "d"(m.ptr())
       : "rax", "rbx");
 }
 

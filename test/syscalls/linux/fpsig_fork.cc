@@ -103,8 +103,8 @@ TEST(FPSigTest, Fork) {
       "movl %[sig], %%edx;"
       "syscall;"
       :
-      : [ killnr ] "i"(__NR_tgkill), [ parent ] "rm"(parent),
-        [ tid ] "rm"(parent_tid), [ sig ] "i"(SIGUSR1)
+      : [killnr] "i"(__NR_tgkill), [parent] "rm"(parent),
+        [tid] "rm"(parent_tid), [sig] "i"(SIGUSR1)
       : "rax", "rdi", "rsi", "rdx",
         // Clobbered by syscall.
         "rcx", "r11");
