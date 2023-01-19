@@ -1240,14 +1240,12 @@ func (s *Sandbox) ChangeLogging(args control.LoggingArgs) error {
 
 // OverlayFileUsage returns the current usage (bytes) of the overlay filestore.
 func (s *Sandbox) OverlayFileUsage() (uint64, error) {
-	conn, err := s.sandboxConnect()
-	if err != nil {
-		return 0, err
-	}
-	defer conn.Close()
-
+	log.Debugf("Getting overlay file usage for sandbox %q", s.ID)
 	var usage uint64
-	return usage, conn.Call(boot.CongMgrOverlayFileUsage, nil, &usage)
+	if err := s.call(boot.CongMgrOverlayFileUsage, nil, &usage); err != nil {
+		return 0, fmt.Errorf("getting overlay file usage for sandbox %q: %w", s.ID, err)
+	}
+	return usage, nil
 }
 
 // DestroyContainer destroys the given container. If it is the root container,
