@@ -105,7 +105,7 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		id := f.Arg(0)
 
 		var err error
-		c, err = container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
+		c, err = container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{SkipCheck: true})
 		if err != nil {
 			return util.Errorf("loading container %q: %v", f.Arg(0), err)
 		}
@@ -115,7 +115,7 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 			return subcommands.ExitUsageError
 		}
 		// Go over all sandboxes and find the one that matches PID.
-		ids, err := container.List(conf.RootDir)
+		ids, err := container.ListSandboxes(conf.RootDir)
 		if err != nil {
 			return util.Errorf("listing containers: %v", err)
 		}

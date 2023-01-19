@@ -77,21 +77,15 @@ func (l *List) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 }
 
 func (l *List) execute(rootDir string, out io.Writer) error {
-	ids, err := container.List(rootDir)
+	var ids []container.FullID
+	var err error
+	if l.sandbox {
+		ids, err = container.ListSandboxes(rootDir)
+	} else {
+		ids, err = container.List(rootDir)
+	}
 	if err != nil {
 		return err
-	}
-
-	if l.sandbox {
-		sandboxes := make(map[string]struct{})
-		for _, id := range ids {
-			sandboxes[id.SandboxID] = struct{}{}
-		}
-		// Reset ids to list only sandboxes.
-		ids = nil
-		for id := range sandboxes {
-			ids = append(ids, container.FullID{SandboxID: id, ContainerID: id})
-		}
 	}
 
 	if l.quiet {

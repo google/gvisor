@@ -2604,36 +2604,6 @@ func TestUsageFD(t *testing.T) {
 	}
 }
 
-// TestReduce checks that reduce call succeeds.
-func TestReduce(t *testing.T) {
-	spec, conf := sleepSpecConf(t)
-	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
-	if err != nil {
-		t.Fatalf("error setting up container: %v", err)
-	}
-	defer cleanup()
-
-	args := Args{
-		ID:        testutil.RandomContainerID(),
-		Spec:      spec,
-		BundleDir: bundleDir,
-	}
-
-	cont, err := New(conf, args)
-	if err != nil {
-		t.Fatalf("Creating container: %v", err)
-	}
-	defer cont.Destroy()
-
-	if err := cont.Start(conf); err != nil {
-		t.Fatalf("starting container: %v", err)
-	}
-
-	if err := cont.Sandbox.Reduce(false); err != nil {
-		t.Fatalf("error reduce from container: %v", err)
-	}
-}
-
 // TestProfile checks that profiling options generate profiles.
 func TestProfile(t *testing.T) {
 	// Perform a non-trivial amount of work so we actually capture
