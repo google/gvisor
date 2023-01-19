@@ -379,7 +379,7 @@ func New(conf *config.Config, args Args) (*Container, error) {
 func (c *Container) Start(conf *config.Config) error {
 	log.Debugf("Start container, cid: %s", c.ID)
 
-	if err := c.Saver.lock(); err != nil {
+	if err := c.Saver.lock(BlockAcquire); err != nil {
 		return err
 	}
 	unlock := cleanup.Make(c.Saver.UnlockOrDie)
@@ -463,7 +463,7 @@ func (c *Container) Start(conf *config.Config) error {
 // to restore a container from its state file.
 func (c *Container) Restore(spec *specs.Spec, conf *config.Config, restoreFile string) error {
 	log.Debugf("Restore container, cid: %s", c.ID)
-	if err := c.Saver.lock(); err != nil {
+	if err := c.Saver.lock(BlockAcquire); err != nil {
 		return err
 	}
 	defer c.Saver.UnlockOrDie()
@@ -649,7 +649,7 @@ func (c *Container) Checkpoint(f *os.File) error {
 // The call only succeeds if the container's status is created or running.
 func (c *Container) Pause() error {
 	log.Debugf("Pausing container, cid: %s", c.ID)
-	if err := c.Saver.lock(); err != nil {
+	if err := c.Saver.lock(BlockAcquire); err != nil {
 		return err
 	}
 	defer c.Saver.UnlockOrDie()
@@ -669,7 +669,7 @@ func (c *Container) Pause() error {
 // The call only succeeds if the container's status is paused.
 func (c *Container) Resume() error {
 	log.Debugf("Resuming container, cid: %s", c.ID)
-	if err := c.Saver.lock(); err != nil {
+	if err := c.Saver.lock(BlockAcquire); err != nil {
 		return err
 	}
 	defer c.Saver.UnlockOrDie()
@@ -710,7 +710,7 @@ func (c *Container) Processes() ([]*control.Process, error) {
 func (c *Container) Destroy() error {
 	log.Debugf("Destroy container, cid: %s", c.ID)
 
-	if err := c.Saver.lock(); err != nil {
+	if err := c.Saver.lock(BlockAcquire); err != nil {
 		return err
 	}
 	defer func() {

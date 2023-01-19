@@ -16,6 +16,7 @@ package container
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -31,6 +32,21 @@ import (
 
 const stateFileExtension = "state"
 
+// ErrStateFileLocked is returned by Load() when the state file is locked
+// and TryLock is enabled.
+var ErrStateFileLocked = errors.New("state file locked")
+
+// TryLock represents whether we should block waiting for the lock to be acquired or not.
+type TryLock bool
+
+const (
+	// BlockAcquire means we will block until the lock can be acquired.
+	BlockAcquire TryLock = false
+
+	// TryAcquire means we will fail fast if the lock cannot be acquired.
+	TryAcquire TryLock = true
+)
+
 // LoadOpts provides options for Load()ing a container.
 type LoadOpts struct {
 	// Exact tells whether the search should be exact. See Load() for more.
@@ -38,6 +54,11 @@ type LoadOpts struct {
 
 	// SkipCheck tells Load() to skip checking if container is runnning.
 	SkipCheck bool
+
+	// TryLock tells Load() to fail if the container state file cannot be locked,
+	// as opposed to blocking until it is available.
+	// When the state file cannot be locked, it will error with ErrStateFileLocked.
+	TryLock TryLock
 
 	// RootContainer when true matches the search only with the root container of
 	// a sandbox. This is used when looking for a sandbox given that root
@@ -74,7 +95,7 @@ func Load(rootDir string, id FullID, opts LoadOpts) (*Container, error) {
 	defer state.close()
 
 	c := &Container{}
-	if err := state.load(c); err != nil {
+	if err := state.load(c, opts); err != nil {
 		if os.IsNotExist(err) {
 			// Preserve error so that callers can distinguish 'not found' errors.
 			return nil, err
@@ -272,13 +293,23 @@ type StateFile struct {
 }
 
 // lock globally locks all locking operations for the container.
-func (s *StateFile) lock() error {
+func (s *StateFile) lock(tryLock TryLock) error {
 	s.once.Do(func() {
 		s.flock = flock.New(s.lockPath())
 	})
 
-	if err := s.flock.Lock(); err != nil {
-		return fmt.Errorf("acquiring lock on %q: %v", s.flock, err)
+	if tryLock {
+		gotLock, err := s.flock.TryLock()
+		if err != nil {
+			return fmt.Errorf("acquiring lock on %q: %v", s.flock, err)
+		}
+		if !gotLock {
+			return ErrStateFileLocked
+		}
+	} else {
+		if err := s.flock.Lock(); err != nil {
+			return fmt.Errorf("acquiring lock on %q: %v", s.flock, err)
+		}
 	}
 	return nil
 }
@@ -287,7 +318,7 @@ func (s *StateFile) lock() error {
 // is done to ensure that more than one creation didn't race to create
 // containers with the same ID.
 func (s *StateFile) LockForNew() error {
-	if err := s.lock(); err != nil {
+	if err := s.lock(BlockAcquire); err != nil {
 		return err
 	}
 
@@ -327,7 +358,7 @@ func (s *StateFile) UnlockOrDie() {
 
 // SaveLocked saves 'v' to the state file.
 //
-// Preconditions: lock() must been called before.
+// Preconditions: lock(*) must been called before.
 func (s *StateFile) SaveLocked(v any) error {
 	if !s.flock.Locked() {
 		panic("saveLocked called without lock held")
@@ -343,8 +374,8 @@ func (s *StateFile) SaveLocked(v any) error {
 	return nil
 }
 
-func (s *StateFile) load(v any) error {
-	if err := s.lock(); err != nil {
+func (s *StateFile) load(v any, opts LoadOpts) error {
+	if err := s.lock(opts.TryLock); err != nil {
 		return err
 	}
 	defer s.UnlockOrDie()

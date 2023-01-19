@@ -74,7 +74,7 @@ func (m *MetricExport) Execute(ctx context.Context, f *flag.FlagSet, args ...any
 	}, map[*prometheus.Snapshot]prometheus.SnapshotExportOptions{
 		snapshot: {
 			ExporterPrefix: conf.MetricExporterPrefix,
-			ExtraLabels:    map[string]string{"sandbox": cont.Sandbox.ID},
+			ExtraLabels:    cont.Sandbox.PrometheusLabels(),
 		},
 	})
 	if err != nil {
