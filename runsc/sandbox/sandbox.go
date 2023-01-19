@@ -33,12 +33,14 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/syndtr/gocapability/capability"
 	"golang.org/x/sys/unix"
+	"google.golang.org/protobuf/encoding/prototext"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/control/client"
 	"gvisor.dev/gvisor/pkg/control/server"
 	"gvisor.dev/gvisor/pkg/coverage"
 	"gvisor.dev/gvisor/pkg/log"
+	metricpb "gvisor.dev/gvisor/pkg/metric/metric_go_proto"
 	"gvisor.dev/gvisor/pkg/prometheus"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
@@ -52,6 +54,16 @@ import (
 	"gvisor.dev/gvisor/runsc/console"
 	"gvisor.dev/gvisor/runsc/donation"
 	"gvisor.dev/gvisor/runsc/specutils"
+)
+
+const (
+	// namespaceAnnotation is a pod annotation populated by containerd.
+	// It contains the name of the pod that a sandbox is in when running in Kubernetes.
+	podNameAnnotation = "io.kubernetes.cri.sandbox-name"
+
+	// namespaceAnnotation is a pod annotation populated by containerd.
+	// It contains the namespace of the pod that a sandbox is in when running in Kubernetes.
+	namespaceAnnotation = "io.kubernetes.cri.sandbox-namespace"
 )
 
 // pid is an atomic type that implements JSON marshal/unmarshal interfaces.
@@ -96,6 +108,14 @@ type Sandbox struct {
 	// ID as the first container run in the sandbox.
 	ID string `json:"id"`
 
+	// PodName is the name of the Kubernetes Pod (if any) that this sandbox
+	// represents. Unset if not running under containerd or Kubernetes.
+	PodName string `json:"podName"`
+
+	// Namespace is the Kubernetes namespace (if any) of the pod that this
+	// sandbox represents. Unset if not running under containerd or Kubernetes.
+	Namespace string `json:"namespace"`
+
 	// Pid is the pid of the running sandbox. May be 0 if the sandbox
 	// is not running.
 	Pid pid `json:"pid"`
@@ -112,6 +132,13 @@ type Sandbox struct {
 	// OriginalOOMScoreAdj stores the value of oom_score_adj when the sandbox
 	// started, before it may be modified.
 	OriginalOOMScoreAdj int `json:"originalOomScoreAdj"`
+
+	// RegisteredMetrics is the set of metrics registered in the sandbox.
+	// Used for verifying metric data integrity after containers are started.
+	// Only populated if exporting metrics was requested when the sandbox was
+	// created.
+	// This is a textproto string of metricpb.MetricRegistration.
+	RegisteredMetrics string `json:"registeredMetrics"`
 
 	// child is set if a sandbox process is a child of the current process.
 	//
@@ -188,6 +215,10 @@ func New(conf *config.Config, args *Args) (*Sandbox, error) {
 		},
 		UID: -1, // prevent usage before it's set.
 		GID: -1, // prevent usage before it's set.
+	}
+	if args.Spec != nil && args.Spec.Annotations != nil {
+		s.PodName = args.Spec.Annotations[podNameAnnotation]
+		s.Namespace = args.Spec.Annotations[namespaceAnnotation]
 	}
 	// The Cleanup object cleans up partially created sandboxes when an error
 	// occurs. Any errors occurring during cleanup itself are ignored.
@@ -1072,7 +1103,23 @@ func (s *Sandbox) UsageFD() (*control.MemoryUsageRecord, error) {
 	return control.NewMemoryUsageRecord(*m.FilePayload.Files[0], *m.FilePayload.Files[1])
 }
 
-// ExportMetrics writes Prometheus-formatted metrics data to the given io.Writer.
+// GetRegisteredMetrics returns metric registration data from the sandbox.
+// This data is meant to be used as a way to sanity-check any exported metrics data during the
+// lifetime of the sandbox in order to avoid a compromised sandbox from being able to produce
+// bogus metrics.
+// This returns an error if the sandbox has not requested instrumentation during creation time.
+func (s *Sandbox) GetRegisteredMetrics() (*metricpb.MetricRegistration, error) {
+	if s.RegisteredMetrics == "" {
+		return nil, errors.New("sandbox did not request instrumentation when it was created")
+	}
+	registeredMetrics := &metricpb.MetricRegistration{}
+	if err := prototext.Unmarshal([]byte(s.RegisteredMetrics), registeredMetrics); err != nil {
+		return nil, err
+	}
+	return registeredMetrics, nil
+}
+
+// ExportMetrics returns a snapshot of metric values from the sandbox in Prometheus format.
 func (s *Sandbox) ExportMetrics() (*prometheus.Snapshot, error) {
 	log.Debugf("Metrics export sandbox %q", s.ID)
 	data := &control.MetricsExportData{}
@@ -1080,6 +1127,26 @@ func (s *Sandbox) ExportMetrics() (*prometheus.Snapshot, error) {
 		return nil, err
 	}
 	return data.Snapshot, nil
+}
+
+// Label names used to identify each sandbox.
+const (
+	SandboxIDLabel = "sandbox"
+	PodNameLabel   = "pod"
+	NamespaceLabel = "namespace"
+)
+
+// PrometheusLabels returns a set of Prometheus labels that identifies the sandbox.
+func (s *Sandbox) PrometheusLabels() map[string]string {
+	labels := make(map[string]string, 3)
+	labels[SandboxIDLabel] = s.ID
+	if s.PodName != "" {
+		labels[PodNameLabel] = s.PodName
+	}
+	if s.Namespace != "" {
+		labels[NamespaceLabel] = s.Namespace
+	}
+	return labels
 }
 
 // IsRunning returns true if the sandbox or gofer process is running.
