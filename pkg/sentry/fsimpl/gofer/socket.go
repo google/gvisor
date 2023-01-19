@@ -36,7 +36,8 @@ func (d *dentry) isSocket() bool {
 //
 // +stateify savable
 type endpoint struct {
-	// dentry is the filesystem dentry which produced this endpoint.
+	// dentry is the filesystem dentry which produced this endpoint. dentry is
+	// not synthetic.
 	dentry *dentry
 
 	// path is the sentry path where this endpoint is bound.
@@ -93,7 +94,7 @@ func (e *endpoint) UnidirectionalConnect(ctx context.Context) (transport.Connect
 }
 
 func (e *endpoint) newConnectedEndpoint(ctx context.Context, sockType linux.SockType, queue *waiter.Queue) (*transport.SCMConnectedEndpoint, *syserr.Error) {
-	hostSockFD, err := e.dentry.controlFDLisa.Connect(ctx, sockType)
+	hostSockFD, err := e.dentry.connect(ctx, sockType)
 	if err != nil {
 		return nil, syserr.ErrConnectionRefused
 	}

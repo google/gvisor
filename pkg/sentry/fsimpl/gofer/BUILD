@@ -53,6 +53,7 @@ go_template_instance(
 go_library(
     name = "gofer",
     srcs = [
+        "dentry_impl.go",
         "dentry_list.go",
         "directory.go",
         "filesystem.go",
@@ -60,6 +61,7 @@ go_library(
         "gofer.go",
         "handle.go",
         "host_named_pipe.go",
+        "lisafs_dentry.go",
         "regular_file.go",
         "revalidate.go",
         "save_restore.go",

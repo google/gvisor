@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/hostarch"
-	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -108,14 +107,14 @@ func (d *dentry) prepareSaveRecursive(ctx context.Context) error {
 	if d.isRegularFile() && !d.cachedMetadataAuthoritative() {
 		// Get updated metadata for d in case we need to perform metadata
 		// validation during restore.
-		if err := d.updateMetadata(ctx, nil); err != nil {
+		if err := d.updateMetadata(ctx); err != nil {
 			return err
 		}
 	}
-	if d.readFDLisa.Ok() || d.writeFDLisa.Ok() {
+	if d.isReadHandleOk() || d.isWriteHandleOk() {
 		d.fs.savedDentryRW[d] = savedDentryRW{
-			read:  d.readFDLisa.Ok(),
-			write: d.writeFDLisa.Ok(),
+			read:  d.isReadHandleOk(),
+			write: d.isWriteHandleOk(),
 		}
 	}
 	d.dirMu.Lock()
@@ -179,11 +178,7 @@ func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRest
 	fs.opts.fd = fd
 	fs.inoByKey = make(map[inoKey]uint64)
 
-	rootInode, err := fs.initClient(ctx)
-	if err != nil {
-		return err
-	}
-	if err := fs.root.restoreFile(ctx, &rootInode, &opts); err != nil {
+	if err := fs.restoreRoot(ctx, &opts); err != nil {
 		return err
 	}
 
@@ -223,90 +218,28 @@ func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRest
 	return nil
 }
 
-func (d *dentry) restoreFile(ctx context.Context, inode *lisafs.Inode, opts *vfs.CompleteRestoreOptions) error {
-	d.controlFDLisa = d.fs.client.NewFD(inode.ControlFD)
-
-	// Gofers do not preserve inoKey across checkpoint/restore, so:
-	//
-	//	- We must assume that the remote filesystem did not change in a way that
-	//		would invalidate dentries, since we can't revalidate dentries by
-	//		checking inoKey.
-	//
-	//	- We need to associate the new inoKey with the existing d.ino.
-	d.inoKey = inoKeyFromStat(&inode.Stat)
-	d.fs.inoMu.Lock()
-	d.fs.inoByKey[d.inoKey] = d.ino
-	d.fs.inoMu.Unlock()
-
-	// Check metadata stability before updating metadata.
-	d.metadataMu.Lock()
-	defer d.metadataMu.Unlock()
-	if d.isRegularFile() {
-		if opts.ValidateFileSizes {
-			if inode.Stat.Mask&linux.STATX_SIZE == 0 {
-				return vfs.ErrCorruption{fmt.Errorf("gofer.dentry(%q).restoreFile: file size validation failed: file size not available", genericDebugPathname(d))}
-			}
-			if d.size.RacyLoad() != inode.Stat.Size {
-				return vfs.ErrCorruption{fmt.Errorf("gofer.dentry(%q).restoreFile: file size validation failed: size changed from %d to %d", genericDebugPathname(d), d.size.Load(), inode.Stat.Size)}
-			}
-		}
-		if opts.ValidateFileModificationTimestamps {
-			if inode.Stat.Mask&linux.STATX_MTIME != 0 {
-				return vfs.ErrCorruption{fmt.Errorf("gofer.dentry(%q).restoreFile: mtime validation failed: mtime not available", genericDebugPathname(d))}
-			}
-			if want := dentryTimestamp(inode.Stat.Mtime); d.mtime.RacyLoad() != want {
-				return vfs.ErrCorruption{fmt.Errorf("gofer.dentry(%q).restoreFile: mtime validation failed: mtime changed from %+v to %+v", genericDebugPathname(d), linux.NsecToStatxTimestamp(d.mtime.RacyLoad()), linux.NsecToStatxTimestamp(want))}
-			}
-		}
-	}
-	if !d.cachedMetadataAuthoritative() {
-		d.updateMetadataFromStatLocked(&inode.Stat)
-	}
-
-	if rw, ok := d.fs.savedDentryRW[d]; ok {
-		if err := d.ensureSharedHandle(ctx, rw.read, rw.write, false /* trunc */); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
 // Preconditions: d is not synthetic.
 func (d *dentry) restoreDescendantsRecursive(ctx context.Context, opts *vfs.CompleteRestoreOptions) error {
 	for _, child := range d.children {
 		if child == nil {
 			continue
 		}
-		// child is synthetic if it does not exist in fs.syncableDentries.
-		if child.syncableListEntry.Next() == nil && child.syncableListEntry.Prev() == nil && d.fs.syncableDentries.Front() != &child.syncableListEntry {
+		if child.isSynthetic() {
 			continue
 		}
-		if err := child.restoreRecursive(ctx, opts); err != nil {
+		if err := child.restoreFile(ctx, opts); err != nil {
+			return err
+		}
+		if err := child.restoreDescendantsRecursive(ctx, opts); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// Preconditions: d is not synthetic (but note that since this function
-// restores d.file, d.file.isNil() is always true at this point, so this can
-// only be detected by checking filesystem.syncableDentries). d.parent has been
-// restored.
-func (d *dentry) restoreRecursive(ctx context.Context, opts *vfs.CompleteRestoreOptions) error {
-	inode, err := d.parent.controlFDLisa.Walk(ctx, d.name)
-	if err != nil {
-		return err
-	}
-	if err := d.restoreFile(ctx, &inode, opts); err != nil {
-		return err
-	}
-	return d.restoreDescendantsRecursive(ctx, opts)
-}
-
 func (fd *specialFileFD) completeRestore(ctx context.Context) error {
 	d := fd.dentry()
-	h, err := openHandle(ctx, d.controlFDLisa, fd.vfsfd.IsReadable(), fd.vfsfd.IsWritable(), false /* trunc */)
+	h, err := d.openHandle(ctx, fd.vfsfd.IsReadable(), fd.vfsfd.IsWritable(), false /* trunc */)
 	if err != nil {
 		return err
 	}

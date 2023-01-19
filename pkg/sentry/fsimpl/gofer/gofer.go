@@ -506,6 +506,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 
 	fs.vfsfs.Init(vfsObj, &fstype, fs)
 
+	// TODO(b/258687694): Handle directfs.
 	if err := fs.initClientAndRoot(ctx); err != nil {
 		fs.vfsfs.DecRef(ctx)
 		return nil, nil, err
@@ -519,9 +520,8 @@ func (fs *filesystem) initClientAndRoot(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	fs.root, err = fs.newDentry(ctx, &rootInode)
+	fs.root, err = fs.newLisafsDentry(ctx, &rootInode)
 	if err != nil {
-		fs.client.CloseFD(ctx, rootInode.ControlFD, false /* flush */)
 		return err
 	}
 
@@ -626,8 +626,9 @@ func (fs *filesystem) Release(ctx context.Context) {
 		d := elem.d
 		d.handleMu.Lock()
 		d.dataMu.Lock()
-		if h := d.writeHandleLocked(); h.isOpen() {
+		if d.isWriteHandleOk() {
 			// Write dirty cached data to the remote file.
+			h := d.writeHandle()
 			if err := fsutil.SyncDirtyAll(ctx, &d.cache, &d.dirty, d.size.Load(), mf, h.writeFromBlocksAt); err != nil {
 				log.Warningf("gofer.filesystem.Release: failed to flush dentry: %v", err)
 			}
@@ -715,7 +716,7 @@ type inoKey struct {
 	devMajor uint32
 }
 
-func inoKeyFromStat(stat *linux.Statx) inoKey {
+func inoKeyFromStatx(stat *linux.Statx) inoKey {
 	return inoKey{
 		ino:      stat.Ino,
 		devMinor: stat.DevMinor,
@@ -752,14 +753,6 @@ type dentry struct {
 
 	// inoKey is used to identify this dentry's inode.
 	inoKey inoKey
-
-	// controlFDLisa is used by lisafs to perform path based operations on this
-	// dentry.
-	//
-	// if !controlFD.Ok(), this dentry represents a synthetic file, i.e. a
-	// file that does not exist on the remote filesystem. As of this writing, the
-	// only files that can be synthetic are sockets, pipes, and directories.
-	controlFDLisa lisafs.ClientFD `state:"nosave"`
 
 	// If deleted is non-zero, the file represented by this dentry has been
 	// deleted is accessed using atomic memory operations.
@@ -861,15 +854,12 @@ type dentry struct {
 	// the file into memmap.MappingSpaces. mappings is protected by mapsMu.
 	mappings memmap.MappingSet
 
-	//	- If this dentry represents a regular file or directory, readFDLisa is
-	//		a LISAFS FD used for reads by all regularFileFDs/directoryFDs
-	//		representing this dentry, and readFD (if not -1) is a host FD
-	//		equivalent to readFDLisa used as a faster alternative.
+	//	- If this dentry represents a regular file or directory, readFD (if not
+	//    -1) is a host FD used for reads by all regularFileFDs/directoryFDs
+	//    representing this dentry.
 	//
-	//	- If this dentry represents a regular file, writeFDLisa is the LISAFS FD
-	//		used for writes by all regularFileFDs representing this dentry, and
-	//		writeFD (if not -1) is a host FD equivalent to writeFDLisa used as a
-	//		faster alternative.
+	//	- If this dentry represents a regular file, writeFD (if not -1) is a host
+	//    FD used for writes by all regularFileFDs representing this dentry.
 	//
 	//	- If this dentry represents a regular file, mmapFD is the host FD used
 	//		for memory mappings. If mmapFD is -1, no such FD is available, and the
@@ -879,21 +869,17 @@ type dentry struct {
 	// additionally written using atomic memory operations, allowing them to be
 	// read (albeit racily) with atomic.LoadInt32() without locking handleMu.
 	//
-	// readFDLisa and writeFDLisa may or may not represent the same LISAFS FD.
-	// Once either transitions from closed (Ok() == false) to open
-	// (Ok() == true), it may be mutated with handleMu locked, but cannot
-	// be closed until the dentry is destroyed.
+	// readFD and writeFD may or may not be the same file descriptor. Once either
+	// transitions from closed (-1) to open, it may be mutated with handleMu
+	// locked, but cannot be closed until the dentry is destroyed.
 	//
 	// readFD and writeFD may or may not be the same file descriptor. mmapFD is
-	// always either -1 or equal to readFD; if writeFDLisa.Ok() (the file has
-	// been opened for writing), it is additionally either -1 or equal to
-	// writeFD.
-	handleMu    sync.RWMutex       `state:"nosave"`
-	readFDLisa  lisafs.ClientFD    `state:"nosave"`
-	writeFDLisa lisafs.ClientFD    `state:"nosave"`
-	readFD      atomicbitops.Int32 `state:"nosave"`
-	writeFD     atomicbitops.Int32 `state:"nosave"`
-	mmapFD      atomicbitops.Int32 `state:"nosave"`
+	// always either -1 or equal to readFD; if the file has been opened for
+	// writing, it is additionally either -1 or equal to writeFD.
+	handleMu sync.RWMutex       `state:"nosave"`
+	readFD   atomicbitops.Int32 `state:"nosave"`
+	writeFD  atomicbitops.Int32 `state:"nosave"`
+	mmapFD   atomicbitops.Int32 `state:"nosave"`
 
 	dataMu sync.RWMutex `state:"nosave"`
 
@@ -935,6 +921,14 @@ type dentry struct {
 	// same underlying file (see the gofer filesystem section fo vfs/inotify.md for
 	// a more in-depth discussion on this matter).
 	watches vfs.Watches
+
+	// impl is the specific dentry implementation for non-synthetic dentries.
+	// impl is immutable.
+	//
+	// If impl is nil, this dentry represents a synthetic file, i.e. a
+	// file that does not exist on the host filesystem. As of this writing, the
+	// only files that can be synthetic are sockets, pipes, and directories.
+	impl any
 }
 
 // +stateify savable
@@ -949,81 +943,6 @@ type dentryListElem struct {
 	// d is the dentry that this elem represents.
 	d *dentry
 	dentryEntry
-}
-
-func (fs *filesystem) newDentry(ctx context.Context, ino *lisafs.Inode) (*dentry, error) {
-	if ino.Stat.Mask&linux.STATX_TYPE == 0 {
-		ctx.Warningf("can't create gofer.dentry without file type")
-		return nil, linuxerr.EIO
-	}
-	if ino.Stat.Mode&linux.FileTypeMask == linux.ModeRegular && ino.Stat.Mask&linux.STATX_SIZE == 0 {
-		ctx.Warningf("can't create regular file gofer.dentry without file size")
-		return nil, linuxerr.EIO
-	}
-
-	inoKey := inoKeyFromStat(&ino.Stat)
-	d := &dentry{
-		fs:            fs,
-		inoKey:        inoKey,
-		ino:           fs.inoFromKey(inoKey),
-		mode:          atomicbitops.FromUint32(uint32(ino.Stat.Mode)),
-		uid:           atomicbitops.FromUint32(uint32(fs.opts.dfltuid)),
-		gid:           atomicbitops.FromUint32(uint32(fs.opts.dfltgid)),
-		blockSize:     atomicbitops.FromUint32(hostarch.PageSize),
-		readFD:        atomicbitops.FromInt32(-1),
-		writeFD:       atomicbitops.FromInt32(-1),
-		mmapFD:        atomicbitops.FromInt32(-1),
-		controlFDLisa: fs.client.NewFD(ino.ControlFD),
-	}
-	d.pf.dentry = d
-	d.cacheEntry.d = d
-	d.syncableListEntry.d = d
-	if ino.Stat.Mask&linux.STATX_UID != 0 {
-		d.uid = atomicbitops.FromUint32(dentryUID(lisafs.UID(ino.Stat.UID)))
-	}
-	if ino.Stat.Mask&linux.STATX_GID != 0 {
-		d.gid = atomicbitops.FromUint32(dentryGID(lisafs.GID(ino.Stat.GID)))
-	}
-	if ino.Stat.Mask&linux.STATX_SIZE != 0 {
-		d.size = atomicbitops.FromUint64(ino.Stat.Size)
-	}
-	if ino.Stat.Blksize != 0 {
-		d.blockSize = atomicbitops.FromUint32(ino.Stat.Blksize)
-	}
-	if ino.Stat.Mask&linux.STATX_ATIME != 0 {
-		d.atime = atomicbitops.FromInt64(dentryTimestamp(ino.Stat.Atime))
-	} else {
-		d.atime = atomicbitops.FromInt64(fs.clock.Now().Nanoseconds())
-	}
-	if ino.Stat.Mask&linux.STATX_MTIME != 0 {
-		d.mtime = atomicbitops.FromInt64(dentryTimestamp(ino.Stat.Mtime))
-	} else {
-		d.mtime = atomicbitops.FromInt64(fs.clock.Now().Nanoseconds())
-	}
-	if ino.Stat.Mask&linux.STATX_CTIME != 0 {
-		d.ctime = atomicbitops.FromInt64(dentryTimestamp(ino.Stat.Ctime))
-	} else {
-		// Approximate ctime with mtime if ctime isn't available.
-		d.ctime = atomicbitops.FromInt64(d.mtime.Load())
-	}
-	if ino.Stat.Mask&linux.STATX_BTIME != 0 {
-		d.btime = atomicbitops.FromInt64(dentryTimestamp(ino.Stat.Btime))
-	}
-	if ino.Stat.Mask&linux.STATX_NLINK != 0 {
-		d.nlink = atomicbitops.FromUint32(ino.Stat.Nlink)
-	} else {
-		if ino.Stat.Mode&linux.FileTypeMask == linux.ModeDirectory {
-			d.nlink = atomicbitops.FromUint32(2)
-		} else {
-			d.nlink = atomicbitops.FromUint32(1)
-		}
-	}
-	d.vfsd.Init(d)
-	refs.Register(d)
-	fs.syncMu.Lock()
-	fs.syncableDentries.PushBack(&d.syncableListEntry)
-	fs.syncMu.Unlock()
-	return d, nil
 }
 
 func (fs *filesystem) inoFromKey(key inoKey) uint64 {
@@ -1042,19 +961,35 @@ func (fs *filesystem) nextIno() uint64 {
 	return fs.lastIno.Add(1)
 }
 
+// init must be called before first use of d.
+func (d *dentry) init(impl any) {
+	d.pf.dentry = d
+	d.cacheEntry.d = d
+	d.syncableListEntry.d = d
+	// Nested impl-inheritance pattern. In memory it looks like:
+	// [[[ vfs.Dentry ] dentry ] dentryImpl ]
+	// All 3 abstractions are allocated in one allocation. We achieve this by
+	// making each outer dentry implementation hold the inner dentry by value.
+	// Then the outer most dentry is allocated and we initialize fields inward.
+	// Each inner dentry has a pointer to the next level of implementation.
+	d.impl = impl
+	d.vfsd.Init(d)
+	refs.Register(d)
+}
+
 func (d *dentry) isSynthetic() bool {
-	return !d.isControlFileOk()
+	return d.impl == nil
 }
 
 func (d *dentry) cachedMetadataAuthoritative() bool {
 	return d.fs.opts.interop != InteropModeShared || d.isSynthetic()
 }
 
-// updateMetadataFromStatLocked is called to update d's metadata after an update
+// updateMetadataFromStatxLocked is called to update d's metadata after an update
 // from the remote filesystem.
 // Precondition: d.metadataMu must be locked.
 // +checklocks:d.metadataMu
-func (d *dentry) updateMetadataFromStatLocked(stat *linux.Statx) {
+func (d *lisafsDentry) updateMetadataFromStatxLocked(stat *linux.Statx) {
 	if stat.Mask&linux.STATX_TYPE != 0 {
 		if got, want := stat.Mode&linux.FileTypeMask, d.fileType(); uint32(got) != want {
 			panic(fmt.Sprintf("gofer.dentry file type changed from %#o to %#o", want, got))
@@ -1103,10 +1038,11 @@ func (d *dentry) refreshSizeLocked(ctx context.Context) error {
 	// Can use RacyLoad() because handleMu is locked.
 	if d.writeFD.RacyLoad() < 0 {
 		d.handleMu.RUnlock()
-		// Ask the gofer if we don't have a host FD.
-		return d.updateMetadataLocked(ctx, nil)
+		// Use a suitable FD if we don't have a writable host FD.
+		return d.updateMetadataLocked(ctx, noHandle)
 	}
 
+	// Using statx(2) with a minimal mask is faster than fstat(2).
 	var stat unix.Statx_t
 	// Can use RacyLoad() because handleMu is locked.
 	err := unix.Statx(int(d.writeFD.RacyLoad()), "", unix.AT_EMPTY_PATH, unix.STATX_SIZE, &stat)
@@ -1119,52 +1055,12 @@ func (d *dentry) refreshSizeLocked(ctx context.Context) error {
 }
 
 // Preconditions: !d.isSynthetic().
-func (d *dentry) updateMetadata(ctx context.Context, fd *lisafs.ClientFD) error {
-	// d.metadataMu must be locked *before* we getAttr so that we do not end up
-	// updating stale attributes in d.updateFromP9AttrsLocked().
+func (d *dentry) updateMetadata(ctx context.Context) error {
+	// d.metadataMu must be locked *before* we stat so that we do not end up
+	// updating stale attributes in d.updateMetadataFromStatLocked().
 	d.metadataMu.Lock()
 	defer d.metadataMu.Unlock()
-	return d.updateMetadataLocked(ctx, fd)
-}
-
-// Preconditions:
-//   - !d.isSynthetic().
-//   - d.metadataMu is locked.
-//
-// +checklocks:d.metadataMu
-func (d *dentry) updateMetadataLocked(ctx context.Context, fd *lisafs.ClientFD) error {
-	handleMuRLocked := false
-	if fd == nil {
-		// Use open FDs in preferenece to the control FD. This may be significantly
-		// more efficient in some implementations. Prefer a writable FD over a
-		// readable one since some filesystem implementations may update a writable
-		// FD's metadata after writes, without making metadata updates immediately
-		// visible to read-only FDs representing the same file.
-		d.handleMu.RLock()
-		switch {
-		case d.writeFDLisa.Ok():
-			fd = &d.writeFDLisa
-			handleMuRLocked = true
-		case d.readFDLisa.Ok():
-			fd = &d.readFDLisa
-			handleMuRLocked = true
-		default:
-			fd = &d.controlFDLisa
-			d.handleMu.RUnlock()
-		}
-	}
-
-	var stat linux.Statx
-	err := fd.StatTo(ctx, &stat)
-	if handleMuRLocked {
-		// handleMu must be released before updateMetadataFromStatLocked().
-		d.handleMu.RUnlock() // +checklocksforce: complex case.
-	}
-	if err != nil {
-		return err
-	}
-	d.updateMetadataFromStatLocked(&stat)
-	return nil
+	return d.updateMetadataLocked(ctx, noHandle)
 }
 
 func (d *dentry) fileType() uint32 {
@@ -1279,6 +1175,7 @@ func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs
 	var failureErr error
 	if !d.isSynthetic() {
 		if stat.Mask != 0 {
+			d.handleMu.RLock()
 			if stat.Mask&linux.STATX_SIZE != 0 {
 				// d.dataMu must be held around the update to both the remote
 				// file's size and d.size to serialize with writeback (which
@@ -1287,7 +1184,8 @@ func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs
 				d.dataMu.Lock()
 			}
 			var err error
-			failureMask, failureErr, err = d.controlFDLisa.SetStat(ctx, stat)
+			failureMask, failureErr, err = d.setStatLocked(ctx, stat)
+			d.handleMu.RUnlock()
 			if err != nil {
 				if stat.Mask&linux.STATX_SIZE != 0 {
 					d.dataMu.Unlock() // +checklocksforce: locked conditionally above
@@ -1339,44 +1237,6 @@ func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs
 	if failureMask != 0 {
 		// Setting some attribute failed on the remote filesystem.
 		return failureErr
-	}
-	return nil
-}
-
-// Preconditions:
-// - filesystem.renameMu must be locked.
-// - d.dirMu must be locked.
-// - d.isDir().
-func (d *dentry) mknodLocked(ctx context.Context, name string, creds *auth.Credentials, opts vfs.MknodOptions, ds **[]*dentry) error {
-	if _, ok := opts.Endpoint.(transport.HostBoundEndpoint); !ok {
-		childInode, err := d.controlFDLisa.MknodAt(ctx, name, opts.Mode, lisafs.UID(creds.EffectiveKUID), lisafs.GID(creds.EffectiveKGID), opts.DevMinor, opts.DevMajor)
-		if err != nil {
-			return err
-		}
-		return d.insertCreatedChildLocked(ctx, &childInode, name, nil, ds)
-	}
-
-	// This mknod(2) is coming from unix bind(2), as opts.Endpoint is set.
-	sockType := opts.Endpoint.(transport.Endpoint).Type()
-	childInode, boundSocketFD, err := d.controlFDLisa.BindAt(ctx, sockType, name, opts.Mode, lisafs.UID(creds.EffectiveKUID), lisafs.GID(creds.EffectiveKGID))
-	if err != nil {
-		return err
-	}
-	hbep := opts.Endpoint.(transport.HostBoundEndpoint)
-	if err := hbep.SetBoundSocketFD(boundSocketFD); err != nil {
-		boundSocketFD.Close(ctx)
-		if err := d.controlFDLisa.UnlinkAt(ctx, name, 0 /* flags */); err != nil {
-			log.Warningf("failed to clean up socket which was created by BindAt RPC: %v", err)
-		}
-		d.fs.client.CloseFD(ctx, childInode.ControlFD, false /* flush */)
-		return err
-	}
-	if err := d.insertCreatedChildLocked(ctx, &childInode, name, func(child *dentry) {
-		// Set the endpoint on the newly created child dentry.
-		child.endpoint = opts.Endpoint
-	}, ds); err != nil {
-		hbep.ResetBoundSocketFD(ctx)
-		return err
 	}
 	return nil
 }
@@ -1831,8 +1691,9 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 	mf := d.fs.mfp.MemoryFile()
 	d.handleMu.Lock()
 	d.dataMu.Lock()
-	if h := d.writeHandleLocked(); h.isOpen() {
+	if d.isWriteHandleOk() {
 		// Write dirty pages back to the remote filesystem.
+		h := d.writeHandle()
 		if err := fsutil.SyncDirtyAll(ctx, &d.cache, &d.dirty, d.size.Load(), mf, h.writeFromBlocksAt); err != nil {
 			log.Warningf("gofer.dentry.destroyLocked: failed to write dirty data back: %v", err)
 		}
@@ -1844,12 +1705,7 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 		d.dirty.RemoveAll()
 	}
 	d.dataMu.Unlock()
-	if d.readFDLisa.Ok() && d.readFDLisa.ID() != d.writeFDLisa.ID() {
-		d.readFDLisa.Close(ctx, false /* flush */)
-	}
-	if d.writeFDLisa.Ok() {
-		d.writeFDLisa.Close(ctx, false /* flush */)
-	}
+	d.destroyImpl(ctx)
 	// Can use RacyLoad() because handleMu is locked.
 	if d.readFD.RacyLoad() >= 0 {
 		_ = unix.Close(int(d.readFD.RacyLoad()))
@@ -1871,12 +1727,6 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 		// instantiated for the same file would remain coherent. Unfortunately,
 		// this turns out to be too expensive in many cases, so for now we
 		// don't do this.
-
-		// Close the control FD. Propagate the Close RPCs immediately to the server
-		// if the dentry being destroyed is a deleted regular file. This is to
-		// release the disk space on remote immediately.
-		flushClose := d.isDeleted() && d.isRegularFile()
-		d.controlFDLisa.Close(ctx, flushClose)
 
 		// Remove d from the set of syncable dentries.
 		d.fs.syncMu.Lock()
@@ -1902,50 +1752,42 @@ func (d *dentry) setDeleted() {
 	d.deleted.Store(1)
 }
 
-func (d *dentry) isControlFileOk() bool {
-	return d.controlFDLisa.Ok()
-}
-
-func (d *dentry) isReadFileOk() bool {
-	return d.readFDLisa.Ok()
-}
-
 func (d *dentry) listXattr(ctx context.Context, size uint64) ([]string, error) {
-	if !d.isControlFileOk() {
+	if d.isSynthetic() {
 		return nil, nil
 	}
 
-	return d.controlFDLisa.ListXattr(ctx, size)
+	return d.listXattrImpl(ctx, size)
 }
 
 func (d *dentry) getXattr(ctx context.Context, creds *auth.Credentials, opts *vfs.GetXattrOptions) (string, error) {
-	if !d.isControlFileOk() {
+	if d.isSynthetic() {
 		return "", linuxerr.ENODATA
 	}
 	if err := d.checkXattrPermissions(creds, opts.Name, vfs.MayRead); err != nil {
 		return "", err
 	}
-	return d.controlFDLisa.GetXattr(ctx, opts.Name, opts.Size)
+	return d.getXattrImpl(ctx, opts)
 }
 
 func (d *dentry) setXattr(ctx context.Context, creds *auth.Credentials, opts *vfs.SetXattrOptions) error {
-	if !d.isControlFileOk() {
+	if d.isSynthetic() {
 		return linuxerr.EPERM
 	}
 	if err := d.checkXattrPermissions(creds, opts.Name, vfs.MayWrite); err != nil {
 		return err
 	}
-	return d.controlFDLisa.SetXattr(ctx, opts.Name, opts.Value, opts.Flags)
+	return d.setXattrImpl(ctx, opts)
 }
 
 func (d *dentry) removeXattr(ctx context.Context, creds *auth.Credentials, name string) error {
-	if !d.isControlFileOk() {
+	if d.isSynthetic() {
 		return linuxerr.EPERM
 	}
 	if err := d.checkXattrPermissions(creds, name, vfs.MayWrite); err != nil {
 		return err
 	}
-	return d.controlFDLisa.RemoveXattr(ctx, name)
+	return d.removeXattrImpl(ctx, name)
 }
 
 // Preconditions:
@@ -1956,7 +1798,7 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 	// O_TRUNC).
 	if !trunc {
 		d.handleMu.RLock()
-		canReuseCurHandle := (!read || d.readFDLisa.Ok()) && (!write || d.writeFDLisa.Ok())
+		canReuseCurHandle := (!read || d.isReadHandleOk()) && (!write || d.isWriteHandleOk())
 		d.handleMu.RUnlock()
 		if canReuseCurHandle {
 			// Current handles are sufficient.
@@ -1964,142 +1806,129 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 		}
 	}
 
+	d.handleMu.Lock()
+	needNewHandle := (read && !d.isReadHandleOk()) || (write && !d.isWriteHandleOk()) || trunc
+	if !needNewHandle {
+		d.handleMu.Unlock()
+		return nil
+	}
+
 	var fdsToCloseArr [2]int32
 	fdsToClose := fdsToCloseArr[:0]
 	invalidateTranslations := false
-	d.handleMu.Lock()
-	if (read && !d.readFDLisa.Ok()) || (write && !d.writeFDLisa.Ok()) || trunc {
-		// Get a new handle. If this file has been opened for both reading and
-		// writing, try to get a single handle that is usable for both:
-		//
-		//	- Writable memory mappings of a host FD require that the host FD is
-		//		opened for both reading and writing.
-		//
-		//	- NOTE(b/141991141): Some filesystems may not ensure coherence
-		//		between multiple handles for the same file.
-		openReadable := d.readFDLisa.Ok() || read
-		openWritable := d.writeFDLisa.Ok() || write
-		h, err := openHandle(ctx, d.controlFDLisa, openReadable, openWritable, trunc)
-		if linuxerr.Equals(linuxerr.EACCES, err) && (openReadable != read || openWritable != write) {
-			// It may not be possible to use a single handle for both
-			// reading and writing, since permissions on the file may have
-			// changed to e.g. disallow reading after previously being
-			// opened for reading. In this case, we have no choice but to
-			// use separate handles for reading and writing.
-			ctx.Debugf("gofer.dentry.ensureSharedHandle: bifurcating read/write handles for dentry %p", d)
-			openReadable = read
-			openWritable = write
-			h, err = openHandle(ctx, d.controlFDLisa, openReadable, openWritable, trunc)
-		}
-		if err != nil {
-			d.handleMu.Unlock()
-			return err
-		}
+	// Get a new handle. If this file has been opened for both reading and
+	// writing, try to get a single handle that is usable for both:
+	//
+	//	- Writable memory mappings of a host FD require that the host FD is
+	//		opened for both reading and writing.
+	//
+	//	- NOTE(b/141991141): Some filesystems may not ensure coherence
+	//		between multiple handles for the same file.
+	openReadable := d.isReadHandleOk() || read
+	openWritable := d.isWriteHandleOk() || write
+	h, err := d.openHandle(ctx, openReadable, openWritable, trunc)
+	if linuxerr.Equals(linuxerr.EACCES, err) && (openReadable != read || openWritable != write) {
+		// It may not be possible to use a single handle for both
+		// reading and writing, since permissions on the file may have
+		// changed to e.g. disallow reading after previously being
+		// opened for reading. In this case, we have no choice but to
+		// use separate handles for reading and writing.
+		ctx.Debugf("gofer.dentry.ensureSharedHandle: bifurcating read/write handles for dentry %p", d)
+		openReadable = read
+		openWritable = write
+		h, err = d.openHandle(ctx, openReadable, openWritable, trunc)
+	}
+	if err != nil {
+		d.handleMu.Unlock()
+		return err
+	}
 
-		// Update d.readFD and d.writeFD
-		if h.fd >= 0 {
-			if openReadable && openWritable && (d.readFD.RacyLoad() < 0 || d.writeFD.RacyLoad() < 0 || d.readFD.RacyLoad() != d.writeFD.RacyLoad()) {
-				// Replace existing FDs with this one.
-				if d.readFD.RacyLoad() >= 0 {
-					// We already have a readable FD that may be in use by
-					// concurrent callers of d.pf.FD().
-					if d.fs.opts.overlayfsStaleRead {
-						// If overlayfsStaleRead is in effect, then the new FD
-						// may not be coherent with the existing one, so we
-						// have no choice but to switch to mappings of the new
-						// FD in both the application and sentry.
-						if err := d.pf.hostFileMapper.RegenerateMappings(int(h.fd)); err != nil {
-							d.handleMu.Unlock()
-							ctx.Warningf("gofer.dentry.ensureSharedHandle: failed to replace sentry mappings of old FD with mappings of new FD: %v", err)
-							h.close(ctx)
-							return err
-						}
-						fdsToClose = append(fdsToClose, d.readFD.RacyLoad())
-						invalidateTranslations = true
-						d.readFD.Store(h.fd)
-					} else {
-						// Otherwise, we want to avoid invalidating existing
-						// memmap.Translations (which is expensive); instead, use
-						// dup3 to make the old file descriptor refer to the new
-						// file description, then close the new file descriptor
-						// (which is no longer needed). Racing callers of d.pf.FD()
-						// may use the old or new file description, but this
-						// doesn't matter since they refer to the same file, and
-						// any racing mappings must be read-only.
-						if err := unix.Dup3(int(h.fd), int(d.readFD.RacyLoad()), unix.O_CLOEXEC); err != nil {
-							oldFD := d.readFD.RacyLoad()
-							d.handleMu.Unlock()
-							ctx.Warningf("gofer.dentry.ensureSharedHandle: failed to dup fd %d to fd %d: %v", h.fd, oldFD, err)
-							h.close(ctx)
-							return err
-						}
-						fdsToClose = append(fdsToClose, h.fd)
-						h.fd = d.readFD.RacyLoad()
+	// Update d.readFD and d.writeFD
+	if h.fd >= 0 {
+		if openReadable && openWritable && (d.readFD.RacyLoad() < 0 || d.writeFD.RacyLoad() < 0 || d.readFD.RacyLoad() != d.writeFD.RacyLoad()) {
+			// Replace existing FDs with this one.
+			if d.readFD.RacyLoad() >= 0 {
+				// We already have a readable FD that may be in use by
+				// concurrent callers of d.pf.FD().
+				if d.fs.opts.overlayfsStaleRead {
+					// If overlayfsStaleRead is in effect, then the new FD
+					// may not be coherent with the existing one, so we
+					// have no choice but to switch to mappings of the new
+					// FD in both the application and sentry.
+					if err := d.pf.hostFileMapper.RegenerateMappings(int(h.fd)); err != nil {
+						d.handleMu.Unlock()
+						ctx.Warningf("gofer.dentry.ensureSharedHandle: failed to replace sentry mappings of old FD with mappings of new FD: %v", err)
+						h.close(ctx)
+						return err
 					}
-				} else {
-					d.readFD.Store(h.fd)
-				}
-				if d.writeFD.RacyLoad() != h.fd && d.writeFD.RacyLoad() >= 0 {
-					fdsToClose = append(fdsToClose, d.writeFD.RacyLoad())
-				}
-				d.writeFD.Store(h.fd)
-				d.mmapFD.Store(h.fd)
-			} else if openReadable && d.readFD.RacyLoad() < 0 {
-				d.readFD.Store(h.fd)
-				// If the file has not been opened for writing, the new FD may
-				// be used for read-only memory mappings. If the file was
-				// previously opened for reading (without an FD), then existing
-				// translations of the file may use the internal page cache;
-				// invalidate those mappings.
-				if !d.writeFDLisa.Ok() {
-					invalidateTranslations = d.readFDLisa.Ok()
-					d.mmapFD.Store(h.fd)
-				}
-			} else if openWritable && d.writeFD.RacyLoad() < 0 {
-				d.writeFD.Store(h.fd)
-				if d.readFD.RacyLoad() >= 0 {
-					// We have an existing read-only FD, but the file has just
-					// been opened for writing, so we need to start supporting
-					// writable memory mappings. However, the new FD is not
-					// readable, so we have no FD that can be used to create
-					// writable memory mappings. Switch to using the internal
-					// page cache.
+					fdsToClose = append(fdsToClose, d.readFD.RacyLoad())
 					invalidateTranslations = true
-					d.mmapFD.Store(-1)
+					d.readFD.Store(h.fd)
+				} else {
+					// Otherwise, we want to avoid invalidating existing
+					// memmap.Translations (which is expensive); instead, use
+					// dup3 to make the old file descriptor refer to the new
+					// file description, then close the new file descriptor
+					// (which is no longer needed). Racing callers of d.pf.FD()
+					// may use the old or new file description, but this
+					// doesn't matter since they refer to the same file, and
+					// any racing mappings must be read-only.
+					if err := unix.Dup3(int(h.fd), int(d.readFD.RacyLoad()), unix.O_CLOEXEC); err != nil {
+						oldFD := d.readFD.RacyLoad()
+						d.handleMu.Unlock()
+						ctx.Warningf("gofer.dentry.ensureSharedHandle: failed to dup fd %d to fd %d: %v", h.fd, oldFD, err)
+						h.close(ctx)
+						return err
+					}
+					fdsToClose = append(fdsToClose, h.fd)
+					h.fd = d.readFD.RacyLoad()
 				}
 			} else {
-				// The new FD is not useful.
-				fdsToClose = append(fdsToClose, h.fd)
+				d.readFD.Store(h.fd)
 			}
-		} else if openWritable && d.writeFD.RacyLoad() < 0 && d.mmapFD.RacyLoad() >= 0 {
-			// We have an existing read-only FD, but the file has just been
-			// opened for writing, so we need to start supporting writable
-			// memory mappings. However, we have no writable host FD. Switch to
-			// using the internal page cache.
-			invalidateTranslations = true
-			d.mmapFD.Store(-1)
+			if d.writeFD.RacyLoad() != h.fd && d.writeFD.RacyLoad() >= 0 {
+				fdsToClose = append(fdsToClose, d.writeFD.RacyLoad())
+			}
+			d.writeFD.Store(h.fd)
+			d.mmapFD.Store(h.fd)
+		} else if openReadable && d.readFD.RacyLoad() < 0 {
+			readHandleWasOk := d.isReadHandleOk()
+			d.readFD.Store(h.fd)
+			// If the file has not been opened for writing, the new FD may
+			// be used for read-only memory mappings. If the file was
+			// previously opened for reading (without an FD), then existing
+			// translations of the file may use the internal page cache;
+			// invalidate those mappings.
+			if !d.isWriteHandleOk() {
+				invalidateTranslations = readHandleWasOk
+				d.mmapFD.Store(h.fd)
+			}
+		} else if openWritable && d.writeFD.RacyLoad() < 0 {
+			d.writeFD.Store(h.fd)
+			if d.readFD.RacyLoad() >= 0 {
+				// We have an existing read-only FD, but the file has just
+				// been opened for writing, so we need to start supporting
+				// writable memory mappings. However, the new FD is not
+				// readable, so we have no FD that can be used to create
+				// writable memory mappings. Switch to using the internal
+				// page cache.
+				invalidateTranslations = true
+				d.mmapFD.Store(-1)
+			}
+		} else {
+			// The new FD is not useful.
+			fdsToClose = append(fdsToClose, h.fd)
 		}
-
-		// Switch to new fids/FDs.
-		oldReadFD := lisafs.InvalidFDID
-		if openReadable {
-			oldReadFD = d.readFDLisa.ID()
-			d.readFDLisa = h.fdLisa
-		}
-		oldWriteFD := lisafs.InvalidFDID
-		if openWritable {
-			oldWriteFD = d.writeFDLisa.ID()
-			d.writeFDLisa = h.fdLisa
-		}
-		// NOTE(b/141991141): Close old FDs before making new fids visible (by
-		// unlocking d.handleMu).
-		if oldReadFD.Ok() {
-			d.fs.client.CloseFD(ctx, oldReadFD, false /* flush */)
-		}
-		if oldWriteFD.Ok() && oldReadFD != oldWriteFD {
-			d.fs.client.CloseFD(ctx, oldWriteFD, false /* flush */)
-		}
+	} else if openWritable && d.writeFD.RacyLoad() < 0 && d.mmapFD.RacyLoad() >= 0 {
+		// We have an existing read-only FD, but the file has just been
+		// opened for writing, so we need to start supporting writable
+		// memory mappings. However, we have no writable host FD. Switch to
+		// using the internal page cache.
+		invalidateTranslations = true
+		d.mmapFD.Store(-1)
 	}
+
+	d.updateHandles(ctx, h, openReadable, openWritable)
 	d.handleMu.Unlock()
 
 	if invalidateTranslations {
@@ -2118,22 +1947,6 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 	return nil
 }
 
-// Preconditions: d.handleMu must be locked.
-func (d *dentry) readHandleLocked() handle {
-	return handle{
-		fdLisa: d.readFDLisa,
-		fd:     d.readFD.RacyLoad(),
-	}
-}
-
-// Preconditions: d.handleMu must be locked.
-func (d *dentry) writeHandleLocked() handle {
-	return handle{
-		fdLisa: d.writeFDLisa,
-		fd:     d.writeFD.RacyLoad(),
-	}
-}
-
 func (d *dentry) syncRemoteFile(ctx context.Context) error {
 	d.handleMu.RLock()
 	defer d.handleMu.RUnlock()
@@ -2142,38 +1955,23 @@ func (d *dentry) syncRemoteFile(ctx context.Context) error {
 
 // Preconditions: d.handleMu must be locked.
 func (d *dentry) syncRemoteFileLocked(ctx context.Context) error {
-	// If we have a host FD, fsyncing it is likely to be faster than an fsync
-	// RPC. Prefer syncing write handles over read handles, since some remote
+	// Prefer syncing write handles over read handles, since some remote
 	// filesystem implementations may not sync changes made through write
 	// handles otherwise.
-	if d.writeFD.RacyLoad() >= 0 {
-		ctx.UninterruptibleSleepStart(false)
-		err := unix.Fsync(int(d.writeFD.RacyLoad()))
-		ctx.UninterruptibleSleepFinish(false)
-		return err
-	}
-	if d.writeFDLisa.Ok() {
-		return d.writeFDLisa.Sync(ctx)
-	}
-	if d.readFD.RacyLoad() >= 0 {
-		ctx.UninterruptibleSleepStart(false)
-		err := unix.Fsync(int(d.readFD.RacyLoad()))
-		ctx.UninterruptibleSleepFinish(false)
-		return err
-	}
-	if d.readFDLisa.Ok() {
-		return d.readFDLisa.Sync(ctx)
-	}
+	wh := d.writeHandle()
+	wh.sync(ctx)
+	rh := d.readHandle()
+	rh.sync(ctx)
 	return nil
 }
 
 func (d *dentry) syncCachedFile(ctx context.Context, forFilesystemSync bool) error {
 	d.handleMu.RLock()
 	defer d.handleMu.RUnlock()
-	h := d.writeHandleLocked()
-	if h.isOpen() {
+	if d.isWriteHandleOk() {
 		// Write back dirty pages to the remote file.
 		d.dataMu.Lock()
+		h := d.writeHandle()
 		err := fsutil.SyncDirtyAll(ctx, &d.cache, &d.dirty, d.size.Load(), d.fs.mfp.MemoryFile(), h.writeFromBlocksAt)
 		d.dataMu.Unlock()
 		if err != nil {
@@ -2186,7 +1984,7 @@ func (d *dentry) syncCachedFile(ctx context.Context, forFilesystemSync bool) err
 		}
 		// Only return err if we can reasonably have expected sync to succeed
 		// (d is a regular file and was opened for writing).
-		if d.isRegularFile() && h.isOpen() {
+		if d.isRegularFile() && d.isWriteHandleOk() {
 			return err
 		}
 		ctx.Debugf("gofer.dentry.syncCachedFile: syncing non-writable or non-regular-file dentry failed: %v", err)
@@ -2239,11 +2037,12 @@ func (fd *fileDescription) Stat(ctx context.Context, opts vfs.StatOptions) (linu
 	if !d.cachedMetadataAuthoritative() && opts.Mask&validMask != 0 && opts.Sync != linux.AT_STATX_DONT_SYNC {
 		// Use specialFileFD.handle.fileLisa for the Stat if available, for the
 		// same reason that we try to use open FD in updateMetadataLocked().
-		var fdLisa *lisafs.ClientFD
+		var err error
 		if sffd, ok := fd.vfsfd.Impl().(*specialFileFD); ok {
-			fdLisa = &sffd.handle.fdLisa
+			err = sffd.updateMetadata(ctx)
+		} else {
+			err = d.updateMetadata(ctx)
 		}
-		err := d.updateMetadata(ctx, fdLisa)
 		if err != nil {
 			return linux.Statx{}, err
 		}

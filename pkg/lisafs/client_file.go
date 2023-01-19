@@ -304,7 +304,13 @@ func (f *ClientFD) SetStat(ctx context.Context, stat *linux.Statx) (uint32, erro
 	ctx.UninterruptibleSleepStart(false)
 	err := f.client.SndRcvMessage(SetStat, uint32(req.SizeBytes()), req.MarshalUnsafe, resp.CheckedUnmarshal, nil, req.String, resp.String)
 	ctx.UninterruptibleSleepFinish(false)
-	return resp.FailureMask, unix.Errno(resp.FailureErrNo), err
+	if err != nil {
+		return 0, nil, err
+	}
+	if resp.FailureMask == 0 {
+		return 0, nil, nil
+	}
+	return resp.FailureMask, unix.Errno(resp.FailureErrNo), nil
 }
 
 // WalkMultiple makes the Walk RPC with multiple path components.

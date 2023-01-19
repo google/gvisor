@@ -17,7 +17,6 @@ package gofer
 import (
 	"fmt"
 
-	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
@@ -150,7 +149,7 @@ func (fd *specialFileFD) OnClose(ctx context.Context) error {
 	if !fd.vfsfd.IsWritable() {
 		return nil
 	}
-	return fd.handle.fdLisa.Flush(ctx)
+	return flush(ctx, fd.handle.fdLisa)
 }
 
 // Readiness implements waiter.Waitable.Readiness.
@@ -198,7 +197,7 @@ func (fd *specialFileFD) Allocate(ctx context.Context, mode, offset, length uint
 	if fd.isRegularFile {
 		d := fd.dentry()
 		return d.doAllocate(ctx, offset, length, func() error {
-			return fd.handle.fdLisa.Allocate(ctx, mode, offset, length)
+			return fd.handle.allocate(ctx, mode, offset, length)
 		})
 	}
 	return fd.FileDescriptionDefaultImpl.Allocate(ctx, mode, offset, length)
@@ -304,7 +303,7 @@ func (fd *specialFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 		// size is updated. There is a possible race here if size is modified
 		// externally after metadata cache is updated.
 		if fd.vfsfd.StatusFlags()&linux.O_APPEND != 0 && !d.cachedMetadataAuthoritative() {
-			if err := d.updateMetadata(ctx, nil); err != nil {
+			if err := d.updateMetadata(ctx); err != nil {
 				return 0, offset, err
 			}
 		}
@@ -416,21 +415,7 @@ func (fd *specialFileFD) sync(ctx context.Context, forFilesystemSync bool) error
 	fd.releaseMu.RLock()
 	defer fd.releaseMu.RUnlock()
 
-	if !fd.handle.isOpen() {
-		return nil
-	}
-	err := func() error {
-		// If we have a host FD, fsyncing it is likely to be faster than an fsync
-		// RPC.
-		if fd.handle.fd >= 0 {
-			ctx.UninterruptibleSleepStart(false)
-			err := unix.Fsync(int(fd.handle.fd))
-			ctx.UninterruptibleSleepFinish(false)
-			return err
-		}
-		return fd.handle.fdLisa.Sync(ctx)
-	}()
-	if err != nil {
+	if err := fd.handle.sync(ctx); err != nil {
 		if !forFilesystemSync {
 			return err
 		}
@@ -532,4 +517,11 @@ func (fd *specialFileFD) requireHostFD() {
 		// host FD, we can't mmap this file post-restore.
 		panic("gofer.specialFileFD can no longer be memory-mapped without a host FD")
 	}
+}
+
+func (fd *specialFileFD) updateMetadata(ctx context.Context) error {
+	d := fd.dentry()
+	d.metadataMu.Lock()
+	defer d.metadataMu.Unlock()
+	return d.updateMetadataLocked(ctx, fd.handle)
 }

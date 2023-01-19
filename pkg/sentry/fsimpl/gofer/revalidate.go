@@ -15,6 +15,7 @@
 package gofer
 
 import (
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -235,27 +236,57 @@ func (fs *filesystem) revalidateHelper(ctx context.Context, vfsObj *vfs.VirtualF
 	// Lock metadata on all dentries *before* getting attributes for them.
 	state.lockAllMetadata()
 
-	stats, err := state.start.controlFDLisa.WalkStat(ctx, state.names)
-	if err != nil {
-		return err
+	var stats []linux.Statx
+	switch dt := state.start.impl.(type) {
+	case *lisafsDentry:
+		var err error
+		stats, err = dt.controlFD.WalkStat(ctx, state.names)
+		if err != nil {
+			return err
+		}
+	default:
+		panic("unknown dentry implementation")
 	}
 
 	i := -1
 	for d := state.popFront(); d != nil; d = state.popFront() {
 		i++
-		found := i < len(stats)
+		var found bool
+		switch state.start.impl.(type) {
+		case *lisafsDentry:
+			found = i < len(stats)
+		default:
+			panic("unknown dentry implementation")
+		}
 		if i == 0 && len(state.names[0]) == 0 {
 			if found && !d.isSynthetic() {
 				// First dentry is where the search is starting, just update attributes
 				// since it cannot be replaced.
-				d.updateMetadataFromStatLocked(&stats[i]) // +checklocksforce: acquired by lockAllMetadata.
+				switch dt := d.impl.(type) {
+				case *lisafsDentry:
+					dt.updateMetadataFromStatxLocked(&stats[i]) // +checklocksforce: acquired by lockAllMetadata.
+				default:
+					panic("unknown dentry implementation")
+				}
 			}
 			d.metadataMu.Unlock() // +checklocksforce: see above.
 			continue
 		}
 
+		var fileChanged bool
+		if found {
+			switch d.impl.(type) {
+			case *lisafsDentry:
+				fileChanged = d.inoKey != inoKeyFromStatx(&stats[i])
+			case nil:
+				// A remote file was found to replace this synthetic file.
+				fileChanged = true
+			default:
+				panic("unknown dentry implementation")
+			}
+		}
 		// Note that synthetic dentries will always fail this comparison check.
-		if !found || d.inoKey != inoKeyFromStat(&stats[i]) {
+		if !found || fileChanged {
 			d.metadataMu.Unlock() // +checklocksforce: see above.
 			if !found && d.isSynthetic() {
 				// We have a synthetic file, and no remote file has arisen to replace
@@ -306,7 +337,12 @@ func (fs *filesystem) revalidateHelper(ctx context.Context, vfsObj *vfs.VirtualF
 		}
 
 		// The file at this path hasn't changed. Just update cached metadata.
-		d.updateMetadataFromStatLocked(&stats[i]) // +checklocksforce: see above.
+		switch dt := d.impl.(type) {
+		case *lisafsDentry:
+			dt.updateMetadataFromStatxLocked(&stats[i]) // +checklocksforce: see above.
+		default:
+			panic("unknown dentry implementation")
+		}
 		d.metadataMu.Unlock()
 	}
 
