@@ -130,7 +130,6 @@ const (
 const (
 	UsageCollect = "Usage.Collect"
 	UsageUsageFD = "Usage.UsageFD"
-	UsageReduce  = "Usage.Reduce"
 )
 
 // Metrics related commands (see metrics.go).
