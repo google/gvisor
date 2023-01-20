@@ -483,9 +483,16 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 		}
 		return &fd.vfsfd, nil
 	case *directory:
+		// Can't open directories with O_CREAT.
+		if opts.Flags&linux.O_CREAT != 0 {
+			return nil, linuxerr.EISDIR
+		}
 		// Can't open directories writably.
 		if ats&vfs.MayWrite != 0 {
 			return nil, linuxerr.EISDIR
+		}
+		if opts.Flags&linux.O_DIRECT != 0 {
+			return nil, linuxerr.EINVAL
 		}
 		var fd directoryFD
 		fd.LockFD.Init(&d.inode.locks)
