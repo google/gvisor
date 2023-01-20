@@ -322,7 +322,7 @@ var AMD64 = &kernel.SyscallTable{
 		267: syscalls.Supported("readlinkat", Readlinkat),
 		268: syscalls.Supported("fchmodat", Fchmodat),
 		269: syscalls.Supported("faccessat", Faccessat),
-		270: syscalls.Supported("pselect", Pselect),
+		270: syscalls.Supported("pselect6", Pselect6),
 		271: syscalls.Supported("ppoll", Ppoll),
 		272: syscalls.PartiallySupported("unshare", Unshare, "Mount, cgroup namespaces not supported. Network namespaces supported but must be empty.", nil),
 		273: syscalls.Supported("set_robust_list", SetRobustList),
@@ -503,7 +503,7 @@ var ARM64 = &kernel.SyscallTable{
 		69:  syscalls.SupportedPoint("preadv", Preadv, PointPreadv),
 		70:  syscalls.SupportedPoint("pwritev", Pwritev, PointPwritev),
 		71:  syscalls.Supported("sendfile", Sendfile),
-		72:  syscalls.Supported("pselect", Pselect),
+		72:  syscalls.Supported("pselect6", Pselect6),
 		73:  syscalls.Supported("ppoll", Ppoll),
 		74:  syscalls.SupportedPoint("signalfd4", Signalfd4, PointSignalfd4),
 		75:  syscalls.ErrorWithEvent("vmsplice", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/138"}), // TODO(b/29354098)

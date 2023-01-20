@@ -508,8 +508,8 @@ type sigSetWithSize struct {
 	sizeofSigset uint64
 }
 
-// Pselect implements linux syscall pselect(2).
-func Pselect(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+// Pselect6 implements linux syscall pselect6(2).
+func Pselect6(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	nfds := int(args[0].Int()) // select(2) uses an int.
 	readFDs := args[1].Pointer()
 	writeFDs := args[2].Pointer()
