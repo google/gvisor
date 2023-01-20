@@ -273,28 +273,32 @@ func (vfs *VirtualFilesystem) ConnectMountAt(ctx context.Context, creds *auth.Cr
 		return err
 	}
 	vfs.mountMu.Lock()
-	defer vfs.mountMu.Unlock()
 	tree := vfs.preparePropagationTree(mnt, vd)
-
 	cleanup := cleanup.Make(func() {
 		vfs.abortPropagationTree(ctx, tree) // +checklocksforce
+		// We need to unlock mountMu first because DecRef takes a lock on the
+		// filesystem mutex in some implementations, which can lead to circular
+		// locking.
+		vfs.mountMu.Unlock()
+		vd.DecRef(ctx)
 	})
 	defer cleanup.Clean()
 	// Check if the new mount + all the propagation mounts puts us over the max.
 	if uint32(len(tree)+1)+vd.mount.ns.mounts > MountMax {
-		vd.DecRef(ctx)
 		return linuxerr.ENOSPC
 	}
 	if err := vfs.connectMountAt(ctx, mnt, vd); err != nil {
 		return err
 	}
 	vfs.commitPropagationTree(ctx, tree)
+	vfs.mountMu.Unlock()
 	cleanup.Release()
 	return nil
 }
 
-// connectMountAtLocked attaches mnt at vd. It returns the new mountpoint of mnt
-// if no error occurred.
+// connectMountAtLocked attaches mnt at vd. If the method returns an error that
+// is not nil, then it did not consume a reference on vd and the caller is
+// responsible for calling DecRef.
 //
 // Preconditions:
 //   - mnt must be disconnected.
@@ -307,7 +311,6 @@ func (vfs *VirtualFilesystem) connectMountAt(ctx context.Context, mnt *Mount, vd
 	for {
 		if vd.mount.umounted || vdDentry.dead {
 			vdDentry.mu.Unlock()
-			vd.DecRef(ctx)
 			return linuxerr.ENOENT
 		}
 		// vd might have been mounted over between vfs.GetDentryAt() and
@@ -392,7 +395,6 @@ func (vfs *VirtualFilesystem) BindAt(ctx context.Context, creds *auth.Credential
 	}
 
 	vfs.mountMu.Lock()
-	defer vfs.mountMu.Unlock()
 	clone := vfs.cloneMount(sourceVd.mount, sourceVd.dentry, nil)
 	defer clone.DecRef(ctx)
 	tree := vfs.preparePropagationTree(clone, targetVd)
@@ -407,16 +409,18 @@ func (vfs *VirtualFilesystem) BindAt(ctx context.Context, creds *auth.Credential
 		// Checklocks doesn't work with anon functions.
 		vfs.setPropagation(clone, Private)  // +checklocksforce
 		vfs.abortPropagationTree(ctx, tree) // +checklocksforce
+		vfs.mountMu.Unlock()
+		targetVd.DecRef(ctx)
 	})
 	defer cleanup.Clean()
 	if uint32(1+len(tree))+targetVd.mount.ns.mounts > MountMax {
-		targetVd.DecRef(ctx)
 		return nil, linuxerr.ENOSPC
 	}
 	if err := vfs.connectMountAt(ctx, clone, targetVd); err != nil {
 		return nil, err
 	}
 	vfs.commitPropagationTree(ctx, tree)
+	vfs.mountMu.Unlock()
 	cleanup.Release()
 	return clone, nil
 }
