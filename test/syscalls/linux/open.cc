@@ -99,17 +99,17 @@ TEST_F(OpenTest, OCreateDirectory) {
   auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
 
   // Normal case: existing directory.
-  ASSERT_THAT(open(dir.path().c_str(), O_RDWR | O_CREAT, 0666),
+  ASSERT_THAT(open(dir.path().c_str(), O_RDONLY | O_CREAT, 0666),
               SyscallFailsWithErrno(EISDIR));
   // Trailing separator on existing directory.
-  ASSERT_THAT(open(dir.path().append("/").c_str(), O_RDWR | O_CREAT, 0666),
+  ASSERT_THAT(open(dir.path().append("/").c_str(), O_RDONLY | O_CREAT, 0666),
               SyscallFailsWithErrno(EISDIR));
   // Trailing separator on non-existing directory.
   ASSERT_THAT(open(JoinPath(dir.path(), "non-existent").append("/").c_str(),
-                   O_RDWR | O_CREAT, 0666),
+                   O_RDONLY | O_CREAT, 0666),
               SyscallFailsWithErrno(EISDIR));
   // "." special case.
-  ASSERT_THAT(open(JoinPath(dir.path(), ".").c_str(), O_RDWR | O_CREAT, 0666),
+  ASSERT_THAT(open(JoinPath(dir.path(), ".").c_str(), O_RDONLY | O_CREAT, 0666),
               SyscallFailsWithErrno(EISDIR));
 }
 
@@ -397,6 +397,11 @@ TEST_F(OpenTest, DotsFromRoot) {
 TEST_F(OpenTest, DirectoryWritableFails) {
   ASSERT_THAT(open(GetAbsoluteTestTmpdir().c_str(), O_RDWR),
               SyscallFailsWithErrno(EISDIR));
+}
+
+TEST_F(OpenTest, DirectoryDirectFails) {
+  ASSERT_THAT(open(GetAbsoluteTestTmpdir().c_str(), O_RDONLY | O_DIRECT),
+              SyscallFailsWithErrno(EINVAL));
 }
 
 TEST_F(OpenTest, FileNotDirectory) {

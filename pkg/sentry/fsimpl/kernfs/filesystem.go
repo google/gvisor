@@ -618,6 +618,19 @@ afterTrailingSymlink:
 	if err := child.inode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
 		return nil, err
 	}
+	if child.isDir() {
+		// Can't open directories with O_CREAT.
+		if opts.Flags&linux.O_CREAT != 0 {
+			return nil, linuxerr.EISDIR
+		}
+		// Can't open directories writably.
+		if ats&vfs.MayWrite != 0 {
+			return nil, linuxerr.EISDIR
+		}
+		if opts.Flags&linux.O_DIRECT != 0 {
+			return nil, linuxerr.EINVAL
+		}
+	}
 	// Open may block so we need to unlock fs.mu. IncRef child to prevent
 	// its destruction while fs.mu is unlocked.
 	child.IncRef()
