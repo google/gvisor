@@ -17,6 +17,7 @@ package dockerutil
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -426,6 +427,20 @@ func (c *Container) CopyFiles(opts *RunOpts, target string, sources ...string) {
 		Target:   target,
 		ReadOnly: false,
 	})
+}
+
+// Stats returns a snapshot of container stats similar to `docker stats`.
+func (c *Container) Stats(ctx context.Context) (*types.StatsJSON, error) {
+	responseBody, err := c.client.ContainerStats(ctx, c.id, false /*stream*/)
+	if err != nil {
+		return nil, fmt.Errorf("ContainerStats failed: %v", err)
+	}
+	defer responseBody.Body.Close()
+	var v types.StatsJSON
+	if err := json.NewDecoder(responseBody.Body).Decode(&v); err != nil {
+		return nil, fmt.Errorf("failed to decode container stats: %v", err)
+	}
+	return &v, nil
 }
 
 // Status inspects the container returns its status.

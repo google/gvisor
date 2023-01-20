@@ -17,6 +17,7 @@ package base
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -40,20 +41,29 @@ func StartServers(ctx context.Context, b *testing.B, args ServerArgs) []*dockeru
 
 	// Create N servers and wait until each of them is serving.
 	for i := 0; i < b.N; i++ {
-		server := args.Machine.GetContainer(ctx, b)
+		server, err := StartServer(ctx, b, args)
+		if err != nil {
+			CleanUpContainers(ctx, servers)
+			b.Fatalf("failed to start server: %v", err)
+		}
 		servers = append(servers, server)
-		if err := server.Spawn(ctx, args.RunOpts, args.Cmd...); err != nil {
-			CleanUpContainers(ctx, servers)
-			b.Fatalf("failed to spawn node instance: %v", err)
-		}
-
-		// Wait until the server is up.
-		if err := harness.WaitUntilContainerServing(ctx, args.Machine, server, args.Port); err != nil {
-			CleanUpContainers(ctx, servers)
-			b.Fatalf("failed to wait for serving")
-		}
 	}
 	return servers
+}
+
+// StartServer starts a single server and cleans it up if it fails.
+func StartServer(ctx context.Context, b *testing.B, args ServerArgs) (*dockerutil.Container, error) {
+	server := args.Machine.GetContainer(ctx, b)
+	if err := server.Spawn(ctx, args.RunOpts, args.Cmd...); err != nil {
+		server.CleanUp(ctx)
+		return server, fmt.Errorf("failed to spawn server: %v", err)
+	}
+	// Wait until server is running.
+	if err := harness.WaitUntilContainerServing(ctx, args.Machine, server, args.Port); err != nil {
+		server.CleanUp(ctx)
+		return server, fmt.Errorf("failed to wait for serving server %q: %v", server.Name, err)
+	}
+	return server, nil
 }
 
 // CleanUpContainers cleans up a slice of containers.
