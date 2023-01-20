@@ -23,9 +23,9 @@ jobs:
     - id: setup
       run: |
         if ! [[ -z "${{ secrets.GO_TOKEN }}" ]]; then
-          echo has_token=true >> $GITHUB_OUTPUT
+          echo has_token=true >> "$GITHUB_OUTPUT"
         else
-          echo has_token=false >> $GITHUB_OUTPUT
+          echo has_token=false >> "$GITHUB_OUTPUT"
         fi
     - run: |
         jq -nc '{"state": "pending", "context": "go tests"}' | \
