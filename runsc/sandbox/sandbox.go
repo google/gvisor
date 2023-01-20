@@ -33,7 +33,6 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/syndtr/gocapability/capability"
 	"golang.org/x/sys/unix"
-	"google.golang.org/protobuf/encoding/prototext"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/control/client"
@@ -137,8 +136,7 @@ type Sandbox struct {
 	// Used for verifying metric data integrity after containers are started.
 	// Only populated if exporting metrics was requested when the sandbox was
 	// created.
-	// This is a textproto string of metricpb.MetricRegistration.
-	RegisteredMetrics string `json:"registeredMetrics"`
+	RegisteredMetrics *metricpb.MetricRegistration `json:"registeredMetrics"`
 
 	// MetricServerAddress is the address of the metric server that this sandbox
 	// intends to export metrics for.
@@ -279,6 +277,17 @@ func New(conf *config.Config, args *Args) (*Sandbox, error) {
 			}
 		}
 		return nil, fmt.Errorf("cannot read client sync file: %w", err)
+	}
+
+	if conf.MetricServer != "" {
+		// The control server is up and the sandbox was configured to export metrics.
+		// We must gather data about registered metrics prior to any process starting in the sandbox.
+		log.Debugf("Getting metric registration information from sandbox %q", s.ID)
+		var registeredMetrics control.MetricsRegistrationResponse
+		if err := s.call(boot.MetricsGetRegistered, nil, &registeredMetrics); err != nil {
+			return nil, fmt.Errorf("cannot get registered metrics: %v", err)
+		}
+		s.RegisteredMetrics = registeredMetrics.RegisteredMetrics
 	}
 
 	c.Release()
@@ -990,7 +999,7 @@ func (s *Sandbox) IsRootContainer(cid string) bool {
 // Destroy frees all resources associated with the sandbox. It fails fast and
 // is idempotent.
 func (s *Sandbox) destroy() error {
-	log.Debugf("Destroy sandbox %q", s.ID)
+	log.Debugf("Destroying sandbox %q", s.ID)
 	pid := s.Pid.load()
 	if pid != 0 {
 		log.Debugf("Killing sandbox %q", s.ID)
@@ -1116,14 +1125,10 @@ func (s *Sandbox) UsageFD() (*control.MemoryUsageRecord, error) {
 // bogus metrics.
 // This returns an error if the sandbox has not requested instrumentation during creation time.
 func (s *Sandbox) GetRegisteredMetrics() (*metricpb.MetricRegistration, error) {
-	if s.RegisteredMetrics == "" {
+	if s.RegisteredMetrics == nil {
 		return nil, errors.New("sandbox did not request instrumentation when it was created")
 	}
-	registeredMetrics := &metricpb.MetricRegistration{}
-	if err := prototext.Unmarshal([]byte(s.RegisteredMetrics), registeredMetrics); err != nil {
-		return nil, err
-	}
-	return registeredMetrics, nil
+	return s.RegisteredMetrics, nil
 }
 
 // ExportMetrics returns a snapshot of metric values from the sandbox in Prometheus format.
