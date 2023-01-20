@@ -70,3 +70,15 @@ benchmark_test(
         "//test/benchmarks/tools",
     ],
 )
+
+benchmark_test(
+    name = "usage_test",
+    srcs = ["usage_test.go"],
+    deps = [
+        ":base",
+        "//pkg/test/dockerutil",
+        "//test/benchmarks/harness",
+        "//test/benchmarks/tools",
+        "@com_github_docker_docker//api/types:go_default_library",
+    ],
+)
