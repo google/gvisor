@@ -15,25 +15,17 @@
 package portforward
 
 import (
-	"bytes"
 	"fmt"
-	"io"
 	"net"
 	"reflect"
-	"sync"
 	"testing"
 
 	"golang.org/x/sync/errgroup"
-	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
-	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/usermem"
-	"gvisor.dev/gvisor/pkg/waiter"
 )
 
 func TestLocalHostSocket(t *testing.T) {
-
 	clientData := append(
 		[]byte("do what must be done\n"),
 		[]byte("do not hesitate\n")...,
@@ -51,7 +43,6 @@ func TestLocalHostSocket(t *testing.T) {
 	defer l.Close()
 
 	port := l.Addr().(*net.TCPAddr).Port
-
 	var g errgroup.Group
 
 	g.Go(func() error {
@@ -121,116 +112,71 @@ func TestLocalHostSocket(t *testing.T) {
 	}
 }
 
-func newMockSocketPair() (*mockEndpoint, *mockEndpoint) {
-	client := &mockEndpoint{}
-	server := &mockEndpoint{other: client}
-	client.other = server
-	return client, server
+type netConnMockEndpoint struct {
+	conn net.Conn
 }
 
-type mockEndpoint struct {
-	vfs.FileDescriptionDefaultImpl
-	vfs.NoLockFD
-	vfs.DentryMetadataFileDescriptionImpl
-	other    *mockEndpoint
-	readBuf  bytes.Buffer
-	mu       sync.Mutex
-	released bool
-	queue    waiter.Queue
+// read implements portforwarderTestHarness.read.
+func (nc *netConnMockEndpoint) read(n int) ([]byte, error) {
+	buf := make([]byte, n)
+	n, err := nc.conn.Read(buf)
+	return buf[:n], err
 }
 
-var _ vfs.FileDescriptionImpl = (*mockEndpoint)(nil)
-
-// Read implements vfs.FileDescriptionImpl.Read details for the parent mockFileDescription.
-func (s *mockEndpoint) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.released {
-		return 0, io.EOF
+// write implements portforwarderTestHarness write.
+func (nc *netConnMockEndpoint) write(buf []byte) (int, error) {
+	written := 0
+	for {
+		n, err := nc.conn.Write(buf[written:])
+		if err != nil && !linuxerr.Equals(linuxerr.ErrWouldBlock, err) {
+			return n, err
+		}
+		written += n
+		if written >= len(buf) {
+			return written, nil
+		}
 	}
-	if s.readBuf.Len() == 0 {
-		return 0, linuxerr.ErrWouldBlock
-	}
-	buf := s.readBuf.Next(s.readBuf.Len())
-	n, err := dst.CopyOut(ctx, buf)
-	s.queue.Notify(waiter.WritableEvents)
-	return int64(n), err
-}
-
-// Write implements vfs.FileDescriptionImpl.Write details for the parent mockFileDescription.
-func (s *mockEndpoint) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
-	return s.other.write(ctx, src, opts)
-}
-
-func (s *mockEndpoint) write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.released {
-		return 0, io.EOF
-	}
-	buf := make([]byte, src.NumBytes())
-	n, err := src.CopyIn(ctx, buf)
-	if err != nil {
-		return 0, err
-	}
-	n, err = s.readBuf.Write(buf[:n])
-	s.queue.Notify(waiter.ReadableEvents)
-	return int64(n), err
-}
-
-func (s *mockEndpoint) IsReadable() bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.released {
-		return false
-	}
-	return s.readBuf.Len() > 0
-}
-
-func (s *mockEndpoint) IsWritable() bool {
-	return s.other.isWritable()
-}
-
-func (s *mockEndpoint) isWritable() bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return !s.released
-}
-
-// EventRegister implements vfs.FileDescriptionImpl.EventRegister details for the parent mockFileDescription.
-func (s *mockEndpoint) EventRegister(we *waiter.Entry) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.queue.EventRegister(we)
-	return nil
-}
-
-// EventUnregister implements vfs.FileDescriptionImpl.Unregister details for the parent mockFileDescription.
-func (s *mockEndpoint) EventUnregister(we *waiter.Entry) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.queue.EventUnregister(we)
-}
-
-// Release implements vfs.FileDescriptionImpl.Release details for the parent mockFileDescription.
-func (s *mockEndpoint) Release(context.Context) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.queue.Notify(waiter.ReadableEvents)
-	s.released = true
-}
-
-var responses = map[string]string{
-	"PING": "PONG",
-	"DING": "DONG",
-	"TING": "TONG",
 }
 
 func TestHostinetPortForwardConn(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		requests map[string]string
+	}{
+		{
+			name: "single",
+			requests: map[string]string{
+				"PING": "PONG",
+			},
+		},
+		{
+			name: "multiple",
+			requests: map[string]string{
+				"PING":       "PONG",
+				"HELLO":      "GOODBYE",
+				"IMPRESSIVE": "MOST IMPRESSIVE",
+			},
+		},
+		{
+			name: "empty",
+			requests: map[string]string{
+				"EMPTY":       "",
+				"NOT":         "EMPTY",
+				"OTHER EMPTY": "",
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			doHostinetTest(t, tc.requests)
+		})
+	}
+}
+
+func doHostinetTest(t *testing.T, requests map[string]string) {
 	ctx := contexttest.Context(t)
-	clientSock, server := newMockSocketPair()
-	defer server.Release(ctx)
-	client, err := newMockFileDescription(ctx, clientSock)
+	appEndpoint := &mockApplicationFDImpl{}
+	defer appEndpoint.Release(ctx)
+	client, err := newMockFileDescription(ctx, appEndpoint)
 	if err != nil {
 		t.Fatalf("newMockFileDescription failed: %v", err)
 	}
@@ -252,60 +198,37 @@ func TestHostinetPortForwardConn(t *testing.T) {
 		t.Fatalf("l.Accept failed: %v", err)
 	}
 	defer conn.Close()
-	buf := make([]byte, 4)
-	for req, resp := range responses {
 
-		for {
-			if server.IsWritable() {
-				break
-			}
+	harness := portforwarderTestHarness{
+		app:  appEndpoint,
+		shim: &netConnMockEndpoint{conn},
+	}
+
+	for req, resp := range requests {
+		if _, err := harness.shimWrite([]byte(req)); err != nil {
+			t.Fatalf("failed to write to shim: %v", err)
 		}
-		_, err := server.Write(ctx, usermem.BytesIOSequence([]byte(req)), vfs.WriteOptions{})
+
+		got, err := harness.appRead(len(req))
 		if err != nil {
-			t.Fatalf("file.Write failed: %v", err)
+			t.Fatalf("failed to read from app: %v", err)
 		}
 
-		read := 0
-		for {
-			n, err := conn.Read([]byte(buf)[read:])
-			if err != nil && !linuxerr.Equals(linuxerr.ErrWouldBlock, err) {
-				t.Fatalf("conn.Write failed: %v", err)
-			}
-			read += n
-			if read >= len(resp) {
-				break
-			}
+		if string(got) != req {
+			t.Fatalf("app mismatch: got: %s want: %s", string(got), req)
 		}
 
-		if string(buf) != req {
-			t.Fatalf("read mismatch: got: %s want: %s", string(buf), req)
+		if _, err := harness.appWrite([]byte(resp)); err != nil {
+			t.Fatalf("failed to write to app: %v", err)
 		}
 
-		written := 0
-		for i := 0; i < 4; i++ {
-			n, err := conn.Write([]byte(resp)[written:])
-			if err != nil && !linuxerr.Equals(linuxerr.ErrWouldBlock, err) {
-				t.Fatalf("conn.Write failed: %v", err)
-			}
-			written += n
-			if written >= len(resp) {
-				break
-			}
+		got, err = harness.shimRead(len(resp))
+		if err != nil {
+			t.Fatalf("failed to read from shim: %v", err)
 		}
 
-		for {
-			if server.IsReadable() {
-				break
-			}
-		}
-
-		_, err = server.Read(ctx, usermem.BytesIOSequence([]byte(buf[:4])), vfs.ReadOptions{})
-		if err != nil && !linuxerr.Equals(linuxerr.ErrWouldBlock, err) {
-			t.Fatalf("file.Read failed: %v", err)
-		}
-
-		if string(buf) != resp {
-			t.Fatalf("write mismatch: got: %s want: %s", string(buf), resp)
+		if string(got) != resp {
+			t.Fatalf("shim mismatch: got: %s want: %s", string(got), resp)
 		}
 	}
 }
