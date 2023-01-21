@@ -38,7 +38,7 @@ func (e *endpoint) beforeSave() {
 	case epState == StateInitial || epState == StateBound:
 	case epState.connected() || epState.handshake():
 		if !e.route.HasSaveRestoreCapability() {
-			if !e.route.HasDisconncetOkCapability() {
+			if !e.route.HasDisconnectOkCapability() {
 				panic(&tcpip.ErrSaveRejection{
 					Err: fmt.Errorf("endpoint cannot be saved in connected state: local %s:%d, remote %s:%d", e.TransportEndpointInfo.ID.LocalAddress, e.TransportEndpointInfo.ID.LocalPort, e.TransportEndpointInfo.ID.RemoteAddress, e.TransportEndpointInfo.ID.RemotePort),
 				})
