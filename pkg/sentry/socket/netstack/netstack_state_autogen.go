@@ -6,11 +6,11 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (s *Socket) StateTypeName() string {
-	return "pkg/sentry/socket/netstack.Socket"
+func (s *sock) StateTypeName() string {
+	return "pkg/sentry/socket/netstack.sock"
 }
 
-func (s *Socket) StateFields() []string {
+func (s *sock) StateFields() []string {
 	return []string{
 		"vfsfd",
 		"FileDescriptionDefaultImpl",
@@ -22,6 +22,7 @@ func (s *Socket) StateFields() []string {
 		"Endpoint",
 		"skType",
 		"protocol",
+		"namespace",
 		"sockOptTimestamp",
 		"timestampValid",
 		"timestamp",
@@ -29,14 +30,14 @@ func (s *Socket) StateFields() []string {
 	}
 }
 
-func (s *Socket) beforeSave() {}
+func (s *sock) beforeSave() {}
 
 // +checklocksignore
-func (s *Socket) StateSave(stateSinkObject state.Sink) {
+func (s *sock) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	var timestampValue int64
 	timestampValue = s.saveTimestamp()
-	stateSinkObject.SaveValue(12, timestampValue)
+	stateSinkObject.SaveValue(13, timestampValue)
 	stateSinkObject.Save(0, &s.vfsfd)
 	stateSinkObject.Save(1, &s.FileDescriptionDefaultImpl)
 	stateSinkObject.Save(2, &s.DentryMetadataFileDescriptionImpl)
@@ -47,15 +48,16 @@ func (s *Socket) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(7, &s.Endpoint)
 	stateSinkObject.Save(8, &s.skType)
 	stateSinkObject.Save(9, &s.protocol)
-	stateSinkObject.Save(10, &s.sockOptTimestamp)
-	stateSinkObject.Save(11, &s.timestampValid)
-	stateSinkObject.Save(13, &s.sockOptInq)
+	stateSinkObject.Save(10, &s.namespace)
+	stateSinkObject.Save(11, &s.sockOptTimestamp)
+	stateSinkObject.Save(12, &s.timestampValid)
+	stateSinkObject.Save(14, &s.sockOptInq)
 }
 
-func (s *Socket) afterLoad() {}
+func (s *sock) afterLoad() {}
 
 // +checklocksignore
-func (s *Socket) StateLoad(stateSourceObject state.Source) {
+func (s *sock) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.vfsfd)
 	stateSourceObject.Load(1, &s.FileDescriptionDefaultImpl)
 	stateSourceObject.Load(2, &s.DentryMetadataFileDescriptionImpl)
@@ -66,10 +68,11 @@ func (s *Socket) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(7, &s.Endpoint)
 	stateSourceObject.Load(8, &s.skType)
 	stateSourceObject.Load(9, &s.protocol)
-	stateSourceObject.Load(10, &s.sockOptTimestamp)
-	stateSourceObject.Load(11, &s.timestampValid)
-	stateSourceObject.Load(13, &s.sockOptInq)
-	stateSourceObject.LoadValue(12, new(int64), func(y any) { s.loadTimestamp(y.(int64)) })
+	stateSourceObject.Load(10, &s.namespace)
+	stateSourceObject.Load(11, &s.sockOptTimestamp)
+	stateSourceObject.Load(12, &s.timestampValid)
+	stateSourceObject.Load(14, &s.sockOptInq)
+	stateSourceObject.LoadValue(13, new(int64), func(y any) { s.loadTimestamp(y.(int64)) })
 }
 
 func (s *Stack) StateTypeName() string {
@@ -93,6 +96,6 @@ func (s *Stack) StateLoad(stateSourceObject state.Source) {
 }
 
 func init() {
-	state.Register((*Socket)(nil))
+	state.Register((*sock)(nil))
 	state.Register((*Stack)(nil))
 }
