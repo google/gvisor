@@ -164,9 +164,7 @@ func (fs *filesystem) renameMuUnlockAndCheckCaching(ctx context.Context, ds **[]
 }
 
 // stepLocked resolves rp.Component() to an existing file, starting from the
-// given directory. If the file at rp.Component is a symlink and
-// mayFollowSymlinks is set, the symlink is resolved and the result returned to
-// the caller (single step).
+// given directory.
 //
 // Dentries which may become cached as a result of the traversal are appended
 // to *ds.
@@ -214,10 +212,8 @@ func (fs *filesystem) stepLocked(ctx context.Context, rp *vfs.ResolvingPath, d *
 		if err != nil {
 			return nil, false, err
 		}
-		if err := rp.HandleSymlink(target); err != nil {
-			return nil, false, err
-		}
-		return d, true, nil
+		followedSymlink, err := rp.HandleSymlink(target)
+		return d, followedSymlink, err
 	}
 	rp.Advance()
 	return child, false, nil
@@ -816,13 +812,13 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		// to creating a synthetic one, i.e. one that is kept entirely in memory.
 
 		// Check that we're not overriding an existing file with a synthetic one.
-		_, _, err := fs.stepLocked(ctx, rp, parent, false, ds)
+		_, _, err := fs.stepLocked(ctx, rp, parent, false /* mayFollowSymlinks */, ds)
 		switch {
 		case err == nil:
 			// Step succeeded, another file exists.
 			return nil, linuxerr.EEXIST
 		case !linuxerr.Equals(linuxerr.ENOENT, err):
-			// Unexpected error.
+			// Schrödinger. File/Cat may or may not exist.
 			return nil, err
 		}
 
@@ -913,7 +909,21 @@ afterTrailingSymlink:
 	}
 	// Determine whether or not we need to create a file.
 	parent.dirMu.Lock()
-	child, _, err := fs.stepLocked(ctx, rp, parent, false /* mayFollowSymlinks */, &ds)
+	child, followedSymlink, err := fs.stepLocked(ctx, rp, parent, true /* mayFollowSymlinks */, &ds)
+	if followedSymlink {
+		parent.dirMu.Unlock()
+		if mustCreate {
+			// EEXIST must be returned if an existing symlink is opened with O_EXCL.
+			return nil, linuxerr.EEXIST
+		}
+		if err != nil {
+			// If followedSymlink && err != nil, then this symlink resolution error
+			// must be handled by the VFS layer.
+			return nil, err
+		}
+		start = parent
+		goto afterTrailingSymlink
+	}
 	if linuxerr.Equals(linuxerr.ENOENT, err) && mayCreate {
 		if parent.isSynthetic() {
 			parent.dirMu.Unlock()
@@ -929,18 +939,6 @@ afterTrailingSymlink:
 	}
 	if mustCreate {
 		return nil, linuxerr.EEXIST
-	}
-	// Open existing child or follow symlink.
-	if child.isSymlink() && rp.ShouldFollowSymlink() {
-		target, err := child.readlink(ctx, rp.Mount())
-		if err != nil {
-			return nil, err
-		}
-		if err := rp.HandleSymlink(target); err != nil {
-			return nil, err
-		}
-		start = parent
-		goto afterTrailingSymlink
 	}
 	if rp.MustBeDir() && !child.isDir() {
 		return nil, linuxerr.ENOTDIR

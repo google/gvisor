@@ -135,54 +135,51 @@ func (fs *filesystem) renameMuUnlockAndCheckDrop(ctx context.Context, ds **[]*de
 //   - fs.renameMu must be locked.
 //   - d.dirMu must be locked.
 //   - !rp.Done().
-func (fs *filesystem) stepLocked(ctx context.Context, rp *vfs.ResolvingPath, d *dentry, mayFollowSymlinks bool, ds **[]*dentry) (*dentry, lookupLayer, error) {
+func (fs *filesystem) stepLocked(ctx context.Context, rp *vfs.ResolvingPath, d *dentry, ds **[]*dentry) (*dentry, lookupLayer, bool, error) {
 	if !d.isDir() {
-		return nil, lookupLayerNone, linuxerr.ENOTDIR
+		return nil, lookupLayerNone, false, linuxerr.ENOTDIR
 	}
 	if err := d.checkPermissions(rp.Credentials(), vfs.MayExec); err != nil {
-		return nil, lookupLayerNone, err
+		return nil, lookupLayerNone, false, err
 	}
-afterSymlink:
 	name := rp.Component()
 	if name == "." {
 		rp.Advance()
-		return d, d.topLookupLayer(), nil
+		return d, d.topLookupLayer(), false, nil
 	}
 	if name == ".." {
 		if isRoot, err := rp.CheckRoot(ctx, &d.vfsd); err != nil {
-			return nil, lookupLayerNone, err
+			return nil, lookupLayerNone, false, err
 		} else if isRoot || d.parent == nil {
 			rp.Advance()
-			return d, d.topLookupLayer(), nil
+			return d, d.topLookupLayer(), false, nil
 		}
 		if err := rp.CheckMount(ctx, &d.parent.vfsd); err != nil {
-			return nil, lookupLayerNone, err
+			return nil, lookupLayerNone, false, err
 		}
 		rp.Advance()
-		return d.parent, d.parent.topLookupLayer(), nil
+		return d.parent, d.parent.topLookupLayer(), false, nil
 	}
 	if uint64(len(name)) > fs.maxFilenameLen {
-		return nil, lookupLayerNone, linuxerr.ENAMETOOLONG
+		return nil, lookupLayerNone, false, linuxerr.ENAMETOOLONG
 	}
 	child, topLookupLayer, err := fs.getChildLocked(ctx, d, name, ds)
 	if err != nil {
-		return nil, topLookupLayer, err
+		return nil, topLookupLayer, false, err
 	}
 	if err := rp.CheckMount(ctx, &child.vfsd); err != nil {
-		return nil, lookupLayerNone, err
+		return nil, lookupLayerNone, false, err
 	}
-	if child.isSymlink() && mayFollowSymlinks && rp.ShouldFollowSymlink() {
+	if child.isSymlink() && rp.ShouldFollowSymlink() {
 		target, err := child.readlink(ctx)
 		if err != nil {
-			return nil, lookupLayerNone, err
+			return nil, lookupLayerNone, false, err
 		}
-		if err := rp.HandleSymlink(target); err != nil {
-			return nil, topLookupLayer, err
-		}
-		goto afterSymlink // don't check the current directory again
+		followedSymlink, err := rp.HandleSymlink(target)
+		return d, topLookupLayer, followedSymlink, err
 	}
 	rp.Advance()
-	return child, topLookupLayer, nil
+	return child, topLookupLayer, false, nil
 }
 
 // Preconditions:
@@ -447,7 +444,7 @@ func (ll lookupLayer) existsInOverlay() bool {
 func (fs *filesystem) walkParentDirLocked(ctx context.Context, rp *vfs.ResolvingPath, d *dentry, ds **[]*dentry) (*dentry, error) {
 	for !rp.Final() {
 		d.dirMu.Lock()
-		next, _, err := fs.stepLocked(ctx, rp, d, true /* mayFollowSymlinks */, ds)
+		next, _, _, err := fs.stepLocked(ctx, rp, d, ds)
 		d.dirMu.Unlock()
 		if err != nil {
 			return nil, err
@@ -467,7 +464,7 @@ func (fs *filesystem) resolveLocked(ctx context.Context, rp *vfs.ResolvingPath, 
 	d := rp.Start().Impl().(*dentry)
 	for !rp.Done() {
 		d.dirMu.Lock()
-		next, _, err := fs.stepLocked(ctx, rp, d, true /* mayFollowSymlinks */, ds)
+		next, _, _, err := fs.stepLocked(ctx, rp, d, ds)
 		d.dirMu.Unlock()
 		if err != nil {
 			return nil, err
@@ -855,7 +852,21 @@ afterTrailingSymlink:
 	}
 	// Determine whether or not we need to create a file.
 	parent.dirMu.Lock()
-	child, topLookupLayer, err := fs.stepLocked(ctx, rp, parent, false /* mayFollowSymlinks */, &ds)
+	child, topLookupLayer, followedSymlink, err := fs.stepLocked(ctx, rp, parent, &ds)
+	if followedSymlink {
+		parent.dirMu.Unlock()
+		if mustCreate {
+			// EEXIST must be returned if an existing symlink is opened with O_EXCL.
+			return nil, linuxerr.EEXIST
+		}
+		if err != nil {
+			// If followedSymlink && err != nil, then this symlink resolution error
+			// must be handled by the VFS layer.
+			return nil, err
+		}
+		start = parent
+		goto afterTrailingSymlink
+	}
 	if linuxerr.Equals(linuxerr.ENOENT, err) && mayCreate {
 		fd, err := fs.createAndOpenLocked(ctx, rp, parent, &opts, &ds, topLookupLayer == lookupLayerUpperWhiteout)
 		parent.dirMu.Unlock()
@@ -865,20 +876,8 @@ afterTrailingSymlink:
 	if err != nil {
 		return nil, err
 	}
-	// Open existing child or follow symlink.
 	if mustCreate {
 		return nil, linuxerr.EEXIST
-	}
-	if child.isSymlink() && rp.ShouldFollowSymlink() {
-		target, err := child.readlink(ctx)
-		if err != nil {
-			return nil, err
-		}
-		if err := rp.HandleSymlink(target); err != nil {
-			return nil, err
-		}
-		start = parent
-		goto afterTrailingSymlink
 	}
 	if rp.MustBeDir() && !child.isDir() {
 		return nil, linuxerr.ENOTDIR
