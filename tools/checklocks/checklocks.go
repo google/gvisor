@@ -16,6 +16,14 @@
 // access to annotated fields.
 //
 // For detailed usage refer to README.md in the same directory.
+//
+// Note that this package uses the built-in atomics, in order to avoid the use
+// of our own atomic package. This is because our own atomic package depends on
+// our own sync package, which includes lock dependency analysis. This in turn
+// requires goid, which introduces a dependency cycle. To avoid this, we simply
+// use the simpler, built-in sync package.
+//
+// +checkalignedignore
 package checklocks
 
 import (

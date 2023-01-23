@@ -64,12 +64,9 @@ NogoStdlibInfo = provider(
 )
 
 def _nogo_stdlib_impl(ctx):
-    # If this is disabled, return nothing.
+    package_filter = ".*"
     if not ctx.attr._nogo_full[BuildSettingInfo].value:
-        return [NogoStdlibInfo(
-            facts = None,
-            raw_findings = [],
-        )]
+        package_filter = "^runtime$"
 
     # Build the configuration for the stdlib.
     go_ctx, args, inputs, raw_findings = _nogo_config(ctx, deps = [])
@@ -97,6 +94,7 @@ def _nogo_stdlib_impl(ctx):
             "-findings=%s" % findings_file.path,
             "-facts=%s" % facts_file.path,
             "-root=.*?/src/",
+            "-filter=%s" % package_filter,
         ] + [f.path for f in go_ctx.stdlib_srcs],
     )
 

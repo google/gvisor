@@ -79,7 +79,6 @@ go_library(
     stateify = False,
     visibility = ["//:sandbox"],
     deps = [
-        "//pkg/log",
         "//pkg/state/wire",
     ],
 )
