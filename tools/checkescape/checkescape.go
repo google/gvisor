@@ -76,7 +76,6 @@ import (
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/buildssa"
 	"golang.org/x/tools/go/ssa"
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/tools/nogo/flags"
 )
 
@@ -653,13 +652,10 @@ func findReasons(pass *analysis.Pass, fdecl *ast.FuncDecl) ([]EscapeReason, bool
 
 // run performs the analysis.
 func run(pass *analysis.Pass, binary io.Reader) (any, error) {
+	// Note that if this analysis fails, then we don't actually
+	// fail the analyzer itself. We simply report every possible
+	// escape. In most cases this will work just fine.
 	calls, callsErr := loadObjdump(binary)
-	if callsErr != nil {
-		// Note that if this analysis fails, then we don't actually
-		// fail the analyzer itself. We simply report every possible
-		// escape. In most cases this will work just fine.
-		log.Warningf("unable to load objdump: %v", callsErr)
-	}
 	allEscapes := make(map[string][]Escapes)
 	mergedEscapes := make(map[string]Escapes)
 	linePosition := func(inst, parent poser) LinePosition {

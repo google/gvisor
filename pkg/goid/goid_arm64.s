@@ -14,8 +14,11 @@
 
 #include "textflag.h"
 
-// func getg() *g
-TEXT ·getg(SB),NOSPLIT,$0-8
+#define GOID_OFFSET {{ .import.runtime.g.goid.Offset }}
+
+// func goid() int64
+TEXT ·goid(SB),NOSPLIT,$0-8
         MOVD g, R0      // g
+        MOVD GOID_OFFSET(R0), R0
         MOVD R0, ret+0(FP)
         RET
