@@ -327,23 +327,25 @@ func (rp *ResolvingPath) ShouldFollowSymlink() bool {
 // HandleSymlink is called when the current path component is a symbolic link
 // to the given target. If the calling Filesystem method should continue path
 // traversal, HandleSymlink updates the path component stream to reflect the
-// symlink target and returns nil. Otherwise it returns a non-nil error.
+// symlink target and returns nil. Otherwise it returns a non-nil error. It
+// also returns whether the symlink was successfully followed, which can be
+// true even when a non-nil error like resolveAbsSymlinkError is returned.
 //
 // Preconditions: !rp.Done().
 //
 // Postconditions: If HandleSymlink returns a nil error, then !rp.Done().
-func (rp *ResolvingPath) HandleSymlink(target string) error {
+func (rp *ResolvingPath) HandleSymlink(target string) (bool, error) {
 	if rp.symlinks >= linux.MaxSymlinkTraversals {
-		return linuxerr.ELOOP
+		return false, linuxerr.ELOOP
 	}
 	if len(target) == 0 {
-		return linuxerr.ENOENT
+		return false, linuxerr.ENOENT
 	}
 	rp.symlinks++
 	targetPath := fspath.Parse(target)
 	if targetPath.Absolute {
 		rp.absSymlinkTarget = targetPath
-		return resolveAbsSymlinkError{}
+		return true, resolveAbsSymlinkError{}
 	}
 	// Consume the path component that represented the symlink.
 	rp.Advance()
@@ -354,7 +356,7 @@ func (rp *ResolvingPath) HandleSymlink(target string) error {
 		}
 	}
 	rp.relpathPrepend(targetPath)
-	return nil
+	return true, nil
 }
 
 // Preconditions: path.HasComponents().
@@ -379,12 +381,14 @@ func (rp *ResolvingPath) relpathPrepend(path fspath.Path) {
 // the given VirtualDentry, like /proc/[pid]/fd/[fd]. If the calling Filesystem
 // method should continue path traversal, HandleJump updates the path
 // component stream to reflect the magic link target and returns nil. Otherwise
-// it returns a non-nil error.
+// it returns a non-nil error. It also returns whether the magic link was
+// followed, which can be true even when a non-nil error like
+// resolveMountRootOrJumpError is returned.
 //
 // Preconditions: !rp.Done().
-func (rp *ResolvingPath) HandleJump(target VirtualDentry) error {
+func (rp *ResolvingPath) HandleJump(target VirtualDentry) (bool, error) {
 	if rp.symlinks >= linux.MaxSymlinkTraversals {
-		return linuxerr.ELOOP
+		return false, linuxerr.ELOOP
 	}
 	rp.symlinks++
 	// Consume the path component that represented the magic link.
@@ -394,7 +398,7 @@ func (rp *ResolvingPath) HandleJump(target VirtualDentry) error {
 	target.IncRef()
 	rp.nextMount = target.mount
 	rp.nextStart = target.dentry
-	return resolveMountRootOrJumpError{}
+	return true, resolveMountRootOrJumpError{}
 }
 
 func (rp *ResolvingPath) handleError(ctx context.Context, err error) bool {
