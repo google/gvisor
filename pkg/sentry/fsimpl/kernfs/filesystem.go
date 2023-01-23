@@ -37,15 +37,14 @@ import (
 //   - !rp.Done().
 //
 // Postcondition: Caller must call fs.processDeferredDecRefs*.
-func (fs *Filesystem) stepExistingLocked(ctx context.Context, rp *vfs.ResolvingPath, d *Dentry, mayFollowSymlinks bool) (*Dentry, error) {
+func (fs *Filesystem) stepExistingLocked(ctx context.Context, rp *vfs.ResolvingPath, d *Dentry) (*Dentry, bool, error) {
 	if !d.isDir() {
-		return nil, linuxerr.ENOTDIR
+		return nil, false, linuxerr.ENOTDIR
 	}
 	// Directory searchable?
 	if err := d.inode.CheckPermissions(ctx, rp.Credentials(), vfs.MayExec); err != nil {
-		return nil, err
+		return nil, false, err
 	}
-afterSymlink:
 	name := rp.Component()
 	// Revalidation must be skipped if name is "." or ".."; d or its parent
 	// respectively can't be expected to transition from invalidated back to
@@ -54,54 +53,49 @@ afterSymlink:
 	// calls d_revalidate(), but walk_component() => handle_dots() does not.
 	if name == "." {
 		rp.Advance()
-		return d, nil
+		return d, false, nil
 	}
 	if name == ".." {
 		if isRoot, err := rp.CheckRoot(ctx, d.VFSDentry()); err != nil {
-			return nil, err
+			return nil, false, err
 		} else if isRoot || d.parent == nil {
 			rp.Advance()
-			return d, nil
+			return d, false, nil
 		}
 		if err := rp.CheckMount(ctx, d.parent.VFSDentry()); err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		rp.Advance()
-		return d.parent, nil
+		return d.parent, false, nil
 	}
 	if len(name) > linux.NAME_MAX {
-		return nil, linuxerr.ENAMETOOLONG
+		return nil, false, linuxerr.ENAMETOOLONG
 	}
 	d.dirMu.Lock()
 	next, err := fs.revalidateChildLocked(ctx, rp.VirtualFilesystem(), d, name, d.children[name])
 	d.dirMu.Unlock()
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if err := rp.CheckMount(ctx, next.VFSDentry()); err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	// Resolve any symlink at current path component.
-	if mayFollowSymlinks && rp.ShouldFollowSymlink() && next.isSymlink() {
+	if rp.ShouldFollowSymlink() && next.isSymlink() {
 		targetVD, targetPathname, err := next.inode.Getlink(ctx, rp.Mount())
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		if targetVD.Ok() {
-			err := rp.HandleJump(targetVD)
+			followedTarget, err := rp.HandleJump(targetVD)
 			fs.deferDecRefVD(ctx, targetVD)
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			if err := rp.HandleSymlink(targetPathname); err != nil {
-				return nil, err
-			}
+			return d, followedTarget, err
 		}
-		goto afterSymlink
+		followedSymlink, err := rp.HandleSymlink(targetPathname)
+		return d, followedSymlink, err
 	}
 	rp.Advance()
-	return next, nil
+	return next, false, nil
 }
 
 // revalidateChildLocked must be called after a call to parent.vfsd.Child(name)
@@ -163,7 +157,7 @@ func (fs *Filesystem) walkExistingLocked(ctx context.Context, rp *vfs.ResolvingP
 	d := rp.Start().Impl().(*Dentry)
 	for !rp.Done() {
 		var err error
-		d, err = fs.stepExistingLocked(ctx, rp, d, true /* mayFollowSymlinks */)
+		d, _, err = fs.stepExistingLocked(ctx, rp, d)
 		if err != nil {
 			return nil, err
 		}
@@ -190,7 +184,7 @@ func (fs *Filesystem) walkParentDirLocked(ctx context.Context, rp *vfs.Resolving
 	d := rp.Start().Impl().(*Dentry)
 	for !rp.Final() {
 		var err error
-		d, err = fs.stepExistingLocked(ctx, rp, d, true /* mayFollowSymlinks */)
+		d, _, err = fs.stepExistingLocked(ctx, rp, d)
 		if err != nil {
 			return nil, err
 		}
@@ -561,7 +555,19 @@ afterTrailingSymlink:
 		return nil, linuxerr.ENOENT
 	}
 	// Determine whether or not we need to create a file.
-	child, err := fs.stepExistingLocked(ctx, rp, parent, false /* mayFollowSymlinks */)
+	child, followedSymlink, err := fs.stepExistingLocked(ctx, rp, parent)
+	if followedSymlink {
+		if mustCreate {
+			// EEXIST must be returned if an existing symlink is opened with O_EXCL.
+			return nil, linuxerr.EEXIST
+		}
+		if err != nil {
+			// If followedSymlink && err != nil, then this symlink resolution error
+			// must be handled by the VFS layer.
+			return nil, err
+		}
+		goto afterTrailingSymlink
+	}
 	if linuxerr.Equals(linuxerr.ENOENT, err) {
 		// Already checked for searchability above; now check for writability.
 		if err := parent.inode.CheckPermissions(ctx, rp.Credentials(), vfs.MayWrite); err != nil {
@@ -595,25 +601,8 @@ afterTrailingSymlink:
 	if mustCreate {
 		return nil, linuxerr.EEXIST
 	}
-	if rp.ShouldFollowSymlink() && child.isSymlink() {
-		targetVD, targetPathname, err := child.inode.Getlink(ctx, rp.Mount())
-		if err != nil {
-			return nil, err
-		}
-		if targetVD.Ok() {
-			err := rp.HandleJump(targetVD)
-			fs.deferDecRefVD(ctx, targetVD)
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			if err := rp.HandleSymlink(targetPathname); err != nil {
-				return nil, err
-			}
-		}
-		// rp.Final() may no longer be true since we now need to resolve the
-		// symlink target.
-		goto afterTrailingSymlink
+	if rp.MustBeDir() && !child.isDir() {
+		return nil, linuxerr.ENOTDIR
 	}
 	if err := child.inode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
 		return nil, err
