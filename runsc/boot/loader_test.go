@@ -104,7 +104,7 @@ func startGofer(root string) (int, func(), error) {
 }
 
 func createLoader(spec *specs.Spec) (*Loader, func(), error) {
-	fd, err := server.CreateSocket(ControlSocketAddr(fmt.Sprintf("%010d", rand.Int())[:10]))
+	fd, err := server.CreateSocket(fmt.Sprintf("\x00loader-test.%010d", rand.Int())[:10])
 	if err != nil {
 		return nil, nil, err
 	}
