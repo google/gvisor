@@ -365,6 +365,15 @@ TEST(SymlinkTest, SymlinkAtEmptyPath) {
               SyscallFailsWithErrno(ENOENT));
 }
 
+// NOTE(b/266111750): Regression test.
+TEST(SymlinkTest, AbsoluteSymlinkDouble) {
+  const std::string symlinkPath = NewTempAbsPath();
+  EXPECT_THAT(symlink("/", symlinkPath.c_str()), SyscallSucceeds());
+  auto doubleSymlinkPath = symlinkPath + symlinkPath;
+  EXPECT_THAT(mkdir(doubleSymlinkPath.c_str(), 0777),
+              SyscallFailsWithErrno(EEXIST));
+}
+
 class ParamSymlinkTest : public ::testing::TestWithParam<std::string> {};
 
 // Test that creating an existing symlink with creat will create the target.
