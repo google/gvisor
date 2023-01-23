@@ -24,6 +24,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"syscall"
@@ -64,6 +65,30 @@ const (
 	// It contains the namespace of the pod that a sandbox is in when running in Kubernetes.
 	namespaceAnnotation = "io.kubernetes.cri.sandbox-namespace"
 )
+
+// createControlSocket finds a location and creates the socket used to
+// communicate with the sandbox.
+func createControlSocket(rootDir, id string) (string, int, error) {
+	name := fmt.Sprintf("runsc-%s.sock", id)
+
+	// Only use absolute paths to guarantee resolution from anywhere.
+	var paths []string
+	for _, dir := range []string{rootDir, "/var/run", "/run", "/tmp"} {
+		paths = append(paths, filepath.Join(dir, name))
+	}
+	// If nothing else worked, use the abstract namespace.
+	paths = append(paths, fmt.Sprintf("\x00runsc-sandbox.%s", id))
+
+	for _, path := range paths {
+		log.Debugf("Attempting to create socket file %q", path)
+		fd, err := server.CreateSocket(path)
+		if err == nil {
+			log.Debugf("Using socket file %q", path)
+			return path, fd, nil
+		}
+	}
+	return "", -1, fmt.Errorf("unable to find location to write socket file")
+}
 
 // pid is an atomic type that implements JSON marshal/unmarshal interfaces.
 type pid struct {
@@ -143,6 +168,9 @@ type Sandbox struct {
 	// Only populated if exporting metrics was requested when the sandbox was
 	// created.
 	MetricServerAddress string `json:"metricServerAddress"`
+
+	// ControlAddress is the uRPC address used to connect to the sandbox.
+	ControlAddress string `json:"control_address"`
 
 	// child is set if a sandbox process is a child of the current process.
 	//
@@ -225,6 +253,7 @@ func New(conf *config.Config, args *Args) (*Sandbox, error) {
 		s.PodName = args.Spec.Annotations[podNameAnnotation]
 		s.Namespace = args.Spec.Annotations[namespaceAnnotation]
 	}
+
 	// The Cleanup object cleans up partially created sandboxes when an error
 	// occurs. Any errors occurring during cleanup itself are ignored.
 	c := cleanup.Make(func() {
@@ -514,7 +543,7 @@ func (s *Sandbox) Event(cid string) (*boot.EventOut, error) {
 
 func (s *Sandbox) sandboxConnect() (*urpc.Client, error) {
 	log.Debugf("Connecting to sandbox %q", s.ID)
-	conn, err := client.ConnectTo(boot.ControlSocketAddr(s.ID))
+	conn, err := client.ConnectTo(s.ControlAddress)
 	if err != nil {
 		return nil, s.connError(err)
 	}
@@ -622,12 +651,12 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	}
 
 	// Create a socket for the control server and donate it to the sandbox.
-	addr := boot.ControlSocketAddr(s.ID)
-	sockFD, err := server.CreateSocket(addr)
-	log.Infof("Creating sandbox process with addr: %s", addr[1:]) // skip "\00".
+	controlAddress, sockFD, err := createControlSocket(conf.RootDir, s.ID)
 	if err != nil {
-		return fmt.Errorf("creating control server socket for sandbox %q: %v", s.ID, err)
+		return fmt.Errorf("creating control socket %q: %v", s.ControlAddress, err)
 	}
+	log.Infof("Control socket: %q", s.ControlAddress)
+	s.ControlAddress = controlAddress
 	donations.DonateAndClose("controller-fd", os.NewFile(uintptr(sockFD), "control_server_socket"))
 
 	specFile, err := specutils.OpenSpec(args.BundleDir)
@@ -1000,6 +1029,12 @@ func (s *Sandbox) IsRootContainer(cid string) bool {
 // is idempotent.
 func (s *Sandbox) destroy() error {
 	log.Debugf("Destroying sandbox %q", s.ID)
+	// Only delete the control file if it exists and is not an abstract UDS.
+	if len(s.ControlAddress) > 0 && s.ControlAddress[0] != 0 {
+		if err := os.Remove(s.ControlAddress); err != nil {
+			log.Warningf("failed to delete control socket file %q: %v", s.ControlAddress, err)
+		}
+	}
 	pid := s.Pid.load()
 	if pid != 0 {
 		log.Debugf("Killing sandbox %q", s.ID)
