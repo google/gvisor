@@ -3604,7 +3604,7 @@ func TestDefaultTTL(t *testing.T) {
 		{"ipv4", ipv4.ProtocolNumber, context.TestAddr},
 		{"ipv6", ipv6.ProtocolNumber, context.TestV6Addr},
 	} {
-		t.Run(fmt.Sprint(test.name), func(t *testing.T) {
+		t.Run(test.name, func(t *testing.T) {
 			c := context.New(t, 65535)
 			defer c.Cleanup()
 
@@ -3668,7 +3668,7 @@ func TestSetTTL(t *testing.T) {
 		{"ipv4", ipv4.ProtocolNumber, context.TestAddr, tcpip.IPv4TTLOption, tcpip.IPv6HopLimitOption},
 		{"ipv6", ipv6.ProtocolNumber, context.TestV6Addr, tcpip.IPv6HopLimitOption, tcpip.IPv4TTLOption},
 	} {
-		t.Run(fmt.Sprint(test.name), func(t *testing.T) {
+		t.Run(test.name, func(t *testing.T) {
 			for _, wantTTL := range []uint8{1, 2, 50, 64, 128, 254, 255} {
 				t.Run(fmt.Sprintf("TTL:%d", wantTTL), func(t *testing.T) {
 					c := context.New(t, 65535)
