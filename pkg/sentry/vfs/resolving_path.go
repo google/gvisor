@@ -438,8 +438,10 @@ func (rp *ResolvingPath) handleError(ctx context.Context, err error) bool {
 		rp.flags &^= rpflagsHaveMountRef | rpflagsHaveStartRef
 		// Consume the path component that represented the symlink.
 		rp.Advance()
-		// Prepend the symlink target to the relative path.
-		rp.relpathPrepend(rp.absSymlinkTarget)
+		if rp.absSymlinkTarget.HasComponents() {
+			// Prepend the symlink target to the relative path.
+			rp.relpathPrepend(rp.absSymlinkTarget)
+		}
 		// Restart path resolution on the new Mount.
 		rp.releaseErrorState(ctx)
 		return true

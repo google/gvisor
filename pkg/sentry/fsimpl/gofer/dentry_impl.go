@@ -201,7 +201,7 @@ func (d *dentry) getRemoteChild(ctx context.Context, name string) (*dentry, erro
 //   - fs.renameMu must be locked.
 //   - parent.dirMu must be locked.
 //   - parent.isDir().
-//   - name is not "." or "..".
+//   - !rp.Done() && rp.Component() is not "." or "..".
 //   - dentry at name must not already exist in dentry tree.
 //
 // Postcondition: The returned dentry is already cached appropriately.

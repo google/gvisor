@@ -241,7 +241,7 @@ func (d *lisafsDentry) getRemoteChild(ctx context.Context, name string) (*dentry
 //   - fs.renameMu must be locked.
 //   - parent.dirMu must be locked.
 //   - parent.isDir().
-//   - name is not "." or "..".
+//   - !rp.Done().
 //   - dentry at name must not already exist in dentry tree.
 func (d *lisafsDentry) getRemoteChildAndWalkPathLocked(ctx context.Context, rp *vfs.ResolvingPath, ds **[]*dentry) (*dentry, error) {
 	// Walk as much of the path as possible in 1 RPC.
