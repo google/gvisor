@@ -659,7 +659,7 @@ func (vfs *VirtualFilesystem) connectLocked(mnt *Mount, vd VirtualDentry, mntns 
 func (vfs *VirtualFilesystem) disconnectLocked(mnt *Mount) VirtualDentry {
 	vd := mnt.getKey()
 	if checkInvariants {
-		if vd.mount != nil {
+		if vd.mount == nil {
 			panic("VFS.disconnectLocked called on disconnected mount")
 		}
 		if mnt.ns.mountpoints[vd.dentry] == 0 {
@@ -669,7 +669,6 @@ func (vfs *VirtualFilesystem) disconnectLocked(mnt *Mount) VirtualDentry {
 			panic("VFS.disconnectLocked called on namespace with zero mounts.")
 		}
 	}
-	mnt.loadKey(VirtualDentry{})
 	delete(vd.mount.children, mnt)
 	vd.dentry.mounts.Add(math.MaxUint32) // -1
 	mnt.ns.mountpoints[vd.dentry]--
@@ -678,6 +677,7 @@ func (vfs *VirtualFilesystem) disconnectLocked(mnt *Mount) VirtualDentry {
 		delete(mnt.ns.mountpoints, vd.dentry)
 	}
 	vfs.mounts.removeSeqed(mnt)
+	mnt.loadKey(VirtualDentry{}) // Clear mnt.key.
 	vfsmpmounts := vfs.mountpoints[vd.dentry]
 	delete(vfsmpmounts, mnt)
 	if len(vfsmpmounts) == 0 {
