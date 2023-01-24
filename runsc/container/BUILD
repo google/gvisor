@@ -41,6 +41,7 @@ go_test(
     srcs = [
         "console_test.go",
         "container_test.go",
+        "metric_server_test.go",
         "multi_container_test.go",
         "shared_volume_test.go",
         "trace_test.go",
@@ -84,6 +85,7 @@ go_test(
         "//runsc/config",
         "//runsc/flag",
         "//runsc/specutils",
+        "//test/metricclient",
         "@com_github_cenkalti_backoff//:go_default_library",
         "@com_github_kr_pty//:go_default_library",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
