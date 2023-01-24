@@ -180,8 +180,7 @@ func (fs *Filesystem) walkExistingLocked(ctx context.Context, rp *vfs.ResolvingP
 //   - !rp.Done().
 //
 // Postconditions: Caller must call fs.processDeferredDecRefs*.
-func (fs *Filesystem) walkParentDirLocked(ctx context.Context, rp *vfs.ResolvingPath) (*Dentry, error) {
-	d := rp.Start().Impl().(*Dentry)
+func (fs *Filesystem) walkParentDirLocked(ctx context.Context, rp *vfs.ResolvingPath, d *Dentry) (*Dentry, error) {
 	for !rp.Final() {
 		var err error
 		d, _, err = fs.stepExistingLocked(ctx, rp, d)
@@ -342,7 +341,7 @@ func (fs *Filesystem) GetParentDentryAt(ctx context.Context, rp *vfs.ResolvingPa
 	fs.mu.RLock()
 	defer fs.processDeferredDecRefs(ctx)
 	defer fs.mu.RUnlock()
-	d, err := fs.walkParentDirLocked(ctx, rp)
+	d, err := fs.walkParentDirLocked(ctx, rp, rp.Start().Impl().(*Dentry))
 	if err != nil {
 		return nil, err
 	}
@@ -358,7 +357,7 @@ func (fs *Filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 	fs.mu.Lock()
 	defer fs.processDeferredDecRefs(ctx)
 	defer fs.mu.Unlock()
-	parent, err := fs.walkParentDirLocked(ctx, rp)
+	parent, err := fs.walkParentDirLocked(ctx, rp, rp.Start().Impl().(*Dentry))
 	if err != nil {
 		return err
 	}
@@ -405,7 +404,7 @@ func (fs *Filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 	fs.mu.Lock()
 	defer fs.processDeferredDecRefs(ctx)
 	defer fs.mu.Unlock()
-	parent, err := fs.walkParentDirLocked(ctx, rp)
+	parent, err := fs.walkParentDirLocked(ctx, rp, rp.Start().Impl().(*Dentry))
 	if err != nil {
 		return err
 	}
@@ -442,7 +441,7 @@ func (fs *Filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 	fs.mu.Lock()
 	defer fs.processDeferredDecRefs(ctx)
 	defer fs.mu.Unlock()
-	parent, err := fs.walkParentDirLocked(ctx, rp)
+	parent, err := fs.walkParentDirLocked(ctx, rp, rp.Start().Impl().(*Dentry))
 	if err != nil {
 		return err
 	}
@@ -499,7 +498,7 @@ func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 
 	// May create new file.
 	mustCreate := opts.Flags&linux.O_EXCL != 0
-	d := rp.Start().Impl().(*Dentry)
+	start := rp.Start().Impl().(*Dentry)
 	fs.mu.Lock()
 	unlocked := false
 	unlock := func() {
@@ -520,19 +519,19 @@ func (fs *Filesystem) OpenAt(ctx context.Context, rp *vfs.ResolvingPath, opts vf
 		if mustCreate {
 			return nil, linuxerr.EEXIST
 		}
-		if err := d.inode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
+		if err := start.inode.CheckPermissions(ctx, rp.Credentials(), ats); err != nil {
 			return nil, err
 		}
 		// Open may block so we need to unlock fs.mu. IncRef d to prevent
 		// its destruction while fs.mu is unlocked.
-		d.IncRef()
+		start.IncRef()
 		unlock()
-		fd, err := d.inode.Open(ctx, rp, d, opts)
-		d.DecRef(ctx)
+		fd, err := start.inode.Open(ctx, rp, start, opts)
+		start.DecRef(ctx)
 		return fd, err
 	}
 afterTrailingSymlink:
-	parent, err := fs.walkParentDirLocked(ctx, rp)
+	parent, err := fs.walkParentDirLocked(ctx, rp, start)
 	if err != nil {
 		return nil, err
 	}
@@ -566,6 +565,7 @@ afterTrailingSymlink:
 			// must be handled by the VFS layer.
 			return nil, err
 		}
+		start = parent
 		goto afterTrailingSymlink
 	}
 	if linuxerr.Equals(linuxerr.ENOENT, err) {
@@ -660,7 +660,7 @@ func (fs *Filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 
 	// Resolve the destination directory first to verify that it's on this
 	// Mount.
-	dstDir, err := fs.walkParentDirLocked(ctx, rp)
+	dstDir, err := fs.walkParentDirLocked(ctx, rp, rp.Start().Impl().(*Dentry))
 	if err != nil {
 		return err
 	}
@@ -883,7 +883,7 @@ func (fs *Filesystem) SymlinkAt(ctx context.Context, rp *vfs.ResolvingPath, targ
 	fs.mu.Lock()
 	defer fs.processDeferredDecRefs(ctx)
 	defer fs.mu.Unlock()
-	parent, err := fs.walkParentDirLocked(ctx, rp)
+	parent, err := fs.walkParentDirLocked(ctx, rp, rp.Start().Impl().(*Dentry))
 	if err != nil {
 		return err
 	}
