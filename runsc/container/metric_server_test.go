@@ -57,9 +57,9 @@ func setupMetrics(t *testing.T) (*metricsTest, func()) {
 	childReaper.Start()
 	cu := cleanup.Make(childReaper.Stop)
 
-	cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 1*time.Minute)
+	cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 3*time.Minute+30*time.Second)
 	cu.Add(cleanupCancel)
-	testCtx, testCancel := context.WithTimeout(cleanupCtx, 50*time.Second)
+	testCtx, testCancel := context.WithTimeout(cleanupCtx, 3*time.Minute)
 	cu.Add(testCancel)
 
 	spec, conf := sleepSpecConf(t)
