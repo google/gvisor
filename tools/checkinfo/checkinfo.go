@@ -74,10 +74,14 @@ func walkObject(pass *analysis.Pass, obj types.Object) {
 		pass.ExportObjectFact(obj, &a)
 		pass.ExportObjectFact(obj, &s)
 	case *types.TypeName:
-		// Skip if just an alias, or if not underlying type. If it is
-		// not an alias, then it must be package-local.
+		// Skip if just an alias, or if not underlying type, or if a
+		// type parameter. If it is not an alias, then it must be
+		// package-local.
 		typ := x.Type()
 		if x.IsAlias() || typ == nil || typ.Underlying() == nil {
+			break
+		}
+		if _, ok := typ.(*types.TypeParam); ok {
 			break
 		}
 		// Add basic information.

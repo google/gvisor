@@ -365,6 +365,7 @@ func (i *importer) checkPackage(path string, srcs []string) (*types.Package, Fin
 	}
 	typesInfo := &types.Info{
 		Types:      make(map[ast.Expr]types.TypeAndValue),
+		Instances:  make(map[*ast.Ident]types.Instance),
 		Uses:       make(map[*ast.Ident]types.Object),
 		Defs:       make(map[*ast.Ident]types.Object),
 		Implicits:  make(map[ast.Node]types.Object),
@@ -726,27 +727,11 @@ func SplitPackages(srcs []string, srcRootPrefix string) map[string][]string {
 			continue
 		}
 
-		// Skip unsupported packages explicitly.
-		if _, ok := usesTypeParams[pkg]; ok {
-			log.Printf("WARNING: Skipping package %q: type param analysis not yet supported.", pkg)
-			continue
-		}
-
 		// Add to the package.
 		sources[pkg] = append(sources[pkg], filename)
 	}
 
 	return sources
-}
-
-// Go standard library packages using Go 1.18 type parameter features.
-//
-// As of writing, analysis tooling is not updated to support type parameters
-// and will choke on these packages. We skip these packages entirely for now.
-//
-// TODO(b/201686256): remove once tooling can handle type parameters.
-var usesTypeParams = map[string]struct{}{
-	"sync/atomic": {}, // https://go.dev/issue/50860
 }
 
 // Bundle checks a bundle of files (typically the standard library).
