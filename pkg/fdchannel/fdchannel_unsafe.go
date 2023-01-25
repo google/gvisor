@@ -24,7 +24,6 @@ import (
 	"unsafe"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/gohacks"
 )
 
 // int32 is the real type of a file descriptor.
@@ -55,10 +54,9 @@ func (ep *Endpoint) Init(sockfd int) {
 	// sendmsg+recvmsg for a zero-length datagram is slightly faster than
 	// sendmsg+recvmsg for a single byte over a stream socket.
 	cmsgSlice := make([]byte, unix.CmsgSpace(sizeofInt32))
-	cmsgSliceHdr := (*gohacks.SliceHeader)(unsafe.Pointer(&cmsgSlice))
 	ep.sockfd = int32(sockfd)
-	ep.msghdr.Control = (*byte)(cmsgSliceHdr.Data)
-	ep.cmsg = (*unix.Cmsghdr)(cmsgSliceHdr.Data)
+	ep.msghdr.Control = (*byte)(unsafe.Pointer(&cmsgSlice[0]))
+	ep.cmsg = (*unix.Cmsghdr)(unsafe.Pointer(&cmsgSlice[0]))
 	// ep.msghdr.Controllen and ep.cmsg.* are mutated by recvmsg(2), so they're
 	// set before calling sendmsg/recvmsg.
 }

@@ -371,8 +371,7 @@ func (shard *apmShard) rehash(oldSlots unsafe.Pointer) {
 
 	// Allocate the new table.
 	newSlotsSlice := make([]apmSlot, newSize)
-	newSlotsHeader := (*gohacks.SliceHeader)(unsafe.Pointer(&newSlotsSlice))
-	newSlots := newSlotsHeader.Data
+	newSlots := unsafe.Pointer(&newSlotsSlice[0])
 	newMask := newSize - 1
 
 	// Start a writer critical section now so that racing users of the old

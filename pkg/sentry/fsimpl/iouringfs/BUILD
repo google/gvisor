@@ -16,7 +16,6 @@ go_library(
         "//pkg/atomicbitops",
         "//pkg/context",
         "//pkg/errors/linuxerr",
-        "//pkg/gohacks",
         "//pkg/hostarch",
         "//pkg/safemem",
         "//pkg/sentry/kernel",
