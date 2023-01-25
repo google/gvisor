@@ -136,9 +136,7 @@ func (fd *DeviceFD) StateFields() []string {
 		"queue",
 		"numActiveRequests",
 		"completions",
-		"writeCursor",
 		"writeBuf",
-		"writeCursorFR",
 		"conn",
 	}
 }
@@ -160,10 +158,8 @@ func (fd *DeviceFD) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(7, &fd.queue)
 	stateSinkObject.Save(8, &fd.numActiveRequests)
 	stateSinkObject.Save(9, &fd.completions)
-	stateSinkObject.Save(10, &fd.writeCursor)
-	stateSinkObject.Save(11, &fd.writeBuf)
-	stateSinkObject.Save(12, &fd.writeCursorFR)
-	stateSinkObject.Save(13, &fd.conn)
+	stateSinkObject.Save(10, &fd.writeBuf)
+	stateSinkObject.Save(11, &fd.conn)
 }
 
 func (fd *DeviceFD) afterLoad() {}
@@ -179,10 +175,8 @@ func (fd *DeviceFD) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(7, &fd.queue)
 	stateSourceObject.Load(8, &fd.numActiveRequests)
 	stateSourceObject.Load(9, &fd.completions)
-	stateSourceObject.Load(10, &fd.writeCursor)
-	stateSourceObject.Load(11, &fd.writeBuf)
-	stateSourceObject.Load(12, &fd.writeCursorFR)
-	stateSourceObject.Load(13, &fd.conn)
+	stateSourceObject.Load(10, &fd.writeBuf)
+	stateSourceObject.Load(11, &fd.conn)
 	stateSourceObject.LoadValue(5, new(int), func(y any) { fd.loadFullQueueCh(y.(int)) })
 }
 
