@@ -19,6 +19,7 @@ package config
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -349,6 +350,16 @@ func (c *Config) GetOverlay2() Overlay2 {
 		return Overlay2{RootMount: true, SubMounts: true, FilestoreDir: ""}
 	}
 	return c.Overlay2
+}
+
+// MetricMetadata returns key-value pairs that are useful to include in metrics
+// exported about the sandbox this config represents.
+func (c *Config) MetricMetadata() map[string]string {
+	metadata := make(map[string]string)
+	metadata["platform"] = c.Platform
+	metadata["network"] = c.Network.String()
+	metadata["coretags"] = strconv.FormatBool(c.EnableCoreTags)
+	return metadata
 }
 
 // FileAccessType tells how the filesystem is accessed.

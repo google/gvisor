@@ -36,6 +36,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/runsc/config"
+	"gvisor.dev/gvisor/runsc/sandbox"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
@@ -358,4 +359,54 @@ func (m MetricData) GetPrometheusContainerInteger(want WantMetric) (int64, time.
 		labels["namespace"] = want.Namespace
 	}
 	return m.GetPrometheusInteger(want.Metric, labels)
+}
+
+// GetSandboxMetadataMetric returns the labels attached to the metadata metric for a given sandbox.
+func (m MetricData) GetSandboxMetadataMetric(want WantMetric) (map[string]string, error) {
+	var buf bytes.Buffer
+	buf.WriteString(string(m))
+	parsed, err := (&expfmt.TextParser{}).TextToMetricFamilies(&buf)
+	if err != nil {
+		return nil, err
+	}
+	metricData, found := parsed[want.Metric]
+	if !found {
+		return nil, fmt.Errorf("metric %q not found", want.Metric)
+	}
+	foundIndex := -1
+	for i, data := range metricData.GetMetric() {
+		dataLabels := make(map[string]string, len(data.GetLabel()))
+		for _, label := range data.GetLabel() {
+			dataLabels[label.GetName()] = label.GetValue()
+		}
+		allMatching := true
+		for wantLabel, wantValue := range map[string]string{
+			sandbox.SandboxIDLabel: want.Sandbox,
+			sandbox.NamespaceLabel: want.Namespace,
+			sandbox.PodNameLabel:   want.Pod,
+		} {
+			if dataLabels[wantLabel] != wantValue {
+				allMatching = false
+				break
+			}
+		}
+		if allMatching {
+			if foundIndex != -1 {
+				return nil, errors.New("found multiple metadata metrics matching requested labels")
+			}
+			foundIndex = i
+		}
+	}
+	if foundIndex == -1 {
+		return nil, errors.New("no metadata metric matching requested labels")
+	}
+	data := metricData.GetMetric()[foundIndex]
+	metadataLabels := make(map[string]string, len(data.GetLabel()))
+	for _, label := range data.GetLabel() {
+		if label.GetName() == sandbox.SandboxIDLabel || label.GetName() == sandbox.NamespaceLabel || label.GetName() == sandbox.PodNameLabel {
+			continue
+		}
+		metadataLabels[label.GetName()] = label.GetValue()
+	}
+	return metadataLabels, nil
 }
