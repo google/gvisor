@@ -14,6 +14,7 @@ go_library(
     deps = [
         "//pkg/sync",
         "//runsc/config",
+        "//runsc/sandbox",
         "//runsc/specutils",
         "@com_github_cenkalti_backoff//:go_default_library",
         "@com_github_prometheus_common//expfmt",

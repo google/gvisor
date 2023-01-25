@@ -141,6 +141,18 @@ func TestContainerMetrics(t *testing.T) {
 	if err != nil {
 		t.Errorf("Cannot get metrics after creating container: %v", err)
 	}
+	gotMetadata, err := initialData.GetSandboxMetadataMetric(metricclient.WantMetric{
+		Metric:    "testmetric_meta_sandbox_metadata",
+		Sandbox:   args.ID,
+		Pod:       "foopod",
+		Namespace: "foons",
+	})
+	if err != nil {
+		t.Errorf("Cannot get sandbox metadata: %v", err)
+	}
+	if gotMetadata["platform"] == "" || gotMetadata["platform"] != te.sleepConf.Platform {
+		t.Errorf("Invalid platform: Metric metadata says %v, config says %v", gotMetadata["platform"], te.sleepConf.Platform)
+	}
 	t.Logf("Metrics prior to container start:\n\n%s\n\n", initialData)
 	if err := cont.Start(te.sleepConf); err != nil {
 		t.Fatalf("Cannot start container: %v", err)
