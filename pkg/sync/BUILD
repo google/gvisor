@@ -30,10 +30,26 @@ arch_genrule(
 
 # Architecture-independent constants.
 nogo_facts(
-    name = "runtime_constants_impl",
+    name = "runtime_constants_unsafe_impl",
     srcs = ["runtime.go"],
-    output = "runtime_constants_impl.go",
-    template = "runtime_constants.tmpl",
+    output = "runtime_constants_impl_unsafe.go",
+    template = "runtime_constants_unsafe.tmpl",
+)
+
+# Architecture-dependent constants. These will only be defined in amd64 and
+# arm64 files, so they must only be used in similarly build-tagged files,
+# otherwise other arches will not build on the go branch.
+nogo_facts(
+    name = "runtime_arch_constants_impl",
+    srcs = ["runtime.go"],
+    output = "runtime_arch_constants_impl.go",
+    template = "runtime_arch_constants.tmpl",
+)
+
+arch_genrule(
+    name = "runtime_arch_constants_impl_arch",
+    src = ":runtime_arch_constants_impl",
+    template = "runtime_arch_constants_%s.go",
 )
 
 go_library(
@@ -57,7 +73,8 @@ go_library(
         "rwmutex_unsafe.go",
         "seqcount.go",
         "sync.go",
-        ":runtime_constants_impl",
+        ":runtime_arch_constants_impl_arch",
+        ":runtime_constants_unsafe_impl",
         ":runtime_spinning_impl_arch",
     ],
     marshal = False,
@@ -74,6 +91,7 @@ go_test(
     size = "small",
     srcs = [
         "gate_test.go",
+        "runtime_map_test.go",
         "rwmutex_test.go",
         "seqcount_test.go",
     ],

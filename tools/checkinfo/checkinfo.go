@@ -30,6 +30,7 @@ var Analyzer = &analysis.Analyzer{
 		(*Align)(nil),
 		(*Offset)(nil),
 		(*Size)(nil),
+		(*Signature)(nil),
 		(*Constants)(nil),
 	},
 }
@@ -51,6 +52,12 @@ type Size int64
 
 // AFact implements analysis.Fact.AFact.
 func (*Size) AFact() {}
+
+// Signature is a fact describing a function signature.
+type Signature string
+
+// AFact implements analysis.Fact.AFact.
+func (*Signature) AFact() {}
 
 // Constants contains all constant values.
 type Constants map[string]string
@@ -74,10 +81,15 @@ func (p *pkg) walkObject(pass *analysis.Pass, obj types.Object) {
 		// Don't walk to other packages.
 	case *types.Var:
 		// Add information as a field.
-		a := Align(pass.TypesSizes.Alignof(x.Type()))
-		s := Size(pass.TypesSizes.Sizeof(x.Type()))
+		typ := x.Type()
+		a := Align(pass.TypesSizes.Alignof(typ))
+		s := Size(pass.TypesSizes.Sizeof(typ))
 		pass.ExportObjectFact(obj, &a)
 		pass.ExportObjectFact(obj, &s)
+		if sig, ok := typ.(*types.Signature); ok {
+			s := Signature(sig.String())
+			pass.ExportObjectFact(obj, &s)
+		}
 	case *types.TypeName:
 		// Skip if just an alias, or if not underlying type, or if a
 		// type parameter. If it is not an alias, then it must be
@@ -94,6 +106,10 @@ func (p *pkg) walkObject(pass *analysis.Pass, obj types.Object) {
 		s := Size(pass.TypesSizes.Sizeof(typ))
 		pass.ExportObjectFact(obj, &a)
 		pass.ExportObjectFact(obj, &s)
+		if sig, ok := typ.(*types.Signature); ok {
+			s := Signature(sig.String())
+			pass.ExportObjectFact(obj, &s)
+		}
 		// Recurse to fields if this is a definition.
 		if structType, ok := typ.Underlying().(*types.Struct); ok {
 			fields := make([]*types.Var, 0, structType.NumFields())
@@ -114,6 +130,8 @@ func (p *pkg) walkObject(pass *analysis.Pass, obj types.Object) {
 		}
 		// Recurse to all parameters.
 		sig := x.Type().(*types.Signature)
+		s := Signature(sig.String())
+		pass.ExportObjectFact(obj, &s)
 		if recv := sig.Recv(); recv != nil {
 			p.walkObject(pass, recv)
 		}

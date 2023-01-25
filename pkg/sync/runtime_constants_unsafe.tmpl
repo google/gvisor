@@ -14,6 +14,10 @@
 
 package sync
 
+import (
+	"unsafe" // unsafe.Pointer used in maptype.hasher signature.
+)
+
 // Values for the reason argument to gopark, from Go's src/runtime/runtime2.go.
 const (
 	WaitReasonSelect      uint8 = {{ .import.runtime.Constants.waitReasonSelect }}
@@ -27,3 +31,6 @@ const (
 	TraceEvGoBlockSelect byte = {{ .import.runtime.Constants.traceEvGoBlockSelect }}
 	TraceEvGoBlockSync   byte = {{ .import.runtime.Constants.traceEvGoBlockSync }}
 )
+
+// Type of maptype.hasher.
+type maptypeHasher {{ .import.runtime.maptype.hasher.Signature }}

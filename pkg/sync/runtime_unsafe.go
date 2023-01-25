@@ -3,17 +3,6 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-//go:build go1.13 && !go1.21
-// +build go1.13,!go1.21
-
-// //go:linkname directives type-checked by checklinkname. Any other
-// non-linkname assumptions outside the Go 1 compatibility guarantee should
-// have an accompanied vet check or version guard build tag.
-
-// Check type definitions and constants when updating Go version.
-//
-// TODO(b/165820485): add these checks to checklinkname.
-
 package sync
 
 import (
@@ -111,22 +100,26 @@ func MapKeyHasher(m any) func(unsafe.Pointer, uintptr) uintptr {
 }
 
 // maptype is equivalent to the beginning of runtime.maptype.
+//
+// TestMaptypeHasherOffset verfies the correct layout w.r.t. the hasher field
+// (the only field we use). Do not use other fields without adding an
+// equivalent test.
 type maptype struct {
-	size       uintptr
-	ptrdata    uintptr
-	hash       uint32
-	tflag      uint8
-	align      uint8
-	fieldAlign uint8
-	kind       uint8
-	equal      func(unsafe.Pointer, unsafe.Pointer) bool
-	gcdata     *byte
-	str        int32
-	ptrToThis  int32
-	key        unsafe.Pointer
-	elem       unsafe.Pointer
-	bucket     unsafe.Pointer
-	hasher     func(unsafe.Pointer, uintptr) uintptr
+	_      uintptr                                   // size
+	_      uintptr                                   // ptrdata
+	_      uint32                                    // hash
+	_      uint8                                     // tflag
+	_      uint8                                     // align
+	_      uint8                                     // fieldAlign
+	_      uint8                                     // kind
+	_      func(unsafe.Pointer, unsafe.Pointer) bool // equal
+	_      *byte                                     // gcdata
+	_      int32                                     // str
+	_      int32                                     // ptrToThis
+	_      unsafe.Pointer                            // key
+	_      unsafe.Pointer                            // elem
+	_      unsafe.Pointer                            // bucket
+	hasher maptypeHasher
 	// more fields
 }
 
