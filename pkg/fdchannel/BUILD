@@ -7,7 +7,6 @@ go_library(
     srcs = ["fdchannel_unsafe.go"],
     visibility = ["//visibility:public"],
     deps = [
-        "//pkg/gohacks",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

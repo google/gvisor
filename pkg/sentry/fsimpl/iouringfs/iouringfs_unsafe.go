@@ -19,7 +19,6 @@ import (
 	"unsafe"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
-	"gvisor.dev/gvisor/pkg/gohacks"
 )
 
 func atomicUint32AtOffset(buf []byte, offset int) *atomicbitops.Uint32 {
@@ -30,6 +29,5 @@ func atomicUint32AtOffset(buf []byte, offset int) *atomicbitops.Uint32 {
 	if offset%sizeOfUint32 != 0 {
 		panic(fmt.Sprintf("cast at offset %d would produce unaligned pointer", offset))
 	}
-	hdr := (*gohacks.SliceHeader)(unsafe.Pointer(&buf))
-	return (*atomicbitops.Uint32)(unsafe.Add(hdr.Data, offset))
+	return (*atomicbitops.Uint32)(unsafe.Pointer(&buf[offset]))
 }
