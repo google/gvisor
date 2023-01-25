@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/log"
 )
 
 // Communicator is a server side utility which represents exactly how the
@@ -41,10 +42,10 @@ type Communicator interface {
 	// response message along with the response payload length.
 	SndRcvMessage(m MID, payloadLen uint32, wantFDs uint8) (MID, uint32, error)
 
-	// DonateFD makes fd non-blocking and starts tracking it. The next call to
-	// ReleaseFDs will include fd in the order it was added. Communicator takes
-	// ownership of fd. Server side should call this.
-	DonateFD(fd int) error
+	// DonateFD attempts to make fd non-blocking and starts tracking it. The next
+	// call to ReleaseFDs will include fd in the order it was added. Communicator
+	// takes ownership of fd. Server side should call this.
+	DonateFD(fd int)
 
 	// Track starts tracking fd. The next call to ReleaseFDs will include fd in
 	// the order it was added. Communicator takes ownership of fd. Client side
@@ -63,14 +64,14 @@ type fdTracker struct {
 }
 
 // DonateFD implements Communicator.DonateFD.
-func (d *fdTracker) DonateFD(fd int) error {
-	// Make sure the FD is non-blocking.
+func (d *fdTracker) DonateFD(fd int) {
+	// Try to make the FD non-blocking.
 	if err := unix.SetNonblock(fd, true); err != nil {
-		unix.Close(fd)
-		return err
+		// This may fail if fd was opened with O_PATH, because fcntl(F_SETFL) fails
+		// with EBADF on O_PATH FDs.
+		log.Warningf("DonateFD: unix.SetNonblock() failed on FD %d: %v", fd, err)
 	}
 	d.TrackFD(fd)
-	return nil
 }
 
 // TrackFD implements Communicator.TrackFD.

@@ -19,7 +19,6 @@ import (
 	"math"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/flipcall"
 	"gvisor.dev/gvisor/pkg/log"
@@ -72,14 +71,11 @@ type Client struct {
 // the server and creates channels for fast IPC. NewClient takes ownership over
 // the passed socket. On success, it returns the initialized client along with
 // the root Inode.
-func NewClient(sock *unet.Socket) (*Client, Inode, error) {
-	maxChans := maxChannels()
+func NewClient(sock *unet.Socket) (*Client, Inode, int, error) {
 	c := &Client{
-		sockComm:          newSockComm(sock),
-		channels:          make([]*channel, 0, maxChans),
-		availableChannels: make([]*channel, 0, maxChans),
-		maxMessageSize:    1 << 20, // 1 MB for now.
-		fdsToClose:        make([]FDID, 0, fdsToCloseBatchSize),
+		sockComm:       newSockComm(sock),
+		maxMessageSize: 1 << 20, // 1 MB for now.
+		fdsToClose:     make([]FDID, 0, fdsToCloseBatchSize),
 	}
 
 	// Start a goroutine to check socket health. This goroutine is also
@@ -87,22 +83,18 @@ func NewClient(sock *unet.Socket) (*Client, Inode, error) {
 	c.watchdogWg.Add(1)
 	go c.watchdog()
 
-	// Clean everything up if anything fails.
-	cu := cleanup.Make(func() {
-		c.Close()
-	})
-	defer cu.Clean()
-
 	// Mount the server first. Assume Mount is supported so that we can make the
 	// Mount RPC below.
 	c.supported = make([]bool, Mount+1)
 	c.supported[Mount] = true
 	var (
-		mountReq  MountReq
-		mountResp MountResp
+		mountReq    MountReq
+		mountResp   MountResp
+		mountHostFD = [1]int{-1}
 	)
-	if err := c.SndRcvMessage(Mount, uint32(mountReq.SizeBytes()), mountReq.MarshalBytes, mountResp.CheckedUnmarshal, nil, mountReq.String, mountResp.String); err != nil {
-		return nil, Inode{}, err
+	if err := c.SndRcvMessage(Mount, uint32(mountReq.SizeBytes()), mountReq.MarshalBytes, mountResp.CheckedUnmarshal, mountHostFD[:], mountReq.String, mountResp.String); err != nil {
+		c.Close()
+		return nil, Inode{}, -1, err
 	}
 
 	// Initialize client.
@@ -117,6 +109,16 @@ func NewClient(sock *unet.Socket) (*Client, Inode, error) {
 	for _, suppMID := range mountResp.SupportedMs {
 		c.supported[suppMID] = true
 	}
+	return c, mountResp.Root, mountHostFD[0], nil
+}
+
+// StartChannels starts maxChannels() channel communicators.
+func (c *Client) StartChannels() error {
+	maxChans := maxChannels()
+	c.channelsMu.Lock()
+	c.channels = make([]*channel, 0, maxChans)
+	c.availableChannels = make([]*channel, 0, maxChans)
+	c.channelsMu.Unlock()
 
 	// Create channels parallely so that channels can be used to create more
 	// channels and costly initialization like flipcall.Endpoint.Connect can
@@ -150,11 +152,9 @@ func NewClient(sock *unet.Socket) (*Client, Inode, error) {
 	c.channelsMu.Unlock()
 	if maxChans > 0 && numChannels == 0 {
 		log.Warningf("all channel RPCs failed")
-		return nil, Inode{}, unix.ENOMEM
+		return unix.ENOMEM
 	}
-
-	cu.Release()
-	return c, mountResp.Root, nil
+	return nil
 }
 
 func (c *Client) watchdog() {
