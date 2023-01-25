@@ -1,5 +1,7 @@
 # gVisor FUSE Test Suite
 
+## This test framework is deprecated. Please use the `usefusefs=True` in syscall tests to test FUSE going forward.
+
 This is an integration test suite for fuse(4) filesystem. It runs under gVisor
 sandbox container with FUSE function enabled.
 
