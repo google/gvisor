@@ -236,7 +236,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	if err != nil {
 		util.Fatalf("reading spec: %v", err)
 	}
-	specutils.LogSpec(spec)
+	specutils.LogSpecDebug(spec, conf.OCISeccomp)
 
 	if b.applyCaps {
 		caps := spec.Process.Capabilities

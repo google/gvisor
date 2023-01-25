@@ -205,7 +205,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		}
 	}()
 
-	specutils.LogSpec(spec)
+	specutils.LogSpecDebug(spec, conf.OCISeccomp)
 
 	// fsgofer should run with a umask of 0, because we want to preserve file
 	// modes exactly as sent by the sandbox, which will have applied its own umask.
