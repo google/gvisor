@@ -190,7 +190,7 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 	name := tc.FullName()
 	id := testutil.RandomContainerID()
 	log.Infof("Running test %q in container %q", name, id)
-	specutils.LogSpec(spec)
+	specutils.LogSpecDebug(spec, false)
 
 	args := []string{
 		"-root", rootDir,

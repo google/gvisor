@@ -403,7 +403,7 @@ func calculatePeerIP(ip string) (string, error) {
 }
 
 func startContainerAndWait(spec *specs.Spec, conf *config.Config, cid string, waitStatus *unix.WaitStatus) subcommands.ExitStatus {
-	specutils.LogSpec(spec)
+	specutils.LogSpecDebug(spec, conf.OCISeccomp)
 
 	out, err := json.Marshal(spec)
 	if err != nil {

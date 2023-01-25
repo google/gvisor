@@ -47,8 +47,8 @@ var ExePath = "/proc/self/exe"
 // Version is the supported spec version.
 var Version = specs.Version
 
-// LogSpec logs the spec in a human-friendly way.
-func LogSpec(orig *specs.Spec) {
+// LogSpecDebug writes the spec in a human-friendly format to the debug log.
+func LogSpecDebug(orig *specs.Spec, logSeccomp bool) {
 	if !log.IsLogging(log.Debug) {
 		return
 	}
@@ -59,7 +59,9 @@ func LogSpec(orig *specs.Spec) {
 		spec.Process.Capabilities = nil
 	}
 	if spec.Linux != nil {
-		spec.Linux.Seccomp = nil
+		if !logSeccomp {
+			spec.Linux.Seccomp = nil
+		}
 		spec.Linux.MaskedPaths = nil
 		spec.Linux.ReadonlyPaths = nil
 		if spec.Linux.Resources != nil {

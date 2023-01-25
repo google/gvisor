@@ -293,7 +293,7 @@ func (cm *containerManager) StartSubcontainer(args *StartArgs, _ *struct{}) erro
 	}
 
 	// All validation passed, logs the spec for debugging.
-	specutils.LogSpec(args.Spec)
+	specutils.LogSpecDebug(args.Spec, args.Conf.OCISeccomp)
 
 	goferFiles := args.Files
 	var stdios []*fd.FD
