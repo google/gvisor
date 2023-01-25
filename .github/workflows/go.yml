@@ -43,7 +43,7 @@ jobs:
       if: github.event_name == 'pull_request' || steps.setup.outputs.has_token != 'true'
       with:
         fetch-depth: 0
-    - uses: actions/setup-go@v2
+    - uses: actions/setup-go@v3.5.0
       with:
         go-version: 1.19
     - run: tools/go_branch.sh
