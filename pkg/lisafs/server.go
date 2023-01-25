@@ -64,7 +64,7 @@ type ServerOpts struct {
 	AllocateOnDeleted bool
 }
 
-// Init must be called before first use of server.
+// Init must be called before first use of the server.
 func (s *Server) Init(impl ServerImpl, opts ServerOpts) {
 	s.impl = impl
 	s.opts = opts
@@ -112,10 +112,10 @@ func (s *Server) Destroy() {
 // value as their first field.
 type ServerImpl interface {
 	// Mount is called when a Mount RPC is made. It mounts the connection on
-	// mountNode.
+	// mountNode. Mount may optionally donate a host FD to the mount point.
 	//
 	// Mount has a read concurrency guarantee on mountNode.
-	Mount(c *Connection, mountNode *Node) (*ControlFD, linux.Statx, error)
+	Mount(c *Connection, mountNode *Node) (*ControlFD, linux.Statx, int, error)
 
 	// SupportedMessages returns a list of messages that the server
 	// implementation supports.

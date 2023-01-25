@@ -56,6 +56,10 @@ type Config struct {
 
 	// HostFifo signals whether the gofer can connect to host FIFOs.
 	HostFifo config.HostFifo
+
+	// DonateMountPointFD indicates whether a host FD to the mount point should
+	// be donated to the client on Mount RPC.
+	DonateMountPointFD bool
 }
 
 var procSelfFD *rwfd.FD
@@ -91,13 +95,13 @@ func NewLisafsServer(config Config) *LisafsServer {
 }
 
 // Mount implements lisafs.ServerImpl.Mount.
-func (s *LisafsServer) Mount(c *lisafs.Connection, mountNode *lisafs.Node) (*lisafs.ControlFD, linux.Statx, error) {
+func (s *LisafsServer) Mount(c *lisafs.Connection, mountNode *lisafs.Node) (*lisafs.ControlFD, linux.Statx, int, error) {
 	mountPath := mountNode.FilePath()
 	rootHostFD, err := tryOpen(func(flags int) (int, error) {
 		return unix.Open(mountPath, flags, 0)
 	})
 	if err != nil {
-		return nil, linux.Statx{}, err
+		return nil, linux.Statx{}, -1, err
 	}
 	cu := cleanup.Make(func() {
 		_ = unix.Close(rootHostFD)
@@ -106,22 +110,31 @@ func (s *LisafsServer) Mount(c *lisafs.Connection, mountNode *lisafs.Node) (*lis
 
 	stat, err := fstatTo(rootHostFD)
 	if err != nil {
-		return nil, linux.Statx{}, err
+		return nil, linux.Statx{}, -1, err
 	}
 
 	if err := checkSupportedFileType(uint32(stat.Mode), &s.config); err != nil {
 		log.Warningf("Mount: checkSupportedFileType() failed for file %q with mode %o: %v", mountPath, stat.Mode, err)
-		return nil, linux.Statx{}, err
+		return nil, linux.Statx{}, -1, err
+	}
+
+	clientHostFD := -1
+	if s.config.DonateMountPointFD {
+		clientHostFD, err = unix.Dup(rootHostFD)
+		if err != nil {
+			return nil, linux.Statx{}, -1, err
+		}
 	}
 	cu.Release()
 
 	rootFD := &controlFDLisa{
 		hostFD:         rootHostFD,
 		writableHostFD: atomicbitops.FromInt32(-1),
+		isMountPoint:   true,
 	}
 	mountNode.IncRef() // Ref is transferred to ControlFD.
 	rootFD.ControlFD.Init(c, mountNode, linux.FileMode(stat.Mode), rootFD)
-	return rootFD.FD(), stat, nil
+	return rootFD.FD(), stat, clientHostFD, nil
 }
 
 // MaxMessageSize implements lisafs.ServerImpl.MaxMessageSize.
@@ -175,6 +188,10 @@ type controlFDLisa struct {
 	// the same FD as `hostFD`. It is initialized to -1, and can change in value
 	// exactly once.
 	writableHostFD atomicbitops.Int32
+
+	// isMountpoint indicates whether this FD represents the mount point for its
+	// owning connection. isMountPoint is immutable.
+	isMountPoint bool
 }
 
 var _ lisafs.ControlFDImpl = (*controlFDLisa)(nil)
@@ -454,31 +471,35 @@ func (fd *controlFDLisa) WalkStat(path lisafs.StringArray, recordStat func(linux
 // Open implements lisafs.ControlFDImpl.Open.
 func (fd *controlFDLisa) Open(flags uint32) (*lisafs.OpenFD, int, error) {
 	flags |= openFlags
-	newHostFD, err := unix.Openat(int(procSelfFD.FD()), strconv.Itoa(fd.hostFD), int(flags)&^unix.O_NOFOLLOW, 0)
+	openHostFD, err := unix.Openat(int(procSelfFD.FD()), strconv.Itoa(fd.hostFD), int(flags)&^unix.O_NOFOLLOW, 0)
 	if err != nil {
 		return nil, -1, err
 	}
-	openFD := fd.newOpenFDLisa(newHostFD, flags)
 
-	hostOpenFD := -1
-	switch fd.FileType() {
-	case unix.S_IFREG:
+	hostFDToDonate := -1
+	ftype := fd.FileType()
+	switch {
+	case ftype == unix.S_IFREG:
 		// Best effort to donate file to the Sentry (for performance only).
-		hostOpenFD, _ = unix.Dup(openFD.hostFD)
+		hostFDToDonate, _ = unix.Dup(openHostFD)
 
-	case unix.S_IFIFO, unix.S_IFCHR:
+	case ftype == unix.S_IFIFO,
+		ftype == unix.S_IFCHR,
+		fd.isMountPoint && fd.Conn().ServerImpl().(*LisafsServer).config.DonateMountPointFD:
 		// Character devices and pipes can block indefinitely during reads/writes,
 		// which is not allowed for gofer operations. Ensure that it donates an FD
 		// back to the caller, so it can wait on the FD when reads/writes return
-		// EWOULDBLOCK.
+		// EWOULDBLOCK. For mount points, if DonateMountPointFD option is set, an
+		// FD must be donated.
 		var err error
-		hostOpenFD, err = unix.Dup(openFD.hostFD)
+		hostFDToDonate, err = unix.Dup(openHostFD)
 		if err != nil {
 			return nil, 0, err
 		}
 	}
 
-	return openFD.FD(), hostOpenFD, nil
+	openFD := fd.newOpenFDLisa(openHostFD, flags)
+	return openFD.FD(), hostFDToDonate, nil
 }
 
 // OpenCreate implements lisafs.ControlFDImpl.OpenCreate.

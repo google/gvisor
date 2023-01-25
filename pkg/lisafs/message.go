@@ -331,7 +331,7 @@ type Inode struct {
 	Stat      linux.Statx
 }
 
-// MountReq is an empty requent to Mount on the connection.
+// MountReq is an empty request to Mount on the connection.
 type MountReq struct{ EmptyMessage }
 
 // String implements fmt.Stringer.String.
