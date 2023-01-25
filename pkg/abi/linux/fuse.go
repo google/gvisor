@@ -113,6 +113,9 @@ type FUSEHeaderIn struct {
 	_ uint32
 }
 
+// SizeOfFUSEHeaderIn is the size of the FUSEHeaderIn struct.
+var SizeOfFUSEHeaderIn = uint32((*FUSEHeaderIn)(nil).SizeBytes())
+
 // FUSEHeaderOut is the header written by the daemon when it processes
 // a request and wants to send a reply (almost all operations require a
 // reply; if they do not, this will be explicitly documented).
@@ -128,6 +131,9 @@ type FUSEHeaderOut struct {
 	// Unique specifies the unique identifier of the corresponding request.
 	Unique FUSEOpID
 }
+
+// SizeOfFUSEHeaderOut is the size of the FUSEHeaderOut struct.
+var SizeOfFUSEHeaderOut = uint32((*FUSEHeaderOut)(nil).SizeBytes())
 
 // FUSE_INIT flags, consistent with the ones in include/uapi/linux/fuse.h.
 // Our taget version is 7.23 but we have few implemented in advance.
@@ -442,7 +448,7 @@ const MAX_NON_LFS = ((1 << 31) - 1)
 const (
 	// FOPEN_DIRECT_IO indicates bypassing page cache for this opened file.
 	FOPEN_DIRECT_IO = 1 << 0
-	// FOPEN_KEEP_CACHE avoids invalidate of data cache on open.
+	// FOPEN_KEEP_CACHE avoids invalidating the data cache on open.
 	FOPEN_KEEP_CACHE = 1 << 1
 	// FOPEN_NONSEEKABLE indicates the file cannot be seeked.
 	FOPEN_NONSEEKABLE = 1 << 2
@@ -464,10 +470,10 @@ type FUSEOpenIn struct {
 //
 // +marshal
 type FUSEOpenOut struct {
-	// Fh is the file handler for opened file.
+	// Fh is the file handler for opened files.
 	Fh uint64
 
-	// OpenFlag for the opened file.
+	// OpenFlag for the opened files.
 	OpenFlag uint32
 
 	_ uint32
@@ -544,6 +550,9 @@ type FUSEWriteIn struct {
 
 	_ uint32
 }
+
+// SizeOfFUSEWriteIn is the size of the FUSEWriteIn struct.
+var SizeOfFUSEWriteIn = uint32((*FUSEWriteIn)(nil).SizeBytes())
 
 // FUSEWritePayloadIn combines header - FUSEWriteIn and payload
 // in a single marshallable struct when sending request by the
@@ -651,7 +660,7 @@ func (r *FUSERenameIn) SizeBytes() int {
 //
 // +marshal dynamic
 type FUSECreateIn struct {
-	// CreateMeta contains mode, rdev and umash field for FUSE_MKNODS.
+	// CreateMeta contains mode, rdev and umash fields for FUSE_MKNODS.
 	CreateMeta FUSECreateMeta
 
 	// Name is the name of the node to create.
@@ -696,7 +705,7 @@ type FUSEMknodMeta struct {
 //
 // +marshal dynamic
 type FUSEMknodIn struct {
-	// MknodMeta contains mode, rdev and umash field for FUSE_MKNODS.
+	// MknodMeta contains mode, rdev and umash fields for FUSE_MKNODS.
 	MknodMeta FUSEMknodMeta
 	// Name is the name of the node to create.
 	Name CString

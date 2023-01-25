@@ -295,11 +295,10 @@ func fuseServerRun(t *testing.T, s *testutil.System, k *kernel.Kernel, fd *vfs.F
 
 	// Read the request.
 	for {
-		inHdrLen := uint32((*linux.FUSEHeaderIn)(nil).SizeBytes())
 		payloadLen := uint32(readPayload.SizeBytes())
 
-		// The raed buffer must meet some certain size criteria.
-		buffSize := inHdrLen + payloadLen
+		// The read buffer must meet some certain size criteria.
+		buffSize := linux.SizeOfFUSEHeaderIn + payloadLen
 		if buffSize < linux.FUSE_MIN_READ_BUFFER {
 			buffSize = linux.FUSE_MIN_READ_BUFFER
 		}
@@ -311,7 +310,7 @@ func fuseServerRun(t *testing.T, s *testutil.System, k *kernel.Kernel, fd *vfs.F
 			t.Fatalf("Read failed :%v", err)
 		}
 
-		// Server should shut down. No new requests are going to be made.
+		// The server should shut down. No new requests are going to be made.
 		if serverKilled {
 			break
 		}
@@ -329,17 +328,16 @@ func fuseServerRun(t *testing.T, s *testutil.System, k *kernel.Kernel, fd *vfs.F
 		}
 
 		// Write the response.
-		outHdrLen := uint32((*linux.FUSEHeaderOut)(nil).SizeBytes())
-		outBuf := make([]byte, outHdrLen+payloadLen)
+		outBuf := make([]byte, linux.SizeOfFUSEHeaderOut+payloadLen)
 		outHeader := linux.FUSEHeaderOut{
-			Len:    outHdrLen + payloadLen,
+			Len:    linux.SizeOfFUSEHeaderOut + payloadLen,
 			Error:  0,
 			Unique: readFUSEHeaderIn.Unique,
 		}
 
 		// Echo the payload back.
-		outHeader.MarshalUnsafe(outBuf[:outHdrLen])
-		readPayload.MarshalUnsafe(outBuf[outHdrLen:])
+		outHeader.MarshalUnsafe(outBuf[:linux.SizeOfFUSEHeaderOut])
+		readPayload.MarshalUnsafe(outBuf[linux.SizeOfFUSEHeaderOut:])
 		outIOseq := usermem.BytesIOSequence(outBuf)
 
 		_, err = fd.Write(s.Ctx, outIOseq, vfs.WriteOptions{})
