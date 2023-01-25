@@ -153,8 +153,7 @@ func (mt *mountTable) Init() {
 
 func newMountTableSlots(cap uintptr) unsafe.Pointer {
 	slice := make([]mountSlot, cap, cap)
-	hdr := (*gohacks.SliceHeader)(unsafe.Pointer(&slice))
-	return hdr.Data
+	return unsafe.Pointer(&slice[0])
 }
 
 // Lookup returns the Mount with the given parent, mounted at the given point.
