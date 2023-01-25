@@ -123,7 +123,7 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...any) su
 		util.Fatalf("reading spec: %v", err)
 	}
 
-	specutils.LogSpec(spec)
+	specutils.LogSpecDebug(spec, conf.OCISeccomp)
 
 	if cont.ConsoleSocket != "" {
 		log.Warningf("ignoring console socket since it cannot be restored")
