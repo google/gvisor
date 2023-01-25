@@ -247,7 +247,10 @@ func (app *runApp) execute(t *Task) taskRunState {
 		t.Arch().ClearSingleStep()
 	}
 	if t.hasTracer() {
-		t.p.PullFullState(t.MemoryManager().AddressSpace(), t.Arch())
+		if e := t.p.PullFullState(t.MemoryManager().AddressSpace(), t.Arch()); e != nil {
+			t.Warningf("Unable to pull a full state: %v", e)
+			err = e
+		}
 	}
 
 	switch err {

@@ -221,7 +221,7 @@ type Context interface {
 	// PullFullState() to load all registers and FPU state.
 	//
 	// Preconditions: The caller must be running on the task goroutine.
-	PullFullState(as AddressSpace, ac *arch.Context64)
+	PullFullState(as AddressSpace, ac *arch.Context64) error
 
 	// FullStateChanged() indicates that a thread state has been changed by
 	// the Sentry. This happens in case of the rt_sigreturn, execve, etc.

@@ -65,7 +65,12 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 
 	// Pull task registers and FPU state, a cloned task will inherit the
 	// state of the current task.
-	t.p.PullFullState(t.MemoryManager().AddressSpace(), t.Arch())
+	if err := t.p.PullFullState(t.MemoryManager().AddressSpace(), t.Arch()); err != nil {
+		t.Warningf("Unable to pull a full state: %v", err)
+		t.forceSignal(linux.SIGILL, true /* unconditional */)
+		t.SendSignal(SignalInfoPriv(linux.SIGILL))
+		return 0, nil, linuxerr.EFAULT
+	}
 
 	// "If CLONE_NEWUSER is specified along with other CLONE_NEW* flags in a
 	// single clone(2) or unshare(2) call, the user namespace is guaranteed to
