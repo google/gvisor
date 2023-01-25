@@ -100,9 +100,12 @@ func RunTest(t *testing.T, tester Tester, testName string, testFn TestFunc, moun
 	}
 	server.StartConnection(conn)
 
-	c, root, err := lisafs.NewClient(clientSocket)
+	c, root, _, err := lisafs.NewClient(clientSocket)
 	if err != nil {
 		t.Fatalf("client creation failed: %v", err)
+	}
+	if err := c.StartChannels(); err != nil {
+		t.Fatalf("failed to start channels: %v", err)
 	}
 
 	if !root.ControlFD.Ok() {

@@ -57,11 +57,11 @@ func (fd *testControlFD) FD() *lisafs.ControlFD {
 func (fd *testControlFD) Close() {}
 
 // Mount implements lisafs.Mount.
-func (s *testServer) Mount(c *lisafs.Connection, mountNode *lisafs.Node) (*lisafs.ControlFD, linux.Statx, error) {
+func (s *testServer) Mount(c *lisafs.Connection, mountNode *lisafs.Node) (*lisafs.ControlFD, linux.Statx, int, error) {
 	dummyRoot := &testControlFD{}
 	mountNode.IncRef() // Ref is transferred to ControlFD.
 	dummyRoot.Init(c, mountNode, linux.ModeDirectory, dummyRoot)
-	return dummyRoot.FD(), linux.Statx{Mode: linux.S_IFDIR}, nil
+	return dummyRoot.FD(), linux.Statx{Mode: linux.S_IFDIR}, -1, nil
 }
 
 // MaxMessageSize implements lisafs.MaxMessageSize.
@@ -95,9 +95,12 @@ func runServerClient(t testing.TB, clientFn func(c *lisafs.Client)) {
 	}
 	ts.StartConnection(conn)
 
-	c, _, err := lisafs.NewClient(clientSocket)
+	c, _, _, err := lisafs.NewClient(clientSocket)
 	if err != nil {
 		t.Fatalf("client creation failed: %v", err)
+	}
+	if err := c.StartChannels(); err != nil {
+		t.Fatalf("failed to start channels: %v", err)
 	}
 
 	clientFn(c)

@@ -540,7 +540,13 @@ func (fs *filesystem) initClient(ctx context.Context) (lisafs.Inode, error) {
 
 	var rootInode lisafs.Inode
 	ctx.UninterruptibleSleepStart(false)
-	fs.client, rootInode, err = lisafs.NewClient(sock)
+	fs.client, rootInode, _, err = lisafs.NewClient(sock)
+	ctx.UninterruptibleSleepFinish(false)
+	if err != nil {
+		return lisafs.Inode{}, err
+	}
+	ctx.UninterruptibleSleepStart(false)
+	err = fs.client.StartChannels()
 	ctx.UninterruptibleSleepFinish(false)
 	if err != nil {
 		return lisafs.Inode{}, err
