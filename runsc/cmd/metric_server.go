@@ -79,6 +79,11 @@ type servedSandbox struct {
 	// Once set, it is immutable.
 	sandbox *sandbox.Sandbox
 
+	// labelsWithMetadata is the union of `extraLabels` and `sandbox.MetricMetadata`.
+	// This is exported as the set of labels for the `sandbox_metadata` metric.
+	// Once set, it is immutable.
+	labelsWithMetadata map[string]string
+
 	// verifier allows verifying the data integrity of the metrics we get from this sandbox.
 	// It is not always initialized when the sandbox is discovered, but rather upon first metrics
 	// access to the sandbox. Metric registration data is loaded from the root container's
@@ -137,6 +142,13 @@ func (s *servedSandbox) load() (*sandbox.Sandbox, *prometheus.Verifier, error) {
 			return nil, nil, err
 		}
 		s.verifier = verifier
+	}
+	s.labelsWithMetadata = make(map[string]string, len(s.extraLabels)+len(s.sandbox.MetricMetadata))
+	for k, v := range s.extraLabels {
+		s.labelsWithMetadata[k] = v
+	}
+	for k, v := range s.sandbox.MetricMetadata {
+		s.labelsWithMetadata[k] = v
 	}
 	return s.sandbox, s.verifier, nil
 }
@@ -408,6 +420,11 @@ var (
 		Type: prometheus.TypeGauge,
 		Help: "Boolean metric set to 1 for each running sandbox.",
 	}
+	sandboxMetadataMetric = prometheus.Metric{
+		Name: "sandbox_metadata",
+		Type: prometheus.TypeGauge,
+		Help: "Key-value pairs about per-sandbox metadata.",
+	}
 	numRunningSandboxesMetric = prometheus.Metric{
 		Name: "num_sandboxes_running",
 		Type: prometheus.TypeGauge,
@@ -541,6 +558,7 @@ func (m *MetricServer) serveMetrics(w http.ResponseWriter, req *http.Request) ht
 					metricsMu.Lock()
 					defer metricsMu.Unlock()
 					selfMetrics.Add(prometheus.LabeledIntData(&sandboxPresenceMetric, served.extraLabels, 1))
+					selfMetrics.Add(prometheus.LabeledIntData(&sandboxMetadataMetric, served.labelsWithMetadata, 1))
 					sandboxRunning := int64(0)
 					if isRunning {
 						sandboxRunning = 1

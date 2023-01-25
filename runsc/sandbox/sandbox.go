@@ -163,6 +163,12 @@ type Sandbox struct {
 	// created.
 	RegisteredMetrics *metricpb.MetricRegistration `json:"registeredMetrics"`
 
+	// MetricMetadata are key-value pairs that are useful to export about this
+	// sandbox, but not part of the set of labels that uniquely identify it.
+	// They are static once initialized, and typically contain high-level
+	// configuration information about the sandbox.
+	MetricMetadata map[string]string `json:"metricMetadata"`
+
 	// MetricServerAddress is the address of the metric server that this sandbox
 	// intends to export metrics for.
 	// Only populated if exporting metrics was requested when the sandbox was
@@ -247,6 +253,7 @@ func New(conf *config.Config, args *Args) (*Sandbox, error) {
 		},
 		UID:                 -1, // prevent usage before it's set.
 		GID:                 -1, // prevent usage before it's set.
+		MetricMetadata:      conf.MetricMetadata(),
 		MetricServerAddress: conf.MetricServer,
 	}
 	if args.Spec != nil && args.Spec.Annotations != nil {
