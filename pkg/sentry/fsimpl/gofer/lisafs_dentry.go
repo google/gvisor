@@ -239,7 +239,7 @@ func (d *lisafsDentry) getRemoteChild(ctx context.Context, name string) (*dentry
 
 // Preconditions:
 //   - fs.renameMu must be locked.
-//   - parent.dirMu must be locked.
+//   - parent.opMu must be locked.
 //   - parent.isDir().
 //   - !rp.Done().
 //   - dentry at name must not already exist in dentry tree.
@@ -262,6 +262,8 @@ func (d *lisafsDentry) getRemoteChildAndWalkPathLocked(ctx context.Context, rp *
 		return nil, err
 	}
 	if len(inodes) == 0 {
+		d.childrenMu.Lock()
+		defer d.childrenMu.Unlock()
 		d.cacheNegativeLookupLocked(names[0])
 		return nil, linuxerr.ENOENT
 	}
@@ -269,14 +271,16 @@ func (d *lisafsDentry) getRemoteChildAndWalkPathLocked(ctx context.Context, rp *
 	// Add the walked inodes into the dentry tree.
 	startParent := &d.dentry
 	curParent := startParent
-	curParentDirMuLock := func() {
+	curParentLock := func() {
 		if curParent != startParent {
-			curParent.dirMu.Lock()
+			curParent.opMu.RLock()
 		}
+		curParent.childrenMu.Lock()
 	}
-	curParentDirMuUnlock := func() {
+	curParentUnlock := func() {
+		curParent.childrenMu.Unlock()
 		if curParent != startParent {
-			curParent.dirMu.Unlock() // +checklocksforce: locked via curParentDirMuLock().
+			curParent.opMu.RUnlock() // +checklocksforce: locked via curParentLock().
 		}
 	}
 	var ret *dentry
@@ -287,14 +291,26 @@ func (d *lisafsDentry) getRemoteChildAndWalkPathLocked(ctx context.Context, rp *
 			continue
 		}
 
-		child, err := d.fs.newLisafsDentry(ctx, &inodes[i])
-		if err != nil {
-			dentryCreationErr = err
-			continue
+		curParentLock()
+		// Did we race with another walk + cache operation?
+		child, ok := curParent.children[names[i]] // +checklocksforce: locked via curParentLock()
+		if ok && child != nil {
+			// We raced. Clean up the new inode and proceed with
+			// the cached child.
+			d.fs.client.CloseFD(ctx, inodes[i].ControlFD, false /* flush */)
+		} else {
+			// Create and cache the new dentry.
+			var err error
+			child, err = d.fs.newLisafsDentry(ctx, &inodes[i])
+			if err != nil {
+				dentryCreationErr = err
+				curParentUnlock()
+				continue
+			}
+			curParent.cacheNewChildLocked(child, names[i]) // +checklocksforce: locked via curParentLock().
 		}
-		curParentDirMuLock()
-		curParent.cacheNewChildLocked(child, names[i])
-		curParentDirMuUnlock()
+		curParentUnlock()
+
 		// For now, child has 0 references, so our caller should call
 		// child.checkCachingLocked(). curParent gained a ref so we should also
 		// call curParent.checkCachingLocked() so it can be removed from the cache
@@ -311,9 +327,9 @@ func (d *lisafsDentry) getRemoteChildAndWalkPathLocked(ctx context.Context, rp *
 	}
 
 	if status == lisafs.WalkComponentDoesNotExist && curParent.isDir() {
-		curParentDirMuLock()
-		curParent.cacheNegativeLookupLocked(names[len(inodes)])
-		curParentDirMuUnlock()
+		curParentLock()
+		curParent.cacheNegativeLookupLocked(names[len(inodes)]) // +checklocksforce: locked via curParentLock().
+		curParentUnlock()
 	}
 	return ret, dentryCreationErr
 }
@@ -404,6 +420,8 @@ func (d *lisafsDentry) openCreate(ctx context.Context, name string, flags uint32
 	return child, h, nil
 }
 
+// Preconditions:
+//   - getDirents may not be called concurrently with another getDirents call.
 func (d *lisafsDentry) getDirentsLocked(ctx context.Context, count int, recordDirent func(name string, key inoKey, dType uint8)) error {
 	// shouldSeek0 indicates whether the server should SEEK to 0 before reading
 	// directory entries.

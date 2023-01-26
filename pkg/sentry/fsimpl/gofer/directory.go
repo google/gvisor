@@ -33,28 +33,46 @@ func (d *dentry) isDir() bool {
 	return d.fileType() == linux.S_IFDIR
 }
 
+// cacheNewChildLocked will cache the new child dentry, and will panic if a
+// non-negative child is already cached. It is the caller's responsibility to
+// check that the child does not exist before calling this method.
+//
 // Preconditions:
 //   - filesystem.renameMu must be locked.
-//   - d.dirMu must be locked.
+//   - If the addition to the dentry tree is due to a read-only operation (like
+//     Walk), then d.opMu must be held for reading. Otherwise d.opMu must be
+//     held for writing.
+//   - d.childrenMu must be locked.
 //   - d.isDir().
 //   - child must be a newly-created dentry that has never had a parent.
+//   - d.children[name] must be unset or nil (a "negative child")
+//
+// +checklocksread:d.opMu
+// +checklocks:d.childrenMu
 func (d *dentry) cacheNewChildLocked(child *dentry, name string) {
 	d.IncRef() // reference held by child on its parent
 	child.parent = d
 	child.name = name
 	if d.children == nil {
 		d.children = make(map[string]*dentry)
-	} else if c, ok := d.children[name]; ok && c == nil {
-		// This child will not be negative, decrease count of negativeChildren.
+	} else if c, ok := d.children[name]; ok {
+		if c != nil {
+			panic(fmt.Sprintf("cacheNewChildLocked collision; child with name=%q already cached", name))
+		}
+
+		// Cached child is negative. OK to cache over, but we must
+		// update the count of negative children.
 		d.negativeChildren--
 	}
 	d.children[name] = child
 }
 
 // Preconditions:
-//   - d.dirMu must be locked.
+//   - d.childrenMu must be locked.
 //   - d.isDir().
 //   - name is not already a negative entry.
+//
+// +checklocks:d.childrenMu
 func (d *dentry) cacheNegativeLookupLocked(name string) {
 	// Don't cache negative lookups if InteropModeShared is in effect (since
 	// this makes remote lookup unavoidable), or if d.isSynthetic() (in which
@@ -139,7 +157,9 @@ func (fs *filesystem) newSyntheticDentry(opts *createSyntheticOpts) *dentry {
 }
 
 // Preconditions:
-//   - d.dirMu must be locked.
+//   - d.childrenMu must be locked.
+//
+// +checklocks:d.childrenMu
 func (d *dentry) clearDirentsLocked() {
 	d.dirents = nil
 	d.childrenSet = nil
@@ -194,7 +214,7 @@ func (d *dentry) getDirents(ctx context.Context) ([]vfs.Dirent, error) {
 	// presence of concurrent mutation of an iterated directory, so
 	// implementations may duplicate or omit entries in this case, which
 	// violates POSIX semantics. Thus we read all directory entries while
-	// holding d.dirMu to exclude directory mutations. (Note that it is
+	// holding d.opMu to exclude directory mutations. (Note that it is
 	// impossible for the client to exclude concurrent mutation from other
 	// remote filesystem users. Since there is no way to detect if the server
 	// has incorrectly omitted directory entries, we simply assume that the
@@ -204,11 +224,20 @@ func (d *dentry) getDirents(ctx context.Context) ([]vfs.Dirent, error) {
 	// to readdir RPCs), but is consistent with VFS1.
 
 	// filesystem.renameMu is needed for d.parent, and must be locked before
-	// dentry.dirMu.
+	// d.opMu.
 	d.fs.renameMu.RLock()
 	defer d.fs.renameMu.RUnlock()
-	d.dirMu.Lock()
-	defer d.dirMu.Unlock()
+	d.opMu.RLock()
+	defer d.opMu.RUnlock()
+
+	// d.childrenMu must be locked after d.opMu and held for the entire
+	// function. This synchronizes concurrent getDirents() attempts.
+	// getdents(2) advances the file offset. To get complete results from
+	// multiple getdents(2) calls, the directory FD's offset needs to be
+	// protected.
+	d.childrenMu.Lock()
+	defer d.childrenMu.Unlock()
+
 	if d.dirents != nil {
 		return d.dirents, nil
 	}
@@ -261,6 +290,7 @@ func (d *dentry) getDirents(ctx context.Context) ([]vfs.Dirent, error) {
 			return nil, err
 		}
 	}
+
 	// Emit entries for synthetic children.
 	if d.syntheticChildren != 0 {
 		for _, child := range d.children {
