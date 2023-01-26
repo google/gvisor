@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"math/rand"
 	"net"
 	"net/http"
@@ -742,6 +743,11 @@ func (m *MetricServer) Execute(ctx context.Context, f *flag.FlagSet, args ...any
 	}
 	if _, err := container.ListSandboxes(conf.RootDir); err != nil {
 		return util.Errorf("Invalid root directory %q: tried to list sandboxes within it and got: %v", conf.RootDir, err)
+	}
+	// container.ListSandboxes uses a glob pattern, which doesn't error out on
+	// permission errors. Double-check by actually listing the directory.
+	if _, err := ioutil.ReadDir(conf.RootDir); err != nil {
+		return util.Errorf("Invalid root directory %q: tried to list all entries within it and got: %v", conf.RootDir, err)
 	}
 	m.startTime = time.Now()
 	m.rand = rand.New(rand.NewSource(m.startTime.UnixNano()))
