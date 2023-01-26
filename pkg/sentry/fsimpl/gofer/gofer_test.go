@@ -44,7 +44,7 @@ func TestDestroyIdempotent(t *testing.T) {
 	}
 	parent, err := fs.newLisafsDentry(ctx, &parentInode)
 	if err != nil {
-		t.Fatalf("fs.newDentry(): %v", err)
+		t.Fatalf("fs.newLisafsDentry(): %v", err)
 	}
 
 	childInode := lisafs.Inode{
@@ -57,9 +57,13 @@ func TestDestroyIdempotent(t *testing.T) {
 	}
 	child, err := fs.newLisafsDentry(ctx, &childInode)
 	if err != nil {
-		t.Fatalf("fs.newDentry(): %v", err)
+		t.Fatalf("fs.newLisafsDentry(): %v", err)
 	}
+	parent.opMu.Lock()
+	parent.childrenMu.Lock()
 	parent.cacheNewChildLocked(child, "child")
+	parent.childrenMu.Unlock()
+	parent.opMu.Unlock()
 
 	fs.renameMu.Lock()
 	defer fs.renameMu.Unlock()

@@ -117,8 +117,8 @@ func (d *dentry) prepareSaveRecursive(ctx context.Context) error {
 			write: d.isWriteHandleOk(),
 		}
 	}
-	d.dirMu.Lock()
-	defer d.dirMu.Unlock()
+	d.childrenMu.Lock()
+	defer d.childrenMu.Unlock()
 	for _, child := range d.children {
 		if child != nil {
 			if err := child.prepareSaveRecursive(ctx); err != nil {
@@ -220,6 +220,8 @@ func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRest
 
 // Preconditions: d is not synthetic.
 func (d *dentry) restoreDescendantsRecursive(ctx context.Context, opts *vfs.CompleteRestoreOptions) error {
+	d.childrenMu.Lock()
+	defer d.childrenMu.Unlock()
 	for _, child := range d.children {
 		if child == nil {
 			continue
