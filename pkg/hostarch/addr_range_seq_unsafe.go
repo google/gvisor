@@ -158,16 +158,13 @@ func (ars AddrRangeSeq) Tail() AddrRangeSeq {
 
 // Preconditions: ars.length >= 2.
 func (ars AddrRangeSeq) externalTail() AddrRangeSeq {
-	headLen := (*AddrRange)(ars.data).Length() - ars.offset
+	data := (*AddrRange)(ars.data)
+	headLen := data.Length() - ars.offset
 	var tailLimit int64
 	if ars.limit > headLen {
 		tailLimit = int64(ars.limit - headLen)
 	}
-	var extSlice []AddrRange
-	extSliceHdr := (*gohacks.SliceHeader)(unsafe.Pointer(&extSlice))
-	extSliceHdr.Data = ars.data
-	extSliceHdr.Len = ars.length
-	extSliceHdr.Cap = ars.length
+	extSlice := gohacks.Slice(data, ars.length)
 	return addrRangeSeqFromSliceLimited(extSlice[1:], tailLimit)
 }
 

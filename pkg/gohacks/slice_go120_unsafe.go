@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2023 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,17 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package procid provides a way to get the current system thread identifier.
-package procid
+//go:build go1.20
+
+package gohacks
 
 import (
-	"runtime"
+	"unsafe"
 )
 
-// Dummy references for facts.
-const _ = runtime.Compiler
-
-// Current returns the current system thread identifier.
+// Slice returns a slice whose underlying array starts at ptr an which length
+// and capacity are len.
 //
-// Precondition: This should only be called with the runtime OS thread locked.
-func Current() uint64
+// Slice is a wrapper around unsafe.Slice. Prefer to use unsafe.Slice directly
+// if possible.
+func Slice[T any](ptr *T, length int) []T {
+	return unsafe.Slice(ptr, length)
+}
