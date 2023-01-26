@@ -188,6 +188,8 @@ func (d *dentry) destroyImpl(ctx context.Context) {
 }
 
 // Postcondition: Caller must do dentry caching appropriately.
+//
+// +checklocksread:d.opMu
 func (d *dentry) getRemoteChild(ctx context.Context, name string) (*dentry, error) {
 	switch dt := d.impl.(type) {
 	case *lisafsDentry:
@@ -199,12 +201,14 @@ func (d *dentry) getRemoteChild(ctx context.Context, name string) (*dentry, erro
 
 // Preconditions:
 //   - fs.renameMu must be locked.
-//   - parent.dirMu must be locked.
+//   - parent.opMu must be locked for reading.
 //   - parent.isDir().
 //   - !rp.Done() && rp.Component() is not "." or "..".
 //   - dentry at name must not already exist in dentry tree.
 //
 // Postcondition: The returned dentry is already cached appropriately.
+//
+// +checklocksread:d.opMu
 func (d *dentry) getRemoteChildAndWalkPathLocked(ctx context.Context, rp *vfs.ResolvingPath, ds **[]*dentry) (*dentry, error) {
 	switch dt := d.impl.(type) {
 	case *lisafsDentry:
