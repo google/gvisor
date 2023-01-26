@@ -178,17 +178,14 @@ func (bs BlockSeq) Tail() BlockSeq {
 	if bs.length < 0 {
 		return BlockSeq{}
 	}
-	head := (*Block)(bs.data).DropFirst(bs.offset)
+	data := (*Block)(bs.data)
+	head := data.DropFirst(bs.offset)
 	headLen := uint64(head.Len())
 	if headLen >= bs.limit {
 		// The head Block exhausts the limit, so the tail is empty.
 		return BlockSeq{}
 	}
-	var extSlice []Block
-	extSliceHdr := (*gohacks.SliceHeader)(unsafe.Pointer(&extSlice))
-	extSliceHdr.Data = bs.data
-	extSliceHdr.Len = bs.length
-	extSliceHdr.Cap = bs.length
+	extSlice := gohacks.Slice(data, bs.length)
 	tailSlice := skipEmpty(extSlice[1:])
 	tailLimit := bs.limit - headLen
 	return blockSeqFromSliceLimited(tailSlice, tailLimit)
