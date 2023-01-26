@@ -1,13 +1,29 @@
-load("//tools:defs.bzl", "go_library", "go_test")
+load("//tools:defs.bzl", "arch_genrule", "go_library", "go_test", "select_arch")
+load("//tools/nogo:defs.bzl", "nogo_facts")
 
 package(licenses = ["notice"])
+
+nogo_facts(
+    name = "procid_impl",
+    srcs = ["procid.go"],
+    output = "procid_impl.s",
+    template = select_arch(
+        amd64 = "procid_amd64.s",
+        arm64 = "procid_arm64.s",
+    ),
+)
+
+arch_genrule(
+    name = "procid_impl_arch",
+    src = ":procid_impl",
+    template = "procid_impl_%s.s",
+)
 
 go_library(
     name = "procid",
     srcs = [
         "procid.go",
-        "procid_amd64.s",
-        "procid_arm64.s",
+        ":procid_impl_arch",
     ],
     visibility = ["//visibility:public"],
 )

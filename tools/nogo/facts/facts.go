@@ -230,6 +230,13 @@ func (b *Bundle) Package(pkg *types.Package) (*Package, error) {
 		return facts, nil
 	}
 
+	if b.reader == nil {
+		// Nothing available.
+		//
+		// N.B. some bundles contain only cached packages.
+		return nil, nil
+	}
+
 	// Find based on the reader.
 	for _, f := range b.reader.File {
 		if f.Name != pkg.Path() {
@@ -367,6 +374,9 @@ func Resolve(pkg *types.Package, localFacts *Package, allFacts *Bundle, allFactN
 		importFacts, err := allFacts.Package(importPkg)
 		if err != nil {
 			return nil, err
+		}
+		if importFacts == nil {
+			continue
 		}
 		r.walkScope(append(names, "import", importPkg.Name()), importPkg.Scope(), importFacts, allFactNames)
 	}

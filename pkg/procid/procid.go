@@ -12,11 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build go1.1
-// +build go1.1
-
 // Package procid provides a way to get the current system thread identifier.
 package procid
+
+import (
+	"runtime"
+)
+
+// Dummy references for facts.
+const _ = runtime.Compiler
 
 // Current returns the current system thread identifier.
 //
