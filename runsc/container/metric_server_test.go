@@ -17,6 +17,7 @@ package container
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -432,5 +433,30 @@ func TestContainerMetricsMultiple(t *testing.T) {
 		Sandbox: noMetricsCont.ID,
 	}); err == nil {
 		t.Errorf("Unexpectedly found testmetric_fs_opens metric data for no-metrics container %s: %v", noMetricsCont.ID, val)
+	}
+}
+
+func TestMetricServerChecksRootDirectoryAccess(t *testing.T) {
+	te, cleanup := setupMetrics(t)
+	defer cleanup()
+	if err := te.client.ShutdownServer(te.testCtx); err != nil {
+		t.Fatalf("Cannot stop metric server: %v", err)
+	}
+	prevStat, err := os.Lstat(te.sleepConf.RootDir)
+	if err != nil {
+		t.Fatalf("cannot stat %q: %v", te.sleepConf.RootDir, err)
+	}
+	if err := os.Chmod(te.sleepConf.RootDir, 0); err != nil {
+		t.Fatalf("cannot chmod %q as 000: %v", te.sleepConf.RootDir, err)
+	}
+	defer os.Chmod(te.sleepConf.RootDir, prevStat.Mode())
+	if _, err := ioutil.ReadDir(te.sleepConf.RootDir); err == nil {
+		t.Logf("Can still read directory %v despite chmodding it to 0. Maybe we are running as root? Skipping test.", te.sleepConf.RootDir)
+		return
+	}
+	shorterCtx, shorterCtxCancel := context.WithTimeout(te.testCtx, time.Second)
+	defer shorterCtxCancel()
+	if err := te.client.SpawnServer(shorterCtx, te.sleepConf); err == nil {
+		t.Error("Metric server was successfully able to be spawned despite not having access to the root directory")
 	}
 }
