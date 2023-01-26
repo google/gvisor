@@ -6,6 +6,8 @@ go_library(
     name = "gohacks",
     srcs = [
         "gohacks_unsafe.go",
+        "slice_go113_unsafe.go",
+        "slice_go120_unsafe.go",
     ],
     stateify = False,
     visibility = ["//:sandbox"],
