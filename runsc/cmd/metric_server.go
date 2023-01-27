@@ -475,6 +475,11 @@ var (
 		Type: prometheus.TypeGauge,
 		Help: "Key-value pairs about per-sandbox metadata.",
 	}
+	sandboxCreationMetric = prometheus.Metric{
+		Name: "sandbox_creation_time_seconds",
+		Type: prometheus.TypeGauge,
+		Help: "When the sandbox was created, as a unix timestamp in milliseconds.",
+	}
 	numRunningSandboxesMetric = prometheus.Metric{
 		Name: "num_sandboxes_running",
 		Type: prometheus.TypeGauge,
@@ -595,12 +600,13 @@ func (m *MetricServer) serveMetrics(w http.ResponseWriter, req *http.Request) ht
 		go func(metricsMu *sync.Mutex, meta *metaMetrics, selfMetrics *prometheus.Snapshot) {
 			defer wg.Done()
 			for s := range loadedSandboxCh {
-				served, sand, verifier, err := s.served, s.sandbox, s.verifier, s.err
+				served, sand, verifier, loadErr := s.served, s.sandbox, s.verifier, s.err
 				isRunning := false
 				var snapshot *prometheus.Snapshot
-				if err == nil {
+				sandboxErr := loadErr
+				if loadErr == nil {
 					queryCtx, queryCtxCancel := context.WithTimeout(ctx, perSandboxTime)
-					snapshot, err = queryMetrics(queryCtx, sand, verifier)
+					snapshot, sandboxErr = queryMetrics(queryCtx, sand, verifier)
 					queryCtxCancel()
 					isRunning = sand.IsRunning()
 				}
@@ -608,25 +614,25 @@ func (m *MetricServer) serveMetrics(w http.ResponseWriter, req *http.Request) ht
 					metricsMu.Lock()
 					defer metricsMu.Unlock()
 					selfMetrics.Add(prometheus.LabeledIntData(&sandboxPresenceMetric, served.extraLabels, 1))
-					selfMetrics.Add(prometheus.LabeledIntData(&sandboxMetadataMetric, served.labelsWithMetadata, 1))
 					sandboxRunning := int64(0)
 					if isRunning {
 						sandboxRunning = 1
+						meta.numRunningSandboxes++
 					}
 					selfMetrics.Add(prometheus.LabeledIntData(&sandboxRunningMetric, served.extraLabels, sandboxRunning))
-					if err != nil && !isRunning {
-						// The sandbox either hasn't started running yet, or it ran and has gone away between the
-						// start of the function and now. It is normal that metrics are not exported for this
-						// sandbox in this case, so do not report this as an error.
+					if loadErr == nil {
+						selfMetrics.Add(prometheus.LabeledIntData(&sandboxMetadataMetric, served.labelsWithMetadata, 1))
+						selfMetrics.Add(prometheus.LabeledFloatData(&sandboxCreationMetric, served.extraLabels, float64(served.createdAt.Unix())+(float64(served.createdAt.Nanosecond())/1e9)))
+					}
+					if sandboxErr != nil {
+						// If the sandbox isn't running, it is normal that metrics are not exported for it, so
+						// do not report this case as an error.
+						if isRunning {
+							meta.numCannotExportSandboxes++
+							log.Warningf("Could not export metrics from sandbox %s: %v", served.rootContainerID.SandboxID, sandboxErr)
+						}
 						return
 					}
-					if err != nil {
-						meta.numRunningSandboxes++
-						meta.numCannotExportSandboxes++
-						log.Warningf("Could not export metrics from sandbox %s: %v", served.rootContainerID.SandboxID, err)
-						return
-					}
-					meta.numRunningSandboxes++
 					snapshotCh <- snapshotAndOptions{
 						snapshot: snapshot,
 						options: prometheus.SnapshotExportOptions{
