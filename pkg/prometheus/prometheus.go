@@ -31,6 +31,14 @@ import (
 // timeNow is the time.Now() function. Can be mocked in tests.
 var timeNow = time.Now
 
+// Prometheus label names used to identify each sandbox.
+const (
+	SandboxIDLabel   = "sandbox"
+	PodNameLabel     = "pod"
+	NamespaceLabel   = "namespace"
+	IterationIDLabel = "iteration"
+)
+
 // Type is a Prometheus metric type.
 type Type int
 

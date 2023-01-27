@@ -1183,26 +1183,6 @@ func (s *Sandbox) ExportMetrics() (*prometheus.Snapshot, error) {
 	return data.Snapshot, nil
 }
 
-// Label names used to identify each sandbox.
-const (
-	SandboxIDLabel = "sandbox"
-	PodNameLabel   = "pod"
-	NamespaceLabel = "namespace"
-)
-
-// PrometheusLabels returns a set of Prometheus labels that identifies the sandbox.
-func (s *Sandbox) PrometheusLabels() map[string]string {
-	labels := make(map[string]string, 3)
-	labels[SandboxIDLabel] = s.ID
-	if s.PodName != "" {
-		labels[PodNameLabel] = s.PodName
-	}
-	if s.Namespace != "" {
-		labels[NamespaceLabel] = s.Namespace
-	}
-	return labels
-}
-
 // IsRunning returns true if the sandbox or gofer process is running.
 func (s *Sandbox) IsRunning() bool {
 	pid := s.Pid.load()
