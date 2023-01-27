@@ -65,6 +65,11 @@ func (m *MetricExport) Execute(ctx context.Context, f *flag.FlagSet, args ...any
 		util.Fatalf("loading container: %v", err)
 	}
 
+	prometheusLabels, err := sandboxPrometheusLabels(cont)
+	if err != nil {
+		util.Fatalf("Cannot compute Prometheus labels of sandbox: %v", err)
+	}
+
 	snapshot, err := cont.Sandbox.ExportMetrics()
 	if err != nil {
 		util.Fatalf("ExportMetrics failed: %v", err)
@@ -74,7 +79,7 @@ func (m *MetricExport) Execute(ctx context.Context, f *flag.FlagSet, args ...any
 	}, map[*prometheus.Snapshot]prometheus.SnapshotExportOptions{
 		snapshot: {
 			ExporterPrefix: conf.MetricExporterPrefix,
-			ExtraLabels:    cont.Sandbox.PrometheusLabels(),
+			ExtraLabels:    prometheusLabels,
 		},
 	})
 	if err != nil {
