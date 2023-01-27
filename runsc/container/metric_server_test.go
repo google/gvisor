@@ -20,9 +20,11 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/test/testutil"
@@ -197,6 +199,67 @@ func TestContainerMetrics(t *testing.T) {
 	}
 }
 
+// TestContainerMetricsIterationID verifies that two successive containers with the same ID
+// do not have the same iteration ID.
+func TestContainerMetricsIterationID(t *testing.T) {
+	te, cleanup := setupMetrics(t)
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      te.sleepSpec,
+		BundleDir: te.bundleDir,
+	}
+	cont1, err := New(te.sleepConf, args)
+	if err != nil {
+		t.Fatalf("error creating container 1: %v", err)
+	}
+	defer cont1.Destroy()
+	data1, err := te.client.GetMetrics(te.testCtx)
+	if err != nil {
+		t.Errorf("Cannot get metrics after creating container 1: %v", err)
+	}
+	metadata1, err := data1.GetSandboxMetadataMetric(metricclient.WantMetric{
+		Metric:  "testmetric_meta_sandbox_metadata",
+		Sandbox: args.ID,
+	})
+	if err != nil {
+		t.Errorf("Cannot get sandbox 1 metadata: %v", err)
+	}
+	t.Logf("Container 1 metadata: %v", metadata1)
+	iterationID1 := metadata1["iteration"]
+	if iterationID1 == "" {
+		t.Fatalf("Cannot find iteration ID in metadata 1: %v", metadata1)
+	}
+	if err := cont1.Destroy(); err != nil && !strings.Contains(err.Error(), "no child process") {
+		t.Fatalf("Cannot destroy container 1: %v", err)
+	}
+	cont2, err := New(te.sleepConf, args)
+	if err != nil {
+		t.Fatalf("error creating container 2: %v", err)
+	}
+	defer cont2.Destroy()
+	data2, err := te.client.GetMetrics(te.testCtx)
+	if err != nil {
+		t.Errorf("Cannot get metrics after creating container 2: %v", err)
+	}
+	metadata2, err := data2.GetSandboxMetadataMetric(metricclient.WantMetric{
+		Metric:  "testmetric_meta_sandbox_metadata",
+		Sandbox: args.ID,
+	})
+	if err != nil {
+		t.Errorf("Cannot get sandbox 2 metadata: %v", err)
+	}
+	t.Logf("Container 2 metadata: %v", metadata2)
+	iterationID2 := metadata2["iteration"]
+	if iterationID2 == "" {
+		t.Fatalf("Cannot find iteration ID in metadata 2: %v", metadata2)
+	}
+	if iterationID1 == iterationID2 {
+		t.Errorf("Iteration IDs of successive instances with the same ID unexpectedly matched: %v", iterationID1)
+	}
+}
+
 // TestContainerMetricsRobustAgainstRestarts that exporting metrics is robust against metric server
 // unavailability or restarts.
 func TestContainerMetricsRobustAgainstRestarts(t *testing.T) {
@@ -235,6 +298,13 @@ func TestContainerMetricsRobustAgainstRestarts(t *testing.T) {
 	})
 	if err != nil {
 		t.Errorf("Cannot get testmetric_fs_opens from following data (err: %v):\n\n%s\n\n", err, preRestartData)
+	}
+	preRestartMetadata, err := preRestartData.GetSandboxMetadataMetric(metricclient.WantMetric{
+		Metric:  "testmetric_meta_sandbox_metadata",
+		Sandbox: args.ID,
+	})
+	if err != nil {
+		t.Errorf("Cannot get sandbox metadata: %v", err)
 	}
 	t.Logf("After exec'ing %d open()s, fs_opens=%d (snapshotted at %v)", targetOpens, preRestartOpens, postExecTimestamp)
 
@@ -312,6 +382,16 @@ func TestContainerMetricsRobustAgainstRestarts(t *testing.T) {
 	}
 	if diff := postRestartOpens - preRestartOpens; diff < int64(targetOpens) {
 		t.Errorf("testmetric_fs_opens for first container did not increase by at least %d after metric server restart: went from %d to %d (diff: %d)", targetOpens, preRestartOpens, postRestartOpens, diff)
+	}
+	postRestartMetadata, err := postRestartData.GetSandboxMetadataMetric(metricclient.WantMetric{
+		Metric:  "testmetric_meta_sandbox_metadata",
+		Sandbox: args.ID,
+	})
+	if err != nil {
+		t.Fatalf("Cannot get post-restart sandbox metadata: %v", err)
+	}
+	if diff := cmp.Diff(preRestartMetadata, postRestartMetadata); diff != "" {
+		t.Errorf("Sandbox metadata changed after restart:\nBefore: %v\nAfter: %v\nDiff: %v", preRestartMetadata, postRestartMetadata, diff)
 	}
 	_, _, err = postRestartData.GetPrometheusContainerInteger(metricclient.WantMetric{
 		Metric:  "testmetric_fs_opens",

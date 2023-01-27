@@ -16,6 +16,8 @@ package cmd
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -25,6 +27,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -60,11 +63,6 @@ const (
 	exportParallelGoroutines = 8
 )
 
-// Prometheus label names.
-const (
-	iterationIDLabel = "iterationid"
-)
-
 // servedSandbox is a sandbox that we serve metrics from.
 // A single metrics server will export data about multiple sandboxes.
 type servedSandbox struct {
@@ -79,6 +77,11 @@ type servedSandbox struct {
 	// sandbox is the sandbox being monitored.
 	// Once set, it is immutable.
 	sandbox *sandbox.Sandbox
+
+	// createdAt stores the time the sandbox was created.
+	// It is loaded from the container state file.
+	// Once set, it is immutable.
+	createdAt time.Time
 
 	// labelsWithMetadata is the union of `extraLabels` and `sandbox.MetricMetadata`.
 	// This is exported as the set of labels for the `sandbox_metadata` metric.
@@ -95,6 +98,36 @@ type servedSandbox struct {
 	// be deleted from the server.
 	// Once set, it is immutable.
 	verifier *prometheus.Verifier
+}
+
+// sandboxPrometheusLabels returns a set of Prometheus labels that identifies the sandbox running
+// the given root container.
+func sandboxPrometheusLabels(rootContainer *container.Container) (map[string]string, error) {
+	s := rootContainer.Sandbox
+	labels := make(map[string]string, 4)
+	labels[prometheus.SandboxIDLabel] = s.ID
+
+	// Compute iteration ID label in a stable manner.
+	// This uses sha256(ID + ":" + creation time).
+	h := sha256.New()
+	if _, err := io.WriteString(h, s.ID); err != nil {
+		return nil, err
+	}
+	if _, err := io.WriteString(h, ":"); err != nil {
+		return nil, err
+	}
+	if _, err := io.WriteString(h, rootContainer.CreatedAt.UTC().String()); err != nil {
+		return nil, err
+	}
+	labels[prometheus.IterationIDLabel] = strconv.FormatUint(binary.BigEndian.Uint64(h.Sum(nil)[:8]), 36)
+
+	if s.PodName != "" {
+		labels[prometheus.PodNameLabel] = s.PodName
+	}
+	if s.Namespace != "" {
+		labels[prometheus.NamespaceLabel] = s.Namespace
+	}
+	return labels, nil
 }
 
 // load loads the sandbox being monitored and initializes its metric verifier.
@@ -124,14 +157,24 @@ func (s *servedSandbox) load() (*sandbox.Sandbox, *prometheus.Verifier, error) {
 		}
 		// Update label data as read from the state file.
 		// Do not store empty labels.
-		authoritativeLabels := cont.Sandbox.PrometheusLabels()
-		for _, label := range []string{sandbox.SandboxIDLabel, sandbox.PodNameLabel, sandbox.NamespaceLabel} {
+		authoritativeLabels, err := sandboxPrometheusLabels(cont)
+		if err != nil {
+			return nil, nil, fmt.Errorf("cannot compute Prometheus labels of sandbox: %v", err)
+		}
+		s.extraLabels = make(map[string]string, len(authoritativeLabels))
+		for _, label := range []string{
+			prometheus.SandboxIDLabel,
+			prometheus.IterationIDLabel,
+			prometheus.PodNameLabel,
+			prometheus.NamespaceLabel,
+		} {
 			s.extraLabels[label] = authoritativeLabels[label]
 			if s.extraLabels[label] == "" {
 				delete(s.extraLabels, label)
 			}
 		}
 		s.sandbox = cont.Sandbox
+		s.createdAt = cont.CreatedAt
 	}
 	if s.verifier == nil {
 		registeredMetrics, err := s.sandbox.GetRegisteredMetrics()
@@ -191,7 +234,6 @@ type MetricServer struct {
 	address        string
 	exporterPrefix string
 	startTime      time.Time
-	rand           *rand.Rand
 	srv            http.Server
 
 	// Size of the map of written metrics during the last /metrics export. Initially zero.
@@ -301,9 +343,17 @@ func (m *MetricServer) refreshSandboxesLocked() {
 		if !found {
 			log.Warningf("Sandbox %s no longer exists but did not explicitly unregister. Removing it.", sandboxID)
 			delete(m.sandboxes, sandboxID)
-		} else if _, _, err := sandbox.load(); err != nil && err != container.ErrStateFileLocked {
+			continue
+		}
+		if _, _, err := sandbox.load(); err != nil && err != container.ErrStateFileLocked {
 			log.Warningf("Sandbox %s cannot be loaded, deleting it: %v", sandboxID, err)
 			delete(m.sandboxes, sandboxID)
+			continue
+		}
+		if !sandbox.sandbox.IsRunning() {
+			log.Infof("Sandbox %s is no longer running, deleting it.", sandboxID)
+			delete(m.sandboxes, sandboxID)
+			continue
 		}
 	}
 	newSandboxIDs := make(map[container.FullID]bool, len(sandboxIDs))
@@ -370,8 +420,7 @@ func (m *MetricServer) refreshSandboxesLocked() {
 			rootDir:          m.rootDir,
 			metricServerAddr: m.address,
 			extraLabels: map[string]string{
-				sandbox.SandboxIDLabel: sid.SandboxID,
-				iterationIDLabel:       fmt.Sprintf("%d", m.rand.Uint64()),
+				prometheus.SandboxIDLabel: sid.SandboxID,
 			},
 		}
 		// Best-effort attempt to load the state file instantly.
@@ -750,7 +799,6 @@ func (m *MetricServer) Execute(ctx context.Context, f *flag.FlagSet, args ...any
 		return util.Errorf("Invalid root directory %q: tried to list all entries within it and got: %v", conf.RootDir, err)
 	}
 	m.startTime = time.Now()
-	m.rand = rand.New(rand.NewSource(m.startTime.UnixNano()))
 	m.rootDir = conf.RootDir
 	m.exporterPrefix = conf.MetricExporterPrefix
 	if strings.Contains(conf.MetricServer, "%RUNTIME_ROOT%") {

@@ -12,9 +12,9 @@ go_library(
         "//runsc:__subpackages__",
     ],
     deps = [
+        "//pkg/prometheus",
         "//pkg/sync",
         "//runsc/config",
-        "//runsc/sandbox",
         "//runsc/specutils",
         "@com_github_cenkalti_backoff//:go_default_library",
         "@com_github_prometheus_common//expfmt",

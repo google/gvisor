@@ -34,9 +34,9 @@ import (
 	"github.com/cenkalti/backoff"
 	"github.com/prometheus/common/expfmt"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/prometheus"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/runsc/config"
-	"gvisor.dev/gvisor/runsc/sandbox"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
@@ -381,9 +381,9 @@ func (m MetricData) GetSandboxMetadataMetric(want WantMetric) (map[string]string
 		}
 		allMatching := true
 		for wantLabel, wantValue := range map[string]string{
-			sandbox.SandboxIDLabel: want.Sandbox,
-			sandbox.NamespaceLabel: want.Namespace,
-			sandbox.PodNameLabel:   want.Pod,
+			prometheus.SandboxIDLabel: want.Sandbox,
+			prometheus.NamespaceLabel: want.Namespace,
+			prometheus.PodNameLabel:   want.Pod,
 		} {
 			if dataLabels[wantLabel] != wantValue {
 				allMatching = false
@@ -403,7 +403,7 @@ func (m MetricData) GetSandboxMetadataMetric(want WantMetric) (map[string]string
 	data := metricData.GetMetric()[foundIndex]
 	metadataLabels := make(map[string]string, len(data.GetLabel()))
 	for _, label := range data.GetLabel() {
-		if label.GetName() == sandbox.SandboxIDLabel || label.GetName() == sandbox.NamespaceLabel || label.GetName() == sandbox.PodNameLabel {
+		if label.GetName() == prometheus.SandboxIDLabel || label.GetName() == prometheus.NamespaceLabel || label.GetName() == prometheus.PodNameLabel {
 			continue
 		}
 		metadataLabels[label.GetName()] = label.GetValue()

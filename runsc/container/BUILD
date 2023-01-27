@@ -87,6 +87,7 @@ go_test(
         "//runsc/specutils",
         "//test/metricclient",
         "@com_github_cenkalti_backoff//:go_default_library",
+        "@com_github_google_go_cmp//cmp:go_default_library",
         "@com_github_kr_pty//:go_default_library",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
         "@org_golang_google_protobuf//proto:go_default_library",
