@@ -1,6 +1,7 @@
 load("//website:defs.bzl", "doc", "docs")
 
 package(
+    default_applicable_licenses = ["//:license"],
     default_visibility = ["//website:__pkg__"],
     licenses = ["notice"],
 )
