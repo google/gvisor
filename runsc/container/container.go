@@ -776,12 +776,13 @@ func (c *Container) Destroy() error {
 }
 
 func createOverlayFilestore(overlay2 config.Overlay2) (*os.File, error) {
-	if overlay2.FilestoreDir == "" {
+	if !overlay2.IsBackedByHostFile() {
 		return nil, nil
 	}
-	fileInfo, err := os.Stat(overlay2.FilestoreDir)
+	filestoreDir := overlay2.HostFileDir()
+	fileInfo, err := os.Stat(filestoreDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to stat overlay filestore directory %q: %v", overlay2.FilestoreDir, err)
+		return nil, fmt.Errorf("failed to stat overlay filestore directory %q: %v", filestoreDir, err)
 	}
 	if !fileInfo.IsDir() {
 		return nil, fmt.Errorf("overlay2 flag should specify an existing directory")
@@ -791,9 +792,9 @@ func createOverlayFilestore(overlay2 config.Overlay2) (*os.File, error) {
 	// it is not supported on all filesystems. So we simulate it by creating a
 	// named file and then immediately unlinking it while keeping an FD on it.
 	// This file will be deleted when the container exits.
-	filestoreFile, err := os.CreateTemp(overlay2.FilestoreDir, "runsc-overlay-filestore-*")
+	filestoreFile, err := os.CreateTemp(filestoreDir, "runsc-overlay-filestore-*")
 	if err != nil {
-		return nil, fmt.Errorf("failed to create a temporary file inside %q: %v", overlay2.FilestoreDir, err)
+		return nil, fmt.Errorf("failed to create a temporary file inside %q: %v", filestoreDir, err)
 	}
 	if err := unix.Unlink(filestoreFile.Name()); err != nil {
 		return nil, fmt.Errorf("failed to unlink temporary file %q: %v", filestoreFile.Name(), err)

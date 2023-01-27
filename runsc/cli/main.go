@@ -227,7 +227,7 @@ func Main(version string) {
 	log.Infof("\t\tPlatform: %v", conf.Platform)
 	log.Infof("\t\tFileAccess: %v", conf.FileAccess)
 	overlay2 := conf.GetOverlay2()
-	log.Infof("\t\tOverlay: Root=%t, SubMounts=%t, FilestoreDir=%q", overlay2.RootMount, overlay2.SubMounts, overlay2.FilestoreDir)
+	log.Infof("\t\tOverlay: Root=%t, SubMounts=%t, Medium=%q", overlay2.RootMount, overlay2.SubMounts, overlay2.Medium)
 	log.Infof("\t\tNetwork: %v, logging: %t", conf.Network, conf.LogPackets)
 	log.Infof("\t\tStrace: %t, max size: %d, syscalls: %s", conf.Strace, conf.StraceLogSize, conf.StraceSyscalls)
 	log.Infof("\t\tIOURING: %t", conf.IOUring)

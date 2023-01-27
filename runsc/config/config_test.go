@@ -115,41 +115,59 @@ func TestToFlags(t *testing.T) {
 func TestInvalidFlags(t *testing.T) {
 	for _, tc := range []struct {
 		name  string
+		value string
 		error string
 	}{
 		{
 			name:  "file-access",
+			value: "invalid",
 			error: "invalid file access type",
 		},
 		{
 			name:  "network",
+			value: "invalid",
 			error: "invalid network type",
 		},
 		{
 			name:  "qdisc",
+			value: "invalid",
 			error: "invalid qdisc",
 		},
 		{
 			name:  "watchdog-action",
+			value: "invalid",
 			error: "invalid watchdog action",
 		},
 		{
 			name:  "ref-leak-mode",
+			value: "invalid",
 			error: "invalid ref leak mode",
 		},
 		{
 			name:  "host-uds",
+			value: "invalid",
 			error: "invalid host UDS",
 		},
 		{
 			name:  "host-fifo",
+			value: "invalid",
 			error: "invalid host fifo",
+		},
+		{
+			name:  "overlay2",
+			value: "root:/tmp",
+			error: "unexpected medium specifier for --overlay2: \"/tmp\"",
+		},
+		{
+			name:  "overlay2",
+			value: "root:dir=tmp",
+			error: "overlay host file directory should be an absolute path, got \"tmp\"",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
 			RegisterFlags(testFlags)
-			if err := testFlags.Lookup(tc.name).Value.Set("invalid"); err == nil || !strings.Contains(err.Error(), tc.error) {
+			if err := testFlags.Lookup(tc.name).Value.Set(tc.value); err == nil || !strings.Contains(err.Error(), tc.error) {
 				t.Errorf("flag.Value.Set(invalid) wrong error reported: %v", err)
 			}
 		})
