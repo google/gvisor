@@ -8,6 +8,8 @@ go_library(
         "gohacks_unsafe.go",
         "slice_go113_unsafe.go",
         "slice_go120_unsafe.go",
+        "string_go113_unsafe.go",
+        "string_go120_unsafe.go",
     ],
     stateify = False,
     visibility = ["//:sandbox"],
@@ -16,7 +18,10 @@ go_library(
 go_test(
     name = "gohacks_test",
     size = "small",
-    srcs = ["gohacks_test.go"],
+    srcs = [
+        "gohacks_test.go",
+        "string_test.go",
+    ],
     library = ":gohacks",
     deps = ["@org_golang_x_sys//unix:go_default_library"],
 )
