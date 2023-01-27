@@ -28,6 +28,14 @@ arch_genrule(
     template = "runtime_spinning_impl_%s.s",
 )
 
+# Architecture-independent constants.
+nogo_facts(
+    name = "runtime_constants_impl",
+    srcs = ["runtime.go"],
+    output = "runtime_constants_impl.go",
+    template = "runtime_constants.tmpl",
+)
+
 go_library(
     name = "sync",
     srcs = [
@@ -49,6 +57,7 @@ go_library(
         "rwmutex_unsafe.go",
         "seqcount.go",
         "sync.go",
+        ":runtime_constants_impl",
         ":runtime_spinning_impl_arch",
     ],
     marshal = False,
