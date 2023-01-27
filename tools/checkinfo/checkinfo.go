@@ -30,7 +30,7 @@ var Analyzer = &analysis.Analyzer{
 		(*Align)(nil),
 		(*Offset)(nil),
 		(*Size)(nil),
-		(*Value)(nil),
+		(*Constants)(nil),
 	},
 }
 
@@ -52,19 +52,24 @@ type Size int64
 // AFact implements analysis.Fact.AFact.
 func (*Size) AFact() {}
 
-// Value is a trivial fact.
-type Value string
+// Constants contains all constant values.
+type Constants map[string]string
 
 // AFact implements analysis.Fact.AFact.
-func (*Value) AFact() {}
+func (*Constants) AFact() {}
 
-func walkObject(pass *analysis.Pass, obj types.Object) {
+// pkg holds package-level facts.
+type pkg struct {
+	constants Constants
+}
+
+func (p *pkg) walkObject(pass *analysis.Pass, obj types.Object) {
 	switch x := obj.(type) {
 	case *types.Const:
-		// Add a special constant value. This is supported for
-		// constants only, and appears as a "Value" fact.
-		v := Value(x.Val().ExactString())
-		pass.ExportObjectFact(obj, &v)
+		// Add to the package-global Constants fact. Unexported
+		// constants can end up as unaddressable via objectpath and
+		// thus are not accessible in downstream analyzers.
+		p.constants[x.Name()] = x.Val().ExactString()
 	case *types.PkgName:
 		// Don't walk to other packages.
 	case *types.Var:
@@ -95,7 +100,7 @@ func walkObject(pass *analysis.Pass, obj types.Object) {
 			for i := 0; i < structType.NumFields(); i++ {
 				fieldObj := structType.Field(i)
 				fields = append(fields, fieldObj)
-				walkObject(pass, fieldObj)
+				p.walkObject(pass, fieldObj)
 			}
 			offsets := pass.TypesSizes.Offsetsof(fields)
 			for i, field := range fields {
@@ -110,31 +115,39 @@ func walkObject(pass *analysis.Pass, obj types.Object) {
 		// Recurse to all parameters.
 		sig := x.Type().(*types.Signature)
 		if recv := sig.Recv(); recv != nil {
-			walkObject(pass, recv)
+			p.walkObject(pass, recv)
 		}
 		if params := sig.Params(); params != nil {
 			for i := 0; i < params.Len(); i++ {
-				walkObject(pass, params.At(i))
+				p.walkObject(pass, params.At(i))
 			}
 		}
 		if results := sig.Results(); results != nil {
 			for i := 0; i < results.Len(); i++ {
-				walkObject(pass, results.At(i))
+				p.walkObject(pass, results.At(i))
 			}
 		}
-		walkScope(pass, x.Scope())
+		p.walkScope(pass, x.Scope())
 	}
 }
 
 // walkScope recursively resolves a scope.
-func walkScope(pass *analysis.Pass, scope *types.Scope) {
+func (p *pkg) walkScope(pass *analysis.Pass, scope *types.Scope) {
 	for _, name := range scope.Names() {
-		walkObject(pass, scope.Lookup(name))
+		p.walkObject(pass, scope.Lookup(name))
 	}
 }
 
 func run(pass *analysis.Pass) (any, error) {
-	// Export all facts.
-	walkScope(pass, pass.Pkg.Scope())
+	p := &pkg{
+		constants: make(Constants),
+	}
+
+	// Export all object facts and accumulate all package facts.
+	p.walkScope(pass, pass.Pkg.Scope())
+
+	// Export package facts.
+	pass.ExportPackageFact(&p.constants)
+
 	return nil, nil
 }

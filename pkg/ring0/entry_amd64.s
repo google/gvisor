@@ -34,34 +34,34 @@
 {{ end }}
 
 // Bits.
-#define _RFLAGS_IF    {{ ._RFLAGS_IF.Value }}
-#define _RFLAGS_IOPL0 {{ ._RFLAGS_IOPL0.Value }}
-#define _KERNEL_FLAGS {{ .KernelFlagsSet.Value }}
+#define _RFLAGS_IF    {{ .Constants._RFLAGS_IF }}
+#define _RFLAGS_IOPL0 {{ .Constants._RFLAGS_IOPL0 }}
+#define _KERNEL_FLAGS {{ .Constants.KernelFlagsSet }}
 
 // Vectors.
-#define DivideByZero               {{ .DivideByZero.Value }}
-#define Debug                      {{ .Debug.Value }}
-#define NMI                        {{ .NMI.Value }}
-#define Breakpoint                 {{ .Breakpoint.Value }}
-#define Overflow                   {{ .Overflow.Value }}
-#define BoundRangeExceeded         {{ .BoundRangeExceeded.Value }}
-#define InvalidOpcode              {{ .InvalidOpcode.Value }}
-#define DeviceNotAvailable         {{ .DeviceNotAvailable.Value }}
-#define DoubleFault                {{ .DoubleFault.Value }}
-#define CoprocessorSegmentOverrun  {{ .CoprocessorSegmentOverrun.Value }}
-#define InvalidTSS                 {{ .InvalidTSS.Value }}
-#define SegmentNotPresent          {{ .SegmentNotPresent.Value }}
-#define StackSegmentFault          {{ .StackSegmentFault.Value }}
-#define GeneralProtectionFault     {{ .GeneralProtectionFault.Value }}
-#define PageFault                  {{ .PageFault.Value }}
-#define X87FloatingPointException  {{ .X87FloatingPointException.Value }}
-#define AlignmentCheck             {{ .AlignmentCheck.Value }}
-#define MachineCheck               {{ .MachineCheck.Value }}
-#define SIMDFloatingPointException {{ .SIMDFloatingPointException.Value }}
-#define VirtualizationException    {{ .VirtualizationException.Value }}
-#define SecurityException          {{ .SecurityException.Value }}
-#define SyscallInt80               {{ .SyscallInt80.Value }}
-#define Syscall                    {{ .Syscall.Value }}
+#define DivideByZero               {{ .Constants.DivideByZero }}
+#define Debug                      {{ .Constants.Debug }}
+#define NMI                        {{ .Constants.NMI }}
+#define Breakpoint                 {{ .Constants.Breakpoint }}
+#define Overflow                   {{ .Constants.Overflow }}
+#define BoundRangeExceeded         {{ .Constants.BoundRangeExceeded }}
+#define InvalidOpcode              {{ .Constants.InvalidOpcode }}
+#define DeviceNotAvailable         {{ .Constants.DeviceNotAvailable }}
+#define DoubleFault                {{ .Constants.DoubleFault }}
+#define CoprocessorSegmentOverrun  {{ .Constants.CoprocessorSegmentOverrun }}
+#define InvalidTSS                 {{ .Constants.InvalidTSS }}
+#define SegmentNotPresent          {{ .Constants.SegmentNotPresent }}
+#define StackSegmentFault          {{ .Constants.StackSegmentFault }}
+#define GeneralProtectionFault     {{ .Constants.GeneralProtectionFault }}
+#define PageFault                  {{ .Constants.PageFault }}
+#define X87FloatingPointException  {{ .Constants.X87FloatingPointException }}
+#define AlignmentCheck             {{ .Constants.AlignmentCheck }}
+#define MachineCheck               {{ .Constants.MachineCheck }}
+#define SIMDFloatingPointException {{ .Constants.SIMDFloatingPointException }}
+#define VirtualizationException    {{ .Constants.VirtualizationException }}
+#define SecurityException          {{ .Constants.SecurityException }}
+#define SyscallInt80               {{ .Constants.SyscallInt80 }}
+#define Syscall                    {{ .Constants.Syscall }}
 
 {{ with .import.linux.PtraceRegs }}
 #define PTRACE_R15      {{ .R15.Offset }}

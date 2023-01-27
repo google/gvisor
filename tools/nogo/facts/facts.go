@@ -362,6 +362,21 @@ func (r Resolved) walkScope(parents []string, scope *types.Scope, facts *Package
 	}
 }
 
+// walkPackage adds all package facts.
+func (r Resolved) walkPackage(parents []string, facts *Package, allFactNames map[reflect.Type]string) {
+	for _, fact := range facts.Objects[nil] {
+		v := reflect.ValueOf(fact)
+		typeName, ok := allFactNames[v.Type()]
+		if !ok {
+			continue
+		}
+		for v.Kind() == reflect.Ptr {
+			v = v.Elem()
+		}
+		r.addRecursively(append(parents, typeName), v.Interface())
+	}
+}
+
 // Resolve resolves all object facts.
 func Resolve(pkg *types.Package, localFacts *Package, allFacts *Bundle, allFactNames map[reflect.Type]string) (Resolved, error) {
 	// Populate the tree. Allocating this slice up front prevents
@@ -369,6 +384,7 @@ func Resolve(pkg *types.Package, localFacts *Package, allFacts *Bundle, allFactN
 	// without allocating a new backing array.
 	r := make(Resolved)
 	names := make([]string, 0, 64)
+	r.walkPackage(names, localFacts, allFactNames)
 	r.walkScope(names, pkg.Scope(), localFacts, allFactNames)
 	for _, importPkg := range pkg.Imports() {
 		importFacts, err := allFacts.Package(importPkg)
@@ -376,8 +392,9 @@ func Resolve(pkg *types.Package, localFacts *Package, allFacts *Bundle, allFactN
 			return nil, err
 		}
 		if importFacts == nil {
-			continue
+			continue // Nothing to render.
 		}
+		r.walkPackage(append(names, "import", importPkg.Name()), importFacts, allFactNames)
 		r.walkScope(append(names, "import", importPkg.Name()), importPkg.Scope(), importFacts, allFactNames)
 	}
 	return r, nil

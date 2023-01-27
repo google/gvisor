@@ -30,39 +30,39 @@
 #define CPU_APP_ASID         ({{ .CPU.CPUArchState.Offset }}+{{ .CPUArchState.appASID.Offset }})
 
 // Bits.
-#define _KERNEL_FLAGS {{ .KernelFlagsSet.Value }}
+#define _KERNEL_FLAGS {{ .Constants.KernelFlagsSet }}
 
 // Vectors.
-#define El1Sync                 {{ .El1Sync.Value }}
-#define El1Irq                  {{ .El1Irq.Value }}
-#define El1Fiq                  {{ .El1Fiq.Value }}
-#define El1Err                  {{ .El1Err.Value }}
-#define El0Sync                 {{ .El0Sync.Value }}
-#define El0Irq                  {{ .El0Irq.Value }}
-#define El0Fiq                  {{ .El0Fiq.Value }}
-#define El0Err                  {{ .El0Err.Value }}
-#define El1SyncDa               {{ .El1SyncDa.Value }}
-#define El1SyncIa               {{ .El1SyncIa.Value }}
-#define El1SyncSpPc             {{ .El1SyncSpPc.Value }}
-#define El1SyncUndef            {{ .El1SyncUndef.Value }}
-#define El1SyncDbg              {{ .El1SyncDbg.Value }}
-#define El1SyncInv              {{ .El1SyncInv.Value }}
-#define El0SyncSVC              {{ .El0SyncSVC.Value }}
-#define El0SyncDa               {{ .El0SyncDa.Value }}
-#define El0SyncIa               {{ .El0SyncIa.Value }}
-#define El0SyncFpsimdAcc        {{ .El0SyncFpsimdAcc.Value }}
-#define El0SyncSveAcc           {{ .El0SyncSveAcc.Value }}
-#define El0SyncFpsimdExc        {{ .El0SyncFpsimdExc.Value }}
-#define El0SyncSys              {{ .El0SyncSys.Value }}
-#define El0SyncSpPc             {{ .El0SyncSpPc.Value }}
-#define El0SyncUndef            {{ .El0SyncUndef.Value }}
-#define El0SyncDbg              {{ .El0SyncDbg.Value }}
-#define El0SyncWfx              {{ .El0SyncWfx.Value }}
-#define El0SyncInv              {{ .El0SyncInv.Value }}
-#define El0ErrNMI               {{ .El0ErrNMI.Value }}
-#define PageFault               {{ .PageFault.Value }}
-#define Syscall                 {{ .Syscall.Value }}
-#define VirtualizationException {{ .VirtualizationException.Value }}
+#define El1Sync                 {{ .Constants.El1Sync }}
+#define El1Irq                  {{ .Constants.El1Irq }}
+#define El1Fiq                  {{ .Constants.El1Fiq }}
+#define El1Err                  {{ .Constants.El1Err }}
+#define El0Sync                 {{ .Constants.El0Sync }}
+#define El0Irq                  {{ .Constants.El0Irq }}
+#define El0Fiq                  {{ .Constants.El0Fiq }}
+#define El0Err                  {{ .Constants.El0Err }}
+#define El1SyncDa               {{ .Constants.El1SyncDa }}
+#define El1SyncIa               {{ .Constants.El1SyncIa }}
+#define El1SyncSpPc             {{ .Constants.El1SyncSpPc }}
+#define El1SyncUndef            {{ .Constants.El1SyncUndef }}
+#define El1SyncDbg              {{ .Constants.El1SyncDbg }}
+#define El1SyncInv              {{ .Constants.El1SyncInv }}
+#define El0SyncSVC              {{ .Constants.El0SyncSVC }}
+#define El0SyncDa               {{ .Constants.El0SyncDa }}
+#define El0SyncIa               {{ .Constants.El0SyncIa }}
+#define El0SyncFpsimdAcc        {{ .Constants.El0SyncFpsimdAcc }}
+#define El0SyncSveAcc           {{ .Constants.El0SyncSveAcc }}
+#define El0SyncFpsimdExc        {{ .Constants.El0SyncFpsimdExc }}
+#define El0SyncSys              {{ .Constants.El0SyncSys }}
+#define El0SyncSpPc             {{ .Constants.El0SyncSpPc }}
+#define El0SyncUndef            {{ .Constants.El0SyncUndef }}
+#define El0SyncDbg              {{ .Constants.El0SyncDbg }}
+#define El0SyncWfx              {{ .Constants.El0SyncWfx }}
+#define El0SyncInv              {{ .Constants.El0SyncInv }}
+#define El0ErrNMI               {{ .Constants.El0ErrNMI }}
+#define PageFault               {{ .Constants.PageFault }}
+#define Syscall                 {{ .Constants.Syscall }}
+#define VirtualizationException {{ .Constants.VirtualizationException }}
 
 {{ with .import.linux.PtraceRegs }}
 #define PTRACE_R0       ({{ .Regs.Offset }} + 0*8)
