@@ -162,7 +162,7 @@ analyzers:
       exclude:
         - ".*_test.go"                                             # Exclude tests.
         - "pkg/flipcall/.*_unsafe.go"                              # Special case.
-        - pkg/gohacks/gohacks_unsafe.go                            # Special case.
+        - pkg/gohacks/noescape_unsafe.go                           # Special case.
         - pkg/ring0/pagetables/allocator_unsafe.go                 # Special case.
         - pkg/sentry/fsutil/host_file_mapper_unsafe.go             # Special case.
         - pkg/sentry/platform/kvm/bluepill_unsafe.go               # Special case.
@@ -207,7 +207,7 @@ analyzers:
   SA4016: # Useless bitwise operations.
     internal:
       exclude:
-        - pkg/gohacks/gohacks_unsafe.go # x ^ 0 always equals x.
+        - pkg/gohacks/noescape_unsafe.go # x ^ 0 always equals x.
   ST1019: # Multiple imports of the same package.
     generated:
       exclude:

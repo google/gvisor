@@ -5,7 +5,8 @@ package(licenses = ["notice"])
 go_library(
     name = "gohacks",
     srcs = [
-        "gohacks_unsafe.go",
+        "linkname_go113_unsafe.go",
+        "noescape_unsafe.go",
         "slice_go113_unsafe.go",
         "slice_go120_unsafe.go",
         "string_go113_unsafe.go",
