@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2023 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,14 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build amd64 && go1.14 && !go1.21 && !goexperiment.staticlockranking
-// +build amd64,go1.14,!go1.21,!goexperiment.staticlockranking
+//go:build !amd64
 
-#include "textflag.h"
-
-TEXT ·addrOfSpinning(SB),NOSPLIT,$0-8
-	// The offset specified here is the nmspinning value in sched.
-	LEAQ runtime·sched(SB), AX
-	ADDQ $92, AX
-	MOVQ AX, ret+0(FP)
-	RET
+// This file is intentionally left blank. Other arches don't use
+// addrOfSpinning, but we still need an input to the nogo temlate rule.
