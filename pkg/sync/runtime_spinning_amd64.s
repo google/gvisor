@@ -12,14 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build amd64 && go1.14 && !go1.21 && !goexperiment.staticlockranking
-// +build amd64,go1.14,!go1.21,!goexperiment.staticlockranking
+//go:build amd64
 
 #include "textflag.h"
 
+#define NMSPINNING_OFFSET {{ .import.runtime.schedt.nmspinning.Offset }}
+
 TEXT ·addrOfSpinning(SB),NOSPLIT,$0-8
-	// The offset specified here is the nmspinning value in sched.
 	LEAQ runtime·sched(SB), AX
-	ADDQ $92, AX
+	ADDQ $NMSPINNING_OFFSET, AX
 	MOVQ AX, ret+0(FP)
 	RET
