@@ -206,7 +206,7 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 		"-file-access", *fileAccess,
 	}
 	if *overlay {
-		args = append(args, "-overlay2=all:/tmp")
+		args = append(args, "-overlay2=all:dir=/tmp")
 	}
 	if *debug {
 		args = append(args, "-debug", "-log-packets=true")

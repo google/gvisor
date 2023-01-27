@@ -2232,8 +2232,8 @@ func TestMultiContainerOverlayLeaks(t *testing.T) {
 
 	// Configure root overlay backed by a file from /tmp.
 	conf.Overlay2 = config.Overlay2{
-		RootMount:    true,
-		FilestoreDir: "/tmp",
+		RootMount: true,
+		Medium:    "dir=/tmp",
 	}
 
 	// Root container will just sleep.
@@ -2313,6 +2313,7 @@ func TestMultiContainerMemoryLeakStress(t *testing.T) {
 	// files in the root directory.
 	conf.Overlay2 = config.Overlay2{
 		RootMount: true,
+		Medium:    "memory",
 	}
 
 	// Root container will just sleep.

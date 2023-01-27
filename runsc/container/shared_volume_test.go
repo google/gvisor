@@ -270,9 +270,9 @@ func TestSharedVolumeFile(t *testing.T) {
 func TestSharedVolumeOverlay(t *testing.T) {
 	conf := testutil.TestConfig(t)
 	conf.Overlay2 = config.Overlay2{
-		RootMount:    true,
-		SubMounts:    true,
-		FilestoreDir: "/tmp",
+		RootMount: true,
+		SubMounts: true,
+		Medium:    "dir=/tmp",
 	}
 
 	// File that will be used to check consistency inside/outside sandbox.
