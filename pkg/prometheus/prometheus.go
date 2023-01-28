@@ -222,7 +222,7 @@ type Data struct {
 
 // NewIntData returns a new Data struct with the given metric and value.
 func NewIntData(metric *Metric, val int64) *Data {
-	return &Data{Metric: metric, Number: &Number{Int: val}}
+	return LabeledIntData(metric, nil, val)
 }
 
 // LabeledIntData returns a new Data struct with the given metric, labels, and value.
@@ -232,7 +232,12 @@ func LabeledIntData(metric *Metric, labels map[string]string, val int64) *Data {
 
 // NewFloatData returns a new Data struct with the given metric and value.
 func NewFloatData(metric *Metric, val float64) *Data {
-	return &Data{Metric: metric, Number: &Number{Float: val}}
+	return LabeledFloatData(metric, nil, val)
+}
+
+// LabeledFloatData returns a new Data struct with the given metric, labels, and value.
+func LabeledFloatData(metric *Metric, labels map[string]string, val float64) *Data {
+	return &Data{Metric: metric, Labels: labels, Number: &Number{Float: val}}
 }
 
 // ExportOptions contains options that control how metric data is exported in Prometheus format.
