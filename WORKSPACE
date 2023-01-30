@@ -131,7 +131,7 @@ http_archive(
 # Load C++ cross-compilation toolchains.
 http_archive(
     name = "coral_crosstool",
-    sha256 = "088ef98b19a45d7224be13636487e3af57b1564880b67df7be8b3b7eee4a1bfc",
+    sha256 = "19bee2660f55d4fccb0ab6f044a9a12e9bb175005ebf8b6f2336f03056e2dab6",
     strip_prefix = "crosstool-142e930ac6bf1295ff3ba7ba2b5b6324dfb42839",
     urls = [
         "https://github.com/google-coral/crosstool/archive/142e930ac6bf1295ff3ba7ba2b5b6324dfb42839.tar.gz",
@@ -146,7 +146,7 @@ register_toolchains("//:cc_toolchain_k8", "//:cc_toolchain_aarch64")
 # Load protobuf dependencies.
 http_archive(
     name = "rules_proto",
-    sha256 = "c4ebe86f6b8d13ca5a10fdff4008d24788b3c6dd17e141a6f8ac381ff40c4585",
+    sha256 = "1780110efdfc8643c2e5922f31c04d1d3c4fc4f082eff36bef5dc212a158f6ea",
     strip_prefix = "rules_proto-b5e5fc85f70cf6bbef66c69b679c86168ad1bea6",
     urls = [
         "https://github.com/bazelbuild/rules_proto/archive/b5e5fc85f70cf6bbef66c69b679c86168ad1bea6.tar.gz",
@@ -629,7 +629,7 @@ rules_pkg_dependencies()
 # Version LTS 20220623.1
 http_archive(
     name = "com_google_absl",
-    sha256 = "a6be76f59c474a215f2df5116b312257462e97f2e38b2bfa6df8b6a55710b058",
+    sha256 = "2c8c8c004c8f5f4085c3d81de60d9fd53a053a3f73006c0c257660f532143f85",
     strip_prefix = "abseil-cpp-8c0b94e793a66495e0b1f34a5eb26bd7dc672db0",
     urls = [
         "https://mirror.bazel.build/github.com/abseil/abseil-cpp/archive/8c0b94e793a66495e0b1f34a5eb26bd7dc672db0.tar.gz",
@@ -642,20 +642,12 @@ http_archive(
     name = "com_github_grpc_grpc",
     patch_args = ["-p1"],
     patches = ["//tools:grpc_extra_deps.patch"],
-    sha256 = "b55696fb249669744de3e71acc54a9382bea0dce7cd5ba379b356b12b82d4229",
+    sha256 = "3956f03e38e3076c1ed90058baa167cdba4d806ab8fef79b46f84ac05ca31924",
     strip_prefix = "grpc-1.51.1",
     urls = [
         "https://github.com/grpc/grpc/archive/v1.51.1.tar.gz",
     ],
 )
-
-load("@com_github_grpc_grpc//bazel:grpc_deps.bzl", "grpc_deps")
-
-grpc_deps()
-
-load("@com_github_grpc_grpc//bazel:grpc_extra_deps.bzl", "grpc_extra_deps")
-
-grpc_extra_deps()
 
 http_archive(
     name = "com_google_googletest",
@@ -666,6 +658,25 @@ http_archive(
         "https://github.com/google/googletest/archive/release-1.11.0.tar.gz",
     ],
 )
+
+http_archive(
+            name = "com_envoyproxy_protoc_gen_validate",
+            strip_prefix = "protoc-gen-validate-4694024279bdac52b77e22dc87808bd0fd732b69",
+            sha256 = "912a3f592d53edea301b31492b43f817ea17b6a7246ada9c2f73dfa1d714459d",
+            urls = [
+                "https://github.com/envoyproxy/protoc-gen-validate/archive/4694024279bdac52b77e22dc87808bd0fd732b69.tar.gz",
+            ],
+            patches = ["@com_github_grpc_grpc//third_party:protoc-gen-validate.patch"],
+            patch_args = ["-p1"],
+        )
+
+load("@com_github_grpc_grpc//bazel:grpc_deps.bzl", "grpc_deps")
+
+grpc_deps()
+
+load("@com_github_grpc_grpc//bazel:grpc_extra_deps.bzl", "grpc_extra_deps")
+
+grpc_extra_deps()
 
 http_archive(
     name = "com_google_benchmark",
