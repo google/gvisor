@@ -196,6 +196,11 @@ type MemoryFileOpts struct {
 	// no effect unless DelayedEviction is DelayedEvictionEnabled.
 	UseHostMemcgPressure bool
 
+	// DecommitOnDestroy indicates whether the entire host file should be
+	// decommitted on destruction. This is appropriate for host filesystem based
+	// files that need to be explicitly cleaned up to release disk space.
+	DecommitOnDestroy bool
+
 	// If ManualZeroing is true, MemoryFile must not assume that new pages
 	// obtained from the host are zero-filled, such that MemoryFile must manually
 	// zero newly-allocated pages.
@@ -1206,6 +1211,12 @@ func (f *MemoryFile) runReclaim() {
 	if !f.destroyed {
 		f.mu.Unlock()
 		panic("findReclaimable broke out of reclaim loop, but destroyed is no longer set")
+	}
+	if f.opts.DecommitOnDestroy && f.fileSize > 0 {
+		if err := f.decommitFile(memmap.FileRange{Start: 0, End: uint64(f.fileSize)}); err != nil {
+			f.mu.Unlock()
+			panic(fmt.Sprintf("failed to decommit entire memory file during destruction: %v", err))
+		}
 	}
 	f.file.Close()
 	// Ensure that any attempts to use f.file.Fd() fail instead of getting a fd
