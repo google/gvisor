@@ -23,6 +23,7 @@ import (
 
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
@@ -34,20 +35,20 @@ func main() {
 		os.Exit(1)
 	}
 	opts := &fuse.MountOptions{DirectMount: true, Debug: true, Options: []string{"default_permissions"}}
-	rawFS := fs.NewNodeFS(loopbackRoot, &fs.Options{Logger: golog.Default()})
+	rawFS := fs.NewNodeFS(loopbackRoot, &fs.Options{NullPermissions: true, Logger: golog.Default()})
 	server, err := fuse.NewServer(rawFS, "/tmp", opts)
 	if err != nil {
 		log.Warningf("could not create fuse server: %v", err)
 		os.Exit(1)
 	}
+	// Clear umask so that it doesn't affect the mode bits twice.
+	unix.Umask(0)
 
 	go server.Serve()
 	defer func() {
 		server.Unmount()
 		server.Wait()
 	}()
-	// TODO(b/267200022): Investigate why gofuse pollHack sometimes fails with
-	// EINTR.
 	if _, _, err := specutils.RetryEintr(func() (uintptr, uintptr, error) {
 		if err := server.WaitMount(); err != nil {
 			return 0, 0, err

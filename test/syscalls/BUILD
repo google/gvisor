@@ -63,11 +63,13 @@ syscall_test(
 )
 
 syscall_test(
+    add_fusefs = True,
     add_overlay = True,
     test = "//test/syscalls/linux:chdir_test",
 )
 
 syscall_test(
+    add_fusefs = True,
     add_overlay = True,
     test = "//test/syscalls/linux:chmod_test",
 )
@@ -126,9 +128,9 @@ syscall_test(
 )
 
 syscall_test(
+    add_fusefs = True,
     add_overlay = True,
     test = "//test/syscalls/linux:creat_test",
-    use_fusefs = True,
 )
 
 syscall_test(
@@ -184,6 +186,7 @@ syscall_test(
 )
 
 syscall_test(
+    add_fusefs = True,
     add_overlay = True,
     test = "//test/syscalls/linux:fchdir_test",
 )
@@ -296,6 +299,7 @@ syscall_test(
 )
 
 syscall_test(
+    add_fusefs = True,
     add_overlay = True,
     test = "//test/syscalls/linux:lseek_test",
 )
@@ -321,14 +325,15 @@ syscall_test(
 )
 
 syscall_test(
+    add_fusefs = True,
     add_overlay = True,
     test = "//test/syscalls/linux:mkdir_test",
 )
 
 syscall_test(
+    add_fusefs = True,
     add_overlay = True,
     test = "//test/syscalls/linux:mknod_test",
-    use_fusefs = True,
 )
 
 syscall_test(
@@ -378,15 +383,16 @@ syscall_test(
 )
 
 syscall_test(
+    add_fusefs = True,
     add_overlay = True,
     test = "//test/syscalls/linux:open_create_test",
 )
 
 syscall_test(
+    add_fusefs = True,
     add_overlay = True,
     shard_count = more_shards,
     test = "//test/syscalls/linux:open_test",
-    use_fusefs = True,
 )
 
 syscall_test(
@@ -441,16 +447,19 @@ syscall_test(
 )
 
 syscall_test(
+    add_fusefs = True,
     add_overlay = True,
     test = "//test/syscalls/linux:pread64_test",
 )
 
 syscall_test(
+    add_fusefs = True,
     add_overlay = True,
     test = "//test/syscalls/linux:preadv_test",
 )
 
 syscall_test(
+    add_fusefs = True,
     add_overlay = True,
     test = "//test/syscalls/linux:preadv2_test",
 )
@@ -506,11 +515,13 @@ syscall_test(
 )
 
 syscall_test(
+    add_fusefs = True,
     add_overlay = True,
     test = "//test/syscalls/linux:pwritev2_test",
 )
 
 syscall_test(
+    add_fusefs = True,
     add_overlay = True,
     test = "//test/syscalls/linux:pwrite64_test",
 )
@@ -529,6 +540,7 @@ syscall_test(
 )
 
 syscall_test(
+    add_fusefs = True,
     add_overlay = True,
     test = "//test/syscalls/linux:read_test",
 )
@@ -546,6 +558,7 @@ syscall_test(
 
 syscall_test(
     size = "medium",
+    add_fusefs = True,
     add_overlay = True,
     test = "//test/syscalls/linux:readv_test",
 )
@@ -914,16 +927,16 @@ syscall_test(
 )
 
 syscall_test(
+    add_fusefs = True,
     add_overlay = True,
     test = "//test/syscalls/linux:statfs_test",
-    use_fusefs = True,
     use_tmpfs = True,  # Test specifically relies on TEST_TMPDIR to be tmpfs.
 )
 
 syscall_test(
+    add_fusefs = True,
     add_overlay = True,
     test = "//test/syscalls/linux:stat_test",
-    use_fusefs = True,
 )
 
 syscall_test(
@@ -937,6 +950,7 @@ syscall_test(
 )
 
 syscall_test(
+    add_fusefs = True,
     add_overlay = True,
     test = "//test/syscalls/linux:symlink_test",
 )
