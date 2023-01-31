@@ -92,10 +92,6 @@ const (
 
 	// ContMgrProcfsDump dumps sandbox procfs state.
 	ContMgrProcfsDump = "containerManager.ProcfsDump"
-
-	// CongMgrOverlayFileUsage returns the current usage (bytes) of the overlay
-	// filestore.
-	CongMgrOverlayFileUsage = "containerManager.OverlayFileUsage"
 )
 
 const (
@@ -268,6 +264,7 @@ type StartArgs struct {
 
 	// FilePayload contains, in order:
 	//   * stdin, stdout, and stderr (optional: if terminal is disabled).
+	//   * file descriptor to overlay-backing host file (optional: for overlay2).
 	//   * file descriptors to connect to gofer to serve the root filesystem.
 	urpc.FilePayload
 }
@@ -288,8 +285,16 @@ func (cm *containerManager) StartSubcontainer(args *StartArgs, _ *struct{}) erro
 	if args.CID == "" {
 		return errors.New("start argument missing container ID")
 	}
-	if len(args.Files) < 1 {
-		return fmt.Errorf("start arguments must contain at least one file for the container root gofer")
+	expectedFDs := 1 // At least one FD for the root filesystem.
+	if !args.Spec.Process.Terminal {
+		expectedFDs += 3
+	}
+	overlay2 := args.Conf.GetOverlay2()
+	if overlay2.IsBackedByHostFile() {
+		expectedFDs++
+	}
+	if len(args.Files) < expectedFDs {
+		return fmt.Errorf("start arguments must contain at least %d FDs, but only got %d", expectedFDs, len(args.Files))
 	}
 
 	// All validation passed, logs the spec for debugging.
@@ -300,9 +305,6 @@ func (cm *containerManager) StartSubcontainer(args *StartArgs, _ *struct{}) erro
 	if !args.Spec.Process.Terminal {
 		// When not using a terminal, stdios come as the first 3 files in the
 		// payload.
-		if l := len(args.Files); l < 4 {
-			return fmt.Errorf("start arguments (len: %d) must contain stdios and files for the container root gofer", l)
-		}
 		var err error
 		stdios, err = fd.NewFromFiles(goferFiles[:3])
 		if err != nil {
@@ -316,6 +318,16 @@ func (cm *containerManager) StartSubcontainer(args *StartArgs, _ *struct{}) erro
 		}
 	}()
 
+	var overlayFilestoreFD *fd.FD
+	if overlay2.IsBackedByHostFile() {
+		var err error
+		overlayFilestoreFD, err = fd.NewFromFile(goferFiles[0])
+		if err != nil {
+			return fmt.Errorf("error dup'ing overlay filestore file: %w", err)
+		}
+		goferFiles = goferFiles[1:]
+	}
+
 	goferFDs, err := fd.NewFromFiles(goferFiles)
 	if err != nil {
 		return fmt.Errorf("error dup'ing gofer files: %w", err)
@@ -326,7 +338,7 @@ func (cm *containerManager) StartSubcontainer(args *StartArgs, _ *struct{}) erro
 		}
 	}()
 
-	if err := cm.l.startSubcontainer(args.Spec, args.Conf, args.CID, stdios, goferFDs); err != nil {
+	if err := cm.l.startSubcontainer(args.Spec, args.Conf, args.CID, stdios, goferFDs, overlayFilestoreFD); err != nil {
 		log.Debugf("containerManager.StartSubcontainer failed, cid: %s, args: %+v, err: %v", args.CID, args, err)
 		return err
 	}
@@ -626,20 +638,5 @@ func (cm *containerManager) ProcfsDump(_ *struct{}, out *[]procfs.ProcessProcfsD
 		}
 		*out = append(*out, procDump)
 	}
-	return nil
-}
-
-// OverlayFileUsage returns the current usage (bytes) of the overlay filestore.
-func (cm *containerManager) OverlayFileUsage(_ *struct{}, out *uint64) error {
-	*out = 0
-	if cm.l.root.overlayFilestore == nil {
-		return nil
-	}
-
-	usage, err := cm.l.root.overlayFilestore.TotalUsage()
-	if err != nil {
-		return err
-	}
-	*out = usage
 	return nil
 }

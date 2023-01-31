@@ -376,17 +376,23 @@ func (s *Sandbox) StartRoot(spec *specs.Spec, conf *config.Config) error {
 }
 
 // StartSubcontainer starts running a sub-container inside the sandbox.
-func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid string, stdios, goferFiles []*os.File) error {
+func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid string, stdios, goferFiles []*os.File, overlayFilestoreFile *os.File) error {
 	log.Debugf("Start sub-container %q in sandbox %q, PID: %d", cid, s.ID, s.Pid.load())
 
 	if err := s.configureStdios(conf, stdios); err != nil {
 		return err
 	}
 
-	// The payload must contain stdin/stdout/stderr (which may be empty if using
-	// TTY) followed by gofer files.
+	// The payload contains (in this specific order):
+	// * stdin/stdout/stderr (optional: only present when not using TTY)
+	// * The subcontainer's overlay filestore file (optional: only present when
+	//   host file backed overlay is configured)
+	// * Gofer files.
 	payload := urpc.FilePayload{}
 	payload.Files = append(payload.Files, stdios...)
+	if overlayFilestoreFile != nil {
+		payload.Files = append(payload.Files, overlayFilestoreFile)
+	}
 	payload.Files = append(payload.Files, goferFiles...)
 
 	// Start running the container.
@@ -1263,16 +1269,6 @@ func (s *Sandbox) ChangeLogging(args control.LoggingArgs) error {
 		return fmt.Errorf("changing sandbox %q logging: %w", s.ID, err)
 	}
 	return nil
-}
-
-// OverlayFileUsage returns the current usage (bytes) of the overlay filestore.
-func (s *Sandbox) OverlayFileUsage() (uint64, error) {
-	log.Debugf("Getting overlay file usage for sandbox %q", s.ID)
-	var usage uint64
-	if err := s.call(boot.CongMgrOverlayFileUsage, nil, &usage); err != nil {
-		return 0, fmt.Errorf("getting overlay file usage for sandbox %q: %w", s.ID, err)
-	}
-	return usage, nil
 }
 
 // DestroyContainer destroys the given container. If it is the root container,

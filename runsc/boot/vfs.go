@@ -46,7 +46,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
@@ -316,9 +315,9 @@ type containerMounter struct {
 	// fds is the list of FDs to be dispensed for mounts that require it.
 	fds fdDispenser
 
-	// overlayFilestore is the memory file that will back the overlay mount's
-	// upper tmpfs layer.
-	overlayFilestore *pgalloc.MemoryFile
+	// overlayFilestoreFD is the FD for the memory file that will back the
+	// overlay mount's upper tmpfs layer.
+	overlayFilestoreFD *fd.FD
 
 	k *kernel.Kernel
 
@@ -331,13 +330,13 @@ type containerMounter struct {
 
 func newContainerMounter(info *containerInfo, k *kernel.Kernel, hints *podMountHints, productName string) *containerMounter {
 	return &containerMounter{
-		root:             info.spec.Root,
-		mounts:           compileMounts(info.spec, info.conf),
-		fds:              fdDispenser{fds: info.goferFDs},
-		overlayFilestore: info.overlayFilestore,
-		k:                k,
-		hints:            hints,
-		productName:      productName,
+		root:               info.spec.Root,
+		mounts:             compileMounts(info.spec, info.conf),
+		fds:                fdDispenser{fds: info.goferFDs},
+		overlayFilestoreFD: info.overlayFilestoreFD,
+		k:                  k,
+		hints:              hints,
+		productName:        productName,
 	}
 }
 
@@ -487,7 +486,7 @@ func (c *containerMounter) configureOverlay(ctx context.Context, creds *auth.Cre
 	// Upper is a tmpfs mount to keep all modifications inside the sandbox.
 	upperOpts.GetFilesystemOptions.InternalData = tmpfs.FilesystemOpts{
 		RootFileType: uint16(rootType),
-		Filestore:    c.overlayFilestore,
+		FilestoreFD:  c.overlayFilestoreFD,
 	}
 	upper, err := c.k.VFS().MountDisconnected(ctx, creds, "" /* source */, tmpfs.Name, &upperOpts)
 	if err != nil {

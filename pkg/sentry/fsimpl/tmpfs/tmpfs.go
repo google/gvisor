@@ -38,6 +38,7 @@ import (
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/time"
@@ -61,8 +62,16 @@ type FilesystemType struct{}
 type filesystem struct {
 	vfsfs vfs.Filesystem
 
-	// mfp is used to allocate memory that stores regular file contents. mfp is
-	// immutable.
+	// mf is used to allocate memory that stores regular file contents. mf is
+	// immutable, except it may to changed during restore.
+	mf *pgalloc.MemoryFile `state:"nosave"`
+
+	// privateMF indicates whether mf is private to this tmpfs mount. If so,
+	// tmpfs takes ownership of mf. privateMF is immutable.
+	privateMF bool
+
+	// mfp is used to provide mf, when privateMF == false. This is required to
+	// re-provide mf on restore. mfp is immutable.
 	mfp pgalloc.MemoryFileProvider
 
 	// clock is a realtime clock used to set timestamps in file operations.
@@ -128,9 +137,9 @@ type FilesystemOpts struct {
 	// MaxFilenameLen is the maximum filename length allowed by the tmpfs.
 	MaxFilenameLen int
 
-	// Filestore is the MemoryFile that will be used to store file data. If this
-	// is nil, then MemoryFileProviderFromContext() is used.
-	Filestore *pgalloc.MemoryFile
+	// FilestoreFD is the FD for the memory file that will be used to store file
+	// data. If this is nil, then MemoryFileProviderFromContext() is used.
+	FilestoreFD *fd.FD
 }
 
 // GetFilesystem implements vfs.FilesystemType.GetFilesystem.
@@ -139,6 +148,8 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	if mfp == nil {
 		panic("MemoryFileProviderFromContext returned nil")
 	}
+	mf := mfp.MemoryFile()
+	privateMF := false
 
 	rootFileType := uint16(linux.S_IFDIR)
 	newFSType := vfs.FilesystemType(&fstype)
@@ -150,8 +161,20 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		if tmpfsOpts.FilesystemType != nil {
 			newFSType = tmpfsOpts.FilesystemType
 		}
-		if tmpfsOpts.Filestore != nil {
-			mfp = tmpfsOpts.Filestore
+		if tmpfsOpts.FilestoreFD != nil {
+			// DecommitOnDestroy because tmpfsOpts.FilestoreFD may be backed by a
+			// host filesystem based file, which needs to be decommited on destroy.
+			// DisableIMAWorkAround because sentry's seccomp filters don't allow the
+			// mmap(2) syscalls that this work around uses. User of this feature is
+			// expected to have performed the work around outside the sandbox.
+			mfOpts := pgalloc.MemoryFileOpts{DecommitOnDestroy: true, DisableIMAWorkAround: true}
+			var err error
+			mf, err = pgalloc.NewMemoryFile(tmpfsOpts.FilestoreFD.ReleaseToFile("overlay-filestore"), mfOpts)
+			if err != nil {
+				ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: pgalloc.NewMemoryFile failed: %v", err)
+				return nil, nil, err
+			}
+			privateMF = true
 		}
 	}
 
@@ -243,6 +266,8 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		memUsage = *tmpfsOpts.Usage
 	}
 	fs := filesystem{
+		mf:             mf,
+		privateMF:      privateMF,
 		mfp:            mfp,
 		clock:          clock,
 		devMinor:       devMinor,
@@ -285,6 +310,9 @@ func (fs *filesystem) Release(ctx context.Context) {
 		fs.root.releaseChildrenLocked(ctx)
 	}
 	fs.mu.Unlock()
+	if fs.privateMF {
+		fs.mf.Destroy()
+	}
 }
 
 // releaseChildrenLocked is called on the mount point by filesystem.Release() to
@@ -533,7 +561,7 @@ func (i *inode) decRef(ctx context.Context) {
 			// Release memory used by regFile to store data. Since regFile is
 			// no longer usable, we don't need to grab any locks or update any
 			// metadata.
-			pagesDec := impl.data.DropAll(impl.memFile)
+			pagesDec := impl.data.DropAll(i.fs.mf)
 			impl.inode.fs.unaccountPages(pagesDec)
 		}
 

@@ -205,6 +205,10 @@ type MemoryFileOpts struct {
 	// obtained from the host are zero-filled, such that MemoryFile must manually
 	// zero newly-allocated pages.
 	ManualZeroing bool
+
+	// If DisableIMAWorkAround is true, NewMemoryFile will not call
+	// IMAWorkAroundForMemFile().
+	DisableIMAWorkAround bool
 }
 
 // DelayedEvictionType is the type of MemoryFileOpts.DelayedEviction.
@@ -357,24 +361,31 @@ func NewMemoryFile(file *os.File, opts MemoryFileOpts) (*MemoryFile, error) {
 
 	go f.runReclaim() // S/R-SAFE: f.mu
 
-	// The Linux kernel contains an optional feature called "Integrity
-	// Measurement Architecture" (IMA). If IMA is enabled, it will checksum
-	// binaries the first time they are mapped PROT_EXEC. This is bad news for
-	// executable pages mapped from our backing file, which can grow to
-	// terabytes in (sparse) size. If IMA attempts to checksum a file that
-	// large, it will allocate all of the sparse pages and quickly exhaust all
-	// memory.
-	//
-	// Work around IMA by immediately creating a temporary PROT_EXEC mapping,
-	// while the backing file is still small. IMA will ignore any future
-	// mappings.
+	if !opts.DisableIMAWorkAround {
+		IMAWorkAroundForMemFile(file.Fd())
+	}
+	return f, nil
+}
+
+// IMAWorkAroundForMemFile works around IMA by immediately creating a temporary
+// PROT_EXEC mapping, while the backing file is still small. IMA will ignore
+// any future mappings.
+//
+// The Linux kernel contains an optional feature called "Integrity
+// Measurement Architecture" (IMA). If IMA is enabled, it will checksum
+// binaries the first time they are mapped PROT_EXEC. This is bad news for
+// executable pages mapped from our backing file, which can grow to
+// terabytes in (sparse) size. If IMA attempts to checksum a file that
+// large, it will allocate all of the sparse pages and quickly exhaust all
+// memory.
+func IMAWorkAroundForMemFile(fd uintptr) {
 	m, _, errno := unix.Syscall6(
 		unix.SYS_MMAP,
 		0,
 		hostarch.PageSize,
 		unix.PROT_EXEC,
 		unix.MAP_SHARED,
-		file.Fd(),
+		fd,
 		0)
 	if errno != 0 {
 		// This isn't fatal (IMA may not even be in use). Log the error, but
@@ -389,8 +400,6 @@ func NewMemoryFile(file *os.File, opts MemoryFileOpts) (*MemoryFile, error) {
 			panic(fmt.Sprintf("failed to unmap PROT_EXEC MemoryFile mapping: %v", errno))
 		}
 	}
-
-	return f, nil
 }
 
 // Destroy releases all resources used by f.
@@ -1362,11 +1371,6 @@ func (f *MemoryFile) startEvictionGoroutineLocked(user EvictableMemoryUser, info
 			user.Evict(context.Background(), er)
 		}
 	}()
-}
-
-// MemoryFile implements MemoryFileProvider.MemoryFile.
-func (f *MemoryFile) MemoryFile() *MemoryFile {
-	return f
 }
 
 // WaitForEvictions blocks until f is no longer evicting any evictable

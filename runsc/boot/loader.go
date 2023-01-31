@@ -101,9 +101,9 @@ type containerInfo struct {
 	// goferFDs are the FDs that attach the sandbox to the gofers.
 	goferFDs []*fd.FD
 
-	// overlayFilestore is the memory file that will back the overlay mount's
-	// upper tmpfs layer.
-	overlayFilestore *pgalloc.MemoryFile
+	// overlayFilestoreFD is the FD for the memory file that will back the
+	// overlay mount's upper tmpfs layer.
+	overlayFilestoreFD *fd.FD
 }
 
 // Loader keeps state needed to start the kernel and run the container.
@@ -274,12 +274,7 @@ func New(args Args) (*Loader, error) {
 		info.goferFDs = append(info.goferFDs, fd.New(goferFD))
 	}
 	if args.OverlayFilestoreFD >= 0 {
-		f := os.NewFile(uintptr(args.OverlayFilestoreFD), "overlay-filestore")
-		mf, err := pgalloc.NewMemoryFile(f, pgalloc.MemoryFileOpts{DecommitOnDestroy: true})
-		if err != nil {
-			return nil, fmt.Errorf("tmpfs.FilesystemType.GetFilesystem: failed to create memory file from host file: %w", err)
-		}
-		info.overlayFilestore = mf
+		info.overlayFilestoreFD = fd.New(args.OverlayFilestoreFD)
 	}
 
 	// Create kernel and platform.
@@ -526,9 +521,6 @@ func (l *Loader) Destroy() {
 	for _, f := range l.root.goferFDs {
 		_ = f.Close()
 	}
-	if l.root.overlayFilestore != nil {
-		l.root.overlayFilestore.Destroy()
-	}
 
 	l.stopProfiling()
 }
@@ -709,7 +701,7 @@ func (l *Loader) createSubcontainer(cid string, tty *fd.FD) error {
 // startSubcontainer starts a child container. It returns the thread group ID of
 // the newly created process. Used FDs are either closed or released. It's safe
 // for the caller to close any remaining files upon return.
-func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid string, stdioFDs, goferFDs []*fd.FD) error {
+func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid string, stdioFDs, goferFDs []*fd.FD, overlayFilestoreFD *fd.FD) error {
 	// Create capabilities.
 	caps, err := specutils.Capabilities(conf.EnableRaw, spec.Process.Capabilities)
 	if err != nil {
@@ -760,12 +752,10 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 	}
 
 	info := &containerInfo{
-		conf:     conf,
-		spec:     spec,
-		goferFDs: goferFDs,
-		// Note that K8s starts all containers in a pod (root and subcontainers)
-		// with the same config. So overlayFilestore can be copied.
-		overlayFilestore: l.root.overlayFilestore,
+		conf:               conf,
+		spec:               spec,
+		goferFDs:           goferFDs,
+		overlayFilestoreFD: overlayFilestoreFD,
 	}
 	info.procArgs, err = createProcessArgs(cid, spec, creds, l.k, pidns)
 	if err != nil {

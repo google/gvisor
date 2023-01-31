@@ -92,6 +92,7 @@ go_library(
         "//pkg/atomicbitops",
         "//pkg/context",
         "//pkg/errors/linuxerr",
+        "//pkg/fd",
         "//pkg/fspath",
         "//pkg/hostarch",
         "//pkg/log",
