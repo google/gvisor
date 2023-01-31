@@ -23,6 +23,7 @@ import (
 	"github.com/hanwen/go-fuse/v2/fs"
 	"github.com/hanwen/go-fuse/v2/fuse"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/runsc/specutils"
 )
 
 func main() {
@@ -44,7 +45,14 @@ func main() {
 		server.Unmount()
 		server.Wait()
 	}()
-	if err := server.WaitMount(); err != nil {
+	// TODO(b/267200022): Investigate why gofuse pollHack sometimes fails with
+	// EINTR.
+	if _, _, err := specutils.RetryEintr(func() (uintptr, uintptr, error) {
+		if err := server.WaitMount(); err != nil {
+			return 0, 0, err
+		}
+		return 0, 0, nil
+	}); err != nil {
 		// We don't shutdown the serve loop. If the mount does
 		// not succeed, the loop won't work and exit.
 		log.Warningf(`Could not mount fuse submount "/tmp": %v`, err)
