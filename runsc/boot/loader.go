@@ -275,7 +275,7 @@ func New(args Args) (*Loader, error) {
 	}
 	if args.OverlayFilestoreFD >= 0 {
 		f := os.NewFile(uintptr(args.OverlayFilestoreFD), "overlay-filestore")
-		mf, err := pgalloc.NewMemoryFile(f, pgalloc.MemoryFileOpts{})
+		mf, err := pgalloc.NewMemoryFile(f, pgalloc.MemoryFileOpts{DecommitOnDestroy: true})
 		if err != nil {
 			return nil, fmt.Errorf("tmpfs.FilesystemType.GetFilesystem: failed to create memory file from host file: %w", err)
 		}
