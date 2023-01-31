@@ -426,3 +426,23 @@ func (d *dentry) restoreFile(ctx context.Context, opts *vfs.CompleteRestoreOptio
 		panic("unknown dentry implementation")
 	}
 }
+
+// doRevalidation calls into r.start's dentry implementation to perform
+// revalidation on all the dentries contained in r.
+//
+// Preconditions:
+//   - fs.renameMu must be locked.
+//   - InteropModeShared is in effect.
+func (r *revalidateState) doRevalidation(ctx context.Context, vfsObj *vfs.VirtualFilesystem, ds **[]*dentry) error {
+	// Skip synthetic dentries because there is no actual implementation that can
+	// be used to walk the remote filesystem. A start dentry cannot be replaced.
+	if r.start.isSynthetic() {
+		return nil
+	}
+	switch r.start.impl.(type) {
+	case *lisafsDentry:
+		return doRevalidationLisafs(ctx, vfsObj, r, ds)
+	default:
+		panic("unknown dentry implementation")
+	}
+}
