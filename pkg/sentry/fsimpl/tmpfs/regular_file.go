@@ -42,9 +42,6 @@ import (
 type regularFile struct {
 	inode inode
 
-	// memFile is a platform.File used to allocate pages to this regularFile.
-	memFile *pgalloc.MemoryFile `state:"nosave"`
-
 	// memoryUsageKind is the memory accounting category under which pages backing
 	// this regularFile's contents are accounted.
 	memoryUsageKind usage.MemoryKind
@@ -93,7 +90,6 @@ type regularFile struct {
 
 func (fs *filesystem) newRegularFile(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, parentDir *directory) *inode {
 	file := &regularFile{
-		memFile:         fs.mfp.MemoryFile(),
 		memoryUsageKind: fs.usage,
 		seals:           linux.F_SEAL_SEAL,
 	}
@@ -224,7 +220,7 @@ func (rf *regularFile) truncateLocked(newSize uint64) (bool, error) {
 	// We are now guaranteed that there are no translations of truncated pages,
 	// and can remove them.
 	rf.dataMu.Lock()
-	decPages := rf.data.Truncate(newSize, rf.memFile)
+	decPages := rf.data.Truncate(newSize, rf.inode.fs.mf)
 	rf.dataMu.Unlock()
 	rf.inode.fs.unaccountPages(decPages)
 	return true, nil
@@ -311,7 +307,7 @@ func (rf *regularFile) Translate(ctx context.Context, required, optional memmap.
 		}
 		optional = required
 	}
-	pagesAlloced, cerr := rf.data.Fill(ctx, required, optional, rf.size.RacyLoad(), rf.memFile, rf.memoryUsageKind, false /* populate */, func(_ context.Context, dsts safemem.BlockSeq, _ uint64) (uint64, error) {
+	pagesAlloced, cerr := rf.data.Fill(ctx, required, optional, rf.size.RacyLoad(), rf.inode.fs.mf, rf.memoryUsageKind, false /* populate */, func(_ context.Context, dsts safemem.BlockSeq, _ uint64) (uint64, error) {
 		// Newly-allocated pages are zeroed, so we don't need to do anything.
 		return dsts.NumBytes(), nil
 	})
@@ -325,7 +321,7 @@ func (rf *regularFile) Translate(ctx context.Context, required, optional memmap.
 		segMR := seg.Range().Intersect(optional)
 		ts = append(ts, memmap.Translation{
 			Source: segMR,
-			File:   rf.memFile,
+			File:   rf.inode.fs.mf,
 			Offset: seg.FileRangeOf(segMR).Start,
 			Perms:  hostarch.AnyAccess,
 		})
@@ -392,7 +388,7 @@ func (fd *regularFileFD) Allocate(ctx context.Context, mode, offset, length uint
 	// Pass populate = true here despite the fact that we don't touch these pages
 	// both for consistency with the expected behavior of fallocate(2) and in
 	// expectation of a future write to them.
-	pagesAlloced, err := f.data.Fill(ctx, required, required, newSize, f.memFile, f.memoryUsageKind, true /* populate */, func(_ context.Context, dsts safemem.BlockSeq, _ uint64) (uint64, error) {
+	pagesAlloced, err := f.data.Fill(ctx, required, required, newSize, f.inode.fs.mf, f.memoryUsageKind, true /* populate */, func(_ context.Context, dsts safemem.BlockSeq, _ uint64) (uint64, error) {
 		// Newly-allocated pages are zeroed, so we don't need to do anything.
 		return dsts.NumBytes(), nil
 	})
@@ -606,7 +602,7 @@ func (rw *regularFileReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, er
 		switch {
 		case seg.Ok():
 			// Get internal mappings.
-			ims, err := rw.file.memFile.MapInternal(seg.FileRangeOf(seg.Range().Intersect(mr)), hostarch.Read)
+			ims, err := rw.file.inode.fs.mf.MapInternal(seg.FileRangeOf(seg.Range().Intersect(mr)), hostarch.Read)
 			if err != nil {
 				return done, err
 			}
@@ -700,7 +696,7 @@ func (rw *regularFileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64,
 		switch {
 		case seg.Ok():
 			// Get internal mappings.
-			ims, err := rw.file.memFile.MapInternal(seg.FileRangeOf(seg.Range().Intersect(mr)), hostarch.Write)
+			ims, err := rw.file.inode.fs.mf.MapInternal(seg.FileRangeOf(seg.Range().Intersect(mr)), hostarch.Write)
 			if err != nil {
 				retErr = err
 				goto exitLoop
@@ -733,7 +729,7 @@ func (rw *regularFileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64,
 				goto exitLoop
 			}
 			gapMR.End = gapMR.Start + (hostarch.PageSize * pagesReserved)
-			fr, err := rw.file.memFile.Allocate(gapMR.Length(), pgalloc.AllocOpts{Kind: rw.file.memoryUsageKind})
+			fr, err := rw.file.inode.fs.mf.Allocate(gapMR.Length(), pgalloc.AllocOpts{Kind: rw.file.memoryUsageKind})
 			if err != nil {
 				retErr = err
 				rw.file.inode.fs.unaccountPages(pagesReserved)
