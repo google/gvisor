@@ -95,7 +95,7 @@ MATCHER_P(IOVecContainsString, str, "") {
 TEST(IOUringTest, ValidFD) {
   SKIP_IF(!IOUringAvailable());
 
-  IOUringParams params;
+  IOUringParams params = {};
   FileDescriptor iouringfd = ASSERT_NO_ERRNO_AND_VALUE(NewIOUringFD(1, params));
 }
 
@@ -103,7 +103,7 @@ TEST(IOUringTest, ValidFD) {
 TEST(IOUringTest, ParamsNonZeroResv) {
   SKIP_IF(!IOUringAvailable());
 
-  IOUringParams params;
+  IOUringParams params = {};
   memset(&params, 0, sizeof(params));
   params.resv[1] = 1;
   ASSERT_THAT(IOUringSetup(1, &params), SyscallFailsWithErrno(EINVAL));
@@ -112,7 +112,7 @@ TEST(IOUringTest, ParamsNonZeroResv) {
 TEST(IOUringTest, ZeroCQEntries) {
   SKIP_IF(!IOUringAvailable());
 
-  IOUringParams params;
+  IOUringParams params = {};
   params.cq_entries = 0;
   params.flags = IORING_SETUP_CQSIZE;
   ASSERT_THAT(IOUringSetup(1, &params), SyscallFailsWithErrno(EINVAL));
@@ -121,7 +121,7 @@ TEST(IOUringTest, ZeroCQEntries) {
 TEST(IOUringTest, ZeroCQEntriesLessThanSQEntries) {
   SKIP_IF(!IOUringAvailable());
 
-  IOUringParams params;
+  IOUringParams params = {};
   params.cq_entries = 16;
   params.flags = IORING_SETUP_CQSIZE;
   ASSERT_THAT(IOUringSetup(32, &params), SyscallFailsWithErrno(EINVAL));
@@ -132,7 +132,7 @@ TEST(IOUringTest, UnsupportedFlags) {
   // Gvisor only test, since linux supports all flags.
   SKIP_IF(!IsRunningOnGvisor());
 
-  IOUringParams params;
+  IOUringParams params = {};
   memset(&params, 0, sizeof(params));
   params.flags |= IORING_SETUP_SQPOLL;
   ASSERT_THAT(IOUringSetup(1, &params), SyscallFailsWithErrno(EINVAL));
@@ -143,7 +143,7 @@ TEST(IOUringTest, UnsupportedFlags) {
 TEST(IOUringTest, MMapMUnMapWork) {
   SKIP_IF(!IOUringAvailable());
 
-  IOUringParams params;
+  IOUringParams params = {};
   FileDescriptor iouringfd = ASSERT_NO_ERRNO_AND_VALUE(NewIOUringFD(1, params));
 
   void *ptr = nullptr;
@@ -172,7 +172,7 @@ TEST(IOUringTest, MMapMUnMapWork) {
 TEST(IOUringTest, MMapWrongOffset) {
   SKIP_IF(!IOUringAvailable());
 
-  IOUringParams params;
+  IOUringParams params = {};
   FileDescriptor iouringfd = ASSERT_NO_ERRNO_AND_VALUE(NewIOUringFD(1, params));
 
   int sring_sz = params.sq_off.array + params.sq_entries * sizeof(unsigned);
@@ -188,7 +188,7 @@ TEST(IOUringTest, MMapWrongOffset) {
 TEST(IOUringTest, MMapOffsets) {
   SKIP_IF(!IOUringAvailable());
 
-  IOUringParams params;
+  IOUringParams params = {};
   FileDescriptor iouringfd = ASSERT_NO_ERRNO_AND_VALUE(NewIOUringFD(1, params));
 
   void *sq_ptr = nullptr;
@@ -224,7 +224,7 @@ TEST(IOUringTest, MMapOffsets) {
 TEST(IOUringTest, ReturnedParamsValues) {
   SKIP_IF(!IsRunningOnGvisor());
 
-  IOUringParams params;
+  IOUringParams params = {};
   FileDescriptor iouringfd = ASSERT_NO_ERRNO_AND_VALUE(NewIOUringFD(1, params));
 
   EXPECT_EQ(params.sq_entries, 1);
@@ -254,7 +254,7 @@ TEST(IOUringTest, ReturnedParamsValues) {
 TEST(IOUringTest, SqeIndexArrayCacheAligned) {
   SKIP_IF(!IOUringAvailable());
 
-  IOUringParams params;
+  IOUringParams params = {};
   for (uint32_t i = 1; i < 10; ++i) {
     FileDescriptor iouringfd =
         ASSERT_NO_ERRNO_AND_VALUE(NewIOUringFD(i, params));
@@ -266,7 +266,7 @@ TEST(IOUringTest, SqeIndexArrayCacheAligned) {
 TEST(IOUringTest, SingleNOPTest) {
   SKIP_IF(!IOUringAvailable());
 
-  IOUringParams params;
+  IOUringParams params = {};
   std::unique_ptr<IOUring> io_uring =
       ASSERT_NO_ERRNO_AND_VALUE(IOUring::InitIOUring(1, params));
 
@@ -305,7 +305,7 @@ TEST(IOUringTest, SingleNOPTest) {
 TEST(IOUringTest, QueueingNOPTest) {
   SKIP_IF(!IOUringAvailable());
 
-  IOUringParams params;
+  IOUringParams params = {};
   std::unique_ptr<IOUring> io_uring =
       ASSERT_NO_ERRNO_AND_VALUE(IOUring::InitIOUring(4, params));
 
@@ -367,7 +367,7 @@ TEST(IOUringTest, QueueingNOPTest) {
 TEST(IOUringTest, MultipleNOPTest) {
   SKIP_IF(!IOUringAvailable());
 
-  IOUringParams params;
+  IOUringParams params = {};
   std::unique_ptr<IOUring> io_uring =
       ASSERT_NO_ERRNO_AND_VALUE(IOUring::InitIOUring(4, params));
 
@@ -413,7 +413,7 @@ TEST(IOUringTest, MultipleNOPTest) {
 TEST(IOUringTest, MultiThreadedNOPTest) {
   SKIP_IF(!IOUringAvailable());
 
-  IOUringParams params;
+  IOUringParams params = {};
   std::unique_ptr<IOUring> io_uring =
       ASSERT_NO_ERRNO_AND_VALUE(IOUring::InitIOUring(4, params));
 
@@ -463,7 +463,7 @@ TEST(IOUringTest, MultiThreadedNOPTest) {
 TEST(IOUringTest, InvalidOpCodeTest) {
   SKIP_IF(!IOUringAvailable());
 
-  IOUringParams params;
+  IOUringParams params = {};
   std::unique_ptr<IOUring> io_uring =
       ASSERT_NO_ERRNO_AND_VALUE(IOUring::InitIOUring(1, params));
 
@@ -502,7 +502,7 @@ TEST(IOUringTest, CorruptRingHeader) {
 
   const int kEntries = 64;
 
-  IOUringParams params;
+  IOUringParams params = {};
   FileDescriptor iouringfd =
       ASSERT_NO_ERRNO_AND_VALUE(NewIOUringFD(kEntries, params));
 
@@ -545,7 +545,7 @@ TEST(IOUringTest, CorruptRingHeader) {
 TEST(IOUringTest, SQERingBuffersWrapAroundTest) {
   SKIP_IF(!IOUringAvailable());
 
-  IOUringParams params;
+  IOUringParams params = {};
   std::unique_ptr<IOUring> io_uring =
       ASSERT_NO_ERRNO_AND_VALUE(IOUring::InitIOUring(4, params));
 
@@ -614,7 +614,7 @@ TEST(IOUringTest, SQERingBuffersWrapAroundTest) {
 TEST(IOUringTest, NonNullSigsetTest) {
   SKIP_IF(!IsRunningOnGvisor());
 
-  IOUringParams params;
+  IOUringParams params = {};
   std::unique_ptr<IOUring> io_uring =
       ASSERT_NO_ERRNO_AND_VALUE(IOUring::InitIOUring(1, params));
 
@@ -640,7 +640,7 @@ TEST(IOUringTest, OverflowCQTest) {
   // Gvisor's completion queue overflow behaviour is different from Linux.
   SKIP_IF(!IsRunningOnGvisor());
 
-  IOUringParams params;
+  IOUringParams params = {};
   std::unique_ptr<IOUring> io_uring =
       ASSERT_NO_ERRNO_AND_VALUE(IOUring::InitIOUring(4, params));
 
@@ -722,7 +722,7 @@ TEST(IOUringTest, OverflowCQTest) {
 TEST(IOUringTest, SingleREADVTest) {
   SKIP_IF(!IOUringAvailable());
 
-  struct io_uring_params params;
+  IOUringParams params = {};
   std::unique_ptr<IOUring> io_uring =
       ASSERT_NO_ERRNO_AND_VALUE(IOUring::InitIOUring(1, params));
 
@@ -793,7 +793,7 @@ TEST(IOUringTest, SingleREADVTest) {
 TEST(IOUringTest, ReadvEmptyFile) {
   SKIP_IF(!IOUringAvailable());
 
-  struct io_uring_params params;
+  IOUringParams params = {};
   std::unique_ptr<IOUring> io_uring =
       ASSERT_NO_ERRNO_AND_VALUE(IOUring::InitIOUring(1, params));
 
@@ -848,7 +848,7 @@ TEST(IOUringTest, ReadvEmptyFile) {
 TEST(IOUringTest, ThreeREADVSingleEnterTest) {
   SKIP_IF(!IOUringAvailable());
 
-  struct io_uring_params params;
+  IOUringParams params = {};
   std::unique_ptr<IOUring> io_uring =
       ASSERT_NO_ERRNO_AND_VALUE(IOUring::InitIOUring(4, params));
 
@@ -940,7 +940,7 @@ TEST(IOUringTest, ThreeREADVSingleEnterTest) {
 TEST(IOUringTest, ReadClosedFD) {
   SKIP_IF(!IOUringAvailable());
 
-  struct io_uring_params params;
+  IOUringParams params = {};
   std::unique_ptr<IOUring> io_uring =
       ASSERT_NO_ERRNO_AND_VALUE(IOUring::InitIOUring(1, params));
 
@@ -999,7 +999,7 @@ TEST(IOUringTest, ReadClosedFD) {
 TEST(IOUringTest, ShortReadREADVTest) {
   SKIP_IF(!IOUringAvailable());
 
-  struct io_uring_params params;
+  IOUringParams params = {};
   std::unique_ptr<IOUring> io_uring =
       ASSERT_NO_ERRNO_AND_VALUE(IOUring::InitIOUring(1, params));
 
@@ -1073,7 +1073,7 @@ TEST(IOUringTest, ShortReadREADVTest) {
 TEST(IOUringTest, NoReadPermissionsREADVTest) {
   SKIP_IF(!IOUringAvailable());
 
-  struct io_uring_params params;
+  IOUringParams params = {};
   std::unique_ptr<IOUring> io_uring =
       ASSERT_NO_ERRNO_AND_VALUE(IOUring::InitIOUring(1, params));
 
@@ -1151,7 +1151,7 @@ TEST_P(IOUringSqeFieldsTest, READVWithInvalidSqeFieldValue) {
 
   const SqeFieldsUT p = GetParam();
 
-  struct io_uring_params params;
+  IOUringParams params = {};
   std::unique_ptr<IOUring> io_uring =
       ASSERT_NO_ERRNO_AND_VALUE(IOUring::InitIOUring(1, params));
 
