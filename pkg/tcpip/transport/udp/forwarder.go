@@ -47,7 +47,7 @@ func (f *Forwarder) HandlePacket(id stack.TransportEndpointID, pkt stack.PacketB
 	f.handler(&ForwarderRequest{
 		stack: f.stack,
 		id:    id,
-		pkt:   pkt,
+		pkt:   pkt.IncRef(),
 	})
 
 	return true
