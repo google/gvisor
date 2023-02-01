@@ -936,111 +936,62 @@ TEST(IOUringTest, ThreeREADVSingleEnterTest) {
   }
 }
 
-// Testing that io_uring_enter(2) successfully handles READV operation, which is
-// racing with deletion of the same file.
-TEST(IOUringTest, READVRaceWithDeleteTest) {
+// Testing that io_uring_enter(2) works with closed FDs.
+TEST(IOUringTest, ReadClosedFD) {
   SKIP_IF(!IOUringAvailable());
 
   struct io_uring_params params;
   std::unique_ptr<IOUring> io_uring =
-      ASSERT_NO_ERRNO_AND_VALUE(IOUring::InitIOUring(2, params));
+      ASSERT_NO_ERRNO_AND_VALUE(IOUring::InitIOUring(1, params));
 
-  ASSERT_EQ(params.sq_entries, 2);
-  ASSERT_EQ(params.cq_entries, 4);
+  ASSERT_EQ(params.sq_entries, 1);
+  ASSERT_EQ(params.cq_entries, 2);
 
   uint32_t sq_head = io_uring->load_sq_head();
   ASSERT_EQ(sq_head, 0);
 
-  std::string file_name[2];
-  FileDescriptor filefd[2];
+  auto file_name = NewTempAbsPath();
+  std::string contents("DEADBEEF");
+  ASSERT_NO_ERRNO(CreateWithContents(file_name, contents, 0666));
+  auto filefd = ASSERT_NO_ERRNO_AND_VALUE(Open(file_name, O_RDONLY));
   unsigned *sq_array = io_uring->get_sq_array();
   struct io_uring_sqe *sqe = io_uring->get_sqes();
-  off_t file_sz[2];
-  int num_blocks[2];
-  struct iovec iov[2];
 
-  for (size_t i = 0; i < 2; i++) {
-    file_name[i] = NewTempAbsPath();
-    std::string contents("DEADBEEF");
-    for (size_t j = 0; j < i; ++j) {
-      contents.append(" DEADBEEF");
-    }
-    ASSERT_NO_ERRNO(CreateWithContents(file_name[i], contents, 0666));
+  struct iovec iov;
+  iov.iov_len = contents.size();
+  void *buf;
+  ASSERT_THAT(posix_memalign(&buf, BLOCK_SZ, BLOCK_SZ), SyscallSucceeds());
+  iov.iov_base = buf;
 
-    filefd[i] = ASSERT_NO_ERRNO_AND_VALUE(Open(file_name[i], O_RDONLY));
-    ASSERT_GE(filefd[i].get(), 0);
+  sqe[0].flags = 0;
+  sqe[0].fd = filefd.get();
+  sqe[0].opcode = IORING_OP_READV;
+  sqe[0].addr = reinterpret_cast<uint64_t>(&iov);
+  sqe[0].len = 1;
+  sqe[0].off = 0;
+  sqe[0].user_data = reinterpret_cast<uint64_t>(&iov);
+  sq_array[0] = 0;
 
-    struct stat st = ASSERT_NO_ERRNO_AND_VALUE(Stat(file_name[i]));
-    file_sz[i] = st.st_size;
-    ASSERT_GT(file_sz[i], 0);
+  uint32_t sq_tail = io_uring->load_sq_tail();
+  io_uring->store_sq_tail(sq_tail + 1);
 
-    num_blocks[i] = (file_sz[i] + BLOCK_SZ - 1) / BLOCK_SZ;
-    ASSERT_EQ(num_blocks[i], 1);
+  filefd.reset();
 
-    iov[i].iov_len = file_sz[i];
-    void *buf;
-    ASSERT_THAT(posix_memalign(&buf, BLOCK_SZ, BLOCK_SZ), SyscallSucceeds());
-    iov[i].iov_base = buf;
-
-    sqe[i].flags = 0;
-    sqe[i].fd = filefd[i].get();
-    sqe[i].opcode = IORING_OP_READV;
-    sqe[i].addr = reinterpret_cast<uint64_t>(&iov[i]);
-    sqe[i].len = num_blocks[i];
-    sqe[i].off = 0;
-    sqe[i].user_data = reinterpret_cast<uint64_t>(&iov[i]);
-    sq_array[i] = i;
-
-    uint32_t sq_tail = io_uring->load_sq_tail();
-    io_uring->store_sq_tail(sq_tail + 1);
-  }
-
-  ASSERT_EQ(file_sz[0], 8);
-  ASSERT_EQ(file_sz[1], 17);
-
-  ScopedThread t1([&] {
-    IOUring *io_uring_ptr = io_uring.get();
-    int ret = io_uring_ptr->Enter(2, 2, IORING_ENTER_GETEVENTS, nullptr);
-    ASSERT_EQ(ret, 2);
-  });
-
-  ScopedThread t2([&] { filefd[0].reset(); });
-
-  t1.Join();
-  t2.Join();
+  IOUring *io_uring_ptr = io_uring.get();
+  int ret = io_uring_ptr->Enter(1, 1, IORING_ENTER_GETEVENTS, nullptr);
+  ASSERT_EQ(ret, 1);
 
   struct io_uring_cqe *cqe = io_uring->get_cqes();
 
   sq_head = io_uring->load_sq_head();
-  ASSERT_EQ(sq_head, 2);
+  ASSERT_EQ(sq_head, 1);
 
   uint32_t cq_tail = io_uring->load_cq_tail();
-  ASSERT_EQ(cq_tail, 2);
+  ASSERT_EQ(cq_tail, 1);
 
-  ASSERT_TRUE(cqe[0].res == -EBADF || cqe[0].res == 8);
-  ASSERT_EQ(cqe[1].res, file_sz[1]);
-
-  for (size_t i = 0; i < 2; i++) {
-    if (cqe[i].res == -EBADF) {
-      uint32_t cq_head = io_uring->load_cq_head();
-      io_uring->store_cq_head(cq_head + 1);
-
-      continue;
-    }
-
-    struct iovec *fi = reinterpret_cast<struct iovec *>(cqe->user_data);
-
-    std::string contents("DEADBEEF");
-    for (size_t j = 0; j < i; ++j) {
-      contents.append(" DEADBEEF");
-    }
-
-    std::pair<struct iovec *, int> iovec_desc(&fi[i], num_blocks[i]);
-    EXPECT_THAT(iovec_desc, IOVecContainsString(contents.c_str()));
-
-    uint32_t cq_head = io_uring->load_cq_head();
-    io_uring->store_cq_head(cq_head + 1);
-  }
+  ASSERT_TRUE(cqe[0].res == -EBADF);
+  uint32_t cq_head = io_uring->load_cq_head();
+  io_uring->store_cq_head(cq_head + 1);
 }
 
 // Testing that io_uring_enter(2) successfully handles single READV operation
