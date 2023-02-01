@@ -227,7 +227,7 @@ network-tests: iptables-tests packetdrill-tests packetimpact-tests
 .PHONY: network-tests
 
 syscall-tests: $(RUNTIME_BIN) ## Run all system call tests.
-	@$(call test,--test_env=RUNTIME=$(RUNTIME_BIN) $(PARTITIONS) test/syscalls/... test/fuse/...)
+	@$(call test,--test_env=RUNTIME=$(RUNTIME_BIN) $(PARTITIONS) test/syscalls/...)
 .PHONY: syscall-tests
 
 packetimpact-tests:
