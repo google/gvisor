@@ -767,7 +767,7 @@ TEST(IOUringTest, SingleREADVTest) {
   uint32_t sq_tail = io_uring->load_sq_tail();
   io_uring->store_sq_tail(sq_tail + 1);
 
-  int ret = io_uring->Enter(1, 1, 0, nullptr);
+  int ret = io_uring->Enter(1, 1, IORING_ENTER_GETEVENTS, nullptr);
   ASSERT_EQ(ret, 1);
 
   struct io_uring_cqe *cqe = io_uring->get_cqes();
@@ -826,7 +826,7 @@ TEST(IOUringTest, ReadvEmptyFile) {
   uint32_t sq_tail = io_uring->load_sq_tail();
   io_uring->store_sq_tail(sq_tail + 1);
 
-  int ret = io_uring->Enter(1, 1, 0, nullptr);
+  int ret = io_uring->Enter(1, 1, IORING_ENTER_GETEVENTS, nullptr);
   ASSERT_EQ(ret, 1);
 
   struct io_uring_cqe *cqe = io_uring->get_cqes();
@@ -905,7 +905,7 @@ TEST(IOUringTest, ThreeREADVSingleEnterTest) {
   ASSERT_EQ(file_sz[1], 17);
   ASSERT_EQ(file_sz[2], 26);
 
-  int ret = io_uring->Enter(3, 3, 0, nullptr);
+  int ret = io_uring->Enter(3, 3, IORING_ENTER_GETEVENTS, nullptr);
   ASSERT_EQ(ret, 3);
 
   struct io_uring_cqe *cqe = io_uring->get_cqes();
@@ -1094,7 +1094,7 @@ TEST(IOUringTest, ShortReadREADVTest) {
   uint32_t sq_tail = io_uring->load_sq_tail();
   io_uring->store_sq_tail(sq_tail + 1);
 
-  int ret = io_uring->Enter(1, 1, 0, nullptr);
+  int ret = io_uring->Enter(1, 1, IORING_ENTER_GETEVENTS, nullptr);
   ASSERT_EQ(ret, 1);
 
   struct io_uring_cqe *cqe = io_uring->get_cqes();
@@ -1167,7 +1167,7 @@ TEST(IOUringTest, NoReadPermissionsREADVTest) {
   uint32_t sq_tail = io_uring->load_sq_tail();
   io_uring->store_sq_tail(sq_tail + 1);
 
-  int ret = io_uring->Enter(1, 1, 0, nullptr);
+  int ret = io_uring->Enter(1, 1, IORING_ENTER_GETEVENTS, nullptr);
   ASSERT_EQ(ret, 1);
 
   struct io_uring_cqe *cqe = io_uring->get_cqes();
@@ -1247,7 +1247,7 @@ TEST_P(IOUringSqeFieldsTest, READVWithInvalidSqeFieldValue) {
   uint32_t sq_tail = io_uring->load_sq_tail();
   io_uring->store_sq_tail(sq_tail + 1);
 
-  int ret = io_uring->Enter(1, 1, 0, nullptr);
+  int ret = io_uring->Enter(1, 1, IORING_ENTER_GETEVENTS, nullptr);
   ASSERT_EQ(ret, 1);
 
   struct io_uring_cqe *cqe = io_uring->get_cqes();
