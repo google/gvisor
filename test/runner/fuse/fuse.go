@@ -17,6 +17,7 @@
 package main
 
 import (
+	golog "log"
 	"os"
 	"os/exec"
 
@@ -32,8 +33,8 @@ func main() {
 		log.Warningf("could not create loopback root: %v", err)
 		os.Exit(1)
 	}
-	opts := &fuse.MountOptions{DirectMount: true}
-	rawFS := fs.NewNodeFS(loopbackRoot, &fs.Options{})
+	opts := &fuse.MountOptions{DirectMount: true, Debug: true}
+	rawFS := fs.NewNodeFS(loopbackRoot, &fs.Options{Logger: golog.Default()})
 	server, err := fuse.NewServer(rawFS, "/tmp", opts)
 	if err != nil {
 		log.Warningf("could not create fuse server: %v", err)
