@@ -2,7 +2,7 @@
 
 [TOC]
 
-This guide described how to change the
+This guide describes how to change the
 [platform](../architecture_guide/platforms.md) used by `runsc`.
 
 Configuring the platform provides significant performance benefits, but isn't
