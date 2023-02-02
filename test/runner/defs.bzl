@@ -72,7 +72,7 @@ def _syscall_test(
         iouring = False,
         container = None,
         one_sandbox = True,
-        use_fusefs = False,
+        fusefs = False,
         **kwargs):
     # Prepend "runsc" to non-native platform names.
     full_platform = platform if platform == "native" else "runsc_" + platform
@@ -85,7 +85,7 @@ def _syscall_test(
         name += "_overlay"
     if network != "none":
         name += "_" + network + "net"
-    if use_fusefs:
+    if fusefs:
         name += "_fuse"
 
     # Apply all tags.
@@ -134,7 +134,7 @@ def _syscall_test(
         "--platform-support=" + platform_support,
         "--network=" + network,
         "--use-tmpfs=" + str(use_tmpfs),
-        "--use-fusefs=" + str(use_fusefs),
+        "--fusefs=" + str(fusefs),
         "--file-access=" + file_access,
         "--overlay=" + str(overlay),
         "--add-host-communication=" + str(add_host_communication),
@@ -167,7 +167,7 @@ def all_platforms():
 def syscall_test(
         test,
         use_tmpfs = False,
-        use_fusefs = False,
+        add_fusefs = False,
         add_overlay = False,
         add_host_communication = False,
         add_hostinet = False,
@@ -183,6 +183,7 @@ def syscall_test(
     Args:
       test: the test target.
       use_tmpfs: use tmpfs in the defined tests.
+      add_fusefs: add a fusefs test.
       add_overlay: add an overlay test.
       add_host_communication: setup UDS and pipe external communication for tests.
       add_hostinet: add a hostinet test.
@@ -268,12 +269,12 @@ def syscall_test(
             file_access = "shared",
             **kwargs
         )
-    if use_fusefs:
+    if add_fusefs:
         _syscall_test(
             test = test,
             platform = default_platform,
             use_tmpfs = True,
-            use_fusefs = True,
+            fusefs = True,
             add_host_communication = add_host_communication,
             tags = platforms.get(default_platform, []) + tags,
             debug = debug,
