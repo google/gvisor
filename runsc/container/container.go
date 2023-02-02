@@ -131,6 +131,10 @@ type Container struct {
 	// processes.
 	Saver StateFile `json:"saver"`
 
+	// OverlayConf is the overlay configuration with which this container was
+	// started.
+	OverlayConf config.Overlay2 `json:"overlayConf"`
+
 	//
 	// Fields below this line are not saved in the state file and will not
 	// be preserved across commands.
@@ -211,6 +215,7 @@ func New(conf *config.Config, args Args) (*Container, error) {
 				ContainerID: args.ID,
 			},
 		},
+		OverlayConf: conf.GetOverlay2(),
 	}
 	// The Cleanup object cleans up partially created containers when an error
 	// occurs. Any errors occurring during cleanup itself are ignored.
@@ -264,7 +269,7 @@ func New(conf *config.Config, args Args) (*Container, error) {
 			}
 		}
 		c.CompatCgroup = cgroup.CgroupJSON{Cgroup: subCgroup}
-		overlayFilestoreFile, err := createOverlayFilestore(conf)
+		overlayFilestoreFiles, err := c.createOverlayFilestores()
 		if err != nil {
 			return nil, err
 		}
@@ -277,16 +282,16 @@ func New(conf *config.Config, args Args) (*Container, error) {
 			// Start a new sandbox for this container. Any errors after this point
 			// must destroy the container.
 			sandArgs := &sandbox.Args{
-				ID:                   sandboxID,
-				Spec:                 args.Spec,
-				BundleDir:            args.BundleDir,
-				ConsoleSocket:        args.ConsoleSocket,
-				UserLog:              args.UserLog,
-				IOFiles:              ioFiles,
-				MountsFile:           specFile,
-				Cgroup:               containerCgroup,
-				Attached:             args.Attached,
-				OverlayFilestoreFile: overlayFilestoreFile,
+				ID:                    sandboxID,
+				Spec:                  args.Spec,
+				BundleDir:             args.BundleDir,
+				ConsoleSocket:         args.ConsoleSocket,
+				UserLog:               args.UserLog,
+				IOFiles:               ioFiles,
+				MountsFile:            specFile,
+				Cgroup:                containerCgroup,
+				Attached:              args.Attached,
+				OverlayFilestoreFiles: overlayFilestoreFiles,
 			}
 			sand, err := sandbox.New(conf, sandArgs)
 			if err != nil {
@@ -403,7 +408,7 @@ func (c *Container) Start(conf *config.Config) error {
 	} else {
 		// Create an overlay filestore for the subcontainer if its overlay is
 		// backed by a host file.
-		overlayFilestoreFile, err := createOverlayFilestore(conf)
+		overlayFilestoreFiles, err := c.createOverlayFilestores()
 		if err != nil {
 			return err
 		}
@@ -435,7 +440,7 @@ func (c *Container) Start(conf *config.Config) error {
 				stdios = []*os.File{os.Stdin, os.Stdout, os.Stderr}
 			}
 
-			return c.Sandbox.StartSubcontainer(c.Spec, conf, c.ID, stdios, goferFiles, overlayFilestoreFile)
+			return c.Sandbox.StartSubcontainer(c.Spec, conf, c.ID, stdios, goferFiles, overlayFilestoreFiles)
 		}); err != nil {
 			return err
 		}
@@ -782,12 +787,27 @@ func (c *Container) Destroy() error {
 	return fmt.Errorf(strings.Join(errs, "\n"))
 }
 
-func createOverlayFilestore(conf *config.Config) (*os.File, error) {
-	overlay2 := conf.GetOverlay2()
-	if !overlay2.IsBackedByHostFile() {
+// createOverlayFilestores creates the regular files that will back the tmpfs
+// upper mount for overlay mounts. It may return (nil, nil) if overlay is not
+// configured to be backed by host files.
+func (c *Container) createOverlayFilestores() ([]*os.File, error) {
+	if !c.OverlayConf.IsBackedByHostFile() {
 		return nil, nil
 	}
-	filestoreDir := overlay2.HostFileDir()
+	filestoreFiles, err := c.createOverlayFilestoreInDir()
+	if err != nil {
+		return nil, err
+	}
+	for _, f := range filestoreFiles {
+		// Perform this work around outside the sandbox. The sandbox may already be
+		// running with seccomp filters that do not allow this.
+		pgalloc.IMAWorkAroundForMemFile(f.Fd())
+	}
+	return filestoreFiles, nil
+}
+
+func (c *Container) createOverlayFilestoreInDir() ([]*os.File, error) {
+	filestoreDir := c.OverlayConf.HostFileDir()
 	fileInfo, err := os.Stat(filestoreDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to stat overlay filestore directory %q: %v", filestoreDir, err)
@@ -795,22 +815,54 @@ func createOverlayFilestore(conf *config.Config) (*os.File, error) {
 	if !fileInfo.IsDir() {
 		return nil, fmt.Errorf("overlay2 flag should specify an existing directory")
 	}
-	// Create an unnamed temporary file in filestore directory which will be
-	// deleted when the last FD on it is closed. We don't use O_TMPFILE because
-	// it is not supported on all filesystems. So we simulate it by creating a
-	// named file and then immediately unlinking it while keeping an FD on it.
-	// This file will be deleted when the container exits.
-	filestoreFile, err := os.CreateTemp(filestoreDir, "runsc-overlay-filestore-*")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create a temporary file inside %q: %v", filestoreDir, err)
+	var filestoreFiles []*os.File
+	if err := c.forEachOverlayMount(func(_ string) error {
+		// Create an unnamed temporary file in filestore directory which will be
+		// deleted when the last FD on it is closed. We don't use O_TMPFILE because
+		// it is not supported on all filesystems. So we simulate it by creating a
+		// named file and then immediately unlinking it while keeping an FD on it.
+		// This file will be deleted when the container exits.
+		filestoreFile, err := os.CreateTemp(filestoreDir, "runsc-overlay-filestore-")
+		if err != nil {
+			return fmt.Errorf("failed to create a temporary file inside %q: %v", filestoreDir, err)
+		}
+		if err := unix.Unlink(filestoreFile.Name()); err != nil {
+			return fmt.Errorf("failed to unlink temporary file %q: %v", filestoreFile.Name(), err)
+		}
+		filestoreFiles = append(filestoreFiles, filestoreFile)
+		return nil
+	}); err != nil {
+		return nil, err
 	}
-	if err := unix.Unlink(filestoreFile.Name()); err != nil {
-		return nil, fmt.Errorf("failed to unlink temporary file %q: %v", filestoreFile.Name(), err)
+	return filestoreFiles, nil
+}
+
+// forEachOverlayMount calls fn on all mounts that runsc/boot/vfs.go will
+// configure filestore-based overlays on. See containerMounter.configureOverlay().
+//
+// Precondition: Overlay2.IsBackedByHostFile().
+func (c *Container) forEachOverlayMount(fn func(srcDir string) error) error {
+	if c.OverlayConf.RootMount && !c.Spec.Root.Readonly {
+		if err := fn(c.Spec.Root.Path); err != nil {
+			return err
+		}
 	}
-	// Perform this work around outside the sandbox. The sandbox may already be
-	// running with seccomp filters that do not allow this.
-	pgalloc.IMAWorkAroundForMemFile(filestoreFile.Fd())
-	return filestoreFile, nil
+	if !c.OverlayConf.SubMounts {
+		return nil
+	}
+	for i := range c.Spec.Mounts {
+		if c.Spec.Mounts[i].Type != boot.Bind {
+			continue
+		}
+		if boot.ParseMountOptions(c.Spec.Mounts[i].Options).ReadOnly {
+			continue
+		}
+		mountSrc := c.Spec.Mounts[i].Source
+		if err := fn(mountSrc); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // saveLocked saves the container metadata to a file.
