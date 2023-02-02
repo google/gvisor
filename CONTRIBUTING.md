@@ -66,8 +66,6 @@ Rules:
 
     *   Itself.
     *   Go standard library.
-        *   Except (transitively) package "net", which would result in a cgo
-            binary. Use `//pkg/unet` instead.
     *   `@org_golang_x_sys//unix:go_default_library` (Go import
         `golang.org/x/sys/unix`).
     *   `@org_golang_x_time//rate:go_default_library` (Go import
@@ -85,6 +83,8 @@ Rules:
         `github.com/google/subcommands`).
     *   `@com_github_opencontainers_runtime_spec//specs_go:go_default_library`
         (Go import `github.com/opencontainers/runtime-spec/specs_go`).
+
+*   For performance reasons, `runsc boot` may not run the `netpoller` goroutine.
 
 ### Code reviews
 
