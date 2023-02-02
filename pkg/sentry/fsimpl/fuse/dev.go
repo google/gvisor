@@ -145,7 +145,6 @@ func (fd *DeviceFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.R
 	if !fd.connected() {
 		return 0, linuxerr.EPERM
 	}
-
 	// We require that any Read done on this filesystem have a sane minimum
 	// read buffer. It must have the capacity for the fixed parts of any request
 	// header (Linux uses the request header and the FUSEWriteIn header for this
@@ -162,14 +161,6 @@ func (fd *DeviceFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.R
 	if dst.NumBytes() < int64(minBuffSize) {
 		return 0, linuxerr.EINVAL
 	}
-	return fd.readLocked(ctx, dst, opts)
-}
-
-// readLocked implements the reading of the fuse device while locked with DeviceFD.mu.
-//
-// Preconditions: dst is large enough for any reasonable request.
-// +checklocks:fd.mu
-func (fd *DeviceFD) readLocked(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
 	// Find the first valid request. For the normal case this loop only executes
 	// once.
 	var req *Request
@@ -209,7 +200,6 @@ func (fd *DeviceFD) readLocked(ctx context.Context, dst usermem.IOSequence, opts
 		fd.numActiveRequests--
 		delete(fd.completions, req.hdr.Unique)
 	}
-
 	return int64(n), nil
 }
 
@@ -231,12 +221,6 @@ func (fd *DeviceFD) PWrite(ctx context.Context, src usermem.IOSequence, offset i
 func (fd *DeviceFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
 	fd.mu.Lock()
 	defer fd.mu.Unlock()
-	return fd.writeLocked(ctx, src, opts)
-}
-
-// writeLocked implements writing to the fuse device while locked with DeviceFD.mu.
-// +checklocks:fd.mu
-func (fd *DeviceFD) writeLocked(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
 	if !fd.connected() {
 		return 0, linuxerr.EPERM
 	}
@@ -273,13 +257,6 @@ func (fd *DeviceFD) writeLocked(ctx context.Context, src usermem.IOSequence, opt
 func (fd *DeviceFD) Readiness(mask waiter.EventMask) waiter.EventMask {
 	fd.mu.Lock()
 	defer fd.mu.Unlock()
-	return fd.readinessLocked(mask)
-}
-
-// readinessLocked implements checking the readiness of the fuse device while
-// locked with DeviceFD.mu.
-// +checklocks:fd.mu
-func (fd *DeviceFD) readinessLocked(mask waiter.EventMask) waiter.EventMask {
 	var ready waiter.EventMask
 
 	if !fd.connected() {

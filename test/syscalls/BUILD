@@ -386,6 +386,7 @@ syscall_test(
     add_overlay = True,
     shard_count = more_shards,
     test = "//test/syscalls/linux:open_test",
+    use_fusefs = True,
 )
 
 syscall_test(
