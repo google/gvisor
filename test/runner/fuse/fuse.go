@@ -33,7 +33,7 @@ func main() {
 		log.Warningf("could not create loopback root: %v", err)
 		os.Exit(1)
 	}
-	opts := &fuse.MountOptions{DirectMount: true, Debug: true}
+	opts := &fuse.MountOptions{DirectMount: true, Debug: true, Options: []string{"default_permissions"}}
 	rawFS := fs.NewNodeFS(loopbackRoot, &fs.Options{Logger: golog.Default()})
 	server, err := fuse.NewServer(rawFS, "/tmp", opts)
 	if err != nil {

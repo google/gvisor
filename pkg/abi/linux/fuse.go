@@ -348,11 +348,11 @@ type FUSEAttr struct {
 	_ uint32
 }
 
-// FUSEGetAttrOut is the reply sent by the daemon to the kernel
-// for FUSEGetAttrIn.
+// FUSEAttrOut is the reply sent by the daemon to the kernel
+// for FUSEGetAttrIn and FUSESetAttrIn.
 //
 // +marshal
-type FUSEGetAttrOut struct {
+type FUSEAttrOut struct {
 	// AttrValid and AttrValidNsec describe the attribute cache duration
 	AttrValid uint64
 
@@ -1051,6 +1051,16 @@ type FUSEFsyncIn struct {
 
 	FsyncFlags uint32
 
+	// padding
+	_ uint32
+}
+
+// FUSEAccessIn is the request sent by the kernel to the daemon when checking
+// permissions on a file.
+//
+// +marshal
+type FUSEAccessIn struct {
+	Mask uint32
 	// padding
 	_ uint32
 }
