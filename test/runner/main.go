@@ -49,7 +49,7 @@ var (
 	platformSupport    = flag.String("platform-support", "", "String passed to the test as GVISOR_PLATFORM_SUPPORT environment variable. Used to determine which syscall tests are expected to work with the current platform.")
 	network            = flag.String("network", "none", "network stack to run on (sandbox, host, none)")
 	useTmpfs           = flag.Bool("use-tmpfs", false, "mounts tmpfs for /tmp")
-	useFUSEfs          = flag.Bool("use-fusefs", false, "mounts a fusefs for /tmp")
+	fusefs             = flag.Bool("fusefs", false, "mounts a fusefs for /tmp")
 	fileAccess         = flag.String("file-access", "exclusive", "mounts root in exclusive or shared mode")
 	overlay            = flag.Bool("overlay", false, "wrap filesystem mounts with writable tmpfs overlay")
 	container          = flag.Bool("container", false, "run tests in their own namespaces (user ns, network ns, etc), pretending to be root. Implicitly enabled if network=host, or if using network namespaces")
@@ -378,7 +378,7 @@ func runTestCaseRunsc(testBin string, tc *gtest.TestCase, args []string, t *test
 		args = tc.Args()
 	}
 	var spec *specs.Spec
-	if *useFUSEfs {
+	if *fusefs {
 		fuseServer, err := testutil.FindFile("test/runner/fuse/fuse")
 		if err != nil {
 			fatalf("cannot find fuse: %v", err)
@@ -433,7 +433,7 @@ func runTestCaseRunsc(testBin string, tc *gtest.TestCase, args []string, t *test
 			testTmpDir = "/tmp"
 		}
 	}
-	if *useFUSEfs {
+	if *fusefs {
 		// In fuse tests, the fuse server forwards all filesystem ops from /tmp
 		// to /fuse.
 		spec.Mounts = append(spec.Mounts, specs.Mount{

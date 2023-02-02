@@ -11,5 +11,6 @@ go_binary(
         "//runsc/specutils",
         "@com_github_hanwen_go_fuse_v2//fs:go_default_library",
         "@com_github_hanwen_go_fuse_v2//fuse:go_default_library",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
