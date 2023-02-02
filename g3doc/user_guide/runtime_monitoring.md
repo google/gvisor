@@ -1,15 +1,21 @@
 # Runtime Monitoring
 
-The runtime monitoring feature provides an interface to observe runtime behavior
-of applications running inside gVisor. Although it can be used for many
-purposes, it was built with the primary focus on threat detection. Out of the
-box, gVisor comes with support to stream application actions (called trace
-points) to an external process, that is used to validate the actions and alert
-when abnormal behavior is detected. Trace points are available for all syscalls
-and other important events in the system, e.g. container start. More trace
-points can be easily added as needed. The trace points are sent to a process
-running alongside the sandbox, which is isolated from the sandbox for security
-reasons. Additionally, the monitoring process can be shared by many sandboxes.
+The **Runtime Monitoring** feature provides an interface to observe runtime
+behavior of applications running inside gVisor. Although it can be used for many
+purposes, it was built with the primary focus on threat detection.
+
+**NOTE**: Runtime monitoring is about the ability to understand the behavior of
+sandboxed workloads. This differs from
+[observability of gVisor itself](observability.md).
+
+Out of the box, gVisor comes with support to stream application actions (called
+trace points) to an external process, that is used to validate the actions and
+alert when abnormal behavior is detected. Trace points are available for all
+syscalls and other important events in the system, e.g. container start. More
+trace points can be easily added as needed. The trace points are sent to a
+process running alongside the sandbox, which is isolated from the sandbox for
+security reasons. Additionally, the monitoring process can be shared by many
+sandboxes.
 
 You can use the following links to learn more:
 

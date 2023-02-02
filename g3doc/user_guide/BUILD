@@ -65,6 +65,14 @@ doc(
 )
 
 doc(
+    name = "observability",
+    src = "observability.md",
+    category = "User Guide",
+    permalink = "/docs/user_guide/observability/",
+    weight = "56",
+)
+
+doc(
     name = "checkpoint_restore",
     src = "checkpoint_restore.md",
     category = "User Guide",
