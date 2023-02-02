@@ -44,7 +44,7 @@ func (fs *filesystem) ReadInPages(ctx context.Context, fd *regularFileFD, off ui
 	// Round up to a multiple of page size.
 	readSize, _ := hostarch.PageRoundUp(uint64(size))
 
-	// One request cannnot exceed either maxRead or maxPages.
+	// One request cannot exceed either maxRead or maxPages.
 	maxPages := fs.conn.maxRead >> hostarch.PageShift
 	if maxPages > uint32(fs.conn.maxPages) {
 		maxPages = uint32(fs.conn.maxPages)
@@ -109,7 +109,7 @@ func (fs *filesystem) ReadInPages(ctx context.Context, fd *regularFileFD, off ui
 		pagesRead += pagesCanRead
 	}
 
-	defer fs.ReadCallback(ctx, fd, off, size, sizeRead, attributeVersion)
+	defer fs.ReadCallback(ctx, fd.inode(), off, size, sizeRead, attributeVersion) // +checklocksforce: fd.inode() locks are held during fd operations.
 
 	// No bytes returned: offset >= EOF.
 	if len(outs) == 0 {
@@ -121,14 +121,13 @@ func (fs *filesystem) ReadInPages(ctx context.Context, fd *regularFileFD, off ui
 
 // ReadCallback updates several information after receiving a read response.
 // Due to readahead, sizeRead can be larger than size.
-func (fs *filesystem) ReadCallback(ctx context.Context, fd *regularFileFD, off uint64, size uint32, sizeRead uint32, attributeVersion uint64) {
+//
+// +checklocks:i.attrMu
+func (fs *filesystem) ReadCallback(ctx context.Context, i *inode, off uint64, size uint32, sizeRead uint32, attributeVersion uint64) {
 	// TODO(gvisor.dev/issue/3247): support async read.
 	// If this is called by an async read, correctly process it.
 	// May need to update the signature.
-
-	i := fd.inode()
-	i.InodeAttrs.TouchAtime(ctx, fd.vfsfd.Mount())
-
+	i.touchAtime()
 	// Reached EOF.
 	if sizeRead < size {
 		// TODO(gvisor.dev/issue/3630): If we have writeback cache, then we need to fill this hole.
@@ -137,8 +136,8 @@ func (fs *filesystem) ReadCallback(ctx context.Context, fd *regularFileFD, off u
 		// Update existing size.
 		newSize := off + uint64(sizeRead)
 		fs.conn.mu.Lock()
-		if attributeVersion == i.attributeVersion.Load() && newSize < i.size.Load() {
-			i.attributeVersion.Store(i.fs.conn.attributeVersion.Add(1))
+		if attributeVersion == i.attrVersion.Load() && newSize < i.size.Load() {
+			i.attrVersion.Store(i.fs.conn.attributeVersion.Add(1))
 			i.size.Store(newSize)
 		}
 		fs.conn.mu.Unlock()
@@ -156,7 +155,7 @@ func (fs *filesystem) Write(ctx context.Context, fd *regularFileFD, off uint64, 
 		return 0, linuxerr.EINVAL
 	}
 
-	// One request cannnot exceed either maxWrite or maxPages.
+	// One request cannot exceed either maxWrite or maxPages.
 	maxWrite := uint32(fs.conn.maxPages) << hostarch.PageShift
 	if maxWrite > fs.conn.maxWrite {
 		maxWrite = fs.conn.maxWrite
@@ -230,7 +229,5 @@ func (fs *filesystem) Write(ctx context.Context, fd *regularFileFD, off uint64, 
 			break
 		}
 	}
-	inode.InodeAttrs.TouchCMtime(ctx)
-
 	return written, nil
 }

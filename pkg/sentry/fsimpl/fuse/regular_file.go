@@ -35,6 +35,30 @@ type regularFileFD struct {
 	offMu sync.Mutex
 }
 
+// Seek implements vfs.FileDescriptionImpl.Seek.
+func (fd *regularFileFD) Seek(ctx context.Context, offset int64, whence int32) (int64, error) {
+	fd.offMu.Lock()
+	defer fd.offMu.Unlock()
+	inode := fd.inode()
+	inode.attrMu.Lock()
+	defer inode.attrMu.Unlock()
+	switch whence {
+	case linux.SEEK_SET:
+		// use offset as specified
+	case linux.SEEK_CUR:
+		offset += fd.off
+	case linux.SEEK_END:
+		offset += int64(inode.size.Load())
+	default:
+		return 0, linuxerr.EINVAL
+	}
+	if offset < 0 {
+		return 0, linuxerr.EINVAL
+	}
+	fd.off = offset
+	return offset, nil
+}
+
 // PRead implements vfs.FileDescriptionImpl.PRead.
 func (fd *regularFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
 	if offset < 0 {
@@ -61,6 +85,8 @@ func (fd *regularFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 	// TODO(gvisor.dev/issue/3678): Add direct IO support.
 
 	inode := fd.inode()
+	inode.attrMu.Lock()
+	defer inode.attrMu.Unlock()
 
 	// Reading beyond EOF, update file size if outdated.
 	if uint64(offset+size) > inode.size.Load() {
@@ -140,7 +166,7 @@ func (fd *regularFileFD) Write(ctx context.Context, src usermem.IOSequence, opts
 
 // pwrite returns the number of bytes written, final offset and error. The
 // final offset should be ignored by PWrite.
-func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (written, finalOff int64, err error) {
+func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, int64, error) {
 	if offset < 0 {
 		return 0, offset, linuxerr.EINVAL
 	}
@@ -153,8 +179,8 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 	}
 
 	inode := fd.inode()
-	inode.metadataMu.Lock()
-	defer inode.metadataMu.Unlock()
+	inode.attrMu.Lock()
+	defer inode.attrMu.Unlock()
 
 	// If the file is opened with O_APPEND, update offset to file size.
 	// Note: since our Open() implements the interface of kernfs,
@@ -177,7 +203,7 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 		return 0, offset, linuxerr.EINVAL
 	}
 
-	srclen, err = vfs.CheckLimit(ctx, offset, srclen)
+	srclen, err := vfs.CheckLimit(ctx, offset, srclen)
 	if err != nil {
 		return 0, offset, err
 	}
@@ -217,13 +243,12 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 		return 0, offset, linuxerr.EIO
 	}
 
-	written = int64(n)
-	finalOff = offset + written
-
+	written := int64(n)
+	finalOff := offset + written
 	if finalOff > int64(inode.size.Load()) {
 		inode.size.Store(uint64(finalOff))
 		inode.fs.conn.attributeVersion.Add(1)
 	}
-
-	return
+	inode.touchCMtime()
+	return written, finalOff, nil
 }

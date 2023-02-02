@@ -181,7 +181,7 @@ type connection struct {
 	dontMask bool
 
 	// noOpen if FUSE server doesn't support open operation.
-	// This flag only influence performance, not correctness of the program.
+	// This flag only influences performance, not correctness of the program.
 	noOpen bool
 }
 
