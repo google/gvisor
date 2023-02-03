@@ -32,7 +32,7 @@ namespace testing {
 
 namespace {
 
-std::atomic<uint64_t> global_temp_file_number = ATOMIC_VAR_INIT(1);
+std::atomic<uint64_t> global_temp_file_number(1);
 
 void TryDeleteRecursively(std::string const& path) {
   if (!path.empty()) {

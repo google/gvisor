@@ -87,8 +87,7 @@ TEST(ItimerTest, ItimervalUpdatedBeforeExpiration) {
       << itv.it_value.tv_usec << " microseconds";
 }
 
-ABSL_CONST_INIT static thread_local std::atomic_int signal_test_num_samples =
-    ATOMIC_VAR_INIT(0);
+ABSL_CONST_INIT static thread_local std::atomic_int signal_test_num_samples(0);
 
 void SignalTestSignalHandler(int /*signum*/) { signal_test_num_samples++; }
 
