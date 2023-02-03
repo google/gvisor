@@ -48,6 +48,7 @@ var _ marshal.Marshallable = (*FUSEHeaderIn)(nil)
 var _ marshal.Marshallable = (*FUSEHeaderOut)(nil)
 var _ marshal.Marshallable = (*FUSEInitIn)(nil)
 var _ marshal.Marshallable = (*FUSEInitOut)(nil)
+var _ marshal.Marshallable = (*FUSELinkIn)(nil)
 var _ marshal.Marshallable = (*FUSELookupIn)(nil)
 var _ marshal.Marshallable = (*FUSEMkdirIn)(nil)
 var _ marshal.Marshallable = (*FUSEMkdirMeta)(nil)
@@ -4266,6 +4267,59 @@ func (f *FUSEInitOut) WriteTo(writer io.Writer) (int64, error) {
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
     runtime.KeepAlive(f) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (r *FUSELinkIn) Packed() bool {
+    // Type FUSELinkIn is dynamic so it might have slice/string headers. Hence, it is not packed.
+    return false
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (r *FUSELinkIn) MarshalUnsafe(dst []byte) []byte {
+    // Type FUSELinkIn doesn't have a packed layout in memory, fallback to MarshalBytes.
+    return r.MarshalBytes(dst)
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (r *FUSELinkIn) UnmarshalUnsafe(src []byte) []byte {
+    // Type FUSELinkIn doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+    return r.UnmarshalBytes(src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+//go:nosplit
+func (r *FUSELinkIn) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    // Type FUSELinkIn doesn't have a packed layout in memory, fall back to MarshalBytes.
+    buf := cc.CopyScratchBuffer(r.SizeBytes()) // escapes: okay.
+    r.MarshalBytes(buf) // escapes: fallback.
+    return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+func (r *FUSELinkIn) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return r.CopyOutN(cc, addr, r.SizeBytes())
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+func (r *FUSELinkIn) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    // Type FUSELinkIn doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+    buf := cc.CopyScratchBuffer(r.SizeBytes()) // escapes: okay.
+    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    // Unmarshal unconditionally. If we had a short copy-in, this results in a
+    // partially unmarshalled struct.
+    r.UnmarshalBytes(buf) // escapes: fallback.
+    return length, err
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (r *FUSELinkIn) WriteTo(writer io.Writer) (int64, error) {
+    // Type FUSELinkIn doesn't have a packed layout in memory, fall back to MarshalBytes.
+    buf := make([]byte, r.SizeBytes())
+    r.MarshalBytes(buf)
+    length, err := writer.Write(buf)
     return int64(length), err
 }
 

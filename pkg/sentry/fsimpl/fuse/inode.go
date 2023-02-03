@@ -45,7 +45,6 @@ type fileHandle struct {
 type inode struct {
 	inodeRefs
 	kernfs.InodeAlwaysValid
-	kernfs.InodeDirectoryNoNewChildren
 	kernfs.InodeNotSymlink
 	kernfs.InodeWatches
 	kernfs.OrderedChildren
@@ -110,6 +109,18 @@ func (i *inode) Mode() linux.FileMode {
 	return i.filemode()
 }
 
+func (i *inode) UID() auth.KUID {
+	i.attrMu.Lock()
+	defer i.attrMu.Unlock()
+	return auth.KUID(i.uid.Load())
+}
+
+func (i *inode) GID() auth.KGID {
+	i.attrMu.Lock()
+	defer i.attrMu.Unlock()
+	return auth.KGID(i.gid.Load())
+}
+
 // +checklocks:i.attrMu
 func (i *inode) filemode() linux.FileMode {
 	return linux.FileMode(i.mode.Load())
@@ -132,15 +143,11 @@ func (i *inode) touchAtime() {
 }
 
 // +checklocks:i.attrMu
-func (i *inode) init(creds *auth.Credentials, devMajor, devMinor uint32, nodeid uint64, mode linux.FileMode) {
+func (i *inode) init(creds *auth.Credentials, devMajor, devMinor uint32, nodeid uint64, mode linux.FileMode, nlink uint32) {
 	if mode.FileType() == 0 {
 		panic(fmt.Sprintf("No file type specified in 'mode' for InodeAttrs.Init(): mode=0%o", mode))
 	}
 
-	nlink := uint32(1)
-	if mode.FileType() == linux.ModeDirectory {
-		nlink = 2
-	}
 	i.nodeID = nodeid
 	i.ino.Store(nodeid)
 	i.mode.Store(uint32(mode))
@@ -397,6 +404,16 @@ func (i *inode) NewSymlink(ctx context.Context, name, target string) (kernfs.Ino
 		Target: linux.CString(target),
 	}
 	return i.newEntry(ctx, name, linux.S_IFLNK, linux.FUSE_SYMLINK, &in)
+}
+
+// NewLink implements kernfs.Inode.NewLink.
+func (i *inode) NewLink(ctx context.Context, name string, target kernfs.Inode) (kernfs.Inode, error) {
+	targetInode := target.(*inode)
+	in := linux.FUSELinkIn{
+		OldNodeID: primitive.Uint64(targetInode.nodeID),
+		Name:      linux.CString(name),
+	}
+	return i.newEntry(ctx, name, targetInode.Mode().FileType(), linux.FUSE_LINK, &in)
 }
 
 // Unlink implements kernfs.Inode.Unlink.

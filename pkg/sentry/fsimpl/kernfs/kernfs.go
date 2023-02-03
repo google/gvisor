@@ -722,6 +722,14 @@ type inodeMetadata interface {
 	// separated from Stat for performance.
 	Mode() linux.FileMode
 
+	// UID returns the (struct stat)::st_uid value for this inode. This is
+	// separated from Stat for performance.
+	UID() auth.KUID
+
+	// GID returns the (struct stat)::st_gid value for this inode. This is
+	// separated from Stat for performance.
+	GID() auth.KGID
+
 	// Stat returns the metadata for this inode. This corresponds to
 	// vfs.FilesystemImpl.StatAt.
 	Stat(ctx context.Context, fs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error)

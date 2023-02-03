@@ -364,6 +364,13 @@ func (fs *Filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 
 	parent.dirMu.Lock()
 	defer parent.dirMu.Unlock()
+	inode := vd.Dentry().Impl().(*Dentry).Inode()
+	if inode.Mode().IsDir() {
+		return linuxerr.EPERM
+	}
+	if err := vfs.MayLink(rp.Credentials(), inode.Mode(), inode.UID(), inode.GID()); err != nil {
+		return err
+	}
 	pc := rp.Component()
 	if err := checkCreateLocked(ctx, rp.Credentials(), pc, parent); err != nil {
 		return err
@@ -379,17 +386,12 @@ func (fs *Filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 	}
 	defer rp.Mount().EndWrite()
 
-	d := vd.Dentry().Impl().(*Dentry)
-	if d.isDir() {
-		return linuxerr.EPERM
-	}
-
-	childI, err := parent.inode.NewLink(ctx, pc, d.inode)
+	childI, err := parent.inode.NewLink(ctx, pc, inode)
 	if err != nil {
 		return err
 	}
 	parent.inode.Watches().Notify(ctx, pc, linux.IN_CREATE, 0, vfs.InodeEvent, false /* unlinked */)
-	d.inode.Watches().Notify(ctx, "", linux.IN_ATTRIB, 0, vfs.InodeEvent, false /* unlinked */)
+	inode.Watches().Notify(ctx, "", linux.IN_ATTRIB, 0, vfs.InodeEvent, false /* unlinked */)
 	var child Dentry
 	child.Init(fs, childI)
 	parent.insertChildLocked(pc, &child)

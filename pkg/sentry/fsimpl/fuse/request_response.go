@@ -108,9 +108,8 @@ func (conn *connection) NewRequest(creds *auth.Credentials, pid uint32, ino uint
 	defer conn.fd.mu.Unlock()
 	conn.fd.nextOpID += linux.FUSEOpID(reqIDStep)
 
-	hdrLen := (*linux.FUSEHeaderIn)(nil).SizeBytes()
 	hdr := linux.FUSEHeaderIn{
-		Len:    uint32(hdrLen + payload.SizeBytes()),
+		Len:    linux.SizeOfFUSEHeaderIn + uint32(payload.SizeBytes()),
 		Opcode: opcode,
 		Unique: conn.fd.nextOpID,
 		NodeID: ino,
@@ -121,8 +120,8 @@ func (conn *connection) NewRequest(creds *auth.Credentials, pid uint32, ino uint
 
 	buf := make([]byte, hdr.Len)
 
-	hdr.MarshalUnsafe(buf[:hdrLen])
-	payload.MarshalUnsafe(buf[hdrLen:])
+	hdr.MarshalUnsafe(buf[:linux.SizeOfFUSEHeaderIn])
+	payload.MarshalUnsafe(buf[linux.SizeOfFUSEHeaderIn:])
 
 	return &Request{
 		id:   hdr.Unique,
