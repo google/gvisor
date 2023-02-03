@@ -566,6 +566,7 @@ syscall_test(
 
 syscall_test(
     size = "medium",
+    add_fusefs = True,
     add_overlay = True,
     test = "//test/syscalls/linux:rename_test",
 )
