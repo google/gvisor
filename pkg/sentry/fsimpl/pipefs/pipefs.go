@@ -127,6 +127,16 @@ func (i *inode) Mode() linux.FileMode {
 	return pipeMode
 }
 
+// UID implements kernfs.Inode.UID.
+func (i *inode) UID() auth.KUID {
+	return auth.KUID(i.uid)
+}
+
+// GID implements kernfs.Inode.GID.
+func (i *inode) GID() auth.KGID {
+	return auth.KGID(i.gid)
+}
+
 // Stat implements kernfs.Inode.Stat.
 func (i *inode) Stat(_ context.Context, vfsfs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error) {
 	ts := linux.NsecToStatxTimestamp(i.ctime.Nanoseconds())

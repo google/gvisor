@@ -291,7 +291,7 @@ func (fs *filesystem) MountOptions() string {
 func (fs *filesystem) newRoot(ctx context.Context, creds *auth.Credentials, mode linux.FileMode) *kernfs.Dentry {
 	i := &inode{fs: fs, nodeID: 1}
 	i.attrMu.Lock()
-	i.init(creds, linux.UNNAMED_MAJOR, fs.devMinor, 1, linux.ModeDirectory|0755)
+	i.init(creds, linux.UNNAMED_MAJOR, fs.devMinor, 1, linux.ModeDirectory|0755, 2)
 	i.attrMu.Unlock()
 	i.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	i.InitRefs()
@@ -305,7 +305,7 @@ func (fs *filesystem) newInode(ctx context.Context, nodeID uint64, attr linux.FU
 	i := &inode{fs: fs, nodeID: nodeID}
 	creds := auth.Credentials{EffectiveKGID: auth.KGID(attr.UID), EffectiveKUID: auth.KUID(attr.UID)}
 	i.attrMu.Lock()
-	i.init(&creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.FileMode(attr.Mode))
+	i.init(&creds, linux.UNNAMED_MAJOR, fs.devMinor, nodeID, linux.FileMode(attr.Mode), attr.Nlink)
 	i.size.Store(attr.Size)
 	i.attrMu.Unlock()
 	i.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})

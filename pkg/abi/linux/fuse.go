@@ -755,6 +755,32 @@ func (r *FUSESymlinkIn) SizeBytes() int {
 	return r.Name.SizeBytes() + r.Target.SizeBytes()
 }
 
+// FUSELinkIn is the request sent by the kernel to create a hard link.
+//
+// +marshal dynamic
+type FUSELinkIn struct {
+	// OldNodeID is the ID of the inode that is being linked to.
+	OldNodeID primitive.Uint64
+	// Name of the new hard link to create.
+	Name CString
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (r *FUSELinkIn) MarshalBytes(buf []byte) []byte {
+	buf = r.OldNodeID.MarshalBytes(buf)
+	return r.Name.MarshalBytes(buf)
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (r *FUSELinkIn) UnmarshalBytes(buf []byte) []byte {
+	panic("Unimplemented, FUSELinkIn is never unmarshalled")
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (r *FUSELinkIn) SizeBytes() int {
+	return r.OldNodeID.SizeBytes() + r.Name.SizeBytes()
+}
+
 // FUSEEmptyIn is used by operations without request body.
 //
 // +marshal dynamic
