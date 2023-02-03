@@ -78,8 +78,8 @@ func (ev Eventfd) Write(val uint64) error {
 		if err == unix.EINTR {
 			continue
 		}
-		if n != sizeofUint64 {
-			panic(fmt.Sprintf("short write to eventfd: got %d bytes, wanted %d", n, sizeofUint64))
+		if err != nil || n != sizeofUint64 {
+			panic(fmt.Sprintf("bad write to eventfd: got %d bytes, wanted %d with error %v", n, sizeofUint64, err))
 		}
 		return err
 	}
