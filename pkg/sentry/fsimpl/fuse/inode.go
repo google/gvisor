@@ -461,21 +461,20 @@ func (i *inode) RmDir(ctx context.Context, name string, child kernfs.Inode) erro
 
 // Rename implements kernfs.Inode.Rename.
 func (i *inode) Rename(ctx context.Context, oldname, newname string, child, dstDir kernfs.Inode) error {
-	fusefs := i.fs
-	task, creds := kernel.TaskFromContext(ctx), auth.CredentialsFromContext(ctx)
-
-	dstDirInode, ok := dstDir.(*inode)
-	if !ok {
-		return linuxerr.EXDEV
+	kernelTask := kernel.TaskFromContext(ctx)
+	if kernelTask == nil {
+		log.Warningf("fusefs.Inode.newEntry: couldn't get kernel task from context", i.nodeID)
+		return linuxerr.EINVAL
 	}
 
+	dstDirInode := dstDir.(*inode)
 	in := linux.FUSERenameIn{
 		Newdir:  primitive.Uint64(dstDirInode.nodeID),
 		Oldname: linux.CString(oldname),
 		Newname: linux.CString(newname),
 	}
-	req := fusefs.conn.NewRequest(creds, uint32(task.ThreadID()), i.nodeID, linux.FUSE_RENAME, &in)
-	res, err := i.fs.conn.Call(task, req)
+	req := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), i.nodeID, linux.FUSE_RENAME, &in)
+	res, err := i.fs.conn.Call(kernelTask, req)
 	if err != nil {
 		return err
 	}

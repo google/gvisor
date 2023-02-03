@@ -681,6 +681,13 @@ func (fs *Filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		return err
 	}
 	defer mnt.EndWrite()
+	oldParentDir := oldParentVD.Dentry().Impl().(*Dentry).Inode()
+	if err := oldParentDir.CheckPermissions(ctx, rp.Credentials(), vfs.MayWrite|vfs.MayExec); err != nil {
+		return err
+	}
+	if err := dstDir.inode.CheckPermissions(ctx, rp.Credentials(), vfs.MayWrite|vfs.MayExec); err != nil {
+		return err
+	}
 
 	srcDirVFSD := oldParentVD.Dentry()
 	srcDir := srcDirVFSD.Impl().(*Dentry)
