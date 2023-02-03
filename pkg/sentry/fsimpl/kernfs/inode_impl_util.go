@@ -228,6 +228,16 @@ func (a *InodeAttrs) Ino() uint64 {
 	return a.ino.Load()
 }
 
+// UID implements Inode.UID.
+func (a *InodeAttrs) UID() auth.KUID {
+	return auth.KUID(a.uid.Load())
+}
+
+// GID implements Inode.GID.
+func (a *InodeAttrs) GID() auth.KGID {
+	return auth.KGID(a.gid.Load())
+}
+
 // Mode implements Inode.Mode.
 func (a *InodeAttrs) Mode() linux.FileMode {
 	return linux.FileMode(a.mode.Load())

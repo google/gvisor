@@ -346,6 +346,16 @@ func (i *inode) Mode() linux.FileMode {
 	return linux.FileMode(s.Mode)
 }
 
+// Mode implements kernfs.Inode.UID
+func (i *inode) UID() auth.KUID {
+	return auth.KUID(i.virtualOwner.uid.Load())
+}
+
+// Mode implements kernfs.Inode.GID
+func (i *inode) GID() auth.KGID {
+	return auth.KGID(i.virtualOwner.gid.Load())
+}
+
 // Stat implements kernfs.Inode.Stat.
 func (i *inode) Stat(ctx context.Context, vfsfs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error) {
 	if opts.Mask&linux.STATX__RESERVED != 0 {
