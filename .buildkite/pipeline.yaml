@@ -485,7 +485,7 @@ steps:
     command: make -i benchmark-platforms BENCHMARKS_FILTER="Continuous" BENCHMARKS_SUITE=httpd BENCHMARKS_TARGETS=test/benchmarks/network:httpd_test
   - <<: *benchmarks
     label: ":piedpiper: iperf benchmarks"
-    command: make -i benchmark-platforms BENCHMARKS_SUITE=iperf BENCHMARKS_TARGETS=test/benchmarks/network:iperf_test
+    command: make -i benchmark-platforms BENCHMARKS_SUITE=iperf BENCHMARKS_TARGETS=test/benchmarks/network:iperf_test BENCHMARKS_FILTER=BenchmarkIperf$
   - <<: *benchmarks
     label: ":nginx: nginx benchmarks"
     command: make -i benchmark-platforms BENCHMARKS_FILTER="Continuous" BENCHMARKS_SUITE=nginx BENCHMARKS_TARGETS=test/benchmarks/network:nginx_test

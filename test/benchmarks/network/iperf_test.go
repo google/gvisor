@@ -72,7 +72,7 @@ func BenchmarkIperf(b *testing.B) {
 			client := bm.clientFunc(ctx, b)
 			defer client.CleanUp(ctx)
 
-			// iperf serves on port 5001 by default.
+			// iperf server listens on port 5001 by default.
 			port := 5001
 
 			// Start the server.
@@ -234,7 +234,7 @@ func BenchmarkIperfParameterized(b *testing.B) {
 			client := bm.clientFunc(ctx, b)
 			defer client.CleanUp(ctx)
 
-			// iperf serves on port 5001 by default.
+			// iperf server listens on port 5001 by default.
 			port := 5001
 
 			// Start the server.
