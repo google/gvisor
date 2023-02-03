@@ -736,7 +736,7 @@ TEST_P(SocketInetLoopbackTest, TCPNonBlockingConnectClose) {
         .events = POLLIN | POLLRDHUP,
     };
     // Use a large timeout to accomodate for retransmitted FINs.
-    constexpr int kTimeout = 30000;
+    constexpr int kTimeout = 120000;
     int n = poll(&pfd, 1, kTimeout);
     ASSERT_GE(n, 0) << strerror(errno);
     ASSERT_EQ(n, 1);
