@@ -133,7 +133,7 @@ TEST_P(BindToDeviceDistributionTest, Tcp) {
   }
 
   constexpr int kConnectAttempts = 10000;
-  std::atomic<int> connects_received = ATOMIC_VAR_INIT(0);
+  std::atomic<int> connects_received(0);
   std::vector<int> accept_counts(listener_fds.size(), 0);
   std::vector<std::unique_ptr<ScopedThread>> listen_threads(
       listener_fds.size());
@@ -256,7 +256,7 @@ TEST_P(BindToDeviceDistributionTest, Udp) {
   }
 
   constexpr int kConnectAttempts = 10000;
-  std::atomic<int> packets_received = ATOMIC_VAR_INIT(0);
+  std::atomic<int> packets_received(0);
   std::vector<int> packets_per_socket(listener_fds.size(), 0);
   std::vector<std::unique_ptr<ScopedThread>> receiver_threads(
       listener_fds.size());

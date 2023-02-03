@@ -230,7 +230,7 @@ TEST(SemaphoreTest, SemOpBlock) {
   AutoSem sem(semget(IPC_PRIVATE, 1, 0600 | IPC_CREAT));
   ASSERT_THAT(sem.get(), SyscallSucceeds());
 
-  std::atomic<int> blocked = ATOMIC_VAR_INIT(1);
+  std::atomic<int> blocked(1);
   ScopedThread th([&sem, &blocked] {
     absl::SleepFor(absl::Milliseconds(100));
     ASSERT_EQ(blocked.load(), 1);
