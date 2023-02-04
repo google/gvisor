@@ -73,9 +73,14 @@ func (p *pkg) walkObject(pass *analysis.Pass, obj types.Object) {
 	case *types.PkgName:
 		// Don't walk to other packages.
 	case *types.Var:
+		// Skip if the var's type is a type parameter.
+		typ := x.Type()
+		if _, ok := typ.(*types.TypeParam); ok {
+			break
+		}
 		// Add information as a field.
-		a := Align(pass.TypesSizes.Alignof(x.Type()))
-		s := Size(pass.TypesSizes.Sizeof(x.Type()))
+		a := Align(pass.TypesSizes.Alignof(typ))
+		s := Size(pass.TypesSizes.Sizeof(typ))
 		pass.ExportObjectFact(obj, &a)
 		pass.ExportObjectFact(obj, &s)
 	case *types.TypeName:
