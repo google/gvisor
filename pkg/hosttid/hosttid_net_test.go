@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package procid
+package hosttid
 
 // This file is just to force the inclusion of the "net" package, which will
 // make the test binary a cgo one.

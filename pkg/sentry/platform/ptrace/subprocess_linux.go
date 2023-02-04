@@ -22,8 +22,8 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hosttid"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/procid"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
@@ -210,7 +210,7 @@ func forkStub(flags uintptr, instrs []linux.BPFInstruction) (*thread, error) {
 func (s *subprocess) createStub() (*thread, error) {
 	// There's no need to lock the runtime thread here, as this can only be
 	// called from a context that is already locked.
-	currentTID := int32(procid.Current())
+	currentTID := int32(hosttid.Current())
 	t := s.syscallThreads.lookupOrCreate(currentTID, s.newThread)
 
 	// Pass the expected PPID to the child via R15.
