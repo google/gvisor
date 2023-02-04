@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package procid provides a way to get the current system thread identifier.
-package procid
+// Package hosttid provides the Current function.
+package hosttid
 
 import (
 	"runtime"
@@ -22,7 +22,9 @@ import (
 // Dummy references for facts.
 const _ = runtime.Compiler
 
-// Current returns the current system thread identifier.
+// Current returns the caller's host thread ID. Unless runtime.LockOSThread()
+// is in effect, this function is inherently racy since the Go runtime may
+// migrate the calling goroutine to another thread at any time.
 //
-// Precondition: This should only be called with the runtime OS thread locked.
+// Current is equivalent to unix.Gettid(), but faster.
 func Current() uint64

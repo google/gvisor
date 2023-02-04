@@ -25,9 +25,9 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/hosttid"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/metric"
-	"gvisor.dev/gvisor/pkg/procid"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
 	"gvisor.dev/gvisor/pkg/seccomp"
@@ -447,7 +447,7 @@ func (m *machine) Destroy() {
 func (m *machine) Get() *vCPU {
 	m.mu.RLock()
 	runtime.LockOSThread()
-	tid := procid.Current()
+	tid := hosttid.Current()
 
 	// Check for an exact match.
 	if c := m.vCPUsByTID[tid]; c != nil {
@@ -467,7 +467,7 @@ func (m *machine) Get() *vCPU {
 	runtime.UnlockOSThread()
 	m.mu.Lock()
 	runtime.LockOSThread()
-	tid = procid.Current()
+	tid = hosttid.Current()
 
 	// Recheck for an exact match.
 	if c := m.vCPUsByTID[tid]; c != nil {

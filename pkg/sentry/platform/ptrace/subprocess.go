@@ -22,8 +22,8 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/hosttid"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/procid"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
@@ -518,7 +518,7 @@ func (s *subprocess) switchToApp(c *context, ac *arch.Context64) bool {
 	fpState := ac.FloatingPointData()
 
 	// Grab our thread from the pool.
-	currentTID := int32(procid.Current())
+	currentTID := int32(hosttid.Current())
 	t := s.sysemuThreads.lookupOrCreate(currentTID, s.newThread)
 
 	// Reset necessary registers.
@@ -627,7 +627,7 @@ func (s *subprocess) syscall(sysno uintptr, args ...arch.SyscallArgument) (uintp
 	// Grab a thread.
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	currentTID := int32(procid.Current())
+	currentTID := int32(hosttid.Current())
 	t := s.syscallThreads.lookupOrCreate(currentTID, s.newThread)
 
 	return t.syscallIgnoreInterrupt(&t.initRegs, sysno, args...)
