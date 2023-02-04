@@ -64,6 +64,7 @@ func (fs *filesystem) newTaskInode(ctx context.Context, task *kernel.Task, pidns
 		"fdinfo":    fs.newFDInfoDirInode(ctx, task),
 		"gid_map":   fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0644, &idMapData{task: task, gids: true}),
 		"io":        fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0400, newIO(task, isThreadGroup)),
+		"limits":    fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &limitsData{task: task}),
 		"maps":      fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &mapsData{task: task}),
 		"mem":       fs.newMemInode(ctx, task, fs.NextIno(), 0400),
 		"mountinfo": fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &mountInfoData{fs: fs, task: task}),

@@ -195,6 +195,51 @@ MATCHER_P(ContainsMappings, mappings,
   return all_present;
 }
 
+// LimitType is an rlimit type
+enum class LimitType {
+  CPU,
+  FileSize,
+  Data,
+  Stack,
+  Core,
+  RSS,
+  ProcessCount,
+  NumberOfFiles,
+  MemoryLocked,
+  AS,
+  Locks,
+  SignalsPending,
+  MessageQueueBytes,
+  Nice,
+  RealTimePriority,
+  Rttime,
+};
+
+// ProcLimitsEntry contains the data from a single line in /proc/xxx/limits.
+struct ProcLimitsEntry {
+  LimitType limit_type;
+  uint64_t cur_limit;
+  uint64_t max_limit;
+};
+
+// Parses a single line from /proc/xxx/limits
+PosixErrorOr<ProcLimitsEntry> ParseProcLimitsLine(absl::string_view line);
+
+// Parses an entire /proc/xxx/limits file into lines
+PosixErrorOr<std::vector<ProcLimitsEntry>> ParseProcLimits(
+    absl::string_view contents);
+
+// Printer for ProcLimitsEntry.
+std::ostream& operator<<(std::ostream& os, const ProcLimitsEntry& entry);
+
+// Printer for std::vector<ProcLimitsEntry>.
+std::ostream& operator<<(std::ostream& os,
+                         const std::vector<ProcLimitsEntry>& vec);
+
+// GMock printer for std::vector<ProcLimitsEntry>.
+inline void PrintTo(const std::vector<ProcLimitsEntry>& vec, std::ostream* os) {
+  *os << vec;
+}
 }  // namespace testing
 }  // namespace gvisor
 
