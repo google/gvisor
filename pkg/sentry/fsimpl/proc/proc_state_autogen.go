@@ -820,6 +820,34 @@ func (fd *memFD) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(4, &fd.offset)
 }
 
+func (d *limitsData) StateTypeName() string {
+	return "pkg/sentry/fsimpl/proc.limitsData"
+}
+
+func (d *limitsData) StateFields() []string {
+	return []string{
+		"DynamicBytesFile",
+		"task",
+	}
+}
+
+func (d *limitsData) beforeSave() {}
+
+// +checklocksignore
+func (d *limitsData) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.DynamicBytesFile)
+	stateSinkObject.Save(1, &d.task)
+}
+
+func (d *limitsData) afterLoad() {}
+
+// +checklocksignore
+func (d *limitsData) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.DynamicBytesFile)
+	stateSourceObject.Load(1, &d.task)
+}
+
 func (d *mapsData) StateTypeName() string {
 	return "pkg/sentry/fsimpl/proc.mapsData"
 }
@@ -2506,6 +2534,7 @@ func init() {
 	state.Register((*idMapData)(nil))
 	state.Register((*memInode)(nil))
 	state.Register((*memFD)(nil))
+	state.Register((*limitsData)(nil))
 	state.Register((*mapsData)(nil))
 	state.Register((*smapsData)(nil))
 	state.Register((*taskStatData)(nil))
