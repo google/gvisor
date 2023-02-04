@@ -43,6 +43,105 @@ const (
 	Rttime
 )
 
+// AllLimitTypes contains all types in the order how they are presented in
+// /proc/pid/limits.
+var AllLimitTypes = []LimitType{
+	CPU,
+	FileSize,
+	Data,
+	Stack,
+	Core,
+	Rss,
+	ProcessCount,
+	NumberOfFiles,
+	MemoryLocked,
+	AS,
+	Locks,
+	SignalsPending,
+	MessageQueueBytes,
+	Nice,
+	RealTimePriority,
+	Rttime,
+}
+
+// Name returns the kernel name of the limit
+func (lt LimitType) Name() string {
+	switch lt {
+	case CPU:
+		return "Max cpu time"
+	case FileSize:
+		return "Max file size"
+	case Data:
+		return "Max data size"
+	case Stack:
+		return "Max stack size"
+	case Core:
+		return "Max core file size"
+	case Rss:
+		return "Max resident set"
+	case ProcessCount:
+		return "Max processes"
+	case NumberOfFiles:
+		return "Max open files"
+	case MemoryLocked:
+		return "Max locked memory"
+	case AS:
+		return "Max address space"
+	case Locks:
+		return "Max file locks"
+	case SignalsPending:
+		return "Max pending signals"
+	case MessageQueueBytes:
+		return "Max msgqueue size"
+	case Nice:
+		return "Max nice priority"
+	case RealTimePriority:
+		return "Max realtime priority"
+	case Rttime:
+		return "Max realtime timeout"
+	}
+	return "unknown"
+}
+
+// Unit returns the unit string for a limit
+func (lt LimitType) Unit() string {
+	switch lt {
+	case CPU:
+		return "seconds"
+	case FileSize:
+		return "bytes"
+	case Data:
+		return "bytes"
+	case Stack:
+		return "bytes"
+	case Core:
+		return "bytes"
+	case Rss:
+		return "bytes"
+	case ProcessCount:
+		return "processes"
+	case NumberOfFiles:
+		return "files"
+	case MemoryLocked:
+		return "bytes"
+	case AS:
+		return "bytes"
+	case Locks:
+		return "locks"
+	case SignalsPending:
+		return "signals"
+	case MessageQueueBytes:
+		return "bytes"
+	case Nice:
+		return ""
+	case RealTimePriority:
+		return ""
+	case Rttime:
+		return "us"
+	}
+	return ""
+}
+
 // Infinity is a constant representing a resource with no limit.
 const Infinity = ^uint64(0)
 
