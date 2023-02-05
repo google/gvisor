@@ -16,6 +16,7 @@ package boot
 
 import (
 	"fmt"
+	"path"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -56,6 +57,16 @@ const (
 	Bind   = "bind"
 	Nonefs = "none"
 )
+
+// SelfOverlayFilestoreDir returns the directory path in which self overlay filestore
+// files are stored for a given mount.
+func SelfOverlayFilestoreDir(mountSrc, cid string) string {
+	// We will place filestore files in a gvisor specific hidden directory inside
+	// the mount being overlayed itself. The same volume can be overlay-ed by
+	// multiple containers. So make the filestore directory unique to container
+	// by suffixing the container ID.
+	return path.Join(mountSrc, ".gvisor.overlay.img."+cid)
+}
 
 // tmpfs has some extra supported options that we must pass through.
 var tmpfsAllowedData = []string{"mode", "size", "uid", "gid"}
@@ -427,11 +438,11 @@ func (c *containerMounter) createMountNamespace(ctx context.Context, conf *confi
 	}
 
 	fsName := gofer.Name
-	if overlay2 := conf.GetOverlay2(); overlay2.RootMount && !c.root.Readonly {
+	if conf.GetOverlay2().RootMount && !c.root.Readonly {
 		log.Infof("Adding overlay on top of root")
 		var err error
 		var cleanup func()
-		opts, cleanup, err = c.configureOverlay(ctx, creds, opts, fsName, overlay2.IsBackedByHostFile())
+		opts, cleanup, err = c.configureOverlay(ctx, conf, creds, opts, fsName, useOverlayFilestoreFD)
 		if err != nil {
 			return nil, fmt.Errorf("mounting root with overlay: %w", err)
 		}
@@ -446,11 +457,23 @@ func (c *containerMounter) createMountNamespace(ctx context.Context, conf *confi
 	return mns, nil
 }
 
+func useOverlayFilestoreFD(conf *config.Config, isDir bool) bool {
+	overlay2 := conf.GetOverlay2()
+	if !overlay2.IsBackedByHostFile() {
+		return false
+	}
+	if overlay2.IsBackedBySelf() {
+		// Only directory mounts can be backed by a self filestore.
+		return isDir
+	}
+	return true
+}
+
 // configureOverlay mounts the lower layer using "lowerOpts", mounts the upper
 // layer using tmpfs, and return overlay mount options. "cleanup" must be called
 // after the options have been used to mount the overlay, to release refs on
 // lower and upper mounts.
-func (c *containerMounter) configureOverlay(ctx context.Context, creds *auth.Credentials, lowerOpts *vfs.MountOptions, lowerFSName string, useFilestoreFD bool) (*vfs.MountOptions, func(), error) {
+func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Config, creds *auth.Credentials, lowerOpts *vfs.MountOptions, lowerFSName string, useFilestoreFD func(conf *config.Config, isDir bool) bool) (*vfs.MountOptions, func(), error) {
 	// First copy options from lower layer to upper layer and overlay. Clear
 	// filesystem specific options.
 	upperOpts := *lowerOpts
@@ -491,7 +514,7 @@ func (c *containerMounter) configureOverlay(ctx context.Context, creds *auth.Cre
 	tmpfsOpts := tmpfs.FilesystemOpts{
 		RootFileType: uint16(rootType),
 	}
-	if useFilestoreFD {
+	if useFilestoreFD != nil && useFilestoreFD(conf, rootType == linux.S_IFDIR) {
 		tmpfsOpts.FilestoreFD = c.overlayFilestoreFDs.removeAsFD()
 	}
 	upperOpts.GetFilesystemOptions.InternalData = tmpfsOpts
@@ -655,9 +678,8 @@ func (c *containerMounter) mountSubmount(ctx context.Context, conf *config.Confi
 
 	if useOverlay {
 		log.Infof("Adding overlay on top of mount %q", submount.mount.Destination)
-		overlay2 := conf.GetOverlay2()
 		var cleanup func()
-		opts, cleanup, err = c.configureOverlay(ctx, creds, opts, fsName, overlay2.IsBackedByHostFile())
+		opts, cleanup, err = c.configureOverlay(ctx, conf, creds, opts, fsName, useOverlayFilestoreFD)
 		if err != nil {
 			return nil, fmt.Errorf("mounting volume with overlay at %q: %w", submount.mount.Destination, err)
 		}
@@ -893,7 +915,10 @@ func (c *containerMounter) mountSharedMaster(ctx context.Context, conf *config.C
 	if useOverlay {
 		log.Infof("Adding overlay on top of shared mount %q", mntFD.mount.Destination)
 		var cleanup func()
-		opts, cleanup, err = c.configureOverlay(ctx, creds, opts, fsName, false /* useFilestoreFD */)
+		// TODO(b/142076984): Use an overlay for a shared EmptyDir mount. Such a
+		// mount should be backed by a self filestore, so limits can be enforced
+		// by k8s on the host. For now pass nil for useFilestoreFD.
+		opts, cleanup, err = c.configureOverlay(ctx, conf, creds, opts, fsName, nil /* useFilestoreFD */)
 		if err != nil {
 			return nil, fmt.Errorf("mounting shared volume with overlay at %q: %w", mntFD.mount.Destination, err)
 		}
