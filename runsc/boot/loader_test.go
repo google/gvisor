@@ -125,14 +125,13 @@ func createLoader(spec *specs.Spec) (*Loader, func(), error) {
 	}
 
 	args := Args{
-		ID:                 "foo",
-		Spec:               spec,
-		Conf:               conf,
-		ControllerFD:       fd,
-		GoferFDs:           []int{sandEnd},
-		StdioFDs:           stdio,
-		OverlayFilestoreFD: -1,
-		PodInitConfigFD:    -1,
+		ID:              "foo",
+		Spec:            spec,
+		Conf:            conf,
+		ControllerFD:    fd,
+		GoferFDs:        []int{sandEnd},
+		StdioFDs:        stdio,
+		PodInitConfigFD: -1,
 	}
 	l, err := New(args)
 	if err != nil {
