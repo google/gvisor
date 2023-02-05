@@ -191,8 +191,8 @@ func (m *mountHint) isSupported() bool {
 // Master options must be the same or less restrictive than the container mount,
 // e.g. master can be 'rw' while container mounts as 'ro'.
 func (m *mountHint) checkCompatible(replica *specs.Mount) error {
-	masterOpts := parseMountOptions(m.mount.Options)
-	replicaOpts := parseMountOptions(replica.Options)
+	masterOpts := ParseMountOptions(m.mount.Options)
+	replicaOpts := ParseMountOptions(replica.Options)
 
 	if masterOpts.ReadOnly && !replicaOpts.ReadOnly {
 		return fmt.Errorf("cannot mount read-write shared mount because master is read-only, mount: %+v", replica)

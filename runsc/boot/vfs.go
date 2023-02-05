@@ -51,10 +51,10 @@ import (
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
+// Supported filesystems that map to different internal filesystems.
 const (
-	// Supported filesystems that map to different internal filesystems.
-	bind   = "bind"
-	nonefs = "none"
+	Bind   = "bind"
+	Nonefs = "none"
 )
 
 // tmpfs has some extra supported options that we must pass through.
@@ -293,10 +293,14 @@ type fdDispenser struct {
 }
 
 func (f *fdDispenser) remove() int {
+	return f.removeAsFD().Release()
+}
+
+func (f *fdDispenser) removeAsFD() *fd.FD {
 	if f.empty() {
 		panic("fdDispenser out of fds")
 	}
-	rv := f.fds[0].Release()
+	rv := f.fds[0]
 	f.fds = f.fds[1:]
 	return rv
 }
@@ -315,9 +319,9 @@ type containerMounter struct {
 	// fds is the list of FDs to be dispensed for mounts that require it.
 	fds fdDispenser
 
-	// overlayFilestoreFD is the FD for the memory file that will back the
-	// overlay mount's upper tmpfs layer.
-	overlayFilestoreFD *fd.FD
+	// overlayFilestoreFDs are the FDs to the regular files that will back the
+	// tmpfs upper mount in the overlay mounts.
+	overlayFilestoreFDs fdDispenser
 
 	k *kernel.Kernel
 
@@ -330,13 +334,13 @@ type containerMounter struct {
 
 func newContainerMounter(info *containerInfo, k *kernel.Kernel, hints *podMountHints, productName string) *containerMounter {
 	return &containerMounter{
-		root:               info.spec.Root,
-		mounts:             compileMounts(info.spec, info.conf),
-		fds:                fdDispenser{fds: info.goferFDs},
-		overlayFilestoreFD: info.overlayFilestoreFD,
-		k:                  k,
-		hints:              hints,
-		productName:        productName,
+		root:                info.spec.Root,
+		mounts:              compileMounts(info.spec, info.conf),
+		fds:                 fdDispenser{fds: info.goferFDs},
+		overlayFilestoreFDs: fdDispenser{fds: info.overlayFilestoreFDs},
+		k:                   k,
+		hints:               hints,
+		productName:         productName,
 	}
 }
 
@@ -423,11 +427,11 @@ func (c *containerMounter) createMountNamespace(ctx context.Context, conf *confi
 	}
 
 	fsName := gofer.Name
-	if conf.GetOverlay2().RootMount && !c.root.Readonly {
+	if overlay2 := conf.GetOverlay2(); overlay2.RootMount && !c.root.Readonly {
 		log.Infof("Adding overlay on top of root")
 		var err error
 		var cleanup func()
-		opts, cleanup, err = c.configureOverlay(ctx, creds, opts, fsName)
+		opts, cleanup, err = c.configureOverlay(ctx, creds, opts, fsName, overlay2.IsBackedByHostFile())
 		if err != nil {
 			return nil, fmt.Errorf("mounting root with overlay: %w", err)
 		}
@@ -446,7 +450,7 @@ func (c *containerMounter) createMountNamespace(ctx context.Context, conf *confi
 // layer using tmpfs, and return overlay mount options. "cleanup" must be called
 // after the options have been used to mount the overlay, to release refs on
 // lower and upper mounts.
-func (c *containerMounter) configureOverlay(ctx context.Context, creds *auth.Credentials, lowerOpts *vfs.MountOptions, lowerFSName string) (*vfs.MountOptions, func(), error) {
+func (c *containerMounter) configureOverlay(ctx context.Context, creds *auth.Credentials, lowerOpts *vfs.MountOptions, lowerFSName string, useFilestoreFD bool) (*vfs.MountOptions, func(), error) {
 	// First copy options from lower layer to upper layer and overlay. Clear
 	// filesystem specific options.
 	upperOpts := *lowerOpts
@@ -484,10 +488,13 @@ func (c *containerMounter) configureOverlay(ctx context.Context, creds *auth.Cre
 	}
 
 	// Upper is a tmpfs mount to keep all modifications inside the sandbox.
-	upperOpts.GetFilesystemOptions.InternalData = tmpfs.FilesystemOpts{
+	tmpfsOpts := tmpfs.FilesystemOpts{
 		RootFileType: uint16(rootType),
-		FilestoreFD:  c.overlayFilestoreFD,
 	}
+	if useFilestoreFD {
+		tmpfsOpts.FilestoreFD = c.overlayFilestoreFDs.removeAsFD()
+	}
+	upperOpts.GetFilesystemOptions.InternalData = tmpfsOpts
 	upper, err := c.k.VFS().MountDisconnected(ctx, creds, "" /* source */, tmpfs.Name, &upperOpts)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to create upper layer for overlay, opts: %+v: %v", upperOpts, err)
@@ -612,7 +619,7 @@ func (c *containerMounter) prepareMounts() ([]mountAndFD, error) {
 		// Only bind mounts use host FDs; see
 		// containerMounter.getMountNameAndOptions.
 		fd := -1
-		if m.Type == bind {
+		if m.Type == Bind {
 			fd = c.fds.remove()
 		}
 		mounts = append(mounts, mountAndFD{
@@ -648,8 +655,9 @@ func (c *containerMounter) mountSubmount(ctx context.Context, conf *config.Confi
 
 	if useOverlay {
 		log.Infof("Adding overlay on top of mount %q", submount.mount.Destination)
+		overlay2 := conf.GetOverlay2()
 		var cleanup func()
-		opts, cleanup, err = c.configureOverlay(ctx, creds, opts, fsName)
+		opts, cleanup, err = c.configureOverlay(ctx, creds, opts, fsName, overlay2.IsBackedByHostFile())
 		if err != nil {
 			return nil, fmt.Errorf("mounting volume with overlay at %q: %w", submount.mount.Destination, err)
 		}
@@ -688,7 +696,7 @@ func (c *containerMounter) getMountNameAndOptions(conf *config.Config, m *mountA
 	case devpts.Name, devtmpfs.Name, proc.Name:
 		// Nothing to do.
 
-	case nonefs:
+	case Nonefs:
 		fsName = sys.Name
 
 	case sys.Name:
@@ -703,7 +711,7 @@ func (c *containerMounter) getMountNameAndOptions(conf *config.Config, m *mountA
 			return "", nil, false, err
 		}
 
-	case bind:
+	case Bind:
 		fsName = gofer.Name
 		if m.fd == 0 {
 			// Check that an FD was provided to fails fast. Technically FD=0 is valid,
@@ -716,7 +724,7 @@ func (c *containerMounter) getMountNameAndOptions(conf *config.Config, m *mountA
 		}
 
 		// If configured, add overlay to all writable mounts.
-		useOverlay = conf.GetOverlay2().SubMounts && !parseMountOptions(m.mount.Options).ReadOnly
+		useOverlay = conf.GetOverlay2().SubMounts && !ParseMountOptions(m.mount.Options).ReadOnly
 
 	case cgroupfs.Name:
 		var err error
@@ -730,7 +738,7 @@ func (c *containerMounter) getMountNameAndOptions(conf *config.Config, m *mountA
 		return "", nil, false, nil
 	}
 
-	opts := parseMountOptions(m.mount.Options)
+	opts := ParseMountOptions(m.mount.Options)
 	opts.GetFilesystemOptions = vfs.GetFilesystemOptions{
 		Data:         strings.Join(data, ","),
 		InternalData: internalData,
@@ -739,7 +747,8 @@ func (c *containerMounter) getMountNameAndOptions(conf *config.Config, m *mountA
 	return fsName, opts, useOverlay, nil
 }
 
-func parseMountOptions(opts []string) *vfs.MountOptions {
+// ParseMountOptions converts specs.Mount.Options to vfs.MountOptions.
+func ParseMountOptions(opts []string) *vfs.MountOptions {
 	mountOpts := &vfs.MountOptions{
 		InternalMount: true,
 	}
@@ -884,7 +893,7 @@ func (c *containerMounter) mountSharedMaster(ctx context.Context, conf *config.C
 	if useOverlay {
 		log.Infof("Adding overlay on top of shared mount %q", mntFD.mount.Destination)
 		var cleanup func()
-		opts, cleanup, err = c.configureOverlay(ctx, creds, opts, fsName)
+		opts, cleanup, err = c.configureOverlay(ctx, creds, opts, fsName, false /* useFilestoreFD */)
 		if err != nil {
 			return nil, fmt.Errorf("mounting shared volume with overlay at %q: %w", mntFD.mount.Destination, err)
 		}

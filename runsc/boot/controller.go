@@ -262,9 +262,13 @@ type StartArgs struct {
 	// CID is the ID of the container to start.
 	CID string
 
+	// NumOverlayFilestoreFDs is the number of overlay filestore FDs donated.
+	// Optionally configured with the overlay2 flag.
+	NumOverlayFilestoreFDs int
+
 	// FilePayload contains, in order:
 	//   * stdin, stdout, and stderr (optional: if terminal is disabled).
-	//   * file descriptor to overlay-backing host file (optional: for overlay2).
+	//   * file descriptors to overlay-backing host files (optional: for overlay2).
 	//   * file descriptors to connect to gofer to serve the root filesystem.
 	urpc.FilePayload
 }
@@ -286,12 +290,9 @@ func (cm *containerManager) StartSubcontainer(args *StartArgs, _ *struct{}) erro
 		return errors.New("start argument missing container ID")
 	}
 	expectedFDs := 1 // At least one FD for the root filesystem.
+	expectedFDs += args.NumOverlayFilestoreFDs
 	if !args.Spec.Process.Terminal {
 		expectedFDs += 3
-	}
-	overlay2 := args.Conf.GetOverlay2()
-	if overlay2.IsBackedByHostFile() {
-		expectedFDs++
 	}
 	if len(args.Files) < expectedFDs {
 		return fmt.Errorf("start arguments must contain at least %d FDs, but only got %d", expectedFDs, len(args.Files))
@@ -318,15 +319,15 @@ func (cm *containerManager) StartSubcontainer(args *StartArgs, _ *struct{}) erro
 		}
 	}()
 
-	var overlayFilestoreFD *fd.FD
-	if overlay2.IsBackedByHostFile() {
-		var err error
-		overlayFilestoreFD, err = fd.NewFromFile(goferFiles[0])
+	var overlayFilestoreFDs []*fd.FD
+	for i := 0; i < args.NumOverlayFilestoreFDs; i++ {
+		overlayFilestoreFD, err := fd.NewFromFile(goferFiles[i])
 		if err != nil {
 			return fmt.Errorf("error dup'ing overlay filestore file: %w", err)
 		}
-		goferFiles = goferFiles[1:]
+		overlayFilestoreFDs = append(overlayFilestoreFDs, overlayFilestoreFD)
 	}
+	goferFiles = goferFiles[args.NumOverlayFilestoreFDs:]
 
 	goferFDs, err := fd.NewFromFiles(goferFiles)
 	if err != nil {
@@ -338,7 +339,7 @@ func (cm *containerManager) StartSubcontainer(args *StartArgs, _ *struct{}) erro
 		}
 	}()
 
-	if err := cm.l.startSubcontainer(args.Spec, args.Conf, args.CID, stdios, goferFDs, overlayFilestoreFD); err != nil {
+	if err := cm.l.startSubcontainer(args.Spec, args.Conf, args.CID, stdios, goferFDs, overlayFilestoreFDs); err != nil {
 		log.Debugf("containerManager.StartSubcontainer failed, cid: %s, args: %+v, err: %v", args.CID, args, err)
 		return err
 	}

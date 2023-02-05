@@ -58,9 +58,9 @@ type Boot struct {
 	// ioFDs is the list of FDs used to connect to FS gofers.
 	ioFDs intFlags
 
-	// overlayFilestoreFD is the host FD to the regular file which will back the
-	// overlay's upper tmpfs mount for all containers.
-	overlayFilestoreFD int
+	// overlayFilestoreFDs are FDs to the regular files that will back the tmpfs
+	// upper mount in the overlay mounts.
+	overlayFilestoreFDs intFlags
 
 	// stdioFDs are the fds for stdin, stdout, and stderr. They must be
 	// provided in that order.
@@ -148,7 +148,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&b.deviceFD, "device-fd", -1, "FD for the platform device file")
 	f.Var(&b.ioFDs, "io-fds", "list of FDs to connect gofer clients. They must follow this order: root first, then mounts as defined in the spec")
 	f.Var(&b.stdioFDs, "stdio-fds", "list of FDs containing sandbox stdin, stdout, and stderr in that order")
-	f.IntVar(&b.overlayFilestoreFD, "overlay-filestore-fd", -1, "FD to a regular file which will be used to back the overlay's tmpfs upper mount.")
+	f.Var(&b.overlayFilestoreFDs, "overlay-filestore-fds", "FDs to the regular files that will back the tmpfs upper mount in the overlay mounts.")
 	f.IntVar(&b.userLogFD, "user-log-fd", 0, "file descriptor to write user logs to. 0 means no logging.")
 	f.IntVar(&b.startSyncFD, "start-sync-fd", -1, "required FD to used to synchronize sandbox startup")
 	f.IntVar(&b.mountsFD, "mounts-fd", -1, "mountsFD is the file descriptor to read list of mounts after they have been resolved (direct paths, no symlinks).")
@@ -324,21 +324,21 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 
 	// Create the loader.
 	bootArgs := boot.Args{
-		ID:                 f.Arg(0),
-		Spec:               spec,
-		Conf:               conf,
-		ControllerFD:       b.controllerFD,
-		Device:             os.NewFile(uintptr(b.deviceFD), "platform device"),
-		GoferFDs:           b.ioFDs.GetArray(),
-		StdioFDs:           b.stdioFDs.GetArray(),
-		OverlayFilestoreFD: b.overlayFilestoreFD,
-		NumCPU:             b.cpuNum,
-		TotalMem:           b.totalMem,
-		UserLogFD:          b.userLogFD,
-		ProductName:        b.productName,
-		PodInitConfigFD:    b.podInitConfigFD,
-		SinkFDs:            b.sinkFDs.GetArray(),
-		ProfileOpts:        b.profileFDs.ToOpts(),
+		ID:                  f.Arg(0),
+		Spec:                spec,
+		Conf:                conf,
+		ControllerFD:        b.controllerFD,
+		Device:              os.NewFile(uintptr(b.deviceFD), "platform device"),
+		GoferFDs:            b.ioFDs.GetArray(),
+		StdioFDs:            b.stdioFDs.GetArray(),
+		OverlayFilestoreFDs: b.overlayFilestoreFDs.GetArray(),
+		NumCPU:              b.cpuNum,
+		TotalMem:            b.totalMem,
+		UserLogFD:           b.userLogFD,
+		ProductName:         b.productName,
+		PodInitConfigFD:     b.podInitConfigFD,
+		SinkFDs:             b.sinkFDs.GetArray(),
+		ProfileOpts:         b.profileFDs.ToOpts(),
 	}
 	l, err := boot.New(bootArgs)
 	if err != nil {
