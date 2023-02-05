@@ -101,9 +101,9 @@ type containerInfo struct {
 	// goferFDs are the FDs that attach the sandbox to the gofers.
 	goferFDs []*fd.FD
 
-	// overlayFilestoreFD is the FD for the memory file that will back the
-	// overlay mount's upper tmpfs layer.
-	overlayFilestoreFD *fd.FD
+	// overlayFilestoreFDs are the FDs to the regular files that will back the
+	// tmpfs upper mount in the overlay mounts.
+	overlayFilestoreFDs []*fd.FD
 }
 
 // Loader keeps state needed to start the kernel and run the container.
@@ -203,9 +203,9 @@ type Args struct {
 	// StdioFDs is the stdio for the application. The Loader takes ownership of
 	// these FDs and may close them at any time.
 	StdioFDs []int
-	// OverlayFilestoreFD is the host FD to a regular file which will be used to
-	// back the overlay mount's upper tmpfs layer.
-	OverlayFilestoreFD int
+	// OverlayFilestoreFDs are the FDs to the regular files that will back the
+	// tmpfs upper mount in the overlay mounts.
+	OverlayFilestoreFDs []int
 	// NumCPU is the number of CPUs to create inside the sandbox.
 	NumCPU int
 	// TotalMem is the initial amount of total memory to report back to the
@@ -273,8 +273,8 @@ func New(args Args) (*Loader, error) {
 	for _, goferFD := range args.GoferFDs {
 		info.goferFDs = append(info.goferFDs, fd.New(goferFD))
 	}
-	if args.OverlayFilestoreFD >= 0 {
-		info.overlayFilestoreFD = fd.New(args.OverlayFilestoreFD)
+	for _, overlayFD := range args.OverlayFilestoreFDs {
+		info.overlayFilestoreFDs = append(info.overlayFilestoreFDs, fd.New(overlayFD))
 	}
 
 	// Create kernel and platform.
@@ -701,7 +701,7 @@ func (l *Loader) createSubcontainer(cid string, tty *fd.FD) error {
 // startSubcontainer starts a child container. It returns the thread group ID of
 // the newly created process. Used FDs are either closed or released. It's safe
 // for the caller to close any remaining files upon return.
-func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid string, stdioFDs, goferFDs []*fd.FD, overlayFilestoreFD *fd.FD) error {
+func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid string, stdioFDs, goferFDs, overlayFilestoreFDs []*fd.FD) error {
 	// Create capabilities.
 	caps, err := specutils.Capabilities(conf.EnableRaw, spec.Process.Capabilities)
 	if err != nil {
@@ -752,10 +752,10 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 	}
 
 	info := &containerInfo{
-		conf:               conf,
-		spec:               spec,
-		goferFDs:           goferFDs,
-		overlayFilestoreFD: overlayFilestoreFD,
+		conf:                conf,
+		spec:                spec,
+		goferFDs:            goferFDs,
+		overlayFilestoreFDs: overlayFilestoreFDs,
 	}
 	info.procArgs, err = createProcessArgs(cid, spec, creds, l.k, pidns)
 	if err != nil {

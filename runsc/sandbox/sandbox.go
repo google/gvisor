@@ -222,9 +222,9 @@ type Args struct {
 	// appear in the spec.
 	IOFiles []*os.File
 
-	// OverlayFilestoreFile is the regular file that will back the tmpfs upper
+	// OverlayFilestoreFiles are the regular files that will back the tmpfs upper
 	// mount in the overlay mounts.
-	OverlayFilestoreFile *os.File
+	OverlayFilestoreFiles []*os.File
 
 	// MountsFile is a file container mount information from the spec. It's
 	// equivalent to the mounts from the spec, except that all paths have been
@@ -376,7 +376,7 @@ func (s *Sandbox) StartRoot(spec *specs.Spec, conf *config.Config) error {
 }
 
 // StartSubcontainer starts running a sub-container inside the sandbox.
-func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid string, stdios, goferFiles []*os.File, overlayFilestoreFile *os.File) error {
+func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid string, stdios, goferFiles, overlayFilestoreFiles []*os.File) error {
 	log.Debugf("Start sub-container %q in sandbox %q, PID: %d", cid, s.ID, s.Pid.load())
 
 	if err := s.configureStdios(conf, stdios); err != nil {
@@ -385,22 +385,21 @@ func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid s
 
 	// The payload contains (in this specific order):
 	// * stdin/stdout/stderr (optional: only present when not using TTY)
-	// * The subcontainer's overlay filestore file (optional: only present when
+	// * The subcontainer's overlay filestore files (optional: only present when
 	//   host file backed overlay is configured)
 	// * Gofer files.
 	payload := urpc.FilePayload{}
 	payload.Files = append(payload.Files, stdios...)
-	if overlayFilestoreFile != nil {
-		payload.Files = append(payload.Files, overlayFilestoreFile)
-	}
+	payload.Files = append(payload.Files, overlayFilestoreFiles...)
 	payload.Files = append(payload.Files, goferFiles...)
 
 	// Start running the container.
 	args := boot.StartArgs{
-		Spec:        spec,
-		Conf:        conf,
-		CID:         cid,
-		FilePayload: payload,
+		Spec:                   spec,
+		Conf:                   conf,
+		CID:                    cid,
+		NumOverlayFilestoreFDs: len(overlayFilestoreFiles),
+		FilePayload:            payload,
 	}
 	if err := s.call(boot.ContMgrStartSubcontainer, &args, nil); err != nil {
 		return fmt.Errorf("starting sub-container %v: %w", spec.Process.Args, err)
@@ -640,7 +639,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 
 	// If there is a gofer, sends all socket ends to the sandbox.
 	donations.DonateAndClose("io-fds", args.IOFiles...)
-	donations.DonateAndClose("overlay-filestore-fd", args.OverlayFilestoreFile)
+	donations.DonateAndClose("overlay-filestore-fds", args.OverlayFilestoreFiles...)
 	donations.DonateAndClose("mounts-fd", args.MountsFile)
 	donations.Donate("start-sync-fd", startSyncFile)
 	if err := donations.OpenAndDonate("user-log-fd", args.UserLog, os.O_CREATE|os.O_WRONLY|os.O_APPEND); err != nil {
