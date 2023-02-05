@@ -9,7 +9,7 @@ go_binary(
         "fds.go",
         "main.go",
     ],
-    pure = True,
+    static = True,
     visibility = ["//runsc/container:__pkg__"],
     deps = [
         "//pkg/test/testutil",

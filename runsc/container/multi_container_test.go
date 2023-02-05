@@ -2214,88 +2214,130 @@ func TestMultiContainerShm(t *testing.T) {
 	}
 }
 
-// TODO(b/241832602): Revive this test when rootfs medium is added.
-// Sandbox.OverlayFileUsage() is no longer supported so stat the named rootfs
-// file and use stat.st_blocks to see usage.
-
 // Test that using file-backed overlay does not lead to memory leak or leaks
 // in the host-file backing the overlay.
-// func TestMultiContainerOverlayLeaks(t *testing.T) {
-// 	conf := testutil.TestConfig(t)
-// 	app, err := testutil.FindFile("test/cmd/test_app/test_app")
-// 	if err != nil {
-// 		t.Fatal("error finding test_app:", err)
-// 	}
+func TestMultiContainerOverlayLeaks(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	app, err := testutil.FindFile("test/cmd/test_app/test_app")
+	if err != nil {
+		t.Fatal("error finding test_app:", err)
+	}
 
-// 	rootDir, cleanup, err := testutil.SetupRootDir()
-// 	if err != nil {
-// 		t.Fatalf("error creating root dir: %v", err)
-// 	}
-// 	defer cleanup()
-// 	conf.RootDir = rootDir
+	rootDir, cleanup, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer cleanup()
+	conf.RootDir = rootDir
 
-// 	// Configure root overlay backed by a file from /tmp.
-// 	conf.Overlay2 = config.Overlay2{
-// 		RootMount: true,
-// 		Medium:    "dir=/tmp",
-// 	}
+	// Configure root overlay backed by rootfs itself.
+	conf.Overlay2 = config.Overlay2{
+		RootMount: true,
+		Medium:    "self",
+	}
 
-// 	// Root container will just sleep.
-// 	sleep := []string{"sleep", "100"}
-// 	// Since all containers share the same conf.RootDir, and root filesystems
-// 	// have overlay enabled, the root directory should never be modified. Hence,
-// 	// creating files at the same locations should not lead to EEXIST error.
-// 	createFsTree := []string{app, "fsTreeCreate", "--depth=10", "--file-per-level=10", "--file-size=4096"}
-// 	testSpecs, ids := createSpecs(sleep, createFsTree, createFsTree, createFsTree)
-// 	// Make sure none of the root filesystems are read-only, otherwise we won't
-// 	// be able to create the file.
-// 	for _, s := range testSpecs {
-// 		s.Root.Readonly = false
-// 	}
+	// Root container will just sleep.
+	sleep := []string{"sleep", "100"}
+	// Since all containers share the same conf.RootDir, and root filesystems
+	// have overlay enabled, the root directory should never be modified. Hence,
+	// creating files at the same locations should not lead to EEXIST error.
+	createFsTree := []string{"/app", "fsTreeCreate", "--depth=10", "--file-per-level=10", "--file-size=4096"}
+	testSpecs, ids := createSpecs(sleep, createFsTree, createFsTree, createFsTree)
+	for i, s := range testSpecs {
+		if i == 0 {
+			// Root container just sleeps, so should be fine.
+			continue
+		}
+		// For subcontainers, make sure the root filesystems is writable because
+		// the app will create files in it.
+		s.Root.Readonly = false
+		// createSpecs assigns the host's root as the container's root. But self
+		// overlay2 medium creates the filestore file inside container's root. That
+		// will fail. So create a temporary writable directory to represent the
+		// container's root filesystem and copy the app binary there.
+		contRoot, rootfsCU, err := testutil.SetupRootDir()
+		if err != nil {
+			t.Fatalf("error creating container's root filesystem: %v", err)
+		}
+		defer rootfsCU()
+		s.Root.Path = contRoot
+		appDst := path.Join(contRoot, "app")
+		if err := copyFile(app, appDst); err != nil {
+			t.Fatalf("error copying app binary from %q to %q: %v", app, appDst, err)
+		}
+	}
 
-// 	// Start the root container.
-// 	rootCont, cleanup, err := startContainers(conf, testSpecs[:1], ids[:1])
-// 	if err != nil {
-// 		t.Fatalf("error starting containers: %v", err)
-// 	}
-// 	defer cleanup()
+	// Start the containers.
+	conts, cleanup, err := startContainers(conf, testSpecs, ids)
+	if err != nil {
+		t.Fatalf("error starting containers: %v", err)
+	}
+	defer cleanup()
 
-// 	// Remember the overlay filestore usage right now.
-// 	oldOverlayUsage, err := rootCont[0].Sandbox.OverlayFileUsage()
-// 	if err != nil {
-// 		t.Fatalf("sandbox.OverlayFileUsage failed: %v", err)
-// 	}
+	for i, c := range conts {
+		if i == 0 {
+			// Don't wait for the root container which just sleeps.
+			continue
+		}
+		// Wait for the sub-container to stop.
+		if ws, err := c.Wait(); err != nil {
+			t.Errorf("failed to wait for subcontainer number %d: %v", i, err)
+		} else if es := ws.ExitStatus(); es != 0 {
+			t.Errorf("subcontainer number %d exited with non-zero status %d", i, es)
+		}
+	}
 
-// 	subConts, cleanup, err := startContainers(conf, testSpecs[1:], ids[1:])
-// 	if err != nil {
-// 		t.Fatalf("error starting containers: %v", err)
-// 	}
-// 	defer cleanup()
+	// Give the reclaimer goroutine some time to reclaim.
+	time.Sleep(3 * time.Second)
 
-// 	for i, c := range subConts {
-// 		// Wait for the sub-container to stop.
-// 		if ws, err := c.Wait(); err != nil {
-// 			t.Errorf("failed to wait for subcontainer number %d: %v", i, err)
-// 		} else if es := ws.ExitStatus(); es != 0 {
-// 			t.Errorf("subcontainer number %d exited with non-zero status %d", i, es)
-// 		}
-// 	}
+	for i, s := range testSpecs {
+		if i == 0 {
+			continue
+		}
 
-// 	// Give the reclaimer goroutine some time to reclaim.
-// 	time.Sleep(3 * time.Second)
+		// Fetch the overlay filestore directory.
+		filestoreDir := conts[i].SelfOverlayFilestoreDir(s.Root.Path)
+		dirFD, err := os.Open(filestoreDir)
+		if err != nil {
+			t.Fatalf("os.Open(%q) failed for filestore dir: %v", filestoreDir, err)
+		}
 
-// 	// Make sure the overlay filestore usage is back to what it was. The
-// 	// sub-containers create files in overlay. But it should have been cleaned
-// 	// up once the container exited and the reclaimer ran.
-// 	newOverlayUsage, err := rootCont[0].Sandbox.OverlayFileUsage()
-// 	if err != nil {
-// 		t.Fatalf("sandbox.OverlayFileUsage failed: %v", err)
-// 	}
+		// Find the filestore file.
+		names, err := dirFD.Readdirnames(0)
+		if err != nil {
+			t.Fatalf("dirFD.Readdirnames(0) failed for filestore dir: %v", err)
+		}
+		filestoreFile := ""
+		for _, name := range names {
+			if strings.HasPrefix(name, "filestore") {
+				filestoreFile = path.Join(filestoreDir, name)
+				break
+			}
+		}
+		if filestoreFile == "" {
+			t.Fatalf("could not find filestore file in root directory entries: %v", names)
+		}
 
-// 	if oldOverlayUsage != newOverlayUsage {
-// 		t.Errorf("overlay filestore usage changed: old = %d, new = %d", oldOverlayUsage, newOverlayUsage)
-// 	}
-// }
+		// Stat filestoreFile to see its usage. It should have been cleaned up.
+		var stat unix.Stat_t
+		if err := unix.Stat(filestoreFile, &stat); err != nil {
+			t.Errorf("unix.Stat(%q) failed for rootfs filestore: %v", filestoreFile, err)
+			continue
+		}
+		if stat.Blocks > 0 {
+			t.Errorf("rootfs filestore file %q for sub container %d is not cleaned up, has %d blocks", filestoreFile, i, stat.Blocks)
+		}
+	}
+}
+
+func copyFile(src, dst string) error {
+	bytesRead, err := ioutil.ReadFile(src)
+	if err != nil {
+		return err
+	}
+
+	return ioutil.WriteFile(dst, bytesRead, 0755)
+}
 
 // Test that spawning many subcontainers that do a lot of filesystem operations
 // does not lead to memory leaks.
