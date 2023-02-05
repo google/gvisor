@@ -754,6 +754,32 @@ func (c *Container) Destroy() error {
 		errs = append(errs, err.Error())
 	}
 
+	if c.OverlayConf.IsBackedBySelf() {
+		// Clean up overlay filestore files created in their respective mounts.
+		c.forEachOverlayMount(func(mountSrc string) error {
+			// Persevere through errors. Always return nil. A non-nil error will halt
+			// forEachOverlayMount(). But we want to clean up as much as we can.
+			mountSrcInfo, err := os.Stat(mountSrc)
+			if err != nil {
+				err = fmt.Errorf("failed to stat mount %q to see if it were a dirctory: %v", mountSrc, err)
+				log.Warningf("%v", err)
+				errs = append(errs, err.Error())
+				return nil
+			}
+			// mountSrc only contains the filestore directory if it is a directory.
+			if !mountSrcInfo.IsDir() {
+				return nil
+			}
+			filestoreDir := c.SelfOverlayFilestoreDir(mountSrc)
+			if err := os.RemoveAll(filestoreDir); err != nil {
+				err = fmt.Errorf("failed to delete filestore directory %q: %v", filestoreDir, err)
+				log.Warningf("%v", err)
+				errs = append(errs, err.Error())
+			}
+			return nil
+		})
+	}
+
 	c.changeStatus(Stopped)
 
 	// Adjust oom_score_adj for the sandbox. This must be done after the container
@@ -794,7 +820,15 @@ func (c *Container) createOverlayFilestores() ([]*os.File, error) {
 	if !c.OverlayConf.IsBackedByHostFile() {
 		return nil, nil
 	}
-	filestoreFiles, err := c.createOverlayFilestoreInDir()
+	var (
+		filestoreFiles []*os.File
+		err            error
+	)
+	if c.OverlayConf.IsBackedBySelf() {
+		filestoreFiles, err = c.createOverlayFilestoreInSelf()
+	} else {
+		filestoreFiles, err = c.createOverlayFilestoreInDir()
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -806,6 +840,48 @@ func (c *Container) createOverlayFilestores() ([]*os.File, error) {
 	return filestoreFiles, nil
 }
 
+// SelfOverlayFilestoreDir returns the directory path in which self overlay filestore
+// files are stored for a given mount.
+func (c *Container) SelfOverlayFilestoreDir(mountSrc string) string {
+	return boot.SelfOverlayFilestoreDir(mountSrc, c.ID)
+}
+
+// Precondition: Overlay2.IsBackedByHostFile() && Overlay2.IsBackedBySelf().
+func (c *Container) createOverlayFilestoreInSelf() ([]*os.File, error) {
+	var filestoreFiles []*os.File
+	err := c.forEachOverlayMount(func(mountSrc string) error {
+		mountSrcInfo, err := os.Stat(mountSrc)
+		if err != nil {
+			return fmt.Errorf("failed to stat mount %q to see if it were a dirctory: %v", mountSrc, err)
+		}
+		if !mountSrcInfo.IsDir() {
+			log.Warningf("overlay2 self medium is only supported for directory mounts, but mount %q is not a directory, falling back to memory", mountSrc)
+			return nil
+		}
+		// Create SelfFilestoreDir() directory. Note that it may already exist from
+		// previous iteration for the same mountSrc.
+		filestoreDir := c.SelfOverlayFilestoreDir(mountSrc)
+		if err := os.Mkdir(filestoreDir, 0755); err != nil && !os.IsExist(err) {
+			return fmt.Errorf("failed to create filestore directory %q: %v", filestoreDir, err)
+		}
+		// The same volume can be mounted at various places within the same
+		// container. So use os.CreateTemp to create a random filename.
+		filestoreFile, err := os.CreateTemp(filestoreDir, "filestore-")
+		if err != nil {
+			return fmt.Errorf("failed to create filestore file inside %q: %v", mountSrc, err)
+		}
+		// Filestore in self should be a named path because it needs to be
+		// discoverable via path traversal so that k8s can scan the filesystem
+		// and apply any limits appropriately (like local ephemeral storage
+		// limits). So don't delte it. These files will be unlinked when the
+		// container is destroyed. This makes self medium appropriate for k8s.
+		filestoreFiles = append(filestoreFiles, filestoreFile)
+		return nil
+	})
+	return filestoreFiles, err
+}
+
+// Precondition: Overlay2.IsBackedByHostFile() && !Overlay2.IsBackedBySelf().
 func (c *Container) createOverlayFilestoreInDir() ([]*os.File, error) {
 	filestoreDir := c.OverlayConf.HostFileDir()
 	fileInfo, err := os.Stat(filestoreDir)

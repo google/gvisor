@@ -676,7 +676,7 @@ func (o *Overlay2) Set(v string) error {
 
 	o.Medium = vs[1]
 	switch o.Medium {
-	case "memory": // OK
+	case "memory", "self": // OK
 	default:
 		if !strings.HasPrefix(o.Medium, "dir=") {
 			return fmt.Errorf("unexpected medium specifier for --overlay2: %q", o.Medium)
@@ -721,10 +721,16 @@ func (o *Overlay2) IsBackedByHostFile() bool {
 	return o.Enabled() && o.Medium != "memory"
 }
 
+// IsBackedBySelf indicates whether the overlayed mounts are backed by
+// themselves.
+func (o *Overlay2) IsBackedBySelf() bool {
+	return o.Enabled() && o.Medium == "self"
+}
+
 // HostFileDir indicates the directory in which the overlay-backing host file
 // should be created.
 //
-// Precondition: o.IsBackedByHostFile() == true.
+// Precondition: o.IsBackedByHostFile() && !o.IsBackedBySelf().
 func (o *Overlay2) HostFileDir() string {
 	if !strings.HasPrefix(o.Medium, "dir=") {
 		panic(fmt.Sprintf("Overlay2.Medium = %q does not have dir= prefix when overlay is backed by a host file", o.Medium))
