@@ -39,6 +39,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/pkg/test/testutil"
+	"gvisor.dev/gvisor/runsc/boot"
 )
 
 const (
@@ -186,8 +187,7 @@ func TestOverlayNameTooLong(t *testing.T) {
 	defer d.CleanUp(ctx)
 
 	opts := dockerutil.RunOpts{
-		Image:   "basic/integrationtest",
-		WorkDir: "/root",
+		Image: "basic/ubuntu",
 	}
 	longName := strings.Repeat("a", unix.NAME_MAX+1)
 	if got, err := d.Run(ctx, opts, "bash", "-c", fmt.Sprintf("stat %s || true", longName)); err != nil {
@@ -232,5 +232,22 @@ func TestMultipleOverlayMounts(t *testing.T) {
 	filePath := filepath.Join(tmpDir, "file")
 	if _, err := os.Stat(filePath); !os.IsNotExist(err) {
 		t.Errorf("overlay not applied to both bind mounts, %q file exists", filePath)
+	}
+}
+
+// Tests that the overlay backing host file inside the container's rootfs is
+// hidden from the application.
+func TestOverlayRootfsWhiteout(t *testing.T) {
+	ctx := context.Background()
+	d := dockerutil.MakeContainerWithRuntime(ctx, t, "-overlay")
+	defer d.CleanUp(ctx)
+
+	opts := dockerutil.RunOpts{
+		Image: "basic/ubuntu",
+	}
+	if got, err := d.Run(ctx, opts, "bash", "-c", fmt.Sprintf("ls -al / | grep %q || true", boot.SelfOverlayFilestoreDirPrefix)); err != nil {
+		t.Fatalf("docker run failed: %s, %v", got, err)
+	} else if got != "" {
+		t.Errorf("root directory contains a file/directory whose name contains %q: output = %q", boot.SelfOverlayFilestoreDirPrefix, got)
 	}
 }

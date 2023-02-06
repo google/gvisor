@@ -438,7 +438,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 
 	// Set up the restore environment.
 	ctx := k.SupervisorContext()
-	mntr := newContainerMounter(&cm.l.root, cm.l.k, cm.l.mountHints, cm.l.productName)
+	mntr := newContainerMounter(&cm.l.root, cm.l.k, cm.l.mountHints, cm.l.productName, o.SandboxID)
 	ctx, err = mntr.configureRestore(ctx)
 	if err != nil {
 		return fmt.Errorf("configuring filesystem restore: %v", err)

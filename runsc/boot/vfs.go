@@ -58,6 +58,10 @@ const (
 	Nonefs = "none"
 )
 
+// SelfOverlayFilestoreDirPrefix is the prefix in the directory name of the
+// self overlay filestore directory.
+const SelfOverlayFilestoreDirPrefix = ".gvisor.overlay.img."
+
 // SelfOverlayFilestoreDir returns the directory path in which self overlay filestore
 // files are stored for a given mount.
 func SelfOverlayFilestoreDir(mountSrc, cid string) string {
@@ -65,7 +69,11 @@ func SelfOverlayFilestoreDir(mountSrc, cid string) string {
 	// the mount being overlayed itself. The same volume can be overlay-ed by
 	// multiple containers. So make the filestore directory unique to container
 	// by suffixing the container ID.
-	return path.Join(mountSrc, ".gvisor.overlay.img."+cid)
+	return path.Join(mountSrc, selfOverlayFilestoreDirName(cid))
+}
+
+func selfOverlayFilestoreDirName(cid string) string {
+	return SelfOverlayFilestoreDirPrefix + cid
 }
 
 // tmpfs has some extra supported options that we must pass through.
@@ -341,9 +349,12 @@ type containerMounter struct {
 	// productName is the value to show in
 	// /sys/devices/virtual/dmi/id/product_name.
 	productName string
+
+	// cid is the container ID for the container.
+	cid string
 }
 
-func newContainerMounter(info *containerInfo, k *kernel.Kernel, hints *podMountHints, productName string) *containerMounter {
+func newContainerMounter(info *containerInfo, k *kernel.Kernel, hints *podMountHints, productName string, cid string) *containerMounter {
 	return &containerMounter{
 		root:                info.spec.Root,
 		mounts:              compileMounts(info.spec, info.conf),
@@ -352,6 +363,7 @@ func newContainerMounter(info *containerInfo, k *kernel.Kernel, hints *podMountH
 		k:                   k,
 		hints:               hints,
 		productName:         productName,
+		cid:                 cid,
 	}
 }
 
@@ -457,8 +469,7 @@ func (c *containerMounter) createMountNamespace(ctx context.Context, conf *confi
 	return mns, nil
 }
 
-func useOverlayFilestoreFD(conf *config.Config, isDir bool) bool {
-	overlay2 := conf.GetOverlay2()
+func useOverlayFilestoreFD(overlay2 config.Overlay2, isDir bool) bool {
 	if !overlay2.IsBackedByHostFile() {
 		return false
 	}
@@ -473,7 +484,7 @@ func useOverlayFilestoreFD(conf *config.Config, isDir bool) bool {
 // layer using tmpfs, and return overlay mount options. "cleanup" must be called
 // after the options have been used to mount the overlay, to release refs on
 // lower and upper mounts.
-func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Config, creds *auth.Credentials, lowerOpts *vfs.MountOptions, lowerFSName string, useFilestoreFD func(conf *config.Config, isDir bool) bool) (*vfs.MountOptions, func(), error) {
+func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Config, creds *auth.Credentials, lowerOpts *vfs.MountOptions, lowerFSName string, useFilestoreFD func(overlay2 config.Overlay2, isDir bool) bool) (*vfs.MountOptions, func(), error) {
 	// First copy options from lower layer to upper layer and overlay. Clear
 	// filesystem specific options.
 	upperOpts := *lowerOpts
@@ -514,7 +525,8 @@ func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Co
 	tmpfsOpts := tmpfs.FilesystemOpts{
 		RootFileType: uint16(rootType),
 	}
-	if useFilestoreFD != nil && useFilestoreFD(conf, rootType == linux.S_IFDIR) {
+	overlay2 := conf.GetOverlay2()
+	if useFilestoreFD != nil && useFilestoreFD(overlay2, rootType == linux.S_IFDIR) {
 		tmpfsOpts.FilestoreFD = c.overlayFilestoreFDs.removeAsFD()
 	}
 	upperOpts.GetFilesystemOptions.InternalData = tmpfsOpts
@@ -551,6 +563,18 @@ func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Co
 		defer upperFD.DecRef(ctx)
 		if _, err := vfs.CopyRegularFileData(ctx, upperFD, lowerFD); err != nil {
 			return nil, nil, fmt.Errorf("failed to copy up overlay file: %v", err)
+		}
+	}
+
+	// If host filestore is being used and it is backed by self, then we need to
+	// hide the filestore from the containerized application.
+	if overlay2.IsBackedBySelf() && useFilestoreFD != nil && useFilestoreFD(overlay2, rootType == linux.S_IFDIR) {
+		if err := overlay.CreateWhiteout(ctx, c.k.VFS(), creds, &vfs.PathOperation{
+			Root:  upperRootVD,
+			Start: upperRootVD,
+			Path:  fspath.Parse(selfOverlayFilestoreDirName(c.cid)),
+		}); err != nil {
+			return nil, nil, fmt.Errorf("failed to create whiteout to hide self overlay filestore: %w", err)
 		}
 	}
 
