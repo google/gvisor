@@ -822,7 +822,7 @@ func (l *Loader) createContainerProcess(root bool, cid string, info *containerIn
 	}
 	l.startGoferMonitor(cid, int32(info.goferFDs[0].FD()))
 
-	mntr := newContainerMounter(info, l.k, l.mountHints, l.productName)
+	mntr := newContainerMounter(info, l.k, l.mountHints, l.productName, cid)
 	if root {
 		if err := mntr.processHints(info.conf, info.procArgs.Credentials); err != nil {
 			return nil, nil, err

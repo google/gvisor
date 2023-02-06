@@ -562,16 +562,19 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, ct 
 	return nil
 }
 
+// CreateWhiteout creates a whiteout at pop. Whiteouts are created with
+// character devices with device ID = 0.
+//
 // Preconditions: pop's parent directory has been copied up.
-func (fs *filesystem) createWhiteout(ctx context.Context, vfsObj *vfs.VirtualFilesystem, pop *vfs.PathOperation) error {
-	return vfsObj.MknodAt(ctx, fs.creds, pop, &vfs.MknodOptions{
+func CreateWhiteout(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, pop *vfs.PathOperation) error {
+	return vfsObj.MknodAt(ctx, creds, pop, &vfs.MknodOptions{
 		Mode: linux.S_IFCHR, // permissions == include/linux/fs.h:WHITEOUT_MODE == 0
 		// DevMajor == DevMinor == 0, from include/linux/fs.h:WHITEOUT_DEV
 	})
 }
 
 func (fs *filesystem) cleanupRecreateWhiteout(ctx context.Context, vfsObj *vfs.VirtualFilesystem, pop *vfs.PathOperation) {
-	if err := fs.createWhiteout(ctx, vfsObj, pop); err != nil {
+	if err := CreateWhiteout(ctx, vfsObj, fs.creds, pop); err != nil {
 		panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to recreate whiteout after failed file creation: %v", err))
 	}
 }
@@ -1237,7 +1240,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 			if !whiteoutUpper {
 				continue
 			}
-			if err := fs.createWhiteout(ctx, vfsObj, &vfs.PathOperation{
+			if err := CreateWhiteout(ctx, vfsObj, fs.creds, &vfs.PathOperation{
 				Root:  replaced.upperVD,
 				Start: replaced.upperVD,
 				Path:  fspath.Parse(whiteoutName),
@@ -1320,7 +1323,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	newParent.children[newName] = renamed
 	oldParent.dirents = nil
 
-	if err := fs.createWhiteout(ctx, vfsObj, &oldpop); err != nil {
+	if err := CreateWhiteout(ctx, vfsObj, fs.creds, &oldpop); err != nil {
 		panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to create whiteout at origin after RenameAt: %v", err))
 	}
 	if renamed.isDir() {
@@ -1410,7 +1413,7 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 				if !whiteoutUpper {
 					continue
 				}
-				if err := fs.createWhiteout(ctx, vfsObj, &vfs.PathOperation{
+				if err := CreateWhiteout(ctx, vfsObj, fs.creds, &vfs.PathOperation{
 					Root:  child.upperVD,
 					Start: child.upperVD,
 					Path:  fspath.Parse(whiteoutName),
@@ -1441,7 +1444,7 @@ func (fs *filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 			return err
 		}
 	}
-	if err := fs.createWhiteout(ctx, vfsObj, &pop); err != nil {
+	if err := CreateWhiteout(ctx, vfsObj, fs.creds, &pop); err != nil {
 		vfsObj.AbortDeleteDentry(&child.vfsd)
 		if child.upperVD.Ok() {
 			// Don't attempt to recover from this: the original directory is
@@ -1655,7 +1658,7 @@ func (fs *filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 			return err
 		}
 	}
-	if err := fs.createWhiteout(ctx, vfsObj, &pop); err != nil {
+	if err := CreateWhiteout(ctx, vfsObj, fs.creds, &pop); err != nil {
 		vfsObj.AbortDeleteDentry(&child.vfsd)
 		if childLayer == lookupLayerUpper {
 			panic(fmt.Sprintf("unrecoverable overlayfs inconsistency: failed to create whiteout after unlinking upper layer file during UnlinkAt: %v", err))

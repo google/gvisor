@@ -417,7 +417,7 @@ func TestCreateMountNamespace(t *testing.T) {
 			defer l.Destroy()
 			defer loaderCleanup()
 
-			mntr := newContainerMounter(&l.root, l.k, l.mountHints, "")
+			mntr := newContainerMounter(&l.root, l.k, l.mountHints, "", l.sandboxID)
 			if err := mntr.processHints(l.root.conf, l.root.procArgs.Credentials); err != nil {
 				t.Fatalf("failed process hints: %v", err)
 			}
