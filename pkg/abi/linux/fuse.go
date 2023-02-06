@@ -15,6 +15,8 @@
 package linux
 
 import (
+	"time"
+
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 )
 
@@ -346,6 +348,24 @@ type FUSEAttr struct {
 	BlkSize uint32
 
 	_ uint32
+}
+
+// ATimeNsec returns the last access time as the total time since the unix epoch
+// in nanoseconds.
+func (a FUSEAttr) ATimeNsec() int64 {
+	return int64(a.Atime)*time.Second.Nanoseconds() + int64(a.AtimeNsec)
+}
+
+// MTimeNsec returns the last modification time as the total time since the unix
+// epoch in nanoseconds.
+func (a FUSEAttr) MTimeNsec() int64 {
+	return int64(a.Mtime)*time.Second.Nanoseconds() + int64(a.MtimeNsec)
+}
+
+// CTimeNsec returns the last change time as the total time since the unix epoch
+// in nanoseconds.
+func (a FUSEAttr) CTimeNsec() int64 {
+	return int64(a.Ctime)*time.Second.Nanoseconds() + int64(a.CtimeNsec)
 }
 
 // FUSEAttrOut is the reply sent by the daemon to the kernel
