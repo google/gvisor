@@ -17,6 +17,7 @@ package fuse
 import (
 	"fmt"
 	"sync"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -562,17 +563,21 @@ func (i *inode) Readlink(ctx context.Context, mnt *vfs.Mount) (string, error) {
 //
 // +checklocks:i.attrMu
 func (i *inode) getFUSEAttr() linux.FUSEAttr {
+	ns := time.Second.Nanoseconds()
 	return linux.FUSEAttr{
-		Ino:     i.nodeID,
-		UID:     i.uid.Load(),
-		GID:     i.gid.Load(),
-		Size:    i.size.Load(),
-		Mode:    uint32(i.filemode()),
-		BlkSize: i.blockSize.Load(),
-		Atime:   uint64(i.atime.Load()),
-		Mtime:   uint64(i.mtime.Load()),
-		Ctime:   uint64(i.ctime.Load()),
-		Nlink:   i.nlink.Load(),
+		Ino:       i.nodeID,
+		UID:       i.uid.Load(),
+		GID:       i.gid.Load(),
+		Size:      i.size.Load(),
+		Mode:      uint32(i.filemode()),
+		BlkSize:   i.blockSize.Load(),
+		Atime:     uint64(i.atime.Load() / ns),
+		Mtime:     uint64(i.mtime.Load() / ns),
+		Ctime:     uint64(i.ctime.Load() / ns),
+		AtimeNsec: uint32(i.atime.Load() % ns),
+		MtimeNsec: uint32(i.mtime.Load() % ns),
+		CtimeNsec: uint32(i.ctime.Load() % ns),
+		Nlink:     i.nlink.Load(),
 	}
 }
 
@@ -771,11 +776,14 @@ func fattrMaskFromStats(mask uint32) uint32 {
 
 // SetStat implements kernfs.Inode.SetStat.
 func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Credentials, opts vfs.SetStatOptions) error {
+	i.attrMu.Lock()
+	defer i.attrMu.Unlock()
+	if err := vfs.CheckSetStat(ctx, creds, &opts, i.filemode(), auth.KUID(i.uid.Load()), auth.KGID(i.gid.Load())); err != nil {
+		return err
+	}
 	if opts.Stat.Mask == 0 {
 		return nil
 	}
-	i.attrMu.Lock()
-	defer i.attrMu.Unlock()
 	return i.setAttr(ctx, fs, creds, opts, fhOptions{useFh: false})
 }
 
@@ -796,6 +804,12 @@ func (i *inode) setAttr(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 	fattrMask := fattrMaskFromStats(opts.Stat.Mask)
 	if fhOpts.useFh {
 		fattrMask |= linux.FATTR_FH
+	}
+	if opts.Stat.Mask&linux.STATX_ATIME != 0 && opts.Stat.Atime.Nsec == linux.UTIME_NOW {
+		fattrMask |= linux.FATTR_ATIME_NOW
+	}
+	if opts.Stat.Mask&linux.STATX_MTIME != 0 && opts.Stat.Mtime.Nsec == linux.UTIME_NOW {
+		fattrMask |= linux.FATTR_ATIME_NOW
 	}
 	in := linux.FUSESetAttrIn{
 		Valid:     fattrMask,
@@ -840,9 +854,9 @@ func (i *inode) updateAttrs(attr linux.FUSEAttr, attrTimeout uint64) {
 	i.uid.Store(attr.UID)
 	i.gid.Store(attr.GID)
 
-	i.atime.Store(int64(attr.Atime))
-	i.mtime.Store(int64(attr.Mtime))
-	i.ctime.Store(int64(attr.Ctime))
+	i.atime.Store(attr.ATimeNsec())
+	i.mtime.Store(attr.MTimeNsec())
+	i.ctime.Store(attr.CTimeNsec())
 
 	i.size.Store(attr.Size)
 	i.nlink.Store(attr.Nlink)

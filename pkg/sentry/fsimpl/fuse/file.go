@@ -133,6 +133,9 @@ func (fd *fileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions)
 	inode := fd.inode()
 	inode.attrMu.Lock()
 	defer inode.attrMu.Unlock()
+	if err := vfs.CheckSetStat(ctx, creds, &opts, inode.filemode(), auth.KUID(inode.uid.Load()), auth.KGID(inode.gid.Load())); err != nil {
+		return err
+	}
 	return inode.setAttr(ctx, fs, creds, opts, fhOptions{useFh: true, fh: fd.Fh})
 }
 
