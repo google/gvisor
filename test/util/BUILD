@@ -82,6 +82,7 @@ cc_library(
         ":fs_util",
         ":posix_error",
         ":test_util",
+        "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:optional",

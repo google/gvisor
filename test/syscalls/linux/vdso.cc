@@ -18,6 +18,7 @@
 #include <algorithm>
 
 #include "gtest/gtest.h"
+#include "absl/algorithm/container.h"
 #include "test/util/fs_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/proc_util.h"
@@ -32,9 +33,8 @@ namespace {
 TEST(VvarTest, WriteVvar) {
   auto contents = ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/self/maps"));
   auto maps = ASSERT_NO_ERRNO_AND_VALUE(ParseProcMaps(contents));
-  auto it = std::find_if(maps.begin(), maps.end(), [](const ProcMapsEntry& e) {
-    return e.filename == "[vvar]";
-  });
+  auto it = absl::c_find_if(
+      maps, [](const ProcMapsEntry& e) { return e.filename == "[vvar]"; });
 
   SKIP_IF(it == maps.end());
   EXPECT_THAT(mprotect(reinterpret_cast<void*>(it->start), kPageSize,
