@@ -362,9 +362,8 @@ func (fs *Filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 		return err
 	}
 
-	if rp.Mount() != vd.Mount() {
-		return linuxerr.EXDEV
-	}
+	parent.dirMu.Lock()
+	defer parent.dirMu.Unlock()
 	inode := vd.Dentry().Impl().(*Dentry).Inode()
 	if inode.Mode().IsDir() {
 		return linuxerr.EPERM
@@ -372,14 +371,15 @@ func (fs *Filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 	if err := vfs.MayLink(rp.Credentials(), inode.Mode(), inode.UID(), inode.GID()); err != nil {
 		return err
 	}
-	parent.dirMu.Lock()
-	defer parent.dirMu.Unlock()
 	pc := rp.Component()
 	if err := checkCreateLocked(ctx, rp.Credentials(), pc, parent); err != nil {
 		return err
 	}
 	if rp.MustBeDir() {
 		return linuxerr.ENOENT
+	}
+	if rp.Mount() != vd.Mount() {
+		return linuxerr.EXDEV
 	}
 	if err := rp.Mount().CheckBeginWrite(); err != nil {
 		return err
@@ -793,46 +793,67 @@ func (fs *Filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	fs.mu.Lock()
 	defer fs.processDeferredDecRefs(ctx)
 	defer fs.mu.Unlock()
-
-	d, err := fs.walkExistingLocked(ctx, rp)
+	parent, err := fs.walkParentDirLocked(ctx, rp, rp.Start().Impl().(*Dentry))
 	if err != nil {
+		return err
+	}
+	if err := parent.inode.CheckPermissions(ctx, rp.Credentials(), vfs.MayWrite|vfs.MayExec); err != nil {
 		return err
 	}
 	if err := rp.Mount().CheckBeginWrite(); err != nil {
 		return err
 	}
 	defer rp.Mount().EndWrite()
-	if err := checkDeleteLocked(ctx, rp, d); err != nil {
+	name := rp.Component()
+	if name == "." {
+		return linuxerr.EINVAL
+	}
+	if name == ".." {
+		return linuxerr.ENOTEMPTY
+	}
+	child, ok := parent.children[name]
+	if !ok {
+		return linuxerr.ENOENT
+	}
+	if err := checkDeleteLocked(ctx, rp, child); err != nil {
 		return err
 	}
-	if !d.isDir() {
+	if err := vfs.CheckDeleteSticky(
+		rp.Credentials(),
+		linux.FileMode(parent.inode.Mode()),
+		auth.KUID(parent.inode.UID()),
+		auth.KUID(child.inode.UID()),
+		auth.KGID(child.inode.GID()),
+	); err != nil {
+		return err
+	}
+	if !child.isDir() {
 		return linuxerr.ENOTDIR
 	}
-	if d.inode.HasChildren() {
+	if child.inode.HasChildren() {
 		return linuxerr.ENOTEMPTY
 	}
 	virtfs := rp.VirtualFilesystem()
-	parentDentry := d.parent
-	parentDentry.dirMu.Lock()
-	defer parentDentry.dirMu.Unlock()
+	parent.dirMu.Lock()
+	defer parent.dirMu.Unlock()
 
 	mntns := vfs.MountNamespaceFromContext(ctx)
 	defer mntns.DecRef(ctx)
-	vfsd := d.VFSDentry()
+	vfsd := child.VFSDentry()
 	if err := virtfs.PrepareDeleteDentry(mntns, vfsd); err != nil {
 		return err // +checklocksforce: vfsd is not locked.
 	}
 
-	if err := parentDentry.inode.RmDir(ctx, d.name, d.inode); err != nil {
+	if err := parent.inode.RmDir(ctx, child.name, child.inode); err != nil {
 		virtfs.AbortDeleteDentry(vfsd)
 		return err
 	}
-	delete(parentDentry.children, d.name)
-	parentDentry.inode.Watches().Notify(ctx, d.name, linux.IN_DELETE|linux.IN_ISDIR, 0, vfs.InodeEvent, true /* unlinked */)
+	delete(parent.children, child.name)
+	parent.inode.Watches().Notify(ctx, child.name, linux.IN_DELETE|linux.IN_ISDIR, 0, vfs.InodeEvent, true /* unlinked */)
 	// Defer decref so that fs.mu and parentDentry.dirMu are unlocked by then.
-	fs.deferDecRef(d)
+	fs.deferDecRef(child)
 	virtfs.CommitDeleteDentry(ctx, vfsd)
-	d.setDeleted()
+	child.setDeleted()
 	return nil
 }
 
