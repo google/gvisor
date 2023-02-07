@@ -17,7 +17,6 @@ package ip_test
 import (
 	"bytes"
 	"fmt"
-	"math"
 	"math/rand"
 	"testing"
 	"time"
@@ -61,11 +60,7 @@ func (m *mockMulticastGroupProtocol) init(opts ip.GenericMulticastProtocolOption
 	m.mu.genericMulticastGroup.Init(&m.mu.RWMutex, opts)
 
 	if v1Compatibility {
-		// A General V1 query should make us drop into V1 compatibility mode.
-		//
-		// Since we just init-ed, we know we don't have any groups to send
-		// reports for so this won't break any tests looking at packets.
-		m.mu.genericMulticastGroup.HandleQueryLocked("", math.MaxInt64)
+		m.mu.genericMulticastGroup.SetForcedV1ModeLocked(true)
 	}
 }
 
@@ -85,6 +80,12 @@ func (m *mockMulticastGroupProtocol) setQueuePackets(v bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.mu.makeQueuePackets = v
+}
+
+func (m *mockMulticastGroupProtocol) setForcedV1Mode(v bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.mu.genericMulticastGroup.SetForcedV1ModeLocked(v)
 }
 
 func (m *mockMulticastGroupProtocol) joinGroup(addr tcpip.Address) {
@@ -1416,11 +1417,6 @@ func TestQueuedPackets(t *testing.T) {
 			// The delayed report timer should have been cancelled since we did not send
 			// the initial report earlier.
 			clock.Advance(time.Hour)
-			if test.v1Compatibility {
-				// V1 query targetting an unjoined group should drop us into V1
-				// compatibility mode without sending any packets, affecting tests.
-				mgp.handleQuery(addr3, 0)
-			}
 			if diff := mgp.check(checkFields{}); diff != "" {
 				t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
@@ -1507,5 +1503,42 @@ func TestQueuedPackets(t *testing.T) {
 				t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestV1Compatibility(t *testing.T) {
+	clock := faketime.NewManualClock()
+	mgp := mockMulticastGroupProtocol{t: t}
+	mgp.init(ip.GenericMulticastProtocolOptions{
+		Rand:                      rand.New(rand.NewSource(4)),
+		Clock:                     clock,
+		MaxUnsolicitedReportDelay: maxUnsolicitedReportDelay,
+	}, false /* v1Compatibility */)
+
+	mgp.joinGroup(addr1)
+	if diff := mgp.check(checkFields{sentV2Reports: []mockReportV2{{records: []mockReportV2Record{
+		{
+			recordType:   ip.MulticastGroupProtocolV2ReportRecordChangeToExcludeMode,
+			groupAddress: addr1,
+		},
+	}}}}); diff != "" {
+		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+	}
+
+	mgp.setForcedV1Mode(true)
+	mgp.joinGroup(addr2)
+	if diff := mgp.check(checkFields{sendReportGroupAddresses: []tcpip.Address{addr2}}); diff != "" {
+		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+	}
+
+	mgp.setForcedV1Mode(false)
+	mgp.joinGroup(addr3)
+	if diff := mgp.check(checkFields{sentV2Reports: []mockReportV2{{records: []mockReportV2Record{
+		{
+			recordType:   ip.MulticastGroupProtocolV2ReportRecordChangeToExcludeMode,
+			groupAddress: addr3,
+		},
+	}}}}); diff != "" {
+		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 }
