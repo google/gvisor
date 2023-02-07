@@ -244,7 +244,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		}
 		// Convert size in bytes to nearest Page Size bytes
 		// as Linux allocates memory in terms of Page size.
-		maxSizeInPages, ok = hostarch.ToPages(maxSizeInBytes)
+		maxSizeInPages, ok = hostarch.ToPagesRoundUp(maxSizeInBytes)
 		if !ok {
 			ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: Pages RoundUp Overflow error: %q", ok)
 			return nil, nil, linuxerr.EINVAL
