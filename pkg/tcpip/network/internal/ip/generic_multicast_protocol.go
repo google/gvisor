@@ -244,7 +244,7 @@ type protocolMode int
 
 const (
 	protocolModeV2 protocolMode = iota
-	protocolModeV1Forced
+	protocolModeV1
 	protocolModeV1Compatibility
 )
 
@@ -292,30 +292,35 @@ type GenericMulticastProtocolState struct {
 	stateChangedReportV2TimerSet bool
 }
 
-// SetForcedV1ModeLocked sets the V1 forced configuration.
+// SetV1ModeLocked sets the V1 configuration.
+//
+// Returns the previous configuration.
 //
 // Precondition: g.protocolMU must be locked.
-func (g *GenericMulticastProtocolState) SetForcedV1ModeLocked(v bool) {
+func (g *GenericMulticastProtocolState) SetV1ModeLocked(v bool) bool {
 	if v {
 		switch g.mode {
 		case protocolModeV2:
 			g.cancelV2ReportTimers()
 		case protocolModeV1Compatibility:
 			g.modeTimer.Stop()
-		case protocolModeV1Forced:
-			// Already in V1 forced mode; nothing to do.
+		case protocolModeV1:
+			// Already in V1 mode; nothing to do.
+			return true
 		default:
 			panic(fmt.Sprintf("unrecognized mode = %d", g.mode))
 		}
-		g.mode = protocolModeV1Forced
-		return
+		g.mode = protocolModeV1
+		return false
 	}
 
 	switch g.mode {
 	case protocolModeV2, protocolModeV1Compatibility:
-		// Not in V1 forced mode; nothing to do.
-	case protocolModeV1Forced:
+		// Not in V1 mode; nothing to do.
+		return false
+	case protocolModeV1:
 		g.mode = protocolModeV2
+		return true
 	default:
 		panic(fmt.Sprintf("unrecognized mode = %d", g.mode))
 	}
@@ -387,7 +392,7 @@ func (g *GenericMulticastProtocolState) MakeAllNonMemberLocked() {
 				groupAddress,
 			)
 		}
-	case protocolModeV1Compatibility, protocolModeV1Forced:
+	case protocolModeV1Compatibility, protocolModeV1:
 		handler = g.transitionToNonMemberLocked
 	default:
 		panic(fmt.Sprintf("unrecognized mode = %d", g.mode))
@@ -434,7 +439,7 @@ func (g *GenericMulticastProtocolState) InitializeGroupsLocked() {
 	switch g.mode {
 	case protocolModeV2:
 		v2ReportBuilder = g.opts.Protocol.NewReportV2Builder()
-	case protocolModeV1Compatibility, protocolModeV1Forced:
+	case protocolModeV1Compatibility, protocolModeV1:
 	default:
 		panic(fmt.Sprintf("unrecognized mode = %d", g.mode))
 	}
@@ -481,7 +486,7 @@ func (g *GenericMulticastProtocolState) SendQueuedReportsLocked() {
 			switch g.mode {
 			case protocolModeV2:
 				g.sendV2ReportAndMaybeScheduleChangedTimer(groupAddress, &info, MulticastGroupProtocolV2ReportRecordChangeToExcludeMode)
-			case protocolModeV1Compatibility, protocolModeV1Forced:
+			case protocolModeV1Compatibility, protocolModeV1:
 				g.maybeSendReportLocked(groupAddress, &info)
 			default:
 				panic(fmt.Sprintf("unrecognized mode = %d", g.mode))
@@ -528,7 +533,7 @@ func (g *GenericMulticastProtocolState) JoinGroupLocked(groupAddress tcpip.Addre
 					// Nothing meaningful we can do with the error here - we only try to
 					// send a delayed report once.
 					_, _ = reportBuilder.Send()
-				case protocolModeV1Compatibility, protocolModeV1Forced:
+				case protocolModeV1Compatibility, protocolModeV1:
 					g.maybeSendReportLocked(groupAddress, &info)
 				default:
 					panic(fmt.Sprintf("unrecognized mode = %d", g.mode))
@@ -674,7 +679,7 @@ func (g *GenericMulticastProtocolState) LeaveGroupLocked(groupAddress tcpip.Addr
 		} else {
 			delete(g.memberships, groupAddress)
 		}
-	case protocolModeV1Compatibility, protocolModeV1Forced:
+	case protocolModeV1Compatibility, protocolModeV1:
 		g.transitionToNonMemberLocked(groupAddress, &info)
 		delete(g.memberships, groupAddress)
 	default:
@@ -693,7 +698,7 @@ func (g *GenericMulticastProtocolState) HandleQueryV2Locked(groupAddress tcpip.A
 	}
 
 	switch g.mode {
-	case protocolModeV1Compatibility, protocolModeV1Forced:
+	case protocolModeV1Compatibility, protocolModeV1:
 		g.handleQueryInnerLocked(groupAddress, g.opts.Protocol.V2QueryMaxRespCodeToV1Delay(maxResponseCode))
 		return
 	case protocolModeV2:
@@ -914,7 +919,7 @@ func (g *GenericMulticastProtocolState) HandleQueryLocked(groupAddress tcpip.Add
 		}
 		g.mode = protocolModeV1Compatibility
 		g.cancelV2ReportTimers()
-	case protocolModeV1Forced:
+	case protocolModeV1:
 	default:
 		panic(fmt.Sprintf("unrecognized mode = %d", g.mode))
 	}
@@ -996,7 +1001,7 @@ func (g *GenericMulticastProtocolState) initializeNewMemberLocked(groupAddress t
 			callersV2ReportBuilder.AddRecord(MulticastGroupProtocolV2ReportRecordChangeToExcludeMode, groupAddress)
 			info.transmissionLeft--
 		}
-	case protocolModeV1Compatibility, protocolModeV1Forced:
+	case protocolModeV1Compatibility, protocolModeV1:
 		info.transmissionLeft = unsolicitedTransmissionCount
 		g.maybeSendReportLocked(groupAddress, info)
 	default:
