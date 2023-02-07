@@ -60,7 +60,7 @@ func (m *mockMulticastGroupProtocol) init(opts ip.GenericMulticastProtocolOption
 	m.mu.genericMulticastGroup.Init(&m.mu.RWMutex, opts)
 
 	if v1Compatibility {
-		m.mu.genericMulticastGroup.SetForcedV1ModeLocked(true)
+		m.mu.genericMulticastGroup.SetV1ModeLocked(true)
 	}
 }
 
@@ -82,10 +82,10 @@ func (m *mockMulticastGroupProtocol) setQueuePackets(v bool) {
 	m.mu.makeQueuePackets = v
 }
 
-func (m *mockMulticastGroupProtocol) setForcedV1Mode(v bool) {
+func (m *mockMulticastGroupProtocol) setV1Mode(v bool) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.mu.genericMulticastGroup.SetForcedV1ModeLocked(v)
+	return m.mu.genericMulticastGroup.SetV1ModeLocked(v)
 }
 
 func (m *mockMulticastGroupProtocol) joinGroup(addr tcpip.Address) {
@@ -1506,7 +1506,7 @@ func TestQueuedPackets(t *testing.T) {
 	}
 }
 
-func TestV1Compatibility(t *testing.T) {
+func TestSetV1Mode(t *testing.T) {
 	clock := faketime.NewManualClock()
 	mgp := mockMulticastGroupProtocol{t: t}
 	mgp.init(ip.GenericMulticastProtocolOptions{
@@ -1525,13 +1525,17 @@ func TestV1Compatibility(t *testing.T) {
 		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 
-	mgp.setForcedV1Mode(true)
+	if mgp.setV1Mode(true) {
+		t.Error("got mgp.setV1Mode(true) = true, want = false")
+	}
 	mgp.joinGroup(addr2)
 	if diff := mgp.check(checkFields{sendReportGroupAddresses: []tcpip.Address{addr2}}); diff != "" {
 		t.Fatalf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 	}
 
-	mgp.setForcedV1Mode(false)
+	if !mgp.setV1Mode(false) {
+		t.Error("got mgp.setV1Mode(false) = false, want = true")
+	}
 	mgp.joinGroup(addr3)
 	if diff := mgp.check(checkFields{sentV2Reports: []mockReportV2{{records: []mockReportV2Record{
 		{

@@ -180,6 +180,7 @@ var _ stack.GroupAddressableEndpoint = (*endpoint)(nil)
 var _ stack.AddressableEndpoint = (*endpoint)(nil)
 var _ stack.NetworkEndpoint = (*endpoint)(nil)
 var _ stack.NDPEndpoint = (*endpoint)(nil)
+var _ MLDEndpoint = (*endpoint)(nil)
 var _ NDPEndpoint = (*endpoint)(nil)
 
 type endpoint struct {
@@ -354,6 +355,13 @@ func (e *endpoint) InvalidateDefaultRouter(rtr tcpip.Address) {
 	// We represent default routers with a default (off-link) route through the
 	// router.
 	e.mu.ndp.invalidateOffLinkRoute(offLinkRoute{dest: header.IPv6EmptySubnet, router: rtr})
+}
+
+// SetMLDVersion implements MLDEndpoint.
+func (e *endpoint) SetMLDVersion(v MLDVersion) MLDVersion {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.mu.mld.setVersion(v)
 }
 
 // SetNDPConfigurations implements NDPEndpoint.
