@@ -191,6 +191,9 @@ type endpoint struct {
 
 // New creates a new shared-memory-based endpoint. Buffers will be broken up
 // into buffers of "bufferSize" bytes.
+//
+// In order to release all resources held by the returned endpoint, Close()
+// must be called followed by Wait().
 func New(opts Options) (stack.LinkEndpoint, error) {
 	e := &endpoint{
 		mtu:                     opts.MTU,
@@ -231,7 +234,8 @@ func New(opts Options) (stack.LinkEndpoint, error) {
 	return e, nil
 }
 
-// Close frees all resources associated with the endpoint.
+// Close frees most resources associated with the endpoint. Wait() must be
+// called after Close() in order to free the rest.
 func (e *endpoint) Close() {
 	// Tell dispatch goroutine to stop, then write to the eventfd so that
 	// it wakes up in case it's sleeping.
