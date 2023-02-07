@@ -958,7 +958,7 @@ TEST_P(AllSocketPairTest, GetSocketRcvbufOption) {
       SyscallSucceeds());
   ASSERT_EQ(opt_len, sizeof(opt));
 
-  if (IsRunningOnGvisor()) {
+  if (IsRunningOnGvisor() && !IsRunningWithHostinet()) {
     // Minimum buffer size in gVisor is 4KiB.
     const int minRcvBufSizeGvisor = 4096;
     EXPECT_EQ(opt, minRcvBufSizeGvisor);
@@ -991,7 +991,7 @@ TEST_P(AllSocketPairTest, GetSetSocketRcvlowatOption) {
       SyscallSucceeds());
   ASSERT_EQ(opt_len, sizeof(opt));
 
-  if (IsRunningOnGvisor()) {
+  if (IsRunningOnGvisor() && !IsRunningWithHostinet()) {
     // TODO(b/226603727): Add support for setting SO_RCVLOWAT option in gVisor.
     EXPECT_EQ(opt, defaultSz);
   } else {
