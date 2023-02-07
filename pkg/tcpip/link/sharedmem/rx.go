@@ -85,8 +85,8 @@ func (r *rx) init(mtu uint32, c *QueueConfig) error {
 	return nil
 }
 
-// cleanup releases all resources allocated during init(). It must only be
-// called if init() has previously succeeded.
+// cleanup releases all resources allocated during init() except r.eventFD. It
+// must only be called if init() has previously succeeded.
 func (r *rx) cleanup() {
 	a, b := r.q.Bytes()
 	unix.Munmap(a)
@@ -94,7 +94,6 @@ func (r *rx) cleanup() {
 
 	unix.Munmap(r.data)
 	unix.Munmap(r.sharedData)
-	r.eventFD.Close()
 }
 
 // notify writes to the tx.eventFD to indicate to the peer that there is data to
