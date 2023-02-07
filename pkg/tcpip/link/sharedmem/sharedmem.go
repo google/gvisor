@@ -254,6 +254,7 @@ func (e *endpoint) Close() {
 // stopped after a Close() call.
 func (e *endpoint) Wait() {
 	e.completed.Wait()
+	e.rx.eventFD.Close()
 }
 
 // Attach implements stack.LinkEndpoint.Attach. It launches the goroutine that
