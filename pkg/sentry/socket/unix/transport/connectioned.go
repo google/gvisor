@@ -326,6 +326,7 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 	ne.ops.InitHandler(ne, &stackHandler{}, getSendBufferLimits, getReceiveBufferLimits)
 	ne.ops.SetSendBufferSize(defaultBufferSize, false /* notify */)
 	ne.ops.SetReceiveBufferSize(defaultBufferSize, false /* notify */)
+	ne.SocketOptions().SetPassCred(e.SocketOptions().GetPassCred())
 
 	readQueue := &queue{ReaderQueue: ce.WaiterQueue(), WriterQueue: ne.Queue, limit: defaultBufferSize}
 	readQueue.InitRefs()
