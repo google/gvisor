@@ -196,11 +196,13 @@ TEST_P(TcpSocketTest, ConnectOnEstablishedConnection) {
       ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
   socklen_t addrlen = sizeof(addr);
 
-  ASSERT_THAT(connect(connected_.get(),
-                      reinterpret_cast<const struct sockaddr*>(&addr), addrlen),
+  ASSERT_THAT(RetryEINTR(connect)(
+                  connected_.get(),
+                  reinterpret_cast<const struct sockaddr*>(&addr), addrlen),
               SyscallFailsWithErrno(EISCONN));
-  ASSERT_THAT(connect(accepted_.get(),
-                      reinterpret_cast<const struct sockaddr*>(&addr), addrlen),
+  ASSERT_THAT(RetryEINTR(connect)(
+                  accepted_.get(),
+                  reinterpret_cast<const struct sockaddr*>(&addr), addrlen),
               SyscallFailsWithErrno(EISCONN));
 }
 
@@ -1480,10 +1482,11 @@ TEST_P(SimpleTcpSocketTest, CleanupOnConnectionRefused) {
   // socket to return an error and clean itself up immediately.
   // The error being ECONNREFUSED diverges with RFC 793, page 37, but does what
   // Linux does.
-  ASSERT_THAT(connect(client_s.get(),
-                      reinterpret_cast<const struct sockaddr*>(&bound_addr),
-                      bound_addrlen),
-              SyscallFailsWithErrno(ECONNREFUSED));
+  ASSERT_THAT(
+      RetryEINTR(connect)(client_s.get(),
+                          reinterpret_cast<const struct sockaddr*>(&bound_addr),
+                          bound_addrlen),
+      SyscallFailsWithErrno(ECONNREFUSED));
 
   FileDescriptor new_s =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
@@ -1502,16 +1505,18 @@ TEST_P(SimpleTcpSocketTest, CleanupOnConnectionRefused) {
   // Linux actually sends a SYN again and gets a RST and correctly returns
   // ECONNREFUSED.
   if (IsRunningOnGvisor()) {
-    ASSERT_THAT(connect(client_s.get(),
-                        reinterpret_cast<const struct sockaddr*>(&bound_addr),
-                        bound_addrlen),
+    ASSERT_THAT(RetryEINTR(connect)(
+                    client_s.get(),
+                    reinterpret_cast<const struct sockaddr*>(&bound_addr),
+                    bound_addrlen),
                 SyscallFailsWithErrno(ECONNABORTED));
     return;
   }
-  ASSERT_THAT(connect(client_s.get(),
-                      reinterpret_cast<const struct sockaddr*>(&bound_addr),
-                      bound_addrlen),
-              SyscallFailsWithErrno(ECONNREFUSED));
+  ASSERT_THAT(
+      RetryEINTR(connect)(client_s.get(),
+                          reinterpret_cast<const struct sockaddr*>(&bound_addr),
+                          bound_addrlen),
+      SyscallFailsWithErrno(ECONNREFUSED));
 }
 
 // Test that we get an ECONNREFUSED with a nonblocking socket.
@@ -2175,17 +2180,19 @@ void ShutdownConnectingSocket(int domain, int shutdown_mode) {
   // connections will not get a SYN-ACK because the queue is full.
   FileDescriptor connected_s =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(domain, SOCK_STREAM, IPPROTO_TCP));
-  ASSERT_THAT(connect(connected_s.get(),
-                      reinterpret_cast<const struct sockaddr*>(&bound_addr),
-                      bound_addrlen),
-              SyscallSucceeds());
+  ASSERT_THAT(
+      RetryEINTR(connect)(connected_s.get(),
+                          reinterpret_cast<const struct sockaddr*>(&bound_addr),
+                          bound_addrlen),
+      SyscallSucceeds());
 
   FileDescriptor connecting_s = ASSERT_NO_ERRNO_AND_VALUE(
       Socket(domain, SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP));
-  ASSERT_THAT(connect(connecting_s.get(),
-                      reinterpret_cast<const struct sockaddr*>(&bound_addr),
-                      bound_addrlen),
-              SyscallFailsWithErrno(EINPROGRESS));
+  ASSERT_THAT(
+      RetryEINTR(connect)(connecting_s.get(),
+                          reinterpret_cast<const struct sockaddr*>(&bound_addr),
+                          bound_addrlen),
+      SyscallFailsWithErrno(EINPROGRESS));
 
   // Now the test: when a connecting socket is shutdown, the socket should enter
   // an error state.
@@ -2270,18 +2277,20 @@ TEST_P(SimpleTcpSocketTest, OnlyAcknowledgeBacklogConnections) {
       // Establish a connection, but do not accept it.
       FileDescriptor connected_s = ASSERT_NO_ERRNO_AND_VALUE(
           Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
-      ASSERT_THAT(connect(connected_s.get(),
-                          reinterpret_cast<const struct sockaddr*>(&bound_addr),
-                          bound_addrlen),
+      ASSERT_THAT(RetryEINTR(connect)(
+                      connected_s.get(),
+                      reinterpret_cast<const struct sockaddr*>(&bound_addr),
+                      bound_addrlen),
                   SyscallSucceeds());
 
       // Immediately attempt to establish another connection. Use non blocking
       // socket because this is expected to timeout.
       FileDescriptor connecting_s = ASSERT_NO_ERRNO_AND_VALUE(
           Socket(GetParam(), SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP));
-      ASSERT_THAT(connect(connecting_s.get(),
-                          reinterpret_cast<const struct sockaddr*>(&bound_addr),
-                          bound_addrlen),
+      ASSERT_THAT(RetryEINTR(connect)(
+                      connecting_s.get(),
+                      reinterpret_cast<const struct sockaddr*>(&bound_addr),
+                      bound_addrlen),
                   SyscallFailsWithErrno(EINPROGRESS));
 
       struct pollfd poll_fd = {
@@ -2321,9 +2330,10 @@ TEST_P(SimpleTcpSocketTest, SynRcvdOnListenerShutdown) {
   for (auto& thread : threads) {
     FileDescriptor connecting_s = ASSERT_NO_ERRNO_AND_VALUE(
         Socket(GetParam(), SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP));
-    ASSERT_THAT(connect(connecting_s.get(),
-                        reinterpret_cast<const struct sockaddr*>(&bound_addr),
-                        bound_addrlen),
+    ASSERT_THAT(RetryEINTR(connect)(
+                    connecting_s.get(),
+                    reinterpret_cast<const struct sockaddr*>(&bound_addr),
+                    bound_addrlen),
                 SyscallFailsWithErrno(EINPROGRESS));
     thread = std::thread([connecting_s = std::move(connecting_s)]() {
       struct pollfd poll_fd = {
