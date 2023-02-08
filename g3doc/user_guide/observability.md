@@ -50,7 +50,10 @@ runsc_fs_reads{sandbox="c7ce77796e0ece4c0881fb26261608552ea4a67b2fe5934658b8b443
 Use the `runsc metric-server` subcommand:
 
 ```shell
-$ sudo runsc --root=/var/run/docker/runtime-runc/moby --metric-server=:1337 metric-server
+$ sudo runsc \
+    --root=/var/run/docker/runtime-runc/moby \
+    --metric-server=localhost:1337 \
+    metric-server
 ```
 
 `--root` needs to be set to the OCI runtime root directory that your runtime
@@ -95,7 +98,7 @@ this can be set in `/etc/docker/daemon.json` like so:
         "runsc": {
             "path": "/path/to/runsc",
             "runtimeArgs": [
-                "--metric-server=:1337"
+                "--metric-server=localhost:1337"
             ]
         }
     }
@@ -252,11 +255,6 @@ runsc_fs_read_wait{iteration="2407456650315156914",sandbox="737ce142058561d764ad
 runsc_fs_reads{iteration="2407456650315156914",sandbox="737ce142058561d764ad870d028130a29944821dd918c7979351b249d5d30481"} 52 1674690333702
 ＃ [...]
 ```
-
-Note that this example won't work if your Docker runtime uses
-`--metric-server=localhost:1337`, since the in-sandbox `runsc metric-server`
-process uses `--metric-server=:1337`. The flag values need to be an *exact*
-string match, even if they run in different contexts.
 
 ## Labeling pods on Kubernetes
 
