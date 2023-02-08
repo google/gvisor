@@ -1320,3 +1320,22 @@ func (mm *MemoryManager) EnableMembarrierRSeq() {
 func (mm *MemoryManager) IsMembarrierRSeqEnabled() bool {
 	return mm.membarrierRSeqEnabled.Load() != 0
 }
+
+// FindVMAByName finds a vma with the specified name and returns its start address and offset.
+func (mm *MemoryManager) FindVMAByName(ar hostarch.AddrRange, hint string) (hostarch.Addr, uint64, error) {
+	mm.mappingMu.RLock()
+	defer mm.mappingMu.RUnlock()
+
+	for vseg := mm.vmas.LowerBoundSegment(ar.Start); vseg.Ok(); vseg = vseg.NextSegment() {
+		start := vseg.Start()
+		if !ar.Contains(start) {
+			break
+		}
+		vma := vseg.ValuePtr()
+
+		if vma.hint == hint {
+			return start, vma.off, nil
+		}
+	}
+	return 0, 0, fmt.Errorf("could not find \"%s\" in %s", hint, ar)
+}
