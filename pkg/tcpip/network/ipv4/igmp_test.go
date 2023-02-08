@@ -43,7 +43,9 @@ var (
 	remoteAddr          = testutil.MustParse4("10.0.0.2")
 	multicastAddr1      = testutil.MustParse4("224.0.0.3")
 	multicastAddr2      = testutil.MustParse4("224.0.0.4")
-	unusedMulticastAddr = testutil.MustParse4("224.0.0.5")
+	multicastAddr3      = testutil.MustParse4("224.0.0.5")
+	multicastAddr4      = testutil.MustParse4("224.0.0.6")
+	unusedMulticastAddr = testutil.MustParse4("224.0.0.7")
 )
 
 // validateIgmpPacket checks that a passed packet is an IPv4 IGMP packet sent
@@ -276,16 +278,17 @@ func TestSendQueuedIGMPReports(t *testing.T) {
 
 			checkVersion := func() {
 				if test.v2Compatibility {
-					createAndInjectIGMPPacket(
-						e,
-						header.IGMPMembershipQuery,
-						1, /* maxRespTime */
-						header.IGMPTTL,
-						remoteAddr,
-						header.IPv4AllSystems,
-						unusedMulticastAddr,
-						true, /* hasRouterAlertOption */
-					)
+					ep, err := s.GetNetworkEndpoint(nicID, header.IPv4ProtocolNumber)
+					if err != nil {
+						t.Fatalf("s.GetNetworkEndpoint(%d, %d): %s", nicID, header.IPv4ProtocolNumber, err)
+					}
+
+					igmpEP, ok := ep.(ipv4.IGMPEndpoint)
+					if !ok {
+						t.Fatalf("got (%T).(%T) = (_, false), want = (_ true)", ep, igmpEP)
+					}
+
+					igmpEP.SetIGMPVersion(ipv4.IGMPVersion2)
 				}
 			}
 			protocolAddr := tcpip.ProtocolAddress{
@@ -503,5 +506,80 @@ func TestIGMPPacketValidation(t *testing.T) {
 				t.Errorf("got stats.IGMP.PacketsReceived.Invalid.Value() = %d, want = %d", got, expectedInvalidCount)
 			}
 		})
+	}
+}
+
+func TestSetIGMPVersion(t *testing.T) {
+	const nicID = 1
+
+	c := newIGMPTestContext(t, true /* igmpEnabled */)
+	defer c.cleanup()
+	s := c.s
+	e := c.ep
+
+	ep, err := s.GetNetworkEndpoint(nicID, header.IPv4ProtocolNumber)
+	if err != nil {
+		t.Fatalf("s.GetNetworkEndpoint(%d, %d): %s", nicID, header.IPv4ProtocolNumber, err)
+	}
+	igmpEP, ok := ep.(ipv4.IGMPEndpoint)
+	if !ok {
+		t.Fatalf("got (%T).(%T) = (_, false), want = (_ true)", ep, igmpEP)
+	}
+
+	protocolAddr := tcpip.ProtocolAddress{
+		Protocol:          ipv4.ProtocolNumber,
+		AddressWithPrefix: tcpip.AddressWithPrefix{Address: stackAddr, PrefixLen: defaultPrefixLength},
+	}
+	if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
+	}
+
+	if err := s.JoinGroup(ipv4.ProtocolNumber, nicID, multicastAddr1); err != nil {
+		t.Fatalf("JoinGroup(ipv4, nic, %s) = %s", multicastAddr1, err)
+	}
+	if p := e.Read(); p.IsNil() {
+		t.Fatal("expected a report message to be sent")
+	} else {
+		validateIgmpv3ReportPacket(t, p, stackAddr, multicastAddr1)
+		p.DecRef()
+	}
+
+	if got := igmpEP.SetIGMPVersion(ipv4.IGMPVersion2); got != ipv4.IGMPVersion3 {
+		t.Errorf("got igmpEP.SetIGMPVersion(%d) = %d, want = %d", ipv4.IGMPVersion2, got, ipv4.IGMPVersion3)
+	}
+	if err := s.JoinGroup(ipv4.ProtocolNumber, nicID, multicastAddr2); err != nil {
+		t.Fatalf("JoinGroup(ipv4, nic, %s) = %s", multicastAddr2, err)
+	}
+	if p := e.Read(); p.IsNil() {
+		t.Fatal("expected a report message to be sent")
+	} else {
+		validateIgmpPacket(t, p, header.IGMPv2MembershipReport, 0, stackAddr, multicastAddr2, multicastAddr2)
+		p.DecRef()
+	}
+
+	if got := igmpEP.SetIGMPVersion(ipv4.IGMPVersion1); got != ipv4.IGMPVersion2 {
+		t.Errorf("got igmpEP.SetIGMPVersion(%d) = %d, want = %d", ipv4.IGMPVersion1, got, ipv4.IGMPVersion2)
+	}
+	if err := s.JoinGroup(ipv4.ProtocolNumber, nicID, multicastAddr3); err != nil {
+		t.Fatalf("JoinGroup(ipv4, nic, %s) = %s", multicastAddr3, err)
+	}
+	if p := e.Read(); p.IsNil() {
+		t.Fatal("expected a report message to be sent")
+	} else {
+		validateIgmpPacket(t, p, header.IGMPv1MembershipReport, 0, stackAddr, multicastAddr3, multicastAddr3)
+		p.DecRef()
+	}
+
+	if got := igmpEP.SetIGMPVersion(ipv4.IGMPVersion3); got != ipv4.IGMPVersion1 {
+		t.Errorf("got igmpEP.SetIGMPVersion(%d) = %d, want = %d", ipv4.IGMPVersion3, got, ipv4.IGMPVersion1)
+	}
+	if err := s.JoinGroup(ipv4.ProtocolNumber, nicID, multicastAddr4); err != nil {
+		t.Fatalf("JoinGroup(ipv4, nic, %s) = %s", multicastAddr4, err)
+	}
+	if p := e.Read(); p.IsNil() {
+		t.Fatal("expected a report message to be sent")
+	} else {
+		validateIgmpv3ReportPacket(t, p, stackAddr, multicastAddr4)
+		p.DecRef()
 	}
 }
