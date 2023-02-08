@@ -77,6 +77,7 @@ var _ stack.MulticastForwardingNetworkEndpoint = (*endpoint)(nil)
 var _ stack.GroupAddressableEndpoint = (*endpoint)(nil)
 var _ stack.AddressableEndpoint = (*endpoint)(nil)
 var _ stack.NetworkEndpoint = (*endpoint)(nil)
+var _ IGMPEndpoint = (*endpoint)(nil)
 
 type endpoint struct {
 	nic        stack.NetworkInterface
@@ -107,6 +108,19 @@ type endpoint struct {
 
 	// +checklocks:mu
 	igmp igmpState
+}
+
+// SetIGMPVersion implements IGMPEndpoint.
+func (e *endpoint) SetIGMPVersion(v IGMPVersion) IGMPVersion {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.setIGMPVersionLocked(v)
+}
+
+// +checklocks:e.mu
+// +checklocksalias:e.igmp.ep.mu=e.mu
+func (e *endpoint) setIGMPVersionLocked(v IGMPVersion) IGMPVersion {
+	return e.igmp.setVersion(v)
 }
 
 // HandleLinkResolutionFailure implements stack.LinkResolvableNetworkEndpoint.
