@@ -176,6 +176,8 @@ type MemoryManager interface {
 	MMap(ctx context.Context, opts memmap.MMapOpts) (hostarch.Addr, error)
 	// AddressSpace returns the AddressSpace bound to mm.
 	AddressSpace() AddressSpace
+	// FindVMAByName finds a vma with the specified name.
+	FindVMAByName(ar hostarch.AddrRange, hint string) (hostarch.Addr, uint64, error)
 }
 
 // Context represents the execution context for a single thread.
