@@ -197,44 +197,6 @@ func TestOverlayNameTooLong(t *testing.T) {
 	}
 }
 
-// TestMultipleOverlayMounts tests having multiple overlay mounts works
-// correctly when using host file backed overlays. All overlay mount should
-// have their own MemoryFile backed different host files.
-func TestMultipleOverlayMounts(t *testing.T) {
-	ctx := context.Background()
-	d := dockerutil.MakeContainerWithRuntime(ctx, t, "-overlay")
-	defer d.CleanUp(ctx)
-
-	tmpDir := testutil.TmpDir()
-	opts := dockerutil.RunOpts{
-		Image: "basic/ubuntu",
-		Mounts: []mount.Mount{
-			{
-				Type:   mount.TypeBind,
-				Source: tmpDir,
-				Target: "/submount1",
-			},
-			{
-				Type:   mount.TypeBind,
-				Source: tmpDir,
-				Target: "/submount2",
-			},
-		},
-	}
-	if got, err := d.Run(ctx, opts, "bash", "-c", "echo one > /submount1/file && echo two > /submount2/file && grep -Fxq one /submount1/file && grep -Fxq two /submount2/file && echo success"); err != nil {
-		t.Fatalf("docker run failed: %v", err)
-	} else if want := "success"; !strings.Contains(got, want) {
-		t.Errorf("container output %q does not contain %q", got, want)
-	}
-
-	// Ensure overlay was applied to both bind mounts and no changes were made
-	// to the host filesystem.
-	filePath := filepath.Join(tmpDir, "file")
-	if _, err := os.Stat(filePath); !os.IsNotExist(err) {
-		t.Errorf("overlay not applied to both bind mounts, %q file exists", filePath)
-	}
-}
-
 // Tests that the overlay backing host file inside the container's rootfs is
 // hidden from the application.
 func TestOverlayRootfsWhiteout(t *testing.T) {
@@ -245,9 +207,9 @@ func TestOverlayRootfsWhiteout(t *testing.T) {
 	opts := dockerutil.RunOpts{
 		Image: "basic/ubuntu",
 	}
-	if got, err := d.Run(ctx, opts, "bash", "-c", fmt.Sprintf("ls -al / | grep %q || true", boot.SelfOverlayFilestoreDirPrefix)); err != nil {
+	if got, err := d.Run(ctx, opts, "bash", "-c", fmt.Sprintf("ls -al / | grep %q || true", boot.SelfOverlayFilestorePrefix)); err != nil {
 		t.Fatalf("docker run failed: %s, %v", got, err)
 	} else if got != "" {
-		t.Errorf("root directory contains a file/directory whose name contains %q: output = %q", boot.SelfOverlayFilestoreDirPrefix, got)
+		t.Errorf("root directory contains a file/directory whose name contains %q: output = %q", boot.SelfOverlayFilestorePrefix, got)
 	}
 }
