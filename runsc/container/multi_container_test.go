@@ -2274,6 +2274,7 @@ func TestMultiContainerOverlayLeaks(t *testing.T) {
 	}
 	defer cleanup()
 
+	sandboxID := conts[0].Sandbox.ID
 	for i, c := range conts {
 		if i == 0 {
 			// Don't wait for the root container which just sleeps.
@@ -2295,30 +2296,8 @@ func TestMultiContainerOverlayLeaks(t *testing.T) {
 			continue
 		}
 
-		// Fetch the overlay filestore directory.
-		filestoreDir := conts[i].SelfOverlayFilestoreDir(s.Root.Path)
-		dirFD, err := os.Open(filestoreDir)
-		if err != nil {
-			t.Fatalf("os.Open(%q) failed for filestore dir: %v", filestoreDir, err)
-		}
-
-		// Find the filestore file.
-		names, err := dirFD.Readdirnames(0)
-		if err != nil {
-			t.Fatalf("dirFD.Readdirnames(0) failed for filestore dir: %v", err)
-		}
-		filestoreFile := ""
-		for _, name := range names {
-			if strings.HasPrefix(name, "filestore") {
-				filestoreFile = path.Join(filestoreDir, name)
-				break
-			}
-		}
-		if filestoreFile == "" {
-			t.Fatalf("could not find filestore file in root directory entries: %v", names)
-		}
-
 		// Stat filestoreFile to see its usage. It should have been cleaned up.
+		filestoreFile := boot.SelfOverlayFilestorePath(s.Root.Path, sandboxID)
 		var stat unix.Stat_t
 		if err := unix.Stat(filestoreFile, &stat); err != nil {
 			t.Errorf("unix.Stat(%q) failed for rootfs filestore: %v", filestoreFile, err)

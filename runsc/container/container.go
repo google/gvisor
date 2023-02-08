@@ -766,13 +766,13 @@ func (c *Container) Destroy() error {
 				errs = append(errs, err.Error())
 				return nil
 			}
-			// mountSrc only contains the filestore directory if it is a directory.
+			// mountSrc only contains the filestore file if it is a directory.
 			if !mountSrcInfo.IsDir() {
 				return nil
 			}
-			filestoreDir := c.SelfOverlayFilestoreDir(mountSrc)
-			if err := os.RemoveAll(filestoreDir); err != nil {
-				err = fmt.Errorf("failed to delete filestore directory %q: %v", filestoreDir, err)
+			filestorePath := boot.SelfOverlayFilestorePath(mountSrc, c.sandboxID())
+			if err := os.Remove(filestorePath); err != nil {
+				err = fmt.Errorf("failed to delete filestore file %q: %v", filestorePath, err)
 				log.Warningf("%v", err)
 				errs = append(errs, err.Error())
 			}
@@ -813,6 +813,10 @@ func (c *Container) Destroy() error {
 	return fmt.Errorf(strings.Join(errs, "\n"))
 }
 
+func (c *Container) sandboxID() string {
+	return c.Saver.ID.SandboxID
+}
+
 // createOverlayFilestores creates the regular files that will back the tmpfs
 // upper mount for overlay mounts. It may return (nil, nil) if overlay is not
 // configured to be backed by host files.
@@ -840,12 +844,6 @@ func (c *Container) createOverlayFilestores() ([]*os.File, error) {
 	return filestoreFiles, nil
 }
 
-// SelfOverlayFilestoreDir returns the directory path in which self overlay filestore
-// files are stored for a given mount.
-func (c *Container) SelfOverlayFilestoreDir(mountSrc string) string {
-	return boot.SelfOverlayFilestoreDir(mountSrc, c.ID)
-}
-
 // Precondition: Overlay2.IsBackedByHostFile() && Overlay2.IsBackedBySelf().
 func (c *Container) createOverlayFilestoreInSelf() ([]*os.File, error) {
 	var filestoreFiles []*os.File
@@ -858,16 +856,19 @@ func (c *Container) createOverlayFilestoreInSelf() ([]*os.File, error) {
 			log.Warningf("overlay2 self medium is only supported for directory mounts, but mount %q is not a directory, falling back to memory", mountSrc)
 			return nil
 		}
-		// Create SelfFilestoreDir() directory. Note that it may already exist from
-		// previous iteration for the same mountSrc.
-		filestoreDir := c.SelfOverlayFilestoreDir(mountSrc)
-		if err := os.Mkdir(filestoreDir, 0755); err != nil && !os.IsExist(err) {
-			return fmt.Errorf("failed to create filestore directory %q: %v", filestoreDir, err)
-		}
-		// The same volume can be mounted at various places within the same
-		// container. So use os.CreateTemp to create a random filename.
-		filestoreFile, err := os.CreateTemp(filestoreDir, "filestore-")
+		// Create the self overlay filestore file.
+		filestorePath := boot.SelfOverlayFilestorePath(mountSrc, c.sandboxID())
+		filestoreFD, err := unix.Open(filestorePath, unix.O_RDWR|unix.O_CREAT|unix.O_EXCL, 0666)
 		if err != nil {
+			if err == unix.EEXIST {
+				// Note that if the same submount is mounted multiple times within the
+				// same sandbox, then the overlay option doesn't work correctly.
+				// Because each overlay mount is independent and changes to one are not
+				// visible to the other. Given "overlay on repeated submounts" is
+				// already broken, we don't support such a scenario with the self
+				// medium. The filestore file will already exist for such a case.
+				return fmt.Errorf("%q mount source already has a filestore file at %q; repeated submounts are not suppported with self medium", mountSrc, filestorePath)
+			}
 			return fmt.Errorf("failed to create filestore file inside %q: %v", mountSrc, err)
 		}
 		// Filestore in self should be a named path because it needs to be
@@ -875,7 +876,7 @@ func (c *Container) createOverlayFilestoreInSelf() ([]*os.File, error) {
 		// and apply any limits appropriately (like local ephemeral storage
 		// limits). So don't delte it. These files will be unlinked when the
 		// container is destroyed. This makes self medium appropriate for k8s.
-		filestoreFiles = append(filestoreFiles, filestoreFile)
+		filestoreFiles = append(filestoreFiles, os.NewFile(uintptr(filestoreFD), filestorePath))
 		return nil
 	})
 	return filestoreFiles, err
