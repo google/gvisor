@@ -12,6 +12,7 @@ go_library(
         "//runsc:__subpackages__",
     ],
     deps = [
+        "//pkg/cleanup",
         "//pkg/prometheus",
         "//pkg/sync",
         "//runsc/config",

@@ -230,11 +230,12 @@ func queryMetrics(ctx context.Context, sand *sandbox.Sandbox, verifier *promethe
 
 // MetricServer implements subcommands.Command for the "metric-server" command.
 type MetricServer struct {
-	rootDir        string
-	address        string
-	exporterPrefix string
-	startTime      time.Time
-	srv            http.Server
+	rootDir          string
+	allowUnknownRoot bool
+	address          string
+	exporterPrefix   string
+	startTime        time.Time
+	srv              http.Server
 
 	// Size of the map of written metrics during the last /metrics export. Initially zero.
 	// Used to efficiently reallocate a map of the right size during the next export.
@@ -329,7 +330,9 @@ func (m *MetricServer) refreshSandboxesLocked() {
 	}
 	sandboxIDs, err := container.ListSandboxes(m.rootDir)
 	if err != nil {
-		log.Warningf("Cannot list containers in root directory %s, it has likely gone away: %v.", m.rootDir, err)
+		if !m.allowUnknownRoot {
+			log.Warningf("Cannot list containers in root directory %s, it has likely gone away: %v.", m.rootDir, err)
+		}
 		return
 	}
 	for sandboxID, sandbox := range m.sandboxes {
@@ -752,8 +755,10 @@ func (m *MetricServer) verify(ctx context.Context) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if err != nil {
-		log.Warningf("Cannot list sandboxes in root directory %s, it has likely gone away: %v. Server shutting down.", m.rootDir, err)
-		m.shutdownLocked(ctx)
+		if !m.allowUnknownRoot {
+			log.Warningf("Cannot list sandboxes in root directory %s, it has likely gone away: %v. Server shutting down.", m.rootDir, err)
+			m.shutdownLocked(ctx)
+		}
 		return
 	}
 	m.refreshSandboxesLocked()
@@ -797,15 +802,22 @@ func (m *MetricServer) Execute(ctx context.Context, f *flag.FlagSet, args ...any
 		return util.Errorf("Metric server address contains '%%ID%%': %v. This should have been replaced by the parent process.", conf.MetricServer)
 	}
 	if _, err := container.ListSandboxes(conf.RootDir); err != nil {
-		return util.Errorf("Invalid root directory %q: tried to list sandboxes within it and got: %v", conf.RootDir, err)
+		if !conf.MetricServerAllowUnknownRoot {
+			return util.Errorf("Invalid root directory %q: tried to list sandboxes within it and got: %v", conf.RootDir, err)
+		}
+		log.Warningf("Invalid root directory %q: tried to list sandboxes within it and got: %v. Continuing anyway, as the server is configured to tolerate this.", conf.RootDir, err)
 	}
 	// container.ListSandboxes uses a glob pattern, which doesn't error out on
 	// permission errors. Double-check by actually listing the directory.
 	if _, err := ioutil.ReadDir(conf.RootDir); err != nil {
-		return util.Errorf("Invalid root directory %q: tried to list all entries within it and got: %v", conf.RootDir, err)
+		if !conf.MetricServerAllowUnknownRoot {
+			return util.Errorf("Invalid root directory %q: tried to list all entries within it and got: %v", conf.RootDir, err)
+		}
+		log.Warningf("Invalid root directory %q: tried to list all entries within it and got: %v. Continuing anyway, as the server is configured to tolerate this.", conf.RootDir, err)
 	}
 	m.startTime = time.Now()
 	m.rootDir = conf.RootDir
+	m.allowUnknownRoot = conf.MetricServerAllowUnknownRoot
 	m.exporterPrefix = conf.MetricExporterPrefix
 	if strings.Contains(conf.MetricServer, "%RUNTIME_ROOT%") {
 		newAddr := strings.ReplaceAll(conf.MetricServer, "%RUNTIME_ROOT%", m.rootDir)

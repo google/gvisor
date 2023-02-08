@@ -34,6 +34,7 @@ import (
 	"github.com/cenkalti/backoff"
 	"github.com/prometheus/common/expfmt"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/prometheus"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/runsc/config"
@@ -187,6 +188,10 @@ func (c *MetricClient) SpawnServer(ctx context.Context, baseConf *config.Config)
 	overriddenConf.MetricServer = c.addr
 	overriddenConf.RootDir = c.rootDir
 	c.server = exec.Command(specutils.ExePath, overriddenConf.ToFlags()...)
+	cu := cleanup.Make(func() {
+		c.server = nil
+	})
+	defer cu.Clean()
 	c.server.SysProcAttr = &unix.SysProcAttr{
 		// Detach from this session, otherwise cmd will get SIGHUP and SIGCONT
 		// when re-parented.
@@ -221,6 +226,7 @@ func (c *MetricClient) SpawnServer(ctx context.Context, baseConf *config.Config)
 	if bindCtx.Err() != nil {
 		return fmt.Errorf("metrics server did not bind to %s in time: %w", c.addr, bindCtx.Err())
 	}
+	cu.Release()
 	return nil
 }
 
