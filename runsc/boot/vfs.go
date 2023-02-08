@@ -58,22 +58,22 @@ const (
 	Nonefs = "none"
 )
 
-// SelfOverlayFilestoreDirPrefix is the prefix in the directory name of the
-// self overlay filestore directory.
-const SelfOverlayFilestoreDirPrefix = ".gvisor.overlay.img."
+// SelfOverlayFilestorePrefix is the prefix in the file name of the
+// self overlay filestore file.
+const SelfOverlayFilestorePrefix = ".gvisor.overlay.img."
 
-// SelfOverlayFilestoreDir returns the directory path in which self overlay filestore
-// files are stored for a given mount.
-func SelfOverlayFilestoreDir(mountSrc, cid string) string {
-	// We will place filestore files in a gvisor specific hidden directory inside
-	// the mount being overlayed itself. The same volume can be overlay-ed by
-	// multiple containers. So make the filestore directory unique to container
-	// by suffixing the container ID.
-	return path.Join(mountSrc, selfOverlayFilestoreDirName(cid))
+// SelfOverlayFilestorePath returns the path at which the self overlay
+// filestore file is stored for a given mount.
+func SelfOverlayFilestorePath(mountSrc, sandboxID string) string {
+	// We will place the filestore file in a gVisor specific hidden file inside
+	// the mount being overlay-ed itself. The same volume can be overlay-ed by
+	// multiple sandboxes. So make the filestore file unique to a sandbox by
+	// suffixing the sandbox ID.
+	return path.Join(mountSrc, selfOverlayFilestoreName(sandboxID))
 }
 
-func selfOverlayFilestoreDirName(cid string) string {
-	return SelfOverlayFilestoreDirPrefix + cid
+func selfOverlayFilestoreName(sandboxID string) string {
+	return SelfOverlayFilestorePrefix + sandboxID
 }
 
 // tmpfs has some extra supported options that we must pass through.
@@ -350,11 +350,11 @@ type containerMounter struct {
 	// /sys/devices/virtual/dmi/id/product_name.
 	productName string
 
-	// cid is the container ID for the container.
-	cid string
+	// sandboxID is the ID for the whole sandbox.
+	sandboxID string
 }
 
-func newContainerMounter(info *containerInfo, k *kernel.Kernel, hints *podMountHints, productName string, cid string) *containerMounter {
+func newContainerMounter(info *containerInfo, k *kernel.Kernel, hints *podMountHints, productName string, sandboxID string) *containerMounter {
 	return &containerMounter{
 		root:                info.spec.Root,
 		mounts:              compileMounts(info.spec, info.conf),
@@ -363,7 +363,7 @@ func newContainerMounter(info *containerInfo, k *kernel.Kernel, hints *podMountH
 		k:                   k,
 		hints:               hints,
 		productName:         productName,
-		cid:                 cid,
+		sandboxID:           sandboxID,
 	}
 }
 
@@ -572,7 +572,7 @@ func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Co
 		if err := overlay.CreateWhiteout(ctx, c.k.VFS(), creds, &vfs.PathOperation{
 			Root:  upperRootVD,
 			Start: upperRootVD,
-			Path:  fspath.Parse(selfOverlayFilestoreDirName(c.cid)),
+			Path:  fspath.Parse(selfOverlayFilestoreName(c.sandboxID)),
 		}); err != nil {
 			return nil, nil, fmt.Errorf("failed to create whiteout to hide self overlay filestore: %w", err)
 		}
