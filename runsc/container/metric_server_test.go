@@ -54,7 +54,7 @@ type metricsTest struct {
 
 // setupMetrics sets up a container configuration with metrics enabled, and returns it all.
 // Also returns a cleanup function.
-func setupMetrics(t *testing.T) (*metricsTest, func()) {
+func setupMetrics(t *testing.T, forceTempUDS bool) (*metricsTest, func()) {
 	// Start the child reaper.
 	childReaper := &testutil.Reaper{}
 	childReaper.Start()
@@ -73,21 +73,19 @@ func setupMetrics(t *testing.T) (*metricsTest, func()) {
 		t.Fatalf("error setting up container: %v", err)
 	}
 	cu.Add(cleanup)
-	udsPath := filepath.Join(rootDir, "metrics.sock")
-	if len(udsPath) >= 100 {
-		// This is longer than the max UDS path length allowed by Linux. Try somewhere else in /tmp.
-		tmpDir, err := os.MkdirTemp("/tmp", "metrics-")
-		if err != nil {
-			t.Fatalf("Runtime root is %s which means the metrics UDS %s (%d bytes) is longer than the maximum length allowed for a UDS path. The test could also not create a temporary directory in /tmp as a fallback (%v).", rootDir, udsPath, len(udsPath), err)
-		}
-		cu.Add(func() { os.RemoveAll(tmpDir) })
-		udsPathTmp := filepath.Join(tmpDir, "metrics.sock")
-		if len(udsPathTmp) >= 100 {
-			t.Fatalf("Runtime root is %s which means the metrics UDS %s (%d bytes) is longer than the maximum length allowed for a UDS path. The test tried to create a fallback in /tmp but it was too long too (%q is %d characters).", rootDir, udsPath, len(udsPath), udsPathTmp, len(udsPathTmp))
-		}
-		udsPath = udsPathTmp
-		conf.MetricServer = udsPathTmp
+	tmpDir, err := os.MkdirTemp("/tmp", "metrics-")
+	if err != nil {
+		t.Fatalf("Cannot create temporary directory in /tmp: %v", err)
 	}
+	cu.Add(func() { os.RemoveAll(tmpDir) })
+	udsPath := filepath.Join(rootDir, "metrics.sock")
+	if forceTempUDS || len(udsPath) >= 100 {
+		udsPath = filepath.Join(tmpDir, "metrics.sock")
+	}
+	if len(udsPath) >= 100 {
+		t.Fatalf("Cannot come up with a UDS path shorter than the maximum length allowed by Linux (tried to use %q)", udsPath)
+	}
+	conf.MetricServer = udsPath
 	// The UDS should be deleted by the metrics server itself, but we clean it up here anyway just in case:
 	cu.Add(func() { os.Remove(udsPath) })
 
@@ -112,7 +110,7 @@ func setupMetrics(t *testing.T) (*metricsTest, func()) {
 func TestContainerMetrics(t *testing.T) {
 	targetOpens := 200
 
-	te, cleanup := setupMetrics(t)
+	te, cleanup := setupMetrics(t /* forceTempUDS= */, false)
 	defer cleanup()
 
 	if _, err := te.client.GetMetrics(te.testCtx); err != nil {
@@ -202,7 +200,7 @@ func TestContainerMetrics(t *testing.T) {
 // TestContainerMetricsIterationID verifies that two successive containers with the same ID
 // do not have the same iteration ID.
 func TestContainerMetricsIterationID(t *testing.T) {
-	te, cleanup := setupMetrics(t)
+	te, cleanup := setupMetrics(t /* forceTempUDS= */, false)
 	defer cleanup()
 
 	args := Args{
@@ -264,7 +262,7 @@ func TestContainerMetricsIterationID(t *testing.T) {
 // unavailability or restarts.
 func TestContainerMetricsRobustAgainstRestarts(t *testing.T) {
 	targetOpens := 200
-	te, cleanup := setupMetrics(t)
+	te, cleanup := setupMetrics(t /* forceTempUDS= */, false)
 	defer cleanup()
 
 	// First, start a container which will kick off the metric server as normal.
@@ -414,7 +412,7 @@ func TestContainerMetricsRobustAgainstRestarts(t *testing.T) {
 func TestContainerMetricsMultiple(t *testing.T) {
 	numConcurrentContainers := 5
 
-	te, cleanup := setupMetrics(t)
+	te, cleanup := setupMetrics(t /* forceTempUDS= */, false)
 	defer cleanup()
 	var containers []*Container
 	needCleanup := map[*Container]struct{}{}
@@ -517,7 +515,7 @@ func TestContainerMetricsMultiple(t *testing.T) {
 }
 
 func TestMetricServerChecksRootDirectoryAccess(t *testing.T) {
-	te, cleanup := setupMetrics(t)
+	te, cleanup := setupMetrics(t /* forceTempUDS= */, false)
 	defer cleanup()
 	if err := te.client.ShutdownServer(te.testCtx); err != nil {
 		t.Fatalf("Cannot stop metric server: %v", err)
@@ -538,5 +536,26 @@ func TestMetricServerChecksRootDirectoryAccess(t *testing.T) {
 	defer shorterCtxCancel()
 	if err := te.client.SpawnServer(shorterCtx, te.sleepConf); err == nil {
 		t.Error("Metric server was successfully able to be spawned despite not having access to the root directory")
+	}
+}
+
+func TestMetricServerToleratesNoRootDirectory(t *testing.T) {
+	te, cleanup := setupMetrics(t /* forceTempUDS= */, true)
+	defer cleanup()
+	if err := te.client.ShutdownServer(te.testCtx); err != nil {
+		t.Fatalf("Cannot stop metric server: %v", err)
+	}
+	if err := os.RemoveAll(te.sleepConf.RootDir); err != nil {
+		t.Fatalf("cannot remove root directory %q: %v", te.sleepConf.RootDir, err)
+	}
+	te.sleepConf.MetricServerAllowUnknownRoot = false
+	shortCtx, shortCtxCancel := context.WithTimeout(te.testCtx, time.Second)
+	defer shortCtxCancel()
+	if err := te.client.SpawnServer(shortCtx, te.sleepConf); err == nil {
+		t.Fatalf("Metric server was successfully able to be spawned despite a non-existent root directory")
+	}
+	te.sleepConf.MetricServerAllowUnknownRoot = true
+	if err := te.client.SpawnServer(te.testCtx, te.sleepConf); err != nil {
+		t.Errorf("Metric server was not able to be spawned despite being configured to tolerate a non-existent root directory: %v", err)
 	}
 }

@@ -152,6 +152,12 @@ type Config struct {
 	// The value of this flag must also match across the two command lines.
 	MetricServer string `flag:"metric-server"`
 
+	// MetricServerAllowUnknownRoot, if set, makes the metric server tolerate a non-existent or bad
+	// --root directory, and will remain running regardless of its validity.
+	// This is useful if the existence of the --root directory depends on the state of the machine,
+	// e.g. it is only created after the first pod that uses runsc has been created.
+	MetricServerAllowUnknownRoot bool `flag:"metric-server-allow-unknown-root"`
+
 	// MetricExporterPrefix is added as prefix to all metric names.
 	// It is used to follow Prometheus's exporter convention, whereby all metric names should be
 	// prefixed by a name meaningfully identifying the software exporting the metric.
