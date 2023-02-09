@@ -159,6 +159,11 @@ TEST_P(SendFileTest, SendMultiple) {
 }
 
 TEST_P(SendFileTest, Shutdown) {
+  // TODO(b/267210840): This test flakes occasionally on hostinet because the
+  // sendfile() call returns EAGAIN, which should not happen because the socket
+  // is blocking.
+  SKIP_IF(IsRunningWithHostinet());
+
   // Create a socket.
   auto socks = ASSERT_NO_ERRNO_AND_VALUE(Sockets(SOCK_STREAM));
 
