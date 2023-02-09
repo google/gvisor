@@ -1273,7 +1273,7 @@ TEST_P(TCPSocketPairTest, SetAndGetLingerOption) {
   // Linux returns a different value as it uses HZ to convert the seconds to
   // jiffies which overflows for negative values. We want to be compatible with
   // linux for getsockopt return value.
-  if (IsRunningOnGvisor()) {
+  if (IsRunningOnGvisor() && !IsRunningWithHostinet()) {
     EXPECT_EQ(sl.l_linger, got_linger.l_linger);
   }
 
