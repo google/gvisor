@@ -1153,13 +1153,28 @@ func TestJoinCount(t *testing.T) {
 }
 
 func TestMakeAllNonMemberAndInitialize(t *testing.T) {
+	const unsolicitedTransmissionCount = 2
+
 	tests := []struct {
 		name            string
+		v1              bool
 		v1Compatibility bool
 		checkFields     func([]tcpip.Address, bool) checkFields
 	}{
 		{
+			name:            "V1",
+			v1:              true,
+			v1Compatibility: false,
+			checkFields: func(addrs []tcpip.Address, leave bool) checkFields {
+				if leave {
+					return checkFields{sendLeaveGroupAddresses: addrs}
+				}
+				return checkFields{sendReportGroupAddresses: addrs}
+			},
+		},
+		{
 			name:            "V1 Compatibility",
+			v1:              false,
 			v1Compatibility: true,
 			checkFields: func(addrs []tcpip.Address, leave bool) checkFields {
 				if leave {
@@ -1170,6 +1185,7 @@ func TestMakeAllNonMemberAndInitialize(t *testing.T) {
 		},
 		{
 			name:            "V2",
+			v1:              false,
 			v1Compatibility: false,
 			checkFields: func(addrs []tcpip.Address, leave bool) checkFields {
 				recordType := ip.MulticastGroupProtocolV2ReportRecordChangeToExcludeMode
@@ -1198,7 +1214,13 @@ func TestMakeAllNonMemberAndInitialize(t *testing.T) {
 				Rand:                      rand.New(rand.NewSource(3)),
 				Clock:                     clock,
 				MaxUnsolicitedReportDelay: maxUnsolicitedReportDelay,
-			}, test.v1Compatibility)
+			}, test.v1)
+
+			if test.v1Compatibility {
+				// V1 query targetting an unjoined group should drop us into V1
+				// compatibility mode without sending any packets, affecting tests.
+				mgp.handleQuery(addr3, 0)
+			}
 
 			mgp.joinGroup(addr1)
 			if diff := mgp.check(test.checkFields([]tcpip.Address{addr1}, false /* leave */)); diff != "" {
@@ -1216,8 +1238,7 @@ func TestMakeAllNonMemberAndInitialize(t *testing.T) {
 			// Should send the leave reports for each but still consider them locally
 			// joined.
 			mgp.makeAllNonMember()
-			expectedLeaveFields := test.checkFields([]tcpip.Address{addr1, addr2}, true /* leave */)
-			if diff := mgp.check(expectedLeaveFields); diff != "" {
+			if diff := mgp.check(test.checkFields([]tcpip.Address{addr1, addr2}, true /* leave */)); diff != "" {
 				t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
 
@@ -1234,48 +1255,44 @@ func TestMakeAllNonMemberAndInitialize(t *testing.T) {
 
 			// Should send the initial set of unsolcited V2 reports.
 			mgp.initializeGroups()
-			if diff := mgp.check(checkFields{sentV2Reports: []mockReportV2{
-				{
-					records: []mockReportV2Record{
+			for i := 0; i < unsolicitedTransmissionCount; i++ {
+				if test.v1 {
+					if diff := mgp.check(test.checkFields([]tcpip.Address{addr1, addr2}, false /* leave */)); diff != "" {
+						t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+					}
+				} else {
+					if diff := mgp.check(checkFields{sentV2Reports: []mockReportV2{
 						{
-							recordType:   ip.MulticastGroupProtocolV2ReportRecordChangeToExcludeMode,
-							groupAddress: addr1,
-						},
-					},
-				},
-				{
-					records: []mockReportV2Record{
-						{
-							recordType:   ip.MulticastGroupProtocolV2ReportRecordChangeToExcludeMode,
-							groupAddress: addr2,
-						},
-					},
-				},
-			}}); diff != "" {
-				t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
-			}
-			clock.Advance(maxUnsolicitedReportDelay)
-			if diff := mgp.check(checkFields{sentV2Reports: []mockReportV2{
-				{
-					records: []mockReportV2Record{
-						{
-							recordType:   ip.MulticastGroupProtocolV2ReportRecordChangeToExcludeMode,
-							groupAddress: addr1,
+							records: []mockReportV2Record{
+								{
+									recordType:   ip.MulticastGroupProtocolV2ReportRecordChangeToExcludeMode,
+									groupAddress: addr1,
+								},
+							},
 						},
 						{
-							recordType:   ip.MulticastGroupProtocolV2ReportRecordChangeToExcludeMode,
-							groupAddress: addr2,
+							records: []mockReportV2Record{
+								{
+									recordType:   ip.MulticastGroupProtocolV2ReportRecordChangeToExcludeMode,
+									groupAddress: addr2,
+								},
+							},
 						},
-					},
-				},
-			}}); diff != "" {
-				t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+					}}); diff != "" {
+						t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+					}
+				}
+				clock.Advance(maxUnsolicitedReportDelay)
 			}
 
 			// Should have no more messages to send.
 			clock.Advance(time.Hour)
 			if diff := mgp.check(checkFields{}); diff != "" {
 				t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
+			}
+
+			if got := mgp.getV1Mode(); got != test.v1 {
+				t.Errorf("got mgp.getV1Mode() = %t, want = %t", got, test.v1)
 			}
 		})
 	}
