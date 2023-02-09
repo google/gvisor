@@ -172,6 +172,23 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	// Set traceback level
 	debug.SetTraceback(conf.Traceback)
 
+	// pgalloc.MemoryFile (which provides application memory) sometimes briefly
+	// mlock(2)s ranges of memory in order to fault in a large number of pages at
+	// a time. Try to make RLIMIT_MEMLOCK unlimited so that it can do so. runsc
+	// expects to run in a memory cgroup that limits its memory usage as
+	// required.
+	var rlim unix.Rlimit
+	if err := unix.Getrlimit(unix.RLIMIT_MEMLOCK, &rlim); err != nil {
+		log.Warningf("Failed to get RLIMIT_MEMLOCK: %v", err)
+	} else if rlim.Cur != unix.RLIM_INFINITY || rlim.Max != unix.RLIM_INFINITY {
+		rlim.Cur = unix.RLIM_INFINITY
+		rlim.Max = unix.RLIM_INFINITY
+		if err := unix.Setrlimit(unix.RLIMIT_MEMLOCK, &rlim); err != nil {
+			// We may not have CAP_SYS_RESOURCE, so this failure may be expected.
+			log.Infof("Failed to set RLIMIT_MEMLOCK: %v", err)
+		}
+	}
+
 	if len(b.productName) == 0 {
 		// Do this before chroot takes effect, otherwise we can't read /sys.
 		if product, err := ioutil.ReadFile("/sys/devices/virtual/dmi/id/product_name"); err != nil {
