@@ -222,7 +222,11 @@ func accept4(fd int, addr *byte, addrlen *uint32, flags int) (int, error) {
 
 func getsockopt(fd int, level, name int, opt []byte) ([]byte, error) {
 	optlen32 := int32(len(opt))
-	_, _, errno := unix.Syscall6(unix.SYS_GETSOCKOPT, uintptr(fd), uintptr(level), uintptr(name), uintptr(firstBytePtr(opt)), uintptr(unsafe.Pointer(&optlen32)), 0)
+	var optPtr uintptr
+	if optlen32 > 0 {
+		optPtr = uintptr(firstBytePtr(opt))
+	}
+	_, _, errno := unix.Syscall6(unix.SYS_GETSOCKOPT, uintptr(fd), uintptr(level), uintptr(name), optPtr, uintptr(unsafe.Pointer(&optlen32)), 0)
 	if errno != 0 {
 		return nil, errno
 	}

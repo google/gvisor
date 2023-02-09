@@ -734,6 +734,7 @@ syscall_test(
 
 syscall_test(
     size = "large",
+    add_hostinet = True,
     shard_count = most_shards,
     test = "//test/syscalls/linux:socket_ip_tcp_generic_loopback_test",
 )
