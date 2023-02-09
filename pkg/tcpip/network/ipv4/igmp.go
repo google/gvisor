@@ -80,10 +80,13 @@ const (
 
 // IGMPEndpoint is a network endpoint that supports IGMP.
 type IGMPEndpoint interface {
-	// Sets the IGMP version.
+	// SetIGMPVersion sets the IGMP version.
 	//
 	// Returns the previous IGMP version.
 	SetIGMPVersion(IGMPVersion) IGMPVersion
+
+	// GetIGMPVersion returns the IGMP version.
+	GetIGMPVersion() IGMPVersion
 }
 
 // IGMPOptions holds options for IGMP.
@@ -622,15 +625,26 @@ func (igmp *igmpState) setVersion(v IGMPVersion) IGMPVersion {
 		panic(fmt.Sprintf("unrecognized version = %d", v))
 	}
 
-	switch prev {
+	return toIGMPVersion(prev, prevGenericModeV1)
+}
+
+func toIGMPVersion(mode protocolMode, genericV1 bool) IGMPVersion {
+	switch mode {
 	case protocolModeV2OrV3, protocolModeV1Compatibility:
-		if prevGenericModeV1 {
+		if genericV1 {
 			return IGMPVersion2
 		}
 		return IGMPVersion3
 	case protocolModeV1:
 		return IGMPVersion1
 	default:
-		panic(fmt.Sprintf("unrecognized mode = %d", igmp.mode))
+		panic(fmt.Sprintf("unrecognized mode = %d", mode))
 	}
+}
+
+// getVersion returns the IGMP version.
+//
+// +checklocksread:igmp.ep.mu
+func (igmp *igmpState) getVersion() IGMPVersion {
+	return toIGMPVersion(igmp.mode, igmp.genericMulticastProtocol.GetV1ModeLocked())
 }

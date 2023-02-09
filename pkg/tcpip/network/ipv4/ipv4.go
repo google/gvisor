@@ -117,10 +117,23 @@ func (e *endpoint) SetIGMPVersion(v IGMPVersion) IGMPVersion {
 	return e.setIGMPVersionLocked(v)
 }
 
+// GetIGMPVersion implements IGMPEndpoint.
+func (e *endpoint) GetIGMPVersion() IGMPVersion {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.getIGMPVersionLocked()
+}
+
 // +checklocks:e.mu
 // +checklocksalias:e.igmp.ep.mu=e.mu
 func (e *endpoint) setIGMPVersionLocked(v IGMPVersion) IGMPVersion {
 	return e.igmp.setVersion(v)
+}
+
+// +checklocksread:e.mu
+// +checklocksalias:e.igmp.ep.mu=e.mu
+func (e *endpoint) getIGMPVersionLocked() IGMPVersion {
+	return e.igmp.getVersion()
 }
 
 // HandleLinkResolutionFailure implements stack.LinkResolvableNetworkEndpoint.
