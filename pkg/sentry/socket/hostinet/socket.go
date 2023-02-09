@@ -16,6 +16,7 @@ package hostinet
 
 import (
 	"fmt"
+	"time"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -138,8 +139,8 @@ func (s *Socket) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.Read
 	}
 
 	reader := hostfd.GetReadWriterAt(int32(s.fd), -1, opts.Flags)
+	defer hostfd.PutReadWriterAt(reader)
 	n, err := dst.CopyOutFrom(ctx, reader)
-	hostfd.PutReadWriterAt(reader)
 	return int64(n), err
 }
 
@@ -157,8 +158,8 @@ func (s *Socket) Write(ctx context.Context, src usermem.IOSequence, opts vfs.Wri
 	}
 
 	writer := hostfd.GetReadWriterAt(int32(s.fd), -1, opts.Flags)
+	defer hostfd.PutReadWriterAt(writer)
 	n, err := src.CopyInTo(ctx, writer)
-	hostfd.PutReadWriterAt(writer)
 	return int64(n), err
 }
 
@@ -244,10 +245,14 @@ func (s *Socket) Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr
 	}
 
 	_, _, errno := unix.Syscall(unix.SYS_CONNECT, uintptr(s.fd), uintptr(firstBytePtr(sockaddr)), uintptr(len(sockaddr)))
-
 	if errno == 0 {
 		return nil
 	}
+	// The host socket is always non-blocking, so we expect connect to
+	// return EINPROGRESS. If we are emulating a blocking socket, we will
+	// wait for the connect to complete below.
+	// But if we are not emulating a blocking socket, or if we got some
+	// other error, then return it now.
 	if errno != unix.EINPROGRESS || !blocking {
 		return syserr.FromError(translateIOSyscallError(errno))
 	}
@@ -268,12 +273,29 @@ func (s *Socket) Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr
 			return syserr.FromError(err)
 		}
 	}
+
 	val, err := unix.GetsockoptInt(s.fd, unix.SOL_SOCKET, unix.SO_ERROR)
 	if err != nil {
 		return syserr.FromError(err)
 	}
 	if val != 0 {
 		return syserr.FromError(unix.Errno(uintptr(val)))
+	}
+
+	// It seems like we are all good now, but Linux has left the socket
+	// state as CONNECTING (not CONNECTED). This is a strange quirk of
+	// non-blocking sockets. See tcp_finish_connect() which sets tcp state
+	// but not socket state.
+	//
+	// Sockets in the CONNECTING state can call connect() a second time,
+	// whereas CONNECTED sockets will reject the second connect() call.
+	// Because we are emulating a blocking socket, we want a subsequent
+	// connect() call to fail. So we must kick Linux to update the socket
+	// to state CONNECTED, which we can do by calling connect() a second
+	// time ourselves.
+	_, _, errno = unix.Syscall(unix.SYS_CONNECT, uintptr(s.fd), uintptr(firstBytePtr(sockaddr)), uintptr(len(sockaddr)))
+	if errno != 0 {
+		return syserr.FromError(translateIOSyscallError(errno))
 	}
 	return nil
 }
@@ -297,7 +319,7 @@ func (s *Socket) Accept(t *kernel.Task, peerRequested bool, flags int, blocking 
 	fd, syscallErr := accept4(s.fd, peerAddrPtr, peerAddrlenPtr, unix.SOCK_NONBLOCK|unix.SOCK_CLOEXEC)
 	if blocking {
 		var ch chan struct{}
-		for syscallErr == linuxerr.ErrWouldBlock {
+		for linuxerr.Equals(linuxerr.ErrWouldBlock, syscallErr) {
 			if ch != nil {
 				if syscallErr = t.Block(ch); syscallErr != nil {
 					break
@@ -367,7 +389,7 @@ func (s *Socket) Shutdown(_ *kernel.Task, how int) *syserr.Error {
 }
 
 // GetSockOpt implements socket.Socket.GetSockOpt.
-func (s *Socket) GetSockOpt(t *kernel.Task, level int, name int, optValAddr hostarch.Addr, outLen int) (marshal.Marshallable, *syserr.Error) {
+func (s *Socket) GetSockOpt(t *kernel.Task, level, name int, optValAddr hostarch.Addr, outLen int) (marshal.Marshallable, *syserr.Error) {
 	if outLen < 0 {
 		return nil, syserr.ErrInvalidArgument
 	}
@@ -387,16 +409,22 @@ func (s *Socket) GetSockOpt(t *kernel.Task, level int, name int, optValAddr host
 		}
 	case linux.SOL_SOCKET:
 		switch name {
-		case linux.SO_BROADCAST, linux.SO_ERROR, linux.SO_KEEPALIVE, linux.SO_SNDBUF, linux.SO_RCVBUF, linux.SO_REUSEADDR, linux.SO_TIMESTAMP:
+		case linux.SO_BROADCAST, linux.SO_ERROR, linux.SO_KEEPALIVE, linux.SO_SNDBUF, linux.SO_RCVBUF, linux.SO_REUSEADDR, linux.SO_TIMESTAMP, linux.SO_ACCEPTCONN:
 			optlen = sizeofInt32
 		case linux.SO_LINGER:
 			optlen = unix.SizeofLinger
-		case linux.SO_RCVTIMEO, linux.SO_SNDTIMEO:
+		case linux.SO_RCVTIMEO:
 			optlen = linux.SizeOfTimeval
+			recvTimeout := linux.NsecToTimeval(s.RecvTimeout())
+			return &recvTimeout, nil
+		case linux.SO_SNDTIMEO:
+			optlen = linux.SizeOfTimeval
+			sndTimeout := linux.NsecToTimeval(s.SendTimeout())
+			return &sndTimeout, nil
 		}
 	case linux.SOL_TCP:
 		switch name {
-		case linux.TCP_NODELAY, linux.TCP_MAXSEG:
+		case linux.TCP_NODELAY, linux.TCP_MAXSEG, linux.TCP_INQ, linux.TCP_USER_TIMEOUT, linux.TCP_DEFER_ACCEPT, linux.TCP_SYNCNT, linux.TCP_WINDOW_CLAMP:
 			optlen = sizeofInt32
 		case linux.TCP_INFO:
 			optlen = linux.SizeOfTCPInfo
@@ -436,7 +464,7 @@ func (s *Socket) GetSockOpt(t *kernel.Task, level int, name int, optValAddr host
 }
 
 // SetSockOpt implements socket.Socket.SetSockOpt.
-func (s *Socket) SetSockOpt(t *kernel.Task, level int, name int, opt []byte) *syserr.Error {
+func (s *Socket) SetSockOpt(t *kernel.Task, level, name int, opt []byte) *syserr.Error {
 	// Only allow known and safe options.
 	optlen := setSockOptLen(t, level, name)
 	switch level {
@@ -454,10 +482,33 @@ func (s *Socket) SetSockOpt(t *kernel.Task, level int, name int, opt []byte) *sy
 		switch name {
 		case linux.SO_BROADCAST, linux.SO_SNDBUF, linux.SO_RCVBUF, linux.SO_REUSEADDR, linux.SO_TIMESTAMP:
 			optlen = sizeofInt32
+		case linux.SO_RCVTIMEO:
+			// Since our host sockets are always non-blocking,
+			// there is no point in setting these timeouts on the
+			// host. But we must store them internally so that we
+			// can put deadlines on our own blocking.
+			optlen = linux.SizeOfTimeval
+			var v linux.Timeval
+			v.UnmarshalBytes(opt[:optlen])
+			if v.Usec < 0 || v.Usec >= int64(time.Second/time.Microsecond) {
+				return syserr.ErrDomain
+			}
+			s.SetRecvTimeout(v.ToNsecCapped())
+			return nil
+		case linux.SO_SNDTIMEO:
+			// See above.
+			optlen = linux.SizeOfTimeval
+			var v linux.Timeval
+			v.UnmarshalBytes(opt[:optlen])
+			if v.Usec < 0 || v.Usec >= int64(time.Second/time.Microsecond) {
+				return syserr.ErrDomain
+			}
+			s.SetSendTimeout(v.ToNsecCapped())
+			return nil
 		}
 	case linux.SOL_TCP:
 		switch name {
-		case linux.TCP_NODELAY, linux.TCP_INQ, linux.TCP_MAXSEG:
+		case linux.TCP_NODELAY, linux.TCP_INQ, linux.TCP_MAXSEG, linux.TCP_USER_TIMEOUT, linux.TCP_DEFER_ACCEPT, linux.TCP_SYNCNT, linux.TCP_WINDOW_CLAMP:
 			optlen = sizeofInt32
 		case linux.TCP_CONGESTION:
 			optlen = len(opt)
@@ -473,7 +524,6 @@ func (s *Socket) SetSockOpt(t *kernel.Task, level int, name int, opt []byte) *sy
 		return syserr.ErrInvalidArgument
 	}
 	opt = opt[:optlen]
-
 	_, _, errno := unix.Syscall6(unix.SYS_SETSOCKOPT, uintptr(s.fd), uintptr(level), uintptr(name), uintptr(firstBytePtr(opt)), uintptr(len(opt)), 0)
 	if errno != 0 {
 		return syserr.FromError(errno)
@@ -515,7 +565,7 @@ func (s *Socket) recvMsgFromHost(iovs []unix.Iovec, flags int, senderRequested b
 // RecvMsg implements socket.Socket.RecvMsg.
 func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlLen uint64) (int, int, linux.SockAddr, uint32, socket.ControlMessages, *syserr.Error) {
 	// Only allow known and safe flags.
-	if flags&^(unix.MSG_DONTWAIT|unix.MSG_PEEK|unix.MSG_TRUNC|unix.MSG_ERRQUEUE) != 0 {
+	if flags&^(unix.MSG_DONTWAIT|unix.MSG_PEEK|unix.MSG_TRUNC|unix.MSG_CTRUNC|unix.MSG_ERRQUEUE) != 0 {
 		return 0, 0, nil, 0, socket.ControlMessages{}, syserr.ErrInvalidArgument
 	}
 
@@ -549,9 +599,10 @@ func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, have
 
 	var ch chan struct{}
 	n, err := copyToDst()
+
 	// recv*(MSG_ERRQUEUE) never blocks, even without MSG_DONTWAIT.
 	if flags&(unix.MSG_DONTWAIT|unix.MSG_ERRQUEUE) == 0 {
-		for err == linuxerr.ErrWouldBlock {
+		for linuxerr.Equals(linuxerr.ErrWouldBlock, err) {
 			// We only expect blocking to come from the actual syscall, in which
 			// case it can't have returned any data.
 			if n != 0 {
@@ -559,6 +610,9 @@ func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, have
 			}
 			if ch != nil {
 				if err = t.BlockWithDeadline(ch, haveDeadline, deadline); err != nil {
+					if linuxerr.Equals(linuxerr.ETIMEDOUT, err) {
+						err = linuxerr.ErrWouldBlock
+					}
 					break
 				}
 			} else {
@@ -574,8 +628,11 @@ func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, have
 		return 0, 0, nil, 0, socket.ControlMessages{}, syserr.FromError(err)
 	}
 
+	// In some circumstances (like MSG_PEEK specified), the sender address
+	// field is purposefully ignored. recvMsgFromHost will return an empty
+	// senderAddrBuf in those cases.
 	var senderAddr linux.SockAddr
-	if senderRequested {
+	if senderRequested && len(senderAddrBuf) > 0 {
 		senderAddr = socket.UnmarshalSockAddr(s.family, senderAddrBuf)
 	}
 
@@ -741,7 +798,7 @@ func (s *Socket) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flag
 	var ch chan struct{}
 	n, err := src.CopyInTo(t, sendmsgFromBlocks)
 	if flags&unix.MSG_DONTWAIT == 0 {
-		for err == linuxerr.ErrWouldBlock {
+		for linuxerr.Equals(linuxerr.ErrWouldBlock, err) {
 			// We only expect blocking to come from the actual syscall, in which
 			// case it can't have returned any data.
 			if n != 0 {

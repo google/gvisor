@@ -10,11 +10,13 @@ syscall_test(
 )
 
 syscall_test(
+    add_hostinet = True,
     test = "//test/syscalls/linux:accept_bind_stream_test",
 )
 
 syscall_test(
     size = "large",
+    add_hostinet = True,
     shard_count = most_shards,
     test = "//test/syscalls/linux:accept_bind_test",
 )
@@ -49,6 +51,7 @@ syscall_test(
 
 syscall_test(
     size = "large",
+    add_hostinet = True,
     add_overlay = True,
     test = "//test/syscalls/linux:bind_test",
 )
@@ -111,6 +114,7 @@ syscall_test(
 
 syscall_test(
     add_host_communication = True,
+    add_hostinet = True,
     one_sandbox = False,
     test = "//test/syscalls/linux:connect_external_test",
     # Shared mode tests replace /tmp which hides the files created for
@@ -409,6 +413,7 @@ syscall_test(
 )
 
 syscall_test(
+    add_hostinet = True,
     test = "//test/syscalls/linux:partial_bad_buffer_test",
 )
 
@@ -553,6 +558,7 @@ syscall_test(
 
 syscall_test(
     size = "medium",
+    add_hostinet = True,
     shard_count = more_shards,
     test = "//test/syscalls/linux:readv_socket_test",
 )
@@ -609,6 +615,7 @@ syscall_test(
 )
 
 syscall_test(
+    add_hostinet = True,
     add_overlay = True,
     test = "//test/syscalls/linux:sendfile_socket_test",
 )
@@ -869,6 +876,7 @@ syscall_test(
 )
 
 syscall_test(
+    add_hostinet = True,
     test = "//test/syscalls/linux:socket_test",
 )
 
@@ -982,6 +990,7 @@ syscall_test(
 
 syscall_test(
     size = "medium",
+    add_hostinet = True,
     shard_count = more_shards,
     test = "//test/syscalls/linux:tcp_socket_test",
 )
