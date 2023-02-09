@@ -2140,6 +2140,7 @@ cc_binary(
         "//test/util:test_main",
         "//test/util:test_util",
         "//test/util:thread_util",
+        "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/strings",
     ],
 )
@@ -4143,6 +4144,7 @@ cc_binary(
     linkstatic = 1,
     deps = [
         "//test/util:fs_util",
+        "@com_google_absl//absl/algorithm:container",
         gtest,
         "//test/util:posix_error",
         "//test/util:proc_util",
