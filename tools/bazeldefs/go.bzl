@@ -140,8 +140,10 @@ def go_context(ctx, goos = None, goarch = None, std = False):
         goos = go_ctx.sdk.goos
     if goarch == None:
         goarch = go_ctx.sdk.goarch
+    env = go_ctx.env
+    env["CGO_ENABLED"] = "0"
     return struct(
-        env = go_ctx.env,
+        env = env,
         go = go_ctx.go,
         goarch = goarch,
         goos = goos,
