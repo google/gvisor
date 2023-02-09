@@ -50,6 +50,8 @@ type SockOpt struct {
 
 // SockOpts are the socket options supported by hostinet.
 var SockOpts = []SockOpt{
+	{linux.SOL_IP, linux.IP_MULTICAST_LOOP, sizeofInt32, true, true},
+	{linux.SOL_IP, linux.IP_MULTICAST_TTL, sizeofInt32, true, true},
 	{linux.SOL_IP, linux.IP_PKTINFO, sizeofInt32, true, true},
 	{linux.SOL_IP, linux.IP_RECVERR, sizeofInt32, true, true},
 	{linux.SOL_IP, linux.IP_RECVORIGDSTADDR, sizeofInt32, true, true},
@@ -70,21 +72,28 @@ var SockOpts = []SockOpt{
 
 	{linux.SOL_SOCKET, linux.SO_ACCEPTCONN, sizeofInt32, true, true},
 	{linux.SOL_SOCKET, linux.SO_BROADCAST, sizeofInt32, true, true},
-	{linux.SOL_SOCKET, linux.SO_ERROR, sizeofInt32, false, true},
+	{linux.SOL_SOCKET, linux.SO_ERROR, sizeofInt32, true, false},
 	{linux.SOL_SOCKET, linux.SO_KEEPALIVE, sizeofInt32, true, true},
 	{linux.SOL_SOCKET, linux.SO_LINGER, linux.SizeOfLinger, true, true},
+	{linux.SOL_SOCKET, linux.SO_OOBINLINE, sizeofInt32, true, true},
 	{linux.SOL_SOCKET, linux.SO_RCVBUF, sizeofInt32, true, true},
 	{linux.SOL_SOCKET, linux.SO_REUSEADDR, sizeofInt32, true, true},
 	{linux.SOL_SOCKET, linux.SO_SNDBUF, sizeofInt32, true, true},
 	{linux.SOL_SOCKET, linux.SO_TIMESTAMP, sizeofInt32, true, true},
-	{linux.SOL_SOCKET, linux.SO_TYPE, sizeofInt32, false, true},
+	{linux.SOL_SOCKET, linux.SO_TYPE, sizeofInt32, true, false},
 
 	{linux.SOL_TCP, linux.TCP_CONGESTION, 0 /* string */, true, true},
+	{linux.SOL_TCP, linux.TCP_CORK, sizeofInt32, true, true},
 	{linux.SOL_TCP, linux.TCP_DEFER_ACCEPT, sizeofInt32, true, true},
 	{linux.SOL_TCP, linux.TCP_INFO, uint64(linux.SizeOfTCPInfo), true, false},
 	{linux.SOL_TCP, linux.TCP_INQ, sizeofInt32, true, true},
+	{linux.SOL_TCP, linux.TCP_KEEPCNT, sizeofInt32, true, true},
+	{linux.SOL_TCP, linux.TCP_KEEPIDLE, sizeofInt32, true, true},
+	{linux.SOL_TCP, linux.TCP_KEEPINTVL, sizeofInt32, true, true},
+	{linux.SOL_TCP, linux.TCP_LINGER2, sizeofInt32, true, true},
 	{linux.SOL_TCP, linux.TCP_MAXSEG, sizeofInt32, true, true},
 	{linux.SOL_TCP, linux.TCP_NODELAY, sizeofInt32, true, true},
+	{linux.SOL_TCP, linux.TCP_QUICKACK, sizeofInt32, true, true},
 	{linux.SOL_TCP, linux.TCP_SYNCNT, sizeofInt32, true, true},
 	{linux.SOL_TCP, linux.TCP_USER_TIMEOUT, sizeofInt32, true, true},
 	{linux.SOL_TCP, linux.TCP_WINDOW_CLAMP, sizeofInt32, true, true},
@@ -138,6 +147,9 @@ func (s *Socket) GetSockOpt(t *kernel.Task, level, name int, optValAddr hostarch
 	sockOpt, ok := sockOptMap[levelName{uint64(level), uint64(name)}]
 	if !ok {
 		return nil, syserr.ErrProtocolNotAvailable
+	}
+	if !sockOpt.AllowGet {
+		return nil, syserr.ErrInvalidArgument
 	}
 	var opt []byte
 	if sockOpt.Size > 0 {
@@ -205,6 +217,9 @@ func (s *Socket) SetSockOpt(t *kernel.Task, level, name int, opt []byte) *syserr
 		// Pretend to accept socket options we don't understand. This
 		// seems dangerous, but it's what netstack does...
 		return nil
+	}
+	if !sockOpt.AllowSet {
+		return syserr.ErrInvalidArgument
 	}
 	if sockOpt.Size > 0 {
 		if uint64(len(opt)) < sockOpt.Size {
