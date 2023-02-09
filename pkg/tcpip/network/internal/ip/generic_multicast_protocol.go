@@ -292,38 +292,45 @@ type GenericMulticastProtocolState struct {
 	stateChangedReportV2TimerSet bool
 }
 
+// GetV1ModeLocked returns the V1 configuration.
+//
+// Precondition: g.protocolMU must be read locked.
+func (g *GenericMulticastProtocolState) GetV1ModeLocked() bool {
+	switch g.mode {
+	case protocolModeV2, protocolModeV1Compatibility:
+		return false
+	case protocolModeV1:
+		return true
+	default:
+		panic(fmt.Sprintf("unrecognized mode = %d", g.mode))
+	}
+}
+
+func (g *GenericMulticastProtocolState) stopModeTimer() {
+	if g.modeTimer != nil {
+		g.modeTimer.Stop()
+	}
+}
+
 // SetV1ModeLocked sets the V1 configuration.
 //
 // Returns the previous configuration.
 //
 // Precondition: g.protocolMU must be locked.
 func (g *GenericMulticastProtocolState) SetV1ModeLocked(v bool) bool {
+	if g.GetV1ModeLocked() == v {
+		return v
+	}
+
 	if v {
-		switch g.mode {
-		case protocolModeV2:
-			g.cancelV2ReportTimers()
-		case protocolModeV1Compatibility:
-			g.modeTimer.Stop()
-		case protocolModeV1:
-			// Already in V1 mode; nothing to do.
-			return true
-		default:
-			panic(fmt.Sprintf("unrecognized mode = %d", g.mode))
-		}
+		g.stopModeTimer()
+		g.cancelV2ReportTimers()
 		g.mode = protocolModeV1
 		return false
 	}
 
-	switch g.mode {
-	case protocolModeV2, protocolModeV1Compatibility:
-		// Not in V1 mode; nothing to do.
-		return false
-	case protocolModeV1:
-		g.mode = protocolModeV2
-		return true
-	default:
-		panic(fmt.Sprintf("unrecognized mode = %d", g.mode))
-	}
+	g.mode = protocolModeV2
+	return true
 }
 
 func (g *GenericMulticastProtocolState) cancelV2ReportTimers() {
@@ -375,9 +382,7 @@ func (g *GenericMulticastProtocolState) MakeAllNonMemberLocked() {
 		return
 	}
 
-	if g.modeTimer != nil {
-		g.modeTimer.Stop()
-	}
+	g.stopModeTimer()
 	g.cancelV2ReportTimers()
 
 	var v2ReportBuilder MulticastGroupProtocolV2ReportBuilder

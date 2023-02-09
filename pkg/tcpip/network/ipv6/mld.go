@@ -47,10 +47,13 @@ const (
 
 // MLDEndpoint is a network endpoint that supports MLD.
 type MLDEndpoint interface {
-	// Sets the MLD version.
+	// SetMLDVersions sets the MLD version.
 	//
 	// Returns the previous MLD version.
 	SetMLDVersion(MLDVersion) MLDVersion
+
+	// GetMLDVersion returns the MLD version.
+	GetMLDVersion() MLDVersion
 }
 
 // MLDOptions holds options for MLD.
@@ -334,10 +337,21 @@ func (mld *mldState) setVersion(v MLDVersion) MLDVersion {
 		panic(fmt.Sprintf("unrecognized version = %d", v))
 	}
 
-	if prev {
+	return toMLDVersion(prev)
+}
+
+func toMLDVersion(v1Generic bool) MLDVersion {
+	if v1Generic {
 		return MLDVersion1
 	}
 	return MLDVersion2
+}
+
+// getVersion returns the MLD version.
+//
+// Precondition: mld.ep.mu must be read locked.
+func (mld *mldState) getVersion() MLDVersion {
+	return toMLDVersion(mld.genericMulticastProtocol.GetV1ModeLocked())
 }
 
 // writePacket assembles and sends an MLD packet.

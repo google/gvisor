@@ -759,7 +759,7 @@ func TestMLDSkipProtocol(t *testing.T) {
 	}
 }
 
-func TestSetMLDVersion(t *testing.T) {
+func TestGetSetMLDVersion(t *testing.T) {
 	const nicID = 1
 
 	c := newMLDTestContext()
@@ -781,6 +781,9 @@ func TestSetMLDVersion(t *testing.T) {
 	if !ok {
 		t.Fatalf("got (%T).(%T) = (_, false), want = (_ true)", ep, mldEP)
 	}
+	if got := mldEP.GetMLDVersion(); got != ipv6.MLDVersion2 {
+		t.Errorf("got mldEP.GetMLDVersion() = %d, want = %d", got, ipv6.MLDVersion2)
+	}
 
 	protocolAddr := tcpip.ProtocolAddress{
 		Protocol:          ipv6.ProtocolNumber,
@@ -799,6 +802,9 @@ func TestSetMLDVersion(t *testing.T) {
 	if got := mldEP.SetMLDVersion(ipv6.MLDVersion1); got != ipv6.MLDVersion2 {
 		t.Errorf("got mldEP.SetMLDVersion(%d) = %d, want = %d", ipv6.MLDVersion1, got, ipv6.MLDVersion2)
 	}
+	if got := mldEP.GetMLDVersion(); got != ipv6.MLDVersion1 {
+		t.Errorf("got mldEP.GetMLDVersion() = %d, want = %d", got, ipv6.MLDVersion1)
+	}
 	if err := s.JoinGroup(ipv6.ProtocolNumber, nicID, globalMulticastAddr); err != nil {
 		t.Fatalf("s.JoinGroup(%d, %d, %s): %s", ipv6.ProtocolNumber, nicID, globalMulticastAddr, err)
 	}
@@ -811,6 +817,9 @@ func TestSetMLDVersion(t *testing.T) {
 
 	if got := mldEP.SetMLDVersion(ipv6.MLDVersion2); got != ipv6.MLDVersion1 {
 		t.Errorf("got mldEP.SetMLDVersion(%d) = %d, want = %d", ipv6.MLDVersion2, got, ipv6.MLDVersion1)
+	}
+	if got := mldEP.GetMLDVersion(); got != ipv6.MLDVersion2 {
+		t.Errorf("got mldEP.GetMLDVersion() = %d, want = %d", got, ipv6.MLDVersion2)
 	}
 	if err := s.LeaveGroup(ipv6.ProtocolNumber, nicID, globalMulticastAddr); err != nil {
 		t.Fatalf("s.LeaveGroup(%d, %d, %s): %s", ipv6.ProtocolNumber, nicID, globalMulticastAddr, err)
