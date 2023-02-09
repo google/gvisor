@@ -9,6 +9,7 @@ go_library(
         "hostinet.go",
         "socket.go",
         "socket_unsafe.go",
+        "sockopt.go",
         "sockopt_impl.go",
         "stack.go",
         "stack_unsafe.go",
