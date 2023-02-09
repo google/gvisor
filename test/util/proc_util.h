@@ -21,6 +21,7 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/algorithm/container.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/string_view.h"
 #include "absl/types/optional.h"
@@ -142,7 +143,7 @@ inline std::ostream& operator<<(std::ostream& os,
   return os;
 }
 
-// GMock printer for std::vector<ProcMapsEntry>.
+// GoogleTest printer for std::vector<ProcMapsEntry>.
 inline void PrintTo(const std::vector<ProcMapsEntry>& vec, std::ostream* os) {
   *os << vec;
 }
@@ -173,7 +174,7 @@ MATCHER_P(ContainsMappings, mappings,
   bool all_present = true;
   std::for_each(mappings.begin(), mappings.end(), [&](const ProcMapsEntry& e1) {
     auto it =
-        std::find_if(maps.begin(), maps.end(), [&e1](const ProcMapsEntry& e2) {
+        absl::c_find_if(maps, [&e1](const ProcMapsEntry& e2) {
           return e1.start == e2.start && e1.end == e2.end &&
                  e1.readable == e2.readable && e1.writable == e2.writable &&
                  e1.executable == e2.executable && e1.priv == e2.priv &&
@@ -197,23 +198,44 @@ MATCHER_P(ContainsMappings, mappings,
 
 // LimitType is an rlimit type
 enum class LimitType {
-  CPU,
-  FileSize,
-  Data,
-  Stack,
-  Core,
-  RSS,
-  ProcessCount,
-  NumberOfFiles,
-  MemoryLocked,
-  AS,
-  Locks,
-  SignalsPending,
-  MessageQueueBytes,
-  Nice,
-  RealTimePriority,
-  Rttime,
+  kCPU,
+  kFileSize,
+  kData,
+  kStack,
+  kCore,
+  kRSS,
+  kProcessCount,
+  kNumberOfFiles,
+  kMemoryLocked,
+  kAS,
+  kLocks,
+  kSignalsPending,
+  kMessageQueueBytes,
+  kNice,
+  kRealTimePriority,
+  kRttime,
 };
+
+const std::vector<LimitType> LimitTypes{
+    LimitType::kCPU,
+    LimitType::kFileSize,
+    LimitType::kData,
+    LimitType::kStack,
+    LimitType::kCore,
+    LimitType::kRSS,
+    LimitType::kProcessCount,
+    LimitType::kNumberOfFiles,
+    LimitType::kMemoryLocked,
+    LimitType::kAS,
+    LimitType::kLocks,
+    LimitType::kSignalsPending,
+    LimitType::kMessageQueueBytes,
+    LimitType::kNice,
+    LimitType::kRealTimePriority,
+    LimitType::kRttime,
+};
+
+std::string LimitTypeToString(LimitType type);
 
 // ProcLimitsEntry contains the data from a single line in /proc/xxx/limits.
 struct ProcLimitsEntry {
@@ -222,10 +244,10 @@ struct ProcLimitsEntry {
   uint64_t max_limit;
 };
 
-// Parses a single line from /proc/xxx/limits
+// Parses a single line from /proc/xxx/limits.
 PosixErrorOr<ProcLimitsEntry> ParseProcLimitsLine(absl::string_view line);
 
-// Parses an entire /proc/xxx/limits file into lines
+// Parses an entire /proc/xxx/limits file into lines.
 PosixErrorOr<std::vector<ProcLimitsEntry>> ParseProcLimits(
     absl::string_view contents);
 
@@ -236,7 +258,7 @@ std::ostream& operator<<(std::ostream& os, const ProcLimitsEntry& entry);
 std::ostream& operator<<(std::ostream& os,
                          const std::vector<ProcLimitsEntry>& vec);
 
-// GMock printer for std::vector<ProcLimitsEntry>.
+// GoogleTest printer for std::vector<ProcLimitsEntry>.
 inline void PrintTo(const std::vector<ProcLimitsEntry>& vec, std::ostream* os) {
   *os << vec;
 }
