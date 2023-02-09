@@ -164,12 +164,7 @@ func hostInetFilters() seccomp.SyscallRules {
 			{
 				seccomp.MatchAny{},
 				seccomp.EqualTo(unix.SOL_SOCKET),
-				seccomp.EqualTo(unix.SO_RCVTIMEO),
-			},
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOL_SOCKET),
-				seccomp.EqualTo(unix.SO_SNDTIMEO),
+				seccomp.EqualTo(unix.SO_ACCEPTCONN),
 			},
 			{
 				seccomp.MatchAny{},
@@ -195,6 +190,26 @@ func hostInetFilters() seccomp.SyscallRules {
 				seccomp.MatchAny{},
 				seccomp.EqualTo(unix.SOL_TCP),
 				seccomp.EqualTo(linux.TCP_CONGESTION),
+			},
+			{
+				seccomp.MatchAny{},
+				seccomp.EqualTo(unix.SOL_TCP),
+				seccomp.EqualTo(linux.TCP_USER_TIMEOUT),
+			},
+			{
+				seccomp.MatchAny{},
+				seccomp.EqualTo(unix.SOL_TCP),
+				seccomp.EqualTo(linux.TCP_DEFER_ACCEPT),
+			},
+			{
+				seccomp.MatchAny{},
+				seccomp.EqualTo(unix.SOL_TCP),
+				seccomp.EqualTo(linux.TCP_SYNCNT),
+			},
+			{
+				seccomp.MatchAny{},
+				seccomp.EqualTo(unix.SOL_TCP),
+				seccomp.EqualTo(linux.TCP_WINDOW_CLAMP),
 			},
 		},
 		unix.SYS_IOCTL: []seccomp.Rule{
@@ -282,6 +297,26 @@ func hostInetFilters() seccomp.SyscallRules {
 				seccomp.MatchAny{},
 				seccomp.EqualTo(unix.SOL_TCP),
 				seccomp.EqualTo(linux.TCP_CONGESTION),
+			},
+			{
+				seccomp.MatchAny{},
+				seccomp.EqualTo(unix.SOL_TCP),
+				seccomp.EqualTo(linux.TCP_USER_TIMEOUT),
+			},
+			{
+				seccomp.MatchAny{},
+				seccomp.EqualTo(unix.SOL_TCP),
+				seccomp.EqualTo(linux.TCP_DEFER_ACCEPT),
+			},
+			{
+				seccomp.MatchAny{},
+				seccomp.EqualTo(unix.SOL_TCP),
+				seccomp.EqualTo(linux.TCP_SYNCNT),
+			},
+			{
+				seccomp.MatchAny{},
+				seccomp.EqualTo(unix.SOL_TCP),
+				seccomp.EqualTo(linux.TCP_WINDOW_CLAMP),
 			},
 			{
 				seccomp.MatchAny{},
