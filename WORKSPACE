@@ -42,10 +42,10 @@ http_archive(
         # Allow for patching of the go_sdk.
         "//tools:rules_go_sdk.patch",
     ],
-    sha256 = "099a9fb96a376ccbbb7d291ed4ecbdfd42f6bc822ab77ae6f1b5cb9e914e94fa",
+    sha256 = "dd926a88a564a9246713a9c00b35315f54cbd46b31a26d5d8fb264c07045f05d",
     urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.35.0/rules_go-v0.35.0.zip",
-        "https://github.com/bazelbuild/rules_go/releases/download/v0.35.0/rules_go-v0.35.0.zip",
+        "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.38.1/rules_go-v0.38.1.zip",
+        "https://github.com/bazelbuild/rules_go/releases/download/v0.38.1/rules_go-v0.38.1.zip",
     ],
 )
 
@@ -70,7 +70,7 @@ go_download_sdk(
     # time on our continuous integration.
     patch = "//tools:go_types_memoize.patch",
     patch_strip = 2,
-    version = "1.19.3",
+    version = "1.20",
 )
 
 gazelle_dependencies()
@@ -81,8 +81,8 @@ gazelle_dependencies()
 go_repository(
     name = "org_golang_x_tools",
     importpath = "golang.org/x/tools",
-    sum = "h1:SrNbZl6ECOS1qFzgTdQfWXZM9XBkiA6tkFrH9YSTPHM=",
-    version = "v0.3.0",
+    sum = "h1:+bSpV5HIeWkuvgaMfI3UmKRThoTA5ODJTUd8T17NO+4=",
+    version = "v0.5.0",
 )
 
 go_repository(
@@ -140,7 +140,11 @@ http_archive(
 
 load("@coral_crosstool//:configure.bzl", "cc_crosstool")
 
-cc_crosstool(name = "crosstool")
+cc_crosstool(
+    name = "crosstool",
+    c_version = "gnu17",
+)
+
 register_toolchains("//:cc_toolchain_k8", "//:cc_toolchain_aarch64")
 
 # Load protobuf dependencies.

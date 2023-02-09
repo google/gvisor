@@ -17,6 +17,7 @@ package container
 import (
 	"encoding/json"
 	"io/ioutil"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -375,7 +376,15 @@ func TestProcfsDump(t *testing.T) {
 	if len(procfsDump[0].FDs) < 3 {
 		t.Errorf("expected at least 3 FDs for the sleep process, got %+v", procfsDump[0].FDs)
 	} else {
-		modes := []uint16{unix.S_IFCHR, unix.S_IFIFO, unix.S_IFREG}
+		modes := [3]uint32{}
+		for i, _ := range []*os.File{os.Stdin, os.Stdout, os.Stderr} {
+			stat := unix.Stat_t{}
+			err := unix.Fstat(i, &stat)
+			if err != nil {
+				t.Fatalf("unix.Fatat(i) failed: %s", err)
+			}
+			modes[i] = stat.Mode & unix.S_IFMT
+		}
 		for i, fd := range procfsDump[0].FDs[:3] {
 			if want := int32(i); fd.Number != want {
 				t.Errorf("expected FD number %d, got %d", want, fd.Number)

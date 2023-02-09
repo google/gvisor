@@ -22,6 +22,7 @@ go_test(
         "//runsc",
     ],
     library = ":root",
+    pure = True,
     tags = [
         "local",
         "manual",
