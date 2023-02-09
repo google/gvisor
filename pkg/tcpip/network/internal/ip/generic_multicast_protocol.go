@@ -397,13 +397,14 @@ func (g *GenericMulticastProtocolState) MakeAllNonMemberLocked() {
 				groupAddress,
 			)
 		}
-	case protocolModeV1Compatibility, protocolModeV1:
+	case protocolModeV1Compatibility:
+		g.mode = protocolModeV2
+		fallthrough
+	case protocolModeV1:
 		handler = g.transitionToNonMemberLocked
 	default:
 		panic(fmt.Sprintf("unrecognized mode = %d", g.mode))
 	}
-
-	g.mode = protocolModeV2
 
 	for groupAddress, info := range g.memberships {
 		if !g.shouldPerformForGroup(groupAddress) {
