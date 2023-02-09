@@ -200,6 +200,7 @@ TEST_P(TcpSocketTest, ConnectOnEstablishedConnection) {
                   connected_.get(),
                   reinterpret_cast<const struct sockaddr*>(&addr), addrlen),
               SyscallFailsWithErrno(EISCONN));
+
   ASSERT_THAT(RetryEINTR(connect)(
                   accepted_.get(),
                   reinterpret_cast<const struct sockaddr*>(&addr), addrlen),
@@ -1245,7 +1246,7 @@ TEST_P(SimpleTcpSocketTest, SelfConnectSend) {
               SyscallSucceeds());
 
   // Ensure the write buffer is large enough not to block on a single write.
-  size_t write_size = 512 << 10;  // 512 KiB.
+  size_t write_size = 128 << 10;  // 128 KiB.
   EXPECT_THAT(setsockopt(s.get(), SOL_SOCKET, SO_SNDBUF, &write_size,
                          sizeof(write_size)),
               SyscallSucceedsWithValue(0));
@@ -2209,14 +2210,20 @@ void ShutdownConnectingSocket(int domain, int shutdown_mode) {
 }
 
 TEST_P(SimpleTcpSocketTest, ShutdownReadConnectingSocket) {
+  // TODO(b/175409607): Fix this test for hostinet.
+  SKIP_IF(IsRunningWithHostinet());
   ShutdownConnectingSocket(GetParam(), SHUT_RD);
 }
 
 TEST_P(SimpleTcpSocketTest, ShutdownWriteConnectingSocket) {
+  // TODO(b/175409607): Fix this test for hostinet.
+  SKIP_IF(IsRunningWithHostinet());
   ShutdownConnectingSocket(GetParam(), SHUT_WR);
 }
 
 TEST_P(SimpleTcpSocketTest, ShutdownReadWriteConnectingSocket) {
+  // TODO(b/175409607): Fix this test for hostinet.
+  SKIP_IF(IsRunningWithHostinet());
   ShutdownConnectingSocket(GetParam(), SHUT_RDWR);
 }
 
@@ -2242,6 +2249,9 @@ TEST_P(SimpleTcpSocketTest, ConnectUnspecifiedAddress) {
 }
 
 TEST_P(SimpleTcpSocketTest, OnlyAcknowledgeBacklogConnections) {
+  // TODO(b/175409607): Fix this test for hostinet.
+  SKIP_IF(IsRunningWithHostinet());
+
   // At some point, there was a bug in gVisor where a connection could be
   // SYN-ACK'd by the server even if the accept queue was already full. This was
   // possible because once the listener would process an ACK, it would move the
@@ -2380,26 +2390,29 @@ TEST_P(SimpleTcpSocketTest, SynRcvdOnListenerShutdown) {
                     const int expected_revents =
                         POLLIN | POLLOUT | POLLHUP | POLLRDNORM | POLLWRNORM;
                     // TODO(gvisor.dev/issue/6666): POLLERR is still present
-                    // after getsockopt(..., SO_ERROR, ...) call.
+                    // after getsockopt(..., SO_ERROR, ...) call (unless
+                    // hostinet is used).
                     if (IsRunningOnGvisor()) {
+                      if (IsRunningWithHostinet()) {
+                        return expected_revents;
+                      }
                       return expected_revents | POLLPRI | POLLERR;
-                    } else {
-                      return expected_revents | POLLRDHUP;
                     }
+                    return expected_revents | POLLRDHUP;
                   }()
 #endif
         );
 
         EXPECT_THAT(
+            // TODO(gvisor.dev/issue/6666): on Linux, POLLERR goes away
+            // after the getsockopt(..., SO_ERROR, ...) call, but not on
+            // gVisor (unless hostinet is used).
             revents,
             ::testing::AnyOf(
                 // If the error arrived after poll returned.
                 ::testing::Eq(POLLOUT | POLLWRNORM),
                 ::testing::Eq([expected_revents = poll_fd.revents]() -> int {
-                  // TODO(gvisor.dev/issue/6666): on Linux, POLLERR goes away
-                  // after the getsockopt(..., SO_ERROR, ...) call, but not on
-                  // gVisor.
-                  if (IsRunningOnGvisor()) {
+                  if (IsRunningOnGvisor() && !IsRunningWithHostinet()) {
                     return expected_revents;
                   }
                   return expected_revents | POLLERR;

@@ -544,6 +544,7 @@ var sockOptNames = map[uint64]abi.ValueSet{
 		linux.SO_RCVTIMEO:     "SO_RCVTIMEO",
 		linux.SO_OOBINLINE:    "SO_OOBINLINE",
 		linux.SO_TIMESTAMP:    "SO_TIMESTAMP",
+		linux.SO_ACCEPTCONN:   "SO_ACCEPTCONN",
 	},
 	linux.SOL_TCP: {
 		linux.TCP_NODELAY:              "TCP_NODELAY",
