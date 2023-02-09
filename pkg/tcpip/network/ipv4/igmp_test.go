@@ -509,7 +509,7 @@ func TestIGMPPacketValidation(t *testing.T) {
 	}
 }
 
-func TestSetIGMPVersion(t *testing.T) {
+func TestGetSetIGMPVersion(t *testing.T) {
 	const nicID = 1
 
 	c := newIGMPTestContext(t, true /* igmpEnabled */)
@@ -524,6 +524,9 @@ func TestSetIGMPVersion(t *testing.T) {
 	igmpEP, ok := ep.(ipv4.IGMPEndpoint)
 	if !ok {
 		t.Fatalf("got (%T).(%T) = (_, false), want = (_ true)", ep, igmpEP)
+	}
+	if got := igmpEP.GetIGMPVersion(); got != ipv4.IGMPVersion3 {
+		t.Errorf("got igmpEP.GetIGMPVersion() = %d, want = %d", got, ipv4.IGMPVersion3)
 	}
 
 	protocolAddr := tcpip.ProtocolAddress{
@@ -547,6 +550,9 @@ func TestSetIGMPVersion(t *testing.T) {
 	if got := igmpEP.SetIGMPVersion(ipv4.IGMPVersion2); got != ipv4.IGMPVersion3 {
 		t.Errorf("got igmpEP.SetIGMPVersion(%d) = %d, want = %d", ipv4.IGMPVersion2, got, ipv4.IGMPVersion3)
 	}
+	if got := igmpEP.GetIGMPVersion(); got != ipv4.IGMPVersion2 {
+		t.Errorf("got igmpEP.GetIGMPVersion() = %d, want = %d", got, ipv4.IGMPVersion2)
+	}
 	if err := s.JoinGroup(ipv4.ProtocolNumber, nicID, multicastAddr2); err != nil {
 		t.Fatalf("JoinGroup(ipv4, nic, %s) = %s", multicastAddr2, err)
 	}
@@ -560,6 +566,9 @@ func TestSetIGMPVersion(t *testing.T) {
 	if got := igmpEP.SetIGMPVersion(ipv4.IGMPVersion1); got != ipv4.IGMPVersion2 {
 		t.Errorf("got igmpEP.SetIGMPVersion(%d) = %d, want = %d", ipv4.IGMPVersion1, got, ipv4.IGMPVersion2)
 	}
+	if got := igmpEP.GetIGMPVersion(); got != ipv4.IGMPVersion1 {
+		t.Errorf("got igmpEP.GetIGMPVersion() = %d, want = %d", got, ipv4.IGMPVersion1)
+	}
 	if err := s.JoinGroup(ipv4.ProtocolNumber, nicID, multicastAddr3); err != nil {
 		t.Fatalf("JoinGroup(ipv4, nic, %s) = %s", multicastAddr3, err)
 	}
@@ -572,6 +581,9 @@ func TestSetIGMPVersion(t *testing.T) {
 
 	if got := igmpEP.SetIGMPVersion(ipv4.IGMPVersion3); got != ipv4.IGMPVersion1 {
 		t.Errorf("got igmpEP.SetIGMPVersion(%d) = %d, want = %d", ipv4.IGMPVersion3, got, ipv4.IGMPVersion1)
+	}
+	if got := igmpEP.GetIGMPVersion(); got != ipv4.IGMPVersion3 {
+		t.Errorf("got igmpEP.GetIGMPVersion() = %d, want = %d", got, ipv4.IGMPVersion3)
 	}
 	if err := s.JoinGroup(ipv4.ProtocolNumber, nicID, multicastAddr4); err != nil {
 		t.Fatalf("JoinGroup(ipv4, nic, %s) = %s", multicastAddr4, err)

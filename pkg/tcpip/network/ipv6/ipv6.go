@@ -364,6 +364,13 @@ func (e *endpoint) SetMLDVersion(v MLDVersion) MLDVersion {
 	return e.mu.mld.setVersion(v)
 }
 
+// GetMLDVersion implements MLDEndpoint.
+func (e *endpoint) GetMLDVersion() MLDVersion {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.mu.mld.getVersion()
+}
+
 // SetNDPConfigurations implements NDPEndpoint.
 func (e *endpoint) SetNDPConfigurations(c NDPConfigurations) {
 	c.validate()
