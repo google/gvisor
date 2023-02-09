@@ -25,6 +25,7 @@ go_library(
         "//pkg/log",
         "//pkg/seccomp",
         "//pkg/sentry/platform",
+        "//pkg/sentry/socket/hostinet",
         "//pkg/tcpip/link/fdbased",
         "@org_golang_x_sys//unix:go_default_library",
     ],
