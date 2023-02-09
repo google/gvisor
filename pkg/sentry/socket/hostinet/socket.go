@@ -16,16 +16,13 @@ package hostinet
 
 import (
 	"fmt"
-	"time"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
-	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -42,8 +39,6 @@ import (
 )
 
 const (
-	sizeofInt32 = 4
-
 	// sizeofSockaddr is the size in bytes of the largest sockaddr type
 	// supported by this package.
 	sizeofSockaddr = unix.SizeofSockaddrInet6 // sizeof(sockaddr_in6) > sizeof(sockaddr_in)
@@ -386,149 +381,6 @@ func (s *Socket) Shutdown(_ *kernel.Task, how int) *syserr.Error {
 	default:
 		return syserr.ErrInvalidArgument
 	}
-}
-
-// GetSockOpt implements socket.Socket.GetSockOpt.
-func (s *Socket) GetSockOpt(t *kernel.Task, level, name int, optValAddr hostarch.Addr, outLen int) (marshal.Marshallable, *syserr.Error) {
-	if outLen < 0 {
-		return nil, syserr.ErrInvalidArgument
-	}
-
-	// Only allow known and safe options.
-	optlen, copyIn := getSockOptLen(t, level, name)
-	switch level {
-	case linux.SOL_IP:
-		switch name {
-		case linux.IP_TOS, linux.IP_RECVTOS, linux.IP_TTL, linux.IP_RECVTTL, linux.IP_PKTINFO, linux.IP_RECVORIGDSTADDR, linux.IP_RECVERR:
-			optlen = sizeofInt32
-		}
-	case linux.SOL_IPV6:
-		switch name {
-		case linux.IPV6_TCLASS, linux.IPV6_RECVTCLASS, linux.IPV6_RECVPKTINFO, linux.IPV6_UNICAST_HOPS, linux.IPV6_MULTICAST_HOPS, linux.IPV6_RECVHOPLIMIT, linux.IPV6_RECVERR, linux.IPV6_V6ONLY, linux.IPV6_RECVORIGDSTADDR:
-			optlen = sizeofInt32
-		}
-	case linux.SOL_SOCKET:
-		switch name {
-		case linux.SO_BROADCAST, linux.SO_ERROR, linux.SO_KEEPALIVE, linux.SO_SNDBUF, linux.SO_RCVBUF, linux.SO_REUSEADDR, linux.SO_TIMESTAMP, linux.SO_ACCEPTCONN:
-			optlen = sizeofInt32
-		case linux.SO_LINGER:
-			optlen = unix.SizeofLinger
-		case linux.SO_RCVTIMEO:
-			optlen = linux.SizeOfTimeval
-			recvTimeout := linux.NsecToTimeval(s.RecvTimeout())
-			return &recvTimeout, nil
-		case linux.SO_SNDTIMEO:
-			optlen = linux.SizeOfTimeval
-			sndTimeout := linux.NsecToTimeval(s.SendTimeout())
-			return &sndTimeout, nil
-		}
-	case linux.SOL_TCP:
-		switch name {
-		case linux.TCP_NODELAY, linux.TCP_MAXSEG, linux.TCP_INQ, linux.TCP_USER_TIMEOUT, linux.TCP_DEFER_ACCEPT, linux.TCP_SYNCNT, linux.TCP_WINDOW_CLAMP:
-			optlen = sizeofInt32
-		case linux.TCP_INFO:
-			optlen = linux.SizeOfTCPInfo
-			// Truncate the output buffer to outLen size.
-			if optlen > outLen {
-				optlen = outLen
-			}
-		case linux.TCP_CONGESTION:
-			optlen = outLen
-		}
-	}
-
-	if optlen == 0 {
-		return nil, syserr.ErrProtocolNotAvailable // ENOPROTOOPT
-	}
-	if outLen < optlen {
-		return nil, syserr.ErrInvalidArgument
-	}
-
-	opt := make([]byte, optlen)
-	if copyIn {
-		// This is non-intuitive as normally in getsockopt one assumes that the
-		// parameter is purely an out parameter. But some custom options do require
-		// copying in the optVal so we do it here only for those custom options.
-		if _, err := t.CopyInBytes(optValAddr, opt); err != nil {
-			return nil, syserr.FromError(err)
-		}
-	}
-	var err error
-	opt, err = getsockopt(s.fd, level, name, opt)
-	if err != nil {
-		return nil, syserr.FromError(err)
-	}
-	opt = postGetSockOpt(t, level, name, opt)
-	optP := primitive.ByteSlice(opt)
-	return &optP, nil
-}
-
-// SetSockOpt implements socket.Socket.SetSockOpt.
-func (s *Socket) SetSockOpt(t *kernel.Task, level, name int, opt []byte) *syserr.Error {
-	// Only allow known and safe options.
-	optlen := setSockOptLen(t, level, name)
-	switch level {
-	case linux.SOL_IP:
-		switch name {
-		case linux.IP_TOS, linux.IP_RECVTOS, linux.IP_TTL, linux.IP_RECVTTL, linux.IP_PKTINFO, linux.IP_RECVORIGDSTADDR, linux.IP_RECVERR:
-			optlen = sizeofInt32
-		}
-	case linux.SOL_IPV6:
-		switch name {
-		case linux.IPV6_TCLASS, linux.IPV6_RECVTCLASS, linux.IPV6_RECVPKTINFO, linux.IPV6_UNICAST_HOPS, linux.IPV6_MULTICAST_HOPS, linux.IPV6_RECVHOPLIMIT, linux.IPV6_RECVERR, linux.IPV6_V6ONLY, linux.IPV6_RECVORIGDSTADDR:
-			optlen = sizeofInt32
-		}
-	case linux.SOL_SOCKET:
-		switch name {
-		case linux.SO_BROADCAST, linux.SO_SNDBUF, linux.SO_RCVBUF, linux.SO_REUSEADDR, linux.SO_TIMESTAMP:
-			optlen = sizeofInt32
-		case linux.SO_RCVTIMEO:
-			// Since our host sockets are always non-blocking,
-			// there is no point in setting these timeouts on the
-			// host. But we must store them internally so that we
-			// can put deadlines on our own blocking.
-			optlen = linux.SizeOfTimeval
-			var v linux.Timeval
-			v.UnmarshalBytes(opt[:optlen])
-			if v.Usec < 0 || v.Usec >= int64(time.Second/time.Microsecond) {
-				return syserr.ErrDomain
-			}
-			s.SetRecvTimeout(v.ToNsecCapped())
-			return nil
-		case linux.SO_SNDTIMEO:
-			// See above.
-			optlen = linux.SizeOfTimeval
-			var v linux.Timeval
-			v.UnmarshalBytes(opt[:optlen])
-			if v.Usec < 0 || v.Usec >= int64(time.Second/time.Microsecond) {
-				return syserr.ErrDomain
-			}
-			s.SetSendTimeout(v.ToNsecCapped())
-			return nil
-		}
-	case linux.SOL_TCP:
-		switch name {
-		case linux.TCP_NODELAY, linux.TCP_INQ, linux.TCP_MAXSEG, linux.TCP_USER_TIMEOUT, linux.TCP_DEFER_ACCEPT, linux.TCP_SYNCNT, linux.TCP_WINDOW_CLAMP:
-			optlen = sizeofInt32
-		case linux.TCP_CONGESTION:
-			optlen = len(opt)
-		}
-	}
-
-	if optlen == 0 {
-		// Pretend to accept socket options we don't understand. This seems
-		// dangerous, but it's what netstack does...
-		return nil
-	}
-	if len(opt) < optlen {
-		return syserr.ErrInvalidArgument
-	}
-	opt = opt[:optlen]
-	_, _, errno := unix.Syscall6(unix.SYS_SETSOCKOPT, uintptr(s.fd), uintptr(level), uintptr(name), uintptr(firstBytePtr(opt)), uintptr(len(opt)), 0)
-	if errno != 0 {
-		return syserr.FromError(errno)
-	}
-	return nil
 }
 
 func (s *Socket) recvMsgFromHost(iovs []unix.Iovec, flags int, senderRequested bool, controlLen uint64) (uint64, int, []byte, []byte, error) {
