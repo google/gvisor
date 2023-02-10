@@ -362,8 +362,9 @@ func (fs *Filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 		return err
 	}
 
-	parent.dirMu.Lock()
-	defer parent.dirMu.Unlock()
+	if rp.Mount() != vd.Mount() {
+		return linuxerr.EXDEV
+	}
 	inode := vd.Dentry().Impl().(*Dentry).Inode()
 	if inode.Mode().IsDir() {
 		return linuxerr.EPERM
@@ -371,15 +372,14 @@ func (fs *Filesystem) LinkAt(ctx context.Context, rp *vfs.ResolvingPath, vd vfs.
 	if err := vfs.MayLink(rp.Credentials(), inode.Mode(), inode.UID(), inode.GID()); err != nil {
 		return err
 	}
+	parent.dirMu.Lock()
+	defer parent.dirMu.Unlock()
 	pc := rp.Component()
 	if err := checkCreateLocked(ctx, rp.Credentials(), pc, parent); err != nil {
 		return err
 	}
 	if rp.MustBeDir() {
 		return linuxerr.ENOENT
-	}
-	if rp.Mount() != vd.Mount() {
-		return linuxerr.EXDEV
 	}
 	if err := rp.Mount().CheckBeginWrite(); err != nil {
 		return err

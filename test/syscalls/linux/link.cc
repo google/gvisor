@@ -349,6 +349,12 @@ TEST(LinkTest, LinkatWithSymlinkFollow) {
   EXPECT_THAT(unlink(newname.c_str()), SyscallSucceeds());
 }
 
+TEST(LinkTest, KernfsAcrossFilesystem) {
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  EXPECT_THAT(link(file.path().c_str(), "/sys/newfile"),
+              SyscallFailsWithErrno(::testing::AnyOf(EROFS, EXDEV)));
+}
+
 }  // namespace
 
 }  // namespace testing
