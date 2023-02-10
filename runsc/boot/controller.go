@@ -382,6 +382,29 @@ func (cm *containerManager) Checkpoint(o *control.SaveOpts, _ *struct{}) error {
 	return state.Save(o, nil)
 }
 
+// PortForwardOpts contains options for port forwarding to a port in a
+// container.
+type PortForwardOpts struct {
+	// FilePayload contains one fd for a UDS (or local port) used for port
+	// forwarding.
+	urpc.FilePayload
+
+	// ContainerID is the container for the process being executed.
+	ContainerID string
+	// Port is the port to to forward.
+	Port uint16
+}
+
+// PortForward initiates a port forward to the container.
+func (cm *containerManager) PortForward(opts *PortForwardOpts, _ *struct{}) error {
+	log.Debugf("containerManager.PortForward, cid: %s, port: %d", opts.ContainerID, opts.Port)
+	if err := cm.l.portForward(opts); err != nil {
+		log.Debugf("containerManager.PortForward failed, opts: %+v, err: %v", opts, err)
+		return err
+	}
+	return nil
+}
+
 // RestoreOpts contains options related to restoring a container's file system.
 type RestoreOpts struct {
 	// FilePayload contains the state file to be restored, followed by the

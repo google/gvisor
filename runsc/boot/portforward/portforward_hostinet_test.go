@@ -18,14 +18,19 @@ import (
 	"fmt"
 	"net"
 	"reflect"
+	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"golang.org/x/sync/errgroup"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 )
 
 func TestLocalHostSocket(t *testing.T) {
+	ctx := contexttest.Context(t)
 	clientData := append(
 		[]byte("do what must be done\n"),
 		[]byte("do not hesitate\n")...,
@@ -48,7 +53,7 @@ func TestLocalHostSocket(t *testing.T) {
 	g.Go(func() error {
 		conn, err := l.Accept()
 		if err != nil {
-			return fmt.Errorf("could not accept connection: %v", err)
+			t.Fatalf("could not accept connection: %v", err)
 		}
 		defer conn.Close()
 
@@ -75,16 +80,12 @@ func TestLocalHostSocket(t *testing.T) {
 	})
 
 	g.Go(func() error {
-		sock, err := newLocalHostSocket()
+		sock, err := NewHostInetConn(uint16(port))
 		if err != nil {
-			return fmt.Errorf("could not create local host socket: %v", err)
-		}
-		defer sock.Close()
-		if err := sock.Connect(uint16(port)); err != nil {
-			return fmt.Errorf("could not connect to local host socket: %v", err)
+			t.Fatalf("could not create local host socket: %v", err)
 		}
 		for i := 0; i < len(clientData); {
-			n, err := sock.Write(clientData[i:])
+			n, err := sock.Write(ctx, clientData[i:], nil)
 			if err != nil {
 				return fmt.Errorf("could not write to local host socket: %v", err)
 			}
@@ -94,7 +95,7 @@ func TestLocalHostSocket(t *testing.T) {
 		data := make([]byte, 1024)
 		dataLen := 0
 		for dataLen < len(serverData) {
-			n, err := sock.Read(data[dataLen:])
+			n, err := sock.Read(ctx, data[dataLen:], nil)
 			if err != nil {
 				t.Fatalf("could not read from local host socket: %v", err)
 			}
@@ -114,17 +115,27 @@ func TestLocalHostSocket(t *testing.T) {
 
 type netConnMockEndpoint struct {
 	conn net.Conn
+	mu   sync.Mutex
 }
 
 // read implements portforwarderTestHarness.read.
 func (nc *netConnMockEndpoint) read(n int) ([]byte, error) {
+	nc.mu.Lock()
+	defer nc.mu.Unlock()
+
 	buf := make([]byte, n)
-	n, err := nc.conn.Read(buf)
-	return buf[:n], err
+	nc.conn.SetReadDeadline(time.Now().Add(time.Millisecond * 500))
+	res, err := nc.conn.Read(buf)
+	if err != nil && strings.Contains(err.Error(), "timeout") {
+		return nil, linuxerr.ErrWouldBlock
+	}
+	return buf[:res], err
 }
 
 // write implements portforwarderTestHarness write.
 func (nc *netConnMockEndpoint) write(buf []byte) (int, error) {
+	nc.mu.Lock()
+	defer nc.mu.Unlock()
 	written := 0
 	for {
 		n, err := nc.conn.Write(buf[written:])
@@ -138,7 +149,7 @@ func (nc *netConnMockEndpoint) write(buf []byte) (int, error) {
 	}
 }
 
-func TestHostinetPortForwardConn(t *testing.T) {
+func TestHostInetProxy(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		requests map[string]string
@@ -167,41 +178,42 @@ func TestHostinetPortForwardConn(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			doHostinetTest(t, tc.requests)
+			doHostinetTest(t, tc.name, tc.requests)
 		})
 	}
 }
 
-func doHostinetTest(t *testing.T, requests map[string]string) {
-	ctx := contexttest.Context(t)
-	appEndpoint := &mockApplicationFDImpl{}
-	defer appEndpoint.Release(ctx)
+func doHostinetTest(t *testing.T, name string, requests map[string]string) {
+	ctx := context.Background()
+	appEndpoint := newMockApplicationFDImpl()
 	client, err := newMockFileDescription(ctx, appEndpoint)
 	if err != nil {
-		t.Fatalf("newMockFileDescription failed: %v", err)
+		t.Fatalf("newMockFileDescription: %v", err)
 	}
+
 	l, err := net.Listen("tcp", ":0")
 	if err != nil {
 		t.Fatalf("net.Listen failed: %v", err)
 	}
 	defer l.Close()
-	port := l.Addr().(*net.TCPAddr).Port
-	portForwardConn, err := newHostinetPortForward(ctx, "", client, uint16(port))
+	port := uint16(l.Addr().(*net.TCPAddr).Port)
+	sock, err := NewHostInetConn(port)
 	if err != nil {
-		t.Fatalf("newHostinetPortForward failed: %v", err)
+		t.Fatalf("could not create local host socket: %v", err)
 	}
-	if err := portForwardConn.start(ctx); err != nil {
-		t.Fatalf("portForwardConn.start failed: %v", err)
-	}
-	conn, err := l.Accept()
-	if err != nil {
-		t.Fatalf("l.Accept failed: %v", err)
-	}
-	defer conn.Close()
 
+	proxy := NewProxy(ProxyPair{To: sock, From: &fileDescriptionConn{file: client}}, name)
+
+	proxy.Start(ctx)
+
+	shim, err := l.Accept()
+	if err != nil {
+		t.Fatalf("could not accept shim connection: %v", err)
+	}
+	defer shim.Close()
 	harness := portforwarderTestHarness{
 		app:  appEndpoint,
-		shim: &netConnMockEndpoint{conn},
+		shim: &netConnMockEndpoint{conn: shim},
 	}
 
 	for req, resp := range requests {
@@ -226,7 +238,6 @@ func doHostinetTest(t *testing.T, requests map[string]string) {
 		if err != nil {
 			t.Fatalf("failed to read from shim: %v", err)
 		}
-
 		if string(got) != resp {
 			t.Fatalf("shim mismatch: got: %s want: %s", string(got), resp)
 		}

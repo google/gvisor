@@ -27,6 +27,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bpf"
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/coverage"
 	"gvisor.dev/gvisor/pkg/cpuid"
@@ -69,6 +70,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/runsc/boot/filter"
 	_ "gvisor.dev/gvisor/runsc/boot/platforms" // register all platforms.
+	pf "gvisor.dev/gvisor/runsc/boot/portforward"
 	"gvisor.dev/gvisor/runsc/boot/pprof"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/profile"
@@ -136,7 +138,15 @@ type Loader struct {
 	// sandboxID is the ID for the whole sandbox.
 	sandboxID string
 
-	// mu guards processes.
+	// mountHints provides extra information about mounts for containers that
+	// apply to the entire pod.
+	mountHints *podMountHints
+
+	// productName is the value to show in
+	// /sys/devices/virtual/dmi/id/product_name.
+	productName string
+
+	// mu guards processes and porForwardProxies.
 	mu sync.Mutex
 
 	// processes maps containers init process and invocation of exec. Root
@@ -146,13 +156,10 @@ type Loader struct {
 	// processes is guarded by mu.
 	processes map[execID]*execProcess
 
-	// mountHints provides extra information about mounts for containers that
-	// apply to the entire pod.
-	mountHints *podMountHints
-
-	// productName is the value to show in
-	// /sys/devices/virtual/dmi/id/product_name.
-	productName string
+	// portForwardProxies is a list of active port forwarding connections.
+	//
+	// portForwardProxies is guarded by mu.
+	portForwardProxies []*pf.Proxy
 }
 
 // execID uniquely identifies a sentry process that is executed in a container.
@@ -1386,4 +1393,101 @@ func createFDTable(ctx context.Context, console bool, stdioFDs []*fd.FD, user sp
 		return nil, nil, err
 	}
 	return fdTable, ttyFile, nil
+}
+
+// portForward implements initiating a portForward connection in the sandbox. portForwardProxies
+// represent a two connections each copying to each other (read ends to write ends) in goroutines.
+// The proxies are stored and can be cleaned up, or clean up after themselves if the connection
+// is broken.
+func (l *Loader) portForward(opts *PortForwardOpts) error {
+	// Validate that we have a stream FD to write to. If this happens then
+	// it means there is a misbehaved urpc client or a bug has occurred.
+	if len(opts.Files) != 1 {
+		return fmt.Errorf("stream FD is required for port forward")
+	}
+
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	cid := opts.ContainerID
+	tg, err := l.tryThreadGroupFromIDLocked(execID{cid: cid})
+	if err != nil {
+		return fmt.Errorf("failed to get threadgroup from %q: %w", cid, err)
+	}
+	if tg == nil {
+		return fmt.Errorf("container %q not started", cid)
+	}
+
+	// Import the fd for the UDS.
+	ctx := l.k.SupervisorContext()
+	fd, err := l.importFD(ctx, opts.Files[0])
+	if err != nil {
+		return fmt.Errorf("importing stream fd: %w", err)
+	}
+	cu := cleanup.Make(func() { fd.DecRef(ctx) })
+	defer cu.Clean()
+
+	fdConn := pf.NewFileDescriptionConn(fd)
+
+	// Create a proxy to forward data between the fdConn and the sandboxed application.
+	pair := pf.ProxyPair{To: fdConn}
+
+	switch l.root.conf.Network {
+	case config.NetworkSandbox:
+		stack := l.k.RootNetworkNamespace().Stack().(*netstack.Stack).Stack
+		nsConn, err := pf.NewNetstackConn(stack, opts.Port)
+		if err != nil {
+			return fmt.Errorf("creating netstack port forward connection: %w", err)
+		}
+		pair.From = nsConn
+	case config.NetworkHost:
+		hConn, err := pf.NewHostInetConn(opts.Port)
+		if err != nil {
+			return fmt.Errorf("creating hostinet port forward connection: %w", err)
+		}
+		pair.From = hConn
+	default:
+		return fmt.Errorf("unsupported network type %q for container %q", l.root.conf.Network, cid)
+	}
+	cu.Release()
+	proxy := pf.NewProxy(pair, opts.ContainerID)
+
+	// Add to the list of port forward connections and remove when the
+	// connection closes.
+	l.portForwardProxies = append(l.portForwardProxies, proxy)
+	proxy.AddCleanup(func() {
+		l.mu.Lock()
+		defer l.mu.Unlock()
+		for i := range l.portForwardProxies {
+			if l.portForwardProxies[i] == proxy {
+				l.portForwardProxies = append(l.portForwardProxies[:i], l.portForwardProxies[i+1:]...)
+				break
+			}
+		}
+	})
+
+	// Start forwarding on the connection.
+	proxy.Start(ctx)
+	return nil
+}
+
+// importFD generically imports a host file descriptor without adding it to any
+// fd table.
+func (l *Loader) importFD(ctx context.Context, f *os.File) (*vfs.FileDescription, error) {
+	hostFD, err := fd.NewFromFile(f)
+	if err != nil {
+		return nil, err
+	}
+	defer hostFD.Close()
+	fd, err := host.NewFD(ctx, l.k.HostMount(), hostFD.FD(), &host.NewFDOptions{
+		Savable:      false, // We disconnect and close on save.
+		IsTTY:        false,
+		VirtualOwner: false, // FD not visible to the sandboxed app so user can't be changed.
+	})
+
+	if err != nil {
+		return nil, err
+	}
+	hostFD.Release()
+	return fd, nil
 }

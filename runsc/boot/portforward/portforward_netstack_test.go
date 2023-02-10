@@ -20,9 +20,7 @@ import (
 	"sync"
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
-	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -32,7 +30,6 @@ type baseTCPEndpointImpl struct {
 	readBuf  bytes.Buffer
 	writeBuf bytes.Buffer
 	mu       sync.Mutex
-	wq       *waiter.Queue
 }
 
 // read reads data from the buffer that "Write" writes to.
@@ -43,7 +40,6 @@ func (b *baseTCPEndpointImpl) read(n int) ([]byte, error) {
 		return nil, io.EOF
 	}
 	ret := b.writeBuf.Next(n)
-	b.wq.Notify(waiter.WritableEvents)
 	return ret, nil
 }
 
@@ -55,7 +51,6 @@ func (b *baseTCPEndpointImpl) write(buf []byte) (int, error) {
 		return 0, io.EOF
 	}
 	n, err := b.readBuf.Write(buf)
-	b.wq.Notify(waiter.ReadableEvents)
 	return n, err
 }
 
@@ -101,22 +96,13 @@ func (b *baseTCPEndpointImpl) Write(payload tcpip.Payloader, _ tcpip.WriteOption
 }
 
 func (b *baseTCPEndpointImpl) Shutdown(shutdown tcpip.ShutdownFlags) tcpip.Error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.closed = true
 	return nil
 }
 
-func newNetstackPortForwardConnWithMock(impl mockTCPEndpointImpl, fd *vfs.FileDescription, wq *waiter.Queue) *netstackPortForwardConn {
-	ep := &mockTCPEndpoint{impl}
-	return &netstackPortForwardConn{
-		ep:       ep,
-		wq:       wq,
-		fd:       fd,
-		toDone:   make(chan struct{}),
-		fromDone: make(chan struct{}),
-		cu:       cleanup.Cleanup{},
-	}
-}
-
-func TestNetstackPortforward(t *testing.T) {
+func TestNetstackProxy(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		requests map[string]string
@@ -145,27 +131,30 @@ func TestNetstackPortforward(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			doNetstackTest(t, tc.requests)
+			doNetstackTest(t, tc.name, tc.requests)
 		})
 	}
 }
 
-func doNetstackTest(t *testing.T, responses map[string]string) {
+func doNetstackTest(t *testing.T, name string, responses map[string]string) {
 	ctx := contexttest.Context(t)
-	appEndpoint := &mockApplicationFDImpl{}
-	defer appEndpoint.Release(ctx)
+	appEndpoint := newMockApplicationFDImpl()
 	fd, err := newMockFileDescription(ctx, appEndpoint)
 	if err != nil {
 		t.Fatalf("newMockFileDescription: %v", err)
 	}
 
-	wq := waiter.Queue{}
-	impl := &baseTCPEndpointImpl{wq: &wq}
-	conn := newNetstackPortForwardConnWithMock(impl, fd, &wq)
-	if err := conn.start(ctx); err != nil {
-		t.Fatalf("conn.start: %v", err)
+	wq := &waiter.Queue{}
+	impl := &baseTCPEndpointImpl{}
+	ep := newMockTCPEndpoint(impl, wq)
+	sock := &netstackConn{
+		ep: ep,
+		wq: wq,
 	}
-	defer conn.close(ctx)
+
+	proxy := NewProxy(ProxyPair{To: sock, From: &fileDescriptionConn{file: fd}}, name)
+	proxy.Start(ctx)
+	defer proxy.Close()
 
 	harness := portforwarderTestHarness{
 		app:  appEndpoint,
@@ -198,5 +187,64 @@ func doNetstackTest(t *testing.T, responses map[string]string) {
 		if string(got) != resp {
 			t.Fatalf("shim mismatch: got: %s want: %s", string(got), resp)
 		}
+	}
+}
+
+// tcpErrImpl blocks on the first Read/Write and then throws an error afterwards.
+type tcpErrImpl struct {
+	mu     sync.Mutex
+	reads  bool
+	writes bool
+}
+
+// Read implements mockTCPEndpointImpl.Read.
+func (e *tcpErrImpl) Read(w io.Writer, _ tcpip.ReadOptions) (tcpip.ReadResult, tcpip.Error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.reads {
+		return tcpip.ReadResult{}, &tcpip.ErrBadLocalAddress{}
+	}
+	e.reads = true
+	return tcpip.ReadResult{}, &tcpip.ErrWouldBlock{}
+}
+
+// Write implements mockTCPEndpointImpl.Write.
+func (e *tcpErrImpl) Write(payload tcpip.Payloader, _ tcpip.WriteOptions) (int64, tcpip.Error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.writes {
+		return 0, &tcpip.ErrBadLocalAddress{}
+	}
+	e.writes = true
+	return 0, &tcpip.ErrWouldBlock{}
+}
+
+// Shutdown implements mockTCPEndpointImpl.Shutdown.
+func (e *tcpErrImpl) Shutdown(shutdown tcpip.ShutdownFlags) tcpip.Error {
+	return nil
+}
+
+// Close implements mockTCPEndpointImpl.Shutdown.
+func (e *tcpErrImpl) Close() {}
+
+// TestNTestNestackReadsWrites checks that reads/writes check errors from the underlying endpoint
+// multiple times.
+func TestNestackReadsWrites(t *testing.T) {
+	ctx := contexttest.Context(t)
+	wq := &waiter.Queue{}
+	ep := newMockTCPEndpoint(&tcpErrImpl{}, wq)
+	cancel := make(chan struct{})
+	conn := netstackConn{ep: ep, wq: wq}
+	defer close(cancel)
+	defer conn.Close(ctx)
+
+	_, err := conn.Read(ctx, []byte("something"), cancel)
+	if err != io.EOF {
+		t.Fatalf("mismatch read err: want: %v got: %v", io.EOF, err)
+	}
+
+	_, err = conn.Write(ctx, []byte("something"), cancel)
+	if err != io.EOF {
+		t.Fatalf("mismatch write err: want: %v got: %v", io.EOF, err)
 	}
 }

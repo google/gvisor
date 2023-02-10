@@ -109,6 +109,7 @@ go_library(
         "//pkg/urpc",
         "//runsc/boot/filter",
         "//runsc/boot/platforms",
+        "//runsc/boot/portforward",
         "//runsc/boot/pprof",
         "//runsc/boot/procfs",
         "//runsc/config",

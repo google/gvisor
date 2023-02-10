@@ -16,6 +16,7 @@ package portforward
 
 import (
 	"io"
+	"sync"
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -24,23 +25,31 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-// fileDescriptionReadWriter implements io.ReadWriter and allows reading and
-// writing to a vfs.FileDescription.
-type fileDescriptionReadWriter struct {
-	// ctx is the context for the socket reader.
-	ctx context.Context
-
+// fileDescriptionConn
+type fileDescriptionConn struct {
 	// file is the file to read and write from.
 	file *vfs.FileDescription
+	// once makes sure we release the owned FileDescription once.
+	once sync.Once
 }
 
-// Read implements io.Reader.Read. It performs a blocking read on the fd.
-func (r *fileDescriptionReadWriter) Read(buf []byte) (int, error) {
+// NewFileDescriptionConn initializes a fileDescriptionConn.
+func NewFileDescriptionConn(file *vfs.FileDescription) proxyConn {
+	return &fileDescriptionConn{file: file}
+}
+
+// Name implements proxyConn.Name.
+func (r *fileDescriptionConn) Name() string {
+	return "fileDescriptionConn"
+}
+
+// Read implements proxyConn.Read.
+func (r *fileDescriptionConn) Read(ctx context.Context, buf []byte, cancel <-chan struct{}) (int, error) {
 	var (
 		notifyCh  chan struct{}
 		waitEntry waiter.Entry
 	)
-	n, err := r.file.Read(r.ctx, usermem.BytesIOSequence(buf), vfs.ReadOptions{})
+	n, err := r.file.Read(ctx, usermem.BytesIOSequence(buf), vfs.ReadOptions{})
 	for linuxerr.Equals(linuxerr.ErrWouldBlock, err) {
 		if notifyCh == nil {
 			waitEntry, notifyCh = waiter.NewChannelEntry(waiter.ReadableEvents | waiter.WritableEvents | waiter.EventHUp | waiter.EventErr)
@@ -48,8 +57,12 @@ func (r *fileDescriptionReadWriter) Read(buf []byte) (int, error) {
 			r.file.EventRegister(&waitEntry)
 			defer r.file.EventUnregister(&waitEntry)
 		}
-		<-notifyCh
-		n, err = r.file.Read(r.ctx, usermem.BytesIOSequence(buf), vfs.ReadOptions{})
+		select {
+		case <-notifyCh:
+		case <-cancel:
+			return 0, io.EOF
+		}
+		n, err = r.file.Read(ctx, usermem.BytesIOSequence(buf), vfs.ReadOptions{})
 	}
 
 	// host fd FileDescriptions use recvmsg which returns zero when the
@@ -60,11 +73,11 @@ func (r *fileDescriptionReadWriter) Read(buf []byte) (int, error) {
 	return int(n), err
 }
 
-// Write implements io.Writer.Write. It performs a blocking write on the fd.
-func (r *fileDescriptionReadWriter) Write(buf []byte) (int, error) {
+// Write implements proxyConn.Write.
+func (r *fileDescriptionConn) Write(ctx context.Context, buf []byte, cancel <-chan struct{}) (int, error) {
 	var notifyCh chan struct{}
 	var waitEntry waiter.Entry
-	n, err := r.file.Write(r.ctx, usermem.BytesIOSequence(buf), vfs.WriteOptions{})
+	n, err := r.file.Write(ctx, usermem.BytesIOSequence(buf), vfs.WriteOptions{})
 	for linuxerr.Equals(linuxerr.ErrWouldBlock, err) {
 		if notifyCh == nil {
 			waitEntry, notifyCh = waiter.NewChannelEntry(waiter.WritableEvents | waiter.EventHUp | waiter.EventErr)
@@ -72,8 +85,19 @@ func (r *fileDescriptionReadWriter) Write(buf []byte) (int, error) {
 			r.file.EventRegister(&waitEntry)
 			defer r.file.EventUnregister(&waitEntry)
 		}
-		<-notifyCh
-		n, err = r.file.Write(r.ctx, usermem.BytesIOSequence(buf), vfs.WriteOptions{})
+		select {
+		case <-notifyCh:
+		case <-cancel:
+			return 0, io.EOF
+		}
+		n, err = r.file.Write(ctx, usermem.BytesIOSequence(buf), vfs.WriteOptions{})
 	}
 	return int(n), err
+}
+
+// Close implements proxyConn.Close.
+func (r *fileDescriptionConn) Close(ctx context.Context) {
+	r.once.Do(func() {
+		r.file.DecRef(ctx)
+	})
 }

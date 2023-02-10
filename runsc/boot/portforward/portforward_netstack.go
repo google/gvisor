@@ -17,12 +17,10 @@ package portforward
 import (
 	"bytes"
 	"fmt"
+	"io"
+	"sync"
 
-	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -30,203 +28,126 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-// netstackPortForwardConn is a portForwardConn implementation for netstack.
-type netstackPortForwardConn struct {
-	// cid is the container id that this connection is connecting to.
-	cid string
-
-	// ep is the tcpip.Endpoint to the application port.
+// netstackConn allows reading and writing to a netstack endpoint.
+// netstackConn implements proxyConn.
+type netstackConn struct {
+	// ep is the tcpip.Endpoint on which to read and write.
 	ep tcpip.Endpoint
-	// wq is the endpoint waiter.Queue.
+	// port is the port on which to connect.
+	port uint16
+	// wq is the WaitQueue for this connection to wait on notifications.
 	wq *waiter.Queue
-	// fd is the FileDescription for the imported host UDS fd.
-	fd *vfs.FileDescription
-
-	// status holds the status of the connection.
-	status struct {
-		sync.Mutex
-		// started indicates if the connection is started or not.
-		started bool
-		// closed indicates if the connection is closed or not.
-		closed bool
-	}
-
-	// toDone is closed when the copy to the application port is finished.
-	toDone chan struct{}
-
-	// fromDone is closed when the copy from the application socket is finished.
-	fromDone chan struct{}
-
-	// cu is called when the connection finishes.
-	cu cleanup.Cleanup
+	// once makes sure Close is called once.
+	once sync.Once
 }
 
-// newNetstackPortForward creates a new port forwarding connection to the given
+// NewNetstackConn creates a new port forwarding connection to the given
 // port in netstack mode.
-func newNetstackPortForward(ctx context.Context, stack *stack.Stack, cid string, fd *vfs.FileDescription, port uint16) (portForwardConn, error) {
+func NewNetstackConn(stack *stack.Stack, port uint16) (proxyConn, error) {
 	var wq waiter.Queue
 	ep, tcpErr := stack.NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, &wq)
 	if tcpErr != nil {
 		return nil, fmt.Errorf("creating endpoint: %v", tcpErr)
 	}
-	cu := cleanup.Make(func() { ep.Close() })
-	defer cu.Clean()
-
+	n := &netstackConn{
+		ep:   ep,
+		port: port,
+		wq:   &wq,
+	}
 	waitEntry, notifyCh := waiter.NewChannelEntry(waiter.WritableEvents)
-	wq.EventRegister(&waitEntry)
-	defer wq.EventUnregister(&waitEntry)
+	n.wq.EventRegister(&waitEntry)
+	defer n.wq.EventUnregister(&waitEntry)
 
-	tcpErr = ep.Connect(tcpip.FullAddress{
+	tcpErr = n.ep.Connect(tcpip.FullAddress{
 		Addr: "\x7f\x00\x00\x01", // 127.0.0.1
-		Port: port,
+		Port: n.port,
 	})
 	if _, ok := tcpErr.(*tcpip.ErrConnectStarted); ok {
 		<-notifyCh
-		tcpErr = ep.LastError()
+		tcpErr = n.ep.LastError()
 	}
 	if tcpErr != nil {
 		return nil, fmt.Errorf("connecting endpoint: %v", tcpErr)
 	}
-
-	pfConn := netstackPortForwardConn{
-		cid:      cid,
-		ep:       ep,
-		wq:       &wq,
-		fd:       fd,
-		toDone:   make(chan struct{}),
-		fromDone: make(chan struct{}),
-		cu:       cleanup.Cleanup{},
-	}
-
-	cu.Release()
-	return &pfConn, nil
+	return n, nil
 }
 
-// start implements portForwardConn.start.
-func (c *netstackPortForwardConn) start(ctx context.Context) error {
-	c.status.Lock()
-	defer c.status.Unlock()
-
-	if c.status.closed {
-		return fmt.Errorf("already closed")
-	}
-	if c.status.started {
-		return fmt.Errorf("already started")
-	}
-
-	log.Debugf("Start forwarding to/from container %q and localhost", c.cid)
-
-	go c.writeToEP(ctx)
-	go c.readFromEP(ctx)
-
-	c.status.started = true
-
-	return nil
+// Name implements proxyConn.Name.
+func (n *netstackConn) Name() string {
+	return fmt.Sprintf("netstack:port:%d", n.port)
 }
 
-// close implements portForwardConn.close.
-func (c *netstackPortForwardConn) close(ctx context.Context) error {
-	c.status.Lock()
-
-	// This should be a no op if the connection is already closed.
-	if c.status.closed {
-		c.status.Unlock()
-		return nil
-	}
-
-	log.Debugf("Stopping forwarding to/from container %q and localhost...", c.cid)
-
-	// Closing the endpoint will make the other goroutine exit.
-	c.ep.Close()
-	c.fd.DecRef(ctx)
-
-	<-c.toDone
-	log.Debugf("Stopped forwarding one-half of copy for %q", c.cid)
-
-	// Wait on the other goroutine.
-	<-c.fromDone
-	log.Debugf("Stopped forwarding to/from container %q and localhost", c.cid)
-
-	c.status.closed = true
-
-	c.status.Unlock()
-
-	// Call the cleanup object.
-	c.cu.Clean()
-
-	return nil
+// bufWriter is used as an io.Writer to read from tcpip.Endpoint.
+type bufWriter struct {
+	buf    []byte
+	offset int64
 }
 
-// cleanup implements portForwardConn.cleanup.
-func (c *netstackPortForwardConn) cleanup(f func()) {
-	c.cu.Add(f)
+// Write implements io.Writer.
+func (b *bufWriter) Write(buf []byte) (int, error) {
+	n := copy(b.buf[b.offset:], buf)
+	b.offset += int64(n)
+	return n, nil
 }
 
-// readFromEP reads from the tcpip.Endpoint and writes to the given Writer.
-func (c *netstackPortForwardConn) readFromEP(ctx context.Context) {
-	w := &fileDescriptionReadWriter{
-		file: c.fd,
+// Read implements proxyConn.Read.
+func (n *netstackConn) Read(ctx context.Context, buf []byte, cancel <-chan struct{}) (int, error) {
+	var ch chan struct{}
+	var e waiter.Entry
+	b := &bufWriter{
+		buf: buf,
 	}
-
-	// Register for read notifications.
-	waitEntry, notifyCh := waiter.NewChannelEntry(waiter.EventIn | waiter.EventHUp | waiter.EventErr)
-	// Register for when the endpoint is readable or disconnected.
-	c.wq.EventRegister(&waitEntry)
-
-	for {
-		_, err := c.ep.Read(w, tcpip.ReadOptions{})
-		if err != nil {
-			if _, ok := err.(*tcpip.ErrWouldBlock); ok {
-				<-notifyCh
-				continue
-			}
-			log.Infof("Port forward read error; cid: %q: %v", c.cid, err)
-			break
+	res, tcpErr := n.ep.Read(b, tcpip.ReadOptions{})
+	for _, ok := tcpErr.(*tcpip.ErrWouldBlock); ok && ctx.Err() == nil; _, ok = tcpErr.(*tcpip.ErrWouldBlock) {
+		if ch == nil {
+			e, ch = waiter.NewChannelEntry(waiter.ReadableEvents | waiter.EventIn | waiter.EventHUp | waiter.EventErr)
+			n.wq.EventRegister(&e)
+			defer n.wq.EventUnregister(&e)
 		}
+		select {
+		case <-ch:
+		case <-cancel:
+			return 0, io.EOF
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		}
+		res, tcpErr = n.ep.Read(b, tcpip.ReadOptions{})
 	}
-
-	// Clean up when one half of the copy is finished.
-	c.wq.EventUnregister(&waitEntry)
-	c.ep.Shutdown(tcpip.ShutdownRead)
-	close(c.fromDone)
-	c.close(ctx)
+	if tcpErr != nil {
+		return 0, io.EOF
+	}
+	return res.Total, nil
 }
 
-func (c *netstackPortForwardConn) writeToEP(ctx context.Context) {
-	r := &fileDescriptionReadWriter{
-		file: c.fd,
-	}
-
-	// Register for write notifications.
-	waitEntry, notifyCh := waiter.NewChannelEntry(waiter.WritableEvents | waiter.EventHUp | waiter.EventErr)
-	// Register for when the endpoint is writable or disconnected.
-	c.wq.EventRegister(&waitEntry)
-
-	v := make([]byte, 16384 /* 16kb read buffer size */)
-	for {
-		n, err := r.Read(v)
-		if err != nil {
-			break
+// Write implements proxyConn.Write.
+func (n *netstackConn) Write(ctx context.Context, buf []byte, cancel <-chan struct{}) (int, error) {
+	var ch chan struct{}
+	var e waiter.Entry
+	var b bytes.Reader
+	b.Reset(buf)
+	res, tcpErr := n.ep.Write(&b, tcpip.WriteOptions{Atomic: true})
+	for _, ok := tcpErr.(*tcpip.ErrWouldBlock); ok && ctx.Err() == nil; _, ok = tcpErr.(*tcpip.ErrWouldBlock) {
+		if ch == nil {
+			e, ch = waiter.NewChannelEntry(waiter.WritableEvents | waiter.EventIn | waiter.EventHUp | waiter.EventErr)
+			n.wq.EventRegister(&e)
+			defer n.wq.EventUnregister(&e)
 		}
-		var b bytes.Reader
-		b.Reset(v[:n])
-		for b.Len() != 0 {
-			_, err := c.ep.Write(&b, tcpip.WriteOptions{Atomic: true})
-			if err != nil {
-				// If the channel is not ready for writing then wait until it is.
-				if _, ok := err.(*tcpip.ErrWouldBlock); ok {
-					<-notifyCh
-					continue
-				}
-				log.Infof("Port forward read error; cid: %q: %v", c.cid, err)
-				break
-			}
+		select {
+		case <-ch:
+		case <-cancel:
+			return 0, io.EOF
+		case <-ctx.Done():
+			return 0, ctx.Err()
 		}
+		res, tcpErr = n.ep.Write(&b, tcpip.WriteOptions{Atomic: true})
 	}
+	if tcpErr != nil {
+		return 0, io.EOF
+	}
+	return int(res), nil
+}
 
-	// Clean up when one half of the copy is finished.
-	c.wq.EventUnregister(&waitEntry)
-	c.ep.Shutdown(tcpip.ShutdownWrite)
-	close(c.toDone)
-	c.close(ctx)
+// Close implements proxyConn.Close.
+func (n *netstackConn) Close(_ context.Context) {
+	n.once.Do(func() { n.ep.Close() })
 }
