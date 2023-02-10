@@ -152,7 +152,7 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 			panic("at least one end of splice must be a pipe")
 		}
 
-		if n != 0 || err != linuxerr.ErrWouldBlock || nonBlock {
+		if n != 0 || !linuxerr.Equals(linuxerr.ErrWouldBlock, err) || nonBlock {
 			break
 		}
 		if err = dw.waitForBoth(t); err != nil {
@@ -245,7 +245,7 @@ func Tee(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallCo
 	defer dw.destroy()
 	for {
 		n, err = pipe.Tee(t, outPipeFD, inPipeFD, count)
-		if n != 0 || err != linuxerr.ErrWouldBlock || nonBlock {
+		if n != 0 || !linuxerr.Equals(linuxerr.ErrWouldBlock, err) || nonBlock {
 			break
 		}
 		if err = dw.waitForBoth(t); err != nil {
@@ -255,7 +255,7 @@ func Tee(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallCo
 
 	if n != 0 {
 		// If a partial write is completed, the error is dropped. Log it here.
-		if err != nil && err != io.EOF && err != linuxerr.ErrWouldBlock {
+		if err != nil && err != io.EOF && !linuxerr.Equals(linuxerr.ErrWouldBlock, err) {
 			log.Debugf("tee completed a partial write with error: %v", err)
 			err = nil
 		}
@@ -370,7 +370,7 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 				err = linuxerr.ErrInterrupted
 				break
 			}
-			if err == linuxerr.ErrWouldBlock && !nonBlock {
+			if linuxerr.Equals(linuxerr.ErrWouldBlock, err) && !nonBlock {
 				err = dw.waitForBoth(t)
 			}
 			if err != nil {
@@ -408,7 +408,7 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 				var writeN int64
 				writeN, err = outFile.Write(t, usermem.BytesIOSequence(wbuf), vfs.WriteOptions{})
 				wbuf = wbuf[writeN:]
-				if err == linuxerr.ErrWouldBlock && !nonBlock {
+				if linuxerr.Equals(linuxerr.ErrWouldBlock, err) && !nonBlock {
 					err = dw.waitForOut(t)
 				}
 				if err != nil {
@@ -441,7 +441,7 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 				err = linuxerr.ErrInterrupted
 				break
 			}
-			if err == linuxerr.ErrWouldBlock && !nonBlock {
+			if linuxerr.Equals(linuxerr.ErrWouldBlock, err) && !nonBlock {
 				err = dw.waitForBoth(t)
 			}
 			if err != nil {
@@ -459,7 +459,7 @@ func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	}
 
 	if total != 0 {
-		if err != nil && err != io.EOF && err != linuxerr.ErrWouldBlock {
+		if err != nil && err != io.EOF && !linuxerr.Equals(linuxerr.ErrWouldBlock, err) {
 			// If a partial write is completed, the error is dropped. Log it here.
 			log.Debugf("sendfile completed a partial write with error: %v", err)
 			err = nil
