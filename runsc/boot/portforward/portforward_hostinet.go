@@ -22,10 +22,9 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	fileDescriptor "gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
-	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -33,41 +32,47 @@ var (
 	localHost = [4]byte{127, 0, 0, 1}
 )
 
-// localHostSocket allows reading and writing to a local host socket for hostinet.
-type localHostSocket struct {
+// hostInetConn allows reading and writing to a local host socket for hostinet.
+// hostInetConn implments proxyConn.
+type hostInetConn struct {
 	// wq is the WaitQueue registered with fdnotifier for this fd.
 	wq waiter.Queue
 	// fd is the file descriptor for the socket.
 	fd *fileDescriptor.FD
+	// port is the port on which to connect.
+	port uint16
+	// once makes sure we close only once.
+	once sync.Once
 }
 
-// newLocalHostSocket creates a hostSocket for an FD and registers the fd for
-// notifications.
-func newLocalHostSocket() (*localHostSocket, error) {
+// NewHostInetConn creates a hostInetConn backed by a host socket on the localhost address.
+func NewHostInetConn(port uint16) (proxyConn, error) {
 	// NOTE: Options must match sandbox seccomp filters. See filter/config.go
 	fd, err := unix.Socket(unix.AF_INET, unix.SOCK_STREAM|unix.SOCK_NONBLOCK|unix.SOCK_CLOEXEC, 0)
 	if err != nil {
 		return nil, err
 	}
-	s := localHostSocket{
-		fd: fileDescriptor.New(fd),
+	s := hostInetConn{
+		fd:   fileDescriptor.New(fd),
+		port: port,
 	}
+
+	cu := cleanup.Make(func() {
+		s.fd.Close()
+	})
+	defer cu.Clean()
 	if err := fdnotifier.AddFD(int32(s.fd.FD()), &s.wq); err != nil {
 		return nil, err
 	}
-	return &s, nil
-}
-
-// Connect performs a blocking connect on the socket to an ipv4 address.
-func (s *localHostSocket) Connect(port uint16) error {
+	cu.Add(func() { fdnotifier.RemoveFD(int32(s.fd.FD())) })
 	sockAddr := &unix.SockaddrInet4{
 		Addr: localHost,
-		Port: int(port),
+		Port: int(s.port),
 	}
 
 	if err := unix.Connect(s.fd.FD(), sockAddr); err != nil {
 		if err != unix.EINPROGRESS {
-			return err
+			return nil, fmt.Errorf("unix.Connect: %w", err)
 		}
 
 		// Connect is in progress. Wait for the socket to be writable.
@@ -85,200 +90,83 @@ func (s *localHostSocket) Connect(port uint16) error {
 		// Call getsockopt to get the connection result.
 		val, err := unix.GetsockoptInt(s.fd.FD(), unix.SOL_SOCKET, unix.SO_ERROR)
 		if err != nil {
-			return nil
+			return nil, fmt.Errorf("unix.GetSockoptInt: %w", err)
 		}
 		if val != 0 {
-			return unix.Errno(val)
+			return nil, fmt.Errorf("unix.GetSockoptInt: %w", unix.Errno(val))
 		}
 	}
+	cu.Release()
+	return &s, nil
+}
 
-	return nil
+func (s *hostInetConn) Name() string {
+	return fmt.Sprintf("localhost:port:%d", s.port)
 }
 
 // Read implements io.Reader.Read. It performs a blocking read on the fd.
-func (s *localHostSocket) Read(buf []byte) (int, error) {
+func (s *hostInetConn) Read(ctx context.Context, buf []byte, cancel <-chan struct{}) (int, error) {
 	var ch chan struct{}
 	var e waiter.Entry
 	n, err := s.fd.Read(buf)
-	for err == unix.EWOULDBLOCK {
+	for ctx.Err() == nil && linuxerr.Equals(linuxerr.ErrWouldBlock, err) {
 		if ch == nil {
-			e, ch = waiter.NewChannelEntry(waiter.ReadableEvents | waiter.WritableEvents | waiter.EventHUp | waiter.EventErr)
+			e, ch = waiter.NewChannelEntry(waiter.ReadableEvents | waiter.EventHUp | waiter.EventErr)
 			// Register for when the endpoint is writable or disconnected.
 			s.eventRegister(&e)
 			defer s.eventUnregister(&e)
 		}
-		<-ch
+		select {
+		case <-ch:
+		case <-cancel:
+			return 0, io.EOF
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		}
 		n, err = s.fd.Read(buf)
 	}
 	return n, err
 }
 
 // Write implements io.Writer.Write. It performs a blocking write on the fd.
-func (s *localHostSocket) Write(buf []byte) (int, error) {
+func (s *hostInetConn) Write(ctx context.Context, buf []byte, cancel <-chan struct{}) (int, error) {
 	var ch chan struct{}
 	var e waiter.Entry
 	n, err := s.fd.Write(buf)
-	for err == unix.EWOULDBLOCK {
+	for ctx.Err() == nil && linuxerr.Equals(linuxerr.ErrWouldBlock, err) {
 		if ch == nil {
 			e, ch = waiter.NewChannelEntry(waiter.WritableEvents | waiter.EventHUp | waiter.EventErr)
 			// Register for when the endpoint is writable or disconnected.
 			s.eventRegister(&e)
 			defer s.eventUnregister(&e)
+
 		}
-		<-ch
+		select {
+		case <-ch:
+		case <-cancel:
+			return 0, io.EOF
+		case <-ctx.Done():
+			return 0, ctx.Err()
+		}
 		n, err = s.fd.Write(buf)
 	}
 	return n, err
 }
 
-func (s *localHostSocket) eventRegister(e *waiter.Entry) {
+func (s *hostInetConn) eventRegister(e *waiter.Entry) {
 	s.wq.EventRegister(e)
 	fdnotifier.UpdateFD(int32(s.fd.FD()))
 }
 
-func (s *localHostSocket) eventUnregister(e *waiter.Entry) {
+func (s *hostInetConn) eventUnregister(e *waiter.Entry) {
 	s.wq.EventUnregister(e)
 	fdnotifier.UpdateFD(int32(s.fd.FD()))
 }
 
 // Close closes the host socket and removes it from notifications.
-func (s *localHostSocket) Close() {
-	fdnotifier.RemoveFD(int32(s.fd.FD()))
-	s.fd.Close()
-}
-
-// hostinetportForwardConn is a hostinet port forwarding connection.
-type hostinetPortForwardConn struct {
-	// cid is the container id that this connection is connecting to.
-	cid string
-
-	// Socket is the host socket connected to the application.
-	socket *localHostSocket
-	// fd is the FileDescription for the imported host UDS fd.
-	fd *vfs.FileDescription
-
-	// status holds the status of the connection.
-	status struct {
-		sync.Mutex
-		// started indicates if the connection is started or not.
-		started bool
-		// closed indicates if the connection is closed or not.
-		closed bool
-	}
-
-	// toDone is closed when the copy to the application port is finished.
-	toDone chan struct{}
-
-	// fromDone is closed when the copy from the application socket is finished.
-	fromDone chan struct{}
-
-	// cu is called when the connection finishes.
-	cu cleanup.Cleanup
-}
-
-// newHostinetPortForward starts port forwarding to the given port in hostinet
-// mode.
-func newHostinetPortForward(ctx context.Context, cid string, fd *vfs.FileDescription, port uint16) (portForwardConn, error) {
-	log.Debugf("Handling hostinet port forwarding request for %s on port %d", cid, port)
-	appSocket, err := newLocalHostSocket()
-	if err != nil {
-		return nil, fmt.Errorf("hostinet socket: %w", err)
-	}
-
-	cu := cleanup.Make(func() { appSocket.Close() })
-	defer cu.Clean()
-
-	if err := appSocket.Connect(port); err != nil {
-		return nil, fmt.Errorf("hostinet connect: %w", err)
-	}
-
-	pfConn := hostinetPortForwardConn{
-		cid:      cid,
-		socket:   appSocket,
-		fd:       fd,
-		toDone:   make(chan struct{}),
-		fromDone: make(chan struct{}),
-		cu:       cleanup.Cleanup{},
-	}
-
-	cu.Release()
-	return &pfConn, nil
-}
-
-// Start implements portForwardConn.start.
-func (c *hostinetPortForwardConn) start(ctx context.Context) error {
-	c.status.Lock()
-	defer c.status.Unlock()
-
-	if c.status.closed {
-		return fmt.Errorf("already closed")
-	}
-	if c.status.started {
-		return fmt.Errorf("already started")
-	}
-
-	log.Debugf("Start forwarding to/from container %q and localhost", c.cid)
-
-	importedRW := &fileDescriptionReadWriter{
-		file: c.fd,
-	}
-
-	go func() {
-		_, _ = io.Copy(c.socket, importedRW)
-		// Indicate that this goroutine has completed.
-		close(c.toDone)
-		// Make sure to clean up when one half of the copy has finished.
-		c.close(ctx)
-	}()
-	go func() {
-		_, _ = io.Copy(importedRW, c.socket)
-		// Indicate that this goroutine has completed.
-		close(c.fromDone)
-		// Make sure to clean up when one half of the copy has finished.
-		c.close(ctx)
-	}()
-
-	c.status.started = true
-
-	return nil
-}
-
-// close implements portForwardConn.close.
-func (c *hostinetPortForwardConn) close(ctx context.Context) error {
-	c.status.Lock()
-
-	// This should be a no op if the connection is already closed.
-	if c.status.closed {
-		c.status.Unlock()
-		return nil
-	}
-
-	log.Debugf("Stopping forwarding to/from container %q and localhost...", c.cid)
-
-	// Closing the FileDescription and endpoint should make all
-	// goroutines exit.
-	c.fd.DecRef(ctx)
-	c.socket.Close()
-
-	// Wait for one goroutine to finish or for a save event.
-	<-c.toDone
-	log.Debugf("Stopped forwarding one-half of copy for %q", c.cid)
-
-	// Wait on the other goroutine.
-	<-c.fromDone
-	log.Debugf("Stopped forwarding to/from container %q and localhost", c.cid)
-
-	c.status.closed = true
-
-	c.status.Unlock()
-
-	// Call the cleanup object.
-	c.cu.Clean()
-
-	return nil
-}
-
-// cleanup implements portForwardConn.cleanup.
-func (c *hostinetPortForwardConn) cleanup(f func()) {
-	c.cu.Add(f)
+func (s *hostInetConn) Close(_ context.Context) {
+	s.once.Do(func() {
+		fdnotifier.RemoveFD(int32(s.fd.FD()))
+		s.fd.Close()
+	})
 }

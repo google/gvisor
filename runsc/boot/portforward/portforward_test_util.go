@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"io"
 	"sync"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -76,14 +77,21 @@ type mockApplicationFDImpl struct {
 	vfs.FileDescriptionDefaultImpl
 	vfs.NoLockFD
 	vfs.DentryMetadataFileDescriptionImpl
-	mu       sync.Mutex
-	readBuf  bytes.Buffer
-	writeBuf bytes.Buffer
-	released bool
-	queue    waiter.Queue
+	mu         sync.Mutex
+	readBuf    bytes.Buffer
+	writeBuf   bytes.Buffer
+	released   bool
+	queue      waiter.Queue
+	notifyStop chan struct{}
 }
 
 var _ vfs.FileDescriptionImpl = (*mockApplicationFDImpl)(nil)
+
+func newMockApplicationFDImpl() *mockApplicationFDImpl {
+	app := &mockApplicationFDImpl{notifyStop: make(chan struct{})}
+	go app.doNotify()
+	return app
+}
 
 // Read implements vfs.FileDescriptionImpl.Read details for the parent mockFileDescription.
 func (s *mockApplicationFDImpl) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
@@ -109,12 +117,9 @@ func (s *mockApplicationFDImpl) Write(ctx context.Context, src usermem.IOSequenc
 	}
 
 	buf := make([]byte, src.NumBytes())
-	n, err := src.CopyIn(ctx, buf)
-	if err != nil {
-		return int64(n), err
-	}
-	res, err := s.writeBuf.Write(buf)
-	return int64(res), err
+	n, _ := src.CopyIn(ctx, buf)
+	res, _ := s.writeBuf.Write(buf[:n])
+	return int64(res), nil
 }
 
 // write implements mockEndpoint.write.
@@ -125,7 +130,6 @@ func (s *mockApplicationFDImpl) write(buf []byte) (int, error) {
 		return 0, io.EOF
 	}
 	ret, err := s.readBuf.Write(buf)
-	s.queue.Notify(waiter.ReadableEvents)
 	return ret, err
 }
 
@@ -140,8 +144,19 @@ func (s *mockApplicationFDImpl) read(n int) ([]byte, error) {
 		return nil, linuxerr.ErrWouldBlock
 	}
 	ret := s.writeBuf.Next(n)
-	s.queue.Notify(waiter.WritableEvents)
 	return ret, nil
+}
+
+func (s *mockApplicationFDImpl) doNotify() {
+	for {
+		s.queue.Notify(waiter.ReadableEvents | waiter.WritableEvents | waiter.EventHUp)
+		select {
+		case <-s.notifyStop:
+			return
+		default:
+			time.Sleep(time.Millisecond * 50)
+		}
+	}
 }
 
 func (s *mockApplicationFDImpl) IsReadable() bool {
@@ -178,8 +193,8 @@ func (s *mockApplicationFDImpl) EventUnregister(we *waiter.Entry) {
 func (s *mockApplicationFDImpl) Release(context.Context) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.queue.Notify(waiter.ReadableEvents)
 	s.released = true
+	s.notifyStop <- struct{}{}
 }
 
 // mockTCPEndpointImpl is the subset of methods used by tests for the mockTCPEndpoint struct. This
@@ -193,7 +208,33 @@ type mockTCPEndpointImpl interface {
 
 // mockTCPEndpoint mocks tcpip.Endpoint for tests.
 type mockTCPEndpoint struct {
-	impl mockTCPEndpointImpl // impl implements the subset of methods needed for mockTCPEndpoints.
+	impl       mockTCPEndpointImpl // impl implements the subset of methods needed for mockTCPEndpoints.
+	wq         *waiter.Queue
+	notifyDone chan struct{}
+}
+
+func newMockTCPEndpoint(impl mockTCPEndpointImpl, wq *waiter.Queue) *mockTCPEndpoint {
+	ret := &mockTCPEndpoint{
+		impl:       impl,
+		wq:         wq,
+		notifyDone: make(chan struct{}),
+	}
+
+	go ret.doNotify()
+	return ret
+}
+
+func (m *mockTCPEndpoint) doNotify() {
+	for {
+		m.wq.Notify(waiter.ReadableEvents | waiter.WritableEvents | waiter.EventHUp)
+		select {
+		case <-m.notifyDone:
+			return
+		default:
+			time.Sleep(time.Millisecond * 50)
+		}
+
+	}
 }
 
 // The below are trivial stub methods to get mockTCPEndpoint to implement tcpip.Endpoint. They
@@ -202,6 +243,7 @@ type mockTCPEndpoint struct {
 // Close implements tcpip.Endpoint.Close.
 func (m *mockTCPEndpoint) Close() {
 	m.impl.Close()
+	m.notifyDone <- struct{}{}
 }
 
 // Abort implements tcpip.Endpoint.Abort.

@@ -11,15 +11,16 @@ go_library(
         "portforward_netstack.go",
         "portforward_test_util.go",
     ],
+    visibility = [
+        "//runsc:__subpackages__",
+    ],
     deps = [
         "//pkg/cleanup",
         "//pkg/context",
         "//pkg/errors/linuxerr",
         "//pkg/fd",
         "//pkg/fdnotifier",
-        "//pkg/log",
         "//pkg/sentry/vfs",
-        "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/network/ipv4",
         "//pkg/tcpip/stack",
@@ -39,13 +40,11 @@ go_test(
     ],
     library = ":portforward",
     tags = [
-        "manual",
         "requires-net:ipv4",
         "requires-net:loopback",
     ],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/cleanup",
         "//pkg/context",
         "//pkg/errors/linuxerr",
         "//pkg/sentry/contexttest",

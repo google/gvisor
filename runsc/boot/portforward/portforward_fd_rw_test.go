@@ -116,6 +116,9 @@ func (rw *readerWriter) Read(ctx context.Context, dst usermem.IOSequence, opts v
 
 // Write implements vfs.FileDescriptionImpl.Write details for the parent mockFileDescription.
 func (rw *readerWriter) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
+	if rw.released {
+		return 0, io.EOF
+	}
 	buf := make([]byte, src.NumBytes())
 	n, err := src.CopyIn(ctx, buf)
 	if err != nil {
@@ -273,8 +276,7 @@ func TestReaderWriter(t *testing.T) {
 				tc.mockFDImpl.Release(ctx)
 				t.Fatal(err)
 			}
-			readerWriter := fileDescriptionReadWriter{
-				ctx:  ctx,
+			readerWriter := fileDescriptionConn{
 				file: fd,
 			}
 			sendBytes := []([]byte){
@@ -284,7 +286,7 @@ func TestReaderWriter(t *testing.T) {
 				[]byte{'y', 'o', 'u', 'a', 'n', 'd', 'm', 'e'},
 			}
 			for _, buf := range sendBytes {
-				n, err := readerWriter.Write(buf)
+				n, err := readerWriter.Write(ctx, buf, nil)
 				if err != nil {
 					tc.mockFDImpl.Release(ctx)
 					t.Fatalf("write failed: %v", err)
@@ -294,10 +296,11 @@ func TestReaderWriter(t *testing.T) {
 					t.Fatalf("failed to write buf: %s", string(buf))
 				}
 			}
+
 			got := []byte{}
 			buf := make([]byte, 4)
 			for {
-				n, err := readerWriter.Read(buf)
+				n, err := readerWriter.Read(ctx, buf, nil)
 				if err == io.EOF {
 					break
 				}
@@ -310,7 +313,6 @@ func TestReaderWriter(t *testing.T) {
 				got = append(got, buf...)
 				buf = buf[0:]
 			}
-
 			tc.mockFDImpl.Release(ctx)
 
 			want := []byte{}
@@ -322,7 +324,7 @@ func TestReaderWriter(t *testing.T) {
 				t.Fatalf("mismatch types: got: %q want: %q", string(got), string(want))
 			}
 
-			_, err = readerWriter.Read(buf[0:])
+			_, err = readerWriter.Read(ctx, buf[0:], nil)
 			if err != io.EOF {
 				t.Fatalf("expected end of file: got: %v", err)
 			}
