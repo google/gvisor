@@ -957,7 +957,7 @@ TEST_P(TCPSocketPairTest, SetTCPLingerTimeoutAboveMax) {
       getsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_LINGER2, &get, &get_len),
       SyscallSucceedsWithValue(0));
   EXPECT_EQ(get_len, sizeof(get));
-  if (IsRunningOnGvisor()) {
+  if (IsRunningOnGvisor() && !IsRunningWithHostinet()) {
     EXPECT_EQ(get, kMaxTCPLingerTimeout);
   } else {
     EXPECT_THAT(get,

@@ -40,7 +40,7 @@ type SockOpt struct {
 	// Name of the option.
 	Name uint64
 	// Size of the parameter. A size of 0 indicates that any size is
-	// allowed (used for strings types).
+	// allowed (used for string or other variable-length types).
 	Size uint64
 	// Support getsockopt on this option.
 	AllowGet bool
@@ -48,10 +48,19 @@ type SockOpt struct {
 	AllowSet bool
 }
 
-// SockOpts are the socket options supported by hostinet.
+// SockOpts are the socket options supported by hostinet by making syscalls to the host.
+//
+// Note the following socket options are supported but do not need syscalls to
+// the host, so do not appear on this list:
+//   - SO_TYPE, SO_PROTOCOL, SO_DOMAIN are handled at the syscall level in
+//     syscalls/sys_socket.go.
+//   - SO_SNDTIMEOU, SO_RCVTIMEO are handled internally by setting the embedded
+//     socket.SendReceiveTimeout.
 var SockOpts = []SockOpt{
-	{linux.SOL_IP, linux.IP_MULTICAST_LOOP, sizeofInt32, true, true},
-	{linux.SOL_IP, linux.IP_MULTICAST_TTL, sizeofInt32, true, true},
+	{linux.SOL_IP, linux.IP_ADD_MEMBERSHIP, 0, false, true},
+	{linux.SOL_IP, linux.IP_DROP_MEMBERSHIP, 0, false, true},
+	{linux.SOL_IP, linux.IP_MULTICAST_LOOP, 0 /* can be 32-bit int or 8-bit uint */, true, true},
+	{linux.SOL_IP, linux.IP_MULTICAST_TTL, 0 /* can be 32-bit int or 8-bit uint */, true, true},
 	{linux.SOL_IP, linux.IP_PKTINFO, sizeofInt32, true, true},
 	{linux.SOL_IP, linux.IP_RECVERR, sizeofInt32, true, true},
 	{linux.SOL_IP, linux.IP_RECVORIGDSTADDR, sizeofInt32, true, true},
@@ -75,12 +84,16 @@ var SockOpts = []SockOpt{
 	{linux.SOL_SOCKET, linux.SO_ERROR, sizeofInt32, true, false},
 	{linux.SOL_SOCKET, linux.SO_KEEPALIVE, sizeofInt32, true, true},
 	{linux.SOL_SOCKET, linux.SO_LINGER, linux.SizeOfLinger, true, true},
+	{linux.SOL_SOCKET, linux.SO_NO_CHECK, sizeofInt32, true, true},
 	{linux.SOL_SOCKET, linux.SO_OOBINLINE, sizeofInt32, true, true},
+	{linux.SOL_SOCKET, linux.SO_PASSCRED, sizeofInt32, true, true},
 	{linux.SOL_SOCKET, linux.SO_RCVBUF, sizeofInt32, true, true},
+	{linux.SOL_SOCKET, linux.SO_RCVBUFFORCE, sizeofInt32, false, true},
+	{linux.SOL_SOCKET, linux.SO_RCVLOWAT, sizeofInt32, true, true},
 	{linux.SOL_SOCKET, linux.SO_REUSEADDR, sizeofInt32, true, true},
+	{linux.SOL_SOCKET, linux.SO_REUSEPORT, sizeofInt32, true, true},
 	{linux.SOL_SOCKET, linux.SO_SNDBUF, sizeofInt32, true, true},
 	{linux.SOL_SOCKET, linux.SO_TIMESTAMP, sizeofInt32, true, true},
-	{linux.SOL_SOCKET, linux.SO_TYPE, sizeofInt32, true, false},
 
 	{linux.SOL_TCP, linux.TCP_CONGESTION, 0 /* string */, true, true},
 	{linux.SOL_TCP, linux.TCP_CORK, sizeofInt32, true, true},

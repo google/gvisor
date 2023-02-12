@@ -178,14 +178,22 @@ func (p *socketProvider) Socket(t *kernel.Task, stypeflags linux.SockType, proto
 	switch stype {
 	case unix.SOCK_STREAM:
 		switch protocol {
-		case 0, unix.IPPROTO_TCP:
+		case unix.IPPROTO_IP:
+			// IPPROTO_IP with SOCK_STREAM causes proto to actually
+			// be IPPROTO_TCP.
+			protocol = unix.IPPROTO_TCP
+		case unix.IPPROTO_TCP:
 			// ok
 		default:
 			return nil, nil
 		}
 	case unix.SOCK_DGRAM:
 		switch protocol {
-		case 0, unix.IPPROTO_UDP:
+		case unix.IPPROTO_IP:
+			// IPPROTO_IP with SOCK_DGRAM causes proto to actually
+			// be IPPROTO_UDP.
+			protocol = unix.IPPROTO_UDP
+		case unix.IPPROTO_UDP:
 			// ok
 		default:
 			return nil, nil
@@ -414,10 +422,17 @@ func (s *Socket) recvMsgFromHost(iovs []unix.Iovec, flags int, senderRequested b
 	return n, int(msg.Flags), senderAddrBuf[:msg.Namelen], controlBuf[:msg.Controllen], err
 }
 
+const allowedRecvMsgFlags = unix.MSG_CTRUNC |
+	unix.MSG_DONTWAIT |
+	unix.MSG_ERRQUEUE |
+	unix.MSG_PEEK |
+	unix.MSG_TRUNC |
+	unix.MSG_WAITALL
+
 // RecvMsg implements socket.Socket.RecvMsg.
 func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, haveDeadline bool, deadline ktime.Time, senderRequested bool, controlLen uint64) (int, int, linux.SockAddr, uint32, socket.ControlMessages, *syserr.Error) {
 	// Only allow known and safe flags.
-	if flags&^(unix.MSG_DONTWAIT|unix.MSG_PEEK|unix.MSG_TRUNC|unix.MSG_CTRUNC|unix.MSG_ERRQUEUE) != 0 {
+	if flags&^allowedRecvMsgFlags != 0 {
 		return 0, 0, nil, 0, socket.ControlMessages{}, syserr.ErrInvalidArgument
 	}
 

@@ -334,7 +334,7 @@ TEST_P(AllSocketPairTest, RecvmmsgInvalidTimeout) {
 TEST_P(AllSocketPairTest, RecvmmsgTimeoutBeforeRecv) {
   // There is a known bug in the Linux recvmmsg(2) causing it to block forever
   // if the timeout expires while blocking for the first message.
-  SKIP_IF(!IsRunningOnGvisor());
+  SKIP_IF(!IsRunningOnGvisor() || IsRunningWithHostinet());
 
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
   char buf[10];
@@ -409,6 +409,10 @@ TEST_P(AllSocketPairTest, RcvBufSucceeds) {
 // Check that setting SO_RCVBUFFORCE above max is not clamped to the maximum
 // receive buffer size.
 TEST_P(AllSocketPairTest, SetSocketRecvBufForceAboveMax) {
+  // TODO(b/267210840): This test requires CAP_NET_ADMIN on the host to run,
+  // which we do not have in some test environments.
+  SKIP_IF(IsRunningWithHostinet());
+
   std::unique_ptr<SocketPair> sockets =
       ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
@@ -928,8 +932,8 @@ TEST_P(AllSocketPairTest, SetAndGetBooleanSocketOptions) {
 }
 
 TEST_P(AllSocketPairTest, GetSocketOutOfBandInlineOption) {
-  // We do not support disabling this option. It is always enabled.
-  SKIP_IF(!IsRunningOnGvisor());
+  // gVisor does not support this option, unless using Hostinet.
+  SKIP_IF(!IsRunningOnGvisor() || IsRunningWithHostinet());
 
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
   int enable = -1;
