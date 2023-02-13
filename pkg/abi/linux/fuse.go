@@ -79,6 +79,7 @@ const (
 	FUSE_POLL         = 40
 	FUSE_NOTIFY_REPLY = 41
 	FUSE_BATCH_FORGET = 42
+	FUSE_FALLOCATE    = 43
 )
 
 const (
@@ -1107,6 +1108,19 @@ type FUSEFsyncIn struct {
 // +marshal
 type FUSEAccessIn struct {
 	Mask uint32
+	// padding
+	_ uint32
+}
+
+// FUSEFallocateIn is the request sent by the kernel to the daemon to perform
+// a fallocate operation.
+//
+// +marshal
+type FUSEFallocateIn struct {
+	Fh     uint64
+	Offset uint64
+	Length uint64
+	Mode   uint32
 	// padding
 	_ uint32
 }

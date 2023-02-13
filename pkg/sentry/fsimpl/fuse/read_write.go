@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // ReadInPages sends FUSE_READ requests for the size after round it up to
@@ -144,15 +145,13 @@ func (fs *filesystem) ReadCallback(ctx context.Context, i *inode, off uint64, si
 	}
 }
 
-// Write sends FUSE_WRITE requests and return the bytes
-// written according to the response.
-//
-// Preconditions: len(data) == size.
-func (fs *filesystem) Write(ctx context.Context, fd *regularFileFD, off uint64, size uint32, data []byte) (uint32, error) {
+// Write sends FUSE_WRITE requests and return the bytes written according to the
+// response.
+func (fs *filesystem) Write(ctx context.Context, fd *regularFileFD, offset int64, src usermem.IOSequence) (int64, int64, error) {
 	t := kernel.TaskFromContext(ctx)
 	if t == nil {
-		log.Warningf("fusefs.Read: couldn't get kernel task from context")
-		return 0, linuxerr.EINVAL
+		log.Warningf("fusefs.Write: couldn't get kernel task from context")
+		return 0, offset, linuxerr.EINVAL
 	}
 
 	// One request cannot exceed either maxWrite or maxPages.
@@ -174,60 +173,63 @@ func (fs *filesystem) Write(ctx context.Context, fd *regularFileFD, off uint64, 
 		},
 	}
 
-	inode := fd.inode()
-	var written uint32
-
 	// This loop is intended for fragmented write where the bytes to write is
 	// larger than either the maxWrite or maxPages or when bigWrites is false.
 	// Unless a small value for max_write is explicitly used, this loop
 	// is expected to execute only once for the majority of the writes.
-	for written < size {
-		toWrite := size - written
+	n := int64(0)
+	end := offset + src.NumBytes()
+	for n < end {
+		writeSize := uint32(end - n)
 
 		// Limit the write size to one page.
 		// Note that the bigWrites flag is obsolete,
 		// latest libfuse always sets it on.
-		if !fs.conn.bigWrites && toWrite > hostarch.PageSize {
-			toWrite = hostarch.PageSize
+		if !fs.conn.bigWrites && writeSize > hostarch.PageSize {
+			writeSize = hostarch.PageSize
 		}
-
 		// Limit the write size to maxWrite.
-		if toWrite > maxWrite {
-			toWrite = maxWrite
+		if writeSize > maxWrite {
+			writeSize = maxWrite
 		}
 
-		in.Header.Offset = off + uint64(written)
-		in.Header.Size = toWrite
-		in.Payload = data[written : written+toWrite]
+		// TODO(gvisor.dev/issue/3237): Add cache support:
+		// buffer cache. Ideally we write from src to our buffer cache first.
+		// The slice passed to fs.Write() should be a slice from buffer cache.
+		data := make([]byte, writeSize)
+		cp, _ := src.CopyIn(ctx, data)
+		data = data[:cp]
 
-		req := fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(t.ThreadID()), inode.nodeID, linux.FUSE_WRITE, &in)
+		in.Header.Offset = uint64(offset)
+		in.Header.Size = uint32(cp)
+		in.Payload = data
+
+		req := fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(t.ThreadID()), fd.inode().nodeID, linux.FUSE_WRITE, &in)
 
 		// TODO(gvisor.dev/issue/3247): support async write.
-
 		res, err := fs.conn.Call(t, req)
 		if err != nil {
-			return 0, err
+			return n, offset, err
 		}
-		if err := res.Error(); err != nil {
-			return 0, err
-		}
-
 		out := linux.FUSEWriteOut{}
 		if err := res.UnmarshalPayload(&out); err != nil {
-			return 0, err
+			return n, offset, err
 		}
+		n += int64(out.Size)
+		offset += int64(out.Size)
+		src = src.DropFirst64(int64(out.Size))
 
+		if err := res.Error(); err != nil {
+			return n, offset, err
+		}
 		// Write more than requested? EIO.
-		if out.Size > toWrite {
-			return 0, linuxerr.EIO
+		if out.Size > writeSize {
+			return n, offset, linuxerr.EIO
 		}
-
-		written += out.Size
-
 		// Break if short write. Not necessarily an error.
-		if out.Size != toWrite {
+		if out.Size != writeSize {
 			break
 		}
 	}
-	return written, nil
+	return n, offset, nil
 }

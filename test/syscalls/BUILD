@@ -181,6 +181,7 @@ syscall_test(
 )
 
 syscall_test(
+    add_fusefs = True,
     add_overlay = True,
     test = "//test/syscalls/linux:fallocate_test",
 )
@@ -1092,6 +1093,7 @@ syscall_test(
 )
 
 syscall_test(
+    add_fusefs = True,
     add_overlay = True,
     test = "//test/syscalls/linux:write_test",
 )

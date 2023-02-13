@@ -49,6 +49,7 @@ type inode struct {
 	kernfs.InodeNotSymlink
 	kernfs.InodeWatches
 	kernfs.OrderedChildren
+	kernfs.CachedMappable
 
 	// the owning filesystem. fs is immutable.
 	fs *filesystem
