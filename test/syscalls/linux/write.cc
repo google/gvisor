@@ -293,6 +293,8 @@ TEST_F(WriteTest, PartialWriteSIGSEGV) {
 // partial write.
 TEST_F(WriteTest, PartialWriteSIGBUS) {
   SKIP_IF(getenv("GVISOR_GOFER_UNCACHED"));  // Can't mmap from uncached files.
+  // TODO(b/264306751): Remove once FUSE implements mmap.
+  SKIP_IF(getenv("GVISOR_FUSE_TEST"));
 
   TempPath mapfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   FileDescriptor fd_map =

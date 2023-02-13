@@ -448,6 +448,7 @@ func runTestCaseRunsc(testBin string, tc *gtest.TestCase, args []string, t *test
 		platformVar = "TEST_ON_GVISOR"
 		networkVar  = "GVISOR_NETWORK"
 		ioUringVar  = "IOURING_ENABLED"
+		fuseVar     = "GVISOR_FUSE_TEST"
 	)
 	env := append(os.Environ(), platformVar+"="+*platform, networkVar+"="+*network)
 	if *platformSupport != "" {
@@ -457,6 +458,11 @@ func runTestCaseRunsc(testBin string, tc *gtest.TestCase, args []string, t *test
 		env = append(env, ioUringVar+"=TRUE")
 	} else {
 		env = append(env, ioUringVar+"=FALSE")
+	}
+	if *fusefs {
+		env = append(env, fuseVar+"=TRUE")
+	} else {
+		env = append(env, fuseVar+"=FALSE")
 	}
 
 	// Remove shard env variables so that the gunit binary does not try to
