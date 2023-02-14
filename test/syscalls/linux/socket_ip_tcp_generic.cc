@@ -289,15 +289,16 @@ TEST_P(TCPSocketPairTest, ShutdownRdAllowsReadOfReceivedDataBeforeEOF) {
 // response.
 TEST_P(TCPSocketPairTest, ShutdownWrServerClientClose) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
-  char buf[10] = {};
   ScopedThread t([&]() {
-    ASSERT_THAT(RetryEINTR(read)(sockets->first_fd(), buf, sizeof(buf)),
-                SyscallSucceedsWithValue(sizeof(buf)));
-    ASSERT_THAT(RetryEINTR(write)(sockets->first_fd(), buf, sizeof(buf)),
-                SyscallSucceedsWithValue(sizeof(buf)));
+    char sbuf[10] = {};
+    ASSERT_THAT(RetryEINTR(read)(sockets->first_fd(), sbuf, sizeof(sbuf)),
+                SyscallSucceedsWithValue(sizeof(sbuf)));
+    ASSERT_THAT(RetryEINTR(write)(sockets->first_fd(), sbuf, sizeof(sbuf)),
+                SyscallSucceedsWithValue(sizeof(sbuf)));
     ASSERT_THAT(close(sockets->release_first_fd()),
                 SyscallSucceedsWithValue(0));
   });
+  char buf[10] = {};
   ASSERT_THAT(RetryEINTR(write)(sockets->second_fd(), buf, sizeof(buf)),
               SyscallSucceedsWithValue(sizeof(buf)));
   ASSERT_THAT(RetryEINTR(shutdown)(sockets->second_fd(), SHUT_WR),
