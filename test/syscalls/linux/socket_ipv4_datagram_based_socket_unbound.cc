@@ -24,6 +24,9 @@ namespace testing {
 void IPv4DatagramBasedUnboundSocketTest::SetUp() {
   if (GetParam().type & SOCK_RAW) {
     SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
+
+    // TODO(b/267210840): Support raw sockets on hostinet.
+    SKIP_IF(IsRunningWithHostinet());
   }
 }
 

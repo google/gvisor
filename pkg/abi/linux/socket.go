@@ -239,6 +239,9 @@ const SockAddrMax = 128
 // +marshal
 type InetAddr [4]byte
 
+// SizeOfInetAddr is the size of InetAddr.
+var SizeOfInetAddr = uint32((*InetAddr)(nil).SizeBytes())
+
 // SockAddrInet is struct sockaddr_in, from uapi/linux/in.h.
 //
 // +marshal

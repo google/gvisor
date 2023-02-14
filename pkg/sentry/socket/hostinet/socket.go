@@ -193,6 +193,8 @@ func (p *socketProvider) Socket(t *kernel.Task, stypeflags linux.SockType, proto
 			// IPPROTO_IP with SOCK_DGRAM causes proto to actually
 			// be IPPROTO_UDP.
 			protocol = unix.IPPROTO_UDP
+		case unix.IPPROTO_ICMP:
+			// ok
 		case unix.IPPROTO_UDP:
 			// ok
 		default:
