@@ -29,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sync/locking"
 )
 
 // Name is the filesystem name.
@@ -91,6 +92,8 @@ type filesystem struct {
 	devMinor uint32
 }
 
+var lockClassGenerator = locking.NewLockClassGenerator("devpts")
+
 // newFilesystem creates a new devpts filesystem with root directory and ptmx
 // master inode. It returns the filesystem and root Dentry.
 func (fstype *FilesystemType) newFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials) (*filesystem, *kernfs.Dentry, error) {
@@ -102,6 +105,7 @@ func (fstype *FilesystemType) newFilesystem(ctx context.Context, vfsObj *vfs.Vir
 	fs := &filesystem{
 		devMinor: devMinor,
 	}
+	fs.Init(lockClassGenerator)
 	fs.Filesystem.VFSFilesystem().Init(vfsObj, fstype, fs)
 
 	// Construct the root directory. This is always inode id 1.

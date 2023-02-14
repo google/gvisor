@@ -104,6 +104,7 @@ go_library(
         "//pkg/sentry/usage",
         "//pkg/sentry/vfs",
         "//pkg/sync",
+        "//pkg/sync/locking",
         "//pkg/tcpip/header",
         "//pkg/tcpip/network/ipv4",
         "//pkg/usermem",

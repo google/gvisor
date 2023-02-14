@@ -40,6 +40,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/sync/locking"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -313,6 +314,8 @@ func (filesystemType) Name() string {
 // Release implements vfs.FilesystemType.Release.
 func (filesystemType) Release(ctx context.Context) {}
 
+var lockClassGenerator = locking.NewLockClassGenerator("hostfs")
+
 // NewFilesystem sets up and returns a new hostfs filesystem.
 //
 // Note that there should only ever be one instance of host.filesystem,
@@ -325,6 +328,7 @@ func NewFilesystem(vfsObj *vfs.VirtualFilesystem) (*vfs.Filesystem, error) {
 	fs := &filesystem{
 		devMinor: devMinor,
 	}
+	fs.Init(lockClassGenerator)
 	fs.VFSFilesystem().Init(vfsObj, filesystemType{}, fs)
 	return fs.VFSFilesystem(), nil
 }

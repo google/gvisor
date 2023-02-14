@@ -69,7 +69,7 @@ import (
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/sync/locking"
 )
 
 // Filesystem mostly implements vfs.FilesystemImpl for a generic in-memory
@@ -130,6 +130,15 @@ type Filesystem struct {
 	// hostfs). Filesystem holds an extra reference on root to prevent it from
 	// being destroyed prematurely. This is immutable.
 	root *Dentry
+
+	lockClassGenerator *locking.LockClassGenerator
+}
+
+// Init initializes the Filesystem object.
+func (fs *Filesystem) Init(gen *locking.LockClassGenerator) {
+	fs.lockClassGenerator = gen
+	fs.mu.AssignClass(gen)
+	fs.deferredDecRefsMu.AssignClass(gen)
 }
 
 // deferDecRef defers dropping a dentry ref until the next call to
@@ -240,7 +249,7 @@ type Dentry struct {
 	// Note that holding fs.mu for writing is not sufficient;
 	// revalidateChildLocked(), which is a very hot path, may modify children with
 	// fs.mu acquired for reading only.
-	dirMu    sync.Mutex `state:"nosave"`
+	dirMu    dirMutex `state:"nosave"`
 	children map[string]*Dentry
 
 	inode Inode
@@ -490,6 +499,7 @@ func (d *Dentry) Init(fs *Filesystem, inode Inode) {
 	d.fs = fs
 	d.inode = inode
 	d.refs.Store(1)
+	d.dirMu.AssignClass(fs.lockClassGenerator)
 	ftype := inode.Mode().FileType()
 	if ftype == linux.ModeDirectory {
 		d.flags = atomicbitops.FromUint32(d.flags.RacyLoad() | dflagsIsDir)

@@ -21,10 +21,53 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync"
 
 	"gvisor.dev/gvisor/pkg/goid"
 	"gvisor.dev/gvisor/pkg/log"
 )
+
+// LockClassGenerator assigns its own class to each lock type.
+// +stateify savable
+type LockClassGenerator struct {
+	division string
+	mu       sync.Mutex `state:"nosave"`
+	classes  map[reflect.Type]*MutexClass
+}
+
+// NewLockClassGenerator creates an initialized lock class generator.
+func NewLockClassGenerator(name string) *LockClassGenerator {
+	g := &LockClassGenerator{
+		division: name,
+		classes:  make(map[reflect.Type]*MutexClass),
+	}
+	return g
+}
+
+// GetClass returns the class that is assigned to the type of obj.
+func (g *LockClassGenerator) GetClass(obj any, lockNames []string) *MutexClass {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	t := reflect.TypeOf(obj)
+	if c, ok := g.classes[t]; ok {
+		return c
+	}
+	c := NewMutexClass(t, lockNames)
+	c.division = g.division
+	g.classes[t] = c
+	return c
+}
+
+// MutexClassRef is the lockdep specific part of lock primitives.
+type MutexClassRef struct {
+	class *MutexClass
+}
+
+// SetClass saves the class.
+func (r *MutexClassRef) SetClass(c *MutexClass) {
+	r.class = c
+}
 
 // NewMutexClass allocates a new mutex class.
 func NewMutexClass(t reflect.Type, lockNames []string) *MutexClass {
@@ -42,6 +85,7 @@ func NewMutexClass(t reflect.Type, lockNames []string) *MutexClass {
 
 // MutexClass describes dependencies of a specific class.
 type MutexClass struct {
+	division string
 	// The type of the mutex.
 	typ reflect.Type
 
@@ -65,7 +109,7 @@ func (m *MutexClass) String() string {
 	if m.lockName == "" {
 		return m.typ.String()
 	}
-	return fmt.Sprintf("%s[%s]", m.typ.String(), m.lockName)
+	return fmt.Sprintf("%s/%s[%s]", m.division, m.typ.String(), m.lockName)
 }
 
 type goroutineLocks map[*MutexClass]bool
@@ -118,12 +162,16 @@ func checkLock(class *MutexClass, prevClass *MutexClass, chain []*MutexClass) {
 }
 
 // AddGLock records a lock to the current goroutine and updates dependencies.
-func AddGLock(class *MutexClass, lockNameIndex int) {
-	gid := goid.Get()
-
+func AddGLock(r *MutexClassRef, defaultClass *MutexClass, lockNameIndex int) {
+	class := r.class
+	if class == nil {
+		class = defaultClass
+	}
 	if lockNameIndex != -1 {
 		class = class.nestedLockClasses[lockNameIndex]
 	}
+
+	gid := goid.Get()
 	currentLocks := routineLocks.Load(gid)
 	if currentLocks == nil {
 		locks := goroutineLocks(make(map[*MutexClass]bool))
@@ -151,10 +199,15 @@ func AddGLock(class *MutexClass, lockNameIndex int) {
 }
 
 // DelGLock deletes a lock from the current goroutine.
-func DelGLock(class *MutexClass, lockNameIndex int) {
+func DelGLock(r *MutexClassRef, defaultClass *MutexClass, lockNameIndex int) {
+	class := r.class
+	if class == nil {
+		class = defaultClass
+	}
 	if lockNameIndex != -1 {
 		class = class.nestedLockClasses[lockNameIndex]
 	}
+
 	gid := goid.Get()
 	currentLocks := routineLocks.Load(gid)
 	if currentLocks == nil {

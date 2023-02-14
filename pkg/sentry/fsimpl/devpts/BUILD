@@ -46,6 +46,7 @@ go_library(
         "//pkg/sentry/unimpl",
         "//pkg/sentry/vfs",
         "//pkg/sync",
+        "//pkg/sync/locking",
         "//pkg/usermem",
         "//pkg/waiter",
     ],

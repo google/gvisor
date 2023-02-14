@@ -99,18 +99,53 @@ declare_mutex(
     prefix = "deferredDecRefs",
 )
 
+declare_mutex(
+    name = "dir_mutex",
+    out = "dir_mutex.go",
+    nested_lock_names = [
+        "rename",
+    ],
+    package = "kernfs",
+    prefix = "dir",
+)
+
+declare_mutex(
+    name = "dir_fd_mutex",
+    out = "dir_fd_mutex.go",
+    package = "kernfs",
+    prefix = "dirFD",
+)
+
+declare_mutex(
+    name = "maps_mutex",
+    out = "maps_mutex.go",
+    package = "kernfs",
+    prefix = "maps",
+)
+
+declare_mutex(
+    name = "fd_refs_mutex",
+    out = "fd_refs_mutex.go",
+    package = "kernfs",
+    prefix = "fdRefs",
+)
+
 go_library(
     name = "kernfs",
     srcs = [
         "deferred_dec_refs_mutex.go",
         "dentry_list.go",
+        "dir_fd_mutex.go",
+        "dir_mutex.go",
         "dynamic_bytes_file.go",
         "fd_impl_util.go",
+        "fd_refs_mutex.go",
         "filesystem.go",
         "filesystem_mutex.go",
         "fstree.go",
         "inode_impl_util.go",
         "kernfs.go",
+        "maps_mutex.go",
         "mmap_util.go",
         "save_restore.go",
         "slot_list.go",
@@ -164,6 +199,7 @@ go_test(
         "//pkg/sentry/fsimpl/testutil",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/vfs",
+        "//pkg/sync/locking",
         "//pkg/usermem",
         "@com_github_google_go_cmp//cmp:go_default_library",
     ],

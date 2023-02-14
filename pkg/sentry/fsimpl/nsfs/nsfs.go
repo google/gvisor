@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sync/locking"
 )
 
 // +stateify savable
@@ -43,6 +44,8 @@ func (filesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFile
 	panic("nsfs.filesystemType.GetFilesystem should never be called")
 }
 
+var lockClassGenerator = locking.NewLockClassGenerator("cgroupfs")
+
 // +stateify savable
 type filesystem struct {
 	kernfs.Filesystem
@@ -59,6 +62,7 @@ func NewFilesystem(vfsObj *vfs.VirtualFilesystem) (*vfs.Filesystem, error) {
 	fs := &filesystem{
 		devMinor: devMinor,
 	}
+	fs.Init(lockClassGenerator)
 	fs.Filesystem.VFSFilesystem().Init(vfsObj, filesystemType{}, fs)
 	return fs.Filesystem.VFSFilesystem(), nil
 }

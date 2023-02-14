@@ -754,8 +754,8 @@ func (fs *Filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	srcDir.dirMu.Lock()
 	defer srcDir.dirMu.Unlock()
 	if srcDir != dstDir {
-		dstDir.dirMu.Lock()
-		defer dstDir.dirMu.Unlock()
+		dstDir.dirMu.NestedLock(dirLockRename)
+		defer dstDir.dirMu.NestedUnlock(dirLockRename)
 	}
 
 	srcVFSD := src.VFSDentry()

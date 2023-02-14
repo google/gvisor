@@ -35,5 +35,6 @@ go_library(
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/vfs",
         "//pkg/sync",
+        "//pkg/sync/locking",
     ],
 )

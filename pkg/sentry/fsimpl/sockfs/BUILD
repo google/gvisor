@@ -16,5 +16,6 @@ go_library(
         "//pkg/sentry/fsimpl/kernfs",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/vfs",
+        "//pkg/sync/locking",
     ],
 )

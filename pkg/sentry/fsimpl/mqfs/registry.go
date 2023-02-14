@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/mq"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sync/locking"
 )
 
 const (
@@ -52,6 +53,8 @@ type RegistryImpl struct {
 	mount *vfs.Mount
 }
 
+var lockClassGenerator = locking.NewLockClassGenerator("mqfs")
+
 // NewRegistryImpl returns a new, initialized RegistryImpl, and takes a
 // reference on root.
 func NewRegistryImpl(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials) (*RegistryImpl, error) {
@@ -64,6 +67,7 @@ func NewRegistryImpl(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *
 		devMinor:   devMinor,
 		Filesystem: kernfs.Filesystem{MaxCachedDentries: maxCachedDentries},
 	}
+	fs.Init(lockClassGenerator)
 	fs.VFSFilesystem().Init(vfsObj, &FilesystemType{}, fs)
 	vfsfs := fs.VFSFilesystem()
 	// NewDisconnectedMount will obtain a ref on dentry and vfsfs which is

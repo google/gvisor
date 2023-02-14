@@ -29,7 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/sync/locking"
 )
 
 // +stateify savable
@@ -55,6 +55,8 @@ type filesystem struct {
 	devMinor uint32
 }
 
+var lockClassGenerator = locking.NewLockClassGenerator("pipefs")
+
 // NewFilesystem sets up and returns a new vfs.Filesystem implemented by pipefs.
 func NewFilesystem(vfsObj *vfs.VirtualFilesystem) (*vfs.Filesystem, error) {
 	devMinor, err := vfsObj.GetAnonBlockDevMinor()
@@ -64,6 +66,7 @@ func NewFilesystem(vfsObj *vfs.VirtualFilesystem) (*vfs.Filesystem, error) {
 	fs := &filesystem{
 		devMinor: devMinor,
 	}
+	fs.Init(lockClassGenerator)
 	fs.Filesystem.VFSFilesystem().Init(vfsObj, filesystemType{}, fs)
 	return fs.Filesystem.VFSFilesystem(), nil
 }
@@ -98,7 +101,7 @@ type inode struct {
 
 	locks  vfs.FileLocks
 	pipe   *pipe.VFSPipe
-	attrMu sync.Mutex `state:"nosave"`
+	attrMu attrMutex `state:"nosave"`
 
 	ino uint64
 	uid auth.KUID

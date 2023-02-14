@@ -11,6 +11,7 @@ package(
 go_library(
     name = "locking",
     srcs = [
+        "atomicptr_class_unsafe.go",
         "atomicptrmap_ancestors_unsafe.go",
         "atomicptrmap_goroutine_unsafe.go",
         "lockdep.go",
@@ -18,7 +19,6 @@ go_library(
         "locking.go",
     ],
     marshal = False,
-    stateify = False,
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/gohacks",
@@ -37,6 +37,17 @@ go_template_instance(
     types = {
         "Key": "int64",
         "Value": "goroutineLocks",
+    },
+)
+
+go_template_instance(
+    name = "atomicptr_class",
+    out = "atomicptr_class_unsafe.go",
+    package = "locking",
+    prefix = "class",
+    template = "//pkg/sync/atomicptr:generic_atomicptr",
+    types = {
+        "Value": "*MutexClass",
     },
 )
 

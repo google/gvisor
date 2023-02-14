@@ -34,9 +34,30 @@ func NewMutexClass(reflect.Type, []string) *MutexClass {
 // AddGLock is no-op without the lockdep tag.
 //
 //go:inline
-func AddGLock(*MutexClass, int) {}
+func AddGLock(*MutexClassRef, *MutexClass, int) {}
 
 // DelGLock is no-op without the lockdep tag.
 //
 //go:inline
-func DelGLock(*MutexClass, int) {}
+func DelGLock(*MutexClassRef, *MutexClass, int) {}
+
+// LockClassGenerator is an empty struct without the lockdep tag.
+// +stateify savable
+type LockClassGenerator struct {
+}
+
+// GetClass is no-op without the lockdep tag.
+func (g *LockClassGenerator) GetClass(o any, lockNames []string) *MutexClass {
+	return nil
+}
+
+// NewLockClassGenerator is no-op without the lockdep tag.
+func NewLockClassGenerator(name string) *LockClassGenerator {
+	return nil
+}
+
+// MutexClassRef is an empty struct without the lockdep tag.
+type MutexClassRef struct{}
+
+// SetClass is no-op without the lockdep tag.
+func (*MutexClassRef) SetClass(*MutexClass) {}

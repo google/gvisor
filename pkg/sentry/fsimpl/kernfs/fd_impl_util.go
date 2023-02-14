@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -73,7 +72,7 @@ type GenericDirectoryFD struct {
 	children *OrderedChildren
 
 	// mu protects the fields below.
-	mu sync.Mutex `state:"nosave"`
+	mu dirFDMutex `state:"nosave"`
 
 	// off is the current directory offset. Protected by "mu".
 	off int64
@@ -83,7 +82,7 @@ type GenericDirectoryFD struct {
 // dentry.
 func NewGenericDirectoryFD(m *vfs.Mount, d *Dentry, children *OrderedChildren, locks *vfs.FileLocks, opts *vfs.OpenOptions, fdOpts GenericDirectoryFDOptions) (*GenericDirectoryFD, error) {
 	fd := &GenericDirectoryFD{}
-	if err := fd.Init(children, locks, opts, fdOpts); err != nil {
+	if err := fd.Init(d, children, locks, opts, fdOpts); err != nil {
 		return nil, err
 	}
 	if err := fd.vfsfd.Init(fd, opts.Flags, m, d.VFSDentry(), &vfs.FileDescriptionOptions{}); err != nil {
@@ -95,7 +94,8 @@ func NewGenericDirectoryFD(m *vfs.Mount, d *Dentry, children *OrderedChildren, l
 // Init initializes a GenericDirectoryFD. Use it when overriding
 // GenericDirectoryFD. Caller must call fd.VFSFileDescription.Init() with the
 // correct implementation.
-func (fd *GenericDirectoryFD) Init(children *OrderedChildren, locks *vfs.FileLocks, opts *vfs.OpenOptions, fdOpts GenericDirectoryFDOptions) error {
+func (fd *GenericDirectoryFD) Init(d *Dentry, children *OrderedChildren, locks *vfs.FileLocks, opts *vfs.OpenOptions, fdOpts GenericDirectoryFDOptions) error {
+	fd.mu.AssignClass(d.fs.lockClassGenerator)
 	if vfs.AccessTypesForOpenFlags(opts)&vfs.MayWrite != 0 {
 		// Can't open directories for writing.
 		return linuxerr.EISDIR

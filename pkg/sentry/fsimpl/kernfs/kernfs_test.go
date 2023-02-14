@@ -29,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/testutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sync/locking"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -218,8 +219,11 @@ func (fsType) Name() string {
 
 func (fsType) Release(ctx context.Context) {}
 
+var lockClassGenerator = locking.NewLockClassGenerator("test")
+
 func (fst fsType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opt vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
 	fs := &filesystem{}
+	fs.Init(lockClassGenerator)
 	fs.VFSFilesystem().Init(vfsObj, &fst, fs)
 	root := fst.rootFn(ctx, creds, fs)
 	var d kernfs.Dentry

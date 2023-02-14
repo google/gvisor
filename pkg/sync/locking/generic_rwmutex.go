@@ -23,7 +23,10 @@ import (
 
 // RWMutex is sync.RWMutex with the correctness validator.
 type RWMutex struct {
-	mu sync.RWMutex
+	cr locking.MutexClassRef
+
+	class *locking.MutexClass
+	mu    sync.RWMutex
 }
 
 // lockNames is a list of user-friendly lock names.
@@ -42,14 +45,14 @@ const ()
 // Lock locks m.
 // +checklocksignore
 func (m *RWMutex) Lock() {
-	locking.AddGLock(genericMarkIndex, -1)
+	locking.AddGLock(&m.cr, genericMarkIndex, -1)
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *RWMutex) NestedLock(i lockNameIndex) {
-	locking.AddGLock(genericMarkIndex, int(i))
+	locking.AddGLock(&m.cr, genericMarkIndex, int(i))
 	m.mu.Lock()
 }
 
@@ -57,20 +60,20 @@ func (m *RWMutex) NestedLock(i lockNameIndex) {
 // +checklocksignore
 func (m *RWMutex) Unlock() {
 	m.mu.Unlock()
-	locking.DelGLock(genericMarkIndex, -1)
+	locking.DelGLock(&m.cr, genericMarkIndex, -1)
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *RWMutex) NestedUnlock(i lockNameIndex) {
 	m.mu.Unlock()
-	locking.DelGLock(genericMarkIndex, int(i))
+	locking.DelGLock(&m.cr, genericMarkIndex, int(i))
 }
 
 // RLock locks m for reading.
 // +checklocksignore
 func (m *RWMutex) RLock() {
-	locking.AddGLock(genericMarkIndex, -1)
+	locking.AddGLock(&m.cr, genericMarkIndex, -1)
 	m.mu.RLock()
 }
 
@@ -78,7 +81,7 @@ func (m *RWMutex) RLock() {
 // +checklocksignore
 func (m *RWMutex) RUnlock() {
 	m.mu.RUnlock()
-	locking.DelGLock(genericMarkIndex, -1)
+	locking.DelGLock(&m.cr, genericMarkIndex, -1)
 }
 
 // RLockBypass locks m for reading without executing the validator.
@@ -97,6 +100,11 @@ func (m *RWMutex) RUnlockBypass() {
 // +checklocksignore
 func (m *RWMutex) DowngradeLock() {
 	m.mu.DowngradeLock()
+}
+
+// AssignClass sets the lock class.
+func (m *RWMutex) AssignClass(g *locking.LockClassGenerator) {
+	m.cr.SetClass(g.GetClass(m, lockNames))
 }
 
 var genericMarkIndex *locking.MutexClass

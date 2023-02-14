@@ -43,6 +43,7 @@ go_library(
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/memmap",
         "//pkg/sentry/vfs",
+        "//pkg/sync/locking",
         "//pkg/usermem",
         "@org_golang_x_sys//unix:go_default_library",
     ],

@@ -36,7 +36,7 @@ type inodePlatformFile struct {
 	hostFD int
 
 	// fdRefsMu protects fdRefs.
-	fdRefsMu sync.Mutex `state:"nosave"`
+	fdRefsMu fdRefsMutex `state:"nosave"`
 
 	// fdRefs counts references on memmap.File offsets. It is used solely for
 	// memory accounting.
@@ -83,7 +83,7 @@ func (i *inodePlatformFile) FD() int {
 // +stateify savable
 type CachedMappable struct {
 	// mapsMu protects mappings.
-	mapsMu sync.Mutex `state:"nosave"`
+	mapsMu mapsMutex `state:"nosave"`
 
 	// mappings tracks mappings of hostFD into memmap.MappingSpaces.
 	mappings memmap.MappingSet

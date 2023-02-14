@@ -28,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sync/locking"
 )
 
 // Name is the default filesystem name.
@@ -255,6 +256,8 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	return fs.VFSFilesystem(), root.VFSDentry(), nil
 }
 
+var lockClassGenerator = locking.NewLockClassGenerator("fusefs")
+
 // newFUSEFilesystem creates a new FUSE filesystem.
 // +checklocks:fuseFD.mu
 func newFUSEFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, fsType *FilesystemType, fuseFD *DeviceFD, devMinor uint32, opts *filesystemOptions) (*filesystem, error) {
@@ -273,6 +276,7 @@ func newFUSEFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, fsTyp
 		conn:     fuseFD.conn,
 		clock:    time.RealtimeClockFromContext(ctx),
 	}
+	fs.Init(lockClassGenerator)
 	fs.VFSFilesystem().Init(vfsObj, fsType, fs)
 	return fs, nil
 }

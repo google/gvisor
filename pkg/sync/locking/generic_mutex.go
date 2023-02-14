@@ -23,6 +23,7 @@ import (
 
 // Mutex is sync.Mutex with the correctness validator.
 type Mutex struct {
+	cr locking.MutexClassRef
 	mu sync.Mutex
 }
 
@@ -44,29 +45,34 @@ const ()
 // Lock locks m.
 // +checklocksignore
 func (m *Mutex) Lock() {
-	locking.AddGLock(genericMarkIndex, -1)
+	locking.AddGLock(&m.cr, genericMarkIndex, -1)
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *Mutex) NestedLock(i lockNameIndex) {
-	locking.AddGLock(genericMarkIndex, int(i))
+	locking.AddGLock(&m.cr, genericMarkIndex, int(i))
 	m.mu.Lock()
 }
 
 // Unlock unlocks m.
 // +checklocksignore
 func (m *Mutex) Unlock() {
-	locking.DelGLock(genericMarkIndex, -1)
+	locking.DelGLock(&m.cr, genericMarkIndex, -1)
 	m.mu.Unlock()
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *Mutex) NestedUnlock(i lockNameIndex) {
-	locking.DelGLock(genericMarkIndex, int(i))
+	locking.DelGLock(&m.cr, genericMarkIndex, int(i))
 	m.mu.Unlock()
+}
+
+// AssignClass sets the lock class.
+func (m *Mutex) AssignClass(g *locking.LockClassGenerator) {
+	m.cr.SetClass(g.GetClass(m, lockNames))
 }
 
 // DO NOT REMOVE: The following function is automatically replaced.

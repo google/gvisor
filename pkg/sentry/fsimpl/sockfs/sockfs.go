@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sync/locking"
 )
 
 // filesystemType implements vfs.FilesystemType.
@@ -56,6 +57,8 @@ type filesystem struct {
 	devMinor uint32
 }
 
+var lockClassGenerator = locking.NewLockClassGenerator("sockfs")
+
 // NewFilesystem sets up and returns a new sockfs filesystem.
 //
 // Note that there should only ever be one instance of sockfs.Filesystem,
@@ -68,6 +71,7 @@ func NewFilesystem(vfsObj *vfs.VirtualFilesystem) (*vfs.Filesystem, error) {
 	fs := &filesystem{
 		devMinor: devMinor,
 	}
+	fs.Init(lockClassGenerator)
 	fs.Filesystem.VFSFilesystem().Init(vfsObj, filesystemType{}, fs)
 	return fs.Filesystem.VFSFilesystem(), nil
 }
