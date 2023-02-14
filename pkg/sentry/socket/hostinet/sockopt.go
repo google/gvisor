@@ -59,6 +59,7 @@ type SockOpt struct {
 var SockOpts = []SockOpt{
 	{linux.SOL_IP, linux.IP_ADD_MEMBERSHIP, 0, false, true},
 	{linux.SOL_IP, linux.IP_DROP_MEMBERSHIP, 0, false, true},
+	{linux.SOL_IP, linux.IP_MULTICAST_IF, uint64(linux.SizeOfInetAddr), true, true},
 	{linux.SOL_IP, linux.IP_MULTICAST_LOOP, 0 /* can be 32-bit int or 8-bit uint */, true, true},
 	{linux.SOL_IP, linux.IP_MULTICAST_TTL, 0 /* can be 32-bit int or 8-bit uint */, true, true},
 	{linux.SOL_IP, linux.IP_PKTINFO, sizeofInt32, true, true},

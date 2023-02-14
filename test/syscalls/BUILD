@@ -730,6 +730,7 @@ syscall_test(
 )
 
 syscall_test(
+    add_hostinet = True,
     test = "//test/syscalls/linux:socket_ipv4_udp_unbound_external_networking_test",
 )
 
@@ -775,6 +776,7 @@ syscall_test(
 
 syscall_test(
     size = "medium",
+    add_hostinet = True,
     test = "//test/syscalls/linux:socket_ipv4_datagram_based_socket_unbound_loopback_test",
 )
 
