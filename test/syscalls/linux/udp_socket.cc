@@ -53,7 +53,11 @@ namespace testing {
 
 namespace {
 
-constexpr size_t kIcmpTimeout = 2000;
+size_t IcmpTimeoutMillis() {
+  // Fuchsia's CI infra is susceptible to timing jumps. Set a long timeout
+  // to avoid flakes.
+  return GvisorPlatform() == Platform::kFuchsia ? 10000 : 1000;
+}
 
 // Fixture for tests parameterized by the address family to use (AF_INET and
 // AF_INET6) when creating sockets.
@@ -401,7 +405,7 @@ TEST_P(UdpSocketTest, ConnectWriteToInvalidPort) {
 
   // Poll to make sure we get the ICMP error back.
   struct pollfd pfd = {sock_.get(), POLLERR, 0};
-  ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, kIcmpTimeout),
+  ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, IcmpTimeoutMillis()),
               SyscallSucceedsWithValue(1));
 
   // Now verify that we got an ICMP error back of ECONNREFUSED.
@@ -806,7 +810,7 @@ TEST_P(UdpSocketTest, ConnectAndSendNoReceiver) {
 
   // Poll to make sure we get the ICMP error back before issuing more writes.
   struct pollfd pfd = {sock_.get(), POLLERR, 0};
-  ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, kIcmpTimeout),
+  ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, IcmpTimeoutMillis()),
               SyscallSucceedsWithValue(1));
 
   // Next write should fail with ECONNREFUSED due to the ICMP error generated in
@@ -819,7 +823,7 @@ TEST_P(UdpSocketTest, ConnectAndSendNoReceiver) {
   ASSERT_THAT(send(sock_.get(), buf, sizeof(buf), 0), SyscallSucceeds());
 
   // Poll to make sure we get the ICMP error back before issuing more writes.
-  ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, kIcmpTimeout),
+  ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, IcmpTimeoutMillis()),
               SyscallSucceedsWithValue(1));
 
   // Next write should fail with ECONNREFUSED due to the ICMP error generated in
