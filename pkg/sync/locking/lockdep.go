@@ -35,8 +35,9 @@ func NewMutexClass(t reflect.Type, lockNames []string) *MutexClass {
 	}
 	for i := range lockNames {
 		c.nestedLockClasses[i] = NewMutexClass(t, nil)
-		c.nestedLockClasses[i].lockName = lockNames[i]
+		c.nestedLockClasses[i].name = c.String() + "/" + lockNames[i]
 	}
+	c.subclasses = make(map[int]*MutexClass)
 	return c
 }
 
@@ -46,7 +47,7 @@ type MutexClass struct {
 	typ reflect.Type
 
 	// Name of the nested lock of the above type.
-	lockName string
+	name string
 
 	// ancestors are locks that are locked before the current class.
 	ancestors ancestorsAtomicPtrMap
@@ -59,13 +60,22 @@ type MutexClass struct {
 	// simultaneously.
 	// Maps one-to-one with nestedLockNames.
 	nestedLockClasses []*MutexClass
+
+	subclasses map[int]*MutexClass
+}
+
+func (m *MutexClass) SetSubclassNameMap(names map[int]string) {
+	for i, n := range names {
+		m.subclasses[i] = NewMutexClass(m.typ, m.nestedLockNames)
+		m.subclasses[i].name = m.String() + "/" + n
+	}
 }
 
 func (m *MutexClass) String() string {
-	if m.lockName == "" {
+	if m.name == "" {
 		return m.typ.String()
 	}
-	return fmt.Sprintf("%s[%s]", m.typ.String(), m.lockName)
+	return m.name
 }
 
 type goroutineLocks map[*MutexClass]bool
@@ -118,9 +128,12 @@ func checkLock(class *MutexClass, prevClass *MutexClass, chain []*MutexClass) {
 }
 
 // AddGLock records a lock to the current goroutine and updates dependencies.
-func AddGLock(class *MutexClass, lockNameIndex int) {
+func AddGLock(class *MutexClass, subClass int, lockNameIndex int) {
 	gid := goid.Get()
 
+	if subClass != 0 {
+		class = class.subclasses[subClass]
+	}
 	if lockNameIndex != -1 {
 		class = class.nestedLockClasses[lockNameIndex]
 	}
@@ -151,7 +164,10 @@ func AddGLock(class *MutexClass, lockNameIndex int) {
 }
 
 // DelGLock deletes a lock from the current goroutine.
-func DelGLock(class *MutexClass, lockNameIndex int) {
+func DelGLock(class *MutexClass, subClass int, lockNameIndex int) {
+	if subClass != 0 {
+		class = class.subclasses[subClass]
+	}
 	if lockNameIndex != -1 {
 		class = class.nestedLockClasses[lockNameIndex]
 	}

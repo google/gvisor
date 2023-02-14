@@ -3,7 +3,7 @@
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 def _substrs(nested_lock_names):
-    substrs = {"genericMark": "prefix"}
+    substrs = {}
     if nested_lock_names == None or len(nested_lock_names) == 0:
         return substrs
     quoted_names = ["\"%s\"" % (n,) for n in nested_lock_names]

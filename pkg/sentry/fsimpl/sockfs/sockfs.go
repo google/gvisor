@@ -68,6 +68,7 @@ func NewFilesystem(vfsObj *vfs.VirtualFilesystem) (*vfs.Filesystem, error) {
 	fs := &filesystem{
 		devMinor: devMinor,
 	}
+	fs.Init(kernfs.SockfsLockClass)
 	fs.Filesystem.VFSFilesystem().Init(vfsObj, filesystemType{}, fs)
 	return fs.Filesystem.VFSFilesystem(), nil
 }

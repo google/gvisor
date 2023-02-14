@@ -328,6 +328,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		devMinor:      devMinor,
 		hierarchyName: name,
 	}
+	fs.Init(kernfs.CgroupfsLockClass)
 	fs.MaxCachedDentries = maxCachedDentries
 	fs.VFSFilesystem().Init(vfsObj, &fsType, fs)
 

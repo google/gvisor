@@ -22,8 +22,11 @@ import (
 )
 
 // Mutex is sync.Mutex with the correctness validator.
+//
+// +stateify savable
 type Mutex struct {
-	mu sync.Mutex
+	subclass int
+	mu       sync.Mutex `state:"nosave"`
 }
 
 var genericMarkIndex *locking.MutexClass
@@ -41,36 +44,44 @@ type lockNameIndex int
 // LOCK_NAME_INDEX_CONSTANTS
 const ()
 
+func (m *Mutex) SetSubclass(c int) {
+	m.subclass = c
+}
+
 // Lock locks m.
 // +checklocksignore
 func (m *Mutex) Lock() {
-	locking.AddGLock(genericMarkIndex, -1)
+	locking.AddGLock(genericMarkIndex, m.subclass, -1)
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *Mutex) NestedLock(i lockNameIndex) {
-	locking.AddGLock(genericMarkIndex, int(i))
+	locking.AddGLock(genericMarkIndex, m.subclass, int(i))
 	m.mu.Lock()
 }
 
 // Unlock unlocks m.
 // +checklocksignore
 func (m *Mutex) Unlock() {
-	locking.DelGLock(genericMarkIndex, -1)
+	locking.DelGLock(genericMarkIndex, m.subclass, -1)
 	m.mu.Unlock()
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
 func (m *Mutex) NestedUnlock(i lockNameIndex) {
-	locking.DelGLock(genericMarkIndex, int(i))
+	locking.DelGLock(genericMarkIndex, m.subclass, int(i))
 	m.mu.Unlock()
 }
 
 // DO NOT REMOVE: The following function is automatically replaced.
 func initLockNames() {}
+
+func SetSubclassNameMap(m map[int]string) {
+	genericMarkIndex.SetSubclassNameMap(m)
+}
 
 func init() {
 	initLockNames()
