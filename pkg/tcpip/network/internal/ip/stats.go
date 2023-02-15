@@ -30,6 +30,11 @@ type MultiCounterIPForwardingStats struct {
 	// because their TTL was exhausted.
 	ExhaustedTTL tcpip.MultiCounterStat
 
+	// InitializingSource is the number of IP packets which were dropped
+	// because they contained a source address that may only be used on the local
+	// network as part of initialization work.
+	InitializingSource tcpip.MultiCounterStat
+
 	// LinkLocalSource is the number of IP packets which were dropped
 	// because they contained a link-local source address.
 	LinkLocalSource tcpip.MultiCounterStat
@@ -77,6 +82,7 @@ type MultiCounterIPForwardingStats struct {
 func (m *MultiCounterIPForwardingStats) Init(a, b *tcpip.IPForwardingStats) {
 	m.Unrouteable.Init(a.Unrouteable, b.Unrouteable)
 	m.Errors.Init(a.Errors, b.Errors)
+	m.InitializingSource.Init(a.InitializingSource, b.InitializingSource)
 	m.LinkLocalSource.Init(a.LinkLocalSource, b.LinkLocalSource)
 	m.LinkLocalDestination.Init(a.LinkLocalDestination, b.LinkLocalDestination)
 	m.ExtensionHeaderProblem.Init(a.ExtensionHeaderProblem, b.ExtensionHeaderProblem)

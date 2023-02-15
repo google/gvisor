@@ -50,13 +50,22 @@ func (*ErrParameterProblem) isForwardingError() {}
 
 func (*ErrParameterProblem) String() string { return "parameter problem" }
 
+// ErrInitializingSourceAddress indicates the received packet had a source
+// address that may only be used on the local network as part of initialization
+// work.
+type ErrInitializingSourceAddress struct{}
+
+func (*ErrInitializingSourceAddress) isForwardingError() {}
+
+func (*ErrInitializingSourceAddress) String() string { return "initializing source address" }
+
 // ErrLinkLocalSourceAddress indicates the received packet had a link-local
 // source address.
 type ErrLinkLocalSourceAddress struct{}
 
 func (*ErrLinkLocalSourceAddress) isForwardingError() {}
 
-func (*ErrLinkLocalSourceAddress) String() string { return "link local destination address" }
+func (*ErrLinkLocalSourceAddress) String() string { return "link local source address" }
 
 // ErrLinkLocalDestinationAddress indicates the received packet had a link-local
 // destination address.

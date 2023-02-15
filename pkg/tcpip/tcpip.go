@@ -1713,6 +1713,11 @@ type IPForwardingStats struct {
 	// because their TTL was exhausted.
 	ExhaustedTTL *StatCounter
 
+	// InitializingSource is the number of IP packets which were dropped
+	// because they contained a source address that may only be used on the local
+	// network as part of initialization work.
+	InitializingSource *StatCounter
+
 	// LinkLocalSource is the number of IP packets which were dropped
 	// because they contained a link-local source address.
 	LinkLocalSource *StatCounter
