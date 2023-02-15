@@ -20,7 +20,9 @@ import (
 	"path/filepath"
 	"reflect"
 	"strconv"
+	"strings"
 
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -144,9 +146,22 @@ func checkOciSeccomp(name string, value string) error {
 	return nil
 }
 
+// isFlagExplicitlySet returns whether the given flag name is explicitly set.
+// Doesn't check for flag existence; returns `false` for flags that don't exist.
+func isFlagExplicitlySet(flagSet *flag.FlagSet, name string) bool {
+	explicit := false
+
+	// The FlagSet.Visit function only visits flags that are explicitly set, as opposed to VisitAll.
+	flagSet.Visit(func(fl *flag.Flag) {
+		explicit = explicit || fl.Name == name
+	})
+
+	return explicit
+}
+
 // NewFromFlags creates a new Config with values coming from command line flags.
 func NewFromFlags(flagSet *flag.FlagSet) (*Config, error) {
-	conf := &Config{}
+	conf := &Config{explicitlySet: map[string]struct{}{}}
 
 	obj := reflect.ValueOf(conf).Elem()
 	st := obj.Type()
@@ -163,6 +178,9 @@ func NewFromFlags(flagSet *flag.FlagSet) (*Config, error) {
 		}
 		x := reflect.ValueOf(flag.Get(fl.Value))
 		obj.Field(i).Set(x)
+		if isFlagExplicitlySet(flagSet, name) {
+			conf.explicitlySet[name] = struct{}{}
+		}
 	}
 
 	if len(conf.RootDir) == 0 {
@@ -204,7 +222,15 @@ func (c *Config) ToFlags() []string {
 			panic(fmt.Sprintf("Flag %q not found", name))
 		}
 		if val == flag.DefValue {
-			continue
+			// If this config wasn't populated from a FlagSet, don't plumb through default flags.
+			if c.explicitlySet == nil {
+				continue
+			}
+			// If this config was populated from a FlagSet, plumb through only default flags which were
+			// explicitly specified.
+			if _, explicit := c.explicitlySet[name]; !explicit {
+				continue
+			}
 		}
 		rv = append(rv, fmt.Sprintf("--%s=%s", flag.Name, val))
 	}
@@ -212,7 +238,7 @@ func (c *Config) ToFlags() []string {
 }
 
 // Override writes a new value to a flag.
-func (c *Config) Override(flagSet *flag.FlagSet, name string, value string) error {
+func (c *Config) Override(flagSet *flag.FlagSet, name string, value string, force bool) error {
 	obj := reflect.ValueOf(c).Elem()
 	st := obj.Type()
 	for i := 0; i < st.NumField(); i++ {
@@ -227,8 +253,10 @@ func (c *Config) Override(flagSet *flag.FlagSet, name string, value string) erro
 			// Flag must exist if there is a field match above.
 			panic(fmt.Sprintf("Flag %q not found", name))
 		}
-		if err := c.isOverrideAllowed(name, value); err != nil {
-			return fmt.Errorf("error setting flag %s=%q: %w", name, value, err)
+		if !force {
+			if err := c.isOverrideAllowed(name, value); err != nil {
+				return fmt.Errorf("error setting flag %s=%q: %w", name, value, err)
+			}
 		}
 
 		// Use flag to convert the string value to the underlying flag type, using
@@ -260,6 +288,79 @@ func (c *Config) isOverrideAllowed(name string, value string) error {
 		return nil
 	}
 	return fmt.Errorf("flag override disabled, use --allow-flag-override to enable it")
+}
+
+// ApplyBundles applies the given bundles by name.
+// It returns an error if a bundle doesn't exist, or if the given
+// bundles have conflicting flag values.
+// Config values which are already specified prior to calling ApplyBundles do not change.
+func (c *Config) ApplyBundles(flagSet *flag.FlagSet, bundleNames ...BundleName) error {
+	// Populate a map from flag name to flag value to bundle name.
+	flagToValueToBundleName := make(map[string]map[string]BundleName)
+	for _, bundleName := range bundleNames {
+		b := Bundles[bundleName]
+		if b == nil {
+			return fmt.Errorf("no such bundle: %q", bundleName)
+		}
+		for flagName, val := range b {
+			valueToBundleName := flagToValueToBundleName[flagName]
+			if valueToBundleName == nil {
+				valueToBundleName = make(map[string]BundleName)
+				flagToValueToBundleName[flagName] = valueToBundleName
+			}
+			valueToBundleName[val] = bundleName
+		}
+	}
+
+	// Check for conflicting flag values between the bundles.
+	for flagName, valueToBundleName := range flagToValueToBundleName {
+		if len(valueToBundleName) == 1 {
+			continue
+		}
+		bundleNameToValue := make(map[string]string)
+		for val, bundleName := range valueToBundleName {
+			bundleNameToValue[string(bundleName)] = val
+		}
+		var sb strings.Builder
+		first := true
+		for _, bundleName := range bundleNames {
+			if val, ok := bundleNameToValue[string(bundleName)]; ok {
+				if !first {
+					sb.WriteString(", ")
+				}
+				sb.WriteString(fmt.Sprintf("bundle %q sets --%s=%q", bundleName, flagName, val))
+				first = false
+			}
+		}
+		return fmt.Errorf("flag --%s is specified by multiple bundles: %s", flagName, sb.String())
+	}
+
+	// Actually apply flag values.
+	for flagName, valueToBundleName := range flagToValueToBundleName {
+		fl := flagSet.Lookup(flagName)
+		if fl == nil {
+			return fmt.Errorf("flag --%s not found", flagName)
+		}
+		prevValue := fl.Value.String()
+		// Note: We verified earlier that valueToBundleName has length 1,
+		// so this loop executes exactly once per flag.
+		for val, bundleName := range valueToBundleName {
+			if isFlagExplicitlySet(flagSet, flagName) {
+				if prevValue != val {
+					log.Infof("Bundle %s is supposed to have the effect of setting flag --%s to %q, but this flag was also explicitly set to --%s=%q on the command-line; the command-line value --%s=%q takes precedence.", bundleName, flagName, val, flagName, prevValue, flagName, prevValue)
+				}
+				continue
+			}
+			if err := c.Override(flagSet, flagName, val /* force= */, true); err != nil {
+				return err
+			}
+			if prevValue != val {
+				log.Infof("Applying bundle %s: flag --%s has been updated from --%s=%q to --%s=%q", bundleName, flagName, flagName, prevValue, flagName, val)
+			}
+		}
+	}
+
+	return c.validate()
 }
 
 func getVal(field reflect.Value) string {

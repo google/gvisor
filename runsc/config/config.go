@@ -298,6 +298,10 @@ type Config struct {
 	// multiple tests are run in parallel, since there is no way to pass
 	// parameters to the runtime from docker.
 	TestOnlyTestNameEnv string `flag:"TESTONLY-test-name-env"`
+
+	// explicitlySet contains whether a flag was explicitly set on the command-line from which this
+	// Config was constructed. Nil when the Config was not initialized from a FlagSet.
+	explicitlySet map[string]struct{}
 }
 
 func (c *Config) validate() error {
@@ -358,6 +362,13 @@ func (c *Config) GetOverlay2() Overlay2 {
 	}
 	return c.Overlay2
 }
+
+// Bundle is a set of flag name-value pairs.
+type Bundle map[string]string
+
+// BundleName is a human-friendly name for a Bundle.
+// It is used as part of an annotation to specify that the user wants to apply a Bundle.
+type BundleName string
 
 // MetricMetadata returns key-value pairs that are useful to include in metrics
 // exported about the sandbox this config represents.
