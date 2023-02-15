@@ -336,7 +336,6 @@ go_test(
     ],
     library = ":stack",
     deps = [
-        "//pkg/atomicbitops",
         "//pkg/bufferv2",
         "//pkg/sync",
         "//pkg/tcpip",

@@ -16,8 +16,8 @@ package queue
 
 import (
 	"encoding/binary"
+	"sync/atomic"
 
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sharedmem/pipe"
 )
@@ -52,11 +52,11 @@ type TxBuffer struct {
 type Tx struct {
 	tx                 pipe.Tx
 	rx                 pipe.Rx
-	sharedEventFDState *atomicbitops.Uint32
+	sharedEventFDState *atomic.Uint32
 }
 
 // Init initializes the transmit queue with the given pipes.
-func (t *Tx) Init(tx, rx []byte, sharedEventFDState *atomicbitops.Uint32) {
+func (t *Tx) Init(tx, rx []byte, sharedEventFDState *atomic.Uint32) {
 	t.tx.Init(tx)
 	t.rx.Init(rx)
 	t.sharedEventFDState = sharedEventFDState

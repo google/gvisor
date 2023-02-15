@@ -18,7 +18,6 @@ go_library(
         "//visibility:public",
     ],
     deps = [
-        "//pkg/atomicbitops",
         "//pkg/bufferv2",
         "//pkg/cleanup",
         "//pkg/eventfd",

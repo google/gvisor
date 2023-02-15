@@ -18,7 +18,8 @@
 package sharedmem
 
 import (
-	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"sync/atomic"
+
 	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -44,7 +45,7 @@ type serverEndpoint struct {
 	rx serverRx
 
 	// stopRequested determines whether the worker goroutines should stop.
-	stopRequested atomicbitops.Uint32
+	stopRequested atomic.Uint32
 
 	// Wait group used to indicate that all workers have stopped.
 	completed sync.WaitGroup

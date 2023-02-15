@@ -18,7 +18,6 @@ import (
 	"reflect"
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -203,9 +202,9 @@ func TestDisabledRxStatsWhenNICDisabled(t *testing.T) {
 
 func TestPacketWithUnknownNetworkProtocolNumber(t *testing.T) {
 	nic := nic{
-		stats:   makeNICStats(tcpip.NICStats{}.FillIn()),
-		enabled: atomicbitops.FromBool(true),
+		stats: makeNICStats(tcpip.NICStats{}.FillIn()),
 	}
+	nic.enabled.Store(true)
 	// IPv4 isn't recognized since we haven't initialized the NIC with an IPv4
 	// endpoint.
 	nic.DeliverNetworkPacket(header.IPv4ProtocolNumber, NewPacketBuffer(PacketBufferOptions{
@@ -222,10 +221,10 @@ func TestPacketWithUnknownNetworkProtocolNumber(t *testing.T) {
 
 func TestPacketWithUnknownTransportProtocolNumber(t *testing.T) {
 	nic := nic{
-		stack:   &Stack{},
-		stats:   makeNICStats(tcpip.NICStats{}.FillIn()),
-		enabled: atomicbitops.FromBool(true),
+		stack: &Stack{},
+		stats: makeNICStats(tcpip.NICStats{}.FillIn()),
 	}
+	nic.enabled.Store(true)
 	// UDP isn't recognized since we haven't initialized the NIC with a UDP
 	// protocol.
 	nic.DeliverTransportPacket(header.UDPProtocolNumber, NewPacketBuffer(PacketBufferOptions{

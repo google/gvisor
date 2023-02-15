@@ -15,7 +15,8 @@
 package tcpip
 
 import (
-	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"sync/atomic"
+
 	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/sync"
 )
@@ -137,96 +138,96 @@ type SocketOptions struct {
 
 	// broadcastEnabled determines whether datagram sockets are allowed to
 	// send packets to a broadcast address.
-	broadcastEnabled atomicbitops.Uint32
+	broadcastEnabled atomic.Uint32
 
 	// passCredEnabled determines whether SCM_CREDENTIALS socket control
 	// messages are enabled.
-	passCredEnabled atomicbitops.Uint32
+	passCredEnabled atomic.Uint32
 
 	// noChecksumEnabled determines whether UDP checksum is disabled while
 	// transmitting for this socket.
-	noChecksumEnabled atomicbitops.Uint32
+	noChecksumEnabled atomic.Uint32
 
 	// reuseAddressEnabled determines whether Bind() should allow reuse of
 	// local address.
-	reuseAddressEnabled atomicbitops.Uint32
+	reuseAddressEnabled atomic.Uint32
 
 	// reusePortEnabled determines whether to permit multiple sockets to be
 	// bound to an identical socket address.
-	reusePortEnabled atomicbitops.Uint32
+	reusePortEnabled atomic.Uint32
 
 	// keepAliveEnabled determines whether TCP keepalive is enabled for this
 	// socket.
-	keepAliveEnabled atomicbitops.Uint32
+	keepAliveEnabled atomic.Uint32
 
 	// multicastLoopEnabled determines whether multicast packets sent over a
 	// non-loopback interface will be looped back.
-	multicastLoopEnabled atomicbitops.Uint32
+	multicastLoopEnabled atomic.Uint32
 
 	// receiveTOSEnabled is used to specify if the TOS ancillary message is
 	// passed with incoming packets.
-	receiveTOSEnabled atomicbitops.Uint32
+	receiveTOSEnabled atomic.Uint32
 
 	// receiveTTLEnabled is used to specify if the TTL ancillary message is passed
 	// with incoming packets.
-	receiveTTLEnabled atomicbitops.Uint32
+	receiveTTLEnabled atomic.Uint32
 
 	// receiveHopLimitEnabled is used to specify if the HopLimit ancillary message
 	// is passed with incoming packets.
-	receiveHopLimitEnabled atomicbitops.Uint32
+	receiveHopLimitEnabled atomic.Uint32
 
 	// receiveTClassEnabled is used to specify if the IPV6_TCLASS ancillary
 	// message is passed with incoming packets.
-	receiveTClassEnabled atomicbitops.Uint32
+	receiveTClassEnabled atomic.Uint32
 
 	// receivePacketInfoEnabled is used to specify if more information is
 	// provided with incoming IPv4 packets.
-	receivePacketInfoEnabled atomicbitops.Uint32
+	receivePacketInfoEnabled atomic.Uint32
 
 	// receivePacketInfoEnabled is used to specify if more information is
 	// provided with incoming IPv6 packets.
-	receiveIPv6PacketInfoEnabled atomicbitops.Uint32
+	receiveIPv6PacketInfoEnabled atomic.Uint32
 
 	// hdrIncludeEnabled is used to indicate for a raw endpoint that all packets
 	// being written have an IP header and the endpoint should not attach an IP
 	// header.
-	hdrIncludedEnabled atomicbitops.Uint32
+	hdrIncludedEnabled atomic.Uint32
 
 	// v6OnlyEnabled is used to determine whether an IPv6 socket is to be
 	// restricted to sending and receiving IPv6 packets only.
-	v6OnlyEnabled atomicbitops.Uint32
+	v6OnlyEnabled atomic.Uint32
 
 	// quickAckEnabled is used to represent the value of TCP_QUICKACK option.
 	// It currently does not have any effect on the TCP endpoint.
-	quickAckEnabled atomicbitops.Uint32
+	quickAckEnabled atomic.Uint32
 
 	// delayOptionEnabled is used to specify if data should be sent out immediately
 	// by the transport protocol. For TCP, it determines if the Nagle algorithm
 	// is on or off.
-	delayOptionEnabled atomicbitops.Uint32
+	delayOptionEnabled atomic.Uint32
 
 	// corkOptionEnabled is used to specify if data should be held until segments
 	// are full by the TCP transport protocol.
-	corkOptionEnabled atomicbitops.Uint32
+	corkOptionEnabled atomic.Uint32
 
 	// receiveOriginalDstAddress is used to specify if the original destination of
 	// the incoming packet should be returned as an ancillary message.
-	receiveOriginalDstAddress atomicbitops.Uint32
+	receiveOriginalDstAddress atomic.Uint32
 
 	// ipv4RecvErrEnabled determines whether extended reliable error message
 	// passing is enabled for IPv4.
-	ipv4RecvErrEnabled atomicbitops.Uint32
+	ipv4RecvErrEnabled atomic.Uint32
 
 	// ipv6RecvErrEnabled determines whether extended reliable error message
 	// passing is enabled for IPv6.
-	ipv6RecvErrEnabled atomicbitops.Uint32
+	ipv6RecvErrEnabled atomic.Uint32
 
 	// errQueue is the per-socket error queue. It is protected by errQueueMu.
 	errQueueMu sync.Mutex `state:"nosave"`
 	errQueue   sockErrorList
 
 	// bindToDevice determines the device to which the socket is bound.
-	bindToDevice atomicbitops.Int32
+	bindToDevice atomic.Int32
 
 	// getSendBufferLimits provides the handler to get the min, default and max
 	// size for send buffer. It is initialized at the creation time and will not
@@ -234,7 +235,7 @@ type SocketOptions struct {
 	getSendBufferLimits GetSendBufferLimits `state:"manual"`
 
 	// sendBufferSize determines the send buffer size for this socket.
-	sendBufferSize atomicbitops.Int64
+	sendBufferSize atomic.Int64
 
 	// getReceiveBufferLimits provides the handler to get the min, default and
 	// max size for receive buffer. It is initialized at the creation time and
@@ -242,7 +243,7 @@ type SocketOptions struct {
 	getReceiveBufferLimits GetReceiveBufferLimits `state:"manual"`
 
 	// receiveBufferSize determines the receive buffer size for this socket.
-	receiveBufferSize atomicbitops.Int64
+	receiveBufferSize atomic.Int64
 
 	// mu protects the access to the below fields.
 	mu sync.Mutex `state:"nosave"`
@@ -253,7 +254,7 @@ type SocketOptions struct {
 
 	// rcvlowat specifies the minimum number of bytes which should be
 	// received to indicate the socket as readable.
-	rcvlowat atomicbitops.Int32
+	rcvlowat atomic.Int32
 }
 
 // InitHandler initializes the handler. This must be called before using the
@@ -265,7 +266,7 @@ func (so *SocketOptions) InitHandler(handler SocketOptionsHandler, stack StackHa
 	so.getReceiveBufferLimits = getReceiveBufferLimits
 }
 
-func storeAtomicBool(addr *atomicbitops.Uint32, v bool) {
+func storeAtomicBool(addr *atomic.Uint32, v bool) {
 	var val uint32
 	if v {
 		val = 1

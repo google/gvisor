@@ -22,9 +22,9 @@ import (
 	"math"
 	"reflect"
 	"sort"
+	"sync/atomic"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -191,18 +191,18 @@ type endpoint struct {
 
 	// enabled is set to 1 when the endpoint is enabled and 0 when it is
 	// disabled.
-	enabled atomicbitops.Uint32
+	enabled atomic.Uint32
 
 	// forwarding is set to forwardingEnabled when the endpoint has forwarding
 	// enabled and forwardingDisabled when it is disabled.
-	forwarding atomicbitops.Uint32
+	forwarding atomic.Uint32
 
 	// multicastForwarding is set to forwardingEnabled when the endpoint has
 	// forwarding enabled and forwardingDisabled when it is disabled.
 	//
 	// TODO(https://gvisor.dev/issue/7338): Implement support for multicast
 	// forwarding. Currently, setting this value to true is a no-op.
-	multicastForwarding atomicbitops.Uint32
+	multicastForwarding atomic.Uint32
 
 	mu struct {
 		sync.RWMutex
@@ -2281,12 +2281,12 @@ type protocol struct {
 		multicastForwardingDisp stack.MulticastForwardingEventDispatcher
 	}
 
-	ids    []atomicbitops.Uint32
+	ids    []atomic.Uint32
 	hashIV uint32
 
 	// defaultTTL is the current default TTL for the protocol. Only the
 	// uint8 portion of it is meaningful.
-	defaultTTL atomicbitops.Uint32
+	defaultTTL atomic.Uint32
 
 	fragmentation   *fragmentation.Fragmentation
 	icmpRateLimiter *stack.ICMPRateLimiter
@@ -2745,9 +2745,9 @@ func NewProtocolWithOptions(opts Options) stack.NetworkProtocolFactory {
 	ids := hash.RandN32(buckets)
 	hashIV := hash.RandN32(1)[0]
 
-	atomicIds := make([]atomicbitops.Uint32, len(ids))
+	atomicIds := make([]atomic.Uint32, len(ids))
 	for i := range ids {
-		atomicIds[i] = atomicbitops.FromUint32(ids[i])
+		atomicIds[i].Store(ids[i])
 	}
 
 	return func(s *stack.Stack) stack.NetworkProtocol {

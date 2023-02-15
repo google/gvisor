@@ -18,8 +18,8 @@ package queue
 
 import (
 	"encoding/binary"
+	"sync/atomic"
 
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sharedmem/pipe"
 )
@@ -77,12 +77,12 @@ type RxBuffer struct {
 type Rx struct {
 	tx                 pipe.Tx
 	rx                 pipe.Rx
-	sharedEventFDState *atomicbitops.Uint32
+	sharedEventFDState *atomic.Uint32
 }
 
 // Init initializes the receive queue with the given pipes, and shared state
 // pointer -- the latter is used to enable/disable eventfd notifications.
-func (r *Rx) Init(tx, rx []byte, sharedEventFDState *atomicbitops.Uint32) {
+func (r *Rx) Init(tx, rx []byte, sharedEventFDState *atomic.Uint32) {
 	r.sharedEventFDState = sharedEventFDState
 	r.tx.Init(tx)
 	r.rx.Init(rx)

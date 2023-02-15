@@ -13,9 +13,6 @@ go_library(
     visibility = [
         "//visibility:public",
     ],
-    deps = [
-        "//pkg/atomicbitops",
-    ],
 )
 
 go_test(

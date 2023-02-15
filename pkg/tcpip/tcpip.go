@@ -38,9 +38,9 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -1384,7 +1384,7 @@ type NetworkProtocolNumber uint32
 //
 // +stateify savable
 type StatCounter struct {
-	count atomicbitops.Uint64
+	count atomic.Uint64
 }
 
 // Increment adds one to the counter.

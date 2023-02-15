@@ -20,8 +20,8 @@ package arp
 import (
 	"fmt"
 	"reflect"
+	"sync/atomic"
 
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -49,7 +49,7 @@ type endpoint struct {
 	protocol *protocol
 
 	// enabled is set to 1 when the NIC is enabled and 0 when it is disabled.
-	enabled atomicbitops.Uint32
+	enabled atomic.Uint32
 
 	nic   stack.NetworkInterface
 	stats sharedStats

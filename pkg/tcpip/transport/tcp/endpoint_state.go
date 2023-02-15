@@ -17,7 +17,6 @@ package tcp
 import (
 	"fmt"
 
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -114,11 +113,11 @@ func (e *endpoint) loadState(epState EndpointState) {
 
 // afterLoad is invoked by stateify.
 func (e *endpoint) afterLoad() {
-	// RacyLoad() can be used because we are initializing e.
-	e.origEndpointState = e.state.RacyLoad()
+	// Load() can be used because we are initializing e.
+	e.origEndpointState = e.state.Load()
 	// Restore the endpoint to InitialState as it will be moved to
 	// its origEndpointState during Resume.
-	e.state = atomicbitops.FromUint32(uint32(StateInitial))
+	e.state.Store(uint32(StateInitial))
 	stack.StackFromEnv.RegisterRestoredEndpoint(e)
 }
 

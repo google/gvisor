@@ -20,9 +20,9 @@ import (
 	"math"
 	"math/rand"
 	"sync"
+	"sync/atomic"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/hash/jenkins"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -137,7 +137,7 @@ type conn struct {
 
 	finalizeOnce sync.Once
 	// Holds a finalizeResult.
-	finalizeResult atomicbitops.Uint32
+	finalizeResult atomic.Uint32
 
 	mu connRWMutex `state:"nosave"`
 	// sourceManip indicates the source manipulation type.
