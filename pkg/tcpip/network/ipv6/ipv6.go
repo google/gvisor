@@ -917,14 +917,33 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt stack.PacketBuf
 }
 
 func validateAddressesForForwarding(h header.IPv6) ip.ForwardingError {
+	srcAddr := h.SourceAddress()
+
+	// As per RFC 4291 section 2.5.2,
+	//
+	//   The address 0:0:0:0:0:0:0:0 is called the unspecified address. It
+	//   must never be assigned to any node. It indicates the absence of an
+	//   address. One example of its use is in the Source Address field of
+	//   any IPv6 packets sent by an initializing host before it has learned
+	//   its own address.
+	//
+	//   The unspecified address must not be used as the destination address
+	//   of IPv6 packets or in IPv6 Routing headers. An IPv6 packet with a
+	//   source address of unspecified must never be forwarded by an IPv6
+	//   router.
+	if srcAddr.Unspecified() {
+		return &ip.ErrInitializingSourceAddress{}
+	}
+
 	// As per RFC 4291 section 2.5.6,
 	//
 	//   Routers must not forward any packets with Link-Local source or
 	//   destination addresses to other links.
-	if header.IsV6LinkLocalUnicastAddress(h.SourceAddress()) {
+	if header.IsV6LinkLocalUnicastAddress(srcAddr) {
 		return &ip.ErrLinkLocalSourceAddress{}
 	}
-	if header.IsV6LinkLocalUnicastAddress(h.DestinationAddress()) || header.IsV6LinkLocalMulticastAddress(h.DestinationAddress()) {
+
+	if dstAddr := h.DestinationAddress(); header.IsV6LinkLocalUnicastAddress(dstAddr) || header.IsV6LinkLocalMulticastAddress(dstAddr) {
 		return &ip.ErrLinkLocalDestinationAddress{}
 	}
 	return nil
@@ -1247,6 +1266,8 @@ func (e *endpoint) handleForwardingError(err ip.ForwardingError) {
 	switch err := err.(type) {
 	case nil:
 		return
+	case *ip.ErrInitializingSourceAddress:
+		stats.Forwarding.InitializingSource.Increment()
 	case *ip.ErrLinkLocalSourceAddress:
 		stats.Forwarding.LinkLocalSource.Increment()
 	case *ip.ErrLinkLocalDestinationAddress:

@@ -2954,21 +2954,22 @@ var (
 
 func TestForwarding(t *testing.T) {
 	tests := []struct {
-		name                            string
-		extHdr                          func(nextHdr uint8) ([]byte, uint8, checker.NetworkChecker)
-		TTL                             uint8
-		payloadLength                   int
-		srcAddr                         tcpip.Address
-		dstAddr                         tcpip.Address
-		expectedPacketUnrouteableErrors uint64
-		expectedLinkLocalSourceErrors   uint64
-		expectedLinkLocalDestErrors     uint64
-		expectedExtensionHeaderErrors   uint64
-		expectedPacketTooBigErrors      uint64
-		expectedExhaustedTTLErrors      uint64
-		expectPacketForwarded           bool
-		expectedFragmentsForwarded      []fragmentInfo
-		expectedICMPError               *icmpError
+		name                             string
+		extHdr                           func(nextHdr uint8) ([]byte, uint8, checker.NetworkChecker)
+		TTL                              uint8
+		payloadLength                    int
+		srcAddr                          tcpip.Address
+		dstAddr                          tcpip.Address
+		expectedPacketUnrouteableErrors  uint64
+		expectedInitializingSourceErrors uint64
+		expectedLinkLocalSourceErrors    uint64
+		expectedLinkLocalDestErrors      uint64
+		expectedExtensionHeaderErrors    uint64
+		expectedPacketTooBigErrors       uint64
+		expectedExhaustedTTLErrors       uint64
+		expectPacketForwarded            bool
+		expectedFragmentsForwarded       []fragmentInfo
+		expectedICMPError                *icmpError
 	}{
 		{
 			name:    "TTL of zero",
@@ -3042,6 +3043,14 @@ func TestForwarding(t *testing.T) {
 			dstAddr:                       remoteIPv6Addr2,
 			expectedLinkLocalSourceErrors: 1,
 			expectPacketForwarded:         false,
+		},
+		{
+			name:                             "Unspecified source",
+			TTL:                              2,
+			srcAddr:                          header.IPv6Any,
+			dstAddr:                          remoteIPv6Addr2,
+			expectedInitializingSourceErrors: 1,
+			expectPacketForwarded:            false,
 		},
 		{
 			name:    "Hopbyhop with unknown option skippable action",
@@ -3340,6 +3349,10 @@ func TestForwarding(t *testing.T) {
 				t.Fatalf("Expected no ICMP Echo packet through outgoing NIC, instead found: %#v", reply)
 			}
 
+			if got, want := s.Stats().IP.Forwarding.InitializingSource.Value(), test.expectedInitializingSourceErrors; got != want {
+				t.Errorf("s.Stats().IP.Forwarding.InitializingSource.Value() = %d, want = %d", got, want)
+			}
+
 			if got, want := s.Stats().IP.Forwarding.LinkLocalSource.Value(), test.expectedLinkLocalSourceErrors; got != want {
 				t.Errorf("s.Stats().IP.Forwarding.LinkLocalSource.Value() = %d, want = %d", got, want)
 			}
@@ -3364,7 +3377,7 @@ func TestForwarding(t *testing.T) {
 				t.Errorf("s.Stats().IP.Forwarding.PacketTooBig.Value() = %d, want = %d", got, want)
 			}
 
-			totalExpectedErrors := test.expectedPacketUnrouteableErrors + test.expectedPacketTooBigErrors + test.expectedExtensionHeaderErrors + test.expectedLinkLocalSourceErrors + test.expectedLinkLocalDestErrors + test.expectedExhaustedTTLErrors
+			totalExpectedErrors := test.expectedPacketUnrouteableErrors + test.expectedPacketTooBigErrors + test.expectedExtensionHeaderErrors + test.expectedLinkLocalSourceErrors + test.expectedLinkLocalDestErrors + test.expectedExhaustedTTLErrors + test.expectedInitializingSourceErrors
 			if got, want := s.Stats().IP.Forwarding.Errors.Value(), totalExpectedErrors; got != want {
 				t.Errorf("s.Stats().IP.Forwarding.Errors.Value() = %d, want = %d", got, want)
 			}
