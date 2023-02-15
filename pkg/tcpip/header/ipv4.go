@@ -210,6 +210,31 @@ var IPv4EmptySubnet = func() tcpip.Subnet {
 	return subnet
 }()
 
+// IPv4CurrentNetworkSubnet is the subnet of addresses for the current network,
+// per RFC 6890 section 2.2.2,
+//
+//	+----------------------+----------------------------+
+//	| Attribute            | Value                      |
+//	+----------------------+----------------------------+
+//	| Address Block        | 0.0.0.0/8                  |
+//	| Name                 | "This host on this network"|
+//	| RFC                  | [RFC1122], Section 3.2.1.3 |
+//	| Allocation Date      | September 1981             |
+//	| Termination Date     | N/A                        |
+//	| Source               | True                       |
+//	| Destination          | False                      |
+//	| Forwardable          | False                      |
+//	| Global               | False                      |
+//	| Reserved-by-Protocol | True                       |
+//	+----------------------+----------------------------+
+var IPv4CurrentNetworkSubnet = func() tcpip.Subnet {
+	subnet, err := tcpip.NewSubnet(IPv4Any, tcpip.AddressMask("\xff\x00\x00\x00"))
+	if err != nil {
+		panic(err)
+	}
+	return subnet
+}()
+
 // IPv4LoopbackSubnet is the loopback subnet for IPv4.
 var IPv4LoopbackSubnet = func() tcpip.Subnet {
 	subnet, err := tcpip.NewSubnet(tcpip.Address("\x7f\x00\x00\x00"), tcpip.AddressMask("\xff\x00\x00\x00"))

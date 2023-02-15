@@ -348,19 +348,20 @@ func TestForwarding(t *testing.T) {
 	linkLocalIPv4Addr := testutil.MustParse4("169.254.0.0")
 
 	tests := []struct {
-		name                            string
-		TTL                             uint8
-		srcAddr                         tcpip.Address
-		dstAddr                         tcpip.Address
-		options                         header.IPv4Options
-		forwardedOptions                header.IPv4Options
-		icmpError                       *icmpError
-		expectedPacketUnrouteableErrors uint64
-		expectedLinkLocalSourceErrors   uint64
-		expectedLinkLocalDestErrors     uint64
-		expectedMalformedPacketErrors   uint64
-		expectedExhaustedTTLErrors      uint64
-		expectPacketForwarded           bool
+		name                             string
+		TTL                              uint8
+		srcAddr                          tcpip.Address
+		dstAddr                          tcpip.Address
+		options                          header.IPv4Options
+		forwardedOptions                 header.IPv4Options
+		icmpError                        *icmpError
+		expectedPacketUnrouteableErrors  uint64
+		expectedInitializingSourceErrors uint64
+		expectedLinkLocalSourceErrors    uint64
+		expectedLinkLocalDestErrors      uint64
+		expectedMalformedPacketErrors    uint64
+		expectedExhaustedTTLErrors       uint64
+		expectPacketForwarded            bool
 	}{
 		{
 			name:    "TTL of zero",
@@ -493,6 +494,22 @@ func TestForwarding(t *testing.T) {
 			expectedLinkLocalSourceErrors: 1,
 			expectPacketForwarded:         false,
 		},
+		{
+			name:                             "unspecified source",
+			TTL:                              2,
+			srcAddr:                          header.IPv4Any,
+			dstAddr:                          remoteIPv4Addr2,
+			expectedInitializingSourceErrors: 1,
+			expectPacketForwarded:            false,
+		},
+		{
+			name:                             "initializing source",
+			TTL:                              2,
+			srcAddr:                          tcpip.Address(net.ParseIP("0.0.0.255").To4()),
+			dstAddr:                          remoteIPv4Addr2,
+			expectedInitializingSourceErrors: 1,
+			expectPacketForwarded:            false,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -600,6 +617,10 @@ func TestForwarding(t *testing.T) {
 				}
 			}
 
+			if got, want := s.Stats().IP.Forwarding.InitializingSource.Value(), test.expectedInitializingSourceErrors; got != want {
+				t.Errorf("s.Stats().IP.Forwarding.InitializingSource.Value() = %d, want = %d", got, want)
+			}
+
 			if got, want := s.Stats().IP.Forwarding.LinkLocalSource.Value(), test.expectedLinkLocalSourceErrors; got != want {
 				t.Errorf("s.Stats().IP.Forwarding.LinkLocalSource.Value() = %d, want = %d", got, want)
 			}
@@ -620,7 +641,7 @@ func TestForwarding(t *testing.T) {
 				t.Errorf("s.Stats().IP.Forwarding.Unrouteable.Value() = %d, want = %d", got, want)
 			}
 
-			expectedTotalErrors := test.expectedLinkLocalSourceErrors + test.expectedLinkLocalDestErrors + test.expectedMalformedPacketErrors + test.expectedExhaustedTTLErrors + test.expectedPacketUnrouteableErrors
+			expectedTotalErrors := test.expectedLinkLocalSourceErrors + test.expectedLinkLocalDestErrors + test.expectedMalformedPacketErrors + test.expectedExhaustedTTLErrors + test.expectedPacketUnrouteableErrors + test.expectedInitializingSourceErrors
 			if got, want := s.Stats().IP.Forwarding.Errors.Value(), expectedTotalErrors; got != want {
 				t.Errorf("s.Stats().IP.Forwarding.Errors.Value() = %d, want = %d", got, want)
 			}
