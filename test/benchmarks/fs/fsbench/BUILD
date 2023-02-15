@@ -3,6 +3,7 @@
 load("//tools:defs.bzl", "go_library")
 
 package(
+    default_applicable_licenses = [""],
     default_visibility = ["//test/benchmarks/fs:__subpackages__"],
     licenses = ["notice"],
 )

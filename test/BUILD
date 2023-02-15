@@ -1,1 +1,4 @@
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = [""],
+    licenses = ["notice"],
+)
