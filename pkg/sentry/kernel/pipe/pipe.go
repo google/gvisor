@@ -18,9 +18,9 @@ package pipe
 import (
 	"fmt"
 	"io"
+	"sync/atomic"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
@@ -117,16 +117,16 @@ type Pipe struct {
 	isNamed bool
 
 	// The number of active readers for this pipe.
-	readers atomicbitops.Int32
+	readers atomic.Int32
 
 	// The total number of readers for this pipe.
-	totalReaders atomicbitops.Int32
+	totalReaders atomic.Int32
 
 	// The number of active writers for this pipe.
-	writers atomicbitops.Int32
+	writers atomic.Int32
 
 	// The total number of writers for this pipe.
-	totalWriters atomicbitops.Int32
+	totalWriters atomic.Int32
 
 	// mu protects all pipe internal state below.
 	mu pipeMutex `state:"nosave"`

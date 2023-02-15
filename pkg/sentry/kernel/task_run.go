@@ -127,7 +127,7 @@ func (t *Task) doStop() {
 	defer t.tg.pidns.owner.runningGoroutines.Add(1)
 	t.goroutineStopped.Add(-1)
 	defer t.goroutineStopped.Add(1)
-	for t.stopCount.RacyLoad() > 0 {
+	for t.stopCount.Load() > 0 {
 		t.endStopCond.Wait()
 	}
 }

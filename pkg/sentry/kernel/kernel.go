@@ -35,10 +35,10 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"sync/atomic"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/cpuid"
@@ -85,7 +85,7 @@ var IOUringEnabled = false
 type userCounters struct {
 	uid auth.KUID
 
-	rlimitNProc atomicbitops.Uint64
+	rlimitNProc atomic.Uint64
 }
 
 // incRLimitNProc increments the rlimitNProc counter.
@@ -175,7 +175,7 @@ type Kernel struct {
 	//
 	// runningTasks must be accessed atomically. Increments from 0 to 1 are
 	// further protected by runningTasksMu (see incRunningTasks).
-	runningTasks atomicbitops.Int64
+	runningTasks atomic.Int64
 
 	// runningTasksCond is signaled when runningTasks is incremented from 0 to 1.
 	//
@@ -195,7 +195,7 @@ type Kernel struct {
 	// provide this information.
 	//
 	// cpuClock is mutable, and is accessed using atomic memory operations.
-	cpuClock atomicbitops.Uint64
+	cpuClock atomic.Uint64
 
 	// cpuClockTickTimer drives increments of cpuClock.
 	cpuClockTickTimer *time.Timer `state:"nosave"`
@@ -224,13 +224,13 @@ type Kernel struct {
 	// uniqueID is used to generate unique identifiers.
 	//
 	// uniqueID is mutable, and is accessed using atomic memory operations.
-	uniqueID atomicbitops.Uint64
+	uniqueID atomic.Uint64
 
 	// nextInotifyCookie is a monotonically increasing counter used for
 	// generating unique inotify event cookies.
 	//
 	// nextInotifyCookie is mutable.
-	nextInotifyCookie atomicbitops.Uint32
+	nextInotifyCookie atomic.Uint32
 
 	// netlinkPorts manages allocation of netlink socket port IDs.
 	netlinkPorts *port.Manager
@@ -303,7 +303,7 @@ type Kernel struct {
 	ptraceExceptions map[*Task]*Task
 
 	// YAMAPtraceScope is the current level of YAMA ptrace restrictions.
-	YAMAPtraceScope atomicbitops.Int32
+	YAMAPtraceScope atomic.Int32
 
 	// cgroupRegistry contains the set of active cgroup controllers on the
 	// system. It is controller by cgroupfs. Nil if cgroupfs is unavailable on
@@ -412,7 +412,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	k.futexes = futex.NewManager()
 	k.netlinkPorts = port.New()
 	k.ptraceExceptions = make(map[*Task]*Task)
-	k.YAMAPtraceScope = atomicbitops.FromInt32(linux.YAMA_SCOPE_RELATIONAL)
+	k.YAMAPtraceScope.Store(linux.YAMA_SCOPE_RELATIONAL)
 	k.userCountersMap = make(map[auth.KUID]*userCounters)
 
 	ctx := k.SupervisorContext()

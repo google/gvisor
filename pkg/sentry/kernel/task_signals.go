@@ -348,7 +348,7 @@ func (t *Task) Sigtimedwait(set linux.SignalSet, timeout time.Duration) (*linux.
 	// Unblock signals we're waiting for. Remember the original signal mask so
 	// that Task.sendSignalTimerLocked doesn't discard ignored signals that
 	// we're temporarily unblocking.
-	t.realSignalMask = linux.SignalSet(t.signalMask.RacyLoad())
+	t.realSignalMask = linux.SignalSet(t.signalMask.Load())
 	t.setSignalMaskLocked(t.realSignalMask & mask)
 
 	// Wait for a timeout or new signal.
@@ -439,7 +439,7 @@ func (t *Task) sendSignalTimerLocked(info *linux.SignalInfo, group bool, timer *
 	// Linux's kernel/signal.c:__send_signal() => prepare_signal() =>
 	// sig_ignored().
 	ignored := computeAction(sig, t.tg.signalHandlers.actions[sig]) == SignalActionIgnore
-	if sigset := linux.SignalSetOf(sig); sigset&linux.SignalSet(t.signalMask.RacyLoad()) == 0 && sigset&t.realSignalMask == 0 && ignored && !t.hasTracer() {
+	if sigset := linux.SignalSetOf(sig); sigset&linux.SignalSet(t.signalMask.Load()) == 0 && sigset&t.realSignalMask == 0 && ignored && !t.hasTracer() {
 		t.Debugf("Discarding ignored signal %d", sig)
 		if timer != nil {
 			timer.signalRejectedLocked()
@@ -526,7 +526,7 @@ func (t *Task) canReceiveSignalLocked(sig linux.Signal) bool {
 	t.signalQueue.Notify(waiter.EventMask(linux.MakeSignalSet(sig)))
 
 	//	- Do not choose tasks that are blocking the signal.
-	if linux.SignalSetOf(sig)&linux.SignalSet(t.signalMask.RacyLoad()) != 0 {
+	if linux.SignalSetOf(sig)&linux.SignalSet(t.signalMask.Load()) != 0 {
 		return false
 	}
 	//	- No need to check Task.exitState, as the exit path sets every bit in the
@@ -573,14 +573,14 @@ func (t *Task) forceSignal(sig linux.Signal, unconditional bool) {
 }
 
 func (t *Task) forceSignalLocked(sig linux.Signal, unconditional bool) {
-	blocked := linux.SignalSetOf(sig)&linux.SignalSet(t.signalMask.RacyLoad()) != 0
+	blocked := linux.SignalSetOf(sig)&linux.SignalSet(t.signalMask.Load()) != 0
 	act := t.tg.signalHandlers.actions[sig]
 	ignored := act.Handler == linux.SIG_IGN
 	if blocked || ignored || unconditional {
 		act.Handler = linux.SIG_DFL
 		t.tg.signalHandlers.actions[sig] = act
 		if blocked {
-			t.setSignalMaskLocked(linux.SignalSet(t.signalMask.RacyLoad()) &^ linux.SignalSetOf(sig))
+			t.setSignalMaskLocked(linux.SignalSet(t.signalMask.Load()) &^ linux.SignalSetOf(sig))
 		}
 	}
 }
@@ -605,7 +605,7 @@ func (t *Task) SetSignalMask(mask linux.SignalSet) {
 
 // Preconditions: The signal mutex must be locked.
 func (t *Task) setSignalMaskLocked(mask linux.SignalSet) {
-	oldMask := linux.SignalSet(t.signalMask.RacyLoad())
+	oldMask := linux.SignalSet(t.signalMask.Load())
 	t.signalMask.Store(uint64(mask))
 
 	// If the new mask blocks any signals that were not blocked by the old
@@ -1046,7 +1046,7 @@ func (*runInterrupt) execute(t *Task) taskRunState {
 	}
 
 	// Are there signals pending?
-	if info := t.dequeueSignalLocked(linux.SignalSet(t.signalMask.RacyLoad())); info != nil {
+	if info := t.dequeueSignalLocked(linux.SignalSet(t.signalMask.Load())); info != nil {
 		if err := t.p.PullFullState(t.MemoryManager().AddressSpace(), t.Arch()); err != nil {
 			t.PrepareGroupExit(linux.WaitStatusTerminationSignal(linux.SIGILL))
 			return (*runExit)(nil)
@@ -1117,7 +1117,7 @@ func (*runInterruptAfterSignalDeliveryStop) execute(t *Task) taskRunState {
 	t.tg.signalHandlers.mu.Lock()
 	t.tg.pidns.owner.mu.Unlock()
 	// If the signal is masked, re-queue it.
-	if linux.SignalSetOf(sig)&linux.SignalSet(t.signalMask.RacyLoad()) != 0 {
+	if linux.SignalSetOf(sig)&linux.SignalSet(t.signalMask.Load()) != 0 {
 		t.sendSignalLocked(info, false /* group */)
 		t.tg.signalHandlers.mu.Unlock()
 		return (*runInterrupt)(nil)

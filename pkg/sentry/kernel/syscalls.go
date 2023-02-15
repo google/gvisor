@@ -16,10 +16,10 @@ package kernel
 
 import (
 	"fmt"
+	"sync/atomic"
 
 	"google.golang.org/protobuf/proto"
 	"gvisor.dev/gvisor/pkg/abi"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -143,10 +143,10 @@ type SyscallFlagsTable struct {
 	//
 	// missing syscalls have the same value in enable as missingEnable to
 	// avoid an extra branch in Word.
-	enable [maxSyscallNum + 1]atomicbitops.Uint32
+	enable [maxSyscallNum + 1]atomic.Uint32
 
 	// missingEnable contains the enable bits for missing syscalls.
-	missingEnable atomicbitops.Uint32
+	missingEnable atomic.Uint32
 }
 
 // Init initializes the struct, with all syscalls in table set to enable.
@@ -155,7 +155,7 @@ type SyscallFlagsTable struct {
 func (e *SyscallFlagsTable) init(table map[uintptr]Syscall) {
 	for num := range table {
 		enableFlags := uint32(syscallPresent)
-		e.enable[num] = atomicbitops.FromUint32(enableFlags)
+		e.enable[num].Store(enableFlags)
 	}
 	seccheck.Global.AddSyscallFlagListener(e)
 	e.UpdateSecCheck(&seccheck.Global)

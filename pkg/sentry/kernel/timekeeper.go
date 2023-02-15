@@ -16,9 +16,9 @@ package kernel
 
 import (
 	"fmt"
+	"sync/atomic"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/log"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -57,7 +57,7 @@ type Timekeeper struct {
 	monotonicOffset int64 `state:"nosave"`
 
 	// monotonicLowerBound is the lowerBound for monotonic time.
-	monotonicLowerBound atomicbitops.Int64 `state:"nosave"`
+	monotonicLowerBound atomic.Int64 `state:"nosave"`
 
 	// restored, if non-nil, indicates that this Timekeeper was restored
 	// from a state file. The clocks are not set until restored is closed.

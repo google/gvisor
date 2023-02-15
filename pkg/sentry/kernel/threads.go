@@ -16,8 +16,8 @@ package kernel
 
 import (
 	"fmt"
+	"sync/atomic"
 
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -329,7 +329,7 @@ type threadGroupNode struct {
 	// pidWithinNS the thread ID of the leader of this thread group within pidns.
 	// Useful to avoid using locks when determining a thread group leader's own
 	// TID.
-	pidWithinNS atomicbitops.Int32
+	pidWithinNS atomic.Int32
 
 	// eventQueue is notified whenever a event of interest to Task.Wait occurs
 	// in a child of this thread group, or a ptrace tracee of a task in this
