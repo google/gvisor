@@ -16,7 +16,6 @@ package tmpfs
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
 )
@@ -34,6 +33,6 @@ type namedPipe struct {
 func (fs *filesystem) newNamedPipe(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, parentDir *directory) *inode {
 	file := &namedPipe{pipe: pipe.NewVFSPipe(true /* isNamed */, pipe.DefaultPipeSize)}
 	file.inode.init(file, fs, kuid, kgid, linux.S_IFIFO|mode, parentDir)
-	file.inode.nlink = atomicbitops.FromUint32(1) // Only the parent has a link.
+	file.inode.nlink.Store(1) // Only the parent has a link.
 	return &file.inode
 }

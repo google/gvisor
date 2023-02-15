@@ -14,7 +14,6 @@ go_library(
     visibility = ["//:sandbox"],
     deps = [
         ":metric_go_proto",
-        "//pkg/atomicbitops",
         "//pkg/eventchannel",
         "//pkg/gohacks",
         "//pkg/log",

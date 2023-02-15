@@ -8,7 +8,6 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/atomicbitops",
         "//pkg/sync",
     ],
 )

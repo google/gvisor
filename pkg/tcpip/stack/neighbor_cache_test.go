@@ -20,12 +20,12 @@ import (
 	"math/rand"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 )
@@ -1278,7 +1278,7 @@ func TestNeighborCacheResolutionFailed(t *testing.T) {
 	clock := faketime.NewManualClock()
 	linkRes := newTestNeighborResolver(&nudDisp, config, clock)
 
-	var requestCount atomicbitops.Uint32
+	var requestCount atomic.Uint32
 	linkRes.onLinkAddressRequest = func() {
 		requestCount.Add(1)
 	}

@@ -15,9 +15,9 @@
 package metric
 
 import (
+	"sync/atomic"
 	"unsafe"
 
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/gohacks"
 	"gvisor.dev/gvisor/pkg/sync"
 )
@@ -28,7 +28,7 @@ import (
 // inconsistency (i.e. increments that race with the snapshot) will simply be
 // detected during the next snapshot instead. Reading them consistently would
 // require more synchronization during increments, which we need to be cheap.
-func snapshotDistribution(samples []atomicbitops.Uint64) []uint64 {
+func snapshotDistribution(samples []atomic.Uint64) []uint64 {
 	// The number of buckets within a distribution never changes, so there is
 	// no race condition from getting the number of buckets upfront.
 	numBuckets := len(samples)
@@ -40,7 +40,7 @@ func snapshotDistribution(samples []atomicbitops.Uint64) []uint64 {
 		gohacks.Memmove(unsafe.Pointer(&snapshot[0]), unsafe.Pointer(&samples[0]), unsafe.Sizeof(uint64(0))*uintptr(numBuckets))
 	} else {
 		for i := range samples {
-			snapshot[i] = samples[i].RacyLoad()
+			snapshot[i] = samples[i].Load()
 		}
 	}
 	return snapshot

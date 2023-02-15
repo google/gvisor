@@ -20,9 +20,9 @@ package unet
 
 import (
 	"errors"
+	"sync/atomic"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/eventfd"
 	"gvisor.dev/gvisor/pkg/sync"
 )
@@ -64,7 +64,7 @@ type Socket struct {
 	// fd is the bound socket.
 	//
 	// fd only remains valid if read while within gate.
-	fd atomicbitops.Int32
+	fd atomic.Int32
 
 	// efd is an event FD that is signaled when the socket is closing.
 	//
@@ -73,7 +73,7 @@ type Socket struct {
 
 	// race is an atomic variable used to avoid triggering the race
 	// detector. See comment in SocketPair below.
-	race *atomicbitops.Int32
+	race *atomic.Int32
 }
 
 // NewSocket returns a socket from an existing FD.
@@ -91,10 +91,11 @@ func NewSocket(fd int) (*Socket, error) {
 		return nil, err
 	}
 
-	return &Socket{
-		fd:  atomicbitops.FromInt32(int32(fd)),
+	sock := &Socket{
 		efd: efd,
-	}, nil
+	}
+	sock.fd.Store(int32(fd))
+	return sock, nil
 }
 
 // finish completes use of s.fd by evicting any waiters, closing the gate, and
@@ -208,7 +209,7 @@ func SocketPair(packet bool) (*Socket, *Socket, error) {
 		unix.Close(fds[1])
 		return nil, nil, err
 	}
-	var race atomicbitops.Int32
+	var race atomic.Int32
 	a.race = &race
 	b, err := NewSocket(fds[1])
 	if err != nil {
@@ -307,7 +308,7 @@ type SocketWriter struct {
 	socket   *Socket
 	to       []byte
 	blocking bool
-	race     *atomicbitops.Int32
+	race     *atomic.Int32
 
 	ControlMessage
 }
@@ -416,7 +417,7 @@ type SocketReader struct {
 	socket   *Socket
 	source   []byte
 	blocking bool
-	race     *atomicbitops.Int32
+	race     *atomic.Int32
 
 	ControlMessage
 }

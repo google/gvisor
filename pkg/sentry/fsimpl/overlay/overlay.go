@@ -36,9 +36,9 @@ package overlay
 import (
 	"fmt"
 	"strings"
+	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
@@ -286,10 +286,10 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 
 	// Construct the root dentry.
 	root := fs.newDentry()
-	root.refs = atomicbitops.FromInt64(1)
+	root.refs.Store(1)
 	if fs.opts.UpperRoot.Ok() {
 		fs.opts.UpperRoot.IncRef()
-		root.copiedUp = atomicbitops.FromUint32(1)
+		root.copiedUp.Store(1)
 		root.upperVD = fs.opts.UpperRoot
 	}
 	for _, lowerRoot := range fs.opts.LowerRoots {
@@ -321,17 +321,17 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		fs.vfsfs.DecRef(ctx)
 		return nil, nil, linuxerr.EINVAL
 	}
-	root.mode = atomicbitops.FromUint32(uint32(rootStat.Mode))
-	root.uid = atomicbitops.FromUint32(rootStat.UID)
-	root.gid = atomicbitops.FromUint32(rootStat.GID)
+	root.mode.Store(uint32(rootStat.Mode))
+	root.uid.Store(rootStat.UID)
+	root.gid.Store(rootStat.GID)
 	if rootStat.Mode&linux.S_IFMT == linux.S_IFDIR {
-		root.devMajor = atomicbitops.FromUint32(linux.UNNAMED_MAJOR)
-		root.devMinor = atomicbitops.FromUint32(fs.dirDevMinor)
+		root.devMajor.Store(linux.UNNAMED_MAJOR)
+		root.devMinor.Store(fs.dirDevMinor)
 		// For root dir, it is okay to use top most level's stat to compute inode
 		// number because we don't allow copy ups on root dentries.
 		root.ino.Store(fs.newDirIno(rootStat.DevMajor, rootStat.DevMinor, rootStat.Ino))
 	} else if !root.upperVD.Ok() {
-		root.devMajor = atomicbitops.FromUint32(linux.UNNAMED_MAJOR)
+		root.devMajor.Store(linux.UNNAMED_MAJOR)
 		rootDevMinor, err := fs.getLowerDevMinor(rootStat.DevMajor, rootStat.DevMinor)
 		if err != nil {
 			ctx.Infof("overlay.FilesystemType.GetFilesystem: failed to get device number for root: %v", err)
@@ -339,11 +339,11 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			fs.vfsfs.DecRef(ctx)
 			return nil, nil, err
 		}
-		root.devMinor = atomicbitops.FromUint32(rootDevMinor)
+		root.devMinor.Store(rootDevMinor)
 		root.ino.Store(rootStat.Ino)
 	} else {
-		root.devMajor = atomicbitops.FromUint32(rootStat.DevMajor)
-		root.devMinor = atomicbitops.FromUint32(rootStat.DevMinor)
+		root.devMajor.Store(rootStat.DevMajor)
+		root.devMinor.Store(rootStat.DevMinor)
 		root.ino.Store(rootStat.Ino)
 	}
 
@@ -457,7 +457,7 @@ func (fs *filesystem) getLowerDevMinor(layerMajor, layerMinor uint32) (uint32, e
 type dentry struct {
 	vfsd vfs.Dentry
 
-	refs atomicbitops.Int64
+	refs atomic.Int64
 
 	// fs is the owning filesystem. fs is immutable.
 	fs *filesystem
@@ -466,13 +466,13 @@ type dentry struct {
 	// the topmost layer (and therefore the overlay file as well), and are used
 	// for permission checks on this dentry. These fields are protected by
 	// copyMu.
-	mode atomicbitops.Uint32
-	uid  atomicbitops.Uint32
-	gid  atomicbitops.Uint32
+	mode atomic.Uint32
+	uid  atomic.Uint32
+	gid  atomic.Uint32
 
 	// copiedUp is 1 if this dentry has been copied-up (i.e. upperVD.Ok()) and
 	// 0 otherwise.
-	copiedUp atomicbitops.Uint32
+	copiedUp atomic.Uint32
 
 	// parent is the dentry corresponding to this dentry's parent directory.
 	// name is this dentry's name in parent. If this dentry is a filesystem
@@ -506,9 +506,9 @@ type dentry struct {
 
 	// devMajor, devMinor, and ino are the device major/minor and inode numbers
 	// used by this dentry. These fields are protected by copyMu.
-	devMajor atomicbitops.Uint32
-	devMinor atomicbitops.Uint32
-	ino      atomicbitops.Uint64
+	devMajor atomic.Uint32
+	devMinor atomic.Uint32
+	ino      atomic.Uint64
 
 	// If this dentry represents a regular file, then:
 	//
@@ -541,7 +541,7 @@ type dentry struct {
 	lowerMappings   memmap.MappingSet
 	dataMu          dataRWMutex `state:"nosave"`
 	wrappedMappable memmap.Mappable
-	isMappable      atomicbitops.Uint32
+	isMappable      atomic.Uint32
 
 	locks vfs.FileLocks
 
@@ -809,7 +809,7 @@ func (d *dentry) statInternalTo(ctx context.Context, opts *vfs.StatOptions, stat
 // Preconditions: d.copyMu must be locked for writing.
 func (d *dentry) updateAfterSetStatLocked(opts *vfs.SetStatOptions) {
 	if opts.Stat.Mask&linux.STATX_MODE != 0 {
-		d.mode.Store((d.mode.RacyLoad() & linux.S_IFMT) | uint32(opts.Stat.Mode&^linux.S_IFMT))
+		d.mode.Store((d.mode.Load() & linux.S_IFMT) | uint32(opts.Stat.Mode&^linux.S_IFMT))
 	}
 	if opts.Stat.Mask&linux.STATX_UID != 0 {
 		d.uid.Store(opts.Stat.UID)

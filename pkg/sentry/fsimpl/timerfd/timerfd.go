@@ -16,7 +16,8 @@
 package timerfd
 
 import (
-	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"sync/atomic"
+
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -42,7 +43,7 @@ type TimerFileDescription struct {
 	// val is the number of timer expirations since the last successful
 	// call to PRead, or SetTime. val must be accessed using atomic memory
 	// operations.
-	val atomicbitops.Uint64
+	val atomic.Uint64
 }
 
 var _ vfs.FileDescriptionImpl = (*TimerFileDescription)(nil)

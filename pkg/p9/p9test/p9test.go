@@ -17,11 +17,11 @@ package p9test
 
 import (
 	"fmt"
+	"sync/atomic"
 	"testing"
 
 	"github.com/golang/mock/gomock"
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/p9"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/unet"
@@ -39,7 +39,7 @@ type Harness struct {
 }
 
 // globalPath is a QID.Path Generator.
-var globalPath atomicbitops.Uint64
+var globalPath atomic.Uint64
 
 // MakePath returns a globally unique path.
 func MakePath() uint64 {

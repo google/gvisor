@@ -17,10 +17,10 @@ package contexttest
 
 import (
 	"os"
+	"sync/atomic"
 	"testing"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/memutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -76,7 +76,7 @@ type TestContext struct {
 }
 
 // globalUniqueID tracks incremental unique identifiers for tests.
-var globalUniqueID atomicbitops.Uint64
+var globalUniqueID atomic.Uint64
 
 // globalUniqueIDProvider implements unix.UniqueIDProvider.
 type globalUniqueIDProvider struct{}
@@ -88,7 +88,7 @@ func (*globalUniqueIDProvider) UniqueID() uint64 {
 
 // lastInotifyCookie is a monotonically increasing counter for generating unique
 // inotify cookies.
-var lastInotifyCookie atomicbitops.Uint32
+var lastInotifyCookie atomic.Uint32
 
 // hostClock implements ktime.Clock.
 type hostClock struct {

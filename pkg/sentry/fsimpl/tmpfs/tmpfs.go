@@ -33,9 +33,9 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fd"
@@ -91,7 +91,7 @@ type filesystem struct {
 	// mu serializes changes to the Dentry tree.
 	mu filesystemRWMutex `state:"nosave"`
 
-	nextInoMinusOne atomicbitops.Uint64 // accessed using atomic memory operations
+	nextInoMinusOne atomic.Uint64 // accessed using atomic memory operations
 
 	root *dentry
 
@@ -102,7 +102,7 @@ type filesystem struct {
 	maxSizeInPages uint64
 
 	// pagesUsed is the number of pages used by this filesystem.
-	pagesUsed atomicbitops.Uint64
+	pagesUsed atomic.Uint64
 }
 
 // Name implements vfs.FilesystemType.Name.
@@ -457,17 +457,17 @@ type inode struct {
 
 	// Inode metadata. Writing multiple fields atomically requires holding
 	// mu, othewise atomic operations can be used.
-	mu    inodeMutex          `state:"nosave"`
-	mode  atomicbitops.Uint32 // file type and mode
-	nlink atomicbitops.Uint32 // protected by filesystem.mu instead of inode.mu
-	uid   atomicbitops.Uint32 // auth.KUID, but stored as raw uint32 for sync/atomic
-	gid   atomicbitops.Uint32 // auth.KGID, but ...
-	ino   uint64              // immutable
+	mu    inodeMutex    `state:"nosave"`
+	mode  atomic.Uint32 // file type and mode
+	nlink atomic.Uint32 // protected by filesystem.mu instead of inode.mu
+	uid   atomic.Uint32 // auth.KUID, but stored as raw uint32 for sync/atomic
+	gid   atomic.Uint32 // auth.KGID, but ...
+	ino   uint64        // immutable
 
 	// Linux's tmpfs has no concept of btime.
-	atime atomicbitops.Int64 // nanoseconds
-	ctime atomicbitops.Int64 // nanoseconds
-	mtime atomicbitops.Int64 // nanoseconds
+	atime atomic.Int64 // nanoseconds
+	ctime atomic.Int64 // nanoseconds
+	mtime atomic.Int64 // nanoseconds
 
 	locks vfs.FileLocks
 
@@ -493,15 +493,15 @@ func (i *inode) init(impl any, fs *filesystem, kuid auth.KUID, kgid auth.KGID, m
 	}
 
 	i.fs = fs
-	i.mode = atomicbitops.FromUint32(uint32(mode))
-	i.uid = atomicbitops.FromUint32(uint32(kuid))
-	i.gid = atomicbitops.FromUint32(uint32(kgid))
+	i.mode.Store(uint32(mode))
+	i.uid.Store(uint32(kuid))
+	i.gid.Store(uint32(kgid))
 	i.ino = fs.nextInoMinusOne.Add(1)
 	// Tmpfs creation sets atime, ctime, and mtime to current time.
 	now := fs.clock.Now().Nanoseconds()
-	i.atime = atomicbitops.FromInt64(now)
-	i.ctime = atomicbitops.FromInt64(now)
-	i.mtime = atomicbitops.FromInt64(now)
+	i.atime.Store(now)
+	i.ctime.Store(now)
+	i.mtime.Store(now)
 	// i.nlink initialized by caller
 	i.impl = impl
 	i.refs.InitRefs()
@@ -515,10 +515,10 @@ func (i *inode) init(impl any, fs *filesystem, kuid auth.KUID, kgid auth.KGID, m
 //   - i.nlink != 0.
 //   - i.nlink < maxLinks.
 func (i *inode) incLinksLocked() {
-	if i.nlink.RacyLoad() == 0 {
+	if i.nlink.Load() == 0 {
 		panic("tmpfs.inode.incLinksLocked() called with no existing links")
 	}
-	if i.nlink.RacyLoad() == maxLinks {
+	if i.nlink.Load() == maxLinks {
 		panic("tmpfs.inode.incLinksLocked() called with maximum link count")
 	}
 	i.nlink.Add(1)
@@ -532,7 +532,7 @@ func (i *inode) incLinksLocked() {
 //   - i.mu must be lcoked.
 //   - i.nlink != 0.
 func (i *inode) decLinksLocked(ctx context.Context) {
-	if i.nlink.RacyLoad() == 0 {
+	if i.nlink.Load() == 0 {
 		panic("tmpfs.inode.decLinksLocked() called with no existing links")
 	}
 	if i.nlink.Add(^uint32(0)) == 0 {

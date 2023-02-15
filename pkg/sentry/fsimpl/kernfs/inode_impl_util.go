@@ -16,9 +16,9 @@ package kernfs
 
 import (
 	"fmt"
+	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -176,17 +176,17 @@ func (InodeNotSymlink) Getlink(context.Context, *vfs.Mount) (vfs.VirtualDentry, 
 type InodeAttrs struct {
 	devMajor  uint32
 	devMinor  uint32
-	ino       atomicbitops.Uint64
-	mode      atomicbitops.Uint32
-	uid       atomicbitops.Uint32
-	gid       atomicbitops.Uint32
-	nlink     atomicbitops.Uint32
-	blockSize atomicbitops.Uint32
+	ino       atomic.Uint64
+	mode      atomic.Uint32
+	uid       atomic.Uint32
+	gid       atomic.Uint32
+	nlink     atomic.Uint32
+	blockSize atomic.Uint32
 
 	// Timestamps, all nsecs from the Unix epoch.
-	atime atomicbitops.Int64
-	mtime atomicbitops.Int64
-	ctime atomicbitops.Int64
+	atime atomic.Int64
+	mtime atomic.Int64
+	ctime atomic.Int64
 }
 
 // Init initializes this InodeAttrs.

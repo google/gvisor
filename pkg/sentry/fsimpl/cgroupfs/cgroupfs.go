@@ -62,9 +62,9 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
@@ -161,7 +161,7 @@ type filesystem struct {
 	controllers  []controller
 	kcontrollers []kernel.CgroupController
 
-	numCgroups atomicbitops.Uint64 // Protected by atomic ops.
+	numCgroups atomic.Uint64 // Protected by atomic ops.
 
 	root *kernfs.Dentry
 	// effectiveRoot is the initial cgroup new tasks are created in. Unless
@@ -763,7 +763,7 @@ type stubControllerFile struct {
 	controllerFile
 
 	// data is accessed through atomic ops.
-	data *atomicbitops.Int64
+	data *atomic.Int64
 }
 
 var _ controllerFileImpl = (*stubControllerFile)(nil)
@@ -791,7 +791,7 @@ func (f *stubControllerFile) WriteBackground(ctx context.Context, src usermem.IO
 
 // newStubControllerFile creates a new stub controller file that loads and
 // stores a control value from data.
-func (fs *filesystem) newStubControllerFile(ctx context.Context, creds *auth.Credentials, data *atomicbitops.Int64, allowBackgroundAccess bool) kernfs.Inode {
+func (fs *filesystem) newStubControllerFile(ctx context.Context, creds *auth.Credentials, data *atomic.Int64, allowBackgroundAccess bool) kernfs.Inode {
 	f := &stubControllerFile{
 		controllerFile: controllerFile{
 			allowBackgroundAccess: allowBackgroundAccess,

@@ -20,11 +20,11 @@ package socket
 import (
 	"bytes"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal"
@@ -381,12 +381,12 @@ type SendReceiveTimeout struct {
 	// send is length of the send timeout in nanoseconds.
 	//
 	// send must be accessed atomically.
-	send atomicbitops.Int64
+	send atomic.Int64
 
 	// recv is length of the receive timeout in nanoseconds.
 	//
 	// recv must be accessed atomically.
-	recv atomicbitops.Int64
+	recv atomic.Int64
 }
 
 // SetRecvTimeout implements Socket.SetRecvTimeout.

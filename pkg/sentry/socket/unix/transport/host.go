@@ -16,10 +16,10 @@ package transport
 
 import (
 	"fmt"
+	"sync/atomic"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
@@ -78,7 +78,7 @@ type HostConnectedEndpoint struct {
 	// GetSockOpt and message splitting/rejection in SendMsg, but do not
 	// prevent lots of small messages from filling the real send buffer
 	// size on the host.
-	sndbuf atomicbitops.Int64 `state:"nosave"`
+	sndbuf atomic.Int64 `state:"nosave"`
 
 	// stype is the type of Unix socket.
 	stype linux.SockType

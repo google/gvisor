@@ -24,9 +24,9 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"sync/atomic"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -37,12 +37,20 @@ import (
 
 // LogPackets is a flag used to enable or disable packet logging via the log
 // package. Valid values are 0 or 1.
-var LogPackets atomicbitops.Uint32 = atomicbitops.FromUint32(1)
+var LogPackets atomic.Uint32
+
+func init() {
+	LogPackets.Store(1)
+}
 
 // LogPacketsToPCAP is a flag used to enable or disable logging packets to a
 // pcap writer. Valid values are 0 or 1. A writer must have been specified when the
 // sniffer was created for this flag to have effect.
-var LogPacketsToPCAP atomicbitops.Uint32 = atomicbitops.FromUint32(1)
+var LogPacketsToPCAP atomic.Uint32
+
+func init() {
+	LogPacketsToPCAP.Store(1)
+}
 
 type endpoint struct {
 	nested.Endpoint

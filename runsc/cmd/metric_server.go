@@ -29,11 +29,11 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/google/subcommands"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/prometheus"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -239,7 +239,7 @@ type MetricServer struct {
 
 	// Size of the map of written metrics during the last /metrics export. Initially zero.
 	// Used to efficiently reallocate a map of the right size during the next export.
-	lastMetricsWrittenSize atomicbitops.Uint32
+	lastMetricsWrittenSize atomic.Uint32
 
 	// mu protects the fields below.
 	mu sync.Mutex

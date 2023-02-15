@@ -15,9 +15,9 @@
 package stack
 
 import (
+	"sync/atomic"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/internal/tcp"
@@ -397,7 +397,7 @@ type TCPSndBufState struct {
 
 	// AutoTuneSndBufDisabled indicates that the auto tuning of send buffer
 	// is disabled.
-	AutoTuneSndBufDisabled atomicbitops.Uint32
+	AutoTuneSndBufDisabled atomic.Uint32
 }
 
 // TCPEndpointStateInner contains the members of TCPEndpointState used directly

@@ -25,9 +25,9 @@ package iouringfs
 import (
 	"fmt"
 	"io"
+	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -57,7 +57,7 @@ type FileDescription struct {
 
 	// running indicates whether the submission queue is currently being
 	// processed. This is either 0 for not running, or 1 for running.
-	running atomicbitops.Uint32
+	running atomic.Uint32
 	// runC is used to wake up serialized task goroutines waiting for any
 	// concurrent processors of the submisison queue.
 	runC chan struct{} `state:"nosave"`

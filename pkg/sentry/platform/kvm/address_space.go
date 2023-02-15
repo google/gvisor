@@ -15,6 +15,8 @@
 package kvm
 
 import (
+	"sync/atomic"
+
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
@@ -25,7 +27,7 @@ import (
 
 // dirtySet tracks vCPUs for invalidation.
 type dirtySet struct {
-	vCPUMasks []atomicbitops.Uint64
+	vCPUMasks []atomic.Uint64
 }
 
 // forEach iterates over all CPUs in the dirty set.

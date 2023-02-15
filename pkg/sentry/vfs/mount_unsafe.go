@@ -20,7 +20,6 @@ import (
 	"sync/atomic"
 	"unsafe"
 
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/gohacks"
 	"gvisor.dev/gvisor/pkg/sync"
 )
@@ -93,7 +92,7 @@ type mountTable struct {
 	// anyway (cf. runtime.bucketShift()), and length isn't used by lookup;
 	// thus this bit packing gets us more bits for the length (vs. storing
 	// length and cap in separate uint32s) for ~free.
-	size atomicbitops.Uint64
+	size atomic.Uint64
 
 	slots unsafe.Pointer `state:"nosave"` // []mountSlot; never nil after Init
 }
@@ -147,7 +146,7 @@ func init() {
 
 // Init must be called exactly once on each mountTable before use.
 func (mt *mountTable) Init() {
-	mt.size = atomicbitops.FromUint64(mtInitOrder)
+	mt.size.Store(mtInitOrder)
 	mt.slots = newMountTableSlots(mtInitCap)
 }
 
@@ -248,8 +247,8 @@ func (mt *mountTable) insertSeqed(mount *Mount) {
 	//
 	//          (len+1) / cap <= mtMaxLoadNum / mtMaxLoadDen
 	// (len+1) * mtMaxLoadDen <= mtMaxLoadNum * cap
-	tlen := mt.size.RacyLoad() >> mtSizeLenLSB
-	order := mt.size.RacyLoad() & mtSizeOrderMask
+	tlen := mt.size.Load() >> mtSizeLenLSB
+	order := mt.size.Load() & mtSizeOrderMask
 	tcap := uintptr(1) << order
 	if ((tlen + 1) * mtMaxLoadDen) <= (uint64(mtMaxLoadNum) << order) {
 		// Atomically insert the new element into the table.
@@ -343,7 +342,7 @@ func (mt *mountTable) Remove(mount *Mount) {
 //   - mt.seq must be in a writer critical section.
 func (mt *mountTable) removeSeqed(mount *Mount) {
 	hash := mount.key.hash()
-	tcap := uintptr(1) << (mt.size.RacyLoad() & mtSizeOrderMask)
+	tcap := uintptr(1) << (mt.size.Load() & mtSizeOrderMask)
 	mask := tcap - 1
 	slots := mt.slots
 	off := (hash & mask) * mountSlotBytes

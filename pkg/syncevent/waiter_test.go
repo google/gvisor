@@ -16,10 +16,10 @@ package syncevent
 
 import (
 	"fmt"
+	"sync/atomic"
 	"testing"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/sync"
 )
@@ -53,7 +53,8 @@ func TestWaiterWaitFor(t *testing.T) {
 	evWaited := Set(1)
 	evOther := Set(2)
 	w.Notify(evOther)
-	notifiedEvent := atomicbitops.FromUint32(0)
+	var notifiedEvent atomic.Uint32
+	notifiedEvent.Store(0)
 	go func() {
 		time.Sleep(100 * time.Millisecond)
 		notifiedEvent.Store(1)

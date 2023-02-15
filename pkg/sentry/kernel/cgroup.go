@@ -18,8 +18,8 @@ import (
 	"bytes"
 	"fmt"
 	"sort"
+	"sync/atomic"
 
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
@@ -266,7 +266,7 @@ type CgroupRegistry struct {
 	// lastHierarchyID is the id of the last allocated cgroup hierarchy. Valid
 	// ids are from 1 to math.MaxUint32.
 	//
-	lastHierarchyID atomicbitops.Uint32
+	lastHierarchyID atomic.Uint32
 
 	mu cgroupMutex `state:"nosave"`
 

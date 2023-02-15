@@ -18,8 +18,9 @@
 package xdp
 
 import (
+	"sync/atomic"
+
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 )
 
 // The TXQueue is how a process tells the kernel which buffers are available to
@@ -48,15 +49,15 @@ type TXQueue struct {
 
 	// producer points to the shared atomic value that indicates the last
 	// produced descriptor. Only we update this value.
-	producer *atomicbitops.Uint32
+	producer *atomic.Uint32
 
 	// consumer points to the shared atomic value that indicates the last
 	// consumed descriptor. Only the kernel updates this value.
-	consumer *atomicbitops.Uint32
+	consumer *atomic.Uint32
 
 	// flags points to the shared atomic value that holds flags for the
 	// queue.
-	flags *atomicbitops.Uint32
+	flags *atomic.Uint32
 
 	// Cached values are used to avoid relatively expensive atomic
 	// operations. They are used, incremented, and decremented multiple

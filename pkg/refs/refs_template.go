@@ -18,8 +18,8 @@ package refs_template
 
 import (
 	"fmt"
+	"sync/atomic"
 
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/refs"
 )
 
@@ -57,7 +57,7 @@ type Refs struct {
 	// Speculative references are used for TryIncRef, to avoid a CompareAndSwap
 	// loop. See IncRef, DecRef and TryIncRef for details of how these fields are
 	// used.
-	refCount atomicbitops.Int64
+	refCount atomic.Int64
 }
 
 // InitRefs initializes r with one reference and, if enabled, activates leak

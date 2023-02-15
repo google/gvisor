@@ -19,10 +19,10 @@ package host
 import (
 	"fmt"
 	"math"
+	"sync/atomic"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
@@ -55,11 +55,11 @@ type virtualOwner struct {
 	// mu protects the fields below and they can be accessed using atomic memory
 	// operations.
 	mu  sync.Mutex `state:"nosave"`
-	uid atomicbitops.Uint32
-	gid atomicbitops.Uint32
+	uid atomic.Uint32
+	gid atomic.Uint32
 	// mode is also stored, otherwise setting the host file to `0000` could remove
 	// access to the file.
-	mode atomicbitops.Uint32
+	mode atomic.Uint32
 }
 
 func (v *virtualOwner) atomicUID() uint32 {
@@ -156,7 +156,7 @@ type inode struct {
 	// read from the pipe from previous calls to inode.beforeSave(). haveBuf
 	// and buf are protected by bufMu.
 	bufMu   sync.Mutex `state:"nosave"`
-	haveBuf atomicbitops.Uint32
+	haveBuf atomic.Uint32
 	buf     []byte
 }
 
@@ -249,9 +249,9 @@ func NewFD(ctx context.Context, mnt *vfs.Mount, hostFD int, opts *NewFDOptions) 
 	}
 	if opts.VirtualOwner {
 		i.virtualOwner.enabled = true
-		i.virtualOwner.uid = atomicbitops.FromUint32(uint32(opts.UID))
-		i.virtualOwner.gid = atomicbitops.FromUint32(uint32(opts.GID))
-		i.virtualOwner.mode = atomicbitops.FromUint32(stat.Mode)
+		i.virtualOwner.uid.Store(uint32(opts.UID))
+		i.virtualOwner.gid.Store(uint32(opts.GID))
+		i.virtualOwner.mode.Store(stat.Mode)
 	}
 
 	d := &kernfs.Dentry{}
@@ -532,7 +532,7 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 	if m&linux.STATX_MODE != 0 {
 		if i.virtualOwner.enabled {
 			// We hold i.virtualOwner.mu.
-			i.virtualOwner.mode = atomicbitops.FromUint32(uint32(opts.Stat.Mode))
+			i.virtualOwner.mode.Store(uint32(opts.Stat.Mode))
 		} else {
 			log.Warningf("sentry seccomp filters don't allow making fchmod(2) syscall")
 			return unix.EPERM
@@ -566,11 +566,11 @@ func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 	if i.virtualOwner.enabled {
 		if m&linux.STATX_UID != 0 {
 			// We hold i.virtualOwner.mu.
-			i.virtualOwner.uid = atomicbitops.FromUint32(opts.Stat.UID)
+			i.virtualOwner.uid.Store(opts.Stat.UID)
 		}
 		if m&linux.STATX_GID != 0 {
 			// We hold i.virtualOwner.mu.
-			i.virtualOwner.gid = atomicbitops.FromUint32(opts.Stat.GID)
+			i.virtualOwner.gid.Store(opts.Stat.GID)
 		}
 	}
 	return nil

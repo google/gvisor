@@ -18,8 +18,9 @@
 package sharedmem
 
 import (
+	"sync/atomic"
+
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/eventfd"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sharedmem/queue"
 )
@@ -109,7 +110,7 @@ func (r *rx) notify() {
 // that were read as well.
 //
 // This function will block if there aren't any available packets.
-func (r *rx) postAndReceive(b []queue.RxBuffer, stopRequested *atomicbitops.Uint32) ([]queue.RxBuffer, uint32) {
+func (r *rx) postAndReceive(b []queue.RxBuffer, stopRequested *atomic.Uint32) ([]queue.RxBuffer, uint32) {
 	// Post the buffers first. If we cannot post, sleep until we can. We
 	// never post more than will fit concurrently, so it's safe to wait
 	// until enough room is available.

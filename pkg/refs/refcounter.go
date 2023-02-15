@@ -19,8 +19,8 @@ import (
 	"bytes"
 	"fmt"
 	"runtime"
+	"sync/atomic"
 
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sync"
 )
@@ -101,7 +101,7 @@ func (l LeakMode) String() string {
 // Values must be one of the LeakMode values.
 //
 // leakMode must be accessed atomically.
-var leakMode atomicbitops.Uint32
+var leakMode atomic.Uint32
 
 // SetLeakMode configures the reference leak checker.
 func SetLeakMode(mode LeakMode) {

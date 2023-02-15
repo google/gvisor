@@ -15,7 +15,8 @@
 package cgroupfs
 
 import (
-	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"sync/atomic"
+
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -29,33 +30,32 @@ type cpuController struct {
 	controllerNoResource
 
 	// CFS bandwidth control parameters, values in microseconds.
-	cfsPeriod atomicbitops.Int64
-	cfsQuota  atomicbitops.Int64
+	cfsPeriod atomic.Int64
+	cfsQuota  atomic.Int64
 
 	// CPU shares, values should be (num core * 1024).
-	shares atomicbitops.Int64
+	shares atomic.Int64
 }
 
 var _ controller = (*cpuController)(nil)
 
 func newCPUController(fs *filesystem, defaults map[string]int64) *cpuController {
 	// Default values for controller parameters from Linux.
-	c := &cpuController{
-		cfsPeriod: atomicbitops.FromInt64(100000),
-		cfsQuota:  atomicbitops.FromInt64(-1),
-		shares:    atomicbitops.FromInt64(1024),
-	}
+	c := &cpuController{}
+	c.cfsPeriod.Store(100000)
+	c.cfsQuota.Store(-1)
+	c.shares.Store(1024)
 
 	if val, ok := defaults["cpu.cfs_period_us"]; ok {
-		c.cfsPeriod = atomicbitops.FromInt64(val)
+		c.cfsPeriod.Store(val)
 		delete(defaults, "cpu.cfs_period_us")
 	}
 	if val, ok := defaults["cpu.cfs_quota_us"]; ok {
-		c.cfsQuota = atomicbitops.FromInt64(val)
+		c.cfsQuota.Store(val)
 		delete(defaults, "cpu.cfs_quota_us")
 	}
 	if val, ok := defaults["cpu.shares"]; ok {
-		c.shares = atomicbitops.FromInt64(val)
+		c.shares.Store(val)
 		delete(defaults, "cpu.shares")
 	}
 
@@ -65,13 +65,12 @@ func newCPUController(fs *filesystem, defaults map[string]int64) *cpuController 
 
 // Clone implements controller.Clone.
 func (c *cpuController) Clone() controller {
-	new := &cpuController{
-		cfsPeriod: atomicbitops.FromInt64(c.cfsPeriod.Load()),
-		cfsQuota:  atomicbitops.FromInt64(c.cfsQuota.Load()),
-		shares:    atomicbitops.FromInt64(c.shares.Load()),
-	}
-	new.controllerCommon.cloneFromParent(c)
-	return new
+	other := &cpuController{}
+	other.cfsPeriod.Store(c.cfsPeriod.Load())
+	other.cfsQuota.Store(c.cfsQuota.Load())
+	other.shares.Store(c.shares.Load())
+	other.controllerCommon.cloneFromParent(c)
+	return other
 }
 
 // AddControlFiles implements controller.AddControlFiles.

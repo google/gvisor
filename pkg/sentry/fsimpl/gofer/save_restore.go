@@ -19,7 +19,6 @@ import (
 	"io"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
@@ -138,9 +137,9 @@ func (d *dentry) beforeSave() {
 
 // afterLoad is invoked by stateify.
 func (d *dentry) afterLoad() {
-	d.readFD = atomicbitops.FromInt32(-1)
-	d.writeFD = atomicbitops.FromInt32(-1)
-	d.mmapFD = atomicbitops.FromInt32(-1)
+	d.readFD.Store(-1)
+	d.writeFD.Store(-1)
+	d.mmapFD.Store(-1)
 	if d.refs.Load() != -1 {
 		refs.Register(d)
 	}

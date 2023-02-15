@@ -18,9 +18,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sync/atomic"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
 )
@@ -64,7 +64,7 @@ type clientFile struct {
 	fid FID
 
 	// closed indicates whether this file has been closed.
-	closed atomicbitops.Uint32
+	closed atomic.Uint32
 }
 
 // Walk implements File.Walk.

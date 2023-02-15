@@ -17,9 +17,9 @@ package usage
 import (
 	"fmt"
 	"os"
+	"sync/atomic"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/memutil"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -81,13 +81,13 @@ const (
 // through the provided methods. The public fields may be safely accessed
 // directly on a copy of the object obtained from Memory.Copy().
 type memoryStats struct {
-	System    atomicbitops.Uint64
-	Anonymous atomicbitops.Uint64
-	PageCache atomicbitops.Uint64
-	Tmpfs     atomicbitops.Uint64
+	System    atomic.Uint64
+	Anonymous atomic.Uint64
+	PageCache atomic.Uint64
+	Tmpfs     atomic.Uint64
 	// Lazily updated based on the value in RTMapped.
-	Mapped    atomicbitops.Uint64
-	Ramdiskfs atomicbitops.Uint64
+	Mapped    atomic.Uint64
+	Ramdiskfs atomic.Uint64
 }
 
 // MemoryStats tracks application memory usage in bytes. All fields correspond
@@ -113,7 +113,7 @@ type MemoryStats struct {
 // initially zeroed. Any added field will be ignored by an older API and will be
 // zero if read by a newer API.
 type RTMemoryStats struct {
-	RTMapped atomicbitops.Uint64
+	RTMapped atomic.Uint64
 }
 
 // MemoryLocked is Memory with access methods.
@@ -259,12 +259,12 @@ func (m *MemoryLocked) Copy() (MemoryStats, uint64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	ms := MemoryStats{
-		System:    m.System.RacyLoad(),
-		Anonymous: m.Anonymous.RacyLoad(),
-		PageCache: m.PageCache.RacyLoad(),
-		Tmpfs:     m.Tmpfs.RacyLoad(),
-		Mapped:    m.RTMapped.RacyLoad(),
-		Ramdiskfs: m.Ramdiskfs.RacyLoad(),
+		System:    m.System.Load(),
+		Anonymous: m.Anonymous.Load(),
+		PageCache: m.PageCache.Load(),
+		Tmpfs:     m.Tmpfs.Load(),
+		Mapped:    m.RTMapped.Load(),
+		Ramdiskfs: m.Ramdiskfs.Load(),
 	}
 	return ms, m.totalLocked()
 }

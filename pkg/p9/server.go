@@ -17,9 +17,9 @@ package p9
 import (
 	"io"
 	"runtime/debug"
+	"sync/atomic"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fdchannel"
@@ -83,11 +83,11 @@ type connState struct {
 
 	// messageSize is the maximum message size. The server does not
 	// do automatic splitting of messages.
-	messageSize atomicbitops.Uint32
+	messageSize atomic.Uint32
 
 	// version is the agreed upon version X of 9P2000.L.Google.X.
 	// version 0 implies 9P2000.L.
-	version atomicbitops.Uint32
+	version atomic.Uint32
 
 	// reqGate counts requests that are still being handled.
 	reqGate sync.Gate
@@ -99,7 +99,7 @@ type connState struct {
 
 	// recvIdle is the number of goroutines in handleRequests() attempting to
 	// lock recvMu so that they can receive from conn.
-	recvIdle atomicbitops.Int32
+	recvIdle atomic.Int32
 
 	// If recvShutdown is true, at least one goroutine has observed a
 	// connection error while receiving from conn, and all goroutines in
@@ -139,7 +139,7 @@ type fidRef struct {
 	// refs is an active refence count.
 	//
 	// The node above will be closed only when refs reaches zero.
-	refs atomicbitops.Int64
+	refs atomic.Int64
 
 	// opened indicates whether this has been opened already.
 	//

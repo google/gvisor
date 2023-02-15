@@ -19,9 +19,9 @@ package flipcall
 import (
 	"fmt"
 	"math"
+	"sync/atomic"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/memutil"
 )
 
@@ -54,7 +54,7 @@ type Endpoint struct {
 
 	// shutdown is non-zero if Endpoint.Shutdown() has been called, or if the
 	// Endpoint has acknowledged shutdown initiated by the peer.
-	shutdown atomicbitops.Uint32
+	shutdown atomic.Uint32
 
 	ctrl endpointControlImpl
 }
@@ -247,7 +247,7 @@ func (ep *Endpoint) sendRecv(dataLen uint32, mayRetainP bool) (uint32, error) {
 	// synchronize with the receiver. We will not read from ep.dataLen() until
 	// after ep.ctrlRoundTrip(), so if the peer is mutating it concurrently then
 	// they can only shoot themselves in the foot.
-	ep.dataLen().RacyStore(dataLen)
+	ep.dataLen().Store(dataLen)
 	raceBecomeInactive()
 	if err := ep.ctrlRoundTrip(mayRetainP); err != nil {
 		return 0, err
@@ -273,7 +273,7 @@ func (ep *Endpoint) SendLast(dataLen uint32) error {
 	if dataLen > ep.dataCap {
 		panic(fmt.Sprintf("attempting to send packet with datagram length %d (maximum %d)", dataLen, ep.dataCap))
 	}
-	ep.dataLen().RacyStore(dataLen)
+	ep.dataLen().Store(dataLen)
 	raceBecomeInactive()
 	if err := ep.ctrlWakeLast(); err != nil {
 		return err

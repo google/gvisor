@@ -21,12 +21,12 @@ import (
 	"io"
 	"os"
 	"sync"
+	"sync/atomic"
 
 	"github.com/containerd/containerd/log"
 	"github.com/containerd/fifo"
 	runc "github.com/containerd/go-runc"
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 )
 
 // TODO(random-liu): This file can be a util.
@@ -107,8 +107,8 @@ func copyPipes(ctx context.Context, rio runc.IO, stdin, stdout, stderr string, w
 			if stdout == stderr {
 				sameFile = &countingWriteCloser{
 					WriteCloser: fw,
-					count:       atomicbitops.FromInt64(1),
 				}
+				sameFile.count.Store(1)
 			}
 		}
 		i.dest(fw, fr)
@@ -134,7 +134,7 @@ func copyPipes(ctx context.Context, rio runc.IO, stdin, stdout, stderr string, w
 // countingWriteCloser masks io.Closer() until close has been invoked a certain number of times.
 type countingWriteCloser struct {
 	io.WriteCloser
-	count atomicbitops.Int64
+	count atomic.Int64
 }
 
 func (c *countingWriteCloser) Close() error {

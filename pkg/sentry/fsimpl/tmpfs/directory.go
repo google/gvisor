@@ -15,8 +15,9 @@
 package tmpfs
 
 import (
+	"sync/atomic"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -37,7 +38,7 @@ type directory struct {
 
 	// numChildren is len(childMap), but accessed using atomic memory
 	// operations to avoid locking in inode.statTo().
-	numChildren atomicbitops.Int64
+	numChildren atomic.Int64
 
 	// childList is a list containing (1) child dentries and (2) fake dentries
 	// (with inode == nil) that represent the iteration position of
@@ -50,7 +51,7 @@ type directory struct {
 func (fs *filesystem) newDirectory(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, parentDir *directory) *directory {
 	dir := &directory{}
 	dir.inode.init(dir, fs, kuid, kgid, linux.S_IFDIR|mode, parentDir)
-	dir.inode.nlink = atomicbitops.FromUint32(2) // from "." and parent directory or ".." for root
+	dir.inode.nlink.Store(2) // from "." and parent directory or ".." for root
 	dir.dentry.inode = &dir.inode
 	dir.dentry.vfsd.Init(&dir.dentry)
 	return dir

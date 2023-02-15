@@ -29,7 +29,6 @@ go_library(
     ],
     visibility = ["//:sandbox"],
     deps = [
-        "//pkg/atomicbitops",
         "//pkg/context",
         "//pkg/log",
         "//pkg/sync",

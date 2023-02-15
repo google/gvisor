@@ -16,12 +16,11 @@ package iouringfs
 
 import (
 	"fmt"
+	"sync/atomic"
 	"unsafe"
-
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 )
 
-func atomicUint32AtOffset(buf []byte, offset int) *atomicbitops.Uint32 {
+func atomicUint32AtOffset(buf []byte, offset int) *atomic.Uint32 {
 	const sizeOfUint32 int = 4
 	if offset+sizeOfUint32 > len(buf) || offset < 0 {
 		panic(fmt.Sprintf("cast at offset %d for slice of len %d would result in overrun", offset, len(buf)))
@@ -29,5 +28,5 @@ func atomicUint32AtOffset(buf []byte, offset int) *atomicbitops.Uint32 {
 	if offset%sizeOfUint32 != 0 {
 		panic(fmt.Sprintf("cast at offset %d would produce unaligned pointer", offset))
 	}
-	return (*atomicbitops.Uint32)(unsafe.Pointer(&buf[offset]))
+	return (*atomic.Uint32)(unsafe.Pointer(&buf[offset]))
 }

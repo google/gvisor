@@ -15,7 +15,8 @@
 package vfs
 
 import (
-	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"sync/atomic"
+
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -73,7 +74,7 @@ type Dentry struct {
 	evictable bool
 
 	// mounts is the number of Mounts for which this Dentry is Mount.point.
-	mounts atomicbitops.Uint32
+	mounts atomic.Uint32
 
 	// impl is the DentryImpl associated with this Dentry. impl is immutable.
 	// This should be the last field in Dentry.

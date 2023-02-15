@@ -19,8 +19,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync/atomic"
 
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck/sinks/remote/server"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck/sinks/remote/wire"
 )
@@ -30,7 +30,7 @@ type Save struct {
 	server.CommonServer
 	dir         string
 	prefix      string
-	clientCount atomicbitops.Uint64
+	clientCount atomic.Uint64
 }
 
 var _ server.ClientHandler = (*Save)(nil)
@@ -87,7 +87,7 @@ func (s *Save) NewClient() (server.MessageHandler, error) {
 
 type msgHandler struct {
 	out          *os.File
-	messageCount atomicbitops.Uint64
+	messageCount atomic.Uint64
 }
 
 var _ server.MessageHandler = (*msgHandler)(nil)

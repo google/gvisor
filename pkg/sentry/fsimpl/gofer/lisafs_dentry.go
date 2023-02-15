@@ -18,7 +18,6 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -79,57 +78,57 @@ func (fs *filesystem) newLisafsDentry(ctx context.Context, ino *lisafs.Inode) (*
 	inoKey := inoKeyFromStatx(&ino.Stat)
 	d := &lisafsDentry{
 		dentry: dentry{
-			fs:        fs,
-			inoKey:    inoKey,
-			ino:       fs.inoFromKey(inoKey),
-			mode:      atomicbitops.FromUint32(uint32(ino.Stat.Mode)),
-			uid:       atomicbitops.FromUint32(uint32(fs.opts.dfltuid)),
-			gid:       atomicbitops.FromUint32(uint32(fs.opts.dfltgid)),
-			blockSize: atomicbitops.FromUint32(hostarch.PageSize),
-			readFD:    atomicbitops.FromInt32(-1),
-			writeFD:   atomicbitops.FromInt32(-1),
-			mmapFD:    atomicbitops.FromInt32(-1),
+			fs:     fs,
+			inoKey: inoKey,
+			ino:    fs.inoFromKey(inoKey),
 		},
 		controlFD: fs.client.NewFD(ino.ControlFD),
 	}
+	d.dentry.mode.Store(uint32(ino.Stat.Mode))
+	d.dentry.uid.Store(uint32(fs.opts.dfltuid))
+	d.dentry.gid.Store(uint32(fs.opts.dfltgid))
+	d.dentry.blockSize.Store(hostarch.PageSize)
+	d.dentry.readFD.Store(-1)
+	d.dentry.writeFD.Store(-1)
+	d.dentry.mmapFD.Store(-1)
 	if ino.Stat.Mask&linux.STATX_UID != 0 {
-		d.uid = atomicbitops.FromUint32(dentryUID(lisafs.UID(ino.Stat.UID)))
+		d.uid.Store(dentryUID(lisafs.UID(ino.Stat.UID)))
 	}
 	if ino.Stat.Mask&linux.STATX_GID != 0 {
-		d.gid = atomicbitops.FromUint32(dentryGID(lisafs.GID(ino.Stat.GID)))
+		d.gid.Store(dentryGID(lisafs.GID(ino.Stat.GID)))
 	}
 	if ino.Stat.Mask&linux.STATX_SIZE != 0 {
-		d.size = atomicbitops.FromUint64(ino.Stat.Size)
+		d.size.Store(ino.Stat.Size)
 	}
 	if ino.Stat.Blksize != 0 {
-		d.blockSize = atomicbitops.FromUint32(ino.Stat.Blksize)
+		d.blockSize.Store(ino.Stat.Blksize)
 	}
 	if ino.Stat.Mask&linux.STATX_ATIME != 0 {
-		d.atime = atomicbitops.FromInt64(dentryTimestamp(ino.Stat.Atime))
+		d.atime.Store(dentryTimestamp(ino.Stat.Atime))
 	} else {
-		d.atime = atomicbitops.FromInt64(fs.clock.Now().Nanoseconds())
+		d.atime.Store(fs.clock.Now().Nanoseconds())
 	}
 	if ino.Stat.Mask&linux.STATX_MTIME != 0 {
-		d.mtime = atomicbitops.FromInt64(dentryTimestamp(ino.Stat.Mtime))
+		d.mtime.Store(dentryTimestamp(ino.Stat.Mtime))
 	} else {
-		d.mtime = atomicbitops.FromInt64(fs.clock.Now().Nanoseconds())
+		d.mtime.Store(fs.clock.Now().Nanoseconds())
 	}
 	if ino.Stat.Mask&linux.STATX_CTIME != 0 {
-		d.ctime = atomicbitops.FromInt64(dentryTimestamp(ino.Stat.Ctime))
+		d.ctime.Store(dentryTimestamp(ino.Stat.Ctime))
 	} else {
 		// Approximate ctime with mtime if ctime isn't available.
-		d.ctime = atomicbitops.FromInt64(d.mtime.Load())
+		d.ctime.Store(d.mtime.Load())
 	}
 	if ino.Stat.Mask&linux.STATX_BTIME != 0 {
-		d.btime = atomicbitops.FromInt64(dentryTimestamp(ino.Stat.Btime))
+		d.btime.Store(dentryTimestamp(ino.Stat.Btime))
 	}
 	if ino.Stat.Mask&linux.STATX_NLINK != 0 {
-		d.nlink = atomicbitops.FromUint32(ino.Stat.Nlink)
+		d.nlink.Store(ino.Stat.Nlink)
 	} else {
 		if ino.Stat.Mode&linux.FileTypeMask == linux.ModeDirectory {
-			d.nlink = atomicbitops.FromUint32(2)
+			d.nlink.Store(2)
 		} else {
-			d.nlink = atomicbitops.FromUint32(1)
+			d.nlink.Store(1)
 		}
 	}
 	d.dentry.init(d)
@@ -501,7 +500,7 @@ func (d *lisafsDentry) restoreFile(ctx context.Context, inode *lisafs.Inode, opt
 			if inode.Stat.Mask&linux.STATX_SIZE == 0 {
 				return vfs.ErrCorruption{fmt.Errorf("gofer.dentry(%q).restoreFile: file size validation failed: file size not available", genericDebugPathname(&d.dentry))}
 			}
-			if d.size.RacyLoad() != inode.Stat.Size {
+			if d.size.Load() != inode.Stat.Size {
 				return vfs.ErrCorruption{fmt.Errorf("gofer.dentry(%q).restoreFile: file size validation failed: size changed from %d to %d", genericDebugPathname(&d.dentry), d.size.Load(), inode.Stat.Size)}
 			}
 		}
@@ -509,8 +508,8 @@ func (d *lisafsDentry) restoreFile(ctx context.Context, inode *lisafs.Inode, opt
 			if inode.Stat.Mask&linux.STATX_MTIME == 0 {
 				return vfs.ErrCorruption{fmt.Errorf("gofer.dentry(%q).restoreFile: mtime validation failed: mtime not available", genericDebugPathname(&d.dentry))}
 			}
-			if want := dentryTimestamp(inode.Stat.Mtime); d.mtime.RacyLoad() != want {
-				return vfs.ErrCorruption{fmt.Errorf("gofer.dentry(%q).restoreFile: mtime validation failed: mtime changed from %+v to %+v", genericDebugPathname(&d.dentry), linux.NsecToStatxTimestamp(d.mtime.RacyLoad()), linux.NsecToStatxTimestamp(want))}
+			if want := dentryTimestamp(inode.Stat.Mtime); d.mtime.Load() != want {
+				return vfs.ErrCorruption{fmt.Errorf("gofer.dentry(%q).restoreFile: mtime validation failed: mtime changed from %+v to %+v", genericDebugPathname(&d.dentry), linux.NsecToStatxTimestamp(d.mtime.Load()), linux.NsecToStatxTimestamp(want))}
 			}
 		}
 	}

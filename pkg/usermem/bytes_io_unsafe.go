@@ -15,6 +15,7 @@
 package usermem
 
 import (
+	"sync/atomic"
 	"unsafe"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -27,7 +28,7 @@ func (b *BytesIO) SwapUint32(ctx context.Context, addr hostarch.Addr, new uint32
 	if _, rngErr := b.rangeCheck(addr, 4); rngErr != nil {
 		return 0, rngErr
 	}
-	return (*atomicbitops.Uint32)(unsafe.Pointer(&b.Bytes[int(addr)])).Swap(new), nil
+	return (*atomic.Uint32)(unsafe.Pointer(&b.Bytes[int(addr)])).Swap(new), nil
 
 }
 
@@ -36,7 +37,7 @@ func (b *BytesIO) CompareAndSwapUint32(ctx context.Context, addr hostarch.Addr, 
 	if _, rngErr := b.rangeCheck(addr, 4); rngErr != nil {
 		return 0, rngErr
 	}
-	return atomicbitops.CompareAndSwapUint32((*atomicbitops.Uint32)(unsafe.Pointer(&b.Bytes[int(addr)])), old, new), nil
+	return atomicbitops.CompareAndSwapUint32((*atomic.Uint32)(unsafe.Pointer(&b.Bytes[int(addr)])), old, new), nil
 }
 
 // LoadUint32 implements IO.LoadUint32.
@@ -44,5 +45,5 @@ func (b *BytesIO) LoadUint32(ctx context.Context, addr hostarch.Addr, opts IOOpt
 	if _, err := b.rangeCheck(addr, 4); err != nil {
 		return 0, err
 	}
-	return (*atomicbitops.Uint32)(unsafe.Pointer(&b.Bytes[int(addr)])).Load(), nil
+	return (*atomic.Uint32)(unsafe.Pointer(&b.Bytes[int(addr)])).Load(), nil
 }

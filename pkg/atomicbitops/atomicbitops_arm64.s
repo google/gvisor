@@ -16,7 +16,7 @@
 
 #include "textflag.h"
 
-TEXT ·andUint32(SB),NOSPLIT,$0-12
+TEXT ·AndUint32(SB),NOSPLIT,$0-12
   MOVD    ptr+0(FP), R0
   MOVW    val+8(FP), R1
   MOVBU   ·arm64HasATOMICS(SB), R4
@@ -31,7 +31,7 @@ load_store_loop:
   CBNZ    R3, load_store_loop
   RET
 
-TEXT ·orUint32(SB),NOSPLIT,$0-12
+TEXT ·OrUint32(SB),NOSPLIT,$0-12
   MOVD    ptr+0(FP), R0
   MOVW    val+8(FP), R1
   MOVBU   ·arm64HasATOMICS(SB), R4
@@ -45,7 +45,7 @@ load_store_loop:
   CBNZ    R3, load_store_loop
   RET
 
-TEXT ·xorUint32(SB),NOSPLIT,$0-12
+TEXT ·XorUint32(SB),NOSPLIT,$0-12
   MOVD    ptr+0(FP), R0
   MOVW    val+8(FP), R1
   MOVBU   ·arm64HasATOMICS(SB), R4
@@ -59,7 +59,7 @@ load_store_loop:
   CBNZ    R3, load_store_loop
   RET
 
-TEXT ·compareAndSwapUint32(SB),NOSPLIT,$0-20
+TEXT ·CompareAndSwapUint32(SB),NOSPLIT,$0-20
   MOVD    addr+0(FP), R0
   MOVW    old+8(FP), R1
   MOVW    new+12(FP), R2
@@ -78,7 +78,7 @@ ok:
   MOVW    R3, prev+16(FP)
   RET
 
-TEXT ·andUint64(SB),NOSPLIT,$0-16
+TEXT ·AndUint64(SB),NOSPLIT,$0-16
   MOVD    ptr+0(FP), R0
   MOVD    val+8(FP), R1
   MOVBU   ·arm64HasATOMICS(SB), R4
@@ -93,7 +93,7 @@ load_store_loop:
   CBNZ    R3, load_store_loop
   RET
 
-TEXT ·orUint64(SB),NOSPLIT,$0-16
+TEXT ·OrUint64(SB),NOSPLIT,$0-16
   MOVD    ptr+0(FP), R0
   MOVD    val+8(FP), R1
   MOVBU   ·arm64HasATOMICS(SB), R4
@@ -107,7 +107,7 @@ load_store_loop:
   CBNZ    R3, load_store_loop
   RET
 
-TEXT ·xorUint64(SB),NOSPLIT,$0-16
+TEXT ·XorUint64(SB),NOSPLIT,$0-16
   MOVD    ptr+0(FP), R0
   MOVD    val+8(FP), R1
   MOVBU   ·arm64HasATOMICS(SB), R4
@@ -121,7 +121,7 @@ load_store_loop:
   CBNZ    R3, load_store_loop
   RET
 
-TEXT ·compareAndSwapUint64(SB),NOSPLIT,$0-32
+TEXT ·CompareAndSwapUint64(SB),NOSPLIT,$0-32
   MOVD    addr+0(FP), R0
   MOVD    old+8(FP), R1
   MOVD    new+16(FP), R2

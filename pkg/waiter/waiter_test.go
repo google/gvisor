@@ -15,9 +15,8 @@
 package waiter
 
 import (
+	"sync/atomic"
 	"testing"
-
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 )
 
 func TestEmptyQueue(t *testing.T) {
@@ -142,7 +141,7 @@ func TestConcurrentRegistration(t *testing.T) {
 
 func TestConcurrentNotification(t *testing.T) {
 	var q Queue
-	var cnt atomicbitops.Int32
+	var cnt atomic.Int32
 	const concurrency = 1000
 	const waiterCount = 1000
 

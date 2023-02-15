@@ -20,9 +20,9 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -82,7 +82,7 @@ type Mount struct {
 	// The lower 63 bits of refs are a reference count. The MSB of refs is set
 	// if the Mount has been eagerly umounted, as by umount(2) without the
 	// MNT_DETACH flag. refs is accessed using atomic memory operations.
-	refs atomicbitops.Int64
+	refs atomic.Int64
 
 	// children is the set of all Mounts for which Mount.key.parent is this
 	// Mount. children is protected by VirtualFilesystem.mountMu.
@@ -114,7 +114,7 @@ type Mount struct {
 	// Mount.CheckBeginWrite() that have not yet been paired with a call to
 	// Mount.EndWrite(). The MSB of writers is set if MS_RDONLY is in effect.
 	// writers is accessed using atomic memory operations.
-	writers atomicbitops.Int64
+	writers atomic.Int64
 }
 
 type sharedMapper struct{}
@@ -130,8 +130,8 @@ func newMount(vfs *VirtualFilesystem, fs *Filesystem, root *Dentry, mntns *Mount
 		root:     root,
 		ns:       mntns,
 		propType: Private,
-		refs:     atomicbitops.FromInt64(1),
 	}
+	mnt.refs.Store(1)
 	if opts.ReadOnly {
 		mnt.setReadOnlyLocked(true)
 	}

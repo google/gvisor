@@ -42,9 +42,9 @@ package fdbased
 
 import (
 	"fmt"
+	"sync/atomic"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -240,7 +240,11 @@ type Options struct {
 // Since fanoutID must be unique within the network namespace, we start with
 // the PID to avoid collisions. The only way to be sure of avoiding collisions
 // is to run in a new network namespace.
-var fanoutID atomicbitops.Int32 = atomicbitops.FromInt32(int32(unix.Getpid()))
+var fanoutID atomic.Int32
+
+func init() {
+	fanoutID.Store(int32(unix.Getpid()))
+}
 
 // New creates a new fd-based endpoint.
 //

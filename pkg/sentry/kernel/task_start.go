@@ -18,7 +18,6 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -146,7 +145,6 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 		},
 		runState:        (*runApp)(nil),
 		interruptChan:   make(chan struct{}, 1),
-		signalMask:      atomicbitops.FromUint64(uint64(cfg.SignalMask)),
 		signalStack:     linux.SignalStack{Flags: linux.SS_DISABLE},
 		image:           *image,
 		fsContext:       cfg.FSContext,
@@ -168,6 +166,7 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 		cgroups:         make(map[Cgroup]struct{}),
 		userCounters:    cfg.UserCounters,
 	}
+	t.signalMask.Store(uint64(cfg.SignalMask))
 	t.netns.Store(cfg.NetworkNamespace)
 	t.creds.Store(cfg.Credentials)
 	t.endStopCond.L = &t.tg.signalHandlers.mu
@@ -259,12 +258,12 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 	tg.activeTasks++
 
 	// Propagate external TaskSet stops to the new task.
-	t.stopCount = atomicbitops.FromInt32(ts.stopCount)
+	t.stopCount.Store(ts.stopCount)
 
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	t.cpu = atomicbitops.FromInt32(assignCPU(t.allowedCPUMask, ts.Root.tids[t]))
+	t.cpu.Store(assignCPU(t.allowedCPUMask, ts.Root.tids[t]))
 
 	t.startTime = t.k.RealtimeClock().Now()
 

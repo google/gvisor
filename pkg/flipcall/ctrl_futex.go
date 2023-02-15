@@ -21,13 +21,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"sync/atomic"
 
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/log"
 )
 
 type endpointControlImpl struct {
-	state atomicbitops.Int32
+	state atomic.Int32
 }
 
 // Bits in endpointControlImpl.state.
@@ -54,7 +54,7 @@ func (ep *Endpoint) ctrlConnect() error {
 	if err := json.NewEncoder(w).Encode(struct{}{}); err != nil {
 		return fmt.Errorf("error writing connection request: %v", err)
 	}
-	*ep.dataLen() = atomicbitops.FromUint32(w.Len())
+	ep.dataLen().Store(w.Len())
 
 	// Exchange control with the server.
 	if err := ep.futexSetPeerActive(); err != nil {
@@ -106,7 +106,7 @@ func (ep *Endpoint) ctrlWaitFirst() error {
 	if err := json.NewEncoder(w).Encode(struct{}{}); err != nil {
 		return fmt.Errorf("error writing connection response: %v", err)
 	}
-	*ep.dataLen() = atomicbitops.FromUint32(w.Len())
+	ep.dataLen().Store(w.Len())
 
 	// Return control to the client.
 	raceBecomeInactive()

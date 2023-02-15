@@ -18,7 +18,6 @@ go_library(
         "//test:__subpackages__",
     ],
     deps = [
-        "//pkg/atomicbitops",
         "//pkg/cleanup",
         "//pkg/control/client",
         "//pkg/control/server",

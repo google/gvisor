@@ -21,10 +21,10 @@ import (
 	"math"
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/eventchannel"
 	"gvisor.dev/gvisor/pkg/log"
 	pb "gvisor.dev/gvisor/pkg/metric/metric_go_proto"
@@ -98,7 +98,7 @@ var (
 // Metrics are not saved across save/restore and thus reset to zero on restore.
 type Uint64Metric struct {
 	// fields is the map of field-value combination index keys to Uint64 counters.
-	fields []atomicbitops.Uint64
+	fields []atomic.Uint64
 
 	// fieldMapper is used to generate index keys for the fields array (above)
 	// based on field value combinations, and vice-versa.
@@ -108,7 +108,7 @@ type Uint64Metric struct {
 var (
 	// initialized indicates that all metrics are registered. allMetrics is
 	// immutable once initialized is true.
-	initialized atomicbitops.Bool
+	initialized atomic.Bool
 
 	// allMetrics are the registered metrics.
 	allMetrics = makeMetricSet()
@@ -327,10 +327,10 @@ func (m fieldMapper) numKeys() int {
 //     accessed using index "keys" made by fieldMapper.
 //   - The second level corresponds to buckets within a metric. The number of
 //     buckets is specified by numBuckets.
-func (m fieldMapper) makeDistributionSampleMap(numBuckets int) [][]atomicbitops.Uint64 {
-	samples := make([][]atomicbitops.Uint64, m.numKeys())
+func (m fieldMapper) makeDistributionSampleMap(numBuckets int) [][]atomic.Uint64 {
+	samples := make([][]atomic.Uint64, m.numKeys())
 	for i := range samples {
-		samples[i] = make([]atomicbitops.Uint64, numBuckets)
+		samples[i] = make([]atomic.Uint64, numBuckets)
 	}
 	return samples
 }
@@ -433,7 +433,7 @@ func NewUint64Metric(name string, sync bool, units pb.MetricMetadata_Units, desc
 	}
 	m := Uint64Metric{
 		fieldMapper: f,
-		fields:      make([]atomicbitops.Uint64, f.numKeys()),
+		fields:      make([]atomic.Uint64, f.numKeys()),
 	}
 	return &m, RegisterCustomUint64Metric(name, true /* cumulative */, sync, units, description, m.Value, fields...)
 }
@@ -662,11 +662,11 @@ type DistributionMetric struct {
 	// (i-1)-th finite bucket.
 	// The last value is the number of samples that fell into the bucketer's
 	// last (i.e. infinite) bucket.
-	samples [][]atomicbitops.Uint64
+	samples [][]atomic.Uint64
 
 	// sampleSum is the sum of samples.
 	// It is mapped by the concatenation of the fields using `fieldsToKey`.
-	sampleSum []atomicbitops.Int64
+	sampleSum []atomic.Int64
 }
 
 // NewDistributionMetric creates and registers a new distribution metric.
@@ -706,7 +706,7 @@ func NewDistributionMetric(name string, sync bool, bucketer Bucketer, unit pb.Me
 		exponentialBucketer: exponentialBucketer,
 		fieldsToKey:         fieldsToKey,
 		samples:             samples,
-		sampleSum:           make([]atomicbitops.Int64, fieldsToKey.numKeys()),
+		sampleSum:           make([]atomic.Int64, fieldsToKey.numKeys()),
 		metadata: &pb.MetricMetadata{
 			Name:                          name,
 			PrometheusName:                nameToPrometheusName(name),

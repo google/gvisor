@@ -20,7 +20,6 @@ import (
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -62,7 +61,7 @@ type Task struct {
 	// but since it's used to detect cases where non-task goroutines
 	// incorrectly access state owned by, or exclusive to, the task goroutine,
 	// goid is always accessed using atomic memory operations.
-	goid atomicbitops.Int64 `state:"nosave"`
+	goid atomic.Int64 `state:"nosave"`
 
 	// runState is what the task goroutine is executing if it is not stopped.
 	// If runState is nil, the task goroutine should exit or has exited.
@@ -71,7 +70,7 @@ type Task struct {
 
 	// taskWorkCount represents the current size of the task work queue. It is
 	// used to avoid acquiring taskWorkMu when the queue is empty.
-	taskWorkCount atomicbitops.Int32
+	taskWorkCount atomic.Int32
 
 	// taskWorkMu protects taskWork.
 	taskWorkMu sync.Mutex `state:"nosave"`
@@ -109,7 +108,7 @@ type Task struct {
 	//
 	// yieldCount is accessed using atomic memory operations. yieldCount is
 	// owned by the task goroutine.
-	yieldCount atomicbitops.Uint64
+	yieldCount atomic.Uint64
 
 	// pendingSignals is the set of pending signals that may be handled only by
 	// this task.
@@ -126,7 +125,7 @@ type Task struct {
 	// signal mutex is locked or if atomic memory operations are used, while
 	// writing signalMask requires both). signalMask is owned by the task
 	// goroutine.
-	signalMask atomicbitops.Uint64
+	signalMask atomic.Uint64
 
 	// If the task goroutine is currently executing Task.sigtimedwait,
 	// realSignalMask is the previous value of signalMask, which has temporarily
@@ -216,7 +215,7 @@ type Task struct {
 	// stop; after a save/restore cycle, the restored sentry has no knowledge
 	// of the pre-save sentryctl command, and the stopped task would remain
 	// stopped forever.)
-	stopCount atomicbitops.Int32 `state:"nosave"`
+	stopCount atomic.Int32 `state:"nosave"`
 
 	// endStopCond is signaled when stopCount transitions to 0. The combination
 	// of stopCount and endStopCond effectively form a sync.WaitGroup, but
@@ -481,7 +480,7 @@ type Task struct {
 
 	// cpu is the fake cpu number returned by getcpu(2). cpu is ignored
 	// entirely if Kernel.useHostCores is true.
-	cpu atomicbitops.Int32
+	cpu atomic.Int32
 
 	// This is used to keep track of changes made to a process' priority/niceness.
 	// It is mostly used to provide some reasonable return value from
@@ -633,7 +632,7 @@ func (t *Task) afterLoad() {
 	t.interruptChan = make(chan struct{}, 1)
 	t.gosched.State = TaskGoroutineNonexistent
 	if t.stop != nil {
-		t.stopCount = atomicbitops.FromInt32(1)
+		t.stopCount.Store(1)
 	}
 	t.endStopCond.L = &t.tg.signalHandlers.mu
 	t.rseqPreempted = true

@@ -17,9 +17,9 @@ package vfs
 import (
 	"bytes"
 	"fmt"
+	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -304,8 +304,8 @@ func (i *Inotify) newWatchLocked(d *Dentry, ws *Watches, mask uint32) *Watch {
 		owner:  i,
 		wd:     i.nextWatchIDLocked(),
 		target: d,
-		mask:   atomicbitops.FromUint32(mask),
 	}
+	w.mask.Store(mask)
 
 	// Hold the watch in this inotify instance as well as the watch set on the
 	// target.
@@ -559,11 +559,11 @@ type Watch struct {
 	target *Dentry
 
 	// Events being monitored via this watch.
-	mask atomicbitops.Uint32
+	mask atomic.Uint32
 
 	// expired is set to 1 to indicate that this watch is a one-shot that has
 	// already sent a notification and therefore can be removed.
-	expired atomicbitops.Int32
+	expired atomic.Int32
 }
 
 // OwnerID returns the id of the inotify instance that owns this watch.

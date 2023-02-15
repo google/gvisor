@@ -28,7 +28,6 @@ go_test(
     ],
     library = ":syncevent",
     deps = [
-        "//pkg/atomicbitops",
         "//pkg/sleep",
         "//pkg/sync",
         "//pkg/waiter",

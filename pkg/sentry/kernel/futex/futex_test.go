@@ -17,10 +17,10 @@ package futex
 import (
 	"math"
 	"runtime"
+	"sync/atomic"
 	"testing"
 	"unsafe"
 
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -44,19 +44,19 @@ func newTestData(size uint) testData {
 }
 
 func (t testData) SwapUint32(addr hostarch.Addr, new uint32) (uint32, error) {
-	val := (*atomicbitops.Uint32)(unsafe.Pointer(&t.data[addr])).Swap(new)
+	val := (*atomic.Uint32)(unsafe.Pointer(&t.data[addr])).Swap(new)
 	return val, nil
 }
 
 func (t testData) CompareAndSwapUint32(addr hostarch.Addr, old, new uint32) (uint32, error) {
-	if (*atomicbitops.Uint32)(unsafe.Pointer(&t.data[addr])).CompareAndSwap(old, new) {
+	if (*atomic.Uint32)(unsafe.Pointer(&t.data[addr])).CompareAndSwap(old, new) {
 		return old, nil
 	}
-	return (*atomicbitops.Uint32)(unsafe.Pointer(&t.data[addr])).Load(), nil
+	return (*atomic.Uint32)(unsafe.Pointer(&t.data[addr])).Load(), nil
 }
 
 func (t testData) LoadUint32(addr hostarch.Addr) (uint32, error) {
-	return (*atomicbitops.Uint32)(unsafe.Pointer(&t.data[addr])).Load(), nil
+	return (*atomic.Uint32)(unsafe.Pointer(&t.data[addr])).Load(), nil
 }
 
 func (t testData) GetSharedKey(addr hostarch.Addr) (Key, error) {
@@ -477,7 +477,7 @@ func newTestMutex(addr hostarch.Addr, d testData, m *Manager) *testMutex {
 func (t *testMutex) Lock() {
 	for {
 		// Attempt to grab the lock.
-		if (*atomicbitops.Uint32)(unsafe.Pointer(&t.d.data[t.a])).CompareAndSwap(
+		if (*atomic.Uint32)(unsafe.Pointer(&t.d.data[t.a])).CompareAndSwap(
 			testMutexUnlocked,
 			testMutexLocked) {
 			// Lock held.
@@ -503,7 +503,7 @@ func (t *testMutex) Lock() {
 // This will notify any waiters via the futex manager.
 func (t *testMutex) Unlock() {
 	// Unlock.
-	(*atomicbitops.Uint32)(unsafe.Pointer(&t.d.data[t.a])).Store(testMutexUnlocked)
+	(*atomic.Uint32)(unsafe.Pointer(&t.d.data[t.a])).Store(testMutexUnlocked)
 
 	// Notify all waiters.
 	t.m.Wake(t.d, t.a, true, ^uint32(0), math.MaxInt32)

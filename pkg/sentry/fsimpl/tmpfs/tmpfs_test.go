@@ -16,10 +16,10 @@ package tmpfs
 
 import (
 	"fmt"
+	"sync/atomic"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -27,7 +27,7 @@ import (
 )
 
 // nextFileID is used to generate unique file names.
-var nextFileID atomicbitops.Int64
+var nextFileID atomic.Int64
 
 // newTmpfsRoot creates a new tmpfs mount, and returns the root. If the error
 // is not nil, then cleanup should be called when the root is no longer needed.

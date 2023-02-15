@@ -31,7 +31,6 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 )
 
 //go:linkname entersyscall runtime.entersyscall
@@ -178,7 +177,7 @@ func (c *vCPU) setSignalMask() error {
 
 // seccompMmapHandlerCnt is a number of currently running seccompMmapHandler
 // instances.
-var seccompMmapHandlerCnt atomicbitops.Int64
+var seccompMmapHandlerCnt atomic.Int64
 
 // seccompMmapSync waits for all currently runnuing seccompMmapHandler
 // instances.

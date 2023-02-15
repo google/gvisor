@@ -18,7 +18,8 @@
 package fifo
 
 import (
-	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"sync/atomic"
+
 	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -45,7 +46,7 @@ type discipline struct {
 	wg          sync.WaitGroup
 	dispatchers []queueDispatcher
 
-	closed atomicbitops.Int32
+	closed atomic.Int32
 }
 
 // queueDispatcher is responsible for dispatching all outbound packets in its

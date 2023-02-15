@@ -17,8 +17,8 @@ package stack
 import (
 	"fmt"
 	"reflect"
+	"sync/atomic"
 
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
@@ -55,13 +55,13 @@ type nic struct {
 	duplicateAddressDetectors map[tcpip.NetworkProtocolNumber]DuplicateAddressDetector
 
 	// enabled indicates whether the NIC is enabled.
-	enabled atomicbitops.Bool
+	enabled atomic.Bool
 
 	// spoofing indicates whether the NIC is spoofing.
-	spoofing atomicbitops.Bool
+	spoofing atomic.Bool
 
 	// promiscuous indicates whether the NIC is promiscuous.
-	promiscuous atomicbitops.Bool
+	promiscuous atomic.Bool
 
 	// linkResQueue holds packets that are waiting for link resolution to
 	// complete.

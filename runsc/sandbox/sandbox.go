@@ -27,6 +27,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -34,7 +35,6 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/syndtr/gocapability/capability"
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/control/client"
 	"gvisor.dev/gvisor/pkg/control/server"
@@ -92,7 +92,7 @@ func createControlSocket(rootDir, id string) (string, int, error) {
 
 // pid is an atomic type that implements JSON marshal/unmarshal interfaces.
 type pid struct {
-	val atomicbitops.Int64
+	val atomic.Int64
 }
 
 func (p *pid) store(pid int) {

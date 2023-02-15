@@ -16,9 +16,9 @@ package gofer
 
 import (
 	"fmt"
+	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
@@ -75,7 +75,7 @@ type specialFileFD struct {
 	// read from the pipe from previous calls to specialFileFD.savePipeData().
 	// haveBuf and buf are protected by bufMu.
 	bufMu   sync.Mutex `state:"nosave"`
-	haveBuf atomicbitops.Uint32
+	haveBuf atomic.Uint32
 	buf     []byte
 
 	// If handle.fd >= 0, hostFileMapper caches mappings of handle.fd, and
@@ -315,7 +315,7 @@ func (fd *specialFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 		// Set offset to file size if the regular file was opened with O_APPEND.
 		if fd.vfsfd.StatusFlags()&linux.O_APPEND != 0 {
 			// Holding d.metadataMu is sufficient for reading d.size.
-			offset = int64(d.size.RacyLoad())
+			offset = int64(d.size.Load())
 		}
 		limit, err := vfs.CheckLimit(ctx, offset, src.NumBytes())
 		if err != nil {
@@ -368,7 +368,7 @@ func (fd *specialFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 	// Update file size for regular files.
 	if fd.isRegularFile {
 		// d.metadataMu is already locked at this point.
-		if uint64(offset) > d.size.RacyLoad() {
+		if uint64(offset) > d.size.Load() {
 			d.dataMu.Lock()
 			defer d.dataMu.Unlock()
 			d.size.Store(uint64(offset))

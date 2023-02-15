@@ -15,7 +15,8 @@
 package lisafs
 
 import (
-	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"sync/atomic"
+
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -68,7 +69,7 @@ type Node struct {
 	// anymore. This node may have been replaced with something hazardous.
 	// deleted is protected by opMu. deleted must only be accessed/mutated using
 	// atomics; see markDeletedRecursive for more details.
-	deleted atomicbitops.Uint32
+	deleted atomic.Uint32
 
 	// name is the name of the file represented by this Node in parent. If this
 	// FD represents the root directory, then name is an empty string. name is

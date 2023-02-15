@@ -19,9 +19,9 @@ package device
 import (
 	"bytes"
 	"fmt"
+	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -37,7 +37,7 @@ import (
 type Registry struct {
 	// lastAnonDeviceMinor is the last minor device number used for an anonymous
 	// device. Must be accessed atomically.
-	lastAnonDeviceMinor atomicbitops.Uint64
+	lastAnonDeviceMinor atomic.Uint64
 
 	// mu protects the fields below.
 	mu sync.Mutex `state:"nosave"`
@@ -138,7 +138,7 @@ type Device struct {
 	ID
 
 	// last is the last generated inode.
-	last atomicbitops.Uint64
+	last atomic.Uint64
 }
 
 // loadFrom initializes d from other. The IDs of both devices must match.

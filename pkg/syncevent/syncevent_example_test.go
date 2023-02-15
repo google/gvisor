@@ -16,9 +16,8 @@ package syncevent
 
 import (
 	"fmt"
+	"sync/atomic"
 	"time"
-
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 )
 
 func Example_ioReadinessInterrputible() {
@@ -31,7 +30,7 @@ func Example_ioReadinessInterrputible() {
 	// State of some I/O object.
 	var (
 		br    Broadcaster
-		ready atomicbitops.Uint32
+		ready atomic.Uint32
 	)
 	doIO := func() error {
 		if ready.Load() == 0 {

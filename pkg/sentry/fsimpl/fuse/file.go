@@ -15,8 +15,9 @@
 package fuse
 
 import (
+	"sync/atomic"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
@@ -46,7 +47,7 @@ type fileDescription struct {
 	OpenFlag uint32
 
 	// off is the file offset.
-	off atomicbitops.Int64
+	off atomic.Int64
 }
 
 func (fd *fileDescription) dentry() *kernfs.Dentry {

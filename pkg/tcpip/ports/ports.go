@@ -19,8 +19,8 @@ package ports
 import (
 	"math"
 	"math/rand"
+	"sync/atomic"
 
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -231,7 +231,7 @@ type PortManager struct {
 	//
 	// hint must be accessed using the portHint/incPortHint helpers.
 	// TODO(gvisor.dev/issue/940): S/R this field.
-	hint atomicbitops.Uint32
+	hint atomic.Uint32
 }
 
 // NewPortManager creates new PortManager.

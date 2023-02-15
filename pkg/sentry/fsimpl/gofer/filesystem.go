@@ -22,7 +22,6 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
@@ -1229,13 +1228,13 @@ func (d *dentry) createAndOpenChildLocked(ctx context.Context, rp *vfs.Resolving
 		if vfs.MayReadFileWithOpenFlags(opts.Flags) {
 			readable = true
 			if h.fd != -1 {
-				child.readFD = atomicbitops.FromInt32(h.fd)
-				child.mmapFD = atomicbitops.FromInt32(h.fd)
+				child.readFD.Store(h.fd)
+				child.mmapFD.Store(h.fd)
 			}
 		}
 		if vfs.MayWriteFileWithOpenFlags(opts.Flags) {
 			writable = true
-			child.writeFD = atomicbitops.FromInt32(h.fd)
+			child.writeFD.Store(h.fd)
 		}
 		child.updateHandles(ctx, h, readable, writable)
 		child.handleMu.Unlock()

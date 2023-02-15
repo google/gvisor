@@ -6,10 +6,7 @@ go_library(
     name = "fd",
     srcs = ["fd.go"],
     visibility = ["//visibility:public"],
-    deps = [
-        "//pkg/atomicbitops",
-        "@org_golang_x_sys//unix:go_default_library",
-    ],
+    deps = ["@org_golang_x_sys//unix:go_default_library"],
 )
 
 go_test(
@@ -17,8 +14,5 @@ go_test(
     size = "small",
     srcs = ["fd_test.go"],
     library = ":fd",
-    deps = [
-        "//pkg/atomicbitops",
-        "@org_golang_x_sys//unix:go_default_library",
-    ],
+    deps = ["@org_golang_x_sys//unix:go_default_library"],
 )

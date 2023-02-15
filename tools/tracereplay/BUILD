@@ -13,7 +13,6 @@ go_library(
         "//tools/tracereplay:__subpackages__",
     ],
     deps = [
-        "//pkg/atomicbitops",
         "//pkg/log",
         "//pkg/sentry/seccheck/points:points_go_proto",
         "//pkg/sentry/seccheck/sinks/remote/server",

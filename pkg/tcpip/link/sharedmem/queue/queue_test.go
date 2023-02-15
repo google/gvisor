@@ -17,9 +17,9 @@ package queue
 import (
 	"encoding/binary"
 	"reflect"
+	"sync/atomic"
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sharedmem/pipe"
 )
 
@@ -36,7 +36,7 @@ func TestBasicTxQueue(t *testing.T) {
 	txp.Init(pb2)
 
 	var q Tx
-	var state atomicbitops.Uint32
+	var state atomic.Uint32
 	q.Init(pb1, pb2, &state)
 
 	// Enqueue two buffers.
@@ -205,7 +205,7 @@ func TestBadTxCompletion(t *testing.T) {
 	txp.Init(pb2)
 
 	var q Tx
-	var state atomicbitops.Uint32
+	var state atomic.Uint32
 	q.Init(pb1, pb2, &state)
 
 	// Post a completion that is too short, and check that it is ignored.
@@ -321,7 +321,7 @@ func TestFillTxPipe(t *testing.T) {
 	txp.Init(pb2)
 
 	var q Tx
-	var state atomicbitops.Uint32
+	var state atomic.Uint32
 	q.Init(pb1, pb2, &state)
 
 	// Transmit twice, which should fill the tx pipe.
@@ -390,7 +390,7 @@ func TestLotsOfTransmissions(t *testing.T) {
 	txp.Init(pb2)
 
 	var q Tx
-	var state atomicbitops.Uint32
+	var state atomic.Uint32
 	q.Init(pb1, pb2, &state)
 
 	// Prepare packet with two buffers.
@@ -496,7 +496,7 @@ func TestRxEnableNotification(t *testing.T) {
 	pb1 := make([]byte, 100)
 	pb2 := make([]byte, 100)
 
-	var state atomicbitops.Uint32
+	var state atomic.Uint32
 	var q Rx
 	q.Init(pb1, pb2, &state)
 
@@ -511,7 +511,7 @@ func TestRxDisableNotification(t *testing.T) {
 	pb1 := make([]byte, 100)
 	pb2 := make([]byte, 100)
 
-	var state atomicbitops.Uint32
+	var state atomic.Uint32
 	var q Rx
 	q.Init(pb1, pb2, &state)
 

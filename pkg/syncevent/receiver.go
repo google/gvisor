@@ -15,6 +15,8 @@
 package syncevent
 
 import (
+	"sync/atomic"
+
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 )
 
@@ -26,7 +28,7 @@ import (
 type Receiver struct {
 	// pending is the set of pending events. pending is accessed using atomic
 	// memory operations.
-	pending atomicbitops.Uint64
+	pending atomic.Uint64
 
 	// cb is notified when new events become pending. cb is immutable after
 	// Init().

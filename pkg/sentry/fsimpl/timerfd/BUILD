@@ -7,7 +7,6 @@ go_library(
     srcs = ["timerfd.go"],
     visibility = ["//pkg/sentry:internal"],
     deps = [
-        "//pkg/atomicbitops",
         "//pkg/context",
         "//pkg/errors/linuxerr",
         "//pkg/hostarch",

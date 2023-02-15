@@ -16,9 +16,9 @@ package fuse
 
 import (
 	"sync"
+	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
@@ -53,7 +53,7 @@ type connection struct {
 	mu sync.Mutex `state:"nosave"`
 
 	// attributeVersion is the version of connection's attributes.
-	attributeVersion atomicbitops.Uint64
+	attributeVersion atomic.Uint64
 
 	// We target FUSE 7.23.
 	// The following FUSE_INIT flags are currently unsupported by this implementation:
@@ -75,7 +75,7 @@ type connection struct {
 	// initialized after receiving FUSE_INIT reply.
 	// Until it's set, suspend sending FUSE requests.
 	// Use SetInitialized() and IsInitialized() for atomic access.
-	initialized atomicbitops.Int32
+	initialized atomic.Int32
 
 	// initializedChan is used to block requests before initialization.
 	initializedChan chan struct{} `state:".(bool)"`

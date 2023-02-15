@@ -18,10 +18,9 @@ import (
 	"math/rand"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
-
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 )
 
 // ZeroWakerNotAsserted tests that a zero-value waker is in non-asserted state.
@@ -352,7 +351,7 @@ func TestAssertFetch(t *testing.T) {
 		}
 	}()
 	var (
-		count atomicbitops.Int32
+		count atomic.Int32
 		wg    sync.WaitGroup
 	)
 	for i := 0; i < sleeperWakers; i++ {

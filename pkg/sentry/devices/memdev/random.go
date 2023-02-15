@@ -15,7 +15,8 @@
 package memdev
 
 import (
-	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"sync/atomic"
+
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/safemem"
@@ -55,7 +56,7 @@ type randomFD struct {
 
 	// off is the "file offset". off is accessed using atomic memory
 	// operations.
-	off atomicbitops.Int64
+	off atomic.Int64
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.

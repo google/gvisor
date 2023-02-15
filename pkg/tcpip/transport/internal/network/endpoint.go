@@ -18,8 +18,8 @@ package network
 
 import (
 	"fmt"
+	"sync/atomic"
 
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -98,7 +98,7 @@ type Endpoint struct {
 	// lock when delivering packets/errors to endpoints).
 	//
 	// Writes must be performed through setEndpointState.
-	state atomicbitops.Uint32
+	state atomic.Uint32
 
 	// Callers should not attempt to obtain sendBufferSizeInUseMu while holding
 	// another lock on Endpoint.

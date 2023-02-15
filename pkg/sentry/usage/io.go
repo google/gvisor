@@ -14,36 +14,36 @@
 
 package usage
 
-import "gvisor.dev/gvisor/pkg/atomicbitops"
+import "sync/atomic"
 
 // IO contains I/O-related statistics.
 //
 // +stateify savable
 type IO struct {
 	// CharsRead is the number of bytes read by read syscalls.
-	CharsRead atomicbitops.Uint64
+	CharsRead atomic.Uint64
 
 	// CharsWritten is the number of bytes written by write syscalls.
-	CharsWritten atomicbitops.Uint64
+	CharsWritten atomic.Uint64
 
 	// ReadSyscalls is the number of read syscalls.
-	ReadSyscalls atomicbitops.Uint64
+	ReadSyscalls atomic.Uint64
 
 	// WriteSyscalls is the number of write syscalls.
-	WriteSyscalls atomicbitops.Uint64
+	WriteSyscalls atomic.Uint64
 
 	// The following counter is only meaningful when Sentry has internal
 	// pagecache.
 
 	// BytesRead is the number of bytes actually read into pagecache.
-	BytesRead atomicbitops.Uint64
+	BytesRead atomic.Uint64
 
 	// BytesWritten is the number of bytes actually written from pagecache.
-	BytesWritten atomicbitops.Uint64
+	BytesWritten atomic.Uint64
 
 	// BytesWriteCancelled is the number of bytes not written out due to
 	// truncation.
-	BytesWriteCancelled atomicbitops.Uint64
+	BytesWriteCancelled atomic.Uint64
 }
 
 // Clone turns other into a clone of i.

@@ -17,9 +17,7 @@
 
 package xdp
 
-import (
-	"gvisor.dev/gvisor/pkg/atomicbitops"
-)
+import "sync/atomic"
 
 // The CompletionQueue is how the kernel tells a process which buffers have
 // been transmitted and can be reused.
@@ -44,15 +42,15 @@ type CompletionQueue struct {
 
 	// producer points to the shared atomic value that indicates the last
 	// produced descriptor. Only the kernel updates this value.
-	producer *atomicbitops.Uint32
+	producer *atomic.Uint32
 
 	// consumer points to the shared atomic value that indicates the last
 	// consumed descriptor. Only we update this value.
-	consumer *atomicbitops.Uint32
+	consumer *atomic.Uint32
 
 	// flags points to the shared atomic value that holds flags for the
 	// queue.
-	flags *atomicbitops.Uint32
+	flags *atomic.Uint32
 
 	// Cached values are used to avoid relatively expensive atomic
 	// operations. They are used, incremented, and decremented multiple
@@ -94,7 +92,7 @@ func (cq *CompletionQueue) free() uint32 {
 func (cq *CompletionQueue) Release(nDone uint32) {
 	// We don't have to use an atomic add because only we update this; the
 	// kernel just reads it.
-	cq.consumer.Store(cq.consumer.RacyLoad() + nDone)
+	cq.consumer.Store(cq.consumer.Load() + nDone)
 }
 
 // Get gets the descriptor at index.

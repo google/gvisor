@@ -18,7 +18,6 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -126,22 +125,22 @@ type createSyntheticOpts struct {
 func (fs *filesystem) newSyntheticDentry(opts *createSyntheticOpts) *dentry {
 	now := fs.clock.Now().Nanoseconds()
 	child := &dentry{
-		refs:      atomicbitops.FromInt64(1), // held by parent.
-		fs:        fs,
-		ino:       fs.nextIno(),
-		mode:      atomicbitops.FromUint32(uint32(opts.mode)),
-		uid:       atomicbitops.FromUint32(uint32(opts.kuid)),
-		gid:       atomicbitops.FromUint32(uint32(opts.kgid)),
-		blockSize: atomicbitops.FromUint32(hostarch.PageSize), // arbitrary
-		atime:     atomicbitops.FromInt64(now),
-		mtime:     atomicbitops.FromInt64(now),
-		ctime:     atomicbitops.FromInt64(now),
-		btime:     atomicbitops.FromInt64(now),
-		readFD:    atomicbitops.FromInt32(-1),
-		writeFD:   atomicbitops.FromInt32(-1),
-		mmapFD:    atomicbitops.FromInt32(-1),
-		nlink:     atomicbitops.FromUint32(2),
+		fs:  fs,
+		ino: fs.nextIno(),
 	}
+	child.refs.Store(1) // held by parent.
+	child.mode.Store(uint32(opts.mode))
+	child.uid.Store(uint32(opts.kuid))
+	child.gid.Store(uint32(opts.kgid))
+	child.blockSize.Store(hostarch.PageSize) // arbitrary
+	child.atime.Store(now)
+	child.mtime.Store(now)
+	child.ctime.Store(now)
+	child.btime.Store(now)
+	child.readFD.Store(-1)
+	child.writeFD.Store(-1)
+	child.mmapFD.Store(-1)
+	child.nlink.Store(2)
 	switch opts.mode.FileType() {
 	case linux.S_IFDIR:
 		// Nothing else needs to be done.

@@ -15,7 +15,6 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/atomicbitops",
         "//pkg/log",
         "//pkg/memutil",
         "//pkg/sync",

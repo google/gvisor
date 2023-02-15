@@ -20,16 +20,16 @@ import (
 	"io"
 	"os"
 	"runtime"
+	"sync/atomic"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 )
 
 // ReadWriter implements io.ReadWriter, io.ReaderAt, and io.WriterAt for fd. It
 // does not take ownership of fd.
 type ReadWriter struct {
 	// fd is accessed atomically so FD.Close/Release can swap it.
-	fd atomicbitops.Int64
+	fd atomic.Int64
 }
 
 var _ io.ReadWriter = (*ReadWriter)(nil)
@@ -38,9 +38,9 @@ var _ io.WriterAt = (*ReadWriter)(nil)
 
 // NewReadWriter creates a ReadWriter for fd.
 func NewReadWriter(fd int) *ReadWriter {
-	return &ReadWriter{
-		fd: atomicbitops.FromInt64(int64(fd)),
-	}
+	var rw ReadWriter
+	rw.fd.Store(int64(fd))
+	return &rw
 }
 
 func fixCount(n int, err error) (int, error) {
@@ -153,20 +153,14 @@ type FD struct {
 //
 // New takes ownership of fd.
 func New(fd int) *FD {
+	var newFD FD
 	if fd < 0 {
-		return &FD{
-			ReadWriter: ReadWriter{
-				fd: atomicbitops.FromInt64(-1),
-			},
-		}
+		newFD.ReadWriter.fd.Store(-1)
+		return &newFD
 	}
-	f := &FD{
-		ReadWriter: ReadWriter{
-			fd: atomicbitops.FromInt64(int64(fd)),
-		},
-	}
-	runtime.SetFinalizer(f, (*FD).Close)
-	return f
+	newFD.ReadWriter.fd.Store(int64(fd))
+	runtime.SetFinalizer(&newFD, (*FD).Close)
+	return &newFD
 }
 
 // NewFromFile creates a new FD from an os.File.
@@ -183,11 +177,9 @@ func NewFromFile(file *os.File) (*FD, error) {
 	// Fd() returns.
 	runtime.KeepAlive(file)
 	if err != nil {
-		return &FD{
-			ReadWriter: ReadWriter{
-				fd: atomicbitops.FromInt64(-1),
-			},
-		}, err
+		var newFD FD
+		newFD.ReadWriter.fd.Store(-1)
+		return &newFD, err
 	}
 	return New(fd), nil
 }

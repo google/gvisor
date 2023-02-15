@@ -16,9 +16,9 @@ package vfs
 
 import (
 	"io"
+	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -51,7 +51,7 @@ type FileDescription struct {
 	// modified by fcntl()" - fcntl(2). statusFlags can be read using atomic
 	// memory operations when it does not need to be synchronized with an
 	// access to asyncHandler.
-	statusFlags atomicbitops.Uint32
+	statusFlags atomic.Uint32
 
 	// asyncHandler handles O_ASYNC signal generation. It is set with the
 	// F_SETOWN or F_SETOWN_EX fcntls. For asyncHandler to be used, O_ASYNC must
@@ -84,7 +84,7 @@ type FileDescription struct {
 	// writable is analogous to Linux's FMODE_WRITE.
 	writable bool
 
-	usedLockBSD atomicbitops.Uint32
+	usedLockBSD atomic.Uint32
 
 	// impl is the FileDescriptionImpl associated with this Filesystem. impl is
 	// immutable. This should be the last field in FileDescription.
@@ -142,7 +142,7 @@ func (fd *FileDescription) Init(impl FileDescriptionImpl, flags uint32, mnt *Mou
 
 	// Remove "file creation flags" to mirror the behavior from file.f_flags in
 	// fs/open.c:do_dentry_open.
-	fd.statusFlags = atomicbitops.FromUint32(flags &^ FileCreationFlags)
+	fd.statusFlags.Store(flags &^ FileCreationFlags)
 	fd.vd = VirtualDentry{
 		mount:  mnt,
 		dentry: d,
@@ -195,7 +195,7 @@ func (fd *FileDescription) DecRef(ctx context.Context) {
 		}
 		fd.vd.DecRef(ctx)
 		fd.flagsMu.Lock()
-		if fd.statusFlags.RacyLoad()&linux.O_ASYNC != 0 && fd.asyncHandler != nil {
+		if fd.statusFlags.Load()&linux.O_ASYNC != 0 && fd.asyncHandler != nil {
 			fd.impl.UnregisterFileAsyncHandler(fd)
 		}
 		fd.asyncHandler = nil
@@ -280,11 +280,11 @@ func (fd *FileDescription) SetStatusFlags(ctx context.Context, creds *auth.Crede
 	if fd.asyncHandler != nil {
 		// Use fd.statusFlags instead of oldFlags, which may have become outdated,
 		// to avoid double registering/unregistering.
-		if fd.statusFlags.RacyLoad()&linux.O_ASYNC == 0 && flags&linux.O_ASYNC != 0 {
+		if fd.statusFlags.Load()&linux.O_ASYNC == 0 && flags&linux.O_ASYNC != 0 {
 			if err := fd.impl.RegisterFileAsyncHandler(fd); err != nil {
 				return err
 			}
-		} else if fd.statusFlags.RacyLoad()&linux.O_ASYNC != 0 && flags&linux.O_ASYNC == 0 {
+		} else if fd.statusFlags.Load()&linux.O_ASYNC != 0 && flags&linux.O_ASYNC == 0 {
 			fd.impl.UnregisterFileAsyncHandler(fd)
 		}
 	}
@@ -943,7 +943,7 @@ func (fd *FileDescription) SetAsyncHandler(newHandler func() FileAsync) (FileAsy
 	defer fd.flagsMu.Unlock()
 	if fd.asyncHandler == nil {
 		fd.asyncHandler = newHandler()
-		if fd.statusFlags.RacyLoad()&linux.O_ASYNC != 0 {
+		if fd.statusFlags.Load()&linux.O_ASYNC != 0 {
 			if err := fd.impl.RegisterFileAsyncHandler(fd); err != nil {
 				return nil, err
 			}

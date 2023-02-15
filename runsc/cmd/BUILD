@@ -49,7 +49,6 @@ go_library(
     ],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/atomicbitops",
         "//pkg/coretag",
         "//pkg/coverage",
         "//pkg/log",

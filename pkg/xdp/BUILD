@@ -15,7 +15,6 @@ go_library(
     ],
     visibility = ["//:sandbox"],
     deps = [
-        "//pkg/atomicbitops",
         "//pkg/cleanup",
         "//pkg/log",
         "//pkg/memutil",

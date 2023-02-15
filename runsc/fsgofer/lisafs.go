@@ -24,10 +24,10 @@ import (
 	"path"
 	"path/filepath"
 	"strconv"
+	"sync/atomic"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	rwfd "gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/lisafs"
@@ -128,10 +128,10 @@ func (s *LisafsServer) Mount(c *lisafs.Connection, mountNode *lisafs.Node) (*lis
 	cu.Release()
 
 	rootFD := &controlFDLisa{
-		hostFD:         rootHostFD,
-		writableHostFD: atomicbitops.FromInt32(-1),
-		isMountPoint:   true,
+		hostFD:       rootHostFD,
+		isMountPoint: true,
 	}
+	rootFD.writableHostFD.Store(-1)
 	mountNode.IncRef() // Ref is transferred to ControlFD.
 	rootFD.ControlFD.Init(c, mountNode, linux.FileMode(stat.Mode), rootFD)
 	return rootFD.FD(), stat, clientHostFD, nil
@@ -187,7 +187,7 @@ type controlFDLisa struct {
 	// writableHostFD is the file descriptor number for a writable FD opened on
 	// the same FD as `hostFD`. It is initialized to -1, and can change in value
 	// exactly once.
-	writableHostFD atomicbitops.Int32
+	writableHostFD atomic.Int32
 
 	// isMountpoint indicates whether this FD represents the mount point for its
 	// owning connection. isMountPoint is immutable.
@@ -223,7 +223,7 @@ func newControlFDLisa(hostFD int, parent *controlFDLisa, name string, mode linux
 		}
 	})
 	childFD.hostFD = hostFD
-	childFD.writableHostFD = atomicbitops.FromInt32(-1)
+	childFD.writableHostFD.Store(-1)
 	childFD.ControlFD.Init(parent.Conn(), childNode, mode, childFD)
 	return childFD
 }
@@ -260,9 +260,9 @@ func (fd *controlFDLisa) Close() {
 		fd.hostFD = -1
 	}
 	// No concurrent access is possible so no need to use atomics.
-	if fd.writableHostFD.RacyLoad() >= 0 {
-		_ = unix.Close(int(fd.writableHostFD.RacyLoad()))
-		fd.writableHostFD = atomicbitops.FromInt32(-1)
+	if fd.writableHostFD.Load() >= 0 {
+		_ = unix.Close(int(fd.writableHostFD.Load()))
+		fd.writableHostFD.Store(-1)
 	}
 }
 

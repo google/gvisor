@@ -17,17 +17,17 @@ package sharedmem
 import (
 	"fmt"
 	"reflect"
+	"sync/atomic"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/memutil"
 )
 
 // sharedDataPointer converts the shared data slice into a pointer so that it
 // can be used in atomic operations.
-func sharedDataPointer(sharedData []byte) *atomicbitops.Uint32 {
-	return (*atomicbitops.Uint32)(unsafe.Pointer(&sharedData[0:4][0]))
+func sharedDataPointer(sharedData []byte) *atomic.Uint32 {
+	return (*atomic.Uint32)(unsafe.Pointer(&sharedData[0:4][0]))
 }
 
 // getBuffer returns a memory region mapped to the full contents of the given

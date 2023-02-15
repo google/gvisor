@@ -14,7 +14,6 @@ go_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
-        "//pkg/atomicbitops",
         "//pkg/bufferv2",
         "//pkg/sync",
         "//pkg/tcpip",

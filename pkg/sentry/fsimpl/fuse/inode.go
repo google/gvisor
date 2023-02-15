@@ -17,10 +17,10 @@ package fuse
 import (
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -59,7 +59,7 @@ type inode struct {
 	nodeID uint64
 
 	// attrVersion is the version of the last attribute change.
-	attrVersion atomicbitops.Uint64
+	attrVersion atomic.Uint64
 
 	// attrTime is the time until the attributes are valid.
 	attrTime uint64
@@ -78,31 +78,31 @@ type inode struct {
 	attrMu sync.Mutex
 
 	// +checklocks:attrMu
-	ino atomicbitops.Uint64 // Stat data, not accessed for path walking.
+	ino atomic.Uint64 // Stat data, not accessed for path walking.
 	// +checklocks:attrMu
-	uid atomicbitops.Uint32 // auth.KUID, but stored as raw uint32 for sync/atomic.
+	uid atomic.Uint32 // auth.KUID, but stored as raw uint32 for sync/atomic.
 	// +checklocks:attrMu
-	gid atomicbitops.Uint32 // auth.KGID, but...
+	gid atomic.Uint32 // auth.KGID, but...
 	// +checklocks:attrMu
-	mode atomicbitops.Uint32 // File type and mode.
+	mode atomic.Uint32 // File type and mode.
 
 	// Timestamps in nanoseconds from the unix epoch.
 	// +checklocks:attrMu
-	atime atomicbitops.Int64
+	atime atomic.Int64
 	// +checklocks:attrMu
-	mtime atomicbitops.Int64
+	mtime atomic.Int64
 	// +checklocks:attrMu
-	ctime atomicbitops.Int64
+	ctime atomic.Int64
 
 	// +checklocks:attrMu
-	size atomicbitops.Uint64
+	size atomic.Uint64
 
 	// nlink counts the number of hard links to this inode. It's updated and
 	// accessed used atomic operations but not protected by attrMu.
-	nlink atomicbitops.Uint32
+	nlink atomic.Uint32
 
 	// +checklocks:attrMu
-	blockSize atomicbitops.Uint32 // 0 if unknown.
+	blockSize atomic.Uint32 // 0 if unknown.
 }
 
 func (i *inode) Mode() linux.FileMode {

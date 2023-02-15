@@ -30,7 +30,6 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -628,7 +627,7 @@ func (f *MemoryFile) AllocateAndFill(length uint64, kind usage.MemoryKind, popul
 	return fr, err
 }
 
-var mlockDisabled atomicbitops.Uint32
+var mlockDisabled atomic.Uint32
 
 func canPopulate() bool {
 	return mlockDisabled.Load() == 0

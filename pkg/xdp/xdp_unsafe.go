@@ -17,10 +17,10 @@ package xdp
 import (
 	"fmt"
 	"reflect"
+	"sync/atomic"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 )
 
 func registerUMEM(fd int, reg unix.XDPUmemReg) error {
@@ -66,9 +66,9 @@ func (fq *FillQueue) init(off unix.XDPMmapOffsets, opts ReadOnlySocketOpts) {
 	fillQueueRingHdr.Data = uintptr(unsafe.Pointer(&fq.mem[off.Fr.Desc]))
 	fillQueueRingHdr.Len = int(opts.NDescriptors)
 	fillQueueRingHdr.Cap = fillQueueRingHdr.Len
-	fq.producer = (*atomicbitops.Uint32)(unsafe.Pointer(&fq.mem[off.Fr.Producer]))
-	fq.consumer = (*atomicbitops.Uint32)(unsafe.Pointer(&fq.mem[off.Fr.Consumer]))
-	fq.flags = (*atomicbitops.Uint32)(unsafe.Pointer(&fq.mem[off.Fr.Flags]))
+	fq.producer = (*atomic.Uint32)(unsafe.Pointer(&fq.mem[off.Fr.Producer]))
+	fq.consumer = (*atomic.Uint32)(unsafe.Pointer(&fq.mem[off.Fr.Consumer]))
+	fq.flags = (*atomic.Uint32)(unsafe.Pointer(&fq.mem[off.Fr.Flags]))
 }
 
 func (rq *RXQueue) init(off unix.XDPMmapOffsets, opts ReadOnlySocketOpts) {
@@ -76,9 +76,9 @@ func (rq *RXQueue) init(off unix.XDPMmapOffsets, opts ReadOnlySocketOpts) {
 	rxQueueRingHdr.Data = uintptr(unsafe.Pointer(&rq.mem[off.Rx.Desc]))
 	rxQueueRingHdr.Len = int(opts.NDescriptors)
 	rxQueueRingHdr.Cap = rxQueueRingHdr.Len
-	rq.producer = (*atomicbitops.Uint32)(unsafe.Pointer(&rq.mem[off.Rx.Producer]))
-	rq.consumer = (*atomicbitops.Uint32)(unsafe.Pointer(&rq.mem[off.Rx.Consumer]))
-	rq.flags = (*atomicbitops.Uint32)(unsafe.Pointer(&rq.mem[off.Rx.Flags]))
+	rq.producer = (*atomic.Uint32)(unsafe.Pointer(&rq.mem[off.Rx.Producer]))
+	rq.consumer = (*atomic.Uint32)(unsafe.Pointer(&rq.mem[off.Rx.Consumer]))
+	rq.flags = (*atomic.Uint32)(unsafe.Pointer(&rq.mem[off.Rx.Flags]))
 	// These probably don't have to be atomic, but we're only loading once
 	// so better safe than sorry.
 	rq.cachedProducer = rq.producer.Load()
@@ -90,9 +90,9 @@ func (cq *CompletionQueue) init(off unix.XDPMmapOffsets, opts ReadOnlySocketOpts
 	completionQueueRingHdr.Data = uintptr(unsafe.Pointer(&cq.mem[off.Cr.Desc]))
 	completionQueueRingHdr.Len = int(opts.NDescriptors)
 	completionQueueRingHdr.Cap = completionQueueRingHdr.Len
-	cq.producer = (*atomicbitops.Uint32)(unsafe.Pointer(&cq.mem[off.Cr.Producer]))
-	cq.consumer = (*atomicbitops.Uint32)(unsafe.Pointer(&cq.mem[off.Cr.Consumer]))
-	cq.flags = (*atomicbitops.Uint32)(unsafe.Pointer(&cq.mem[off.Cr.Flags]))
+	cq.producer = (*atomic.Uint32)(unsafe.Pointer(&cq.mem[off.Cr.Producer]))
+	cq.consumer = (*atomic.Uint32)(unsafe.Pointer(&cq.mem[off.Cr.Consumer]))
+	cq.flags = (*atomic.Uint32)(unsafe.Pointer(&cq.mem[off.Cr.Flags]))
 	// These probably don't have to be atomic, but we're only loading once
 	// so better safe than sorry.
 	cq.cachedProducer = cq.producer.Load()
@@ -104,14 +104,14 @@ func (tq *TXQueue) init(off unix.XDPMmapOffsets, opts ReadOnlySocketOpts) {
 	txQueueRingHdr.Data = uintptr(unsafe.Pointer(&tq.mem[off.Tx.Desc]))
 	txQueueRingHdr.Len = int(opts.NDescriptors)
 	txQueueRingHdr.Cap = txQueueRingHdr.Len
-	tq.producer = (*atomicbitops.Uint32)(unsafe.Pointer(&tq.mem[off.Tx.Producer]))
-	tq.consumer = (*atomicbitops.Uint32)(unsafe.Pointer(&tq.mem[off.Tx.Consumer]))
-	tq.flags = (*atomicbitops.Uint32)(unsafe.Pointer(&tq.mem[off.Tx.Flags]))
+	tq.producer = (*atomic.Uint32)(unsafe.Pointer(&tq.mem[off.Tx.Producer]))
+	tq.consumer = (*atomic.Uint32)(unsafe.Pointer(&tq.mem[off.Tx.Consumer]))
+	tq.flags = (*atomic.Uint32)(unsafe.Pointer(&tq.mem[off.Tx.Flags]))
 }
 
 // kick notifies the kernel that there are packets to transmit.
 func (tq *TXQueue) kick() error {
-	if tq.flags.RacyLoad()&unix.XDP_RING_NEED_WAKEUP == 0 {
+	if tq.flags.Load()&unix.XDP_RING_NEED_WAKEUP == 0 {
 		return nil
 	}
 

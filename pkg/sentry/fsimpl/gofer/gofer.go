@@ -44,10 +44,10 @@ import (
 	"path"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -225,13 +225,13 @@ type filesystem struct {
 
 	// lastIno is the last inode number assigned to a file. lastIno is accessed
 	// using atomic memory operations.
-	lastIno atomicbitops.Uint64
+	lastIno atomic.Uint64
 
 	// savedDentryRW records open read/write handles during save/restore.
 	savedDentryRW map[*dentry]savedDentryRW
 
 	// released is nonzero once filesystem.Release has been called.
-	released atomicbitops.Int32
+	released atomic.Int32
 }
 
 // +stateify savable
@@ -529,7 +529,7 @@ func (fs *filesystem) initClientAndRoot(ctx context.Context) error {
 	// Set the root's reference count to 2. One reference is returned to the
 	// caller, and the other is held by fs to prevent the root from being "cached"
 	// and subsequently evicted.
-	fs.root.refs = atomicbitops.FromInt64(2)
+	fs.root.refs.Store(2)
 	return nil
 }
 
@@ -645,17 +645,16 @@ func (fs *filesystem) Release(ctx context.Context) {
 		d.cache.DropAll(mf)
 		d.dirty.RemoveAll()
 		d.dataMu.Unlock()
-		// Close host FDs if they exist. We can use RacyLoad() because d.handleMu
-		// is locked.
-		if d.readFD.RacyLoad() >= 0 {
-			_ = unix.Close(int(d.readFD.RacyLoad()))
+		// Close host FDs if they exist.
+		if d.readFD.Load() >= 0 {
+			_ = unix.Close(int(d.readFD.Load()))
 		}
-		if d.writeFD.RacyLoad() >= 0 && d.readFD.RacyLoad() != d.writeFD.RacyLoad() {
-			_ = unix.Close(int(d.writeFD.RacyLoad()))
+		if d.writeFD.Load() >= 0 && d.readFD.Load() != d.writeFD.Load() {
+			_ = unix.Close(int(d.writeFD.Load()))
 		}
-		d.readFD = atomicbitops.FromInt32(-1)
-		d.writeFD = atomicbitops.FromInt32(-1)
-		d.mmapFD = atomicbitops.FromInt32(-1)
+		d.readFD.Store(-1)
+		d.writeFD.Store(-1)
+		d.mmapFD.Store(-1)
 		d.handleMu.Unlock()
 	}
 	// There can't be any specialFileFDs still using fs, since each such
@@ -743,7 +742,7 @@ type dentry struct {
 	// reaches 0, the dentry may be added to the cache or destroyed. If refs ==
 	// -1, the dentry has already been destroyed. refs is accessed using atomic
 	// memory operations.
-	refs atomicbitops.Int64
+	refs atomic.Int64
 
 	// fs is the owning filesystem. fs is immutable.
 	fs *filesystem
@@ -763,7 +762,7 @@ type dentry struct {
 
 	// If deleted is non-zero, the file represented by this dentry has been
 	// deleted is accessed using atomic memory operations.
-	deleted atomicbitops.Uint32
+	deleted atomic.Uint32
 
 	// cachingMu is used to synchronize concurrent dentry caching attempts on
 	// this dentry.
@@ -837,17 +836,17 @@ type dentry struct {
 	// To mutate:
 	//   - Lock metadataMu and use atomic operations to update because we might
 	//     have atomic readers that don't hold the lock.
-	metadataMu sync.Mutex          `state:"nosave"`
-	ino        uint64              // immutable
-	mode       atomicbitops.Uint32 // type is immutable, perms are mutable
-	uid        atomicbitops.Uint32 // auth.KUID, but stored as raw uint32 for sync/atomic
-	gid        atomicbitops.Uint32 // auth.KGID, but ...
-	blockSize  atomicbitops.Uint32 // 0 if unknown
+	metadataMu sync.Mutex    `state:"nosave"`
+	ino        uint64        // immutable
+	mode       atomic.Uint32 // type is immutable, perms are mutable
+	uid        atomic.Uint32 // auth.KUID, but stored as raw uint32 for sync/atomic
+	gid        atomic.Uint32 // auth.KGID, but ...
+	blockSize  atomic.Uint32 // 0 if unknown
 	// Timestamps, all nsecs from the Unix epoch.
-	atime atomicbitops.Int64
-	mtime atomicbitops.Int64
-	ctime atomicbitops.Int64
-	btime atomicbitops.Int64
+	atime atomic.Int64
+	mtime atomic.Int64
+	ctime atomic.Int64
+	btime atomic.Int64
 	// File size, which differs from other metadata in two ways:
 	//
 	//	- We make a best-effort attempt to keep it up to date even if
@@ -855,18 +854,18 @@ type dentry struct {
 	//
 	//	- size is protected by both metadataMu and dataMu (i.e. both must be
 	//		locked to mutate it; locking either is sufficient to access it).
-	size atomicbitops.Uint64
+	size atomic.Uint64
 	// If this dentry does not represent a synthetic file, deleted is 0, and
 	// atimeDirty/mtimeDirty are non-zero, atime/mtime may have diverged from the
 	// remote file's timestamps, which should be updated when this dentry is
 	// evicted.
-	atimeDirty atomicbitops.Uint32
-	mtimeDirty atomicbitops.Uint32
+	atimeDirty atomic.Uint32
+	mtimeDirty atomic.Uint32
 
 	// nlink counts the number of hard links to this dentry. It's updated and
 	// accessed using atomic operations. It's not protected by metadataMu like the
 	// other metadata fields.
-	nlink atomicbitops.Uint32
+	nlink atomic.Uint32
 
 	mapsMu sync.Mutex `state:"nosave"`
 
@@ -896,10 +895,10 @@ type dentry struct {
 	// readFD and writeFD may or may not be the same file descriptor. mmapFD is
 	// always either -1 or equal to readFD; if the file has been opened for
 	// writing, it is additionally either -1 or equal to writeFD.
-	handleMu sync.RWMutex       `state:"nosave"`
-	readFD   atomicbitops.Int32 `state:"nosave"`
-	writeFD  atomicbitops.Int32 `state:"nosave"`
-	mmapFD   atomicbitops.Int32 `state:"nosave"`
+	handleMu sync.RWMutex `state:"nosave"`
+	readFD   atomic.Int32 `state:"nosave"`
+	writeFD  atomic.Int32 `state:"nosave"`
+	mmapFD   atomic.Int32 `state:"nosave"`
 
 	dataMu sync.RWMutex `state:"nosave"`
 
@@ -1055,8 +1054,7 @@ func (d *lisafsDentry) updateMetadataFromStatxLocked(stat *linux.Statx) {
 func (d *dentry) refreshSizeLocked(ctx context.Context) error {
 	d.handleMu.RLock()
 
-	// Can use RacyLoad() because handleMu is locked.
-	if d.writeFD.RacyLoad() < 0 {
+	if d.writeFD.Load() < 0 {
 		d.handleMu.RUnlock()
 		// Use a suitable FD if we don't have a writable host FD.
 		return d.updateMetadataLocked(ctx, noHandle)
@@ -1064,8 +1062,7 @@ func (d *dentry) refreshSizeLocked(ctx context.Context) error {
 
 	// Using statx(2) with a minimal mask is faster than fstat(2).
 	var stat unix.Statx_t
-	// Can use RacyLoad() because handleMu is locked.
-	err := unix.Statx(int(d.writeFD.RacyLoad()), "", unix.AT_EMPTY_PATH, unix.STATX_SIZE, &stat)
+	err := unix.Statx(int(d.writeFD.Load()), "", unix.AT_EMPTY_PATH, unix.STATX_SIZE, &stat)
 	d.handleMu.RUnlock() // must be released before updateSizeLocked()
 	if err != nil {
 		return err
@@ -1269,7 +1266,7 @@ func (d *dentry) doAllocate(ctx context.Context, offset, length uint64, allocate
 
 	// Allocating a smaller size is a noop.
 	size := offset + length
-	if d.cachedMetadataAuthoritative() && size <= d.size.RacyLoad() {
+	if d.cachedMetadataAuthoritative() && size <= d.size.Load() {
 		return nil
 	}
 
@@ -1295,7 +1292,7 @@ func (d *dentry) updateSizeLocked(newSize uint64) {
 // Postconditions: d.dataMu is unlocked.
 // +checklocksrelease:d.dataMu
 func (d *dentry) updateSizeAndUnlockDataMuLocked(newSize uint64) {
-	oldSize := d.size.RacyLoad()
+	oldSize := d.size.Load()
 	d.size.Store(newSize)
 	// d.dataMu must be unlocked to lock d.mapsMu and invalidate mappings
 	// below. This allows concurrent calls to Read/Translate/etc. These
@@ -1714,16 +1711,15 @@ func (d *dentry) destroyDisconnected(ctx context.Context) {
 	// Close any resources held by the implementation.
 	d.destroyImpl(ctx)
 
-	// Can use RacyLoad() because handleMu is locked.
-	if d.readFD.RacyLoad() >= 0 {
-		_ = unix.Close(int(d.readFD.RacyLoad()))
+	if d.readFD.Load() >= 0 {
+		_ = unix.Close(int(d.readFD.Load()))
 	}
-	if d.writeFD.RacyLoad() >= 0 && d.readFD.RacyLoad() != d.writeFD.RacyLoad() {
-		_ = unix.Close(int(d.writeFD.RacyLoad()))
+	if d.writeFD.Load() >= 0 && d.readFD.Load() != d.writeFD.Load() {
+		_ = unix.Close(int(d.writeFD.Load()))
 	}
-	d.readFD = atomicbitops.FromInt32(-1)
-	d.writeFD = atomicbitops.FromInt32(-1)
-	d.mmapFD = atomicbitops.FromInt32(-1)
+	d.readFD.Store(-1)
+	d.writeFD.Store(-1)
+	d.mmapFD.Store(-1)
 	d.handleMu.Unlock()
 
 	if !d.isSynthetic() {
@@ -1884,9 +1880,9 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 
 	// Update d.readFD and d.writeFD
 	if h.fd >= 0 {
-		if openReadable && openWritable && (d.readFD.RacyLoad() < 0 || d.writeFD.RacyLoad() < 0 || d.readFD.RacyLoad() != d.writeFD.RacyLoad()) {
+		if openReadable && openWritable && (d.readFD.Load() < 0 || d.writeFD.Load() < 0 || d.readFD.Load() != d.writeFD.Load()) {
 			// Replace existing FDs with this one.
-			if d.readFD.RacyLoad() >= 0 {
+			if d.readFD.Load() >= 0 {
 				// We already have a readable FD that may be in use by
 				// concurrent callers of d.pf.FD().
 				if d.fs.opts.overlayfsStaleRead {
@@ -1900,7 +1896,7 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 						h.close(ctx)
 						return err
 					}
-					fdsToClose = append(fdsToClose, d.readFD.RacyLoad())
+					fdsToClose = append(fdsToClose, d.readFD.Load())
 					invalidateTranslations = true
 					d.readFD.Store(h.fd)
 				} else {
@@ -1912,25 +1908,25 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 					// may use the old or new file description, but this
 					// doesn't matter since they refer to the same file, and
 					// any racing mappings must be read-only.
-					if err := unix.Dup3(int(h.fd), int(d.readFD.RacyLoad()), unix.O_CLOEXEC); err != nil {
-						oldFD := d.readFD.RacyLoad()
+					if err := unix.Dup3(int(h.fd), int(d.readFD.Load()), unix.O_CLOEXEC); err != nil {
+						oldFD := d.readFD.Load()
 						d.handleMu.Unlock()
 						ctx.Warningf("gofer.dentry.ensureSharedHandle: failed to dup fd %d to fd %d: %v", h.fd, oldFD, err)
 						h.close(ctx)
 						return err
 					}
 					fdsToClose = append(fdsToClose, h.fd)
-					h.fd = d.readFD.RacyLoad()
+					h.fd = d.readFD.Load()
 				}
 			} else {
 				d.readFD.Store(h.fd)
 			}
-			if d.writeFD.RacyLoad() != h.fd && d.writeFD.RacyLoad() >= 0 {
-				fdsToClose = append(fdsToClose, d.writeFD.RacyLoad())
+			if d.writeFD.Load() != h.fd && d.writeFD.Load() >= 0 {
+				fdsToClose = append(fdsToClose, d.writeFD.Load())
 			}
 			d.writeFD.Store(h.fd)
 			d.mmapFD.Store(h.fd)
-		} else if openReadable && d.readFD.RacyLoad() < 0 {
+		} else if openReadable && d.readFD.Load() < 0 {
 			readHandleWasOk := d.isReadHandleOk()
 			d.readFD.Store(h.fd)
 			// If the file has not been opened for writing, the new FD may
@@ -1942,9 +1938,9 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 				invalidateTranslations = readHandleWasOk
 				d.mmapFD.Store(h.fd)
 			}
-		} else if openWritable && d.writeFD.RacyLoad() < 0 {
+		} else if openWritable && d.writeFD.Load() < 0 {
 			d.writeFD.Store(h.fd)
-			if d.readFD.RacyLoad() >= 0 {
+			if d.readFD.Load() >= 0 {
 				// We have an existing read-only FD, but the file has just
 				// been opened for writing, so we need to start supporting
 				// writable memory mappings. However, the new FD is not
@@ -1958,7 +1954,7 @@ func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool
 			// The new FD is not useful.
 			fdsToClose = append(fdsToClose, h.fd)
 		}
-	} else if openWritable && d.writeFD.RacyLoad() < 0 && d.mmapFD.RacyLoad() >= 0 {
+	} else if openWritable && d.writeFD.Load() < 0 && d.mmapFD.Load() >= 0 {
 		// We have an existing read-only FD, but the file has just been
 		// opened for writing, so we need to start supporting writable
 		// memory mappings. However, we have no writable host FD. Switch to

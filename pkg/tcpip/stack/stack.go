@@ -28,7 +28,6 @@ import (
 	"time"
 
 	"golang.org/x/time/rate"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/log"
 	cryptorand "gvisor.dev/gvisor/pkg/rand"
@@ -58,10 +57,10 @@ type ResumableEndpoint interface {
 }
 
 // uniqueIDGenerator is a default unique ID generator.
-type uniqueIDGenerator atomicbitops.Uint64
+type uniqueIDGenerator atomic.Uint64
 
 func (u *uniqueIDGenerator) UniqueID() uint64 {
-	return ((*atomicbitops.Uint64)(u)).Add(1)
+	return ((*atomic.Uint64)(u)).Add(1)
 }
 
 var netRawMissingLogger = log.BasicRateLimitedLogger(time.Minute)

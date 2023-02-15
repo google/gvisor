@@ -17,9 +17,9 @@ package proc
 import (
 	"bytes"
 	"fmt"
+	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -44,7 +44,7 @@ type yamaPtraceScope struct {
 	kernfs.DynamicBytesFile
 
 	// level is the ptrace_scope level.
-	level *atomicbitops.Int32
+	level *atomic.Int32
 }
 
 var _ vfs.WritableDynamicBytesSource = (*yamaPtraceScope)(nil)

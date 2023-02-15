@@ -16,9 +16,9 @@ package stack
 
 import (
 	"fmt"
+	"sync/atomic"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -218,7 +218,7 @@ type groDispatcher struct {
 	// newInterval notifies about changes to the interval.
 	newInterval chan struct{}
 	// intervalNS is the interval in nanoseconds.
-	intervalNS atomicbitops.Int64
+	intervalNS atomic.Int64
 	// stop instructs the GRO dispatcher goroutine to stop.
 	stop chan struct{}
 

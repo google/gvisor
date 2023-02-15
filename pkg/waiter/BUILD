@@ -34,5 +34,4 @@ go_test(
         "waiter_test.go",
     ],
     library = ":waiter",
-    deps = ["//pkg/atomicbitops"],
 )

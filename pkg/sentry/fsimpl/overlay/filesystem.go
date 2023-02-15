@@ -19,7 +19,6 @@ import (
 	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
@@ -271,7 +270,7 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 		childVD.IncRef()
 		if isUpper {
 			child.upperVD = childVD
-			child.copiedUp = atomicbitops.FromUint32(1)
+			child.copiedUp.Store(1)
 		} else {
 			child.lowerVDs = append(child.lowerVDs, childVD)
 		}
@@ -281,12 +280,12 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 			} else {
 				topLookupLayer = lookupLayerLower
 			}
-			child.mode = atomicbitops.FromUint32(uint32(stat.Mode))
-			child.uid = atomicbitops.FromUint32(stat.UID)
-			child.gid = atomicbitops.FromUint32(stat.GID)
-			child.devMajor = atomicbitops.FromUint32(stat.DevMajor)
-			child.devMinor = atomicbitops.FromUint32(stat.DevMinor)
-			child.ino = atomicbitops.FromUint64(stat.Ino)
+			child.mode.Store(uint32(stat.Mode))
+			child.uid.Store(stat.UID)
+			child.gid.Store(stat.GID)
+			child.devMajor.Store(stat.DevMajor)
+			child.devMinor.Store(stat.DevMinor)
+			child.ino.Store(stat.Ino)
 		}
 
 		// For non-directory files, only the topmost layer that contains a file
@@ -298,9 +297,9 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 		// Directories use the lowest layer inode and device numbers to generate a
 		// filesystem local inode number. This way the inode number does not change
 		// after copy ups.
-		child.devMajor = atomicbitops.FromUint32(stat.DevMajor)
-		child.devMinor = atomicbitops.FromUint32(stat.DevMinor)
-		child.ino = atomicbitops.FromUint64(stat.Ino)
+		child.devMajor.Store(stat.DevMajor)
+		child.devMinor.Store(stat.DevMinor)
+		child.ino.Store(stat.Ino)
 
 		// Directories are merged with directories from lower layers if they
 		// are not explicitly opaque.
@@ -325,21 +324,20 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 
 	// Device and inode numbers were copied from the topmost layer above for
 	// non-directories. They were copied from the bottommost layer for
-	// directories. Override them if necessary. We can use RacyLoad() because
-	// child is still being initialized.
+	// directories. Override them if necessary.
 	if child.isDir() {
-		child.ino.Store(fs.newDirIno(child.devMajor.RacyLoad(), child.devMinor.RacyLoad(), child.ino.RacyLoad()))
-		child.devMajor = atomicbitops.FromUint32(linux.UNNAMED_MAJOR)
-		child.devMinor = atomicbitops.FromUint32(fs.dirDevMinor)
+		child.ino.Store(fs.newDirIno(child.devMajor.Load(), child.devMinor.Load(), child.ino.Load()))
+		child.devMajor.Store(linux.UNNAMED_MAJOR)
+		child.devMinor.Store(fs.dirDevMinor)
 	} else if !child.upperVD.Ok() {
-		childDevMinor, err := fs.getLowerDevMinor(child.devMajor.RacyLoad(), child.devMinor.RacyLoad())
+		childDevMinor, err := fs.getLowerDevMinor(child.devMajor.Load(), child.devMinor.Load())
 		if err != nil {
-			ctx.Infof("overlay.filesystem.lookupLocked: failed to map lower layer device number (%d, %d) to an overlay-specific device number: %v", child.devMajor.RacyLoad(), child.devMinor.RacyLoad(), err)
+			ctx.Infof("overlay.filesystem.lookupLocked: failed to map lower layer device number (%d, %d) to an overlay-specific device number: %v", child.devMajor.Load(), child.devMinor.Load(), err)
 			child.destroyLocked(ctx)
 			return nil, topLookupLayer, err
 		}
-		child.devMajor = atomicbitops.FromUint32(linux.UNNAMED_MAJOR)
-		child.devMinor = atomicbitops.FromUint32(childDevMinor)
+		child.devMajor.Store(linux.UNNAMED_MAJOR)
+		child.devMinor.Store(childDevMinor)
 	}
 
 	parent.IncRef()

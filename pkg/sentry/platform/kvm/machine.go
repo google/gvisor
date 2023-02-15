@@ -48,7 +48,7 @@ type machine struct {
 	//
 	// If nextSlot is ^uint32(0), then slots are currently being updated, and the
 	// caller should retry.
-	nextSlot atomicbitops.Uint32
+	nextSlot atomic.Uint32
 
 	// upperSharedPageTables tracks the read-only shared upper of all the pagetables.
 	upperSharedPageTables *pagetables.PageTables
@@ -151,13 +151,13 @@ type vCPU struct {
 	fd int
 
 	// tid is the last set tid.
-	tid atomicbitops.Uint64
+	tid atomic.Uint64
 
 	// userExits is the count of user exits.
-	userExits atomicbitops.Uint64
+	userExits atomic.Uint64
 
 	// guestExits is the count of guest to host world switches.
-	guestExits atomicbitops.Uint64
+	guestExits atomic.Uint64
 
 	// faults is a count of world faults (informational only).
 	faults uint32
@@ -165,7 +165,7 @@ type vCPU struct {
 	// state is the vCPU state.
 	//
 	// This is a bitmask of the three fields (vCPU*) described above.
-	state atomicbitops.Uint32
+	state atomic.Uint32
 
 	// runData for this vCPU.
 	runData *runData
@@ -550,7 +550,7 @@ func (m *machine) Put(c *vCPU) {
 // newDirtySet returns a new dirty set.
 func (m *machine) newDirtySet() *dirtySet {
 	return &dirtySet{
-		vCPUMasks: make([]atomicbitops.Uint64,
+		vCPUMasks: make([]atomic.Uint64,
 			(m.maxVCPUs+63)/64, (m.maxVCPUs+63)/64),
 	}
 }
@@ -752,7 +752,7 @@ const machinePoolSize = 16
 // machinePool is enumerated from the seccompMmapHandler signal handler
 var (
 	machinePool          [machinePoolSize]machineAtomicPtr
-	machinePoolLen       atomicbitops.Uint32
+	machinePoolLen       atomic.Uint32
 	machinePoolMu        sync.Mutex
 	seccompMmapRulesOnce gosync.Once
 )

@@ -22,9 +22,9 @@ import (
 	"math"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -291,7 +291,7 @@ func (sq *sndQueueInfo) CloneState(other *stack.TCPSndBufState) {
 	other.SndClosed = sq.SndClosed
 	other.PacketTooBigCount = sq.PacketTooBigCount
 	other.SndMTU = sq.SndMTU
-	other.AutoTuneSndBufDisabled = atomicbitops.FromUint32(sq.AutoTuneSndBufDisabled.RacyLoad())
+	other.AutoTuneSndBufDisabled.Store(sq.AutoTuneSndBufDisabled.Load())
 }
 
 // endpoint represents a TCP endpoint. This struct serves as the interface
@@ -380,7 +380,7 @@ type endpoint struct {
 	// compute the window and the actual available buffer space. This is distinct
 	// from rcvBufUsed above which is the actual number of payload bytes held in
 	// the buffer not including any segment overheads.
-	rcvMemUsed atomicbitops.Int32
+	rcvMemUsed atomic.Int32
 
 	// mu protects all endpoint fields unless documented otherwise. mu must
 	// be acquired before interacting with the endpoint fields.
@@ -388,7 +388,7 @@ type endpoint struct {
 	// During handshake, mu is locked by the protocol listen goroutine and
 	// released by the handshake completion goroutine.
 	mu          sync.CrossGoroutineMutex `state:"nosave"`
-	ownedByUser atomicbitops.Uint32
+	ownedByUser atomic.Uint32
 
 	// rcvQueue is the queue for ready-for-delivery segments.
 	//
@@ -397,7 +397,7 @@ type endpoint struct {
 
 	// state must be read/set using the EndpointState()/setEndpointState()
 	// methods.
-	state atomicbitops.Uint32 `state:".(EndpointState)"`
+	state atomic.Uint32 `state:".(EndpointState)"`
 
 	// origEndpointState is only used during a restore phase to save the
 	// endpoint state at restore time as the socket is moved to it's correct
@@ -837,7 +837,6 @@ func newEndpoint(s *stack.Stack, protocol *protocol, netProto tcpip.NetworkProto
 			},
 		},
 		waiterQueue: waiterQueue,
-		state:       atomicbitops.FromUint32(uint32(StateInitial)),
 		keepalive: keepalive{
 			idle:     DefaultKeepaliveIdle,
 			interval: DefaultKeepaliveInterval,
@@ -850,6 +849,7 @@ func newEndpoint(s *stack.Stack, protocol *protocol, netProto tcpip.NetworkProto
 		windowClamp:   DefaultReceiveBufferSize,
 		maxSynRetries: DefaultSynRetries,
 	}
+	e.state.Store(uint32(StateInitial))
 	e.ops.InitHandler(e, e.stack, GetTCPSendBufferLimits, GetTCPReceiveBufferLimits)
 	e.ops.SetMulticastLoop(true)
 	e.ops.SetQuickAck(true)

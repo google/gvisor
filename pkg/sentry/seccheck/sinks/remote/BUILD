@@ -7,7 +7,6 @@ go_library(
     srcs = ["remote.go"],
     visibility = ["//:sandbox"],
     deps = [
-        "//pkg/atomicbitops",
         "//pkg/cleanup",
         "//pkg/context",
         "//pkg/fd",

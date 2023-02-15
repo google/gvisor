@@ -60,9 +60,9 @@ package kernfs
 
 import (
 	"fmt"
+	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
@@ -112,7 +112,7 @@ type Filesystem struct {
 
 	// nextInoMinusOne is used to to allocate inode numbers on this
 	// filesystem. Must be accessed by atomic operations.
-	nextInoMinusOne atomicbitops.Uint64
+	nextInoMinusOne atomic.Uint64
 
 	// cachedDentries contains all dentries with 0 references. (Due to race
 	// conditions, it may also contain dentries with non-zero references.)
@@ -217,14 +217,14 @@ type Dentry struct {
 	// added to the cache or destroyed. If refs == -1, the dentry has already
 	// been destroyed. refs are allowed to go to 0 and increase again. refs is
 	// accessed using atomic memory operations.
-	refs atomicbitops.Int64
+	refs atomic.Int64
 
 	// fs is the owning filesystem. fs is immutable.
 	fs *Filesystem
 
 	// flags caches useful information about the dentry from the inode. See the
 	// dflags* consts above.
-	flags atomicbitops.Uint32
+	flags atomic.Uint32
 
 	parent *Dentry
 	name   string
@@ -247,7 +247,7 @@ type Dentry struct {
 
 	// If deleted is non-zero, the file represented by this dentry has been
 	// deleted. deleted is accessed using atomic memory operations.
-	deleted atomicbitops.Uint32
+	deleted atomic.Uint32
 }
 
 // IncRef implements vfs.DentryImpl.IncRef.
@@ -477,10 +477,10 @@ func (d *Dentry) Init(fs *Filesystem, inode Inode) {
 	d.refs.Store(1)
 	ftype := inode.Mode().FileType()
 	if ftype == linux.ModeDirectory {
-		d.flags = atomicbitops.FromUint32(d.flags.RacyLoad() | dflagsIsDir)
+		d.flags.Store(d.flags.Load() | dflagsIsDir)
 	}
 	if ftype == linux.ModeSymlink {
-		d.flags = atomicbitops.FromUint32(d.flags.RacyLoad() | dflagsIsSymlink)
+		d.flags.Store(d.flags.Load() | dflagsIsSymlink)
 	}
 	refs.Register(d)
 }

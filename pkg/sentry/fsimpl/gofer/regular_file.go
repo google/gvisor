@@ -217,7 +217,7 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 	// Set offset to file size if the fd was opened with O_APPEND.
 	if fd.vfsfd.StatusFlags()&linux.O_APPEND != 0 {
 		// Holding d.metadataMu is sufficient for reading d.size.
-		offset = int64(d.size.RacyLoad())
+		offset = int64(d.size.Load())
 	}
 	limit, err := vfs.CheckLimit(ctx, offset, src.NumBytes())
 	if err != nil {
@@ -370,7 +370,7 @@ func (rw *dentryReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) 
 	// readHandle() without locking dentry.dataMu.
 	rw.d.handleMu.RLock()
 	h := rw.d.readHandle()
-	if (rw.d.mmapFD.RacyLoad() >= 0 && !rw.d.fs.opts.forcePageCache) || rw.d.fs.opts.interop == InteropModeShared || rw.direct {
+	if (rw.d.mmapFD.Load() >= 0 && !rw.d.fs.opts.forcePageCache) || rw.d.fs.opts.interop == InteropModeShared || rw.direct {
 		n, err := h.readToBlocksAt(rw.ctx, dsts, rw.off)
 		rw.d.handleMu.RUnlock()
 		rw.off += n
@@ -490,7 +490,7 @@ func (rw *dentryReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, erro
 	// without locking dentry.dataMu.
 	rw.d.handleMu.RLock()
 	h := rw.d.writeHandle()
-	if (rw.d.mmapFD.RacyLoad() >= 0 && !rw.d.fs.opts.forcePageCache) || rw.d.fs.opts.interop == InteropModeShared || rw.direct {
+	if (rw.d.mmapFD.Load() >= 0 && !rw.d.fs.opts.forcePageCache) || rw.d.fs.opts.interop == InteropModeShared || rw.direct {
 		n, err := h.writeFromBlocksAt(rw.ctx, srcs, rw.off)
 		rw.off += n
 		rw.d.dataMu.Lock()
@@ -761,7 +761,7 @@ func (d *dentry) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR,
 // Translate implements memmap.Mappable.Translate.
 func (d *dentry) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
 	d.handleMu.RLock()
-	if d.mmapFD.RacyLoad() >= 0 && !d.fs.opts.forcePageCache {
+	if d.mmapFD.Load() >= 0 && !d.fs.opts.forcePageCache {
 		d.handleMu.RUnlock()
 		mr := optional
 		if d.fs.opts.limitHostFDTranslation {
@@ -952,12 +952,12 @@ func (d *dentryPlatformFile) DecRef(fr memmap.FileRange) {
 func (d *dentryPlatformFile) MapInternal(fr memmap.FileRange, at hostarch.AccessType) (safemem.BlockSeq, error) {
 	d.handleMu.RLock()
 	defer d.handleMu.RUnlock()
-	return d.hostFileMapper.MapInternal(fr, int(d.mmapFD.RacyLoad()), at.Write)
+	return d.hostFileMapper.MapInternal(fr, int(d.mmapFD.Load()), at.Write)
 }
 
 // FD implements memmap.File.FD.
 func (d *dentryPlatformFile) FD() int {
 	d.handleMu.RLock()
 	defer d.handleMu.RUnlock()
-	return int(d.mmapFD.RacyLoad())
+	return int(d.mmapFD.Load())
 }

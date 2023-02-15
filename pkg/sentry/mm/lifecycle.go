@@ -17,7 +17,6 @@ package mm
 import (
 	"fmt"
 
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -29,17 +28,18 @@ import (
 
 // NewMemoryManager returns a new MemoryManager with no mappings and 1 user.
 func NewMemoryManager(p platform.Platform, mfp pgalloc.MemoryFileProvider, sleepForActivation bool) *MemoryManager {
-	return &MemoryManager{
+	mm := &MemoryManager{
 		p:                  p,
 		mfp:                mfp,
 		haveASIO:           p.SupportsAddressSpaceIO(),
 		privateRefs:        &privateRefs{},
-		users:              atomicbitops.FromInt32(1),
 		auxv:               arch.Auxv{},
-		dumpability:        atomicbitops.FromInt32(int32(UserDumpable)),
 		aioManager:         aioManager{contexts: make(map[uint64]*AIOContext)},
 		sleepForActivation: sleepForActivation,
 	}
+	mm.users.Store(1)
+	mm.dumpability.Store(int32(UserDumpable))
+	return mm
 }
 
 // SetMmapLayout initializes mm's layout from the given arch.Context64.
@@ -78,7 +78,6 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 		haveASIO:    mm.haveASIO,
 		layout:      mm.layout,
 		privateRefs: mm.privateRefs,
-		users:       atomicbitops.FromInt32(1),
 		brk:         mm.brk,
 		usageAS:     mm.usageAS,
 		dataAS:      mm.dataAS,
@@ -92,11 +91,12 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 		auxv:                 append(arch.Auxv(nil), mm.auxv...),
 		// IncRef'd below, once we know that there isn't an error.
 		executable:         mm.executable,
-		dumpability:        atomicbitops.FromInt32(mm.dumpability.Load()),
 		aioManager:         aioManager{contexts: make(map[uint64]*AIOContext)},
 		sleepForActivation: mm.sleepForActivation,
 		vdsoSigReturnAddr:  mm.vdsoSigReturnAddr,
 	}
+	mm.users.Store(1)
+	mm.dumpability.Store(mm.dumpability.Load())
 
 	// Copy vmas.
 	dontforks := false

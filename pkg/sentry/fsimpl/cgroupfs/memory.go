@@ -18,9 +18,9 @@ import (
 	"bytes"
 	"fmt"
 	"math"
+	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -34,25 +34,24 @@ type memoryController struct {
 	controllerStateless
 	controllerNoResource
 
-	limitBytes            atomicbitops.Int64
-	softLimitBytes        atomicbitops.Int64
-	moveChargeAtImmigrate atomicbitops.Int64
+	limitBytes            atomic.Int64
+	softLimitBytes        atomic.Int64
+	moveChargeAtImmigrate atomic.Int64
 	pressureLevel         int64
 }
 
 var _ controller = (*memoryController)(nil)
 
 func newMemoryController(fs *filesystem, defaults map[string]int64) *memoryController {
-	c := &memoryController{
-		// Linux sets these limits to (PAGE_COUNTER_MAX * PAGE_SIZE) by default,
-		// which is ~ 2**63 on a 64-bit system. So essentially, inifinity. The
-		// exact value isn't very important.
+	c := &memoryController{}
 
-		limitBytes:     atomicbitops.FromInt64(math.MaxInt64),
-		softLimitBytes: atomicbitops.FromInt64(math.MaxInt64),
-	}
+	// Linux sets these limits to (PAGE_COUNTER_MAX * PAGE_SIZE) by
+	// default, which is ~ 2**63 on a 64-bit system. So essentially,
+	// inifinity. The exact value isn't very important.
+	c.limitBytes.Store(math.MaxInt64)
+	c.softLimitBytes.Store(math.MaxInt64)
 
-	consumeDefault := func(name string, valPtr *atomicbitops.Int64) {
+	consumeDefault := func(name string, valPtr *atomic.Int64) {
 		if val, ok := defaults[name]; ok {
 			valPtr.Store(val)
 			delete(defaults, name)
@@ -69,13 +68,12 @@ func newMemoryController(fs *filesystem, defaults map[string]int64) *memoryContr
 
 // Clone implements controller.Clone.
 func (c *memoryController) Clone() controller {
-	new := &memoryController{
-		limitBytes:            atomicbitops.FromInt64(c.limitBytes.Load()),
-		softLimitBytes:        atomicbitops.FromInt64(c.softLimitBytes.Load()),
-		moveChargeAtImmigrate: atomicbitops.FromInt64(c.moveChargeAtImmigrate.Load()),
-	}
-	new.controllerCommon.cloneFromParent(c)
-	return new
+	other := &memoryController{}
+	c.limitBytes.Store(c.limitBytes.Load())
+	c.softLimitBytes.Store(c.softLimitBytes.Load())
+	c.moveChargeAtImmigrate.Store(c.moveChargeAtImmigrate.Load())
+	other.controllerCommon.cloneFromParent(c)
+	return other
 }
 
 // AddControlFiles implements controller.AddControlFiles.

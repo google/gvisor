@@ -18,10 +18,10 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"sync/atomic"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
@@ -39,7 +39,7 @@ type fileDescription struct {
 // genCount contains the number of times its DynamicBytesSource.Generate()
 // implementation has been called.
 type genCount struct {
-	count atomicbitops.Uint64
+	count atomic.Uint64
 }
 
 // Generate implements DynamicBytesSource.Generate.

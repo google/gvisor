@@ -71,7 +71,7 @@ func (d *dentry) readHandle() handle {
 	case *lisafsDentry:
 		return handle{
 			fdLisa: dt.readFDLisa,
-			fd:     d.readFD.RacyLoad(),
+			fd:     d.readFD.Load(),
 		}
 	case nil: // synthetic dentry
 		return noHandle
@@ -86,7 +86,7 @@ func (d *dentry) writeHandle() handle {
 	case *lisafsDentry:
 		return handle{
 			fdLisa: dt.writeFDLisa,
-			fd:     d.writeFD.RacyLoad(),
+			fd:     d.writeFD.Load(),
 		}
 	case nil: // synthetic dentry
 		return noHandle

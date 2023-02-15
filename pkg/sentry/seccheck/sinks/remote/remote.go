@@ -21,11 +21,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/sys/unix"
 	"google.golang.org/protobuf/proto"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fd"
@@ -53,7 +53,7 @@ func init() {
 type remote struct {
 	endpoint *fd.FD
 
-	droppedCount atomicbitops.Uint32
+	droppedCount atomic.Uint32
 
 	retries        int
 	initialBackoff time.Duration

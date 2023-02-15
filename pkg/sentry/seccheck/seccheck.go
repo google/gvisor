@@ -17,8 +17,9 @@
 package seccheck
 
 import (
+	"sync/atomic"
+
 	"google.golang.org/protobuf/proto"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -199,7 +200,7 @@ type State struct {
 	// is registered.
 	//
 	// Mutation of enabledPoints is serialized by registrationMu.
-	enabledPoints [numPointBitmaskUint32s]atomicbitops.Uint32
+	enabledPoints [numPointBitmaskUint32s]atomic.Uint32
 
 	// registrationSeq supports store-free atomic reads of registeredSinks.
 	registrationSeq sync.SeqCount
@@ -233,7 +234,7 @@ func (s *State) AppendSink(c Sink, reqs []PointReq) {
 	updateSyscalls := false
 	for _, req := range reqs {
 		word, bit := req.Pt/numPointsPerUint32, req.Pt%numPointsPerUint32
-		s.enabledPoints[word].Store(s.enabledPoints[word].RacyLoad() | (uint32(1) << bit))
+		s.enabledPoints[word].Store(s.enabledPoints[word].Load() | (uint32(1) << bit))
 		if req.Pt >= pointLengthBeforeSyscalls {
 			updateSyscalls = true
 		}

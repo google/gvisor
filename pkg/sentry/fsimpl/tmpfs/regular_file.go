@@ -18,9 +18,9 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -85,7 +85,7 @@ type regularFile struct {
 	// either mutex, while writing requires holding both AND using atomics.
 	// Readers that do not require consistency (like Stat) may read the
 	// value atomically without holding either lock.
-	size atomicbitops.Uint64
+	size atomic.Uint64
 }
 
 func (fs *filesystem) newRegularFile(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, parentDir *directory) *inode {
@@ -94,7 +94,7 @@ func (fs *filesystem) newRegularFile(kuid auth.KUID, kgid auth.KGID, mode linux.
 		seals:           linux.F_SEAL_SEAL,
 	}
 	file.inode.init(file, fs, kuid, kgid, linux.S_IFREG|mode, parentDir)
-	file.inode.nlink = atomicbitops.FromUint32(1) // from parent directory
+	file.inode.nlink.Store(1) // from parent directory
 	return &file.inode
 }
 
@@ -181,7 +181,7 @@ func (rf *regularFile) growLocked(newSize uint64) error {
 
 // Preconditions: rf.inode.mu must be held.
 func (rf *regularFile) truncateLocked(newSize uint64) (bool, error) {
-	oldSize := rf.size.RacyLoad()
+	oldSize := rf.size.Load()
 	if newSize == oldSize {
 		// Nothing to do.
 		return false, nil
@@ -284,7 +284,7 @@ func (rf *regularFile) Translate(ctx context.Context, required, optional memmap.
 
 	// Constrain translations to f.attr.Size (rounded up) to prevent
 	// translation to pages that may be concurrently truncated.
-	pgend := offsetPageEnd(int64(rf.size.RacyLoad()))
+	pgend := offsetPageEnd(int64(rf.size.Load()))
 	var beyondEOF bool
 	if required.End > pgend {
 		if required.Start >= pgend {
@@ -307,7 +307,7 @@ func (rf *regularFile) Translate(ctx context.Context, required, optional memmap.
 		}
 		optional = required
 	}
-	pagesAlloced, cerr := rf.data.Fill(ctx, required, optional, rf.size.RacyLoad(), rf.inode.fs.mf, rf.memoryUsageKind, false /* populate */, func(_ context.Context, dsts safemem.BlockSeq, _ uint64) (uint64, error) {
+	pagesAlloced, cerr := rf.data.Fill(ctx, required, optional, rf.size.Load(), rf.inode.fs.mf, rf.memoryUsageKind, false /* populate */, func(_ context.Context, dsts safemem.BlockSeq, _ uint64) (uint64, error) {
 		// Newly-allocated pages are zeroed, so we don't need to do anything.
 		return dsts.NumBytes(), nil
 	})
@@ -475,7 +475,7 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 	// If the file is opened with O_APPEND, update offset to file size.
 	if fd.vfsfd.StatusFlags()&linux.O_APPEND != 0 {
 		// Locking f.inode.mu is sufficient for reading f.size.
-		offset = int64(f.size.RacyLoad())
+		offset = int64(f.size.Load())
 	}
 	end := offset + srclen
 	if end < offset {
@@ -584,7 +584,7 @@ func putRegularFileReadWriter(rw *regularFileReadWriter) {
 func (rw *regularFileReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
 	rw.file.dataMu.RLock()
 	defer rw.file.dataMu.RUnlock()
-	size := rw.file.size.RacyLoad()
+	size := rw.file.size.Load()
 
 	// Compute the range to read (limited by file size and overflow-checked).
 	if rw.off >= size {
@@ -656,7 +656,7 @@ func (rw *regularFileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64,
 	switch {
 	case rw.file.seals&linux.F_SEAL_WRITE != 0: // Write sealed
 		return 0, linuxerr.EPERM
-	case end > rw.file.size.RacyLoad() && rw.file.seals&linux.F_SEAL_GROW != 0: // Grow sealed
+	case end > rw.file.size.Load() && rw.file.seals&linux.F_SEAL_GROW != 0: // Grow sealed
 		// When growth is sealed, Linux effectively allows writes which would
 		// normally grow the file to partially succeed up to the current EOF,
 		// rounded down to the page boundary before the EOF.
@@ -671,7 +671,7 @@ func (rw *regularFileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64,
 		//
 		// See Linux, mm/filemap.c:generic_perform_write() and
 		// mm/shmem.c:shmem_write_begin().
-		if pgstart := uint64(hostarch.Addr(rw.file.size.RacyLoad()).RoundDown()); end > pgstart {
+		if pgstart := uint64(hostarch.Addr(rw.file.size.Load()).RoundDown()); end > pgstart {
 			end = pgstart
 		}
 		if end <= rw.off {
@@ -745,7 +745,7 @@ func (rw *regularFileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64,
 exitLoop:
 	// If the write ends beyond the file's previous size, it causes the
 	// file to grow.
-	if rw.off > rw.file.size.RacyLoad() {
+	if rw.off > rw.file.size.Load() {
 		rw.file.size.Store(rw.off)
 	}
 
