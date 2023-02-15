@@ -195,6 +195,31 @@ func ReadSpecFromFile(bundleDir string, specFile *os.File, conf *config.Config) 
 			m.Source = absPath(bundleDir, m.Source)
 		}
 	}
+	// Look for config bundle annotations and verify that they exist.
+	const configBundlePrefix = "dev.gvisor.bundle."
+	var bundles []config.BundleName
+	for annotation, val := range spec.Annotations {
+		if !strings.HasPrefix(annotation, configBundlePrefix) {
+			continue
+		}
+		if val != "true" {
+			return nil, fmt.Errorf("invalid value %q for annotation %q (must be set to 'true' or removed entirely)", val, annotation)
+		}
+		bundleName := config.BundleName(annotation[len(configBundlePrefix):])
+		if _, exists := config.Bundles[bundleName]; !exists {
+			log.Warningf("Bundle name %q (from annotation %q=%q) does not exist; this bundle may have been deprecated. Skipping.", bundleName, annotation, val)
+			continue
+		}
+		bundles = append(bundles, bundleName)
+	}
+
+	// Apply config bundles, if any.
+	if len(bundles) > 0 {
+		log.Infof("Applying config bundles: %v", bundles)
+		if err := conf.ApplyBundles(flag.CommandLine, bundles...); err != nil {
+			return nil, err
+		}
+	}
 
 	// Override flags using annotation to allow customization per sandbox
 	// instance.
@@ -203,7 +228,7 @@ func ReadSpecFromFile(bundleDir string, specFile *os.File, conf *config.Config) 
 		if strings.HasPrefix(annotation, flagPrefix) {
 			name := annotation[len(flagPrefix):]
 			log.Infof("Overriding flag: %s=%q", name, val)
-			if err := conf.Override(flag.CommandLine, name, val); err != nil {
+			if err := conf.Override(flag.CommandLine, name, val /* force= */, false); err != nil {
 				return nil, err
 			}
 		}

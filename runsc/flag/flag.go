@@ -25,6 +25,9 @@ import (
 // FlagSet is an alias for flag.FlagSet.
 type FlagSet = flag.FlagSet
 
+// Flag is an alias for flag.Flag.
+type Flag = flag.Flag
+
 // Aliases for flag functions.
 var (
 	Bool        = flag.Bool

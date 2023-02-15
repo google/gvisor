@@ -15,9 +15,11 @@
 package config
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
@@ -73,21 +75,83 @@ func TestFromFlags(t *testing.T) {
 	}
 }
 
-func TestToFlags(t *testing.T) {
+func TestToFlagsFromFlags(t *testing.T) {
 	testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
 	RegisterFlags(testFlags)
+	testFlags.Set("root", "some-path")
+	testFlags.Set("debug", "true")
+	testFlags.Set("profile", "false") // Matches default value.
+	testFlags.Set("num-network-channels", "123")
+	testFlags.Set("network", "none")
 	c, err := NewFromFlags(testFlags)
 	if err != nil {
 		t.Fatal(err)
 	}
-	c.RootDir = "some-path"
-	c.Debug = true
-	c.NumNetworkChannels = 123
-	c.Network = NetworkNone
+
+	flags := c.ToFlags()
+	if len(flags) != 5 {
+		t.Errorf("wrong number of flags set, want: 5, got: %d: %s", len(flags), flags)
+	}
+	t.Logf("Flags: %s", flags)
+	fm := map[string]string{}
+	for _, f := range flags {
+		kv := strings.Split(f, "=")
+		fm[kv[0]] = kv[1]
+	}
+	for name, want := range map[string]string{
+		"--root":                 "some-path",
+		"--debug":                "true",
+		"--profile":              "false",
+		"--num-network-channels": "123",
+		"--network":              "none",
+	} {
+		if got, ok := fm[name]; ok {
+			if got != want {
+				t.Errorf("flag %q, want: %q, got: %q", name, want, got)
+			}
+		} else {
+			t.Errorf("flag %q not set", name)
+		}
+	}
+}
+
+func TestToFlagsFromManual(t *testing.T) {
+	c := &Config{
+		RootDir:            "some-path",
+		Debug:              true,
+		ProfileEnable:      false, // Matches default flag value.
+		NumNetworkChannels: 123,
+		Network:            NetworkNone,
+	}
+
+	// Create a second config with flag-default values that we'll copy from.
+	testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
+	RegisterFlags(testFlags)
+	cfgDefault, err := NewFromFlags(testFlags)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Set all the unset fields of c to their flag-default value from cfgDefault.
+	cfgReflect := reflect.ValueOf(c).Elem()
+	cfgDefaultReflect := reflect.ValueOf(cfgDefault).Elem()
+	cfgType := cfgReflect.Type()
+	for i := 0; i < cfgType.NumField(); i++ {
+		f := cfgType.Field(i)
+		name, ok := f.Tag.Lookup("flag")
+		if !ok {
+			// No flag set for this field.
+			continue
+		}
+		if name == "root" || name == "debug" || name == "profile" || name == "num-network-channels" || name == "network" {
+			continue
+		}
+		cfgReflect.Field(i).Set(cfgDefaultReflect.Field(i))
+	}
 
 	flags := c.ToFlags()
 	if len(flags) != 4 {
-		t.Errorf("wrong number of flags set, want: 5, got: %d: %s", len(flags), flags)
+		t.Errorf("wrong number of flags set, want: 4, got: %d: %s", len(flags), flags)
 	}
 	t.Logf("Flags: %s", flags)
 	fm := map[string]string{}
@@ -108,6 +172,9 @@ func TestToFlags(t *testing.T) {
 		} else {
 			t.Errorf("flag %q not set", name)
 		}
+	}
+	if _, hasProfile := fm["--profile"]; hasProfile {
+		t.Error("--profile flag unexpectedly set")
 	}
 }
 
@@ -262,7 +329,7 @@ func TestOverride(t *testing.T) {
 
 	t.Run("string", func(t *testing.T) {
 		c.RootDir = "foobar"
-		if err := c.Override(testFlags, "root", "bar"); err != nil {
+		if err := c.Override(testFlags, "root", "bar", false); err != nil {
 			t.Fatalf("Override(root, bar) failed: %v", err)
 		}
 		if c.RootDir != "bar" {
@@ -272,7 +339,7 @@ func TestOverride(t *testing.T) {
 
 	t.Run("bool", func(t *testing.T) {
 		c.Debug = true
-		if err := c.Override(testFlags, "debug", "false"); err != nil {
+		if err := c.Override(testFlags, "debug", "false", false); err != nil {
 			t.Fatalf("Override(debug, false) failed: %v", err)
 		}
 		if c.Debug {
@@ -282,7 +349,7 @@ func TestOverride(t *testing.T) {
 
 	t.Run("enum", func(t *testing.T) {
 		c.FileAccess = FileAccessShared
-		if err := c.Override(testFlags, "file-access", "exclusive"); err != nil {
+		if err := c.Override(testFlags, "file-access", "exclusive", false); err != nil {
 			t.Fatalf("Override(file-access, exclusive) failed: %v", err)
 		}
 		if c.FileAccess != FileAccessExclusive {
@@ -299,7 +366,7 @@ func TestOverrideDisabled(t *testing.T) {
 		t.Fatal(err)
 	}
 	const errMsg = "flag override disabled"
-	if err := c.Override(testFlags, "root", "path"); err == nil || !strings.Contains(err.Error(), errMsg) {
+	if err := c.Override(testFlags, "root", "path", false); err == nil || !strings.Contains(err.Error(), errMsg) {
 		t.Errorf("Override() wrong error: %v", err)
 	}
 }
@@ -334,7 +401,7 @@ func TestOverrideError(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			if err := c.Override(testFlags, tc.name, tc.value); err == nil || !strings.Contains(err.Error(), tc.error) {
+			if err := c.Override(testFlags, tc.name, tc.value, false); err == nil || !strings.Contains(err.Error(), tc.error) {
 				t.Errorf("Override(%q, %q) wrong error: %v", tc.name, tc.value, err)
 			}
 		})
@@ -351,6 +418,7 @@ func TestOverrideAllowlist(t *testing.T) {
 	for _, tc := range []struct {
 		flag  string
 		value string
+		force bool
 		error string
 	}{
 		{
@@ -383,18 +451,215 @@ func TestOverrideAllowlist(t *testing.T) {
 		},
 		{
 			flag:  "profile",
+			value: "true",
+			force: true,
+		},
+		{
+			flag:  "profile",
 			value: "123",
 			error: "flag override disabled",
 		},
 	} {
 		t.Run(tc.flag, func(t *testing.T) {
-			err := c.Override(testFlags, tc.flag, tc.value)
+			err := c.Override(testFlags, tc.flag, tc.value, tc.force)
 			if len(tc.error) == 0 {
 				if err != nil {
 					t.Errorf("Unexpected error: %v", err)
 				}
 			} else if err == nil || !strings.Contains(err.Error(), tc.error) {
 				t.Errorf("Override(%q, %q) wrong error: %v", tc.flag, tc.value, err)
+			}
+		})
+	}
+}
+
+func TestBundles(t *testing.T) {
+	noChange := func(t *testing.T, old, new *Config) {
+		t.Helper()
+		if diff := cmp.Diff(old, new, cmp.AllowUnexported(Config{})); diff != "" {
+			t.Errorf("different configs:\n%+v\nvs\n%+v\nDiff:\n%s", old, new, diff)
+		}
+	}
+	for _, test := range []struct {
+		// Name of the test.
+		Name string
+
+		// List of bundles that exist for the purpose of this test.
+		BundleConfig map[BundleName]Bundle
+
+		// Command-line arguments passed as explicit flags.
+		CommandLine []string
+
+		// Names of the bundles to apply.
+		Bundles []BundleName
+
+		// Whether we expect applying bundles to fail.
+		WantErr bool
+
+		// If bundles were successfully applied, this function is called to compare
+		// pre-bundle-application and post-bundle-application configs.
+		Verify func(t *testing.T, old, new *Config)
+	}{
+		{
+			Name:         "empty bundle",
+			BundleConfig: map[BundleName]Bundle{"empty": {}},
+			Bundles:      []BundleName{"empty"},
+			Verify:       noChange,
+		},
+		{
+			Name: "no-op bundle",
+			BundleConfig: map[BundleName]Bundle{
+				"no-debug": {
+					"debug": "false",
+				},
+			},
+			Bundles: []BundleName{"no-debug"},
+			Verify:  noChange,
+		},
+		{
+			Name: "invalid flag",
+			BundleConfig: map[BundleName]Bundle{
+				"invalid-flag": {
+					"not-a-real-flag": "nope.avi",
+				},
+			},
+			Bundles: []BundleName{"invalid-flag"},
+			WantErr: true,
+		},
+		{
+			Name: "duplicate no-op bundles",
+			BundleConfig: map[BundleName]Bundle{
+				"empty": {},
+				"no-debug": {
+					"debug": "false",
+				},
+			},
+			Bundles: []BundleName{"no-debug", "no-debug"},
+			Verify:  noChange,
+		},
+		{
+			Name: "simple bundle",
+			BundleConfig: map[BundleName]Bundle{
+				"empty": {},
+				"debug": {
+					"debug": "true",
+				},
+				"no-debug": {
+					"debug": "false",
+				},
+			},
+			Bundles: []BundleName{"debug"},
+			Verify: func(t *testing.T, old, new *Config) {
+				t.Helper()
+				if old.Debug {
+					t.Error("debug was previously set to true")
+				}
+				if !new.Debug {
+					t.Error("debug was not set to true")
+				}
+			},
+		},
+		{
+			Name: "incompatible bundles",
+			BundleConfig: map[BundleName]Bundle{
+				"debug": {
+					"debug": "true",
+				},
+				"no-debug": {
+					"debug": "false",
+				},
+			},
+			Bundles: []BundleName{"debug", "no-debug"},
+			WantErr: true,
+		},
+		{
+			Name: "compatible bundles",
+			BundleConfig: map[BundleName]Bundle{
+				"debug": {
+					"debug": "true",
+				},
+				"debug-and-profile": {
+					"debug":   "true",
+					"profile": "true",
+				},
+			},
+			Bundles: []BundleName{"debug", "debug-and-profile"},
+			Verify: func(t *testing.T, old, new *Config) {
+				t.Helper()
+				if old.Debug || old.ProfileEnable {
+					t.Error("debug/profiling was previously set to true")
+				}
+				if !new.Debug {
+					t.Error("debug was not set to true")
+				}
+				if !new.ProfileEnable {
+					t.Error("profiling was not set to true")
+				}
+			},
+		},
+		{
+			Name: "command line takes precedence to non-default value",
+			BundleConfig: map[BundleName]Bundle{
+				"no-debug": {
+					"debug": "false",
+				},
+			},
+			CommandLine: []string{"-debug=true"},
+			Bundles:     []BundleName{"no-debug"},
+			Verify: func(t *testing.T, old, new *Config) {
+				t.Helper()
+				noChange(t, old, new)
+				if !new.Debug {
+					t.Error("debug was not set to true")
+				}
+			},
+		},
+		{
+			Name: "command line takes precedence to default value",
+			BundleConfig: map[BundleName]Bundle{
+				"debug": {
+					"debug": "true",
+				},
+			},
+			CommandLine: []string{"-debug=false"},
+			Bundles:     []BundleName{"debug"},
+			Verify: func(t *testing.T, old, new *Config) {
+				t.Helper()
+				noChange(t, old, new)
+				if new.Debug {
+					t.Error("debug was set to true")
+				}
+			},
+		},
+	} {
+		t.Run(test.Name, func(t *testing.T) {
+			oldBundles := Bundles
+			defer func() {
+				Bundles = oldBundles
+			}()
+			Bundles = test.BundleConfig
+			flagSet := flag.NewFlagSet(test.Name, flag.ContinueOnError)
+			RegisterFlags(flagSet)
+			if err := flagSet.Parse(test.CommandLine); err != nil {
+				t.Fatalf("cannot parse command line %q: %v", test.CommandLine, err)
+			}
+			cfg, err := NewFromFlags(flagSet)
+			if err != nil {
+				t.Fatalf("cannot generate config from flags: %v", err)
+			}
+			oldCfg := *cfg
+			err = cfg.ApplyBundles(flagSet, test.Bundles...)
+			if test.WantErr && err == nil {
+				t.Error("got no error, but expected one")
+			}
+			if !test.WantErr && err != nil {
+				t.Errorf("got unexpected error: %v", err)
+			}
+			if err != nil && test.Verify != nil && !t.Failed() {
+				t.Error("cannot specify Verify function for erroring tests")
+			}
+			if err == nil && test.Verify != nil {
+				test.Verify(t, &oldCfg, cfg)
 			}
 		})
 	}

@@ -6,10 +6,12 @@ go_library(
     name = "config",
     srcs = [
         "config.go",
+        "config_bundles.go",
         "flags.go",
     ],
     visibility = ["//:sandbox"],
     deps = [
+        "//pkg/log",
         "//pkg/refs",
         "//pkg/sentry/watchdog",
         "//runsc/flag",
@@ -23,5 +25,8 @@ go_test(
         "config_test.go",
     ],
     library = ":config",
-    deps = ["//runsc/flag"],
+    deps = [
+        "//runsc/flag",
+        "@com_github_google_go_cmp//cmp:go_default_library",
+    ],
 )
