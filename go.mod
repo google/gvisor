@@ -24,7 +24,7 @@ require (
 	github.com/mohae/deepcopy v0.0.0-20170308212314-bb9b5e7adda9
 	github.com/opencontainers/runtime-spec v1.0.3-0.20211123151946-c2389c3cb60a
 	github.com/sirupsen/logrus v1.8.1
-	github.com/syndtr/gocapability v0.0.0-20180916011248-d98352740cb2
+	github.com/syndtr/gocapability v0.0.0-20200815063812-42c35b437635
 	github.com/vishvananda/netlink v1.0.1-0.20190930145447-2ec5bdc52b86
 	golang.org/x/mod v0.6.0-dev
 	golang.org/x/sync v0.1.0
