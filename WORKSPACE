@@ -792,8 +792,8 @@ go_repository(
 go_repository(
     name = "com_github_syndtr_gocapability",
     importpath = "github.com/syndtr/gocapability",
-    sum = "h1:b6uOv7YOFK0TYG7HtkIgExQo+2RdLuwRft63jn2HWj8=",
-    version = "v0.0.0-20180916011248-d98352740cb2",
+    sum = "h1:kdXcSzyDtseVEc4yCz2qF8ZrQvIDBJLl4S1c3GCXmoI=",
+    version = "v0.0.0-20200815063812-42c35b437635",
 )
 
 go_repository(
