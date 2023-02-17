@@ -28,6 +28,15 @@ func (d *dentry) isSocket() bool {
 	return d.fileType() == linux.S_IFSOCK
 }
 
+func isSocketTypeSupported(sockType linux.SockType) bool {
+	switch sockType {
+	case unix.SOCK_STREAM, unix.SOCK_DGRAM, unix.SOCK_SEQPACKET:
+		return true
+	default:
+		return false
+	}
+}
+
 // endpoint is a Gofer-backed transport.BoundEndpoint.
 //
 // An endpoint's lifetime is the time between when filesystem.BoundEndpointAt()
@@ -94,7 +103,9 @@ func (e *endpoint) UnidirectionalConnect(ctx context.Context) (transport.Connect
 }
 
 func (e *endpoint) newConnectedEndpoint(ctx context.Context, sockType linux.SockType, queue *waiter.Queue) (*transport.SCMConnectedEndpoint, *syserr.Error) {
+	e.dentry.fs.renameMu.RLock()
 	hostSockFD, err := e.dentry.connect(ctx, sockType)
+	e.dentry.fs.renameMu.RUnlock()
 	if err != nil {
 		return nil, syserr.ErrConnectionRefused
 	}

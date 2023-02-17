@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package fsgofer
+package fsutil
 
 import (
 	"unsafe"
@@ -21,9 +21,12 @@ import (
 	"gvisor.dev/gvisor/pkg/syserr"
 )
 
-var unixDirentMaxSize = int(unsafe.Sizeof(unix.Dirent{}))
+// UnixDirentMaxSize is the maximum size of unix.Dirent in bytes.
+var UnixDirentMaxSize = int(unsafe.Sizeof(unix.Dirent{}))
 
-func utimensat(dirFd int, name string, times [2]unix.Timespec, flags int) error {
+// Utimensat is a convenience wrapper to make the utimensat(2) syscall. It
+// additionally handles empty name.
+func Utimensat(dirFd int, name string, times [2]unix.Timespec, flags int) error {
 	// utimensat(2) doesn't accept empty name, instead name must be nil to make it
 	// operate directly on 'dirFd' unlike other *at syscalls.
 	var namePtr unsafe.Pointer
@@ -51,7 +54,9 @@ func utimensat(dirFd int, name string, times [2]unix.Timespec, flags int) error 
 	return nil
 }
 
-func renameat(oldDirFD int, oldName string, newDirFD int, newName string) error {
+// RenameAt is a convenience wrapper to make the renameat(2) syscall. It
+// additionally handles empty names.
+func RenameAt(oldDirFD int, oldName string, newDirFD int, newName string) error {
 	var oldNamePtr unsafe.Pointer
 	if oldName != "" {
 		nameBytes, err := unix.BytePtrFromString(oldName)
@@ -83,7 +88,9 @@ func renameat(oldDirFD int, oldName string, newDirFD int, newName string) error 
 	return nil
 }
 
-func parseDirents(buf []byte, handleDirent func(ino uint64, off int64, ftype uint8, name string, reclen uint16) bool) {
+// ParseDirents parses dirents from buf. buf must have been populated by
+// getdents64(2) syscall. It calls the handleDirent callback for each dirent.
+func ParseDirents(buf []byte, handleDirent func(ino uint64, off int64, ftype uint8, name string, reclen uint16) bool) {
 	for len(buf) > 0 {
 		// Interpret the buf populated by unix.Getdents as unix.Dirent.
 		dirent := *(*unix.Dirent)(unsafe.Pointer(&buf[0]))

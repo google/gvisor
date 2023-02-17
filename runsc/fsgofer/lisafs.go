@@ -30,11 +30,14 @@ import (
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	rwfd "gvisor.dev/gvisor/pkg/fd"
+	"gvisor.dev/gvisor/pkg/fsutil"
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/runsc/config"
 )
+
+// LINT.IfChange
 
 const (
 	openFlags = unix.O_NOFOLLOW | unix.O_CLOEXEC
@@ -332,7 +335,7 @@ func (fd *controlFDLisa) SetStat(stat lisafs.SetStatReq) (failureMask uint32, fa
 			symlinkPath := fd.Node().FilePath()
 			parent, err := unix.Open(path.Dir(symlinkPath), openFlags|unix.O_PATH, 0)
 			if err == nil {
-				err = utimensat(parent, path.Base(symlinkPath), utimes, unix.AT_SYMLINK_NOFOLLOW)
+				err = fsutil.Utimensat(parent, path.Base(symlinkPath), utimes, unix.AT_SYMLINK_NOFOLLOW)
 				unix.Close(parent)
 			}
 			if err != nil {
@@ -352,7 +355,7 @@ func (fd *controlFDLisa) SetStat(stat lisafs.SetStatReq) (failureMask uint32, fa
 			}
 			// Directories and regular files can operate directly on the fd
 			// using empty name.
-			err := utimensat(hostFD, "", utimes, 0)
+			err := fsutil.Utimensat(hostFD, "", utimes, 0)
 			if err != nil {
 				log.Warningf("SetStat utimens failed %q, err: %v", fd.Node().FilePath(), err)
 				failureMask |= (stat.Mask & (unix.STATX_ATIME | unix.STATX_MTIME))
@@ -749,7 +752,7 @@ func (fd *controlFDLisa) Connect(sockType uint32) (int, error) {
 	// hostPath in our sockaddr. We'd need to redirect through a shorter path
 	// in order to actually connect to this socket.
 	hostPath := fd.Node().FilePath()
-	if len(hostPath) >= unixPathMax {
+	if len(hostPath) >= linux.UnixPathMax {
 		return -1, unix.EINVAL
 	}
 
@@ -784,7 +787,7 @@ func (fd *controlFDLisa) BindAt(name string, sockType uint32, mode linux.FileMod
 	// mappings, the app path may have fit in the sockaddr, but we can't fit
 	// hostPath in our sockaddr. We'd need to redirect through a shorter path
 	// in order to actually connect to this socket.
-	if len(socketPath) >= unixPathMax {
+	if len(socketPath) >= linux.UnixPathMax {
 		log.Warningf("BindAt called with name too long: %q (len=%d)", socketPath, len(socketPath))
 		return nil, linux.Statx{}, nil, -1, unix.EINVAL
 	}
@@ -861,7 +864,7 @@ func (fd *controlFDLisa) Unlink(name string, flags uint32) error {
 
 // RenameAt implements lisafs.ControlFDImpl.RenameAt.
 func (fd *controlFDLisa) RenameAt(oldName string, newDir lisafs.ControlFDImpl, newName string) error {
-	return renameat(fd.hostFD, oldName, newDir.(*controlFDLisa).hostFD, newName)
+	return fsutil.RenameAt(fd.hostFD, oldName, newDir.(*controlFDLisa).hostFD, newName)
 }
 
 // Renamed implements lisafs.ControlFDImpl.Renamed.
@@ -977,7 +980,7 @@ func (fd *openFDLisa) Getdent64(count uint32, seek0 bool, recordDirent func(lisa
 		}
 		n, err := unix.Getdents(fd.hostFD, direntsBuf[:bufEnd])
 		if err != nil {
-			if err == unix.EINVAL && bufEnd < unixDirentMaxSize {
+			if err == unix.EINVAL && bufEnd < fsutil.UnixDirentMaxSize {
 				// getdents64(2) returns EINVAL is returned when the result
 				// buffer is too small. If bufEnd is smaller than the max
 				// size of unix.Dirent, then just break here to return all
@@ -990,7 +993,7 @@ func (fd *openFDLisa) Getdent64(count uint32, seek0 bool, recordDirent func(lisa
 			break
 		}
 
-		parseDirents(direntsBuf[:n], func(ino uint64, off int64, ftype uint8, name string, reclen uint16) bool {
+		fsutil.ParseDirents(direntsBuf[:n], func(ino uint64, off int64, ftype uint8, name string, reclen uint16) bool {
 			dirent := lisafs.Dirent64{
 				Ino:  primitive.Uint64(ino),
 				Off:  primitive.Uint64(off),
@@ -999,8 +1002,9 @@ func (fd *openFDLisa) Getdent64(count uint32, seek0 bool, recordDirent func(lisa
 			}
 
 			// The client also wants the device ID, which annoyingly incurs an
-			// additional syscall per dirent. Live with it.
-			stat, err := statAt(fd.hostFD, name)
+			// additional syscall per dirent.
+			// TODO(gvisor.dev/issue/6665): Get rid of per-dirent stat.
+			stat, err := fsutil.StatAt(fd.hostFD, name)
 			if err != nil {
 				log.Warningf("Getdent64: skipping file %q with failed stat, err: %v", path.Join(fd.ControlFD().FD().Node().FilePath(), name), err)
 				return true
@@ -1177,3 +1181,5 @@ func extractErrno(err error) unix.Errno {
 	log.Debugf("Unknown error: %v, defaulting to EIO", err)
 	return unix.EIO
 }
+
+// LINT.ThenChange(../../pkg/sentry/fsimpl/gofer/directfs_dentry.go)

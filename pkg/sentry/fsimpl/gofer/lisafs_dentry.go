@@ -16,6 +16,7 @@ package gofer
 
 import (
 	"fmt"
+	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -28,6 +29,39 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
+
+func (fs *filesystem) handleAnameLisafs(ctx context.Context, rootInode lisafs.Inode) (lisafs.Inode, error) {
+	if fs.opts.aname == "/" {
+		return rootInode, nil
+	}
+
+	// Walk to the attach point from root inode. aname is always absolute.
+	rootFD := fs.client.NewFD(rootInode.ControlFD)
+	status, inodes, err := rootFD.WalkMultiple(ctx, strings.Split(fs.opts.aname, "/")[1:])
+	if err != nil {
+		return lisafs.Inode{}, err
+	}
+
+	// Close all intermediate FDs to the attach point.
+	rootFD.Close(ctx, false /* flush */)
+	numInodes := len(inodes)
+	for i := 0; i < numInodes-1; i++ {
+		curFD := fs.client.NewFD(inodes[i].ControlFD)
+		curFD.Close(ctx, false /* flush */)
+	}
+
+	switch status {
+	case lisafs.WalkSuccess:
+		return inodes[numInodes-1], nil
+	default:
+		if numInodes > 0 {
+			last := fs.client.NewFD(inodes[numInodes-1].ControlFD)
+			last.Close(ctx, false /* flush */)
+		}
+		log.Warningf("initClient failed because walk to attach point %q failed: lisafs.WalkStatus = %v", fs.opts.aname, status)
+		return lisafs.Inode{}, linuxerr.ENOENT
+	}
+}
 
 // lisafsDentry is a gofer dentry implementation. It represents a dentry backed
 // by a lisafs connection.
@@ -139,6 +173,17 @@ func (fs *filesystem) newLisafsDentry(ctx context.Context, ino *lisafs.Inode) (*
 	return &d.dentry, nil
 }
 
+func (d *lisafsDentry) openHandle(ctx context.Context, flags uint32) (handle, error) {
+	openFD, hostFD, err := d.controlFD.OpenAt(ctx, flags)
+	if err != nil {
+		return noHandle, err
+	}
+	return handle{
+		fdLisa: d.controlFD.Client().NewFD(openFD),
+		fd:     int32(hostFD),
+	}, nil
+}
+
 func (d *lisafsDentry) updateHandles(ctx context.Context, h handle, readable, writable bool) {
 	// Switch to new LISAFS FDs. Note that the read, write and mmap host FDs are
 	// updated separately.
@@ -242,7 +287,8 @@ func (d *lisafsDentry) getRemoteChild(ctx context.Context, name string) (*dentry
 //   - parent.opMu must be locked.
 //   - parent.isDir().
 //   - !rp.Done().
-//   - dentry at name must not already exist in dentry tree.
+//
+// Postcondition: The returned dentry is already cached appropriately.
 func (d *lisafsDentry) getRemoteChildAndWalkPathLocked(ctx context.Context, rp *vfs.ResolvingPath, ds **[]*dentry) (*dentry, error) {
 	// Walk as much of the path as possible in 1 RPC.
 	// Note that pit is a copy of the iterator that does not affect rp.

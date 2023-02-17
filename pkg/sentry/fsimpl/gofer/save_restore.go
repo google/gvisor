@@ -147,6 +147,11 @@ func (d *dentry) afterLoad() {
 }
 
 // afterLoad is invoked by stateify.
+func (d *directfsDentry) afterLoad() {
+	d.controlFD = -1
+}
+
+// afterLoad is invoked by stateify.
 func (d *dentryPlatformFile) afterLoad() {
 	if d.hostFileMapper.IsInited() {
 		// Ensure that we don't call d.hostFileMapper.Init() again.
