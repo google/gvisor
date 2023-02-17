@@ -403,6 +403,13 @@ func (fs FeatureSet) UseXsaveopt() bool {
 	return fs.UseXsave() && fs.HasFeature(X86FeatureXSAVEOPT)
 }
 
+// UseXsavec returns true if 'fs' supports the "xsavec" instruction.
+//
+//go:nosplit
+func (fs FeatureSet) UseXsavec() bool {
+	return fs.UseXsaveopt() && fs.HasFeature(X86FeatureXSAVEC)
+}
+
 // archCheckHostCompatible checks for compatibility.
 func (fs FeatureSet) archCheckHostCompatible(hfs FeatureSet) error {
 	// The size of a cache line must match, as it is critical to correctly
