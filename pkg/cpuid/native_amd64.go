@@ -221,4 +221,5 @@ func init() {
 	}.Fixed()
 
 	readMaxCPUFreq()
+	initHWCap()
 }

@@ -86,7 +86,7 @@ func (s Static) ToFeatureSet() FeatureSet {
 		ns[k] = v
 	}
 	ns.normalize()
-	return FeatureSet{ns}
+	return FeatureSet{ns, hwCap{}}
 }
 
 // afterLoad calls normalize.
@@ -97,7 +97,7 @@ func (s Static) afterLoad() {
 // normalize normalizes FPU sizes.
 func (s Static) normalize() {
 	// Override local FPU sizes, which must be fixed.
-	fs := FeatureSet{s}
+	fs := FeatureSet{s, hwCap{}}
 	if fs.HasFeature(X86FeatureXSAVE) {
 		in := In{Eax: uint32(xSaveInfo)}
 		out := s[in]

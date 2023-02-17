@@ -18,7 +18,6 @@
 package cpuid
 
 import (
-	"encoding/binary"
 	"io/ioutil"
 	"runtime"
 	"strconv"
@@ -151,57 +150,7 @@ func initCPUInfo() {
 	}
 }
 
-// The auxiliary vector of a process on the Linux system can be read
-// from /proc/self/auxv, and tags and values are stored as 8-bytes
-// decimal key-value pairs on the 64-bit system.
-//
-// $ od -t d8 /proc/self/auxv
-//
-//	0000000                   33      140734615224320
-//	0000020                   16           3219913727
-//	0000040                    6                 4096
-//	0000060                   17                  100
-//	0000100                    3       94665627353152
-//	0000120                    4                   56
-//	0000140                    5                    9
-//	0000160                    7      140425502162944
-//	0000200                    8                    0
-//	0000220                    9       94665627365760
-//	0000240                   11                 1000
-//	0000260                   12                 1000
-//	0000300                   13                 1000
-//	0000320                   14                 1000
-//	0000340                   23                    0
-//	0000360                   25      140734614619513
-//	0000400                   26                    0
-//	0000420                   31      140734614626284
-//	0000440                   15      140734614619529
-//	0000460                    0                    0
-func initHwCap() {
-	if runtime.GOOS != "linux" {
-		// Don't try to read Linux-specific /proc files or
-		// warn about them not existing.
-		return
-	}
-	auxv, err := ioutil.ReadFile("/proc/self/auxv")
-	if err != nil {
-		log.Warningf("Could not read /proc/self/auxv: %v", err)
-		return
-	}
-
-	const _AT_HWCAP = 16 // hardware capability bit vector.
-	l := len(auxv) / 16
-	for i := 0; i < l; i++ {
-		tag := binary.LittleEndian.Uint64(auxv[i*16:])
-		val := binary.LittleEndian.Uint64(auxv[(i*16 + 8):])
-		if tag == _AT_HWCAP {
-			hostFeatureSet.hwCap = uint(val)
-			break
-		}
-	}
-}
-
 func init() {
 	initCPUInfo()
-	initHwCap()
+	initHWCap()
 }

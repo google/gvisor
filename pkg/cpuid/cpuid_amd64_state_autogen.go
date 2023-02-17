@@ -16,6 +16,7 @@ func (fs *FeatureSet) StateTypeName() string {
 func (fs *FeatureSet) StateFields() []string {
 	return []string{
 		"Function",
+		"hwCap",
 	}
 }
 
@@ -27,12 +28,14 @@ func (fs *FeatureSet) StateSave(stateSinkObject state.Sink) {
 	var FunctionValue Static
 	FunctionValue = fs.saveFunction()
 	stateSinkObject.SaveValue(0, FunctionValue)
+	stateSinkObject.Save(1, &fs.hwCap)
 }
 
 func (fs *FeatureSet) afterLoad() {}
 
 // +checklocksignore
 func (fs *FeatureSet) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(1, &fs.hwCap)
 	stateSourceObject.LoadValue(0, new(Static), func(y any) { fs.loadFunction(y.(Static)) })
 }
 
