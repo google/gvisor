@@ -1388,23 +1388,6 @@ rules_proto_dependencies()
 
 rules_proto_toolchains()
 
-# Load bazel_toolchain to support Remote Build Execution.
-# See releases at https://releases.bazel.build/bazel-toolchains.html
-http_archive(
-    name = "bazel_toolchains",
-    sha256 = "1adf5db506a7e3c465a26988514cfc3971af6d5b3c2218925cd6e71ee443fc3f",
-    strip_prefix = "bazel-toolchains-4.0.0",
-    urls = [
-        "https://github.com/bazelbuild/bazel-toolchains/releases/download/4.0.0/bazel-toolchains-4.0.0.tar.gz",
-        "https://mirror.bazel.build/github.com/bazelbuild/bazel-toolchains/releases/download/4.0.0/bazel-toolchains-4.0.0.tar.gz",
-    ],
-)
-
-# Creates a default toolchain config for RBE.
-load("@bazel_toolchains//rules:rbe_repo.bzl", "rbe_autoconfig")
-
-rbe_autoconfig(name = "rbe_default")
-
 http_archive(
     name = "rules_pkg",
     sha256 = "62eeb544ff1ef41d786e329e1536c1d541bb9bcad27ae984d57f18f314018e66",
