@@ -62,6 +62,7 @@ global:
       - "panic recovered: no type for \\*ast.SelectorExpr"
       - "panic recovered: no types.Object for ast.Ident SetTypeErrors"
       - "panic recovered: unexpected CompositeLit type: invalid type"
+      - "panic recovered: interface conversion: ssa.Member is \\*ssa.NamedConst"
     exclude:
       - ".*/vet/testdata/.*"
       - ".*/runtime/testdata/.*"
@@ -79,6 +80,8 @@ global:
       - "return with unexpected locks held.*"
       - "incompatible return states.*"
       - "may require checklocks annotation for.*"
+      # For some reason, the types package falls down.
+      - "panic recovered: .*types/sizes.go:82: assertion failed"
     exclude:
       # Generated: exempt all.
       - pkg/shim/runtimeoptions/runtimeoptions_cri.go
@@ -184,16 +187,22 @@ analyzers:
   checklinkname:
     external: # Enabled.
       suppress:
-        # We don't care to check every single linkname in the Go standard
-        # library. Suppress findings about stdlib linkname targets we haven't
-        # described in checklinkname.
-        #
-        # Note that we _do_ want to check the signature of the known linkname
-        # targets in the standard library, so we still need to run
-        # checklinkname on stdlib generally.
-        - "linkname to unknown symbol"
+        # Suppress bad linkname directives in the internals. This may be fixed
+        # by the patch: https://go-review.googlesource.com/c/go/+/466615
+        - "symbol \"runtime_pollWaitCanceled\".*"
+        - "symbol \"runtime_procPin\".*"
       exclude:
         - ".*/containerd/sys/subprocess_unsafe_linux.go"
+    internal:
+      suppress:
+        # See above.
+        - "symbol \"runtime_pollWaitCanceled\".*"
+        - "symbol \"runtime_procPin\".*"
+    generated:
+      suppress:
+        # See above.
+        - "symbol \"runtime_pollWaitCanceled\".*"
+        - "symbol \"runtime_procPin\".*"
   SA1019: # Use of deprecated identifier.
     # disable for now due to misattribution from golang.org/issue/44195.
     generated:

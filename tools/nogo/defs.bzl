@@ -342,7 +342,6 @@ nogo_aspect = go_rule(
 
 def _nogo_test_impl(ctx):
     """Check nogo findings."""
-    nogo_target_info = ctx.attr._target[NogoTargetInfo]
 
     # Ensure there's a single dependency.
     if len(ctx.attr.deps) != 1:

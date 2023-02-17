@@ -727,6 +727,12 @@ func SplitPackages(srcs []string, srcRootPrefix string) map[string][]string {
 			continue
 		}
 
+		// Place the special runtime package (functions emitted by the
+		// compiler itself) into the runtime packages.
+		if strings.Contains(filename, "cmd/compile/internal/typecheck/_builtin/runtime.go") {
+			pkg = "runtime"
+		}
+
 		// Add to the package.
 		sources[pkg] = append(sources[pkg], filename)
 	}
