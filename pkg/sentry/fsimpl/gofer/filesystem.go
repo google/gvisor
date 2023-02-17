@@ -252,6 +252,8 @@ func (fs *filesystem) getChildLocked(ctx context.Context, parent *dentry, name s
 //   - If checkForRace is false, then parent.opMu must be held for writing.
 //   - Otherwise, parent.opMu must be held for reading.
 //
+// Postcondition: The returned dentry is already cached appropriately.
+//
 // +checklocksread:parent.opMu
 func (fs *filesystem) getRemoteChildLocked(ctx context.Context, parent *dentry, name string, checkForRace bool, ds **[]*dentry) (*dentry, error) {
 	child, err := parent.getRemoteChild(ctx, name)
@@ -1038,6 +1040,16 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 		return nil, err
 	}
 
+	if !d.isSynthetic() {
+		// renameMu is locked here because it is required by d.openHandle(), which
+		// is called by d.ensureSharedHandle() and d.openSpecialFile() below. It is
+		// also required by d.connect() which is called by
+		// d.openSocketByConnecting(). Note that opening non-synthetic pipes may
+		// block, renameMu is unlocked separately in d.openSpecialFile() for pipes.
+		d.fs.renameMu.RLock()
+		defer d.fs.renameMu.RUnlock()
+	}
+
 	trunc := opts.Flags&linux.O_TRUNC != 0 && d.fileType() == linux.S_IFREG
 	if trunc {
 		// Lock metadataMu *while* we open a regular file with O_TRUNC because
@@ -1125,6 +1137,7 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 	return vfd, err
 }
 
+// Precondition: fs.renameMu is locked.
 func (d *dentry) openSocketByConnecting(ctx context.Context, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
 	if opts.Flags&linux.O_DIRECT != 0 {
 		return nil, linuxerr.EINVAL
@@ -1146,6 +1159,10 @@ func (d *dentry) openSocketByConnecting(ctx context.Context, opts *vfs.OpenOptio
 	return fd, nil
 }
 
+// Preconditions:
+//   - !d.isSynthetic().
+//   - fs.renameMu is locked. It may be released temporarily while pipe blocks.
+//   - If d is a pipe, no other locks (other than fs.renameMu) should be held.
 func (d *dentry) openSpecialFile(ctx context.Context, mnt *vfs.Mount, opts *vfs.OpenOptions) (*vfs.FileDescription, error) {
 	ats := vfs.AccessTypesForOpenFlags(opts)
 	if opts.Flags&linux.O_DIRECT != 0 && !d.isRegularFile() {
@@ -1166,8 +1183,12 @@ retry:
 		if isBlockingOpenOfNamedPipe && ats == vfs.MayWrite && linuxerr.Equals(linuxerr.ENXIO, err) {
 			// An attempt to open a named pipe with O_WRONLY|O_NONBLOCK fails
 			// with ENXIO if opening the same named pipe with O_WRONLY would
-			// block because there are no readers of the pipe.
-			if err := sleepBetweenNamedPipeOpenChecks(ctx); err != nil {
+			// block because there are no readers of the pipe. Release renameMu
+			// while blocking.
+			d.fs.renameMu.RUnlock()
+			err := sleepBetweenNamedPipeOpenChecks(ctx)
+			d.fs.renameMu.RLock()
+			if err != nil {
 				return nil, err
 			}
 			goto retry
@@ -1175,7 +1196,11 @@ retry:
 		return nil, err
 	}
 	if isBlockingOpenOfNamedPipe && ats == vfs.MayRead && h.fd >= 0 {
-		if err := blockUntilNonblockingPipeHasWriter(ctx, h.fd); err != nil {
+		// Release renameMu while blocking.
+		d.fs.renameMu.RUnlock()
+		err := blockUntilNonblockingPipeHasWriter(ctx, h.fd)
+		d.fs.renameMu.RLock()
+		if err != nil {
 			h.close(ctx)
 			return nil, err
 		}
@@ -1725,6 +1750,15 @@ func (fs *filesystem) MountOptions() string {
 	}
 	if fs.opts.overlayfsStaleRead {
 		optsKV = append(optsKV, mopt{moptOverlayfsStaleRead, nil})
+	}
+	if fs.opts.directfs.enabled {
+		optsKV = append(optsKV, mopt{moptDirectfs, nil})
+		if fs.opts.directfs.hostUDSBind {
+			optsKV = append(optsKV, mopt{moptHostUDSBind, nil})
+		}
+		if fs.opts.directfs.hostUDSConnect {
+			optsKV = append(optsKV, mopt{moptHostUDSConnect, nil})
+		}
 	}
 
 	opts := make([]string, 0, len(optsKV))

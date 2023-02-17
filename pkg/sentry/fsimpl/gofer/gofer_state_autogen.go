@@ -62,6 +62,33 @@ func (e *dentryEntry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &e.prev)
 }
 
+func (d *directfsDentry) StateTypeName() string {
+	return "pkg/sentry/fsimpl/gofer.directfsDentry"
+}
+
+func (d *directfsDentry) StateFields() []string {
+	return []string{
+		"dentry",
+		"controlFD",
+	}
+}
+
+func (d *directfsDentry) beforeSave() {}
+
+// +checklocksignore
+func (d *directfsDentry) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.dentry)
+	stateSinkObject.Save(1, &d.controlFD)
+}
+
+// +checklocksignore
+func (d *directfsDentry) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.dentry)
+	stateSourceObject.Load(1, &d.controlFD)
+	stateSourceObject.AfterLoad(d.afterLoad)
+}
+
 func (fd *directoryFD) StateTypeName() string {
 	return "pkg/sentry/fsimpl/gofer.directoryFD"
 }
@@ -252,6 +279,7 @@ func (f *filesystemOptions) StateFields() []string {
 		"limitHostFDTranslation",
 		"overlayfsStaleRead",
 		"regularFilesUseSpecialFileFD",
+		"directfs",
 	}
 }
 
@@ -269,6 +297,7 @@ func (f *filesystemOptions) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(6, &f.limitHostFDTranslation)
 	stateSinkObject.Save(7, &f.overlayfsStaleRead)
 	stateSinkObject.Save(8, &f.regularFilesUseSpecialFileFD)
+	stateSinkObject.Save(9, &f.directfs)
 }
 
 func (f *filesystemOptions) afterLoad() {}
@@ -284,6 +313,38 @@ func (f *filesystemOptions) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(6, &f.limitHostFDTranslation)
 	stateSourceObject.Load(7, &f.overlayfsStaleRead)
 	stateSourceObject.Load(8, &f.regularFilesUseSpecialFileFD)
+	stateSourceObject.Load(9, &f.directfs)
+}
+
+func (d *directfsOpts) StateTypeName() string {
+	return "pkg/sentry/fsimpl/gofer.directfsOpts"
+}
+
+func (d *directfsOpts) StateFields() []string {
+	return []string{
+		"enabled",
+		"hostUDSBind",
+		"hostUDSConnect",
+	}
+}
+
+func (d *directfsOpts) beforeSave() {}
+
+// +checklocksignore
+func (d *directfsOpts) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.enabled)
+	stateSinkObject.Save(1, &d.hostUDSBind)
+	stateSinkObject.Save(2, &d.hostUDSConnect)
+}
+
+func (d *directfsOpts) afterLoad() {}
+
+// +checklocksignore
+func (d *directfsOpts) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.enabled)
+	stateSourceObject.Load(1, &d.hostUDSBind)
+	stateSourceObject.Load(2, &d.hostUDSConnect)
 }
 
 func (i *InteropMode) StateTypeName() string {
@@ -887,12 +948,14 @@ func (e *stringEntry) StateLoad(stateSourceObject state.Source) {
 func init() {
 	state.Register((*dentryList)(nil))
 	state.Register((*dentryEntry)(nil))
+	state.Register((*directfsDentry)(nil))
 	state.Register((*directoryFD)(nil))
 	state.Register((*stringFixedCache)(nil))
 	state.Register((*dentryCache)(nil))
 	state.Register((*FilesystemType)(nil))
 	state.Register((*filesystem)(nil))
 	state.Register((*filesystemOptions)(nil))
+	state.Register((*directfsOpts)(nil))
 	state.Register((*InteropMode)(nil))
 	state.Register((*InternalFilesystemOptions)(nil))
 	state.Register((*inoKey)(nil))
