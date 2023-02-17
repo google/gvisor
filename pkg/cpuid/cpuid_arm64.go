@@ -34,7 +34,7 @@ import (
 //
 // +stateify savable
 type FeatureSet struct {
-	hwCap      uint
+	hwCap      hwCap
 	cpuFreqMHz float64
 	cpuImplHex uint64
 	cpuArchDec uint64
@@ -79,15 +79,15 @@ func (fs FeatureSet) ExtendedStateSize() (size, align uint) {
 	// struct user_fpsimd_state {
 	//        __uint128_t     vregs[32];
 	//        __u32           fpsr;
-	//	  __u32           fpcr;
-	//	  __u32           __reserved[2];
+	//        __u32           fpcr;
+	//        __u32           __reserved[2];
 	// };
 	return 528, 16
 }
 
 // HasFeature checks for the presence of a feature.
 func (fs FeatureSet) HasFeature(feature Feature) bool {
-	return fs.hwCap&(1<<feature) != 0
+	return fs.hwCap.hwCap1&(1<<feature) != 0
 }
 
 // WriteCPUInfoTo is to generate a section of one cpu in /proc/cpuinfo. This is
