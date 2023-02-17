@@ -43,12 +43,13 @@ func getTaskFD(t *kernel.Task, fd int32) (*vfs.FileDescription, kernel.FDFlags) 
 }
 
 func taskFDExists(ctx context.Context, fs *filesystem, t *kernel.Task, fd int32) bool {
-	file, _ := getTaskFD(t, fd)
-	if file == nil {
-		return false
-	}
-	fs.SafeDecRefFD(ctx, file)
-	return true
+	var exists bool
+	t.WithMuLocked(func(task *kernel.Task) {
+		if fdt := t.FDTable(); fdt != nil {
+			exists = fdt.Exists(fd)
+		}
+	})
+	return exists
 }
 
 // +stateify savable
