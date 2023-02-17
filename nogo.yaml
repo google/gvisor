@@ -136,7 +136,9 @@ analyzers:
   shift:
     generated: # Disabled for generated code; these shifts are well-defined.
       exclude: [".*"]
-    external: # Enabled.
+    external:
+      exclude:
+        - ".*unix/syscall_linux.go" # False positive on line 2002.
   stringintconv:
     external:
       exclude:
