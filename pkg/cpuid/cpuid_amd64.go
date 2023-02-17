@@ -23,6 +23,9 @@ import (
 )
 
 // FeatureSet defines features in terms of CPUID leaves and bits.
+// The kernel also exposes the presence of features to userspace through
+// a set of flags(HWCAP/HWCAP2) bits, exposed in the auxiliary vector, which
+// are necessary to read for some features (e.g. FSGSBASE).
 //
 // Common references:
 //
@@ -40,6 +43,8 @@ type FeatureSet struct {
 	// This is exported to allow direct calls of the underlying CPUID
 	// function, where required.
 	Function `state:".(Static)"`
+	// hwCap stores HWCAP1/2 exposed from the elf auxiliary vector.
+	hwCap hwCap
 }
 
 // saveFunction saves the function as a static query.
@@ -408,6 +413,12 @@ func (fs FeatureSet) UseXsaveopt() bool {
 //go:nosplit
 func (fs FeatureSet) UseXsavec() bool {
 	return fs.UseXsaveopt() && fs.HasFeature(X86FeatureXSAVEC)
+}
+
+// UseFSGSBASE returns true if 'fs' supports the (RD|WR)(FS|GS)BASE instructions.
+func (fs FeatureSet) UseFSGSBASE() bool {
+	HWCAP2_FSGSBASE := uint64(1) << 1
+	return fs.HasFeature(X86FeatureFSGSBase) && ((fs.hwCap.hwCap2 & HWCAP2_FSGSBASE) != 0)
 }
 
 // archCheckHostCompatible checks for compatibility.
