@@ -440,6 +440,17 @@ func (f *FDTable) GetFDs(ctx context.Context) []int32 {
 	return fds
 }
 
+// Exists returns whether fd is defined in the table. It is inherently racy.
+//
+//go:nosplit
+func (f *FDTable) Exists(fd int32) bool {
+	if fd < 0 {
+		return false
+	}
+	file, _, _ := f.get(fd)
+	return file != nil
+}
+
 // Fork returns an independent FDTable, cloning all FDs up to maxFds (non-inclusive).
 func (f *FDTable) Fork(ctx context.Context, maxFds int32) *FDTable {
 	clone := f.k.NewFDTable()
