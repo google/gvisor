@@ -43,7 +43,7 @@ def go_proto_library(name, **kwargs):
 def go_grpc_and_proto_libraries(name, **kwargs):
     _go_proto_or_grpc_library(_go_grpc_library, name, **kwargs)
 
-def go_binary(name, static = False, pure = False, x_defs = None, system_malloc = False, **kwargs):
+def go_binary(name, static = False, pure = False, x_defs = None, **kwargs):
     """Build a go binary.
 
     Args:
@@ -79,17 +79,20 @@ def go_library(name, arch_deps = [], **kwargs):
         **kwargs
     )
 
-def go_test(name, pure = False, library = None, **kwargs):
+def go_test(name, static = False, pure = False, library = None, **kwargs):
     """Build a go test.
 
     Args:
         name: name of the output binary.
+        static: build a static binary.
         pure: should it be built without cgo.
         library: the library to embed.
         **kwargs: rest of the arguments to pass to _go_test.
     """
     if pure:
         kwargs["pure"] = "on"
+    if static:
+        kwargs["static"] = "on"
     if library:
         kwargs["embed"] = [library]
     _go_test(
