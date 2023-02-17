@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build arm64
-// +build arm64
+//go:build amd64
+// +build amd64
 
-package fsgofer
+package fsutil
 
 import (
 	"unsafe"
@@ -24,7 +24,8 @@ import (
 	"gvisor.dev/gvisor/pkg/syserr"
 )
 
-func statAt(dirFd int, name string) (unix.Stat_t, error) {
+// StatAt is a convenience wrapper around newfstatat(2).
+func StatAt(dirFd int, name string) (unix.Stat_t, error) {
 	nameBytes, err := unix.BytePtrFromString(name)
 	if err != nil {
 		return unix.Stat_t{}, err
@@ -35,7 +36,7 @@ func statAt(dirFd int, name string) (unix.Stat_t, error) {
 	statPtr := unsafe.Pointer(&stat)
 
 	if _, _, errno := unix.Syscall6(
-		unix.SYS_FSTATAT,
+		unix.SYS_NEWFSTATAT,
 		uintptr(dirFd),
 		uintptr(namePtr),
 		uintptr(statPtr),

@@ -48,6 +48,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -82,6 +83,11 @@ const (
 	moptForcePageCache         = "force_page_cache"
 	moptLimitHostFDTranslation = "limit_host_fd_translation"
 	moptOverlayfsStaleRead     = "overlayfs_stale_read"
+
+	// Directfs options.
+	moptDirectfs       = "directfs"
+	moptHostUDSConnect = "host_uds_connect"
+	moptHostUDSBind    = "host_uds_bind"
 )
 
 // Valid values for the "cache" mount option.
@@ -271,6 +277,24 @@ type filesystemOptions struct {
 	// may regress performance due to excessive Open RPCs. This option is not
 	// supported with overlayfsStaleRead for now.
 	regularFilesUseSpecialFileFD bool
+
+	// directfs holds options for directfs mode.
+	directfs directfsOpts
+}
+
+// +stateify savable
+type directfsOpts struct {
+	// If directfs is enabled, the gofer client does not make RPCs to the gofer
+	// process. Instead, it makes host syscalls to perform file operations.
+	enabled bool
+
+	// hostUDSBind dictates whether this mount can create host unix domain
+	// sockets.
+	hostUDSBind bool
+
+	// hostUDSConnect dictates whether this mount can connect to host unix domain
+	// sockets.
+	hostUDSConnect bool
 }
 
 // InteropMode controls the client's interaction with other remote filesystem
@@ -457,6 +481,18 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		delete(mopts, moptOverlayfsStaleRead)
 		fsopts.overlayfsStaleRead = true
 	}
+	if _, ok := mopts[moptDirectfs]; ok {
+		delete(mopts, moptDirectfs)
+		fsopts.directfs.enabled = true
+	}
+	if _, ok := mopts[moptHostUDSBind]; ok {
+		delete(mopts, moptHostUDSBind)
+		fsopts.directfs.hostUDSBind = true
+	}
+	if _, ok := mopts[moptHostUDSConnect]; ok {
+		delete(mopts, moptHostUDSConnect)
+		fsopts.directfs.hostUDSConnect = true
+	}
 	// fsopts.regularFilesUseSpecialFileFD can only be enabled by specifying
 	// "cache=none".
 
@@ -507,81 +543,82 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 
 	fs.vfsfs.Init(vfsObj, &fstype, fs)
 
-	// TODO(b/258687694): Handle directfs.
-	if err := fs.initClientAndRoot(ctx); err != nil {
+	rootInode, rootHostFD, err := fs.initClientAndGetRoot(ctx)
+	if err != nil {
 		fs.vfsfs.DecRef(ctx)
 		return nil, nil, err
 	}
-
-	return &fs.vfsfs, &fs.root.vfsd, nil
-}
-
-func (fs *filesystem) initClientAndRoot(ctx context.Context) error {
-	rootInode, err := fs.initClient(ctx)
-	if err != nil {
-		return err
+	if fs.opts.directfs.enabled {
+		fs.root, err = fs.getDirectfsRootDentry(ctx, rootHostFD, fs.client.NewFD(rootInode.ControlFD))
+	} else {
+		fs.root, err = fs.newLisafsDentry(ctx, &rootInode)
 	}
-	fs.root, err = fs.newLisafsDentry(ctx, &rootInode)
 	if err != nil {
-		return err
+		fs.vfsfs.DecRef(ctx)
+		return nil, nil, err
 	}
-
 	// Set the root's reference count to 2. One reference is returned to the
 	// caller, and the other is held by fs to prevent the root from being "cached"
 	// and subsequently evicted.
 	fs.root.refs = atomicbitops.FromInt64(2)
-	return nil
+	return &fs.vfsfs, &fs.root.vfsd, nil
 }
 
-func (fs *filesystem) initClient(ctx context.Context) (lisafs.Inode, error) {
+// initClientAndGetRoot initializes fs.client and returns the root inode for
+// this mount point. It handles the attach point (fs.opts.aname) resolution.
+func (fs *filesystem) initClientAndGetRoot(ctx context.Context) (lisafs.Inode, int, error) {
 	sock, err := unet.NewSocket(fs.opts.fd)
 	if err != nil {
-		return lisafs.Inode{}, err
+		return lisafs.Inode{}, -1, err
 	}
 
-	var rootInode lisafs.Inode
 	ctx.UninterruptibleSleepStart(false)
-	fs.client, rootInode, _, err = lisafs.NewClient(sock)
-	ctx.UninterruptibleSleepFinish(false)
+	defer ctx.UninterruptibleSleepFinish(false)
+
+	var (
+		rootInode  lisafs.Inode
+		rootHostFD int
+	)
+	fs.client, rootInode, rootHostFD, err = lisafs.NewClient(sock)
 	if err != nil {
-		return lisafs.Inode{}, err
-	}
-	ctx.UninterruptibleSleepStart(false)
-	err = fs.client.StartChannels()
-	ctx.UninterruptibleSleepFinish(false)
-	if err != nil {
-		return lisafs.Inode{}, err
-	}
-	if fs.opts.aname == "/" {
-		return rootInode, nil
+		return lisafs.Inode{}, -1, err
 	}
 
-	// Walk to the attach point from root inode. aname is always absolute.
-	rootFD := fs.client.NewFD(rootInode.ControlFD)
-	status, inodes, err := rootFD.WalkMultiple(ctx, strings.Split(fs.opts.aname, "/")[1:])
-	rootFD.Close(ctx, false /* flush */)
-	if err != nil {
-		return lisafs.Inode{}, err
-	}
-
-	// Close all intermediate FDs to the attach point.
-	numInodes := len(inodes)
-	for i := 0; i < numInodes-1; i++ {
-		curFD := fs.client.NewFD(inodes[i].ControlFD)
-		curFD.Close(ctx, false /* flush */)
-	}
-
-	switch status {
-	case lisafs.WalkSuccess:
-		return inodes[numInodes-1], nil
-	default:
-		if numInodes > 0 {
-			last := fs.client.NewFD(inodes[numInodes-1].ControlFD)
-			last.Close(ctx, false /* flush */)
+	cu := cleanup.Make(func() {
+		if rootHostFD >= 0 {
+			_ = unix.Close(rootHostFD)
 		}
-		log.Warningf("initClient failed because walk to attach point %q failed: lisafs.WalkStatus = %v", fs.opts.aname, status)
-		return lisafs.Inode{}, unix.ENOENT
+		rootControlFD := fs.client.NewFD(rootInode.ControlFD)
+		rootControlFD.Close(ctx, false /* flush */)
+	})
+	defer cu.Clean()
+
+	if fs.opts.directfs.enabled {
+		if fs.opts.aname != "/" {
+			log.Warningf("directfs does not support aname filesystem option: aname=%q", fs.opts.aname)
+			return lisafs.Inode{}, -1, unix.EINVAL
+		}
+		if rootHostFD < 0 {
+			log.Warningf("Mount RPC did not return host FD to mount point with directfs enabled")
+			return lisafs.Inode{}, -1, unix.EINVAL
+		}
+	} else {
+		if rootHostFD >= 0 {
+			log.Warningf("Mount RPC returned a host FD to mount point without directfs, we didn't ask for it")
+			_ = unix.Close(rootHostFD)
+			rootHostFD = -1
+		}
+		// Use flipcall channels with lisafs because it makes a lot of RPCs.
+		if err := fs.client.StartChannels(); err != nil {
+			return lisafs.Inode{}, -1, err
+		}
+		rootInode, err = fs.handleAnameLisafs(ctx, rootInode)
+		if err != nil {
+			return lisafs.Inode{}, -1, err
+		}
 	}
+	cu.Release()
+	return rootInode, rootHostFD, nil
 }
 
 func getFDFromMountOptionsMap(ctx context.Context, mopts map[string]string) (int, error) {
@@ -728,6 +765,14 @@ func inoKeyFromStatx(stat *linux.Statx) inoKey {
 		ino:      stat.Ino,
 		devMinor: stat.DevMinor,
 		devMajor: stat.DevMajor,
+	}
+}
+
+func inoKeyFromStat(stat *unix.Stat_t) inoKey {
+	return inoKey{
+		ino:      stat.Ino,
+		devMinor: unix.Minor(stat.Dev),
+		devMajor: unix.Major(stat.Dev),
 	}
 }
 
@@ -1049,6 +1094,32 @@ func (d *lisafsDentry) updateMetadataFromStatxLocked(stat *linux.Statx) {
 	}
 }
 
+// updateMetadataFromStatLocked is similar to updateMetadataFromStatxLocked,
+// except that it takes a unix.Stat_t argument.
+// Precondition: d.metadataMu must be locked.
+// +checklocks:d.metadataMu
+func (d *directfsDentry) updateMetadataFromStatLocked(stat *unix.Stat_t) error {
+	if got, want := stat.Mode&unix.S_IFMT, d.fileType(); got != want {
+		panic(fmt.Sprintf("direct.dentry file type changed from %#o to %#o", want, got))
+	}
+	d.mode.Store(stat.Mode)
+	d.uid.Store(stat.Uid)
+	d.gid.Store(stat.Gid)
+	d.blockSize.Store(uint32(stat.Blksize))
+	// Don't override newer client-defined timestamps with old host-defined
+	// ones.
+	if d.atimeDirty.Load() == 0 {
+		d.atime.Store(dentryTimestampFromUnix(stat.Atim))
+	}
+	if d.mtimeDirty.Load() == 0 {
+		d.mtime.Store(dentryTimestampFromUnix(stat.Mtim))
+	}
+	d.ctime.Store(dentryTimestampFromUnix(stat.Ctim))
+	d.nlink.Store(uint32(stat.Nlink))
+	d.updateSizeLocked(uint64(stat.Size))
+	return nil
+}
+
 // Preconditions: !d.isSynthetic().
 // Preconditions: d.metadataMu is locked.
 // +checklocks:d.metadataMu
@@ -1115,6 +1186,7 @@ func (d *dentry) statTo(stat *linux.Statx) {
 	stat.DevMinor = d.fs.devMinor
 }
 
+// Precondition: fs.renameMu is locked.
 func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs.SetStatOptions, mnt *vfs.Mount) error {
 	stat := &opts.Stat
 	if stat.Mask == 0 {
@@ -1195,6 +1267,9 @@ func (d *dentry) setStat(ctx context.Context, creds *auth.Credentials, opts *vfs
 	var failureErr error
 	if !d.isSynthetic() {
 		if stat.Mask != 0 {
+			if err := d.prepareSetStat(ctx, stat); err != nil {
+				return err
+			}
 			d.handleMu.RLock()
 			if stat.Mask&linux.STATX_SIZE != 0 {
 				// d.dataMu must be held around the update to both the remote
@@ -1832,6 +1907,7 @@ func (d *dentry) removeXattr(ctx context.Context, creds *auth.Credentials, name 
 // Preconditions:
 //   - !d.isSynthetic().
 //   - d.isRegularFile() || d.isDir().
+//   - fs.renameMu is locked.
 func (d *dentry) ensureSharedHandle(ctx context.Context, read, write, trunc bool) error {
 	// O_TRUNC unconditionally requires us to obtain a new handle (opened with
 	// O_TRUNC).
@@ -2093,6 +2169,9 @@ func (fd *fileDescription) Stat(ctx context.Context, opts vfs.StatOptions) (linu
 
 // SetStat implements vfs.FileDescriptionImpl.SetStat.
 func (fd *fileDescription) SetStat(ctx context.Context, opts vfs.SetStatOptions) error {
+	fs := fd.filesystem()
+	fs.renameMu.RLock()
+	defer fs.renameMu.RUnlock()
 	return fd.dentry().setStat(ctx, auth.CredentialsFromContext(ctx), &opts, fd.vfsfd.Mount())
 }
 

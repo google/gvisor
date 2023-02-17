@@ -55,6 +55,7 @@ go_library(
     srcs = [
         "dentry_impl.go",
         "dentry_list.go",
+        "directfs_dentry.go",
         "directory.go",
         "filesystem.go",
         "fstree.go",
@@ -76,11 +77,13 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/atomicbitops",
+        "//pkg/cleanup",
         "//pkg/context",
         "//pkg/errors/linuxerr",
         "//pkg/fd",
         "//pkg/fdnotifier",
         "//pkg/fspath",
+        "//pkg/fsutil",
         "//pkg/hostarch",
         "//pkg/lisafs",
         "//pkg/log",

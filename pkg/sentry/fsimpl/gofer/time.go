@@ -15,12 +15,17 @@
 package gofer
 
 import (
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
 func dentryTimestamp(t linux.StatxTimestamp) int64 {
-	return t.Sec*1e9 + int64(t.Nsec)
+	return t.ToNsec()
+}
+
+func dentryTimestampFromUnix(t unix.Timespec) int64 {
+	return dentryTimestamp(linux.StatxTimestamp{Sec: t.Sec, Nsec: uint32(t.Nsec)})
 }
 
 // Preconditions: d.cachedMetadataAuthoritative() == true.

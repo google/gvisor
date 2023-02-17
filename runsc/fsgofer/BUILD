@@ -5,9 +5,6 @@ package(licenses = ["notice"])
 go_library(
     name = "fsgofer",
     srcs = [
-        "fsgofer_amd64_unsafe.go",
-        "fsgofer_arm64_unsafe.go",
-        "fsgofer_unsafe.go",
         "lisafs.go",
     ],
     visibility = ["//runsc:__subpackages__"],
@@ -16,10 +13,10 @@ go_library(
         "//pkg/atomicbitops",
         "//pkg/cleanup",
         "//pkg/fd",
+        "//pkg/fsutil",
         "//pkg/lisafs",
         "//pkg/log",
         "//pkg/marshal/primitive",
-        "//pkg/syserr",
         "//runsc/config",
         "@org_golang_x_sys//unix:go_default_library",
     ],
