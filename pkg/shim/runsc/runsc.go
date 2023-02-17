@@ -489,6 +489,7 @@ func (r *Runsc) args() []string {
 	}
 	if r.PanicLog != "" {
 		args = append(args, fmt.Sprintf("--panic-log=%s", r.PanicLog))
+		args = append(args, "--watchdog-log-destination=panic-log")
 	}
 	for k, v := range r.Config {
 		args = append(args, fmt.Sprintf("--%s=%s", k, v))

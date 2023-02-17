@@ -31,6 +31,7 @@ package watchdog
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -51,6 +52,10 @@ type Opts struct {
 	// is detected.
 	TaskTimeoutAction Action
 
+	// TaskTimeoutLogDestination indicates where the watchdog should log messages
+	// to. This affects logs output by any watchdog Action.
+	TaskTimeoutLogDestination LogDestination
+
 	// StartupTimeout is the amount of time to allow between watchdog
 	// creation and calling watchdog.Start.
 	StartupTimeout time.Duration
@@ -63,8 +68,9 @@ type Opts struct {
 // DefaultOpts is a default set of options for the watchdog.
 var DefaultOpts = Opts{
 	// Task timeout.
-	TaskTimeout:       3 * time.Minute,
-	TaskTimeoutAction: LogWarning,
+	TaskTimeout:               3 * time.Minute,
+	TaskTimeoutAction:         LogWarning,
+	TaskTimeoutLogDestination: LogToDefault,
 
 	// Startup timeout.
 	StartupTimeout:       30 * time.Second,
@@ -76,8 +82,12 @@ var DefaultOpts = Opts{
 // trigger it.
 const descheduleThreshold = 1 * time.Second
 
-// Amount of time to wait before dumping the stack to the log again when the same task(s) remains stuck.
-var stackDumpSameTaskPeriod = time.Minute
+var (
+	// Amount of time to wait before dumping the stack to the log again when the same task(s) remains stuck.
+	stackDumpSameTaskPeriod = time.Minute
+	// Logger used when TaskTimeoutLogDestination="panic-log".
+	stderrLogger = &log.BasicLogger{Level: log.Info, Emitter: log.GoogleEmitter{&log.Writer{Next: os.Stderr}}}
+)
 
 // Action defines what action to take when a stuck task is detected.
 type Action int
@@ -120,6 +130,48 @@ func (a Action) String() string {
 	}
 }
 
+// LogDestination defines where Watchdog logs will be logged to.
+type LogDestination int
+
+const (
+	// LogToDefault logs watchdog messages using the global logger set in
+	// pkg/log.
+	LogToDefault LogDestination = iota
+
+	// LogToStderr logs watchdog messages to stderr.
+	LogToStderr
+)
+
+// Set implements flag.Value.
+func (d *LogDestination) Set(v string) error {
+	switch v {
+	case "debug-log", "debug":
+		*d = LogToDefault
+	case "panic-log":
+		*d = LogToStderr
+	default:
+		return fmt.Errorf("invalid watchdog log destination %q", v)
+	}
+	return nil
+}
+
+// Get implements flag.Value.
+func (d *LogDestination) Get() any {
+	return *d
+}
+
+// String returns LogDestination's string representation.
+func (d LogDestination) String() string {
+	switch d {
+	case LogToDefault:
+		return "debug-log"
+	case LogToStderr:
+		return "panic-log"
+	default:
+		panic(fmt.Sprintf("Invalid watchdog log destination: %d", d))
+	}
+}
+
 // Watchdog is the main watchdog class. It controls a goroutine that periodically
 // analyses all tasks and reports if any of them appear to be stuck.
 type Watchdog struct {
@@ -158,6 +210,10 @@ type Watchdog struct {
 	// startCalled is true if Start has ever been called. It remains true
 	// even if Stop is called.
 	startCalled bool
+
+	// getTaskTimeoutLog is a function that returns the log to which the watchdog
+	// should log messages to in case of a task timeout.
+	getTaskTimeoutLog func() *log.BasicLogger
 }
 
 type offender struct {
@@ -168,13 +224,25 @@ type offender struct {
 func New(k *kernel.Kernel, opts Opts) *Watchdog {
 	// 4 is arbitrary, just don't want to prolong 'TaskTimeout' too much.
 	period := opts.TaskTimeout / 4
+	var getLog func() *log.BasicLogger
+	switch opts.TaskTimeoutLogDestination {
+	case LogToDefault:
+		getLog = log.Log
+	case LogToStderr:
+		getLog = func() *log.BasicLogger {
+			return stderrLogger
+		}
+	default:
+		panic(fmt.Sprintf("Unknown watchdog log destination %v", opts.TaskTimeoutLogDestination))
+	}
 	w := &Watchdog{
-		Opts:      opts,
-		k:         k,
-		period:    period,
-		offenders: make(map[*kernel.Task]*offender),
-		stop:      make(chan struct{}),
-		done:      make(chan struct{}),
+		Opts:              opts,
+		k:                 k,
+		period:            period,
+		offenders:         make(map[*kernel.Task]*offender),
+		stop:              make(chan struct{}),
+		done:              make(chan struct{}),
+		getTaskTimeoutLog: getLog,
 	}
 
 	// Handle StartupTimeout if it exists.
@@ -354,16 +422,16 @@ func (w *Watchdog) doAction(action Action, forceStack bool, msg *bytes.Buffer) {
 		// stack dump was generated.
 		if !forceStack && time.Since(w.lastStackDump) < stackDumpSameTaskPeriod {
 			msg.WriteString("\n...[stack dump skipped]...")
-			log.Warningf(msg.String())
+			w.getTaskTimeoutLog().Warningf(msg.String())
 			return
 		}
-		log.TracebackAll(msg.String())
+		w.getTaskTimeoutLog().TracebackAll(msg.String())
 		w.lastStackDump = time.Now()
 
 	case Panic:
 		// Panic will skip over running tasks, which is likely the culprit here. So manually
 		// dump all stacks before panic'ing.
-		log.TracebackAll(msg.String())
+		w.getTaskTimeoutLog().TracebackAll(msg.String())
 
 		// Attempt to flush metrics, timeout and move on in case metrics are stuck as well.
 		metricsEmitted := make(chan struct{}, 1)

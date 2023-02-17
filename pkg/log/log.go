@@ -346,17 +346,32 @@ func LocalStack(excludeTopN int) []byte {
 // goroutine.
 //
 // This will be print a traceback, tb, as Warningf(format+":\n%s", v..., tb).
-func Traceback(format string, v ...any) {
+func (l *BasicLogger) Traceback(format string, v ...any) {
 	v = append(v, Stacks(false))
-	Warningf(format+":\n%s", v...)
+	l.Warningf(format+":\n%s", v...)
+}
+
+// TracebackAll logs the given message and dumps a stacktrace of all goroutines.
+//
+// This will be print a traceback, tb, as Warningf(format+":\n%s", v..., tb).
+func (l *BasicLogger) TracebackAll(format string, v ...any) {
+	v = append(v, Stacks(true))
+	l.Warningf(format+":\n%s", v...)
+}
+
+// Traceback logs the given message and dumps a stacktrace of the current
+// goroutine.
+//
+// This will be print a traceback, tb, as Warningf(format+":\n%s", v..., tb).
+func Traceback(format string, v ...any) {
+	Log().Traceback(format, v...)
 }
 
 // TracebackAll logs the given message and dumps a stacktrace of all goroutines.
 //
 // This will be print a traceback, tb, as Warningf(format+":\n%s", v..., tb).
 func TracebackAll(format string, v ...any) {
-	v = append(v, Stacks(true))
-	Warningf(format+":\n%s", v...)
+	Log().TracebackAll(format, v...)
 }
 
 // IsLogging returns whether the global logger is logging.

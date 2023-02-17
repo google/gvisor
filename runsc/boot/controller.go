@@ -499,6 +499,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	// Since we have a new kernel we also must make a new watchdog.
 	dogOpts := watchdog.DefaultOpts
 	dogOpts.TaskTimeoutAction = cm.l.root.conf.WatchdogAction
+	dogOpts.TaskTimeoutLogDestination = cm.l.root.conf.WatchdogLogDestination
 	dog := watchdog.New(k, dogOpts)
 
 	// Change the loader fields to reflect the changes made when restoring.

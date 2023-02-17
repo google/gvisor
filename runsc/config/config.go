@@ -194,6 +194,9 @@ type Config struct {
 	// WatchdogAction sets what action the watchdog takes when triggered.
 	WatchdogAction watchdog.Action `flag:"watchdog-action"`
 
+	// WatchdogLogDestination sets where the watchdog outputs stuck task logs.
+	WatchdogLogDestination watchdog.LogDestination `flag:"watchdog-log-destination"`
+
 	// PanicSignal registers signal handling that panics. Usually set to
 	// SIGUSR2(12) to troubleshoot hangs. -1 disables it.
 	PanicSignal int `flag:"panic-signal"`
@@ -561,6 +564,10 @@ func leakModePtr(v refs.LeakMode) *refs.LeakMode {
 }
 
 func watchdogActionPtr(v watchdog.Action) *watchdog.Action {
+	return &v
+}
+
+func watchdogLogDestinationPtr(v watchdog.LogDestination) *watchdog.LogDestination {
 	return &v
 }
 

@@ -389,6 +389,7 @@ func New(args Args) (*Loader, error) {
 	// Create a watchdog.
 	dogOpts := watchdog.DefaultOpts
 	dogOpts.TaskTimeoutAction = args.Conf.WatchdogAction
+	dogOpts.TaskTimeoutLogDestination = args.Conf.WatchdogLogDestination
 	dog := watchdog.New(k, dogOpts)
 
 	procArgs, err := createProcessArgs(args.ID, args.Spec, creds, k, k.RootPIDNamespace())
