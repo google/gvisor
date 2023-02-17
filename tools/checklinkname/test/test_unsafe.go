@@ -19,7 +19,7 @@ import (
 	_ "unsafe" // for go:linkname.
 )
 
-//go:linkname DetachedLinkname runtime.fastrand
+//go:linkname detachedLinkname runtime.fastrand
 
 //go:linkname attachedLinkname runtime.entersyscall
 func attachedLinkname()
@@ -30,5 +30,5 @@ func AttachedLinkname() {
 	attachedLinkname()
 }
 
-// DetachedLinkname has a linkname elsewhere in the file.
-func DetachedLinkname() uint32
+// detachedLinkname has a linkname elsewhere in the file.
+func detachedLinkname() uint32
