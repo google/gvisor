@@ -271,9 +271,6 @@ func (fs *filesystem) newComm(ctx context.Context, task *kernel.Task, ino uint64
 func (i *commInode) CheckPermissions(ctx context.Context, creds *auth.Credentials, ats vfs.AccessTypes) error {
 	// This file can always be read or written by members of the same thread
 	// group. See fs/proc/base.c:proc_tid_comm_permission.
-	//
-	// N.B. This check is currently a no-op as we don't yet support writing and
-	// this file is world-readable anyways.
 	t := kernel.TaskFromContext(ctx)
 	if t != nil && t.ThreadGroup() == i.task.ThreadGroup() && !ats.MayExec() {
 		return nil
@@ -282,7 +279,7 @@ func (i *commInode) CheckPermissions(ctx context.Context, creds *auth.Credential
 	return i.DynamicBytesFile.CheckPermissions(ctx, creds, ats)
 }
 
-// commData implements vfs.DynamicBytesSource for /proc/[pid]/comm.
+// commData implements vfs.WritableDynamicBytesSource for /proc/[pid]/comm.
 //
 // +stateify savable
 type commData struct {
@@ -292,12 +289,34 @@ type commData struct {
 }
 
 var _ dynamicInode = (*commData)(nil)
+var _ vfs.WritableDynamicBytesSource = (*commData)(nil)
 
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (d *commData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	buf.WriteString(d.task.Name())
 	buf.WriteString("\n")
 	return nil
+}
+
+// Write implements vfs.WritableDynamicBytesSource.Write.
+func (d *commData) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
+	srclen := src.NumBytes()
+	name := make([]byte, srclen)
+	if _, err := src.CopyIn(ctx, name); err != nil {
+		return 0, err
+	}
+
+	// Only allow writes from the same thread group, otherwise return
+	// EINVAL. See fs/proc/base.c:comm_write.
+	//
+	// Note that this check exists in addition to the same-thread-group
+	// check in CheckPermissions.
+	t := kernel.TaskFromContext(ctx)
+	if t == nil || t.ThreadGroup() != d.task.ThreadGroup() {
+		return 0, linuxerr.EINVAL
+	}
+	d.task.SetName(string(name))
+	return int64(srclen), nil
 }
 
 // idMapData implements vfs.WritableDynamicBytesSource for
