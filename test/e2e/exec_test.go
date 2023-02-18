@@ -111,9 +111,21 @@ func TestExecPrivileged(t *testing.T) {
 		t.Fatalf("docker exec failed: %v", err)
 	}
 	t.Logf("Exec CapEff: %v", got)
-	want := fmt.Sprintf("CapEff:\t%016x\n", specutils.AllCapabilitiesUint64()&^bits.MaskOf64(int(linux.CAP_NET_RAW)))
-	if got != want {
-		t.Errorf("Wrong capabilities, got: %q, want: %q. Make sure runsc is not using '--net-raw'", got, want)
+	wantCaps := specutils.AllCapabilitiesUint64() &^ bits.MaskOf64(int(linux.CAP_NET_RAW))
+	wantStr := fmt.Sprintf("CapEff:\t%016x\n", wantCaps)
+	if got == wantStr {
+		// All good.
+		return
+	}
+	// Older versions of Docker don't support CAP_PERFMON, _BPF, or
+	// _CHECKPOINT_RESTORE. Mask those and see if we are equal.
+	oldWantCaps := wantCaps
+	for _, cap := range []linux.Capability{linux.CAP_PERFMON, linux.CAP_BPF, linux.CAP_CHECKPOINT_RESTORE} {
+		oldWantCaps = oldWantCaps &^ bits.MaskOf64(int(cap))
+	}
+	oldWantStr := fmt.Sprintf("CapEff:\t%016x\n", oldWantCaps)
+	if got != oldWantStr {
+		t.Errorf("Wrong capabilities, got: %q, want: %q or %q. Make sure runsc is not using '--net-raw'", got, wantStr, oldWantStr)
 	}
 }
 
