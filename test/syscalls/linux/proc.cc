@@ -2441,6 +2441,54 @@ TEST(ProcTask, CommContainsThreadNameAndTrailingNewline) {
   EXPECT_EQ(absl::StrCat(kThreadName, "\n"), thread_name);
 }
 
+TEST(ProcTask, CommCanSetSelfThreadName) {
+  auto path = JoinPath("/proc", absl::StrCat(getpid()), "task",
+                       absl::StrCat(syscall(SYS_gettid)), "comm");
+  constexpr char kThreadName[] = "TestThread12345";
+  ASSERT_NO_ERRNO(SetContents(path, kThreadName));
+
+  auto got_thread_name = ASSERT_NO_ERRNO_AND_VALUE(GetContents(path));
+  EXPECT_EQ(absl::StrCat(kThreadName, "\n"), got_thread_name);
+}
+
+TEST(ProcTask, CommCanSetPeerThreadName) {
+  constexpr char kThreadName[] = "TestThread12345";
+
+  // Path correspond to *this* thread's tid. We will changed it from the new
+  // thread created below.
+  auto path = JoinPath("/proc", absl::StrCat(getpid()), "task",
+                       absl::StrCat(syscall(SYS_gettid)), "comm");
+
+  // Start a thread that will set this parent threads name.
+  ScopedThread peer_thread(
+      [&]() { ASSERT_NO_ERRNO(SetContents(path, kThreadName)); });
+
+  peer_thread.Join();
+
+  // Our thread name should have been updated.
+  auto got_thread_name = ASSERT_NO_ERRNO_AND_VALUE(GetContents(path));
+  EXPECT_EQ(absl::StrCat(kThreadName, "\n"), got_thread_name);
+}
+
+TEST(ProcTask, CommCannotSetAnotherProcessThreadName) {
+  // Path correspond to *this* thread's pid and tid.
+  auto path = JoinPath("/proc", absl::StrCat(getpid()), "task",
+                       absl::StrCat(syscall(SYS_gettid)), "comm");
+
+  auto rest = [&] {
+    // New process is allowed to open the file, even for writing, since the
+    // owning user is the same.
+    int fd;
+    TEST_CHECK_SUCCESS(fd = open(path.c_str(), O_WRONLY));
+
+    // Write gets EINVAL since the thread group is different. See Linux
+    // fs/proc/base.c:comm_write.
+    TEST_CHECK_ERRNO(write(fd, "x", 1), EINVAL);
+  };
+
+  EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
+}
+
 TEST(ProcTaskNs, NsDirExistsAndHasCorrectMetadata) {
   EXPECT_NO_ERRNO(DirContains("/proc/self/ns", {"net", "pid", "user"}, {}));
 
