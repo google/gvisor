@@ -610,3 +610,39 @@ func AddressAndFamily(addr []byte) (tcpip.FullAddress, uint16, *syserr.Error) {
 		return tcpip.FullAddress{}, 0, syserr.ErrAddressFamilyNotSupported
 	}
 }
+
+// IsTCP returns true if the socket is a TCP socket.
+func IsTCP(s Socket) bool {
+	fam, typ, proto := s.Type()
+	if fam != linux.AF_INET && fam != linux.AF_INET6 {
+		return false
+	}
+	return typ == linux.SOCK_STREAM && (proto == 0 || proto == linux.IPPROTO_TCP)
+}
+
+// IsUDP returns true if the socket is a UDP socket.
+func IsUDP(s Socket) bool {
+	fam, typ, proto := s.Type()
+	if fam != linux.AF_INET && fam != linux.AF_INET6 {
+		return false
+	}
+	return typ == linux.SOCK_DGRAM && (proto == 0 || proto == linux.IPPROTO_UDP)
+}
+
+// IsICMP returns true if the socket is an ICMP socket.
+func IsICMP(s Socket) bool {
+	fam, typ, proto := s.Type()
+	if fam != linux.AF_INET && fam != linux.AF_INET6 {
+		return false
+	}
+	return typ == linux.SOCK_DGRAM && (proto == linux.IPPROTO_ICMP || proto == linux.IPPROTO_ICMPV6)
+}
+
+// IsRaw returns true if the socket is a raw socket.
+func IsRaw(s Socket) bool {
+	fam, typ, _ := s.Type()
+	if fam != linux.AF_INET && fam != linux.AF_INET6 {
+		return false
+	}
+	return typ == linux.SOCK_RAW
+}

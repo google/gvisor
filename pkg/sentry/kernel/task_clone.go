@@ -136,7 +136,12 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 		})
 	}
 
-	image, err := t.image.Fork(t, t.k, args.Flags&linux.CLONE_VM != 0)
+	// We must hold t.mu to access t.image, but want to avoid holding the lock
+	// during Fork() call, so we make a copy.
+	t.mu.Lock()
+	curImage := t.image
+	t.mu.Unlock()
+	image, err := curImage.Fork(t, t.k, args.Flags&linux.CLONE_VM != 0)
 	if err != nil {
 		return 0, nil, err
 	}
