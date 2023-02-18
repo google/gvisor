@@ -310,6 +310,8 @@ TEST(ChrootTest, ProcMemSelfFdsNoEscapeProcOpen) {
 // expose the full file path via /proc/self/maps and instead honor the chroot.
 TEST(ChrootTest, ProcMemSelfMapsNoEscapeProcOpen) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_CHROOT)));
+  // TODO(b/264306751): Remove once FUSE implements mmap.
+  SKIP_IF(getenv("GVISOR_FUSE_TEST"));
 
   // Get a FD to /proc before we enter the chroot.
   const FileDescriptor proc =

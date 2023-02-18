@@ -22,6 +22,7 @@ syscall_test(
 )
 
 syscall_test(
+    add_fusefs = True,
     add_overlay = True,
     test = "//test/syscalls/linux:access_test",
 )
@@ -79,17 +80,20 @@ syscall_test(
 
 syscall_test(
     size = "medium",
+    add_fusefs = True,
     add_overlay = True,
     test = "//test/syscalls/linux:chown_test",
     use_tmpfs = True,  # chown tests require gofer to be running as root.
 )
 
 syscall_test(
+    add_fusefs = True,
     add_overlay = True,
     test = "//test/syscalls/linux:chroot_test",
 )
 
 syscall_test(
+    add_fusefs = True,
     add_overlay = True,
     test = "//test/syscalls/linux:pivot_root_test",
     use_tmpfs = True,
@@ -143,6 +147,7 @@ syscall_test(
 )
 
 syscall_test(
+    add_fusefs = True,
     add_overlay = True,
     test = "//test/syscalls/linux:dup_test",
 )
@@ -224,6 +229,7 @@ syscall_test(
 )
 
 syscall_test(
+    add_fusefs = True,
     add_overlay = True,
     test = "//test/syscalls/linux:fsync_test",
 )
@@ -973,11 +979,13 @@ syscall_test(
 )
 
 syscall_test(
+    add_fusefs = True,
     add_overlay = True,
     test = "//test/syscalls/linux:sync_test",
 )
 
 syscall_test(
+    add_fusefs = True,
     add_overlay = True,
     test = "//test/syscalls/linux:sync_file_range_test",
 )
