@@ -1055,7 +1055,7 @@ func getSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, family
 
 		// This option is only viable for TCP endpoints.
 		var v bool
-		if _, skType, skProto := s.Type(); isTCPSocket(skType, skProto) {
+		if socket.IsTCP(s) {
 			v = tcp.EndpointState(ep.State()) == tcp.StateListen
 		}
 		vP := primitive.Int32(boolToInt32(v))
@@ -1074,8 +1074,7 @@ func getSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, family
 
 // getSockOptTCP implements GetSockOpt when level is SOL_TCP.
 func getSockOptTCP(t *kernel.Task, s socket.Socket, ep commonEndpoint, name, outLen int) (marshal.Marshallable, *syserr.Error) {
-	if _, skType, skProto := s.Type(); !isTCPSocket(skType, skProto) {
-		log.Warningf("SOL_TCP options are only supported on TCP sockets: skType, skProto = %v, %d", skType, skProto)
+	if !socket.IsTCP(s) {
 		return nil, syserr.ErrUnknownProtocolOption
 	}
 
@@ -1975,8 +1974,7 @@ func setSockOptSocket(t *kernel.Task, s socket.Socket, ep commonEndpoint, name i
 
 // setSockOptTCP implements SetSockOpt when level is SOL_TCP.
 func setSockOptTCP(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int, optVal []byte) *syserr.Error {
-	if _, skType, skProto := s.Type(); !isTCPSocket(skType, skProto) {
-		log.Warningf("SOL_TCP options are only supported on TCP sockets: skType, skProto = %v, %d", skType, skProto)
+	if !socket.IsTCP(s) {
 		return syserr.ErrUnknownProtocolOption
 	}
 
@@ -2144,7 +2142,7 @@ func setSockOptIPv6(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int
 		return syserr.ErrUnknownProtocolOption
 	}
 
-	family, skType, skProto := s.Type()
+	family, _, _ := s.Type()
 	if family != linux.AF_INET6 {
 		return syserr.ErrUnknownProtocolOption
 	}
@@ -2164,9 +2162,9 @@ func setSockOptIPv6(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int
 			return syserr.ErrInvalidArgument
 		}
 
-		if isTCPSocket(skType, skProto) && tcp.EndpointState(ep.State()) != tcp.StateInitial {
+		if socket.IsTCP(s) && tcp.EndpointState(ep.State()) != tcp.StateInitial {
 			return syserr.ErrInvalidEndpointState
-		} else if isUDPSocket(skType, skProto) && transport.DatagramEndpointState(ep.State()) != transport.DatagramEndpointStateInitial {
+		} else if socket.IsUDP(s) && transport.DatagramEndpointState(ep.State()) != transport.DatagramEndpointStateInitial {
 			return syserr.ErrInvalidEndpointState
 		}
 
@@ -2286,7 +2284,7 @@ func setSockOptIPv6(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int
 		}
 
 		// Only valid for raw IPv6 sockets.
-		if skType != linux.SOCK_RAW {
+		if !socket.IsRaw(s) {
 			return syserr.ErrProtocolNotAvailable
 		}
 
@@ -3319,18 +3317,6 @@ func nicStateFlagsToLinux(f stack.NICStateFlags) uint32 {
 	return rv
 }
 
-func isTCPSocket(skType linux.SockType, skProto int) bool {
-	return skType == linux.SOCK_STREAM && (skProto == 0 || skProto == unix.IPPROTO_TCP)
-}
-
-func isUDPSocket(skType linux.SockType, skProto int) bool {
-	return skType == linux.SOCK_DGRAM && (skProto == 0 || skProto == unix.IPPROTO_UDP)
-}
-
-func isICMPSocket(skType linux.SockType, skProto int) bool {
-	return skType == linux.SOCK_DGRAM && (skProto == unix.IPPROTO_ICMP || skProto == unix.IPPROTO_ICMPV6)
-}
-
 // State implements socket.Socket.State. State translates the internal state
 // returned by netstack to values defined by Linux.
 func (s *sock) State() uint32 {
@@ -3340,7 +3326,7 @@ func (s *sock) State() uint32 {
 	}
 
 	switch {
-	case isTCPSocket(s.skType, s.protocol):
+	case socket.IsTCP(s):
 		// TCP socket.
 		switch tcp.EndpointState(s.Endpoint.State()) {
 		case tcp.StateEstablished:
@@ -3369,7 +3355,7 @@ func (s *sock) State() uint32 {
 			// Internal or unknown state.
 			return 0
 		}
-	case isUDPSocket(s.skType, s.protocol):
+	case socket.IsUDP(s):
 		// UDP socket.
 		switch transport.DatagramEndpointState(s.Endpoint.State()) {
 		case transport.DatagramEndpointStateInitial, transport.DatagramEndpointStateBound, transport.DatagramEndpointStateClosed:
@@ -3379,9 +3365,9 @@ func (s *sock) State() uint32 {
 		default:
 			return 0
 		}
-	case isICMPSocket(s.skType, s.protocol):
+	case socket.IsICMP(s):
 		// TODO(b/112063468): Export states for ICMP sockets.
-	case s.skType == linux.SOCK_RAW:
+	case socket.IsRaw(s):
 		// TODO(b/112063468): Export states for raw sockets.
 	default:
 		// Unknown transport protocol, how did we make this socket?
