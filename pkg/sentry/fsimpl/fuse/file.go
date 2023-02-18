@@ -144,9 +144,6 @@ func (fd *fileDescription) Sync(ctx context.Context) error {
 	inode := fd.inode()
 	inode.attrMu.Lock()
 	defer inode.attrMu.Unlock()
-	if inode.filemode().IsDir() {
-		return linuxerr.EPERM
-	}
 	conn := inode.fs.conn
 	// no need to proceed if FUSE server doesn't implement Open.
 	if conn.noOpen {
