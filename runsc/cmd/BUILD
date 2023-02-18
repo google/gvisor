@@ -22,6 +22,7 @@ go_library(
         "kill.go",
         "list.go",
         "metric_export.go",
+        "metric_metadata.go",
         "metric_server.go",
         "mitigate.go",
         "mitigate_extras.go",
@@ -44,9 +45,7 @@ go_library(
         "wait.go",
         "write_control.go",
     ],
-    visibility = [
-        "//runsc:__subpackages__",
-    ],
+    visibility = ["//runsc:__subpackages__"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/atomicbitops",
@@ -79,6 +78,7 @@ go_library(
         "@com_github_google_subcommands//:go_default_library",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
         "@com_github_syndtr_gocapability//capability:go_default_library",
+        "@org_golang_google_protobuf//encoding/prototext:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
