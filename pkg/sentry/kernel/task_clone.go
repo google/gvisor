@@ -136,8 +136,9 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 		})
 	}
 
-	// We must hold t.mu to access t.image, but want to avoid holding the lock
-	// during Fork() call, so we make a copy.
+	// We must hold t.mu to access t.image, but we can't hold it during Fork(),
+	// since TaskImage.Fork()=>mm.Fork() takes mm.addressSpaceMu, which is ordered
+	// above Task.mu. So we copy t.image with t.mu held and call Fork() on the copy.
 	t.mu.Lock()
 	curImage := t.image
 	t.mu.Unlock()
