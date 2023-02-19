@@ -111,6 +111,10 @@ type lineDiscipline struct {
 
 	// replicaWaiter is used to wait on the replica end of the TTY.
 	replicaWaiter waiter.Queue
+
+	// fgProcessGroup is the foreground process group that is currently
+	// connected to this TTY.
+	fgProcessGroup *kernel.ProcessGroup
 }
 
 func newLineDiscipline(termios linux.KernelTermios) *lineDiscipline {
@@ -118,6 +122,10 @@ func newLineDiscipline(termios linux.KernelTermios) *lineDiscipline {
 	ld.inQueue.transformer = &inputQueueTransformer{}
 	ld.outQueue.transformer = &outputQueueTransformer{}
 	return &ld
+}
+
+func (l *lineDiscipline) SetForegroundProcessGroup(pg *kernel.ProcessGroup) {
+	l.fgProcessGroup = pg
 }
 
 // getTermios gets the linux.Termios for the tty.
@@ -393,6 +401,10 @@ func (*inputQueueTransformer) transform(l *lineDiscipline, q *queue, buf []byte)
 			if l.termios.IEnabled(linux.INLCR) {
 				cBytes[0] = '\r'
 			}
+		case l.termios.ControlCharacters[linux.VINTR]: // ctrl-c
+			l.fgProcessGroup.SendSignal(kernel.SignalInfoPriv(linux.SIGINT))
+		case l.termios.ControlCharacters[linux.VSUSP]: // ctrl-z
+			l.fgProcessGroup.SendSignal(kernel.SignalInfoPriv(linux.SIGTSTP))
 		}
 
 		// In canonical mode, we discard non-terminating characters
