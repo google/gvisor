@@ -405,6 +405,8 @@ func (*inputQueueTransformer) transform(l *lineDiscipline, q *queue, buf []byte)
 			l.fgProcessGroup.SendSignal(kernel.SignalInfoPriv(linux.SIGINT))
 		case l.termios.ControlCharacters[linux.VSUSP]: // ctrl-z
 			l.fgProcessGroup.SendSignal(kernel.SignalInfoPriv(linux.SIGTSTP))
+		case l.termios.ControlCharacters[linux.VQUIT]: // ctrl-\
+			l.fgProcessGroup.SendSignal(kernel.SignalInfoPriv(linux.SIGQUIT))
 		}
 
 		// In canonical mode, we discard non-terminating characters
