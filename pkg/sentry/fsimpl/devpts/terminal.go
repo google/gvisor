@@ -105,6 +105,9 @@ func (tm *Terminal) setForegroundProcessGroup(ctx context.Context, args arch.Sys
 		return 0, err
 	}
 
+	// Put the processgroup also in line discipline for further signal handling
+	tm.ld.SetForegroundProcessGroup(task.ThreadGroup().ProcessGroup())
+
 	ret, err := task.ThreadGroup().SetForegroundProcessGroup(tm.tty(isMaster), kernel.ProcessGroupID(pgid))
 	return uintptr(ret), err
 }
