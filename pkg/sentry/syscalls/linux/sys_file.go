@@ -681,11 +681,17 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		err := tmpfs.AddSeals(file, args[2].Uint())
 		return 0, nil, err
 	case linux.F_SETLK:
-		return 0, nil, posixLock(t, args, file, false /* block */)
+		return 0, nil, posixLock(t, args, file, false /* ofd */, false /* block */)
 	case linux.F_SETLKW:
-		return 0, nil, posixLock(t, args, file, true /* block */)
+		return 0, nil, posixLock(t, args, file, false /* ofd */, true /* block */)
 	case linux.F_GETLK:
-		return 0, nil, posixTestLock(t, args, file)
+		return 0, nil, posixTestLock(t, args, file, false /* ofd */)
+	case linux.F_OFD_SETLK:
+		return 0, nil, posixLock(t, args, file, true /* ofd */, false /* block */)
+	case linux.F_OFD_SETLKW:
+		return 0, nil, posixLock(t, args, file, true /* ofd */, true /* block */)
+	case linux.F_OFD_GETLK:
+		return 0, nil, posixTestLock(t, args, file, true /* ofd */)
 	case linux.F_GETSIG:
 		a := file.AsyncHandler()
 		if a == nil {
@@ -779,7 +785,7 @@ func setAsyncOwner(t *kernel.Task, fd int, file *vfs.FileDescription, ownerType,
 	}
 }
 
-func posixTestLock(t *kernel.Task, args arch.SyscallArguments, file *vfs.FileDescription) error {
+func posixTestLock(t *kernel.Task, args arch.SyscallArguments, file *vfs.FileDescription, ofd bool) error {
 	// Copy in the lock request.
 	flockAddr := args[2].Pointer()
 	var flock linux.Flock
@@ -799,12 +805,18 @@ func posixTestLock(t *kernel.Task, args arch.SyscallArguments, file *vfs.FileDes
 	if err != nil {
 		return err
 	}
+	uid := lock.UniqueID(t.FDTable())
+	if ofd {
+		uid = lock.UniqueID(file)
+	}
 
-	newFlock, err := file.TestPOSIX(t, t.FDTable(), typ, r)
+	newFlock, err := file.TestPOSIX(t, uid, typ, r)
 	if err != nil {
 		return err
 	}
-	newFlock.PID = translatePID(t.PIDNamespace().Root(), t.PIDNamespace(), newFlock.PID)
+	if !ofd {
+		newFlock.PID = translatePID(t.PIDNamespace().Root(), t.PIDNamespace(), newFlock.PID)
+	}
 	if _, err = newFlock.CopyOut(t, flockAddr); err != nil {
 		return err
 	}
@@ -821,12 +833,22 @@ func translatePID(old, new *kernel.PIDNamespace, pid int32) int32 {
 	return int32(new.IDOfTask(old.TaskWithID(kernel.ThreadID(pid))))
 }
 
-func posixLock(t *kernel.Task, args arch.SyscallArguments, file *vfs.FileDescription, block bool) error {
+func posixLock(t *kernel.Task, args arch.SyscallArguments, file *vfs.FileDescription, ofd bool, block bool) error {
 	// Copy in the lock request.
 	flockAddr := args[2].Pointer()
 	var flock linux.Flock
 	if _, err := flock.CopyIn(t, flockAddr); err != nil {
 		return err
+	}
+	if ofd && flock.PID != 0 {
+		return linuxerr.EINVAL
+	}
+
+	uid := lock.UniqueID(t.FDTable())
+	pid := int32(t.TGIDInRoot())
+	if ofd {
+		uid = lock.UniqueID(file)
+		pid = -1
 	}
 
 	r, err := file.ComputeLockRange(t, uint64(flock.Start), uint64(flock.Len), flock.Whence)
@@ -839,16 +861,16 @@ func posixLock(t *kernel.Task, args arch.SyscallArguments, file *vfs.FileDescrip
 		if !file.IsReadable() {
 			return linuxerr.EBADF
 		}
-		return file.LockPOSIX(t, t.FDTable(), int32(t.TGIDInRoot()), lock.ReadLock, r, block)
+		return file.LockPOSIX(t, uid, pid, lock.ReadLock, r, block)
 
 	case linux.F_WRLCK:
 		if !file.IsWritable() {
 			return linuxerr.EBADF
 		}
-		return file.LockPOSIX(t, t.FDTable(), int32(t.TGIDInRoot()), lock.WriteLock, r, block)
+		return file.LockPOSIX(t, uid, pid, lock.WriteLock, r, block)
 
 	case linux.F_UNLCK:
-		return file.UnlockPOSIX(t, t.FDTable(), r)
+		return file.UnlockPOSIX(t, uid, r)
 
 	default:
 		return linuxerr.EINVAL
