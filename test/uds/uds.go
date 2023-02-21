@@ -267,12 +267,12 @@ func createPipeReader(path string) (func(), error) {
 
 	cleanup := func() {
 		// Kick the goroutine in case it's blocked waiting for a reader.
-		if kicker, err := os.OpenFile(path, os.O_WRONLY|unix.O_NONBLOCK, 0); err != nil {
+		kicker, err := os.OpenFile(path, os.O_WRONLY|unix.O_NONBLOCK, 0)
+		if err != nil {
 			log.Warningf("Failed to kick pipe reader: %v", err)
 			return
-		} else {
-			_ = kicker.Close()
 		}
+		_ = kicker.Close()
 
 		reader := <-readerCh
 		if reader != nil {
@@ -285,23 +285,15 @@ func createPipeReader(path string) (func(), error) {
 }
 
 type socketCreator func(path string, proto int) (cleanup func(), err error)
-type pipeCreator func(path string) (cleanup func(), err error)
+type socketCreatorSpec struct {
+	protocol int
+	name     string
+	sockets  map[string]socketCreator
+}
 
-// CreateSocketTree creates a local tree of unix domain sockets and pipes for
-// use in testing:
-//   - /stream/echo
-//   - /stream/nonlistening
-//   - /seqpacket/echo
-//   - /seqpacket/nonlistening
-//   - /dgram/null
-//   - /pipe/in
-//   - /pipe/out
-//
-// Additionally, it will attempt to connect to sockets at the following
-// locations, and turn into an echo server once connected:
-//   - /stream/created-in-sandbox
-//   - /seqpacket/created-in-sandbox
-func CreateSocketTree(baseDir string) (string, func(), error) {
+// createSocketTree creates a local tree of unix domain sockets for use in
+// testing as per specs.
+func createSocketTree(baseDir string, specs []socketCreatorSpec) (string, func(), error) {
 	dir, err := ioutil.TempDir(baseDir, "sockets")
 	if err != nil {
 		return "", nil, fmt.Errorf("error creating temp dir: %v", err)
@@ -311,37 +303,7 @@ func CreateSocketTree(baseDir string) (string, func(), error) {
 	})
 	defer cu.Clean()
 
-	for _, proto := range []struct {
-		protocol int
-		name     string
-		sockets  map[string]socketCreator
-	}{
-		{
-			protocol: unix.SOCK_STREAM,
-			name:     "stream",
-			sockets: map[string]socketCreator{
-				"echo":               createEchoSocket,
-				"nonlistening":       createNonListeningSocket,
-				"created-in-sandbox": connectAndBecomeEcho,
-			},
-		},
-		{
-			protocol: unix.SOCK_SEQPACKET,
-			name:     "seqpacket",
-			sockets: map[string]socketCreator{
-				"echo":               createEchoSocket,
-				"nonlistening":       createNonListeningSocket,
-				"created-in-sandbox": connectAndBecomeEcho,
-			},
-		},
-		{
-			protocol: unix.SOCK_DGRAM,
-			name:     "dgram",
-			sockets: map[string]socketCreator{
-				"null": createNullSocket,
-			},
-		},
-	} {
+	for _, proto := range specs {
 		protoDir := filepath.Join(dir, proto.name)
 		if err := os.Mkdir(protoDir, 0755); err != nil {
 			return "", nil, fmt.Errorf("error creating %s dir: %v", proto.name, err)
@@ -357,10 +319,86 @@ func CreateSocketTree(baseDir string) (string, func(), error) {
 		}
 	}
 
-	pipeDir := filepath.Join(dir, "pipe")
-	if err := os.Mkdir(pipeDir, 0755); err != nil {
-		return "", nil, err
+	return dir, cu.Release(), nil
+}
+
+// CreateBoundUDSTree creates a local tree of bound unix domain sockets that
+// are ready to accept connections.
+//
+// These are created at locations:
+//   - /stream/echo
+//   - /stream/nonlistening
+//   - /seqpacket/echo
+//   - /seqpacket/nonlistening
+//   - /dgram/null
+func CreateBoundUDSTree(baseDir string) (string, func(), error) {
+	return createSocketTree(baseDir, []socketCreatorSpec{
+		{
+			protocol: unix.SOCK_STREAM,
+			name:     "stream",
+			sockets: map[string]socketCreator{
+				"echo":         createEchoSocket,
+				"nonlistening": createNonListeningSocket,
+			},
+		},
+		{
+			protocol: unix.SOCK_SEQPACKET,
+			name:     "seqpacket",
+			sockets: map[string]socketCreator{
+				"echo":         createEchoSocket,
+				"nonlistening": createNonListeningSocket,
+			},
+		},
+		{
+			protocol: unix.SOCK_DGRAM,
+			name:     "dgram",
+			sockets: map[string]socketCreator{
+				"null": createNullSocket,
+			},
+		},
+	})
+}
+
+// CreateSocketConnectors creates goroutines that will attempt to connect to
+// sockets at the following locations, and turn into an echo server once
+// connected:
+//   - /stream/created-in-sandbox
+//   - /seqpacket/created-in-sandbox
+func CreateSocketConnectors(baseDir string) (string, func(), error) {
+	return createSocketTree(baseDir, []socketCreatorSpec{
+		{
+			protocol: unix.SOCK_STREAM,
+			name:     "stream",
+			sockets: map[string]socketCreator{
+				"created-in-sandbox": connectAndBecomeEcho,
+			},
+		},
+		{
+			protocol: unix.SOCK_SEQPACKET,
+			name:     "seqpacket",
+			sockets: map[string]socketCreator{
+				"created-in-sandbox": connectAndBecomeEcho,
+			},
+		},
+	})
+}
+
+type pipeCreator func(path string) (cleanup func(), err error)
+
+// CreateFifoTree creates a local tree of fifo files for use in testing:
+//
+//   - /in
+//   - /out
+func CreateFifoTree(baseDir string) (string, func(), error) {
+	dir, err := ioutil.TempDir(baseDir, "pipes")
+	if err != nil {
+		return "", nil, fmt.Errorf("error creating temp dir: %v", err)
 	}
+	cu := cleanup.Make(func() {
+		_ = os.RemoveAll(dir)
+	})
+	defer cu.Clean()
+
 	for _, pipe := range []struct {
 		name string
 		ctor pipeCreator
@@ -372,7 +410,7 @@ func CreateSocketTree(baseDir string) (string, func(), error) {
 			name: "out", ctor: createPipeReader,
 		},
 	} {
-		cleanup, err := pipe.ctor(filepath.Join(pipeDir, pipe.name))
+		cleanup, err := pipe.ctor(filepath.Join(dir, pipe.name))
 		if err != nil {
 			return "", nil, fmt.Errorf("error creating %q pipe: %w", pipe.name, err)
 		}

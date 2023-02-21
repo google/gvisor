@@ -56,8 +56,10 @@ var (
 	setupContainerPath = flag.String("setup-container", "", "path to setup_container binary (for use with --container)")
 	trace              = flag.Bool("trace", false, "enables all trace points")
 
-	addUDSTree = flag.Bool("add-host-communication", false, "expose a tree of UDS and pipe utilities to test communication with the host")
-	ioUring    = flag.Bool("iouring", false, "Enables IO_URING API for asynchronous I/O")
+	addHostUDS       = flag.Bool("add-host-uds", false, "expose a tree of UDS to test communication with the host")
+	addHostConnector = flag.Bool("add-host-connector", false, "create goroutines that connect to bound UDS that will be created by sandbox")
+	addHostFIFO      = flag.Bool("add-host-fifo", false, "expose a tree of FIFO to test communication with the host")
+	ioUring          = flag.Bool("iouring", false, "Enables IO_URING API for asynchronous I/O")
 	// TODO(gvisor.dev/issue/4572): properly support leak checking for runsc, and
 	// set to true as the default for the test runner.
 	leakCheck = flag.Bool("leak-check", false, "check for reference leaks")
@@ -109,8 +111,8 @@ func runTestCaseNative(testBin string, tc *gtest.TestCase, args []string, t *tes
 	// interpret them.
 	env = filterEnv(env, []string{"TEST_SHARD_INDEX", "TEST_TOTAL_SHARDS", "GTEST_SHARD_INDEX", "GTEST_TOTAL_SHARDS"})
 
-	if *addUDSTree {
-		socketDir, cleanup, err := uds.CreateSocketTree("/tmp")
+	if *addHostUDS {
+		socketDir, cleanup, err := uds.CreateBoundUDSTree("/tmp")
 		if err != nil {
 			t.Fatalf("failed to create socket tree: %v", err)
 		}
@@ -118,8 +120,31 @@ func runTestCaseNative(testBin string, tc *gtest.TestCase, args []string, t *tes
 
 		env = append(env, "TEST_UDS_TREE="+socketDir)
 		// On Linux, the concept of "attach" location doesn't exist.
-		// Just pass the same path to make these test identical.
+		// Just pass the same path to make these tests identical.
 		env = append(env, "TEST_UDS_ATTACH_TREE="+socketDir)
+	}
+
+	if *addHostConnector {
+		connectorDir, cleanup, err := uds.CreateSocketConnectors("/tmp")
+		if err != nil {
+			t.Fatalf("failed to create socket connectors: %v", err)
+		}
+		defer cleanup()
+
+		env = append(env, "TEST_CONNECTOR_TREE="+connectorDir)
+	}
+
+	if *addHostFIFO {
+		pipeDir, cleanup, err := uds.CreateFifoTree("/tmp")
+		if err != nil {
+			t.Fatalf("failed to create pipe tree: %v", err)
+		}
+		defer cleanup()
+
+		env = append(env, "TEST_FIFO_TREE="+pipeDir)
+		// On Linux, the concept of "attach" location doesn't exist.
+		// Just pass the same path to make these tests identical.
+		env = append(env, "TEST_FIFO_ATTACH_TREE="+pipeDir)
 	}
 
 	if *platformSupport != "" {
@@ -214,8 +239,14 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 	if *strace {
 		args = append(args, "-strace")
 	}
-	if *addUDSTree {
-		args = append(args, "-host-uds=all", "-host-fifo=open")
+	if *addHostUDS {
+		args = append(args, "-host-uds=open")
+	}
+	if *addHostConnector {
+		args = append(args, "-host-uds=create")
+	}
+	if *addHostFIFO {
+		args = append(args, "-host-fifo=open")
 	}
 	if *leakCheck {
 		args = append(args, "-ref-leak-mode=log-names")
@@ -325,10 +356,10 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 	return err
 }
 
-// setupHostCommTree updates the spec to expose a UDS and pipe files tree for
-// testing communication with the host.
-func setupHostCommTree(spec *specs.Spec) (cleanup func(), err error) {
-	socketDir, cleanup, err := uds.CreateSocketTree("/tmp")
+// setupHostUDSTree updates the spec to expose a UDS files tree for testing
+// communication with the host.
+func setupHostUDSTree(spec *specs.Spec) (cleanup func(), err error) {
+	socketDir, cleanup, err := uds.CreateBoundUDSTree("/tmp")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create socket tree: %v", err)
 	}
@@ -356,16 +387,60 @@ func setupHostCommTree(spec *specs.Spec) (cleanup func(), err error) {
 		Source:      filepath.Join(socketDir, "dgram/null"),
 		Type:        "bind",
 	})
+
+	spec.Process.Env = append(spec.Process.Env, "TEST_UDS_TREE=/tmp/sockets")
+	spec.Process.Env = append(spec.Process.Env, "TEST_UDS_ATTACH_TREE=/tmp/sockets-attach")
+
+	return cleanup, nil
+}
+
+// setupHostFifoTree starts goroutines that will attempt to connect to sockets
+// in a directory that will be bind mounted into the container.
+func setupHostConnectorTree(spec *specs.Spec) (cleanup func(), err error) {
+	connectorDir, cleanup, err := uds.CreateSocketConnectors("/tmp")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create connector tree: %v", err)
+	}
+
+	// Standard access to entire tree.
+	spec.Mounts = append(spec.Mounts, specs.Mount{
+		Destination: "/tmp/connectors",
+		Source:      connectorDir,
+		Type:        "bind",
+	})
+	// We can not create individual attach points for sockets that have not been
+	// created yet.
+	spec.Process.Env = append(spec.Process.Env, "TEST_CONNECTOR_TREE=/tmp/connectors")
+	return cleanup, nil
+}
+
+// setupHostFifoTree updates the spec to expose FIFO file tree for testing
+// communication with the host.
+func setupHostFifoTree(spec *specs.Spec) (cleanup func(), err error) {
+	fifoDir, cleanup, err := uds.CreateFifoTree("/tmp")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create FIFO tree: %v", err)
+	}
+
+	// Standard access to entire tree.
+	spec.Mounts = append(spec.Mounts, specs.Mount{
+		Destination: "/tmp/pipes",
+		Source:      fifoDir,
+		Type:        "bind",
+	})
+
+	// Individual attach points for each pipe to test mounts that attach
+	// directly to the pipe.
 	for _, name := range []string{"in", "out"} {
 		spec.Mounts = append(spec.Mounts, specs.Mount{
-			Destination: filepath.Join("/tmp/sockets-attach/pipe", name),
-			Source:      filepath.Join(socketDir, "pipe", name),
+			Destination: filepath.Join("/tmp/pipes-attach", name),
+			Source:      filepath.Join(fifoDir, name),
 			Type:        "bind",
 		})
 	}
 
-	spec.Process.Env = append(spec.Process.Env, "TEST_UDS_TREE=/tmp/sockets")
-	spec.Process.Env = append(spec.Process.Env, "TEST_UDS_ATTACH_TREE=/tmp/sockets-attach")
+	spec.Process.Env = append(spec.Process.Env, "TEST_FIFO_TREE=/tmp/pipes")
+	spec.Process.Env = append(spec.Process.Env, "TEST_FIFO_ATTACH_TREE=/tmp/pipes-attach")
 
 	return cleanup, nil
 }
@@ -476,10 +551,24 @@ func runTestCaseRunsc(testBin string, tc *gtest.TestCase, args []string, t *test
 
 	spec.Process.Env = env
 
-	if *addUDSTree {
-		cleanup, err := setupHostCommTree(spec)
+	if *addHostUDS {
+		cleanup, err := setupHostUDSTree(spec)
 		if err != nil {
 			t.Fatalf("error creating UDS tree: %v", err)
+		}
+		defer cleanup()
+	}
+	if *addHostConnector {
+		cleanup, err := setupHostConnectorTree(spec)
+		if err != nil {
+			t.Fatalf("error creating connector tree: %v", err)
+		}
+		defer cleanup()
+	}
+	if *addHostFIFO {
+		cleanup, err := setupHostFifoTree(spec)
+		if err != nil {
+			t.Fatalf("error creating FIFO tree: %v", err)
 		}
 		defer cleanup()
 	}
