@@ -556,6 +556,7 @@ func (m *MetricServer) serveMetrics(w http.ResponseWriter, req *http.Request) ht
 		loadedSandboxes = append(loadedSandboxes, <-loadedSandboxesCh)
 	}
 	close(loadedSandboxesCh)
+	numSandboxesTotal := m.numSandboxes
 	m.mu.Unlock()
 
 	// Now iterate over all sandboxes.
@@ -682,6 +683,11 @@ func (m *MetricServer) serveMetrics(w http.ResponseWriter, req *http.Request) ht
 	for snapshotAndOptions := range snapshotCh {
 		snapshotsToOptions[snapshotAndOptions.snapshot] = snapshotAndOptions.options
 	}
+
+	// Add our own metrics.
+	selfMetrics.Add(prometheus.NewIntData(&NumRunningSandboxesMetric, meta.numRunningSandboxes))
+	selfMetrics.Add(prometheus.NewIntData(&NumCannotExportSandboxesMetric, meta.numCannotExportSandboxes))
+	selfMetrics.Add(prometheus.NewIntData(&NumTotalSandboxesMetric, numSandboxesTotal))
 
 	// Write out all data.
 	lastMetricsWrittenSize := int(m.lastMetricsWrittenSize.Load())
