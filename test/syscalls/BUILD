@@ -117,21 +117,31 @@ syscall_test(
 )
 
 syscall_test(
-    add_host_communication = True,
+    add_host_connector = True,
     add_hostinet = True,
     one_sandbox = False,
-    test = "//test/syscalls/linux:connect_external_test",
+    test = "//test/syscalls/linux:bind_external_test",
     # Shared mode tests replace /tmp which hides the files created for
-    # add_host_communication. use_tmpfs makes shared mode be skipped.
+    # add_host_connector. use_tmpfs makes shared mode be skipped.
     use_tmpfs = True,
 )
 
 syscall_test(
-    add_host_communication = True,
+    add_host_uds = True,
+    add_hostinet = True,
+    one_sandbox = False,
+    test = "//test/syscalls/linux:connect_external_test",
+    # Shared mode tests replace /tmp which hides the files created for
+    # add_host_uds. use_tmpfs makes shared mode be skipped.
+    use_tmpfs = True,
+)
+
+syscall_test(
+    add_host_fifo = True,
     one_sandbox = False,
     test = "//test/syscalls/linux:pipe_external_test",
     # Shared mode tests replace /tmp which hides the files created for
-    # add_host_communication. use_tmpfs makes shared mode be skipped.
+    # add_host_fifo. use_tmpfs makes shared mode be skipped.
     use_tmpfs = True,
 )
 

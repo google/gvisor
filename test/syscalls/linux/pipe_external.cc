@@ -53,7 +53,7 @@ TEST_P(HostPipeTest, Read) {
   ASSERT_NE(val, nullptr);
   const std::string root(val);
 
-  const std::string path = JoinPath(root, "pipe", "in");
+  const std::string path = JoinPath(root, "in");
   FileDescriptor reader = ASSERT_NO_ERRNO_AND_VALUE(Open(path, O_RDONLY));
 
   char lastValue = 0;
@@ -78,7 +78,7 @@ TEST_P(HostPipeTest, Write) {
   ASSERT_NE(val, nullptr);
   const std::string root(val);
 
-  const std::string path = JoinPath(root, "pipe", "out");
+  const std::string path = JoinPath(root, "out");
   FileDescriptor writer = ASSERT_NO_ERRNO_AND_VALUE(Open(path, O_WRONLY));
 
   char lastValue = 0;
@@ -98,8 +98,8 @@ TEST_P(HostPipeTest, Write) {
 
 INSTANTIATE_TEST_SUITE_P(Paths, HostPipeTest,
                          // Test access via standard path and attach point.
-                         ::testing::Values("TEST_UDS_TREE",
-                                           "TEST_UDS_ATTACH_TREE"));
+                         ::testing::Values("TEST_FIFO_TREE",
+                                           "TEST_FIFO_ATTACH_TREE"));
 
 }  // namespace
 

@@ -537,6 +537,21 @@ cc_binary(
 )
 
 cc_binary(
+    name = "bind_external_test",
+    testonly = 1,
+    srcs = ["bind_external.cc"],
+    linkstatic = 1,
+    deps = [
+        "//test/util:file_descriptor",
+        "//test/util:fs_util",
+        "//test/util:socket_util",
+        gtest,
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
+
+cc_binary(
     name = "connect_external_test",
     testonly = 1,
     srcs = ["connect_external.cc"],
