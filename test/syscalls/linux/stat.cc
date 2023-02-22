@@ -783,6 +783,18 @@ TEST_F(StatTest, StatxInvalidFlags) {
               SyscallFailsWithErrno(EINVAL));
 }
 
+TEST_F(StatTest, StatxIgnoreNoAutomount) {
+  SKIP_IF(!IsRunningOnGvisor() && statx(-1, nullptr, 0, 0, nullptr) < 0 &&
+          errno == ENOSYS);
+
+  // TODO(b/270219255): AT_NO_AUTOMOUNT flag has no effect because gVisor does
+  // not support automount.
+  struct kernel_statx stx;
+  EXPECT_THAT(
+      statx(-1, test_file_name_.c_str(), AT_NO_AUTOMOUNT, STATX_ALL, &stx),
+      SyscallSucceeds());
+}
+
 }  // namespace
 
 }  // namespace testing

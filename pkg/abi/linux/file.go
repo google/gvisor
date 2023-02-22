@@ -209,6 +209,7 @@ var SizeOfStat = (*Stat)(nil).SizeBytes()
 
 // Flags for statx.
 const (
+	AT_NO_AUTOMOUNT       = 0x800
 	AT_STATX_SYNC_TYPE    = 0x6000
 	AT_STATX_SYNC_AS_STAT = 0x0000
 	AT_STATX_FORCE_SYNC   = 0x2000
