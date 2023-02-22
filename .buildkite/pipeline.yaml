@@ -520,9 +520,6 @@ steps:
     label: ":ruby: Ruby benchmarks"
     command: make -i benchmark-platforms BENCHMARKS_SUITE=ruby BENCHMARKS_TARGETS=test/benchmarks/network:ruby_test
   - <<: *benchmarks
-    label: ":weight_lifter: Size benchmarks"
-    command: make -i benchmark-platforms  BENCHMARKS_SUITE=size BENCHMARKS_TARGETS=test/benchmarks/base:size_test
-  - <<: *benchmarks
     label: ":gorilla: Usage benchmarks"
     command: make -i benchmark-platforms  BENCHMARKS_SUITE=usage BENCHMARKS_TARGETS=test/benchmarks/base:usage_test
   - <<: *benchmarks
