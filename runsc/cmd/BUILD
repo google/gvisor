@@ -45,9 +45,7 @@ go_library(
         "wait.go",
         "write_control.go",
     ],
-    visibility = [
-        "//runsc:__subpackages__",
-    ],
+    visibility = ["//runsc:__subpackages__"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/atomicbitops",
