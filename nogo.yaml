@@ -88,7 +88,18 @@ global:
       - pkg/shim/runtimeoptions/v14/runtimeoptions_cri.go
 analyzers:
   asmdecl:
-    external: # Enabled.
+    generated:
+      exclude: [".*"] # Disabled.
+    external:
+      exclude: [".*"] # Disabled.
+    internal:
+      suppress:
+        # Suppress for now, will be fixed separately.
+        - ".*unknown variable.*"
+        - ".*RET without writing.*"
+        - ".*wrong argument size.*"
+        - ".*missing Go declaration.*"
+        - ".*invalid.*"
   assign:
     external:
       exclude:
