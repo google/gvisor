@@ -20,6 +20,7 @@ package config
 import (
 	"fmt"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -373,11 +374,15 @@ type BundleName string
 // MetricMetadata returns key-value pairs that are useful to include in metrics
 // exported about the sandbox this config represents.
 func (c *Config) MetricMetadata() map[string]string {
-	metadata := make(map[string]string)
-	metadata["platform"] = c.Platform
-	metadata["network"] = c.Network.String()
-	metadata["coretags"] = strconv.FormatBool(c.EnableCoreTags)
-	return metadata
+	return map[string]string{
+		"platform":  c.Platform,
+		"network":   c.Network.String(),
+		"numcores":  strconv.Itoa(runtime.NumCPU()),
+		"coretags":  strconv.FormatBool(c.EnableCoreTags),
+		"overlay":   c.Overlay2.String(),
+		"gofermode": "default",
+		"cpuarch":   runtime.GOARCH,
+	}
 }
 
 // FileAccessType tells how the filesystem is accessed.
