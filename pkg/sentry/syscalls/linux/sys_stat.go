@@ -153,6 +153,10 @@ func Statx(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	mask := args[3].Uint()
 	statxAddr := args[4].Pointer()
 
+	// TODO(b/270247637): gVisor does not yet support automount, so
+	// AT_NO_AUTOMOUNT flag is a no-op.
+	flags &= ^linux.AT_NO_AUTOMOUNT
+
 	if flags&^(linux.AT_EMPTY_PATH|linux.AT_SYMLINK_NOFOLLOW|linux.AT_STATX_SYNC_TYPE) != 0 {
 		return 0, nil, linuxerr.EINVAL
 	}
