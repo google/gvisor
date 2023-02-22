@@ -1,4 +1,8 @@
-set -euo pipefail
+set -xeuo pipefail
+
+if test -d  ~/.cache/go-build/; then
+  find ~/.cache/go-build/ -user root  | grep go-build && exit 1 || true
+fi
 
 # Download any build-specific configuration that has been uploaded.
 # This allows top-level steps to override all subsequent steps.

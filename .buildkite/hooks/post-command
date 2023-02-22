@@ -1,5 +1,9 @@
 set -x
 
+if test -d  ~/.cache/go-build/; then
+  find ~/.cache/go-build/ -user root  | grep go-build && exit 1 || true
+fi
+
 # Clear any downloaded credentials.
 rm -f repo.key
 
