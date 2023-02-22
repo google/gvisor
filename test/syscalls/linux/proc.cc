@@ -37,6 +37,7 @@
 #include <atomic>
 #include <functional>
 #include <iostream>
+#include <iterator>
 #include <map>
 #include <memory>
 #include <ostream>
@@ -48,6 +49,7 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/algorithm/container.h"
 #include "absl/container/node_hash_set.h"
 #include "absl/strings/ascii.h"
 #include "absl/strings/match.h"
@@ -1483,12 +1485,32 @@ TEST(ProcLoadavg, Fields) {
 
 class ProcPidStatTest : public ::testing::TestWithParam<std::string> {};
 
+// Parses /proc/<pid>/stat output to a vector of string. We need a more
+// complicated approach than absl::StrSplit because COMM can contain spaces.
+PosixErrorOr<std::vector<std::string>> ParseProcPidStat(
+    absl::string_view proc_pid_stat) {
+  auto comm_start = proc_pid_stat.find('(');
+  auto comm_end = proc_pid_stat.rfind(')');
+  if (comm_start == proc_pid_stat.npos || comm_end == proc_pid_stat.npos) {
+    return PosixError(EINVAL, absl::StrCat("Invalid /proc/<pid>/stat"));
+  }
+  std::vector<std::string> fields =
+      absl::StrSplit(proc_pid_stat.substr(0, comm_start - 1), ' ');
+  fields.push_back(std::string{proc_pid_stat.substr(comm_start, comm_end + 1)});
+  absl::c_transform(absl::StrSplit(proc_pid_stat.substr(comm_end + 2), ' '),
+                    std::back_inserter(fields),
+                    [](auto sv) { return std::string{sv}; });
+  return fields;
+}
+
 TEST_P(ProcPidStatTest, HasBasicFields) {
   std::string proc_pid_stat = ASSERT_NO_ERRNO_AND_VALUE(
       GetContents(absl::StrCat("/proc/", GetParam(), "/stat")));
 
   ASSERT_FALSE(proc_pid_stat.empty());
-  std::vector<std::string> fields = absl::StrSplit(proc_pid_stat, ' ');
+  std::vector<std::string> fields =
+      ASSERT_NO_ERRNO_AND_VALUE(ParseProcPidStat(proc_pid_stat));
+
   ASSERT_GE(fields.size(), 24);
   EXPECT_EQ(absl::StrCat(getpid()), fields[0]);
   // fields[1] is the thread name.
@@ -1546,7 +1568,8 @@ PosixErrorOr<uint64_t> CurrentRSS() {
     return PosixError(EINVAL, "empty /proc/self/stat");
   }
 
-  std::vector<std::string> fields = absl::StrSplit(proc_self_stat, ' ');
+  ASSIGN_OR_RETURN_ERRNO(std::vector<std::string> fields,
+                         ParseProcPidStat(proc_self_stat));
   if (fields.size() < 24) {
     return PosixError(
         EINVAL,
