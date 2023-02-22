@@ -1,4 +1,5 @@
-load("//tools:defs.bzl", "arch_genrule", "go_library", "go_test")
+load("//tools:arch.bzl", "arch_genrule")
+load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/nogo:defs.bzl", "nogo_facts")
 
 # Package linux contains the constants and types needed to interface with a

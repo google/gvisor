@@ -21,12 +21,23 @@ def proto_library(name, has_services = None, **kwargs):
         **kwargs
     )
 
-def select_arch(amd64 = "amd64", arm64 = "arm64", default = None, **kwargs):
-    values = {
-        "//tools/bazeldefs:amd64": amd64,
-        "//tools/bazeldefs:arm64": arm64,
-    }
-    if default:
+def select_arch(amd64 = None, arm64 = None, default = None, **kwargs):
+    """Select an option against standard architectures.
+
+    Args:
+      amd64: the option if the architecture is amd64.
+      arm64: the option if the architecture is arm64.
+      default: the option if no matching architecture is provided.
+      **kwargs: extra select arguments.
+
+    Returns:
+      An appropriate select."""
+    values = dict()
+    if amd64 != None:
+        values["//tools/bazeldefs:amd64"] = amd64
+    if arm64 != None:
+        values["//tools/bazeldefs:arm64"] = arm64
+    if default != None:
         values["//conditions:default"] = default
     return select(values, **kwargs)
 

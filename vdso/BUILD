@@ -3,7 +3,8 @@
 #   normal system VDSO (time, gettimeofday, clock_gettimeofday) but which uses
 #   timekeeping parameters managed by the sandbox kernel.
 
-load("//tools:defs.bzl", "cc_flags_supplier", "cc_toolchain", "select_arch", "vdso_linker_option")
+load("//tools:arch.bzl", "select_arch")
+load("//tools:defs.bzl", "cc_flags_supplier", "cc_toolchain", "vdso_linker_option")
 
 package(licenses = ["notice"])
 

@@ -1,4 +1,5 @@
-load("//tools:defs.bzl", "arch_genrule", "go_embed_data", "go_library")
+load("//tools:arch.bzl", "arch_genrule")
+load("//tools:defs.bzl", "go_embed_data", "go_library")
 
 package(licenses = ["notice"])
 
