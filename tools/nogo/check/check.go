@@ -337,7 +337,7 @@ func (i *errorImporter) Import(path string) (*types.Package, error) {
 // [2] golang.org/x/tools/go/checker/internal/checker
 func (i *importer) checkPackage(path string, srcs []string) (*types.Package, FindingSet, *facts.Package, error) {
 	// Load all source files.
-	goFiles, _ := sortSrcs(srcs)
+	goFiles, nonGoFiles := sortSrcs(srcs)
 	syntax := make([]*ast.File, 0, len(goFiles))
 	for _, file := range goFiles {
 		include, err := shouldInclude(file)
@@ -352,6 +352,17 @@ func (i *importer) checkPackage(path string, srcs []string) (*types.Package, Fin
 			return nil, nil, nil, fmt.Errorf("error parsing file %q: %w", file, err)
 		}
 		syntax = append(syntax, s)
+	}
+	otherFiles := make([]string, 0, len(nonGoFiles))
+	for _, file := range nonGoFiles {
+		include, err := shouldInclude(file)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("error evaluating non-Go file %q: %w", file, err)
+		}
+		if !include {
+			continue
+		}
+		otherFiles = append(otherFiles, file)
 	}
 
 	// Check type information.
@@ -431,12 +442,13 @@ func (i *importer) checkPackage(path string, srcs []string) (*types.Package, Fin
 			// Run the analysis.
 			var localFindings FindingSet
 			p := &analysis.Pass{
-				Analyzer:  a,
-				Fset:      i.fset,
-				Files:     syntax,
-				Pkg:       astPackage,
-				TypesInfo: typesInfo,
-				ResultOf:  results, // All results.
+				Analyzer:   a,
+				Fset:       i.fset,
+				Files:      syntax,
+				OtherFiles: otherFiles,
+				Pkg:        astPackage,
+				TypesInfo:  typesInfo,
+				ResultOf:   results, // All results.
 				Report: func(d analysis.Diagnostic) {
 					localFindings = append(localFindings, Finding{
 						Category: a.Name,
