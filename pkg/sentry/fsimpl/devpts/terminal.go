@@ -39,6 +39,10 @@ type Terminal struct {
 	// replicaKTTY contains the controlling process of the replica end of this
 	// terminal. This field is immutable.
 	replicaKTTY *kernel.TTY
+
+	// fgProcessGroup is the foreground process group that is currently
+	// connected to this TTY.
+	fgProcessGroup *kernel.ProcessGroup
 }
 
 func newTerminal(n uint32) *Terminal {
@@ -49,6 +53,8 @@ func newTerminal(n uint32) *Terminal {
 		masterKTTY:  &kernel.TTY{Index: n},
 		replicaKTTY: &kernel.TTY{Index: n},
 	}
+
+	t.ld.SetTerminal(&t)
 	return &t
 }
 
@@ -105,8 +111,7 @@ func (tm *Terminal) setForegroundProcessGroup(ctx context.Context, args arch.Sys
 		return 0, err
 	}
 
-	// Put the processgroup also in line discipline for further signal handling
-	tm.ld.SetForegroundProcessGroup(task.ThreadGroup().ProcessGroup())
+	tm.fgProcessGroup = task.ThreadGroup().ProcessGroup()
 
 	ret, err := task.ThreadGroup().SetForegroundProcessGroup(tm.tty(isMaster), kernel.ProcessGroupID(pgid))
 	return uintptr(ret), err
