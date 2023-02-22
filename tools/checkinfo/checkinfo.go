@@ -75,14 +75,16 @@ func (p *pkg) walkObject(pass *analysis.Pass, obj types.Object) {
 	case *types.Var:
 		// Skip if the var's type is a type parameter.
 		typ := x.Type()
-		if _, ok := typ.(*types.TypeParam); ok {
+		if _, ok := typ.Underlying().(*types.TypeParam); ok {
 			break
 		}
 		// Add information as a field.
-		a := Align(pass.TypesSizes.Alignof(typ))
-		s := Size(pass.TypesSizes.Sizeof(typ))
-		pass.ExportObjectFact(obj, &a)
-		pass.ExportObjectFact(obj, &s)
+		bestEffort(func() {
+			a := Align(pass.TypesSizes.Alignof(typ))
+			s := Size(pass.TypesSizes.Sizeof(typ))
+			pass.ExportObjectFact(obj, &a)
+			pass.ExportObjectFact(obj, &s)
+		})
 	case *types.TypeName:
 		// Skip if just an alias, or if not underlying type, or if a
 		// type parameter. If it is not an alias, then it must be
@@ -91,14 +93,16 @@ func (p *pkg) walkObject(pass *analysis.Pass, obj types.Object) {
 		if x.IsAlias() || typ == nil || typ.Underlying() == nil {
 			break
 		}
-		if _, ok := typ.(*types.TypeParam); ok {
+		if _, ok := typ.Underlying().(*types.TypeParam); ok {
 			break
 		}
 		// Add basic information.
-		a := Align(pass.TypesSizes.Alignof(typ))
-		s := Size(pass.TypesSizes.Sizeof(typ))
-		pass.ExportObjectFact(obj, &a)
-		pass.ExportObjectFact(obj, &s)
+		bestEffort(func() {
+			a := Align(pass.TypesSizes.Alignof(typ))
+			s := Size(pass.TypesSizes.Sizeof(typ))
+			pass.ExportObjectFact(obj, &a)
+			pass.ExportObjectFact(obj, &s)
+		})
 		// Recurse to fields if this is a definition.
 		if structType, ok := typ.Underlying().(*types.Struct); ok {
 			fields := make([]*types.Var, 0, structType.NumFields())
@@ -107,10 +111,12 @@ func (p *pkg) walkObject(pass *analysis.Pass, obj types.Object) {
 				fields = append(fields, fieldObj)
 				p.walkObject(pass, fieldObj)
 			}
-			offsets := pass.TypesSizes.Offsetsof(fields)
-			for i, field := range fields {
-				pass.ExportObjectFact(field, (*Offset)(&offsets[i]))
-			}
+			bestEffort(func() {
+				offsets := pass.TypesSizes.Offsetsof(fields)
+				for i, field := range fields {
+					pass.ExportObjectFact(field, (*Offset)(&offsets[i]))
+				}
+			})
 		}
 	case *types.Func:
 		// Skip if no underlying type.
@@ -134,6 +140,17 @@ func (p *pkg) walkObject(pass *analysis.Pass, obj types.Object) {
 		}
 		p.walkScope(pass, x.Scope())
 	}
+}
+
+// bestEffort is a panic/recover wrapper. This is used because the tools
+// package occasionally panics due to some type parameter use, and there is no
+// simple or obvious way to detect these conditions. This should only be used
+// when absolutely necessary.
+func bestEffort(fn func()) {
+	defer func() {
+		recover()
+	}()
+	fn()
 }
 
 // walkScope recursively resolves a scope.
