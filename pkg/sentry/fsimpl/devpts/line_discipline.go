@@ -112,9 +112,8 @@ type lineDiscipline struct {
 	// replicaWaiter is used to wait on the replica end of the TTY.
 	replicaWaiter waiter.Queue
 
-	// fgProcessGroup is the foreground process group that is currently
-	// connected to this TTY.
-	fgProcessGroup *kernel.ProcessGroup
+	// terminal is the terminal linked to this lineDiscipline
+	terminal *Terminal
 }
 
 func newLineDiscipline(termios linux.KernelTermios) *lineDiscipline {
@@ -124,8 +123,8 @@ func newLineDiscipline(termios linux.KernelTermios) *lineDiscipline {
 	return &ld
 }
 
-func (l *lineDiscipline) SetForegroundProcessGroup(pg *kernel.ProcessGroup) {
-	l.fgProcessGroup = pg
+func (l *lineDiscipline) SetTerminal(tm *Terminal) {
+	l.terminal = tm
 }
 
 // getTermios gets the linux.Termios for the tty.
@@ -402,11 +401,11 @@ func (*inputQueueTransformer) transform(l *lineDiscipline, q *queue, buf []byte)
 				cBytes[0] = '\r'
 			}
 		case l.termios.ControlCharacters[linux.VINTR]: // ctrl-c
-			l.fgProcessGroup.SendSignal(kernel.SignalInfoPriv(linux.SIGINT))
+			l.terminal.fgProcessGroup.SendSignal(kernel.SignalInfoPriv(linux.SIGINT))
 		case l.termios.ControlCharacters[linux.VSUSP]: // ctrl-z
-			l.fgProcessGroup.SendSignal(kernel.SignalInfoPriv(linux.SIGTSTP))
+			l.terminal.fgProcessGroup.SendSignal(kernel.SignalInfoPriv(linux.SIGTSTP))
 		case l.termios.ControlCharacters[linux.VQUIT]: // ctrl-\
-			l.fgProcessGroup.SendSignal(kernel.SignalInfoPriv(linux.SIGQUIT))
+			l.terminal.fgProcessGroup.SendSignal(kernel.SignalInfoPriv(linux.SIGQUIT))
 		}
 
 		// In canonical mode, we discard non-terminating characters
