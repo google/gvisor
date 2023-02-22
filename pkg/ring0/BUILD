@@ -1,4 +1,5 @@
-load("//tools:defs.bzl", "arch_genrule", "go_library", "select_arch")
+load("//tools:arch.bzl", "arch_genrule", "select_arch")
+load("//tools:defs.bzl", "go_library")
 load("//tools/nogo:defs.bzl", "nogo_facts")
 
 package(licenses = ["notice"])

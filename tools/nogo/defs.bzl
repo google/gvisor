@@ -2,6 +2,7 @@
 
 load("//tools/bazeldefs:defs.bzl", "BuildSettingInfo")
 load("//tools/bazeldefs:go.bzl", "go_context", "go_embed_libraries", "go_importpath", "go_rule")
+load("//tools:arch.bzl", "arch_transition", "transition_allowlist")
 
 NogoConfigInfo = provider(
     "information about a nogo configuration",
@@ -343,54 +344,61 @@ nogo_aspect = go_rule(
 def _nogo_test_impl(ctx):
     """Check nogo findings."""
 
-    # Ensure there's a single dependency.
-    if len(ctx.attr.deps) != 1:
-        fail("nogo_test requires exactly one dep.")
-    raw_findings = ctx.attr.deps[0][NogoInfo].raw_findings
-
-    # Build a step that applies the configuration.
-    config_srcs = ctx.attr.config[NogoConfigInfo].srcs
-    findings = ctx.actions.declare_file(ctx.label.name + ".findings")
-    ctx.actions.run(
-        inputs = raw_findings + ctx.files.srcs + config_srcs,
-        outputs = [findings],
-        tools = depset(ctx.files._nogo),
-        executable = ctx.files._nogo[0],
-        mnemonic = "GoStaticAnalysis",
-        progress_message = "Generating %s" % ctx.label,
-        # See above.
-        execution_requirements = {"no-sandbox": "1"},
-        arguments = ["filter"] +
-                    ["-config=%s" % f.path for f in config_srcs] +
-                    ["-output=%s" % findings.path] +
-                    [f.path for f in raw_findings],
-    )
-
     # Build a runner that checks the filtered facts.
-    #
-    # Note that this calls the filter binary without any configuration, so all
-    # findings will be included. But this is expected, since we've already
-    # filtered out everything that should not be included.
     runner = ctx.actions.declare_file(ctx.label.name)
-    runner_content = [
-        "#!/bin/bash",
-        "exec %s filter -test -text %s" % (ctx.files._nogo[0].short_path, findings.short_path),
-        "",
-    ]
-    ctx.actions.write(runner, "\n".join(runner_content), is_executable = True)
+    runner_content = ["#!/bin/bash"]
+    runner_footer = list()
+    all_findings = list()
 
+    # Collect all architecture-targets.
+    for (arch, deps) in ctx.split_attr.deps.items():
+        # Ensure there's a single dependency.
+        if len(deps) != 1:
+            fail("nogo_test requires exactly one dep.")
+        raw_findings = deps[0][NogoInfo].raw_findings
+
+        # Build a step that applies the configuration.
+        config_srcs = ctx.attr.config[NogoConfigInfo].srcs
+        findings = ctx.actions.declare_file(ctx.label.name + "." + arch + ".findings")
+        ctx.actions.run(
+            inputs = raw_findings + ctx.files.srcs + config_srcs,
+            outputs = [findings],
+            tools = depset(ctx.files._nogo),
+            executable = ctx.files._nogo[0],
+            mnemonic = "GoStaticAnalysis",
+            progress_message = "Generating %s" % ctx.label,
+            # See above.
+            execution_requirements = {"no-sandbox": "1"},
+            arguments = ["filter"] +
+                        ["-config=%s" % f.path for f in config_srcs] +
+                        ["-output=%s" % findings.path] +
+                        [f.path for f in raw_findings],
+        )
+
+        # Note that this calls the filter binary without any configuration, so
+        # all findings will be included. But this is expected, since we've
+        # already filtered out everything that should not be included. The
+        # runner will always run all tests, and then exit if any have failed.
+        runner_content.append("echo -n %s..." % arch)
+        runner_content.append("%s filter -test -text %s" % (ctx.files._nogo[0].short_path, findings.short_path))
+        runner_content.append("rc_%s=$?" % arch)
+        runner_footer.append("if [[ $rc_%s -ne 0 ]]; then exit $rc_%s; fi" % (arch, arch))
+        all_findings.append(findings)
+    runner_content.extend(runner_footer)
+    runner_content.append("")  # Ensure empty line.
+    ctx.actions.write(runner, "\n".join(runner_content), is_executable = True)
     return [DefaultInfo(
         # The runner just executes the filter again, on the
         # newly generated filtered findings. We still need
         # the filter tool as part of our runfiles, however.
-        runfiles = ctx.runfiles(files = ctx.files._nogo + [findings]),
+        runfiles = ctx.runfiles(files = ctx.files._nogo + all_findings),
         executable = runner,
     ), OutputGroupInfo(
         # Propagate the filtered filters, for consumption by
         # build tooling. Note that the build tooling typically
         # pays attention to the mnemoic above, so this must be
         # what is expected by the tooling.
-        nogo_findings = depset([findings]),
+        nogo_findings = depset(all_findings),
     )]
 
 nogo_test = rule(
@@ -403,6 +411,7 @@ nogo_test = rule(
         "deps": attr.label_list(
             aspects = [nogo_aspect],
             doc = "Exactly one Go dependency to be analyzed.",
+            cfg = arch_transition,
         ),
         "srcs": attr.label_list(
             allow_files = True,
@@ -414,11 +423,14 @@ nogo_test = rule(
         ),
         "_target": attr.label(
             default = "//tools/nogo:target",
-            cfg = "target",
+            cfg = arch_transition,
         ),
         "_nogo_full": attr.label(
             default = "//tools/nogo:full",
             cfg = "exec",
+        ),
+        "_allowlist_function_transition": attr.label(
+            default = transition_allowlist,
         ),
     },
     test = True,

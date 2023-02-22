@@ -8,7 +8,7 @@ change for Google-internal and bazel-compatible rules.
 load("//tools/go_stateify:defs.bzl", "go_stateify")
 load("//tools/go_marshal:defs.bzl", "go_marshal", "marshal_deps", "marshal_test_deps")
 load("//tools/nogo:defs.bzl", "nogo_test")
-load("//tools/bazeldefs:defs.bzl", _BuildSettingInfo = "BuildSettingInfo", _amd64_config = "amd64_config", _arch_config = "arch_config", _arm64_config = "arm64_config", _bool_flag = "bool_flag", _bpf_program = "bpf_program", _build_test = "build_test", _bzl_library = "bzl_library", _coreutil = "coreutil", _default_net_util = "default_net_util", _more_shards = "more_shards", _most_shards = "most_shards", _proto_library = "proto_library", _select_arch = "select_arch", _select_system = "select_system", _short_path = "short_path", _transition_allowlist = "transition_allowlist", _version = "version")
+load("//tools/bazeldefs:defs.bzl", _BuildSettingInfo = "BuildSettingInfo", _bool_flag = "bool_flag", _bpf_program = "bpf_program", _build_test = "build_test", _bzl_library = "bzl_library", _coreutil = "coreutil", _default_net_util = "default_net_util", _more_shards = "more_shards", _most_shards = "most_shards", _proto_library = "proto_library", _select_system = "select_system", _short_path = "short_path", _version = "version")
 load("//tools/bazeldefs:cc.bzl", _cc_binary = "cc_binary", _cc_flags_supplier = "cc_flags_supplier", _cc_grpc_library = "cc_grpc_library", _cc_library = "cc_library", _cc_proto_library = "cc_proto_library", _cc_test = "cc_test", _cc_toolchain = "cc_toolchain", _gbenchmark = "gbenchmark", _gbenchmark_internal = "gbenchmark_internal", _grpcpp = "grpcpp", _gtest = "gtest", _vdso_linker_option = "vdso_linker_option")
 load("//tools/bazeldefs:go.bzl", _gazelle = "gazelle", _go_binary = "go_binary", _go_embed_data = "go_embed_data", _go_grpc_and_proto_libraries = "go_grpc_and_proto_libraries", _go_library = "go_library", _go_path = "go_path", _go_proto_library = "go_proto_library", _go_test = "go_test", _gotsan_flag_values = "gotsan_flag_values", _gotsan_values = "gotsan_values", _select_goarch = "select_goarch", _select_goos = "select_goos")
 load("//tools/bazeldefs:pkg.bzl", _pkg_deb = "pkg_deb", _pkg_tar = "pkg_tar")
@@ -21,7 +21,6 @@ bzl_library = _bzl_library
 bool_flag = _bool_flag
 BuildSettingInfo = _BuildSettingInfo
 default_net_util = _default_net_util
-select_arch = _select_arch
 select_system = _select_system
 short_path = _short_path
 coreutil = _coreutil
@@ -325,58 +324,3 @@ def proto_library(name, srcs, deps = None, has_services = 0, **kwargs):
             deps = [":" + name + "_cc_proto"],
             **kwargs
         )
-
-def _arch_transition_impl(settings, attr):
-    return {
-        "arm64": _arm64_config(settings, attr),
-        "amd64": _amd64_config(settings, attr),
-    }
-
-arch_transition = transition(
-    implementation = _arch_transition_impl,
-    inputs = [],
-    outputs = _arch_config,
-)
-
-def _arch_genrule_impl(ctx):
-    """Runs a command with inputs from multiple architectures.
-
-    The command will be run multiple times, with the provided
-    template rendered using the architecture for the output.
-    """
-    outputs = []
-    for (arch, src) in ctx.split_attr.src.items():
-        # Calculate the template for this output file.
-        output = ctx.actions.declare_file(ctx.attr.template % arch)
-        outputs.append(output)
-
-        # Copy the specific generated source.
-        input_files = src[DefaultInfo].files
-        ctx.actions.run_shell(
-            inputs = input_files,
-            outputs = [output],
-            command = "cp %s %s" % (
-                " ".join([f.path for f in input_files.to_list()]),
-                output.path,
-            ),
-        )
-    return [DefaultInfo(
-        files = depset(outputs),
-    )]
-
-arch_genrule = rule(
-    implementation = _arch_genrule_impl,
-    attrs = {
-        "src": attr.label(
-            doc = "Sources for the genrule.",
-            cfg = arch_transition,
-        ),
-        "template": attr.string(
-            doc = "Template for the output files.",
-            mandatory = True,
-        ),
-        "_allowlist_function_transition": attr.label(
-            default = _transition_allowlist,
-        ),
-    },
-)

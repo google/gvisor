@@ -1,7 +1,8 @@
 # This package contains a standalone rseq test binary. This binary must not
 # depend on libc, which might use rseq itself.
 
-load("//tools:defs.bzl", "cc_flags_supplier", "cc_library", "cc_toolchain", "select_arch")
+load("//tools:arch.bzl", "select_arch")
+load("//tools:defs.bzl", "cc_flags_supplier", "cc_library", "cc_toolchain")
 
 package(licenses = ["notice"])
 

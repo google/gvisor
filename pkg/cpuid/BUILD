@@ -29,6 +29,11 @@ go_test(
         "cpuid_test.go",
     ],
     library = ":cpuid",
+    # NOTE: It seems that bazel code generation does not properly parse tags
+    # when run via the architecture transition for nogo. This should be fixed
+    # at some point in the future, but for now we can simply skip nogo analysis
+    # on the test itself. It still applies to the core library.
+    nogo = False,
 )
 
 go_test(

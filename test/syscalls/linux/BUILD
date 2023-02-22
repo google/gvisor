@@ -1,4 +1,5 @@
-load("//tools:defs.bzl", "cc_binary", "cc_library", "gbenchmark", "gtest", "select_arch", "select_system")
+load("//tools:arch.bzl", "select_arch")
+load("//tools:defs.bzl", "cc_binary", "cc_library", "gbenchmark", "gtest", "select_system")
 
 package(
     default_visibility = ["//:sandbox"],

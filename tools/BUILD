@@ -20,6 +20,14 @@ config_setting(
 )
 
 bzl_library(
+    name = "arch_bzl",
+    srcs = ["arch.bzl"],
+    visibility = [
+        "//:sandbox",
+    ],
+)
+
+bzl_library(
     name = "defs_bzl",
     srcs = ["defs.bzl"],
     visibility = [

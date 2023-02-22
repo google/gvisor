@@ -1,4 +1,5 @@
-load("//tools:defs.bzl", "pkg_deb", "pkg_tar", "select_arch", "version")
+load("//tools:arch.bzl", "select_arch")
+load("//tools:defs.bzl", "pkg_deb", "pkg_tar", "version")
 
 package(licenses = ["notice"])
 
