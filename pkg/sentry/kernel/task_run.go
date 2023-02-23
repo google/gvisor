@@ -168,6 +168,12 @@ func (app *runApp) execute(t *Task) taskRunState {
 	// a pending signal, causing another interruption, but that signal should
 	// not interact with the interrupted syscall.)
 	if t.haveSyscallReturn {
+		if err := t.p.PullFullState(t.MemoryManager().AddressSpace(), t.Arch()); err != nil {
+			t.Warningf("Unable to pull a full state: %v", err)
+			t.PrepareExit(linux.WaitStatusExit(int32(ExtractErrno(err, -1))))
+			return (*runExit)(nil)
+		}
+
 		if sre, ok := linuxerr.SyscallRestartErrorFromReturn(t.Arch().Return()); ok {
 			if sre == linuxerr.ERESTART_RESTARTBLOCK {
 				t.Debugf("Restarting syscall %d with restart block: not interrupted by handled signal", t.Arch().SyscallNo())
