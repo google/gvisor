@@ -15,94 +15,93 @@
 #include "funcdata.h"
 #include "textflag.h"
 
-#define CPU_SELF             0
-#define CPU_REGISTERS        224
-#define CPU_STACK_TOP        (16+0 + 128)
-#define CPU_ERROR_CODE       (16+128)
-#define CPU_ERROR_TYPE       (16+136)
-#define CPU_FAULT_ADDR       (16+144)
-#define CPU_FPSTATE_EL0      (16+152)
-#define CPU_TTBR0_KVM       (16+160)
-#define CPU_TTBR0_APP        (16+168)
-#define CPU_VECTOR_CODE      (16+176)
-#define CPU_APP_ADDR         (16+184)
-#define CPU_LAZY_VFP         (16+192)
-#define CPU_APP_ASID         (16+200)
+#define CPU_SELF             0   // +checkoffset . CPU.self
+#define CPU_REGISTERS        224 // +checkoffset . CPU.registers
+#define CPU_ARCH_STATE       16  // +checkoffset . CPU.CPUArchState
+#define CPU_STACK_BOTTOM     CPU_ARCH_STATE+0     // +checkoffset . CPUArchState.stack
+#define CPU_STACK_TOP        CPU_STACK_BOTTOM+128 // +checksize . CPUArchState.stack
+#define CPU_ERROR_CODE       CPU_ARCH_STATE+128   // +checkoffset . CPUArchState.errorCode
+#define CPU_ERROR_TYPE       CPU_ARCH_STATE+136   // +checkoffset . CPUArchState.errorType
+#define CPU_FAULT_ADDR       CPU_ARCH_STATE+144   // +checkoffset . CPUArchState.faultAddr
+#define CPU_FPSTATE_EL0      CPU_ARCH_STATE+152   // +checkoffset . CPUArchState.el0Fp
+#define CPU_TTBR0_KVM        CPU_ARCH_STATE+160   // +checkoffset . CPUArchState.ttbr0Kvm
+#define CPU_TTBR0_APP        CPU_ARCH_STATE+168   // +checkoffset . CPUArchState.ttbr0App
+#define CPU_VECTOR_CODE      CPU_ARCH_STATE+176   // +checkoffset . CPUArchState.vecCode
+#define CPU_APP_ADDR         CPU_ARCH_STATE+184   // +checkoffset . CPUArchState.appAddr
+#define CPU_LAZY_VFP         CPU_ARCH_STATE+192   // +checkoffset . CPUArchState.lazyVFP
+#define CPU_APP_ASID         CPU_ARCH_STATE+200   // +checkoffset . CPUArchState.appASID
 
 // Bits.
-#define _KERNEL_FLAGS 965
+#define _KERNEL_FLAGS 965 // +checkconst . KernelFlagsSet
 
 // Vectors.
-#define El1Sync                 4
-#define El1Irq                  5
-#define El1Fiq                  6
-#define El1Err                  7
-#define El0Sync                 8
-#define El0Irq                  9
-#define El0Fiq                  10
-#define El0Err                  11
-#define El1SyncDa               16
-#define El1SyncIa               17
-#define El1SyncSpPc             18
-#define El1SyncUndef            19
-#define El1SyncDbg              20
-#define El1SyncInv              21
-#define El0SyncSVC              22
-#define El0SyncDa               23
-#define El0SyncIa               24
-#define El0SyncFpsimdAcc        25
-#define El0SyncSveAcc           26
-#define El0SyncFpsimdExc        27
-#define El0SyncSys              28
-#define El0SyncSpPc             29
-#define El0SyncUndef            30
-#define El0SyncDbg              31
-#define El0SyncWfx              32
-#define El0SyncInv              33
-#define El0ErrNMI               34
-#define PageFault               23
-#define Syscall                 22
-#define VirtualizationException 35
+#define El1Sync                 4  // +checkconst . El1Sync
+#define El1Irq                  5  // +checkconst . El1Irq
+#define El1Fiq                  6  // +checkconst . El1Fiq
+#define El1Err                  7  // +checkconst . El1Err
+#define El0Sync                 8  // +checkconst . El0Sync
+#define El0Irq                  9  // +checkconst . El0Irq
+#define El0Fiq                  10 // +checkconst . El0Fiq
+#define El0Err                  11 // +checkconst . El0Err
+#define El1SyncDa               16 // +checkconst . El1SyncDa
+#define El1SyncIa               17 // +checkconst . El1SyncIa
+#define El1SyncSpPc             18 // +checkconst . El1SyncSpPc
+#define El1SyncUndef            19 // +checkconst . El1SyncUndef
+#define El1SyncDbg              20 // +checkconst . El1SyncDbg
+#define El1SyncInv              21 // +checkconst . El1SyncInv
+#define El0SyncSVC              22 // +checkconst . El0SyncSVC
+#define El0SyncDa               23 // +checkconst . El0SyncDa
+#define El0SyncIa               24 // +checkconst . El0SyncIa
+#define El0SyncFpsimdAcc        25 // +checkconst . El0SyncFpsimdAcc
+#define El0SyncSveAcc           26 // +checkconst . El0SyncSveAcc
+#define El0SyncFpsimdExc        27 // +checkconst . El0SyncFpsimdExc
+#define El0SyncSys              28 // +checkconst . El0SyncSys
+#define El0SyncSpPc             29 // +checkconst . El0SyncSpPc
+#define El0SyncUndef            30 // +checkconst . El0SyncUndef
+#define El0SyncDbg              31 // +checkconst . El0SyncDbg
+#define El0SyncWfx              32 // +checkconst . El0SyncWfx
+#define El0SyncInv              33 // +checkconst . El0SyncInv
+#define El0ErrNMI               34 // +checkconst . El0ErrNMI
+#define PageFault               23 // +checkconst . PageFault
+#define Syscall                 22 // +checkconst . Syscall
+#define VirtualizationException 35 // +checkconst . VirtualizationException
 
-
-#define PTRACE_R0       (0 + 0*8)
-#define PTRACE_R1       (0 + 1*8)
-#define PTRACE_R2       (0 + 2*8)
-#define PTRACE_R3       (0 + 3*8)
-#define PTRACE_R4       (0 + 4*8)
-#define PTRACE_R5       (0 + 5*8)
-#define PTRACE_R6       (0 + 6*8)
-#define PTRACE_R7       (0 + 7*8)
-#define PTRACE_R8       (0 + 8*8)
-#define PTRACE_R9       (0 + 9*8)
-#define PTRACE_R10      (0 + 10*8)
-#define PTRACE_R11      (0 + 11*8)
-#define PTRACE_R12      (0 + 12*8)
-#define PTRACE_R13      (0 + 13*8)
-#define PTRACE_R14      (0 + 14*8)
-#define PTRACE_R15      (0 + 15*8)
-#define PTRACE_R16      (0 + 16*8)
-#define PTRACE_R17      (0 + 17*8)
-#define PTRACE_R18      (0 + 18*8)
-#define PTRACE_R19      (0 + 19*8)
-#define PTRACE_R20      (0 + 20*8)
-#define PTRACE_R21      (0 + 21*8)
-#define PTRACE_R22      (0 + 22*8)
-#define PTRACE_R23      (0 + 23*8)
-#define PTRACE_R24      (0 + 24*8)
-#define PTRACE_R25      (0 + 25*8)
-#define PTRACE_R26      (0 + 26*8)
-#define PTRACE_R27      (0 + 27*8)
-#define PTRACE_R28      (0 + 28*8)
-#define PTRACE_R29      (0 + 29*8)
-#define PTRACE_R30      (0 + 30*8)
-#define PTRACE_SP       248
-#define PTRACE_PC       256
-#define PTRACE_PSTATE   264
-
-
-#define PTRACE_TLS      272
-
+#define PTRACE_REGS     0 // +checkoffset linux PtraceRegs.Regs
+#define PTRACE_R0       (PTRACE_REGS + 0*8)
+#define PTRACE_R1       (PTRACE_REGS + 1*8)
+#define PTRACE_R2       (PTRACE_REGS + 2*8)
+#define PTRACE_R3       (PTRACE_REGS + 3*8)
+#define PTRACE_R4       (PTRACE_REGS + 4*8)
+#define PTRACE_R5       (PTRACE_REGS + 5*8)
+#define PTRACE_R6       (PTRACE_REGS + 6*8)
+#define PTRACE_R7       (PTRACE_REGS + 7*8)
+#define PTRACE_R8       (PTRACE_REGS + 8*8)
+#define PTRACE_R9       (PTRACE_REGS + 9*8)
+#define PTRACE_R10      (PTRACE_REGS + 10*8)
+#define PTRACE_R11      (PTRACE_REGS + 11*8)
+#define PTRACE_R12      (PTRACE_REGS + 12*8)
+#define PTRACE_R13      (PTRACE_REGS + 13*8)
+#define PTRACE_R14      (PTRACE_REGS + 14*8)
+#define PTRACE_R15      (PTRACE_REGS + 15*8)
+#define PTRACE_R16      (PTRACE_REGS + 16*8)
+#define PTRACE_R17      (PTRACE_REGS + 17*8)
+#define PTRACE_R18      (PTRACE_REGS + 18*8)
+#define PTRACE_R19      (PTRACE_REGS + 19*8)
+#define PTRACE_R20      (PTRACE_REGS + 20*8)
+#define PTRACE_R21      (PTRACE_REGS + 21*8)
+#define PTRACE_R22      (PTRACE_REGS + 22*8)
+#define PTRACE_R23      (PTRACE_REGS + 23*8)
+#define PTRACE_R24      (PTRACE_REGS + 24*8)
+#define PTRACE_R25      (PTRACE_REGS + 25*8)
+#define PTRACE_R26      (PTRACE_REGS + 26*8)
+#define PTRACE_R27      (PTRACE_REGS + 27*8)
+#define PTRACE_R28      (PTRACE_REGS + 28*8)
+#define PTRACE_R29      (PTRACE_REGS + 29*8)
+#define PTRACE_R30      (PTRACE_REGS + 30*8)
+#define PTRACE_SP       248 // +checkoffset linux PtraceRegs.Sp
+#define PTRACE_PC       256 // +checkoffset linux PtraceRegs.Pc
+#define PTRACE_PSTATE   264 // +checkoffset linux PtraceRegs.Pstate
+#define PTRACE_TLS      272 // +checkoffset arch Registers.TPIDR_EL0
 
 // Saves a register set.
 //

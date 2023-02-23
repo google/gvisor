@@ -15,35 +15,36 @@
 #include "funcdata.h"
 #include "textflag.h"
 
-#define SYS_GETPID       39
-#define SYS_EXIT	 60
-#define SYS_KILL	 62
-#define SYS_GETPPID	 110
-#define SIGKILL		 9
-#define SIGSTOP		 19
-#define SYS_PRCTL	 157
-#define PR_SET_PDEATHSIG 1
+#define SYS_GETPID       39  // +checkconst unix SYS_GETPID
+#define SYS_EXIT	 60  // +checkconst unix SYS_EXIT
+#define SYS_KILL	 62  // +checkconst unix SYS_KILL
+#define SYS_GETPPID	 110 // +checkconst unix SYS_GETPPID
+#define SIGKILL		 9   // +checkconst unix SIGKILL
+#define SIGSTOP		 19  // +checkconst unix SIGSTOP
+#define SYS_PRCTL	 157 // +checkconst unix SYS_PRCTL
+#define PR_SET_PDEATHSIG 1   // +checkconst unix PR_SET_PDEATHSIG
 
-#define SYS_FUTEX	 202
-#define FUTEX_WAKE	 1
-#define FUTEX_WAIT	 0
+#define SYS_FUTEX	 202 // +checkconst unix SYS_FUTEX
+#define FUTEX_WAKE	 1   // +checkconst linux FUTEX_WAKE
+#define FUTEX_WAIT	 0   // +checkconst linux FUTEX_WAIT
 
-#define NEW_STUB	 1
-#define RUN_SYSCALL_LOOP 5
+#define NEW_STUB	 1 // +checkconst . _NEW_STUB
+#define RUN_SYSCALL_LOOP 5 // +checkconst . _RUN_SYSCALL_LOOP
 
 // syscallSentryMessage offsets.
-#define SENTRY_MESSAGE_STATE 0
-#define SENTRY_MESSAGE_SYSNO 8
-#define SENTRY_MESSAGE_ARG0  (16 + 0*8)
-#define SENTRY_MESSAGE_ARG1  (16 + 1*8)
-#define SENTRY_MESSAGE_ARG2  (16 + 2*8)
-#define SENTRY_MESSAGE_ARG3  (16 + 3*8)
-#define SENTRY_MESSAGE_ARG4  (16 + 4*8)
-#define SENTRY_MESSAGE_ARG5  (16 + 5*8)
+#define SENTRY_MESSAGE_STATE 0  // +checkoffset . syscallSentryMessage.state
+#define SENTRY_MESSAGE_SYSNO 8  // +checkoffset . syscallSentryMessage.sysno
+#define SENTRY_MESSAGE_ARGS  16 // +checkoffset . syscallSentryMessage.args
+#define SENTRY_MESSAGE_ARG0  (SENTRY_MESSAGE_ARGS + 0*8)
+#define SENTRY_MESSAGE_ARG1  (SENTRY_MESSAGE_ARGS + 1*8)
+#define SENTRY_MESSAGE_ARG2  (SENTRY_MESSAGE_ARGS + 2*8)
+#define SENTRY_MESSAGE_ARG3  (SENTRY_MESSAGE_ARGS + 3*8)
+#define SENTRY_MESSAGE_ARG4  (SENTRY_MESSAGE_ARGS + 4*8)
+#define SENTRY_MESSAGE_ARG5  (SENTRY_MESSAGE_ARGS + 5*8)
 
 // syscallStubMessage offsets.
-#define STUB_MESSAGE_OFFSET 4096
-#define STUB_MESSAGE_RET    0
+#define STUB_MESSAGE_OFFSET 4096 // +checkconst . syscallStubMessageOffset
+#define STUB_MESSAGE_RET    0    // +checkoffset . syscallStubMessage.ret
 
 // initStubProcess bootstraps the child and sends itself SIGSTOP to wait for attach.
 //

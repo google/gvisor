@@ -1,4 +1,4 @@
-// Copyright 2020 The gVisor Authors.
+// Copyright 2018 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,13 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build amd64
+
 #include "textflag.h"
 
-#define GOID_OFFSET 152
+#define NMSPINNING_OFFSET 92 // +checkoffset runtime schedt.nmspinning
 
-// func goid() int64
-TEXT ·goid(SB),NOSPLIT,$0-8
-  MOVQ (TLS), R14
-  MOVQ GOID_OFFSET(R14), R14
-  MOVQ R14, ret+0(FP)
-  RET
+TEXT ·addrOfSpinning(SB),NOSPLIT,$0-8
+	LEAQ runtime·sched(SB), AX
+	ADDQ $NMSPINNING_OFFSET, AX
+	MOVQ AX, ret+0(FP)
+	RET

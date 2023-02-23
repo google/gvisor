@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2023 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,14 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build amd64
+package sync
 
-#include "textflag.h"
+import (
+	"runtime"
+)
 
-#define NMSPINNING_OFFSET 92
-
-TEXT ·addrOfSpinning(SB),NOSPLIT,$0-8
-	LEAQ runtime·sched(SB), AX
-	ADDQ $NMSPINNING_OFFSET, AX
-	MOVQ AX, ret+0(FP)
-	RET
+// Dummy reference for facts.
+const _ = runtime.Compiler

@@ -16,78 +16,75 @@
 #include "textflag.h"
 
 // CPU offsets.
-#define CPU_REGISTERS    64
-#define CPU_FPU_STATE    280
-#define CPU_ERROR_CODE   (16+0)
-#define CPU_ERROR_TYPE   (16+8)
-#define CPU_VECTOR       (16+16)
-#define CPU_FAULT_ADDR   (16+24)
-#define CPU_ENTRY        (16+32)
-#define CPU_HAS_XSAVE    (16+40)
-#define CPU_HAS_XSAVEOPT (16+41)
+#define CPU_REGISTERS    64  // +checkoffset . CPU.registers
+#define CPU_FPU_STATE    280 // +checkoffset . CPU.floatingPointState
+#define CPU_ARCH_STATE   16  // +checkoffset . CPU.CPUArchState
+#define CPU_ERROR_CODE   CPU_ARCH_STATE+0  // +checkoffset . CPUArchState.errorCode
+#define CPU_ERROR_TYPE   CPU_ARCH_STATE+8  // +checkoffset . CPUArchState.errorType
+#define CPU_VECTOR       CPU_ARCH_STATE+16 // +checkoffset . CPUArchState.vector
+#define CPU_FAULT_ADDR   CPU_ARCH_STATE+24 // +checkoffset . CPUArchState.faultAddr
+#define CPU_ENTRY        CPU_ARCH_STATE+32 // +checkoffset . CPUArchState.kernelEntry
+#define CPU_HAS_XSAVE    CPU_ARCH_STATE+40 // +checkoffset . CPUArchState.hasXSAVE
+#define CPU_HAS_XSAVEOPT CPU_ARCH_STATE+41 // +checkoffset . CPUArchState.hasXSAVEOPT
 
-
-#define ENTRY_SCRATCH0   256
-#define ENTRY_STACK_TOP  264
-#define ENTRY_CPU_SELF   272
-#define ENTRY_KERNEL_CR3 280
-
+#define ENTRY_SCRATCH0   256 // +checkoffset . kernelEntry.scratch0
+#define ENTRY_STACK_TOP  264 // +checkoffset . kernelEntry.stackTop
+#define ENTRY_CPU_SELF   272 // +checkoffset . kernelEntry.cpuSelf
+#define ENTRY_KERNEL_CR3 280 // +checkoffset . kernelEntry.kernelCR3
 
 // Bits.
-#define _RFLAGS_IF    512
-#define _RFLAGS_IOPL0 4096
-#define _KERNEL_FLAGS 2
+#define _RFLAGS_IF    512  // +checkconst . _RFLAGS_IF
+#define _RFLAGS_IOPL0 4096 // +checkconst . _RFLAGS_IOPL0
+#define _KERNEL_FLAGS 2    // +checkconst . KernelFlagsSet
 
 // Vectors.
-#define DivideByZero               0
-#define Debug                      1
-#define NMI                        2
-#define Breakpoint                 3
-#define Overflow                   4
-#define BoundRangeExceeded         5
-#define InvalidOpcode              6
-#define DeviceNotAvailable         7
-#define DoubleFault                8
-#define CoprocessorSegmentOverrun  9
-#define InvalidTSS                 10
-#define SegmentNotPresent          11
-#define StackSegmentFault          12
-#define GeneralProtectionFault     13
-#define PageFault                  14
-#define X87FloatingPointException  16
-#define AlignmentCheck             17
-#define MachineCheck               18
-#define SIMDFloatingPointException 19
-#define VirtualizationException    20
-#define SecurityException          30
-#define SyscallInt80               128
-#define Syscall                    256
+#define DivideByZero               0 // +checkconst . DivideByZero
+#define Debug                      1 // +checkconst . Debug
+#define NMI                        2 // +checkconst . NMI
+#define Breakpoint                 3 // +checkconst . Breakpoint
+#define Overflow                   4 // +checkconst . Overflow
+#define BoundRangeExceeded         5 // +checkconst . BoundRangeExceeded
+#define InvalidOpcode              6 // +checkconst . InvalidOpcode
+#define DeviceNotAvailable         7 // +checkconst . DeviceNotAvailable
+#define DoubleFault                8 // +checkconst . DoubleFault
+#define CoprocessorSegmentOverrun  9 // +checkconst . CoprocessorSegmentOverrun
+#define InvalidTSS                 10 // +checkconst . InvalidTSS
+#define SegmentNotPresent          11 // +checkconst . SegmentNotPresent
+#define StackSegmentFault          12 // +checkconst . StackSegmentFault
+#define GeneralProtectionFault     13 // +checkconst . GeneralProtectionFault
+#define PageFault                  14 // +checkconst . PageFault
+#define X87FloatingPointException  16 // +checkconst . X87FloatingPointException
+#define AlignmentCheck             17 // +checkconst . AlignmentCheck
+#define MachineCheck               18 // +checkconst . MachineCheck
+#define SIMDFloatingPointException 19 // +checkconst . SIMDFloatingPointException
+#define VirtualizationException    20 // +checkconst . VirtualizationException
+#define SecurityException          30 // +checkconst . SecurityException
+#define SyscallInt80               128 // +checkconst . SyscallInt80
+#define Syscall                    256 // +checkconst . Syscall
 
-
-#define PTRACE_R15      0
-#define PTRACE_R14      8
-#define PTRACE_R13      16
-#define PTRACE_R12      24
-#define PTRACE_RBP      32
-#define PTRACE_RBX      40
-#define PTRACE_R11      48
-#define PTRACE_R10      56
-#define PTRACE_R9       64
-#define PTRACE_R8       72
-#define PTRACE_RAX      80
-#define PTRACE_RCX      88
-#define PTRACE_RDX      96
-#define PTRACE_RSI      104
-#define PTRACE_RDI      112
-#define PTRACE_ORIGRAX  120
-#define PTRACE_RIP      128
-#define PTRACE_CS       136
-#define PTRACE_FLAGS    144
-#define PTRACE_RSP      152
-#define PTRACE_SS       160
-#define PTRACE_FS_BASE  168
-#define PTRACE_GS_BASE  176
-
+#define PTRACE_R15      0   // +checkoffset linux PtraceRegs.R15
+#define PTRACE_R14      8   // +checkoffset linux PtraceRegs.R14
+#define PTRACE_R13      16  // +checkoffset linux PtraceRegs.R13
+#define PTRACE_R12      24  // +checkoffset linux PtraceRegs.R12
+#define PTRACE_RBP      32  // +checkoffset linux PtraceRegs.Rbp
+#define PTRACE_RBX      40  // +checkoffset linux PtraceRegs.Rbx
+#define PTRACE_R11      48  // +checkoffset linux PtraceRegs.R11
+#define PTRACE_R10      56  // +checkoffset linux PtraceRegs.R10
+#define PTRACE_R9       64  // +checkoffset linux PtraceRegs.R9
+#define PTRACE_R8       72  // +checkoffset linux PtraceRegs.R8
+#define PTRACE_RAX      80  // +checkoffset linux PtraceRegs.Rax
+#define PTRACE_RCX      88  // +checkoffset linux PtraceRegs.Rcx
+#define PTRACE_RDX      96  // +checkoffset linux PtraceRegs.Rdx
+#define PTRACE_RSI      104 // +checkoffset linux PtraceRegs.Rsi
+#define PTRACE_RDI      112 // +checkoffset linux PtraceRegs.Rdi
+#define PTRACE_ORIGRAX  120 // +checkoffset linux PtraceRegs.Orig_rax
+#define PTRACE_RIP      128 // +checkoffset linux PtraceRegs.Rip
+#define PTRACE_CS       136 // +checkoffset linux PtraceRegs.Cs
+#define PTRACE_FLAGS    144 // +checkoffset linux PtraceRegs.Eflags
+#define PTRACE_RSP      152 // +checkoffset linux PtraceRegs.Rsp
+#define PTRACE_SS       160 // +checkoffset linux PtraceRegs.Ss
+#define PTRACE_FS_BASE  168 // +checkoffset linux PtraceRegs.Fs_base
+#define PTRACE_GS_BASE  176 // +checkoffset linux PtraceRegs.Gs_base
 
 // Saves a register set.
 //

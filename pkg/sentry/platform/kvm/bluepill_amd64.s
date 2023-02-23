@@ -22,7 +22,7 @@
 // ENTRY_CPU_SELF is the location of the CPU in the entry struct.
 //
 // This is sourced from ring0.
-#define ENTRY_CPU_SELF 272
+#define ENTRY_CPU_SELF 272 // +checkoffset ring0 kernelEntry.cpuSelf
 
 // Context offsets.
 //

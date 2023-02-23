@@ -12,19 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build amd64
-// +build amd64
+//go:build arm64
+// +build arm64
 
 #include "textflag.h"
 
-#define M_OFFSET 48
-#define PROCID_OFFSET 72
+#define M_OFFSET      48 // +checkoffset runtime g.m
+#define PROCID_OFFSET 72 // +checkoffset runtime m.procid
 
 TEXT ·Current(SB),NOSPLIT,$0-8
 	// procid is in getg().m.procid.
-	MOVQ TLS, AX
-	MOVQ 0(AX)(TLS*1), AX
-	MOVQ M_OFFSET(AX), AX // gp.m
-	MOVQ PROCID_OFFSET(AX), AX // mp.procid
-	MOVQ AX, ret+0(FP)
+	MOVD g, R0      // g
+	MOVD M_OFFSET(R0), R0 // gp.m
+	MOVD PROCID_OFFSET(R0), R0 // mp.procid
+	MOVD R0, ret+0(FP)
 	RET

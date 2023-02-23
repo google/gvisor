@@ -192,3 +192,47 @@ type IOUringSqe struct {
 	addr3               uint64
 	_                   uint64
 }
+
+const (
+	_IOSqRingOffset        = 0   // +checkoffset . IORings.Sq
+	_IOSqRingOffsetHead    = 0   // +checkoffset . IOUring.Head
+	_IOSqRingOffsetTail    = 64  // +checkoffset . IOUring.Tail
+	_IOSqRingOffsetMask    = 256 // +checkoffset . IORings.SqRingMask
+	_IOSqRingOffsetEntries = 264 // +checkoffset . IORings.SqRingEntries
+	_IOSqRingOffsetFlags   = 276 // +checkoffset . IORings.sqFlags
+	_IOSqRingOffsetDropped = 272 // +checkoffset . IORings.sqDropped
+)
+
+// PreComputedIOSqRingOffsets returns precomputed values for IOSqRingOffsets.
+func PreComputedIOSqRingOffsets() IOSqRingOffsets {
+	return IOSqRingOffsets{
+		Head:        _IOSqRingOffset + _IOSqRingOffsetHead,
+		Tail:        _IOSqRingOffset + _IOSqRingOffsetTail,
+		RingMask:    _IOSqRingOffsetMask,
+		RingEntries: _IOSqRingOffsetEntries,
+		Flags:       _IOSqRingOffsetFlags,
+		Dropped:     _IOSqRingOffsetDropped,
+	}
+}
+
+const (
+	_IOCqRingOffset         = 128 // +checkoffset . IORings.Cq
+	_IOCqRingOffsetHead     = 0   // +checkoffset . IOUring.Head
+	_IOCqRingOffsetTail     = 64  // +checkoffset . IOUring.Tail
+	_IOCqRingOffsetMask     = 260 // +checkoffset . IORings.CqRingMask
+	_IOCqRingOffsetEntries  = 268 // +checkoffset . IORings.CqRingEntries
+	_IOCqRingOffsetFlags    = 280 // +checkoffset . IORings.cqFlags
+	_IOCqRingOffsetOverflow = 284 // +checkoffset . IORings.CqOverflow
+)
+
+// PreComputedIOCqRingOffsets returns precomputed values for IOCqRingOffsets.
+func PreComputedIOCqRingOffsets() IOCqRingOffsets {
+	return IOCqRingOffsets{
+		Head:        _IOCqRingOffset + _IOCqRingOffsetHead,
+		Tail:        _IOCqRingOffset + _IOCqRingOffsetTail,
+		RingMask:    _IOCqRingOffsetMask,
+		RingEntries: _IOCqRingOffsetEntries,
+		Overflow:    _IOCqRingOffsetOverflow,
+		Flags:       _IOCqRingOffsetFlags,
+	}
+}
