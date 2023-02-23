@@ -453,6 +453,8 @@ func (i *importer) checkPackage(path string, srcs []string) (*types.Package, Fin
 						Category: a.Name,
 						Position: i.fset.Position(d.Pos),
 						Message:  d.Message,
+						GOOS:     flags.GOOS,
+						GOARCH:   flags.GOARCH,
 					})
 				},
 				ImportPackageFact: func(pkg *types.Package, ptr analysis.Fact) bool {
@@ -609,6 +611,8 @@ func (i *importer) checkPackage(path string, srcs []string) (*types.Package, Fin
 				Category: a.Name,
 				Position: token.Position{Filename: filename},
 				Message:  errs[a].Error(),
+				GOOS:     flags.GOOS,
+				GOARCH:   flags.GOARCH,
 			})
 			continue
 		}
