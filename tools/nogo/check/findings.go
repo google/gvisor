@@ -29,11 +29,18 @@ type Finding struct {
 	Category string
 	Position token.Position
 	Message  string
+	GOARCH   string
+	GOOS     string
 }
 
 // String implements fmt.Stringer.String.
 func (f *Finding) String() string {
-	return fmt.Sprintf("%s: %s: %s", f.Category, f.Position.String(), f.Message)
+	if f.GOARCH == "" && f.GOOS == "" {
+		// Use the legacy simplified string.
+		return fmt.Sprintf("%s: %s: %s", f.Category, f.Position.String(), f.Message)
+	}
+	// Use the more complete information.
+	return fmt.Sprintf("%s: %s: %s (GOOARCH=%s, GOOS=%s)", f.Category, f.Position.String(), f.Message, f.GOARCH, f.GOOS)
 }
 
 // FindingSet is a collection of findings.
