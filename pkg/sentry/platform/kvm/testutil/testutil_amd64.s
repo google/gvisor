@@ -65,7 +65,7 @@ TEXT ·AddrOfSpinLoop(SB), $0-8
 	MOVQ AX, ret+0(FP)
 	RET
 
-TEXT ·FloatingPointWorks(SB),NOSPLIT,$0-8
+TEXT ·FloatingPointWorks(SB),NOSPLIT,$0
 	NO_LOCAL_POINTERS
 	MOVQ $1, AX
 	MOVQ AX, X0

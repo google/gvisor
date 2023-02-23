@@ -34,11 +34,11 @@ TEXT ·muldiv64(SB),NOSPLIT,$0-33
 	// Divide DX:AX by CX.
 	DIVQ CX
 
-	MOVQ AX, result+24(FP)
-	MOVB $1, ok+32(FP)
+	MOVQ AX, ret+24(FP)
+	MOVB $1, ret1+32(FP)
 	RET
 
 overflow:
-	MOVQ $0, result+24(FP)
-	MOVB $0, ok+32(FP)
+	MOVQ $0, ret+24(FP)
+	MOVB $0, ret1+32(FP)
 	RET

@@ -50,7 +50,7 @@ start:
 	HLT
 	B start
 
-TEXT ·AddOfHaltLoop(SB),NOSPLIT,$0-8
+TEXT ·AddrOfHaltLoop(SB),NOSPLIT,$0-8
 	MOVD $·haltLoop(SB), R0
 	MOVD R0, ret+0(FP)
 	RET
@@ -75,7 +75,7 @@ TEXT ·AddrOfSpinLoop(SB),NOSPLIT,$0-8
 	MOVD R0, ret+0(FP)
 	RET
 
-TEXT ·TLSWorks(SB),NOSPLIT,$0-8
+TEXT ·TLSWorks(SB),NOSPLIT,$0
         NO_LOCAL_POINTERS
         MOVD $0x6789, R5
         MSR R5, TPIDR_EL0
@@ -91,7 +91,7 @@ isNaN:
         MOVD $0, ret+0(FP)
         RET
 
-TEXT ·FloatingPointWorks(SB),NOSPLIT,$0-8
+TEXT ·FloatingPointWorks(SB),NOSPLIT,$0
 	NO_LOCAL_POINTERS
 	// gc will touch fpsimd, so we should test it.
 	// such as in <runtime.deductSweepCredit>.

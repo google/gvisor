@@ -200,7 +200,7 @@ TEXT ·fninit(SB),NOSPLIT,$0
 // 	xsetbv
 //
 TEXT ·xsetbv(SB),NOSPLIT,$0-16
-	MOVL reg+0(FP), CX
+	MOVQ reg+0(FP), CX
 	MOVL value+8(FP), AX
 	MOVL value+12(FP), DX
 	BYTE $0x0f; BYTE $0x01; BYTE $0xd1;
@@ -213,7 +213,7 @@ TEXT ·xsetbv(SB),NOSPLIT,$0-16
 // 	xgetbv
 //
 TEXT ·xgetbv(SB),NOSPLIT,$0-16
-	MOVL reg+0(FP), CX
+	MOVQ reg+0(FP), CX
 	BYTE $0x0f; BYTE $0x01; BYTE $0xd0;
 	MOVL AX, ret+8(FP)
 	MOVL DX, ret+12(FP)
@@ -226,7 +226,7 @@ TEXT ·xgetbv(SB),NOSPLIT,$0-16
 // 	wrmsr
 //
 TEXT ·wrmsr(SB),NOSPLIT,$0-16
-	MOVL reg+0(FP), CX
+	MOVQ reg+0(FP), CX
 	MOVL value+8(FP), AX
 	MOVL value+12(FP), DX
 	BYTE $0x0f; BYTE $0x30;
@@ -239,7 +239,7 @@ TEXT ·wrmsr(SB),NOSPLIT,$0-16
 // 	rdmsr
 //
 TEXT ·rdmsr(SB),NOSPLIT,$0-16
-	MOVL reg+0(FP), CX
+	MOVQ reg+0(FP), CX
 	BYTE $0x0f; BYTE $0x32;
 	MOVL AX, ret+8(FP)
 	MOVL DX, ret+12(FP)

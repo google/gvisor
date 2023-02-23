@@ -17,7 +17,7 @@
 #include "textflag.h"
 
 TEXT ·andUint32(SB),NOSPLIT,$0-12
-  MOVD    ptr+0(FP), R0
+  MOVD    addr+0(FP), R0
   MOVW    val+8(FP), R1
   MOVBU   ·arm64HasATOMICS(SB), R4
   CBZ     R4, load_store_loop
@@ -32,7 +32,7 @@ load_store_loop:
   RET
 
 TEXT ·orUint32(SB),NOSPLIT,$0-12
-  MOVD    ptr+0(FP), R0
+  MOVD    addr+0(FP), R0
   MOVW    val+8(FP), R1
   MOVBU   ·arm64HasATOMICS(SB), R4
   CBZ     R4, load_store_loop
@@ -46,7 +46,7 @@ load_store_loop:
   RET
 
 TEXT ·xorUint32(SB),NOSPLIT,$0-12
-  MOVD    ptr+0(FP), R0
+  MOVD    addr+0(FP), R0
   MOVW    val+8(FP), R1
   MOVBU   ·arm64HasATOMICS(SB), R4
   CBZ     R4, load_store_loop
@@ -66,7 +66,7 @@ TEXT ·compareAndSwapUint32(SB),NOSPLIT,$0-20
   MOVBU   ·arm64HasATOMICS(SB), R4
   CBZ     R4, load_store_loop
   CASALW  R1, (R0), R2
-  MOVW    R1, prev+16(FP)
+  MOVW    R1, ret+16(FP)
   RET
 load_store_loop:
   LDAXRW  (R0), R3
@@ -75,11 +75,11 @@ load_store_loop:
   STLXRW  R2, (R0), R4
   CBNZ    R4, load_store_loop
 ok:
-  MOVW    R3, prev+16(FP)
+  MOVW    R3, ret+16(FP)
   RET
 
 TEXT ·andUint64(SB),NOSPLIT,$0-16
-  MOVD    ptr+0(FP), R0
+  MOVD    addr+0(FP), R0
   MOVD    val+8(FP), R1
   MOVBU   ·arm64HasATOMICS(SB), R4
   CBZ     R4, load_store_loop
@@ -94,7 +94,7 @@ load_store_loop:
   RET
 
 TEXT ·orUint64(SB),NOSPLIT,$0-16
-  MOVD    ptr+0(FP), R0
+  MOVD    addr+0(FP), R0
   MOVD    val+8(FP), R1
   MOVBU   ·arm64HasATOMICS(SB), R4
   CBZ     R4, load_store_loop
@@ -108,7 +108,7 @@ load_store_loop:
   RET
 
 TEXT ·xorUint64(SB),NOSPLIT,$0-16
-  MOVD    ptr+0(FP), R0
+  MOVD    addr+0(FP), R0
   MOVD    val+8(FP), R1
   MOVBU   ·arm64HasATOMICS(SB), R4
   CBZ     R4, load_store_loop
@@ -128,7 +128,7 @@ TEXT ·compareAndSwapUint64(SB),NOSPLIT,$0-32
   MOVBU   ·arm64HasATOMICS(SB), R4
   CBZ     R4, load_store_loop
   CASALD  R1, (R0), R2
-  MOVD    R1, prev+24(FP)
+  MOVD    R1, ret+24(FP)
   RET
 load_store_loop:
   LDAXR   (R0), R3
@@ -137,5 +137,5 @@ load_store_loop:
   STLXR   R2, (R0), R4
   CBNZ    R4, load_store_loop
 ok:
-  MOVD    R3, prev+24(FP)
+  MOVD    R3, ret+24(FP)
   RET
