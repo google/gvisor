@@ -18,9 +18,11 @@ import (
 	"io/ioutil"
 	"math/rand"
 	"os"
+	"runtime"
 	"runtime/debug"
 	"testing"
 	"time"
+	"unsafe"
 
 	"golang.org/x/sys/unix"
 )
@@ -104,5 +106,51 @@ func TestNanotime(t *testing.T) {
 	nano2 := Nanotime()
 	if nano2 <= nano1 {
 		t.Errorf("runtime.nanotime() did not increase after 10ms: %d vs %d", nano1, nano2)
+	}
+}
+
+// +checkescape:heap
+//
+//go:noinline
+func NoescapeAlloc() unsafe.Pointer {
+	// This is obviously quite dangerous, and we presumably return a pointer to a
+	// 16-byte object that is allocated on the local stack. This pointer should
+	// never be used for anything (or saved anywhere). The function is exported
+	// and marked as noinline in order to ensure that it is still defined as is.
+	var m [16]byte // 16-byte object.
+	return Noescape(unsafe.Pointer(&m))
+}
+
+// ptrs is used to ensure that when the compiler is analyzing TestNoescape, it
+// cannot simply eliminate the entire relevant block of code, realizing that it
+// does not have any side effects. This is much harder with a global, unless
+// the compiler implements whole program analysis.
+var ptrs [1024]uintptr
+
+func TestNoescape(t *testing.T) {
+	var (
+		beforeStats runtime.MemStats
+		afterStats  runtime.MemStats
+	)
+
+	// Ensure referenced objects don't escape.
+	runtime.ReadMemStats(&beforeStats)
+	for i := 0; i < len(ptrs); i++ {
+		ptrs[i] = uintptr(NoescapeAlloc())
+	}
+	runtime.ReadMemStats(&afterStats)
+
+	// Count the mallocs to check if it escaped.
+	if afterStats.Mallocs-beforeStats.Mallocs >= uint64(len(ptrs)) {
+		t.Errorf("Noescape did not prevent escapes to the heap")
+	}
+
+	// Use ptrs to ensure the loop above isn't optimized out. As noted above,
+	// this is already quite difficult with the global, but we may as well make
+	// it slightly harder by introducing a sanity check for the values here.
+	for _, p := range ptrs {
+		if p == 0 {
+			t.Errorf("got nil ptr, expected non-nil")
+		}
 	}
 }
