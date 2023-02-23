@@ -31,14 +31,14 @@
 // point registers.
 //
 // Preconditions: data is zeroed.
-TEXT ·initX86FPState(SB), $24-16
+TEXT ·initX86FPState(SB), $24-9
 	// Save MXCSR (callee-save)
 	STMXCSR	mxcsr-8(SP)
 
 	// Save x87 CW (callee-save)
 	FSTCW	cw-16(SP)
 
-	MOVQ	fpState+0(FP), DI
+	MOVQ	data+0(FP), DI
 
 	// Do we use xsave?
 	MOVBQZX	useXsave+8(FP), AX

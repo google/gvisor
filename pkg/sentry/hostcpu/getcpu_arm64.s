@@ -17,10 +17,10 @@
 // GetCPU makes the getcpu(unsigned *cpu, unsigned *node, NULL) syscall for
 // the lack of an optimazed way of getting the current CPU number on arm64.
 
-// func GetCPU() (cpu uint32)
+// func GetCPU() uint32
 TEXT ·GetCPU(SB), NOSPLIT, $0-4
-	MOVW ZR, cpu+0(FP)
-	MOVD $cpu+0(FP), R0
+	MOVW ZR, ret+0(FP)
+	MOVD $ret+0(FP), R0
 	MOVD $0x0, R1  // unused
 	MOVD $0x0, R2  // unused
 	MOVD $0xA8, R8 // SYS_GETCPU

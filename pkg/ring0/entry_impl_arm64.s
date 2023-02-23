@@ -498,7 +498,7 @@ TEXT ·HaltEl1SvcAndResume(SB),NOSPLIT,$0
 	B ·kernelExitToEl1(SB)      // Resume.
 
 // HaltEl1ExceptionAndResume calls Hooks.KernelException and resume.
-TEXT ·HaltEl1ExceptionAndResume(SB),NOSPLIT,$0-8
+TEXT ·HaltEl1ExceptionAndResume(SB),NOSPLIT,$0
 	WORD $0xd538d092            // MRS TPIDR_EL1, R18
 	MOVD CPU_SELF(RSV_REG), R3  // Load vCPU.
 	MOVD R3, 8(RSP)             // First argument (vCPU).
@@ -512,12 +512,6 @@ TEXT ·Shutdown(SB),NOSPLIT,$0
 	// PSCI EVENT.
 	MOVD $0x84000009, R0
 	HVC $0
-
-// See kernel.go.
-TEXT ·Current(SB),NOSPLIT,$0-8
-	MOVD CPU_SELF(RSV_REG), R8
-	MOVD R8, ret+0(FP)
-	RET
 
 #define STACK_FRAME_SIZE 32
 

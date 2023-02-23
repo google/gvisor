@@ -22,4 +22,5 @@ import (
 	// Import platforms that runsc might use.
 	_ "gvisor.dev/gvisor/pkg/sentry/platform/kvm"
 	_ "gvisor.dev/gvisor/pkg/sentry/platform/ptrace"
+	_ "gvisor.dev/gvisor/pkg/sentry/platform/systrap"
 )
