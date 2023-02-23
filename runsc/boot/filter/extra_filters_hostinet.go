@@ -16,6 +16,7 @@ package filter
 
 import (
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/socket/hostinet"
 )
@@ -73,31 +74,24 @@ func hostInetFilters() seccomp.SyscallRules {
 				seccomp.EqualTo(unix.SHUT_RDWR),
 			},
 		},
-		unix.SYS_SOCKET: []seccomp.Rule{
-			{
-				seccomp.EqualTo(unix.AF_INET),
-				seccomp.EqualTo(unix.SOCK_STREAM | unix.SOCK_NONBLOCK | unix.SOCK_CLOEXEC),
-				seccomp.EqualTo(0),
-			},
-			{
-				seccomp.EqualTo(unix.AF_INET),
-				seccomp.EqualTo(unix.SOCK_DGRAM | unix.SOCK_NONBLOCK | unix.SOCK_CLOEXEC),
-				seccomp.EqualTo(0),
-			},
-			{
-				seccomp.EqualTo(unix.AF_INET6),
-				seccomp.EqualTo(unix.SOCK_STREAM | unix.SOCK_NONBLOCK | unix.SOCK_CLOEXEC),
-				seccomp.EqualTo(0),
-			},
-			{
-				seccomp.EqualTo(unix.AF_INET6),
-				seccomp.EqualTo(unix.SOCK_DGRAM | unix.SOCK_NONBLOCK | unix.SOCK_CLOEXEC),
-				seccomp.EqualTo(0),
-			},
-		},
 		unix.SYS_WRITEV: {},
 	}
 
+	// Generate rules for socket creation based on hostinet's supported
+	// socket types.
+	socketRules := []seccomp.Rule{}
+	for _, sock := range hostinet.AllowedSocketTypes {
+		socketRules = append(socketRules, seccomp.Rule{
+			seccomp.EqualTo(sock.Family),
+			// We always set SOCK_NONBLOCK and SOCK_CLOEXEC
+			seccomp.EqualTo(sock.Type | linux.SOCK_NONBLOCK | linux.SOCK_CLOEXEC),
+			seccomp.EqualTo(sock.Protocol),
+		})
+	}
+	rules[unix.SYS_SOCKET] = socketRules
+
+	// Generate rules for socket options based on hostinet's supported
+	// socket options.
 	getSockOptRules := []seccomp.Rule{}
 	setSockOptRules := []seccomp.Rule{}
 	for _, opt := range hostinet.SockOpts {
@@ -128,5 +122,6 @@ func hostInetFilters() seccomp.SyscallRules {
 	}
 	rules[unix.SYS_GETSOCKOPT] = getSockOptRules
 	rules[unix.SYS_SETSOCKOPT] = setSockOptRules
+
 	return rules
 }
