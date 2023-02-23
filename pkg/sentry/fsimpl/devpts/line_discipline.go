@@ -112,7 +112,7 @@ type lineDiscipline struct {
 	// replicaWaiter is used to wait on the replica end of the TTY.
 	replicaWaiter waiter.Queue
 
-	// terminal is the terminal linked to this lineDiscipline
+	// terminal is the terminal linked to this lineDiscipline.
 	terminal *Terminal
 }
 
@@ -121,10 +121,6 @@ func newLineDiscipline(termios linux.KernelTermios) *lineDiscipline {
 	ld.inQueue.transformer = &inputQueueTransformer{}
 	ld.outQueue.transformer = &outputQueueTransformer{}
 	return &ld
-}
-
-func (l *lineDiscipline) SetTerminal(tm *Terminal) {
-	l.terminal = tm
 }
 
 // getTermios gets the linux.Termios for the tty.

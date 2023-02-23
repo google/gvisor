@@ -54,7 +54,8 @@ func newTerminal(n uint32) *Terminal {
 		replicaKTTY: &kernel.TTY{Index: n},
 	}
 
-	t.ld.SetTerminal(&t)
+	t.ld.terminal = &t
+
 	return &t
 }
 
@@ -111,9 +112,10 @@ func (tm *Terminal) setForegroundProcessGroup(ctx context.Context, args arch.Sys
 		return 0, err
 	}
 
-	tm.fgProcessGroup = task.ThreadGroup().ProcessGroup()
-
 	ret, err := task.ThreadGroup().SetForegroundProcessGroup(tm.tty(isMaster), kernel.ProcessGroupID(pgid))
+	if err == nil {
+		tm.fgProcessGroup = task.PIDNamespace().ProcessGroupWithID(kernel.ProcessGroupID(pgid))
+	}
 	return uintptr(ret), err
 }
 
