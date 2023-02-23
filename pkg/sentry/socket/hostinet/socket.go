@@ -48,6 +48,26 @@ const (
 	maxControlLen = 1024
 )
 
+// AllowedSocketType is a tuple of socket family, type, and protocol.
+type AllowedSocketType struct {
+	Family   int
+	Type     int
+	Protocol int
+}
+
+// AllowedSocketTypes are the socket types which are supported by hostinet.
+// These are used to validate the arguments to socket(), and also to generate
+// syscall filters.
+var AllowedSocketTypes = []AllowedSocketType{
+	// Family, Type, Protocol.
+	{unix.AF_INET, unix.SOCK_STREAM, unix.IPPROTO_TCP},
+	{unix.AF_INET, unix.SOCK_DGRAM, unix.IPPROTO_UDP},
+	{unix.AF_INET, unix.SOCK_DGRAM, unix.IPPROTO_ICMP},
+
+	{unix.AF_INET6, unix.SOCK_STREAM, unix.IPPROTO_TCP},
+	{unix.AF_INET6, unix.SOCK_DGRAM, unix.IPPROTO_UDP},
+}
+
 // Socket implements socket.Socket (and by extension, vfs.FileDescriptionImpl)
 // for host sockets.
 //
@@ -173,41 +193,36 @@ func (p *socketProvider) Socket(t *kernel.Task, stypeflags linux.SockType, proto
 		return nil, nil
 	}
 
-	// Only accept TCP and UDP.
 	stype := stypeflags & linux.SOCK_TYPE_MASK
-	switch stype {
-	case unix.SOCK_STREAM:
-		switch protocol {
-		case unix.IPPROTO_IP:
-			// IPPROTO_IP with SOCK_STREAM causes proto to actually
-			// be IPPROTO_TCP.
-			protocol = unix.IPPROTO_TCP
-		case unix.IPPROTO_TCP:
-			// ok
-		default:
-			return nil, nil
+
+	// Convert generic IPPROTO_IP protocol to the actual protocol depending
+	// on family and type.
+	if protocol == linux.IPPROTO_IP && (p.family == linux.AF_INET || p.family == linux.AF_INET6) {
+		switch stype {
+		case linux.SOCK_STREAM:
+			protocol = linux.IPPROTO_TCP
+		case linux.SOCK_DGRAM:
+			protocol = linux.IPPROTO_UDP
 		}
-	case unix.SOCK_DGRAM:
-		switch protocol {
-		case unix.IPPROTO_IP:
-			// IPPROTO_IP with SOCK_DGRAM causes proto to actually
-			// be IPPROTO_UDP.
-			protocol = unix.IPPROTO_UDP
-		case unix.IPPROTO_ICMP:
-			// ok
-		case unix.IPPROTO_UDP:
-			// ok
-		default:
-			return nil, nil
+	}
+
+	// Validate the socket based on family, type, and protocol.
+	var supported bool
+	for _, allowed := range AllowedSocketTypes {
+		if p.family == allowed.Family && int(stype) == allowed.Type && protocol == allowed.Protocol {
+			supported = true
+			break
 		}
-	default:
+	}
+	if !supported {
+		// Return nil error here to give other socket providers a
+		// chance to create this socket.
 		return nil, nil
 	}
 
 	// Conservatively ignore all flags specified by the application and add
-	// SOCK_NONBLOCK since socketOperations requires it. Pass a protocol of 0
-	// to simplify the syscall filters, since 0 and IPPROTO_* are equivalent.
-	fd, err := unix.Socket(p.family, int(stype)|unix.SOCK_NONBLOCK|unix.SOCK_CLOEXEC, 0)
+	// SOCK_NONBLOCK since socketOperations requires it.
+	fd, err := unix.Socket(p.family, int(stype)|unix.SOCK_NONBLOCK|unix.SOCK_CLOEXEC, protocol)
 	if err != nil {
 		return nil, syserr.FromError(err)
 	}
