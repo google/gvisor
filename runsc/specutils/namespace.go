@@ -198,7 +198,11 @@ func startInNS(cmd *exec.Cmd, nss []specs.LinuxNamespace) ([]func() error, error
 		deferFuncs = append(deferFuncs, restoreNS)
 	}
 
-	return deferFuncs, cmd.Start()
+	err := cmd.Start()
+	if err != nil && cmd.SysProcAttr.Cloneflags&unix.CLONE_NEWUSER != 0 {
+		err = fmt.Errorf("%v: check whether /proc/sys/user/max_user_namespaces is set too low (gvisor.dev/issue/5964)", err)
+	}
+	return deferFuncs, err
 }
 
 // SetUIDGIDMappings sets the given uid/gid mappings from the spec on the cmd.
