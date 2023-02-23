@@ -160,6 +160,7 @@ func (l *lineDiscipline) StateFields() []string {
 		"column",
 		"masterWaiter",
 		"replicaWaiter",
+		"terminal",
 	}
 }
 
@@ -175,6 +176,7 @@ func (l *lineDiscipline) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(4, &l.column)
 	stateSinkObject.Save(5, &l.masterWaiter)
 	stateSinkObject.Save(6, &l.replicaWaiter)
+	stateSinkObject.Save(7, &l.terminal)
 }
 
 func (l *lineDiscipline) afterLoad() {}
@@ -188,6 +190,7 @@ func (l *lineDiscipline) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(4, &l.column)
 	stateSourceObject.Load(5, &l.masterWaiter)
 	stateSourceObject.Load(6, &l.replicaWaiter)
+	stateSourceObject.Load(7, &l.terminal)
 }
 
 func (o *outputQueueTransformer) StateTypeName() string {
@@ -469,6 +472,7 @@ func (tm *Terminal) StateFields() []string {
 		"ld",
 		"masterKTTY",
 		"replicaKTTY",
+		"fgProcessGroup",
 	}
 }
 
@@ -481,6 +485,7 @@ func (tm *Terminal) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &tm.ld)
 	stateSinkObject.Save(2, &tm.masterKTTY)
 	stateSinkObject.Save(3, &tm.replicaKTTY)
+	stateSinkObject.Save(4, &tm.fgProcessGroup)
 }
 
 func (tm *Terminal) afterLoad() {}
@@ -491,6 +496,7 @@ func (tm *Terminal) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &tm.ld)
 	stateSourceObject.Load(2, &tm.masterKTTY)
 	stateSourceObject.Load(3, &tm.replicaKTTY)
+	stateSourceObject.Load(4, &tm.fgProcessGroup)
 }
 
 func init() {
