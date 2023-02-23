@@ -4,6 +4,12 @@
 
 > Note: gVisor supports only x86\_64 and requires Linux 4.14.77+
 > ([older Linux](./networking.md#gso)).
+> Gvisor requires the `user.max_user_namespaces` kernel parameter to be set to
+> a value greater than 0. This can be done by adding the following line to
+> `/etc/sysctl.conf` (or `/etc/sysctl.d`) and running `sudo sysctl --system`:
+> ```bash
+> user.max_user_namespaces=28633
+> ```
 
 ## Install latest release {#install-latest}
 
