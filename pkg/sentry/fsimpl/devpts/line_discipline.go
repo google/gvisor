@@ -111,6 +111,9 @@ type lineDiscipline struct {
 
 	// replicaWaiter is used to wait on the replica end of the TTY.
 	replicaWaiter waiter.Queue
+
+	// terminal is the terminal linked to this lineDiscipline.
+	terminal *Terminal
 }
 
 func newLineDiscipline(termios linux.KernelTermios) *lineDiscipline {
@@ -393,6 +396,12 @@ func (*inputQueueTransformer) transform(l *lineDiscipline, q *queue, buf []byte)
 			if l.termios.IEnabled(linux.INLCR) {
 				cBytes[0] = '\r'
 			}
+		case l.termios.ControlCharacters[linux.VINTR]: // ctrl-c
+			l.terminal.fgProcessGroup.SendSignal(kernel.SignalInfoPriv(linux.SIGINT))
+		case l.termios.ControlCharacters[linux.VSUSP]: // ctrl-z
+			l.terminal.fgProcessGroup.SendSignal(kernel.SignalInfoPriv(linux.SIGTSTP))
+		case l.termios.ControlCharacters[linux.VQUIT]: // ctrl-\
+			l.terminal.fgProcessGroup.SendSignal(kernel.SignalInfoPriv(linux.SIGQUIT))
 		}
 
 		// In canonical mode, we discard non-terminating characters
