@@ -251,6 +251,10 @@ syscall_test(
 )
 
 syscall_test(
+    test = "//test/syscalls/linux:fuse_test",
+)
+
+syscall_test(
     test = "//test/syscalls/linux:getcpu_host_test",
 )
 
