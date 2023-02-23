@@ -14,7 +14,7 @@
 
 #include "textflag.h"
 
-#define GOID_OFFSET {{ .import.runtime.g.goid.Offset }}
+#define GOID_OFFSET 152 // +checkoffset runtime g.goid
 
 // func goid() int64
 TEXT ·goid(SB),NOSPLIT,$0-8

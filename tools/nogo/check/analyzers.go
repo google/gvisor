@@ -18,7 +18,6 @@ import (
 	"encoding/gob"
 	"io"
 	"reflect"
-	"strings"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/asmdecl"
@@ -50,8 +49,8 @@ import (
 	"honnef.co/go/tools/stylecheck"
 
 	"gvisor.dev/gvisor/tools/checkaligned"
+	"gvisor.dev/gvisor/tools/checkconst"
 	"gvisor.dev/gvisor/tools/checkescape"
-	"gvisor.dev/gvisor/tools/checkinfo"
 	"gvisor.dev/gvisor/tools/checklinkname"
 	"gvisor.dev/gvisor/tools/checklocks"
 	"gvisor.dev/gvisor/tools/checkunsafe"
@@ -94,9 +93,6 @@ var (
 
 	// allFactTypes is a list of all fact types, useful as a filter.
 	allFactTypes = make(map[reflect.Type]bool)
-
-	// allFactNames is a list with all fact names.
-	allFactNames = make(map[reflect.Type]string)
 )
 
 // findAnalyzer maps orig to an analyzer instance.
@@ -107,7 +103,7 @@ func findAnalyzer(orig *analysis.Analyzer) analyzer {
 	return allAnalyzers[orig]
 }
 
-// registerFactType registers a analysis.Fact.
+// registerFactType registers an analysis.Fact.
 func registerFactType(f analysis.Fact) {
 	// Already registered?
 	t := reflect.TypeOf(f)
@@ -118,17 +114,9 @@ func registerFactType(f analysis.Fact) {
 	// Register the type.
 	gob.Register(f)
 	allFactTypes[t] = true
-	s := t.String()
-	for len(s) > 0 && s[0] == '*' {
-		s = s[1:]
-	}
-
-	// Take only the final element.
-	parts := strings.Split(s, ".")
-	allFactNames[t] = parts[len(parts)-1]
 }
 
-// register recurisvely registers an analyzer.
+// register recursively registers an analyzer.
 func register(a analyzer) {
 	// Already registered?
 	if _, ok := allAnalyzers[a.Legacy()]; ok {
@@ -179,7 +167,7 @@ func init() {
 	register(&plainAnalyzer{unsafeptr.Analyzer})
 	register(&plainAnalyzer{unusedresult.Analyzer})
 	register(checkescape.Analyzer)
-	register(&plainAnalyzer{checkinfo.Analyzer})
+	register(&plainAnalyzer{checkconst.Analyzer})
 	register(&plainAnalyzer{checkunsafe.Analyzer})
 	register(&plainAnalyzer{checklinkname.Analyzer})
 	register(&plainAnalyzer{checklocks.Analyzer})

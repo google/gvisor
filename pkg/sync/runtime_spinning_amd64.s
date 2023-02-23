@@ -16,7 +16,7 @@
 
 #include "textflag.h"
 
-#define NMSPINNING_OFFSET {{ .import.runtime.schedt.nmspinning.Offset }}
+#define NMSPINNING_OFFSET 92 // +checkoffset runtime schedt.nmspinning
 
 TEXT ·addrOfSpinning(SB),NOSPLIT,$0-8
 	LEAQ runtime·sched(SB), AX

@@ -1,30 +1,13 @@
-load("//tools:arch.bzl", "arch_genrule", "select_arch")
 load("//tools:defs.bzl", "go_library", "go_test")
-load("//tools/nogo:defs.bzl", "nogo_facts")
 
 package(licenses = ["notice"])
-
-nogo_facts(
-    name = "hosttid_impl",
-    srcs = ["hosttid.go"],
-    output = "hosttid_impl.s",
-    template = select_arch(
-        amd64 = "hosttid_amd64.s",
-        arm64 = "hosttid_arm64.s",
-    ),
-)
-
-arch_genrule(
-    name = "hosttid_impl_arch",
-    src = ":hosttid_impl",
-    template = "hosttid_impl_%s.s",
-)
 
 go_library(
     name = "hosttid",
     srcs = [
         "hosttid.go",
-        ":hosttid_impl_arch",
+        "hosttid_amd64.s",
+        "hosttid_arm64.s",
     ],
     visibility = ["//visibility:public"],
 )

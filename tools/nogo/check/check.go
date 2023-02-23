@@ -655,27 +655,6 @@ func (i *importer) allFactsAndFindings() (FindingSet, *facts.Bundle) {
 	return findings, allFacts
 }
 
-// Facts runs all analyzers, and returns human-readable facts.
-//
-// These facts are essentially a dictionary tree (split across all '.'
-// characters in the canonical human representation) that can be used for
-// rendering via a template.
-func Facts(path string, srcs []string) (facts.Resolved, error) {
-	i := &importer{
-		fset:    token.NewFileSet(),
-		cache:   make(map[string]*importerEntry),
-		imports: make(map[string]*types.Package),
-	}
-	pkg, _, localFacts, err := i.checkPackage(path, srcs)
-	if localFacts == nil && err != nil {
-		// Allow failure here, since we may not care about some
-		// analyzers for these packages.
-		return nil, err
-	}
-	_, allFacts := i.allFactsAndFindings()
-	return facts.Resolve(pkg, localFacts, allFacts, allFactNames)
-}
-
 // FindRoot finds a package root.
 func FindRoot(srcs []string, srcRootRegex string) (string, error) {
 	if srcRootRegex == "" {
