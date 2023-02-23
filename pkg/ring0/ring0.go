@@ -14,3 +14,8 @@
 
 // Package ring0 provides basic operating system-level stubs.
 package ring0
+
+import (
+	// Required for facts checks.
+	_ "gvisor.dev/gvisor/pkg/abi/linux"
+)

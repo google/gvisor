@@ -16,11 +16,8 @@
 package goid
 
 import (
-	"runtime"
+	_ "runtime" // For facts in assembly files.
 )
-
-// Dummy references for facts.
-const _ = runtime.Compiler
 
 // goid returns the current goid, it is defined in assembly.
 func goid() int64

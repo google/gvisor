@@ -1,34 +1,7 @@
-load("//tools:arch.bzl", "arch_genrule", "select_arch")
 load("//tools:defs.bzl", "go_library")
-load("//tools/nogo:defs.bzl", "nogo_facts")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(licenses = ["notice"])
-
-nogo_facts(
-    name = "stub_impl",
-    srcs = [
-        "stub_defs.go",
-        "syscall_thread_defs.go",
-    ],
-    output = "stub_impl.s",
-    template = select_arch(
-        amd64 = "stub_amd64.s",
-        arm64 = "stub_arm64.s",
-    ),
-    deps = [
-        "//pkg/abi/linux",
-        "//pkg/atomicbitops",
-        "//pkg/hostarch",
-        "@org_golang_x_sys//unix:go_default_library",
-    ],
-)
-
-arch_genrule(
-    name = "stub_impl_arch",
-    src = ":stub_impl",
-    template = "stub_impl_%s.s",
-)
 
 go_template_instance(
     name = "subprocess_list",
@@ -50,6 +23,8 @@ go_library(
         "filters_arm64.go",
         "lib_amd64.s",
         "lib_arm64.s",
+        "stub_amd64.s",
+        "stub_arm64.s",
         "stub_defs.go",
         "stub_unsafe.go",
         "subprocess.go",
@@ -76,7 +51,6 @@ go_library(
         "systrap_arm64.go",
         "systrap_arm64_unsafe.go",
         "systrap_unsafe.go",
-        ":stub_impl_arch",
     ],
     visibility = ["//:sandbox"],
     deps = [

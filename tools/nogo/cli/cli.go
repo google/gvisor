@@ -23,7 +23,6 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
-	"text/template"
 
 	"github.com/google/subcommands"
 	"golang.org/x/sys/unix"
@@ -421,7 +420,7 @@ func (f *Filter) Execute(ctx context.Context, fs *flag.FlagSet, args ...any) sub
 	}
 	defer closeOutput(output)
 
-	// Load and filer available findings.
+	// Load and filter available findings.
 	var filteredFindings check.FindingSet
 	for _, filename := range fs.Args() {
 		// Note that this applies a caching strategy to the filtered
@@ -467,75 +466,12 @@ func (f *Filter) Execute(ctx context.Context, fs *flag.FlagSet, args ...any) sub
 	return subcommands.ExitSuccess
 }
 
-// Render implements subcommands.Command for the "render" command.
-type Render struct {
-	Template string
-	Output   string
-}
-
-// Name implements subcommands.Command.Name.
-func (*Render) Name() string {
-	return "render"
-}
-
-// Synopsis implements subcommands.Command.Synopsis.
-func (*Render) Synopsis() string {
-	return "Renders facts about a package using a template."
-}
-
-// Usage implements subcommands.Command.Usage.
-func (*Render) Usage() string {
-	return `render <srcs...>
-
-	Loads all data and renders all known facts. Note that render is not
-	currently compatible with binary analyzers, and these facts will not
-	be included (unless they come from dependencies).
-
-`
-}
-
-// SetFlags implements subcommands.Command.SetFlags.
-func (r *Render) SetFlags(fs *flag.FlagSet) {
-	fs.StringVar(&r.Template, "template", "", "text template file for rendering (required)")
-	fs.StringVar(&r.Output, "output", "", "output file for rendering (or empty for stdout)")
-}
-
-// Execute implements subcommands.Command.Execute.
-func (r *Render) Execute(ctx context.Context, fs *flag.FlagSet, args ...any) subcommands.ExitStatus {
-	// Open the output file.
-	output, err := openOutput(r.Output, os.Stdout)
-	if err != nil {
-		return failure("opening output: %v", err)
-	}
-	defer closeOutput(output)
-
-	// Open the template file.
-	t, err := template.ParseFiles(r.Template)
-	if err != nil {
-		return failure("loading template: %v", err)
-	}
-
-	// Process the facts.
-	facts, err := check.Facts("main", fs.Args())
-	if err != nil {
-		return failure("%v", err)
-	}
-
-	// Render as a template.
-	if err := t.Execute(output, facts); err != nil {
-		return failure("during render: %v", err)
-	}
-
-	return subcommands.ExitSuccess
-}
-
 // Main is the main entrypoint.
 func Main() {
 	subcommands.Register(&Check{}, "")
 	subcommands.Register(&Bundle{}, "")
 	subcommands.Register(&Stdlib{}, "")
 	subcommands.Register(&Filter{}, "")
-	subcommands.Register(&Render{}, "")
 	subcommands.Register(subcommands.HelpCommand(), "")
 	subcommands.Register(subcommands.FlagsCommand(), "")
 	flag.CommandLine.Parse(os.Args[1:])

@@ -16,14 +16,14 @@ package sync
 
 // Values for the reason argument to gopark, from Go's src/runtime/runtime2.go.
 const (
-	WaitReasonSelect      uint8 = {{ .import.runtime.Constants.waitReasonSelect }}
-	WaitReasonChanReceive uint8 = {{ .import.runtime.Constants.waitReasonChanReceive }}
-	WaitReasonSemacquire  uint8 = {{ .import.runtime.Constants.waitReasonSemacquire }}
+	WaitReasonSelect      uint8 = 9  // +checkconst runtime waitReasonSelect
+	WaitReasonChanReceive uint8 = 14 // +checkconst runtime waitReasonChanReceive
+	WaitReasonSemacquire  uint8 = 18 // +checkconst runtime waitReasonSemacquire
 )
 
 // Values for the traceEv argument to gopark, from Go's src/runtime/trace.go.
 const (
-	TraceEvGoBlockRecv   byte = {{ .import.runtime.Constants.traceEvGoBlockRecv }}
-	TraceEvGoBlockSelect byte = {{ .import.runtime.Constants.traceEvGoBlockSelect }}
-	TraceEvGoBlockSync   byte = {{ .import.runtime.Constants.traceEvGoBlockSync }}
+	TraceEvGoBlockRecv   byte = 23 // +checkconst runtime traceEvGoBlockRecv
+	TraceEvGoBlockSelect byte = 24 // +checkconst runtime traceEvGoBlockSelect
+	TraceEvGoBlockSync   byte = 25 // +checkconst runtime traceEvGoBlockSync
 )

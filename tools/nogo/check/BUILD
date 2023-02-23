@@ -14,8 +14,8 @@ go_library(
     deps = [
         "//runsc/flag",
         "//tools/checkaligned",
+        "//tools/checkconst",
         "//tools/checkescape",
-        "//tools/checkinfo",
         "//tools/checklinkname",
         "//tools/checklocks",
         "//tools/checkunsafe",

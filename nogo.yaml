@@ -88,14 +88,7 @@ global:
       - pkg/shim/runtimeoptions/v14/runtimeoptions_cri.go
 analyzers:
   asmdecl:
-    generated:
-      suppress:
-        # Non-conventional functions.
-        - "\\[amd64\\].*sysret: RET without writing to 8-byte"
-        - "\\[amd64\\].*iret: RET without writing to 8-byte"
-        - "\\[amd64\\].*exception: use of .* points beyond argument frame"
-        - "\\[arm64\\].*HaltEl1ExceptionAndResume: unknown variable"
-        - "\\[arm64\\].*HaltEl1ExceptionAndResume: use of .* points beyond argument frame"
+    generated: # Enabled.
     external:
       exclude: [".*"] # Disabled.
     internal:
@@ -109,6 +102,12 @@ analyzers:
         - "wrmsr: invalid offset value"
         - "rdmsr: invalid MOVL of ret"
         - "rdmsr: invalid offset ret"
+        # Non-conventional functions.
+        - "\\[amd64\\].*sysret: RET without writing to 8-byte"
+        - "\\[amd64\\].*iret: RET without writing to 8-byte"
+        - "\\[amd64\\].*exception: use of .* points beyond argument frame"
+        - "\\[arm64\\].*HaltEl1ExceptionAndResume: unknown variable"
+        - "\\[arm64\\].*HaltEl1ExceptionAndResume: use of .* points beyond argument frame"
   assign:
     external:
       exclude:

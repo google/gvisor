@@ -17,8 +17,8 @@
 
 #include "textflag.h"
 
-#define M_OFFSET {{ .import.runtime.g.m.Offset }}
-#define PROCID_OFFSET {{ .import.runtime.m.procid.Offset }}
+#define M_OFFSET       48 // +checkoffset runtime g.m
+#define PROCID_OFFSET  72 // +checkoffset runtime m.procid
 
 TEXT ·Current(SB),NOSPLIT,$0-8
 	// procid is in getg().m.procid.

@@ -16,78 +16,75 @@
 #include "textflag.h"
 
 // CPU offsets.
-#define CPU_REGISTERS    {{ .CPU.registers.Offset }}
-#define CPU_FPU_STATE    {{ .CPU.floatingPointState.Offset }}
-#define CPU_ERROR_CODE   ({{ .CPU.CPUArchState.Offset }}+{{ .CPUArchState.errorCode.Offset }})
-#define CPU_ERROR_TYPE   ({{ .CPU.CPUArchState.Offset }}+{{ .CPUArchState.errorType.Offset }})
-#define CPU_VECTOR       ({{ .CPU.CPUArchState.Offset }}+{{ .CPUArchState.vector.Offset }})
-#define CPU_FAULT_ADDR   ({{ .CPU.CPUArchState.Offset }}+{{ .CPUArchState.faultAddr.Offset }})
-#define CPU_ENTRY        ({{ .CPU.CPUArchState.Offset }}+{{ .CPUArchState.kernelEntry.Offset }})
-#define CPU_HAS_XSAVE    ({{ .CPU.CPUArchState.Offset }}+{{ .CPUArchState.hasXSAVE.Offset }})
-#define CPU_HAS_XSAVEOPT ({{ .CPU.CPUArchState.Offset }}+{{ .CPUArchState.hasXSAVEOPT.Offset }})
+#define CPU_REGISTERS    64  // +checkoffset . CPU.registers
+#define CPU_FPU_STATE    280 // +checkoffset . CPU.floatingPointState
+#define CPU_ARCH_STATE   16  // +checkoffset . CPU.CPUArchState
+#define CPU_ERROR_CODE   CPU_ARCH_STATE+0  // +checkoffset . CPUArchState.errorCode
+#define CPU_ERROR_TYPE   CPU_ARCH_STATE+8  // +checkoffset . CPUArchState.errorType
+#define CPU_VECTOR       CPU_ARCH_STATE+16 // +checkoffset . CPUArchState.vector
+#define CPU_FAULT_ADDR   CPU_ARCH_STATE+24 // +checkoffset . CPUArchState.faultAddr
+#define CPU_ENTRY        CPU_ARCH_STATE+32 // +checkoffset . CPUArchState.kernelEntry
+#define CPU_HAS_XSAVE    CPU_ARCH_STATE+40 // +checkoffset . CPUArchState.hasXSAVE
+#define CPU_HAS_XSAVEOPT CPU_ARCH_STATE+41 // +checkoffset . CPUArchState.hasXSAVEOPT
 
-{{ with .kernelEntry }}
-#define ENTRY_SCRATCH0   {{ .scratch0.Offset }}
-#define ENTRY_STACK_TOP  {{ .stackTop.Offset }}
-#define ENTRY_CPU_SELF   {{ .cpuSelf.Offset }}
-#define ENTRY_KERNEL_CR3 {{ .kernelCR3.Offset }}
-{{ end }}
+#define ENTRY_SCRATCH0   256 // +checkoffset . kernelEntry.scratch0
+#define ENTRY_STACK_TOP  264 // +checkoffset . kernelEntry.stackTop
+#define ENTRY_CPU_SELF   272 // +checkoffset . kernelEntry.cpuSelf
+#define ENTRY_KERNEL_CR3 280 // +checkoffset . kernelEntry.kernelCR3
 
 // Bits.
-#define _RFLAGS_IF    {{ .Constants._RFLAGS_IF }}
-#define _RFLAGS_IOPL0 {{ .Constants._RFLAGS_IOPL0 }}
-#define _KERNEL_FLAGS {{ .Constants.KernelFlagsSet }}
+#define _RFLAGS_IF    512  // +checkconst . _RFLAGS_IF
+#define _RFLAGS_IOPL0 4096 // +checkconst . _RFLAGS_IOPL0
+#define _KERNEL_FLAGS 2    // +checkconst . KernelFlagsSet
 
 // Vectors.
-#define DivideByZero               {{ .Constants.DivideByZero }}
-#define Debug                      {{ .Constants.Debug }}
-#define NMI                        {{ .Constants.NMI }}
-#define Breakpoint                 {{ .Constants.Breakpoint }}
-#define Overflow                   {{ .Constants.Overflow }}
-#define BoundRangeExceeded         {{ .Constants.BoundRangeExceeded }}
-#define InvalidOpcode              {{ .Constants.InvalidOpcode }}
-#define DeviceNotAvailable         {{ .Constants.DeviceNotAvailable }}
-#define DoubleFault                {{ .Constants.DoubleFault }}
-#define CoprocessorSegmentOverrun  {{ .Constants.CoprocessorSegmentOverrun }}
-#define InvalidTSS                 {{ .Constants.InvalidTSS }}
-#define SegmentNotPresent          {{ .Constants.SegmentNotPresent }}
-#define StackSegmentFault          {{ .Constants.StackSegmentFault }}
-#define GeneralProtectionFault     {{ .Constants.GeneralProtectionFault }}
-#define PageFault                  {{ .Constants.PageFault }}
-#define X87FloatingPointException  {{ .Constants.X87FloatingPointException }}
-#define AlignmentCheck             {{ .Constants.AlignmentCheck }}
-#define MachineCheck               {{ .Constants.MachineCheck }}
-#define SIMDFloatingPointException {{ .Constants.SIMDFloatingPointException }}
-#define VirtualizationException    {{ .Constants.VirtualizationException }}
-#define SecurityException          {{ .Constants.SecurityException }}
-#define SyscallInt80               {{ .Constants.SyscallInt80 }}
-#define Syscall                    {{ .Constants.Syscall }}
+#define DivideByZero               0 // +checkconst . DivideByZero
+#define Debug                      1 // +checkconst . Debug
+#define NMI                        2 // +checkconst . NMI
+#define Breakpoint                 3 // +checkconst . Breakpoint
+#define Overflow                   4 // +checkconst . Overflow
+#define BoundRangeExceeded         5 // +checkconst . BoundRangeExceeded
+#define InvalidOpcode              6 // +checkconst . InvalidOpcode
+#define DeviceNotAvailable         7 // +checkconst . DeviceNotAvailable
+#define DoubleFault                8 // +checkconst . DoubleFault
+#define CoprocessorSegmentOverrun  9 // +checkconst . CoprocessorSegmentOverrun
+#define InvalidTSS                 10 // +checkconst . InvalidTSS
+#define SegmentNotPresent          11 // +checkconst . SegmentNotPresent
+#define StackSegmentFault          12 // +checkconst . StackSegmentFault
+#define GeneralProtectionFault     13 // +checkconst . GeneralProtectionFault
+#define PageFault                  14 // +checkconst . PageFault
+#define X87FloatingPointException  16 // +checkconst . X87FloatingPointException
+#define AlignmentCheck             17 // +checkconst . AlignmentCheck
+#define MachineCheck               18 // +checkconst . MachineCheck
+#define SIMDFloatingPointException 19 // +checkconst . SIMDFloatingPointException
+#define VirtualizationException    20 // +checkconst . VirtualizationException
+#define SecurityException          30 // +checkconst . SecurityException
+#define SyscallInt80               128 // +checkconst . SyscallInt80
+#define Syscall                    256 // +checkconst . Syscall
 
-{{ with .import.linux.PtraceRegs }}
-#define PTRACE_R15      {{ .R15.Offset }}
-#define PTRACE_R14      {{ .R14.Offset }}
-#define PTRACE_R13      {{ .R13.Offset }}
-#define PTRACE_R12      {{ .R12.Offset }}
-#define PTRACE_RBP      {{ .Rbp.Offset }}
-#define PTRACE_RBX      {{ .Rbx.Offset }}
-#define PTRACE_R11      {{ .R11.Offset }}
-#define PTRACE_R10      {{ .R10.Offset }}
-#define PTRACE_R9       {{ .R9.Offset }}
-#define PTRACE_R8       {{ .R8.Offset }}
-#define PTRACE_RAX      {{ .Rax.Offset }}
-#define PTRACE_RCX      {{ .Rcx.Offset }}
-#define PTRACE_RDX      {{ .Rdx.Offset }}
-#define PTRACE_RSI      {{ .Rsi.Offset }}
-#define PTRACE_RDI      {{ .Rdi.Offset }}
-#define PTRACE_ORIGRAX  {{ .Orig_rax.Offset }}
-#define PTRACE_RIP      {{ .Rip.Offset }}
-#define PTRACE_CS       {{ .Cs.Offset }}
-#define PTRACE_FLAGS    {{ .Eflags.Offset }}
-#define PTRACE_RSP      {{ .Rsp.Offset }}
-#define PTRACE_SS       {{ .Ss.Offset }}
-#define PTRACE_FS_BASE  {{ .Fs_base.Offset }}
-#define PTRACE_GS_BASE  {{ .Gs_base.Offset }}
-{{ end }}
+#define PTRACE_R15      0   // +checkoffset linux PtraceRegs.R15
+#define PTRACE_R14      8   // +checkoffset linux PtraceRegs.R14
+#define PTRACE_R13      16  // +checkoffset linux PtraceRegs.R13
+#define PTRACE_R12      24  // +checkoffset linux PtraceRegs.R12
+#define PTRACE_RBP      32  // +checkoffset linux PtraceRegs.Rbp
+#define PTRACE_RBX      40  // +checkoffset linux PtraceRegs.Rbx
+#define PTRACE_R11      48  // +checkoffset linux PtraceRegs.R11
+#define PTRACE_R10      56  // +checkoffset linux PtraceRegs.R10
+#define PTRACE_R9       64  // +checkoffset linux PtraceRegs.R9
+#define PTRACE_R8       72  // +checkoffset linux PtraceRegs.R8
+#define PTRACE_RAX      80  // +checkoffset linux PtraceRegs.Rax
+#define PTRACE_RCX      88  // +checkoffset linux PtraceRegs.Rcx
+#define PTRACE_RDX      96  // +checkoffset linux PtraceRegs.Rdx
+#define PTRACE_RSI      104 // +checkoffset linux PtraceRegs.Rsi
+#define PTRACE_RDI      112 // +checkoffset linux PtraceRegs.Rdi
+#define PTRACE_ORIGRAX  120 // +checkoffset linux PtraceRegs.Orig_rax
+#define PTRACE_RIP      128 // +checkoffset linux PtraceRegs.Rip
+#define PTRACE_CS       136 // +checkoffset linux PtraceRegs.Cs
+#define PTRACE_FLAGS    144 // +checkoffset linux PtraceRegs.Eflags
+#define PTRACE_RSP      152 // +checkoffset linux PtraceRegs.Rsp
+#define PTRACE_SS       160 // +checkoffset linux PtraceRegs.Ss
+#define PTRACE_FS_BASE  168 // +checkoffset linux PtraceRegs.Fs_base
+#define PTRACE_GS_BASE  176 // +checkoffset linux PtraceRegs.Gs_base
 
 // Saves a register set.
 //

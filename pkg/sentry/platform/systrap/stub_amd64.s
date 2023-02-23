@@ -15,35 +15,36 @@
 #include "funcdata.h"
 #include "textflag.h"
 
-#define SYS_GETPID       {{ .import.unix.Constants.SYS_GETPID }}
-#define SYS_EXIT	 {{ .import.unix.Constants.SYS_EXIT }}
-#define SYS_KILL	 {{ .import.unix.Constants.SYS_KILL }}
-#define SYS_GETPPID	 {{ .import.unix.Constants.SYS_GETPPID }}
-#define SIGKILL		 {{ .import.unix.Constants.SIGKILL }}
-#define SIGSTOP		 {{ .import.unix.Constants.SIGSTOP }}
-#define SYS_PRCTL	 {{ .import.unix.Constants.SYS_PRCTL }}
-#define PR_SET_PDEATHSIG {{ .import.unix.Constants.PR_SET_PDEATHSIG }}
+#define SYS_GETPID       39  // +checkconst unix SYS_GETPID
+#define SYS_EXIT	 60  // +checkconst unix SYS_EXIT
+#define SYS_KILL	 62  // +checkconst unix SYS_KILL
+#define SYS_GETPPID	 110 // +checkconst unix SYS_GETPPID
+#define SIGKILL		 9   // +checkconst unix SIGKILL
+#define SIGSTOP		 19  // +checkconst unix SIGSTOP
+#define SYS_PRCTL	 157 // +checkconst unix SYS_PRCTL
+#define PR_SET_PDEATHSIG 1   // +checkconst unix PR_SET_PDEATHSIG
 
-#define SYS_FUTEX	 {{ .import.unix.Constants.SYS_FUTEX }}
-#define FUTEX_WAKE	 {{ .import.linux.Constants.FUTEX_WAKE }}
-#define FUTEX_WAIT	 {{ .import.linux.Constants.FUTEX_WAIT }}
+#define SYS_FUTEX	 202 // +checkconst unix SYS_FUTEX
+#define FUTEX_WAKE	 1   // +checkconst linux FUTEX_WAKE
+#define FUTEX_WAIT	 0   // +checkconst linux FUTEX_WAIT
 
-#define NEW_STUB	 {{ .Constants._NEW_STUB }}
-#define RUN_SYSCALL_LOOP {{ .Constants._RUN_SYSCALL_LOOP }}
+#define NEW_STUB	 1 // +checkconst . _NEW_STUB
+#define RUN_SYSCALL_LOOP 5 // +checkconst . _RUN_SYSCALL_LOOP
 
 // syscallSentryMessage offsets.
-#define SENTRY_MESSAGE_STATE {{ .syscallSentryMessage.state.Offset }}
-#define SENTRY_MESSAGE_SYSNO {{ .syscallSentryMessage.sysno.Offset }}
-#define SENTRY_MESSAGE_ARG0  ({{ .syscallSentryMessage.args.Offset }} + 0*8)
-#define SENTRY_MESSAGE_ARG1  ({{ .syscallSentryMessage.args.Offset }} + 1*8)
-#define SENTRY_MESSAGE_ARG2  ({{ .syscallSentryMessage.args.Offset }} + 2*8)
-#define SENTRY_MESSAGE_ARG3  ({{ .syscallSentryMessage.args.Offset }} + 3*8)
-#define SENTRY_MESSAGE_ARG4  ({{ .syscallSentryMessage.args.Offset }} + 4*8)
-#define SENTRY_MESSAGE_ARG5  ({{ .syscallSentryMessage.args.Offset }} + 5*8)
+#define SENTRY_MESSAGE_STATE 0  // +checkoffset . syscallSentryMessage.state
+#define SENTRY_MESSAGE_SYSNO 8  // +checkoffset . syscallSentryMessage.sysno
+#define SENTRY_MESSAGE_ARGS  16 // +checkoffset . syscallSentryMessage.args
+#define SENTRY_MESSAGE_ARG0  (SENTRY_MESSAGE_ARGS + 0*8)
+#define SENTRY_MESSAGE_ARG1  (SENTRY_MESSAGE_ARGS + 1*8)
+#define SENTRY_MESSAGE_ARG2  (SENTRY_MESSAGE_ARGS + 2*8)
+#define SENTRY_MESSAGE_ARG3  (SENTRY_MESSAGE_ARGS + 3*8)
+#define SENTRY_MESSAGE_ARG4  (SENTRY_MESSAGE_ARGS + 4*8)
+#define SENTRY_MESSAGE_ARG5  (SENTRY_MESSAGE_ARGS + 5*8)
 
 // syscallStubMessage offsets.
-#define STUB_MESSAGE_OFFSET {{ .Constants.syscallStubMessageOffset }}
-#define STUB_MESSAGE_RET    {{ .syscallStubMessage.ret.Offset }}
+#define STUB_MESSAGE_OFFSET 4096 // +checkconst . syscallStubMessageOffset
+#define STUB_MESSAGE_RET    0    // +checkoffset . syscallStubMessage.ret
 
 // initStubProcess bootstraps the child and sends itself SIGSTOP to wait for attach.
 //
