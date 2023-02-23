@@ -209,10 +209,11 @@ analyzers:
   checklinkname:
     external: # Enabled.
       suppress:
-        # Suppress bad linkname directives in the internals. This may be fixed
-        # by the patch: https://go-review.googlesource.com/c/go/+/466615
+        # Suppress bad linkname directives in the internals. These will be fixed
+        # in the bug: https://github.com/golang/go/issues/58440
         - "symbol \"runtime_pollWaitCanceled\".*"
         - "symbol \"runtime_procPin\".*"
+        - "symbol \"registerMetric\".*"
       exclude:
         - ".*/containerd/sys/subprocess_unsafe_linux.go"
     internal:
