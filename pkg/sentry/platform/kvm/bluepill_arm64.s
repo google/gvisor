@@ -38,19 +38,19 @@
 // getTLS returns the value of TPIDR_EL0 register.
 TEXT ·getTLS(SB),NOSPLIT,$0-8
 	MRS TPIDR_EL0, R1
-	MOVD R1, ret+0(FP)
+	MOVD R1, value+0(FP)
 	RET
 
 // setTLS writes the TPIDR_EL0 value.
 TEXT ·setTLS(SB),NOSPLIT,$0-8
-	MOVD addr+0(FP), R1
+	MOVD value+0(FP), R1
 	MSR R1, TPIDR_EL0
 	RET
 
 // See bluepill.go.
 TEXT ·bluepill(SB),NOSPLIT,$0
 begin:
-	MOVD	vcpu+0(FP), R8
+	MOVD	arg+0(FP), R8
 	MOVD	$VCPU_CPU(R8), R9
 	ORR	$0xffff000000000000, R9, R9
 	// Trigger sigill.

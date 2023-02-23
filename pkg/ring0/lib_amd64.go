@@ -22,6 +22,21 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
+// fxrstor restores floating point state.
+func fxrstor(addr uintptr)
+
+// xrstor restores floating point state.
+func xrstor(addr uintptr)
+
+// fxsave saves floating point state.
+func fxsave(addr uintptr)
+
+// xsave saves floating point state.
+func xsave(addr uintptr)
+
+// xsaveopt saves floating point state.
+func xsaveopt(addr uintptr)
+
 // writeFS sets the FS base address (selects one of wrfsbase or wrfsmsr).
 func writeFS(addr uintptr)
 

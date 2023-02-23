@@ -89,17 +89,26 @@ global:
 analyzers:
   asmdecl:
     generated:
-      exclude: [".*"] # Disabled.
+      suppress:
+        # Non-conventional functions.
+        - "\\[amd64\\].*sysret: RET without writing to 8-byte"
+        - "\\[amd64\\].*iret: RET without writing to 8-byte"
+        - "\\[amd64\\].*exception: use of .* points beyond argument frame"
+        - "\\[arm64\\].*HaltEl1ExceptionAndResume: unknown variable"
+        - "\\[arm64\\].*HaltEl1ExceptionAndResume: use of .* points beyond argument frame"
     external:
       exclude: [".*"] # Disabled.
     internal:
       suppress:
-        # Suppress for now, will be fixed separately.
-        - ".*unknown variable.*"
-        - ".*RET without writing.*"
-        - ".*wrong argument size.*"
-        - ".*missing Go declaration.*"
-        - ".*invalid.*"
+        # Valid reasons to break the rules.
+        - "xsetbv: invalid MOVL of value"
+        - "xsetbv: invalid offset value"
+        - "xgetbv: invalid MOVL of ret"
+        - "xgetbv: invalid offset ret"
+        - "wrmsr: invalid MOVL of value"
+        - "wrmsr: invalid offset value"
+        - "rdmsr: invalid MOVL of ret"
+        - "rdmsr: invalid offset ret"
   assign:
     external:
       exclude:

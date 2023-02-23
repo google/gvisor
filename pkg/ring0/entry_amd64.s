@@ -185,11 +185,6 @@ TEXT ·HaltAndWriteFSBase(SB),NOSPLIT,$8-8
 
 	RET
 
-// See entry_amd64.go.
-TEXT ·swapgs(SB),NOSPLIT,$0
-	SWAP_GS()
-	RET
-
 // jumpToKernel changes execution to the kernel address space.
 //
 // This works by changing the return value to the kernel version.
@@ -268,7 +263,7 @@ do_iret:
 done_sysret_or_iret:
 	MOVQ 24(SP), AX // vector
 	ADDQ $32, SP
-	MOVQ AX, vector+40(FP)
+	MOVQ AX, ret+40(FP)
 
 	// Save application floating point state.
 	MOVQ fpState+16(FP), DI

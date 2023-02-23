@@ -43,7 +43,7 @@
 // See bluepill.go.
 TEXT ·bluepill(SB),NOSPLIT,$0
 begin:
-	MOVQ vcpu+0(FP), AX
+	MOVQ arg+0(FP), AX
 	LEAQ VCPU_CPU(AX), BX
 
 	// The gorountine stack will be changed in guest which renders

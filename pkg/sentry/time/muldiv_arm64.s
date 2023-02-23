@@ -36,12 +36,12 @@ TEXT ·muldiv64(SB),NOSPLIT,$40-33
     MOVD    R2, 24(RSP)
     CALL    ·divWW(SB)
     MOVD    32(RSP), R0
-    MOVD    R0, result+24(FP)
+    MOVD    R0, ret+24(FP)
     MOVD    $1, R0
-    MOVB    R0, ok+32(FP)
+    MOVB    R0, ret1+32(FP)
     RET
 
 overflow:
-    MOVD    ZR, result+24(FP)
-    MOVB    ZR, ok+32(FP)
+    MOVD    ZR, ret+24(FP)
+    MOVB    ZR, ret1+32(FP)
     RET
