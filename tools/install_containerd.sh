@@ -77,13 +77,12 @@ readonly BTRFS_DEV
 # Install dependencies for the crictl tests.
 export DEBIAN_FRONTEND=noninteractive
 while true; do
-  if (apt-get update && apt-get install -y \
-      "${BTRFS_DEV}" \
-      libseccomp-dev); then
-    break
-  fi
+  apt-get update && apt-get install -y \
+    "${BTRFS_DEV}" libseccomp-dev
   result=$?
-  if [[ $result -ne 100 ]]; then
+  if [[ $result -eq 0 ]]; then
+    break
+  elif [[ $result -ne 100 ]]; then
     exit $result
   fi
 done
