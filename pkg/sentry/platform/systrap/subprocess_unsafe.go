@@ -1,4 +1,4 @@
-// Copyright 2019 The gVisor Authors.
+// Copyright 2018 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,15 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build linux
-// +build linux
+//go:build go1.12
+// +build go1.12
 
-// Package platforms imports all available platform packages.
-package platforms
+// //go:linkname directives type-checked by checklinkname. Any other
+// non-linkname assumptions outside the Go 1 compatibility guarantee should
+// have an accompanied vet check or version guard build tag.
+
+package systrap
 
 import (
-	// Import platforms that runsc might use.
-	_ "gvisor.dev/gvisor/pkg/sentry/platform/kvm"
-	_ "gvisor.dev/gvisor/pkg/sentry/platform/ptrace"
-	_ "gvisor.dev/gvisor/pkg/sentry/platform/systrap"
+	_ "unsafe" // required for go:linkname.
 )
+
+//go:linkname beforeFork syscall.runtime_BeforeFork
+func beforeFork()
+
+//go:linkname afterFork syscall.runtime_AfterFork
+func afterFork()
+
+//go:linkname afterForkInChild syscall.runtime_AfterForkInChild
+func afterForkInChild()

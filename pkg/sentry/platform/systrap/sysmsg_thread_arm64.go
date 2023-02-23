@@ -1,4 +1,4 @@
-// Copyright 2019 The gVisor Authors.
+// Copyright 2021 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,15 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build linux
-// +build linux
+package systrap
 
-// Package platforms imports all available platform packages.
-package platforms
+import "gvisor.dev/gvisor/pkg/seccomp"
 
-import (
-	// Import platforms that runsc might use.
-	_ "gvisor.dev/gvisor/pkg/sentry/platform/kvm"
-	_ "gvisor.dev/gvisor/pkg/sentry/platform/ptrace"
-	_ "gvisor.dev/gvisor/pkg/sentry/platform/systrap"
-)
+func appendSysThreadArchSeccompRules(rules []seccomp.RuleSet) []seccomp.RuleSet {
+	return rules
+}

@@ -1,4 +1,4 @@
-// Copyright 2019 The gVisor Authors.
+// Copyright 2021 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,15 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build linux
-// +build linux
-
-// Package platforms imports all available platform packages.
-package platforms
+package systrap
 
 import (
-	// Import platforms that runsc might use.
-	_ "gvisor.dev/gvisor/pkg/sentry/platform/kvm"
-	_ "gvisor.dev/gvisor/pkg/sentry/platform/ptrace"
-	_ "gvisor.dev/gvisor/pkg/sentry/platform/systrap"
+	// Required for fact extraction.
+	_ "golang.org/x/sys/unix"
+	_ "gvisor.dev/gvisor/pkg/abi/linux"
 )
+
+// _NEW_STUB is the value of the BX register when a new stub thread is created.
+const _NEW_STUB = 1
+
+// _NEW_STUB is the value of the BX register when the syscall loop is executed.
+const _RUN_SYSCALL_LOOP = 5

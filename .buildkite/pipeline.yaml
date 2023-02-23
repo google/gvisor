@@ -316,6 +316,14 @@ steps:
       arch: "amd64"
   - <<: *common
     <<: *docker
+    <<: *source_test
+    label: ":rocket: Systrap tests"
+    command: make systrap-tests
+    agents:
+      <<: *kvm_agents
+      arch: "amd64"
+  - <<: *common
+    <<: *docker
     label: ":weight_lifter: Fsstress test"
     command: make fsstress-test
     agents:

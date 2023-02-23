@@ -298,6 +298,11 @@ kvm-tests: load-basic $(RUNTIME_BIN)
 	@$(call test_runtime,$(RUNTIME),$(INTEGRATION_TARGETS))
 .PHONY: kvm-tests
 
+systrap-tests: load-basic $(RUNTIME_BIN)
+	@$(call install_runtime,$(RUNTIME),--platform=systrap)
+	@$(call test_runtime,$(RUNTIME),$(INTEGRATION_TARGETS))
+.PHONY: systrap-tests
+
 iptables-tests: load-iptables $(RUNTIME_BIN)
 	@sudo modprobe iptable_filter
 	@sudo modprobe ip6table_filter

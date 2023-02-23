@@ -4,6 +4,7 @@
 platforms = {
     "ptrace": [],
     "kvm": [],
+    "systrap": [],
 }
 
 # Capabilities that platforms may or may not support.
@@ -18,6 +19,13 @@ _CAPABILITY_VSYSCALL = "VSYSCALL"
 # True (supported) or False (unsupported).
 platform_capabilities = {
     "ptrace": {
+        _CAPABILITY_32BIT: False,
+        _CAPABILITY_ALIGNMENT_CHECK: True,
+        _CAPABILITY_MULTIPROCESS: True,
+        _CAPABILITY_INT3: True,
+        _CAPABILITY_VSYSCALL: True,
+    },
+    "systrap": {
         _CAPABILITY_32BIT: False,
         _CAPABILITY_ALIGNMENT_CHECK: True,
         _CAPABILITY_MULTIPROCESS: True,

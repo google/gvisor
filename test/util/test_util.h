@@ -219,6 +219,7 @@ constexpr char kNative[] = "native";
 constexpr char kPtrace[] = "ptrace";
 constexpr char kKVM[] = "kvm";
 constexpr char kFuchsia[] = "fuchsia";
+constexpr char kSystrap[] = "systrap";
 }  // namespace Platform
 
 bool IsRunningOnGvisor();
