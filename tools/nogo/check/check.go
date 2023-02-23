@@ -27,7 +27,6 @@ import (
 	"go/token"
 	"go/types"
 	"io"
-	"log"
 	"os"
 	"path"
 	"path/filepath"
@@ -213,9 +212,9 @@ func (i *importer) fastFacts(pkg *types.Package) *facts.Package {
 	// Load the facts.
 	facts, err := i.loadFacts(pkg)
 	if err != nil {
-		// We have no available to propagate an error when attempting
-		// to import a fact, so we must simply issue a warning.
-		log.Printf("WARNING: error loading facts for %s: %v", pkg.Path(), err)
+		// There are no facts available, but no good way to propagate
+		// this minor error. It may be intentional that no analysis was
+		// performed on some part of the standard library, for example.
 		return nil
 	}
 	e.facts = facts // Cache the result.
