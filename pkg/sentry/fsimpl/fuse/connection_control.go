@@ -18,6 +18,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 )
 
@@ -42,6 +43,9 @@ const (
 	// The FUSE_INIT_IN flags sent to the daemon.
 	// TODO(gvisor.dev/issue/3199): complete the flags.
 	fuseDefaultInitFlags = linux.FUSE_MAX_PAGES
+
+	// An INIT response needs to be at least this long.
+	minInitSize = 24
 )
 
 // Adjustable maximums for Connection's cogestion control parameters.
@@ -96,6 +100,9 @@ func (conn *connection) InitRecv(res *Response, hasSysAdminCap bool) error {
 		return err
 	}
 
+	if res.DataLen() < minInitSize {
+		return linuxerr.EINVAL
+	}
 	initRes := fuseInitRes{initLen: res.DataLen()}
 	if err := res.UnmarshalPayload(&initRes); err != nil {
 		return err

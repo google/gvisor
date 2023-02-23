@@ -4530,6 +4530,30 @@ cc_binary(
 )
 
 cc_binary(
+    name = "fuse_test",
+    testonly = 1,
+    srcs = ["fuse.cc"],
+    linkstatic = 1,
+    # We require additional UIDs for this test, so don't include the bazel
+    # sandbox as standard.
+    deps = [
+        "//test/util:capability_util",
+        "//test/util:file_descriptor",
+        "//test/util:fs_util",
+        "//test/util:mount_util",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/synchronization",
+        gtest,
+        "//test/util:posix_error",
+        "//test/util:temp_path",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "//test/util:thread_util",
+        "@com_google_absl//absl/strings:str_format",
+    ],
+)
+
+cc_binary(
     name = "process_vm_read_write",
     testonly = 1,
     srcs = ["process_vm_read_write.cc"],
