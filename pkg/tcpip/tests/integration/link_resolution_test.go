@@ -1093,15 +1093,10 @@ func (d *nudDispatcher) OnNeighborRemoved(nicID tcpip.NICID, entry stack.Neighbo
 }
 
 func (d *nudDispatcher) expectEvent(want eventInfo) error {
-	select {
-	case got := <-d.c:
-		if diff := cmp.Diff(want, got, cmp.AllowUnexported(eventInfo{}), cmpopts.IgnoreFields(stack.NeighborEntry{}, "UpdatedAt")); diff != "" {
-			return fmt.Errorf("got invalid event (-want +got):\n%s", diff)
-		}
-		return nil
-	default:
-		return fmt.Errorf("event didn't arrive")
+	if diff := cmp.Diff(want, <-d.c, cmp.AllowUnexported(eventInfo{}), cmpopts.IgnoreFields(stack.NeighborEntry{}, "UpdatedAt")); diff != "" {
+		return fmt.Errorf("got invalid event (-want +got):\n%s", diff)
 	}
+	return nil
 }
 
 // TestTCPConfirmNeighborReachability tests that TCP informs layers beneath it
