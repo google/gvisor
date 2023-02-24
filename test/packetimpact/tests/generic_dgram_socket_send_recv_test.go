@@ -76,54 +76,56 @@ func expectedEthLayer(t *testing.T, dut testbench.DUT, socketFD int32, sendTo ne
 }
 
 type protocolTest interface {
-	Name() string
 	Send(t *testing.T, dut testbench.DUT, bindTo, sendTo net.IP, bindToDevice bool)
 	Receive(t *testing.T, dut testbench.DUT, bindTo, sendTo net.IP, bindToDevice bool)
 }
 
-func TestSocket(t *testing.T) {
+func TestICMPv4(t *testing.T) {
+	runAllCombinations(t, &icmpV4Test{})
+}
+
+func TestICMPv6(t *testing.T) {
+	runAllCombinations(t, &icmpV6Test{})
+}
+
+func TestUDP(t *testing.T) {
+	runAllCombinations(t, &udpTest{})
+}
+
+func runAllCombinations(t *testing.T, proto protocolTest) {
 	dut := testbench.NewDUT(t)
 	subnetBroadcast := dut.Net.SubnetBroadcast()
-
-	for _, proto := range []protocolTest{
-		&icmpV4Test{},
-		&icmpV6Test{},
-		&udpTest{},
+	// Test every combination of bound/unbound, broadcast/multicast/unicast
+	// bound/destination address, and bound/not-bound to device.
+	for _, bindTo := range []net.IP{
+		nil, // Do not bind.
+		net.IPv4zero,
+		net.IPv4bcast,
+		net.IPv4allsys,
+		net.IPv6zero,
+		subnetBroadcast,
+		dut.Net.RemoteIPv4,
+		dut.Net.RemoteIPv6,
 	} {
-		t.Run(proto.Name(), func(t *testing.T) {
-			// Test every combination of bound/unbound, broadcast/multicast/unicast
-			// bound/destination address, and bound/not-bound to device.
-			for _, bindTo := range []net.IP{
-				nil, // Do not bind.
-				net.IPv4zero,
+		t.Run(fmt.Sprintf("bindTo=%s", bindTo), func(t *testing.T) {
+			for _, sendTo := range []net.IP{
 				net.IPv4bcast,
 				net.IPv4allsys,
-				net.IPv6zero,
 				subnetBroadcast,
+				dut.Net.LocalIPv4,
+				dut.Net.LocalIPv6,
 				dut.Net.RemoteIPv4,
 				dut.Net.RemoteIPv6,
 			} {
-				t.Run(fmt.Sprintf("bindTo=%s", bindTo), func(t *testing.T) {
-					for _, sendTo := range []net.IP{
-						net.IPv4bcast,
-						net.IPv4allsys,
-						subnetBroadcast,
-						dut.Net.LocalIPv4,
-						dut.Net.LocalIPv6,
-						dut.Net.RemoteIPv4,
-						dut.Net.RemoteIPv6,
-					} {
-						t.Run(fmt.Sprintf("sendTo=%s", sendTo), func(t *testing.T) {
-							for _, bindToDevice := range []bool{true, false} {
-								t.Run(fmt.Sprintf("bindToDevice=%t", bindToDevice), func(t *testing.T) {
-									t.Run("Send", func(t *testing.T) {
-										proto.Send(t, dut, bindTo, sendTo, bindToDevice)
-									})
-									t.Run("Receive", func(t *testing.T) {
-										proto.Receive(t, dut, bindTo, sendTo, bindToDevice)
-									})
-								})
-							}
+				t.Run(fmt.Sprintf("sendTo=%s", sendTo), func(t *testing.T) {
+					for _, bindToDevice := range []bool{true, false} {
+						t.Run(fmt.Sprintf("bindToDevice=%t", bindToDevice), func(t *testing.T) {
+							t.Run("Send", func(t *testing.T) {
+								proto.Send(t, dut, bindTo, sendTo, bindToDevice)
+							})
+							t.Run("Receive", func(t *testing.T) {
+								proto.Receive(t, dut, bindTo, sendTo, bindToDevice)
+							})
 						})
 					}
 				})
@@ -180,10 +182,6 @@ func (test *icmpV4Test) setup(t *testing.T, dut testbench.DUT, bindTo, sendTo ne
 		},
 	}
 }
-
-var _ protocolTest = (*icmpV4Test)(nil)
-
-func (*icmpV4Test) Name() string { return "icmpv4" }
 
 func (test *icmpV4Test) Send(t *testing.T, dut testbench.DUT, bindTo, sendTo net.IP, bindToDevice bool) {
 	if bindTo.To4() == nil || isBroadcastOrMulticast(dut, bindTo) {
@@ -407,10 +405,6 @@ func (test *icmpV6Test) setup(t *testing.T, dut testbench.DUT, bindTo, sendTo ne
 	}
 }
 
-var _ protocolTest = (*icmpV6Test)(nil)
-
-func (*icmpV6Test) Name() string { return "icmpv6" }
-
 func (test *icmpV6Test) Send(t *testing.T, dut testbench.DUT, bindTo, sendTo net.IP, bindToDevice bool) {
 	if bindTo.To4() != nil || bindTo.IsMulticast() {
 		// ICMPv6 sockets cannot bind to IPv4 or multicast addresses.
@@ -631,10 +625,6 @@ func (test *udpTest) setup(t *testing.T, dut testbench.DUT, bindTo, sendTo net.I
 		},
 	}
 }
-
-var _ protocolTest = (*udpTest)(nil)
-
-func (*udpTest) Name() string { return "udp" }
 
 func (test *udpTest) Send(t *testing.T, dut testbench.DUT, bindTo, sendTo net.IP, bindToDevice bool) {
 	wantErrno := unix.Errno(0)
