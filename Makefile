@@ -199,18 +199,18 @@ smoke-race-tests: ## Runs a smoke test after build building runsc in race config
 .PHONY: smoke-race-tests
 
 nogo-tests:
-	@$(call test,--build_tag_filters=nogo --test_tag_filters=nogo --//tools/nogo:full //:all pkg/... tools/...)
+	@$(call test,--test_tag_filters=nogo //:all pkg/... tools/...)
 .PHONY: nogo-tests
 
 # For unit tests, we take everything in the root, pkg/... and tools/..., and
 # pull in all directories in runsc except runsc/container.
 unit-tests: ## Local package unit tests in pkg/..., tools/.., etc.
-	@$(call test,--build_tag_filters=-nogo --test_tag_filters=-nogo --test_filter=-//runsc/container/... //:all pkg/... tools/... runsc/... vdso/... test/trace/...)
+	@$(call test,--test_tag_filters=-nogo --test_filter=-//runsc/container/... //:all pkg/... tools/... runsc/... vdso/... test/trace/...)
 .PHONY: unit-tests
 
 # See unit-tests: this includes runsc/container.
 container-tests: $(RUNTIME_BIN) ## Run all tests in runsc/container/...
-	@$(call test,--test_env=RUNTIME=$(RUNTIME_BIN) runsc/container/...)
+	@$(call test,--test_tag_filters=-nogo --test_env=RUNTIME=$(RUNTIME_BIN) runsc/container/...)
 .PHONY: container-tests
 
 tests: ## Runs all unit tests and syscall tests.

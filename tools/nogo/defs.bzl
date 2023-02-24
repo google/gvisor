@@ -1,6 +1,5 @@
 """Nogo rules."""
 
-load("//tools/bazeldefs:defs.bzl", "BuildSettingInfo")
 load("//tools/bazeldefs:go.bzl", "go_context", "go_embed_libraries", "go_importpath", "go_rule")
 load("//tools:arch.bzl", "arch_transition", "transition_allowlist")
 
@@ -65,10 +64,6 @@ NogoStdlibInfo = provider(
 )
 
 def _nogo_stdlib_impl(ctx):
-    package_filter = ".*"
-    if not ctx.attr._nogo_full[BuildSettingInfo].value:
-        package_filter = "^runtime$"
-
     # Build the configuration for the stdlib.
     go_ctx, args, inputs, raw_findings = _nogo_config(ctx, deps = [])
 
@@ -95,7 +90,6 @@ def _nogo_stdlib_impl(ctx):
             "-findings=%s" % findings_file.path,
             "-facts=%s" % facts_file.path,
             "-root=.*?/src/",
-            "-filter=%s" % package_filter,
         ] + [f.path for f in go_ctx.stdlib_srcs],
     )
 
@@ -121,10 +115,6 @@ nogo_stdlib = go_rule(
         "_target": attr.label(
             default = "//tools/nogo:target",
             cfg = "target",
-        ),
-        "_nogo_full": attr.label(
-            default = "//tools/nogo:full",
-            cfg = "exec",
         ),
     },
 )
@@ -424,10 +414,6 @@ nogo_test = rule(
         "_target": attr.label(
             default = "//tools/nogo:target",
             cfg = arch_transition,
-        ),
-        "_nogo_full": attr.label(
-            default = "//tools/nogo:full",
-            cfg = "exec",
         ),
         "_allowlist_function_transition": attr.label(
             default = transition_allowlist,

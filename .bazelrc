@@ -27,6 +27,10 @@ test:race --@io_bazel_rules_go//go/config:race --@io_bazel_rules_go//go/config:p
 build --@io_bazel_rules_go//go/config:pure
 test --@io_bazel_rules_go//go/config:pure
 
+# By default, exclude nogo targets from building. They will still be included
+# by default for all tests.
+build --build_tag_filters=-nogo
+
 # Set flags for x86_64.
 build:x86_64 --crosstool_top=@crosstool//:toolchains
 build:x86_64 --cpu=k8

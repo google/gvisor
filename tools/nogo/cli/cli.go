@@ -22,7 +22,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"regexp"
 
 	"github.com/google/subcommands"
 	"golang.org/x/sys/unix"
@@ -228,17 +227,12 @@ func (b *Bundle) SetFlags(fs *flag.FlagSet) {
 	b.setFlags(fs, "bundle")
 	fs.StringVar(&b.Root, "root", "", "root regular expression (for package discovery)")
 	fs.StringVar(&b.Prefix, "prefix", "", "package prefix to apply (for complete names)")
-	fs.StringVar(&b.Filter, "filter", ".*", "Filter packages to analyze")
 }
 
 // Execute implements subcommands.Command.Execute.
 func (b *Bundle) Execute(ctx context.Context, fs *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	// Perform the analysis.
 	if err := b.execute(func() (check.FindingSet, facts.Serializer, error) {
-		pathRegexp, err := regexp.Compile(b.Filter)
-		if err != nil {
-			return nil, nil, fmt.Errorf("invalid filter: %v", err)
-		}
 		// Discover the correct common root.
 		srcRootPrefix, err := check.FindRoot(fs.Args(), b.Root)
 		if err != nil {
@@ -251,9 +245,7 @@ func (b *Bundle) Execute(ctx context.Context, fs *flag.FlagSet, args ...any) sub
 			if b.Prefix != "" {
 				path = b.Prefix + "/" + path // Subpackage.
 			}
-			if pathRegexp.MatchString(path) {
-				sources[path] = append(sources[path], srcs...)
-			}
+			sources[path] = append(sources[path], srcs...)
 		}
 		return check.Bundle(sources)
 	}); err != nil {
