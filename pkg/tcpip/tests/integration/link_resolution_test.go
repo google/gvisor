@@ -1123,7 +1123,6 @@ func TestTCPConfirmNeighborReachability(t *testing.T) {
 				if err != nil {
 					t.Fatalf("host2Stack.NewEndpoint(%d, %d, _): %s", tcp.ProtocolNumber, ipv4.ProtocolNumber, err)
 				}
-				t.Cleanup(listenerEP.Close)
 
 				var clientWQ waiter.Queue
 				clientWE, clientCH := waiter.NewChannelEntry(waiter.ReadableEvents | waiter.WritableEvents)
@@ -1149,7 +1148,6 @@ func TestTCPConfirmNeighborReachability(t *testing.T) {
 				if err != nil {
 					t.Fatalf("host2Stack.NewEndpoint(%d, %d, _): %s", tcp.ProtocolNumber, ipv6.ProtocolNumber, err)
 				}
-				t.Cleanup(listenerEP.Close)
 
 				var clientWQ waiter.Queue
 				clientWE, clientCH := waiter.NewChannelEntry(waiter.ReadableEvents | waiter.WritableEvents)
@@ -1175,7 +1173,6 @@ func TestTCPConfirmNeighborReachability(t *testing.T) {
 				if err != nil {
 					t.Fatalf("routerStack.NewEndpoint(%d, %d, _): %s", tcp.ProtocolNumber, ipv4.ProtocolNumber, err)
 				}
-				t.Cleanup(listenerEP.Close)
 
 				var clientWQ waiter.Queue
 				clientWE, clientCH := waiter.NewChannelEntry(waiter.ReadableEvents | waiter.WritableEvents)
@@ -1201,7 +1198,6 @@ func TestTCPConfirmNeighborReachability(t *testing.T) {
 				if err != nil {
 					t.Fatalf("routerStack.NewEndpoint(%d, %d, _): %s", tcp.ProtocolNumber, ipv6.ProtocolNumber, err)
 				}
-				t.Cleanup(listenerEP.Close)
 
 				var clientWQ waiter.Queue
 				clientWE, clientCH := waiter.NewChannelEntry(waiter.ReadableEvents | waiter.WritableEvents)
@@ -1227,7 +1223,6 @@ func TestTCPConfirmNeighborReachability(t *testing.T) {
 				if err != nil {
 					t.Fatalf("host1Stack.NewEndpoint(%d, %d, _): %s", tcp.ProtocolNumber, ipv4.ProtocolNumber, err)
 				}
-				t.Cleanup(listenerEP.Close)
 
 				var clientWQ waiter.Queue
 				clientWE, clientCH := waiter.NewChannelEntry(waiter.ReadableEvents | waiter.WritableEvents)
@@ -1254,7 +1249,6 @@ func TestTCPConfirmNeighborReachability(t *testing.T) {
 				if err != nil {
 					t.Fatalf("host1Stack.NewEndpoint(%d, %d, _): %s", tcp.ProtocolNumber, ipv6.ProtocolNumber, err)
 				}
-				t.Cleanup(listenerEP.Close)
 
 				var clientWQ waiter.Queue
 				clientWE, clientCH := waiter.NewChannelEntry(waiter.ReadableEvents | waiter.WritableEvents)
@@ -1281,7 +1275,6 @@ func TestTCPConfirmNeighborReachability(t *testing.T) {
 				if err != nil {
 					t.Fatalf("host1Stack.NewEndpoint(%d, %d, _): %s", tcp.ProtocolNumber, ipv4.ProtocolNumber, err)
 				}
-				t.Cleanup(listenerEP.Close)
 
 				var clientWQ waiter.Queue
 				clientWE, clientCH := waiter.NewChannelEntry(waiter.ReadableEvents | waiter.WritableEvents)
@@ -1308,7 +1301,6 @@ func TestTCPConfirmNeighborReachability(t *testing.T) {
 				if err != nil {
 					t.Fatalf("host1Stack.NewEndpoint(%d, %d, _): %s", tcp.ProtocolNumber, ipv6.ProtocolNumber, err)
 				}
-				t.Cleanup(listenerEP.Close)
 
 				var clientWQ waiter.Queue
 				clientWE, clientCH := waiter.NewChannelEntry(waiter.ReadableEvents | waiter.WritableEvents)
@@ -1395,6 +1387,7 @@ func TestTCPConfirmNeighborReachability(t *testing.T) {
 			}
 
 			listenerEP, listenerCH, clientEP, clientCH := test.getEndpoints(t, host1Stack, routerStack, host2Stack)
+			defer listenerEP.Close()
 			defer clientEP.Close()
 			listenerAddr := tcpip.FullAddress{Addr: test.remoteAddr, Port: 1234}
 			if err := listenerEP.Bind(listenerAddr); err != nil {
