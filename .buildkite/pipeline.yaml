@@ -93,8 +93,8 @@ steps:
     <<: *source_test_presubmit
     label: ":world_map: Build runsc and pkg (AMD64)"
     commands:
-      - "make build OPTIONS=--build_tag_filters=-nogo TARGETS=//pkg/..."
-      - "make build OPTIONS=--build_tag_filters=-nogo TARGETS=//runsc/..."
+      - "make build TARGETS=//pkg/..."
+      - "make build TARGETS=//runsc/..."
     agents:
       arch: "amd64"
 
@@ -102,8 +102,8 @@ steps:
     <<: *source_test_presubmit
     label: ":world_map: Build runsc and pkg (ARM64)"
     commands:
-      - "make build OPTIONS=--build_tag_filters=-nogo TARGETS=//pkg/..."
-      - "make build OPTIONS=--build_tag_filters=-nogo TARGETS=//runsc/..."
+      - "make build TARGETS=//pkg/..."
+      - "make build TARGETS=//runsc/..."
     agents:
       arch: "arm64"
 
@@ -112,7 +112,7 @@ steps:
     <<: *source_test_continuous
     label: ":world_map: Build everything"
     commands:
-      - "make build OPTIONS=--build_tag_filters=-nogo TARGETS=//..."
+      - "make build TARGETS=//..."
 
   # Check that the Go branch builds. This is not technically required, as this build is maintained
   # as a GitHub action in order to preserve this maintaince across forks. However, providing the
