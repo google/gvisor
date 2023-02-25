@@ -444,9 +444,9 @@ func (tg *ThreadGroup) ReleaseControllingTTY(tty *TTY) error {
 	return lastErr
 }
 
-// ForegroundProcessGroup returns the process group ID of the foreground
-// process group.
-func (tg *ThreadGroup) ForegroundProcessGroup(tty *TTY) (int32, error) {
+// ForegroundProcessGroupID returns the foreground process group ID of the
+// thread group.
+func (tg *ThreadGroup) ForegroundProcessGroupID(tty *TTY) (ProcessGroupID, error) {
 	tty.mu.Lock()
 	defer tty.mu.Unlock()
 
@@ -455,17 +455,18 @@ func (tg *ThreadGroup) ForegroundProcessGroup(tty *TTY) (int32, error) {
 	tg.signalHandlers.mu.Lock()
 	defer tg.signalHandlers.mu.Unlock()
 
-	// "When fd does not refer to the controlling terminal of the calling
-	// process, -1 is returned" - tcgetpgrp(3)
+	// fd must refer to the controlling terminal of the calling process.
+	// See tcgetpgrp(3)
 	if tg.tty != tty {
-		return -1, linuxerr.ENOTTY
+		return 0, linuxerr.ENOTTY
 	}
 
-	return int32(tg.processGroup.session.foreground.id), nil
+	return tg.processGroup.session.foreground.id, nil
 }
 
-// SetForegroundProcessGroup sets the foreground process group of tty to pgid.
-func (tg *ThreadGroup) SetForegroundProcessGroup(tty *TTY, pgid ProcessGroupID) (int32, error) {
+// SetForegroundProcessGroupID sets the foreground process group of tty to
+// pgid.
+func (tg *ThreadGroup) SetForegroundProcessGroupID(tty *TTY, pgid ProcessGroupID) error {
 	tty.mu.Lock()
 	defer tty.mu.Unlock()
 
@@ -476,24 +477,24 @@ func (tg *ThreadGroup) SetForegroundProcessGroup(tty *TTY, pgid ProcessGroupID) 
 
 	// tty must be the controlling terminal.
 	if tg.tty != tty {
-		return -1, linuxerr.ENOTTY
+		return linuxerr.ENOTTY
 	}
 
 	// pgid must be positive.
 	if pgid < 0 {
-		return -1, linuxerr.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	// pg must not be empty. Empty process groups are removed from their
 	// pid namespaces.
 	pg, ok := tg.pidns.processGroups[pgid]
 	if !ok {
-		return -1, linuxerr.ESRCH
+		return linuxerr.ESRCH
 	}
 
 	// pg must be part of this process's session.
 	if tg.processGroup.session != pg.session {
-		return -1, linuxerr.EPERM
+		return linuxerr.EPERM
 	}
 
 	signalAction := tg.signalHandlers.actions[linux.SIGTTOU]
@@ -504,11 +505,11 @@ func (tg *ThreadGroup) SetForegroundProcessGroup(tty *TTY, pgid ProcessGroupID) 
 	blocked := (linux.SignalSet(tg.leader.signalMask.RacyLoad()) & linux.SignalSetOf(linux.SIGTTOU)) != 0
 	if tg.processGroup.id != tg.processGroup.session.foreground.id && !ignored && !blocked {
 		tg.leader.sendSignalLocked(SignalInfoPriv(linux.SIGTTOU), true)
-		return -1, linuxerr.ERESTARTSYS
+		return linuxerr.ERESTARTSYS
 	}
 
-	tg.processGroup.session.foreground.id = pgid
-	return 0, nil
+	tg.processGroup.session.foreground = pg
+	return nil
 }
 
 // itimerRealListener implements ktime.Listener for ITIMER_REAL expirations.

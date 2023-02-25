@@ -24,7 +24,7 @@ import (
 )
 
 func TestSimpleMasterToReplica(t *testing.T) {
-	ld := newLineDiscipline(linux.DefaultReplicaTermios)
+	ld := newLineDiscipline(linux.DefaultReplicaTermios, nil)
 	ctx := contexttest.Context(t)
 	inBytes := []byte("hello, tty\n")
 	src := usermem.BytesIOSequence(inBytes)
@@ -60,7 +60,7 @@ func TestEchoDeadlock(t *testing.T) {
 	ctx := contexttest.Context(t)
 	termios := linux.DefaultReplicaTermios
 	termios.LocalFlags |= linux.ECHO
-	ld := newLineDiscipline(termios)
+	ld := newLineDiscipline(termios, nil)
 	outBytes := make([]byte, 32)
 	dst := usermem.BytesIOSequence(outBytes)
 	entry := waiter.NewFunctionEntry(waiter.ReadableEvents, func(waiter.EventMask) {
