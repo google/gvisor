@@ -2378,32 +2378,32 @@ func (tc *timekeeperClock) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &tc.c)
 }
 
-func (t *TTY) StateTypeName() string {
+func (tty *TTY) StateTypeName() string {
 	return "pkg/sentry/kernel.TTY"
 }
 
-func (t *TTY) StateFields() []string {
+func (tty *TTY) StateFields() []string {
 	return []string{
 		"Index",
 		"tg",
 	}
 }
 
-func (t *TTY) beforeSave() {}
+func (tty *TTY) beforeSave() {}
 
 // +checklocksignore
-func (t *TTY) StateSave(stateSinkObject state.Sink) {
-	t.beforeSave()
-	stateSinkObject.Save(0, &t.Index)
-	stateSinkObject.Save(1, &t.tg)
+func (tty *TTY) StateSave(stateSinkObject state.Sink) {
+	tty.beforeSave()
+	stateSinkObject.Save(0, &tty.Index)
+	stateSinkObject.Save(1, &tty.tg)
 }
 
-func (t *TTY) afterLoad() {}
+func (tty *TTY) afterLoad() {}
 
 // +checklocksignore
-func (t *TTY) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &t.Index)
-	stateSourceObject.Load(1, &t.tg)
+func (tty *TTY) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &tty.Index)
+	stateSourceObject.Load(1, &tty.tg)
 }
 
 func (u *UTSNamespace) StateTypeName() string {

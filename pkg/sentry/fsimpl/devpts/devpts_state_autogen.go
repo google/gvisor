@@ -462,41 +462,38 @@ func (r *rootInodeRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.AfterLoad(r.afterLoad)
 }
 
-func (tm *Terminal) StateTypeName() string {
+func (t *Terminal) StateTypeName() string {
 	return "pkg/sentry/fsimpl/devpts.Terminal"
 }
 
-func (tm *Terminal) StateFields() []string {
+func (t *Terminal) StateFields() []string {
 	return []string{
 		"n",
 		"ld",
 		"masterKTTY",
 		"replicaKTTY",
-		"fgProcessGroup",
 	}
 }
 
-func (tm *Terminal) beforeSave() {}
+func (t *Terminal) beforeSave() {}
 
 // +checklocksignore
-func (tm *Terminal) StateSave(stateSinkObject state.Sink) {
-	tm.beforeSave()
-	stateSinkObject.Save(0, &tm.n)
-	stateSinkObject.Save(1, &tm.ld)
-	stateSinkObject.Save(2, &tm.masterKTTY)
-	stateSinkObject.Save(3, &tm.replicaKTTY)
-	stateSinkObject.Save(4, &tm.fgProcessGroup)
+func (t *Terminal) StateSave(stateSinkObject state.Sink) {
+	t.beforeSave()
+	stateSinkObject.Save(0, &t.n)
+	stateSinkObject.Save(1, &t.ld)
+	stateSinkObject.Save(2, &t.masterKTTY)
+	stateSinkObject.Save(3, &t.replicaKTTY)
 }
 
-func (tm *Terminal) afterLoad() {}
+func (t *Terminal) afterLoad() {}
 
 // +checklocksignore
-func (tm *Terminal) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &tm.n)
-	stateSourceObject.Load(1, &tm.ld)
-	stateSourceObject.Load(2, &tm.masterKTTY)
-	stateSourceObject.Load(3, &tm.replicaKTTY)
-	stateSourceObject.Load(4, &tm.fgProcessGroup)
+func (t *Terminal) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &t.n)
+	stateSourceObject.Load(1, &t.ld)
+	stateSourceObject.Load(2, &t.masterKTTY)
+	stateSourceObject.Load(3, &t.replicaKTTY)
 }
 
 func init() {

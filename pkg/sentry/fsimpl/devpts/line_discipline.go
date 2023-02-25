@@ -116,8 +116,11 @@ type lineDiscipline struct {
 	terminal *Terminal
 }
 
-func newLineDiscipline(termios linux.KernelTermios) *lineDiscipline {
-	ld := lineDiscipline{termios: termios}
+func newLineDiscipline(termios linux.KernelTermios, terminal *Terminal) *lineDiscipline {
+	ld := lineDiscipline{
+		termios:  termios,
+		terminal: terminal,
+	}
 	ld.inQueue.transformer = &inputQueueTransformer{}
 	ld.outQueue.transformer = &outputQueueTransformer{}
 	return &ld
@@ -397,11 +400,15 @@ func (*inputQueueTransformer) transform(l *lineDiscipline, q *queue, buf []byte)
 				cBytes[0] = '\r'
 			}
 		case l.termios.ControlCharacters[linux.VINTR]: // ctrl-c
-			l.terminal.fgProcessGroup.SendSignal(kernel.SignalInfoPriv(linux.SIGINT))
+			// The input queue is reading from the master TTY and
+			// writing to the replica TTY which is connected to the
+			// interactive program (like bash). We want to send the
+			// signal the process connected to the replica TTY.
+			l.terminal.replicaKTTY.SignalForegroundProcessGroup(kernel.SignalInfoPriv(linux.SIGINT))
 		case l.termios.ControlCharacters[linux.VSUSP]: // ctrl-z
-			l.terminal.fgProcessGroup.SendSignal(kernel.SignalInfoPriv(linux.SIGTSTP))
+			l.terminal.replicaKTTY.SignalForegroundProcessGroup(kernel.SignalInfoPriv(linux.SIGTSTP))
 		case l.termios.ControlCharacters[linux.VQUIT]: // ctrl-\
-			l.terminal.fgProcessGroup.SendSignal(kernel.SignalInfoPriv(linux.SIGQUIT))
+			l.terminal.replicaKTTY.SignalForegroundProcessGroup(kernel.SignalInfoPriv(linux.SIGQUIT))
 		}
 
 		// In canonical mode, we discard non-terminating characters

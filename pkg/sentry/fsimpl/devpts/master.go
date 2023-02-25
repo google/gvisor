@@ -172,16 +172,26 @@ func (mfd *masterFileDescription) Ioctl(ctx context.Context, io usermem.IO, args
 		// Make the given terminal the controlling terminal of the
 		// calling process.
 		steal := args[2].Int() == 1
-		return 0, mfd.t.setControllingTTY(ctx, steal, true /* isMaster */, mfd.vfsfd.IsReadable())
+		return 0, t.ThreadGroup().SetControllingTTY(mfd.t.masterKTTY, steal, mfd.vfsfd.IsReadable())
 	case linux.TIOCNOTTY:
 		// Release this process's controlling terminal.
-		return 0, mfd.t.releaseControllingTTY(ctx, true /* isMaster */)
+		return 0, t.ThreadGroup().ReleaseControllingTTY(mfd.t.masterKTTY)
 	case linux.TIOCGPGRP:
-		// Get the foreground process group.
-		return mfd.t.foregroundProcessGroup(ctx, args, true /* isMaster */)
+		// Get the foreground process group id.
+		pgid, err := t.ThreadGroup().ForegroundProcessGroupID(mfd.t.masterKTTY)
+		if err != nil {
+			return 0, err
+		}
+		ret := primitive.Int32(pgid)
+		_, err = ret.CopyOut(t, args[2].Pointer())
+		return 0, err
 	case linux.TIOCSPGRP:
-		// Set the foreground process group.
-		return mfd.t.setForegroundProcessGroup(ctx, args, true /* isMaster */)
+		// Set the foreground process group id.
+		var pgid primitive.Int32
+		if _, err := pgid.CopyIn(t, args[2].Pointer()); err != nil {
+			return 0, err
+		}
+		return 0, t.ThreadGroup().SetForegroundProcessGroupID(mfd.t.masterKTTY, kernel.ProcessGroupID(pgid))
 	default:
 		maybeEmitUnimplementedEvent(ctx, cmd)
 		return 0, linuxerr.ENOTTY
