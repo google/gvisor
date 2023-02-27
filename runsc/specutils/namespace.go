@@ -282,6 +282,10 @@ func MaybeRunAsRoot() error {
 
 		// Make sure child is killed when the parent terminates.
 		Pdeathsig: unix.SIGKILL,
+
+		// Detach from session. Otherwise, signals sent to the foreground process
+		// will also be forwarded by this process, resulting in duplicate signals.
+		Setsid: true,
 	}
 
 	cmd.Env = os.Environ()
