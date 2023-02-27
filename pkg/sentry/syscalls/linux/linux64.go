@@ -235,7 +235,7 @@ var AMD64 = &kernel.SyscallTable{
 		180: syscalls.Error("nfsservctl", linuxerr.ENOSYS, "Removed after Linux 3.1.", nil),
 		181: syscalls.Error("getpmsg", linuxerr.ENOSYS, "Not implemented in Linux.", nil),
 		182: syscalls.Error("putpmsg", linuxerr.ENOSYS, "Not implemented in Linux.", nil),
-		183: syscalls.Error("afs_syscall", linuxerr.ENOSYS, "Not implemented in Linux.", nil),
+		183: syscalls.PartiallySupported("afs_syscall", AFSSyscall, "Test implementation.", nil),
 		184: syscalls.Error("tuxcall", linuxerr.ENOSYS, "Not implemented in Linux.", nil),
 		185: syscalls.Error("security", linuxerr.ENOSYS, "Not implemented in Linux.", nil),
 		186: syscalls.Supported("gettid", Gettid),
