@@ -118,7 +118,7 @@ func (gb *groBucket) removeOne(pkt *groPacket) {
 // none exists. It also returns whether the groPkt should be flushed based on
 // differences between the two headers.
 // +checklocks:gb.mu
-func (gb *groBucket) findGROPacket(pkt PacketBufferPtr, ipHdr header.IPv4, tcpHdr header.TCP) (*groPacket, bool) {
+func (gb *groBucket) findGROPacket(pkt PacketBufferPtr, ipHdr header.IPv4, tcpHdr header.TCP, ep NetworkEndpoint) (*groPacket, bool) {
 	for groPkt := gb.packets.Front(); groPkt != nil; groPkt = groPkt.Next() {
 		// Do the addresses match?
 		if ipHdr.SourceAddress() != groPkt.ipHdr.SourceAddress() || ipHdr.DestinationAddress() != groPkt.ipHdr.DestinationAddress() {
@@ -298,19 +298,25 @@ func (gd *groDispatcher) dispatch(pkt PacketBufferPtr, netProto tcpip.NetworkPro
 		return
 	}
 
+	switch netProto {
+	case header.IPv4ProtocolNumber:
+		gd.dispatch4(pkt, ep)
+	case header.IPv6ProtocolNumber:
+		fallthrough
+	default:
+		// We can't GRO this.
+		ep.HandlePacket(pkt)
+	}
+}
+
+func (gd *groDispatcher) dispatch4(pkt PacketBufferPtr, ep NetworkEndpoint) {
 	// Immediately get the IPv4 and TCP headers. We need a way to hash the
 	// packet into its bucket, which requires addresses and ports. Linux
 	// simply gets a hash passed by hardware, but we're not so lucky.
 
-	// We only GRO IPv4 packets.
-	if netProto != header.IPv4ProtocolNumber {
-		ep.HandlePacket(pkt)
-		return
-	}
-
-	// We only GRO TCP4 packets. The check for the transport protocol
-	// number is done below so that we can PullUp both the IP and TCP
-	// headers together.
+	// We only GRO TCP packets. The check for the transport protocol number
+	// is done below so that we can PullUp both the IP and TCP headers
+	// together.
 	hdrBytes, ok := pkt.Data().PullUp(header.IPv4MinimumSize + header.TCPMinimumSize)
 	if !ok {
 		ep.HandlePacket(pkt)
@@ -348,13 +354,13 @@ func (gd *groDispatcher) dispatch(pkt PacketBufferPtr, netProto tcpip.NetworkPro
 
 	// If either checksum is bad, flush the packet. Since we don't know
 	// what bits were flipped, we can't identify this packet with a flow.
-	tcpPayloadSize := pkt.Data().Size() - header.IPv4MinimumSize - int(dataOff)
 	if !pkt.RXChecksumValidated {
 		if !ipHdr.IsValid(pkt.Data().Size()) || !ipHdr.IsChecksumValid() {
 			ep.HandlePacket(pkt)
 			return
 		}
 		payloadChecksum := pkt.Data().ChecksumAtOffset(header.IPv4MinimumSize + int(dataOff))
+		tcpPayloadSize := pkt.Data().Size() - header.IPv4MinimumSize - int(dataOff)
 		if !tcpHdr.IsChecksumValid(ipHdr.SourceAddress(), ipHdr.DestinationAddress(), payloadChecksum, uint16(tcpPayloadSize)) {
 			ep.HandlePacket(pkt)
 			return
@@ -367,29 +373,35 @@ func (gd *groDispatcher) dispatch(pkt PacketBufferPtr, netProto tcpip.NetworkPro
 	// Now we can get the bucket for the packet.
 	bucket := &gd.buckets[gd.bucketForPacket(ipHdr, tcpHdr)&groNBucketsMask]
 	bucket.mu.Lock()
-	groPkt, flushGROPkt := bucket.findGROPacket(pkt, ipHdr, tcpHdr)
+	groPkt, flushGROPkt := bucket.findGROPacket(pkt, ipHdr, tcpHdr, ep)
+	bucket.found(groPkt, flushGROPkt, pkt, ipHdr, tcpHdr, ep)
+}
 
+// +checklocks:gb.mu
+func (gb *groBucket) found(groPkt *groPacket, flushGROPkt bool, pkt PacketBufferPtr, ipHdr header.IPv4, tcpHdr header.TCP, ep NetworkEndpoint) {
 	// Flush groPkt or merge the packets.
 	flags := tcpHdr.Flags()
 	if flushGROPkt {
 		// Flush the existing GRO packet. Don't hold bucket.mu while
 		// processing the packet.
 		pkt := groPkt.pkt
-		bucket.removeOne(groPkt)
-		bucket.mu.Unlock()
+		gb.removeOne(groPkt)
+		gb.mu.Unlock()
 		ep.HandlePacket(pkt)
 		pkt.DecRef()
-		bucket.mu.Lock()
+		gb.mu.Lock()
 		groPkt = nil
 	} else if groPkt != nil {
 		// Merge pkt in to GRO packet.
 		buf := pkt.Data().ToBuffer()
+		dataOff := tcpHdr.DataOffset()
 		buf.TrimFront(header.IPv4MinimumSize + int64(dataOff))
 		groPkt.pkt.Data().MergeBuffer(&buf)
 		buf.Release()
 		// Add flags from the packet to the GRO packet.
 		groPkt.tcpHdr.SetFlags(uint8(groPkt.tcpHdr.Flags() | (flags & (header.TCPFlagFin | header.TCPFlagPsh))))
 		// Update the IP total length.
+		tcpPayloadSize := pkt.Data().Size() - header.IPv4MinimumSize - int(dataOff)
 		groPkt.ipHdr.SetTotalLength(groPkt.ipHdr.TotalLength() + uint16(tcpPayloadSize))
 
 		pkt = PacketBufferPtr{}
@@ -412,30 +424,30 @@ func (gd *groDispatcher) dispatch(pkt PacketBufferPtr, netProto tcpip.NetworkPro
 	case flush && groPkt != nil:
 		// A merge occurred and we need to flush groPkt.
 		pkt := groPkt.pkt
-		bucket.removeOne(groPkt)
-		bucket.mu.Unlock()
+		gb.removeOne(groPkt)
+		gb.mu.Unlock()
 		ep.HandlePacket(pkt)
 		pkt.DecRef()
 	case flush && groPkt == nil:
 		// No merge occurred and the incoming packet needs to be flushed.
-		bucket.mu.Unlock()
+		gb.mu.Unlock()
 		ep.HandlePacket(pkt)
 	case !flush && groPkt == nil:
 		// New flow and we don't need to flush. Insert pkt into GRO.
-		if bucket.full() {
+		if gb.full() {
 			// Head is always the oldest packet
-			toFlush := bucket.removeOldest()
-			bucket.insert(pkt.IncRef(), ipHdr, tcpHdr, ep)
-			bucket.mu.Unlock()
+			toFlush := gb.removeOldest()
+			gb.insert(pkt.IncRef(), ipHdr, tcpHdr, ep)
+			gb.mu.Unlock()
 			ep.HandlePacket(toFlush)
 			toFlush.DecRef()
 		} else {
-			bucket.insert(pkt.IncRef(), ipHdr, tcpHdr, ep)
-			bucket.mu.Unlock()
+			gb.insert(pkt.IncRef(), ipHdr, tcpHdr, ep)
+			gb.mu.Unlock()
 		}
 	default:
 		// A merge occurred and we don't need to flush anything.
-		bucket.mu.Unlock()
+		gb.mu.Unlock()
 	}
 }
 
