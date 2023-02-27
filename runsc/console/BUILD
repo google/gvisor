@@ -6,6 +6,7 @@ go_library(
     name = "console",
     srcs = [
         "console.go",
+	"pty_linux.go"
     ],
     visibility = [
         "//runsc:__subpackages__",

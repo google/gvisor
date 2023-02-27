@@ -33,6 +33,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
+	"gvisor.dev/gvisor/runsc/console"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/specutils"
@@ -167,6 +168,7 @@ func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommand
 			Args:         f.Args(),
 			Env:          os.Environ(),
 			Capabilities: specutils.AllCapabilities(),
+			Terminal:     console.IsPty(os.Stdin.Fd()),
 		},
 		Hostname: hostname,
 	}
@@ -445,7 +447,7 @@ func startContainerAndWait(spec *specs.Spec, conf *config.Config, cid string, wa
 	//
 	// N.B. There is a still a window before this where a signal may kill
 	// this process, skipping cleanup.
-	stopForwarding := ct.ForwardSignals(0 /* pid */, false /* fgProcess */)
+	stopForwarding := ct.ForwardSignals(0 /* pid */, spec.Process.Terminal /* fgProcess */)
 	defer stopForwarding()
 
 	ws, err := ct.Wait()
