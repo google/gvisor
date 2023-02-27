@@ -27,6 +27,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
+	"runtime/pprof"
 	"strconv"
 	"strings"
 	"syscall"
@@ -230,12 +232,13 @@ func queryMetrics(ctx context.Context, sand *sandbox.Sandbox, verifier *promethe
 
 // MetricServer implements subcommands.Command for the "metric-server" command.
 type MetricServer struct {
-	rootDir          string
-	allowUnknownRoot bool
-	address          string
-	exporterPrefix   string
-	startTime        time.Time
-	srv              http.Server
+	rootDir                string
+	allowUnknownRoot       bool
+	exposeProfileEndpoints bool
+	address                string
+	exporterPrefix         string
+	startTime              time.Time
+	srv                    http.Server
 
 	// Size of the map of written metrics during the last /metrics export. Initially zero.
 	// Used to efficiently reallocate a map of the right size during the next export.
@@ -292,7 +295,9 @@ func (*MetricServer) Usage() string {
 }
 
 // SetFlags implements subcommands.Command.SetFlags.
-func (m *MetricServer) SetFlags(f *flag.FlagSet) {}
+func (m *MetricServer) SetFlags(f *flag.FlagSet) {
+	f.BoolVar(&m.exposeProfileEndpoints, "allow-profiling", false, "If true, expose /runsc-metrics/profile-cpu and /runsc-metrics/profile-heap to get profiling data about the metric server")
+}
 
 // sufficientlyEqualStats returns whether the given FileInfo's are sufficiently
 // equal to assume the file they represent has not changed between the time
@@ -733,6 +738,63 @@ func (m *MetricServer) serveHealthCheck(w http.ResponseWriter, req *http.Request
 	return httpOK
 }
 
+// profileCPU returns a CPU profile over HTTP.
+func (m *MetricServer) profileCPU(w http.ResponseWriter, req *http.Request) httpResult {
+	// Time to finish up profiling and flush out the results to the client.
+	const finishProfilingBuffer = 250 * time.Millisecond
+
+	m.mu.Lock()
+	if m.shuttingDown {
+		m.mu.Unlock()
+		return httpResult{http.StatusServiceUnavailable, errors.New("server is shutting down already")}
+	}
+	m.mu.Unlock()
+	w.WriteHeader(http.StatusOK)
+	if err := pprof.StartCPUProfile(w); err != nil {
+		// We cannot return this as an error, because we've already sent the HTTP 200 OK status.
+		log.Warningf("Failed to start recording CPU profile: %v", err)
+		return httpOK
+	}
+	deadline := time.Now().Add(httpTimeout - finishProfilingBuffer)
+	if seconds, err := strconv.Atoi(req.URL.Query().Get("seconds")); err == nil && time.Duration(seconds)*time.Second < httpTimeout {
+		deadline = time.Now().Add(time.Duration(seconds) * time.Second)
+	} else if ctxDeadline, hasDeadline := req.Context().Deadline(); hasDeadline {
+		deadline = ctxDeadline.Add(-finishProfilingBuffer)
+	}
+	log.Infof("Profiling CPU until %v...", deadline)
+	var wasInterrupted bool
+	select {
+	case <-time.After(time.Until(deadline)):
+		wasInterrupted = false
+	case <-req.Context().Done():
+		wasInterrupted = true
+	}
+	pprof.StopCPUProfile()
+	if wasInterrupted {
+		log.Warningf("Profiling CPU interrupted.")
+	} else {
+		log.Infof("Profiling CPU done.")
+	}
+	return httpOK
+}
+
+// profileHeap returns a heap profile over HTTP.
+func (m *MetricServer) profileHeap(w http.ResponseWriter, req *http.Request) httpResult {
+	m.mu.Lock()
+	if m.shuttingDown {
+		m.mu.Unlock()
+		return httpResult{http.StatusServiceUnavailable, errors.New("server is shutting down already")}
+	}
+	m.mu.Unlock()
+	w.WriteHeader(http.StatusOK)
+	runtime.GC() // Run GC just before looking at the heap to get a clean view.
+	if err := pprof.Lookup("heap").WriteTo(w, 0); err != nil {
+		// We cannot return this as an error, because we've already sent the HTTP 200 OK status.
+		log.Warningf("Failed to record heap profile: %v", err)
+	}
+	return httpOK
+}
+
 // shutdownLocked shuts down the server. It assumes mu is held.
 func (m *MetricServer) shutdownLocked(ctx context.Context) {
 	log.Infof("Server shutting down.")
@@ -889,6 +951,11 @@ func (m *MetricServer) Execute(ctx context.Context, f *flag.FlagSet, args ...any
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/runsc-metrics/healthcheck", logRequest(m.serveHealthCheck))
+	if m.exposeProfileEndpoints {
+		log.Warningf("Profiling HTTP endpoints are exposed; this should only be used for development!")
+		mux.HandleFunc("/runsc-metrics/profile-cpu", logRequest(m.profileCPU))
+		mux.HandleFunc("/runsc-metrics/profile-heap", logRequest(m.profileHeap))
+	}
 	mux.HandleFunc("/metrics", logRequest(m.serveMetrics))
 	mux.HandleFunc("/", logRequest(m.serveIndex))
 	m.srv.Handler = mux
