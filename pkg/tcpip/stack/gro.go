@@ -85,7 +85,7 @@ func (gb *groBucket) insert(pkt PacketBufferPtr, ipHdr header.IPv4, tcpHdr heade
 		ep:            ep,
 		ipHdr:         ipHdr,
 		tcpHdr:        tcpHdr,
-		initialLength: ipHdr.TotalLength(),
+		initialLength: pkt.Data().Size(), // pkt.Data() contains network header.
 		idx:           groPkt.idx,
 	}
 	gb.count++
@@ -118,7 +118,7 @@ func (gb *groBucket) removeOne(pkt *groPacket) {
 // none exists. It also returns whether the groPkt should be flushed based on
 // differences between the two headers.
 // +checklocks:gb.mu
-func (gb *groBucket) findGROPacket(ipHdr header.IPv4, tcpHdr header.TCP) (*groPacket, bool) {
+func (gb *groBucket) findGROPacket(pkt PacketBufferPtr, ipHdr header.IPv4, tcpHdr header.TCP) (*groPacket, bool) {
 	for groPkt := gb.packets.Front(); groPkt != nil; groPkt = groPkt.Next() {
 		// Do the addresses match?
 		if ipHdr.SourceAddress() != groPkt.ipHdr.SourceAddress() || ipHdr.DestinationAddress() != groPkt.ipHdr.DestinationAddress() {
@@ -158,7 +158,7 @@ func (gb *groBucket) findGROPacket(ipHdr header.IPv4, tcpHdr header.TCP) (*groPa
 		}
 
 		// There's an upper limit on coalesced packet size.
-		if int(ipHdr.TotalLength())-header.IPv4MinimumSize-int(dataOff)+groPkt.pkt.Data().Size() >= groMaxPacketSize {
+		if pkt.Data().Size()-header.IPv4MinimumSize-int(dataOff)+groPkt.pkt.Data().Size() >= groMaxPacketSize {
 			return groPkt, true
 		}
 
@@ -193,7 +193,7 @@ type groPacket struct {
 	// used as a best-effort guess at MSS: senders will send MSS-sized
 	// packets until they run out of data, so we coalesce as long as
 	// packets are the same size.
-	initialLength uint16
+	initialLength int
 
 	// idx is the groPacket's index in its bucket packetsPrealloc. It is
 	// immutable.
@@ -209,8 +209,8 @@ func (pk *groPacket) reset() {
 
 // payloadSize is the payload size of the coalesced packet, which does not
 // include the network or transport headers.
-func (pk *groPacket) payloadSize() uint16 {
-	return pk.ipHdr.TotalLength() - header.IPv4MinimumSize - uint16(pk.tcpHdr.DataOffset())
+func (pk *groPacket) payloadSize() int {
+	return pk.pkt.Data().Size() - header.IPv4MinimumSize - int(pk.tcpHdr.DataOffset())
 }
 
 // groDispatcher coalesces incoming packets to increase throughput.
@@ -348,14 +348,14 @@ func (gd *groDispatcher) dispatch(pkt PacketBufferPtr, netProto tcpip.NetworkPro
 
 	// If either checksum is bad, flush the packet. Since we don't know
 	// what bits were flipped, we can't identify this packet with a flow.
-	tcpPayloadSize := ipHdr.TotalLength() - header.IPv4MinimumSize - uint16(dataOff)
+	tcpPayloadSize := pkt.Data().Size() - header.IPv4MinimumSize - int(dataOff)
 	if !pkt.RXChecksumValidated {
 		if !ipHdr.IsValid(pkt.Data().Size()) || !ipHdr.IsChecksumValid() {
 			ep.HandlePacket(pkt)
 			return
 		}
 		payloadChecksum := pkt.Data().ChecksumAtOffset(header.IPv4MinimumSize + int(dataOff))
-		if !tcpHdr.IsChecksumValid(ipHdr.SourceAddress(), ipHdr.DestinationAddress(), payloadChecksum, tcpPayloadSize) {
+		if !tcpHdr.IsChecksumValid(ipHdr.SourceAddress(), ipHdr.DestinationAddress(), payloadChecksum, uint16(tcpPayloadSize)) {
 			ep.HandlePacket(pkt)
 			return
 		}
@@ -367,7 +367,7 @@ func (gd *groDispatcher) dispatch(pkt PacketBufferPtr, netProto tcpip.NetworkPro
 	// Now we can get the bucket for the packet.
 	bucket := &gd.buckets[gd.bucketForPacket(ipHdr, tcpHdr)&groNBucketsMask]
 	bucket.mu.Lock()
-	groPkt, flushGROPkt := bucket.findGROPacket(ipHdr, tcpHdr)
+	groPkt, flushGROPkt := bucket.findGROPacket(pkt, ipHdr, tcpHdr)
 
 	// Flush groPkt or merge the packets.
 	flags := tcpHdr.Flags()
@@ -405,7 +405,7 @@ func (gd *groDispatcher) dispatch(pkt PacketBufferPtr, netProto tcpip.NetworkPro
 	//   GRO.
 	flush := header.TCPFlags(flags)&(header.TCPFlagUrg|header.TCPFlagPsh|header.TCPFlagRst|header.TCPFlagSyn|header.TCPFlagFin) != 0
 	if groPkt != nil {
-		flush = flush || ipHdr.TotalLength() != groPkt.initialLength
+		flush = flush || pkt.Data().Size() != groPkt.initialLength
 	}
 
 	switch {
