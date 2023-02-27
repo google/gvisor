@@ -233,6 +233,8 @@ func queryMetrics(ctx context.Context, sand *sandbox.Sandbox, verifier *promethe
 // MetricServer implements subcommands.Command for the "metric-server" command.
 type MetricServer struct {
 	rootDir                string
+	pid                    int
+	pidFile                string
 	allowUnknownRoot       bool
 	exposeProfileEndpoints bool
 	address                string
@@ -296,6 +298,7 @@ func (*MetricServer) Usage() string {
 
 // SetFlags implements subcommands.Command.SetFlags.
 func (m *MetricServer) SetFlags(f *flag.FlagSet) {
+	f.StringVar(&m.pidFile, "pid-file", "", "If set, write the metric server's own PID to this file after binding to the --metric-server address. The parent directory of this file must already exist.")
 	f.BoolVar(&m.exposeProfileEndpoints, "allow-profiling", false, "If true, expose /runsc-metrics/profile-cpu and /runsc-metrics/profile-heap to get profiling data about the metric server")
 }
 
@@ -724,7 +727,7 @@ func (m *MetricServer) serveHealthCheck(w http.ResponseWriter, req *http.Request
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if m.shuttingDown {
-		return httpResult{http.StatusServiceUnavailable, errors.New("server is shutting down already")}
+		return httpResult{http.StatusServiceUnavailable, errors.New("server is shutting down")}
 	}
 	if err := req.ParseForm(); err != nil {
 		return httpResult{http.StatusBadRequest, err}
@@ -735,6 +738,17 @@ func (m *MetricServer) serveHealthCheck(w http.ResponseWriter, req *http.Request
 	}
 	w.WriteHeader(http.StatusOK)
 	io.WriteString(w, "runsc-metrics:OK")
+	return httpOK
+}
+
+// servePID serves the PID of the metric server process.
+func (m *MetricServer) servePID(w http.ResponseWriter, req *http.Request) httpResult {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.shuttingDown {
+		return httpResult{http.StatusServiceUnavailable, errors.New("server is shutting down")}
+	}
+	io.WriteString(w, strconv.Itoa(m.pid))
 	return httpOK
 }
 
@@ -804,6 +818,11 @@ func (m *MetricServer) shutdownLocked(ctx context.Context) {
 			log.Warningf("Cannot remove UDS at %s: %v", m.udsPath, err)
 		} else {
 			m.udsPath = ""
+		}
+	}
+	if m.pidFile != "" {
+		if err := os.Remove(m.pidFile); err != nil {
+			log.Warningf("Cannot remove PID file at %s: %v", m.pidFile, err)
 		}
 	}
 	m.srv.Shutdown(ctx)
@@ -907,6 +926,9 @@ func (m *MetricServer) Execute(ctx context.Context, f *flag.FlagSet, args ...any
 	m.address = conf.MetricServer
 	m.sandboxes = make(map[container.FullID]*servedSandbox)
 	m.lastStateFileStat = make(map[container.FullID]os.FileInfo)
+	m.pid = os.Getpid()
+	m.shutdownCh = make(chan os.Signal, 1)
+	signal.Notify(m.shutdownCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 
 	var listener net.Listener
 	var listenErr error
@@ -951,6 +973,7 @@ func (m *MetricServer) Execute(ctx context.Context, f *flag.FlagSet, args ...any
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/runsc-metrics/healthcheck", logRequest(m.serveHealthCheck))
+	mux.HandleFunc("/runsc-metrics/pid", logRequest(m.servePID))
 	if m.exposeProfileEndpoints {
 		log.Warningf("Profiling HTTP endpoints are exposed; this should only be used for development!")
 		mux.HandleFunc("/runsc-metrics/profile-cpu", logRequest(m.profileCPU))
@@ -961,11 +984,18 @@ func (m *MetricServer) Execute(ctx context.Context, f *flag.FlagSet, args ...any
 	m.srv.Handler = mux
 	m.srv.ReadTimeout = httpTimeout
 	m.srv.WriteTimeout = httpTimeout
-	m.shutdownCh = make(chan os.Signal, 1)
+	go m.verifyLoop(ctx)
+	if m.pidFile != "" {
+		if err := ioutil.WriteFile(m.pidFile, []byte(fmt.Sprintf("%d", m.pid)), 0644); err != nil {
+			return util.Errorf("Cannot write PID to file %q: %v", m.pidFile, err)
+		}
+		defer os.Remove(m.pidFile)
+		log.Infof("Wrote PID %d to file %v.", m.pid, m.pidFile)
+	}
+
+	// Initialization complete.
 	log.Infof("Server serving on %s for root directory %s.", conf.MetricServer, conf.RootDir)
 
-	go m.verifyLoop(ctx)
-	signal.Notify(m.shutdownCh, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT)
 	serveErr := m.srv.Serve(listener)
 	log.Infof("Server has stopped accepting requests.")
 	m.mu.Lock()
