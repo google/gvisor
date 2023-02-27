@@ -81,6 +81,9 @@ func StartSignalForwarding(handler func(linux.Signal)) func() {
 	//
 	// External real-time signals are not supported. We rely on the go-runtime
 	// for their handling.
+	//
+	// We do not forward some signals that are likely induced by the behavior
+	// of the forwarding process.
 	var sigchans []chan os.Signal
 	for sig := 1; sig <= numSignals+1; sig++ {
 		sigchan := make(chan os.Signal, 1)
@@ -92,6 +95,10 @@ func StartSignalForwarding(handler func(linux.Signal)) func() {
 		}
 		// SIGPIPE is received when sending to disconnected host pipes/sockets.
 		if sig == int(linux.SIGPIPE) {
+			continue
+		}
+		// SIGCHLD is received when a child of the forwarding process exits.
+		if sig == int(linux.SIGCHLD) {
 			continue
 		}
 		signal.Notify(sigchan, unix.Signal(sig))

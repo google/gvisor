@@ -329,7 +329,7 @@ func (ex *Exec) argsFromCLI(argv []string, enableRaw bool) (*control.ExecArgs, e
 		KGID:             ex.user.kgid,
 		ExtraKGIDs:       extraKGIDs,
 		Capabilities:     caps,
-		StdioIsPty:       ex.consoleSocket != "",
+		StdioIsPty:       ex.consoleSocket != "" || console.IsPty(os.Stdin.Fd()),
 		FilePayload:      urpc.FilePayload{[]*os.File{os.Stdin, os.Stdout, os.Stderr}},
 	}, nil
 }
