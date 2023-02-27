@@ -521,6 +521,15 @@ func Run(conf *config.Config, args Args) (unix.WaitStatus, error) {
 			return 0, fmt.Errorf("starting container: %v", err)
 		}
 	}
+
+	// If we allocate a terminal, forward signals to the sandbox process.
+	// Otherwise, Ctrl+C will terminate this process and its children,
+	// including the terminal.
+	if c.Spec.Process.Terminal {
+		stopForwarding := c.ForwardSignals(0, true /* fgProcess */)
+		defer stopForwarding()
+	}
+
 	if args.Attached {
 		return c.Wait()
 	}
@@ -1059,7 +1068,11 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 
 	// Start with the general config flags.
 	cmd := exec.Command(specutils.ExePath, conf.ToFlags()...)
-	cmd.SysProcAttr = &unix.SysProcAttr{}
+	cmd.SysProcAttr = &unix.SysProcAttr{
+		// Detach from session. Otherwise, signals sent to the foreground process
+		// will also be forwarded by this process, resulting in duplicate signals.
+		Setsid: true,
+	}
 
 	// Set Args[0] to make easier to spot the gofer process. Otherwise it's
 	// shown as `exe`.
