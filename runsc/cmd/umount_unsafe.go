@@ -27,7 +27,7 @@ import (
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
-// Umount implements subcommands.Command for the "kill" command.
+// Umount implements subcommands.Command for the "umount" command.
 type Umount struct {
 	syncFD int
 }
@@ -39,7 +39,7 @@ func (*Umount) Name() string {
 
 // Synopsis implements subcommands.Command.Synopsis.
 func (*Umount) Synopsis() string {
-	return "umount the specified directory when one byte is read from synd-fd"
+	return "umount the specified directory lazily when one byte is read from synd-fd"
 }
 
 // Usage implements subcommands.Command.Usage.

@@ -217,9 +217,9 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 			// /proc is umounted from a forked process, because the
 			// current one is going to re-execute itself without
 			// capabilities.
-			cmd, w := b.execProcUmounter()
-			defer w.Close()
+			cmd, w := execProcUmounter()
 			defer cmd.Wait()
+			defer w.Close()
 			if b.procMountSyncFD != -1 {
 				panic("procMountSyncFD is set")
 			}
@@ -367,23 +367,8 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 
 	if b.procMountSyncFD != -1 {
 		l.PreSeccompCallback = func() {
-			syncFile := os.NewFile(uintptr(b.procMountSyncFD), "sync file")
-			buf := make([]byte, 1)
-			if w, err := syncFile.Write(buf); err != nil || w != 1 {
-				util.Fatalf("unable to write into the proc umounter descriptor: %v", err)
-			}
-			syncFile.Close()
-
-			var waitStatus unix.WaitStatus
-			if _, err := unix.Wait4(0, &waitStatus, 0, nil); err != nil {
-				util.Fatalf("error waiting for the proc umounter process: %v", err)
-			}
-			if !waitStatus.Exited() || waitStatus.ExitStatus() != 0 {
-				util.Fatalf("the proc umounter process failed: %v", waitStatus)
-			}
-			if err := unix.Access("/proc/self", unix.F_OK); err != unix.ENOENT {
-				util.Fatalf("/proc is still accessible")
-			}
+			// Umount /proc right before installing seccomp filters.
+			umountProc(b.procMountSyncFD)
 		}
 	}
 
@@ -450,9 +435,9 @@ func (b *Boot) prepareArgs(exclude ...string) []string {
 	return args
 }
 
-// execProcUmounter execute a child process that umounts /proc when the sks[1]
-// socket is closed.
-func (b *Boot) execProcUmounter() (*exec.Cmd, *os.File) {
+// execProcUmounter execute a child process that umounts /proc when the
+// returned pipe is closed.
+func execProcUmounter() (*exec.Cmd, *os.File) {
 	r, w, err := os.Pipe()
 	if err != nil {
 		util.Fatalf("error creating a pipe: %v", err)
@@ -469,4 +454,26 @@ func (b *Boot) execProcUmounter() (*exec.Cmd, *os.File) {
 		util.Fatalf("error executing umounter: %v", err)
 	}
 	return cmd, w
+}
+
+// umountProc writes to syncFD signalling the process started by
+// execProcUmounter() to umount /proc.
+func umountProc(syncFD int) {
+	syncFile := os.NewFile(uintptr(syncFD), "sync file")
+	buf := make([]byte, 1)
+	if w, err := syncFile.Write(buf); err != nil || w != 1 {
+		util.Fatalf("unable to write into the proc umounter descriptor: %v", err)
+	}
+	syncFile.Close()
+
+	var waitStatus unix.WaitStatus
+	if _, err := unix.Wait4(0, &waitStatus, 0, nil); err != nil {
+		util.Fatalf("error waiting for the proc umounter process: %v", err)
+	}
+	if !waitStatus.Exited() || waitStatus.ExitStatus() != 0 {
+		util.Fatalf("the proc umounter process failed: %v", waitStatus)
+	}
+	if err := unix.Access("/proc/self", unix.F_OK); err != unix.ENOENT {
+		util.Fatalf("/proc is still accessible")
+	}
 }
