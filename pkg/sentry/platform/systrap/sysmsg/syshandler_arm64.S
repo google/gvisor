@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#if defined(__aarch64__)
+
 #include "sysmsg_offsets.h"
 
 .globl __export_syshandler;
@@ -26,3 +28,5 @@ __export_syshandler:
   BRK #0xdead
 
 .size __export_syshandler, . - __export_syshandler
+
+#endif  // defined(__aarch64__)

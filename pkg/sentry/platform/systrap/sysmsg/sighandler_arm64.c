@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#if defined(__aarch64__)
+
 #define _GNU_SOURCE
 #include <asm/unistd.h>
 #include <errno.h>
@@ -126,3 +128,5 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
   set_tls(sysmsg->tls);
   __atomic_store_n(&sysmsg->state, SYSMSG_STATE_NONE, __ATOMIC_RELEASE);
 }
+
+#endif  // defined(__aarch64__)

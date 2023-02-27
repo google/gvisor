@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#if defined(__aarch64__)
+
 #include <linux/unistd.h>
 
 .global __export_restore_rt;
@@ -20,3 +22,5 @@ __export_restore_rt:
   mov x8, __NR_rt_sigreturn
   svc #0
 .size __export_restore_rt,.-__export_restore_rt
+
+#endif  // defined(__arch64__)

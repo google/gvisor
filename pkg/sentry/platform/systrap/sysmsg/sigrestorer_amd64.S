@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#if defined(__x86_64__)
+
 #include <linux/unistd.h>
 
 .global __export_restore_rt;
@@ -20,3 +22,5 @@ __export_restore_rt:
   movq $__NR_rt_sigreturn, %rax
   syscall
 .size __export_restore_rt,.-__export_restore_rt
+
+#endif  // defined(__x86_64__)

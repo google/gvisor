@@ -15,6 +15,10 @@
 
 SECTIONS
 {
+        /DISCARD/ : {
+                *(.interp) *(.gnu.hash) *(.hash) *(.dynamic) *(.dynsym) *(.dynstr) *(.rela.dyn) *(.eh_frame)
+        }
+
         .crblob 0x0 : {
                 *(.head.text)
                 *(.text*)
@@ -32,8 +36,4 @@ SECTIONS
                 *(.debug*)
                 . = ALIGN(32);
         } =0x00000000,
-
-        /DISCARD/ : {
-                *(.interp) *(.gnu.hash) *(.hash) *(.dynamic) *(.dynsym) *(.dynstr) *(.rela.dyn) *(.eh_frame)
-        }
 }

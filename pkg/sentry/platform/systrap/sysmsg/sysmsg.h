@@ -26,10 +26,12 @@ struct arch_state {
   uint32_t fsgsbase;
 };
 // LINT.ThenChange(sysmsg_amd64.go)
-#else
+#elif defined(__aarch64__)
 // LINT.IfChange
 struct arch_state {};
 // LINT.ThenChange(sysmsg_arm64.go)
+#else
+#error "unknown architecture"
 #endif
 
 // LINT.IfChange

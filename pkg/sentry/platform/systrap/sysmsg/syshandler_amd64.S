@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#if defined(__x86_64__)
+
 #include "sysmsg_offsets.h"
 
 .globl __export_syshandler;
@@ -76,3 +78,5 @@ skipint:
   jmp *%gs:offsetof_sysmsg_ret_addr // msg->ret_addr
 
 .size __export_syshandler, . - __export_syshandler
+
+#endif  // defined(__x86_64__)

@@ -12,8 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#if defined(__x86_64__)
+
 #define _GNU_SOURCE
-#include <asm/prctl.h>
 #include <asm/unistd_64.h>
 #include <errno.h>
 #include <linux/audit.h>
@@ -25,6 +26,10 @@
 #include <stdlib.h>
 #include <sys/prctl.h>
 #include <sys/ucontext.h>
+
+// Inlined from asm/prctl.h, which may not be available.
+#define ARCH_SET_FS 0x1002
+#define ARCH_GET_FS 0x1003
 
 #include "sysmsg.h"
 #include "sysmsg_offsets.h"
@@ -342,3 +347,5 @@ long __syshandler(long a1, long a2, long a3, long __unused, long a5, long a6) {
   __atomic_store_n(&sysmsg->state, SYSMSG_STATE_NONE, __ATOMIC_RELEASE);
   return sysret;
 }
+
+#endif  // defined(__x86_64__)
