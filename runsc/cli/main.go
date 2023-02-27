@@ -31,6 +31,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
 	"gvisor.dev/gvisor/runsc/cmd"
 	"gvisor.dev/gvisor/runsc/cmd/trace"
 	"gvisor.dev/gvisor/runsc/cmd/util"
@@ -244,6 +245,7 @@ func Main(version string) {
 		log.Warningf("Block the TERM signal. This is only safe in tests!")
 		signal.Ignore(unix.SIGTERM)
 	}
+	linux.SetAFSSyscallPanic(conf.TestOnlyAFSSyscallPanic)
 
 	// Call the subcommand and pass in the configuration.
 	var ws unix.WaitStatus
