@@ -49,7 +49,15 @@ func (tg *ThreadGroup) TTY() *TTY {
 func (tty *TTY) SignalForegroundProcessGroup(info *linux.SignalInfo) {
 	tty.mu.Lock()
 	defer tty.mu.Unlock()
+
 	tg := tty.tg
+	if tg == nil {
+		// This TTY is not a controlling thread group. This can happen
+		// if it was opened with O_NOCTTY, or if it failed the checks
+		// on session and leaders in SetControllingTTY(). There is
+		// nothing to signal.
+		return
+	}
 
 	tg.pidns.owner.mu.Lock()
 	tg.signalHandlers.mu.Lock()
