@@ -14,6 +14,7 @@ go_library(
         "//pkg/log",
         "//pkg/refs",
         "//pkg/sentry/platform",
+        "//pkg/sentry/syscalls/linux",
         "//runsc/cmd",
         "//runsc/cmd/trace",
         "//runsc/cmd/util",

@@ -300,6 +300,11 @@ type Config struct {
 	// parameters to the runtime from docker.
 	TestOnlyTestNameEnv string `flag:"TESTONLY-test-name-env"`
 
+	// TestOnlyAFSSyscallPanic should only be used in tests. It enables the
+	// alternate behaviour for afs_syscall to trigger a Go-runtime panic upon being
+	// called. This is useful for tests exercising gVisor panic-reporting.
+	TestOnlyAFSSyscallPanic bool `flag:"TESTONLY-afs-syscall-panic"`
+
 	// explicitlySet contains whether a flag was explicitly set on the command-line from which this
 	// Config was constructed. Nil when the Config was not initialized from a FlagSet.
 	explicitlySet map[string]struct{}
