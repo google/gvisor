@@ -787,7 +787,7 @@ TEST_F(StatTest, StatxIgnoreNoAutomount) {
   SKIP_IF(!IsRunningOnGvisor() && statx(-1, nullptr, 0, 0, nullptr) < 0 &&
           errno == ENOSYS);
 
-  // TODO(b/270219255): AT_NO_AUTOMOUNT flag has no effect because gVisor does
+  // NOTE(b/270219255): AT_NO_AUTOMOUNT flag has no effect because gVisor does
   // not support automount.
   struct kernel_statx stx;
   EXPECT_THAT(
