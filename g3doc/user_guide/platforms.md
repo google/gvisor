@@ -45,6 +45,11 @@ cause of security issues (e.g.
 [CVE-2018-12904](https://nvd.nist.gov/vuln/detail/CVE-2018-12904)). It is not
 recommended for production.***
 
+A third platform, `systrap`, is expected to eventually replace the `ptrace`
+platform. As of this writing (2023-03), **this platform is not
+production-ready**, but we encourage `ptrace` users to try it out in
+non-production settings and [report bugs and feedback](../community.md).
+
 ## Configuring Docker
 
 The platform is selected by the `--platform` command line flag passed to
@@ -89,6 +94,12 @@ for the KVM platform:
             "path": "/usr/local/bin/runsc",
             "runtimeArgs": [
                 "--platform=kvm"
+            ]
+        },
+        "runsc-systrap": {
+            "path": "/usr/local/bin/runsc",
+            "runtimeArgs": [
+                "--platform=systrap"
             ]
         }
     }

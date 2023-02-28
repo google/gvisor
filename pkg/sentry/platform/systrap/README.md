@@ -1,33 +1,34 @@
 # The systrap platform
 
-This platform is similar with the ptrace platform with the difference how system
-calls, page-faults and other exceptions handled.
+This platform is similar with the ptrace platform but differs on how system
+calls, page-faults and other exceptions are handled.
 
-The kernel allows setting seccomp filters (SECCOMP_RET_TRAP), so that each time
-when a thread tries to call a filtered system call, it will receive the SIGSYS
-signal.
+Linux allows setting seccomp filters with `SECCOMP_RET_TRAP`, such that when a
+thread tries to call a system call caught by the seccomp filter, this thread
+will receive the `SIGSYS` signal.
 
-With this kernel feature, all stub thread events what have to be handled in the
-sentry triggers signals. This means that they can be handled from a signal
-handler.
+gVisor's systrap platform uses this kernel feature to have all thread events
+that have to be handled in the sentry trigger signals.
 
-The systrap platform includes the sysmsg module which implements a stub signal
-handler and a protocol of communications of stub threads and the Sentry.
+The systrap platform implements a stub signal handler (as part of the `sysmsg`
+module), and communication protocol between this stub signal handler and the
+Sentry.
 
-The initializations of a new stub thread includes next steps:
+The initialization of a new stub thread involves:
 
-*   installing seccomp filters to trap all user system calls.
-*   setting an alternate signal stack which is shared with the Sentry.
-*   setting the sysmsg signal handler for SIGSYS, SIGSEGV, SIGBUS, SIGFPE,
-    SIGTRAP, SIGILL.
+*   Installing seccomp filters to trap all user system calls.
+*   Setting up an alternate signal stack which is shared with the Sentry.
+*   Setting up the sysmsg signal handler for `SIGSYS`, `SIGSEGV`, `SIGBUS`,
+    `SIGFPE`, `SIGTRAP`, and `SIGILL`.
 
-User code is executed in context of a stub thread. When it calls a system call
-or triggers page-fault, the signal handler is started. It notifies the Sentry
-about a new signal, then the Sentry handles this event and notifies the system
-thread back that it can continue running.
+User code is executed in the context of a stub thread. When it calls a system
+call or triggers a page-fault, the stub signal handler code executes. It
+notifies the Sentry of this new signal. The Sentry handles this, and calls back
+the system thread so that it can resume running.
 
 When the kernel prepares to execute the signal handler, it generates a signal
-frame which contains a process state (registers, FPU state, etc). Then when the
-kernel resumes a process, the process state is restored from this frame. The
-signal frame is saved on a signal handler stack which is shared with the Sentry.
-This allows us to read and modify the thread state from the Sentry.
+frame which contains the process state (registers, FPU state, etc). Then, when
+the kernel resumes the process, the process state is restored from this frame.
+The signal frame is saved on the signal handler stack. This memory region is
+shared with the Sentry process. This allows gVisor to read and modify the thread
+state from the Sentry.
