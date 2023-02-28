@@ -34,6 +34,6 @@ SECTIONS
         } =0x00000000,
 
         /DISCARD/ : {
-                *(.interp) *(.gnu.hash) *(.hash) *(.dynamic) *(.dynsym) *(.dynstr) *(.rela.dyn) *(.eh_frame)
+                *(.interp) *(.gnu.hash) *(.hash) *(.dynamic) *(.dynsym) *(.dynstr) *(.rela.dyn) *(.eh_frame) *(.note.gnu.property)
         }
 }
