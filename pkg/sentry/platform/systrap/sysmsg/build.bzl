@@ -3,7 +3,7 @@
 load("//tools:arch.bzl", "select_arch")
 load("//tools:defs.bzl", "cc_toolchain")
 
-def cc_pie_obj(name, srcs, outs, obj_src):
+def cc_pie_obj(name, srcs, outs):
     native.genrule(
         name = name,
         srcs = srcs,
@@ -25,9 +25,8 @@ def cc_pie_obj(name, srcs, outs, obj_src):
               "-g " +
               "-Wa,--noexecstack " +
               "-fno-asynchronous-unwind-tables " +
-              "-fno-stack-protector -c " +
-              "$(location " + obj_src + ") " +
-              " -o $(location " + outs[0] + ")",
+              "-fno-stack-protector " +
+              "-c $$(echo $(SRCS) | tr ' ' '\n' | grep -v -E '.h$$') -o $@",
         toolchains = [
             ":no_pie_cc_flags",
             cc_toolchain,

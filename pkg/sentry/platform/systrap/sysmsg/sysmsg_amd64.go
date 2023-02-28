@@ -15,11 +15,17 @@
 package sysmsg
 
 import (
+	_ "embed"
 	"fmt"
 	"strings"
 
 	"gvisor.dev/gvisor/pkg/cpuid"
 )
+
+// SighandlerBlob contains the compiled code of the sysmsg signal handler.
+//
+//go:embed sighandler.built-in.amd64.bin
+var SighandlerBlob []byte
 
 // ArchState defines variables specific to the architecture being
 // used.

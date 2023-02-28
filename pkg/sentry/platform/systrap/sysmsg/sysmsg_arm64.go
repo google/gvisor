@@ -14,6 +14,15 @@
 
 package sysmsg
 
+import (
+	_ "embed"
+)
+
+// SighandlerBlob contains the compiled code of the sysmsg signal handler.
+//
+//go:embed sighandler.built-in.arm64.bin
+var SighandlerBlob []byte
+
 // ArchState defines variables specific to the architecture being
 // used.
 type ArchState struct{}

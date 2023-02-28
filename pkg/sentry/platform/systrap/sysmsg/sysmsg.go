@@ -21,7 +21,6 @@
 package sysmsg
 
 import (
-	_ "embed"
 	"fmt"
 	"strings"
 	"sync/atomic"
@@ -244,8 +243,3 @@ func (m *Msg) String() string {
 
 	return b.String()
 }
-
-// SighandlerBlob contains the compiled code of the sysmsg signal handler.
-//
-//go:embed sighandler.built-in.bin
-var SighandlerBlob []byte
