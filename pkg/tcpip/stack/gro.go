@@ -380,6 +380,7 @@ func (gd *groDispatcher) dispatch4(pkt PacketBufferPtr, ep NetworkEndpoint) {
 // +checklocks:gb.mu
 func (gb *groBucket) found(groPkt *groPacket, flushGROPkt bool, pkt PacketBufferPtr, ipHdr header.IPv4, tcpHdr header.TCP, ep NetworkEndpoint) {
 	// Flush groPkt or merge the packets.
+	pktSize := pkt.Data().Size()
 	flags := tcpHdr.Flags()
 	if flushGROPkt {
 		// Flush the existing GRO packet. Don't hold bucket.mu while
@@ -417,7 +418,7 @@ func (gb *groBucket) found(groPkt *groPacket, flushGROPkt bool, pkt PacketBuffer
 	//   GRO.
 	flush := header.TCPFlags(flags)&(header.TCPFlagUrg|header.TCPFlagPsh|header.TCPFlagRst|header.TCPFlagSyn|header.TCPFlagFin) != 0
 	if groPkt != nil {
-		flush = flush || pkt.Data().Size() != groPkt.initialLength
+		flush = flush || pktSize != groPkt.initialLength
 	}
 
 	switch {
