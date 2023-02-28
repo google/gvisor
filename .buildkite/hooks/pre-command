@@ -44,7 +44,7 @@ export RUNTIME="$(echo "$RUNTIME" | sed -r 's~[^-_a-z0-9]+~_~g')"
 if [[ -x /tmp/buildkite-reload-host-docker/reload ]]; then
   export DOCKER_RELOAD_COMMAND='/tmp/buildkite-reload-host-docker/reload'
 else
-  export DOCKER_RELOAD_COMMAND='sudo systemctl reload docker'
+  export DOCKER_RELOAD_COMMAND='sudo systemctl restart docker'
 fi
 
 if [[ "${BUILDKITE_PIPELINE_INSTALL_RUNTIME:-}" == "true" ]]; then
