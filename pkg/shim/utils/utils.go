@@ -64,6 +64,9 @@ func UserLogPath(spec *specs.Spec) string {
 
 // PanicLogPath gets the panic log path from OCI annotation.
 func PanicLogPath(spec *specs.Spec) string {
+	if spec == nil {
+		return ""
+	}
 	sandboxLogDir := spec.Annotations[sandboxLogDirAnnotation]
 	if sandboxLogDir == "" {
 		return ""

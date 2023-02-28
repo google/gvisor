@@ -38,6 +38,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/shim/runsc"
+	"gvisor.dev/gvisor/pkg/shim/utils"
 )
 
 const statusStopped = "stopped"
@@ -74,12 +75,11 @@ type Init struct {
 	IoGID    int
 	Sandbox  bool
 	UserLog  string
-	PanicLog string
 	Monitor  ProcessMonitor
 }
 
 // NewRunsc returns a new runsc instance for a process.
-func NewRunsc(root, path, namespace, runtime string, config map[string]string) *runsc.Runsc {
+func NewRunsc(root, path, namespace, runtime string, config map[string]string, spec *specs.Spec) *runsc.Runsc {
 	if root == "" {
 		root = RunscRoot
 	}
@@ -88,6 +88,7 @@ func NewRunsc(root, path, namespace, runtime string, config map[string]string) *
 		PdeathSignal: unix.SIGKILL,
 		Log:          filepath.Join(path, "log.json"),
 		LogFormat:    runc.JSON,
+		PanicLog:     utils.PanicLogPath(spec),
 		Root:         filepath.Join(root, namespace),
 		Config:       config,
 	}
