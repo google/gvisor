@@ -304,7 +304,7 @@ func (s *service) Cleanup(ctx context.Context) (*taskAPI.DeleteResponse, error) 
 	if err := st.load(path); err != nil {
 		return nil, err
 	}
-	r := proc.NewRunsc(s.opts.Root, path, ns, st.Options.BinaryName, nil)
+	r := proc.NewRunsc(s.opts.Root, path, ns, st.Options.BinaryName, nil, nil)
 
 	if err := r.Delete(ctx, s.id, &runsc.DeleteOpts{
 		Force: true,
@@ -1082,7 +1082,7 @@ func newInit(path, workDir, namespace string, platform stdio.Platform, r *proc.C
 	}
 
 	runsc.FormatRunscPaths(r.ID, options.RunscConfig)
-	runtime := proc.NewRunsc(options.Root, path, namespace, options.BinaryName, options.RunscConfig)
+	runtime := proc.NewRunsc(options.Root, path, namespace, options.BinaryName, options.RunscConfig, spec)
 	p := proc.New(r.ID, runtime, stdio.Stdio{
 		Stdin:    r.Stdin,
 		Stdout:   r.Stdout,
@@ -1097,7 +1097,6 @@ func newInit(path, workDir, namespace string, platform stdio.Platform, r *proc.C
 	p.IoGID = int(options.IoGID)
 	p.Sandbox = specutils.SpecContainerType(spec) == specutils.ContainerTypeSandbox
 	p.UserLog = utils.UserLogPath(spec)
-	p.PanicLog = utils.PanicLogPath(spec)
 	p.Monitor = reaper.Default
 	return p, nil
 }
