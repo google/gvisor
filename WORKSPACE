@@ -145,10 +145,10 @@ http_archive(
 # Load C++ cross-compilation toolchains.
 http_archive(
     name = "coral_crosstool",
-    sha256 = "088ef98b19a45d7224be13636487e3af57b1564880b67df7be8b3b7eee4a1bfc",
-    strip_prefix = "crosstool-142e930ac6bf1295ff3ba7ba2b5b6324dfb42839",
+    sha256 = "f86d488ca353c5ee99187579fe408adb73e9f2bb1d69c6e3a42ffb904ce3ba01",
+    strip_prefix = "crosstool-8e885509123395299bed6a5f9529fdc1b9751599",
     urls = [
-        "https://github.com/google-coral/crosstool/archive/142e930ac6bf1295ff3ba7ba2b5b6324dfb42839.tar.gz",
+        "https://github.com/google-coral/crosstool/archive/8e885509123395299bed6a5f9529fdc1b9751599.tar.gz",
     ],
 )
 
