@@ -27,6 +27,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
+	"gvisor.dev/gvisor/runsc/flag"
 )
 
 // Config holds configuration that is not part of the runtime spec.
@@ -375,6 +376,22 @@ type Bundle map[string]string
 // BundleName is a human-friendly name for a Bundle.
 // It is used as part of an annotation to specify that the user wants to apply a Bundle.
 type BundleName string
+
+// Validate validates that given flag string values map to actual flags in runsc.
+func (b Bundle) Validate() error {
+	flagSet := flag.NewFlagSet("tmp", flag.ContinueOnError)
+	RegisterFlags(flagSet)
+	for key, val := range b {
+		flag := flagSet.Lookup(key)
+		if flag == nil {
+			return fmt.Errorf("unknown flag %q", key)
+		}
+		if err := flagSet.Set(key, val); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 // MetricMetadata returns key-value pairs that are useful to include in metrics
 // exported about the sandbox this config represents.
