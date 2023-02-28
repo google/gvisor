@@ -23,6 +23,7 @@ go_library(
         "//pkg/atomicbitops",
         "//pkg/cleanup",
         "//pkg/shim/runsc",
+        "//pkg/shim/utils",
         "@com_github_containerd_console//:go_default_library",
         "@com_github_containerd_containerd//errdefs:go_default_library",
         "@com_github_containerd_containerd//log:go_default_library",

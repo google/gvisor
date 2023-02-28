@@ -69,6 +69,7 @@ type Runsc struct {
 	Root         string
 	Log          string
 	LogFormat    runc.Format
+	PanicLog     string
 	Config       map[string]string
 }
 
@@ -108,10 +109,6 @@ type CreateOpts struct {
 
 	// UserLog is a path to where runsc user log should be generated.
 	UserLog string
-
-	// PanicLog is a path to where runsc will output its panic message
-	// (in case it does panic).
-	PanicLog string
 }
 
 func (o *CreateOpts) args() (out []string, err error) {
@@ -127,9 +124,6 @@ func (o *CreateOpts) args() (out []string, err error) {
 	}
 	if o.UserLog != "" {
 		out = append(out, "--user-log", o.UserLog)
-	}
-	if o.PanicLog != "" {
-		out = append(out, "--panic-log", o.PanicLog)
 	}
 	return out, nil
 }
@@ -492,6 +486,9 @@ func (r *Runsc) args() []string {
 	}
 	if r.LogFormat != "" {
 		args = append(args, fmt.Sprintf("--log-format=%s", r.LogFormat))
+	}
+	if r.PanicLog != "" {
+		args = append(args, fmt.Sprintf("--panic-log=%s", r.PanicLog))
 	}
 	for k, v := range r.Config {
 		args = append(args, fmt.Sprintf("--%s=%s", k, v))
