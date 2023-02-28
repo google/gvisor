@@ -15,6 +15,7 @@
 package config
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -660,6 +661,54 @@ func TestBundles(t *testing.T) {
 			}
 			if err == nil && test.Verify != nil {
 				test.Verify(t, &oldCfg, cfg)
+			}
+		})
+	}
+}
+
+func TestBundleValidate(t *testing.T) {
+	defaultVerify := func(err error) error { return err }
+	for _, tc := range []struct {
+		name   string
+		bundle Bundle
+		verify func(err error) error
+	}{
+		{
+			name:   "empty bundle",
+			bundle: Bundle(map[string]string{}),
+			verify: defaultVerify,
+		},
+		{
+			name:   "invalid flag bundle",
+			bundle: Bundle(map[string]string{"not-a-real-flag": "true"}),
+			verify: func(err error) error {
+				want := `unknown flag "not-a-real-flag"`
+				if !strings.Contains(err.Error(), want) {
+					return fmt.Errorf("mismatch error: got: %q want: %q", err.Error(), want)
+				}
+				return nil
+			},
+		},
+		{
+			name:   "invalid value",
+			bundle: Bundle(map[string]string{"debug": "invalid"}),
+			verify: func(err error) error {
+				want := `parsing "invalid": invalid syntax`
+				if !strings.Contains(err.Error(), want) {
+					return fmt.Errorf("mismatch error: got: %q want: %q", err.Error(), want)
+				}
+				return nil
+			},
+		},
+		{
+			name:   "valid flag bundle",
+			bundle: Bundle(map[string]string{"debug": "true"}),
+			verify: defaultVerify,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := tc.verify(tc.bundle.Validate()); err != nil {
+				t.Fatalf("Validate failed: %v", err)
 			}
 		})
 	}
