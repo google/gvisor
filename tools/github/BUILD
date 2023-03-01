@@ -1,6 +1,9 @@
 load("//tools:defs.bzl", "go_binary")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = [""],
+    licenses = ["notice"],
+)
 
 go_binary(
     name = "github",
