@@ -49,12 +49,13 @@ generic = [
     "_norace",
     "_unsafe",
     "_opts",
+    "_testonly",
 ]
 
 # State explosion? Sure. This is approximately:
-#   len(archs) * (1 + 2 * len(oses) * (1 + 2 * len(generic))
+#   len(archs) * (1 + 2 * len(oses)) * (1 + 2 * len(generic))
 #
-# This evaluates to 495 at the time of writing. So it's a lot of different
+# This evaluates to 663 at the time of writing. So it's a lot of different
 # combinations, but not so much that it will cause issues. We can probably add
 # quite a few more variants before this becomes a genuine problem.
 go_suffixes = explode(explode(archs, oses), generic)
