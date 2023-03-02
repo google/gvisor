@@ -67,7 +67,6 @@ go_library(
         "//pkg/sentry/fsimpl/user",
         "//pkg/sentry/inet",
         "//pkg/sentry/kernel",
-        "//pkg/sentry/kernel:uncaught_signal_go_proto",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/limits",
         "//pkg/sentry/loader",

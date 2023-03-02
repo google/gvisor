@@ -186,7 +186,6 @@ func (t *Task) deliverSignal(info *linux.SignalInfo, act linux.SigAction) taskRu
 	switch sigact {
 	case SignalActionTerm, SignalActionCore:
 		// "Default action is to terminate the process." - signal(7)
-		t.Debugf("Signal %d: terminating thread group", info.Signo)
 
 		// Emit an event channel messages related to this uncaught signal.
 		ucs := &ucspb.UncaughtSignal{
@@ -202,6 +201,7 @@ func (t *Task) deliverSignal(info *linux.SignalInfo, act linux.SigAction) taskRu
 			ucs.FaultAddr = info.Addr()
 		}
 
+		t.Debugf("Signal %d, PID: %d, TID: %d, fault addr: %#x: terminating thread group", ucs.Pid, ucs.Tid, ucs.FaultAddr, info.Signo)
 		eventchannel.Emit(ucs)
 
 		t.PrepareGroupExit(linux.WaitStatusTerminationSignal(sig))
