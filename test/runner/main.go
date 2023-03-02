@@ -62,7 +62,8 @@ var (
 	ioUring          = flag.Bool("iouring", false, "Enables IO_URING API for asynchronous I/O")
 	// TODO(gvisor.dev/issue/4572): properly support leak checking for runsc, and
 	// set to true as the default for the test runner.
-	leakCheck = flag.Bool("leak-check", false, "check for reference leaks")
+	leakCheck  = flag.Bool("leak-check", false, "check for reference leaks")
+	waitForPid = flag.Duration("delay-for-debugger", 0, "Print out the sandbox PID and wait for the specified duration to start the test. This is useful for attaching a debugger to the runsc-sandbox process.")
 )
 
 const (
@@ -289,9 +290,7 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 
 	// Current process doesn't have CAP_SYS_ADMIN, create user namespace and run
 	// as root inside that namespace to get it.
-	rArgs := append(args, "run", "--bundle", bundleDir, id)
-	cmd := exec.Command(specutils.ExePath, rArgs...)
-	cmd.SysProcAttr = &unix.SysProcAttr{
+	sysProcAttr := &unix.SysProcAttr{
 		Cloneflags: unix.CLONE_NEWUSER | unix.CLONE_NEWNS,
 		// Set current user/group as root inside the namespace.
 		UidMappings: []syscall.SysProcIDMap{
@@ -306,6 +305,41 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 			Gid: 0,
 		},
 	}
+	var cmdArgs []string
+	if *waitForPid != 0 {
+		createArgs := append(args, "create", "-pid-file", filepath.Join(testLogDir, "pid"), "--bundle", bundleDir, id)
+		defer os.Remove(filepath.Join(testLogDir, "pid"))
+		createCmd := exec.Command(specutils.ExePath, createArgs...)
+		createCmd.SysProcAttr = sysProcAttr
+		createCmd.Stdout = os.Stdout
+		createCmd.Stderr = os.Stderr
+		if err := createCmd.Run(); err != nil {
+			return fmt.Errorf("could not create sandbox: %v", err)
+		}
+
+		sandboxPidBytes, err := os.ReadFile(filepath.Join(testLogDir, "pid"))
+		if err != nil {
+			return fmt.Errorf("could not read pid file: %v", err)
+		}
+		log.Infof("Sandbox process ID is %s. You can attach to it from a debugger of your choice.", sandboxPidBytes)
+		log.Infof("For example, with Delve you can call: $ dlv attach %s", sandboxPidBytes)
+		log.Infof("The test will automatically start after %s.", *waitForPid)
+		log.Infof("You may also signal the test process to start the test immediately: $ kill -SIGUSR1 %d", os.Getpid())
+
+		sigCh := make(chan os.Signal, 1)
+		signal.Notify(sigCh, unix.SIGUSR1)
+		select {
+		case <-sigCh:
+		case <-time.After(*waitForPid):
+		}
+		signal.Reset(unix.SIGUSR1)
+
+		cmdArgs = append(args, "start", id)
+	} else {
+		cmdArgs = append(args, "run", "--bundle", bundleDir, id)
+	}
+	cmd := exec.Command(specutils.ExePath, cmdArgs...)
+	cmd.SysProcAttr = sysProcAttr
 	if *container || *network == "host" || (cmd.SysProcAttr.Cloneflags&unix.CLONE_NEWNET != 0) {
 		cmd.SysProcAttr.Cloneflags |= unix.CLONE_NEWNET
 		cmd.Path = getSetupContainerPath()
@@ -352,6 +386,17 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 	}()
 
 	err = cmd.Run()
+	if *waitForPid != 0 {
+		if err != nil {
+			return fmt.Errorf("could not start container: %v", err)
+		}
+		waitArgs := append(args, "wait", id)
+		waitCmd := exec.Command(specutils.ExePath, waitArgs...)
+		waitCmd.SysProcAttr = sysProcAttr
+		waitCmd.Stdout = os.Stdout
+		waitCmd.Stderr = os.Stderr
+		err = waitCmd.Run()
+	}
 	if err == nil && len(testLogDir) > 0 {
 		// If the test passed, then we erase the log directory. This speeds up
 		// uploading logs in continuous integration & saves on disk space.
