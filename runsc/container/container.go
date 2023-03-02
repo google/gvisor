@@ -191,6 +191,10 @@ func New(conf *config.Config, args Args) (*Container, error) {
 		return nil, fmt.Errorf("creating container root directory %q: %v", conf.RootDir, err)
 	}
 
+	if err := modifySpecForDirectfs(conf, args.Spec); err != nil {
+		return nil, fmt.Errorf("failed to modify spec for directfs: %v", err)
+	}
+
 	sandboxID := args.ID
 	if !isRoot(args.Spec) {
 		var ok bool
@@ -1565,4 +1569,51 @@ func cgroupInstall(conf *config.Config, cg cgroup.Cgroup, res *specs.LinuxResour
 		}
 	}
 	return cg, nil
+}
+
+func modifySpecForDirectfs(conf *config.Config, spec *specs.Spec) error {
+	if !conf.DirectFS || conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
+		return nil
+	}
+	if conf.Network == config.NetworkHost {
+		// Hostnet feature requires the sandbox to run in the current user
+		// namespace, in which the network namespace is configured.
+		return nil
+	}
+	if _, ok := specutils.GetNS(specs.UserNamespace, spec); ok {
+		// If the spec already defines a userns, use that.
+		return nil
+	}
+	if spec.Linux == nil {
+		spec.Linux = &specs.Linux{}
+	}
+	if len(spec.Linux.UIDMappings) > 0 || len(spec.Linux.GIDMappings) > 0 {
+		// The spec can only define UID/GID mappings with a userns (checked above).
+		return fmt.Errorf("spec defines UID/GID mappings without defining userns")
+	}
+	// Run the sandbox in a new user namespace with identity UID/GID mappings.
+	spec.Linux.Namespaces = append(spec.Linux.Namespaces, specs.LinuxNamespace{Type: specs.UserNamespace})
+	// The maximum range of UID/GID mapping should be the largest uint32 integer.
+	// This is similar to what Linux does for identity mappings. Also note:
+	// "This leaves 4294967295 (the 32-bit signed -1 value) unmapped. This is
+	// deliberate: (uid_t) -1 is used in several interfaces (e.g., setreuid(2))
+	// as a way to specify "no user ID".  Leaving (uid_t) -1 unmapped and
+	// unusable guarantees that there will be no confusion when using these
+	// interfaces." -- user_namespaces(7).
+	maxRange := ^uint32(0)
+	spec.Linux.UIDMappings = []specs.LinuxIDMapping{
+		{
+			ContainerID: 0,
+			HostID:      0,
+			Size:        maxRange,
+		},
+	}
+	spec.Linux.GIDMappings = []specs.LinuxIDMapping{
+		{
+			ContainerID: 0,
+			HostID:      0,
+			Size:        maxRange,
+		},
+	}
+	return nil
 }
