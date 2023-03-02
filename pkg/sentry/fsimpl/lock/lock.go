@@ -84,17 +84,16 @@ const (
 //
 // A BSD-style full file lock can be represented as a regional file lock from
 // offset 0 to LockEOF.
-const LockEOF = math.MaxUint64
+const LockEOF = math.MaxInt64
 
 // OwnerInfo describes the owner of a lock.
-//
-// TODO(gvisor.dev/issue/5264): We may need to add other fields in the future
-// (e.g., Linux's file_lock.fl_flags to support open file-descriptor locks).
 //
 // +stateify savable
 type OwnerInfo struct {
 	// PID is the process ID of the lock owner.
 	PID int32
+	// OFD is whether this is an open file descriptor lock.
+	OFD bool
 }
 
 // Lock is a regional file lock.  It consists of either a single writer
@@ -139,7 +138,7 @@ type Locks struct {
 // LockRegion attempts to acquire a typed lock for the uid on a region of a
 // file. Returns nil if successful in locking the region, otherwise an
 // appropriate error is returned.
-func (l *Locks) LockRegion(ctx context.Context, uid UniqueID, ownerPID int32, t LockType, r LockRange, block bool) error {
+func (l *Locks) LockRegion(ctx context.Context, uid UniqueID, ownerPID int32, t LockType, r LockRange, ofd bool, block bool) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	for {
@@ -147,7 +146,7 @@ func (l *Locks) LockRegion(ctx context.Context, uid UniqueID, ownerPID int32, t 
 		// Blocking locks must run in a loop because we'll be woken up whenever an unlock event
 		// happens for this lock. We will then attempt to take the lock again and if it fails
 		// continue blocking.
-		err := l.locks.lock(uid, ownerPID, t, r)
+		err := l.locks.lock(uid, ownerPID, t, r, ofd)
 		if err == linuxerr.ErrWouldBlock && block {
 			// Note: we release the lock in EventRegister below, in
 			// order to avoid a possible race.
@@ -197,14 +196,14 @@ func (l *Locks) UnlockRegion(uid UniqueID, r LockRange) {
 
 // makeLock returns a new typed Lock that has either uid as its only reader
 // or uid as its only writer.
-func makeLock(uid UniqueID, ownerPID int32, t LockType) Lock {
+func makeLock(uid UniqueID, ownerPID int32, t LockType, ofd bool) Lock {
 	value := Lock{Readers: make(map[UniqueID]OwnerInfo)}
 	switch t {
 	case ReadLock:
-		value.Readers[uid] = OwnerInfo{PID: ownerPID}
+		value.Readers[uid] = OwnerInfo{PID: ownerPID, OFD: ofd}
 	case WriteLock:
 		value.Writer = uid
-		value.WriterInfo = OwnerInfo{PID: ownerPID}
+		value.WriterInfo = OwnerInfo{PID: ownerPID, OFD: ofd}
 	default:
 		panic(fmt.Sprintf("makeLock: invalid lock type %d", t))
 	}
@@ -222,7 +221,7 @@ func (l Lock) isHeld(uid UniqueID) bool {
 // lock sets uid as a holder of a typed lock on Lock.
 //
 // Preconditions: canLock is true for the range containing this Lock.
-func (l *Lock) lock(uid UniqueID, ownerPID int32, t LockType) {
+func (l *Lock) lock(uid UniqueID, ownerPID int32, t LockType, ofd bool) {
 	switch t {
 	case ReadLock:
 		// If we are already a reader, then this is a no-op.
@@ -240,7 +239,7 @@ func (l *Lock) lock(uid UniqueID, ownerPID int32, t LockType) {
 			// Ensure that there is no longer a writer.
 			l.Writer = nil
 		}
-		l.Readers[uid] = OwnerInfo{PID: ownerPID}
+		l.Readers[uid] = OwnerInfo{PID: ownerPID, OFD: ofd}
 		return
 	case WriteLock:
 		// If we are already the writer, then this is a no-op.
@@ -261,7 +260,7 @@ func (l *Lock) lock(uid UniqueID, ownerPID int32, t LockType) {
 		// Ensure that there is only a writer.
 		l.Readers = make(map[UniqueID]OwnerInfo)
 		l.Writer = uid
-		l.WriterInfo = OwnerInfo{PID: ownerPID}
+		l.WriterInfo = OwnerInfo{PID: ownerPID, OFD: ofd}
 	default:
 		panic(fmt.Sprintf("lock: invalid lock type %d", t))
 	}
@@ -331,7 +330,7 @@ func (l *Lock) isOnlyReader(uid UniqueID) bool {
 // LockRange. Otherwise, linuxerr.ErrWouldBlock is returned.
 //
 // Preconditions: r.Start <= r.End (will panic otherwise).
-func (l *LockSet) lock(uid UniqueID, ownerPID int32, t LockType, r LockRange) error {
+func (l *LockSet) lock(uid UniqueID, ownerPID int32, t LockType, r LockRange, ofd bool) error {
 	if r.Start > r.End {
 		panic(fmt.Sprintf("lock: r.Start %d > r.End %d", r.Start, r.End))
 	}
@@ -353,7 +352,7 @@ func (l *LockSet) lock(uid UniqueID, ownerPID int32, t LockType, r LockRange) er
 	seg, gap := l.Find(r.Start)
 	if gap.Ok() {
 		// Fill in the gap and get the next segment to modify.
-		seg = l.Insert(gap, gap.Range().Intersect(r), makeLock(uid, ownerPID, t)).NextSegment()
+		seg = l.Insert(gap, gap.Range().Intersect(r), makeLock(uid, ownerPID, t, ofd)).NextSegment()
 	} else if seg.Start() < r.Start {
 		// Get our first segment to modify.
 		_, seg = l.Split(seg, r.Start)
@@ -367,12 +366,12 @@ func (l *LockSet) lock(uid UniqueID, ownerPID int32, t LockType, r LockRange) er
 		// Set the lock on the segment. This is guaranteed to
 		// always be safe, given canLock above.
 		value := seg.ValuePtr()
-		value.lock(uid, ownerPID, t)
+		value.lock(uid, ownerPID, t, ofd)
 
 		// Fill subsequent gaps.
 		gap = seg.NextGap()
 		if gr := gap.Range().Intersect(r); gr.Length() > 0 {
-			seg = l.Insert(gap, gr, makeLock(uid, ownerPID, t)).NextSegment()
+			seg = l.Insert(gap, gr, makeLock(uid, ownerPID, t, ofd)).NextSegment()
 		} else {
 			seg = gap.NextSegment()
 		}
@@ -496,10 +495,7 @@ func ComputeRange(start, length, offset int64) (LockRange, error) {
 // Note that the PID returned in the flock structure is relative to the root PID
 // namespace. It needs to be converted to the caller's PID namespace before
 // returning to userspace.
-//
-// TODO(gvisor.dev/issue/5264): we don't support OFD locks through fcntl, which
-// would return a struct with pid = -1.
-func (l *Locks) TestRegion(ctx context.Context, uid UniqueID, t LockType, r LockRange) linux.Flock {
+func (l *Locks) TestRegion(ctx context.Context, uid UniqueID, t LockType, r LockRange, ofd bool) linux.Flock {
 	f := linux.Flock{Type: linux.F_UNLCK}
 	switch t {
 	case ReadLock:
@@ -517,7 +513,7 @@ func (l *Locks) TestRegion(ctx context.Context, uid UniqueID, t LockType, r Lock
 		l.testRegion(r, func(lock Lock, start, length uint64) bool {
 			if lock.Writer == nil {
 				for k, v := range lock.Readers {
-					if k != uid {
+					if k != uid && v.OFD == ofd {
 						// Stop at the first conflict detected.
 						f.Type = linux.F_RDLCK
 						f.PID = v.PID
