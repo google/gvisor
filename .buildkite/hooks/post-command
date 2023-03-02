@@ -71,12 +71,12 @@ if test "${BUILDKITE_COMMAND_EXIT_STATUS}" -ne "0"; then
 fi
 
 # Kill any running containers (clear state), except for "bootstrap".
-for id_and_name in $(docker ps --format='{{.ID}} {{.Names}}'); do
-  if [[ "$(echo "$id_and_name" | cut -d' ' -f2-)" == 'bootstrap' ]]; then
+for id_and_name in $(docker ps --format='{{.ID}}/{{.Names}}'); do
+  if [[ "$(echo "$id_and_name" | cut -d'/' -f2-)" == 'bootstrap' ]]; then
     continue
   fi
   timeout --kill-after=10s --preserve-status 8s \
-      docker container kill "$(echo "$id_and_name" | cut -d' ' -f1)"
+      docker container kill "$(echo "$id_and_name" | cut -d'/' -f1)"
 done
 
 set -euo pipefail
