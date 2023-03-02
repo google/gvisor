@@ -22,12 +22,14 @@
 #include <unistd.h>
 
 #include <atomic>
+#include <cerrno>
 #include <deque>
 #include <iostream>
 #include <list>
 #include <string>
 #include <vector>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/base/macros.h"
 #include "absl/base/port.h"
@@ -1952,6 +1954,199 @@ TEST_F(FcntlLockTest, GetLockRespectsPIDNamespace) {
   ASSERT_THAT(waitpid(child_pid, &status, 0),
               SyscallSucceedsWithValue(child_pid));
   ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+
+TEST_F(FcntlLockTest, TestOFDBasicLock) {
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor fd1 =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR, 0666));
+
+  struct flock fl = {
+      .l_type = F_WRLCK,
+      .l_whence = SEEK_SET,
+      .l_start = 0,
+      .l_len = 0,
+      .l_pid = 0,
+  };
+  ASSERT_THAT(fcntl(fd1.get(), F_OFD_SETLK, &fl), SyscallSucceeds());
+
+  FileDescriptor fd2 =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR, 0666));
+  // Locking from a different file descriptor should fail.
+  ASSERT_THAT(fcntl(fd2.get(), F_OFD_SETLK, &fl),
+              SyscallFailsWithErrno(EAGAIN));
+
+  fl.l_type = F_UNLCK;
+  ASSERT_THAT(fcntl(fd1.get(), F_OFD_SETLK, &fl), SyscallSucceeds());
+
+  fl.l_type = F_WRLCK;
+  ASSERT_THAT(fcntl(fd2.get(), F_OFD_SETLK, &fl), SyscallSucceeds());
+}
+
+TEST_F(FcntlLockTest, TestOFDLockNonZeroPidFails) {
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor fd1 =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR, 0666));
+
+  struct flock fl = {
+      .l_type = F_WRLCK,
+      .l_whence = SEEK_SET,
+      .l_start = 0,
+      .l_len = 0,
+      .l_pid = 1,
+  };
+  ASSERT_THAT(fcntl(fd1.get(), F_OFD_SETLK, &fl),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+TEST_F(FcntlLockTest, TestOFDNoUnlockOnClose) {
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  struct flock fl = {
+      .l_type = F_RDLCK,
+      .l_whence = SEEK_SET,
+      .l_start = 0,
+      .l_len = 0,
+      .l_pid = 0,
+  };
+  FileDescriptor fd1 =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR, 0666));
+  FileDescriptor fd2 =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR, 0666));
+
+  ASSERT_THAT(fcntl(fd1.get(), F_OFD_SETLK, &fl), SyscallSucceeds());
+  ASSERT_THAT(fcntl(fd2.get(), F_OFD_SETLK, &fl), SyscallSucceeds());
+
+  FileDescriptor fd3 =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR, 0666));
+
+  // Close should not release all locks, just the one associated with the closed
+  // file descriptor.
+  ASSERT_THAT(close(fd1.release()), SyscallSucceeds());
+  fl.l_type = F_WRLCK;
+  ASSERT_THAT(fcntl(fd3.get(), F_OFD_GETLK, &fl), SyscallSucceeds());
+  ASSERT_EQ(fl.l_type, F_RDLCK);
+}
+
+TEST_F(FcntlLockTest, TestOFDUnlocksOnLastClose) {
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  struct flock fl = {
+      .l_type = F_RDLCK,
+      .l_whence = SEEK_SET,
+      .l_start = 0,
+      .l_len = 0,
+      .l_pid = 0,
+  };
+  FileDescriptor fd1 =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR, 0666));
+  FileDescriptor fd2 =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR, 0666));
+
+  ASSERT_THAT(fcntl(fd1.get(), F_OFD_SETLK, &fl), SyscallSucceeds());
+  ASSERT_THAT(fcntl(fd2.get(), F_OFD_SETLK, &fl), SyscallSucceeds());
+  ASSERT_THAT(close(fd1.release()), SyscallSucceeds());
+  ASSERT_THAT(close(fd2.release()), SyscallSucceeds());
+
+  FileDescriptor fd3 =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR, 0666));
+  fl.l_type = F_WRLCK;
+  ASSERT_THAT(fcntl(fd3.get(), F_OFD_GETLK, &fl), SyscallSucceeds());
+  ASSERT_EQ(fl.l_type, F_UNLCK);
+}
+
+TEST_F(FcntlLockTest, TestOFDInheritsLockAfterDup) {
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  struct flock fl = {
+      .l_type = F_WRLCK,
+      .l_whence = SEEK_SET,
+      .l_start = 0,
+      .l_len = 0,
+      .l_pid = 0,
+  };
+  FileDescriptor fd1 =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR, 0666));
+  ASSERT_THAT(fcntl(fd1.get(), F_OFD_SETLK, &fl), SyscallSucceeds());
+  FileDescriptor duped = ASSERT_NO_ERRNO_AND_VALUE(fd1.Dup());
+  ASSERT_THAT(close(fd1.release()), SyscallSucceeds());
+
+  FileDescriptor fd2 =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR, 0666));
+  ASSERT_THAT(fcntl(fd2.get(), F_OFD_SETLK, &fl),
+              SyscallFailsWithErrno(EAGAIN));
+}
+
+TEST_F(FcntlLockTest, TestOFDLocksHoldAfterExec) {
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR, 0666));
+
+  // Setup two regional locks with different permissions.
+  struct flock fl0;
+  fl0.l_type = F_WRLCK;
+  fl0.l_whence = SEEK_SET;
+  fl0.l_start = 0;
+  fl0.l_len = 4096;
+  fl0.l_pid = 0;
+
+  struct flock fl1;
+  fl1.l_type = F_RDLCK;
+  fl1.l_whence = SEEK_SET;
+  fl1.l_start = 4096;
+  // Same as SetLockBadFd.
+  fl1.l_len = 0;
+  fl1.l_pid = 0;
+
+  // Set both region locks.
+  EXPECT_THAT(fcntl(fd.get(), F_OFD_SETLK, &fl0), SyscallSucceeds());
+  EXPECT_THAT(fcntl(fd.get(), F_OFD_SETLK, &fl1), SyscallSucceeds());
+
+  // Another process should fail to take a read lock on the entire file
+  // due to the regional write lock.
+  pid_t child_pid = 0;
+  auto cleanup = ASSERT_NO_ERRNO_AND_VALUE(
+      SubprocessLock(file.path(), false /* write lock */,
+                     false /* nonblocking */, false /* no eintr retry */,
+                     nullptr /* no socket fd */, 0, 0, &child_pid));
+
+  int status = 0;
+  ASSERT_THAT(RetryEINTR(waitpid)(child_pid, &status, 0), SyscallSucceeds());
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == EAGAIN)
+      << "Exited with code: " << status;
+}
+
+TEST_F(FcntlLockTest, TestOFDGetLkReturnsNegPID) {
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  struct flock fl = {
+      .l_type = F_WRLCK,
+      .l_whence = SEEK_SET,
+      .l_start = 0,
+      .l_len = 0,
+      .l_pid = 0,
+  };
+  FileDescriptor fd1 =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR, 0666));
+  ASSERT_THAT(fcntl(fd1.get(), F_OFD_SETLK, &fl), SyscallSucceeds());
+  FileDescriptor fd2 =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR, 0666));
+  ASSERT_THAT(fcntl(fd2.get(), F_OFD_GETLK, &fl), SyscallSucceeds());
+  ASSERT_EQ(fl.l_pid, -1);
+}
+
+TEST_F(FcntlLockTest, TestOFDCanUpgradeLock) {
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  struct flock fl = {
+      .l_type = F_RDLCK,
+      .l_whence = SEEK_SET,
+      .l_start = 0,
+      .l_len = 0,
+      .l_pid = 0,
+  };
+  FileDescriptor fd1 =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR, 0666));
+  ASSERT_THAT(fcntl(fd1.get(), F_OFD_SETLK, &fl), SyscallSucceeds());
+
+  fl.l_type = F_WRLCK;
+  ASSERT_THAT(fcntl(fd1.get(), F_OFD_GETLK, &fl), SyscallSucceeds());
+  ASSERT_EQ(fl.l_type, F_UNLCK);
 }
 
 }  // namespace

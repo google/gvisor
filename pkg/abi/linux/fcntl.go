@@ -30,6 +30,9 @@ const (
 	F_GETSIG        = 11
 	F_SETOWN_EX     = 15
 	F_GETOWN_EX     = 16
+	F_OFD_GETLK     = 36
+	F_OFD_SETLK     = 37
+	F_OFD_SETLKW    = 38
 	F_DUPFD_CLOEXEC = 1024 + 6
 	F_SETPIPE_SZ    = 1024 + 7
 	F_GETPIPE_SZ    = 1024 + 8

@@ -662,7 +662,7 @@ func TestSetLock(t *testing.T) {
 			l := fill(test.before)
 
 			r := LockRange{Start: test.start, End: test.end}
-			err := l.lock(test.uid, 0 /* ownerPID */, test.lockType, r)
+			err := l.lock(test.uid, 0 /* ownerPID */, test.lockType, r, false)
 			var got []entry
 			for seg := l.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
 				got = append(got, entry{
