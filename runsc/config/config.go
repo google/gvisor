@@ -287,6 +287,11 @@ type Config struct {
 	// asynchronous I/O operations.
 	IOUring bool `flag:"iouring"`
 
+	// DirectFS sets up the sandbox to directly access/mutate the filesystem from
+	// the sentry. Sentry runs with escalated privileges. Gofer process still
+	// exists, but is mostly idle. Not supported in rootless mode.
+	DirectFS bool `flag:"directfs"`
+
 	// TestOnlyAllowRunAsCurrentUserWithoutChroot should only be used in
 	// tests. It allows runsc to start the sandbox process as the current
 	// user, and without chrooting the sandbox process. This can be

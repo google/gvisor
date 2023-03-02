@@ -25,13 +25,16 @@ import (
 
 // Options are seccomp filter related options.
 type Options struct {
-	Platform      platform.Platform
-	HostNetwork   bool
-	ProfileEnable bool
-	ControllerFD  int
+	Platform         platform.Platform
+	HostNetwork      bool
+	HostFilesystem   bool
+	HostSocketCreate bool
+	HostSocketOpen   bool
+	ProfileEnable    bool
+	ControllerFD     int
 }
 
-// Install installs seccomp filters for based on the given platform.
+// Install seccomp filters based on the given platform.
 func Install(opt Options) error {
 	s := allowedSyscalls
 	s.Merge(controlServerFilters(opt.ControllerFD))
@@ -47,6 +50,20 @@ func Install(opt Options) error {
 	if opt.ProfileEnable {
 		Report("profile enabled: syscall filters less restrictive!")
 		s.Merge(profileFilters())
+	}
+	if opt.HostFilesystem {
+		Report("host filesystem enabled: syscall filters less restrictive!")
+		s.Merge(hostFilesystemFilters())
+	}
+	if opt.HostSocketCreate || opt.HostSocketOpen {
+		Report("host socket enabled: syscall filters less restrictive!")
+		s.Merge(hostSocketCommonFilters())
+		if opt.HostSocketCreate {
+			s.Merge(hostSocketCreateFilters())
+		}
+		if opt.HostSocketOpen {
+			s.Merge(hostSocketOpenFilters())
+		}
 	}
 
 	s.Merge(opt.Platform.SyscallFilters())

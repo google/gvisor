@@ -42,3 +42,7 @@ func init() {
 		},
 	}
 }
+
+func archFstatAtSysNo() uintptr {
+	return unix.SYS_FSTATAT
+}
