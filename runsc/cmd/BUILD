@@ -58,6 +58,7 @@ go_library(
         "//pkg/metric",
         "//pkg/prometheus",
         "//pkg/sentry/control",
+        "//pkg/sentry/fsutil/chdir",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/platform",

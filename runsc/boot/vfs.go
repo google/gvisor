@@ -271,7 +271,7 @@ func compileMounts(spec *specs.Spec, conf *config.Config) []specs.Mount {
 }
 
 // goferMountData creates a slice of gofer mount data.
-func goferMountData(fd int, fa config.FileAccessType) []string {
+func goferMountData(fd int, fa config.FileAccessType, conf *config.Config) []string {
 	opts := []string{
 		"trans=fd",
 		"rfdno=" + strconv.Itoa(fd),
@@ -279,6 +279,16 @@ func goferMountData(fd int, fa config.FileAccessType) []string {
 	}
 	if fa == config.FileAccessShared {
 		opts = append(opts, "cache=remote_revalidating")
+	}
+	if conf.DirectFS {
+		opts = append(opts, "directfs")
+		hostUDS := conf.GetHostUDS()
+		if hostUDS.AllowOpen() {
+			opts = append(opts, "host_uds_connect")
+		}
+		if hostUDS.AllowCreate() {
+			opts = append(opts, "host_uds_bind")
+		}
 	}
 	return opts
 }
@@ -427,7 +437,7 @@ func (c *containerMounter) mountAll(conf *config.Config, procArgs *kernel.Create
 // createMountNamespace creates the container's root mount and namespace.
 func (c *containerMounter) createMountNamespace(ctx context.Context, conf *config.Config, creds *auth.Credentials) (*vfs.MountNamespace, error) {
 	fd := c.fds.remove()
-	data := goferMountData(fd, conf.FileAccess)
+	data := goferMountData(fd, conf.FileAccess, conf)
 
 	// We can't check for overlayfs here because sandbox is chroot'ed and gofer
 	// can only send mount options for specs.Mounts (specs.Root is missing
@@ -654,6 +664,10 @@ type mountAndFD struct {
 	fd    int
 }
 
+func newNonGoferMountAndFD(mnt *specs.Mount) *mountAndFD {
+	return &mountAndFD{mount: mnt, fd: -1}
+}
+
 func (c *containerMounter) prepareMounts() ([]mountAndFD, error) {
 	// Associate bind mounts with their FDs before sorting since there is an
 	// undocumented assumption that FDs are dispensed in the order in which
@@ -759,12 +773,11 @@ func (c *containerMounter) getMountNameAndOptions(conf *config.Config, m *mountA
 
 	case Bind:
 		fsName = gofer.Name
-		if m.fd == 0 {
-			// Check that an FD was provided to fails fast. Technically FD=0 is valid,
-			// but unlikely to be correct in this context.
+		if m.fd < 0 {
+			// Check that an FD was provided to fails fast.
 			return "", nil, false, fmt.Errorf("gofer mount requires a connection FD")
 		}
-		data = goferMountData(m.fd, c.getMountAccessType(conf, m.mount))
+		data = goferMountData(m.fd, c.getMountAccessType(conf, m.mount), conf)
 		internalData = gofer.InternalFilesystemOptions{
 			UniqueID: m.mount.Destination,
 		}
@@ -886,7 +899,7 @@ func (c *containerMounter) mountTmp(ctx context.Context, conf *config.Config, cr
 			// another user. This is normally done for /tmp.
 			Options: []string{"mode=01777"},
 		}
-		if _, err := c.mountSubmount(ctx, conf, mns, creds, &mountAndFD{mount: &tmpMount}); err != nil {
+		if _, err := c.mountSubmount(ctx, conf, mns, creds, newNonGoferMountAndFD(&tmpMount)); err != nil {
 			return fmt.Errorf("mountSubmount failed: %v", err)
 		}
 		return nil
@@ -927,7 +940,7 @@ func (c *containerMounter) processHints(conf *config.Config, creds *auth.Credent
 func (c *containerMounter) mountSharedMaster(ctx context.Context, conf *config.Config, hint *mountHint, creds *auth.Credentials) (*vfs.Mount, error) {
 	// Map mount type to filesystem name, and parse out the options that we are
 	// capable of dealing with.
-	mntFD := &mountAndFD{mount: &hint.mount}
+	mntFD := newNonGoferMountAndFD(&hint.mount)
 	fsName, opts, useOverlay, err := c.getMountNameAndOptions(conf, mntFD)
 	if err != nil {
 		return nil, err
@@ -962,7 +975,7 @@ func (c *containerMounter) mountSharedSubmount(ctx context.Context, conf *config
 
 	// Ignore data and useOverlay because these were already applied to
 	// the master mount.
-	_, opts, _, err := c.getMountNameAndOptions(conf, &mountAndFD{mount: mount})
+	_, opts, _, err := c.getMountNameAndOptions(conf, newNonGoferMountAndFD(mount))
 	if err != nil {
 		return nil, err
 	}

@@ -230,6 +230,7 @@ func Main(version string) {
 	log.Infof("\t\tRootDir: %s", conf.RootDir)
 	log.Infof("\t\tPlatform: %v", conf.Platform)
 	log.Infof("\t\tFileAccess: %v", conf.FileAccess)
+	log.Infof("\t\tDirectfs: %t", conf.DirectFS)
 	overlay2 := conf.GetOverlay2()
 	log.Infof("\t\tOverlay: Root=%t, SubMounts=%t, Medium=%q", overlay2.RootMount, overlay2.SubMounts, overlay2.Medium)
 	log.Infof("\t\tNetwork: %v, logging: %t", conf.Network, conf.LogPackets)

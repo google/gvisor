@@ -367,3 +367,199 @@ func controlServerFilters(fd int) seccomp.SyscallRules {
 		},
 	}
 }
+
+func nonNegativeFDCheck() seccomp.LessThanOrEqual {
+	// Negative int32 has the MSB (31st bit) set. So the raw uint FD value must
+	// be less than or equal to 0x7fffffff.
+	return seccomp.LessThanOrEqual(0x7fffffff)
+}
+
+// hostFilesystemFilters contains syscalls that are needed by directfs.
+func hostFilesystemFilters() seccomp.SyscallRules {
+	// Directfs allows FD-based filesystem syscalls. We deny these syscalls with
+	// negative FD values (like AT_FDCWD or invalid FD numbers). We try to be as
+	// restrictive as possible because any restriction here improves security. We
+	// don't know what set of arguments will trigger a future vulnerability.
+	validFDCheck := nonNegativeFDCheck()
+	return seccomp.SyscallRules{
+		unix.SYS_FCHOWNAT: []seccomp.Rule{
+			{
+				validFDCheck,
+				seccomp.MatchAny{},
+				seccomp.MatchAny{},
+				seccomp.MatchAny{},
+				seccomp.EqualTo(unix.AT_EMPTY_PATH | unix.AT_SYMLINK_NOFOLLOW),
+			},
+		},
+		unix.SYS_FCHMODAT: []seccomp.Rule{
+			{
+				validFDCheck,
+				seccomp.MatchAny{},
+				seccomp.MatchAny{},
+			},
+		},
+		unix.SYS_UNLINKAT: []seccomp.Rule{
+			{
+				validFDCheck,
+				seccomp.MatchAny{},
+				seccomp.MatchAny{},
+			},
+		},
+		unix.SYS_GETDENTS64: []seccomp.Rule{
+			{
+				validFDCheck,
+				seccomp.MatchAny{},
+				seccomp.MatchAny{},
+			},
+		},
+		unix.SYS_OPENAT: []seccomp.Rule{
+			{
+				validFDCheck,
+				seccomp.MatchAny{},
+				seccomp.MatchAny{},
+				seccomp.MatchAny{},
+			},
+		},
+		unix.SYS_LINKAT: []seccomp.Rule{
+			{
+				validFDCheck,
+				seccomp.MatchAny{},
+				validFDCheck,
+				seccomp.MatchAny{},
+				seccomp.EqualTo(unix.AT_EMPTY_PATH),
+			},
+		},
+		unix.SYS_MKDIRAT: []seccomp.Rule{
+			{
+				validFDCheck,
+				seccomp.MatchAny{},
+				seccomp.MatchAny{},
+			},
+		},
+		unix.SYS_MKNODAT: []seccomp.Rule{
+			{
+				validFDCheck,
+				seccomp.MatchAny{},
+				seccomp.MatchAny{},
+				seccomp.MatchAny{},
+			},
+		},
+		unix.SYS_SYMLINKAT: []seccomp.Rule{
+			{
+				seccomp.MatchAny{},
+				validFDCheck,
+				seccomp.MatchAny{},
+			},
+		},
+		unix.SYS_FSTATFS: []seccomp.Rule{
+			{
+				validFDCheck,
+				seccomp.MatchAny{},
+			},
+		},
+		unix.SYS_FCHDIR: []seccomp.Rule{
+			{
+				validFDCheck,
+			},
+		},
+		unix.SYS_READLINKAT: []seccomp.Rule{
+			{
+				validFDCheck,
+				seccomp.MatchAny{},
+				seccomp.MatchAny{},
+				seccomp.MatchAny{},
+			},
+		},
+		unix.SYS_UTIMENSAT: []seccomp.Rule{
+			{
+				validFDCheck,
+				seccomp.MatchAny{},
+				seccomp.MatchAny{},
+				seccomp.MatchAny{},
+			},
+		},
+		unix.SYS_RENAMEAT: []seccomp.Rule{
+			{
+				validFDCheck,
+				seccomp.MatchAny{},
+				validFDCheck,
+				seccomp.MatchAny{},
+			},
+		},
+		archFstatAtSysNo(): []seccomp.Rule{
+			{
+				validFDCheck,
+				seccomp.MatchAny{},
+				seccomp.MatchAny{},
+				seccomp.MatchAny{},
+			},
+		},
+	}
+}
+
+// hostSocketCommonFilters contains syscalls that are needed to create socket FDs.
+func hostSocketCommonFilters() seccomp.SyscallRules {
+	return seccomp.SyscallRules{
+		unix.SYS_SOCKET: []seccomp.Rule{
+			{
+				seccomp.EqualTo(unix.AF_UNIX),
+				seccomp.EqualTo(unix.SOCK_STREAM),
+				seccomp.EqualTo(0),
+			},
+			{
+				seccomp.EqualTo(unix.AF_UNIX),
+				seccomp.EqualTo(unix.SOCK_DGRAM),
+				seccomp.EqualTo(0),
+			},
+			{
+				seccomp.EqualTo(unix.AF_UNIX),
+				seccomp.EqualTo(unix.SOCK_SEQPACKET),
+				seccomp.EqualTo(0),
+			},
+		},
+	}
+}
+
+// hostSocketCreateFilters contains syscalls that are needed to create UDS on
+// the host filesystem and interact with it.
+func hostSocketCreateFilters() seccomp.SyscallRules {
+	validFDCheck := nonNegativeFDCheck()
+	return seccomp.SyscallRules{
+		unix.SYS_BIND: []seccomp.Rule{
+			{
+				validFDCheck,
+				seccomp.MatchAny{},
+				seccomp.MatchAny{},
+			},
+		},
+		unix.SYS_LISTEN: []seccomp.Rule{
+			{
+				validFDCheck,
+				seccomp.MatchAny{},
+			},
+		},
+		unix.SYS_ACCEPT4: []seccomp.Rule{
+			{
+				validFDCheck,
+				seccomp.MatchAny{},
+				seccomp.MatchAny{},
+				seccomp.EqualTo(unix.SOCK_NONBLOCK | unix.SOCK_CLOEXEC),
+			},
+		},
+	}
+}
+
+// hostSocketOpenFilters contains syscalls that are needed to open UDS on the
+// host filesystem and interact with it.
+func hostSocketOpenFilters() seccomp.SyscallRules {
+	validFDCheck := nonNegativeFDCheck()
+	return seccomp.SyscallRules{
+		unix.SYS_CONNECT: []seccomp.Rule{
+			{
+				validFDCheck,
+				seccomp.MatchAny{},
+				seccomp.MatchAny{},
+			},
+		},
+	}
+}

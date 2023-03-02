@@ -30,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/coretag"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/metric"
+	"gvisor.dev/gvisor/pkg/sentry/fsutil/chdir"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/cmd/util"
@@ -38,6 +39,24 @@ import (
 	"gvisor.dev/gvisor/runsc/profile"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
+
+// Note that directfsSandboxCaps is the same as caps defined in gofer.go
+// except CAP_SYS_CHROOT because we don't need to chroot in directfs mode.
+var directfsSandboxCaps = []string{
+	"CAP_CHOWN",
+	"CAP_DAC_OVERRIDE",
+	"CAP_DAC_READ_SEARCH",
+	"CAP_FOWNER",
+	"CAP_FSETID",
+}
+
+// directfsSandboxLinuxCaps is the minimal set of capabilities needed by the
+// sandbox to operate on files in directfs mode.
+var directfsSandboxLinuxCaps = &specs.LinuxCapabilities{
+	Bounding:  directfsSandboxCaps,
+	Effective: directfsSandboxCaps,
+	Permitted: directfsSandboxCaps,
+}
 
 // Boot implements subcommands.Command for the "boot" command which starts a
 // new sandbox. It should not be called directly.
@@ -273,6 +292,10 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 			caps.Permitted = append(caps.Permitted, c)
 		}
 
+		if conf.DirectFS {
+			caps = specutils.MergeCapabilities(caps, directfsSandboxLinuxCaps)
+		}
+
 		// Remove --apply-caps and --setup-root arg to call myself. Both have
 		// already been done.
 		args := b.prepareArgs("setup-root", "apply-caps")
@@ -321,6 +344,19 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	}
 	mountsFile.Close()
 	spec.Mounts = cleanMounts
+
+	if conf.DirectFS {
+		// sandbox should run with a umask of 0, because we want to preserve file
+		// modes exactly as sent by the sentry, which would have already applied
+		// the application umask.
+		unix.Umask(0)
+
+		// Now that the sandbox process is running in an empty pivot_root(2)
+		// environment, we can initialize the chdir package.
+		if err := chdir.InitCWD(); err != nil {
+			util.Fatalf("Failed to initialize CWD for directfs: %v", err)
+		}
+	}
 
 	if conf.EnableCoreTags {
 		if err := coretag.Enable(); err != nil {

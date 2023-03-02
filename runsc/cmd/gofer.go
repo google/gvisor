@@ -279,8 +279,9 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string) subcom
 	server := fsgofer.NewLisafsServer(fsgofer.Config{
 		// These are global options. Ignore readonly configuration, that is set on
 		// a per connection basis.
-		HostUDS:  conf.GetHostUDS(),
-		HostFifo: conf.HostFifo,
+		HostUDS:            conf.GetHostUDS(),
+		HostFifo:           conf.HostFifo,
+		DonateMountPointFD: conf.DirectFS,
 	})
 	overlay2 := conf.GetOverlay2()
 

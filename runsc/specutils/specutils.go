@@ -303,6 +303,32 @@ func AllCapabilitiesUint64() uint64 {
 	return rv
 }
 
+// MergeCapabilities merges the capabilites from first and second.
+func MergeCapabilities(first, second *specs.LinuxCapabilities) *specs.LinuxCapabilities {
+	return &specs.LinuxCapabilities{
+		Bounding:    mergeUnique(first.Bounding, second.Bounding),
+		Effective:   mergeUnique(first.Effective, second.Effective),
+		Inheritable: mergeUnique(first.Inheritable, second.Inheritable),
+		Permitted:   mergeUnique(first.Permitted, second.Permitted),
+		Ambient:     mergeUnique(first.Ambient, second.Ambient),
+	}
+}
+
+func mergeUnique(strSlices ...[]string) []string {
+	common := make(map[string]struct{})
+	for _, strSlice := range strSlices {
+		for _, s := range strSlice {
+			common[s] = struct{}{}
+		}
+	}
+
+	res := make([]string, 0, len(common))
+	for s := range common {
+		res = append(res, s)
+	}
+	return res
+}
+
 var capFromName = map[string]linux.Capability{
 	"CAP_CHOWN":              linux.CAP_CHOWN,
 	"CAP_DAC_OVERRIDE":       linux.CAP_DAC_OVERRIDE,
