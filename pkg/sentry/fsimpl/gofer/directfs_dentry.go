@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/fsutil"
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/fsutil/chdir"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -490,7 +491,7 @@ func (d *directfsDentry) bindAt(ctx context.Context, name string, creds *auth.Cr
 	// There are no filesystems mounted in the sandbox process's mount namespace.
 	// So we can't perform absolute path traversals. So fchdir(2) to this
 	// directory and bind at name (relative path traversal).
-	if err := fsutil.DoInDir(d.controlFD, func() error {
+	if err := chdir.DoInDir(d.controlFD, func() error {
 		return unix.Bind(sockFD, &unix.SockaddrUnix{Name: name})
 	}); err != nil {
 		hbep.ResetBoundSocketFD(ctx)
@@ -617,7 +618,7 @@ func (d *directfsDentry) connect(ctx context.Context, sockType linux.SockType) (
 	// There are no filesystems mounted in the sandbox process's mount namespace.
 	// So we can't perform absolute path traversals. So fchdir(2) to parent
 	// and connect to this socket at name (relative path traversal).
-	if err := fsutil.DoInDir(d.parent.impl.(*directfsDentry).controlFD, func() error {
+	if err := chdir.DoInDir(d.parent.impl.(*directfsDentry).controlFD, func() error {
 		return unix.Connect(sock, &unix.SockaddrUnix{Name: d.name})
 	}); err != nil {
 		unix.Close(sock)
