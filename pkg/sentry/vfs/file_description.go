@@ -188,6 +188,11 @@ func (fd *FileDescription) DecRef(ctx context.Context) {
 			fd.impl.UnlockBSD(context.Background(), fd)
 		}
 
+		// Unlock any OFD locks.
+		if fd.impl.SupportsLocks() {
+			fd.impl.UnlockPOSIX(ctx, fd, lock.LockRange{0, lock.LockEOF})
+		}
+
 		// Release implementation resources.
 		fd.impl.Release(ctx)
 		if fd.writable {
