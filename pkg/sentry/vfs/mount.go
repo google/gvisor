@@ -954,11 +954,12 @@ retry:
 	// The current root and the new root must be in the context's mount namespace.
 	ns := MountNamespaceFromContext(ctx)
 	defer ns.DecRef(ctx)
+	vfs.mountMu.Lock()
 	if rootVd.mount.ns != ns || newRootVd.mount.ns != ns {
+		vfs.mountMu.Unlock()
 		return linuxerr.EINVAL
 	}
 
-	vfs.mountMu.Lock()
 	// Either the mount point at new_root, or the parent mount of that mount
 	// point, has propagation type MS_SHARED.
 	if newRootParent := newRootVd.mount.parent(); newRootVd.mount.propType == Shared || newRootParent.propType == Shared {
