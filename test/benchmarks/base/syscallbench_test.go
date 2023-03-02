@@ -24,41 +24,58 @@ import (
 	"gvisor.dev/gvisor/test/benchmarks/tools"
 )
 
-// BenchmarSyscallbench runs syscallbench on the runtime.
+// BenchmarSyscallbench runs a syscall b.N times on the runtime.
 func BenchmarkSyscallbench(b *testing.B) {
+	ctx := context.Background()
 	machine, err := harness.GetMachine()
 	if err != nil {
 		b.Fatalf("failed to get machine: %v", err)
 	}
 	defer machine.CleanUp()
 
-	param := tools.Parameter{
-		Name:  "syscall",
-		Value: "getpid",
-	}
-	name, err := tools.ParametersToName(param)
-	if err != nil {
-		b.Fatalf("Failed to parse params: %v", err)
-	}
-	b.Run(name, func(b *testing.B) {
-		ctx := context.Background()
-		container := machine.GetContainer(ctx, b)
-		defer container.CleanUp(ctx)
-
-		if err := container.Spawn(
-			ctx, dockerutil.RunOpts{
-				Image: "benchmarks/syscallbench",
+	for _, tc := range []struct {
+		param      tools.Parameter
+		syscallArg int
+	}{
+		{
+			param: tools.Parameter{
+				Name:  "syscall",
+				Value: "getpid",
 			},
-			"sleep", "24h",
-		); err != nil {
-			b.Fatalf("run failed with: %v", err)
+		},
+		{
+			param: tools.Parameter{
+				Name:  "syscall",
+				Value: "getpidopt",
+			},
+			syscallArg: 1,
+		},
+	} {
+		name, err := tools.ParametersToName(tc.param)
+		if err != nil {
+			b.Fatalf("Failed to parse params: %v", err)
 		}
 
-		cmd := []string{"syscallbench", fmt.Sprintf("--loops=%d", b.N)}
-		b.ResetTimer()
-		out, err := container.Exec(ctx, dockerutil.ExecOpts{}, cmd...)
-		if err != nil {
-			b.Fatalf("failed to run syscallbench: %v, logs:%s", err, out)
-		}
-	})
+		func() {
+			container := machine.GetContainer(ctx, b)
+			defer container.CleanUp(ctx)
+			if err := container.Spawn(
+				ctx, dockerutil.RunOpts{
+					Image: "benchmarks/syscallbench",
+				},
+				"sleep", "24h",
+			); err != nil {
+				b.Fatalf("run failed with: %v", err)
+			}
+			b.Run(name, func(b *testing.B) {
+				cmd := []string{"syscallbench", fmt.Sprintf("--loops=%d --syscall %d", b.N, tc.syscallArg)}
+				b.ResetTimer()
+				out, err := container.Exec(ctx, dockerutil.ExecOpts{}, cmd...)
+				if err != nil {
+					b.Fatalf("failed to run syscallbench: %v, logs:%s", err, out)
+				}
+			})
+		}()
+	}
+
 }
