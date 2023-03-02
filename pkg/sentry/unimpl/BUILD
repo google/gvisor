@@ -1,6 +1,9 @@
 load("//tools:defs.bzl", "go_library", "proto_library")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 proto_library(
     name = "unimplemented_syscall",

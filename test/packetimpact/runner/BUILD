@@ -1,6 +1,7 @@
 load("//tools:defs.bzl", "bzl_library", "go_binary")
 
 package(
+    default_applicable_licenses = ["//:license"],
     default_visibility = ["//test/packetimpact:__subpackages__"],
     licenses = ["notice"],
 )

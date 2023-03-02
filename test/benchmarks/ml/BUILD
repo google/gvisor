@@ -1,7 +1,10 @@
 load("//tools:defs.bzl", "go_library")
 load("//test/benchmarks:defs.bzl", "benchmark_test")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_library(
     name = "ml",

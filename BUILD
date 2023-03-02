@@ -2,8 +2,17 @@ load("//tools:defs.bzl", "build_test", "gazelle", "go_path")
 load("//tools/nogo:defs.bzl", "nogo_config")
 load("//tools/yamltest:defs.bzl", "yaml_test")
 load("//website:defs.bzl", "doc")
+load("@rules_license//rules:license.bzl", "license")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
+
+license(
+    name = "license",
+    package_name = "gvisor",
+)
 
 exports_files(["LICENSE"])
 

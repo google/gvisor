@@ -1,5 +1,7 @@
 load("//tools:defs.bzl", "bzl_library", "go_binary")
 
+package(default_applicable_licenses = ["//:license"])
+
 licenses(["notice"])
 
 go_binary(

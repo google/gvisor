@@ -2,6 +2,7 @@ load("//tools:arch.bzl", "select_arch")
 load("//tools:defs.bzl", "cc_binary", "cc_library", "gbenchmark", "gtest", "select_system")
 
 package(
+    default_applicable_licenses = ["//:license"],
     default_visibility = ["//:sandbox"],
     licenses = ["notice"],
 )

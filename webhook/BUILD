@@ -1,7 +1,10 @@
 load("//images:defs.bzl", "docker_image")
 load("//tools:defs.bzl", "go_binary", "pkg_tar")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 docker_image(
     name = "image",

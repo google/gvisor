@@ -1,4 +1,7 @@
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 # The "internal" package_group should be used as much as possible by packages
 # that should remain Sentry-internal (i.e. not be exposed directly to command

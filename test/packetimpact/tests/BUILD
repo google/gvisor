@@ -1,6 +1,7 @@
 load("//test/packetimpact/runner:defs.bzl", "ALL_TESTS", "packetimpact_go_test", "packetimpact_testbench", "validate_all_tests")
 
 package(
+    default_applicable_licenses = ["//:license"],
     default_visibility = ["//test/packetimpact:__subpackages__"],
     licenses = ["notice"],
 )

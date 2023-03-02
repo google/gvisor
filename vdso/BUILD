@@ -6,7 +6,10 @@
 load("//tools:arch.bzl", "select_arch")
 load("//tools:defs.bzl", "cc_flags_supplier", "cc_toolchain", "vdso_linker_option")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 exports_files(["check_vdso.py"])
 

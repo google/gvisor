@@ -1,6 +1,9 @@
 load("//tools:defs.bzl", "bzl_library", "gotsan_flag_values", "gotsan_values")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 config_setting(
     name = "debug",

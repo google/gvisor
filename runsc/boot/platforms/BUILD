@@ -3,7 +3,10 @@
 # operating-specific dependencies listed below.
 load("//tools:defs.bzl", "platforms", "select_system", exempt_go_library = "go_library")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 exempt_go_library(
     name = "platforms",

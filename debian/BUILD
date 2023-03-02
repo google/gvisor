@@ -1,7 +1,10 @@
 load("//tools:arch.bzl", "select_arch")
 load("//tools:defs.bzl", "pkg_deb", "pkg_tar", "version")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 pkg_tar(
     name = "debian-bin",
