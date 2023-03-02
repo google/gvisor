@@ -140,25 +140,12 @@ func (gb *groBucket) findGROPacket(pkt PacketBufferPtr, ipHdr header.IPv4, tcpHd
 		}
 
 		// TCP checks.
-		flags := tcpHdr.Flags()
-		groPktFlags := groPkt.tcpHdr.Flags()
-		dataOff := tcpHdr.DataOffset()
-		if flags&header.TCPFlagCwr != 0 || // Is congestion control occurring?
-			(flags^groPktFlags)&^(header.TCPFlagCwr|header.TCPFlagFin|header.TCPFlagPsh) != 0 || // Do the flags differ besides CRW, FIN, and PSH?
-			tcpHdr.AckNumber() != groPkt.tcpHdr.AckNumber() || // Do the ACKs match?
-			dataOff != groPkt.tcpHdr.DataOffset() || // Are the TCP headers the same length?
-			groPkt.tcpHdr.SequenceNumber()+uint32(groPkt.payloadSize()) != tcpHdr.SequenceNumber() { // Does the incoming packet match the expected sequence number?
+		if shouldFlushTCP(groPkt, tcpHdr) {
 			return groPkt, true
-		}
-		// The options, including timestamps, must be identical.
-		for i := header.TCPMinimumSize; i < int(dataOff); i++ {
-			if tcpHdr[i] != groPkt.tcpHdr[i] {
-				return groPkt, true
-			}
 		}
 
 		// There's an upper limit on coalesced packet size.
-		if pkt.Data().Size()-header.IPv4MinimumSize-int(dataOff)+groPkt.pkt.Data().Size() >= groMaxPacketSize {
+		if pkt.Data().Size()-header.IPv4MinimumSize-int(tcpHdr.DataOffset())+groPkt.pkt.Data().Size() >= groMaxPacketSize {
 			return groPkt, true
 		}
 
@@ -171,6 +158,7 @@ func (gb *groBucket) findGROPacket(pkt PacketBufferPtr, ipHdr header.IPv4, tcpHd
 // +checklocks:gb.mu
 func (gb *groBucket) found(groPkt *groPacket, flushGROPkt bool, pkt PacketBufferPtr, ipHdr header.IPv4, tcpHdr header.TCP, ep NetworkEndpoint) {
 	// Flush groPkt or merge the packets.
+	pktSize := pkt.Data().Size()
 	flags := tcpHdr.Flags()
 	if flushGROPkt {
 		// Flush the existing GRO packet. Don't hold bucket.mu while
@@ -208,7 +196,7 @@ func (gb *groBucket) found(groPkt *groPacket, flushGROPkt bool, pkt PacketBuffer
 	//   GRO.
 	flush := header.TCPFlags(flags)&(header.TCPFlagUrg|header.TCPFlagPsh|header.TCPFlagRst|header.TCPFlagSyn|header.TCPFlagFin) != 0
 	if groPkt != nil {
-		flush = flush || pkt.Data().Size() != groPkt.initialLength
+		flush = flush || pktSize != groPkt.initialLength
 	}
 
 	switch {
@@ -539,4 +527,26 @@ func (gd *groDispatcher) String() string {
 		bucket.mu.Unlock()
 	}
 	return ret
+}
+
+// shouldFlushTCP returns whether the TCP headers indicate that groPkt should
+// be flushed
+func shouldFlushTCP(groPkt *groPacket, tcpHdr header.TCP) bool {
+	flags := tcpHdr.Flags()
+	groPktFlags := groPkt.tcpHdr.Flags()
+	dataOff := tcpHdr.DataOffset()
+	if flags&header.TCPFlagCwr != 0 || // Is congestion control occurring?
+		(flags^groPktFlags)&^(header.TCPFlagCwr|header.TCPFlagFin|header.TCPFlagPsh) != 0 || // Do the flags differ besides CRW, FIN, and PSH?
+		tcpHdr.AckNumber() != groPkt.tcpHdr.AckNumber() || // Do the ACKs match?
+		dataOff != groPkt.tcpHdr.DataOffset() || // Are the TCP headers the same length?
+		groPkt.tcpHdr.SequenceNumber()+uint32(groPkt.payloadSize()) != tcpHdr.SequenceNumber() { // Does the incoming packet match the expected sequence number?
+		return true
+	}
+	// The options, including timestamps, must be identical.
+	for i := header.TCPMinimumSize; i < int(dataOff); i++ {
+		if tcpHdr[i] != groPkt.tcpHdr[i] {
+			return true
+		}
+	}
+	return false
 }
