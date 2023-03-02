@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/eventchannel"
 	"gvisor.dev/gvisor/pkg/log"
 	rpb "gvisor.dev/gvisor/pkg/sentry/arch/registers_go_proto"
-	ucspb "gvisor.dev/gvisor/pkg/sentry/kernel/uncaught_signal_go_proto"
 	"gvisor.dev/gvisor/pkg/sentry/strace"
 	spb "gvisor.dev/gvisor/pkg/sentry/unimpl/unimplemented_syscall_go_proto"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -76,8 +75,6 @@ func (c *compatEmitter) Emit(msg proto.Message) (bool, error) {
 	switch m := msg.(type) {
 	case *spb.UnimplementedSyscall:
 		c.emitUnimplementedSyscall(m)
-	case *ucspb.UncaughtSignal:
-		c.emitUncaughtSignal(m)
 	}
 
 	return false, nil
@@ -128,13 +125,6 @@ func (c *compatEmitter) emitUnimplementedSyscall(us *spb.UnimplementedSyscall) {
 
 		tr.onReported(regs)
 	}
-}
-
-func (c *compatEmitter) emitUncaughtSignal(msg *ucspb.UncaughtSignal) {
-	sig := unix.Signal(msg.SignalNumber)
-	c.sink.Infof(
-		"Uncaught signal: %q (%d), PID: %d, TID: %d, fault addr: %#x",
-		sig, msg.SignalNumber, msg.Pid, msg.Tid, msg.FaultAddr)
 }
 
 // Close implements eventchannel.Emitter.
