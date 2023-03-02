@@ -115,6 +115,7 @@ go_library(
         "anonfs.go",
         "context.go",
         "debug.go",
+        "debug_testonly.go",
         "dentry.go",
         "device.go",
         "epoll.go",
