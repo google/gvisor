@@ -223,12 +223,17 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 		"-log-format=text",
 		"-TESTONLY-unsafe-nonroot=true",
 		"-TESTONLY-allow-packet-endpoint-write=true",
-		"-net-raw=true",
 		fmt.Sprintf("-panic-signal=%d", unix.SIGTERM),
 		fmt.Sprintf("-iouring=%t", *ioUring),
 		"-watchdog-action=panic",
 		"-platform", *platform,
 		"-file-access", *fileAccess,
+	}
+
+	if *network == "host" && !testutil.TestEnvSupportsRawSockets {
+		log.Warningf("Testing with network=host but test environment does not support raw sockets. Raw socket support will be disabled.")
+	} else {
+		args = append(args, "-net-raw")
 	}
 	if *overlay {
 		args = append(args, "-overlay2=all:dir=/tmp")

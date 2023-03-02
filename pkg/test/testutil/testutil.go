@@ -56,6 +56,10 @@ var (
 	runscPath            = flag.String("runsc", os.Getenv("RUNTIME"), "path to runsc binary")
 	// Note: flag overlay is already taken by runsc.
 	isRunningWithOverlay = flag.Bool("test-overlay", BoolFromEnv("TEST_OVERLAY", false), "whether test is running with --overlay2")
+
+	// TestEnvSupportsRawSockets indicates whether a test sandbox can
+	// create raw sockets.
+	TestEnvSupportsRawSockets = true
 )
 
 // StringFromEnv returns the value of the named environment variable, or `def` if unset/empty.
