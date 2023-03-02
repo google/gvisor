@@ -24,6 +24,7 @@ import (
 	gtime "time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/syndtr/gocapability/capability"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bpf"
@@ -1116,6 +1117,12 @@ func newRootNetworkNamespace(conf *config.Config, clock tcpip.Clock, uniqueID st
 	// Run().
 	switch conf.Network {
 	case config.NetworkHost:
+		// If configured for raw socket support with host network
+		// stack, make sure that we have CAP_NET_RAW the host,
+		// otherwise we can't make raw sockets.
+		if conf.EnableRaw && !specutils.HasCapabilities(capability.CAP_NET_RAW) {
+			return nil, fmt.Errorf("configuring network=host with raw sockets requires CAP_NET_RAW capability")
+		}
 		// No network namespacing support for hostinet yet, hence creator is nil.
 		return inet.NewRootNamespace(hostinet.NewStack(), nil), nil
 
