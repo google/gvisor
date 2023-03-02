@@ -1,6 +1,7 @@
 load("//tools:defs.bzl", "cc_binary", "gbenchmark", "gtest")
 
 package(
+    default_applicable_licenses = ["//:license"],
     default_visibility = ["//:sandbox"],
     licenses = ["notice"],
 )

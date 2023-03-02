@@ -2,7 +2,10 @@ load("//tools:defs.bzl", "go_library")
 load("//pkg/sync/locking:locking.bzl", "declare_mutex")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 declare_mutex(
     name = "queue_mutex",

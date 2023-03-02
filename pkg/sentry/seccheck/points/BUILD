@@ -2,7 +2,10 @@ load("//tools:defs.bzl", "proto_library")
 
 licenses(["notice"])
 
-package(default_visibility = ["//:sandbox"])
+package(
+    default_applicable_licenses = ["//:license"],
+    default_visibility = ["//:sandbox"],
+)
 
 proto_library(
     name = "points",

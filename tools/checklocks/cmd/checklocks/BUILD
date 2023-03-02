@@ -1,5 +1,7 @@
 load("//tools:defs.bzl", "go_binary")
 
+package(default_applicable_licenses = ["//:license"])
+
 go_binary(
     name = "checklocks",
     srcs = ["main.go"],

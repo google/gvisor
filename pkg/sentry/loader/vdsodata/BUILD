@@ -1,7 +1,10 @@
 load("//tools:arch.bzl", "arch_genrule")
 load("//tools:defs.bzl", "go_embed_data", "go_library")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_embed_data(
     name = "vdso_bin",

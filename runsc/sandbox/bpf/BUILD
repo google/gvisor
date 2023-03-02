@@ -1,6 +1,9 @@
 load("//tools:defs.bzl", "bpf_program")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 bpf_program(
     name = "af_xdp_ebpf",

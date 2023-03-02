@@ -1,6 +1,9 @@
 load("//test/benchmarks:defs.bzl", "benchmark_test")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 benchmark_test(
     name = "bazel_test",

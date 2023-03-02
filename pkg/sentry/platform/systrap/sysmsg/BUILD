@@ -2,7 +2,10 @@ load("//tools:arch.bzl", "arch_genrule", "select_arch")
 load("//tools:defs.bzl", "cc_flags_supplier", "cc_toolchain", "go_library")
 load("build.bzl", "cc_pie_obj")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 cc_flags_supplier(
     name = "no_pie_cc_flags",

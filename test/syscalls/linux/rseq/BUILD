@@ -4,7 +4,10 @@
 load("//tools:arch.bzl", "select_arch")
 load("//tools:defs.bzl", "cc_flags_supplier", "cc_library", "cc_toolchain")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 genrule(
     name = "rseq_binary",

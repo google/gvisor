@@ -1,7 +1,10 @@
 load("//tools:defs.bzl", "bzl_library", "more_shards", "most_shards")
 load("//test/runtimes:defs.bzl", "runtime_test")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 runtime_test(
     name = "go1.16",

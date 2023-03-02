@@ -1,6 +1,9 @@
 load("//tools:defs.bzl", "go_library", "go_test", "more_shards")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_test(
     name = "tcp_test",

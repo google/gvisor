@@ -1,6 +1,7 @@
 load("//tools:defs.bzl", "cc_binary", "go_library", "grpcpp")
 
 package(
+    default_applicable_licenses = ["//:license"],
     licenses = ["notice"],
 )
 

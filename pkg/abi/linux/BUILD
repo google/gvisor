@@ -4,7 +4,10 @@ load("//tools:defs.bzl", "go_library", "go_test")
 # Linux kernel. It should be used instead of syscall or golang.org/x/sys/unix
 # when the host OS may not be Linux.
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_library(
     name = "linux",

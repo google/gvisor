@@ -1,7 +1,10 @@
 load("//tools:defs.bzl", "more_shards", "most_shards")
 load("//test/runner:defs.bzl", "syscall_test")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 # Please keep syscall tests ordered alphabetically by name.
 

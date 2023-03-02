@@ -1,7 +1,10 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 load("//pkg/sync/locking:locking.bzl", "declare_mutex")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 declare_mutex(
     name = "vfs_mutex",

@@ -2,7 +2,10 @@ load("//tools:defs.bzl", "go_library", "go_test", "most_shards")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 load("//pkg/sync/locking:locking.bzl", "declare_mutex", "declare_rwmutex")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 declare_rwmutex(
     name = "addressable_endpoint_state_mutex",

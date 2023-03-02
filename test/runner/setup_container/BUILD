@@ -3,7 +3,10 @@
 
 load("//tools:defs.bzl", "cc_binary")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 cc_binary(
     name = "setup_container",

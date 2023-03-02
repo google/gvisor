@@ -1,6 +1,7 @@
 load("//tools:defs.bzl", "bzl_library")
 
 package(
+    default_applicable_licenses = ["//:license"],
     default_visibility = ["//:sandbox"],
     licenses = ["notice"],
 )
