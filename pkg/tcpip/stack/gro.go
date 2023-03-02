@@ -168,6 +168,80 @@ func (gb *groBucket) findGROPacket(pkt PacketBufferPtr, ipHdr header.IPv4, tcpHd
 	return nil, false
 }
 
+// +checklocks:gb.mu
+func (gb *groBucket) found(groPkt *groPacket, flushGROPkt bool, pkt PacketBufferPtr, ipHdr header.IPv4, tcpHdr header.TCP, ep NetworkEndpoint) {
+	// Flush groPkt or merge the packets.
+	flags := tcpHdr.Flags()
+	if flushGROPkt {
+		// Flush the existing GRO packet. Don't hold bucket.mu while
+		// processing the packet.
+		pkt := groPkt.pkt
+		gb.removeOne(groPkt)
+		gb.mu.Unlock()
+		ep.HandlePacket(pkt)
+		pkt.DecRef()
+		gb.mu.Lock()
+		groPkt = nil
+	} else if groPkt != nil {
+		// Merge pkt in to GRO packet.
+		buf := pkt.Data().ToBuffer()
+		dataOff := tcpHdr.DataOffset()
+		buf.TrimFront(header.IPv4MinimumSize + int64(dataOff))
+		groPkt.pkt.Data().MergeBuffer(&buf)
+		buf.Release()
+		// Add flags from the packet to the GRO packet.
+		groPkt.tcpHdr.SetFlags(uint8(groPkt.tcpHdr.Flags() | (flags & (header.TCPFlagFin | header.TCPFlagPsh))))
+		// Update the IP total length.
+		tcpPayloadSize := pkt.Data().Size() - header.IPv4MinimumSize - int(dataOff)
+		groPkt.ipHdr.SetTotalLength(groPkt.ipHdr.TotalLength() + uint16(tcpPayloadSize))
+
+		pkt = PacketBufferPtr{}
+	}
+
+	// Flush if the packet isn't the same size as the previous packets or
+	// if certain flags are set. The reason for checking size equality is:
+	// - If the packet is smaller than the others, this is likely the end
+	//   of some message. Peers will send MSS-sized packets until they have
+	//   insufficient data to do so.
+	// - If the packet is larger than the others, this packet is either
+	//   malformed, a local GSO packet, or has already been handled by host
+	//   GRO.
+	flush := header.TCPFlags(flags)&(header.TCPFlagUrg|header.TCPFlagPsh|header.TCPFlagRst|header.TCPFlagSyn|header.TCPFlagFin) != 0
+	if groPkt != nil {
+		flush = flush || pkt.Data().Size() != groPkt.initialLength
+	}
+
+	switch {
+	case flush && groPkt != nil:
+		// A merge occurred and we need to flush groPkt.
+		pkt := groPkt.pkt
+		gb.removeOne(groPkt)
+		gb.mu.Unlock()
+		ep.HandlePacket(pkt)
+		pkt.DecRef()
+	case flush && groPkt == nil:
+		// No merge occurred and the incoming packet needs to be flushed.
+		gb.mu.Unlock()
+		ep.HandlePacket(pkt)
+	case !flush && groPkt == nil:
+		// New flow and we don't need to flush. Insert pkt into GRO.
+		if gb.full() {
+			// Head is always the oldest packet
+			toFlush := gb.removeOldest()
+			gb.insert(pkt.IncRef(), ipHdr, tcpHdr, ep)
+			gb.mu.Unlock()
+			ep.HandlePacket(toFlush)
+			toFlush.DecRef()
+		} else {
+			gb.insert(pkt.IncRef(), ipHdr, tcpHdr, ep)
+			gb.mu.Unlock()
+		}
+	default:
+		// A merge occurred and we don't need to flush anything.
+		gb.mu.Unlock()
+	}
+}
+
 // A groPacket is packet undergoing GRO. It may be several packets coalesced
 // together.
 type groPacket struct {
@@ -375,80 +449,6 @@ func (gd *groDispatcher) dispatch4(pkt PacketBufferPtr, ep NetworkEndpoint) {
 	bucket.mu.Lock()
 	groPkt, flushGROPkt := bucket.findGROPacket(pkt, ipHdr, tcpHdr, ep)
 	bucket.found(groPkt, flushGROPkt, pkt, ipHdr, tcpHdr, ep)
-}
-
-// +checklocks:gb.mu
-func (gb *groBucket) found(groPkt *groPacket, flushGROPkt bool, pkt PacketBufferPtr, ipHdr header.IPv4, tcpHdr header.TCP, ep NetworkEndpoint) {
-	// Flush groPkt or merge the packets.
-	flags := tcpHdr.Flags()
-	if flushGROPkt {
-		// Flush the existing GRO packet. Don't hold bucket.mu while
-		// processing the packet.
-		pkt := groPkt.pkt
-		gb.removeOne(groPkt)
-		gb.mu.Unlock()
-		ep.HandlePacket(pkt)
-		pkt.DecRef()
-		gb.mu.Lock()
-		groPkt = nil
-	} else if groPkt != nil {
-		// Merge pkt in to GRO packet.
-		buf := pkt.Data().ToBuffer()
-		dataOff := tcpHdr.DataOffset()
-		buf.TrimFront(header.IPv4MinimumSize + int64(dataOff))
-		groPkt.pkt.Data().MergeBuffer(&buf)
-		buf.Release()
-		// Add flags from the packet to the GRO packet.
-		groPkt.tcpHdr.SetFlags(uint8(groPkt.tcpHdr.Flags() | (flags & (header.TCPFlagFin | header.TCPFlagPsh))))
-		// Update the IP total length.
-		tcpPayloadSize := pkt.Data().Size() - header.IPv4MinimumSize - int(dataOff)
-		groPkt.ipHdr.SetTotalLength(groPkt.ipHdr.TotalLength() + uint16(tcpPayloadSize))
-
-		pkt = PacketBufferPtr{}
-	}
-
-	// Flush if the packet isn't the same size as the previous packets or
-	// if certain flags are set. The reason for checking size equality is:
-	// - If the packet is smaller than the others, this is likely the end
-	//   of some message. Peers will send MSS-sized packets until they have
-	//   insufficient data to do so.
-	// - If the packet is larger than the others, this packet is either
-	//   malformed, a local GSO packet, or has already been handled by host
-	//   GRO.
-	flush := header.TCPFlags(flags)&(header.TCPFlagUrg|header.TCPFlagPsh|header.TCPFlagRst|header.TCPFlagSyn|header.TCPFlagFin) != 0
-	if groPkt != nil {
-		flush = flush || pkt.Data().Size() != groPkt.initialLength
-	}
-
-	switch {
-	case flush && groPkt != nil:
-		// A merge occurred and we need to flush groPkt.
-		pkt := groPkt.pkt
-		gb.removeOne(groPkt)
-		gb.mu.Unlock()
-		ep.HandlePacket(pkt)
-		pkt.DecRef()
-	case flush && groPkt == nil:
-		// No merge occurred and the incoming packet needs to be flushed.
-		gb.mu.Unlock()
-		ep.HandlePacket(pkt)
-	case !flush && groPkt == nil:
-		// New flow and we don't need to flush. Insert pkt into GRO.
-		if gb.full() {
-			// Head is always the oldest packet
-			toFlush := gb.removeOldest()
-			gb.insert(pkt.IncRef(), ipHdr, tcpHdr, ep)
-			gb.mu.Unlock()
-			ep.HandlePacket(toFlush)
-			toFlush.DecRef()
-		} else {
-			gb.insert(pkt.IncRef(), ipHdr, tcpHdr, ep)
-			gb.mu.Unlock()
-		}
-	default:
-		// A merge occurred and we don't need to flush anything.
-		gb.mu.Unlock()
-	}
 }
 
 func (gd *groDispatcher) bucketForPacket(ipHdr header.IPv4, tcpHdr header.TCP) int {
