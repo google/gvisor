@@ -266,17 +266,17 @@ simple-tests: unit-tests # Compatibility target.
 INTEGRATION_TARGETS := //test/image:image_test //test/e2e:integration_test
 
 docker-tests: load-basic $(RUNTIME_BIN)
-	@$(call install_runtime,$(RUNTIME),) # Clear flags.
+	@$(call install_runtime,$(RUNTIME),--overlay2=none)
 	@$(call install_runtime,$(RUNTIME)-fdlimit,--fdlimit=2000) # Used by TestRlimitNoFile.
 	@$(call install_runtime,$(RUNTIME)-dcache,--fdlimit=2000 --dcache=100) # Used by TestDentryCacheLimit.
 	@$(call install_runtime,$(RUNTIME)-host-uds,--host-uds=all) # Used by TestHostSocketConnect.
 	@$(call install_runtime,$(RUNTIME)-overlay,--overlay2=all:self) # Used by TestOverlay*.
+	@$(call install_runtime,$(RUNTIME)-no-overlay,--overlay2=none) # Used by TestCheckpointRestore.
 	@$(call test_runtime,$(RUNTIME),$(INTEGRATION_TARGETS) //test/e2e:integration_runtime_test)
 .PHONY: docker-tests
 
-# TODO(b/241832602): Run overlay tests with host filestore option after S/R support is added.
 overlay-tests: load-basic $(RUNTIME_BIN)
-	@$(call install_runtime,$(RUNTIME),--overlay2=all:memory)
+	@$(call install_runtime,$(RUNTIME),--overlay2=all:dir=/tmp)
 	@$(call test_runtime,$(RUNTIME),--test_env=TEST_OVERLAY=true $(INTEGRATION_TARGETS))
 .PHONY: overlay-tests
 

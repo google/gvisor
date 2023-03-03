@@ -146,9 +146,12 @@ func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommand
 		return util.Errorf("Error to retrieve hostname: %v", err)
 	}
 
-	// If c.overlay is set, then forcefully enable overlay.
-	if overlay2 := conf.GetOverlay2(); c.overlay && !overlay2.Enabled() {
-		conf.Overlay = true
+	// If c.overlay is set, then enable overlay.
+	conf.Overlay = false // conf.Overlay is deprecated.
+	if c.overlay {
+		conf.Overlay2 = config.Overlay2{RootMount: true, SubMounts: true, Medium: "memory"}
+	} else {
+		conf.Overlay2 = config.Overlay2{RootMount: false, SubMounts: false, Medium: ""}
 	}
 	absRoot, err := resolvePath(c.root)
 	if err != nil {

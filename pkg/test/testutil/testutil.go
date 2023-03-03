@@ -467,6 +467,20 @@ func WaitForHTTP(ip string, port int, timeout time.Duration) error {
 	return Poll(cb, timeout)
 }
 
+// HTTPRequestSucceeds sends a request to a given url and checks that the status is OK.
+func HTTPRequestSucceeds(client http.Client, server string, port int) error {
+	url := fmt.Sprintf("http://%s:%d", server, port)
+	// Ensure that content is being served.
+	resp, err := client.Get(url)
+	if err != nil {
+		return fmt.Errorf("error reaching http server: %v", err)
+	}
+	if want := http.StatusOK; resp.StatusCode != want {
+		return fmt.Errorf("wrong response code, got: %d, want: %d", resp.StatusCode, want)
+	}
+	return nil
+}
+
 // Reaper reaps child processes.
 type Reaper struct {
 	// mu protects ch, which will be nil if the reaper is not running.
