@@ -244,7 +244,12 @@ TEST_F(RawSocketICMPTest, MultipleSocketReceive) {
 // A raw ICMP socket and ping socket should both receive the ICMP packets
 // intended for the ping socket.
 TEST_F(RawSocketICMPTest, RawAndPingSockets) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
+  // By default, ping sockets cannot be created on Linux, even with root privs.
+  // So we only run the test with gVisor and not hostinet, and even then require
+  // CAP_NET_RAW.
+  // See https://lwn.net/Articles/443051/
+  SKIP_IF(!IsRunningOnGvisor() || IsRunningWithHostinet() ||
+          ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
 
   FileDescriptor ping_sock =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP));
@@ -294,7 +299,12 @@ TEST_F(RawSocketICMPTest, RawAndPingSockets) {
 // while a ping socket should not. Neither should be able to receieve a short
 // malformed packet.
 TEST_F(RawSocketICMPTest, ShortEchoRawAndPingSockets) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
+  // By default, ping sockets cannot be created on Linux, even with root privs.
+  // So we only run the test with gVisor and not hostinet, and even then require
+  // CAP_NET_RAW.
+  // See https://lwn.net/Articles/443051/
+  SKIP_IF(!IsRunningOnGvisor() || IsRunningWithHostinet() ||
+          ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
 
   FileDescriptor ping_sock =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP));
@@ -335,7 +345,12 @@ TEST_F(RawSocketICMPTest, ShortEchoRawAndPingSockets) {
 // while ping socket should not.
 // Neither should be able to receieve a short malformed packet.
 TEST_F(RawSocketICMPTest, ShortEchoReplyRawAndPingSockets) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
+  // By default, ping sockets cannot be created on Linux, even with root privs.
+  // So we only run the test with gVisor and not hostinet, and even then require
+  // CAP_NET_RAW.
+  // See https://lwn.net/Articles/443051/
+  SKIP_IF(!IsRunningOnGvisor() || IsRunningWithHostinet() ||
+          ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
 
   FileDescriptor ping_sock =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, IPPROTO_ICMP));

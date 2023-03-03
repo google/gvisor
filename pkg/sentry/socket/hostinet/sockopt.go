@@ -59,6 +59,7 @@ type SockOpt struct {
 var SockOpts = []SockOpt{
 	{linux.SOL_IP, linux.IP_ADD_MEMBERSHIP, 0, false, true},
 	{linux.SOL_IP, linux.IP_DROP_MEMBERSHIP, 0, false, true},
+	{linux.SOL_IP, linux.IP_HDRINCL, sizeofInt32, true, true},
 	{linux.SOL_IP, linux.IP_MULTICAST_IF, uint64(linux.SizeOfInetAddr), true, true},
 	{linux.SOL_IP, linux.IP_MULTICAST_LOOP, 0 /* can be 32-bit int or 8-bit uint */, true, true},
 	{linux.SOL_IP, linux.IP_MULTICAST_TTL, 0 /* can be 32-bit int or 8-bit uint */, true, true},
@@ -70,6 +71,7 @@ var SockOpts = []SockOpt{
 	{linux.SOL_IP, linux.IP_TOS, 0 /* Can be 32, 16, or 8 bits */, true, true},
 	{linux.SOL_IP, linux.IP_TTL, sizeofInt32, true, true},
 
+	{linux.SOL_IPV6, linux.IPV6_CHECKSUM, sizeofInt32, true, true},
 	{linux.SOL_IPV6, linux.IPV6_MULTICAST_HOPS, sizeofInt32, true, true},
 	{linux.SOL_IPV6, linux.IPV6_RECVERR, sizeofInt32, true, true},
 	{linux.SOL_IPV6, linux.IPV6_RECVHOPLIMIT, sizeofInt32, true, true},
@@ -81,6 +83,7 @@ var SockOpts = []SockOpt{
 	{linux.SOL_IPV6, linux.IPV6_V6ONLY, sizeofInt32, true, true},
 
 	{linux.SOL_SOCKET, linux.SO_ACCEPTCONN, sizeofInt32, true, true},
+	{linux.SOL_SOCKET, linux.SO_BINDTODEVICE, 0, true, true},
 	{linux.SOL_SOCKET, linux.SO_BROADCAST, sizeofInt32, true, true},
 	{linux.SOL_SOCKET, linux.SO_ERROR, sizeofInt32, true, false},
 	{linux.SOL_SOCKET, linux.SO_KEEPALIVE, sizeofInt32, true, true},
@@ -111,6 +114,8 @@ var SockOpts = []SockOpt{
 	{linux.SOL_TCP, linux.TCP_SYNCNT, sizeofInt32, true, true},
 	{linux.SOL_TCP, linux.TCP_USER_TIMEOUT, sizeofInt32, true, true},
 	{linux.SOL_TCP, linux.TCP_WINDOW_CLAMP, sizeofInt32, true, true},
+
+	{linux.SOL_ICMPV6, linux.ICMPV6_FILTER, uint64(linux.SizeOfICMP6Filter), true, true},
 }
 
 // sockOptMap is a map of {level, name} -> SockOpts. It is an optimization for

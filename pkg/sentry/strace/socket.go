@@ -101,6 +101,7 @@ var SocketFlagSet = abi.FlagSet{
 var ipProtocol = abi.ValueSet{
 	linux.IPPROTO_IP:      "IPPROTO_IP",
 	linux.IPPROTO_ICMP:    "IPPROTO_ICMP",
+	linux.IPPROTO_ICMPV6:  "IPPROTO_ICMPV6",
 	linux.IPPROTO_IGMP:    "IPPROTO_IGMP",
 	linux.IPPROTO_IPIP:    "IPPROTO_IPIP",
 	linux.IPPROTO_TCP:     "IPPROTO_TCP",

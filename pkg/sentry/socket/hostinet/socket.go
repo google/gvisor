@@ -29,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sockfs"
 	"gvisor.dev/gvisor/pkg/sentry/hostfd"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/socket/control"
@@ -66,6 +67,21 @@ var AllowedSocketTypes = []AllowedSocketType{
 
 	{unix.AF_INET6, unix.SOCK_STREAM, unix.IPPROTO_TCP},
 	{unix.AF_INET6, unix.SOCK_DGRAM, unix.IPPROTO_UDP},
+	{unix.AF_INET6, unix.SOCK_DGRAM, unix.IPPROTO_ICMPV6},
+}
+
+// AllowedRawSocketTypes are the socket types which are supported by hostinet
+// with raw sockets enabled.
+var AllowedRawSocketTypes = []AllowedSocketType{
+	{unix.AF_INET, unix.SOCK_RAW, unix.IPPROTO_RAW},
+	{unix.AF_INET, unix.SOCK_RAW, unix.IPPROTO_TCP},
+	{unix.AF_INET, unix.SOCK_RAW, unix.IPPROTO_UDP},
+	{unix.AF_INET, unix.SOCK_RAW, unix.IPPROTO_ICMP},
+
+	{unix.AF_INET6, unix.SOCK_RAW, unix.IPPROTO_RAW},
+	{unix.AF_INET6, unix.SOCK_RAW, unix.IPPROTO_TCP},
+	{unix.AF_INET6, unix.SOCK_RAW, unix.IPPROTO_UDP},
+	{unix.AF_INET6, unix.SOCK_RAW, unix.IPPROTO_ICMPV6},
 }
 
 // Socket implements socket.Socket (and by extension, vfs.FileDescriptionImpl)
@@ -185,15 +201,23 @@ type socketProvider struct {
 // Socket implements socket.Provider.Socket.
 func (p *socketProvider) Socket(t *kernel.Task, stypeflags linux.SockType, protocol int) (*vfs.FileDescription, *syserr.Error) {
 	// Check that we are using the host network stack.
-	stack := t.NetworkContext()
-	if stack == nil {
+	netCtx := t.NetworkContext()
+	if netCtx == nil {
 		return nil, nil
 	}
-	if _, ok := stack.(*Stack); !ok {
+	stack, ok := netCtx.(*Stack)
+	if !ok {
 		return nil, nil
 	}
 
 	stype := stypeflags & linux.SOCK_TYPE_MASK
+
+	// Raw sockets require CAP_NET_RAW.
+	if stype == linux.SOCK_RAW {
+		if creds := auth.CredentialsFromContext(t); !creds.HasCapability(linux.CAP_NET_RAW) {
+			return nil, syserr.ErrNotPermitted
+		}
+	}
 
 	// Convert generic IPPROTO_IP protocol to the actual protocol depending
 	// on family and type.
@@ -208,7 +232,7 @@ func (p *socketProvider) Socket(t *kernel.Task, stypeflags linux.SockType, proto
 
 	// Validate the socket based on family, type, and protocol.
 	var supported bool
-	for _, allowed := range AllowedSocketTypes {
+	for _, allowed := range stack.allowedSocketTypes {
 		if p.family == allowed.Family && int(stype) == allowed.Type && protocol == allowed.Protocol {
 			supported = true
 			break
@@ -222,7 +246,8 @@ func (p *socketProvider) Socket(t *kernel.Task, stypeflags linux.SockType, proto
 
 	// Conservatively ignore all flags specified by the application and add
 	// SOCK_NONBLOCK since socketOperations requires it.
-	fd, err := unix.Socket(p.family, int(stype)|unix.SOCK_NONBLOCK|unix.SOCK_CLOEXEC, protocol)
+	st := int(stype) | unix.SOCK_NONBLOCK | unix.SOCK_CLOEXEC
+	fd, err := unix.Socket(p.family, st, protocol)
 	if err != nil {
 		return nil, syserr.FromError(err)
 	}

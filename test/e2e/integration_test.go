@@ -568,12 +568,6 @@ func TestLink(t *testing.T) {
 
 // This test ensures we can run ping without errors.
 func TestPing4Loopback(t *testing.T) {
-	if testutil.IsRunningWithHostNet() {
-		// TODO(gvisor.dev/issue/5011): support ICMP sockets in hostnet and enable
-		// this test.
-		t.Skip("hostnet only supports TCP/UDP sockets, so ping is not supported.")
-	}
-
 	runIntegrationTest(t, nil, "./ping4.sh")
 }
 
