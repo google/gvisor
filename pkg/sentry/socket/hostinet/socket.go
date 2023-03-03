@@ -51,10 +51,17 @@ const (
 
 // AllowedSocketType is a tuple of socket family, type, and protocol.
 type AllowedSocketType struct {
-	Family   int
-	Type     int
+	Family int
+	Type   int
+
+	// Protocol of AllowAllProtocols indicates that all protocols are
+	// allowed.
 	Protocol int
 }
+
+// AllowAllProtocols indicates that all protocols are allowed by the stack and
+// in the syscall filters.
+var AllowAllProtocols = -1
 
 // AllowedSocketTypes are the socket types which are supported by hostinet.
 // These are used to validate the arguments to socket(), and also to generate
@@ -82,6 +89,9 @@ var AllowedRawSocketTypes = []AllowedSocketType{
 	{unix.AF_INET6, unix.SOCK_RAW, unix.IPPROTO_TCP},
 	{unix.AF_INET6, unix.SOCK_RAW, unix.IPPROTO_UDP},
 	{unix.AF_INET6, unix.SOCK_RAW, unix.IPPROTO_ICMPV6},
+
+	{unix.AF_PACKET, unix.SOCK_DGRAM, AllowAllProtocols},
+	{unix.AF_PACKET, unix.SOCK_RAW, AllowAllProtocols},
 }
 
 // Socket implements socket.Socket (and by extension, vfs.FileDescriptionImpl)
@@ -212,8 +222,8 @@ func (p *socketProvider) Socket(t *kernel.Task, stypeflags linux.SockType, proto
 
 	stype := stypeflags & linux.SOCK_TYPE_MASK
 
-	// Raw sockets require CAP_NET_RAW.
-	if stype == linux.SOCK_RAW {
+	// Raw and packet sockets require CAP_NET_RAW.
+	if stype == linux.SOCK_RAW || p.family == linux.AF_PACKET {
 		if creds := auth.CredentialsFromContext(t); !creds.HasCapability(linux.CAP_NET_RAW) {
 			return nil, syserr.ErrNotPermitted
 		}
@@ -233,7 +243,10 @@ func (p *socketProvider) Socket(t *kernel.Task, stypeflags linux.SockType, proto
 	// Validate the socket based on family, type, and protocol.
 	var supported bool
 	for _, allowed := range stack.allowedSocketTypes {
-		if p.family == allowed.Family && int(stype) == allowed.Type && protocol == allowed.Protocol {
+		isAllowedFamily := p.family == allowed.Family
+		isAllowedType := int(stype) == allowed.Type
+		isAllowedProtocol := protocol == allowed.Protocol || allowed.Protocol == AllowAllProtocols
+		if isAllowedFamily && isAllowedType && isAllowedProtocol {
 			supported = true
 			break
 		}
@@ -770,7 +783,16 @@ func (s *Socket) Type() (family int, skType linux.SockType, protocol int) {
 }
 
 func init() {
-	for _, family := range []int{unix.AF_INET, unix.AF_INET6} {
-		socket.RegisterProvider(family, &socketProvider{family})
+	// Register all families in AllowedSocketTypes and AllowedRawSocket
+	// types. If we don't allow raw sockets, they will be rejected in the
+	// Socket call.
+	registered := make(map[int]struct{})
+	for _, sockType := range append(AllowedSocketTypes, AllowedRawSocketTypes...) {
+		fam := sockType.Family
+		if _, ok := registered[fam]; ok {
+			continue
+		}
+		socket.RegisterProvider(fam, &socketProvider{fam})
+		registered[fam] = struct{}{}
 	}
 }

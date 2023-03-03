@@ -226,6 +226,10 @@ TEST_P(CookedPacketTest, Receive) {
 
 // Send via a packet socket.
 TEST_P(CookedPacketTest, Send) {
+  // TODO(b/267210840): Fix this test for hostinet. Something is wrong with
+  // poll().
+  SKIP_IF(IsRunningWithHostinet());
+
   // Let's send a UDP packet and receive it using a regular UDP socket.
   FileDescriptor udp_sock =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));

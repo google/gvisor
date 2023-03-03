@@ -432,6 +432,10 @@ func UnmarshalSockAddr(family int, data []byte) linux.SockAddr {
 		var addr linux.SockAddrNetlink
 		addr.UnmarshalUnsafe(data)
 		return &addr
+	case unix.AF_PACKET:
+		var addr linux.SockAddrLink
+		addr.UnmarshalUnsafe(data)
+		return &addr
 	default:
 		panic(fmt.Sprintf("Unsupported socket family %v", family))
 	}

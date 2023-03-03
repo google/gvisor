@@ -85,12 +85,18 @@ func hostInetFilters(allowRawSockets bool) seccomp.SyscallRules {
 		stypes = append(stypes, hostinet.AllowedRawSocketTypes...)
 	}
 	for _, sock := range stypes {
-		socketRules = append(socketRules, seccomp.Rule{
+		rule := seccomp.Rule{
 			seccomp.EqualTo(sock.Family),
-			// We always set SOCK_NONBLOCK and SOCK_CLOEXEC
+			// We always set SOCK_NONBLOCK and SOCK_CLOEXEC.
 			seccomp.EqualTo(sock.Type | linux.SOCK_NONBLOCK | linux.SOCK_CLOEXEC),
+			// Match specific protocol by default.
 			seccomp.EqualTo(sock.Protocol),
-		})
+		}
+		if sock.Protocol == hostinet.AllowAllProtocols {
+			// Change protocol filter to MatchAny.
+			rule[2] = seccomp.MatchAny{}
+		}
+		socketRules = append(socketRules, rule)
 	}
 	rules[unix.SYS_SOCKET] = socketRules
 
