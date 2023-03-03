@@ -28,6 +28,7 @@
 
 #include "sysmsg.h"
 #include "sysmsg_offsets.h"
+#include "sysmsg_offsets_amd64.h"
 
 long __syscall(long n, long a1, long a2, long a3, long a4, long a5, long a6) {
   unsigned long ret;
@@ -298,19 +299,6 @@ long __syshandler(long a1, long a2, long a3, long __unused, long a5, long a6) {
       :);
   asm volatile("movq %%gs:0, %0\n" : "=r"(sysmsg) : :);
 
-  BUILD_BUG_ON(offsetof_sysmsg_self != offsetof(struct sysmsg, self));
-  BUILD_BUG_ON(offsetof_sysmsg_ret_addr != offsetof(struct sysmsg, ret_addr));
-  BUILD_BUG_ON(offsetof_sysmsg_syshandler !=
-               offsetof(struct sysmsg, syshandler));
-  BUILD_BUG_ON(offsetof_sysmsg_syshandler_stack !=
-               offsetof(struct sysmsg, syshandler_stack));
-  BUILD_BUG_ON(offsetof_sysmsg_app_stack != offsetof(struct sysmsg, app_stack));
-  BUILD_BUG_ON(offsetof_sysmsg_interrupt != offsetof(struct sysmsg, interrupt));
-  BUILD_BUG_ON(offsetof_sysmsg_type != offsetof(struct sysmsg, type));
-  BUILD_BUG_ON(offsetof_sysmsg_state != offsetof(struct sysmsg, state));
-  BUILD_BUG_ON(kSYSMSG_SYSCALL != SYSMSG_SYSCALL);
-  BUILD_BUG_ON(kSYSMSG_INTERRUPT != SYSMSG_INTERRUPT);
-
   // SYSMSG_STATE_PREP is set to postpone interrupts. Look at
   // __export_sighandler for more details.
   int state = __atomic_load_n(&sysmsg->state, __ATOMIC_ACQUIRE);
@@ -341,4 +329,64 @@ long __syshandler(long a1, long a2, long a3, long __unused, long a5, long a6) {
 
   __atomic_store_n(&sysmsg->state, SYSMSG_STATE_NONE, __ATOMIC_RELEASE);
   return sysret;
+}
+
+void verify_offsets_amd64() {
+#define PTREGS_OFFSET offsetof(struct thread_context, ptregs)
+  BUILD_BUG_ON(offsetof_thread_context_ptregs != PTREGS_OFFSET);
+  BUILD_BUG_ON(offsetof_thread_context_ptregs_r15 !=
+               (offsetof(struct user_regs_struct, r15) + PTREGS_OFFSET));
+  BUILD_BUG_ON(offsetof_thread_context_ptregs_r14 !=
+               (offsetof(struct user_regs_struct, r14) + PTREGS_OFFSET));
+  BUILD_BUG_ON(offsetof_thread_context_ptregs_r13 !=
+               (offsetof(struct user_regs_struct, r13) + PTREGS_OFFSET));
+  BUILD_BUG_ON(offsetof_thread_context_ptregs_r12 !=
+               (offsetof(struct user_regs_struct, r12) + PTREGS_OFFSET));
+  BUILD_BUG_ON(offsetof_thread_context_ptregs_rbp !=
+               (offsetof(struct user_regs_struct, rbp) + PTREGS_OFFSET));
+  BUILD_BUG_ON(offsetof_thread_context_ptregs_rbx !=
+               (offsetof(struct user_regs_struct, rbx) + PTREGS_OFFSET));
+  BUILD_BUG_ON(offsetof_thread_context_ptregs_r11 !=
+               (offsetof(struct user_regs_struct, r11) + PTREGS_OFFSET));
+  BUILD_BUG_ON(offsetof_thread_context_ptregs_r10 !=
+               (offsetof(struct user_regs_struct, r10) + PTREGS_OFFSET));
+  BUILD_BUG_ON(offsetof_thread_context_ptregs_r9 !=
+               (offsetof(struct user_regs_struct, r9) + PTREGS_OFFSET));
+  BUILD_BUG_ON(offsetof_thread_context_ptregs_r8 !=
+               (offsetof(struct user_regs_struct, r8) + PTREGS_OFFSET));
+  BUILD_BUG_ON(offsetof_thread_context_ptregs_rax !=
+               (offsetof(struct user_regs_struct, rax) + PTREGS_OFFSET));
+  BUILD_BUG_ON(offsetof_thread_context_ptregs_rcx !=
+               (offsetof(struct user_regs_struct, rcx) + PTREGS_OFFSET));
+  BUILD_BUG_ON(offsetof_thread_context_ptregs_rdx !=
+               (offsetof(struct user_regs_struct, rdx) + PTREGS_OFFSET));
+  BUILD_BUG_ON(offsetof_thread_context_ptregs_rsi !=
+               (offsetof(struct user_regs_struct, rsi) + PTREGS_OFFSET));
+  BUILD_BUG_ON(offsetof_thread_context_ptregs_rdi !=
+               (offsetof(struct user_regs_struct, rdi) + PTREGS_OFFSET));
+  BUILD_BUG_ON(offsetof_thread_context_ptregs_orig_rax !=
+               (offsetof(struct user_regs_struct, orig_rax) + PTREGS_OFFSET));
+  BUILD_BUG_ON(offsetof_thread_context_ptregs_rip !=
+               (offsetof(struct user_regs_struct, rip) + PTREGS_OFFSET));
+  BUILD_BUG_ON(offsetof_thread_context_ptregs_cs !=
+               (offsetof(struct user_regs_struct, cs) + PTREGS_OFFSET));
+  BUILD_BUG_ON(offsetof_thread_context_ptregs_eflags !=
+               (offsetof(struct user_regs_struct, eflags) + PTREGS_OFFSET));
+  BUILD_BUG_ON(offsetof_thread_context_ptregs_rsp !=
+               (offsetof(struct user_regs_struct, rsp) + PTREGS_OFFSET));
+  BUILD_BUG_ON(offsetof_thread_context_ptregs_ss !=
+               (offsetof(struct user_regs_struct, ss) + PTREGS_OFFSET));
+  BUILD_BUG_ON(offsetof_thread_context_ptregs_fs_base !=
+               (offsetof(struct user_regs_struct, fs_base) + PTREGS_OFFSET));
+  BUILD_BUG_ON(offsetof_thread_context_ptregs_gs_base !=
+               (offsetof(struct user_regs_struct, gs_base) + PTREGS_OFFSET));
+  BUILD_BUG_ON(offsetof_thread_context_ptregs_ds !=
+               (offsetof(struct user_regs_struct, ds) + PTREGS_OFFSET));
+  BUILD_BUG_ON(offsetof_thread_context_ptregs_es !=
+               (offsetof(struct user_regs_struct, es) + PTREGS_OFFSET));
+  BUILD_BUG_ON(offsetof_thread_context_ptregs_fs !=
+               (offsetof(struct user_regs_struct, fs) + PTREGS_OFFSET));
+  BUILD_BUG_ON(offsetof_thread_context_ptregs_gs !=
+               (offsetof(struct user_regs_struct, gs) + PTREGS_OFFSET));
+#undef PTREGS_OFFSET
 }

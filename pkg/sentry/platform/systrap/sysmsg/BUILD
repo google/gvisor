@@ -17,15 +17,13 @@ cc_pie_obj(
     srcs = select_arch(
         amd64 = [
             "sighandler_amd64.c",
-            "sysmsg.h",
-            "sysmsg_offsets.h",
+            "sysmsg_offsets_amd64.h",
         ],
-        arm64 = [
-            "sighandler_arm64.c",
-            "sysmsg.h",
-            "sysmsg_offsets.h",
-        ],
-    ),
+        arm64 = ["sighandler_arm64.c"],
+    ) + [
+        "sysmsg.h",
+        "sysmsg_offsets.h",
+    ],
     outs = ["sighandler.o"],
 )
 
@@ -53,13 +51,12 @@ cc_pie_obj(
     srcs = select_arch(
         amd64 = [
             "syshandler_amd64.S",
-            "sysmsg_offsets.h",
+            "sysmsg_offsets_amd64.h",
         ],
-        arm64 = [
-            "syshandler_arm64.S",
-            "sysmsg_offsets.h",
-        ],
-    ),
+        arm64 = ["syshandler_arm64.S"],
+    ) + [
+        "sysmsg_offsets.h",
+    ],
     outs = ["syshandler.o"],
 )
 

@@ -126,3 +126,34 @@ out:
   __atomic_fetch_add(&sysmsg->acked_events, 1, __ATOMIC_SEQ_CST);
   return v;
 }
+
+void verify_offsets() {
+  BUILD_BUG_ON(offsetof_sysmsg_self != offsetof(struct sysmsg, self));
+  BUILD_BUG_ON(offsetof_sysmsg_ret_addr != offsetof(struct sysmsg, ret_addr));
+  BUILD_BUG_ON(offsetof_sysmsg_syshandler !=
+               offsetof(struct sysmsg, syshandler));
+  BUILD_BUG_ON(offsetof_sysmsg_syshandler_stack !=
+               offsetof(struct sysmsg, syshandler_stack));
+  BUILD_BUG_ON(offsetof_sysmsg_app_stack != offsetof(struct sysmsg, app_stack));
+  BUILD_BUG_ON(offsetof_sysmsg_interrupt != offsetof(struct sysmsg, interrupt));
+  BUILD_BUG_ON(offsetof_sysmsg_type != offsetof(struct sysmsg, type));
+  BUILD_BUG_ON(offsetof_sysmsg_state != offsetof(struct sysmsg, state));
+  BUILD_BUG_ON(offsetof_sysmsg_context_id !=
+               offsetof(struct sysmsg, context_id));
+  BUILD_BUG_ON(offsetof_sysmsg_context_region !=
+               offsetof(struct sysmsg, context_region));
+
+  BUILD_BUG_ON(offsetof_thread_context_fpstate !=
+               offsetof(struct thread_context, fpstate));
+  BUILD_BUG_ON(offsetof_thread_context_fpstate_changed !=
+               offsetof(struct thread_context, fpstate_changed));
+  BUILD_BUG_ON(offsetof_thread_context_ptregs !=
+               offsetof(struct thread_context, ptregs));
+
+  BUILD_BUG_ON(kSYSMSG_SYSCALL != SYSMSG_SYSCALL);
+  BUILD_BUG_ON(kSYSMSG_INTERRUPT != SYSMSG_INTERRUPT);
+  BUILD_BUG_ON(kSYSMSG_STATE_NONE != SYSMSG_STATE_NONE);
+
+  BUILD_BUG_ON(sizeof(struct thread_context) >
+               ALLOCATED_SIZEOF_THREAD_CONTEXT_STRUCT);
+}

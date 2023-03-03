@@ -18,6 +18,8 @@
 #include <stdint.h>
 #include <sys/user.h>
 
+#include "sysmsg_offsets.h"  // NOLINT
+
 #if defined(__x86_64__)
 // LINT.IfChange
 struct arch_state {
@@ -50,6 +52,7 @@ enum sysmsg_type {
   SYSMSG_INTERRUPT,
 };
 
+// sysmsg contains the current state of the sysmsg thread. See: sysmsg.go:Msg
 struct sysmsg {
   struct sysmsg *self;
   uint64_t ret_addr;
@@ -60,6 +63,10 @@ struct sysmsg {
   int32_t fault_jump;
   uint32_t type;
   uint32_t state;
+  uint64_t context_id;
+  uint64_t context_region;
+
+  // The fields above have offsets defined in sysmsg_offsets*.h
 
   int32_t signo;
   int32_t err;
@@ -73,6 +80,21 @@ struct sysmsg {
   uint32_t stub_fast_path;
   uint32_t sentry_fast_path;
   uint32_t acked_events;
+  uint64_t interrupted_context_id;
+};
+
+// thread_context contains the current context of the sysmsg thread.
+// See sysmsg.go:SysThreadContext
+struct thread_context {
+  uint8_t fpstate[MAX_FPSTATE_LEN];
+  uint64_t fpstate_changed;
+  struct user_regs_struct ptregs;
+
+  // The fields above have offsets defined in sysmsg_offsets*.h
+
+  siginfo_t siginfo;
+  int64_t signo;
+  uint64_t interrupt;
 };
 
 #ifndef PAGE_SIZE
