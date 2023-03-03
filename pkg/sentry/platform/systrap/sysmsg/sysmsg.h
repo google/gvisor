@@ -93,6 +93,7 @@ struct sysmsg {
 extern uint64_t __export_pr_sched_core;
 extern uint64_t __export_deep_sleep_timeout;
 extern struct arch_state __export_arch_state;
+extern uint64_t __export_context_decoupling_exp;
 
 // NOLINTBEGIN(runtime/int)
 static void *sysmsg_sp() {

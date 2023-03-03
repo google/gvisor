@@ -21,6 +21,8 @@ go_template_instance(
 go_library(
     name = "systrap",
     srcs = [
+        "context_decoupling_disable.go",
+        "context_decoupling_enable.go",
         "filters.go",
         "filters_amd64.go",
         "filters_arm64.go",

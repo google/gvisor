@@ -374,7 +374,7 @@ func (*constructor) OpenDevice(_ string) (*os.File, error) {
 	return nil, nil
 }
 
-// Flags implements platform.Constructor.Flags().
+// Requirements implements platform.Constructor.Requirements().
 func (*constructor) Requirements() platform.Requirements {
 	// TODO(b/75837838): Also set a new PID namespace so that we limit
 	// access to other host processes.
