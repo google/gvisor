@@ -49,13 +49,16 @@ import (
 )
 
 var (
-	checkpoint           = flag.Bool("checkpoint", BoolFromEnv("CHECKPOINT", true), "control checkpoint/restore support")
-	partition            = flag.Int("partition", IntFromEnv("PARTITION", 1), "partition number, this is 1-indexed")
-	totalPartitions      = flag.Int("total_partitions", IntFromEnv("TOTAL_PARTITIONS", 1), "total number of partitions")
-	isRunningWithHostNet = flag.Bool("hostnet", BoolFromEnv("HOSTNET", false), "whether test is running with hostnet")
-	runscPath            = flag.String("runsc", os.Getenv("RUNTIME"), "path to runsc binary")
-	// Note: flag overlay is already taken by runsc.
+	partition       = flag.Int("partition", IntFromEnv("PARTITION", 1), "partition number, this is 1-indexed")
+	totalPartitions = flag.Int("total_partitions", IntFromEnv("TOTAL_PARTITIONS", 1), "total number of partitions")
+	runscPath       = flag.String("runsc", os.Getenv("RUNTIME"), "path to runsc binary")
+
+	// Flags controlling features for sandbox under test, prefixed with
+	// "test-" to avoid potential conflicts with runsc flags.
+	checkpointSupported  = flag.Bool("test-checkpoint", BoolFromEnv("TEST_CHECKPOINT", true), "control checkpoint/restore support")
 	isRunningWithOverlay = flag.Bool("test-overlay", BoolFromEnv("TEST_OVERLAY", false), "whether test is running with --overlay2")
+	isRunningWithNetRaw  = flag.Bool("test-net-raw", BoolFromEnv("TEST_NET_RAW", false), "whether test is running with raw socket support")
+	isRunningWithHostNet = flag.Bool("test-hostnet", BoolFromEnv("TEST_HOSTNET", false), "whether test is running with hostnet")
 
 	// TestEnvSupportsRawSockets indicates whether a test sandbox can
 	// create raw sockets.
@@ -117,12 +120,17 @@ func DurationFromEnv(name string, def time.Duration) time.Duration {
 
 // IsCheckpointSupported returns the relevant command line flag.
 func IsCheckpointSupported() bool {
-	return *checkpoint
+	return *checkpointSupported
 }
 
 // IsRunningWithHostNet returns the relevant command line flag.
 func IsRunningWithHostNet() bool {
 	return *isRunningWithHostNet
+}
+
+// IsRunningWithNetRaw returns the relevant command line flag.
+func IsRunningWithNetRaw() bool {
+	return *isRunningWithNetRaw
 }
 
 // IsRunningWithOverlay returns the relevant command line flag.

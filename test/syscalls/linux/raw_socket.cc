@@ -797,7 +797,7 @@ TEST_P(RawSocketTest, RecvBufLimits) {
     ASSERT_NO_FATAL_FAILURE(SendBuf(buf.data(), buf.size()));
     ASSERT_NO_FATAL_FAILURE(SendBuf(buf.data(), buf.size()));
     int sent = 4;
-    if (IsRunningOnGvisor()) {
+    if (IsRunningOnGvisor() && !IsRunningWithHostinet()) {
       // Linux seems to drop the 4th packet even though technically it should
       // fit in the receive buffer.
       ASSERT_NO_FATAL_FAILURE(SendBuf(buf.data(), buf.size()));
@@ -1451,7 +1451,7 @@ TEST(RawSocketTest, SetIPv6ChecksumError_ReadShort) {
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_RAW, IPPROTO_UDP));
 
   int intV = 2;
-  if (IsRunningOnGvisor() && !IsRunningWithHostinet()) {
+  if (IsRunningOnGvisor()) {
     // TODO(https://gvisor.dev/issue/6982): This is a deviation from Linux. We
     // should determine if we want to match the behaviour or handle the error
     // more gracefully.

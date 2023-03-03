@@ -286,8 +286,8 @@ swgso-tests: load-basic $(RUNTIME_BIN)
 .PHONY: swgso-tests
 
 hostnet-tests: load-basic $(RUNTIME_BIN)
-	@$(call install_runtime,$(RUNTIME),--network=host)
-	@$(call test_runtime,$(RUNTIME),--test_env=CHECKPOINT=false --test_env=HOSTNET=true $(INTEGRATION_TARGETS))
+	@$(call install_runtime,$(RUNTIME),--network=host --net-raw)
+	@$(call test_runtime,$(RUNTIME),--test_env=TEST_CHECKPOINT=false --test_env=TEST_HOSTNET=true --test_env=TEST_NET_RAW=true $(INTEGRATION_TARGETS))
 .PHONY: hostnet-tests
 
 kvm-tests: load-basic $(RUNTIME_BIN)
@@ -311,7 +311,7 @@ iptables-tests: load-iptables $(RUNTIME_BIN)
 	@# FIXME(b/218923513): Need to fix permissions issues.
 	@#$(call test,--test_env=RUNTIME=runc //test/iptables:iptables_test)
 	@$(call install_runtime,$(RUNTIME),--net-raw)
-	@$(call test_runtime,$(RUNTIME),//test/iptables:iptables_test)
+	@$(call test_runtime,$(RUNTIME),--test_env=TEST_NET_RAW=true //test/iptables:iptables_test)
 .PHONY: iptables-tests
 
 packetdrill-tests: load-packetdrill $(RUNTIME_BIN)

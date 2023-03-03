@@ -447,6 +447,7 @@ syscall_test(
 
 syscall_test(
     size = "medium",
+    add_hostinet = True,
     # Takes too long under gotsan to run.
     tags = ["nogotsan"],
     test = "//test/syscalls/linux:ping_socket_test",
@@ -557,14 +558,17 @@ syscall_test(
 )
 
 syscall_test(
+    add_hostinet = True,
     test = "//test/syscalls/linux:raw_socket_hdrincl_test",
 )
 
 syscall_test(
+    add_hostinet = True,
     test = "//test/syscalls/linux:raw_socket_icmp_test",
 )
 
 syscall_test(
+    add_hostinet = True,
     shard_count = more_shards,
     test = "//test/syscalls/linux:raw_socket_test",
 )

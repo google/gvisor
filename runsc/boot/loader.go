@@ -569,14 +569,16 @@ func (l *Loader) installSeccompFilters() error {
 		filter.Report("syscall filter is DISABLED. Running in less secure mode.")
 	} else {
 		hostUDS := l.root.conf.GetHostUDS()
+		hostnet := l.root.conf.Network == config.NetworkHost
 		opts := filter.Options{
-			Platform:         l.k.Platform,
-			HostNetwork:      l.root.conf.Network == config.NetworkHost,
-			HostFilesystem:   l.root.conf.DirectFS,
-			HostSocketCreate: l.root.conf.DirectFS && hostUDS.AllowCreate(),
-			HostSocketOpen:   l.root.conf.DirectFS && hostUDS.AllowOpen(),
-			ProfileEnable:    l.root.conf.ProfileEnable,
-			ControllerFD:     l.ctrl.srv.FD(),
+			Platform:              l.k.Platform,
+			HostNetwork:           hostnet,
+			HostNetworkRawSockets: hostnet && l.root.conf.EnableRaw,
+			HostFilesystem:        l.root.conf.DirectFS,
+			HostSocketCreate:      l.root.conf.DirectFS && hostUDS.AllowCreate(),
+			HostSocketOpen:        l.root.conf.DirectFS && hostUDS.AllowOpen(),
+			ProfileEnable:         l.root.conf.ProfileEnable,
+			ControllerFD:          l.ctrl.srv.FD(),
 		}
 		if err := filter.Install(opts); err != nil {
 			return fmt.Errorf("installing seccomp filters: %w", err)
@@ -606,7 +608,7 @@ func (l *Loader) run() error {
 		// is configured after the loader is created and before Run() is called.
 		log.Debugf("Configuring host network")
 		s := l.k.RootNetworkNamespace().Stack().(*hostinet.Stack)
-		if err := s.Configure(); err != nil {
+		if err := s.Configure(l.root.conf.EnableRaw); err != nil {
 			return err
 		}
 	}
