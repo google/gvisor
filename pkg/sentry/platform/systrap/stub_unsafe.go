@@ -199,6 +199,10 @@ func stubInit() {
 	*p = handshakeTimeout
 	archState := (*sysmsg.ArchState)(unsafe.Pointer(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_arch_state)))
 	archState.Init()
+	exp := (*uint64)(unsafe.Pointer(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_context_decoupling_exp)))
+	if contextDecouplingExp {
+		*exp = 1
+	}
 
 	prepareSeccompRules(stubSysmsgStart, stubSysmsgRules, stubSysmsgRulesLen)
 
@@ -215,5 +219,5 @@ func stubInit() {
 	stubEnd = stubStart + mapLen + uintptr(gap)
 	log.Debugf("stubStart %x stubSysmsgStart %x stubSysmsgStack %x, mapLen %x", stubStart, stubSysmsgStart, stubSysmsgStack, mapLen)
 	log.Debugf(archState.String())
-
+	log.Debugf("contextDecouplingExp=%t", contextDecouplingExp)
 }
