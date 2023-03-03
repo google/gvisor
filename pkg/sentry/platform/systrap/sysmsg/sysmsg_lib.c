@@ -28,6 +28,7 @@
 uint64_t __export_deep_sleep_timeout;
 uint64_t __export_handshake_timeout;
 struct arch_state __export_arch_state;
+uint64_t __export_context_decoupling_exp;
 
 // A per-thread memory region is always align to STACK_SIZE.
 // *------------*
