@@ -738,6 +738,7 @@ syscall_test(
 
 syscall_test(
     size = "large",
+    add_hostinet = True,
     container = True,
     one_sandbox = False,
     shard_count = most_shards,
@@ -746,6 +747,7 @@ syscall_test(
 
 syscall_test(
     size = "large",
+    add_hostinet = True,
     shard_count = most_shards,
     # Takes too long for TSAN. Creates a lot of TCP sockets.
     tags = ["nogotsan"],
@@ -810,6 +812,7 @@ syscall_test(
 
 syscall_test(
     size = "medium",
+    add_hostinet = True,
     test = "//test/syscalls/linux:socket_ipv6_udp_unbound_loopback_test",
 )
 
@@ -831,11 +834,13 @@ syscall_test(
 )
 
 syscall_test(
+    add_hostinet = True,
     shard_count = more_shards,
     test = "//test/syscalls/linux:socket_ip_unbound_test",
 )
 
 syscall_test(
+    add_hostinet = True,
     shard_count = more_shards,
     test = "//test/syscalls/linux:socket_ipv6_unbound_test",
 )
@@ -862,10 +867,12 @@ syscall_test(
 )
 
 syscall_test(
+    add_hostinet = True,
     test = "//test/syscalls/linux:socket_blocking_local_test",
 )
 
 syscall_test(
+    add_hostinet = True,
     test = "//test/syscalls/linux:socket_blocking_ip_test",
 )
 
@@ -875,11 +882,13 @@ syscall_test(
 )
 
 syscall_test(
+    add_hostinet = True,
     test = "//test/syscalls/linux:socket_non_stream_blocking_udp_test",
 )
 
 syscall_test(
     size = "large",
+    add_hostinet = True,
     test = "//test/syscalls/linux:socket_stream_blocking_local_test",
 )
 
@@ -890,11 +899,13 @@ syscall_test(
 
 syscall_test(
     size = "medium",
+    add_hostinet = True,
     test = "//test/syscalls/linux:socket_stream_local_test",
 )
 
 syscall_test(
     size = "medium",
+    add_hostinet = True,
     test = "//test/syscalls/linux:socket_stream_nonblock_local_test",
 )
 
