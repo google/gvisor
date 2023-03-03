@@ -74,9 +74,13 @@ var (
 
 	stubInitProcess uintptr
 
+	// Memory region to store thread specific stacks.
 	stubSysmsgStack uintptr
 	stubSysmsgStart uintptr
 	stubSysmsgEnd   uintptr
+	// Memory region to store instances of sysmsg.ThreadContext.
+	stubContextRegion    uintptr
+	stubContextRegionLen uintptr
 	// The memory blob with precompiled seccomp rules.
 	stubSysmsgRules    uintptr
 	stubSysmsgRulesLen uintptr
@@ -218,12 +222,12 @@ restart:
 	if lastFaultSP != faultSP {
 		if lastFaultSP != nil {
 			lastFaultSP.mu.Lock()
-			delete(lastFaultSP.contexts, c)
+			delete(lastFaultSP.faultedContexts, c)
 			lastFaultSP.mu.Unlock()
 		}
 		if faultSP != nil {
 			faultSP.mu.Lock()
-			faultSP.contexts[c] = struct{}{}
+			faultSP.faultedContexts[c] = struct{}{}
 			faultSP.mu.Unlock()
 		}
 	}

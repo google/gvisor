@@ -152,7 +152,8 @@ type Msg struct {
 	Syshandler uint64
 	// SyshandlerStack is an address of  the thread syshandler stack.
 	SyshandlerStack uint64
-	// AppStack is a value of the stack register before calling the syshandler function.
+	// AppStack is a value of the stack register before calling the syshandler
+	// function.
 	AppStack uint64
 	// interrupt is non-zero if there is a postponed interrupt.
 	interrupt uint32
@@ -160,11 +161,24 @@ type Msg struct {
 	FaultJump int32
 	Type      EventType
 	State     State
+	// ContextID is the ID of the ThreadContext struct that the current
+	// sysmsg thread is is processing. This ID is used in the {sig|sys}handler
+	// to find the offset to the correct ThreadContext struct location.
+	ContextID uint64
+	// ContextRegion defines the ThreadContext memory region start within
+	// the sysmsg thread address space.
+	ContextRegion uint64
 
-	Signo      int32
-	Err        int32
-	Line       int32
-	debug      uint64
+	// Signo is the signal that the stub is requesting the sentry to handle.
+	Signo int32
+	// Err is the error value with which the {sig|sys}handler crashes the stub
+	// thread (see sysmsg.h:__panic).
+	Err int32
+	// Line is the code line on which the {sig|sys}handler crashed the stub thread
+	// (see sysmsg.h:panic).
+	Line int32
+	// Debug is a variable to use to get visibility into the stub from the sentry.
+	Debug      uint64
 	Regs       linux.PtraceRegs
 	fpState    uint64
 	SignalInfo linux.SignalInfo
@@ -190,6 +204,48 @@ type Msg struct {
 	stubFastPath   uint32
 	sentryFastPath uint32
 	AckedEvents    uint32
+	// InterruptedContextID is the target of the interrupt sent to sysmsg thread.
+	InterruptedContextID uint64
+}
+
+const (
+	// MaxFPStateLen is the largest possible FPState that we will save.
+	// Note: This value was chosen to be able to fit ThreadContext into one page.
+	MaxFPStateLen uint32 = 3648
+
+	// AllocatedSizeofThreadContextStruct defines how much memory to allocate for
+	// one instance of ThreadContext.
+	// We over allocate the memory for it because:
+	//   - The next instances needs to align to 64 bytes for purposes of xsave.
+	//   - It's nice to align it to the page boundary.
+	AllocatedSizeofThreadContextStruct uintptr = 4096
+)
+
+// ThreadContext contains the current context of the sysmsg thread. The struct
+// facilitates switching contexts by allowing the sentry to switch pointers to
+// this struct as it needs to.
+type ThreadContext struct {
+	// FPState is a region of memory where:
+	//   - syshandler saves FPU state to using xsave/fxsave
+	//   - sighandler copies FPU state to from ucontext->uc_mcontext.fpregs
+	// Note that xsave requires this region of memory to be 64 byte aligned;
+	// therefore allocations of ThreadContext must be too.
+	FPState [MaxFPStateLen]byte
+	// FPStateChanged is set to true when the stub thread needs to restore FPState
+	// because the sentry changed it.
+	FPStateChanged uint64
+	// Regs is the context's GP register set. The {sig|sys}handler will save and
+	// restore the user app's registers here.
+	Regs linux.PtraceRegs
+
+	// SignalInfo is the siginfo struct.
+	SignalInfo linux.SignalInfo
+	// Signo is the signal that the stub is requesting the sentry to handle.
+	Signo int64
+	// Interrupt is set to indicate that this context has been interrupted.
+	Interrupt uint64
+	// Debug is a variable to use to get visibility into the stub from the sentry.
+	Debug uint64
 }
 
 // LINT.ThenChange(sysmsg.h)
@@ -200,6 +256,14 @@ func (m *Msg) Init() {
 	m.Line = -1
 	m.stubFastPath = 0
 	m.sentryFastPath = 1
+}
+
+// Init initializes the ThreadContext instance.
+func (c *ThreadContext) Init() {
+	c.FPStateChanged = 1
+	c.Regs = linux.PtraceRegs{}
+	c.Signo = 0
+	c.SignalInfo = linux.SignalInfo{}
 }
 
 // StubFastPath returns true if the stub thread in the polling mode.
@@ -236,9 +300,21 @@ func (m *Msg) String() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "sysmsg.Msg{msg: %x type %d", m.Self, m.Type)
 	fmt.Fprintf(&b, " fault addr %x syscall %d", m.SignalInfo.Addr(), m.SignalInfo.Syscall())
-	fmt.Fprintf(&b, " err %x line %d debug %x", m.Err, m.Line, m.debug)
+	fmt.Fprintf(&b, " err %x line %d debug %x", m.Err, m.Line, m.Debug)
 	fmt.Fprintf(&b, " ip %x sp %x ret addr %x app stack %x", m.Regs.InstructionPointer(), m.Regs.StackPointer(), m.RetAddr, m.AppStack)
-	fmt.Fprintf(&b, " signo: %d, siginfo: %+v", m.Signo, m.SignalInfo)
+	fmt.Fprintf(&b, " signo %d siginfo %+v", m.Signo, m.SignalInfo)
+	fmt.Fprintf(&b, " contextID %d", m.ContextID)
+	b.WriteString("}")
+
+	return b.String()
+}
+
+func (c *ThreadContext) String() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "sysmsg.ThreadContext{fault addr %x syscall %d", c.SignalInfo.Addr(), c.SignalInfo.Syscall())
+	fmt.Fprintf(&b, " ip %x sp %x", c.Regs.InstructionPointer(), c.Regs.StackPointer())
+	fmt.Fprintf(&b, " FPStateChanged %d Regs %+v", c.FPStateChanged, c.Regs)
+	fmt.Fprintf(&b, " signo: %d, siginfo: %+v", c.Signo, c.SignalInfo)
 	b.WriteString("}")
 
 	return b.String()

@@ -109,18 +109,19 @@ func stubInit() {
 	// |--------stubSysmsgStack-------------|
 	// | Reserved space for per-thread      |
 	// | sysmsg stacks.                     |
+	// |--------stubThreadContextRegion-----|
+	// | Reserved space for thread contexts |
 	// *------------------------------------*
 
-	pageMask := uintptr(hostarch.PageSize - 1)
 	// Grab the existing stub.
 	procStubBegin := addrOfInitStubProcess()
 	procStubLen := int(safecopy.FindEndAddress(procStubBegin) - procStubBegin)
 	procStubSlice := unsafeSlice(procStubBegin, procStubLen)
-	mapLen := (uintptr(procStubLen) + pageMask) & ^pageMask
+	mapLen, _ := hostarch.PageRoundUp(uintptr(procStubLen))
 
 	stubSysmsgStart = mapLen
 	stubSysmsgLen := len(sysmsg.SighandlerBlob)
-	mapLen += (uintptr(stubSysmsgLen) + pageMask) & ^pageMask
+	mapLen, _ = hostarch.PageRoundUp(mapLen + uintptr(stubSysmsgLen))
 
 	stubSysmsgRules = mapLen
 	stubSysmsgRulesLen = hostarch.PageSize * 4
@@ -133,7 +134,11 @@ func stubInit() {
 	// Allocate maxGuestThreads plus ONE because each per-thread stack
 	// has to be aligned to sysmsg.PerThreadMemSize.
 	// Look at sysmsg/sighandler.c:sysmsg_addr() for more details.
-	mapLen += sysmsg.PerThreadMemSize * (maxGuestThreads + 1)
+	mapLen, _ = hostarch.PageRoundUp(mapLen + sysmsg.PerThreadMemSize*(maxSystemThreads+1))
+	// Allocate thread context region
+	stubContextRegion = mapLen
+	stubContextRegionLen = sysmsg.AllocatedSizeofThreadContextStruct * (maxGuestContexts + 1)
+	mapLen, _ = hostarch.PageRoundUp(mapLen + stubContextRegionLen)
 
 	// Randomize stubStart address.
 	randomOffset := uintptr(rand.Uint64() * hostarch.PageSize)
@@ -172,6 +177,7 @@ func stubInit() {
 	// Randomize stubSysmsgStack address.
 	gap := uintptr(rand.Uint64()) * hostarch.PageSize % (maximumUserAddress - stubStart - mapLen)
 	stubSysmsgStack += uintptr(gap)
+	stubContextRegion += uintptr(gap)
 
 	// Copy the stub to the address.
 	targetSlice := unsafeSlice(stubStart, procStubLen)
@@ -181,6 +187,7 @@ func stubInit() {
 	stubSysmsgStart += stubStart
 	stubSysmsgStack += stubStart
 	stubROMapEnd += stubStart
+	stubContextRegion += stubStart
 
 	// Align stubSysmsgStack to the per-thread stack size.
 	// Look at sysmsg/sighandler.c:sysmsg_addr() for more details.
@@ -217,7 +224,7 @@ func stubInit() {
 
 	// Set the end.
 	stubEnd = stubStart + mapLen + uintptr(gap)
-	log.Debugf("stubStart %x stubSysmsgStart %x stubSysmsgStack %x, mapLen %x", stubStart, stubSysmsgStart, stubSysmsgStack, mapLen)
+	log.Debugf("stubStart %x stubSysmsgStart %x stubSysmsgStack %x, stubThreadContextRegion %x, mapLen %x", stubStart, stubSysmsgStart, stubSysmsgStack, stubContextRegion, mapLen)
 	log.Debugf(archState.String())
 	log.Debugf("contextDecouplingExp=%t", contextDecouplingExp)
 }

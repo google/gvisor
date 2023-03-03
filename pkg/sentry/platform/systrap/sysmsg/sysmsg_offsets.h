@@ -21,6 +21,11 @@
 #define FAULT_OPCODE 0x06
 
 // LINT.IfChange
+#define MAX_FPSTATE_LEN 3648
+#define ALLOCATED_SIZEOF_THREAD_CONTEXT_STRUCT 4096
+// LINT.ThenChange(sysmsg.go)
+
+// LINT.IfChange
 
 // Define offsets in the struct sysmsg to use them in assembly files.
 // Each offset has to have BUILD_BUG_ON in sighandler.c.
@@ -32,10 +37,18 @@
 #define offsetof_sysmsg_interrupt 0x28
 #define offsetof_sysmsg_type 0x30
 #define offsetof_sysmsg_state 0x34
+#define offsetof_sysmsg_context_id 0x38
+#define offsetof_sysmsg_context_region 0x40
+
+#define offsetof_thread_context_fpstate 0x0
+#define offsetof_thread_context_fpstate_changed MAX_FPSTATE_LEN
+#define offsetof_thread_context_ptregs 0x8 + MAX_FPSTATE_LEN
 
 #define kSYSMSG_SYSCALL 1
 #define kSYSMSG_INTERRUPT 5
 
-// LINT.ThenChange(sysmsg.h, sighandler.c)
+#define kSYSMSG_STATE_NONE 0
+
+// LINT.ThenChange(sysmsg.h, sysmsg_lib.c)
 
 #endif  // THIRD_PARTY_GVISOR_PKG_SENTRY_PLATFORM_SYSTRAP_SYSMSG_SYSMSG_OFFSETS_H_
