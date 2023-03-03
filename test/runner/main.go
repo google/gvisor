@@ -238,6 +238,8 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 	}
 	if *overlay {
 		args = append(args, "-overlay2=all:dir=/tmp")
+	} else {
+		args = append(args, "-overlay2=none")
 	}
 	if *debug {
 		args = append(args, "-debug", "-log-packets=true")

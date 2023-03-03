@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -211,5 +212,58 @@ func TestOverlayRootfsWhiteout(t *testing.T) {
 		t.Fatalf("docker run failed: %s, %v", got, err)
 	} else if got != "" {
 		t.Errorf("root directory contains a file/directory whose name contains %q: output = %q", boot.SelfOverlayFilestorePrefix, got)
+	}
+}
+
+// TODO(b/271612187): Once S/R support is added for file-backed overlays, move
+// this test to integration_test.go so it can run with the default runsc
+// configuration which uses file-backed overlay.
+func TestCheckpointRestore(t *testing.T) {
+	if !testutil.IsCheckpointSupported() {
+		t.Skip("Pause/resume is not supported.")
+	}
+	dockerutil.EnsureDockerExperimentalEnabled()
+
+	ctx := context.Background()
+	d := dockerutil.MakeContainerWithRuntime(ctx, t, "-no-overlay")
+	defer d.CleanUp(ctx)
+
+	// Start the container.
+	port := 8080
+	if err := d.Spawn(ctx, dockerutil.RunOpts{
+		Image: "basic/python",
+		Ports: []int{port}, // See Dockerfile.
+	}); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+
+	// Create a snapshot.
+	if err := d.Checkpoint(ctx, "test"); err != nil {
+		t.Fatalf("docker checkpoint failed: %v", err)
+	}
+	if err := d.WaitTimeout(ctx, defaultWait); err != nil {
+		t.Fatalf("wait failed: %v", err)
+	}
+
+	// TODO(b/143498576): Remove Poll after github.com/moby/moby/issues/38963 is fixed.
+	if err := testutil.Poll(func() error { return d.Restore(ctx, "test") }, defaultWait); err != nil {
+		t.Fatalf("docker restore failed: %v", err)
+	}
+
+	// Find container IP address.
+	ip, err := d.FindIP(ctx, false)
+	if err != nil {
+		t.Fatalf("docker.FindIP failed: %v", err)
+	}
+
+	// Wait until it's up and running.
+	if err := testutil.WaitForHTTP(ip.String(), port, defaultWait); err != nil {
+		t.Fatalf("WaitForHTTP() timeout: %v", err)
+	}
+
+	// Check if container is working again.
+	client := http.Client{Timeout: defaultWait}
+	if err := testutil.HTTPRequestSucceeds(client, ip.String(), port); err != nil {
+		t.Error("http request failed:", err)
 	}
 }

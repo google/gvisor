@@ -56,20 +56,6 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-// httpRequestSucceeds sends a request to a given url and checks that the status is OK.
-func httpRequestSucceeds(client http.Client, server string, port int) error {
-	url := fmt.Sprintf("http://%s:%d", server, port)
-	// Ensure that content is being served.
-	resp, err := client.Get(url)
-	if err != nil {
-		return fmt.Errorf("error reaching http server: %v", err)
-	}
-	if want := http.StatusOK; resp.StatusCode != want {
-		return fmt.Errorf("wrong response code, got: %d, want: %d", resp.StatusCode, want)
-	}
-	return nil
-}
-
 // TestLifeCycle tests a basic Create/Start/Stop docker container life cycle.
 func TestLifeCycle(t *testing.T) {
 	ctx := context.Background()
@@ -96,7 +82,7 @@ func TestLifeCycle(t *testing.T) {
 		t.Fatalf("WaitForHTTP() timeout: %v", err)
 	}
 	client := http.Client{Timeout: defaultWait}
-	if err := httpRequestSucceeds(client, ip.String(), port); err != nil {
+	if err := testutil.HTTPRequestSucceeds(client, ip.String(), port); err != nil {
 		t.Errorf("http request failed: %v", err)
 	}
 
@@ -139,7 +125,7 @@ func TestPauseResume(t *testing.T) {
 
 	// Check that container is working.
 	client := http.Client{Timeout: defaultWait}
-	if err := httpRequestSucceeds(client, ip.String(), port); err != nil {
+	if err := testutil.HTTPRequestSucceeds(client, ip.String(), port); err != nil {
 		t.Error("http request failed:", err)
 	}
 
@@ -171,57 +157,7 @@ func TestPauseResume(t *testing.T) {
 
 	// Check if container is working again.
 	client = http.Client{Timeout: defaultWait}
-	if err := httpRequestSucceeds(client, ip.String(), port); err != nil {
-		t.Error("http request failed:", err)
-	}
-}
-
-func TestCheckpointRestore(t *testing.T) {
-	if !testutil.IsCheckpointSupported() {
-		t.Skip("Pause/resume is not supported.")
-	}
-	dockerutil.EnsureDockerExperimentalEnabled()
-
-	ctx := context.Background()
-	d := dockerutil.MakeContainer(ctx, t)
-	defer d.CleanUp(ctx)
-
-	// Start the container.
-	port := 8080
-	if err := d.Spawn(ctx, dockerutil.RunOpts{
-		Image: "basic/python",
-		Ports: []int{port}, // See Dockerfile.
-	}); err != nil {
-		t.Fatalf("docker run failed: %v", err)
-	}
-
-	// Create a snapshot.
-	if err := d.Checkpoint(ctx, "test"); err != nil {
-		t.Fatalf("docker checkpoint failed: %v", err)
-	}
-	if err := d.WaitTimeout(ctx, defaultWait); err != nil {
-		t.Fatalf("wait failed: %v", err)
-	}
-
-	// TODO(b/143498576): Remove Poll after github.com/moby/moby/issues/38963 is fixed.
-	if err := testutil.Poll(func() error { return d.Restore(ctx, "test") }, defaultWait); err != nil {
-		t.Fatalf("docker restore failed: %v", err)
-	}
-
-	// Find container IP address.
-	ip, err := d.FindIP(ctx, false)
-	if err != nil {
-		t.Fatalf("docker.FindIP failed: %v", err)
-	}
-
-	// Wait until it's up and running.
-	if err := testutil.WaitForHTTP(ip.String(), port, defaultWait); err != nil {
-		t.Fatalf("WaitForHTTP() timeout: %v", err)
-	}
-
-	// Check if container is working again.
-	client := http.Client{Timeout: defaultWait}
-	if err := httpRequestSucceeds(client, ip.String(), port); err != nil {
+	if err := testutil.HTTPRequestSucceeds(client, ip.String(), port); err != nil {
 		t.Error("http request failed:", err)
 	}
 }

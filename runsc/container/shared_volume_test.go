@@ -33,6 +33,7 @@ import (
 // into and out of the sandbox.
 func TestSharedVolume(t *testing.T) {
 	conf := testutil.TestConfig(t)
+	conf.Overlay2 = config.Overlay2{RootMount: false, SubMounts: false, Medium: ""}
 	conf.FileAccess = config.FileAccessShared
 
 	// Main process just sleeps. We will use "exec" to probe the state of
@@ -145,11 +146,6 @@ func TestSharedVolume(t *testing.T) {
 		t.Errorf("stat %q got error %v, wanted nil", filename, err)
 	}
 
-	// File should exist outside the sandbox.
-	if _, err := os.Stat(filename); err != nil {
-		t.Errorf("stat %q got error %v, wanted nil", filename, err)
-	}
-
 	// Delete the file from within the sandbox.
 	argsRemove := &control.ExecArgs{
 		Filename: "/bin/rm",
@@ -186,6 +182,7 @@ func checkFile(conf *config.Config, c *Container, filename string, want []byte) 
 // is reflected inside.
 func TestSharedVolumeFile(t *testing.T) {
 	conf := testutil.TestConfig(t)
+	conf.Overlay2 = config.Overlay2{RootMount: false, SubMounts: false, Medium: ""}
 	conf.FileAccess = config.FileAccessShared
 
 	// Main process just sleeps. We will use "exec" to probe the state of

@@ -252,7 +252,7 @@ func TestValidationFail(t *testing.T) {
 			name: "shared+overlay",
 			flags: map[string]string{
 				"file-access": "shared",
-				"overlay":     "true",
+				"overlay2":    "root:self",
 			},
 			error: "overlay flag is incompatible",
 		},

@@ -408,6 +408,7 @@ func configs(t *testing.T, noOverlay bool) map[string]*config.Config {
 	cs := make(map[string]*config.Config)
 	for _, p := range ps {
 		c := testutil.TestConfig(t)
+		c.Overlay2 = config.Overlay2{RootMount: false, SubMounts: false, Medium: ""}
 		c.Platform = p
 		cs[p] = c
 	}
@@ -417,7 +418,7 @@ func configs(t *testing.T, noOverlay bool) map[string]*config.Config {
 		for _, p := range ps {
 			c := testutil.TestConfig(t)
 			c.Platform = p
-			c.Overlay = true
+			c.Overlay2 = config.Overlay2{RootMount: true, SubMounts: true, Medium: "memory"}
 			cs[p+"-overlay"] = c
 		}
 	}
@@ -616,7 +617,8 @@ func TestExePath(t *testing.T) {
 		"default": testutil.TestConfig(t),
 		"overlay": testutil.TestConfig(t),
 	}
-	configs["overlay"].Overlay = true
+	configs["default"].Overlay2 = config.Overlay2{RootMount: false, SubMounts: false, Medium: ""}
+	configs["overlay"].Overlay2 = config.Overlay2{RootMount: true, SubMounts: true, Medium: "memory"}
 
 	for name, conf := range configs {
 		t.Run(name, func(t *testing.T) {

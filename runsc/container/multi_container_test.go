@@ -1086,7 +1086,7 @@ func TestMultiContainerDifferentFilesystems(t *testing.T) {
 
 	// Make sure overlay is enabled, and none of the root filesystems are
 	// read-only, otherwise we won't be able to create the file.
-	conf.Overlay = true
+	conf.Overlay2 = config.Overlay2{RootMount: true, SubMounts: true, Medium: "memory"}
 	specs, ids := createSpecs(cmdRoot, cmd, cmd)
 	for _, s := range specs {
 		s.Root.Readonly = false

@@ -322,7 +322,7 @@ func (c *Config) validate() error {
 		return fmt.Errorf("overlay flag has been replaced with overlay2 flag")
 	}
 	if overlay2 := c.GetOverlay2(); c.FileAccess == FileAccessShared && overlay2.Enabled() {
-		return fmt.Errorf("overlay flag is incompatible with shared file access")
+		return fmt.Errorf("overlay flag is incompatible with shared file access for rootfs")
 	}
 	if c.NumNetworkChannels <= 0 {
 		return fmt.Errorf("num_network_channels must be > 0, got: %d", c.NumNetworkChannels)
@@ -705,7 +705,9 @@ func defaultOverlay2() *Overlay2 {
 // Set implements flag.Value.
 func (o *Overlay2) Set(v string) error {
 	if v == "none" {
-		// Defaults are correct.
+		o.RootMount = false
+		o.SubMounts = false
+		o.Medium = ""
 		return nil
 	}
 	vs := strings.Split(v, ":")

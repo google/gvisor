@@ -8,3 +8,4 @@ test_readline,b/162980389,TestReadline hangs forever
 test_resource,b/76174079,
 test_signal,,Flaky - signal: alarm clock
 test_socket,,Broken test
+test_os,b/271473320,TestScandir.test_attributes fails with overlay
