@@ -638,6 +638,12 @@ func (i *IPv6PayloadIterator) Next() (IPv6PayloadHeader, bool, error) {
 	}
 }
 
+// NextHeaderIdentifier returns the identifier of the header next returned by
+// it.Next().
+func (i *IPv6PayloadIterator) NextHeaderIdentifier() IPv6ExtensionHeaderIdentifier {
+	return i.nextHdrIdentifier
+}
+
 // nextHeaderData returns the extension header's Next Header field and raw data.
 //
 // fragmentHdr indicates that the extension header being parsed is the Fragment
