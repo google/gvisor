@@ -19,7 +19,7 @@
 // to be called in cases when the syscall is expected to block.
 //
 // func BlockingPoll(fds *PollEvent, nfds int, timeout *syscall.Timespec) (n int, err syscall.Errno)
-TEXT ·BlockingPoll(SB),NOSPLIT,$0-40
+TEXT ·BlockingPoll(SB),NOSPLIT|NOFRAME,$0-40
 	CALL	·callEntersyscallblock(SB)
 	MOVQ	fds+0(FP), DI
 	MOVQ	nfds+8(FP), SI

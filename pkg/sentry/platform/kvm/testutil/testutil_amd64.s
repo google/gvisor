@@ -19,7 +19,7 @@
 #include "funcdata.h"
 #include "textflag.h"
 
-TEXT ·Getpid(SB),NOSPLIT,$0
+TEXT ·Getpid(SB),NOSPLIT|NOFRAME,$0
 	NO_LOCAL_POINTERS
 	MOVQ $39, AX // getpid
 	SYSCALL
@@ -31,7 +31,7 @@ TEXT ·AddrOfGetpid(SB), $0-8
 	MOVQ AX, ret+0(FP)
 	RET
 
-TEXT ·touch(SB),NOSPLIT,$0
+TEXT ·touch(SB),NOSPLIT|NOFRAME,$0
 start:
 	MOVQ 0(AX), BX // deref AX
 	MOVQ $39, AX   // getpid
@@ -44,7 +44,7 @@ TEXT ·AddrOfTouch(SB), $0-8
 	MOVQ AX, ret+0(FP)
 	RET
 
-TEXT ·syscallLoop(SB),NOSPLIT,$0
+TEXT ·syscallLoop(SB),NOSPLIT|NOFRAME,$0
 start:
 	SYSCALL
 	JMP start
@@ -55,7 +55,7 @@ TEXT ·AddrOfSyscallLoop(SB), $0-8
 	MOVQ AX, ret+0(FP)
 	RET
 
-TEXT ·spinLoop(SB),NOSPLIT,$0
+TEXT ·spinLoop(SB),NOSPLIT|NOFRAME,$0
 start:
 	JMP start
 
@@ -65,7 +65,7 @@ TEXT ·AddrOfSpinLoop(SB), $0-8
 	MOVQ AX, ret+0(FP)
 	RET
 
-TEXT ·FloatingPointWorks(SB),NOSPLIT,$0
+TEXT ·FloatingPointWorks(SB),NOSPLIT|NOFRAME,$0
 	NO_LOCAL_POINTERS
 	MOVQ $1, AX
 	MOVQ AX, X0
@@ -94,7 +94,7 @@ TEXT ·FloatingPointWorks(SB),NOSPLIT,$0
 	NOTQ DI; \
 	NOTQ SP;
 
-TEXT ·twiddleRegsSyscall(SB),NOSPLIT,$0
+TEXT ·twiddleRegsSyscall(SB),NOSPLIT|NOFRAME,$0
 	TWIDDLE_REGS()
 	SYSCALL
 	RET // never reached
@@ -105,7 +105,7 @@ TEXT ·AddrOfTwiddleRegsSyscall(SB), $0-8
 	MOVQ AX, ret+0(FP)
 	RET
 
-TEXT ·twiddleRegsFault(SB),NOSPLIT,$0
+TEXT ·twiddleRegsFault(SB),NOSPLIT|NOFRAME,$0
 	TWIDDLE_REGS()
 	JMP AX // must fault
 	RET // never reached
@@ -119,7 +119,7 @@ TEXT ·AddrOfTwiddleRegsFault(SB), $0-8
 #define READ_FS() BYTE $0x64; BYTE $0x48; BYTE $0x8b; BYTE $0x00;
 #define READ_GS() BYTE $0x65; BYTE $0x48; BYTE $0x8b; BYTE $0x00;
 
-TEXT ·twiddleSegments(SB),NOSPLIT,$0
+TEXT ·twiddleSegments(SB),NOSPLIT|NOFRAME,$0
 	MOVQ $0x0, AX
 	READ_GS()
 	MOVQ AX, BX

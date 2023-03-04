@@ -28,7 +28,7 @@
 //
 // It must have the same frame configuration as memcpy so that it can undo any
 // potential call frame set up by the assembler.
-TEXT handleMemcpyFault(SB), NOSPLIT, $0-36
+TEXT handleMemcpyFault(SB), NOSPLIT|NOFRAME, $0-36
 	MOVQ	AX, addr+24(FP)
 	MOVL	DI, sig+32(FP)
 	RET
@@ -45,7 +45,7 @@ TEXT handleMemcpyFault(SB), NOSPLIT, $0-36
 // The code is derived from the forward copying part of runtime.memmove.
 //
 // func memcpy(dst, src unsafe.Pointer, n uintptr) (fault unsafe.Pointer, sig int32)
-TEXT ·memcpy(SB), NOSPLIT, $0-36
+TEXT ·memcpy(SB), NOSPLIT|NOFRAME, $0-36
 	// Store 0 as the returned signal number. If we run to completion,
 	// this is the value the caller will see; if a signal is received,
 	// handleMemcpyFault will store a different value in this address.
