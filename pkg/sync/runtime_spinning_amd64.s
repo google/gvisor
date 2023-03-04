@@ -18,7 +18,7 @@
 
 #define NMSPINNING_OFFSET 92 // +checkoffset runtime schedt.nmspinning
 
-TEXT ·addrOfSpinning(SB),NOSPLIT,$0-8
+TEXT ·addrOfSpinning(SB),NOSPLIT|NOFRAME,$0-8
 	LEAQ runtime·sched(SB), AX
 	ADDQ $NMSPINNING_OFFSET, AX
 	MOVQ AX, ret+0(FP)

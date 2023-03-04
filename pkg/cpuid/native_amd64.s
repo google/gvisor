@@ -14,7 +14,7 @@
 
 #include "textflag.h"
 
-TEXT ·native(SB),NOSPLIT,$0-24
+TEXT ·native(SB),NOSPLIT|NOFRAME,$0-24
 	MOVL arg_Eax+0(FP), AX
 	MOVL arg_Ecx+4(FP), CX
 	CPUID

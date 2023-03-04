@@ -25,7 +25,7 @@
 // GetASIDBits return the system ASID bits, 8 or 16 bits.
 //
 // func GetASIDBits() uint8
-TEXT ·GetASIDBits(SB),NOSPLIT,$0-1
+TEXT ·GetASIDBits(SB),NOSPLIT|NOFRAME,$0-1
 	// First, check whether 16bits ASID is supported.
 	// ID_AA64MMFR0_EL1.ASIDBITS[7:4] == 0010.
 	WORD $0xd5380700    // MRS ID_AA64MMFR0_EL1, R0

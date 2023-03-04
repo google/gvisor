@@ -18,7 +18,7 @@
 #include "textflag.h"
 
 // func RaceUncheckedAtomicCompareAndSwapUintptr(ptr *uintptr, old, new uintptr) bool
-TEXT ·RaceUncheckedAtomicCompareAndSwapUintptr(SB),NOSPLIT,$0-25
+TEXT ·RaceUncheckedAtomicCompareAndSwapUintptr(SB),NOSPLIT|NOFRAME,$0-25
 	MOVQ ptr+0(FP), DI
 	MOVQ old+8(FP), AX
 	MOVQ new+16(FP), SI
