@@ -52,7 +52,7 @@ int main(int argc, char *argv[]) {
                                   {0, 0, 0, 0}};
   int option_index = 0;
 
-  while ((c = getopt_long(argc, argv, "l:s", long_options, &option_index)) !=
+  while ((c = getopt_long(argc, argv, "l:s:", long_options, &option_index)) !=
          -1) {
     switch (c) {
       case 'l':

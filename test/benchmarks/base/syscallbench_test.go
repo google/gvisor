@@ -68,7 +68,7 @@ func BenchmarkSyscallbench(b *testing.B) {
 				b.Fatalf("run failed with: %v", err)
 			}
 			b.Run(name, func(b *testing.B) {
-				cmd := []string{"syscallbench", fmt.Sprintf("--loops=%d --syscall %d", b.N, tc.syscallArg)}
+				cmd := []string{"syscallbench", fmt.Sprintf("--loops=%d", b.N), fmt.Sprintf("--syscall=%d", tc.syscallArg)}
 				b.ResetTimer()
 				out, err := container.Exec(ctx, dockerutil.ExecOpts{}, cmd...)
 				if err != nil {
