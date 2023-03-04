@@ -25,13 +25,14 @@ import (
 
 // Options are seccomp filter related options.
 type Options struct {
-	Platform         platform.Platform
-	HostNetwork      bool
-	HostFilesystem   bool
-	HostSocketCreate bool
-	HostSocketOpen   bool
-	ProfileEnable    bool
-	ControllerFD     int
+	Platform              platform.Platform
+	HostNetwork           bool
+	HostNetworkRawSockets bool
+	HostFilesystem        bool
+	HostSocketCreate      bool
+	HostSocketOpen        bool
+	ProfileEnable         bool
+	ControllerFD          int
 }
 
 // Install seccomp filters based on the given platform.
@@ -44,8 +45,12 @@ func Install(opt Options) error {
 	s.Merge(instrumentationFilters())
 
 	if opt.HostNetwork {
-		Report("host networking enabled: syscall filters less restrictive!")
-		s.Merge(hostInetFilters())
+		if opt.HostNetworkRawSockets {
+			Report("host networking (with raw sockets) enabled: syscall filters less restrictive!")
+		} else {
+			Report("host networking enabled: syscall filters less restrictive!")
+		}
+		s.Merge(hostInetFilters(opt.HostNetworkRawSockets))
 	}
 	if opt.ProfileEnable {
 		Report("profile enabled: syscall filters less restrictive!")

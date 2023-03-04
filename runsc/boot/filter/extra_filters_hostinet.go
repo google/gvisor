@@ -22,7 +22,7 @@ import (
 )
 
 // hostInetFilters contains syscalls that are needed by sentry/socket/hostinet.
-func hostInetFilters() seccomp.SyscallRules {
+func hostInetFilters(allowRawSockets bool) seccomp.SyscallRules {
 	rules := seccomp.SyscallRules{
 		unix.SYS_ACCEPT4: []seccomp.Rule{
 			{
@@ -80,13 +80,23 @@ func hostInetFilters() seccomp.SyscallRules {
 	// Generate rules for socket creation based on hostinet's supported
 	// socket types.
 	socketRules := []seccomp.Rule{}
-	for _, sock := range hostinet.AllowedSocketTypes {
-		socketRules = append(socketRules, seccomp.Rule{
+	stypes := hostinet.AllowedSocketTypes
+	if allowRawSockets {
+		stypes = append(stypes, hostinet.AllowedRawSocketTypes...)
+	}
+	for _, sock := range stypes {
+		rule := seccomp.Rule{
 			seccomp.EqualTo(sock.Family),
-			// We always set SOCK_NONBLOCK and SOCK_CLOEXEC
+			// We always set SOCK_NONBLOCK and SOCK_CLOEXEC.
 			seccomp.EqualTo(sock.Type | linux.SOCK_NONBLOCK | linux.SOCK_CLOEXEC),
+			// Match specific protocol by default.
 			seccomp.EqualTo(sock.Protocol),
-		})
+		}
+		if sock.Protocol == hostinet.AllowAllProtocols {
+			// Change protocol filter to MatchAny.
+			rule[2] = seccomp.MatchAny{}
+		}
+		socketRules = append(socketRules, rule)
 	}
 	rules[unix.SYS_SOCKET] = socketRules
 

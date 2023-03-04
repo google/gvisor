@@ -34,7 +34,7 @@
 //
 // This should not be used outside the context of a new ptrace child (as the
 // function is otherwise a bunch of nonsense).
-TEXT ·stub(SB),NOSPLIT,$0
+TEXT ·stub(SB),NOSPLIT|NOFRAME,$0
 begin:
 	// N.B. This loop only executes in the context of a single-threaded
 	// fork child.
@@ -119,7 +119,7 @@ TEXT ·addrOfStub(SB), $0-8
 //
 // This is a distinct function because stub, above, may be mapped at any
 // arbitrary location, and stub has a specific binary API (see above).
-TEXT ·stubCall(SB),NOSPLIT,$0-16
+TEXT ·stubCall(SB),NOSPLIT|NOFRAME,$0-16
 	MOVQ addr+0(FP), AX
 	MOVQ pid+8(FP), R15
 	JMP AX

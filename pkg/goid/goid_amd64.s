@@ -17,7 +17,7 @@
 #define GOID_OFFSET 152 // +checkoffset runtime g.goid
 
 // func goid() int64
-TEXT ·goid(SB),NOSPLIT,$0-8
+TEXT ·goid(SB),NOSPLIT|NOFRAME,$0-8
   MOVQ (TLS), R14
   MOVQ GOID_OFFSET(R14), R14
   MOVQ R14, ret+0(FP)

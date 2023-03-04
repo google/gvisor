@@ -15,6 +15,6 @@
 #include "funcdata.h"
 #include "textflag.h"
 
-TEXT ·spinloop(SB),NOSPLIT,$0
+TEXT ·spinloop(SB),NOSPLIT|NOFRAME,$0
 	PAUSE
 	RET

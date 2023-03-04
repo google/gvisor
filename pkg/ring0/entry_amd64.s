@@ -164,7 +164,7 @@ TEXT name,$0-8; \
 	RET
 
 // See kernel.go.
-TEXT ·Halt(SB),NOSPLIT,$0
+TEXT ·Halt(SB),NOSPLIT|NOFRAME,$0
 	HLT
 	RET
 
@@ -185,7 +185,7 @@ TEXT ·HaltAndWriteFSBase(SB),NOSPLIT,$8-8
 // jumpToKernel changes execution to the kernel address space.
 //
 // This works by changing the return value to the kernel version.
-TEXT ·jumpToKernel(SB),NOSPLIT,$0
+TEXT ·jumpToKernel(SB),NOSPLIT|NOFRAME,$0
 	MOVQ 0(SP), AX
 	ORQ ·KernelStartAddress(SB), AX // Future return value.
 	MOVQ AX, 0(SP)
@@ -194,7 +194,7 @@ TEXT ·jumpToKernel(SB),NOSPLIT,$0
 // jumpToUser changes execution to the user address space.
 //
 // This works by changing the return value to the user version.
-TEXT ·jumpToUser(SB),NOSPLIT,$0
+TEXT ·jumpToUser(SB),NOSPLIT|NOFRAME,$0
 	// N.B. we can't access KernelStartAddress from the upper half (data
 	// pages not available), so just naively clear all the upper bits.
 	// We are assuming a 47-bit virtual address space.
@@ -300,7 +300,7 @@ fpsave_done:
 	RET
 
 // See entry_amd64.go.
-TEXT ·sysret(SB),NOSPLIT,$0-32
+TEXT ·sysret(SB),NOSPLIT|NOFRAME,$0-32
 	// Set application FS. We can't do this in Go because Go code needs FS.
 	MOVQ regs+8(FP), AX
 	MOVQ PTRACE_FS_BASE(AX), AX
@@ -343,7 +343,7 @@ TEXT ·sysret(SB),NOSPLIT,$0-32
 	// caller.
 
 // See entry_amd64.go.
-TEXT ·iret(SB),NOSPLIT,$0-32
+TEXT ·iret(SB),NOSPLIT|NOFRAME,$0-32
 	// Set application FS. We can't do this in Go because Go code needs FS.
 	MOVQ regs+8(FP), AX
 	MOVQ PTRACE_FS_BASE(AX), AX
@@ -383,7 +383,7 @@ TEXT ·iret(SB),NOSPLIT,$0-32
 	// caller.
 
 // See entry_amd64.go.
-TEXT ·resume(SB),NOSPLIT,$0
+TEXT ·resume(SB),NOSPLIT|NOFRAME,$0
 	// See iret, above.
 	MOVQ ENTRY_CPU_SELF(GS), AX                 // Load vCPU.
 	PUSHQ CPU_REGISTERS+PTRACE_SS(AX)
@@ -396,7 +396,7 @@ TEXT ·resume(SB),NOSPLIT,$0
 	IRET()
 
 // See entry_amd64.go.
-TEXT ·start(SB),NOSPLIT,$0
+TEXT ·start(SB),NOSPLIT|NOFRAME,$0
 	// N.B. This is the vCPU entrypoint. It is not called from Go code and
 	// thus pushes and pops values on the stack until calling into Go
 	// (startGo) because we aren't usually a typical Go assembly frame.
@@ -418,7 +418,7 @@ TEXT ·start(SB),NOSPLIT,$0
 ADDR_OF_FUNC(·AddrOfStart(SB), ·start(SB));
 
 // See entry_amd64.go.
-TEXT ·sysenter(SB),NOSPLIT,$0
+TEXT ·sysenter(SB),NOSPLIT|NOFRAME,$0
 	// _RFLAGS_IOPL0 is always set in the user mode and it is never set in
 	// the kernel mode. See the comment of UserFlagsSet for more details.
 	TESTL $_RFLAGS_IOPL0, R11
@@ -532,7 +532,7 @@ ADDR_OF_FUNC(·addrOfSysenter(SB), ·sysenter(SB));
 // the vector & error codes are pushed as return values.
 //
 // See below for the stubs that call exception.
-TEXT ·exception(SB),NOSPLIT,$0
+TEXT ·exception(SB),NOSPLIT|NOFRAME,$0
 	// Determine whether the exception occurred in kernel mode or user
 	// mode, based on the flags. We expect the following stack:
 	//
@@ -649,13 +649,13 @@ fpsave_done:
 
 #define EXCEPTION_WITH_ERROR(value, symbol, addr) \
 ADDR_OF_FUNC(addr, symbol); \
-TEXT symbol,NOSPLIT,$0; \
+TEXT symbol,NOSPLIT|NOFRAME,$0; \
 	PUSHQ $value; \
 	JMP ·exception(SB);
 
 #define EXCEPTION_WITHOUT_ERROR(value, symbol, addr) \
 ADDR_OF_FUNC(addr, symbol); \
-TEXT symbol,NOSPLIT,$0; \
+TEXT symbol,NOSPLIT|NOFRAME,$0; \
 	PUSHQ $0x0; \
 	PUSHQ $value; \
 	JMP ·exception(SB);

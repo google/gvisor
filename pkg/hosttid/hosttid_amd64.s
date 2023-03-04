@@ -20,7 +20,7 @@
 #define M_OFFSET       48 // +checkoffset runtime g.m
 #define PROCID_OFFSET  72 // +checkoffset runtime m.procid
 
-TEXT ·Current(SB),NOSPLIT,$0-8
+TEXT ·Current(SB),NOSPLIT|NOFRAME,$0-8
 	// procid is in getg().m.procid.
 	MOVQ TLS, AX
 	MOVQ 0(AX)(TLS*1), AX

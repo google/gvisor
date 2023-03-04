@@ -603,3 +603,6 @@ const SO_ACCEPTCON = 1 << 16
 type ICMP6Filter struct {
 	Filter [8]uint32
 }
+
+// SizeOfICMP6Filter is the size of ICMP6Filter struct.
+var SizeOfICMP6Filter = uint32((*ICMP6Filter)(nil).SizeBytes())

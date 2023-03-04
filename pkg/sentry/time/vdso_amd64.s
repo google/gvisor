@@ -16,7 +16,7 @@
 
 #define SYS_clock_gettime       228
 
-TEXT ·vdsoClockGettime(SB), NOSPLIT, $0-24
+TEXT ·vdsoClockGettime(SB),NOSPLIT|NOFRAME,$0-24
 	MOVL clockid+0(FP), DI
 	MOVQ ts+8(FP), SI
 	MOVQ runtime·vdsoClockgettimeSym(SB), AX

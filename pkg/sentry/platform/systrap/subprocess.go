@@ -99,7 +99,12 @@ type requestStub struct {
 }
 
 const (
-	maxGuestThreads = 4096
+	// maxSystemThreads specifies the maximum number of system threads that a
+	// subprocess may create in order to process the contexts.
+	maxSystemThreads = 4096
+	// maxGuestContexts specifies the maximum number of task contexts that a
+	// subprocess can handle.
+	maxGuestContexts = 4096
 )
 
 // subprocess is a collection of threads being traced.
@@ -123,12 +128,19 @@ type subprocess struct {
 	// reused until all tied contexts have been unregistered.
 	released bool
 
-	// contexts is the set of contexts for which it's possible that
+	// faultedContexts is the set of contexts for which it's possible that
 	// context.lastFaultSP == this subprocess.
-	contexts map[*context]struct{}
+	faultedContexts map[*context]struct{}
 
 	// sysmsgStackPool is a pool of available sysmsg stacks.
 	sysmsgStackPool pool.Pool
+
+	// threadContextPool is a pool of available sysmsg.ThreadContext IDs.
+	threadContextPool pool.Pool
+
+	// threadContextRegion defines the ThreadContext memory region start
+	// within the sentry address space.
+	threadContextRegion uintptr
 
 	// memoryFile is used to allocate a sysmsg stack which is shared
 	// between a stub process and the Sentry.
@@ -244,10 +256,11 @@ func newSubprocess(create func() (*thread, error), memoryFile *pgalloc.MemoryFil
 
 	// Ready.
 	sp := &subprocess{
-		requests:        requests,
-		contexts:        make(map[*context]struct{}),
-		sysmsgStackPool: pool.Pool{Start: 0, Limit: maxGuestThreads},
-		memoryFile:      memoryFile,
+		requests:          requests,
+		faultedContexts:   make(map[*context]struct{}),
+		sysmsgStackPool:   pool.Pool{Start: 0, Limit: maxSystemThreads},
+		threadContextPool: pool.Pool{Start: 0, Limit: maxGuestContexts},
+		memoryFile:        memoryFile,
 	}
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -275,9 +288,59 @@ func newSubprocess(create func() (*thread, error), memoryFile *pgalloc.MemoryFil
 
 	sp.unmap()
 	sp.usertrap = usertrap.New()
+	sp.mapSharedRegions()
 
 	globalPool.add(sp)
 	return sp, nil
+}
+
+// mapSharedRegions maps the shared regions that are used between the subprocess
+// and ALL of the subsequently created sysmsg threads into both the sentry and
+// the syscall thread.
+//
+// Should be called before any sysmsg threads are created.
+// Initializes s.contextQueue and s.threadContextRegion.
+func (s *subprocess) mapSharedRegions() {
+	if s.threadContextRegion != 0 {
+		panic("contextQueue or threadContextRegion was already initialized")
+	}
+
+	opts := pgalloc.AllocOpts{
+		Kind: usage.System,
+		Dir:  pgalloc.TopDown,
+	}
+
+	// Map thread context region into the sentry.
+	threadContextFR, err := s.memoryFile.Allocate(uint64(stubContextRegionLen), opts)
+	if err != nil {
+		panic(fmt.Sprintf("failed to allocate a new subprocess context memory region"))
+	}
+	sentryThreadContextRegionAddr, _, errno := unix.RawSyscall6(
+		unix.SYS_MMAP,
+		0,
+		uintptr(threadContextFR.Length()),
+		unix.PROT_WRITE|unix.PROT_READ,
+		unix.MAP_SHARED|unix.MAP_FILE,
+		uintptr(s.memoryFile.FD()), uintptr(threadContextFR.Start))
+	if errno != 0 {
+		panic(fmt.Sprintf("mmap failed for subprocess context memory region: %v", errno))
+	}
+
+	// Map thread context region into the syscall thread.
+	// Map shared regions that will be the same and used for all sysmsg threads
+	// in this subprocess.
+	if _, err := s.syscallThread.syscall(
+		unix.SYS_MMAP,
+		arch.SyscallArgument{Value: uintptr(stubContextRegion)},
+		arch.SyscallArgument{Value: uintptr(threadContextFR.Length())},
+		arch.SyscallArgument{Value: uintptr(unix.PROT_READ | unix.PROT_WRITE)},
+		arch.SyscallArgument{Value: uintptr(unix.MAP_SHARED | unix.MAP_FILE | unix.MAP_FIXED)},
+		arch.SyscallArgument{Value: uintptr(s.memoryFile.FD())},
+		arch.SyscallArgument{Value: uintptr(threadContextFR.Start)}); err != nil {
+		panic(fmt.Sprintf("failed to mmap context queue region into syscall thread: %v", err))
+	}
+
+	s.threadContextRegion = sentryThreadContextRegionAddr
 }
 
 // unmap unmaps non-stub regions of the process.
@@ -659,7 +722,7 @@ func (s *subprocess) Unmap(addr hostarch.Addr, length uint64) {
 		panic(fmt.Sprintf("addr %#x + length %#x overflows", addr, length))
 	}
 	s.mu.Lock()
-	for c := range s.contexts {
+	for c := range s.faultedContexts {
 		c.mu.Lock()
 		if c.lastFaultSP == s && ar.Contains(c.lastFaultAddr) {
 			// Forget the last fault so that if c faults again, the fault isn't
@@ -667,7 +730,7 @@ func (s *subprocess) Unmap(addr hostarch.Addr, length uint64) {
 			// due to munmap() of the corresponding vma, handling of the second
 			// fault will fail anyway.
 			c.lastFaultSP = nil
-			delete(s.contexts, c)
+			delete(s.faultedContexts, c)
 		}
 		c.mu.Unlock()
 	}
@@ -850,7 +913,7 @@ func (s *subprocess) unregisterContext(c *context) {
 		return
 	}
 	s.mu.Lock()
-	delete(s.contexts, c)
+	delete(s.faultedContexts, c)
 	s.numContexts.Add(-1)
 	released := s.released
 	s.mu.Unlock()

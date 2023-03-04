@@ -20,7 +20,7 @@
 //
 // It must have the same frame configuration as swapUint32 so that it can undo
 // any potential call frame set up by the assembler.
-TEXT handleSwapUint32Fault(SB), NOSPLIT, $0-24
+TEXT handleSwapUint32Fault(SB), NOSPLIT|NOFRAME, $0-24
   MOVL DI, sig+20(FP)
   RET
 
@@ -32,7 +32,7 @@ TEXT handleSwapUint32Fault(SB), NOSPLIT, $0-24
 // Preconditions: ptr must be aligned to a 4-byte boundary.
 //
 //func swapUint32(ptr unsafe.Pointer, new uint32) (old uint32, sig int32)
-TEXT ·swapUint32(SB), NOSPLIT, $0-24
+TEXT ·swapUint32(SB), NOSPLIT|NOFRAME, $0-24
   // Store 0 as the returned signal number. If we run to completion,
   // this is the value the caller will see; if a signal is received,
   // handleSwapUint32Fault will store a different value in this address.
@@ -56,7 +56,7 @@ TEXT ·addrOfSwapUint32(SB), $0-8
 //
 // It must have the same frame configuration as swapUint64 so that it can undo
 // any potential call frame set up by the assembler.
-TEXT handleSwapUint64Fault(SB), NOSPLIT, $0-28
+TEXT handleSwapUint64Fault(SB), NOSPLIT|NOFRAME, $0-28
   MOVL DI, sig+24(FP)
   RET
 
@@ -68,7 +68,7 @@ TEXT handleSwapUint64Fault(SB), NOSPLIT, $0-28
 // Preconditions: ptr must be aligned to a 8-byte boundary.
 //
 //func swapUint64(ptr unsafe.Pointer, new uint64) (old uint64, sig int32)
-TEXT ·swapUint64(SB), NOSPLIT, $0-28
+TEXT ·swapUint64(SB), NOSPLIT|NOFRAME, $0-28
   // Store 0 as the returned signal number. If we run to completion,
   // this is the value the caller will see; if a signal is received,
   // handleSwapUint64Fault will store a different value in this address.
@@ -81,7 +81,7 @@ TEXT ·swapUint64(SB), NOSPLIT, $0-28
   RET
 
 // func addrOfSwapUint64() uintptr
-TEXT ·addrOfSwapUint64(SB), $0-8
+TEXT ·addrOfSwapUint64(SB), NOSPLIT|NOFRAME, $0-8
   MOVQ $·swapUint64(SB), AX
   MOVQ AX, ret+0(FP)
   RET
@@ -92,7 +92,7 @@ TEXT ·addrOfSwapUint64(SB), $0-8
 //
 // It must have the same frame configuration as compareAndSwapUint32 so that it
 // can undo any potential call frame set up by the assembler.
-TEXT handleCompareAndSwapUint32Fault(SB), NOSPLIT, $0-24
+TEXT handleCompareAndSwapUint32Fault(SB), NOSPLIT|NOFRAME, $0-24
   MOVL DI, sig+20(FP)
   RET
 
@@ -104,7 +104,7 @@ TEXT handleCompareAndSwapUint32Fault(SB), NOSPLIT, $0-24
 // Preconditions: ptr must be aligned to a 4-byte boundary.
 //
 //func compareAndSwapUint32(ptr unsafe.Pointer, old, new uint32) (prev uint32, sig int32)
-TEXT ·compareAndSwapUint32(SB), NOSPLIT, $0-24
+TEXT ·compareAndSwapUint32(SB), NOSPLIT|NOFRAME, $0-24
   // Store 0 as the returned signal number. If we run to completion, this is
   // the value the caller will see; if a signal is received,
   // handleCompareAndSwapUint32Fault will store a different value in this
@@ -120,7 +120,7 @@ TEXT ·compareAndSwapUint32(SB), NOSPLIT, $0-24
   RET
 
 // func addrOfCompareAndSwapUint32() uintptr
-TEXT ·addrOfCompareAndSwapUint32(SB), $0-8
+TEXT ·addrOfCompareAndSwapUint32(SB), NOSPLIT|NOFRAME, $0-8
   MOVQ $·compareAndSwapUint32(SB), AX
   MOVQ AX, ret+0(FP)
   RET
@@ -131,7 +131,7 @@ TEXT ·addrOfCompareAndSwapUint32(SB), $0-8
 //
 // It must have the same frame configuration as loadUint32 so that it can undo
 // any potential call frame set up by the assembler.
-TEXT handleLoadUint32Fault(SB), NOSPLIT, $0-16
+TEXT handleLoadUint32Fault(SB), NOSPLIT|NOFRAME, $0-16
   MOVL DI, sig+12(FP)
   RET
 
@@ -142,7 +142,7 @@ TEXT handleLoadUint32Fault(SB), NOSPLIT, $0-16
 // Preconditions: ptr must be aligned to a 4-byte boundary.
 //
 //func loadUint32(ptr unsafe.Pointer) (val uint32, sig int32)
-TEXT ·loadUint32(SB), NOSPLIT, $0-16
+TEXT ·loadUint32(SB), NOSPLIT|NOFRAME, $0-16
   // Store 0 as the returned signal number. If we run to completion,
   // this is the value the caller will see; if a signal is received,
   // handleLoadUint32Fault will store a different value in this address.
@@ -154,7 +154,7 @@ TEXT ·loadUint32(SB), NOSPLIT, $0-16
   RET
 
 // func addrOfLoadUint32() uintptr
-TEXT ·addrOfLoadUint32(SB), $0-8
+TEXT ·addrOfLoadUint32(SB), NOSPLIT|NOFRAME, $0-8
   MOVQ $·loadUint32(SB), AX
   MOVQ AX, ret+0(FP)
   RET

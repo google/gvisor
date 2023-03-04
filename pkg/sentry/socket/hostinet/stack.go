@@ -64,6 +64,8 @@ type Stack struct {
 	tcpSACKEnabled bool
 	netDevFile     *os.File
 	netSNMPFile    *os.File
+	// allowedSocketTypes is the list of allowed socket types
+	allowedSocketTypes []AllowedSocketType
 }
 
 // Destroy implements inet.Stack.Destroy.
@@ -79,7 +81,7 @@ func NewStack() *Stack {
 }
 
 // Configure sets up the stack using the current state of the host network.
-func (s *Stack) Configure() error {
+func (s *Stack) Configure(allowRawSockets bool) error {
 	if err := addHostInterfaces(s); err != nil {
 		return err
 	}
@@ -125,6 +127,11 @@ func (s *Stack) Configure() error {
 		log.Warningf("Failed to open /proc/net/snmp: %v", err)
 	} else {
 		s.netSNMPFile = f
+	}
+
+	s.allowedSocketTypes = AllowedSocketTypes
+	if allowRawSockets {
+		s.allowedSocketTypes = append(s.allowedSocketTypes, AllowedRawSocketTypes...)
 	}
 
 	return nil

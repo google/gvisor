@@ -15,7 +15,7 @@
 #include "textflag.h"
 
 // func GetCPU() uint32
-TEXT ·GetCPU(SB), NOSPLIT, $0-4
+TEXT ·GetCPU(SB),NOSPLIT|NOFRAME,$0-4
 	BYTE $0x0f; BYTE $0x01; BYTE $0xf9; // RDTSCP
 	// On Linux, the bottom 12 bits of IA32_TSC_AUX are CPU and the upper 20
 	// are node. See arch/x86/entry/vdso/vma.c:vgetcpu_cpu_init().
