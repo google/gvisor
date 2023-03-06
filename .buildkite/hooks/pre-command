@@ -49,7 +49,9 @@ fi
 
 if [[ "${BUILDKITE_PIPELINE_INSTALL_RUNTIME:-}" == "true" ]]; then
   # Ensure Docker has experimental enabled, install runtimes.
-  HAD_EXPERIMENTAL="$(docker version --format='{{.Server.Experimental}}')"
+  echo 'Current Docker daemon configuration:' >&2
+  cat /etc/docker/daemon.json >&2
+  HAD_EXPERIMENTAL="$(cat /etc/docker/daemon.json | jq '.experimental')"
   if [[ -n "${STAGED_BINARIES:-}" ]]; then
     # Used `runsc` from STAGED_BINARIES instead of building it from scratch.
     export BUILDKITE_STAGED_BINARIES_DIRECTORY="$(mktemp -d)"
@@ -57,20 +59,24 @@ if [[ "${BUILDKITE_PIPELINE_INSTALL_RUNTIME:-}" == "true" ]]; then
       | tar -C "$BUILDKITE_STAGED_BINARIES_DIRECTORY" -zxvf - runsc
     chmod +x "$BUILDKITE_STAGED_BINARIES_DIRECTORY/runsc"
     sudo "$BUILDKITE_STAGED_BINARIES_DIRECTORY/runsc" install \
-    --experimental=true --runtime="${RUNTIME}" \
-    -- "${RUNTIME_ARGS:-}"
+      --experimental=true --runtime="${RUNTIME}" \
+      -- "${RUNTIME_ARGS:-}"
   else
     make sudo TARGETS=//runsc:runsc \
       ARGS="install --experimental=true --runtime=${RUNTIME} -- ${RUNTIME_ARGS:-}"
   fi
-  if [[ "$HAD_EXPERIMENTAL" == false ]]; then
+  if [[ "$HAD_EXPERIMENTAL" != true ]]; then
     # WARNING: We may be running in a container when this command executes.
     # This only makes sense if Docker's `live-restore` feature is enabled.
+    echo 'Restarting Docker daemon with this new configuration:' >&2
+    cat /etc/docker/daemon.json >&2
     sudo systemctl restart docker
   else
     # If experimental-ness was already enabled, we don't need to restart, as the
     # only thing we modified is the list of runtimes, which can be reloaded with
     # just a SIGHUP.
+    echo 'Reloading Docker daemon with this new configuration:' >&2
+    cat /etc/docker/daemon.json >&2
     bash -c "$DOCKER_RELOAD_COMMAND"
   fi
 fi
