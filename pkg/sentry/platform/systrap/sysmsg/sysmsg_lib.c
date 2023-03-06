@@ -27,8 +27,6 @@
 // polling and fall asleep.
 uint64_t __export_deep_sleep_timeout;
 uint64_t __export_handshake_timeout;
-struct arch_state __export_arch_state;
-uint64_t __export_context_decoupling_exp;
 
 // A per-thread memory region is always align to STACK_SIZE.
 // *------------*
@@ -67,6 +65,12 @@ static __inline__ unsigned long rdtsc(void) {
 static __inline__ void spinloop(void) { asm volatile("yield" : : : "memory"); }
 #endif
 
+void memcpy(uint8_t *dest, uint8_t *src, size_t n) {
+  for (size_t i = 0; i < n; i += 1) {
+    dest[i] = src[i];
+  }
+}
+
 int wait_state(struct sysmsg *sysmsg, uint32_t state) {
   unsigned long handshake_timeout;
   uint64_t acked_events_prev;
@@ -86,13 +90,13 @@ int wait_state(struct sysmsg *sysmsg, uint32_t state) {
   }
 
   v = __atomic_load_n(&sysmsg->state, __ATOMIC_ACQUIRE);
-  if (v == SYSMSG_STATE_DONE || v == SYSMSG_STATE_SIGACT) goto out;
+  if (v == THREAD_STATE_DONE || v == THREAD_STATE_SIGACT) goto out;
 
   handshake_timeout = __export_handshake_timeout;
   start = rdtsc();
   while (1) {
     v = __atomic_load_n(&sysmsg->state, __ATOMIC_ACQUIRE);
-    if (v == SYSMSG_STATE_DONE || v == SYSMSG_STATE_SIGACT) goto out;
+    if (v == THREAD_STATE_DONE || v == THREAD_STATE_SIGACT) goto out;
 
     // The Sentry can change stub_fast_path to zero if it finds out that the
     // user task has to sleep.
@@ -136,7 +140,6 @@ void verify_offsets() {
                offsetof(struct sysmsg, syshandler_stack));
   BUILD_BUG_ON(offsetof_sysmsg_app_stack != offsetof(struct sysmsg, app_stack));
   BUILD_BUG_ON(offsetof_sysmsg_interrupt != offsetof(struct sysmsg, interrupt));
-  BUILD_BUG_ON(offsetof_sysmsg_type != offsetof(struct sysmsg, type));
   BUILD_BUG_ON(offsetof_sysmsg_state != offsetof(struct sysmsg, state));
   BUILD_BUG_ON(offsetof_sysmsg_context_id !=
                offsetof(struct sysmsg, context_id));
@@ -150,9 +153,9 @@ void verify_offsets() {
   BUILD_BUG_ON(offsetof_thread_context_ptregs !=
                offsetof(struct thread_context, ptregs));
 
-  BUILD_BUG_ON(kSYSMSG_SYSCALL != SYSMSG_SYSCALL);
-  BUILD_BUG_ON(kSYSMSG_INTERRUPT != SYSMSG_INTERRUPT);
-  BUILD_BUG_ON(kSYSMSG_STATE_NONE != SYSMSG_STATE_NONE);
+  BUILD_BUG_ON(kTHREAD_STATE_NONE != THREAD_STATE_NONE);
+  BUILD_BUG_ON(kTHREAD_STATE_SIGACT != THREAD_STATE_SIGACT);
+  BUILD_BUG_ON(kTHREAD_STATE_INTERRUPT != THREAD_STATE_INTERRUPT);
 
   BUILD_BUG_ON(sizeof(struct thread_context) >
                ALLOCATED_SIZEOF_THREAD_CONTEXT_STRUCT);

@@ -24,22 +24,42 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/sysmsg"
 )
 
-func (s *subprocess) restoreFPState(msg *sysmsg.Msg, fpuToMsgOffset uint64, c *context, ac *arch.Context64) {
-	// c.needRestoreFPState is changed only from the task goroutine, so it can
-	// be accessed without locks.
+//go:nosplit
+func isFPStateInContextRegion(ctx *sysmsg.ThreadContext) bool {
+	// If context decoupling experiment is ON then both the sighandler and
+	// syshandler save FPState to the context region since contexts will move
+	// threads. Otherwise only syshandler will save FPState to the region.
+	return contextDecouplingExp || ctx.State == sysmsg.ContextStateSyscallTrap
+}
+
+func (s *subprocess) saveFPState(msg *sysmsg.Msg, ctx *sysmsg.ThreadContext, fpuToMsgOffset uint64, c *context, ac *arch.Context64) {
+	fpState := ac.FloatingPointData().BytePointer()
+	dst := unsafeSlice(uintptr(unsafe.Pointer(fpState)), c.fpLen)
+	var src []byte
+	if isFPStateInContextRegion(ctx) {
+		src = ctx.FPState[:]
+	} else {
+		src = unsafeSlice(uintptr(unsafe.Pointer(msg))+uintptr(fpuToMsgOffset), c.fpLen)
+	}
+	copy(dst, src)
+}
+
+// restoreFPStateDecoupledContext writes FPState from c to the thread context
+// shared memory region if there is any need to do so.
+func (s *subprocess) restoreFPState(msg *sysmsg.Msg, ctx *sysmsg.ThreadContext, fpuToMsgOffset uint64, c *context, ac *arch.Context64) {
 	if !c.needRestoreFPState {
 		return
 	}
 	c.needRestoreFPState = false
+	ctx.FPStateChanged = 1
+
 	fpState := ac.FloatingPointData().BytePointer()
 	src := unsafeSlice(uintptr(unsafe.Pointer(fpState)), c.fpLen)
-	dst := unsafeSlice(uintptr(unsafe.Pointer(msg))+uintptr(fpuToMsgOffset), c.fpLen)
-	copy(dst, src)
-}
-
-func (s *subprocess) saveFPState(msg *sysmsg.Msg, fpuToMsgOffset uint64, c *context, ac *arch.Context64) {
-	fpState := ac.FloatingPointData().BytePointer()
-	src := unsafeSlice(uintptr(unsafe.Pointer(msg))+uintptr(fpuToMsgOffset), c.fpLen)
-	dst := unsafeSlice(uintptr(unsafe.Pointer(fpState)), c.fpLen)
+	var dst []byte
+	if isFPStateInContextRegion(ctx) {
+		dst = ctx.FPState[:]
+	} else {
+		dst = unsafeSlice(uintptr(unsafe.Pointer(msg))+uintptr(fpuToMsgOffset), c.fpLen)
+	}
 	copy(dst, src)
 }

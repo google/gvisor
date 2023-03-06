@@ -50,7 +50,7 @@ func (s *State) addTrapLocked(ctx context.Context, ac *arch.Context64, mm memory
 	// used and we need to save values of stack and instruction registers,
 	// switch to the syshandler stack and call the jmp instruction to
 	// syshandler:
-	// mov    sysmsg.StatePrep, %gs:offset(msg.State)
+	// mov    sysmsg.ThreadStatePrep, %gs:offset(msg.State)
 	// mov    %rsp,%gs:0x20 // msg.AppStack
 	// mov    %gs:0x18,%rsp // msg.SyshandlerStack
 	// movabs $ret_addr, %rax
@@ -58,7 +58,7 @@ func (s *State) addTrapLocked(ctx context.Context, ac *arch.Context64, mm memory
 	// mov    sysno,%eax
 	// jmpq   *%gs:0x10     // msg.Syshandler
 	trap := []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		// msg.State = sysmsg.StatePrep
+		// msg.State = sysmsg.ThreadStatePrep
 		/*08*/ 0x65, 0xc7, 0x04, 0x25, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // mov $X, %gs:OFFSET
 		/*20*/ 0x65, 0x48, 0x89, 0x24, 0x25, 0x20, 0x00, 0x00, 0x00, // mov    %rsp,%gs:0x20
 		/*29*/ 0x65, 0x48, 0x8b, 0x24, 0x25, 0x18, 0x00, 0x00, 0x00, // mov    %gs:0x18,%rsp
@@ -73,7 +73,7 @@ func (s *State) addTrapLocked(ctx context.Context, ac *arch.Context64, mm memory
 
 	var msg *sysmsg.Msg
 	binary.LittleEndian.PutUint32(trap[12:16], uint32(unsafe.Offsetof(msg.State)))
-	binary.LittleEndian.PutUint32(trap[16:20], uint32(sysmsg.StatePrep))
+	binary.LittleEndian.PutUint32(trap[16:20], uint32(sysmsg.ThreadStatePrep))
 	binary.LittleEndian.PutUint32(trap[25:29], uint32(unsafe.Offsetof(msg.AppStack)))
 	binary.LittleEndian.PutUint32(trap[34:38], uint32(unsafe.Offsetof(msg.SyshandlerStack)))
 	binary.LittleEndian.PutUint32(trap[53:57], uint32(unsafe.Offsetof(msg.RetAddr)))

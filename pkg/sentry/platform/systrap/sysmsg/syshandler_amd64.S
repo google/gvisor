@@ -57,9 +57,9 @@ __export_syshandler:
   pop %r11
   pop %rbp
 
-  movq    %gs:offsetof_sysmsg_app_stack,%rsp
+  movq %gs:offsetof_sysmsg_app_stack,%rsp
 
-  cmpl $kSYSMSG_SYSCALL, %gs:offsetof_sysmsg_type // msg->type
+  cmpl $kTHREAD_STATE_SIGACT, %gs:offsetof_sysmsg_state // msg->state
   jne skipsyscall
   mov $0xffff, %eax // any syscall which isn't allowed by seccomp.
   // nop is here to avoid matching the `mov sysno, %eax; syscall` pattern that
@@ -70,8 +70,8 @@ __export_syshandler:
 skipsyscall:
   cmpl $0, %gs:offsetof_sysmsg_interrupt // msg->interrupt
   je skipint
-  movl $kSYSMSG_INTERRUPT, %gs:offsetof_sysmsg_type
-        .byte FAULT_OPCODE // Re-trigger the interrupt.
+  movl $kTHREAD_STATE_INTERRUPT, %gs:offsetof_sysmsg_state
+  .byte FAULT_OPCODE // Re-trigger the interrupt.
 skipint:
   jmp *%gs:offsetof_sysmsg_ret_addr // msg->ret_addr
 
