@@ -87,9 +87,11 @@ if [[ "${BUILDKITE_PIPELINE_INSTALL_RUNTIME:-}" == "true" ]]; then
       '(if has("runtimes") then .runtimes else {} end) | length' \
       < /etc/docker/daemon.json)"
   if [[ "$num_docker_runtimes" -gt 0 ]]; then
-    cat /etc/docker/daemon.json | jq 'del(.runtimes)' \
+    cat /etc/docker/daemon.json | jq '.runtimes = {}' \
       | sudo tee /etc/docker/daemon.json.tmp
     sudo mv /etc/docker/daemon.json.tmp /etc/docker/daemon.json
+    echo 'Removed all Docker runtimes; reloading Docker daemon with this new configuration:' >&2
+    cat /etc/docker/daemon.json >&2
     bash -c "$DOCKER_RELOAD_COMMAND"
   fi
 fi
