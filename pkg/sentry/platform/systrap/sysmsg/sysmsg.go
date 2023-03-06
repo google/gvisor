@@ -82,57 +82,40 @@ func MsgToStackAddr(msg uintptr) uintptr {
 	return msg - MsgOffsetFromSharedStack
 }
 
-// State is used to store a state of Msg.
-type State uint32
+// ThreadState is used to store a state of the sysmsg thread.
+type ThreadState uint32
 
 // Set atomicaly sets the state value.
-func (s *State) Set(state State) {
+func (s *ThreadState) Set(state ThreadState) {
 	atomic.StoreUint32((*uint32)(s), uint32(state))
 }
 
 // Get returns the current state value.
 //
 //go:nosplit
-func (s *State) Get() State {
-	return State(atomic.LoadUint32((*uint32)(s)))
+func (s *ThreadState) Get() ThreadState {
+	return ThreadState(atomic.LoadUint32((*uint32)(s)))
 }
 
 const (
-	// StateNone is the invalid state that isn't used.
-	StateNone State = iota
-	// StateDone means that last event has been handled
-	// and a stub thread can be resumed.
-	StateDone
-	// StateEvent means that there is a new event
-	// which has to be handled by Sentry.
-	StateEvent
-	// StateSigact means that the Sentry requests the full state of the
-	// stub thread.
-	//
-	// When a stub thread is in a syscall function call
-	// (EventTypeSyscallTrap), the Sentry knows only syscall arguments
-	// without a full set of registers and an FPU state. This is enough to
-	// handle a system call, but in some cases like signal handling, the
-	// Sentry needs to know the full state.
-	StateSigact
-	// StatePrep means that syshandler started filling the sysmsg struct.
-	StatePrep
-)
-
-// EventType defines event types.
-type EventType uint32
-
-// Event types.
-const (
-	EventTypeNone EventType = iota
-	EventTypeSyscall
-	EventTypeFault
-	// EventTypeSyscallTrap means that the syscall event is triggered from
-	// a function call (syshandler).
-	EventTypeSyscallTrap
-	// EventTypeSyscallCanBePatched means that the syscall can be replaced
-	// with a function call.
-	EventTypeSyscallCanBePatched
+	// ThreadStateNone means that the thread is executing the user workload.
+	ThreadStateNone ThreadState = iota
+	// ThreadStateDone means that last event has been handled and the stub thread
+	// can be resumed.
+	ThreadStateDone
+	// ThreadStateEvent means that there is a new event which has to be handled by
+	// Sentry. (Used only if !contextDecoupledExp)
+	ThreadStateEvent
+	// ThreadStatePrep means that syshandler started filling the sysmsg struct.
+	ThreadStatePrep
+	// ThreadStateSigact means that the sentry requests the full state of the stub
+	// thread.
+	// TODO(b/268366549): Remove this when syshandler saves full state to context.
+	ThreadStateSigact
+	// ThreadStateInterrupt is a Sysmsg state that indicates to the sighandler
+	// that there is a postponed interrupt from the syshandler.
+	// The sentry should never see this event.
+	ThreadStateInterrupt
 )
 
 // Msg contains the current state of the sysmsg thread.
@@ -157,10 +140,9 @@ type Msg struct {
 	AppStack uint64
 	// interrupt is non-zero if there is a postponed interrupt.
 	interrupt uint32
-	// FaultJump is the size of a faulted instruction.
-	FaultJump int32
-	Type      EventType
-	State     State
+	// State indicates to the sentry what the sysmsg thread is doing at a given
+	// moment.
+	State ThreadState
 	// ContextID is the ID of the ThreadContext struct that the current
 	// sysmsg thread is is processing. This ID is used in the {sig|sys}handler
 	// to find the offset to the correct ThreadContext struct location.
@@ -169,8 +151,10 @@ type Msg struct {
 	// the sysmsg thread address space.
 	ContextRegion uint64
 
-	// Signo is the signal that the stub is requesting the sentry to handle.
-	Signo int32
+	// InterruptedContextID is the target of the interrupt sent to sysmsg thread.
+	InterruptedContextID uint64
+	// FaultJump is the size of a faulted instruction.
+	FaultJump int32
 	// Err is the error value with which the {sig|sys}handler crashes the stub
 	// thread (see sysmsg.h:__panic).
 	Err int32
@@ -178,14 +162,13 @@ type Msg struct {
 	// (see sysmsg.h:panic).
 	Line int32
 	// Debug is a variable to use to get visibility into the stub from the sentry.
-	Debug      uint64
-	Regs       linux.PtraceRegs
-	fpState    uint64
-	SignalInfo linux.SignalInfo
+	Debug uint64
+	// fpState is an offset relative to the sighandler stack to the fpState, stored
+	// by the sighandler.
+	fpState uint64
 	// TLS is a pointer to a thread local storage.
 	// It is is only populated on ARM64.
 	TLS uint64
-
 	// The fast path is the mode when a thread is polling msg->state to
 	// wait for a required state instead of calling FUTEX_WAIT.
 	//
@@ -204,9 +187,44 @@ type Msg struct {
 	stubFastPath   uint32
 	sentryFastPath uint32
 	AckedEvents    uint32
-	// InterruptedContextID is the target of the interrupt sent to sysmsg thread.
-	InterruptedContextID uint64
 }
+
+// ContextState defines the reason the context has exited back to the sentry,
+// or ContextStateNone if running/ready-to-run.
+type ContextState uint32
+
+// Set atomicaly sets the state value.
+func (s *ContextState) Set(state ContextState) {
+	atomic.StoreUint32((*uint32)(s), uint32(state))
+}
+
+// Get returns the current state value.
+//
+//go:nosplit
+func (s *ContextState) Get() ContextState {
+	return ContextState(atomic.LoadUint32((*uint32)(s)))
+}
+
+// Context State types.
+const (
+	// ContextStateNone means that is either running in the user task or is ready
+	// to run in the user task.
+	ContextStateNone ContextState = iota
+	// ContextStateSyscall means that a syscall event is triggered from the
+	// sighandler.
+	ContextStateSyscall
+	// ContextStateFault means that there is a fault event that needs to be
+	// handled.
+	ContextStateFault
+	// ContextStateSyscallTrap means that a syscall event is triggered from
+	// a function call (syshandler).
+	ContextStateSyscallTrap
+	// ContextStateSyscallCanBePatched means that the syscall can be replaced
+	// with a function call.
+	ContextStateSyscallCanBePatched
+	// ContextStateInvalid is an invalid state that the sentry should never see.
+	ContextStateInvalid
+)
 
 const (
 	// MaxFPStateLen is the largest possible FPState that we will save.
@@ -242,8 +260,18 @@ type ThreadContext struct {
 	SignalInfo linux.SignalInfo
 	// Signo is the signal that the stub is requesting the sentry to handle.
 	Signo int64
+	// State indicates the reason why the context has exited back to the sentry.
+	State ContextState
 	// Interrupt is set to indicate that this context has been interrupted.
-	Interrupt uint64
+	Interrupt uint32
+	// Decoupled is set to indicate that this context is not tied to the sysmsg
+	// thread used to to execute this context. This value is only changed from
+	// the sentry if contextDecouplingExp is on.
+	// It changes the behaviour of the sysmsg threads in the following ways:
+	//   - sighandler will save fpstate to ThreadContext.FPState instead of on the
+	//     sighandler stack.
+	//   - syshandler will not save fpstate at all.
+	Decoupled uint32
 	// Debug is a variable to use to get visibility into the stub from the sentry.
 	Debug uint64
 }
@@ -264,6 +292,7 @@ func (c *ThreadContext) Init() {
 	c.Regs = linux.PtraceRegs{}
 	c.Signo = 0
 	c.SignalInfo = linux.SignalInfo{}
+	c.State = ContextStateNone
 }
 
 // StubFastPath returns true if the stub thread in the polling mode.
@@ -298,11 +327,9 @@ func (m *Msg) FPUStateOffset() (uint64, error) {
 
 func (m *Msg) String() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "sysmsg.Msg{msg: %x type %d", m.Self, m.Type)
-	fmt.Fprintf(&b, " fault addr %x syscall %d", m.SignalInfo.Addr(), m.SignalInfo.Syscall())
+	fmt.Fprintf(&b, "sysmsg.Msg{msg: %x state %d", m.Self, m.State)
 	fmt.Fprintf(&b, " err %x line %d debug %x", m.Err, m.Line, m.Debug)
-	fmt.Fprintf(&b, " ip %x sp %x ret addr %x app stack %x", m.Regs.InstructionPointer(), m.Regs.StackPointer(), m.RetAddr, m.AppStack)
-	fmt.Fprintf(&b, " signo %d siginfo %+v", m.Signo, m.SignalInfo)
+	fmt.Fprintf(&b, " app stack %x", m.AppStack)
 	fmt.Fprintf(&b, " contextID %d", m.ContextID)
 	b.WriteString("}")
 
@@ -311,10 +338,12 @@ func (m *Msg) String() string {
 
 func (c *ThreadContext) String() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "sysmsg.ThreadContext{fault addr %x syscall %d", c.SignalInfo.Addr(), c.SignalInfo.Syscall())
+	fmt.Fprintf(&b, "sysmsg.ThreadContext{state %d", c.State.Get())
+	fmt.Fprintf(&b, " fault addr %x syscall %d", c.SignalInfo.Addr(), c.SignalInfo.Syscall())
 	fmt.Fprintf(&b, " ip %x sp %x", c.Regs.InstructionPointer(), c.Regs.StackPointer())
 	fmt.Fprintf(&b, " FPStateChanged %d Regs %+v", c.FPStateChanged, c.Regs)
 	fmt.Fprintf(&b, " signo: %d, siginfo: %+v", c.Signo, c.SignalInfo)
+	fmt.Fprintf(&b, " debug %d", atomic.LoadUint64(&c.Debug))
 	b.WriteString("}")
 
 	return b.String()

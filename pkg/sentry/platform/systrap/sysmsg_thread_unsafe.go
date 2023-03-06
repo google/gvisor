@@ -101,7 +101,7 @@ func exitsyscall()
 const deepSleepTimeout = uint64(80000)
 const handshakeTimeout = uint64(1000)
 
-func futexWaitForState(msg *sysmsg.Msg, state sysmsg.State, wakeup bool, acked uint32) syscall.Errno {
+func futexWaitForState(msg *sysmsg.Msg, state sysmsg.ThreadState, wakeup bool, acked uint32) syscall.Errno {
 	slowPath := false
 	errno := syscall.Errno(0)
 	start := cputicks()

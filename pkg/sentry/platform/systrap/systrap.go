@@ -110,6 +110,10 @@ type context struct {
 	// goroutine.
 	subprocess *subprocess
 
+	// cid is the ID of the context in the address space of the current
+	// subprocess used to run it.
+	cid uint64
+
 	// mu protects the following fields.
 	mu sync.Mutex
 
@@ -170,8 +174,9 @@ func (c *context) Switch(ctx pkgcontext.Context, mm platform.MemoryManager, ac *
 
 	if s != c.subprocess {
 		c.subprocess.unregisterContext(c)
-		c.subprocess = s
-		s.numContexts.Add(1)
+		if err := s.registerContext(c); err != nil {
+			return nil, hostarch.NoAccess, err
+		}
 	}
 restart:
 	isSyscall, needPatch, err := s.switchToApp(c, ac)
@@ -210,8 +215,8 @@ restart:
 	lastFaultSP := c.lastFaultSP
 	lastFaultAddr := c.lastFaultAddr
 	lastFaultIP := c.lastFaultIP
-	// At this point, c may not yet be in s.contexts, so c.lastFaultSP won't be
-	// updated by s.Unmap(). This is fine; we only need to synchronize with
+	// At this point, c may not yet be in s.faultedContexts, so c.lastFaultSP won't
+	// be updated by s.Unmap(). This is fine; we only need to synchronize with
 	// calls to s.Unmap() that occur after the handling of this fault.
 	c.lastFaultSP = faultSP
 	c.lastFaultAddr = faultAddr
@@ -283,6 +288,9 @@ func (c *context) Release() {
 
 // PrepareSleep implements platform.Context.platform.PrepareSleep.
 func (c *context) PrepareSleep() {
+	if contextDecouplingExp {
+		return // When this is called context hasn't entered the context queue.
+	}
 	if c.sysmsgThread != nil {
 		c.sysmsgThread.msg.DisableStubFastPath()
 	}
@@ -362,6 +370,7 @@ func (*Systrap) NewContext(ctx pkgcontext.Context) platform.Context {
 	fs := cpuid.FromContext(ctx)
 	fpLen, _ := fs.ExtendedStateSize()
 	return &context{
+		cid:                 invalidContextID,
 		fpLen:               int(fpLen),
 		needRestoreFPState:  true,
 		needToPullFullState: false,

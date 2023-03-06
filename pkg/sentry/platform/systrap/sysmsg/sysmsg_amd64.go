@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build amd64
+// +build amd64
+
 package sysmsg
 
 import (
@@ -67,6 +70,7 @@ func (s *ArchState) String() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "sysmsg.ArchState{")
 	fmt.Fprintf(&b, " xsaveMode %d", s.xsaveMode)
+	fmt.Fprintf(&b, " fsgsbase %d", s.fsgsbase)
 	fmt.Fprintf(&b, " fpLen %d", s.fpLen)
 	b.WriteString(" }")
 

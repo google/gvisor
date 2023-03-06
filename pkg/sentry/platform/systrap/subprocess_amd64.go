@@ -211,7 +211,7 @@ func appendArchSeccompRules(rules []seccomp.RuleSet) []seccomp.RuleSet {
 	}...)
 }
 
-func (s *subprocess) PullFullState(c *context, ac *arch.Context64) error {
+func (s *subprocess) PullFullArchState(c *context, ac *arch.Context64) error {
 	// Reset necessary registers.
 	regs := &ac.StateData().Regs
 
@@ -220,6 +220,7 @@ func (s *subprocess) PullFullState(c *context, ac *arch.Context64) error {
 		return err
 	}
 	msg := sysThread.msg
+	ctx := s.getThreadContextFromID(c.cid)
 
 	// In case of EventTypeSyscallTrap, we have only syscall argument
 	// registers and we need to trigger a signal in the stub process to get
@@ -227,8 +228,8 @@ func (s *subprocess) PullFullState(c *context, ac *arch.Context64) error {
 	//
 	// In other cases, we have the full set of registers and need only copy
 	// the FPU state from a signal frame.
-	if msg.Type != sysmsg.EventTypeSyscallTrap {
-		s.saveFPState(msg, sysThread.fpuStateToMsgOffset, c, ac)
+	if ctx.State != sysmsg.ContextStateSyscallTrap {
+		s.saveFPState(msg, ctx, sysThread.fpuStateToMsgOffset, c, ac)
 		return nil
 	}
 
@@ -236,16 +237,16 @@ func (s *subprocess) PullFullState(c *context, ac *arch.Context64) error {
 	// number and syscall arguments and the target thread is stopped in the
 	// syshandler stub function. We need to ask syshandler to trigger a
 	// real syscall to get the full state.
-	msg.Regs = regs.PtraceRegs
+	ctx.Regs = regs.PtraceRegs
 
-	sysThread.waitEvent(sysmsg.StateSigact)
+	sysThread.waitEvent(sysmsg.ThreadStateSigact)
 
 	if msg.Err != 0 {
 		panic(fmt.Sprintf("stub thread failed: err %d line %d: %s", msg.Err, msg.Line, msg))
 	}
 
-	if msg.Type != sysmsg.EventTypeSyscall {
-		panic(fmt.Sprintf("unknown message type: type %v: %s", msg.Type, msg))
+	if ctx.State != sysmsg.ContextStateSyscall {
+		panic(fmt.Sprintf("unknown context state: state %v: %s", ctx.State, msg))
 	}
 
 	sysThread.fpuStateToMsgOffset, err = msg.FPUStateOffset()
@@ -255,15 +256,15 @@ func (s *subprocess) PullFullState(c *context, ac *arch.Context64) error {
 
 	// When we are triggering the real syscall instruction, we don't
 	// restore all syscall arguments and even the syscall number.
-	msg.Regs.Rax = regs.Rax
-	msg.Regs.Orig_rax = regs.Orig_rax
-	msg.Regs.Rdi = regs.Rdi
-	msg.Regs.Rsi = regs.Rsi
-	msg.Regs.Rdx = regs.Rdx
-	msg.Regs.R10 = regs.R10
-	msg.Regs.R8 = regs.R8
-	msg.Regs.R9 = regs.R9
-	regs.PtraceRegs = msg.Regs
+	ctx.Regs.Rax = regs.Rax
+	ctx.Regs.Orig_rax = regs.Orig_rax
+	ctx.Regs.Rdi = regs.Rdi
+	ctx.Regs.Rsi = regs.Rsi
+	ctx.Regs.Rdx = regs.Rdx
+	ctx.Regs.R10 = regs.R10
+	ctx.Regs.R8 = regs.R8
+	ctx.Regs.R9 = regs.R9
+	regs.PtraceRegs = ctx.Regs
 
 	// The thread has restored all registers that could be changed in
 	// the syshandler stub function, but it is still in this function. We
@@ -271,9 +272,9 @@ func (s *subprocess) PullFullState(c *context, ac *arch.Context64) error {
 	// the stub code will be changed after save/restore.
 	regs.Rip = msg.RetAddr
 
-	s.saveFPState(msg, sysThread.fpuStateToMsgOffset, c, ac)
+	s.saveFPState(msg, ctx, sysThread.fpuStateToMsgOffset, c, ac)
 
-	c.signalInfo = msg.SignalInfo
+	c.signalInfo = ctx.SignalInfo
 
 	return nil
 }
