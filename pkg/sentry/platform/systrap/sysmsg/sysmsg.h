@@ -37,12 +37,15 @@ struct arch_state {
 #endif
 
 // LINT.IfChange
-enum {
+enum thread_state {
   THREAD_STATE_NONE,
   THREAD_STATE_DONE,
   THREAD_STATE_EVENT,
   THREAD_STATE_PREP,
   THREAD_STATE_INTERRUPT,
+  THREAD_STATE_CONTEXT_RESTORE,
+  THREAD_STATE_ASLEEP,
+  THREAD_STATE_INITIALIZING,
 };
 
 // sysmsg contains the current state of the sysmsg thread. See: sysmsg.go:Msg
@@ -65,8 +68,6 @@ struct sysmsg {
   int32_t err_line;
   uint64_t debug;
   uint64_t fpstate;
-  // tls is only populated on ARM64.
-  uint64_t tls;
   uint32_t stub_fast_path;
   uint32_t sentry_fast_path;
   uint32_t acked_events;
@@ -96,6 +97,10 @@ struct thread_context {
   uint32_t state;
   uint32_t interrupt;
   uint32_t thread_id;
+  uint32_t last_thread_id;
+  uint32_t sentry_fast_path;
+  uint32_t acked;
+  uint64_t tls;
   uint64_t debug;
 };
 
@@ -118,6 +123,7 @@ extern uint64_t __export_pr_sched_core;
 extern uint64_t __export_deep_sleep_timeout;
 extern struct arch_state __export_arch_state;
 extern uint64_t __export_context_decoupling_exp;
+extern uint64_t __export_context_queue_addr;
 
 // NOLINTBEGIN(runtime/int)
 static void *sysmsg_sp() {
@@ -151,10 +157,15 @@ long sys_futex(uint32_t *addr, int op, int val, struct __kernel_timespec *tv,
 static void __panic(int err, long line) {
   void *sp = sysmsg_sp();
   struct sysmsg *sysmsg = sysmsg_addr(sp);
+  struct thread_context *ctx = thread_context_addr(sysmsg);
   sysmsg->err = err;
   sysmsg->err_line = line;
+  // Normally sentry waits on sysmsg->state.
   __atomic_store_n(&sysmsg->state, THREAD_STATE_EVENT, __ATOMIC_RELEASE);
   sys_futex(&sysmsg->state, FUTEX_WAKE, 1, NULL, NULL, 666);
+  // Under context-decoupling the sentry waits on ctx->state.
+  __atomic_store_n(&ctx->state, CONTEXT_STATE_FAULT, __ATOMIC_RELEASE);
+  sys_futex(&ctx->state, FUTEX_WAKE, 1, NULL, NULL, 666);
   // crash the stub process.
   //
   // Normal user processes cannot map addresses lower than vm.mmap_min_addr
@@ -165,7 +176,16 @@ static void __panic(int err, long line) {
 
 void memcpy(uint8_t *dest, uint8_t *src, size_t n);
 
-int wait_state(struct sysmsg *sysmsg, uint32_t state);
+void __export_start(struct sysmsg *sysmsg, void *_ucontext);
+
+void restore_state(struct sysmsg *sysmsg, struct thread_context *ctx,
+                   void *_ucontext);
+
+struct thread_context *switch_context(struct sysmsg *sysmsg,
+                                      struct thread_context *ctx,
+                                      enum context_state new_context_state);
+
+int wait_state(struct sysmsg *sysmsg, enum thread_state new_thread_state);
 
 #define panic(err) __panic(err, __LINE__)
 // NOLINTEND(runtime/int)

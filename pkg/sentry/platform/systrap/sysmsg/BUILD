@@ -118,6 +118,7 @@ go_library(
         "sysmsg.go",
         "sysmsg_amd64.go",
         "sysmsg_arm64.go",
+        "sysmsg_unsafe.go",
         ":sighandler_go_arch",
     ],
     embedsrcs = [
@@ -130,5 +131,6 @@ go_library(
         "//pkg/cpuid",
         "//pkg/errors",
         "//pkg/hostarch",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
