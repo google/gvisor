@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #define _GNU_SOURCE
+#include <asm/sigcontext.h>
 #include <asm/unistd.h>
 #include <errno.h>
 #include <linux/audit.h>
@@ -27,6 +28,11 @@
 
 #include "sysmsg.h"
 #include "sysmsg_offsets.h"
+
+// TODO(b/271631387): These globals are shared between AMD64 and ARM64; move to
+// sysmsg_lib.c.
+struct arch_state __export_arch_state;
+uint64_t __export_context_decoupling_exp;
 
 long __syscall(long n, long a1, long a2, long a3, long a4, long a5, long a6) {
   // ARM64 syscall interface passes the syscall number in x8 and the 6 arguments
@@ -63,23 +69,25 @@ long sys_futex(uint32_t *addr, int op, int val, struct __kernel_timespec *tv,
                    (long)addr2, (long)val3);
 }
 
-static void gregs_to_ptregs(ucontext_t *ucontext, struct sysmsg *sysmsg) {
+static void gregs_to_ptregs(ucontext_t *ucontext,
+                            struct user_regs_struct *ptregs) {
   // Set all registers.
   for (int i = 0; i < 31; i++ ) {
-    sysmsg->ptregs.regs[i] = ucontext->uc_mcontext.regs[i];
+    ptregs->regs[i] = ucontext->uc_mcontext.regs[i];
   }
-  sysmsg->ptregs.sp = ucontext->uc_mcontext.sp;
-  sysmsg->ptregs.pc = ucontext->uc_mcontext.pc;
-  sysmsg->ptregs.pstate = ucontext->uc_mcontext.pstate;
+  ptregs->sp = ucontext->uc_mcontext.sp;
+  ptregs->pc = ucontext->uc_mcontext.pc;
+  ptregs->pstate = ucontext->uc_mcontext.pstate;
 }
 
-static void ptregs_to_gregs(ucontext_t *ucontext, struct sysmsg *sysmsg) {
+static void ptregs_to_gregs(ucontext_t *ucontext,
+                            struct user_regs_struct *ptregs) {
   for (int i = 0; i < 31; i++ ) {
-    ucontext->uc_mcontext.regs[i] = sysmsg->ptregs.regs[i];
+    ucontext->uc_mcontext.regs[i] = ptregs->regs[i];
   }
-  ucontext->uc_mcontext.sp = sysmsg->ptregs.sp;
-  ucontext->uc_mcontext.pc = sysmsg->ptregs.pc;
-  ucontext->uc_mcontext.pstate = sysmsg->ptregs.pstate;
+  ucontext->uc_mcontext.sp = ptregs->sp;
+  ucontext->uc_mcontext.pc = ptregs->pc;
+  ucontext->uc_mcontext.pstate = ptregs->pstate;
 }
 
 void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
@@ -88,23 +96,39 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
   struct sysmsg *sysmsg = sysmsg_addr(sp);
 
   if (sysmsg != sysmsg->self) panic(0xdeaddead);
+  struct thread_context *ctx = thread_context_addr(sysmsg);
 
-  sysmsg->signo = signo;
+  ctx->signo = signo;
 
-  gregs_to_ptregs(ucontext, sysmsg);
-  sysmsg->fpstate =
-      (uint64_t)(&ucontext->uc_mcontext.__reserved) - (uint64_t)sysmsg;
+  gregs_to_ptregs(ucontext, &ctx->ptregs);
+
+  // Signal frames for ARM64 include 8 byte magic header before the floating
+  // point context.
+  //
+  // See: arch/arm64/include/uapi/asm/sigcontext.h
+  const uint64_t kSigframeMagicHeaderLen = sizeof(struct _aarch64_ctx);
+  // Verify the header.
+  if (((uint32_t *)&ucontext->uc_mcontext.__reserved)[0] != FPSIMD_MAGIC) {
+    panic(0xbadf);
+  }
+  uint8_t *fpStatePointer =
+      (uint8_t *)&ucontext->uc_mcontext.__reserved + kSigframeMagicHeaderLen;
+  if (__export_context_decoupling_exp) {
+    memcpy(ctx->fpstate, fpStatePointer, __export_arch_state.fp_len);
+  } else {
+    sysmsg->fpstate = (uint64_t)(fpStatePointer) - (uint64_t)sysmsg;
+  }
   sysmsg->tls = get_tls();
-  sysmsg->siginfo = *siginfo;
+  ctx->siginfo = *siginfo;
   switch (signo) {
     case SIGSYS: {
-      sysmsg->type = SYSMSG_SYSCALL;
+      ctx->state = CONTEXT_STATE_SYSCALL;
       if (siginfo->si_arch != AUDIT_ARCH_AARCH64) {
         // gVisor doesn't support x32 system calls, so let's change the syscall
         // number so that it returns ENOSYS. The value added here is just a
         // random large number which is large enough to not match any existing
         // syscall number in linux.
-        sysmsg->ptregs.regs[8] += 0x86000000;
+        ctx->ptregs.regs[8] += 0x86000000;
       }
       break;
     }
@@ -114,15 +138,19 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
     case SIGFPE:
     case SIGTRAP:
     case SIGILL:
-      sysmsg->type = SYSMSG_FAULT;
+      ctx->state = CONTEXT_STATE_FAULT;
       break;
     default:
       return;
   }
 
-  wait_state(sysmsg, SYSMSG_STATE_EVENT);
+  wait_state(sysmsg, THREAD_STATE_EVENT);
 
-  ptregs_to_gregs(ucontext, sysmsg);
+  if (__export_context_decoupling_exp &&
+      __atomic_load_n(&ctx->fpstate_changed, __ATOMIC_ACQUIRE)) {
+    memcpy(fpStatePointer, ctx->fpstate, __export_arch_state.fp_len);
+  }
+  ptregs_to_gregs(ucontext, &ctx->ptregs);
   set_tls(sysmsg->tls);
-  __atomic_store_n(&sysmsg->state, SYSMSG_STATE_NONE, __ATOMIC_RELEASE);
+  __atomic_store_n(&sysmsg->state, THREAD_STATE_NONE, __ATOMIC_RELEASE);
 }

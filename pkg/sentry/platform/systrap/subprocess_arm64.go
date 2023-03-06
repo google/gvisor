@@ -187,7 +187,7 @@ func (s *subprocess) arm64SyscallWorkaround(t *thread, regs *arch.Registers) {
 	}
 }
 
-func (s *subprocess) PullFullState(c *context, ac *arch.Context64) error {
+func (s *subprocess) PullFullArchState(c *context, ac *arch.Context64) error {
 	// We do not support syscall trap in ARM64 so just get the fp state from the
 	// signal frame and we are done.
 	regs := &ac.StateData().Regs
@@ -195,7 +195,8 @@ func (s *subprocess) PullFullState(c *context, ac *arch.Context64) error {
 	if err != nil {
 		return err
 	}
-	s.saveFPState(sysThread.msg, sysThread.fpuStateToMsgOffset, c, ac)
+	ctx := s.getThreadContextFromID(c.cid)
+	s.saveFPState(sysThread.msg, ctx, sysThread.fpuStateToMsgOffset, c, ac)
 	return nil
 }
 

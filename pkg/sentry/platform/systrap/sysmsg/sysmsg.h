@@ -30,26 +30,20 @@ struct arch_state {
 // LINT.ThenChange(sysmsg_amd64.go)
 #else
 // LINT.IfChange
-struct arch_state {};
+struct arch_state {
+  uint32_t fp_len;
+};
 // LINT.ThenChange(sysmsg_arm64.go)
 #endif
 
 // LINT.IfChange
 enum {
-  SYSMSG_STATE_NONE,
-  SYSMSG_STATE_DONE,
-  SYSMSG_STATE_EVENT,
-  SYSMSG_STATE_SIGACT,
-  SYSMSG_STATE_PREP,
-};
-
-enum sysmsg_type {
-  SYSMSG_NONE,
-  SYSMSG_SYSCALL,
-  SYSMSG_FAULT,
-  SYSMSG_SYSCALL_TRAP,
-  SYSMSG_SYSCALL_NEED_TRAP,
-  SYSMSG_INTERRUPT,
+  THREAD_STATE_NONE,
+  THREAD_STATE_DONE,
+  THREAD_STATE_EVENT,
+  THREAD_STATE_PREP,
+  THREAD_STATE_SIGACT,
+  THREAD_STATE_INTERRUPT,
 };
 
 // sysmsg contains the current state of the sysmsg thread. See: sysmsg.go:Msg
@@ -60,27 +54,32 @@ struct sysmsg {
   uint64_t syshandler_stack;
   uint64_t app_stack;
   uint32_t interrupt;
-  int32_t fault_jump;
-  uint32_t type;
   uint32_t state;
   uint64_t context_id;
   uint64_t context_region;
 
   // The fields above have offsets defined in sysmsg_offsets*.h
 
-  int32_t signo;
+  uint64_t interrupted_context_id;
+  int32_t fault_jump;
   int32_t err;
   int32_t err_line;
   uint64_t debug;
-  struct user_regs_struct ptregs;
   uint64_t fpstate;
-  siginfo_t siginfo;
   // tls is only populated on ARM64.
   uint64_t tls;
   uint32_t stub_fast_path;
   uint32_t sentry_fast_path;
   uint32_t acked_events;
-  uint64_t interrupted_context_id;
+};
+
+enum context_state {
+  CONTEXT_STATE_NONE,
+  CONTEXT_STATE_SYSCALL,
+  CONTEXT_STATE_FAULT,
+  CONTEXT_STATE_SYSCALL_TRAP,
+  CONTEXT_STATE_SYSCALL_NEED_TRAP,
+  CONTEXT_STATE_INVALID,
 };
 
 // thread_context contains the current context of the sysmsg thread.
@@ -94,7 +93,10 @@ struct thread_context {
 
   siginfo_t siginfo;
   int64_t signo;
-  uint64_t interrupt;
+  uint32_t state;
+  uint32_t interrupt;
+  uint32_t decoupled;
+  uint64_t debug;
 };
 
 #ifndef PAGE_SIZE
@@ -133,6 +135,13 @@ static struct sysmsg *sysmsg_addr(void *sp) {
   return (struct sysmsg *)(sp + MSG_OFFSET_FROM_START);
 }
 
+static struct thread_context *thread_context_addr(struct sysmsg *sysmsg) {
+  uint64_t tcid = __atomic_load_n(&sysmsg->context_id, __ATOMIC_ACQUIRE);
+  return (struct thread_context *)(sysmsg->context_region +
+                                   tcid *
+                                       ALLOCATED_SIZEOF_THREAD_CONTEXT_STRUCT);
+}
+
 long __syscall(long n, long a1, long a2, long a3, long a4, long a5, long a6);
 
 struct __kernel_timespec;
@@ -144,7 +153,7 @@ static void __panic(int err, long line) {
   struct sysmsg *sysmsg = sysmsg_addr(sp);
   sysmsg->err = err;
   sysmsg->err_line = line;
-  __atomic_store_n(&sysmsg->state, SYSMSG_STATE_EVENT, __ATOMIC_RELEASE);
+  __atomic_store_n(&sysmsg->state, THREAD_STATE_EVENT, __ATOMIC_RELEASE);
   sys_futex(&sysmsg->state, FUTEX_WAKE, 1, NULL, NULL, 666);
   // crash the stub process.
   //
@@ -153,6 +162,8 @@ static void __panic(int err, long line) {
   // process with a segfault.
   *(int *)(line % 4096) = err;
 }
+
+void memcpy(uint8_t *dest, uint8_t *src, size_t n);
 
 int wait_state(struct sysmsg *sysmsg, uint32_t state);
 

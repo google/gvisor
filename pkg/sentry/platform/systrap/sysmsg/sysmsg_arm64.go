@@ -12,10 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build arm64
+// +build arm64
+
 package sysmsg
 
 import (
 	_ "embed"
+	"fmt"
+	"strings"
+
+	"gvisor.dev/gvisor/pkg/cpuid"
 )
 
 // SighandlerBlob contains the compiled code of the sysmsg signal handler.
@@ -25,9 +32,22 @@ var SighandlerBlob []byte
 
 // ArchState defines variables specific to the architecture being
 // used.
-type ArchState struct{}
+type ArchState struct {
+	fpLen uint32
+}
 
 // Init initializes the arch specific state.
-func (s *ArchState) Init() {}
+func (s *ArchState) Init() {
+	fs := cpuid.HostFeatureSet()
+	fpLenUint, _ := fs.ExtendedStateSize()
+	s.fpLen = uint32(fpLenUint)
+}
 
-func (s *ArchState) String() string { return "sysmsg.ArchState{}" }
+func (s *ArchState) String() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "sysmsg.ArchState{")
+	fmt.Fprintf(&b, " fpLen %d", s.fpLen)
+	b.WriteString(" }")
+
+	return b.String()
+}

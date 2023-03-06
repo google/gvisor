@@ -121,18 +121,18 @@ func (p *sysmsgThread) mapPrivateStack(addr uintptr, size uintptr) error {
 	return err
 }
 
-func (p *sysmsgThread) waitEvent(switchToState sysmsg.State) {
+func (p *sysmsgThread) waitEvent(switchToState sysmsg.ThreadState) {
 	msg := p.msg
 	wakeup := false
 	acked := atomic.LoadUint32(&msg.AckedEvents)
-	if switchToState != sysmsg.StateNone {
+	if switchToState != sysmsg.ThreadStateNone {
 		msg.State.Set(switchToState)
 		wakeup = msg.StubFastPath() == false
 	} else {
 		acked--
 	}
 
-	if errno := futexWaitForState(msg, sysmsg.StateEvent, wakeup, acked); errno != 0 {
+	if errno := futexWaitForState(msg, sysmsg.ThreadStateEvent, wakeup, acked); errno != 0 {
 		panic(fmt.Sprintf("error waiting for state: %v", errno))
 	}
 }

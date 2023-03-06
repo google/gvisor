@@ -194,6 +194,7 @@ analyzers:
         - pkg/sentry/platform/systrap/stub_unsafe.go               # Special case.
         - pkg/sentry/platform/systrap/syscall_thread_unsafe.go     # Special case.
         - pkg/sentry/platform/systrap/sysmsg_thread_unsafe.go      # Special case.
+        - pkg/sentry/platform/systrap/subprocess_unsafe.go         # Special case.
         - pkg/sentry/platform/safecopy/safecopy_unsafe.go          # Special case.
         - pkg/sentry/usage/memory_unsafe.go                        # Special case.
         - pkg/sentry/vfs/mount_unsafe.go                           # Special case.

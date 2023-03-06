@@ -22,7 +22,9 @@
 package systrap
 
 import (
-	_ "unsafe" // required for go:linkname.
+	"unsafe"
+
+	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/sysmsg"
 )
 
 //go:linkname beforeFork syscall.runtime_BeforeFork
@@ -33,3 +35,13 @@ func afterFork()
 
 //go:linkname afterForkInChild syscall.runtime_AfterForkInChild
 func afterForkInChild()
+
+// getThreadContextFromID returns a ThreadContext struct that corresponds to the
+// given ID.
+//
+// Precondition: cid must be a valid thread context ID that has a mapping for it
+// that exists in s.contexts.
+func (s *subprocess) getThreadContextFromID(cid uint64) *sysmsg.ThreadContext {
+	tcSlot := s.threadContextRegion + uintptr(cid)*sysmsg.AllocatedSizeofThreadContextStruct
+	return (*sysmsg.ThreadContext)(unsafe.Pointer(tcSlot))
+}

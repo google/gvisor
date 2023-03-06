@@ -35,19 +35,17 @@
 #define offsetof_sysmsg_syshandler_stack 0x18
 #define offsetof_sysmsg_app_stack 0x20
 #define offsetof_sysmsg_interrupt 0x28
-#define offsetof_sysmsg_type 0x30
-#define offsetof_sysmsg_state 0x34
-#define offsetof_sysmsg_context_id 0x38
-#define offsetof_sysmsg_context_region 0x40
+#define offsetof_sysmsg_state 0x2c
+#define offsetof_sysmsg_context_id 0x30
+#define offsetof_sysmsg_context_region 0x38
 
 #define offsetof_thread_context_fpstate 0x0
 #define offsetof_thread_context_fpstate_changed MAX_FPSTATE_LEN
 #define offsetof_thread_context_ptregs 0x8 + MAX_FPSTATE_LEN
 
-#define kSYSMSG_SYSCALL 1
-#define kSYSMSG_INTERRUPT 5
-
-#define kSYSMSG_STATE_NONE 0
+#define kTHREAD_STATE_NONE 0
+#define kTHREAD_STATE_SIGACT 4
+#define kTHREAD_STATE_INTERRUPT 5
 
 // LINT.ThenChange(sysmsg.h, sysmsg_lib.c)
 

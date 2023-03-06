@@ -30,6 +30,11 @@
 #include "sysmsg_offsets.h"
 #include "sysmsg_offsets_amd64.h"
 
+// TODO(b/271631387): These globals are shared between AMD64 and ARM64; move to
+// sysmsg_lib.c.
+struct arch_state __export_arch_state;
+uint64_t __export_context_decoupling_exp;
+
 long __syscall(long n, long a1, long a2, long a3, long a4, long a5, long a6) {
   unsigned long ret;
   register long r10 __asm__("r10") = a4;
@@ -49,6 +54,15 @@ long sys_futex(uint32_t *addr, int op, int val, struct __kernel_timespec *tv,
                    (long)addr2, (long)val3);
 }
 
+void check_sysmsg_thread_context(struct sysmsg *sysmsg,
+                                 struct thread_context **ctx) {
+  struct thread_context *new_ctx = thread_context_addr(sysmsg);
+  if (*ctx != new_ctx) {
+    *ctx = new_ctx;
+    __atomic_store_n(&(*ctx)->fpstate_changed, 1, __ATOMIC_RELEASE);
+  }
+}
+
 union csgsfs {
   uint64_t csgsfs;  // REG_CSGSFS
   struct {
@@ -59,64 +73,65 @@ union csgsfs {
   };
 };
 
-static void gregs_to_ptregs(ucontext_t *ucontext, struct sysmsg *sysmsg) {
+static void gregs_to_ptregs(ucontext_t *ucontext,
+                            struct user_regs_struct *ptregs) {
   union csgsfs csgsfs = {.csgsfs = ucontext->uc_mcontext.gregs[REG_CSGSFS]};
 
   // Set all registers except:
   // * fs_base and gs_base, because they can be only changed by arch_prctl.
   // * DS and ES are not used on x86_64.
+  ptregs->r15 = ucontext->uc_mcontext.gregs[REG_R15];
+  ptregs->r14 = ucontext->uc_mcontext.gregs[REG_R14];
+  ptregs->r13 = ucontext->uc_mcontext.gregs[REG_R13];
+  ptregs->r12 = ucontext->uc_mcontext.gregs[REG_R12];
+  ptregs->rbp = ucontext->uc_mcontext.gregs[REG_RBP];
+  ptregs->rbx = ucontext->uc_mcontext.gregs[REG_RBX];
+  ptregs->r11 = ucontext->uc_mcontext.gregs[REG_R11];
+  ptregs->r10 = ucontext->uc_mcontext.gregs[REG_R10];
+  ptregs->r9 = ucontext->uc_mcontext.gregs[REG_R9];
+  ptregs->r8 = ucontext->uc_mcontext.gregs[REG_R8];
+  ptregs->rax = ucontext->uc_mcontext.gregs[REG_RAX];
+  ptregs->rcx = ucontext->uc_mcontext.gregs[REG_RCX];
+  ptregs->rdx = ucontext->uc_mcontext.gregs[REG_RDX];
+  ptregs->rsi = ucontext->uc_mcontext.gregs[REG_RSI];
+  ptregs->rdi = ucontext->uc_mcontext.gregs[REG_RDI];
+  ptregs->rip = ucontext->uc_mcontext.gregs[REG_RIP];
+  ptregs->eflags = ucontext->uc_mcontext.gregs[REG_EFL];
+  ptregs->rsp = ucontext->uc_mcontext.gregs[REG_RSP];
 
-  sysmsg->ptregs.r15 = ucontext->uc_mcontext.gregs[REG_R15];
-  sysmsg->ptregs.r14 = ucontext->uc_mcontext.gregs[REG_R14];
-  sysmsg->ptregs.r13 = ucontext->uc_mcontext.gregs[REG_R13];
-  sysmsg->ptregs.r12 = ucontext->uc_mcontext.gregs[REG_R12];
-  sysmsg->ptregs.rbp = ucontext->uc_mcontext.gregs[REG_RBP];
-  sysmsg->ptregs.rbx = ucontext->uc_mcontext.gregs[REG_RBX];
-  sysmsg->ptregs.r11 = ucontext->uc_mcontext.gregs[REG_R11];
-  sysmsg->ptregs.r10 = ucontext->uc_mcontext.gregs[REG_R10];
-  sysmsg->ptregs.r9 = ucontext->uc_mcontext.gregs[REG_R9];
-  sysmsg->ptregs.r8 = ucontext->uc_mcontext.gregs[REG_R8];
-  sysmsg->ptregs.rax = ucontext->uc_mcontext.gregs[REG_RAX];
-  sysmsg->ptregs.rcx = ucontext->uc_mcontext.gregs[REG_RCX];
-  sysmsg->ptregs.rdx = ucontext->uc_mcontext.gregs[REG_RDX];
-  sysmsg->ptregs.rsi = ucontext->uc_mcontext.gregs[REG_RSI];
-  sysmsg->ptregs.rdi = ucontext->uc_mcontext.gregs[REG_RDI];
-  sysmsg->ptregs.rip = ucontext->uc_mcontext.gregs[REG_RIP];
-  sysmsg->ptregs.eflags = ucontext->uc_mcontext.gregs[REG_EFL];
-  sysmsg->ptregs.rsp = ucontext->uc_mcontext.gregs[REG_RSP];
-
-  sysmsg->ptregs.cs = csgsfs.cs;
-  sysmsg->ptregs.ss = csgsfs.ss;
-  sysmsg->ptregs.fs = csgsfs.fs;
-  sysmsg->ptregs.gs = csgsfs.gs;
+  ptregs->cs = csgsfs.cs;
+  ptregs->ss = csgsfs.ss;
+  ptregs->fs = csgsfs.fs;
+  ptregs->gs = csgsfs.gs;
 }
 
-static void ptregs_to_gregs(ucontext_t *ucontext, struct sysmsg *sysmsg) {
+static void ptregs_to_gregs(ucontext_t *ucontext,
+                            struct user_regs_struct *ptregs) {
   union csgsfs csgsfs = {.csgsfs = ucontext->uc_mcontext.gregs[REG_CSGSFS]};
 
-  ucontext->uc_mcontext.gregs[REG_R15] = sysmsg->ptregs.r15;
-  ucontext->uc_mcontext.gregs[REG_R14] = sysmsg->ptregs.r14;
-  ucontext->uc_mcontext.gregs[REG_R13] = sysmsg->ptregs.r13;
-  ucontext->uc_mcontext.gregs[REG_R12] = sysmsg->ptregs.r12;
-  ucontext->uc_mcontext.gregs[REG_RBP] = sysmsg->ptregs.rbp;
-  ucontext->uc_mcontext.gregs[REG_RBX] = sysmsg->ptregs.rbx;
-  ucontext->uc_mcontext.gregs[REG_R11] = sysmsg->ptregs.r11;
-  ucontext->uc_mcontext.gregs[REG_R10] = sysmsg->ptregs.r10;
-  ucontext->uc_mcontext.gregs[REG_R9] = sysmsg->ptregs.r9;
-  ucontext->uc_mcontext.gregs[REG_R8] = sysmsg->ptregs.r8;
-  ucontext->uc_mcontext.gregs[REG_RAX] = sysmsg->ptregs.rax;
-  ucontext->uc_mcontext.gregs[REG_RCX] = sysmsg->ptregs.rcx;
-  ucontext->uc_mcontext.gregs[REG_RDX] = sysmsg->ptregs.rdx;
-  ucontext->uc_mcontext.gregs[REG_RSI] = sysmsg->ptregs.rsi;
-  ucontext->uc_mcontext.gregs[REG_RDI] = sysmsg->ptregs.rdi;
-  ucontext->uc_mcontext.gregs[REG_RIP] = sysmsg->ptregs.rip;
-  ucontext->uc_mcontext.gregs[REG_EFL] = sysmsg->ptregs.eflags;
-  ucontext->uc_mcontext.gregs[REG_RSP] = sysmsg->ptregs.rsp;
+  ucontext->uc_mcontext.gregs[REG_R15] = ptregs->r15;
+  ucontext->uc_mcontext.gregs[REG_R14] = ptregs->r14;
+  ucontext->uc_mcontext.gregs[REG_R13] = ptregs->r13;
+  ucontext->uc_mcontext.gregs[REG_R12] = ptregs->r12;
+  ucontext->uc_mcontext.gregs[REG_RBP] = ptregs->rbp;
+  ucontext->uc_mcontext.gregs[REG_RBX] = ptregs->rbx;
+  ucontext->uc_mcontext.gregs[REG_R11] = ptregs->r11;
+  ucontext->uc_mcontext.gregs[REG_R10] = ptregs->r10;
+  ucontext->uc_mcontext.gregs[REG_R9] = ptregs->r9;
+  ucontext->uc_mcontext.gregs[REG_R8] = ptregs->r8;
+  ucontext->uc_mcontext.gregs[REG_RAX] = ptregs->rax;
+  ucontext->uc_mcontext.gregs[REG_RCX] = ptregs->rcx;
+  ucontext->uc_mcontext.gregs[REG_RDX] = ptregs->rdx;
+  ucontext->uc_mcontext.gregs[REG_RSI] = ptregs->rsi;
+  ucontext->uc_mcontext.gregs[REG_RDI] = ptregs->rdi;
+  ucontext->uc_mcontext.gregs[REG_RIP] = ptregs->rip;
+  ucontext->uc_mcontext.gregs[REG_EFL] = ptregs->eflags;
+  ucontext->uc_mcontext.gregs[REG_RSP] = ptregs->rsp;
 
-  csgsfs.cs = sysmsg->ptregs.cs;
-  csgsfs.ss = sysmsg->ptregs.ss;
-  csgsfs.fs = sysmsg->ptregs.fs;
-  csgsfs.gs = sysmsg->ptregs.gs;
+  csgsfs.cs = ptregs->cs;
+  csgsfs.ss = ptregs->ss;
+  csgsfs.fs = ptregs->fs;
+  csgsfs.gs = ptregs->gs;
 
   ucontext->uc_mcontext.gregs[REG_CSGSFS] = csgsfs.csgsfs;
 }
@@ -155,18 +170,19 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
   struct sysmsg *sysmsg = sysmsg_addr(sp);
 
   if (sysmsg != sysmsg->self) panic(0xdeaddead);
+  struct thread_context *ctx = thread_context_addr(sysmsg);
 
   if (signo == SIGCHLD) {
     // If the current thread is in syshandler, an interrupt has to be postponed,
     // because sysmsg can't be changed.
-    int32_t state;
-    state = __atomic_load_n(&sysmsg->state, __ATOMIC_ACQUIRE);
-    if ((state != SYSMSG_STATE_NONE) ||
+    int32_t thread_state;
+    thread_state = __atomic_load_n(&sysmsg->state, __ATOMIC_ACQUIRE);
+    if ((thread_state != THREAD_STATE_NONE) ||
         (ucontext->uc_mcontext.gregs[REG_RSP] > (unsigned long)sp)) {
       __atomic_store_n(&sysmsg->interrupt, 1, __ATOMIC_RELEASE);
       return;
     }
-  } else if (signo == SIGILL && sysmsg->type == SYSMSG_INTERRUPT) {
+  } else if (signo == SIGILL && sysmsg->state == THREAD_STATE_INTERRUPT) {
     // This is a postponed SignalInterrupt from syshandler.
     signo = SIGCHLD;
     siginfo->si_signo = SIGCHLD;
@@ -182,16 +198,23 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
     return;
   }
 
-  sysmsg->signo = signo;
-  gregs_to_ptregs(ucontext, sysmsg);
-  sysmsg->fpstate =
-      (unsigned long)ucontext->uc_mcontext.fpregs - (unsigned long)sysmsg;
-  sysmsg->siginfo = *siginfo;
+  ctx->signo = signo;
+  ctx->siginfo = *siginfo;
+  gregs_to_ptregs(ucontext, &ctx->ptregs);
+  if (__export_context_decoupling_exp) {
+    memcpy(ctx->fpstate, (uint8_t *)ucontext->uc_mcontext.fpregs,
+           __export_arch_state.fp_len);
+  } else {
+    sysmsg->fpstate =
+        (unsigned long)ucontext->uc_mcontext.fpregs - (unsigned long)sysmsg;
+  }
+  __atomic_store_n(&ctx->fpstate_changed, 0, __ATOMIC_RELEASE);
+
   switch (signo) {
     case SIGSYS: {
       int si_sysno = siginfo->si_syscall;
       int i;
-      sysmsg->type = SYSMSG_SYSCALL;
+      ctx->state = CONTEXT_STATE_SYSCALL;
 
       // Check whether this syscall can be replaced on a function call or not.
       // If a syscall instruction set is "mov sysno, %eax, syscall", it can be
@@ -203,7 +226,7 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
           si_sysno != __NR_execve && si_sysno != __NR_fork &&
           si_sysno != __NR_clone && si_sysno != __NR_vfork &&
           si_sysno != __NR_rt_sigreturn && si_sysno != __NR_arch_prctl) {
-        uint8_t *rip = (uint8_t *)sysmsg->ptregs.rip;
+        uint8_t *rip = (uint8_t *)ctx->ptregs.rip;
         // FIXME(b/144063246): Even if all five bytes before the syscall
         // instruction match the "mov sysno, %eax" instruction, they can be a
         // part of a longer instruction. Here is not easy way to decode x86
@@ -231,7 +254,7 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
                         *(syscall_code + 7) == 0x05 &&
                         *(syscall_code + 1) == 0xb8 &&  // mov sysno, %eax
                         sysno == siginfo->si_syscall &&
-                        sysno == sysmsg->ptregs.rax;
+                        sysno == ctx->ptregs.rax;
 
         // Restart syscall if it has been patched by another thread.  When a
         // syscall instruction set is replaced on a function call, all threads
@@ -251,15 +274,15 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
 
         if (need_trap) {
           // This syscall can be replaced on the function call.
-          sysmsg->type = SYSMSG_SYSCALL_NEED_TRAP;
+          ctx->state = CONTEXT_STATE_SYSCALL_NEED_TRAP;
         }
       }
-      sysmsg->ptregs.orig_rax = sysmsg->ptregs.rax;
-      sysmsg->ptregs.rax = (unsigned long)-ENOSYS;
+      ctx->ptregs.orig_rax = ctx->ptregs.rax;
+      ctx->ptregs.rax = (unsigned long)-ENOSYS;
       if (siginfo->si_arch != AUDIT_ARCH_X86_64)
         // gVisor doesn't support x32 system calls, so let's change the syscall
         // number so that it returns ENOSYS.
-        sysmsg->ptregs.orig_rax += 0x86000000;
+        ctx->ptregs.orig_rax += 0x86000000;
       break;
     }
     case SIGCHLD:
@@ -268,22 +291,27 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
     case SIGFPE:
     case SIGTRAP:
     case SIGILL:
-      sysmsg->ptregs.orig_rax = -1;
-      sysmsg->type = SYSMSG_FAULT;
+      ctx->ptregs.orig_rax = -1;
+      ctx->state = CONTEXT_STATE_FAULT;
       break;
     default:
       return;
   }
-  get_fsbase(&sysmsg->ptregs);
-  long fs_base = sysmsg->ptregs.fs_base;
+  get_fsbase(&ctx->ptregs);
+  long fs_base = ctx->ptregs.fs_base;
 
-  wait_state(sysmsg, SYSMSG_STATE_EVENT);
+  wait_state(sysmsg, THREAD_STATE_EVENT);
 
-  if (fs_base != sysmsg->ptregs.fs_base) {
-    set_fsbase(&sysmsg->ptregs);
+  if (fs_base != __atomic_load_n(&ctx->ptregs.fs_base, __ATOMIC_ACQUIRE)) {
+    set_fsbase(&ctx->ptregs);
   }
-  ptregs_to_gregs(ucontext, sysmsg);
-  __atomic_store_n(&sysmsg->state, SYSMSG_STATE_NONE, __ATOMIC_RELEASE);
+  if (__export_context_decoupling_exp &&
+      __atomic_load_n(&ctx->fpstate_changed, __ATOMIC_ACQUIRE)) {
+    memcpy((uint8_t *)ucontext->uc_mcontext.fpregs, ctx->fpstate,
+           __export_arch_state.fp_len);
+  }
+  ptregs_to_gregs(ucontext, &ctx->ptregs);
+  __atomic_store_n(&sysmsg->state, THREAD_STATE_NONE, __ATOMIC_RELEASE);
 }
 
 // Function arguments: %rdi,%rsi, %rdx, %rcx, %r8 and %r9.
@@ -298,36 +326,36 @@ long __syshandler(long a1, long a2, long a3, long __unused, long a5, long a6) {
       :
       :);
   asm volatile("movq %%gs:0, %0\n" : "=r"(sysmsg) : :);
+  struct thread_context *ctx = thread_context_addr(sysmsg);
 
   // SYSMSG_STATE_PREP is set to postpone interrupts. Look at
   // __export_sighandler for more details.
-  int state = __atomic_load_n(&sysmsg->state, __ATOMIC_ACQUIRE);
-  if (state != SYSMSG_STATE_PREP) panic(state);
-  sysmsg->signo = SIGSYS;
-  sysmsg->ptregs.rax = sysno;
-  sysmsg->ptregs.rdi = a1;
-  sysmsg->ptregs.rsi = a2;
-  sysmsg->ptregs.rdx = a3;
-  sysmsg->ptregs.r10 = a4;
-  sysmsg->ptregs.r8 = a5;
-  sysmsg->ptregs.r9 = a6;
-  sysmsg->ptregs.rsp = sysmsg->app_stack;
-  sysmsg->ptregs.rip = sysmsg->ret_addr;
-  sysmsg->type = SYSMSG_SYSCALL_TRAP;
-  sysmsg->ptregs.orig_rax = sysmsg->ptregs.rax;
-  sysmsg->ptregs.rax = (unsigned long)-ENOSYS;
-  sysmsg->siginfo.si_addr = 0;
-  sysmsg->siginfo.si_syscall = sysno;
+  int thread_state = __atomic_load_n(&sysmsg->state, __ATOMIC_ACQUIRE);
+  if (thread_state != THREAD_STATE_PREP) panic(thread_state);
+  ctx->signo = SIGSYS;
+  ctx->ptregs.rax = sysno;
+  ctx->ptregs.rdi = a1;
+  ctx->ptregs.rsi = a2;
+  ctx->ptregs.rdx = a3;
+  ctx->ptregs.r10 = a4;
+  ctx->ptregs.r8 = a5;
+  ctx->ptregs.r9 = a6;
+  ctx->ptregs.rsp = sysmsg->app_stack;
+  ctx->ptregs.rip = sysmsg->ret_addr;
+  ctx->state = CONTEXT_STATE_SYSCALL_TRAP;
+  ctx->ptregs.orig_rax = ctx->ptregs.rax;
+  ctx->ptregs.rax = (unsigned long)-ENOSYS;
+  ctx->siginfo.si_addr = 0;
+  ctx->siginfo.si_syscall = sysno;
   __atomic_store_n(&sysmsg->interrupt, 0, __ATOMIC_RELAXED);
 
-  state = wait_state(sysmsg, SYSMSG_STATE_EVENT);
-  long sysret = sysmsg->ptregs.rax;
-  if (state == SYSMSG_STATE_SIGACT) {
-    sysmsg->type = SYSMSG_SYSCALL;
+  thread_state = wait_state(sysmsg, THREAD_STATE_EVENT);
+  long sysret = ctx->ptregs.rax;
+  if (thread_state == THREAD_STATE_SIGACT) {
     return -1;
   }
 
-  __atomic_store_n(&sysmsg->state, SYSMSG_STATE_NONE, __ATOMIC_RELEASE);
+  __atomic_store_n(&sysmsg->state, THREAD_STATE_NONE, __ATOMIC_RELEASE);
   return sysret;
 }
 
