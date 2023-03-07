@@ -106,13 +106,13 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
   // point context.
   //
   // See: arch/arm64/include/uapi/asm/sigcontext.h
-  struct fpsimd_context *fpctx = &ucontext->uc_mcontext.__reserved;
+  const uint64_t kSigframeMagicHeaderLen = sizeof(struct _aarch64_ctx);
   // Verify the header.
-  if (fpctx->head.magic != FPSIMD_MAGIC ||
-      __export_arch_state.fp_len != sizeof(*fpctx) - sizeof(fpctx->head)) {
+  if (((uint32_t *)&ucontext->uc_mcontext.__reserved)[0] != FPSIMD_MAGIC) {
     panic(0xbadf);
   }
-  uint8_t *fpStatePointer = (uint8_t *)&fpctx->fpsr;
+  uint8_t *fpStatePointer =
+      (uint8_t *)&ucontext->uc_mcontext.__reserved + kSigframeMagicHeaderLen;
   if (__export_context_decoupling_exp) {
     memcpy(ctx->fpstate, fpStatePointer, __export_arch_state.fp_len);
   } else {
