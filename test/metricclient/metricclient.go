@@ -167,7 +167,7 @@ func (c *MetricClient) HealthCheck(ctx context.Context) error {
 // Callers should call ShutdownServer to stop the server.
 // A running server must be stopped before a new one can be successfully started.
 // baseConf is used for passing other flags to the server, e.g. debug log directory.
-func (c *MetricClient) SpawnServer(ctx context.Context, baseConf *config.Config) error {
+func (c *MetricClient) SpawnServer(ctx context.Context, baseConf *config.Config, extraArgs ...string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.server != nil {
@@ -209,6 +209,7 @@ func (c *MetricClient) SpawnServer(ctx context.Context, baseConf *config.Config)
 	// shown as `exe`.
 	c.server.Args[0] = "runsc-metrics"
 	c.server.Args = append(c.server.Args, "metric-server")
+	c.server.Args = append(c.server.Args, extraArgs...)
 	if err := c.server.Start(); err != nil {
 		return fmt.Errorf("cannot start metrics server: %w", err)
 	}

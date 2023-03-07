@@ -293,13 +293,16 @@ func (*MetricServer) Synopsis() string {
 
 // Usage implements subcommands.Command.Usage.
 func (*MetricServer) Usage() string {
-	return `-root=<root dir> -metric-server=<addr> [-metric-exporter-prefix=<prefix_>] metric-server`
+	return `-root=<root dir> -metric-server=<addr> metric-server [-exporter-prefix=<runsc_>]
+`
 }
 
 // SetFlags implements subcommands.Command.SetFlags.
 func (m *MetricServer) SetFlags(f *flag.FlagSet) {
+	f.StringVar(&m.exporterPrefix, "exporter-prefix", "runsc_", "Prefix for all metric names, following Prometheus exporter convention")
 	f.StringVar(&m.pidFile, "pid-file", "", "If set, write the metric server's own PID to this file after binding to the --metric-server address. The parent directory of this file must already exist.")
 	f.BoolVar(&m.exposeProfileEndpoints, "allow-profiling", false, "If true, expose /runsc-metrics/profile-cpu and /runsc-metrics/profile-heap to get profiling data about the metric server")
+	f.BoolVar(&m.allowUnknownRoot, "allow-unknown-root", false, "if set, the metric server will keep running regardless of the existence of --root or the metric server's ability to access it.")
 }
 
 // sufficientlyEqualStats returns whether the given FileInfo's are sufficiently
@@ -901,7 +904,7 @@ func (m *MetricServer) Execute(ctx context.Context, f *flag.FlagSet, args ...any
 		return util.Errorf("Metric server address contains '%%ID%%': %v. This should have been replaced by the parent process.", conf.MetricServer)
 	}
 	if _, err := container.ListSandboxes(conf.RootDir); err != nil {
-		if !conf.MetricServerAllowUnknownRoot {
+		if !m.allowUnknownRoot {
 			return util.Errorf("Invalid root directory %q: tried to list sandboxes within it and got: %v", conf.RootDir, err)
 		}
 		log.Warningf("Invalid root directory %q: tried to list sandboxes within it and got: %v. Continuing anyway, as the server is configured to tolerate this.", conf.RootDir, err)
@@ -909,15 +912,13 @@ func (m *MetricServer) Execute(ctx context.Context, f *flag.FlagSet, args ...any
 	// container.ListSandboxes uses a glob pattern, which doesn't error out on
 	// permission errors. Double-check by actually listing the directory.
 	if _, err := ioutil.ReadDir(conf.RootDir); err != nil {
-		if !conf.MetricServerAllowUnknownRoot {
+		if !m.allowUnknownRoot {
 			return util.Errorf("Invalid root directory %q: tried to list all entries within it and got: %v", conf.RootDir, err)
 		}
 		log.Warningf("Invalid root directory %q: tried to list all entries within it and got: %v. Continuing anyway, as the server is configured to tolerate this.", conf.RootDir, err)
 	}
 	m.startTime = time.Now()
 	m.rootDir = conf.RootDir
-	m.allowUnknownRoot = conf.MetricServerAllowUnknownRoot
-	m.exporterPrefix = conf.MetricExporterPrefix
 	if strings.Contains(conf.MetricServer, "%RUNTIME_ROOT%") {
 		newAddr := strings.ReplaceAll(conf.MetricServer, "%RUNTIME_ROOT%", m.rootDir)
 		log.Infof("Metric server address replaced %RUNTIME_ROOT%: %q -> %q", conf.MetricServer, newAddr)
