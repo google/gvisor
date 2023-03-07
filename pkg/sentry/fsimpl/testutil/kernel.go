@@ -34,6 +34,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 
@@ -49,6 +50,8 @@ var (
 
 // Boot initializes a new bare bones kernel for test.
 func Boot() (*kernel.Kernel, error) {
+	seccheck.Initialize()
+
 	platformCtr, err := platform.Lookup(*platformFlag)
 	if err != nil {
 		return nil, fmt.Errorf("platform not found: %v", err)
