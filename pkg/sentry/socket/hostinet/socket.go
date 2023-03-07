@@ -480,6 +480,7 @@ func (s *Socket) recvMsgFromHost(iovs []unix.Iovec, flags int, senderRequested b
 const allowedRecvMsgFlags = unix.MSG_CTRUNC |
 	unix.MSG_DONTWAIT |
 	unix.MSG_ERRQUEUE |
+	unix.MSG_OOB |
 	unix.MSG_PEEK |
 	unix.MSG_TRUNC |
 	unix.MSG_WAITALL
@@ -653,10 +654,17 @@ func parseUnixControlMessages(unixControlMessages []unix.SocketControlMessage) s
 	return controlMessages
 }
 
+const allowedSendMsgFlags = unix.MSG_DONTWAIT |
+	unix.MSG_EOR |
+	unix.MSG_FASTOPEN |
+	unix.MSG_MORE |
+	unix.MSG_NOSIGNAL |
+	unix.MSG_OOB
+
 // SendMsg implements socket.Socket.SendMsg.
 func (s *Socket) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flags int, haveDeadline bool, deadline ktime.Time, controlMessages socket.ControlMessages) (int, *syserr.Error) {
 	// Only allow known and safe flags.
-	if flags&^(unix.MSG_DONTWAIT|unix.MSG_EOR|unix.MSG_FASTOPEN|unix.MSG_MORE|unix.MSG_NOSIGNAL) != 0 {
+	if flags&^allowedSendMsgFlags != 0 {
 		return 0, syserr.ErrInvalidArgument
 	}
 
