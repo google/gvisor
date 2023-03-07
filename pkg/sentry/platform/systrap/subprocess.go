@@ -675,10 +675,7 @@ func (s *subprocess) switchToApp(c *context, ac *arch.Context64) (isSyscall bool
 
 	if ctx.State == sysmsg.ContextStateSyscallCanBePatched {
 		ctx.State = sysmsg.ContextStateSyscall
-		// Syshandler not implemented with context decoupling yet.
-		if !contextDecouplingExp {
-			shouldPatchSyscall = true
-		}
+		shouldPatchSyscall = true
 	}
 
 	if ctx.State == sysmsg.ContextStateSyscall || ctx.State == sysmsg.ContextStateSyscallTrap {
@@ -750,10 +747,6 @@ func (s *subprocess) Unmap(addr hostarch.Addr, length uint64) {
 }
 
 func (s *subprocess) PullFullState(c *context, ac *arch.Context64) error {
-	if !contextDecouplingExp {
-		return s.PullFullArchState(c, ac)
-	}
-
 	if s != c.subprocess {
 		panic("Attempted to PullFullState for context that is not used in subprocess")
 	}
@@ -857,10 +850,10 @@ func (s *subprocess) getSysmsgThread(tregs *arch.Registers, c *context, ac *arch
 	sysThread.setMsg(sysmsg.StackAddrToMsg(sentryStackAddr))
 	sysThread.msg.Init()
 	sysThread.msg.Self = uint64(sysmsgStackAddr + sysmsg.MsgOffsetFromSharedStack)
-	sysThread.msg.Syshandler = uint64(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_syshandler))
 	sysThread.msg.SyshandlerStack = uint64(sysmsg.StackAddrToSyshandlerStack(sysThread.sysmsgPerThreadMemAddr()))
 	sysThread.msg.ContextRegion = uint64(stubContextRegion)
 	sysThread.msg.ContextID = c.cid
+	sysThread.msg.Syshandler = uint64(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_syshandler))
 
 	sysThread.msg.State.Set(sysmsg.ThreadStateDone)
 

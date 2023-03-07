@@ -108,10 +108,6 @@ const (
 	ThreadStateEvent
 	// ThreadStatePrep means that syshandler started filling the sysmsg struct.
 	ThreadStatePrep
-	// ThreadStateSigact means that the sentry requests the full state of the stub
-	// thread.
-	// TODO(b/268366549): Remove this when syshandler saves full state to context.
-	ThreadStateSigact
 	// ThreadStateInterrupt is a Sysmsg state that indicates to the sighandler
 	// that there is a postponed interrupt from the syshandler.
 	// The sentry should never see this event.
@@ -264,14 +260,6 @@ type ThreadContext struct {
 	State ContextState
 	// Interrupt is set to indicate that this context has been interrupted.
 	Interrupt uint32
-	// Decoupled is set to indicate that this context is not tied to the sysmsg
-	// thread used to to execute this context. This value is only changed from
-	// the sentry if contextDecouplingExp is on.
-	// It changes the behaviour of the sysmsg threads in the following ways:
-	//   - sighandler will save fpstate to ThreadContext.FPState instead of on the
-	//     sighandler stack.
-	//   - syshandler will not save fpstate at all.
-	Decoupled uint32
 	// Debug is a variable to use to get visibility into the stub from the sentry.
 	Debug uint64
 }

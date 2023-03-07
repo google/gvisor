@@ -177,8 +177,7 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
     // because sysmsg can't be changed.
     int32_t thread_state;
     thread_state = __atomic_load_n(&sysmsg->state, __ATOMIC_ACQUIRE);
-    if ((thread_state != THREAD_STATE_NONE) ||
-        (ucontext->uc_mcontext.gregs[REG_RSP] > (unsigned long)sp)) {
+    if (thread_state != THREAD_STATE_NONE) {
       __atomic_store_n(&sysmsg->interrupt, 1, __ATOMIC_RELEASE);
       return;
     }
@@ -189,6 +188,13 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
     __atomic_store_n(&sysmsg->interrupt, 0, __ATOMIC_RELAXED);
     // Skip the fault instruction.
     ucontext->uc_mcontext.gregs[REG_RIP] = sysmsg->ret_addr;
+    // If we're skipping the fault instruction and going straight to the user
+    // RIP we must also restore RSP and RFLAGS which are the last registers
+    // restored. We can take these values from ctx->ptregs because the
+    // syshandler saved them there and hasn't overwritten them before
+    // retriggering the interrupt.
+    ucontext->uc_mcontext.gregs[REG_RSP] = ctx->ptregs.rsp;
+    ucontext->uc_mcontext.gregs[REG_EFL] = ctx->ptregs.eflags;
   }
 
   // Handle faults in syshandler.
@@ -220,12 +226,7 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
       // If a syscall instruction set is "mov sysno, %eax, syscall", it can be
       // replaced on a function call which works much faster.
       // Look at pkg/sentry/usertrap for more details.
-      //
-      // Exclude all syscalls which requires a full thread state to be handled.
-      if (siginfo->si_arch == AUDIT_ARCH_X86_64 && si_sysno != __NR_execveat &&
-          si_sysno != __NR_execve && si_sysno != __NR_fork &&
-          si_sysno != __NR_clone && si_sysno != __NR_vfork &&
-          si_sysno != __NR_rt_sigreturn && si_sysno != __NR_arch_prctl) {
+      if (siginfo->si_arch == AUDIT_ARCH_X86_64) {
         uint8_t *rip = (uint8_t *)ctx->ptregs.rip;
         // FIXME(b/144063246): Even if all five bytes before the syscall
         // instruction match the "mov sysno, %eax" instruction, they can be a
@@ -314,49 +315,32 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
   __atomic_store_n(&sysmsg->state, THREAD_STATE_NONE, __ATOMIC_RELEASE);
 }
 
-// Function arguments: %rdi,%rsi, %rdx, %rcx, %r8 and %r9.
-// http://refspecs.linuxfoundation.org/elf/x86_64-abi-0.99.pdf
-long __syshandler(long a1, long a2, long a3, long __unused, long a5, long a6) {
-  long sysno, a4, rip;
+void __syshandler() {
   struct sysmsg *sysmsg;
-  asm volatile(
-      "movq %%rax, %0\n"
-      "movq %%r10, %1\n"
-      : "=m"(sysno), "=m"(a4)
-      :
-      :);
   asm volatile("movq %%gs:0, %0\n" : "=r"(sysmsg) : :);
-  struct thread_context *ctx = thread_context_addr(sysmsg);
-
   // SYSMSG_STATE_PREP is set to postpone interrupts. Look at
   // __export_sighandler for more details.
-  int thread_state = __atomic_load_n(&sysmsg->state, __ATOMIC_ACQUIRE);
-  if (thread_state != THREAD_STATE_PREP) panic(thread_state);
-  ctx->signo = SIGSYS;
-  ctx->ptregs.rax = sysno;
-  ctx->ptregs.rdi = a1;
-  ctx->ptregs.rsi = a2;
-  ctx->ptregs.rdx = a3;
-  ctx->ptregs.r10 = a4;
-  ctx->ptregs.r8 = a5;
-  ctx->ptregs.r9 = a6;
-  ctx->ptregs.rsp = sysmsg->app_stack;
-  ctx->ptregs.rip = sysmsg->ret_addr;
+  int state = __atomic_load_n(&sysmsg->state, __ATOMIC_ACQUIRE);
+  if (state != THREAD_STATE_PREP) panic(state);
+
+  struct thread_context *ctx = thread_context_addr(sysmsg);
+
   ctx->state = CONTEXT_STATE_SYSCALL_TRAP;
-  ctx->ptregs.orig_rax = ctx->ptregs.rax;
-  ctx->ptregs.rax = (unsigned long)-ENOSYS;
+  ctx->signo = SIGSYS;
   ctx->siginfo.si_addr = 0;
-  ctx->siginfo.si_syscall = sysno;
+  ctx->siginfo.si_syscall = ctx->ptregs.rax;
+  ctx->ptregs.rax = (unsigned long)-ENOSYS;
   __atomic_store_n(&sysmsg->interrupt, 0, __ATOMIC_RELAXED);
 
-  thread_state = wait_state(sysmsg, THREAD_STATE_EVENT);
-  long sysret = ctx->ptregs.rax;
-  if (thread_state == THREAD_STATE_SIGACT) {
-    return -1;
-  }
+  get_fsbase(&ctx->ptregs);
+  long fs_base = ctx->ptregs.fs_base;
 
-  __atomic_store_n(&sysmsg->state, THREAD_STATE_NONE, __ATOMIC_RELEASE);
-  return sysret;
+  state = wait_state(sysmsg, THREAD_STATE_EVENT);
+
+  // Restore state
+  if (fs_base != ctx->ptregs.fs_base) {
+    set_fsbase(&ctx->ptregs);
+  }
 }
 
 void verify_offsets_amd64() {
