@@ -15,12 +15,15 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
+	"text/template"
 
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
@@ -198,13 +201,109 @@ func NewFromFlags(flagSet *flag.FlagSet) (*Config, error) {
 	return conf, nil
 }
 
-// ToFlags returns a slice of flags that correspond to the given Config.
-func (c *Config) ToFlags() []string {
-	var rv []string
-
-	// Construct a temporary set for default plumbing.
+// NewFromBundle makes a new config from a Bundle.
+func NewFromBundle(bundle Bundle) (*Config, error) {
+	if err := bundle.Validate(); err != nil {
+		return nil, err
+	}
 	flagSet := flag.NewFlagSet("tmp", flag.ContinueOnError)
 	RegisterFlags(flagSet)
+	conf := &Config{explicitlySet: map[string]struct{}{}}
+
+	obj := reflect.ValueOf(conf).Elem()
+	st := obj.Type()
+	for i := 0; i < st.NumField(); i++ {
+		f := st.Field(i)
+		name, ok := f.Tag.Lookup("flag")
+		if !ok {
+			continue
+		}
+		fl := flagSet.Lookup(name)
+		if fl == nil {
+			return nil, fmt.Errorf("flag %q not found", name)
+		}
+		val, ok := bundle[name]
+		if !ok {
+			continue
+		}
+		if err := flagSet.Set(name, val); err != nil {
+			return nil, fmt.Errorf("error setting flag %s=%q: %w", name, val, err)
+		}
+		conf.Override(flagSet, name, val, true)
+
+		conf.explicitlySet[name] = struct{}{}
+	}
+	return conf, nil
+}
+
+// ToFlags returns a slice of flags that correspond to the given Config.
+func (c *Config) ToFlags() []string {
+	flagSet := flag.NewFlagSet("tmp", flag.ContinueOnError)
+	RegisterFlags(flagSet)
+
+	var rv []string
+	keyVals := c.keyVals(flagSet, false /*onlyIfSet*/)
+	for name, val := range keyVals {
+		rv = append(rv, fmt.Sprintf("--%s=%s", name, val))
+	}
+
+	// Construct a temporary set for default plumbing.
+	return rv
+}
+
+// KeyVal is a key value pair. It is used so ToContainerdConfigTOML returns
+// predictable ordering for runsc flags.
+type KeyVal struct {
+	Key string
+	Val string
+}
+
+// ContainerdConfigOptions contains arguments for ToContainerdConfigTOML.
+type ContainerdConfigOptions struct {
+	BinaryPath string
+	RootPath   string
+	Options    map[string]string
+	RunscFlags []KeyVal
+}
+
+// ToContainerdConfigTOML turns a given config into a format for a k8s containerd config.toml file.
+// See: https://gvisor.dev/docs/user_guide/containerd/quick_start/
+func (c *Config) ToContainerdConfigTOML(opts ContainerdConfigOptions) (string, error) {
+	flagSet := flag.NewFlagSet("tmp", flag.ContinueOnError)
+	RegisterFlags(flagSet)
+	keyVals := c.keyVals(flagSet, true /*onlyIfSet*/)
+	keys := []string{}
+	for k := range keyVals {
+		keys = append(keys, k)
+	}
+
+	sort.Strings(keys)
+
+	for _, k := range keys {
+		opts.RunscFlags = append(opts.RunscFlags, KeyVal{k, keyVals[k]})
+	}
+
+	const temp = `{{if .BinaryPath}}binary_name = "{{.BinaryPath}}"{{end}}
+{{if .RootPath}}root = "{{.RootPath}}"{{end}}
+{{if .Options}}{{ range $key, $value := .Options}}{{$key}} = "{{$value}}"
+{{end}}{{end}}{{if .RunscFlags}}[runsc_config]
+{{ range $fl:= .RunscFlags}}  {{$fl.Key}} = "{{$fl.Val}}"
+{{end}}{{end}}`
+
+	t := template.New("temp")
+	t, err := t.Parse(temp)
+	if err != nil {
+		return "", err
+	}
+	var buf bytes.Buffer
+	if err := t.Execute(&buf, opts); err != nil {
+		return "", err
+	}
+	return buf.String(), nil
+}
+
+func (c *Config) keyVals(flagSet *flag.FlagSet, onlyIfSet bool) map[string]string {
+	keyVals := make(map[string]string)
 
 	obj := reflect.ValueOf(c).Elem()
 	st := obj.Type()
@@ -217,11 +316,11 @@ func (c *Config) ToFlags() []string {
 		}
 		val := getVal(obj.Field(i))
 
-		flag := flagSet.Lookup(name)
-		if flag == nil {
+		fl := flagSet.Lookup(name)
+		if fl == nil {
 			panic(fmt.Sprintf("Flag %q not found", name))
 		}
-		if val == flag.DefValue {
+		if val == fl.DefValue || onlyIfSet {
 			// If this config wasn't populated from a FlagSet, don't plumb through default flags.
 			if c.explicitlySet == nil {
 				continue
@@ -232,9 +331,9 @@ func (c *Config) ToFlags() []string {
 				continue
 			}
 		}
-		rv = append(rv, fmt.Sprintf("--%s=%s", flag.Name, val))
+		keyVals[fl.Name] = val
 	}
-	return rv
+	return keyVals
 }
 
 // Override writes a new value to a flag.
@@ -277,7 +376,7 @@ func (c *Config) isOverrideAllowed(name string, value string) error {
 	if c.AllowFlagOverride {
 		return nil
 	}
-	// If the global override flag is not enabled, check if individual flag is
+	// If the global override flag is not enabled, check if the individual flag is
 	// safe to apply.
 	if allow, ok := overrideAllowlist[name]; ok {
 		if allow.check != nil {
@@ -311,7 +410,6 @@ func (c *Config) ApplyBundles(flagSet *flag.FlagSet, bundleNames ...BundleName) 
 			valueToBundleName[val] = bundleName
 		}
 	}
-
 	// Check for conflicting flag values between the bundles.
 	for flagName, valueToBundleName := range flagToValueToBundleName {
 		if len(valueToBundleName) == 1 {
