@@ -1,5 +1,11 @@
 set -euo pipefail
 
+# Check that the target branch exists.
+git fetch origin "${BUILDKITE_BRANCH}" || {
+  echo "Branch ${BUILDKITE_BRANCH} no longer exists; it was probably deleted by the time we got to it." >&2
+  exit 1
+}
+
 # Download any build-specific configuration that has been uploaded.
 # This allows top-level steps to override all subsequent steps.
 buildkite-agent artifact download 'tools/bazeldefs/*' . || true
