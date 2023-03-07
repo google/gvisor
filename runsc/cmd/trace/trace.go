@@ -20,6 +20,7 @@ import (
 	"context"
 
 	"github.com/google/subcommands"
+	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
@@ -54,6 +55,7 @@ func (*Trace) SetFlags(f *flag.FlagSet) {}
 
 // Execute implements subcommands.Command.
 func (*Trace) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
+	seccheck.Initialize()
 	return createCommander(f).Execute(ctx, args...)
 }
 
