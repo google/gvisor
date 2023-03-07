@@ -22,7 +22,10 @@
 
 // LINT.IfChange
 #define MAX_FPSTATE_LEN 3648
+// Note: To be explicit, 2^12 = 4096; if ALLOCATED_SIZEOF_THREAD_CONTEXT_STRUCT
+//       is changed, make sure to change the code that relies on the bitshift.
 #define ALLOCATED_SIZEOF_THREAD_CONTEXT_STRUCT 4096
+#define THREAD_CONTEXT_STRUCT_BITSHIFT 12
 // LINT.ThenChange(sysmsg.go)
 
 // LINT.IfChange
@@ -44,8 +47,7 @@
 #define offsetof_thread_context_ptregs 0x8 + MAX_FPSTATE_LEN
 
 #define kTHREAD_STATE_NONE 0
-#define kTHREAD_STATE_SIGACT 4
-#define kTHREAD_STATE_INTERRUPT 5
+#define kTHREAD_STATE_INTERRUPT 4
 
 // LINT.ThenChange(sysmsg.h, sysmsg_lib.c)
 

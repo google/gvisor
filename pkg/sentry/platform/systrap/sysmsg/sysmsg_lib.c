@@ -90,13 +90,13 @@ int wait_state(struct sysmsg *sysmsg, uint32_t state) {
   }
 
   v = __atomic_load_n(&sysmsg->state, __ATOMIC_ACQUIRE);
-  if (v == THREAD_STATE_DONE || v == THREAD_STATE_SIGACT) goto out;
+  if (v == THREAD_STATE_DONE) goto out;
 
   handshake_timeout = __export_handshake_timeout;
   start = rdtsc();
   while (1) {
     v = __atomic_load_n(&sysmsg->state, __ATOMIC_ACQUIRE);
-    if (v == THREAD_STATE_DONE || v == THREAD_STATE_SIGACT) goto out;
+    if (v == THREAD_STATE_DONE) goto out;
 
     // The Sentry can change stub_fast_path to zero if it finds out that the
     // user task has to sleep.
@@ -154,7 +154,6 @@ void verify_offsets() {
                offsetof(struct thread_context, ptregs));
 
   BUILD_BUG_ON(kTHREAD_STATE_NONE != THREAD_STATE_NONE);
-  BUILD_BUG_ON(kTHREAD_STATE_SIGACT != THREAD_STATE_SIGACT);
   BUILD_BUG_ON(kTHREAD_STATE_INTERRUPT != THREAD_STATE_INTERRUPT);
 
   BUILD_BUG_ON(sizeof(struct thread_context) >

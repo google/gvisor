@@ -51,11 +51,8 @@ func (s *ArchState) Init() {
 
 	fpLenUint, _ := fs.ExtendedStateSize()
 	s.fpLen = uint32(fpLenUint)
-	if fs.UseXsavec() {
-		s.xsaveMode = xsavec
-	} else if fs.UseXsaveopt() {
-		s.xsaveMode = xsaveopt
-	} else if fs.UseXsave() {
+	// TODO(b/268366549): Fix use of xsavec/xsaveopt.
+	if fs.UseXsave() {
 		s.xsaveMode = xsave
 	} else {
 		s.xsaveMode = fxsave

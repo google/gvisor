@@ -42,7 +42,6 @@ enum {
   THREAD_STATE_DONE,
   THREAD_STATE_EVENT,
   THREAD_STATE_PREP,
-  THREAD_STATE_SIGACT,
   THREAD_STATE_INTERRUPT,
 };
 
@@ -95,7 +94,6 @@ struct thread_context {
   int64_t signo;
   uint32_t state;
   uint32_t interrupt;
-  uint32_t decoupled;
   uint64_t debug;
 };
 
