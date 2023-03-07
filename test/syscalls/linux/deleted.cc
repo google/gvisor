@@ -84,7 +84,7 @@ TEST(DeletedTest, Truncate) {
 TEST(DeletedTest, Fallocate) {
   auto fd = ASSERT_NO_ERRNO_AND_VALUE(createdDeleted());
 
-  ASSERT_THAT(fallocate(fd.get(), 0, 0, 123), SyscallSucceeds());
+  ASSERT_THAT(RetryEINTR(fallocate)(fd.get(), 0, 0, 123), SyscallSucceeds());
 
   struct stat stat;
   ASSERT_THAT(fstat(fd.get(), &stat), SyscallSucceeds());
