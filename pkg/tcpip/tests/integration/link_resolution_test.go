@@ -973,52 +973,48 @@ func TestWritePacketsLinkResolution(t *testing.T) {
 				TOS:      stack.DefaultTOS,
 			}
 			data := []byte{1, 2}
-			for _, d := range data {
-				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					ReserveHeaderBytes: header.UDPMinimumSize + int(r.MaxHeaderLength()),
-					Payload:            bufferv2.MakeWithData([]byte{d}),
-				})
-				pkt.TransportProtocolNumber = udp.ProtocolNumber
-				length := uint16(pkt.Data().Size() + header.UDPMinimumSize)
-				udpHdr := header.UDP(pkt.TransportHeader().Push(header.UDPMinimumSize))
-				udpHdr.Encode(&header.UDPFields{
-					SrcPort: 5555,
-					DstPort: serverAddr.Port,
-					Length:  length,
-				})
-				xsum := r.PseudoHeaderChecksum(udp.ProtocolNumber, length)
-				xsum = checksum.Combine(xsum, pkt.Data().Checksum())
-				udpHdr.SetChecksum(^udpHdr.CalculateChecksum(xsum))
+			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+				ReserveHeaderBytes: header.UDPMinimumSize + int(r.MaxHeaderLength()),
+				Payload:            bufferv2.MakeWithData(data),
+			})
+			pkt.TransportProtocolNumber = udp.ProtocolNumber
+			length := uint16(pkt.Data().Size() + header.UDPMinimumSize)
+			udpHdr := header.UDP(pkt.TransportHeader().Push(header.UDPMinimumSize))
+			udpHdr.Encode(&header.UDPFields{
+				SrcPort: 5555,
+				DstPort: serverAddr.Port,
+				Length:  length,
+			})
+			xsum := r.PseudoHeaderChecksum(udp.ProtocolNumber, length)
+			xsum = checksum.Combine(xsum, pkt.Data().Checksum())
+			udpHdr.SetChecksum(^udpHdr.CalculateChecksum(xsum))
 
-				if err := r.WritePacket(params, pkt); err != nil {
-					t.Fatalf("WritePacket(...): %s", err)
-				}
-				pkt.DecRef()
+			if err := r.WritePacket(params, pkt); err != nil {
+				t.Fatalf("WritePacket(...): %s", err)
 			}
+			pkt.DecRef()
 
 			var writer bytes.Buffer
-			count := 0
 			for {
 				var rOpts tcpip.ReadOptions
 				res, err := serverEP.Read(&writer, rOpts)
 				if err != nil {
 					if _, ok := err.(*tcpip.ErrWouldBlock); ok {
-						// Should not have anymore bytes to read after we read the sent
-						// number of bytes.
-						if count == len(data) {
-							break
-						}
-
 						<-serverCH
 						continue
 					}
 
 					t.Fatalf("serverEP.Read(_, %#v): %s", rOpts, err)
 				}
-				count += res.Count
+
+				if res.Count != len(data) {
+					t.Fatalf("got res.Count = %d, want = %d", res.Count, len(data))
+				}
+
+				break
 			}
 
-			if got, want := host2Stack.Stats().UDP.PacketsReceived.Value(), uint64(len(data)); got != want {
+			if got, want := host2Stack.Stats().UDP.PacketsReceived.Value(), uint64(1); got != want {
 				t.Errorf("got host2Stack.Stats().UDP.PacketsReceived.Value() = %d, want = %d", got, want)
 			}
 			if diff := cmp.Diff(data, writer.Bytes()); diff != "" {
