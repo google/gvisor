@@ -157,8 +157,8 @@ metric-server`. Simply point Prometheus at this address.
 
 If desired, you can change the
 [exporter name](https://prometheus.io/docs/instrumenting/writing_exporters/)
-(prefix applied to all metric names) using the `--metric-exporter-prefix` flag.
-It defaults to `runsc_`.
+(prefix applied to all metric names) using the `--exporter-prefix` flag. It
+defaults to `runsc_`.
 
 The metric server also supports listening on a
 [Unix Domain Socket](https://en.wikipedia.org/wiki/Unix_domain_socket). This can
@@ -277,8 +277,8 @@ own metrics as well. All metrics have documentation and type annotations in the
 
 *   `process_start_time_seconds`: Unix timestamp representing the time at which
     the metric server started. This specific metric name is used by Prometheus,
-    and as such its name is not affected by the `--metric-exporter-prefix` flag.
-    This metric is process-wide and has no labels.
+    and as such its name is not affected by the `--exporter-prefix` flag. This
+    metric is process-wide and has no labels.
 *   `num_sandboxes_total`: A process-wide metric representing the total number
     of sandboxes that the metric server knows about.
 *   `num_sandboxes_running`: A process-wide metric representing the number of

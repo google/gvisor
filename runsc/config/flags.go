@@ -55,8 +55,6 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 
 	// Metrics flags.
 	flagSet.String("metric-server", "", "if set, export metrics on this address. This may either be 1) 'addr:port' to export metrics on a specific network interface address, 2) ':port' for exporting metrics on all interfaces, or 3) an absolute path to a Unix Domain Socket. The substring '%ID%' will be replaced by the container ID, and '%RUNTIME_ROOT%' by the root. This flag must be specified in both `runsc metric-server` and `runsc create`, and their values must match.")
-	flagSet.Bool("metric-server-allow-unknown-root", false, "if set, the metric server will keep running regardless of the existence of --root or the metric server's ability to access it.")
-	flagSet.String("metric-exporter-prefix", "runsc_", "prefix for all metric names, following Prometheus exporter convention")
 
 	// Debugging flags: strace related
 	flagSet.Bool("strace", false, "enable strace.")

@@ -43,13 +43,14 @@ const (
 
 // metricsTest is returned by setupMetrics.
 type metricsTest struct {
-	testCtx   context.Context
-	rootDir   string
-	bundleDir string
-	sleepSpec *specs.Spec
-	sleepConf *config.Config
-	udsPath   string
-	client    *metricclient.MetricClient
+	testCtx         context.Context
+	rootDir         string
+	bundleDir       string
+	sleepSpec       *specs.Spec
+	sleepConf       *config.Config
+	udsPath         string
+	client          *metricclient.MetricClient
+	serverExtraArgs []string
 }
 
 // setupMetrics sets up a container configuration with metrics enabled, and returns it all.
@@ -67,7 +68,7 @@ func setupMetrics(t *testing.T, forceTempUDS bool) (*metricsTest, func()) {
 
 	spec, conf := sleepSpecConf(t)
 	conf.MetricServer = "%RUNTIME_ROOT%/metrics.sock"
-	conf.MetricExporterPrefix = "testmetric_"
+	serverExtraArgs := []string{"--exporter-prefix=testmetric_"}
 	rootDir, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
@@ -90,19 +91,20 @@ func setupMetrics(t *testing.T, forceTempUDS bool) (*metricsTest, func()) {
 	cu.Add(func() { os.Remove(udsPath) })
 
 	metricClient := metricclient.NewMetricClient(udsPath, rootDir)
-	if err := metricClient.SpawnServer(testCtx, conf); err != nil {
+	if err := metricClient.SpawnServer(testCtx, conf, serverExtraArgs...); err != nil {
 		t.Fatalf("Cannot start metric server: %v", err)
 	}
 	cu.Add(func() { metricClient.ShutdownServer(cleanupCtx) })
 
 	return &metricsTest{
-		testCtx:   testCtx,
-		rootDir:   rootDir,
-		bundleDir: bundleDir,
-		sleepSpec: spec,
-		sleepConf: conf,
-		udsPath:   udsPath,
-		client:    metricClient,
+		testCtx:         testCtx,
+		rootDir:         rootDir,
+		bundleDir:       bundleDir,
+		sleepSpec:       spec,
+		sleepConf:       conf,
+		udsPath:         udsPath,
+		client:          metricClient,
+		serverExtraArgs: serverExtraArgs,
 	}, cu.Clean
 }
 
@@ -345,7 +347,7 @@ func TestContainerMetricsRobustAgainstRestarts(t *testing.T) {
 	}
 
 	// Start the metric server.
-	if err := te.client.SpawnServer(te.testCtx, te.sleepConf); err != nil {
+	if err := te.client.SpawnServer(te.testCtx, te.sleepConf, te.serverExtraArgs...); err != nil {
 		t.Fatalf("Cannot re-spawn server: %v", err)
 	}
 
@@ -534,7 +536,7 @@ func TestMetricServerChecksRootDirectoryAccess(t *testing.T) {
 	}
 	shorterCtx, shorterCtxCancel := context.WithTimeout(te.testCtx, time.Second)
 	defer shorterCtxCancel()
-	if err := te.client.SpawnServer(shorterCtx, te.sleepConf); err == nil {
+	if err := te.client.SpawnServer(shorterCtx, te.sleepConf, te.serverExtraArgs...); err == nil {
 		t.Error("Metric server was successfully able to be spawned despite not having access to the root directory")
 	}
 }
@@ -548,14 +550,12 @@ func TestMetricServerToleratesNoRootDirectory(t *testing.T) {
 	if err := os.RemoveAll(te.sleepConf.RootDir); err != nil {
 		t.Fatalf("cannot remove root directory %q: %v", te.sleepConf.RootDir, err)
 	}
-	te.sleepConf.MetricServerAllowUnknownRoot = false
 	shortCtx, shortCtxCancel := context.WithTimeout(te.testCtx, time.Second)
 	defer shortCtxCancel()
-	if err := te.client.SpawnServer(shortCtx, te.sleepConf); err == nil {
+	if err := te.client.SpawnServer(shortCtx, te.sleepConf, append([]string{"--allow-unknown-root=false"}, te.serverExtraArgs...)...); err == nil {
 		t.Fatalf("Metric server was successfully able to be spawned despite a non-existent root directory")
 	}
-	te.sleepConf.MetricServerAllowUnknownRoot = true
-	if err := te.client.SpawnServer(te.testCtx, te.sleepConf); err != nil {
+	if err := te.client.SpawnServer(te.testCtx, te.sleepConf, append([]string{"--allow-unknown-root=true"}, te.serverExtraArgs...)...); err != nil {
 		t.Errorf("Metric server was not able to be spawned despite being configured to tolerate a non-existent root directory: %v", err)
 	}
 }
