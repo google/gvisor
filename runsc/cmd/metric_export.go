@@ -29,6 +29,7 @@ import (
 
 // MetricExport implements subcommands.Command for the "metric-export" command.
 type MetricExport struct {
+	exporterPrefix string
 }
 
 // Name implements subcommands.Command.Name.
@@ -43,11 +44,13 @@ func (*MetricExport) Synopsis() string {
 
 // Usage implements subcommands.Command.Usage.
 func (*MetricExport) Usage() string {
-	return `export-metrics <container id> - prints sandbox metric data in Prometheus metric format`
+	return `export-metrics [-exporter-prefix=<runsc_>] <container id> - prints sandbox metric data in Prometheus metric format
+`
 }
 
 // SetFlags implements subcommands.Command.SetFlags.
 func (m *MetricExport) SetFlags(f *flag.FlagSet) {
+	f.StringVar(&m.exporterPrefix, "exporter-prefix", "runsc_", "Prefix for all metric names, following Prometheus exporter convention")
 }
 
 // Execute implements subcommands.Command.Execute.
@@ -78,7 +81,7 @@ func (m *MetricExport) Execute(ctx context.Context, f *flag.FlagSet, args ...any
 		CommentHeader: fmt.Sprintf("Command-line export for sandbox %s", cont.Sandbox.ID),
 	}, map[*prometheus.Snapshot]prometheus.SnapshotExportOptions{
 		snapshot: {
-			ExporterPrefix: conf.MetricExporterPrefix,
+			ExporterPrefix: m.exporterPrefix,
 			ExtraLabels:    prometheusLabels,
 		},
 	})
