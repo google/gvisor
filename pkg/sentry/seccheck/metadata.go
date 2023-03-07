@@ -20,6 +20,7 @@ import (
 	"path"
 
 	"gvisor.dev/gvisor/pkg/fd"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // PointX represents the checkpoint X.
@@ -210,8 +211,8 @@ func addSyscallPointHelper(typ SyscallType, sysno uintptr, name string, optional
 	})
 }
 
-// These are all the Points available in the system.
-func init() {
+// genericInit initializes non-architecture-specific Points available in the system.
+func genericInit() {
 	// Points from the container namespace.
 	registerPoint(PointDesc{
 		ID:   PointContainerStart,
@@ -284,5 +285,16 @@ func init() {
 		ID:            PointTaskExit,
 		Name:          "sentry/task_exit",
 		ContextFields: defaultContextFields,
+	})
+}
+
+var initOnce sync.Once
+
+// Initialize initializes the Points available in the system.
+// Must be called prior to using any of them.
+func Initialize() {
+	initOnce.Do(func() {
+		genericInit()
+		archInit()
 	})
 }

@@ -17,9 +17,9 @@
 
 package seccheck
 
-// init registers syscall trace points metadata.
+// archInit registers syscall trace points metadata.
 // Keep them sorted by syscall number.
-func init() {
+func archInit() {
 	addSyscallPoint(0, "read", []FieldDesc{
 		{
 			ID:   FieldSyscallPath,

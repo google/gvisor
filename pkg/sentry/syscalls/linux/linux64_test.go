@@ -16,6 +16,7 @@ package linux
 
 import (
 	"fmt"
+	"os"
 	"reflect"
 	"runtime"
 	"strings"
@@ -99,4 +100,9 @@ func TestSeccheckSyscalls(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMain(m *testing.M) {
+	seccheck.Initialize()
+	os.Exit(m.Run())
 }

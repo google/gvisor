@@ -77,3 +77,8 @@ func TestConfigFile(t *testing.T) {
 		})
 	}
 }
+
+func TestMain(m *testing.M) {
+	seccheck.Initialize()
+	os.Exit(m.Run())
+}

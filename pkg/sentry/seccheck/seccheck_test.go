@@ -16,19 +16,13 @@ package seccheck
 
 import (
 	"errors"
+	"os"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fd"
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 )
-
-func init() {
-	RegisterSink(SinkDesc{
-		Name: "test-sink",
-		New:  newTestSink,
-	})
-}
 
 type testSink struct {
 	SinkDefaults
@@ -274,4 +268,14 @@ func TestFieldMask(t *testing.T) {
 	if want := two; fd.Contains(want) {
 		t.Errorf("FieldMask must not contain %v: %+v", want, fd)
 	}
+}
+
+func TestMain(m *testing.M) {
+
+	RegisterSink(SinkDesc{
+		Name: "test-sink",
+		New:  newTestSink,
+	})
+	Initialize()
+	os.Exit(m.Run())
 }
