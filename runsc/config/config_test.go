@@ -713,3 +713,66 @@ func TestBundleValidate(t *testing.T) {
 		})
 	}
 }
+
+func TestToContinerdConfigTOML(t *testing.T) {
+	header := `binary_name = "%s"
+root = "%s"
+`
+	opt := ContainerdConfigOptions{
+		BinaryPath: "/path/to/runsc",
+		RootPath:   "/path/to/root",
+	}
+	header = fmt.Sprintf(header, opt.BinaryPath, opt.RootPath)
+
+	for _, tc := range []struct {
+		name        string
+		bundle      Bundle
+		want        string
+		createError error
+	}{
+		{
+			name: "empty bundle",
+			want: header,
+		},
+		{
+			name:   "valid flag bundle",
+			bundle: Bundle(map[string]string{"debug": "true"}),
+			want: func() string {
+				flagStr := "[runsc_config]\n  debug = \"true\"\n"
+				return strings.Join([]string{header, flagStr}, "")
+			}(),
+		},
+		{
+			name:        "invalid flag bundle",
+			bundle:      Bundle(map[string]string{"not-a-real-flag": "true"}),
+			createError: fmt.Errorf("unknown flag \"not-a-real-flag\""),
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := NewFromBundle(tc.bundle)
+			if tc.createError != nil {
+				if err == nil {
+					t.Fatalf("got no error, but expected one")
+				}
+				if !strings.Contains(err.Error(), tc.createError.Error()) {
+					t.Fatalf("mismatch error: got: %q want: %q", err.Error(), tc.createError.Error())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("NewFromBundle failed: %v", err)
+			}
+
+			toml, err := cfg.ToContainerdConfigTOML(opt)
+			if err != nil {
+				t.Fatalf("ToContainerdConfigTOML failed: %v", err)
+			}
+			if diff := cmp.Diff(tc.want, toml); diff != "" {
+				t.Fatalf("mismatch strings: %s", diff)
+			}
+
+		})
+	}
+
+}
