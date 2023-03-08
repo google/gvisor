@@ -35,6 +35,7 @@ import (
 	"strings"
 
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // contextID is the package for context.Context.Value keys.
@@ -252,4 +253,12 @@ func initHWCap() {
 	} else {
 		hostFeatureSet.hwCap = c
 	}
+}
+
+var initOnce sync.Once
+
+// Initialize initializes the global data structures used by this package.
+// Must be called prior to using anything else in this package.
+func Initialize() {
+	initOnce.Do(archInitialize)
 }

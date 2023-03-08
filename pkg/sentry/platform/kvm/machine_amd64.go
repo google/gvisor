@@ -158,12 +158,17 @@ func (c *vCPU) initArchState() error {
 }
 
 // bitsForScaling returns the bits available for storing the fraction component
+// of the TSC scaling ratio.
+// It is set using getBitsForScaling when the KVM platform is initialized.
+var bitsForScaling int64
+
+// getBitsForScaling returns the bits available for storing the fraction component
 // of the TSC scaling ratio. This allows us to replicate the (bad) math done by
 // the kernel below in scaledTSC, and ensure we can compute an exact zero
 // offset in setSystemTime.
 //
 // These constants correspond to kvm_tsc_scaling_ratio_frac_bits.
-var bitsForScaling = func() int64 {
+func getBitsForScaling() int64 {
 	fs := cpuid.HostFeatureSet()
 	if fs.Intel() {
 		return 48 // See vmx.c (kvm sources).
@@ -172,7 +177,7 @@ var bitsForScaling = func() int64 {
 	} else {
 		return 63 // Unknown: theoretical maximum.
 	}
-}()
+}
 
 // scaledTSC returns the host TSC scaled by the given frequency.
 //

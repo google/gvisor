@@ -150,7 +150,8 @@ func initCPUInfo() {
 	}
 }
 
-func init() {
+// archInitialize initializes hostFeatureSet.
+func archInitialize() {
 	initCPUInfo()
 	initHWCap()
 }
