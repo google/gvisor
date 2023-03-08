@@ -52,7 +52,9 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	pkgcontext "gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/cpuid"
@@ -105,17 +107,15 @@ type context struct {
 	// interrupt is the interrupt context.
 	interrupt interrupt.Forwarder
 
+	// mu protects the following fields.
+	mu sync.Mutex
+
 	// subprocess is the current subprocess used to execute the context.
-	// It is only updated in Switch, and used in Release, so only on the task
-	// goroutine.
 	subprocess *subprocess
 
 	// cid is the ID of the context in the address space of the current
 	// subprocess used to run it.
 	cid uint64
-
-	// mu protects the following fields.
-	mu sync.Mutex
 
 	// If lastFaultSP is non-nil, the last context switch was due to a fault
 	// received while executing lastFaultSP. Only context.Switch may set
@@ -276,6 +276,46 @@ restart:
 // Interrupt interrupts the running guest application associated with this context.
 func (c *context) Interrupt() {
 	c.interrupt.NotifyInterrupt()
+}
+
+// NotifyInterrupt implements interrupt.Receiver.NotifyInterrupt.
+//
+// Another reasonable existing object to implement NotifyInterrupt would be
+// sysmsg.ThreadContext, because it already has the correct tid written into it
+// to know which thread to send the signal to. However we cannot do that because
+// it is in shared memory, which means that one subprocess can overwrite it to
+// have the sentry send an interrupt to a completely different subprocess.
+// For this reason we use systrap.context and check that the target thread
+// is actually valid within the subprocess.
+func (c *context) NotifyInterrupt() {
+	c.mu.Lock()
+	s := c.subprocess
+	cid := c.cid
+	c.mu.Unlock()
+
+	if s == nil || cid == invalidContextID {
+		return
+	}
+
+	threadContext := s.getThreadContextFromID(cid)
+	atomic.StoreUint32(&threadContext.Interrupt, 1)
+	threadID := atomic.LoadUint32(&threadContext.ThreadID)
+
+	s.sysmsgThreadsMu.Lock()
+	defer s.sysmsgThreadsMu.Unlock()
+
+	sysmsgThread, ok := s.sysmsgThreads[threadID]
+	if !ok {
+		// This is either an invalidThreadID or another garbage value; either way we
+		// don't know which thread to interrupt; best we can do is mark the context.
+		return
+	}
+
+	t := sysmsgThread.thread
+	atomic.StoreUint64(&sysmsgThread.msg.InterruptedContextID, cid)
+	if _, _, e := unix.RawSyscall(unix.SYS_TGKILL, uintptr(t.tgid), uintptr(t.tid), uintptr(platform.SignalInterrupt)); e != 0 {
+		panic(fmt.Sprintf("failed to interrupt the child process %d: %v", t.tid, e))
+	}
 }
 
 // Release releases all platform resources used by the context.

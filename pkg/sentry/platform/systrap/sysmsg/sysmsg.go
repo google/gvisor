@@ -183,6 +183,8 @@ type Msg struct {
 	stubFastPath   uint32
 	sentryFastPath uint32
 	AckedEvents    uint32
+	// ThreadID is the ID of the sysmsg thread.
+	ThreadID uint32
 }
 
 // ContextState defines the reason the context has exited back to the sentry,
@@ -260,6 +262,9 @@ type ThreadContext struct {
 	State ContextState
 	// Interrupt is set to indicate that this context has been interrupted.
 	Interrupt uint32
+	// ThreadID is the ID of the sysmsg thread that's currently working on the
+	// context.
+	ThreadID uint32
 	// Debug is a variable to use to get visibility into the stub from the sentry.
 	Debug uint64
 }
@@ -267,7 +272,7 @@ type ThreadContext struct {
 // LINT.ThenChange(sysmsg.h)
 
 // Init initializes the message.
-func (m *Msg) Init() {
+func (m *Msg) Init(threadID uint32) {
 	m.Err = 0
 	m.Line = -1
 	m.stubFastPath = 0
@@ -275,12 +280,13 @@ func (m *Msg) Init() {
 }
 
 // Init initializes the ThreadContext instance.
-func (c *ThreadContext) Init() {
+func (c *ThreadContext) Init(initialThreadID uint32) {
 	c.FPStateChanged = 1
 	c.Regs = linux.PtraceRegs{}
 	c.Signo = 0
 	c.SignalInfo = linux.SignalInfo{}
 	c.State = ContextStateNone
+	c.ThreadID = initialThreadID
 }
 
 // StubFastPath returns true if the stub thread in the polling mode.

@@ -107,6 +107,9 @@ const (
 	maxGuestContexts = 4096
 	// invalidContextID specifies an invalid ID.
 	invalidContextID = maxGuestContexts + 1
+	// invalidThreadID is used to indicate that a context is not being worked on by
+	// any sysmsg thread.
+	invalidThreadID uint32 = uint32(maxGuestContexts) + 1
 )
 
 // subprocess is a collection of threads being traced.
@@ -154,6 +157,9 @@ type subprocess struct {
 
 	syscallThreadMu sync.Mutex
 	syscallThread   *syscallThread
+
+	sysmsgThreadsMu sync.Mutex
+	sysmsgThreads   map[uint32]*sysmsgThread
 }
 
 func (s *subprocess) initSyscallThread(ptraceThread *thread) error {
@@ -263,6 +269,7 @@ func newSubprocess(create func() (*thread, error), memoryFile *pgalloc.MemoryFil
 		sysmsgStackPool:   pool.Pool{Start: 0, Limit: maxSystemThreads},
 		threadContextPool: pool.Pool{Start: 0, Limit: maxGuestContexts},
 		memoryFile:        memoryFile,
+		sysmsgThreads:     make(map[uint32]*sysmsgThread),
 	}
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -643,9 +650,10 @@ func (s *subprocess) switchToApp(c *context, ac *arch.Context64) (isSyscall bool
 	ctx.Regs = regs.PtraceRegs
 	restoreArchSpecificState(regs, t, sysThread, msg, ac)
 
-	// Check for interrupts, and ensure that future interrupts will signal t.
-	if !c.interrupt.Enable(sysThread) {
+	// Check for interrupts, and ensure that future interrupts signal the context.
+	if !c.interrupt.Enable(c) {
 		// Pending interrupt; simulate.
+		ctx.Interrupt = 0
 		c.signalInfo = linux.SignalInfo{Signo: int32(platform.SignalInterrupt)}
 		return false, false, nil
 	}
@@ -806,6 +814,7 @@ func (s *subprocess) getSysmsgThread(tregs *arch.Registers, c *context, ac *arch
 		subproc:    s,
 		stackRange: fr,
 	}
+	tid := uint32(p.tid)
 
 	// Map the stack into the sentry.
 	sentryStackAddr, _, errno := unix.RawSyscall6(
@@ -848,11 +857,12 @@ func (s *subprocess) getSysmsgThread(tregs *arch.Registers, c *context, ac *arch
 	}
 
 	sysThread.setMsg(sysmsg.StackAddrToMsg(sentryStackAddr))
-	sysThread.msg.Init()
+	sysThread.msg.Init(tid)
+	s.getThreadContextFromID(c.cid).ThreadID = tid
+	sysThread.msg.ContextID = c.cid
 	sysThread.msg.Self = uint64(sysmsgStackAddr + sysmsg.MsgOffsetFromSharedStack)
 	sysThread.msg.SyshandlerStack = uint64(sysmsg.StackAddrToSyshandlerStack(sysThread.sysmsgPerThreadMemAddr()))
 	sysThread.msg.ContextRegion = uint64(stubContextRegion)
-	sysThread.msg.ContextID = c.cid
 	sysThread.msg.Syshandler = uint64(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_syshandler))
 
 	sysThread.msg.State.Set(sysmsg.ThreadStateDone)
@@ -908,6 +918,10 @@ func (s *subprocess) getSysmsgThread(tregs *arch.Registers, c *context, ac *arch
 
 	c.sysmsgThread = sysThread
 
+	s.sysmsgThreadsMu.Lock()
+	s.sysmsgThreads[tid] = sysThread
+	s.sysmsgThreadsMu.Unlock()
+
 	return sysThread, nil
 }
 
@@ -928,11 +942,13 @@ func (s *subprocess) PostFork() {
 // subprocess.
 func (s *subprocess) registerContext(c *context) error {
 	s.mu.Lock()
+	c.mu.Lock()
 	// Unlock manually for the sake of not holding the lock while initializing
 	// context memory.
 	locked := true
 	unlock := func() {
 		if locked {
+			c.mu.Unlock()
 			s.mu.Unlock()
 			locked = false
 		}
@@ -953,7 +969,7 @@ func (s *subprocess) registerContext(c *context) error {
 	unlock()
 
 	threadContext := s.getThreadContextFromID(id)
-	threadContext.Init()
+	threadContext.Init(invalidThreadID)
 	return nil
 }
 
@@ -964,9 +980,15 @@ func (s *subprocess) unregisterContext(c *context) {
 	if s == nil {
 		return
 	}
+	c.mu.Lock()
+	cid := c.cid
+	c.cid = invalidContextID
+	c.subprocess = nil
+	c.mu.Unlock()
+
 	s.mu.Lock()
 	delete(s.faultedContexts, c)
-	s.threadContextPool.Put(c.cid)
+	s.threadContextPool.Put(cid)
 	s.numContexts.Add(-1)
 	released := s.released
 	s.mu.Unlock()
