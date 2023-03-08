@@ -16,6 +16,7 @@ package cpuid
 
 import (
 	"io/ioutil"
+	"os"
 	"regexp"
 	"strings"
 	"testing"
@@ -66,4 +67,9 @@ func TestHostFeatureFlags(t *testing.T) {
 			t.Errorf("Missing flag: %v", feature)
 		}
 	}
+}
+
+func TestMain(m *testing.M) {
+	Initialize()
+	os.Exit(m.Run())
 }

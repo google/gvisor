@@ -90,3 +90,8 @@ func TestReadingSelfProcAuxv(t *testing.T) {
 		t.Errorf("got %v, expected nil", err)
 	}
 }
+
+func TestMain(m *testing.M) {
+	Initialize()
+	os.Exit(m.Run())
+}

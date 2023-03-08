@@ -50,6 +50,7 @@ var (
 
 // Boot initializes a new bare bones kernel for test.
 func Boot() (*kernel.Kernel, error) {
+	cpuid.Initialize()
 	seccheck.Initialize()
 
 	platformCtr, err := platform.Lookup(*platformFlag)

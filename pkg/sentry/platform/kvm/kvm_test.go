@@ -16,12 +16,14 @@ package kvm
 
 import (
 	"math/rand"
+	"os"
 	"reflect"
 	"testing"
 	"time"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
@@ -32,7 +34,8 @@ import (
 	ktime "gvisor.dev/gvisor/pkg/sentry/time"
 )
 
-var dummyFPState = fpu.NewState()
+// dummyFPState is initialized in TestMain.
+var dummyFPState fpu.State
 
 type testHarness interface {
 	Errorf(format string, args ...any)
@@ -553,4 +556,10 @@ func BenchmarkWorldSwitchToUserRoundtrip(b *testing.B) {
 	if a != 0 {
 		b.Logf("ErrContextInterrupt occurred %d times (in %d iterations).", a, a+i)
 	}
+}
+
+func TestMain(m *testing.M) {
+	cpuid.Initialize()
+	dummyFPState = fpu.NewState()
+	os.Exit(m.Run())
 }

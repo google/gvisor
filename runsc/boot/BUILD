@@ -137,8 +137,10 @@ go_test(
     library = ":boot",
     deps = [
         "//pkg/control/server",
+        "//pkg/cpuid",
         "//pkg/fspath",
         "//pkg/log",
+        "//pkg/sentry/seccheck",
         "//pkg/sentry/vfs",
         "//pkg/sync",
         "//pkg/unet",

@@ -76,3 +76,7 @@ func FPSIMDEnableTrap()
 //
 // This must be called prior to using ring0.
 func Init() {}
+
+// InitDefault calls Init with default parameters.
+// On ARM, this is not much.
+func InitDefault() {}
