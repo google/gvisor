@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_binary", "go_embed_data", "go_library", "go_test")
+load("//tools:defs.bzl", "go_binary", "go_library", "go_test")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -18,14 +18,6 @@ go_binary(
         ":seccomp",
         "@org_golang_x_sys//unix:go_default_library",
     ],
-)
-
-go_embed_data(
-    name = "victim_data",
-    testonly = 1,
-    src = "victim",
-    package = "seccomp",
-    var = "victimData",
 )
 
 go_library(
@@ -51,7 +43,9 @@ go_test(
     size = "small",
     srcs = [
         "seccomp_test.go",
-        ":victim_data",
+    ],
+    embedsrcs = [
+        ":victim",  # keep
     ],
     library = ":seccomp",
     deps = [
