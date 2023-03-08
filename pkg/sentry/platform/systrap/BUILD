@@ -23,6 +23,7 @@ go_library(
     srcs = [
         "context_decoupling_disable.go",
         "context_decoupling_enable.go",
+        "context_queue.go",
         "filters.go",
         "filters_amd64.go",
         "filters_arm64.go",

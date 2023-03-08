@@ -27,25 +27,36 @@
 // polling and fall asleep.
 uint64_t __export_deep_sleep_timeout;
 uint64_t __export_handshake_timeout;
+uint64_t __export_context_queue_addr;
 
-// A per-thread memory region is always align to STACK_SIZE.
-// *------------*
-// | guard page |
-// |------------|
-// | syshandler |
-// |   stack    |
-// |            |
-// |------------|
-// | guard page |
-// |------------|
-// |            |
-// |     ^      |
-// |    / \     |
-// |     |      |
-// |  altstack  |
-// |------------|
-// |   sysmsg   |
-// *------------*
+// LINT.IfChange
+#define MAX_STUB_THREADS (4096)
+#define MAX_CONTEXT_QUEUE_ENTRIES (MAX_STUB_THREADS + 1)
+#define INVALID_CONTEXT_ID (MAX_STUB_THREADS + 1)
+#define INVALID_THREAD_ID (MAX_STUB_THREADS + 1)
+
+// See systrap/context_queue.go
+struct context_queue {
+  uint32_t start;
+  uint32_t end;
+  uint32_t polling_index;
+  uint32_t polling_index_base;
+  uint32_t num_sleeping_threads;
+  uint32_t ringbuffer[MAX_CONTEXT_QUEUE_ENTRIES];
+};
+// LINT.ThenChange(../context_queue.go)
+
+uint32_t is_empty(struct context_queue *queue) {
+  return __atomic_load_n(&queue->start, __ATOMIC_ACQUIRE) ==
+         __atomic_load_n(&queue->end, __ATOMIC_ACQUIRE);
+}
+
+int32_t queued_contexts(struct context_queue *queue) {
+  return (__atomic_load_n(&queue->end, __ATOMIC_ACQUIRE) +
+          MAX_CONTEXT_QUEUE_ENTRIES -
+          __atomic_load_n(&queue->start, __ATOMIC_ACQUIRE)) %
+         MAX_CONTEXT_QUEUE_ENTRIES;
+}
 
 #if defined(__x86_64__)
 static __inline__ unsigned long rdtsc(void) {
@@ -71,7 +82,106 @@ void memcpy(uint8_t *dest, uint8_t *src, size_t n) {
   }
 }
 
-int wait_state(struct sysmsg *sysmsg, uint32_t state) {
+// get_context retrieves a context that is ready to be restored to the user.
+// This populates sysmsg->thread_context_id.
+struct thread_context *get_context(struct sysmsg *sysmsg) {
+  struct context_queue *queue =
+      (struct context_queue *)(__export_context_queue_addr);
+  for (;;) {
+    // Change sysmsg thread state just to indicate thread is not asleep.
+    __atomic_store_n(&sysmsg->state, THREAD_STATE_PREP, __ATOMIC_RELEASE);
+    unsigned long start = rdtsc();
+    uint32_t index =
+        __atomic_add_fetch(&queue->polling_index, 1, __ATOMIC_ACQ_REL);
+    for (;;) {
+      // order_from_end can be negative because of racing threads.
+      int32_t order_from_end =
+          __atomic_load_n(&queue->polling_index, __ATOMIC_ACQUIRE) - index;
+      int32_t num_queued = queued_contexts(queue);
+      if (!is_empty(queue) || (order_from_end < num_queued)) {
+        uint32_t next = __atomic_load_n(&queue->start, __ATOMIC_ACQUIRE) %
+                        MAX_CONTEXT_QUEUE_ENTRIES;
+        uint32_t context_id = __atomic_exchange_n(
+            &queue->ringbuffer[next], INVALID_CONTEXT_ID, __ATOMIC_ACQ_REL);
+        if (context_id != INVALID_CONTEXT_ID) {
+          __atomic_add_fetch(&queue->start, 1, __ATOMIC_ACQ_REL);
+          __atomic_sub_fetch(&queue->polling_index, 1, __ATOMIC_ACQ_REL);
+          if (context_id > MAX_STUB_THREADS) {
+            panic(context_id);
+          }
+          sysmsg->context_id = context_id;
+          struct thread_context *ctx = thread_context_addr(sysmsg);
+          __atomic_store_n(&ctx->acked, 1, __ATOMIC_RELEASE);
+          __atomic_store_n(&ctx->thread_id, sysmsg->thread_id,
+                           __ATOMIC_RELEASE);
+          return ctx;
+        } else {
+          continue;
+        }
+      }
+      if ((rdtsc() - start) > __export_deep_sleep_timeout) {
+        break;
+      }
+      // Stop if another thread higher in the queue has been stopped.
+      uint32_t index_base =
+          __atomic_load_n(&queue->polling_index_base, __ATOMIC_ACQUIRE);
+      if ((index - index_base) < 0) {
+        break;
+      }
+
+      spinloop();
+    }
+    __atomic_add_fetch(&queue->polling_index_base, 1, __ATOMIC_ACQ_REL);
+    __atomic_store_n(&sysmsg->state, THREAD_STATE_ASLEEP, __ATOMIC_RELEASE);
+
+    __atomic_add_fetch(&queue->num_sleeping_threads, 1, __ATOMIC_ACQ_REL);
+    sys_futex(&sysmsg->state, FUTEX_WAIT, THREAD_STATE_ASLEEP, NULL, NULL, 0);
+    __atomic_sub_fetch(&queue->num_sleeping_threads, 1, __ATOMIC_ACQ_REL);
+  }
+}
+
+// switch_context signals the sentry that the old context is ready to be worked
+// on and retrieves a new context to switch to.
+struct thread_context *switch_context(struct sysmsg *sysmsg,
+                                      struct thread_context *ctx,
+                                      enum context_state new_context_state) {
+  __atomic_store_n(&ctx->thread_id, INVALID_THREAD_ID, __ATOMIC_RELEASE);
+  __atomic_store_n(&ctx->last_thread_id, sysmsg->thread_id, __ATOMIC_RELEASE);
+  __atomic_store_n(&ctx->state, new_context_state, __ATOMIC_RELEASE);
+  if (__atomic_load_n(&ctx->sentry_fast_path, __ATOMIC_ACQUIRE) == 0) {
+    int ret = sys_futex(&ctx->state, FUTEX_WAKE, 1, NULL, NULL, 0);
+    if (ret < 0) {
+      panic(ret);
+    }
+  }
+  uint32_t old_ctx_id = sysmsg->context_id;
+
+  ctx = get_context(sysmsg);
+
+  if (old_ctx_id != sysmsg->context_id ||
+      ctx->last_thread_id != sysmsg->thread_id) {
+    ctx->fpstate_changed = 1;
+  }
+
+  return ctx;
+}
+
+void __export_start(struct sysmsg *sysmsg, void *_ucontext) {
+#if defined(__x86_64__)
+  asm volatile("movq %%gs:0, %0\n" : "=r"(sysmsg) : :);
+  if (sysmsg->self != sysmsg) {
+    panic(0xdeaddead);
+  }
+#endif
+
+  struct thread_context *ctx = get_context(sysmsg);
+  __atomic_store_n(&ctx->fpstate_changed, 1, __ATOMIC_RELEASE);
+  __atomic_store_n(&ctx->thread_id, sysmsg->thread_id, __ATOMIC_RELEASE);
+
+  restore_state(sysmsg, ctx, _ucontext);
+}
+
+int wait_state(struct sysmsg *sysmsg, enum thread_state new_thread_state) {
   unsigned long handshake_timeout;
   uint64_t acked_events_prev;
   unsigned long start;
@@ -81,7 +191,7 @@ int wait_state(struct sysmsg *sysmsg, uint32_t state) {
   // stub_fast_path can be changed non-atomically before we change the state and
   // wake up the Sentry.
   sysmsg->stub_fast_path = 1;
-  __atomic_store_n(&sysmsg->state, state, __ATOMIC_SEQ_CST);
+  __atomic_store_n(&sysmsg->state, new_thread_state, __ATOMIC_SEQ_CST);
 
   fast_path = __atomic_load_n(&sysmsg->sentry_fast_path, __ATOMIC_SEQ_CST);
   if (!fast_path) {

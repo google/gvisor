@@ -80,6 +80,9 @@ var (
 	stubSysmsgStack uintptr
 	stubSysmsgStart uintptr
 	stubSysmsgEnd   uintptr
+	// Memory region to store the contextQueue.
+	stubContextQueueRegion    uintptr
+	stubContextQueueRegionLen uintptr
 	// Memory region to store instances of sysmsg.ThreadContext.
 	stubContextRegion    uintptr
 	stubContextRegionLen uintptr
@@ -131,7 +134,7 @@ type context struct {
 	lastFaultIP hostarch.Addr
 
 	// sysmsgThread is a sysmsg thread descriptor which is used to execute
-	// application code.
+	// application code. (Note: Unused if contextDecouplingExp=true).
 	sysmsgThread *sysmsgThread
 
 	// fpLen is the size of the floating point context.
@@ -402,6 +405,10 @@ func (*Systrap) MaxUserAddress() hostarch.Addr {
 // NewAddressSpace returns a new subprocess.
 func (p *Systrap) NewAddressSpace(any) (platform.AddressSpace, <-chan struct{}, error) {
 	as, err := newSubprocess(globalPool.source.createStub, p.memoryFile)
+	if err == nil && contextDecouplingExp {
+		// Create the initial sysmsg thread.
+		_, err = as.createSysmsgThread(nil, nil, nil)
+	}
 	return as, nil, err
 }
 

@@ -36,7 +36,7 @@ const (
 // resetSysemuRegs sets up emulation registers.
 //
 // This should be called prior to calling sysemu.
-func (t *thread) resetSysemuRegs(regs *arch.Registers) {
+func (s *subprocess) resetSysemuRegs(regs *arch.Registers) {
 }
 
 // createSyscallRegs sets up syscall registers.
@@ -187,15 +187,27 @@ func (s *subprocess) arm64SyscallWorkaround(t *thread, regs *arch.Registers) {
 	}
 }
 
-func restoreArchSpecificState(regs *arch.Registers, t *thread, _ *sysmsgThread, msg *sysmsg.Msg, ac *arch.Context64) {
-	msg.TLS = uint64(ac.TLS())
+func restoreArchSpecificState(ctx *sysmsg.ThreadContext, ac *arch.Context64) {
+	ctx.TLS = uint64(ac.TLS())
 }
 
-func archSpecificSysThreadInit(sysThread *sysmsgThread, regs *arch.Registers) {
+func setArchSpecificRegs(sysThread *sysmsgThread, regs *arch.Registers) {
+	if contextDecouplingExp {
+		// Set the start function and initial stack.
+		regs.PtraceRegs.Pc = uint64(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_start))
+		regs.PtraceRegs.Sp = uint64(sysmsg.StackAddrToSyshandlerStack(sysThread.sysmsgPerThreadMemAddr()))
+	}
 }
 
-func retrieveArchSpecificState(regs *arch.Registers, msg *sysmsg.Msg, t *thread, ac *arch.Context64) {
-	if !ac.SetTLS(uintptr(msg.TLS)) {
-		panic(fmt.Sprintf("ac.SetTLS(%+v) failed", msg.TLS))
+func retrieveArchSpecificState(ctx *sysmsg.ThreadContext, ac *arch.Context64) {
+	if !ac.SetTLS(uintptr(ctx.TLS)) {
+		panic(fmt.Sprintf("ac.SetTLS(%+v) failed", ctx.TLS))
+	}
+}
+
+func archSpecificSysmsgThreadInit(sysThread *sysmsgThread) {
+	// Send a fake event to stop the BPF process so that it enters the sighandler.
+	if _, _, e := unix.RawSyscall(unix.SYS_TGKILL, uintptr(sysThread.thread.tgid), uintptr(sysThread.thread.tid), uintptr(unix.SIGSEGV)); e != 0 {
+		panic(fmt.Sprintf("tkill failed: %v", e))
 	}
 }
