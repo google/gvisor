@@ -28,8 +28,10 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/coretag"
+	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/metric"
+	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/sentry/fsutil/chdir"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/runsc/boot"
@@ -207,6 +209,12 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 			log.Infof("Failed to set RLIMIT_MEMLOCK: %v", err)
 		}
 	}
+
+	// Initialize CPUID information.
+	cpuid.Initialize()
+
+	// Initialize ring0 library.
+	ring0.InitDefault()
 
 	if len(b.productName) == 0 {
 		// Do this before chroot takes effect, otherwise we can't read /sys.

@@ -219,6 +219,7 @@ func (c *cpuidEntries) Set(in cpuid.In, out cpuid.Out) {
 
 // updateGlobalOnce does global initialization. It has to be called only once.
 func updateGlobalOnce(fd int) error {
+	bitsForScaling = getBitsForScaling()
 	if err := updateSystemValues(int(fd)); err != nil {
 		return err
 	}
