@@ -70,6 +70,7 @@ struct sysmsg {
   uint32_t stub_fast_path;
   uint32_t sentry_fast_path;
   uint32_t acked_events;
+  uint32_t thread_id;
 };
 
 enum context_state {
@@ -94,6 +95,7 @@ struct thread_context {
   int64_t signo;
   uint32_t state;
   uint32_t interrupt;
+  uint32_t thread_id;
   uint64_t debug;
 };
 

@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
-	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/sysmsg"
 )
 
@@ -134,14 +133,6 @@ func (p *sysmsgThread) waitEvent(switchToState sysmsg.ThreadState) {
 
 	if errno := futexWaitForState(msg, sysmsg.ThreadStateEvent, wakeup, acked); errno != 0 {
 		panic(fmt.Sprintf("error waiting for state: %v", errno))
-	}
-}
-
-// NotifyInterrupt implements interrupt.Receiver.NotifyInterrupt.
-func (p *sysmsgThread) NotifyInterrupt() {
-	t := p.thread
-	if _, _, e := unix.RawSyscall(unix.SYS_TGKILL, uintptr(t.tgid), uintptr(t.tid), uintptr(platform.SignalInterrupt)); e != 0 {
-		panic(fmt.Sprintf("failed to interrupt the child process %d: %v", t.tid, e))
 	}
 }
 
