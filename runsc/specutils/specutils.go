@@ -40,6 +40,14 @@ import (
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
+const (
+	annotationFlagPrefix            = "dev.gvisor.flag."
+	annotationSeccomp               = "dev.gvisor.internal.seccomp."
+	annotationSeccompRuntimeDefault = "RuntimeDefault"
+
+	annotationContainerName = "io.kubernetes.cri.container-name"
+)
+
 // ExePath must point to runsc binary, which is normally the same binary. It's
 // changed in tests that aren't linked in the same binary.
 var ExePath = "/proc/self/exe"
@@ -170,8 +178,12 @@ func ReadSpec(bundleDir string, conf *config.Config) (*specs.Spec, error) {
 	return ReadSpecFromFile(bundleDir, specFile, conf)
 }
 
-// ReadSpecFromFile reads an OCI runtime spec from the given File, and
-// normalizes all relative paths into absolute by prepending the bundle dir.
+// ReadSpecFromFile reads an OCI runtime spec from the given file. It also fixes
+// up the spec so that the rest of the code doesn't need to worry about it.
+//  1. Normalizes all relative paths into absolute by prepending the bundle
+//     dir to them.
+//  2. Looks for flag overrides and applies them if any.
+//  3. Removes seccomp rules if `RuntimeDefault` was used.
 func ReadSpecFromFile(bundleDir string, specFile *os.File, conf *config.Config) (*specs.Spec, error) {
 	if _, err := specFile.Seek(0, io.SeekStart); err != nil {
 		return nil, fmt.Errorf("error seeking to beginning of file %q: %v", specFile.Name(), err)
@@ -187,6 +199,13 @@ func ReadSpecFromFile(bundleDir string, specFile *os.File, conf *config.Config) 
 	if err := ValidateSpec(&spec); err != nil {
 		return nil, err
 	}
+	if err := fixSpec(&spec, bundleDir, conf); err != nil {
+		return nil, err
+	}
+	return &spec, nil
+}
+
+func fixSpec(spec *specs.Spec, bundleDir string, conf *config.Config) error {
 	// Turn any relative paths in the spec to absolute by prepending the bundleDir.
 	spec.Root.Path = absPath(bundleDir, spec.Root.Path)
 	for i := range spec.Mounts {
@@ -203,7 +222,7 @@ func ReadSpecFromFile(bundleDir string, specFile *os.File, conf *config.Config) 
 			continue
 		}
 		if val != "true" {
-			return nil, fmt.Errorf("invalid value %q for annotation %q (must be set to 'true' or removed entirely)", val, annotation)
+			return fmt.Errorf("invalid value %q for annotation %q (must be set to 'true' or removed entirely)", val, annotation)
 		}
 		bundleName := config.BundleName(annotation[len(configBundlePrefix):])
 		if _, exists := config.Bundles[bundleName]; !exists {
@@ -217,24 +236,42 @@ func ReadSpecFromFile(bundleDir string, specFile *os.File, conf *config.Config) 
 	if len(bundles) > 0 {
 		log.Infof("Applying config bundles: %v", bundles)
 		if err := conf.ApplyBundles(flag.CommandLine, bundles...); err != nil {
-			return nil, err
+			return err
 		}
 	}
 
-	// Override flags using annotation to allow customization per sandbox
-	// instance.
+	// Check annotation to see if container name is available.
+	var containerName string
+	for key, val := range spec.Annotations {
+		if key == annotationContainerName {
+			containerName = val
+			log.Debugf("Container name: %q", containerName)
+			break
+		}
+	}
 	for annotation, val := range spec.Annotations {
-		const flagPrefix = "dev.gvisor.flag."
-		if strings.HasPrefix(annotation, flagPrefix) {
-			name := annotation[len(flagPrefix):]
+		if strings.HasPrefix(annotation, annotationFlagPrefix) {
+			// Override flags using annotation to allow customization per sandbox
+			// instance.
+			name := annotation[len(annotationFlagPrefix):]
 			log.Infof("Overriding flag: %s=%q", name, val)
 			if err := conf.Override(flag.CommandLine, name, val /* force= */, false); err != nil {
-				return nil, err
+				return err
+			}
+		} else if len(containerName) > 0 {
+			// If we know the container name, then check to see if seccomp
+			// instructions were given to the the container.
+			if annotation == annotationSeccomp+containerName && val == annotationSeccompRuntimeDefault {
+				// Container seccomp rules are redundant when using gVisor, so remove
+				// them when seccomp is set to RuntimeDefault.
+				if spec.Linux != nil && spec.Linux.Seccomp != nil {
+					log.Debugf("Seccomp is being ignored because annotation %q is set to default.", annotationSeccomp)
+					spec.Linux.Seccomp = nil
+				}
 			}
 		}
 	}
-
-	return &spec, nil
+	return nil
 }
 
 // ReadMounts reads mount list from a file.
