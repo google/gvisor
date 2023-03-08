@@ -178,7 +178,23 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
     int32_t thread_state;
     thread_state = __atomic_load_n(&sysmsg->state, __ATOMIC_ACQUIRE);
     if (thread_state != THREAD_STATE_NONE) {
-      __atomic_store_n(&sysmsg->interrupt, 1, __ATOMIC_RELEASE);
+      // There are two possibilities for when we received the interrupt:
+      //   1. Before syshandler switched to the sentry.
+      //      In this case we do not need to postpone the interrupt because it
+      //      will be handled as soon as the Task returns to the sentry kernel.
+      //   2. After syshandler has received a response from the sentry.
+      //      This is an interrupt most likely targeted at whatever context is
+      //      bound to the sysmsg right now, but there is an unlikely case that
+      //      an interrupt takes a while to reach the stub and the context has
+      //      changed. For this reason we write which context ID the interrupt
+      //      was meant for in sysmsg and check against that.
+      uint64_t interrupted_tid =
+          __atomic_load_n(&sysmsg->interrupted_context_id, __ATOMIC_ACQUIRE);
+      if (thread_state == THREAD_STATE_DONE &&
+          (interrupted_tid == sysmsg->context_id)) {
+        __atomic_store_n(&sysmsg->interrupt, 1, __ATOMIC_RELEASE);
+        __atomic_store_n(&ctx->interrupt, 1, __ATOMIC_RELAXED);
+      }
       return;
     }
   } else if (signo == SIGILL && sysmsg->state == THREAD_STATE_INTERRUPT) {
@@ -186,6 +202,7 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
     signo = SIGCHLD;
     siginfo->si_signo = SIGCHLD;
     __atomic_store_n(&sysmsg->interrupt, 0, __ATOMIC_RELAXED);
+    __atomic_store_n(&ctx->interrupt, 0, __ATOMIC_RELAXED);
     // Skip the fault instruction.
     ucontext->uc_mcontext.gregs[REG_RIP] = sysmsg->ret_addr;
     // If we're skipping the fault instruction and going straight to the user
