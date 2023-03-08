@@ -688,7 +688,8 @@ type Overlay2 struct {
 }
 
 func defaultOverlay2() *Overlay2 {
-	return &Overlay2{}
+	// Rootfs overlay is enabled by default and backed by a file in rootfs itself.
+	return &Overlay2{RootMount: true, SubMounts: false, Medium: "self"}
 }
 
 // Set implements flag.Value.
