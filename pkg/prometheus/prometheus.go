@@ -19,6 +19,7 @@ package prometheus
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -65,8 +66,24 @@ type Metric struct {
 // writeHeaderTo writes the metric comment header to the given writer.
 func (m *Metric) writeHeaderTo(w io.Writer, options SnapshotExportOptions) error {
 	if m.Help != "" {
-		// Prometheus metric description escape rules: Only backslashes and line breaks need escaping.
-		if _, err := io.WriteString(w, fmt.Sprintf("# HELP %s%s %s\n", options.ExporterPrefix, m.Name, strings.ReplaceAll(strings.ReplaceAll(m.Help, "\\", "\\\\"), "\n", "\\n"))); err != nil {
+		// This writes each string component one by one (rather than using fmt.Sprintf)
+		// in order to avoid allocating strings for each metric.
+		if _, err := io.WriteString(w, "# HELP "); err != nil {
+			return err
+		}
+		if _, err := io.WriteString(w, options.ExporterPrefix); err != nil {
+			return err
+		}
+		if _, err := io.WriteString(w, m.Name); err != nil {
+			return err
+		}
+		if _, err := io.WriteString(w, " "); err != nil {
+			return err
+		}
+		if _, err := writeEscapedString(w, m.Help, false); err != nil {
+			return err
+		}
+		if _, err := io.WriteString(w, "\n"); err != nil {
 			return err
 		}
 	}
@@ -82,7 +99,22 @@ func (m *Metric) writeHeaderTo(w io.Writer, options SnapshotExportOptions) error
 		metricType = "untyped"
 	}
 	if metricType != "" {
-		if _, err := io.WriteString(w, fmt.Sprintf("# TYPE %s%s %s\n", options.ExporterPrefix, m.Name, metricType)); err != nil {
+		if _, err := io.WriteString(w, "# TYPE "); err != nil {
+			return err
+		}
+		if _, err := io.WriteString(w, options.ExporterPrefix); err != nil {
+			return err
+		}
+		if _, err := io.WriteString(w, m.Name); err != nil {
+			return err
+		}
+		if _, err := io.WriteString(w, " "); err != nil {
+			return err
+		}
+		if _, err := io.WriteString(w, metricType); err != nil {
+			return err
+		}
+		if _, err := io.WriteString(w, "\n"); err != nil {
 			return err
 		}
 	}
@@ -105,6 +137,47 @@ type Number struct {
 	Int int64 `json:"int,omitempty"`
 }
 
+// Common numbers which are reused and don't need their own memory allocations.
+var (
+	zero        = Number{}
+	intOne      = Number{Int: 1}
+	floatOne    = Number{Float: 1.0}
+	floatNaN    = Number{Float: math.NaN()}
+	floatInf    = Number{Float: math.Inf(1)}
+	floatNegInf = Number{Float: math.Inf(-1)}
+)
+
+// NewInt returns a new integer Number.
+func NewInt(val int64) *Number {
+	switch val {
+	case 0:
+		return &zero
+	case 1:
+		return &intOne
+	default:
+		return &Number{Int: val}
+	}
+}
+
+// NewFloat returns a new floating-point Number.
+func NewFloat(val float64) *Number {
+	if math.IsNaN(val) {
+		return &floatNaN
+	}
+	switch val {
+	case 0:
+		return &zero
+	case 1.0:
+		return &floatOne
+	case math.Inf(1.0):
+		return &floatInf
+	case math.Inf(-1.0):
+		return &floatNegInf
+	default:
+		return &Number{Float: val}
+	}
+}
+
 // IsInteger returns whether this number contains an integer value.
 // This is defined as either having the `Float` part set to zero (in which case the `Int` part takes
 // precedence), or having `Float` be a value equal to its own rounding and not a special float.
@@ -115,7 +188,7 @@ func (n *Number) IsInteger() bool {
 	if math.IsNaN(n.Float) || n.Float == math.Inf(-1) || n.Float == math.Inf(1) {
 		return false
 	}
-	return math.Round(n.Float) == n.Float
+	return n.Float < float64(math.MaxInt64) && n.Float > float64(math.MinInt64) && math.Round(n.Float) == n.Float
 }
 
 // String returns a string representation of this number.
@@ -147,7 +220,37 @@ func (n *Number) GreaterThan(other *Number) bool {
 	return n.Float > other.Float
 }
 
+// writeInteger writes the given integer to a writer without allocating strings.
+func writeInteger(w io.Writer, val int64) (int, error) {
+	const decimalDigits = "0123456789"
+	if val == 0 {
+		return io.WriteString(w, decimalDigits[0:1])
+	}
+	var written int
+	if val < 0 {
+		n, err := io.WriteString(w, "-")
+		written += n
+		if err != nil {
+			return written, err
+		}
+		val = -val
+	}
+	decimal := int64(1)
+	for ; val/decimal != 0; decimal *= 10 {
+	}
+	for decimal /= 10; decimal > 0; decimal /= 10 {
+		digit := (val / decimal) % 10
+		n, err := io.WriteString(w, decimalDigits[digit:digit+1])
+		written += n
+		if err != nil {
+			return written, err
+		}
+	}
+	return written, nil
+}
+
 // writeTo writes the number to the given writer.
+// This only causes heap allocations when the number is a non-zero, non-special float.
 func (n *Number) writeTo(w io.Writer) error {
 	var s string
 	switch {
@@ -155,9 +258,10 @@ func (n *Number) writeTo(w io.Writer) error {
 	case n.Int == 0 && n.Float == 0:
 		s = "0"
 
-		// Integer case:
+	// Integer case:
 	case n.Int != 0:
-		s = fmt.Sprintf("%d", n.Int)
+		_, err := writeInteger(w, n.Int)
+		return err
 
 	// Special float cases:
 	case n.Float == math.Inf(-1):
@@ -227,7 +331,7 @@ func NewIntData(metric *Metric, val int64) *Data {
 
 // LabeledIntData returns a new Data struct with the given metric, labels, and value.
 func LabeledIntData(metric *Metric, labels map[string]string, val int64) *Data {
-	return &Data{Metric: metric, Labels: labels, Number: &Number{Int: val}}
+	return &Data{Metric: metric, Labels: labels, Number: NewInt(val)}
 }
 
 // NewFloatData returns a new Data struct with the given metric and value.
@@ -237,7 +341,7 @@ func NewFloatData(metric *Metric, val float64) *Data {
 
 // LabeledFloatData returns a new Data struct with the given metric, labels, and value.
 func LabeledFloatData(metric *Metric, labels map[string]string, val float64) *Data {
-	return &Data{Metric: metric, Labels: labels, Number: &Number{Float: val}}
+	return &Data{Metric: metric, Labels: labels, Number: NewFloat(val)}
 }
 
 // ExportOptions contains options that control how metric data is exported in Prometheus format.
@@ -260,6 +364,60 @@ type SnapshotExportOptions struct {
 
 	// ExtraLabels is added as labels for all metric values.
 	ExtraLabels map[string]string
+}
+
+// writeEscapedString writes the given string in quotation marks and with some characters escaped,
+// per Prometheus spec. It does this without string allocations.
+// If `quoted` is true, quote characters will surround the string, and quote characters within `s`
+// will also be escaped.
+func writeEscapedString(w io.Writer, s string, quoted bool) (int, error) {
+	const (
+		quote            = '"'
+		backslash        = '\\'
+		newline          = '\n'
+		quoteStr         = `"`
+		escapedQuote     = `\\"`
+		escapedBackslash = "\\\\"
+		escapedNewline   = "\\\n"
+	)
+	written := 0
+	var n int
+	var err error
+	if quoted {
+		n, err = io.WriteString(w, quoteStr)
+		written += n
+		if err != nil {
+			return written, err
+		}
+	}
+	for _, r := range s {
+		switch r {
+		case quote:
+			if quoted {
+				n, err = io.WriteString(w, escapedQuote)
+			} else {
+				n, err = io.WriteString(w, quoteStr)
+			}
+		case backslash:
+			n, err = io.WriteString(w, escapedBackslash)
+		case newline:
+			n, err = io.WriteString(w, escapedNewline)
+		default:
+			n, err = io.WriteString(w, string(r))
+		}
+		written += n
+		if err != nil {
+			return written, err
+		}
+	}
+	if quoted {
+		n, err = io.WriteString(w, quoteStr)
+		written += n
+		if err != nil {
+			return written, err
+		}
+	}
+	return written, nil
 }
 
 // writeMetricPreambleTo writes the metric name to the io.Writer. It may also
@@ -290,44 +448,198 @@ func (d *Data) writeMetricPreambleTo(w io.Writer, options SnapshotExportOptions,
 	return nil
 }
 
-// OrderedLabels returns the list of 'label_key="label_value"' in sorted order, except "le" which is
-// a reserved Prometheus label name and should go last.
-func OrderedLabels(labels ...map[string]string) ([]string, error) {
-	var le string
-	totalLabels := 0
-	for _, labelMap := range labels {
-		if leVal, found := labelMap["le"]; found {
-			le = leVal
-			totalLabels += len(labelMap) - 1
-		} else {
-			totalLabels += len(labelMap)
+// keyVal is a key-value pair used in the function below.
+type keyVal struct{ Key, Value string }
+
+// sortedIterateLabels iterates through labels and outputs them to `out` in sorted key order,
+// or stops when cancelCh is written to. It runs in O(n^2) time but makes no heap allocations.
+func sortedIterateLabels(labels map[string]string, out chan<- keyVal, cancelCh <-chan struct{}) {
+	defer close(out)
+	if len(labels) == 0 {
+		return
+	}
+
+	// smallestKey is the smallest key that we've already sent to `out`.
+	// It starts as the empty string, which means we haven't sent anything to `out` yet.
+	smallestKey := ""
+	// Find the smallest key of the whole set and send it out.
+	for k := range labels {
+		if smallestKey == "" || k < smallestKey {
+			smallestKey = k
 		}
 	}
-	if le != "" {
-		totalLabels++
+	select {
+	case out <- keyVal{smallestKey, labels[smallestKey]}:
+	case <-cancelCh:
+		return
 	}
-	keys := make(map[string]struct{}, totalLabels)
+
+	// Iterate until we've sent as many items as we have as input to the output channel.
+	// We start at 1 because the loop above already sent out the smallest key to `out`.
+	for numOutput := 1; numOutput < len(labels); numOutput++ {
+		// nextSmallestKey is the smallest key that is strictly larger than `smallestKey`.
+		nextSmallestKey := ""
+		for k := range labels {
+			if k > smallestKey && (nextSmallestKey == "" || k < nextSmallestKey) {
+				nextSmallestKey = k
+			}
+		}
+
+		// Update smallestKey and send it out.
+		smallestKey = nextSmallestKey
+		select {
+		case out <- keyVal{smallestKey, labels[smallestKey]}:
+		case <-cancelCh:
+			return
+		}
+	}
+}
+
+// LabelOrError is used in OrderedLabels.
+// It represents either a key-value pair, or an error.
+type LabelOrError struct {
+	Key, Value string
+	Error      error
+}
+
+// OrderedLabels streams the list of 'label_key="label_value"' in sorted order, except "le" which is
+// a reserved Prometheus label name and should go last.
+// If an error is encountered, it is returned as the Error field of LabelOrError, and no further
+// messages will be sent on the channel.
+func OrderedLabels(labels ...map[string]string) <-chan LabelOrError {
+	// This function is quite hot on the metric-rendering path, and its naive "just put all the
+	// strings in one map to ensure no dupes it, then in one slice and sort it" approach is very
+	// allocation-heavy. This approach is more computation-heavy (it runs in
+	// O(len(labels) * len(largest label map))), but the only heap allocations it does is for the
+	// following tiny slices and channels. In practice, the number of label maps and the size of
+	// each label map is tiny, so this is worth doing despite the theoretically-longer run time.
+
+	// Initialize the channels we'll use.
+	mapChannels := make([]chan keyVal, 0, len(labels))
+	lastKeyVal := make([]keyVal, len(labels))
+	resultCh := make(chan LabelOrError)
+	var cancelCh chan struct{}
+	// outputError is a helper function for when we have encountered an error mid-way.
+	outputError := func(err error) {
+		if cancelCh != nil {
+			for range mapChannels {
+				cancelCh <- struct{}{}
+			}
+			close(cancelCh)
+		}
+		resultCh <- LabelOrError{Error: err}
+		close(resultCh)
+	}
+
+	// Verify that no label is the empty string. It's not a valid label name,
+	// and we use the empty string later on in the function as a marker of having
+	// finished processing all labels from a given label map.
 	for _, labelMap := range labels {
 		for label := range labelMap {
-			if _, found := keys[label]; found {
-				return nil, fmt.Errorf("duplicate label name %q", label)
+			if label == "" {
+				go outputError(errors.New("got empty-string label"))
+				return resultCh
 			}
-			keys[label] = struct{}{}
 		}
 	}
-	orderedKeys := make([]string, 0, totalLabels)
+
+	// Each label map is processed in its own goroutine,
+	// which will stream it back to this function in sorted order.
+	cancelCh = make(chan struct{}, len(labels))
 	for _, labelMap := range labels {
-		for k, v := range labelMap {
-			if k != "le" {
-				orderedKeys = append(orderedKeys, fmt.Sprintf("%s=%q", k, v))
+		ch := make(chan keyVal)
+		mapChannels = append(mapChannels, ch)
+		go sortedIterateLabels(labelMap, ch, cancelCh)
+	}
+
+	// This goroutine is the meat of this function; it iterates through
+	// the results being streamed from each `sortedIterateLabels` goroutine
+	// that we spawned earlier, until all of them are exhausted or until we
+	// hit an error.
+	go func() {
+		// The "le" label is special and goes last, not in sorted order.
+		// gotLe is the empty string if there is no "le" label,
+		// otherwise it's the value of the "le" label.
+		var gotLe string
+
+		// numChannelsLeft tracks the number of channels that are still live.
+		for numChannelsLeft := len(mapChannels); numChannelsLeft > 0; {
+			// Iterate over all channels and ensure we have the freshest (smallest)
+			// label from each of them.
+			for i, ch := range mapChannels {
+				// A nil channel is one that has been closed.
+				if ch == nil {
+					continue
+				}
+				// If we already have the latest value from this channel,
+				// keep it there instead of getting a new one,
+				if lastKeyVal[i].Key != "" {
+					continue
+				}
+				// Otherwise, get a new label.
+				kv, open := <-ch
+				if !open {
+					// Channel has been closed, no more to read from this one.
+					numChannelsLeft--
+					mapChannels[i] = nil
+					continue
+				}
+				if kv.Key == "le" {
+					if gotLe != "" {
+						outputError(errors.New("got duplicate 'le' label"))
+						return
+					}
+					gotLe = kv.Value
+					continue
+				}
+				lastKeyVal[i] = kv
+			}
+
+			// We have one key-value pair from each still-active channel now.
+			// Find the smallest one between them.
+			smallestKey := ""
+			indexForSmallest := -1
+			for i, kv := range lastKeyVal {
+				if kv.Key == "" {
+					continue
+				}
+				if smallestKey == "" || kv.Key < smallestKey {
+					smallestKey = kv.Key
+					indexForSmallest = i
+				} else if kv.Key == smallestKey {
+					outputError(fmt.Errorf("got duplicate label %q", smallestKey))
+					return
+				}
+			}
+
+			if indexForSmallest == -1 {
+				// There are no more key-value pairs to output. We're done.
+				break
+			}
+
+			// Output the smallest key-value pairs out of all the channels.
+			resultCh <- LabelOrError{
+				Key:   smallestKey,
+				Value: lastKeyVal[indexForSmallest].Value,
+			}
+			// Mark the last key-value pair from the channel that gave us the
+			// smallest key-value pair as no longer present, so that we get a new
+			// key-value pair from it in the next iteration.
+			lastKeyVal[indexForSmallest] = keyVal{}
+		}
+
+		// Output the "le" label last.
+		if gotLe != "" {
+			resultCh <- LabelOrError{
+				Key:   "le",
+				Value: gotLe,
 			}
 		}
-	}
-	sort.Strings(orderedKeys)
-	if le != "" {
-		orderedKeys = append(orderedKeys, fmt.Sprintf("le=%q", le))
-	}
-	return orderedKeys, nil
+		close(resultCh)
+		close(cancelCh)
+	}()
+
+	return resultCh
 }
 
 // writeLabelsTo writes a set of metric labels.
@@ -336,25 +648,40 @@ func (d *Data) writeLabelsTo(w io.Writer, extraLabels map[string]string, leLabel
 		if _, err := io.WriteString(w, "{"); err != nil {
 			return err
 		}
-		var orderedLabels []string
-		var err error
+		var orderedLabels <-chan LabelOrError
 		if leLabel != nil {
-			orderedLabels, err = OrderedLabels(d.Labels, extraLabels, map[string]string{"le": leLabel.String()})
+			orderedLabels = OrderedLabels(d.Labels, extraLabels, map[string]string{"le": leLabel.String()})
 		} else {
-			orderedLabels, err = OrderedLabels(d.Labels, extraLabels)
+			orderedLabels = OrderedLabels(d.Labels, extraLabels)
 		}
-		if err != nil {
-			return err
-		}
-		for i, keyVal := range orderedLabels {
-			if i != 0 {
+		firstLabel := true
+		var foundError error
+		for labelOrError := range orderedLabels {
+			if foundError != nil {
+				continue
+			}
+			if labelOrError.Error != nil {
+				foundError = labelOrError.Error
+				continue
+			}
+			if !firstLabel {
 				if _, err := io.WriteString(w, ","); err != nil {
 					return err
 				}
 			}
-			if _, err := io.WriteString(w, keyVal); err != nil {
+			firstLabel = false
+			if _, err := io.WriteString(w, labelOrError.Key); err != nil {
 				return err
 			}
+			if _, err := io.WriteString(w, "="); err != nil {
+				return err
+			}
+			if _, err := writeEscapedString(w, labelOrError.Value, true); err != nil {
+				return err
+			}
+		}
+		if foundError != nil {
+			return foundError
 		}
 		if _, err := io.WriteString(w, "}"); err != nil {
 			return err
@@ -382,7 +709,13 @@ func (d *Data) writeMetricLine(w io.Writer, metricSuffix string, val *Number, wh
 	if err := val.writeTo(w); err != nil {
 		return err
 	}
-	if _, err := io.WriteString(w, fmt.Sprintf(" %d\n", when.UnixMilli())); err != nil {
+	if _, err := io.WriteString(w, " "); err != nil {
+		return err
+	}
+	if _, err := writeInteger(w, when.UnixMilli()); err != nil {
+		return err
+	}
+	if _, err := io.WriteString(w, "\n"); err != nil {
 		return err
 	}
 	return nil
@@ -459,6 +792,14 @@ type countingWriter struct {
 // Write implements io.Writer.Write.
 func (w *countingWriter) Write(b []byte) (int, error) {
 	written, err := w.w.Write(b)
+	w.written += written
+	return written, err
+}
+
+// WriteString implements io.StringWriter.WriteString.
+// This avoids going into the slow, allocation-heavy path of io.WriteString.
+func (w *countingWriter) WriteString(s string) (int, error) {
+	written, err := w.w.WriteString(s)
 	w.written += written
 	return written, err
 }
