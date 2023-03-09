@@ -841,7 +841,8 @@ syscall_test(
 )
 
 syscall_test(
-    add_hostinet = True,
+    # TODO(b/267210840): Flaky on hostinet.
+    # add_hostinet = True,
     shard_count = more_shards,
     test = "//test/syscalls/linux:socket_ip_unbound_test",
 )
@@ -1087,7 +1088,8 @@ syscall_test(
 
 syscall_test(
     size = "medium",
-    add_hostinet = True,
+    # TODO(b/267210840): Flaky on hostinet.
+    # add_hostinet = True,
     shard_count = more_shards,
     test = "//test/syscalls/linux:udp_socket_test",
 )
