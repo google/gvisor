@@ -28,6 +28,7 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"runtime/debug"
 	"runtime/pprof"
 	"strconv"
 	"strings"
@@ -38,6 +39,7 @@ import (
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/prometheus"
+	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
@@ -100,6 +102,9 @@ type servedSandbox struct {
 	// be deleted from the server.
 	// Once set, it is immutable.
 	verifier *prometheus.Verifier
+
+	// cleanupVerifier holds a reference to the cleanup function of the verifier.
+	cleanupVerifier func()
 }
 
 // sandboxPrometheusLabels returns a set of Prometheus labels that identifies the sandbox running
@@ -183,11 +188,12 @@ func (s *servedSandbox) load() (*sandbox.Sandbox, *prometheus.Verifier, error) {
 		if err != nil {
 			return nil, nil, err
 		}
-		verifier, err := prometheus.NewVerifier(registeredMetrics)
+		verifier, cleanup, err := prometheus.NewVerifier(registeredMetrics)
 		if err != nil {
 			return nil, nil, err
 		}
 		s.verifier = verifier
+		s.cleanupVerifier = cleanup
 	}
 	s.labelsWithMetadata = make(map[string]string, len(s.extraLabels)+len(s.sandbox.MetricMetadata))
 	for k, v := range s.extraLabels {
@@ -199,25 +205,36 @@ func (s *servedSandbox) load() (*sandbox.Sandbox, *prometheus.Verifier, error) {
 	return s.sandbox, s.verifier, nil
 }
 
+func (s *servedSandbox) cleanup() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.cleanupVerifier != nil {
+		s.cleanupVerifier()
+	}
+}
+
 // queryMetrics queries the sandbox for metrics data.
 func queryMetrics(ctx context.Context, sand *sandbox.Sandbox, verifier *prometheus.Verifier) (*prometheus.Snapshot, error) {
 	ch := make(chan struct {
 		snapshot *prometheus.Snapshot
 		err      error
 	}, 1)
-	defer close(ch)
+	canceled := make(chan struct{}, 1)
+	defer close(canceled)
 	go func() {
 		snapshot, err := sand.ExportMetrics()
 		select {
+		case <-canceled:
 		case ch <- struct {
 			snapshot *prometheus.Snapshot
 			err      error
 		}{snapshot, err}:
-		default:
+			close(ch)
 		}
 	}()
 	select {
 	case <-ctx.Done():
+		canceled <- struct{}{}
 		return nil, ctx.Err()
 	case ret := <-ch:
 		if ret.err != nil {
@@ -356,16 +373,19 @@ func (m *MetricServer) refreshSandboxesLocked() {
 		}
 		if !found {
 			log.Warningf("Sandbox %s no longer exists but did not explicitly unregister. Removing it.", sandboxID)
+			sandbox.cleanup()
 			delete(m.sandboxes, sandboxID)
 			continue
 		}
 		if _, _, err := sandbox.load(); err != nil && err != container.ErrStateFileLocked {
 			log.Warningf("Sandbox %s cannot be loaded, deleting it: %v", sandboxID, err)
+			sandbox.cleanup()
 			delete(m.sandboxes, sandboxID)
 			continue
 		}
 		if !sandbox.sandbox.IsRunning() {
 			log.Infof("Sandbox %s is no longer running, deleting it.", sandboxID)
+			sandbox.cleanup()
 			delete(m.sandboxes, sandboxID)
 			continue
 		}
@@ -444,6 +464,7 @@ func (m *MetricServer) refreshSandboxesLocked() {
 		if _, _, err := served.load(); err != nil && err != container.ErrStateFileLocked {
 			log.Warningf("Sandbox %q cannot be loaded, ignoring it: %v", sid, err)
 			m.lastStateFileStat[sid] = stat
+			served.cleanup()
 			continue
 		}
 		m.sandboxes[sid] = served
@@ -845,6 +866,8 @@ func logRequest(f func(w http.ResponseWriter, req *http.Request) httpResult) fun
 			http.Error(w, result.err.Error(), result.code)
 			log.Warningf("Request: %s %s: Failed with HTTP code %d: %v", req.Method, req.URL.Path, result.code, result.err)
 		}
+		// Run GC after every request to keep memory usage as predictable and as flat as possible.
+		runtime.GC()
 	}
 }
 
@@ -979,6 +1002,9 @@ func (m *MetricServer) Execute(ctx context.Context, f *flag.FlagSet, args ...any
 		log.Warningf("Profiling HTTP endpoints are exposed; this should only be used for development!")
 		mux.HandleFunc("/runsc-metrics/profile-cpu", logRequest(m.profileCPU))
 		mux.HandleFunc("/runsc-metrics/profile-heap", logRequest(m.profileHeap))
+	} else {
+		// Disable memory profiling, since we don't expose it.
+		runtime.MemProfileRate = 0
 	}
 	mux.HandleFunc("/metrics", logRequest(m.serveMetrics))
 	mux.HandleFunc("/", logRequest(m.serveIndex))
@@ -994,9 +1020,18 @@ func (m *MetricServer) Execute(ctx context.Context, f *flag.FlagSet, args ...any
 		log.Infof("Wrote PID %d to file %v.", m.pid, m.pidFile)
 	}
 
+	// If not modified by the user from the environment, set the Go GC percentage lower than default.
+	if _, hasEnv := os.LookupEnv("GOGC"); !hasEnv {
+		debug.SetGCPercent(40)
+	}
+
+	// Run GC immediately to get rid of all the initialization-related memory bloat and start from
+	// a clean slate.
+	state.Release()
+	runtime.GC()
+
 	// Initialization complete.
 	log.Infof("Server serving on %s for root directory %s.", conf.MetricServer, conf.RootDir)
-
 	serveErr := m.srv.Serve(listener)
 	log.Infof("Server has stopped accepting requests.")
 	m.mu.Lock()
