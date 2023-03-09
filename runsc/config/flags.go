@@ -392,7 +392,7 @@ func (c *Config) isOverrideAllowed(name string, value string) error {
 // ApplyBundles applies the given bundles by name.
 // It returns an error if a bundle doesn't exist, or if the given
 // bundles have conflicting flag values.
-// Config values which are already specified prior to calling ApplyBundles do not change.
+// Config values which are already specified prior to calling ApplyBundles are overridden.
 func (c *Config) ApplyBundles(flagSet *flag.FlagSet, bundleNames ...BundleName) error {
 	// Populate a map from flag name to flag value to bundle name.
 	flagToValueToBundleName := make(map[string]map[string]BundleName)
@@ -443,17 +443,16 @@ func (c *Config) ApplyBundles(flagSet *flag.FlagSet, bundleNames ...BundleName) 
 		// Note: We verified earlier that valueToBundleName has length 1,
 		// so this loop executes exactly once per flag.
 		for val, bundleName := range valueToBundleName {
-			if isFlagExplicitlySet(flagSet, flagName) {
-				if prevValue != val {
-					log.Infof("Bundle %s is supposed to have the effect of setting flag --%s to %q, but this flag was also explicitly set to --%s=%q on the command-line; the command-line value --%s=%q takes precedence.", bundleName, flagName, val, flagName, prevValue, flagName, prevValue)
-				}
+			if prevValue == val {
 				continue
+			}
+			if isFlagExplicitlySet(flagSet, flagName) {
+				log.Infof("Flag --%s has explicitly-set value %q, but bundle %s takes precedence and is overriding its value to --%s=%q.", flagName, prevValue, bundleName, flagName, val)
+			} else {
+				log.Infof("Overriding flag --%s=%q from applying bundle %s.", flagName, val, bundleName)
 			}
 			if err := c.Override(flagSet, flagName, val /* force= */, true); err != nil {
 				return err
-			}
-			if prevValue != val {
-				log.Infof("Applying bundle %s: flag --%s has been updated from --%s=%q to --%s=%q", bundleName, flagName, flagName, prevValue, flagName, val)
 			}
 		}
 	}
