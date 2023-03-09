@@ -204,7 +204,7 @@ bool handshake(int client_fd) {
   if (bytes < 0) {
     printf("Error receiving handshake message: %d\n", errno);
     return false;
-  } else if (bytes == buf.size()) {
+  } else if (bytes == (int)buf.size()) {
     // Protect against the handshake becoming larger than the buffer allocated
     // for it.
     printf("handshake message too big\n");

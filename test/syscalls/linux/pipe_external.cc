@@ -85,7 +85,7 @@ TEST_P(HostPipeTest, Write) {
   ssize_t length = 0;
   while (length < 1024 * 1024) {
     char buf[1024];
-    for (int i = 0; i < sizeof(buf); ++i) {
+    for (unsigned int i = 0; i < sizeof(buf); ++i) {
       buf[i] = i + lastValue;
     }
 

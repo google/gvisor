@@ -178,7 +178,7 @@ TEST(ChrootTest, CreatesNewRoot) {
 
     // getcwd should return "/".
     TEST_CHECK_SUCCESS(syscall(__NR_getcwd, buf, sizeof(buf)));
-    TEST_CHECK_SUCCESS(strcmp(buf, "/") == 0);
+    TEST_PCHECK(strcmp(buf, "/") == 0);
 
     // Statting '.', '..', '/', and '/..' all return the same dev and inode.
     struct stat statbuf_dot;
