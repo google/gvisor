@@ -1,11 +1,1 @@
-test name,bug id,comment
-test_asyncio,,Broken test
-test_asyncore,b/162973328,
-test_fcntl,b/162978767,fcntl invalid argument -- artificial test to make sure something works in 64 bit mode.
-test_posix,b/76174079,posix.sched_get_priority_min not implemented + posix.sched_rr_get_interval not permitted
-test_pty,b/162979921,
-test_readline,b/162980389,TestReadline hangs forever
-test_resource,b/76174079,
-test_signal,,Flaky - signal: alarm clock
-test_socket,,Broken test
-test_os,b/271473320,TestScandir.test_attributes fails with overlay
+Python excludes test cases differently. See exclude list and justification in proctor/lib/python.go.
