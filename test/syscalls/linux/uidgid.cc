@@ -76,7 +76,10 @@ TEST(UidGidTest, Getgroups) {
 
   // "EINVAL: size is less than the number of supplementary group IDs, but is
   // not zero."
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstringop-overflow="
   EXPECT_THAT(getgroups(-1, nullptr), SyscallFailsWithErrno(EINVAL));
+#pragma GCC diagnostic pop
 
   // Testing for EFAULT requires actually having groups, which isn't guaranteed
   // here; see the setgroups test below.

@@ -362,7 +362,7 @@ TEST_F(ForkTest, SigAltStack) {
     MaybeSave();
 
     TEST_CHECK((oss.ss_flags & SS_DISABLE) == 0);
-    TEST_CHECK(oss.ss_size == SIGSTKSZ);
+    TEST_CHECK(oss.ss_size == (size_t)SIGSTKSZ);
     TEST_CHECK(oss.ss_sp == stack.ss_sp);
 
     Exit(0);

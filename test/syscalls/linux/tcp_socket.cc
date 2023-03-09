@@ -761,7 +761,7 @@ TEST_P(TcpSocketTest, TcpInq) {
 
 TEST_P(TcpSocketTest, Tiocinq) {
   char buf[1024];
-  size_t size = sizeof(buf);
+  int size = sizeof(buf);
   ASSERT_THAT(RetryEINTR(write)(connected_.get(), buf, size),
               SyscallSucceedsWithValue(size));
 

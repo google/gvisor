@@ -128,8 +128,8 @@ TEST(SigstopTest, RestartSyscall) {
   pid_t pid;
   constexpr absl::Duration kStopDelay = absl::Seconds(5);
   constexpr absl::Duration kStartupDelay = absl::Seconds(5);
-  constexpr uint64_t kSleepDelay = 15;
-  constexpr uint64_t kErrorDelay = 3;
+  constexpr int64_t kSleepDelay = 15;
+  constexpr int64_t kErrorDelay = 3;
 
   const DisableSave ds;  // Timing-related.
 

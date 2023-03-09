@@ -220,7 +220,7 @@ TEST_P(DataTransferStressTest, BigDataTransfer) {
 
   const std::string chunk = "Though this upload be but little, it is fierce.";
   std::string big_string;
-  while (big_string.size() < 31 << kShift) {
+  while (big_string.size() < size_t(31 << kShift)) {
     big_string += chunk;
   }
   absl::string_view data = big_string;
