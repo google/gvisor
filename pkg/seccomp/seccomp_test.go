@@ -16,6 +16,7 @@ package seccomp
 
 import (
 	"bytes"
+	_ "embed"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -31,6 +32,9 @@ import (
 	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/hostarch"
 )
+
+//go:embed victim
+var victimData []byte
 
 // newVictim makes a victim binary.
 func newVictim() (string, error) {
