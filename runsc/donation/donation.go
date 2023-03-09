@@ -106,6 +106,17 @@ func (f *Agency) Transfer(cmd *exec.Cmd, nextFD int) int {
 	return nextFD
 }
 
+// DonateAndTransferCustomFiles sets up the flags for passing file descriptors from the
+// host to the sandbox. Making use of the agency is not necessary,
+func DonateAndTransferCustomFiles(cmd *exec.Cmd, nextFD int, files map[int]*os.File) int {
+	for fd, file := range files {
+		cmd.Args = append(cmd.Args, fmt.Sprintf("--pass-fd=%d:%d", nextFD, fd))
+		cmd.ExtraFiles = append(cmd.ExtraFiles, file)
+		nextFD++
+	}
+	return nextFD
+}
+
 // Close closes any files the agency has taken ownership over.
 func (f *Agency) Close() {
 	for _, file := range f.closePending {

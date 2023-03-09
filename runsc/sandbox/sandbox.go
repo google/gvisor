@@ -241,6 +241,10 @@ type Args struct {
 	// SinkFiles is the an ordered array of files to be used by seccheck sinks
 	// configured from the --pod-init-config file.
 	SinkFiles []*os.File
+
+	// PassFiles are user-supplied files from the host to be exposed to the
+	// sandboxed app.
+	PassFiles map[int]*os.File
 }
 
 // New creates the sandbox process. The caller must call Destroy() on the
@@ -528,7 +532,17 @@ func (s *Sandbox) NewCGroup() (cgroup.Cgroup, error) {
 func (s *Sandbox) Execute(conf *config.Config, args *control.ExecArgs) (int32, error) {
 	log.Debugf("Executing new process in container %q in sandbox %q", args.ContainerID, s.ID)
 
-	if err := s.configureStdios(conf, args.Files); err != nil {
+	// Stdios are those files which have an FD <= 2 in the process. We do not
+	// want the ownership of other files to be changed by configureStdios.
+	var stdios []*os.File
+	for i, fd := range args.GuestFDs {
+		if fd > 2 || i >= len(args.Files) {
+			continue
+		}
+		stdios = append(stdios, args.Files[i])
+	}
+
+	if err := s.configureStdios(conf, stdios); err != nil {
 		return 0, err
 	}
 
@@ -927,8 +941,9 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		cmd.Args = append(cmd.Args, "--attached")
 	}
 
-	// nextFD must not be used beyond this point.
-	_ = donations.Transfer(cmd, nextFD)
+	nextFD = donations.Transfer(cmd, nextFD)
+
+	_ = donation.DonateAndTransferCustomFiles(cmd, nextFD, args.PassFiles)
 
 	// Add container ID as the last argument.
 	cmd.Args = append(cmd.Args, s.ID)

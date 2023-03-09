@@ -66,6 +66,9 @@ type Boot struct {
 	// provided in that order.
 	stdioFDs intFlags
 
+	// passFDs are mappings of user-supplied host to guest file descriptors.
+	passFDs fdMappings
+
 	// applyCaps determines if capabilities defined in the spec should be applied
 	// to the process.
 	applyCaps bool
@@ -148,6 +151,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&b.deviceFD, "device-fd", -1, "FD for the platform device file")
 	f.Var(&b.ioFDs, "io-fds", "list of FDs to connect gofer clients. They must follow this order: root first, then mounts as defined in the spec")
 	f.Var(&b.stdioFDs, "stdio-fds", "list of FDs containing sandbox stdin, stdout, and stderr in that order")
+	f.Var(&b.passFDs, "pass-fd", "mapping of host to guest FDs. They must be in M:N format. M is the host and N the guest descriptor.")
 	f.Var(&b.overlayFilestoreFDs, "overlay-filestore-fds", "FDs to the regular files that will back the tmpfs upper mount in the overlay mounts.")
 	f.IntVar(&b.userLogFD, "user-log-fd", 0, "file descriptor to write user logs to. 0 means no logging.")
 	f.IntVar(&b.startSyncFD, "start-sync-fd", -1, "required FD to used to synchronize sandbox startup")
@@ -348,6 +352,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		Device:              os.NewFile(uintptr(b.deviceFD), "platform device"),
 		GoferFDs:            b.ioFDs.GetArray(),
 		StdioFDs:            b.stdioFDs.GetArray(),
+		PassFDs:             b.passFDs.GetArray(),
 		OverlayFilestoreFDs: b.overlayFilestoreFDs.GetArray(),
 		NumCPU:              b.cpuNum,
 		TotalMem:            b.totalMem,
