@@ -324,6 +324,14 @@ var globalTypeDatabase = map[string]reflect.Type{}
 // reverseTypeDatabase is a reverse mapping.
 var reverseTypeDatabase = map[reflect.Type]string{}
 
+// Release releases references to global type databases.
+// Must only be called in contexts where they will definitely never be used,
+// in order to save memory.
+func Release() {
+	globalTypeDatabase = nil
+	reverseTypeDatabase = nil
+}
+
 // Register registers a type.
 //
 // This must be called on init and only done once.

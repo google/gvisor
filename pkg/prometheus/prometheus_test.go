@@ -874,7 +874,8 @@ func TestVerifier(t *testing.T) {
 			}
 			at(testTime, func() {
 				t.Logf("Test is running with simulated time: %v", testTime)
-				verifier, err := NewVerifier(test.Registration)
+				verifier, cleanup, err := NewVerifier(test.Registration)
+				defer cleanup()
 				if err != nil && !test.WantVerifierCreationErr {
 					t.Fatalf("unexpected verifier creation error: %v", err)
 				}
@@ -1458,4 +1459,146 @@ func TestGroupSameNameMetrics(t *testing.T) {
 	if !cmp.Equal(seenMetrics, wantSeenMetrics) {
 		t.Errorf("Seen metrics: %v\nWant metrics: %v", seenMetrics, wantSeenMetrics)
 	}
+}
+
+func TestNumberPacker(t *testing.T) {
+	interestingIntegers := map[uint64]struct{}{
+		uint64(0):                  struct{}{},
+		uint64(0x5555555555555555): struct{}{},
+		uint64(0xaaaaaaaaaaaaaaaa): struct{}{},
+		uint64(0xffffffffffffffff): struct{}{},
+	}
+	for numBits := 0; numBits < 2; numBits++ {
+		newIntegers := map[uint64]struct{}{}
+		for interestingInt := range interestingIntegers {
+			for i := 0; i < 64; i++ {
+				newIntegers[interestingInt|(1<<i)] = struct{}{}
+				newIntegers[interestingInt & ^(1<<i)] = struct{}{}
+			}
+		}
+		for newInt := range newIntegers {
+			interestingIntegers[newInt] = struct{}{}
+		}
+	}
+	for _, i := range []int64{
+		math.MinInt,
+		math.MaxInt,
+		math.MinInt8,
+		math.MaxInt8,
+		math.MaxUint8,
+		math.MinInt16,
+		math.MaxInt16,
+		math.MaxUint16,
+		math.MinInt32,
+		math.MaxInt32,
+		math.MaxUint32,
+		math.MinInt64,
+		math.MaxInt64,
+	} {
+		for d := int64(-3); d <= int64(3); d++ {
+			interestingIntegers[uint64(i+d)] = struct{}{}
+		}
+	}
+	interestingIntegers[0] = struct{}{}
+	interestingIntegers[1] = struct{}{}
+	interestingIntegers[2] = struct{}{}
+	interestingIntegers[3] = struct{}{}
+	interestingIntegers[math.MaxUint64-3] = struct{}{}
+	interestingIntegers[math.MaxUint64-2] = struct{}{}
+	interestingIntegers[math.MaxUint64-1] = struct{}{}
+	interestingIntegers[math.MaxUint64] = struct{}{}
+
+	p := &numberPacker{}
+	t.Run("integers", func(t *testing.T) {
+		seenDirectInteger := false
+		seenIndirectInteger := false
+		for interestingInt := range interestingIntegers {
+			orig := NewInt(int64(interestingInt))
+			packed, err := p.pack(orig)
+			if err != nil {
+				t.Fatalf("integer %v (bits=%x): cannot pack: %v", orig, interestingInt, err)
+			}
+			unpacked := p.unpack(packed)
+			if !orig.SameType(unpacked) || orig.Int != unpacked.Int {
+				t.Errorf("integer %v (bits=%x): got packed=%v => unpacked version %v (int: %d)", orig, interestingInt, uint32(packed), unpacked, unpacked.Int)
+			}
+			seenDirectInteger = seenDirectInteger || (uint32(packed)&storageField) == storageFieldDirect
+			seenIndirectInteger = seenIndirectInteger || (uint32(packed)&storageField) == storageFieldIndirect
+		}
+		if !seenDirectInteger {
+			t.Error("did not encounter any integer that could be packed directly")
+		}
+		if !seenIndirectInteger {
+			t.Error("did not encounter any integer that was packed indirectly")
+		}
+	})
+	t.Run("packing_efficiency", func(t *testing.T) {
+		// Verify that we actually saved space by not packing every number in numberPacker itself.
+		if len(p.data) >= len(interestingIntegers) {
+			t.Errorf("packer had %d data points stored in its data, but we expected some of it to not be stored in it (tried to pack %d integers total)", len(p.data), len(interestingIntegers))
+		}
+	})
+	t.Run("floats", func(t *testing.T) {
+		interestingFloats := make(map[float64]struct{}, len(interestingIntegers)+21*21+17)
+		for divExp := -10; divExp < 10; divExp++ {
+			div := math.Pow(10, float64(divExp))
+			for i := -10; i < 10; i++ {
+				interestingFloats[float64(i)*div] = struct{}{}
+			}
+		}
+		interestingFloats[0.0] = struct{}{}
+		interestingFloats[math.NaN()] = struct{}{}
+		interestingFloats[math.Inf(1)] = struct{}{}
+		interestingFloats[math.Inf(-1)] = struct{}{}
+		interestingFloats[math.Pi] = struct{}{}
+		interestingFloats[math.Sqrt2] = struct{}{}
+		interestingFloats[math.E] = struct{}{}
+		interestingFloats[math.SqrtE] = struct{}{}
+		interestingFloats[math.Ln2] = struct{}{}
+		interestingFloats[math.MaxFloat32] = struct{}{}
+		interestingFloats[-math.MaxFloat32] = struct{}{}
+		interestingFloats[math.MaxFloat64] = struct{}{}
+		interestingFloats[-math.MaxFloat64] = struct{}{}
+		interestingFloats[math.SmallestNonzeroFloat32] = struct{}{}
+		interestingFloats[-math.SmallestNonzeroFloat32] = struct{}{}
+		interestingFloats[math.SmallestNonzeroFloat64] = struct{}{}
+		interestingFloats[-math.SmallestNonzeroFloat64] = struct{}{}
+		for interestingInt := range interestingIntegers {
+			interestingFloats[math.Float64frombits(interestingInt)] = struct{}{}
+		}
+		seenDirectFloat := false
+		seenIndirectFloat := false
+		for interestingFloat := range interestingFloats {
+			orig := NewFloat(interestingFloat)
+			packed, err := p.pack(orig)
+			if err != nil {
+				t.Fatalf("float %v (64bits=%x, 32bits=%x. float32-encodable=%v): cannot pack: %v", orig, math.Float64bits(interestingFloat), math.Float32bits(float32(interestingFloat)), float64(float32(interestingFloat)) == interestingFloat, err)
+			}
+			unpacked := p.unpack(packed)
+			switch {
+			case interestingFloat == 0: // Zero-valued float becomes an integer.
+				if !unpacked.IsInteger() {
+					t.Errorf("Zero-valued float %v: got non-integer number: %v", orig, unpacked)
+				} else if unpacked.Int != 0 {
+					t.Errorf("Zero-valued float %v: got non-zero integer: %d", orig, unpacked.Int)
+				}
+			case math.IsNaN(orig.Float):
+				if !math.IsNaN(unpacked.Float) {
+					t.Errorf("NaN float %v: got non-NaN unpacked version %v", orig, unpacked)
+				}
+			default: // Not NaN, not integer
+				if !orig.SameType(unpacked) || orig.Float != unpacked.Float {
+					t.Errorf("float %v (64bits=%x, 32bits=%x, float32-encodable=%v): got packed=%x => unpacked version %v (float: %f)", orig, math.Float64bits(interestingFloat), math.Float32bits(float32(interestingFloat)), float64(float32(interestingFloat)) == interestingFloat, uint32(packed), unpacked, unpacked.Float)
+				}
+			}
+			seenDirectFloat = seenDirectFloat || (uint32(packed)&storageField) == storageFieldDirect
+			seenIndirectFloat = seenIndirectFloat || (uint32(packed)&storageField) == storageFieldIndirect
+		}
+		if !seenDirectFloat {
+			t.Error("did not encounter any float that could be packed directly")
+		}
+		if !seenIndirectFloat {
+			t.Error("did not encounter any float that was packed indirectly")
+		}
+	})
 }
