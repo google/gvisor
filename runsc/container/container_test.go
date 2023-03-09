@@ -42,7 +42,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/test/testutil"
-	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/cgroup"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -78,9 +77,11 @@ func executeCombinedOutput(conf *config.Config, cont *Container, name string, ar
 	defer r.Close()
 
 	args := &control.ExecArgs{
-		Filename:    name,
-		Argv:        append([]string{name}, arg...),
-		FilePayload: urpc.FilePayload{Files: []*os.File{os.Stdin, w, w}},
+		Filename: name,
+		Argv:     append([]string{name}, arg...),
+		FilePayload: control.NewFDMap(map[int]*os.File{
+			0: os.Stdin, 1: w, 2: w,
+		}),
 	}
 	ws, err := cont.executeSync(conf, args)
 	w.Close()
@@ -851,9 +852,9 @@ func TestExec(t *testing.T) {
 
 				_, err = cont.executeSync(conf, &control.ExecArgs{
 					Argv: []string{"/nonexist"},
-					FilePayload: urpc.FilePayload{
-						Files: []*os.File{os.NewFile(uintptr(fds[1]), "sock")},
-					},
+					FilePayload: control.NewFDMap(map[int]*os.File{
+						0: os.NewFile(uintptr(fds[1]), "sock"),
+					}),
 				})
 				want := "failed to load /nonexist"
 				if err == nil || !strings.Contains(err.Error(), want) {
@@ -2722,5 +2723,170 @@ func TestSandboxCommunicationUnshare(t *testing.T) {
 	// Send a simple command to test that the sandbox can be reached.
 	if err := cont.SignalContainer(0, true); err != nil {
 		t.Errorf("SignalContainer(): %v", err)
+	}
+}
+
+// writeAndReadFromPipe writes the bytes to the write end of the pipe, then
+// reads from the read end and returns the result.
+func writeAndReadFromPipe(write, read *os.File, msg string) (string, error) {
+	// Write the message to be read by the guest.
+	if _, err := io.StringWriter(write).WriteString(msg); err != nil {
+		return "", fmt.Errorf("failed to write message to pipe: %w", err)
+	}
+	write.Close()
+
+	// Read and return the message.
+	response, err := io.ReadAll(read)
+	if err != nil {
+		return "", fmt.Errorf("failed to read from pipe: %w", err)
+	}
+	read.Close()
+
+	return string(response), nil
+}
+
+func createPipes() (*os.File, *os.File, *os.File, *os.File, func(), error) {
+	// This is the first pipe which the host writes to and the guest reads
+	// from.
+	guestRead, hostWrite, err := os.Pipe()
+	if err != nil {
+		return nil, nil, nil, nil, nil, err
+	}
+
+	// This is the second pipe which the guest writes to and the host reads
+	// from.
+	hostRead, guestWrite, err := os.Pipe()
+	if err != nil {
+		guestRead.Close()
+		hostWrite.Close()
+		return nil, nil, nil, nil, nil, err
+	}
+
+	cleanup := func() {
+		guestRead.Close()
+		hostWrite.Close()
+		hostRead.Close()
+		guestWrite.Close()
+	}
+
+	return guestRead, hostWrite, hostRead, guestWrite, cleanup, nil
+}
+
+// TestFDPassingRun checks that file descriptors passed into a new container
+// work as expected.
+func TestFDPassingRun(t *testing.T) {
+	guestRead, hostWrite, hostRead, guestWrite, cleanup, err := createPipes()
+	if err != nil {
+		t.Fatalf("error creating pipes: %v", err)
+	}
+	defer cleanup()
+
+	// In the guest, read from the host and write the result back to the host.
+	conf := testutil.TestConfig(t)
+	cmd := fmt.Sprintf("cat /proc/self/fd/%d > /proc/self/fd/%d", int(guestRead.Fd()), int(guestWrite.Fd()))
+	spec := testutil.NewSpecWithArgs("bash", "-c", cmd)
+
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+		PassFiles: map[int]*os.File{
+			int(guestRead.Fd()):  guestRead,
+			int(guestWrite.Fd()): guestWrite,
+		},
+	}
+
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("Creating container: %v", err)
+	}
+	defer cont.Destroy()
+
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("starting container: %v", err)
+	}
+
+	// We close guestWrite here because it has been passed into the container.
+	// If we do not close it, we will never see an EOF.
+	guestWrite.Close()
+
+	msg := "hello"
+	got, err := writeAndReadFromPipe(hostWrite, hostRead, msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != msg {
+		t.Errorf("got message %q, want %q", got, msg)
+	}
+}
+
+// TestFDPassingExec checks that file descriptors passed into an already
+// running container work as expected.
+func TestFDPassingExec(t *testing.T) {
+	guestRead, hostWrite, hostRead, guestWrite, cleanup, err := createPipes()
+	if err != nil {
+		t.Fatalf("error creating pipes: %v", err)
+	}
+	defer cleanup()
+
+	conf := testutil.TestConfig(t)
+
+	// We just sleep here because we want to test file descriptor passing
+	// inside a process executed inside an already running container.
+	spec := testutil.NewSpecWithArgs("bash", "-c", "sleep infinity")
+
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("Creating container: %v", err)
+	}
+	defer cont.Destroy()
+
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("starting container: %v", err)
+	}
+
+	// Prepare executing a command in the running container.
+	cmd := fmt.Sprintf("cat /proc/self/fd/%d > /proc/self/fd/%d", int(guestRead.Fd()), int(guestWrite.Fd()))
+	execArgs := &control.ExecArgs{
+		Argv: []string{"/bin/bash", "-c", cmd},
+		FilePayload: control.NewFDMap(map[int]*os.File{
+			int(guestRead.Fd()):  guestRead,
+			int(guestWrite.Fd()): guestWrite,
+		}),
+	}
+
+	if _, err = cont.Execute(conf, execArgs); err != nil {
+		t.Fatalf("Failed to execute command: %v", err)
+	}
+
+	// We close guestWrite here because it has been passed into the container.
+	// If we do not close it, we will never see an EOF.
+	guestWrite.Close()
+
+	msg := "hello"
+	got, err := writeAndReadFromPipe(hostWrite, hostRead, msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != msg {
+		t.Errorf("got message %q, want %q", got, msg)
 	}
 }
