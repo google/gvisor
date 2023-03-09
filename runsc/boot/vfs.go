@@ -919,9 +919,7 @@ func (c *containerMounter) mountTmp(ctx context.Context, conf *config.Config, cr
 func (c *containerMounter) processHints(conf *config.Config, creds *auth.Credentials) error {
 	ctx := c.k.SupervisorContext()
 	for _, hint := range c.hints.mounts {
-		// TODO(b/142076984): Only support tmpfs for now. Bind mounts require a
-		// common gofer to mount all shared volumes.
-		if hint.mount.Type != tmpfs.Name {
+		if !hint.isSupported() {
 			continue
 		}
 
