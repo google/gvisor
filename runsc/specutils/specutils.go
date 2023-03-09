@@ -254,7 +254,7 @@ func fixSpec(spec *specs.Spec, bundleDir string, conf *config.Config) error {
 			// Override flags using annotation to allow customization per sandbox
 			// instance.
 			name := annotation[len(annotationFlagPrefix):]
-			log.Infof("Overriding flag: %s=%q", name, val)
+			log.Infof("Overriding flag from flag annotation: --%s=%q", name, val)
 			if err := conf.Override(flag.CommandLine, name, val /* force= */, false); err != nil {
 				return err
 			}

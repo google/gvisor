@@ -599,7 +599,7 @@ func TestBundles(t *testing.T) {
 			},
 		},
 		{
-			Name: "command line takes precedence to non-default value",
+			Name: "bundle takes precedence over command-line value",
 			BundleConfig: map[BundleName]Bundle{
 				"no-debug": {
 					"debug": "false",
@@ -609,26 +609,25 @@ func TestBundles(t *testing.T) {
 			Bundles:     []BundleName{"no-debug"},
 			Verify: func(t *testing.T, old, new *Config) {
 				t.Helper()
-				noChange(t, old, new)
-				if !new.Debug {
-					t.Error("debug was not set to true")
+				if new.Debug {
+					t.Error("debug is still true")
 				}
 			},
 		},
 		{
-			Name: "command line takes precedence to default value",
+			Name: "command line matching bundle value",
 			BundleConfig: map[BundleName]Bundle{
 				"debug": {
 					"debug": "true",
 				},
 			},
-			CommandLine: []string{"-debug=false"},
+			CommandLine: []string{"-debug=true"},
 			Bundles:     []BundleName{"debug"},
 			Verify: func(t *testing.T, old, new *Config) {
 				t.Helper()
 				noChange(t, old, new)
-				if new.Debug {
-					t.Error("debug was set to true")
+				if !new.Debug {
+					t.Error("debug was set to false")
 				}
 			},
 		},
@@ -656,7 +655,10 @@ func TestBundles(t *testing.T) {
 			if !test.WantErr && err != nil {
 				t.Errorf("got unexpected error: %v", err)
 			}
-			if err != nil && test.Verify != nil && !t.Failed() {
+			if t.Failed() {
+				return
+			}
+			if err != nil && test.Verify != nil {
 				t.Error("cannot specify Verify function for erroring tests")
 			}
 			if err == nil && test.Verify != nil {
