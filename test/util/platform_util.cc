@@ -37,6 +37,7 @@ PlatformSupport PlatformSupport32Bit() {
   }
   std::cerr << "GVISOR_PLATFORM_SUPPORT variable undefined" << std::endl;
   TEST_CHECK(false);
+  __builtin_unreachable();
 }
 
 PlatformSupport PlatformSupportAlignmentCheck() {
@@ -58,6 +59,7 @@ PlatformSupport PlatformSupportAlignmentCheck() {
   }
   std::cerr << "GVISOR_PLATFORM_SUPPORT variable undefined" << std::endl;
   TEST_CHECK(false);
+  __builtin_unreachable();
 }
 
 PlatformSupport PlatformSupportMultiProcess() {
@@ -77,6 +79,7 @@ PlatformSupport PlatformSupportMultiProcess() {
   }
   std::cerr << "GVISOR_PLATFORM_SUPPORT variable undefined" << std::endl;
   TEST_CHECK(false);
+  __builtin_unreachable();
 }
 
 PlatformSupport PlatformSupportInt3() {
@@ -95,6 +98,7 @@ PlatformSupport PlatformSupportInt3() {
   }
   std::cerr << "GVISOR_PLATFORM_SUPPORT variable undefined" << std::endl;
   TEST_CHECK(false);
+  __builtin_unreachable();
 }
 
 PlatformSupport PlatformSupportVsyscall() {
@@ -113,6 +117,7 @@ PlatformSupport PlatformSupportVsyscall() {
   }
   std::cerr << "GVISOR_PLATFORM_SUPPORT variable undefined" << std::endl;
   TEST_CHECK(false);
+  __builtin_unreachable();
 }
 
 }  // namespace testing

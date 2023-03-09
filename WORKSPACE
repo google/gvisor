@@ -29,11 +29,11 @@ bazel_skylib_workspace()
 # Load license rules.
 http_archive(
     name = "rules_license",
+    sha256 = "6157e1e68378532d0241ecd15d3c45f6e5cfd98fc10846045509fb2a7cc9e381",
     urls = [
         "https://github.com/bazelbuild/rules_license/releases/download/0.0.4/rules_license-0.0.4.tar.gz",
         "https://mirror.bazel.build/github.com/bazelbuild/rules_license/releases/download/0.0.4/rules_license-0.0.4.tar.gz",
     ],
-    sha256 = "6157e1e68378532d0241ecd15d3c45f6e5cfd98fc10846045509fb2a7cc9e381",
 )
 
 # Load go bazel rules and gazelle.
@@ -1430,10 +1430,10 @@ http_archive(
     name = "com_github_grpc_grpc",
     patch_args = ["-p1"],
     patches = ["//tools:grpc_extra_deps.patch"],
-    sha256 = "b55696fb249669744de3e71acc54a9382bea0dce7cd5ba379b356b12b82d4229",
-    strip_prefix = "grpc-1.51.1",
+    sha256 = "ec125d7fdb77ecc25b01050a0d5d32616594834d3fe163b016768e2ae42a2df6",
+    strip_prefix = "grpc-1.52.1",
     urls = [
-        "https://github.com/grpc/grpc/archive/v1.51.1.tar.gz",
+        "https://github.com/grpc/grpc/archive/v1.52.1.tar.gz",
     ],
 )
 
@@ -1457,11 +1457,11 @@ http_archive(
 
 http_archive(
     name = "com_google_benchmark",
-    sha256 = "3c6a165b6ecc948967a1ead710d4a181d7b0fbcaa183ef7ea84604994966221a",
-    strip_prefix = "benchmark-1.5.0",
+    sha256 = "6430e4092653380d9dc4ccb45a1e2dc9259d581f4866dc0759713126056bc1d7",
+    strip_prefix = "benchmark-1.7.1",
     urls = [
-        "https://mirror.bazel.build/github.com/google/benchmark/archive/v1.5.0.tar.gz",
-        "https://github.com/google/benchmark/archive/v1.5.0.tar.gz",
+        "https://mirror.bazel.build/github.com/google/benchmark/archive/v1.7.1.tar.gz",
+        "https://github.com/google/benchmark/archive/v1.7.1.tar.gz",
     ],
 )
 

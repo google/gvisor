@@ -18,6 +18,7 @@
 #include <limits.h>
 #include <sys/mount.h>
 #include <unistd.h>
+#include <cstdint>
 
 #include "gtest/gtest.h"
 #include "absl/container/flat_hash_map.h"
@@ -857,17 +858,17 @@ PosixErrorOr<std::vector<bool>> ParseBitmap(std::string s) {
   for (const std::string_view& t : absl::StrSplit(s, ',')) {
     std::vector<std::string> parts = absl::StrSplit(t, absl::MaxSplits('-', 2));
     if (parts.size() == 2) {
-      ASSIGN_OR_RETURN_ERRNO(int64_t start, Atoi<int64_t>(parts[0]));
-      ASSIGN_OR_RETURN_ERRNO(int64_t end, Atoi<int64_t>(parts[1]));
+      ASSIGN_OR_RETURN_ERRNO(uint64_t start, Atoi<uint64_t>(parts[0]));
+      ASSIGN_OR_RETURN_ERRNO(uint64_t end, Atoi<uint64_t>(parts[1]));
       // Note: start and end are indices into bitmap.
       if (end >= bitmap.size()) {
         bitmap.resize(end + 1, false);
       }
-      for (int i = start; i <= end; ++i) {
+      for (uint64_t i = start; i <= end; ++i) {
         bitmap[i] = true;
       }
     } else {  // parts.size() == 1, 0 not possible.
-      ASSIGN_OR_RETURN_ERRNO(int64_t i, Atoi<int64_t>(parts[0]));
+      ASSIGN_OR_RETURN_ERRNO(uint64_t i, Atoi<uint64_t>(parts[0]));
       if (i >= bitmap.size()) {
         bitmap.resize(i + 1, false);
       }
