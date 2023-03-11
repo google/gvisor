@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
-// TODO(b/256037250): Enable by default.
 // TODO(b/256037250): We parse headers here. We should save those headers in
 // PacketBuffers so they don't have to be re-parsed later.
 // TODO(b/256037250): I still see the occasional SACK block in the zero-loss
@@ -366,6 +365,7 @@ type groDispatcher struct {
 }
 
 func (gd *groDispatcher) init(interval time.Duration) {
+	interval = time.Duration(200_000 * time.Nanosecond) // DO NOT SUBMIT: for testing only
 	gd.intervalNS.Store(interval.Nanoseconds())
 
 	for i := range gd.buckets {
