@@ -22,7 +22,6 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/pool"
@@ -115,23 +114,13 @@ const (
 // subprocess is a collection of threads being traced.
 type subprocess struct {
 	platform.NoAddressSpaceIO
-	subprocessEntry
+	subprocessRefs
 
 	// requests is used to signal creation of new threads.
 	requests chan any
 
-	// numContexts counts the number of contexts currently active within the
-	// subprocess. A subprocess should not be fully released to be reused until
-	// numContexts reaches 0.
-	numContexts atomicbitops.Int32
-
 	// mu protects the following fields.
 	mu sync.Mutex
-
-	// released marks this subprocess as having been released.
-	// A subprocess can be both released and active because we cannot allow it to
-	// reused until all tied contexts have been unregistered.
-	released bool
 
 	// faultedContexts is the set of contexts for which it's possible that
 	// context.lastFaultSP == this subprocess.
@@ -253,6 +242,8 @@ func (s *subprocess) handlePtraceSyscallRequest(req any) {
 // to happen with the runtime thread locked.
 func newSubprocess(create func() (*thread, error), memoryFile *pgalloc.MemoryFile) (*subprocess, error) {
 	if sp := globalPool.fetchAvailable(); sp != nil {
+		sp.subprocessRefs.InitRefs()
+		sp.usertrap = usertrap.New()
 		return sp, nil
 	}
 
@@ -271,6 +262,7 @@ func newSubprocess(create func() (*thread, error), memoryFile *pgalloc.MemoryFil
 		memoryFile:        memoryFile,
 		sysmsgThreads:     make(map[uint32]*sysmsgThread),
 	}
+	sp.subprocessRefs.InitRefs()
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
@@ -299,7 +291,6 @@ func newSubprocess(create func() (*thread, error), memoryFile *pgalloc.MemoryFil
 	sp.usertrap = usertrap.New()
 	sp.mapSharedRegions()
 
-	globalPool.add(sp)
 	return sp, nil
 }
 
@@ -372,10 +363,13 @@ func (s *subprocess) unmap() {
 // globalPool. This has the added benefit of reducing creation time for new
 // subprocesses.
 func (s *subprocess) Release() {
-	go func() { // S/R-SAFE: Platform.
-		s.unmap()
-		globalPool.release(s)
-	}()
+	s.unmap()
+	s.DecRef(s.release)
+}
+
+// release returns the subprocess to the global pool.
+func (s *subprocess) release() {
+	globalPool.markAvailable(s)
 }
 
 // newThread creates a new traced thread.
@@ -963,7 +957,7 @@ func (s *subprocess) registerContext(c *context) error {
 	if !ok {
 		return fmt.Errorf("subprocess has too many active threads (%d); failed to create a new one", maxGuestContexts)
 	}
-	s.numContexts.Add(1)
+	s.IncRef()
 	c.cid = id
 	c.subprocess = s
 	unlock()
@@ -989,11 +983,7 @@ func (s *subprocess) unregisterContext(c *context) {
 	s.mu.Lock()
 	delete(s.faultedContexts, c)
 	s.threadContextPool.Put(cid)
-	s.numContexts.Add(-1)
-	released := s.released
 	s.mu.Unlock()
 
-	if released && s.numContexts.Load() == 0 {
-		globalPool.release(s)
-	}
+	s.DecRef(s.release)
 }
