@@ -35,8 +35,8 @@ var timeNow = time.Now
 // Prometheus label names used to identify each sandbox.
 const (
 	SandboxIDLabel   = "sandbox"
-	PodNameLabel     = "pod"
-	NamespaceLabel   = "namespace"
+	PodNameLabel     = "pod_name"
+	NamespaceLabel   = "namespace_name"
 	IterationIDLabel = "iteration"
 )
 
