@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/goid"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/hostcpu"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -57,6 +58,9 @@ type taskRunState interface {
 // searching for Task.run()'s argument value.
 func (t *Task) run(threadID uintptr) {
 	t.goid.Store(goid.Get())
+
+	refs.CleanupSync.Add(1)
+	defer refs.CleanupSync.Done()
 
 	// Construct t.blockingTimer here. We do this here because we can't
 	// reconstruct t.blockingTimer during restore in Task.afterLoad(), because
