@@ -21,7 +21,7 @@
 #define FAULT_OPCODE 0x06
 
 // LINT.IfChange
-#define MAX_FPSTATE_LEN 3648
+#define MAX_FPSTATE_LEN 3584
 // Note: To be explicit, 2^12 = 4096; if ALLOCATED_SIZEOF_THREAD_CONTEXT_STRUCT
 //       is changed, make sure to change the code that relies on the bitshift.
 #define ALLOCATED_SIZEOF_THREAD_CONTEXT_STRUCT 4096

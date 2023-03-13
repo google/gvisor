@@ -19,7 +19,6 @@ package systrap
 
 import (
 	"fmt"
-	"runtime"
 	"strings"
 
 	"golang.org/x/sys/unix"
@@ -37,13 +36,13 @@ const (
 // resetSysemuRegs sets up emulation registers.
 //
 // This should be called prior to calling sysemu.
-func (t *thread) resetSysemuRegs(regs *arch.Registers) {
-	regs.Cs = t.initRegs.Cs
-	regs.Ss = t.initRegs.Ss
-	regs.Ds = t.initRegs.Ds
-	regs.Es = t.initRegs.Es
-	regs.Fs = t.initRegs.Fs
-	regs.Gs = t.initRegs.Gs
+func (s *subprocess) resetSysemuRegs(regs *arch.Registers) {
+	regs.Cs = s.sysmsgInitRegs.Cs
+	regs.Ss = s.sysmsgInitRegs.Ss
+	regs.Ds = s.sysmsgInitRegs.Ds
+	regs.Es = s.sysmsgInitRegs.Es
+	regs.Fs = s.sysmsgInitRegs.Fs
+	regs.Gs = s.sysmsgInitRegs.Gs
 }
 
 // createSyscallRegs sets up syscall registers.
@@ -211,38 +210,31 @@ func appendArchSeccompRules(rules []seccomp.RuleSet) []seccomp.RuleSet {
 	}...)
 }
 
-func restoreArchSpecificState(regs *arch.Registers, t *thread, sysThread *sysmsgThread, msg *sysmsg.Msg, _ *arch.Context64) {
-	regs.Gs_base = msg.Self
+func restoreArchSpecificState(ctx *sysmsg.ThreadContext, ac *arch.Context64) {
+}
 
-	// Switching gs_base is a rare operation, therefore checking that we need to do
-	// so is better done in the sentry, because doing so on a host that doesn't
-	// have FSGSBASE instructions enabled is quite expensive since it would require
-	// an ARCH_PRCTL syscall.
-	if regs.Gs_base != sysThread.gsBase {
-		runtime.LockOSThread()
-		defer runtime.UnlockOSThread()
-
-		t.attach()
-
-		var r arch.Registers
-		if err := t.getRegs(&r); err != nil {
-			panic(fmt.Sprintf("ptrace get regs failed: %v", err))
-		}
-		r.Gs_base = regs.Gs_base
-		if err := t.setRegs(&r); err != nil {
-			panic(fmt.Sprintf("ptrace set regs failed: %v", err))
-		}
-		if _, _, errno := unix.RawSyscall6(unix.SYS_PTRACE, unix.PTRACE_DETACH, uintptr(t.tid), 0, 0, 0, 0); errno != 0 {
-			panic(fmt.Sprintf("ptrace detach failed: %v", errno))
-		}
-		sysThread.gsBase = regs.Gs_base
+func setArchSpecificRegs(sysThread *sysmsgThread, regs *arch.Registers) {
+	if contextDecouplingExp {
+		// Set the start function and initial stack.
+		regs.PtraceRegs.Rip = uint64(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_start))
+		regs.PtraceRegs.Rsp = uint64(sysmsg.StackAddrToSyshandlerStack(sysThread.sysmsgPerThreadMemAddr()))
 	}
-}
 
-func archSpecificSysThreadInit(sysThread *sysmsgThread, regs *arch.Registers) {
+	// Set gs_base; this is the only time we set it and we don't expect it to ever
+	// change for any thread.
 	regs.Gs_base = sysThread.msg.Self
-	sysThread.gsBase = regs.Gs_base
 }
 
-func retrieveArchSpecificState(regs *arch.Registers, msg *sysmsg.Msg, _ *thread, ac *arch.Context64) {
+func retrieveArchSpecificState(ctx *sysmsg.ThreadContext, ac *arch.Context64) {
+}
+
+func archSpecificSysmsgThreadInit(sysThread *sysmsgThread) {
+	// Send a fake event to stop the BPF process so that it enters the sighandler.
+	// If there is no coupled context we don't want that to happen because the
+	// thread needs to find a context first.
+	if !contextDecouplingExp {
+		if _, _, e := unix.RawSyscall(unix.SYS_TGKILL, uintptr(sysThread.thread.tgid), uintptr(sysThread.thread.tid), uintptr(unix.SIGSEGV)); e != 0 {
+			panic(fmt.Sprintf("tkill failed: %v", e))
+		}
+	}
 }
