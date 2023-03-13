@@ -16,8 +16,6 @@ package systrap
 
 import (
 	"sync"
-
-	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/usertrap"
 )
 
 // subprocessPool exists to solve these distinct problems:
@@ -30,49 +28,29 @@ import (
 // 2) Any seccomp filters that have been installed will apply to subprocesses
 // created here. Therefore we use the intermediary (source), which is created
 // on initialization of the platform.
-//
-// 3) Contexts are used in potentially many subprocesses, and upon
-// context.Release their resources need to be cleaned up from each subprocess.
 type subprocessPool struct {
 	mu     sync.Mutex
 	source *subprocess
 	// available stores all subprocesses that are available for reuse.
 	// +checklocks:mu
 	available []*subprocess
-	// active stores all subprocesses that are currently active.
-	// +checklocks:mu
-	active subprocessList
 }
 
-func (p *subprocessPool) add(s *subprocess) {
-	p.mu.Lock()
-	p.active.PushBack(s)
-	p.mu.Unlock()
-}
-
-func (p *subprocessPool) release(s *subprocess) {
+func (p *subprocessPool) markAvailable(s *subprocess) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	s.mu.Lock()
-	defer s.mu.Unlock()
 
-	s.released = true
-	if s.numContexts.Load() == 0 {
-		p.active.Remove(s)
-		p.available = append(p.available, s)
-	}
+	p.available = append(p.available, s)
 }
 
 func (p *subprocessPool) fetchAvailable() *subprocess {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if len(p.available) > 0 {
-		sp := p.available[len(p.available)-1]
+		s := p.available[len(p.available)-1]
 		p.available = p.available[:len(p.available)-1]
-		p.active.PushBack(sp)
-		sp.usertrap = usertrap.New()
-		sp.released = false
-		return sp
+
+		return s
 	}
 	return nil
 }

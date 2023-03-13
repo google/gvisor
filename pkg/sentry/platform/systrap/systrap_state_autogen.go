@@ -9,63 +9,30 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (l *subprocessList) StateTypeName() string {
-	return "pkg/sentry/platform/systrap.subprocessList"
+func (r *subprocessRefs) StateTypeName() string {
+	return "pkg/sentry/platform/systrap.subprocessRefs"
 }
 
-func (l *subprocessList) StateFields() []string {
+func (r *subprocessRefs) StateFields() []string {
 	return []string{
-		"head",
-		"tail",
+		"refCount",
 	}
 }
 
-func (l *subprocessList) beforeSave() {}
+func (r *subprocessRefs) beforeSave() {}
 
 // +checklocksignore
-func (l *subprocessList) StateSave(stateSinkObject state.Sink) {
-	l.beforeSave()
-	stateSinkObject.Save(0, &l.head)
-	stateSinkObject.Save(1, &l.tail)
+func (r *subprocessRefs) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.refCount)
 }
-
-func (l *subprocessList) afterLoad() {}
 
 // +checklocksignore
-func (l *subprocessList) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &l.head)
-	stateSourceObject.Load(1, &l.tail)
-}
-
-func (e *subprocessEntry) StateTypeName() string {
-	return "pkg/sentry/platform/systrap.subprocessEntry"
-}
-
-func (e *subprocessEntry) StateFields() []string {
-	return []string{
-		"next",
-		"prev",
-	}
-}
-
-func (e *subprocessEntry) beforeSave() {}
-
-// +checklocksignore
-func (e *subprocessEntry) StateSave(stateSinkObject state.Sink) {
-	e.beforeSave()
-	stateSinkObject.Save(0, &e.next)
-	stateSinkObject.Save(1, &e.prev)
-}
-
-func (e *subprocessEntry) afterLoad() {}
-
-// +checklocksignore
-func (e *subprocessEntry) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &e.next)
-	stateSourceObject.Load(1, &e.prev)
+func (r *subprocessRefs) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.refCount)
+	stateSourceObject.AfterLoad(r.afterLoad)
 }
 
 func init() {
-	state.Register((*subprocessList)(nil))
-	state.Register((*subprocessEntry)(nil))
+	state.Register((*subprocessRefs)(nil))
 }

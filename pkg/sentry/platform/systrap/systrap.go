@@ -369,6 +369,8 @@ func New() (*Systrap, error) {
 			// Should never happen.
 			panic("unable to initialize systrap source: " + err.Error())
 		}
+		// The source subprocess is never released explicitly by a MM.
+		source.DecRef(nil)
 
 		globalPool.source = source
 	})
