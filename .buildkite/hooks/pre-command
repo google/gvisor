@@ -24,7 +24,7 @@ function install_pkgs() {
 }
 install_pkgs make linux-libc-dev graphviz jq curl binutils gnupg gnupg-agent \
   gcc pkg-config apt-transport-https ca-certificates \
-  software-properties-common rsync kmod systemd
+  software-properties-common rsync kmod systemd unzip
 
 # Install headers, only if available.
 if test -n "$(apt-cache search --names-only "^linux-headers-$(uname -r)$")"; then
