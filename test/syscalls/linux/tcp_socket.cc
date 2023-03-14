@@ -2259,7 +2259,10 @@ TEST_P(SimpleTcpSocketTest, OnlyAcknowledgeBacklogConnections) {
   // opportunity where the listener could process another SYN before completing
   // the delivery that would have filled the accept queue.
   //
-  // This test checks that there is no such race.
+  // This test checks that there is no such race on loopback. On other
+  // interfaces, where delivery is not synchronous, it is possible for more
+  // clients to be in the ESTABLISHED state than there are slots in the accept
+  // queue.
 
   std::array<std::optional<ScopedThread>, 100> threads;
   for (auto& thread : threads) {
