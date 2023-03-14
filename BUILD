@@ -120,7 +120,7 @@ build_test(
 # The files in this tree are symlinks to the true sources.
 go_path(
     name = "gopath",
-    mode = "link",
+    mode = "archive",
     deps = [
         # Main binaries.
         #
