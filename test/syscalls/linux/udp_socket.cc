@@ -56,7 +56,7 @@ namespace {
 size_t IcmpTimeoutMillis() {
   // Fuchsia's CI infra is susceptible to timing jumps. Set a long timeout
   // to avoid flakes.
-  return GvisorPlatform() == Platform::kFuchsia ? 10000 : 1000;
+  return GvisorPlatform() == Platform::kFuchsia ? 100000 : 1000;
 }
 
 // Fixture for tests parameterized by the address family to use (AF_INET and
