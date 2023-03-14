@@ -864,7 +864,7 @@ func (s *Stack) CreateNICWithOptions(id tcpip.NICID, ep LinkEndpoint, opts NICOp
 		}
 	}
 
-	n := newNIC(s, id, ep, opts)
+	n := newNIC(s, id, ep, opts, s.clock)
 	for proto := range s.defaultForwardingEnabled {
 		if _, err := n.setForwarding(proto, true); err != nil {
 			panic(fmt.Sprintf("newNIC(%d, ...).setForwarding(%d, true): %s", id, proto, err))

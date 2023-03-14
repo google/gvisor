@@ -362,10 +362,10 @@ type groDispatcher struct {
 	buckets [groNBuckets]groBucket
 
 	flushTimerState atomicbitops.Int32
-	flushTimer      *time.Timer
+	flushTimer      tcpip.Timer
 }
 
-func (gd *groDispatcher) init(interval time.Duration) {
+func (gd *groDispatcher) init(interval time.Duration, clock tcpip.Clock) {
 	gd.intervalNS.Store(interval.Nanoseconds())
 
 	for i := range gd.buckets {
@@ -381,7 +381,7 @@ func (gd *groDispatcher) init(interval time.Duration) {
 	// Create a timer to fire far from now and cancel it immediately.
 	//
 	// The timer will be reset when there is a need for it to fire.
-	gd.flushTimer = time.AfterFunc(time.Hour, func() {
+	gd.flushTimer = clock.AfterFunc(time.Hour, func() {
 		if !gd.flushTimerState.CompareAndSwap(flushTimerSet, flushTimerUnset) {
 			// Timer was unset or GRO is closed, do nothing further.
 			return

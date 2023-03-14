@@ -147,7 +147,7 @@ func (qDisc *delegatingQueueingDiscipline) WritePacket(pkt PacketBufferPtr) tcpi
 }
 
 // newNIC returns a new NIC using the default NDP configurations from stack.
-func newNIC(stack *Stack, id tcpip.NICID, ep LinkEndpoint, opts NICOptions) *nic {
+func newNIC(stack *Stack, id tcpip.NICID, ep LinkEndpoint, opts NICOptions, clock tcpip.Clock) *nic {
 	// TODO(b/141011931): Validate a LinkEndpoint (ep) is valid. For
 	// example, make sure that the link address it provides is a valid
 	// unicast ethernet address.
@@ -201,7 +201,7 @@ func newNIC(stack *Stack, id tcpip.NICID, ep LinkEndpoint, opts NICOptions) *nic
 		}
 	}
 
-	nic.gro.init(opts.GROTimeout)
+	nic.gro.init(opts.GROTimeout, clock)
 	nic.NetworkLinkEndpoint.Attach(nic)
 
 	return nic
