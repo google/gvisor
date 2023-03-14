@@ -114,8 +114,8 @@ TEST(FPSigTest, Fork) {
       "mov x0, %1\n"
       "mov x1, %2\n"
       "mov x2, %3\n"
-      "svc #0\n" ::"r"(__NR_tgkill),
-      "r"(parent), "r"(parent_tid), "r"(SIGUSR1));
+      "svc #0\n" ::"N"(__NR_tgkill),
+      "r"((uint64_t)parent), "r"((uint64_t)parent_tid), "N"(SIGUSR1));
 #endif
 
   uint64_t got;

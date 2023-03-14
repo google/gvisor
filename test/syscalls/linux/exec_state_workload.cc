@@ -26,9 +26,10 @@
 
 #include "absl/strings/numbers.h"
 
-#ifndef ANDROID  // Conflicts with existing operator<< on Android.
-
-// Pretty-print a sigset_t.
+// Pretty-print a sigset_t when it is a struct type.
+// This is disabled for targets such as Android x86_64, which define sigset_t as
+// an integral type, to prevent conflicts with the std library.
+template <typename = std::enable_if<std::is_class<sigset_t>::value>>
 std::ostream& operator<<(std::ostream& out, const sigset_t& s) {
   out << "{ ";
 
@@ -41,8 +42,6 @@ std::ostream& operator<<(std::ostream& out, const sigset_t& s) {
   out << "}";
   return out;
 }
-
-#endif
 
 // Verify that the signo handler is handler.
 int CheckSigHandler(uint32_t signo, uintptr_t handler) {
