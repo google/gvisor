@@ -401,6 +401,12 @@ func setupRootFS(spec *specs.Spec, conf *config.Config) error {
 		if err := unix.Mount("runsc-proc", "/proc/proc", "proc", flags|unix.MS_RDONLY, ""); err != nil {
 			util.Fatalf("error mounting proc: %v", err)
 		}
+		// self/fd is bind-mounted, so that the FD return by
+		// OpenProcSelfFD() does not allow escapes with walking ".." .
+		if err := unix.Mount("/proc/proc/self/fd", "/proc/proc/self/fd",
+			"", unix.MS_RDONLY|unix.MS_BIND|unix.MS_NOEXEC, ""); err != nil {
+			util.Fatalf("error mounting proc/self/fd: %v", err)
+		}
 		if err := copyFile("/proc/etc/localtime", "/etc/localtime"); err != nil {
 			log.Warningf("Failed to copy /etc/localtime: %v. UTC timezone will be used.", err)
 		}
