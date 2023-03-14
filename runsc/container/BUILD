@@ -83,7 +83,6 @@ go_test(
         "//pkg/sync",
         "//pkg/test/testutil",
         "//pkg/unet",
-        "//pkg/urpc",
         "//runsc/boot",
         "//runsc/cgroup",
         "//runsc/config",
