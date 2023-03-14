@@ -86,8 +86,8 @@ void sigusr1(int s, siginfo_t* siginfo, void* _uc) {
       "mov x0, %1\n"
       "mov x1, %2\n"
       "mov x2, %3\n"
-      "svc #0\n" ::"r"(__NR_tgkill),
-      "r"(pid), "r"(tid), "r"(SIGUSR2));
+      "svc #0\n" ::"N"(__NR_tgkill),
+      "r"((uint64_t)pid), "r"((uint64_t)tid), "N"(SIGUSR2));
 #endif
 
   // Record value of %xmm0 again to verify that the nested signal handler
@@ -142,8 +142,8 @@ TEST(FPSigTest, NestedSignals) {
       "mov x0, %1\n"
       "mov x1, %2\n"
       "mov x2, %3\n"
-      "svc #0\n" ::"r"(__NR_tgkill),
-      "r"(pid), "r"(tid), "r"(SIGUSR1));
+      "svc #0\n" ::"N"(__NR_tgkill),
+      "r"((uint64_t)pid), "r"((uint64_t)tid), "N"(SIGUSR1));
 #endif
 
   uint64_t got;
