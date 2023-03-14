@@ -32,7 +32,6 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/console"
@@ -58,6 +57,10 @@ type Exec struct {
 	// file descriptor referencing the master end of the console's
 	// pseudoterminal.
 	consoleSocket string
+
+	// passFDs are user-supplied FDs from the host to be exposed to the
+	// sandboxed app.
+	passFDs intFlags
 }
 
 // Name implements subcommands.Command.Name.
@@ -101,6 +104,7 @@ func (ex *Exec) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&ex.pidFile, "pid-file", "", "filename that the container pid will be written to")
 	f.StringVar(&ex.internalPidFile, "internal-pid-file", "", "filename that the container-internal pid will be written to")
 	f.StringVar(&ex.consoleSocket, "console-socket", "", "path to an AF_UNIX socket which will receive a file descriptor referencing the master end of the console's pseudoterminal")
+	f.Var(&ex.passFDs, "pass-fd", "file descriptors passed to the container. Can be supplied multiple times.")
 }
 
 // Execute implements subcommands.Command.Execute. It starts a process in an
@@ -139,6 +143,35 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		}
 		log.Infof("Using exec capabilities from container: %+v", e.Capabilities)
 	}
+
+	// Create the file descriptor map for the process in the container.
+	fdMap := map[int]*os.File{
+		0: os.Stdin,
+		1: os.Stdout,
+		2: os.Stderr,
+	}
+
+	// Add custom file descriptors to the map.
+	var files []*os.File
+	for _, fd := range ex.passFDs {
+		file := os.NewFile(uintptr(fd), "")
+		if file == nil {
+			util.Fatalf("failed to create file from file descriptor %d", fd)
+		}
+		fdMap[int(file.Fd())] = file
+	}
+
+	// Close the underlying file descriptors after we have passed them.
+	defer func() {
+		for _, file := range files {
+			fd := file.Fd()
+			if file.Close() != nil {
+				log.Debugf("Failed to close FD %d", fd)
+			}
+		}
+	}()
+
+	e.FilePayload = control.NewFDMap(fdMap)
 
 	// containerd expects an actual process to represent the container being
 	// executed. If detach was specified, starts a child in non-detach mode,
@@ -330,7 +363,11 @@ func (ex *Exec) argsFromCLI(argv []string, enableRaw bool) (*control.ExecArgs, e
 		ExtraKGIDs:       extraKGIDs,
 		Capabilities:     caps,
 		StdioIsPty:       ex.consoleSocket != "" || console.IsPty(os.Stdin.Fd()),
-		FilePayload:      urpc.FilePayload{[]*os.File{os.Stdin, os.Stdout, os.Stderr}},
+		FilePayload: control.NewFDMap(map[int]*os.File{
+			0: os.Stdin,
+			1: os.Stdout,
+			2: os.Stderr,
+		}),
 	}, nil
 }
 
@@ -379,7 +416,11 @@ func argsFromProcess(p *specs.Process, enableRaw bool) (*control.ExecArgs, error
 		ExtraKGIDs:       extraKGIDs,
 		Capabilities:     caps,
 		StdioIsPty:       p.Terminal,
-		FilePayload:      urpc.FilePayload{Files: []*os.File{os.Stdin, os.Stdout, os.Stderr}},
+		FilePayload: control.NewFDMap(map[int]*os.File{
+			0: os.Stdin,
+			1: os.Stdout,
+			2: os.Stderr,
+		}),
 	}, nil
 }
 
