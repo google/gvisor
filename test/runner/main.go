@@ -229,7 +229,6 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 		"-watchdog-action=panic",
 		"-platform", *platform,
 		"-file-access", *fileAccess,
-		"-gvisor-gro=200000ns",
 	}
 
 	if *network == "host" && !testutil.TestEnvSupportsRawSockets {
