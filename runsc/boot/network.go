@@ -121,19 +121,17 @@ type XDPLink struct {
 	LinkAddress       net.HardwareAddr
 	QDisc             config.QueueingDiscipline
 	Neighbors         []Neighbor
-	GvisorGROTimeout  time.Duration
 
 	// NumChannels controls how many underlying FDs are to be used to
 	// create this endpoint.
 	NumChannels int
 }
 
-// LoopbackLink configures a loopback link.
+// LoopbackLink configures a loopback li nk.
 type LoopbackLink struct {
-	Name             string
-	Addresses        []IPWithPrefix
-	Routes           []Route
-	GvisorGROTimeout time.Duration
+	Name      string
+	Addresses []IPWithPrefix
+	Routes    []Route
 }
 
 // CreateLinksAndRoutesArgs are arguments to CreateLinkAndRoutes.
@@ -218,10 +216,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 		linkEP := packetsocket.New(ethernet.New(loopback.New()))
 
 		log.Infof("Enabling loopback interface %q with id %d on addresses %+v", link.Name, nicID, link.Addresses)
-		opts := stack.NICOptions{
-			Name:       link.Name,
-			GROTimeout: link.GvisorGROTimeout,
-		}
+		opts := stack.NICOptions{Name: link.Name}
 		if err := n.createNICWithAddrs(nicID, linkEP, opts, link.Addresses); err != nil {
 			return err
 		}
@@ -388,9 +383,8 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 
 		log.Infof("Enabling interface %q with id %d on addresses %+v (%v) w/ %d channels", link.Name, nicID, link.Addresses, mac, link.NumChannels)
 		opts := stack.NICOptions{
-			Name:       link.Name,
-			QDisc:      qDisc,
-			GROTimeout: link.GvisorGROTimeout,
+			Name:  link.Name,
+			QDisc: qDisc,
 		}
 		if err := n.createNICWithAddrs(nicID, sniffEP, opts, link.Addresses); err != nil {
 			return err
