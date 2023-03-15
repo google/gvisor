@@ -892,6 +892,7 @@ func LinkAtHandler(c *Connection, comm Communicator, payloadLen uint32) (uint32,
 	if err != nil {
 		return 0, err
 	}
+	defer targetFD.DecRef(nil)
 	if targetFD.IsDir() {
 		// Can not create hard link to directory.
 		return 0, unix.EPERM
