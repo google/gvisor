@@ -85,9 +85,7 @@ const (
 	moptOverlayfsStaleRead     = "overlayfs_stale_read"
 
 	// Directfs options.
-	moptDirectfs       = "directfs"
-	moptHostUDSConnect = "host_uds_connect"
-	moptHostUDSBind    = "host_uds_bind"
+	moptDirectfs = "directfs"
 )
 
 // Valid values for the "cache" mount option.
@@ -287,14 +285,6 @@ type directfsOpts struct {
 	// If directfs is enabled, the gofer client does not make RPCs to the gofer
 	// process. Instead, it makes host syscalls to perform file operations.
 	enabled bool
-
-	// hostUDSBind dictates whether this mount can create host unix domain
-	// sockets.
-	hostUDSBind bool
-
-	// hostUDSConnect dictates whether this mount can connect to host unix domain
-	// sockets.
-	hostUDSConnect bool
 }
 
 // InteropMode controls the client's interaction with other remote filesystem
@@ -484,14 +474,6 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	if _, ok := mopts[moptDirectfs]; ok {
 		delete(mopts, moptDirectfs)
 		fsopts.directfs.enabled = true
-	}
-	if _, ok := mopts[moptHostUDSBind]; ok {
-		delete(mopts, moptHostUDSBind)
-		fsopts.directfs.hostUDSBind = true
-	}
-	if _, ok := mopts[moptHostUDSConnect]; ok {
-		delete(mopts, moptHostUDSConnect)
-		fsopts.directfs.hostUDSConnect = true
 	}
 	// fsopts.regularFilesUseSpecialFileFD can only be enabled by specifying
 	// "cache=none".

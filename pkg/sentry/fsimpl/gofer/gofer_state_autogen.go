@@ -323,8 +323,6 @@ func (d *directfsOpts) StateTypeName() string {
 func (d *directfsOpts) StateFields() []string {
 	return []string{
 		"enabled",
-		"hostUDSBind",
-		"hostUDSConnect",
 	}
 }
 
@@ -334,8 +332,6 @@ func (d *directfsOpts) beforeSave() {}
 func (d *directfsOpts) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
 	stateSinkObject.Save(0, &d.enabled)
-	stateSinkObject.Save(1, &d.hostUDSBind)
-	stateSinkObject.Save(2, &d.hostUDSConnect)
 }
 
 func (d *directfsOpts) afterLoad() {}
@@ -343,8 +339,6 @@ func (d *directfsOpts) afterLoad() {}
 // +checklocksignore
 func (d *directfsOpts) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.enabled)
-	stateSourceObject.Load(1, &d.hostUDSBind)
-	stateSourceObject.Load(2, &d.hostUDSConnect)
 }
 
 func (i *InteropMode) StateTypeName() string {
