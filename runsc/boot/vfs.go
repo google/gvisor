@@ -282,13 +282,6 @@ func goferMountData(fd int, fa config.FileAccessType, conf *config.Config) []str
 	}
 	if conf.DirectFS {
 		opts = append(opts, "directfs")
-		hostUDS := conf.GetHostUDS()
-		if hostUDS.AllowOpen() {
-			opts = append(opts, "host_uds_connect")
-		}
-		if hostUDS.AllowCreate() {
-			opts = append(opts, "host_uds_bind")
-		}
 	}
 	return opts
 }

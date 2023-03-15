@@ -601,15 +601,12 @@ func (l *Loader) installSeccompFilters() error {
 	if l.root.conf.DisableSeccomp {
 		filter.Report("syscall filter is DISABLED. Running in less secure mode.")
 	} else {
-		hostUDS := l.root.conf.GetHostUDS()
 		hostnet := l.root.conf.Network == config.NetworkHost
 		opts := filter.Options{
 			Platform:              l.k.Platform,
 			HostNetwork:           hostnet,
 			HostNetworkRawSockets: hostnet && l.root.conf.EnableRaw,
 			HostFilesystem:        l.root.conf.DirectFS,
-			HostSocketCreate:      l.root.conf.DirectFS && hostUDS.AllowCreate(),
-			HostSocketOpen:        l.root.conf.DirectFS && hostUDS.AllowOpen(),
 			ProfileEnable:         l.root.conf.ProfileEnable,
 			ControllerFD:          l.ctrl.srv.FD(),
 		}

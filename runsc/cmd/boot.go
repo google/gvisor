@@ -32,7 +32,6 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/ring0"
-	"gvisor.dev/gvisor/pkg/sentry/fsutil/chdir"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/cmd/util"
@@ -362,12 +361,6 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		// modes exactly as sent by the sentry, which would have already applied
 		// the application umask.
 		unix.Umask(0)
-
-		// Now that the sandbox process is running in an empty pivot_root(2)
-		// environment, we can initialize the chdir package.
-		if err := chdir.InitCWD(); err != nil {
-			util.Fatalf("Failed to initialize CWD for directfs: %v", err)
-		}
 	}
 
 	if conf.EnableCoreTags {
