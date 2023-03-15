@@ -269,9 +269,9 @@ type BoundEndpoint interface {
 type HostBoundEndpoint interface {
 	// SetBoundSocketFD will be called on supporting endpoints after
 	// binding a socket on the host filesystem. Implementations should
-	// delegate Listen and Accept calls to the BoundSocketFD. On success,
-	// the ownership of bsFD is transferred to the endpoint.
-	SetBoundSocketFD(bsFD BoundSocketFD) error
+	// delegate Listen and Accept calls to the BoundSocketFD. The ownership
+	// of bsFD is transferred to the endpoint.
+	SetBoundSocketFD(ctx context.Context, bsFD BoundSocketFD) error
 
 	// ResetBoundSocketFD cleans up the BoundSocketFD set by the last successful
 	// SetBoundSocketFD call.
