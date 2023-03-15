@@ -282,6 +282,12 @@ type Config struct {
 	// exists, but is mostly idle. Not supported in rootless mode.
 	DirectFS bool `flag:"directfs"`
 
+	// EnableCuda enables CUDA support in the sandbox. It creates a custom file
+	// system that provides a single read-only file, libcuda.so, which used by
+	// applications to access the host's CUDA libraries via the /dev/cuda
+	// device enabled by this flag.
+	EnableCuda bool `flag:"enable-cuda"`
+
 	// TestOnlyAllowRunAsCurrentUserWithoutChroot should only be used in
 	// tests. It allows runsc to start the sandbox process as the current
 	// user, and without chrooting the sandbox process. This can be

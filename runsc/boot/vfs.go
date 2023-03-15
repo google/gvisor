@@ -30,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/devices/cudadev"
 	"gvisor.dev/gvisor/pkg/sentry/devices/memdev"
 	"gvisor.dev/gvisor/pkg/sentry/devices/ttydev"
 	"gvisor.dev/gvisor/pkg/sentry/devices/tundev"
@@ -79,7 +80,7 @@ func selfOverlayFilestoreName(sandboxID string) string {
 // tmpfs has some extra supported options that we must pass through.
 var tmpfsAllowedData = []string{"mode", "size", "uid", "gid"}
 
-func registerFilesystems(k *kernel.Kernel) error {
+func registerFilesystems(k *kernel.Kernel, conf *config.Config) error {
 	ctx := k.SupervisorContext()
 	creds := auth.NewRootCredentials(k.RootUserNamespace())
 	vfsObj := k.VFS()
@@ -144,6 +145,12 @@ func registerFilesystems(k *kernel.Kernel) error {
 		return fmt.Errorf("registering fusedev: %w", err)
 	}
 
+	if conf.EnableCuda {
+		if err := cudadev.Register(vfsObj); err != nil {
+			return fmt.Errorf("registering cudadev: %v", err)
+		}
+	}
+
 	a, err := devtmpfs.NewAccessor(ctx, vfsObj, creds, devtmpfs.Name)
 	if err != nil {
 		return fmt.Errorf("creating devtmpfs accessor: %w", err)
@@ -167,6 +174,12 @@ func registerFilesystems(k *kernel.Kernel) error {
 
 	if err := fuse.CreateDevtmpfsFile(ctx, a); err != nil {
 		return fmt.Errorf("creating fusedev devtmpfs files: %w", err)
+	}
+
+	if conf.EnableCuda {
+		if err := cudadev.CreateDevtmpfsFiles(ctx, a); err != nil {
+			return fmt.Errorf("creating cudadev devtmpfs files: %v", err)
+		}
 	}
 
 	return nil

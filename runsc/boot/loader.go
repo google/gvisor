@@ -414,7 +414,7 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("initializing kernel: %w", err)
 	}
 
-	if err := registerFilesystems(k); err != nil {
+	if err := registerFilesystems(k, args.Conf); err != nil {
 		return nil, fmt.Errorf("registering filesystems: %w", err)
 	}
 
