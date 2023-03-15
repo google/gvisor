@@ -274,6 +274,11 @@ func NsecToStatxTimestamp(nsec int64) (ts StatxTimestamp) {
 	}
 }
 
+// ToTime returns the Go time.Time representation.
+func (sxts StatxTimestamp) ToTime() time.Time {
+	return time.Unix(sxts.Sec, int64(sxts.Nsec))
+}
+
 // Utime represents struct utimbuf used by utimes(2).
 //
 // +marshal
