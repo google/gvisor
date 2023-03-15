@@ -53,6 +53,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/atomicbitops",
+        "//pkg/cleanup",
         "//pkg/coretag",
         "//pkg/coverage",
         "//pkg/cpuid",
