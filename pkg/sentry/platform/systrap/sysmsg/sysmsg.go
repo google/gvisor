@@ -112,6 +112,16 @@ const (
 	// that there is a postponed interrupt from the syshandler.
 	// The sentry should never see this event.
 	ThreadStateInterrupt
+	// ThreadStateContextRestore means that the thread is in the process of doing
+	// a context restore.
+	ThreadStateContextRestore
+	// ThreadStateAsleep means that this thread fell asleep because there was not
+	// enough contexts to process in the context queue.
+	ThreadStateAsleep
+	// ThreadStateInitializing is only set once at sysmsg thread creation time. It
+	// is used to tell the signal handler that the thread does not yet have a
+	// context.
+	ThreadStateInitializing
 )
 
 // Msg contains the current state of the sysmsg thread.
@@ -162,9 +172,6 @@ type Msg struct {
 	// fpState is an offset relative to the sighandler stack to the fpState, stored
 	// by the sighandler.
 	fpState uint64
-	// TLS is a pointer to a thread local storage.
-	// It is is only populated on ARM64.
-	TLS uint64
 	// The fast path is the mode when a thread is polling msg->state to
 	// wait for a required state instead of calling FUTEX_WAIT.
 	//
@@ -227,7 +234,7 @@ const (
 const (
 	// MaxFPStateLen is the largest possible FPState that we will save.
 	// Note: This value was chosen to be able to fit ThreadContext into one page.
-	MaxFPStateLen uint32 = 3648
+	MaxFPStateLen uint32 = 3584
 
 	// AllocatedSizeofThreadContextStruct defines how much memory to allocate for
 	// one instance of ThreadContext.
@@ -265,6 +272,21 @@ type ThreadContext struct {
 	// ThreadID is the ID of the sysmsg thread that's currently working on the
 	// context.
 	ThreadID uint32
+	// LastThreadID is the ID of the previous sysmsg thread that ran the context
+	// (not the one currently working on it). This field is used by sysmsg threads
+	// to detect whether fpstate may have changed since the last time they ran a
+	// context.
+	LastThreadID uint32
+	// SentryFastPath is used to indicate to the stub thread that the sentry
+	// goroutine used for this thread context is busy-polling for a response
+	// instead of using FUTEX_WAIT.
+	SentryFastPath uint32
+	// Acked is used by sysmsg threads to signal to the sentry that this context
+	// has been picked up from the context queue and is actively being worked on.
+	Acked uint32
+	// TLS is a pointer to a thread local storage.
+	// It is is only populated on ARM64.
+	TLS uint64
 	// Debug is a variable to use to get visibility into the stub from the sentry.
 	Debug uint64
 }
@@ -277,6 +299,7 @@ func (m *Msg) Init(threadID uint32) {
 	m.Line = -1
 	m.stubFastPath = 0
 	m.sentryFastPath = 1
+	m.ThreadID = threadID
 }
 
 // Init initializes the ThreadContext instance.
@@ -301,13 +324,33 @@ func (m *Msg) DisableStubFastPath() {
 
 // EnableSentryFastPath enables the polling mode for the Sentry. It has to be
 // called before switching controls to the stub process.
+// This function is used if contextDecouplingExp=false because the fastpath
+// is negotiated in Sysmsg.
 func (m *Msg) EnableSentryFastPath() {
 	m.sentryFastPath = 1
 }
 
 // DisableSentryFastPath disables the polling mode for the Sentry.
+// This function is used if contextDecouplingExp=false because the fastpath
+// is negotiated in Sysmsg.
 func (m *Msg) DisableSentryFastPath() {
 	atomic.StoreUint32(&m.sentryFastPath, 0)
+}
+
+// EnableSentryFastPath indicates that the polling mode is enabled for the
+// Sentry. It has to be called before putting the context into the context queue.
+// This function is used if contextDecouplingExp=true because the fastpath
+// is negotiated in ThreadContext
+func (c *ThreadContext) EnableSentryFastPath() {
+	c.SentryFastPath = 1
+}
+
+// DisableSentryFastPath indicates that the polling mode for the sentry is
+// disabled for the Sentry.
+// This function is used if contextDecouplingExp=true because the fastpath
+// is negotiated in ThreadContext.
+func (c *ThreadContext) DisableSentryFastPath() {
+	atomic.StoreUint32(&c.SentryFastPath, 0)
 }
 
 // FPUStateOffset returns the offset of a saved FPU state to the msg.

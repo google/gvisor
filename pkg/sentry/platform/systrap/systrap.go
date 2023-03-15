@@ -80,6 +80,9 @@ var (
 	stubSysmsgStack uintptr
 	stubSysmsgStart uintptr
 	stubSysmsgEnd   uintptr
+	// Memory region to store the contextQueue.
+	stubContextQueueRegion    uintptr
+	stubContextQueueRegionLen uintptr
 	// Memory region to store instances of sysmsg.ThreadContext.
 	stubContextRegion    uintptr
 	stubContextRegionLen uintptr
@@ -131,7 +134,7 @@ type context struct {
 	lastFaultIP hostarch.Addr
 
 	// sysmsgThread is a sysmsg thread descriptor which is used to execute
-	// application code.
+	// application code. (Note: Unused if contextDecouplingExp=true).
 	sysmsgThread *sysmsgThread
 
 	// fpLen is the size of the floating point context.
@@ -281,10 +284,10 @@ func (c *context) Interrupt() {
 // NotifyInterrupt implements interrupt.Receiver.NotifyInterrupt.
 //
 // Another reasonable existing object to implement NotifyInterrupt would be
-// sysmsg.ThreadContext, because it already has the correct tid written into it
-// to know which thread to send the signal to. However we cannot do that because
-// it is in shared memory, which means that one subprocess can overwrite it to
-// have the sentry send an interrupt to a completely different subprocess.
+// sysmsg.ThreadContext, because we can write the correct host TID into it
+// to know which thread to send the signal to. However, because it is in shared
+// memory, one subprocess can overwrite it to have the sentry send an interrupt
+// to a completely different subprocess.
 // For this reason we use systrap.context and check that the target thread
 // is actually valid within the subprocess.
 func (c *context) NotifyInterrupt() {
