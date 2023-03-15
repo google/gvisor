@@ -22,8 +22,12 @@
 package systrap
 
 import (
+	"fmt"
 	"unsafe"
 
+	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/sentry/memmap"
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/sysmsg"
 )
 
@@ -44,4 +48,23 @@ func afterForkInChild()
 func (s *subprocess) getThreadContextFromID(cid uint64) *sysmsg.ThreadContext {
 	tcSlot := s.threadContextRegion + uintptr(cid)*sysmsg.AllocatedSizeofThreadContextStruct
 	return (*sysmsg.ThreadContext)(unsafe.Pointer(tcSlot))
+}
+
+func mmapContextQueueForSentry(memoryFile *pgalloc.MemoryFile, opts pgalloc.AllocOpts) (memmap.FileRange, *contextQueue) {
+	fr, err := memoryFile.Allocate(uint64(stubContextQueueRegionLen), opts)
+	if err != nil {
+		panic(fmt.Sprintf("failed to allocate a new subprocess context memory region"))
+	}
+	addr, _, errno := unix.RawSyscall6(
+		unix.SYS_MMAP,
+		0,
+		uintptr(fr.Length()),
+		unix.PROT_WRITE|unix.PROT_READ,
+		unix.MAP_SHARED|unix.MAP_FILE,
+		uintptr(memoryFile.FD()), uintptr(fr.Start))
+	if errno != 0 {
+		panic(fmt.Sprintf("mmap failed for subprocess context memory region: %v", errno))
+	}
+
+	return fr, (*contextQueue)(unsafe.Pointer(addr))
 }

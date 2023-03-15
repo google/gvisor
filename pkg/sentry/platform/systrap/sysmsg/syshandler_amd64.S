@@ -196,6 +196,9 @@ __export_syshandler:
 
   callq __syshandler
 
+.globl asm_restore_state;
+.type asm_restore_state, @function;
+asm_restore_state:
   // thread_context may have changed, therefore we reload it into %rcx anew.
   load_thread_context_addr
   restore_fpstate
