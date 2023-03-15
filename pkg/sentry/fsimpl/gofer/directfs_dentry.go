@@ -476,8 +476,7 @@ func (d *directfsDentry) bindAt(ctx context.Context, name string, creds *auth.Cr
 	}
 	bsFD := &boundSocketFD{sockFD}
 	hbep := opts.Endpoint.(transport.HostBoundEndpoint)
-	if err := hbep.SetBoundSocketFD(bsFD); err != nil {
-		bsFD.Close(ctx)
+	if err := hbep.SetBoundSocketFD(ctx, bsFD); err != nil {
 		return nil, err
 	}
 
