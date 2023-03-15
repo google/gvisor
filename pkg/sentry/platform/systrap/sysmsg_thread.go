@@ -47,10 +47,6 @@ type sysmsgThread struct {
 	// context is the last context that ran on this thread.
 	context *context
 
-	// gsBase contains previous values of gs_base register to follow
-	// changes, because it's not restored by the kernel from a signal frame.
-	gsBase uint64
-
 	// stackRange is a sysmsg stack in the memory file.
 	stackRange memmap.FileRange
 
