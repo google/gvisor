@@ -1753,12 +1753,6 @@ func (fs *filesystem) MountOptions() string {
 	}
 	if fs.opts.directfs.enabled {
 		optsKV = append(optsKV, mopt{moptDirectfs, nil})
-		if fs.opts.directfs.hostUDSBind {
-			optsKV = append(optsKV, mopt{moptHostUDSBind, nil})
-		}
-		if fs.opts.directfs.hostUDSConnect {
-			optsKV = append(optsKV, mopt{moptHostUDSConnect, nil})
-		}
 	}
 
 	opts := make([]string, 0, len(optsKV))
