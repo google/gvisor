@@ -595,10 +595,11 @@ func (e *connectionedEndpoint) OnSetSendBufferSize(v int64) (newSz int64) {
 func (e *connectionedEndpoint) WakeupWriters() {}
 
 // SetBoundSocketFD implement HostBountEndpoint.SetBoundSocketFD.
-func (e *connectionedEndpoint) SetBoundSocketFD(bsFD BoundSocketFD) error {
+func (e *connectionedEndpoint) SetBoundSocketFD(ctx context.Context, bsFD BoundSocketFD) error {
 	e.Lock()
 	defer e.Unlock()
 	if e.path != "" || e.boundSocketFD != nil {
+		bsFD.Close(ctx)
 		return syserr.ErrAlreadyBound.ToError()
 	}
 	e.boundSocketFD = bsFD
