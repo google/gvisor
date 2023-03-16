@@ -43,6 +43,11 @@ func (s *ArchState) Init() {
 	s.fpLen = uint32(fpLenUint)
 }
 
+// FpLen returns the FP state length for ARM.
+func (s *ArchState) FpLen() int {
+	return int(s.fpLen)
+}
+
 func (s *ArchState) String() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "sysmsg.ArchState{")
