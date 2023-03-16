@@ -385,7 +385,8 @@ void __syshandler() {
 void asm_restore_state();
 
 // On x86 restore_state jumps straight to user code and does not return.
-void restore_state(struct sysmsg *sysmsg, struct thread_context *ctx, void *) {
+void restore_state(struct sysmsg *sysmsg, struct thread_context *ctx,
+                   void *unused) {
   set_fsbase(&ctx->ptregs);
   asm_restore_state();
 }
