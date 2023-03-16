@@ -337,22 +337,6 @@ func (m *Msg) DisableSentryFastPath() {
 	atomic.StoreUint32(&m.sentryFastPath, 0)
 }
 
-// EnableSentryFastPath indicates that the polling mode is enabled for the
-// Sentry. It has to be called before putting the context into the context queue.
-// This function is used if contextDecouplingExp=true because the fastpath
-// is negotiated in ThreadContext
-func (c *ThreadContext) EnableSentryFastPath() {
-	c.SentryFastPath = 1
-}
-
-// DisableSentryFastPath indicates that the polling mode for the sentry is
-// disabled for the Sentry.
-// This function is used if contextDecouplingExp=true because the fastpath
-// is negotiated in ThreadContext.
-func (c *ThreadContext) DisableSentryFastPath() {
-	atomic.StoreUint32(&c.SentryFastPath, 0)
-}
-
 // FPUStateOffset returns the offset of a saved FPU state to the msg.
 func (m *Msg) FPUStateOffset() (uint64, error) {
 	offset := m.fpState

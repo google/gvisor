@@ -680,9 +680,9 @@ func (s *subprocess) switchToApp(c *context, ac *arch.Context64) (isSyscall bool
 	// Reset necessary registers.
 	regs := &ac.StateData().Regs
 	s.resetSysemuRegs(regs)
-	ctx := s.getThreadContextFromID(c.cid)
-	ctx.Regs = regs.PtraceRegs
-	restoreArchSpecificState(ctx, ac)
+	ctx := c.sharedContext
+	ctx.shared.Regs = regs.PtraceRegs
+	restoreArchSpecificState(ctx.shared, ac)
 
 	// Get sysmsg thread bound to the context; no-op if contextDecoupling is on.
 	sysThread, err := s.getSysmsgThread(regs, c, ac)
@@ -691,36 +691,36 @@ func (s *subprocess) switchToApp(c *context, ac *arch.Context64) (isSyscall bool
 	}
 
 	// Check for interrupts, and ensure that future interrupts signal the context.
-	if !c.interrupt.Enable(c) {
+	if !c.interrupt.Enable(c.sharedContext) {
 		// Pending interrupt; simulate.
-		ctx.Interrupt = 0
+		ctx.clearInterrupt()
 		c.signalInfo = linux.SignalInfo{Signo: int32(platform.SignalInterrupt)}
 		return false, false, nil
 	}
 	defer c.interrupt.Disable()
 
 	if contextDecouplingExp {
-		s.restoreFPState(nil, ctx, 0, c, ac)
+		restoreFPState(nil, ctx, 0, c, ac)
 
 		// Place the context onto the context queue.
-		ctx.State.Set(sysmsg.ContextStateNone)
-		s.contextQueue.add(uint32(c.cid))
+		ctx.setState(sysmsg.ContextStateNone)
+		s.contextQueue.add(uint32(ctx.contextID))
 		s.waitOnState(ctx)
 
 		// Check if there's been an error.
-		tid := atomic.LoadUint32(&ctx.ThreadID)
-		if tid != invalidThreadID {
-			if sysThread, ok := s.sysmsgThreads[tid]; ok && sysThread.msg.Err != 0 {
+		threadID := ctx.threadID()
+		if threadID != invalidThreadID {
+			if sysThread, ok := s.sysmsgThreads[threadID]; ok && sysThread.msg.Err != 0 {
 				msg := sysThread.msg
 				panic(fmt.Sprintf("stub thread %d failed: err 0x%x line %d: %s", sysThread.thread.tid, msg.Err, msg.Line, msg))
 			}
-			log.Warningf("systrap: found unexpected ThreadContext.ThreadID field, expected %d found %d", invalidThreadID, tid)
+			log.Warningf("systrap: found unexpected ThreadContext.ThreadID field, expected %d found %d", invalidThreadID, threadID)
 		}
 	} else {
 		msg := sysThread.msg
 		t := sysThread.thread
 
-		s.restoreFPState(msg, ctx, sysThread.fpuStateToMsgOffset, c, ac)
+		restoreFPState(msg, ctx, sysThread.fpuStateToMsgOffset, c, ac)
 
 		msg.EnableSentryFastPath()
 		sysThread.waitEvent(sysmsg.ThreadStateDone)
@@ -730,7 +730,7 @@ func (s *subprocess) switchToApp(c *context, ac *arch.Context64) (isSyscall bool
 			panic(fmt.Sprintf("stub thread %d failed: err %d line %d: %s", t.tid, msg.Err, msg.Line, msg))
 		}
 
-		if ctx.State != sysmsg.ContextStateSyscallTrap {
+		if ctx.state() != sysmsg.ContextStateSyscallTrap {
 			var err error
 			sysThread.fpuStateToMsgOffset, err = msg.FPUStateOffset()
 			if err != nil {
@@ -738,27 +738,28 @@ func (s *subprocess) switchToApp(c *context, ac *arch.Context64) (isSyscall bool
 			}
 		}
 
-		retrieveArchSpecificState(ctx, ac)
+		retrieveArchSpecificState(ctx.shared, ac)
 	}
 
-	regs.PtraceRegs = ctx.Regs
+	regs.PtraceRegs = ctx.shared.Regs
 	// We have a signal. We verify however, that the signal was
 	// either delivered from the kernel or from this process. We
 	// don't respect other signals.
-	c.signalInfo = ctx.SignalInfo
-	if ctx.State == sysmsg.ContextStateSyscallCanBePatched {
-		ctx.State = sysmsg.ContextStateSyscall
+	c.signalInfo = ctx.shared.SignalInfo
+	ctxState := ctx.state()
+	if ctxState == sysmsg.ContextStateSyscallCanBePatched {
+		ctxState = sysmsg.ContextStateSyscall
 		shouldPatchSyscall = true
 	}
 
-	if ctx.State == sysmsg.ContextStateSyscall || ctx.State == sysmsg.ContextStateSyscallTrap {
+	if ctxState == sysmsg.ContextStateSyscall || ctxState == sysmsg.ContextStateSyscallTrap {
 		if maybePatchSignalInfo(regs, &c.signalInfo) {
 			return false, false, nil
 		}
 		updateSyscallRegs(regs)
 		return true, shouldPatchSyscall, nil
-	} else if ctx.State != sysmsg.ContextStateFault {
-		panic(fmt.Sprintf("unknown context state: %v", ctx.State))
+	} else if ctxState != sysmsg.ContextStateFault {
+		panic(fmt.Sprintf("unknown context state: %v", ctxState))
 	}
 
 	return false, false, nil
@@ -773,23 +774,21 @@ const (
 	threadKickTimeout = uint64(20000)
 )
 
-func (s *subprocess) waitOnState(ctx *sysmsg.ThreadContext) {
-	// ackedEvents is always reset to 0 at the end of this function.
-	ackedEvents := uint32(0)
+func (s *subprocess) waitOnState(ctx *sharedContext) {
 	kicked := false
 	slowPath := false
 	start := cputicks()
 	handshake := false
-	for curState := ctx.State.Get(); curState == sysmsg.ContextStateNone; curState = ctx.State.Get() {
+	for curState := ctx.state(); curState == sysmsg.ContextStateNone; curState = ctx.state() {
 		if !slowPath {
 			delta := uint64(cputicks() - start)
 			if delta > decoupledDeepSleepTimeout {
-				ctx.DisableSentryFastPath()
+				ctx.disableSentryFastPath()
 				slowPath = true
 				continue
 			}
 
-			if !handshake && ackedEvents != atomic.LoadUint32(&ctx.Acked) {
+			if !handshake && ctx.isAcked() {
 				handshake = true
 				continue
 			}
@@ -802,12 +801,12 @@ func (s *subprocess) waitOnState(ctx *sysmsg.ThreadContext) {
 				s.kickSysmsgThread()
 			}
 
-			ctx.SleepOnState(curState)
+			ctx.sleepOnState(curState)
 		}
 	}
 
-	atomic.StoreUint32(&ctx.Acked, 0)
-	ctx.EnableSentryFastPath()
+	ctx.resetAcked()
+	ctx.enableSentryFastPath()
 }
 
 func (s *subprocess) kickSysmsgThread() {
@@ -894,18 +893,17 @@ func (s *subprocess) Unmap(addr hostarch.Addr, length uint64) {
 }
 
 func (s *subprocess) PullFullState(c *context, ac *arch.Context64) error {
-	if s != c.subprocess {
+	if !c.sharedContext.isActiveInSubprocess(s) {
 		panic("Attempted to PullFullState for context that is not used in subprocess")
 	}
-	ctx := s.getThreadContextFromID(c.cid)
 	if contextDecouplingExp {
-		s.saveFPState(nil, ctx, 0, c, ac)
+		saveFPState(nil, c.sharedContext, 0, c, ac)
 	} else {
 		sysThread, err := s.getSysmsgThread(&ac.StateData().Regs, c, ac)
 		if err != nil {
 			return err
 		}
-		s.saveFPState(sysThread.msg, ctx, sysThread.fpuStateToMsgOffset, c, ac)
+		saveFPState(sysThread.msg, c.sharedContext, sysThread.fpuStateToMsgOffset, c, ac)
 	}
 	return nil
 }
@@ -1023,8 +1021,8 @@ func (s *subprocess) createSysmsgThread(tregs *arch.Registers, c *context, ac *a
 	if contextDecouplingExp {
 		sysThread.msg.ContextID = uint64(invalidContextID)
 	} else {
-		s.getThreadContextFromID(c.cid).ThreadID = threadID
-		sysThread.msg.ContextID = c.cid
+		c.sharedContext.setThreadID(threadID)
+		sysThread.msg.ContextID = c.sharedContext.contextID
 	}
 	sysThread.msg.Self = uint64(sysmsgStackAddr + sysmsg.MsgOffsetFromSharedStack)
 	sysThread.msg.SyshandlerStack = uint64(sysmsg.StackAddrToSyshandlerStack(sysThread.sysmsgPerThreadMemAddr()))
@@ -1100,60 +1098,19 @@ func (s *subprocess) PostFork() {
 	s.usertrap.PostFork() // +checklocksforce: PreFork acquires, above.
 }
 
-// registerContext registers the context to an ID specific to this subprocess.
-// It will return an error if too many contexts are already active in this
-// subprocess.
-func (s *subprocess) registerContext(c *context) error {
-	s.mu.Lock()
-	c.mu.Lock()
-	// Unlock manually for the sake of not holding the lock while initializing
-	// context memory.
-	locked := true
-	unlock := func() {
-		if locked {
-			c.mu.Unlock()
-			s.mu.Unlock()
-			locked = false
+// activateContext activates the context in this subprocess.
+// No-op if the context is already active within the subprocess; if not,
+// deactivates it from its last subprocess.
+func (s *subprocess) activateContext(c *context) error {
+	if !c.sharedContext.isActiveInSubprocess(s) {
+		c.sharedContext.release()
+		c.sharedContext = nil
+
+		shared, err := s.getSharedContext()
+		if err != nil {
+			return err
 		}
+		c.sharedContext = shared
 	}
-	defer unlock()
-
-	if s == c.subprocess && c.cid != invalidContextID {
-		return nil
-	}
-
-	id, ok := s.threadContextPool.Get()
-	if !ok {
-		return fmt.Errorf("subprocess has too many active threads (%d); failed to create a new one", maxGuestContexts)
-	}
-	s.IncRef()
-	c.cid = id
-	c.subprocess = s
-	c.FullStateChanged()
-	unlock()
-
-	threadContext := s.getThreadContextFromID(id)
-	threadContext.Init(invalidThreadID)
 	return nil
-}
-
-// unregisterContext releases all references held for this context.
-//
-// Precondition: context c must have been active within subprocess s.
-func (s *subprocess) unregisterContext(c *context) {
-	if s == nil {
-		return
-	}
-	c.mu.Lock()
-	cid := c.cid
-	c.cid = invalidContextID
-	c.subprocess = nil
-	c.mu.Unlock()
-
-	s.mu.Lock()
-	delete(s.faultedContexts, c)
-	s.threadContextPool.Put(cid)
-	s.mu.Unlock()
-
-	s.DecRef(s.release)
 }
