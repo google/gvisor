@@ -66,6 +66,7 @@ package kernel
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
@@ -92,13 +93,16 @@ func (*execStop) Killable() bool { return true }
 // Preconditions: The caller must be running Task.doSyscallInvoke on the task
 // goroutine.
 func (t *Task) Execve(newImage *TaskImage, argv, env []string, executable *vfs.FileDescription, pathname string) (*SyscallControl, error) {
+	cu := cleanup.Make(func() {
+		newImage.release()
+	})
+	defer cu.Clean()
 	// We can't clearly hold kernel package locks while stat'ing executable.
 	if seccheck.Global.Enabled(seccheck.PointExecve) {
 		mask, info := getExecveSeccheckInfo(t, argv, env, executable, pathname)
 		if err := seccheck.Global.SentToSinks(func(c seccheck.Sink) error {
 			return c.Execve(t, mask, info)
 		}); err != nil {
-			newImage.release()
 			return nil, err
 		}
 	}
@@ -111,7 +115,6 @@ func (t *Task) Execve(newImage *TaskImage, argv, env []string, executable *vfs.F
 	if t.tg.exiting || t.tg.execing != nil {
 		// We lost to a racing group-exit, kill, or exec from another thread
 		// and should just exit.
-		newImage.release()
 		return nil, linuxerr.EINTR
 	}
 
@@ -133,6 +136,7 @@ func (t *Task) Execve(newImage *TaskImage, argv, env []string, executable *vfs.F
 		t.beginInternalStopLocked((*execStop)(nil))
 	}
 
+	cu.Release()
 	return &SyscallControl{next: &runSyscallAfterExecStop{newImage}, ignoreReturn: true}, nil
 }
 
