@@ -145,7 +145,7 @@ func registerFilesystems(k *kernel.Kernel, conf *config.Config) error {
 		return fmt.Errorf("registering fusedev: %w", err)
 	}
 
-	if conf.EnableCuda {
+	if conf.Cuda {
 		if err := cudadev.Register(vfsObj); err != nil {
 			return fmt.Errorf("registering cudadev: %v", err)
 		}
@@ -176,7 +176,7 @@ func registerFilesystems(k *kernel.Kernel, conf *config.Config) error {
 		return fmt.Errorf("creating fusedev devtmpfs files: %w", err)
 	}
 
-	if conf.EnableCuda {
+	if conf.Cuda {
 		if err := cudadev.CreateDevtmpfsFiles(ctx, a); err != nil {
 			return fmt.Errorf("creating cudadev devtmpfs files: %v", err)
 		}

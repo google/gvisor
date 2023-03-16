@@ -101,7 +101,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Int("dcache", -1, "Set the global dentry cache size. This acts as a coarse-grained control on the number of host FDs simultaneously open by the sentry. If negative, per-mount caches are used.")
 	flagSet.Bool("iouring", false, "TEST ONLY; Enables io_uring syscalls in the sentry. Support is experimental and very limited.")
 	flagSet.Bool("directfs", false, "directly access the container filesystems from the sentry. Sentry runs with higher privileges.")
-	flagSet.Bool("enable-cuda", false, "TEST ONLY; Enables CUDA support. Not yet implemented.")
+	flagSet.Bool("cuda", false, "TEST ONLY; Enables CUDA support. Not yet implemented.")
 
 	// Flags that control sandbox runtime behavior: network related.
 	flagSet.Var(networkTypePtr(NetworkSandbox), "network", "specifies which network to use: sandbox (default), host, none. Using network inside the sandbox is more secure because it's isolated from the host network.")
