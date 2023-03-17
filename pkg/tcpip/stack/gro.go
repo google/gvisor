@@ -226,6 +226,8 @@ func (gb *groBucket) found(gd *groDispatcher, groPkt *groPacket, flushGROPkt boo
 	// Flush groPkt or merge the packets.
 	pktSize := pkt.Data().Size()
 	flags := tcpHdr.Flags()
+	dataOff := tcpHdr.DataOffset()
+	tcpPayloadSize := pkt.Data().Size() - len(ipHdr) - int(dataOff)
 	if flushGROPkt {
 		// Flush the existing GRO packet. Don't hold bucket.mu while
 		// processing the packet.
@@ -239,12 +241,10 @@ func (gb *groBucket) found(gd *groDispatcher, groPkt *groPacket, flushGROPkt boo
 	} else if groPkt != nil {
 		// Merge pkt in to GRO packet.
 		buf := pkt.Data().ToBuffer()
-		dataOff := tcpHdr.DataOffset()
 		buf.TrimFront(int64(len(ipHdr)) + int64(dataOff))
 		groPkt.pkt.Data().MergeBuffer(&buf)
 		buf.Release()
 		// Update the IP total length.
-		tcpPayloadSize := pkt.Data().Size() - len(ipHdr) - int(dataOff)
 		updateIPHdr(groPkt.ipHdr, tcpPayloadSize)
 		// Add flags from the packet to the GRO packet.
 		groPkt.tcpHdr.SetFlags(uint8(groPkt.tcpHdr.Flags() | (flags & (header.TCPFlagFin | header.TCPFlagPsh))))
@@ -261,6 +261,7 @@ func (gb *groBucket) found(gd *groDispatcher, groPkt *groPacket, flushGROPkt boo
 	//   malformed, a local GSO packet, or has already been handled by host
 	//   GRO.
 	flush := header.TCPFlags(flags)&(header.TCPFlagUrg|header.TCPFlagPsh|header.TCPFlagRst|header.TCPFlagSyn|header.TCPFlagFin) != 0
+	flush = flush || tcpPayloadSize == 0
 	if groPkt != nil {
 		flush = flush || pktSize != groPkt.initialLength
 	}
