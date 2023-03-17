@@ -426,7 +426,7 @@ func hostFilesystemFilters() seccomp.SyscallRules {
 				seccomp.MatchAny{},
 				validFDCheck,
 				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.AT_EMPTY_PATH),
+				seccomp.EqualTo(0),
 			},
 		},
 		unix.SYS_MKDIRAT: []seccomp.Rule{
