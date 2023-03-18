@@ -512,8 +512,16 @@ func (d *directfsDentry) bindAt(ctx context.Context, name string, creds *auth.Cr
 	return child, nil
 }
 
+// Precondition: d.fs.renameMu must be locked.
 func (d *directfsDentry) link(target *directfsDentry, name string) (*dentry, error) {
-	if err := unix.Linkat(target.controlFD, "", d.controlFD, name, unix.AT_EMPTY_PATH); err != nil {
+	// Using linkat(targetFD, "", newdirfd, name, AT_EMPTY_PATH) requires
+	// CAP_DAC_READ_SEARCH in the *root* userns. With directfs, the sandbox
+	// process has CAP_DAC_READ_SEARCH in its own userns. But the sandbox is
+	// running in a different userns. So we can't use AT_EMPTY_PATH. Fallback to
+	// using olddirfd to call linkat(2).
+	// Also note that d and target are from the same mount. Given target is a
+	// non-directory and d is a directory, target.parent must exist.
+	if err := unix.Linkat(target.parent.impl.(*directfsDentry).controlFD, target.name, d.controlFD, name, 0); err != nil {
 		return nil, err
 	}
 	// Note that we don't need to set uid/gid for the new child. This is a hard
