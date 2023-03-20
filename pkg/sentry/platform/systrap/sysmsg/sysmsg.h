@@ -57,12 +57,11 @@ struct sysmsg {
   uint64_t app_stack;
   uint32_t interrupt;
   uint32_t state;
-  uint64_t context_id;
   uint64_t context_region;
+  uint32_t context_id;
 
   // The fields above have offsets defined in sysmsg_offsets*.h
 
-  uint64_t interrupted_context_id;
   int32_t fault_jump;
   int32_t err;
   int32_t err_line;
