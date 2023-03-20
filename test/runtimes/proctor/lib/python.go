@@ -120,6 +120,9 @@ var exclude = map[string][]string{
 		"UDPLITETimeoutTest.testTimeoutZero",
 		"UDPLITETimeoutTest.testUDPLITETimeout",
 	},
+	// TODO(b/274167897): Un-exclude test cases once this is patched upstream.
+	// The test is broken: https://github.com/python/cpython/issues/102795
+	"test_epoll": []string{"TestEPoll.test_control_and_wait"},
 }
 
 // Some python test libraries contain other test libraries that have test cases
