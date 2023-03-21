@@ -758,8 +758,8 @@ func (t *Task) NewFDs(fd int32, files []*vfs.FileDescription, flags FDFlags) ([]
 // This automatically passes the task as the context.
 //
 // Precondition: same as FDTable.Get.
-func (t *Task) NewFDFrom(fd int32, file *vfs.FileDescription, flags FDFlags) (int32, error) {
-	return t.fdTable.NewFD(t, fd, file, flags)
+func (t *Task) NewFDFrom(minFD int32, file *vfs.FileDescription, flags FDFlags) (int32, error) {
+	return t.fdTable.NewFD(t, minFD, file, flags)
 }
 
 // NewFDAt is a convenience wrapper for t.FDTable().NewFDAt.

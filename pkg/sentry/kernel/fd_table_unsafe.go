@@ -20,7 +20,6 @@ import (
 	"unsafe"
 
 	"gvisor.dev/gvisor/pkg/bitmap"
-	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
@@ -79,16 +78,20 @@ func (f *FDTable) CurrentMaxFDs() int {
 // file after unlocking f.mu.
 //
 // Precondition: mu must be held.
-func (f *FDTable) set(ctx context.Context, fd int32, file *vfs.FileDescription, flags FDFlags) *vfs.FileDescription {
+func (f *FDTable) set(fd int32, file *vfs.FileDescription, flags FDFlags) *vfs.FileDescription {
 	slicePtr := (*[]unsafe.Pointer)(atomic.LoadPointer(&f.slice))
 
 	// Grow the table as required.
-	if last := int32(len(*slicePtr)); fd >= last {
-		end := fd + 1
-		if end < 2*last {
-			end = 2 * last
+	if length := len(*slicePtr); int(fd) >= length {
+		newLen := int(fd) + 1
+		if newLen < 2*length {
+			// Ensure the table at least doubles in size without going over the limit.
+			newLen = 2 * length
+			if newLen > int(MaxFdLimit) {
+				newLen = int(MaxFdLimit)
+			}
 		}
-		newSlice := append(*slicePtr, make([]unsafe.Pointer, end-last)...)
+		newSlice := append(*slicePtr, make([]unsafe.Pointer, newLen-length)...)
 		slicePtr = &newSlice
 		atomic.StorePointer(&f.slice, unsafe.Pointer(slicePtr))
 	}
