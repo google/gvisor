@@ -205,7 +205,7 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
     return;
   }
 
-  struct thread_context *ctx = thread_context_addr(sysmsg);
+  struct thread_context *ctx = sysmsg->context;
 
   if (signo == SIGCHLD) {
     // If the current thread is in syshandler, an interrupt has to be postponed,
@@ -254,8 +254,6 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
 
   switch (signo) {
     case SIGSYS: {
-      int si_sysno = siginfo->si_syscall;
-      int i;
       ctx_state = CONTEXT_STATE_SYSCALL;
 
       // Check whether this syscall can be replaced on a function call or not.
@@ -354,7 +352,7 @@ void __syshandler() {
   int state = __atomic_load_n(&sysmsg->state, __ATOMIC_ACQUIRE);
   if (state != THREAD_STATE_PREP) panic(state);
 
-  struct thread_context *ctx = thread_context_addr(sysmsg);
+  struct thread_context *ctx = sysmsg->context;
 
   enum context_state ctx_state = CONTEXT_STATE_SYSCALL_TRAP;
   ctx->signo = SIGSYS;

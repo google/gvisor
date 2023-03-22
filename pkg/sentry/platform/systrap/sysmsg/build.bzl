@@ -9,6 +9,7 @@ def cc_pie_obj(name, srcs, outs):
         srcs = srcs,
         outs = outs,
         cmd = "$(CC)  $(CC_FLAGS)  " +
+              "-Wall -Werror -Wno-unused-command-line-argument " +
               "-fpie " +
               # -01 is required for clang to avoid making use of memcpy when
               # building for ARM64. For some reason when no optimization is turned

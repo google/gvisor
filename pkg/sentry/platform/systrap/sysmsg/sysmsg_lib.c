@@ -79,6 +79,14 @@ static __inline__ unsigned long rdtsc(void) {
 static __inline__ void spinloop(void) { asm volatile("yield" : : : "memory"); }
 #endif
 
+void *__export_context_region;
+
+static struct thread_context *thread_context_addr(uint32_t tcid) {
+  return (struct thread_context *)(__export_context_region +
+                                   tcid *
+                                       ALLOCATED_SIZEOF_THREAD_CONTEXT_STRUCT);
+}
+
 void memcpy(uint8_t *dest, uint8_t *src, size_t n) {
   for (size_t i = 0; i < n; i += 1) {
     dest[i] = src[i];
@@ -180,8 +188,8 @@ struct thread_context *queue_get_context(struct sysmsg *sysmsg) {
     if (context_id > MAX_STUB_THREADS) {
       panic(context_id);
     }
-    sysmsg->context_id = context_id;
-    struct thread_context *ctx = thread_context_addr(sysmsg);
+    struct thread_context *ctx = thread_context_addr(context_id);
+    sysmsg->context = ctx;
     __atomic_store_n(&ctx->acked, 1, __ATOMIC_RELEASE);
     __atomic_store_n(&ctx->thread_id, sysmsg->thread_id, __ATOMIC_RELEASE);
     return ctx;
@@ -235,12 +243,11 @@ struct thread_context *switch_context(struct sysmsg *sysmsg,
     }
   }
 
-  uint32_t old_ctx_id = sysmsg->context_id;
+  struct thread_context *old_ctx = sysmsg->context;
 
   ctx = get_context(sysmsg);
 
-  if (old_ctx_id != sysmsg->context_id ||
-      ctx->last_thread_id != sysmsg->thread_id) {
+  if (old_ctx != ctx || ctx->last_thread_id != sysmsg->thread_id) {
     ctx->fpstate_changed = 1;
   }
 
@@ -332,10 +339,7 @@ void verify_offsets() {
   BUILD_BUG_ON(offsetof_sysmsg_app_stack != offsetof(struct sysmsg, app_stack));
   BUILD_BUG_ON(offsetof_sysmsg_interrupt != offsetof(struct sysmsg, interrupt));
   BUILD_BUG_ON(offsetof_sysmsg_state != offsetof(struct sysmsg, state));
-  BUILD_BUG_ON(offsetof_sysmsg_context_id !=
-               offsetof(struct sysmsg, context_id));
-  BUILD_BUG_ON(offsetof_sysmsg_context_region !=
-               offsetof(struct sysmsg, context_region));
+  BUILD_BUG_ON(offsetof_sysmsg_context != offsetof(struct sysmsg, context));
 
   BUILD_BUG_ON(offsetof_thread_context_fpstate !=
                offsetof(struct thread_context, fpstate));

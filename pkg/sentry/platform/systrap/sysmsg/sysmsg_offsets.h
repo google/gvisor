@@ -39,8 +39,7 @@
 #define offsetof_sysmsg_app_stack 0x20
 #define offsetof_sysmsg_interrupt 0x28
 #define offsetof_sysmsg_state 0x2c
-#define offsetof_sysmsg_context_region 0x30
-#define offsetof_sysmsg_context_id 0x38
+#define offsetof_sysmsg_context 0x30
 
 #define offsetof_thread_context_fpstate 0x0
 #define offsetof_thread_context_fpstate_changed MAX_FPSTATE_LEN

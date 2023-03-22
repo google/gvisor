@@ -152,13 +152,10 @@ type Msg struct {
 	// State indicates to the sentry what the sysmsg thread is doing at a given
 	// moment.
 	State ThreadState
-	// ContextRegion defines the ThreadContext memory region start within
-	// the sysmsg thread address space.
-	ContextRegion uint64
 	// ContextID is the ID of the ThreadContext struct that the current
 	// sysmsg thread is is processing. This ID is used in the {sig|sys}handler
 	// to find the offset to the correct ThreadContext struct location.
-	ContextID uint32
+	Context uint64
 
 	// FaultJump is the size of a faulted instruction.
 	FaultJump int32
@@ -352,7 +349,7 @@ func (m *Msg) String() string {
 	fmt.Fprintf(&b, "sysmsg.Msg{msg: %x state %d", m.Self, m.State)
 	fmt.Fprintf(&b, " err %x line %d debug %x", m.Err, m.Line, m.Debug)
 	fmt.Fprintf(&b, " app stack %x", m.AppStack)
-	fmt.Fprintf(&b, " contextID %d", m.ContextID)
+	fmt.Fprintf(&b, " context %x", m.Context)
 	b.WriteString("}")
 
 	return b.String()
