@@ -222,6 +222,8 @@ func stubInit() {
 	*p = deepSleepTimeout
 	p = (*uint64)(unsafe.Pointer(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_handshake_timeout)))
 	*p = handshakeTimeout
+	p = (*uint64)(unsafe.Pointer(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_context_region)))
+	*p = uint64(stubContextRegion)
 	archState := (*sysmsg.ArchState)(unsafe.Pointer(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_arch_state)))
 	archState.Init()
 	exp := (*uint64)(unsafe.Pointer(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_context_decoupling_exp)))
