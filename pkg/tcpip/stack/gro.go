@@ -451,9 +451,9 @@ func (gd *groDispatcher) dispatch4(pkt PacketBufferPtr, ep NetworkEndpoint) {
 	}
 	ipHdr := header.IPv4(hdrBytes)
 
-	// We only handle atomic packets. That's the vast majority of traffic,
-	// and simplifies handling.
-	if ipHdr.FragmentOffset() != 0 || ipHdr.Flags()&header.IPv4FlagMoreFragments != 0 || ipHdr.Flags()&header.IPv4FlagDontFragment == 0 {
+	// We don't handle fragments. That should be the vast majority of
+	// traffic, and simplifies handling.
+	if ipHdr.FragmentOffset() != 0 || ipHdr.Flags()&header.IPv4FlagMoreFragments != 0 {
 		ep.HandlePacket(pkt)
 		return
 	}
