@@ -60,7 +60,7 @@ func setupNetwork(conn *urpc.Client, pid int, conf *config.Config) error {
 	switch conf.Network {
 	case config.NetworkNone:
 		log.Infof("Network is disabled, create loopback interface only")
-		if err := createDefaultLoopbackInterface(conn); err != nil {
+		if err := createDefaultLoopbackInterface(conf, conn); err != nil {
 			return fmt.Errorf("creating default loopback interface: %v", err)
 		}
 	case config.NetworkSandbox:
@@ -78,9 +78,11 @@ func setupNetwork(conn *urpc.Client, pid int, conf *config.Config) error {
 	return nil
 }
 
-func createDefaultLoopbackInterface(conn *urpc.Client) error {
+func createDefaultLoopbackInterface(conf *config.Config, conn *urpc.Client) error {
+	link := boot.DefaultLoopbackLink
+	link.GvisorGROTimeout = conf.GvisorGROTimeout
 	if err := conn.Call(boot.NetworkCreateLinksAndRoutes, &boot.CreateLinksAndRoutesArgs{
-		LoopbackLinks: []boot.LoopbackLink{boot.DefaultLoopbackLink},
+		LoopbackLinks: []boot.LoopbackLink{link},
 	}, nil); err != nil {
 		return fmt.Errorf("creating loopback link and routes: %v", err)
 	}
@@ -157,7 +159,7 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 
 		// We build our own loopback device.
 		if iface.Flags&net.FlagLoopback != 0 {
-			link, err := loopbackLink(iface, allAddrs)
+			link, err := loopbackLink(conf, iface, allAddrs)
 			if err != nil {
 				return fmt.Errorf("getting loopback link for iface %q: %w", iface.Name, err)
 			}
@@ -261,6 +263,7 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 				Neighbors:         neighbors,
 				LinkAddress:       linkAddress,
 				Addresses:         addresses,
+				GvisorGROTimeout:  conf.GvisorGROTimeout,
 			})
 		} else {
 			link := boot.FDBasedLink{
@@ -492,9 +495,10 @@ func createSocketXDP(iface net.Interface) ([]*os.File, error) {
 
 // loopbackLink returns the link with addresses and routes for a loopback
 // interface.
-func loopbackLink(iface net.Interface, addrs []net.Addr) (boot.LoopbackLink, error) {
+func loopbackLink(conf *config.Config, iface net.Interface, addrs []net.Addr) (boot.LoopbackLink, error) {
 	link := boot.LoopbackLink{
-		Name: iface.Name,
+		Name:             iface.Name,
+		GvisorGROTimeout: conf.GvisorGROTimeout,
 	}
 	for _, addr := range addrs {
 		ipNet, ok := addr.(*net.IPNet)
