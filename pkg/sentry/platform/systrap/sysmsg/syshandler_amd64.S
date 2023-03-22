@@ -18,15 +18,6 @@
 // Helper macros:
 ////////////////////////////////////////
 
-// load_thread_context loads the address of the thread context slot for the current
-// context.
-// Clobbers %rflags; loads address into %rcx.
-.macro load_thread_context_addr
-  movl %gs:offsetof_sysmsg_context_id, %ecx
-  shl $THREAD_CONTEXT_STRUCT_BITSHIFT, %rcx
-  add %gs:offsetof_sysmsg_context_region, %rcx
-.endm
-
 // prepare_enter_syshandler does the following:
 //   - saves all registers that are restorable onto the thread_context struct.
 //   - loads the address of the thread_context struct into %rcx.
@@ -37,7 +28,7 @@
   // load_thread_context_addr overwrites %rcx.
   push %rcx
 
-  load_thread_context_addr
+  movq %gs:offsetof_sysmsg_context, %rcx
 
   // Registers listed in order as written in ptregs:
   movq %r15, offsetof_thread_context_ptregs_r15(%rcx)
@@ -200,7 +191,7 @@ __export_syshandler:
 .type asm_restore_state, @function;
 asm_restore_state:
   // thread_context may have changed, therefore we reload it into %rcx anew.
-  load_thread_context_addr
+  movq %gs:offsetof_sysmsg_context, %rcx
   restore_fpstate
 
   prepare_exit_syshandler

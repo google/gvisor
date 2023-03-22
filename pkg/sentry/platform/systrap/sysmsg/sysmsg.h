@@ -16,6 +16,7 @@
 #define THIRD_PARTY_GVISOR_PKG_SENTRY_PLATFORM_SYSTRAP_SYSMSG_SYSMSG_H_
 
 #include <stdint.h>
+#include <sys/types.h>
 #include <sys/user.h>
 
 #include "sysmsg_offsets.h"  // NOLINT
@@ -48,6 +49,8 @@ enum thread_state {
   THREAD_STATE_INITIALIZING,
 };
 
+struct thread_context;
+
 // sysmsg contains the current state of the sysmsg thread. See: sysmsg.go:Msg
 struct sysmsg {
   struct sysmsg *self;
@@ -57,8 +60,7 @@ struct sysmsg {
   uint64_t app_stack;
   uint32_t interrupt;
   uint32_t state;
-  uint64_t context_region;
-  uint32_t context_id;
+  struct thread_context *context;
 
   // The fields above have offsets defined in sysmsg_offsets*.h
 
@@ -142,13 +144,6 @@ static struct sysmsg *sysmsg_addr(void *sp) {
   return (struct sysmsg *)(sp + MSG_OFFSET_FROM_START);
 }
 
-static struct thread_context *thread_context_addr(struct sysmsg *sysmsg) {
-  uint64_t tcid = __atomic_load_n(&sysmsg->context_id, __ATOMIC_ACQUIRE);
-  return (struct thread_context *)(sysmsg->context_region +
-                                   tcid *
-                                       ALLOCATED_SIZEOF_THREAD_CONTEXT_STRUCT);
-}
-
 long __syscall(long n, long a1, long a2, long a3, long a4, long a5, long a6);
 
 struct __kernel_timespec;
@@ -158,7 +153,7 @@ long sys_futex(uint32_t *addr, int op, int val, struct __kernel_timespec *tv,
 static void __panic(int err, long line) {
   void *sp = sysmsg_sp();
   struct sysmsg *sysmsg = sysmsg_addr(sp);
-  struct thread_context *ctx = thread_context_addr(sysmsg);
+  struct thread_context *ctx = sysmsg->context;
   sysmsg->err = err;
   sysmsg->err_line = line;
   // Normally sentry waits on sysmsg->state.

@@ -1039,14 +1039,13 @@ func (s *subprocess) createSysmsgThread(tregs *arch.Registers, c *context, ac *a
 	sysThread.setMsg(sysmsg.StackAddrToMsg(sentryStackAddr))
 	sysThread.msg.Init(threadID)
 	if contextDecouplingExp {
-		sysThread.msg.ContextID = invalidContextID
+		sysThread.msg.Context = 0
 	} else {
 		c.sharedContext.setThreadID(threadID)
-		sysThread.msg.ContextID = c.sharedContext.contextID
+		sysThread.msg.Context = uint64(stubContextRegion + uintptr(c.sharedContext.contextID)*sysmsg.AllocatedSizeofThreadContextStruct)
 	}
 	sysThread.msg.Self = uint64(sysmsgStackAddr + sysmsg.MsgOffsetFromSharedStack)
 	sysThread.msg.SyshandlerStack = uint64(sysmsg.StackAddrToSyshandlerStack(sysThread.sysmsgPerThreadMemAddr()))
-	sysThread.msg.ContextRegion = uint64(stubContextRegion)
 	sysThread.msg.Syshandler = uint64(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_syshandler))
 
 	sysThread.msg.State.Set(sysmsg.ThreadStateInitializing)

@@ -104,7 +104,7 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
     return;
   }
 
-  struct thread_context *ctx = thread_context_addr(sysmsg);
+  struct thread_context *ctx = sysmsg->context;
 
   uint32_t ctx_state = CONTEXT_STATE_INVALID;
   ctx->signo = signo;
@@ -181,7 +181,8 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
 void restore_state(struct sysmsg *sysmsg, struct thread_context *ctx,
                    void *_ucontext) {
   ucontext_t *ucontext = _ucontext;
-  struct fpsimd_context *fpctx = &ucontext->uc_mcontext.__reserved;
+  struct fpsimd_context *fpctx =
+      (struct fpsimd_context *)&ucontext->uc_mcontext.__reserved;
   uint8_t *fpStatePointer = (uint8_t *)&fpctx->fpsr;
 
   if (__export_context_decoupling_exp &&
