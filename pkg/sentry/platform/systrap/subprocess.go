@@ -311,6 +311,7 @@ func newSubprocess(create func() (*thread, error), memoryFile *pgalloc.MemoryFil
 	sp.unmap()
 	sp.usertrap = usertrap.New()
 	sp.mapSharedRegions()
+	sp.mapPrivateRegions()
 
 	// Create the initial sysmsg thread.
 	if contextDecouplingExp {
@@ -389,6 +390,22 @@ func (s *subprocess) mapSharedRegions() {
 	}
 
 	s.threadContextRegion = sentryThreadContextRegionAddr
+}
+
+func (s *subprocess) mapPrivateRegions() {
+	if contextDecouplingExp {
+		_, err := s.syscallThread.syscall(
+			unix.SYS_MMAP,
+			arch.SyscallArgument{Value: uintptr(stubSpinningThreadQueueAddr)},
+			arch.SyscallArgument{Value: uintptr(sysmsg.SpinningQueueMemSize)},
+			arch.SyscallArgument{Value: uintptr(unix.PROT_READ | unix.PROT_WRITE)},
+			arch.SyscallArgument{Value: uintptr(unix.MAP_PRIVATE | unix.MAP_ANONYMOUS | unix.MAP_FIXED)},
+			arch.SyscallArgument{Value: 0},
+			arch.SyscallArgument{Value: 0})
+		if err != nil {
+			panic(fmt.Sprintf("failed to mmap spinning queue region into syscall thread: %v", err))
+		}
+	}
 }
 
 // unmap unmaps non-stub regions of the process.
