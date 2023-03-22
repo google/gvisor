@@ -102,7 +102,7 @@ func copyOutNodemask(t *kernel.Task, addr hostarch.Addr, maxnode uint32, val uin
 }
 
 // GetMempolicy implements the syscall get_mempolicy(2).
-func GetMempolicy(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func GetMempolicy(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	mode := args[0].Pointer()
 	nodemask := args[1].Pointer()
 	maxnode := args[2].Uint()
@@ -216,7 +216,7 @@ func GetMempolicy(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 }
 
 // SetMempolicy implements the syscall set_mempolicy(2).
-func SetMempolicy(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func SetMempolicy(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	modeWithFlags := linux.NumaPolicy(args[0].Int())
 	nodemask := args[1].Pointer()
 	maxnode := args[2].Uint()
@@ -231,7 +231,7 @@ func SetMempolicy(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 }
 
 // Mbind implements the syscall mbind(2).
-func Mbind(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Mbind(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
 	length := args[1].Uint64()
 	mode := linux.NumaPolicy(args[2].Int())

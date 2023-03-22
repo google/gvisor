@@ -167,7 +167,7 @@ func tryLockPI(t *kernel.Task, addr hostarch.Addr, private bool) error {
 // Futex implements linux syscall futex(2).
 // It provides a method for a program to wait for a value at a given address to
 // change, and a method to wake up anyone waiting on a particular address.
-func Futex(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Futex(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
 	futexOp := args[1].Int()
 	val := int(args[2].Int())
@@ -278,7 +278,7 @@ func Futex(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		return 0, nil, err
 
 	case linux.FUTEX_WAIT_REQUEUE_PI, linux.FUTEX_CMP_REQUEUE_PI:
-		t.Kernel().EmitUnimplementedEvent(t)
+		t.Kernel().EmitUnimplementedEvent(t, sysno)
 		return 0, nil, linuxerr.ENOSYS
 
 	default:
@@ -288,7 +288,7 @@ func Futex(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 }
 
 // SetRobustList implements linux syscall set_robust_list(2).
-func SetRobustList(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func SetRobustList(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	// Despite the syscall using the name 'pid' for this variable, it is
 	// very much a tid.
 	head := args[0].Pointer()
@@ -302,7 +302,7 @@ func SetRobustList(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 }
 
 // GetRobustList implements linux syscall get_robust_list(2).
-func GetRobustList(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func GetRobustList(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	// Despite the syscall using the name 'pid' for this variable, it is
 	// very much a tid.
 	tid := args[0].Int()

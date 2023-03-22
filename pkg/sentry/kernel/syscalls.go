@@ -90,7 +90,7 @@ type Syscall struct {
 }
 
 // SyscallFn is a syscall implementation.
-type SyscallFn func(t *Task, args arch.SyscallArguments) (uintptr, *SyscallControl, error)
+type SyscallFn func(t *Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *SyscallControl, error)
 
 // MissingFn is a syscall to be called when an implementation is missing.
 type MissingFn func(t *Task, sysno uintptr, args arch.SyscallArguments) (uintptr, error)

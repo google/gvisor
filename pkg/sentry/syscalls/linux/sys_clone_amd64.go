@@ -27,7 +27,7 @@ import (
 // x86_64:
 //
 //	sys_clone(clone_flags, newsp, parent_tidptr, child_tidptr, tls_val)
-func Clone(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Clone(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	flags := int(args[0].Int())
 	stack := args[1].Pointer()
 	parentTID := args[2].Pointer()

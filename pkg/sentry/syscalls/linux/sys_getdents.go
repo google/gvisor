@@ -27,12 +27,12 @@ import (
 )
 
 // Getdents implements Linux syscall getdents(2).
-func Getdents(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Getdents(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	return getdents(t, args, false /* isGetdents64 */)
 }
 
 // Getdents64 implements Linux syscall getdents64(2).
-func Getdents64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Getdents64(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	return getdents(t, args, true /* isGetdents64 */)
 }
 

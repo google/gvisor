@@ -73,6 +73,6 @@ func seccomp(t *kernel.Task, mode, flags uint64, addr hostarch.Addr) error {
 }
 
 // Seccomp implements linux syscall seccomp(2).
-func Seccomp(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Seccomp(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	return 0, nil, seccomp(t, args[0].Uint64(), args[1].Uint64(), args[2].Pointer())
 }

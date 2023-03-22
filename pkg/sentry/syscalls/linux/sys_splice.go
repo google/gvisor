@@ -30,7 +30,7 @@ import (
 )
 
 // Splice implements Linux syscall splice(2).
-func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Splice(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	inFD := args[0].Int()
 	inOffsetPtr := args[1].Pointer()
 	outFD := args[2].Int()
@@ -178,7 +178,7 @@ func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 }
 
 // Tee implements Linux syscall tee(2).
-func Tee(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Tee(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	inFD := args[0].Int()
 	outFD := args[1].Int()
 	count := int64(args[2].SizeT())
@@ -267,7 +267,7 @@ func Tee(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallCo
 }
 
 // Sendfile implements linux system call sendfile(2).
-func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Sendfile(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	outFD := args[0].Int()
 	inFD := args[1].Int()
 	offsetAddr := args[2].Pointer()

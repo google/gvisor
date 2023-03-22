@@ -24,7 +24,7 @@ import (
 )
 
 // TimerfdCreate implements Linux syscall timerfd_create(2).
-func TimerfdCreate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func TimerfdCreate(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	clockID := args[0].Int()
 	flags := args[1].Int()
 
@@ -65,7 +65,7 @@ func TimerfdCreate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 }
 
 // TimerfdSettime implements Linux syscall timerfd_settime(2).
-func TimerfdSettime(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func TimerfdSettime(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	flags := args[1].Int()
 	newValAddr := args[2].Pointer()
@@ -105,7 +105,7 @@ func TimerfdSettime(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 }
 
 // TimerfdGettime implements Linux syscall timerfd_gettime(2).
-func TimerfdGettime(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func TimerfdGettime(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	curValAddr := args[1].Pointer()
 

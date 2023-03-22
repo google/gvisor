@@ -426,7 +426,7 @@ func poll(t *kernel.Task, pfdAddr hostarch.Addr, nfds uint, timeout time.Duratio
 }
 
 // Poll implements linux syscall poll(2).
-func Poll(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Poll(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	pfdAddr := args[0].Pointer()
 	nfds := uint(args[1].Uint()) // poll(2) uses unsigned long.
 	timeout := time.Duration(args[2].Int()) * time.Millisecond
@@ -435,7 +435,7 @@ func Poll(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 }
 
 // Ppoll implements linux syscall ppoll(2).
-func Ppoll(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Ppoll(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	pfdAddr := args[0].Pointer()
 	nfds := uint(args[1].Uint()) // poll(2) uses unsigned long.
 	timespecAddr := args[2].Pointer()
@@ -473,7 +473,7 @@ func Ppoll(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 }
 
 // Select implements linux syscall select(2).
-func Select(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Select(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	nfds := int(args[0].Int()) // select(2) uses an int.
 	readFDs := args[1].Pointer()
 	writeFDs := args[2].Pointer()
@@ -509,7 +509,7 @@ type sigSetWithSize struct {
 }
 
 // Pselect6 implements linux syscall pselect6(2).
-func Pselect6(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Pselect6(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	nfds := int(args[0].Int()) // select(2) uses an int.
 	readFDs := args[1].Pointer()
 	writeFDs := args[2].Pointer()
