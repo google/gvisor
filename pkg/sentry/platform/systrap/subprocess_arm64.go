@@ -193,7 +193,9 @@ func restoreArchSpecificState(ctx *sysmsg.ThreadContext, ac *arch.Context64) {
 
 func setArchSpecificRegs(sysThread *sysmsgThread, regs *arch.Registers) {
 	if contextDecouplingExp {
-		// Set the start function and initial stack.
+		// Set the start function and initial stack. On ARM __export_start does not
+		// actually get used because we send a signal to the thread upon startup
+		// right away (see archSpecificSysmsgThreadInit below).
 		regs.PtraceRegs.Pc = uint64(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_start))
 		regs.PtraceRegs.Sp = uint64(sysmsg.StackAddrToSyshandlerStack(sysThread.sysmsgPerThreadMemAddr()))
 	}

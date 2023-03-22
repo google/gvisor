@@ -694,18 +694,18 @@ func (t *thread) NotifyInterrupt() {
 // The second return value is true if a syscall instruction can be replaced on
 // a function call.
 func (s *subprocess) switchToApp(c *context, ac *arch.Context64) (isSyscall bool, shouldPatchSyscall bool, err error) {
-	// Reset necessary registers.
-	regs := &ac.StateData().Regs
-	s.resetSysemuRegs(regs)
-	ctx := c.sharedContext
-	ctx.shared.Regs = regs.PtraceRegs
-	restoreArchSpecificState(ctx.shared, ac)
-
 	// Get sysmsg thread bound to the context; no-op if contextDecoupling is on.
+	regs := &ac.StateData().Regs
 	sysThread, err := s.getSysmsgThread(regs, c, ac)
 	if err != nil {
 		return false, false, err
 	}
+
+	// Reset necessary registers.
+	s.resetSysemuRegs(regs)
+	ctx := c.sharedContext
+	ctx.shared.Regs = regs.PtraceRegs
+	restoreArchSpecificState(ctx.shared, ac)
 
 	// Check for interrupts, and ensure that future interrupts signal the context.
 	if !c.interrupt.Enable(c.sharedContext) {
@@ -757,11 +757,11 @@ func (s *subprocess) switchToApp(c *context, ac *arch.Context64) (isSyscall bool
 				return false, false, err
 			}
 		}
-
-		retrieveArchSpecificState(ctx.shared, ac)
 	}
 
+	// Copy register state locally.
 	regs.PtraceRegs = ctx.shared.Regs
+	retrieveArchSpecificState(ctx.shared, ac)
 	// We have a signal. We verify however, that the signal was
 	// either delivered from the kernel or from this process. We
 	// don't respect other signals.
