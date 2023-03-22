@@ -211,23 +211,8 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
     // If the current thread is in syshandler, an interrupt has to be postponed,
     // because sysmsg can't be changed.
     if (thread_state != THREAD_STATE_NONE) {
-      // There are two possibilities for when we received the interrupt:
-      //   1. Before syshandler switched to the sentry.
-      //      In this case we do not need to postpone the interrupt because it
-      //      will be handled as soon as the Task returns to the sentry kernel.
-      //   2. After syshandler has received a response from the sentry.
-      //      This is an interrupt most likely targeted at whatever context is
-      //      bound to the sysmsg right now, but there is an unlikely case that
-      //      an interrupt takes a while to reach the stub and the context has
-      //      changed. For this reason we write which context ID the interrupt
-      //      was meant for in sysmsg and check against that.
-      uint64_t interrupted_tid =
-          __atomic_load_n(&sysmsg->interrupted_context_id, __ATOMIC_ACQUIRE);
-      if (thread_state == THREAD_STATE_DONE &&
-          (interrupted_tid == sysmsg->context_id)) {
+      if (__atomic_load_n(&ctx->interrupt, __ATOMIC_ACQUIRE))
         __atomic_store_n(&sysmsg->interrupt, 1, __ATOMIC_RELEASE);
-        __atomic_store_n(&ctx->interrupt, 1, __ATOMIC_RELAXED);
-      }
       return;
     }
   } else if (signo == SIGILL && sysmsg->state == THREAD_STATE_INTERRUPT) {
@@ -376,7 +361,6 @@ void __syshandler() {
   ctx->siginfo.si_addr = 0;
   ctx->siginfo.si_syscall = ctx->ptregs.rax;
   ctx->ptregs.rax = (unsigned long)-ENOSYS;
-  __atomic_store_n(&sysmsg->interrupt, 0, __ATOMIC_RELAXED);
 
   switch_context_amd64(sysmsg, ctx, THREAD_STATE_EVENT, ctx_state);
 }
