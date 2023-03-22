@@ -40,7 +40,7 @@ type sharedContext struct {
 	subprocess *subprocess
 	// contextID is the ID corresponding to the sysmsg.ThreadContext memory slot
 	// that is used for this sharedContext.
-	contextID uint64
+	contextID uint32
 	// shared is the handle to the shared memory that the sentry task goroutine
 	// reads from and writes to.
 	// NOTE: Using this handle directly without a getter from this function should
@@ -59,7 +59,7 @@ func (s *subprocess) getSharedContext() (*sharedContext, error) {
 	s.IncRef()
 	sc := sharedContext{
 		subprocess: s,
-		contextID:  id,
+		contextID:  uint32(id),
 		shared:     s.getThreadContextFromID(id),
 	}
 	sc.shared.Init(invalidThreadID)
@@ -71,7 +71,7 @@ func (sc *sharedContext) release() {
 	if sc == nil {
 		return
 	}
-	sc.subprocess.threadContextPool.Put(sc.contextID)
+	sc.subprocess.threadContextPool.Put(uint64(sc.contextID))
 	sc.subprocess.DecRef(sc.subprocess.release)
 }
 
@@ -102,7 +102,6 @@ func (sc *sharedContext) NotifyInterrupt() {
 	}
 
 	t := sysmsgThread.thread
-	atomic.StoreUint64(&sysmsgThread.msg.InterruptedContextID, sc.contextID)
 	if _, _, e := unix.RawSyscall(unix.SYS_TGKILL, uintptr(t.tgid), uintptr(t.tid), uintptr(platform.SignalInterrupt)); e != 0 {
 		panic(fmt.Sprintf("failed to interrupt the child process %d: %v", t.tid, e))
 	}

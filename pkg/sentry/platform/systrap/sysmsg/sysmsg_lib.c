@@ -234,6 +234,7 @@ struct thread_context *switch_context(struct sysmsg *sysmsg,
       panic(ret);
     }
   }
+
   uint32_t old_ctx_id = sysmsg->context_id;
 
   ctx = get_context(sysmsg);
