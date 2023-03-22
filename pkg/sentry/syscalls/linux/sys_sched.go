@@ -34,7 +34,7 @@ type SchedParam struct {
 }
 
 // SchedGetparam implements linux syscall sched_getparam(2).
-func SchedGetparam(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func SchedGetparam(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	pid := args[0].Int()
 	param := args[1].Pointer()
 	if param == 0 {
@@ -55,7 +55,7 @@ func SchedGetparam(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 }
 
 // SchedGetscheduler implements linux syscall sched_getscheduler(2).
-func SchedGetscheduler(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func SchedGetscheduler(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	pid := args[0].Int()
 	if pid < 0 {
 		return 0, nil, linuxerr.EINVAL
@@ -67,7 +67,7 @@ func SchedGetscheduler(t *kernel.Task, args arch.SyscallArguments) (uintptr, *ke
 }
 
 // SchedSetscheduler implements linux syscall sched_setscheduler(2).
-func SchedSetscheduler(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func SchedSetscheduler(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	pid := args[0].Int()
 	policy := args[1].Int()
 	param := args[2].Pointer()
@@ -91,11 +91,11 @@ func SchedSetscheduler(t *kernel.Task, args arch.SyscallArguments) (uintptr, *ke
 }
 
 // SchedGetPriorityMax implements linux syscall sched_get_priority_max(2).
-func SchedGetPriorityMax(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func SchedGetPriorityMax(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	return onlyPriority, nil, nil
 }
 
 // SchedGetPriorityMin implements linux syscall sched_get_priority_min(2).
-func SchedGetPriorityMin(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func SchedGetPriorityMin(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	return onlyPriority, nil, nil
 }

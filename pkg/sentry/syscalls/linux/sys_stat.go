@@ -27,21 +27,21 @@ import (
 )
 
 // Stat implements Linux syscall stat(2).
-func Stat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Stat(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	pathAddr := args[0].Pointer()
 	statAddr := args[1].Pointer()
 	return 0, nil, fstatat(t, linux.AT_FDCWD, pathAddr, statAddr, 0 /* flags */)
 }
 
 // Lstat implements Linux syscall lstat(2).
-func Lstat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Lstat(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	pathAddr := args[0].Pointer()
 	statAddr := args[1].Pointer()
 	return 0, nil, fstatat(t, linux.AT_FDCWD, pathAddr, statAddr, linux.AT_SYMLINK_NOFOLLOW)
 }
 
 // Newfstatat implements Linux syscall newfstatat, which backs fstatat(2).
-func Newfstatat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Newfstatat(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	dirfd := args[0].Int()
 	pathAddr := args[1].Pointer()
 	statAddr := args[2].Pointer()
@@ -123,7 +123,7 @@ func timespecFromStatxTimestamp(sxts linux.StatxTimestamp) linux.Timespec {
 }
 
 // Fstat implements Linux syscall fstat(2).
-func Fstat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Fstat(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	statAddr := args[1].Pointer()
 
@@ -146,7 +146,7 @@ func Fstat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 }
 
 // Statx implements Linux syscall statx(2).
-func Statx(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Statx(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	dirfd := args[0].Int()
 	pathAddr := args[1].Pointer()
 	flags := args[2].Int()
@@ -236,7 +236,7 @@ func userifyStatx(t *kernel.Task, statx *linux.Statx) {
 }
 
 // Statfs implements Linux syscall statfs(2).
-func Statfs(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Statfs(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	pathAddr := args[0].Pointer()
 	bufAddr := args[1].Pointer()
 
@@ -259,7 +259,7 @@ func Statfs(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 }
 
 // Fstatfs implements Linux syscall fstatfs(2).
-func Fstatfs(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Fstatfs(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	bufAddr := args[1].Pointer()
 

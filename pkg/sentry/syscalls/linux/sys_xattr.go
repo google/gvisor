@@ -27,12 +27,12 @@ import (
 )
 
 // ListXattr implements Linux syscall listxattr(2).
-func ListXattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func ListXattr(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	return listxattr(t, args, followFinalSymlink)
 }
 
 // Llistxattr implements Linux syscall llistxattr(2).
-func Llistxattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Llistxattr(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	return listxattr(t, args, nofollowFinalSymlink)
 }
 
@@ -63,7 +63,7 @@ func listxattr(t *kernel.Task, args arch.SyscallArguments, shouldFollowFinalSyml
 }
 
 // Flistxattr implements Linux syscall flistxattr(2).
-func Flistxattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Flistxattr(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	listAddr := args[1].Pointer()
 	size := args[2].SizeT()
@@ -86,12 +86,12 @@ func Flistxattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 }
 
 // GetXattr implements Linux syscall getxattr(2).
-func GetXattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func GetXattr(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	return getxattr(t, args, followFinalSymlink)
 }
 
 // Lgetxattr implements Linux syscall lgetxattr(2).
-func Lgetxattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Lgetxattr(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	return getxattr(t, args, nofollowFinalSymlink)
 }
 
@@ -131,7 +131,7 @@ func getxattr(t *kernel.Task, args arch.SyscallArguments, shouldFollowFinalSymli
 }
 
 // Fgetxattr implements Linux syscall fgetxattr(2).
-func Fgetxattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Fgetxattr(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	nameAddr := args[1].Pointer()
 	valueAddr := args[2].Pointer()
@@ -160,12 +160,12 @@ func Fgetxattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 }
 
 // SetXattr implements Linux syscall setxattr(2).
-func SetXattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func SetXattr(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	return 0, nil, setxattr(t, args, followFinalSymlink)
 }
 
 // Lsetxattr implements Linux syscall lsetxattr(2).
-func Lsetxattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Lsetxattr(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	return 0, nil, setxattr(t, args, nofollowFinalSymlink)
 }
 
@@ -207,7 +207,7 @@ func setxattr(t *kernel.Task, args arch.SyscallArguments, shouldFollowFinalSymli
 }
 
 // Fsetxattr implements Linux syscall fsetxattr(2).
-func Fsetxattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Fsetxattr(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	nameAddr := args[1].Pointer()
 	valueAddr := args[2].Pointer()
@@ -241,12 +241,12 @@ func Fsetxattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 }
 
 // RemoveXattr implements Linux syscall removexattr(2).
-func RemoveXattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func RemoveXattr(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	return 0, nil, removexattr(t, args, followFinalSymlink)
 }
 
 // Lremovexattr implements Linux syscall lremovexattr(2).
-func Lremovexattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Lremovexattr(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	return 0, nil, removexattr(t, args, nofollowFinalSymlink)
 }
 
@@ -273,7 +273,7 @@ func removexattr(t *kernel.Task, args arch.SyscallArguments, shouldFollowFinalSy
 }
 
 // Fremovexattr implements Linux syscall fremovexattr(2).
-func Fremovexattr(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Fremovexattr(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	nameAddr := args[1].Pointer()
 

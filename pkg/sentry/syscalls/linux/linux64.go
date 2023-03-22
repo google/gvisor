@@ -414,7 +414,7 @@ var AMD64 = &kernel.SyscallTable{
 		0xffffffffff600800: 309, // vsyscall getcpu(2)
 	},
 	Missing: func(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
-		t.Kernel().EmitUnimplementedEvent(t)
+		t.Kernel().EmitUnimplementedEvent(t, sysno)
 		return 0, linuxerr.ENOSYS
 	},
 }
@@ -731,7 +731,7 @@ var ARM64 = &kernel.SyscallTable{
 	},
 	Emulate: map[hostarch.Addr]uintptr{},
 	Missing: func(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
-		t.Kernel().EmitUnimplementedEvent(t)
+		t.Kernel().EmitUnimplementedEvent(t, sysno)
 		return 0, linuxerr.ENOSYS
 	},
 }

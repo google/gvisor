@@ -1534,7 +1534,7 @@ const (
 
 // EmitUnimplementedEvent emits an UnimplementedSyscall event via the event
 // channel.
-func (k *Kernel) EmitUnimplementedEvent(ctx context.Context) {
+func (k *Kernel) EmitUnimplementedEvent(ctx context.Context, sysno uintptr) {
 	k.unimplementedSyscallEmitterOnce.Do(func() {
 		k.unimplementedSyscallEmitter = eventchannel.RateLimitedEmitterFrom(eventchannel.DefaultEmitter, unimplementedSyscallsMaxRate, unimplementedSyscallBurst)
 	})
