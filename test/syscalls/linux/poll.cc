@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <fcntl.h>
 #include <poll.h>
 #include <sys/resource.h>
 #include <sys/socket.h>
@@ -348,6 +349,15 @@ TEST_F(PollTest, Nfds) {
 
   // If 'nfds' exceeds RLIMIT_NOFILE then it must fail with EINVAL.
   EXPECT_THAT(poll(fds.data(), max_fds + 1, 1), SyscallFailsWithErrno(EINVAL));
+}
+
+// Polling on a file that doesn't support blocking, like a directory, should
+// immediately return.
+TEST_F(PollTest, UnpollableFile) {
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open("/", O_RDONLY));
+  struct pollfd poll_fd = {fd.get(), POLLIN | POLLOUT, 0};
+  EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, -1), SyscallSucceedsWithValue(1));
+  EXPECT_EQ(poll_fd.revents, POLLIN | POLLOUT);
 }
 
 }  // namespace
