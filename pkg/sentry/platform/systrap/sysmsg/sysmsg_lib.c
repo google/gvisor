@@ -17,6 +17,7 @@
 #include <linux/futex.h>
 #include <linux/unistd.h>
 #include <signal.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -27,7 +28,6 @@
 // polling and fall asleep.
 uint64_t __export_deep_sleep_timeout;
 uint64_t __export_handshake_timeout;
-uint64_t __export_context_queue_addr;
 
 // LINT.IfChange
 #define MAX_STUB_THREADS (4096)
@@ -44,6 +44,9 @@ struct context_queue {
   uint32_t num_sleeping_threads;
   uint32_t ringbuffer[MAX_CONTEXT_QUEUE_ENTRIES];
 };
+
+struct context_queue *__export_context_queue_addr;
+
 // LINT.ThenChange(../context_queue.go)
 
 uint32_t is_empty(struct context_queue *queue) {
@@ -82,41 +85,132 @@ void memcpy(uint8_t *dest, uint8_t *src, size_t n) {
   }
 }
 
+// The spinning queue is a queue of spinning threads. It solves the
+// fragmentation problem. The idea is to minimize the number of threads
+// processing requests. We can't control how system threads are scheduled, so
+// can't distribute requests efficiently. The spinning queue emulates virtual
+// threads sorted by their spinning time.
+//
+// This queue is lock-less to be sure that any thread scheduled out
+// from CPU doesn't block others.
+#define SPINNING_QUEUE_SIZE 128
+
+// MAX_SPINNING_THREADS is half of SPINNING_QUEUE_SIZE to be sure that the tail
+// doesn't catch the head. More details are in spinning_queue_remove_first.
+#define MAX_SPINNING_THREADS (SPINNING_QUEUE_SIZE / 2)
+struct spinning_queue {
+  uint32_t start;
+  uint32_t end;
+  uint64_t start_times[SPINNING_QUEUE_SIZE];
+};
+
+struct spinning_queue *__export_spinning_queue_addr;
+
+// spinning_queue_push adds a new thread to the queue. It returns false if the
+// queue if full.
+static bool spinning_queue_push() __attribute__((warn_unused_result));
+static bool spinning_queue_push(void) {
+  struct spinning_queue *queue = __export_spinning_queue_addr;
+  uint32_t idx, start, end;
+
+  BUILD_BUG_ON(sizeof(struct spinning_queue) > SPINNING_QUEUE_MEM_SIZE);
+
+  end = __atomic_add_fetch(&queue->end, 1, __ATOMIC_SEQ_CST);
+  start = __atomic_load_n(&queue->start, __ATOMIC_SEQ_CST);
+  if (end - start > MAX_SPINNING_THREADS) {
+    __atomic_sub_fetch(&queue->end, 1, __ATOMIC_SEQ_CST);
+    return false;
+  }
+
+  idx = end - 1;
+  __atomic_store_n(&queue->start_times[idx % SPINNING_QUEUE_SIZE], rdtsc(),
+                   __ATOMIC_SEQ_CST);
+  return true;
+}
+
+// spinning_queue_pop() removes one thread from a queue that has been spinning
+// the shortest time.
+static void spinning_queue_pop() {
+  struct spinning_queue *queue = __export_spinning_queue_addr;
+
+  __atomic_add_fetch(&queue->end, -1, __ATOMIC_SEQ_CST);
+}
+
+// spinning_queue_remove_first removes one thread from a queue that has been
+// spinning longer than others and longer than a specified timeout.
+//
+// Returns true if one thread has been removed from the queue.
+static bool spinning_queue_remove_first(uint64_t timeout)
+    __attribute__((warn_unused_result));
+static bool spinning_queue_remove_first(uint64_t timeout) {
+  struct spinning_queue *queue = __export_spinning_queue_addr;
+  uint64_t ts;
+  uint32_t idx;
+
+  idx = __atomic_load_n(&queue->start, __ATOMIC_SEQ_CST);
+  ts = __atomic_load_n(&queue->start_times[idx % SPINNING_QUEUE_SIZE],
+                       __ATOMIC_SEQ_CST);
+  if (ts == 0 || rdtsc() - ts < timeout) return false;
+
+  // The current thread is still in a queue and the length of the queue is twice
+  // of the maximum number of threads, so we can zero the element and be sure
+  // that nobody is trying to set it in a  non-zero value.
+  __atomic_store_n(&queue->start_times[idx % SPINNING_QUEUE_SIZE], 0,
+                   __ATOMIC_SEQ_CST);
+  if (!__atomic_compare_exchange_n(&queue->start, &idx, idx + 1, false,
+                                   __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) {
+    return false;
+  }
+
+  return true;
+}
+
+struct thread_context *queue_get_context(struct sysmsg *sysmsg) {
+  struct context_queue *queue = __export_context_queue_addr;
+
+  while (!is_empty(queue)) {
+    uint32_t next = __atomic_load_n(&queue->start, __ATOMIC_ACQUIRE) %
+                    MAX_CONTEXT_QUEUE_ENTRIES;
+    uint32_t context_id = __atomic_exchange_n(
+        &queue->ringbuffer[next], INVALID_CONTEXT_ID, __ATOMIC_ACQ_REL);
+
+    if (context_id == INVALID_CONTEXT_ID) continue;
+
+    __atomic_add_fetch(&queue->start, 1, __ATOMIC_ACQ_REL);
+    if (context_id > MAX_STUB_THREADS) {
+      panic(context_id);
+    }
+    sysmsg->context_id = context_id;
+    struct thread_context *ctx = thread_context_addr(sysmsg);
+    __atomic_store_n(&ctx->acked, 1, __ATOMIC_RELEASE);
+    __atomic_store_n(&ctx->thread_id, sysmsg->thread_id, __ATOMIC_RELEASE);
+    return ctx;
+  }
+  return NULL;
+}
+
 // get_context retrieves a context that is ready to be restored to the user.
 // This populates sysmsg->thread_context_id.
 struct thread_context *get_context(struct sysmsg *sysmsg) {
-  struct context_queue *queue =
-      (struct context_queue *)(__export_context_queue_addr);
+  struct context_queue *queue = __export_context_queue_addr;
+
   for (;;) {
+    struct thread_context *ctx;
+
     // Change sysmsg thread state just to indicate thread is not asleep.
     __atomic_store_n(&sysmsg->state, THREAD_STATE_PREP, __ATOMIC_RELEASE);
-    unsigned long start = rdtsc();
-    for (;;) {
-      if (!is_empty(queue)) {
-        uint32_t next = __atomic_load_n(&queue->start, __ATOMIC_ACQUIRE) %
-                        MAX_CONTEXT_QUEUE_ENTRIES;
-        uint32_t context_id = __atomic_exchange_n(
-            &queue->ringbuffer[next], INVALID_CONTEXT_ID, __ATOMIC_ACQ_REL);
-        if (context_id != INVALID_CONTEXT_ID) {
-          __atomic_add_fetch(&queue->start, 1, __ATOMIC_ACQ_REL);
-          if (context_id > MAX_STUB_THREADS) {
-            panic(context_id);
-          }
-          sysmsg->context_id = context_id;
-          struct thread_context *ctx = thread_context_addr(sysmsg);
-          __atomic_store_n(&ctx->acked, 1, __ATOMIC_RELEASE);
-          __atomic_store_n(&ctx->thread_id, sysmsg->thread_id,
-                           __ATOMIC_RELEASE);
+    ctx = queue_get_context(sysmsg);
+    if (ctx) return ctx;
+    if (spinning_queue_push()) {
+      while (!spinning_queue_remove_first(__export_deep_sleep_timeout)) {
+        ctx = queue_get_context(sysmsg);
+        if (ctx) {
+          spinning_queue_pop();
           return ctx;
-        } else {
-          continue;
         }
-      }
-      if ((rdtsc() - start) > __export_deep_sleep_timeout) {
-        break;
-      }
 
-      spinloop();
+        spinloop();
+      }
     }
     __atomic_store_n(&sysmsg->state, THREAD_STATE_ASLEEP, __ATOMIC_RELEASE);
 

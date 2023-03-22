@@ -65,6 +65,9 @@ const (
 	// MsgOffsetFromStack is the offset of the Msg structure on
 	// the thread stack.
 	MsgOffsetFromSharedStack = PerThreadMemSize - hostarch.PageSize - PerThreadSharedStackOffset
+
+	// SpinningQueueMemSize is the size of a spinning queue memory region.
+	SpinningQueueMemSize = hostarch.PageSize
 )
 
 // StackAddrToMsg returns an address of a sysmsg structure.

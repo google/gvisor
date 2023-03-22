@@ -134,6 +134,7 @@ func stubInit() {
 	// Add a guard page.
 	mapLen += hostarch.PageSize
 	stubSysmsgStack = mapLen
+
 	// Allocate maxGuestThreads plus ONE because each per-thread stack
 	// has to be aligned to sysmsg.PerThreadMemSize.
 	// Look at sysmsg/sighandler.c:sysmsg_addr() for more details.
@@ -144,6 +145,9 @@ func stubInit() {
 		stubContextQueueRegion = mapLen
 		stubContextQueueRegionLen, _ = hostarch.PageRoundUp(unsafe.Sizeof(contextQueue{}))
 		mapLen += stubContextQueueRegionLen
+
+		stubSpinningThreadQueueAddr = mapLen
+		mapLen += sysmsg.SpinningQueueMemSize
 	}
 
 	// Allocate thread context region
@@ -200,6 +204,7 @@ func stubInit() {
 	stubSysmsgStack += stubStart
 	stubROMapEnd += stubStart
 	stubContextQueueRegion += stubStart
+	stubSpinningThreadQueueAddr += stubStart
 	stubContextRegion += stubStart
 
 	// Align stubSysmsgStack to the per-thread stack size.
@@ -224,6 +229,9 @@ func stubInit() {
 		*exp = 1
 		contextQueue := (*uint64)(unsafe.Pointer(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_context_queue_addr)))
 		*contextQueue = uint64(stubContextQueueRegion)
+
+		p = (*uint64)(unsafe.Pointer(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_spinning_queue_addr)))
+		*p = uint64(stubSpinningThreadQueueAddr)
 	}
 
 	prepareSeccompRules(stubSysmsgStart, stubSysmsgRules, stubSysmsgRulesLen)

@@ -88,6 +88,9 @@ var (
 	stubSysmsgRules    uintptr
 	stubSysmsgRulesLen uintptr
 
+	stubSpinningThreadQueueAddr uintptr
+	stubSpinningThreadQueueSize uintptr
+
 	// stubROMapEnd is the end address of the read-only stub region that
 	// contains the code and precompiled seccomp rules.
 	stubROMapEnd uintptr

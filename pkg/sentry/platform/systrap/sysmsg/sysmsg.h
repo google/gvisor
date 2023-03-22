@@ -111,6 +111,7 @@ struct thread_context {
 #define GUARD_SIZE (PAGE_SIZE)
 #define MSG_OFFSET_FROM_START (PER_THREAD_MEM_SIZE - PAGE_SIZE)
 
+#define SPINNING_QUEUE_MEM_SIZE PAGE_SIZE
 // LINT.ThenChange(sysmsg.go)
 
 #define FAULT_OPCODE 0x06  // "push %es" on x32 and invalid opcode on x64.
@@ -123,7 +124,8 @@ extern uint64_t __export_pr_sched_core;
 extern uint64_t __export_deep_sleep_timeout;
 extern struct arch_state __export_arch_state;
 extern uint64_t __export_context_decoupling_exp;
-extern uint64_t __export_context_queue_addr;
+struct context_queue;
+extern struct context_queue *__export_context_queue_addr;
 
 // NOLINTBEGIN(runtime/int)
 static void *sysmsg_sp() {
