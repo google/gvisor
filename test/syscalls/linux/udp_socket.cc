@@ -797,13 +797,14 @@ TEST_P(UdpSocketTest, SendToAddressOtherThanConnected) {
 
 TEST_P(UdpSocketTest, ConnectAndSendNoReceiver) {
   ASSERT_NO_ERRNO(BindLoopback());
-  // Close the socket to release the port so that we get an ICMP error.
-  ASSERT_THAT(close(bind_.release()), SyscallSucceeds());
-
   // Connect to loopback:bind_addr_ which should *hopefully* not be bound by an
   // UDP socket. There is no easy way to ensure that the UDP port is not bound
   // by another conncurrently running test. *This is potentially flaky*.
   ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
+
+  // Close the socket after connecting to the bound address to make sure `sock_`
+  // doesn't get auto-bound to the same port.
+  ASSERT_THAT(close(bind_.release()), SyscallSucceeds());
 
   char buf[512];
   EXPECT_THAT(send(sock_.get(), buf, sizeof(buf), 0),
