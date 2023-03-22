@@ -152,16 +152,14 @@ type Msg struct {
 	// State indicates to the sentry what the sysmsg thread is doing at a given
 	// moment.
 	State ThreadState
-	// ContextID is the ID of the ThreadContext struct that the current
-	// sysmsg thread is is processing. This ID is used in the {sig|sys}handler
-	// to find the offset to the correct ThreadContext struct location.
-	ContextID uint64
 	// ContextRegion defines the ThreadContext memory region start within
 	// the sysmsg thread address space.
 	ContextRegion uint64
+	// ContextID is the ID of the ThreadContext struct that the current
+	// sysmsg thread is is processing. This ID is used in the {sig|sys}handler
+	// to find the offset to the correct ThreadContext struct location.
+	ContextID uint32
 
-	// InterruptedContextID is the target of the interrupt sent to sysmsg thread.
-	InterruptedContextID uint64
 	// FaultJump is the size of a faulted instruction.
 	FaultJump int32
 	// Err is the error value with which the {sig|sys}handler crashes the stub

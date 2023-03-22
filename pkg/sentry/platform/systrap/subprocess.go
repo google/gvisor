@@ -714,7 +714,10 @@ func (s *subprocess) switchToApp(c *context, ac *arch.Context64) (isSyscall bool
 		c.signalInfo = linux.SignalInfo{Signo: int32(platform.SignalInterrupt)}
 		return false, false, nil
 	}
-	defer c.interrupt.Disable()
+	defer func() {
+		ctx.clearInterrupt()
+		c.interrupt.Disable()
+	}()
 
 	if contextDecouplingExp {
 		restoreFPState(nil, ctx, 0, c, ac)
@@ -1036,7 +1039,7 @@ func (s *subprocess) createSysmsgThread(tregs *arch.Registers, c *context, ac *a
 	sysThread.setMsg(sysmsg.StackAddrToMsg(sentryStackAddr))
 	sysThread.msg.Init(threadID)
 	if contextDecouplingExp {
-		sysThread.msg.ContextID = uint64(invalidContextID)
+		sysThread.msg.ContextID = invalidContextID
 	} else {
 		c.sharedContext.setThreadID(threadID)
 		sysThread.msg.ContextID = c.sharedContext.contextID
