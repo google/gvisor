@@ -32,12 +32,12 @@ const (
 )
 
 // ProcessVMReadv implements process_vm_readv(2).
-func ProcessVMReadv(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func ProcessVMReadv(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	return processVMRW(t, args, false /*isWrite*/)
 }
 
 // ProcessVMWritev implements process_vm_writev(2).
-func ProcessVMWritev(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func ProcessVMWritev(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	return processVMRW(t, args, true /*isWrite*/)
 }
 

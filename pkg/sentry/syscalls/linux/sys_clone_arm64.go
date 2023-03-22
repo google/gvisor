@@ -27,7 +27,7 @@ import (
 // arm64(kernel/fork.c with CONFIG_CLONE_BACKWARDS defined in the config file):
 //
 //	sys_clone(clone_flags, newsp, parent_tidptr, tls_val, child_tidptr)
-func Clone(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Clone(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	flags := int(args[0].Int())
 	stack := args[1].Pointer()
 	parentTID := args[2].Pointer()

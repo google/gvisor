@@ -22,7 +22,7 @@ import (
 )
 
 // Membarrier implements syscall membarrier(2).
-func Membarrier(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Membarrier(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	cmd := args[0].Int()
 	flags := args[1].Uint()
 
@@ -97,7 +97,7 @@ func Membarrier(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 		return 0, nil, nil
 	default:
 		// Probably a command we don't implement.
-		t.Kernel().EmitUnimplementedEvent(t)
+		t.Kernel().EmitUnimplementedEvent(t, sysno)
 		return 0, nil, linuxerr.EINVAL
 	}
 }

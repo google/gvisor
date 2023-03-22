@@ -34,7 +34,7 @@ const (
 )
 
 // Read implements Linux syscall read(2).
-func Read(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Read(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	addr := args[1].Pointer()
 	size := args[2].SizeT()
@@ -65,7 +65,7 @@ func Read(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 }
 
 // Readv implements Linux syscall readv(2).
-func Readv(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Readv(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	addr := args[1].Pointer()
 	iovcnt := int(args[2].Int())
@@ -133,7 +133,7 @@ func read(t *kernel.Task, file *vfs.FileDescription, dst usermem.IOSequence, opt
 }
 
 // Pread64 implements Linux syscall pread64(2).
-func Pread64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Pread64(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	addr := args[1].Pointer()
 	size := args[2].SizeT()
@@ -170,7 +170,7 @@ func Pread64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 }
 
 // Preadv implements Linux syscall preadv(2).
-func Preadv(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Preadv(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	addr := args[1].Pointer()
 	iovcnt := int(args[2].Int())
@@ -201,7 +201,7 @@ func Preadv(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 }
 
 // Preadv2 implements Linux syscall preadv2(2).
-func Preadv2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Preadv2(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	// While the glibc signature is
 	// preadv2(int fd, struct iovec* iov, int iov_cnt, off_t offset, int flags)
 	// the actual syscall
@@ -288,7 +288,7 @@ func pread(t *kernel.Task, file *vfs.FileDescription, dst usermem.IOSequence, of
 }
 
 // Write implements Linux syscall write(2).
-func Write(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Write(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	addr := args[1].Pointer()
 	size := args[2].SizeT()
@@ -319,7 +319,7 @@ func Write(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 }
 
 // Writev implements Linux syscall writev(2).
-func Writev(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Writev(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	addr := args[1].Pointer()
 	iovcnt := int(args[2].Int())
@@ -386,7 +386,7 @@ func write(t *kernel.Task, file *vfs.FileDescription, src usermem.IOSequence, op
 }
 
 // Pwrite64 implements Linux syscall pwrite64(2).
-func Pwrite64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Pwrite64(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	addr := args[1].Pointer()
 	size := args[2].SizeT()
@@ -423,7 +423,7 @@ func Pwrite64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 }
 
 // Pwritev implements Linux syscall pwritev(2).
-func Pwritev(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Pwritev(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	addr := args[1].Pointer()
 	iovcnt := int(args[2].Int())
@@ -454,7 +454,7 @@ func Pwritev(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 }
 
 // Pwritev2 implements Linux syscall pwritev2(2).
-func Pwritev2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Pwritev2(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	// While the glibc signature is
 	// pwritev2(int fd, struct iovec* iov, int iov_cnt, off_t offset, int flags)
 	// the actual syscall
@@ -559,7 +559,7 @@ func blockPolicy(t *kernel.Task, file *vfs.FileDescription) (allowBlock bool, de
 }
 
 // Lseek implements Linux syscall lseek(2).
-func Lseek(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Lseek(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	offset := args[1].Int64()
 	whence := args[2].Int()
@@ -575,7 +575,7 @@ func Lseek(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 }
 
 // Readahead implements readahead(2).
-func Readahead(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Readahead(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	offset := args[1].Int64()
 	size := args[2].SizeT()

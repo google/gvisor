@@ -25,7 +25,7 @@ import (
 const allFlags = linux.IN_NONBLOCK | linux.IN_CLOEXEC
 
 // InotifyInit1 implements the inotify_init1() syscalls.
-func InotifyInit1(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func InotifyInit1(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	flags := args[0].Int()
 	if flags&^allFlags != 0 {
 		return 0, nil, linuxerr.EINVAL
@@ -49,9 +49,9 @@ func InotifyInit1(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 }
 
 // InotifyInit implements the inotify_init() syscalls.
-func InotifyInit(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func InotifyInit(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	args[0].Value = 0
-	return InotifyInit1(t, args)
+	return InotifyInit1(t, sysno, args)
 }
 
 // fdToInotify resolves an fd to an inotify object. If successful, the file will
@@ -74,7 +74,7 @@ func fdToInotify(t *kernel.Task, fd int32) (*vfs.Inotify, *vfs.FileDescription, 
 }
 
 // InotifyAddWatch implements the inotify_add_watch() syscall.
-func InotifyAddWatch(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func InotifyAddWatch(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	addr := args[1].Pointer()
 	mask := args[2].Uint()
@@ -120,7 +120,7 @@ func InotifyAddWatch(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kern
 }
 
 // InotifyRmWatch implements the inotify_rm_watch() syscall.
-func InotifyRmWatch(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func InotifyRmWatch(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	wd := args[1].Int()
 

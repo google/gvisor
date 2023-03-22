@@ -169,7 +169,7 @@ func writeAddress(t *kernel.Task, addr linux.SockAddr, addrLen uint32, addrPtr h
 }
 
 // Socket implements the linux syscall socket(2).
-func Socket(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Socket(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	domain := int(args[0].Int())
 	stype := args[1].Int()
 	protocol := int(args[2].Int())
@@ -201,7 +201,7 @@ func Socket(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 }
 
 // SocketPair implements the linux syscall socketpair(2).
-func SocketPair(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func SocketPair(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	domain := int(args[0].Int())
 	stype := args[1].Int()
 	protocol := int(args[2].Int())
@@ -251,7 +251,7 @@ func SocketPair(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 }
 
 // Connect implements the linux syscall connect(2).
-func Connect(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Connect(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	addr := args[1].Pointer()
 	addrlen := args[2].Uint()
@@ -320,7 +320,7 @@ func accept(t *kernel.Task, fd int32, addr hostarch.Addr, addrLen hostarch.Addr,
 }
 
 // Accept4 implements the linux syscall accept4(2).
-func Accept4(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Accept4(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	addr := args[1].Pointer()
 	addrlen := args[2].Pointer()
@@ -331,7 +331,7 @@ func Accept4(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 }
 
 // Accept implements the linux syscall accept(2).
-func Accept(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Accept(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	addr := args[1].Pointer()
 	addrlen := args[2].Pointer()
@@ -341,7 +341,7 @@ func Accept(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 }
 
 // Bind implements the linux syscall bind(2).
-func Bind(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Bind(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	addr := args[1].Pointer()
 	addrlen := args[2].Uint()
@@ -369,7 +369,7 @@ func Bind(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 }
 
 // Listen implements the linux syscall listen(2).
-func Listen(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Listen(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	backlog := args[1].Uint()
 
@@ -407,7 +407,7 @@ func Listen(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 }
 
 // Shutdown implements the linux syscall shutdown(2).
-func Shutdown(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Shutdown(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	how := args[1].Int()
 
@@ -435,7 +435,7 @@ func Shutdown(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 }
 
 // GetSockOpt implements the linux syscall getsockopt(2).
-func GetSockOpt(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func GetSockOpt(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	level := args[1].Int()
 	name := args[2].Int()
@@ -516,7 +516,7 @@ func getSockOpt(t *kernel.Task, s socket.Socket, level, name int, optValAddr hos
 // SetSockOpt implements the linux syscall setsockopt(2).
 //
 // Note that unlike Linux, enabling SO_PASSCRED does not autobind the socket.
-func SetSockOpt(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func SetSockOpt(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	level := args[1].Int()
 	name := args[2].Int()
@@ -556,7 +556,7 @@ func SetSockOpt(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 }
 
 // GetSockName implements the linux syscall getsockname(2).
-func GetSockName(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func GetSockName(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	addr := args[1].Pointer()
 	addrlen := args[2].Pointer()
@@ -584,7 +584,7 @@ func GetSockName(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 }
 
 // GetPeerName implements the linux syscall getpeername(2).
-func GetPeerName(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func GetPeerName(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	addr := args[1].Pointer()
 	addrlen := args[2].Pointer()
@@ -612,7 +612,7 @@ func GetPeerName(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 }
 
 // RecvMsg implements the linux syscall recvmsg(2).
-func RecvMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func RecvMsg(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	msgPtr := args[1].Pointer()
 	flags := args[2].Int()
@@ -658,7 +658,7 @@ func RecvMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 }
 
 // RecvMMsg implements the linux syscall recvmmsg(2).
-func RecvMMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func RecvMMsg(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	msgPtr := args[1].Pointer()
 	vlen := args[2].Uint()
@@ -937,7 +937,7 @@ func recvFrom(t *kernel.Task, fd int32, bufPtr hostarch.Addr, bufLen uint64, fla
 }
 
 // RecvFrom implements the linux syscall recvfrom(2).
-func RecvFrom(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func RecvFrom(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	bufPtr := args[1].Pointer()
 	bufLen := args[2].Uint64()
@@ -950,7 +950,7 @@ func RecvFrom(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 }
 
 // SendMsg implements the linux syscall sendmsg(2).
-func SendMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func SendMsg(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	msgPtr := args[1].Pointer()
 	flags := args[2].Int()
@@ -987,7 +987,7 @@ func SendMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 }
 
 // SendMMsg implements the linux syscall sendmmsg(2).
-func SendMMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func SendMMsg(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	msgPtr := args[1].Pointer()
 	vlen := args[2].Uint()
@@ -1175,7 +1175,7 @@ func sendTo(t *kernel.Task, fd int32, bufPtr hostarch.Addr, bufLen uint64, flags
 }
 
 // SendTo implements the linux syscall sendto(2).
-func SendTo(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func SendTo(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	bufPtr := args[1].Pointer()
 	bufLen := args[2].Uint64()
