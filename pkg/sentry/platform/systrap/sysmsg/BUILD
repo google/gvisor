@@ -131,6 +131,8 @@ go_library(
         "//pkg/cpuid",
         "//pkg/errors",
         "//pkg/hostarch",
+        "//pkg/log",
+        "//pkg/sentry/platform/interrupt",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

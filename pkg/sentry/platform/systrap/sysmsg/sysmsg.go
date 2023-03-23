@@ -152,9 +152,8 @@ type Msg struct {
 	// State indicates to the sentry what the sysmsg thread is doing at a given
 	// moment.
 	State ThreadState
-	// ContextID is the ID of the ThreadContext struct that the current
-	// sysmsg thread is is processing. This ID is used in the {sig|sys}handler
-	// to find the offset to the correct ThreadContext struct location.
+	// Context is a pointer to the ThreadContext struct that the current sysmsg
+	// thread is processing.
 	Context uint64
 
 	// FaultJump is the size of a faulted instruction.
@@ -350,6 +349,7 @@ func (m *Msg) String() string {
 	fmt.Fprintf(&b, " err %x line %d debug %x", m.Err, m.Line, m.Debug)
 	fmt.Fprintf(&b, " app stack %x", m.AppStack)
 	fmt.Fprintf(&b, " context %x", m.Context)
+	fmt.Fprintf(&b, " ThreadID %d", m.ThreadID)
 	b.WriteString("}")
 
 	return b.String()
@@ -361,6 +361,9 @@ func (c *ThreadContext) String() string {
 	fmt.Fprintf(&b, " fault addr %x syscall %d", c.SignalInfo.Addr(), c.SignalInfo.Syscall())
 	fmt.Fprintf(&b, " ip %x sp %x", c.Regs.InstructionPointer(), c.Regs.StackPointer())
 	fmt.Fprintf(&b, " FPStateChanged %d Regs %+v", c.FPStateChanged, c.Regs)
+	fmt.Fprintf(&b, " Interrupt %d", c.Interrupt)
+	fmt.Fprintf(&b, " ThreadID %d LastThreadID %d", c.ThreadID, c.LastThreadID)
+	fmt.Fprintf(&b, " SentryFastPath %d Acked %d", c.SentryFastPath, c.Acked)
 	fmt.Fprintf(&b, " signo: %d, siginfo: %+v", c.Signo, c.SignalInfo)
 	fmt.Fprintf(&b, " debug %d", atomic.LoadUint64(&c.Debug))
 	b.WriteString("}")

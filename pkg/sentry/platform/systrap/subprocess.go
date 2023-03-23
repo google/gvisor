@@ -743,7 +743,7 @@ func (s *subprocess) switchToApp(c *context, ac *arch.Context64) (isSyscall bool
 		restoreFPState(msg, ctx, sysThread.fpuStateToMsgOffset, c, ac)
 
 		msg.EnableSentryFastPath()
-		sysThread.waitEvent(sysmsg.ThreadStateDone)
+		sysThread.waitEvent(sysmsg.ThreadStateDone, ctx)
 
 		// Check if there's been an error.
 		if msg.Err != 0 {
@@ -1084,7 +1084,7 @@ func (s *subprocess) createSysmsgThread(tregs *arch.Registers, c *context, ac *a
 	}
 
 	if !contextDecouplingExp {
-		sysThread.waitEvent(sysmsg.ThreadStateNone)
+		sysThread.waitEvent(sysmsg.ThreadStateNone, c.sharedContext)
 		if msg := sysThread.msg; msg.Err != 0 {
 			panic(fmt.Sprintf("stub thread failed: %v (line %v)", msg.Err, msg.Line))
 		}
