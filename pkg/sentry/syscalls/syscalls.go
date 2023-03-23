@@ -78,6 +78,7 @@ func Error(name string, err error, note string, urls []string) kernel.Syscall {
 	return kernel.Syscall{
 		Name: name,
 		Fn: func(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+			kernel.IncrementUnimplementedSyscallCounter(sysno)
 			return 0, nil, err
 		},
 		SupportLevel: kernel.SupportUnimplemented,
