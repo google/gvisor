@@ -31,15 +31,15 @@ const (
 
 // Events interface defines method to emit unsupported events.
 type Events interface {
-	EmitUnimplementedEvent(context.Context)
+	EmitUnimplementedEvent(ctx context.Context, sysno uintptr)
 }
 
 // EmitUnimplementedEvent emits unsupported syscall event to the context.
-func EmitUnimplementedEvent(ctx context.Context) {
+func EmitUnimplementedEvent(ctx context.Context, sysno uintptr) {
 	e := ctx.Value(CtxEvents)
 	if e == nil {
 		log.Warningf("Context.Value(CtxEvents) not present, unimplemented syscall event not reported.")
 		return
 	}
-	e.(Events).EmitUnimplementedEvent(ctx)
+	e.(Events).EmitUnimplementedEvent(ctx, sysno)
 }

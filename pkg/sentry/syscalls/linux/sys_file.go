@@ -283,7 +283,7 @@ func Ioctl(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 		return 0, nil, setAsyncOwner(t, int(fd), file, ownerType, who)
 	}
 
-	ret, err := file.Ioctl(t, t.MemoryManager(), args)
+	ret, err := file.Ioctl(t, t.MemoryManager(), sysno, args)
 	return ret, nil, err
 }
 

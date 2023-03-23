@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library", "proto_library")
+load("//tools:defs.bzl", "go_library", "go_test", "proto_library")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -19,5 +19,14 @@ go_library(
     deps = [
         "//pkg/context",
         "//pkg/log",
+    ],
+)
+
+go_test(
+    name = "events_test",
+    srcs = ["events_test.go"],
+    deps = [
+        ":unimpl",
+        "//pkg/sentry/kernel",
     ],
 )

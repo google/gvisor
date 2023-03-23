@@ -2974,7 +2974,7 @@ func (s *sock) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flags 
 }
 
 // Ioctl implements vfs.FileDescriptionImpl.
-func (s *sock) Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+func (s *sock) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
 	t := kernel.TaskFromContext(ctx)
 	if t == nil {
 		panic("ioctl(2) may only be called from a task goroutine")
@@ -3011,11 +3011,11 @@ func (s *sock) Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallArgum
 		return 0, err
 	}
 
-	return Ioctl(ctx, s.Endpoint, uio, args)
+	return Ioctl(ctx, s.Endpoint, uio, sysno, args)
 }
 
 // Ioctl performs a socket ioctl.
-func Ioctl(ctx context.Context, ep commonEndpoint, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+func Ioctl(ctx context.Context, ep commonEndpoint, io usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
 	t := kernel.TaskFromContext(ctx)
 	if t == nil {
 		panic("ioctl(2) may only be called from a task goroutine")

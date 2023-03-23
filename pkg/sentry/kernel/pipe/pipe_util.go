@@ -135,7 +135,7 @@ func (p *Pipe) Readiness(mask waiter.EventMask) waiter.EventMask {
 }
 
 // Ioctl implements ioctls on the Pipe.
-func (p *Pipe) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+func (p *Pipe) Ioctl(ctx context.Context, io usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
 	// Switch on ioctl request.
 	switch int(args[1].Int()) {
 	case linux.FIONREAD:

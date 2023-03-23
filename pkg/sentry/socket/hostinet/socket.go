@@ -162,8 +162,8 @@ func (s *Socket) Epollable() bool {
 }
 
 // Ioctl implements vfs.FileDescriptionImpl.
-func (s *Socket) Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallArguments) (uintptr, error) {
-	return ioctl(ctx, s.fd, uio, args)
+func (s *Socket) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
+	return ioctl(ctx, s.fd, uio, sysno, args)
 }
 
 // PRead implements vfs.FileDescriptionImpl.PRead.

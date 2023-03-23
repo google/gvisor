@@ -55,7 +55,7 @@ func writev(fd int, srcs []unix.Iovec) (uint64, error) {
 	return uint64(n), nil
 }
 
-func ioctl(ctx context.Context, fd int, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+func ioctl(ctx context.Context, fd int, io usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
 	switch cmd := uintptr(args[1].Int()); cmd {
 	case unix.TIOCINQ, unix.TIOCOUTQ:
 		var val int32
