@@ -365,6 +365,28 @@ func TestVerifier(t *testing.T) {
 			WantVerifierCreationErr: true,
 		},
 		{
+			Name: "Prometheus metric name starts with reserved prefix",
+			Registration: newMetricRegistration(&metricMetadata{
+				PB: &pb.MetricMetadata{
+					Name:           "metaFooBar",
+					PrometheusName: "meta_foo_bar",
+					Type:           pb.MetricMetadata_TYPE_UINT64,
+				}},
+			),
+			WantVerifierCreationErr: true,
+		},
+		{
+			Name: "Prometheus metric name does not starts with reserved prefix but non-Prometheus metric name does",
+			Registration: newMetricRegistration(&metricMetadata{
+				PB: &pb.MetricMetadata{
+					Name:           "metaFooBar",
+					PrometheusName: "not_meta_foo_bar",
+					Type:           pb.MetricMetadata_TYPE_UINT64,
+				}},
+			),
+			WantVerifierCreationErr: false,
+		},
+		{
 			Name: "no buckets",
 			Registration: newMetricRegistration(&metricMetadata{
 				PB: &pb.MetricMetadata{
