@@ -1540,6 +1540,7 @@ func (k *Kernel) EmitUnimplementedEvent(ctx context.Context, sysno uintptr) {
 	})
 
 	t := TaskFromContext(ctx)
+	IncrementUnimplementedSyscallCounter(sysno)
 	_, _ = k.unimplementedSyscallEmitter.Emit(&uspb.UnimplementedSyscall{
 		Tid:       int32(t.ThreadID()),
 		Registers: t.Arch().StateData().Proto(),
