@@ -166,7 +166,7 @@ func (s *Socket) Epollable() bool {
 }
 
 // Ioctl implements vfs.FileDescriptionImpl.
-func (*Socket) Ioctl(context.Context, usermem.IO, arch.SyscallArguments) (uintptr, error) {
+func (*Socket) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
 	// TODO(b/68878065): no ioctls supported.
 	return 0, linuxerr.ENOTTY
 }

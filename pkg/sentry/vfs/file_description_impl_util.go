@@ -143,7 +143,7 @@ func (FileDescriptionDefaultImpl) ConfigureMMap(ctx context.Context, opts *memma
 
 // Ioctl implements FileDescriptionImpl.Ioctl analogously to
 // file_operations::unlocked_ioctl == NULL in Linux.
-func (FileDescriptionDefaultImpl) Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+func (FileDescriptionDefaultImpl) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
 	return 0, linuxerr.ENOTTY
 }
 

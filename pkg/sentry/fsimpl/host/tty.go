@@ -144,7 +144,7 @@ func (t *TTYFileDescription) Write(ctx context.Context, src usermem.IOSequence, 
 }
 
 // Ioctl implements vfs.FileDescriptionImpl.Ioctl.
-func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
 	task := kernel.TaskFromContext(ctx)
 	if task == nil {
 		return 0, linuxerr.ENOTTY
@@ -299,7 +299,7 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, args arch
 		linux.TIOCSSERIAL,
 		linux.TIOCGPTPEER:
 
-		unimpl.EmitUnimplementedEvent(ctx)
+		unimpl.EmitUnimplementedEvent(ctx, sysno)
 		fallthrough
 	default:
 		return 0, linuxerr.ENOTTY
