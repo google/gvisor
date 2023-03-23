@@ -24,6 +24,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/platform/interrupt"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/sysmsg"
 )
 
@@ -101,7 +102,7 @@ func exitsyscall()
 const deepSleepTimeout = uint64(80000)
 const handshakeTimeout = uint64(1000)
 
-func futexWaitForState(msg *sysmsg.Msg, state sysmsg.ThreadState, wakeup bool, acked uint32) syscall.Errno {
+func futexWaitForState(msg *sysmsg.Msg, state sysmsg.ThreadState, wakeup bool, acked uint32, interruptor interrupt.Receiver) syscall.Errno {
 	slowPath := false
 	errno := syscall.Errno(0)
 	start := cputicks()
@@ -141,12 +142,10 @@ func futexWaitForState(msg *sysmsg.Msg, state sysmsg.ThreadState, wakeup bool, a
 		}
 
 		if slowPath {
-			_, _, errno = unix.Syscall6(unix.SYS_FUTEX, uintptr(unsafe.Pointer(&msg.State)),
-				linux.FUTEX_WAIT, uintptr(curState), 0, 0, 0)
-			if errno != 0 && errno != unix.EAGAIN && errno != unix.EINTR {
+			errno = msg.SleepOnState(curState, interruptor)
+			if errno != 0 {
 				break
 			}
-			errno = 0
 		} else {
 			spinloop()
 		}
