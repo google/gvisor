@@ -16,12 +16,14 @@ package kernel
 
 import (
 	"fmt"
+	"strconv"
 
 	"google.golang.org/protobuf/proto"
 	"gvisor.dev/gvisor/pkg/abi"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
@@ -37,6 +39,10 @@ const (
 	// LINT.IfChange
 	maxSyscallNum = 2000
 	// LINT.ThenChange(../seccheck/syscall.go)
+
+	// outOfRangeSyscallNumber is used to represent a syscall number that is out of the
+	// range [0, maxSyscallNum] in monitoring.
+	outOfRangeSyscallNumber = "-1"
 )
 
 // SyscallSupportLevel is a syscall support levels.
@@ -347,6 +353,19 @@ func (s *SyscallTable) MaxSysno() (max uintptr) {
 // allSyscallTables contains all known tables.
 var allSyscallTables []*SyscallTable
 
+var (
+	// unimplementedSyscallCounterInit ensures the following fields are only initialized once.
+	unimplementedSyscallCounterInit sync.Once
+
+	// unimplementedSyscallNumbers maps syscall numbers to their string representation.
+	// Used such that incrementing unimplementedSyscallCounter does not require allocating memory.
+	unimplementedSyscallNumbers map[uintptr]string
+
+	// unimplementedSyscallCounter tracks the number of times each unimplemented syscall has been
+	// called by the sandboxed application.
+	unimplementedSyscallCounter *metric.Uint64Metric
+)
+
 // SyscallTables returns a read-only slice of registered SyscallTables.
 func SyscallTables() []*SyscallTable {
 	return allSyscallTables
@@ -371,6 +390,17 @@ func RegisterSyscallTable(s *SyscallTable) {
 		panic(fmt.Sprintf("Duplicate SyscallTable registered for OS %v Arch %v", s.OS, s.Arch))
 	}
 	allSyscallTables = append(allSyscallTables, s)
+	unimplementedSyscallCounterInit.Do(func() {
+		allowedValues := make([]string, maxSyscallNum+2)
+		unimplementedSyscallNumbers = make(map[uintptr]string, len(allowedValues))
+		for i := uintptr(0); i <= maxSyscallNum; i++ {
+			s := strconv.Itoa(int(i))
+			allowedValues[i] = s
+			unimplementedSyscallNumbers[i] = s
+		}
+		allowedValues[len(allowedValues)-1] = outOfRangeSyscallNumber
+		unimplementedSyscallCounter = metric.MustCreateNewUint64Metric("unimplemented_syscalls", true, "Number of times the application tried to call an unimplemented syscall, broken down by syscall number", metric.NewField("sysno", allowedValues))
+	})
 	s.Init()
 }
 
@@ -460,4 +490,18 @@ type SyscallInfo struct {
 	Args  arch.SyscallArguments
 	Rval  uintptr
 	Errno int
+}
+
+// IncrementUnimplementedSyscallCounter increments the "unimplemented syscall" metric for the given
+// syscall number.
+// A syscall table must have been initialized prior to calling this function.
+// +checkescape:all
+//
+//go:nosplit
+func IncrementUnimplementedSyscallCounter(sysno uintptr) {
+	s, found := unimplementedSyscallNumbers[sysno]
+	if !found {
+		s = outOfRangeSyscallNumber
+	}
+	unimplementedSyscallCounter.Increment(s)
 }
