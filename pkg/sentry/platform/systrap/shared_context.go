@@ -163,5 +163,7 @@ func (sc *sharedContext) resetAcked() {
 }
 
 func (sc *sharedContext) sleepOnState(state sysmsg.ContextState) {
-	sc.shared.SleepOnState(state)
+	if errno := sc.shared.SleepOnState(state, sc); errno != 0 {
+		panic(fmt.Sprintf("error waiting for state: %v", errno))
+	}
 }
