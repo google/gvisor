@@ -41,7 +41,8 @@ struct context_queue {
   uint32_t end;
   uint32_t polling_index;
   uint32_t polling_index_base;
-  uint32_t num_sleeping_threads;
+  uint32_t num_active_threads;
+  uint32_t num_active_contexts;
   uint32_t ringbuffer[MAX_CONTEXT_QUEUE_ENTRIES];
 };
 
@@ -209,22 +210,43 @@ struct thread_context *get_context(struct sysmsg *sysmsg) {
     __atomic_store_n(&sysmsg->state, THREAD_STATE_PREP, __ATOMIC_RELEASE);
     ctx = queue_get_context(sysmsg);
     if (ctx) return ctx;
+
     if (spinning_queue_push()) {
-      while (!spinning_queue_remove_first(__export_deep_sleep_timeout)) {
+      while (1) {
         ctx = queue_get_context(sysmsg);
         if (ctx) {
           spinning_queue_pop();
           return ctx;
         }
-
+        if (spinning_queue_remove_first(__export_deep_sleep_timeout)) {
+          break;
+        }
         spinloop();
       }
     }
-    __atomic_store_n(&sysmsg->state, THREAD_STATE_ASLEEP, __ATOMIC_RELEASE);
+    uint32_t nr_active_threads =
+        __atomic_sub_fetch(&queue->num_active_threads, 1, __ATOMIC_ACQ_REL);
+    uint32_t nr_active_contexts =
+        __atomic_load_n(&queue->num_active_contexts, __ATOMIC_ACQUIRE);
+    // We have to make another attempt to get a context here to prevent TOCTTOU
+    // races with waitOnState and kickSysmsgThread. There are two assumptions:
+    // * If the queue isn't empty, one or more threads have to be active.
+    // * A new thread isn't kicked, if the number of active threads are not less
+    //   than a number of active contexts.
+    if (nr_active_threads == 0 || nr_active_threads < nr_active_contexts) {
+      ctx = queue_get_context(sysmsg);
+      if (ctx) {
+        __atomic_add_fetch(&queue->num_active_threads, 1, __ATOMIC_ACQ_REL);
+        return ctx;
+      }
+    }
 
-    __atomic_add_fetch(&queue->num_sleeping_threads, 1, __ATOMIC_ACQ_REL);
-    sys_futex(&sysmsg->state, FUTEX_WAIT, THREAD_STATE_ASLEEP, NULL, NULL, 0);
-    __atomic_sub_fetch(&queue->num_sleeping_threads, 1, __ATOMIC_ACQ_REL);
+    __atomic_store_n(&sysmsg->state, THREAD_STATE_ASLEEP, __ATOMIC_RELEASE);
+    while (__atomic_load_n(&sysmsg->state, __ATOMIC_ACQUIRE) ==
+           THREAD_STATE_ASLEEP) {
+      sys_futex(&sysmsg->state, FUTEX_WAIT, THREAD_STATE_ASLEEP, NULL, NULL, 0);
+    }
+    __atomic_add_fetch(&queue->num_active_threads, 1, __ATOMIC_ACQ_REL);
   }
 }
 
@@ -233,6 +255,8 @@ struct thread_context *get_context(struct sysmsg *sysmsg) {
 struct thread_context *switch_context(struct sysmsg *sysmsg,
                                       struct thread_context *ctx,
                                       enum context_state new_context_state) {
+  struct context_queue *queue = __export_context_queue_addr;
+
   __atomic_store_n(&ctx->thread_id, INVALID_THREAD_ID, __ATOMIC_RELEASE);
   __atomic_store_n(&ctx->last_thread_id, sysmsg->thread_id, __ATOMIC_RELEASE);
   __atomic_store_n(&ctx->state, new_context_state, __ATOMIC_RELEASE);
@@ -242,6 +266,7 @@ struct thread_context *switch_context(struct sysmsg *sysmsg,
       panic(ret);
     }
   }
+  __atomic_sub_fetch(&queue->num_active_contexts, 1, __ATOMIC_ACQ_REL);
 
   struct thread_context *old_ctx = sysmsg->context;
 

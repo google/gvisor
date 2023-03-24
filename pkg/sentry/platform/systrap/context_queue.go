@@ -45,8 +45,10 @@ type contextQueue struct {
 	// stubPollingIndexBase is used by stubs to indicate to each other how many
 	// threads went to sleep.
 	stubPollingIndexBase uint32
-	// numSleepingThreads indicates to the sentry how many stubs are asleep.
-	numSleepingThreads uint32
+	// numActiveThreads indicates to the sentry how many stubs are running.
+	numActiveThreads uint32
+	// numActiveContext is a number of running and waiting contexts
+	numActiveContexts uint32
 	// ringbuffer is the mmapped region of memory that's shared with the stub
 	// threads.
 	ringbuffer [maxContextQueueEntries]uint32
@@ -62,7 +64,8 @@ func (q *contextQueue) init() {
 	atomic.StoreUint32(&q.end, 0)
 	atomic.StoreUint32(&q.stubPollingIndex, 0)
 	atomic.StoreUint32(&q.stubPollingIndexBase, 0)
-	atomic.StoreUint32(&q.numSleepingThreads, 0)
+	atomic.StoreUint32(&q.numActiveThreads, 0)
+	atomic.StoreUint32(&q.numActiveContexts, 0)
 }
 
 func (q *contextQueue) isEmpty() bool {
@@ -74,6 +77,7 @@ func (q *contextQueue) queuedContexts() uint32 {
 }
 
 func (q *contextQueue) add(contextID uint32) uint32 {
+	atomic.AddUint32(&q.numActiveContexts, 1)
 	next := atomic.AddUint32(&q.end, 1)
 	if (next % maxContextQueueEntries) ==
 		(atomic.LoadUint32(&q.start) % maxContextQueueEntries) {
