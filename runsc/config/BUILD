@@ -18,6 +18,7 @@ go_library(
         "//pkg/refs",
         "//pkg/sentry/watchdog",
         "//runsc/flag",
+        "//runsc/version",
     ],
 )
 
