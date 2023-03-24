@@ -69,7 +69,7 @@ type tunFD struct {
 }
 
 // Ioctl implements vfs.FileDescriptionImpl.Ioctl.
-func (fd *tunFD) Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+func (fd *tunFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
 	request := args[1].Uint()
 	data := args[2].Pointer()
 
