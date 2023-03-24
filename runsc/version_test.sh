@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright 2018 The gVisor Authors.
+# Copyright 2023 The gVisor Authors.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -19,8 +19,8 @@ set -euf -x -o pipefail
 readonly runsc="$1"
 readonly version=$($runsc --version)
 
-# Version should should not match VERSION, which is the default and which will
-# also appear if something is wrong with workspace_status.sh script.
+# Version should should not match VERSION, which is the default and which
+# will also appear if something is wrong with workspace_status.sh script.
 if [[ $version =~ "VERSION" ]]; then
   echo "FAIL: Got bad version $version"
   exit 1
