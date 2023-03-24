@@ -315,7 +315,9 @@ func newSubprocess(create func() (*thread, error), memoryFile *pgalloc.MemoryFil
 
 	// Create the initial sysmsg thread.
 	if contextDecouplingExp {
+		atomic.AddUint32(&sp.contextQueue.numActiveThreads, 1)
 		if _, err := sp.createSysmsgThread(nil, nil, nil); err != nil {
+			atomic.AddUint32(&sp.contextQueue.numActiveThreads, ^uint32(0))
 			return nil, err
 		}
 		sp.numSysmsgThreads++
@@ -799,6 +801,10 @@ func (s *subprocess) waitOnState(ctx *sharedContext) {
 	slowPath := false
 	start := cputicks()
 	handshake := false
+	if atomic.LoadUint32(&s.contextQueue.numActiveThreads) == 0 {
+		kicked = true
+		s.kickSysmsgThread()
+	}
 	for curState := ctx.state(); curState == sysmsg.ContextStateNone; curState = ctx.state() {
 		if !slowPath {
 			delta := uint64(cputicks() - start)
@@ -832,7 +838,15 @@ func (s *subprocess) waitOnState(ctx *sharedContext) {
 func (s *subprocess) kickSysmsgThread() {
 	s.sysmsgThreadsMu.Lock()
 
-	if atomic.LoadUint32(&s.contextQueue.numSleepingThreads) > 0 {
+	nrActiveContexts := atomic.LoadUint32(&s.contextQueue.numActiveContexts)
+	nrActiveThreads := atomic.LoadUint32(&s.contextQueue.numActiveThreads)
+
+	if nrActiveThreads >= nrActiveContexts {
+		s.sysmsgThreadsMu.Unlock()
+		return
+	}
+
+	if s.numSysmsgThreads > int(nrActiveThreads) {
 		for _, t := range s.sysmsgThreads {
 			if t.msg.State.Get() == sysmsg.ThreadStateAsleep {
 				t.msg.WakeSysmsgThread()
@@ -847,7 +861,10 @@ func (s *subprocess) kickSysmsgThread() {
 	if s.numSysmsgThreads < maxSysmsgThreads {
 		s.numSysmsgThreads++
 		s.sysmsgThreadsMu.Unlock()
+		atomic.AddUint32(&s.contextQueue.numActiveThreads, 1)
 		if _, err := s.createSysmsgThread(nil, nil, nil); err != nil {
+			log.Warningf("Unable to create a new stub thread: %s", err)
+			atomic.AddUint32(&s.contextQueue.numActiveThreads, ^uint32(0))
 			s.sysmsgThreadsMu.Lock()
 			s.numSysmsgThreads--
 			s.sysmsgThreadsMu.Unlock()
