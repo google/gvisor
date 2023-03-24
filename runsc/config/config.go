@@ -28,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 	"gvisor.dev/gvisor/runsc/flag"
+	"gvisor.dev/gvisor/runsc/version"
 )
 
 // Config holds configuration that is not part of the runtime spec.
@@ -391,6 +392,7 @@ func (b Bundle) Validate() error {
 // exported about the sandbox this config represents.
 func (c *Config) MetricMetadata() map[string]string {
 	return map[string]string{
+		"version":   version.Version(),
 		"platform":  c.Platform,
 		"network":   c.Network.String(),
 		"numcores":  strconv.Itoa(runtime.NumCPU()),
