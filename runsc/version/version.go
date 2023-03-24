@@ -1,4 +1,4 @@
-// Copyright 2019 The gVisor Authors.
+// Copyright 2023 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,7 +15,16 @@
 //go:build go1.1
 // +build go1.1
 
-package main
+// Package version holds a string containing version information for runsc.
+// Other packages may import it to get this information while avoiding
+// import loops.
+package version
 
-// version is set during linking.
+// version is the version string.
+// It is initialized by the runsc main() function.
 var version = "VERSION_MISSING"
+
+// Version returns the version string.
+func Version() string {
+	return version
+}
