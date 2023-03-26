@@ -26,7 +26,7 @@ import (
 )
 
 // Msgget implements msgget(2).
-func Msgget(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Msgget(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	key := ipc.Key(args[0].Int())
 	flag := args[1].Int()
 
@@ -44,7 +44,7 @@ func Msgget(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 }
 
 // Msgsnd implements msgsnd(2).
-func Msgsnd(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Msgsnd(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	id := ipc.ID(args[0].Int())
 	msgAddr := args[1].Pointer()
 	size := args[2].Int64()
@@ -78,7 +78,7 @@ func Msgsnd(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 }
 
 // Msgrcv implements msgrcv(2).
-func Msgrcv(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Msgrcv(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	id := ipc.ID(args[0].Int())
 	msgAddr := args[1].Pointer()
 	size := args[2].Int64()
@@ -127,7 +127,7 @@ func receive(t *kernel.Task, id ipc.ID, mType int64, maxSize int64, msgCopy, wai
 }
 
 // Msgctl implements msgctl(2).
-func Msgctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Msgctl(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	id := ipc.ID(args[0].Int())
 	cmd := args[1].Int()
 	buf := args[2].Pointer()

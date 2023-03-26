@@ -406,8 +406,7 @@ func (d *lisafsDentry) mknod(ctx context.Context, name string, creds *auth.Crede
 		return nil, err
 	}
 	hbep := opts.Endpoint.(transport.HostBoundEndpoint)
-	if err := hbep.SetBoundSocketFD(boundSocketFD); err != nil {
-		boundSocketFD.Close(ctx)
+	if err := hbep.SetBoundSocketFD(ctx, boundSocketFD); err != nil {
 		if err := d.controlFD.UnlinkAt(ctx, name, 0 /* flags */); err != nil {
 			log.Warningf("failed to clean up socket which was created by BindAt RPC: %v", err)
 		}

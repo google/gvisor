@@ -135,7 +135,7 @@ func (mfd *masterFileDescription) Write(ctx context.Context, src usermem.IOSeque
 }
 
 // Ioctl implements vfs.FileDescriptionImpl.Ioctl.
-func (mfd *masterFileDescription) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+func (mfd *masterFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
 	t := kernel.TaskFromContext(ctx)
 	if t == nil {
 		// ioctl(2) may only be called from a task goroutine.
@@ -193,7 +193,7 @@ func (mfd *masterFileDescription) Ioctl(ctx context.Context, io usermem.IO, args
 		}
 		return 0, t.ThreadGroup().SetForegroundProcessGroupID(mfd.t.masterKTTY, kernel.ProcessGroupID(pgid))
 	default:
-		maybeEmitUnimplementedEvent(ctx, cmd)
+		maybeEmitUnimplementedEvent(ctx, sysno, cmd)
 		return 0, linuxerr.ENOTTY
 	}
 }
@@ -212,7 +212,7 @@ func (mfd *masterFileDescription) Stat(ctx context.Context, opts vfs.StatOptions
 }
 
 // maybeEmitUnimplementedEvent emits unimplemented event if cmd is valid.
-func maybeEmitUnimplementedEvent(ctx context.Context, cmd uint32) {
+func maybeEmitUnimplementedEvent(ctx context.Context, sysno uintptr, cmd uint32) {
 	switch cmd {
 	case linux.TCGETS,
 		linux.TCSETS,
@@ -244,6 +244,6 @@ func maybeEmitUnimplementedEvent(ctx context.Context, cmd uint32) {
 		linux.TIOCSSERIAL,
 		linux.TIOCGPTPEER:
 
-		unimpl.EmitUnimplementedEvent(ctx)
+		unimpl.EmitUnimplementedEvent(ctx, sysno)
 	}
 }

@@ -490,7 +490,8 @@ func testHardLink(ctx context.Context, t *testing.T, tester Tester, root lisafs.
 	defer closeFD(ctx, t, fd)
 	defer unix.Close(hostFD)
 
-	link, linkStat := link(ctx, t, root, name, controlFile)
+	linkName := "linkFile"
+	link, linkStat := link(ctx, t, root, linkName, controlFile)
 	defer closeFD(ctx, t, link)
 
 	if linkStat.Ino != fileIno.Ino {

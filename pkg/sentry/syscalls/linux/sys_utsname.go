@@ -22,7 +22,7 @@ import (
 )
 
 // Uname implements linux syscall uname.
-func Uname(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Uname(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	version := t.SyscallTable().Version
 
 	uts := t.UTSNamespace()
@@ -51,7 +51,7 @@ func Uname(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 }
 
 // Setdomainname implements Linux syscall setdomainname.
-func Setdomainname(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Setdomainname(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	nameAddr := args[0].Pointer()
 	size := args[1].Int()
 
@@ -73,7 +73,7 @@ func Setdomainname(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 }
 
 // Sethostname implements Linux syscall sethostname.
-func Sethostname(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Sethostname(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	nameAddr := args[0].Pointer()
 	size := args[1].Int()
 

@@ -26,13 +26,13 @@ import (
 )
 
 // Pipe implements Linux syscall pipe(2).
-func Pipe(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Pipe(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
 	return 0, nil, pipe2(t, addr, 0)
 }
 
 // Pipe2 implements Linux syscall pipe2(2).
-func Pipe2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Pipe2(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
 	flags := args[1].Int()
 	return 0, nil, pipe2(t, addr, flags)

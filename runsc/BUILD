@@ -9,15 +9,17 @@ go_binary(
     name = "runsc",
     srcs = [
         "main.go",
-        "version.go",
     ],
     pure = True,
     tags = ["staging"],
     visibility = [
         "//visibility:public",
     ],
-    x_defs = {"main.version": "{STABLE_VERSION}"},
-    deps = ["//runsc/cli"],
+    x_defs = {"gvisor.dev/gvisor/runsc/version.version": "{STABLE_VERSION}"},
+    deps = [
+        "//runsc/cli",
+        "//runsc/version",
+    ],
 )
 
 # The runsc-race target is a race-compatible BUILD target. This must be built
@@ -37,15 +39,17 @@ go_binary(
     name = "runsc-race",
     srcs = [
         "main.go",
-        "version.go",
     ],
     gotags = ["lockdep"],
     static = True,
     visibility = [
         "//visibility:public",
     ],
-    x_defs = {"main.version": "{STABLE_VERSION}"},
-    deps = ["//runsc/cli"],
+    x_defs = {"gvisor.dev/gvisor/runsc/version.version": "{STABLE_VERSION}"},
+    deps = [
+        "//runsc/cli",
+        "//runsc/version",
+    ],
 )
 
 sh_test(

@@ -23,7 +23,7 @@ import (
 )
 
 // Eventfd2 implements linux syscall eventfd2(2).
-func Eventfd2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Eventfd2(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	initVal := uint64(args[0].Uint())
 	flags := uint(args[1].Uint())
 	allOps := uint(linux.EFD_SEMAPHORE | linux.EFD_NONBLOCK | linux.EFD_CLOEXEC)
@@ -55,7 +55,7 @@ func Eventfd2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 }
 
 // Eventfd implements linux syscall eventfd(2).
-func Eventfd(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Eventfd(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	args[1].Value = 0
-	return Eventfd2(t, args)
+	return Eventfd2(t, sysno, args)
 }

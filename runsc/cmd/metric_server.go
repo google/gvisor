@@ -701,7 +701,7 @@ func (m *MetricServer) serveMetrics(w http.ResponseWriter, req *http.Request) ht
 	// Meanwhile, build the map of all snapshots we will be rendering.
 	snapshotsToOptions := make(map[*prometheus.Snapshot]prometheus.SnapshotExportOptions, numSandboxes+2)
 	snapshotsToOptions[selfMetrics] = prometheus.SnapshotExportOptions{
-		ExporterPrefix: fmt.Sprintf("%smeta_", m.exporterPrefix),
+		ExporterPrefix: fmt.Sprintf("%s%s", m.exporterPrefix, prometheus.MetaMetricPrefix),
 	}
 	processMetrics := prometheus.NewSnapshot()
 	processMetrics.Add(prometheus.NewFloatData(&ProcessStartTimeMetric, float64(m.startTime.Unix())+(float64(m.startTime.Nanosecond())/1e9)))

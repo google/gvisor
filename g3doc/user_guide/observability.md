@@ -265,7 +265,7 @@ non-human-friendly hexadecimal strings.
 In order to provide more user-friendly labels, the metric server will pick up
 the `io.kubernetes.cri.sandbox-name` and `io.kubernetes.cri.sandbox-namespace`
 annotations provided by `containerd`, and automatically add these as labels
-(`pod` and `namespace` respectively) for each per-sandbox metric.
+(`pod_name` and `namespace_name` respectively) for each per-sandbox metric.
 
 ## Metrics exported
 

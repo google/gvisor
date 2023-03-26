@@ -38,6 +38,7 @@ import (
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/specutils"
+	"gvisor.dev/gvisor/runsc/version"
 )
 
 var (
@@ -56,7 +57,7 @@ var (
 )
 
 // Main is the main entrypoint.
-func Main(version string) {
+func Main() {
 	// Help and flags commands are generated automatically.
 	help := cmd.NewHelp(subcommands.DefaultCommander)
 	help.Register(new(cmd.Platforms))
@@ -118,7 +119,7 @@ func Main(version string) {
 	// Are we showing the version?
 	if *showVersion {
 		// The format here is the same as runc.
-		fmt.Fprintf(os.Stdout, "runsc version %s\n", version)
+		fmt.Fprintf(os.Stdout, "runsc version %s\n", version.Version())
 		fmt.Fprintf(os.Stdout, "spec: %s\n", specutils.Version)
 		os.Exit(0)
 	}
@@ -221,7 +222,7 @@ func Main(version string) {
 
 	log.Infof("***************************")
 	log.Infof("Args: %s", os.Args)
-	log.Infof("Version %s", version)
+	log.Infof("Version %s", version.Version())
 	log.Infof("GOOS: %s", runtime.GOOS)
 	log.Infof("GOARCH: %s", runtime.GOARCH)
 	log.Infof("PID: %d", os.Getpid())

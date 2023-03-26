@@ -110,7 +110,7 @@ func (f *FDTable) loadDescriptorTable(m map[int32]descriptor) {
 			panic(fmt.Sprintf("FD is not supposed to be negative. FD: %d", fd))
 		}
 
-		if file := f.set(ctx, fd, d.file, d.flags); file != nil {
+		if file := f.set(fd, d.file, d.flags); file != nil {
 			panic("file set")
 		}
 		f.fdBitmap.Add(uint32(fd))
@@ -158,14 +158,14 @@ func (f *FDTable) DecRef(ctx context.Context) {
 // forEachUpTo iterates over all non-nil files upto maxFds (non-inclusive) in sorted order.
 //
 // It is the caller's responsibility to acquire an appropriate lock.
-func (f *FDTable) forEachUpTo(ctx context.Context, maxFds int32, fn func(fd int32, file *vfs.FileDescription, flags FDFlags)) {
+func (f *FDTable) forEachUpTo(ctx context.Context, maxFd int32, fn func(fd int32, file *vfs.FileDescription, flags FDFlags)) {
 	// retries tracks the number of failed TryIncRef attempts for the same FD.
 	retries := 0
 	fds := f.fdBitmap.ToSlice()
 	// Iterate through the fdBitmap.
 	for _, ufd := range fds {
 		fd := int32(ufd)
-		if fd >= maxFds {
+		if fd >= maxFd {
 			break
 		}
 		file, flags, ok := f.get(fd)
@@ -246,7 +246,8 @@ func (f *FDTable) NewFDs(ctx context.Context, minFD int32, files []*vfs.FileDesc
 	// Ensure we don't get past the provided limit.
 	if limitSet := limits.FromContext(ctx); limitSet != nil {
 		lim := limitSet.Get(limits.NumberOfFiles)
-		if lim.Cur != limits.Infinity {
+		// Only set if the limit is smaller than the max to avoid overflow.
+		if lim.Cur != limits.Infinity && lim.Cur < uint64(MaxFdLimit) {
 			end = int32(lim.Cur)
 		}
 		if minFD+int32(len(files)) > end {
@@ -258,7 +259,6 @@ func (f *FDTable) NewFDs(ctx context.Context, minFD int32, files []*vfs.FileDesc
 
 	// max is used as the largest number in fdBitmap + 1.
 	max := int32(0)
-
 	if !f.fdBitmap.IsEmpty() {
 		max = int32(f.fdBitmap.Maximum())
 		max++
@@ -281,7 +281,7 @@ func (f *FDTable) NewFDs(ctx context.Context, minFD int32, files []*vfs.FileDesc
 			break
 		}
 		f.fdBitmap.Add(fd)
-		f.set(ctx, int32(fd), files[len(fds)], flags)
+		f.set(int32(fd), files[len(fds)], flags)
 		fds = append(fds, int32(fd))
 		minFD = int32(fd)
 	}
@@ -289,7 +289,7 @@ func (f *FDTable) NewFDs(ctx context.Context, minFD int32, files []*vfs.FileDesc
 	// Failure? Unwind existing FDs.
 	if len(fds) < len(files) {
 		for _, i := range fds {
-			f.set(ctx, i, nil, FDFlags{})
+			f.set(i, nil, FDFlags{})
 			f.fdBitmap.Remove(uint32(i))
 		}
 		f.mu.Unlock()
@@ -350,7 +350,7 @@ func (f *FDTable) newFDAt(ctx context.Context, fd int32, file *vfs.FileDescripti
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	df := f.set(ctx, fd, file, flags)
+	df := f.set(fd, file, flags)
 	// Add fd to fdBitmap.
 	if file != nil {
 		f.fdBitmap.Add(uint32(fd))
@@ -378,7 +378,7 @@ func (f *FDTable) SetFlags(ctx context.Context, fd int32, flags FDFlags) error {
 	}
 
 	// Update the flags.
-	f.set(ctx, fd, file, flags)
+	f.set(fd, file, flags)
 	return nil
 }
 
@@ -395,7 +395,7 @@ func (f *FDTable) SetFlagsForRange(ctx context.Context, startFd int32, endFd int
 	for fd, err := f.fdBitmap.FirstOne(uint32(startFd)); err == nil && fd <= uint32(endFd); fd, err = f.fdBitmap.FirstOne(fd + 1) {
 		fdI32 := int32(fd)
 		file, _, _ := f.get(fdI32)
-		f.set(ctx, fdI32, file, flags)
+		f.set(fdI32, file, flags)
 	}
 
 	return nil
@@ -452,14 +452,14 @@ func (f *FDTable) Exists(fd int32) bool {
 }
 
 // Fork returns an independent FDTable, cloning all FDs up to maxFds (non-inclusive).
-func (f *FDTable) Fork(ctx context.Context, maxFds int32) *FDTable {
+func (f *FDTable) Fork(ctx context.Context, maxFd int32) *FDTable {
 	clone := f.k.NewFDTable()
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.forEachUpTo(ctx, maxFds, func(fd int32, file *vfs.FileDescription, flags FDFlags) {
+	f.forEachUpTo(ctx, maxFd, func(fd int32, file *vfs.FileDescription, flags FDFlags) {
 		// The set function here will acquire an appropriate table
 		// reference for the clone. We don't need anything else.
-		if df := clone.set(ctx, fd, file, flags); df != nil {
+		if df := clone.set(fd, file, flags); df != nil {
 			panic("file set")
 		}
 		clone.fdBitmap.Add(uint32(fd))
@@ -481,7 +481,7 @@ func (f *FDTable) Remove(ctx context.Context, fd int32) *vfs.FileDescription {
 	if file != nil {
 		// Add reference for caller.
 		file.IncRef()
-		file = f.set(ctx, fd, nil, FDFlags{}) // Zap entry.
+		file = f.set(fd, nil, FDFlags{}) // Zap entry.
 		f.fdBitmap.Remove(uint32(fd))
 	}
 	f.mu.Unlock()
@@ -499,7 +499,7 @@ func (f *FDTable) RemoveIf(ctx context.Context, cond func(*vfs.FileDescription, 
 	f.mu.Lock()
 	f.forEach(ctx, func(fd int32, file *vfs.FileDescription, flags FDFlags) {
 		if cond(file, flags) {
-			df := f.set(ctx, fd, nil, FDFlags{}) // Clear from table.
+			df := f.set(fd, nil, FDFlags{}) // Clear from table.
 			f.fdBitmap.Remove(uint32(fd))
 			if df != nil {
 				files = append(files, df)
@@ -535,7 +535,7 @@ func (f *FDTable) RemoveNextInRange(ctx context.Context, startFd int32, endFd in
 	if file != nil {
 		// Add reference for caller.
 		file.IncRef()
-		file = f.set(ctx, fd, nil, FDFlags{}) // Zap entry.
+		file = f.set(fd, nil, FDFlags{}) // Zap entry.
 		f.fdBitmap.Remove(uint32(fd))
 	}
 	f.mu.Unlock()

@@ -27,7 +27,7 @@ import (
 
 // ArchPrctl implements linux syscall arch_prctl(2).
 // It sets architecture-specific process or thread state for t.
-func ArchPrctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func ArchPrctl(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	switch args[0].Int() {
 	case linux.ARCH_GET_FS:
 		addr := args[1].Pointer()
@@ -46,7 +46,7 @@ func ArchPrctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 			return 0, nil, linuxerr.EPERM
 		}
 	case linux.ARCH_GET_GS, linux.ARCH_SET_GS:
-		t.Kernel().EmitUnimplementedEvent(t)
+		t.Kernel().EmitUnimplementedEvent(t, sysno)
 		fallthrough
 	default:
 		return 0, nil, linuxerr.EINVAL

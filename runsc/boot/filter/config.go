@@ -426,7 +426,7 @@ func hostFilesystemFilters() seccomp.SyscallRules {
 				seccomp.MatchAny{},
 				validFDCheck,
 				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.AT_EMPTY_PATH),
+				seccomp.EqualTo(0),
 			},
 		},
 		unix.SYS_MKDIRAT: []seccomp.Rule{
@@ -457,11 +457,6 @@ func hostFilesystemFilters() seccomp.SyscallRules {
 				seccomp.MatchAny{},
 			},
 		},
-		unix.SYS_FCHDIR: []seccomp.Rule{
-			{
-				validFDCheck,
-			},
-		},
 		unix.SYS_READLINKAT: []seccomp.Rule{
 			{
 				validFDCheck,
@@ -490,73 +485,6 @@ func hostFilesystemFilters() seccomp.SyscallRules {
 			{
 				validFDCheck,
 				seccomp.MatchAny{},
-				seccomp.MatchAny{},
-				seccomp.MatchAny{},
-			},
-		},
-	}
-}
-
-// hostSocketCommonFilters contains syscalls that are needed to create socket FDs.
-func hostSocketCommonFilters() seccomp.SyscallRules {
-	return seccomp.SyscallRules{
-		unix.SYS_SOCKET: []seccomp.Rule{
-			{
-				seccomp.EqualTo(unix.AF_UNIX),
-				seccomp.EqualTo(unix.SOCK_STREAM),
-				seccomp.EqualTo(0),
-			},
-			{
-				seccomp.EqualTo(unix.AF_UNIX),
-				seccomp.EqualTo(unix.SOCK_DGRAM),
-				seccomp.EqualTo(0),
-			},
-			{
-				seccomp.EqualTo(unix.AF_UNIX),
-				seccomp.EqualTo(unix.SOCK_SEQPACKET),
-				seccomp.EqualTo(0),
-			},
-		},
-	}
-}
-
-// hostSocketCreateFilters contains syscalls that are needed to create UDS on
-// the host filesystem and interact with it.
-func hostSocketCreateFilters() seccomp.SyscallRules {
-	validFDCheck := nonNegativeFDCheck()
-	return seccomp.SyscallRules{
-		unix.SYS_BIND: []seccomp.Rule{
-			{
-				validFDCheck,
-				seccomp.MatchAny{},
-				seccomp.MatchAny{},
-			},
-		},
-		unix.SYS_LISTEN: []seccomp.Rule{
-			{
-				validFDCheck,
-				seccomp.MatchAny{},
-			},
-		},
-		unix.SYS_ACCEPT4: []seccomp.Rule{
-			{
-				validFDCheck,
-				seccomp.MatchAny{},
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOCK_NONBLOCK | unix.SOCK_CLOEXEC),
-			},
-		},
-	}
-}
-
-// hostSocketOpenFilters contains syscalls that are needed to open UDS on the
-// host filesystem and interact with it.
-func hostSocketOpenFilters() seccomp.SyscallRules {
-	validFDCheck := nonNegativeFDCheck()
-	return seccomp.SyscallRules{
-		unix.SYS_CONNECT: []seccomp.Rule{
-			{
-				validFDCheck,
 				seccomp.MatchAny{},
 				seccomp.MatchAny{},
 			},

@@ -27,7 +27,6 @@ import (
 	"gvisor.dev/gvisor/pkg/fsutil"
 	"gvisor.dev/gvisor/pkg/lisafs"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/fsutil/chdir"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -78,7 +77,7 @@ func (fs *filesystem) getDirectfsRootDentry(ctx context.Context, rootHostFD int,
 		rootControlFD.Close(ctx, false /* flush */)
 		return nil, err
 	}
-	d.impl.(*directfsDentry).rootControlFDLisa = rootControlFD
+	d.impl.(*directfsDentry).controlFDLisa = rootControlFD
 	return d, nil
 }
 
@@ -95,12 +94,16 @@ type directfsDentry struct {
 	// controlFD is the host FD to this file. controlFD is immutable.
 	controlFD int
 
-	// rootControlFDLisa is a lisafs control FD on this dentry. This is only set
-	// when this dentry represents the root of the current mount. This is
-	// required in cases where we require dentry.parent to perform operations.
-	// But for the root dentry, the parent is not available. So we fallback to
-	// using lisafs RPCs. rootControlFDLisa is immutable.
-	rootControlFDLisa lisafs.ClientFD `state:"nosave"`
+	// controlFDLisa is a lisafs control FD on this dentry.
+	// This is used to fallback to using lisafs RPCs in the following cases:
+	// * When parent dentry is required to perform operations but
+	//   dentry.parent = nil (root dentry).
+	// * For path-based syscalls (like connect(2) and bind(2)) on sockets.
+	//
+	// For the root dentry, controlFDLisa is always set and is immutable.
+	// For sockets, controlFDLisa is protected by dentry.handleMu and is
+	// immutable after initialization.
+	controlFDLisa lisafs.ClientFD `state:"nosave"`
 }
 
 // newDirectfsDentry creates a new dentry representing the given file. The dentry
@@ -147,10 +150,10 @@ func (fs *filesystem) newDirectfsDentry(controlFD int) (*dentry, error) {
 func (d *directfsDentry) openHandle(ctx context.Context, flags uint32) (handle, error) {
 	if d.parent == nil {
 		// This is a mount point. We don't have parent. Fallback to using lisafs.
-		if !d.rootControlFDLisa.Ok() {
-			panic("directfsDentry.rootControlFDLisa is not set for mount point file")
+		if !d.controlFDLisa.Ok() {
+			panic("directfsDentry.controlFDLisa is not set for mount point dentry")
 		}
-		openFD, hostFD, err := d.rootControlFDLisa.OpenAt(ctx, flags)
+		openFD, hostFD, err := d.controlFDLisa.OpenAt(ctx, flags)
 		if err != nil {
 			return noHandle, err
 		}
@@ -170,6 +173,55 @@ func (d *directfsDentry) openHandle(ctx context.Context, flags uint32) (handle, 
 		return noHandle, err
 	}
 	return handle{fd: int32(openFD)}, nil
+}
+
+// Precondition: fs.renameMu is locked.
+func (d *directfsDentry) ensureLisafsControlFD(ctx context.Context) error {
+	d.handleMu.Lock()
+	defer d.handleMu.Unlock()
+	if d.controlFDLisa.Ok() {
+		return nil
+	}
+
+	var names []string
+	root := d
+	for root.parent != nil {
+		names = append(names, root.name)
+		root = root.parent.impl.(*directfsDentry)
+	}
+	if !root.controlFDLisa.Ok() {
+		panic("controlFDLisa is not set for mount point dentry")
+	}
+	if len(names) == 0 {
+		return nil // d == root
+	}
+	// Reverse names.
+	last := len(names) - 1
+	for i := 0; i < len(names)/2; i++ {
+		names[i], names[last-i] = names[last-i], names[i]
+	}
+	status, inodes, err := root.controlFDLisa.WalkMultiple(ctx, names)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		// Close everything except for inodes[last] if it exists.
+		for i := 0; i < len(inodes) && i < last; i++ {
+			flush := i == last-1 || i == len(inodes)-1
+			d.fs.client.CloseFD(ctx, inodes[i].ControlFD, flush)
+		}
+	}()
+	switch status {
+	case lisafs.WalkComponentDoesNotExist:
+		return unix.ENOENT
+	case lisafs.WalkComponentSymlink:
+		log.Warningf("intermediate path component was a symlink? names = %v, inodes = %+v", names, inodes)
+		return unix.ELOOP
+	case lisafs.WalkSuccess:
+		d.controlFDLisa = d.fs.client.NewFD(inodes[last].ControlFD)
+		return nil
+	}
+	panic("unreachable")
 }
 
 // Precondition: d.metadataMu must be locked.
@@ -226,11 +278,11 @@ func (d *directfsDentry) chmod(ctx context.Context, mode uint16) error {
 
 	// This is a mount point socket. We don't have a parent FD. Fallback to using
 	// lisafs.
-	if !d.rootControlFDLisa.Ok() {
-		panic("directfsDentry.rootControlFDLisa is not set for mount point socket")
+	if !d.controlFDLisa.Ok() {
+		panic("directfsDentry.controlFDLisa is not set for mount point socket")
 	}
 
-	return chmod(ctx, d.rootControlFDLisa, mode)
+	return chmod(ctx, d.controlFDLisa, mode)
 }
 
 // Preconditions:
@@ -274,8 +326,8 @@ func (d *directfsDentry) utimensat(ctx context.Context, stat *linux.Statx) error
 
 	// This is a mount point symlink. We don't have a parent FD. Fallback to
 	// using lisafs.
-	if !d.rootControlFDLisa.Ok() {
-		panic("directfsDentry.rootControlFDLisa is not set for mount point symlink")
+	if !d.controlFDLisa.Ok() {
+		panic("directfsDentry.controlFDLisa is not set for mount point symlink")
 	}
 
 	setStat := linux.Statx{
@@ -283,7 +335,7 @@ func (d *directfsDentry) utimensat(ctx context.Context, stat *linux.Statx) error
 		Atime: stat.Atime,
 		Mtime: stat.Mtime,
 	}
-	_, failureErr, err := d.rootControlFDLisa.SetStat(ctx, &setStat)
+	_, failureErr, err := d.controlFDLisa.SetStat(ctx, &setStat)
 	if err != nil {
 		return err
 	}
@@ -352,8 +404,8 @@ func (d *directfsDentry) destroy(ctx context.Context) {
 	if d.controlFD >= 0 {
 		_ = unix.Close(d.controlFD)
 	}
-	if d.rootControlFDLisa.Ok() {
-		d.rootControlFDLisa.Close(ctx, true /* flush */)
+	if d.controlFDLisa.Ok() {
+		d.controlFDLisa.Close(ctx, true /* flush */)
 	}
 }
 
@@ -428,76 +480,29 @@ func (d *directfsDentry) mknod(ctx context.Context, name string, creds *auth.Cre
 	return d.getCreatedChild(name, int(creds.EffectiveKUID), int(creds.EffectiveKGID), false /* isDir */)
 }
 
-type boundSocketFD struct {
-	sock int
-}
-
-// Close closes the host and gofer-backed FDs associated to this bound socket.
-func (fd *boundSocketFD) Close(ctx context.Context) {
-	_ = unix.Close(fd.sock)
-}
-
-// NotificationFD is a host FD that can be used to notify when new clients
-// connect to the socket.
-func (fd *boundSocketFD) NotificationFD() int32 {
-	return int32(fd.sock)
-}
-
-// Listen makes a Listen RPC.
-func (fd *boundSocketFD) Listen(ctx context.Context, backlog int32) error {
-	return unix.Listen(int(fd.sock), int(backlog))
-}
-
-// Accept makes an Accept RPC.
-func (fd *boundSocketFD) Accept(ctx context.Context) (int, error) {
-	flags := unix.O_NONBLOCK | unix.O_CLOEXEC
-	nfd, _, err := unix.Accept4(int(fd.sock), flags)
-	if err != nil {
-		return -1, err
-	}
-	return nfd, nil
-}
-
 // Precondition: opts.Endpoint != nil and is transport.HostBoundEndpoint type.
 func (d *directfsDentry) bindAt(ctx context.Context, name string, creds *auth.Credentials, opts *vfs.MknodOptions) (*dentry, error) {
-	if !d.fs.opts.directfs.hostUDSBind {
-		return nil, unix.EPERM
+	// There are no filesystems mounted in the sandbox process's mount namespace.
+	// So we can't perform absolute path traversals. So fallback to using lisafs.
+	if err := d.ensureLisafsControlFD(ctx); err != nil {
+		return nil, err
 	}
-
-	// This mknod(2) is coming from unix bind(2), as opts.Endpoint is set.
 	sockType := opts.Endpoint.(transport.Endpoint).Type()
-	if !isSocketTypeSupported(sockType) {
-		return nil, unix.ENXIO
-	}
-	// Create the socket.
-	sockFD, err := unix.Socket(unix.AF_UNIX, int(sockType), 0)
+	childInode, boundSocketFD, err := d.controlFDLisa.BindAt(ctx, sockType, name, opts.Mode, lisafs.UID(creds.EffectiveKUID), lisafs.GID(creds.EffectiveKGID))
 	if err != nil {
 		return nil, err
 	}
-	bsFD := &boundSocketFD{sockFD}
+	d.fs.client.CloseFD(ctx, childInode.ControlFD, true /* flush */)
+	// Update opts.Endpoint that it is bound.
 	hbep := opts.Endpoint.(transport.HostBoundEndpoint)
-	if err := hbep.SetBoundSocketFD(bsFD); err != nil {
-		bsFD.Close(ctx)
+	if err := hbep.SetBoundSocketFD(ctx, boundSocketFD); err != nil {
+		if err := unix.Unlinkat(d.controlFD, name, 0); err != nil {
+			log.Warningf("error unlinking newly created socket %q after failure: %v", filepath.Join(genericDebugPathname(&d.dentry), name), err)
+		}
 		return nil, err
 	}
-
-	// fchmod(2) has to happen *before* the bind(2). sockFD's file mode will
-	// be used in creating the filesystem-object in bind(2).
-	if err := unix.Fchmod(sockFD, uint32(opts.Mode&^unix.S_IFMT)); err != nil {
-		hbep.ResetBoundSocketFD(ctx)
-		return nil, err
-	}
-
-	// There are no filesystems mounted in the sandbox process's mount namespace.
-	// So we can't perform absolute path traversals. So fchdir(2) to this
-	// directory and bind at name (relative path traversal).
-	if err := chdir.DoInDir(d.controlFD, func() error {
-		return unix.Bind(sockFD, &unix.SockaddrUnix{Name: name})
-	}); err != nil {
-		hbep.ResetBoundSocketFD(ctx)
-		return nil, err
-	}
-	child, err := d.getCreatedChild(name, int(creds.EffectiveKUID), int(creds.EffectiveKGID), false /* isDir */)
+	// Socket already has the right UID/GID set, so use uid = gid = -1.
+	child, err := d.getCreatedChild(name, -1 /* uid */, -1 /* gid */, false /* isDir */)
 	if err != nil {
 		hbep.ResetBoundSocketFD(ctx)
 		return nil, err
@@ -507,8 +512,16 @@ func (d *directfsDentry) bindAt(ctx context.Context, name string, creds *auth.Cr
 	return child, nil
 }
 
+// Precondition: d.fs.renameMu must be locked.
 func (d *directfsDentry) link(target *directfsDentry, name string) (*dentry, error) {
-	if err := unix.Linkat(target.controlFD, "", d.controlFD, name, unix.AT_EMPTY_PATH); err != nil {
+	// Using linkat(targetFD, "", newdirfd, name, AT_EMPTY_PATH) requires
+	// CAP_DAC_READ_SEARCH in the *root* userns. With directfs, the sandbox
+	// process has CAP_DAC_READ_SEARCH in its own userns. But the sandbox is
+	// running in a different userns. So we can't use AT_EMPTY_PATH. Fallback to
+	// using olddirfd to call linkat(2).
+	// Also note that d and target are from the same mount. Given target is a
+	// non-directory and d is a directory, target.parent must exist.
+	if err := unix.Linkat(target.parent.impl.(*directfsDentry).controlFD, target.name, d.controlFD, name, 0); err != nil {
 		return nil, err
 	}
 	// Note that we don't need to set uid/gid for the new child. This is a hard
@@ -591,41 +604,12 @@ func (d *directfsDentry) getDirentsLocked(count int, recordDirent func(name stri
 
 // Precondition: fs.renameMu is locked.
 func (d *directfsDentry) connect(ctx context.Context, sockType linux.SockType) (int, error) {
-	if !d.fs.opts.directfs.hostUDSConnect {
-		return -1, unix.EPERM
-	}
-
-	if d.parent == nil {
-		// This is a mount point socket. Fall back to lisafs for connect since we
-		// don't have parent.
-		if !d.rootControlFDLisa.Ok() {
-			panic("directfsDentry.rootControlFDLisa is not set for mount point socket")
-		}
-		return d.rootControlFDLisa.Connect(ctx, sockType)
-	}
-
-	if !isSocketTypeSupported(sockType) {
-		log.Warningf("unsupported socket type %d", sockType)
-		return -1, unix.ENXIO
-	}
-
-	sock, err := unix.Socket(unix.AF_UNIX, int(sockType), 0)
-	if err != nil {
-		log.Warningf("socket(2) failed: %v", err)
-		return -1, err
-	}
-
 	// There are no filesystems mounted in the sandbox process's mount namespace.
-	// So we can't perform absolute path traversals. So fchdir(2) to parent
-	// and connect to this socket at name (relative path traversal).
-	if err := chdir.DoInDir(d.parent.impl.(*directfsDentry).controlFD, func() error {
-		return unix.Connect(sock, &unix.SockaddrUnix{Name: d.name})
-	}); err != nil {
-		unix.Close(sock)
-		log.Warningf("connect(2) failed: %v", err)
+	// So we can't perform absolute path traversals. So fallback to using lisafs.
+	if err := d.ensureLisafsControlFD(ctx); err != nil {
 		return -1, err
 	}
-	return sock, nil
+	return d.controlFDLisa.Connect(ctx, sockType)
 }
 
 func (d *directfsDentry) readlink() (string, error) {

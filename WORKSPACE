@@ -1485,8 +1485,8 @@ http_file(
 
 http_file(
     name = "github_workflow_schema",
-    sha256 = "60603d1095b11d136e04a8b95be83a23ad8044169e46f82f925c320c1cf47a49",
-    urls = ["https://raw.githubusercontent.com/SchemaStore/schemastore/27612065234778feaac216ce14dd47846fe0a2dd/src/schemas/json/github-workflow.json"],
+    sha256 = "7499ccb3e75975504ea1ee7c70291e0c9f6c1f684678091d013061fe263e3ddb",
+    urls = ["https://raw.githubusercontent.com/SchemaStore/schemastore/166136b96a14f103a948053903e9339e63ad9170/src/schemas/json/github-workflow.json"],
 )
 
 # External Go repositories.

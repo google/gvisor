@@ -48,8 +48,8 @@ func (i *Writer) Write(data []byte) (n int, err error) {
 
 // Infof writes message to log and stdout.
 func Infof(format string, args ...any) {
-	log.Infof(format, args)
-	fmt.Printf(format+"\n", args)
+	log.Infof(format, args...)
+	fmt.Printf(format+"\n", args...)
 }
 
 // Errorf logs error to containerd log (--log), to stderr, and debug logs. It

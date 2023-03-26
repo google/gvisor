@@ -40,7 +40,7 @@ func lookupCaps(t *kernel.Task, tid kernel.ThreadID) (permitted, inheritable, ef
 }
 
 // Capget implements Linux syscall capget.
-func Capget(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Capget(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	hdrAddr := args[0].Pointer()
 	dataAddr := args[1].Pointer()
 
@@ -104,7 +104,7 @@ func Capget(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 }
 
 // Capset implements Linux syscall capset.
-func Capset(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Capset(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	hdrAddr := args[0].Pointer()
 	dataAddr := args[1].Pointer()
 

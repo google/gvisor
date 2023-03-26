@@ -54,15 +54,6 @@ long sys_futex(uint32_t *addr, int op, int val, struct __kernel_timespec *tv,
                    (long)addr2, (long)val3);
 }
 
-void check_sysmsg_thread_context(struct sysmsg *sysmsg,
-                                 struct thread_context **ctx) {
-  struct thread_context *new_ctx = thread_context_addr(sysmsg);
-  if (*ctx != new_ctx) {
-    *ctx = new_ctx;
-    __atomic_store_n(&(*ctx)->fpstate_changed, 1, __ATOMIC_RELEASE);
-  }
-}
-
 union csgsfs {
   uint64_t csgsfs;  // REG_CSGSFS
   struct {
@@ -164,37 +155,64 @@ static void set_fsbase(struct user_regs_struct *ptregs) {
   }
 }
 
+// switch_context_amd64 is a wrapper of switch_context() which does checks
+// specific to amd64.
+struct thread_context *switch_context_amd64(
+    struct sysmsg *sysmsg, struct thread_context *ctx,
+    enum thread_state new_thread_state, enum context_state new_context_state) {
+  get_fsbase(&ctx->ptregs);
+  long fs_base = ctx->ptregs.fs_base;
+
+  for (;;) {
+    // TODO(b/271631387): Once stub code globals can be used between objects
+    // move this check into sysmsg_lib:switch_context().
+    if (__export_context_decoupling_exp) {
+      ctx = switch_context(sysmsg, ctx, new_context_state);
+    } else {
+      ctx->state = new_context_state;
+      wait_state(sysmsg, new_thread_state);
+    }
+
+    if (__atomic_load_n(&ctx->interrupt, __ATOMIC_ACQUIRE) != 0) {
+      // This context got interrupted while it was waiting in the queue.
+      // Setup all the necessary bits to let the sentry know this context has
+      // switched back because of it.
+      __atomic_store_n(&ctx->interrupt, 0, __ATOMIC_RELEASE);
+      new_context_state = CONTEXT_STATE_FAULT;
+      ctx->signo = SIGCHLD;
+      ctx->siginfo.si_signo = SIGCHLD;
+      ctx->ptregs.orig_rax = -1;
+    } else {
+      break;
+    }
+  }
+  if (fs_base != ctx->ptregs.fs_base) {
+    set_fsbase(&ctx->ptregs);
+  }
+  return ctx;
+}
+
 void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
   ucontext_t *ucontext = _ucontext;
   void *sp = sysmsg_sp();
   struct sysmsg *sysmsg = sysmsg_addr(sp);
 
   if (sysmsg != sysmsg->self) panic(0xdeaddead);
-  struct thread_context *ctx = thread_context_addr(sysmsg);
+  int32_t thread_state = __atomic_load_n(&sysmsg->state, __ATOMIC_ACQUIRE);
+  if (__export_context_decoupling_exp &&
+      thread_state == THREAD_STATE_INITIALIZING) {
+    // This thread was interrupted before it even had a context.
+    return;
+  }
+
+  struct thread_context *ctx = sysmsg->context;
 
   if (signo == SIGCHLD) {
     // If the current thread is in syshandler, an interrupt has to be postponed,
     // because sysmsg can't be changed.
-    int32_t thread_state;
-    thread_state = __atomic_load_n(&sysmsg->state, __ATOMIC_ACQUIRE);
     if (thread_state != THREAD_STATE_NONE) {
-      // There are two possibilities for when we received the interrupt:
-      //   1. Before syshandler switched to the sentry.
-      //      In this case we do not need to postpone the interrupt because it
-      //      will be handled as soon as the Task returns to the sentry kernel.
-      //   2. After syshandler has received a response from the sentry.
-      //      This is an interrupt most likely targeted at whatever context is
-      //      bound to the sysmsg right now, but there is an unlikely case that
-      //      an interrupt takes a while to reach the stub and the context has
-      //      changed. For this reason we write which context ID the interrupt
-      //      was meant for in sysmsg and check against that.
-      uint64_t interrupted_tid =
-          __atomic_load_n(&sysmsg->interrupted_context_id, __ATOMIC_ACQUIRE);
-      if (thread_state == THREAD_STATE_DONE &&
-          (interrupted_tid == sysmsg->context_id)) {
+      if (__atomic_load_n(&ctx->interrupt, __ATOMIC_ACQUIRE))
         __atomic_store_n(&sysmsg->interrupt, 1, __ATOMIC_RELEASE);
-        __atomic_store_n(&ctx->interrupt, 1, __ATOMIC_RELAXED);
-      }
       return;
     }
   } else if (signo == SIGILL && sysmsg->state == THREAD_STATE_INTERRUPT) {
@@ -221,6 +239,7 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
     return;
   }
 
+  enum context_state ctx_state = CONTEXT_STATE_INVALID;
   ctx->signo = signo;
   ctx->siginfo = *siginfo;
   gregs_to_ptregs(ucontext, &ctx->ptregs);
@@ -235,9 +254,7 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
 
   switch (signo) {
     case SIGSYS: {
-      int si_sysno = siginfo->si_syscall;
-      int i;
-      ctx->state = CONTEXT_STATE_SYSCALL;
+      ctx_state = CONTEXT_STATE_SYSCALL;
 
       // Check whether this syscall can be replaced on a function call or not.
       // If a syscall instruction set is "mov sysno, %eax, syscall", it can be
@@ -292,7 +309,7 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
 
         if (need_trap) {
           // This syscall can be replaced on the function call.
-          ctx->state = CONTEXT_STATE_SYSCALL_NEED_TRAP;
+          ctx_state = CONTEXT_STATE_SYSCALL_NEED_TRAP;
         }
       }
       ctx->ptregs.orig_rax = ctx->ptregs.rax;
@@ -310,19 +327,14 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
     case SIGTRAP:
     case SIGILL:
       ctx->ptregs.orig_rax = -1;
-      ctx->state = CONTEXT_STATE_FAULT;
+      ctx_state = CONTEXT_STATE_FAULT;
       break;
     default:
       return;
   }
-  get_fsbase(&ctx->ptregs);
-  long fs_base = ctx->ptregs.fs_base;
 
-  wait_state(sysmsg, THREAD_STATE_EVENT);
+  ctx = switch_context_amd64(sysmsg, ctx, THREAD_STATE_EVENT, ctx_state);
 
-  if (fs_base != __atomic_load_n(&ctx->ptregs.fs_base, __ATOMIC_ACQUIRE)) {
-    set_fsbase(&ctx->ptregs);
-  }
   if (__export_context_decoupling_exp &&
       __atomic_load_n(&ctx->fpstate_changed, __ATOMIC_ACQUIRE)) {
     memcpy((uint8_t *)ucontext->uc_mcontext.fpregs, ctx->fpstate,
@@ -340,24 +352,25 @@ void __syshandler() {
   int state = __atomic_load_n(&sysmsg->state, __ATOMIC_ACQUIRE);
   if (state != THREAD_STATE_PREP) panic(state);
 
-  struct thread_context *ctx = thread_context_addr(sysmsg);
+  struct thread_context *ctx = sysmsg->context;
 
-  ctx->state = CONTEXT_STATE_SYSCALL_TRAP;
+  enum context_state ctx_state = CONTEXT_STATE_SYSCALL_TRAP;
   ctx->signo = SIGSYS;
   ctx->siginfo.si_addr = 0;
   ctx->siginfo.si_syscall = ctx->ptregs.rax;
   ctx->ptregs.rax = (unsigned long)-ENOSYS;
-  __atomic_store_n(&sysmsg->interrupt, 0, __ATOMIC_RELAXED);
 
-  get_fsbase(&ctx->ptregs);
-  long fs_base = ctx->ptregs.fs_base;
+  switch_context_amd64(sysmsg, ctx, THREAD_STATE_EVENT, ctx_state);
+}
 
-  state = wait_state(sysmsg, THREAD_STATE_EVENT);
+// asm_restore_state is implemented in syshandler_amd64.S
+void asm_restore_state();
 
-  // Restore state
-  if (fs_base != ctx->ptregs.fs_base) {
-    set_fsbase(&ctx->ptregs);
-  }
+// On x86 restore_state jumps straight to user code and does not return.
+void restore_state(struct sysmsg *sysmsg, struct thread_context *ctx,
+                   void *unused) {
+  set_fsbase(&ctx->ptregs);
+  asm_restore_state();
 }
 
 void verify_offsets_amd64() {

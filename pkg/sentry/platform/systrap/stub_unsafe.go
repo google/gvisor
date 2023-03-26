@@ -109,6 +109,9 @@ func stubInit() {
 	// |--------stubSysmsgStack-------------|
 	// | Reserved space for per-thread      |
 	// | sysmsg stacks.                     |
+	// |----------stubContextQueue----------|
+	// | Shared ringbuffer queue for stubs  |
+	// | to select the next context.        |
 	// |--------stubThreadContextRegion-----|
 	// | Reserved space for thread contexts |
 	// *------------------------------------*
@@ -131,10 +134,22 @@ func stubInit() {
 	// Add a guard page.
 	mapLen += hostarch.PageSize
 	stubSysmsgStack = mapLen
+
 	// Allocate maxGuestThreads plus ONE because each per-thread stack
 	// has to be aligned to sysmsg.PerThreadMemSize.
 	// Look at sysmsg/sighandler.c:sysmsg_addr() for more details.
 	mapLen, _ = hostarch.PageRoundUp(mapLen + sysmsg.PerThreadMemSize*(maxSystemThreads+1))
+
+	// Allocate context queue region
+	if contextDecouplingExp {
+		stubContextQueueRegion = mapLen
+		stubContextQueueRegionLen, _ = hostarch.PageRoundUp(unsafe.Sizeof(contextQueue{}))
+		mapLen += stubContextQueueRegionLen
+
+		stubSpinningThreadQueueAddr = mapLen
+		mapLen += sysmsg.SpinningQueueMemSize
+	}
+
 	// Allocate thread context region
 	stubContextRegion = mapLen
 	stubContextRegionLen = sysmsg.AllocatedSizeofThreadContextStruct * (maxGuestContexts + 1)
@@ -177,6 +192,7 @@ func stubInit() {
 	// Randomize stubSysmsgStack address.
 	gap := uintptr(rand.Uint64()) * hostarch.PageSize % (maximumUserAddress - stubStart - mapLen)
 	stubSysmsgStack += uintptr(gap)
+	stubContextQueueRegion += uintptr(gap)
 	stubContextRegion += uintptr(gap)
 
 	// Copy the stub to the address.
@@ -187,6 +203,8 @@ func stubInit() {
 	stubSysmsgStart += stubStart
 	stubSysmsgStack += stubStart
 	stubROMapEnd += stubStart
+	stubContextQueueRegion += stubStart
+	stubSpinningThreadQueueAddr += stubStart
 	stubContextRegion += stubStart
 
 	// Align stubSysmsgStack to the per-thread stack size.
@@ -204,11 +222,18 @@ func stubInit() {
 	*p = deepSleepTimeout
 	p = (*uint64)(unsafe.Pointer(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_handshake_timeout)))
 	*p = handshakeTimeout
+	p = (*uint64)(unsafe.Pointer(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_context_region)))
+	*p = uint64(stubContextRegion)
 	archState := (*sysmsg.ArchState)(unsafe.Pointer(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_arch_state)))
 	archState.Init()
 	exp := (*uint64)(unsafe.Pointer(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_context_decoupling_exp)))
 	if contextDecouplingExp {
 		*exp = 1
+		contextQueue := (*uint64)(unsafe.Pointer(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_context_queue_addr)))
+		*contextQueue = uint64(stubContextQueueRegion)
+
+		p = (*uint64)(unsafe.Pointer(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_spinning_queue_addr)))
+		*p = uint64(stubSpinningThreadQueueAddr)
 	}
 
 	prepareSeccompRules(stubSysmsgStart, stubSysmsgRules, stubSysmsgRulesLen)
@@ -224,7 +249,7 @@ func stubInit() {
 
 	// Set the end.
 	stubEnd = stubStart + mapLen + uintptr(gap)
-	log.Debugf("stubStart %x stubSysmsgStart %x stubSysmsgStack %x, stubThreadContextRegion %x, mapLen %x", stubStart, stubSysmsgStart, stubSysmsgStack, stubContextRegion, mapLen)
+	log.Debugf("stubStart %x stubSysmsgStart %x stubSysmsgStack %x, stubContextQueue %x, stubThreadContextRegion %x, mapLen %x", stubStart, stubSysmsgStart, stubSysmsgStack, stubContextQueueRegion, stubContextRegion, mapLen)
 	log.Debugf(archState.String())
 	log.Debugf("contextDecouplingExp=%t", contextDecouplingExp)
 }

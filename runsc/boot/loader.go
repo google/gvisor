@@ -101,6 +101,9 @@ type containerInfo struct {
 	// stdioFDs contains stdin, stdout, and stderr.
 	stdioFDs []*fd.FD
 
+	// passFDs are mappings of user-supplied host to guest file descriptors.
+	passFDs []fdMapping
+
 	// goferFDs are the FDs that attach the sandbox to the gofers.
 	goferFDs []*fd.FD
 
@@ -186,6 +189,21 @@ type execProcess struct {
 	hostTTY *fd.FD
 }
 
+// fdMapping maps guest to host file descriptors. Guest file descriptors are
+// exposed to the application inside the sandbox through the FD table.
+type fdMapping struct {
+	guest int
+	host  *fd.FD
+}
+
+// FDMapping is a helper type to represent a mapping from guest to host file
+// descriptors. In contrast to the unexported fdMapping type, it does not imply
+// file ownership.
+type FDMapping struct {
+	Guest int
+	Host  int
+}
+
 func init() {
 	// Initialize the random number generator.
 	mrand.Seed(gtime.Now().UnixNano())
@@ -211,6 +229,9 @@ type Args struct {
 	// StdioFDs is the stdio for the application. The Loader takes ownership of
 	// these FDs and may close them at any time.
 	StdioFDs []int
+	// PassFDs are user-supplied FD mappings from host to guest descriptors.
+	// The Loader takes ownership of these FDs and may close them at any time.
+	PassFDs []FDMapping
 	// OverlayFilestoreFDs are the FDs to the regular files that will back the
 	// tmpfs upper mount in the overlay mounts.
 	OverlayFilestoreFDs []int
@@ -286,6 +307,12 @@ func New(args Args) (*Loader, error) {
 	}
 	for _, overlayFD := range args.OverlayFilestoreFDs {
 		info.overlayFilestoreFDs = append(info.overlayFilestoreFDs, fd.New(overlayFD))
+	}
+	for _, customFD := range args.PassFDs {
+		info.passFDs = append(info.passFDs, fdMapping{
+			host:  fd.New(customFD.Host),
+			guest: customFD.Guest,
+		})
 	}
 
 	// Create kernel and platform.
@@ -529,6 +556,9 @@ func (l *Loader) Destroy() {
 	for _, f := range l.root.stdioFDs {
 		_ = f.Close()
 	}
+	for _, f := range l.root.passFDs {
+		_ = f.host.Close()
+	}
 	for _, f := range l.root.goferFDs {
 		_ = f.Close()
 	}
@@ -571,15 +601,12 @@ func (l *Loader) installSeccompFilters() error {
 	if l.root.conf.DisableSeccomp {
 		filter.Report("syscall filter is DISABLED. Running in less secure mode.")
 	} else {
-		hostUDS := l.root.conf.GetHostUDS()
 		hostnet := l.root.conf.Network == config.NetworkHost
 		opts := filter.Options{
 			Platform:              l.k.Platform,
 			HostNetwork:           hostnet,
 			HostNetworkRawSockets: hostnet && l.root.conf.EnableRaw,
 			HostFilesystem:        l.root.conf.DirectFS,
-			HostSocketCreate:      l.root.conf.DirectFS && hostUDS.AllowCreate(),
-			HostSocketOpen:        l.root.conf.DirectFS && hostUDS.AllowOpen(),
 			ProfileEnable:         l.root.conf.ProfileEnable,
 			ControllerFD:          l.ctrl.srv.FD(),
 		}
@@ -825,7 +852,7 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 func (l *Loader) createContainerProcess(root bool, cid string, info *containerInfo) (*kernel.ThreadGroup, *host.TTYFileDescription, error) {
 	// Create the FD map, which will set stdin, stdout, and stderr.
 	ctx := info.procArgs.NewContext(l.k)
-	fdTable, ttyFile, err := createFDTable(ctx, info.spec.Process.Terminal, info.stdioFDs, info.spec.Process.User)
+	fdTable, ttyFile, err := createFDTable(ctx, info.spec.Process.Terminal, info.stdioFDs, info.passFDs, info.spec.Process.User)
 	if err != nil {
 		return nil, nil, fmt.Errorf("importing fds: %w", err)
 	}
@@ -1391,7 +1418,7 @@ func (l *Loader) ttyFromIDLocked(key execID) (*host.TTYFileDescription, error) {
 	return ep.tty, nil
 }
 
-func createFDTable(ctx context.Context, console bool, stdioFDs []*fd.FD, user specs.User) (*kernel.FDTable, *host.TTYFileDescription, error) {
+func createFDTable(ctx context.Context, console bool, stdioFDs []*fd.FD, passFDs []fdMapping, user specs.User) (*kernel.FDTable, *host.TTYFileDescription, error) {
 	if len(stdioFDs) != 3 {
 		return nil, nil, fmt.Errorf("stdioFDs should contain exactly 3 FDs (stdin, stdout, and stderr), but %d FDs received", len(stdioFDs))
 	}
@@ -1399,6 +1426,11 @@ func createFDTable(ctx context.Context, console bool, stdioFDs []*fd.FD, user sp
 		0: stdioFDs[0],
 		1: stdioFDs[1],
 		2: stdioFDs[2],
+	}
+
+	// Create the entries for the host files that were passed to our app.
+	for _, customFD := range passFDs {
+		fdMap[customFD.guest] = customFD.host
 	}
 
 	k := kernel.KernelFromContext(ctx)

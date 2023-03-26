@@ -52,18 +52,16 @@ import (
 	"fmt"
 	"os"
 	"sync"
-	"sync/atomic"
 
-	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	pkgcontext "gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/memutil"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/platform/interrupt"
+	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/sysmsg"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/usertrap"
 )
 
@@ -80,12 +78,18 @@ var (
 	stubSysmsgStack uintptr
 	stubSysmsgStart uintptr
 	stubSysmsgEnd   uintptr
+	// Memory region to store the contextQueue.
+	stubContextQueueRegion    uintptr
+	stubContextQueueRegionLen uintptr
 	// Memory region to store instances of sysmsg.ThreadContext.
 	stubContextRegion    uintptr
 	stubContextRegionLen uintptr
 	// The memory blob with precompiled seccomp rules.
 	stubSysmsgRules    uintptr
 	stubSysmsgRulesLen uintptr
+
+	stubSpinningThreadQueueAddr uintptr
+	stubSpinningThreadQueueSize uintptr
 
 	// stubROMapEnd is the end address of the read-only stub region that
 	// contains the code and precompiled seccomp rules.
@@ -97,6 +101,9 @@ var (
 
 	// stubInitialized controls one-time stub initialization.
 	stubInitialized sync.Once
+
+	// archState stores architecture-specific details used in the platform.
+	archState sysmsg.ArchState
 )
 
 // context is an implementation of the platform context.
@@ -107,15 +114,14 @@ type context struct {
 	// interrupt is the interrupt context.
 	interrupt interrupt.Forwarder
 
+	// sharedContext is everything related to this context that is resident in
+	// shared memory with the stub thread.
+	// sharedContext is only accessed on the Task goroutine, therefore it is not
+	// mutex protected.
+	sharedContext *sharedContext
+
 	// mu protects the following fields.
 	mu sync.Mutex
-
-	// subprocess is the current subprocess used to execute the context.
-	subprocess *subprocess
-
-	// cid is the ID of the context in the address space of the current
-	// subprocess used to run it.
-	cid uint64
 
 	// If lastFaultSP is non-nil, the last context switch was due to a fault
 	// received while executing lastFaultSP. Only context.Switch may set
@@ -131,11 +137,8 @@ type context struct {
 	lastFaultIP hostarch.Addr
 
 	// sysmsgThread is a sysmsg thread descriptor which is used to execute
-	// application code.
+	// application code. (Note: Unused if contextDecouplingExp=true).
 	sysmsgThread *sysmsgThread
-
-	// fpLen is the size of the floating point context.
-	fpLen int
 
 	// needRestoreFPState indicates that the FPU state has been changed by
 	// the Sentry and has to be updated on the stub thread.
@@ -171,13 +174,10 @@ func (c *context) Switch(ctx pkgcontext.Context, mm platform.MemoryManager, ac *
 
 	as := mm.AddressSpace()
 	s := as.(*subprocess)
-
-	if s != c.subprocess {
-		c.subprocess.unregisterContext(c)
-		if err := s.registerContext(c); err != nil {
-			return nil, hostarch.NoAccess, err
-		}
+	if err := s.activateContext(c); err != nil {
+		return nil, hostarch.NoAccess, err
 	}
+
 restart:
 	isSyscall, needPatch, err := s.switchToApp(c, ac)
 	if err != nil {
@@ -278,52 +278,15 @@ func (c *context) Interrupt() {
 	c.interrupt.NotifyInterrupt()
 }
 
-// NotifyInterrupt implements interrupt.Receiver.NotifyInterrupt.
-//
-// Another reasonable existing object to implement NotifyInterrupt would be
-// sysmsg.ThreadContext, because it already has the correct tid written into it
-// to know which thread to send the signal to. However we cannot do that because
-// it is in shared memory, which means that one subprocess can overwrite it to
-// have the sentry send an interrupt to a completely different subprocess.
-// For this reason we use systrap.context and check that the target thread
-// is actually valid within the subprocess.
-func (c *context) NotifyInterrupt() {
-	c.mu.Lock()
-	s := c.subprocess
-	cid := c.cid
-	c.mu.Unlock()
-
-	if s == nil || cid == invalidContextID {
-		return
-	}
-
-	threadContext := s.getThreadContextFromID(cid)
-	atomic.StoreUint32(&threadContext.Interrupt, 1)
-	threadID := atomic.LoadUint32(&threadContext.ThreadID)
-
-	s.sysmsgThreadsMu.Lock()
-	defer s.sysmsgThreadsMu.Unlock()
-
-	sysmsgThread, ok := s.sysmsgThreads[threadID]
-	if !ok {
-		// This is either an invalidThreadID or another garbage value; either way we
-		// don't know which thread to interrupt; best we can do is mark the context.
-		return
-	}
-
-	t := sysmsgThread.thread
-	atomic.StoreUint64(&sysmsgThread.msg.InterruptedContextID, cid)
-	if _, _, e := unix.RawSyscall(unix.SYS_TGKILL, uintptr(t.tgid), uintptr(t.tid), uintptr(platform.SignalInterrupt)); e != 0 {
-		panic(fmt.Sprintf("failed to interrupt the child process %d: %v", t.tid, e))
-	}
-}
-
 // Release releases all platform resources used by the context.
 func (c *context) Release() {
 	if c.sysmsgThread != nil {
 		c.sysmsgThread.destroy()
 	}
-	c.subprocess.unregisterContext(c)
+	if c.sharedContext != nil {
+		c.sharedContext.release()
+		c.sharedContext = nil
+	}
 }
 
 // PrepareSleep implements platform.Context.platform.PrepareSleep.
@@ -353,6 +316,9 @@ func (*Systrap) MinUserAddress() hostarch.Addr {
 
 // New returns a new seccomp-based implementation of the platform interface.
 func New() (*Systrap, error) {
+	// CPUID information has been initialized at this point.
+	archState.Init()
+
 	mf, err := createMemoryFile()
 	if err != nil {
 		return nil, err
@@ -409,11 +375,7 @@ func (p *Systrap) NewAddressSpace(any) (platform.AddressSpace, <-chan struct{}, 
 
 // NewContext returns an interruptible context.
 func (*Systrap) NewContext(ctx pkgcontext.Context) platform.Context {
-	fs := cpuid.FromContext(ctx)
-	fpLen, _ := fs.ExtendedStateSize()
 	return &context{
-		cid:                 invalidContextID,
-		fpLen:               int(fpLen),
 		needRestoreFPState:  true,
 		needToPullFullState: false,
 	}

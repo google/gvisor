@@ -28,7 +28,7 @@ import (
 )
 
 // Brk implements linux syscall brk(2).
-func Brk(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Brk(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr, _ := t.MemoryManager().Brk(t, args[0].Pointer())
 	// "However, the actual Linux system call returns the new program break on
 	// success. On failure, the system call returns the current break." -
@@ -37,7 +37,7 @@ func Brk(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallCo
 }
 
 // Mmap implements Linux syscall mmap(2).
-func Mmap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Mmap(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	prot := args[2].Int()
 	flags := args[3].Int()
 	fd := args[4].Int()
@@ -116,12 +116,12 @@ func Mmap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 }
 
 // Munmap implements linux syscall munmap(2).
-func Munmap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Munmap(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	return 0, nil, t.MemoryManager().MUnmap(t, args[0].Pointer(), args[1].Uint64())
 }
 
 // Mremap implements linux syscall mremap(2).
-func Mremap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Mremap(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	oldAddr := args[0].Pointer()
 	oldSize := args[1].Uint64()
 	newSize := args[2].Uint64()
@@ -155,7 +155,7 @@ func Mremap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 }
 
 // Mprotect implements linux syscall mprotect(2).
-func Mprotect(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Mprotect(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	length := args[1].Uint64()
 	prot := args[2].Int()
 	err := t.MemoryManager().MProtect(args[0].Pointer(), length, hostarch.AccessType{
@@ -167,7 +167,7 @@ func Mprotect(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 }
 
 // Madvise implements linux syscall madvise(2).
-func Madvise(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Madvise(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
 	length := uint64(args[1].SizeT())
 	adv := args[2].Int()
@@ -219,7 +219,7 @@ func Madvise(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 }
 
 // Mincore implements the syscall mincore(2).
-func Mincore(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Mincore(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
 	length := args[1].SizeT()
 	vec := args[2].Pointer()
@@ -251,7 +251,7 @@ func Mincore(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 }
 
 // Msync implements Linux syscall msync(2).
-func Msync(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Msync(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
 	length := args[1].SizeT()
 	flags := args[2].Int()
@@ -278,7 +278,7 @@ func Msync(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 }
 
 // Mlock implements linux syscall mlock(2).
-func Mlock(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Mlock(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
 	length := args[1].SizeT()
 
@@ -286,7 +286,7 @@ func Mlock(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 }
 
 // Mlock2 implements linux syscall mlock2(2).
-func Mlock2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Mlock2(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
 	length := args[1].SizeT()
 	flags := args[2].Int()
@@ -303,7 +303,7 @@ func Mlock2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 }
 
 // Munlock implements linux syscall munlock(2).
-func Munlock(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Munlock(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
 	length := args[1].SizeT()
 
@@ -311,7 +311,7 @@ func Munlock(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 }
 
 // Mlockall implements linux syscall mlockall(2).
-func Mlockall(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Mlockall(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	flags := args[0].Int()
 
 	if flags&^(linux.MCL_CURRENT|linux.MCL_FUTURE|linux.MCL_ONFAULT) != 0 {
@@ -330,7 +330,7 @@ func Mlockall(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 }
 
 // Munlockall implements linux syscall munlockall(2).
-func Munlockall(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Munlockall(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	return 0, nil, t.MemoryManager().MLockAll(t, mm.MLockAllOpts{
 		Current: true,
 		Future:  true,

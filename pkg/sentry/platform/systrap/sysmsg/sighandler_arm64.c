@@ -96,8 +96,17 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
   struct sysmsg *sysmsg = sysmsg_addr(sp);
 
   if (sysmsg != sysmsg->self) panic(0xdeaddead);
-  struct thread_context *ctx = thread_context_addr(sysmsg);
+  int32_t thread_state = __atomic_load_n(&sysmsg->state, __ATOMIC_ACQUIRE);
+  if (__export_context_decoupling_exp &&
+      thread_state == THREAD_STATE_INITIALIZING) {
+    // Find a new context and exit to restore it.
+    __export_start(sysmsg, _ucontext);
+    return;
+  }
 
+  struct thread_context *ctx = sysmsg->context;
+
+  uint32_t ctx_state = CONTEXT_STATE_INVALID;
   ctx->signo = signo;
 
   gregs_to_ptregs(ucontext, &ctx->ptregs);
@@ -118,11 +127,11 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
   } else {
     sysmsg->fpstate = (uint64_t)(fpStatePointer) - (uint64_t)sysmsg;
   }
-  sysmsg->tls = get_tls();
+  ctx->tls = get_tls();
   ctx->siginfo = *siginfo;
   switch (signo) {
     case SIGSYS: {
-      ctx->state = CONTEXT_STATE_SYSCALL;
+      ctx_state = CONTEXT_STATE_SYSCALL;
       if (siginfo->si_arch != AUDIT_ARCH_AARCH64) {
         // gVisor doesn't support x32 system calls, so let's change the syscall
         // number so that it returns ENOSYS. The value added here is just a
@@ -138,19 +147,49 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
     case SIGFPE:
     case SIGTRAP:
     case SIGILL:
-      ctx->state = CONTEXT_STATE_FAULT;
+      ctx_state = CONTEXT_STATE_FAULT;
       break;
     default:
       return;
   }
 
-  wait_state(sysmsg, THREAD_STATE_EVENT);
+  for (;;) {
+    if (__export_context_decoupling_exp) {
+      ctx = switch_context(sysmsg, ctx, ctx_state);
+    } else {
+      ctx->state = ctx_state;
+      wait_state(sysmsg, THREAD_STATE_EVENT);
+    }
+
+    if (__atomic_load_n(&ctx->interrupt, __ATOMIC_ACQUIRE) != 0) {
+      // This context got interrupted while it was waiting in the queue.
+      // Setup all the necessary bits to let the sentry know this context has
+      // switched back because of it.
+      __atomic_store_n(&ctx->interrupt, 0, __ATOMIC_RELEASE);
+      ctx_state = CONTEXT_STATE_FAULT;
+      ctx->signo = SIGCHLD;
+      ctx->siginfo.si_signo = SIGCHLD;
+    } else {
+      break;
+    }
+  }
+  restore_state(sysmsg, ctx, _ucontext);
+}
+
+// On ARM restore_state sets up a correct restore from the sighandler by
+// populating _ucontext.
+void restore_state(struct sysmsg *sysmsg, struct thread_context *ctx,
+                   void *_ucontext) {
+  ucontext_t *ucontext = _ucontext;
+  struct fpsimd_context *fpctx =
+      (struct fpsimd_context *)&ucontext->uc_mcontext.__reserved;
+  uint8_t *fpStatePointer = (uint8_t *)&fpctx->fpsr;
 
   if (__export_context_decoupling_exp &&
       __atomic_load_n(&ctx->fpstate_changed, __ATOMIC_ACQUIRE)) {
     memcpy(fpStatePointer, ctx->fpstate, __export_arch_state.fp_len);
   }
   ptregs_to_gregs(ucontext, &ctx->ptregs);
-  set_tls(sysmsg->tls);
+  set_tls(ctx->tls);
   __atomic_store_n(&sysmsg->state, THREAD_STATE_NONE, __ATOMIC_RELEASE);
 }

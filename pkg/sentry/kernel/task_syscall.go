@@ -139,7 +139,7 @@ func (t *Task) executeSyscall(sysno uintptr, args arch.SyscallArguments) (rval u
 		}
 		if fn != nil {
 			// Call our syscall implementation.
-			rval, ctrl, err = fn(t, args)
+			rval, ctrl, err = fn(t, sysno, args)
 		} else {
 			// Use the missing function if not found.
 			rval, err = t.SyscallTable().Missing(t, sysno, args)

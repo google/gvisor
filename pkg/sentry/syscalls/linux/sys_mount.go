@@ -26,7 +26,7 @@ import (
 )
 
 // Mount implements Linux syscall mount(2).
-func Mount(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Mount(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	sourceAddr := args[0].Pointer()
 	targetAddr := args[1].Pointer()
 	typeAddr := args[2].Pointer()
@@ -136,7 +136,7 @@ func Mount(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 }
 
 // Umount2 implements Linux syscall umount2(2).
-func Umount2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Umount2(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
 	flags := args[1].Int()
 

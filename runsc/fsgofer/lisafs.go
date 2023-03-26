@@ -248,6 +248,16 @@ func (fd *controlFDLisa) getWritableFD() (int, error) {
 	return writableFD, nil
 }
 
+func (fd *controlFDLisa) getParentFD() (int, string, error) {
+	filePath := fd.Node().FilePath()
+	if filePath == "/" {
+		log.Warningf("getParentFD() call on the root")
+		return -1, "", unix.EINVAL
+	}
+	parent, err := unix.Open(path.Dir(filePath), openFlags|unix.O_PATH, 0)
+	return parent, path.Base(filePath), err
+}
+
 // FD implements lisafs.ControlFDImpl.FD.
 func (fd *controlFDLisa) FD() *lisafs.ControlFD {
 	if fd == nil {
@@ -280,15 +290,14 @@ func (fd *controlFDLisa) SetStat(stat lisafs.SetStatReq) (failureMask uint32, fa
 		if fd.IsSocket() {
 			// fchmod(2) on socket files created via bind(2) fails. We need to
 			// fchmodat(2) it from its parent.
-			sockPath := fd.Node().FilePath()
-			parent, err := unix.Open(path.Dir(sockPath), openFlags|unix.O_PATH, 0)
+			parent, sockName, err := fd.getParentFD()
 			if err == nil {
 				// Note that AT_SYMLINK_NOFOLLOW flag is not currently supported.
-				err = unix.Fchmodat(parent, path.Base(sockPath), stat.Mode&^unix.S_IFMT, 0 /* flags */)
+				err = unix.Fchmodat(parent, sockName, stat.Mode&^unix.S_IFMT, 0 /* flags */)
 				unix.Close(parent)
 			}
 			if err != nil {
-				log.Warningf("SetStat fchmod failed on socket %q, err: %v", sockPath, err)
+				log.Warningf("SetStat fchmod failed on socket %q, err: %v", fd.Node().FilePath(), err)
 				failureMask |= unix.STATX_MODE
 				failureErr = err
 			}
@@ -332,10 +341,9 @@ func (fd *controlFDLisa) SetStat(stat lisafs.SetStatReq) (failureMask uint32, fa
 			// utimensat operates different that other syscalls. To operate on a
 			// symlink it *requires* AT_SYMLINK_NOFOLLOW with dirFD and a non-empty
 			// name. We need the parent FD.
-			symlinkPath := fd.Node().FilePath()
-			parent, err := unix.Open(path.Dir(symlinkPath), openFlags|unix.O_PATH, 0)
+			parent, symlinkName, err := fd.getParentFD()
 			if err == nil {
-				err = fsutil.Utimensat(parent, path.Base(symlinkPath), utimes, unix.AT_SYMLINK_NOFOLLOW)
+				err = fsutil.Utimensat(parent, symlinkName, utimes, unix.AT_SYMLINK_NOFOLLOW)
 				unix.Close(parent)
 			}
 			if err != nil {
@@ -669,8 +677,17 @@ func (fd *controlFDLisa) Symlink(name string, target string, uid lisafs.UID, gid
 
 // Link implements lisafs.ControlFDImpl.Link.
 func (fd *controlFDLisa) Link(dir lisafs.ControlFDImpl, name string) (*lisafs.ControlFD, linux.Statx, error) {
+	// Using linkat(targetFD, "", newdirfd, name, AT_EMPTY_PATH) requires
+	// CAP_DAC_READ_SEARCH in the *root* userns. The gofer process has
+	// CAP_DAC_READ_SEARCH in its own userns. But sometimes the gofer may be
+	// running in a different userns. So we can't use AT_EMPTY_PATH. Fallback
+	// to using olddirfd to call linkat(2).
+	oldDirFD, oldName, err := fd.getParentFD()
+	if err != nil {
+		return nil, linux.Statx{}, err
+	}
 	dirFD := dir.(*controlFDLisa)
-	if err := unix.Linkat(fd.hostFD, "", dirFD.hostFD, name, unix.AT_EMPTY_PATH); err != nil {
+	if err := unix.Linkat(oldDirFD, oldName, dirFD.hostFD, name, 0); err != nil {
 		return nil, linux.Statx{}, err
 	}
 	cu := cleanup.Make(func() {

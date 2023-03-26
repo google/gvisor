@@ -35,7 +35,7 @@ func SetAFSSyscallPanic(v bool) {
 
 // AFSSyscall is a gVisor specific implementation of afs_syscall:
 // - if TESTONLY-afs-syscall-panic flag is set it triggers a panic.
-func AFSSyscall(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func AFSSyscall(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	if afsSyscallPanic.Load() {
 		panic("User workload triggered a panic via afs_syscall. This panic is intentional.")
 	}

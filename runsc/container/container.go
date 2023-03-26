@@ -176,6 +176,10 @@ type Args struct {
 	//
 	// It only applies for the init container.
 	Attached bool
+
+	// PassFiles are user-supplied files from the host to be exposed to the
+	// sandboxed app.
+	PassFiles map[int]*os.File
 }
 
 // New creates the container in a new Sandbox process, unless the metadata
@@ -296,6 +300,7 @@ func New(conf *config.Config, args Args) (*Container, error) {
 				Cgroup:                containerCgroup,
 				Attached:              args.Attached,
 				OverlayFilestoreFiles: overlayFilestoreFiles,
+				PassFiles:             args.PassFiles,
 			}
 			sand, err := sandbox.New(conf, sandArgs)
 			if err != nil {

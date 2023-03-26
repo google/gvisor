@@ -22,7 +22,7 @@ import (
 )
 
 // MqOpen implements mq_open(2).
-func MqOpen(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func MqOpen(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	nameAddr := args[0].Pointer()
 	flag := args[1].Int()
 	mode := args[2].ModeT()
@@ -68,7 +68,7 @@ func MqOpen(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 }
 
 // MqUnlink implements mq_unlink(2).
-func MqUnlink(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func MqUnlink(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	nameAddr := args[0].Pointer()
 	name, err := t.CopyInString(nameAddr, mq.MaxName)
 	if err != nil {

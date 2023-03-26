@@ -16,6 +16,7 @@
 #define THIRD_PARTY_GVISOR_PKG_SENTRY_PLATFORM_SYSTRAP_SYSMSG_SYSMSG_H_
 
 #include <stdint.h>
+#include <sys/types.h>
 #include <sys/user.h>
 
 #include "sysmsg_offsets.h"  // NOLINT
@@ -37,13 +38,18 @@ struct arch_state {
 #endif
 
 // LINT.IfChange
-enum {
+enum thread_state {
   THREAD_STATE_NONE,
   THREAD_STATE_DONE,
   THREAD_STATE_EVENT,
   THREAD_STATE_PREP,
   THREAD_STATE_INTERRUPT,
+  THREAD_STATE_CONTEXT_RESTORE,
+  THREAD_STATE_ASLEEP,
+  THREAD_STATE_INITIALIZING,
 };
+
+struct thread_context;
 
 // sysmsg contains the current state of the sysmsg thread. See: sysmsg.go:Msg
 struct sysmsg {
@@ -54,19 +60,15 @@ struct sysmsg {
   uint64_t app_stack;
   uint32_t interrupt;
   uint32_t state;
-  uint64_t context_id;
-  uint64_t context_region;
+  struct thread_context *context;
 
   // The fields above have offsets defined in sysmsg_offsets*.h
 
-  uint64_t interrupted_context_id;
   int32_t fault_jump;
   int32_t err;
   int32_t err_line;
   uint64_t debug;
   uint64_t fpstate;
-  // tls is only populated on ARM64.
-  uint64_t tls;
   uint32_t stub_fast_path;
   uint32_t sentry_fast_path;
   uint32_t acked_events;
@@ -96,6 +98,10 @@ struct thread_context {
   uint32_t state;
   uint32_t interrupt;
   uint32_t thread_id;
+  uint32_t last_thread_id;
+  uint32_t sentry_fast_path;
+  uint32_t acked;
+  uint64_t tls;
   uint64_t debug;
 };
 
@@ -106,6 +112,7 @@ struct thread_context {
 #define GUARD_SIZE (PAGE_SIZE)
 #define MSG_OFFSET_FROM_START (PER_THREAD_MEM_SIZE - PAGE_SIZE)
 
+#define SPINNING_QUEUE_MEM_SIZE PAGE_SIZE
 // LINT.ThenChange(sysmsg.go)
 
 #define FAULT_OPCODE 0x06  // "push %es" on x32 and invalid opcode on x64.
@@ -118,6 +125,8 @@ extern uint64_t __export_pr_sched_core;
 extern uint64_t __export_deep_sleep_timeout;
 extern struct arch_state __export_arch_state;
 extern uint64_t __export_context_decoupling_exp;
+struct context_queue;
+extern struct context_queue *__export_context_queue_addr;
 
 // NOLINTBEGIN(runtime/int)
 static void *sysmsg_sp() {
@@ -135,13 +144,6 @@ static struct sysmsg *sysmsg_addr(void *sp) {
   return (struct sysmsg *)(sp + MSG_OFFSET_FROM_START);
 }
 
-static struct thread_context *thread_context_addr(struct sysmsg *sysmsg) {
-  uint64_t tcid = __atomic_load_n(&sysmsg->context_id, __ATOMIC_ACQUIRE);
-  return (struct thread_context *)(sysmsg->context_region +
-                                   tcid *
-                                       ALLOCATED_SIZEOF_THREAD_CONTEXT_STRUCT);
-}
-
 long __syscall(long n, long a1, long a2, long a3, long a4, long a5, long a6);
 
 struct __kernel_timespec;
@@ -151,10 +153,15 @@ long sys_futex(uint32_t *addr, int op, int val, struct __kernel_timespec *tv,
 static void __panic(int err, long line) {
   void *sp = sysmsg_sp();
   struct sysmsg *sysmsg = sysmsg_addr(sp);
+  struct thread_context *ctx = sysmsg->context;
   sysmsg->err = err;
   sysmsg->err_line = line;
+  // Normally sentry waits on sysmsg->state.
   __atomic_store_n(&sysmsg->state, THREAD_STATE_EVENT, __ATOMIC_RELEASE);
   sys_futex(&sysmsg->state, FUTEX_WAKE, 1, NULL, NULL, 666);
+  // Under context-decoupling the sentry waits on ctx->state.
+  __atomic_store_n(&ctx->state, CONTEXT_STATE_FAULT, __ATOMIC_RELEASE);
+  sys_futex(&ctx->state, FUTEX_WAKE, 1, NULL, NULL, 666);
   // crash the stub process.
   //
   // Normal user processes cannot map addresses lower than vm.mmap_min_addr
@@ -165,7 +172,16 @@ static void __panic(int err, long line) {
 
 void memcpy(uint8_t *dest, uint8_t *src, size_t n);
 
-int wait_state(struct sysmsg *sysmsg, uint32_t state);
+void __export_start(struct sysmsg *sysmsg, void *_ucontext);
+
+void restore_state(struct sysmsg *sysmsg, struct thread_context *ctx,
+                   void *_ucontext);
+
+struct thread_context *switch_context(struct sysmsg *sysmsg,
+                                      struct thread_context *ctx,
+                                      enum context_state new_context_state);
+
+int wait_state(struct sysmsg *sysmsg, enum thread_state new_thread_state);
 
 #define panic(err) __panic(err, __LINE__)
 // NOLINTEND(runtime/int)
