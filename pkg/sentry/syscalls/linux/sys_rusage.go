@@ -72,7 +72,7 @@ func getrusage(t *kernel.Task, which int32) linux.Rusage {
 //	*    long   ru_nsignals;      /* signals received */
 //	y    long   ru_nvcsw;         /* voluntary context switches */
 //	y    long   ru_nivcsw;        /* involuntary context switches */
-func Getrusage(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Getrusage(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	which := args[0].Int()
 	addr := args[1].Pointer()
 
@@ -86,7 +86,7 @@ func Getrusage(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 }
 
 // Times implements linux syscall times(2).
-func Times(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Times(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
 
 	// Calculate the ticks first, and figure out if any additional work is

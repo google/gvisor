@@ -234,8 +234,8 @@ func (fd *VFSPipeFD) Write(ctx context.Context, src usermem.IOSequence, _ vfs.Wr
 }
 
 // Ioctl implements vfs.FileDescriptionImpl.Ioctl.
-func (fd *VFSPipeFD) Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallArguments) (uintptr, error) {
-	return fd.pipe.Ioctl(ctx, uio, args)
+func (fd *VFSPipeFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
+	return fd.pipe.Ioctl(ctx, uio, sysno, args)
 }
 
 // PipeSize implements fcntl(F_GETPIPE_SZ).

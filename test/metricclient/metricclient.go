@@ -360,10 +360,10 @@ func (m MetricData) GetPrometheusContainerInteger(want WantMetric) (int64, time.
 		"sandbox": want.Sandbox,
 	}
 	if want.Pod != "" {
-		labels["pod"] = want.Pod
+		labels["pod_name"] = want.Pod
 	}
 	if want.Namespace != "" {
-		labels["namespace"] = want.Namespace
+		labels["namespace_name"] = want.Namespace
 	}
 	return m.GetPrometheusInteger(want.Metric, labels)
 }

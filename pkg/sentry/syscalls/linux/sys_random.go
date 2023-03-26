@@ -39,7 +39,7 @@ const (
 // possible. The urandom pool is also expected to have plenty of entropy, thus
 // the GRND_RANDOM flag is ignored. The GRND_NONBLOCK flag does not apply, as
 // the pool will already be initialized.
-func GetRandom(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func GetRandom(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
 	length := args[1].SizeT()
 	flags := args[2].Int()

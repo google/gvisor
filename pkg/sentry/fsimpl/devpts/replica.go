@@ -148,7 +148,7 @@ func (rfd *replicaFileDescription) Write(ctx context.Context, src usermem.IOSequ
 }
 
 // Ioctl implements vfs.FileDescriptionImpl.Ioctl.
-func (rfd *replicaFileDescription) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+func (rfd *replicaFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
 	t := kernel.TaskFromContext(ctx)
 	if t == nil {
 		// ioctl(2) may only be called from a task goroutine.
@@ -199,7 +199,7 @@ func (rfd *replicaFileDescription) Ioctl(ctx context.Context, io usermem.IO, arg
 		}
 		return 0, t.ThreadGroup().SetForegroundProcessGroupID(rfd.inode.t.replicaKTTY, kernel.ProcessGroupID(pgid))
 	default:
-		maybeEmitUnimplementedEvent(ctx, cmd)
+		maybeEmitUnimplementedEvent(ctx, sysno, cmd)
 		return 0, linuxerr.ENOTTY
 	}
 }

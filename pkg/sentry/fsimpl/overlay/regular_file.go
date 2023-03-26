@@ -365,13 +365,13 @@ func (fd *regularFileFD) Sync(ctx context.Context) error {
 }
 
 // Ioctl implements vfs.FileDescriptionImpl.Ioctl.
-func (fd *regularFileFD) Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+func (fd *regularFileFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
 	wrappedFD, err := fd.getCurrentFD(ctx)
 	if err != nil {
 		return 0, err
 	}
 	defer wrappedFD.DecRef(ctx)
-	return wrappedFD.Ioctl(ctx, uio, args)
+	return wrappedFD.Ioctl(ctx, uio, sysno, args)
 }
 
 // ConfigureMMap implements vfs.FileDescriptionImpl.ConfigureMMap.

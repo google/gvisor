@@ -32,7 +32,7 @@ const logBufLen = 1 << 17
 //
 // Only the unpriviledged commands are implemented, allowing applications to
 // read a fun dmesg.
-func Syslog(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Syslog(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	command := args[0].Int()
 	buf := args[1].Pointer()
 	size := int(args[2].Int())

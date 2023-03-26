@@ -32,7 +32,6 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/ring0"
-	"gvisor.dev/gvisor/pkg/sentry/fsutil/chdir"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/cmd/util"
@@ -86,6 +85,9 @@ type Boot struct {
 	// stdioFDs are the fds for stdin, stdout, and stderr. They must be
 	// provided in that order.
 	stdioFDs intFlags
+
+	// passFDs are mappings of user-supplied host to guest file descriptors.
+	passFDs fdMappings
 
 	// applyCaps determines if capabilities defined in the spec should be applied
 	// to the process.
@@ -169,6 +171,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&b.deviceFD, "device-fd", -1, "FD for the platform device file")
 	f.Var(&b.ioFDs, "io-fds", "list of FDs to connect gofer clients. They must follow this order: root first, then mounts as defined in the spec")
 	f.Var(&b.stdioFDs, "stdio-fds", "list of FDs containing sandbox stdin, stdout, and stderr in that order")
+	f.Var(&b.passFDs, "custom-fds", "mapping of host to guest FDs. They must be in M:N format. M is the host and N the guest descriptor.")
 	f.Var(&b.overlayFilestoreFDs, "overlay-filestore-fds", "FDs to the regular files that will back the tmpfs upper mount in the overlay mounts.")
 	f.IntVar(&b.userLogFD, "user-log-fd", 0, "file descriptor to write user logs to. 0 means no logging.")
 	f.IntVar(&b.startSyncFD, "start-sync-fd", -1, "required FD to used to synchronize sandbox startup")
@@ -358,12 +361,6 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		// modes exactly as sent by the sentry, which would have already applied
 		// the application umask.
 		unix.Umask(0)
-
-		// Now that the sandbox process is running in an empty pivot_root(2)
-		// environment, we can initialize the chdir package.
-		if err := chdir.InitCWD(); err != nil {
-			util.Fatalf("Failed to initialize CWD for directfs: %v", err)
-		}
 	}
 
 	if conf.EnableCoreTags {
@@ -392,6 +389,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		Device:              os.NewFile(uintptr(b.deviceFD), "platform device"),
 		GoferFDs:            b.ioFDs.GetArray(),
 		StdioFDs:            b.stdioFDs.GetArray(),
+		PassFDs:             b.passFDs.GetArray(),
 		OverlayFilestoreFDs: b.overlayFilestoreFDs.GetArray(),
 		NumCPU:              b.cpuNum,
 		TotalMem:            b.totalMem,

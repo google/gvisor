@@ -77,7 +77,8 @@ func Error(name string, err error, note string, urls []string) kernel.Syscall {
 	}
 	return kernel.Syscall{
 		Name: name,
-		Fn: func(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+		Fn: func(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+			kernel.IncrementUnimplementedSyscallCounter(sysno)
 			return 0, nil, err
 		},
 		SupportLevel: kernel.SupportUnimplemented,
@@ -94,8 +95,8 @@ func ErrorWithEvent(name string, err error, note string, urls []string) kernel.S
 	}
 	return kernel.Syscall{
 		Name: name,
-		Fn: func(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-			t.Kernel().EmitUnimplementedEvent(t)
+		Fn: func(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+			t.Kernel().EmitUnimplementedEvent(t, sysno)
 			return 0, nil, err
 		},
 		SupportLevel: kernel.SupportUnimplemented,
@@ -113,11 +114,11 @@ func CapError(name string, c linux.Capability, note string, urls []string) kerne
 	}
 	return kernel.Syscall{
 		Name: name,
-		Fn: func(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+		Fn: func(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 			if !t.HasCapability(c) {
 				return 0, nil, linuxerr.EPERM
 			}
-			t.Kernel().EmitUnimplementedEvent(t)
+			t.Kernel().EmitUnimplementedEvent(t, sysno)
 			return 0, nil, linuxerr.ENOSYS
 		},
 		SupportLevel: kernel.SupportUnimplemented,

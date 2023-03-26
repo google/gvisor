@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
+	"gvisor.dev/gvisor/pkg/sentry/platform/interrupt"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/sysmsg"
 )
 
@@ -46,10 +47,6 @@ type sysmsgThread struct {
 
 	// context is the last context that ran on this thread.
 	context *context
-
-	// gsBase contains previous values of gs_base register to follow
-	// changes, because it's not restored by the kernel from a signal frame.
-	gsBase uint64
 
 	// stackRange is a sysmsg stack in the memory file.
 	stackRange memmap.FileRange
@@ -120,7 +117,7 @@ func (p *sysmsgThread) mapPrivateStack(addr uintptr, size uintptr) error {
 	return err
 }
 
-func (p *sysmsgThread) waitEvent(switchToState sysmsg.ThreadState) {
+func (p *sysmsgThread) waitEvent(switchToState sysmsg.ThreadState, interruptor interrupt.Receiver) {
 	msg := p.msg
 	wakeup := false
 	acked := atomic.LoadUint32(&msg.AckedEvents)
@@ -131,7 +128,7 @@ func (p *sysmsgThread) waitEvent(switchToState sysmsg.ThreadState) {
 		acked--
 	}
 
-	if errno := futexWaitForState(msg, sysmsg.ThreadStateEvent, wakeup, acked); errno != 0 {
+	if errno := futexWaitForState(msg, sysmsg.ThreadStateEvent, wakeup, acked, interruptor); errno != 0 {
 		panic(fmt.Sprintf("error waiting for state: %v", errno))
 	}
 }

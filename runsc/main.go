@@ -17,8 +17,13 @@ package main
 
 import (
 	"gvisor.dev/gvisor/runsc/cli"
+	"gvisor.dev/gvisor/runsc/version"
 )
 
+// version.Version is set dynamically, but needs to be
+// linked in the binary, so reference it here.
+var _ = version.Version()
+
 func main() {
-	cli.Main(version)
+	cli.Main()
 }

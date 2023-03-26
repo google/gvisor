@@ -994,6 +994,55 @@ TEST_P(TcpSocketTest, PollAfterShutdown) {
               SyscallSucceedsWithValue(1));
 }
 
+TEST_P(SimpleTcpSocketTest, PollAroundAccept) {
+  const FileDescriptor listener =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+  sockaddr_storage addr =
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+  socklen_t addrlen = sizeof(addr);
+
+  // Bind to some port.
+  ASSERT_THAT(bind(listener.get(), AsSockAddr(&addr), addrlen),
+              SyscallSucceeds());
+  ASSERT_THAT(listen(listener.get(), SOMAXCONN), SyscallSucceeds());
+
+  // Get the address we're bound to. We need to do this because we're allowing
+  // the stack to pick a port for us.
+  ASSERT_THAT(getsockname(listener.get(), AsSockAddr(&addr), &addrlen),
+              SyscallSucceeds());
+  switch (GetParam()) {
+    case AF_INET:
+      ASSERT_EQ(addrlen, sizeof(sockaddr_in));
+      break;
+    case AF_INET6:
+      ASSERT_EQ(addrlen, sizeof(sockaddr_in6));
+      break;
+  }
+
+  // Before the listener socket receives a connection, it should not be eligible
+  // for reading.
+  struct pollfd poll_fd = {listener.get(), POLLIN, 0};
+  EXPECT_THAT(RetryEINTR(poll)(&poll_fd, /* nfds */ 1, /* timeout */ 0),
+              SyscallSucceedsWithValue(0));
+
+  FileDescriptor connector =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
+  ASSERT_THAT(RetryEINTR(connect)(connector.get(), AsSockAddr(&addr), addrlen),
+              SyscallSucceeds());
+
+  // Now that a connection is pending, the listener is ready for a read.
+  ASSERT_THAT(
+      RetryEINTR(poll)(&poll_fd, /* nfds */ 1, /* infinite timeout */ -1),
+      SyscallSucceedsWithValue(1));
+
+  // Accept the connection. This should make the listener no longer ready for a
+  // read.
+  const FileDescriptor accepted =
+      ASSERT_NO_ERRNO_AND_VALUE(Accept(listener.get(), nullptr, nullptr));
+  EXPECT_THAT(RetryEINTR(poll)(&poll_fd, /* nfds*/ 1, /* timeout */ 0),
+              SyscallSucceedsWithValue(0));
+}
+
 TEST_P(SimpleTcpSocketTest, NonBlockingConnectRetry) {
   const FileDescriptor listener =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
@@ -2259,7 +2308,10 @@ TEST_P(SimpleTcpSocketTest, OnlyAcknowledgeBacklogConnections) {
   // opportunity where the listener could process another SYN before completing
   // the delivery that would have filled the accept queue.
   //
-  // This test checks that there is no such race.
+  // This test checks that there is no such race on loopback. On other
+  // interfaces, where delivery is not synchronous, it is possible for more
+  // clients to be in the ESTABLISHED state than there are slots in the accept
+  // queue.
 
   std::array<std::optional<ScopedThread>, 100> threads;
   for (auto& thread : threads) {

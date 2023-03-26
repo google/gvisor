@@ -44,7 +44,7 @@ var (
 )
 
 // Getppid implements linux syscall getppid(2).
-func Getppid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Getppid(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	parent := t.Parent()
 	if parent == nil {
 		return 0, nil, nil
@@ -53,17 +53,17 @@ func Getppid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 }
 
 // Getpid implements linux syscall getpid(2).
-func Getpid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Getpid(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	return uintptr(t.ThreadGroup().ID()), nil, nil
 }
 
 // Gettid implements linux syscall gettid(2).
-func Gettid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Gettid(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	return uintptr(t.ThreadID()), nil, nil
 }
 
 // Execve implements linux syscall execve(2).
-func Execve(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Execve(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	pathnameAddr := args[0].Pointer()
 	argvAddr := args[1].Pointer()
 	envvAddr := args[2].Pointer()
@@ -71,7 +71,7 @@ func Execve(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 }
 
 // Execveat implements linux syscall execveat(2).
-func Execveat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Execveat(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	dirfd := args[0].Int()
 	pathnameAddr := args[1].Pointer()
 	argvAddr := args[2].Pointer()
@@ -189,14 +189,14 @@ func execveat(t *kernel.Task, dirfd int32, pathnameAddr, argvAddr, envvAddr host
 }
 
 // Exit implements linux syscall exit(2).
-func Exit(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Exit(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	status := args[0].Int()
 	t.PrepareExit(linux.WaitStatusExit(status & 0xff))
 	return 0, kernel.CtrlDoExit, nil
 }
 
 // ExitGroup implements linux syscall exit_group(2).
-func ExitGroup(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func ExitGroup(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	status := args[0].Int()
 	t.PrepareGroupExit(linux.WaitStatusExit(status & 0xff))
 	return 0, kernel.CtrlDoExit, nil
@@ -218,14 +218,14 @@ func clone(t *kernel.Task, flags int, stack hostarch.Addr, parentTID hostarch.Ad
 }
 
 // Fork implements Linux syscall fork(2).
-func Fork(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Fork(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	// "A call to fork() is equivalent to a call to clone(2) specifying flags
 	// as just SIGCHLD." - fork(2)
 	return clone(t, int(linux.SIGCHLD), 0, 0, 0, 0)
 }
 
 // Vfork implements Linux syscall vfork(2).
-func Vfork(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Vfork(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	// """
 	// A call to vfork() is equivalent to calling clone(2) with flags specified as:
 	//
@@ -315,7 +315,7 @@ func wait4(t *kernel.Task, pid int, statusAddr hostarch.Addr, options int, rusag
 }
 
 // Wait4 implements linux syscall wait4(2).
-func Wait4(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Wait4(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	pid := int(args[0].Int())
 	statusAddr := args[1].Pointer()
 	options := int(args[2].Uint())
@@ -326,7 +326,7 @@ func Wait4(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 }
 
 // WaitPid implements linux syscall waitpid(2).
-func WaitPid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func WaitPid(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	pid := int(args[0].Int())
 	statusAddr := args[1].Pointer()
 	options := int(args[2].Uint())
@@ -336,7 +336,7 @@ func WaitPid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 }
 
 // Waitid implements linux syscall waitid(2).
-func Waitid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Waitid(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	idtype := args[0].Int()
 	id := args[1].Int()
 	infop := args[2].Pointer()
@@ -435,7 +435,7 @@ func Waitid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 }
 
 // SetTidAddress implements linux syscall set_tid_address(2).
-func SetTidAddress(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func SetTidAddress(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
 
 	// Always succeed, return caller's tid.
@@ -444,7 +444,7 @@ func SetTidAddress(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 }
 
 // Unshare implements linux syscall unshare(2).
-func Unshare(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Unshare(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	flags := args[0].Int()
 	// "CLONE_NEWPID automatically implies CLONE_THREAD as well." - unshare(2)
 	if flags&linux.CLONE_NEWPID != 0 {
@@ -459,13 +459,13 @@ func Unshare(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 }
 
 // SchedYield implements linux syscall sched_yield(2).
-func SchedYield(t *kernel.Task, _ arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func SchedYield(t *kernel.Task, sysno uintptr, _ arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	t.Yield()
 	return 0, nil, nil
 }
 
 // SchedSetaffinity implements linux syscall sched_setaffinity(2).
-func SchedSetaffinity(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func SchedSetaffinity(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	tid := args[0].Int()
 	size := args[1].SizeT()
 	maskAddr := args[2].Pointer()
@@ -491,7 +491,7 @@ func SchedSetaffinity(t *kernel.Task, args arch.SyscallArguments) (uintptr, *ker
 }
 
 // SchedGetaffinity implements linux syscall sched_getaffinity(2).
-func SchedGetaffinity(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func SchedGetaffinity(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	tid := args[0].Int()
 	size := args[1].SizeT()
 	maskAddr := args[2].Pointer()
@@ -528,7 +528,7 @@ func SchedGetaffinity(t *kernel.Task, args arch.SyscallArguments) (uintptr, *ker
 }
 
 // Getcpu implements linux syscall getcpu(2).
-func Getcpu(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Getcpu(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	cpu := args[0].Pointer()
 	node := args[1].Pointer()
 	// third argument to this system call is nowadays unused.
@@ -550,7 +550,7 @@ func Getcpu(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 }
 
 // Setpgid implements the linux syscall setpgid(2).
-func Setpgid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Setpgid(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	// Note that throughout this function, pgid is interpreted with respect
 	// to t's namespace, not with respect to the selected ThreadGroup's
 	// namespace (which may be different).
@@ -613,15 +613,15 @@ func Setpgid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 }
 
 // Getpgrp implements the linux syscall getpgrp(2).
-func Getpgrp(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Getpgrp(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	return uintptr(t.PIDNamespace().IDOfProcessGroup(t.ThreadGroup().ProcessGroup())), nil, nil
 }
 
 // Getpgid implements the linux syscall getpgid(2).
-func Getpgid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Getpgid(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	tid := kernel.ThreadID(args[0].Int())
 	if tid == 0 {
-		return Getpgrp(t, args)
+		return Getpgrp(t, sysno, args)
 	}
 
 	target := t.PIDNamespace().TaskWithID(tid)
@@ -633,12 +633,12 @@ func Getpgid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 }
 
 // Setsid implements the linux syscall setsid(2).
-func Setsid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Setsid(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	return 0, nil, t.ThreadGroup().CreateSession()
 }
 
 // Getsid implements the linux syscall getsid(2).
-func Getsid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Getsid(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	tid := kernel.ThreadID(args[0].Int())
 	if tid == 0 {
 		return uintptr(t.PIDNamespace().IDOfSession(t.ThreadGroup().Session())), nil, nil
@@ -655,7 +655,7 @@ func Getsid(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 // Getpriority pretends to implement the linux syscall getpriority(2).
 //
 // This is a stub; real priorities require a full scheduler.
-func Getpriority(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Getpriority(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	which := args[0].Int()
 	who := kernel.ThreadID(args[1].Int())
 
@@ -691,7 +691,7 @@ func Getpriority(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 // Setpriority pretends to implement the linux syscall setpriority(2).
 //
 // This is a stub; real priorities require a full scheduler.
-func Setpriority(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Setpriority(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	which := args[0].Int()
 	who := kernel.ThreadID(args[1].Int())
 	niceval := int(args[2].Int())
@@ -733,7 +733,7 @@ func Setpriority(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 }
 
 // Ptrace implements linux system call ptrace(2).
-func Ptrace(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Ptrace(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	req := args[0].Int64()
 	pid := kernel.ThreadID(args[1].Int())
 	addr := args[2].Pointer()

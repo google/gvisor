@@ -31,7 +31,7 @@ import (
 var sizeofEpollEvent = (*linux.EpollEvent)(nil).SizeBytes()
 
 // EpollCreate1 implements Linux syscall epoll_create1(2).
-func EpollCreate1(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func EpollCreate1(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	flags := args[0].Int()
 	if flags&^linux.EPOLL_CLOEXEC != 0 {
 		return 0, nil, linuxerr.EINVAL
@@ -53,7 +53,7 @@ func EpollCreate1(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 }
 
 // EpollCreate implements Linux syscall epoll_create(2).
-func EpollCreate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func EpollCreate(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	size := args[0].Int()
 
 	// "Since Linux 2.6.8, the size argument is ignored, but must be greater
@@ -76,7 +76,7 @@ func EpollCreate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 }
 
 // EpollCtl implements Linux syscall epoll_ctl(2).
-func EpollCtl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func EpollCtl(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	epfd := args[0].Int()
 	op := args[1].Int()
 	fd := args[2].Int()
@@ -187,7 +187,7 @@ func waitEpoll(t *kernel.Task, epfd int32, eventsAddr hostarch.Addr, maxEvents i
 }
 
 // EpollWait implements Linux syscall epoll_wait(2).
-func EpollWait(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func EpollWait(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	epfd := args[0].Int()
 	eventsAddr := args[1].Pointer()
 	maxEvents := int(args[2].Int())
@@ -197,7 +197,7 @@ func EpollWait(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 }
 
 // EpollPwait implements Linux syscall epoll_pwait(2).
-func EpollPwait(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func EpollPwait(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	maskAddr := args[4].Pointer()
 	maskSize := uint(args[5].Uint())
 
@@ -205,11 +205,11 @@ func EpollPwait(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 		return 0, nil, err
 	}
 
-	return EpollWait(t, args)
+	return EpollWait(t, sysno, args)
 }
 
 // EpollPwait2 implements Linux syscall epoll_pwait(2).
-func EpollPwait2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func EpollPwait2(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	epfd := args[0].Int()
 	eventsAddr := args[1].Pointer()
 	maxEvents := int(args[2].Int())

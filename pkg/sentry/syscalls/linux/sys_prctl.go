@@ -30,7 +30,7 @@ import (
 // Prctl implements linux syscall prctl(2).
 // It has a list of subfunctions which operate on the process. The arguments are
 // all based on each subfunction.
-func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Prctl(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	option := args[0].Int()
 
 	switch option {
@@ -155,7 +155,7 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 			linux.PR_SET_MM_ENV_START,
 			linux.PR_SET_MM_ENV_END:
 
-			t.Kernel().EmitUnimplementedEvent(t)
+			t.Kernel().EmitUnimplementedEvent(t, sysno)
 			fallthrough
 		default:
 			return 0, nil, linuxerr.EINVAL
@@ -234,7 +234,7 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 			return 0, nil, nil
 		}
 
-		t.Kernel().EmitUnimplementedEvent(t)
+		t.Kernel().EmitUnimplementedEvent(t, sysno)
 		return 0, nil, linuxerr.EINVAL
 
 	case linux.PR_GET_TIMING,
@@ -254,7 +254,7 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		linux.PR_MPX_ENABLE_MANAGEMENT,
 		linux.PR_MPX_DISABLE_MANAGEMENT:
 
-		t.Kernel().EmitUnimplementedEvent(t)
+		t.Kernel().EmitUnimplementedEvent(t, sysno)
 		fallthrough
 	default:
 		return 0, nil, linuxerr.EINVAL

@@ -30,7 +30,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/pkg/unet"
-	"gvisor.dev/gvisor/pkg/urpc"
 )
 
 // socketPath creates a path inside bundleDir and ensures that the returned
@@ -282,9 +281,9 @@ func TestJobControlSignalExec(t *testing.T) {
 		// our PID counts get messed up.
 		Argv: []string{"/bin/bash", "--noprofile", "--norc"},
 		// Pass the pty replica as FD 0, 1, and 2.
-		FilePayload: urpc.FilePayload{
-			Files: []*os.File{ptyReplica, ptyReplica, ptyReplica},
-		},
+		FilePayload: control.NewFDMap(map[int]*os.File{
+			0: ptyReplica, 1: ptyReplica, 2: ptyReplica,
+		}),
 		StdioIsPty: true,
 	}
 

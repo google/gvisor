@@ -64,7 +64,7 @@ func (fd *opathFD) Write(ctx context.Context, src usermem.IOSequence, opts Write
 }
 
 // Ioctl implements FileDescriptionImpl.Ioctl.
-func (fd *opathFD) Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+func (fd *opathFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
 	return 0, linuxerr.EBADF
 }
 

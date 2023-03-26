@@ -22,12 +22,12 @@ import (
 )
 
 // Sync implements Linux syscall sync(2).
-func Sync(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Sync(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	return 0, nil, t.Kernel().VFS().SyncAllFilesystems(t)
 }
 
 // Syncfs implements Linux syscall syncfs(2).
-func Syncfs(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Syncfs(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 
 	file := t.GetFile(fd)
@@ -44,7 +44,7 @@ func Syncfs(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 }
 
 // Fsync implements Linux syscall fsync(2).
-func Fsync(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Fsync(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 
 	file := t.GetFile(fd)
@@ -57,13 +57,13 @@ func Fsync(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 }
 
 // Fdatasync implements Linux syscall fdatasync(2).
-func Fdatasync(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Fdatasync(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	// TODO(gvisor.dev/issue/1897): Avoid writeback of unnecessary metadata.
-	return Fsync(t, args)
+	return Fsync(t, sysno, args)
 }
 
 // SyncFileRange implements Linux syscall sync_file_range(2).
-func SyncFileRange(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func SyncFileRange(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	offset := args[1].Int64()
 	nbytes := args[2].Int64()
@@ -106,7 +106,7 @@ func SyncFileRange(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 
 	if flags&linux.SYNC_FILE_RANGE_WAIT_BEFORE != 0 &&
 		flags&linux.SYNC_FILE_RANGE_WAIT_AFTER == 0 {
-		t.Kernel().EmitUnimplementedEvent(t)
+		t.Kernel().EmitUnimplementedEvent(t, sysno)
 		return 0, nil, linuxerr.ENOSYS
 	}
 

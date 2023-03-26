@@ -24,6 +24,7 @@ go_library(
         "//runsc/config",
         "//runsc/flag",
         "//runsc/specutils",
+        "//runsc/version",
         "@com_github_google_subcommands//:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],

@@ -22,7 +22,7 @@ import (
 )
 
 // Sysinfo implements Linux syscall sysinfo(2).
-func Sysinfo(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Sysinfo(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
 
 	mf := t.Kernel().MemoryFile()

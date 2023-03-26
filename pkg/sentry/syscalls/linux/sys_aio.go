@@ -30,7 +30,7 @@ import (
 )
 
 // IoSetup implements linux syscall io_setup(2).
-func IoSetup(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func IoSetup(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	nrEvents := args[0].Int()
 	idAddr := args[1].Pointer()
 
@@ -60,7 +60,7 @@ func IoSetup(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 }
 
 // IoDestroy implements linux syscall io_destroy(2).
-func IoDestroy(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func IoDestroy(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	id := args[0].Uint64()
 
 	ctx := t.MemoryManager().DestroyAIOContext(t, id)
@@ -88,7 +88,7 @@ func IoDestroy(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 }
 
 // IoGetevents implements linux syscall io_getevents(2).
-func IoGetevents(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func IoGetevents(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	id := args[0].Uint64()
 	minEvents := args[1].Int()
 	events := args[2].Int()
@@ -214,12 +214,12 @@ func memoryFor(t *kernel.Task, cb *linux.IOCallback) (usermem.IOSequence, error)
 //
 // It is not presently supported (ENOSYS indicates no support on this
 // architecture).
-func IoCancel(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func IoCancel(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	return 0, nil, linuxerr.ENOSYS
 }
 
 // IoSubmit implements linux syscall io_submit(2).
-func IoSubmit(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func IoSubmit(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	id := args[0].Uint64()
 	nrEvents := args[1].Int()
 	addr := args[2].Pointer()

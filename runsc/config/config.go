@@ -28,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 	"gvisor.dev/gvisor/runsc/flag"
+	"gvisor.dev/gvisor/runsc/version"
 )
 
 // Config holds configuration that is not part of the runtime spec.
@@ -390,14 +391,19 @@ func (b Bundle) Validate() error {
 // MetricMetadata returns key-value pairs that are useful to include in metrics
 // exported about the sandbox this config represents.
 func (c *Config) MetricMetadata() map[string]string {
+	var fsMode = "goferfs"
+	if c.DirectFS {
+		fsMode = "directfs"
+	}
 	return map[string]string{
-		"platform":  c.Platform,
-		"network":   c.Network.String(),
-		"numcores":  strconv.Itoa(runtime.NumCPU()),
-		"coretags":  strconv.FormatBool(c.EnableCoreTags),
-		"overlay":   c.Overlay2.String(),
-		"gofermode": "default",
-		"cpuarch":   runtime.GOARCH,
+		"version":  version.Version(),
+		"platform": c.Platform,
+		"network":  c.Network.String(),
+		"numcores": strconv.Itoa(runtime.NumCPU()),
+		"coretags": strconv.FormatBool(c.EnableCoreTags),
+		"overlay":  c.Overlay2.String(),
+		"fsmode":   fsMode,
+		"cpuarch":  runtime.GOARCH,
 	}
 }
 

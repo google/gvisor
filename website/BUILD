@@ -112,8 +112,8 @@ genrule(
 pkg_tar(
     name = "config",
     srcs = [
-        ":css",
         "_config.yml",
+        ":css",
         "//website/blog:index.html",
     ] + glob([
         "assets/**",

@@ -75,7 +75,7 @@ type kcovFD struct {
 }
 
 // Ioctl implements vfs.FileDescriptionImpl.Ioctl.
-func (fd *kcovFD) Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+func (fd *kcovFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
 	cmd := uint32(args[1].Int())
 	arg := args[2].Uint64()
 	switch uint32(cmd) {

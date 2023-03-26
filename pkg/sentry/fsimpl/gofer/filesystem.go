@@ -1736,11 +1736,10 @@ func (fs *filesystem) MountOptions() string {
 	case InteropModeWritethrough:
 		optsKV = append(optsKV, mopt{moptCache, cacheFSCacheWritethrough})
 	case InteropModeShared:
-		if fs.opts.regularFilesUseSpecialFileFD {
-			optsKV = append(optsKV, mopt{moptCache, cacheNone})
-		} else {
-			optsKV = append(optsKV, mopt{moptCache, cacheRemoteRevalidating})
-		}
+		optsKV = append(optsKV, mopt{moptCache, cacheRemoteRevalidating})
+	}
+	if fs.opts.regularFilesUseSpecialFileFD {
+		optsKV = append(optsKV, mopt{moptDisableFileHandleSharing, nil})
 	}
 	if fs.opts.forcePageCache {
 		optsKV = append(optsKV, mopt{moptForcePageCache, nil})
@@ -1753,12 +1752,6 @@ func (fs *filesystem) MountOptions() string {
 	}
 	if fs.opts.directfs.enabled {
 		optsKV = append(optsKV, mopt{moptDirectfs, nil})
-		if fs.opts.directfs.hostUDSBind {
-			optsKV = append(optsKV, mopt{moptHostUDSBind, nil})
-		}
-		if fs.opts.directfs.hostUDSConnect {
-			optsKV = append(optsKV, mopt{moptHostUDSConnect, nil})
-		}
 	}
 
 	opts := make([]string, 0, len(optsKV))

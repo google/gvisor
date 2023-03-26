@@ -967,7 +967,7 @@ func (f *fileDescription) Epollable() bool {
 }
 
 // Ioctl queries the underlying FD for allowed ioctl commands.
-func (f *fileDescription) Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+func (f *fileDescription) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
 	switch cmd := args[1].Int(); cmd {
 	case linux.FIONREAD:
 		v, err := ioctlFionread(f.inode.hostFD)
@@ -981,5 +981,5 @@ func (f *fileDescription) Ioctl(ctx context.Context, uio usermem.IO, args arch.S
 		return 0, err
 	}
 
-	return f.FileDescriptionDefaultImpl.Ioctl(ctx, uio, args)
+	return f.FileDescriptionDefaultImpl.Ioctl(ctx, uio, sysno, args)
 }

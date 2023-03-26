@@ -45,13 +45,10 @@ origpwd=$(pwd)
 othersrc=("go.mod" "go.sum" "AUTHORS" "LICENSE")
 readonly module origpwd othersrc
 
-# Build a full gopath. Before copying, this scans the generated directory
-# and removes broken symbolic links. It's not clear what conditions this bug
-# is hit with bazel, but it happens on occasion.
+# Build a full gopath.
 declare -r go_output="${tmp_dir}/output"
 make build BAZEL_OPTIONS="" TARGETS="//:gopath"
-find bazel-bin/gopath/ -xtype l -delete # See above.
-rsync --recursive --delete --copy-links bazel-bin/gopath/ "${go_output}"
+unzip bazel-bin/gopath.zip -d "${go_output}"
 
 # We expect to have an existing go branch that we will use as the basis for this
 # commit. That branch may be empty, but it must exist. We search for this branch
