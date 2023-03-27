@@ -405,6 +405,9 @@ func (c *Config) MetricMetadata() map[string]string {
 		"fsmode":   fsMode,
 		"cpuarch":  runtime.GOARCH,
 		"go":       runtime.Version(),
+		// The "experiment" label is currently unused, but may be used to contain
+		// extra information about e.g. an experiment that may be enabled.
+		"experiment": "",
 	}
 }
 
