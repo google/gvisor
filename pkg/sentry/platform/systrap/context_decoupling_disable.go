@@ -17,4 +17,4 @@
 
 package systrap
 
-var contextDecouplingExp bool = false
+var contextDecouplingExp bool = true
