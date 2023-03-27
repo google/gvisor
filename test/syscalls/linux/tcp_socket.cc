@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <fcntl.h>
+
 #ifdef __linux__
 #include <linux/filter.h>
 #endif  // __linux__
@@ -27,6 +28,7 @@
 #include <vector>
 
 #include "gtest/gtest.h"
+#include "absl/status/statusor.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/util/file_descriptor.h"
@@ -42,24 +44,59 @@ namespace {
 
 constexpr int kTimeoutMillis = 10000;
 
-PosixErrorOr<sockaddr_storage> InetLoopbackAddr(int family) {
+PosixErrorOr<sockaddr_storage> InetLoopbackAddrZeroPort(int family) {
   struct sockaddr_storage addr;
   memset(&addr, 0, sizeof(addr));
   addr.ss_family = family;
   switch (family) {
-    case AF_INET:
-      reinterpret_cast<struct sockaddr_in*>(&addr)->sin_addr.s_addr =
-          htonl(INADDR_LOOPBACK);
+    case AF_INET: {
+      auto& addr_in = reinterpret_cast<struct sockaddr_in&>(addr);
+      addr_in.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
       break;
-    case AF_INET6:
-      reinterpret_cast<struct sockaddr_in6*>(&addr)->sin6_addr =
-          in6addr_loopback;
+    }
+    case AF_INET6: {
+      auto& addr_in6 = reinterpret_cast<struct sockaddr_in6&>(addr);
+      addr_in6.sin6_addr = in6addr_loopback;
       break;
+    }
     default:
       return PosixError(EINVAL,
                         absl::StrCat("unknown socket family: ", family));
   }
   return addr;
+}
+
+// Gets the port number from the address, assuming it is an IPv4 or IPv6 socket
+// address.
+absl::StatusOr<uint16_t> GetPort(const sockaddr_storage& addr) {
+  switch (addr.ss_family) {
+    case AF_INET:
+      return reinterpret_cast<const struct sockaddr_in&>(addr).sin_port;
+    case AF_INET6:
+      return reinterpret_cast<const struct sockaddr_in6&>(addr).sin6_port;
+    default:
+      return absl::InvalidArgumentError("not an IPv4 or IPv6 address");
+  }
+}
+
+// Allocates a file descriptor that is bound to a local port but not listening.
+// Sets `addr` and `addrlen` to the bound address.
+PosixErrorOr<FileDescriptor> ReserveLocalPort(int family,
+                                              sockaddr_storage& addr,
+                                              socklen_t& addrlen) {
+  // Reserve a port by binding to it but not listening.
+  ASSIGN_OR_RETURN_ERRNO(FileDescriptor reserving,
+                         Socket(family, SOCK_STREAM, IPPROTO_TCP));
+  if (int err = bind(reserving.get(), AsSockAddr(&addr), addrlen); err != 0) {
+    return PosixError(err, "bind failed");
+  }
+  // Get the address with the reserved port because the port is chosen by the
+  // stack.
+  if (int err = getsockname(reserving.get(), AsSockAddr(&addr), &addrlen);
+      err != 0) {
+    return PosixError(err, "getsockname failed");
+  }
+  return reserving;
 }
 
 static void FillSocketBuffers(int sender, int receiver) {
@@ -134,7 +171,7 @@ void TcpSocketTest::SetUp() {
 
   // Initialize address to the loopback one.
   sockaddr_storage addr =
-      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddrZeroPort(GetParam()));
   socklen_t addrlen = sizeof(addr);
 
   // Bind to some port then start listening.
@@ -192,9 +229,10 @@ TEST_P(TcpSocketTest, ConnectedAcceptedPeerAndLocalAreReciprocals) {
 }
 
 TEST_P(TcpSocketTest, ConnectOnEstablishedConnection) {
-  sockaddr_storage addr =
-      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+  sockaddr_storage addr;
   socklen_t addrlen = sizeof(addr);
+  ASSERT_THAT(getpeername(connected_.get(), AsSockAddr(&addr), &addrlen),
+              SyscallSucceeds());
 
   ASSERT_THAT(RetryEINTR(connect)(
                   connected_.get(),
@@ -897,7 +935,7 @@ TEST_P(SimpleTcpSocketTest, SendtoWithAddressUnconnected) {
   FileDescriptor sock_fd(fd);
 
   sockaddr_storage addr =
-      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddrZeroPort(GetParam()));
   char data = '\0';
   EXPECT_THAT(RetryEINTR(sendto)(fd, &data, sizeof(data), 0, AsSockAddr(&addr),
                                  sizeof(addr)),
@@ -998,7 +1036,7 @@ TEST_P(SimpleTcpSocketTest, PollAroundAccept) {
   const FileDescriptor listener =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
   sockaddr_storage addr =
-      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddrZeroPort(GetParam()));
   socklen_t addrlen = sizeof(addr);
 
   // Bind to some port.
@@ -1049,7 +1087,7 @@ TEST_P(SimpleTcpSocketTest, NonBlockingConnectRetry) {
 
   // Initialize address to the loopback one.
   sockaddr_storage addr =
-      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddrZeroPort(GetParam()));
   socklen_t addrlen = sizeof(addr);
 
   // Bind to some port but don't listen yet.
@@ -1090,10 +1128,10 @@ TEST_P(SimpleTcpSocketTest, NonBlockingConnectRetry) {
 }
 
 // nonBlockingConnectNoListener returns a socket on which a connect that is
-// expected to fail has been issued.
-PosixErrorOr<FileDescriptor> nonBlockingConnectNoListener(const int family,
-                                                          sockaddr_storage addr,
-                                                          socklen_t addrlen) {
+// expected to fail has been issued. The address to which the connect is issued
+// is written to `addr` and `addrlen`.
+PosixErrorOr<FileDescriptor> nonBlockingConnectNoListener(
+    const int family, sockaddr_storage& addr, socklen_t& addrlen) {
   // We will first create a socket and bind to ensure we bind a port but will
   // not call listen on this socket.
   // Then we will create a new socket that will connect to the port bound by
@@ -1127,11 +1165,12 @@ PosixErrorOr<FileDescriptor> nonBlockingConnectNoListener(const int family,
 
 TEST_P(SimpleTcpSocketTest, NonBlockingConnectNoListener) {
   sockaddr_storage addr =
-      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddrZeroPort(GetParam()));
   socklen_t addrlen = sizeof(addr);
 
   const FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
       nonBlockingConnectNoListener(GetParam(), addr, addrlen));
+  ASSERT_NE(GetPort(addr).value(), 0);
 
   int err;
   socklen_t optlen = sizeof(err);
@@ -1154,7 +1193,7 @@ TEST_P(SimpleTcpSocketTest, NonBlockingConnectNoListener) {
 TEST_P(SimpleTcpSocketTest, ListenConnectParallel) {
   int family = GetParam();
   sockaddr_storage addr =
-      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddrZeroPort(GetParam()));
   socklen_t addrlen = sizeof(addr);
   constexpr int sock_type = SOCK_STREAM;
 
@@ -1196,11 +1235,12 @@ TEST_P(SimpleTcpSocketTest, ListenConnectParallel) {
 
 TEST_P(SimpleTcpSocketTest, NonBlockingConnectNoListenerRead) {
   sockaddr_storage addr =
-      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddrZeroPort(GetParam()));
   socklen_t addrlen = sizeof(addr);
 
   const FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
       nonBlockingConnectNoListener(GetParam(), addr, addrlen));
+  ASSERT_NE(GetPort(addr).value(), 0);
 
   unsigned char c;
   ASSERT_THAT(read(s.get(), &c, 1), SyscallFailsWithErrno(ECONNREFUSED));
@@ -1211,11 +1251,12 @@ TEST_P(SimpleTcpSocketTest, NonBlockingConnectNoListenerRead) {
 
 TEST_P(SimpleTcpSocketTest, NonBlockingConnectNoListenerPeek) {
   sockaddr_storage addr =
-      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddrZeroPort(GetParam()));
   socklen_t addrlen = sizeof(addr);
 
   const FileDescriptor s = ASSERT_NO_ERRNO_AND_VALUE(
       nonBlockingConnectNoListener(GetParam(), addr, addrlen));
+  ASSERT_NE(GetPort(addr).value(), 0);
 
   unsigned char c;
   ASSERT_THAT(recv(s.get(), &c, 1, MSG_PEEK),
@@ -1228,7 +1269,7 @@ TEST_P(SimpleTcpSocketTest, NonBlockingConnectNoListenerPeek) {
 TEST_P(SimpleTcpSocketTest, SelfConnectSendRecv) {
   // Initialize address to the loopback one.
   sockaddr_storage addr =
-      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddrZeroPort(GetParam()));
   socklen_t addrlen = sizeof(addr);
 
   const FileDescriptor s =
@@ -1276,7 +1317,7 @@ TEST_P(SimpleTcpSocketTest, SelfConnectSendRecv) {
 TEST_P(SimpleTcpSocketTest, SelfConnectSend) {
   // Initialize address to the loopback one.
   sockaddr_storage addr =
-      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddrZeroPort(GetParam()));
   socklen_t addrlen = sizeof(addr);
 
   const FileDescriptor s =
@@ -1315,7 +1356,7 @@ TEST_P(SimpleTcpSocketTest, SelfConnectSend) {
 TEST_P(SimpleTcpSocketTest, SelfConnectSendShutdownWrite) {
   // Initialize address to the loopback one.
   sockaddr_storage addr =
-      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddrZeroPort(GetParam()));
   socklen_t addrlen = sizeof(addr);
 
   const FileDescriptor s =
@@ -1346,7 +1387,7 @@ TEST_P(SimpleTcpSocketTest, SelfConnectSendShutdownWrite) {
 TEST_P(SimpleTcpSocketTest, SelfConnectRecvShutdownRead) {
   // Initialize address to the loopback one.
   sockaddr_storage addr =
-      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddrZeroPort(GetParam()));
   socklen_t addrlen = sizeof(addr);
 
   const FileDescriptor s =
@@ -1373,7 +1414,8 @@ void NonBlockingConnect(int family, int16_t pollMask) {
       ASSERT_NO_ERRNO_AND_VALUE(Socket(family, SOCK_STREAM, IPPROTO_TCP));
 
   // Initialize address to the loopback one.
-  sockaddr_storage addr = ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(family));
+  sockaddr_storage addr =
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddrZeroPort(family));
   socklen_t addrlen = sizeof(addr);
 
   // Bind to some port then start listening.
@@ -1434,7 +1476,7 @@ TEST_P(SimpleTcpSocketTest, NonBlockingConnectRemoteClose) {
 
   // Initialize address to the loopback one.
   sockaddr_storage addr =
-      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddrZeroPort(GetParam()));
   socklen_t addrlen = sizeof(addr);
 
   // Bind to some port then start listening.
@@ -1479,8 +1521,11 @@ TEST_P(SimpleTcpSocketTest, BlockingConnectRefused) {
 
   // Initialize address to the loopback one.
   sockaddr_storage addr =
-      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddrZeroPort(GetParam()));
   socklen_t addrlen = sizeof(addr);
+
+  auto reservation = ReserveLocalPort(GetParam(), addr, addrlen);
+  ASSERT_NE(GetPort(addr).value(), 0);
 
   ASSERT_THAT(RetryEINTR(connect)(s.get(), AsSockAddr(&addr), addrlen),
               SyscallFailsWithErrno(ECONNREFUSED));
@@ -1499,7 +1544,7 @@ TEST_P(SimpleTcpSocketTest, CleanupOnConnectionRefused) {
       ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
 
   sockaddr_storage bound_addr =
-      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddrZeroPort(GetParam()));
   socklen_t bound_addrlen = sizeof(bound_addr);
 
   ASSERT_THAT(bind(bound_s.get(), AsSockAddr(&bound_addr), bound_addrlen),
@@ -1517,7 +1562,7 @@ TEST_P(SimpleTcpSocketTest, CleanupOnConnectionRefused) {
       ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
   // Initialize client address to the loopback one.
   sockaddr_storage client_addr =
-      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddrZeroPort(GetParam()));
   socklen_t client_addrlen = sizeof(client_addr);
 
   ASSERT_THAT(bind(client_s.get(), AsSockAddr(&client_addr), client_addrlen),
@@ -1576,8 +1621,10 @@ TEST_P(SimpleTcpSocketTest, NonBlockingConnectRefused) {
 
   // Initialize address to the loopback one.
   sockaddr_storage addr =
-      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddrZeroPort(GetParam()));
   socklen_t addrlen = sizeof(addr);
+  auto reservation = ReserveLocalPort(GetParam(), addr, addrlen);
+  ASSERT_NE(GetPort(addr).value(), 0);
 
   ASSERT_THAT(RetryEINTR(connect)(s.get(), AsSockAddr(&addr), addrlen),
               SyscallFailsWithErrno(EINPROGRESS));
@@ -1868,8 +1915,10 @@ TEST_P(SimpleTcpSocketTest, TCPConnectSoRcvBufRace) {
   auto s = ASSERT_NO_ERRNO_AND_VALUE(
       Socket(GetParam(), SOCK_STREAM | SOCK_NONBLOCK, IPPROTO_TCP));
   sockaddr_storage addr =
-      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddrZeroPort(GetParam()));
   socklen_t addrlen = sizeof(addr);
+  auto reservation = ReserveLocalPort(GetParam(), addr, addrlen);
+  ASSERT_NE(GetPort(addr).value(), 0);
 
   RetryEINTR(connect)(s.get(), AsSockAddr(&addr), addrlen);
   int buf_sz = 1 << 18;
@@ -2183,7 +2232,7 @@ TEST_P(SimpleTcpSocketTest, GetSocketAcceptConnWithShutdown) {
 
   // Initialize address to the loopback one.
   sockaddr_storage addr =
-      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddrZeroPort(GetParam()));
   socklen_t addrlen = sizeof(addr);
 
   // Bind to some port then start listening.
@@ -2210,7 +2259,7 @@ void ShutdownConnectingSocket(int domain, int shutdown_mode) {
       ASSERT_NO_ERRNO_AND_VALUE(Socket(domain, SOCK_STREAM, IPPROTO_TCP));
 
   sockaddr_storage bound_addr =
-      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(domain));
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddrZeroPort(domain));
   socklen_t bound_addrlen = sizeof(bound_addr);
 
   ASSERT_THAT(bind(bound_s.get(), AsSockAddr(&bound_addr), bound_addrlen),
@@ -2320,7 +2369,7 @@ TEST_P(SimpleTcpSocketTest, OnlyAcknowledgeBacklogConnections) {
           Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
 
       sockaddr_storage bound_addr =
-          ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+          ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddrZeroPort(GetParam()));
       socklen_t bound_addrlen = sizeof(bound_addr);
 
       ASSERT_THAT(bind(bound_s.get(), AsSockAddr(&bound_addr), bound_addrlen),
@@ -2370,7 +2419,7 @@ TEST_P(SimpleTcpSocketTest, SynRcvdOnListenerShutdown) {
       ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
 
   sockaddr_storage bound_addr =
-      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddr(GetParam()));
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddrZeroPort(GetParam()));
   socklen_t bound_addrlen = sizeof(bound_addr);
 
   ASSERT_THAT(bind(bound_s.get(), AsSockAddr(&bound_addr), bound_addrlen),
