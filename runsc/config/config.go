@@ -404,6 +404,7 @@ func (c *Config) MetricMetadata() map[string]string {
 		"overlay":  c.Overlay2.String(),
 		"fsmode":   fsMode,
 		"cpuarch":  runtime.GOARCH,
+		"go":       runtime.Version(),
 	}
 }
 
