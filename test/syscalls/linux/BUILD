@@ -3903,6 +3903,7 @@ cc_binary(
     deps = [
         "//test/util:file_descriptor",
         "//test/util:socket_util",
+        "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/time",
         gtest,
         "//test/util:posix_error",
