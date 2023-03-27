@@ -174,7 +174,7 @@ func (c *context) Switch(ctx pkgcontext.Context, mm platform.MemoryManager, ac *
 
 	as := mm.AddressSpace()
 	s := as.(*subprocess)
-	if err := s.activateContext(c); err != nil {
+	if err := s.activateContext(c, ac); err != nil {
 		return nil, hostarch.NoAccess, err
 	}
 

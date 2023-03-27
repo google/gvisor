@@ -1137,7 +1137,7 @@ func (s *subprocess) PostFork() {
 // activateContext activates the context in this subprocess.
 // No-op if the context is already active within the subprocess; if not,
 // deactivates it from its last subprocess.
-func (s *subprocess) activateContext(c *context) error {
+func (s *subprocess) activateContext(c *context, ac *arch.Context64) error {
 	if !c.sharedContext.isActiveInSubprocess(s) {
 		c.sharedContext.release()
 		c.sharedContext = nil
@@ -1147,6 +1147,7 @@ func (s *subprocess) activateContext(c *context) error {
 			return err
 		}
 		c.sharedContext = shared
+		c.needRestoreFPState = true
 	}
 	return nil
 }
