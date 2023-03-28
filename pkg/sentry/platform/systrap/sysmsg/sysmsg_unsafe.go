@@ -81,8 +81,10 @@ func (c *ThreadContext) SleepOnState(curState ContextState, interruptor interrup
 }
 
 // WakeSysmsgThread calls futex wake on Sysmsg.State.
-func (m *Msg) WakeSysmsgThread() syscall.Errno {
-	m.State.Set(ThreadStatePrep)
+func (m *Msg) WakeSysmsgThread() (bool, syscall.Errno) {
+	if !m.State.CompareAndSwap(ThreadStateAsleep, ThreadStatePrep) {
+		return false, 0
+	}
 	_, _, e := unix.RawSyscall6(unix.SYS_FUTEX, uintptr(unsafe.Pointer(&m.State)), linux.FUTEX_WAKE, 1, 0, 0, 0)
-	return e
+	return true, e
 }

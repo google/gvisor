@@ -93,6 +93,11 @@ func (s *ThreadState) Set(state ThreadState) {
 	atomic.StoreUint32((*uint32)(s), uint32(state))
 }
 
+// CompareAndSwap atomicaly compares and swaps the state value.
+func (s *ThreadState) CompareAndSwap(old, state ThreadState) bool {
+	return atomic.CompareAndSwapUint32((*uint32)(s), uint32(old), uint32(state))
+}
+
 // Get returns the current state value.
 //
 //go:nosplit
