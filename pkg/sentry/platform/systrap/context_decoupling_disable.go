@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !context_decoupling
-// +build !context_decoupling
+//go:build context_decoupling_disabled
+// +build context_decoupling_disabled
 
 package systrap
 
