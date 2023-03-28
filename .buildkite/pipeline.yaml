@@ -448,7 +448,7 @@ steps:
   - <<: *common
     <<: *docker
     label: ":golang: Go runtime tests"
-    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} go1.16-runtime-tests
+    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} go1.20-runtime-tests
     parallelism: 10
     agents:
       <<: *platform_specific_agents
