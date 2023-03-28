@@ -224,6 +224,8 @@ struct thread_context *get_context(struct sysmsg *sysmsg) {
         spinloop();
       }
     }
+
+    __atomic_store_n(&sysmsg->state, THREAD_STATE_ASLEEP, __ATOMIC_RELEASE);
     uint32_t nr_active_threads =
         __atomic_sub_fetch(&queue->num_active_threads, 1, __ATOMIC_ACQ_REL);
     uint32_t nr_active_contexts =
@@ -236,12 +238,12 @@ struct thread_context *get_context(struct sysmsg *sysmsg) {
     if (nr_active_threads == 0 || nr_active_threads < nr_active_contexts) {
       ctx = queue_get_context(sysmsg);
       if (ctx) {
+        __atomic_store_n(&sysmsg->state, THREAD_STATE_PREP, __ATOMIC_RELEASE);
         __atomic_add_fetch(&queue->num_active_threads, 1, __ATOMIC_ACQ_REL);
         return ctx;
       }
     }
 
-    __atomic_store_n(&sysmsg->state, THREAD_STATE_ASLEEP, __ATOMIC_RELEASE);
     while (__atomic_load_n(&sysmsg->state, __ATOMIC_ACQUIRE) ==
            THREAD_STATE_ASLEEP) {
       sys_futex(&sysmsg->state, FUTEX_WAIT, THREAD_STATE_ASLEEP, NULL, NULL, 0);
@@ -257,6 +259,7 @@ struct thread_context *switch_context(struct sysmsg *sysmsg,
                                       enum context_state new_context_state) {
   struct context_queue *queue = __export_context_queue_addr;
 
+  __atomic_sub_fetch(&queue->num_active_contexts, 1, __ATOMIC_ACQ_REL);
   __atomic_store_n(&ctx->thread_id, INVALID_THREAD_ID, __ATOMIC_RELEASE);
   __atomic_store_n(&ctx->last_thread_id, sysmsg->thread_id, __ATOMIC_RELEASE);
   __atomic_store_n(&ctx->state, new_context_state, __ATOMIC_RELEASE);
@@ -266,7 +269,6 @@ struct thread_context *switch_context(struct sysmsg *sysmsg,
       panic(ret);
     }
   }
-  __atomic_sub_fetch(&queue->num_active_contexts, 1, __ATOMIC_ACQ_REL);
 
   struct thread_context *old_ctx = sysmsg->context;
 

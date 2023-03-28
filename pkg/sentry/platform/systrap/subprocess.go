@@ -787,44 +787,38 @@ func (s *subprocess) switchToApp(c *context, ac *arch.Context64) (isSyscall bool
 	return false, false, nil
 }
 
-const (
-	// deepSleepTimeout is the timeout after which we stop polling and fall asleep.
-	// The value is 100µs for 2GHz CPU.
-	decoupledDeepSleepTimeout = uint64(200000)
-	// threadKickTimeout is the timeout after which we will either wake up a sleeping
-	// thread or create a new one.
-	threadKickTimeout = uint64(20000)
-)
-
 func (s *subprocess) waitOnState(ctx *sharedContext) {
 	kicked := false
 	slowPath := false
 	start := cputicks()
 	handshake := false
 	if atomic.LoadUint32(&s.contextQueue.numActiveThreads) == 0 {
-		kicked = true
-		s.kickSysmsgThread()
+		kicked = s.kickSysmsgThread()
 	}
 	for curState := ctx.state(); curState == sysmsg.ContextStateNone; curState = ctx.state() {
 		if !slowPath {
 			delta := uint64(cputicks() - start)
-			if delta > decoupledDeepSleepTimeout {
+			if delta > deepSleepTimeout {
 				ctx.disableSentryFastPath()
 				slowPath = true
 				continue
 			}
 
-			if !handshake && ctx.isAcked() {
-				handshake = true
-				continue
+			if !handshake {
+				if ctx.isAcked() {
+					handshake = true
+					continue
+				}
+				if !kicked && delta > handshakeTimeout {
+					kicked = s.kickSysmsgThread()
+				}
 			}
 			spinloop()
 		} else {
 			// If the context already received a handshake then it knows it's being
 			// worked on.
 			if !kicked && !handshake {
-				kicked = true
-				s.kickSysmsgThread()
+				kicked = s.kickSysmsgThread()
 			}
 
 			ctx.sleepOnState(curState)
@@ -835,29 +829,46 @@ func (s *subprocess) waitOnState(ctx *sharedContext) {
 	ctx.enableSentryFastPath()
 }
 
-func (s *subprocess) kickSysmsgThread() {
-	s.sysmsgThreadsMu.Lock()
-
+func (s *subprocess) kickSysmsgThread() bool {
+	// numActiveContexts and numActiveThreads can be changed from stub
+	// threads that work with the contextQueue without any locks. The idea
+	// here is that any stub thread that gets CPU time can make some
+	// progress. In stub threads, we can use only spinlock-like
+	// synchronizations, but they don't work well because a thread that
+	// holds a lock can be preempted by another threads that is waiting for
+	// the same lock.
 	nrActiveContexts := atomic.LoadUint32(&s.contextQueue.numActiveContexts)
 	nrActiveThreads := atomic.LoadUint32(&s.contextQueue.numActiveThreads)
+	if nrActiveContexts != 0 && nrActiveThreads >= nrActiveContexts {
+		// This can happen when one or more stub threads are
+		// waiting for cpu time. The host probably has more
+		// running tasks than a number of cpu-s.
+		return false
+	}
 
-	if nrActiveThreads >= nrActiveContexts {
+	s.sysmsgThreadsMu.Lock()
+	nrActiveContexts = atomic.LoadUint32(&s.contextQueue.numActiveContexts)
+	nrActiveThreads = atomic.LoadUint32(&s.contextQueue.numActiveThreads)
+	if nrActiveContexts != 0 && nrActiveThreads >= nrActiveContexts {
 		s.sysmsgThreadsMu.Unlock()
-		return
+		return false
 	}
 
 	if s.numSysmsgThreads > int(nrActiveThreads) {
 		for _, t := range s.sysmsgThreads {
-			if t.msg.State.Get() == sysmsg.ThreadStateAsleep {
-				t.msg.WakeSysmsgThread()
+			if kicked, _ := t.msg.WakeSysmsgThread(); kicked {
 				s.sysmsgThreadsMu.Unlock()
-				return
+				return true
 			}
 		}
+		s.sysmsgThreadsMu.Unlock()
+		// Threads are kicked only here under sysmsgThreadsMu. It means
+		// that this case is possible only if one thread decides to
+		// fall asleep but then change its mind. Look at
+		// sysmsg_lib.c:get_context for more details.
+		return false
 	}
-	// It's also possible that we got here after iterating through all other
-	// threads and not finding anything asleep because other goroutines already
-	// woke up every other thread up.
+
 	if s.numSysmsgThreads < maxSysmsgThreads {
 		s.numSysmsgThreads++
 		s.sysmsgThreadsMu.Unlock()
@@ -868,10 +879,13 @@ func (s *subprocess) kickSysmsgThread() {
 			s.sysmsgThreadsMu.Lock()
 			s.numSysmsgThreads--
 			s.sysmsgThreadsMu.Unlock()
+			return false
 		}
-	} else {
-		s.sysmsgThreadsMu.Unlock()
+		return true
 	}
+
+	s.sysmsgThreadsMu.Unlock()
+	return false
 }
 
 // syscall executes the given system call without handling interruptions.
