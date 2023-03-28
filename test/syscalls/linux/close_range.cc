@@ -212,9 +212,10 @@ TEST_F(CloseRangeTest, CallCloseRangeTwice) {
 
 // Test that using CLOEXEC flag does not close the file for this process.
 TEST_F(CloseRangeTest, CloexecFlagTest) {
-  SKIP_IF(!IsRunningOnGvisor() && close_range(1, 0, 0) < 0 && errno == ENOSYS);
   int num_files_in_range = 10;
   unsigned int flags = CLOSE_RANGE_CLOEXEC;
+
+  SKIP_IF(!IsRunningOnGvisor() && close_range(2, 2, CLOSE_RANGE_CLOEXEC));
 
   CreateFiles(num_files_in_range);
   OpenFilesRdwr();
@@ -314,9 +315,10 @@ TEST_F(CloseRangeTest, UnshareFlagAndCloseRangeAtEnd) {
 // Test that using both CLOEXEC and UNSHARE flags does not close files for this
 // process.
 TEST_F(CloseRangeTest, CloexecAndUnshareFlagTest) {
-  SKIP_IF(!IsRunningOnGvisor() && close_range(1, 0, 0) < 0 && errno == ENOSYS);
   int num_files_in_range = 10;
   unsigned int flags = CLOSE_RANGE_CLOEXEC | CLOSE_RANGE_UNSHARE;
+
+  SKIP_IF(!IsRunningOnGvisor() && close_range(2, 2, flags) < 0);
 
   CreateFiles(num_files_in_range);
   OpenFilesRdwr();

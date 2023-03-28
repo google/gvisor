@@ -453,6 +453,7 @@ TEST(CloneTest, NonCanonicalTLS) {
                       nullptr, kNonCanonical),
               SyscallFailsWithErrno(EPERM));
 #elif defined(__aarch64__)
+  SKIP_IF(!IsRunningOnGvisor());
   EXPECT_THAT(syscall(__NR_clone, SIGCHLD | CLONE_SETTLS, &stack, nullptr,
                       kNonCanonical, nullptr),
               SyscallFailsWithErrno(EPERM));
