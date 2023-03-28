@@ -242,7 +242,7 @@ RUNTIME_TESTS_FLAKY_IS_ERROR ?= true
 RUNTIME_TESTS_FLAKY_SHORT_CIRCUIT ?= true
 
 %-runtime-tests: load-runtimes_% $(RUNTIME_BIN)
-	@$(call install_runtime,$(RUNTIME),--watchdog-action=panic)
+	@$(call install_runtime,$(RUNTIME),--platform=systrap --watchdog-action=panic)
 	@$(call test_runtime,$(RUNTIME),--test_timeout=1800 --test_env=RUNTIME_TESTS_FILTER=$(RUNTIME_TESTS_FILTER) --test_env=RUNTIME_TESTS_PER_TEST_TIMEOUT=$(RUNTIME_TESTS_PER_TEST_TIMEOUT) --test_env=RUNTIME_TESTS_RUNS_PER_TEST=$(RUNTIME_TESTS_RUNS_PER_TEST) --test_env=RUNTIME_TESTS_FLAKY_IS_ERROR=$(RUNTIME_TESTS_FLAKY_IS_ERROR) --test_env=RUNTIME_TESTS_FLAKY_SHORT_CIRCUIT=$(RUNTIME_TESTS_FLAKY_SHORT_CIRCUIT) //test/runtimes:$*)
 
 do-tests: $(RUNTIME_BIN)
