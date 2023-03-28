@@ -764,6 +764,7 @@ func (s *subprocess) switchToApp(c *context, ac *arch.Context64) (isSyscall bool
 	// Copy register state locally.
 	regs.PtraceRegs = ctx.shared.Regs
 	retrieveArchSpecificState(ctx.shared, ac)
+	c.needToPullFullState = true
 	// We have a signal. We verify however, that the signal was
 	// either delivered from the kernel or from this process. We
 	// don't respect other signals.

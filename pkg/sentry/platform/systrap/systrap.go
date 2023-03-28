@@ -170,8 +170,6 @@ func (c *context) FullStateChanged() {
 
 // Switch runs the provided context in the given address space.
 func (c *context) Switch(ctx pkgcontext.Context, mm platform.MemoryManager, ac *arch.Context64, cpu int32) (*linux.SignalInfo, hostarch.AccessType, error) {
-	c.needToPullFullState = true
-
 	as := mm.AddressSpace()
 	s := as.(*subprocess)
 	if err := s.activateContext(c); err != nil {
