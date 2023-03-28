@@ -1086,6 +1086,9 @@ func (s *subprocess) createSysmsgThread(tregs *arch.Registers, c *context, ac *a
 	_, err = p.syscallIgnoreInterrupt(&p.initRegs, unix.SYS_PRCTL,
 		arch.SyscallArgument{Value: uintptr(linux.PR_SET_NO_NEW_PRIVS)},
 		arch.SyscallArgument{Value: uintptr(1)},
+		arch.SyscallArgument{Value: uintptr(0)},
+		arch.SyscallArgument{Value: uintptr(0)},
+		arch.SyscallArgument{Value: uintptr(0)},
 		arch.SyscallArgument{Value: uintptr(0)})
 	if err != nil {
 		panic(fmt.Sprintf("prctl(PR_SET_NO_NEW_PRIVS) failed: %v", err))
