@@ -354,7 +354,12 @@ CreateTCPConnectAcceptSocketPair(int bound, FileDescriptor connected, int type,
   if (connect_result == -1) {
     struct pollfd connect_poll = {connected.get(), POLLOUT | POLLERR | POLLHUP,
                                   0};
-    RETURN_ERROR_IF_SYSCALL_FAIL(RetryEINTR(poll)(&connect_poll, 1, 0));
+    int num_fds;
+    RETURN_ERROR_IF_SYSCALL_FAIL(
+        (num_fds = RetryEINTR(poll)(&connect_poll, 1, -1)));
+    if (num_fds != 1) {
+      return PosixError(ENOTCONN, "connect failed");
+    }
     int error = 0;
     socklen_t errorlen = sizeof(error);
     RETURN_ERROR_IF_SYSCALL_FAIL(
