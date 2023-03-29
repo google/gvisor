@@ -1125,9 +1125,16 @@ func EmitMetricUpdate() {
 	}
 }
 
+// SnapshotOptions controls how snapshots are exported in GetSnapshot.
+type SnapshotOptions struct {
+	// Filter, if set, should return true for metrics that should be written to
+	// the snapshot. If unset, all metrics are written to the snapshot.
+	Filter func(*prometheus.Metric) bool
+}
+
 // GetSnapshot returns a Prometheus snapshot of the metric data.
 // Returns ErrNotYetInitialized if metrics have not yet been initialized.
-func GetSnapshot() (*prometheus.Snapshot, error) {
+func GetSnapshot(options SnapshotOptions) (*prometheus.Snapshot, error) {
 	if !initialized.Load() {
 		return nil, ErrNotYetInitialized
 	}
@@ -1135,6 +1142,9 @@ func GetSnapshot() (*prometheus.Snapshot, error) {
 	snapshot := prometheus.NewSnapshot()
 	for k, v := range values.uint64Metrics {
 		m := allMetrics.uint64Metrics[k]
+		if options.Filter != nil && !options.Filter(m.prometheusMetric) {
+			continue
+		}
 		switch t := v.(type) {
 		case uint64:
 			if m.metadata.GetCumulative() && t == 0 {
@@ -1157,6 +1167,9 @@ func GetSnapshot() (*prometheus.Snapshot, error) {
 	}
 	for k, dists := range values.distributionTotalSamples {
 		m := allMetrics.distributionMetrics[k]
+		if options.Filter != nil && !options.Filter(m.prometheusMetric) {
+			continue
+		}
 		distributionSamples := values.distributionMetrics[k]
 		numFiniteBuckets := m.exponentialBucketer.NumFiniteBuckets()
 		sampleSums := values.distributionSampleSum[k]
