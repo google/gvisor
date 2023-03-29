@@ -45,7 +45,19 @@ func (i *fdMappings) GetArray() []boot.FDMapping {
 func (i *fdMappings) Set(s string) error {
 	split := strings.Split(s, ":")
 	if len(split) != 2 {
-		return fmt.Errorf("invalid flag value: must be of format M:N")
+		// Split returns a slice of length 1 if its first argument does not
+		// contain the separator. An additional length check is not necessary.
+		// In case no separator is used and the argument is a valid integer, we
+		// assume that host FD and guest FD should be identical.
+		fd, err := strconv.Atoi(split[0])
+		if err != nil {
+			return fmt.Errorf("invalid flag value: must be an integer or a mapping of format M:N")
+		}
+		*i = append(*i, boot.FDMapping{
+			Host:  fd,
+			Guest: fd,
+		})
+		return nil
 	}
 
 	fdHost, err := strconv.Atoi(split[0])
