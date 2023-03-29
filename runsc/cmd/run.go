@@ -38,7 +38,7 @@ type Run struct {
 
 	// passFDs are user-supplied FDs from the host to be exposed to the
 	// sandboxed app.
-	passFDs intFlags
+	passFDs fdMappings
 }
 
 // Name implements subcommands.Command.Name.
@@ -60,7 +60,7 @@ func (*Run) Usage() string {
 // SetFlags implements subcommands.Command.SetFlags.
 func (r *Run) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&r.detach, "detach", false, "detach from the container's process")
-	f.Var(&r.passFDs, "pass-fd", "file descriptors passed to the container. Can be supplied multiple times.")
+	f.Var(&r.passFDs, "pass-fd", "file descriptor passed to the container in M:N format, where M is the host and N is the guest descriptor (can be supplied multiple times)")
 	r.Create.SetFlags(f)
 }
 
@@ -98,12 +98,12 @@ func (r *Run) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomman
 
 	// Create files from file descriptors.
 	fdMap := make(map[int]*os.File)
-	for _, fd := range r.passFDs {
-		file := os.NewFile(uintptr(fd), "")
+	for _, mapping := range r.passFDs {
+		file := os.NewFile(uintptr(mapping.Host), "")
 		if file == nil {
-			return util.Errorf("Failed to create file from file descriptor %d", fd)
+			return util.Errorf("Failed to create file from file descriptor %d", mapping.Host)
 		}
-		fdMap[fd] = file
+		fdMap[mapping.Guest] = file
 	}
 
 	// Close the underlying file descriptors after we have passed them.
