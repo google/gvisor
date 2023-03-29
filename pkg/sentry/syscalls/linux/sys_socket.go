@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
+	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -116,6 +117,9 @@ type multipleMessageHeader64 struct {
 	_      int32
 }
 
+// rawSocketCounter counts the number of times the application tries to create a SOCK_RAW socket.
+var rawSocketCounter = metric.MustCreateNewUint64Metric("/raw_socket_creations_total", false, "Number of times the application has tried to create a SOCK_RAW socket.")
+
 // CaptureAddress allocates memory for and copies a socket address structure
 // from the untrusted address space range.
 func CaptureAddress(t *kernel.Task, addr hostarch.Addr, addrlen uint32) ([]byte, error) {
@@ -179,8 +183,13 @@ func Socket(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr,
 		return 0, nil, linuxerr.EINVAL
 	}
 
+	sockType := linux.SockType(stype & 0xf)
+	if sockType == linux.SOCK_RAW {
+		rawSocketCounter.Increment()
+	}
+
 	// Create the new socket.
-	s, e := socket.New(t, domain, linux.SockType(stype&0xf), protocol)
+	s, e := socket.New(t, domain, sockType, protocol)
 	if e != nil {
 		return 0, nil, e.ToError()
 	}
