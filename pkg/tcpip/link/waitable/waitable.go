@@ -63,7 +63,9 @@ func (e *Endpoint) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pk
 	e.mu.RLock()
 	d := e.dispatcher
 	e.mu.RUnlock()
-	d.DeliverNetworkPacket(protocol, pkt)
+	if d != nil {
+		d.DeliverNetworkPacket(protocol, pkt)
+	}
 	e.dispatchGate.Leave()
 }
 
@@ -75,7 +77,9 @@ func (e *Endpoint) DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt s
 	e.mu.RLock()
 	d := e.dispatcher
 	e.mu.RUnlock()
-	d.DeliverLinkPacket(protocol, pkt)
+	if d != nil {
+		d.DeliverLinkPacket(protocol, pkt)
+	}
 	e.dispatchGate.Leave()
 }
 
