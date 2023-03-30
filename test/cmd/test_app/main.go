@@ -29,6 +29,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 	sys "syscall"
 	"time"
 
@@ -338,7 +339,7 @@ func (*syscall) Synopsis() string {
 
 // Usage implements subcommands.Command.
 func (*syscall) Usage() string {
-	return "syscall <flags>"
+	return "syscall <flags> [arg1 arg2...]"
 }
 
 // SetFlags implements subcommands.Command.
@@ -347,11 +348,38 @@ func (s *syscall) SetFlags(f *flag.FlagSet) {
 }
 
 // Execute implements subcommands.Command.
-func (s *syscall) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
-	if _, _, errno := sys.Syscall(uintptr(s.sysno), 0, 0, 0); errno != 0 {
-		fmt.Printf("syscall(%d, 0, 0...) failed: %v\n", s.sysno, errno)
+func (s *syscall) Execute(ctx context.Context, f *flag.FlagSet, _ ...any) subcommands.ExitStatus {
+	const maxSyscallArgs = 6
+	numArgs := f.NArg()
+	if numArgs > maxSyscallArgs {
+		fmt.Printf("number of sycall arguments not supported: %d (max is %d)\n", numArgs, maxSyscallArgs)
+		return subcommands.ExitUsageError
+	}
+	var syscallArgs [maxSyscallArgs]uintptr
+	for i := 0; i < numArgs; i++ {
+		uintArg, err := strconv.ParseUint(f.Arg(i), 10, 64)
+		if err != nil {
+			fmt.Printf("not an integer: %q\n", f.Arg(i))
+			return subcommands.ExitUsageError
+		}
+		syscallArgs[i] = uintptr(uintArg)
+	}
+	var errno sys.Errno
+	switch numArgs {
+	case 0:
+		_, _, errno = sys.Syscall(uintptr(s.sysno), 0, 0, 0)
+	case 3:
+		_, _, errno = sys.Syscall(uintptr(s.sysno), syscallArgs[0], syscallArgs[1], syscallArgs[2])
+	case 6:
+		_, _, errno = sys.Syscall6(uintptr(s.sysno), syscallArgs[0], syscallArgs[1], syscallArgs[2], syscallArgs[3], syscallArgs[4], syscallArgs[5])
+	default:
+		fmt.Printf("number of sycall arguments not supported: %d\n", numArgs)
+		return subcommands.ExitUsageError
+	}
+	if errno != 0 {
+		fmt.Printf("syscall(%d, %s) failed: %v\n", s.sysno, strings.Join(f.Args(), ", "), errno)
 	} else {
-		fmt.Printf("syscall(%d, 0, 0...) success\n", s.sysno)
+		fmt.Printf("syscall(%d, %s) success\n", s.sysno, strings.Join(f.Args(), ", "))
 	}
 	return subcommands.ExitSuccess
 }
