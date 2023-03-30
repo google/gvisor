@@ -37,6 +37,71 @@ const (
 	MetaMetricPrefix = "meta_"
 )
 
+// Prometheus process-level metric names and definitions.
+// These are not necessarily exported, but we enforce that sandboxes may not
+// export metrics sharing the same names.
+// https://prometheus.io/docs/instrumenting/writing_clientlibs/#process-metrics
+var (
+	ProcessCPUSecondsTotal = Metric{
+		Name: "process_cpu_seconds_total",
+		Type: TypeGauge,
+		Help: "Total user and system CPU time spent in seconds.",
+	}
+	ProcessOpenFDs = Metric{
+		Name: "process_open_fds",
+		Type: TypeGauge,
+		Help: "Number of open file descriptors.",
+	}
+	ProcessMaxFDs = Metric{
+		Name: "process_max_fds",
+		Type: TypeGauge,
+		Help: "Maximum number of open file descriptors.",
+	}
+	ProcessVirtualMemoryBytes = Metric{
+		Name: "process_virtual_memory_bytes",
+		Type: TypeGauge,
+		Help: "Virtual memory size in bytes.",
+	}
+	ProcessVirtualMemoryMaxBytes = Metric{
+		Name: "process_virtual_memory_max_bytes",
+		Type: TypeGauge,
+		Help: "Maximum amount of virtual memory available in bytes.",
+	}
+	ProcessResidentMemoryBytes = Metric{
+		Name: "process_resident_memory_bytes",
+		Type: TypeGauge,
+		Help: "Resident memory size in bytes.",
+	}
+	ProcessHeapBytes = Metric{
+		Name: "process_heap_bytes",
+		Type: TypeGauge,
+		Help: "Process heap size in bytes.",
+	}
+	ProcessStartTimeSeconds = Metric{
+		Name: "process_start_time_seconds",
+		Type: TypeGauge,
+		Help: "Start time of the process since unix epoch in seconds.",
+	}
+	ProcessThreads = Metric{
+		Name: "process_threads",
+		Type: TypeGauge,
+		Help: "Number of OS threads in the process.",
+	}
+)
+
+// processMetrics is the set of process-level metrics.
+var processMetrics = [9]*Metric{
+	&ProcessCPUSecondsTotal,
+	&ProcessOpenFDs,
+	&ProcessMaxFDs,
+	&ProcessVirtualMemoryBytes,
+	&ProcessVirtualMemoryMaxBytes,
+	&ProcessResidentMemoryBytes,
+	&ProcessHeapBytes,
+	&ProcessStartTimeSeconds,
+	&ProcessThreads,
+}
+
 // internedStringMap allows for interning strings.
 type internedStringMap map[string]*string
 
@@ -262,18 +327,24 @@ type verifiableMetric struct {
 // newVerifiableMetric creates a new verifiableMetric that can verify the
 // values of a metric with the given metadata.
 func newVerifiableMetric(metadata *pb.MetricMetadata, verifier *Verifier) (*verifiableMetric, error) {
-	if metadata.GetName() == "" || metadata.GetPrometheusName() == "" {
+	promName := metadata.GetPrometheusName()
+	if metadata.GetName() == "" || promName == "" {
 		return nil, errors.New("metric has no name")
 	}
-	if strings.HasPrefix(metadata.GetPrometheusName(), MetaMetricPrefix) {
-		return nil, fmt.Errorf("metric name %q starts with %q which is a reserved prefix", metadata.GetPrometheusName(), "meta_")
+	for _, processMetric := range processMetrics {
+		if promName == processMetric.Name {
+			return nil, fmt.Errorf("metric name %q is reserved by Prometheus for process-level metrics", promName)
+		}
 	}
-	if !unicode.IsLower(rune(metadata.GetPrometheusName()[0])) {
-		return nil, fmt.Errorf("invalid initial character in prometheus metric name: %q", metadata.GetPrometheusName())
+	if strings.HasPrefix(promName, MetaMetricPrefix) {
+		return nil, fmt.Errorf("metric name %q starts with %q which is a reserved prefix", promName, "meta_")
 	}
-	for _, r := range metadata.GetPrometheusName() {
+	if !unicode.IsLower(rune(promName[0])) {
+		return nil, fmt.Errorf("invalid initial character in prometheus metric name: %q", promName)
+	}
+	for _, r := range promName {
 		if !unicode.IsLower(r) && !unicode.IsDigit(r) && r != '_' {
-			return nil, fmt.Errorf("invalid character %c in prometheus metric name %q", r, metadata.GetPrometheusName())
+			return nil, fmt.Errorf("invalid character %c in prometheus metric name %q", r, promName)
 		}
 	}
 	numFields := uint32(len(metadata.GetFields()))
@@ -304,7 +375,7 @@ func newVerifiableMetric(metadata *pb.MetricMetadata, verifier *Verifier) (*veri
 		metadata: metadata,
 		verifier: verifier,
 		wantMetric: Metric{
-			Name: globalIntern(metadata.GetPrometheusName()),
+			Name: globalIntern(promName),
 			Help: globalIntern(metadata.GetDescription()),
 		},
 		numFields:          numFields,

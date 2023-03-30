@@ -387,6 +387,17 @@ func TestVerifier(t *testing.T) {
 			WantVerifierCreationErr: false,
 		},
 		{
+			Name: "Prometheus metric name matches reserved one",
+			Registration: newMetricRegistration(&metricMetadata{
+				PB: &pb.MetricMetadata{
+					Name:           "doesNotMatter",
+					PrometheusName: ProcessStartTimeSeconds.Name,
+					Type:           pb.MetricMetadata_TYPE_UINT64,
+				}},
+			),
+			WantVerifierCreationErr: true,
+		},
+		{
 			Name: "no buckets",
 			Registration: newMetricRegistration(&metricMetadata{
 				PB: &pb.MetricMetadata{
