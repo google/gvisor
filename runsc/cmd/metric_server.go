@@ -530,11 +530,6 @@ var (
 		Type: prometheus.TypeCounter,
 		Help: "Counter of sandboxes that have ever been started.",
 	}
-	ProcessStartTimeMetric = prometheus.Metric{
-		Name: "process_start_time_seconds",
-		Type: prometheus.TypeGauge,
-		Help: "Unix timestamp at which the process started. Used by Prometheus for counter resets.",
-	}
 )
 
 // ServerMetrics is a list of metrics that the metric server generates.
@@ -546,7 +541,7 @@ var ServerMetrics = []prometheus.Metric{
 	NumRunningSandboxesMetric,
 	NumCannotExportSandboxesMetric,
 	NumTotalSandboxesMetric,
-	ProcessStartTimeMetric,
+	prometheus.ProcessStartTimeSeconds,
 }
 
 // serveMetrics serves metrics requests.
@@ -704,7 +699,7 @@ func (m *MetricServer) serveMetrics(w http.ResponseWriter, req *http.Request) ht
 		ExporterPrefix: fmt.Sprintf("%s%s", m.exporterPrefix, prometheus.MetaMetricPrefix),
 	}
 	processMetrics := prometheus.NewSnapshot()
-	processMetrics.Add(prometheus.NewFloatData(&ProcessStartTimeMetric, float64(m.startTime.Unix())+(float64(m.startTime.Nanosecond())/1e9)))
+	processMetrics.Add(prometheus.NewFloatData(&prometheus.ProcessStartTimeSeconds, float64(m.startTime.Unix())+(float64(m.startTime.Nanosecond())/1e9)))
 	snapshotsToOptions[processMetrics] = prometheus.SnapshotExportOptions{
 		// These metrics must be written without any prefix.
 	}
