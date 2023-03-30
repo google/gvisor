@@ -58,6 +58,9 @@ const (
 	// ContMgrExecuteAsync executes a command in a container.
 	ContMgrExecuteAsync = "containerManager.ExecuteAsync"
 
+	// ContMgrPortForward starts port forwarding with the sandbox.
+	ContMgrPortForward = "containerManager.PortForward"
+
 	// ContMgrProcesses lists processes running in a container.
 	ContMgrProcesses = "containerManager.Processes"
 

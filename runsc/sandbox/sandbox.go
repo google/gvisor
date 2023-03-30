@@ -567,6 +567,22 @@ func (s *Sandbox) Event(cid string) (*boot.EventOut, error) {
 	return &e, nil
 }
 
+// PortForward starts port forwarding to the sandbox.
+func (s *Sandbox) PortForward(opts *boot.PortForwardOpts) error {
+	log.Debugf("Requesting port forward for container %q in sandbox %q: %+v", opts.ContainerID, s.ID, opts)
+	conn, err := s.sandboxConnect()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	if err := conn.Call(boot.ContMgrPortForward, opts, nil); err != nil {
+		return fmt.Errorf("port forwarding to sandbox: %v", err)
+	}
+
+	return nil
+}
+
 func (s *Sandbox) sandboxConnect() (*urpc.Client, error) {
 	log.Debugf("Connecting to sandbox %q", s.ID)
 	conn, err := client.ConnectTo(s.ControlAddress)
@@ -1322,7 +1338,7 @@ func (s *Sandbox) waitForStopped() error {
 			return nil
 		}
 		// The sandbox process is a child of the current process,
-		// so we can wait it and collect its zombie.
+		// so we can wait on it to terminate and collect its zombie.
 		if _, err := unix.Wait4(int(pid), &s.status, 0, nil); err != nil {
 			return fmt.Errorf("error waiting the sandbox process: %v", err)
 		}

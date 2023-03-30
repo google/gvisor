@@ -45,9 +45,8 @@ import (
 // client. Container is backed by the offical golang docker API.
 // See: https://pkg.go.dev/github.com/docker/docker.
 type Container struct {
-	Name    string
-	runtime string
-
+	Name     string
+	runtime  string
 	logger   testutil.Logger
 	client   *client.Client
 	id       string
@@ -89,6 +88,11 @@ type RunOpts struct {
 
 	// Privileged enables privileged mode.
 	Privileged bool
+
+	// Sets network mode for the container. See container.NetworkMode for types. Several options will
+	// not work w/ gVisor. For example, you can't set the "sandbox" network option for gVisor using
+	// this handle.
+	NetworkMode string
 
 	// CapAdd are the extra set of capabilities to add.
 	CapAdd []string
@@ -270,6 +274,7 @@ func (c *Container) hostConfig(r RunOpts) *container.HostConfig {
 		CapDrop:         r.CapDrop,
 		Privileged:      r.Privileged,
 		ReadonlyRootfs:  r.ReadOnly,
+		NetworkMode:     container.NetworkMode(r.NetworkMode),
 		Resources: container.Resources{
 			Memory:     int64(r.Memory), // In bytes.
 			CpusetCpus: r.CpusetCpus,
@@ -339,6 +344,25 @@ func (c *Container) logs(ctx context.Context, stdout, stderr *bytes.Buffer) erro
 // ID returns the container id.
 func (c *Container) ID() string {
 	return c.id
+}
+
+// RootDirectory returns an educated guess about the container's root directory.
+func (c *Container) RootDirectory() (string, error) {
+	// The root directory of this container's runtime.
+	rootDir := fmt.Sprintf("/var/run/docker/runtime-%s/moby", c.runtime)
+	_, err := os.Stat(rootDir)
+	if err == nil {
+		return rootDir, nil
+	}
+	// In docker v20+, due to https://github.com/moby/moby/issues/42345 the
+	// rootDir seems to always be the following.
+	const defaultDir = "/var/run/docker/runtime-runc/moby"
+	_, derr := os.Stat(defaultDir)
+	if derr == nil {
+		return defaultDir, nil
+	}
+
+	return "", fmt.Errorf("cannot stat %q: %v or %q: %v", rootDir, err, defaultDir, derr)
 }
 
 // SandboxPid returns the container's pid.
