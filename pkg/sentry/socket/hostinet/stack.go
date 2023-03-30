@@ -82,11 +82,11 @@ func NewStack() *Stack {
 
 // Configure sets up the stack using the current state of the host network.
 func (s *Stack) Configure(allowRawSockets bool) error {
-	if err := addHostInterfaces(s); err != nil {
+	if err := s.initializeInterfaces(); err != nil {
 		return err
 	}
 
-	if err := addHostRoutes(s); err != nil {
+	if err := s.initializeRoutes(); err != nil {
 		return err
 	}
 
@@ -137,74 +137,9 @@ func (s *Stack) Configure(allowRawSockets bool) error {
 	return nil
 }
 
-// ExtractHostInterfaces will populate an interface map and
-// interfaceAddrs map with the results of the equivalent
-// netlink messages.
-func ExtractHostInterfaces(links []syscall.NetlinkMessage, addrs []syscall.NetlinkMessage, interfaces map[int32]*inet.Interface, interfaceAddrs map[int32][]inet.InterfaceAddr) error {
-	for _, link := range links {
-		if link.Header.Type != unix.RTM_NEWLINK {
-			continue
-		}
-		if len(link.Data) < unix.SizeofIfInfomsg {
-			return fmt.Errorf("RTM_GETLINK returned RTM_NEWLINK message with invalid data length (%d bytes, expected at least %d bytes)", len(link.Data), unix.SizeofIfInfomsg)
-		}
-		var ifinfo linux.InterfaceInfoMessage
-		ifinfo.UnmarshalUnsafe(link.Data)
-		inetIF := inet.Interface{
-			DeviceType: ifinfo.Type,
-			Flags:      ifinfo.Flags,
-		}
-		// Not clearly documented: syscall.ParseNetlinkRouteAttr will check the
-		// syscall.NetlinkMessage.Header.Type and skip the struct ifinfomsg
-		// accordingly.
-		attrs, err := syscall.ParseNetlinkRouteAttr(&link)
-		if err != nil {
-			return fmt.Errorf("RTM_GETLINK returned RTM_NEWLINK message with invalid rtattrs: %v", err)
-		}
-		for _, attr := range attrs {
-			switch attr.Attr.Type {
-			case unix.IFLA_ADDRESS:
-				inetIF.Addr = attr.Value
-			case unix.IFLA_IFNAME:
-				inetIF.Name = string(attr.Value[:len(attr.Value)-1])
-			}
-		}
-		interfaces[ifinfo.Index] = &inetIF
-	}
-
-	for _, addr := range addrs {
-		if addr.Header.Type != unix.RTM_NEWADDR {
-			continue
-		}
-		if len(addr.Data) < unix.SizeofIfAddrmsg {
-			return fmt.Errorf("RTM_GETADDR returned RTM_NEWADDR message with invalid data length (%d bytes, expected at least %d bytes)", len(addr.Data), unix.SizeofIfAddrmsg)
-		}
-		var ifaddr linux.InterfaceAddrMessage
-		ifaddr.UnmarshalUnsafe(addr.Data)
-		inetAddr := inet.InterfaceAddr{
-			Family:    ifaddr.Family,
-			PrefixLen: ifaddr.PrefixLen,
-			Flags:     ifaddr.Flags,
-		}
-		attrs, err := syscall.ParseNetlinkRouteAttr(&addr)
-		if err != nil {
-			return fmt.Errorf("RTM_GETADDR returned RTM_NEWADDR message with invalid rtattrs: %v", err)
-		}
-		for _, attr := range attrs {
-			switch attr.Attr.Type {
-			case unix.IFA_ADDRESS:
-				inetAddr.Addr = attr.Value
-			}
-		}
-		interfaceAddrs[int32(ifaddr.Index)] = append(interfaceAddrs[int32(ifaddr.Index)], inetAddr)
-	}
-
-	return nil
-}
-
-// ExtractHostRoutes populates the given routes slice with the data from the
+// extractHostRoutes populates the given routes slice with the data from the
 // host route table.
-func ExtractHostRoutes(routeMsgs []syscall.NetlinkMessage) ([]inet.Route, error) {
+func extractHostRoutes(routeMsgs []syscall.NetlinkMessage) ([]inet.Route, error) {
 	var routes []inet.Route
 	for _, routeMsg := range routeMsgs {
 		if routeMsg.Header.Type != unix.RTM_NEWROUTE {
@@ -258,20 +193,93 @@ func ExtractHostRoutes(routeMsgs []syscall.NetlinkMessage) ([]inet.Route, error)
 	return routes, nil
 }
 
-func addHostInterfaces(s *Stack) error {
-	links, err := doNetlinkRouteRequest(unix.RTM_GETLINK)
+func getHostLinks() (map[int32]*inet.Interface, error) {
+	msgs, err := doNetlinkRouteRequest(unix.RTM_GETLINK)
 	if err != nil {
-		return fmt.Errorf("RTM_GETLINK failed: %v", err)
+		return nil, fmt.Errorf("RTM_GETLINK failed: %v", err)
 	}
+	links := make(map[int32]*inet.Interface, len(msgs))
+	for _, msg := range msgs {
+		if msg.Header.Type != unix.RTM_NEWLINK {
+			continue
+		}
+		if len(msg.Data) < unix.SizeofIfInfomsg {
+			return nil, fmt.Errorf("RTM_GETLINK returned RTM_NEWLINK message with invalid data length (%d bytes, expected at least %d bytes)", len(msg.Data), unix.SizeofIfInfomsg)
+		}
+		var ifinfo linux.InterfaceInfoMessage
+		ifinfo.UnmarshalUnsafe(msg.Data)
+		inetIF := inet.Interface{
+			DeviceType: ifinfo.Type,
+			Flags:      ifinfo.Flags,
+		}
+		// Not clearly documented: syscall.ParseNetlinkRouteAttr will check the
+		// syscall.NetlinkMessage.Header.Type and skip the struct ifinfomsg
+		// accordingly.
+		attrs, err := syscall.ParseNetlinkRouteAttr(&msg)
+		if err != nil {
+			return nil, fmt.Errorf("RTM_GETLINK returned RTM_NEWLINK message with invalid rtattrs: %v", err)
+		}
+		for _, attr := range attrs {
+			switch attr.Attr.Type {
+			case unix.IFLA_ADDRESS:
+				inetIF.Addr = attr.Value
+			case unix.IFLA_IFNAME:
+				inetIF.Name = string(attr.Value[:len(attr.Value)-1])
+			}
+		}
+		links[ifinfo.Index] = &inetIF
+	}
+	return links, nil
+}
 
-	addrs, err := doNetlinkRouteRequest(unix.RTM_GETADDR)
+func getHostRoutes() (map[int32][]inet.InterfaceAddr, error) {
+	msgs, err := doNetlinkRouteRequest(unix.RTM_GETADDR)
 	if err != nil {
-		return fmt.Errorf("RTM_GETADDR failed: %v", err)
+		return nil, fmt.Errorf("RTM_GETADDR failed: %v", err)
 	}
+	addrs := make(map[int32][]inet.InterfaceAddr, len(msgs))
+	for _, msg := range msgs {
+		if msg.Header.Type != unix.RTM_NEWADDR {
+			continue
+		}
+		if len(msg.Data) < unix.SizeofIfAddrmsg {
+			return nil, fmt.Errorf("RTM_GETADDR returned RTM_NEWADDR message with invalid data length (%d bytes, expected at least %d bytes)", len(msg.Data), unix.SizeofIfAddrmsg)
+		}
+		var ifaddr linux.InterfaceAddrMessage
+		ifaddr.UnmarshalUnsafe(msg.Data)
+		inetAddr := inet.InterfaceAddr{
+			Family:    ifaddr.Family,
+			PrefixLen: ifaddr.PrefixLen,
+			Flags:     ifaddr.Flags,
+		}
+		attrs, err := syscall.ParseNetlinkRouteAttr(&msg)
+		if err != nil {
+			return nil, fmt.Errorf("RTM_GETADDR returned RTM_NEWADDR message with invalid rtattrs: %v", err)
+		}
+		for _, attr := range attrs {
+			switch attr.Attr.Type {
+			case unix.IFA_ADDRESS:
+				inetAddr.Addr = attr.Value
+			}
+		}
+		addrs[int32(ifaddr.Index)] = append(addrs[int32(ifaddr.Index)], inetAddr)
 
-	if err := ExtractHostInterfaces(links, addrs, s.interfaces, s.interfaceAddrs); err != nil {
+	}
+	return addrs, nil
+}
+
+func (s *Stack) initializeInterfaces() error {
+	links, err := getHostLinks()
+	if err != nil {
 		return err
 	}
+	s.interfaces = links
+
+	addrs, err := getHostRoutes()
+	if err != nil {
+		return err
+	}
+	s.interfaceAddrs = addrs
 
 	// query interface features for each of the host interfaces.
 	if err := queryInterfaceFeatures(s.interfaces); err != nil {
@@ -280,13 +288,13 @@ func addHostInterfaces(s *Stack) error {
 	return nil
 }
 
-func addHostRoutes(s *Stack) error {
+func (s *Stack) initializeRoutes() error {
 	routes, err := doNetlinkRouteRequest(unix.RTM_GETROUTE)
 	if err != nil {
 		return fmt.Errorf("RTM_GETROUTE failed: %v", err)
 	}
 
-	s.routes, err = ExtractHostRoutes(routes)
+	s.routes, err = extractHostRoutes(routes)
 	if err != nil {
 		return err
 	}
