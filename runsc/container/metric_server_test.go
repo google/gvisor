@@ -20,6 +20,7 @@ import (
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -51,6 +52,14 @@ type metricsTest struct {
 	udsPath         string
 	client          *metricclient.MetricClient
 	serverExtraArgs []string
+}
+
+// applyConf applies metric-server-related configuration options to the given config.
+// Returns the passed-in config itself.
+func (mt *metricsTest) applyConf(conf *config.Config) *config.Config {
+	conf.MetricServer = mt.sleepConf.MetricServer
+	conf.RootDir = mt.rootDir
+	return conf
 }
 
 // setupMetrics sets up a container configuration with metrics enabled, and returns it all.
@@ -557,5 +566,116 @@ func TestMetricServerToleratesNoRootDirectory(t *testing.T) {
 	}
 	if err := te.client.SpawnServer(te.testCtx, te.sleepConf, append([]string{"--allow-unknown-root=true"}, te.serverExtraArgs...)...); err != nil {
 		t.Errorf("Metric server was not able to be spawned despite being configured to tolerate a non-existent root directory: %v", err)
+	}
+}
+
+func TestMetricServerDoesNotExportZeroValueCounters(t *testing.T) {
+	te, cleanup := setupMetrics(t, false /* forceTempUDS */)
+	defer cleanup()
+	app, err := testutil.FindFile("test/cmd/test_app/test_app")
+	if err != nil {
+		t.Fatalf("error finding test_app: %v", err)
+	}
+	unimpl1Spec := testutil.NewSpecWithArgs("sh", "-c", fmt.Sprintf("%s syscall --syscall=1337; sleep 1h", app))
+	unimpl1Conf := te.applyConf(testutil.TestConfig(t))
+	unimpl1Bundle, cleanup, err := testutil.SetupBundleDir(unimpl1Spec)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+	unimpl2Spec := testutil.NewSpecWithArgs("sh", "-c", fmt.Sprintf("%s syscall --syscall=1338; sleep 1h", app))
+	unimpl2Conf := te.applyConf(testutil.TestConfig(t))
+	unimpl2Bundle, cleanup, err := testutil.SetupBundleDir(unimpl2Spec)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+	unimpl1, err := New(unimpl1Conf, Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      unimpl1Spec,
+		BundleDir: unimpl1Bundle,
+	})
+	if err != nil {
+		t.Fatalf("error creating first container: %v", err)
+	}
+	defer unimpl1.Destroy()
+	if err := unimpl1.Start(unimpl1Conf); err != nil {
+		t.Fatalf("Cannot start first container: %v", err)
+	}
+	unimpl2, err := New(unimpl2Conf, Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      unimpl2Spec,
+		BundleDir: unimpl2Bundle,
+	})
+	if err != nil {
+		t.Fatalf("error creating second container: %v", err)
+	}
+	defer unimpl2.Destroy()
+	if err := unimpl2.Start(unimpl2Conf); err != nil {
+		t.Fatalf("Cannot start second container: %v", err)
+	}
+	metricData, err := te.client.GetMetrics(te.testCtx)
+	if err != nil {
+		t.Fatalf("Cannot get metrics: %v", err)
+	}
+	metricDataPtr := &metricData
+
+	// For this test to work, it must wait for long enough such that the containers have
+	// actually tried to call the unimplemented syscall so that it shows up in metrics.
+	waitCtx, waitCtxCancel := context.WithTimeout(te.testCtx, 50*time.Second)
+	defer waitCtxCancel()
+
+	for _, test := range []struct {
+		cont          *Container
+		sysno         uintptr
+		wantExistence bool
+	}{
+		{unimpl1, 1337, true},
+		{unimpl1, 1338, false},
+		{unimpl2, 1337, false},
+		{unimpl2, 1338, true},
+	} {
+		t.Run(fmt.Sprintf("container %s syscall %d", test.cont.ID, test.sysno), func(t *testing.T) {
+			check := func() error {
+				got, _, err := metricDataPtr.GetPrometheusContainerInteger(metricclient.WantMetric{
+					Metric:      "testmetric_unimplemented_syscalls",
+					Sandbox:     test.cont.sandboxID(),
+					ExtraLabels: map[string]string{"sysno": strconv.Itoa(int(test.sysno))},
+				})
+				if test.wantExistence {
+					if err != nil {
+						return fmt.Errorf("cannot get unimplemented syscall metric for sysno=%d even though we expected its presence: %v", test.sysno, err)
+					}
+					if got != 1 {
+						return fmt.Errorf("expected counter value for unimplemented syscall %d be exactly 1, got %d", test.sysno, got)
+					}
+				} else /* !test.wantExistence */ {
+					if err == nil {
+						return fmt.Errorf("unimplemented syscall metric for sysno=%d was unexpectedly present (value: %d)", test.sysno, got)
+					}
+				}
+				return nil
+			}
+			for waitCtx.Err() == nil {
+				if check() == nil {
+					break
+				}
+				select {
+				case <-time.After(20 * time.Millisecond):
+					newMetricData, err := te.client.GetMetrics(te.testCtx)
+					if err != nil {
+						t.Fatalf("Cannot get metrics: %v", err)
+					}
+					*metricDataPtr = newMetricData
+				case <-waitCtx.Done():
+				}
+			}
+			if err := check(); err != nil {
+				t.Error(err.Error())
+			}
+		})
+	}
+	if t.Failed() {
+		t.Logf("Last metric data:\n\n%s\n\n", metricData)
 	}
 }

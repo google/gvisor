@@ -351,6 +351,8 @@ type WantMetric struct {
 	// Pod and Namespace are the pod and namespace labels associated with the sandbox.
 	// Leave empty if the sandbox metadata doesn't contain this information.
 	Pod, Namespace string
+	// ExtraLabels are additional key-value labels that must match.
+	ExtraLabels map[string]string
 }
 
 // GetPrometheusContainerInteger returns the integer value of a Prometheus metric from the
@@ -364,6 +366,9 @@ func (m MetricData) GetPrometheusContainerInteger(want WantMetric) (int64, time.
 	}
 	if want.Namespace != "" {
 		labels["namespace_name"] = want.Namespace
+	}
+	for k, v := range want.ExtraLabels {
+		labels[k] = v
 	}
 	return m.GetPrometheusInteger(want.Metric, labels)
 }

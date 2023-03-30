@@ -1137,9 +1137,17 @@ func GetSnapshot() (*prometheus.Snapshot, error) {
 		m := allMetrics.uint64Metrics[k]
 		switch t := v.(type) {
 		case uint64:
+			if m.metadata.GetCumulative() && t == 0 {
+				// Zero-valued counter, ignore.
+				continue
+			}
 			snapshot.Add(prometheus.NewIntData(m.prometheusMetric, int64(t)))
 		case map[string]uint64:
 			for fieldValue, metricValue := range t {
+				if m.metadata.GetCumulative() && metricValue == 0 {
+					// Zero-valued counter, ignore.
+					continue
+				}
 				snapshot.Add(prometheus.LabeledIntData(m.prometheusMetric, map[string]string{
 					// uint64 metrics currently only support at most one field name.
 					m.metadata.Fields[0].GetFieldName(): fieldValue,
@@ -1162,6 +1170,7 @@ func GetSnapshot() (*prometheus.Snapshot, error) {
 			}
 			currentSamples := distributionSamples[fieldKey]
 			buckets := make([]prometheus.Bucket, numFiniteBuckets+2)
+			samplesForFieldKey := uint64(0)
 			for b := 0; b < numFiniteBuckets+2; b++ {
 				var upperBound prometheus.Number
 				if b == numFiniteBuckets+1 {
@@ -1172,11 +1181,17 @@ func GetSnapshot() (*prometheus.Snapshot, error) {
 				samples := uint64(0)
 				if currentSamples != nil {
 					samples = currentSamples[b]
+					samplesForFieldKey += samples
 				}
 				buckets[b] = prometheus.Bucket{
 					Samples:    samples,
 					UpperBound: upperBound,
 				}
+			}
+			if samplesForFieldKey == 0 {
+				// Zero-valued distribution (no samples in any bucket for this field
+				// combination). Ignore.
+				continue
 			}
 			snapshot.Add(&prometheus.Data{
 				Metric: m.prometheusMetric,
