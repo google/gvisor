@@ -669,7 +669,7 @@ type OpenAtReq struct {
 
 // String implements fmt.Stringer.String.
 func (o *OpenAtReq) String() string {
-	return fmt.Sprintf("OpenAtReq{FD: %d, Flags: %d}", o.FD, o.Flags)
+	return fmt.Sprintf("OpenAtReq{FD: %d, Flags: %#o}", o.FD, o.Flags)
 }
 
 // OpenAtResp is used to communicate the newly created FD.
@@ -704,7 +704,7 @@ type OpenCreateAtReq struct {
 
 // String implements fmt.Stringer.String.
 func (o *OpenCreateAtReq) String() string {
-	return fmt.Sprintf("OpenCreateAtReq{DirFD: %d, Mode: %s, UID: %d, GID: %d, Flags: %d, Name: %s}", o.DirFD, o.Mode, o.UID, o.GID, o.Flags, o.Name)
+	return fmt.Sprintf("OpenCreateAtReq{DirFD: %d, Mode: %s, UID: %d, GID: %d, Flags: %#o, Name: %s}", o.DirFD, o.Mode, o.UID, o.GID, o.Flags, o.Name)
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -1437,7 +1437,7 @@ type UnlinkAtReq struct {
 
 // String implements fmt.Stringer.String.
 func (u *UnlinkAtReq) String() string {
-	return fmt.Sprintf("UnlinkAtReq{DirFD: %d, Flags: %d, Name: %s}", u.DirFD, u.Flags, u.Name)
+	return fmt.Sprintf("UnlinkAtReq{DirFD: %d, Flags: %#x, Name: %s}", u.DirFD, u.Flags, u.Name)
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
@@ -1729,7 +1729,7 @@ type FSetXattrReq struct {
 
 // String implements fmt.Stringer.String.
 func (s *FSetXattrReq) String() string {
-	return fmt.Sprintf("FSetXattrReq{FD: %d, Flags: %d, Name: %s, Value: %s}", s.FD, s.Flags, s.Name, s.Value)
+	return fmt.Sprintf("FSetXattrReq{FD: %d, Flags: %#x, Name: %s, Value: %s}", s.FD, s.Flags, s.Name, s.Value)
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
