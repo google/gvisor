@@ -262,6 +262,13 @@ arm-qemu-smoke-test: $(RUNTIME_BIN) load-arm-qemu
 simple-tests: unit-tests # Compatibility target.
 .PHONY: simple-tests
 
+portforward-tests: load-basic_redis $(RUNTIME_BIN)
+	@$(call install_runtime,$(RUNTIME),--network=sandbox)
+	@$(call sudo,test/root:portforward_test,--runtime=$(RUNTIME) -test.v)
+	@$(call install_runtime,$(RUNTIME),--network=host)
+	@$(call sudo,test/root:portforward_test,--runtime=$(RUNTIME) -test.v)
+.PHONY: portforward-test
+
 # Standard integration targets.
 INTEGRATION_TARGETS := //test/image:image_test //test/e2e:integration_test
 
@@ -324,6 +331,7 @@ fsstress-test: load-basic $(RUNTIME_BIN)
 	@$(call test_runtime,$(RUNTIME),//test/fsstress:fsstress_test)
 .PHONY: fsstress-test
 
+
 # Specific containerd version tests.
 containerd-test-%: load-basic_alpine load-basic_python load-basic_busybox load-basic_symlink-resolv load-basic_httpd load-basic_ubuntu $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),) # Clear flags.
@@ -335,7 +343,6 @@ else
 		sudo tar -C "$$(dirname $$(which containerd))" -zxvf - containerd-shim-runsc-v1
 endif
 	@$(call sudo,test/root:root_test,--runtime=$(RUNTIME) -test.v)
-
 containerd-tests-min: containerd-test-1.4.12
 
 ##

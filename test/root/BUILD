@@ -47,3 +47,23 @@ go_test(
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
+
+go_test(
+    name = "portforward_test",
+    srcs = ["portforward_test.go"],
+    pure = True,
+    tags = [
+        "local",
+        "manual",
+    ],
+    visibility = ["//:sandbox"],
+    deps = [
+        "//pkg/cleanup",
+        "//pkg/test/dockerutil",
+        "//runsc/config",
+        "//runsc/flag",
+        "//runsc/specutils",
+        "@com_github_syndtr_gocapability//capability:go_default_library",
+        "@org_golang_x_sync//errgroup:go_default_library",
+    ],
+)

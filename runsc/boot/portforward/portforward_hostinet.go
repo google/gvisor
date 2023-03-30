@@ -48,7 +48,7 @@ type hostInetConn struct {
 // NewHostInetConn creates a hostInetConn backed by a host socket on the localhost address.
 func NewHostInetConn(port uint16) (proxyConn, error) {
 	// NOTE: Options must match sandbox seccomp filters. See filter/config.go
-	fd, err := unix.Socket(unix.AF_INET, unix.SOCK_STREAM|unix.SOCK_NONBLOCK|unix.SOCK_CLOEXEC, 0)
+	fd, err := unix.Socket(unix.AF_INET, unix.SOCK_STREAM|unix.SOCK_NONBLOCK|unix.SOCK_CLOEXEC, unix.IPPROTO_TCP)
 	if err != nil {
 		return nil, err
 	}

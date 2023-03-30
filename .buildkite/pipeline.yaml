@@ -271,7 +271,7 @@ steps:
     # See above: not truly a source test.
     <<: *source_test
     label: ":docker: Docker tests (cgroupv2)"
-    command: make docker-tests
+    command: make portforward-tests docker-tests
     agents:
       <<: *ubuntu_agents
       arch: "amd64"
