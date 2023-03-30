@@ -60,7 +60,7 @@ type Exec struct {
 
 	// passFDs are user-supplied FDs from the host to be exposed to the
 	// sandboxed app.
-	passFDs intFlags
+	passFDs fdMappings
 }
 
 // Name implements subcommands.Command.Name.
@@ -104,7 +104,7 @@ func (ex *Exec) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&ex.pidFile, "pid-file", "", "filename that the container pid will be written to")
 	f.StringVar(&ex.internalPidFile, "internal-pid-file", "", "filename that the container-internal pid will be written to")
 	f.StringVar(&ex.consoleSocket, "console-socket", "", "path to an AF_UNIX socket which will receive a file descriptor referencing the master end of the console's pseudoterminal")
-	f.Var(&ex.passFDs, "pass-fd", "file descriptors passed to the container. Can be supplied multiple times.")
+	f.Var(&ex.passFDs, "pass-fd", "file descriptor passed to the container in M:N format, where M is the host and N is the guest descriptor (can be supplied multiple times)")
 }
 
 // Execute implements subcommands.Command.Execute. It starts a process in an
@@ -152,18 +152,17 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 	}
 
 	// Add custom file descriptors to the map.
-	var files []*os.File
-	for _, fd := range ex.passFDs {
-		file := os.NewFile(uintptr(fd), "")
+	for _, mapping := range ex.passFDs {
+		file := os.NewFile(uintptr(mapping.Host), "")
 		if file == nil {
-			util.Fatalf("failed to create file from file descriptor %d", fd)
+			util.Fatalf("failed to create file from file descriptor %d", mapping.Host)
 		}
-		fdMap[int(file.Fd())] = file
+		fdMap[mapping.Guest] = file
 	}
 
 	// Close the underlying file descriptors after we have passed them.
 	defer func() {
-		for _, file := range files {
+		for _, file := range fdMap {
 			fd := file.Fd()
 			if file.Close() != nil {
 				log.Debugf("Failed to close FD %d", fd)
