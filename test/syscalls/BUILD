@@ -865,6 +865,7 @@ syscall_test(
 )
 
 syscall_test(
+    add_hostinet = True,
     test = "//test/syscalls/linux:socket_netlink_test",
 )
 
@@ -873,6 +874,7 @@ syscall_test(
 )
 
 syscall_test(
+    add_hostinet = True,
     test = "//test/syscalls/linux:socket_netlink_uevent_test",
 )
 
