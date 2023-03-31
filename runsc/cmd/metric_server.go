@@ -441,6 +441,7 @@ func (m *MetricServer) refreshSandboxesLocked() {
 			log.Warningf("Cannot load state file for sandbox %q: %v", sid, err)
 			continue
 		}
+
 		// This is redundant with one of the checks performed below in servedSandbox.load(), but this
 		// avoids log spam for the non-error case of sandboxes that didn't request instrumentation.
 		sandboxMetricAddr := strings.ReplaceAll(cont.Sandbox.MetricServerAddress, "%RUNTIME_ROOT%", m.rootDir)
@@ -448,6 +449,16 @@ func (m *MetricServer) refreshSandboxesLocked() {
 			m.lastStateFileStat[sid] = stat
 			continue
 		}
+
+		// This case can be hit when there is a leftover state file for a sandbox that was `kill -9`'d
+		// without an opportunity for it to clean up its state file. This results in a valid state file
+		// but the sandbox PID is gone. We don't want to continuously load this sandbox's state file.
+		if cont.Status == container.Running && !cont.Sandbox.IsRunning() {
+			log.Warningf("Sandbox %q has state file in state Running, yet it isn't actually running. Ignoring it.", sid)
+			m.lastStateFileStat[sid] = stat
+			continue
+		}
+
 		m.numSandboxes++
 		served := &servedSandbox{
 			rootContainerID:  sid,
