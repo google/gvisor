@@ -33,6 +33,7 @@
 // sysmsg_lib.c.
 struct arch_state __export_arch_state;
 uint64_t __export_context_decoupling_exp;
+uint64_t __export_stub_start;
 
 long __syscall(long n, long a1, long a2, long a3, long a4, long a5, long a6) {
   // ARM64 syscall interface passes the syscall number in x8 and the 6 arguments
