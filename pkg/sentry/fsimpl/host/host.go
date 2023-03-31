@@ -144,6 +144,12 @@ type inode struct {
 	// This field is initialized at creation time and is immutable.
 	savable bool
 
+	// readonly is true if operations that can potentially change the host file
+	// are blocked.
+	//
+	// This field is initialized at creation time and is immutable.
+	readonly bool
+
 	// Event queue for blocking operations.
 	queue waiter.Queue
 
@@ -160,7 +166,7 @@ type inode struct {
 	buf     []byte
 }
 
-func newInode(ctx context.Context, fs *filesystem, hostFD int, savable bool, fileType linux.FileMode, isTTY bool) (*inode, error) {
+func newInode(ctx context.Context, fs *filesystem, hostFD int, savable bool, fileType linux.FileMode, isTTY bool, readonly bool) (*inode, error) {
 	// Determine if hostFD is seekable.
 	_, err := unix.Seek(hostFD, 0, linux.SEEK_CUR)
 	seekable := !linuxerr.Equals(linuxerr.ESPIPE, err)
@@ -179,6 +185,7 @@ func newInode(ctx context.Context, fs *filesystem, hostFD int, savable bool, fil
 		seekable:  seekable,
 		isTTY:     isTTY,
 		savable:   savable,
+		readonly:  readonly,
 	}
 	i.InitRefs()
 	i.CachedMappable.Init(hostFD)
@@ -216,6 +223,10 @@ type NewFDOptions struct {
 	VirtualOwner bool
 	UID          auth.KUID
 	GID          auth.KGID
+
+	// If Readonly is true, we disallow operations that can potentially change
+	// the host file associated with the file descriptor.
+	Readonly bool
 }
 
 // NewFD returns a vfs.FileDescription representing the given host file
@@ -224,6 +235,23 @@ func NewFD(ctx context.Context, mnt *vfs.Mount, hostFD int, opts *NewFDOptions) 
 	fs, ok := mnt.Filesystem().Impl().(*filesystem)
 	if !ok {
 		return nil, fmt.Errorf("can't import host FDs into filesystems of type %T", mnt.Filesystem().Impl())
+	}
+
+	if opts.Readonly {
+		if opts.IsTTY {
+			// This is not a technical limitation, but access checks for TTYs
+			// have not been implemented yet.
+			return nil, fmt.Errorf("readonly file descriptor may currently not be a TTY")
+		}
+
+		flagsInt, err := unix.FcntlInt(uintptr(hostFD), unix.F_GETFL, 0)
+		if err != nil {
+			return nil, err
+		}
+		accessMode := uint32(flagsInt) & unix.O_ACCMODE
+		if accessMode != unix.O_RDONLY {
+			return nil, fmt.Errorf("readonly file descriptor may only be opened as O_RDONLY on the host")
+		}
 	}
 
 	// Retrieve metadata.
@@ -243,7 +271,7 @@ func NewFD(ctx context.Context, mnt *vfs.Mount, hostFD int, opts *NewFDOptions) 
 	}
 
 	fileType := linux.FileMode(stat.Mode).FileType()
-	i, err := newInode(ctx, fs, hostFD, opts.Savable, fileType, opts.IsTTY)
+	i, err := newInode(ctx, fs, hostFD, opts.Savable, fileType, opts.IsTTY, opts.Readonly)
 	if err != nil {
 		return nil, err
 	}
@@ -501,6 +529,10 @@ func (i *inode) stat(stat *unix.Stat_t) error {
 //
 // +checklocksignore
 func (i *inode) SetStat(ctx context.Context, fs *vfs.Filesystem, creds *auth.Credentials, opts vfs.SetStatOptions) error {
+	if i.readonly {
+		return linuxerr.EPERM
+	}
+
 	s := &opts.Stat
 
 	m := s.Mask
@@ -712,6 +744,9 @@ func (f *fileDescription) Release(context.Context) {
 
 // Allocate implements vfs.FileDescriptionImpl.Allocate.
 func (f *fileDescription) Allocate(ctx context.Context, mode, offset, length uint64) error {
+	if f.inode.readonly {
+		return linuxerr.EPERM
+	}
 	return unix.Fallocate(f.inode.hostFD, uint32(mode), int64(offset), int64(length))
 }
 
@@ -834,6 +869,9 @@ func (f *fileDescription) Write(ctx context.Context, src usermem.IOSequence, opt
 }
 
 func (f *fileDescription) writeToHostFD(ctx context.Context, src usermem.IOSequence, offset int64, flags uint32) (int64, error) {
+	if f.inode.readonly {
+		return 0, linuxerr.EPERM
+	}
 	hostFD := f.inode.hostFD
 	// TODO(gvisor.dev/issue/2601): Support select pwritev2 flags.
 	if flags != 0 {
@@ -918,6 +956,9 @@ func (f *fileDescription) Seek(_ context.Context, offset int64, whence int32) (i
 
 // Sync implements vfs.FileDescriptionImpl.Sync.
 func (f *fileDescription) Sync(ctx context.Context) error {
+	if f.inode.readonly {
+		return linuxerr.EPERM
+	}
 	// TODO(gvisor.dev/issue/1897): Currently, we always sync everything.
 	return unix.Fsync(f.inode.hostFD)
 }

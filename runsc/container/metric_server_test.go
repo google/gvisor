@@ -184,7 +184,7 @@ func TestContainerMetrics(t *testing.T) {
 	}
 	t.Logf("After container start, fs_opens=%d (snapshotted at %v)", postStartOpens, postStartTimestamp)
 	// The touch operation may fail from permission errors, but the metric should still be incremented.
-	shOutput, err := executeCombinedOutput(te.sleepConf, cont, "/bin/bash", "-c", fmt.Sprintf("for i in $(seq 1 %d); do touch /tmp/$i || true; done", targetOpens))
+	shOutput, err := executeCombinedOutput(te.sleepConf, cont, nil, "/bin/bash", "-c", fmt.Sprintf("for i in $(seq 1 %d); do touch /tmp/$i || true; done", targetOpens))
 	if err != nil {
 		t.Fatalf("Exec failed: %v; output: %v", err, shOutput)
 	}
@@ -290,7 +290,7 @@ func TestContainerMetricsRobustAgainstRestarts(t *testing.T) {
 	if err := cont.Start(te.sleepConf); err != nil {
 		t.Fatalf("Cannot start container: %v", err)
 	}
-	shOutput, err := executeCombinedOutput(te.sleepConf, cont, "/bin/bash", "-c", fmt.Sprintf("for i in $(seq 1 %d); do touch /tmp/$i || true; done", targetOpens))
+	shOutput, err := executeCombinedOutput(te.sleepConf, cont, nil, "/bin/bash", "-c", fmt.Sprintf("for i in $(seq 1 %d); do touch /tmp/$i || true; done", targetOpens))
 	if err != nil {
 		t.Fatalf("Exec failed: %v; output: %v", err, shOutput)
 	}
@@ -327,7 +327,7 @@ func TestContainerMetricsRobustAgainstRestarts(t *testing.T) {
 
 	// Do a bunch of touches again. The metric server is down during this time.
 	// This verifies that metric value modifications does not depend on the metric server being up.
-	shOutput, err = executeCombinedOutput(te.sleepConf, cont, "/bin/bash", "-c", fmt.Sprintf("for i in $(seq 1 %d); do touch /tmp/$i || true; done", targetOpens))
+	shOutput, err = executeCombinedOutput(te.sleepConf, cont, nil, "/bin/bash", "-c", fmt.Sprintf("for i in $(seq 1 %d); do touch /tmp/$i || true; done", targetOpens))
 	if err != nil {
 		t.Fatalf("Exec failed: %v; output: %v", err, shOutput)
 	}
