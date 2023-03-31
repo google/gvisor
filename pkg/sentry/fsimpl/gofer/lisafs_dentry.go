@@ -284,8 +284,8 @@ func (d *lisafsDentry) getRemoteChild(ctx context.Context, name string) (*dentry
 
 // Preconditions:
 //   - fs.renameMu must be locked.
-//   - parent.opMu must be locked.
-//   - parent.isDir().
+//   - d.opMu must be locked.
+//   - d.isDir().
 //   - !rp.Done().
 //
 // Postcondition: The returned dentry is already cached appropriately.
@@ -303,11 +303,13 @@ func (d *lisafsDentry) getRemoteChildAndWalkPathLocked(ctx context.Context, rp *
 		}
 		names = append(names, name)
 	}
-	status, inodes, err := d.controlFD.WalkMultiple(ctx, names)
+	_, inodes, err := d.controlFD.WalkMultiple(ctx, names)
 	if err != nil {
 		return nil, err
 	}
 	if len(inodes) == 0 {
+		// d.opMu is locked. So a new child could not have appeared concurrently.
+		// It should be safe to mark this as a negative entry.
 		d.childrenMu.Lock()
 		defer d.childrenMu.Unlock()
 		d.cacheNegativeLookupLocked(names[0])
@@ -370,12 +372,6 @@ func (d *lisafsDentry) getRemoteChildAndWalkPathLocked(ctx context.Context, rp *
 		if i == 0 {
 			ret = child
 		}
-	}
-
-	if status == lisafs.WalkComponentDoesNotExist && curParent.isDir() {
-		curParentLock()
-		curParent.cacheNegativeLookupLocked(names[len(inodes)]) // +checklocksforce: locked via curParentLock().
-		curParentUnlock()
 	}
 	return ret, dentryCreationErr
 }
