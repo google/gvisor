@@ -128,7 +128,7 @@ static void ptregs_to_gregs(ucontext_t *ucontext,
 }
 
 // get_fsbase writes the current thread's fsbase value to ptregs.
-static void get_fsbase(struct user_regs_struct *ptregs) {
+static uint64_t get_fsbase(void) {
   uint64_t fsbase;
   if (__export_arch_state.fsgsbase) {
     asm volatile("rdfsbase %0" : "=r"(fsbase));
@@ -139,12 +139,11 @@ static void get_fsbase(struct user_regs_struct *ptregs) {
       panic(ret);
     }
   }
-  ptregs->fs_base = fsbase;
+  return fsbase;
 }
 
 // set_fsbase sets the current thread's fsbase to the fsbase value in ptregs.
-static void set_fsbase(struct user_regs_struct *ptregs) {
-  uint64_t fsbase = ptregs->fs_base;
+static void set_fsbase(uint64_t fsbase) {
   if (__export_arch_state.fsgsbase) {
     asm volatile("wrfsbase %0" : : "r"(fsbase) : "memory");
   } else {
@@ -160,8 +159,6 @@ static void set_fsbase(struct user_regs_struct *ptregs) {
 struct thread_context *switch_context_amd64(
     struct sysmsg *sysmsg, struct thread_context *ctx,
     enum thread_state new_thread_state, enum context_state new_context_state) {
-  get_fsbase(&ctx->ptregs);
-  long fs_base = ctx->ptregs.fs_base;
 
   for (;;) {
     // TODO(b/271631387): Once stub code globals can be used between objects
@@ -186,9 +183,6 @@ struct thread_context *switch_context_amd64(
       break;
     }
   }
-  if (fs_base != ctx->ptregs.fs_base) {
-    set_fsbase(&ctx->ptregs);
-  }
   return ctx;
 }
 
@@ -210,26 +204,10 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
   if (signo == SIGCHLD) {
     // If the current thread is in syshandler, an interrupt has to be postponed,
     // because sysmsg can't be changed.
-    if (thread_state != THREAD_STATE_NONE) {
-      if (__atomic_load_n(&ctx->interrupt, __ATOMIC_ACQUIRE))
-        __atomic_store_n(&sysmsg->interrupt, 1, __ATOMIC_RELEASE);
+    if (thread_state != THREAD_STATE_NONE &&
+        thread_state != THREAD_STATE_RESUMING_CONTEXT) {
       return;
     }
-  } else if (signo == SIGILL && sysmsg->state == THREAD_STATE_INTERRUPT) {
-    // This is a postponed SignalInterrupt from syshandler.
-    signo = SIGCHLD;
-    siginfo->si_signo = SIGCHLD;
-    __atomic_store_n(&sysmsg->interrupt, 0, __ATOMIC_RELAXED);
-    __atomic_store_n(&ctx->interrupt, 0, __ATOMIC_RELAXED);
-    // Skip the fault instruction.
-    ucontext->uc_mcontext.gregs[REG_RIP] = sysmsg->ret_addr;
-    // If we're skipping the fault instruction and going straight to the user
-    // RIP we must also restore RSP and RFLAGS which are the last registers
-    // restored. We can take these values from ctx->ptregs because the
-    // syshandler saved them there and hasn't overwritten them before
-    // retriggering the interrupt.
-    ucontext->uc_mcontext.gregs[REG_RSP] = ctx->ptregs.rsp;
-    ucontext->uc_mcontext.gregs[REG_EFL] = ctx->ptregs.eflags;
   }
 
   // Handle faults in syshandler.
@@ -239,18 +217,27 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
     return;
   }
 
-  enum context_state ctx_state = CONTEXT_STATE_INVALID;
+  long fs_base = get_fsbase();
+
   ctx->signo = signo;
   ctx->siginfo = *siginfo;
-  gregs_to_ptregs(ucontext, &ctx->ptregs);
-  if (__export_context_decoupling_exp) {
-    memcpy(ctx->fpstate, (uint8_t *)ucontext->uc_mcontext.fpregs,
-           __export_arch_state.fp_len);
-  } else {
-    sysmsg->fpstate =
-        (unsigned long)ucontext->uc_mcontext.fpregs - (unsigned long)sysmsg;
+  // THREAD_STATE_RESUMING_CONTEXT means syshandler is resuming the context, so
+  // the context contains the actual stat, but a state of the stub thread is
+  // incomplete.
+  if (thread_state != THREAD_STATE_RESUMING_CONTEXT) {
+    ctx->ptregs.fs_base = fs_base;
+    gregs_to_ptregs(ucontext, &ctx->ptregs);
+    if (__export_context_decoupling_exp) {
+      memcpy(ctx->fpstate, (uint8_t *)ucontext->uc_mcontext.fpregs,
+             __export_arch_state.fp_len);
+    } else {
+      sysmsg->fpstate =
+          (unsigned long)ucontext->uc_mcontext.fpregs - (unsigned long)sysmsg;
+    }
+    __atomic_store_n(&ctx->fpstate_changed, 0, __ATOMIC_RELEASE);
   }
-  __atomic_store_n(&ctx->fpstate_changed, 0, __ATOMIC_RELEASE);
+
+  enum context_state ctx_state = CONTEXT_STATE_INVALID;
 
   switch (signo) {
     case SIGSYS: {
@@ -334,6 +321,9 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
   }
 
   ctx = switch_context_amd64(sysmsg, ctx, THREAD_STATE_EVENT, ctx_state);
+  if (fs_base != ctx->ptregs.fs_base) {
+    set_fsbase(ctx->ptregs.fs_base);
+  }
 
   if (__export_context_decoupling_exp &&
       __atomic_load_n(&ctx->fpstate_changed, __ATOMIC_ACQUIRE)) {
@@ -360,7 +350,28 @@ void __syshandler() {
   ctx->siginfo.si_syscall = ctx->ptregs.rax;
   ctx->ptregs.rax = (unsigned long)-ENOSYS;
 
-  switch_context_amd64(sysmsg, ctx, THREAD_STATE_EVENT, ctx_state);
+  long fs_base = get_fsbase();
+  ctx->ptregs.fs_base = fs_base;
+
+try_again:
+  ctx = switch_context_amd64(sysmsg, ctx, THREAD_STATE_EVENT, ctx_state);
+  // After setting THREAD_STATE_RESUMING_CONTEXT, sighandler can interrupt up in
+  // a case of the interrupt signal. It considers that the current context
+  // contains the actual state.
+  __atomic_store_n(&sysmsg->state, THREAD_STATE_RESUMING_CONTEXT,
+                   __ATOMIC_RELEASE);
+  if (ctx->interrupt) {
+    __atomic_store_n(&sysmsg->state, THREAD_STATE_PREP, __ATOMIC_RELEASE);
+    ctx->signo = SIGCHLD;
+    ctx->siginfo.si_signo = SIGCHLD;
+    ctx->ptregs.orig_rax = -1;
+    ctx_state = CONTEXT_STATE_FAULT;
+    goto try_again;
+  }
+
+  if (fs_base != ctx->ptregs.fs_base) {
+    set_fsbase(ctx->ptregs.fs_base);
+  }
 }
 
 // asm_restore_state is implemented in syshandler_amd64.S
@@ -369,7 +380,7 @@ void asm_restore_state();
 // On x86 restore_state jumps straight to user code and does not return.
 void restore_state(struct sysmsg *sysmsg, struct thread_context *ctx,
                    void *unused) {
-  set_fsbase(&ctx->ptregs);
+  set_fsbase(ctx->ptregs.fs_base);
   asm_restore_state();
 }
 

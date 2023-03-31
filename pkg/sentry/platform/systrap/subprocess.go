@@ -34,6 +34,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/sysmsg"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/usertrap"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
+	gsync "gvisor.dev/gvisor/pkg/sync"
 )
 
 var (
@@ -101,7 +102,11 @@ type requestStub struct {
 // maxSysmsgThreads specifies the maximum number of system threads that a
 // subprocess can create in context decoupled mode.
 // TODO(b/268366549): Replace maxSystemThreads below.
-var maxSysmsgThreads = runtime.GOMAXPROCS(0)
+var (
+	maxSysmsgThreads      = runtime.GOMAXPROCS(0)
+	runningContexts       = uint32(0)
+	maxContextsInFastPath = uint32(runtime.GOMAXPROCS(0))
+)
 
 const (
 	// maxSystemThreads specifies the maximum number of system threads that a
@@ -726,8 +731,15 @@ func (s *subprocess) switchToApp(c *context, ac *arch.Context64) (isSyscall bool
 
 		// Place the context onto the context queue.
 		ctx.setState(sysmsg.ContextStateNone)
+		nr := atomic.AddUint32(&runningContexts, 1)
+		fastPathEnabled := uint32(0)
+		if nr < maxContextsInFastPath {
+			fastPathEnabled = 1
+		}
+		atomic.StoreUint32(&s.contextQueue.fastPathEnabled, uint32(fastPathEnabled))
 		s.contextQueue.add(uint32(ctx.contextID))
-		s.waitOnState(ctx)
+		s.waitOnState(ctx, fastPathEnabled == 1)
+		atomic.AddUint32(&runningContexts, ^uint32(0))
 
 		// Check if there's been an error.
 		threadID := ctx.threadID()
@@ -788,7 +800,7 @@ func (s *subprocess) switchToApp(c *context, ac *arch.Context64) (isSyscall bool
 	return false, false, nil
 }
 
-func (s *subprocess) waitOnState(ctx *sharedContext) {
+func (s *subprocess) waitOnState(ctx *sharedContext, fastPath bool) {
 	kicked := false
 	slowPath := false
 	start := cputicks()
@@ -797,7 +809,7 @@ func (s *subprocess) waitOnState(ctx *sharedContext) {
 		kicked = s.kickSysmsgThread()
 	}
 	for curState := ctx.state(); curState == sysmsg.ContextStateNone; curState = ctx.state() {
-		if !slowPath {
+		if !slowPath && fastPath {
 			delta := uint64(cputicks() - start)
 			if delta > deepSleepTimeout {
 				ctx.disableSentryFastPath()
@@ -814,7 +826,7 @@ func (s *subprocess) waitOnState(ctx *sharedContext) {
 					kicked = s.kickSysmsgThread()
 				}
 			}
-			spinloop()
+			gsync.Goyield()
 		} else {
 			// If the context already received a handshake then it knows it's being
 			// worked on.

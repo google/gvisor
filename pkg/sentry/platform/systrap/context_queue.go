@@ -40,15 +40,11 @@ type contextQueue struct {
 	start uint32
 	// end is an index used for putting new contexts into the ringbuffer.
 	end uint32
-	// stubPollingIndex is used by stubs to indicate polling order.
-	stubPollingIndex uint32
-	// stubPollingIndexBase is used by stubs to indicate to each other how many
-	// threads went to sleep.
-	stubPollingIndexBase uint32
 	// numActiveThreads indicates to the sentry how many stubs are running.
 	numActiveThreads uint32
 	// numActiveContext is a number of running and waiting contexts
 	numActiveContexts uint32
+	fastPathEnabled   uint32
 	// ringbuffer is the mmapped region of memory that's shared with the stub
 	// threads.
 	ringbuffer [maxContextQueueEntries]uint32
@@ -62,8 +58,7 @@ func (q *contextQueue) init() {
 	}
 	atomic.StoreUint32(&q.start, 0)
 	atomic.StoreUint32(&q.end, 0)
-	atomic.StoreUint32(&q.stubPollingIndex, 0)
-	atomic.StoreUint32(&q.stubPollingIndexBase, 0)
+	atomic.StoreUint32(&q.fastPathEnabled, 0)
 	atomic.StoreUint32(&q.numActiveThreads, 0)
 	atomic.StoreUint32(&q.numActiveContexts, 0)
 }

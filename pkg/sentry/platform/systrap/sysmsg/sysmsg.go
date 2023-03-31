@@ -116,13 +116,9 @@ const (
 	ThreadStateEvent
 	// ThreadStatePrep means that syshandler started filling the sysmsg struct.
 	ThreadStatePrep
-	// ThreadStateInterrupt is a Sysmsg state that indicates to the sighandler
-	// that there is a postponed interrupt from the syshandler.
-	// The sentry should never see this event.
-	ThreadStateInterrupt
-	// ThreadStateContextRestore means that the thread is in the process of doing
+	// ThreadStateResumingContext means that the thread is in the process of doing
 	// a context restore.
-	ThreadStateContextRestore
+	ThreadStateContext
 	// ThreadStateAsleep means that this thread fell asleep because there was not
 	// enough contexts to process in the context queue.
 	ThreadStateAsleep

@@ -39,10 +39,9 @@ uint64_t __export_handshake_timeout;
 struct context_queue {
   uint32_t start;
   uint32_t end;
-  uint32_t polling_index;
-  uint32_t polling_index_base;
   uint32_t num_active_threads;
   uint32_t num_active_contexts;
+  uint32_t fast_path_enabled;
   uint32_t ringbuffer[MAX_CONTEXT_QUEUE_ENTRIES];
 };
 
@@ -376,7 +375,6 @@ void verify_offsets() {
                offsetof(struct thread_context, ptregs));
 
   BUILD_BUG_ON(kTHREAD_STATE_NONE != THREAD_STATE_NONE);
-  BUILD_BUG_ON(kTHREAD_STATE_INTERRUPT != THREAD_STATE_INTERRUPT);
 
   BUILD_BUG_ON(sizeof(struct thread_context) >
                ALLOCATED_SIZEOF_THREAD_CONTEXT_STRUCT);
