@@ -245,6 +245,9 @@ type Args struct {
 	// PassFiles are user-supplied files from the host to be exposed to the
 	// sandboxed app.
 	PassFiles map[int]*os.File
+
+	// ExecFile is the file from the host used for program execution.
+	ExecFile *os.File
 }
 
 // New creates the sandbox process. The caller must call Destroy() on the
@@ -957,6 +960,10 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		cmd.SysProcAttr.Pdeathsig = unix.SIGKILL
 		// Tells boot that any process it creates must have pdeathsig set.
 		cmd.Args = append(cmd.Args, "--attached")
+	}
+
+	if args.ExecFile != nil {
+		donations.Donate("exec-fd", args.ExecFile)
 	}
 
 	nextFD = donations.Transfer(cmd, nextFD)

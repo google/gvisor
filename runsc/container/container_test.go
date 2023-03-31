@@ -69,19 +69,26 @@ func execute(conf *config.Config, cont *Container, name string, arg ...string) (
 	return cont.executeSync(conf, args)
 }
 
-func executeCombinedOutput(conf *config.Config, cont *Container, name string, arg ...string) ([]byte, error) {
+// executeCombinedOutput executes a process in the container and captures
+// stdout and stderr. If execFile is supplied, a host file will be executed.
+// Otherwise, the name argument is used to resolve the executable in the guest.
+func executeCombinedOutput(conf *config.Config, cont *Container, execFile *os.File, name string, arg ...string) ([]byte, error) {
 	r, w, err := os.Pipe()
 	if err != nil {
 		return nil, err
 	}
 	defer r.Close()
 
+	// Unset the filename when we execute via FD.
+	if execFile != nil {
+		name = ""
+	}
 	args := &control.ExecArgs{
 		Filename: name,
 		Argv:     append([]string{name}, arg...),
-		FilePayload: control.NewFDMap(map[int]*os.File{
+		FilePayload: control.NewFilePayload(map[int]*os.File{
 			0: os.Stdin, 1: w, 2: w,
-		}),
+		}, execFile),
 	}
 	ws, err := cont.executeSync(conf, args)
 	w.Close()
@@ -176,7 +183,7 @@ func blockUntilWaitable(pid int) error {
 
 // execPS executes `ps` inside the container and return the processes.
 func execPS(conf *config.Config, c *Container) ([]*control.Process, error) {
-	out, err := executeCombinedOutput(conf, c, "/bin/ps", "-e")
+	out, err := executeCombinedOutput(conf, c, nil, "/bin/ps", "-e")
 	if err != nil {
 		return nil, err
 	}
@@ -854,9 +861,9 @@ func TestExec(t *testing.T) {
 
 				_, err = cont.executeSync(conf, &control.ExecArgs{
 					Argv: []string{"/nonexist"},
-					FilePayload: control.NewFDMap(map[int]*os.File{
+					FilePayload: control.NewFilePayload(map[int]*os.File{
 						0: os.NewFile(uintptr(fds[1]), "sock"),
-					}),
+					}, nil),
 				})
 				want := "failed to load /nonexist"
 				if err == nil || !strings.Contains(err.Error(), want) {
@@ -1625,7 +1632,7 @@ func TestReadonlyRoot(t *testing.T) {
 			}
 
 			// Read mounts to check that root is readonly.
-			out, err := executeCombinedOutput(conf, c, "/bin/sh", "-c", "mount | grep ' / ' | grep -o -e '(.*)'")
+			out, err := executeCombinedOutput(conf, c, nil, "/bin/sh", "-c", "mount | grep ' / ' | grep -o -e '(.*)'")
 			if err != nil {
 				t.Fatalf("exec failed: %v", err)
 			}
@@ -1684,7 +1691,7 @@ func TestReadonlyMount(t *testing.T) {
 
 			// Read mounts to check that volume is readonly.
 			cmd := fmt.Sprintf("mount | grep ' %s ' | grep -o -e '(.*)'", dir)
-			out, err := executeCombinedOutput(conf, c, "/bin/sh", "-c", cmd)
+			out, err := executeCombinedOutput(conf, c, nil, "/bin/sh", "-c", cmd)
 			if err != nil {
 				t.Fatalf("exec failed, err: %v", err)
 			}
@@ -2505,7 +2512,7 @@ func TestRlimitsExec(t *testing.T) {
 		t.Fatalf("error starting container: %v", err)
 	}
 
-	got, err := executeCombinedOutput(conf, cont, "/bin/sh", "-c", "ulimit -n")
+	got, err := executeCombinedOutput(conf, cont, nil, "/bin/sh", "-c", "ulimit -n")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -2869,10 +2876,10 @@ func TestFDPassingExec(t *testing.T) {
 	cmd := fmt.Sprintf("cat /proc/self/fd/%d > /proc/self/fd/%d", int(guestRead.Fd()), int(guestWrite.Fd()))
 	execArgs := &control.ExecArgs{
 		Argv: []string{"/bin/bash", "-c", cmd},
-		FilePayload: control.NewFDMap(map[int]*os.File{
+		FilePayload: control.NewFilePayload(map[int]*os.File{
 			int(guestRead.Fd()):  guestRead,
 			int(guestWrite.Fd()): guestWrite,
-		}),
+		}, nil),
 	}
 
 	if _, err = cont.Execute(conf, execArgs); err != nil {
@@ -2890,5 +2897,138 @@ func TestFDPassingExec(t *testing.T) {
 	}
 	if got != msg {
 		t.Errorf("got message %q, want %q", got, msg)
+	}
+}
+
+// findInPath finds a filename in the PATH environment variable.
+func findInPath(filename string) string {
+	for _, dir := range strings.Split(os.Getenv("PATH"), ":") {
+		fullPath := filepath.Join(dir, filename)
+		if _, err := os.Stat(fullPath); err == nil {
+			return fullPath
+		}
+	}
+	return ""
+}
+
+// TestExecFDRun checks that an executable from the host can be started inside
+// a container.
+func TestExecFDRun(t *testing.T) {
+	// In the guest, read from the host and write the result back to the host.
+	conf := testutil.TestConfig(t)
+	// Note that we do not supply the name or path of the echo binary here.
+	// Thus, the guest does not know the binary path or name either.
+	// argv[0] inside echo is "can be anything".
+	spec := testutil.NewSpecWithArgs("can be anything", "hello world")
+
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	// Find the echo binary on the host.
+	echoPath := findInPath("echo")
+	if echoPath == "" {
+		t.Fatalf("failed to find echo executable in PATH")
+	}
+
+	// Open the echo binary as a file.
+	echoFile, err := os.Open(echoPath)
+	if err != nil {
+		t.Fatalf("opening echo binary: %v", err)
+	}
+	defer echoFile.Close()
+
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("creating pipe: %v", err)
+	}
+	defer r.Close()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+		PassFiles: map[int]*os.File{
+			0: os.Stdin, 1: w, 2: w,
+		},
+		ExecFile: echoFile,
+	}
+
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("Creating container: %v", err)
+	}
+	defer cont.Destroy()
+
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("starting container: %v", err)
+	}
+
+	w.Close()
+
+	got, err := io.ReadAll(r)
+	if err != nil {
+		t.Errorf("reading container output: %v", err)
+	}
+	if want := "hello world\n"; string(got) != want {
+		t.Errorf("got message %q, want %q", got, want)
+	}
+}
+
+// TestExecFDExec checks that an executable from the host can be started from a
+// file descriptor inside an already running container.
+func TestExecFDExec(t *testing.T) {
+	conf := testutil.TestConfig(t)
+
+	// We just sleep here because we want to test execution in an already
+	// running container.
+	spec := testutil.NewSpecWithArgs("bash", "-c", "sleep infinity")
+
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("Creating container: %v", err)
+	}
+	defer cont.Destroy()
+
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("starting container: %v", err)
+	}
+
+	// Find the echo binary on the host.
+	echoPath := findInPath("echo")
+	if echoPath == "" {
+		t.Fatalf("failed to find echo executable in PATH")
+	}
+
+	// Open the echo binary as a file.
+	echoFile, err := os.Open(echoPath)
+	if err != nil {
+		t.Fatalf("opening echo binary: %v", err)
+	}
+	defer echoFile.Close()
+
+	// Note that we do not supply the name or path of the echo binary here.
+	// Thus, the guest does not know the binary path or name either.
+	// argv[0] inside echo is "can be anything".
+	got, err := executeCombinedOutput(conf, cont, echoFile, "can be anything", "hello world")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "hello world\n"; string(got) != want {
+		t.Errorf("echo result, got: %q, want: %q", got, want)
 	}
 }

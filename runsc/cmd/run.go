@@ -39,6 +39,9 @@ type Run struct {
 	// passFDs are user-supplied FDs from the host to be exposed to the
 	// sandboxed app.
 	passFDs fdMappings
+
+	// execFD is the host file descriptor used for program execution.
+	execFD int
 }
 
 // Name implements subcommands.Command.Name.
@@ -61,6 +64,7 @@ func (*Run) Usage() string {
 func (r *Run) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&r.detach, "detach", false, "detach from the container's process")
 	f.Var(&r.passFDs, "pass-fd", "file descriptor passed to the container in M:N format, where M is the host and N is the guest descriptor (can be supplied multiple times)")
+	f.IntVar(&r.execFD, "exec-fd", -1, "host file descriptor used for program execution")
 	r.Create.SetFlags(f)
 }
 
@@ -106,6 +110,11 @@ func (r *Run) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomman
 		fdMap[mapping.Guest] = file
 	}
 
+	var execFile *os.File
+	if r.execFD >= 0 {
+		execFile = os.NewFile(uintptr(r.execFD), "exec-fd")
+	}
+
 	// Close the underlying file descriptors after we have passed them.
 	defer func() {
 		for _, file := range fdMap {
@@ -113,6 +122,10 @@ func (r *Run) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomman
 			if file.Close() != nil {
 				log.Debugf("Failed to close FD %d", fd)
 			}
+		}
+
+		if execFile != nil && execFile.Close() != nil {
+			log.Debugf("Failed to close exec FD")
 		}
 	}()
 
@@ -125,6 +138,7 @@ func (r *Run) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomman
 		UserLog:       r.userLog,
 		Attached:      !r.detach,
 		PassFiles:     fdMap,
+		ExecFile:      execFile,
 	}
 	ws, err := container.Run(conf, runArgs)
 	if err != nil {

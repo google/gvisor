@@ -179,6 +179,10 @@ func setupContainerVFS(ctx context.Context, conf *config.Config, mntr *container
 	}
 	procArgs.MountNamespace = mns
 
+	// We are executing a file directly. Do not resolve the executable path.
+	if procArgs.File != nil {
+		return nil
+	}
 	// Resolve the executable path from working dir and environment.
 	resolved, err := user.ResolveExecutablePath(ctx, procArgs)
 	if err != nil {
