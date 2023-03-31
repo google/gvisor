@@ -2205,7 +2205,7 @@ func TestMultiContainerShm(t *testing.T) {
 	}
 
 	// Check that file can be found in the other container.
-	out, err := executeCombinedOutput(conf, containers[1], "/bin/cat", output)
+	out, err := executeCombinedOutput(conf, containers[1], nil, "/bin/cat", output)
 	if err != nil {
 		t.Fatalf("exec failed: %v", err)
 	}
