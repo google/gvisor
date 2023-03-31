@@ -196,16 +196,6 @@ asm_restore_state:
 
   prepare_exit_syshandler
 
-  // Indicate syshandler is done.
-  movl $kTHREAD_STATE_NONE, %gs:offsetof_sysmsg_state
-
-  // Check if syshandler received an interrupt while executing.
-  // If it did, retrigger the interrupt. See __export_sighandler for details.
-  cmpl $0, %gs:offsetof_sysmsg_interrupt // msg->interrupt
-  je skipint
-  movl $kTHREAD_STATE_INTERRUPT, %gs:offsetof_sysmsg_state
-  .byte FAULT_OPCODE // Re-trigger the interrupt.
-skipint:
   // Now syshandler is exiting for good; restore user rflags and %rsp.
   popfq
   movq 0(%rsp), %rsp

@@ -376,7 +376,6 @@ void verify_offsets() {
                offsetof(struct thread_context, ptregs));
 
   BUILD_BUG_ON(kTHREAD_STATE_NONE != THREAD_STATE_NONE);
-  BUILD_BUG_ON(kTHREAD_STATE_INTERRUPT != THREAD_STATE_INTERRUPT);
 
   BUILD_BUG_ON(sizeof(struct thread_context) >
                ALLOCATED_SIZEOF_THREAD_CONTEXT_STRUCT);
