@@ -97,27 +97,38 @@ func (c *MetricClient) Close() {
 // req performs an HTTP request against the metrics server.
 // It returns an http.Response, and a function to close out the request that should be called when
 // the response is no longer necessary.
-func (c *MetricClient) req(ctx context.Context, timeout time.Duration, endpoint string, params map[string]string) (*http.Response, func(), error) {
+func (c *MetricClient) req(ctx context.Context, timeout time.Duration, method, endpoint string, params map[string]string) (*http.Response, func(), error) {
 	cancelFunc := context.CancelFunc(func() {})
 	if timeout != 0 {
 		ctx, cancelFunc = context.WithTimeout(ctx, timeout)
 	}
-	method := http.MethodGet
 	var bodyBytes io.Reader
-	if params != nil {
-		method = http.MethodPost
-		values := url.Values{}
-		for k, v := range params {
-			values.Set(k, v)
+	var getSuffix string
+	if len(params) != 0 {
+		switch method {
+		case http.MethodGet:
+			getParams := url.Values{}
+			for k, v := range params {
+				getParams.Add(k, v)
+			}
+			getSuffix = fmt.Sprintf("?%s", getParams.Encode())
+		case http.MethodPost:
+			values := url.Values{}
+			for k, v := range params {
+				values.Set(k, v)
+			}
+			bodyBytes = strings.NewReader(values.Encode())
+		default:
+			cancelFunc()
+			return nil, nil, fmt.Errorf("unsupported method: %v", method)
 		}
-		bodyBytes = strings.NewReader(values.Encode())
 	}
-	req, err := http.NewRequestWithContext(ctx, method, fmt.Sprintf("http://runsc-metrics%s", endpoint), bodyBytes)
+	req, err := http.NewRequestWithContext(ctx, method, fmt.Sprintf("http://runsc-metrics%s%s", endpoint, getSuffix), bodyBytes)
 	if err != nil {
 		cancelFunc()
 		return nil, nil, fmt.Errorf("cannot create request object: %v", err)
 	}
-	if params != nil {
+	if method == http.MethodPost {
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	}
 	resp, err := c.client.Do(req)
@@ -144,7 +155,7 @@ func (c *MetricClient) HealthCheck(ctx context.Context) error {
 	//  - The server is running, and the /runsc-metrics/healthcheck request succeeds.
 	//  - The server is running, but it is shutting down. The metrics server will fail the
 	//    /runsc-metrics/healthcheck request in this case.
-	resp, closeReq, err := c.req(ctx, 5*time.Second, "/runsc-metrics/healthcheck", map[string]string{
+	resp, closeReq, err := c.req(ctx, 5*time.Second, http.MethodPost, "/runsc-metrics/healthcheck", map[string]string{
 		"root": c.rootDir,
 	})
 	if err != nil {
@@ -263,8 +274,8 @@ func (c *MetricClient) ShutdownServer(ctx context.Context) error {
 type MetricData string
 
 // GetMetrics returns the raw Prometheus-formatted metric data from the metric server.
-func (c *MetricClient) GetMetrics(ctx context.Context) (MetricData, error) {
-	resp, closeReq, err := c.req(ctx, 10*time.Second, "/metrics", nil)
+func (c *MetricClient) GetMetrics(ctx context.Context, urlParams map[string]string) (MetricData, error) {
+	resp, closeReq, err := c.req(ctx, 10*time.Second, http.MethodGet, "/metrics", urlParams)
 	if err != nil {
 		return "", fmt.Errorf("cannot get /metrics: %v", err)
 	}

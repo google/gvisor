@@ -160,6 +160,12 @@ If desired, you can change the
 (prefix applied to all metric names) using the `--exporter-prefix` flag. It
 defaults to `runsc_`.
 
+The sandbox metrics exported may be filtered by using the optional `GET`
+parameter `runsc-sandbox-metrics-filter`, e.g.
+`/metrics?runsc-sandbox-metrics-filter=fs_.*`. Metric names must fully match
+this regular expression. Note that this filtering is performed before prepending
+`--exporter-prefix` to metric names.
+
 The metric server also supports listening on a
 [Unix Domain Socket](https://en.wikipedia.org/wiki/Unix_domain_socket). This can
 be convenient to avoid reserving port numbers on the machine's network
