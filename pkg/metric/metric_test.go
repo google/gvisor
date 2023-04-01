@@ -42,7 +42,7 @@ const (
 // However, it does not verify that the data that was parsed actually matches the metric data.
 func verifyPrometheusParsing(t *testing.T) {
 	t.Helper()
-	snapshot, err := GetSnapshot()
+	snapshot, err := GetSnapshot(SnapshotOptions{})
 	if err != nil {
 		t.Errorf("failed to get Prometheus snapshot: %v", err)
 		return

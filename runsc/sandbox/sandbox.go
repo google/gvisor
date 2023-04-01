@@ -1212,10 +1212,15 @@ func (s *Sandbox) GetRegisteredMetrics() (*metricpb.MetricRegistration, error) {
 }
 
 // ExportMetrics returns a snapshot of metric values from the sandbox in Prometheus format.
-func (s *Sandbox) ExportMetrics() (*prometheus.Snapshot, error) {
+func (s *Sandbox) ExportMetrics(opts control.MetricsExportOpts) (*prometheus.Snapshot, error) {
 	log.Debugf("Metrics export sandbox %q", s.ID)
-	data := &control.MetricsExportData{}
-	if err := s.call(boot.MetricsExport, &control.MetricsExportOpts{}, data); err != nil {
+	var data control.MetricsExportData
+	if err := s.call(boot.MetricsExport, &opts, &data); err != nil {
+		return nil, err
+	}
+	// Since we do not trust the output of the sandbox as-is, double-check that the options were
+	// respected.
+	if err := opts.Verify(&data); err != nil {
 		return nil, err
 	}
 	return data.Snapshot, nil
