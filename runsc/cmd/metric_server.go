@@ -27,6 +27,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"regexp"
 	"runtime"
 	"runtime/debug"
 	"runtime/pprof"
@@ -39,6 +40,7 @@ import (
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/prometheus"
+	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/runsc/cmd/util"
@@ -214,7 +216,7 @@ func (s *servedSandbox) cleanup() {
 }
 
 // queryMetrics queries the sandbox for metrics data.
-func queryMetrics(ctx context.Context, sand *sandbox.Sandbox, verifier *prometheus.Verifier) (*prometheus.Snapshot, error) {
+func (m *MetricServer) queryMetrics(ctx context.Context, sand *sandbox.Sandbox, verifier *prometheus.Verifier, metricsFilter string) (*prometheus.Snapshot, error) {
 	ch := make(chan struct {
 		snapshot *prometheus.Snapshot
 		err      error
@@ -222,7 +224,9 @@ func queryMetrics(ctx context.Context, sand *sandbox.Sandbox, verifier *promethe
 	canceled := make(chan struct{}, 1)
 	defer close(canceled)
 	go func() {
-		snapshot, err := sand.ExportMetrics()
+		snapshot, err := sand.ExportMetrics(control.MetricsExportOpts{
+			OnlyMetrics: metricsFilter,
+		})
 		select {
 		case <-canceled:
 		case ch <- struct {
@@ -280,6 +284,13 @@ type MetricServer struct {
 	// This is used to monitor for sandboxes in the background. If a sandbox's state file matches this
 	// info, we can assume that the last background scan already looked at it.
 	lastStateFileStat map[container.FullID]os.FileInfo
+
+	// lastValidMetricFilter stores the last value of the "runsc-sandbox-metrics-filter" parameter for
+	// /metrics requests.
+	// It represents the last-known compilable regular expression that was passed to /metrics.
+	// It is used to avoid re-verifying this parameter in the common case where a single scraper
+	// is consistently passing in the same value for this parameter in each successive request.
+	lastValidMetricFilter string
 
 	// numSandboxes counts the number of sandboxes that have ever been registered on this server.
 	// Used to distinguish between the case where this metrics serve has sat there doing nothing
@@ -559,7 +570,20 @@ var ServerMetrics = []prometheus.Metric{
 func (m *MetricServer) serveMetrics(w http.ResponseWriter, req *http.Request) httpResult {
 	ctx, ctxCancel := context.WithTimeout(req.Context(), metricsExportTimeout)
 	defer ctxCancel()
+
+	metricsFilter := req.URL.Query().Get("runsc-sandbox-metrics-filter")
+
 	m.mu.Lock()
+
+	if metricsFilter != "" && metricsFilter != m.lastValidMetricFilter {
+		_, err := regexp.Compile(metricsFilter)
+		if err != nil {
+			m.mu.Unlock()
+			return httpResult{http.StatusBadRequest, errors.New("provided metric filter is not a valid regular expression")}
+		}
+		m.lastValidMetricFilter = metricsFilter
+	}
+
 	m.refreshSandboxesLocked()
 
 	numGoroutines := exportParallelGoroutines
@@ -660,7 +684,7 @@ func (m *MetricServer) serveMetrics(w http.ResponseWriter, req *http.Request) ht
 				sandboxErr := loadErr
 				if loadErr == nil {
 					queryCtx, queryCtxCancel := context.WithTimeout(ctx, perSandboxTime)
-					snapshot, sandboxErr = queryMetrics(queryCtx, sand, verifier)
+					snapshot, sandboxErr = m.queryMetrics(queryCtx, sand, verifier, metricsFilter)
 					queryCtxCancel()
 					isRunning = sand.IsRunning()
 				}
@@ -730,8 +754,12 @@ func (m *MetricServer) serveMetrics(w http.ResponseWriter, req *http.Request) ht
 	// Write out all data.
 	lastMetricsWrittenSize := int(m.lastMetricsWrittenSize.Load())
 	metricsWritten := make(map[string]bool, lastMetricsWrittenSize)
+	commentHeader := fmt.Sprintf("Data for runsc metric server exporting data for sandboxes in root directory %s", m.rootDir)
+	if metricsFilter != "" {
+		commentHeader = fmt.Sprintf("%s (filtered using regular expression: %q)", commentHeader, metricsFilter)
+	}
 	written, err := prometheus.Write(w, prometheus.ExportOptions{
-		CommentHeader:  fmt.Sprintf("Data for runsc metric server exporting data for sandboxes in root directory %s", m.rootDir),
+		CommentHeader:  commentHeader,
 		MetricsWritten: metricsWritten,
 	}, snapshotsToOptions)
 	if err != nil {
