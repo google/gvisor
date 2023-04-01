@@ -157,6 +157,33 @@ func (cp Capability) String() string {
 	}
 }
 
+// CapabilityFromString converts a string to a capability.
+// If the capability doesn't exist, its second return value is `false`.
+// The capability name is expected to include the "CAP_" prefix.
+func CapabilityFromString(capability string) (Capability, bool) {
+	for cp := Capability(0); cp <= CAP_LAST_CAP; cp++ {
+		if !cp.Ok() {
+			continue
+		}
+		if cp.String() == capability {
+			return cp, true
+		}
+	}
+	return -1, false
+}
+
+// AllCapabilities returns a list of all defined capabilities.
+func AllCapabilities() []Capability {
+	allCapapabilities := make([]Capability, 0, CAP_LAST_CAP+1)
+	for cp := Capability(0); cp <= CAP_LAST_CAP; cp++ {
+		if !cp.Ok() {
+			continue
+		}
+		allCapapabilities = append(allCapapabilities, cp)
+	}
+	return allCapapabilities
+}
+
 // Version numbers used by the capget/capset syscalls, defined in Linux's
 // include/uapi/linux/capability.h.
 const (
