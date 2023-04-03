@@ -44,7 +44,7 @@ func (errRevalidationStepDone) Error() string {
 //
 // Preconditions:
 //   - fs.renameMu must be locked.
-func (fs *filesystem) revalidatePath(ctx context.Context, rpOrig *vfs.ResolvingPath, start *dentry, ds **[]*dentry) error {
+func (fs *filesystem) revalidatePath(ctx context.Context, rpOrig resolvingPath, start *dentry, ds **[]*dentry) error {
 	// Revalidation is done even if start is synthetic in case the path is
 	// something like: ../non_synthetic_file.
 	if fs.opts.interop != InteropModeShared {
@@ -52,26 +52,8 @@ func (fs *filesystem) revalidatePath(ctx context.Context, rpOrig *vfs.ResolvingP
 	}
 
 	// Copy resolving path to walk the path for revalidation.
-	rp := rpOrig.Copy()
-	err := fs.revalidate(ctx, rp, start, rp.Done, ds)
-	rp.Release(ctx)
-	return err
-}
-
-// revalidateParentDir does the same as revalidatePath, but stops at the parent.
-//
-// Preconditions:
-//   - fs.renameMu must be locked.
-func (fs *filesystem) revalidateParentDir(ctx context.Context, rpOrig *vfs.ResolvingPath, start *dentry, ds **[]*dentry) error {
-	// Revalidation is done even if start is synthetic in case the path is
-	// something like: ../non_synthetic_file and parent is non synthetic.
-	if fs.opts.interop != InteropModeShared {
-		return nil
-	}
-
-	// Copy resolving path to walk the path for revalidation.
-	rp := rpOrig.Copy()
-	err := fs.revalidate(ctx, rp, start, rp.Final, ds)
+	rp := rpOrig.copy()
+	err := fs.revalidate(ctx, rp, start, ds)
 	rp.Release(ctx)
 	return err
 }
@@ -111,12 +93,12 @@ func (fs *filesystem) revalidateOne(ctx context.Context, vfsObj *vfs.VirtualFile
 // Preconditions:
 //   - fs.renameMu must be locked.
 //   - InteropModeShared is in effect.
-func (fs *filesystem) revalidate(ctx context.Context, rp *vfs.ResolvingPath, start *dentry, done func() bool, ds **[]*dentry) error {
+func (fs *filesystem) revalidate(ctx context.Context, rp resolvingPath, start *dentry, ds **[]*dentry) error {
 	state := makeRevalidateState(start, true /* refreshStart */)
 	defer state.release()
 
 done:
-	for cur := start; !done(); {
+	for cur := start; !rp.done(); {
 		var err error
 		cur, err = fs.revalidateStep(ctx, rp, cur, state)
 		if err != nil {
@@ -161,7 +143,7 @@ done:
 //   - fs.renameMu must be locked.
 //   - !rp.Done().
 //   - InteropModeShared is in effect (assumes no negative dentries).
-func (fs *filesystem) revalidateStep(ctx context.Context, rp *vfs.ResolvingPath, d *dentry, state *revalidateState) (*dentry, error) {
+func (fs *filesystem) revalidateStep(ctx context.Context, rp resolvingPath, d *dentry, state *revalidateState) (*dentry, error) {
 	switch name := rp.Component(); name {
 	case ".":
 		// Do nothing.

@@ -177,7 +177,7 @@ func (fs *filesystem) renameMuUnlockAndCheckCaching(ctx context.Context, ds **[]
 //     part of rp must have been revalidated.
 //
 // +checklocksread:d.opMu
-func (fs *filesystem) stepLocked(ctx context.Context, rp *vfs.ResolvingPath, d *dentry, mayFollowSymlinks bool, ds **[]*dentry) (*dentry, bool, error) {
+func (fs *filesystem) stepLocked(ctx context.Context, rp resolvingPath, d *dentry, mayFollowSymlinks bool, ds **[]*dentry) (*dentry, bool, error) {
 	if !d.isDir() {
 		return nil, false, linuxerr.ENOTDIR
 	}
@@ -293,7 +293,7 @@ func (fs *filesystem) getRemoteChildLocked(ctx context.Context, parent *dentry, 
 // may prefetch the entire path represented by rp.
 //
 // +checklocksread:parent.opMu
-func (fs *filesystem) getChildAndWalkPathLocked(ctx context.Context, parent *dentry, rp *vfs.ResolvingPath, ds **[]*dentry) (*dentry, error) {
+func (fs *filesystem) getChildAndWalkPathLocked(ctx context.Context, parent *dentry, rp resolvingPath, ds **[]*dentry) (*dentry, error) {
 	if child, err := parent.getCachedChildLocked(rp.Component()); child != nil || err != nil {
 		return child, err
 	}
@@ -344,11 +344,12 @@ func (d *dentry) getCachedChildLocked(name string) (*dentry, error) {
 //   - !rp.Done().
 //   - If !d.cachedMetadataAuthoritative(), then d's cached metadata must be up
 //     to date.
-func (fs *filesystem) walkParentDirLocked(ctx context.Context, rp *vfs.ResolvingPath, d *dentry, ds **[]*dentry) (*dentry, error) {
-	if err := fs.revalidateParentDir(ctx, rp, d, ds); err != nil {
+func (fs *filesystem) walkParentDirLocked(ctx context.Context, vfsRP *vfs.ResolvingPath, d *dentry, ds **[]*dentry) (*dentry, error) {
+	rp := resolvingPathParent(vfsRP)
+	if err := fs.revalidatePath(ctx, rp, d, ds); err != nil {
 		return nil, err
 	}
-	for !rp.Final() {
+	for !rp.done() {
 		d.opMu.RLock()
 		next, followedSymlink, err := fs.stepLocked(ctx, rp, d, true /* mayFollowSymlinks */, ds)
 		d.opMu.RUnlock()
@@ -357,7 +358,7 @@ func (fs *filesystem) walkParentDirLocked(ctx context.Context, rp *vfs.Resolving
 		}
 		d = next
 		if followedSymlink {
-			if err := fs.revalidateParentDir(ctx, rp, d, ds); err != nil {
+			if err := fs.revalidatePath(ctx, rp, d, ds); err != nil {
 				return nil, err
 			}
 		}
@@ -371,12 +372,13 @@ func (fs *filesystem) walkParentDirLocked(ctx context.Context, rp *vfs.Resolving
 // resolveLocked resolves rp to an existing file.
 //
 // Preconditions: fs.renameMu must be locked.
-func (fs *filesystem) resolveLocked(ctx context.Context, rp *vfs.ResolvingPath, ds **[]*dentry) (*dentry, error) {
+func (fs *filesystem) resolveLocked(ctx context.Context, vfsRP *vfs.ResolvingPath, ds **[]*dentry) (*dentry, error) {
+	rp := resolvingPathFull(vfsRP)
 	d := rp.Start().Impl().(*dentry)
 	if err := fs.revalidatePath(ctx, rp, d, ds); err != nil {
 		return nil, err
 	}
-	for !rp.Done() {
+	for !rp.done() {
 		d.opMu.RLock()
 		next, followedSymlink, err := fs.stepLocked(ctx, rp, d, true /* mayFollowSymlinks */, ds)
 		d.opMu.RUnlock()
@@ -599,7 +601,7 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 			return linuxerr.ENOENT
 		}
 	} else {
-		child, _, err = fs.stepLocked(ctx, rp, parent, false /* mayFollowSymlinks */, &ds)
+		child, _, err = fs.stepLocked(ctx, resolvingPathFull(rp), parent, false /* mayFollowSymlinks */, &ds)
 		if err != nil {
 			return err
 		}
@@ -872,7 +874,7 @@ func (fs *filesystem) MknodAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 		// to creating a synthetic one, i.e. one that is kept entirely in memory.
 
 		// Check that we're not overriding an existing file with a synthetic one.
-		_, _, err := fs.stepLocked(ctx, rp, parent, false /* mayFollowSymlinks */, ds) // +checklocksforce: parent.opMu taken by doCreateAt.
+		_, _, err := fs.stepLocked(ctx, resolvingPathFull(rp), parent, false /* mayFollowSymlinks */, ds) // +checklocksforce: parent.opMu taken by doCreateAt.
 		switch {
 		case err == nil:
 			// Step succeeded, another file exists.
@@ -972,7 +974,7 @@ afterTrailingSymlink:
 	// serializing OpenAt calls in the same directory in the common case
 	// that the file exists.
 	parent.opMu.RLock()
-	child, followedSymlink, err := fs.stepLocked(ctx, rp, parent, true /* mayFollowSymlinks */, &ds)
+	child, followedSymlink, err := fs.stepLocked(ctx, resolvingPathFull(rp), parent, true /* mayFollowSymlinks */, &ds)
 	parent.opMu.RUnlock()
 	if followedSymlink {
 		if mustCreate {
@@ -1012,7 +1014,7 @@ afterTrailingSymlink:
 
 		// Step to the file again. Since we still hold opMu for
 		// writing, there can't be a race here.
-		child, _, err = fs.stepLocked(ctx, rp, parent, false /* mayFollowSymlinks */, &ds)
+		child, _, err = fs.stepLocked(ctx, resolvingPathFull(rp), parent, false /* mayFollowSymlinks */, &ds)
 		parent.opMu.Unlock()
 	}
 	if err != nil {
