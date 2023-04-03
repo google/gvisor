@@ -89,11 +89,6 @@ type servedSandbox struct {
 	// Once set, it is immutable.
 	createdAt time.Time
 
-	// labelsWithMetadata is the union of `extraLabels` and `sandbox.MetricMetadata`.
-	// This is exported as the set of labels for the `sandbox_metadata` metric.
-	// Once set, it is immutable.
-	labelsWithMetadata map[string]string
-
 	// verifier allows verifying the data integrity of the metrics we get from this sandbox.
 	// It is not always initialized when the sandbox is discovered, but rather upon first metrics
 	// access to the sandbox. Metric registration data is loaded from the root container's
@@ -196,13 +191,6 @@ func (s *servedSandbox) load() (*sandbox.Sandbox, *prometheus.Verifier, error) {
 		}
 		s.verifier = verifier
 		s.cleanupVerifier = cleanup
-	}
-	s.labelsWithMetadata = make(map[string]string, len(s.extraLabels)+len(s.sandbox.MetricMetadata))
-	for k, v := range s.extraLabels {
-		s.labelsWithMetadata[k] = v
-	}
-	for k, v := range s.sandbox.MetricMetadata {
-		s.labelsWithMetadata[k] = v
 	}
 	return s.sandbox, s.verifier, nil
 }
@@ -691,16 +679,17 @@ func (m *MetricServer) serveMetrics(w http.ResponseWriter, req *http.Request) ht
 				func() {
 					metricsMu.Lock()
 					defer metricsMu.Unlock()
-					selfMetrics.Add(prometheus.LabeledIntData(&SandboxPresenceMetric, served.extraLabels, 1))
+					selfMetrics.Add(prometheus.LabeledIntData(&SandboxPresenceMetric, nil, 1).SetExternalLabels(served.extraLabels))
 					sandboxRunning := int64(0)
 					if isRunning {
 						sandboxRunning = 1
 						meta.numRunningSandboxes++
 					}
-					selfMetrics.Add(prometheus.LabeledIntData(&SandboxRunningMetric, served.extraLabels, sandboxRunning))
+					selfMetrics.Add(prometheus.LabeledIntData(&SandboxRunningMetric, nil, sandboxRunning).SetExternalLabels(served.extraLabels))
 					if loadErr == nil {
-						selfMetrics.Add(prometheus.LabeledIntData(&SandboxMetadataMetric, served.labelsWithMetadata, 1))
-						selfMetrics.Add(prometheus.LabeledFloatData(&SandboxCreationMetric, served.extraLabels, float64(served.createdAt.Unix())+(float64(served.createdAt.Nanosecond())/1e9)))
+						selfMetrics.Add(prometheus.LabeledIntData(&SandboxMetadataMetric, sand.MetricMetadata, 1).SetExternalLabels(served.extraLabels))
+						createdAt := float64(served.createdAt.Unix()) + (float64(served.createdAt.Nanosecond()) / 1e9)
+						selfMetrics.Add(prometheus.LabeledFloatData(&SandboxCreationMetric, nil, createdAt).SetExternalLabels(served.extraLabels))
 					}
 					if sandboxErr != nil {
 						// If the sandbox isn't running, it is normal that metrics are not exported for it, so
