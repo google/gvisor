@@ -314,6 +314,15 @@ type Data struct {
 	// This may be merged with other labels during export.
 	Labels map[string]string `json:"labels,omitempty"`
 
+	// ExternalLabels are more labels merged together with `Labels`.
+	// They can be set using SetExternalLabels.
+	// They are useful in the case where a single Data needs labels from two sources:
+	// labels specific to this data point (which should be in `Labels`), and labels
+	// that are shared between multiple data points (stored in `ExternalLabels`).
+	// This avoids allocating unique `Labels` maps for each Data struct, when
+	// most of the actual labels would be shared between them.
+	ExternalLabels map[string]string `json:"external_labels,omitempty"`
+
 	// At most one of the fields below may be set.
 	// Which one depends on the type of the metric.
 
@@ -342,6 +351,13 @@ func NewFloatData(metric *Metric, val float64) *Data {
 // LabeledFloatData returns a new Data struct with the given metric, labels, and value.
 func LabeledFloatData(metric *Metric, labels map[string]string, val float64) *Data {
 	return &Data{Metric: metric, Labels: labels, Number: NewFloat(val)}
+}
+
+// SetExternalLabels sets d.ExternalLabels. See its docstring for more information.
+// Returns `d` for chainability.
+func (d *Data) SetExternalLabels(externalLabels map[string]string) *Data {
+	d.ExternalLabels = externalLabels
+	return d
 }
 
 // ExportOptions contains options that control how metric data is exported in Prometheus format.
@@ -650,9 +666,9 @@ func (d *Data) writeLabelsTo(w io.Writer, extraLabels map[string]string, leLabel
 		}
 		var orderedLabels <-chan LabelOrError
 		if leLabel != nil {
-			orderedLabels = OrderedLabels(d.Labels, extraLabels, map[string]string{"le": leLabel.String()})
+			orderedLabels = OrderedLabels(d.Labels, d.ExternalLabels, extraLabels, map[string]string{"le": leLabel.String()})
 		} else {
-			orderedLabels = OrderedLabels(d.Labels, extraLabels)
+			orderedLabels = OrderedLabels(d.Labels, d.ExternalLabels, extraLabels)
 		}
 		firstLabel := true
 		var foundError error
