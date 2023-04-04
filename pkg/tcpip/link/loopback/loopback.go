@@ -81,7 +81,8 @@ func (*endpoint) LinkAddress() tcpip.LinkAddress {
 // Wait implements stack.LinkEndpoint.Wait.
 func (*endpoint) Wait() {}
 
-// WritePackets implements stack.LinkEndpoint.WritePackets.
+// WritePackets implements stack.LinkEndpoint.WritePackets. If the endpoint is
+// not attached, the packets are not delivered.
 func (e *endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
 	e.mu.RLock()
 	d := e.dispatcher
@@ -93,7 +94,9 @@ func (e *endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) 
 		newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Payload: pkt.ToBuffer(),
 		})
-		d.DeliverNetworkPacket(pkt.NetworkProtocolNumber, newPkt)
+		if d != nil {
+			d.DeliverNetworkPacket(pkt.NetworkProtocolNumber, newPkt)
+		}
 		newPkt.DecRef()
 	}
 	return pkts.Len(), nil
