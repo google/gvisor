@@ -45,6 +45,10 @@ type FSBenchmark struct {
 	// Variants is a list of benchmarka variants to run.
 	// If unset, the typical set is used.
 	Variants []Variant
+	// Callback is an optional function that is called after each execution of
+	// the workload being benchmarked. It can be used to perform workload
+	// specific metric reporting.
+	Callback func(b *testing.B, output string)
 }
 
 // Variant is a specific configuration for a benchmark.
@@ -151,6 +155,10 @@ func RunWithDifferentFilesystems(ctx context.Context, b *testing.B, machine harn
 
 				if bm.WantOutput != "" && !strings.Contains(got, bm.WantOutput) {
 					b.Fatalf("string %s not in: %s", bm.WantOutput, got)
+				}
+
+				if bm.Callback != nil {
+					bm.Callback(b, got)
 				}
 
 				// Clean the container in case we are doing another run.
