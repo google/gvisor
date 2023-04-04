@@ -398,7 +398,7 @@ TEST_P(RawPacketTest, SetSocketRecvBuf) {
                 SyscallSucceeds());
   }
 
-  int quarter_sz = min + (max - min) / 4;
+  const int quarter_sz = min + (max - min) / 4;
   ASSERT_THAT(
       setsockopt(s_, SOL_SOCKET, SO_RCVBUF, &quarter_sz, sizeof(quarter_sz)),
       SyscallSucceeds());
@@ -408,8 +408,11 @@ TEST_P(RawPacketTest, SetSocketRecvBuf) {
   ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_RCVBUF, &val, &val_len),
               SyscallSucceeds());
 
-  quarter_sz *= 2;
-  ASSERT_EQ(quarter_sz, val);
+#ifndef __Fuchsia__
+  ASSERT_EQ(val, quarter_sz * 2);
+#else
+  ASSERT_THAT(val, AnyOf(quarter_sz, quarter_sz * 2));
+#endif  // __Fuchsia__
 }
 
 // Check that setting SO_SNDBUF below min is clamped to the minimum
@@ -502,7 +505,7 @@ TEST_P(RawPacketTest, SetSocketSendBuf) {
                 SyscallSucceeds());
   }
 
-  int quarter_sz = min + (max - min) / 4;
+  const int quarter_sz = min + (max - min) / 4;
   ASSERT_THAT(
       setsockopt(s_, SOL_SOCKET, SO_SNDBUF, &quarter_sz, sizeof(quarter_sz)),
       SyscallSucceeds());
@@ -512,8 +515,11 @@ TEST_P(RawPacketTest, SetSocketSendBuf) {
   ASSERT_THAT(getsockopt(s_, SOL_SOCKET, SO_SNDBUF, &val, &val_len),
               SyscallSucceeds());
 
-  quarter_sz *= 2;
-  ASSERT_EQ(quarter_sz, val);
+#ifndef __Fuchsia__
+  ASSERT_EQ(val, quarter_sz * 2);
+#else
+  ASSERT_THAT(val, AnyOf(quarter_sz, quarter_sz * 2));
+#endif  // __Fuchsia__
 }
 
 TEST_P(RawPacketTest, GetSocketError) {
