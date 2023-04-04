@@ -250,6 +250,23 @@ func Main() {
 	}
 	linux.SetAFSSyscallPanic(conf.TestOnlyAFSSyscallPanic)
 
+	// pgalloc.MemoryFile (which provides application memory) sometimes briefly
+	// mlock(2)s ranges of memory in order to fault in a large number of pages at
+	// a time. Try to make RLIMIT_MEMLOCK unlimited so that it can do so. runsc
+	// expects to run in a memory cgroup that limits its memory usage as
+	// required.
+	var rlim unix.Rlimit
+	if err := unix.Getrlimit(unix.RLIMIT_MEMLOCK, &rlim); err != nil {
+		log.Warningf("Failed to get RLIMIT_MEMLOCK: %v", err)
+	} else if rlim.Cur != unix.RLIM_INFINITY || rlim.Max != unix.RLIM_INFINITY {
+		rlim.Cur = unix.RLIM_INFINITY
+		rlim.Max = unix.RLIM_INFINITY
+		if err := unix.Setrlimit(unix.RLIMIT_MEMLOCK, &rlim); err != nil {
+			// We may not have CAP_SYS_RESOURCE, so this failure may be expected.
+			log.Infof("Failed to set RLIMIT_MEMLOCK: %v", err)
+		}
+	}
+
 	// Call the subcommand and pass in the configuration.
 	var ws unix.WaitStatus
 	subcmdCode := subcommands.Execute(context.Background(), conf, &ws)
