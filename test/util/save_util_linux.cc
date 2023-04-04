@@ -20,13 +20,7 @@
 
 #include "test/util/save_util.h"
 
-#if defined(__x86_64__) || defined(__i386__)
-#define SYS_TRIGGER_SAVE SYS_create_module
-#elif defined(__aarch64__)
-#define SYS_TRIGGER_SAVE SYS_finit_module
-#else
-#error "Unknown architecture"
-#endif
+#define SYS_TRIGGER_SAVE SYS_init_module
 
 namespace gvisor {
 namespace testing {
