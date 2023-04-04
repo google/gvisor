@@ -173,18 +173,23 @@ func listMatch(rootDir string, id FullID) ([]FullID, error) {
 	return out, nil
 }
 
-// loadSandbox loads all containers that belong to the sandbox with the given
+// LoadSandbox loads all containers that belong to the sandbox with the given
 // ID.
-func loadSandbox(rootDir, id string) ([]*Container, error) {
+func LoadSandbox(rootDir, id string, opts LoadOpts) ([]*Container, error) {
 	cids, err := listMatch(rootDir, FullID{SandboxID: id})
 	if err != nil {
 		return nil, err
 	}
 
+	// Override load options that don't make sense in the context of this function.
+	opts.SkipCheck = true      // We're loading all containers irrespective of status.
+	opts.RootContainer = false // We're loading all containers, not just the root one.
+	opts.Exact = true          // We'll iterate over exact container IDs below.
+
 	// Load the container metadata.
 	var containers []*Container
 	for _, cid := range cids {
-		container, err := Load(rootDir, cid, LoadOpts{Exact: true, SkipCheck: true})
+		container, err := Load(rootDir, cid, opts)
 		if err != nil {
 			// Container file may not exist if it raced with creation/deletion or
 			// directory was left behind. Load provides a snapshot in time, so it's

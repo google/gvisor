@@ -37,6 +37,7 @@ import (
 	"time"
 
 	"github.com/google/subcommands"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/prometheus"
@@ -88,6 +89,12 @@ type servedSandbox struct {
 	// It is loaded from the container state file.
 	// Once set, it is immutable.
 	createdAt time.Time
+
+	// capabilities is the union of the capability set of the containers within `sandbox`.
+	// It is used to export a per-sandbox metric representing which capabilities are in use.
+	// For monitoring purposes, a capability added in a container means it is considered
+	// added for the whole sandbox.
+	capabilities []linux.Capability
 
 	// verifier allows verifying the data integrity of the metrics we get from this sandbox.
 	// It is not always initialized when the sandbox is discovered, but rather upon first metrics
@@ -143,16 +150,25 @@ func (s *servedSandbox) load() (*sandbox.Sandbox, *prometheus.Verifier, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.sandbox == nil {
-		cont, err := container.Load(s.rootDir, s.rootContainerID, container.LoadOpts{
-			Exact:         true,
-			SkipCheck:     true,
-			TryLock:       container.TryAcquire,
-			RootContainer: true,
+		allContainers, err := container.LoadSandbox(s.rootDir, s.rootContainerID.SandboxID, container.LoadOpts{
+			TryLock: container.TryAcquire,
 		})
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, fmt.Errorf("cannot load sandbox %q: %v", s.rootContainerID.SandboxID, err)
 		}
-		sandboxMetricAddr := strings.ReplaceAll(cont.Sandbox.MetricServerAddress, "%RUNTIME_ROOT%", s.rootDir)
+		var rootContainer *container.Container
+		for _, cont := range allContainers {
+			if cont.IsSandboxRoot() {
+				if rootContainer != nil {
+					return nil, nil, fmt.Errorf("multiple root contains found for sandbox ID %q: %v and %v", s.rootContainerID.SandboxID, cont, rootContainer)
+				}
+				rootContainer = cont
+			}
+		}
+		if rootContainer == nil {
+			return nil, nil, fmt.Errorf("no root container found for sandbox ID %q", s.rootContainerID.SandboxID)
+		}
+		sandboxMetricAddr := strings.ReplaceAll(rootContainer.Sandbox.MetricServerAddress, "%RUNTIME_ROOT%", s.rootDir)
 		if sandboxMetricAddr == "" {
 			return nil, nil, errors.New("sandbox did not request instrumentation")
 		}
@@ -161,7 +177,7 @@ func (s *servedSandbox) load() (*sandbox.Sandbox, *prometheus.Verifier, error) {
 		}
 		// Update label data as read from the state file.
 		// Do not store empty labels.
-		authoritativeLabels, err := sandboxPrometheusLabels(cont)
+		authoritativeLabels, err := sandboxPrometheusLabels(rootContainer)
 		if err != nil {
 			return nil, nil, fmt.Errorf("cannot compute Prometheus labels of sandbox: %v", err)
 		}
@@ -177,8 +193,28 @@ func (s *servedSandbox) load() (*sandbox.Sandbox, *prometheus.Verifier, error) {
 				delete(s.extraLabels, label)
 			}
 		}
-		s.sandbox = cont.Sandbox
-		s.createdAt = cont.CreatedAt
+
+		// Compute capability set.
+		allCaps := linux.AllCapabilities()
+		capSet := make([]linux.Capability, 0, len(allCaps))
+		for _, cap := range allCaps {
+			for _, cont := range allContainers {
+				if cont.HasCapabilityInAnySet(cap) {
+					capSet = append(capSet, cap)
+					break
+				}
+			}
+		}
+		if len(capSet) > 0 {
+			// Reallocate a slice with minimum size, since it will be long-lived.
+			s.capabilities = make([]linux.Capability, len(capSet))
+			for i, capLabels := range capSet {
+				s.capabilities[i] = capLabels
+			}
+		}
+
+		s.sandbox = rootContainer.Sandbox
+		s.createdAt = rootContainer.CreatedAt
 	}
 	if s.verifier == nil {
 		registeredMetrics, err := s.sandbox.GetRegisteredMetrics()
@@ -279,6 +315,17 @@ type MetricServer struct {
 	// It is used to avoid re-verifying this parameter in the common case where a single scraper
 	// is consistently passing in the same value for this parameter in each successive request.
 	lastValidMetricFilter string
+
+	// lastValidCapabilityFilterStr stores the last value of the "runsc-capability-filter" parameter
+	// for /metrics requests.
+	// It represents the last-known compilable regular expression that was passed to /metrics.
+	// It is used to avoid re-verifying this parameter in the common case where a single scraper
+	// is consistently passing in the same value for this parameter in each successive request.
+	lastValidCapabilityFilterStr string
+
+	// lastValidCapabilityFilterReg is the compiled regular expression corresponding to
+	// lastValidCapabilityFilterStr.
+	lastValidCapabilityFilterReg *regexp.Regexp
 
 	// numSandboxes counts the number of sandboxes that have ever been registered on this server.
 	// Used to distinguish between the case where this metrics serve has sat there doing nothing
@@ -441,7 +488,7 @@ func (m *MetricServer) refreshSandboxesLocked() {
 			continue
 		}
 
-		// This is redundant with one of the checks performed below in servedSandbox.load(), but this
+		// This is redundant with one of the checks performed below in servedSandbox.load, but this
 		// avoids log spam for the non-error case of sandboxes that didn't request instrumentation.
 		sandboxMetricAddr := strings.ReplaceAll(cont.Sandbox.MetricServerAddress, "%RUNTIME_ROOT%", m.rootDir)
 		if sandboxMetricAddr != m.address {
@@ -520,7 +567,13 @@ var (
 		Type: prometheus.TypeGauge,
 		Help: "Key-value pairs about per-sandbox metadata.",
 	}
-	SandboxCreationMetric = prometheus.Metric{
+	SandboxCapabilitiesMetric = prometheus.Metric{
+		Name: "sandbox_capabilities",
+		Type: prometheus.TypeGauge,
+		Help: "Linux capabilities added within containers of the sandbox.",
+	}
+	SandboxCapabilitiesMetricLabel = "capability"
+	SandboxCreationMetric          = prometheus.Metric{
 		Name: "sandbox_creation_time_seconds",
 		Type: prometheus.TypeGauge,
 		Help: "When the sandbox was created, as a unix timestamp in milliseconds.",
@@ -560,6 +613,8 @@ func (m *MetricServer) serveMetrics(w http.ResponseWriter, req *http.Request) ht
 	defer ctxCancel()
 
 	metricsFilter := req.URL.Query().Get("runsc-sandbox-metrics-filter")
+	var capabilityFilterReg *regexp.Regexp
+	capabilityFilterStr := req.URL.Query().Get("runsc-capability-filter")
 
 	m.mu.Lock()
 
@@ -570,6 +625,20 @@ func (m *MetricServer) serveMetrics(w http.ResponseWriter, req *http.Request) ht
 			return httpResult{http.StatusBadRequest, errors.New("provided metric filter is not a valid regular expression")}
 		}
 		m.lastValidMetricFilter = metricsFilter
+	}
+	if capabilityFilterStr != "" {
+		if capabilityFilterStr != m.lastValidCapabilityFilterStr {
+			reg, err := regexp.Compile(capabilityFilterStr)
+			if err != nil {
+				m.mu.Unlock()
+				return httpResult{http.StatusBadRequest, errors.New("provided capability filter is not a valid regular expression")}
+			}
+			m.lastValidCapabilityFilterStr = capabilityFilterStr
+			m.lastValidCapabilityFilterReg = reg
+			capabilityFilterReg = reg
+		} else {
+			capabilityFilterReg = m.lastValidCapabilityFilterReg
+		}
 	}
 
 	m.refreshSandboxesLocked()
@@ -688,6 +757,14 @@ func (m *MetricServer) serveMetrics(w http.ResponseWriter, req *http.Request) ht
 					selfMetrics.Add(prometheus.LabeledIntData(&SandboxRunningMetric, nil, sandboxRunning).SetExternalLabels(served.extraLabels))
 					if loadErr == nil {
 						selfMetrics.Add(prometheus.LabeledIntData(&SandboxMetadataMetric, sand.MetricMetadata, 1).SetExternalLabels(served.extraLabels))
+						for _, cap := range served.capabilities {
+							if capabilityFilterReg != nil && !capabilityFilterReg.MatchString(cap.String()) && !capabilityFilterReg.MatchString(cap.TrimmedString()) {
+								continue
+							}
+							selfMetrics.Add(prometheus.LabeledIntData(&SandboxCapabilitiesMetric, map[string]string{
+								SandboxCapabilitiesMetricLabel: cap.TrimmedString(),
+							}, 1).SetExternalLabels(served.extraLabels))
+						}
 						createdAt := float64(served.createdAt.Unix()) + (float64(served.createdAt.Nanosecond()) / 1e9)
 						selfMetrics.Add(prometheus.LabeledFloatData(&SandboxCreationMetric, nil, createdAt).SetExternalLabels(served.extraLabels))
 					}
