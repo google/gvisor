@@ -251,7 +251,7 @@ steps:
   - <<: *common
     <<: *source_test
     label: ":muscle: System call tests (ARM64)"
-    command: make BAZEL_OPTIONS=--test_tag_filters=runsc_ptrace syscall-tests
+    command: make BAZEL_OPTIONS=--test_tag_filters=runsc_ptrace,runsc_systrap syscall-tests
     parallelism: 10
     agents:
       arch: "arm64"
