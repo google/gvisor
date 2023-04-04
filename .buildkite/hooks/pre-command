@@ -110,3 +110,5 @@ if test "${BUILDKITE_AGENT_META_DATA_QUEUE}" = "release"; then
   # Configure the Docker credential helper (to push images).
   gcloud auth configure-docker -q
 fi
+
+sudo sysctl -w kernel.print-fatal-signals=1

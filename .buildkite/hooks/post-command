@@ -54,6 +54,7 @@ rm -rf "${profile_output}"
 # Clean the bazel cache, if there's failure.
 if test "${BUILDKITE_COMMAND_EXIT_STATUS}" -ne "0"; then
   set -x
+  dmesg -kT | tail -n 50
   # LINT.IfChange
   runtime="buildkite_runtime_${BUILDKITE_BRANCH}-${BUILDKITE_BUILD_ID}"
   runtime="$(echo "$runtime" | sed -r 's~[^-_a-z0-9]+~_~g')"
