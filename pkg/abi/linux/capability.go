@@ -14,6 +14,10 @@
 
 package linux
 
+import (
+	"strings"
+)
+
 // A Capability represents the ability to perform a privileged operation.
 type Capability int
 
@@ -155,6 +159,23 @@ func (cp Capability) String() string {
 	default:
 		return "UNKNOWN"
 	}
+}
+
+// TrimmedString returns the capability name without the "CAP_" prefix.
+func (cp Capability) TrimmedString() string {
+	const capPrefix = "CAP_"
+	s := cp.String()
+	if !strings.HasPrefix(s, capPrefix) {
+		return s
+	}
+	// This could use strings.TrimPrefix, but that function doesn't guarantee
+	// that it won't allocate a new string, whereas string slicing does.
+	// In the case of this function, since Capability.String returns a constant
+	// string, the underlying set of bytes backing that string will never be
+	// garbage-collected. Therefore, we always want to use a string slice that
+	// points to this same constant set of bytes, rather than risking
+	// allocating a new string.
+	return s[len(capPrefix):]
 }
 
 // CapabilityFromString converts a string to a capability.

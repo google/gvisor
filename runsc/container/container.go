@@ -1301,6 +1301,26 @@ func (c *Container) IsSandboxRunning() bool {
 	return c.Sandbox != nil && c.Sandbox.IsRunning()
 }
 
+// HasCapabilityInAnySet returns true if the given capability is in any of the
+// capability sets of the container process.
+func (c *Container) HasCapabilityInAnySet(capability linux.Capability) bool {
+	capString := capability.String()
+	for _, set := range [5][]string{
+		c.Spec.Process.Capabilities.Bounding,
+		c.Spec.Process.Capabilities.Effective,
+		c.Spec.Process.Capabilities.Inheritable,
+		c.Spec.Process.Capabilities.Permitted,
+		c.Spec.Process.Capabilities.Ambient,
+	} {
+		for _, c := range set {
+			if c == capString {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func (c *Container) requireStatus(action string, statuses ...Status) error {
 	for _, s := range statuses {
 		if c.Status == s {
@@ -1308,6 +1328,11 @@ func (c *Container) requireStatus(action string, statuses ...Status) error {
 		}
 	}
 	return fmt.Errorf("cannot %s container %q in state %s", action, c.ID, c.Status)
+}
+
+// IsSandboxRoot returns true if this container is its sandbox's root container.
+func (c *Container) IsSandboxRoot() bool {
+	return isRoot(c.Spec)
 }
 
 func isRoot(spec *specs.Spec) bool {
@@ -1350,7 +1375,7 @@ func adjustSandboxOOMScoreAdj(s *sandbox.Sandbox, spec *specs.Spec, rootDir stri
 		return nil
 	}
 
-	containers, err := loadSandbox(rootDir, s.ID)
+	containers, err := LoadSandbox(rootDir, s.ID, LoadOpts{})
 	if err != nil {
 		return fmt.Errorf("loading sandbox containers: %v", err)
 	}

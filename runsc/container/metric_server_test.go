@@ -27,6 +27,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/config"
@@ -633,6 +634,90 @@ func TestContainerMetricsFilter(t *testing.T) {
 	})
 	if err != nil {
 		t.Errorf("Cannot get sandbox metadata from unfiltered data: %v", err)
+	}
+}
+
+// TestContainerCapabilityFilter verifies the ability to filter capabilities in /metrics requests.
+func TestContainerCapabilityFilter(t *testing.T) {
+	te, cleanup := setupMetrics(t, false /* forceTempUDS */)
+	defer cleanup()
+	te.sleepSpec.Process.Capabilities.Bounding = append(
+		te.sleepSpec.Process.Capabilities.Bounding,
+		linux.CAP_SYS_NICE.String(),
+		linux.CAP_NET_RAW.String())
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      te.sleepSpec,
+		BundleDir: te.bundleDir,
+	}
+	cont, err := New(te.sleepConf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont.Destroy()
+	if err := cont.Start(te.sleepConf); err != nil {
+		t.Fatalf("Cannot start container: %v", err)
+	}
+
+	for _, test := range []struct {
+		name   string
+		filter string
+		want   map[linux.Capability]bool
+	}{
+		{
+			name:   "unfiltered",
+			filter: "",
+			want:   map[linux.Capability]bool{linux.CAP_SYS_NICE: true, linux.CAP_NET_RAW: true},
+		},
+		{
+			name:   "all filtered out",
+			filter: "^$",
+			want:   map[linux.Capability]bool{linux.CAP_SYS_NICE: false, linux.CAP_NET_RAW: false},
+		},
+		{
+			name:   "simple filter with prefix",
+			filter: fmt.Sprintf("^%s$", linux.CAP_SYS_NICE.String()),
+			want:   map[linux.Capability]bool{linux.CAP_SYS_NICE: true, linux.CAP_NET_RAW: false},
+		},
+		{
+			name:   "simple filter without prefix",
+			filter: fmt.Sprintf("^%s$", linux.CAP_SYS_NICE.TrimmedString()),
+			want:   map[linux.Capability]bool{linux.CAP_SYS_NICE: true, linux.CAP_NET_RAW: false},
+		},
+		{
+			name:   "unfiltered again to test regexp caching",
+			filter: "",
+			want:   map[linux.Capability]bool{linux.CAP_SYS_NICE: true, linux.CAP_NET_RAW: true},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var params map[string]string
+			if test.filter != "" {
+				params = map[string]string{
+					"runsc-capability-filter": test.filter,
+				}
+			}
+			data, err := te.client.GetMetrics(te.testCtx, params)
+			if err != nil {
+				t.Fatalf("Cannot get metrics: %v", err)
+			}
+			for cap, want := range test.want {
+				got, _, err := data.GetPrometheusContainerInteger(metricclient.WantMetric{
+					Metric:      "testmetric_meta_sandbox_capabilities",
+					Sandbox:     args.ID,
+					ExtraLabels: map[string]string{"capability": cap.TrimmedString()},
+				})
+				if err != nil && want {
+					t.Errorf("Cannot get testmetric_meta_sandbox_capabilities[capability=%q]: %v", cap.TrimmedString(), err)
+				} else if err == nil && !want {
+					t.Errorf("Unexpectedly able to get testmetric_meta_sandbox_capabilities[capability=%q]: %v", cap.TrimmedString(), got)
+				}
+			}
+			if t.Failed() {
+				t.Logf("Metric data:\n\n%s\n\n", data)
+			}
+		})
 	}
 }
 
