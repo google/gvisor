@@ -58,8 +58,9 @@ func (*PortForward) Synopsis() string {
 func (*PortForward) Usage() string {
 	return `port-forward CONTAINER_ID [LOCAL_PORT:]REMOTE_PORT - port forward to gvisor container.
 
-Open a local port and forward connections to another port inside the specified
-container.
+Port forwarding has two modes. Local mode opens a local port and forwards
+connections to another port inside the specified container. Stream mode
+forwards a single connection on a UDS to the specified port in the container.
 
 EXAMPLES:
 
@@ -67,11 +68,20 @@ The following will forward connections on local port 8080 to port 80 in the
 container named 'nginx':
 
 	# runsc port-forward nginx 8080:80
+
+The following will forward a single new connection on the unix domain socket at
+/tmp/pipe to port 80 in the container named 'nginx':
+
+	# runsc port-forward --stream /tmp/pipe nginx 80
+
+OPTIONS:
 `
 }
 
 // SetFlags implements subcommands.Command.SetFlags.
-func (p *PortForward) SetFlags(f *flag.FlagSet) {}
+func (p *PortForward) SetFlags(f *flag.FlagSet) {
+	f.StringVar(&p.stream, "stream", "", "Stream mode - a Unix doman socket")
+}
 
 // Execute implements subcommands.Command.Execute.
 func (p *PortForward) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
@@ -88,6 +98,13 @@ func (p *PortForward) Execute(ctx context.Context, f *flag.FlagSet, args ...any)
 	c, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
 	if err != nil {
 		util.Fatalf("loading container: %v", err)
+	}
+
+	if p.stream != "" {
+		if err := p.doStream(ctx, portStr, c); err != nil {
+			util.Fatalf("doStream: %v", err)
+		}
+		return subcommands.ExitSuccess
 	}
 
 	// Allow forwarding to a local port.
@@ -192,6 +209,35 @@ func localForward(ctx context.Context, c *container.Container, localPort int, co
 			}()
 		}
 	}
+}
+
+// doStream does the stream version of the port-forward command.
+func (p *PortForward) doStream(ctx context.Context, port string, c *container.Container) error {
+	var err error
+	p.portNum, err = strconv.Atoi(port)
+	if err != nil {
+		return fmt.Errorf("invalid port string %q: %v", port, err)
+	}
+
+	if p.portNum < 0 || p.portNum > math.MaxUint16 {
+		return fmt.Errorf("invalid port %d: %v", p.portNum, err)
+	}
+
+	f, err := openStream(p.stream)
+	if err != nil {
+		return fmt.Errorf("opening uds stream: %v", err)
+	}
+	defer f.Close()
+
+	if err := c.PortForward(&boot.PortForwardOpts{
+		Port:        uint16(p.portNum),
+		ContainerID: c.ID,
+		FilePayload: urpc.FilePayload{Files: []*os.File{f}},
+	}); err != nil {
+		return fmt.Errorf("PortForward: %v", err)
+	}
+
+	return nil
 }
 
 // portCopy creates a UDS and begins copying data to and from the local

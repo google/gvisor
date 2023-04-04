@@ -262,7 +262,7 @@ arm-qemu-smoke-test: $(RUNTIME_BIN) load-arm-qemu
 simple-tests: unit-tests # Compatibility target.
 .PHONY: simple-tests
 
-portforward-tests: load-basic_redis $(RUNTIME_BIN)
+portforward-tests: load-basic_redis load-basic_nginx $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),--network=sandbox)
 	@$(call sudo,test/root:portforward_test,--runtime=$(RUNTIME) -test.v)
 	@$(call install_runtime,$(RUNTIME),--network=host)
