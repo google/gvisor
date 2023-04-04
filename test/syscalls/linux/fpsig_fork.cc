@@ -95,28 +95,22 @@ TEST(FPSigTest, Fork) {
   uint64_t expected = 0xdeadbeeffacefeed;
   SET_FP0(expected);
 
+  int64_t ret;
 #ifdef __x86_64__
-  asm volatile(
-      "movl %[killnr], %%eax;"
-      "movl %[parent], %%edi;"
-      "movl %[tid], %%esi;"
-      "movl %[sig], %%edx;"
-      "syscall;"
-      :
-      : [killnr] "i"(__NR_tgkill), [parent] "rm"(parent),
-        [tid] "rm"(parent_tid), [sig] "i"(SIGUSR1)
-      : "rax", "rdi", "rsi", "rdx",
-        // Clobbered by syscall.
-        "rcx", "r11");
+  asm volatile("syscall;"
+               : "=a"(ret)
+               : "a"(__NR_tgkill), "D"(parent), "S"(parent_tid), "d"(SIGUSR1)
+               :  // Clobbered by syscall.
+               "rcx", "r11");
 #elif __aarch64__
-  asm volatile(
-      "mov x8, %0\n"
-      "mov x0, %1\n"
-      "mov x1, %2\n"
-      "mov x2, %3\n"
-      "svc #0\n" ::"N"(__NR_tgkill),
-      "r"((uint64_t)parent), "r"((uint64_t)parent_tid), "N"(SIGUSR1));
+  register uint64_t x8 __asm__("x8") = __NR_tgkill;
+  register uint64_t x0 __asm__("x0") = parent;
+  register uint64_t x1 __asm__("x1") = parent_tid;
+  register uint64_t x2 __asm__("x2") = SIGUSR1;
+  asm volatile("svc #0\n" : "=r"(x0) : "r"(x0), "r"(x1), "r"(x2), "r"(x8) :);
+  ret = x0;
 #endif
+  EXPECT_EQ(ret, 0);
 
   uint64_t got;
   GET_FP0(got);

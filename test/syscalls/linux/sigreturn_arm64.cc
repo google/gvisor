@@ -84,8 +84,9 @@ TEST(SigreturnTest, CheckX7) {
 
   uint64_t x7 = kOrigX7;
 
-  testX7(&x7, __NR_tgkill, getpid(), syscall(__NR_gettid), SIGVTALRM);
+  int ret = testX7(&x7, __NR_tgkill, getpid(), syscall(__NR_gettid), SIGVTALRM);
 
+  EXPECT_EQ(ret, 0);
   // The following check verifies that %x7 was not clobbered
   // when returning from the signal handler (via sigreturn(2)).
   EXPECT_EQ(x7, ~kOrigX7);
