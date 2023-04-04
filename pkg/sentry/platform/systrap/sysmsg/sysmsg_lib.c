@@ -259,41 +259,20 @@ struct thread_context *switch_context(struct sysmsg *sysmsg,
                                       enum context_state new_context_state) {
   struct context_queue *queue = __export_context_queue_addr;
 
-  __atomic_sub_fetch(&queue->num_active_contexts, 1, __ATOMIC_ACQ_REL);
-  __atomic_store_n(&ctx->thread_id, INVALID_THREAD_ID, __ATOMIC_RELEASE);
-  __atomic_store_n(&ctx->last_thread_id, sysmsg->thread_id, __ATOMIC_RELEASE);
-  __atomic_store_n(&ctx->state, new_context_state, __ATOMIC_RELEASE);
-  if (__atomic_load_n(&ctx->sentry_fast_path, __ATOMIC_ACQUIRE) == 0) {
-    int ret = sys_futex(&ctx->state, FUTEX_WAKE, 1, NULL, NULL, 0);
-    if (ret < 0) {
-      panic(ret);
+  if (ctx) {
+    __atomic_sub_fetch(&queue->num_active_contexts, 1, __ATOMIC_ACQ_REL);
+    __atomic_store_n(&ctx->thread_id, INVALID_THREAD_ID, __ATOMIC_RELEASE);
+    __atomic_store_n(&ctx->last_thread_id, sysmsg->thread_id, __ATOMIC_RELEASE);
+    __atomic_store_n(&ctx->state, new_context_state, __ATOMIC_RELEASE);
+    if (__atomic_load_n(&ctx->sentry_fast_path, __ATOMIC_ACQUIRE) == 0) {
+      int ret = sys_futex(&ctx->state, FUTEX_WAKE, 1, NULL, NULL, 0);
+      if (ret < 0) {
+        panic(ret);
+      }
     }
   }
 
-  struct thread_context *old_ctx = sysmsg->context;
-
-  ctx = get_context(sysmsg);
-
-  if (old_ctx != ctx || ctx->last_thread_id != sysmsg->thread_id) {
-    ctx->fpstate_changed = 1;
-  }
-
-  return ctx;
-}
-
-void __export_start(struct sysmsg *sysmsg, void *_ucontext) {
-#if defined(__x86_64__)
-  asm volatile("movq %%gs:0, %0\n" : "=r"(sysmsg) : :);
-  if (sysmsg->self != sysmsg) {
-    panic(0xdeaddead);
-  }
-#endif
-
-  struct thread_context *ctx = get_context(sysmsg);
-  __atomic_store_n(&ctx->fpstate_changed, 1, __ATOMIC_RELEASE);
-  __atomic_store_n(&ctx->thread_id, sysmsg->thread_id, __ATOMIC_RELEASE);
-
-  restore_state(sysmsg, ctx, _ucontext);
+  return get_context(sysmsg);
 }
 
 int wait_state(struct sysmsg *sysmsg, enum thread_state new_thread_state) {

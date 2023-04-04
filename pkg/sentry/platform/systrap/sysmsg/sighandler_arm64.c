@@ -91,6 +91,10 @@ static void ptregs_to_gregs(ucontext_t *ucontext,
   ucontext->uc_mcontext.pstate = ptregs->pstate;
 }
 
+void __export_start(struct sysmsg *sysmsg, void *_ucontext) {
+  panic(0x11111111);
+}
+
 void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
   ucontext_t *ucontext = _ucontext;
   void *sp = sysmsg_sp();
@@ -98,16 +102,18 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
 
   if (sysmsg != sysmsg->self) panic(0xdeaddead);
   int32_t thread_state = __atomic_load_n(&sysmsg->state, __ATOMIC_ACQUIRE);
+
+  uint32_t ctx_state = CONTEXT_STATE_INVALID;
+  struct thread_context *ctx = NULL, *old_ctx = NULL;
   if (__export_context_decoupling_exp &&
       thread_state == THREAD_STATE_INITIALIZING) {
     // Find a new context and exit to restore it.
-    __export_start(sysmsg, _ucontext);
-    return;
+    goto init;
   }
 
-  struct thread_context *ctx = sysmsg->context;
+  ctx = sysmsg->context;
+  old_ctx = sysmsg->context;
 
-  uint32_t ctx_state = CONTEXT_STATE_INVALID;
   ctx->signo = signo;
 
   gregs_to_ptregs(ucontext, &ctx->ptregs);
@@ -154,6 +160,7 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
       return;
   }
 
+init:
   for (;;) {
     if (__export_context_decoupling_exp) {
       ctx = switch_context(sysmsg, ctx, ctx_state);
@@ -173,6 +180,10 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
     } else {
       break;
     }
+  }
+
+  if (old_ctx != ctx || ctx->last_thread_id != sysmsg->thread_id) {
+    ctx->fpstate_changed = 1;
   }
   restore_state(sysmsg, ctx, _ucontext);
 }

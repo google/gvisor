@@ -160,6 +160,7 @@ static void set_fsbase(uint64_t fsbase) {
 struct thread_context *switch_context_amd64(
     struct sysmsg *sysmsg, struct thread_context *ctx,
     enum thread_state new_thread_state, enum context_state new_context_state) {
+  struct thread_context *old_ctx = sysmsg->context;
 
   for (;;) {
     // TODO(b/271631387): Once stub code globals can be used between objects
@@ -188,6 +189,9 @@ struct thread_context *switch_context_amd64(
     } else {
       break;
     }
+  }
+  if (old_ctx != ctx || ctx->last_thread_id != sysmsg->thread_id) {
+    ctx->fpstate_changed = 1;
   }
   return ctx;
 }
@@ -364,6 +368,20 @@ void __syshandler() {
   if (fs_base != ctx->ptregs.fs_base) {
     set_fsbase(ctx->ptregs.fs_base);
   }
+}
+
+void __export_start(struct sysmsg *sysmsg, void *_ucontext) {
+#if defined(__x86_64__)
+  asm volatile("movq %%gs:0, %0\n" : "=r"(sysmsg) : :);
+  if (sysmsg->self != sysmsg) {
+    panic(0xdeaddead);
+  }
+#endif
+
+  struct thread_context *ctx = switch_context_amd64(
+      sysmsg, NULL, THREAD_STATE_EVENT, CONTEXT_STATE_INVALID);
+
+  restore_state(sysmsg, ctx, _ucontext);
 }
 
 // asm_restore_state is implemented in syshandler_amd64.S
