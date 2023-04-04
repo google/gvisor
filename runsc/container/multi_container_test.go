@@ -1817,7 +1817,7 @@ func TestMultiContainerLoadSandbox(t *testing.T) {
 
 	// Load the sandbox and check that the correct containers were returned.
 	id := wants[0].Sandbox.ID
-	gots, err := loadSandbox(conf.RootDir, id)
+	gots, err := LoadSandbox(conf.RootDir, id, LoadOpts{})
 	if err != nil {
 		t.Fatalf("loadSandbox()=%v", err)
 	}

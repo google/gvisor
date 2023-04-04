@@ -307,5 +307,11 @@ own metrics as well. All metrics have documentation and type annotations in the
     labels contain useful metadata about the sandbox, such as the version
     number, [platform](platforms.md), and [network type](networking.md) being
     used.
+*   `sandbox_capabilities`: A per-sandbox, per-capability metric that carries
+    the union of all capabilities present on at least one container of the
+    sandbox. Can optionally be filtered to only a subset of capabilities using
+    the `runsc-capability-filter` GET parameter on `/metrics` requests (regular
+    expression). Useful for auditing and aggregating the capabilities you rely
+    on across multiple sandboxes.
 *   `sandbox_creation_time_seconds`: A per-sandbox Unix timestamp representing
     the time at which this sandbox was created.

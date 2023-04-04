@@ -340,9 +340,9 @@ func (m MetricData) GetPrometheusInteger(metricName string, wantLabels map[strin
 	data := metricData.GetMetric()[foundIndex]
 	// Convert the value of this data point to an int regardless of its underlying Prometheus type.
 	var floatValue float64
-	if data.GetCounter().Value != nil {
+	if data.GetCounter() != nil && data.GetCounter().Value != nil {
 		floatValue = data.GetCounter().GetValue()
-	} else if data.GetGauge().Value != nil {
+	} else if data.GetGauge() != nil && data.GetGauge().Value != nil {
 		floatValue = data.GetGauge().GetValue()
 	} else {
 		return 0, time.Time{}, fmt.Errorf("metric is not numerical: %v", data)
