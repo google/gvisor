@@ -430,7 +430,7 @@ steps:
   - <<: *common
     <<: *docker
     label: ":php: PHP runtime tests"
-    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} php8.1.1-runtime-tests
+    command: make php8.1.1-runtime-tests
     parallelism: 10
     agents:
       <<: *platform_specific_agents
@@ -439,7 +439,7 @@ steps:
   - <<: *common
     <<: *docker
     label: ":java: Java runtime tests"
-    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} java17-runtime-tests
+    command: make java17-runtime-tests
     parallelism: 40
     agents:
       <<: *platform_specific_agents
@@ -448,7 +448,7 @@ steps:
   - <<: *common
     <<: *docker
     label: ":golang: Go runtime tests"
-    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} go1.20-runtime-tests
+    command: make go1.20-runtime-tests
     parallelism: 10
     agents:
       <<: *platform_specific_agents
@@ -457,7 +457,7 @@ steps:
   - <<: *common
     <<: *docker
     label: ":node: NodeJS runtime tests"
-    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} nodejs16.13.2-runtime-tests
+    command: make nodejs16.13.2-runtime-tests
     parallelism: 10
     agents:
       <<: *platform_specific_agents
@@ -466,7 +466,7 @@ steps:
   - <<: *common
     <<: *docker
     label: ":python: Python runtime tests"
-    command: make RUNTIME_LOG_DIR=/tmp/$${BUILDKITE_JOB_ID} python3.10.2-runtime-tests
+    command: make python3.10.2-runtime-tests
     parallelism: 10
     agents:
       <<: *platform_specific_agents
