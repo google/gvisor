@@ -192,12 +192,15 @@ func (e *Endpoint) NumQueued() int {
 	return e.q.Num()
 }
 
-// InjectInbound injects an inbound packet.
+// InjectInbound injects an inbound packet. If the endpoint is not attached, the
+// packet is not delivered.
 func (e *Endpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr) {
 	e.mu.RLock()
 	d := e.dispatcher
 	e.mu.RUnlock()
-	d.DeliverNetworkPacket(protocol, pkt)
+	if d != nil {
+		d.DeliverNetworkPacket(protocol, pkt)
+	}
 }
 
 // Attach saves the stack network-layer dispatcher for use later when packets

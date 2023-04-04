@@ -785,12 +785,15 @@ func (e *InjectableEndpoint) Attach(dispatcher stack.NetworkDispatcher) {
 	e.dispatcher = dispatcher
 }
 
-// InjectInbound injects an inbound packet.
+// InjectInbound injects an inbound packet. If the endpoint is not attached, the
+// packet is not delivered.
 func (e *InjectableEndpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr) {
 	e.mu.RLock()
 	d := e.dispatcher
 	e.mu.RUnlock()
-	d.DeliverNetworkPacket(protocol, pkt)
+	if d != nil {
+		d.DeliverNetworkPacket(protocol, pkt)
+	}
 }
 
 // NewInjectable creates a new fd-based InjectableEndpoint.
