@@ -248,7 +248,7 @@ func (d *dentry) getRemoteChild(ctx context.Context, name string) (*dentry, erro
 // Postcondition: The returned dentry is already cached appropriately.
 //
 // +checklocksread:d.opMu
-func (d *dentry) getRemoteChildAndWalkPathLocked(ctx context.Context, rp *vfs.ResolvingPath, ds **[]*dentry) (*dentry, error) {
+func (d *dentry) getRemoteChildAndWalkPathLocked(ctx context.Context, rp resolvingPath, ds **[]*dentry) (*dentry, error) {
 	switch dt := d.impl.(type) {
 	case *lisafsDentry:
 		return dt.getRemoteChildAndWalkPathLocked(ctx, rp, ds)

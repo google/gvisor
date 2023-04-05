@@ -255,12 +255,16 @@ func (rp *ResolvingPath) Advance() {
 }
 
 // GetComponents emits all the remaining path components in rp. It does *not*
-// update rp state. It halts if emit() returns false.
-func (rp *ResolvingPath) GetComponents(emit func(string) bool) {
+// update rp state. It halts if emit() returns false. If excludeLast is true,
+// then the last path component is not emitted.
+func (rp *ResolvingPath) GetComponents(excludeLast bool, emit func(string) bool) {
 	// Copy rp state.
 	cur := rp.pit
 	curPart := rp.curPart
 	for cur.Ok() {
+		if excludeLast && curPart == 0 && !cur.NextOk() {
+			break
+		}
 		if !emit(cur.String()) {
 			break
 		}
