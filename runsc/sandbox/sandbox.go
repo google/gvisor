@@ -612,6 +612,28 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	donations := donation.Agency{}
 	defer donations.Close()
 
+	// pgalloc.MemoryFile (which provides application memory) sometimes briefly
+	// mlock(2)s ranges of memory in order to fault in a large number of pages at
+	// a time. Try to make RLIMIT_MEMLOCK unlimited so that it can do so. runsc
+	// expects to run in a memory cgroup that limits its memory usage as
+	// required.
+	// This needs to be done before exec'ing `runsc boot`, as that subcommand
+	// runs as an unprivileged user that will not be able to call `setrlimit`
+	// by itself. Calling `setrlimit` here will have the side-effect of setting
+	// the limit on the currently-running `runsc` process as well, but that
+	// should be OK too.
+	var rlim unix.Rlimit
+	if err := unix.Getrlimit(unix.RLIMIT_MEMLOCK, &rlim); err != nil {
+		log.Warningf("Failed to get RLIMIT_MEMLOCK: %v", err)
+	} else if rlim.Cur != unix.RLIM_INFINITY || rlim.Max != unix.RLIM_INFINITY {
+		rlim.Cur = unix.RLIM_INFINITY
+		rlim.Max = unix.RLIM_INFINITY
+		if err := unix.Setrlimit(unix.RLIMIT_MEMLOCK, &rlim); err != nil {
+			// We may not have CAP_SYS_RESOURCE, so this failure may be expected.
+			log.Infof("Failed to set RLIMIT_MEMLOCK: %v", err)
+		}
+	}
+
 	//
 	// These flags must come BEFORE the "boot" command in cmd.Args.
 	//
