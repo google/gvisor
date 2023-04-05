@@ -53,6 +53,11 @@ func hostInetFilters(allowRawSockets bool) seccomp.SyscallRules {
 				seccomp.MatchAny{},
 				seccomp.EqualTo(unix.SIOCGIFCONF),
 			},
+			// Needed to query netlink sockets.
+			{
+				seccomp.MatchAny{},
+				seccomp.EqualTo(unix.SIOCETHTOOL),
+			},
 		},
 		unix.SYS_LISTEN:   {},
 		unix.SYS_READV:    {},
@@ -79,7 +84,26 @@ func hostInetFilters(allowRawSockets bool) seccomp.SyscallRules {
 
 	// Generate rules for socket creation based on hostinet's supported
 	// socket types.
-	socketRules := []seccomp.Rule{}
+	socketRules := []seccomp.Rule{
+		// Need NETLINK_ROUTE and stream sockets to query host
+		// interfaces and routes.
+		seccomp.Rule{
+			seccomp.EqualTo(unix.AF_NETLINK),
+			seccomp.EqualTo(unix.SOCK_RAW | unix.SOCK_CLOEXEC),
+			seccomp.EqualTo(unix.NETLINK_ROUTE),
+		},
+		seccomp.Rule{
+			seccomp.EqualTo(unix.AF_INET),
+			seccomp.EqualTo(unix.SOCK_STREAM),
+			seccomp.EqualTo(0),
+		},
+		seccomp.Rule{
+			seccomp.EqualTo(unix.AF_INET6),
+			seccomp.EqualTo(unix.SOCK_STREAM),
+			seccomp.EqualTo(0),
+		},
+	}
+
 	stypes := hostinet.AllowedSocketTypes
 	if allowRawSockets {
 		stypes = append(stypes, hostinet.AllowedRawSocketTypes...)

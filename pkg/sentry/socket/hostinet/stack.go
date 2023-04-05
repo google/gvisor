@@ -54,9 +54,6 @@ var defaultSendBufSize = inet.TCPBufferSize{
 // Stack implements inet.Stack for host sockets.
 type Stack struct {
 	// Stack is immutable.
-	interfaces     map[int32]*inet.Interface
-	interfaceAddrs map[int32][]inet.InterfaceAddr
-	routes         []inet.Route
 	supportsIPv6   bool
 	tcpRecovery    inet.TCPLossRecovery
 	tcpRecvBufSize inet.TCPBufferSize
@@ -74,22 +71,11 @@ func (*Stack) Destroy() {
 
 // NewStack returns an empty Stack containing no configuration.
 func NewStack() *Stack {
-	return &Stack{
-		interfaces:     make(map[int32]*inet.Interface),
-		interfaceAddrs: make(map[int32][]inet.InterfaceAddr),
-	}
+	return &Stack{}
 }
 
 // Configure sets up the stack using the current state of the host network.
 func (s *Stack) Configure(allowRawSockets bool) error {
-	if err := s.initializeInterfaces(); err != nil {
-		return err
-	}
-
-	if err := s.initializeRoutes(); err != nil {
-		return err
-	}
-
 	if _, err := os.Stat("/proc/net/if_inet6"); err == nil {
 		s.supportsIPv6 = true
 	}
@@ -193,12 +179,12 @@ func extractHostRoutes(routeMsgs []syscall.NetlinkMessage) ([]inet.Route, error)
 	return routes, nil
 }
 
-func getHostLinks() (map[int32]*inet.Interface, error) {
+func getHostInterfaces() (map[int32]inet.Interface, error) {
 	msgs, err := doNetlinkRouteRequest(unix.RTM_GETLINK)
 	if err != nil {
 		return nil, fmt.Errorf("RTM_GETLINK failed: %v", err)
 	}
-	links := make(map[int32]*inet.Interface, len(msgs))
+	ifs := make(map[int32]inet.Interface, len(msgs))
 	for _, msg := range msgs {
 		if msg.Header.Type != unix.RTM_NEWLINK {
 			continue
@@ -227,12 +213,12 @@ func getHostLinks() (map[int32]*inet.Interface, error) {
 				inetIF.Name = string(attr.Value[:len(attr.Value)-1])
 			}
 		}
-		links[ifinfo.Index] = &inetIF
+		ifs[ifinfo.Index] = inetIF
 	}
-	return links, nil
+	return ifs, nil
 }
 
-func getHostRoutes() (map[int32][]inet.InterfaceAddr, error) {
+func getHostInterfaceAddrs() (map[int32][]inet.InterfaceAddr, error) {
 	msgs, err := doNetlinkRouteRequest(unix.RTM_GETADDR)
 	if err != nil {
 		return nil, fmt.Errorf("RTM_GETADDR failed: %v", err)
@@ -268,40 +254,6 @@ func getHostRoutes() (map[int32][]inet.InterfaceAddr, error) {
 	return addrs, nil
 }
 
-func (s *Stack) initializeInterfaces() error {
-	links, err := getHostLinks()
-	if err != nil {
-		return err
-	}
-	s.interfaces = links
-
-	addrs, err := getHostRoutes()
-	if err != nil {
-		return err
-	}
-	s.interfaceAddrs = addrs
-
-	// query interface features for each of the host interfaces.
-	if err := queryInterfaceFeatures(s.interfaces); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (s *Stack) initializeRoutes() error {
-	routes, err := doNetlinkRouteRequest(unix.RTM_GETROUTE)
-	if err != nil {
-		return fmt.Errorf("RTM_GETROUTE failed: %v", err)
-	}
-
-	s.routes, err = extractHostRoutes(routes)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 func doNetlinkRouteRequest(req int) ([]syscall.NetlinkMessage, error) {
 	data, err := syscall.NetlinkRIB(req, syscall.AF_UNSPEC)
 	if err != nil {
@@ -329,11 +281,18 @@ func readTCPBufferSizeFile(filename string) (inet.TCPBufferSize, error) {
 
 // Interfaces implements inet.Stack.Interfaces.
 func (s *Stack) Interfaces() map[int32]inet.Interface {
-	interfaces := make(map[int32]inet.Interface)
-	for k, v := range s.interfaces {
-		interfaces[k] = *v
+	ifs, err := getHostInterfaces()
+	if err != nil {
+		log.Warningf("could not get host interface: %v", err)
+		return nil
 	}
-	return interfaces
+
+	// query interface features for each of the host interfaces.
+	if err := queryInterfaceFeatures(ifs); err != nil {
+		log.Warningf("could not query host interfaces: %v", err)
+		return nil
+	}
+	return ifs
 }
 
 // RemoveInterface implements inet.Stack.RemoveInterface.
@@ -343,9 +302,10 @@ func (*Stack) RemoveInterface(int32) error {
 
 // InterfaceAddrs implements inet.Stack.InterfaceAddrs.
 func (s *Stack) InterfaceAddrs() map[int32][]inet.InterfaceAddr {
-	addrs := make(map[int32][]inet.InterfaceAddr)
-	for k, v := range s.interfaceAddrs {
-		addrs[k] = append([]inet.InterfaceAddr(nil), v...)
+	addrs, err := getHostInterfaceAddrs()
+	if err != nil {
+		log.Warningf("failed to get host interface addresses: %v", err)
+		return nil
 	}
 	return addrs
 }
@@ -498,7 +458,19 @@ func (s *Stack) Statistics(stat any, arg string) error {
 
 // RouteTable implements inet.Stack.RouteTable.
 func (s *Stack) RouteTable() []inet.Route {
-	return append([]inet.Route(nil), s.routes...)
+	msgs, err := doNetlinkRouteRequest(unix.RTM_GETROUTE)
+	if err != nil {
+		log.Warningf("RTM_GETROUTE failed: %v", err)
+		return nil
+	}
+
+	routes, err := extractHostRoutes(msgs)
+	if err != nil {
+		log.Warningf("failed to extract host routes: %v", err)
+		return nil
+	}
+
+	return append([]inet.Route(nil), routes...)
 }
 
 // Pause implements inet.Stack.Pause.
