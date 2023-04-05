@@ -24,7 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 )
 
-func queryInterfaceFeatures(interfaces map[int32]*inet.Interface) error {
+func queryInterfaceFeatures(interfaces map[int32]inet.Interface) error {
 	fd, err := queryFD()
 	if err != nil {
 		return err
@@ -76,8 +76,10 @@ func queryInterfaceFeatures(interfaces map[int32]*inet.Interface) error {
 			next = next[unsafe.Sizeof(linux.EthtoolGetFeaturesBlock{}):]
 		}
 		// Store the queried features.
-		interfaces[idx].Features = make([]linux.EthtoolGetFeaturesBlock, gfeatures.Size)
-		copy(interfaces[idx].Features, featureBlocks)
+		iface := interfaces[idx]
+		iface.Features = make([]linux.EthtoolGetFeaturesBlock, gfeatures.Size)
+		copy(iface.Features, featureBlocks)
+		interfaces[idx] = iface
 
 		// This ensures b is not garbage collected before this point to ensure that
 		// the slice is not collected before the syscall returns and we copy out the
