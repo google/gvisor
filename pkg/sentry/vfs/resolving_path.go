@@ -223,12 +223,6 @@ func (rp *ResolvingPath) Final() bool {
 	return rp.curPart == 0 && !rp.pit.NextOk()
 }
 
-// Pit returns a copy of rp's current path iterator. Modifying the iterator
-// does not change rp.
-func (rp *ResolvingPath) Pit() fspath.Iterator {
-	return rp.pit
-}
-
 // Component returns the current path component in the stream represented by
 // rp.
 //
@@ -257,6 +251,24 @@ func (rp *ResolvingPath) Advance() {
 	} else { // at end of path segment, continue with next one
 		rp.curPart--
 		rp.pit = rp.parts[rp.curPart]
+	}
+}
+
+// GetComponents emits all the remaining path components in rp. It does *not*
+// update rp state. It halts if emit() returns false.
+func (rp *ResolvingPath) GetComponents(emit func(string) bool) {
+	// Copy rp state.
+	cur := rp.pit
+	curPart := rp.curPart
+	for cur.Ok() {
+		if !emit(cur.String()) {
+			break
+		}
+		cur = cur.Next()
+		if !cur.Ok() && curPart > 0 {
+			curPart--
+			cur = rp.parts[curPart]
+		}
 	}
 }
 

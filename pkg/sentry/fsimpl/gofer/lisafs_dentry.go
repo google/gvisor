@@ -286,23 +286,24 @@ func (d *lisafsDentry) getRemoteChild(ctx context.Context, name string) (*dentry
 //   - fs.renameMu must be locked.
 //   - d.opMu must be locked.
 //   - d.isDir().
-//   - !rp.Done().
+//   - !rp.Done() && rp.Component() is not "." or "..".
 //
 // Postcondition: The returned dentry is already cached appropriately.
 func (d *lisafsDentry) getRemoteChildAndWalkPathLocked(ctx context.Context, rp *vfs.ResolvingPath, ds **[]*dentry) (*dentry, error) {
-	// Walk as much of the path as possible in 1 RPC.
-	// Note that pit is a copy of the iterator that does not affect rp.
-	var names []string
-	for pit := rp.Pit(); pit.Ok(); pit = pit.Next() {
-		name := pit.String()
+	// Collect as many path components as possible to walk.
+	var namesArr [16]string // arbitrarily sized array to help avoid slice allocation.
+	names := namesArr[:0]
+	rp.GetComponents(func(name string) bool {
 		if name == "." {
-			continue
+			return true
 		}
 		if name == ".." {
-			break
+			return false
 		}
 		names = append(names, name)
-	}
+		return true
+	})
+	// Walk as much of the path as possible in 1 RPC.
 	_, inodes, err := d.controlFD.WalkMultiple(ctx, names)
 	if err != nil {
 		return nil, err
