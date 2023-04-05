@@ -2198,3 +2198,40 @@ func (fd *fileDescription) LockPOSIX(ctx context.Context, uid fslock.UniqueID, o
 func (fd *fileDescription) UnlockPOSIX(ctx context.Context, uid fslock.UniqueID, r fslock.LockRange) error {
 	return fd.Locks().UnlockPOSIX(ctx, uid, r)
 }
+
+// resolvingPath is just a wrapper around *vfs.ResolvingPath. It additionally
+// holds some information around the intent behind resolving the path.
+type resolvingPath struct {
+	*vfs.ResolvingPath
+
+	// excludeLast indicates whether the intent is to resolve until the last path
+	// component. If true, the last path component should remain unresolved.
+	excludeLast bool
+}
+
+func resolvingPathFull(rp *vfs.ResolvingPath) resolvingPath {
+	return resolvingPath{ResolvingPath: rp, excludeLast: false}
+}
+
+func resolvingPathParent(rp *vfs.ResolvingPath) resolvingPath {
+	return resolvingPath{ResolvingPath: rp, excludeLast: true}
+}
+
+func (rp *resolvingPath) done() bool {
+	if rp.excludeLast {
+		return rp.Final()
+	}
+	return rp.Done()
+}
+
+func (rp *resolvingPath) copy() resolvingPath {
+	return resolvingPath{
+		ResolvingPath: rp.ResolvingPath.Copy(),
+		excludeLast:   rp.excludeLast,
+	}
+}
+
+// Precondition: !rp.done() && rp.Component() is not "." or "..".
+func (rp *resolvingPath) getComponents(emit func(string) bool) {
+	rp.GetComponents(rp.excludeLast, emit)
+}
