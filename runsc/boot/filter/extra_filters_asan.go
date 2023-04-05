@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2023 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,17 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !asan && !msan && !race
+//go:build asan
+// +build asan
 
 package filter
 
 import (
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/seccomp"
 )
 
-// instrumentationFilters returns additional filters for syscalls used by
-// Go instrumentation tools, e.g. -race, -msan.
-// Returns empty when disabled.
+// instrumentationFilters returns additional filters for syscalls used by ASAN.
 func instrumentationFilters() seccomp.SyscallRules {
-	return nil
+	Report("ASAN is enabled: syscall filters less restrictive!")
+	return seccomp.SyscallRules{
+		unix.SYS_CLONE:             {},
+		unix.SYS_MMAP:              {},
+		unix.SYS_SCHED_GETAFFINITY: {},
+		unix.SYS_SET_ROBUST_LIST:   {},
+	}
 }
