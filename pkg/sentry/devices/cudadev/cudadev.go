@@ -65,7 +65,7 @@ func (fd *cudaFD) Release(context.Context) {
 }
 
 // Ioctl implements vfs.FileDescriptionImpl.Ioctl.
-func (fd *cudaFD) Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+func (fd *cudaFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
 	return 0, linuxerr.ENOSYS // TODO
 }
 
