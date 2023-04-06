@@ -36,7 +36,7 @@ const (
 	// the neighbor cache to give ample opportunity for verifying behavior during
 	// cache overflows. Four times the size of the neighbor cache allows for
 	// three complete cache overflows.
-	entryStoreSize = 4 * neighborCacheSize
+	entryStoreSize = 4 * NeighborCacheSize
 
 	// typicalLatency is the typical latency for an ARP or NDP packet to travel
 	// to a router and back.
@@ -471,10 +471,10 @@ func (c *testContext) overflowCache(opts overflowOptions) error {
 		// When beyond the full capacity, the cache will evict an entry as per the
 		// LRU eviction strategy. Note that the number of static entries should not
 		// affect the total number of dynamic entries that can be added.
-		if i >= neighborCacheSize+opts.startAtEntryIndex {
-			removedEntry, ok := c.linkRes.entries.entry(i - neighborCacheSize)
+		if i >= NeighborCacheSize+opts.startAtEntryIndex {
+			removedEntry, ok := c.linkRes.entries.entry(i - NeighborCacheSize)
 			if !ok {
-				return fmt.Errorf("got linkRes.entries.entry(%d) = _, false, want = true", i-neighborCacheSize)
+				return fmt.Errorf("got linkRes.entries.entry(%d) = _, false, want = true", i-NeighborCacheSize)
 			}
 			removedEntries = append(removedEntries, removedEntry)
 		}
@@ -492,7 +492,7 @@ func (c *testContext) overflowCache(opts overflowOptions) error {
 	// by entries() is nondeterministic, so entries have to be sorted before
 	// comparison.
 	wantUnorderedEntries := opts.wantStaticEntries
-	for i := c.linkRes.entries.size() - neighborCacheSize; i < c.linkRes.entries.size(); i++ {
+	for i := c.linkRes.entries.size() - NeighborCacheSize; i < c.linkRes.entries.size(); i++ {
 		entry, ok := c.linkRes.entries.entry(i)
 		if !ok {
 			return fmt.Errorf("got c.linkRes.entries.entry(%d) = _, false, want = true", i)
@@ -1065,7 +1065,7 @@ func TestNeighborCacheKeepFrequentlyUsed(t *testing.T) {
 	// periodically refreshes the frequently used entry.
 
 	// Fill the neighbor cache to capacity
-	for i := uint16(0); i < neighborCacheSize; i++ {
+	for i := uint16(0); i < NeighborCacheSize; i++ {
 		entry, ok := linkRes.entries.entry(i)
 		if !ok {
 			t.Fatalf("got linkRes.entries.entry(%d) = _, false, want = true", i)
@@ -1081,9 +1081,9 @@ func TestNeighborCacheKeepFrequentlyUsed(t *testing.T) {
 	}
 
 	// Keep adding more entries
-	for i := uint16(neighborCacheSize); i < linkRes.entries.size(); i++ {
+	for i := uint16(NeighborCacheSize); i < linkRes.entries.size(); i++ {
 		// Periodically refresh the frequently used entry
-		if i%(neighborCacheSize/2) == 0 {
+		if i%(NeighborCacheSize/2) == 0 {
 			if _, _, err := linkRes.neigh.entry(frequentlyUsedEntry.Addr, "", nil); err != nil {
 				t.Errorf("unexpected error from linkRes.neigh.entry(%s, '', nil): %s", frequentlyUsedEntry.Addr, err)
 			}
@@ -1095,9 +1095,9 @@ func TestNeighborCacheKeepFrequentlyUsed(t *testing.T) {
 		}
 
 		// An entry should have been removed, as per the LRU eviction strategy
-		removedEntry, ok := linkRes.entries.entry(i - neighborCacheSize + 1)
+		removedEntry, ok := linkRes.entries.entry(i - NeighborCacheSize + 1)
 		if !ok {
-			t.Fatalf("got linkRes.entries.entry(%d) = _, false, want = true", i-neighborCacheSize+1)
+			t.Fatalf("got linkRes.entries.entry(%d) = _, false, want = true", i-NeighborCacheSize+1)
 		}
 
 		if err := addReachableEntryWithRemoved(&nudDisp, clock, linkRes, entry, []NeighborEntry{removedEntry}); err != nil {
@@ -1119,7 +1119,7 @@ func TestNeighborCacheKeepFrequentlyUsed(t *testing.T) {
 		},
 	}
 
-	for i := linkRes.entries.size() - neighborCacheSize + 1; i < linkRes.entries.size(); i++ {
+	for i := linkRes.entries.size() - NeighborCacheSize + 1; i < linkRes.entries.size(); i++ {
 		entry, ok := linkRes.entries.entry(i)
 		if !ok {
 			t.Fatalf("got linkRes.entries.entry(%d) = _, false, want = true", i)
@@ -1182,7 +1182,7 @@ func TestNeighborCacheConcurrent(t *testing.T) {
 	// The order of entries reported by entries() is nondeterministic, so entries
 	// have to be sorted before comparison.
 	var wantUnsortedEntries []NeighborEntry
-	for i := linkRes.entries.size() - neighborCacheSize; i < linkRes.entries.size(); i++ {
+	for i := linkRes.entries.size() - NeighborCacheSize; i < linkRes.entries.size(); i++ {
 		entry, ok := linkRes.entries.entry(i)
 		if !ok {
 			t.Errorf("got linkRes.entries.entry(%d) = _, false, want = true", i)
@@ -1615,7 +1615,7 @@ func BenchmarkCacheClear(b *testing.B) {
 	linkRes.delay = 0
 
 	// Clear for every possible size of the cache
-	for cacheSize := uint16(0); cacheSize < neighborCacheSize; cacheSize++ {
+	for cacheSize := uint16(0); cacheSize < NeighborCacheSize; cacheSize++ {
 		// Fill the neighbor cache to capacity.
 		for i := uint16(0); i < cacheSize; i++ {
 			entry, ok := linkRes.entries.entry(i)
