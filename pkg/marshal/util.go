@@ -21,3 +21,24 @@ func Marshal(m Marshallable) []byte {
 	m.MarshalUnsafe(buf)
 	return buf
 }
+
+// MarshalAll returns the serialized contents of all ms in a newly allocated
+// byte slice.
+func MarshalAll(ms []Marshallable) []byte {
+	buf := make([]byte, TotalSize(ms))
+	var written int
+	for _, m := range ms {
+		m.MarshalUnsafe(buf[written:])
+		written += m.SizeBytes()
+	}
+	return buf
+}
+
+// TotalSize returns the total size of all ms.
+func TotalSize(ms []Marshallable) int {
+	var size int
+	for _, m := range ms {
+		size += m.SizeBytes()
+	}
+	return size
+}
