@@ -59,10 +59,6 @@ var (
 	isRunningWithOverlay = flag.Bool("test-overlay", BoolFromEnv("TEST_OVERLAY", false), "whether test is running with --overlay2")
 	isRunningWithNetRaw  = flag.Bool("test-net-raw", BoolFromEnv("TEST_NET_RAW", false), "whether test is running with raw socket support")
 	isRunningWithHostNet = flag.Bool("test-hostnet", BoolFromEnv("TEST_HOSTNET", false), "whether test is running with hostnet")
-
-	// TestEnvSupportsRawSockets indicates whether a test sandbox can
-	// create raw sockets.
-	TestEnvSupportsRawSockets = true
 )
 
 // StringFromEnv returns the value of the named environment variable, or `def` if unset/empty.

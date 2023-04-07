@@ -10,6 +10,7 @@ go_library(
     srcs = [
         "device.go",
         "hostinet.go",
+        "netlink.go",
         "socket.go",
         "socket_unsafe.go",
         "sockopt.go",
@@ -20,6 +21,7 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/binary",
         "//pkg/context",
         "//pkg/errors/linuxerr",
         "//pkg/fdnotifier",

@@ -351,6 +351,15 @@ func MergeCapabilities(first, second *specs.LinuxCapabilities) *specs.LinuxCapab
 	}
 }
 
+// DropCapability removes the specified capability from all capability sets.
+func DropCapability(caps *specs.LinuxCapabilities, drop string) {
+	caps.Bounding = remove(caps.Bounding, drop)
+	caps.Effective = remove(caps.Effective, drop)
+	caps.Inheritable = remove(caps.Inheritable, drop)
+	caps.Permitted = remove(caps.Permitted, drop)
+	caps.Ambient = remove(caps.Ambient, drop)
+}
+
 func mergeUnique(strSlices ...[]string) []string {
 	common := make(map[string]struct{})
 	for _, strSlice := range strSlices {
@@ -364,6 +373,17 @@ func mergeUnique(strSlices ...[]string) []string {
 		res = append(res, s)
 	}
 	return res
+}
+
+func remove(ss []string, rem string) []string {
+	var out []string
+	for _, s := range ss {
+		if s == rem {
+			continue
+		}
+		out = append(out, s)
+	}
+	return out
 }
 
 var capFromName = map[string]linux.Capability{

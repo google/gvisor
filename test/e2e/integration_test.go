@@ -686,10 +686,6 @@ func TestUnmount(t *testing.T) {
 }
 
 func TestDeleteInterface(t *testing.T) {
-	if testutil.IsRunningWithHostNet() {
-		t.Skip("not able to remove interfaces on hostnet")
-	}
-
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, t)
 	defer d.CleanUp(ctx)
