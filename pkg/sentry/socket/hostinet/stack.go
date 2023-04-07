@@ -15,7 +15,6 @@
 package hostinet
 
 import (
-	"encoding/binary"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -23,15 +22,11 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
-	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -123,145 +118,6 @@ func (s *Stack) Configure(allowRawSockets bool) error {
 	return nil
 }
 
-// extractHostRoutes populates the given routes slice with the data from the
-// host route table.
-func extractHostRoutes(routeMsgs []syscall.NetlinkMessage) ([]inet.Route, error) {
-	var routes []inet.Route
-	for _, routeMsg := range routeMsgs {
-		if routeMsg.Header.Type != unix.RTM_NEWROUTE {
-			continue
-		}
-
-		var ifRoute linux.RouteMessage
-		ifRoute.UnmarshalUnsafe(routeMsg.Data)
-		inetRoute := inet.Route{
-			Family:   ifRoute.Family,
-			DstLen:   ifRoute.DstLen,
-			SrcLen:   ifRoute.SrcLen,
-			TOS:      ifRoute.TOS,
-			Table:    ifRoute.Table,
-			Protocol: ifRoute.Protocol,
-			Scope:    ifRoute.Scope,
-			Type:     ifRoute.Type,
-			Flags:    ifRoute.Flags,
-		}
-
-		// Not clearly documented: syscall.ParseNetlinkRouteAttr will check the
-		// syscall.NetlinkMessage.Header.Type and skip the struct rtmsg
-		// accordingly.
-		attrs, err := syscall.ParseNetlinkRouteAttr(&routeMsg)
-		if err != nil {
-			return nil, fmt.Errorf("RTM_GETROUTE returned RTM_NEWROUTE message with invalid rtattrs: %v", err)
-		}
-
-		for _, attr := range attrs {
-			switch attr.Attr.Type {
-			case unix.RTA_DST:
-				inetRoute.DstAddr = attr.Value
-			case unix.RTA_SRC:
-				inetRoute.SrcAddr = attr.Value
-			case unix.RTA_GATEWAY:
-				inetRoute.GatewayAddr = attr.Value
-			case unix.RTA_OIF:
-				expected := int(binary.Size(inetRoute.OutputInterface))
-				if len(attr.Value) != expected {
-					return nil, fmt.Errorf("RTM_GETROUTE returned RTM_NEWROUTE message with invalid attribute data length (%d bytes, expected %d bytes)", len(attr.Value), expected)
-				}
-				var outputIF primitive.Int32
-				outputIF.UnmarshalUnsafe(attr.Value)
-				inetRoute.OutputInterface = int32(outputIF)
-			}
-		}
-
-		routes = append(routes, inetRoute)
-	}
-
-	return routes, nil
-}
-
-func getHostInterfaces() (map[int32]inet.Interface, error) {
-	msgs, err := doNetlinkRouteRequest(unix.RTM_GETLINK)
-	if err != nil {
-		return nil, fmt.Errorf("RTM_GETLINK failed: %v", err)
-	}
-	ifs := make(map[int32]inet.Interface, len(msgs))
-	for _, msg := range msgs {
-		if msg.Header.Type != unix.RTM_NEWLINK {
-			continue
-		}
-		if len(msg.Data) < unix.SizeofIfInfomsg {
-			return nil, fmt.Errorf("RTM_GETLINK returned RTM_NEWLINK message with invalid data length (%d bytes, expected at least %d bytes)", len(msg.Data), unix.SizeofIfInfomsg)
-		}
-		var ifinfo linux.InterfaceInfoMessage
-		ifinfo.UnmarshalUnsafe(msg.Data)
-		inetIF := inet.Interface{
-			DeviceType: ifinfo.Type,
-			Flags:      ifinfo.Flags,
-		}
-		// Not clearly documented: syscall.ParseNetlinkRouteAttr will check the
-		// syscall.NetlinkMessage.Header.Type and skip the struct ifinfomsg
-		// accordingly.
-		attrs, err := syscall.ParseNetlinkRouteAttr(&msg)
-		if err != nil {
-			return nil, fmt.Errorf("RTM_GETLINK returned RTM_NEWLINK message with invalid rtattrs: %v", err)
-		}
-		for _, attr := range attrs {
-			switch attr.Attr.Type {
-			case unix.IFLA_ADDRESS:
-				inetIF.Addr = attr.Value
-			case unix.IFLA_IFNAME:
-				inetIF.Name = string(attr.Value[:len(attr.Value)-1])
-			}
-		}
-		ifs[ifinfo.Index] = inetIF
-	}
-	return ifs, nil
-}
-
-func getHostInterfaceAddrs() (map[int32][]inet.InterfaceAddr, error) {
-	msgs, err := doNetlinkRouteRequest(unix.RTM_GETADDR)
-	if err != nil {
-		return nil, fmt.Errorf("RTM_GETADDR failed: %v", err)
-	}
-	addrs := make(map[int32][]inet.InterfaceAddr, len(msgs))
-	for _, msg := range msgs {
-		if msg.Header.Type != unix.RTM_NEWADDR {
-			continue
-		}
-		if len(msg.Data) < unix.SizeofIfAddrmsg {
-			return nil, fmt.Errorf("RTM_GETADDR returned RTM_NEWADDR message with invalid data length (%d bytes, expected at least %d bytes)", len(msg.Data), unix.SizeofIfAddrmsg)
-		}
-		var ifaddr linux.InterfaceAddrMessage
-		ifaddr.UnmarshalUnsafe(msg.Data)
-		inetAddr := inet.InterfaceAddr{
-			Family:    ifaddr.Family,
-			PrefixLen: ifaddr.PrefixLen,
-			Flags:     ifaddr.Flags,
-		}
-		attrs, err := syscall.ParseNetlinkRouteAttr(&msg)
-		if err != nil {
-			return nil, fmt.Errorf("RTM_GETADDR returned RTM_NEWADDR message with invalid rtattrs: %v", err)
-		}
-		for _, attr := range attrs {
-			switch attr.Attr.Type {
-			case unix.IFA_ADDRESS:
-				inetAddr.Addr = attr.Value
-			}
-		}
-		addrs[int32(ifaddr.Index)] = append(addrs[int32(ifaddr.Index)], inetAddr)
-
-	}
-	return addrs, nil
-}
-
-func doNetlinkRouteRequest(req int) ([]syscall.NetlinkMessage, error) {
-	data, err := syscall.NetlinkRIB(req, syscall.AF_UNSPEC)
-	if err != nil {
-		return nil, err
-	}
-	return syscall.ParseNetlinkMessage(data)
-}
-
 func readTCPBufferSizeFile(filename string) (inet.TCPBufferSize, error) {
 	contents, err := ioutil.ReadFile(filename)
 	if err != nil {
@@ -281,7 +137,7 @@ func readTCPBufferSizeFile(filename string) (inet.TCPBufferSize, error) {
 
 // Interfaces implements inet.Stack.Interfaces.
 func (s *Stack) Interfaces() map[int32]inet.Interface {
-	ifs, err := getHostInterfaces()
+	ifs, err := getInterfaces()
 	if err != nil {
 		log.Warningf("could not get host interface: %v", err)
 		return nil
@@ -296,13 +152,13 @@ func (s *Stack) Interfaces() map[int32]inet.Interface {
 }
 
 // RemoveInterface implements inet.Stack.RemoveInterface.
-func (*Stack) RemoveInterface(int32) error {
-	return linuxerr.EACCES
+func (*Stack) RemoveInterface(idx int32) error {
+	return removeInterface(idx)
 }
 
 // InterfaceAddrs implements inet.Stack.InterfaceAddrs.
 func (s *Stack) InterfaceAddrs() map[int32][]inet.InterfaceAddr {
-	addrs, err := getHostInterfaceAddrs()
+	addrs, err := getInterfaceAddrs()
 	if err != nil {
 		log.Warningf("failed to get host interface addresses: %v", err)
 		return nil
@@ -311,13 +167,13 @@ func (s *Stack) InterfaceAddrs() map[int32][]inet.InterfaceAddr {
 }
 
 // AddInterfaceAddr implements inet.Stack.AddInterfaceAddr.
-func (*Stack) AddInterfaceAddr(int32, inet.InterfaceAddr) error {
-	return linuxerr.EACCES
+func (*Stack) AddInterfaceAddr(idx int32, addr inet.InterfaceAddr) error {
+	return addInterfaceAddr(idx, addr)
 }
 
 // RemoveInterfaceAddr implements inet.Stack.RemoveInterfaceAddr.
-func (*Stack) RemoveInterfaceAddr(int32, inet.InterfaceAddr) error {
-	return linuxerr.EACCES
+func (*Stack) RemoveInterfaceAddr(idx int32, addr inet.InterfaceAddr) error {
+	return removeInterfaceAddr(idx, addr)
 }
 
 // SupportsIPv6 implements inet.Stack.SupportsIPv6.
@@ -458,18 +314,12 @@ func (s *Stack) Statistics(stat any, arg string) error {
 
 // RouteTable implements inet.Stack.RouteTable.
 func (s *Stack) RouteTable() []inet.Route {
-	msgs, err := doNetlinkRouteRequest(unix.RTM_GETROUTE)
+	routes, err := getRoutes()
 	if err != nil {
-		log.Warningf("RTM_GETROUTE failed: %v", err)
+		log.Warningf("failed to get routes: %v", err)
 		return nil
 	}
-
-	routes, err := extractHostRoutes(msgs)
-	if err != nil {
-		log.Warningf("failed to extract host routes: %v", err)
-		return nil
-	}
-
+	// Prepend empty route.
 	return append([]inet.Route(nil), routes...)
 }
 
