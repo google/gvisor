@@ -61,6 +61,7 @@ func (i *inode) StateFields() []string {
 		"seekable",
 		"isTTY",
 		"savable",
+		"readonly",
 		"queue",
 		"virtualOwner",
 		"haveBuf",
@@ -86,10 +87,11 @@ func (i *inode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(12, &i.seekable)
 	stateSinkObject.Save(13, &i.isTTY)
 	stateSinkObject.Save(14, &i.savable)
-	stateSinkObject.Save(15, &i.queue)
-	stateSinkObject.Save(16, &i.virtualOwner)
-	stateSinkObject.Save(17, &i.haveBuf)
-	stateSinkObject.Save(18, &i.buf)
+	stateSinkObject.Save(15, &i.readonly)
+	stateSinkObject.Save(16, &i.queue)
+	stateSinkObject.Save(17, &i.virtualOwner)
+	stateSinkObject.Save(18, &i.haveBuf)
+	stateSinkObject.Save(19, &i.buf)
 }
 
 // +checklocksignore
@@ -109,10 +111,11 @@ func (i *inode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(12, &i.seekable)
 	stateSourceObject.Load(13, &i.isTTY)
 	stateSourceObject.Load(14, &i.savable)
-	stateSourceObject.Load(15, &i.queue)
-	stateSourceObject.Load(16, &i.virtualOwner)
-	stateSourceObject.Load(17, &i.haveBuf)
-	stateSourceObject.Load(18, &i.buf)
+	stateSourceObject.Load(15, &i.readonly)
+	stateSourceObject.Load(16, &i.queue)
+	stateSourceObject.Load(17, &i.virtualOwner)
+	stateSourceObject.Load(18, &i.haveBuf)
+	stateSourceObject.Load(19, &i.buf)
 	stateSourceObject.AfterLoad(i.afterLoad)
 }
 

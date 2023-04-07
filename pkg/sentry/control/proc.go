@@ -45,27 +45,33 @@ type Proc struct {
 	Kernel *kernel.Kernel
 }
 
-// FilePayload aids to ensure that len(urpc.FilePayload.Files) == len(GuestFDs)
-// when instantiated through the NewFDMap helper method.
+// FilePayload aids to ensure that payload files and guest file descriptors are
+// consistent when instantiated through the NewFilePayload helper method.
 type FilePayload struct {
 	// FilePayload is the file payload that is transferred via RPC.
 	urpc.FilePayload
 
 	// GuestFDs are the file descriptors in the file descriptor map of the
 	// executed application. They correspond 1:1 to the files in the
-	// urpc.FilePayload.
+	// urpc.FilePayload. If a program is executed from a host file descriptor,
+	// the file payload may contain one additional file. In that case, the file
+	// used for program execution is the last file in the Files array.
 	GuestFDs []int
 }
 
-// NewFDMap returns a FilePayload that maps file descriptors to files inside
-// the executed process.
-func NewFDMap(fdMap map[int]*os.File) FilePayload {
-	files := make([]*os.File, 0, len(fdMap))
+// NewFilePayload returns a FilePayload that maps file descriptors to files inside
+// the executed process and provides a file for execution.
+func NewFilePayload(fdMap map[int]*os.File, execFile *os.File) FilePayload {
+	fileCount := len(fdMap)
+	if execFile != nil {
+		fileCount++
+	}
+	files := make([]*os.File, 0, fileCount)
+	guestFDs := make([]int, 0, len(fdMap))
 
 	// Make the map iteration order deterministic for the sake of testing.
 	// Otherwise, the order is randomized and tests relying on the comparison
 	// of equality will fail.
-	guestFDs := make([]int, 0, len(fdMap))
 	for key := range fdMap {
 		guestFDs = append(guestFDs, key)
 	}
@@ -74,6 +80,11 @@ func NewFDMap(fdMap map[int]*os.File) FilePayload {
 	for _, guestFD := range guestFDs {
 		files = append(files, fdMap[guestFD])
 	}
+
+	if execFile != nil {
+		files = append(files, execFile)
+	}
+
 	return FilePayload{
 		FilePayload: urpc.FilePayload{Files: files},
 		GuestFDs:    guestFDs,
@@ -219,13 +230,8 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 		initArgs.MountNamespace = proc.Kernel.GlobalInit().Leader().MountNamespace()
 		initArgs.MountNamespace.IncRef()
 	}
-	resolved, err := user.ResolveExecutablePath(ctx, &initArgs)
-	if err != nil {
-		return nil, 0, nil, err
-	}
-	initArgs.Filename = resolved
 
-	fdMap, err := args.createFDMap()
+	fdMap, execFD, err := args.unpackFiles()
 	if err != nil {
 		return nil, 0, nil, fmt.Errorf("creating fd map: %w", err)
 	}
@@ -234,6 +240,32 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 			_ = hostFD.Close()
 		}
 	}()
+
+	if execFD != nil {
+		if initArgs.Filename != "" {
+			return nil, 0, nil, fmt.Errorf("process must either be started from a file or a filename, not both")
+		}
+		file, err := host.NewFD(ctx, proc.Kernel.HostMount(), execFD.FD(), &host.NewFDOptions{
+			Readonly:     true,
+			Savable:      true,
+			VirtualOwner: true,
+			UID:          args.KUID,
+			GID:          args.KGID,
+		})
+		if err != nil {
+			return nil, 0, nil, err
+		}
+		defer file.DecRef(ctx)
+		execFD.Release()
+		initArgs.File = file
+	} else {
+		resolved, err := user.ResolveExecutablePath(ctx, &initArgs)
+		if err != nil {
+			return nil, 0, nil, err
+		}
+		initArgs.Filename = resolved
+	}
+
 	ttyFile, err := fdimport.Import(ctx, fdTable, args.StdioIsPty, args.KUID, args.KGID, fdMap)
 	if err != nil {
 		return nil, 0, nil, err
@@ -437,21 +469,35 @@ func ContainerUsage(kr *kernel.Kernel) map[string]uint64 {
 	return cusage
 }
 
-// createFDMap creates the file descriptor map from the unmarshalled ExecArgs.
-func (args *ExecArgs) createFDMap() (map[int]*fd.FD, error) {
-	if len(args.Files) != len(args.GuestFDs) {
-		return nil, fmt.Errorf("length of payload files does not match length of file descriptor array")
+// unpackFiles unpacks the file descriptor map and, if applicable, the file
+// descriptor to be used for execution from the unmarshalled ExecArgs.
+func (args *ExecArgs) unpackFiles() (map[int]*fd.FD, *fd.FD, error) {
+	var execFD *fd.FD
+	var err error
+
+	// If there is one additional file, the last file is used for program
+	// execution.
+	if len(args.Files) == len(args.GuestFDs)+1 {
+		execFD, err = fd.NewFromFile(args.Files[len(args.Files)-1])
+		if err != nil {
+			return nil, nil, fmt.Errorf("duplicating exec file: %w", err)
+		}
+	} else if len(args.Files) != len(args.GuestFDs) {
+		return nil, nil, fmt.Errorf("length of payload files does not match length of file descriptor array")
 	}
-	fdMap := make(map[int]*fd.FD, len(args.Files))
-	for i, file := range args.Files {
-		var appFD int
-		// GuestFDs are the indexes of our FD map.
-		appFD = args.GuestFDs[i]
+
+	// GuestFDs are the indexes of our FD map.
+	fdMap := make(map[int]*fd.FD, len(args.GuestFDs))
+	for i, appFD := range args.GuestFDs {
+		file := args.Files[i]
+		if appFD < 0 {
+			return nil, nil, fmt.Errorf("guest file descriptors must be 0 or greater")
+		}
 		hostFD, err := fd.NewFromFile(file)
 		if err != nil {
-			return nil, fmt.Errorf("duplicating payload files: %w", err)
+			return nil, nil, fmt.Errorf("duplicating payload files: %w", err)
 		}
 		fdMap[appFD] = hostFD
 	}
-	return fdMap, nil
+	return fdMap, execFD, nil
 }
