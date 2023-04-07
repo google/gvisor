@@ -136,6 +136,7 @@ func createLoader(conf *config.Config, spec *specs.Spec) (*Loader, func(), error
 		GoferFDs:        []int{sandEnd},
 		StdioFDs:        stdio,
 		PodInitConfigFD: -1,
+		ExecFD:          -1,
 	}
 	l, err := New(args)
 	if err != nil {

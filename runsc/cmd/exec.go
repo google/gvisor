@@ -61,6 +61,9 @@ type Exec struct {
 	// passFDs are user-supplied FDs from the host to be exposed to the
 	// sandboxed app.
 	passFDs fdMappings
+
+	// execFD is the host file descriptor used for program execution.
+	execFD int
 }
 
 // Name implements subcommands.Command.Name.
@@ -105,6 +108,7 @@ func (ex *Exec) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&ex.internalPidFile, "internal-pid-file", "", "filename that the container-internal pid will be written to")
 	f.StringVar(&ex.consoleSocket, "console-socket", "", "path to an AF_UNIX socket which will receive a file descriptor referencing the master end of the console's pseudoterminal")
 	f.Var(&ex.passFDs, "pass-fd", "file descriptor passed to the container in M:N format, where M is the host and N is the guest descriptor (can be supplied multiple times)")
+	f.IntVar(&ex.execFD, "exec-fd", -1, "host file descriptor used for program execution")
 }
 
 // Execute implements subcommands.Command.Execute. It starts a process in an
@@ -160,6 +164,11 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		fdMap[mapping.Guest] = file
 	}
 
+	var execFile *os.File
+	if ex.execFD >= 0 {
+		execFile = os.NewFile(uintptr(ex.execFD), "exec-fd")
+	}
+
 	// Close the underlying file descriptors after we have passed them.
 	defer func() {
 		for _, file := range fdMap {
@@ -168,9 +177,13 @@ func (ex *Exec) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 				log.Debugf("Failed to close FD %d", fd)
 			}
 		}
+
+		if execFile != nil && execFile.Close() != nil {
+			log.Debugf("Failed to close exec FD")
+		}
 	}()
 
-	e.FilePayload = control.NewFDMap(fdMap)
+	e.FilePayload = control.NewFilePayload(fdMap, execFile)
 
 	// containerd expects an actual process to represent the container being
 	// executed. If detach was specified, starts a child in non-detach mode,
@@ -362,11 +375,11 @@ func (ex *Exec) argsFromCLI(argv []string, enableRaw bool) (*control.ExecArgs, e
 		ExtraKGIDs:       extraKGIDs,
 		Capabilities:     caps,
 		StdioIsPty:       ex.consoleSocket != "" || console.IsPty(os.Stdin.Fd()),
-		FilePayload: control.NewFDMap(map[int]*os.File{
+		FilePayload: control.NewFilePayload(map[int]*os.File{
 			0: os.Stdin,
 			1: os.Stdout,
 			2: os.Stderr,
-		}),
+		}, nil),
 	}, nil
 }
 
@@ -415,11 +428,11 @@ func argsFromProcess(p *specs.Process, enableRaw bool) (*control.ExecArgs, error
 		ExtraKGIDs:       extraKGIDs,
 		Capabilities:     caps,
 		StdioIsPty:       p.Terminal,
-		FilePayload: control.NewFDMap(map[int]*os.File{
+		FilePayload: control.NewFilePayload(map[int]*os.File{
 			0: os.Stdin,
 			1: os.Stdout,
 			2: os.Stderr,
-		}),
+		}, nil),
 	}, nil
 }
 

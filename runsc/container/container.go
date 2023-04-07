@@ -180,6 +180,9 @@ type Args struct {
 	// PassFiles are user-supplied files from the host to be exposed to the
 	// sandboxed app.
 	PassFiles map[int]*os.File
+
+	// ExecFile is the host file used for program execution.
+	ExecFile *os.File
 }
 
 // New creates the container in a new Sandbox process, unless the metadata
@@ -301,6 +304,7 @@ func New(conf *config.Config, args Args) (*Container, error) {
 				Attached:              args.Attached,
 				OverlayFilestoreFiles: overlayFilestoreFiles,
 				PassFiles:             args.PassFiles,
+				ExecFile:              args.ExecFile,
 			}
 			sand, err := sandbox.New(conf, sandArgs)
 			if err != nil {

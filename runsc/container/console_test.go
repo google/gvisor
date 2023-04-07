@@ -281,9 +281,9 @@ func TestJobControlSignalExec(t *testing.T) {
 		// our PID counts get messed up.
 		Argv: []string{"/bin/bash", "--noprofile", "--norc"},
 		// Pass the pty replica as FD 0, 1, and 2.
-		FilePayload: control.NewFDMap(map[int]*os.File{
+		FilePayload: control.NewFilePayload(map[int]*os.File{
 			0: ptyReplica, 1: ptyReplica, 2: ptyReplica,
-		}),
+		}, nil),
 		StdioIsPty: true,
 	}
 

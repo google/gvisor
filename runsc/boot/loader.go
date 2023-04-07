@@ -104,6 +104,9 @@ type containerInfo struct {
 	// passFDs are mappings of user-supplied host to guest file descriptors.
 	passFDs []fdMapping
 
+	// execFD is the host file descriptor used for program execution.
+	execFD *fd.FD
+
 	// goferFDs are the FDs that attach the sandbox to the gofers.
 	goferFDs []*fd.FD
 
@@ -232,6 +235,8 @@ type Args struct {
 	// PassFDs are user-supplied FD mappings from host to guest descriptors.
 	// The Loader takes ownership of these FDs and may close them at any time.
 	PassFDs []FDMapping
+	// ExecFD is the host file descriptor used for program execution.
+	ExecFD int
 	// OverlayFilestoreFDs are the FDs to the regular files that will back the
 	// tmpfs upper mount in the overlay mounts.
 	OverlayFilestoreFDs []int
@@ -308,6 +313,11 @@ func New(args Args) (*Loader, error) {
 	for _, overlayFD := range args.OverlayFilestoreFDs {
 		info.overlayFilestoreFDs = append(info.overlayFilestoreFDs, fd.New(overlayFD))
 	}
+
+	if args.ExecFD >= 0 {
+		info.execFD = fd.New(args.ExecFD)
+	}
+
 	for _, customFD := range args.PassFDs {
 		info.passFDs = append(info.passFDs, fdMapping{
 			host:  fd.New(customFD.Host),
@@ -859,6 +869,26 @@ func (l *Loader) createContainerProcess(root bool, cid string, info *containerIn
 	// CreateProcess takes a reference on fdTable if successful. We won't need
 	// ours either way.
 	info.procArgs.FDTable = fdTable
+
+	if info.execFD != nil {
+		if info.procArgs.Filename != "" {
+			return nil, nil, fmt.Errorf("process must either be started from a file or a filename, not both")
+		}
+		file, err := host.NewFD(ctx, l.k.HostMount(), info.execFD.FD(), &host.NewFDOptions{
+			Readonly:     true,
+			Savable:      true,
+			VirtualOwner: true,
+			UID:          auth.KUID(info.spec.Process.User.UID),
+			GID:          auth.KGID(info.spec.Process.User.GID),
+		})
+		if err != nil {
+			return nil, nil, err
+		}
+		defer file.DecRef(ctx)
+		info.execFD.Release()
+
+		info.procArgs.File = file
+	}
 
 	// Gofer FDs must be ordered and the first FD is always the rootfs.
 	if len(info.goferFDs) < 1 {
@@ -1430,6 +1460,9 @@ func createFDTable(ctx context.Context, console bool, stdioFDs []*fd.FD, passFDs
 
 	// Create the entries for the host files that were passed to our app.
 	for _, customFD := range passFDs {
+		if customFD.guest < 0 {
+			return nil, nil, fmt.Errorf("guest file descriptors must be 0 or greater")
+		}
 		fdMap[customFD.guest] = customFD.host
 	}
 
