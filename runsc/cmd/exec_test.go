@@ -75,11 +75,11 @@ func TestCLIArgs(t *testing.T) {
 			expected: control.ExecArgs{
 				Argv:             []string{"ls", "/"},
 				WorkingDirectory: "/foo/bar",
-				FilePayload: control.NewFDMap(map[int]*os.File{
+				FilePayload: control.NewFilePayload(map[int]*os.File{
 					0: os.Stdin,
 					1: os.Stdout,
 					2: os.Stderr,
-				}),
+				}, nil),
 				KUID:       0,
 				KGID:       0,
 				ExtraKGIDs: []auth.KGID{1, 2, 3},
@@ -132,11 +132,11 @@ func TestJSONArgs(t *testing.T) {
 			expected: control.ExecArgs{
 				Argv:             []string{"ls", "/"},
 				WorkingDirectory: "/foo/bar",
-				FilePayload: control.NewFDMap(map[int]*os.File{
+				FilePayload: control.NewFilePayload(map[int]*os.File{
 					0: os.Stdin,
 					1: os.Stdout,
 					2: os.Stderr,
-				}),
+				}, nil),
 				KUID:       0,
 				KGID:       0,
 				ExtraKGIDs: []auth.KGID{1, 2, 3},
