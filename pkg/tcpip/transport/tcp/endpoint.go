@@ -1012,6 +1012,7 @@ func (e *endpoint) Abort() {
 	switch state := e.EndpointState(); {
 	case state.connected():
 		e.resetConnectionLocked(&tcpip.ErrAborted{})
+		e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.ReadableEvents | waiter.WritableEvents)
 		return
 	}
 	e.closeLocked()
