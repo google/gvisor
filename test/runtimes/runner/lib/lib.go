@@ -116,7 +116,7 @@ func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, 
 		panic("TIMEOUT: Unable to get a list of tests")
 	}()
 	// Get a list of all tests in the image.
-	list, err := d.Exec(ctx, dockerutil.ExecOpts{}, "/proctor/proctor", "--runtime", lang, "--list")
+	list, err := d.Exec(ctx, dockerutil.ExecOpts{Privileged: true, User: "0"}, "/proctor/proctor", "--runtime", lang, "--list")
 	if err != nil {
 		return nil, fmt.Errorf("docker exec failed: %v", err)
 	}
@@ -188,7 +188,7 @@ func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, 
 						fmt.Sprintf("--timeout=%s", timeout-time.Since(startTime)),
 					}
 					argv = append(argv, proctorSettings.ToArgs()...)
-					output, err = d.Exec(ctx, dockerutil.ExecOpts{}, argv...)
+					output, err = d.Exec(ctx, dockerutil.ExecOpts{Privileged: true, User: "0"}, argv...)
 					close(done)
 				}()
 
