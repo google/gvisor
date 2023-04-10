@@ -28,7 +28,7 @@ Note: java runtime test take 1+ hours with 16 cores.
 
 Language | Version | Running the test suite
 -------- | ------- | ----------------------------------
-Go       | 1.16    | `make go1.16-runtime-tests`
+Go       | 1.20    | `make go1.20-runtime-tests`
 Java     | 17      | `make java17-runtime-tests`
 NodeJS   | 16.13.2 | `make nodejs16.13.2-runtime-tests`
 Php      | 8.1.1   | `make php8.1.1-runtime-tests`
