@@ -148,9 +148,9 @@ func sandboxPrometheusLabels(rootContainer *container.Container) (map[string]str
 // ComputeSpecMetadata returns the labels for the `spec_metadata` metric.
 // It merges data from the Specs of multiple containers running within the
 // same sandbox.
-// It must support being called with zero containers; this is used to determine
-// its set of labels, the keys of which must be static regardless of how many
-// containers are passed to this function.
+// This function must support being called with `allContainers` being nil.
+// It must return the same set of label keys regardless of how many containers
+// are in `allContainers`.
 func ComputeSpecMetadata(allContainers []*container.Container) map[string]string {
 	const (
 		unknownOCIVersion      = "UNKNOWN"
@@ -643,6 +643,7 @@ var ServerMetrics = []prometheus.Metric{
 	SandboxRunningMetric,
 	SandboxMetadataMetric,
 	SandboxCapabilitiesMetric,
+	SpecMetadataMetric,
 	SandboxCreationMetric,
 	NumRunningSandboxesMetric,
 	NumCannotExportSandboxesMetric,
