@@ -105,9 +105,6 @@ type RunOpts struct {
 
 	// Links is the list of containers to be connected to the container.
 	Links []string
-
-	// Sysctls is the list of Namespaced sysctls used for the container.
-	Sysctls map[string]string
 }
 
 func makeContainer(ctx context.Context, logger testutil.Logger, runtime string) *Container {
@@ -278,7 +275,6 @@ func (c *Container) hostConfig(r RunOpts) *container.HostConfig {
 		Privileged:      r.Privileged,
 		ReadonlyRootfs:  r.ReadOnly,
 		NetworkMode:     container.NetworkMode(r.NetworkMode),
-		Sysctls:         r.Sysctls,
 		Resources: container.Resources{
 			Memory:     int64(r.Memory), // In bytes.
 			CpusetCpus: r.CpusetCpus,
