@@ -42,6 +42,9 @@ class PollTest : public BasePollTest {
   void TearDown() override { BasePollTest::TearDown(); }
 };
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnonnull"
+#pragma GCC diagnostic ignored "-Wstringop-overflow"
 TEST_F(PollTest, InvalidFds) {
   // fds is invalid because it's null, but we tell ppoll the length is non-zero.
   EXPECT_THAT(poll(nullptr, 1, 1), SyscallFailsWithErrno(EFAULT));
@@ -64,6 +67,7 @@ TEST_F(PollTest, NegativeTimeout) {
   EXPECT_THAT(poll(nullptr, 0, -1), SyscallFailsWithErrno(EINTR));
   EXPECT_TRUE(TimerFired());
 }
+#pragma GCC diagnostic pop
 
 void NonBlockingReadableTest(int16_t mask) {
   // Create a pipe.

@@ -139,13 +139,19 @@ TEST_F(ReadvSocketTest, ReadIovecsCompletelyFilled_DgramSocket) {
 }
 
 TEST_F(ReadvSocketTest, BadIovecsPointer_StreamSocket) {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnonnull"
   ASSERT_THAT(readv(test_unix_stream_socket_[0], nullptr, 1),
               SyscallFailsWithErrno(EFAULT));
+#pragma GCC diagnostic pop
 }
 
 TEST_F(ReadvSocketTest, BadIovecsPointer_DgramSocket) {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnonnull"
   ASSERT_THAT(readv(test_unix_dgram_socket_[0], nullptr, 1),
               SyscallFailsWithErrno(EFAULT));
+#pragma GCC diagnostic pop
 }
 
 TEST_F(ReadvSocketTest, BadIovecBase_StreamSocket) {

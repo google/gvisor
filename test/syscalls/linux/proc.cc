@@ -1255,7 +1255,7 @@ TEST(ProcCpuinfo, RequiredFieldsArePresent) {
 
   // Check that the usual fields are there. We don't really care about the
   // contents.
-  for (const std::string& field : required_fields) {
+  for (const char* field : required_fields) {
     EXPECT_THAT(proc_cpuinfo, HasSubstr(field));
   }
 }

@@ -104,16 +104,21 @@ TEST_F(ReadvTest, BadFileDescriptor) {
   iov[0].iov_base = buffer;
   iov[0].iov_len = 1024;
 
-  ASSERT_THAT(readv(-1, iov, 1024), SyscallFailsWithErrno(EBADF));
+  ASSERT_THAT(readv(-1, iov, 1), SyscallFailsWithErrno(EBADF));
 }
-
 TEST_F(ReadvTest, BadIovecsPointer_File) {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnonnull"
   ASSERT_THAT(readv(test_file_fd_.get(), nullptr, 1),
               SyscallFailsWithErrno(EFAULT));
+#pragma GCC diagnostic pop
 }
 
 TEST_F(ReadvTest, BadIovecsPointer_Pipe) {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnonnull"
   ASSERT_THAT(readv(test_pipe_[0], nullptr, 1), SyscallFailsWithErrno(EFAULT));
+#pragma GCC diagnostic pop
 }
 
 TEST_F(ReadvTest, BadIovecBase_File) {
