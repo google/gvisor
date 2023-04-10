@@ -647,6 +647,11 @@ func (l *Loader) run() error {
 		// Delay host network configuration to this point because network namespace
 		// is configured after the loader is created and before Run() is called.
 		log.Debugf("Configuring host network")
+
+		// Apply any net-related sysctls to the host kernel in our
+		// network namespace now.
+		specutils.ApplySysctls(l.root.spec, "net.")
+
 		s := l.k.RootNetworkNamespace().Stack().(*hostinet.Stack)
 		if err := s.Configure(l.root.conf.EnableRaw); err != nil {
 			return err
