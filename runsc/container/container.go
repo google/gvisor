@@ -1325,6 +1325,11 @@ func (c *Container) HasCapabilityInAnySet(capability linux.Capability) bool {
 	return false
 }
 
+// RunsAsUID0 returns true if the container process runs with UID 0 (root).
+func (c *Container) RunsAsUID0() bool {
+	return c.Spec.Process.User.UID == 0
+}
+
 func (c *Container) requireStatus(action string, statuses ...Status) error {
 	for _, s := range statuses {
 		if c.Status == s {
