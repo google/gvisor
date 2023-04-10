@@ -23,6 +23,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <cstdint>
 #include <functional>
 #include <iostream>
 #include <memory>
@@ -1042,7 +1043,7 @@ TEST(MountTest, SetMountPropagationOfStackedMounts) {
 
   std::vector<ProcMountInfoEntry> mounts =
       ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntries());
-  int parent_mount_id;
+  uint64_t parent_mount_id;
   for (const auto& e : mounts) {
     if (e.mount_point == dir.path()) {
       parent_mount_id = e.id;

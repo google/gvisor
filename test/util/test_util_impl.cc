@@ -21,8 +21,9 @@
 #include "test/util/logging.h"
 
 extern bool FLAGS_gtest_list_tests;
+namespace benchmark {
 extern bool FLAGS_benchmark_list_tests;
-extern std::string FLAGS_benchmark_filter;
+}
 
 namespace gvisor {
 namespace testing {
@@ -44,7 +45,7 @@ int RunAllTests() {
   if (::testing::FLAGS_gtest_list_tests) {
     return RUN_ALL_TESTS();
   }
-  if (FLAGS_benchmark_list_tests) {
+  if (::benchmark::FLAGS_benchmark_list_tests) {
     benchmark::RunSpecifiedBenchmarks();
     return 0;
   }

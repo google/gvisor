@@ -107,7 +107,7 @@ TEST(PivotRootTest, CreatesNewRoot) {
     TEST_CHECK_SUCCESS(stat(file_in_new_root_new_path.c_str(), &statbuf));
     // getcwd should return "/".
     TEST_CHECK_SUCCESS(syscall(__NR_getcwd, buf, sizeof(buf)));
-    TEST_CHECK_SUCCESS(strcmp(buf, "/") == 0);
+    TEST_PCHECK(strcmp(buf, "/") == 0);
     // Statting '.', '..', '/', and '/..' all return the same dev and inode.
     struct stat statbuf_dot;
     TEST_CHECK_SUCCESS(stat(".", &statbuf_dot));

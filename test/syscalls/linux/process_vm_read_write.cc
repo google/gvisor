@@ -52,7 +52,7 @@ class TestIovecs {
   TestIovecs(std::vector<std::string>& data) {
     data_ = std::vector<std::string>(data.size());
     initial_ = std::vector<std::string>(data.size());
-    for (int i = 0; i < data.size(); ++i) {
+    for (size_t i = 0; i < data.size(); ++i) {
       data_[i] = data[i];
       initial_[i] = data[i];
       struct iovec iov;
@@ -87,7 +87,7 @@ class TestIovecs {
 
   std::vector<struct iovec*> marshal() {
     std::vector<struct iovec*> ret(iovecs_.size());
-    for (int i = 0; i < iovecs_.size(); ++i) {
+    for (size_t i = 0; i < iovecs_.size(); ++i) {
       ret[i] = &iovecs_[i];
     }
     return ret;
@@ -111,7 +111,7 @@ struct ProcessVMTestCase {
 using ProcessVMTest = ::testing::TestWithParam<ProcessVMTestCase>;
 
 bool ProcessVMCallsNotSupported() {
-  struct iovec iov;
+  struct iovec iov = {};
   // Flags should be 0.
   ssize_t ret = process_vm_readv(0, &iov, 1, &iov, 1, 10);
   if (ret != 0 && errno == ENOSYS) return true;
@@ -245,7 +245,7 @@ INSTANTIATE_TEST_SUITE_P(
 
 TEST(ProcessVMInvalidTest, NonZeroFlags) {
   SKIP_IF(ProcessVMCallsNotSupported());
-  struct iovec iov;
+  struct iovec iov = {};
   // Flags should be 0.
   EXPECT_THAT(process_vm_readv(0, &iov, 1, &iov, 1, 10),
               SyscallFailsWithErrno(EINVAL));
@@ -255,7 +255,7 @@ TEST(ProcessVMInvalidTest, NonZeroFlags) {
 
 TEST(ProcessVMInvalidTest, NullLocalIovec) {
   SKIP_IF(ProcessVMCallsNotSupported());
-  struct iovec iov;
+  struct iovec iov = {};
   pid_t child = fork();
   if (child == 0) {
     while (true) {

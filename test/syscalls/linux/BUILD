@@ -1661,6 +1661,9 @@ cc_binary(
     name = "poll_test",
     testonly = 1,
     srcs = ["poll.cc"],
+    copts = [
+        "-Wno-unknown-warning-option",
+    ],
     linkstatic = 1,
     deps = [
         ":base_poll_test",
@@ -4078,6 +4081,9 @@ cc_binary(
     name = "uidgid_test",
     testonly = 1,
     srcs = ["uidgid.cc"],
+    copts = [
+        "-Wno-unknown-warning-option",
+    ],
     linkstatic = 1,
     deps = [
         "//test/util:capability_util",
