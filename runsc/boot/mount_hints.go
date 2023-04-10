@@ -99,12 +99,12 @@ func newPodMountHints(spec *specs.Spec) (*podMountHints, error) {
 				mnts[name] = mnt
 			}
 			if err := mnt.setField(parts[1], v); err != nil {
-				return nil, err
+				log.Warningf("ignoring invalid mount annotation (name = %q, key = %q, value = %q): %v", name, parts[1], v, err)
 			}
 		}
 	}
 
-	// Validate all hints after done parsing.
+	// Validate all the parsed hints.
 	for name, m := range mnts {
 		log.Infof("Mount annotation found, name: %s, source: %q, type: %s, share: %v", name, m.mount.Source, m.mount.Type, m.share)
 		if m.share == invalid {
