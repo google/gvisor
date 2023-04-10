@@ -154,7 +154,7 @@ func TestContainerMetrics(t *testing.T) {
 	if err != nil {
 		t.Errorf("Cannot get metrics after creating container: %v", err)
 	}
-	gotMetadata, err := initialData.GetSandboxMetadataMetric(metricclient.WantMetric{
+	gotSandboxMetadata, err := initialData.GetSandboxMetadataMetric(metricclient.WantMetric{
 		Metric:    "testmetric_meta_sandbox_metadata",
 		Sandbox:   args.ID,
 		Pod:       "foopod",
@@ -163,8 +163,20 @@ func TestContainerMetrics(t *testing.T) {
 	if err != nil {
 		t.Errorf("Cannot get sandbox metadata: %v", err)
 	}
-	if gotMetadata["platform"] == "" || gotMetadata["platform"] != te.sleepConf.Platform {
-		t.Errorf("Invalid platform: Metric metadata says %v, config says %v", gotMetadata["platform"], te.sleepConf.Platform)
+	if gotSandboxMetadata["platform"] == "" || gotSandboxMetadata["platform"] != te.sleepConf.Platform {
+		t.Errorf("Invalid platform: Metric metadata says %v, config says %v", gotSandboxMetadata["platform"], te.sleepConf.Platform)
+	}
+	gotSpecMetadata, err := initialData.GetSandboxMetadataMetric(metricclient.WantMetric{
+		Metric:    "testmetric_meta_spec_metadata",
+		Sandbox:   args.ID,
+		Pod:       "foopod",
+		Namespace: "foons",
+	})
+	if err != nil {
+		t.Errorf("Cannot get spec metadata: %v", err)
+	}
+	if gotSpecMetadata["hasuid0"] == "" || (gotSpecMetadata["hasuid0"] != "true" && gotSpecMetadata["hasuid0"] != "false") {
+		t.Errorf("Invalid or absent hasuid0 key from spec metadata: %v", gotSpecMetadata["hasuid0"])
 	}
 	t.Logf("Metrics prior to container start:\n\n%s\n\n", initialData)
 	if err := cont.Start(te.sleepConf); err != nil {
