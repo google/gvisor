@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library", "go_test")
+load("//tools:defs.bzl", "go_library", "go_test", "proto_library")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 load("//pkg/sync/locking:locking.bzl", "declare_mutex")
 
@@ -111,6 +111,12 @@ go_template_instance(
     },
 )
 
+proto_library(
+    name = "events",
+    srcs = ["events.proto"],
+    visibility = ["//visibility:public"],
+)
+
 go_library(
     name = "vfs",
     srcs = [
@@ -152,12 +158,14 @@ go_library(
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
+        ":events_go_proto",
         "//pkg/abi/linux",
         "//pkg/atomicbitops",
         "//pkg/bitmap",
         "//pkg/cleanup",
         "//pkg/context",
         "//pkg/errors/linuxerr",
+        "//pkg/eventchannel",
         "//pkg/fd",
         "//pkg/fdnotifier",
         "//pkg/fspath",
