@@ -600,6 +600,7 @@ var ServerMetrics = []prometheus.Metric{
 	SandboxPresenceMetric,
 	SandboxRunningMetric,
 	SandboxMetadataMetric,
+	SandboxCapabilitiesMetric,
 	SandboxCreationMetric,
 	NumRunningSandboxesMetric,
 	NumCannotExportSandboxesMetric,
