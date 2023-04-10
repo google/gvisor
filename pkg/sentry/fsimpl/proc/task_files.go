@@ -854,7 +854,7 @@ func (s *statusFD) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	fmt.Fprintf(buf, "Uid:\t%d\t%d\t%d\t%d\n", ruid, euid, suid, euid)
 	fmt.Fprintf(buf, "Gid:\t%d\t%d\t%d\t%d\n", rgid, egid, sgid, egid)
 	fmt.Fprintf(buf, "FDSize:\t%d\n", fds)
-	buf.WriteString("Groups:\t ")
+	buf.WriteString("Groups:\t")
 	// There is a space between each pair of supplemental GIDs, as well as an
 	// unconditional trailing space that some applications actually depend on.
 	var sep string
