@@ -647,6 +647,7 @@ func (vfs *VirtualFilesystem) connectLocked(mnt *Mount, vd VirtualDentry, mntns 
 		vfs.mountpoints[vd.dentry] = vfsmpmounts
 	}
 	vfsmpmounts[mnt] = struct{}{}
+	vfs.maybeResolveMountPromise(vd)
 }
 
 // disconnectLocked makes vd have no mount parent/point and returns its old
