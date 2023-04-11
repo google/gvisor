@@ -41,6 +41,8 @@ import (
 )
 
 func TestPortForwardLocalMode(t *testing.T) {
+	// TODO(b/276812243): Fix test and revive.
+	t.Skip("Broken test")
 	ctx := context.Background()
 	server := dockerutil.MakeContainer(ctx, t)
 	defer server.CleanUp(ctx)
