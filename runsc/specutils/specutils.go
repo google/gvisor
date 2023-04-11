@@ -698,3 +698,24 @@ func ResolveEnvs(envs ...[]string) ([]string, error) {
 func FaqErrorMsg(anchor, msg string) string {
 	return fmt.Sprintf("%s; see https://gvisor.dev/faq#%s for more details", msg, anchor)
 }
+
+// ApplySysctls applies the sysctls from the spec with the given prefix to the
+// host kernel. Falures are not fatal, but a warning is logged.
+func ApplySysctls(spec *specs.Spec, prefix string) {
+	if spec.Linux == nil {
+		return
+	}
+	for k, v := range spec.Linux.Sysctl {
+		if !strings.HasPrefix(k, prefix) {
+			continue
+		}
+		// Turn the sysctl name into corresponding proc file. We will
+		// write to the proc file directly, rather than rely on the
+		// sysctl binary which might not exist in our filesystem
+		pFile := path.Join("/proc/sys", strings.ReplaceAll(k, ".", "/"))
+		log.Infof("Applying sysctl name=%q value=%q", k, v)
+		if err := os.WriteFile(pFile, []byte(v), 0644); err != nil {
+			log.Warningf("Failed to set sysctl name=%q (%s)  value=%q: %v", k, pFile, v, err)
+		}
+	}
+}

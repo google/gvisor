@@ -18,6 +18,7 @@
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/syscalls/linux/socket_inet_loopback_test_params.h"
+#include "test/util/capability_util.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
@@ -298,6 +299,9 @@ using SocketMultiProtocolInetLoopbackIsolatedTest =
     ::testing::TestWithParam<ProtocolTestParam>;
 
 TEST_P(SocketMultiProtocolInetLoopbackIsolatedTest, BindToDeviceReusePort) {
+  // setsockopt(SO_BINDTODEVICE) requires CAP_NET_RAW.
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
+
   ProtocolTestParam const& param = GetParam();
   TestAddress const& test_addr = V4Loopback();
 

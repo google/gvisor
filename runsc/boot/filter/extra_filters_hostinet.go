@@ -39,11 +39,11 @@ func hostInetFilters(allowRawSockets bool) seccomp.SyscallRules {
 		unix.SYS_IOCTL: []seccomp.Rule{
 			{
 				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.TIOCOUTQ),
+				seccomp.EqualTo(unix.SIOCGIFCONF),
 			},
 			{
 				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.TIOCINQ),
+				seccomp.EqualTo(unix.SIOCETHTOOL),
 			},
 			{
 				seccomp.MatchAny{},
@@ -51,12 +51,31 @@ func hostInetFilters(allowRawSockets bool) seccomp.SyscallRules {
 			},
 			{
 				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SIOCGIFCONF),
+				seccomp.EqualTo(unix.SIOCGIFHWADDR),
 			},
-			// Needed to query netlink sockets.
 			{
 				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SIOCETHTOOL),
+				seccomp.EqualTo(unix.SIOCGIFINDEX),
+			},
+			{
+				seccomp.MatchAny{},
+				seccomp.EqualTo(unix.SIOCGIFMTU),
+			},
+			{
+				seccomp.MatchAny{},
+				seccomp.EqualTo(unix.SIOCGIFNAME),
+			},
+			{
+				seccomp.MatchAny{},
+				seccomp.EqualTo(unix.SIOCGIFNETMASK),
+			},
+			{
+				seccomp.MatchAny{},
+				seccomp.EqualTo(unix.TIOCOUTQ),
+			},
+			{
+				seccomp.MatchAny{},
+				seccomp.EqualTo(unix.TIOCINQ),
 			},
 		},
 		unix.SYS_LISTEN:   {},
