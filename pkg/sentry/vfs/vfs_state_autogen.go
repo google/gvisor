@@ -1981,6 +1981,7 @@ func (vfs *VirtualFilesystem) StateFields() []string {
 		"fsTypes",
 		"filesystems",
 		"groupIDBitmap",
+		"mountPromises",
 	}
 }
 
@@ -2001,6 +2002,7 @@ func (vfs *VirtualFilesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(7, &vfs.fsTypes)
 	stateSinkObject.Save(8, &vfs.filesystems)
 	stateSinkObject.Save(9, &vfs.groupIDBitmap)
+	stateSinkObject.Save(10, &vfs.mountPromises)
 }
 
 func (vfs *VirtualFilesystem) afterLoad() {}
@@ -2016,6 +2018,7 @@ func (vfs *VirtualFilesystem) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(7, &vfs.fsTypes)
 	stateSourceObject.Load(8, &vfs.filesystems)
 	stateSourceObject.Load(9, &vfs.groupIDBitmap)
+	stateSourceObject.Load(10, &vfs.mountPromises)
 	stateSourceObject.LoadValue(0, new([]*Mount), func(y any) { vfs.loadMounts(y.([]*Mount)) })
 }
 
