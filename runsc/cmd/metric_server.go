@@ -618,7 +618,7 @@ var (
 	SandboxCreationMetric = prometheus.Metric{
 		Name: "sandbox_creation_time_seconds",
 		Type: prometheus.TypeGauge,
-		Help: "When the sandbox was created, as a unix timestamp in milliseconds.",
+		Help: "When the sandbox was created, as a unix timestamp in seconds.",
 	}
 	NumRunningSandboxesMetric = prometheus.Metric{
 		Name: "num_sandboxes_running",
