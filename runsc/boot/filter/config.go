@@ -416,7 +416,7 @@ func hostFilesystemFilters() seccomp.SyscallRules {
 			{
 				validFDCheck,
 				seccomp.MatchAny{},
-				seccomp.MatchAny{},
+				seccomp.MaskedEqual(unix.O_NOFOLLOW, unix.O_NOFOLLOW),
 				seccomp.MatchAny{},
 			},
 		},
