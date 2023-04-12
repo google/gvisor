@@ -58,7 +58,6 @@ var exclude = map[string][]string{
 	"test_fcntl": []string{"TestFcntl.test_fcntl_64_bit"},
 	// TODO(b/76174079): Un-exclude once this bug is fixed.
 	"test_posix": []string{
-		"PosixTester.test_fs_holes", // Fails only with --overlay=none.
 		"PosixTester.test_sched_priority",
 		"PosixTester.test_sched_rr_get_interval",
 		"PosixTester.test_get_and_set_scheduler_and_param", // sched_setparam(2) is not supported.

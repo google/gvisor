@@ -648,12 +648,12 @@ func regularFileSeekLocked(ctx context.Context, d *dentry, fdOffset, offset int6
 		case linux.SEEK_END:
 			offset += size
 		case linux.SEEK_DATA:
-			if offset > size {
+			if offset >= size {
 				return 0, linuxerr.ENXIO
 			}
 			// Use offset as specified.
 		case linux.SEEK_HOLE:
-			if offset > size {
+			if offset >= size {
 				return 0, linuxerr.ENXIO
 			}
 			offset = size
