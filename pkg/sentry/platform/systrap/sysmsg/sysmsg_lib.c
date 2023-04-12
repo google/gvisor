@@ -39,10 +39,10 @@ uint64_t __export_handshake_timeout;
 struct context_queue {
   uint32_t start;
   uint32_t end;
-  uint32_t polling_index;
-  uint32_t polling_index_base;
   uint32_t num_active_threads;
   uint32_t num_active_contexts;
+  uint64_t fast_path_disalbed_ts;
+  uint32_t fast_path_failed_in_row;
   uint32_t ringbuffer[MAX_CONTEXT_QUEUE_ENTRIES];
 };
 
@@ -198,6 +198,9 @@ struct thread_context *queue_get_context(struct sysmsg *sysmsg) {
   return NULL;
 }
 
+#define FAILED_FAST_PATH_LIMIT 5
+#define FAILED_FAST_PATH_TIMEOUT 20000000  // 10ms
+
 // get_context retrieves a context that is ready to be restored to the user.
 // This populates sysmsg->thread_context_id.
 struct thread_context *get_context(struct sysmsg *sysmsg) {
@@ -209,16 +212,40 @@ struct thread_context *get_context(struct sysmsg *sysmsg) {
     // Change sysmsg thread state just to indicate thread is not asleep.
     __atomic_store_n(&sysmsg->state, THREAD_STATE_PREP, __ATOMIC_RELEASE);
     ctx = queue_get_context(sysmsg);
-    if (ctx) return ctx;
+    if (ctx) {
+      __atomic_store_n(&queue->fast_path_failed_in_row, 0, __ATOMIC_RELEASE);
+      return ctx;
+    }
 
-    if (spinning_queue_push()) {
+    uint64_t slow_path_ts =
+        __atomic_load_n(&queue->fast_path_disalbed_ts, __ATOMIC_ACQUIRE);
+    bool fast_path_enabled = true;
+
+    if (!slow_path_ts) {
+      if (rdtsc() - slow_path_ts > FAILED_FAST_PATH_TIMEOUT) {
+        __atomic_store_n(&queue->fast_path_failed_in_row, 0, __ATOMIC_RELEASE);
+        __atomic_store_n(&queue->fast_path_disalbed_ts, 0, __ATOMIC_RELEASE);
+      } else {
+        fast_path_enabled = false;
+      }
+    }
+
+    if (fast_path_enabled && spinning_queue_push()) {
       while (1) {
         ctx = queue_get_context(sysmsg);
         if (ctx) {
+          __atomic_store_n(&queue->fast_path_failed_in_row, 0,
+                           __ATOMIC_RELEASE);
           spinning_queue_pop();
           return ctx;
         }
         if (spinning_queue_remove_first(__export_deep_sleep_timeout)) {
+          uint32_t nr = __atomic_add_fetch(&queue->fast_path_failed_in_row, 1,
+                                           __ATOMIC_ACQ_REL);
+          if (nr >= FAILED_FAST_PATH_LIMIT) {
+            __atomic_store_n(&queue->fast_path_disalbed_ts, rdtsc(),
+                             __ATOMIC_RELEASE);
+          }
           break;
         }
         spinloop();

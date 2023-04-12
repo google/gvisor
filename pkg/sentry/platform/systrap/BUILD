@@ -77,6 +77,7 @@ go_library(
         "//pkg/sentry/platform/systrap/sysmsg",
         "//pkg/sentry/platform/systrap/usertrap",
         "//pkg/sentry/usage",
+        "//pkg/sync",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
