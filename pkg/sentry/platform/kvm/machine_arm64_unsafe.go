@@ -113,6 +113,34 @@ func (c *vCPU) initArchState() error {
 		return err
 	}
 
+	// cntkctl_el1
+	data = _CNTKCTL_EL1_DEFAULT
+	reg.id = _KVM_ARM64_REGS_CNTKCTL_EL1
+	if err := c.setOneRegister(&reg); err != nil {
+		return err
+	}
+
+	// cpacr_el1
+	data = 0
+	reg.id = _KVM_ARM64_REGS_CPACR_EL1
+	if err := c.setOneRegister(&reg); err != nil {
+		return err
+	}
+
+	// sctlr_el1
+	data = _SCTLR_EL1_DEFAULT
+	reg.id = _KVM_ARM64_REGS_SCTLR_EL1
+	if err := c.setOneRegister(&reg); err != nil {
+		return err
+	}
+
+	// tpidr_el1
+	reg.id = _KVM_ARM64_REGS_TPIDR_EL1
+	data = uint64(reflect.ValueOf(&c.CPU).Pointer() | ring0.KernelStartAddress)
+	if err := c.setOneRegister(&reg); err != nil {
+		return err
+	}
+
 	// sp_el1
 	data = c.CPU.StackTop()
 	reg.id = _KVM_ARM64_REGS_SP_EL1
@@ -127,13 +155,6 @@ func (c *vCPU) initArchState() error {
 		return err
 	}
 
-	// r8
-	reg.id = _KVM_ARM64_REGS_R8
-	data = uint64(reflect.ValueOf(&c.CPU).Pointer())
-	if err := c.setOneRegister(&reg); err != nil {
-		return err
-	}
-
 	// vbar_el1
 	reg.id = _KVM_ARM64_REGS_VBAR_EL1
 	vectorLocation := ring0.AddrOfVectors()
@@ -144,7 +165,8 @@ func (c *vCPU) initArchState() error {
 
 	// Use the address of the exception vector table as
 	// the MMIO address base.
-	arm64HypercallMMIOBase = vectorLocation
+	vectorLocationPhys, _, _ := translateToPhysical(vectorLocation)
+	arm64HypercallMMIOBase = vectorLocationPhys
 
 	// Initialize the PCID database.
 	if hasGuestPCID {
