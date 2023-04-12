@@ -156,12 +156,13 @@ func (epsByNIC *endpointsByNIC) transportEndpoints() []TransportEndpoint {
 // endpoint. It returns false if the packet could not be matched to any
 // transport endpoint, true otherwise.
 func (epsByNIC *endpointsByNIC) handlePacket(id TransportEndpointID, pkt PacketBufferPtr) bool {
+	// Don't use defer for performance reasons.
 	epsByNIC.mu.RLock()
 
 	mpep, ok := epsByNIC.endpoints[pkt.NICID]
 	if !ok {
 		if mpep, ok = epsByNIC.endpoints[0]; !ok {
-			epsByNIC.mu.RUnlock() // Don't use defer for performance reasons.
+			epsByNIC.mu.RUnlock()
 			return false
 		}
 	}
@@ -169,18 +170,18 @@ func (epsByNIC *endpointsByNIC) handlePacket(id TransportEndpointID, pkt PacketB
 	// If this is a broadcast or multicast datagram, deliver the datagram to all
 	// endpoints bound to the right device.
 	if isInboundMulticastOrBroadcast(pkt, id.LocalAddress) {
+		epsByNIC.mu.RUnlock()
 		mpep.handlePacketAll(id, pkt)
-		epsByNIC.mu.RUnlock() // Don't use defer for performance reasons.
 		return true
 	}
 	// multiPortEndpoints are guaranteed to have at least one element.
 	transEP := mpep.selectEndpoint(id, epsByNIC.seed)
-	if queuedProtocol, mustQueue := mpep.demux.queuedProtocols[protocolIDs{mpep.netProto, mpep.transProto}]; mustQueue {
+	queuedProtocol, mustQueue := mpep.demux.queuedProtocols[protocolIDs{mpep.netProto, mpep.transProto}]
+	epsByNIC.mu.RUnlock()
+	if mustQueue {
 		queuedProtocol.QueuePacket(transEP, id, pkt)
-		epsByNIC.mu.RUnlock()
 		return true
 	}
-	epsByNIC.mu.RUnlock()
 
 	transEP.HandlePacket(id, pkt)
 	return true
