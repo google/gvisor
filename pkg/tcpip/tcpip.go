@@ -2302,6 +2302,29 @@ type WriteErrors struct {
 	InvalidArgs StatCounter
 }
 
+// NetworkLayerSocketOptionStats collects network-layer socket option get/set
+// statistics.
+//
+// +stateify savable
+type NetworkLayerSocketOptionStats struct {
+	GetMTUDiscoverOption        StatCounter
+	SetMTUDiscoverOption        StatCounter
+	GetMulticastTTLOption       StatCounter
+	SetMulticastTTLOption       StatCounter
+	GetIPv4TTLOption            StatCounter
+	SetIPv4TTLOption            StatCounter
+	GetIPv6HopLimitOption       StatCounter
+	SetIPv6HopLimitOption       StatCounter
+	GetIPv4TOSOption            StatCounter
+	SetIPv4TOSOption            StatCounter
+	GetIPv6TrafficClassOption   StatCounter
+	SetIPv6TrafficClassOption   StatCounter
+	GetMulticastInterfaceOption StatCounter
+	SetMulticastInterfaceOption StatCounter
+	SetAddMembershipOption      StatCounter
+	SetRemoveMembershipOption   StatCounter
+}
+
 // TransportEndpointStats collects statistics about the endpoint.
 //
 // +stateify savable
@@ -2328,6 +2351,17 @@ type TransportEndpointStats struct {
 // IsEndpointStats is an empty method to implement the tcpip.EndpointStats
 // marker interface.
 func (*TransportEndpointStats) IsEndpointStats() {}
+
+// DatagramEndpointStats collects statistics about endpoints that operate on
+// datagrams at the network layer and above.
+//
+// +stateify savable
+type DatagramEndpointStats struct {
+	TransportEndpointStats
+
+	// NetworkLayerSocketOptionStats collects network-layer socket option stats.
+	NetworkLayerSocketOptionStats NetworkLayerSocketOptionStats
+}
 
 // InitStatCounters initializes v's fields with nil StatCounter fields to new
 // StatCounters.

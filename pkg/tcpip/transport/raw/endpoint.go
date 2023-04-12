@@ -79,7 +79,7 @@ type endpoint struct {
 	associated  bool
 
 	net   network.Endpoint
-	stats tcpip.TransportEndpointStats
+	stats tcpip.DatagramEndpointStats
 	ops   tcpip.SocketOptions
 
 	rcvMu sync.Mutex `state:"nosave"`
@@ -136,7 +136,7 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProt
 	e.ops.SetHeaderIncluded(!associated)
 	e.ops.SetSendBufferSize(32*1024, false /* notify */)
 	e.ops.SetReceiveBufferSize(32*1024, false /* notify */)
-	e.net.Init(s, netProto, transProto, &e.ops, waiterQueue)
+	e.net.Init(s, netProto, transProto, &e.ops, &e.stats.NetworkLayerSocketOptionStats, waiterQueue)
 
 	// Override with stack defaults.
 	var ss tcpip.SendBufferSizeOption

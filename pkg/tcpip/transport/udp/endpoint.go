@@ -66,7 +66,7 @@ type endpoint struct {
 	waiterQueue *waiter.Queue
 	uniqueID    uint64
 	net         network.Endpoint
-	stats       tcpip.TransportEndpointStats
+	stats       tcpip.DatagramEndpointStats
 	ops         tcpip.SocketOptions
 
 	// The following fields are used to manage the receive queue, and are
@@ -117,7 +117,7 @@ func newEndpoint(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, waiterQue
 	e.ops.SetMulticastLoop(true)
 	e.ops.SetSendBufferSize(32*1024, false /* notify */)
 	e.ops.SetReceiveBufferSize(32*1024, false /* notify */)
-	e.net.Init(s, netProto, header.UDPProtocolNumber, &e.ops, waiterQueue)
+	e.net.Init(s, netProto, header.UDPProtocolNumber, &e.ops, &e.stats.NetworkLayerSocketOptionStats, waiterQueue)
 
 	// Override with stack defaults.
 	var ss tcpip.SendBufferSizeOption
