@@ -46,6 +46,9 @@ type sharedContext struct {
 	// NOTE: Using this handle directly without a getter from this function should
 	//       most likely be avoided due to concerns listed above.
 	shared *sysmsg.ThreadContext
+
+	fastPathFailedInRow uint32
+	fastPathDisabledTS  uint64
 }
 
 func (s *subprocess) getSharedContext() (*sharedContext, error) {

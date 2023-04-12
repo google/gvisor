@@ -34,6 +34,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/sysmsg"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/usertrap"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
+	gsync "gvisor.dev/gvisor/pkg/sync"
 )
 
 var (
@@ -788,6 +789,11 @@ func (s *subprocess) switchToApp(c *context, ac *arch.Context64) (isSyscall bool
 	return false, false, nil
 }
 
+const (
+	fastPathFailedInRowLimit = 5
+	fastPathDisabledTimeout  = 20 * 1000 * 1000 // 10ms
+)
+
 func (s *subprocess) waitOnState(ctx *sharedContext) {
 	kicked := false
 	slowPath := false
@@ -796,15 +802,18 @@ func (s *subprocess) waitOnState(ctx *sharedContext) {
 	if atomic.LoadUint32(&s.contextQueue.numActiveThreads) == 0 {
 		kicked = s.kickSysmsgThread()
 	}
+	fastPathEnabled := true
+	if ctx.fastPathDisabledTS != 0 {
+		if uint64(cputicks())-ctx.fastPathDisabledTS < fastPathDisabledTimeout {
+			fastPathEnabled = false
+		} else {
+			ctx.fastPathFailedInRow = 0
+			ctx.fastPathDisabledTS = 0
+		}
+	}
 	for curState := ctx.state(); curState == sysmsg.ContextStateNone; curState = ctx.state() {
 		if !slowPath {
 			delta := uint64(cputicks() - start)
-			if delta > deepSleepTimeout {
-				ctx.disableSentryFastPath()
-				slowPath = true
-				continue
-			}
-
 			if !handshake {
 				if ctx.isAcked() {
 					handshake = true
@@ -814,7 +823,13 @@ func (s *subprocess) waitOnState(ctx *sharedContext) {
 					kicked = s.kickSysmsgThread()
 				}
 			}
-			spinloop()
+			if !fastPathEnabled || delta > deepSleepTimeout {
+				ctx.disableSentryFastPath()
+				slowPath = true
+				continue
+			}
+
+			gsync.Goyield()
 		} else {
 			// If the context already received a handshake then it knows it's being
 			// worked on.
@@ -823,6 +838,17 @@ func (s *subprocess) waitOnState(ctx *sharedContext) {
 			}
 
 			ctx.sleepOnState(curState)
+		}
+	}
+
+	if fastPathEnabled {
+		if slowPath {
+			ctx.fastPathFailedInRow++
+			if ctx.fastPathFailedInRow > fastPathFailedInRowLimit {
+				ctx.fastPathDisabledTS = uint64(cputicks())
+			}
+		} else {
+			ctx.fastPathFailedInRow = 0
 		}
 	}
 
