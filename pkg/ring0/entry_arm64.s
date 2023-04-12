@@ -126,22 +126,6 @@
 
 #define FPEN_ENABLE (FPEN_NOTRAP << FPEN_SHIFT)
 
-// sctlr_el1: system control register el1.
-#define SCTLR_M         1 << 0
-#define SCTLR_C         1 << 2
-#define SCTLR_I         1 << 12
-#define SCTLR_DZE       1 << 14
-#define SCTLR_UCT       1 << 15
-#define SCTLR_UCI       1 << 26
-
-#define SCTLR_EL1_DEFAULT       (SCTLR_M | SCTLR_C | SCTLR_I | SCTLR_UCT | SCTLR_UCI | SCTLR_DZE)
-
-// cntkctl_el1: counter-timer kernel control register el1.
-#define CNTKCTL_EL0PCTEN 	1 << 0
-#define CNTKCTL_EL0VCTEN 	1 << 1
-
-#define CNTKCTL_EL1_DEFAULT 	(CNTKCTL_EL0PCTEN | CNTKCTL_EL0VCTEN)
-
 // Saves a register set.
 //
 // This is a macro because it may need to executed in contents where a stack is
@@ -604,39 +588,9 @@ TEXT ·kernelExitToEl1(SB),NOSPLIT,$0
 
 	ERET()
 
-// start is the CPU entrypoint.
 TEXT ·start(SB),NOSPLIT,$0
-	// Init.
-	WORD $0xd508871f    // __tlbi(vmalle1)
-	DSB $7          // dsb(nsh)
-
-	MOVD $1<<12, R1         // Reset mdscr_el1 and disable
-	MSR R1, MDSCR_EL1       // access to the DCC from EL0
-	ISB $15
-
-	MRS TTBR1_EL1, R1
-	MSR R1, TTBR0_EL1
-	ISB $15
-
-	MOVD $CNTKCTL_EL1_DEFAULT, R1
-	MSR R1, CNTKCTL_EL1
-
-	MOVD R8, RSV_REG
-	ORR $0xffff000000000000, RSV_REG, RSV_REG
-	WORD $0xd518d092        //MSR R18, TPIDR_EL1
-
-	// Enable trap for accessing fpsimd.
-	MSR $0, CPACR_EL1
-
-	// Init.
-	MOVD $SCTLR_EL1_DEFAULT, R1 // re-enable the mmu.
-	MSR R1, SCTLR_EL1
-	ISB $15
-	WORD $0xd508751f // ic iallu
-
 	DSB $7          // dsb(nsh)
 	ISB $15
-
 	B ·kernelExitToEl1(SB)
 
 // func AddrOfStart() uintptr
