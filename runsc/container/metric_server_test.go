@@ -647,6 +647,30 @@ func TestContainerMetricsFilter(t *testing.T) {
 	if err != nil {
 		t.Errorf("Cannot get sandbox metadata from unfiltered data: %v", err)
 	}
+
+	// Fifth pass: Use alternate URL encoding to mimic Prometheus's URL-encoding
+	// behavior.
+	alternatePathData, err := te.client.GetMetrics(te.testCtx, map[string]string{
+		// Encoded version of "/metrics?runsc-sandbox-metrics-filter=^$", this should match nothing.
+		"": "/metrics%3Frunsc-sandbox-metrics-filter=%5E%24",
+	})
+	if err != nil {
+		t.Fatalf("Cannot get metrics: %v", err)
+	}
+	_, err = alternatePathData.GetSandboxMetadataMetric(metricclient.WantMetric{
+		Metric:  "testmetric_meta_sandbox_metadata",
+		Sandbox: args.ID,
+	})
+	if err != nil {
+		t.Errorf("Cannot get sandbox metadata from data obtained from alternate path: %v\n\nData:\n\n%v\n\n", err, alternatePathData)
+	}
+	_, _, err = alternatePathData.GetPrometheusContainerInteger(metricclient.WantMetric{
+		Metric:  "testmetric_fs_opens",
+		Sandbox: args.ID,
+	})
+	if err == nil {
+		t.Errorf("Was unexpectedly able to get testmetric_fs_opens from data obtained from alternate path which was supposed to filter it out:\n\n%v\n\n", alternatePathData)
+	}
 }
 
 // TestContainerCapabilityFilter verifies the ability to filter capabilities in /metrics requests.

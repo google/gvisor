@@ -274,8 +274,16 @@ func (c *MetricClient) ShutdownServer(ctx context.Context) error {
 type MetricData string
 
 // GetMetrics returns the raw Prometheus-formatted metric data from the metric server.
+// `urlParams` may contain a special parameter with the empty string as the key.
+// If this is set, that string is used to override the request path from its default
+// value of `/metrics`.
 func (c *MetricClient) GetMetrics(ctx context.Context, urlParams map[string]string) (MetricData, error) {
-	resp, closeReq, err := c.req(ctx, 10*time.Second, http.MethodGet, "/metrics", urlParams)
+	path := "/metrics"
+	if overridePath, found := urlParams[""]; found {
+		path = overridePath
+		delete(urlParams, "")
+	}
+	resp, closeReq, err := c.req(ctx, 10*time.Second, http.MethodGet, path, urlParams)
 	if err != nil {
 		return "", fmt.Errorf("cannot get /metrics: %v", err)
 	}
