@@ -87,7 +87,7 @@ func (goRunner) TestCmds(tests []string) []*exec.Cmd {
 
 	var cmds []*exec.Cmd
 	if len(toolTests) > 0 {
-		cmds = append(cmds, exec.Command("go", "tool", "dist", "test", "-v", "-no-rebuild", "-run", strings.Join(toolTests, "\\|")))
+		cmds = append(cmds, exec.Command("go", "tool", "dist", "test", "-v", "-no-rebuild", "-run", strings.Join(toolTests, "|")))
 	}
 	if len(onDiskTests) > 0 {
 		cmd := exec.Command("go", append([]string{"run", "run.go", "-v", "--"}, onDiskTests...)...)
