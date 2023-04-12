@@ -36,21 +36,60 @@ type epQueue struct {
 
 // enqueue adds e to the queue if the endpoint is not already on the queue.
 func (q *epQueue) enqueue(e *endpoint) {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-	e.pendingProcessingMu.Lock()
-	defer e.pendingProcessingMu.Unlock()
+	// q.mu.Lock()
+	// defer q.mu.Unlock()
+	// e.pendingProcessingMu.Lock()
+	// defer e.pendingProcessingMu.Unlock()
 
-	if e.pendingProcessing {
-		return
+	// if e.pendingProcessing {
+	// 	return
+	// }
+	// q.list.PushBack(e)
+	// e.pendingProcessing = true
+
+	// ep := p.epQ.dequeue()
+	// if ep == nil {
+	// 	break
+	// }
+	for {
+		ep := e
+		if ep.segmentQueue.empty() {
+			continue
+		}
+		switch state := ep.EndpointState(); {
+		case state.connecting():
+			handleConnecting(ep)
+		case state.connected() && state != StateTimeWait:
+			handleConnected(ep)
+		case state == StateTimeWait:
+			handleTimeWait(ep)
+		case state == StateListen:
+			handleListen(ep)
+		case state == StateError || state == StateClose:
+			// Try to redeliver any still queued
+			// packets to another endpoint or send a
+			// RST if it can't be delivered.
+			ep.mu.Lock()
+			if st := ep.EndpointState(); st == StateError || st == StateClose {
+				ep.drainClosingSegmentQueue()
+			}
+			ep.mu.Unlock()
+		default:
+			panic(fmt.Sprintf("unexpected tcp state in processor: %v", state))
+		}
+		// If there are more segments to process and the
+		// endpoint lock is not held by user then
+		// requeue this endpoint for processing.
+		if ep.segmentQueue.empty() || ep.isOwnedByUser() {
+			break
+		}
 	}
-	q.list.PushBack(e)
-	e.pendingProcessing = true
 }
 
 // dequeue removes and returns the first element from the queue if available,
 // returns nil otherwise.
 func (q *epQueue) dequeue() *endpoint {
+	panic("don't call me bro")
 	q.mu.Lock()
 	if e := q.list.Front(); e != nil {
 		q.list.Remove(e)
@@ -129,7 +168,7 @@ func deliverAccepted(ep *endpoint) bool {
 
 // handleConnecting is responsible for TCP processing for an endpoint in one of
 // the connecting states.
-func (p *processor) handleConnecting(ep *endpoint) {
+func handleConnecting(ep *endpoint) {
 	if !ep.TryLock() {
 		return
 	}
@@ -172,7 +211,7 @@ func (p *processor) handleConnecting(ep *endpoint) {
 
 // handleConnected is responsible for TCP processing for an endpoint in one of
 // the connected states(StateEstablished, StateFinWait1 etc.)
-func (p *processor) handleConnected(ep *endpoint) {
+func handleConnected(ep *endpoint) {
 	if !ep.TryLock() {
 		return
 	}
@@ -200,7 +239,7 @@ func (p *processor) handleConnected(ep *endpoint) {
 		ep.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.ReadableEvents | waiter.WritableEvents)
 		return
 	case ep.EndpointState() == StateTimeWait:
-		p.startTimeWait(ep)
+		startTimeWait(ep)
 	}
 	ep.mu.Unlock()
 }
@@ -208,7 +247,7 @@ func (p *processor) handleConnected(ep *endpoint) {
 // startTimeWait starts a new goroutine to handle TIME-WAIT.
 //
 // +checklocks:ep.mu
-func (p *processor) startTimeWait(ep *endpoint) {
+func startTimeWait(ep *endpoint) {
 	// Disable close timer as we are now entering real TIME_WAIT.
 	if ep.finWait2Timer != nil {
 		ep.finWait2Timer.Stop()
@@ -221,7 +260,7 @@ func (p *processor) startTimeWait(ep *endpoint) {
 
 // handleTimeWait is responsible for TCP processing for an endpoint in TIME-WAIT
 // state.
-func (p *processor) handleTimeWait(ep *endpoint) {
+func handleTimeWait(ep *endpoint) {
 	if !ep.TryLock() {
 		return
 	}
@@ -251,7 +290,7 @@ func (p *processor) handleTimeWait(ep *endpoint) {
 
 // handleListen is responsible for TCP processing for an endpoint in LISTEN
 // state.
-func (p *processor) handleListen(ep *endpoint) {
+func handleListen(ep *endpoint) {
 	if !ep.TryLock() {
 		return
 	}
@@ -297,42 +336,42 @@ func (p *processor) start(wg *sync.WaitGroup) {
 				<-p.resumeChan
 			}
 		case w == &p.newEndpointWaker:
-			for {
-				ep := p.epQ.dequeue()
-				if ep == nil {
-					break
-				}
-				if ep.segmentQueue.empty() {
-					continue
-				}
-				switch state := ep.EndpointState(); {
-				case state.connecting():
-					p.handleConnecting(ep)
-				case state.connected() && state != StateTimeWait:
-					p.handleConnected(ep)
-				case state == StateTimeWait:
-					p.handleTimeWait(ep)
-				case state == StateListen:
-					p.handleListen(ep)
-				case state == StateError || state == StateClose:
-					// Try to redeliver any still queued
-					// packets to another endpoint or send a
-					// RST if it can't be delivered.
-					ep.mu.Lock()
-					if st := ep.EndpointState(); st == StateError || st == StateClose {
-						ep.drainClosingSegmentQueue()
-					}
-					ep.mu.Unlock()
-				default:
-					panic(fmt.Sprintf("unexpected tcp state in processor: %v", state))
-				}
-				// If there are more segments to process and the
-				// endpoint lock is not held by user then
-				// requeue this endpoint for processing.
-				if !ep.segmentQueue.empty() && !ep.isOwnedByUser() {
-					p.epQ.enqueue(ep)
-				}
-			}
+			// for {
+			// 	ep := p.epQ.dequeue()
+			// 	if ep == nil {
+			// 		break
+			// 	}
+			// 	if ep.segmentQueue.empty() {
+			// 		continue
+			// 	}
+			// 	switch state := ep.EndpointState(); {
+			// 	case state.connecting():
+			// 		p.handleConnecting(ep)
+			// 	case state.connected() && state != StateTimeWait:
+			// 		p.handleConnected(ep)
+			// 	case state == StateTimeWait:
+			// 		p.handleTimeWait(ep)
+			// 	case state == StateListen:
+			// 		p.handleListen(ep)
+			// 	case state == StateError || state == StateClose:
+			// 		// Try to redeliver any still queued
+			// 		// packets to another endpoint or send a
+			// 		// RST if it can't be delivered.
+			// 		ep.mu.Lock()
+			// 		if st := ep.EndpointState(); st == StateError || st == StateClose {
+			// 			ep.drainClosingSegmentQueue()
+			// 		}
+			// 		ep.mu.Unlock()
+			// 	default:
+			// 		panic(fmt.Sprintf("unexpected tcp state in processor: %v", state))
+			// 	}
+			// 	// If there are more segments to process and the
+			// 	// endpoint lock is not held by user then
+			// 	// requeue this endpoint for processing.
+			// 	if !ep.segmentQueue.empty() && !ep.isOwnedByUser() {
+			// 		p.epQ.enqueue(ep)
+			// 	}
+			// }
 		}
 	}
 }
