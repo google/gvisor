@@ -75,6 +75,7 @@ def _syscall_test(
         container = None,
         one_sandbox = True,
         fusefs = False,
+        directfs = False,
         **kwargs):
     # Prepend "runsc" to non-native platform names.
     full_platform = platform if platform == "native" else "runsc_" + platform
@@ -89,6 +90,8 @@ def _syscall_test(
         name += "_" + network + "net"
     if fusefs:
         name += "_fuse"
+    if directfs:
+        name += "_directfs"
 
     # Apply all tags.
     if tags == None:
@@ -147,6 +150,7 @@ def _syscall_test(
         "--container=" + str(container),
         "--one-sandbox=" + str(one_sandbox),
         "--iouring=" + str(iouring),
+        "--directfs=" + str(directfs),
     ]
 
     # Trace points are platform agnostic, so enable them for ptrace only.
@@ -177,6 +181,7 @@ def syscall_test(
         add_host_connector = False,
         add_host_fifo = False,
         add_hostinet = False,
+        add_directfs = True,
         one_sandbox = True,
         iouring = False,
         allow_native = True,
@@ -195,6 +200,7 @@ def syscall_test(
       add_host_connector: setup host threads to connect to bound UDS created by sandbox.
       add_host_fifo: setup FIFO files on the host.
       add_hostinet: add a hostinet test.
+      add_directfs: add a directfs test.
       one_sandbox: runs each unit test in a new sandbox instance.
       iouring: enable IO_URING support.
       allow_native: generate a native test variant.
@@ -223,6 +229,8 @@ def syscall_test(
         )
 
     for platform, platform_tags in all_platforms():
+        # Add directfs to the default platform variant.
+        directfs = add_directfs and platform == default_platform
         _syscall_test(
             test = test,
             platform = platform,
@@ -232,6 +240,7 @@ def syscall_test(
             add_host_fifo = add_host_fifo,
             tags = platform_tags + tags,
             iouring = iouring,
+            directfs = directfs,
             debug = debug,
             container = container,
             one_sandbox = one_sandbox,
