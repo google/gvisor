@@ -16,7 +16,6 @@ package kernel
 
 import (
 	"fmt"
-	"strconv"
 
 	"google.golang.org/protobuf/proto"
 	"gvisor.dev/gvisor/pkg/abi"
@@ -391,13 +390,8 @@ func RegisterSyscallTable(s *SyscallTable) {
 	}
 	allSyscallTables = append(allSyscallTables, s)
 	unimplementedSyscallCounterInit.Do(func() {
-		allowedValues := make([]string, maxSyscallNum+2)
-		unimplementedSyscallNumbers = make(map[uintptr]string, len(allowedValues))
-		for i := uintptr(0); i <= maxSyscallNum; i++ {
-			s := strconv.Itoa(int(i))
-			allowedValues[i] = s
-			unimplementedSyscallNumbers[i] = s
-		}
+		allowedValues := make([]string, 1)
+		// TODO(b/278108862): Add all other syscall numbers once doing so is possible.
 		allowedValues[len(allowedValues)-1] = outOfRangeSyscallNumber
 		unimplementedSyscallCounter = metric.MustCreateNewUint64Metric("unimplemented_syscalls", true, "Number of times the application tried to call an unimplemented syscall, broken down by syscall number", metric.NewField("sysno", allowedValues))
 	})
@@ -499,9 +493,6 @@ type SyscallInfo struct {
 //
 //go:nosplit
 func IncrementUnimplementedSyscallCounter(sysno uintptr) {
-	s, found := unimplementedSyscallNumbers[sysno]
-	if !found {
-		s = outOfRangeSyscallNumber
-	}
-	unimplementedSyscallCounter.Increment(s)
+	// TODO(b/278108862): Use the real syscall number once doing so is possible.s, found := unimplementedSyscallNumbers[sysno]
+	unimplementedSyscallCounter.Increment(outOfRangeSyscallNumber)
 }
