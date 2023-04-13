@@ -55,6 +55,7 @@ var (
 	container          = flag.Bool("container", false, "run tests in their own namespaces (user ns, network ns, etc), pretending to be root. Implicitly enabled if network=host, or if using network namespaces")
 	setupContainerPath = flag.String("setup-container", "", "path to setup_container binary (for use with --container)")
 	trace              = flag.Bool("trace", false, "enables all trace points")
+	directfs           = flag.Bool("directfs", false, "enables directfs (for all gofer mounts)")
 
 	addHostUDS       = flag.Bool("add-host-uds", false, "expose a tree of UDS to test communication with the host")
 	addHostConnector = flag.Bool("add-host-connector", false, "create goroutines that connect to bound UDS that will be created by sandbox")
@@ -267,6 +268,9 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 		}
 		log.Infof("Enabling all trace points: %s", flag)
 		args = append(args, flag)
+	}
+	if *directfs {
+		args = append(args, "-directfs")
 	}
 
 	testLogDir := ""
