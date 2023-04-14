@@ -107,14 +107,10 @@ func newPodMountHints(spec *specs.Spec) (*podMountHints, error) {
 	// Validate all the parsed hints.
 	for name, m := range mnts {
 		log.Infof("Mount annotation found, name: %s, source: %q, type: %s, share: %v", name, m.mount.Source, m.mount.Type, m.share)
-		if m.share == invalid {
-			return nil, fmt.Errorf("share field for %q has not been set", m.name)
-		}
-		if len(m.mount.Source) == 0 {
-			return nil, fmt.Errorf("source field for %q has not been set", m.name)
-		}
-		if len(m.mount.Type) == 0 {
-			return nil, fmt.Errorf("type field for %q has not been set", m.name)
+		if m.share == invalid || len(m.mount.Source) == 0 || len(m.mount.Type) == 0 {
+			log.Warningf("ignoring mount annotations for %q because of missing required field(s)", name)
+			delete(mnts, name)
+			continue
 		}
 
 		// Check for duplicate mount sources.
