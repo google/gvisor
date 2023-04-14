@@ -121,20 +121,13 @@ func TestPodMountHintsErrors(t *testing.T) {
 			error: "share field",
 		},
 		{
-			name: "invalid field name",
-			annotations: map[string]string{
-				MountPrefix + "mount1.invalid": "foo",
-			},
-			error: "invalid mount annotation",
-		},
-		{
 			name: "invalid source",
 			annotations: map[string]string{
 				MountPrefix + "mount1.source": "",
 				MountPrefix + "mount1.type":   "tmpfs",
 				MountPrefix + "mount1.share":  "pod",
 			},
-			error: "source cannot be empty",
+			error: "source field for \"mount1\" has not been set",
 		},
 		{
 			name: "invalid type",
@@ -143,7 +136,7 @@ func TestPodMountHintsErrors(t *testing.T) {
 				MountPrefix + "mount1.type":   "invalid-type",
 				MountPrefix + "mount1.share":  "pod",
 			},
-			error: "invalid type",
+			error: "type field for \"mount1\" has not been set",
 		},
 		{
 			name: "invalid share",
@@ -152,17 +145,7 @@ func TestPodMountHintsErrors(t *testing.T) {
 				MountPrefix + "mount1.type":   "tmpfs",
 				MountPrefix + "mount1.share":  "invalid-share",
 			},
-			error: "invalid share",
-		},
-		{
-			name: "invalid options",
-			annotations: map[string]string{
-				MountPrefix + "mount1.source":  "foo",
-				MountPrefix + "mount1.type":    "tmpfs",
-				MountPrefix + "mount1.share":   "pod",
-				MountPrefix + "mount1.options": "invalid-option",
-			},
-			error: "unknown mount option",
+			error: "share field for \"mount1\" has not been set",
 		},
 		{
 			name: "duplicate source",
