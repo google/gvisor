@@ -153,7 +153,7 @@ func (m *mountHint) setField(key, val string) error {
 		}
 		m.share = share
 	case "options":
-		return m.setOptions(val)
+		m.mount.Options = specutils.FilterMountOptions(strings.Split(val, ","))
 	default:
 		return fmt.Errorf("invalid mount annotation: %s=%s", key, val)
 	}
@@ -167,15 +167,6 @@ func (m *mountHint) setType(val string) error {
 	default:
 		return fmt.Errorf("invalid type %q", val)
 	}
-	return nil
-}
-
-func (m *mountHint) setOptions(val string) error {
-	opts := strings.Split(val, ",")
-	if err := specutils.ValidateMountOptions(opts); err != nil {
-		return err
-	}
-	m.mount.Options = opts
 	return nil
 }
 

@@ -169,6 +169,25 @@ func TestPodMountHintsIgnore(t *testing.T) {
 	}
 }
 
+func TestIgnoreInvalidMountOptions(t *testing.T) {
+	spec := &specs.Spec{
+		Annotations: map[string]string{
+			MountPrefix + "mount1.source":  "foo",
+			MountPrefix + "mount1.type":    "tmpfs",
+			MountPrefix + "mount1.share":   "container",
+			MountPrefix + "mount1.options": "rw,invalid,private",
+		},
+	}
+	podHints, err := newPodMountHints(spec)
+	if err != nil {
+		t.Fatalf("newPodMountHints failed: %v", err)
+	}
+	mount1 := podHints.mounts["mount1"]
+	if want := []string{"rw", "private"}; !reflect.DeepEqual(want, mount1.mount.Options) {
+		t.Errorf("mount2 type, want: %q, got: %q", want, mount1.mount.Options)
+	}
+}
+
 func TestHintsCheckCompatible(t *testing.T) {
 	for _, tc := range []struct {
 		name        string
