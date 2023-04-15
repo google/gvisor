@@ -22,6 +22,7 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/log"
 )
 
 type mapping struct {
@@ -126,22 +127,39 @@ func moptKey(opt string) string {
 	return strings.SplitN(opt, "=", 2)[0]
 }
 
+// FilterMountOptions filters out all invalid mount options.
+func FilterMountOptions(opts []string) []string {
+	out := make([]string, 0, len(opts))
+	for _, o := range opts {
+		if err := validateMountOption(o); err == nil {
+			out = append(out, o)
+		} else {
+			log.Warningf("mount option skipped %q: %v", o, err)
+		}
+	}
+	return out
+}
+
 // ValidateMountOptions validates that mount options are correct.
 func ValidateMountOptions(opts []string) error {
 	for _, o := range opts {
-		if ContainsStr(invalidOptions, o) {
-			return fmt.Errorf("mount option %q is not supported", o)
-		}
-		_, ok1 := optionsMap[o]
-		_, ok2 := propOptionsMap[o]
-		if !ok1 && !ok2 {
-			return fmt.Errorf("unknown mount option %q", o)
-		}
-		if err := validatePropagation(o); err != nil {
+		if err := validateMountOption(o); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func validateMountOption(o string) error {
+	if ContainsStr(invalidOptions, o) {
+		return fmt.Errorf("mount option %q is not supported", o)
+	}
+	_, ok1 := optionsMap[o]
+	_, ok2 := propOptionsMap[o]
+	if !ok1 && !ok2 {
+		return fmt.Errorf("unknown mount option %q", o)
+	}
+	return validatePropagation(o)
 }
 
 // ValidateRootfsPropagation validates that rootfs propagation options are
