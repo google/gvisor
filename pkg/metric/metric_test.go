@@ -409,9 +409,11 @@ func TestEmitMetricUpdate(t *testing.T) {
 func TestEmitMetricUpdateWithFields(t *testing.T) {
 	defer resetTest()
 
-	field := Field{
-		name:          "weirdness_type",
-		allowedValues: []string{"weird1", "weird2"}}
+	const (
+		weird1 = "weird1"
+		weird2 = "weird2"
+	)
+	field := NewField("weirdness_type", []string{weird1, weird2})
 
 	counter, err := NewUint64Metric("/weirdness", false, pb.MetricMetadata_UNITS_NONE, counterDescription, field)
 	if err != nil {
@@ -434,8 +436,8 @@ func TestEmitMetricUpdateWithFields(t *testing.T) {
 	}
 	verifyPrometheusParsing(t)
 
-	counter.IncrementBy(4, "weird1")
-	counter.Increment("weird2")
+	counter.IncrementBy(4, weird1)
+	counter.Increment(weird2)
 
 	emitter.Reset()
 	EmitMetricUpdate()
@@ -466,7 +468,7 @@ func TestEmitMetricUpdateWithFields(t *testing.T) {
 		}
 
 		switch m.FieldValues[0] {
-		case "weird1":
+		case weird1:
 			uv, ok := m.Value.(*pb.MetricValue_Uint64Value)
 			if !ok {
 				t.Errorf("%+v: value %v got %T want pb.MetricValue_Uint64Value", m, m.Value, m.Value)
@@ -475,7 +477,7 @@ func TestEmitMetricUpdateWithFields(t *testing.T) {
 				t.Errorf("%v: Value got %v want 4", m, uv.Uint64Value)
 			}
 			foundWeird1 = true
-		case "weird2":
+		case weird2:
 			uv, ok := m.Value.(*pb.MetricValue_Uint64Value)
 			if !ok {
 				t.Errorf("%+v: value %v got %T want pb.MetricValue_Uint64Value", m, m.Value, m.Value)
@@ -910,7 +912,7 @@ func TestFieldMapperWithFields(t *testing.T) {
 					return
 				}
 				if depth == 1 {
-					for _, val := range remFields[0].allowedValues {
+					for _, val := range remFields[0].values {
 						fields := append(curFields, val)
 						key := m.lookup(fields...)
 						mapping[key]++
@@ -924,7 +926,7 @@ func TestFieldMapperWithFields(t *testing.T) {
 						}
 					}
 				} else {
-					for _, val := range remFields[0].allowedValues {
+					for _, val := range remFields[0].values {
 						visitCombinations(append(curFields, val), remFields[1:])
 					}
 				}
@@ -953,5 +955,44 @@ func TestFieldMapperNoFields(t *testing.T) {
 	key := m.lookup()
 	if len(m.keyToMultiField(key)) != 0 {
 		t.Errorf("keyToMultiField using key %v (corresponding to no field values): expected no values, got some", key)
+	}
+}
+
+func TestFieldPointerUniqueness(t *testing.T) {
+	foobar := "foobar"
+	foo := foobar[:3]
+	panicked := false
+	func() {
+		defer func() {
+			recover()
+			panicked = true
+		}()
+		NewField("field1", []string{foobar, foo})
+	}()
+	if !panicked {
+		t.Error("did not panic")
+	}
+}
+
+func TestFieldMapperMustUseSamePointerString(t *testing.T) {
+	const constFoo = "foo"
+	heapBar := fmt.Sprintf("%sr", "ba")
+	n, err := newFieldMapper(NewField("field1", []string{constFoo, heapBar}))
+	if err != nil {
+		t.Fatalf("newFieldMapper err: got %v wanted nil", err)
+	}
+	n.lookup(constFoo)
+	n.lookup(heapBar)
+	newFoo := fmt.Sprintf("%so", "fo")
+	panicked := false
+	func() {
+		defer func() {
+			recover()
+			panicked = true
+		}()
+		n.lookup(newFoo)
+	}()
+	if !panicked {
+		t.Error("did not panic")
 	}
 }

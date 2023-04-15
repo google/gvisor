@@ -58,7 +58,7 @@ func newRegularFileFD(mnt *vfs.Mount, d *dentry, flags uint32) (*regularFileFD, 
 		return nil, err
 	}
 	if fd.vfsfd.IsWritable() && (d.mode.Load()&0111 != 0) {
-		metric.SuspiciousOperationsMetric.Increment("opened_write_execute_file")
+		metric.SuspiciousOperationsMetric.Increment(metric.SuspiciousOperationsTypeOpenedWriteExecuteFile)
 	}
 	if d.mmapFD.Load() >= 0 {
 		fsmetric.GoferOpensHost.Increment()
