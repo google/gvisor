@@ -2196,6 +2196,118 @@ func (s NICStats) FillIn() NICStats {
 	return s
 }
 
+// SocketStats holds aggregated socket statistics.
+type SocketStats struct {
+	// Socket options implemented via the SocketOptions type.
+
+	GetBroadcastEnabled             *StatCounter
+	SetBroadcastEnabled             *StatCounter
+	GetPassCredEnabled              *StatCounter
+	SetPassCredEnabled              *StatCounter
+	GetNoChecksumEnabled            *StatCounter
+	SetNoChecksumEnabled            *StatCounter
+	GetReuseAddressEnabled          *StatCounter
+	SetReuseAddressEnabled          *StatCounter
+	GetReusePortEnabled             *StatCounter
+	SetReusePortEnabled             *StatCounter
+	GetKeepAliveEnabled             *StatCounter
+	SetKeepAliveEnabled             *StatCounter
+	GetMulticastLoopEnabled         *StatCounter
+	SetMulticastLoopEnabled         *StatCounter
+	GetReceiveTOSEnabled            *StatCounter
+	SetReceiveTOSEnabled            *StatCounter
+	GetReceiveTTLEnabled            *StatCounter
+	SetReceiveTTLEnabled            *StatCounter
+	GetReceiveHopLimitEnabled       *StatCounter
+	SetReceiveHopLimitEnabled       *StatCounter
+	GetReceiveTClassEnabled         *StatCounter
+	SetReceiveTClassEnabled         *StatCounter
+	GetReceivePacketInfoEnabled     *StatCounter
+	SetReceivePacketInfoEnabled     *StatCounter
+	GetReceiveIPv6PacketInfoEnabled *StatCounter
+	SetReceiveIPv6PacketInfoEnabled *StatCounter
+	GetHdrIncludedEnabled           *StatCounter
+	SetHdrIncludedEnabled           *StatCounter
+	GetV6OnlyEnabled                *StatCounter
+	SetV6OnlyEnabled                *StatCounter
+	GetQuickAckEnabled              *StatCounter
+	SetQuickAckEnabled              *StatCounter
+	GetDelayOptionEnabled           *StatCounter
+	SetDelayOptionEnabled           *StatCounter
+	GetCorkOptionEnabled            *StatCounter
+	SetCorkOptionEnabled            *StatCounter
+	GetReceiveOriginalDstAddress    *StatCounter
+	SetReceiveOriginalDstAddress    *StatCounter
+	GetIpv4RecvErrEnabled           *StatCounter
+	SetIpv4RecvErrEnabled           *StatCounter
+	GetIpv6RecvErrEnabled           *StatCounter
+	SetIpv6RecvErrEnabled           *StatCounter
+	GetBindToDevice                 *StatCounter
+	SetBindToDevice                 *StatCounter
+	GetSendBufferSize               *StatCounter
+	SetSendBufferSize               *StatCounter
+	GetReceiveBufferSize            *StatCounter
+	SetReceiveBufferSize            *StatCounter
+	GetLinger                       *StatCounter
+	SetLinger                       *StatCounter
+	GetRcvlowat                     *StatCounter
+	SetRcvlowat                     *StatCounter
+	GetOutOfBandInline              *StatCounter
+	SetOutOfBandInline              *StatCounter
+
+	// Network-layer socket options.
+
+	GetMTUDiscover        *StatCounter
+	SetMTUDiscover        *StatCounter
+	GetMulticastTTL       *StatCounter
+	SetMulticastTTL       *StatCounter
+	GetIPv4TTL            *StatCounter
+	SetIPv4TTL            *StatCounter
+	GetIPv6HopLimit       *StatCounter
+	SetIPv6HopLimit       *StatCounter
+	GetIPv4TOS            *StatCounter
+	SetIPv4TOS            *StatCounter
+	GetIPv6TrafficClass   *StatCounter
+	SetIPv6TrafficClass   *StatCounter
+	GetMulticastInterface *StatCounter
+	SetMulticastInterface *StatCounter
+	SetAddMembership      *StatCounter
+	SetRemoveMembership   *StatCounter
+
+	// TCP-specific socket option counters.
+
+	SetKeepaliveCount      *StatCounter
+	GetKeepaliveCount      *StatCounter
+	SetMaxSeg              *StatCounter
+	GetMaxSeg              *StatCounter
+	SetTCPSynCount         *StatCounter
+	GetTCPSynCount         *StatCounter
+	SetTCPWindowClamp      *StatCounter
+	GetTCPWindowClamp      *StatCounter
+	SetKeepaliveIdle       *StatCounter
+	GetKeepaliveIdle       *StatCounter
+	SetKeepaliveInterval   *StatCounter
+	GetKeepaliveInterval   *StatCounter
+	SetTCPUserTimeout      *StatCounter
+	GetTCPUserTimeout      *StatCounter
+	SetCongestionControl   *StatCounter
+	GetCongestionControl   *StatCounter
+	SetTCPLingerTimeout    *StatCounter
+	GetTCPLingerTimeout    *StatCounter
+	SetTCPDeferAccept      *StatCounter
+	GetTCPDeferAccept      *StatCounter
+	GetTCPInfo             *StatCounter
+	GetOriginalDestination *StatCounter
+	GetReceiveQueueSize    *StatCounter
+}
+
+// NewSocketStats returns a SocketStats with all counters initialized to 0.
+func NewSocketStats() SocketStats {
+	var s SocketStats
+	InitStatCounters(reflect.ValueOf(&s).Elem())
+	return s
+}
+
 // Stats holds statistics about the networking stack.
 type Stats struct {
 	// TODO(https://gvisor.dev/issues/5986): Make the DroppedPackets stat less
@@ -2233,6 +2345,10 @@ type Stats struct {
 
 	// UDP holds UDP-specific stats.
 	UDP UDPStats
+
+	// Socket holds aggregate socket statistics. These should not be incremented
+	// using this field, but using the relevant per-endpoint counters.
+	Socket SocketStats
 }
 
 // ReceiveErrors collects packet receive errors within transport endpoint.
@@ -2302,6 +2418,29 @@ type WriteErrors struct {
 	InvalidArgs StatCounter
 }
 
+// NetworkLayerSocketOptionStats collects network-layer socket option get/set
+// statistics.
+//
+// +stateify savable
+type NetworkLayerSocketOptionStats struct {
+	GetMTUDiscover        StatCounter
+	SetMTUDiscover        StatCounter
+	GetMulticastTTL       StatCounter
+	SetMulticastTTL       StatCounter
+	GetIPv4TTL            StatCounter
+	SetIPv4TTL            StatCounter
+	GetIPv6HopLimit       StatCounter
+	SetIPv6HopLimit       StatCounter
+	GetIPv4TOS            StatCounter
+	SetIPv4TOS            StatCounter
+	GetIPv6TrafficClass   StatCounter
+	SetIPv6TrafficClass   StatCounter
+	GetMulticastInterface StatCounter
+	SetMulticastInterface StatCounter
+	SetAddMembership      StatCounter
+	SetRemoveMembership   StatCounter
+}
+
 // TransportEndpointStats collects statistics about the endpoint.
 //
 // +stateify savable
@@ -2328,6 +2467,17 @@ type TransportEndpointStats struct {
 // IsEndpointStats is an empty method to implement the tcpip.EndpointStats
 // marker interface.
 func (*TransportEndpointStats) IsEndpointStats() {}
+
+// DatagramEndpointStats collects statistics about endpoints that operate on
+// datagrams at the network layer and above.
+//
+// +stateify savable
+type DatagramEndpointStats struct {
+	TransportEndpointStats
+
+	// NetworkLayerSocketOptionStats collects network-layer socket option stats.
+	NetworkLayerSocketOptionStats NetworkLayerSocketOptionStats
+}
 
 // InitStatCounters initializes v's fields with nil StatCounter fields to new
 // StatCounters.

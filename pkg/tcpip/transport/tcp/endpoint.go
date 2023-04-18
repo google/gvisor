@@ -239,6 +239,46 @@ type SendErrors struct {
 	Timeouts tcpip.StatCounter
 }
 
+// SocketOptionStats collect socket option get/set statistics.
+//
+// +stateify savable
+type SocketOptionStats struct {
+	SetKeepaliveCount      tcpip.StatCounter
+	GetKeepaliveCount      tcpip.StatCounter
+	SetIPv4TOS             tcpip.StatCounter
+	GetIPv4TOS             tcpip.StatCounter
+	SetIPv6TrafficClass    tcpip.StatCounter
+	GetIPv6TrafficClass    tcpip.StatCounter
+	SetMaxSeg              tcpip.StatCounter
+	GetMaxSeg              tcpip.StatCounter
+	SetMTUDiscover         tcpip.StatCounter
+	GetMTUDiscover         tcpip.StatCounter
+	SetIPv4TTL             tcpip.StatCounter
+	GetIPv4TTL             tcpip.StatCounter
+	SetIPv6HopLimit        tcpip.StatCounter
+	GetIPv6HopLimit        tcpip.StatCounter
+	SetTCPSynCount         tcpip.StatCounter
+	GetTCPSynCount         tcpip.StatCounter
+	SetTCPWindowClamp      tcpip.StatCounter
+	GetTCPWindowClamp      tcpip.StatCounter
+	SetKeepaliveIdle       tcpip.StatCounter
+	GetKeepaliveIdle       tcpip.StatCounter
+	SetKeepaliveInterval   tcpip.StatCounter
+	GetKeepaliveInterval   tcpip.StatCounter
+	SetTCPUserTimeout      tcpip.StatCounter
+	GetTCPUserTimeout      tcpip.StatCounter
+	SetCongestionControl   tcpip.StatCounter
+	GetCongestionControl   tcpip.StatCounter
+	SetTCPLingerTimeout    tcpip.StatCounter
+	GetTCPLingerTimeout    tcpip.StatCounter
+	SetTCPDeferAccept      tcpip.StatCounter
+	GetTCPDeferAccept      tcpip.StatCounter
+	GetMulticastTTL        tcpip.StatCounter
+	GetTCPInfo             tcpip.StatCounter
+	GetOriginalDestination tcpip.StatCounter
+	GetReceiveQueueSize    tcpip.StatCounter
+}
+
 // Stats holds statistics about the endpoint.
 //
 // +stateify savable
@@ -266,6 +306,9 @@ type Stats struct {
 
 	// WriteErrors collects segment write errors from an endpoint write call.
 	WriteErrors tcpip.WriteErrors
+
+	// SocketOptionStats collects socket option get/set statistics.
+	SocketOptionStats SocketOptionStats
 }
 
 // IsEndpointStats is an empty method to implement the tcpip.EndpointStats
@@ -1821,6 +1864,8 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
 
 	switch opt {
 	case tcpip.KeepaliveCountOption:
+		e.stats.SocketOptionStats.SetKeepaliveCount.Increment()
+		e.stack.Stats().Socket.SetKeepaliveCount.Increment()
 		e.LockUser()
 		e.keepalive.Lock()
 		e.keepalive.count = v
@@ -1829,6 +1874,8 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
 		e.UnlockUser()
 
 	case tcpip.IPv4TOSOption:
+		e.stats.SocketOptionStats.SetIPv4TOS.Increment()
+		e.stack.Stats().Socket.SetIPv4TOS.Increment()
 		e.LockUser()
 		// TODO(gvisor.dev/issue/995): ECN is not currently supported,
 		// ignore the bits for now.
@@ -1836,6 +1883,8 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
 		e.UnlockUser()
 
 	case tcpip.IPv6TrafficClassOption:
+		e.stats.SocketOptionStats.SetIPv6TrafficClass.Increment()
+		e.stack.Stats().Socket.SetIPv6TrafficClass.Increment()
 		e.LockUser()
 		// TODO(gvisor.dev/issue/995): ECN is not currently supported,
 		// ignore the bits for now.
@@ -1843,6 +1892,8 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
 		e.UnlockUser()
 
 	case tcpip.MaxSegOption:
+		e.stats.SocketOptionStats.SetMaxSeg.Increment()
+		e.stack.Stats().Socket.SetMaxSeg.Increment()
 		userMSS := v
 		if userMSS < header.TCPMinimumMSS || userMSS > header.TCPMaximumMSS {
 			return &tcpip.ErrInvalidOptionValue{}
@@ -1852,6 +1903,8 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
 		e.UnlockUser()
 
 	case tcpip.MTUDiscoverOption:
+		e.stats.SocketOptionStats.SetMTUDiscover.Increment()
+		e.stack.Stats().Socket.SetMTUDiscover.Increment()
 		// Return not supported if attempting to set this option to
 		// anything other than path MTU discovery disabled.
 		if v != tcpip.PMTUDiscoveryDont {
@@ -1859,16 +1912,22 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
 		}
 
 	case tcpip.IPv4TTLOption:
+		e.stats.SocketOptionStats.SetIPv4TTL.Increment()
+		e.stack.Stats().Socket.SetIPv4TTL.Increment()
 		e.LockUser()
 		e.ipv4TTL = uint8(v)
 		e.UnlockUser()
 
 	case tcpip.IPv6HopLimitOption:
+		e.stats.SocketOptionStats.SetIPv6HopLimit.Increment()
+		e.stack.Stats().Socket.SetIPv6HopLimit.Increment()
 		e.LockUser()
 		e.ipv6HopLimit = int16(v)
 		e.UnlockUser()
 
 	case tcpip.TCPSynCountOption:
+		e.stats.SocketOptionStats.SetTCPSynCount.Increment()
+		e.stack.Stats().Socket.SetTCPSynCount.Increment()
 		if v < 1 || v > 255 {
 			return &tcpip.ErrInvalidOptionValue{}
 		}
@@ -1877,6 +1936,8 @@ func (e *endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
 		e.UnlockUser()
 
 	case tcpip.TCPWindowClampOption:
+		e.stats.SocketOptionStats.SetTCPWindowClamp.Increment()
+		e.stack.Stats().Socket.SetTCPWindowClamp.Increment()
 		if v == 0 {
 			e.LockUser()
 			switch e.EndpointState() {
@@ -1910,6 +1971,8 @@ func (e *endpoint) HasNIC(id int32) bool {
 func (e *endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 	switch v := opt.(type) {
 	case *tcpip.KeepaliveIdleOption:
+		e.stats.SocketOptionStats.SetKeepaliveIdle.Increment()
+		e.stack.Stats().Socket.SetKeepaliveIdle.Increment()
 		e.LockUser()
 		e.keepalive.Lock()
 		e.keepalive.idle = time.Duration(*v)
@@ -1918,6 +1981,8 @@ func (e *endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 		e.UnlockUser()
 
 	case *tcpip.KeepaliveIntervalOption:
+		e.stats.SocketOptionStats.SetKeepaliveInterval.Increment()
+		e.stack.Stats().Socket.SetKeepaliveInterval.Increment()
 		e.LockUser()
 		e.keepalive.Lock()
 		e.keepalive.interval = time.Duration(*v)
@@ -1926,11 +1991,15 @@ func (e *endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 		e.UnlockUser()
 
 	case *tcpip.TCPUserTimeoutOption:
+		e.stats.SocketOptionStats.SetTCPUserTimeout.Increment()
+		e.stack.Stats().Socket.SetTCPUserTimeout.Increment()
 		e.LockUser()
 		e.userTimeout = time.Duration(*v)
 		e.UnlockUser()
 
 	case *tcpip.CongestionControlOption:
+		e.stats.SocketOptionStats.SetCongestionControl.Increment()
+		e.stack.Stats().Socket.SetCongestionControl.Increment()
 		// Query the available cc algorithms in the stack and
 		// validate that the specified algorithm is actually
 		// supported in the stack.
@@ -1960,6 +2029,8 @@ func (e *endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 		return &tcpip.ErrNoSuchFile{}
 
 	case *tcpip.TCPLingerTimeoutOption:
+		e.stats.SocketOptionStats.SetTCPLingerTimeout.Increment()
+		e.stack.Stats().Socket.SetTCPLingerTimeout.Increment()
 		e.LockUser()
 
 		switch {
@@ -1983,6 +2054,8 @@ func (e *endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 		e.UnlockUser()
 
 	case *tcpip.TCPDeferAcceptOption:
+		e.stats.SocketOptionStats.SetTCPDeferAccept.Increment()
+		e.stack.Stats().Socket.SetTCPDeferAccept.Increment()
 		e.LockUser()
 		if time.Duration(*v) > MaxRTO {
 			*v = tcpip.TCPDeferAcceptOption(MaxRTO)
@@ -2019,24 +2092,32 @@ func (e *endpoint) readyReceiveSize() (int, tcpip.Error) {
 func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 	switch opt {
 	case tcpip.KeepaliveCountOption:
+		e.stats.SocketOptionStats.GetKeepaliveCount.Increment()
+		e.stack.Stats().Socket.GetKeepaliveCount.Increment()
 		e.keepalive.Lock()
 		v := e.keepalive.count
 		e.keepalive.Unlock()
 		return v, nil
 
 	case tcpip.IPv4TOSOption:
+		e.stats.SocketOptionStats.GetIPv4TOS.Increment()
+		e.stack.Stats().Socket.GetIPv4TOS.Increment()
 		e.LockUser()
 		v := int(e.sendTOS)
 		e.UnlockUser()
 		return v, nil
 
 	case tcpip.IPv6TrafficClassOption:
+		e.stats.SocketOptionStats.GetIPv6TrafficClass.Increment()
+		e.stack.Stats().Socket.GetIPv6TrafficClass.Increment()
 		e.LockUser()
 		v := int(e.sendTOS)
 		e.UnlockUser()
 		return v, nil
 
 	case tcpip.MaxSegOption:
+		e.stats.SocketOptionStats.GetMaxSeg.Increment()
+		e.stack.Stats().Socket.GetMaxSeg.Increment()
 		// This is just stubbed out. Linux never returns the user_mss
 		// value as it either returns the defaultMSS or returns the
 		// actual current MSS. Netstack just returns the defaultMSS
@@ -2045,38 +2126,52 @@ func (e *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 		return v, nil
 
 	case tcpip.MTUDiscoverOption:
+		e.stats.SocketOptionStats.GetMTUDiscover.Increment()
+		e.stack.Stats().Socket.GetMTUDiscover.Increment()
 		// Always return the path MTU discovery disabled setting since
 		// it's the only one supported.
 		return tcpip.PMTUDiscoveryDont, nil
 
 	case tcpip.ReceiveQueueSizeOption:
+		e.stats.SocketOptionStats.GetReceiveQueueSize.Increment()
+		e.stack.Stats().Socket.GetReceiveQueueSize.Increment()
 		return e.readyReceiveSize()
 
 	case tcpip.IPv4TTLOption:
+		e.stats.SocketOptionStats.GetIPv4TTL.Increment()
+		e.stack.Stats().Socket.GetIPv4TTL.Increment()
 		e.LockUser()
 		v := int(e.ipv4TTL)
 		e.UnlockUser()
 		return v, nil
 
 	case tcpip.IPv6HopLimitOption:
+		e.stats.SocketOptionStats.GetIPv6HopLimit.Increment()
+		e.stack.Stats().Socket.GetIPv6HopLimit.Increment()
 		e.LockUser()
 		v := int(e.ipv6HopLimit)
 		e.UnlockUser()
 		return v, nil
 
 	case tcpip.TCPSynCountOption:
+		e.stats.SocketOptionStats.GetTCPSynCount.Increment()
+		e.stack.Stats().Socket.GetTCPSynCount.Increment()
 		e.LockUser()
 		v := int(e.maxSynRetries)
 		e.UnlockUser()
 		return v, nil
 
 	case tcpip.TCPWindowClampOption:
+		e.stats.SocketOptionStats.GetTCPWindowClamp.Increment()
+		e.stack.Stats().Socket.GetTCPWindowClamp.Increment()
 		e.LockUser()
 		v := int(e.windowClamp)
 		e.UnlockUser()
 		return v, nil
 
 	case tcpip.MulticastTTLOption:
+		e.stats.SocketOptionStats.GetMulticastTTL.Increment()
+		e.stack.Stats().Socket.GetMulticastTTL.Increment()
 		return 1, nil
 
 	default:
@@ -2116,39 +2211,55 @@ func (e *endpoint) getTCPInfo() tcpip.TCPInfoOption {
 func (e *endpoint) GetSockOpt(opt tcpip.GettableSocketOption) tcpip.Error {
 	switch o := opt.(type) {
 	case *tcpip.TCPInfoOption:
+		e.stats.SocketOptionStats.GetTCPInfo.Increment()
+		e.stack.Stats().Socket.GetTCPInfo.Increment()
 		*o = e.getTCPInfo()
 
 	case *tcpip.KeepaliveIdleOption:
+		e.stats.SocketOptionStats.GetKeepaliveIdle.Increment()
+		e.stack.Stats().Socket.GetKeepaliveIdle.Increment()
 		e.keepalive.Lock()
 		*o = tcpip.KeepaliveIdleOption(e.keepalive.idle)
 		e.keepalive.Unlock()
 
 	case *tcpip.KeepaliveIntervalOption:
+		e.stats.SocketOptionStats.GetKeepaliveInterval.Increment()
+		e.stack.Stats().Socket.GetKeepaliveInterval.Increment()
 		e.keepalive.Lock()
 		*o = tcpip.KeepaliveIntervalOption(e.keepalive.interval)
 		e.keepalive.Unlock()
 
 	case *tcpip.TCPUserTimeoutOption:
+		e.stats.SocketOptionStats.GetTCPUserTimeout.Increment()
+		e.stack.Stats().Socket.GetTCPUserTimeout.Increment()
 		e.LockUser()
 		*o = tcpip.TCPUserTimeoutOption(e.userTimeout)
 		e.UnlockUser()
 
 	case *tcpip.CongestionControlOption:
+		e.stats.SocketOptionStats.GetCongestionControl.Increment()
+		e.stack.Stats().Socket.GetCongestionControl.Increment()
 		e.LockUser()
 		*o = e.cc
 		e.UnlockUser()
 
 	case *tcpip.TCPLingerTimeoutOption:
+		e.stats.SocketOptionStats.GetTCPLingerTimeout.Increment()
+		e.stack.Stats().Socket.GetTCPLingerTimeout.Increment()
 		e.LockUser()
 		*o = tcpip.TCPLingerTimeoutOption(e.tcpLingerTimeout)
 		e.UnlockUser()
 
 	case *tcpip.TCPDeferAcceptOption:
+		e.stats.SocketOptionStats.GetTCPDeferAccept.Increment()
+		e.stack.Stats().Socket.GetTCPDeferAccept.Increment()
 		e.LockUser()
 		*o = tcpip.TCPDeferAcceptOption(e.deferAccept)
 		e.UnlockUser()
 
 	case *tcpip.OriginalDestinationOption:
+		e.stats.SocketOptionStats.GetOriginalDestination.Increment()
+		e.stack.Stats().Socket.GetOriginalDestination.Increment()
 		e.LockUser()
 		ipt := e.stack.IPTables()
 		addr, port, err := ipt.OriginalDst(e.TransportEndpointInfo.ID, e.NetProto, ProtocolNumber)

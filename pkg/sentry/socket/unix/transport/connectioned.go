@@ -138,7 +138,7 @@ func newConnectioned(ctx context.Context, stype linux.SockType, uid uniqueid.Pro
 		stype:        stype,
 	}
 
-	ep.ops.InitHandler(ep, &stackHandler{}, getSendBufferLimits, getReceiveBufferLimits)
+	ep.ops.InitHandler(ep, newStackHandler(), getSendBufferLimits, getReceiveBufferLimits)
 	ep.ops.SetSendBufferSize(defaultBufferSize, false /* notify */)
 	ep.ops.SetReceiveBufferSize(defaultBufferSize, false /* notify */)
 	return ep
@@ -185,7 +185,7 @@ func NewExternal(stype linux.SockType, uid uniqueid.Provider, queue *waiter.Queu
 		idGenerator:  uid,
 		stype:        stype,
 	}
-	ep.ops.InitHandler(ep, &stackHandler{}, getSendBufferLimits, getReceiveBufferLimits)
+	ep.ops.InitHandler(ep, newStackHandler(), getSendBufferLimits, getReceiveBufferLimits)
 	ep.ops.SetSendBufferSize(connected.SendMaxQueueSize(), false /* notify */)
 	ep.ops.SetReceiveBufferSize(defaultBufferSize, false /* notify */)
 	return ep
@@ -323,7 +323,7 @@ func (e *connectionedEndpoint) BidirectionalConnect(ctx context.Context, ce Conn
 		idGenerator: e.idGenerator,
 		stype:       e.stype,
 	}
-	ne.ops.InitHandler(ne, &stackHandler{}, getSendBufferLimits, getReceiveBufferLimits)
+	ne.ops.InitHandler(ne, newStackHandler(), getSendBufferLimits, getReceiveBufferLimits)
 	ne.ops.SetSendBufferSize(defaultBufferSize, false /* notify */)
 	ne.ops.SetReceiveBufferSize(defaultBufferSize, false /* notify */)
 	ne.SocketOptions().SetPassCred(e.SocketOptions().GetPassCred())

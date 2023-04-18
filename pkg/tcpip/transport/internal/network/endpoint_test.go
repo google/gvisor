@@ -150,9 +150,10 @@ func TestEndpointStateTransitions(t *testing.T) {
 			})
 
 			var ops tcpip.SocketOptions
+			var sockOptStats tcpip.NetworkLayerSocketOptionStats
 			var ep network.Endpoint
 			var wq waiter.Queue
-			ep.Init(s, test.netProto, udp.ProtocolNumber, &ops, &wq)
+			ep.Init(s, test.netProto, udp.ProtocolNumber, &ops, &sockOptStats, &wq)
 			defer ep.Close()
 			if state := ep.State(); state != transport.DatagramEndpointStateInitial {
 				t.Fatalf("got ep.State() = %s, want = %s", state, transport.DatagramEndpointStateInitial)
@@ -293,9 +294,10 @@ func TestBindNICID(t *testing.T) {
 					}
 
 					var ops tcpip.SocketOptions
+					var sockOptStats tcpip.NetworkLayerSocketOptionStats
 					var ep network.Endpoint
 					var wq waiter.Queue
-					ep.Init(s, test.netProto, udp.ProtocolNumber, &ops, &wq)
+					ep.Init(s, test.netProto, udp.ProtocolNumber, &ops, &sockOptStats, &wq)
 					defer ep.Close()
 					if ep.WasBound() {
 						t.Fatal("got ep.WasBound() = true, want = false")

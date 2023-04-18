@@ -35,11 +35,12 @@ import (
 // +stateify savable
 type Endpoint struct {
 	// The following fields must only be set once then never changed.
-	stack       *stack.Stack `state:"manual"`
-	ops         *tcpip.SocketOptions
-	netProto    tcpip.NetworkProtocolNumber
-	transProto  tcpip.TransportProtocolNumber
-	waiterQueue *waiter.Queue
+	stack        *stack.Stack `state:"manual"`
+	ops          *tcpip.SocketOptions
+	netProto     tcpip.NetworkProtocolNumber
+	transProto   tcpip.TransportProtocolNumber
+	waiterQueue  *waiter.Queue
+	sockOptStats *tcpip.NetworkLayerSocketOptionStats
 
 	mu sync.RWMutex `state:"nosave"`
 	// +checklocks:mu
@@ -116,7 +117,7 @@ type multicastMembership struct {
 }
 
 // Init initializes the endpoint.
-func (e *Endpoint) Init(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, ops *tcpip.SocketOptions, waiterQueue *waiter.Queue) {
+func (e *Endpoint) Init(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, ops *tcpip.SocketOptions, sockOptStats *tcpip.NetworkLayerSocketOptionStats, waiterQueue *waiter.Queue) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.multicastMemberships != nil {
@@ -131,6 +132,7 @@ func (e *Endpoint) Init(s *stack.Stack, netProto tcpip.NetworkProtocolNumber, tr
 
 	e.stack = s
 	e.ops = ops
+	e.sockOptStats = sockOptStats
 	e.netProto = netProto
 	e.transProto = transProto
 	e.waiterQueue = waiterQueue
@@ -795,6 +797,8 @@ func (e *Endpoint) GetRemoteAddress() (tcpip.FullAddress, bool) {
 func (e *Endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
 	switch opt {
 	case tcpip.MTUDiscoverOption:
+		e.sockOptStats.SetMTUDiscover.Increment()
+		e.stack.Stats().Socket.SetMTUDiscover.Increment()
 		// Return not supported if the value is not disabling path
 		// MTU discovery.
 		if v != tcpip.PMTUDiscoveryDont {
@@ -802,26 +806,36 @@ func (e *Endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
 		}
 
 	case tcpip.MulticastTTLOption:
+		e.sockOptStats.SetMulticastTTL.Increment()
+		e.stack.Stats().Socket.SetMulticastTTL.Increment()
 		e.mu.Lock()
 		e.multicastTTL = uint8(v)
 		e.mu.Unlock()
 
 	case tcpip.IPv4TTLOption:
+		e.sockOptStats.SetIPv4TTL.Increment()
+		e.stack.Stats().Socket.SetIPv4TTL.Increment()
 		e.mu.Lock()
 		e.ipv4TTL = uint8(v)
 		e.mu.Unlock()
 
 	case tcpip.IPv6HopLimitOption:
+		e.sockOptStats.SetIPv6HopLimit.Increment()
+		e.stack.Stats().Socket.SetIPv6HopLimit.Increment()
 		e.mu.Lock()
 		e.ipv6HopLimit = int16(v)
 		e.mu.Unlock()
 
 	case tcpip.IPv4TOSOption:
+		e.sockOptStats.SetIPv4TOS.Increment()
+		e.stack.Stats().Socket.SetIPv4TOS.Increment()
 		e.mu.Lock()
 		e.ipv4TOS = uint8(v)
 		e.mu.Unlock()
 
 	case tcpip.IPv6TrafficClassOption:
+		e.sockOptStats.SetIPv6TrafficClass.Increment()
+		e.stack.Stats().Socket.SetIPv6TrafficClass.Increment()
 		e.mu.Lock()
 		e.ipv6TClass = uint8(v)
 		e.mu.Unlock()
@@ -834,34 +848,46 @@ func (e *Endpoint) SetSockOptInt(opt tcpip.SockOptInt, v int) tcpip.Error {
 func (e *Endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 	switch opt {
 	case tcpip.MTUDiscoverOption:
+		e.sockOptStats.GetMTUDiscover.Increment()
+		e.stack.Stats().Socket.GetMTUDiscover.Increment()
 		// The only supported setting is path MTU discovery disabled.
 		return tcpip.PMTUDiscoveryDont, nil
 
 	case tcpip.MulticastTTLOption:
+		e.sockOptStats.GetMulticastTTL.Increment()
+		e.stack.Stats().Socket.GetMulticastTTL.Increment()
 		e.mu.Lock()
 		v := int(e.multicastTTL)
 		e.mu.Unlock()
 		return v, nil
 
 	case tcpip.IPv4TTLOption:
+		e.sockOptStats.GetIPv4TTL.Increment()
+		e.stack.Stats().Socket.GetIPv4TTL.Increment()
 		e.mu.Lock()
 		v := int(e.ipv4TTL)
 		e.mu.Unlock()
 		return v, nil
 
 	case tcpip.IPv6HopLimitOption:
+		e.sockOptStats.GetIPv6HopLimit.Increment()
+		e.stack.Stats().Socket.GetIPv6HopLimit.Increment()
 		e.mu.Lock()
 		v := int(e.ipv6HopLimit)
 		e.mu.Unlock()
 		return v, nil
 
 	case tcpip.IPv4TOSOption:
+		e.sockOptStats.GetIPv4TOS.Increment()
+		e.stack.Stats().Socket.GetIPv4TOS.Increment()
 		e.mu.RLock()
 		v := int(e.ipv4TOS)
 		e.mu.RUnlock()
 		return v, nil
 
 	case tcpip.IPv6TrafficClassOption:
+		e.sockOptStats.GetIPv6TrafficClass.Increment()
+		e.stack.Stats().Socket.GetIPv6TrafficClass.Increment()
 		e.mu.RLock()
 		v := int(e.ipv6TClass)
 		e.mu.RUnlock()
@@ -876,6 +902,8 @@ func (e *Endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 func (e *Endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 	switch v := opt.(type) {
 	case *tcpip.MulticastInterfaceOption:
+		e.sockOptStats.SetMulticastInterface.Increment()
+		e.stack.Stats().Socket.SetMulticastInterface.Increment()
 		e.mu.Lock()
 		defer e.mu.Unlock()
 
@@ -912,6 +940,8 @@ func (e *Endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 		e.multicastAddr = addr
 
 	case *tcpip.AddMembershipOption:
+		e.sockOptStats.SetAddMembership.Increment()
+		e.stack.Stats().Socket.SetAddMembership.Increment()
 		if !(header.IsV4MulticastAddress(v.MulticastAddr) && e.netProto == header.IPv4ProtocolNumber) && !(header.IsV6MulticastAddress(v.MulticastAddr) && e.netProto == header.IPv6ProtocolNumber) {
 			return &tcpip.ErrInvalidOptionValue{}
 		}
@@ -948,6 +978,8 @@ func (e *Endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 		e.multicastMemberships[memToInsert] = struct{}{}
 
 	case *tcpip.RemoveMembershipOption:
+		e.sockOptStats.SetRemoveMembership.Increment()
+		e.stack.Stats().Socket.SetRemoveMembership.Increment()
 		if !(header.IsV4MulticastAddress(v.MulticastAddr) && e.netProto == header.IPv4ProtocolNumber) && !(header.IsV6MulticastAddress(v.MulticastAddr) && e.netProto == header.IPv6ProtocolNumber) {
 			return &tcpip.ErrInvalidOptionValue{}
 		}
@@ -992,6 +1024,8 @@ func (e *Endpoint) SetSockOpt(opt tcpip.SettableSocketOption) tcpip.Error {
 func (e *Endpoint) GetSockOpt(opt tcpip.GettableSocketOption) tcpip.Error {
 	switch o := opt.(type) {
 	case *tcpip.MulticastInterfaceOption:
+		e.sockOptStats.GetMulticastInterface.Increment()
+		e.stack.Stats().Socket.GetMulticastInterface.Increment()
 		e.mu.Lock()
 		*o = tcpip.MulticastInterfaceOption{
 			NIC:           e.multicastNICID,

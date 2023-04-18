@@ -61,5 +61,5 @@ func (e *connectionedEndpoint) beforeSave() {
 
 // afterLoad is invoked by stateify.
 func (e *connectionedEndpoint) afterLoad() {
-	e.ops.InitHandler(e, &stackHandler{}, getSendBufferLimits, getReceiveBufferLimits)
+	e.ops.InitHandler(e, newStackHandler(), getSendBufferLimits, getReceiveBufferLimits)
 }
