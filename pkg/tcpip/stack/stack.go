@@ -509,6 +509,11 @@ func (s *Stack) Stats() tcpip.Stats {
 	return s.stats
 }
 
+// SocketStats implements tcpip.StackHandler.
+func (s *Stack) SocketStats() tcpip.SocketStats {
+	return s.stats.Socket
+}
+
 // SetNICForwarding enables or disables packet forwarding on the specified NIC
 // for the passed protocol.
 //

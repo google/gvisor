@@ -1025,6 +1025,13 @@ func (*baseEndpoint) Release(context.Context) {
 // stackHandler is just a stub implementation of tcpip.StackHandler to provide
 // when initializing socketoptions.
 type stackHandler struct {
+	stats tcpip.SocketStats
+}
+
+func newStackHandler() *stackHandler {
+	return &stackHandler{
+		stats: tcpip.NewSocketStats(),
+	}
 }
 
 // Option implements tcpip.StackHandler.
@@ -1035,6 +1042,11 @@ func (h *stackHandler) Option(option any) tcpip.Error {
 // TransportProtocolOption implements tcpip.StackHandler.
 func (h *stackHandler) TransportProtocolOption(proto tcpip.TransportProtocolNumber, option tcpip.GettableTransportProtocolOption) tcpip.Error {
 	panic("unimplemented")
+}
+
+// SocketStats implements tcpip.StackHandler.
+func (h *stackHandler) SocketStats() tcpip.SocketStats {
+	return h.stats
 }
 
 // getSendBufferLimits implements tcpip.GetSendBufferLimits.

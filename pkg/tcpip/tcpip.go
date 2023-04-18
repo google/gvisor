@@ -2196,6 +2196,71 @@ func (s NICStats) FillIn() NICStats {
 	return s
 }
 
+// SocketStats holds aggregated socket statistics.
+type SocketStats struct {
+	GetBroadcastEnabled             *StatCounter
+	SetBroadcastEnabled             *StatCounter
+	GetPassCredEnabled              *StatCounter
+	SetPassCredEnabled              *StatCounter
+	GetNoChecksumEnabled            *StatCounter
+	SetNoChecksumEnabled            *StatCounter
+	GetReuseAddressEnabled          *StatCounter
+	SetReuseAddressEnabled          *StatCounter
+	GetReusePortEnabled             *StatCounter
+	SetReusePortEnabled             *StatCounter
+	GetKeepAliveEnabled             *StatCounter
+	SetKeepAliveEnabled             *StatCounter
+	GetMulticastLoopEnabled         *StatCounter
+	SetMulticastLoopEnabled         *StatCounter
+	GetReceiveTOSEnabled            *StatCounter
+	SetReceiveTOSEnabled            *StatCounter
+	GetReceiveTTLEnabled            *StatCounter
+	SetReceiveTTLEnabled            *StatCounter
+	GetReceiveHopLimitEnabled       *StatCounter
+	SetReceiveHopLimitEnabled       *StatCounter
+	GetReceiveTClassEnabled         *StatCounter
+	SetReceiveTClassEnabled         *StatCounter
+	GetReceivePacketInfoEnabled     *StatCounter
+	SetReceivePacketInfoEnabled     *StatCounter
+	GetReceiveIPv6PacketInfoEnabled *StatCounter
+	SetReceiveIPv6PacketInfoEnabled *StatCounter
+	GetHdrIncludedEnabled           *StatCounter
+	SetHdrIncludedEnabled           *StatCounter
+	GetV6OnlyEnabled                *StatCounter
+	SetV6OnlyEnabled                *StatCounter
+	GetQuickAckEnabled              *StatCounter
+	SetQuickAckEnabled              *StatCounter
+	GetDelayOptionEnabled           *StatCounter
+	SetDelayOptionEnabled           *StatCounter
+	GetCorkOptionEnabled            *StatCounter
+	SetCorkOptionEnabled            *StatCounter
+	GetReceiveOriginalDstAddress    *StatCounter
+	SetReceiveOriginalDstAddress    *StatCounter
+	GetIpv4RecvErrEnabled           *StatCounter
+	SetIpv4RecvErrEnabled           *StatCounter
+	GetIpv6RecvErrEnabled           *StatCounter
+	SetIpv6RecvErrEnabled           *StatCounter
+	GetBindToDevice                 *StatCounter
+	SetBindToDevice                 *StatCounter
+	GetSendBufferSize               *StatCounter
+	SetSendBufferSize               *StatCounter
+	GetReceiveBufferSize            *StatCounter
+	SetReceiveBufferSize            *StatCounter
+	GetLinger                       *StatCounter
+	SetLinger                       *StatCounter
+	GetRcvlowat                     *StatCounter
+	SetRcvlowat                     *StatCounter
+	GetOutOfBandInline              *StatCounter
+	SetOutOfBandInline              *StatCounter
+}
+
+// NewSocketStats returns a SocketStats with all counters initialized to 0.
+func NewSocketStats() SocketStats {
+	var s SocketStats
+	InitStatCounters(reflect.ValueOf(&s).Elem())
+	return s
+}
+
 // Stats holds statistics about the networking stack.
 type Stats struct {
 	// TODO(https://gvisor.dev/issues/5986): Make the DroppedPackets stat less
@@ -2233,6 +2298,10 @@ type Stats struct {
 
 	// UDP holds UDP-specific stats.
 	UDP UDPStats
+
+	// Socket holds aggregate socket statistics. These should not be incremented
+	// using this field, but using the relevant per-endpoint counters.
+	Socket SocketStats
 }
 
 // ReceiveErrors collects packet receive errors within transport endpoint.
