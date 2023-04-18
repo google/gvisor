@@ -1049,11 +1049,9 @@ func (s *Stack) NICInfo() map[tcpip.NICID]NICInfo {
 		}
 
 		netStats := make(map[tcpip.NetworkProtocolNumber]NetworkEndpointStats)
-		nic.mu.RLock()
 		for proto, netEP := range nic.networkEndpoints {
 			netStats[proto] = netEP.Stats()
 		}
-		nic.mu.RUnlock()
 
 		info := NICInfo{
 			Name:                nic.name,
