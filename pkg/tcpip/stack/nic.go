@@ -44,12 +44,13 @@ type nic struct {
 
 	stats sharedStats
 
-	// mu protects annotated fields below.
-	mu nicRWMutex
+	// enableDisableMu is used to synchronize attempts to enable/disable the NIC.
+	// Without this mutex, calls to enable/disable the NIC may interleave and
+	// leave the NIC in an inconsistent state.
+	enableDisableMu nicRWMutex
 
 	// The network endpoints themselves may be modified by calling the interface's
 	// methods, but the map reference and entries must be constant.
-	// +checklocks:mu
 	networkEndpoints          map[tcpip.NetworkProtocolNumber]NetworkEndpoint
 	linkAddrResolvers         map[tcpip.NetworkProtocolNumber]*linkResolver
 	duplicateAddressDetectors map[tcpip.NetworkProtocolNumber]DuplicateAddressDetector
@@ -208,8 +209,6 @@ func newNIC(stack *Stack, id tcpip.NICID, ep LinkEndpoint, opts NICOptions) *nic
 }
 
 func (n *nic) getNetworkEndpoint(proto tcpip.NetworkProtocolNumber) NetworkEndpoint {
-	n.mu.RLock()
-	defer n.mu.RUnlock()
 	return n.networkEndpoints[proto]
 }
 
@@ -221,6 +220,8 @@ func (n *nic) Enabled() bool {
 // setEnabled sets the enabled status for the NIC.
 //
 // Returns true if the enabled status was updated.
+//
+// +checklocks:n.enableDisableMu
 func (n *nic) setEnabled(v bool) bool {
 	return n.enabled.Swap(v) != v
 }
@@ -229,8 +230,8 @@ func (n *nic) setEnabled(v bool) bool {
 //
 // It undoes the work done by enable.
 func (n *nic) disable() {
-	n.mu.Lock()
-	defer n.mu.Unlock()
+	n.enableDisableMu.Lock()
+	defer n.enableDisableMu.Unlock()
 	n.disableLocked()
 }
 
@@ -238,7 +239,7 @@ func (n *nic) disable() {
 //
 // It undoes the work done by enable.
 //
-// +checklocks:n.mu
+// +checklocks:n.enableDisableMu
 func (n *nic) disableLocked() {
 	if !n.Enabled() {
 		return
@@ -278,8 +279,8 @@ func (n *nic) disableLocked() {
 // routers if the stack is not operating as a router. If the stack is also
 // configured to auto-generate a link-local address, one will be generated.
 func (n *nic) enable() tcpip.Error {
-	n.mu.Lock()
-	defer n.mu.Unlock()
+	n.enableDisableMu.Lock()
+	defer n.enableDisableMu.Unlock()
 
 	if !n.setEnabled(true) {
 		return nil
@@ -298,7 +299,7 @@ func (n *nic) enable() tcpip.Error {
 // resources. This guarantees no packets between this NIC and the network
 // stack.
 func (n *nic) remove() tcpip.Error {
-	n.mu.Lock()
+	n.enableDisableMu.Lock()
 
 	n.disableLocked()
 
@@ -306,13 +307,13 @@ func (n *nic) remove() tcpip.Error {
 		ep.Close()
 	}
 
-	n.mu.Unlock()
+	n.enableDisableMu.Unlock()
 
 	// Shutdown GRO.
 	n.gro.close()
 
 	// Drain and drop any packets pending link resolution.
-	// We must not hold n.mu here.
+	// We must not hold n.enableDisableMu here.
 	n.linkResQueue.cancel()
 
 	// Prevent packets from going down to the link before shutting the link down.
@@ -517,8 +518,6 @@ func (n *nic) addAddress(protocolAddress tcpip.ProtocolAddress, properties Addre
 // allPermanentAddresses returns all permanent addresses associated with
 // this NIC.
 func (n *nic) allPermanentAddresses() []tcpip.ProtocolAddress {
-	n.mu.RLock()
-	defer n.mu.RUnlock()
 	var addrs []tcpip.ProtocolAddress
 	for p, ep := range n.networkEndpoints {
 		addressableEndpoint, ok := ep.(AddressableEndpoint)
@@ -535,8 +534,6 @@ func (n *nic) allPermanentAddresses() []tcpip.ProtocolAddress {
 
 // primaryAddresses returns the primary addresses associated with this NIC.
 func (n *nic) primaryAddresses() []tcpip.ProtocolAddress {
-	n.mu.RLock()
-	defer n.mu.RUnlock()
 	var addrs []tcpip.ProtocolAddress
 	for p, ep := range n.networkEndpoints {
 		addressableEndpoint, ok := ep.(AddressableEndpoint)
@@ -568,8 +565,6 @@ func (n *nic) PrimaryAddress(proto tcpip.NetworkProtocolNumber) (tcpip.AddressWi
 
 // removeAddress removes an address from n.
 func (n *nic) removeAddress(addr tcpip.Address) tcpip.Error {
-	n.mu.RLock()
-	defer n.mu.RUnlock()
 	for _, ep := range n.networkEndpoints {
 		addressableEndpoint, ok := ep.(AddressableEndpoint)
 		if !ok {
@@ -588,8 +583,6 @@ func (n *nic) removeAddress(addr tcpip.Address) tcpip.Error {
 }
 
 func (n *nic) setAddressLifetimes(addr tcpip.Address, lifetimes AddressLifetimes) tcpip.Error {
-	n.mu.RLock()
-	defer n.mu.RUnlock()
 	for _, ep := range n.networkEndpoints {
 		ep, ok := ep.(AddressableEndpoint)
 		if !ok {
@@ -698,8 +691,6 @@ func (n *nic) leaveGroup(protocol tcpip.NetworkProtocolNumber, addr tcpip.Addres
 
 // isInGroup returns true if n has joined the multicast group addr.
 func (n *nic) isInGroup(addr tcpip.Address) bool {
-	n.mu.RLock()
-	defer n.mu.RUnlock()
 	for _, ep := range n.networkEndpoints {
 		gep, ok := ep.(GroupAddressableEndpoint)
 		if !ok {
