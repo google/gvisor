@@ -410,6 +410,7 @@ syscall_test(
 )
 
 syscall_test(
+    add_hostinet = True,
     test = "//test/syscalls/linux:network_namespace_test",
 )
 
