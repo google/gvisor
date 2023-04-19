@@ -24,14 +24,12 @@ import (
 	"strings"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 var defaultRecvBufSize = inet.TCPBufferSize{
@@ -54,6 +52,8 @@ type Stack struct {
 	tcpRecvBufSize inet.TCPBufferSize
 	tcpSendBufSize inet.TCPBufferSize
 	tcpSACKEnabled bool
+	tcpSendBufFile *os.File
+	tcpRecvBufFile *os.File
 	netDevFile     *os.File
 	netSNMPFile    *os.File
 	// allowedSocketTypes is the list of allowed socket types
@@ -75,15 +75,27 @@ func (s *Stack) Configure(allowRawSockets bool) error {
 		s.supportsIPv6 = true
 	}
 
+	if f, err := os.Open("/proc/sys/net/ipv4/tcp_rmem"); err != nil {
+		log.Warningf("Failed to open /proc/sys/net/ipv4/tcp_rmem: %v", err)
+	} else {
+		s.tcpRecvBufFile = f
+	}
+
 	s.tcpRecvBufSize = defaultRecvBufSize
-	if tcpRMem, err := readTCPBufferSizeFile("/proc/sys/net/ipv4/tcp_rmem"); err == nil {
+	if tcpRMem, err := readTCPBufferSizeFile(s.tcpRecvBufFile); err == nil {
 		s.tcpRecvBufSize = tcpRMem
 	} else {
 		log.Warningf("Failed to read TCP receive buffer size, using default values")
 	}
 
+	if f, err := os.Open("/proc/sys/net/ipv4/tcp_wmem"); err != nil {
+		log.Warningf("Failed to open /proc/sys/net/ipv4/tcp_wmem: %v", err)
+	} else {
+		s.tcpSendBufFile = f
+	}
+
 	s.tcpSendBufSize = defaultSendBufSize
-	if tcpWMem, err := readTCPBufferSizeFile("/proc/sys/net/ipv4/tcp_wmem"); err == nil {
+	if tcpWMem, err := readTCPBufferSizeFile(s.tcpSendBufFile); err == nil {
 		s.tcpSendBufSize = tcpWMem
 	} else {
 		log.Warningf("Failed to read TCP send buffer size, using default values")
@@ -118,20 +130,39 @@ func (s *Stack) Configure(allowRawSockets bool) error {
 	return nil
 }
 
-func readTCPBufferSizeFile(filename string) (inet.TCPBufferSize, error) {
-	contents, err := ioutil.ReadFile(filename)
+func readTCPBufferSizeFile(f *os.File) (inet.TCPBufferSize, error) {
+	contents := make([]byte, 4096)
+
+	if _, err := f.Seek(0, 0); err != nil {
+		return inet.TCPBufferSize{}, fmt.Errorf("failed to read : %v", err)
+	}
+
+	if _, err := io.ReadFull(f, contents); err != io.ErrUnexpectedEOF {
+		return inet.TCPBufferSize{}, fmt.Errorf("failed to read : %v", err)
+	}
+
+	lines := strings.Split(string(contents), "\n")
+	sz := strings.Fields(lines[0])
+	if len(sz) != 3 {
+		return inet.TCPBufferSize{}, fmt.Errorf("failed to read the buffer size")
+	}
+	minSz, err := strconv.Atoi(sz[0])
 	if err != nil {
-		return inet.TCPBufferSize{}, fmt.Errorf("failed to read %s: %v", filename, err)
+		return inet.TCPBufferSize{}, fmt.Errorf("failed to read minimum buffer size")
 	}
-	ioseq := usermem.BytesIOSequence(contents)
-	fields := make([]int32, 3)
-	if n, err := usermem.CopyInt32StringsInVec(context.Background(), ioseq.IO, ioseq.Addrs, fields, ioseq.Opts); n != ioseq.NumBytes() || err != nil {
-		return inet.TCPBufferSize{}, fmt.Errorf("failed to parse %s (%q): got %v after %d/%d bytes", filename, contents, err, n, ioseq.NumBytes())
+	defaultSz, err := strconv.Atoi(sz[1])
+	if err != nil {
+		return inet.TCPBufferSize{}, fmt.Errorf("failed to read default buffer size")
 	}
+	maxSz, err := strconv.Atoi(sz[2])
+	if err != nil {
+		return inet.TCPBufferSize{}, fmt.Errorf("failed to read maximum buffer size")
+	}
+
 	return inet.TCPBufferSize{
-		Min:     int(fields[0]),
-		Default: int(fields[1]),
-		Max:     int(fields[2]),
+		Min:     minSz,
+		Default: defaultSz,
+		Max:     maxSz,
 	}, nil
 }
 
@@ -183,21 +214,31 @@ func (s *Stack) SupportsIPv6() bool {
 
 // TCPReceiveBufferSize implements inet.Stack.TCPReceiveBufferSize.
 func (s *Stack) TCPReceiveBufferSize() (inet.TCPBufferSize, error) {
+	// Read from the file "/proc/sys/net/ipv4/tcp_rmem".
+	if tcpRmem, err := readTCPBufferSizeFile(s.tcpRecvBufFile); err == nil {
+		s.tcpRecvBufSize = tcpRmem
+	}
 	return s.tcpRecvBufSize, nil
 }
 
 // SetTCPReceiveBufferSize implements inet.Stack.SetTCPReceiveBufferSize.
-func (*Stack) SetTCPReceiveBufferSize(inet.TCPBufferSize) error {
+func (*Stack) SetTCPReceiveBufferSize(size inet.TCPBufferSize) error {
+	// Write directly to the file "/proc/sys/net/ipv4/tcp_rmem".
 	return linuxerr.EACCES
 }
 
 // TCPSendBufferSize implements inet.Stack.TCPSendBufferSize.
 func (s *Stack) TCPSendBufferSize() (inet.TCPBufferSize, error) {
+	// Read from the file "/proc/sys/net/ipv4/tcp_wmem".
+	if tcpWmem, err := readTCPBufferSizeFile(s.tcpSendBufFile); err == nil {
+		s.tcpSendBufSize = tcpWmem
+	}
 	return s.tcpSendBufSize, nil
 }
 
 // SetTCPSendBufferSize implements inet.Stack.SetTCPSendBufferSize.
 func (*Stack) SetTCPSendBufferSize(inet.TCPBufferSize) error {
+	// Write directly to the file "/proc/sys/net/ipv4/tcp_wmem".
 	return linuxerr.EACCES
 }
 
