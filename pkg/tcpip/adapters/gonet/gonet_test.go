@@ -402,15 +402,17 @@ func TestCloseStack(t *testing.T) {
 		c := NewTCPConn(&wq, ep)
 
 		// Give c.Read() a chance to block before closing the stack.
-		time.AfterFunc(time.Second*1, func() {
+		time.AfterFunc(50*time.Millisecond, func() {
 			s.Close()
 			s.Wait()
 		})
 
 		buf := make([]byte, 256)
 		n, e := c.Read(buf)
-		if n != 0 || !strings.Contains(e.Error(), "operation aborted") {
-			t.Errorf("c.Read() = (%d, %v), want (0, operation aborted)", n, e)
+		// Depending on the ordering of Close and Read, we should get
+		// one of two errors.
+		if n != 0 || (!strings.Contains(e.Error(), "operation aborted") && !strings.Contains(e.Error(), "connection reset by peer")) {
+			t.Errorf("c.Read() = (%d, %v), want (0, operation aborted) or (0, connection reset by peer)", n, e)
 		}
 	})
 	s.SetTransportProtocolHandler(tcp.ProtocolNumber, fwd.HandlePacket)
