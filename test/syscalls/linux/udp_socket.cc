@@ -1587,10 +1587,6 @@ TEST_P(UdpSocketTest, FIONREADZeroLengthWriteShutdown) {
 }
 
 TEST_P(UdpSocketTest, SoNoCheckOffByDefault) {
-  // TODO(gvisor.dev/issue/1202): SO_NO_CHECK socket option not supported by
-  // hostinet.
-  SKIP_IF(IsRunningWithHostinet());
-
   int v = -1;
   socklen_t optlen = sizeof(v);
   ASSERT_THAT(getsockopt(bind_.get(), SOL_SOCKET, SO_NO_CHECK, &v, &optlen),
@@ -1600,10 +1596,6 @@ TEST_P(UdpSocketTest, SoNoCheckOffByDefault) {
 }
 
 TEST_P(UdpSocketTest, SoNoCheck) {
-  // TODO(gvisor.dev/issue/1202): SO_NO_CHECK socket option not supported by
-  // hostinet.
-  SKIP_IF(IsRunningWithHostinet());
-
   int v = kSockOptOn;
   socklen_t optlen = sizeof(v);
   ASSERT_THAT(setsockopt(bind_.get(), SOL_SOCKET, SO_NO_CHECK, &v, optlen),
@@ -2125,6 +2117,9 @@ class UdpSocketControlMessagesTest
 };
 
 TEST_P(UdpSocketControlMessagesTest, SetAndReceiveTOSOrTClass) {
+  // TODO(b/267210840): Test is flaky on hostinet.
+  SKIP_IF(IsRunningWithHostinet());
+
   // Enable receiving TOS and maybe TClass on the receiver.
   ASSERT_THAT(setsockopt(server_.get(), SOL_IP, IP_RECVTOS, &kSockOptOn,
                          sizeof(kSockOptOn)),
