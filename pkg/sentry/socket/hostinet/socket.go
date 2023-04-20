@@ -384,7 +384,7 @@ func (s *Socket) Accept(t *kernel.Task, peerRequested bool, flags int, blocking 
 				}
 			} else {
 				var e waiter.Entry
-				e, ch = waiter.NewChannelEntry(waiter.ReadableEvents)
+				e, ch = waiter.NewChannelEntry(waiter.ReadableEvents | waiter.EventHUp | waiter.EventErr)
 				s.EventRegister(&e)
 				defer s.EventUnregister(&e)
 			}
@@ -540,11 +540,21 @@ func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, have
 				}
 			} else {
 				var e waiter.Entry
-				e, ch = waiter.NewChannelEntry(waiter.ReadableEvents)
+				e, ch = waiter.NewChannelEntry(waiter.ReadableEvents | waiter.EventRdHUp | waiter.EventHUp | waiter.EventErr)
 				s.EventRegister(&e)
 				defer s.EventUnregister(&e)
 			}
 			n, err = copyToDst()
+
+			// If we got an RDHUP event, there's no use trying to
+			// read again since the socket has been shutdown.
+			if s.Readiness(waiter.EventRdHUp)&waiter.EventRdHUp > 0 {
+				// Don't return the EWOULDBLOCK.
+				if linuxerr.Equals(linuxerr.ErrWouldBlock, err) {
+					err = nil
+				}
+				break
+			}
 		}
 	}
 	if err != nil {
@@ -743,7 +753,7 @@ func (s *Socket) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flag
 				}
 			} else {
 				var e waiter.Entry
-				e, ch = waiter.NewChannelEntry(waiter.WritableEvents)
+				e, ch = waiter.NewChannelEntry(waiter.WritableEvents | waiter.EventHUp | waiter.EventErr)
 				s.EventRegister(&e)
 				defer s.EventUnregister(&e)
 			}
