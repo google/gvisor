@@ -818,6 +818,7 @@ syscall_test(
 
 syscall_test(
     size = "medium",
+    add_hostinet = True,
     test = "//test/syscalls/linux:socket_ipv4_udp_unbound_loopback_test",
 )
 
@@ -847,7 +848,9 @@ syscall_test(
 )
 
 syscall_test(
-    # TODO(b/267210840): Flaky on hostinet.
+    # TODO(b/275742272): IP_TOS behaves strange on some new kernels, causing
+    # this to be very flaky on hostinet. Enable this once the strangeness is
+    # resolved..
     # add_hostinet = True,
     shard_count = more_shards,
     test = "//test/syscalls/linux:socket_ip_unbound_test",
@@ -929,6 +932,7 @@ syscall_test(
 
 syscall_test(
     size = "large",
+    add_hostinet = True,
     shard_count = most_shards,
     test = "//test/syscalls/linux:socket_stress_test",
 )

@@ -56,6 +56,10 @@ type Stack struct {
 	tcpSACKEnabled bool
 	netDevFile     *os.File
 	netSNMPFile    *os.File
+
+	// /proc/sys/net/ipv4/ip_local_port_range
+	netIpv4IpLocalPortRange *os.File
+
 	// allowedSocketTypes is the list of allowed socket types
 	allowedSocketTypes []AllowedSocketType
 }
@@ -108,6 +112,12 @@ func (s *Stack) Configure(allowRawSockets bool) error {
 		log.Warningf("Failed to open /proc/net/snmp: %v", err)
 	} else {
 		s.netSNMPFile = f
+	}
+
+	if f, err := os.OpenFile("/proc/sys/net/ipv4/ip_local_port_range", os.O_RDWR, 0644); err != nil {
+		log.Warningf("Failed to open /proc/sys/net/ipv4/ip_local_port_range: %v", err)
+	} else {
+		s.netIpv4IpLocalPortRange = f
 	}
 
 	s.allowedSocketTypes = AllowedSocketTypes
@@ -344,14 +354,42 @@ func (*Stack) SetForwarding(tcpip.NetworkProtocolNumber, bool) error {
 }
 
 // PortRange implements inet.Stack.PortRange.
-func (*Stack) PortRange() (uint16, uint16) {
-	// Use the default Linux values per net/ipv4/af_inet.c:inet_init_net().
-	return 32768, 28232
+func (s *Stack) PortRange() (uint16, uint16) {
+	// Defaults from net/ipv4/af_inet.c:inet_init_net().
+	const (
+		start uint16 = 32768
+		end   uint16 = 60999
+	)
+
+	if s.netIpv4IpLocalPortRange == nil {
+		return start, end
+	}
+	bs, err := io.ReadAll(s.netIpv4IpLocalPortRange)
+	if err != nil {
+		return start, end
+	}
+	ss := strings.Split(strings.TrimSpace(string(bs)), " \t")
+	if len(ss) != 2 {
+		return start, end
+	}
+	parsedStart, err := strconv.Atoi(ss[0])
+	if err != nil {
+		return start, end
+	}
+	parsedEnd, err := strconv.Atoi(ss[1])
+	if err != nil {
+		return start, end
+	}
+	return uint16(parsedStart), uint16(parsedEnd)
 }
 
 // SetPortRange implements inet.Stack.SetPortRange.
-func (*Stack) SetPortRange(uint16, uint16) error {
-	return linuxerr.EACCES
+func (s *Stack) SetPortRange(start uint16, end uint16) error {
+	if s.netIpv4IpLocalPortRange == nil {
+		return linuxerr.EACCES
+	}
+	_, err := io.WriteString(s.netIpv4IpLocalPortRange, fmt.Sprintf("%d %d\n", start, end))
+	return err
 }
 
 // GROTimeout implements inet.Stack.GROTimeout.

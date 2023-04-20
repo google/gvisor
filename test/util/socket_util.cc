@@ -1117,9 +1117,9 @@ PosixErrorOr<int> MaybeLimitEphemeralPorts() {
     const std::string small_range = absl::StrFormat("%d %d", min, newMax);
     int n = write(fd.get(), small_range.c_str(), small_range.size());
     if (n < 0) {
-      // Hostinet doesn't allow modifying the host port range. And if we're root
-      // (as we are in some tests), access and open will succeed even if the
-      // file mode is readonly.
+      // Hostinet doesn't allow modifying the host port range depending on the
+      // host capabilities. And if we're root (as we are in some tests), access
+      // and open will succeed even if the file mode is readonly.
       if (errno != EACCES) {
         return PosixError(
             errno,
