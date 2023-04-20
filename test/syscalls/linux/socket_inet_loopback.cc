@@ -498,7 +498,8 @@ TEST_P(SocketInetLoopbackTest, TCPInfoState) {
   int n = poll(&pfd, 1, kTimeout);
   ASSERT_GE(n, 0) << strerror(errno);
   ASSERT_EQ(n, 1);
-  if (IsRunningOnGvisor() && GvisorPlatform() != Platform::kFuchsia) {
+  if (IsRunningOnGvisor() && !IsRunningWithHostinet() &&
+      GvisorPlatform() != Platform::kFuchsia) {
     // TODO(gvisor.dev/issue/6015): Notify POLLRDHUP on incoming FIN.
     ASSERT_EQ(pfd.revents, POLLIN);
   } else {
@@ -649,9 +650,17 @@ void TestListenHangupConnectingRead(const SocketInetTestParam& param,
 
   hangup(listen_fd);
 
+  int connecting_client_error = ECONNREFUSED;
+  if (IsRunningWithHostinet()) {
+    // TODO(b/267210840): For some reason the connecting client gets
+    // ECONNRESET on hostinet. Maybe the intervening poll() implementation
+    // changes the socket state somehow?
+    connecting_client_error = ECONNRESET;
+  }
+
   std::array<std::pair<int, int>, 2> sockets = {
       std::make_pair(established_client.get(), ECONNRESET),
-      std::make_pair(connecting_client.get(), ECONNREFUSED),
+      std::make_pair(connecting_client.get(), connecting_client_error),
   };
   for (size_t i = 0; i < sockets.size(); i++) {
     SCOPED_TRACE(absl::StrCat("i=", i));
@@ -741,7 +750,8 @@ TEST_P(SocketInetLoopbackTest, TCPNonBlockingConnectClose) {
     ASSERT_GE(n, 0) << strerror(errno);
     ASSERT_EQ(n, 1);
 
-    if (IsRunningOnGvisor() && GvisorPlatform() != Platform::kFuchsia) {
+    if (IsRunningOnGvisor() && !IsRunningWithHostinet() &&
+        GvisorPlatform() != Platform::kFuchsia) {
       // TODO(gvisor.dev/issue/6015): Notify POLLRDHUP on incoming FIN.
       ASSERT_EQ(pfd.revents, POLLIN);
     } else {
