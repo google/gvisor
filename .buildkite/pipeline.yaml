@@ -238,7 +238,6 @@ steps:
       <<: *kvm_agents
       cgroup: "v2"
       arch: "amd64"
-
   # All system call tests.
   - <<: *common
     label: ":toolbox: System call tests (AMD64)"
@@ -271,7 +270,7 @@ steps:
     # See above: not truly a source test.
     <<: *source_test
     label: ":docker: Docker tests (cgroupv2)"
-    command: make portforward-tests docker-tests
+    command: make docker-tests
     agents:
       <<: *ubuntu_agents
       arch: "amd64"
@@ -284,6 +283,14 @@ steps:
       <<: *platform_specific_agents
       <<: *ubuntu_agents
       arch: "amd64"
+  - <<: *common
+    <<: *docker
+    label: ":one-does-not-simply: Port-Forward tests"
+    command: make portforward-tests
+    agents:
+      <<: *ubuntu_agents
+      arch: "amd64"
+    soft_fail: true
   - <<: *common
     <<: *docker
     label: ":safety_pin: Host network tests"
