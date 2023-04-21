@@ -54,6 +54,10 @@ func TestPortForwardLocalMode(t *testing.T) {
 		t.Fatalf("failed to create redis server: %v", err)
 	}
 
+	if err := waitUntilServerIsUp(ctx, server, redisPort); err != nil {
+		t.Fatalf("failed to wait for redis server to be up: %v", err)
+	}
+
 	localPort, err := getUnusedPort()
 	if err != nil {
 		t.Fatalf("failed to pick unused port: %v", err)
@@ -120,30 +124,8 @@ func TestPortForwardStreamMode(t *testing.T) {
 		t.Fatalf("failed to create nginx server: %v", err)
 	}
 
-	// This is a bit crude, but we need to make sure the server is up without exposing a port to the
-	// host. When the server container boots, the nginx process should run first. If we run nginx
-	// again, it will fail to bind to port 80. Run exec calls until we get that failure.
-	serverUpChan := make(chan struct{}, 1)
-	var upOut string
-	var upErr error
-	reg := regexp.MustCompile(`0\.0\.0\.0:80[\s]*0\.0\.0\.0:\*[\s]*LISTEN`)
-	go func() {
-		for {
-			time.Sleep(time.Millisecond * 500)
-			upOut, upErr = server.Exec(ctx, dockerutil.ExecOpts{}, []string{"netstat", "-l"}...)
-			if reg.MatchString(upOut) {
-				serverUpChan <- struct{}{}
-				return
-			}
-		}
-	}()
-
-	// If the server isn't up after 10 seconds, there is probably something wrong.
-	select {
-	case <-serverUpChan:
-		break
-	case <-time.After(time.Second * 30):
-		t.Fatalf("could not verify server is up: err: %v out: %s", upErr, upOut)
+	if err := waitUntilServerIsUp(ctx, server, nginxPort); err != nil {
+		t.Fatalf("failed to wait for nginx server to be up: %v", err)
 	}
 
 	socket, err := net.Listen("unix", sockAddr)
@@ -190,6 +172,36 @@ func getUnusedPort() (int, error) {
 	}
 	defer l.Close()
 	return l.Addr().(*net.TCPAddr).Port, nil
+}
+
+func waitUntilServerIsUp(ctx context.Context, server *dockerutil.Container, port int) error {
+	// This is a bit crude, but we need to make sure the server is up without exposing a port to the
+	// host. When the server container boots, the nginx process should run first. If we run nginx
+	// again, it will fail to bind to port 80. Run exec calls until we get that failure.
+	serverUpChan := make(chan struct{})
+	var upOut string
+	var upErr error
+	reg := regexp.MustCompile(fmt.Sprintf(`0\.0\.0\.0:%d[\s]*0\.0\.0\.0:\*[\s]*LISTEN`, port))
+	go func() {
+		for {
+			time.Sleep(time.Millisecond * 500)
+			upOut, upErr = server.Exec(ctx, dockerutil.ExecOpts{}, []string{"netstat", "-l"}...)
+			if reg.MatchString(upOut) {
+				close(serverUpChan)
+				return
+			}
+		}
+	}()
+
+	// If the server isn't up after 30 seconds, there is probably something wrong.
+	select {
+	case <-serverUpChan:
+		break
+	case <-time.After(time.Second * 30):
+		return fmt.Errorf("could not verify server is up: err: %v out: %s", upErr, upOut)
+	}
+
+	return nil
 }
 
 type portForwardProcess struct {

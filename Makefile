@@ -264,9 +264,9 @@ simple-tests: unit-tests # Compatibility target.
 
 portforward-tests: load-basic_redis load-basic_nginx $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),--network=sandbox)
-	@$(call sudo,test/root:portforward_test,--runtime=$(RUNTIME) -test.v)
+	@$(call sudo,test/root:portforward_test,--runtime=$(RUNTIME) -test.v $(ARGS))
 	@$(call install_runtime,$(RUNTIME),--network=host)
-	@$(call sudo,test/root:portforward_test,--runtime=$(RUNTIME) -test.v)
+	@$(call sudo,test/root:portforward_test,--runtime=$(RUNTIME) -test.v $(ARGS))
 .PHONY: portforward-test
 
 # Standard integration targets.
