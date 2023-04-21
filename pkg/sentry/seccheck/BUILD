@@ -35,6 +35,7 @@ go_library(
         "//pkg/fd",
         "//pkg/gohacks",
         "//pkg/log",
+        "//pkg/metric",
         "//pkg/sentry/arch",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/seccheck/points:points_go_proto",
