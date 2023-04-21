@@ -21,6 +21,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/metric"
 )
 
 // DefaultSessionName is the name of the only session that can exist in the
@@ -31,6 +32,8 @@ var (
 	sessionsMu = sync.Mutex{}
 	sessions   = make(map[string]*State)
 )
+
+var sessionCounter = metric.MustCreateNewUint64Metric("/trace/sessions_created", false /* sync */, "Counts the number of trace sessions created.")
 
 // SessionConfig describes a new session configuration. A session consists of a
 // set of points to be enabled and sinks where the points are sent to.
@@ -136,6 +139,7 @@ func Create(conf *SessionConfig, force bool) error {
 	}
 
 	sessions[conf.Name] = state
+	sessionCounter.Increment()
 	return nil
 }
 
