@@ -311,6 +311,7 @@ func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
 	}
 
 	if _, ok := l.containerMap[initArgs.ContainerID]; ok {
+		l.mu.Unlock()
 		return fmt.Errorf("container id: %v already exists", initArgs.ContainerID)
 	}
 
