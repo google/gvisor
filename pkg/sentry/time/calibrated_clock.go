@@ -97,7 +97,7 @@ func (c *CalibratedClock) resetLocked(str string, v ...any) {
 	c.Warningf(str+" Resetting clock; time may jump.", v...)
 	c.ready = false
 	c.ref.Reset()
-	metric.WeirdnessMetric.Increment("time_fallback")
+	metric.WeirdnessMetric.Increment(metric.WeirdnessTypeTimeFallback)
 }
 
 // updateParams updates the timekeeping parameters based on the passed
