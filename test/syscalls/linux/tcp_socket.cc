@@ -2488,16 +2488,18 @@ TEST_P(SimpleTcpSocketTest, SynRcvdOnListenerShutdown) {
                   POLLOUT
 #else
                   []() {
-                    const int expected_revents = POLLIN | POLLOUT | POLLHUP |
-                                                 POLLRDNORM | POLLWRNORM |
-                                                 POLLRDHUP;
+                    const int expected_revents =
+                        POLLIN | POLLOUT | POLLHUP | POLLRDNORM | POLLWRNORM;
                     // TODO(gvisor.dev/issue/6666): POLLERR is still present
                     // after getsockopt(..., SO_ERROR, ...) call (unless
                     // hostinet is used).
-                    if (IsRunningWithHostinet()) {
-                      return expected_revents;
+                    if (IsRunningOnGvisor()) {
+                      if (IsRunningWithHostinet()) {
+                        return expected_revents;
+                      }
+                      return expected_revents | POLLPRI | POLLERR;
                     }
-                    return expected_revents | POLLPRI | POLLERR;
+                    return expected_revents | POLLRDHUP;
                   }()
 #endif
         );
