@@ -346,7 +346,7 @@ func (*Stack) SetForwarding(tcpip.NetworkProtocolNumber, bool) error {
 // PortRange implements inet.Stack.PortRange.
 func (*Stack) PortRange() (uint16, uint16) {
 	// Use the default Linux values per net/ipv4/af_inet.c:inet_init_net().
-	return 32768, 28232
+	return 32768, 60999
 }
 
 // SetPortRange implements inet.Stack.SetPortRange.
