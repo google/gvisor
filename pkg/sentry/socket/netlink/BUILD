@@ -35,7 +35,6 @@ go_library(
         "//pkg/sentry/vfs",
         "//pkg/sync",
         "//pkg/syserr",
-        "//pkg/tcpip",
         "//pkg/usermem",
         "//pkg/waiter",
     ],

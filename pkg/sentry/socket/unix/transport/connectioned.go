@@ -50,7 +50,7 @@ type ConnectingEndpoint interface {
 	Type() linux.SockType
 
 	// GetLocalAddress returns the bound path.
-	GetLocalAddress() (tcpip.FullAddress, tcpip.Error)
+	GetLocalAddress() (Address, tcpip.Error)
 
 	// Locker protects the following methods. While locked, only the holder of
 	// the lock can change the return value of the protected methods.
@@ -438,7 +438,7 @@ func (e *connectionedEndpoint) Listen(ctx context.Context, backlog int) *syserr.
 }
 
 // Accept accepts a new connection.
-func (e *connectionedEndpoint) Accept(ctx context.Context, peerAddr *tcpip.FullAddress) (Endpoint, *syserr.Error) {
+func (e *connectionedEndpoint) Accept(ctx context.Context, peerAddr *Address) (Endpoint, *syserr.Error) {
 	e.Lock()
 
 	if !e.ListeningLocked() {
@@ -511,7 +511,7 @@ func (e *connectionedEndpoint) getAcceptedEndpointLocked(ctx context.Context) (*
 //
 // Bind will fail only if the socket is connected, bound or the passed address
 // is invalid (the empty string).
-func (e *connectionedEndpoint) Bind(addr tcpip.FullAddress) *syserr.Error {
+func (e *connectionedEndpoint) Bind(addr Address) *syserr.Error {
 	e.Lock()
 	defer e.Unlock()
 	if e.isBound() || e.ListeningLocked() {
@@ -523,7 +523,7 @@ func (e *connectionedEndpoint) Bind(addr tcpip.FullAddress) *syserr.Error {
 	}
 
 	// Save the bound address.
-	e.path = string(addr.Addr)
+	e.path = addr.Addr
 	return nil
 }
 
