@@ -301,14 +301,6 @@ var errStackType = syserr.New("expected but did not receive a netstack.Stack", e
 // commonEndpoint represents the intersection of a tcpip.Endpoint and a
 // transport.Endpoint.
 type commonEndpoint interface {
-	// GetLocalAddress implements tcpip.Endpoint.GetLocalAddress and
-	// transport.Endpoint.GetLocalAddress.
-	GetLocalAddress() (tcpip.FullAddress, tcpip.Error)
-
-	// GetRemoteAddress implements tcpip.Endpoint.GetRemoteAddress and
-	// transport.Endpoint.GetRemoteAddress.
-	GetRemoteAddress() (tcpip.FullAddress, tcpip.Error)
-
 	// Readiness implements tcpip.Endpoint.Readiness and
 	// transport.Endpoint.Readiness.
 	Readiness(mask waiter.EventMask) waiter.EventMask

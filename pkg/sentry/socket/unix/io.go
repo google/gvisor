@@ -18,7 +18,6 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
-	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
 // EndpointWriter implements safemem.Writer that writes to a transport.Endpoint.
@@ -79,7 +78,7 @@ type EndpointReader struct {
 	MsgSize int64
 
 	// From, if not nil, will be set with the address read from.
-	From *tcpip.FullAddress
+	From *transport.Address
 
 	// Control contains the received control messages.
 	Control transport.ControlMessages

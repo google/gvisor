@@ -17,7 +17,6 @@ package transport
 import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/syserr"
-	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -113,7 +112,7 @@ func (q *queue) IsWritable() bool {
 //
 // If notify is true, ReaderQueue.Notify must be called:
 // q.ReaderQueue.Notify(waiter.ReadableEvents)
-func (q *queue) Enqueue(ctx context.Context, data [][]byte, c ControlMessages, from tcpip.FullAddress, discardEmpty bool, truncate bool) (l int64, notify bool, err *syserr.Error) {
+func (q *queue) Enqueue(ctx context.Context, data [][]byte, c ControlMessages, from Address, discardEmpty bool, truncate bool) (l int64, notify bool, err *syserr.Error) {
 	q.mu.Lock()
 
 	if q.closed {

@@ -467,24 +467,6 @@ func isLinkLocal(addr tcpip.Address) bool {
 // ConvertAddress converts the given address to a native format.
 func ConvertAddress(family int, addr tcpip.FullAddress) (linux.SockAddr, uint32) {
 	switch family {
-	case linux.AF_UNIX:
-		var out linux.SockAddrUnix
-		out.Family = linux.AF_UNIX
-		l := len([]byte(addr.Addr))
-		for i := 0; i < l; i++ {
-			out.Path[i] = int8(addr.Addr[i])
-		}
-
-		// Linux returns the used length of the address struct (including the
-		// null terminator) for filesystem paths. The Family field is 2 bytes.
-		// It is sometimes allowed to exclude the null terminator if the
-		// address length is the max. Abstract and empty paths always return
-		// the full exact length.
-		if l == 0 || out.Path[0] == 0 || l == len(out.Path) {
-			return &out, uint32(2 + l)
-		}
-		return &out, uint32(3 + l)
-
 	case linux.AF_INET:
 		var out linux.SockAddrInet
 		copy(out.Addr[:], addr.Addr)

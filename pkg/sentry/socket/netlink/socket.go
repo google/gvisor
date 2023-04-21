@@ -38,7 +38,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserr"
-	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -124,7 +123,7 @@ func New(t *kernel.Task, skType linux.SockType, protocol Protocol) (*Socket, *sy
 
 	// Bind the endpoint for good measure so we can connect to it. The
 	// bound address will never be exposed.
-	if err := ep.Bind(tcpip.FullAddress{Addr: "dummy"}); err != nil {
+	if err := ep.Bind(transport.Address{Addr: "dummy"}); err != nil {
 		ep.Close(t)
 		return nil, err
 	}
@@ -629,7 +628,7 @@ func (s *Socket) sendResponse(ctx context.Context, ms *MessageSet) *syserr.Error
 	if len(bufs) > 0 {
 		// RecvMsg never receives the address, so we don't need to send
 		// one.
-		_, notify, err := s.connection.Send(ctx, bufs, cms, tcpip.FullAddress{})
+		_, notify, err := s.connection.Send(ctx, bufs, cms, transport.Address{})
 		// If the buffer is full, we simply drop messages, just like
 		// Linux.
 		if err != nil && err != syserr.ErrWouldBlock {
@@ -656,7 +655,7 @@ func (s *Socket) sendResponse(ctx context.Context, ms *MessageSet) *syserr.Error
 		// Add the dump_done_errno payload.
 		m.Put(primitive.AllocateInt64(0))
 
-		_, notify, err := s.connection.Send(ctx, [][]byte{m.Finalize()}, cms, tcpip.FullAddress{})
+		_, notify, err := s.connection.Send(ctx, [][]byte{m.Finalize()}, cms, transport.Address{})
 		if err != nil && err != syserr.ErrWouldBlock {
 			return err
 		}
