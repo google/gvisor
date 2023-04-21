@@ -52,23 +52,42 @@ var (
 	// ErrTooManyFieldCombinations indicates that the number of unique
 	// combinations of fields is too large to support.
 	ErrTooManyFieldCombinations = errors.New("metric has too many combinations of allowed field values")
+)
 
+// Weirdness metric type constants.
+const (
+	WeirdnessTypeTimeFallback         = "time_fallback"
+	WeirdnessTypePartialResult        = "partial_result"
+	WeirdnessTypeVsyscallCount        = "vsyscall_count"
+	WeirdnessTypeWatchdogStuckStartup = "watchdog_stuck_startup"
+	WeirdnessTypeWatchdogStuckTasks   = "watchdog_stuck_tasks"
+)
+
+// Suspicious operations metric type constants.
+const (
+	SuspiciousOperationsTypeOpenedWriteExecuteFile = "opened_write_execute_file"
+)
+
+// List of global metrics that are used in multiple places.
+var (
 	// WeirdnessMetric is a metric with fields created to track the number
 	// of weird occurrences such as time fallback, partial_result, vsyscall
 	// count, watchdog startup timeouts and stuck tasks.
 	WeirdnessMetric = MustCreateNewUint64Metric("/weirdness", true /* sync */, "Increment for weird occurrences of problems such as time fallback, partial result, vsyscalls invoked in the sandbox, watchdog startup timeouts and stuck tasks.",
-		Field{
-			name:          "weirdness_type",
-			allowedValues: []string{"time_fallback", "partial_result", "vsyscall_count", "watchdog_stuck_startup", "watchdog_stuck_tasks"},
-		})
+		NewField("weirdness_type", []string{
+			WeirdnessTypeTimeFallback,
+			WeirdnessTypePartialResult,
+			WeirdnessTypeVsyscallCount,
+			WeirdnessTypeWatchdogStuckStartup,
+			WeirdnessTypeWatchdogStuckTasks,
+		}))
 
 	// SuspiciousOperationsMetric is a metric with fields created to detect
 	// operations such as opening an executable file to write from a gofer.
 	SuspiciousOperationsMetric = MustCreateNewUint64Metric("/suspicious_operations", true /* sync */, "Increment for suspicious operations such as opening an executable file to write from a gofer.",
-		Field{
-			name:          "operation_type",
-			allowedValues: []string{"opened_write_execute_file"},
-		})
+		NewField("operation_type", []string{
+			SuspiciousOperationsTypeOpenedWriteExecuteFile,
+		}))
 )
 
 // InitStage is the name of a Sentry initialization stage.
@@ -196,22 +215,30 @@ type customUint64Metric struct {
 	value func(fieldValues ...string) uint64
 }
 
+// fieldMapperMapThreshold is the number of field values after which we switch
+// to using map lookups when looking up field values.
+// This value was determined using benchmarks to see which is fastest.
+const fieldMapperMapThreshold = 48
+
 // Field contains the field name and allowed values for the metric which is
 // used in registration of the metric.
 type Field struct {
 	// name is the metric field name.
 	name string
 
-	// allowedValues is the list of allowed values for the field.
-	allowedValues []string
-}
+	// values is the list of values for the field.
+	// `values` is always populated but not always used for lookup. It depends
+	// on the number of allowed field values. `values` is used for lookups on
+	// fields with small numbers of field values.
+	values []string
 
-// NewField defines a new Field that can be used to break down a metric.
-func NewField(name string, allowedValues []string) Field {
-	return Field{
-		name:          name,
-		allowedValues: allowedValues,
-	}
+	// valuesPtrMap is a map version of `values`. For each string in `values`,
+	// its underlying byte string pointer is mapped to its index in `values`.
+	// `valuesPtrMap` is used for fields with large numbers of possible values.
+	// For fields with small numbers of field values, it is nil.
+	// This map allows doing faster string matching than a normal string map,
+	// as it avoids the string hashing step that normal string maps need to do.
+	valuesPtrMap map[*byte]int
 }
 
 // toProto returns the proto definition of this field, for use in metric
@@ -219,7 +246,7 @@ func NewField(name string, allowedValues []string) Field {
 func (f Field) toProto() *pb.MetricMetadata_Field {
 	return &pb.MetricMetadata_Field{
 		FieldName:     f.name,
-		AllowedValues: f.allowedValues,
+		AllowedValues: f.values,
 	}
 }
 
@@ -242,10 +269,10 @@ func newFieldMapper(fields ...Field) (fieldMapper, error) {
 	for _, f := range fields {
 		// Disallow fields with no possible values. We could also ignore them
 		// instead, but passing in a no-allowed-values field is probably a mistake.
-		if len(f.allowedValues) == 0 {
+		if len(f.values) == 0 {
 			return fieldMapper{nil, 0}, ErrFieldHasNoAllowedValues
 		}
-		numFieldCombinations *= len(f.allowedValues)
+		numFieldCombinations *= len(f.values)
 
 		// Sanity check, could be useful in case someone dynamically generates too
 		// many fields accidentally.
@@ -274,31 +301,13 @@ func (m fieldMapper) lookupConcat(fields1, fields2 []string) int {
 	}
 	idx := 0
 	remainingCombinationBucket := m.numFieldCombinations
-
-IdxLookup1:
 	for i, val := range fields1 {
-		for valIdx, allowedVal := range m.fields[i].allowedValues {
-			if val == allowedVal {
-				remainingCombinationBucket /= len(m.fields[i].allowedValues)
-				idx += remainingCombinationBucket * valIdx
-				continue IdxLookup1
-			}
-		}
-
-		panic("disallowed field value")
+		idx, remainingCombinationBucket = m.lookupSingle(i, val, idx, remainingCombinationBucket)
 	}
 
-IdxLookup2:
+	numFields1 := len(fields1)
 	for i, val := range fields2 {
-		for valIdx, allowedVal := range m.fields[i+len(fields1)].allowedValues {
-			if val == allowedVal {
-				remainingCombinationBucket /= len(m.fields[i+len(fields1)].allowedValues)
-				idx += remainingCombinationBucket * valIdx
-				continue IdxLookup2
-			}
-		}
-
-		panic("disallowed field value")
+		idx, remainingCombinationBucket = m.lookupSingle(i+numFields1, val, idx, remainingCombinationBucket)
 	}
 
 	return idx
@@ -346,8 +355,8 @@ func (m fieldMapper) keyToMultiField(key int) []string {
 	fields := make([]string, depth)
 	remainingCombinationBucket := m.numFieldCombinations
 	for i := 0; i < depth; i++ {
-		remainingCombinationBucket /= len(m.fields[i].allowedValues)
-		fields[i] = m.fields[i].allowedValues[key/remainingCombinationBucket]
+		remainingCombinationBucket /= len(m.fields[i].values)
+		fields[i] = m.fields[i].values[key/remainingCombinationBucket]
 		key = key % remainingCombinationBucket
 	}
 	return fields
@@ -438,7 +447,7 @@ func NewUint64Metric(name string, sync bool, units pb.MetricMetadata_Units, desc
 	return &m, RegisterCustomUint64Metric(name, true /* cumulative */, sync, units, description, m.Value, fields...)
 }
 
-// MustCreateNewUint64Metric calls RegisterUint64Metric and panics if it returns
+// MustCreateNewUint64Metric calls NewUint64Metric and panics if it returns
 // an error.
 func MustCreateNewUint64Metric(name string, sync bool, description string, fields ...Field) *Uint64Metric {
 	m, err := NewUint64Metric(name, sync, pb.MetricMetadata_UNITS_NONE, description, fields...)

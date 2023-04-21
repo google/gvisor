@@ -15,6 +15,7 @@
 package metric
 
 import (
+	"fmt"
 	"unsafe"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -51,4 +52,80 @@ func snapshotDistribution(samples []atomicbitops.Uint64) []uint64 {
 //go:nosplit
 func CheapNowNano() int64 {
 	return gohacks.Nanotime()
+}
+
+// NewField defines a new Field that can be used to break down a metric.
+// The set of allowedValues must have unique string pointers (i.e. one cannot
+// be a prefix of another from the same underlying byte slice).
+// The *same* string pointers must be used during metric modifications.
+// In practice, in most cases, this means you should declare these strings as
+// `const`s, and always use these `const` strings during metric modifications.
+func NewField(name string, allowedValues []string) Field {
+	// Verify that all string values have a unique pointer.
+	// We do this because we try to match strings by pointer matching first,
+	// as this will work in pretty much all cases.
+	ptrMap := make(map[uintptr]string, len(allowedValues))
+	for _, v := range allowedValues {
+		ptr := uintptr(unsafe.Pointer(unsafe.StringData(v)))
+		if duplicate, found := ptrMap[ptr]; found {
+			panic(fmt.Sprintf("found duplicate string values: %q vs %q", v, duplicate))
+		}
+		ptrMap[ptr] = v
+	}
+
+	if useMap := len(allowedValues) > fieldMapperMapThreshold; !useMap {
+		return Field{
+			name:   name,
+			values: allowedValues,
+		}
+	}
+
+	valuesPtrMap := make(map[*byte]int, len(allowedValues))
+	for i, v := range allowedValues {
+		valuesPtrMap[unsafe.StringData(v)] = i
+	}
+	return Field{
+		name:         name,
+		values:       allowedValues,
+		valuesPtrMap: valuesPtrMap,
+	}
+}
+
+// lookupSingle looks up a single key for a single field within fieldMapper.
+// It is used internally within lookupConcat.
+// It returns the updated `idx` and `remainingCombinationBucket` values.
+// +checkescape:all
+//
+//go:nosplit
+func (m fieldMapper) lookupSingle(fieldIndex int, fieldValue string, idx, remainingCombinationBucket int) (int, int) {
+	field := m.fields[fieldIndex]
+	numValues := len(field.values)
+	fieldValPtr := unsafe.StringData(fieldValue)
+
+	// Are we doing a linear search?
+	if field.valuesPtrMap == nil {
+		// We scan by pointers only. This means the caller must pass the same
+		// string as the one used in `NewField`.
+		for valIdx, allowedVal := range field.values {
+			if fieldValPtr == unsafe.StringData(allowedVal) {
+				remainingCombinationBucket /= numValues
+				idx += remainingCombinationBucket * valIdx
+				return idx, remainingCombinationBucket
+			}
+		}
+		panic("invalid field value or did not reuse the same string pointer as passed in NewField")
+	}
+
+	// Use map lookup instead.
+
+	// Match using the raw byte pointer of the string.
+	// This avoids the string hashing step that string maps otherwise do.
+	valIdx, found := field.valuesPtrMap[fieldValPtr]
+	if found {
+		remainingCombinationBucket /= numValues
+		idx += remainingCombinationBucket * valIdx
+		return idx, remainingCombinationBucket
+	}
+
+	panic("invalid field value or did not reuse the same string pointer as passed in NewField")
 }
