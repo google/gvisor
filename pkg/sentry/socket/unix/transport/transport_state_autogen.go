@@ -314,6 +314,31 @@ func (m *message) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(3, &m.Address)
 }
 
+func (a *Address) StateTypeName() string {
+	return "pkg/sentry/socket/unix/transport.Address"
+}
+
+func (a *Address) StateFields() []string {
+	return []string{
+		"Addr",
+	}
+}
+
+func (a *Address) beforeSave() {}
+
+// +checklocksignore
+func (a *Address) StateSave(stateSinkObject state.Sink) {
+	a.beforeSave()
+	stateSinkObject.Save(0, &a.Addr)
+}
+
+func (a *Address) afterLoad() {}
+
+// +checklocksignore
+func (a *Address) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &a.Addr)
+}
+
 func (q *queueReceiver) StateTypeName() string {
 	return "pkg/sentry/socket/unix/transport.queueReceiver"
 }
@@ -452,6 +477,7 @@ func init() {
 	state.Register((*messageEntry)(nil))
 	state.Register((*ControlMessages)(nil))
 	state.Register((*message)(nil))
+	state.Register((*Address)(nil))
 	state.Register((*queueReceiver)(nil))
 	state.Register((*streamQueueReceiver)(nil))
 	state.Register((*connectedEndpoint)(nil))
