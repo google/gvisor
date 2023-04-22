@@ -213,6 +213,15 @@ type customUint64Metric struct {
 	// value returns the current value of the metric for the given set of
 	// fields. It takes a variadic number of field values as argument.
 	value func(fieldValues ...string) uint64
+
+	// forEachNonZero calls the given function on each possible field value of
+	// the metric where the metric's value is non-zero.
+	// The passed-in function should not allocate new memory, and may not save
+	// or modify `fields` directly, as the slice memory is reused across calls.
+	// `forEachNonZero` does not guarantee that it will be called on a
+	// consistent snapshot of this metric's values.
+	// `forEachNonZero` may be nil.
+	forEachNonZero func(f func(fields []string, val uint64))
 }
 
 // fieldMapperMapThreshold is the number of field values after which we switch
@@ -326,8 +335,9 @@ func (m fieldMapper) lookup(fields ...string) int {
 
 // numKeys returns the total number of key-to-field-combinations mappings
 // defined by the fieldMapper.
+//
+//go:nosplit
 func (m fieldMapper) numKeys() int {
-	// Reserve an extra slot for a metric with no fields.
 	return m.numFieldCombinations
 }
 
@@ -348,18 +358,31 @@ func (m fieldMapper) makeDistributionSampleMap(numBuckets int) [][]atomicbitops.
 // field values corresponds to the same order of fields that were passed in to
 // newFieldMapper.
 func (m fieldMapper) keyToMultiField(key int) []string {
-	if len(m.fields) == 0 && key == 0 {
+	depth := len(m.fields)
+	if depth == 0 && key == 0 {
 		return nil
 	}
+	fieldValues := make([]string, depth)
+	m.keyToMultiFieldInPlace(key, fieldValues)
+	return fieldValues
+}
+
+// keyToMultiFieldInPlace does the operation described in `keyToMultiField`
+// but modifies `fieldValues` in-place. It must aready be of size
+// `len(m.fields)`.
+//
+//go:nosplit
+func (m fieldMapper) keyToMultiFieldInPlace(key int, fieldValues []string) {
+	if len(m.fields) == 0 {
+		return
+	}
 	depth := len(m.fields)
-	fields := make([]string, depth)
 	remainingCombinationBucket := m.numFieldCombinations
 	for i := 0; i < depth; i++ {
 		remainingCombinationBucket /= len(m.fields[i].values)
-		fields[i] = m.fields[i].values[key/remainingCombinationBucket]
+		fieldValues[i] = m.fields[i].values[key/remainingCombinationBucket]
 		key = key % remainingCombinationBucket
 	}
-	return fields
 }
 
 // nameToPrometheusName transforms a path-style metric name (/foo/bar) into a Prometheus-style
@@ -444,7 +467,13 @@ func NewUint64Metric(name string, sync bool, units pb.MetricMetadata_Units, desc
 		fieldMapper: f,
 		fields:      make([]atomicbitops.Uint64, f.numKeys()),
 	}
-	return &m, RegisterCustomUint64Metric(name, true /* cumulative */, sync, units, description, m.Value, fields...)
+	if err := RegisterCustomUint64Metric(name, true /* cumulative */, sync, units, description, m.Value, fields...); err != nil {
+		return nil, err
+	}
+	cm := allMetrics.uint64Metrics[name]
+	cm.forEachNonZero = m.forEachNonZero
+	allMetrics.uint64Metrics[name] = cm
+	return &m, nil
 }
 
 // MustCreateNewUint64Metric calls NewUint64Metric and panics if it returns
@@ -474,6 +503,32 @@ func MustCreateNewUint64NanosecondsMetric(name string, sync bool, description st
 func (m *Uint64Metric) Value(fieldValues ...string) uint64 {
 	key := m.fieldMapper.lookupConcat(fieldValues, nil)
 	return m.fields[key].Load()
+}
+
+// forEachNonZero iterates over each field combination and calls the given
+// function whenever this metric's value is not zero.
+func (m *Uint64Metric) forEachNonZero(f func(fieldValues []string, value uint64)) {
+	numCombinations := m.fieldMapper.numKeys()
+	if len(m.fieldMapper.fields) == 0 {
+		// Special-case the "there are no fields" case for speed and to avoid
+		// allocating a slice.
+		if val := m.fields[0].Load(); val != 0 {
+			f(nil, val)
+		}
+		return
+	}
+	var fieldValues []string
+	for k := 0; k < numCombinations; k++ {
+		val := m.fields[k].Load()
+		if val == 0 {
+			continue
+		}
+		if fieldValues == nil {
+			fieldValues = make([]string, len(m.fieldMapper.fields))
+		}
+		m.fieldMapper.keyToMultiFieldInPlace(k, fieldValues)
+		f(fieldValues, val)
+	}
 }
 
 // Increment increments the metric field by 1.
@@ -924,10 +979,16 @@ func (m *metricSet) Values() metricValues {
 		case 0:
 			vals.uint64Metrics[k] = v.value()
 		case 1:
-			values := fields[0].GetAllowedValues()
 			fieldsMap := make(map[string]uint64)
-			for _, fieldValue := range values {
-				fieldsMap[fieldValue] = v.value(fieldValue)
+			if v.forEachNonZero != nil {
+				v.forEachNonZero(func(fieldValues []string, val uint64) {
+					fieldsMap[fieldValues[0]] = val
+				})
+			} else {
+				values := fields[0].GetAllowedValues()
+				for _, fieldValue := range values {
+					fieldsMap[fieldValue] = v.value(fieldValue)
+				}
 			}
 			vals.uint64Metrics[k] = fieldsMap
 		default:
