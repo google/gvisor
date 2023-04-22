@@ -859,29 +859,26 @@ func TestMetricServerDoesNotExportZeroValueCounters(t *testing.T) {
 
 	for _, test := range []struct {
 		cont          *Container
-		sysno         int
+		sysno         uintptr
 		wantExistence bool
 	}{
 		{unimpl1, 1337, true},
-		// TODO(b/278108862): Uncomment this: {unimpl1, 1338, false},
-		// TODO(b/278108862): Uncomment this: {unimpl2, 1337, false},
+		{unimpl1, 1338, false},
+		{unimpl2, 1337, false},
 		{unimpl2, 1338, true},
 	} {
-		// TODO(b/278108862): Undo this hack:
-		test.sysno = -1
-
 		t.Run(fmt.Sprintf("container %s syscall %d", test.cont.ID, test.sysno), func(t *testing.T) {
 			check := func() error {
 				got, _, err := metricDataPtr.GetPrometheusContainerInteger(metricclient.WantMetric{
 					Metric:      "testmetric_unimplemented_syscalls",
 					Sandbox:     test.cont.sandboxID(),
-					ExtraLabels: map[string]string{"sysno": strconv.Itoa(test.sysno)},
+					ExtraLabels: map[string]string{"sysno": strconv.Itoa(int(test.sysno))},
 				})
 				if test.wantExistence {
 					if err != nil {
 						return fmt.Errorf("cannot get unimplemented syscall metric for sysno=%d even though we expected its presence: %v", test.sysno, err)
 					}
-					if got <= 0 /* TODO(b/278108862): Revert to got != 1 */ {
+					if got != 1 {
 						return fmt.Errorf("expected counter value for unimplemented syscall %d be exactly 1, got %d", test.sysno, got)
 					}
 				} else /* !test.wantExistence */ {
