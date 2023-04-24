@@ -233,8 +233,8 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 		"-gvisor-gro=200000ns",
 	}
 
-	if *network == "host" && !specutils.HasCapabilities(capability.CAP_NET_RAW) {
-		log.Warningf("Testing with network=host but host does not have CAP_NET_RAW. Raw socket support will be disabled.")
+	if *network == "host" && !testutil.TestEnvSupportsNetAdmin {
+		log.Warningf("Testing with network=host but test environment does not support net admin or raw sockets. Raw sockets will not be enabled.")
 	} else {
 		args = append(args, "-net-raw")
 	}
@@ -573,19 +573,10 @@ func runTestCaseRunsc(testBin string, tc *gtest.TestCase, args []string, t *test
 			Type:        "tmpfs",
 		})
 	}
-	if *network == "host" {
-		// If host does not have CAP_NET_ADMIN or CAP_NET_RAW, then we
-		// must drop those caps inside the sandbox, since we will not
-		// be able to perform those operations with hostinet.
-		if !specutils.HasCapabilities(capability.CAP_NET_ADMIN) {
-			log.Warningf("Running with network=host, but host does not have CAP_NET_ADMIN. Dropping this capability inside the sandbox.")
-			specutils.DropCapability(spec.Process.Capabilities, "CAP_NET_ADMIN")
-
-		}
-		if !specutils.HasCapabilities(capability.CAP_NET_RAW) {
-			log.Warningf("Running with network=host, but host does not have CAP_NET_RAW. Dropping this capability inside the sandbox.")
-			specutils.DropCapability(spec.Process.Capabilities, "CAP_NET_RAW")
-		}
+	if *network == "host" && !testutil.TestEnvSupportsNetAdmin {
+		log.Warningf("Testing with network=host but test environment does not support net admin or raw sockets. Dropping CAP_NET_ADMIN and CAP_NET_RAW.")
+		specutils.DropCapability(spec.Process.Capabilities, "CAP_NET_ADMIN")
+		specutils.DropCapability(spec.Process.Capabilities, "CAP_NET_RAW")
 	}
 
 	// Set environment variables that indicate we are running in gVisor with

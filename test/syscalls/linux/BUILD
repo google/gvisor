@@ -4259,6 +4259,7 @@ cc_binary(
         ":ip_socket_test_util",
         "//test/util:capability_util",
         "//test/util:test_main",
+        "//test/util:test_util",
         "//test/util:thread_util",
     ],
 )
