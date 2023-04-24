@@ -25,6 +25,7 @@
 #include "gtest/gtest.h"
 #include "absl/memory/memory.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
+#include "test/util/test_util.h"
 
 namespace gvisor {
 namespace testing {
@@ -318,6 +319,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfaceIndexAndAddr) {
 // IP_MULTICAST_IF, the send address is specified in sendto, and the group
 // membership is configured by address.
 TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfAddr) {
+  // TODO(b/267210840): Get multicast working with hostinet.
+  SKIP_IF(IsRunningWithHostinet());
+
   auto socket1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto socket2 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
@@ -372,6 +376,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfAddr) {
 // IP_MULTICAST_IF, the send address is specified in sendto, and the group
 // membership is configured by NIC ID.
 TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfNic) {
+  // TODO(b/267210840): Get multicast working with hostinet.
+  SKIP_IF(IsRunningWithHostinet());
+
   auto socket1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto socket2 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
@@ -426,6 +433,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfNic) {
 // IP_MULTICAST_IF, the send address is specified in connect, and the group
 // membership is configured by address.
 TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfAddrConnect) {
+  // TODO(b/267210840): Get multicast working with hostinet.
+  SKIP_IF(IsRunningWithHostinet());
+
   auto socket1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto socket2 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
@@ -483,6 +493,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfAddrConnect) {
 // IP_MULTICAST_IF, the send address is specified in connect, and the group
 // membership is configured by NIC ID.
 TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfNicConnect) {
+  // TODO(b/267210840): Get multicast working with hostinet.
+  SKIP_IF(IsRunningWithHostinet());
+
   auto socket1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto socket2 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
@@ -540,6 +553,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfNicConnect) {
 // IP_MULTICAST_IF, the send address is specified in sendto, and the group
 // membership is configured by address.
 TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfAddrSelf) {
+  // TODO(b/267210840): Get multicast working with hostinet.
+  SKIP_IF(IsRunningWithHostinet());
+
   auto socket1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto socket2 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
@@ -594,6 +610,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfAddrSelf) {
 // IP_MULTICAST_IF, the send address is specified in sendto, and the group
 // membership is configured by NIC ID.
 TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfNicSelf) {
+  // TODO(b/267210840): Get multicast working with hostinet.
+  SKIP_IF(IsRunningWithHostinet());
+
   auto socket1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto socket2 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
@@ -648,6 +667,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfNicSelf) {
 // IP_MULTICAST_IF, the send address is specified in connect, and the group
 // membership is configured by address.
 TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfAddrSelfConnect) {
+  // TODO(b/267210840): Get multicast working with hostinet.
+  SKIP_IF(IsRunningWithHostinet());
+
   auto socket1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto socket2 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
@@ -703,6 +725,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfAddrSelfConnect) {
 // IP_MULTICAST_IF, the send address is specified in connect, and the group
 // membership is configured by NIC ID.
 TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfNicSelfConnect) {
+  // TODO(b/267210840): Get multicast working with hostinet.
+  SKIP_IF(IsRunningWithHostinet());
+
   auto socket1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto socket2 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
@@ -758,6 +783,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfNicSelfConnect) {
 // IP_MULTICAST_IF, the send address is specified in sendto, and the group
 // membership is configured by address.
 TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfAddrSelfNoLoop) {
+  // TODO(b/267210840): Get multicast working with hostinet.
+  SKIP_IF(IsRunningWithHostinet());
+
   auto socket1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto socket2 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
@@ -816,6 +844,9 @@ TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfAddrSelfNoLoop) {
 // IP_MULTICAST_IF, the send address is specified in sendto, and the group
 // membership is configured by NIC ID.
 TEST_P(IPv4UDPUnboundSocketTest, IpMulticastLoopbackIfNicSelfNoLoop) {
+  // TODO(b/267210840): Get multicast working with hostinet.
+  SKIP_IF(IsRunningWithHostinet());
+
   auto socket1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto socket2 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
@@ -1014,6 +1045,9 @@ TEST_P(IPv4UDPUnboundSocketTest, TestTwoSocketsJoinSameMulticastGroup) {
 // Check that two sockets can join the same multicast group at the same time,
 // and both will receive data on it.
 TEST_P(IPv4UDPUnboundSocketTest, TestMcastReceptionOnTwoSockets) {
+  // TODO(b/267210840): Get multicast working with hostinet.
+  SKIP_IF(IsRunningWithHostinet());
+
   std::unique_ptr<SocketPair> socket_pairs[2] = {
       std::make_unique<FDSocketPair>(ASSERT_NO_ERRNO_AND_VALUE(NewSocket()),
                                      ASSERT_NO_ERRNO_AND_VALUE(NewSocket())),
@@ -1087,6 +1121,9 @@ TEST_P(IPv4UDPUnboundSocketTest, TestMcastReceptionOnTwoSockets) {
 // memberships one by one will continue to deliver packets to both sockets until
 // both memberships have been dropped.
 TEST_P(IPv4UDPUnboundSocketTest, TestMcastReceptionWhenDroppingMemberships) {
+  // TODO(b/267210840): Get multicast working with hostinet.
+  SKIP_IF(IsRunningWithHostinet());
+
   std::unique_ptr<SocketPair> socket_pairs[2] = {
       std::make_unique<FDSocketPair>(ASSERT_NO_ERRNO_AND_VALUE(NewSocket()),
                                      ASSERT_NO_ERRNO_AND_VALUE(NewSocket())),
@@ -1184,6 +1221,9 @@ TEST_P(IPv4UDPUnboundSocketTest, TestMcastReceptionWhenDroppingMemberships) {
 // Check that a receiving socket can bind to the multicast address before
 // joining the group and receive data once the group has been joined.
 TEST_P(IPv4UDPUnboundSocketTest, TestBindToMcastThenJoinThenReceive) {
+  // TODO(b/267210840): Get multicast working with hostinet.
+  SKIP_IF(IsRunningWithHostinet());
+
   auto socket1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto socket2 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
@@ -1234,6 +1274,9 @@ TEST_P(IPv4UDPUnboundSocketTest, TestBindToMcastThenJoinThenReceive) {
 // Check that a receiving socket can bind to the multicast address and won't
 // receive multicast data if it hasn't joined the group.
 TEST_P(IPv4UDPUnboundSocketTest, TestBindToMcastThenNoJoinThenNoReceive) {
+  // TODO(b/267210840): Get multicast working with hostinet.
+  SKIP_IF(IsRunningWithHostinet());
+
   auto socket1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto socket2 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
@@ -2192,6 +2235,9 @@ TEST_P(IPv4UDPUnboundSocketTest, SetSocketSendBuf) {
 }
 
 TEST_P(IPv4UDPUnboundSocketTest, IpMulticastIPPacketInfo) {
+  // TODO(b/267210840): Get multicast working with hostinet.
+  SKIP_IF(IsRunningWithHostinet());
+
   auto sender_socket = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   auto receiver_socket = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
