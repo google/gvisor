@@ -660,7 +660,7 @@ func OrderedLabels(labels ...map[string]string) <-chan LabelOrError {
 
 // writeLabelsTo writes a set of metric labels.
 func (d *Data) writeLabelsTo(w io.Writer, extraLabels map[string]string, leLabel *Number) error {
-	if (d.Labels != nil && len(d.Labels) != 0) || (extraLabels != nil && len(extraLabels) != 0) || leLabel != nil {
+	if len(d.Labels)+len(d.ExternalLabels)+len(extraLabels) != 0 || leLabel != nil {
 		if _, err := io.WriteString(w, "{"); err != nil {
 			return err
 		}
