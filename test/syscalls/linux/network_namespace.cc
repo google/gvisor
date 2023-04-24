@@ -15,6 +15,7 @@
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/util/capability_util.h"
+#include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
 namespace gvisor {
@@ -22,6 +23,9 @@ namespace testing {
 namespace {
 
 TEST(NetworkNamespaceTest, LoopbackExists) {
+  // TODO(b/267210840): Fix this tests for hostinet.
+  SKIP_IF(IsRunningWithHostinet());
+
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
 
   ScopedThread t([&] {
