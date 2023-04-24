@@ -136,7 +136,7 @@ endif
 
 # Configure helpers for below.
 configure_noreload = \
-  $(call header,CONFIGURE $(1) → $(RUNTIME_BIN) $(2)); \
+  $(call header,CONFIGURE $(1) → $(RUNTIME_BIN) $(RUNTIME_ARGS) $(2)); \
   sudo $(RUNTIME_BIN) install --experimental=true --runtime="$(1)" -- $(RUNTIME_ARGS) --debug-log "$(RUNTIME_LOGS)" $(2) && \
   sudo rm -rf "$(RUNTIME_LOG_DIR)" && mkdir -p "$(RUNTIME_LOG_DIR)"
 
