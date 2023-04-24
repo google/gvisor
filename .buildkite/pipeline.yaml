@@ -480,6 +480,58 @@ steps:
       <<: *ubuntu_agents
       arch: "amd64"
 
+  # Runtime tests (directfs).
+  - <<: *common
+    <<: *docker
+    label: ":php: PHP runtime tests (directfs)"
+    command: make php8.1.1-runtime-tests RUNTIME_ARGS=--directfs
+    parallelism: 10
+    if: build.branch == "master"
+    agents:
+      <<: *platform_specific_agents
+      <<: *ubuntu_agents
+      arch: "amd64"
+  - <<: *common
+    <<: *docker
+    label: ":java: Java runtime tests (directfs)"
+    command: make java17-runtime-tests RUNTIME_ARGS=--directfs
+    parallelism: 40
+    if: build.branch == "master"
+    agents:
+      <<: *platform_specific_agents
+      <<: *ubuntu_agents
+      arch: "amd64"
+  - <<: *common
+    <<: *docker
+    label: ":golang: Go runtime tests (directfs)"
+    command: make go1.20-runtime-tests RUNTIME_ARGS=--directfs
+    parallelism: 10
+    if: build.branch == "master"
+    agents:
+      <<: *platform_specific_agents
+      <<: *ubuntu_agents
+      arch: "amd64"
+  - <<: *common
+    <<: *docker
+    label: ":node: NodeJS runtime tests (directfs)"
+    command: make nodejs16.13.2-runtime-tests RUNTIME_ARGS=--directfs
+    parallelism: 10
+    if: build.branch == "master"
+    agents:
+      <<: *platform_specific_agents
+      <<: *ubuntu_agents
+      arch: "amd64"
+  - <<: *common
+    <<: *docker
+    label: ":python: Python runtime tests (directfs)"
+    command: make python3.10.2-runtime-tests RUNTIME_ARGS=--directfs
+    parallelism: 10
+    if: build.branch == "master"
+    agents:
+      <<: *platform_specific_agents
+      <<: *ubuntu_agents
+      arch: "amd64"
+
   # Run basic benchmarks smoke tests (no upload).
   - <<: *common
     <<: *docker
