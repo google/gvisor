@@ -1525,7 +1525,6 @@ func (e *endpoint) processIPv6RawPayloadHeader(extHdr *header.IPv6RawPayloadHead
 		e.handleICMP(pkt, hasFragmentHeader, routerAlert)
 		return nil
 	}
-	stats.PacketsDelivered.Increment()
 	switch res := e.dispatcher.DeliverTransportPacket(proto, pkt); res {
 	case stack.TransportPacketHandled:
 		return nil
