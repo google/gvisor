@@ -104,11 +104,11 @@ const (
 )
 
 // Field values for the get_vcpu metric acquisition path used.
-const (
-	getVCPUAcquisitionFastReused = "fast_reused"
-	getVCPUAcquisitionReused     = "reused"
-	getVCPUAcquisitionUnused     = "unused"
-	getVCPUAcquisitionStolen     = "stolen"
+var (
+	getVCPUAcquisitionFastReused = metric.FieldValue{"fast_reused"}
+	getVCPUAcquisitionReused     = metric.FieldValue{"reused"}
+	getVCPUAcquisitionUnused     = metric.FieldValue{"unused"}
+	getVCPUAcquisitionStolen     = metric.FieldValue{"stolen"}
 )
 
 var (
@@ -136,7 +136,7 @@ var (
 	// machine.Get() are triggered.
 	getVCPUCounter = metric.MustCreateNewProfilingUint64Metric(
 		"/kvm/get_vcpu", false, "The number of times that machine.Get() was called, split by path the function took.",
-		metric.NewField("acquisition_type", []string{getVCPUAcquisitionFastReused, getVCPUAcquisitionReused, getVCPUAcquisitionUnused, getVCPUAcquisitionStolen}))
+		metric.NewField("acquisition_type", &getVCPUAcquisitionFastReused, &getVCPUAcquisitionReused, &getVCPUAcquisitionUnused, &getVCPUAcquisitionStolen))
 
 	// asInvalidateDuration are durations of calling addressSpace.invalidate().
 	asInvalidateDuration = metric.MustCreateNewProfilingTimerMetric("/kvm/address_space_invalidate",
@@ -461,7 +461,7 @@ func (m *machine) Get() *vCPU {
 	if c := m.vCPUsByTID[tid]; c != nil {
 		c.lock()
 		m.mu.RUnlock()
-		getVCPUCounter.Increment(getVCPUAcquisitionFastReused)
+		getVCPUCounter.Increment(&getVCPUAcquisitionFastReused)
 		return c
 	}
 
@@ -481,7 +481,7 @@ func (m *machine) Get() *vCPU {
 	if c := m.vCPUsByTID[tid]; c != nil {
 		c.lock()
 		m.mu.Unlock()
-		getVCPUCounter.Increment(getVCPUAcquisitionReused)
+		getVCPUCounter.Increment(&getVCPUAcquisitionReused)
 		return c
 	}
 
@@ -494,7 +494,7 @@ func (m *machine) Get() *vCPU {
 			m.vCPUsByTID[tid] = c
 			m.mu.Unlock()
 			c.loadSegments(tid)
-			getVCPUCounter.Increment(getVCPUAcquisitionUnused)
+			getVCPUCounter.Increment(&getVCPUAcquisitionUnused)
 			return c
 		}
 
@@ -505,7 +505,7 @@ func (m *machine) Get() *vCPU {
 				m.vCPUsByTID[tid] = c
 				m.mu.Unlock()
 				c.loadSegments(tid)
-				getVCPUCounter.Increment(getVCPUAcquisitionUnused)
+				getVCPUCounter.Increment(&getVCPUAcquisitionUnused)
 				return c
 			}
 		}
@@ -533,7 +533,7 @@ func (m *machine) Get() *vCPU {
 			m.vCPUsByTID[tid] = c
 			m.mu.Unlock()
 			c.loadSegments(tid)
-			getVCPUCounter.Increment(getVCPUAcquisitionStolen)
+			getVCPUCounter.Increment(&getVCPUAcquisitionStolen)
 			return c
 		}
 

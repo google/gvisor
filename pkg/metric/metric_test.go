@@ -36,6 +36,13 @@ const (
 	distribDescription = "A distribution metric for testing"
 )
 
+var (
+	fieldValFoo  = FieldValue{"foo"}
+	fieldValBar  = FieldValue{"bar"}
+	fieldValBaz  = FieldValue{"baz"}
+	fieldValQuux = FieldValue{"quux"}
+)
+
 // Helper method that exercises Prometheus metric exporting.
 // Ensures that current metric data, if it were to be exported and formatted as Prometheus format,
 // would be successfully parsable by the reference Prometheus implementation.
@@ -73,8 +80,8 @@ func TestInitialize(t *testing.T) {
 	}
 
 	bucketer := NewExponentialBucketer(3, 2, 0, 1)
-	field1 := NewField("field1", []string{"foo", "bar"})
-	field2 := NewField("field2", []string{"baz", "quux"})
+	field1 := NewField("field1", &fieldValFoo, &fieldValBar)
+	field2 := NewField("field2", &fieldValBaz, &fieldValQuux)
 	_, err = NewDistributionMetric("/distrib", true, bucketer, pb.MetricMetadata_UNITS_NANOSECONDS, distribDescription, field1, field2)
 	if err != nil {
 		t.Fatalf("NewDistributionMetric got err %v want nil", err)
@@ -220,8 +227,8 @@ func TestEmitMetricUpdate(t *testing.T) {
 	}
 
 	bucketer := NewExponentialBucketer(2, 2, 0, 1)
-	field1 := NewField("field1", []string{"foo", "bar"})
-	field2 := NewField("field2", []string{"baz", "quux"})
+	field1 := NewField("field1", &fieldValFoo, &fieldValBar)
+	field2 := NewField("field2", &fieldValBaz, &fieldValQuux)
 	distrib, err := NewDistributionMetric("/distrib", false, bucketer, pb.MetricMetadata_UNITS_NONE, distribDescription, field1, field2)
 	if err != nil {
 		t.Fatalf("NewDistributionMetric: %v", err)
@@ -318,12 +325,12 @@ func TestEmitMetricUpdate(t *testing.T) {
 	verifyPrometheusParsing(t)
 
 	// Add a few samples to the distribution metric.
-	distrib.AddSample(1, "foo", "baz")
-	distrib.AddSample(1, "foo", "baz")
-	distrib.AddSample(3, "foo", "baz")
-	distrib.AddSample(-1, "foo", "quux")
-	distrib.AddSample(1, "foo", "quux")
-	distrib.AddSample(100, "foo", "quux")
+	distrib.AddSample(1, &fieldValFoo, &fieldValBaz)
+	distrib.AddSample(1, &fieldValFoo, &fieldValBaz)
+	distrib.AddSample(3, &fieldValFoo, &fieldValBaz)
+	distrib.AddSample(-1, &fieldValFoo, &fieldValQuux)
+	distrib.AddSample(1, &fieldValFoo, &fieldValQuux)
+	distrib.AddSample(100, &fieldValFoo, &fieldValQuux)
 	emitter.Reset()
 	EmitMetricUpdate()
 	if len(emitter) != 1 {
@@ -372,10 +379,10 @@ func TestEmitMetricUpdate(t *testing.T) {
 	verifyPrometheusParsing(t)
 
 	// Add more samples to the distribution metric, check that we get the delta.
-	distrib.AddSample(3, "foo", "baz")
-	distrib.AddSample(2, "foo", "baz")
-	distrib.AddSample(1, "foo", "baz")
-	distrib.AddSample(3, "foo", "baz")
+	distrib.AddSample(3, &fieldValFoo, &fieldValBaz)
+	distrib.AddSample(2, &fieldValFoo, &fieldValBaz)
+	distrib.AddSample(1, &fieldValFoo, &fieldValBaz)
+	distrib.AddSample(3, &fieldValFoo, &fieldValBaz)
 	emitter.Reset()
 	EmitMetricUpdate()
 	if len(emitter) != 1 {
@@ -409,11 +416,11 @@ func TestEmitMetricUpdate(t *testing.T) {
 func TestEmitMetricUpdateWithFields(t *testing.T) {
 	defer resetTest()
 
-	const (
-		weird1 = "weird1"
-		weird2 = "weird2"
+	var (
+		weird1 = FieldValue{"weird1"}
+		weird2 = FieldValue{"weird2"}
 	)
-	field := NewField("weirdness_type", []string{weird1, weird2})
+	field := NewField("weirdness_type", &weird1, &weird2)
 
 	counter, err := NewUint64Metric("/weirdness", false, pb.MetricMetadata_UNITS_NONE, counterDescription, field)
 	if err != nil {
@@ -436,8 +443,8 @@ func TestEmitMetricUpdateWithFields(t *testing.T) {
 	}
 	verifyPrometheusParsing(t)
 
-	counter.IncrementBy(4, weird1)
-	counter.Increment(weird2)
+	counter.IncrementBy(4, &weird1)
+	counter.Increment(&weird2)
 
 	emitter.Reset()
 	EmitMetricUpdate()
@@ -468,7 +475,7 @@ func TestEmitMetricUpdateWithFields(t *testing.T) {
 		}
 
 		switch m.FieldValues[0] {
-		case weird1:
+		case weird1.Value:
 			uv, ok := m.Value.(*pb.MetricValue_Uint64Value)
 			if !ok {
 				t.Errorf("%+v: value %v got %T want pb.MetricValue_Uint64Value", m, m.Value, m.Value)
@@ -477,7 +484,7 @@ func TestEmitMetricUpdateWithFields(t *testing.T) {
 				t.Errorf("%v: Value got %v want 4", m, uv.Uint64Value)
 			}
 			foundWeird1 = true
-		case weird2:
+		case weird2.Value:
 			uv, ok := m.Value.(*pb.MetricValue_Uint64Value)
 			if !ok {
 				t.Errorf("%+v: value %v got %T want pb.MetricValue_Uint64Value", m, m.Value, m.Value)
@@ -652,8 +659,8 @@ func TestTimerMetric(t *testing.T) {
 	defer resetTest()
 	// This bucketer just has 2 finite buckets: [0, 500ms) and [500ms, 1s).
 	bucketer := NewExponentialBucketer(2, uint64((500 * time.Millisecond).Nanoseconds()), 0, 1)
-	field1 := NewField("field1", []string{"foo", "bar"})
-	field2 := NewField("field2", []string{"baz", "quux"})
+	field1 := NewField("field1", &fieldValFoo, &fieldValBar)
+	field2 := NewField("field2", &fieldValBaz, &fieldValQuux)
 	timer, err := NewTimerMetric("/timer", bucketer, "a timer metric", field1, field2)
 	if err != nil {
 		t.Fatalf("NewTimerMetric: %v", err)
@@ -670,8 +677,8 @@ func TestTimerMetric(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			op := timer.Start("foo")
-			defer op.Finish("quux")
+			op := timer.Start(&fieldValFoo)
+			defer op.Finish(&fieldValQuux)
 			time.Sleep(250 * time.Millisecond)
 		}()
 	}
@@ -680,7 +687,7 @@ func TestTimerMetric(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			op := timer.Start()
-			defer op.Finish("foo", "quux")
+			defer op.Finish(&fieldValFoo, &fieldValQuux)
 			time.Sleep(750 * time.Millisecond)
 		}()
 	}
@@ -862,11 +869,11 @@ func TestFieldMapperWithFields(t *testing.T) {
 		fields := make([]Field, len(fieldSizes))
 		for i, fieldSize := range fieldSizes {
 			fieldName := fmt.Sprintf("%c", 'A'+i)
-			allowedValues := make([]string, fieldSize)
+			allowedValues := make([]*FieldValue, fieldSize)
 			for val := range allowedValues {
-				allowedValues[val] = fmt.Sprintf("%s%d", fieldName, val)
+				allowedValues[val] = &FieldValue{fmt.Sprintf("%s%d", fieldName, val)}
 			}
-			fields[i] = NewField(fieldName, allowedValues)
+			fields[i] = NewField(fieldName, allowedValues...)
 		}
 		return fields
 	}
@@ -893,7 +900,7 @@ func TestFieldMapperWithFields(t *testing.T) {
 		},
 		{
 			name:          "FieldMapperErrNoAllowedValues",
-			fields:        []Field{NewField("TheNoValuesField", []string{})},
+			fields:        []Field{NewField("TheNoValuesField")},
 			errOnCreation: ErrFieldHasNoAllowedValues,
 		},
 	} {
@@ -905,8 +912,8 @@ func TestFieldMapperWithFields(t *testing.T) {
 
 			// Test that every field value combination corresponds to just one entry.
 			mapping := make([]int, m.numKeys())
-			var visitCombinations func(curFields []string, remFields []Field)
-			visitCombinations = func(curFields []string, remFields []Field) {
+			var visitCombinations func(curFields []*FieldValue, remFields []Field)
+			visitCombinations = func(curFields []*FieldValue, remFields []Field) {
 				depth := len(remFields)
 				if depth == 0 {
 					return
@@ -920,7 +927,7 @@ func TestFieldMapperWithFields(t *testing.T) {
 						// Assert that the reverse operation is also correct.
 						fields2 := m.keyToMultiField(key)
 						for i, f1val := range fields {
-							if f1val != fields2[i] {
+							if f1val.Value != fields2[i] {
 								t.Errorf("Field values put into the map are not the same as ones returned: got %v wanted %v", fields2, f1val)
 							}
 						}
@@ -958,32 +965,31 @@ func TestFieldMapperNoFields(t *testing.T) {
 	}
 }
 
-func TestFieldPointerUniqueness(t *testing.T) {
-	foobar := "foobar"
-	foo := foobar[:3]
+func TestFieldValueUniqueness(t *testing.T) {
 	panicked := false
 	func() {
 		defer func() {
 			recover()
 			panicked = true
 		}()
-		NewField("field1", []string{foobar, foo})
+		NewField("field1", &FieldValue{"foo"}, &FieldValue{"foo"})
 	}()
 	if !panicked {
 		t.Error("did not panic")
 	}
 }
 
-func TestFieldMapperMustUseSamePointerString(t *testing.T) {
-	const constFoo = "foo"
-	heapBar := fmt.Sprintf("%sr", "ba")
-	n, err := newFieldMapper(NewField("field1", []string{constFoo, heapBar}))
+func TestFieldMapperMustUseSameValuePointer(t *testing.T) {
+	const fooString = "foo"
+	var constFoo = FieldValue{fooString}
+	var heapBar = &FieldValue{fmt.Sprintf("%sr", "ba")}
+	n, err := newFieldMapper(NewField("field1", &constFoo, heapBar))
 	if err != nil {
 		t.Fatalf("newFieldMapper err: got %v wanted nil", err)
 	}
-	n.lookup(constFoo)
+	n.lookup(&constFoo)
 	n.lookup(heapBar)
-	newFoo := fmt.Sprintf("%so", "fo")
+	newFoo := &FieldValue{fmt.Sprintf("%so", "fo")}
 	panicked := false
 	func() {
 		defer func() {

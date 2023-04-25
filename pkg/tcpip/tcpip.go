@@ -1398,7 +1398,7 @@ func (s *StatCounter) Decrement() {
 }
 
 // Value returns the current value of the counter.
-func (s *StatCounter) Value(...string) uint64 {
+func (s *StatCounter) Value() uint64 {
 	return s.count.Load()
 }
 
