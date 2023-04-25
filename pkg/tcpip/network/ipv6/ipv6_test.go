@@ -3914,7 +3914,7 @@ func TestRejectMartianMappedPackets(t *testing.T) {
 		},
 		{
 			name:          "valid source and destination",
-			wantDelivered: 2,
+			wantDelivered: 1,
 			srcAddr:       testutil.MustParse6("fe80::2"),
 			dstAddr:       header.IPv6AllNodesMulticastAddress,
 		},
