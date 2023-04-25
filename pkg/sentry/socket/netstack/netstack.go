@@ -66,15 +66,24 @@ import (
 
 const bitsPerUint32 = 32
 
+// statCounterValue returns a function usable as callback function when defining a gVisor Sentry
+// metric that contains the value counted by the StatCounter.
+// This avoids a dependency loop in the tcpip package.
+func statCounterValue(cm *tcpip.StatCounter) func(...*metric.FieldValue) uint64 {
+	return func(...*metric.FieldValue) uint64 {
+		return cm.Value()
+	}
+}
+
 func mustCreateMetric(name, description string) *tcpip.StatCounter {
 	var cm tcpip.StatCounter
-	metric.MustRegisterCustomUint64Metric(name, true /* cumulative */, false /* sync */, description, cm.Value)
+	metric.MustRegisterCustomUint64Metric(name, true /* cumulative */, false /* sync */, description, statCounterValue(&cm))
 	return &cm
 }
 
 func mustCreateGauge(name, description string) *tcpip.StatCounter {
 	var cm tcpip.StatCounter
-	metric.MustRegisterCustomUint64Metric(name, false /* cumulative */, false /* sync */, description, cm.Value)
+	metric.MustRegisterCustomUint64Metric(name, false /* cumulative */, false /* sync */, description, statCounterValue(&cm))
 	return &cm
 }
 

@@ -119,7 +119,7 @@ func newSpecialFileFD(h handle, mnt *vfs.Mount, d *dentry, flags uint32) (*speci
 	d.fs.specialFileFDs.PushBack(fd)
 	d.fs.syncMu.Unlock()
 	if fd.vfsfd.IsWritable() && (d.mode.Load()&0111 != 0) {
-		metric.SuspiciousOperationsMetric.Increment(metric.SuspiciousOperationsTypeOpenedWriteExecuteFile)
+		metric.SuspiciousOperationsMetric.Increment(&metric.SuspiciousOperationsTypeOpenedWriteExecuteFile)
 	}
 	if h.fd >= 0 {
 		fsmetric.GoferOpensHost.Increment()
