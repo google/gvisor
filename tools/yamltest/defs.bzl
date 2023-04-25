@@ -39,7 +39,7 @@ yaml_test = rule(
         ),
         "_tool": attr.label(
             executable = True,
-            cfg = "exec",
+            cfg = "target",
             default = Label("//tools/yamltest:yamltest"),
         ),
     },
