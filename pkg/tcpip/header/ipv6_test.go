@@ -455,3 +455,31 @@ func TestV6MulticastScope(t *testing.T) {
 		})
 	}
 }
+
+func TestLoopbackAddress(t *testing.T) {
+	tests := []struct {
+		addr       tcpip.Address
+		isLoopback bool
+	}{
+		{
+			addr:       "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01",
+			isLoopback: true,
+		},
+		{
+			addr:       "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xFF\x7F\x00\x00\x01",
+			isLoopback: true,
+		},
+		{
+			addr:       "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xFF\x0A\x00\x01\x01",
+			isLoopback: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(fmt.Sprintf("%s", test.addr), func(t *testing.T) {
+			if got := header.IsV6LoopbackAddress(test.addr); got != test.isLoopback {
+				t.Errorf("got header.IsV6LoopbackAddress(%s) = %t, want = %t", test.addr, got, test.isLoopback)
+			}
+		})
+	}
+}

@@ -129,6 +129,9 @@ const (
 	// IPv6Loopback is the IPv6 Loopback address.
 	IPv6Loopback tcpip.Address = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01"
 
+	// IPv4MappedLoopback is the IPv4 Loopback address mapped to an IPv6 address.
+	IPv4MappedLoopback tcpip.Address = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xFF\xFF\x7F\x00\x00\x01"
+
 	// IPv6Any is the non-routable IPv6 "any" meta address. It is also
 	// known as the unspecified address.
 	IPv6Any tcpip.Address = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
@@ -403,7 +406,7 @@ func IsV6LinkLocalUnicastAddress(addr tcpip.Address) bool {
 // IsV6LoopbackAddress returns true iff the provided address is an IPv6 loopback
 // address, as defined by RFC 4291 section 2.5.3.
 func IsV6LoopbackAddress(addr tcpip.Address) bool {
-	return addr == IPv6Loopback
+	return addr == IPv6Loopback || addr == IPv4MappedLoopback
 }
 
 // IsV6LinkLocalMulticastAddress returns true iff the provided address is an
