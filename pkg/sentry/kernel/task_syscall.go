@@ -367,7 +367,7 @@ func (*runSyscallExit) execute(t *Task) taskRunState {
 // indicated by an execution fault at address addr. doVsyscall returns the
 // task's next run state.
 func (t *Task) doVsyscall(addr hostarch.Addr, sysno uintptr) taskRunState {
-	metric.WeirdnessMetric.Increment(metric.WeirdnessTypeVsyscallCount)
+	metric.WeirdnessMetric.Increment(&metric.WeirdnessTypeVsyscallCount)
 
 	// Grab the caller up front, to make sure there's a sensible stack.
 	caller := t.Arch().Native(uintptr(0))

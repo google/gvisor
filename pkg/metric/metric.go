@@ -55,17 +55,17 @@ var (
 )
 
 // Weirdness metric type constants.
-const (
-	WeirdnessTypeTimeFallback         = "time_fallback"
-	WeirdnessTypePartialResult        = "partial_result"
-	WeirdnessTypeVsyscallCount        = "vsyscall_count"
-	WeirdnessTypeWatchdogStuckStartup = "watchdog_stuck_startup"
-	WeirdnessTypeWatchdogStuckTasks   = "watchdog_stuck_tasks"
+var (
+	WeirdnessTypeTimeFallback         = FieldValue{"time_fallback"}
+	WeirdnessTypePartialResult        = FieldValue{"partial_result"}
+	WeirdnessTypeVsyscallCount        = FieldValue{"vsyscall_count"}
+	WeirdnessTypeWatchdogStuckStartup = FieldValue{"watchdog_stuck_startup"}
+	WeirdnessTypeWatchdogStuckTasks   = FieldValue{"watchdog_stuck_tasks"}
 )
 
 // Suspicious operations metric type constants.
-const (
-	SuspiciousOperationsTypeOpenedWriteExecuteFile = "opened_write_execute_file"
+var (
+	SuspiciousOperationsTypeOpenedWriteExecuteFile = FieldValue{"opened_write_execute_file"}
 )
 
 // List of global metrics that are used in multiple places.
@@ -74,20 +74,20 @@ var (
 	// of weird occurrences such as time fallback, partial_result, vsyscall
 	// count, watchdog startup timeouts and stuck tasks.
 	WeirdnessMetric = MustCreateNewUint64Metric("/weirdness", true /* sync */, "Increment for weird occurrences of problems such as time fallback, partial result, vsyscalls invoked in the sandbox, watchdog startup timeouts and stuck tasks.",
-		NewField("weirdness_type", []string{
-			WeirdnessTypeTimeFallback,
-			WeirdnessTypePartialResult,
-			WeirdnessTypeVsyscallCount,
-			WeirdnessTypeWatchdogStuckStartup,
-			WeirdnessTypeWatchdogStuckTasks,
-		}))
+		NewField("weirdness_type",
+			&WeirdnessTypeTimeFallback,
+			&WeirdnessTypePartialResult,
+			&WeirdnessTypeVsyscallCount,
+			&WeirdnessTypeWatchdogStuckStartup,
+			&WeirdnessTypeWatchdogStuckTasks,
+		))
 
 	// SuspiciousOperationsMetric is a metric with fields created to detect
 	// operations such as opening an executable file to write from a gofer.
 	SuspiciousOperationsMetric = MustCreateNewUint64Metric("/suspicious_operations", true /* sync */, "Increment for suspicious operations such as opening an executable file to write from a gofer.",
-		NewField("operation_type", []string{
-			SuspiciousOperationsTypeOpenedWriteExecuteFile,
-		}))
+		NewField("operation_type",
+			&SuspiciousOperationsTypeOpenedWriteExecuteFile,
+		))
 )
 
 // InitStage is the name of a Sentry initialization stage.
@@ -116,6 +116,8 @@ var (
 //
 // Metrics are not saved across save/restore and thus reset to zero on restore.
 type Uint64Metric struct {
+	name string
+
 	// fields is the map of field-value combination index keys to Uint64 counters.
 	fields []atomicbitops.Uint64
 
@@ -210,9 +212,12 @@ type customUint64Metric struct {
 	// prometheusMetric describes the metric in Prometheus format. It is immutable.
 	prometheusMetric *prometheus.Metric
 
+	// fields is the set of fields of the metric.
+	fields []Field
+
 	// value returns the current value of the metric for the given set of
 	// fields. It takes a variadic number of field values as argument.
-	value func(fieldValues ...string) uint64
+	value func(fieldValues ...*FieldValue) uint64
 
 	// forEachNonZero calls the given function on each possible field value of
 	// the metric where the metric's value is non-zero.
@@ -221,7 +226,16 @@ type customUint64Metric struct {
 	// `forEachNonZero` does not guarantee that it will be called on a
 	// consistent snapshot of this metric's values.
 	// `forEachNonZero` may be nil.
-	forEachNonZero func(f func(fields []string, val uint64))
+	forEachNonZero func(f func(fields []*FieldValue, val uint64))
+}
+
+// FieldValue is a string that can be used as a value for a Field.
+// It must be referred to by address when the Field is created and when its
+// metric value is modified. This ensures that the same FieldValue reference
+// is used, which in turn enables the metric code to use the address of a
+// FieldValue as comparison operator, rather than doing string comparisons.
+type FieldValue struct {
+	Value string
 }
 
 // fieldMapperMapThreshold is the number of field values after which we switch
@@ -239,23 +253,61 @@ type Field struct {
 	// `values` is always populated but not always used for lookup. It depends
 	// on the number of allowed field values. `values` is used for lookups on
 	// fields with small numbers of field values.
-	values []string
+	values []*FieldValue
 
-	// valuesPtrMap is a map version of `values`. For each string in `values`,
-	// its underlying byte string pointer is mapped to its index in `values`.
+	// valuesPtrMap is a map version of `values`. For each item in `values`,
+	// its pointer is mapped to its index within `values`.
 	// `valuesPtrMap` is used for fields with large numbers of possible values.
 	// For fields with small numbers of field values, it is nil.
 	// This map allows doing faster string matching than a normal string map,
 	// as it avoids the string hashing step that normal string maps need to do.
-	valuesPtrMap map[*byte]int
+	valuesPtrMap map[*FieldValue]int
 }
 
 // toProto returns the proto definition of this field, for use in metric
 // metadata.
 func (f Field) toProto() *pb.MetricMetadata_Field {
+	allowedValues := make([]string, len(f.values))
+	for i, v := range f.values {
+		allowedValues[i] = v.Value
+	}
 	return &pb.MetricMetadata_Field{
 		FieldName:     f.name,
-		AllowedValues: f.values,
+		AllowedValues: allowedValues,
+	}
+}
+
+// NewField defines a new Field that can be used to break down a metric.
+// The set of allowedValues must be unique strings wrapped with `FieldValue`.
+// The *same* `FieldValue` pointers must be used during metric modifications.
+// In practice, in most cases, this means you should declare these
+// `FieldValue`s as package-level `var`s, and always use the address of these
+// package-level `var`s during metric modifications.
+func NewField(name string, allowedValues ...*FieldValue) Field {
+	// Verify that all string values have a unique value.
+	strMap := make(map[string]bool, len(allowedValues))
+	for _, v := range allowedValues {
+		if strMap[v.Value] {
+			panic(fmt.Sprintf("found duplicate field value: %q", v))
+		}
+		strMap[v.Value] = true
+	}
+
+	if useMap := len(allowedValues) > fieldMapperMapThreshold; !useMap {
+		return Field{
+			name:   name,
+			values: allowedValues,
+		}
+	}
+
+	valuesPtrMap := make(map[*FieldValue]int, len(allowedValues))
+	for i, v := range allowedValues {
+		valuesPtrMap[v] = i
+	}
+	return Field{
+		name:         name,
+		values:       allowedValues,
+		valuesPtrMap: valuesPtrMap,
 	}
 }
 
@@ -296,6 +348,44 @@ func newFieldMapper(fields ...Field) (fieldMapper, error) {
 	}, nil
 }
 
+// lookupSingle looks up a single key for a single field within fieldMapper.
+// It is used internally within lookupConcat.
+// It returns the updated `idx` and `remainingCombinationBucket` values.
+// +checkescape:all
+//
+//go:nosplit
+func (m fieldMapper) lookupSingle(fieldIndex int, fieldValue *FieldValue, idx, remainingCombinationBucket int) (int, int) {
+	field := m.fields[fieldIndex]
+	numValues := len(field.values)
+
+	// Are we doing a linear search?
+	if field.valuesPtrMap == nil {
+		// We scan by pointers only. This means the caller must pass the same
+		// FieldValue pointer as the one used in `NewField`.
+		for valIdx, allowedVal := range field.values {
+			if fieldValue == allowedVal {
+				remainingCombinationBucket /= numValues
+				idx += remainingCombinationBucket * valIdx
+				return idx, remainingCombinationBucket
+			}
+		}
+		panic("invalid field value or did not reuse the same FieldValue pointer as passed in NewField")
+	}
+
+	// Use map lookup instead.
+
+	// Match using FieldValue pointer.
+	// This avoids the string hashing step that string maps otherwise do.
+	valIdx, found := field.valuesPtrMap[fieldValue]
+	if found {
+		remainingCombinationBucket /= numValues
+		idx += remainingCombinationBucket * valIdx
+		return idx, remainingCombinationBucket
+	}
+
+	panic("invalid field value or did not reuse the same FieldValue pointer as passed in NewField")
+}
+
 // lookupConcat looks up a key within the fieldMapper where the fields are
 // the concatenation of two list of fields.
 // The returned key is an index that can be used to access to map created by
@@ -304,7 +394,7 @@ func newFieldMapper(fields ...Field) (fieldMapper, error) {
 // +checkescape:all
 //
 //go:nosplit
-func (m fieldMapper) lookupConcat(fields1, fields2 []string) int {
+func (m fieldMapper) lookupConcat(fields1, fields2 []*FieldValue) int {
 	if (len(fields1) + len(fields2)) != len(m.fields) {
 		panic("invalid field lookup depth")
 	}
@@ -329,7 +419,7 @@ func (m fieldMapper) lookupConcat(fields1, fields2 []string) int {
 // +checkescape:all
 //
 //go:nosplit
-func (m fieldMapper) lookup(fields ...string) int {
+func (m fieldMapper) lookup(fields ...*FieldValue) int {
 	return m.lookupConcat(fields, nil)
 }
 
@@ -363,16 +453,21 @@ func (m fieldMapper) keyToMultiField(key int) []string {
 		return nil
 	}
 	fieldValues := make([]string, depth)
-	m.keyToMultiFieldInPlace(key, fieldValues)
+	remainingCombinationBucket := m.numFieldCombinations
+	for i := 0; i < depth; i++ {
+		remainingCombinationBucket /= len(m.fields[i].values)
+		fieldValues[i] = m.fields[i].values[key/remainingCombinationBucket].Value
+		key = key % remainingCombinationBucket
+	}
 	return fieldValues
 }
 
 // keyToMultiFieldInPlace does the operation described in `keyToMultiField`
-// but modifies `fieldValues` in-place. It must aready be of size
+// but modifies `fieldValues` in-place. It must already be of size
 // `len(m.fields)`.
 //
 //go:nosplit
-func (m fieldMapper) keyToMultiFieldInPlace(key int, fieldValues []string) {
+func (m fieldMapper) keyToMultiFieldInPlace(key int, fieldValues []*FieldValue) {
 	if len(m.fields) == 0 {
 		return
 	}
@@ -400,7 +495,7 @@ func nameToPrometheusName(name string) string {
 //   - name must be globally unique.
 //   - Initialize/Disable have not been called.
 //   - value is expected to accept exactly len(fields) arguments.
-func RegisterCustomUint64Metric(name string, cumulative, sync bool, units pb.MetricMetadata_Units, description string, value func(...string) uint64, fields ...Field) error {
+func RegisterCustomUint64Metric(name string, cumulative, sync bool, units pb.MetricMetadata_Units, description string, value func(...*FieldValue) uint64, fields ...Field) error {
 	if initialized.Load() {
 		return ErrInitializationDone
 	}
@@ -432,7 +527,8 @@ func RegisterCustomUint64Metric(name string, cumulative, sync bool, units pb.Met
 			Help: description,
 			Type: promType,
 		},
-		value: value,
+		fields: fields,
+		value:  value,
 	}
 
 	// Metrics can exist without fields.
@@ -448,7 +544,7 @@ func RegisterCustomUint64Metric(name string, cumulative, sync bool, units pb.Met
 
 // MustRegisterCustomUint64Metric calls RegisterCustomUint64Metric for metrics
 // without fields and panics if it returns an error.
-func MustRegisterCustomUint64Metric(name string, cumulative, sync bool, description string, value func(...string) uint64, fields ...Field) {
+func MustRegisterCustomUint64Metric(name string, cumulative, sync bool, description string, value func(...*FieldValue) uint64, fields ...Field) {
 	if err := RegisterCustomUint64Metric(name, cumulative, sync, pb.MetricMetadata_UNITS_NONE, description, value, fields...); err != nil {
 		panic(fmt.Sprintf("Unable to register metric %q: %s", name, err))
 	}
@@ -464,6 +560,7 @@ func NewUint64Metric(name string, sync bool, units pb.MetricMetadata_Units, desc
 		return nil, err
 	}
 	m := Uint64Metric{
+		name:        name,
 		fieldMapper: f,
 		fields:      make([]atomicbitops.Uint64, f.numKeys()),
 	}
@@ -500,14 +597,14 @@ func MustCreateNewUint64NanosecondsMetric(name string, sync bool, description st
 // This must be called with the correct number of field values or it will panic.
 //
 //go:nosplit
-func (m *Uint64Metric) Value(fieldValues ...string) uint64 {
+func (m *Uint64Metric) Value(fieldValues ...*FieldValue) uint64 {
 	key := m.fieldMapper.lookupConcat(fieldValues, nil)
 	return m.fields[key].Load()
 }
 
 // forEachNonZero iterates over each field combination and calls the given
 // function whenever this metric's value is not zero.
-func (m *Uint64Metric) forEachNonZero(f func(fieldValues []string, value uint64)) {
+func (m *Uint64Metric) forEachNonZero(f func(fieldValues []*FieldValue, value uint64)) {
 	numCombinations := m.fieldMapper.numKeys()
 	if len(m.fieldMapper.fields) == 0 {
 		// Special-case the "there are no fields" case for speed and to avoid
@@ -517,14 +614,14 @@ func (m *Uint64Metric) forEachNonZero(f func(fieldValues []string, value uint64)
 		}
 		return
 	}
-	var fieldValues []string
+	var fieldValues []*FieldValue
 	for k := 0; k < numCombinations; k++ {
 		val := m.fields[k].Load()
 		if val == 0 {
 			continue
 		}
 		if fieldValues == nil {
-			fieldValues = make([]string, len(m.fieldMapper.fields))
+			fieldValues = make([]*FieldValue, len(m.fieldMapper.fields))
 		}
 		m.fieldMapper.keyToMultiFieldInPlace(k, fieldValues)
 		f(fieldValues, val)
@@ -535,7 +632,7 @@ func (m *Uint64Metric) forEachNonZero(f func(fieldValues []string, value uint64)
 // This must be called with the correct number of field values or it will panic.
 //
 //go:nosplit
-func (m *Uint64Metric) Increment(fieldValues ...string) {
+func (m *Uint64Metric) Increment(fieldValues ...*FieldValue) {
 	key := m.fieldMapper.lookupConcat(fieldValues, nil)
 	m.fields[key].Add(1)
 }
@@ -544,7 +641,7 @@ func (m *Uint64Metric) Increment(fieldValues ...string) {
 // This must be called with the correct number of field values or it will panic.
 //
 //go:nosplit
-func (m *Uint64Metric) IncrementBy(v uint64, fieldValues ...string) {
+func (m *Uint64Metric) IncrementBy(v uint64, fieldValues ...*FieldValue) {
 	key := m.fieldMapper.lookupConcat(fieldValues, nil)
 	m.fields[key].Add(v)
 }
@@ -806,7 +903,7 @@ func MustCreateNewDistributionMetric(name string, sync bool, bucketer Bucketer, 
 // +checkescape:all
 //
 //go:nosplit
-func (d *DistributionMetric) AddSample(sample int64, fields ...string) {
+func (d *DistributionMetric) AddSample(sample int64, fields ...*FieldValue) {
 	d.addSampleByKey(sample, d.fieldsToKey.lookup(fields...))
 }
 
@@ -878,7 +975,7 @@ type TimedOperation struct {
 
 	// partialFields is a prefix of the fields used in this operation.
 	// The rest of the fields is provided in TimedOperation.Finish.
-	partialFields []string
+	partialFields []*FieldValue
 
 	// startedNs is the number of nanoseconds measured in TimerMetric.Start().
 	startedNs int64
@@ -895,7 +992,7 @@ type TimedOperation struct {
 // +checkescape:all
 //
 //go:nosplit
-func (t *TimerMetric) Start(fields ...string) TimedOperation {
+func (t *TimerMetric) Start(fields ...*FieldValue) TimedOperation {
 	return TimedOperation{
 		metric:        t,
 		partialFields: fields,
@@ -910,7 +1007,7 @@ func (t *TimerMetric) Start(fields ...string) TimedOperation {
 // +checkescape:all
 //
 //go:nosplit
-func (o TimedOperation) Finish(extraFields ...string) {
+func (o TimedOperation) Finish(extraFields ...*FieldValue) {
 	ended := CheapNowNano()
 	fieldKey := o.metric.fieldsToKey.lookupConcat(o.partialFields, extraFields)
 	o.metric.addSampleByKey(ended-o.startedNs, fieldKey)
@@ -974,19 +1071,18 @@ func (m *metricSet) Values() metricValues {
 		stages:                   stages,
 	}
 	for k, v := range m.uint64Metrics {
-		fields := v.metadata.GetFields()
+		fields := v.fields
 		switch len(fields) {
 		case 0:
 			vals.uint64Metrics[k] = v.value()
 		case 1:
-			fieldsMap := make(map[string]uint64)
+			fieldsMap := make(map[*FieldValue]uint64)
 			if v.forEachNonZero != nil {
-				v.forEachNonZero(func(fieldValues []string, val uint64) {
+				v.forEachNonZero(func(fieldValues []*FieldValue, val uint64) {
 					fieldsMap[fieldValues[0]] = val
 				})
 			} else {
-				values := fields[0].GetAllowedValues()
-				for _, fieldValue := range values {
+				for _, fieldValue := range fields[0].values {
 					fieldsMap[fieldValue] = v.value(fieldValue)
 				}
 			}
@@ -1028,7 +1124,7 @@ func (m *metricSet) Values() metricValues {
 // metricValues contains a copy of the values of all metrics.
 type metricValues struct {
 	// uint64Metrics is a map of uint64 metrics,
-	// with key as metric name. Value can be either uint64, or map[string]uint64
+	// with key as metric name. Value can be either uint64, or map[*FieldValue]uint64
 	// to support metrics with one field.
 	uint64Metrics map[string]any
 
@@ -1100,22 +1196,24 @@ func EmitMetricUpdate() {
 				Name:  k,
 				Value: &pb.MetricValue_Uint64Value{Uint64Value: t},
 			})
-		case map[string]uint64:
+		case map[*FieldValue]uint64:
 			for fieldValue, metricValue := range t {
 				// Emit data on the first call only if the field
 				// value has been incremented. For all other
 				// calls, emit data if the field value has been
 				// changed from the previous emit.
-				if (!ok && metricValue == 0) || (ok && prev.(map[string]uint64)[fieldValue] == metricValue) {
+				if (!ok && metricValue == 0) || (ok && prev.(map[*FieldValue]uint64)[fieldValue] == metricValue) {
 					continue
 				}
 
 				m.Metrics = append(m.Metrics, &pb.MetricValue{
 					Name:        k,
-					FieldValues: []string{fieldValue},
+					FieldValues: []string{fieldValue.Value},
 					Value:       &pb.MetricValue_Uint64Value{Uint64Value: metricValue},
 				})
 			}
+		default:
+			panic(fmt.Sprintf("unsupported type in uint64Metrics: %T (%v)", v, v))
 		}
 	}
 	for name, dist := range snapshot.distributionTotalSamples {
@@ -1222,7 +1320,7 @@ func GetSnapshot(options SnapshotOptions) (*prometheus.Snapshot, error) {
 				continue
 			}
 			snapshot.Add(prometheus.NewIntData(m.prometheusMetric, int64(t)))
-		case map[string]uint64:
+		case map[*FieldValue]uint64:
 			for fieldValue, metricValue := range t {
 				if m.metadata.GetCumulative() && metricValue == 0 {
 					// Zero-valued counter, ignore.
@@ -1230,9 +1328,11 @@ func GetSnapshot(options SnapshotOptions) (*prometheus.Snapshot, error) {
 				}
 				snapshot.Add(prometheus.LabeledIntData(m.prometheusMetric, map[string]string{
 					// uint64 metrics currently only support at most one field name.
-					m.metadata.Fields[0].GetFieldName(): fieldValue,
+					m.metadata.Fields[0].GetFieldName(): fieldValue.Value,
 				}, int64(metricValue)))
 			}
+		default:
+			panic(fmt.Sprintf("unsupported type in uint64Metrics: %T (%v)", v, v))
 		}
 	}
 	for k, dists := range values.distributionTotalSamples {

@@ -35,37 +35,37 @@ type FakeTimedOperation struct{}
 // Value from a FakeUint64Metric always returns a meaningless value.
 //
 //go:nosplit
-func (m *FakeUint64Metric) Value(fieldValues ...string) uint64 {
+func (m *FakeUint64Metric) Value(fieldValues ...*FieldValue) uint64 {
 	return 0
 }
 
 // Increment on a FakeUint64Metric does nothing.
 //
 //go:nosplit
-func (m *FakeUint64Metric) Increment(fieldValues ...string) {}
+func (m *FakeUint64Metric) Increment(fieldValues ...*FieldValue) {}
 
 // IncrementBy on a FakeUint64Metric does nothing.
 //
 //go:nosplit
-func (m *FakeUint64Metric) IncrementBy(v uint64, fieldValues ...string) {}
+func (m *FakeUint64Metric) IncrementBy(v uint64, fieldValues ...*FieldValue) {}
 
 // AddSample on a FakeUint64Metric does nothing.
 //
 //go:nosplit
-func (d *FakeDistributionMetric) AddSample(sample int64, fields ...string) {}
+func (d *FakeDistributionMetric) AddSample(sample int64, fields ...*FieldValue) {}
 
 // Start on a FakeUint64Metric returns a FakeTimedOperation struct, which does
 // nothing and does not keep the time.
 //
 //go:nosplit
-func (t *FakeTimerMetric) Start(fields ...string) FakeTimedOperation {
+func (t *FakeTimerMetric) Start(fields ...*FieldValue) FakeTimedOperation {
 	return FakeTimedOperation{}
 }
 
 // Finish on a FakeTimedOperation does nothing.
 //
 //go:nosplit
-func (o FakeTimedOperation) Finish(extraFields ...string) {}
+func (o FakeTimedOperation) Finish(extraFields ...*FieldValue) {}
 
 // NewFakeUint64Metric is equivalent to NewUint64Metric except it creates a
 // FakeUint64Metric

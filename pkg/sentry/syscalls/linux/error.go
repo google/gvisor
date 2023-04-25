@@ -36,7 +36,7 @@ var (
 // us to pass a function which does not take any arguments, whereas Increment()
 // takes a variadic number of arguments.
 func incrementPartialResultMetric() {
-	metric.WeirdnessMetric.Increment(metric.WeirdnessTypePartialResult)
+	metric.WeirdnessMetric.Increment(&metric.WeirdnessTypePartialResult)
 }
 
 // HandleIOError handles special error cases for partial results. For some
