@@ -3881,3 +3881,110 @@ func TestIcmpRateLimit(t *testing.T) {
 		})
 	}
 }
+
+// TestRejectMartianMappedPackets tests that IPv6 endpoints reject packets
+// containing IPv4-mapped IPv6 addresses.
+func TestRejectMartianMappedPackets(t *testing.T) {
+	tcs := []struct {
+		name            string
+		wantSrcReceived uint64
+		wantDstReceived uint64
+		wantDelivered   uint64
+		srcAddr         tcpip.Address
+		dstAddr         tcpip.Address
+	}{
+		{
+			name:            "bad source",
+			wantSrcReceived: 1,
+			srcAddr:         testutil.MustParse6("::ffff:1.2.3.4"),
+			dstAddr:         testutil.MustParse6("fe80::2"),
+		},
+		{
+			name:            "bad destination",
+			wantDstReceived: 1,
+			srcAddr:         testutil.MustParse6("fe80::2"),
+			dstAddr:         testutil.MustParse6("::ffff:1.2.3.4"),
+		},
+		{
+			name:            "bad source and destination",
+			wantSrcReceived: 1,
+			wantDstReceived: 1,
+			srcAddr:         testutil.MustParse6("::ffff:1.2.3.4"),
+			dstAddr:         testutil.MustParse6("::ffff:5.6.7.8"),
+		},
+		{
+			name:          "valid source and destination",
+			wantDelivered: 2,
+			srcAddr:       testutil.MustParse6("fe80::2"),
+			dstAddr:       header.IPv6AllNodesMulticastAddress,
+		},
+	}
+
+	// dst := header.SolicitedNodeAddr(addr2)
+
+	for _, tc := range tcs {
+		t.Run(tc.name, func(t *testing.T) {
+			// Initialize the stack and add an address.
+			ctx := newTestContext()
+			defer ctx.cleanup()
+			stk := ctx.s
+
+			channelEP := channel.New(1, header.IPv6MinimumMTU, linkAddr1)
+			defer channelEP.Close()
+			if err := stk.CreateNIC(nicID, channelEP); err != nil {
+				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
+			}
+
+			stk.SetRouteTable([]tcpip.Route{
+				{
+					Destination: header.IPv6EmptySubnet,
+					NIC:         nicID,
+				},
+			})
+
+			protocolAddr := tcpip.ProtocolAddress{
+				Protocol:          ProtocolNumber,
+				AddressWithPrefix: addr2.WithPrefix(),
+			}
+			if err := stk.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
+			}
+
+			// We don't have to setup the UDP header properly, as
+			// it should be rejected at the IP layer.
+			hdr := prependable.New(header.IPv6MinimumSize + header.UDPMinimumSize)
+			_ = header.UDP(hdr.Prepend(header.UDPMinimumSize))
+
+			payloadLength := hdr.UsedLength()
+			ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
+			ip.Encode(&header.IPv6Fields{
+				PayloadLength:     uint16(payloadLength),
+				TransportProtocol: udp.ProtocolNumber,
+				HopLimit:          255,
+				SrcAddr:           tc.srcAddr,
+				DstAddr:           tc.dstAddr,
+			})
+
+			// Send the packet out.
+			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+				Payload: bufferv2.MakeWithData(hdr.View()),
+			})
+			channelEP.InjectInbound(ProtocolNumber, pkt)
+			pkt.DecRef()
+
+			// Verify that stat counters are appropriately updated.
+			srcStat := stk.Stats().IP.InvalidSourceAddressesReceived
+			if got := srcStat.Value(); got != tc.wantSrcReceived {
+				t.Errorf("got InvalidSourceAddressesReceived = %d, want = %d", got, tc.wantSrcReceived)
+			}
+			dstStat := stk.Stats().IP.InvalidDestinationAddressesReceived
+			if got := dstStat.Value(); got != tc.wantDstReceived {
+				t.Errorf("got InvalidDestinationAddressesReceived = %d, want = %d", got, tc.wantDstReceived)
+			}
+			deliveredStat := stk.Stats().IP.PacketsDelivered
+			if got := deliveredStat.Value(); got != tc.wantDelivered {
+				t.Errorf("got PacketsDelivered = %d, want = %d", got, tc.wantDelivered)
+			}
+		})
+	}
+}

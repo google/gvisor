@@ -1090,6 +1090,10 @@ func (e *endpoint) HandlePacket(pkt stack.PacketBufferPtr) {
 	defer hView.Release()
 	h := header.IPv6(hView.AsSlice())
 
+	if !checkV4Mapped(h, stats) {
+		return
+	}
+
 	if !e.nic.IsLoopback() {
 		if !e.protocol.options.AllowExternalLoopbackTraffic {
 			if header.IsV6LoopbackAddress(h.SourceAddress()) {
@@ -1146,6 +1150,10 @@ func (e *endpoint) handleLocalPacket(pkt stack.PacketBufferPtr, canSkipRXChecksu
 	}
 	defer hView.Release()
 	h := header.IPv6(hView.AsSlice())
+
+	if !checkV4Mapped(h, stats) {
+		return
+	}
 
 	e.handleValidatedPacket(h, pkt, e.nic.Name() /* inNICName */)
 }
@@ -2842,4 +2850,18 @@ func buildNextFragment(pf *fragmentation.PacketFragmenter, originalIPHeaders hea
 	fragmentIPHeaders.SetPayloadLength(uint16(copied + fragmentIPHeadersLength - header.IPv6MinimumSize))
 
 	return fragPkt, more
+}
+
+func checkV4Mapped(h header.IPv6, stats ip.MultiCounterIPStats) bool {
+	// Disallow IPv4-mapped addresses per RFC 6890 section 2.2.3.
+	ret := true
+	if header.IsV4MappedAddress(h.SourceAddress()) {
+		stats.InvalidSourceAddressesReceived.Increment()
+		ret = false
+	}
+	if header.IsV4MappedAddress(h.DestinationAddress()) {
+		stats.InvalidDestinationAddressesReceived.Increment()
+		ret = false
+	}
+	return ret
 }
