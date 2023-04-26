@@ -1145,11 +1145,9 @@ class IOUringSqeFieldsTest : public ::testing::Test,
 };
 
 // Testing that io_uring_enter(2) successfully handles single READV operation
-// and returns EINVAL error in the CQE when either ioprio or buf_index is set.
-TEST_P(IOUringSqeFieldsTest, READVWithInvalidSqeFieldValue) {
+// and returns EINVAL error in the CQE when ioprio is set.
+TEST(IOUringTest, READVWithInvalidSqeFieldValue) {
   SKIP_IF(!IOUringAvailable());
-
-  const SqeFieldsUT p = GetParam();
 
   IOUringParams params = {};
   std::unique_ptr<IOUring> io_uring =
@@ -1191,8 +1189,8 @@ TEST_P(IOUringSqeFieldsTest, READVWithInvalidSqeFieldValue) {
   sqe->len = num_blocks;
   sqe->off = 0;
   sqe->user_data = reinterpret_cast<uint64_t>(&iov);
-  sqe->ioprio = p.ioprio;
-  sqe->buf_index = p.buf_index;
+  sqe->ioprio = 1;
+  sqe->buf_index = 0;
   sq_array[0] = 0;
 
   uint32_t sq_tail = io_uring->load_sq_tail();
@@ -1214,11 +1212,6 @@ TEST_P(IOUringSqeFieldsTest, READVWithInvalidSqeFieldValue) {
   uint32_t cq_head = io_uring->load_cq_head();
   io_uring->store_cq_head(cq_head + 1);
 }
-
-INSTANTIATE_TEST_SUITE_P(
-    IOUringSqeFields, IOUringSqeFieldsTest,
-    ::testing::Values(SqeFieldsUT{.ioprio = 0, .buf_index = 1},
-                      SqeFieldsUT{.ioprio = 1, .buf_index = 0}));
 
 }  // namespace
 

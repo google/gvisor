@@ -500,10 +500,6 @@ func (fd *FileDescription) handleReadv(t *kernel.Task, sqe *linux.IOUringSqe, fl
 	if sqe.IoPrio != 0 {
 		return 0, linuxerr.EINVAL
 	}
-	// buf_index should not be set for the READV operation.
-	if sqe.BufIndexOrGroup != 0 {
-		return 0, linuxerr.EINVAL
-	}
 
 	// AddressSpaceActive is set to true as we are doing this from the task goroutine.And this is a
 	// case as we currently don't support neither IOPOLL nor SQPOLL modes.
