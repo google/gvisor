@@ -3920,8 +3920,6 @@ func TestRejectMartianMappedPackets(t *testing.T) {
 		},
 	}
 
-	// dst := header.SolicitedNodeAddr(addr2)
-
 	for _, tc := range tcs {
 		t.Run(tc.name, func(t *testing.T) {
 			// Initialize the stack and add an address.
