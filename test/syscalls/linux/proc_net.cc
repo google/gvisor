@@ -78,7 +78,8 @@ TEST(ProcSysNetIpv4Sack, Exists) {
 }
 
 TEST(ProcSysNetIpv4Sack, CanReadAndWrite) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability((CAP_DAC_OVERRIDE))));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability((CAP_NET_ADMIN))) ||
+          IsRunningWithHostinet());
 
   auto const fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/sys/net/ipv4/tcp_sack", O_RDWR));
@@ -221,6 +222,8 @@ PosixErrorOr<uint64_t> GetSNMPMetricFromProc(const std::string snmp,
 }
 
 TEST(ProcNetSnmp, TcpReset) {
+  SKIP_IF(IsRunningWithHostinet());
+
   // TODO(gvisor.dev/issue/866): epsocket metrics are not savable.
   DisableSave ds;
 
@@ -271,6 +274,8 @@ TEST(ProcNetSnmp, TcpReset) {
 }
 
 TEST(ProcNetSnmp, TcpEstab) {
+  SKIP_IF(IsRunningWithHostinet());
+
   // This test aims to test the tcpCurrEstab metric which has "SYNTAX  Gauge" as
   // per RFC 1213. Hence, it becomes infeasible to test this when system-wide
   // statistics have noise.
@@ -370,6 +375,8 @@ TEST(ProcNetSnmp, TcpEstab) {
 }
 
 TEST(ProcNetSnmp, UdpNoPorts) {
+  SKIP_IF(IsRunningWithHostinet());
+
   // TODO(gvisor.dev/issue/866): epsocket metrics are not savable.
   DisableSave ds;
 
@@ -411,6 +418,8 @@ TEST(ProcNetSnmp, UdpNoPorts) {
 }
 
 TEST(ProcNetSnmp, UdpIn) {
+  SKIP_IF(IsRunningWithHostinet());
+
   // TODO(gvisor.dev/issue/866): epsocket metrics are not savable.
   const DisableSave ds;
 
@@ -545,7 +554,8 @@ TEST(ProcSysNetIpv4Recovery, CanReadAndWrite) {
   // fixed.
   DisableSave ds;
 
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability((CAP_DAC_OVERRIDE))));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability((CAP_NET_ADMIN))) ||
+          IsRunningWithHostinet());
 
   auto const fd = ASSERT_NO_ERRNO_AND_VALUE(
       Open("/proc/sys/net/ipv4/tcp_recovery", O_RDWR));
@@ -592,7 +602,8 @@ TEST(ProcSysNetIpv4IpForward, DefaultValueEqZero) {
 }
 
 TEST(ProcSysNetIpv4IpForward, CanReadAndWrite) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability((CAP_DAC_OVERRIDE))));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability((CAP_NET_ADMIN))) ||
+          IsRunningWithHostinet());
 
   auto const fd = ASSERT_NO_ERRNO_AND_VALUE(Open(kIpForward, O_RDWR));
 
@@ -614,6 +625,8 @@ TEST(ProcSysNetIpv4IpForward, CanReadAndWrite) {
 }
 
 TEST(ProcSysNetPortRange, CanReadAndWrite) {
+  SKIP_IF(IsRunningWithHostinet());
+
   int min;
   int max;
   std::string rangefile = ASSERT_NO_ERRNO_AND_VALUE(GetContents(kRangeFile));

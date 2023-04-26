@@ -517,6 +517,7 @@ syscall_test(
 )
 
 syscall_test(
+    add_hostinet = True,
     test = "//test/syscalls/linux:proc_net_test",
 )
 
