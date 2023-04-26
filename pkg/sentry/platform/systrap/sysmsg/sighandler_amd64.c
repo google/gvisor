@@ -20,6 +20,7 @@
 #include <linux/futex.h>
 #include <linux/unistd.h>
 #include <signal.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -196,6 +197,9 @@ struct thread_context *switch_context_amd64(
   return ctx;
 }
 
+static void prep_fpstate_for_sigframe(void *buf, uint32_t user_size,
+                                      bool use_xsave);
+
 void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
   ucontext_t *ucontext = _ucontext;
   void *sp = sysmsg_sp();
@@ -335,8 +339,10 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
 
   if (__export_context_decoupling_exp &&
       __atomic_load_n(&ctx->fpstate_changed, __ATOMIC_ACQUIRE)) {
-    memcpy((uint8_t *)ucontext->uc_mcontext.fpregs, ctx->fpstate,
-           __export_arch_state.fp_len);
+    prep_fpstate_for_sigframe(
+        ctx->fpstate, __export_arch_state.fp_len,
+        __export_arch_state.xsave_mode != XSAVE_MODE_FXSAVE);
+    ucontext->uc_mcontext.fpregs = (void *)ctx->fpstate;
   }
   ptregs_to_gregs(ucontext, &ctx->ptregs);
 }
@@ -452,4 +458,42 @@ void verify_offsets_amd64() {
   BUILD_BUG_ON(offsetof_thread_context_ptregs_gs !=
                (offsetof(struct user_regs_struct, gs) + PTREGS_OFFSET));
 #undef PTREGS_OFFSET
+}
+
+// asm/sigcontext.h conflicts with signal.h.
+struct __fpx_sw_bytes {
+  uint32_t magic1;
+  uint32_t extended_size;
+  uint64_t xfeatures;
+  uint32_t xstate_size;
+  uint32_t padding[7];
+};
+
+struct __fpstate {
+  uint16_t cwd;
+  uint16_t swd;
+  uint16_t twd;
+  uint16_t fop;
+  uint64_t rip;
+  uint64_t rdp;
+  uint32_t mxcsr;
+  uint32_t mxcsr_mask;
+  uint32_t st_space[32];
+  uint32_t xmm_space[64];
+  uint32_t reserved2[12];
+  struct __fpx_sw_bytes sw_reserved;
+};
+
+// The kernel expects to see some additional info in an FPU state. More details
+// can be found in arch/x86/kernel/fpu/signal.c:check_xstate_in_sigframe.
+static void prep_fpstate_for_sigframe(void *buf, uint32_t user_size,
+                                      bool use_xsave) {
+  struct __fpstate *fpstate = buf;
+  struct __fpx_sw_bytes *sw_bytes = &fpstate->sw_reserved;
+
+  sw_bytes->magic1 = FP_XSTATE_MAGIC1;
+  sw_bytes->extended_size = user_size + FP_XSTATE_MAGIC2_SIZE;
+  sw_bytes->xfeatures = ~(0ULL);
+  sw_bytes->xstate_size = user_size;
+  *(uint32_t *)(buf + user_size) = use_xsave ? FP_XSTATE_MAGIC2 : 0;
 }
