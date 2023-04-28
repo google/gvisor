@@ -25,6 +25,9 @@ defaults:
       layout: default
 analytics: "UA-150193582-1"
 authors:
+  bogomolov:
+    name: Konstantin Bogomolov
+    email: bogomolov@google.com
   lucasmanning:
     name: Lucas Manning
     email: lucasmanning@google.com
