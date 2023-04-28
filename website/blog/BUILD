@@ -91,6 +91,16 @@ doc(
     permalink = "/blog/2022/10/24/buffer-pooling/",
 )
 
+doc(
+    name = "systrap_release",
+    src = "2023-04-28-systrap-release.md",
+    authors = [
+        "bogomolov",
+    ],
+    layout = "post",
+    permalink = "/blog/2023/04/28/systrap-release/",
+)
+
 docs(
     name = "posts",
     deps = [
