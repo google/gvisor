@@ -77,7 +77,7 @@ populates shared memory regions, and requests the sentry to handle the requested
 system call. This alone proved to be faster than using `PTRACE_SYSEMU`, as
 demonstrated by the `getpid` benchmark:
 
-![Figure 2](/assets/images/2023-04-28-getpid-ptrace-vs-systrap-unopt.svg "Getpid benchmark: ptrace vs. Systrap."){:width="100%"}
+![Figure 2](/assets/images/2023-04-28-getpid-ptrace-vs-systrap-unoptimized.svg "Getpid benchmark: ptrace vs. Systrap."){:width="100%"}
 
 Can we make it even faster? Recall what the main purpose of our signal handler
 is: to send a request to the sentry via shared memory. To do that, the sandboxed
