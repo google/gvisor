@@ -126,13 +126,13 @@ static void FillSocketBuffers(int sender, int receiver) {
       SyscallSucceedsWithValue(0));
 
   // Create a large buffer that will be used for sending.
-  std::vector<char> buf(1 << 16);
+  std::vector<char> buf(buf_sz << 2);
 
   // Write until we receive an error.
   while (RetryEINTR(send)(sender, buf.data(), buf.size(), 0) != -1) {
     // Sleep to give linux a chance to move data from the send buffer to the
     // receive buffer.
-    usleep(10000);  // 10ms.
+    usleep(100000);  // 100ms.
   }
   // The last error should have been EWOULDBLOCK.
   ASSERT_EQ(errno, EWOULDBLOCK);
