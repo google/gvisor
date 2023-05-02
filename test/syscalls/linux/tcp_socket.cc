@@ -899,6 +899,67 @@ TEST_P(TcpSocketTest, TimeWaitPollHUP) {
   ASSERT_THAT(poll(&pfd, 1, kTimeoutMillis), SyscallSucceedsWithValue(1));
 }
 
+// Tests that send will return EWOULDBLOCK initially with large buffer and will
+// succeed after the send buffer size is increased.
+TEST_P(TcpSocketTest, SendUnblocksOnSendBufferIncrease) {
+  // Set the FD to O_NONBLOCK.
+  int opts;
+  ASSERT_THAT(opts = fcntl(connected_.get(), F_GETFL), SyscallSucceeds());
+  opts |= O_NONBLOCK;
+  ASSERT_THAT(fcntl(connected_.get(), F_SETFL, opts), SyscallSucceeds());
+
+  // Get maximum buffer size by trying to set it to a large value.
+  constexpr int kSndBufSz = 0xffffffff;
+  ASSERT_THAT(setsockopt(connected_.get(), SOL_SOCKET, SO_SNDBUF, &kSndBufSz,
+                         sizeof(kSndBufSz)),
+              SyscallSucceeds());
+
+  int max_buffer_sz = 0;
+  socklen_t max_len = sizeof(max_buffer_sz);
+  ASSERT_THAT(getsockopt(connected_.get(), SOL_SOCKET, SO_SNDBUF,
+                         &max_buffer_sz, &max_len),
+              SyscallSucceeds());
+
+  int buffer_sz = max_buffer_sz >> 2;
+  EXPECT_THAT(setsockopt(connected_.get(), SOL_SOCKET, SO_SNDBUF, &buffer_sz,
+                         sizeof(buffer_sz)),
+              SyscallSucceedsWithValue(0));
+
+  // Create a large buffer that will be used for sending.
+  std::vector<char> buffer(max_buffer_sz);
+
+  // Write until we receive an error.
+  while (RetryEINTR(send)(connected_.get(), buffer.data(), buffer.size(), 0) !=
+         -1) {
+    // Sleep to give linux a chance to move data from the send buffer to the
+    // receive buffer.
+    usleep(10000);  // 10ms.
+  }
+
+  // The last error should have been EWOULDBLOCK.
+  ASSERT_EQ(errno, EWOULDBLOCK);
+
+  ScopedThread send_thread([this]() {
+    int flags = 0;
+    ASSERT_THAT(flags = fcntl(connected_.get(), F_GETFL), SyscallSucceeds());
+    EXPECT_THAT(fcntl(connected_.get(), F_SETFL, flags & ~O_NONBLOCK),
+                SyscallSucceeds());
+
+    // Expect the send() to succeed.
+    char buffer;
+    ASSERT_THAT(RetryEINTR(send)(connected_.get(), &buffer, sizeof(buffer), 0),
+                SyscallSucceeds());
+  });
+
+  // Set SO_SNDBUF to maximum buffer size allowed.
+  buffer_sz = max_buffer_sz >> 1;
+  EXPECT_THAT(setsockopt(connected_.get(), SOL_SOCKET, SO_SNDBUF, &buffer_sz,
+                         sizeof(buffer_sz)),
+              SyscallSucceedsWithValue(0));
+
+  send_thread.Join();
+}
+
 INSTANTIATE_TEST_SUITE_P(AllInetTests, TcpSocketTest,
                          ::testing::Values(AF_INET, AF_INET6));
 
@@ -2527,67 +2588,6 @@ TEST_P(SimpleTcpSocketTest, SynRcvdOnListenerShutdown) {
   for (auto& thread : threads) {
     thread.join();
   }
-}
-
-// Tests that send will return EWOULDBLOCK initially with large buffer and will
-// succeed after the send buffer size is increased.
-TEST_P(TcpSocketTest, SendUnblocksOnSendBufferIncrease) {
-  // Set the FD to O_NONBLOCK.
-  int opts;
-  ASSERT_THAT(opts = fcntl(connected_.get(), F_GETFL), SyscallSucceeds());
-  opts |= O_NONBLOCK;
-  ASSERT_THAT(fcntl(connected_.get(), F_SETFL, opts), SyscallSucceeds());
-
-  // Get maximum buffer size by trying to set it to a large value.
-  constexpr int kSndBufSz = 0xffffffff;
-  ASSERT_THAT(setsockopt(connected_.get(), SOL_SOCKET, SO_SNDBUF, &kSndBufSz,
-                         sizeof(kSndBufSz)),
-              SyscallSucceeds());
-
-  int max_buffer_sz = 0;
-  socklen_t max_len = sizeof(max_buffer_sz);
-  ASSERT_THAT(getsockopt(connected_.get(), SOL_SOCKET, SO_SNDBUF,
-                         &max_buffer_sz, &max_len),
-              SyscallSucceeds());
-
-  int buffer_sz = max_buffer_sz >> 2;
-  EXPECT_THAT(setsockopt(connected_.get(), SOL_SOCKET, SO_SNDBUF, &buffer_sz,
-                         sizeof(buffer_sz)),
-              SyscallSucceedsWithValue(0));
-
-  // Create a large buffer that will be used for sending.
-  std::vector<char> buffer(max_buffer_sz);
-
-  // Write until we receive an error.
-  while (RetryEINTR(send)(connected_.get(), buffer.data(), buffer.size(), 0) !=
-         -1) {
-    // Sleep to give linux a chance to move data from the send buffer to the
-    // receive buffer.
-    usleep(10000);  // 10ms.
-  }
-
-  // The last error should have been EWOULDBLOCK.
-  ASSERT_EQ(errno, EWOULDBLOCK);
-
-  ScopedThread send_thread([this]() {
-    int flags = 0;
-    ASSERT_THAT(flags = fcntl(connected_.get(), F_GETFL), SyscallSucceeds());
-    EXPECT_THAT(fcntl(connected_.get(), F_SETFL, flags & ~O_NONBLOCK),
-                SyscallSucceeds());
-
-    // Expect the send() to succeed.
-    char buffer;
-    ASSERT_THAT(RetryEINTR(send)(connected_.get(), &buffer, sizeof(buffer), 0),
-                SyscallSucceeds());
-  });
-
-  // Set SO_SNDBUF to maximum buffer size allowed.
-  buffer_sz = max_buffer_sz >> 1;
-  EXPECT_THAT(setsockopt(connected_.get(), SOL_SOCKET, SO_SNDBUF, &buffer_sz,
-                         sizeof(buffer_sz)),
-              SyscallSucceedsWithValue(0));
-
-  send_thread.Join();
 }
 
 INSTANTIATE_TEST_SUITE_P(AllInetTests, SimpleTcpSocketTest,
