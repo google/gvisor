@@ -136,24 +136,6 @@ func (e *endpoint) Resume(s *stack.Stack) {
 	e.protocol = protocolFromStack(s)
 	e.ops.InitHandler(e, e.stack, GetTCPSendBufferLimits, GetTCPReceiveBufferLimits)
 	e.segmentQueue.thaw()
-	epState := EndpointState(e.origEndpointState)
-	switch epState {
-	case StateInitial, StateBound, StateListen, StateConnecting, StateEstablished:
-		var ss tcpip.TCPSendBufferSizeRangeOption
-		if err := e.stack.TransportProtocolOption(ProtocolNumber, &ss); err == nil {
-			sendBufferSize := e.getSendBufferSize()
-			if sendBufferSize < ss.Min || sendBufferSize > ss.Max {
-				panic(fmt.Sprintf("endpoint sendBufferSize %d is outside the min and max allowed [%d, %d]", sendBufferSize, ss.Min, ss.Max))
-			}
-		}
-
-		var rs tcpip.TCPReceiveBufferSizeRangeOption
-		if err := e.stack.TransportProtocolOption(ProtocolNumber, &rs); err == nil {
-			if rcvBufSize := e.ops.GetReceiveBufferSize(); rcvBufSize < int64(rs.Min) || rcvBufSize > int64(rs.Max) {
-				panic(fmt.Sprintf("endpoint rcvBufSize %d is outside the min and max allowed [%d, %d]", rcvBufSize, rs.Min, rs.Max))
-			}
-		}
-	}
 
 	bind := func() {
 		e.mu.Lock()
@@ -180,6 +162,7 @@ func (e *endpoint) Resume(s *stack.Stack) {
 		e.setEndpointState(StateBound)
 	}
 
+	epState := EndpointState(e.origEndpointState)
 	switch {
 	case epState.connected():
 		bind()
