@@ -16,6 +16,7 @@ package systrap
 
 import (
 	"fmt"
+	"runtime"
 	"sync"
 	"sync/atomic"
 
@@ -99,7 +100,7 @@ func (sc *sharedContext) release() {
 		return
 	}
 	if !sc.sleeping {
-		atomic.AddUint32(&sc.subprocess.contextQueue.numAwakeContexts, ^uint32(0))
+		sc.subprocess.decAwakeContexts()
 
 	}
 	sc.subprocess.threadContextPool.Put(uint64(sc.contextID))
@@ -199,8 +200,7 @@ func (sc *sharedContext) sleepOnState(state sysmsg.ContextState) {
 	}
 }
 
-type fastPathContextQueue struct {
-
+type fastPathDispatcher struct {
 	// list is used only from the loop method and so it isn't protected by
 	// any lock.
 	list contextList
@@ -214,15 +214,84 @@ type fastPathContextQueue struct {
 	// entrants contains new contexts that haven't been added to `list` yet.
 	// +checklocks:mu
 	entrants contextList
+
+	// fastPathDisabledTS is the time stamp when the stub fast path was
+	// disabled. It is zero if the fast path is enabled.
+	fastPathDisabledTS atomic.Uint64
+
+	subprocessListMu sync.Mutex
+	// subprocessList contains subprocesses with at least one awake context.
+	// +checklocks:subprocessListMu
+	subprocessList subprocessList
 }
 
-var dispatcher fastPathContextQueue
+var dispatcher fastPathDispatcher
+
+// fastPathContextLimit is the maximum number of contexts after which the fast
+// path in stub threads is disabled. Its value can be higher than the number of
+// CPU-s, because the Sentry is running with higher priority than stub threads,
+// deepSleepTimeout is much shorter than the Linux scheduler timeslice, so the
+// only thing that matters here is whether the Sentry handles syscall faster
+// than the overhead of scheduling another stub thread.
+var fastPathContextLimit = uint32(runtime.GOMAXPROCS(0) * 2)
+
+// fastPathDisabledTimeout is the timeout after which the fast path in stub
+// processes will be re-enabled.
+const fastPathDisabledTimeout = uint64(200 * 1000 * 1000) // 100ms for 2GHz.
+
+// nrMaxAwakeStubThreads is the maximum number of awake stub threads over all
+// subprocesses at the this moment.
+var nrMaxAwakeStubThreads atomic.Uint32
+
+// stubFastPathEnabled returns true if the fast path in stub processes is
+// enabled. If the fast path is disabled, it revises whether it has to be
+// re-enabled or not.
+func (q *fastPathDispatcher) stubFastPathEnabled() bool {
+	ts := q.fastPathDisabledTS.Load()
+	if ts != 0 {
+		if uint64(cputicks())-ts < fastPathDisabledTimeout {
+			return false
+		}
+		if nrMaxAwakeStubThreads.Load() > fastPathContextLimit {
+			q.fastPathDisabledTS.Store(uint64(cputicks()))
+			return false
+		}
+		q.fastPathDisabledTS.Store(0)
+	}
+	return true
+}
+
+// disableStubFastPath disables the fast path over all subprocesses with active
+// contexts.
+func (q *fastPathDispatcher) disableStubFastPath() {
+	q.subprocessListMu.Lock()
+	defer q.subprocessListMu.Unlock()
+
+	for s := q.subprocessList.Front(); s != nil; s = s.Next() {
+		s.contextQueue.disableFastPath()
+	}
+	q.fastPathDisabledTS.Store(uint64(cputicks()))
+}
+
+func (q *fastPathDispatcher) activateSubprocess(s *subprocess) {
+	q.subprocessListMu.Lock()
+	defer q.subprocessListMu.Unlock()
+
+	q.subprocessList.PushBack(s)
+}
+
+func (q *fastPathDispatcher) deactivateSubprocess(s *subprocess) {
+	q.subprocessListMu.Lock()
+	defer q.subprocessListMu.Unlock()
+
+	q.subprocessList.Remove(s)
+}
 
 // loop is processing contexts in the queue. Only one instance of it can be
 // running, because it has exclusive access to the list.
 //
 // target is the context associated with the current go-routine.
-func (q *fastPathContextQueue) loop(target *sharedContext) {
+func (q *fastPathDispatcher) loop(target *sharedContext) {
 	done := false
 	processed := 0
 	slowPath := false
@@ -287,7 +356,7 @@ func (q *fastPathContextQueue) loop(target *sharedContext) {
 	}
 }
 
-func (q *fastPathContextQueue) waitFor(ctx *sharedContext) syncevent.Set {
+func (q *fastPathDispatcher) waitFor(ctx *sharedContext) syncevent.Set {
 	events := syncevent.Set(0)
 
 	q.mu.Lock()
