@@ -56,10 +56,6 @@ func (e *endpoint) beforeSave() {
 	default:
 		panic(fmt.Sprintf("endpoint in unknown state %v", e.EndpointState()))
 	}
-
-	if e.waiterQueue != nil && !e.waiterQueue.IsEmpty() {
-		panic("endpoint still has waiters upon save")
-	}
 }
 
 // saveEndpoints is invoked by stateify.
