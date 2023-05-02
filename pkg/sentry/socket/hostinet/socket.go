@@ -90,6 +90,7 @@ var AllowedRawSocketTypes = []AllowedSocketType{
 	{unix.AF_INET6, unix.SOCK_RAW, unix.IPPROTO_UDP},
 	{unix.AF_INET6, unix.SOCK_RAW, unix.IPPROTO_ICMPV6},
 
+	// AF_PACKET do not allow Write or SendMsg.
 	{unix.AF_PACKET, unix.SOCK_DGRAM, AllowAllProtocols},
 	{unix.AF_PACKET, unix.SOCK_RAW, AllowAllProtocols},
 }
@@ -192,6 +193,11 @@ func (s *Socket) PWrite(ctx context.Context, dst usermem.IOSequence, offset int6
 
 // Write implements vfs.FileDescriptionImpl.
 func (s *Socket) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
+	if s.family == linux.AF_PACKET {
+		// Don't allow Write for AF_PACKET.
+		return 0, linuxerr.EACCES
+	}
+
 	// All flags other than RWF_NOWAIT should be ignored.
 	// TODO(gvisor.dev/issue/2601): Support RWF_NOWAIT.
 	if opts.Flags != 0 {
@@ -663,6 +669,11 @@ const allowedSendMsgFlags = unix.MSG_DONTWAIT |
 
 // SendMsg implements socket.Socket.SendMsg.
 func (s *Socket) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flags int, haveDeadline bool, deadline ktime.Time, controlMessages socket.ControlMessages) (int, *syserr.Error) {
+	if s.family == linux.AF_PACKET {
+		// Don't allow SendMesg for AF_PACKET.
+		return 0, syserr.ErrPermissionDenied
+	}
+
 	// Only allow known and safe flags.
 	if flags&^allowedSendMsgFlags != 0 {
 		return 0, syserr.ErrInvalidArgument
