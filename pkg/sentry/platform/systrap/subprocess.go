@@ -726,7 +726,7 @@ func (s *subprocess) switchToApp(c *context, ac *arch.Context64) (isSyscall bool
 
 		// Place the context onto the context queue.
 		ctx.setState(sysmsg.ContextStateNone)
-		s.contextQueue.add(uint32(ctx.contextID))
+		s.contextQueue.add(ctx)
 		s.waitOnState(ctx)
 
 		// Check if there's been an error.

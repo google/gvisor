@@ -52,6 +52,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	pkgcontext "gvisor.dev/gvisor/pkg/context"
@@ -290,9 +291,17 @@ func (c *context) Release() {
 // PrepareSleep implements platform.Context.platform.PrepareSleep.
 func (c *context) PrepareSleep() {
 	if contextDecouplingExp {
-		return // When this is called context hasn't entered the context queue.
-	}
-	if c.sysmsgThread != nil {
+		ctx := c.sharedContext
+		if ctx == nil {
+			return
+		}
+		s := ctx.subprocess
+		if !ctx.sleeping {
+			ctx.sleeping = true
+			atomic.AddUint32(&s.contextQueue.numAwakeContexts, ^uint32(0))
+		}
+		return
+	} else if c.sysmsgThread != nil {
 		c.sysmsgThread.msg.DisableStubFastPath()
 	}
 }

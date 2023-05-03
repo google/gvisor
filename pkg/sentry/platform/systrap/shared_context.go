@@ -57,6 +57,8 @@ type sharedContext struct {
 	sync           syncevent.Waiter
 	startWaitingTS int64
 	kicked         bool
+	// The task associated with the context fell asleep.
+	sleeping bool
 }
 
 const (
@@ -87,6 +89,7 @@ func (s *subprocess) getSharedContext() (*sharedContext, error) {
 	}
 	sc.shared.Init(invalidThreadID)
 	sc.sync.Init()
+	sc.sleeping = true
 
 	return &sc, nil
 }
@@ -94,6 +97,10 @@ func (s *subprocess) getSharedContext() (*sharedContext, error) {
 func (sc *sharedContext) release() {
 	if sc == nil {
 		return
+	}
+	if !sc.sleeping {
+		atomic.AddUint32(&sc.subprocess.contextQueue.numAwakeContexts, ^uint32(0))
+
 	}
 	sc.subprocess.threadContextPool.Put(uint64(sc.contextID))
 	sc.subprocess.DecRef(sc.subprocess.release)
