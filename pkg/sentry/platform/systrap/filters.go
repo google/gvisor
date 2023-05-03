@@ -72,6 +72,13 @@ func (p *Systrap) SyscallFilters() seccomp.SyscallRules {
 		},
 		unix.SYS_TGKILL: {},
 		unix.SYS_WAIT4:  {},
+		unix.SYS_SETPRIORITY: {
+			{
+				seccomp.EqualTo(unix.PRIO_PROCESS),
+				seccomp.MatchAny{},
+				seccomp.EqualTo(sysmsgThreadPriority),
+			},
+		},
 	}
 	r.Merge(p.archSyscallFilters())
 	return r
