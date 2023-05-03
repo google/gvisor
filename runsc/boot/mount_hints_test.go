@@ -35,7 +35,7 @@ func TestPodMountHintsHappy(t *testing.T) {
 			MountPrefix + "mount2.options": "rw,private",
 		},
 	}
-	podHints, err := newPodMountHints(spec)
+	podHints, err := NewPodMountHints(spec)
 	if err != nil {
 		t.Fatalf("newPodMountHints failed: %v", err)
 	}
@@ -112,7 +112,7 @@ func TestPodMountHintsErrors(t *testing.T) {
 	} {
 		t.Run(tst.name, func(t *testing.T) {
 			spec := &specs.Spec{Annotations: tst.annotations}
-			podHints, err := newPodMountHints(spec)
+			podHints, err := NewPodMountHints(spec)
 			if err == nil || !strings.Contains(err.Error(), tst.error) {
 				t.Errorf("newPodMountHints invalid error, want: .*%s.*, got: %v", tst.error, err)
 			}
@@ -157,7 +157,7 @@ func TestPodMountHintsIgnore(t *testing.T) {
 	} {
 		t.Run(tst.name, func(t *testing.T) {
 			spec := &specs.Spec{Annotations: tst.annotations}
-			podHints, err := newPodMountHints(spec)
+			podHints, err := NewPodMountHints(spec)
 			if err != nil {
 				t.Errorf("newPodMountHints() failed: %v", err)
 			} else if podHints != nil {
@@ -178,7 +178,7 @@ func TestIgnoreInvalidMountOptions(t *testing.T) {
 			MountPrefix + "mount1.options": "rw,invalid,private",
 		},
 	}
-	podHints, err := newPodMountHints(spec)
+	podHints, err := NewPodMountHints(spec)
 	if err != nil {
 		t.Fatalf("newPodMountHints failed: %v", err)
 	}
@@ -233,7 +233,7 @@ func TestHintsCheckCompatible(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			master := mountHint{mount: specs.Mount{Options: tc.masterOpts}}
+			master := MountHint{mount: specs.Mount{Options: tc.masterOpts}}
 			replica := specs.Mount{Options: tc.replicaOpts}
 			if err := master.checkCompatible(&replica); err != nil {
 				if !strings.Contains(err.Error(), tc.err) {

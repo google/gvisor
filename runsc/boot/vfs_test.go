@@ -67,13 +67,14 @@ func TestGetMountAccessType(t *testing.T) {
 	} {
 		t.Run(tst.name, func(t *testing.T) {
 			spec := &specs.Spec{Annotations: tst.annotations}
-			podHints, err := newPodMountHints(spec)
+			podHints, err := NewPodMountHints(spec)
 			if err != nil {
 				t.Fatalf("newPodMountHints failed: %v", err)
 			}
 			mounter := containerMounter{hints: podHints}
 			conf := &config.Config{FileAccessMounts: config.FileAccessShared}
-			if got := mounter.getMountAccessType(conf, &specs.Mount{Source: source}); got != tst.want {
+			mnt := &specs.Mount{Source: source}
+			if got := mounter.getMountAccessType(conf, mnt, podHints.FindMount(mnt)); got != tst.want {
 				t.Errorf("getMountAccessType(), want: %v, got: %v", tst.want, got)
 			}
 		})

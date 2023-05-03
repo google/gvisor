@@ -147,7 +147,7 @@ type Loader struct {
 
 	// mountHints provides extra information about mounts for containers that
 	// apply to the entire pod.
-	mountHints *podMountHints
+	mountHints *PodMountHints
 
 	// productName is the value to show in
 	// /sys/devices/virtual/dmi/id/product_name.
@@ -442,7 +442,7 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("initializing compat logs: %w", err)
 	}
 
-	mountHints, err := newPodMountHints(args.Spec)
+	mountHints, err := NewPodMountHints(args.Spec)
 	if err != nil {
 		return nil, fmt.Errorf("creating pod mount hints: %w", err)
 	}
