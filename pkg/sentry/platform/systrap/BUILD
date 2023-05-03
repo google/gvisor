@@ -19,6 +19,18 @@ go_template_instance(
 )
 
 go_template_instance(
+    name = "subprocess_list",
+    out = "subprocess_list.go",
+    package = "systrap",
+    prefix = "subprocess",
+    template = "//pkg/ilist:generic_list",
+    types = {
+        "Element": "*subprocess",
+        "Linker": "*subprocess",
+    },
+)
+
+go_template_instance(
     name = "subprocess_refs",
     out = "subprocess_refs.go",
     package = "systrap",
@@ -51,6 +63,7 @@ go_library(
         "subprocess_arm64.go",
         "subprocess_linux.go",
         "subprocess_linux_unsafe.go",
+        "subprocess_list.go",
         "subprocess_pool.go",
         "subprocess_refs.go",
         "subprocess_unsafe.go",
