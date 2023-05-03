@@ -30,6 +30,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/unet"
+	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -59,10 +60,11 @@ var goferCaps = &specs.LinuxCapabilities{
 // Gofer implements subcommands.Command for the "gofer" command, which starts a
 // filesystem gofer.  This command should not be called directly.
 type Gofer struct {
-	bundleDir string
-	ioFDs     intFlags
-	applyCaps bool
-	setUpRoot bool
+	bundleDir      string
+	ioFDs          intFlags
+	applyCaps      bool
+	setUpRoot      bool
+	overlayMediums boot.OverlayMediumFlags
 
 	specFD       int
 	mountsFD     int
@@ -98,6 +100,7 @@ func (g *Gofer) SetFlags(f *flag.FlagSet) {
 
 	// Open FDs that are donated to the gofer.
 	f.Var(&g.ioFDs, "io-fds", "list of FDs to connect gofer servers. They must follow this order: root first, then mounts as defined in the spec")
+	f.Var(&g.overlayMediums, "overlay-mediums", "information about how the gofer mounts have been overlaid.")
 	f.IntVar(&g.specFD, "spec-fd", -1, "required fd with the container spec")
 	f.IntVar(&g.mountsFD, "mounts-fd", -1, "mountsFD is the file descriptor to write list of mounts after they have been resolved (direct paths, no symlinks).")
 	f.IntVar(&g.syncUsernsFD, "sync-userns-fd", -1, "file descriptor used to synchronize rootless user namespace initialization.")
@@ -147,7 +150,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 	}
 
 	if g.setUpRoot {
-		if err := setupRootFS(spec, conf); err != nil {
+		if err := g.setupRootFS(spec, conf); err != nil {
 			util.Fatalf("Error setting up root FS: %v", err)
 		}
 		if !conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
@@ -283,13 +286,12 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string) subcom
 		HostFifo:           conf.HostFifo,
 		DonateMountPointFD: conf.DirectFS,
 	})
-	overlay2 := conf.GetOverlay2()
 
 	// Start with root mount, then add any other additional mount as needed.
 	cfgs = append(cfgs, connectionConfig{
 		sock:      newSocket(g.ioFDs[0]),
 		mountPath: "/", // fsgofer process is always chroot()ed. So serve root.
-		readonly:  spec.Root.Readonly || overlay2.RootMount,
+		readonly:  spec.Root.Readonly || g.overlayMediums[0].IsEnabled(),
 	})
 	log.Infof("Serving %q mapped to %q on FD %d (ro: %t)", "/", root, g.ioFDs[0], cfgs[0].readonly)
 
@@ -309,7 +311,7 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string) subcom
 		cfgs = append(cfgs, connectionConfig{
 			sock:      newSocket(g.ioFDs[mountIdx]),
 			mountPath: m.Destination,
-			readonly:  isReadonlyMount(m.Options) || overlay2.SubMounts,
+			readonly:  specutils.IsReadonlyMount(m.Options) || g.overlayMediums[mountIdx].IsEnabled(),
 		})
 
 		log.Infof("Serving %q mapped on FD %d (ro: %t)", m.Destination, g.ioFDs[mountIdx], cfgs[mountIdx].readonly)
@@ -356,16 +358,7 @@ func (g *Gofer) writeMounts(mounts []specs.Mount) error {
 	return nil
 }
 
-func isReadonlyMount(opts []string) bool {
-	for _, o := range opts {
-		if o == "ro" {
-			return true
-		}
-	}
-	return false
-}
-
-func setupRootFS(spec *specs.Spec, conf *config.Config) error {
+func (g *Gofer) setupRootFS(spec *specs.Spec, conf *config.Config) error {
 	// Convert all shared mounts into slaves to be sure that nothing will be
 	// propagated outside of our namespace.
 	procPath := "/proc"
@@ -428,7 +421,7 @@ func setupRootFS(spec *specs.Spec, conf *config.Config) error {
 	}
 
 	// Replace the current spec, with the clean spec with symlinks resolved.
-	if err := setupMounts(conf, spec.Mounts, root, procPath); err != nil {
+	if err := g.setupMounts(conf, spec.Mounts, root, procPath); err != nil {
 		util.Fatalf("error setting up FS: %v", err)
 	}
 
@@ -445,7 +438,7 @@ func setupRootFS(spec *specs.Spec, conf *config.Config) error {
 	}
 
 	// Check if root needs to be remounted as readonly.
-	if spec.Root.Readonly || conf.GetOverlay2().RootMount {
+	if spec.Root.Readonly || g.overlayMediums[0].IsEnabled() {
 		// If root is a mount point but not read-only, we can change mount options
 		// to make it read-only for extra safety.
 		log.Infof("Remounting root as readonly: %q", root)
@@ -469,7 +462,8 @@ func setupRootFS(spec *specs.Spec, conf *config.Config) error {
 // setupMounts bind mounts all mounts specified in the spec in their correct
 // location inside root. It will resolve relative paths and symlinks. It also
 // creates directories as needed.
-func setupMounts(conf *config.Config, mounts []specs.Mount, root, procPath string) error {
+func (g *Gofer) setupMounts(conf *config.Config, mounts []specs.Mount, root, procPath string) error {
+	goferMntIdx := 1 // First index is for rootfs.
 	for _, m := range mounts {
 		if !specutils.IsGoferMount(m) {
 			continue
@@ -481,7 +475,7 @@ func setupMounts(conf *config.Config, mounts []specs.Mount, root, procPath strin
 		}
 
 		flags := specutils.OptionsToFlags(m.Options) | unix.MS_BIND
-		if conf.GetOverlay2().SubMounts {
+		if g.overlayMediums[goferMntIdx].IsEnabled() {
 			// Force mount read-only if writes are not going to be sent to it.
 			flags |= unix.MS_RDONLY
 		}
@@ -498,6 +492,7 @@ func setupMounts(conf *config.Config, mounts []specs.Mount, root, procPath strin
 				return fmt.Errorf("mount dst: %q, flags: %#x, err: %v", dst, flags, err)
 			}
 		}
+		goferMntIdx++
 	}
 	return nil
 }

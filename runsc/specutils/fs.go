@@ -108,6 +108,16 @@ func optionsToFlags(opts []string, source map[string]mapping) uint32 {
 	return rv
 }
 
+// IsReadonlyMount returns true if the mount options has read only option.
+func IsReadonlyMount(opts []string) bool {
+	for _, o := range opts {
+		if o == "ro" {
+			return true
+		}
+	}
+	return false
+}
+
 // validateMount validates that spec mounts are correct.
 func validateMount(mnt *specs.Mount) error {
 	if !path.IsAbs(mnt.Destination) {

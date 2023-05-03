@@ -767,12 +767,12 @@ func (o *Overlay2) Enabled() bool {
 	return o.RootMount || o.SubMounts
 }
 
-// IsBackedByHostFile indicates whether the overlay is backed by a host file.
-func (o *Overlay2) IsBackedByHostFile() bool {
-	return o.Enabled() && o.Medium != "memory"
+// IsBackedByMemory indicates whether the overlay is backed by app memory.
+func (o *Overlay2) IsBackedByMemory() bool {
+	return o.Enabled() && o.Medium == "memory"
 }
 
-// IsBackedBySelf indicates whether the overlayed mounts are backed by
+// IsBackedBySelf indicates whether the overlaid mounts are backed by
 // themselves.
 func (o *Overlay2) IsBackedBySelf() bool {
 	return o.Enabled() && o.Medium == "self"

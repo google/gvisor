@@ -135,6 +135,7 @@ func createLoader(conf *config.Config, spec *specs.Spec) (*Loader, func(), error
 		ControllerFD:    fd,
 		GoferFDs:        []int{sandEnd},
 		StdioFDs:        stdio,
+		OverlayMediums:  []OverlayMedium{NoOverlay},
 		PodInitConfigFD: -1,
 		ExecFD:          -1,
 	}
