@@ -43,7 +43,11 @@ type contextQueue struct {
 	// numActiveThreads indicates to the sentry how many stubs are running.
 	numActiveThreads uint32
 	// numActiveContext is a number of running and waiting contexts
-	numActiveContexts   uint32
+	numActiveContexts uint32
+	// numAwakeContexts is the number of awake contexts. It includes all
+	// active contexts and contexts that are running in the Sentry.
+	numAwakeContexts uint32
+
 	fastPathDisabledTS  uint64
 	fastPathFailedInRow uint32
 	ringbuffer          [maxContextQueueEntries]uint32
@@ -61,6 +65,7 @@ func (q *contextQueue) init() {
 	atomic.StoreUint32(&q.fastPathFailedInRow, 0)
 	atomic.StoreUint32(&q.numActiveThreads, 0)
 	atomic.StoreUint32(&q.numActiveContexts, 0)
+	atomic.StoreUint32(&q.numAwakeContexts, 0)
 }
 
 func (q *contextQueue) isEmpty() bool {
@@ -71,7 +76,12 @@ func (q *contextQueue) queuedContexts() uint32 {
 	return (atomic.LoadUint32(&q.end) + maxContextQueueEntries - atomic.LoadUint32(&q.start)) % maxContextQueueEntries
 }
 
-func (q *contextQueue) add(contextID uint32) uint32 {
+func (q *contextQueue) add(ctx *sharedContext) uint32 {
+	contextID := ctx.contextID
+	if ctx.sleeping {
+		ctx.sleeping = false
+		atomic.AddUint32(&q.numAwakeContexts, 1)
+	}
 	atomic.AddUint32(&q.numActiveContexts, 1)
 	next := atomic.AddUint32(&q.end, 1)
 	if (next % maxContextQueueEntries) ==

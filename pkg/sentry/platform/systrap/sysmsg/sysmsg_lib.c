@@ -41,6 +41,7 @@ struct context_queue {
   uint32_t end;
   uint32_t num_active_threads;
   uint32_t num_active_contexts;
+  uint32_t num_awake_contexts;
   uint64_t fast_path_disalbed_ts;
   uint32_t fast_path_failed_in_row;
   uint32_t ringbuffer[MAX_CONTEXT_QUEUE_ENTRIES];
@@ -201,10 +202,67 @@ struct thread_context *queue_get_context(struct sysmsg *sysmsg) {
 #define FAILED_FAST_PATH_LIMIT 5
 #define FAILED_FAST_PATH_TIMEOUT 20000000  // 10ms
 
+// get_context_fast sets nr_active_threads_p only if it deactivates the thread.
+static struct thread_context *get_context_fast(struct sysmsg *sysmsg,
+                                               struct context_queue *queue,
+                                               uint32_t *nr_active_threads_p) {
+  uint32_t nr_active_threads, nr_awake_contexts;
+
+  if (!spinning_queue_push()) return NULL;
+
+  while (1) {
+    struct thread_context *ctx;
+
+    ctx = queue_get_context(sysmsg);
+    if (ctx) {
+      __atomic_store_n(&queue->fast_path_failed_in_row, 0, __ATOMIC_RELEASE);
+      spinning_queue_pop();
+      return ctx;
+    }
+
+    nr_active_threads =
+        __atomic_load_n(&queue->num_active_threads, __ATOMIC_ACQUIRE);
+    nr_awake_contexts =
+        __atomic_load_n(&queue->num_awake_contexts, __ATOMIC_ACQUIRE);
+
+    if (nr_awake_contexts < nr_active_threads) {
+      if (__atomic_compare_exchange_n(&queue->num_active_threads,
+                                      &nr_active_threads, nr_active_threads - 1,
+                                      false, __ATOMIC_SEQ_CST,
+                                      __ATOMIC_SEQ_CST)) {
+        nr_active_threads -= 1;
+        if (spinning_queue_remove_first(0)) {
+          *nr_active_threads_p = nr_active_threads;
+          break;
+        }
+
+        // spinning_queue_remove_first can fail due to a race with another
+        // thread.
+        __atomic_add_fetch(&queue->num_active_threads, 1, __ATOMIC_ACQ_REL);
+      }
+    }
+
+    if (spinning_queue_remove_first(__export_deep_sleep_timeout)) {
+      uint32_t nr = __atomic_add_fetch(&queue->fast_path_failed_in_row, 1,
+                                       __ATOMIC_ACQ_REL);
+      if (nr >= FAILED_FAST_PATH_LIMIT) {
+        __atomic_store_n(&queue->fast_path_disalbed_ts, rdtsc(),
+                         __ATOMIC_RELEASE);
+      }
+      break;
+    }
+    spinloop();
+  }
+  return NULL;
+}
+
+#define NR_IF_THREAD_IS_ACTIVE (~0)
+
 // get_context retrieves a context that is ready to be restored to the user.
 // This populates sysmsg->thread_context_id.
 struct thread_context *get_context(struct sysmsg *sysmsg) {
   struct context_queue *queue = __export_context_queue_addr;
+  uint32_t nr_active_threads;
 
   for (;;) {
     struct thread_context *ctx;
@@ -230,31 +288,17 @@ struct thread_context *get_context(struct sysmsg *sysmsg) {
       }
     }
 
-    if (fast_path_enabled && spinning_queue_push()) {
-      while (1) {
-        ctx = queue_get_context(sysmsg);
-        if (ctx) {
-          __atomic_store_n(&queue->fast_path_failed_in_row, 0,
-                           __ATOMIC_RELEASE);
-          spinning_queue_pop();
-          return ctx;
-        }
-        if (spinning_queue_remove_first(__export_deep_sleep_timeout)) {
-          uint32_t nr = __atomic_add_fetch(&queue->fast_path_failed_in_row, 1,
-                                           __ATOMIC_ACQ_REL);
-          if (nr >= FAILED_FAST_PATH_LIMIT) {
-            __atomic_store_n(&queue->fast_path_disalbed_ts, rdtsc(),
-                             __ATOMIC_RELEASE);
-          }
-          break;
-        }
-        spinloop();
-      }
+    nr_active_threads = NR_IF_THREAD_IS_ACTIVE;
+    if (fast_path_enabled) {
+      ctx = get_context_fast(sysmsg, queue, &nr_active_threads);
+      if (ctx) return ctx;
+    }
+    if (nr_active_threads == NR_IF_THREAD_IS_ACTIVE) {
+      nr_active_threads =
+          __atomic_sub_fetch(&queue->num_active_threads, 1, __ATOMIC_ACQ_REL);
     }
 
     __atomic_store_n(&sysmsg->state, THREAD_STATE_ASLEEP, __ATOMIC_RELEASE);
-    uint32_t nr_active_threads =
-        __atomic_sub_fetch(&queue->num_active_threads, 1, __ATOMIC_ACQ_REL);
     uint32_t nr_active_contexts =
         __atomic_load_n(&queue->num_active_contexts, __ATOMIC_ACQUIRE);
     // We have to make another attempt to get a context here to prevent TOCTTOU
