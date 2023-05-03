@@ -185,14 +185,14 @@ func configureShm(s *specs.Spec) (bool, error) {
 		m := &s.Mounts[i]
 		if m.Destination == shmPath && m.Type == "bind" {
 			if IsSandbox(s) {
-				s.Annotations["dev.gvisor.spec.mount."+devshmName+".source"] = m.Source
-				s.Annotations["dev.gvisor.spec.mount."+devshmName+".type"] = devshmType
-				s.Annotations["dev.gvisor.spec.mount."+devshmName+".share"] = "pod"
+				s.Annotations[volumeKeyPrefix+devshmName+".source"] = m.Source
+				s.Annotations[volumeKeyPrefix+devshmName+".type"] = devshmType
+				s.Annotations[volumeKeyPrefix+devshmName+".share"] = "pod"
 				// Given that we don't have visibility into mount options for all
 				// containers, assume broad access for the master mount (it's tmpfs
 				// inside the sandbox anyways) and apply options to subcontainers as
 				// they bind mount individually.
-				s.Annotations["dev.gvisor.spec.mount."+devshmName+".options"] = "rw"
+				s.Annotations[volumeKeyPrefix+devshmName+".options"] = "rw"
 			}
 
 			changeMountType(m, devshmType)

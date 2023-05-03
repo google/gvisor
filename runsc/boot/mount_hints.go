@@ -74,13 +74,14 @@ func (s shareType) String() string {
 	}
 }
 
-// podMountHints contains a collection of mountHints for the pod.
-type podMountHints struct {
-	mounts map[string]*mountHint
+// PodMountHints contains a collection of mountHints for the pod.
+type PodMountHints struct {
+	mounts map[string]*MountHint
 }
 
-func newPodMountHints(spec *specs.Spec) (*podMountHints, error) {
-	mnts := make(map[string]*mountHint)
+// NewPodMountHints instantiates PodMountHints using spec.
+func NewPodMountHints(spec *specs.Spec) (*PodMountHints, error) {
+	mnts := make(map[string]*MountHint)
 	for k, v := range spec.Annotations {
 		// Look for 'dev.gvisor.spec.mount' annotations and parse them.
 		if strings.HasPrefix(k, MountPrefix) {
@@ -95,7 +96,7 @@ func newPodMountHints(spec *specs.Spec) (*podMountHints, error) {
 			}
 			mnt := mnts[name]
 			if mnt == nil {
-				mnt = &mountHint{name: name}
+				mnt = &MountHint{name: name}
 				mnts[name] = mnt
 			}
 			if err := mnt.setField(parts[1], v); err != nil {
@@ -121,13 +122,13 @@ func newPodMountHints(spec *specs.Spec) (*podMountHints, error) {
 		}
 	}
 
-	return &podMountHints{mounts: mnts}, nil
+	return &PodMountHints{mounts: mnts}, nil
 }
 
-// mountHint represents extra information about mounts that are provided via
+// MountHint represents extra information about mounts that are provided via
 // annotations. They can override mount type, and provide sharing information
 // so that mounts can be correctly shared inside the pod.
-type mountHint struct {
+type MountHint struct {
 	name  string
 	share shareType
 	mount specs.Mount
@@ -137,7 +138,7 @@ type mountHint struct {
 	vfsMount *vfs.Mount
 }
 
-func (m *mountHint) setField(key, val string) error {
+func (m *MountHint) setField(key, val string) error {
 	switch key {
 	case "source":
 		if len(val) == 0 {
@@ -160,9 +161,9 @@ func (m *mountHint) setField(key, val string) error {
 	return nil
 }
 
-func (m *mountHint) setType(val string) error {
+func (m *MountHint) setType(val string) error {
 	switch val {
-	case "tmpfs", "bind":
+	case tmpfs.Name, Bind:
 		m.mount.Type = val
 	default:
 		return fmt.Errorf("invalid type %q", val)
@@ -170,7 +171,8 @@ func (m *mountHint) setType(val string) error {
 	return nil
 }
 
-func (m *mountHint) isSupported() bool {
+// isShared returns true if this mount should be configured as a shared mount.
+func (m *MountHint) isShared() bool {
 	// TODO(b/142076984): Only support tmpfs for now. Bind mounts require a
 	// common gofer to mount all shared volumes.
 	return m.mount.Type == tmpfs.Name && m.share == pod
@@ -179,7 +181,7 @@ func (m *mountHint) isSupported() bool {
 // checkCompatible verifies that shared mount is compatible with master.
 // Master options must be the same or less restrictive than the container mount,
 // e.g. master can be 'rw' while container mounts as 'ro'.
-func (m *mountHint) checkCompatible(replica *specs.Mount) error {
+func (m *MountHint) checkCompatible(replica *specs.Mount) error {
 	masterOpts := ParseMountOptions(m.mount.Options)
 	replicaOpts := ParseMountOptions(replica.Options)
 
@@ -195,14 +197,15 @@ func (m *mountHint) checkCompatible(replica *specs.Mount) error {
 	return nil
 }
 
-func (m *mountHint) fileAccessType() config.FileAccessType {
+func (m *MountHint) fileAccessType() config.FileAccessType {
 	if m.share == container {
 		return config.FileAccessExclusive
 	}
 	return config.FileAccessShared
 }
 
-func (p *podMountHints) findMount(mount *specs.Mount) *mountHint {
+// FindMount finds the MountHint that applies to this mount.
+func (p *PodMountHints) FindMount(mount *specs.Mount) *MountHint {
 	for _, m := range p.mounts {
 		if m.mount.Source == mount.Source {
 			return m
