@@ -16,11 +16,14 @@ package systrap
 
 import (
 	"fmt"
+	"sync"
 	"sync/atomic"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/sysmsg"
+	gsync "gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/syncevent"
 )
 
 const (
@@ -36,20 +39,37 @@ const (
 //     (trusted) synchronization between the sentry and the stub processes.
 //   - Data read from shared memory may require validation before it can be used.
 type sharedContext struct {
+	contextEntry
+
 	// subprocess is the subprocess that this sharedContext instance belongs to.
 	subprocess *subprocess
 	// contextID is the ID corresponding to the sysmsg.ThreadContext memory slot
 	// that is used for this sharedContext.
 	contextID uint32
-	// shared is the handle to the shared memory that the sentry task goroutine
+	// shared is the handle to the shared memory that the sentry task go-routine
 	// reads from and writes to.
 	// NOTE: Using this handle directly without a getter from this function should
 	//       most likely be avoided due to concerns listed above.
 	shared *sysmsg.ThreadContext
 
-	fastPathFailedInRow uint32
-	fastPathDisabledTS  uint64
+	// sync is used by the context go-routine to wait for events from the
+	// dispatcher.
+	sync           syncevent.Waiter
+	startWaitingTS int64
+	kicked         bool
 }
+
+const (
+	// sharedContextReady indicates that a context has new events.
+	sharedContextReady = syncevent.Set(1 << iota)
+	// sharedContextKicked indicates that a new stub thread should be woken up.
+	sharedContextKicked
+	// sharedContextSlowPath indicates that a context has to be waited for in the
+	// slow path.
+	sharedContextSlowPath
+	// sharedContextDispatch indicates that a context go-routine has to start the wait loop.
+	sharedContextDispatch
+)
 
 func (s *subprocess) getSharedContext() (*sharedContext, error) {
 	s.mu.Lock()
@@ -66,6 +86,7 @@ func (s *subprocess) getSharedContext() (*sharedContext, error) {
 		shared:     s.getThreadContextFromID(id),
 	}
 	sc.shared.Init(invalidThreadID)
+	sc.sync.Init()
 
 	return &sc, nil
 }
@@ -169,4 +190,116 @@ func (sc *sharedContext) sleepOnState(state sysmsg.ContextState) {
 	if errno := sc.shared.SleepOnState(state, sc); errno != 0 {
 		panic(fmt.Sprintf("error waiting for state: %v", errno))
 	}
+}
+
+type fastPathContextQueue struct {
+
+	// list is used only from the loop method and so it isn't protected by
+	// any lock.
+	list contextList
+
+	mu sync.Mutex
+
+	// nr is the number of contexts in the queue.
+	// +checklocks:mu
+	nr int
+
+	// entrants contains new contexts that haven't been added to `list` yet.
+	// +checklocks:mu
+	entrants contextList
+}
+
+var dispatcher fastPathContextQueue
+
+// loop is processing contexts in the queue. Only one instance of it can be
+// running, because it has exclusive access to the list.
+//
+// target is the context associated with the current go-routine.
+func (q *fastPathContextQueue) loop(target *sharedContext) {
+	done := false
+	processed := 0
+	slowPath := false
+	start := cputicks()
+	for {
+		var ctx, next *sharedContext
+
+		q.mu.Lock()
+		if processed != 0 || !q.entrants.Empty() {
+			start = cputicks()
+			slowPath = false
+		}
+		q.nr -= processed
+		// Add new contexts to the list.
+		q.list.PushBackList(&q.entrants)
+		ctx = q.list.Front()
+		q.mu.Unlock()
+
+		if done {
+			if ctx != nil {
+				// Wake up the next go-routine to run the loop.
+				ctx.sync.Receiver().Notify(sharedContextDispatch)
+			}
+			break
+		}
+
+		processed = 0
+		now := cputicks()
+		for ctx = q.list.Front(); ctx != nil; ctx = next {
+			next = ctx.Next()
+
+			event := sharedContextReady
+			if ctx.state() == sysmsg.ContextStateNone {
+				if slowPath {
+					event = sharedContextSlowPath
+				} else if !ctx.kicked && uint64(now-ctx.startWaitingTS) > handshakeTimeout {
+					if ctx.isAcked() {
+						ctx.kicked = true
+						continue
+					}
+					event = sharedContextKicked
+				} else {
+					continue
+				}
+			}
+			processed++
+			q.list.Remove(ctx)
+			if ctx == target {
+				done = true
+			}
+			ctx.sync.Receiver().Notify(event)
+		}
+		if processed == 0 {
+			if uint64(cputicks()-start) > deepSleepTimeout {
+				slowPath = true
+				// Do one more run to notify all contexts.
+				// q.list has to be empty at the end.
+				continue
+			}
+			gsync.Goyield()
+		}
+	}
+}
+
+func (q *fastPathContextQueue) waitFor(ctx *sharedContext) syncevent.Set {
+	events := syncevent.Set(0)
+
+	q.mu.Lock()
+	q.entrants.PushBack(ctx)
+	q.nr++
+	if q.nr == 1 {
+		events = sharedContextDispatch
+	}
+	q.mu.Unlock()
+
+	for {
+		if events&sharedContextDispatch != 0 {
+			ctx.sync.Ack(sharedContextDispatch)
+			q.loop(ctx)
+		}
+		events = ctx.sync.WaitAndAckAll()
+		if events&sharedContextDispatch == 0 {
+			break
+		}
+	}
+	return events
 }
