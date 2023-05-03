@@ -121,6 +121,7 @@ const (
 type subprocess struct {
 	platform.NoAddressSpaceIO
 	subprocessRefs
+	subprocessEntry
 
 	// requests is used to signal creation of new threads.
 	requests chan any
@@ -690,6 +691,33 @@ func (t *thread) NotifyInterrupt() {
 	unix.Tgkill(int(t.tgid), int(t.tid), unix.Signal(platform.SignalInterrupt))
 }
 
+func (s *subprocess) incAwakeContexts() {
+	nr := atomic.AddUint32(&s.contextQueue.numAwakeContexts, 1)
+	if nr > uint32(maxSysmsgThreads) {
+		return
+	}
+	if nr == 1 {
+		dispatcher.activateSubprocess(s)
+	}
+	nr = nrMaxAwakeStubThreads.Add(1)
+	if nr > fastPathContextLimit {
+		if dispatcher.stubFastPathEnabled() {
+			dispatcher.disableStubFastPath()
+		}
+	}
+}
+
+func (s *subprocess) decAwakeContexts() {
+	nr := atomic.AddUint32(&s.contextQueue.numAwakeContexts, ^uint32(0))
+	if nr >= uint32(maxSysmsgThreads) {
+		return
+	}
+	if nr == 0 {
+		dispatcher.deactivateSubprocess(s)
+	}
+	nrMaxAwakeStubThreads.Add(^uint32(0))
+}
+
 // switchToApp is called from the main SwitchToApp entrypoint.
 //
 // This function returns true on a system call, false on a signal.
@@ -725,9 +753,14 @@ func (s *subprocess) switchToApp(c *context, ac *arch.Context64) (isSyscall bool
 		restoreFPState(nil, ctx, 0, c, ac)
 
 		// Place the context onto the context queue.
+		if ctx.sleeping {
+			ctx.sleeping = false
+			s.incAwakeContexts()
+		}
+		stubFastPathEnabled := dispatcher.stubFastPathEnabled()
 		ctx.setState(sysmsg.ContextStateNone)
-		s.contextQueue.add(ctx)
-		s.waitOnState(ctx)
+		s.contextQueue.add(ctx, stubFastPathEnabled)
+		s.waitOnState(ctx, stubFastPathEnabled)
 
 		// Check if there's been an error.
 		threadID := ctx.threadID()
@@ -788,17 +821,12 @@ func (s *subprocess) switchToApp(c *context, ac *arch.Context64) (isSyscall bool
 	return false, false, nil
 }
 
-const (
-	fastPathFailedInRowLimit = 5
-	fastPathDisabledTimeout  = 20 * 1000 * 1000 // 10ms
-)
-
-func (s *subprocess) waitOnState(ctx *sharedContext) {
+func (s *subprocess) waitOnState(ctx *sharedContext, stubFastPathEnabled bool) {
 	ctx.kicked = false
 	slowPath := false
 	start := cputicks()
 	ctx.startWaitingTS = start
-	if atomic.LoadUint32(&s.contextQueue.numActiveThreads) == 0 {
+	if !stubFastPathEnabled || atomic.LoadUint32(&s.contextQueue.numActiveThreads) == 0 {
 		ctx.kicked = s.kickSysmsgThread()
 	}
 	for curState := ctx.state(); curState == sysmsg.ContextStateNone; curState = ctx.state() {

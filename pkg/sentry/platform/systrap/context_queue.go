@@ -50,6 +50,7 @@ type contextQueue struct {
 
 	fastPathDisabledTS  uint64
 	fastPathFailedInRow uint32
+	fastPathDisabled    uint32
 	ringbuffer          [maxContextQueueEntries]uint32
 }
 
@@ -66,6 +67,7 @@ func (q *contextQueue) init() {
 	atomic.StoreUint32(&q.numActiveThreads, 0)
 	atomic.StoreUint32(&q.numActiveContexts, 0)
 	atomic.StoreUint32(&q.numAwakeContexts, 0)
+	atomic.StoreUint32(&q.fastPathDisabled, 0)
 }
 
 func (q *contextQueue) isEmpty() bool {
@@ -76,12 +78,13 @@ func (q *contextQueue) queuedContexts() uint32 {
 	return (atomic.LoadUint32(&q.end) + maxContextQueueEntries - atomic.LoadUint32(&q.start)) % maxContextQueueEntries
 }
 
-func (q *contextQueue) add(ctx *sharedContext) uint32 {
-	contextID := ctx.contextID
-	if ctx.sleeping {
-		ctx.sleeping = false
-		atomic.AddUint32(&q.numAwakeContexts, 1)
+func (q *contextQueue) add(ctx *sharedContext, stubFastPathEnabled bool) uint32 {
+	if stubFastPathEnabled {
+		q.enableFastPath()
+	} else {
+		q.disableFastPath()
 	}
+	contextID := ctx.contextID
 	atomic.AddUint32(&q.numActiveContexts, 1)
 	next := atomic.AddUint32(&q.end, 1)
 	if (next % maxContextQueueEntries) ==
@@ -92,4 +95,12 @@ func (q *contextQueue) add(ctx *sharedContext) uint32 {
 	next = (next - 1) % maxContextQueueEntries
 	atomic.StoreUint32(&q.ringbuffer[next], contextID)
 	return next // remove me
+}
+
+func (q *contextQueue) disableFastPath() {
+	atomic.StoreUint32(&q.fastPathDisabled, 1)
+}
+
+func (q *contextQueue) enableFastPath() {
+	atomic.StoreUint32(&q.fastPathDisabled, 0)
 }

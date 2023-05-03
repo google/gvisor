@@ -44,6 +44,7 @@ struct context_queue {
   uint32_t num_awake_contexts;
   uint64_t fast_path_disalbed_ts;
   uint32_t fast_path_failed_in_row;
+  uint32_t fast_path_disabled;
   uint32_t ringbuffer[MAX_CONTEXT_QUEUE_ENTRIES];
 };
 
@@ -220,6 +221,11 @@ static struct thread_context *get_context_fast(struct sysmsg *sysmsg,
       return ctx;
     }
 
+    if (__atomic_load_n(&queue->fast_path_disabled, __ATOMIC_ACQUIRE) != 0 &&
+        spinning_queue_remove_first(0)) {
+      break;
+    }
+
     nr_active_threads =
         __atomic_load_n(&queue->num_active_threads, __ATOMIC_ACQUIRE);
     nr_awake_contexts =
@@ -286,6 +292,9 @@ struct thread_context *get_context(struct sysmsg *sysmsg) {
       } else {
         fast_path_enabled = false;
       }
+    }
+    if (__atomic_load_n(&queue->fast_path_disabled, __ATOMIC_ACQUIRE) != 0) {
+      fast_path_enabled = false;
     }
 
     nr_active_threads = NR_IF_THREAD_IS_ACTIVE;
