@@ -82,6 +82,11 @@ type Boot struct {
 	// upper mount in the overlay mounts.
 	overlayFilestoreFDs intFlags
 
+	// overlayMediums contains information about how the gofer mounts have been
+	// overlaid. The first entry is for rootfs and the following entries are for
+	// bind mounts in Spec.Mounts (in the same order).
+	overlayMediums boot.OverlayMediumFlags
+
 	// stdioFDs are the fds for stdin, stdout, and stderr. They must be
 	// provided in that order.
 	stdioFDs intFlags
@@ -177,6 +182,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.Var(&b.passFDs, "pass-fd", "mapping of host to guest FDs. They must be in M:N format. M is the host and N the guest descriptor.")
 	f.IntVar(&b.execFD, "exec-fd", -1, "host file descriptor used for program execution.")
 	f.Var(&b.overlayFilestoreFDs, "overlay-filestore-fds", "FDs to the regular files that will back the tmpfs upper mount in the overlay mounts.")
+	f.Var(&b.overlayMediums, "overlay-mediums", "information about how the gofer mounts have been overlaid.")
 	f.IntVar(&b.userLogFD, "user-log-fd", 0, "file descriptor to write user logs to. 0 means no logging.")
 	f.IntVar(&b.startSyncFD, "start-sync-fd", -1, "required FD to used to synchronize sandbox startup")
 	f.IntVar(&b.mountsFD, "mounts-fd", -1, "mountsFD is the file descriptor to read list of mounts after they have been resolved (direct paths, no symlinks).")
@@ -379,6 +385,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		PassFDs:             b.passFDs.GetArray(),
 		ExecFD:              b.execFD,
 		OverlayFilestoreFDs: b.overlayFilestoreFDs.GetArray(),
+		OverlayMediums:      b.overlayMediums.GetArray(),
 		NumCPU:              b.cpuNum,
 		TotalMem:            b.totalMem,
 		UserLogFD:           b.userLogFD,

@@ -226,6 +226,11 @@ type Args struct {
 	// mount in the overlay mounts.
 	OverlayFilestoreFiles []*os.File
 
+	// OverlayMediums contains information about how the gofer mounts have been
+	// overlaid. The first entry is for rootfs and the following entries are for
+	// bind mounts in Spec.Mounts (in the same order).
+	OverlayMediums []boot.OverlayMedium
+
 	// MountsFile is a file container mount information from the spec. It's
 	// equivalent to the mounts from the spec, except that all paths have been
 	// resolved to their final absolute location.
@@ -383,7 +388,7 @@ func (s *Sandbox) StartRoot(spec *specs.Spec, conf *config.Config) error {
 }
 
 // StartSubcontainer starts running a sub-container inside the sandbox.
-func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid string, stdios, goferFiles, overlayFilestoreFiles []*os.File) error {
+func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid string, stdios, goferFiles, overlayFilestoreFiles []*os.File, overlayMediums []boot.OverlayMedium) error {
 	log.Debugf("Start sub-container %q in sandbox %q, PID: %d", cid, s.ID, s.Pid.load())
 
 	if err := s.configureStdios(conf, stdios); err != nil {
@@ -406,6 +411,7 @@ func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid s
 		Conf:                   conf,
 		CID:                    cid,
 		NumOverlayFilestoreFDs: len(overlayFilestoreFiles),
+		OverlayMediums:         overlayMediums,
 		FilePayload:            payload,
 	}
 	if err := s.call(boot.ContMgrStartSubcontainer, &args, nil); err != nil {
@@ -716,6 +722,9 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	if err := donations.OpenAndDonate("trace-fd", conf.TraceFile, profFlags); err != nil {
 		return err
 	}
+
+	// Pass overlay mediums.
+	cmd.Args = append(cmd.Args, "--overlay-mediums="+boot.ToOverlayMediumFlags(args.OverlayMediums))
 
 	// Create a socket for the control server and donate it to the sandbox.
 	controlAddress, sockFD, err := createControlSocket(conf.RootDir, s.ID)

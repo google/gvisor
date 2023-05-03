@@ -135,6 +135,11 @@ type Container struct {
 	// started.
 	OverlayConf config.Overlay2 `json:"overlayConf"`
 
+	// OverlayMediums contains information about how the gofer mounts have been
+	// overlaid. The first entry is for rootfs and the following entries are for
+	// bind mounts in Spec.Mounts (in the same order).
+	OverlayMediums []boot.OverlayMedium `json:"overlayMediums"`
+
 	//
 	// Fields below this line are not saved in the state file and will not
 	// be preserved across commands.
@@ -280,10 +285,11 @@ func New(conf *config.Config, args Args) (*Container, error) {
 			}
 		}
 		c.CompatCgroup = cgroup.CgroupJSON{Cgroup: subCgroup}
-		overlayFilestoreFiles, err := c.createOverlayFilestores()
+		overlayFilestoreFiles, overlayMediums, err := c.createOverlayFilestores()
 		if err != nil {
 			return nil, err
 		}
+		c.OverlayMediums = overlayMediums
 		if err := runInCgroup(containerCgroup, func() error {
 			ioFiles, specFile, err := c.createGoferProcess(args.Spec, conf, args.BundleDir, args.Attached)
 			if err != nil {
@@ -303,6 +309,7 @@ func New(conf *config.Config, args Args) (*Container, error) {
 				Cgroup:                containerCgroup,
 				Attached:              args.Attached,
 				OverlayFilestoreFiles: overlayFilestoreFiles,
+				OverlayMediums:        overlayMediums,
 				PassFiles:             args.PassFiles,
 				ExecFile:              args.ExecFile,
 			}
@@ -419,12 +426,11 @@ func (c *Container) Start(conf *config.Config) error {
 			return err
 		}
 	} else {
-		// Create an overlay filestore for the subcontainer if its overlay is
-		// backed by a host file.
-		overlayFilestoreFiles, err := c.createOverlayFilestores()
+		overlayFilestoreFiles, overlayMediums, err := c.createOverlayFilestores()
 		if err != nil {
 			return err
 		}
+		c.OverlayMediums = overlayMediums
 		// Join cgroup to start gofer process to ensure it's part of the cgroup from
 		// the start (and all their children processes).
 		if err := runInCgroup(c.Sandbox.CgroupJSON.Cgroup, func() error {
@@ -453,7 +459,7 @@ func (c *Container) Start(conf *config.Config) error {
 				stdios = []*os.File{os.Stdin, os.Stdout, os.Stderr}
 			}
 
-			return c.Sandbox.StartSubcontainer(c.Spec, conf, c.ID, stdios, goferFiles, overlayFilestoreFiles)
+			return c.Sandbox.StartSubcontainer(c.Spec, conf, c.ID, stdios, goferFiles, overlayFilestoreFiles, overlayMediums)
 		}); err != nil {
 			return err
 		}
@@ -785,31 +791,15 @@ func (c *Container) Destroy() error {
 		errs = append(errs, err.Error())
 	}
 
-	if c.OverlayConf.IsBackedBySelf() {
-		// Clean up overlay filestore files created in their respective mounts.
-		c.forEachOverlayMount(func(mountSrc string) error {
-			// Persevere through errors. Always return nil. A non-nil error will halt
-			// forEachOverlayMount(). But we want to clean up as much as we can.
-			mountSrcInfo, err := os.Stat(mountSrc)
-			if err != nil {
-				err = fmt.Errorf("failed to stat mount %q to see if it were a dirctory: %v", mountSrc, err)
-				log.Warningf("%v", err)
-				errs = append(errs, err.Error())
-				return nil
-			}
-			// mountSrc only contains the filestore file if it is a directory.
-			if !mountSrcInfo.IsDir() {
-				return nil
-			}
-			filestorePath := boot.SelfOverlayFilestorePath(mountSrc, c.sandboxID())
-			if err := os.Remove(filestorePath); err != nil {
-				err = fmt.Errorf("failed to delete filestore file %q: %v", filestorePath, err)
-				log.Warningf("%v", err)
-				errs = append(errs, err.Error())
-			}
-			return nil
-		})
-	}
+	// Clean up overlay filestore files created in their respective mounts.
+	c.forEachSelfOverlay(func(mountSrc string) {
+		filestorePath := boot.SelfOverlayFilestorePath(mountSrc, c.sandboxID())
+		if err := os.Remove(filestorePath); err != nil {
+			err = fmt.Errorf("failed to delete filestore file %q: %v", filestorePath, err)
+			log.Warningf("%v", err)
+			errs = append(errs, err.Error())
+		}
+	})
 
 	c.changeStatus(Stopped)
 
@@ -848,129 +838,136 @@ func (c *Container) sandboxID() string {
 	return c.Saver.ID.SandboxID
 }
 
+func (c *Container) forEachSelfOverlay(fn func(mountSrc string)) {
+	if c.OverlayMediums == nil {
+		// Sub container not started? Skip.
+		return
+	}
+	if c.OverlayMediums[0] == boot.SelfMedium {
+		fn(c.Spec.Root.Path)
+	}
+	goferMntIdx := 1 // First index is for rootfs.
+	for i := range c.Spec.Mounts {
+		if !specutils.IsGoferMount(c.Spec.Mounts[i]) {
+			continue
+		}
+		if c.OverlayMediums[goferMntIdx] == boot.SelfMedium {
+			fn(c.Spec.Mounts[i].Source)
+		}
+		goferMntIdx++
+	}
+}
+
 // createOverlayFilestores creates the regular files that will back the tmpfs
-// upper mount for overlay mounts. It may return (nil, nil) if overlay is not
-// configured to be backed by host files.
-func (c *Container) createOverlayFilestores() ([]*os.File, error) {
-	if !c.OverlayConf.IsBackedByHostFile() {
-		return nil, nil
-	}
-	var (
-		filestoreFiles []*os.File
-		err            error
-	)
-	if c.OverlayConf.IsBackedBySelf() {
-		filestoreFiles, err = c.createOverlayFilestoreInSelf()
-	} else {
-		filestoreFiles, err = c.createOverlayFilestoreInDir()
-	}
+// upper mount for overlay mounts. It also returns information about the
+// overlay medium used for each bind mount.
+func (c *Container) createOverlayFilestores() ([]*os.File, []boot.OverlayMedium, error) {
+	var filestoreFiles []*os.File
+	var overlayMediums []boot.OverlayMedium
+
+	// Handle root mount first.
+	shouldOverlay := c.OverlayConf.RootMount && !c.Spec.Root.Readonly
+	filestore, medium, err := c.createOverlayFilestore(c.Spec.Root.Path, shouldOverlay)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	for _, f := range filestoreFiles {
+	if filestore != nil {
+		filestoreFiles = append(filestoreFiles, filestore)
+	}
+	overlayMediums = append(overlayMediums, medium)
+
+	// Handle bind mounts.
+	for i := range c.Spec.Mounts {
+		if !specutils.IsGoferMount(c.Spec.Mounts[i]) {
+			continue
+		}
+		shouldOverlay := c.OverlayConf.SubMounts && !specutils.IsReadonlyMount(c.Spec.Mounts[i].Options)
+		filestore, medium, err := c.createOverlayFilestore(c.Spec.Mounts[i].Source, shouldOverlay)
+		if err != nil {
+			return nil, nil, err
+		}
+		if filestore != nil {
+			filestoreFiles = append(filestoreFiles, filestore)
+		}
+		overlayMediums = append(overlayMediums, medium)
+	}
+	for _, filestore := range filestoreFiles {
 		// Perform this work around outside the sandbox. The sandbox may already be
 		// running with seccomp filters that do not allow this.
-		pgalloc.IMAWorkAroundForMemFile(f.Fd())
+		pgalloc.IMAWorkAroundForMemFile(filestore.Fd())
 	}
-	return filestoreFiles, nil
+	return filestoreFiles, overlayMediums, nil
 }
 
-// Precondition: Overlay2.IsBackedByHostFile() && Overlay2.IsBackedBySelf().
-func (c *Container) createOverlayFilestoreInSelf() ([]*os.File, error) {
-	var filestoreFiles []*os.File
-	err := c.forEachOverlayMount(func(mountSrc string) error {
-		mountSrcInfo, err := os.Stat(mountSrc)
-		if err != nil {
-			return fmt.Errorf("failed to stat mount %q to see if it were a dirctory: %v", mountSrc, err)
-		}
-		if !mountSrcInfo.IsDir() {
-			log.Warningf("overlay2 self medium is only supported for directory mounts, but mount %q is not a directory, falling back to memory", mountSrc)
-			return nil
-		}
-		// Create the self overlay filestore file.
-		filestorePath := boot.SelfOverlayFilestorePath(mountSrc, c.sandboxID())
-		filestoreFD, err := unix.Open(filestorePath, unix.O_RDWR|unix.O_CREAT|unix.O_EXCL, 0666)
-		if err != nil {
-			if err == unix.EEXIST {
-				// Note that if the same submount is mounted multiple times within the
-				// same sandbox, then the overlay option doesn't work correctly.
-				// Because each overlay mount is independent and changes to one are not
-				// visible to the other. Given "overlay on repeated submounts" is
-				// already broken, we don't support such a scenario with the self
-				// medium. The filestore file will already exist for such a case.
-				return fmt.Errorf("%q mount source already has a filestore file at %q; repeated submounts are not suppported with self medium", mountSrc, filestorePath)
-			}
-			return fmt.Errorf("failed to create filestore file inside %q: %v", mountSrc, err)
-		}
-		// Filestore in self should be a named path because it needs to be
-		// discoverable via path traversal so that k8s can scan the filesystem
-		// and apply any limits appropriately (like local ephemeral storage
-		// limits). So don't delte it. These files will be unlinked when the
-		// container is destroyed. This makes self medium appropriate for k8s.
-		filestoreFiles = append(filestoreFiles, os.NewFile(uintptr(filestoreFD), filestorePath))
-		return nil
-	})
-	return filestoreFiles, err
+func (c *Container) createOverlayFilestore(mountSrc string, shouldOverlay bool) (*os.File, boot.OverlayMedium, error) {
+	switch {
+	case !shouldOverlay:
+		return nil, boot.NoOverlay, nil
+	case c.OverlayConf.IsBackedByMemory():
+		return nil, boot.MemoryMedium, nil
+	case c.OverlayConf.IsBackedBySelf():
+		return c.createOverlayFilestoreInSelf(mountSrc)
+	default:
+		return c.createOverlayFilestoreInDir()
+	}
 }
 
-// Precondition: Overlay2.IsBackedByHostFile() && !Overlay2.IsBackedBySelf().
-func (c *Container) createOverlayFilestoreInDir() ([]*os.File, error) {
+func (c *Container) createOverlayFilestoreInSelf(mountSrc string) (*os.File, boot.OverlayMedium, error) {
+	mountSrcInfo, err := os.Stat(mountSrc)
+	if err != nil {
+		return nil, boot.NoOverlay, fmt.Errorf("failed to stat mount %q to see if it were a dirctory: %v", mountSrc, err)
+	}
+	if !mountSrcInfo.IsDir() {
+		log.Warningf("overlay2 self medium is only supported for directory mounts, but mount %q is not a directory, falling back to memory", mountSrc)
+		return nil, boot.MemoryMedium, nil
+	}
+	// Create the self overlay filestore file.
+	filestorePath := boot.SelfOverlayFilestorePath(mountSrc, c.sandboxID())
+	filestoreFD, err := unix.Open(filestorePath, unix.O_RDWR|unix.O_CREAT|unix.O_EXCL|unix.O_CLOEXEC, 0666)
+	if err != nil {
+		if err == unix.EEXIST {
+			// Note that if the same submount is mounted multiple times within the
+			// same sandbox, then the overlay option doesn't work correctly.
+			// Because each overlay mount is independent and changes to one are not
+			// visible to the other. Given "overlay on repeated submounts" is
+			// already broken, we don't support such a scenario with the self
+			// medium. The filestore file will already exist for such a case.
+			return nil, boot.NoOverlay, fmt.Errorf("%q mount source already has a filestore file at %q; repeated submounts are not suppported with self medium", mountSrc, filestorePath)
+		}
+		return nil, boot.NoOverlay, fmt.Errorf("failed to create filestore file inside %q: %v", mountSrc, err)
+	}
+	log.Debugf("Created overlay filestore file at %q for mount source %q", filestorePath, mountSrc)
+	// Filestore in self should be a named path because it needs to be
+	// discoverable via path traversal so that k8s can scan the filesystem
+	// and apply any limits appropriately (like local ephemeral storage
+	// limits). So don't delete it. These files will be unlinked when the
+	// container is destroyed. This makes self medium appropriate for k8s.
+	return os.NewFile(uintptr(filestoreFD), filestorePath), boot.SelfMedium, nil
+}
+
+func (c *Container) createOverlayFilestoreInDir() (*os.File, boot.OverlayMedium, error) {
 	filestoreDir := c.OverlayConf.HostFileDir()
 	fileInfo, err := os.Stat(filestoreDir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to stat overlay filestore directory %q: %v", filestoreDir, err)
+		return nil, boot.NoOverlay, fmt.Errorf("failed to stat overlay filestore directory %q: %v", filestoreDir, err)
 	}
 	if !fileInfo.IsDir() {
-		return nil, fmt.Errorf("overlay2 flag should specify an existing directory")
+		return nil, boot.NoOverlay, fmt.Errorf("overlay2 flag should specify an existing directory")
 	}
-	var filestoreFiles []*os.File
-	if err := c.forEachOverlayMount(func(_ string) error {
-		// Create an unnamed temporary file in filestore directory which will be
-		// deleted when the last FD on it is closed. We don't use O_TMPFILE because
-		// it is not supported on all filesystems. So we simulate it by creating a
-		// named file and then immediately unlinking it while keeping an FD on it.
-		// This file will be deleted when the container exits.
-		filestoreFile, err := os.CreateTemp(filestoreDir, "runsc-overlay-filestore-")
-		if err != nil {
-			return fmt.Errorf("failed to create a temporary file inside %q: %v", filestoreDir, err)
-		}
-		if err := unix.Unlink(filestoreFile.Name()); err != nil {
-			return fmt.Errorf("failed to unlink temporary file %q: %v", filestoreFile.Name(), err)
-		}
-		filestoreFiles = append(filestoreFiles, filestoreFile)
-		return nil
-	}); err != nil {
-		return nil, err
+	// Create an unnamed temporary file in filestore directory which will be
+	// deleted when the last FD on it is closed. We don't use O_TMPFILE because
+	// it is not supported on all filesystems. So we simulate it by creating a
+	// named file and then immediately unlinking it while keeping an FD on it.
+	// This file will be deleted when the container exits.
+	filestoreFile, err := os.CreateTemp(filestoreDir, "runsc-overlay-filestore-")
+	if err != nil {
+		return nil, boot.NoOverlay, fmt.Errorf("failed to create a temporary file inside %q: %v", filestoreDir, err)
 	}
-	return filestoreFiles, nil
-}
-
-// forEachOverlayMount calls fn on all mounts that runsc/boot/vfs.go will
-// configure filestore-based overlays on. See containerMounter.configureOverlay().
-//
-// Precondition: Overlay2.IsBackedByHostFile().
-func (c *Container) forEachOverlayMount(fn func(srcDir string) error) error {
-	if c.OverlayConf.RootMount && !c.Spec.Root.Readonly {
-		if err := fn(c.Spec.Root.Path); err != nil {
-			return err
-		}
+	if err := unix.Unlink(filestoreFile.Name()); err != nil {
+		return nil, boot.NoOverlay, fmt.Errorf("failed to unlink temporary file %q: %v", filestoreFile.Name(), err)
 	}
-	if !c.OverlayConf.SubMounts {
-		return nil
-	}
-	for i := range c.Spec.Mounts {
-		if c.Spec.Mounts[i].Type != boot.Bind {
-			continue
-		}
-		if boot.ParseMountOptions(c.Spec.Mounts[i].Options).ReadOnly {
-			continue
-		}
-		mountSrc := c.Spec.Mounts[i].Source
-		if err := fn(mountSrc); err != nil {
-			return err
-		}
-	}
-	return nil
+	log.Debugf("Created an unnamed overlay filestore file at %q", filestoreDir)
+	return filestoreFile, boot.AnonDirMedium, nil
 }
 
 // saveLocked saves the container metadata to a file.
@@ -1105,6 +1102,7 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 	nextFD := donations.Transfer(cmd, 3)
 
 	cmd.Args = append(cmd.Args, "gofer", "--bundle", bundleDir)
+	cmd.Args = append(cmd.Args, "--overlay-mediums="+boot.ToOverlayMediumFlags(c.OverlayMediums))
 
 	// Open the spec file to donate to the sandbox.
 	specFile, err := specutils.OpenSpec(bundleDir)
