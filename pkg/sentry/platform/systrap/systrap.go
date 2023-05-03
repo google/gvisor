@@ -52,7 +52,6 @@ import (
 	"fmt"
 	"os"
 	"sync"
-	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	pkgcontext "gvisor.dev/gvisor/pkg/context"
@@ -295,10 +294,9 @@ func (c *context) PrepareSleep() {
 		if ctx == nil {
 			return
 		}
-		s := ctx.subprocess
 		if !ctx.sleeping {
 			ctx.sleeping = true
-			atomic.AddUint32(&s.contextQueue.numAwakeContexts, ^uint32(0))
+			ctx.subprocess.decAwakeContexts()
 		}
 		return
 	} else if c.sysmsgThread != nil {
