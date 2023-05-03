@@ -34,7 +34,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/sysmsg"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/usertrap"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
-	gsync "gvisor.dev/gvisor/pkg/sync"
 )
 
 var (
@@ -795,60 +794,41 @@ const (
 )
 
 func (s *subprocess) waitOnState(ctx *sharedContext) {
-	kicked := false
+	ctx.kicked = false
 	slowPath := false
 	start := cputicks()
-	handshake := false
+	ctx.startWaitingTS = start
 	if atomic.LoadUint32(&s.contextQueue.numActiveThreads) == 0 {
-		kicked = s.kickSysmsgThread()
-	}
-	fastPathEnabled := true
-	if ctx.fastPathDisabledTS != 0 {
-		if uint64(cputicks())-ctx.fastPathDisabledTS < fastPathDisabledTimeout {
-			fastPathEnabled = false
-		} else {
-			ctx.fastPathFailedInRow = 0
-			ctx.fastPathDisabledTS = 0
-		}
+		ctx.kicked = s.kickSysmsgThread()
 	}
 	for curState := ctx.state(); curState == sysmsg.ContextStateNone; curState = ctx.state() {
 		if !slowPath {
-			delta := uint64(cputicks() - start)
-			if !handshake {
-				if ctx.isAcked() {
-					handshake = true
+			events := dispatcher.waitFor(ctx)
+			if events&sharedContextKicked != 0 {
+				if ctx.kicked {
 					continue
 				}
-				if !kicked && delta > handshakeTimeout {
-					kicked = s.kickSysmsgThread()
+				if ctx.isAcked() {
+					ctx.kicked = true
+					continue
 				}
+				s.kickSysmsgThread()
+				ctx.kicked = true
+				continue
 			}
-			if !fastPathEnabled || delta > deepSleepTimeout {
+			if events&sharedContextSlowPath != 0 {
 				ctx.disableSentryFastPath()
 				slowPath = true
 				continue
 			}
-
-			gsync.Goyield()
 		} else {
 			// If the context already received a handshake then it knows it's being
 			// worked on.
-			if !kicked && !handshake {
-				kicked = s.kickSysmsgThread()
+			if !ctx.kicked && !ctx.isAcked() {
+				ctx.kicked = s.kickSysmsgThread()
 			}
 
 			ctx.sleepOnState(curState)
-		}
-	}
-
-	if fastPathEnabled {
-		if slowPath {
-			ctx.fastPathFailedInRow++
-			if ctx.fastPathFailedInRow > fastPathFailedInRowLimit {
-				ctx.fastPathDisabledTS = uint64(cputicks())
-			}
-		} else {
-			ctx.fastPathFailedInRow = 0
 		}
 	}
 
