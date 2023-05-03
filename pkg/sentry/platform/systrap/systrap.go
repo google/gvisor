@@ -337,6 +337,8 @@ func New() (*Systrap, error) {
 		source.DecRef(nil)
 
 		globalPool.source = source
+
+		initSysmsgThreadPriority()
 	})
 
 	return &Systrap{memoryFile: mf}, nil
