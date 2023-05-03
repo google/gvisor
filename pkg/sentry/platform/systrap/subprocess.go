@@ -1005,6 +1005,17 @@ func (s *subprocess) getSysmsgThread(tregs *arch.Registers, c *context, ac *arch
 	return s.createSysmsgThread(tregs, c, ac)
 }
 
+var sysmsgThreadPriority int
+
+func initSysmsgThreadPriority() {
+	prio, err := unix.Getpriority(unix.PRIO_PROCESS, 0)
+	if err != nil {
+		panic("unable to get current scheduling priority")
+	}
+	// Sysmsg threads are executed with a priority one lower than the Sentry.
+	sysmsgThreadPriority = 20 - prio + 1
+}
+
 // createSysmsgThread creates a new sysmsg thread.
 // If contextDecouplingExp=false, the thread starts working on the given context.
 // Otherwise the given function parameters are not used, and the thread starts
@@ -1107,6 +1118,10 @@ func (s *subprocess) createSysmsgThread(tregs *arch.Registers, c *context, ac *a
 	sysThread.msg.Syshandler = uint64(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_syshandler))
 
 	sysThread.msg.State.Set(sysmsg.ThreadStateInitializing)
+
+	if err := unix.Setpriority(unix.PRIO_PROCESS, int(p.tid), sysmsgThreadPriority); err != nil {
+		log.Warningf("Unable to change priority of a stub thread: %s", err)
+	}
 
 	// Install a pre-compiled seccomp rules for the BPF process.
 	_, err = p.syscallIgnoreInterrupt(&p.initRegs, unix.SYS_PRCTL,
