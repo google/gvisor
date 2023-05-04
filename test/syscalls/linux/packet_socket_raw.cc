@@ -662,6 +662,57 @@ TEST_P(RawPacketMsgSizeTest, SendTooLong) {
               SyscallFailsWithErrno(EMSGSIZE));
 }
 
+// Assert on the behavior for sending a short frame on a packet socket.
+TEST(BasicRawPacketTest, ShortFrameLoopedBack) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HavePacketSocketCapability()));
+
+  FileDescriptor socket =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_PACKET, SOCK_RAW, 0));
+  const struct sockaddr_ll bind_addr = {
+      .sll_family = AF_PACKET,
+      .sll_protocol = htons(ETH_P_ALL),
+      .sll_ifindex = ASSERT_NO_ERRNO_AND_VALUE(GetLoopbackIndex()),
+      .sll_halen = ETH_ALEN,
+  };
+  ASSERT_THAT(bind(socket.get(), reinterpret_cast<const sockaddr*>(&bind_addr),
+                   sizeof(bind_addr)),
+              SyscallSucceeds());
+
+  constexpr const size_t kTruncatedEthLen = ETH_ALEN;
+  static_assert(sizeof(ethhdr) > kTruncatedEthLen);
+
+  const char send_buf[sizeof(ethhdr) + sizeof(iphdr) + sizeof(udphdr)] = {0xAA};
+
+  // Set up the destination physical address. We're sending to the loopback
+  // device, so the address is all 0s.
+  const struct sockaddr_ll dest = {
+      .sll_family = AF_PACKET,
+      .sll_protocol = htons(ETH_P_IP),
+      .sll_halen = ETH_ALEN,
+  };
+
+  // Send the short frame.
+  ASSERT_THAT(
+      sendto(socket.get(), send_buf, kTruncatedEthLen, 0,
+             reinterpret_cast<const struct sockaddr*>(&dest), sizeof(dest)),
+      SyscallSucceedsWithValue(kTruncatedEthLen));
+
+  // The packet should show up on the socket, but only as a received packet, not
+  // as an outbound packet.
+  char recv_buf[sizeof(send_buf) + 1];
+  struct sockaddr_ll src = {};
+  socklen_t src_len = sizeof(src);
+  ASSERT_THAT(recvfrom(socket.get(), recv_buf, sizeof(recv_buf), 0,
+                       reinterpret_cast<struct sockaddr*>(&src), &src_len),
+              SyscallSucceedsWithValue(kTruncatedEthLen));
+  EXPECT_EQ(std::string_view(recv_buf, kTruncatedEthLen),
+            std::string_view(send_buf, kTruncatedEthLen));
+  EXPECT_EQ(src.sll_halen, ETH_ALEN);
+  EXPECT_EQ(src.sll_ifindex, GetLoopbackIndex().ValueOrDie());
+  EXPECT_EQ(src.sll_protocol, htons(ETH_P_IP));
+  EXPECT_EQ(src.sll_hatype, PACKET_HOST);
+}
+
 // TODO(https://fxbug.dev/76957): Run this test on Fuchsia once splice is
 // available.
 #ifndef __Fuchsia__
