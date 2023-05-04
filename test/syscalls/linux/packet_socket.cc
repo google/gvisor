@@ -142,6 +142,105 @@ TEST_P(PacketSocketTest, GetSockName) {
   }
 }
 
+// Expects that a packet can be read from the given packet socket that contains
+// a UDP packet whose source and destination port match the one in the given
+// address, and whose payload matches the expected payload.
+//
+// On success, writes the link-layer source address for the packet into
+// the provided output parameter (if it is non-null).
+void ExpectReceiveOnPacketSocket(FileDescriptor& socket,
+                                 bool ethernet_header_included,
+                                 const sockaddr_in& expected_udp_addr,
+                                 const uint64_t expected_udp_payload,
+                                 sockaddr_ll* src_out = nullptr) {
+  // Declare each section of the packet as a separate stack variable in order
+  // to ensure all sections are 8-byte aligned.
+  ethhdr eth;
+  iphdr ip;
+  udphdr udp;
+  uint64_t payload;
+  char unused;
+
+  constexpr size_t kStorageLen =
+      sizeof(eth) + sizeof(ip) + sizeof(udp) + sizeof(payload) + sizeof(unused);
+  char storage[kStorageLen];
+
+  sockaddr_ll src;
+  socklen_t src_len = sizeof(src);
+
+  char* buf = storage;
+  size_t buflen = kStorageLen;
+  auto advance_buf = [&buf, &buflen](size_t amount) {
+    buf += amount;
+    buflen -= amount;
+  };
+  size_t expected_read_len = buflen - sizeof(unused);
+  if (!ethernet_header_included) {
+    advance_buf(sizeof(eth));
+    expected_read_len -= sizeof(eth);
+  }
+
+  iovec received_iov = {
+      .iov_base = buf,
+      .iov_len = buflen,
+  };
+  msghdr received_msg = {
+      .msg_name = &src,
+      .msg_namelen = src_len,
+      .msg_iov = &received_iov,
+      .msg_iovlen = 1,
+  };
+
+  ASSERT_THAT(RecvMsgTimeout(socket.get(), &received_msg, 1 /*timeout*/),
+              IsPosixErrorOkAndHolds(expected_read_len));
+
+  // sockaddr_ll ends with an 8 byte physical address field, but ethernet
+  // addresses only use 6 bytes. Linux used to return sizeof(sockaddr_ll)-2
+  // here, but returns sizeof(sockaddr_ll) since
+  // https://github.com/torvalds/linux/commit/b2cf86e1563e33a14a1c69b3e508d15dc12f804c.
+  ASSERT_THAT(received_msg.msg_namelen,
+              AnyOf(Eq(sizeof(src)),
+                    Eq(sizeof(src) - sizeof(src.sll_addr) + ETH_ALEN)));
+  EXPECT_EQ(src.sll_family, AF_PACKET);
+  EXPECT_EQ(src.sll_ifindex, ASSERT_NO_ERRNO_AND_VALUE(GetLoopbackIndex()));
+  EXPECT_EQ(src.sll_halen, ETH_ALEN);
+  EXPECT_EQ(ntohs(src.sll_protocol), ETH_P_IP);
+  // This came from the loopback device, so the address is all 0s.
+  constexpr uint8_t allZeroesMAC[ETH_ALEN] = {};
+  EXPECT_EQ(memcmp(src.sll_addr, allZeroesMAC, sizeof(allZeroesMAC)), 0);
+
+  if (ethernet_header_included) {
+    memcpy(&eth, buf, sizeof(eth));
+    EXPECT_EQ(memcmp(eth.h_dest, allZeroesMAC, sizeof(allZeroesMAC)), 0);
+    EXPECT_EQ(memcmp(eth.h_source, allZeroesMAC, sizeof(allZeroesMAC)), 0);
+    EXPECT_EQ(ntohs(eth.h_proto), ETH_P_IP);
+    advance_buf(sizeof(eth));
+  }
+
+  // IHL hold the size of the header in 4 byte units.
+  memcpy(&ip, buf, sizeof(ip));
+  EXPECT_EQ(ip.ihl, sizeof(iphdr) / 4);
+  EXPECT_EQ(ip.version, IPVERSION);
+  const uint16_t ip_pkt_size = sizeof(ip) + sizeof(udp) + sizeof(payload);
+  EXPECT_EQ(ntohs(ip.tot_len), ip_pkt_size);
+  EXPECT_EQ(ip.protocol, IPPROTO_UDP);
+  EXPECT_EQ(ntohl(ip.daddr), INADDR_LOOPBACK);
+  EXPECT_EQ(ntohl(ip.saddr), INADDR_LOOPBACK);
+  advance_buf(sizeof(ip));
+
+  memcpy(&udp, buf, sizeof(udp));
+  EXPECT_EQ(udp.source, expected_udp_addr.sin_port);
+  EXPECT_EQ(udp.dest, expected_udp_addr.sin_port);
+  EXPECT_EQ(ntohs(udp.len), ip_pkt_size - sizeof(ip));
+  advance_buf(sizeof(udp));
+
+  memcpy(&payload, buf, sizeof(payload));
+  EXPECT_EQ(payload, expected_udp_payload);
+  if (src_out) {
+    *src_out = src;
+  }
+}
+
 TEST_P(PacketSocketTest, RebindProtocol) {
   const bool kEthHdrIncluded = GetParam() == SOCK_RAW;
 
@@ -199,92 +298,6 @@ TEST_P(PacketSocketTest, RebindProtocol) {
                 SyscallSucceeds());
   };
 
-  auto test_recv = [&, this](const uint64_t v) {
-    // Declare each section of the packet as a separate stack variable in order
-    // to ensure all sections are 8-byte aligned.
-    ethhdr eth;
-    iphdr ip;
-    udphdr udp;
-    uint64_t payload;
-    char unused;
-
-    constexpr size_t kStorageLen = sizeof(eth) + sizeof(ip) + sizeof(udp) +
-                                   sizeof(payload) + sizeof(unused);
-    char storage[kStorageLen];
-
-    sockaddr_ll src;
-    socklen_t src_len = sizeof(src);
-
-    char* buf = storage;
-    size_t buflen = kStorageLen;
-    auto advance_buf = [&buf, &buflen](size_t amount) {
-      buf += amount;
-      buflen -= amount;
-    };
-    size_t expected_read_len = buflen - sizeof(unused);
-    if (!kEthHdrIncluded) {
-      advance_buf(sizeof(eth));
-      expected_read_len -= sizeof(eth);
-    }
-
-    iovec received_iov = {
-        .iov_base = buf,
-        .iov_len = buflen,
-    };
-    msghdr received_msg = {
-        .msg_name = &src,
-        .msg_namelen = src_len,
-        .msg_iov = &received_iov,
-        .msg_iovlen = 1,
-    };
-
-    ASSERT_THAT(RecvMsgTimeout(socket_.get(), &received_msg, 1 /*timeout*/),
-                IsPosixErrorOkAndHolds(expected_read_len));
-
-    // sockaddr_ll ends with an 8 byte physical address field, but ethernet
-    // addresses only use 6 bytes. Linux used to return sizeof(sockaddr_ll)-2
-    // here, but returns sizeof(sockaddr_ll) since
-    // https://github.com/torvalds/linux/commit/b2cf86e1563e33a14a1c69b3e508d15dc12f804c.
-    ASSERT_THAT(received_msg.msg_namelen,
-                AnyOf(Eq(sizeof(src)),
-                      Eq(sizeof(src) - sizeof(src.sll_addr) + ETH_ALEN)));
-    EXPECT_EQ(src.sll_family, AF_PACKET);
-    EXPECT_EQ(src.sll_ifindex, loopback_index);
-    EXPECT_EQ(src.sll_halen, ETH_ALEN);
-    EXPECT_EQ(ntohs(src.sll_protocol), ETH_P_IP);
-    // This came from the loopback device, so the address is all 0s.
-    constexpr uint8_t allZeroesMAC[ETH_ALEN] = {};
-    EXPECT_EQ(memcmp(src.sll_addr, allZeroesMAC, sizeof(allZeroesMAC)), 0);
-
-    if (kEthHdrIncluded) {
-      memcpy(&eth, buf, sizeof(eth));
-      EXPECT_EQ(memcmp(eth.h_dest, allZeroesMAC, sizeof(allZeroesMAC)), 0);
-      EXPECT_EQ(memcmp(eth.h_source, allZeroesMAC, sizeof(allZeroesMAC)), 0);
-      EXPECT_EQ(ntohs(eth.h_proto), ETH_P_IP);
-      advance_buf(sizeof(eth));
-    }
-
-    // IHL hold the size of the header in 4 byte units.
-    memcpy(&ip, buf, sizeof(ip));
-    EXPECT_EQ(ip.ihl, sizeof(iphdr) / 4);
-    EXPECT_EQ(ip.version, IPVERSION);
-    const uint16_t ip_pkt_size = sizeof(ip) + sizeof(udp) + sizeof(payload);
-    EXPECT_EQ(ntohs(ip.tot_len), ip_pkt_size);
-    EXPECT_EQ(ip.protocol, IPPROTO_UDP);
-    EXPECT_EQ(ntohl(ip.daddr), INADDR_LOOPBACK);
-    EXPECT_EQ(ntohl(ip.saddr), INADDR_LOOPBACK);
-    advance_buf(sizeof(ip));
-
-    memcpy(&udp, buf, sizeof(udp));
-    EXPECT_EQ(udp.source, udp_bind_addr.sin_port);
-    EXPECT_EQ(udp.dest, udp_bind_addr.sin_port);
-    EXPECT_EQ(ntohs(udp.len), ip_pkt_size - sizeof(ip));
-    advance_buf(sizeof(udp));
-
-    memcpy(&payload, buf, sizeof(payload));
-    EXPECT_EQ(payload, v);
-  };
-
   // The packet socket is not bound to IPv4 so we should not receive the sent
   // message.
   uint64_t counter = 0;
@@ -293,7 +306,8 @@ TEST_P(PacketSocketTest, RebindProtocol) {
   // Bind to IPv4 and expect to receive the UDP packet we send after binding.
   ASSERT_NO_FATAL_FAILURE(bind_to_network_protocol(ETH_P_IP));
   ASSERT_NO_FATAL_FAILURE(send_udp_message(++counter));
-  ASSERT_NO_FATAL_FAILURE(test_recv(counter));
+  ASSERT_NO_FATAL_FAILURE(ExpectReceiveOnPacketSocket(socket_, kEthHdrIncluded,
+                                                      udp_bind_addr, counter));
 
   // Bind the packet socket to a random protocol.
   ASSERT_NO_FATAL_FAILURE(bind_to_network_protocol(255));
@@ -303,12 +317,78 @@ TEST_P(PacketSocketTest, RebindProtocol) {
   // back to IPv4.
   ASSERT_NO_FATAL_FAILURE(bind_to_network_protocol(ETH_P_IP));
   ASSERT_NO_FATAL_FAILURE(send_udp_message(++counter));
-  ASSERT_NO_FATAL_FAILURE(test_recv(counter));
+  ASSERT_NO_FATAL_FAILURE(ExpectReceiveOnPacketSocket(socket_, kEthHdrIncluded,
+                                                      udp_bind_addr, counter));
 
   // A zero valued protocol number should not change the bound network protocol.
   ASSERT_NO_FATAL_FAILURE(bind_to_network_protocol(0));
   ASSERT_NO_FATAL_FAILURE(send_udp_message(++counter));
-  ASSERT_NO_FATAL_FAILURE(test_recv(counter));
+  ASSERT_NO_FATAL_FAILURE(ExpectReceiveOnPacketSocket(socket_, kEthHdrIncluded,
+                                                      udp_bind_addr, counter));
+}
+
+// Receive sent frames when bound to ETH_P_ALL.
+TEST_P(PacketSocketTest, ReceiveSentBoundToProtocolAll) {
+  // If a packet socket is bound to the loopback interface with protocol
+  // ETH_P_ALL, it should receive a frame that is sent twice: once on sending
+  // and again on reception.
+
+  sockaddr_in udp_bind_addr = {
+      .sin_family = AF_INET,
+      .sin_addr = {.s_addr = htonl(INADDR_LOOPBACK)},
+  };
+
+  FileDescriptor udp_sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
+  {
+    // Bind the socket so that we have something to send packets to.
+    //
+    // If we didn't do this, the UDP packets we send will be responded to with
+    // ICMP Destination Port Unreachable errors.
+    ASSERT_THAT(
+        bind(udp_sock.get(), reinterpret_cast<const sockaddr*>(&udp_bind_addr),
+             sizeof(udp_bind_addr)),
+        SyscallSucceeds());
+    socklen_t addrlen = sizeof(udp_bind_addr);
+    ASSERT_THAT(
+        getsockname(udp_sock.get(), reinterpret_cast<sockaddr*>(&udp_bind_addr),
+                    &addrlen),
+        SyscallSucceeds());
+    ASSERT_THAT(addrlen, sizeof(udp_bind_addr));
+    ASSERT_NE(udp_bind_addr.sin_port, 0);
+  }
+
+  // Bind the packet socket to the loopback interface with ETH_P_ALL.
+  const struct sockaddr_ll bind_addr = {
+      .sll_family = AF_PACKET,
+      .sll_protocol = htons(ETH_P_ALL),
+      .sll_ifindex = ASSERT_NO_ERRNO_AND_VALUE(GetLoopbackIndex()),
+      .sll_halen = ETH_ALEN,
+  };
+  ASSERT_THAT(bind(socket_.get(), reinterpret_cast<const sockaddr*>(&bind_addr),
+                   sizeof(bind_addr)),
+              SyscallSucceeds());
+
+  const uint64_t kContents = 0xAAAAAAAAAAAAAAAA;
+
+  // Send to the same UDP socket so we don't interfere with other tests.
+  ASSERT_THAT(sendto(udp_sock.get(), &kContents, sizeof(kContents), 0,
+                     reinterpret_cast<const struct sockaddr*>(&udp_bind_addr),
+                     sizeof(udp_bind_addr)),
+              SyscallSucceeds());
+
+  const bool kExpectEthernetHeader = GetParam() == SOCK_RAW;
+  sockaddr_ll src_addr;
+
+  // Receive the outgoing frame.
+  ExpectReceiveOnPacketSocket(socket_, kExpectEthernetHeader, udp_bind_addr,
+                              kContents, &src_addr);
+  ASSERT_EQ(src_addr.sll_pkttype, PACKET_OUTGOING);
+
+  // Then receive the incoming frame.
+  ExpectReceiveOnPacketSocket(socket_, kExpectEthernetHeader, udp_bind_addr,
+                              kContents, &src_addr);
+  ASSERT_EQ(src_addr.sll_pkttype, PACKET_HOST);
 }
 
 INSTANTIATE_TEST_SUITE_P(AllPacketSocketTests, PacketSocketTest,
