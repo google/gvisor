@@ -452,14 +452,10 @@ func (b *Boot) prepareArgs(exclude ...string) []string {
 			}
 		}
 		args = append(args, arg)
-		// Strategically add parameters after the command and before the container
-		// ID at the end.
+		// Some parameters are not already part of os.Args because they are
+		// solely configured by Boot.Execute(). Strategically add these parameters
+		// after the command and before the container ID at the end.
 		if arg == "boot" {
-			if b.attached {
-				// This is needed to ensure the new process is killed when the parent
-				// process terminates.
-				args = append(args, "--attached")
-			}
 			if b.procMountSyncFD != -1 {
 				args = append(args, fmt.Sprintf("--proc-mount-sync-fd=%d", b.procMountSyncFD))
 			}
