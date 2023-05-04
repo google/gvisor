@@ -710,11 +710,11 @@ func (s *Stack) SetPortRange(start uint16, end uint16) tcpip.Error {
 }
 
 // GROTimeout returns the GRO timeout.
-func (s *Stack) GROTimeout(NICID int32) (time.Duration, tcpip.Error) {
+func (s *Stack) GROTimeout(nicID tcpip.NICID) (time.Duration, tcpip.Error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	nic, ok := s.nics[tcpip.NICID(NICID)]
+	nic, ok := s.nics[nicID]
 	if !ok {
 		return 0, &tcpip.ErrUnknownNICID{}
 	}
@@ -723,11 +723,11 @@ func (s *Stack) GROTimeout(NICID int32) (time.Duration, tcpip.Error) {
 }
 
 // SetGROTimeout sets the GRO timeout.
-func (s *Stack) SetGROTimeout(NICID int32, timeout time.Duration) tcpip.Error {
+func (s *Stack) SetGROTimeout(nicID tcpip.NICID, timeout time.Duration) tcpip.Error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	nic, ok := s.nics[tcpip.NICID(NICID)]
+	nic, ok := s.nics[nicID]
 	if !ok {
 		return &tcpip.ErrUnknownNICID{}
 	}
