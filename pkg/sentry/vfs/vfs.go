@@ -116,6 +116,11 @@ type VirtualFilesystem struct {
 	devicesMu sync.RWMutex `state:"nosave"`
 	devices   map[devTuple]*registeredDevice
 
+	// dynCharDevMajorUsed contains all allocated dynamic character device
+	// major numbers. dynCharDevMajor is protected by dynCharDevMajorMu.
+	dynCharDevMajorMu   sync.Mutex `state:"nosave"`
+	dynCharDevMajorUsed map[uint32]struct{}
+
 	// anonBlockDevMinor contains all allocated anonymous block device minor
 	// numbers. anonBlockDevMinorNext is a lower bound for the smallest
 	// unallocated anonymous block device number. anonBlockDevMinorNext and
@@ -149,6 +154,7 @@ func (vfs *VirtualFilesystem) Init(ctx context.Context) error {
 	}
 	vfs.mountpoints = make(map[*Dentry]map[*Mount]struct{})
 	vfs.devices = make(map[devTuple]*registeredDevice)
+	vfs.dynCharDevMajorUsed = make(map[uint32]struct{})
 	vfs.anonBlockDevMinorNext = 1
 	vfs.anonBlockDevMinor = make(map[uint32]struct{})
 	vfs.fsTypes = make(map[string]*registeredFilesystemType)
