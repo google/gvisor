@@ -30,10 +30,15 @@ uint64_t __export_deep_sleep_timeout;
 uint64_t __export_handshake_timeout;
 
 // LINT.IfChange
-#define MAX_STUB_THREADS (4096)
-#define MAX_CONTEXT_QUEUE_ENTRIES (MAX_STUB_THREADS + 1)
-#define INVALID_CONTEXT_ID (MAX_STUB_THREADS + 1)
-#define INVALID_THREAD_ID (MAX_STUB_THREADS + 1)
+#define MAX_GUEST_CONTEXTS (4095)
+#define MAX_CONTEXT_QUEUE_ENTRIES (MAX_GUEST_CONTEXTS + 1)
+#define INVALID_CONTEXT_ID 0xfefefefe
+#define INVALID_THREAD_ID 0xfefefefe
+
+// Each element of a context_queue ring buffer is a sum of its index shifted by
+// CQ_INDEX_SHIFT and context_id.
+#define CQ_INDEX_SHIFT 32
+#define CQ_CONTEXT_MASK ((1UL << CQ_INDEX_SHIFT) - 1)
 
 // See systrap/context_queue.go
 struct context_queue {
@@ -45,7 +50,7 @@ struct context_queue {
   uint64_t fast_path_disalbed_ts;
   uint32_t fast_path_failed_in_row;
   uint32_t fast_path_disabled;
-  uint32_t ringbuffer[MAX_CONTEXT_QUEUE_ENTRIES];
+  uint64_t ringbuffer[MAX_CONTEXT_QUEUE_ENTRIES];
 };
 
 struct context_queue *__export_context_queue_addr;
@@ -179,16 +184,28 @@ static bool spinning_queue_remove_first(uint64_t timeout) {
 struct thread_context *queue_get_context(struct sysmsg *sysmsg) {
   struct context_queue *queue = __export_context_queue_addr;
 
-  while (!is_empty(queue)) {
-    uint32_t next = __atomic_load_n(&queue->start, __ATOMIC_ACQUIRE) %
-                    MAX_CONTEXT_QUEUE_ENTRIES;
-    uint32_t context_id = __atomic_exchange_n(
-        &queue->ringbuffer[next], INVALID_CONTEXT_ID, __ATOMIC_ACQ_REL);
+  // Indexes should not jump when start or end are overflowed.
+  BUILD_BUG_ON(UINT32_MAX % MAX_CONTEXT_QUEUE_ENTRIES !=
+               MAX_CONTEXT_QUEUE_ENTRIES - 1);
 
+  while (!is_empty(queue)) {
+    uint64_t idx = __atomic_load_n(&queue->start, __ATOMIC_ACQUIRE);
+    uint32_t next = idx % MAX_CONTEXT_QUEUE_ENTRIES;
+    uint64_t v = __atomic_load_n(&queue->ringbuffer[next], __ATOMIC_ACQUIRE);
+
+    // We need to check the index to be sure that a ring buffer hasn't been
+    // recycled.
+    if ((v >> CQ_INDEX_SHIFT) != idx) continue;
+    if (!__atomic_compare_exchange_n(&queue->ringbuffer[next], &v,
+                                     INVALID_CONTEXT_ID, false,
+                                     __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
+      continue;
+
+    uint32_t context_id = v & CQ_CONTEXT_MASK;
     if (context_id == INVALID_CONTEXT_ID) continue;
 
     __atomic_add_fetch(&queue->start, 1, __ATOMIC_ACQ_REL);
-    if (context_id > MAX_STUB_THREADS) {
+    if (context_id > MAX_GUEST_CONTEXTS) {
       panic(context_id);
     }
     struct thread_context *ctx = thread_context_addr(context_id);

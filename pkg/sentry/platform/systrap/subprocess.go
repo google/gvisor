@@ -109,12 +109,12 @@ const (
 	maxSystemThreads = 4096
 	// maxGuestContexts specifies the maximum number of task contexts that a
 	// subprocess can handle.
-	maxGuestContexts = 4096
+	maxGuestContexts = 4095
 	// invalidContextID specifies an invalid ID.
-	invalidContextID = maxGuestContexts + 1
+	invalidContextID uint32 = 0xfefefefe
 	// invalidThreadID is used to indicate that a context is not being worked on by
 	// any sysmsg thread.
-	invalidThreadID uint32 = uint32(maxGuestContexts) + 1
+	invalidThreadID uint32 = 0xfefefefe
 )
 
 // subprocess is a collection of threads being traced.
