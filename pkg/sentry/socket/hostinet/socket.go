@@ -19,6 +19,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
@@ -119,6 +120,10 @@ type Socket struct {
 	// will return EWOULDBLOCK instead of blocking on the host. This allows us to
 	// handle blocking behavior independently in the sentry.
 	fd int
+
+	// recvClosed indicates that the socket has been shutdown for reading
+	// (SHUT_RD or SHUT_RDWR).
+	recvClosed atomicbitops.Bool
 }
 
 var _ = socket.Socket(&Socket{})
@@ -358,7 +363,7 @@ func (s *Socket) Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr
 	// to state CONNECTED, which we can do by calling connect() a second
 	// time ourselves.
 	_, _, errno = unix.Syscall(unix.SYS_CONNECT, uintptr(s.fd), uintptr(firstBytePtr(sockaddr)), uintptr(len(sockaddr)))
-	if errno != 0 {
+	if errno != 0 && errno != unix.EALREADY {
 		return syserr.FromError(translateIOSyscallError(errno))
 	}
 	return nil
@@ -390,7 +395,7 @@ func (s *Socket) Accept(t *kernel.Task, peerRequested bool, flags int, blocking 
 				}
 			} else {
 				var e waiter.Entry
-				e, ch = waiter.NewChannelEntry(waiter.ReadableEvents)
+				e, ch = waiter.NewChannelEntry(waiter.ReadableEvents | waiter.EventHUp | waiter.EventErr)
 				s.EventRegister(&e)
 				defer s.EventUnregister(&e)
 			}
@@ -445,7 +450,11 @@ func (s *Socket) Listen(_ *kernel.Task, backlog int) *syserr.Error {
 // Shutdown implements socket.Socket.Shutdown.
 func (s *Socket) Shutdown(_ *kernel.Task, how int) *syserr.Error {
 	switch how {
-	case unix.SHUT_RD, unix.SHUT_WR, unix.SHUT_RDWR:
+	case unix.SHUT_RD, unix.SHUT_RDWR:
+		// Mark the socket as closed for reading.
+		s.recvClosed.Store(true)
+		fallthrough
+	case unix.SHUT_WR:
 		return syserr.FromError(unix.Shutdown(s.fd, how))
 	default:
 		return syserr.ErrInvalidArgument
@@ -537,6 +546,10 @@ func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, have
 			if n != 0 {
 				panic(fmt.Sprintf("CopyOutFrom: got (%d, %v), wanted (0, %v)", n, err, err))
 			}
+			// Are we closed for reading? No sense in trying to read if so.
+			if s.recvClosed.Load() {
+				break
+			}
 			if ch != nil {
 				if err = t.BlockWithDeadline(ch, haveDeadline, deadline); err != nil {
 					if linuxerr.Equals(linuxerr.ETIMEDOUT, err) {
@@ -546,7 +559,7 @@ func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, have
 				}
 			} else {
 				var e waiter.Entry
-				e, ch = waiter.NewChannelEntry(waiter.ReadableEvents)
+				e, ch = waiter.NewChannelEntry(waiter.ReadableEvents | waiter.EventRdHUp | waiter.EventHUp | waiter.EventErr)
 				s.EventRegister(&e)
 				defer s.EventUnregister(&e)
 			}
@@ -754,7 +767,7 @@ func (s *Socket) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flag
 				}
 			} else {
 				var e waiter.Entry
-				e, ch = waiter.NewChannelEntry(waiter.WritableEvents)
+				e, ch = waiter.NewChannelEntry(waiter.WritableEvents | waiter.EventHUp | waiter.EventErr)
 				s.EventRegister(&e)
 				defer s.EventUnregister(&e)
 			}
