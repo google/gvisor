@@ -101,6 +101,16 @@ doc(
     permalink = "/blog/2023/04/28/systrap-release/",
 )
 
+doc(
+    name = "rootfs_overlay",
+    src = "2023-05-08-rootfs-overlay.md",
+    authors = [
+        "ayushranjan",
+    ],
+    layout = "post",
+    permalink = "/blog/2023/05/08/rootfs-overlay/",
+)
+
 docs(
     name = "posts",
     deps = [
