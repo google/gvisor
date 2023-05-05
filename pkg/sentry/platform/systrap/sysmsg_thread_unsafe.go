@@ -16,15 +16,11 @@ package systrap
 
 import (
 	"fmt"
-	"runtime"
-	"sync/atomic"
-	"syscall"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/platform/interrupt"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/sysmsg"
 )
 
@@ -76,82 +72,6 @@ func (p *sysmsgThread) init(sentryAddr, guestAddr uintptr) {
 	if err != nil {
 		panic(fmt.Sprintf("sigaltstack: %v", err))
 	}
-}
-
-func futexWake(msg *sysmsg.Msg) syscall.Errno {
-	_, _, e := unix.RawSyscall6(unix.SYS_FUTEX, uintptr(unsafe.Pointer(&msg.State)), linux.FUTEX_WAKE, 1, 0, 0, 0)
-	return e
-}
-
-//go:linkname cputicks runtime.cputicks
-func cputicks() int64
-
-// spinloop is implemented in assembly.
-func spinloop()
-
-//go:linkname entersyscall runtime.entersyscall
-func entersyscall()
-
-//go:linkname exitsyscall runtime.exitsyscall
-func exitsyscall()
-
-// deep_sleep_timeout is the timeout after which we stops polling and fall asleep.
-//
-// The value is 40µs for 2GHz CPU. This timeout matches the sentry<->stub round
-// trip in the pure deep sleep case.
-const deepSleepTimeout = uint64(80000)
-const handshakeTimeout = uint64(1000)
-
-func futexWaitForState(msg *sysmsg.Msg, state sysmsg.ThreadState, wakeup bool, acked uint32, interruptor interrupt.Receiver) syscall.Errno {
-	slowPath := false
-	errno := syscall.Errno(0)
-	start := cputicks()
-	htimeout := handshakeTimeout
-	handshake := false
-	for {
-		curState := msg.State.Get()
-		if curState == state {
-			break
-		}
-		if wakeup {
-			if errno = futexWake(msg); errno != 0 {
-				break
-			}
-			wakeup = false
-			continue
-		}
-
-		if !slowPath {
-			delta := uint64(cputicks() - start)
-			if delta > deepSleepTimeout {
-				msg.DisableSentryFastPath()
-				slowPath = true
-				continue
-			}
-
-			if !handshake {
-				if acked != atomic.LoadUint32(&msg.AckedEvents) {
-					handshake = true
-					continue
-				}
-				if delta > htimeout {
-					htimeout += handshakeTimeout
-					runtime.Gosched()
-				}
-			}
-		}
-
-		if slowPath {
-			errno = msg.SleepOnState(curState, interruptor)
-			if errno != 0 {
-				break
-			}
-		} else {
-			spinloop()
-		}
-	}
-	atomic.AddUint32(&msg.AckedEvents, 1)
-	return errno
 }
 
 // sysmsgSigactions installs signal handles for signals which can be triggered
