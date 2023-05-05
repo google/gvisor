@@ -22,6 +22,7 @@ func (s *Socket) StateFields() []string {
 		"protocol",
 		"queue",
 		"fd",
+		"recvClosed",
 	}
 }
 
@@ -40,6 +41,7 @@ func (s *Socket) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(7, &s.protocol)
 	stateSinkObject.Save(8, &s.queue)
 	stateSinkObject.Save(9, &s.fd)
+	stateSinkObject.Save(10, &s.recvClosed)
 }
 
 func (s *Socket) afterLoad() {}
@@ -56,6 +58,7 @@ func (s *Socket) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(7, &s.protocol)
 	stateSourceObject.Load(8, &s.queue)
 	stateSourceObject.Load(9, &s.fd)
+	stateSourceObject.Load(10, &s.recvClosed)
 }
 
 func init() {
