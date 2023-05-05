@@ -1976,6 +1976,7 @@ func (vfs *VirtualFilesystem) StateFields() []string {
 		"lastMountID",
 		"anonMount",
 		"devices",
+		"dynCharDevMajorUsed",
 		"anonBlockDevMinorNext",
 		"anonBlockDevMinor",
 		"fsTypes",
@@ -1997,12 +1998,13 @@ func (vfs *VirtualFilesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &vfs.lastMountID)
 	stateSinkObject.Save(3, &vfs.anonMount)
 	stateSinkObject.Save(4, &vfs.devices)
-	stateSinkObject.Save(5, &vfs.anonBlockDevMinorNext)
-	stateSinkObject.Save(6, &vfs.anonBlockDevMinor)
-	stateSinkObject.Save(7, &vfs.fsTypes)
-	stateSinkObject.Save(8, &vfs.filesystems)
-	stateSinkObject.Save(9, &vfs.groupIDBitmap)
-	stateSinkObject.Save(10, &vfs.mountPromises)
+	stateSinkObject.Save(5, &vfs.dynCharDevMajorUsed)
+	stateSinkObject.Save(6, &vfs.anonBlockDevMinorNext)
+	stateSinkObject.Save(7, &vfs.anonBlockDevMinor)
+	stateSinkObject.Save(8, &vfs.fsTypes)
+	stateSinkObject.Save(9, &vfs.filesystems)
+	stateSinkObject.Save(10, &vfs.groupIDBitmap)
+	stateSinkObject.Save(11, &vfs.mountPromises)
 }
 
 func (vfs *VirtualFilesystem) afterLoad() {}
@@ -2013,12 +2015,13 @@ func (vfs *VirtualFilesystem) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &vfs.lastMountID)
 	stateSourceObject.Load(3, &vfs.anonMount)
 	stateSourceObject.Load(4, &vfs.devices)
-	stateSourceObject.Load(5, &vfs.anonBlockDevMinorNext)
-	stateSourceObject.Load(6, &vfs.anonBlockDevMinor)
-	stateSourceObject.Load(7, &vfs.fsTypes)
-	stateSourceObject.Load(8, &vfs.filesystems)
-	stateSourceObject.Load(9, &vfs.groupIDBitmap)
-	stateSourceObject.Load(10, &vfs.mountPromises)
+	stateSourceObject.Load(5, &vfs.dynCharDevMajorUsed)
+	stateSourceObject.Load(6, &vfs.anonBlockDevMinorNext)
+	stateSourceObject.Load(7, &vfs.anonBlockDevMinor)
+	stateSourceObject.Load(8, &vfs.fsTypes)
+	stateSourceObject.Load(9, &vfs.filesystems)
+	stateSourceObject.Load(10, &vfs.groupIDBitmap)
+	stateSourceObject.Load(11, &vfs.mountPromises)
 	stateSourceObject.LoadValue(0, new([]*Mount), func(y any) { vfs.loadMounts(y.([]*Mount)) })
 }
 
