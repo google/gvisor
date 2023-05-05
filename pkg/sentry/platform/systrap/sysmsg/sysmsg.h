@@ -41,7 +41,6 @@ struct arch_state {
 enum thread_state {
   THREAD_STATE_NONE,
   THREAD_STATE_DONE,
-  THREAD_STATE_EVENT,
   THREAD_STATE_PREP,
   THREAD_STATE_ASLEEP,
   THREAD_STATE_INITIALIZING,
@@ -66,10 +65,6 @@ struct sysmsg {
   int32_t err;
   int32_t err_line;
   uint64_t debug;
-  uint64_t fpstate;
-  uint32_t stub_fast_path;
-  uint32_t sentry_fast_path;
-  uint32_t acked_events;
   uint32_t thread_id;
 };
 
@@ -122,7 +117,6 @@ struct thread_context {
 extern uint64_t __export_pr_sched_core;
 extern uint64_t __export_deep_sleep_timeout;
 extern struct arch_state __export_arch_state;
-extern uint64_t __export_context_decoupling_exp;
 struct context_queue;
 extern struct context_queue *__export_context_queue_addr;
 
@@ -154,10 +148,7 @@ static void __panic(int err, long line) {
   struct thread_context *ctx = sysmsg->context;
   sysmsg->err = err;
   sysmsg->err_line = line;
-  // Normally sentry waits on sysmsg->state.
-  __atomic_store_n(&sysmsg->state, THREAD_STATE_EVENT, __ATOMIC_RELEASE);
-  sys_futex(&sysmsg->state, FUTEX_WAKE, 1, NULL, NULL, 666);
-  // Under context-decoupling the sentry waits on ctx->state.
+  // Wake up the goroutine waiting on the current context.
   __atomic_store_n(&ctx->state, CONTEXT_STATE_FAULT, __ATOMIC_RELEASE);
   sys_futex(&ctx->state, FUTEX_WAKE, 1, NULL, NULL, 666);
   // crash the stub process.

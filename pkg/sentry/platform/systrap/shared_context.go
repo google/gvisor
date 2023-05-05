@@ -163,13 +163,6 @@ func (sc *sharedContext) threadID() uint32 {
 	return atomic.LoadUint32(&sc.shared.ThreadID)
 }
 
-func (sc *sharedContext) setThreadID(threadID uint32) {
-	if contextDecouplingExp {
-		panic("context decoupled systrap should never explicitly set ThreadID")
-	}
-	atomic.StoreUint32(&sc.shared.ThreadID, threadID)
-}
-
 // EnableSentryFastPath indicates that the polling mode is enabled for the
 // Sentry. It has to be called before putting the context into the context queue.
 // This function is used if contextDecouplingExp=true because the fastpath
@@ -286,6 +279,13 @@ func (q *fastPathDispatcher) deactivateSubprocess(s *subprocess) {
 
 	q.subprocessList.Remove(s)
 }
+
+// deep_sleep_timeout is the timeout after which we stops polling and fall asleep.
+//
+// The value is 40µs for 2GHz CPU. This timeout matches the sentry<->stub round
+// trip in the pure deep sleep case.
+const deepSleepTimeout = uint64(80000)
+const handshakeTimeout = uint64(1000)
 
 // loop is processing contexts in the queue. Only one instance of it can be
 // running, because it has exclusive access to the list.

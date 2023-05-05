@@ -46,7 +46,7 @@
 #define offsetof_thread_context_ptregs 0x8 + MAX_FPSTATE_LEN
 
 #define kTHREAD_STATE_NONE 0
-#define kTHREAD_STATE_INTERRUPT 4
+#define kTHREAD_STATE_INTERRUPT 3
 
 // LINT.ThenChange(sysmsg.h, sysmsg_lib.c)
 

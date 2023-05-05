@@ -16,7 +16,6 @@ package systrap
 
 import (
 	"fmt"
-	"sync/atomic"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -24,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
-	"gvisor.dev/gvisor/pkg/sentry/platform/interrupt"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/sysmsg"
 )
 
@@ -34,8 +32,7 @@ import (
 // This type of thread is used to execute user processes.
 type sysmsgThread struct {
 	// subproc is a link to the subprocess which is used to call native
-	// system calls and track when a sysmsg thread has to be recreated.
-	// Look at getSysmsgThread() for more details.
+	// system calls.
 	subproc *subprocess
 
 	// thread is a thread identifier.
@@ -55,7 +52,8 @@ type sysmsgThread struct {
 	fpuStateToMsgOffset uint64
 }
 
-// sysmsgStackAddr returns a sysmsg stack address in the thread address space.
+// sysmsgPerThreadMemAddr returns a sysmsg stack address in the thread address
+// space.
 func (p *sysmsgThread) sysmsgPerThreadMemAddr() uintptr {
 	return stubSysmsgStack + sysmsg.PerThreadMemSize*uintptr(p.thread.sysmsgStackID)
 }
@@ -115,22 +113,6 @@ func (p *sysmsgThread) mapPrivateStack(addr uintptr, size uintptr) error {
 		arch.SyscallArgument{Value: 0},
 		arch.SyscallArgument{Value: 0})
 	return err
-}
-
-func (p *sysmsgThread) waitEvent(switchToState sysmsg.ThreadState, interruptor interrupt.Receiver) {
-	msg := p.msg
-	wakeup := false
-	acked := atomic.LoadUint32(&msg.AckedEvents)
-	if switchToState != sysmsg.ThreadStateNone {
-		msg.State.Set(switchToState)
-		wakeup = msg.StubFastPath() == false
-	} else {
-		acked--
-	}
-
-	if errno := futexWaitForState(msg, sysmsg.ThreadStateEvent, wakeup, acked, interruptor); errno != 0 {
-		panic(fmt.Sprintf("error waiting for state: %v", errno))
-	}
 }
 
 func (p *sysmsgThread) Debugf(format string, v ...any) {

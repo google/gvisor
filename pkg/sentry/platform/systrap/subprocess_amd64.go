@@ -214,11 +214,9 @@ func restoreArchSpecificState(ctx *sysmsg.ThreadContext, ac *arch.Context64) {
 }
 
 func setArchSpecificRegs(sysThread *sysmsgThread, regs *arch.Registers) {
-	if contextDecouplingExp {
-		// Set the start function and initial stack.
-		regs.PtraceRegs.Rip = uint64(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_start))
-		regs.PtraceRegs.Rsp = uint64(sysmsg.StackAddrToSyshandlerStack(sysThread.sysmsgPerThreadMemAddr()))
-	}
+	// Set the start function and initial stack.
+	regs.PtraceRegs.Rip = uint64(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_start))
+	regs.PtraceRegs.Rsp = uint64(sysmsg.StackAddrToSyshandlerStack(sysThread.sysmsgPerThreadMemAddr()))
 
 	// Set gs_base; this is the only time we set it and we don't expect it to ever
 	// change for any thread.
@@ -229,12 +227,4 @@ func retrieveArchSpecificState(ctx *sysmsg.ThreadContext, ac *arch.Context64) {
 }
 
 func archSpecificSysmsgThreadInit(sysThread *sysmsgThread) {
-	// Send a fake event to stop the BPF process so that it enters the sighandler.
-	// If there is no coupled context we don't want that to happen because the
-	// thread needs to find a context first.
-	if !contextDecouplingExp {
-		if _, _, e := unix.RawSyscall(unix.SYS_TGKILL, uintptr(sysThread.thread.tgid), uintptr(sysThread.thread.tid), uintptr(unix.SIGSEGV)); e != 0 {
-			panic(fmt.Sprintf("tkill failed: %v", e))
-		}
-	}
 }

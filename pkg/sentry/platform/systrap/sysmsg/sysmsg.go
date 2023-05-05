@@ -26,8 +26,6 @@ import (
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/abi/linux/errno"
-	"gvisor.dev/gvisor/pkg/errors"
 	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
@@ -111,9 +109,6 @@ const (
 	// ThreadStateDone means that last event has been handled and the stub thread
 	// can be resumed.
 	ThreadStateDone
-	// ThreadStateEvent means that there is a new event which has to be handled by
-	// Sentry. (Used only if !contextDecoupledExp)
-	ThreadStateEvent
 	// ThreadStatePrep means that syshandler started filling the sysmsg struct.
 	ThreadStatePrep
 	// ThreadStateAsleep means that this thread fell asleep because there was not
@@ -164,27 +159,6 @@ type Msg struct {
 	Line int32
 	// Debug is a variable to use to get visibility into the stub from the sentry.
 	Debug uint64
-	// fpState is an offset relative to the sighandler stack to the fpState, stored
-	// by the sighandler.
-	fpState uint64
-	// The fast path is the mode when a thread is polling msg->state to
-	// wait for a required state instead of calling FUTEX_WAIT.
-	//
-	// If core tagging is supported by the kernel, the Sentry thread, and a
-	// stub thread share the same cookie and run on two associated
-	// hyper-threads. The thread which is polling msg->state calls the
-	// pause instruction, so the second thread gets almost the entire core
-	// to run its workload.
-	//
-	// If core tagging isn't supported, a polling thread calls sched_yield
-	// to let other processes to run.
-
-	// StubFastPath is set if a stub process uses the fast path to wait for
-	// events.  Only the stub thread can set it before switching to the
-	// sentry, but the Sentry can clear it.
-	stubFastPath   uint32
-	sentryFastPath uint32
-	AckedEvents    uint32
 	// ThreadID is the ID of the sysmsg thread.
 	ThreadID uint32
 }
@@ -292,9 +266,8 @@ type ThreadContext struct {
 func (m *Msg) Init(threadID uint32) {
 	m.Err = 0
 	m.Line = -1
-	m.stubFastPath = 0
-	m.sentryFastPath = 1
 	m.ThreadID = threadID
+	m.Context = 0
 }
 
 // Init initializes the ThreadContext instance.
@@ -305,40 +278,6 @@ func (c *ThreadContext) Init(initialThreadID uint32) {
 	c.SignalInfo = linux.SignalInfo{}
 	c.State = ContextStateNone
 	c.ThreadID = initialThreadID
-}
-
-// StubFastPath returns true if the stub thread in the polling mode.
-func (m *Msg) StubFastPath() bool {
-	return atomic.LoadUint32(&m.stubFastPath) != 0
-}
-
-// DisableStubFastPath disables the polling mode for the stub thread.
-func (m *Msg) DisableStubFastPath() {
-	atomic.StoreUint32(&m.stubFastPath, 0)
-}
-
-// EnableSentryFastPath enables the polling mode for the Sentry. It has to be
-// called before switching controls to the stub process.
-// This function is used if contextDecouplingExp=false because the fastpath
-// is negotiated in Sysmsg.
-func (m *Msg) EnableSentryFastPath() {
-	m.sentryFastPath = 1
-}
-
-// DisableSentryFastPath disables the polling mode for the Sentry.
-// This function is used if contextDecouplingExp=false because the fastpath
-// is negotiated in Sysmsg.
-func (m *Msg) DisableSentryFastPath() {
-	atomic.StoreUint32(&m.sentryFastPath, 0)
-}
-
-// FPUStateOffset returns the offset of a saved FPU state to the msg.
-func (m *Msg) FPUStateOffset() (uint64, error) {
-	offset := m.fpState
-	if int64(offset) > -MsgOffsetFromSharedStack && int64(offset) < 0 {
-		return offset, nil
-	}
-	return 0, errors.New(errno.EFAULT, fmt.Sprintf("FPU offset has been corrupted: %x", offset))
 }
 
 func (m *Msg) String() string {

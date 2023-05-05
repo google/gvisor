@@ -27,7 +27,6 @@
 // __export_deep_sleep_timeout is the timeout after which the stub thread stops
 // polling and fall asleep.
 uint64_t __export_deep_sleep_timeout;
-uint64_t __export_handshake_timeout;
 
 // LINT.IfChange
 #define MAX_GUEST_CONTEXTS (4095)
@@ -370,66 +369,6 @@ struct thread_context *switch_context(struct sysmsg *sysmsg,
   }
 
   return get_context(sysmsg);
-}
-
-int wait_state(struct sysmsg *sysmsg, enum thread_state new_thread_state) {
-  unsigned long handshake_timeout;
-  uint64_t acked_events_prev;
-  unsigned long start;
-  int ret, v, fast_path;
-
-  acked_events_prev = __atomic_load_n(&sysmsg->acked_events, __ATOMIC_SEQ_CST);
-  // stub_fast_path can be changed non-atomically before we change the state and
-  // wake up the Sentry.
-  sysmsg->stub_fast_path = 1;
-  __atomic_store_n(&sysmsg->state, new_thread_state, __ATOMIC_SEQ_CST);
-
-  fast_path = __atomic_load_n(&sysmsg->sentry_fast_path, __ATOMIC_SEQ_CST);
-  if (!fast_path) {
-    ret = sys_futex(&sysmsg->state, FUTEX_WAKE, 1, NULL, NULL, 0);
-    if (ret < 0) panic(ret);
-  }
-
-  v = __atomic_load_n(&sysmsg->state, __ATOMIC_ACQUIRE);
-  if (v == THREAD_STATE_DONE) goto out;
-
-  handshake_timeout = __export_handshake_timeout;
-  start = rdtsc();
-  while (1) {
-    v = __atomic_load_n(&sysmsg->state, __ATOMIC_ACQUIRE);
-    if (v == THREAD_STATE_DONE) goto out;
-
-    // The Sentry can change stub_fast_path to zero if it finds out that the
-    // user task has to sleep.
-    fast_path = __atomic_load_n(&sysmsg->stub_fast_path, __ATOMIC_ACQUIRE);
-    if (fast_path) {
-      unsigned long delta = rdtsc() - start;
-
-      if (delta > __export_deep_sleep_timeout) {
-        fast_path = 0;
-        __atomic_store_n(&sysmsg->stub_fast_path, 0, __ATOMIC_SEQ_CST);
-      }
-      if (handshake_timeout != 0) {
-        if (__atomic_load_n(&sysmsg->acked_events, __ATOMIC_SEQ_CST) !=
-            acked_events_prev) {
-          handshake_timeout = 0;
-        } else if (delta > handshake_timeout) {
-          __syscall(__NR_sched_yield, 0, 0, 0, 0, 0, 0);
-          handshake_timeout += __export_handshake_timeout;
-          continue;
-        }
-      }
-    }
-
-    if (fast_path) {
-      spinloop();
-    } else {
-      sys_futex(&sysmsg->state, FUTEX_WAIT, v, NULL, NULL, 0);
-    }
-  }
-out:
-  __atomic_fetch_add(&sysmsg->acked_events, 1, __ATOMIC_SEQ_CST);
-  return v;
 }
 
 void verify_offsets() {
