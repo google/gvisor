@@ -54,7 +54,9 @@ func Install(rules SyscallRules, denyRules SyscallRules) error {
 		return err
 	}
 
-	// Uncomment to get stack trace when there is a violation.
+	// ***   DEBUG TIP   ***
+	// If you suspect the process is getting killed due to a seccomp violation, uncomment the line
+	// below to get a panic stack trace when there is a violation.
 	// defaultAction = linux.BPFAction(linux.SECCOMP_RET_TRAP)
 
 	log.Infof("Installing seccomp filters for %d syscalls (action=%v)", len(rules), defaultAction)
