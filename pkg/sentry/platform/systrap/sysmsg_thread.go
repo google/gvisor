@@ -58,34 +58,6 @@ func (p *sysmsgThread) sysmsgPerThreadMemAddr() uintptr {
 	return stubSysmsgStack + sysmsg.PerThreadMemSize*uintptr(p.thread.sysmsgStackID)
 }
 
-func (p *sysmsgThread) destroy() {
-	t := p.thread
-	if _, _, e := unix.RawSyscall(unix.SYS_TGKILL, uintptr(t.tgid), uintptr(t.tid), uintptr(unix.SIGKILL)); e != 0 {
-		panic(fmt.Sprintf("failed to kill the BPF process %d:%d: %v", t.tgid, t.tid, e))
-	}
-	_, err := p.subproc.syscall(
-		unix.SYS_WAIT4,
-		arch.SyscallArgument{Value: uintptr(t.tid)},
-		arch.SyscallArgument{Value: 0},          // siginfo
-		arch.SyscallArgument{Value: linux.WALL}, // options
-		arch.SyscallArgument{Value: 0},          // rusage
-	)
-	if err != nil {
-		// We never expect this to happen.
-		panic(fmt.Sprintf("failed to wait %d:%d: %v", t.tid, linux.WEXITED|linux.WALL, err))
-	}
-	stackAddr := p.sysmsgPerThreadMemAddr()
-	_, err = p.subproc.syscall(unix.SYS_MUNMAP,
-		arch.SyscallArgument{Value: stackAddr},
-		arch.SyscallArgument{Value: sysmsg.PerThreadMemSize})
-	if err != nil {
-		panic(fmt.Sprintf("munmap filed: %v", err))
-	}
-	p.subproc.sysmsgStackPool.Put(p.thread.sysmsgStackID)
-	p.unmapStackFromSentry()
-	p.subproc.memoryFile.DecRef(p.stackRange)
-}
-
 // mapStack maps a sysmsg stack into the thread address space.
 func (p *sysmsgThread) mapStack(addr uintptr, readOnly bool) error {
 	prot := uintptr(unix.PROT_READ)
