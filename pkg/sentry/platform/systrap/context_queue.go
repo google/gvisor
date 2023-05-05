@@ -51,17 +51,25 @@ type contextQueue struct {
 	fastPathDisabledTS  uint64
 	fastPathFailedInRow uint32
 	fastPathDisabled    uint32
-	ringbuffer          [maxContextQueueEntries]uint32
+	ringbuffer          [maxContextQueueEntries]uint64
 }
+
+const (
+	// Each element of a contextQueue ring buffer is a sum of its index
+	// shifted by CQ_INDEX_SHIFT and context_id.
+	contextQueueIndexShift = 32
+)
 
 // LINT.ThenChange(./sysmsg/sysmsg_lib.c)
 
 func (q *contextQueue) init() {
 	for i := uint32(0); i < maxContextQueueEntries; i++ {
-		q.ringbuffer[i] = invalidContextID
+		q.ringbuffer[i] = uint64(invalidContextID)
 	}
-	atomic.StoreUint32(&q.start, 0)
-	atomic.StoreUint32(&q.end, 0)
+	// Allow tests to trigger overflows of start and end.
+	idx := ^uint32(0) - maxContextQueueEntries*4
+	atomic.StoreUint32(&q.start, idx)
+	atomic.StoreUint32(&q.end, idx)
 	atomic.StoreUint64(&q.fastPathDisabledTS, 0)
 	atomic.StoreUint32(&q.fastPathFailedInRow, 0)
 	atomic.StoreUint32(&q.numActiveThreads, 0)
@@ -92,8 +100,10 @@ func (q *contextQueue) add(ctx *sharedContext, stubFastPathEnabled bool) uint32 
 		// should be unreacheable
 		panic("contextQueue is full")
 	}
-	next = (next - 1) % maxContextQueueEntries
-	atomic.StoreUint32(&q.ringbuffer[next], contextID)
+	idx := next - 1
+	next = idx % maxContextQueueEntries
+	v := (uint64(idx) << contextQueueIndexShift) + uint64(contextID)
+	atomic.StoreUint64(&q.ringbuffer[next], v)
 	return next // remove me
 }
 
