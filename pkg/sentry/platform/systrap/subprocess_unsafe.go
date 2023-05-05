@@ -41,6 +41,12 @@ func afterFork()
 //go:linkname afterForkInChild syscall.runtime_AfterForkInChild
 func afterForkInChild()
 
+//go:linkname cputicks runtime.cputicks
+func cputicks() int64
+
+// spinloop is implemented in assembly.
+func spinloop()
+
 // getThreadContextFromID returns a ThreadContext struct that corresponds to the
 // given ID.
 //
@@ -70,29 +76,16 @@ func mmapContextQueueForSentry(memoryFile *pgalloc.MemoryFile, opts pgalloc.Allo
 	return fr, (*contextQueue)(unsafe.Pointer(addr))
 }
 
-//go:nosplit
-func isFPStateInContextRegion(ctx *sharedContext) bool {
-	// If context decoupling experiment is ON then both the sighandler and
-	// syshandler save FPState to the context region since contexts will move
-	// threads. Otherwise only syshandler will save FPState to the region.
-	return contextDecouplingExp || ctx.state() == sysmsg.ContextStateSyscallTrap
-}
-
-func saveFPState(msg *sysmsg.Msg, ctx *sharedContext, fpuToMsgOffset uint64, c *context, ac *arch.Context64) {
+func saveFPState(ctx *sharedContext, ac *arch.Context64) {
 	fpState := ac.FloatingPointData().BytePointer()
 	dst := unsafeSlice(uintptr(unsafe.Pointer(fpState)), archState.FpLen())
-	var src []byte
-	if isFPStateInContextRegion(ctx) {
-		src = ctx.shared.FPState[:]
-	} else {
-		src = unsafeSlice(uintptr(unsafe.Pointer(msg))+uintptr(fpuToMsgOffset), archState.FpLen())
-	}
+	src := ctx.shared.FPState[:]
 	copy(dst, src)
 }
 
 // restoreFPStateDecoupledContext writes FPState from c to the thread context
 // shared memory region if there is any need to do so.
-func restoreFPState(msg *sysmsg.Msg, ctx *sharedContext, fpuToMsgOffset uint64, c *context, ac *arch.Context64) {
+func restoreFPState(ctx *sharedContext, c *context, ac *arch.Context64) {
 	if !c.needRestoreFPState {
 		return
 	}
@@ -101,11 +94,6 @@ func restoreFPState(msg *sysmsg.Msg, ctx *sharedContext, fpuToMsgOffset uint64, 
 
 	fpState := ac.FloatingPointData().BytePointer()
 	src := unsafeSlice(uintptr(unsafe.Pointer(fpState)), archState.FpLen())
-	var dst []byte
-	if isFPStateInContextRegion(ctx) {
-		dst = ctx.shared.FPState[:]
-	} else {
-		dst = unsafeSlice(uintptr(unsafe.Pointer(msg))+uintptr(fpuToMsgOffset), archState.FpLen())
-	}
+	dst := ctx.shared.FPState[:]
 	copy(dst, src)
 }

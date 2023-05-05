@@ -127,9 +127,7 @@ go_library(
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/abi/linux/errno",
         "//pkg/cpuid",
-        "//pkg/errors",
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/sentry/platform/interrupt",

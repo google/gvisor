@@ -34,7 +34,6 @@
 // TODO(b/271631387): These globals are shared between AMD64 and ARM64; move to
 // sysmsg_lib.c.
 struct arch_state __export_arch_state;
-uint64_t __export_context_decoupling_exp;
 uint64_t __export_stub_start;
 
 long __syscall(long n, long a1, long a2, long a3, long a4, long a5, long a6) {
@@ -160,18 +159,11 @@ static void set_fsbase(uint64_t fsbase) {
 // specific to amd64.
 struct thread_context *switch_context_amd64(
     struct sysmsg *sysmsg, struct thread_context *ctx,
-    enum thread_state new_thread_state, enum context_state new_context_state) {
+    enum context_state new_context_state) {
   struct thread_context *old_ctx = sysmsg->context;
 
   for (;;) {
-    // TODO(b/271631387): Once stub code globals can be used between objects
-    // move this check into sysmsg_lib:switch_context().
-    if (__export_context_decoupling_exp) {
-      ctx = switch_context(sysmsg, ctx, new_context_state);
-    } else {
-      ctx->state = new_context_state;
-      wait_state(sysmsg, new_thread_state);
-    }
+    ctx = switch_context(sysmsg, ctx, new_context_state);
 
     // After setting THREAD_STATE_NONE, syshandled can be interrupted by
     // SIGCHLD. In this case, we consider that the current context contains
@@ -207,8 +199,7 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
 
   if (sysmsg != sysmsg->self) panic(0xdeaddead);
   int32_t thread_state = __atomic_load_n(&sysmsg->state, __ATOMIC_ACQUIRE);
-  if (__export_context_decoupling_exp &&
-      thread_state == THREAD_STATE_INITIALIZING) {
+  if (thread_state == THREAD_STATE_INITIALIZING) {
     // This thread was interrupted before it even had a context.
     return;
   }
@@ -239,13 +230,9 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
       ucontext->uc_mcontext.gregs[REG_RIP] < __export_stub_start) {
     ctx->ptregs.fs_base = fs_base;
     gregs_to_ptregs(ucontext, &ctx->ptregs);
-    if (__export_context_decoupling_exp) {
-      memcpy(ctx->fpstate, (uint8_t *)ucontext->uc_mcontext.fpregs,
-             __export_arch_state.fp_len);
-    } else {
-      sysmsg->fpstate =
-          (unsigned long)ucontext->uc_mcontext.fpregs - (unsigned long)sysmsg;
-    }
+    memcpy(ctx->fpstate, (uint8_t *)ucontext->uc_mcontext.fpregs,
+           __export_arch_state.fp_len);
+
     __atomic_store_n(&ctx->fpstate_changed, 0, __ATOMIC_RELEASE);
   }
 
@@ -332,13 +319,12 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
       return;
   }
 
-  ctx = switch_context_amd64(sysmsg, ctx, THREAD_STATE_EVENT, ctx_state);
+  ctx = switch_context_amd64(sysmsg, ctx, ctx_state);
   if (fs_base != ctx->ptregs.fs_base) {
     set_fsbase(ctx->ptregs.fs_base);
   }
 
-  if (__export_context_decoupling_exp &&
-      __atomic_load_n(&ctx->fpstate_changed, __ATOMIC_ACQUIRE)) {
+  if (__atomic_load_n(&ctx->fpstate_changed, __ATOMIC_ACQUIRE)) {
     prep_fpstate_for_sigframe(
         ctx->fpstate, __export_arch_state.fp_len,
         __export_arch_state.xsave_mode != XSAVE_MODE_FXSAVE);
@@ -366,7 +352,7 @@ void __syshandler() {
   long fs_base = get_fsbase();
   ctx->ptregs.fs_base = fs_base;
 
-  ctx = switch_context_amd64(sysmsg, ctx, THREAD_STATE_EVENT, ctx_state);
+  ctx = switch_context_amd64(sysmsg, ctx, ctx_state);
   // switch_context_amd64 changed sysmsg->state to THREAD_STATE_NONE, so we can
   // only resume the current process, all other actions are
   // prohibited after this point.
@@ -384,8 +370,8 @@ void __export_start(struct sysmsg *sysmsg, void *_ucontext) {
   }
 #endif
 
-  struct thread_context *ctx = switch_context_amd64(
-      sysmsg, NULL, THREAD_STATE_EVENT, CONTEXT_STATE_INVALID);
+  struct thread_context *ctx =
+      switch_context_amd64(sysmsg, NULL, CONTEXT_STATE_INVALID);
 
   restore_state(sysmsg, ctx, _ucontext);
 }

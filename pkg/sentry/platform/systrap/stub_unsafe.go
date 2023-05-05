@@ -141,14 +141,12 @@ func stubInit() {
 	mapLen, _ = hostarch.PageRoundUp(mapLen + sysmsg.PerThreadMemSize*(maxSystemThreads+1))
 
 	// Allocate context queue region
-	if contextDecouplingExp {
-		stubContextQueueRegion = mapLen
-		stubContextQueueRegionLen, _ = hostarch.PageRoundUp(unsafe.Sizeof(contextQueue{}))
-		mapLen += stubContextQueueRegionLen
+	stubContextQueueRegion = mapLen
+	stubContextQueueRegionLen, _ = hostarch.PageRoundUp(unsafe.Sizeof(contextQueue{}))
+	mapLen += stubContextQueueRegionLen
 
-		stubSpinningThreadQueueAddr = mapLen
-		mapLen += sysmsg.SpinningQueueMemSize
-	}
+	stubSpinningThreadQueueAddr = mapLen
+	mapLen += sysmsg.SpinningQueueMemSize
 
 	// Allocate thread context region
 	stubContextRegion = mapLen
@@ -220,23 +218,16 @@ func stubInit() {
 	// Initialize stub globals
 	p := (*uint64)(unsafe.Pointer(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_deep_sleep_timeout)))
 	*p = deepSleepTimeout
-	p = (*uint64)(unsafe.Pointer(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_handshake_timeout)))
-	*p = handshakeTimeout
 	p = (*uint64)(unsafe.Pointer(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_context_region)))
 	*p = uint64(stubContextRegion)
 	p = (*uint64)(unsafe.Pointer(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_stub_start)))
 	*p = uint64(stubStart)
 	archState := (*sysmsg.ArchState)(unsafe.Pointer(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_arch_state)))
 	archState.Init()
-	exp := (*uint64)(unsafe.Pointer(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_context_decoupling_exp)))
-	if contextDecouplingExp {
-		*exp = 1
-		contextQueue := (*uint64)(unsafe.Pointer(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_context_queue_addr)))
-		*contextQueue = uint64(stubContextQueueRegion)
-
-		p = (*uint64)(unsafe.Pointer(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_spinning_queue_addr)))
-		*p = uint64(stubSpinningThreadQueueAddr)
-	}
+	p = (*uint64)(unsafe.Pointer(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_context_queue_addr)))
+	*p = uint64(stubContextQueueRegion)
+	p = (*uint64)(unsafe.Pointer(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_spinning_queue_addr)))
+	*p = uint64(stubSpinningThreadQueueAddr)
 
 	prepareSeccompRules(stubSysmsgStart, stubSysmsgRules, stubSysmsgRulesLen)
 
@@ -253,5 +244,4 @@ func stubInit() {
 	stubEnd = stubStart + mapLen + uintptr(gap)
 	log.Debugf("stubStart %x stubSysmsgStart %x stubSysmsgStack %x, stubContextQueue %x, stubThreadContextRegion %x, mapLen %x", stubStart, stubSysmsgStart, stubSysmsgStack, stubContextQueueRegion, stubContextRegion, mapLen)
 	log.Debugf(archState.String())
-	log.Debugf("contextDecouplingExp=%t", contextDecouplingExp)
 }
