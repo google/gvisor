@@ -76,11 +76,6 @@ func createSyscallRegs(initRegs *arch.Registers, sysno uintptr, args ...arch.Sys
 	return regs
 }
 
-// isSingleStepping determines if the registers indicate single-stepping.
-func isSingleStepping(regs *arch.Registers) bool {
-	return (regs.Eflags & arch.X86TrapFlag) != 0
-}
-
 // updateSyscallRegs updates registers after finishing sysemu.
 func updateSyscallRegs(regs *arch.Registers) {
 	// Ptrace puts -ENOSYS in rax on syscall-enter-stop.
