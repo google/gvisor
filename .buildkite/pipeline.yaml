@@ -284,6 +284,7 @@ steps:
       <<: *ubuntu_agents
       arch: "amd64"
   - <<: *common
+    <<: *source_test
     <<: *docker
     label: ":one-does-not-simply: Port-Forward tests"
     command: make portforward-tests
