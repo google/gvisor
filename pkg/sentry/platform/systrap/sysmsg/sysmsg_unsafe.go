@@ -15,7 +15,9 @@
 package sysmsg
 
 import (
+	"sync/atomic"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -25,6 +27,7 @@ import (
 )
 
 const maxFutexSleepSeconds = 60
+const interruptTimeoutSeconds = 5
 
 // SleepOnState makes the caller sleep on the Msg.State futex.
 func (m *Msg) SleepOnState(curState ThreadState, interruptor interrupt.Receiver) syscall.Errno {
@@ -61,15 +64,20 @@ func (c *ThreadContext) SleepOnState(curState ContextState, interruptor interrup
 	}
 	sentInterruptOnce := false
 	errno := syscall.Errno(0)
+	finishTime := time.Now().Add(maxFutexSleepSeconds * time.Second)
 	for {
 		_, _, errno = unix.Syscall6(unix.SYS_FUTEX, uintptr(unsafe.Pointer(&c.State)),
 			linux.FUTEX_WAIT, uintptr(curState), uintptr(unsafe.Pointer(&futexTimeout)), 0, 0)
 		if errno == unix.ETIMEDOUT {
-			interruptor.NotifyInterrupt()
-			if !sentInterruptOnce {
-				log.Warningf("Systrap task goroutine has been waiting on ThreadContext.State futex too long. ThreadContext: %s", c.String())
+			if !sentInterruptOnce && atomic.LoadUint32(&c.Acked) != 0 {
+				interruptor.NotifyInterrupt()
+				sentInterruptOnce = true
+				continue
 			}
-			sentInterruptOnce = true
+			if time.Now().After(finishTime) {
+				log.Warningf("Systrap task goroutine has been waiting on ThreadContext.State futex too long. ThreadContext: %s", c.String())
+				return errno
+			}
 		} else {
 			break
 		}

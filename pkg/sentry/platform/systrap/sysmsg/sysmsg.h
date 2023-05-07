@@ -171,6 +171,7 @@ struct thread_context *switch_context(struct sysmsg *sysmsg,
                                       enum context_state new_context_state);
 
 int wait_state(struct sysmsg *sysmsg, enum thread_state new_thread_state);
+void init_new_thread(void);
 
 #define panic(err) __panic(err, __LINE__)
 // NOLINTEND(runtime/int)
