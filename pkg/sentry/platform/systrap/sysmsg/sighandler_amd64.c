@@ -27,6 +27,7 @@
 #include <sys/prctl.h>
 #include <sys/ucontext.h>
 
+#include "atomic.h"
 #include "sysmsg.h"
 #include "sysmsg_offsets.h"
 #include "sysmsg_offsets_amd64.h"
@@ -168,13 +169,13 @@ struct thread_context *switch_context_amd64(
     // After setting THREAD_STATE_NONE, syshandled can be interrupted by
     // SIGCHLD. In this case, we consider that the current context contains
     // the actual state and sighandler can take control on it.
-    __atomic_store_n(&sysmsg->state, THREAD_STATE_NONE, __ATOMIC_RELEASE);
-    if (__atomic_load_n(&ctx->interrupt, __ATOMIC_ACQUIRE) != 0) {
-      __atomic_store_n(&sysmsg->state, THREAD_STATE_PREP, __ATOMIC_RELEASE);
+    atomic_store(&sysmsg->state, THREAD_STATE_NONE);
+    if (atomic_load(&ctx->interrupt) != 0) {
+      atomic_store(&sysmsg->state, THREAD_STATE_PREP);
       // This context got interrupted while it was waiting in the queue.
       // Setup all the necessary bits to let the sentry know this context has
       // switched back because of it.
-      __atomic_store_n(&ctx->interrupt, 0, __ATOMIC_RELEASE);
+      atomic_store(&ctx->interrupt, 0);
       new_context_state = CONTEXT_STATE_FAULT;
       ctx->signo = SIGCHLD;
       ctx->siginfo.si_signo = SIGCHLD;
@@ -198,7 +199,7 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
   struct sysmsg *sysmsg = sysmsg_addr(sp);
 
   if (sysmsg != sysmsg->self) panic(0xdeaddead);
-  int32_t thread_state = __atomic_load_n(&sysmsg->state, __ATOMIC_ACQUIRE);
+  int32_t thread_state = atomic_load(&sysmsg->state);
   if (thread_state == THREAD_STATE_INITIALIZING) {
     // This thread was interrupted before it even had a context.
     return;
@@ -233,7 +234,7 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
     memcpy(ctx->fpstate, (uint8_t *)ucontext->uc_mcontext.fpregs,
            __export_arch_state.fp_len);
 
-    __atomic_store_n(&ctx->fpstate_changed, 0, __ATOMIC_RELEASE);
+    atomic_store(&ctx->fpstate_changed, 0);
   }
 
   enum context_state ctx_state = CONTEXT_STATE_INVALID;
@@ -261,12 +262,12 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
         // will mean that the first copy is in the consistent state.
         for (int i = 0; i < 2; i++) {
           // fault_jump is set to the size of "mov (%rbx)" which is 3 bytes.
-          __atomic_store_n(&sysmsg->fault_jump, 3, __ATOMIC_RELEASE);
+          atomic_store(&sysmsg->fault_jump, 3);
           asm volatile("movq (%1), %0\n"
                        : "=a"(syscall_code_int[i])
                        : "b"(rip - 8)
                        : "cc", "memory");
-          __atomic_store_n(&sysmsg->fault_jump, 0, __ATOMIC_RELEASE);
+          atomic_store(&sysmsg->fault_jump, 0);
         }
         // The mov instruction is 5 bytes:  b8 <sysno, 4 bytes>.
         // The syscall instruction is 2 bytes: 0f 05.
@@ -324,7 +325,7 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
     set_fsbase(ctx->ptregs.fs_base);
   }
 
-  if (__atomic_load_n(&ctx->fpstate_changed, __ATOMIC_ACQUIRE)) {
+  if (atomic_load(&ctx->fpstate_changed)) {
     prep_fpstate_for_sigframe(
         ctx->fpstate, __export_arch_state.fp_len,
         __export_arch_state.xsave_mode != XSAVE_MODE_FXSAVE);
@@ -338,7 +339,7 @@ void __syshandler() {
   asm volatile("movq %%gs:0, %0\n" : "=r"(sysmsg) : :);
   // SYSMSG_STATE_PREP is set to postpone interrupts. Look at
   // __export_sighandler for more details.
-  int state = __atomic_load_n(&sysmsg->state, __ATOMIC_ACQUIRE);
+  int state = atomic_load(&sysmsg->state);
   if (state != THREAD_STATE_PREP) panic(state);
 
   struct thread_context *ctx = sysmsg->context;

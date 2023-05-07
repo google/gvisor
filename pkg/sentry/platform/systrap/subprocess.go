@@ -854,13 +854,15 @@ func (s *subprocess) kickSysmsgThread() bool {
 		return false
 	}
 
-	if s.numSysmsgThreads > int(nrActiveThreads) {
+	nrActiveThreads = atomic.AddUint32(&s.contextQueue.numActiveThreads, 1)
+	if s.numSysmsgThreads >= int(nrActiveThreads) {
 		for _, t := range s.sysmsgThreads {
 			if kicked, _ := t.msg.WakeSysmsgThread(); kicked {
 				s.sysmsgThreadsMu.Unlock()
 				return true
 			}
 		}
+		atomic.AddUint32(&s.contextQueue.numActiveThreads, ^uint32(0))
 		s.sysmsgThreadsMu.Unlock()
 		// Threads are kicked only here under sysmsgThreadsMu. It means
 		// that this case is possible only if one thread decides to
@@ -872,18 +874,18 @@ func (s *subprocess) kickSysmsgThread() bool {
 	if s.numSysmsgThreads < maxSysmsgThreads {
 		s.numSysmsgThreads++
 		s.sysmsgThreadsMu.Unlock()
-		atomic.AddUint32(&s.contextQueue.numActiveThreads, 1)
 		if err := s.createSysmsgThread(); err != nil {
 			log.Warningf("Unable to create a new stub thread: %s", err)
-			atomic.AddUint32(&s.contextQueue.numActiveThreads, ^uint32(0))
 			s.sysmsgThreadsMu.Lock()
 			s.numSysmsgThreads--
+			atomic.AddUint32(&s.contextQueue.numActiveThreads, ^uint32(0))
 			s.sysmsgThreadsMu.Unlock()
 			return false
 		}
 		return true
 	}
 
+	atomic.AddUint32(&s.contextQueue.numActiveThreads, ^uint32(0))
 	s.sysmsgThreadsMu.Unlock()
 	return false
 }
