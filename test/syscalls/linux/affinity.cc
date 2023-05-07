@@ -41,6 +41,8 @@ class AffinityTest : public ::testing::Test {
         SyscallSucceeds());
     // Lots of tests rely on having more than 1 logical processor available.
     EXPECT_GT(CPU_COUNT(&mask_), 1);
+    EXPECT_GT(cpuset_size_, 0);
+    EXPECT_LE(cpuset_size_, sizeof(cpu_set_t));
   }
 
   static PosixError ClearLowestBit(cpu_set_t* mask, size_t cpus) {
