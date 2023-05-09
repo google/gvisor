@@ -16,6 +16,7 @@
 
 #ifdef __linux__
 #include <linux/filter.h>
+#include <sys/epoll.h>
 #endif  // __linux__
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -1252,6 +1253,8 @@ TEST_P(SimpleTcpSocketTest, NonBlockingConnectNoListener) {
 }
 
 TEST_P(SimpleTcpSocketTest, ListenConnectParallel) {
+  // TODO(b/171436815): Re-enable when S/R is fixed.
+  const DisableSave disable_save;
   int family = GetParam();
   sockaddr_storage addr =
       ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddrZeroPort(GetParam()));
@@ -2369,18 +2372,24 @@ void ShutdownConnectingSocket(int domain, int shutdown_mode) {
 }
 
 TEST_P(SimpleTcpSocketTest, ShutdownReadConnectingSocket) {
+  // TODO(b/171436815): Re-enable when S/R is fixed.
+  const DisableSave disable_save;
   // TODO(b/175409607): Fix this test for hostinet.
   SKIP_IF(IsRunningWithHostinet());
   ShutdownConnectingSocket(GetParam(), SHUT_RD);
 }
 
 TEST_P(SimpleTcpSocketTest, ShutdownWriteConnectingSocket) {
+  // TODO(b/171436815): Re-enable when S/R is fixed.
+  const DisableSave disable_save;
   // TODO(b/175409607): Fix this test for hostinet.
   SKIP_IF(IsRunningWithHostinet());
   ShutdownConnectingSocket(GetParam(), SHUT_WR);
 }
 
 TEST_P(SimpleTcpSocketTest, ShutdownReadWriteConnectingSocket) {
+  // TODO(b/171436815): Re-enable when S/R is fixed.
+  const DisableSave disable_save;
   // TODO(b/175409607): Fix this test for hostinet.
   SKIP_IF(IsRunningWithHostinet());
   ShutdownConnectingSocket(GetParam(), SHUT_RDWR);
@@ -2408,6 +2417,8 @@ TEST_P(SimpleTcpSocketTest, ConnectUnspecifiedAddress) {
 }
 
 TEST_P(SimpleTcpSocketTest, OnlyAcknowledgeBacklogConnections) {
+  // TODO(b/171436815): Re-enable when S/R is fixed.
+  const DisableSave disable_save;
   // TODO(b/175409607): Fix this test for hostinet.
   SKIP_IF(IsRunningWithHostinet());
 
@@ -2476,6 +2487,8 @@ TEST_P(SimpleTcpSocketTest, OnlyAcknowledgeBacklogConnections) {
 }
 
 TEST_P(SimpleTcpSocketTest, SynRcvdOnListenerShutdown) {
+  // TODO(b/171436815): Re-enable when S/R is fixed.
+  const DisableSave disable_save;
   FileDescriptor bound_s =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(GetParam(), SOCK_STREAM, IPPROTO_TCP));
 
@@ -2587,6 +2600,65 @@ TEST_P(SimpleTcpSocketTest, SynRcvdOnListenerShutdown) {
     thread.join();
   }
 }
+
+// Fuchsia doesn't have epoll.
+#ifdef __linux__
+
+// Ensure that we can S/R when epoll is waiting on a listening socket.
+// Regression test for b/280313827.
+TEST_P(SimpleTcpSocketTest, EpollListeningSocket) {
+  // Create the listening socket.
+  int fd;
+  ASSERT_THAT(fd = socket(GetParam(), SOCK_STREAM | SOCK_NONBLOCK, 0),
+              SyscallSucceeds());
+  FileDescriptor sockfd(fd);
+
+  // Bind to some port.
+  sockaddr_storage addr =
+      ASSERT_NO_ERRNO_AND_VALUE(InetLoopbackAddrZeroPort(GetParam()));
+  socklen_t addrlen = sizeof(addr);
+  ASSERT_THAT(bind(sockfd.get(), AsSockAddr(&addr), addrlen),
+              SyscallSucceeds());
+
+  // Listen and accept with the expectation that accept fails.
+  ASSERT_THAT(listen(sockfd.get(), 2), SyscallSucceeds());
+  ASSERT_THAT(accept(sockfd.get(), nullptr, nullptr),
+              SyscallFailsWithErrno(EAGAIN));
+
+  // Start a thread that waits a bit, then connects to the listening socket.
+  ScopedThread save_and_connect_thread([&]() {
+    // Give epoll a chance to start blocking.
+    sleep(1);
+
+    // Save while epoll is blocking.
+    MaybeSave();
+
+    // Get the listener's address and connect to it.
+    int fd;
+    ASSERT_THAT(fd = socket(GetParam(), SOCK_STREAM, 0), SyscallSucceeds());
+    FileDescriptor connfd(fd);
+    ASSERT_THAT(getsockname(sockfd.get(), AsSockAddr(&addr), &addrlen),
+                SyscallSucceeds());
+    ASSERT_THAT(RetryEINTR(connect)(connfd.get(), AsSockAddr(&addr), addrlen),
+                SyscallSucceeds());
+  });
+
+  // Epoll on sockfd.
+  ASSERT_THAT(fd = epoll_create(1), SyscallSucceeds());
+  FileDescriptor epollfd(fd);
+  struct epoll_event event = {};
+  event.events = EPOLLIN;
+  ASSERT_THAT(epoll_ctl(epollfd.get(), EPOLL_CTL_ADD, sockfd.get(), &event),
+              SyscallSucceeds());
+
+  struct epoll_event results = {};
+  ASSERT_THAT(RetryEINTR(epoll_wait)(epollfd.get(), &results, 1, 60000),
+              SyscallSucceeds());
+
+  save_and_connect_thread.Join();
+}
+
+#endif  // __linux__
 
 INSTANTIATE_TEST_SUITE_P(AllInetTests, SimpleTcpSocketTest,
                          ::testing::Values(AF_INET, AF_INET6));
