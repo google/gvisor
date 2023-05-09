@@ -38,7 +38,7 @@ func TestUpdateVolumeAnnotations(t *testing.T) {
 		testLogDirPath       = "/var/log/pods/testns_testname_" + testPodUID
 		testLegacyLogDirPath = "/var/log/pods/" + testPodUID
 	)
-	testVolumePath := fmt.Sprintf("%s/%s/volumes/kubernetes.io~empty-dir/%s", dir, testPodUID, testVolumeName)
+	testVolumePath := fmt.Sprintf("%s/%s/volumes/%s/%s", dir, testPodUID, emptyDirVolumesDir, testVolumeName)
 
 	if err := os.MkdirAll(testVolumePath, 0755); err != nil {
 		t.Fatalf("Create test volume: %v", err)
@@ -64,12 +64,13 @@ func TestUpdateVolumeAnnotations(t *testing.T) {
 			},
 			expected: &specs.Spec{
 				Annotations: map[string]string{
-					sandboxLogDirAnnotation:                       testLogDirPath,
-					ContainerTypeAnnotation:                       containerTypeSandbox,
-					volumeKeyPrefix + testVolumeName + ".share":   "pod",
-					volumeKeyPrefix + testVolumeName + ".type":    "tmpfs",
-					volumeKeyPrefix + testVolumeName + ".options": "ro",
-					volumeKeyPrefix + testVolumeName + ".source":  testVolumePath,
+					sandboxLogDirAnnotation:                         testLogDirPath,
+					ContainerTypeAnnotation:                         containerTypeSandbox,
+					volumeKeyPrefix + testVolumeName + ".share":     "pod",
+					volumeKeyPrefix + testVolumeName + ".type":      "tmpfs",
+					volumeKeyPrefix + testVolumeName + ".options":   "ro",
+					volumeKeyPrefix + testVolumeName + ".source":    testVolumePath,
+					volumeKeyPrefix + testVolumeName + ".lifecycle": "pod",
 				},
 			},
 			expectUpdate: true,
@@ -87,12 +88,13 @@ func TestUpdateVolumeAnnotations(t *testing.T) {
 			},
 			expected: &specs.Spec{
 				Annotations: map[string]string{
-					sandboxLogDirAnnotation:                       testLegacyLogDirPath,
-					ContainerTypeAnnotation:                       containerTypeSandbox,
-					volumeKeyPrefix + testVolumeName + ".share":   "pod",
-					volumeKeyPrefix + testVolumeName + ".type":    "tmpfs",
-					volumeKeyPrefix + testVolumeName + ".options": "ro",
-					volumeKeyPrefix + testVolumeName + ".source":  testVolumePath,
+					sandboxLogDirAnnotation:                         testLegacyLogDirPath,
+					ContainerTypeAnnotation:                         containerTypeSandbox,
+					volumeKeyPrefix + testVolumeName + ".share":     "pod",
+					volumeKeyPrefix + testVolumeName + ".type":      "tmpfs",
+					volumeKeyPrefix + testVolumeName + ".options":   "ro",
+					volumeKeyPrefix + testVolumeName + ".source":    testVolumePath,
+					volumeKeyPrefix + testVolumeName + ".lifecycle": "pod",
 				},
 			},
 			expectUpdate: true,
@@ -273,11 +275,12 @@ func TestUpdateVolumeAnnotations(t *testing.T) {
 			name: "bind options removed",
 			spec: &specs.Spec{
 				Annotations: map[string]string{
-					ContainerTypeAnnotation:                       ContainerTypeContainer,
-					volumeKeyPrefix + testVolumeName + ".share":   "pod",
-					volumeKeyPrefix + testVolumeName + ".type":    "tmpfs",
-					volumeKeyPrefix + testVolumeName + ".options": "ro",
-					volumeKeyPrefix + testVolumeName + ".source":  testVolumePath,
+					ContainerTypeAnnotation:                         ContainerTypeContainer,
+					volumeKeyPrefix + testVolumeName + ".share":     "pod",
+					volumeKeyPrefix + testVolumeName + ".type":      "tmpfs",
+					volumeKeyPrefix + testVolumeName + ".options":   "ro",
+					volumeKeyPrefix + testVolumeName + ".source":    testVolumePath,
+					volumeKeyPrefix + testVolumeName + ".lifecycle": "pod",
 				},
 				Mounts: []specs.Mount{
 					{
@@ -290,11 +293,12 @@ func TestUpdateVolumeAnnotations(t *testing.T) {
 			},
 			expected: &specs.Spec{
 				Annotations: map[string]string{
-					ContainerTypeAnnotation:                       ContainerTypeContainer,
-					volumeKeyPrefix + testVolumeName + ".share":   "pod",
-					volumeKeyPrefix + testVolumeName + ".type":    "tmpfs",
-					volumeKeyPrefix + testVolumeName + ".options": "ro",
-					volumeKeyPrefix + testVolumeName + ".source":  testVolumePath,
+					ContainerTypeAnnotation:                         ContainerTypeContainer,
+					volumeKeyPrefix + testVolumeName + ".share":     "pod",
+					volumeKeyPrefix + testVolumeName + ".type":      "tmpfs",
+					volumeKeyPrefix + testVolumeName + ".options":   "ro",
+					volumeKeyPrefix + testVolumeName + ".source":    testVolumePath,
+					volumeKeyPrefix + testVolumeName + ".lifecycle": "pod",
 				},
 				Mounts: []specs.Mount{
 					{
@@ -325,12 +329,13 @@ func TestUpdateVolumeAnnotations(t *testing.T) {
 			},
 			expected: &specs.Spec{
 				Annotations: map[string]string{
-					sandboxLogDirAnnotation:                   testLogDirPath,
-					ContainerTypeAnnotation:                   containerTypeSandbox,
-					volumeKeyPrefix + devshmName + ".share":   "pod",
-					volumeKeyPrefix + devshmName + ".type":    "tmpfs",
-					volumeKeyPrefix + devshmName + ".options": "rw",
-					volumeKeyPrefix + devshmName + ".source":  testVolumePath,
+					sandboxLogDirAnnotation:                     testLogDirPath,
+					ContainerTypeAnnotation:                     containerTypeSandbox,
+					volumeKeyPrefix + devshmName + ".share":     "pod",
+					volumeKeyPrefix + devshmName + ".type":      "tmpfs",
+					volumeKeyPrefix + devshmName + ".options":   "rw",
+					volumeKeyPrefix + devshmName + ".source":    testVolumePath,
+					volumeKeyPrefix + devshmName + ".lifecycle": "pod",
 				},
 				Mounts: []specs.Mount{
 					{

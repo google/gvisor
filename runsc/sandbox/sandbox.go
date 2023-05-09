@@ -178,6 +178,10 @@ type Sandbox struct {
 	// ControlAddress is the uRPC address used to connect to the sandbox.
 	ControlAddress string `json:"control_address"`
 
+	// MountHints provides extra information about container mounts that apply
+	// to the entire pod.
+	MountHints *boot.PodMountHints `json:"mountHints"`
+
 	// child is set if a sandbox process is a child of the current process.
 	//
 	// This field isn't saved to json, because only a creator of sandbox
@@ -231,6 +235,10 @@ type Args struct {
 	// bind mounts in Spec.Mounts (in the same order).
 	OverlayMediums []boot.OverlayMedium
 
+	// MountHints provides extra information about containers mounts that apply
+	// to the entire pod.
+	MountHints *boot.PodMountHints
+
 	// MountsFile is a file container mount information from the spec. It's
 	// equivalent to the mounts from the spec, except that all paths have been
 	// resolved to their final absolute location.
@@ -267,6 +275,7 @@ func New(conf *config.Config, args *Args) (*Sandbox, error) {
 		GID:                 -1, // prevent usage before it's set.
 		MetricMetadata:      conf.MetricMetadata(),
 		MetricServerAddress: conf.MetricServer,
+		MountHints:          args.MountHints,
 	}
 	if args.Spec != nil && args.Spec.Annotations != nil {
 		s.PodName = args.Spec.Annotations[podNameAnnotation]
