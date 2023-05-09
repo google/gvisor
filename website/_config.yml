@@ -25,6 +25,9 @@ defaults:
       layout: default
 analytics: "UA-150193582-1"
 authors:
+  ayushranjan:
+    name: Ayush Ranjan
+    email: ayushranjan@google.com
   bogomolov:
     name: Konstantin Bogomolov
     email: bogomolov@google.com
