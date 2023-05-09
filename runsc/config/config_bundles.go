@@ -24,6 +24,8 @@ package config
 // Bundles are mutually exclusive iff their flag values overlap and differ.
 var Bundles = map[BundleName]Bundle{
 	"experimental-high-performance": {
+		"directfs": "true",
 		"overlay2": "root:self",
+		"platform": "systrap",
 	},
 }
