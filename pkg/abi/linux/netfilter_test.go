@@ -15,14 +15,13 @@
 package linux
 
 import (
+	"encoding/binary"
 	"testing"
-
-	"gvisor.dev/gvisor/pkg/binary"
 )
 
 func TestSizes(t *testing.T) {
 	testCases := []struct {
-		typ     interface{}
+		typ     any
 		defined uintptr
 	}{
 		{IPTEntry{}, SizeOfIPTEntry},
@@ -42,7 +41,7 @@ func TestSizes(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		if calculated := binary.Size(tc.typ); calculated != tc.defined {
+		if calculated := uintptr(binary.Size(tc.typ)); calculated != tc.defined {
 			t.Errorf("%T has a defined size of %d and calculated size of %d", tc.typ, tc.defined, calculated)
 		}
 	}

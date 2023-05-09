@@ -23,6 +23,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
@@ -33,7 +34,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 )
 
@@ -206,17 +206,17 @@ var _ dynamicInode = (*netUnixData)(nil)
 func (n *netUnixData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	buf.WriteString("Num       RefCount Protocol Flags    Type St Inode Path\n")
 	for _, se := range n.kernel.ListSockets() {
-		s := se.SockVFS2
+		s := se.Sock
 		if !s.TryIncRef() {
 			// Racing with socket destruction, this is ok.
 			continue
 		}
-		if family, _, _ := s.Impl().(socket.SocketVFS2).Type(); family != linux.AF_UNIX {
+		if family, _, _ := s.Impl().(socket.Socket).Type(); family != linux.AF_UNIX {
 			s.DecRef(ctx)
 			// Not a unix socket.
 			continue
 		}
-		sops := s.Impl().(*unix.SocketVFS2)
+		sops := s.Impl().(*unix.Socket)
 
 		addr, err := sops.Endpoint().GetLocalAddress()
 		if err != nil {
@@ -226,11 +226,13 @@ func (n *netUnixData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 
 		sockFlags := 0
 		if ce, ok := sops.Endpoint().(transport.ConnectingEndpoint); ok {
-			if ce.Listening() {
+			ce.Lock()
+			if ce.ListeningLocked() {
 				// For unix domain sockets, linux reports a single flag
 				// value if the socket is listening, of __SO_ACCEPTCON.
 				sockFlags = linux.SO_ACCEPTCON
 			}
+			ce.Unlock()
 		}
 
 		// Get inode number.
@@ -261,13 +263,13 @@ func (n *netUnixData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 		//
 		// For now, we always redact this pointer.
 		fmt.Fprintf(buf, "%#016p: %08X %08X %08X %04X %02X %8d",
-			(*unix.SocketOperations)(nil), // Num, pointer to kernel socket struct.
-			s.ReadRefs()-1,                // RefCount, don't count our own ref.
-			0,                             // Protocol, always 0 for UDS.
-			sockFlags,                     // Flags.
-			sops.Endpoint().Type(),        // Type.
-			sops.State(),                  // State.
-			ino,                           // Inode.
+			(*unix.Socket)(nil),    // Num, pointer to kernel socket struct.
+			s.ReadRefs()-1,         // RefCount, don't count our own ref.
+			0,                      // Protocol, always 0 for UDS.
+			sockFlags,              // Flags.
+			sops.Endpoint().Type(), // Type.
+			sops.State(),           // State.
+			ino,                    // Inode.
 		)
 
 		// Path
@@ -349,12 +351,12 @@ func commonGenerateTCP(ctx context.Context, buf *bytes.Buffer, k *kernel.Kernel,
 	t := kernel.TaskFromContext(ctx)
 
 	for _, se := range k.ListSockets() {
-		s := se.SockVFS2
+		s := se.Sock
 		if !s.TryIncRef() {
 			// Racing with socket destruction, this is ok.
 			continue
 		}
-		sops, ok := s.Impl().(socket.SocketVFS2)
+		sops, ok := s.Impl().(socket.Socket)
 		if !ok {
 			panic(fmt.Sprintf("Found non-socket file in socket table: %+v", s))
 		}
@@ -514,12 +516,12 @@ func (d *netUDPData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	buf.WriteString("  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode ref pointer drops             \n")
 
 	for _, se := range d.kernel.ListSockets() {
-		s := se.SockVFS2
+		s := se.Sock
 		if !s.TryIncRef() {
 			// Racing with socket destruction, this is ok.
 			continue
 		}
-		sops, ok := s.Impl().(socket.SocketVFS2)
+		sops, ok := s.Impl().(socket.Socket)
 		if !ok {
 			panic(fmt.Sprintf("Found non-socket file in socket table: %+v", s))
 		}
@@ -648,7 +650,7 @@ var snmp = []snmpLine{
 	},
 }
 
-func toSlice(a interface{}) []uint64 {
+func toSlice(a any) []uint64 {
 	v := reflect.Indirect(reflect.ValueOf(a))
 	return v.Slice(0, v.Len()).Interface().([]uint64)
 }
@@ -663,7 +665,7 @@ func sprintSlice(s []uint64) string {
 
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (d *netSnmpData) Generate(ctx context.Context, buf *bytes.Buffer) error {
-	types := []interface{}{
+	types := []any{
 		&inet.StatSNMPIP{},
 		&inet.StatSNMPICMP{},
 		nil, // TODO(gvisor.dev/issue/628): Support IcmpMsg stats.
@@ -679,7 +681,7 @@ func (d *netSnmpData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 			continue
 		}
 		if err := d.stack.Statistics(stat, line.prefix); err != nil {
-			if err == syserror.EOPNOTSUPP {
+			if linuxerr.Equals(linuxerr.EOPNOTSUPP, err) {
 				log.Infof("Failed to retrieve %s of /proc/net/snmp: %v", line.prefix, err)
 			} else {
 				log.Warningf("Failed to retrieve %s of /proc/net/snmp: %v", line.prefix, err)

@@ -24,11 +24,11 @@
 // The different types of escapes are as follows, with the category in
 // parentheses:
 //
-// 	heap:      A direct allocation is made on the heap (hard).
-// 	builtin:   A call is made to a built-in allocation function (hard).
-// 	stack:     A stack split as part of a function preamble (soft).
-// 	interface: A call is made via an interface which *may* escape (soft).
-// 	dynamic:   A dynamic function is dispatched which *may* escape (soft).
+//	heap:      A direct allocation is made on the heap (hard).
+//	builtin:   A call is made to a built-in allocation function (hard).
+//	stack:     A stack split as part of a function preamble (soft).
+//	interface: A call is made via an interface which *may* escape (soft).
+//	dynamic:   A dynamic function is dispatched which *may* escape (soft).
 //
 // To the use the package, annotate a function-level comment with either the
 // line "// +checkescape" or "// +checkescape:OPTION[,OPTION]". In the second
@@ -61,26 +61,31 @@ package checkescape
 import (
 	"bufio"
 	"bytes"
-	"flag"
 	"fmt"
 	"go/ast"
 	"go/token"
 	"go/types"
 	"io"
-	"log"
+	"io/ioutil"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"golang.org/x/tools/go/analysis"
 	"golang.org/x/tools/go/analysis/passes/buildssa"
 	"golang.org/x/tools/go/ssa"
+	"gvisor.dev/gvisor/tools/nogo/flags"
 )
 
 const (
 	// magic is the magic annotation.
 	magic = "// +checkescape"
+
+	// Bad versions of `magic` observed in the wilderness of the codebase.
+	badMagicNoSpace = "//+checkescape"
+	badMagicPlural  = "// +checkescapes"
 
 	// magicParams is the magic annotation with specific parameters.
 	magicParams = magic + ":"
@@ -90,21 +95,6 @@ const (
 
 	// exempt is the exemption annotation.
 	exempt = "// escapes"
-)
-
-var (
-	// Binary is the binary under analysis.
-	//
-	// See Reader, below.
-	binary = flag.String("binary", "", "binary under analysis")
-
-	// Reader is the input stream.
-	//
-	// This may be set instead of Binary.
-	Reader io.Reader
-
-	// objdumpTool is the tool used to dump a binary.
-	objdumpTool = flag.String("objdump_tool", "", "tool used to dump a binary")
 )
 
 // EscapeReason is an escape reason.
@@ -179,36 +169,30 @@ var escapingBuiltins = []string{
 	"mallocgc",
 }
 
-// packageEscapeFacts is the set of all functions in a package, and whether or
-// not they recursively pass escape analysis.
-//
-// All the type names for receivers are encoded in the full key. The key
-// represents the fully qualified package and type name used at link time.
-//
-// Note that each Escapes object is a summary. Local findings may be reported
-// using more detailed information.
-type packageEscapeFacts struct {
-	Funcs map[string]Escapes
+// objdumpAnalyzer accepts the objdump parameter.
+type objdumpAnalyzer struct {
+	analysis.Analyzer
 }
 
-// AFact implements analysis.Fact.AFact.
-func (*packageEscapeFacts) AFact() {}
+// Run implements nogo.binaryAnalyzer.Run.
+func (ob *objdumpAnalyzer) Run(pass *analysis.Pass, binary io.Reader) (any, error) {
+	return run(pass, binary)
+}
+
+// Legacy implements nogo.analyzer.Legacy.
+func (ob *objdumpAnalyzer) Legacy() *analysis.Analyzer {
+	return &ob.Analyzer
+}
 
 // Analyzer includes specific results.
-var Analyzer = &analysis.Analyzer{
-	Name:      "checkescape",
-	Doc:       "escape analysis checks based on +checkescape annotations",
-	Run:       runSelectEscapes,
-	Requires:  []*analysis.Analyzer{buildssa.Analyzer},
-	FactTypes: []analysis.Fact{(*packageEscapeFacts)(nil)},
-}
-
-// EscapeAnalyzer includes all local escape results.
-var EscapeAnalyzer = &analysis.Analyzer{
-	Name:     "checkescape",
-	Doc:      "complete local escape analysis results (requires Analyzer facts)",
-	Run:      runAllEscapes,
-	Requires: []*analysis.Analyzer{buildssa.Analyzer},
+var Analyzer = &objdumpAnalyzer{
+	Analyzer: analysis.Analyzer{
+		Name:      "checkescape",
+		Doc:       "escape analysis checks based on +checkescape annotations",
+		Run:       nil, // Must be invoked via Run above.
+		Requires:  []*analysis.Analyzer{buildssa.Analyzer},
+		FactTypes: []analysis.Fact{(*Escapes)(nil)},
+	},
 }
 
 // LinePosition is a low-resolution token.Position.
@@ -256,6 +240,9 @@ type Escapes struct {
 	Details   [reasonCount]string
 	Omitted   [reasonCount]int
 }
+
+// AFact implements analysis.Fact.AFact.
+func (*Escapes) AFact() {}
 
 // add is called by Add and Merge.
 func (es *Escapes) add(r EscapeReason, detail string, omitted int, callSites ...CallSite) {
@@ -373,36 +360,86 @@ func MergeAll(others []Escapes) (es Escapes) {
 //
 // Note that the map uses <basename.go>:<line> because that is all that is
 // provided in the objdump format. Since this is all local, it is sufficient.
-func loadObjdump() (map[string][]string, error) {
-	var (
-		args  []string
-		stdin io.Reader
-	)
-	if *binary != "" {
-		args = append(args, *binary)
-	} else if Reader != nil {
-		stdin = Reader
-	} else {
-		// We have no input stream or binary.
-		return nil, fmt.Errorf("no binary or reader provided")
+func loadObjdump(binary io.Reader) (finalResults map[string][]string, finalErr error) {
+	// Do we have a binary? If it's missing, then the nil will simply be
+	// plumbed all the way down here.
+	if binary == nil {
+		return nil, fmt.Errorf("no binary provided")
 	}
 
-	// Construct our command.
-	cmd := exec.Command(*objdumpTool, args...)
-	cmd.Stdin = stdin
-	cmd.Stderr = os.Stderr
-	out, err := cmd.StdoutPipe()
+	// Construct & start our command. The 'go tool objdump' command
+	// requires a seekable input passed on the command line. Therefore, we
+	// may need to generate a temporary file here.
+	input, ok := binary.(*os.File)
+	if ok {
+		// Ensure that the file is seekable and that the offset is
+		// zero, since we can't control that.
+		if offset, err := input.Seek(0, os.SEEK_CUR); err != nil || offset != 0 {
+			ok = false // Not usable.
+		}
+	}
+	if !ok {
+		// Copy to a temporary path.
+		f, err := ioutil.TempFile("", "")
+		if err != nil {
+			return nil, fmt.Errorf("unable to create temp file: %w", err)
+		}
+		// Ensure the file is deleted.
+		defer os.Remove(f.Name())
+		// Populate the file contents.
+		if _, err := io.Copy(f, binary); err != nil {
+			return nil, fmt.Errorf("unable to populate temp file: %w", err)
+		}
+		// Seek to the beginning.
+		if _, err := f.Seek(0, os.SEEK_SET); err != nil {
+			return nil, fmt.Errorf("unable to seek in temp file: %w", err)
+		}
+		input = f
+	}
+
+	// Execute go tool objdump ggiven the input.
+	cmd := exec.Command(flags.Go, "tool", "objdump", input.Name())
+	pipeOut, err := cmd.StdoutPipe()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("unable to load objdump: %w", err)
 	}
-	if err := cmd.Start(); err != nil {
-		return nil, err
+	defer pipeOut.Close()
+	pipeErr, err := cmd.StderrPipe()
+	if err != nil {
+		return nil, fmt.Errorf("unable to load objdump: %w", err)
+	}
+	defer pipeErr.Close()
+	if startErr := cmd.Start(); startErr != nil {
+		return nil, fmt.Errorf("unable to start objdump: %w", startErr)
 	}
 
-	// Identify calls by address or name. Note that this is also
-	// constructed dynamically below, as we encounted the addresses.
-	// This is because some of the functions (duffzero) may have
-	// jump targets in the middle of the function itself.
+	// Ensure that the command has finished successfully. Note that even if
+	// we parse the first few lines correctly, and early exit could
+	// indicate that the dump was incomplete and we could be missed some
+	// escapes that would have appeared. We need to force failure.
+	defer func() {
+		var (
+			wg  sync.WaitGroup
+			buf bytes.Buffer
+		)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			io.Copy(&buf, pipeErr)
+		}()
+		waitErr := cmd.Wait()
+		wg.Wait()
+		if finalErr == nil && waitErr != nil {
+			// Override the function's return value in this case.
+			finalErr = fmt.Errorf("error running objdump %s: %v (%s)", input.Name(), waitErr, buf.Bytes())
+		}
+	}()
+
+	// Identify calls by address or name. Note that the list of allowed addresses
+	// -- not the list of allowed function names -- is also constructed
+	// dynamically below, as we encounter the addresses. This is because some of
+	// the functions (duffzero) may have jump targets in the middle of the
+	// function itself.
 	funcsAllowed := map[string]struct{}{
 		"runtime.duffzero":       {},
 		"runtime.duffcopy":       {},
@@ -426,12 +463,14 @@ func loadObjdump() (map[string][]string, error) {
 		"runtime.stackcheck":     {},
 		"runtime.settls":         {},
 	}
+	// addrsAllowed lists every address that can be jumped to within the
+	// funcsAllowed functions.
 	addrsAllowed := make(map[string]struct{})
 
 	// Build the map.
 	nextFunc := "" // For funcsAllowed.
 	m := make(map[string][]string)
-	r := bufio.NewReader(out)
+	r := bufio.NewReader(pipeOut)
 NextLine:
 	for {
 		line, err := r.ReadString('\n')
@@ -440,7 +479,8 @@ NextLine:
 		}
 		fields := strings.Fields(line)
 
-		// Is this an "allowed" function definition?
+		// Is this an "allowed" function definition? If so, record every address of
+		// the function body.
 		if len(fields) >= 2 && fields[0] == "TEXT" {
 			nextFunc = strings.TrimSuffix(fields[1], "(SB)")
 			if _, ok := funcsAllowed[nextFunc]; !ok {
@@ -448,7 +488,8 @@ NextLine:
 			}
 		}
 		if nextFunc != "" && len(fields) > 2 {
-			// Save the given address (in hex form, as it appears).
+			// We're inside an allowed function. Save the given address (in hex form,
+			// as it appears).
 			addrsAllowed[fields[1]] = struct{}{}
 		}
 
@@ -466,6 +507,10 @@ NextLine:
 			}
 			site := fields[0]
 			target := strings.TrimSuffix(fields[4], "(SB)")
+			target, err := fixOffset(fields, target)
+			if err != nil {
+				return nil, err
+			}
 
 			// Ignore strings containing allowed functions.
 			if _, ok := funcsAllowed[target]; ok {
@@ -518,27 +563,12 @@ NextLine:
 		final[site] = filteredCalls
 	}
 
-	// Wait for the dump to finish.
-	if err := cmd.Wait(); err != nil {
-		return nil, err
-	}
-
 	return final, nil
 }
 
 // poser is a type that implements Pos.
 type poser interface {
 	Pos() token.Pos
-}
-
-// runSelectEscapes runs with only select escapes.
-func runSelectEscapes(pass *analysis.Pass) (interface{}, error) {
-	return run(pass, false)
-}
-
-// runAllEscapes runs with all escapes included.
-func runAllEscapes(pass *analysis.Pass) (interface{}, error) {
-	return run(pass, true)
 }
 
 // findReasons extracts reasons from the function.
@@ -555,6 +585,10 @@ func findReasons(pass *analysis.Pass, fdecl *ast.FuncDecl) ([]EscapeReason, bool
 	// Scan all lines.
 	found := false
 	for _, c := range fdecl.Doc.List {
+		if strings.HasPrefix(c.Text, badMagicNoSpace) || strings.HasPrefix(c.Text, badMagicPlural) {
+			pass.Reportf(fdecl.Pos(), "misspelled checkescape prefix: please use %q instead", magic)
+			continue
+		}
 		// Does the comment contain a +checkescape line?
 		if !strings.HasPrefix(c.Text, magic) && !strings.HasPrefix(c.Text, testMagic) {
 			continue
@@ -617,14 +651,11 @@ func findReasons(pass *analysis.Pass, fdecl *ast.FuncDecl) ([]EscapeReason, bool
 }
 
 // run performs the analysis.
-func run(pass *analysis.Pass, localEscapes bool) (interface{}, error) {
-	calls, callsErr := loadObjdump()
-	if callsErr != nil {
-		// Note that if this analysis fails, then we don't actually
-		// fail the analyzer itself. We simply report every possible
-		// escape. In most cases this will work just fine.
-		log.Printf("WARNING: unable to load objdump: %v", callsErr)
-	}
+func run(pass *analysis.Pass, binary io.Reader) (any, error) {
+	// Note that if this analysis fails, then we don't actually
+	// fail the analyzer itself. We simply report every possible
+	// escape. In most cases this will work just fine.
+	calls, callsErr := loadObjdump(binary)
 	allEscapes := make(map[string][]Escapes)
 	mergedEscapes := make(map[string]Escapes)
 	linePosition := func(inst, parent poser) LinePosition {
@@ -694,35 +725,45 @@ func run(pass *analysis.Pass, localEscapes bool) (interface{}, error) {
 			}
 			switch x := x.Call.Value.(type) {
 			case *ssa.Function:
-				if x.Pkg == nil {
-					// Can't resolve the package.
-					es.Add(unknownPackage, "no package", cs)
-					return
-				}
-
 				// Is this a local function? If yes, call the
 				// function to load the local function. The
 				// local escapes are the escapes found in the
 				// local function.
-				if x.Pkg.Pkg == pass.Pkg {
+				if x.Pkg != nil && x.Pkg.Pkg == pass.Pkg {
 					es.MergeWithCall(loadFunc(x), cs)
 					return
 				}
 
-				// Recursively collect information from
-				// the other analyzers.
-				var imp packageEscapeFacts
-				if !pass.ImportPackageFact(x.Pkg.Pkg, &imp) {
+				// If this package is the atomic package, the implementation
+				// may be replaced by instrinsics that don't have analysis.
+				if x.Pkg != nil && x.Pkg.Pkg.Path() == "sync/atomic" {
+					return
+				}
+
+				// Recursively collect information.
+				var funcEscapes Escapes
+				if !pass.ImportObjectFact(x.Object(), &funcEscapes) {
+					// If this is the unix or syscall
+					// package, and the function is
+					// RawSyscall, we can also ignore this
+					// case.
+					pkgIsUnixOrSyscall := x.Pkg != nil && (x.Pkg.Pkg.Name() == "unix" || x.Pkg.Pkg.Name() == "syscall")
+					methodIsRawSyscall := x.Name() == "RawSyscall" || x.Name() == "RawSyscall6"
+					if pkgIsUnixOrSyscall && methodIsRawSyscall {
+						return
+					}
+
 					// Unable to import the dependency; we must
 					// declare these as escaping.
-					es.Add(unknownPackage, "no analysis", cs)
+					message := fmt.Sprintf("no analysis for %q", x.Object().String())
+					es.Add(unknownPackage, message, cs)
 					return
 				}
 
 				// The escapes of this instruction are the
 				// escapes of the called function directly.
 				// Note that this may record many escapes.
-				es.MergeWithCall(imp.Funcs[x.RelString(x.Pkg.Pkg)], cs)
+				es.MergeWithCall(funcEscapes, cs)
 				return
 			case *ssa.Builtin:
 				// Ignore elided escapes.
@@ -828,16 +869,10 @@ func run(pass *analysis.Pass, localEscapes bool) (interface{}, error) {
 
 	// Complete all local functions.
 	for _, fn := range state.SrcFuncs {
-		loadFunc(fn)
-	}
-
-	if !localEscapes {
-		// Export all findings for future packages. We only do this in
-		// non-local escapes mode, and expect to run this analysis
-		// after the SelectAnalysis.
-		pass.ExportPackageFact(&packageEscapeFacts{
-			Funcs: mergedEscapes,
-		})
+		funcEscapes := loadFunc(fn)
+		if obj := fn.Object(); obj != nil {
+			pass.ExportObjectFact(obj, &funcEscapes)
+		}
 	}
 
 	// Scan all functions for violations.
@@ -849,18 +884,8 @@ func run(pass *analysis.Pass, localEscapes bool) (interface{}, error) {
 			if !ok {
 				continue
 			}
-			var (
-				reasons     []EscapeReason
-				local       bool
-				testReasons map[EscapeReason]bool
-			)
-			if localEscapes {
-				// Find all hard escapes.
-				reasons = hardReasons
-			} else {
-				// Find all declared reasons.
-				reasons, local, testReasons = findReasons(pass, fdecl)
-			}
+			// Find all declared reasons.
+			reasons, local, testReasons := findReasons(pass, fdecl)
 
 			// Scan for matches.
 			fn := pass.TypesInfo.Defs[fdecl.Name].(*types.Func)

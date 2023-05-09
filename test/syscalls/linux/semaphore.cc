@@ -20,6 +20,7 @@
 #include <atomic>
 #include <cerrno>
 #include <ctime>
+#include <memory>
 #include <set>
 
 #include "gmock/gmock.h"
@@ -49,6 +50,9 @@ constexpr int kSemAem = 32767;
 
 class AutoSem {
  public:
+  // Creates a new private semaphore.
+  AutoSem() : id_(semget(IPC_PRIVATE, 1, 0)) {}
+
   explicit AutoSem(int id) : id_(id) {}
   ~AutoSem() {
     if (id_ >= 0) {
@@ -99,6 +103,20 @@ TEST(SemaphoreTest, SemGet) {
   EXPECT_NE(sem.get(), sem2.get());
   ASSERT_THAT(sem3.get(), SyscallSucceeds());
   EXPECT_NE(sem3.get(), sem2.get());
+}
+
+// Tests system-wide limits for semget.
+TEST(SemaphoreTest, SemGetSystemLimits) {
+  // Disable save so that we don't trigger save/restore too many times.
+  const DisableSave ds;
+
+  // Exceed number of semaphores per set.
+  EXPECT_THAT(semget(IPC_PRIVATE, kSemMsl + 1, 0),
+              SyscallFailsWithErrno(EINVAL));
+
+  // Exceed system-wide limit for semaphore sets by 1.
+  AutoSem sems[kSemMni];
+  EXPECT_THAT(semget(IPC_PRIVATE, 1, 0), SyscallFailsWithErrno(ENOSPC));
 }
 
 // Tests simple operations that shouldn't block in a single-thread.
@@ -212,7 +230,7 @@ TEST(SemaphoreTest, SemOpBlock) {
   AutoSem sem(semget(IPC_PRIVATE, 1, 0600 | IPC_CREAT));
   ASSERT_THAT(sem.get(), SyscallSucceeds());
 
-  std::atomic<int> blocked = ATOMIC_VAR_INIT(1);
+  std::atomic<int> blocked(1);
   ScopedThread th([&sem, &blocked] {
     absl::SleepFor(absl::Milliseconds(100));
     ASSERT_EQ(blocked.load(), 1);
@@ -287,7 +305,7 @@ TEST(SemaphoreTest, SemOpSimple) {
 
 // Tests that semaphore can be removed while there are waiters.
 // NoRandomSave: Test relies on timing that random save throws off.
-TEST(SemaphoreTest, SemOpRemoveWithWaiter_NoRandomSave) {
+TEST(SemaphoreTest, SemOpRemoveWithWaiter) {
   AutoSem sem(semget(IPC_PRIVATE, 2, 0600 | IPC_CREAT));
   ASSERT_THAT(sem.get(), SyscallSucceeds());
 
@@ -354,7 +372,7 @@ TEST(SemaphoreTest, SemOpRandom) {
   // These threads will wait in a loop.
   std::unique_ptr<ScopedThread> decs[5];
   for (auto& dec : decs) {
-    dec = absl::make_unique<ScopedThread>([&sem, &mutex, &count, &seed, &done] {
+    dec = std::make_unique<ScopedThread>([&sem, &mutex, &count, &seed, &done] {
       for (size_t i = 0; i < 500; ++i) {
         int16_t val;
         {
@@ -376,7 +394,7 @@ TEST(SemaphoreTest, SemOpRandom) {
   // These threads will wait for zero in a loop.
   std::unique_ptr<ScopedThread> zeros[5];
   for (auto& zero : zeros) {
-    zero = absl::make_unique<ScopedThread>([&sem, &mutex, &done] {
+    zero = std::make_unique<ScopedThread>([&sem, &mutex, &done] {
       for (size_t i = 0; i < 500; ++i) {
         {
           absl::MutexLock l(&mutex);
@@ -395,7 +413,7 @@ TEST(SemaphoreTest, SemOpRandom) {
   // These threads will signal in a loop.
   std::unique_ptr<ScopedThread> incs[5];
   for (auto& inc : incs) {
-    inc = absl::make_unique<ScopedThread>([&sem, &mutex, &count, &seed] {
+    inc = std::make_unique<ScopedThread>([&sem, &mutex, &count, &seed] {
       for (size_t i = 0; i < 500; ++i) {
         int16_t val;
         {
@@ -535,7 +553,7 @@ TEST(SemaphoreTest, SemCtlGetPidFork) {
 
 TEST(SemaphoreTest, SemIpcSet) {
   // Drop CAP_IPC_OWNER which allows us to bypass semaphore permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_IPC_OWNER, false));
+  AutoCapability cap(CAP_IPC_OWNER, false);
 
   AutoSem sem(semget(IPC_PRIVATE, 1, 0600 | IPC_CREAT));
   ASSERT_THAT(sem.get(), SyscallSucceeds());
@@ -560,7 +578,7 @@ TEST(SemaphoreTest, SemIpcSet) {
 
 TEST(SemaphoreTest, SemCtlIpcStat) {
   // Drop CAP_IPC_OWNER which allows us to bypass semaphore permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_IPC_OWNER, false));
+  AutoCapability cap(CAP_IPC_OWNER, false);
   const uid_t kUid = getuid();
   const gid_t kGid = getgid();
   time_t start_time = time(nullptr);
@@ -635,7 +653,7 @@ PosixErrorOr<int> WaitSemctl(int semid, int target, int cmd) {
 
 TEST(SemaphoreTest, SemopGetzcnt) {
   // Drop CAP_IPC_OWNER which allows us to bypass semaphore permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_IPC_OWNER, false));
+  AutoCapability cap(CAP_IPC_OWNER, false);
   // Create a write only semaphore set.
   AutoSem sem(semget(IPC_PRIVATE, 1, 0200 | IPC_CREAT));
   ASSERT_THAT(sem.get(), SyscallSucceeds());
@@ -708,7 +726,7 @@ TEST(SemaphoreTest, SemopGetzcntOnSetRemoval) {
   EXPECT_THAT(semctl(semid, 0, GETZCNT), SyscallFailsWithErrno(EINVAL));
 }
 
-TEST(SemaphoreTest, SemopGetzcntOnSignal_NoRandomSave) {
+TEST(SemaphoreTest, SemopGetzcntOnSignal) {
   AutoSem sem(semget(IPC_PRIVATE, 1, 0600 | IPC_CREAT));
   ASSERT_THAT(sem.get(), SyscallSucceeds());
   ASSERT_THAT(semctl(sem.get(), 0, SETVAL, 1), SyscallSucceeds());
@@ -743,7 +761,7 @@ TEST(SemaphoreTest, SemopGetzcntOnSignal_NoRandomSave) {
 
 TEST(SemaphoreTest, SemopGetncnt) {
   // Drop CAP_IPC_OWNER which allows us to bypass semaphore permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_IPC_OWNER, false));
+  AutoCapability cap(CAP_IPC_OWNER, false);
   // Create a write only semaphore set.
   AutoSem sem(semget(IPC_PRIVATE, 1, 0200 | IPC_CREAT));
   ASSERT_THAT(sem.get(), SyscallSucceeds());
@@ -813,7 +831,7 @@ TEST(SemaphoreTest, SemopGetncntOnSetRemoval) {
   EXPECT_THAT(semctl(semid, 0, GETNCNT), SyscallFailsWithErrno(EINVAL));
 }
 
-TEST(SemaphoreTest, SemopGetncntOnSignal_NoRandomSave) {
+TEST(SemaphoreTest, SemopGetncntOnSignal) {
   AutoSem sem(semget(IPC_PRIVATE, 1, 0600 | IPC_CREAT));
   ASSERT_THAT(sem.get(), SyscallSucceeds());
   ASSERT_EQ(semctl(sem.get(), 0, GETNCNT), 0);
@@ -853,7 +871,7 @@ TEST(SemaphoreTest, IpcInfo) {
   std::set<int> sem_ids;
   struct seminfo info;
   // Drop CAP_IPC_OWNER which allows us to bypass semaphore permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_IPC_OWNER, false));
+  AutoCapability cap(CAP_IPC_OWNER, false);
   for (int i = 0; i < kLoops; i++) {
     AutoSem sem(semget(IPC_PRIVATE, 1, 0600 | IPC_CREAT));
     ASSERT_THAT(sem.get(), SyscallSucceeds());
@@ -923,7 +941,7 @@ TEST(SemaphoreTest, SemInfo) {
   std::set<int> sem_ids;
   struct seminfo info;
   // Drop CAP_IPC_OWNER which allows us to bypass semaphore permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_IPC_OWNER, false));
+  AutoCapability cap(CAP_IPC_OWNER, false);
   for (int i = 0; i < kLoops; i++) {
     AutoSem sem(semget(IPC_PRIVATE, kSemSetSize, 0600 | IPC_CREAT));
     ASSERT_THAT(sem.get(), SyscallSucceeds());
@@ -1000,6 +1018,17 @@ TEST(SemaphoreTest, SemInfo) {
   // semaem range from 0 to a random number. Since the numbers are always
   // non-negative, the test will not check the reslts of semusz and semaem.
   EXPECT_EQ(info.semvmx, kSemVmx);
+}
+
+TEST(SempahoreTest, RemoveNonExistentSemaphore) {
+  EXPECT_THAT(semctl(-1, 0, IPC_RMID), SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(SempahoreTest, RemoveDeletedSemaphore) {
+  int id;
+  EXPECT_THAT(id = semget(IPC_PRIVATE, 1, 0), SyscallSucceeds());
+  EXPECT_THAT(semctl(id, 0, IPC_RMID), SyscallSucceeds());
+  EXPECT_THAT(semctl(id, 0, IPC_RMID), SyscallFailsWithErrno(EINVAL));
 }
 
 }  // namespace

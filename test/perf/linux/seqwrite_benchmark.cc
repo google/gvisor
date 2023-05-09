@@ -46,7 +46,7 @@ void BM_SeqWrite(benchmark::State& state) {
   uint64_t offset = 0;
   for (auto _ : state) {
     TEST_CHECK(PwriteFd(fd.get(), buf.data(), buf.size(), offset) ==
-               buf.size());
+               ssize_t(buf.size()));
     offset += buf.size();
     // Wrap around if going above the maximum file size.
     if (offset >= kMaxFile) {

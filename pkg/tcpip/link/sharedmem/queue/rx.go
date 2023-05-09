@@ -18,8 +18,8 @@ package queue
 
 import (
 	"encoding/binary"
-	"sync/atomic"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sharedmem/pipe"
 )
@@ -49,9 +49,16 @@ const (
 	sizeOfConsumedBuffer = 28
 
 	// The following are the allowed states of the shared data area.
-	eventFDUninitialized = 0
-	eventFDDisabled      = 1
-	eventFDEnabled       = 2
+	// EventFDUinitialized is the value stored at the start of the shared data
+	// region when it hasn't been initialized.
+	EventFDUninitialized = 0
+	// EventFDDisabled is the value stored at the start of the shared data region
+	// when notifications using eventFD has been disabled.
+	EventFDDisabled = 1
+	// EventFDEnabled is the value stored at the start of the shared data region
+	// when eventFD should be notified as the peer might be blocked waiting on
+	// notifications.
+	EventFDEnabled = 2
 )
 
 // RxBuffer is the descriptor of a receive buffer.
@@ -70,12 +77,12 @@ type RxBuffer struct {
 type Rx struct {
 	tx                 pipe.Tx
 	rx                 pipe.Rx
-	sharedEventFDState *uint32
+	sharedEventFDState *atomicbitops.Uint32
 }
 
 // Init initializes the receive queue with the given pipes, and shared state
 // pointer -- the latter is used to enable/disable eventfd notifications.
-func (r *Rx) Init(tx, rx []byte, sharedEventFDState *uint32) {
+func (r *Rx) Init(tx, rx []byte, sharedEventFDState *atomicbitops.Uint32) {
 	r.sharedEventFDState = sharedEventFDState
 	r.tx.Init(tx)
 	r.rx.Init(rx)
@@ -84,13 +91,13 @@ func (r *Rx) Init(tx, rx []byte, sharedEventFDState *uint32) {
 // EnableNotification updates the shared state such that the peer will notify
 // the eventfd when there are packets to be dequeued.
 func (r *Rx) EnableNotification() {
-	atomic.StoreUint32(r.sharedEventFDState, eventFDEnabled)
+	r.sharedEventFDState.Store(EventFDEnabled)
 }
 
 // DisableNotification updates the shared state such that the peer will not
 // notify the eventfd.
 func (r *Rx) DisableNotification() {
-	atomic.StoreUint32(r.sharedEventFDState, eventFDDisabled)
+	r.sharedEventFDState.Store(EventFDDisabled)
 }
 
 // PostedBuffersLimit returns the maximum number of buffers that can be posted
@@ -119,7 +126,6 @@ func (r *Rx) PostBuffers(buffers []RxBuffer) bool {
 	}
 
 	r.tx.Flush()
-
 	return true
 }
 
@@ -131,7 +137,6 @@ func (r *Rx) PostBuffers(buffers []RxBuffer) bool {
 func (r *Rx) Dequeue(bufs []RxBuffer) ([]RxBuffer, uint32) {
 	for {
 		outBufs := bufs
-
 		// Pull the next descriptor from the rx pipe.
 		b := r.rx.Pull()
 		if b == nil {

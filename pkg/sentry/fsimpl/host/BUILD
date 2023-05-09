@@ -1,6 +1,8 @@
 load("//tools:defs.bzl", "go_library")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
+package(default_applicable_licenses = ["//:license"])
+
 licenses(["notice"])
 
 go_template_instance(
@@ -8,35 +10,20 @@ go_template_instance(
     out = "inode_refs.go",
     package = "host",
     prefix = "inode",
-    template = "//pkg/refsvfs2:refs_template",
+    template = "//pkg/refs:refs_template",
     types = {
         "T": "inode",
-    },
-)
-
-go_template_instance(
-    name = "connected_endpoint_refs",
-    out = "connected_endpoint_refs.go",
-    package = "host",
-    prefix = "ConnectedEndpoint",
-    template = "//pkg/refsvfs2:refs_template",
-    types = {
-        "T": "ConnectedEndpoint",
     },
 )
 
 go_library(
     name = "host",
     srcs = [
-        "connected_endpoint_refs.go",
-        "control.go",
         "host.go",
+        "host_unsafe.go",
         "inode_refs.go",
         "ioctl_unsafe.go",
         "save_restore.go",
-        "socket.go",
-        "socket_iovec.go",
-        "socket_unsafe.go",
         "tty.go",
         "util.go",
         "util_unsafe.go",
@@ -44,20 +31,20 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/atomicbitops",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/fdnotifier",
         "//pkg/fspath",
         "//pkg/hostarch",
-        "//pkg/iovec",
         "//pkg/log",
         "//pkg/marshal/primitive",
         "//pkg/refs",
-        "//pkg/refsvfs2",
         "//pkg/safemem",
         "//pkg/sentry/arch",
-        "//pkg/sentry/fs/fsutil",
-        "//pkg/sentry/fs/lock",
         "//pkg/sentry/fsimpl/kernfs",
+        "//pkg/sentry/fsimpl/lock",
+        "//pkg/sentry/fsutil",
         "//pkg/sentry/hostfd",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
@@ -70,7 +57,6 @@ go_library(
         "//pkg/sentry/vfs",
         "//pkg/sync",
         "//pkg/syserr",
-        "//pkg/syserror",
         "//pkg/tcpip",
         "//pkg/unet",
         "//pkg/usermem",

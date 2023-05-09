@@ -21,20 +21,31 @@ import (
 	"gvisor.dev/gvisor/pkg/seccomp"
 )
 
-// SyscallFilters returns syscalls made exclusively by the KVM platform.
-func (*KVM) SyscallFilters() seccomp.SyscallRules {
+// archSyscallFilters returns arch-specific syscalls made exclusively by the
+// KVM platform.
+func (k *KVM) archSyscallFilters() seccomp.SyscallRules {
 	return seccomp.SyscallRules{
-		unix.SYS_ARCH_PRCTL: {},
-		unix.SYS_IOCTL:      {},
-		unix.SYS_MEMBARRIER: []seccomp.Rule{
+		unix.SYS_ARCH_PRCTL: {
 			{
-				seccomp.EqualTo(linux.MEMBARRIER_CMD_PRIVATE_EXPEDITED),
-				seccomp.EqualTo(0),
+				seccomp.EqualTo(linux.ARCH_GET_FS),
+			},
+			{
+				seccomp.EqualTo(linux.ARCH_GET_GS),
 			},
 		},
-		unix.SYS_MMAP:            {},
-		unix.SYS_RT_SIGSUSPEND:   {},
-		unix.SYS_RT_SIGTIMEDWAIT: {},
-		0xffffffffffffffff:       {}, // KVM uses syscall -1 to transition to host.
+		unix.SYS_IOCTL: []seccomp.Rule{
+			{
+				seccomp.MatchAny{},
+				seccomp.EqualTo(_KVM_INTERRUPT),
+			},
+			{
+				seccomp.MatchAny{},
+				seccomp.EqualTo(_KVM_NMI),
+			},
+			{
+				seccomp.MatchAny{},
+				seccomp.EqualTo(_KVM_GET_REGS),
+			},
+		},
 	}
 }

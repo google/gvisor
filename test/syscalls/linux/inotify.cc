@@ -785,8 +785,6 @@ TEST(Inotify, MoveWatchedTargetGeneratesEvents) {
 // Tests that close events are only emitted when a file description drops its
 // last reference.
 TEST(Inotify, DupFD) {
-  SKIP_IF(IsRunningWithVFS1());
-
   const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   const FileDescriptor inotify_fd =
       ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
@@ -1156,7 +1154,7 @@ TEST(Inotify, ZeroLengthReadWriteDoesNotGenerateEvent) {
   EXPECT_TRUE(events.empty());
 }
 
-TEST(Inotify, ChmodGeneratesAttribEvent_NoRandomSave) {
+TEST(Inotify, ChmodGeneratesAttribEvent) {
   const TempPath root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   const TempPath file1 =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(root.path()));
@@ -1305,8 +1303,7 @@ TEST(Inotify, SymlinkGeneratesCreateEvent) {
 
   const int root_wd = ASSERT_NO_ERRNO_AND_VALUE(
       InotifyAddWatch(fd.get(), root.path(), IN_ALL_EVENTS));
-  ASSERT_NO_ERRNO_AND_VALUE(
-      InotifyAddWatch(fd.get(), file1.path(), IN_ALL_EVENTS));
+  ASSERT_NO_ERRNO(InotifyAddWatch(fd.get(), file1.path(), IN_ALL_EVENTS));
 
   ASSERT_THAT(symlink(file1.path().c_str(), link1.path().c_str()),
               SyscallSucceeds());
@@ -1315,6 +1312,32 @@ TEST(Inotify, SymlinkGeneratesCreateEvent) {
       ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(fd.get()));
 
   ASSERT_THAT(events, Are({Event(IN_CREATE, root_wd, Basename(link1.path()))}));
+}
+
+TEST(Inotify, SymlinkFollow) {
+  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const TempPath link(NewTempAbsPath());
+  ASSERT_THAT(symlink(file.path().c_str(), link.path().c_str()),
+              SyscallSucceeds());
+
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+  const int file_wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(fd.get(), link.path(), IN_ALL_EVENTS));
+  const int link_wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(fd.get(), link.path(), IN_ALL_EVENTS | IN_DONT_FOLLOW));
+
+  ASSERT_NO_ERRNO(Unlink(file.path()));
+  ASSERT_NO_ERRNO(Unlink(link.path()));
+
+  const std::vector<Event> events =
+      ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(fd.get()));
+
+  ASSERT_THAT(
+      events,
+      Are({Event(IN_ATTRIB, file_wd), Event(IN_DELETE_SELF, file_wd),
+           Event(IN_IGNORED, file_wd), Event(IN_ATTRIB, link_wd),
+           Event(IN_DELETE_SELF, link_wd), Event(IN_IGNORED, link_wd)}));
 }
 
 TEST(Inotify, LinkGeneratesAttribAndCreateEvents) {
@@ -1734,8 +1757,6 @@ TEST(Inotify, Fallocate) {
 }
 
 TEST(Inotify, Utimensat) {
-  SKIP_IF(IsRunningWithVFS1());
-
   const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR));
@@ -1773,8 +1794,6 @@ TEST(Inotify, Utimensat) {
 }
 
 TEST(Inotify, Sendfile) {
-  SKIP_IF(IsRunningWithVFS1());
-
   const TempPath root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   const TempPath in_file = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateFileWith(root.path(), "x", 0644));
@@ -1834,7 +1853,7 @@ TEST(Inotify, SpliceOnWatchTarget) {
   // generate events, whereas fs/splice.c:default_file_splice_read does.
   std::vector<Event> events =
       ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(inotify_fd.get()));
-  if (IsRunningOnGvisor() && !IsRunningWithVFS1()) {
+  if (IsRunningOnGvisor()) {
     ASSERT_THAT(events, Are({Event(IN_ACCESS, dir_wd, Basename(file.path())),
                              Event(IN_ACCESS, file_wd)}));
   }
@@ -1847,34 +1866,6 @@ TEST(Inotify, SpliceOnWatchTarget) {
                           Event(IN_MODIFY, dir_wd, Basename(file.path())),
                           Event(IN_MODIFY, file_wd),
                       }));
-}
-
-TEST(Inotify, SpliceOnInotifyFD) {
-  int pipefds[2];
-  ASSERT_THAT(pipe2(pipefds, O_NONBLOCK), SyscallSucceeds());
-
-  const TempPath root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
-  const FileDescriptor fd =
-      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
-  const TempPath file1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
-      root.path(), "some content", TempPath::kDefaultFileMode));
-
-  const FileDescriptor file1_fd =
-      ASSERT_NO_ERRNO_AND_VALUE(Open(file1.path(), O_RDONLY));
-  const int watcher = ASSERT_NO_ERRNO_AND_VALUE(
-      InotifyAddWatch(fd.get(), file1.path(), IN_ALL_EVENTS));
-
-  char buf;
-  EXPECT_THAT(read(file1_fd.get(), &buf, 1), SyscallSucceeds());
-
-  EXPECT_THAT(splice(fd.get(), nullptr, pipefds[1], nullptr,
-                     sizeof(struct inotify_event) + 1, SPLICE_F_NONBLOCK),
-              SyscallSucceedsWithValue(sizeof(struct inotify_event)));
-
-  const FileDescriptor read_fd(pipefds[0]);
-  const std::vector<Event> events =
-      ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(read_fd.get()));
-  ASSERT_THAT(events, Are({Event(IN_ACCESS, watcher)}));
 }
 
 // Watches on a parent should not be triggered by actions on a hard link to one
@@ -1969,7 +1960,6 @@ TEST(Inotify, Xattr) {
 }
 
 TEST(Inotify, Exec) {
-  SKIP_IF(IsRunningWithVFS1());
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
   const int wd = ASSERT_NO_ERRNO_AND_VALUE(
@@ -1999,7 +1989,7 @@ TEST(Inotify, Exec) {
 //
 // We need to disable S/R because there are filesystems where we cannot re-open
 // fds to an unlinked file across S/R, e.g. gofer-backed filesytems.
-TEST(Inotify, IncludeUnlinkedFile_NoRandomSave) {
+TEST(Inotify, IncludeUnlinkedFile) {
   const DisableSave ds;
 
   const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
@@ -2052,11 +2042,8 @@ TEST(Inotify, IncludeUnlinkedFile_NoRandomSave) {
 //
 // We need to disable S/R because there are filesystems where we cannot re-open
 // fds to an unlinked file across S/R, e.g. gofer-backed filesytems.
-TEST(Inotify, ExcludeUnlink_NoRandomSave) {
+TEST(Inotify, ExcludeUnlink) {
   const DisableSave ds;
-  // TODO(gvisor.dev/issue/1624): This test fails on VFS1.
-  SKIP_IF(IsRunningWithVFS1());
-
   const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   const TempPath file =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(dir.path()));
@@ -2093,13 +2080,8 @@ TEST(Inotify, ExcludeUnlink_NoRandomSave) {
 
 // We need to disable S/R because there are filesystems where we cannot re-open
 // fds to an unlinked file across S/R, e.g. gofer-backed filesytems.
-TEST(Inotify, ExcludeUnlinkDirectory_NoRandomSave) {
-  // TODO(gvisor.dev/issue/1624): This test fails on VFS1. Remove once VFS1 is
-  // deleted.
-  SKIP_IF(IsRunningWithVFS1());
-
+TEST(Inotify, ExcludeUnlinkDirectory) {
   const DisableSave ds;
-
   const TempPath parent = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   TempPath dir =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(parent.path()));
@@ -2138,12 +2120,10 @@ TEST(Inotify, ExcludeUnlinkDirectory_NoRandomSave) {
 //
 // We need to disable S/R because there are filesystems where we cannot re-open
 // fds to an unlinked file across S/R, e.g. gofer-backed filesytems.
-TEST(Inotify, ExcludeUnlinkMultipleChildren_NoRandomSave) {
+TEST(Inotify, ExcludeUnlinkMultipleChildren) {
   // Inotify does not work properly with hard links in gofer and overlay fs.
   SKIP_IF(IsRunningOnGvisor() &&
           !ASSERT_NO_ERRNO_AND_VALUE(IsTmpfs(GetAbsoluteTestTmpdir())));
-  // TODO(gvisor.dev/issue/1624): This test fails on VFS1.
-  SKIP_IF(IsRunningWithVFS1());
 
   const DisableSave ds;
 
@@ -2184,10 +2164,7 @@ TEST(Inotify, ExcludeUnlinkMultipleChildren_NoRandomSave) {
 //
 // We need to disable S/R because there are filesystems where we cannot re-open
 // fds to an unlinked file across S/R, e.g. gofer-backed filesytems.
-TEST(Inotify, ExcludeUnlinkInodeEvents_NoRandomSave) {
-  // TODO(gvisor.dev/issue/1624): Fails on VFS1.
-  SKIP_IF(IsRunningWithVFS1());
-
+TEST(Inotify, ExcludeUnlinkInodeEvents) {
   // NOTE(gvisor.dev/issue/3654): In the gofer filesystem, we do not allow
   // setting attributes through an fd if the file at the open path has been
   // deleted.
@@ -2250,9 +2227,6 @@ TEST(Inotify, ExcludeUnlinkInodeEvents_NoRandomSave) {
 }
 
 TEST(Inotify, OneShot) {
-  // TODO(gvisor.dev/issue/1624): IN_ONESHOT not supported in VFS1.
-  SKIP_IF(IsRunningWithVFS1());
-
   const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   const FileDescriptor inotify_fd =
       ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
@@ -2284,7 +2258,7 @@ TEST(Inotify, OneShot) {
 // This test helps verify that the lock order of filesystem and inotify locks
 // is respected when inotify instances and watch targets are concurrently being
 // destroyed.
-TEST(InotifyTest, InotifyAndTargetDestructionDoNotDeadlock_NoRandomSave) {
+TEST(InotifyTest, InotifyAndTargetDestructionDoNotDeadlock) {
   const DisableSave ds;  // Too many syscalls.
 
   // A file descriptor protected by a mutex. This ensures that while a
@@ -2350,7 +2324,7 @@ TEST(InotifyTest, InotifyAndTargetDestructionDoNotDeadlock_NoRandomSave) {
 // This test helps verify that the lock order of filesystem and inotify locks
 // is respected when adding/removing watches occurs concurrently with the
 // removal of their targets.
-TEST(InotifyTest, AddRemoveUnlinkDoNotDeadlock_NoRandomSave) {
+TEST(InotifyTest, AddRemoveUnlinkDoNotDeadlock) {
   const DisableSave ds;  // Too many syscalls.
 
   // Set up inotify instances.
@@ -2405,7 +2379,7 @@ TEST(InotifyTest, AddRemoveUnlinkDoNotDeadlock_NoRandomSave) {
 // This test helps verify that the lock order of filesystem and inotify locks
 // is respected when many inotify events and filesystem operations occur
 // simultaneously.
-TEST(InotifyTest, NotifyNoDeadlock_NoRandomSave) {
+TEST(InotifyTest, NotifyNoDeadlock) {
   const DisableSave ds;  // Too many syscalls.
 
   const TempPath parent = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
@@ -2525,6 +2499,25 @@ TEST(InotifyTest, NotifyNoDeadlock_NoRandomSave) {
     }
     sched_yield();
   }
+}
+
+// NOTE(b/239215242): Regression test.
+TEST(Inotify, KernfsBasic) {
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
+  const std::string procFile = "/proc/filesystems";
+
+  const int wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(fd.get(), procFile, IN_ALL_EVENTS));
+  const FileDescriptor file1_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(procFile, O_RDONLY));
+
+  char buf;
+  EXPECT_THAT(read(file1_fd.get(), &buf, 1), SyscallSucceeds());
+
+  const std::vector<Event> events =
+      ASSERT_NO_ERRNO_AND_VALUE(DrainEvents(fd.get()));
+  ASSERT_THAT(events, Are({Event(IN_OPEN, wd), Event(IN_ACCESS, wd)}));
 }
 
 }  // namespace

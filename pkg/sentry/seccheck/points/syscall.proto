@@ -1,0 +1,313 @@
+// Copyright 2022 The gVisor Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package gvisor.syscall;
+
+import "pkg/sentry/seccheck/points/common.proto";
+
+message Exit {
+  int64 result = 1;
+  int64 errorno = 2;
+}
+
+message Syscall {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 4;
+  uint64 arg1 = 5;
+  uint64 arg2 = 6;
+  uint64 arg3 = 7;
+  uint64 arg4 = 8;
+  uint64 arg5 = 9;
+  uint64 arg6 = 10;
+}
+
+message Open {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int64 fd = 4;
+  string fd_path = 5;
+  string pathname = 6;
+  uint32 flags = 7;
+  uint32 mode = 8;
+}
+
+message Close {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int64 fd = 4;
+  string fd_path = 5;
+}
+
+message Read {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int64 fd = 4;
+  string fd_path = 5;
+  uint64 count = 6;
+  bool has_offset = 7;
+  int64 offset = 8;
+  uint32 flags = 9;
+}
+
+message Write {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int64 fd = 4;
+  string fd_path = 5;
+  uint64 count = 6;
+  bool has_offset = 7;
+  int64 offset = 8;
+  uint32 flags = 9;
+}
+
+message Connect {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int64 fd = 4;
+  string fd_path = 5;
+  bytes address = 6;
+}
+
+message Execve {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int64 fd = 4;
+  string fd_path = 5;
+  string pathname = 6;
+  repeated string argv = 7;
+  repeated string envv = 8;
+  uint32 flags = 9;
+}
+
+message Socket {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int32 domain = 4;
+  int32 type = 5;
+  int32 protocol = 6;
+}
+
+message Chdir {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int64 fd = 4;
+  string fd_path = 5;
+  string pathname = 6;
+}
+
+message Setresid {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  uint32 rid = 4;
+  uint32 eid = 5;
+  uint32 sid = 6;
+}
+
+message Setid {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  uint32 id = 4;
+}
+
+message StructRlimit {
+  uint64 cur = 1;
+  uint64 max = 2;
+}
+
+message Prlimit {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int32 pid = 4;
+  int64 resource = 5;
+  StructRlimit new_limit = 6;
+  StructRlimit old_limit = 7;
+}
+
+message Pipe {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  uint32 flags = 4;
+  int32 reader = 5;
+  int32 writer = 6;
+}
+
+message Fcntl {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int32 fd = 4;
+  string fd_path = 5;
+  int32 cmd = 6;
+  int64 args = 7;
+}
+
+message Dup {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int32 old_fd = 4;
+  int32 new_fd = 5;
+  string fd_path = 6;
+  uint32 flags = 7;
+}
+
+message Signalfd {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int32 fd = 4;
+  string fd_path = 5;
+  uint64 sigset = 6;
+  int32 flags = 7;
+}
+
+message Chroot {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  string pathname = 4;
+}
+
+message Eventfd {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int32 val = 4;
+  uint32 flags = 5;
+}
+
+message Clone {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  uint64 flags = 4;
+  uint64 stack = 5;
+  uint64 new_tid = 6;
+  uint64 tls = 7;
+}
+
+message Bind {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int32 fd = 4;
+  string fd_path = 5;
+  bytes address = 6;
+}
+
+message Accept {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int32 fd = 4;
+  string fd_path = 5;
+  bytes address = 6;
+  int32 flags = 7;
+}
+
+message TimerfdCreate {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int32 clock_id = 4;
+  int32 flags = 5;
+}
+
+message Timespec {
+  int64 sec = 1;
+  int64 nsec = 2;
+}
+
+message ItimerSpec {
+  Timespec interval = 1;
+  Timespec value = 2;
+}
+
+message TimerfdSetTime {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int32 fd = 4;
+  string fd_path = 5;
+  int32 flags = 6;
+  ItimerSpec new_value = 7;
+  ItimerSpec old_value = 8;
+}
+
+message TimerfdGetTime {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int32 fd = 4;
+  string fd_path = 5;
+  ItimerSpec cur_value = 6;
+}
+
+message Fork {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+}
+
+message InotifyInit {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int32 flags = 4;
+}
+
+message InotifyAddWatch {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int32 fd = 4;
+  string fd_path = 5;
+  string pathname = 6;
+  uint32 mask = 7;
+}
+
+message InotifyRmWatch {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int32 fd = 4;
+  string fd_path = 5;
+  int32 wd = 6;
+}
+
+message SocketPair {
+  gvisor.common.ContextData context_data = 1;
+  Exit exit = 2;
+  uint64 sysno = 3;
+  int32 domain = 4;
+  int32 type = 5;
+  int32 protocol = 6;
+  int32 socket1 = 7;
+  int32 socket2 = 8;
+}

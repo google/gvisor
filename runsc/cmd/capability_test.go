@@ -112,7 +112,7 @@ func TestCapabilities(t *testing.T) {
 	}
 
 	// Check that sandbox and gofer have the proper capabilities.
-	if err := checkProcessCaps(c.Sandbox.Pid, spec.Process.Capabilities); err != nil {
+	if err := checkProcessCaps(c.Sandbox.Getpid(), spec.Process.Capabilities); err != nil {
 		t.Error(err)
 	}
 	if err := checkProcessCaps(c.GoferPid, goferCaps); err != nil {
@@ -122,6 +122,9 @@ func TestCapabilities(t *testing.T) {
 
 func TestMain(m *testing.M) {
 	flag.Parse()
-	specutils.MaybeRunAsRoot()
+	if err := specutils.MaybeRunAsRoot(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error running as root: %v", err)
+		os.Exit(123)
+	}
 	os.Exit(m.Run())
 }

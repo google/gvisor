@@ -16,17 +16,15 @@
 // headers).
 
 #include "gtest/gtest.h"
-#include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {
 namespace testing {
 
 TEST(SocketTest, UnixConnectNeedsWritePerm) {
-  SKIP_IF(IsRunningWithVFS1());
-
   FileDescriptor bound =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_STREAM, PF_UNIX));
 
@@ -40,7 +38,7 @@ TEST(SocketTest, UnixConnectNeedsWritePerm) {
   // Drop capabilites that allow us to override permision checks. Otherwise if
   // the test is run as root, the connect below will bypass permission checks
   // and succeed unexpectedly.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
+  AutoCapability cap(CAP_DAC_OVERRIDE, false);
 
   // Connect should fail without write perms.
   ASSERT_THAT(chmod(addr.sun_path, 0500), SyscallSucceeds());

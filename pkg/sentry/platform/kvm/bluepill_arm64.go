@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build arm64
 // +build arm64
 
 package kvm
@@ -25,29 +26,6 @@ import (
 var (
 	// The action for bluepillSignal is changed by sigaction().
 	bluepillSignal = unix.SIGILL
-
-	// vcpuSErrBounce is the event of system error for bouncing KVM.
-	vcpuSErrBounce = kvmVcpuEvents{
-		exception: exception{
-			sErrPending: 1,
-		},
-	}
-
-	// vcpuSErrNMI is the event of system error to trigger sigbus.
-	vcpuSErrNMI = kvmVcpuEvents{
-		exception: exception{
-			sErrPending: 1,
-			sErrHasEsr:  1,
-			sErrEsr:     _ESR_ELx_SERR_NMI,
-		},
-	}
-
-	// vcpuExtDabt is the event of ext_dabt.
-	vcpuExtDabt = kvmVcpuEvents{
-		exception: exception{
-			extDabtPending: 1,
-		},
-	}
 )
 
 // getTLS returns the value of TPIDR_EL0 register.
@@ -92,7 +70,7 @@ func bluepillArchExit(c *vCPU, context *arch.SignalContext64) {
 
 	lazyVfp := c.GetLazyVFP()
 	if lazyVfp != 0 {
-		fpsimd := fpsimdPtr(c.floatingPointState.BytePointer())
+		fpsimd := fpsimdPtr(c.FloatingPointState().BytePointer()) // escapes: no
 		context.Fpsimd64.Fpsr = fpsimd.Fpsr
 		context.Fpsimd64.Fpcr = fpsimd.Fpcr
 		context.Fpsimd64.Vregs = fpsimd.Vregs
@@ -112,12 +90,12 @@ func (c *vCPU) KernelSyscall() {
 
 	fpDisableTrap := ring0.CPACREL1()
 	if fpDisableTrap != 0 {
-		fpsimd := fpsimdPtr(c.floatingPointState.BytePointer())
+		fpsimd := fpsimdPtr(c.FloatingPointState().BytePointer()) // escapes: no
 		fpcr := ring0.GetFPCR()
 		fpsr := ring0.GetFPSR()
 		fpsimd.Fpcr = uint32(fpcr)
 		fpsimd.Fpsr = uint32(fpsr)
-		ring0.SaveVRegs(c.floatingPointState.BytePointer())
+		ring0.SaveVRegs(c.FloatingPointState().BytePointer()) // escapes: no
 	}
 
 	ring0.Halt()
@@ -136,13 +114,19 @@ func (c *vCPU) KernelException(vector ring0.Vector) {
 
 	fpDisableTrap := ring0.CPACREL1()
 	if fpDisableTrap != 0 {
-		fpsimd := fpsimdPtr(c.floatingPointState.BytePointer())
+		fpsimd := fpsimdPtr(c.FloatingPointState().BytePointer()) // escapes: no
 		fpcr := ring0.GetFPCR()
 		fpsr := ring0.GetFPSR()
 		fpsimd.Fpcr = uint32(fpcr)
 		fpsimd.Fpsr = uint32(fpsr)
-		ring0.SaveVRegs(c.floatingPointState.BytePointer())
+		ring0.SaveVRegs(c.FloatingPointState().BytePointer()) // escapes: no
 	}
 
 	ring0.Halt()
+}
+
+// hltSanityCheck verifies the current state to detect obvious corruption.
+//
+//go:nosplit
+func (c *vCPU) hltSanityCheck() {
 }

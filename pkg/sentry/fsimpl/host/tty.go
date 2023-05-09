@@ -17,13 +17,13 @@ package host
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/unimpl"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -144,10 +144,10 @@ func (t *TTYFileDescription) Write(ctx context.Context, src usermem.IOSequence, 
 }
 
 // Ioctl implements vfs.FileDescriptionImpl.Ioctl.
-func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
 	task := kernel.TaskFromContext(ctx)
 	if task == nil {
-		return 0, syserror.ENOTTY
+		return 0, linuxerr.ENOTTY
 	}
 
 	// Ignore arg[0]. This is the real FD:
@@ -188,7 +188,7 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, args arch
 
 		pidns := kernel.PIDNamespaceFromContext(ctx)
 		if pidns == nil {
-			return 0, syserror.ENOTTY
+			return 0, linuxerr.ENOTTY
 		}
 
 		t.mu.Lock()
@@ -211,15 +211,15 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, args arch
 		if err := t.checkChange(ctx, linux.SIGTTOU); err != nil {
 			// drivers/tty/tty_io.c:tiocspgrp() converts -EIO from tty_check_change()
 			// to -ENOTTY.
-			if err == syserror.EIO {
-				return 0, syserror.ENOTTY
+			if linuxerr.Equals(linuxerr.EIO, err) {
+				return 0, linuxerr.ENOTTY
 			}
 			return 0, err
 		}
 
 		// Check that calling task's process group is in the TTY session.
 		if task.ThreadGroup().Session() != t.session {
-			return 0, syserror.ENOTTY
+			return 0, linuxerr.ENOTTY
 		}
 
 		var pgIDP primitive.Int32
@@ -230,19 +230,19 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, args arch
 
 		// pgID must be non-negative.
 		if pgID < 0 {
-			return 0, syserror.EINVAL
+			return 0, linuxerr.EINVAL
 		}
 
 		// Process group with pgID must exist in this PID namespace.
 		pidns := task.PIDNamespace()
 		pg := pidns.ProcessGroupWithID(pgID)
 		if pg == nil {
-			return 0, syserror.ESRCH
+			return 0, linuxerr.ESRCH
 		}
 
 		// Check that new process group is in the TTY session.
 		if pg.Session() != t.session {
-			return 0, syserror.EPERM
+			return 0, linuxerr.EPERM
 		}
 
 		t.fgProcessGroup = pg
@@ -299,10 +299,10 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, args arch
 		linux.TIOCSSERIAL,
 		linux.TIOCGPTPEER:
 
-		unimpl.EmitUnimplementedEvent(ctx)
+		unimpl.EmitUnimplementedEvent(ctx, sysno)
 		fallthrough
 	default:
-		return 0, syserror.ENOTTY
+		return 0, linuxerr.ENOTTY
 	}
 }
 
@@ -345,7 +345,7 @@ func (t *TTYFileDescription) checkChange(ctx context.Context, sig linux.Signal) 
 		// If the signal is SIGTTIN, then we are attempting to read
 		// from the TTY. Don't send the signal and return EIO.
 		if sig == linux.SIGTTIN {
-			return syserror.EIO
+			return linuxerr.EIO
 		}
 
 		// Otherwise, we are writing or changing terminal state. This is allowed.
@@ -354,7 +354,7 @@ func (t *TTYFileDescription) checkChange(ctx context.Context, sig linux.Signal) 
 
 	// If the process group is an orphan, return EIO.
 	if pg.IsOrphan() {
-		return syserror.EIO
+		return linuxerr.EIO
 	}
 
 	// Otherwise, send the signal to the process group and return ERESTARTSYS.
@@ -367,5 +367,5 @@ func (t *TTYFileDescription) checkChange(ctx context.Context, sig linux.Signal) 
 	//
 	// Linux ignores the result of kill_pgrp().
 	_ = pg.SendSignal(kernel.SignalInfoPriv(sig))
-	return syserror.ERESTARTSYS
+	return linuxerr.ERESTARTSYS
 }

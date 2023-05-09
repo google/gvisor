@@ -29,19 +29,32 @@ type NullClock struct{}
 
 var _ tcpip.Clock = (*NullClock)(nil)
 
-// NowNanoseconds implements tcpip.Clock.NowNanoseconds.
-func (*NullClock) NowNanoseconds() int64 {
-	return 0
+// Now implements tcpip.Clock.Now.
+func (*NullClock) Now() time.Time {
+	return time.Time{}
 }
 
 // NowMonotonic implements tcpip.Clock.NowMonotonic.
-func (*NullClock) NowMonotonic() int64 {
-	return 0
+func (*NullClock) NowMonotonic() tcpip.MonotonicTime {
+	return tcpip.MonotonicTime{}
 }
+
+// nullTimer implements a timer that never fires.
+type nullTimer struct{}
+
+var _ tcpip.Timer = (*nullTimer)(nil)
+
+// Stop implements tcpip.Timer.
+func (*nullTimer) Stop() bool {
+	return true
+}
+
+// Reset implements tcpip.Timer.
+func (*nullTimer) Reset(time.Duration) {}
 
 // AfterFunc implements tcpip.Clock.AfterFunc.
 func (*NullClock) AfterFunc(time.Duration, func()) tcpip.Timer {
-	return nil
+	return &nullTimer{}
 }
 
 type notificationChannels struct {
@@ -118,16 +131,17 @@ func NewManualClock() *ManualClock {
 
 var _ tcpip.Clock = (*ManualClock)(nil)
 
-// NowNanoseconds implements tcpip.Clock.NowNanoseconds.
-func (mc *ManualClock) NowNanoseconds() int64 {
+// Now implements tcpip.Clock.Now.
+func (mc *ManualClock) Now() time.Time {
 	mc.mu.RLock()
 	defer mc.mu.RUnlock()
-	return mc.mu.now.UnixNano()
+	return mc.mu.now
 }
 
 // NowMonotonic implements tcpip.Clock.NowMonotonic.
-func (mc *ManualClock) NowMonotonic() int64 {
-	return mc.NowNanoseconds()
+func (mc *ManualClock) NowMonotonic() tcpip.MonotonicTime {
+	var mt tcpip.MonotonicTime
+	return mt.Add(mc.Now().Sub(time.Unix(0, 0)))
 }
 
 // AfterFunc implements tcpip.Clock.AfterFunc.
@@ -216,6 +230,12 @@ func (mc *ManualClock) stopTimerLocked(mt *manualTimer) {
 	if len(timers) == 0 {
 		delete(mc.mu.timers, t)
 	}
+}
+
+// RunImmediatelyScheduledJobs runs all jobs scheduled to run at the current
+// time.
+func (mc *ManualClock) RunImmediatelyScheduledJobs() {
+	mc.Advance(0)
 }
 
 // Advance executes all work that have been scheduled to execute within d from
@@ -347,11 +367,11 @@ func (h timeHeap) Swap(i, j int) {
 	h[i], h[j] = h[j], h[i]
 }
 
-func (h *timeHeap) Push(x interface{}) {
+func (h *timeHeap) Push(x any) {
 	*h = append(*h, x.(time.Time))
 }
 
-func (h *timeHeap) Pop() interface{} {
+func (h *timeHeap) Pop() any {
 	last := (*h)[len(*h)-1]
 	*h = (*h)[:len(*h)-1]
 	return last

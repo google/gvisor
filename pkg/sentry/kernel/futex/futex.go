@@ -20,10 +20,9 @@ package futex
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
-	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // KeyKind indicates the type of a Key.
@@ -122,7 +121,7 @@ func check(t Target, addr hostarch.Addr, val uint32) error {
 		return err
 	}
 	if cur != val {
-		return syserror.EAGAIN
+		return linuxerr.EAGAIN
 	}
 	return nil
 }
@@ -165,7 +164,7 @@ func atomicOp(t Target, addr hostarch.Addr, opIn uint32) (bool, error) {
 			case linux.FUTEX_OP_XOR:
 				newVal = oldVal ^ opArg
 			default:
-				return false, syserror.ENOSYS
+				return false, linuxerr.ENOSYS
 			}
 			prev, err := t.CompareAndSwapUint32(addr, oldVal, newVal)
 			if err != nil {
@@ -191,7 +190,7 @@ func atomicOp(t Target, addr hostarch.Addr, opIn uint32) (bool, error) {
 	case linux.FUTEX_OP_CMP_GE:
 		return oldVal >= cmpArg, nil
 	default:
-		return false, syserror.ENOSYS
+		return false, linuxerr.ENOSYS
 	}
 }
 
@@ -201,18 +200,18 @@ func atomicOp(t Target, addr hostarch.Addr, opIn uint32) (bool, error) {
 type Waiter struct {
 	// Synchronization:
 	//
-	// - A Waiter that is not enqueued in a bucket is exclusively owned (no
-	// synchronization applies).
+	//	- A Waiter that is not enqueued in a bucket is exclusively owned (no
+	//		synchronization applies).
 	//
-	// - A Waiter is enqueued in a bucket by calling WaitPrepare(). After this,
-	// waiterEntry, bucket, and key are protected by the bucket.mu ("bucket
-	// lock") of the containing bucket, and bitmask is immutable. Note that
-	// since bucket is mutated using atomic memory operations, bucket.Load()
-	// may be called without holding the bucket lock, although it may change
-	// racily. See WaitComplete().
+	//	- A Waiter is enqueued in a bucket by calling WaitPrepare(). After this,
+	//		waiterEntry, bucket, and key are protected by the bucket.mu ("bucket
+	//		lock") of the containing bucket, and bitmask is immutable. Note that
+	//		since bucket is mutated using atomic memory operations, bucket.Load()
+	//		may be called without holding the bucket lock, although it may change
+	//		racily. See WaitComplete().
 	//
-	// - A Waiter is only guaranteed to be no longer queued after calling
-	// WaitComplete().
+	//	- A Waiter is only guaranteed to be no longer queued after calling
+	//		WaitComplete().
 
 	// waiterEntry links Waiter into bucket.waiters.
 	waiterEntry
@@ -252,7 +251,7 @@ func (w *Waiter) woken() bool {
 // +stateify savable
 type bucket struct {
 	// mu protects waiters and contained Waiter state. See comment in Waiter.
-	mu sync.Mutex `state:"nosave"`
+	mu futexBucketMutex `state:"nosave"`
 
 	waiters waiterList `state:"zerovalue"`
 }
@@ -332,7 +331,7 @@ func getKey(t Target, addr hostarch.Addr, private bool) (Key, error) {
 	// Ensure the address is aligned.
 	// It must be a DWORD boundary.
 	if addr&0x3 != 0 {
-		return Key{}, syserror.EINVAL
+		return Key{}, linuxerr.EINVAL
 	}
 	if private {
 		return Key{Kind: KindPrivate, Offset: uint64(addr)}, nil
@@ -342,11 +341,11 @@ func getKey(t Target, addr hostarch.Addr, private bool) (Key, error) {
 
 // bucketIndexForAddr returns the index into Manager.buckets for addr.
 func bucketIndexForAddr(addr hostarch.Addr) uintptr {
-	// - The bottom 2 bits of addr must be 0, per getKey.
+	//	- The bottom 2 bits of addr must be 0, per getKey.
 	//
-	// - On amd64, the top 16 bits of addr (bits 48-63) must be equal to bit 47
-	// for a canonical address, and (on all existing platforms) bit 47 must be
-	// 0 for an application address.
+	//	- On amd64, the top 16 bits of addr (bits 48-63) must be equal to bit 47
+	//		for a canonical address, and (on all existing platforms) bit 47 must be
+	//		0 for an application address.
 	//
 	// Thus 19 bits of addr are "useless" for hashing, leaving only 45 "useful"
 	// bits. We choose one of the simplest possible hash functions that at
@@ -397,8 +396,8 @@ func (m *Manager) Fork() *Manager {
 }
 
 // lockBucket returns a locked bucket for the given key.
-func (m *Manager) lockBucket(k *Key) *bucket {
-	var b *bucket
+// +checklocksacquire:b.mu
+func (m *Manager) lockBucket(k *Key) (b *bucket) {
 	if k.Kind == KindSharedMappable {
 		b = m.sharedBucket
 	} else {
@@ -409,7 +408,12 @@ func (m *Manager) lockBucket(k *Key) *bucket {
 }
 
 // lockBuckets returns locked buckets for the given keys.
-func (m *Manager) lockBuckets(k1, k2 *Key) (*bucket, *bucket) {
+// It returns which bucket was locked first and second. They may be nil in case the buckets are
+// identical or they did not need locking.
+//
+// +checklocksacquire:lockedFirst.mu
+// +checklocksacquire:lockedSecond.mu
+func (m *Manager) lockBuckets(k1, k2 *Key) (b1, b2, lockedFirst, lockedSecond *bucket) {
 	// Buckets must be consistently ordered to avoid circular lock
 	// dependencies. We order buckets in m.privateBuckets by index (lowest
 	// index first), and all buckets in m.privateBuckets precede
@@ -419,31 +423,50 @@ func (m *Manager) lockBuckets(k1, k2 *Key) (*bucket, *bucket) {
 	if k1.Kind != KindSharedMappable && k2.Kind != KindSharedMappable {
 		i1 := bucketIndexForAddr(k1.addr())
 		i2 := bucketIndexForAddr(k2.addr())
-		b1 := &m.privateBuckets[i1]
-		b2 := &m.privateBuckets[i2]
+		b1 = &m.privateBuckets[i1]
+		b2 = &m.privateBuckets[i2]
 		switch {
 		case i1 < i2:
 			b1.mu.Lock()
-			b2.mu.Lock()
+			b2.mu.NestedLock(futexBucketLockB)
+			return b1, b2, b1, b2
 		case i2 < i1:
 			b2.mu.Lock()
-			b1.mu.Lock()
+			b1.mu.NestedLock(futexBucketLockB)
+			return b1, b2, b2, b1
 		default:
 			b1.mu.Lock()
+			return b1, b2, b1, nil // +checklocksforce
 		}
-		return b1, b2
 	}
 
 	// At least one of b1 or b2 should be m.sharedBucket.
-	b1 := m.sharedBucket
-	b2 := m.sharedBucket
+	b1 = m.sharedBucket
+	b2 = m.sharedBucket
 	if k1.Kind != KindSharedMappable {
 		b1 = m.lockBucket(k1)
-	} else if k2.Kind != KindSharedMappable {
-		b2 = m.lockBucket(k2)
+		b2.mu.NestedLock(futexBucketLockB)
+		return b1, b2, b1, b2
 	}
-	m.sharedBucket.mu.Lock()
-	return b1, b2
+	if k2.Kind != KindSharedMappable {
+		b2 = m.lockBucket(k2)
+		b1.mu.NestedLock(futexBucketLockB)
+		return b1, b2, b2, b1
+	}
+	return b1, b2, nil, nil // +checklocksforce
+}
+
+// unlockBuckets unlocks two buckets.
+// +checklocksrelease:lockedFirst.mu
+// +checklocksrelease:lockedSecond.mu
+func (m *Manager) unlockBuckets(lockedFirst, lockedSecond *bucket) {
+	if lockedSecond != nil {
+		lockedSecond.mu.NestedUnlock(futexBucketLockB)
+	}
+	if lockedFirst != nil && lockedFirst != lockedSecond {
+		lockedFirst.mu.Unlock()
+	}
+	return
 }
 
 // Wake wakes up to n waiters matching the bitmask on the given addr.
@@ -475,11 +498,8 @@ func (m *Manager) doRequeue(t Target, addr, naddr hostarch.Addr, private bool, c
 	}
 	defer k2.release(t)
 
-	b1, b2 := m.lockBuckets(&k1, &k2)
-	defer b1.mu.Unlock()
-	if b2 != b1 {
-		defer b2.mu.Unlock()
-	}
+	b1, b2, lockedFirst, lockedSecond := m.lockBuckets(&k1, &k2)
+	defer m.unlockBuckets(lockedFirst, lockedSecond)
 
 	if checkval {
 		if err := check(t, addr, val); err != nil {
@@ -525,11 +545,8 @@ func (m *Manager) WakeOp(t Target, addr1, addr2 hostarch.Addr, private bool, nwa
 	}
 	defer k2.release(t)
 
-	b1, b2 := m.lockBuckets(&k1, &k2)
-	defer b1.mu.Unlock()
-	if b2 != b1 {
-		defer b2.mu.Unlock()
-	}
+	b1, b2, lockedFirst, lockedSecond := m.lockBuckets(&k1, &k2)
+	defer m.unlockBuckets(lockedFirst, lockedSecond)
 
 	done := 0
 	cond, err := atomicOp(t, addr2, op)
@@ -670,7 +687,7 @@ func (m *Manager) lockPILocked(w *Waiter, t Target, addr hostarch.Addr, tid uint
 			return false, err
 		}
 		if (cur & linux.FUTEX_TID_MASK) == tid {
-			return false, syserror.EDEADLK
+			return false, linuxerr.EDEADLK
 		}
 
 		if (cur & linux.FUTEX_TID_MASK) == 0 {
@@ -745,7 +762,7 @@ func (m *Manager) unlockPILocked(t Target, addr hostarch.Addr, tid uint32, b *bu
 	}
 
 	if (cur & linux.FUTEX_TID_MASK) != tid {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 
 	var next *Waiter  // Who's the next owner?
@@ -773,7 +790,7 @@ func (m *Manager) unlockPILocked(t Target, addr hostarch.Addr, tid uint32, b *bu
 		if prev != cur {
 			// Let user mode handle CAS races. This is different than lock, which
 			// retries when CAS fails.
-			return syserror.EAGAIN
+			return linuxerr.EAGAIN
 		}
 		return nil
 	}
@@ -790,7 +807,7 @@ func (m *Manager) unlockPILocked(t Target, addr hostarch.Addr, tid uint32, b *bu
 		return err
 	}
 	if prev != cur {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	b.wakeWaiterLocked(next)

@@ -34,11 +34,11 @@ const (
 //
 // In the comments below:
 //
-// - A, X, and M[] are BPF virtual machine registers.
+//   - A, X, and M[] are BPF virtual machine registers.
 //
-// - K refers to the instruction field linux.BPFInstruction.K.
+//   - K refers to the instruction field linux.BPFInstruction.K.
 //
-// - Bits are counted from the LSB position.
+//   - Bits are counted from the LSB position.
 const (
 	// Instruction class, stored in bits 0-2.
 	Ld                   = 0x00 // load into A

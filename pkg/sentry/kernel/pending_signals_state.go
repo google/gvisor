@@ -14,13 +14,11 @@
 
 package kernel
 
-import (
-	"gvisor.dev/gvisor/pkg/sentry/arch"
-)
+import "gvisor.dev/gvisor/pkg/abi/linux"
 
 // +stateify savable
 type savedPendingSignal struct {
-	si    *arch.SignalInfo
+	si    *linux.SignalInfo
 	timer *IntervalTimer
 }
 

@@ -1,6 +1,9 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_library(
     name = "root",
@@ -22,6 +25,7 @@ go_test(
         "//runsc",
     ],
     library = ":root",
+    pure = True,
     tags = [
         "local",
         "manual",
@@ -33,11 +37,33 @@ go_test(
         "//pkg/test/dockerutil",
         "//pkg/test/testutil",
         "//runsc/cgroup",
+        "//runsc/config",
         "//runsc/container",
+        "//runsc/flag",
         "//runsc/specutils",
         "@com_github_cenkalti_backoff//:go_default_library",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
         "@com_github_syndtr_gocapability//capability:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+go_test(
+    name = "portforward_test",
+    srcs = ["portforward_test.go"],
+    pure = True,
+    tags = [
+        "local",
+        "manual",
+    ],
+    visibility = ["//:sandbox"],
+    deps = [
+        "//pkg/cleanup",
+        "//pkg/test/dockerutil",
+        "//runsc/config",
+        "//runsc/flag",
+        "//runsc/specutils",
+        "@com_github_syndtr_gocapability//capability:go_default_library",
+        "@org_golang_x_sync//errgroup:go_default_library",
     ],
 )

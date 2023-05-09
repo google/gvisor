@@ -92,7 +92,7 @@ func (b *GitHubBugger) Activate(todo *Todo) (bool, error) {
 	fmt.Fprintln(&comment, "There are TODOs still referencing this issue:")
 	for _, l := range todo.Locations {
 		fmt.Fprintf(&comment,
-			"1. [%s:%d](https://github.com/%s/%s/blob/HEAD/%s#%d): %s\n",
+			"1. [%s:%d](https://github.com/%s/%s/blob/HEAD/%s#L%d): %s\n",
 			l.File, l.Line, b.owner, b.repo, l.File, l.Line, l.Comment)
 	}
 	fmt.Fprintf(&comment,
@@ -108,6 +108,11 @@ func (b *GitHubBugger) Activate(todo *Todo) (bool, error) {
 	_, _, err = b.client.Issues.Edit(ctx, b.owner, b.repo, id, req)
 	if err != nil {
 		return true, fmt.Errorf("failed to reactivate issue %d: %v", id, err)
+	}
+
+	_, _, err = b.client.Issues.AddLabelsToIssue(ctx, b.owner, b.repo, id, []string{"revived"})
+	if err != nil {
+		return true, fmt.Errorf("failed to set label on issue %d: %v", id, err)
 	}
 
 	cmt := &github.IssueComment{

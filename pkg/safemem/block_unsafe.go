@@ -20,15 +20,16 @@ import (
 
 	"gvisor.dev/gvisor/pkg/gohacks"
 	"gvisor.dev/gvisor/pkg/safecopy"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // A Block is a range of contiguous bytes, similar to []byte but with the
 // following differences:
 //
-// - The memory represented by a Block may require the use of safecopy to
-// access.
+//   - The memory represented by a Block may require the use of safecopy to
+//     access.
 //
-// - Block does not carry a capacity and cannot be expanded.
+//   - Block does not carry a capacity and cannot be expanded.
 //
 // Blocks are immutable and may be copied by value. The zero value of Block
 // represents an empty range, analogous to a nil []byte.
@@ -148,11 +149,7 @@ func (b Block) TakeFirst64(n uint64) Block {
 
 // ToSlice returns a []byte equivalent to b.
 func (b Block) ToSlice() []byte {
-	return *(*[]byte)(unsafe.Pointer(&gohacks.SliceHeader{
-		Data: b.start,
-		Len:  b.length,
-		Cap:  b.length,
-	}))
+	return gohacks.Slice((*byte)(b.start), b.length)
 }
 
 // Addr returns b's start address as a uintptr. It returns uintptr instead of
@@ -223,8 +220,22 @@ func Copy(dst, src Block) (int, error) {
 func Zero(dst Block) (int, error) {
 	if !dst.needSafecopy {
 		bs := dst.ToSlice()
-		for i := range bs {
-			bs[i] = 0
+		if !sync.RaceEnabled {
+			// If the race detector isn't enabled, the golang
+			// compiler replaces the next loop with memclr
+			// (https://github.com/golang/go/issues/5373).
+			for i := range bs {
+				bs[i] = 0
+			}
+		} else {
+			bsLen := len(bs)
+			if bsLen == 0 {
+				return 0, nil
+			}
+			bs[0] = 0
+			for i := 1; i < bsLen; i *= 2 {
+				copy(bs[i:], bs[:i])
+			}
 		}
 		return len(bs), nil
 	}

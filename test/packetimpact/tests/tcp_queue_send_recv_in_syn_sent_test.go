@@ -20,7 +20,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"flag"
-	"sync"
 	"testing"
 	"time"
 
@@ -54,37 +53,39 @@ func TestQueueSendInSynSentHandshake(t *testing.T) {
 	// Test blocking send.
 	dut.SetNonBlocking(t, socket, false)
 
-	var wg sync.WaitGroup
-	defer wg.Wait()
-	wg.Add(1)
-	var block sync.WaitGroup
-	block.Add(1)
+	start := make(chan struct{})
+	done := make(chan struct{})
 	go func() {
-		defer wg.Done()
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
-		defer cancel()
+		defer close(done)
 
-		block.Done()
+		close(start)
 		// Issue SEND call in SYN-SENT, this should be queued for
 		// process until the connection is established.
-		n, err := dut.SendWithErrno(ctx, t, socket, sampleData, 0)
-		if n == -1 {
+		if _, err := dut.SendWithErrno(context.Background(), t, socket, sampleData, 0); err != unix.Errno(0) {
 			t.Errorf("failed to send on DUT: %s", err)
-			return
 		}
 	}()
 
 	// Wait for the goroutine to be scheduled and before it
 	// blocks on endpoint send/receive.
-	block.Wait()
+	<-start
 	// The following sleep is used to prevent the connection
 	// from being established before we are blocked: there is
 	// still a small time window between we sending the RPC
 	// request and the system actually being blocked.
 	time.Sleep(100 * time.Millisecond)
 
+	select {
+	case <-done:
+		t.Fatal("expected send to be blocked in SYN-SENT")
+	default:
+	}
+
 	// Bring the connection to Established.
 	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagSyn | header.TCPFlagAck)})
+
+	<-done
+
 	// Expect the data from the DUT's enqueued send request.
 	//
 	// On Linux, this can be piggybacked with the ACK completing the
@@ -126,21 +127,16 @@ func TestQueueRecvInSynSentHandshake(t *testing.T) {
 	// Test blocking read.
 	dut.SetNonBlocking(t, socket, false)
 
-	var wg sync.WaitGroup
-	defer wg.Wait()
-	wg.Add(1)
-	var block sync.WaitGroup
-	block.Add(1)
+	start := make(chan struct{})
+	done := make(chan struct{})
 	go func() {
-		defer wg.Done()
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
-		defer cancel()
+		defer close(done)
 
-		block.Done()
+		close(start)
 		// Issue RECEIVE call in SYN-SENT, this should be queued for
 		// process until the connection is established.
-		n, buff, err := dut.RecvWithErrno(ctx, t, socket, int32(len(sampleData)), 0)
-		if n == -1 {
+		n, buff, err := dut.RecvWithErrno(context.Background(), t, socket, int32(len(sampleData)), 0)
+		if err != unix.Errno(0) {
 			t.Errorf("failed to recv on DUT: %s", err)
 			return
 		}
@@ -151,7 +147,8 @@ func TestQueueRecvInSynSentHandshake(t *testing.T) {
 
 	// Wait for the goroutine to be scheduled and before it
 	// blocks on endpoint send/receive.
-	block.Wait()
+	<-start
+
 	// The following sleep is used to prevent the connection
 	// from being established before we are blocked: there is
 	// still a small time window between we sending the RPC
@@ -169,6 +166,8 @@ func TestQueueRecvInSynSentHandshake(t *testing.T) {
 	if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagAck)}, time.Second); err != nil {
 		t.Fatalf("expected an ACK from DUT, but got none: %s", err)
 	}
+
+	<-done
 }
 
 // TestQueueSendInSynSentRST tests send behavior when the TCP state
@@ -192,20 +191,15 @@ func TestQueueSendInSynSentRST(t *testing.T) {
 	// Test blocking send.
 	dut.SetNonBlocking(t, socket, false)
 
-	var wg sync.WaitGroup
-	defer wg.Wait()
-	wg.Add(1)
-	var block sync.WaitGroup
-	block.Add(1)
+	start := make(chan struct{})
+	done := make(chan struct{})
 	go func() {
-		defer wg.Done()
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
-		defer cancel()
+		defer close(done)
 
-		block.Done()
+		close(start)
 		// Issue SEND call in SYN-SENT, this should be queued for
 		// process until the connection is established.
-		n, err := dut.SendWithErrno(ctx, t, socket, sampleData, 0)
+		n, err := dut.SendWithErrno(context.Background(), t, socket, sampleData, 0)
 		if err != unix.ECONNREFUSED {
 			t.Errorf("expected error %s, got %s", unix.ECONNREFUSED, err)
 		}
@@ -216,14 +210,23 @@ func TestQueueSendInSynSentRST(t *testing.T) {
 
 	// Wait for the goroutine to be scheduled and before it
 	// blocks on endpoint send/receive.
-	block.Wait()
+	<-start
+
 	// The following sleep is used to prevent the connection
 	// from being established before we are blocked: there is
 	// still a small time window between we sending the RPC
 	// request and the system actually being blocked.
 	time.Sleep(100 * time.Millisecond)
 
+	select {
+	case <-done:
+		t.Fatal("expected send to be blocked in SYN-SENT")
+	default:
+	}
+
 	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagRst | header.TCPFlagAck)})
+
+	<-done
 }
 
 // TestQueueRecvInSynSentRST tests recv behavior when the TCP state
@@ -251,20 +254,15 @@ func TestQueueRecvInSynSentRST(t *testing.T) {
 	// Test blocking read.
 	dut.SetNonBlocking(t, socket, false)
 
-	var wg sync.WaitGroup
-	defer wg.Wait()
-	wg.Add(1)
-	var block sync.WaitGroup
-	block.Add(1)
+	start := make(chan struct{})
+	done := make(chan struct{})
 	go func() {
-		defer wg.Done()
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second*3)
-		defer cancel()
+		defer close(done)
 
-		block.Done()
+		close(start)
 		// Issue RECEIVE call in SYN-SENT, this should be queued for
 		// process until the connection is established.
-		n, _, err := dut.RecvWithErrno(ctx, t, socket, int32(len(sampleData)), 0)
+		n, _, err := dut.RecvWithErrno(context.Background(), t, socket, int32(len(sampleData)), 0)
 		if err != unix.ECONNREFUSED {
 			t.Errorf("expected error %s, got %s", unix.ECONNREFUSED, err)
 		}
@@ -275,7 +273,8 @@ func TestQueueRecvInSynSentRST(t *testing.T) {
 
 	// Wait for the goroutine to be scheduled and before it
 	// blocks on endpoint send/receive.
-	block.Wait()
+	<-start
+
 	// The following sleep is used to prevent the connection
 	// from being established before we are blocked: there is
 	// still a small time window between we sending the RPC
@@ -283,4 +282,5 @@ func TestQueueRecvInSynSentRST(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	conn.Send(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagRst | header.TCPFlagAck)})
+	<-done
 }

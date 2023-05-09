@@ -15,7 +15,6 @@
 package icmpv6_param_problem_test
 
 import (
-	"encoding/binary"
 	"flag"
 	"testing"
 	"time"
@@ -56,13 +55,11 @@ func TestICMPv6ParamProblemTest(t *testing.T) {
 		t.Fatalf("can't convert %s to bytes: %s", ipv6Sent, err)
 	}
 
-	// The problematic field is the NextHeader.
-	b := make([]byte, 4)
-	binary.BigEndian.PutUint32(b, header.IPv6NextHeaderOffset)
-	expectedPayload = append(b, expectedPayload...)
 	expectedICMPv6 := testbench.ICMPv6{
 		Type:    testbench.ICMPv6Type(header.ICMPv6ParamProblem),
 		Payload: expectedPayload,
+		// The problematic field is the NextHeader.
+		Pointer: testbench.Uint32(header.IPv6NextHeaderOffset),
 	}
 
 	paramProblem := testbench.Layers{

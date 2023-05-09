@@ -15,6 +15,7 @@
 #include <signal.h>
 #include <stdlib.h>
 #include <sys/select.h>
+#include <time.h>
 
 #include "gtest/gtest.h"
 #include "absl/flags/flag.h"
@@ -121,6 +122,56 @@ void SleepIgnoreStopped(absl::Duration d) {
     absl::SleepFor(to_sleep);
     d -= to_sleep;
   }
+}
+
+TEST(SigstopTest, RestartSyscall) {
+  pid_t pid;
+  constexpr absl::Duration kStopDelay = absl::Seconds(5);
+  constexpr absl::Duration kStartupDelay = absl::Seconds(5);
+  constexpr int64_t kSleepDelay = 15;
+  constexpr int64_t kErrorDelay = 3;
+
+  const DisableSave ds;  // Timing-related.
+
+  pid = fork();
+  if (pid == 0) {
+    struct timespec ts = {.tv_sec = kSleepDelay};
+    struct timespec start, finish;
+    TEST_CHECK(clock_gettime(CLOCK_MONOTONIC, &start) == 0);
+    TEST_CHECK(nanosleep(&ts, nullptr) == 0);
+    TEST_CHECK(clock_gettime(CLOCK_MONOTONIC, &finish) == 0);
+    // Check that time spent stopped is counted as time spent sleeping.
+    TEST_CHECK(finish.tv_sec - start.tv_sec >= kSleepDelay);
+    TEST_CHECK(finish.tv_sec - start.tv_sec < kSleepDelay + kErrorDelay);
+    _exit(kChildMainThreadExitCode);
+  }
+  ASSERT_THAT(pid, SyscallSucceeds());
+
+  // Wait for the child subprocess to start sleeping before stopping it.
+  absl::SleepFor(kStartupDelay);
+  ASSERT_THAT(kill(pid, SIGSTOP), SyscallSucceeds());
+  int status;
+  EXPECT_THAT(RetryEINTR(waitpid)(pid, &status, WUNTRACED),
+              SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFSTOPPED(status));
+  EXPECT_EQ(SIGSTOP, WSTOPSIG(status));
+
+  // Sleep for shorter than the sleep in the child subprocess.
+  absl::SleepFor(kStopDelay);
+  ASSERT_THAT(RetryEINTR(waitpid)(pid, &status, WNOHANG),
+              SyscallSucceedsWithValue(0));
+
+  // Resume the child.
+  ASSERT_THAT(kill(pid, SIGCONT), SyscallSucceeds());
+
+  EXPECT_THAT(RetryEINTR(waitpid)(pid, &status, WCONTINUED),
+              SyscallSucceedsWithValue(pid));
+  EXPECT_TRUE(WIFCONTINUED(status));
+
+  // Expect it to die.
+  ASSERT_THAT(RetryEINTR(waitpid)(pid, &status, 0), SyscallSucceeds());
+  ASSERT_TRUE(WIFEXITED(status));
+  ASSERT_EQ(WEXITSTATUS(status), kChildMainThreadExitCode);
 }
 
 void RunChild() {

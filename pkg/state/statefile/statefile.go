@@ -48,6 +48,7 @@ import (
 	"compress/flate"
 	"crypto/hmac"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"hash"
@@ -55,7 +56,6 @@ import (
 	"strings"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/compressio"
 	"gvisor.dev/gvisor/pkg/state/wire"
 )
@@ -88,6 +88,13 @@ var ErrMetadataInvalid = fmt.Errorf("metadata invalid, can't start with _")
 type WriteCloser interface {
 	wire.Writer
 	io.Closer
+}
+
+func writeMetadataLen(w io.Writer, val uint64) error {
+	var buf [8]byte
+	binary.BigEndian.PutUint64(buf[:], val)
+	_, err := w.Write(buf[:])
+	return err
 }
 
 // NewWriter returns a state data writer for a statefile.
@@ -127,7 +134,7 @@ func NewWriter(w io.Writer, key []byte, metadata map[string]string) (WriteCloser
 	}
 
 	// Metadata length.
-	if err := binary.WriteUint64(mw, binary.BigEndian, uint64(len(b))); err != nil {
+	if err := writeMetadataLen(mw, uint64(len(b))); err != nil {
 		return nil, err
 	}
 	// Metadata bytes; io.MultiWriter will return a short write error if
@@ -158,6 +165,14 @@ func MetadataUnsafe(r io.Reader) (map[string]string, error) {
 	return metadata(r, nil)
 }
 
+func readMetadataLen(r io.Reader) (uint64, error) {
+	var buf [8]byte
+	if _, err := io.ReadFull(r, buf[:]); err != nil {
+		return 0, err
+	}
+	return binary.BigEndian.Uint64(buf[:]), nil
+}
+
 // metadata validates the magic header and reads out the metadata from a state
 // data stream.
 func metadata(r io.Reader, h hash.Hash) (map[string]string, error) {
@@ -183,7 +198,7 @@ func metadata(r io.Reader, h hash.Hash) (map[string]string, error) {
 			}
 		}()
 
-		metadataLen, err := binary.ReadUint64(r, binary.BigEndian)
+		metadataLen, err := readMetadataLen(r)
 		if err != nil {
 			return nil, err
 		}

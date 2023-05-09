@@ -1,6 +1,9 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_library(
     name = "utils",
@@ -13,9 +16,7 @@ go_library(
         "//pkg/shim:__subpackages__",
         "//shim:__subpackages__",
     ],
-    deps = [
-        "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
-    ],
+    deps = ["@com_github_opencontainers_runtime_spec//specs-go:go_default_library"],
 )
 
 go_test(

@@ -1,5 +1,7 @@
 load("//tools:defs.bzl", "go_library")
 
+package(default_applicable_licenses = ["//:license"])
+
 licenses(["notice"])
 
 go_library(
@@ -18,5 +20,5 @@ go_library(
     visibility = [
         "//:sandbox",
     ],
-    deps = ["//tools/tags"],
+    deps = ["//tools/constraintutil"],
 )

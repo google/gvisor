@@ -172,7 +172,7 @@ func TestRWTryLockUnlock(t *testing.T) {
 	if !rwm.TryLock() {
 		t.Fatal("failed to aquire lock")
 	}
-	rwm.Unlock()
+	rwm.Unlock() // +checklocksforce
 	if !rwm.TryLock() {
 		t.Fatal("failed to aquire lock after unlock")
 	}

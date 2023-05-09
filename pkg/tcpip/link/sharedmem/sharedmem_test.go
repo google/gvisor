@@ -12,13 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build linux
 // +build linux
 
 package sharedmem
 
 import (
 	"bytes"
-	"io/ioutil"
 	"math/rand"
 	"os"
 	"strings"
@@ -26,9 +26,10 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sharedmem/pipe"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sharedmem/queue"
@@ -78,10 +79,9 @@ func (q *queueBuffers) cleanup() {
 }
 
 type packetInfo struct {
-	addr       tcpip.LinkAddress
 	proto      tcpip.NetworkProtocolNumber
-	data       buffer.View
-	linkHeader buffer.View
+	data       []byte
+	linkHeader []byte
 }
 
 type testContext struct {
@@ -103,24 +103,36 @@ func newTestContext(t *testing.T, mtu, bufferSize uint32, addr tcpip.LinkAddress
 		t:        t,
 		packetCh: make(chan struct{}, 1000000),
 	}
-	c.txCfg = createQueueFDs(t, queueSizes{
+	c.txCfg, err = createQueueFDs("" /* sharedMemPath */, queueSizes{
 		dataSize:       queueDataSize,
 		txPipeSize:     queuePipeSize,
 		rxPipeSize:     queuePipeSize,
 		sharedDataSize: 4096,
 	})
-
-	c.rxCfg = createQueueFDs(t, queueSizes{
+	if err != nil {
+		t.Fatalf("createQueueFDs for tx failed: %s", err)
+	}
+	c.rxCfg, err = createQueueFDs("" /* sharedMemPath */, queueSizes{
 		dataSize:       queueDataSize,
 		txPipeSize:     queuePipeSize,
 		rxPipeSize:     queuePipeSize,
 		sharedDataSize: 4096,
 	})
+	if err != nil {
+		t.Fatalf("createQueueFDs for rx failed: %s", err)
+	}
 
 	initQueue(t, &c.txq, &c.txCfg)
 	initQueue(t, &c.rxq, &c.rxCfg)
 
-	ep, err := New(mtu, bufferSize, addr, c.txCfg, c.rxCfg)
+	ep, err := New(Options{
+		MTU:         mtu,
+		BufferSize:  bufferSize,
+		LinkAddress: addr,
+		TX:          c.txCfg,
+		RX:          c.rxCfg,
+		PeerFD:      -1,
+	})
 	if err != nil {
 		t.Fatalf("New failed: %v", err)
 	}
@@ -131,26 +143,25 @@ func newTestContext(t *testing.T, mtu, bufferSize uint32, addr tcpip.LinkAddress
 	return c
 }
 
-func (c *testContext) DeliverNetworkPacket(remoteLinkAddr, localLinkAddr tcpip.LinkAddress, proto tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+func (c *testContext) DeliverNetworkPacket(proto tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr) {
 	c.mu.Lock()
 	c.packets = append(c.packets, packetInfo{
-		addr:  remoteLinkAddr,
 		proto: proto,
-		data:  pkt.Data().AsRange().ToOwnedView(),
+		data:  pkt.Data().AsRange().ToSlice(),
 	})
 	c.mu.Unlock()
 
 	c.packetCh <- struct{}{}
 }
 
-func (c *testContext) DeliverOutboundPacket(remoteLinkAddr, localLinkAddr tcpip.LinkAddress, proto tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
-	panic("unimplemented")
+func (c *testContext) DeliverLinkPacket(tcpip.NetworkProtocolNumber, stack.PacketBufferPtr) {
+	c.t.Fatal("DeliverLinkPacket not implemented")
 }
 
 func (c *testContext) cleanup() {
 	c.ep.Close()
-	closeFDs(&c.txCfg)
-	closeFDs(&c.rxCfg)
+	closeFDs(c.txCfg)
+	closeFDs(c.rxCfg)
 	c.txq.cleanup()
 	c.rxq.cleanup()
 }
@@ -190,99 +201,40 @@ func shuffle(b []int) {
 	}
 }
 
-func createFile(t *testing.T, size int64, initQueue bool) int {
-	tmpDir, ok := os.LookupEnv("TEST_TMPDIR")
-	if !ok {
-		tmpDir = os.Getenv("TMPDIR")
-	}
-	f, err := ioutil.TempFile(tmpDir, "sharedmem_test")
-	if err != nil {
-		t.Fatalf("TempFile failed: %v", err)
-	}
-	defer f.Close()
-	unix.Unlink(f.Name())
-
-	if initQueue {
-		// Write the "slot-free" flag in the initial queue.
-		_, err := f.WriteAt([]byte{0, 0, 0, 0, 0, 0, 0, 0x80}, 0)
-		if err != nil {
-			t.Fatalf("WriteAt failed: %v", err)
-		}
-	}
-
-	fd, err := unix.Dup(int(f.Fd()))
-	if err != nil {
-		t.Fatalf("Dup failed: %v", err)
-	}
-
-	if err := unix.Ftruncate(fd, size); err != nil {
-		unix.Close(fd)
-		t.Fatalf("Ftruncate failed: %v", err)
-	}
-
-	return fd
-}
-
-func closeFDs(c *QueueConfig) {
-	unix.Close(c.DataFD)
-	unix.Close(c.EventFD)
-	unix.Close(c.TxPipeFD)
-	unix.Close(c.RxPipeFD)
-	unix.Close(c.SharedDataFD)
-}
-
-type queueSizes struct {
-	dataSize       int64
-	txPipeSize     int64
-	rxPipeSize     int64
-	sharedDataSize int64
-}
-
-func createQueueFDs(t *testing.T, s queueSizes) QueueConfig {
-	fd, _, err := unix.RawSyscall(unix.SYS_EVENTFD2, 0, 0, 0)
-	if err != 0 {
-		t.Fatalf("eventfd failed: %v", error(err))
-	}
-
-	return QueueConfig{
-		EventFD:      int(fd),
-		DataFD:       createFile(t, s.dataSize, false),
-		TxPipeFD:     createFile(t, s.txPipeSize, true),
-		RxPipeFD:     createFile(t, s.rxPipeSize, true),
-		SharedDataFD: createFile(t, s.sharedDataSize, false),
-	}
-}
-
 // TestSimpleSend sends 1000 packets with random header and payload sizes,
 // then checks that the right payload is received on the shared memory queues.
 func TestSimpleSend(t *testing.T) {
 	c := newTestContext(t, 20000, 1500, localLinkAddr)
 	defer c.cleanup()
 
-	// Prepare route.
-	var r stack.RouteInfo
-	r.RemoteLinkAddress = remoteLinkAddr
-
 	for iters := 1000; iters > 0; iters-- {
 		func() {
 			hdrLen, dataLen := rand.Intn(10000), rand.Intn(10000)
 
 			// Prepare and send packet.
-			hdrBuf := buffer.NewView(hdrLen)
+			hdrBuf := make([]byte, hdrLen)
 			randomFill(hdrBuf)
 
-			data := buffer.NewView(dataLen)
+			data := make([]byte, dataLen)
 			randomFill(data)
 
 			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 				ReserveHeaderBytes: hdrLen + int(c.ep.MaxHeaderLength()),
-				Data:               data.ToVectorisedView(),
+				Payload:            bufferv2.MakeWithData(data),
 			})
 			copy(pkt.NetworkHeader().Push(hdrLen), hdrBuf)
-
 			proto := tcpip.NetworkProtocolNumber(rand.Intn(0x10000))
-			if err := c.ep.WritePacket(r, nil /* gso */, proto, pkt); err != nil {
-				t.Fatalf("WritePacket failed: %v", err)
+			// Every PacketBuffer must have these set:
+			// See nic.writePacket.
+			pkt.EgressRoute.RemoteLinkAddress = remoteLinkAddr
+			pkt.EgressRoute.LocalLinkAddress = localLinkAddr
+			pkt.NetworkProtocolNumber = proto
+			c.ep.AddHeader(pkt)
+			var pkts stack.PacketBufferList
+			pkts.PushBack(pkt)
+			defer pkts.DecRef()
+			if _, err := c.ep.WritePackets(pkts); err != nil {
+				t.Fatalf("WritePackets failed: %s", err)
 			}
 
 			// Receive packet.
@@ -339,20 +291,25 @@ func TestPreserveSrcAddressInSend(t *testing.T) {
 	defer c.cleanup()
 
 	newLocalLinkAddress := tcpip.LinkAddress(strings.Repeat("0xFE", 6))
-	// Set both remote and local link address in route.
-	var r stack.RouteInfo
-	r.LocalLinkAddress = newLocalLinkAddress
-	r.RemoteLinkAddress = remoteLinkAddr
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		// WritePacket panics given a prependable with anything less than
 		// the minimum size of the ethernet header.
 		ReserveHeaderBytes: header.EthernetMinimumSize,
 	})
-
 	proto := tcpip.NetworkProtocolNumber(rand.Intn(0x10000))
-	if err := c.ep.WritePacket(r, nil /* gso */, proto, pkt); err != nil {
-		t.Fatalf("WritePacket failed: %v", err)
+	// Every PacketBuffer must have these set:
+	// See nic.writePacket.
+	pkt.EgressRoute.LocalLinkAddress = newLocalLinkAddress
+	pkt.EgressRoute.RemoteLinkAddress = remoteLinkAddr
+	pkt.NetworkProtocolNumber = proto
+	c.ep.AddHeader(pkt)
+
+	var pkts stack.PacketBufferList
+	defer func() { pkts.DecRef() }()
+	pkts.PushBack(pkt)
+	if _, err := c.ep.WritePackets(pkts); err != nil {
+		t.Fatalf("WritePackets failed: %s", err)
 	}
 
 	// Receive packet.
@@ -392,24 +349,29 @@ func TestFillTxQueue(t *testing.T) {
 	c := newTestContext(t, 20000, 1500, localLinkAddr)
 	defer c.cleanup()
 
-	// Prepare to send a packet.
-	var r stack.RouteInfo
-	r.RemoteLinkAddress = remoteLinkAddr
-
-	buf := buffer.NewView(100)
+	buf := make([]byte, 100)
 
 	// Each packet is uses no more than 40 bytes, so write that many packets
+	// until the tx queue if full.
+	// Each packet uses no more than 40 bytes, so write that many packets
 	// until the tx queue if full.
 	ids := make(map[uint64]struct{})
 	for i := queuePipeSize / 40; i > 0; i-- {
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
-			Data:               buf.ToVectorisedView(),
+			Payload:            bufferv2.MakeWithData(buf),
 		})
+		pkt.EgressRoute.RemoteLinkAddress = remoteLinkAddr
+		pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
+		c.ep.AddHeader(pkt)
 
-		if err := c.ep.WritePacket(r, nil /* gso */, header.IPv4ProtocolNumber, pkt); err != nil {
-			t.Fatalf("WritePacket failed unexpectedly: %v", err)
+		var pkts stack.PacketBufferList
+		pkts.PushBack(pkt)
+		if _, err := c.ep.WritePackets(pkts); err != nil {
+			pkts.DecRef()
+			t.Fatalf("WritePackets failed unexpectedly: %s", err)
 		}
+		pkts.DecRef()
 
 		// Check that they have different IDs.
 		desc := c.txq.tx.Pull()
@@ -423,12 +385,19 @@ func TestFillTxQueue(t *testing.T) {
 	// Next attempt to write must fail.
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
-		Data:               buf.ToVectorisedView(),
+		Payload:            bufferv2.MakeWithData(buf),
 	})
-	err := c.ep.WritePacket(r, nil /* gso */, header.IPv4ProtocolNumber, pkt)
+	pkt.EgressRoute.RemoteLinkAddress = remoteLinkAddr
+	pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
+	c.ep.AddHeader(pkt)
+
+	var pkts stack.PacketBufferList
+	pkts.PushBack(pkt)
+	_, err := c.ep.WritePackets(pkts)
 	if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
-		t.Fatalf("got WritePacket(...) = %v, want %s", err, &tcpip.ErrWouldBlock{})
+		t.Fatalf("got WritePackets(...) = %s, want %s", err, &tcpip.ErrWouldBlock{})
 	}
+	pkts.DecRef()
 }
 
 // TestFillTxQueueAfterBadCompletion sends a bad completion, then sends packets
@@ -441,21 +410,25 @@ func TestFillTxQueueAfterBadCompletion(t *testing.T) {
 	queue.EncodeTxCompletion(c.txq.rx.Push(8), 1)
 	c.txq.rx.Flush()
 
-	// Prepare to send a packet.
-	var r stack.RouteInfo
-	r.RemoteLinkAddress = remoteLinkAddr
-
-	buf := buffer.NewView(100)
+	buf := make([]byte, 100)
 
 	// Send two packets so that the id slice has at least two slots.
-	for i := 2; i > 0; i-- {
-		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-			ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
-			Data:               buf.ToVectorisedView(),
-		})
-		if err := c.ep.WritePacket(r, nil /* gso */, header.IPv4ProtocolNumber, pkt); err != nil {
-			t.Fatalf("WritePacket failed unexpectedly: %v", err)
+	{
+		var pkts stack.PacketBufferList
+		for i := 2; i > 0; i-- {
+			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+				ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
+				Payload:            bufferv2.MakeWithData(buf),
+			})
+			pkts.PushBack(pkt)
+			pkt.EgressRoute.RemoteLinkAddress = remoteLinkAddr
+			pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
+			c.ep.AddHeader(pkt)
 		}
+		if _, err := c.ep.WritePackets(pkts); err != nil {
+			t.Fatalf("WritePackets failed unexpectedly: %s", err)
+		}
+		pkts.DecRef()
 	}
 
 	// Complete the two writes twice.
@@ -474,11 +447,18 @@ func TestFillTxQueueAfterBadCompletion(t *testing.T) {
 	for i := queuePipeSize / 40; i > 0; i-- {
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
-			Data:               buf.ToVectorisedView(),
+			Payload:            bufferv2.MakeWithData(buf),
 		})
-		if err := c.ep.WritePacket(r, nil /* gso */, header.IPv4ProtocolNumber, pkt); err != nil {
-			t.Fatalf("WritePacket failed unexpectedly: %v", err)
+		pkt.EgressRoute.RemoteLinkAddress = remoteLinkAddr
+		pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
+		c.ep.AddHeader(pkt)
+
+		var pkts stack.PacketBufferList
+		pkts.PushBack(pkt)
+		if _, err := c.ep.WritePackets(pkts); err != nil {
+			t.Fatalf("WritePackets failed unexpectedly: %s", err)
 		}
+		pkts.DecRef()
 
 		// Check that they have different IDs.
 		desc := c.txq.tx.Pull()
@@ -492,12 +472,19 @@ func TestFillTxQueueAfterBadCompletion(t *testing.T) {
 	// Next attempt to write must fail.
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
-		Data:               buf.ToVectorisedView(),
+		Payload:            bufferv2.MakeWithData(buf),
 	})
-	err := c.ep.WritePacket(r, nil /* gso */, header.IPv4ProtocolNumber, pkt)
+	pkt.EgressRoute.RemoteLinkAddress = remoteLinkAddr
+	pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
+	c.ep.AddHeader(pkt)
+
+	var pkts stack.PacketBufferList
+	pkts.PushBack(pkt)
+	_, err := c.ep.WritePackets(pkts)
 	if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
-		t.Fatalf("got WritePacket(...) = %v, want %s", err, &tcpip.ErrWouldBlock{})
+		t.Fatalf("got WritePackets(...) = %s, want %s", err, &tcpip.ErrWouldBlock{})
 	}
+	pkts.DecRef()
 }
 
 // TestFillTxMemory sends packets until the we run out of shared memory.
@@ -506,11 +493,7 @@ func TestFillTxMemory(t *testing.T) {
 	c := newTestContext(t, 20000, bufferSize, localLinkAddr)
 	defer c.cleanup()
 
-	// Prepare to send a packet.
-	var r stack.RouteInfo
-	r.RemoteLinkAddress = remoteLinkAddr
-
-	buf := buffer.NewView(100)
+	buf := make([]byte, 100)
 
 	// Each packet is uses up one buffer, so write as many as possible until
 	// we fill the memory.
@@ -518,11 +501,18 @@ func TestFillTxMemory(t *testing.T) {
 	for i := queueDataSize / bufferSize; i > 0; i-- {
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
-			Data:               buf.ToVectorisedView(),
+			Payload:            bufferv2.MakeWithData(buf),
 		})
-		if err := c.ep.WritePacket(r, nil /* gso */, header.IPv4ProtocolNumber, pkt); err != nil {
-			t.Fatalf("WritePacket failed unexpectedly: %v", err)
+		pkt.EgressRoute.RemoteLinkAddress = remoteLinkAddr
+		pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
+		c.ep.AddHeader(pkt)
+
+		var pkts stack.PacketBufferList
+		pkts.PushBack(pkt)
+		if _, err := c.ep.WritePackets(pkts); err != nil {
+			t.Fatalf("WritePackets failed unexpectedly: %s", err)
 		}
+		pkts.DecRef()
 
 		// Check that they have different IDs.
 		desc := c.txq.tx.Pull()
@@ -537,12 +527,17 @@ func TestFillTxMemory(t *testing.T) {
 	// Next attempt to write must fail.
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
-		Data:               buf.ToVectorisedView(),
+		Payload:            bufferv2.MakeWithData(buf),
 	})
-	err := c.ep.WritePacket(r, nil /* gso */, header.IPv4ProtocolNumber, pkt)
+	pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
+	pkt.EgressRoute.RemoteLinkAddress = remoteLinkAddr
+	var pkts stack.PacketBufferList
+	pkts.PushBack(pkt)
+	_, err := c.ep.WritePackets(pkts)
 	if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
-		t.Fatalf("got WritePacket(...) = %v, want %s", err, &tcpip.ErrWouldBlock{})
+		t.Fatalf("got WritePackets(...) = %s, want %s", err, &tcpip.ErrWouldBlock{})
 	}
+	pkts.DecRef()
 }
 
 // TestFillTxMemoryWithMultiBuffer sends packets until the we run out of
@@ -553,22 +548,23 @@ func TestFillTxMemoryWithMultiBuffer(t *testing.T) {
 	c := newTestContext(t, 20000, bufferSize, localLinkAddr)
 	defer c.cleanup()
 
-	// Prepare to send a packet.
-	var r stack.RouteInfo
-	r.RemoteLinkAddress = remoteLinkAddr
-
-	buf := buffer.NewView(100)
+	buf := make([]byte, 100)
 
 	// Each packet is uses up one buffer, so write as many as possible
 	// until there is only one buffer left.
 	for i := queueDataSize/bufferSize - 1; i > 0; i-- {
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
-			Data:               buf.ToVectorisedView(),
+			Payload:            bufferv2.MakeWithData(buf),
 		})
-		if err := c.ep.WritePacket(r, nil /* gso */, header.IPv4ProtocolNumber, pkt); err != nil {
-			t.Fatalf("WritePacket failed unexpectedly: %v", err)
+		var pkts stack.PacketBufferList
+		pkt.EgressRoute.RemoteLinkAddress = remoteLinkAddr
+		pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
+		pkts.PushBack(pkt)
+		if _, err := c.ep.WritePackets(pkts); err != nil {
+			t.Fatalf("WritePackets failed unexpectedly: %s", err)
 		}
+		pkts.DecRef()
 
 		// Pull the posted buffer.
 		c.txq.tx.Pull()
@@ -577,25 +573,37 @@ func TestFillTxMemoryWithMultiBuffer(t *testing.T) {
 
 	// Attempt to write a two-buffer packet. It must fail.
 	{
+		var pkts stack.PacketBufferList
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
-			Data:               buffer.NewView(bufferSize).ToVectorisedView(),
+			Payload:            bufferv2.MakeWithData(make([]byte, bufferSize)),
 		})
-		err := c.ep.WritePacket(r, nil /* gso */, header.IPv4ProtocolNumber, pkt)
+		pkt.EgressRoute.RemoteLinkAddress = remoteLinkAddr
+		pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
+		c.ep.AddHeader(pkt)
+
+		pkts.PushBack(pkt)
+		_, err := c.ep.WritePackets(pkts)
 		if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
-			t.Fatalf("got WritePacket(...) = %v, want %s", err, &tcpip.ErrWouldBlock{})
+			t.Fatalf("got WritePackets(...) = %s, want %s", err, &tcpip.ErrWouldBlock{})
 		}
+		pkts.DecRef()
 	}
 
 	// Attempt to write the one-buffer packet again. It must succeed.
 	{
+		var pkts stack.PacketBufferList
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			ReserveHeaderBytes: int(c.ep.MaxHeaderLength()),
-			Data:               buf.ToVectorisedView(),
+			Payload:            bufferv2.MakeWithData(buf),
 		})
-		if err := c.ep.WritePacket(r, nil /* gso */, header.IPv4ProtocolNumber, pkt); err != nil {
-			t.Fatalf("WritePacket failed unexpectedly: %v", err)
+		pkt.EgressRoute.RemoteLinkAddress = remoteLinkAddr
+		pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
+		pkts.PushBack(pkt)
+		if _, err := c.ep.WritePackets(pkts); err != nil {
+			t.Fatalf("WritePackets failed unexpectedly: %s", err)
 		}
+		pkts.DecRef()
 	}
 }
 
@@ -671,7 +679,7 @@ func TestSimpleReceive(t *testing.T) {
 		// Push completion.
 		c.pushRxCompletion(uint32(len(contents)), bufs)
 		c.rxq.rx.Flush()
-		unix.Write(c.rxCfg.EventFD, []byte{1, 0, 0, 0, 0, 0, 0, 0})
+		c.rxCfg.EventFD.Notify()
 
 		// Wait for packet to be received, then check it.
 		c.waitForPackets(1, time.After(5*time.Second), "Timeout waiting for packet")
@@ -717,7 +725,7 @@ func TestRxBuffersReposted(t *testing.T) {
 		// Complete the buffer.
 		c.pushRxCompletion(buffers[i].Size, buffers[i:][:1])
 		c.rxq.rx.Flush()
-		unix.Write(c.rxCfg.EventFD, []byte{1, 0, 0, 0, 0, 0, 0, 0})
+		c.rxCfg.EventFD.Notify()
 
 		// Wait for it to be reposted.
 		bi := queue.DecodeRxBufferHeader(pollPull(t, &c.rxq.tx, timeout, "Timeout waiting for buffer to be reposted"))
@@ -733,7 +741,7 @@ func TestRxBuffersReposted(t *testing.T) {
 		// Complete with two buffers.
 		c.pushRxCompletion(2*bufferSize, buffers[2*i:][:2])
 		c.rxq.rx.Flush()
-		unix.Write(c.rxCfg.EventFD, []byte{1, 0, 0, 0, 0, 0, 0, 0})
+		c.rxCfg.EventFD.Notify()
 
 		// Wait for them to be reposted.
 		for j := 0; j < 2; j++ {
@@ -758,7 +766,7 @@ func TestReceivePostingIsFull(t *testing.T) {
 	first := queue.DecodeRxBufferHeader(pollPull(t, &c.rxq.tx, time.After(time.Second), "Timeout waiting for first buffer to be posted"))
 	c.pushRxCompletion(first.Size, []queue.RxBuffer{first})
 	c.rxq.rx.Flush()
-	unix.Write(c.rxCfg.EventFD, []byte{1, 0, 0, 0, 0, 0, 0, 0})
+	c.rxCfg.EventFD.Notify()
 
 	// Check that packet is received.
 	c.waitForPackets(1, time.After(time.Second), "Timeout waiting for completed packet")
@@ -767,7 +775,7 @@ func TestReceivePostingIsFull(t *testing.T) {
 	second := queue.DecodeRxBufferHeader(pollPull(t, &c.rxq.tx, time.After(time.Second), "Timeout waiting for second buffer to be posted"))
 	c.pushRxCompletion(second.Size, []queue.RxBuffer{second})
 	c.rxq.rx.Flush()
-	unix.Write(c.rxCfg.EventFD, []byte{1, 0, 0, 0, 0, 0, 0, 0})
+	c.rxCfg.EventFD.Notify()
 
 	// Check that no packet is received yet, as the worker is blocked trying
 	// to repost.
@@ -780,7 +788,7 @@ func TestReceivePostingIsFull(t *testing.T) {
 	// Flush tx queue, which will allow the first buffer to be reposted,
 	// and the second completion to be pulled.
 	c.rxq.tx.Flush()
-	unix.Write(c.rxCfg.EventFD, []byte{1, 0, 0, 0, 0, 0, 0, 0})
+	c.rxCfg.EventFD.Notify()
 
 	// Check that second packet completes.
 	c.waitForPackets(1, time.After(time.Second), "Timeout waiting for second completed packet")
@@ -802,7 +810,7 @@ func TestCloseWhileWaitingToPost(t *testing.T) {
 	bi := queue.DecodeRxBufferHeader(pollPull(t, &c.rxq.tx, time.After(time.Second), "Timeout waiting for initial buffer to be posted"))
 	c.pushRxCompletion(bi.Size, []queue.RxBuffer{bi})
 	c.rxq.rx.Flush()
-	unix.Write(c.rxCfg.EventFD, []byte{1, 0, 0, 0, 0, 0, 0, 0})
+	c.rxCfg.EventFD.Notify()
 
 	// Wait for packet to be indicated.
 	c.waitForPackets(1, time.After(time.Second), "Timeout waiting for completed packet")
@@ -811,4 +819,11 @@ func TestCloseWhileWaitingToPost(t *testing.T) {
 	c.cleanup()
 	cleaned = true
 	c.ep.Wait()
+}
+
+func TestMain(m *testing.M) {
+	refs.SetLeakMode(refs.LeaksPanic)
+	code := m.Run()
+	refs.DoLeakCheck()
+	os.Exit(code)
 }

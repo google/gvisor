@@ -114,9 +114,7 @@ TEST(MlockTest, Fork) {
 }
 
 TEST(MlockTest, RlimitMemlockZero) {
-  if (ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_IPC_LOCK))) {
-    ASSERT_NO_ERRNO(SetCapability(CAP_IPC_LOCK, false));
-  }
+  AutoCapability cap(CAP_IPC_LOCK, false);
   Cleanup reset_rlimit =
       ASSERT_NO_ERRNO_AND_VALUE(ScopedSetSoftRlimit(RLIMIT_MEMLOCK, 0));
   auto const mapping = ASSERT_NO_ERRNO_AND_VALUE(
@@ -127,9 +125,7 @@ TEST(MlockTest, RlimitMemlockZero) {
 }
 
 TEST(MlockTest, RlimitMemlockInsufficient) {
-  if (ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_IPC_LOCK))) {
-    ASSERT_NO_ERRNO(SetCapability(CAP_IPC_LOCK, false));
-  }
+  AutoCapability cap(CAP_IPC_LOCK, false);
   Cleanup reset_rlimit =
       ASSERT_NO_ERRNO_AND_VALUE(ScopedSetSoftRlimit(RLIMIT_MEMLOCK, kPageSize));
   auto const mapping = ASSERT_NO_ERRNO_AND_VALUE(
@@ -255,9 +251,7 @@ TEST(MapLockedTest, Basic) {
 }
 
 TEST(MapLockedTest, RlimitMemlockZero) {
-  if (ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_IPC_LOCK))) {
-    ASSERT_NO_ERRNO(SetCapability(CAP_IPC_LOCK, false));
-  }
+  AutoCapability cap(CAP_IPC_LOCK, false);
   Cleanup reset_rlimit =
       ASSERT_NO_ERRNO_AND_VALUE(ScopedSetSoftRlimit(RLIMIT_MEMLOCK, 0));
   EXPECT_THAT(
@@ -266,9 +260,7 @@ TEST(MapLockedTest, RlimitMemlockZero) {
 }
 
 TEST(MapLockedTest, RlimitMemlockInsufficient) {
-  if (ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_IPC_LOCK))) {
-    ASSERT_NO_ERRNO(SetCapability(CAP_IPC_LOCK, false));
-  }
+  AutoCapability cap(CAP_IPC_LOCK, false);
   Cleanup reset_rlimit =
       ASSERT_NO_ERRNO_AND_VALUE(ScopedSetSoftRlimit(RLIMIT_MEMLOCK, kPageSize));
   EXPECT_THAT(
@@ -298,9 +290,7 @@ TEST(MremapLockedTest, RlimitMemlockZero) {
       MmapAnon(kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_LOCKED));
   EXPECT_TRUE(IsPageMlocked(mapping.addr()));
 
-  if (ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_IPC_LOCK))) {
-    ASSERT_NO_ERRNO(SetCapability(CAP_IPC_LOCK, false));
-  }
+  AutoCapability cap(CAP_IPC_LOCK, false);
   Cleanup reset_rlimit =
       ASSERT_NO_ERRNO_AND_VALUE(ScopedSetSoftRlimit(RLIMIT_MEMLOCK, 0));
   void* addr = mremap(mapping.ptr(), mapping.len(), 2 * mapping.len(),
@@ -315,9 +305,7 @@ TEST(MremapLockedTest, RlimitMemlockInsufficient) {
       MmapAnon(kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_LOCKED));
   EXPECT_TRUE(IsPageMlocked(mapping.addr()));
 
-  if (ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_IPC_LOCK))) {
-    ASSERT_NO_ERRNO(SetCapability(CAP_IPC_LOCK, false));
-  }
+  AutoCapability cap(CAP_IPC_LOCK, false);
   Cleanup reset_rlimit = ASSERT_NO_ERRNO_AND_VALUE(
       ScopedSetSoftRlimit(RLIMIT_MEMLOCK, mapping.len()));
   void* addr = mremap(mapping.ptr(), mapping.len(), 2 * mapping.len(),

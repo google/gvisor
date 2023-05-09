@@ -46,6 +46,18 @@ void BM_Write(benchmark::State& state) {
 
 BENCHMARK(BM_Write)->Range(1, 1 << 26)->UseRealTime();
 
+void BM_Append(benchmark::State& state) {
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_WRONLY | O_APPEND));
+
+  const char data = 'a';
+  for (auto _ : state) {
+    TEST_CHECK(WriteFd(fd.get(), &data, 1) == 1);
+  }
+}
+
+BENCHMARK(BM_Append);
+
 }  // namespace
 
 }  // namespace testing

@@ -49,7 +49,6 @@ TEST(ChownTest, FchownatBadF) {
 }
 
 TEST(ChownTest, FchownFileWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_PATH));
 
@@ -58,7 +57,6 @@ TEST(ChownTest, FchownFileWithOpath) {
 }
 
 TEST(ChownTest, FchownDirWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   const auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   const auto fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_DIRECTORY | O_PATH));
@@ -68,7 +66,6 @@ TEST(ChownTest, FchownDirWithOpath) {
 }
 
 TEST(ChownTest, FchownatWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   const auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(dir.path()));
   const auto dirfd =
@@ -91,9 +88,7 @@ using Chown =
 class ChownParamTest : public ::testing::TestWithParam<Chown> {};
 
 TEST_P(ChownParamTest, ChownFileSucceeds) {
-  if (ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_CHOWN))) {
-    ASSERT_NO_ERRNO(SetCapability(CAP_CHOWN, false));
-  }
+  AutoCapability cap(CAP_CHOWN, false);
 
   const auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
 
@@ -135,9 +130,7 @@ TEST_P(ChownParamTest, ChownFilePermissionDenied) {
   // thread won't be able to open some log files after the test ends.
   ScopedThread([&] {
     // Drop privileges.
-    if (HaveCapability(CAP_CHOWN).ValueOrDie()) {
-      EXPECT_NO_ERRNO(SetCapability(CAP_CHOWN, false));
-    }
+    AutoCapability cap(CAP_CHOWN, false);
 
     // Change EUID and EGID.
     //

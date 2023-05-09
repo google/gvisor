@@ -46,7 +46,6 @@ TEST(FAdvise64Test, Basic) {
 }
 
 TEST(FAdvise64Test, FAdvise64WithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   const auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_PATH));
 

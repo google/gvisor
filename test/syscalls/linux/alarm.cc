@@ -36,7 +36,7 @@ void do_nothing_handler(int sig, siginfo_t* siginfo, void* arg) {}
 
 // No random save as the test relies on alarm timing. Cooperative save tests
 // already cover the save between alarm and read.
-TEST(AlarmTest, Interrupt_NoRandomSave) {
+TEST(AlarmTest, Interrupt) {
   int pipe_fds[2];
   ASSERT_THAT(pipe(pipe_fds), SyscallSucceeds());
 
@@ -71,7 +71,7 @@ void inc_alarms_handler(int sig, siginfo_t* siginfo, void* arg) {
 
 // No random save as the test relies on alarm timing. Cooperative save tests
 // already cover the save between alarm and read.
-TEST(AlarmTest, Restart_NoRandomSave) {
+TEST(AlarmTest, Restart) {
   alarms_received = 0;
 
   int pipe_fds[2];
@@ -114,7 +114,7 @@ TEST(AlarmTest, Restart_NoRandomSave) {
 
 // No random save as the test relies on alarm timing. Cooperative save tests
 // already cover the save between alarm and pause.
-TEST(AlarmTest, SaSiginfo_NoRandomSave) {
+TEST(AlarmTest, SaSiginfo) {
   // Use a signal handler that interrupts but does nothing rather than using the
   // default terminate action.
   struct sigaction sa;
@@ -134,7 +134,7 @@ TEST(AlarmTest, SaSiginfo_NoRandomSave) {
 
 // No random save as the test relies on alarm timing. Cooperative save tests
 // already cover the save between alarm and pause.
-TEST(AlarmTest, SaInterrupt_NoRandomSave) {
+TEST(AlarmTest, SaInterrupt) {
   // Use a signal handler that interrupts but does nothing rather than using the
   // default terminate action.
   struct sigaction sa;

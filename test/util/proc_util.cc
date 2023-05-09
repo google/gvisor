@@ -14,10 +14,14 @@
 
 #include "test/util/proc_util.h"
 
+#include <sys/prctl.h>
+
 #include <algorithm>
 #include <iostream>
 #include <vector>
 
+#include "absl/algorithm/container.h"
+#include "absl/container/flat_hash_set.h"
 #include "absl/strings/ascii.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_split.h"
@@ -101,6 +105,398 @@ PosixErrorOr<bool> IsVsyscallEnabled() {
   return std::any_of(maps.begin(), maps.end(), [](const ProcMapsEntry& e) {
     return e.filename == "[vsyscall]";
   });
+}
+
+// Given the value part of a /proc/[pid]/smaps field containing a value in kB
+// (for example, "    4 kB", returns the value in kB (in this example, 4).
+PosixErrorOr<size_t> SmapsValueKb(absl::string_view value) {
+  // TODO(jamieliu): let us use RE2 or <regex>
+  std::pair<absl::string_view, absl::string_view> parts =
+      absl::StrSplit(value, ' ', absl::SkipEmpty());
+  if (parts.second != "kB") {
+    return PosixError(EINVAL,
+                      absl::StrCat("invalid smaps field value: ", value));
+  }
+  ASSIGN_OR_RETURN_ERRNO(auto val_kb, Atoi<size_t>(parts.first));
+  return val_kb;
+}
+
+PosixErrorOr<std::vector<ProcSmapsEntry>> ParseProcSmaps(
+    absl::string_view contents) {
+  std::vector<ProcSmapsEntry> entries;
+  absl::optional<ProcSmapsEntry> entry;
+  bool have_size_kb = false;
+  bool have_rss_kb = false;
+  bool have_shared_clean_kb = false;
+  bool have_shared_dirty_kb = false;
+  bool have_private_clean_kb = false;
+  bool have_private_dirty_kb = false;
+
+  auto const finish_entry = [&] {
+    if (entry) {
+      if (!have_size_kb) {
+        return PosixError(EINVAL, "smaps entry is missing Size");
+      }
+      if (!have_rss_kb) {
+        return PosixError(EINVAL, "smaps entry is missing Rss");
+      }
+      if (!have_shared_clean_kb) {
+        return PosixError(EINVAL, "smaps entry is missing Shared_Clean");
+      }
+      if (!have_shared_dirty_kb) {
+        return PosixError(EINVAL, "smaps entry is missing Shared_Dirty");
+      }
+      if (!have_private_clean_kb) {
+        return PosixError(EINVAL, "smaps entry is missing Private_Clean");
+      }
+      if (!have_private_dirty_kb) {
+        return PosixError(EINVAL, "smaps entry is missing Private_Dirty");
+      }
+      // std::move(entry.value()) instead of std::move(entry).value(), because
+      // otherwise tools may report a "use-after-move" warning, which is
+      // spurious because entry.emplace() below resets entry to a new
+      // ProcSmapsEntry.
+      entries.emplace_back(std::move(entry.value()));
+    }
+    entry.emplace();
+    have_size_kb = false;
+    have_rss_kb = false;
+    have_shared_clean_kb = false;
+    have_shared_dirty_kb = false;
+    have_private_clean_kb = false;
+    have_private_dirty_kb = false;
+    return NoError();
+  };
+
+  // Holds key/value pairs from smaps field lines. Declared here so it can be
+  // captured by reference by the following lambdas.
+  std::vector<absl::string_view> key_value;
+
+  auto const on_required_field_kb = [&](size_t* field, bool* have_field) {
+    if (*have_field) {
+      return PosixError(
+          EINVAL,
+          absl::StrFormat("smaps entry has duplicate %s line", key_value[0]));
+    }
+    ASSIGN_OR_RETURN_ERRNO(*field, SmapsValueKb(key_value[1]));
+    *have_field = true;
+    return NoError();
+  };
+
+  auto const on_optional_field_kb = [&](absl::optional<size_t>* field) {
+    if (*field) {
+      return PosixError(
+          EINVAL,
+          absl::StrFormat("smaps entry has duplicate %s line", key_value[0]));
+    }
+    ASSIGN_OR_RETURN_ERRNO(*field, SmapsValueKb(key_value[1]));
+    return NoError();
+  };
+
+  absl::flat_hash_set<std::string> unknown_fields;
+  auto const on_unknown_field = [&] {
+    absl::string_view key = key_value[0];
+    // Don't mention unknown fields more than once.
+    if (unknown_fields.count(key)) {
+      return;
+    }
+    unknown_fields.insert(std::string(key));
+    std::cerr << "skipping unknown smaps field " << key << std::endl;
+  };
+
+  auto lines = absl::StrSplit(contents, '\n', absl::SkipEmpty());
+  for (absl::string_view l : lines) {
+    // Is this line a valid /proc/[pid]/maps entry?
+    auto maybe_maps_entry = ParseProcMapsLine(l);
+    if (maybe_maps_entry.ok()) {
+      // This marks the beginning of a new /proc/[pid]/smaps entry.
+      RETURN_IF_ERRNO(finish_entry());
+      entry->maps_entry = std::move(maybe_maps_entry).ValueOrDie();
+      continue;
+    }
+    // Otherwise it's a field in an existing /proc/[pid]/smaps entry of the form
+    // "key:value" (where value in practice will be preceded by a variable
+    // amount of whitespace).
+    if (!entry) {
+      std::cerr << "smaps line not considered a maps line: "
+                << maybe_maps_entry.error().message() << std::endl;
+      return PosixError(
+          EINVAL,
+          absl::StrCat("smaps field line without preceding maps line: ", l));
+    }
+    key_value = absl::StrSplit(l, absl::MaxSplits(':', 1));
+    if (key_value.size() != 2) {
+      return PosixError(EINVAL, absl::StrCat("invalid smaps field line: ", l));
+    }
+    absl::string_view const key = key_value[0];
+    if (key == "Size") {
+      RETURN_IF_ERRNO(on_required_field_kb(&entry->size_kb, &have_size_kb));
+    } else if (key == "Rss") {
+      RETURN_IF_ERRNO(on_required_field_kb(&entry->rss_kb, &have_rss_kb));
+    } else if (key == "Shared_Clean") {
+      RETURN_IF_ERRNO(
+          on_required_field_kb(&entry->shared_clean_kb, &have_shared_clean_kb));
+    } else if (key == "Shared_Dirty") {
+      RETURN_IF_ERRNO(
+          on_required_field_kb(&entry->shared_dirty_kb, &have_shared_dirty_kb));
+    } else if (key == "Private_Clean") {
+      RETURN_IF_ERRNO(on_required_field_kb(&entry->private_clean_kb,
+                                           &have_private_clean_kb));
+    } else if (key == "Private_Dirty") {
+      RETURN_IF_ERRNO(on_required_field_kb(&entry->private_dirty_kb,
+                                           &have_private_dirty_kb));
+    } else if (key == "Pss") {
+      RETURN_IF_ERRNO(on_optional_field_kb(&entry->pss_kb));
+    } else if (key == "Referenced") {
+      RETURN_IF_ERRNO(on_optional_field_kb(&entry->referenced_kb));
+    } else if (key == "Anonymous") {
+      RETURN_IF_ERRNO(on_optional_field_kb(&entry->anonymous_kb));
+    } else if (key == "AnonHugePages") {
+      RETURN_IF_ERRNO(on_optional_field_kb(&entry->anon_huge_pages_kb));
+    } else if (key == "Shared_Hugetlb") {
+      RETURN_IF_ERRNO(on_optional_field_kb(&entry->shared_hugetlb_kb));
+    } else if (key == "Private_Hugetlb") {
+      RETURN_IF_ERRNO(on_optional_field_kb(&entry->private_hugetlb_kb));
+    } else if (key == "Swap") {
+      RETURN_IF_ERRNO(on_optional_field_kb(&entry->swap_kb));
+    } else if (key == "SwapPss") {
+      RETURN_IF_ERRNO(on_optional_field_kb(&entry->swap_pss_kb));
+    } else if (key == "KernelPageSize") {
+      RETURN_IF_ERRNO(on_optional_field_kb(&entry->kernel_page_size_kb));
+    } else if (key == "MMUPageSize") {
+      RETURN_IF_ERRNO(on_optional_field_kb(&entry->mmu_page_size_kb));
+    } else if (key == "Locked") {
+      RETURN_IF_ERRNO(on_optional_field_kb(&entry->locked_kb));
+    } else if (key == "VmFlags") {
+      if (entry->vm_flags) {
+        return PosixError(EINVAL, "duplicate VmFlags line");
+      }
+      entry->vm_flags = absl::StrSplit(key_value[1], ' ', absl::SkipEmpty());
+    } else {
+      on_unknown_field();
+    }
+  }
+  RETURN_IF_ERRNO(finish_entry());
+  return entries;
+}
+
+PosixErrorOr<ProcSmapsEntry> FindUniqueSmapsEntry(
+    std::vector<ProcSmapsEntry> const& entries, uintptr_t addr) {
+  auto const pred = [&](ProcSmapsEntry const& entry) {
+    return entry.maps_entry.start <= addr && addr < entry.maps_entry.end;
+  };
+  auto const it = absl::c_find_if(entries, pred);
+  if (it == entries.end()) {
+    return PosixError(EINVAL,
+                      absl::StrFormat("no entry contains address %#x", addr));
+  }
+  auto const it2 = std::find_if(it + 1, entries.end(), pred);
+  if (it2 != entries.end()) {
+    return PosixError(
+        EINVAL,
+        absl::StrFormat("overlapping entries [%#x-%#x) and [%#x-%#x) both "
+                        "contain address %#x",
+                        it->maps_entry.start, it->maps_entry.end,
+                        it2->maps_entry.start, it2->maps_entry.end, addr));
+  }
+  return *it;
+}
+
+PosixErrorOr<std::vector<ProcSmapsEntry>> ReadProcSelfSmaps() {
+  ASSIGN_OR_RETURN_ERRNO(std::string contents, GetContents("/proc/self/smaps"));
+  return ParseProcSmaps(contents);
+}
+
+PosixErrorOr<std::vector<ProcSmapsEntry>> ReadProcSmaps(pid_t pid) {
+  ASSIGN_OR_RETURN_ERRNO(std::string contents,
+                         GetContents(absl::StrCat("/proc/", pid, "/smaps")));
+  return ParseProcSmaps(contents);
+}
+
+bool EntryHasNH(const ProcSmapsEntry& e) {
+  if (e.vm_flags) {
+    auto flags = e.vm_flags.value();
+    return std::find(flags.begin(), flags.end(), "nh") != flags.end();
+  }
+  return false;
+}
+
+bool StackTHPDisabled(std::vector<ProcSmapsEntry> maps) {
+  return std::any_of(maps.begin(), maps.end(), [](const ProcSmapsEntry& e) {
+    return e.maps_entry.filename == "[stack]" && EntryHasNH(e);
+  });
+}
+
+bool IsTHPDisabled() {
+  auto maps = ReadProcSelfSmaps();
+  return StackTHPDisabled(maps.ValueOrDie());
+}
+
+std::string LimitTypeToString(LimitType type) {
+  switch (type) {
+    case LimitType::kCPU:
+      return "cpu time";
+    case LimitType::kFileSize:
+      return "file size";
+    case LimitType::kData:
+      return "data size";
+    case LimitType::kStack:
+      return "stack size";
+    case LimitType::kCore:
+      return "core file size";
+    case LimitType::kRSS:
+      return "resident set";
+    case LimitType::kProcessCount:
+      return "processes";
+    case LimitType::kNumberOfFiles:
+      return "open files";
+    case LimitType::kMemoryLocked:
+      return "locked memory";
+    case LimitType::kAS:
+      return "address space";
+    case LimitType::kLocks:
+      return "file locks";
+    case LimitType::kSignalsPending:
+      return "pending signals";
+    case LimitType::kMessageQueueBytes:
+      return "msgqueue size";
+    case LimitType::kNice:
+      return "nice priority";
+    case LimitType::kRealTimePriority:
+      return "realtime priority";
+    case LimitType::kRttime:
+      return "realtime timeout";
+    default:
+      return "unknown";
+  }
+}
+
+PosixErrorOr<ProcLimitsEntry> ParseProcLimitsLine(absl::string_view line) {
+  ProcLimitsEntry limits_entry = {};
+
+  std::vector<std::string> parts =
+      absl::StrSplit(line.substr(25), ' ', absl::SkipWhitespace());
+
+  // should have 3 parts (soft, hard, units)
+  // the name is ignored since the whole line is space separated and
+  // the name has spaces in but not a consistent number of spaces per
+  // name (e.g. 'Max cpu time' vs 'Max processes')
+  // however, since units are optional, ignore them as well
+  if (parts.size() < 2 || parts.size() > 3) {
+    return PosixError(EINVAL, absl::StrCat("Invalid line: ", line));
+  }
+
+  // parse the limit type
+  auto limitType = line.substr(0, 25);
+  auto it = absl::c_find_if(LimitTypes, [&limitType](LimitType t) {
+    return absl::StrContains(limitType, LimitTypeToString(t));
+  });
+  if (it == LimitTypes.end()) {
+    return PosixError(EINVAL, absl::StrCat("Invalid limit type: ", limitType));
+  }
+  limits_entry.limit_type = *it;
+
+  // parse soft limit
+  if (parts[0] == "unlimited") {
+    limits_entry.cur_limit = ~0ULL;
+  } else {
+    ASSIGN_OR_RETURN_ERRNO(limits_entry.cur_limit, Atoi<uint64_t>(parts[0]));
+  }
+
+  // parse hard limit
+  if (parts[1] == "unlimited") {
+    limits_entry.max_limit = ~0ULL;
+  } else {
+    ASSIGN_OR_RETURN_ERRNO(limits_entry.max_limit, Atoi<uint64_t>(parts[1]));
+  }
+
+  // ignore units
+
+  return limits_entry;
+}
+
+PosixErrorOr<std::vector<ProcLimitsEntry>> ParseProcLimits(
+    absl::string_view contents) {
+  std::vector<ProcLimitsEntry> entries;
+  std::vector<std::string> lines =
+      absl::StrSplit(contents, '\n', absl::SkipEmpty());
+  // skip first line (headers)
+  for (size_t i = 1U; i < lines.size(); ++i) {
+    std::cout << "line: " << lines[i] << std::endl;
+    ASSIGN_OR_RETURN_ERRNO(auto entry, ParseProcLimitsLine(lines[i]));
+    entries.push_back(entry);
+  }
+  return entries;
+}
+
+std::ostream& operator<<(std::ostream& os, const ProcLimitsEntry& entry) {
+  std::string str =
+      absl::StrFormat("Max %-25s ", LimitTypeToString(entry.limit_type));
+
+  if (entry.cur_limit == ~0ULL) {
+    absl::StrAppendFormat(&str, "%-20s ", "unlimited");
+  } else {
+    absl::StrAppendFormat(&str, "%-20d ", entry.cur_limit);
+  }
+
+  if (entry.max_limit == ~0ULL) {
+    absl::StrAppendFormat(&str, "%-20s ", "unlimited");
+  } else {
+    absl::StrAppendFormat(&str, "%-20d ", entry.max_limit);
+  }
+
+  switch (entry.limit_type) {
+    case LimitType::kFileSize:
+    case LimitType::kData:
+    case LimitType::kStack:
+    case LimitType::kCore:
+    case LimitType::kRSS:
+    case LimitType::kMemoryLocked:
+    case LimitType::kAS:
+    case LimitType::kMessageQueueBytes:
+      absl::StrAppendFormat(&str, "%-10s ", "bytes");
+      break;
+    case LimitType::kCPU:
+      absl::StrAppendFormat(&str, "%-10s", "seconds");
+      break;
+    case LimitType::kNumberOfFiles:
+      absl::StrAppendFormat(&str, "%-10s ", "files");
+      break;
+    case LimitType::kLocks:
+      absl::StrAppendFormat(&str, "%-10s ", "locks");
+      break;
+    case LimitType::kSignalsPending:
+      absl::StrAppendFormat(&str, "%-10s ", "signals");
+      break;
+    case LimitType::kProcessCount:
+      absl::StrAppendFormat(&str, "%-10s ", "processes");
+      break;
+    case LimitType::kNice:
+      absl::StrAppendFormat(&str, "%-10s ", "");
+      break;
+    case LimitType::kRealTimePriority:
+      absl::StrAppendFormat(&str, "%-10s ", "");
+      break;
+    case LimitType::kRttime:
+      absl::StrAppendFormat(&str, "%-10s ", "us");
+      break;
+  }
+
+  os << str;
+  return os;
+}
+
+std::ostream& operator<<(std::ostream& os,
+                         const std::vector<ProcLimitsEntry>& vec) {
+  os << "Limit                     Soft Limit           Hard Limit           "
+        "Units     \n";
+  for (unsigned int i = 0; i < vec.size(); i++) {
+    os << vec[i];
+    if (i != vec.size() - 1) {
+      os << "\n";
+    }
+  }
+  return os;
 }
 
 }  // namespace testing

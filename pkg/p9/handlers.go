@@ -15,14 +15,17 @@
 package p9
 
 import (
+	errors2 "errors"
 	"fmt"
 	"io"
 	"os"
 	"path"
 	"strings"
-	"sync/atomic"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/errors"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
 )
@@ -42,6 +45,8 @@ func ExtractErrno(err error) unix.Errno {
 
 	// Attempt to unwrap.
 	switch e := err.(type) {
+	case *errors.Error:
+		return linuxerr.ToUnix(e)
 	case unix.Errno:
 		return e
 	case *os.PathError:
@@ -59,6 +64,45 @@ func ExtractErrno(err error) unix.Errno {
 
 // newErr returns a new error message from an error.
 func newErr(err error) *Rlerror {
+	return &Rlerror{Error: uint32(ExtractErrno(err))}
+}
+
+// ExtractLinuxerrErrno extracts a *errors.Error from a error, best effort.
+// TODO(b/34162363): Merge this with ExtractErrno.
+func ExtractLinuxerrErrno(err error) error {
+	switch err {
+	case os.ErrNotExist:
+		return linuxerr.ENOENT
+	case os.ErrExist:
+		return linuxerr.EEXIST
+	case os.ErrPermission:
+		return linuxerr.EACCES
+	case os.ErrInvalid:
+		return linuxerr.EINVAL
+	}
+
+	// Attempt to unwrap.
+	switch e := err.(type) {
+	case *errors.Error:
+		return linuxerr.ToError(e)
+	case unix.Errno:
+		return linuxerr.ErrorFromUnix(e)
+	case *os.PathError:
+		return ExtractLinuxerrErrno(e.Err)
+	case *os.SyscallError:
+		return ExtractLinuxerrErrno(e.Err)
+	case *os.LinkError:
+		return ExtractLinuxerrErrno(e.Err)
+	}
+
+	// Default case.
+	log.Warningf("unknown error: %v", err)
+	return linuxerr.EIO
+}
+
+// newErrFromLinuxerr returns an Rlerror from the linuxerr list.
+// TODO(b/34162363): Merge this with newErr.
+func newErrFromLinuxerr(err error) *Rlerror {
 	return &Rlerror{Error: uint32(ExtractErrno(err))}
 }
 
@@ -82,7 +126,7 @@ func (t *Tversion) handle(cs *connState) message {
 	if t.MSize > maximumLength {
 		return newErr(unix.EINVAL)
 	}
-	atomic.StoreUint32(&cs.messageSize, t.MSize)
+	cs.messageSize.Store(t.MSize)
 	requested, ok := parseVersion(t.Version)
 	if !ok {
 		return newErr(unix.EINVAL)
@@ -94,7 +138,7 @@ func (t *Tversion) handle(cs *connState) message {
 	}
 	// From Tversion(9P): "The server may respond with the client’s version
 	// string, or a version string identifying an earlier defined protocol version".
-	atomic.StoreUint32(&cs.version, requested)
+	cs.version.Store(requested)
 	return &Rversion{
 		MSize:   t.MSize,
 		Version: t.Version,
@@ -135,7 +179,7 @@ func (t *Tsetattrclunk) handle(cs *connState) message {
 		// This might be technically incorrect, as it's possible that
 		// there were multiple links and you can still change the
 		// corresponding inode information.
-		if ref.isDeleted() {
+		if !cs.server.options.SetAttrOnDeleted && ref.isDeleted() {
 			return unix.EINVAL
 		}
 
@@ -255,7 +299,7 @@ func (t *Tattach) handle(cs *connState) message {
 		server:   cs.server,
 		parent:   nil,
 		file:     sf,
-		refs:     1,
+		refs:     atomicbitops.FromInt64(1),
 		mode:     attr.Mode.FileType(),
 		pathNode: cs.server.pathTree,
 	}
@@ -870,7 +914,7 @@ func (t *Tsetattr) handle(cs *connState) message {
 		// This might be technically incorrect, as it's possible that
 		// there were multiple links and you can still change the
 		// corresponding inode information.
-		if ref.isDeleted() {
+		if !cs.server.options.SetAttrOnDeleted && ref.isDeleted() {
 			return unix.EINVAL
 		}
 
@@ -903,7 +947,7 @@ func (t *Tallocate) handle(cs *connState) message {
 		}
 
 		// We don't allow allocate on files that have been deleted.
-		if ref.isDeleted() {
+		if !cs.server.options.AllocateOnDeleted && ref.isDeleted() {
 			return unix.EINVAL
 		}
 
@@ -1049,7 +1093,7 @@ func (t *Treaddir) handle(cs *connState) message {
 		}
 
 		// Read the entries.
-		entries, err = ref.file.Readdir(t.Offset, t.Count)
+		entries, err = ref.file.Readdir(t.DirentOffset, t.Count)
 		if err != nil && err != io.EOF {
 			return err
 		}
@@ -1206,11 +1250,6 @@ func doWalk(cs *connState, ref *fidRef, names []string, getattr bool) (qids []QI
 				file:     sf,
 				mode:     ref.mode,
 				pathNode: ref.pathNode,
-
-				// For the clone case, the cloned fid must
-				// preserve the deleted property of the
-				// original FID.
-				deleted: ref.deleted,
 			}
 			if !ref.isRoot() {
 				if !newRef.isDeleted() {
@@ -1242,6 +1281,13 @@ func doWalk(cs *connState, ref *fidRef, names []string, getattr bool) (qids []QI
 
 		var sf File // Temporary.
 		if err := walkRef.safelyRead(func() (err error) {
+			// It is not safe to walk on a deleted directory. It could have been
+			// replaced with a malicious symlink.
+			if walkRef.isDeleted() {
+				// Fail this operation as the result will not be meaningful if walkRef
+				// is deleted.
+				return unix.ENOENT
+			}
 			// Pass getattr = true to walkOne since we need the file type for
 			// newRef.
 			qids, sf, valid, attr, err = walkOne(qids, walkRef.file, names[i:i+1], true)
@@ -1356,6 +1402,58 @@ func (t *Tumknod) handle(cs *connState) message {
 }
 
 // handle implements handler.handle.
+func (t *Tbind) handle(cs *connState) message {
+	if err := checkSafeName(t.SockName); err != nil {
+		return newErr(err)
+	}
+
+	ref, ok := cs.LookupFID(t.Directory)
+	if !ok {
+		return newErr(unix.EBADF)
+	}
+	defer ref.DecRef()
+
+	var (
+		sockRef *fidRef
+		qid     QID
+		valid   AttrMask
+		attr    Attr
+	)
+	if err := ref.safelyWrite(func() (err error) {
+		// Don't allow creation from non-directories or deleted directories.
+		if ref.isDeleted() || !ref.mode.IsDir() {
+			return unix.EINVAL
+		}
+
+		// Not allowed on open directories.
+		if ref.opened {
+			return unix.EINVAL
+		}
+
+		var sockF File
+		sockF, qid, valid, attr, err = ref.file.Bind(t.SockType, t.SockName, t.UID, t.GID)
+		if err != nil {
+			return err
+		}
+
+		sockRef = &fidRef{
+			server:   cs.server,
+			parent:   ref,
+			file:     sockF,
+			mode:     ModeSocket,
+			pathNode: ref.pathNode.pathNodeFor(t.SockName),
+		}
+		ref.pathNode.addChild(sockRef, t.SockName)
+		ref.IncRef() // Acquire parent reference.
+		return nil
+	}); err != nil {
+		return newErr(err)
+	}
+	cs.InsertFID(t.NewFID, sockRef)
+	return &Rbind{QID: qid, Valid: valid, Attr: attr}
+}
+
+// handle implements handler.handle.
 func (t *Tlconnect) handle(cs *connState) message {
 	ref, ok := cs.LookupFID(t.FID)
 	if !ok {
@@ -1371,7 +1469,7 @@ func (t *Tlconnect) handle(cs *connState) message {
 		}
 
 		// Do the connect.
-		osFile, err = ref.file.Connect(t.Flags)
+		osFile, err = ref.file.Connect(t.SocketType)
 		return err
 	}); err != nil {
 		return newErr(err)
@@ -1420,4 +1518,99 @@ func (t *Tchannel) handle(cs *connState) message {
 		return newErr(unix.EINVAL)
 	}
 	return rchannel
+}
+
+// handle implements handler.handle.
+func (t *Tmultigetattr) handle(cs *connState) message {
+	for i, name := range t.Names {
+		if len(name) == 0 && i == 0 {
+			// Empty name is allowed on the first entry to indicate that the current
+			// FID needs to be included in the result.
+			continue
+		}
+		if err := checkSafeName(name); err != nil {
+			return newErr(err)
+		}
+	}
+	ref, ok := cs.LookupFID(t.FID)
+	if !ok {
+		return newErr(unix.EBADF)
+	}
+	defer ref.DecRef()
+
+	if cs.server.options.MultiGetAttrSupported {
+		var stats []FullStat
+		if err := ref.safelyRead(func() (err error) {
+			stats, err = ref.file.MultiGetAttr(t.Names)
+			return err
+		}); err != nil {
+			return newErr(err)
+		}
+		return &Rmultigetattr{Stats: stats}
+	}
+
+	stats := make([]FullStat, 0, len(t.Names))
+	mask := AttrMaskAll()
+	start := ref.file
+	startNode := ref.pathNode
+	parent := start
+	parentNode := startNode
+	closeParent := func() {
+		if parent != start {
+			_ = parent.Close()
+		}
+	}
+	defer closeParent()
+
+	cs.server.renameMu.RLock()
+	defer cs.server.renameMu.RUnlock()
+
+	for i, name := range t.Names {
+		if len(name) == 0 && i == 0 {
+			startNode.opMu.RLock()
+			qid, valid, attr, err := start.GetAttr(mask)
+			startNode.opMu.RUnlock()
+			if err != nil {
+				return newErr(err)
+			}
+			stats = append(stats, FullStat{
+				QID:   qid,
+				Valid: valid,
+				Attr:  attr,
+			})
+			continue
+		}
+
+		parentNode.opMu.RLock()
+		if parentNode.deleted.Load() != 0 {
+			parentNode.opMu.RUnlock()
+			break
+		}
+		qids, child, valid, attr, err := parent.WalkGetAttr([]string{name})
+		if err != nil {
+			parentNode.opMu.RUnlock()
+			if errors2.Is(err, unix.ENOENT) {
+				break
+			}
+			return newErr(err)
+		}
+		stats = append(stats, FullStat{
+			QID:   qids[0],
+			Valid: valid,
+			Attr:  attr,
+		})
+		// Update with next generation.
+		closeParent()
+		parent = child
+		childNode := parentNode.pathNodeFor(name)
+		parentNode.opMu.RUnlock()
+		parentNode = childNode
+		if attr.Mode.FileType() != ModeDirectory {
+			// Doesn't need to continue if entry is not a dir. Including symlinks
+			// that cannot be followed.
+			break
+		}
+	}
+
+	return &Rmultigetattr{Stats: stats}
 }

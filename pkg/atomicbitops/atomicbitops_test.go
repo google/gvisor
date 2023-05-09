@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// +checkalignedignore
 package atomicbitops
 
 import (
@@ -23,40 +24,40 @@ import (
 
 const iterations = 100
 
-func detectRaces32(val, target uint32, fn func(*uint32, uint32)) bool {
+func detectRaces32(val, target uint32, fn func(*Uint32, uint32)) bool {
 	runtime.GOMAXPROCS(100)
 	for n := 0; n < iterations; n++ {
-		x := val
+		x := FromUint32(val)
 		var wg sync.WaitGroup
 		for i := uint32(0); i < 32; i++ {
 			wg.Add(1)
-			go func(a *uint32, i uint32) {
+			go func(a *Uint32, i uint32) {
 				defer wg.Done()
 				fn(a, uint32(1<<i))
 			}(&x, i)
 		}
 		wg.Wait()
-		if x != target {
+		if x != FromUint32(target) {
 			return true
 		}
 	}
 	return false
 }
 
-func detectRaces64(val, target uint64, fn func(*uint64, uint64)) bool {
+func detectRaces64(val, target uint64, fn func(*Uint64, uint64)) bool {
 	runtime.GOMAXPROCS(100)
 	for n := 0; n < iterations; n++ {
-		x := val
+		x := FromUint64(val)
 		var wg sync.WaitGroup
 		for i := uint64(0); i < 64; i++ {
 			wg.Add(1)
-			go func(a *uint64, i uint64) {
+			go func(a *Uint64, i uint64) {
 				defer wg.Done()
 				fn(a, uint64(1<<i))
 			}(&x, i)
 		}
 		wg.Wait()
-		if x != target {
+		if x != FromUint64(target) {
 			return true
 		}
 	}
@@ -137,12 +138,12 @@ func TestCompareAndSwapUint32(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
-		val := test.prev
+		val := FromUint32(test.prev)
 		prev := CompareAndSwapUint32(&val, test.old, test.new)
 		if got, want := prev, test.prev; got != want {
 			t.Errorf("%s: incorrect returned previous value: got %d, expected %d", test.name, got, want)
 		}
-		if got, want := val, test.next; got != want {
+		if got, want := val.Load(), test.next; got != want {
 			t.Errorf("%s: incorrect value stored in val: got %d, expected %d", test.name, got, want)
 		}
 	}
@@ -186,12 +187,12 @@ func TestCompareAndSwapUint64(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
-		val := test.prev
+		val := FromUint64(test.prev)
 		prev := CompareAndSwapUint64(&val, test.old, test.new)
 		if got, want := prev, test.prev; got != want {
 			t.Errorf("%s: incorrect returned previous value: got %d, expected %d", test.name, got, want)
 		}
-		if got, want := val, test.next; got != want {
+		if got, want := val.Load(), test.next; got != want {
 			t.Errorf("%s: incorrect value stored in val: got %d, expected %d", test.name, got, want)
 		}
 	}

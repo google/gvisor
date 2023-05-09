@@ -15,7 +15,7 @@
 package stack
 
 import (
-	mathrand "math/rand"
+	"math/rand"
 
 	"gvisor.dev/gvisor/pkg/sync"
 )
@@ -23,7 +23,7 @@ import (
 // lockedRandomSource provides a threadsafe rand.Source.
 type lockedRandomSource struct {
 	mu  sync.Mutex
-	src mathrand.Source
+	src rand.Source
 }
 
 func (r *lockedRandomSource) Int63() (n int64) {

@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 )
 
 // IGMP represents an IGMP header stored in a byte array.
@@ -76,10 +77,10 @@ type IGMPType byte
 const (
 	// IGMPMembershipQuery indicates that the message type is Membership Query.
 	// "There are two sub-types of Membership Query messages:
-	// - General Query, used to learn which groups have members on an
-	//   attached network.
-	// - Group-Specific Query, used to learn if a particular group
-	//   has any members on an attached network.
+	//	- General Query, used to learn which groups have members on an
+	//		attached network.
+	//	- Group-Specific Query, used to learn if a particular group
+	//		has any members on an attached network.
 	// These two messages are differentiated by the Group Address, as
 	// described in section 1.4 ."
 	IGMPMembershipQuery IGMPType = 0x11
@@ -93,6 +94,8 @@ const (
 	// IGMPLeaveGroup indicates that the message type is a Leave Group
 	// notification message.
 	IGMPLeaveGroup IGMPType = 0x17
+	// IGMPv3MembershipReport indicates that the message type is a IGMPv3 report.
+	IGMPv3MembershipReport IGMPType = 0x22
 )
 
 // Type is the IGMP type field.
@@ -111,7 +114,7 @@ func (b IGMP) MaxRespTime() time.Duration {
 	//  messages, and specifies the maximum allowed time before sending a
 	//  responding report in units of 1/10 second.  In all other messages, it
 	//  is set to zero by the sender and ignored by receivers.
-	return DecisecondToDuration(b[igmpMaxRespTimeOffset])
+	return DecisecondToDuration(uint16(b[igmpMaxRespTimeOffset]))
 }
 
 // SetMaxRespTime sets the MaxRespTimeField.
@@ -169,13 +172,13 @@ func IGMPCalculateChecksum(h IGMP) uint16 {
 	// the checksum and replace it afterwards.
 	existingXsum := h.Checksum()
 	h.SetChecksum(0)
-	xsum := ^Checksum(h, 0)
+	xsum := ^checksum.Checksum(h, 0)
 	h.SetChecksum(existingXsum)
 	return xsum
 }
 
 // DecisecondToDuration converts a value representing deci-seconds to a
 // time.Duration.
-func DecisecondToDuration(ds uint8) time.Duration {
+func DecisecondToDuration(ds uint16) time.Duration {
 	return time.Duration(ds) * time.Second / 10
 }

@@ -23,6 +23,7 @@ import (
 
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
@@ -30,7 +31,6 @@ func writeSpec(w io.Writer, cwd string, netns string, args []string) error {
 	spec := &specs.Spec{
 		Version: "1.0.0",
 		Process: &specs.Process{
-			Terminal: true,
 			User: specs.User{
 				UID: 0,
 				GID: 0,
@@ -180,7 +180,7 @@ func (s *Spec) SetFlags(f *flag.FlagSet) {
 }
 
 // Execute implements subcommands.Command.Execute.
-func (s *Spec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (s *Spec) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	// Grab the arguments.
 	containerArgs := f.Args()
 	if len(containerArgs) == 0 {
@@ -189,17 +189,17 @@ func (s *Spec) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) 
 
 	confPath := filepath.Join(s.bundle, "config.json")
 	if _, err := os.Stat(confPath); !os.IsNotExist(err) {
-		Fatalf("file %q already exists", confPath)
+		util.Fatalf("file %q already exists", confPath)
 	}
 
 	configFile, err := os.OpenFile(confPath, os.O_WRONLY|os.O_CREATE, 0664)
 	if err != nil {
-		Fatalf("opening file %q: %v", confPath, err)
+		util.Fatalf("opening file %q: %v", confPath, err)
 	}
 
 	err = writeSpec(configFile, s.cwd, s.netns, containerArgs)
 	if err != nil {
-		Fatalf("writing to %q: %v", confPath, err)
+		util.Fatalf("writing to %q: %v", confPath, err)
 	}
 
 	return subcommands.ExitSuccess

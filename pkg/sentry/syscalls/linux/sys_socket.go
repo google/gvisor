@@ -15,25 +15,28 @@
 package linux
 
 import (
+	"fmt"
 	"time"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/socket/control"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserr"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
-
-// LINT.IfChange
 
 // maxAddrLen is the maximum socket address length we're willing to accept.
 const maxAddrLen = 200
@@ -117,7 +120,7 @@ type multipleMessageHeader64 struct {
 // from the untrusted address space range.
 func CaptureAddress(t *kernel.Task, addr hostarch.Addr, addrlen uint32) ([]byte, error) {
 	if addrlen > maxAddrLen {
-		return nil, syserror.EINVAL
+		return nil, linuxerr.EINVAL
 	}
 
 	addrBuf := make([]byte, addrlen)
@@ -139,7 +142,7 @@ func writeAddress(t *kernel.Task, addr linux.SockAddr, addrLen uint32, addrPtr h
 	}
 
 	if int32(bufLen) < 0 {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	// Write the length unconditionally.
@@ -166,14 +169,14 @@ func writeAddress(t *kernel.Task, addr linux.SockAddr, addrLen uint32, addrPtr h
 }
 
 // Socket implements the linux syscall socket(2).
-func Socket(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Socket(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	domain := int(args[0].Int())
 	stype := args[1].Int()
 	protocol := int(args[2].Int())
 
 	// Check and initialize the flags.
 	if stype & ^(0xf|linux.SOCK_NONBLOCK|linux.SOCK_CLOEXEC) != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// Create the new socket.
@@ -181,10 +184,11 @@ func Socket(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	if e != nil {
 		return 0, nil, e.ToError()
 	}
-	s.SetFlags(fs.SettableFileFlags{
-		NonBlocking: stype&linux.SOCK_NONBLOCK != 0,
-	})
 	defer s.DecRef(t)
+
+	if err := s.SetStatusFlags(t, t.Credentials(), uint32(stype&linux.SOCK_NONBLOCK)); err != nil {
+		return 0, nil, err
+	}
 
 	fd, err := t.NewFDFrom(0, s, kernel.FDFlags{
 		CloseOnExec: stype&linux.SOCK_CLOEXEC != 0,
@@ -197,19 +201,15 @@ func Socket(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 }
 
 // SocketPair implements the linux syscall socketpair(2).
-func SocketPair(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func SocketPair(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	domain := int(args[0].Int())
 	stype := args[1].Int()
 	protocol := int(args[2].Int())
-	socks := args[3].Pointer()
+	addr := args[3].Pointer()
 
 	// Check and initialize the flags.
 	if stype & ^(0xf|linux.SOCK_NONBLOCK|linux.SOCK_CLOEXEC) != 0 {
-		return 0, nil, syserror.EINVAL
-	}
-
-	fileFlags := fs.SettableFileFlags{
-		NonBlocking: stype&linux.SOCK_NONBLOCK != 0,
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// Create the socket pair.
@@ -217,23 +217,30 @@ func SocketPair(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 	if e != nil {
 		return 0, nil, e.ToError()
 	}
-	s1.SetFlags(fileFlags)
-	s2.SetFlags(fileFlags)
+	// Adding to the FD table will cause an extra reference to be acquired.
 	defer s1.DecRef(t)
 	defer s2.DecRef(t)
 
+	nonblocking := uint32(stype & linux.SOCK_NONBLOCK)
+	if err := s1.SetStatusFlags(t, t.Credentials(), nonblocking); err != nil {
+		return 0, nil, err
+	}
+	if err := s2.SetStatusFlags(t, t.Credentials(), nonblocking); err != nil {
+		return 0, nil, err
+	}
+
 	// Create the FDs for the sockets.
-	fds, err := t.NewFDs(0, []*fs.File{s1, s2}, kernel.FDFlags{
+	flags := kernel.FDFlags{
 		CloseOnExec: stype&linux.SOCK_CLOEXEC != 0,
-	})
+	}
+	fds, err := t.NewFDs(0, []*vfs.FileDescription{s1, s2}, flags)
 	if err != nil {
 		return 0, nil, err
 	}
 
-	// Copy the file descriptors out.
-	if _, err := primitive.CopyInt32SliceOut(t, socks, fds); err != nil {
+	if _, err := primitive.CopyInt32SliceOut(t, addr, fds); err != nil {
 		for _, fd := range fds {
-			if file, _ := t.FDTable().Remove(t, fd); file != nil {
+			if file := t.FDTable().Remove(t, fd); file != nil {
 				file.DecRef(t)
 			}
 		}
@@ -244,7 +251,7 @@ func SocketPair(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 }
 
 // Connect implements the linux syscall connect(2).
-func Connect(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Connect(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	addr := args[1].Pointer()
 	addrlen := args[2].Uint()
@@ -252,14 +259,14 @@ func Connect(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	// Get socket from the file descriptor.
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
 	// Extract the socket.
-	s, ok := file.FileOperations.(socket.Socket)
+	s, ok := file.Impl().(socket.Socket)
 	if !ok {
-		return 0, nil, syserror.ENOTSOCK
+		return 0, nil, linuxerr.ENOTSOCK
 	}
 
 	// Capture address and call syscall implementation.
@@ -268,8 +275,8 @@ func Connect(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 		return 0, nil, err
 	}
 
-	blocking := !file.Flags().NonBlocking
-	return 0, nil, syserror.ConvertIntr(s.Connect(t, a, blocking).ToError(), syserror.ERESTARTSYS)
+	blocking := (file.StatusFlags() & linux.SOCK_NONBLOCK) == 0
+	return 0, nil, linuxerr.ConvertIntr(s.Connect(t, a, blocking).ToError(), linuxerr.ERESTARTSYS)
 }
 
 // accept is the implementation of the accept syscall. It is called by accept
@@ -277,35 +284,35 @@ func Connect(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 func accept(t *kernel.Task, fd int32, addr hostarch.Addr, addrLen hostarch.Addr, flags int) (uintptr, error) {
 	// Check that no unsupported flags are passed in.
 	if flags & ^(linux.SOCK_NONBLOCK|linux.SOCK_CLOEXEC) != 0 {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 
 	// Get socket from the file descriptor.
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, syserror.EBADF
+		return 0, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
 	// Extract the socket.
-	s, ok := file.FileOperations.(socket.Socket)
+	s, ok := file.Impl().(socket.Socket)
 	if !ok {
-		return 0, syserror.ENOTSOCK
+		return 0, linuxerr.ENOTSOCK
 	}
 
 	// Call the syscall implementation for this socket, then copy the
 	// output address if one is specified.
-	blocking := !file.Flags().NonBlocking
+	blocking := (file.StatusFlags() & linux.SOCK_NONBLOCK) == 0
 
 	peerRequested := addrLen != 0
 	nfd, peer, peerLen, e := s.Accept(t, peerRequested, flags, blocking)
 	if e != nil {
-		return 0, syserror.ConvertIntr(e.ToError(), syserror.ERESTARTSYS)
+		return 0, linuxerr.ConvertIntr(e.ToError(), linuxerr.ERESTARTSYS)
 	}
 	if peerRequested {
 		// NOTE(magi): Linux does not give you an error if it can't
 		// write the data back out so neither do we.
-		if err := writeAddress(t, peer, peerLen, addr, addrLen); err == syserror.EINVAL {
+		if err := writeAddress(t, peer, peerLen, addr, addrLen); linuxerr.Equals(linuxerr.EINVAL, err) {
 			return 0, err
 		}
 	}
@@ -313,7 +320,7 @@ func accept(t *kernel.Task, fd int32, addr hostarch.Addr, addrLen hostarch.Addr,
 }
 
 // Accept4 implements the linux syscall accept4(2).
-func Accept4(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Accept4(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	addr := args[1].Pointer()
 	addrlen := args[2].Pointer()
@@ -324,7 +331,7 @@ func Accept4(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 }
 
 // Accept implements the linux syscall accept(2).
-func Accept(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Accept(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	addr := args[1].Pointer()
 	addrlen := args[2].Pointer()
@@ -334,7 +341,7 @@ func Accept(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 }
 
 // Bind implements the linux syscall bind(2).
-func Bind(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Bind(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	addr := args[1].Pointer()
 	addrlen := args[2].Uint()
@@ -342,14 +349,14 @@ func Bind(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 	// Get socket from the file descriptor.
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
 	// Extract the socket.
-	s, ok := file.FileOperations.(socket.Socket)
+	s, ok := file.Impl().(socket.Socket)
 	if !ok {
-		return 0, nil, syserror.ENOTSOCK
+		return 0, nil, linuxerr.ENOTSOCK
 	}
 
 	// Capture address and call syscall implementation.
@@ -362,66 +369,73 @@ func Bind(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 }
 
 // Listen implements the linux syscall listen(2).
-func Listen(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Listen(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	backlog := args[1].Uint()
 
 	// Get socket from the file descriptor.
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
 	// Extract the socket.
-	s, ok := file.FileOperations.(socket.Socket)
+	s, ok := file.Impl().(socket.Socket)
 	if !ok {
-		return 0, nil, syserror.ENOTSOCK
+		return 0, nil, linuxerr.ENOTSOCK
 	}
 
 	if backlog > maxListenBacklog {
 		// Linux treats incoming backlog as uint with a limit defined by
 		// sysctl_somaxconn.
 		// https://github.com/torvalds/linux/blob/7acac4b3196/net/socket.c#L1666
-		//
-		// We use the backlog to allocate a channel of that size, hence enforce
-		// a hard limit for the backlog.
 		backlog = maxListenBacklog
 	}
+
+	// Accept one more than the configured listen backlog to keep in parity with
+	// Linux. Ref, because of missing equality check here:
+	// https://github.com/torvalds/linux/blob/7acac4b3196/include/net/sock.h#L937
+	//
+	// In case of unix domain sockets, the following check
+	// https://github.com/torvalds/linux/blob/7d6beb71da3/net/unix/af_unix.c#L1293
+	// will allow 1 connect through since it checks for a receive queue len >
+	// backlog and not >=.
+	backlog++
 
 	return 0, nil, s.Listen(t, int(backlog)).ToError()
 }
 
 // Shutdown implements the linux syscall shutdown(2).
-func Shutdown(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Shutdown(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	how := args[1].Int()
 
 	// Get socket from the file descriptor.
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
 	// Extract the socket.
-	s, ok := file.FileOperations.(socket.Socket)
+	s, ok := file.Impl().(socket.Socket)
 	if !ok {
-		return 0, nil, syserror.ENOTSOCK
+		return 0, nil, linuxerr.ENOTSOCK
 	}
 
 	// Validate how, then call syscall implementation.
 	switch how {
 	case linux.SHUT_RD, linux.SHUT_WR, linux.SHUT_RDWR:
 	default:
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	return 0, nil, s.Shutdown(t, int(how)).ToError()
 }
 
 // GetSockOpt implements the linux syscall getsockopt(2).
-func GetSockOpt(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func GetSockOpt(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	level := args[1].Int()
 	name := args[2].Int()
@@ -431,14 +445,14 @@ func GetSockOpt(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 	// Get socket from the file descriptor.
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
 	// Extract the socket.
-	s, ok := file.FileOperations.(socket.Socket)
+	s, ok := file.Impl().(socket.Socket)
 	if !ok {
-		return 0, nil, syserror.ENOTSOCK
+		return 0, nil, linuxerr.ENOTSOCK
 	}
 
 	// Read the length. Reject negative values.
@@ -447,7 +461,7 @@ func GetSockOpt(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 		return 0, nil, err
 	}
 	if optLen < 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// Call syscall implementation then copy both value and value len out.
@@ -456,8 +470,7 @@ func GetSockOpt(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 		return 0, nil, e.ToError()
 	}
 
-	vLen := int32(v.SizeBytes())
-	if _, err := primitive.CopyInt32Out(t, optLenAddr, vLen); err != nil {
+	if _, err := primitive.CopyInt32Out(t, optLenAddr, int32(v.SizeBytes())); err != nil {
 		return 0, nil, err
 	}
 
@@ -503,7 +516,7 @@ func getSockOpt(t *kernel.Task, s socket.Socket, level, name int, optValAddr hos
 // SetSockOpt implements the linux syscall setsockopt(2).
 //
 // Note that unlike Linux, enabling SO_PASSCRED does not autobind the socket.
-func SetSockOpt(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func SetSockOpt(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	level := args[1].Int()
 	name := args[2].Int()
@@ -513,21 +526,21 @@ func SetSockOpt(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 	// Get socket from the file descriptor.
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
 	// Extract the socket.
-	s, ok := file.FileOperations.(socket.Socket)
+	s, ok := file.Impl().(socket.Socket)
 	if !ok {
-		return 0, nil, syserror.ENOTSOCK
+		return 0, nil, linuxerr.ENOTSOCK
 	}
 
 	if optLen < 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	if optLen > maxOptLen {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	buf := t.CopyScratchBuffer(int(optLen))
 	if _, err := t.CopyInBytes(optValAddr, buf); err != nil {
@@ -543,7 +556,7 @@ func SetSockOpt(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sy
 }
 
 // GetSockName implements the linux syscall getsockname(2).
-func GetSockName(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func GetSockName(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	addr := args[1].Pointer()
 	addrlen := args[2].Pointer()
@@ -551,14 +564,14 @@ func GetSockName(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 	// Get socket from the file descriptor.
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
 	// Extract the socket.
-	s, ok := file.FileOperations.(socket.Socket)
+	s, ok := file.Impl().(socket.Socket)
 	if !ok {
-		return 0, nil, syserror.ENOTSOCK
+		return 0, nil, linuxerr.ENOTSOCK
 	}
 
 	// Get the socket name and copy it to the caller.
@@ -571,7 +584,7 @@ func GetSockName(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 }
 
 // GetPeerName implements the linux syscall getpeername(2).
-func GetPeerName(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func GetPeerName(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	addr := args[1].Pointer()
 	addrlen := args[2].Pointer()
@@ -579,14 +592,14 @@ func GetPeerName(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 	// Get socket from the file descriptor.
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
 	// Extract the socket.
-	s, ok := file.FileOperations.(socket.Socket)
+	s, ok := file.Impl().(socket.Socket)
 	if !ok {
-		return 0, nil, syserror.ENOTSOCK
+		return 0, nil, linuxerr.ENOTSOCK
 	}
 
 	// Get the socket peer name and copy it to the caller.
@@ -599,35 +612,35 @@ func GetPeerName(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 }
 
 // RecvMsg implements the linux syscall recvmsg(2).
-func RecvMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func RecvMsg(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	msgPtr := args[1].Pointer()
 	flags := args[2].Int()
 
 	if t.Arch().Width() != 8 {
 		// We only handle 64-bit for now.
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// Get socket from the file descriptor.
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
 	// Extract the socket.
-	s, ok := file.FileOperations.(socket.Socket)
+	s, ok := file.Impl().(socket.Socket)
 	if !ok {
-		return 0, nil, syserror.ENOTSOCK
+		return 0, nil, linuxerr.ENOTSOCK
 	}
 
 	// Reject flags that we don't handle yet.
 	if flags & ^(baseRecvFlags|linux.MSG_PEEK|linux.MSG_CMSG_CLOEXEC|linux.MSG_ERRQUEUE) != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
-	if file.Flags().NonBlocking {
+	if (file.StatusFlags() & linux.SOCK_NONBLOCK) != 0 {
 		flags |= linux.MSG_DONTWAIT
 	}
 
@@ -645,7 +658,7 @@ func RecvMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 }
 
 // RecvMMsg implements the linux syscall recvmmsg(2).
-func RecvMMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func RecvMMsg(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	msgPtr := args[1].Pointer()
 	vlen := args[2].Uint()
@@ -654,7 +667,7 @@ func RecvMMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 
 	if t.Arch().Width() != 8 {
 		// We only handle 64-bit for now.
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	if vlen > linux.UIO_MAXIOV {
@@ -663,35 +676,35 @@ func RecvMMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 
 	// Reject flags that we don't handle yet.
 	if flags & ^(baseRecvFlags|linux.MSG_CMSG_CLOEXEC|linux.MSG_ERRQUEUE) != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// Get socket from the file descriptor.
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
 	// Extract the socket.
-	s, ok := file.FileOperations.(socket.Socket)
+	s, ok := file.Impl().(socket.Socket)
 	if !ok {
-		return 0, nil, syserror.ENOTSOCK
+		return 0, nil, linuxerr.ENOTSOCK
 	}
 
-	if file.Flags().NonBlocking {
+	if (file.StatusFlags() & linux.SOCK_NONBLOCK) != 0 {
 		flags |= linux.MSG_DONTWAIT
 	}
 
 	var haveDeadline bool
 	var deadline ktime.Time
 	if toPtr != 0 {
-		ts, err := copyTimespecIn(t, toPtr)
-		if err != nil {
+		var ts linux.Timespec
+		if _, err := ts.CopyIn(t, toPtr); err != nil {
 			return 0, nil, err
 		}
 		if !ts.Valid() {
-			return 0, nil, syserror.EINVAL
+			return 0, nil, linuxerr.EINVAL
 		}
 		deadline = t.Kernel().MonotonicClock().Now().Add(ts.ToDuration())
 		haveDeadline = true
@@ -711,7 +724,7 @@ func RecvMMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	for i := uint64(0); i < uint64(vlen); i++ {
 		mp, ok := msgPtr.AddLength(i * multipleMessageHeader64Len)
 		if !ok {
-			return 0, nil, syserror.EFAULT
+			return 0, nil, linuxerr.EFAULT
 		}
 		var n uintptr
 		if n, err = recvSingleMsg(t, s, mp, flags, haveDeadline, deadline); err != nil {
@@ -721,7 +734,7 @@ func RecvMMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		// Copy the received length to the caller.
 		lp, ok := mp.AddLength(messageHeader64Len)
 		if !ok {
-			return 0, nil, syserror.EFAULT
+			return 0, nil, linuxerr.EFAULT
 		}
 		if _, err = primitive.CopyUint32Out(t, lp, uint32(n)); err != nil {
 			break
@@ -735,6 +748,48 @@ func RecvMMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	return uintptr(count), nil, nil
 }
 
+func getSCMRights(t *kernel.Task, rights transport.RightsControlMessage) control.SCMRights {
+	switch v := rights.(type) {
+	case control.SCMRights:
+		return v
+	case *transport.SCMRights:
+		rf := control.RightsFiles(fdsToHostFiles(t, v.FDs))
+		return &rf
+	default:
+		panic(fmt.Sprintf("rights of type %T must be *transport.SCMRights or implement SCMRights", rights))
+	}
+}
+
+// If an error is encountered, only files created before the error will be
+// returned. This is what Linux does.
+func fdsToHostFiles(ctx context.Context, fds []int) []*vfs.FileDescription {
+	files := make([]*vfs.FileDescription, 0, len(fds))
+	for _, fd := range fds {
+		// Get flags. We do it here because they may be modified
+		// by subsequent functions.
+		fileFlags, _, errno := unix.Syscall(unix.SYS_FCNTL, uintptr(fd), unix.F_GETFL, 0)
+		if errno != 0 {
+			ctx.Warningf("Error retrieving host FD flags: %v", error(errno))
+			break
+		}
+
+		// Create the file backed by hostFD.
+		file, err := host.NewFD(ctx, kernel.KernelFromContext(ctx).HostMount(), fd, &host.NewFDOptions{})
+		if err != nil {
+			ctx.Warningf("Error creating file from host FD: %v", err)
+			break
+		}
+
+		if err := file.SetStatusFlags(ctx, auth.CredentialsFromContext(ctx), uint32(fileFlags&linux.O_NONBLOCK)); err != nil {
+			ctx.Warningf("Error setting flags on host FD file: %v", err)
+			break
+		}
+
+		files = append(files, file)
+	}
+	return files
+}
+
 func recvSingleMsg(t *kernel.Task, s socket.Socket, msgPtr hostarch.Addr, flags int32, haveDeadline bool, deadline ktime.Time) (uintptr, error) {
 	// Capture the message header and io vectors.
 	var msg MessageHeader64
@@ -743,7 +798,7 @@ func recvSingleMsg(t *kernel.Task, s socket.Socket, msgPtr hostarch.Addr, flags 
 	}
 
 	if msg.IovLen > linux.UIO_MAXIOV {
-		return 0, syserror.EMSGSIZE
+		return 0, linuxerr.EMSGSIZE
 	}
 	dst, err := t.IovecsIOSequence(hostarch.Addr(msg.Iov), int(msg.IovLen), usermem.IOOpts{
 		AddressSpaceActive: true,
@@ -756,7 +811,7 @@ func recvSingleMsg(t *kernel.Task, s socket.Socket, msgPtr hostarch.Addr, flags 
 	if msg.ControlLen == 0 && msg.NameLen == 0 {
 		n, mflags, _, _, cms, err := s.RecvMsg(t, dst, int(flags), haveDeadline, deadline, false, 0)
 		if err != nil {
-			return 0, syserror.ConvertIntr(err.ToError(), syserror.ERESTARTSYS)
+			return 0, linuxerr.ConvertIntr(err.ToError(), linuxerr.ERESTARTSYS)
 		}
 		if !cms.Unix.Empty() {
 			mflags |= linux.MSG_CTRUNC
@@ -774,11 +829,11 @@ func recvSingleMsg(t *kernel.Task, s socket.Socket, msgPtr hostarch.Addr, flags 
 	}
 
 	if msg.ControlLen > maxControlLen {
-		return 0, syserror.ENOBUFS
+		return 0, linuxerr.ENOBUFS
 	}
 	n, mflags, sender, senderLen, cms, e := s.RecvMsg(t, dst, int(flags), haveDeadline, deadline, msg.NameLen != 0, msg.ControlLen)
 	if e != nil {
-		return 0, syserror.ConvertIntr(e.ToError(), syserror.ERESTARTSYS)
+		return 0, linuxerr.ConvertIntr(e.ToError(), linuxerr.ERESTARTSYS)
 	}
 	defer cms.Release(t)
 
@@ -791,6 +846,7 @@ func recvSingleMsg(t *kernel.Task, s socket.Socket, msgPtr hostarch.Addr, flags 
 	}
 
 	if cms.Unix.Rights != nil {
+		cms.Unix.Rights = getSCMRights(t, cms.Unix.Rights)
 		controlData, mflags = control.PackRights(t, cms.Unix.Rights.(control.SCMRights), flags&linux.MSG_CMSG_CLOEXEC != 0, controlData, mflags)
 	}
 
@@ -823,28 +879,28 @@ func recvSingleMsg(t *kernel.Task, s socket.Socket, msgPtr hostarch.Addr, flags 
 // recvfrom and recv syscall handlers.
 func recvFrom(t *kernel.Task, fd int32, bufPtr hostarch.Addr, bufLen uint64, flags int32, namePtr hostarch.Addr, nameLenPtr hostarch.Addr) (uintptr, error) {
 	if int(bufLen) < 0 {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 
 	// Reject flags that we don't handle yet.
 	if flags & ^(baseRecvFlags|linux.MSG_PEEK|linux.MSG_CONFIRM) != 0 {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 
 	// Get socket from the file descriptor.
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, syserror.EBADF
+		return 0, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
 	// Extract the socket.
-	s, ok := file.FileOperations.(socket.Socket)
+	s, ok := file.Impl().(socket.Socket)
 	if !ok {
-		return 0, syserror.ENOTSOCK
+		return 0, linuxerr.ENOTSOCK
 	}
 
-	if file.Flags().NonBlocking {
+	if (file.StatusFlags() & linux.SOCK_NONBLOCK) != 0 {
 		flags |= linux.MSG_DONTWAIT
 	}
 
@@ -867,7 +923,7 @@ func recvFrom(t *kernel.Task, fd int32, bufPtr hostarch.Addr, bufLen uint64, fla
 	n, _, sender, senderLen, cm, e := s.RecvMsg(t, dst, int(flags), haveDeadline, deadline, nameLenPtr != 0, 0)
 	cm.Release(t)
 	if e != nil {
-		return 0, syserror.ConvertIntr(e.ToError(), syserror.ERESTARTSYS)
+		return 0, linuxerr.ConvertIntr(e.ToError(), linuxerr.ERESTARTSYS)
 	}
 
 	// Copy the address to the caller.
@@ -881,7 +937,7 @@ func recvFrom(t *kernel.Task, fd int32, bufPtr hostarch.Addr, bufLen uint64, fla
 }
 
 // RecvFrom implements the linux syscall recvfrom(2).
-func RecvFrom(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func RecvFrom(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	bufPtr := args[1].Pointer()
 	bufLen := args[2].Uint64()
@@ -894,35 +950,35 @@ func RecvFrom(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 }
 
 // SendMsg implements the linux syscall sendmsg(2).
-func SendMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func SendMsg(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	msgPtr := args[1].Pointer()
 	flags := args[2].Int()
 
 	if t.Arch().Width() != 8 {
 		// We only handle 64-bit for now.
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// Get socket from the file descriptor.
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
 	// Extract the socket.
-	s, ok := file.FileOperations.(socket.Socket)
+	s, ok := file.Impl().(socket.Socket)
 	if !ok {
-		return 0, nil, syserror.ENOTSOCK
+		return 0, nil, linuxerr.ENOTSOCK
 	}
 
 	// Reject flags that we don't handle yet.
 	if flags & ^(linux.MSG_DONTWAIT|linux.MSG_EOR|linux.MSG_MORE|linux.MSG_NOSIGNAL) != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
-	if file.Flags().NonBlocking {
+	if (file.StatusFlags() & linux.SOCK_NONBLOCK) != 0 {
 		flags |= linux.MSG_DONTWAIT
 	}
 
@@ -931,7 +987,7 @@ func SendMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 }
 
 // SendMMsg implements the linux syscall sendmmsg(2).
-func SendMMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func SendMMsg(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	msgPtr := args[1].Pointer()
 	vlen := args[2].Uint()
@@ -939,7 +995,7 @@ func SendMMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 
 	if t.Arch().Width() != 8 {
 		// We only handle 64-bit for now.
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	if vlen > linux.UIO_MAXIOV {
@@ -949,22 +1005,22 @@ func SendMMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	// Get socket from the file descriptor.
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
 	// Extract the socket.
-	s, ok := file.FileOperations.(socket.Socket)
+	s, ok := file.Impl().(socket.Socket)
 	if !ok {
-		return 0, nil, syserror.ENOTSOCK
+		return 0, nil, linuxerr.ENOTSOCK
 	}
 
 	// Reject flags that we don't handle yet.
 	if flags & ^(linux.MSG_DONTWAIT|linux.MSG_EOR|linux.MSG_MORE|linux.MSG_NOSIGNAL) != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
-	if file.Flags().NonBlocking {
+	if (file.StatusFlags() & linux.SOCK_NONBLOCK) != 0 {
 		flags |= linux.MSG_DONTWAIT
 	}
 
@@ -973,7 +1029,7 @@ func SendMMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	for i := uint64(0); i < uint64(vlen); i++ {
 		mp, ok := msgPtr.AddLength(i * multipleMessageHeader64Len)
 		if !ok {
-			return 0, nil, syserror.EFAULT
+			return 0, nil, linuxerr.EFAULT
 		}
 		var n uintptr
 		if n, err = sendSingleMsg(t, s, file, mp, flags); err != nil {
@@ -983,7 +1039,7 @@ func SendMMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 		// Copy the received length to the caller.
 		lp, ok := mp.AddLength(messageHeader64Len)
 		if !ok {
-			return 0, nil, syserror.EFAULT
+			return 0, nil, linuxerr.EFAULT
 		}
 		if _, err = primitive.CopyUint32Out(t, lp, uint32(n)); err != nil {
 			break
@@ -997,7 +1053,7 @@ func SendMMsg(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 	return uintptr(count), nil, nil
 }
 
-func sendSingleMsg(t *kernel.Task, s socket.Socket, file *fs.File, msgPtr hostarch.Addr, flags int32) (uintptr, error) {
+func sendSingleMsg(t *kernel.Task, s socket.Socket, file *vfs.FileDescription, msgPtr hostarch.Addr, flags int32) (uintptr, error) {
 	// Capture the message header.
 	var msg MessageHeader64
 	if _, err := msg.CopyIn(t, msgPtr); err != nil {
@@ -1008,7 +1064,7 @@ func sendSingleMsg(t *kernel.Task, s socket.Socket, file *fs.File, msgPtr hostar
 	if msg.ControlLen > 0 {
 		// Put an upper bound to prevent large allocations.
 		if msg.ControlLen > maxControlLen {
-			return 0, syserror.ENOBUFS
+			return 0, linuxerr.ENOBUFS
 		}
 		controlData = make([]byte, msg.ControlLen)
 		if _, err := t.CopyInBytes(hostarch.Addr(msg.Control), controlData); err != nil {
@@ -1028,7 +1084,7 @@ func sendSingleMsg(t *kernel.Task, s socket.Socket, file *fs.File, msgPtr hostar
 
 	// Read data then call the sendmsg implementation.
 	if msg.IovLen > linux.UIO_MAXIOV {
-		return 0, syserror.EMSGSIZE
+		return 0, linuxerr.EMSGSIZE
 	}
 	src, err := t.IovecsIOSequence(hostarch.Addr(msg.Iov), int(msg.IovLen), usermem.IOOpts{
 		AddressSpaceActive: true,
@@ -1053,7 +1109,7 @@ func sendSingleMsg(t *kernel.Task, s socket.Socket, file *fs.File, msgPtr hostar
 
 	// Call the syscall implementation.
 	n, e := s.SendMsg(t, src, to, int(flags), haveDeadline, deadline, controlMessages)
-	err = handleIOError(t, n != 0, e.ToError(), syserror.ERESTARTSYS, "sendmsg", file)
+	err = HandleIOError(t, n != 0, e.ToError(), linuxerr.ERESTARTSYS, "sendmsg", file)
 	// Control messages should be released on error as well as for zero-length
 	// messages, which are discarded by the receiver.
 	if n == 0 || err != nil {
@@ -1067,23 +1123,23 @@ func sendSingleMsg(t *kernel.Task, s socket.Socket, file *fs.File, msgPtr hostar
 func sendTo(t *kernel.Task, fd int32, bufPtr hostarch.Addr, bufLen uint64, flags int32, namePtr hostarch.Addr, nameLen uint32) (uintptr, error) {
 	bl := int(bufLen)
 	if bl < 0 {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 
 	// Get socket from the file descriptor.
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, syserror.EBADF
+		return 0, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
 	// Extract the socket.
-	s, ok := file.FileOperations.(socket.Socket)
+	s, ok := file.Impl().(socket.Socket)
 	if !ok {
-		return 0, syserror.ENOTSOCK
+		return 0, linuxerr.ENOTSOCK
 	}
 
-	if file.Flags().NonBlocking {
+	if (file.StatusFlags() & linux.SOCK_NONBLOCK) != 0 {
 		flags |= linux.MSG_DONTWAIT
 	}
 
@@ -1114,12 +1170,12 @@ func sendTo(t *kernel.Task, fd int32, bufPtr hostarch.Addr, bufLen uint64, flags
 	}
 
 	// Call the syscall implementation.
-	n, e := s.SendMsg(t, src, to, int(flags), haveDeadline, deadline, socket.ControlMessages{Unix: control.New(t, s, nil)})
-	return uintptr(n), handleIOError(t, n != 0, e.ToError(), syserror.ERESTARTSYS, "sendto", file)
+	n, e := s.SendMsg(t, src, to, int(flags), haveDeadline, deadline, socket.ControlMessages{Unix: control.New(t, s)})
+	return uintptr(n), HandleIOError(t, n != 0, e.ToError(), linuxerr.ERESTARTSYS, "sendto", file)
 }
 
 // SendTo implements the linux syscall sendto(2).
-func SendTo(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func SendTo(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	bufPtr := args[1].Pointer()
 	bufLen := args[2].Uint64()
@@ -1130,5 +1186,3 @@ func SendTo(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	n, err := sendTo(t, fd, bufPtr, bufLen, flags, namePtr, nameLen)
 	return n, nil, err
 }
-
-// LINT.ThenChange(./vfs2/socket.go)

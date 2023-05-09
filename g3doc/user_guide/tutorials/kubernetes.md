@@ -16,8 +16,8 @@ Take the following steps to enable the Kubernetes Engine API:
 Create a node pool inside your cluster with option `--sandbox type=gvisor` added
 to the command, like below:
 
-```bash
-gcloud beta container node-pools create sandbox-pool --cluster=${CLUSTER_NAME} --image-type=cos_containerd --sandbox type=gvisor
+```shell
+gcloud container node-pools create gvisor --cluster=${CLUSTER_NAME?} --sandbox type=gvisor --machine-type=e2-standard-2
 ```
 
 If you prefer to use the console, select your cluster and select the **ADD NODE
@@ -25,31 +25,41 @@ POOL** button:
 
 ![+ ADD NODE POOL](node-pool-button.png)
 
-Then select the **Image type** with **Containerd** and select **Enable sandbox
-with gVisor** option. Select other options as you like:
+Then click on the **Security** tab on the left and select **Enable sandbox with
+gVisor** option. Select other options as you like:
 
 ![+ NODE POOL](add-node-pool.png)
 
 ### Check that gVisor is enabled
 
-The gvisor RuntimeClass is instantiated during node creation. You can check for
-the existence of the gvisor RuntimeClass using the following command:
+The gvisor `RuntimeClass` is instantiated during node creation. You can check
+for the existence of the gvisor `RuntimeClass` using the following command:
 
-```bash
-kubectl get runtimeclasses
+```shell
+$ kubectl get runtimeclass/gvisor
+NAME     HANDLER   AGE
+gvisor   gvisor    1h
 ```
 
 ### Wordpress deployment
 
 Now, let's deploy a WordPress site using GKE Sandbox. WordPress site requires
 two pods: web server in the frontend, MySQL database in the backend. Both
-applications use PersistentVolumes to store the site data data. In addition,
-they use secret store to share MySQL password between them.
+applications use `PersistentVolumes` to store the site data. In addition, they
+use secret store to share MySQL password between them.
+
+> **Note**: This example uses gVisor to sandbox the frontend web server, but not
+> the MySQL database backend. In a production setup, due to
+> [the I/O overhead](../../architecture_guide/performance) imposed by gVisor,
+> **it is not recommended to run your database in a sandbox**. The frontend is
+> the critical component with the largest outside attack surface, where gVisor's
+> security/performance trade-off makes the most sense. See the
+> [Production guide] for more details.
 
 First, let's download the deployment configuration files to add the runtime
 class annotation to them:
 
-```bash
+```shell
 curl -LO https://k8s.io/examples/application/wordpress/wordpress-deployment.yaml
 curl -LO https://k8s.io/examples/application/wordpress/mysql-deployment.yaml
 ```
@@ -179,7 +189,7 @@ spec:
         app: wordpress
         tier: mysql
     spec:
-      runtimeClassName: gvisor   # ADD THIS LINE
+      #runtimeClassName: gvisor  # Uncomment this line if you want to sandbox the database.
       containers:
       - image: mysql:5.6
         name: mysql
@@ -207,21 +217,23 @@ Deployment has is changed.
 You are now ready to deploy the entire application. Just create a secret to
 store MySQL's password and *apply* both deployments:
 
-```bash
-kubectl create secret generic mysql-pass --from-literal=password=${YOUR_SECRET_PASSWORD_HERE?}
-kubectl apply -f mysql-deployment.yaml
-kubectl apply -f wordpress-deployment.yaml
+```shell
+$ kubectl create secret generic mysql-pass --from-literal=password=${YOUR_SECRET_PASSWORD_HERE?}
+$ kubectl apply -f mysql-deployment.yaml
+$ kubectl apply -f wordpress-deployment.yaml
 ```
 
 Wait for the deployments to be ready and an external IP to be assigned to the
 Wordpress service:
 
-```bash
-watch kubectl get service wordpress
+```shell
+$ watch kubectl get service wordpress
+NAME        TYPE           CLUSTER-IP     EXTERNAL-IP      PORT(S)        AGE
+wordpress   LoadBalancer   10.120.16.63   35.203.179.216   80:31025/TCP   1m
 ```
 
-Now, copy the service `EXTERNAL-IP` from above to your favorite browser to view
-and configure your new WordPress site.
+Now, copy the service's `EXTERNAL-IP` from above to your favorite browser to
+view and configure your new WordPress site.
 
 Congratulations! You have just deployed a WordPress site using GKE Sandbox.
 
@@ -230,7 +242,10 @@ Congratulations! You have just deployed a WordPress site using GKE Sandbox.
 To learn more about GKE Sandbox and how to run your deployment securely, take a
 look at the [documentation][gke-sandbox-docs].
 
+Before taking this deployment to production, review the [Production guide].
+
 [gke-sandbox-docs]: https://cloud.google.com/kubernetes-engine/docs/how-to/sandbox-pods
 [gke-sandbox]: https://cloud.google.com/kubernetes-engine/sandbox/
 [project-selector]: https://console.cloud.google.com/projectselector/kubernetes
 [wordpress]: https://wordpress.com/
+[Production guide]: /docs/user_guide/production/

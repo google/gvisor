@@ -1,6 +1,7 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 
 package(
+    default_applicable_licenses = ["//:license"],
     default_visibility = ["//visibility:public"],
     licenses = ["notice"],
 )
@@ -22,6 +23,10 @@ go_library(
         "version.go",
     ],
     deps = [
+        "//pkg/abi/linux",
+        "//pkg/atomicbitops",
+        "//pkg/errors",
+        "//pkg/errors/linuxerr",
         "//pkg/fd",
         "//pkg/fdchannel",
         "//pkg/flipcall",

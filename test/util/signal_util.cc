@@ -15,6 +15,7 @@
 #include "test/util/signal_util.h"
 
 #include <signal.h>
+#include <sys/signalfd.h>
 
 #include <ostream>
 
@@ -98,6 +99,16 @@ PosixErrorOr<Cleanup> ScopedSignalMask(int how, sigset_t const& set) {
   return Cleanup([old] {
     EXPECT_THAT(sigprocmask(SIG_SETMASK, &old, nullptr), SyscallSucceeds());
   });
+}
+
+// Returns a new signalfd.
+PosixErrorOr<FileDescriptor> NewSignalFD(sigset_t* mask, int flags) {
+  int fd = signalfd(-1, mask, flags);
+  MaybeSave();
+  if (fd < 0) {
+    return PosixError(errno, "signalfd");
+  }
+  return FileDescriptor(fd);
 }
 
 }  // namespace testing

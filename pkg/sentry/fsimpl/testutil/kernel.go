@@ -25,7 +25,6 @@ import (
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/memutil"
-	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -35,6 +34,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 
@@ -44,16 +44,20 @@ import (
 )
 
 var (
-	platformFlag = flag.String("platform", "ptrace", "specify which platform to use")
+	platformFlag           = flag.String("platform", "ptrace", "specify which platform to use")
+	platformDevicePathFlag = flag.String("platform_device_path", "", "path to a platform-specific device file (e.g. /dev/kvm for KVM platform). If unset, will use a sane platform-specific default.")
 )
 
 // Boot initializes a new bare bones kernel for test.
 func Boot() (*kernel.Kernel, error) {
+	cpuid.Initialize()
+	seccheck.Initialize()
+
 	platformCtr, err := platform.Lookup(*platformFlag)
 	if err != nil {
 		return nil, fmt.Errorf("platform not found: %v", err)
 	}
-	deviceFile, err := platformCtr.OpenDevice()
+	deviceFile, err := platformCtr.OpenDevice(*platformDevicePathFlag)
 	if err != nil {
 		return nil, fmt.Errorf("creating platform: %v", err)
 	}
@@ -62,7 +66,6 @@ func Boot() (*kernel.Kernel, error) {
 		return nil, fmt.Errorf("creating platform: %v", err)
 	}
 
-	kernel.VFS2Enabled = true
 	k := &kernel.Kernel{
 		Platform: plat,
 	}
@@ -80,10 +83,7 @@ func Boot() (*kernel.Kernel, error) {
 	}
 
 	// Create timekeeper.
-	tk, err := kernel.NewTimekeeper(k, vdso.ParamPage.FileRange())
-	if err != nil {
-		return nil, fmt.Errorf("creating timekeeper: %v", err)
-	}
+	tk := kernel.NewTimekeeper(k, vdso.ParamPage.FileRange())
 	tk.SetClocks(time.NewCalibratedClocks())
 
 	creds := auth.NewRootCredentials(auth.NewRootUserNamespace())
@@ -113,7 +113,7 @@ func Boot() (*kernel.Kernel, error) {
 	if err != nil {
 		return nil, err
 	}
-	tg := k.NewThreadGroup(nil, k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, ls)
+	tg := k.NewThreadGroup(k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, ls)
 	k.TestOnlySetGlobalInit(tg)
 
 	return k, nil
@@ -131,8 +131,9 @@ func CreateTask(ctx context.Context, name string, tc *kernel.ThreadGroup, mntns 
 		return nil, err
 	}
 	m := mm.NewMemoryManager(k, k, k.SleepForAddressSpaceActivation)
-	m.SetExecutable(ctx, fsbridge.NewVFSFile(exe))
+	m.SetExecutable(ctx, exe)
 
+	creds := auth.CredentialsFromContext(ctx)
 	config := &kernel.TaskConfig{
 		Kernel:                  k,
 		ThreadGroup:             tc,
@@ -143,10 +144,12 @@ func CreateTask(ctx context.Context, name string, tc *kernel.ThreadGroup, mntns 
 		UTSNamespace:            kernel.UTSNamespaceFromContext(ctx),
 		IPCNamespace:            kernel.IPCNamespaceFromContext(ctx),
 		AbstractSocketNamespace: kernel.NewAbstractSocketNamespace(),
-		MountNamespaceVFS2:      mntns,
-		FSContext:               kernel.NewFSContextVFS2(root, cwd, 0022),
+		MountNamespace:          mntns,
+		FSContext:               kernel.NewFSContext(root, cwd, 0022),
 		FDTable:                 k.NewFDTable(),
+		UserCounters:            k.GetUserCounters(creds.RealKUID),
 	}
+	config.NetworkNamespace.IncRef()
 	t, err := k.TaskSet().NewTask(ctx, config)
 	if err != nil {
 		config.ThreadGroup.Release(ctx)
@@ -178,7 +181,7 @@ func createMemoryFile() (*pgalloc.MemoryFile, error) {
 	memfile := os.NewFile(uintptr(memfd), memfileName)
 	mf, err := pgalloc.NewMemoryFile(memfile, pgalloc.MemoryFileOpts{})
 	if err != nil {
-		memfile.Close()
+		_ = memfile.Close()
 		return nil, fmt.Errorf("error creating pgalloc.MemoryFile: %v", err)
 	}
 	return mf, nil

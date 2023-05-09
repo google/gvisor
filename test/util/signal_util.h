@@ -23,6 +23,7 @@
 
 #include "gmock/gmock.h"
 #include "test/util/cleanup.h"
+#include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
 
 // Format a sigset_t as a comma separated list of numeric ranges.
@@ -100,6 +101,9 @@ inline void FixupFault(ucontext_t* ctx) {
   ctx->uc_mcontext.pc += 4;
 }
 #endif
+
+// Wrapper around signalfd(2) that returns a FileDescriptor.
+PosixErrorOr<FileDescriptor> NewSignalFD(sigset_t* mask, int flags = 0);
 
 }  // namespace testing
 }  // namespace gvisor

@@ -31,25 +31,26 @@ func (t *Type12Dynamic) SizeBytes() int {
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (t *Type12Dynamic) MarshalBytes(dst []byte) {
-	t.X.MarshalBytes(dst)
-	dst = dst[t.X.SizeBytes():]
-	for i, x := range t.Y {
-		x.MarshalBytes(dst[i*8 : (i+1)*8])
+func (t *Type12Dynamic) MarshalBytes(dst []byte) []byte {
+	dst = t.X.MarshalBytes(dst)
+	for _, x := range t.Y {
+		dst = x.MarshalBytes(dst)
 	}
+	return dst
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (t *Type12Dynamic) UnmarshalBytes(src []byte) {
-	t.X.UnmarshalBytes(src)
+func (t *Type12Dynamic) UnmarshalBytes(src []byte) []byte {
+	src = t.X.UnmarshalBytes(src)
 	if t.Y != nil {
 		t.Y = t.Y[:0]
 	}
-	for i := t.X.SizeBytes(); i < len(src); i += 8 {
+	for len(src) > 0 {
 		var x primitive.Int64
-		x.UnmarshalBytes(src[i:])
+		src = x.UnmarshalBytes(src)
 		t.Y = append(t.Y, x)
 	}
+	return src
 }
 
 // Type13Dynamic is a dynamically sized struct which depends on the
@@ -67,17 +68,16 @@ func (t *Type13Dynamic) SizeBytes() int {
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (t *Type13Dynamic) MarshalBytes(dst []byte) {
+func (t *Type13Dynamic) MarshalBytes(dst []byte) []byte {
 	strLen := primitive.Uint32(len(*t))
-	strLen.MarshalBytes(dst)
-	dst = dst[strLen.SizeBytes():]
-	copy(dst[:strLen], *t)
+	dst = strLen.MarshalBytes(dst)
+	return dst[copy(dst[:strLen], *t):]
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (t *Type13Dynamic) UnmarshalBytes(src []byte) {
+func (t *Type13Dynamic) UnmarshalBytes(src []byte) []byte {
 	var strLen primitive.Uint32
-	strLen.UnmarshalBytes(src)
-	src = src[strLen.SizeBytes():]
+	src = strLen.UnmarshalBytes(src)
 	*t = Type13Dynamic(src[:strLen])
+	return src[strLen:]
 }

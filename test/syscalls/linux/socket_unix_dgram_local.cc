@@ -15,10 +15,10 @@
 #include <vector>
 
 #include "test/syscalls/linux/socket_non_stream.h"
-#include "test/syscalls/linux/socket_test_util.h"
 #include "test/syscalls/linux/socket_unix_dgram.h"
 #include "test/syscalls/linux/socket_unix_non_stream.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
+#include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {

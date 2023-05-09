@@ -40,24 +40,24 @@ func (mm *MemoryManager) String() string {
 
 // DebugString returns a string containing information about mm for debugging.
 func (mm *MemoryManager) DebugString(ctx context.Context) string {
-	mm.mappingMu.RLock()
-	defer mm.mappingMu.RUnlock()
-	mm.activeMu.RLock()
-	defer mm.activeMu.RUnlock()
-	return mm.debugStringLocked(ctx)
-}
-
-// Preconditions: mm.mappingMu and mm.activeMu must be locked.
-func (mm *MemoryManager) debugStringLocked(ctx context.Context) string {
 	var b bytes.Buffer
+
+	// FIXME(b/235153601): Need to replace RLockBypass with RLockBypass
+	// after fixing b/235153601.
+	mm.mappingMu.RLockBypass()
+	defer mm.mappingMu.RUnlockBypass()
 	b.WriteString("VMAs:\n")
 	for vseg := mm.vmas.FirstSegment(); vseg.Ok(); vseg = vseg.NextSegment() {
 		b.Write(mm.vmaMapsEntryLocked(ctx, vseg))
 	}
+
+	mm.activeMu.RLock()
+	defer mm.activeMu.RUnlock()
 	b.WriteString("PMAs:\n")
 	for pseg := mm.pmas.FirstSegment(); pseg.Ok(); pseg = pseg.NextSegment() {
 		b.Write(pseg.debugStringEntryLocked())
 	}
+
 	return string(b.Bytes())
 }
 

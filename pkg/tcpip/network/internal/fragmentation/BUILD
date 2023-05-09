@@ -1,7 +1,10 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_template_instance(
     name = "reassembler_list",
@@ -27,10 +30,10 @@ go_library(
         "//pkg/tcpip/network/ipv6:__pkg__",
     ],
     deps = [
+        "//pkg/bufferv2",
         "//pkg/log",
         "//pkg/sync",
         "//pkg/tcpip",
-        "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
         "//pkg/tcpip/stack",
     ],
@@ -41,11 +44,13 @@ go_test(
     size = "small",
     srcs = [
         "fragmentation_test.go",
+        "main_test.go",
         "reassembler_test.go",
     ],
     library = ":fragmentation",
     deps = [
-        "//pkg/tcpip/buffer",
+        "//pkg/bufferv2",
+        "//pkg/refs",
         "//pkg/tcpip/faketime",
         "//pkg/tcpip/network/internal/testutil",
         "//pkg/tcpip/stack",

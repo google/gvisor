@@ -17,7 +17,6 @@ package harness
 import (
 	"context"
 	"fmt"
-	"net"
 	"strings"
 	"testing"
 
@@ -29,16 +28,17 @@ import (
 
 //TODO(gvisor.dev/issue/3535): move to own package or move methods to harness struct.
 
-// WaitUntilServing grabs a container from `machine` and waits for a server at
-// IP:port.
-func WaitUntilServing(ctx context.Context, machine Machine, server net.IP, port int) error {
+// WaitUntilContainerServing grabs a container from `machine` and waits for a server on
+// the given container and port.
+func WaitUntilContainerServing(ctx context.Context, machine Machine, container *dockerutil.Container, port int) error {
 	var logger testutil.DefaultLogger = "util"
 	netcat := machine.GetNativeContainer(ctx, logger)
 	defer netcat.CleanUp(ctx)
 
-	cmd := fmt.Sprintf("while ! wget -q --spider http://%s:%d; do true; done", server, port)
+	cmd := fmt.Sprintf("while ! wget -q --spider http://%s:%d; do true; done", "server", port)
 	_, err := netcat.Run(ctx, dockerutil.RunOpts{
 		Image: "benchmarks/util",
+		Links: []string{container.MakeLink("server")},
 	}, "sh", "-c", cmd)
 	return err
 }
@@ -52,7 +52,7 @@ func DropCaches(machine Machine) error {
 }
 
 // DebugLog prints debug messages if the debug flag is set.
-func DebugLog(b *testing.B, msg string, args ...interface{}) {
+func DebugLog(b *testing.B, msg string, args ...any) {
 	b.Helper()
 	if *debug {
 		b.Logf(msg, args...)

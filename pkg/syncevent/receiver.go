@@ -15,8 +15,6 @@
 package syncevent
 
 import (
-	"sync/atomic"
-
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 )
 
@@ -28,7 +26,7 @@ import (
 type Receiver struct {
 	// pending is the set of pending events. pending is accessed using atomic
 	// memory operations.
-	pending uint64
+	pending atomicbitops.Uint64
 
 	// cb is notified when new events become pending. cb is immutable after
 	// Init().
@@ -54,12 +52,12 @@ func (r *Receiver) Init(cb ReceiverCallback) {
 
 // Pending returns the set of pending events.
 func (r *Receiver) Pending() Set {
-	return Set(atomic.LoadUint64(&r.pending))
+	return Set(r.pending.Load())
 }
 
 // Notify sets the given events as pending.
 func (r *Receiver) Notify(es Set) {
-	p := Set(atomic.LoadUint64(&r.pending))
+	p := Set(r.pending.Load())
 	// Optimization: Skip the atomic CAS on r.pending if all events are
 	// already pending.
 	if p&es == es {
@@ -68,7 +66,7 @@ func (r *Receiver) Notify(es Set) {
 	// When this is uncontended (the common case), CAS is faster than
 	// atomic-OR because the former is inlined and the latter (which we
 	// implement in assembly ourselves) is not.
-	if !atomic.CompareAndSwapUint64(&r.pending, uint64(p), uint64(p|es)) {
+	if !r.pending.CompareAndSwap(uint64(p), uint64(p|es)) {
 		// If the CAS fails, fall back to atomic-OR.
 		atomicbitops.OrUint64(&r.pending, uint64(es))
 	}
@@ -77,7 +75,7 @@ func (r *Receiver) Notify(es Set) {
 
 // Ack unsets the given events as pending.
 func (r *Receiver) Ack(es Set) {
-	p := Set(atomic.LoadUint64(&r.pending))
+	p := Set(r.pending.Load())
 	// Optimization: Skip the atomic CAS on r.pending if all events are
 	// already not pending.
 	if p&es == 0 {
@@ -86,7 +84,7 @@ func (r *Receiver) Ack(es Set) {
 	// When this is uncontended (the common case), CAS is faster than
 	// atomic-AND because the former is inlined and the latter (which we
 	// implement in assembly ourselves) is not.
-	if !atomic.CompareAndSwapUint64(&r.pending, uint64(p), uint64(p&^es)) {
+	if !r.pending.CompareAndSwap(uint64(p), uint64(p&^es)) {
 		// If the CAS fails, fall back to atomic-AND.
 		atomicbitops.AndUint64(&r.pending, ^uint64(es))
 	}
@@ -99,5 +97,5 @@ func (r *Receiver) Ack(es Set) {
 // followed by a conditional call to Ack when the caller expects events to be
 // pending (e.g. after a call to ReceiverCallback.NotifyPending()).
 func (r *Receiver) PendingAndAckAll() Set {
-	return Set(atomic.SwapUint64(&r.pending, 0))
+	return Set(r.pending.Swap(0))
 }

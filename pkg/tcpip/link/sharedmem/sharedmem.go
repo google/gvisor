@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build linux
 // +build linux
 
 // Package sharedmem provides the implemention of data-link layer endpoints
@@ -23,14 +24,16 @@
 package sharedmem
 
 import (
-	"sync/atomic"
+	"fmt"
 
-	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/eventfd"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/link/rawfile"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sharedmem/queue"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -46,7 +49,7 @@ type QueueConfig struct {
 
 	// EventFD is a file descriptor for the event that is signaled when
 	// data is becomes available in this queue.
-	EventFD int
+	EventFD eventfd.Eventfd
 
 	// TxPipeFD is a file descriptor for the tx pipe associated with the
 	// queue.
@@ -62,69 +65,188 @@ type QueueConfig struct {
 	SharedDataFD int
 }
 
+// FDs returns the FD's in the QueueConfig as a slice of ints. This must
+// be used in conjunction with QueueConfigFromFDs to ensure the order
+// of FDs matches when reconstructing the config when serialized or sent
+// as part of control messages.
+func (q *QueueConfig) FDs() []int {
+	return []int{q.DataFD, q.EventFD.FD(), q.TxPipeFD, q.RxPipeFD, q.SharedDataFD}
+}
+
+// QueueConfigFromFDs constructs a QueueConfig out of a slice of ints where each
+// entry represents an file descriptor. The order of FDs in the slice must be in
+// the order specified below for the config to be valid. QueueConfig.FDs()
+// should be used when the config needs to be serialized or sent as part of a
+// control message to ensure the correct order.
+func QueueConfigFromFDs(fds []int) (QueueConfig, error) {
+	if len(fds) != 5 {
+		return QueueConfig{}, fmt.Errorf("insufficient number of fds: len(fds): %d, want: 5", len(fds))
+	}
+	return QueueConfig{
+		DataFD:       fds[0],
+		EventFD:      eventfd.Wrap(fds[1]),
+		TxPipeFD:     fds[2],
+		RxPipeFD:     fds[3],
+		SharedDataFD: fds[4],
+	}, nil
+}
+
+// Options specify the details about the sharedmem endpoint to be created.
+type Options struct {
+	// MTU is the mtu to use for this endpoint.
+	MTU uint32
+
+	// BufferSize is the size of each scatter/gather buffer that will hold packet
+	// data.
+	//
+	// NOTE: This directly determines number of packets that can be held in
+	// the ring buffer at any time. This does not have to be sized to the MTU as
+	// the shared memory queue design allows usage of more than one buffer to be
+	// used to make up a given packet.
+	BufferSize uint32
+
+	// LinkAddress is the link address for this endpoint (required).
+	LinkAddress tcpip.LinkAddress
+
+	// TX is the transmit queue configuration for this shared memory endpoint.
+	TX QueueConfig
+
+	// RX is the receive queue configuration for this shared memory endpoint.
+	RX QueueConfig
+
+	// PeerFD is the fd for the connected peer which can be used to detect
+	// peer disconnects.
+	PeerFD int
+
+	// OnClosed is a function that is called when the endpoint is being closed
+	// (probably due to peer going away)
+	OnClosed func(err tcpip.Error)
+
+	// TXChecksumOffload if true, indicates that this endpoints capability
+	// set should include CapabilityTXChecksumOffload.
+	TXChecksumOffload bool
+
+	// RXChecksumOffload if true, indicates that this endpoints capability
+	// set should include CapabilityRXChecksumOffload.
+	RXChecksumOffload bool
+
+	// VirtioNetHeaderRequired if true, indicates that all outbound packets should have
+	// a virtio header and inbound packets should have a virtio header as well.
+	VirtioNetHeaderRequired bool
+}
+
 type endpoint struct {
 	// mtu (maximum transmission unit) is the maximum size of a packet.
+	// mtu is immutable.
 	mtu uint32
 
 	// bufferSize is the size of each individual buffer.
+	// bufferSize is immutable.
 	bufferSize uint32
 
 	// addr is the local address of this endpoint.
+	// addr is immutable.
 	addr tcpip.LinkAddress
+
+	// peerFD is an fd to the peer that can be used to detect when the
+	// peer is gone.
+	// peerFD is immutable.
+	peerFD int
+
+	// caps holds the endpoint capabilities.
+	caps stack.LinkEndpointCapabilities
+
+	// hdrSize is the size of the link layer header if any.
+	// hdrSize is immutable.
+	hdrSize uint32
+
+	// virtioNetHeaderRequired if true indicates that a virtio header is expected
+	// in all inbound/outbound packets.
+	virtioNetHeaderRequired bool
 
 	// rx is the receive queue.
 	rx rx
 
-	// stopRequested is to be accessed atomically only, and determines if
-	// the worker goroutines should stop.
-	stopRequested uint32
+	// stopRequested  determines whether the worker goroutines should stop.
+	stopRequested atomicbitops.Uint32
 
 	// Wait group used to indicate that all workers have stopped.
 	completed sync.WaitGroup
+
+	// onClosed is a function to be called when the FD's peer (if any) closes
+	// its end of the communication pipe.
+	onClosed func(tcpip.Error)
 
 	// mu protects the following fields.
 	mu sync.Mutex
 
 	// tx is the transmit queue.
+	// +checklocks:mu
 	tx tx
 
 	// workerStarted specifies whether the worker goroutine was started.
+	// +checklocks:mu
 	workerStarted bool
 }
 
 // New creates a new shared-memory-based endpoint. Buffers will be broken up
 // into buffers of "bufferSize" bytes.
-func New(mtu, bufferSize uint32, addr tcpip.LinkAddress, tx, rx QueueConfig) (stack.LinkEndpoint, error) {
+//
+// In order to release all resources held by the returned endpoint, Close()
+// must be called followed by Wait().
+func New(opts Options) (stack.LinkEndpoint, error) {
 	e := &endpoint{
-		mtu:        mtu,
-		bufferSize: bufferSize,
-		addr:       addr,
+		mtu:                     opts.MTU,
+		bufferSize:              opts.BufferSize,
+		addr:                    opts.LinkAddress,
+		peerFD:                  opts.PeerFD,
+		onClosed:                opts.OnClosed,
+		virtioNetHeaderRequired: opts.VirtioNetHeaderRequired,
 	}
 
-	if err := e.tx.init(bufferSize, &tx); err != nil {
+	if err := e.tx.init(opts.BufferSize, &opts.TX); err != nil {
 		return nil, err
 	}
 
-	if err := e.rx.init(bufferSize, &rx); err != nil {
+	if err := e.rx.init(opts.BufferSize, &opts.RX); err != nil {
 		e.tx.cleanup()
 		return nil, err
+	}
+
+	e.caps = stack.LinkEndpointCapabilities(0)
+	if opts.RXChecksumOffload {
+		e.caps |= stack.CapabilityRXChecksumOffload
+	}
+
+	if opts.TXChecksumOffload {
+		e.caps |= stack.CapabilityTXChecksumOffload
+	}
+
+	if opts.LinkAddress != "" {
+		e.hdrSize = header.EthernetMinimumSize
+		e.caps |= stack.CapabilityResolutionRequired
+	}
+
+	if opts.VirtioNetHeaderRequired {
+		e.hdrSize += header.VirtioNetHeaderSize
 	}
 
 	return e, nil
 }
 
-// Close frees all resources associated with the endpoint.
+// Close frees most resources associated with the endpoint. Wait() must be
+// called after Close() in order to free the rest.
 func (e *endpoint) Close() {
 	// Tell dispatch goroutine to stop, then write to the eventfd so that
 	// it wakes up in case it's sleeping.
-	atomic.StoreUint32(&e.stopRequested, 1)
-	unix.Write(e.rx.eventFD, []byte{1, 0, 0, 0, 0, 0, 0, 0})
+	e.stopRequested.Store(1)
+	e.rx.eventFD.Notify()
 
 	// Cleanup the queues inline if the worker hasn't started yet; we also
 	// know it won't start from now on because stopRequested is set to 1.
 	e.mu.Lock()
+	defer e.mu.Unlock()
 	workerPresent := e.workerStarted
-	e.mu.Unlock()
 
 	if !workerPresent {
 		e.tx.cleanup()
@@ -136,15 +258,36 @@ func (e *endpoint) Close() {
 // stopped after a Close() call.
 func (e *endpoint) Wait() {
 	e.completed.Wait()
+	e.rx.eventFD.Close()
 }
 
 // Attach implements stack.LinkEndpoint.Attach. It launches the goroutine that
 // reads packets from the rx queue.
 func (e *endpoint) Attach(dispatcher stack.NetworkDispatcher) {
+	if dispatcher == nil {
+		e.Close()
+		return
+	}
 	e.mu.Lock()
-	if !e.workerStarted && atomic.LoadUint32(&e.stopRequested) == 0 {
+	if !e.workerStarted && e.stopRequested.Load() == 0 {
 		e.workerStarted = true
 		e.completed.Add(1)
+
+		// Spin up a goroutine to monitor for peer shutdown.
+		if e.peerFD >= 0 {
+			e.completed.Add(1)
+			go func() {
+				defer e.completed.Done()
+				b := make([]byte, 1)
+				// When sharedmem endpoint is in use the peerFD is never used for any data
+				// transfer and this Read should only return if the peer is shutting down.
+				_, err := rawfile.BlockingRead(e.peerFD, b)
+				if e.onClosed != nil {
+					e.onClosed(err)
+				}
+			}()
+		}
+
 		// Link endpoints are not savable. When transportation endpoints
 		// are saved, they stop sending outgoing packets and all
 		// incoming packets are rejected.
@@ -163,18 +306,18 @@ func (e *endpoint) IsAttached() bool {
 // MTU implements stack.LinkEndpoint.MTU. It returns the value initialized
 // during construction.
 func (e *endpoint) MTU() uint32 {
-	return e.mtu - header.EthernetMinimumSize
+	return e.mtu
 }
 
 // Capabilities implements stack.LinkEndpoint.Capabilities.
-func (*endpoint) Capabilities() stack.LinkEndpointCapabilities {
-	return 0
+func (e *endpoint) Capabilities() stack.LinkEndpointCapabilities {
+	return e.caps
 }
 
 // MaxHeaderLength implements stack.LinkEndpoint.MaxHeaderLength. It returns the
 // ethernet frame header size.
-func (*endpoint) MaxHeaderLength() uint16 {
-	return header.EthernetMinimumSize
+func (e *endpoint) MaxHeaderLength() uint16 {
+	return uint16(e.hdrSize)
 }
 
 // LinkAddress implements stack.LinkEndpoint.LinkAddress. It returns the local
@@ -184,34 +327,35 @@ func (e *endpoint) LinkAddress() tcpip.LinkAddress {
 }
 
 // AddHeader implements stack.LinkEndpoint.AddHeader.
-func (e *endpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+func (e *endpoint) AddHeader(pkt stack.PacketBufferPtr) {
 	// Add ethernet header if needed.
-	eth := header.Ethernet(pkt.LinkHeader().Push(header.EthernetMinimumSize))
-	ethHdr := &header.EthernetFields{
-		DstAddr: remote,
-		Type:    protocol,
+	if len(e.addr) == 0 {
+		return
 	}
 
-	// Preserve the src address if it's set in the route.
-	if local != "" {
-		ethHdr.SrcAddr = local
-	} else {
-		ethHdr.SrcAddr = e.addr
-	}
-	eth.Encode(ethHdr)
+	eth := header.Ethernet(pkt.LinkHeader().Push(header.EthernetMinimumSize))
+	eth.Encode(&header.EthernetFields{
+		SrcAddr: pkt.EgressRoute.LocalLinkAddress,
+		DstAddr: pkt.EgressRoute.RemoteLinkAddress,
+		Type:    pkt.NetworkProtocolNumber,
+	})
 }
 
-// WritePacket writes outbound packets to the file descriptor. If it is not
-// currently writable, the packet is dropped.
-func (e *endpoint) WritePacket(r stack.RouteInfo, _ *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
-	e.AddHeader(r.LocalLinkAddress, r.RemoteLinkAddress, protocol, pkt)
+func (e *endpoint) AddVirtioNetHeader(pkt stack.PacketBufferPtr) {
+	virtio := header.VirtioNetHeader(pkt.VirtioNetHeader().Push(header.VirtioNetHeaderSize))
+	virtio.Encode(&header.VirtioNetHeaderFields{})
+}
 
-	views := pkt.Views()
+// +checklocks:e.mu
+func (e *endpoint) writePacketLocked(r stack.RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr) tcpip.Error {
+	if e.virtioNetHeaderRequired {
+		e.AddVirtioNetHeader(pkt)
+	}
+
 	// Transmit the packet.
-	e.mu.Lock()
-	ok := e.tx.transmit(views...)
-	e.mu.Unlock()
-
+	b := pkt.ToBuffer()
+	defer b.Release()
+	ok := e.tx.transmit(b)
 	if !ok {
 		return &tcpip.ErrWouldBlock{}
 	}
@@ -220,8 +364,24 @@ func (e *endpoint) WritePacket(r stack.RouteInfo, _ *stack.GSO, protocol tcpip.N
 }
 
 // WritePackets implements stack.LinkEndpoint.WritePackets.
-func (*endpoint) WritePackets(stack.RouteInfo, *stack.GSO, stack.PacketBufferList, tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
-	panic("not implemented")
+func (e *endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
+	n := 0
+	var err tcpip.Error
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	for _, pkt := range pkts.AsSlice() {
+		if err = e.writePacketLocked(pkt.EgressRoute, pkt.NetworkProtocolNumber, pkt); err != nil {
+			break
+		}
+		n++
+	}
+	// WritePackets never returns an error if it successfully transmitted at least
+	// one packet.
+	if err != nil && n == 0 {
+		return 0, err
+	}
+	e.tx.notify()
+	return n, nil
 }
 
 // dispatchLoop reads packets from the rx queue in a loop and dispatches them
@@ -245,34 +405,69 @@ func (e *endpoint) dispatchLoop(d stack.NetworkDispatcher) {
 
 	// Read in a loop until a stop is requested.
 	var rxb []queue.RxBuffer
-	for atomic.LoadUint32(&e.stopRequested) == 0 {
+	for e.stopRequested.Load() == 0 {
 		var n uint32
 		rxb, n = e.rx.postAndReceive(rxb, &e.stopRequested)
 
 		// Copy data from the shared area to its own buffer, then
 		// prepare to repost the buffer.
-		b := make([]byte, n)
+		v := bufferv2.NewView(int(n))
+		v.Grow(int(n))
 		offset := uint32(0)
 		for i := range rxb {
-			copy(b[offset:], e.rx.data[rxb[i].Offset:][:rxb[i].Size])
+			v.WriteAt(e.rx.data[rxb[i].Offset:][:rxb[i].Size], int(offset))
 			offset += rxb[i].Size
 
 			rxb[i].Size = e.bufferSize
 		}
 
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-			Data: buffer.View(b).ToVectorisedView(),
+			Payload: bufferv2.MakeWithView(v),
 		})
 
-		hdr, ok := pkt.LinkHeader().Consume(header.EthernetMinimumSize)
-		if !ok {
-			continue
+		if e.virtioNetHeaderRequired {
+			_, ok := pkt.VirtioNetHeader().Consume(header.VirtioNetHeaderSize)
+			if !ok {
+				pkt.DecRef()
+				continue
+			}
 		}
-		eth := header.Ethernet(hdr)
+
+		var proto tcpip.NetworkProtocolNumber
+		if e.addr != "" {
+			hdr, ok := pkt.LinkHeader().Consume(header.EthernetMinimumSize)
+			if !ok {
+				pkt.DecRef()
+				continue
+			}
+			proto = header.Ethernet(hdr).Type()
+		} else {
+			// We don't get any indication of what the packet is, so try to guess
+			// if it's an IPv4 or IPv6 packet.
+			// IP version information is at the first octet, so pulling up 1 byte.
+			h, ok := pkt.Data().PullUp(1)
+			if !ok {
+				pkt.DecRef()
+				continue
+			}
+			switch header.IPVersion(h) {
+			case header.IPv4Version:
+				proto = header.IPv4ProtocolNumber
+			case header.IPv6Version:
+				proto = header.IPv6ProtocolNumber
+			default:
+				pkt.DecRef()
+				continue
+			}
+		}
 
 		// Send packet up the stack.
-		d.DeliverNetworkPacket(eth.SourceAddress(), eth.DestinationAddress(), eth.Type(), pkt)
+		d.DeliverNetworkPacket(proto, pkt)
+		pkt.DecRef()
 	}
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
 
 	// Clean state.
 	e.tx.cleanup()

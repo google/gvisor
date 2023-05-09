@@ -1,7 +1,10 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_template_instance(
     name = "addr_range",
@@ -19,6 +22,7 @@ go_test(
     size = "small",
     srcs = [
         "addr_range_seq_test.go",
+        "addr_test.go",
     ],
     library = ":hostarch",
 )
@@ -33,6 +37,7 @@ go_library(
         "hostarch.go",
         "hostarch_arm64.go",
         "hostarch_x86.go",
+        "sizes_util.go",
     ],
     visibility = ["//:sandbox"],
     deps = [

@@ -22,6 +22,7 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/log"
 )
 
 type mapping struct {
@@ -63,12 +64,6 @@ var optionsMap = map[string]mapping{
 	"strictatime":   {set: true, val: unix.MS_STRICTATIME},
 	"suid":          {set: false, val: unix.MS_NOSUID},
 	"sync":          {set: true, val: unix.MS_SYNCHRONOUS},
-}
-
-// verityMountOptions is the set of valid verity mount option keys.
-var verityMountOptions = map[string]struct{}{
-	"verity.roothash": struct{}{},
-	"verity.action":   struct{}{},
 }
 
 // propOptionsMap is similar to optionsMap, but it lists propagation options
@@ -113,6 +108,16 @@ func optionsToFlags(opts []string, source map[string]mapping) uint32 {
 	return rv
 }
 
+// IsReadonlyMount returns true if the mount options has read only option.
+func IsReadonlyMount(opts []string) bool {
+	for _, o := range opts {
+		if o == "ro" {
+			return true
+		}
+	}
+	return false
+}
+
 // validateMount validates that spec mounts are correct.
 func validateMount(mnt *specs.Mount) error {
 	if !path.IsAbs(mnt.Destination) {
@@ -132,23 +137,39 @@ func moptKey(opt string) string {
 	return strings.SplitN(opt, "=", 2)[0]
 }
 
+// FilterMountOptions filters out all invalid mount options.
+func FilterMountOptions(opts []string) []string {
+	out := make([]string, 0, len(opts))
+	for _, o := range opts {
+		if err := validateMountOption(o); err == nil {
+			out = append(out, o)
+		} else {
+			log.Warningf("mount option skipped %q: %v", o, err)
+		}
+	}
+	return out
+}
+
 // ValidateMountOptions validates that mount options are correct.
 func ValidateMountOptions(opts []string) error {
 	for _, o := range opts {
-		if ContainsStr(invalidOptions, o) {
-			return fmt.Errorf("mount option %q is not supported", o)
-		}
-		_, ok1 := optionsMap[o]
-		_, ok2 := propOptionsMap[o]
-		_, ok3 := verityMountOptions[moptKey(o)]
-		if !ok1 && !ok2 && !ok3 {
-			return fmt.Errorf("unknown mount option %q", o)
-		}
-		if err := validatePropagation(o); err != nil {
+		if err := validateMountOption(o); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func validateMountOption(o string) error {
+	if ContainsStr(invalidOptions, o) {
+		return fmt.Errorf("mount option %q is not supported", o)
+	}
+	_, ok1 := optionsMap[o]
+	_, ok2 := propOptionsMap[o]
+	if !ok1 && !ok2 {
+		return fmt.Errorf("unknown mount option %q", o)
+	}
+	return validatePropagation(o)
 }
 
 // ValidateRootfsPropagation validates that rootfs propagation options are

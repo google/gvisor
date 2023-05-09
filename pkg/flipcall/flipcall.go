@@ -19,9 +19,10 @@ package flipcall
 import (
 	"fmt"
 	"math"
-	"sync/atomic"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/memutil"
 )
 
 // An Endpoint provides the ability to synchronously transfer data and control
@@ -52,9 +53,8 @@ type Endpoint struct {
 	inactiveState uint32
 
 	// shutdown is non-zero if Endpoint.Shutdown() has been called, or if the
-	// Endpoint has acknowledged shutdown initiated by the peer. shutdown is
-	// accessed using atomic memory operations.
-	shutdown uint32
+	// Endpoint has acknowledged shutdown initiated by the peer.
+	shutdown atomicbitops.Uint32
 
 	ctrl endpointControlImpl
 }
@@ -96,9 +96,9 @@ func (ep *Endpoint) Init(side EndpointSide, pwd PacketWindowDescriptor, opts ...
 	if pwd.Length > math.MaxUint32 {
 		return fmt.Errorf("packet window size (%d) exceeds maximum (%d)", pwd.Length, math.MaxUint32)
 	}
-	m, e := packetWindowMmap(pwd)
-	if e != 0 {
-		return fmt.Errorf("failed to mmap packet window: %v", e)
+	m, err := memutil.MapFile(0, uintptr(pwd.Length), unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED, uintptr(pwd.FD), uintptr(pwd.Offset))
+	if err != nil {
+		return fmt.Errorf("failed to mmap packet window: %v", err)
 	}
 	ep.packet = m
 	ep.dataCap = uint32(pwd.Length) - uint32(PacketHeaderBytes)
@@ -143,7 +143,7 @@ func (ep *Endpoint) unmapPacket() {
 // Shutdown is the only Endpoint method that may be called concurrently with
 // other methods on the same Endpoint.
 func (ep *Endpoint) Shutdown() {
-	if atomic.SwapUint32(&ep.shutdown, 1) != 0 {
+	if ep.shutdown.Swap(1) != 0 {
 		// ep.Shutdown() has previously been called.
 		return
 	}
@@ -152,7 +152,7 @@ func (ep *Endpoint) Shutdown() {
 
 // isShutdownLocally returns true if ep.Shutdown() has been called.
 func (ep *Endpoint) isShutdownLocally() bool {
-	return atomic.LoadUint32(&ep.shutdown) != 0
+	return ep.shutdown.Load() != 0
 }
 
 // ShutdownError is returned by most Endpoint methods after Endpoint.Shutdown()
@@ -181,9 +181,9 @@ const (
 // Connect blocks until the peer Endpoint has called Endpoint.RecvFirst().
 //
 // Preconditions:
-// * ep is a client Endpoint.
-// * ep.Connect(), ep.RecvFirst(), ep.SendRecv(), and ep.SendLast() have never
-//   been called.
+//   - ep is a client Endpoint.
+//   - ep.Connect(), ep.RecvFirst(), ep.SendRecv(), and ep.SendLast() have never
+//     been called.
 func (ep *Endpoint) Connect() error {
 	err := ep.ctrlConnect()
 	if err == nil {
@@ -196,14 +196,14 @@ func (ep *Endpoint) Connect() error {
 // returns the datagram length specified by that call.
 //
 // Preconditions:
-// * ep is a server Endpoint.
-// * ep.SendRecv(), ep.RecvFirst(), and ep.SendLast() have never been called.
+//   - ep is a server Endpoint.
+//   - ep.SendRecv(), ep.RecvFirst(), and ep.SendLast() have never been called.
 func (ep *Endpoint) RecvFirst() (uint32, error) {
 	if err := ep.ctrlWaitFirst(); err != nil {
 		return 0, err
 	}
 	raceBecomeActive()
-	recvDataLen := atomic.LoadUint32(ep.dataLen())
+	recvDataLen := ep.dataLen().Load()
 	if recvDataLen > ep.dataCap {
 		return 0, fmt.Errorf("received packet with invalid datagram length %d (maximum %d)", recvDataLen, ep.dataCap)
 	}
@@ -216,12 +216,29 @@ func (ep *Endpoint) RecvFirst() (uint32, error) {
 // Endpoint.SendRecv() or Endpoint.SendLast().
 //
 // Preconditions:
-// * dataLen <= ep.DataCap().
-// * No previous call to ep.SendRecv() or ep.RecvFirst() has returned an error.
-// * ep.SendLast() has never been called.
-// * If ep is a client Endpoint, ep.Connect() has previously been called and
-//   returned nil.
+//   - dataLen <= ep.DataCap().
+//   - No previous call to ep.SendRecv() or ep.RecvFirst() has returned an error.
+//   - ep.SendLast() has never been called.
+//   - If ep is a client Endpoint, ep.Connect() has previously been called and
+//     returned nil.
 func (ep *Endpoint) SendRecv(dataLen uint32) (uint32, error) {
+	return ep.sendRecv(dataLen, false /* mayRetainP */)
+}
+
+// SendRecvFast is equivalent to SendRecv, but may prevent the caller's runtime
+// P from being released, in which case the calling goroutine continues to
+// count against GOMAXPROCS while waiting for the peer Endpoint to return
+// control to the caller.
+//
+// SendRecvFast is appropriate if the peer Endpoint is expected to consistently
+// return control in a short amount of time (less than ~10ms).
+//
+// Preconditions: As for SendRecv.
+func (ep *Endpoint) SendRecvFast(dataLen uint32) (uint32, error) {
+	return ep.sendRecv(dataLen, true /* mayRetainP */)
+}
+
+func (ep *Endpoint) sendRecv(dataLen uint32, mayRetainP bool) (uint32, error) {
 	if dataLen > ep.dataCap {
 		panic(fmt.Sprintf("attempting to send packet with datagram length %d (maximum %d)", dataLen, ep.dataCap))
 	}
@@ -230,13 +247,13 @@ func (ep *Endpoint) SendRecv(dataLen uint32) (uint32, error) {
 	// synchronize with the receiver. We will not read from ep.dataLen() until
 	// after ep.ctrlRoundTrip(), so if the peer is mutating it concurrently then
 	// they can only shoot themselves in the foot.
-	*ep.dataLen() = dataLen
+	ep.dataLen().RacyStore(dataLen)
 	raceBecomeInactive()
-	if err := ep.ctrlRoundTrip(); err != nil {
+	if err := ep.ctrlRoundTrip(mayRetainP); err != nil {
 		return 0, err
 	}
 	raceBecomeActive()
-	recvDataLen := atomic.LoadUint32(ep.dataLen())
+	recvDataLen := ep.dataLen().Load()
 	if recvDataLen > ep.dataCap {
 		return 0, fmt.Errorf("received packet with invalid datagram length %d (maximum %d)", recvDataLen, ep.dataCap)
 	}
@@ -247,16 +264,16 @@ func (ep *Endpoint) SendRecv(dataLen uint32) (uint32, error) {
 // Endpoint.RecvFirst() to return with the given datagram length.
 //
 // Preconditions:
-// * dataLen <= ep.DataCap().
-// * No previous call to ep.SendRecv() or ep.RecvFirst() has returned an error.
-// * ep.SendLast() has never been called.
-// * If ep is a client Endpoint, ep.Connect() has previously been called and
-//   returned nil.
+//   - dataLen <= ep.DataCap().
+//   - No previous call to ep.SendRecv() or ep.RecvFirst() has returned an error.
+//   - ep.SendLast() has never been called.
+//   - If ep is a client Endpoint, ep.Connect() has previously been called and
+//     returned nil.
 func (ep *Endpoint) SendLast(dataLen uint32) error {
 	if dataLen > ep.dataCap {
 		panic(fmt.Sprintf("attempting to send packet with datagram length %d (maximum %d)", dataLen, ep.dataCap))
 	}
-	*ep.dataLen() = dataLen
+	ep.dataLen().RacyStore(dataLen)
 	raceBecomeInactive()
 	if err := ep.ctrlWakeLast(); err != nil {
 		return err

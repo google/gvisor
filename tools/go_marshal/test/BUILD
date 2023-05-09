@@ -1,5 +1,7 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 
+package(default_applicable_licenses = ["//:license"])
+
 licenses(["notice"])
 
 package_group(
@@ -41,10 +43,10 @@ go_test(
     srcs = ["marshal_test.go"],
     deps = [
         ":test",
+        "//pkg/errors/linuxerr",
         "//pkg/hostarch",
         "//pkg/marshal",
         "//pkg/marshal/primitive",
-        "//pkg/syserror",
         "//pkg/usermem",
         "//tools/go_marshal/analysis",
         "@com_github_google_go_cmp//cmp:go_default_library",

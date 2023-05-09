@@ -19,7 +19,9 @@ package utils
 // These are vendor due to import conflicts.
 const (
 	sandboxLogDirAnnotation = "io.kubernetes.cri.sandbox-log-directory"
-	containerTypeAnnotation = "io.kubernetes.cri.container-type"
+	// ContainerTypeAnnotation is they key that defines sandbox or container.
+	ContainerTypeAnnotation = "io.kubernetes.cri.container-type"
 	containerTypeSandbox    = "sandbox"
-	containerTypeContainer  = "container"
+	// ContainerTypeContainer is the value for container.
+	ContainerTypeContainer = "container"
 )

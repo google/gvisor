@@ -1,5 +1,7 @@
 load("//tools:defs.bzl", "go_library")
 
+package(default_applicable_licenses = ["//:license"])
+
 licenses(["notice"])
 
 go_library(
@@ -9,6 +11,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/fspath",
         "//pkg/hostarch",
         "//pkg/sentry/fsimpl/kernfs",
@@ -16,6 +19,5 @@ go_library(
         "//pkg/sentry/kernel/pipe",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/vfs",
-        "//pkg/syserror",
     ],
 )

@@ -76,9 +76,7 @@ TEST(UnameTest, SetNames) {
 }
 
 TEST(UnameTest, UnprivilegedSetNames) {
-  if (ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN))) {
-    EXPECT_NO_ERRNO(SetCapability(CAP_SYS_ADMIN, false));
-  }
+  AutoCapability cap(CAP_SYS_ADMIN, false);
 
   EXPECT_THAT(sethostname("", 0), SyscallFailsWithErrno(EPERM));
   EXPECT_THAT(setdomainname("", 0), SyscallFailsWithErrno(EPERM));
@@ -90,7 +88,7 @@ TEST(UnameTest, UnshareUTS) {
   struct utsname init;
   ASSERT_THAT(uname(&init), SyscallSucceeds());
 
-  ScopedThread([&]() {
+  ScopedThread thread = ScopedThread([&]() {
     EXPECT_THAT(unshare(CLONE_NEWUTS), SyscallSucceeds());
 
     constexpr char kHostname[] = "wubbalubba";
@@ -99,6 +97,7 @@ TEST(UnameTest, UnshareUTS) {
     char hostname[65];
     EXPECT_THAT(gethostname(hostname, sizeof(hostname)), SyscallSucceeds());
   });
+  thread.Join();
 
   struct utsname after;
   EXPECT_THAT(uname(&after), SyscallSucceeds());

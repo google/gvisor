@@ -16,7 +16,7 @@
 
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/syscalls/linux/socket_ipv6_udp_unbound_netlink.h"
-#include "test/syscalls/linux/socket_test_util.h"
+#include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {

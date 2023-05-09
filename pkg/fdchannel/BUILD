@@ -1,5 +1,7 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 
+package(default_applicable_licenses = ["//:license"])
+
 licenses(["notice"])
 
 go_library(
@@ -7,7 +9,6 @@ go_library(
     srcs = ["fdchannel_unsafe.go"],
     visibility = ["//visibility:public"],
     deps = [
-        "//pkg/gohacks",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

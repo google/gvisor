@@ -17,6 +17,8 @@
 
 #include <stddef.h>
 
+#include <cerrno>
+
 namespace gvisor {
 namespace testing {
 

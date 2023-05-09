@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build amd64
 // +build amd64
 
 package kvm
@@ -19,6 +20,8 @@ package kvm
 import (
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -27,10 +30,10 @@ import (
 )
 
 func TestSegments(t *testing.T) {
-	applicationTest(t, true, testutil.TwiddleSegments, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
+	applicationTest(t, true, testutil.AddrOfTwiddleSegments(), func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		testutil.SetTestSegments(regs)
 		for {
-			var si arch.SignalInfo
+			var si linux.SignalInfo
 			if _, err := c.SwitchToUser(ring0.SwitchOpts{
 				Registers:          regs,
 				FloatingPointState: &dummyFPState,
@@ -54,8 +57,8 @@ func TestSegments(t *testing.T) {
 func stmxcsr(addr *uint32)
 
 func TestMXCSR(t *testing.T) {
-	applicationTest(t, true, testutil.SyscallLoop, func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
-		var si arch.SignalInfo
+	applicationTest(t, true, testutil.AddrOfSyscallLoop(), func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
+		var si linux.SignalInfo
 		switchOpts := ring0.SwitchOpts{
 			Registers:          regs,
 			FloatingPointState: &dummyFPState,
@@ -84,5 +87,23 @@ func TestMXCSR(t *testing.T) {
 			t.Errorf("mxcsr = %x (expected %x)", mxcsrBefore, mxcsrAfter)
 		}
 		return false
+	})
+}
+
+//go:nosplit
+func nestedVirtIsOn(c *vCPU, fs *cpuid.FeatureSet) bool {
+	bluepill(c)
+	return fs.HasFeature(cpuid.X86FeatureVMX) || fs.HasFeature(cpuid.X86FeatureSVM)
+
+}
+
+func TestKernelCPUID(t *testing.T) {
+	bluepillTest(t, func(c *vCPU) {
+		fs := cpuid.FeatureSet{
+			Function: &cpuid.Native{},
+		}
+		if nestedVirtIsOn(c, &fs) {
+			t.Fatalf("Nested virtualization is enabled")
+		}
 	})
 }

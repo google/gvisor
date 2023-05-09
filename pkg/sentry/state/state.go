@@ -20,6 +20,7 @@ import (
 	"io"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -27,7 +28,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 	"gvisor.dev/gvisor/pkg/state/statefile"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 var previousMetadata map[string]string
@@ -88,7 +88,7 @@ func (opts SaveOpts) Save(ctx context.Context, k *kernel.Kernel, w *watchdog.Wat
 		// ENOSPC is a state file error. This error can only come from
 		// writing the state file, and not from fs.FileOperations.Fsync
 		// because we wrap those in kernel.TaskSet.flushWritesToFiles.
-		if err == syserror.ENOSPC {
+		if linuxerr.Equals(linuxerr.ENOSPC, err) {
 			err = ErrStateFile{err}
 		}
 
@@ -110,7 +110,7 @@ type LoadOpts struct {
 }
 
 // Load loads the given kernel, setting the provided platform and stack.
-func (opts LoadOpts) Load(ctx context.Context, k *kernel.Kernel, n inet.Stack, clocks time.Clocks, vfsOpts *vfs.CompleteRestoreOptions) error {
+func (opts LoadOpts) Load(ctx context.Context, k *kernel.Kernel, timeReady chan struct{}, n inet.Stack, clocks time.Clocks, vfsOpts *vfs.CompleteRestoreOptions) error {
 	// Open the file.
 	r, m, err := statefile.NewReader(opts.Source, opts.Key)
 	if err != nil {
@@ -120,5 +120,5 @@ func (opts LoadOpts) Load(ctx context.Context, k *kernel.Kernel, n inet.Stack, c
 	previousMetadata = m
 
 	// Restore the Kernel object graph.
-	return k.LoadFrom(ctx, r, n, clocks, vfsOpts)
+	return k.LoadFrom(ctx, r, timeReady, n, clocks, vfsOpts)
 }

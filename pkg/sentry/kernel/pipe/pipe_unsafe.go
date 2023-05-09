@@ -22,14 +22,20 @@ import (
 // consistent for both lockTwoPipes(x, y) and lockTwoPipes(y, x), such that
 // concurrent calls cannot deadlock.
 //
+// Returns the two pipes in order (first locked pipe, second locked pipe).
+// The caller should unlock the second pipe first.
+//
 // Preconditions: x != y.
-func lockTwoPipes(x, y *Pipe) {
+// +checklocksacquire:x.mu
+// +checklocksacquire:y.mu
+func lockTwoPipes(x, y *Pipe) (*Pipe, *Pipe) {
 	// Lock the two pipes in order of increasing address.
 	if uintptr(unsafe.Pointer(x)) < uintptr(unsafe.Pointer(y)) {
 		x.mu.Lock()
-		y.mu.Lock()
-	} else {
-		y.mu.Lock()
-		x.mu.Lock()
+		y.mu.NestedLock(pipeLockPipe)
+		return x, y
 	}
+	y.mu.Lock()
+	x.mu.NestedLock(pipeLockPipe)
+	return y, x
 }

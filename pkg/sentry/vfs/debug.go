@@ -12,11 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build !check_invariants
+// +build !check_invariants
+
 package vfs
 
 const (
 	// If checkInvariants is true, perform runtime checks for invariants
-	// expected by the vfs package. This is normally disabled since VFS is
-	// often a hot path.
+	// expected by the vfs package. This is disabled for non-test binaries since
+	// VFS is often a hot path.
 	checkInvariants = false
 )

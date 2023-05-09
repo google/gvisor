@@ -1,12 +1,18 @@
 load("//tools:defs.bzl", "go_library")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_library(
     name = "context",
-    srcs = ["context.go"],
+    srcs = [
+        "context.go",
+    ],
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/log",
+        "//pkg/waiter",
     ],
 )

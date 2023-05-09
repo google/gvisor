@@ -54,7 +54,7 @@ func NewForwarder(s *stack.Stack, rcvWnd, maxInFlight int, handler func(*Forward
 		maxInFlight: maxInFlight,
 		handler:     handler,
 		inFlight:    make(map[stack.TransportEndpointID]struct{}),
-		listen:      newListenContext(s, nil /* listenEP */, seqnum.Size(rcvWnd), true, 0),
+		listen:      newListenContext(s, protocolFromStack(s), nil /* listenEP */, seqnum.Size(rcvWnd), true, 0),
 	}
 }
 
@@ -64,12 +64,15 @@ func NewForwarder(s *stack.Stack, rcvWnd, maxInFlight int, handler func(*Forward
 //
 // This function is expected to be passed as an argument to the
 // stack.SetTransportProtocolHandler function.
-func (f *Forwarder) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketBuffer) bool {
-	s := newIncomingSegment(id, pkt)
-	defer s.decRef()
+func (f *Forwarder) HandlePacket(id stack.TransportEndpointID, pkt stack.PacketBufferPtr) bool {
+	s, err := newIncomingSegment(id, f.stack.Clock(), pkt)
+	if err != nil {
+		return false
+	}
+	defer s.DecRef()
 
-	// We only care about well-formed SYN packets.
-	if !s.parse(pkt.RXTransportChecksumValidated) || !s.csumValid || s.flags != header.TCPFlagSyn {
+	// We only care about well-formed SYN packets (not SYN-ACK) packets.
+	if !s.csumValid || !s.flags.Contains(header.TCPFlagSyn) || s.flags.Contains(header.TCPFlagAck) {
 		return false
 	}
 
@@ -90,7 +93,7 @@ func (f *Forwarder) HandlePacket(id stack.TransportEndpointID, pkt *stack.Packet
 
 	// Launch a new goroutine to handle the request.
 	f.inFlight[id] = struct{}{}
-	s.incRef()
+	s.IncRef()
 	go f.handler(&ForwarderRequest{ // S/R-SAFE: not used by Sentry.
 		forwarder:  f,
 		segment:    s,
@@ -132,11 +135,11 @@ func (r *ForwarderRequest) Complete(sendReset bool) {
 	r.forwarder.mu.Unlock()
 
 	if sendReset {
-		replyWithReset(r.forwarder.stack, r.segment, stack.DefaultTOS, 0 /* ttl */)
+		replyWithReset(r.forwarder.stack, r.segment, stack.DefaultTOS, tcpip.UseDefaultIPv4TTL, tcpip.UseDefaultIPv6HopLimit)
 	}
 
 	// Release all resources.
-	r.segment.decRef()
+	r.segment.DecRef()
 	r.segment = nil
 	r.forwarder = nil
 }
@@ -152,7 +155,7 @@ func (r *ForwarderRequest) CreateEndpoint(queue *waiter.Queue) (tcpip.Endpoint, 
 	}
 
 	f := r.forwarder
-	ep, err := f.listen.performHandshake(r.segment, &header.TCPSynOptions{
+	ep, err := f.listen.performHandshake(r.segment, header.TCPSynOptions{
 		MSS:           r.synOptions.MSS,
 		WS:            r.synOptions.WS,
 		TS:            r.synOptions.TS,
@@ -163,9 +166,6 @@ func (r *ForwarderRequest) CreateEndpoint(queue *waiter.Queue) (tcpip.Endpoint, 
 	if err != nil {
 		return nil, err
 	}
-
-	// Start the protocol goroutine.
-	ep.startAcceptedLoop()
 
 	return ep, nil
 }

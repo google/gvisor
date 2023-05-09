@@ -54,7 +54,15 @@ func (r *Rx) Pull() []byte {
 	// Check if this is a wrapping slot. If that's the case, it carries no
 	// data, so we just skip it and try again from the first slot.
 	if int64(newHead-headWrap) >= 0 {
-		if int64(newHead-headWrap) > int64(jump) || newHead&offsetMask != 0 {
+		// If newHead passes the tail, the pipe is either damaged or the
+		// RX view of the pipe has completely wrapped without an
+		// intervening flush.
+		if int64(newHead-(r.tail+jump)) > 0 {
+			return nil
+		}
+		// The pipe is damaged if newHead doesn't point to the start of
+		// the ring.
+		if newHead&offsetMask != 0 {
 			return nil
 		}
 
@@ -85,6 +93,11 @@ func (r *Rx) Flush() {
 	}
 	r.p.writeAtomic(r.tail, slotFree|slotToPayloadSize(r.head-r.tail))
 	r.tail = r.head
+}
+
+// Abort unpulls any pulled buffers.
+func (r *Rx) Abort() {
+	r.head = r.tail
 }
 
 // Bytes returns the byte slice on which the pipe operates.

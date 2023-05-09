@@ -19,17 +19,17 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/signalfd"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/signalfd"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // "For a process to have permission to send a signal it must
-// - either be privileged (CAP_KILL), or
-// - the real or effective user ID of the sending process must be equal to the
+//   - either be privileged (CAP_KILL), or
+//   - the real or effective user ID of the sending process must be equal to the
+//
 // real or saved set-user-ID of the target process.
 //
 // In the case of SIGCONT it suffices when the sending and receiving processes
@@ -65,7 +65,7 @@ func mayKill(t *kernel.Task, target *kernel.Task, sig linux.Signal) bool {
 }
 
 // Kill implements linux syscall kill(2).
-func Kill(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Kill(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	pid := kernel.ThreadID(args[0].Int())
 	sig := linux.Signal(args[1].Int())
 
@@ -79,18 +79,18 @@ func Kill(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 		for {
 			target := t.PIDNamespace().TaskWithID(pid)
 			if target == nil {
-				return 0, nil, syserror.ESRCH
+				return 0, nil, linuxerr.ESRCH
 			}
 			if !mayKill(t, target, sig) {
-				return 0, nil, syserror.EPERM
+				return 0, nil, linuxerr.EPERM
 			}
-			info := &arch.SignalInfo{
+			info := &linux.SignalInfo{
 				Signo: int32(sig),
-				Code:  arch.SignalInfoUser,
+				Code:  linux.SI_USER,
 			}
 			info.SetPID(int32(target.PIDNamespace().IDOfTask(t)))
 			info.SetUID(int32(t.Credentials().RealKUID.In(target.UserNamespace()).OrOverflow()))
-			if err := target.SendGroupSignal(info); err != syserror.ESRCH {
+			if err := target.SendGroupSignal(info); !linuxerr.Equals(linuxerr.ESRCH, err) {
 				return 0, nil, err
 			}
 		}
@@ -123,14 +123,14 @@ func Kill(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 			// depend on the iteration order. We at least implement the
 			// semantics documented by the man page: "On success (at least
 			// one signal was sent), zero is returned."
-			info := &arch.SignalInfo{
+			info := &linux.SignalInfo{
 				Signo: int32(sig),
-				Code:  arch.SignalInfoUser,
+				Code:  linux.SI_USER,
 			}
 			info.SetPID(int32(tg.PIDNamespace().IDOfTask(t)))
 			info.SetUID(int32(t.Credentials().RealKUID.In(tg.Leader().UserNamespace()).OrOverflow()))
 			err := tg.SendSignal(info)
-			if err == syserror.ESRCH {
+			if linuxerr.Equals(linuxerr.ESRCH, err) {
 				// ESRCH is ignored because it means the task
 				// exited while we were iterating.  This is a
 				// race which would not normally exist on
@@ -145,7 +145,7 @@ func Kill(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 		if delivered > 0 {
 			return 0, nil, lastErr
 		}
-		return 0, nil, syserror.ESRCH
+		return 0, nil, linuxerr.ESRCH
 	default:
 		// "If pid equals 0, then sig is sent to every process in the process
 		// group of the calling process."
@@ -159,22 +159,22 @@ func Kill(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 
 		// If pid != -1 (i.e. signalling a process group), the returned error
 		// is the last error from any call to group_send_sig_info.
-		lastErr := syserror.ESRCH
+		lastErr := error(linuxerr.ESRCH)
 		for _, tg := range t.PIDNamespace().ThreadGroups() {
 			if t.PIDNamespace().IDOfProcessGroup(tg.ProcessGroup()) == pgid {
 				if !mayKill(t, tg.Leader(), sig) {
-					lastErr = syserror.EPERM
+					lastErr = linuxerr.EPERM
 					continue
 				}
 
-				info := &arch.SignalInfo{
+				info := &linux.SignalInfo{
 					Signo: int32(sig),
-					Code:  arch.SignalInfoUser,
+					Code:  linux.SI_USER,
 				}
 				info.SetPID(int32(tg.PIDNamespace().IDOfTask(t)))
 				info.SetUID(int32(t.Credentials().RealKUID.In(tg.Leader().UserNamespace()).OrOverflow()))
 				// See note above regarding ESRCH race above.
-				if err := tg.SendSignal(info); err != syserror.ESRCH {
+				if err := tg.SendSignal(info); !linuxerr.Equals(linuxerr.ESRCH, err) {
 					lastErr = err
 				}
 			}
@@ -184,10 +184,10 @@ func Kill(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 	}
 }
 
-func tkillSigInfo(sender, receiver *kernel.Task, sig linux.Signal) *arch.SignalInfo {
-	info := &arch.SignalInfo{
+func tkillSigInfo(sender, receiver *kernel.Task, sig linux.Signal) *linux.SignalInfo {
+	info := &linux.SignalInfo{
 		Signo: int32(sig),
-		Code:  arch.SignalInfoTkill,
+		Code:  linux.SI_TKILL,
 	}
 	info.SetPID(int32(receiver.PIDNamespace().IDOfThreadGroup(sender.ThreadGroup())))
 	info.SetUID(int32(sender.Credentials().RealKUID.In(receiver.UserNamespace()).OrOverflow()))
@@ -195,29 +195,29 @@ func tkillSigInfo(sender, receiver *kernel.Task, sig linux.Signal) *arch.SignalI
 }
 
 // Tkill implements linux syscall tkill(2).
-func Tkill(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Tkill(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	tid := kernel.ThreadID(args[0].Int())
 	sig := linux.Signal(args[1].Int())
 
 	// N.B. Inconsistent with man page, linux actually rejects calls with
 	// tid <=0 by EINVAL. This isn't the same for all signal calls.
 	if tid <= 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	target := t.PIDNamespace().TaskWithID(tid)
 	if target == nil {
-		return 0, nil, syserror.ESRCH
+		return 0, nil, linuxerr.ESRCH
 	}
 
 	if !mayKill(t, target, sig) {
-		return 0, nil, syserror.EPERM
+		return 0, nil, linuxerr.EPERM
 	}
 	return 0, nil, target.SendSignal(tkillSigInfo(t, target, sig))
 }
 
 // Tgkill implements linux syscall tgkill(2).
-func Tgkill(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Tgkill(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	tgid := kernel.ThreadID(args[0].Int())
 	tid := kernel.ThreadID(args[1].Int())
 	sig := linux.Signal(args[2].Int())
@@ -225,46 +225,46 @@ func Tgkill(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	// N.B. Inconsistent with man page, linux actually rejects calls with
 	// tgid/tid <=0 by EINVAL. This isn't the same for all signal calls.
 	if tgid <= 0 || tid <= 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	targetTG := t.PIDNamespace().ThreadGroupWithID(tgid)
 	target := t.PIDNamespace().TaskWithID(tid)
 	if targetTG == nil || target == nil || target.ThreadGroup() != targetTG {
-		return 0, nil, syserror.ESRCH
+		return 0, nil, linuxerr.ESRCH
 	}
 
 	if !mayKill(t, target, sig) {
-		return 0, nil, syserror.EPERM
+		return 0, nil, linuxerr.EPERM
 	}
 	return 0, nil, target.SendSignal(tkillSigInfo(t, target, sig))
 }
 
 // RtSigaction implements linux syscall rt_sigaction(2).
-func RtSigaction(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func RtSigaction(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	sig := linux.Signal(args[0].Int())
 	newactarg := args[1].Pointer()
 	oldactarg := args[2].Pointer()
 	sigsetsize := args[3].SizeT()
 
 	if sigsetsize != linux.SignalSetSize {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
-	var newactptr *arch.SignalAct
+	var newactptr *linux.SigAction
 	if newactarg != 0 {
-		newact, err := t.CopyInSignalAct(newactarg)
-		if err != nil {
+		var newact linux.SigAction
+		if _, err := newact.CopyIn(t, newactarg); err != nil {
 			return 0, nil, err
 		}
 		newactptr = &newact
 	}
-	oldact, err := t.ThreadGroup().SetSignalAct(sig, newactptr)
+	oldact, err := t.ThreadGroup().SetSigAction(sig, newactptr)
 	if err != nil {
 		return 0, nil, err
 	}
 	if oldactarg != 0 {
-		if err := t.CopyOutSignalAct(oldactarg, &oldact); err != nil {
+		if _, err := oldact.CopyOut(t, oldactarg); err != nil {
 			return 0, nil, err
 		}
 	}
@@ -272,30 +272,30 @@ func RtSigaction(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.S
 }
 
 // Sigreturn implements linux syscall sigreturn(2).
-func Sigreturn(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Sigreturn(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	ctrl, err := t.SignalReturn(false)
 	return 0, ctrl, err
 }
 
 // RtSigreturn implements linux syscall rt_sigreturn(2).
-func RtSigreturn(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func RtSigreturn(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	ctrl, err := t.SignalReturn(true)
 	return 0, ctrl, err
 }
 
 // RtSigprocmask implements linux syscall rt_sigprocmask(2).
-func RtSigprocmask(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func RtSigprocmask(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	how := args[0].Int()
 	setaddr := args[1].Pointer()
 	oldaddr := args[2].Pointer()
 	sigsetsize := args[3].SizeT()
 
 	if sigsetsize != linux.SignalSetSize {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	oldmask := t.SignalMask()
 	if setaddr != 0 {
-		mask, err := CopyInSigSet(t, setaddr, sigsetsize)
+		mask, err := copyInSigSet(t, setaddr, sigsetsize)
 		if err != nil {
 			return 0, nil, err
 		}
@@ -308,7 +308,7 @@ func RtSigprocmask(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 		case linux.SIG_SETMASK:
 			t.SetSignalMask(mask)
 		default:
-			return 0, nil, syserror.EINVAL
+			return 0, nil, linuxerr.EINVAL
 		}
 	}
 	if oldaddr != 0 {
@@ -319,40 +319,21 @@ func RtSigprocmask(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 }
 
 // Sigaltstack implements linux syscall sigaltstack(2).
-func Sigaltstack(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Sigaltstack(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	setaddr := args[0].Pointer()
 	oldaddr := args[1].Pointer()
 
-	alt := t.SignalStack()
-	if oldaddr != 0 {
-		if err := t.CopyOutSignalStack(oldaddr, &alt); err != nil {
-			return 0, nil, err
-		}
-	}
-	if setaddr != 0 {
-		alt, err := t.CopyInSignalStack(setaddr)
-		if err != nil {
-			return 0, nil, err
-		}
-		// The signal stack cannot be changed if the task is currently
-		// on the stack. This is enforced at the lowest level because
-		// these semantics apply to changing the signal stack via a
-		// ucontext during a signal handler.
-		if !t.SetSignalStack(alt) {
-			return 0, nil, syserror.EPERM
-		}
-	}
-
-	return 0, nil, nil
+	ctrl, err := t.SigaltStack(setaddr, oldaddr)
+	return 0, ctrl, err
 }
 
 // Pause implements linux syscall pause(2).
-func Pause(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	return 0, nil, syserror.ConvertIntr(t.Block(nil), syserror.ERESTARTNOHAND)
+func Pause(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	return 0, nil, linuxerr.ConvertIntr(t.Block(nil), linuxerr.ERESTARTNOHAND)
 }
 
 // RtSigpending implements linux syscall rt_sigpending(2).
-func RtSigpending(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func RtSigpending(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
 	pending := t.PendingSignals()
 	_, err := pending.CopyOut(t, addr)
@@ -360,13 +341,13 @@ func RtSigpending(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 }
 
 // RtSigtimedwait implements linux syscall rt_sigtimedwait(2).
-func RtSigtimedwait(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func RtSigtimedwait(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	sigset := args[0].Pointer()
 	siginfo := args[1].Pointer()
 	timespec := args[2].Pointer()
 	sigsetsize := args[3].SizeT()
 
-	mask, err := CopyInSigSet(t, sigset, sigsetsize)
+	mask, err := copyInSigSet(t, sigset, sigsetsize)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -378,7 +359,7 @@ func RtSigtimedwait(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 			return 0, nil, err
 		}
 		if !d.Valid() {
-			return 0, nil, syserror.EINVAL
+			return 0, nil, linuxerr.EINVAL
 		}
 		timeout = time.Duration(d.ToNsecCapped())
 	} else {
@@ -400,7 +381,7 @@ func RtSigtimedwait(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 }
 
 // RtSigqueueinfo implements linux syscall rt_sigqueueinfo(2).
-func RtSigqueueinfo(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func RtSigqueueinfo(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	pid := kernel.ThreadID(args[0].Int())
 	sig := linux.Signal(args[1].Int())
 	infoAddr := args[2].Pointer()
@@ -410,7 +391,7 @@ func RtSigqueueinfo(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 	// We must ensure that the Signo is set (Linux overrides this in the
 	// same way), and that the code is in the allowed set. This same logic
 	// appears below in RtSigtgqueueinfo and should be kept in sync.
-	var info arch.SignalInfo
+	var info linux.SignalInfo
 	if _, err := info.CopyIn(t, infoAddr); err != nil {
 		return 0, nil, err
 	}
@@ -421,27 +402,27 @@ func RtSigqueueinfo(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 		// Deliver to the given task's thread group.
 		target := t.PIDNamespace().TaskWithID(pid)
 		if target == nil {
-			return 0, nil, syserror.ESRCH
+			return 0, nil, linuxerr.ESRCH
 		}
 
 		// If the sender is not the receiver, it can't use si_codes used by the
 		// kernel or SI_TKILL.
-		if (info.Code >= 0 || info.Code == arch.SignalInfoTkill) && target != t {
-			return 0, nil, syserror.EPERM
+		if (info.Code >= 0 || info.Code == linux.SI_TKILL) && target != t {
+			return 0, nil, linuxerr.EPERM
 		}
 
 		if !mayKill(t, target, sig) {
-			return 0, nil, syserror.EPERM
+			return 0, nil, linuxerr.EPERM
 		}
 
-		if err := target.SendGroupSignal(&info); err != syserror.ESRCH {
+		if err := target.SendGroupSignal(&info); !linuxerr.Equals(linuxerr.ESRCH, err) {
 			return 0, nil, err
 		}
 	}
 }
 
 // RtTgsigqueueinfo implements linux syscall rt_tgsigqueueinfo(2).
-func RtTgsigqueueinfo(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func RtTgsigqueueinfo(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	tgid := kernel.ThreadID(args[0].Int())
 	tid := kernel.ThreadID(args[1].Int())
 	sig := linux.Signal(args[2].Int())
@@ -450,11 +431,11 @@ func RtTgsigqueueinfo(t *kernel.Task, args arch.SyscallArguments) (uintptr, *ker
 	// N.B. Inconsistent with man page, linux actually rejects calls with
 	// tgid/tid <=0 by EINVAL. This isn't the same for all signal calls.
 	if tgid <= 0 || tid <= 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// Copy in the info. See RtSigqueueinfo above.
-	var info arch.SignalInfo
+	var info linux.SignalInfo
 	if _, err := info.CopyIn(t, infoAddr); err != nil {
 		return 0, nil, err
 	}
@@ -464,23 +445,23 @@ func RtTgsigqueueinfo(t *kernel.Task, args arch.SyscallArguments) (uintptr, *ker
 	targetTG := t.PIDNamespace().ThreadGroupWithID(tgid)
 	target := t.PIDNamespace().TaskWithID(tid)
 	if targetTG == nil || target == nil || target.ThreadGroup() != targetTG {
-		return 0, nil, syserror.ESRCH
+		return 0, nil, linuxerr.ESRCH
 	}
 
 	// If the sender is not the receiver, it can't use si_codes used by the
 	// kernel or SI_TKILL.
-	if (info.Code >= 0 || info.Code == arch.SignalInfoTkill) && target != t {
-		return 0, nil, syserror.EPERM
+	if (info.Code >= 0 || info.Code == linux.SI_TKILL) && target != t {
+		return 0, nil, linuxerr.EPERM
 	}
 
 	if !mayKill(t, target, sig) {
-		return 0, nil, syserror.EPERM
+		return 0, nil, linuxerr.EPERM
 	}
 	return 0, nil, target.SendSignal(&info)
 }
 
 // RtSigsuspend implements linux syscall rt_sigsuspend(2).
-func RtSigsuspend(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func RtSigsuspend(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	sigset := args[0].Pointer()
 
 	// Copy in the signal mask.
@@ -496,11 +477,11 @@ func RtSigsuspend(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 	t.SetSavedSignalMask(oldmask)
 
 	// Perform the wait.
-	return 0, nil, syserror.ConvertIntr(t.Block(nil), syserror.ERESTARTNOHAND)
+	return 0, nil, linuxerr.ConvertIntr(t.Block(nil), linuxerr.ERESTARTNOHAND)
 }
 
 // RestartSyscall implements the linux syscall restart_syscall(2).
-func RestartSyscall(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func RestartSyscall(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	if r := t.SyscallRestartBlock(); r != nil {
 		n, err := r.Restart(t)
 		return n, nil, err
@@ -512,20 +493,20 @@ func RestartSyscall(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kerne
 	// function is never null by (re)initializing it with one that translates
 	// the restart into EINTR. We'll emulate that behaviour.
 	t.Debugf("Restart block missing in restart_syscall(2). Did ptrace inject a return value of ERESTART_RESTARTBLOCK?")
-	return 0, nil, syserror.EINTR
+	return 0, nil, linuxerr.EINTR
 }
 
 // sharedSignalfd is shared between the two calls.
 func sharedSignalfd(t *kernel.Task, fd int32, sigset hostarch.Addr, sigsetsize uint, flags int32) (uintptr, *kernel.SyscallControl, error) {
 	// Copy in the signal mask.
-	mask, err := CopyInSigSet(t, sigset, sigsetsize)
+	mask, err := copyInSigSet(t, sigset, sigsetsize)
 	if err != nil {
 		return 0, nil, err
 	}
 
 	// Always check for valid flags, even if not creating.
 	if flags&^(linux.SFD_NONBLOCK|linux.SFD_CLOEXEC) != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// Is this a change to an existing signalfd?
@@ -534,31 +515,32 @@ func sharedSignalfd(t *kernel.Task, fd int32, sigset hostarch.Addr, sigsetsize u
 	if fd != -1 {
 		file := t.GetFile(fd)
 		if file == nil {
-			return 0, nil, syserror.EBADF
+			return 0, nil, linuxerr.EBADF
 		}
 		defer file.DecRef(t)
 
 		// Is this a signalfd?
-		if s, ok := file.FileOperations.(*signalfd.SignalOperations); ok {
-			s.SetMask(mask)
+		if sfd, ok := file.Impl().(*signalfd.SignalFileDescription); ok {
+			sfd.SetMask(mask)
 			return 0, nil, nil
 		}
 
 		// Not a signalfd.
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
+	}
+
+	fileFlags := uint32(linux.O_RDWR)
+	if flags&linux.SFD_NONBLOCK != 0 {
+		fileFlags |= linux.O_NONBLOCK
 	}
 
 	// Create a new file.
-	file, err := signalfd.New(t, mask)
+	vfsObj := t.Kernel().VFS()
+	file, err := signalfd.New(vfsObj, t, mask, fileFlags)
 	if err != nil {
 		return 0, nil, err
 	}
 	defer file.DecRef(t)
-
-	// Set appropriate flags.
-	file.SetFlags(fs.SettableFileFlags{
-		NonBlocking: flags&linux.SFD_NONBLOCK != 0,
-	})
 
 	// Create a new descriptor.
 	fd, err = t.NewFDFrom(0, file, kernel.FDFlags{
@@ -573,7 +555,7 @@ func sharedSignalfd(t *kernel.Task, fd int32, sigset hostarch.Addr, sigsetsize u
 }
 
 // Signalfd implements the linux syscall signalfd(2).
-func Signalfd(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Signalfd(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	sigset := args[1].Pointer()
 	sigsetsize := args[2].SizeT()
@@ -581,7 +563,7 @@ func Signalfd(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 }
 
 // Signalfd4 implements the linux syscall signalfd4(2).
-func Signalfd4(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Signalfd4(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	sigset := args[1].Pointer()
 	sigsetsize := args[2].SizeT()

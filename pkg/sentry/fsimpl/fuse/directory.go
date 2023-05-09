@@ -15,14 +15,12 @@
 package fuse
 
 import (
-	"sync/atomic"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -32,27 +30,27 @@ type directoryFD struct {
 
 // Allocate implements directoryFD.Allocate.
 func (*directoryFD) Allocate(ctx context.Context, mode, offset, length uint64) error {
-	return syserror.EISDIR
+	return linuxerr.EISDIR
 }
 
 // PRead implements vfs.FileDescriptionImpl.PRead.
 func (*directoryFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
-	return 0, syserror.EISDIR
+	return 0, linuxerr.EISDIR
 }
 
 // Read implements vfs.FileDescriptionImpl.Read.
 func (*directoryFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.ReadOptions) (int64, error) {
-	return 0, syserror.EISDIR
+	return 0, linuxerr.EISDIR
 }
 
 // PWrite implements vfs.FileDescriptionImpl.PWrite.
 func (*directoryFD) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
-	return 0, syserror.EISDIR
+	return 0, linuxerr.EISDIR
 }
 
 // Write implements vfs.FileDescriptionImpl.Write.
 func (*directoryFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
-	return 0, syserror.EISDIR
+	return 0, linuxerr.EISDIR
 }
 
 // IterDirents implements vfs.FileDescriptionImpl.IterDirents.
@@ -62,7 +60,7 @@ func (dir *directoryFD) IterDirents(ctx context.Context, callback vfs.IterDirent
 
 	in := linux.FUSEReadIn{
 		Fh:     dir.Fh,
-		Offset: uint64(atomic.LoadInt64(&dir.off)),
+		Offset: uint64(dir.off.Load()),
 		Size:   linux.FUSE_PAGE_SIZE,
 		Flags:  dir.statusFlags(),
 	}
@@ -94,7 +92,7 @@ func (dir *directoryFD) IterDirents(ctx context.Context, callback vfs.IterDirent
 		if err := callback.Handle(dirent); err != nil {
 			return err
 		}
-		atomic.StoreInt64(&dir.off, nextOff)
+		dir.off.Store(nextOff)
 	}
 
 	return nil

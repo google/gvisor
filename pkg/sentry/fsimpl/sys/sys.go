@@ -23,17 +23,18 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/coverage"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 const (
 	// Name is the default filesystem name.
 	Name                     = "sysfs"
+	defaultSysMode           = linux.FileMode(0444)
 	defaultSysDirMode        = linux.FileMode(0755)
 	defaultMaxCachedDentries = uint64(1000)
 )
@@ -42,6 +43,15 @@ const (
 //
 // +stateify savable
 type FilesystemType struct{}
+
+// InternalData contains internal data passed in via
+// vfs.GetFilesystemOptions.InternalData.
+//
+// +stateify savable
+type InternalData struct {
+	// ProductName is the value to be set to devices/virtual/dmi/id/product_name.
+	ProductName string
+}
 
 // filesystem implements vfs.FilesystemImpl.
 //
@@ -74,7 +84,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		maxCachedDentries, err = strconv.ParseUint(str, 10, 64)
 		if err != nil {
 			ctx.Warningf("sys.FilesystemType.GetFilesystem: invalid dentry cache limit: dentry_cache_limit=%s", str)
-			return nil, nil, syserror.EINVAL
+			return nil, nil, linuxerr.EINVAL
 		}
 	}
 
@@ -84,20 +94,54 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	fs.MaxCachedDentries = maxCachedDentries
 	fs.VFSFilesystem().Init(vfsObj, &fsType, fs)
 
-	root := fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
-		"block": fs.newDir(ctx, creds, defaultSysDirMode, nil),
-		"bus":   fs.newDir(ctx, creds, defaultSysDirMode, nil),
-		"class": fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
-			"power_supply": fs.newDir(ctx, creds, defaultSysDirMode, nil),
+	k := kernel.KernelFromContext(ctx)
+	fsDirChildren := make(map[string]kernfs.Inode)
+	// Create an empty directory to serve as the mount point for cgroupfs when
+	// cgroups are available. This emulates Linux behaviour, see
+	// kernel/cgroup.c:cgroup_init(). Note that in Linux, userspace (typically
+	// the init process) is ultimately responsible for actually mounting
+	// cgroupfs, but the kernel creates the mountpoint. For the sentry, the
+	// launcher mounts cgroupfs.
+	if k.CgroupRegistry() != nil {
+		fsDirChildren["cgroup"] = fs.newDir(ctx, creds, defaultSysDirMode, nil)
+	}
+
+	classSub := map[string]kernfs.Inode{
+		"power_supply": fs.newDir(ctx, creds, defaultSysDirMode, nil),
+		"net":          fs.newDir(ctx, creds, defaultSysDirMode, fs.newNetDir(ctx, creds, defaultSysDirMode)),
+	}
+	devicesSub := map[string]kernfs.Inode{
+		"system": fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
+			"cpu": cpuDir(ctx, fs, creds),
 		}),
-		"dev": fs.newDir(ctx, creds, defaultSysDirMode, nil),
-		"devices": fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
-			"system": fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
-				"cpu": cpuDir(ctx, fs, creds),
+	}
+
+	productName := ""
+	if opts.InternalData != nil {
+		data := opts.InternalData.(*InternalData)
+		productName = data.ProductName
+	}
+	if len(productName) > 0 {
+		log.Debugf("Setting product_name: %q", productName)
+		classSub["dmi"] = fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
+			"id": kernfs.NewStaticSymlink(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), "../../devices/virtual/dmi/id"),
+		})
+		devicesSub["virtual"] = fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
+			"dmi": fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
+				"id": fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
+					"product_name": fs.newStaticFile(ctx, creds, defaultSysMode, productName+"\n"),
+				}),
 			}),
-		}),
+		})
+	}
+	root := fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
+		"block":    fs.newDir(ctx, creds, defaultSysDirMode, nil),
+		"bus":      fs.newDir(ctx, creds, defaultSysDirMode, nil),
+		"class":    fs.newDir(ctx, creds, defaultSysDirMode, classSub),
+		"dev":      fs.newDir(ctx, creds, defaultSysDirMode, nil),
+		"devices":  fs.newDir(ctx, creds, defaultSysDirMode, devicesSub),
 		"firmware": fs.newDir(ctx, creds, defaultSysDirMode, nil),
-		"fs":       fs.newDir(ctx, creds, defaultSysDirMode, nil),
+		"fs":       fs.newDir(ctx, creds, defaultSysDirMode, fsDirChildren),
 		"kernel":   kernelDir(ctx, fs, creds),
 		"module":   fs.newDir(ctx, creds, defaultSysDirMode, nil),
 		"power":    fs.newDir(ctx, creds, defaultSysDirMode, nil),
@@ -122,11 +166,11 @@ func cpuDir(ctx context.Context, fs *filesystem, creds *auth.Credentials) kernfs
 }
 
 func kernelDir(ctx context.Context, fs *filesystem, creds *auth.Credentials) kernfs.Inode {
-	// If kcov is available, set up /sys/kernel/debug/kcov. Technically, debugfs
-	// should be mounted at debug/, but for our purposes, it is sufficient to
-	// keep it in sys.
+	// Set up /sys/kernel/debug/kcov. Technically, debugfs should be
+	// mounted at debug/, but for our purposes, it is sufficient to keep it
+	// in sys.
 	var children map[string]kernfs.Inode
-	if coverage.KcovAvailable() {
+	if coverage.KcovSupported() {
 		log.Debugf("Set up /sys/kernel/debug/kcov")
 		children = map[string]kernfs.Inode{
 			"debug": fs.newDir(ctx, creds, linux.FileMode(0700), map[string]kernfs.Inode{
@@ -158,6 +202,7 @@ type dir struct {
 	kernfs.InodeNotSymlink
 	kernfs.InodeDirectoryNoNewChildren
 	kernfs.InodeTemporary
+	kernfs.InodeWatches
 	kernfs.OrderedChildren
 
 	locks vfs.FileLocks
@@ -174,11 +219,13 @@ func (fs *filesystem) newDir(ctx context.Context, creds *auth.Credentials, mode 
 
 // SetStat implements kernfs.Inode.SetStat not allowing inode attributes to be changed.
 func (*dir) SetStat(context.Context, *vfs.Filesystem, *auth.Credentials, vfs.SetStatOptions) error {
-	return syserror.EPERM
+	return linuxerr.EPERM
 }
 
 // Open implements kernfs.Inode.Open.
 func (d *dir) Open(ctx context.Context, rp *vfs.ResolvingPath, kd *kernfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
+	opts.Flags &= linux.O_ACCMODE | linux.O_CREAT | linux.O_EXCL | linux.O_TRUNC |
+		linux.O_DIRECTORY | linux.O_NOFOLLOW | linux.O_NONBLOCK | linux.O_NOCTTY
 	fd, err := kernfs.NewGenericDirectoryFD(rp.Mount(), kd, &d.OrderedChildren, &d.locks, &opts, kernfs.GenericDirectoryFDOptions{
 		SeekEnd: kernfs.SeekEndStaticEntries,
 	})
@@ -226,4 +273,16 @@ type implStatFS struct{}
 // StatFS implements kernfs.Inode.StatFS.
 func (*implStatFS) StatFS(context.Context, *vfs.Filesystem) (linux.Statfs, error) {
 	return vfs.GenericStatFS(linux.SYSFS_MAGIC), nil
+}
+
+// +stateify savable
+type staticFile struct {
+	kernfs.DynamicBytesFile
+	vfs.StaticData
+}
+
+func (fs *filesystem) newStaticFile(ctx context.Context, creds *auth.Credentials, mode linux.FileMode, data string) kernfs.Inode {
+	s := &staticFile{StaticData: vfs.StaticData{Data: data}}
+	s.Init(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), s, mode)
+	return s
 }

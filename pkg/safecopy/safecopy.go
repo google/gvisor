@@ -18,11 +18,12 @@ package safecopy
 
 import (
 	"fmt"
-	"reflect"
 	"runtime"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/errors"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/sighandling"
 )
 
 // SegvError is returned when a safecopy function receives SIGSEGV.
@@ -83,13 +84,18 @@ var (
 	// when we get a SIGSEGV that is not interesting to us.
 	savedSigSegVHandler uintptr
 
-	// same a above, but for SIGBUS signals.
+	// Same as above, but for SIGBUS signals.
 	savedSigBusHandler uintptr
 )
 
 // signalHandler is our replacement signal handler for SIGSEGV and SIGBUS
 // signals.
 func signalHandler()
+
+// addrOfSignalHandler returns the start address of signalHandler.
+//
+// See comment on addrOfMemcpy for more details.
+func addrOfSignalHandler() uintptr
 
 // FindEndAddress returns the end address (one byte beyond the last) of the
 // function that contains the specified address (begin).
@@ -111,34 +117,34 @@ func initializeAddresses() {
 	// The following functions are written in assembly language, so they won't
 	// be inlined by the existing compiler/linker. Tests will fail if this
 	// assumption is violated.
-	memcpyBegin = reflect.ValueOf(memcpy).Pointer()
+	memcpyBegin = addrOfMemcpy()
 	memcpyEnd = FindEndAddress(memcpyBegin)
-	memclrBegin = reflect.ValueOf(memclr).Pointer()
+	memclrBegin = addrOfMemclr()
 	memclrEnd = FindEndAddress(memclrBegin)
-	swapUint32Begin = reflect.ValueOf(swapUint32).Pointer()
+	swapUint32Begin = addrOfSwapUint32()
 	swapUint32End = FindEndAddress(swapUint32Begin)
-	swapUint64Begin = reflect.ValueOf(swapUint64).Pointer()
+	swapUint64Begin = addrOfSwapUint64()
 	swapUint64End = FindEndAddress(swapUint64Begin)
-	compareAndSwapUint32Begin = reflect.ValueOf(compareAndSwapUint32).Pointer()
+	compareAndSwapUint32Begin = addrOfCompareAndSwapUint32()
 	compareAndSwapUint32End = FindEndAddress(compareAndSwapUint32Begin)
-	loadUint32Begin = reflect.ValueOf(loadUint32).Pointer()
+	loadUint32Begin = addrOfLoadUint32()
 	loadUint32End = FindEndAddress(loadUint32Begin)
 }
 
 func init() {
 	initializeAddresses()
-	if err := ReplaceSignalHandler(unix.SIGSEGV, reflect.ValueOf(signalHandler).Pointer(), &savedSigSegVHandler); err != nil {
+	if err := sighandling.ReplaceSignalHandler(unix.SIGSEGV, addrOfSignalHandler(), &savedSigSegVHandler); err != nil {
 		panic(fmt.Sprintf("Unable to set handler for SIGSEGV: %v", err))
 	}
-	if err := ReplaceSignalHandler(unix.SIGBUS, reflect.ValueOf(signalHandler).Pointer(), &savedSigBusHandler); err != nil {
+	if err := sighandling.ReplaceSignalHandler(unix.SIGBUS, addrOfSignalHandler(), &savedSigBusHandler); err != nil {
 		panic(fmt.Sprintf("Unable to set handler for SIGBUS: %v", err))
 	}
-	syserror.AddErrorUnwrapper(func(e error) (unix.Errno, bool) {
+	linuxerr.AddErrorUnwrapper(func(e error) (*errors.Error, bool) {
 		switch e.(type) {
 		case SegvError, BusError, AlignmentError:
-			return unix.EFAULT, true
+			return linuxerr.EFAULT, true
 		default:
-			return 0, false
+			return nil, false
 		}
 	})
 }

@@ -1,0 +1,143 @@
+test name,bug id,comment
+com/sun/jdi/OnJcmdTest.java,b/180542784,
+com/sun/jdi/ProcessAttachTest.java,,
+com/sun/management/HotSpotDiagnosticMXBean/CheckOrigin.java,,
+com/sun/management/ThreadMXBean/ThreadCpuTimeArray.java,,Test assumes high CPU clock precision
+com/sun/tools/attach/AttachSelf.java,,
+com/sun/tools/attach/BasicTests.java,,
+com/sun/tools/attach/PermissionTest.java,,
+com/sun/tools/attach/StartManagementAgent.java,,Broken test
+com/sun/tools/attach/TempDirTest.java,,
+com/sun/tools/attach/modules/Driver.java,,
+java/io/File/GetXSpace.java,,
+java/lang/Class/GetPackageBootLoaderChildLayer.java,,
+java/lang/ClassLoader/nativeLibrary/NativeLibraryTest.java,,Broken test
+java/lang/String/nativeEncoding/StringPlatformChars.java,,Broken test
+java/lang/instrument/HiddenClass/HiddenClassAgent.java,,Broken test
+java/lang/invoke/LFCaching/LFGarbageCollectedTest.java,,Broken test
+java/lang/invoke/lambda/LambdaFileEncodingSerialization.java,,Broken test
+java/lang/reflect/exeCallerAccessTest/CallerAccessTest.java,,Broken test
+java/net/DatagramSocket/AddressNotSet.java,,
+java/net/DatagramSocket/SetGetReceiveBufferSize.java,b/180507650,
+java/net/MulticastSocket/MulticastTTL.java,,
+java/net/MulticastSocket/Promiscuous.java,,
+java/net/MulticastSocket/SendPortZero.java,,
+java/net/MulticastSocket/SetLoopbackMode.java,,
+java/net/MulticastSocket/SetLoopbackModeIPv4.java,,
+java/net/MulticastSocket/SetLoopbackOption.java,,
+java/net/MulticastSocket/SetTTLAndGetTTL.java,,
+java/net/MulticastSocket/TestDefaults.java,,
+java/net/MulticastSocket/TimeToLive.java,,
+java/net/NetworkInterface/NetworkInterfaceStreamTest.java,,
+java/net/Socket/SocketAcceptInterruptTest.java,,Broken test
+java/net/Socket/SocketReadInterruptTest.java,,Broken test
+java/net/Socket/UrgentDataTest.java,b/111515323,
+java/net/SocketOption/OptionsTest.java,,
+java/net/SocketPermission/SocketPermissionTest.java,,
+java/nio/channels/DatagramChannel/SocketOptionTests.java,,java.net.SocketException: Invalid argument
+java/nio/channels/FileChannel/directio/DirectIOTest.java,,Broken test
+java/nio/channels/Selector/OutOfBand.java,,
+java/nio/channels/Selector/OutOfBand.java#id0,,
+java/nio/channels/Selector/SelectWithConsumer.java,,Flaky
+java/nio/channels/etc/PrintSupportedOptions.java,,
+java/nio/channels/spi/SelectorProvider/inheritedChannel/InheritedChannelTest.java,,Broken test
+java/nio/channels/unixdomain/SocketOptions.java,,
+java/rmi/transport/checkLeaseInfoLeak/CheckLeaseLeak.java,,Broken test
+java/security/cert/CertPathBuilder/targetConstraints/BuildEEBasicConstraints.java,,Broken test
+java/security/cert/pkix/policyChanges/TestPolicy.java,,Broken test
+java/util/ResourceBundle/Control/MissingResourceCauseTestRun.java,,Broken test
+java/util/concurrent/locks/Lock/TimedAcquireLeak.java,,
+java/util/logging/LogManager/Configuration/updateConfiguration/SimpleUpdateConfigWithInputStreamTest.java,,Broken test
+java/util/logging/TestLoggerWeakRefLeak.java,,
+javax/imageio/plugins/jpeg/JPEGsNotAcceleratedTest.java,,Broken test
+javax/management/remote/mandatory/connection/RMIConnector_NPETest.java,,Broken test
+javax/management/security/HashedPasswordFileTest.java,,Broken test
+jdk/internal/loader/NativeLibraries/Main.java,,Broken test
+jdk/jfr/api/consumer/log/TestDynamicStart.java,,
+jdk/jfr/api/consumer/streaming/TestBaseRepositoryAfterStart.java,,Times out
+jdk/jfr/api/consumer/streaming/TestBaseRepositoryLastModified.java,,Times out
+jdk/jfr/api/consumer/streaming/TestCrossProcessStreaming.java,,Times out
+jdk/jfr/api/consumer/streaming/TestInProcessMigration.java,,
+jdk/jfr/api/consumer/streaming/TestJVMCrash.java,,
+jdk/jfr/api/consumer/streaming/TestJVMExit.java,,
+jdk/jfr/api/consumer/streaming/TestOutOfProcessMigration.java,,
+jdk/jfr/api/consumer/streaming/TestRepositoryProperty.java,,
+jdk/jfr/event/gc/detailed/TestZUncommitEvent.java,,
+jdk/jfr/event/oldobject/TestLargeRootSet.java,,Flaky - `main' threw exception: java.lang.RuntimeException: Could not find root object
+jdk/jfr/event/runtime/TestNetworkUtilizationEvent.java,,
+jdk/jfr/javaagent/TestLoadedAgent.java,b/180542638,
+jdk/jfr/jcmd/TestJcmdChangeLogLevel.java,,
+jdk/jfr/jcmd/TestJcmdConfigure.java,,
+jdk/jfr/jcmd/TestJcmdDump.java,,
+jdk/jfr/jcmd/TestJcmdDumpGeneratedFilename.java,,
+jdk/jfr/jcmd/TestJcmdDumpLimited.java,,
+jdk/jfr/jcmd/TestJcmdDumpPathToGCRoots.java,,
+jdk/jfr/jcmd/TestJcmdDumpWithFileName.java,b/180542783,
+jdk/jfr/jcmd/TestJcmdLegacy.java,,
+jdk/jfr/jcmd/TestJcmdSaveToFile.java,,
+jdk/jfr/jcmd/TestJcmdStartDirNotExist.java,,
+jdk/jfr/jcmd/TestJcmdStartFlushInterval.java,,
+jdk/jfr/jcmd/TestJcmdStartInvaldFile.java,,
+jdk/jfr/jcmd/TestJcmdStartPathToGCRoots.java,,
+jdk/jfr/jcmd/TestJcmdStartStopDefault.java,,
+jdk/jfr/jcmd/TestJcmdStartWithOptions.java,,
+jdk/jfr/jcmd/TestJcmdStartWithSettings.java,,
+jdk/jfr/jcmd/TestJcmdStopInvalidFile.java,,
+jdk/jfr/jmx/TestGetRecordings.java,b/180542639,
+jdk/jfr/jvm/TestJfrJavaBase.java,,
+jdk/jfr/startupargs/TestStartRecording.java,,
+jdk/net/Sockets/ExtOptionTest.java,,
+sun/management/jmxremote/bootstrap/CustomLauncherTest.java,,Broken test
+sun/management/jmxremote/bootstrap/JvmstatCountersTest.java,,Broken test
+sun/management/jmxremote/bootstrap/LocalManagementTest.java,,Broken test
+sun/management/jmxremote/bootstrap/RmiRegistrySslTest.java,,Broken test
+sun/management/jmxremote/bootstrap/RmiSslBootstrapTest.sh,,Broken test
+sun/management/jmxremote/startstop/JMXStartStopTest.java,,Broken test
+sun/management/jmxremote/startstop/JMXStatusPerfCountersTest.java,,
+sun/management/jmxremote/startstop/JMXStatusTest.java,,
+sun/tools/jcmd/JcmdOutputEncodingTest.java,,
+sun/tools/jcmd/TestJcmdSanity.java,,
+sun/tools/jhsdb/BasicLauncherTest.java,,Broken test
+sun/tools/jhsdb/HeapDumpTest.java,,Broken test
+sun/tools/jhsdb/HeapDumpTestWithActiveProcess.java,,Broken test
+sun/tools/jhsdb/JShellHeapDumpTest.java,,Broken test
+sun/tools/jhsdb/JStackStressTest.java,,Broken test
+sun/tools/jhsdb/heapconfig/JMapHeapConfigTest.java,,Broken test
+sun/tools/jinfo/BasicJInfoTest.java,,
+sun/tools/jinfo/JInfoTest.java,,
+sun/tools/jmap/BasicJMapTest.java,,Broken test
+sun/tools/jstack/BasicJStackTest.java,,
+sun/tools/jstack/DeadlockDetectionTest.java,,
+sun/tools/jstat/jstatClassloadOutput1.sh,,Broken test
+sun/tools/jstatd/TestJstatdPort.java,,Flaky
+sun/tools/jstatd/TestJstatdPortAndServer.java,,Flaky
+tools/jimage/JImageExtractTest.java,,Broken test
+tools/jimage/JImageTest.java,,Broken test
+tools/jlink/JLinkReproducible3Test.java,,Broken test
+tools/jlink/plugins/StripNativeDebugSymbolsPlugin/StripNativeDebugSymbolsPluginTest.java,,Broken test
+tools/jpackage/junit/junit.java,,Broken test
+tools/jpackage/linux/AppCategoryTest.java,,Broken test
+tools/jpackage/linux/LinuxBundleNameTest.java,,Broken test
+tools/jpackage/linux/MaintainerTest.java,,Broken test
+tools/jpackage/linux/PackageDepsTest.java,,Broken test
+tools/jpackage/linux/ReleaseTest.java,,Broken test
+tools/jpackage/linux/jdk/jpackage/tests/UsrTreeTest.java,,Broken test
+tools/jpackage/share/AppLauncherEnvTest.java,,Broken test
+tools/jpackage/share/ArgumentsTest.java,,Broken test
+tools/jpackage/share/EmptyFolderPackageTest.java,,Broken test
+tools/jpackage/share/EmptyFolderTest.java,,Broken test
+tools/jpackage/share/MultiLauncherTwoPhaseTest.java,,Broken test
+tools/jpackage/share/SimplePackageTest.java,,Broken test
+tools/jpackage/share/jdk/jpackage/tests/AppVersionTest.java,,Broken test
+tools/jpackage/share/jdk/jpackage/tests/BasicTest.java,,Broken test
+tools/jpackage/share/jdk/jpackage/tests/CookedRuntimeTest.java,,Broken test
+tools/jpackage/share/jdk/jpackage/tests/DotInNameTest.java,,Broken test
+tools/jpackage/share/jdk/jpackage/tests/JLinkOptionsTest.java,,Broken test
+tools/jpackage/share/jdk/jpackage/tests/MainClassTest.java,,Broken test
+tools/jpackage/share/jdk/jpackage/tests/ModulePathTest.java,,Broken test
+tools/jpackage/share/jdk/jpackage/tests/ModulePathTest2.java,,Broken test
+tools/jpackage/share/jdk/jpackage/tests/ModulePathTest3.java,,Broken test
+tools/jpackage/share/jdk/jpackage/tests/MultipleJarAppTest.java,,Broken test
+tools/jpackage/share/jdk/jpackage/tests/NoMPathRuntimeTest.java,,Broken test
+tools/launcher/BigJar.java,b/111611473,Broken test
+tools/launcher/JliLaunchTest.java,,Broken test

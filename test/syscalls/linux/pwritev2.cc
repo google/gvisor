@@ -284,7 +284,6 @@ TEST(Pwritev2Test, ReadOnlyFile) {
 }
 
 TEST(Pwritev2Test, Pwritev2WithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   SKIP_IF(pwritev2(-1, nullptr, 0, 0, 0) < 0 && errno == ENOSYS);
 
   const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());

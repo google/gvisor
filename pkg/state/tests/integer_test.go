@@ -58,7 +58,7 @@ func TestInt(t *testing.T) {
 }
 
 func TestIntTruncation(t *testing.T) {
-	runTestCases(t, true, "pass", []interface{}{
+	runTestCases(t, true, "pass", []any{
 		truncatingInt8{save: math.MinInt8 - 1},
 		truncatingInt16{save: math.MinInt16 - 1},
 		truncatingInt32{save: math.MinInt32 - 1},
@@ -66,7 +66,7 @@ func TestIntTruncation(t *testing.T) {
 		truncatingInt16{save: math.MaxInt16 + 1},
 		truncatingInt32{save: math.MaxInt32 + 1},
 	})
-	runTestCases(t, false, "fail", []interface{}{
+	runTestCases(t, false, "fail", []any{
 		truncatingInt8{save: 1},
 		truncatingInt16{save: 1},
 		truncatingInt32{save: 1},
@@ -81,12 +81,12 @@ func TestUint(t *testing.T) {
 }
 
 func TestUintTruncation(t *testing.T) {
-	runTestCases(t, true, "pass", []interface{}{
+	runTestCases(t, true, "pass", []any{
 		truncatingUint8{save: math.MaxUint8 + 1},
 		truncatingUint16{save: math.MaxUint16 + 1},
 		truncatingUint32{save: math.MaxUint32 + 1},
 	})
-	runTestCases(t, false, "fail", []interface{}{
+	runTestCases(t, false, "fail", []any{
 		truncatingUint8{save: 1},
 		truncatingUint16{save: 1},
 		truncatingUint32{save: 1},

@@ -17,12 +17,11 @@ package mm
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
-	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -31,7 +30,7 @@ import (
 // +stateify savable
 type aioManager struct {
 	// mu protects below.
-	mu sync.Mutex `state:"nosave"`
+	mu aioManagerMutex `state:"nosave"`
 
 	// aioContexts is the set of asynchronous I/O contexts.
 	contexts map[uint64]*AIOContext
@@ -77,15 +76,6 @@ func (mm *MemoryManager) destroyAIOContextLocked(ctx context.Context, id uint64)
 		return nil
 	}
 
-	// Only unmaps after it assured that the address is a valid aio context to
-	// prevent random memory from been unmapped.
-	//
-	// Note: It's possible to unmap this address and map something else into
-	// the same address. Then it would be unmapping memory that it doesn't own.
-	// This is, however, the way Linux implements AIO. Keeps the same [weird]
-	// semantics in case anyone relies on it.
-	mm.MUnmap(ctx, hostarch.Addr(id), aioRingBufferSize)
-
 	delete(mm.aioManager.contexts, id)
 	aioCtx.destroy()
 	return aioCtx
@@ -105,7 +95,7 @@ func (a *aioManager) lookupAIOContext(id uint64) (*AIOContext, bool) {
 //
 // +stateify savable
 type ioResult struct {
-	data interface{}
+	data any
 	ioEntry
 }
 
@@ -117,7 +107,7 @@ type AIOContext struct {
 	requestReady chan struct{} `state:"nosave"`
 
 	// mu protects below.
-	mu sync.Mutex `state:"nosave"`
+	mu aioContextMutex `state:"nosave"`
 
 	// results is the set of completed requests.
 	results ioList
@@ -158,11 +148,11 @@ func (ctx *AIOContext) Prepare() error {
 	defer ctx.mu.Unlock()
 	if ctx.dead {
 		// Context died after the caller looked it up.
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	if ctx.outstanding >= ctx.maxOutstanding {
 		// Context is busy.
-		return syserror.EAGAIN
+		return linuxerr.EAGAIN
 	}
 	ctx.outstanding++
 	return nil
@@ -170,7 +160,7 @@ func (ctx *AIOContext) Prepare() error {
 
 // PopRequest pops a completed request if available, this function does not do
 // any blocking. Returns false if no request is available.
-func (ctx *AIOContext) PopRequest() (interface{}, bool) {
+func (ctx *AIOContext) PopRequest() (any, bool) {
 	ctx.mu.Lock()
 	defer ctx.mu.Unlock()
 
@@ -189,7 +179,7 @@ func (ctx *AIOContext) PopRequest() (interface{}, bool) {
 
 // FinishRequest finishes a pending request. It queues up the data
 // and notifies listeners.
-func (ctx *AIOContext) FinishRequest(data interface{}) {
+func (ctx *AIOContext) FinishRequest(data any) {
 	ctx.mu.Lock()
 	defer ctx.mu.Unlock()
 
@@ -263,7 +253,7 @@ type aioMappable struct {
 var aioRingBufferSize = uint64(hostarch.Addr(linux.AIORingSize).MustRoundUp())
 
 func newAIOMappable(mfp pgalloc.MemoryFileProvider) (*aioMappable, error) {
-	fr, err := mfp.MemoryFile().Allocate(aioRingBufferSize, usage.Anonymous)
+	fr, err := mfp.MemoryFile().Allocate(aioRingBufferSize, pgalloc.AllocOpts{Kind: usage.Anonymous})
 	if err != nil {
 		return nil, err
 	}
@@ -297,7 +287,7 @@ func (m *aioMappable) InodeID() uint64 {
 // Msync implements memmap.MappingIdentity.Msync.
 func (m *aioMappable) Msync(ctx context.Context, mr memmap.MappableRange) error {
 	// Linux: aio_ring_fops.fsync == NULL
-	return syserror.EINVAL
+	return linuxerr.EINVAL
 }
 
 // AddMapping implements memmap.Mappable.AddMapping.
@@ -305,7 +295,7 @@ func (m *aioMappable) AddMapping(_ context.Context, _ memmap.MappingSpace, ar ho
 	// Don't allow mappings to be expanded (in Linux, fs/aio.c:aio_ring_mmap()
 	// sets VM_DONTEXPAND).
 	if offset != 0 || uint64(ar.Length()) != aioRingBufferSize {
-		return syserror.EFAULT
+		return linuxerr.EFAULT
 	}
 	return nil
 }
@@ -319,13 +309,13 @@ func (m *aioMappable) CopyMapping(ctx context.Context, ms memmap.MappingSpace, s
 	// Don't allow mappings to be expanded (in Linux, fs/aio.c:aio_ring_mmap()
 	// sets VM_DONTEXPAND).
 	if offset != 0 || uint64(dstAR.Length()) != aioRingBufferSize {
-		return syserror.EFAULT
+		return linuxerr.EFAULT
 	}
 	// Require that the mapping correspond to a live AIOContext. Compare
 	// Linux's fs/aio.c:aio_ring_mremap().
 	mm, ok := ms.(*MemoryManager)
 	if !ok {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	am := &mm.aioManager
 	am.mu.Lock()
@@ -333,12 +323,12 @@ func (m *aioMappable) CopyMapping(ctx context.Context, ms memmap.MappingSpace, s
 	oldID := uint64(srcAR.Start)
 	aioCtx, ok := am.contexts[oldID]
 	if !ok {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	aioCtx.mu.Lock()
 	defer aioCtx.mu.Unlock()
 	if aioCtx.dead {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	// Use the new ID for the AIOContext.
 	am.contexts[uint64(dstAR.Start)] = aioCtx
@@ -350,7 +340,7 @@ func (m *aioMappable) CopyMapping(ctx context.Context, ms memmap.MappingSpace, s
 func (m *aioMappable) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
 	var err error
 	if required.End > m.fr.Length() {
-		err = &memmap.BusError{syserror.EFAULT}
+		err = &memmap.BusError{linuxerr.EFAULT}
 	}
 	if source := optional.Intersect(memmap.MappableRange{0, m.fr.Length()}); source.Length() != 0 {
 		return []memmap.Translation{
@@ -399,7 +389,7 @@ func (mm *MemoryManager) NewAIOContext(ctx context.Context, events uint32) (uint
 	id := uint64(addr)
 	if !mm.aioManager.newAIOContext(events, id) {
 		mm.MUnmap(ctx, addr, aioRingBufferSize)
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	return id, nil
 }
@@ -410,6 +400,15 @@ func (mm *MemoryManager) DestroyAIOContext(ctx context.Context, id uint64) *AIOC
 	if !mm.isValidAddr(ctx, id) {
 		return nil
 	}
+
+	// Only unmaps after it assured that the address is a valid aio context to
+	// prevent random memory from been unmapped.
+	//
+	// Note: It's possible to unmap this address and map something else into
+	// the same address. Then it would be unmapping memory that it doesn't own.
+	// This is, however, the way Linux implements AIO. Keeps the same [weird]
+	// semantics in case anyone relies on it.
+	mm.MUnmap(ctx, hostarch.Addr(id), aioRingBufferSize)
 
 	mm.aioManager.mu.Lock()
 	defer mm.aioManager.mu.Unlock()

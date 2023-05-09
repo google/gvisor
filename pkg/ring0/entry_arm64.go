@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build arm64
 // +build arm64
 
 package ring0
@@ -46,12 +47,14 @@ func El0_irq_invalid()
 func El0_fiq_invalid()
 func El0_error_invalid()
 
-func Vectors()
+func vectors()
+func AddrOfVectors() uintptr
 
-// Start is the CPU entrypoint.
+// start is the CPU entrypoint.
 //
 // The CPU state will be set to c.Registers().
-func Start()
+func start()
+func AddrOfStart() uintptr
 func kernelExitToEl1()
 
 func kernelExitToEl0()

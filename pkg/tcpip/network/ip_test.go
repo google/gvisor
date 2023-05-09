@@ -15,38 +15,46 @@
 package ip_test
 
 import (
+	"bytes"
 	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
+	"gvisor.dev/gvisor/pkg/tcpip/prependable"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/raw"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
+	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-const (
-	localIPv4Addr  = tcpip.Address("\x0a\x00\x00\x01")
-	remoteIPv4Addr = tcpip.Address("\x0a\x00\x00\x02")
-	ipv4SubnetAddr = tcpip.Address("\x0a\x00\x00\x00")
-	ipv4SubnetMask = tcpip.Address("\xff\xff\xff\x00")
-	ipv4Gateway    = tcpip.Address("\x0a\x00\x00\x03")
-	localIPv6Addr  = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
-	remoteIPv6Addr = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
-	ipv6SubnetAddr = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00")
-	ipv6SubnetMask = tcpip.Address("\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\x00")
-	ipv6Gateway    = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x03")
-	nicID          = 1
+const nicID = 1
+
+var (
+	localIPv4Addr  = testutil.MustParse4("10.0.0.1")
+	remoteIPv4Addr = testutil.MustParse4("10.0.0.2")
+	ipv4SubnetAddr = testutil.MustParse4("10.0.0.0")
+	ipv4SubnetMask = testutil.MustParse4("255.255.255.0")
+	ipv4Gateway    = testutil.MustParse4("10.0.0.3")
+	localIPv6Addr  = testutil.MustParse6("a00::1")
+	remoteIPv6Addr = testutil.MustParse6("a00::2")
+	ipv6SubnetAddr = testutil.MustParse6("a00::")
+	ipv6SubnetMask = testutil.MustParse6("ffff:ffff:ffff:ffff:ffff:ffff:ffff:ff00")
+	ipv6Gateway    = testutil.MustParse6("a00::3")
 )
 
 var localIPv4AddrWithPrefix = tcpip.AddressWithPrefix{
@@ -86,12 +94,13 @@ type testObject struct {
 
 	dataCalls    int
 	controlCalls int
+	rawCalls     int
 }
 
 // checkValues verifies that the transport protocol, data contents, src & dst
 // addresses of a packet match what's expected. If any field doesn't match, the
 // test fails.
-func (t *testObject) checkValues(protocol tcpip.TransportProtocolNumber, v buffer.View, srcAddr, dstAddr tcpip.Address) {
+func (t *testObject) checkValues(protocol tcpip.TransportProtocolNumber, v []byte, srcAddr, dstAddr tcpip.Address) {
 	if protocol != t.protocol {
 		t.t.Errorf("protocol = %v, want %v", protocol, t.protocol)
 	}
@@ -118,9 +127,11 @@ func (t *testObject) checkValues(protocol tcpip.TransportProtocolNumber, v buffe
 // DeliverTransportPacket is called by network endpoints after parsing incoming
 // packets. This is used by the test object to verify that the results of the
 // parsing are expected.
-func (t *testObject) DeliverTransportPacket(protocol tcpip.TransportProtocolNumber, pkt *stack.PacketBuffer) stack.TransportPacketDisposition {
+func (t *testObject) DeliverTransportPacket(protocol tcpip.TransportProtocolNumber, pkt stack.PacketBufferPtr) stack.TransportPacketDisposition {
 	netHdr := pkt.Network()
-	t.checkValues(protocol, pkt.Data().AsRange().ToOwnedView(), netHdr.SourceAddress(), netHdr.DestinationAddress())
+	v := pkt.Data().AsRange().ToView()
+	defer v.Release()
+	t.checkValues(protocol, v.AsSlice(), netHdr.SourceAddress(), netHdr.DestinationAddress())
 	t.dataCalls++
 	return stack.TransportPacketHandled
 }
@@ -128,8 +139,10 @@ func (t *testObject) DeliverTransportPacket(protocol tcpip.TransportProtocolNumb
 // DeliverTransportError is called by network endpoints after parsing
 // incoming control (ICMP) packets. This is used by the test object to verify
 // that the results of the parsing are expected.
-func (t *testObject) DeliverTransportError(local, remote tcpip.Address, net tcpip.NetworkProtocolNumber, trans tcpip.TransportProtocolNumber, transErr stack.TransportError, pkt *stack.PacketBuffer) {
-	t.checkValues(trans, pkt.Data().AsRange().ToOwnedView(), remote, local)
+func (t *testObject) DeliverTransportError(local, remote tcpip.Address, net tcpip.NetworkProtocolNumber, trans tcpip.TransportProtocolNumber, transErr stack.TransportError, pkt stack.PacketBufferPtr) {
+	v := pkt.Data().AsRange().ToView()
+	defer v.Release()
+	t.checkValues(trans, v.AsSlice(), remote, local)
 	if diff := cmp.Diff(
 		t.transErr,
 		transportError{
@@ -144,6 +157,10 @@ func (t *testObject) DeliverTransportError(local, remote tcpip.Address, net tcpi
 		t.t.Errorf("transport error mismatch (-want +got):\n%s", diff)
 	}
 	t.controlCalls++
+}
+
+func (t *testObject) DeliverRawPacket(tcpip.TransportProtocolNumber, stack.PacketBufferPtr) {
+	t.rawCalls++
 }
 
 // Attach is only implemented to satisfy the LinkEndpoint interface.
@@ -181,30 +198,25 @@ func (*testObject) Wait() {}
 // WritePacket is called by network endpoints after producing a packet and
 // writing it to the link endpoint. This is used by the test object to verify
 // that the produced packet is as expected.
-func (t *testObject) WritePacket(_ *stack.Route, _ *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
+func (t *testObject) WritePacket(_ *stack.Route, pkt stack.PacketBufferPtr) tcpip.Error {
 	var prot tcpip.TransportProtocolNumber
 	var srcAddr tcpip.Address
 	var dstAddr tcpip.Address
 
 	if t.v4 {
-		h := header.IPv4(pkt.NetworkHeader().View())
+		h := header.IPv4(pkt.NetworkHeader().Slice())
 		prot = tcpip.TransportProtocolNumber(h.Protocol())
 		srcAddr = h.SourceAddress()
 		dstAddr = h.DestinationAddress()
 
 	} else {
-		h := header.IPv6(pkt.NetworkHeader().View())
+		h := header.IPv6(pkt.NetworkHeader().Slice())
 		prot = tcpip.TransportProtocolNumber(h.NextHeader())
 		srcAddr = h.SourceAddress()
 		dstAddr = h.DestinationAddress()
 	}
-	t.checkValues(prot, pkt.Data().AsRange().ToOwnedView(), srcAddr, dstAddr)
+	t.checkValues(prot, pkt.Data().AsRange().ToSlice(), srcAddr, dstAddr)
 	return nil
-}
-
-// WritePackets implements stack.LinkEndpoint.WritePackets.
-func (*testObject) WritePackets(_ *stack.Route, _ *stack.GSO, pkt stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
-	panic("not implemented")
 }
 
 // ARPHardwareType implements stack.LinkEndpoint.ARPHardwareType.
@@ -213,17 +225,39 @@ func (*testObject) ARPHardwareType() header.ARPHardwareType {
 }
 
 // AddHeader implements stack.LinkEndpoint.AddHeader.
-func (*testObject) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+func (*testObject) AddHeader(stack.PacketBufferPtr) {
 	panic("not implemented")
 }
 
-func buildIPv4Route(local, remote tcpip.Address) (*stack.Route, tcpip.Error) {
+type testContext struct {
+	s *stack.Stack
+}
+
+func newTestContext() testContext {
 	s := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol},
+		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
 		TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol, tcp.NewProtocol},
+		RawFactory:         raw.EndpointFactory{},
 	})
+	return testContext{s: s}
+}
+
+func (ctx *testContext) cleanup() {
+	ctx.s.Close()
+	ctx.s.Wait()
+	refs.DoRepeatedLeakCheck()
+}
+
+func buildIPv4Route(ctx testContext, local, remote tcpip.Address) (*stack.Route, tcpip.Error) {
+	s := ctx.s
 	s.CreateNIC(nicID, loopback.New())
-	s.AddAddress(nicID, ipv4.ProtocolNumber, local)
+	protocolAddr := tcpip.ProtocolAddress{
+		Protocol:          ipv4.ProtocolNumber,
+		AddressWithPrefix: local.WithPrefix(),
+	}
+	if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+		return nil, err
+	}
 	s.SetRouteTable([]tcpip.Route{{
 		Destination: header.IPv4EmptySubnet,
 		Gateway:     ipv4Gateway,
@@ -233,13 +267,16 @@ func buildIPv4Route(local, remote tcpip.Address) (*stack.Route, tcpip.Error) {
 	return s.FindRoute(nicID, local, remote, ipv4.ProtocolNumber, false /* multicastLoop */)
 }
 
-func buildIPv6Route(local, remote tcpip.Address) (*stack.Route, tcpip.Error) {
-	s := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv6.NewProtocol},
-		TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol, tcp.NewProtocol},
-	})
+func buildIPv6Route(ctx testContext, local, remote tcpip.Address) (*stack.Route, tcpip.Error) {
+	s := ctx.s
 	s.CreateNIC(nicID, loopback.New())
-	s.AddAddress(nicID, ipv6.ProtocolNumber, local)
+	protocolAddr := tcpip.ProtocolAddress{
+		Protocol:          ipv6.ProtocolNumber,
+		AddressWithPrefix: local.WithPrefix(),
+	}
+	if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+		return nil, err
+	}
 	s.SetRouteTable([]tcpip.Route{{
 		Destination: header.IPv6EmptySubnet,
 		Gateway:     ipv6Gateway,
@@ -249,36 +286,29 @@ func buildIPv6Route(local, remote tcpip.Address) (*stack.Route, tcpip.Error) {
 	return s.FindRoute(nicID, local, remote, ipv6.ProtocolNumber, false /* multicastLoop */)
 }
 
-func buildDummyStackWithLinkEndpoint(t *testing.T, mtu uint32) (*stack.Stack, *channel.Endpoint) {
+func addLinkEndpointToStackWithMTU(t *testing.T, s *stack.Stack, mtu uint32) *channel.Endpoint {
 	t.Helper()
-
-	s := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
-		TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol, tcp.NewProtocol},
-	})
 	e := channel.New(1, mtu, "")
 	if err := s.CreateNIC(nicID, e); err != nil {
 		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 	}
 
 	v4Addr := tcpip.ProtocolAddress{Protocol: header.IPv4ProtocolNumber, AddressWithPrefix: localIPv4AddrWithPrefix}
-	if err := s.AddProtocolAddress(nicID, v4Addr); err != nil {
-		t.Fatalf("AddProtocolAddress(%d, %#v) = %s", nicID, v4Addr, err)
+	if err := s.AddProtocolAddress(nicID, v4Addr, stack.AddressProperties{}); err != nil {
+		t.Fatalf("AddProtocolAddress(%d, %+v, {}) = %s", nicID, v4Addr, err)
 	}
 
 	v6Addr := tcpip.ProtocolAddress{Protocol: header.IPv6ProtocolNumber, AddressWithPrefix: localIPv6AddrWithPrefix}
-	if err := s.AddProtocolAddress(nicID, v6Addr); err != nil {
-		t.Fatalf("AddProtocolAddress(%d, %#v) = %s", nicID, v6Addr, err)
+	if err := s.AddProtocolAddress(nicID, v6Addr, stack.AddressProperties{}); err != nil {
+		t.Fatalf("AddProtocolAddress(%d, %+v, {}) = %s", nicID, v6Addr, err)
 	}
 
-	return s, e
+	return e
 }
 
-func buildDummyStack(t *testing.T) *stack.Stack {
+func addLinkEndpointToStack(t *testing.T, s *stack.Stack) *channel.Endpoint {
 	t.Helper()
-
-	s, _ := buildDummyStackWithLinkEndpoint(t, header.IPv6MinimumMTU)
-	return s
+	return addLinkEndpointToStackWithMTU(t, s, header.IPv6MinimumMTU)
 }
 
 var _ stack.NetworkInterface = (*testInterface)(nil)
@@ -324,7 +354,7 @@ func (t *testInterface) setEnabled(v bool) {
 	t.mu.disabled = !v
 }
 
-func (*testInterface) WritePacketToRemote(tcpip.LinkAddress, *stack.GSO, tcpip.NetworkProtocolNumber, *stack.PacketBuffer) tcpip.Error {
+func (*testInterface) WritePacketToRemote(tcpip.LinkAddress, stack.PacketBufferPtr) tcpip.Error {
 	return &tcpip.ErrNotSupported{}
 }
 
@@ -347,12 +377,12 @@ func (*testInterface) CheckLocalAddress(tcpip.NetworkProtocolNumber, tcpip.Addre
 func TestSourceAddressValidation(t *testing.T) {
 	rxIPv4ICMP := func(e *channel.Endpoint, src tcpip.Address) {
 		totalLen := header.IPv4MinimumSize + header.ICMPv4MinimumSize
-		hdr := buffer.NewPrependable(totalLen)
+		hdr := prependable.New(totalLen)
 		pkt := header.ICMPv4(hdr.Prepend(header.ICMPv4MinimumSize))
 		pkt.SetType(header.ICMPv4Echo)
 		pkt.SetCode(0)
 		pkt.SetChecksum(0)
-		pkt.SetChecksum(^header.Checksum(pkt, 0))
+		pkt.SetChecksum(^checksum.Checksum(pkt, 0))
 		ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
 		ip.Encode(&header.IPv4Fields{
 			TotalLength: uint16(totalLen),
@@ -363,14 +393,16 @@ func TestSourceAddressValidation(t *testing.T) {
 		})
 		ip.SetChecksum(^ip.CalculateChecksum())
 
-		e.InjectInbound(header.IPv4ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-			Data: hdr.View().ToVectorisedView(),
-		}))
+		pktBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
+			Payload: bufferv2.MakeWithData(hdr.View()),
+		})
+		e.InjectInbound(header.IPv4ProtocolNumber, pktBuf)
+		pktBuf.DecRef()
 	}
 
 	rxIPv6ICMP := func(e *channel.Endpoint, src tcpip.Address) {
 		totalLen := header.IPv6MinimumSize + header.ICMPv6MinimumSize
-		hdr := buffer.NewPrependable(totalLen)
+		hdr := prependable.New(totalLen)
 		pkt := header.ICMPv6(hdr.Prepend(header.ICMPv6MinimumSize))
 		pkt.SetType(header.ICMPv6EchoRequest)
 		pkt.SetCode(0)
@@ -388,9 +420,11 @@ func TestSourceAddressValidation(t *testing.T) {
 			SrcAddr:           src,
 			DstAddr:           localIPv6Addr,
 		})
-		e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-			Data: hdr.View().ToVectorisedView(),
-		}))
+		pktBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
+			Payload: bufferv2.MakeWithData(hdr.View()),
+		})
+		e.InjectInbound(header.IPv6ProtocolNumber, pktBuf)
+		pktBuf.DecRef()
 	}
 
 	tests := []struct {
@@ -454,7 +488,12 @@ func TestSourceAddressValidation(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			s, e := buildDummyStackWithLinkEndpoint(t, header.IPv6MinimumMTU)
+			ctx := newTestContext()
+			defer ctx.cleanup()
+			s := ctx.s
+
+			e := addLinkEndpointToStack(t, s)
+			defer e.Close()
 			test.rxICMP(e, test.srcAddress)
 
 			var wantValid uint64
@@ -498,6 +537,11 @@ func TestEnableWhenNICDisabled(t *testing.T) {
 			s := stack.New(stack.Options{
 				NetworkProtocols: []stack.NetworkProtocolFactory{test.protocolFactory},
 			})
+			defer func() {
+				s.Close()
+				s.Wait()
+			}()
+
 			p := s.NetworkProtocolInstance(test.protoNum)
 
 			// We pass nil for all parameters except the NetworkInterface and Stack
@@ -556,7 +600,10 @@ func TestEnableWhenNICDisabled(t *testing.T) {
 }
 
 func TestIPv4Send(t *testing.T) {
-	s := buildDummyStack(t)
+	ctx := newTestContext()
+	defer ctx.cleanup()
+	s := ctx.s
+
 	proto := s.NetworkProtocolInstance(ipv4.ProtocolNumber)
 	nic := testInterface{
 		testObject: testObject{
@@ -568,7 +615,7 @@ func TestIPv4Send(t *testing.T) {
 	defer ep.Close()
 
 	// Allocate and initialize the payload view.
-	payload := buffer.NewView(100)
+	payload := make([]byte, 100)
 	for i := 0; i < len(payload); i++ {
 		payload[i] = uint8(i)
 	}
@@ -576,8 +623,9 @@ func TestIPv4Send(t *testing.T) {
 	// Setup the packet buffer.
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(ep.MaxHeaderLength()),
-		Data:               payload.ToVectorisedView(),
+		Payload:            bufferv2.MakeWithData(payload),
 	})
+	defer pkt.DecRef()
 
 	// Issue the write.
 	nic.testObject.protocol = 123
@@ -585,11 +633,12 @@ func TestIPv4Send(t *testing.T) {
 	nic.testObject.dstAddr = remoteIPv4Addr
 	nic.testObject.contents = payload
 
-	r, err := buildIPv4Route(localIPv4Addr, remoteIPv4Addr)
+	r, err := buildIPv4Route(ctx, localIPv4Addr, remoteIPv4Addr)
 	if err != nil {
 		t.Fatalf("could not find route: %v", err)
 	}
-	if err := ep.WritePacket(r, nil /* gso */, stack.NetworkHeaderParams{
+	defer r.Release()
+	if err := ep.WritePacket(r, stack.NetworkHeaderParams{
 		Protocol: 123,
 		TTL:      123,
 		TOS:      stack.DefaultTOS,
@@ -616,7 +665,7 @@ func TestReceive(t *testing.T) {
 			handlePacket: func(t *testing.T, ep stack.NetworkEndpoint, nic *testInterface) {
 				const totalLen = header.IPv4MinimumSize + 30 /* payload length */
 
-				view := buffer.NewView(totalLen)
+				view := make([]byte, totalLen)
 				ip := header.IPv4(view)
 				ip.Encode(&header.IPv4Fields{
 					TotalLength: totalLen,
@@ -639,9 +688,10 @@ func TestReceive(t *testing.T) {
 				nic.testObject.contents = view[header.IPv4MinimumSize:totalLen]
 
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Data: view.ToVectorisedView(),
+					Payload: bufferv2.MakeWithData(view),
 				})
 				ep.HandlePacket(pkt)
+				pkt.DecRef()
 			},
 		},
 		{
@@ -652,7 +702,7 @@ func TestReceive(t *testing.T) {
 			epAddr:       localIPv6Addr.WithPrefix(),
 			handlePacket: func(t *testing.T, ep stack.NetworkEndpoint, nic *testInterface) {
 				const payloadLen = 30
-				view := buffer.NewView(header.IPv6MinimumSize + payloadLen)
+				view := make([]byte, header.IPv6MinimumSize+payloadLen)
 				ip := header.IPv6(view)
 				ip.Encode(&header.IPv6Fields{
 					PayloadLength:     payloadLen,
@@ -674,9 +724,10 @@ func TestReceive(t *testing.T) {
 				nic.testObject.contents = view[header.IPv6MinimumSize:][:payloadLen]
 
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Data: view.ToVectorisedView(),
+					Payload: bufferv2.MakeWithData(view),
 				})
 				ep.HandlePacket(pkt)
+				pkt.DecRef()
 			},
 		},
 	}
@@ -686,6 +737,11 @@ func TestReceive(t *testing.T) {
 			s := stack.New(stack.Options{
 				NetworkProtocols: []stack.NetworkProtocolFactory{test.protoFactory},
 			})
+			defer func() {
+				s.Close()
+				s.Wait()
+			}()
+
 			nic := testInterface{
 				testObject: testObject{
 					t:  t,
@@ -703,8 +759,8 @@ func TestReceive(t *testing.T) {
 			if !ok {
 				t.Fatalf("expected network endpoint with number = %d to implement stack.AddressableEndpoint", test.protoNum)
 			}
-			if ep, err := addressableEndpoint.AddAndAcquirePermanentAddress(test.epAddr, stack.CanBePrimaryEndpoint, stack.AddressConfigStatic, false /* deprecated */); err != nil {
-				t.Fatalf("addressableEndpoint.AddAndAcquirePermanentAddress(%s, CanBePrimaryEndpoint, AddressConfigStatic, false): %s", test.epAddr, err)
+			if ep, err := addressableEndpoint.AddAndAcquirePermanentAddress(test.epAddr, stack.AddressProperties{}); err != nil {
+				t.Fatalf("addressableEndpoint.AddAndAcquirePermanentAddress(%s, {}): %s", test.epAddr, err)
 			} else {
 				ep.DecRef()
 			}
@@ -715,7 +771,10 @@ func TestReceive(t *testing.T) {
 			}
 			test.handlePacket(t, ep, &nic)
 			if nic.testObject.dataCalls != 1 {
-				t.Errorf("Bad number of data calls: got %x, want 1", nic.testObject.dataCalls)
+				t.Errorf("Bad number of data calls: got %d, want 1", nic.testObject.dataCalls)
+			}
+			if nic.testObject.rawCalls != 1 {
+				t.Errorf("Bad number of raw calls: got %d, want 1", nic.testObject.rawCalls)
 			}
 			if got := stat.Value(); got != 1 {
 				t.Errorf("got s.Stats().IP.PacketsReceived.Value() = %d, want = 1", got)
@@ -803,7 +862,10 @@ func TestIPv4ReceiveControl(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			s := buildDummyStack(t)
+			ctx := newTestContext()
+			defer ctx.cleanup()
+			s := ctx.s
+
 			proto := s.NetworkProtocolInstance(ipv4.ProtocolNumber)
 			nic := testInterface{
 				testObject: testObject{
@@ -818,7 +880,7 @@ func TestIPv4ReceiveControl(t *testing.T) {
 			}
 
 			const dataOffset = header.IPv4MinimumSize*2 + header.ICMPv4MinimumSize
-			view := buffer.NewView(dataOffset + dataLen)
+			view := make([]byte, dataOffset+dataLen)
 
 			// Create the outer IPv4 header.
 			ip := header.IPv4(view)
@@ -856,8 +918,8 @@ func TestIPv4ReceiveControl(t *testing.T) {
 			}
 
 			icmp.SetChecksum(0)
-			checksum := ^header.Checksum(icmp, 0 /* initial */)
-			icmp.SetChecksum(checksum)
+			xsum := ^checksum.Checksum(icmp, 0 /* initial */)
+			icmp.SetChecksum(xsum)
 
 			// Give packet to IPv4 endpoint, dispatcher will validate that
 			// it's ok.
@@ -872,14 +934,15 @@ func TestIPv4ReceiveControl(t *testing.T) {
 				t.Fatal("expected IPv4 network endpoint to implement stack.AddressableEndpoint")
 			}
 			addr := localIPv4Addr.WithPrefix()
-			if ep, err := addressableEndpoint.AddAndAcquirePermanentAddress(addr, stack.CanBePrimaryEndpoint, stack.AddressConfigStatic, false /* deprecated */); err != nil {
-				t.Fatalf("addressableEndpoint.AddAndAcquirePermanentAddress(%s, CanBePrimaryEndpoint, AddressConfigStatic, false): %s", addr, err)
+			if ep, err := addressableEndpoint.AddAndAcquirePermanentAddress(addr, stack.AddressProperties{}); err != nil {
+				t.Fatalf("addressableEndpoint.AddAndAcquirePermanentAddress(%s, {}): %s", addr, err)
 			} else {
 				ep.DecRef()
 			}
 
 			pkt := truncatedPacket(view, c.trunc, header.IPv4MinimumSize)
 			ep.HandlePacket(pkt)
+			pkt.DecRef()
 			if want := c.expectedCount; nic.testObject.controlCalls != want {
 				t.Fatalf("Bad number of control calls for %q case: got %v, want %v", c.name, nic.testObject.controlCalls, want)
 			}
@@ -888,9 +951,10 @@ func TestIPv4ReceiveControl(t *testing.T) {
 }
 
 func TestIPv4FragmentationReceive(t *testing.T) {
-	s := stack.New(stack.Options{
-		NetworkProtocols: []stack.NetworkProtocolFactory{ipv4.NewProtocol},
-	})
+	ctx := newTestContext()
+	defer ctx.cleanup()
+	s := ctx.s
+
 	proto := s.NetworkProtocolInstance(ipv4.ProtocolNumber)
 	nic := testInterface{
 		testObject: testObject{
@@ -907,7 +971,7 @@ func TestIPv4FragmentationReceive(t *testing.T) {
 
 	totalLen := header.IPv4MinimumSize + 24
 
-	frag1 := buffer.NewView(totalLen)
+	frag1 := make([]byte, totalLen)
 	ip1 := header.IPv4(frag1)
 	ip1.Encode(&header.IPv4Fields{
 		TotalLength:    uint16(totalLen),
@@ -925,7 +989,7 @@ func TestIPv4FragmentationReceive(t *testing.T) {
 		frag1[i] = uint8(i)
 	}
 
-	frag2 := buffer.NewView(totalLen)
+	frag2 := make([]byte, totalLen)
 	ip2 := header.IPv4(frag2)
 	ip2.Encode(&header.IPv4Fields{
 		TotalLength:    uint16(totalLen),
@@ -948,39 +1012,51 @@ func TestIPv4FragmentationReceive(t *testing.T) {
 	nic.testObject.dstAddr = localIPv4Addr
 	nic.testObject.contents = append(frag1[header.IPv4MinimumSize:totalLen], frag2[header.IPv4MinimumSize:totalLen]...)
 
-	// Send first segment.
-	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: frag1.ToVectorisedView(),
-	})
-
 	addressableEndpoint, ok := ep.(stack.AddressableEndpoint)
 	if !ok {
 		t.Fatal("expected IPv4 network endpoint to implement stack.AddressableEndpoint")
 	}
 	addr := localIPv4Addr.WithPrefix()
-	if ep, err := addressableEndpoint.AddAndAcquirePermanentAddress(addr, stack.CanBePrimaryEndpoint, stack.AddressConfigStatic, false /* deprecated */); err != nil {
-		t.Fatalf("addressableEndpoint.AddAndAcquirePermanentAddress(%s, CanBePrimaryEndpoint, AddressConfigStatic, false): %s", addr, err)
+	if ep, err := addressableEndpoint.AddAndAcquirePermanentAddress(addr, stack.AddressProperties{}); err != nil {
+		t.Fatalf("addressableEndpoint.AddAndAcquirePermanentAddress(%s, {}): %s", addr, err)
 	} else {
 		ep.DecRef()
 	}
 
+	// Send first segment.
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Payload: bufferv2.MakeWithData(frag1),
+	})
 	ep.HandlePacket(pkt)
+	pkt.DecRef()
+
 	if nic.testObject.dataCalls != 0 {
-		t.Fatalf("Bad number of data calls: got %x, want 0", nic.testObject.dataCalls)
+		t.Fatalf("Bad number of data calls: got %d, want 0", nic.testObject.dataCalls)
+	}
+	if nic.testObject.rawCalls != 0 {
+		t.Errorf("Bad number of raw calls: got %d, want 0", nic.testObject.rawCalls)
 	}
 
 	// Send second segment.
 	pkt = stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: frag2.ToVectorisedView(),
+		Payload: bufferv2.MakeWithData(frag2),
 	})
 	ep.HandlePacket(pkt)
+	pkt.DecRef()
+
 	if nic.testObject.dataCalls != 1 {
-		t.Fatalf("Bad number of data calls: got %x, want 1", nic.testObject.dataCalls)
+		t.Fatalf("Bad number of data calls: got %d, want 1", nic.testObject.dataCalls)
+	}
+	if nic.testObject.rawCalls != 1 {
+		t.Errorf("Bad number of raw calls: got %d, want 1", nic.testObject.rawCalls)
 	}
 }
 
 func TestIPv6Send(t *testing.T) {
-	s := buildDummyStack(t)
+	ctx := newTestContext()
+	defer ctx.cleanup()
+	s := ctx.s
+
 	proto := s.NetworkProtocolInstance(ipv6.ProtocolNumber)
 	nic := testInterface{
 		testObject: testObject{
@@ -995,7 +1071,7 @@ func TestIPv6Send(t *testing.T) {
 	}
 
 	// Allocate and initialize the payload view.
-	payload := buffer.NewView(100)
+	payload := make([]byte, 100)
 	for i := 0; i < len(payload); i++ {
 		payload[i] = uint8(i)
 	}
@@ -1003,20 +1079,21 @@ func TestIPv6Send(t *testing.T) {
 	// Setup the packet buffer.
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(ep.MaxHeaderLength()),
-		Data:               payload.ToVectorisedView(),
+		Payload:            bufferv2.MakeWithData(payload),
 	})
-
+	defer pkt.DecRef()
 	// Issue the write.
 	nic.testObject.protocol = 123
 	nic.testObject.srcAddr = localIPv6Addr
 	nic.testObject.dstAddr = remoteIPv6Addr
 	nic.testObject.contents = payload
 
-	r, err := buildIPv6Route(localIPv6Addr, remoteIPv6Addr)
+	r, err := buildIPv6Route(ctx, localIPv6Addr, remoteIPv6Addr)
 	if err != nil {
 		t.Fatalf("could not find route: %v", err)
 	}
-	if err := ep.WritePacket(r, nil /* gso */, stack.NetworkHeaderParams{
+	defer r.Release()
+	if err := ep.WritePacket(r, stack.NetworkHeaderParams{
 		Protocol: 123,
 		TTL:      123,
 		TOS:      stack.DefaultTOS,
@@ -1135,7 +1212,10 @@ func TestIPv6ReceiveControl(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			s := buildDummyStack(t)
+			ctx := newTestContext()
+			defer ctx.cleanup()
+			s := ctx.s
+
 			proto := s.NetworkProtocolInstance(ipv6.ProtocolNumber)
 			nic := testInterface{
 				testObject: testObject{
@@ -1153,7 +1233,7 @@ func TestIPv6ReceiveControl(t *testing.T) {
 			if c.fragmentOffset != nil {
 				dataOffset += header.IPv6FragmentHeaderSize
 			}
-			view := buffer.NewView(dataOffset + dataLen)
+			view := make([]byte, dataOffset+dataLen)
 
 			// Create the outer IPv6 header.
 			ip := header.IPv6(view)
@@ -1218,13 +1298,14 @@ func TestIPv6ReceiveControl(t *testing.T) {
 				t.Fatal("expected IPv6 network endpoint to implement stack.AddressableEndpoint")
 			}
 			addr := localIPv6Addr.WithPrefix()
-			if ep, err := addressableEndpoint.AddAndAcquirePermanentAddress(addr, stack.CanBePrimaryEndpoint, stack.AddressConfigStatic, false /* deprecated */); err != nil {
-				t.Fatalf("addressableEndpoint.AddAndAcquirePermanentAddress(%s, CanBePrimaryEndpoint, AddressConfigStatic, false): %s", addr, err)
+			if ep, err := addressableEndpoint.AddAndAcquirePermanentAddress(addr, stack.AddressProperties{}); err != nil {
+				t.Fatalf("addressableEndpoint.AddAndAcquirePermanentAddress(%s, {}): %s", addr, err)
 			} else {
 				ep.DecRef()
 			}
 			pkt := truncatedPacket(view, c.trunc, header.IPv6MinimumSize)
 			ep.HandlePacket(pkt)
+			pkt.DecRef()
 			if want := c.expectedCount; nic.testObject.controlCalls != want {
 				t.Fatalf("Bad number of control calls for %q case: got %v, want %v", c.name, nic.testObject.controlCalls, want)
 			}
@@ -1236,10 +1317,10 @@ func TestIPv6ReceiveControl(t *testing.T) {
 // after truncation, is large enough to hold a network header, it makes part of
 // view the packet's NetworkHeader and the rest its Data. Otherwise all of view
 // becomes Data.
-func truncatedPacket(view buffer.View, trunc, netHdrLen int) *stack.PacketBuffer {
+func truncatedPacket(view []byte, trunc, netHdrLen int) stack.PacketBufferPtr {
 	v := view[:len(view)-trunc]
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: v.ToVectorisedView(),
+		Payload: bufferv2.MakeWithData(v),
 	})
 	return pkt
 }
@@ -1285,21 +1366,21 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 		name         string
 		protoFactory stack.NetworkProtocolFactory
 		protoNum     tcpip.NetworkProtocolNumber
-		nicAddr      tcpip.Address
+		nicAddr      tcpip.AddressWithPrefix
 		remoteAddr   tcpip.Address
-		pktGen       func(*testing.T, tcpip.Address) buffer.VectorisedView
-		checker      func(*testing.T, *stack.PacketBuffer, tcpip.Address)
+		pktGen       func(*testing.T, tcpip.Address) bufferv2.Buffer
+		checker      func(*testing.T, stack.PacketBufferPtr, tcpip.Address)
 		expectedErr  tcpip.Error
 	}{
 		{
 			name:         "IPv4",
 			protoFactory: ipv4.NewProtocol,
 			protoNum:     ipv4.ProtocolNumber,
-			nicAddr:      localIPv4Addr,
+			nicAddr:      localIPv4AddrWithPrefix,
 			remoteAddr:   remoteIPv4Addr,
-			pktGen: func(t *testing.T, src tcpip.Address) buffer.VectorisedView {
+			pktGen: func(t *testing.T, src tcpip.Address) bufferv2.Buffer {
 				totalLen := header.IPv4MinimumSize + len(data)
-				hdr := buffer.NewPrependable(totalLen)
+				hdr := prependable.New(totalLen)
 				if n := copy(hdr.Prepend(len(data)), data); n != len(data) {
 					t.Fatalf("copied %d bytes, expected %d bytes", n, len(data))
 				}
@@ -1308,22 +1389,24 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 					Protocol: transportProto,
 					TTL:      ipv4.DefaultTTL,
 					SrcAddr:  src,
-					DstAddr:  header.IPv4Any,
+					DstAddr:  remoteIPv4Addr,
 				})
-				return hdr.View().ToVectorisedView()
+				return bufferv2.MakeWithData(hdr.View())
 			},
-			checker: func(t *testing.T, pkt *stack.PacketBuffer, src tcpip.Address) {
+			checker: func(t *testing.T, pkt stack.PacketBufferPtr, src tcpip.Address) {
 				if src == header.IPv4Any {
 					src = localIPv4Addr
 				}
 
 				netHdr := pkt.NetworkHeader()
 
-				if len(netHdr.View()) != header.IPv4MinimumSize {
-					t.Errorf("got len(netHdr.View()) = %d, want = %d", len(netHdr.View()), header.IPv4MinimumSize)
+				if len(netHdr.Slice()) != header.IPv4MinimumSize {
+					t.Errorf("got len(netHdr.View()) = %d, want = %d", len(netHdr.Slice()), header.IPv4MinimumSize)
 				}
 
-				checker.IPv4(t, stack.PayloadSince(netHdr),
+				payload := stack.PayloadSince(netHdr)
+				defer payload.Release()
+				checker.IPv4(t, payload,
 					checker.SrcAddr(src),
 					checker.DstAddr(remoteIPv4Addr),
 					checker.IPv4HeaderLength(header.IPv4MinimumSize),
@@ -1336,11 +1419,11 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 			name:         "IPv4 with IHL too small",
 			protoFactory: ipv4.NewProtocol,
 			protoNum:     ipv4.ProtocolNumber,
-			nicAddr:      localIPv4Addr,
+			nicAddr:      localIPv4AddrWithPrefix,
 			remoteAddr:   remoteIPv4Addr,
-			pktGen: func(t *testing.T, src tcpip.Address) buffer.VectorisedView {
+			pktGen: func(t *testing.T, src tcpip.Address) bufferv2.Buffer {
 				totalLen := header.IPv4MinimumSize + len(data)
-				hdr := buffer.NewPrependable(totalLen)
+				hdr := prependable.New(totalLen)
 				if n := copy(hdr.Prepend(len(data)), data); n != len(data) {
 					t.Fatalf("copied %d bytes, expected %d bytes", n, len(data))
 				}
@@ -1349,10 +1432,10 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 					Protocol: transportProto,
 					TTL:      ipv4.DefaultTTL,
 					SrcAddr:  src,
-					DstAddr:  header.IPv4Any,
+					DstAddr:  remoteIPv4Addr,
 				})
 				ip.SetHeaderLength(header.IPv4MinimumSize - 1)
-				return hdr.View().ToVectorisedView()
+				return bufferv2.MakeWithData(hdr.View())
 			},
 			expectedErr: &tcpip.ErrMalformedHeader{},
 		},
@@ -1360,17 +1443,17 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 			name:         "IPv4 too small",
 			protoFactory: ipv4.NewProtocol,
 			protoNum:     ipv4.ProtocolNumber,
-			nicAddr:      localIPv4Addr,
+			nicAddr:      localIPv4AddrWithPrefix,
 			remoteAddr:   remoteIPv4Addr,
-			pktGen: func(t *testing.T, src tcpip.Address) buffer.VectorisedView {
+			pktGen: func(t *testing.T, src tcpip.Address) bufferv2.Buffer {
 				ip := header.IPv4(make([]byte, header.IPv4MinimumSize))
 				ip.Encode(&header.IPv4Fields{
 					Protocol: transportProto,
 					TTL:      ipv4.DefaultTTL,
 					SrcAddr:  src,
-					DstAddr:  header.IPv4Any,
+					DstAddr:  remoteIPv4Addr,
 				})
-				return buffer.View(ip[:len(ip)-1]).ToVectorisedView()
+				return bufferv2.MakeWithData(ip[:len(ip)-1])
 			},
 			expectedErr: &tcpip.ErrMalformedHeader{},
 		},
@@ -1378,30 +1461,32 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 			name:         "IPv4 minimum size",
 			protoFactory: ipv4.NewProtocol,
 			protoNum:     ipv4.ProtocolNumber,
-			nicAddr:      localIPv4Addr,
+			nicAddr:      localIPv4AddrWithPrefix,
 			remoteAddr:   remoteIPv4Addr,
-			pktGen: func(t *testing.T, src tcpip.Address) buffer.VectorisedView {
+			pktGen: func(t *testing.T, src tcpip.Address) bufferv2.Buffer {
 				ip := header.IPv4(make([]byte, header.IPv4MinimumSize))
 				ip.Encode(&header.IPv4Fields{
 					Protocol: transportProto,
 					TTL:      ipv4.DefaultTTL,
 					SrcAddr:  src,
-					DstAddr:  header.IPv4Any,
+					DstAddr:  remoteIPv4Addr,
 				})
-				return buffer.View(ip).ToVectorisedView()
+				return bufferv2.MakeWithData(ip)
 			},
-			checker: func(t *testing.T, pkt *stack.PacketBuffer, src tcpip.Address) {
+			checker: func(t *testing.T, pkt stack.PacketBufferPtr, src tcpip.Address) {
 				if src == header.IPv4Any {
 					src = localIPv4Addr
 				}
 
 				netHdr := pkt.NetworkHeader()
 
-				if len(netHdr.View()) != header.IPv4MinimumSize {
-					t.Errorf("got len(netHdr.View()) = %d, want = %d", len(netHdr.View()), header.IPv4MinimumSize)
+				if len(netHdr.Slice()) != header.IPv4MinimumSize {
+					t.Errorf("got len(netHdr.Slice()) = %d, want = %d", len(netHdr.Slice()), header.IPv4MinimumSize)
 				}
 
-				checker.IPv4(t, stack.PayloadSince(netHdr),
+				payload := stack.PayloadSince(netHdr)
+				defer payload.Release()
+				checker.IPv4(t, payload,
 					checker.SrcAddr(src),
 					checker.DstAddr(remoteIPv4Addr),
 					checker.IPv4HeaderLength(header.IPv4MinimumSize),
@@ -1414,12 +1499,12 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 			name:         "IPv4 with options",
 			protoFactory: ipv4.NewProtocol,
 			protoNum:     ipv4.ProtocolNumber,
-			nicAddr:      localIPv4Addr,
+			nicAddr:      localIPv4AddrWithPrefix,
 			remoteAddr:   remoteIPv4Addr,
-			pktGen: func(t *testing.T, src tcpip.Address) buffer.VectorisedView {
+			pktGen: func(t *testing.T, src tcpip.Address) bufferv2.Buffer {
 				ipHdrLen := int(header.IPv4MinimumSize + ipv4Options.Length())
 				totalLen := ipHdrLen + len(data)
-				hdr := buffer.NewPrependable(totalLen)
+				hdr := prependable.New(totalLen)
 				if n := copy(hdr.Prepend(len(data)), data); n != len(data) {
 					t.Fatalf("copied %d bytes, expected %d bytes", n, len(data))
 				}
@@ -1428,12 +1513,12 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 					Protocol: transportProto,
 					TTL:      ipv4.DefaultTTL,
 					SrcAddr:  src,
-					DstAddr:  header.IPv4Any,
+					DstAddr:  remoteIPv4Addr,
 					Options:  ipv4Options,
 				})
-				return hdr.View().ToVectorisedView()
+				return bufferv2.MakeWithData(hdr.View())
 			},
-			checker: func(t *testing.T, pkt *stack.PacketBuffer, src tcpip.Address) {
+			checker: func(t *testing.T, pkt stack.PacketBufferPtr, src tcpip.Address) {
 				if src == header.IPv4Any {
 					src = localIPv4Addr
 				}
@@ -1441,11 +1526,13 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 				netHdr := pkt.NetworkHeader()
 
 				hdrLen := int(header.IPv4MinimumSize + ipv4Options.Length())
-				if len(netHdr.View()) != hdrLen {
-					t.Errorf("got len(netHdr.View()) = %d, want = %d", len(netHdr.View()), hdrLen)
+				if len(netHdr.Slice()) != hdrLen {
+					t.Errorf("got len(netHdr.Slice()) = %d, want = %d", len(netHdr.Slice()), hdrLen)
 				}
 
-				checker.IPv4(t, stack.PayloadSince(netHdr),
+				payload := stack.PayloadSince(netHdr)
+				defer payload.Release()
+				checker.IPv4(t, payload,
 					checker.SrcAddr(src),
 					checker.DstAddr(remoteIPv4Addr),
 					checker.IPv4HeaderLength(hdrLen),
@@ -1459,22 +1546,22 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 			name:         "IPv4 with options and data across views",
 			protoFactory: ipv4.NewProtocol,
 			protoNum:     ipv4.ProtocolNumber,
-			nicAddr:      localIPv4Addr,
+			nicAddr:      localIPv4AddrWithPrefix,
 			remoteAddr:   remoteIPv4Addr,
-			pktGen: func(t *testing.T, src tcpip.Address) buffer.VectorisedView {
+			pktGen: func(t *testing.T, src tcpip.Address) bufferv2.Buffer {
 				ip := header.IPv4(make([]byte, header.IPv4MinimumSize+ipv4Options.Length()))
 				ip.Encode(&header.IPv4Fields{
 					Protocol: transportProto,
 					TTL:      ipv4.DefaultTTL,
 					SrcAddr:  src,
-					DstAddr:  header.IPv4Any,
+					DstAddr:  remoteIPv4Addr,
 					Options:  ipv4Options,
 				})
-				vv := buffer.View(ip).ToVectorisedView()
-				vv.AppendView(data)
-				return vv
+				buf := bufferv2.MakeWithData(ip)
+				buf.Append(bufferv2.NewViewWithData(data))
+				return buf
 			},
-			checker: func(t *testing.T, pkt *stack.PacketBuffer, src tcpip.Address) {
+			checker: func(t *testing.T, pkt stack.PacketBufferPtr, src tcpip.Address) {
 				if src == header.IPv4Any {
 					src = localIPv4Addr
 				}
@@ -1482,11 +1569,13 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 				netHdr := pkt.NetworkHeader()
 
 				hdrLen := int(header.IPv4MinimumSize + ipv4Options.Length())
-				if len(netHdr.View()) != hdrLen {
-					t.Errorf("got len(netHdr.View()) = %d, want = %d", len(netHdr.View()), hdrLen)
+				if len(netHdr.Slice()) != hdrLen {
+					t.Errorf("got len(netHdr.Slice()) = %d, want = %d", len(netHdr.Slice()), hdrLen)
 				}
 
-				checker.IPv4(t, stack.PayloadSince(netHdr),
+				payload := stack.PayloadSince(netHdr)
+				defer payload.Release()
+				checker.IPv4(t, payload,
 					checker.SrcAddr(src),
 					checker.DstAddr(remoteIPv4Addr),
 					checker.IPv4HeaderLength(hdrLen),
@@ -1500,11 +1589,11 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 			name:         "IPv6",
 			protoFactory: ipv6.NewProtocol,
 			protoNum:     ipv6.ProtocolNumber,
-			nicAddr:      localIPv6Addr,
+			nicAddr:      localIPv6AddrWithPrefix,
 			remoteAddr:   remoteIPv6Addr,
-			pktGen: func(t *testing.T, src tcpip.Address) buffer.VectorisedView {
+			pktGen: func(t *testing.T, src tcpip.Address) bufferv2.Buffer {
 				totalLen := header.IPv6MinimumSize + len(data)
-				hdr := buffer.NewPrependable(totalLen)
+				hdr := prependable.New(totalLen)
 				if n := copy(hdr.Prepend(len(data)), data); n != len(data) {
 					t.Fatalf("copied %d bytes, expected %d bytes", n, len(data))
 				}
@@ -1513,22 +1602,24 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 					TransportProtocol: transportProto,
 					HopLimit:          ipv6.DefaultTTL,
 					SrcAddr:           src,
-					DstAddr:           header.IPv4Any,
+					DstAddr:           remoteIPv6Addr,
 				})
-				return hdr.View().ToVectorisedView()
+				return bufferv2.MakeWithData(hdr.View())
 			},
-			checker: func(t *testing.T, pkt *stack.PacketBuffer, src tcpip.Address) {
+			checker: func(t *testing.T, pkt stack.PacketBufferPtr, src tcpip.Address) {
 				if src == header.IPv6Any {
 					src = localIPv6Addr
 				}
 
 				netHdr := pkt.NetworkHeader()
 
-				if len(netHdr.View()) != header.IPv6MinimumSize {
-					t.Errorf("got len(netHdr.View()) = %d, want = %d", len(netHdr.View()), header.IPv6MinimumSize)
+				if len(netHdr.Slice()) != header.IPv6MinimumSize {
+					t.Errorf("got len(netHdr.View()) = %d, want = %d", len(netHdr.Slice()), header.IPv6MinimumSize)
 				}
 
-				checker.IPv6(t, stack.PayloadSince(netHdr),
+				payload := stack.PayloadSince(netHdr)
+				defer payload.Release()
+				checker.IPv6(t, payload,
 					checker.SrcAddr(src),
 					checker.DstAddr(remoteIPv6Addr),
 					checker.IPFullLength(uint16(header.IPv6MinimumSize+len(data))),
@@ -1540,11 +1631,11 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 			name:         "IPv6 with extension header",
 			protoFactory: ipv6.NewProtocol,
 			protoNum:     ipv6.ProtocolNumber,
-			nicAddr:      localIPv6Addr,
+			nicAddr:      localIPv6AddrWithPrefix,
 			remoteAddr:   remoteIPv6Addr,
-			pktGen: func(t *testing.T, src tcpip.Address) buffer.VectorisedView {
+			pktGen: func(t *testing.T, src tcpip.Address) bufferv2.Buffer {
 				totalLen := header.IPv6MinimumSize + len(ipv6FragmentExtHdr) + len(data)
-				hdr := buffer.NewPrependable(totalLen)
+				hdr := prependable.New(totalLen)
 				if n := copy(hdr.Prepend(len(data)), data); n != len(data) {
 					t.Fatalf("copied %d bytes, expected %d bytes", n, len(data))
 				}
@@ -1558,22 +1649,24 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 					TransportProtocol: tcpip.TransportProtocolNumber(header.IPv6FragmentExtHdrIdentifier),
 					HopLimit:          ipv6.DefaultTTL,
 					SrcAddr:           src,
-					DstAddr:           header.IPv4Any,
+					DstAddr:           remoteIPv6Addr,
 				})
-				return hdr.View().ToVectorisedView()
+				return bufferv2.MakeWithData(hdr.View())
 			},
-			checker: func(t *testing.T, pkt *stack.PacketBuffer, src tcpip.Address) {
+			checker: func(t *testing.T, pkt stack.PacketBufferPtr, src tcpip.Address) {
 				if src == header.IPv6Any {
 					src = localIPv6Addr
 				}
 
 				netHdr := pkt.NetworkHeader()
 
-				if want := header.IPv6MinimumSize + len(ipv6FragmentExtHdr); len(netHdr.View()) != want {
-					t.Errorf("got len(netHdr.View()) = %d, want = %d", len(netHdr.View()), want)
+				if want := header.IPv6MinimumSize + len(ipv6FragmentExtHdr); len(netHdr.Slice()) != want {
+					t.Errorf("got len(netHdr.View()) = %d, want = %d", len(netHdr.Slice()), want)
 				}
 
-				checker.IPv6(t, stack.PayloadSince(netHdr),
+				payload := stack.PayloadSince(netHdr)
+				defer payload.Release()
+				checker.IPv6(t, payload,
 					checker.SrcAddr(src),
 					checker.DstAddr(remoteIPv6Addr),
 					checker.IPFullLength(uint16(header.IPv6MinimumSize+len(ipv6PayloadWithExtHdr))),
@@ -1585,30 +1678,32 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 			name:         "IPv6 minimum size",
 			protoFactory: ipv6.NewProtocol,
 			protoNum:     ipv6.ProtocolNumber,
-			nicAddr:      localIPv6Addr,
+			nicAddr:      localIPv6AddrWithPrefix,
 			remoteAddr:   remoteIPv6Addr,
-			pktGen: func(t *testing.T, src tcpip.Address) buffer.VectorisedView {
+			pktGen: func(t *testing.T, src tcpip.Address) bufferv2.Buffer {
 				ip := header.IPv6(make([]byte, header.IPv6MinimumSize))
 				ip.Encode(&header.IPv6Fields{
 					TransportProtocol: transportProto,
 					HopLimit:          ipv6.DefaultTTL,
 					SrcAddr:           src,
-					DstAddr:           header.IPv4Any,
+					DstAddr:           remoteIPv6Addr,
 				})
-				return buffer.View(ip).ToVectorisedView()
+				return bufferv2.MakeWithData(ip)
 			},
-			checker: func(t *testing.T, pkt *stack.PacketBuffer, src tcpip.Address) {
+			checker: func(t *testing.T, pkt stack.PacketBufferPtr, src tcpip.Address) {
 				if src == header.IPv6Any {
 					src = localIPv6Addr
 				}
 
 				netHdr := pkt.NetworkHeader()
 
-				if len(netHdr.View()) != header.IPv6MinimumSize {
-					t.Errorf("got len(netHdr.View()) = %d, want = %d", len(netHdr.View()), header.IPv6MinimumSize)
+				if len(netHdr.Slice()) != header.IPv6MinimumSize {
+					t.Errorf("got len(netHdr.View()) = %d, want = %d", len(netHdr.Slice()), header.IPv6MinimumSize)
 				}
 
-				checker.IPv6(t, stack.PayloadSince(netHdr),
+				payload := stack.PayloadSince(netHdr)
+				defer payload.Release()
+				checker.IPv6(t, payload,
 					checker.SrcAddr(src),
 					checker.DstAddr(remoteIPv6Addr),
 					checker.IPFullLength(header.IPv6MinimumSize),
@@ -1620,17 +1715,17 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 			name:         "IPv6 too small",
 			protoFactory: ipv6.NewProtocol,
 			protoNum:     ipv6.ProtocolNumber,
-			nicAddr:      localIPv6Addr,
+			nicAddr:      localIPv6AddrWithPrefix,
 			remoteAddr:   remoteIPv6Addr,
-			pktGen: func(t *testing.T, src tcpip.Address) buffer.VectorisedView {
+			pktGen: func(t *testing.T, src tcpip.Address) bufferv2.Buffer {
 				ip := header.IPv6(make([]byte, header.IPv6MinimumSize))
 				ip.Encode(&header.IPv6Fields{
 					TransportProtocol: transportProto,
 					HopLimit:          ipv6.DefaultTTL,
 					SrcAddr:           src,
-					DstAddr:           header.IPv4Any,
+					DstAddr:           remoteIPv4Addr,
 				})
-				return buffer.View(ip[:len(ip)-1]).ToVectorisedView()
+				return bufferv2.MakeWithData(ip[:len(ip)-1])
 			},
 			expectedErr: &tcpip.ErrMalformedHeader{},
 		},
@@ -1644,11 +1739,11 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 			}{
 				{
 					name:    "unspecified source",
-					srcAddr: tcpip.Address(strings.Repeat("\x00", len(test.nicAddr))),
+					srcAddr: tcpip.Address(strings.Repeat("\x00", len(test.nicAddr.Address))),
 				},
 				{
 					name:    "random source",
-					srcAddr: tcpip.Address(strings.Repeat("\xab", len(test.nicAddr))),
+					srcAddr: tcpip.Address(strings.Repeat("\xab", len(test.nicAddr.Address))),
 				},
 			}
 
@@ -1657,26 +1752,38 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 					s := stack.New(stack.Options{
 						NetworkProtocols: []stack.NetworkProtocolFactory{test.protoFactory},
 					})
+					defer func() {
+						s.Close()
+						s.Wait()
+					}()
+
 					e := channel.New(1, header.IPv6MinimumMTU, "")
+					defer e.Close()
 					if err := s.CreateNIC(nicID, e); err != nil {
 						t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
 					}
-					if err := s.AddAddress(nicID, test.protoNum, test.nicAddr); err != nil {
-						t.Fatalf("s.AddAddress(%d, %d, %s): %s", nicID, test.protoNum, test.nicAddr, err)
+					protocolAddr := tcpip.ProtocolAddress{
+						Protocol:          test.protoNum,
+						AddressWithPrefix: test.nicAddr,
+					}
+					if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+						t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
 					}
 
 					s.SetRouteTable([]tcpip.Route{{Destination: test.remoteAddr.WithPrefix().Subnet(), NIC: nicID}})
 
-					r, err := s.FindRoute(nicID, test.nicAddr, test.remoteAddr, test.protoNum, false /* multicastLoop */)
+					r, err := s.FindRoute(nicID, test.nicAddr.Address, test.remoteAddr, test.protoNum, false /* multicastLoop */)
 					if err != nil {
-						t.Fatalf("s.FindRoute(%d, %s, %s, %d, false): %s", nicID, test.remoteAddr, test.nicAddr, test.protoNum, err)
+						t.Fatalf("s.FindRoute(%d, %s, %s, %d, false): %s", nicID, test.remoteAddr, test.nicAddr.Address, test.protoNum, err)
 					}
 					defer r.Release()
 
 					{
-						err := r.WriteHeaderIncludedPacket(stack.NewPacketBuffer(stack.PacketBufferOptions{
-							Data: test.pktGen(t, subTest.srcAddr),
-						}))
+						pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+							Payload: test.pktGen(t, subTest.srcAddr),
+						})
+						err := r.WriteHeaderIncludedPacket(pkt)
+						pkt.DecRef()
 						if diff := cmp.Diff(test.expectedErr, err); diff != "" {
 							t.Fatalf("unexpected error from r.WriteHeaderIncludedPacket(_), (-want, +got):\n%s", diff)
 						}
@@ -1686,11 +1793,12 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 						return
 					}
 
-					pkt, ok := e.Read()
-					if !ok {
+					pkt := e.Read()
+					if pkt.IsNil() {
 						t.Fatal("expected a packet to be written")
 					}
-					test.checker(t, pkt.Pkt, subTest.srcAddr)
+					test.checker(t, pkt, subTest.srcAddr)
+					pkt.DecRef()
 				})
 			}
 		})
@@ -1712,9 +1820,9 @@ func TestICMPInclusionSize(t *testing.T) {
 	// IPv4 function to create a IP packet and send it to the stack.
 	// The packet should generate an error response. We can do that by using an
 	// unknown transport protocol (254).
-	rxIPv4Bad := func(e *channel.Endpoint, src tcpip.Address, payload []byte) buffer.View {
+	rxIPv4Bad := func(e *channel.Endpoint, src tcpip.Address, payload []byte) []byte {
 		totalLen := header.IPv4MinimumSize + len(payload)
-		hdr := buffer.NewPrependable(header.IPv4MinimumSize)
+		hdr := prependable.New(header.IPv4MinimumSize)
 		ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
 		ip.Encode(&header.IPv4Fields{
 			TotalLength: uint16(totalLen),
@@ -1724,14 +1832,16 @@ func TestICMPInclusionSize(t *testing.T) {
 			DstAddr:     localIPv4Addr,
 		})
 		ip.SetChecksum(^ip.CalculateChecksum())
-		vv := hdr.View().ToVectorisedView()
-		vv.AppendView(buffer.View(payload))
+		buf := bufferv2.MakeWithData(hdr.View())
+		buf.Append(bufferv2.NewViewWithData(payload))
 		// Take a copy before InjectInbound takes ownership of vv
 		// as vv may be changed during the call.
-		v := vv.ToView()
-		e.InjectInbound(header.IPv4ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-			Data: vv,
-		}))
+		v := buf.Flatten()
+		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+			Payload: buf,
+		})
+		e.InjectInbound(header.IPv4ProtocolNumber, pkt)
+		pkt.DecRef()
 		return v
 	}
 
@@ -1740,8 +1850,8 @@ func TestICMPInclusionSize(t *testing.T) {
 	// ICMP error response and have enough data to allow the testing of the
 	// inclusion of the errant packet. Use `unknown next header' to generate
 	// the error.
-	rxIPv6Bad := func(e *channel.Endpoint, src tcpip.Address, payload []byte) buffer.View {
-		hdr := buffer.NewPrependable(header.IPv6MinimumSize)
+	rxIPv6Bad := func(e *channel.Endpoint, src tcpip.Address, payload []byte) []byte {
+		hdr := prependable.New(header.IPv6MinimumSize)
 		ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
 		ip.Encode(&header.IPv6Fields{
 			PayloadLength:     uint16(len(payload)),
@@ -1750,23 +1860,27 @@ func TestICMPInclusionSize(t *testing.T) {
 			SrcAddr:           src,
 			DstAddr:           localIPv6Addr,
 		})
-		vv := hdr.View().ToVectorisedView()
-		vv.AppendView(buffer.View(payload))
+		buf := bufferv2.MakeWithData(hdr.View())
+		buf.Append(bufferv2.NewViewWithData(payload))
 		// Take a copy before InjectInbound takes ownership of vv
 		// as vv may be changed during the call.
-		v := vv.ToView()
+		v := buf.Flatten()
 
-		e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-			Data: vv,
-		}))
+		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+			Payload: buf,
+		})
+		e.InjectInbound(header.IPv6ProtocolNumber, pkt)
+		pkt.DecRef()
 		return v
 	}
 
-	v4Checker := func(t *testing.T, pkt *stack.PacketBuffer, payload buffer.View) {
+	v4Checker := func(t *testing.T, pkt stack.PacketBufferPtr, payload []byte) {
 		// We already know the entire packet is the right size so we can use its
 		// length to calculate the right payload size to check.
 		expectedPayloadLength := pkt.Size() - header.IPv4MinimumSize - header.ICMPv4MinimumSize
-		checker.IPv4(t, stack.PayloadSince(pkt.NetworkHeader()),
+		p := stack.PayloadSince(pkt.NetworkHeader())
+		defer p.Release()
+		checker.IPv4(t, p,
 			checker.SrcAddr(localIPv4Addr),
 			checker.DstAddr(remoteIPv4Addr),
 			checker.IPv4HeaderLength(header.IPv4MinimumSize),
@@ -1780,11 +1894,13 @@ func TestICMPInclusionSize(t *testing.T) {
 		)
 	}
 
-	v6Checker := func(t *testing.T, pkt *stack.PacketBuffer, payload buffer.View) {
+	v6Checker := func(t *testing.T, pkt stack.PacketBufferPtr, payload []byte) {
 		// We already know the entire packet is the right size so we can use its
 		// length to calculate the right payload size to check.
 		expectedPayloadLength := pkt.Size() - header.IPv6MinimumSize - header.ICMPv6MinimumSize
-		checker.IPv6(t, stack.PayloadSince(pkt.NetworkHeader()),
+		p := stack.PayloadSince(pkt.NetworkHeader())
+		defer p.Release()
+		checker.IPv6(t, p,
 			checker.SrcAddr(localIPv6Addr),
 			checker.DstAddr(remoteIPv6Addr),
 			checker.IPFullLength(uint16(header.IPv6MinimumSize+header.ICMPv6MinimumSize+expectedPayloadLength)),
@@ -1798,8 +1914,8 @@ func TestICMPInclusionSize(t *testing.T) {
 	tests := []struct {
 		name          string
 		srcAddress    tcpip.Address
-		injector      func(*channel.Endpoint, tcpip.Address, []byte) buffer.View
-		checker       func(*testing.T, *stack.PacketBuffer, buffer.View)
+		injector      func(*channel.Endpoint, tcpip.Address, []byte) []byte
+		checker       func(*testing.T, stack.PacketBufferPtr, []byte)
 		payloadLength int    // Not including IP header.
 		linkMTU       uint32 // Largest IP packet that the link can send as payload.
 		replyLength   int    // Total size of IP/ICMP packet expected back.
@@ -1909,9 +2025,14 @@ func TestICMPInclusionSize(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			s, e := buildDummyStackWithLinkEndpoint(t, test.linkMTU)
+			ctx := newTestContext()
+			defer ctx.cleanup()
+			s := ctx.s
+
+			e := addLinkEndpointToStackWithMTU(t, s, test.linkMTU)
+			defer e.Close()
 			// Allocate and initialize the payload view.
-			payload := buffer.NewView(test.payloadLength)
+			payload := make([]byte, test.payloadLength)
 			for i := 0; i < len(payload); i++ {
 				payload[i] = uint8(i)
 			}
@@ -1928,14 +2049,15 @@ func TestICMPInclusionSize(t *testing.T) {
 				},
 			})
 			v := test.injector(e, test.srcAddress, payload)
-			pkt, ok := e.Read()
-			if !ok {
+			pkt := e.Read()
+			if pkt.IsNil() {
 				t.Fatal("expected a packet to be written")
 			}
-			if got, want := pkt.Pkt.Size(), test.replyLength; got != want {
+			if got, want := pkt.Size(), test.replyLength; got != want {
 				t.Fatalf("got %d bytes of icmp error packet, want %d", got, want)
 			}
-			test.checker(t, pkt.Pkt, v)
+			test.checker(t, pkt, v)
+			pkt.DecRef()
 		})
 	}
 }
@@ -1979,10 +2101,10 @@ func TestJoinLeaveAllRoutersGroup(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			for _, nicDisabled := range [...]bool{true, false} {
 				t.Run(fmt.Sprintf("NIC Disabled = %t", nicDisabled), func(t *testing.T) {
-					s := stack.New(stack.Options{
-						NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
-						TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol, tcp.NewProtocol},
-					})
+					ctx := newTestContext()
+					defer ctx.cleanup()
+					s := ctx.s
+
 					opts := stack.NICOptions{Disabled: nicDisabled}
 					if err := s.CreateNICWithOptions(nicID, channel.New(0, 0, ""), opts); err != nil {
 						t.Fatalf("CreateNICWithOptions(%d, _, %#v) = %s", nicID, opts, err)
@@ -1994,8 +2116,8 @@ func TestJoinLeaveAllRoutersGroup(t *testing.T) {
 						t.Fatalf("got s.IsInGroup(%d, %s) = true, want = false", nicID, test.allRoutersAddr)
 					}
 
-					if err := s.SetForwarding(test.netProto, true); err != nil {
-						t.Fatalf("s.SetForwarding(%d, true): %s", test.netProto, err)
+					if err := s.SetForwardingDefaultAndAllNICs(test.netProto, true); err != nil {
+						t.Fatalf("s.SetForwardingDefaultAndAllNICs(%d, true): %s", test.netProto, err)
 					}
 					if got, err := s.IsInGroup(nicID, test.allRoutersAddr); err != nil {
 						t.Fatalf("s.IsInGroup(%d, %s): %s", nicID, test.allRoutersAddr, err)
@@ -2003,8 +2125,8 @@ func TestJoinLeaveAllRoutersGroup(t *testing.T) {
 						t.Fatalf("got s.IsInGroup(%d, %s) = false, want = true", nicID, test.allRoutersAddr)
 					}
 
-					if err := s.SetForwarding(test.netProto, false); err != nil {
-						t.Fatalf("s.SetForwarding(%d, false): %s", test.netProto, err)
+					if err := s.SetForwardingDefaultAndAllNICs(test.netProto, false); err != nil {
+						t.Fatalf("s.SetForwardingDefaultAndAllNICs(%d, false): %s", test.netProto, err)
 					}
 					if got, err := s.IsInGroup(nicID, test.allRoutersAddr); err != nil {
 						t.Fatalf("s.IsInGroup(%d, %s): %s", nicID, test.allRoutersAddr, err)
@@ -2012,6 +2134,96 @@ func TestJoinLeaveAllRoutersGroup(t *testing.T) {
 						t.Fatalf("got s.IsInGroup(%d, %s) = true, want = false", nicID, test.allRoutersAddr)
 					}
 				})
+			}
+		})
+	}
+}
+
+func TestSetNICIDBeforeDeliveringToRawEndpoint(t *testing.T) {
+	const nicID = 1
+
+	tests := []struct {
+		name          string
+		proto         tcpip.NetworkProtocolNumber
+		addr          tcpip.AddressWithPrefix
+		payloadOffset int
+	}{
+		{
+			name:          "IPv4",
+			proto:         header.IPv4ProtocolNumber,
+			addr:          localIPv4AddrWithPrefix,
+			payloadOffset: header.IPv4MinimumSize,
+		},
+		{
+			name:          "IPv6",
+			proto:         header.IPv6ProtocolNumber,
+			addr:          localIPv6AddrWithPrefix,
+			payloadOffset: 0,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := newTestContext()
+			defer ctx.cleanup()
+			s := ctx.s
+
+			if err := s.CreateNIC(nicID, loopback.New()); err != nil {
+				t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
+			}
+			protocolAddr := tcpip.ProtocolAddress{
+				Protocol:          test.proto,
+				AddressWithPrefix: test.addr,
+			}
+			if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
+			}
+
+			s.SetRouteTable([]tcpip.Route{
+				{
+					Destination: test.addr.Subnet(),
+					NIC:         nicID,
+				},
+			})
+
+			var wq waiter.Queue
+			we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
+			wq.EventRegister(&we)
+			ep, err := s.NewRawEndpoint(udp.ProtocolNumber, test.proto, &wq, true /* associated */)
+			if err != nil {
+				t.Fatalf("NewEndpoint(%d, %d, _): %s", udp.ProtocolNumber, test.proto, err)
+			}
+			defer ep.Close()
+
+			writeOpts := tcpip.WriteOptions{
+				To: &tcpip.FullAddress{
+					Addr: test.addr.Address,
+				},
+			}
+			data := []byte{1, 2, 3, 4}
+			var r bytes.Reader
+			r.Reset(data)
+			if n, err := ep.Write(&r, writeOpts); err != nil {
+				t.Fatalf("ep.Write(_, _): %s", err)
+			} else if want := int64(len(data)); n != want {
+				t.Fatalf("got ep.Write(_, _) = (%d, nil), want = (%d, nil)", n, want)
+			}
+
+			// Wait for the endpoint to become readable.
+			<-ch
+
+			var w bytes.Buffer
+			rr, err := ep.Read(&w, tcpip.ReadOptions{
+				NeedRemoteAddr: true,
+			})
+			if err != nil {
+				t.Fatalf("ep.Read(...): %s", err)
+			}
+			if diff := cmp.Diff(data, w.Bytes()[test.payloadOffset:]); diff != "" {
+				t.Errorf("payload mismatch (-want +got):\n%s", diff)
+			}
+			if diff := cmp.Diff(tcpip.FullAddress{Addr: test.addr.Address, NIC: nicID}, rr.RemoteAddr); diff != "" {
+				t.Errorf("remote addr mismatch (-want +got):\n%s", diff)
 			}
 		})
 	}

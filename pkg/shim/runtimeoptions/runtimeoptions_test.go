@@ -26,7 +26,7 @@ import (
 func TestCreateTaskRequest(t *testing.T) {
 	// Serialize the top-level message.
 	const encodedText = `options: <
-  type_url: "cri.runtimeoptions.v1.Options"
+  type_url: "runtimeoptions.v1.Options"
   value: "\n\010type_url\022\013config_path"
 >`
 	got := &shim.CreateTaskRequest{} // Should have raw options.

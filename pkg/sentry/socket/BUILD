@@ -1,20 +1,23 @@
 load("//tools:defs.bzl", "go_library")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_library(
     name = "socket",
-    srcs = ["socket.go"],
+    srcs = [
+        "socket.go",
+        "socket_state.go",
+    ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/binary",
+        "//pkg/atomicbitops",
         "//pkg/context",
         "//pkg/hostarch",
         "//pkg/marshal",
-        "//pkg/sentry/device",
-        "//pkg/sentry/fs",
-        "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/socket/unix/transport",

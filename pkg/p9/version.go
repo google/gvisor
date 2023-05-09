@@ -26,7 +26,7 @@ const (
 	//
 	// Clients are expected to start requesting this version number and
 	// to continuously decrement it until a Tversion request succeeds.
-	highestSupportedVersion uint32 = 12
+	highestSupportedVersion uint32 = 13
 
 	// lowestSupportedVersion is the lowest supported version X in a
 	// version string of the format 9P2000.L.Google.X.
@@ -65,9 +65,10 @@ func HighestVersionString() string {
 // predicate must be commented and should take the format:
 //
 // // VersionSupportsX returns true if version v supports X and must be checked when ...
-// func VersionSupportsX(v int32) bool {
-//	...
-// )
+//
+//	func VersionSupportsX(v int32) bool {
+//		...
+//	}
 func parseVersion(str string) (uint32, bool) {
 	// Special case the base version which lacks the ".Google.X" suffix.  This
 	// version always means version 0.
@@ -178,4 +179,16 @@ func versionSupportsListRemoveXattr(v uint32) bool {
 // the Tsetattrclunk message.
 func versionSupportsTsetattrclunk(v uint32) bool {
 	return v >= 12
+}
+
+// versionSupportsTmultiGetAttr returns true if version v supports
+// the TmultiGetAttr message.
+func versionSupportsTmultiGetAttr(v uint32) bool {
+	return v >= 13
+}
+
+// versionSupportsBind returns true if version v supports the Tbind message.
+func versionSupportsBind(v uint32) bool {
+	// TODO(b/194709873): Bump version and gate with that.
+	return false
 }

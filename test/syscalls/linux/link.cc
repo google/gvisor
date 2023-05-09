@@ -108,10 +108,8 @@ TEST(LinkTest, PermissionDenied) {
                 SyscallFailsWithErrno(EPERM));
     EXPECT_THAT(link(special_path.c_str(), newname.c_str()),
                 SyscallFailsWithErrno(EPERM));
-    if (!IsRunningWithVFS1()) {
-      EXPECT_THAT(link(setuid_file.path().c_str(), newname.c_str()),
-                  SyscallFailsWithErrno(EPERM));
-    }
+    EXPECT_THAT(link(setuid_file.path().c_str(), newname.c_str()),
+                SyscallFailsWithErrno(EPERM));
   });
 }
 
@@ -142,7 +140,8 @@ TEST(LinkTest, OldnameIsEmpty) {
 TEST(LinkTest, OldnameDoesNotExist) {
   const std::string oldname = NewTempAbsPath();
   const std::string newname = NewTempAbsPath();
-  EXPECT_THAT(link("", newname.c_str()), SyscallFailsWithErrno(ENOENT));
+  EXPECT_THAT(link(oldname.c_str(), newname.c_str()),
+              SyscallFailsWithErrno(ENOENT));
 }
 
 TEST(LinkTest, NewnameCannotExist) {
@@ -238,7 +237,6 @@ TEST(LinkTest, AbsPathsWithNonDirFDs) {
 }
 
 TEST(LinkTest, NewDirFDWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   auto oldfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   const std::string newname_parent = NewTempAbsPath();
   const std::string newname_base = "child";
@@ -258,7 +256,6 @@ TEST(LinkTest, NewDirFDWithOpath) {
 }
 
 TEST(LinkTest, RelPathsNonDirFDsWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   auto oldfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
 
   // Create a file that will be passed as the directory fd for old/new names.
@@ -275,8 +272,6 @@ TEST(LinkTest, RelPathsNonDirFDsWithOpath) {
 }
 
 TEST(LinkTest, AbsPathsNonDirFDsWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
-
   auto oldfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   const std::string newname = NewTempAbsPath();
 
@@ -352,6 +347,12 @@ TEST(LinkTest, LinkatWithSymlinkFollow) {
 
   EXPECT_THAT(unlink(oldsymlink.c_str()), SyscallSucceeds());
   EXPECT_THAT(unlink(newname.c_str()), SyscallSucceeds());
+}
+
+TEST(LinkTest, KernfsAcrossFilesystem) {
+  auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  EXPECT_THAT(link(file.path().c_str(), "/sys/newfile"),
+              SyscallFailsWithErrno(::testing::AnyOf(EROFS, EXDEV)));
 }
 
 }  // namespace

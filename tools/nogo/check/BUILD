@@ -1,11 +1,57 @@
-load("//tools:defs.bzl", "go_binary")
+load("//tools:defs.bzl", "go_library")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
-go_binary(
+go_library(
     name = "check",
-    srcs = ["main.go"],
-    nogo = False,
-    visibility = ["//visibility:public"],
-    deps = ["//tools/nogo"],
+    srcs = [
+        "analyzers.go",
+        "build.go",
+        "check.go",
+        "findings.go",
+    ],
+    visibility = ["//tools/nogo:__subpackages__"],
+    deps = [
+        "//runsc/flag",
+        "//tools/checkaligned",
+        "//tools/checkconst",
+        "//tools/checkescape",
+        "//tools/checklinkname",
+        "//tools/checklocks",
+        "//tools/checkunsafe",
+        "//tools/nogo/facts",
+        "//tools/nogo/flags",
+        "@co_honnef_go_tools//staticcheck:go_default_library",
+        "@co_honnef_go_tools//stylecheck:go_default_library",
+        "@org_golang_x_tools//go/analysis:go_default_library",
+        "@org_golang_x_tools//go/analysis/passes/asmdecl:go_default_library",
+        "@org_golang_x_tools//go/analysis/passes/assign:go_default_library",
+        "@org_golang_x_tools//go/analysis/passes/atomic:go_default_library",
+        "@org_golang_x_tools//go/analysis/passes/bools:go_default_library",
+        "@org_golang_x_tools//go/analysis/passes/buildtag:go_default_library",
+        "@org_golang_x_tools//go/analysis/passes/cgocall:go_default_library",
+        "@org_golang_x_tools//go/analysis/passes/composite:go_default_library",
+        "@org_golang_x_tools//go/analysis/passes/copylock:go_default_library",
+        "@org_golang_x_tools//go/analysis/passes/errorsas:go_default_library",
+        "@org_golang_x_tools//go/analysis/passes/httpresponse:go_default_library",
+        "@org_golang_x_tools//go/analysis/passes/loopclosure:go_default_library",
+        "@org_golang_x_tools//go/analysis/passes/lostcancel:go_default_library",
+        "@org_golang_x_tools//go/analysis/passes/nilfunc:go_default_library",
+        "@org_golang_x_tools//go/analysis/passes/nilness:go_default_library",
+        "@org_golang_x_tools//go/analysis/passes/printf:go_default_library",
+        "@org_golang_x_tools//go/analysis/passes/shadow:go_default_library",
+        "@org_golang_x_tools//go/analysis/passes/shift:go_default_library",
+        "@org_golang_x_tools//go/analysis/passes/stdmethods:go_default_library",
+        "@org_golang_x_tools//go/analysis/passes/stringintconv:go_default_library",
+        "@org_golang_x_tools//go/analysis/passes/structtag:go_default_library",
+        "@org_golang_x_tools//go/analysis/passes/tests:go_default_library",
+        "@org_golang_x_tools//go/analysis/passes/unmarshal:go_default_library",
+        "@org_golang_x_tools//go/analysis/passes/unreachable:go_default_library",
+        "@org_golang_x_tools//go/analysis/passes/unsafeptr:go_default_library",
+        "@org_golang_x_tools//go/analysis/passes/unusedresult:go_default_library",
+        "@org_golang_x_tools//go/gcexportdata:go_default_library",
+    ],
 )

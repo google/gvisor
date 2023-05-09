@@ -18,17 +18,17 @@ import (
 	"bytes"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
-	"gvisor.dev/gvisor/pkg/syserror"
-
-	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 // Brk implements linux syscall brk(2).
-func Brk(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Brk(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr, _ := t.MemoryManager().Brk(t, args[0].Pointer())
 	// "However, the actual Linux system call returns the new program break on
 	// success. On failure, the system call returns the current break." -
@@ -36,10 +36,8 @@ func Brk(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallCo
 	return uintptr(addr), nil, nil
 }
 
-// LINT.IfChange
-
-// Mmap implements linux syscall mmap(2).
-func Mmap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+// Mmap implements Linux syscall mmap(2).
+func Mmap(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	prot := args[2].Int()
 	flags := args[3].Int()
 	fd := args[4].Int()
@@ -51,7 +49,7 @@ func Mmap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 
 	// Require exactly one of MAP_PRIVATE and MAP_SHARED.
 	if private == shared {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	opts := memmap.MMapOpts{
@@ -84,17 +82,16 @@ func Mmap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 		// Convert the passed FD to a file reference.
 		file := t.GetFile(fd)
 		if file == nil {
-			return 0, nil, syserror.EBADF
+			return 0, nil, linuxerr.EBADF
 		}
 		defer file.DecRef(t)
 
-		flags := file.Flags()
 		// mmap unconditionally requires that the FD is readable.
-		if !flags.Read {
-			return 0, nil, syserror.EACCES
+		if !file.IsReadable() {
+			return 0, nil, linuxerr.EACCES
 		}
 		// MAP_SHARED requires that the FD be writable for PROT_WRITE.
-		if shared && !flags.Write {
+		if shared && !file.IsWritable() {
 			opts.MaxPerms.Write = false
 		}
 
@@ -102,29 +99,29 @@ func Mmap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 			return 0, nil, err
 		}
 	} else if shared {
-		// Back shared anonymous mappings with a special mappable.
+		// Back shared anonymous mappings with an anonymous tmpfs file.
 		opts.Offset = 0
-		m, err := mm.NewSharedAnonMappable(opts.Length, t.Kernel())
+		file, err := tmpfs.NewZeroFile(t, t.Credentials(), t.Kernel().ShmMount(), opts.Length)
 		if err != nil {
 			return 0, nil, err
 		}
-		opts.MappingIdentity = m // transfers ownership of m to opts
-		opts.Mappable = m
+		defer file.DecRef(t)
+		if err := file.ConfigureMMap(t, &opts); err != nil {
+			return 0, nil, err
+		}
 	}
 
 	rv, err := t.MemoryManager().MMap(t, opts)
 	return uintptr(rv), nil, err
 }
 
-// LINT.ThenChange(vfs2/mmap.go)
-
 // Munmap implements linux syscall munmap(2).
-func Munmap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Munmap(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	return 0, nil, t.MemoryManager().MUnmap(t, args[0].Pointer(), args[1].Uint64())
 }
 
 // Mremap implements linux syscall mremap(2).
-func Mremap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Mremap(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	oldAddr := args[0].Pointer()
 	oldSize := args[1].Uint64()
 	newSize := args[2].Uint64()
@@ -132,7 +129,7 @@ func Mremap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	newAddr := args[4].Pointer()
 
 	if flags&^(linux.MREMAP_MAYMOVE|linux.MREMAP_FIXED) != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	mayMove := flags&linux.MREMAP_MAYMOVE != 0
 	fixed := flags&linux.MREMAP_FIXED != 0
@@ -147,7 +144,7 @@ func Mremap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	case !mayMove && fixed:
 		// "If MREMAP_FIXED is specified, then MREMAP_MAYMOVE must also be
 		// specified." - mremap(2)
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	rv, err := t.MemoryManager().MRemap(t, oldAddr, oldSize, newSize, mm.MRemapOpts{
@@ -158,7 +155,7 @@ func Mremap(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 }
 
 // Mprotect implements linux syscall mprotect(2).
-func Mprotect(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Mprotect(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	length := args[1].Uint64()
 	prot := args[2].Int()
 	err := t.MemoryManager().MProtect(args[0].Pointer(), length, hostarch.AccessType{
@@ -170,7 +167,7 @@ func Mprotect(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 }
 
 // Madvise implements linux syscall madvise(2).
-func Madvise(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Madvise(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
 	length := uint64(args[1].SizeT())
 	adv := args[2].Int()
@@ -178,7 +175,7 @@ func Madvise(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	// "The Linux implementation requires that the address addr be
 	// page-aligned, and allows length to be zero." - madvise(2)
 	if addr.RoundDown() != addr {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	if length == 0 {
 		return 0, nil, nil
@@ -186,7 +183,7 @@ func Madvise(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	// Not explicitly stated: length need not be page-aligned.
 	lenAddr, ok := hostarch.Addr(length).RoundUp()
 	if !ok {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	length = uint64(lenAddr)
 
@@ -211,42 +208,42 @@ func Madvise(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 	case linux.MADV_REMOVE:
 		// These "suggestions" have application-visible side effects, so we
 		// have to indicate that we don't support them.
-		return 0, nil, syserror.ENOSYS
+		return 0, nil, linuxerr.ENOSYS
 	case linux.MADV_HWPOISON:
 		// Only privileged processes are allowed to poison pages.
-		return 0, nil, syserror.EPERM
+		return 0, nil, linuxerr.EPERM
 	default:
 		// If adv is not a valid value tell the caller.
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 }
 
 // Mincore implements the syscall mincore(2).
-func Mincore(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Mincore(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
 	length := args[1].SizeT()
 	vec := args[2].Pointer()
 
 	if addr != addr.RoundDown() {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	// "The length argument need not be a multiple of the page size, but since
 	// residency information is returned for whole pages, length is effectively
 	// rounded up to the next multiple of the page size." - mincore(2)
 	la, ok := hostarch.Addr(length).RoundUp()
 	if !ok {
-		return 0, nil, syserror.ENOMEM
+		return 0, nil, linuxerr.ENOMEM
 	}
 	ar, ok := addr.ToRange(uint64(la))
 	if !ok {
-		return 0, nil, syserror.ENOMEM
+		return 0, nil, linuxerr.ENOMEM
 	}
 
 	// Pretend that all mapped pages are "resident in core".
 	mapped := t.MemoryManager().VirtualMemorySizeRange(ar)
 	// "ENOMEM: addr to addr + length contained unmapped memory."
 	if mapped != uint64(la) {
-		return 0, nil, syserror.ENOMEM
+		return 0, nil, linuxerr.ENOMEM
 	}
 	resident := bytes.Repeat([]byte{1}, int(mapped/hostarch.PageSize))
 	_, err := t.CopyOutBytes(vec, resident)
@@ -254,7 +251,7 @@ func Mincore(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 }
 
 // Msync implements Linux syscall msync(2).
-func Msync(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Msync(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
 	length := args[1].SizeT()
 	flags := args[2].Int()
@@ -265,11 +262,11 @@ func Msync(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	// semantics that are (currently) equivalent to specifying MS_ASYNC." -
 	// msync(2)
 	if flags&^(linux.MS_ASYNC|linux.MS_SYNC|linux.MS_INVALIDATE) != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	sync := flags&linux.MS_SYNC != 0
 	if sync && flags&linux.MS_ASYNC != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	err := t.MemoryManager().MSync(t, addr, uint64(length), mm.MSyncOpts{
 		Sync:       sync,
@@ -277,11 +274,11 @@ func Msync(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	})
 	// MSync calls fsync, the same interrupt conversion rules apply, see
 	// mm/msync.c, fsync POSIX.1-2008.
-	return 0, nil, syserror.ConvertIntr(err, syserror.ERESTARTSYS)
+	return 0, nil, linuxerr.ConvertIntr(err, linuxerr.ERESTARTSYS)
 }
 
 // Mlock implements linux syscall mlock(2).
-func Mlock(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Mlock(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
 	length := args[1].SizeT()
 
@@ -289,13 +286,13 @@ func Mlock(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 }
 
 // Mlock2 implements linux syscall mlock2(2).
-func Mlock2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Mlock2(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
 	length := args[1].SizeT()
 	flags := args[2].Int()
 
 	if flags&^(linux.MLOCK_ONFAULT) != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	mode := memmap.MLockEager
@@ -306,7 +303,7 @@ func Mlock2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 }
 
 // Munlock implements linux syscall munlock(2).
-func Munlock(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Munlock(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
 	length := args[1].SizeT()
 
@@ -314,11 +311,11 @@ func Munlock(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysca
 }
 
 // Mlockall implements linux syscall mlockall(2).
-func Mlockall(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Mlockall(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	flags := args[0].Int()
 
 	if flags&^(linux.MCL_CURRENT|linux.MCL_FUTURE|linux.MCL_ONFAULT) != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	mode := memmap.MLockEager
@@ -333,7 +330,7 @@ func Mlockall(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sysc
 }
 
 // Munlockall implements linux syscall munlockall(2).
-func Munlockall(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Munlockall(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	return 0, nil, t.MemoryManager().MLockAll(t, mm.MLockAllOpts{
 		Current: true,
 		Future:  true,

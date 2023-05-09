@@ -20,13 +20,22 @@ import (
 	"runtime"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/hosttid"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/procid"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sync"
+)
+
+var (
+	// maximumUserAddress is the largest possible user address.
+	maximumUserAddress = linux.TaskSize
+
+	// stubInitAddress is the initial attempt link address for the stub.
+	stubInitAddress = linux.TaskSize
 )
 
 // Linux kernel errnos which "should never be seen by user programs", but will
@@ -500,18 +509,16 @@ func (t *thread) NotifyInterrupt() {
 // switchToApp is called from the main SwitchToApp entrypoint.
 //
 // This function returns true on a system call, false on a signal.
-func (s *subprocess) switchToApp(c *context, ac arch.Context) bool {
+func (s *subprocess) switchToApp(c *context, ac *arch.Context64) bool {
 	// Lock the thread for ptrace operations.
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
 	// Extract floating point state.
 	fpState := ac.FloatingPointData()
-	fpLen, _ := ac.FeatureSet().ExtendedStateSize()
-	useXsave := ac.FeatureSet().UseXsave()
 
 	// Grab our thread from the pool.
-	currentTID := int32(procid.Current())
+	currentTID := int32(hosttid.Current())
 	t := s.sysemuThreads.lookupOrCreate(currentTID, s.newThread)
 
 	// Reset necessary registers.
@@ -524,7 +531,7 @@ func (s *subprocess) switchToApp(c *context, ac arch.Context) bool {
 	// Check for interrupts, and ensure that future interrupts will signal t.
 	if !c.interrupt.Enable(t) {
 		// Pending interrupt; simulate.
-		c.signalInfo = arch.SignalInfo{Signo: int32(platform.SignalInterrupt)}
+		c.signalInfo = linux.SignalInfo{Signo: int32(platform.SignalInterrupt)}
 		return false
 	}
 	defer c.interrupt.Disable()
@@ -533,7 +540,7 @@ func (s *subprocess) switchToApp(c *context, ac arch.Context) bool {
 	if err := t.setRegs(regs); err != nil {
 		panic(fmt.Sprintf("ptrace set regs (%+v) failed: %v", regs, err))
 	}
-	if err := t.setFPRegs(fpState, uint64(fpLen), useXsave); err != nil {
+	if err := t.setFPRegs(fpState, &c.archContext); err != nil {
 		panic(fmt.Sprintf("ptrace set fpregs (%+v) failed: %v", fpState, err))
 	}
 	if err := t.setTLS(&tls); err != nil {
@@ -571,7 +578,7 @@ func (s *subprocess) switchToApp(c *context, ac arch.Context) bool {
 		if err := t.getRegs(regs); err != nil {
 			panic(fmt.Sprintf("ptrace get regs failed: %v", err))
 		}
-		if err := t.getFPRegs(fpState, uint64(fpLen), useXsave); err != nil {
+		if err := t.getFPRegs(fpState, &c.archContext); err != nil {
 			panic(fmt.Sprintf("ptrace get fpregs failed: %v", err))
 		}
 		if err := t.getTLS(&tls); err != nil {
@@ -620,7 +627,7 @@ func (s *subprocess) syscall(sysno uintptr, args ...arch.SyscallArgument) (uintp
 	// Grab a thread.
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	currentTID := int32(procid.Current())
+	currentTID := int32(hosttid.Current())
 	t := s.syscallThreads.lookupOrCreate(currentTID, s.newThread)
 
 	return t.syscallIgnoreInterrupt(&t.initRegs, sysno, args...)

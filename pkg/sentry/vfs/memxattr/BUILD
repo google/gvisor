@@ -1,6 +1,9 @@
 load("//tools:defs.bzl", "go_library")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_library(
     name = "memxattr",
@@ -8,8 +11,9 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/errors/linuxerr",
+        "//pkg/sentry/kernel/auth",
         "//pkg/sentry/vfs",
         "//pkg/sync",
-        "//pkg/syserror",
     ],
 )

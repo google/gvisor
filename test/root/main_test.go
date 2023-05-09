@@ -15,13 +15,14 @@
 package root
 
 import (
-	"flag"
 	"fmt"
 	"os"
 	"testing"
 
 	"github.com/syndtr/gocapability/capability"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
+	"gvisor.dev/gvisor/runsc/config"
+	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
@@ -29,7 +30,10 @@ import (
 // supported docker version, required capabilities, and configures the executable
 // path for runsc.
 func TestMain(m *testing.M) {
-	flag.Parse()
+	config.RegisterFlags(flag.CommandLine)
+	if !flag.CommandLine.Parsed() {
+		flag.Parse()
+	}
 
 	if !specutils.HasCapabilities(capability.CAP_SYS_ADMIN, capability.CAP_DAC_OVERRIDE) {
 		fmt.Println("Test requires sysadmin privileges to run. Try again with sudo.")

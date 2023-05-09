@@ -149,33 +149,7 @@ TEST(EventfdTest, BigWriteBigRead) {
   EXPECT_EQ(l[0], 1);
 }
 
-TEST(EventfdTest, SpliceFromPipePartialSucceeds) {
-  int pipes[2];
-  ASSERT_THAT(pipe2(pipes, O_NONBLOCK), SyscallSucceeds());
-  const FileDescriptor pipe_rfd(pipes[0]);
-  const FileDescriptor pipe_wfd(pipes[1]);
-  constexpr uint64_t kVal{1};
-
-  FileDescriptor efd = ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(0, EFD_NONBLOCK));
-
-  uint64_t event_array[2];
-  event_array[0] = kVal;
-  event_array[1] = kVal;
-  ASSERT_THAT(write(pipe_wfd.get(), event_array, sizeof(event_array)),
-              SyscallSucceedsWithValue(sizeof(event_array)));
-  EXPECT_THAT(splice(pipe_rfd.get(), /*__offin=*/nullptr, efd.get(),
-                     /*__offout=*/nullptr, sizeof(event_array[0]) + 1,
-                     SPLICE_F_NONBLOCK),
-              SyscallSucceedsWithValue(sizeof(event_array[0])));
-
-  uint64_t val;
-  ASSERT_THAT(read(efd.get(), &val, sizeof(val)),
-              SyscallSucceedsWithValue(sizeof(val)));
-  EXPECT_EQ(val, kVal);
-}
-
-// NotifyNonZero is inherently racy, so random save is disabled.
-TEST(EventfdTest, NotifyNonZero_NoRandomSave) {
+TEST(EventfdTest, NotifyNonZero) {
   // Waits will time out at 10 seconds.
   constexpr int kEpollTimeoutMs = 10000;
   // Create an eventfd descriptor.
@@ -214,6 +188,29 @@ TEST(EventfdTest, NotifyNonZero_NoRandomSave) {
   val = 0;
   ASSERT_THAT(read(efd.get(), &val, sizeof(val)), SyscallSucceeds());
   EXPECT_EQ(val, 1);
+}
+
+TEST(EventfdTest, SpliceReturnsEINVAL) {
+  // Splicing into eventfd has been disabled in
+  // 36e2c7421f02 ("fs: don't allow splice read/write without explicit ops").
+  SKIP_IF(!IsRunningOnGvisor());
+
+  // Create an eventfd descriptor.
+  FileDescriptor efd = ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(7, 0));
+
+  // Create a new pipe.
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  const FileDescriptor rfd(fds[0]);
+  const FileDescriptor wfd(fds[1]);
+
+  // Fill the pipe.
+  std::vector<char> buf(kPageSize);
+  ASSERT_THAT(write(wfd.get(), buf.data(), buf.size()),
+              SyscallSucceedsWithValue(kPageSize));
+
+  EXPECT_THAT(splice(rfd.get(), nullptr, efd.get(), nullptr, kPageSize, 0),
+              SyscallFailsWithErrno(EINVAL));
 }
 
 }  // namespace

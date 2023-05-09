@@ -1,14 +1,18 @@
 load("//tools:defs.bzl", "go_library")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
+load("//pkg/sync/locking:locking.bzl", "declare_mutex")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_template_instance(
     name = "atomicptr_credentials",
     out = "atomicptr_credentials_unsafe.go",
     package = "auth",
     suffix = "Credentials",
-    template = "//pkg/sync:generic_atomicptr",
+    template = "//pkg/sync/atomicptr:generic_atomicptr",
     types = {
         "Value": "Credentials",
     },
@@ -42,6 +46,14 @@ go_template_instance(
     },
 )
 
+declare_mutex(
+    name = "user_namespace_mutex",
+    out = "user_namespace_mutex.go",
+    nested_lock_names = ["ns"],
+    package = "auth",
+    prefix = "userNamespace",
+)
+
 go_library(
     name = "auth",
     srcs = [
@@ -56,6 +68,7 @@ go_library(
         "id_map_range.go",
         "id_map_set.go",
         "user_namespace.go",
+        "user_namespace_mutex.go",
     ],
     marshal = True,
     visibility = ["//pkg/sentry:internal"],
@@ -63,8 +76,11 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/bits",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/log",
+        "//pkg/sentry/seccheck",
+        "//pkg/sentry/seccheck/points:points_go_proto",
         "//pkg/sync",
-        "//pkg/syserror",
+        "//pkg/sync/locking",
     ],
 )

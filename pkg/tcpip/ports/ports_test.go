@@ -15,19 +15,24 @@
 package ports
 
 import (
+	"math"
 	"math/rand"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 )
 
 const (
 	fakeTransNumber   tcpip.TransportProtocolNumber = 1
 	fakeNetworkNumber tcpip.NetworkProtocolNumber   = 2
+)
 
-	fakeIPAddress  = tcpip.Address("\x08\x08\x08\x08")
-	fakeIPAddress1 = tcpip.Address("\x08\x08\x08\x09")
+var (
+	fakeIPAddress  = testutil.MustParse4("8.8.8.8")
+	fakeIPAddress1 = testutil.MustParse4("8.8.8.9")
 )
 
 type portReserveTestAction struct {
@@ -327,6 +332,7 @@ func TestPortReservation(t *testing.T) {
 		t.Run(test.tname, func(t *testing.T) {
 			pm := NewPortManager()
 			net := []tcpip.NetworkProtocolNumber{fakeNetworkNumber}
+			rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 
 			for _, test := range test.actions {
 				first, _ := pm.PortRange()
@@ -352,7 +358,7 @@ func TestPortReservation(t *testing.T) {
 					BindToDevice: test.device,
 					Dest:         test.dest,
 				}
-				gotPort, err := pm.ReservePort(portRes, nil /* testPort */)
+				gotPort, err := pm.ReservePort(rng, portRes, nil /* testPort */)
 				if diff := cmp.Diff(test.want, err); diff != "" {
 					t.Fatalf("unexpected error from ReservePort(%+v, _), (-want, +got):\n%s", portRes, diff)
 				}
@@ -413,10 +419,11 @@ func TestPickEphemeralPort(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			pm := NewPortManager()
+			rng := rand.New(rand.NewSource(time.Now().UnixNano()))
 			if err := pm.SetPortRange(firstEphemeral, firstEphemeral+numEphemeralPorts); err != nil {
 				t.Fatalf("failed to set ephemeral port range: %s", err)
 			}
-			port, err := pm.PickEphemeralPort(test.f)
+			port, err := pm.PickEphemeralPort(rng, test.f)
 			if diff := cmp.Diff(test.wantErr, err); diff != "" {
 				t.Fatalf("unexpected error from PickEphemeralPort(..), (-want, +got):\n%s", diff)
 			}
@@ -479,7 +486,7 @@ func TestPickEphemeralPortStable(t *testing.T) {
 			if err := pm.SetPortRange(firstEphemeral, firstEphemeral+numEphemeralPorts); err != nil {
 				t.Fatalf("failed to set ephemeral port range: %s", err)
 			}
-			portOffset := uint16(rand.Int31n(int32(numEphemeralPorts)))
+			portOffset := uint32(rand.Int31n(int32(numEphemeralPorts)))
 			port, err := pm.PickEphemeralPortStable(portOffset, test.f)
 			if diff := cmp.Diff(test.wantErr, err); diff != "" {
 				t.Fatalf("unexpected error from PickEphemeralPort(..), (-want, +got):\n%s", diff)
@@ -488,5 +495,31 @@ func TestPickEphemeralPortStable(t *testing.T) {
 				t.Errorf("got PickEphemeralPort(..) = (%d, nil); want (%d, nil)", port, test.wantPort)
 			}
 		})
+	}
+}
+
+// TestOverflow addresses b/183593432, wherein an overflowing uint16 causes a
+// port allocation failure.
+func TestOverflow(t *testing.T) {
+	// Use a small range and start at offsets that will cause an overflow.
+	count := uint16(50)
+	for offset := uint32(math.MaxUint16 - count); offset < math.MaxUint16; offset++ {
+		reservedPorts := make(map[uint16]struct{})
+		// Ensure we can reserve everything in the allowed range.
+		for i := uint16(0); i < count; i++ {
+			port, err := pickEphemeralPort(offset, firstEphemeral, count, func(port uint16) (bool, tcpip.Error) {
+				if _, ok := reservedPorts[port]; !ok {
+					reservedPorts[port] = struct{}{}
+					return true, nil
+				}
+				return false, nil
+			})
+			if err != nil {
+				t.Fatalf("port picking failed at iteration %d, for offset %d, len(reserved): %+v", i, offset, len(reservedPorts))
+			}
+			if port < firstEphemeral || port > firstEphemeral+count {
+				t.Fatalf("reserved port %d, which is not in range [%d, %d]", port, firstEphemeral, firstEphemeral+count-1)
+			}
+		}
 	}
 }

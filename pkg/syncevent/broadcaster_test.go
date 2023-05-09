@@ -136,11 +136,11 @@ func BenchmarkMapSubscribeUnsubscribe(b *testing.B) {
 
 func BenchmarkQueueSubscribeUnsubscribe(b *testing.B) {
 	var q waiter.Queue
-	e, _ := waiter.NewChannelEntry(nil)
+	e, _ := waiter.NewChannelEntry(1)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		q.EventRegister(&e, 1)
+		q.EventRegister(&e)
 		q.EventUnregister(&e)
 	}
 }
@@ -207,7 +207,7 @@ func BenchmarkQueueSubscribeUnsubscribeBatch(b *testing.B) {
 	var q waiter.Queue
 	es := make([]waiter.Entry, numBatchReceivers)
 	for i := range es {
-		es[i], _ = waiter.NewChannelEntry(nil)
+		es[i], _ = waiter.NewChannelEntry(1)
 	}
 
 	// Generate a random order for unsubscriptions.
@@ -216,7 +216,7 @@ func BenchmarkQueueSubscribeUnsubscribeBatch(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N/numBatchReceivers; i++ {
 		for j := 0; j < numBatchReceivers; j++ {
-			q.EventRegister(&es[j], 1)
+			q.EventRegister(&es[j])
 		}
 		for j := 0; j < numBatchReceivers; j++ {
 			q.EventUnregister(&es[unsub[j]])
@@ -279,8 +279,8 @@ func BenchmarkQueueBroadcastRedundant(b *testing.B) {
 		b.Run(fmt.Sprintf("%d", n), func(b *testing.B) {
 			var q waiter.Queue
 			for i := 0; i < n; i++ {
-				e, _ := waiter.NewChannelEntry(nil)
-				q.EventRegister(&e, 1)
+				e, _ := waiter.NewChannelEntry(1)
+				q.EventRegister(&e)
 			}
 			q.Notify(1)
 
@@ -355,8 +355,8 @@ func BenchmarkQueueBroadcastAck(b *testing.B) {
 			var q waiter.Queue
 			chs := make([]chan struct{}, n)
 			for i := range chs {
-				e, ch := waiter.NewChannelEntry(nil)
-				q.EventRegister(&e, 1)
+				e, ch := waiter.NewChannelEntry(1)
+				q.EventRegister(&e)
 				chs[i] = ch
 			}
 

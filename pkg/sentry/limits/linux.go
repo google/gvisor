@@ -20,7 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
-// FromLinuxResource maps linux resources to sentry LimitTypes.
+// FromLinuxResource maps linux resources to LimitTypes.
 var FromLinuxResource = map[int]LimitType{
 	linux.RLIMIT_CPU:        CPU,
 	linux.RLIMIT_FSIZE:      FileSize,
@@ -38,6 +38,26 @@ var FromLinuxResource = map[int]LimitType{
 	linux.RLIMIT_NICE:       Nice,
 	linux.RLIMIT_RTPRIO:     RealTimePriority,
 	linux.RLIMIT_RTTIME:     Rttime,
+}
+
+// FromLinuxResourceName maps from linux resource names to LimitTypes.
+var FromLinuxResourceName = map[string]LimitType{
+	"RLIMIT_AS":         AS,
+	"RLIMIT_CORE":       Core,
+	"RLIMIT_CPU":        CPU,
+	"RLIMIT_DATA":       Data,
+	"RLIMIT_FSIZE":      FileSize,
+	"RLIMIT_LOCKS":      Locks,
+	"RLIMIT_MEMLOCK":    MemoryLocked,
+	"RLIMIT_MSGQUEUE":   MessageQueueBytes,
+	"RLIMIT_NICE":       Nice,
+	"RLIMIT_NOFILE":     NumberOfFiles,
+	"RLIMIT_NPROC":      ProcessCount,
+	"RLIMIT_RSS":        Rss,
+	"RLIMIT_RTPRIO":     RealTimePriority,
+	"RLIMIT_RTTIME":     Rttime,
+	"RLIMIT_SIGPENDING": SignalsPending,
+	"RLIMIT_STACK":      Stack,
 }
 
 // FromLinux maps linux rlimit values to sentry Limits, being careful to handle

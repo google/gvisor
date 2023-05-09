@@ -26,6 +26,23 @@ import (
 	"gvisor.dev/gvisor/pkg/urpc"
 )
 
+const (
+	// DefaultBlockProfileRate is the default profiling rate for block
+	// profiles.
+	//
+	// The default here is 10%, which will record a stacktrace 10% of the
+	// time when blocking occurs. Since these events should not be super
+	// frequent, we expect this to achieve a reasonable balance between
+	// collecting the data we need and imposing a high performance cost
+	// (e.g. skewing even the CPU profile).
+	DefaultBlockProfileRate = 10
+
+	// DefaultMutexProfileRate is the default profiling rate for mutex
+	// profiles. Like the block rate above, we use a default rate of 10%
+	// for the same reasons.
+	DefaultMutexProfileRate = 10
+)
+
 // Profile includes profile-related RPC stubs. It provides a way to
 // control the built-in runtime profiling facilities.
 //
@@ -175,12 +192,8 @@ func (p *Profile) Block(o *BlockProfileOpts, _ *struct{}) error {
 	defer p.blockMu.Unlock()
 
 	// Always set the rate. We then wait to collect a profile at this rate,
-	// and disable when we're done. Note that the default here is 10%, which
-	// will record a stacktrace 10% of the time when blocking occurs. Since
-	// these events should not be super frequent, we expect this to achieve
-	// a reasonable balance between collecting the data we need and imposing
-	// a high performance cost (e.g. skewing even the CPU profile).
-	rate := 10
+	// and disable when we're done.
+	rate := DefaultBlockProfileRate
 	if o.Rate != 0 {
 		rate = o.Rate
 	}
@@ -220,9 +233,8 @@ func (p *Profile) Mutex(o *MutexProfileOpts, _ *struct{}) error {
 	p.mutexMu.Lock()
 	defer p.mutexMu.Unlock()
 
-	// Always set the fraction. Like the block rate above, we use
-	// a default rate of 10% for the same reasons.
-	fraction := 10
+	// Always set the fraction.
+	fraction := DefaultMutexProfileRate
 	if o.Fraction != 0 {
 		fraction = o.Fraction
 	}

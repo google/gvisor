@@ -15,43 +15,36 @@
 package arp_test
 
 import (
-	"context"
 	"fmt"
+	"os"
 	"testing"
-	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
 	"gvisor.dev/gvisor/pkg/tcpip/network/arp"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
-	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
+	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 )
 
 const (
 	nicID = 1
 
-	stackAddr     = tcpip.Address("\x0a\x00\x00\x01")
-	stackLinkAddr = tcpip.LinkAddress("\x0a\x0a\x0b\x0b\x0c\x0c")
-
-	remoteAddr     = tcpip.Address("\x0a\x00\x00\x02")
+	stackLinkAddr  = tcpip.LinkAddress("\x0a\x0a\x0b\x0b\x0c\x0c")
 	remoteLinkAddr = tcpip.LinkAddress("\x01\x02\x03\x04\x05\x06")
+)
 
-	unknownAddr = tcpip.Address("\x0a\x00\x00\x03")
-
-	defaultChannelSize = 1
-	defaultMTU         = 65536
-
-	// eventChanSize defines the size of event channels used by the neighbor
-	// cache's event dispatcher. The size chosen here needs to be sufficient to
-	// queue all the events received during tests before consumption.
-	// If eventChanSize is too small, the tests may deadlock.
-	eventChanSize = 32
+var (
+	stackAddr   = testutil.MustParse4("10.0.0.1")
+	remoteAddr  = testutil.MustParse4("10.0.0.2")
+	unknownAddr = testutil.MustParse4("10.0.0.3")
 )
 
 type eventType uint8
@@ -121,24 +114,6 @@ func (d *arpDispatcher) OnNeighborRemoved(nicID tcpip.NICID, entry stack.Neighbo
 	d.C <- e
 }
 
-func (d *arpDispatcher) waitForEvent(ctx context.Context, want eventInfo) error {
-	select {
-	case got := <-d.C:
-		if diff := cmp.Diff(want, got, cmp.AllowUnexported(got), cmpopts.IgnoreFields(stack.NeighborEntry{}, "UpdatedAtNanos")); diff != "" {
-			return fmt.Errorf("got invalid event (-want +got):\n%s", diff)
-		}
-	case <-ctx.Done():
-		return fmt.Errorf("%s for %s", ctx.Err(), want)
-	}
-	return nil
-}
-
-func (d *arpDispatcher) waitForEventWithTimeout(want eventInfo, timeout time.Duration) error {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	return d.waitForEvent(ctx, want)
-}
-
 func (d *arpDispatcher) nextEvent() (eventInfo, bool) {
 	select {
 	case event := <-d.C:
@@ -151,71 +126,67 @@ func (d *arpDispatcher) nextEvent() (eventInfo, bool) {
 type testContext struct {
 	s       *stack.Stack
 	linkEP  *channel.Endpoint
-	nudDisp *arpDispatcher
+	nudDisp arpDispatcher
 }
 
-func newTestContext(t *testing.T) *testContext {
-	c := stack.DefaultNUDConfigurations()
-	// Transition from Reachable to Stale almost immediately to test if receiving
-	// probes refreshes positive reachability.
-	c.BaseReachableTime = time.Microsecond
+func makeTestContext(t *testing.T, eventDepth int, packetDepth int) testContext {
+	t.Helper()
 
-	d := arpDispatcher{
-		// Create an event channel large enough so the neighbor cache doesn't block
-		// while dispatching events. Blocking could interfere with the timing of
-		// NUD transitions.
-		C: make(chan eventInfo, eventChanSize),
+	tc := testContext{
+		nudDisp: arpDispatcher{
+			C: make(chan eventInfo, eventDepth),
+		},
 	}
 
-	s := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, arp.NewProtocol},
-		TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol4},
-		NUDConfigs:         c,
-		NUDDisp:            &d,
+	tc.s = stack.New(stack.Options{
+		NetworkProtocols: []stack.NetworkProtocolFactory{ipv4.NewProtocol, arp.NewProtocol},
+		NUDDisp:          &tc.nudDisp,
+		Clock:            &faketime.NullClock{},
 	})
 
-	ep := channel.New(defaultChannelSize, defaultMTU, stackLinkAddr)
-	ep.LinkEPCapabilities |= stack.CapabilityResolutionRequired
+	tc.linkEP = channel.New(packetDepth, header.IPv4MinimumMTU, stackLinkAddr)
+	tc.linkEP.LinkEPCapabilities |= stack.CapabilityResolutionRequired
 
-	wep := stack.LinkEndpoint(ep)
-
+	wep := stack.LinkEndpoint(tc.linkEP)
 	if testing.Verbose() {
-		wep = sniffer.New(ep)
+		wep = sniffer.New(wep)
 	}
-	if err := s.CreateNIC(nicID, wep); err != nil {
-		t.Fatalf("CreateNIC failed: %v", err)
-	}
-
-	if err := s.AddAddress(nicID, ipv4.ProtocolNumber, stackAddr); err != nil {
-		t.Fatalf("AddAddress for ipv4 failed: %v", err)
+	if err := tc.s.CreateNIC(nicID, wep); err != nil {
+		t.Fatalf("CreateNIC failed: %s", err)
 	}
 
-	s.SetRouteTable([]tcpip.Route{{
+	protocolAddr := tcpip.ProtocolAddress{
+		Protocol:          ipv4.ProtocolNumber,
+		AddressWithPrefix: stackAddr.WithPrefix(),
+	}
+	if err := tc.s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
+	}
+
+	tc.s.SetRouteTable([]tcpip.Route{{
 		Destination: header.IPv4EmptySubnet,
 		NIC:         nicID,
 	}})
 
-	return &testContext{
-		s:       s,
-		linkEP:  ep,
-		nudDisp: &d,
-	}
+	return tc
 }
 
 func (c *testContext) cleanup() {
 	c.linkEP.Close()
+	c.s.Close()
+	c.s.Wait()
 }
 
 func TestMalformedPacket(t *testing.T) {
-	c := newTestContext(t)
+	c := makeTestContext(t, 0, 0)
 	defer c.cleanup()
 
-	v := make(buffer.View, header.ARPSize)
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: v.ToVectorisedView(),
+		Payload: bufferv2.MakeWithData(make([]byte, header.ARPSize)),
 	})
 
 	c.linkEP.InjectInbound(arp.ProtocolNumber, pkt)
+	pkt.DecRef()
 
 	if got := c.s.Stats().ARP.PacketsReceived.Value(); got != 1 {
 		t.Errorf("got c.s.Stats().ARP.PacketsReceived.Value() = %d, want = 1", got)
@@ -226,7 +197,7 @@ func TestMalformedPacket(t *testing.T) {
 }
 
 func TestDisabledEndpoint(t *testing.T) {
-	c := newTestContext(t)
+	c := makeTestContext(t, 0, 0)
 	defer c.cleanup()
 
 	ep, err := c.s.GetNetworkEndpoint(nicID, header.ARPProtocolNumber)
@@ -235,12 +206,12 @@ func TestDisabledEndpoint(t *testing.T) {
 	}
 	ep.Disable()
 
-	v := make(buffer.View, header.ARPSize)
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: v.ToVectorisedView(),
+		Payload: bufferv2.MakeWithData(make([]byte, header.ARPSize)),
 	})
 
 	c.linkEP.InjectInbound(arp.ProtocolNumber, pkt)
+	pkt.DecRef()
 
 	if got := c.s.Stats().ARP.PacketsReceived.Value(); got != 1 {
 		t.Errorf("got c.s.Stats().ARP.PacketsReceived.Value() = %d, want = 1", got)
@@ -251,13 +222,13 @@ func TestDisabledEndpoint(t *testing.T) {
 }
 
 func TestDirectReply(t *testing.T) {
-	c := newTestContext(t)
+	c := makeTestContext(t, 0, 0)
 	defer c.cleanup()
 
 	const senderMAC = "\x01\x02\x03\x04\x05\x06"
 	const senderIPv4 = "\x0a\x00\x00\x02"
 
-	v := make(buffer.View, header.ARPSize)
+	v := make([]byte, header.ARPSize)
 	h := header.ARP(v)
 	h.SetIPv4OverEthernet()
 	h.SetOp(header.ARPReply)
@@ -268,10 +239,11 @@ func TestDirectReply(t *testing.T) {
 	copy(h.ProtocolAddressTarget(), stackAddr)
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: v.ToVectorisedView(),
+		Payload: bufferv2.MakeWithData(v),
 	})
 
 	c.linkEP.InjectInbound(arp.ProtocolNumber, pkt)
+	pkt.DecRef()
 
 	if got := c.s.Stats().ARP.PacketsReceived.Value(); got != 1 {
 		t.Errorf("got c.s.Stats().ARP.PacketsReceived.Value() = %d, want = 1", got)
@@ -282,9 +254,6 @@ func TestDirectReply(t *testing.T) {
 }
 
 func TestDirectRequest(t *testing.T) {
-	c := newTestContext(t)
-	defer c.cleanup()
-
 	tests := []struct {
 		name           string
 		senderAddr     tcpip.Address
@@ -317,22 +286,27 @@ func TestDirectRequest(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			c := makeTestContext(t, 1, 1)
+			defer c.cleanup()
+
 			packetsRecv := c.s.Stats().ARP.PacketsReceived.Value()
 			requestsRecv := c.s.Stats().ARP.RequestsReceived.Value()
 			requestsRecvUnknownAddr := c.s.Stats().ARP.RequestsReceivedUnknownTargetAddress.Value()
 			outgoingReplies := c.s.Stats().ARP.OutgoingRepliesSent.Value()
 
 			// Inject an incoming ARP request.
-			v := make(buffer.View, header.ARPSize)
+			v := make([]byte, header.ARPSize)
 			h := header.ARP(v)
 			h.SetIPv4OverEthernet()
 			h.SetOp(header.ARPRequest)
 			copy(h.HardwareAddressSender(), test.senderLinkAddr)
 			copy(h.ProtocolAddressSender(), test.senderAddr)
 			copy(h.ProtocolAddressTarget(), test.targetAddr)
-			c.linkEP.InjectInbound(arp.ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-				Data: v.ToVectorisedView(),
-			}))
+			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+				Payload: bufferv2.MakeWithData(v),
+			})
+			c.linkEP.InjectInbound(arp.ProtocolNumber, pkt)
+			pkt.DecRef()
 
 			if got, want := c.s.Stats().ARP.PacketsReceived.Value(), packetsRecv+1; got != want {
 				t.Errorf("got c.s.Stats().ARP.PacketsReceived.Value() = %d, want = %d", got, want)
@@ -345,8 +319,8 @@ func TestDirectRequest(t *testing.T) {
 				// No packets should be sent after receiving an invalid ARP request.
 				// There is no need to perform a blocking read here, since packets are
 				// sent in the same function that handles ARP requests.
-				if pkt, ok := c.linkEP.Read(); ok {
-					t.Errorf("unexpected packet sent with network protocol number %d", pkt.Proto)
+				if pkt := c.linkEP.Read(); !pkt.IsNil() {
+					t.Errorf("unexpected packet sent: %+v", pkt)
 				}
 				if got, want := c.s.Stats().ARP.RequestsReceivedUnknownTargetAddress.Value(), requestsRecvUnknownAddr+1; got != want {
 					t.Errorf("got c.s.Stats().ARP.RequestsReceivedUnknownTargetAddress.Value() = %d, want = %d", got, want)
@@ -363,15 +337,16 @@ func TestDirectRequest(t *testing.T) {
 			}
 
 			// Verify an ARP response was sent.
-			pi, ok := c.linkEP.Read()
-			if !ok {
+			pi := c.linkEP.Read()
+			if pi.IsNil() {
 				t.Fatal("expected ARP response to be sent, got none")
 			}
 
-			if pi.Proto != arp.ProtocolNumber {
-				t.Fatalf("expected ARP response, got network protocol number %d", pi.Proto)
+			if got, want := pi.NetworkProtocolNumber, arp.ProtocolNumber; got != want {
+				t.Fatalf("expected %d, got network protocol number %d", want, got)
 			}
-			rep := header.ARP(pi.Pkt.NetworkHeader().View())
+			rep := header.ARP(pi.NetworkHeader().Slice())
+			pi.DecRef()
 			if !rep.IsValid() {
 				t.Fatalf("invalid ARP response: len = %d; response = %x", len(rep), rep)
 			}
@@ -389,17 +364,21 @@ func TestDirectRequest(t *testing.T) {
 			}
 
 			// Verify the sender was saved in the neighbor cache.
-			wantEvent := eventInfo{
-				eventType: entryAdded,
-				nicID:     nicID,
-				entry: stack.NeighborEntry{
-					Addr:     test.senderAddr,
-					LinkAddr: tcpip.LinkAddress(test.senderLinkAddr),
-					State:    stack.Stale,
-				},
-			}
-			if err := c.nudDisp.waitForEventWithTimeout(wantEvent, time.Second); err != nil {
-				t.Fatal(err)
+			if got, ok := c.nudDisp.nextEvent(); ok {
+				want := eventInfo{
+					eventType: entryAdded,
+					nicID:     nicID,
+					entry: stack.NeighborEntry{
+						Addr:     test.senderAddr,
+						LinkAddr: test.senderLinkAddr,
+						State:    stack.Stale,
+					},
+				}
+				if diff := cmp.Diff(want, got, cmp.AllowUnexported(eventInfo{}), cmpopts.IgnoreFields(stack.NeighborEntry{}, "UpdatedAt")); diff != "" {
+					t.Errorf("got invalid event (-want +got):\n%s", diff)
+				}
+			} else {
+				t.Fatal("event didn't arrive")
 			}
 
 			neighbors, err := c.s.Neighbors(nicID, ipv4.ProtocolNumber)
@@ -441,6 +420,100 @@ func TestDirectRequest(t *testing.T) {
 	}
 }
 
+func TestReplyPacketType(t *testing.T) {
+	for _, testCase := range []struct {
+		name             string
+		packetType       tcpip.PacketType
+		becomesReachable bool
+	}{
+		{
+			name:             "unicast",
+			packetType:       tcpip.PacketHost,
+			becomesReachable: true,
+		},
+		{
+			name:             "broadcast",
+			packetType:       tcpip.PacketBroadcast,
+			becomesReachable: false,
+		},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			c := makeTestContext(t, 1, 1)
+			defer c.cleanup()
+
+			// Inject an incoming ARP request first.
+			v := make([]byte, header.ARPSize)
+			h := header.ARP(v)
+			h.SetIPv4OverEthernet()
+			h.SetOp(header.ARPRequest)
+			if got, want := copy(h.HardwareAddressSender(), remoteLinkAddr), header.EthernetAddressSize; got != want {
+				t.Fatalf("got copy(_, _) = %d, want = %d", got, want)
+			}
+			if got, want := copy(h.ProtocolAddressSender(), remoteAddr), header.IPv4AddressSize; got != want {
+				t.Fatalf("got copy(_, _) = %d, want = %d", got, want)
+			}
+			if got, want := copy(h.ProtocolAddressTarget(), stackAddr), header.IPv4AddressSize; got != want {
+				t.Fatalf("got copy(_, _) = %d, want = %d", got, want)
+			}
+			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+				Payload: bufferv2.MakeWithData(v),
+			})
+			pkt.PktType = tcpip.PacketBroadcast
+			c.linkEP.InjectInbound(arp.ProtocolNumber, pkt)
+			pkt.DecRef()
+
+			if got, ok := c.nudDisp.nextEvent(); ok {
+				want := eventInfo{
+					eventType: entryAdded,
+					nicID:     nicID,
+					entry: stack.NeighborEntry{
+						Addr:     remoteAddr,
+						LinkAddr: remoteLinkAddr,
+						State:    stack.Stale,
+					},
+				}
+				if diff := cmp.Diff(want, got, cmp.AllowUnexported(eventInfo{}), cmpopts.IgnoreFields(stack.NeighborEntry{}, "UpdatedAt")); diff != "" {
+					t.Errorf("got invalid event (-want +got):\n%s", diff)
+				}
+			} else {
+				t.Fatal("event didn't arrive")
+			}
+
+			// Then inject replies with different packet types.
+			h.SetIPv4OverEthernet()
+			h.SetOp(header.ARPReply)
+			pkt = stack.NewPacketBuffer(stack.PacketBufferOptions{
+				Payload: bufferv2.MakeWithData(v),
+			})
+			pkt.PktType = testCase.packetType
+			c.linkEP.InjectInbound(arp.ProtocolNumber, pkt)
+			pkt.DecRef()
+
+			got, ok := c.nudDisp.nextEvent()
+			// If the entry doesn't become reachable we're not supposed to see a new
+			// event.
+			if got, want := ok, testCase.becomesReachable; got != want {
+				t.Errorf("got c.nudDisp.nextEvent() = %t, want %t", got, want)
+			}
+			if ok {
+				want := eventInfo{
+					eventType: entryChanged,
+					nicID:     nicID,
+					entry: stack.NeighborEntry{
+						Addr:     remoteAddr,
+						LinkAddr: remoteLinkAddr,
+						State:    stack.Reachable,
+					},
+				}
+				if diff := cmp.Diff(want, got, cmp.AllowUnexported(eventInfo{}), cmpopts.IgnoreFields(stack.NeighborEntry{}, "UpdatedAt")); diff != "" {
+					t.Errorf("got invalid event (-want +got):\n%s", diff)
+				}
+			}
+		})
+	}
+
+}
+
 var _ stack.LinkEndpoint = (*testLinkEndpoint)(nil)
 
 type testLinkEndpoint struct {
@@ -449,12 +522,12 @@ type testLinkEndpoint struct {
 	writeErr tcpip.Error
 }
 
-func (t *testLinkEndpoint) WritePacket(r stack.RouteInfo, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
+func (t *testLinkEndpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
 	if t.writeErr != nil {
-		return t.writeErr
+		return 0, t.writeErr
 	}
 
-	return t.LinkEndpoint.WritePacket(r, gso, protocol, pkt)
+	return t.LinkEndpoint.WritePackets(pkts)
 }
 
 func TestLinkAddressRequest(t *testing.T) {
@@ -587,7 +660,12 @@ func TestLinkAddressRequest(t *testing.T) {
 			s := stack.New(stack.Options{
 				NetworkProtocols: []stack.NetworkProtocolFactory{arp.NewProtocol, ipv4.NewProtocol},
 			})
-			linkEP := channel.New(defaultChannelSize, defaultMTU, stackLinkAddr)
+			defer func() {
+				s.Close()
+				s.Wait()
+			}()
+			linkEP := channel.New(1, header.IPv4MinimumMTU, stackLinkAddr)
+			defer linkEP.Close()
 			if err := s.CreateNIC(nicID, &testLinkEndpoint{LinkEndpoint: linkEP, writeErr: test.linkErr}); err != nil {
 				t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
 			}
@@ -602,8 +680,12 @@ func TestLinkAddressRequest(t *testing.T) {
 			}
 
 			if len(test.nicAddr) != 0 {
-				if err := s.AddAddress(nicID, ipv4.ProtocolNumber, test.nicAddr); err != nil {
-					t.Fatalf("s.AddAddress(%d, %d, %s): %s", nicID, ipv4.ProtocolNumber, test.nicAddr, err)
+				protocolAddr := tcpip.ProtocolAddress{
+					Protocol:          ipv4.ProtocolNumber,
+					AddressWithPrefix: test.nicAddr.WithPrefix(),
+				}
+				if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+					t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
 				}
 			}
 
@@ -631,16 +713,19 @@ func TestLinkAddressRequest(t *testing.T) {
 				return
 			}
 
-			pkt, ok := linkEP.Read()
-			if !ok {
+			pkt := linkEP.Read()
+			if pkt.IsNil() {
 				t.Fatal("expected to send a link address request")
 			}
 
-			if pkt.Route.RemoteLinkAddress != test.expectedRemoteLinkAddr {
-				t.Errorf("got pkt.Route.RemoteLinkAddress = %s, want = %s", pkt.Route.RemoteLinkAddress, test.expectedRemoteLinkAddr)
+			if pkt.EgressRoute.RemoteLinkAddress != test.expectedRemoteLinkAddr {
+				t.Errorf("got pkt.EgressRoute.RemoteLinkAddress = %s, want = %s", pkt.EgressRoute.RemoteLinkAddress, test.expectedRemoteLinkAddr)
 			}
 
-			rep := header.ARP(stack.PayloadSince(pkt.Pkt.NetworkHeader()))
+			payload := stack.PayloadSince(pkt.NetworkHeader())
+			defer payload.Release()
+			rep := header.ARP(payload.AsSlice())
+			pkt.DecRef()
 			if got := rep.Op(); got != header.ARPRequest {
 				t.Errorf("got Op = %d, want = %d", got, header.ARPRequest)
 			}
@@ -661,15 +746,21 @@ func TestLinkAddressRequest(t *testing.T) {
 }
 
 func TestDADARPRequestPacket(t *testing.T) {
+	clock := faketime.NewManualClock()
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{arp.NewProtocolWithOptions(arp.Options{
 			DADConfigs: stack.DADConfigurations{
 				DupAddrDetectTransmits: 1,
-				RetransmitTimer:        time.Second,
 			},
 		}), ipv4.NewProtocol},
+		Clock: clock,
 	})
-	e := channel.New(1, defaultMTU, stackLinkAddr)
+	defer func() {
+		s.Close()
+		s.Wait()
+	}()
+	e := channel.New(1, header.IPv4MinimumMTU, stackLinkAddr)
+	defer e.Close()
 	if err := s.CreateNIC(nicID, e); err != nil {
 		t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
 	}
@@ -680,16 +771,19 @@ func TestDADARPRequestPacket(t *testing.T) {
 		t.Fatalf("got s.CheckDuplicateAddress(%d, %d, %s, _) = %d, want = %d", nicID, header.IPv4ProtocolNumber, remoteAddr, res, stack.DADStarting)
 	}
 
-	pkt, ok := e.ReadContext(context.Background())
-	if !ok {
+	clock.RunImmediatelyScheduledJobs()
+	pkt := e.Read()
+	if pkt.IsNil() {
 		t.Fatal("expected to send an ARP request")
 	}
 
-	if pkt.Route.RemoteLinkAddress != header.EthernetBroadcastAddress {
-		t.Errorf("got pkt.Route.RemoteLinkAddress = %s, want = %s", pkt.Route.RemoteLinkAddress, header.EthernetBroadcastAddress)
+	if pkt.EgressRoute.RemoteLinkAddress != header.EthernetBroadcastAddress {
+		t.Errorf("got pkt.EgressRoute.RemoteLinkAddress = %s, want = %s", pkt.EgressRoute.RemoteLinkAddress, header.EthernetBroadcastAddress)
 	}
-
-	req := header.ARP(stack.PayloadSince(pkt.Pkt.NetworkHeader()))
+	payload := stack.PayloadSince(pkt.NetworkHeader())
+	defer payload.Release()
+	req := header.ARP(payload.AsSlice())
+	pkt.DecRef()
 	if !req.IsValid() {
 		t.Errorf("got req.IsValid() = false, want = true")
 	}
@@ -708,4 +802,11 @@ func TestDADARPRequestPacket(t *testing.T) {
 	if got := tcpip.Address(req.ProtocolAddressTarget()); got != remoteAddr {
 		t.Errorf("got req.ProtocolAddressTarget() = %s, want = %s", got, remoteAddr)
 	}
+}
+
+func TestMain(m *testing.M) {
+	refs.SetLeakMode(refs.LeaksPanic)
+	code := m.Run()
+	refs.DoLeakCheck()
+	os.Exit(code)
 }

@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build arm64
 // +build arm64
 
 package ring0
@@ -20,9 +21,9 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
-var (
+const (
 	// UserspaceSize is the total size of userspace.
-	UserspaceSize = uintptr(1) << (VirtualAddressBits())
+	UserspaceSize = uintptr(1) << VirtualAddressBits
 
 	// MaximumUserAddress is the largest possible user address.
 	MaximumUserAddress = (UserspaceSize - 1) & ^uintptr(hostarch.PageSize-1)
@@ -97,8 +98,10 @@ func (c *CPU) ClearErrorCode() {
 	c.errorType = 1 // User mode.
 }
 
+// FaultAddr returns the last fault address.
+//
 //go:nosplit
-func (c *CPU) GetFaultAddr() (value uintptr) {
+func (c *CPU) FaultAddr() (value uintptr) {
 	return c.faultAddr
 }
 
@@ -123,6 +126,7 @@ func (c *CPU) SetAppAddr(value uintptr) {
 }
 
 // GetLazyVFP returns the value of cpacr_el1.
+//
 //go:nosplit
 func (c *CPU) GetLazyVFP() (value uintptr) {
 	return c.lazyVFP
@@ -135,7 +139,4 @@ type SwitchArchOpts struct {
 
 	// KernelASID indicates that the kernel ASID to be used on return,
 	KernelASID uint16
-}
-
-func init() {
 }

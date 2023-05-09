@@ -1,6 +1,9 @@
 load("//tools:defs.bzl", "go_library")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_library(
     name = "usage",
@@ -15,6 +18,7 @@ go_library(
         "//:sandbox",
     ],
     deps = [
+        "//pkg/atomicbitops",
         "//pkg/bits",
         "//pkg/memutil",
         "//pkg/sync",

@@ -1,3 +1,8 @@
+set -x
+
+# Clear any downloaded credentials.
+rm -f repo.key
+
 # Upload all relevant test failures.
 make -s testlogs 2>/dev/null | grep // | sort | uniq | (
   declare log_count=0
@@ -48,6 +53,16 @@ rm -rf "${profile_output}"
 
 # Clean the bazel cache, if there's failure.
 if test "${BUILDKITE_COMMAND_EXIT_STATUS}" -ne "0"; then
+  set -x
+  dmesg -kT | tail -n 50
+  # LINT.IfChange
+  runtime="buildkite_runtime_${BUILDKITE_BRANCH}-${BUILDKITE_BUILD_ID}"
+  runtime="$(echo "$runtime" | sed -r 's~[^-_a-z0-9]+~_~g')"
+  # LINT.ThenChange(pre-command)
+  if [ -d "/tmp/${runtime}/" ]; then
+      tar -czf "/tmp/${BUILDKITE_JOB_ID}.tar.gz" -C /tmp/ "${runtime}"
+      buildkite-agent artifact upload "/tmp/${BUILDKITE_JOB_ID}.tar.gz"
+  fi
   # Attempt to clear the cache and shut down.
   make clean || echo "make clean failed with code $?"
   make bazel-shutdown || echo "make bazel-shutdown failed with code $?"
@@ -56,8 +71,33 @@ if test "${BUILDKITE_COMMAND_EXIT_STATUS}" -ne "0"; then
   sudo rm -rf "${HOME}/go"
 fi
 
-# Kill any running containers (clear state).
-CONTAINERS="$(docker ps -q)"
-if ! test -z "${CONTAINERS}"; then
-  docker container kill ${CONTAINERS} 2>/dev/null || true
+# Kill any running containers (clear state), except for "bootstrap".
+for id_and_name in $(docker ps --format='{{.ID}}/{{.Names}}'); do
+  if [[ "$(echo "$id_and_name" | cut -d'/' -f2-)" == 'bootstrap' ]]; then
+    continue
+  fi
+  timeout --kill-after=10s --preserve-status 8s \
+      docker container kill "$(echo "$id_and_name" | cut -d'/' -f1)"
+done
+
+set -euo pipefail
+
+if [[ "${BUILDKITE_PIPELINE_INSTALL_RUNTIME:-}" == "true" ]]; then
+  # Remove all Docker runtimes that may be installed.
+  num_docker_runtimes="$(jq \
+      '(if has("runtimes") then .runtimes else {} end) | length' \
+      < /etc/docker/daemon.json)"
+  if [[ "$num_docker_runtimes" -gt 0 ]]; then
+    cat /etc/docker/daemon.json | jq '.runtimes = {}' \
+      | sudo tee /etc/docker/daemon.json.tmp
+    sudo mv /etc/docker/daemon.json.tmp /etc/docker/daemon.json
+    echo 'Removed all Docker runtimes; reloading Docker daemon with this new configuration:' >&2
+    cat /etc/docker/daemon.json >&2
+    bash -c "$DOCKER_RELOAD_COMMAND"
+  fi
+fi
+
+# Cleanup temporary directory where STAGED_BINARIES may have been extracted.
+if [[ -n "${BUILDKITE_STAGED_BINARIES_DIRECTORY:-}" ]]; then
+  rm -rf "$BUILDKITE_STAGED_BINARIES_DIRECTORY" || true
 fi

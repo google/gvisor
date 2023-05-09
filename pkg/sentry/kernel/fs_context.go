@@ -18,7 +18,6 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 )
@@ -34,19 +33,11 @@ type FSContext struct {
 	// mu protects below.
 	mu sync.Mutex `state:"nosave"`
 
-	// root is the filesystem root. Will be nil iff the FSContext has been
-	// destroyed.
-	root *fs.Dirent
+	// root is the filesystem root.
+	root vfs.VirtualDentry
 
-	// rootVFS2 is the filesystem root.
-	rootVFS2 vfs.VirtualDentry
-
-	// cwd is the current working directory. Will be nil iff the FSContext
-	// has been destroyed.
-	cwd *fs.Dirent
-
-	// cwdVFS2 is the current working directory.
-	cwdVFS2 vfs.VirtualDentry
+	// cwd is the current working directory.
+	cwd vfs.VirtualDentry
 
 	// umask is the current file mode creation mask. When a thread using this
 	// context invokes a syscall that creates a file, bits set in umask are
@@ -54,27 +45,14 @@ type FSContext struct {
 	umask uint
 }
 
-// newFSContext returns a new filesystem context.
-func newFSContext(root, cwd *fs.Dirent, umask uint) *FSContext {
+// NewFSContext returns a new filesystem context.
+func NewFSContext(root, cwd vfs.VirtualDentry, umask uint) *FSContext {
 	root.IncRef()
 	cwd.IncRef()
 	f := FSContext{
 		root:  root,
 		cwd:   cwd,
 		umask: umask,
-	}
-	f.InitRefs()
-	return &f
-}
-
-// NewFSContextVFS2 returns a new filesystem context.
-func NewFSContextVFS2(root, cwd vfs.VirtualDentry, umask uint) *FSContext {
-	root.IncRef()
-	cwd.IncRef()
-	f := FSContext{
-		rootVFS2: root,
-		cwdVFS2:  cwd,
-		umask:    umask,
 	}
 	f.InitRefs()
 	return &f
@@ -95,17 +73,10 @@ func (f *FSContext) DecRef(ctx context.Context) {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 
-		if VFS2Enabled {
-			f.rootVFS2.DecRef(ctx)
-			f.rootVFS2 = vfs.VirtualDentry{}
-			f.cwdVFS2.DecRef(ctx)
-			f.cwdVFS2 = vfs.VirtualDentry{}
-		} else {
-			f.root.DecRef(ctx)
-			f.root = nil
-			f.cwd.DecRef(ctx)
-			f.cwd = nil
-		}
+		f.root.DecRef(ctx)
+		f.root = vfs.VirtualDentry{}
+		f.cwd.DecRef(ctx)
+		f.cwd = vfs.VirtualDentry{}
 	})
 }
 
@@ -116,26 +87,16 @@ func (f *FSContext) Fork() *FSContext {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	if VFS2Enabled {
-		if !f.cwdVFS2.Ok() {
-			panic("FSContext.Fork() called after destroy")
-		}
-		f.cwdVFS2.IncRef()
-		f.rootVFS2.IncRef()
-	} else {
-		if f.cwd == nil {
-			panic("FSContext.Fork() called after destroy")
-		}
-		f.cwd.IncRef()
-		f.root.IncRef()
+	if !f.cwd.Ok() {
+		panic("FSContext.Fork() called after destroy")
 	}
+	f.cwd.IncRef()
+	f.root.IncRef()
 
 	ctx := &FSContext{
-		cwd:      f.cwd,
-		root:     f.root,
-		cwdVFS2:  f.cwdVFS2,
-		rootVFS2: f.rootVFS2,
-		umask:    f.umask,
+		cwd:   f.cwd,
+		root:  f.root,
+		umask: f.umask,
 	}
 	ctx.InitRefs()
 	return ctx
@@ -143,45 +104,27 @@ func (f *FSContext) Fork() *FSContext {
 
 // WorkingDirectory returns the current working directory.
 //
-// This will return nil if called after f is destroyed, otherwise it will return
-// a Dirent with a reference taken.
-func (f *FSContext) WorkingDirectory() *fs.Dirent {
+// This will return an empty vfs.VirtualDentry if called after f is
+// destroyed, otherwise it will return a Dirent with a reference taken.
+func (f *FSContext) WorkingDirectory() vfs.VirtualDentry {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	if f.cwd != nil {
+	if f.cwd.Ok() {
 		f.cwd.IncRef()
 	}
 	return f.cwd
 }
 
-// WorkingDirectoryVFS2 returns the current working directory.
-//
-// This will return an empty vfs.VirtualDentry if called after f is
-// destroyed, otherwise it will return a Dirent with a reference taken.
-func (f *FSContext) WorkingDirectoryVFS2() vfs.VirtualDentry {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	if f.cwdVFS2.Ok() {
-		f.cwdVFS2.IncRef()
-	}
-	return f.cwdVFS2
-}
-
 // SetWorkingDirectory sets the current working directory.
-// This will take an extra reference on the Dirent.
+// This will take an extra reference on the VirtualDentry.
 //
 // This is not a valid call after f is destroyed.
-func (f *FSContext) SetWorkingDirectory(ctx context.Context, d *fs.Dirent) {
-	if d == nil {
-		panic("FSContext.SetWorkingDirectory called with nil dirent")
-	}
-
+func (f *FSContext) SetWorkingDirectory(ctx context.Context, d vfs.VirtualDentry) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	if f.cwd == nil {
+	if !f.cwd.Ok() {
 		panic(fmt.Sprintf("FSContext.SetWorkingDirectory(%v)) called after destroy", d))
 	}
 
@@ -191,91 +134,38 @@ func (f *FSContext) SetWorkingDirectory(ctx context.Context, d *fs.Dirent) {
 	old.DecRef(ctx)
 }
 
-// SetWorkingDirectoryVFS2 sets the current working directory.
-// This will take an extra reference on the VirtualDentry.
-//
-// This is not a valid call after f is destroyed.
-func (f *FSContext) SetWorkingDirectoryVFS2(ctx context.Context, d vfs.VirtualDentry) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	if !f.cwdVFS2.Ok() {
-		panic(fmt.Sprintf("FSContext.SetWorkingDirectoryVFS2(%v)) called after destroy", d))
-	}
-
-	old := f.cwdVFS2
-	f.cwdVFS2 = d
-	d.IncRef()
-	old.DecRef(ctx)
-}
-
 // RootDirectory returns the current filesystem root.
 //
-// This will return nil if called after f is destroyed, otherwise it will return
-// a Dirent with a reference taken.
-func (f *FSContext) RootDirectory() *fs.Dirent {
+// This will return an empty vfs.VirtualDentry if called after f is
+// destroyed, otherwise it will return a Dirent with a reference taken.
+func (f *FSContext) RootDirectory() vfs.VirtualDentry {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.root != nil {
+
+	if f.root.Ok() {
 		f.root.IncRef()
 	}
 	return f.root
 }
 
-// RootDirectoryVFS2 returns the current filesystem root.
-//
-// This will return an empty vfs.VirtualDentry if called after f is
-// destroyed, otherwise it will return a Dirent with a reference taken.
-func (f *FSContext) RootDirectoryVFS2() vfs.VirtualDentry {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-
-	if f.rootVFS2.Ok() {
-		f.rootVFS2.IncRef()
-	}
-	return f.rootVFS2
-}
-
-// SetRootDirectory sets the root directory.
-// This will take an extra reference on the Dirent.
+// SetRootDirectory sets the root directory. It takes a reference on vd.
 //
 // This is not a valid call after f is destroyed.
-func (f *FSContext) SetRootDirectory(ctx context.Context, d *fs.Dirent) {
-	if d == nil {
-		panic("FSContext.SetRootDirectory called with nil dirent")
+func (f *FSContext) SetRootDirectory(ctx context.Context, vd vfs.VirtualDentry) {
+	if !vd.Ok() {
+		panic("FSContext.SetRootDirectory called with zero-value VirtualDentry")
 	}
 
 	f.mu.Lock()
-	defer f.mu.Unlock()
 
-	if f.root == nil {
-		panic(fmt.Sprintf("FSContext.SetRootDirectory(%v)) called after destroy", d))
+	if !f.root.Ok() {
+		f.mu.Unlock()
+		panic(fmt.Sprintf("FSContext.SetRootDirectory(%v)) called after destroy", vd))
 	}
 
 	old := f.root
-	f.root = d
-	d.IncRef()
-	old.DecRef(ctx)
-}
-
-// SetRootDirectoryVFS2 sets the root directory. It takes a reference on vd.
-//
-// This is not a valid call after f is destroyed.
-func (f *FSContext) SetRootDirectoryVFS2(ctx context.Context, vd vfs.VirtualDentry) {
-	if !vd.Ok() {
-		panic("FSContext.SetRootDirectoryVFS2 called with zero-value VirtualDentry")
-	}
-
-	f.mu.Lock()
-
-	if !f.rootVFS2.Ok() {
-		f.mu.Unlock()
-		panic(fmt.Sprintf("FSContext.SetRootDirectoryVFS2(%v)) called after destroy", vd))
-	}
-
-	old := f.rootVFS2
 	vd.IncRef()
-	f.rootVFS2 = vd
+	f.root = vd
 	f.mu.Unlock()
 	old.DecRef(ctx)
 }

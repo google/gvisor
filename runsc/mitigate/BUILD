@@ -1,10 +1,16 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_library(
     name = "mitigate",
-    srcs = ["mitigate.go"],
+    srcs = [
+        "mitigate.go",
+        "mock.go",
+    ],
     visibility = [
         "//runsc:__subpackages__",
     ],
@@ -16,8 +22,5 @@ go_test(
     size = "small",
     srcs = ["mitigate_test.go"],
     library = ":mitigate",
-    deps = [
-        "//runsc/mitigate/mock",
-        "@com_github_google_go_cmp//cmp:go_default_library",
-    ],
+    deps = ["@com_github_google_go_cmp//cmp:go_default_library"],
 )

@@ -97,7 +97,7 @@ TEST_F(ReadTest, DevNullReturnsEof) {
 const int kReadSize = 128 * 1024;
 
 // Do not allow random save as it could lead to partial reads.
-TEST_F(ReadTest, CanReadFullyFromDevZero_NoRandomSave) {
+TEST_F(ReadTest, CanReadFullyFromDevZero) {
   int fd;
   ASSERT_THAT(fd = open("/dev/zero", O_RDONLY), SyscallSucceeds());
 
@@ -116,7 +116,6 @@ TEST_F(ReadTest, ReadDirectoryFails) {
 }
 
 TEST_F(ReadTest, ReadWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_PATH));
@@ -157,7 +156,8 @@ TEST_F(ReadTest, PartialReadSIGSEGV) {
           .iov_len = size,
       },
   };
-  EXPECT_THAT(preadv(fd.get(), iov, ABSL_ARRAYSIZE(iov), 0),
+  EXPECT_THAT(lseek(fd.get(), 0, SEEK_SET), SyscallSucceeds());
+  EXPECT_THAT(readv(fd.get(), iov, ABSL_ARRAYSIZE(iov)),
               SyscallSucceedsWithValue(size));
 }
 

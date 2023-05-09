@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build linux
 // +build linux
 
 // Package fdnotifier contains an adapter that translates IO events (e.g., a
@@ -154,13 +155,20 @@ func (n *notifier) waitAndNotify() error {
 			return err
 		}
 
+		notified := false
 		n.mu.Lock()
 		for i := 0; i < v; i++ {
 			if fi, ok := n.fdMap[e[i].Fd]; ok {
 				fi.queue.Notify(waiter.EventMaskFromLinux(e[i].Events))
+				notified = true
 			}
 		}
 		n.mu.Unlock()
+		if notified {
+			// Let goroutines woken by Notify get a chance to run before we
+			// epoll_wait again.
+			sync.Goyield()
+		}
 	}
 }
 

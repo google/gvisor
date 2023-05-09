@@ -17,8 +17,7 @@ package auth
 import (
 	"math"
 
-	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 )
 
 // A UserNamespace represents a user namespace. See user_namespaces(7) for
@@ -38,7 +37,7 @@ type UserNamespace struct {
 	//
 	// If mu will be locked in multiple UserNamespaces, it must be locked in
 	// descendant namespaces before ancestors.
-	mu sync.Mutex `state:"nosave"`
+	mu userNamespaceMutex `state:"nosave"`
 
 	// Mappings of user/group IDs between this namespace and its parent.
 	//
@@ -53,7 +52,10 @@ type UserNamespace struct {
 }
 
 // NewRootUserNamespace returns a UserNamespace that is appropriate for a
-// system's root user namespace.
+// system's root user namespace. Note that namespaces returned by separate calls
+// to this function are *distinct* namespaces. Once a root namespace is created
+// by this function, the returned value must be reused to refer to the same
+// namespace.
 func NewRootUserNamespace() *UserNamespace {
 	var ns UserNamespace
 	// """
@@ -105,7 +107,7 @@ func (c *Credentials) NewChildUserNamespace() (*UserNamespace, error) {
 	if c.UserNamespace.depth() >= maxUserNamespaceDepth {
 		// "... Calls to unshare(2) or clone(2) that would cause this limit to
 		// be exceeded fail with the error EUSERS." - user_namespaces(7)
-		return nil, syserror.EUSERS
+		return nil, linuxerr.EUSERS
 	}
 	// "EPERM: CLONE_NEWUSER was specified in flags, but either the effective
 	// user ID or the effective group ID of the caller does not have a mapping
@@ -114,10 +116,10 @@ func (c *Credentials) NewChildUserNamespace() (*UserNamespace, error) {
 	// process are mapped to user IDs and group IDs in the user namespace of
 	// the calling process at the time of the call." - unshare(2)
 	if !c.EffectiveKUID.In(c.UserNamespace).Ok() {
-		return nil, syserror.EPERM
+		return nil, linuxerr.EPERM
 	}
 	if !c.EffectiveKGID.In(c.UserNamespace).Ok() {
-		return nil, syserror.EPERM
+		return nil, linuxerr.EPERM
 	}
 	return &UserNamespace{
 		parent: c.UserNamespace,

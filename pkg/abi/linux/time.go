@@ -206,10 +206,11 @@ type Itimerspec struct {
 }
 
 // ItimerVal mimics the following struct in <sys/time.h>
-//   struct itimerval {
-//     struct timeval it_interval; /* next value */
-//     struct timeval it_value;    /* current value */
-//   };
+//
+//	struct itimerval {
+//	  struct timeval it_interval; /* next value */
+//	  struct timeval it_value;    /* current value */
+//	};
 //
 // +marshal
 type ItimerVal struct {
@@ -271,6 +272,11 @@ func NsecToStatxTimestamp(nsec int64) (ts StatxTimestamp) {
 		Sec:  nsec / 1e9,
 		Nsec: uint32(nsec % 1e9),
 	}
+}
+
+// ToTime returns the Go time.Time representation.
+func (sxts StatxTimestamp) ToTime() time.Time {
+	return time.Unix(sxts.Sec, int64(sxts.Nsec))
 }
 
 // Utime represents struct utimbuf used by utimes(2).

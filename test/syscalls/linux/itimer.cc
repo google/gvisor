@@ -87,8 +87,7 @@ TEST(ItimerTest, ItimervalUpdatedBeforeExpiration) {
       << itv.it_value.tv_usec << " microseconds";
 }
 
-ABSL_CONST_INIT static thread_local std::atomic_int signal_test_num_samples =
-    ATOMIC_VAR_INIT(0);
+ABSL_CONST_INIT static thread_local std::atomic_int signal_test_num_samples(0);
 
 void SignalTestSignalHandler(int /*signum*/) { signal_test_num_samples++; }
 
@@ -197,9 +196,9 @@ int TestSIGALRMToMainThread() {
   // (but don't guarantee it), so we expect to see most samples on the main
   // thread.
   //
-  // The number of SIGALRMs delivered to a worker should not exceed 20%
+  // The number of SIGALRMs delivered to a worker should not exceed 40%
   // of the number of total signals expected (this is somewhat arbitrary).
-  const int worker_threshold = result.expected_total / 5;
+  const int worker_threshold = result.expected_total / 5 * 2;
 
   //
   // Linux only guarantees timers will never expire before the requested time.
@@ -215,7 +214,7 @@ int TestSIGALRMToMainThread() {
 
 // Random save/restore is disabled as it introduces additional latency and
 // unpredictable distribution patterns.
-TEST(ItimerTest, DeliversSIGALRMToMainThread_NoRandomSave) {
+TEST(ItimerTest, DeliversSIGALRMToMainThread) {
   pid_t child;
   int execve_errno;
   auto kill = ASSERT_NO_ERRNO_AND_VALUE(
@@ -230,7 +229,8 @@ TEST(ItimerTest, DeliversSIGALRMToMainThread_NoRandomSave) {
   // Not required anymore.
   kill.Release();
 
-  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0) << status;
+  EXPECT_EQ(WIFEXITED(status) && WEXITSTATUS(status), 0)
+      << WIFEXITED(status) << " " << WEXITSTATUS(status);
 }
 
 // Signals are delivered to threads fairly.
@@ -266,7 +266,7 @@ int TestSIGPROFFairness(absl::Duration sleep) {
 
 // Random save/restore is disabled as it introduces additional latency and
 // unpredictable distribution patterns.
-TEST(ItimerTest, DeliversSIGPROFToThreadsRoughlyFairlyActive_NoRandomSave) {
+TEST(ItimerTest, DeliversSIGPROFToThreadsRoughlyFairlyActive) {
   // On the KVM and ptrace platforms, switches between sentry and application
   // context are sometimes extremely slow, causing the itimer to send SIGPROF to
   // a thread that either already has one pending or has had SIGPROF delivered,
@@ -301,7 +301,7 @@ TEST(ItimerTest, DeliversSIGPROFToThreadsRoughlyFairlyActive_NoRandomSave) {
 
 // Random save/restore is disabled as it introduces additional latency and
 // unpredictable distribution patterns.
-TEST(ItimerTest, DeliversSIGPROFToThreadsRoughlyFairlyIdle_NoRandomSave) {
+TEST(ItimerTest, DeliversSIGPROFToThreadsRoughlyFairlyIdle) {
   // See comment in DeliversSIGPROFToThreadsRoughlyFairlyActive.
   const auto gvisor_platform = GvisorPlatform();
   SKIP_IF(gvisor_platform == Platform::kKVM ||

@@ -21,7 +21,7 @@
 //
 //     fxrstor64 (%rbx)
 //
-TEXT ·fxrstor(SB),NOSPLIT,$0-8
+TEXT ·fxrstor(SB),NOSPLIT|NOFRAME,$0-8
 	MOVQ addr+0(FP), BX
 	MOVL $0xffffffff, AX
 	MOVL $0xffffffff, DX
@@ -34,7 +34,7 @@ TEXT ·fxrstor(SB),NOSPLIT,$0-8
 //
 //     xrstor (%rdi)
 //
-TEXT ·xrstor(SB),NOSPLIT,$0-8
+TEXT ·xrstor(SB),NOSPLIT|NOFRAME,$0-8
 	MOVQ addr+0(FP), DI
 	MOVL $0xffffffff, AX
 	MOVL $0xffffffff, DX
@@ -47,7 +47,7 @@ TEXT ·xrstor(SB),NOSPLIT,$0-8
 //
 //     fxsave64 (%rbx)
 //
-TEXT ·fxsave(SB),NOSPLIT,$0-8
+TEXT ·fxsave(SB),NOSPLIT|NOFRAME,$0-8
 	MOVQ addr+0(FP), BX
 	MOVL $0xffffffff, AX
 	MOVL $0xffffffff, DX
@@ -60,7 +60,7 @@ TEXT ·fxsave(SB),NOSPLIT,$0-8
 //
 //     xsave (%rdi)
 //
-TEXT ·xsave(SB),NOSPLIT,$0-8
+TEXT ·xsave(SB),NOSPLIT|NOFRAME,$0-8
 	MOVQ addr+0(FP), DI
 	MOVL $0xffffffff, AX
 	MOVL $0xffffffff, DX
@@ -73,11 +73,34 @@ TEXT ·xsave(SB),NOSPLIT,$0-8
 //
 //     xsaveopt (%rdi)
 //
-TEXT ·xsaveopt(SB),NOSPLIT,$0-8
+TEXT ·xsaveopt(SB),NOSPLIT|NOFRAME,$0-8
 	MOVQ addr+0(FP), DI
 	MOVL $0xffffffff, AX
 	MOVL $0xffffffff, DX
 	BYTE $0x48; BYTE $0x0f; BYTE $0xae; BYTE $0x37;
+	RET
+
+// writeFS writes to the FS base.
+//
+// This is written in assembly because it must be safe to call before the Go
+// environment is set up. See comment on start().
+//
+// Preconditions: must be running in the lower address space, as it accesses
+// global data.
+TEXT ·writeFS(SB),NOSPLIT,$8-8
+	MOVQ addr+0(FP), AX
+
+	CMPB ·hasFSGSBASE(SB), $1
+	JNE msr
+
+	PUSHQ AX
+	CALL ·wrfsbase(SB)
+	POPQ AX
+	RET
+msr:
+	PUSHQ AX
+	CALL ·wrfsmsr(SB)
+	POPQ AX
 	RET
 
 // wrfsbase writes to the FS base.
@@ -86,7 +109,7 @@ TEXT ·xsaveopt(SB),NOSPLIT,$0-8
 //
 // 	wrfsbase %rax
 //
-TEXT ·wrfsbase(SB),NOSPLIT,$0-8
+TEXT ·wrfsbase(SB),NOSPLIT|NOFRAME,$0-8
 	MOVQ addr+0(FP), AX
 	BYTE $0xf3; BYTE $0x48; BYTE $0x0f; BYTE $0xae; BYTE $0xd0;
 	RET
@@ -97,12 +120,35 @@ TEXT ·wrfsbase(SB),NOSPLIT,$0-8
 //
 // 	wrmsr (writes EDX:EAX to the MSR in ECX)
 //
-TEXT ·wrfsmsr(SB),NOSPLIT,$0-8
+TEXT ·wrfsmsr(SB),NOSPLIT|NOFRAME,$0-8
 	MOVQ addr+0(FP), AX
 	MOVQ AX, DX
 	SHRQ $32, DX
 	MOVQ $0xc0000100, CX // MSR_FS_BASE
 	BYTE $0x0f; BYTE $0x30;
+	RET
+
+// writeGS writes to the GS base.
+//
+// This is written in assembly because it must be callable from assembly (ABI0)
+// without an intermediate transition to ABIInternal.
+//
+// Preconditions: must be running in the lower address space, as it accesses
+// global data.
+TEXT ·writeGS(SB),NOSPLIT,$8-8
+	MOVQ addr+0(FP), AX
+
+	CMPB ·hasFSGSBASE(SB), $1
+	JNE msr
+
+	PUSHQ AX
+	CALL ·wrgsbase(SB)
+	POPQ AX
+	RET
+msr:
+	PUSHQ AX
+	CALL ·wrgsmsr(SB)
+	POPQ AX
 	RET
 
 // wrgsbase writes to the GS base.
@@ -111,7 +157,7 @@ TEXT ·wrfsmsr(SB),NOSPLIT,$0-8
 //
 // 	wrgsbase %rax
 //
-TEXT ·wrgsbase(SB),NOSPLIT,$0-8
+TEXT ·wrgsbase(SB),NOSPLIT|NOFRAME,$0-8
 	MOVQ addr+0(FP), AX
 	BYTE $0xf3; BYTE $0x48; BYTE $0x0f; BYTE $0xae; BYTE $0xd8;
 	RET
@@ -119,7 +165,7 @@ TEXT ·wrgsbase(SB),NOSPLIT,$0-8
 // wrgsmsr writes to the GSBASE MSR.
 //
 // See wrfsmsr.
-TEXT ·wrgsmsr(SB),NOSPLIT,$0-8
+TEXT ·wrgsmsr(SB),NOSPLIT|NOFRAME,$0-8
 	MOVQ addr+0(FP), AX
 	MOVQ AX, DX
 	SHRQ $32, DX
@@ -133,7 +179,7 @@ TEXT ·wrgsmsr(SB),NOSPLIT,$0-8
 //
 // 	mov %cr2, %rax
 //
-TEXT ·readCR2(SB),NOSPLIT,$0-8
+TEXT ·readCR2(SB),NOSPLIT|NOFRAME,$0-8
 	BYTE $0x0f; BYTE $0x20; BYTE $0xd0;
 	MOVQ AX, ret+0(FP)
 	RET
@@ -143,7 +189,7 @@ TEXT ·readCR2(SB),NOSPLIT,$0-8
 // The code corresponds to:
 //
 // 	fninit
-TEXT ·fninit(SB),NOSPLIT,$0
+TEXT ·fninit(SB),NOSPLIT|NOFRAME,$0
 	BYTE $0xdb; BYTE $0xe3;
 	RET
 
@@ -153,8 +199,8 @@ TEXT ·fninit(SB),NOSPLIT,$0
 //
 // 	xsetbv
 //
-TEXT ·xsetbv(SB),NOSPLIT,$0-16
-	MOVL reg+0(FP), CX
+TEXT ·xsetbv(SB),NOSPLIT|NOFRAME,$0-16
+	MOVQ reg+0(FP), CX
 	MOVL value+8(FP), AX
 	MOVL value+12(FP), DX
 	BYTE $0x0f; BYTE $0x01; BYTE $0xd1;
@@ -166,8 +212,8 @@ TEXT ·xsetbv(SB),NOSPLIT,$0-16
 //
 // 	xgetbv
 //
-TEXT ·xgetbv(SB),NOSPLIT,$0-16
-	MOVL reg+0(FP), CX
+TEXT ·xgetbv(SB),NOSPLIT|NOFRAME,$0-16
+	MOVQ reg+0(FP), CX
 	BYTE $0x0f; BYTE $0x01; BYTE $0xd0;
 	MOVL AX, ret+8(FP)
 	MOVL DX, ret+12(FP)
@@ -179,8 +225,8 @@ TEXT ·xgetbv(SB),NOSPLIT,$0-16
 //
 // 	wrmsr
 //
-TEXT ·wrmsr(SB),NOSPLIT,$0-16
-	MOVL reg+0(FP), CX
+TEXT ·wrmsr(SB),NOSPLIT|NOFRAME,$0-16
+	MOVQ reg+0(FP), CX
 	MOVL value+8(FP), AX
 	MOVL value+12(FP), DX
 	BYTE $0x0f; BYTE $0x30;
@@ -192,21 +238,21 @@ TEXT ·wrmsr(SB),NOSPLIT,$0-16
 //
 // 	rdmsr
 //
-TEXT ·rdmsr(SB),NOSPLIT,$0-16
-	MOVL reg+0(FP), CX
+TEXT ·rdmsr(SB),NOSPLIT|NOFRAME,$0-16
+	MOVQ reg+0(FP), CX
 	BYTE $0x0f; BYTE $0x32;
 	MOVL AX, ret+8(FP)
 	MOVL DX, ret+12(FP)
 	RET
 
 // stmxcsr reads the MXCSR control and status register.
-TEXT ·stmxcsr(SB),NOSPLIT,$0-8
+TEXT ·stmxcsr(SB),NOSPLIT|NOFRAME,$0-8
 	MOVQ addr+0(FP), SI
 	STMXCSR (SI)
 	RET
 
 // ldmxcsr writes to the MXCSR control and status register.
-TEXT ·ldmxcsr(SB),NOSPLIT,$0-8
+TEXT ·ldmxcsr(SB),NOSPLIT|NOFRAME,$0-8
 	MOVQ addr+0(FP), SI
 	LDMXCSR (SI)
 	RET

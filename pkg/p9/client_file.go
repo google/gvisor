@@ -15,11 +15,12 @@
 package p9
 
 import (
+	"errors"
 	"fmt"
 	"io"
-	"sync/atomic"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
 )
@@ -63,12 +64,12 @@ type clientFile struct {
 	fid FID
 
 	// closed indicates whether this file has been closed.
-	closed uint32
+	closed atomicbitops.Uint32
 }
 
 // Walk implements File.Walk.
 func (c *clientFile) Walk(names []string) ([]QID, File, error) {
-	if atomic.LoadUint32(&c.closed) != 0 {
+	if c.closed.Load() != 0 {
 		return nil, nil, unix.EBADF
 	}
 
@@ -89,7 +90,7 @@ func (c *clientFile) Walk(names []string) ([]QID, File, error) {
 
 // WalkGetAttr implements File.WalkGetAttr.
 func (c *clientFile) WalkGetAttr(components []string) ([]QID, File, AttrMask, Attr, error) {
-	if atomic.LoadUint32(&c.closed) != 0 {
+	if c.closed.Load() != 0 {
 		return nil, nil, AttrMask{}, Attr{}, unix.EBADF
 	}
 
@@ -121,9 +122,68 @@ func (c *clientFile) WalkGetAttr(components []string) ([]QID, File, AttrMask, At
 	return rwalkgetattr.QIDs, c.client.newFile(FID(fid)), rwalkgetattr.Valid, rwalkgetattr.Attr, nil
 }
 
+func (c *clientFile) MultiGetAttr(names []string) ([]FullStat, error) {
+	if c.closed.Load() != 0 {
+		return nil, unix.EBADF
+	}
+
+	if versionSupportsTmultiGetAttr(c.client.version) {
+		rmultigetattr := Rmultigetattr{}
+		if err := c.client.sendRecv(&Tmultigetattr{FID: c.fid, Names: names}, &rmultigetattr); err != nil {
+			return nil, err
+		}
+		return rmultigetattr.Stats, nil
+	}
+
+	stats := make([]FullStat, 0, len(names))
+	var start File = c
+	parent := start
+	closeParent := func() {
+		if parent != start {
+			_ = parent.Close()
+		}
+	}
+	defer closeParent()
+	mask := AttrMaskAll()
+	for i, name := range names {
+		if len(name) == 0 && i == 0 {
+			qid, valid, attr, err := parent.GetAttr(mask)
+			if err != nil {
+				return nil, err
+			}
+			stats = append(stats, FullStat{
+				QID:   qid,
+				Valid: valid,
+				Attr:  attr,
+			})
+			continue
+		}
+		qids, child, valid, attr, err := parent.WalkGetAttr([]string{name})
+		if err != nil {
+			if errors.Is(err, unix.ENOENT) {
+				return stats, nil
+			}
+			return nil, err
+		}
+		closeParent()
+		parent = child
+		stats = append(stats, FullStat{
+			QID:   qids[0],
+			Valid: valid,
+			Attr:  attr,
+		})
+		if attr.Mode.FileType() != ModeDirectory {
+			// Doesn't need to continue if entry is not a dir. Including symlinks
+			// that cannot be followed.
+			break
+		}
+	}
+	return stats, nil
+}
+
 // StatFS implements File.StatFS.
 func (c *clientFile) StatFS() (FSStat, error) {
-	if atomic.LoadUint32(&c.closed) != 0 {
+	if c.closed.Load() != 0 {
 		return FSStat{}, unix.EBADF
 	}
 
@@ -137,7 +197,7 @@ func (c *clientFile) StatFS() (FSStat, error) {
 
 // FSync implements File.FSync.
 func (c *clientFile) FSync() error {
-	if atomic.LoadUint32(&c.closed) != 0 {
+	if c.closed.Load() != 0 {
 		return unix.EBADF
 	}
 
@@ -146,7 +206,7 @@ func (c *clientFile) FSync() error {
 
 // GetAttr implements File.GetAttr.
 func (c *clientFile) GetAttr(req AttrMask) (QID, AttrMask, Attr, error) {
-	if atomic.LoadUint32(&c.closed) != 0 {
+	if c.closed.Load() != 0 {
 		return QID{}, AttrMask{}, Attr{}, unix.EBADF
 	}
 
@@ -160,7 +220,7 @@ func (c *clientFile) GetAttr(req AttrMask) (QID, AttrMask, Attr, error) {
 
 // SetAttr implements File.SetAttr.
 func (c *clientFile) SetAttr(valid SetAttrMask, attr SetAttr) error {
-	if atomic.LoadUint32(&c.closed) != 0 {
+	if c.closed.Load() != 0 {
 		return unix.EBADF
 	}
 
@@ -169,7 +229,7 @@ func (c *clientFile) SetAttr(valid SetAttrMask, attr SetAttr) error {
 
 // GetXattr implements File.GetXattr.
 func (c *clientFile) GetXattr(name string, size uint64) (string, error) {
-	if atomic.LoadUint32(&c.closed) != 0 {
+	if c.closed.Load() != 0 {
 		return "", unix.EBADF
 	}
 	if !versionSupportsGetSetXattr(c.client.version) {
@@ -186,7 +246,7 @@ func (c *clientFile) GetXattr(name string, size uint64) (string, error) {
 
 // SetXattr implements File.SetXattr.
 func (c *clientFile) SetXattr(name, value string, flags uint32) error {
-	if atomic.LoadUint32(&c.closed) != 0 {
+	if c.closed.Load() != 0 {
 		return unix.EBADF
 	}
 	if !versionSupportsGetSetXattr(c.client.version) {
@@ -198,7 +258,7 @@ func (c *clientFile) SetXattr(name, value string, flags uint32) error {
 
 // ListXattr implements File.ListXattr.
 func (c *clientFile) ListXattr(size uint64) (map[string]struct{}, error) {
-	if atomic.LoadUint32(&c.closed) != 0 {
+	if c.closed.Load() != 0 {
 		return nil, unix.EBADF
 	}
 	if !versionSupportsListRemoveXattr(c.client.version) {
@@ -219,7 +279,7 @@ func (c *clientFile) ListXattr(size uint64) (map[string]struct{}, error) {
 
 // RemoveXattr implements File.RemoveXattr.
 func (c *clientFile) RemoveXattr(name string) error {
-	if atomic.LoadUint32(&c.closed) != 0 {
+	if c.closed.Load() != 0 {
 		return unix.EBADF
 	}
 	if !versionSupportsListRemoveXattr(c.client.version) {
@@ -231,7 +291,7 @@ func (c *clientFile) RemoveXattr(name string) error {
 
 // Allocate implements File.Allocate.
 func (c *clientFile) Allocate(mode AllocateMode, offset, length uint64) error {
-	if atomic.LoadUint32(&c.closed) != 0 {
+	if c.closed.Load() != 0 {
 		return unix.EBADF
 	}
 	if !versionSupportsTallocate(c.client.version) {
@@ -247,7 +307,7 @@ func (c *clientFile) Allocate(mode AllocateMode, offset, length uint64) error {
 // considered deprecated.
 func (c *clientFile) Remove() error {
 	// Avoid double close.
-	if !atomic.CompareAndSwapUint32(&c.closed, 0, 1) {
+	if !c.closed.CompareAndSwap(0, 1) {
 		return unix.EBADF
 	}
 
@@ -268,7 +328,7 @@ func (c *clientFile) Remove() error {
 // Close implements File.Close.
 func (c *clientFile) Close() error {
 	// Avoid double close.
-	if !atomic.CompareAndSwapUint32(&c.closed, 0, 1) {
+	if !c.closed.CompareAndSwap(0, 1) {
 		return unix.EBADF
 	}
 
@@ -301,7 +361,7 @@ func (c *clientFile) SetAttrClose(valid SetAttrMask, attr SetAttr) error {
 	}
 
 	// Avoid double close.
-	if !atomic.CompareAndSwapUint32(&c.closed, 0, 1) {
+	if !c.closed.CompareAndSwap(0, 1) {
 		return unix.EBADF
 	}
 
@@ -320,7 +380,7 @@ func (c *clientFile) SetAttrClose(valid SetAttrMask, attr SetAttr) error {
 
 // Open implements File.Open.
 func (c *clientFile) Open(flags OpenFlags) (*fd.FD, QID, uint32, error) {
-	if atomic.LoadUint32(&c.closed) != 0 {
+	if c.closed.Load() != 0 {
 		return nil, QID{}, 0, unix.EBADF
 	}
 
@@ -332,9 +392,40 @@ func (c *clientFile) Open(flags OpenFlags) (*fd.FD, QID, uint32, error) {
 	return rlopen.File, rlopen.QID, rlopen.IoUnit, nil
 }
 
+func (c *clientFile) Bind(sockType uint32, sockName string, uid UID, gid GID) (File, QID, AttrMask, Attr, error) {
+	if c.closed.Load() != 0 {
+		return nil, QID{}, AttrMask{}, Attr{}, unix.EBADF
+	}
+
+	if !versionSupportsBind(c.client.version) {
+		return nil, QID{}, AttrMask{}, Attr{}, unix.EOPNOTSUPP
+	}
+
+	fid, ok := c.client.fidPool.Get()
+	if !ok {
+		return nil, QID{}, AttrMask{}, Attr{}, ErrOutOfFIDs
+	}
+
+	tbind := Tbind{
+		SockType:  sockType,
+		SockName:  sockName,
+		UID:       uid,
+		GID:       gid,
+		Directory: c.fid,
+		NewFID:    FID(fid),
+	}
+	rbind := Rbind{}
+	if err := c.client.sendRecv(&tbind, &rbind); err != nil {
+		c.client.fidPool.Put(fid)
+		return nil, QID{}, AttrMask{}, Attr{}, err
+	}
+
+	return c.client.newFile(FID(fid)), rbind.QID, rbind.Valid, rbind.Attr, nil
+}
+
 // Connect implements File.Connect.
-func (c *clientFile) Connect(flags ConnectFlags) (*fd.FD, error) {
-	if atomic.LoadUint32(&c.closed) != 0 {
+func (c *clientFile) Connect(socketType SocketType) (*fd.FD, error) {
+	if c.closed.Load() != 0 {
 		return nil, unix.EBADF
 	}
 
@@ -343,7 +434,7 @@ func (c *clientFile) Connect(flags ConnectFlags) (*fd.FD, error) {
 	}
 
 	rlconnect := Rlconnect{}
-	if err := c.client.sendRecv(&Tlconnect{FID: c.fid, Flags: flags}, &rlconnect); err != nil {
+	if err := c.client.sendRecv(&Tlconnect{FID: c.fid, SocketType: socketType}, &rlconnect); err != nil {
 		return nil, err
 	}
 
@@ -403,7 +494,7 @@ func (c *clientFile) ReadAt(p []byte, offset uint64) (int, error) {
 }
 
 func (c *clientFile) readAt(p []byte, offset uint64) (int, error) {
-	if atomic.LoadUint32(&c.closed) != 0 {
+	if c.closed.Load() != 0 {
 		return 0, unix.EBADF
 	}
 
@@ -434,7 +525,7 @@ func (c *clientFile) WriteAt(p []byte, offset uint64) (int, error) {
 }
 
 func (c *clientFile) writeAt(p []byte, offset uint64) (int, error) {
-	if atomic.LoadUint32(&c.closed) != 0 {
+	if c.closed.Load() != 0 {
 		return 0, unix.EBADF
 	}
 
@@ -499,7 +590,7 @@ func (r *ReadWriterFile) WriteAt(p []byte, offset int64) (int, error) {
 
 // Rename implements File.Rename.
 func (c *clientFile) Rename(dir File, name string) error {
-	if atomic.LoadUint32(&c.closed) != 0 {
+	if c.closed.Load() != 0 {
 		return unix.EBADF
 	}
 
@@ -513,7 +604,7 @@ func (c *clientFile) Rename(dir File, name string) error {
 
 // Create implements File.Create.
 func (c *clientFile) Create(name string, openFlags OpenFlags, permissions FileMode, uid UID, gid GID) (*fd.FD, File, QID, uint32, error) {
-	if atomic.LoadUint32(&c.closed) != 0 {
+	if c.closed.Load() != 0 {
 		return nil, nil, QID{}, 0, unix.EBADF
 	}
 
@@ -544,7 +635,7 @@ func (c *clientFile) Create(name string, openFlags OpenFlags, permissions FileMo
 
 // Mkdir implements File.Mkdir.
 func (c *clientFile) Mkdir(name string, permissions FileMode, uid UID, gid GID) (QID, error) {
-	if atomic.LoadUint32(&c.closed) != 0 {
+	if c.closed.Load() != 0 {
 		return QID{}, unix.EBADF
 	}
 
@@ -574,7 +665,7 @@ func (c *clientFile) Mkdir(name string, permissions FileMode, uid UID, gid GID) 
 
 // Symlink implements File.Symlink.
 func (c *clientFile) Symlink(oldname string, newname string, uid UID, gid GID) (QID, error) {
-	if atomic.LoadUint32(&c.closed) != 0 {
+	if c.closed.Load() != 0 {
 		return QID{}, unix.EBADF
 	}
 
@@ -604,7 +695,7 @@ func (c *clientFile) Symlink(oldname string, newname string, uid UID, gid GID) (
 
 // Link implements File.Link.
 func (c *clientFile) Link(target File, newname string) error {
-	if atomic.LoadUint32(&c.closed) != 0 {
+	if c.closed.Load() != 0 {
 		return unix.EBADF
 	}
 
@@ -618,7 +709,7 @@ func (c *clientFile) Link(target File, newname string) error {
 
 // Mknod implements File.Mknod.
 func (c *clientFile) Mknod(name string, mode FileMode, major uint32, minor uint32, uid UID, gid GID) (QID, error) {
-	if atomic.LoadUint32(&c.closed) != 0 {
+	if c.closed.Load() != 0 {
 		return QID{}, unix.EBADF
 	}
 
@@ -650,7 +741,7 @@ func (c *clientFile) Mknod(name string, mode FileMode, major uint32, minor uint3
 
 // RenameAt implements File.RenameAt.
 func (c *clientFile) RenameAt(oldname string, newdir File, newname string) error {
-	if atomic.LoadUint32(&c.closed) != 0 {
+	if c.closed.Load() != 0 {
 		return unix.EBADF
 	}
 
@@ -664,7 +755,7 @@ func (c *clientFile) RenameAt(oldname string, newdir File, newname string) error
 
 // UnlinkAt implements File.UnlinkAt.
 func (c *clientFile) UnlinkAt(name string, flags uint32) error {
-	if atomic.LoadUint32(&c.closed) != 0 {
+	if c.closed.Load() != 0 {
 		return unix.EBADF
 	}
 
@@ -672,13 +763,13 @@ func (c *clientFile) UnlinkAt(name string, flags uint32) error {
 }
 
 // Readdir implements File.Readdir.
-func (c *clientFile) Readdir(offset uint64, count uint32) ([]Dirent, error) {
-	if atomic.LoadUint32(&c.closed) != 0 {
+func (c *clientFile) Readdir(direntOffset uint64, count uint32) ([]Dirent, error) {
+	if c.closed.Load() != 0 {
 		return nil, unix.EBADF
 	}
 
 	rreaddir := Rreaddir{}
-	if err := c.client.sendRecv(&Treaddir{Directory: c.fid, Offset: offset, Count: count}, &rreaddir); err != nil {
+	if err := c.client.sendRecv(&Treaddir{Directory: c.fid, DirentOffset: direntOffset, Count: count}, &rreaddir); err != nil {
 		return nil, err
 	}
 
@@ -687,7 +778,7 @@ func (c *clientFile) Readdir(offset uint64, count uint32) ([]Dirent, error) {
 
 // Readlink implements File.Readlink.
 func (c *clientFile) Readlink() (string, error) {
-	if atomic.LoadUint32(&c.closed) != 0 {
+	if c.closed.Load() != 0 {
 		return "", unix.EBADF
 	}
 
@@ -701,7 +792,7 @@ func (c *clientFile) Readlink() (string, error) {
 
 // Flush implements File.Flush.
 func (c *clientFile) Flush() error {
-	if atomic.LoadUint32(&c.closed) != 0 {
+	if c.closed.Load() != 0 {
 		return unix.EBADF
 	}
 

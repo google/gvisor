@@ -17,6 +17,7 @@ package vfs
 import (
 	"bytes"
 	"fmt"
+	"strings"
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -28,7 +29,7 @@ import (
 type FilesystemType interface {
 	// GetFilesystem returns a Filesystem configured by the given options,
 	// along with its mount root. A reference is taken on the returned
-	// Filesystem and Dentry.
+	// Filesystem and Dentry whose ownership is transferred to the caller.
 	GetFilesystem(ctx context.Context, vfsObj *VirtualFilesystem, creds *auth.Credentials, source string, opts GetFilesystemOptions) (*Filesystem, *Dentry, error)
 
 	// Name returns the name of this FilesystemType.
@@ -47,7 +48,7 @@ type GetFilesystemOptions struct {
 	// InternalData holds opaque FilesystemType-specific data. There is
 	// intentionally no way for applications to specify InternalData; if it is
 	// not nil, the call to GetFilesystem originates from within the sentry.
-	InternalData interface{}
+	InternalData any
 }
 
 // +stateify savable
@@ -102,7 +103,13 @@ func (vfs *VirtualFilesystem) MustRegisterFilesystemType(name string, fsType Fil
 func (vfs *VirtualFilesystem) getFilesystemType(name string) *registeredFilesystemType {
 	vfs.fsTypesMu.RLock()
 	defer vfs.fsTypesMu.RUnlock()
-	return vfs.fsTypes[name]
+	fsname := name
+	// Fetch a meaningful part of name if there is a dot in the name
+	// and use left part of a string as fname.
+	if strings.Index(name, ".") != -1 {
+		fsname = strings.Split(name, ".")[0]
+	}
+	return vfs.fsTypes[fsname]
 }
 
 // GenerateProcFilesystems emits the contents of /proc/filesystems for vfs to

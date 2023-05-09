@@ -29,7 +29,7 @@ func TestWaitForReadyHappy(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("cmd.Start() failed, err: %v", err)
 	}
-	defer cmd.Wait()
+	defer func() { _ = cmd.Wait() }()
 
 	var count int
 	err := WaitForReady(cmd.Process.Pid, 5*time.Second, func() (bool, error) {
@@ -42,7 +42,9 @@ func TestWaitForReadyHappy(t *testing.T) {
 	if err != nil {
 		t.Errorf("ProcessWaitReady got: %v, expected: nil", err)
 	}
-	cmd.Process.Kill()
+	if err := cmd.Process.Kill(); err != nil {
+		t.Errorf("cmd.ProcessKill(): %v", err)
+	}
 }
 
 func TestWaitForReadyFail(t *testing.T) {
@@ -50,7 +52,7 @@ func TestWaitForReadyFail(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("cmd.Start() failed, err: %v", err)
 	}
-	defer cmd.Wait()
+	defer func() { _ = cmd.Wait() }()
 
 	var count int
 	err := WaitForReady(cmd.Process.Pid, 5*time.Second, func() (bool, error) {
@@ -58,12 +60,14 @@ func TestWaitForReadyFail(t *testing.T) {
 			count++
 			return false, nil
 		}
-		return false, fmt.Errorf("Fake error")
+		return false, fmt.Errorf("fake error")
 	})
 	if err == nil {
 		t.Errorf("ProcessWaitReady got: nil, expected: error")
 	}
-	cmd.Process.Kill()
+	if err := cmd.Process.Kill(); err != nil {
+		t.Errorf("cmd.ProcessKill(): %v", err)
+	}
 }
 
 func TestWaitForReadyNotRunning(t *testing.T) {
@@ -71,7 +75,7 @@ func TestWaitForReadyNotRunning(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("cmd.Start() failed, err: %v", err)
 	}
-	defer cmd.Wait()
+	defer func() { _ = cmd.Wait() }()
 
 	err := WaitForReady(cmd.Process.Pid, 5*time.Second, func() (bool, error) {
 		return false, nil
@@ -89,15 +93,17 @@ func TestWaitForReadyTimeout(t *testing.T) {
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("cmd.Start() failed, err: %v", err)
 	}
-	defer cmd.Wait()
+	defer func() { _ = cmd.Wait() }()
 
 	err := WaitForReady(cmd.Process.Pid, 50*time.Millisecond, func() (bool, error) {
 		return false, nil
 	})
-	if !strings.Contains(err.Error(), "not running yet") {
+	if err == nil || !strings.Contains(err.Error(), "not running yet") {
 		t.Errorf("ProcessWaitReady got: %v, expected: not running yet", err)
 	}
-	cmd.Process.Kill()
+	if err := cmd.Process.Kill(); err != nil {
+		t.Errorf("cmd.ProcessKill(): %v", err)
+	}
 }
 
 func TestSpecInvalid(t *testing.T) {
@@ -261,5 +267,115 @@ func TestSpecInvalid(t *testing.T) {
 				t.Errorf("ValidateSpec(%q) wrong error, got: %v, want: .*%s.*", test.name, err, test.error)
 			}
 		}
+	}
+}
+
+func TestSeccomp(t *testing.T) {
+	const containerName = "cont1"
+	for _, tc := range []struct {
+		name           string
+		spec           specs.Spec
+		seccompPresent bool
+	}{
+		{
+			name:           "seccomp set",
+			seccompPresent: true,
+			spec: specs.Spec{
+				Annotations: map[string]string{
+					annotationContainerName: containerName,
+				},
+				Linux: &specs.Linux{
+					Seccomp: &specs.LinuxSeccomp{},
+				},
+			},
+		},
+		{
+			name:           "another container",
+			seccompPresent: true,
+			spec: specs.Spec{
+				Annotations: map[string]string{
+					annotationContainerName:     containerName,
+					annotationSeccomp + "cont2": annotationSeccompRuntimeDefault,
+				},
+				Linux: &specs.Linux{
+					Seccomp: &specs.LinuxSeccomp{},
+				},
+			},
+		},
+		{
+			name:           "not RuntimeDefault",
+			seccompPresent: true,
+			spec: specs.Spec{
+				Annotations: map[string]string{
+					annotationContainerName:           containerName,
+					annotationSeccomp + containerName: "foobar",
+				},
+				Linux: &specs.Linux{
+					Seccomp: &specs.LinuxSeccomp{},
+				},
+			},
+		},
+		{
+			name:           "not RuntimeDefault many names",
+			seccompPresent: true,
+			spec: specs.Spec{
+				Annotations: map[string]string{
+					annotationContainerName:           containerName,
+					annotationSeccomp + containerName: "foobar",
+					annotationSeccomp + "cont2":       annotationSeccompRuntimeDefault,
+				},
+				Linux: &specs.Linux{
+					Seccomp: &specs.LinuxSeccomp{},
+				},
+			},
+		},
+		{
+			name: "remove",
+			spec: specs.Spec{
+				Annotations: map[string]string{
+					annotationContainerName:           containerName,
+					annotationSeccomp + containerName: annotationSeccompRuntimeDefault,
+				},
+				Linux: &specs.Linux{
+					Seccomp: &specs.LinuxSeccomp{},
+				},
+			},
+		},
+		{
+			name: "remove many names",
+			spec: specs.Spec{
+				Annotations: map[string]string{
+					annotationContainerName:           containerName,
+					annotationSeccomp + containerName: annotationSeccompRuntimeDefault,
+					annotationSeccomp + "cont2":       "foobar",
+				},
+				Linux: &specs.Linux{
+					Seccomp: &specs.LinuxSeccomp{},
+				},
+			},
+		},
+		{
+			name: "remove-nonexistent",
+			spec: specs.Spec{
+				Annotations: map[string]string{
+					annotationSeccomp + containerName: annotationSeccompRuntimeDefault,
+				},
+			},
+		},
+		{
+			name: "empty",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.spec.Root = &specs.Root{}
+			fixSpec(&tc.spec, "", nil)
+			if tc.seccompPresent {
+				if tc.spec.Linux == nil || tc.spec.Linux.Seccomp == nil {
+					t.Errorf("seccomp is not in the spec: %+v", tc.spec)
+				}
+			} else if tc.spec.Linux != nil && tc.spec.Linux.Seccomp != nil {
+				t.Errorf("seccomp is in the spec: %+v", tc.spec)
+			}
+		})
 	}
 }

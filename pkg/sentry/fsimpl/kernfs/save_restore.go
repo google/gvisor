@@ -15,15 +15,13 @@
 package kernfs
 
 import (
-	"sync/atomic"
-
-	"gvisor.dev/gvisor/pkg/refsvfs2"
+	"gvisor.dev/gvisor/pkg/refs"
 )
 
 // afterLoad is invoked by stateify.
 func (d *Dentry) afterLoad() {
-	if atomic.LoadInt64(&d.refs) >= 0 {
-		refsvfs2.Register(d)
+	if d.refs.Load() >= 0 {
+		refs.Register(d)
 	}
 }
 

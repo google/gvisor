@@ -23,8 +23,11 @@
 #include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/save_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
+
+using ::testing::AnyOf;
 
 namespace gvisor {
 namespace testing {
@@ -83,6 +86,29 @@ TEST(RenameTest, FileToSameDirectory) {
   f.reset(newpath);
   EXPECT_THAT(Exists(oldpath), IsPosixErrorOkAndHolds(false));
   EXPECT_THAT(Exists(newpath), IsPosixErrorOkAndHolds(true));
+}
+
+TEST(RenameTest, FileNameTooLong) {
+  auto old_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  auto new_base = NextTempBasename();
+  int padding = (NAME_MAX + 1) - new_base.size();
+  new_base.append(padding, 'x');
+  auto new_path = JoinPath(Dirname(old_file.path()), new_base);
+  ASSERT_THAT(rename(old_file.path().c_str(), new_path.c_str()),
+              SyscallFailsWithErrno(ENAMETOOLONG));
+}
+
+TEST(RenameTest, RenameAfterWritableFDAndChmod) {
+  // Restore will require re-opening the writable FD which will fail.
+  const DisableSave ds;
+  const std::string data = "hello world\n";
+  auto f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  auto wfd = ASSERT_NO_ERRNO_AND_VALUE(Open(f.path(), O_WRONLY));
+  ASSERT_THAT(chmod(f.path().c_str(), 0444), SyscallSucceeds());
+  std::string const newpath = NewTempAbsPath();
+  ASSERT_THAT(rename(f.path().c_str(), newpath.c_str()), SyscallSucceeds());
+  EXPECT_THAT(WriteFd(wfd.get(), data.c_str(), data.size()),
+              SyscallSucceedsWithValue(data.size()));
 }
 
 TEST(RenameTest, DirectoryToSameDirectory) {
@@ -259,8 +285,8 @@ TEST(RenameTest, DirectoryDoesNotOverwriteNonemptyDirectory) {
 
 TEST(RenameTest, FailsWhenOldParentNotWritable) {
   // Drop capabilities that allow us to override file and directory permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
 
   auto dir1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto f1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(dir1.path()));
@@ -275,8 +301,8 @@ TEST(RenameTest, FailsWhenOldParentNotWritable) {
 
 TEST(RenameTest, FailsWhenNewParentNotWritable) {
   // Drop capabilities that allow us to override file and directory permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
 
   auto dir1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto f1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(dir1.path()));
@@ -293,8 +319,8 @@ TEST(RenameTest, FailsWhenNewParentNotWritable) {
 // to overwrite.
 TEST(RenameTest, OverwriteFailsWhenNewParentNotWritable) {
   // Drop capabilities that allow us to override file and directory permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
 
   auto dir1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto f1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(dir1.path()));
@@ -312,8 +338,8 @@ TEST(RenameTest, OverwriteFailsWhenNewParentNotWritable) {
 // because the user cannot determine if source exists.
 TEST(RenameTest, FileDoesNotExistWhenNewParentNotExecutable) {
   // Drop capabilities that allow us to override file and directory permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
 
   // No execute permission.
   auto dir = ASSERT_NO_ERRNO_AND_VALUE(
@@ -436,6 +462,60 @@ TEST(RenameTest, SysfsDirectoryToSelf) {
   SKIP_IF(geteuid() != 0);
   std::string const path = "/sys/devices";
   EXPECT_THAT(rename(path.c_str(), path.c_str()), SyscallSucceeds());
+}
+
+#ifndef SYS_renameat2
+#if defined(__x86_64__)
+#define SYS_renameat2 316
+#elif defined(__aarch64__)
+#define SYS_renameat2 276
+#else
+#error "Unknown architecture"
+#endif
+#endif  // SYS_renameat2
+
+#ifndef RENAME_NOREPLACE
+#define RENAME_NOREPLACE (1 << 0)
+#endif  // RENAME_NOREPLACE
+
+int renameat2(int olddirfd, const char* oldpath, int newdirfd,
+              const char* newpath, unsigned int flags) {
+  return syscall(SYS_renameat2, olddirfd, oldpath, newdirfd, newpath, flags);
+}
+
+TEST(Renameat2Test, NoReplaceSuccess) {
+  auto f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  std::string const newpath = NewTempAbsPath();
+  // renameat2 may fail with ENOSYS (if the syscall is unsupported) or EINVAL
+  // (if flags are unsupported), or succeed (if RENAME_NOREPLACE is operating
+  // correctly).
+  EXPECT_THAT(
+      renameat2(AT_FDCWD, f.path().c_str(), AT_FDCWD, newpath.c_str(),
+                RENAME_NOREPLACE),
+      AnyOf(SyscallFailsWithErrno(AnyOf(ENOSYS, EINVAL)), SyscallSucceeds()));
+}
+
+TEST(Renameat2Test, NoReplaceExisting) {
+  auto f1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  auto f2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  // renameat2 may fail with ENOSYS (if the syscall is unsupported), EINVAL (if
+  // flags are unsupported), or EEXIST (if RENAME_NOREPLACE is operating
+  // correctly).
+  EXPECT_THAT(renameat2(AT_FDCWD, f1.path().c_str(), AT_FDCWD,
+                        f2.path().c_str(), RENAME_NOREPLACE),
+              SyscallFailsWithErrno(AnyOf(ENOSYS, EINVAL, EEXIST)));
+}
+
+TEST(Renameat2Test, NoReplaceDot) {
+  auto d1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto d2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  // renameat2 may fail with ENOSYS (if the syscall is unsupported), EINVAL (if
+  // flags are unsupported), or EEXIST (if RENAME_NOREPLACE is operating
+  // correctly).
+  EXPECT_THAT(
+      renameat2(AT_FDCWD, d1.path().c_str(), AT_FDCWD,
+                absl::StrCat(d2.path(), "/.").c_str(), RENAME_NOREPLACE),
+      SyscallFailsWithErrno(AnyOf(ENOSYS, EINVAL, EEXIST)));
 }
 
 }  // namespace

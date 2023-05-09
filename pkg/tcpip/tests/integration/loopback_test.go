@@ -20,8 +20,8 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
@@ -30,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/tests/utils"
+	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
@@ -43,20 +44,18 @@ type ndpDispatcher struct{}
 func (*ndpDispatcher) OnDuplicateAddressDetectionResult(tcpip.NICID, tcpip.Address, stack.DADResult) {
 }
 
-func (*ndpDispatcher) OnDefaultRouterDiscovered(tcpip.NICID, tcpip.Address) bool {
-	return false
+func (*ndpDispatcher) OnOffLinkRouteUpdated(tcpip.NICID, tcpip.Subnet, tcpip.Address, header.NDPRoutePreference) {
 }
 
-func (*ndpDispatcher) OnDefaultRouterInvalidated(tcpip.NICID, tcpip.Address) {}
+func (*ndpDispatcher) OnOffLinkRouteInvalidated(tcpip.NICID, tcpip.Subnet, tcpip.Address) {}
 
-func (*ndpDispatcher) OnOnLinkPrefixDiscovered(tcpip.NICID, tcpip.Subnet) bool {
-	return false
+func (*ndpDispatcher) OnOnLinkPrefixDiscovered(tcpip.NICID, tcpip.Subnet) {
 }
 
 func (*ndpDispatcher) OnOnLinkPrefixInvalidated(tcpip.NICID, tcpip.Subnet) {}
 
-func (*ndpDispatcher) OnAutoGenAddress(tcpip.NICID, tcpip.AddressWithPrefix) bool {
-	return true
+func (*ndpDispatcher) OnAutoGenAddress(tcpip.NICID, tcpip.AddressWithPrefix) stack.AddressDispatcher {
+	return nil
 }
 
 func (*ndpDispatcher) OnAutoGenAddressDeprecated(tcpip.NICID, tcpip.AddressWithPrefix) {}
@@ -86,6 +85,7 @@ func TestInitialLoopbackAddresses(t *testing.T) {
 			},
 		})},
 	})
+	defer s.Destroy()
 
 	if err := s.CreateNIC(nicID, loopback.New()); err != nil {
 		t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
@@ -194,11 +194,12 @@ func TestLoopbackAcceptAllInSubnetUDP(t *testing.T) {
 				NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
 				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 			})
+			defer s.Destroy()
 			if err := s.CreateNIC(nicID, loopback.New()); err != nil {
 				t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
 			}
-			if err := s.AddProtocolAddress(nicID, test.addAddress); err != nil {
-				t.Fatalf("AddProtocolAddress(%d, %+v): %s", nicID, test.addAddress, err)
+			if err := s.AddProtocolAddress(nicID, test.addAddress, stack.AddressProperties{}); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, test.addAddress, err)
 			}
 			s.SetRouteTable([]tcpip.Route{
 				{
@@ -289,11 +290,12 @@ func TestLoopbackSubnetLifetimeBoundToAddr(t *testing.T) {
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{ipv4.NewProtocol},
 	})
+	defer s.Destroy()
 	if err := s.CreateNIC(nicID, loopback.New()); err != nil {
 		t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
 	}
-	if err := s.AddProtocolAddress(nicID, protoAddr); err != nil {
-		t.Fatalf("s.AddProtocolAddress(%d, %#v): %s", nicID, protoAddr, err)
+	if err := s.AddProtocolAddress(nicID, protoAddr, stack.AddressProperties{}); err != nil {
+		t.Fatalf("s.AddProtocolAddress(%d, %+v, {}): %s", nicID, protoAddr, err)
 	}
 	s.SetRouteTable([]tcpip.Route{
 		{
@@ -313,12 +315,12 @@ func TestLoopbackSubnetLifetimeBoundToAddr(t *testing.T) {
 		TTL:      64,
 		TOS:      stack.DefaultTOS,
 	}
-	data := buffer.View([]byte{1, 2, 3, 4})
-	if err := r.WritePacket(nil /* gso */, params, stack.NewPacketBuffer(stack.PacketBufferOptions{
+	data := []byte{1, 2, 3, 4}
+	if err := r.WritePacket(params, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(r.MaxHeaderLength()),
-		Data:               data.ToVectorisedView(),
+		Payload:            bufferv2.MakeWithData(data),
 	})); err != nil {
-		t.Fatalf("r.WritePacket(nil, %#v, _): %s", params, err)
+		t.Fatalf("r.WritePacket(%#v, _): %s", params, err)
 	}
 
 	// Removing the address should make the endpoint invalid.
@@ -326,12 +328,12 @@ func TestLoopbackSubnetLifetimeBoundToAddr(t *testing.T) {
 		t.Fatalf("s.RemoveAddress(%d, %s): %s", nicID, protoAddr.AddressWithPrefix.Address, err)
 	}
 	{
-		err := r.WritePacket(nil /* gso */, params, stack.NewPacketBuffer(stack.PacketBufferOptions{
+		err := r.WritePacket(params, stack.NewPacketBuffer(stack.PacketBufferOptions{
 			ReserveHeaderBytes: int(r.MaxHeaderLength()),
-			Data:               data.ToVectorisedView(),
+			Payload:            bufferv2.MakeWithData(data),
 		}))
 		if _, ok := err.(*tcpip.ErrInvalidEndpointState); !ok {
-			t.Fatalf("got r.WritePacket(nil, %#v, _) = %s, want = %s", params, err, &tcpip.ErrInvalidEndpointState{})
+			t.Fatalf("got r.WritePacket(%#v, _) = %s, want = %s", params, err, &tcpip.ErrInvalidEndpointState{})
 		}
 	}
 }
@@ -430,11 +432,12 @@ func TestLoopbackAcceptAllInSubnetTCP(t *testing.T) {
 				NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
 				TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol},
 			})
+			defer s.Destroy()
 			if err := s.CreateNIC(nicID, loopback.New()); err != nil {
 				t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
 			}
-			if err := s.AddProtocolAddress(nicID, test.addAddress); err != nil {
-				t.Fatalf("AddProtocolAddress(%d, %#v): %s", nicID, test.addAddress, err)
+			if err := s.AddProtocolAddress(nicID, test.addAddress, stack.AddressProperties{}); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, test.addAddress, err)
 			}
 			s.SetRouteTable([]tcpip.Route{
 				{
@@ -448,12 +451,12 @@ func TestLoopbackAcceptAllInSubnetTCP(t *testing.T) {
 			})
 
 			var wq waiter.Queue
-			we, ch := waiter.NewChannelEntry(nil)
-			wq.EventRegister(&we, waiter.ReadableEvents)
+			we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
+			wq.EventRegister(&we)
 			defer wq.EventUnregister(&we)
 			listeningEndpoint, err := s.NewEndpoint(tcp.ProtocolNumber, test.addAddress.Protocol, &wq)
 			if err != nil {
-				t.Fatalf("NewEndpoint(%d, %d, _): %s", udp.ProtocolNumber, test.addAddress.Protocol, err)
+				t.Fatalf("NewEndpoint(%d, %d, _): %s", tcp.ProtocolNumber, test.addAddress.Protocol, err)
 			}
 			defer listeningEndpoint.Close()
 
@@ -468,7 +471,7 @@ func TestLoopbackAcceptAllInSubnetTCP(t *testing.T) {
 
 			connectingEndpoint, err := s.NewEndpoint(tcp.ProtocolNumber, test.addAddress.Protocol, &wq)
 			if err != nil {
-				t.Fatalf("s.NewEndpoint(%d, %d, _): %s", udp.ProtocolNumber, test.addAddress.Protocol, err)
+				t.Fatalf("s.NewEndpoint(%d, %d, _): %s", tcp.ProtocolNumber, test.addAddress.Protocol, err)
 			}
 			defer connectingEndpoint.Close()
 
@@ -510,11 +513,10 @@ func TestExternalLoopbackTraffic(t *testing.T) {
 		nicID1 = 1
 		nicID2 = 2
 
-		ipv4Loopback = tcpip.Address("\x7f\x00\x00\x01")
-
 		numPackets = 1
 		ttl        = 64
 	)
+	ipv4Loopback := testutil.MustParse4("127.0.0.1")
 
 	loopbackSourcedICMPv4 := func(e *channel.Endpoint) {
 		utils.RxICMPv4EchoRequest(e, ipv4Loopback, utils.Ipv4Addr.Address, ttl)
@@ -692,50 +694,70 @@ func TestExternalLoopbackTraffic(t *testing.T) {
 				},
 				TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol4, icmp.NewProtocol6},
 			})
+			defer s.Destroy()
 			e := channel.New(1, header.IPv6MinimumMTU, "")
 			if err := s.CreateNIC(nicID1, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _): %s", nicID1, err)
 			}
-			if err := s.AddAddressWithPrefix(nicID1, ipv4.ProtocolNumber, utils.Ipv4Addr); err != nil {
-				t.Fatalf("AddAddressWithPrefix(%d, %d, %s): %s", nicID1, ipv4.ProtocolNumber, utils.Ipv4Addr, err)
+			v4Addr := tcpip.ProtocolAddress{
+				Protocol:          ipv4.ProtocolNumber,
+				AddressWithPrefix: utils.Ipv4Addr,
 			}
-			if err := s.AddAddressWithPrefix(nicID1, ipv6.ProtocolNumber, utils.Ipv6Addr); err != nil {
-				t.Fatalf("AddAddressWithPrefix(%d, %d, %s): %s", nicID1, ipv6.ProtocolNumber, utils.Ipv6Addr, err)
+			if err := s.AddProtocolAddress(nicID1, v4Addr, stack.AddressProperties{}); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID1, v4Addr, err)
+			}
+			v6Addr := tcpip.ProtocolAddress{
+				Protocol:          ipv6.ProtocolNumber,
+				AddressWithPrefix: utils.Ipv6Addr,
+			}
+			if err := s.AddProtocolAddress(nicID1, v6Addr, stack.AddressProperties{}); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID1, v6Addr, err)
 			}
 
 			if err := s.CreateNIC(nicID2, loopback.New()); err != nil {
 				t.Fatalf("CreateNIC(%d, _): %s", nicID2, err)
 			}
-			if err := s.AddAddress(nicID2, ipv4.ProtocolNumber, ipv4Loopback); err != nil {
-				t.Fatalf("AddAddress(%d, %d, %s): %s", nicID2, ipv4.ProtocolNumber, ipv4Loopback, err)
+			protocolAddrV4 := tcpip.ProtocolAddress{
+				Protocol: ipv4.ProtocolNumber,
+				AddressWithPrefix: tcpip.AddressWithPrefix{
+					Address:   ipv4Loopback,
+					PrefixLen: 8,
+				},
 			}
-			if err := s.AddAddress(nicID2, ipv6.ProtocolNumber, header.IPv6Loopback); err != nil {
-				t.Fatalf("AddAddress(%d, %d, %s): %s", nicID2, ipv6.ProtocolNumber, header.IPv6Loopback, err)
+			if err := s.AddProtocolAddress(nicID2, protocolAddrV4, stack.AddressProperties{}); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID2, protocolAddrV4, err)
+			}
+			protocolAddrV6 := tcpip.ProtocolAddress{
+				Protocol:          ipv6.ProtocolNumber,
+				AddressWithPrefix: header.IPv6Loopback.WithPrefix(),
+			}
+			if err := s.AddProtocolAddress(nicID2, protocolAddrV6, stack.AddressProperties{}); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID2, protocolAddrV6, err)
 			}
 
 			if test.forwarding {
-				if err := s.SetForwarding(ipv4.ProtocolNumber, true); err != nil {
-					t.Fatalf("SetForwarding(%d, true): %s", ipv4.ProtocolNumber, err)
+				if err := s.SetForwardingDefaultAndAllNICs(ipv4.ProtocolNumber, true); err != nil {
+					t.Fatalf("SetForwardingDefaultAndAllNICs(%d, true): %s", ipv4.ProtocolNumber, err)
 				}
-				if err := s.SetForwarding(ipv6.ProtocolNumber, true); err != nil {
-					t.Fatalf("SetForwarding(%d, true): %s", ipv6.ProtocolNumber, err)
+				if err := s.SetForwardingDefaultAndAllNICs(ipv6.ProtocolNumber, true); err != nil {
+					t.Fatalf("SetForwardingDefaultAndAllNICs(%d, true): %s", ipv6.ProtocolNumber, err)
 				}
 			}
 
 			s.SetRouteTable([]tcpip.Route{
-				tcpip.Route{
+				{
 					Destination: header.IPv4EmptySubnet,
 					NIC:         nicID1,
 				},
-				tcpip.Route{
+				{
 					Destination: header.IPv6EmptySubnet,
 					NIC:         nicID1,
 				},
-				tcpip.Route{
+				{
 					Destination: ipv4Loopback.WithPrefix().Subnet(),
 					NIC:         nicID2,
 				},
-				tcpip.Route{
+				{
 					Destination: header.IPv6Loopback.WithPrefix().Subnet(),
 					NIC:         nicID2,
 				},

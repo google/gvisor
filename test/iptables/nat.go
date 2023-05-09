@@ -804,10 +804,10 @@ func recvWithRECVORIGDSTADDR(ctx context.Context, ipv6 bool, expectedDst *net.IP
 		return fmt.Errorf("failed SetsockoptByte(%d, %d, %d, 1): %v", sockfd, level, option, err)
 	}
 
-	addrCh := make(chan interface{})
+	addrCh := make(chan any)
 	errCh := make(chan error)
 	go func() {
-		var addr interface{}
+		var addr any
 		var err error
 		if ipv6 {
 			addr, err = recvOrigDstAddr6(sockfd)
@@ -822,7 +822,7 @@ func recvWithRECVORIGDSTADDR(ctx context.Context, ipv6 bool, expectedDst *net.IP
 	}()
 
 	// Wait to receive a packet.
-	var addr interface{}
+	var addr any
 	select {
 	case <-ctx.Done():
 		return ctx.Err()

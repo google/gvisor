@@ -28,10 +28,10 @@
 #include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
 #include "absl/time/clock.h"
-#include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {
@@ -78,7 +78,8 @@ TEST(ProcSysNetIpv4Sack, Exists) {
 }
 
 TEST(ProcSysNetIpv4Sack, CanReadAndWrite) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability((CAP_DAC_OVERRIDE))));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability((CAP_NET_ADMIN))) ||
+          IsRunningWithHostinet());
 
   auto const fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/sys/net/ipv4/tcp_sack", O_RDWR));
@@ -152,6 +153,37 @@ TEST(ProcNetDev, Format) {
   EXPECT_GT(entries.size(), 0);
 }
 
+// GetMibsAllocationSysctl retuns a value of the net.core.mibs_allocation
+// sysctl./proc/sys/net/core/mibs_allocation
+//
+// When mibs_allocation is unset, a netns creation inherits MIB from init
+// network namespace. Otherwise, MIBS is allocated for each namespace.
+int GetMibsAllocationSysctl() {
+  auto ret = GetContents("/proc/sys/net/core/mibs_allocation");
+  if (!ret.ok()) {
+    // The current kernel doesn't support mibs_allocation.
+    return 1;
+  }
+  int32_t val;
+  EXPECT_TRUE(absl::SimpleAtoi(ret.ValueOrDie(), &val));
+  return val;
+}
+
+// GetSNMPMetricFromProc retrieves the metric named `item` of `type` from the
+// `snmp` string which represents the file contents of /proc/net/snmp.
+//
+// Note to test writers: If you are writing tests to check the change in value
+// of SNMP metrics, note that if GetMibsAllocationSysctl() == 0
+// (net.core.mibs_allocation isn't set), MIB is from the init network namespace
+// and hence these metrics can have system-wide noise.
+//
+// A feasible way of testing is the following:
+// * Consult RFC 1213 to learn the "SYNTAX" of the metric.
+// * If net.core.mibs_allocation is set:
+//   - Can test any metric while checking for hard equality.
+// * If net.core.mibs_allocation is NOT set (system-wide noise is present):
+//   - Only test "SYNTAX  Counter" metrics.
+//   - Counter metrics are increasing in nature, so use LE/GE equality checks.
 PosixErrorOr<uint64_t> GetSNMPMetricFromProc(const std::string snmp,
                                              const std::string& type,
                                              const std::string& item) {
@@ -189,7 +221,9 @@ PosixErrorOr<uint64_t> GetSNMPMetricFromProc(const std::string snmp,
       EINVAL, absl::StrCat("failed to find ", type, "/", item, " in:", snmp));
 }
 
-TEST(ProcNetSnmp, TcpReset_NoRandomSave) {
+TEST(ProcNetSnmp, TcpReset) {
+  SKIP_IF(IsRunningWithHostinet());
+
   // TODO(gvisor.dev/issue/866): epsocket metrics are not savable.
   DisableSave ds;
 
@@ -226,12 +260,27 @@ TEST(ProcNetSnmp, TcpReset_NoRandomSave) {
   newAttemptFails = ASSERT_NO_ERRNO_AND_VALUE(
       GetSNMPMetricFromProc(snmp, "Tcp", "AttemptFails"));
 
-  EXPECT_EQ(oldActiveOpens, newActiveOpens - 1);
-  EXPECT_EQ(oldOutRsts, newOutRsts - 1);
-  EXPECT_EQ(oldAttemptFails, newAttemptFails - 1);
+  if (GetMibsAllocationSysctl()) {
+    EXPECT_EQ(oldActiveOpens + 1, newActiveOpens);
+    EXPECT_EQ(oldOutRsts + 1, newOutRsts);
+    EXPECT_EQ(oldAttemptFails + 1, newAttemptFails);
+  } else {
+    // System-wide statistics can have some noise. These metrics should have
+    // increased by at least 1.
+    EXPECT_LE(oldActiveOpens + 1, newActiveOpens);
+    EXPECT_LE(oldOutRsts + 1, newOutRsts);
+    EXPECT_LE(oldAttemptFails + 1, newAttemptFails);
+  }
 }
 
-TEST(ProcNetSnmp, TcpEstab_NoRandomSave) {
+TEST(ProcNetSnmp, TcpEstab) {
+  SKIP_IF(IsRunningWithHostinet());
+
+  // This test aims to test the tcpCurrEstab metric which has "SYNTAX  Gauge" as
+  // per RFC 1213. Hence, it becomes infeasible to test this when system-wide
+  // statistics have noise.
+  SKIP_IF(GetMibsAllocationSysctl() == 0);
+
   // TODO(gvisor.dev/issue/866): epsocket metrics are not savable.
   DisableSave ds;
 
@@ -263,9 +312,8 @@ TEST(ProcNetSnmp, TcpEstab_NoRandomSave) {
 
   // Get the port bound by the listening socket.
   socklen_t addrlen = sizeof(sin);
-  ASSERT_THAT(
-      getsockname(s_listen.get(), reinterpret_cast<sockaddr*>(&sin), &addrlen),
-      SyscallSucceeds());
+  ASSERT_THAT(getsockname(s_listen.get(), AsSockAddr(&sin), &addrlen),
+              SyscallSucceeds());
 
   FileDescriptor s_connect =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_STREAM, 0));
@@ -287,9 +335,9 @@ TEST(ProcNetSnmp, TcpEstab_NoRandomSave) {
   newCurrEstab = ASSERT_NO_ERRNO_AND_VALUE(
       GetSNMPMetricFromProc(snmp, "Tcp", "CurrEstab"));
 
-  EXPECT_EQ(oldActiveOpens, newActiveOpens - 1);
-  EXPECT_EQ(oldPassiveOpens, newPassiveOpens - 1);
-  EXPECT_EQ(oldCurrEstab, newCurrEstab - 2);
+  EXPECT_EQ(oldActiveOpens + 1, newActiveOpens);
+  EXPECT_EQ(oldPassiveOpens + 1, newPassiveOpens);
+  EXPECT_EQ(oldCurrEstab + 2, newCurrEstab);
 
   // Send 1 byte from client to server.
   ASSERT_THAT(send(s_connect.get(), "a", 1, 0), SyscallSucceedsWithValue(1));
@@ -326,7 +374,9 @@ TEST(ProcNetSnmp, TcpEstab_NoRandomSave) {
   EXPECT_EQ(oldEstabResets, newEstabResets - 2);
 }
 
-TEST(ProcNetSnmp, UdpNoPorts_NoRandomSave) {
+TEST(ProcNetSnmp, UdpNoPorts) {
+  SKIP_IF(IsRunningWithHostinet());
+
   // TODO(gvisor.dev/issue/866): epsocket metrics are not savable.
   DisableSave ds;
 
@@ -356,11 +406,20 @@ TEST(ProcNetSnmp, UdpNoPorts_NoRandomSave) {
   newNoPorts =
       ASSERT_NO_ERRNO_AND_VALUE(GetSNMPMetricFromProc(snmp, "Udp", "NoPorts"));
 
-  EXPECT_EQ(oldOutDatagrams, newOutDatagrams - 1);
-  EXPECT_EQ(oldNoPorts, newNoPorts - 1);
+  if (GetMibsAllocationSysctl()) {
+    EXPECT_EQ(oldOutDatagrams + 1, newOutDatagrams);
+    EXPECT_EQ(oldNoPorts + 1, newNoPorts);
+  } else {
+    // System-wide statistics can have some noise. These metrics should have
+    // increased by at least 1.
+    EXPECT_LE(oldOutDatagrams + 1, newOutDatagrams);
+    EXPECT_LE(oldNoPorts + 1, newNoPorts);
+  }
 }
 
-TEST(ProcNetSnmp, UdpIn_NoRandomSave) {
+TEST(ProcNetSnmp, UdpIn) {
+  SKIP_IF(IsRunningWithHostinet());
+
   // TODO(gvisor.dev/issue/866): epsocket metrics are not savable.
   const DisableSave ds;
 
@@ -384,9 +443,8 @@ TEST(ProcNetSnmp, UdpIn_NoRandomSave) {
               SyscallSucceeds());
   // Get the port bound by the server socket.
   socklen_t addrlen = sizeof(sin);
-  ASSERT_THAT(
-      getsockname(server.get(), reinterpret_cast<sockaddr*>(&sin), &addrlen),
-      SyscallSucceeds());
+  ASSERT_THAT(getsockname(server.get(), AsSockAddr(&sin), &addrlen),
+              SyscallSucceeds());
 
   FileDescriptor client =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET, SOCK_DGRAM, 0));
@@ -407,8 +465,15 @@ TEST(ProcNetSnmp, UdpIn_NoRandomSave) {
   newInDatagrams = ASSERT_NO_ERRNO_AND_VALUE(
       GetSNMPMetricFromProc(snmp, "Udp", "InDatagrams"));
 
-  EXPECT_EQ(oldOutDatagrams, newOutDatagrams - 1);
-  EXPECT_EQ(oldInDatagrams, newInDatagrams - 1);
+  if (GetMibsAllocationSysctl()) {
+    EXPECT_EQ(oldOutDatagrams + 1, newOutDatagrams);
+    EXPECT_EQ(oldInDatagrams + 1, newInDatagrams);
+  } else {
+    // System-wide statistics can have some noise. These metrics should have
+    // increased by at least 1.
+    EXPECT_LE(oldOutDatagrams + 1, newOutDatagrams);
+    EXPECT_LE(oldInDatagrams + 1, newInDatagrams);
+  }
 }
 
 TEST(ProcNetSnmp, CheckNetStat) {
@@ -421,14 +486,14 @@ TEST(ProcNetSnmp, CheckNetStat) {
   int name_count = 0;
   int value_count = 0;
   std::vector<absl::string_view> lines = absl::StrSplit(contents, '\n');
-  for (long unsigned int i = 0; i + 1 < lines.size(); i += 2) {
+  for (size_t i = 0; i + 1 < lines.size(); i += 2) {
     std::vector<absl::string_view> names =
         absl::StrSplit(lines[i], absl::ByAnyChar("\t "));
     std::vector<absl::string_view> values =
         absl::StrSplit(lines[i + 1], absl::ByAnyChar("\t "));
     EXPECT_EQ(names.size(), values.size()) << " mismatch in lines '" << lines[i]
                                            << "' and '" << lines[i + 1] << "'";
-    for (long unsigned int j = 0; j < names.size() && j < values.size(); ++j) {
+    for (size_t j = 0; j < names.size() && j < values.size(); ++j) {
       if (names[j] == "TCPOrigDataSent" || names[j] == "TCPSynRetrans" ||
           names[j] == "TCPDSACKRecv" || names[j] == "TCPDSACKOfoRecv") {
         ++name_count;
@@ -458,14 +523,14 @@ TEST(ProcNetSnmp, CheckSnmp) {
   int name_count = 0;
   int value_count = 0;
   std::vector<absl::string_view> lines = absl::StrSplit(contents, '\n');
-  for (long unsigned int i = 0; i + 1 < lines.size(); i += 2) {
+  for (size_t i = 0; i + 1 < lines.size(); i += 2) {
     std::vector<absl::string_view> names =
         absl::StrSplit(lines[i], absl::ByAnyChar("\t "));
     std::vector<absl::string_view> values =
         absl::StrSplit(lines[i + 1], absl::ByAnyChar("\t "));
     EXPECT_EQ(names.size(), values.size()) << " mismatch in lines '" << lines[i]
                                            << "' and '" << lines[i + 1] << "'";
-    for (long unsigned int j = 0; j < names.size() && j < values.size(); ++j) {
+    for (size_t j = 0; j < names.size() && j < values.size(); ++j) {
       if (names[j] == "RetransSegs") {
         ++name_count;
         int64_t val;
@@ -489,7 +554,8 @@ TEST(ProcSysNetIpv4Recovery, CanReadAndWrite) {
   // fixed.
   DisableSave ds;
 
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability((CAP_DAC_OVERRIDE))));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability((CAP_NET_ADMIN))) ||
+          IsRunningWithHostinet());
 
   auto const fd = ASSERT_NO_ERRNO_AND_VALUE(
       Open("/proc/sys/net/ipv4/tcp_recovery", O_RDWR));
@@ -500,13 +566,7 @@ TEST(ProcSysNetIpv4Recovery, CanReadAndWrite) {
   // Check initial value is set to 1.
   EXPECT_THAT(PreadFd(fd.get(), &buf, sizeof(buf), 0),
               SyscallSucceedsWithValue(sizeof(to_write) + 1));
-  if (IsRunningOnGvisor()) {
-    // TODO(gvisor.dev/issue/5243): TCPRACKLossDetection = 1 should be turned on
-    // by default.
-    EXPECT_EQ(strcmp(buf, "0\n"), 0);
-  } else {
-    EXPECT_EQ(strcmp(buf, "1\n"), 0);
-  }
+  EXPECT_EQ(strcmp(buf, "1\n"), 0);
 
   // Set tcp_recovery to one of the allowed constants.
   EXPECT_THAT(PwriteFd(fd.get(), &to_write, sizeof(to_write), 0),
@@ -542,7 +602,8 @@ TEST(ProcSysNetIpv4IpForward, DefaultValueEqZero) {
 }
 
 TEST(ProcSysNetIpv4IpForward, CanReadAndWrite) {
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability((CAP_DAC_OVERRIDE))));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability((CAP_NET_ADMIN))) ||
+          IsRunningWithHostinet());
 
   auto const fd = ASSERT_NO_ERRNO_AND_VALUE(Open(kIpForward, O_RDWR));
 
@@ -564,6 +625,8 @@ TEST(ProcSysNetIpv4IpForward, CanReadAndWrite) {
 }
 
 TEST(ProcSysNetPortRange, CanReadAndWrite) {
+  SKIP_IF(IsRunningWithHostinet());
+
   int min;
   int max;
   std::string rangefile = ASSERT_NO_ERRNO_AND_VALUE(GetContents(kRangeFile));

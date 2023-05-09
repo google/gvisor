@@ -13,5 +13,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package runtimeoptions contains the runtimeoptions proto.
+// Package runtimeoptions contains the runtimeoptions proto for containerd 1.5
+// and above.
 package runtimeoptions

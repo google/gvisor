@@ -90,9 +90,9 @@ func (s *SACKScoreboard) Insert(r header.SACKBlock) {
 		// There is some overlap at this point, merge the blocks and
 		// delete the other one.
 		//
-		// ----sS--------sE
-		// r.S---------------rE
-		//               -------sE
+		//	----sS--------sE
+		//	r.S---------------rE
+		//	              -------sE
 		if sacked.End.LessThan(r.End) {
 			// sacked is contained in the newly inserted range.
 			// Delete this block.

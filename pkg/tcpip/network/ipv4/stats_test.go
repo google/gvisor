@@ -19,8 +19,8 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/network/internal/testutil"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 )
 
 var _ stack.NetworkInterface = (*testInterface)(nil)
@@ -34,27 +34,45 @@ func (t *testInterface) ID() tcpip.NICID {
 	return t.nicID
 }
 
+// +checklocks:proto.mu
 func knownNICIDs(proto *protocol) []tcpip.NICID {
 	var nicIDs []tcpip.NICID
 
-	for k := range proto.mu.eps {
+	for k := range proto.eps {
 		nicIDs = append(nicIDs, k)
 	}
 
 	return nicIDs
 }
 
-func TestClearEndpointFromProtocolOnClose(t *testing.T) {
+type statsTestContext struct {
+	s *stack.Stack
+}
+
+func newStatsTestContext() statsTestContext {
 	s := stack.New(stack.Options{
 		NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
 	})
+	return statsTestContext{s: s}
+}
+
+func (ctx statsTestContext) cleanup() {
+	ctx.s.Close()
+	ctx.s.Wait()
+}
+
+func TestClearEndpointFromProtocolOnClose(t *testing.T) {
+	ctx := newStatsTestContext()
+	defer ctx.cleanup()
+	s := ctx.s
+
 	proto := s.NetworkProtocolInstance(ProtocolNumber).(*protocol)
 	nic := testInterface{nicID: 1}
 	ep := proto.NewEndpoint(&nic, nil).(*endpoint)
 	var nicIDs []tcpip.NICID
 
 	proto.mu.Lock()
-	foundEP, hasEndpointBeforeClose := proto.mu.eps[nic.ID()]
+	foundEP, hasEndpointBeforeClose := proto.eps[nic.ID()]
 	nicIDs = knownNICIDs(proto)
 	proto.mu.Unlock()
 
@@ -68,7 +86,7 @@ func TestClearEndpointFromProtocolOnClose(t *testing.T) {
 	ep.Close()
 
 	proto.mu.Lock()
-	_, hasEP := proto.mu.eps[nic.ID()]
+	_, hasEP := proto.eps[nic.ID()]
 	nicIDs = knownNICIDs(proto)
 	proto.mu.Unlock()
 	if hasEP {
@@ -77,9 +95,10 @@ func TestClearEndpointFromProtocolOnClose(t *testing.T) {
 }
 
 func TestMultiCounterStatsInitialization(t *testing.T) {
-	s := stack.New(stack.Options{
-		NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
-	})
+	ctx := newStatsTestContext()
+	defer ctx.cleanup()
+	s := ctx.s
+
 	proto := s.NetworkProtocolInstance(ProtocolNumber).(*protocol)
 	var nic testInterface
 	ep := proto.NewEndpoint(&nic, nil).(*endpoint)
@@ -87,13 +106,22 @@ func TestMultiCounterStatsInitialization(t *testing.T) {
 	// expected to be bound by a MultiCounterStat.
 	refStack := s.Stats()
 	refEP := ep.stats.localStats
-	if err := testutil.ValidateMultiCounterStats(reflect.ValueOf(&ep.stats.ip).Elem(), []reflect.Value{reflect.ValueOf(&refEP.IP).Elem(), reflect.ValueOf(&refStack.IP).Elem()}); err != nil {
+	if err := testutil.ValidateMultiCounterStats(reflect.ValueOf(&ep.stats.ip).Elem(), []reflect.Value{reflect.ValueOf(&refEP.IP).Elem(), reflect.ValueOf(&refStack.IP).Elem()}, testutil.ValidateMultiCounterStatsOptions{
+		ExpectMultiCounterStat:            true,
+		ExpectMultiIntegralStatCounterMap: false,
+	}); err != nil {
 		t.Error(err)
 	}
-	if err := testutil.ValidateMultiCounterStats(reflect.ValueOf(&ep.stats.icmp).Elem(), []reflect.Value{reflect.ValueOf(&refEP.ICMP).Elem(), reflect.ValueOf(&refStack.ICMP.V4).Elem()}); err != nil {
+	if err := testutil.ValidateMultiCounterStats(reflect.ValueOf(&ep.stats.icmp).Elem(), []reflect.Value{reflect.ValueOf(&refEP.ICMP).Elem(), reflect.ValueOf(&refStack.ICMP.V4).Elem()}, testutil.ValidateMultiCounterStatsOptions{
+		ExpectMultiCounterStat:            true,
+		ExpectMultiIntegralStatCounterMap: false,
+	}); err != nil {
 		t.Error(err)
 	}
-	if err := testutil.ValidateMultiCounterStats(reflect.ValueOf(&ep.stats.igmp).Elem(), []reflect.Value{reflect.ValueOf(&refEP.IGMP).Elem(), reflect.ValueOf(&refStack.IGMP).Elem()}); err != nil {
+	if err := testutil.ValidateMultiCounterStats(reflect.ValueOf(&ep.stats.igmp).Elem(), []reflect.Value{reflect.ValueOf(&refEP.IGMP).Elem(), reflect.ValueOf(&refStack.IGMP).Elem()}, testutil.ValidateMultiCounterStatsOptions{
+		ExpectMultiCounterStat:            true,
+		ExpectMultiIntegralStatCounterMap: false,
+	}); err != nil {
 		t.Error(err)
 	}
 }

@@ -14,7 +14,14 @@
 
 package sniffer
 
-import "time"
+import (
+	"encoding"
+	"encoding/binary"
+	"time"
+
+	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/stack"
+)
 
 type pcapHeader struct {
 	// MagicNumber is the file magic number.
@@ -39,28 +46,40 @@ type pcapHeader struct {
 	Network uint32
 }
 
-const pcapPacketHeaderLen = 16
+var _ encoding.BinaryMarshaler = (*pcapPacket)(nil)
 
-type pcapPacketHeader struct {
-	// Seconds is the timestamp seconds.
-	Seconds uint32
-
-	// Microseconds is the timestamp microseconds.
-	Microseconds uint32
-
-	// IncludedLength is the number of octets of packet saved in file.
-	IncludedLength uint32
-
-	// OriginalLength is the actual length of packet.
-	OriginalLength uint32
+type pcapPacket struct {
+	timestamp     time.Time
+	packet        stack.PacketBufferPtr
+	maxCaptureLen int
 }
 
-func newPCAPPacketHeader(incLen, orgLen uint32) pcapPacketHeader {
-	now := time.Now()
-	return pcapPacketHeader{
-		Seconds:        uint32(now.Unix()),
-		Microseconds:   uint32(now.Nanosecond() / 1000),
-		IncludedLength: incLen,
-		OriginalLength: orgLen,
+func (p *pcapPacket) MarshalBinary() ([]byte, error) {
+	pkt := trimmedClone(p.packet)
+	defer pkt.DecRef()
+	packetSize := pkt.Size()
+	captureLen := p.maxCaptureLen
+	if packetSize < captureLen {
+		captureLen = packetSize
 	}
+	b := make([]byte, 16+captureLen)
+	binary.LittleEndian.PutUint32(b[0:4], uint32(p.timestamp.Unix()))
+	binary.LittleEndian.PutUint32(b[4:8], uint32(p.timestamp.Nanosecond()/1000))
+	binary.LittleEndian.PutUint32(b[8:12], uint32(captureLen))
+	binary.LittleEndian.PutUint32(b[12:16], uint32(packetSize))
+	w := tcpip.SliceWriter(b[16:])
+	for _, v := range pkt.AsSlices() {
+		if captureLen == 0 {
+			break
+		}
+		if len(v) > captureLen {
+			v = v[:captureLen]
+		}
+		n, err := w.Write(v)
+		if err != nil {
+			panic(err)
+		}
+		captureLen -= n
+	}
+	return b, nil
 }

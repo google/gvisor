@@ -14,15 +14,20 @@
 
 package seccomp
 
-import "fmt"
+import (
+	"fmt"
+
+	"golang.org/x/sys/unix"
+)
 
 // The offsets are based on the following struct in include/linux/seccomp.h.
-// struct seccomp_data {
-//	int nr;
-//	__u32 arch;
-//	__u64 instruction_pointer;
-//	__u64 args[6];
-// };
+//
+//	struct seccomp_data {
+//		int nr;
+//		__u32 arch;
+//		__u64 instruction_pointer;
+//		__u64 args[6];
+//	};
 const (
 	seccompDataOffsetNR     = 0
 	seccompDataOffsetArch   = 4
@@ -100,7 +105,7 @@ func (a maskedEqual) String() (s string) {
 // MaskedEqual specifies a value that matches the input after the input is
 // masked (bitwise &) against the given mask. Can be used to verify that input
 // only includes certain approved flags.
-func MaskedEqual(mask, value uintptr) interface{} {
+func MaskedEqual(mask, value uintptr) any {
 	return maskedEqual{
 		mask:  mask,
 		value: value,
@@ -110,10 +115,11 @@ func MaskedEqual(mask, value uintptr) interface{} {
 // Rule stores the allowed syscall arguments.
 //
 // For example:
-// rule := Rule {
-//       EqualTo(linux.ARCH_GET_FS | linux.ARCH_SET_FS), // arg0
-// }
-type Rule [7]interface{} // 6 arguments + RIP
+//
+//	rule := Rule {
+//		EqualTo(linux.ARCH_GET_FS | linux.ARCH_SET_FS), // arg0
+//	}
+type Rule [7]any // 6 arguments + RIP
 
 // RuleIP indicates what rules in the Rule array have to be applied to
 // instruction pointer.
@@ -137,18 +143,20 @@ func (r Rule) String() (s string) {
 // If the 'Rules' is empty, we treat it as any argument is allowed.
 //
 // For example:
-//  rules := SyscallRules{
-//         syscall.SYS_FUTEX: []Rule{
-//                 {
-//                         MatchAny{},
-//                         EqualTo(linux.FUTEX_WAIT | linux.FUTEX_PRIVATE_FLAG),
-//                 }, // OR
-//                 {
-//                         MatchAny{},
-//                         EqualTo(linux.FUTEX_WAKE | linux.FUTEX_PRIVATE_FLAG),
-//                 },
-//         },
-//         syscall.SYS_GETPID: []Rule{},
+//
+//	rules := SyscallRules{
+//	       syscall.SYS_FUTEX: []Rule{
+//	               {
+//	                       MatchAny{},
+//	                       EqualTo(linux.FUTEX_WAIT | linux.FUTEX_PRIVATE_FLAG),
+//	               }, // OR
+//	               {
+//	                       MatchAny{},
+//	                       EqualTo(linux.FUTEX_WAKE | linux.FUTEX_PRIVATE_FLAG),
+//	               },
+//	       },
+//	       syscall.SYS_GETPID: []Rule{},
+//
 // }
 type SyscallRules map[uintptr][]Rule
 
@@ -187,4 +195,23 @@ func (sr SyscallRules) Merge(rules SyscallRules) {
 			sr[sysno] = rs
 		}
 	}
+}
+
+// DenyNewExecMappings is a set of rules that denies creating new executable
+// mappings and converting existing ones.
+var DenyNewExecMappings = SyscallRules{
+	unix.SYS_MMAP: []Rule{
+		{
+			MatchAny{},
+			MatchAny{},
+			MaskedEqual(unix.PROT_EXEC, unix.PROT_EXEC),
+		},
+	},
+	unix.SYS_MPROTECT: []Rule{
+		{
+			MatchAny{},
+			MatchAny{},
+			MaskedEqual(unix.PROT_EXEC, unix.PROT_EXEC),
+		},
+	},
 }

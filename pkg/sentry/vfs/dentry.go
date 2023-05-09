@@ -15,11 +15,10 @@
 package vfs
 
 import (
-	"sync/atomic"
-
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Dentry represents a node in a Filesystem tree at which a file exists.
@@ -29,33 +28,33 @@ import (
 //
 // Dentry is loosely analogous to Linux's struct dentry, but:
 //
-// - VFS does not associate Dentries with inodes. gVisor interacts primarily
-// with filesystems that are accessed through filesystem APIs (as opposed to
-// raw block devices); many such APIs support only paths and file descriptors,
-// and not inodes. Furthermore, when parties outside the scope of VFS can
-// rename inodes on such filesystems, VFS generally cannot "follow" the rename,
-// both due to synchronization issues and because it may not even be able to
-// name the destination path; this implies that it would in fact be incorrect
-// for Dentries to be associated with inodes on such filesystems. Consequently,
-// operations that are inode operations in Linux are FilesystemImpl methods
-// and/or FileDescriptionImpl methods in gVisor's VFS. Filesystems that do
-// support inodes may store appropriate state in implementations of DentryImpl.
+//   - VFS does not associate Dentries with inodes. gVisor interacts primarily
+//     with filesystems that are accessed through filesystem APIs (as opposed to
+//     raw block devices); many such APIs support only paths and file descriptors,
+//     and not inodes. Furthermore, when parties outside the scope of VFS can
+//     rename inodes on such filesystems, VFS generally cannot "follow" the rename,
+//     both due to synchronization issues and because it may not even be able to
+//     name the destination path; this implies that it would in fact be incorrect
+//     for Dentries to be associated with inodes on such filesystems. Consequently,
+//     operations that are inode operations in Linux are FilesystemImpl methods
+//     and/or FileDescriptionImpl methods in gVisor's VFS. Filesystems that do
+//     support inodes may store appropriate state in implementations of DentryImpl.
 //
-// - VFS does not require that Dentries are instantiated for all paths accessed
-// through VFS, only those that are tracked beyond the scope of a single
-// Filesystem operation. This includes file descriptions, mount points, mount
-// roots, process working directories, and chroots. This avoids instantiation
-// of Dentries for operations on mutable remote filesystems that can't actually
-// cache any state in the Dentry.
+//   - VFS does not require that Dentries are instantiated for all paths accessed
+//     through VFS, only those that are tracked beyond the scope of a single
+//     Filesystem operation. This includes file descriptions, mount points, mount
+//     roots, process working directories, and chroots. This avoids instantiation
+//     of Dentries for operations on mutable remote filesystems that can't actually
+//     cache any state in the Dentry.
 //
-// - VFS does not track filesystem structure (i.e. relationships between
-// Dentries), since both the relevant state and synchronization are
-// filesystem-specific.
+//   - VFS does not track filesystem structure (i.e. relationships between
+//     Dentries), since both the relevant state and synchronization are
+//     filesystem-specific.
 //
-// - For the reasons above, VFS is not directly responsible for managing Dentry
-// lifetime. Dentry reference counts only indicate the extent to which VFS
-// requires Dentries to exist; Filesystems may elect to cache or discard
-// Dentries with zero references.
+//   - For the reasons above, VFS is not directly responsible for managing Dentry
+//     lifetime. Dentry reference counts only indicate the extent to which VFS
+//     requires Dentries to exist; Filesystems may elect to cache or discard
+//     Dentries with zero references.
 //
 // +stateify savable
 type Dentry struct {
@@ -67,9 +66,14 @@ type Dentry struct {
 	// InvalidateDentry). dead is protected by mu.
 	dead bool
 
+	// evictable is set by the VFS layer or filesystems like overlayfs as a hint
+	// that this dentry will not be accessed hence forth. So filesystems that
+	// cache dentries locally can use this hint to release the dentry when all
+	// references are dropped. evictable is protected by mu.
+	evictable bool
+
 	// mounts is the number of Mounts for which this Dentry is Mount.point.
-	// mounts is accessed using atomic memory operations.
-	mounts uint32
+	mounts atomicbitops.Uint32
 
 	// impl is the DentryImpl associated with this Dentry. impl is immutable.
 	// This should be the last field in Dentry.
@@ -122,12 +126,6 @@ type DentryImpl interface {
 	// the Dentry. Dentries that are hard links to the same underlying file
 	// share the same watches.
 	//
-	// Watches may return nil if the dentry belongs to a FilesystemImpl that
-	// does not support inotify. If an implementation returns a non-nil watch
-	// set, it must always return a non-nil watch set. Likewise, if an
-	// implementation returns a nil watch set, it must always return a nil watch
-	// set.
-	//
 	// The caller does not need to hold a reference on the dentry.
 	Watches() *Watches
 
@@ -165,8 +163,22 @@ func (d *Dentry) IsDead() bool {
 	return d.dead
 }
 
+// IsEvictable returns true if d is evictable from filesystem dentry cache.
+func (d *Dentry) IsEvictable() bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.evictable
+}
+
+// MarkEvictable marks d as evictable.
+func (d *Dentry) MarkEvictable() {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.evictable = true
+}
+
 func (d *Dentry) isMounted() bool {
-	return atomic.LoadUint32(&d.mounts) != 0
+	return d.mounts.Load() != 0
 }
 
 // InotifyWithParent notifies all watches on the targets represented by d and
@@ -176,9 +188,6 @@ func (d *Dentry) InotifyWithParent(ctx context.Context, events, cookie uint32, e
 }
 
 // Watches returns the set of inotify watches associated with d.
-//
-// Watches will return nil if d belongs to a FilesystemImpl that does not
-// support inotify.
 func (d *Dentry) Watches() *Watches {
 	return d.impl.Watches()
 }
@@ -196,11 +205,12 @@ func (d *Dentry) OnZeroWatches(ctx context.Context) {
 // PrepareDeleteDentry must be called before attempting to delete the file
 // represented by d. If PrepareDeleteDentry succeeds, the caller must call
 // AbortDeleteDentry or CommitDeleteDentry depending on the deletion's outcome.
+// +checklocksacquire:d.mu
 func (vfs *VirtualFilesystem) PrepareDeleteDentry(mntns *MountNamespace, d *Dentry) error {
 	vfs.mountMu.Lock()
 	if mntns.mountpoints[d] != 0 {
 		vfs.mountMu.Unlock()
-		return syserror.EBUSY
+		return linuxerr.EBUSY // +checklocksforce: inconsistent return.
 	}
 	d.mu.Lock()
 	vfs.mountMu.Unlock()
@@ -211,14 +221,14 @@ func (vfs *VirtualFilesystem) PrepareDeleteDentry(mntns *MountNamespace, d *Dent
 
 // AbortDeleteDentry must be called after PrepareDeleteDentry if the deletion
 // fails.
-// +checklocks:d.mu
+// +checklocksrelease:d.mu
 func (vfs *VirtualFilesystem) AbortDeleteDentry(d *Dentry) {
 	d.mu.Unlock()
 }
 
 // CommitDeleteDentry must be called after PrepareDeleteDentry if the deletion
 // succeeds.
-// +checklocks:d.mu
+// +checklocksrelease:d.mu
 func (vfs *VirtualFilesystem) CommitDeleteDentry(ctx context.Context, d *Dentry) {
 	d.dead = true
 	d.mu.Unlock()
@@ -247,18 +257,21 @@ func (vfs *VirtualFilesystem) InvalidateDentry(ctx context.Context, d *Dentry) {
 // CommitRenameExchangeDentry depending on the rename's outcome.
 //
 // Preconditions:
-// * If to is not nil, it must be a child Dentry from the same Filesystem.
-// * from != to.
+//   - If to is not nil, it must be a child Dentry from the same Filesystem.
+//   - from != to.
+//
+// +checklocksacquire:from.mu
+// +checklocksacquire:to.mu
 func (vfs *VirtualFilesystem) PrepareRenameDentry(mntns *MountNamespace, from, to *Dentry) error {
 	vfs.mountMu.Lock()
 	if mntns.mountpoints[from] != 0 {
 		vfs.mountMu.Unlock()
-		return syserror.EBUSY
+		return linuxerr.EBUSY // +checklocksforce: no locks acquired.
 	}
 	if to != nil {
 		if mntns.mountpoints[to] != 0 {
 			vfs.mountMu.Unlock()
-			return syserror.EBUSY
+			return linuxerr.EBUSY // +checklocksforce: no locks acquired.
 		}
 		to.mu.Lock()
 	}
@@ -267,13 +280,13 @@ func (vfs *VirtualFilesystem) PrepareRenameDentry(mntns *MountNamespace, from, t
 	// Return with from.mu and to.mu locked, which will be unlocked by
 	// AbortRenameDentry, CommitRenameReplaceDentry, or
 	// CommitRenameExchangeDentry.
-	return nil
+	return nil // +checklocksforce: to may not be acquired.
 }
 
 // AbortRenameDentry must be called after PrepareRenameDentry if the rename
 // fails.
-// +checklocks:from.mu
-// +checklocks:to.mu
+// +checklocksrelease:from.mu
+// +checklocksrelease:to.mu
 func (vfs *VirtualFilesystem) AbortRenameDentry(from, to *Dentry) {
 	from.mu.Unlock()
 	if to != nil {
@@ -286,8 +299,8 @@ func (vfs *VirtualFilesystem) AbortRenameDentry(from, to *Dentry) {
 // that was replaced by from.
 //
 // Preconditions: PrepareRenameDentry was previously called on from and to.
-// +checklocks:from.mu
-// +checklocks:to.mu
+// +checklocksrelease:from.mu
+// +checklocksrelease:to.mu
 func (vfs *VirtualFilesystem) CommitRenameReplaceDentry(ctx context.Context, from, to *Dentry) {
 	from.mu.Unlock()
 	if to != nil {
@@ -303,8 +316,8 @@ func (vfs *VirtualFilesystem) CommitRenameReplaceDentry(ctx context.Context, fro
 // from and to are exchanged by rename(RENAME_EXCHANGE).
 //
 // Preconditions: PrepareRenameDentry was previously called on from and to.
-// +checklocks:from.mu
-// +checklocks:to.mu
+// +checklocksrelease:from.mu
+// +checklocksrelease:to.mu
 func (vfs *VirtualFilesystem) CommitRenameExchangeDentry(from, to *Dentry) {
 	from.mu.Unlock()
 	to.mu.Unlock()

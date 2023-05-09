@@ -95,13 +95,13 @@ func (g *interfaceGenerator) validatePrimitiveNewtype(t *ast.Ident) {
 // newtypes are always packed, so we can omit the various fallbacks required for
 // non-packed structs.
 func (g *interfaceGenerator) emitMarshallableForPrimitiveNewtype(nt *ast.Ident) {
+	g.recordUsedImport("gohacks")
+	g.recordUsedImport("hostarch")
 	g.recordUsedImport("io")
 	g.recordUsedImport("marshal")
 	g.recordUsedImport("reflect")
 	g.recordUsedImport("runtime")
-	g.recordUsedImport("safecopy")
 	g.recordUsedImport("unsafe")
-	g.recordUsedImport("hostarch")
 
 	g.emit("// SizeBytes implements marshal.Marshallable.SizeBytes.\n")
 	g.emit("//go:nosplit\n")
@@ -116,16 +116,26 @@ func (g *interfaceGenerator) emitMarshallableForPrimitiveNewtype(nt *ast.Ident) 
 	g.emit("}\n\n")
 
 	g.emit("// MarshalBytes implements marshal.Marshallable.MarshalBytes.\n")
-	g.emit("func (%s *%s) MarshalBytes(dst []byte) {\n", g.r, g.typeName())
+	g.emit("func (%s *%s) MarshalBytes(dst []byte) []byte {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		g.marshalPrimitiveScalar(g.r, nt.Name, "dst")
+		if size, dynamic := g.scalarSize(nt); !dynamic {
+			g.emit("return dst[%d:]\n", size)
+		} else {
+			g.emit("return dst[(*%s)(nil).SizeBytes():]\n", nt.Name)
+		}
 	})
 	g.emit("}\n\n")
 
 	g.emit("// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.\n")
-	g.emit("func (%s *%s) UnmarshalBytes(src []byte) {\n", g.r, g.typeName())
+	g.emit("func (%s *%s) UnmarshalBytes(src []byte) []byte {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		g.unmarshalPrimitiveScalar(g.r, nt.Name, "src", g.typeName())
+		if size, dynamic := g.scalarSize(nt); !dynamic {
+			g.emit("return src[%d:]\n", size)
+		} else {
+			g.emit("return src[(*%s)(nil).SizeBytes():]\n", nt.Name)
+		}
 	})
 	g.emit("}\n\n")
 
@@ -139,21 +149,24 @@ func (g *interfaceGenerator) emitMarshallableForPrimitiveNewtype(nt *ast.Ident) 
 	g.emit("}\n\n")
 
 	g.emit("// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.\n")
-	g.emit("func (%s *%s) MarshalUnsafe(dst []byte) {\n", g.r, g.typeName())
+	g.emit("func (%s *%s) MarshalUnsafe(dst []byte) []byte {\n", g.r, g.typeName())
 	g.inIndent(func() {
-		g.emit("safecopy.CopyIn(dst, unsafe.Pointer(%s))\n", g.r)
+		g.emit("size := %s.SizeBytes()\n", g.r)
+		g.emit("gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(%s), uintptr(size))\n", g.r)
+		g.emit("return dst[size:]\n")
 	})
 	g.emit("}\n\n")
 
 	g.emit("// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.\n")
-	g.emit("func (%s *%s) UnmarshalUnsafe(src []byte) {\n", g.r, g.typeName())
+	g.emit("func (%s *%s) UnmarshalUnsafe(src []byte) []byte {\n", g.r, g.typeName())
 	g.inIndent(func() {
-		g.emit("safecopy.CopyOut(unsafe.Pointer(%s), src)\n", g.r)
+		g.emit("size := %s.SizeBytes()\n", g.r)
+		g.emit("gohacks.Memmove(unsafe.Pointer(%s), unsafe.Pointer(&src[0]), uintptr(size))\n", g.r)
+		g.emit("return src[size:]\n")
 	})
 	g.emit("}\n\n")
 
 	g.emit("// CopyOutN implements marshal.Marshallable.CopyOutN.\n")
-	g.emit("//go:nosplit\n")
 	g.emit("func (%s *%s) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		g.emitCastToByteSlice(g.r, "buf", fmt.Sprintf("%s.SizeBytes()", g.r))
@@ -165,7 +178,6 @@ func (g *interfaceGenerator) emitMarshallableForPrimitiveNewtype(nt *ast.Ident) 
 	g.emit("}\n\n")
 
 	g.emit("// CopyOut implements marshal.Marshallable.CopyOut.\n")
-	g.emit("//go:nosplit\n")
 	g.emit("func (%s *%s) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		g.emit("return %s.CopyOutN(cc, addr, %s.SizeBytes())\n", g.r, g.r)
@@ -173,7 +185,6 @@ func (g *interfaceGenerator) emitMarshallableForPrimitiveNewtype(nt *ast.Ident) 
 	g.emit("}\n\n")
 
 	g.emit("// CopyIn implements marshal.Marshallable.CopyIn.\n")
-	g.emit("//go:nosplit\n")
 	g.emit("func (%s *%s) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		g.emitCastToByteSlice(g.r, "buf", fmt.Sprintf("%s.SizeBytes()", g.r))
@@ -185,14 +196,44 @@ func (g *interfaceGenerator) emitMarshallableForPrimitiveNewtype(nt *ast.Ident) 
 	g.emit("}\n\n")
 
 	g.emit("// WriteTo implements io.WriterTo.WriteTo.\n")
-	g.emit("func (%s *%s) WriteTo(w io.Writer) (int64, error) {\n", g.r, g.typeName())
+	g.emit("func (%s *%s) WriteTo(writer io.Writer) (int64, error) {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		g.emitCastToByteSlice(g.r, "buf", fmt.Sprintf("%s.SizeBytes()", g.r))
 
-		g.emit("length, err := w.Write(buf)\n")
+		g.emit("length, err := writer.Write(buf)\n")
 		g.emitKeepAlive(g.r)
 		g.emit("return int64(length), err\n")
 
+	})
+	g.emit("}\n\n")
+}
+
+func (g *interfaceGenerator) emitCheckedMarshallableForPrimitiveNewtype() {
+	g.emit("// CheckedMarshal implements marshal.CheckedMarshallable.CheckedMarshal.\n")
+	g.emit("func (%s *%s) CheckedMarshal(dst []byte) ([]byte, bool) {\n", g.r, g.typeName())
+	g.inIndent(func() {
+		g.emit("size := %s.SizeBytes()\n", g.r)
+		g.emit("if size > len(dst) {\n")
+		g.inIndent(func() {
+			g.emit("return dst, false\n")
+		})
+		g.emit("}\n")
+		g.emit("gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(%s), uintptr(size))\n", g.r)
+		g.emit("return dst[size:], true\n")
+	})
+	g.emit("}\n\n")
+
+	g.emit("// CheckedUnmarshal implements marshal.CheckedMarshallable.CheckedUnmarshal.\n")
+	g.emit("func (%s *%s) CheckedUnmarshal(src []byte) ([]byte, bool) {\n", g.r, g.typeName())
+	g.inIndent(func() {
+		g.emit("size := %s.SizeBytes()\n", g.r)
+		g.emit("if size > len(src) {\n")
+		g.inIndent(func() {
+			g.emit("return src, false\n")
+		})
+		g.emit("}\n")
+		g.emit("gohacks.Memmove(unsafe.Pointer(%s), unsafe.Pointer(&src[0]), uintptr(size))\n", g.r)
+		g.emit("return src[size:], true\n")
 	})
 	g.emit("}\n\n")
 }
@@ -210,7 +251,6 @@ func (g *interfaceGenerator) emitMarshallableSliceForPrimitiveNewtype(nt *ast.Id
 	}
 
 	g.emit("// Copy%sIn copies in a slice of %s objects from the task's memory.\n", slice.ident, eltType)
-	g.emit("//go:nosplit\n")
 	g.emit("func Copy%sIn(cc marshal.CopyContext, addr hostarch.Addr, dst []%s) (int, error) {\n", slice.ident, eltType)
 	g.inIndent(func() {
 		g.emit("count := len(dst)\n")
@@ -230,7 +270,6 @@ func (g *interfaceGenerator) emitMarshallableSliceForPrimitiveNewtype(nt *ast.Id
 	g.emit("}\n\n")
 
 	g.emit("// Copy%sOut copies a slice of %s objects to the task's memory.\n", slice.ident, eltType)
-	g.emit("//go:nosplit\n")
 	g.emit("func Copy%sOut(cc marshal.CopyContext, addr hostarch.Addr, src []%s) (int, error) {\n", slice.ident, eltType)
 	g.inIndent(func() {
 		g.emit("count := len(src)\n")
@@ -250,40 +289,36 @@ func (g *interfaceGenerator) emitMarshallableSliceForPrimitiveNewtype(nt *ast.Id
 	g.emit("}\n\n")
 
 	g.emit("// MarshalUnsafe%s is like %s.MarshalUnsafe, but for a []%s.\n", slice.ident, g.typeName(), g.typeName())
-	g.emit("func MarshalUnsafe%s(src []%s, dst []byte) (int, error) {\n", slice.ident, g.typeName())
+	g.emit("func MarshalUnsafe%s(src []%s, dst []byte) []byte {\n", slice.ident, g.typeName())
 	g.inIndent(func() {
 		g.emit("count := len(src)\n")
 		g.emit("if count == 0 {\n")
 		g.inIndent(func() {
-			g.emit("return 0, nil\n")
+			g.emit("return dst\n")
 		})
 		g.emit("}\n")
 		g.emit("size := (*%s)(nil).SizeBytes()\n\n", g.typeName())
 
-		g.emitNoEscapeSliceDataPointer("&src", "val")
-
-		g.emit("length, err := safecopy.CopyIn(dst[:(size*count)], val)\n")
-		g.emitKeepAlive("src")
-		g.emit("return length, err\n")
+		g.emit("buf := dst[:size*count]\n")
+		g.emit("gohacks.Memmove(unsafe.Pointer(&buf[0]), unsafe.Pointer(&src[0]), uintptr(len(buf)))\n")
+		g.emit("return dst[size*count:]\n")
 	})
 	g.emit("}\n\n")
 
 	g.emit("// UnmarshalUnsafe%s is like %s.UnmarshalUnsafe, but for a []%s.\n", slice.ident, g.typeName(), g.typeName())
-	g.emit("func UnmarshalUnsafe%s(dst []%s, src []byte) (int, error) {\n", slice.ident, g.typeName())
+	g.emit("func UnmarshalUnsafe%s(dst []%s, src []byte) []byte {\n", slice.ident, g.typeName())
 	g.inIndent(func() {
 		g.emit("count := len(dst)\n")
 		g.emit("if count == 0 {\n")
 		g.inIndent(func() {
-			g.emit("return 0, nil\n")
+			g.emit("return src\n")
 		})
 		g.emit("}\n")
 		g.emit("size := (*%s)(nil).SizeBytes()\n\n", g.typeName())
 
-		g.emitNoEscapeSliceDataPointer("&dst", "val")
-
-		g.emit("length, err := safecopy.CopyOut(val, src[:(size*count)])\n")
-		g.emitKeepAlive("dst")
-		g.emit("return length, err\n")
+		g.emit("buf := src[:size*count]\n")
+		g.emit("gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(&buf[0]), uintptr(len(buf)))\n")
+		g.emit("return src[size*count:]\n")
 	})
 	g.emit("}\n\n")
 }

@@ -46,6 +46,26 @@ global:
       - "(field|method|struct|type) .* should be .*"
       # Generated proto code sometimes duplicates imports with aliases.
       - "duplicate import"
+      # These will never be annotated.
+      - "unexpected call to atomic function"
+      - "may require checklocks annotation for"
+      # Generated proto code creates declarations like 'var start int = iNdEx'
+      - "should omit type .* from declaration; it will be inferred from the right-hand side"
+  external:
+    suppress:
+      # buildssa can't handle certain packages (cmd/...).
+      - "panic recovered: interface conversion: types.Type is nil"
+      - "panic recovered: runtime error: invalid memory address or nil"
+      - "panic recovered: no type for \\*ast.CallExpr"
+      - "panic recovered: interface conversion: types.Type is \\*types.Basic"
+      - "panic recovered: no type for \\*ast.BinaryExpr"
+      - "panic recovered: no type for \\*ast.SelectorExpr"
+      - "panic recovered: no types.Object for ast.Ident SetTypeErrors"
+      - "panic recovered: unexpected CompositeLit type: invalid type"
+      - "panic recovered: interface conversion: ssa.Member is \\*ssa.NamedConst"
+    exclude:
+      - ".*/vet/testdata/.*"
+      - ".*/runtime/testdata/.*"
   internal:
     suppress:
       # We use ALL_CAPS for system definitions,
@@ -55,12 +75,39 @@ global:
       # Same story for underscores.
       - "should not use ALL_CAPS in Go names"
       - "should not use underscores in Go names"
+      # These need to be annotated.
+      - "unexpected call to atomic function.*"
+      - "return with unexpected locks held.*"
+      - "incompatible return states.*"
+      - "may require checklocks annotation for.*"
+      # For some reason, the types package falls down.
+      - "panic recovered: .*types/sizes.go:82: assertion failed"
     exclude:
       # Generated: exempt all.
       - pkg/shim/runtimeoptions/runtimeoptions_cri.go
+      - pkg/shim/runtimeoptions/v14/runtimeoptions_cri.go
 analyzers:
   asmdecl:
-    external: # Enabled.
+    generated: # Enabled.
+    external:
+      exclude: [".*"] # Disabled.
+    internal:
+      suppress:
+        # Valid reasons to break the rules.
+        - "xsetbv: invalid MOVL of value"
+        - "xsetbv: invalid offset value"
+        - "xgetbv: invalid MOVL of ret"
+        - "xgetbv: invalid offset ret"
+        - "wrmsr: invalid MOVL of value"
+        - "wrmsr: invalid offset value"
+        - "rdmsr: invalid MOVL of ret"
+        - "rdmsr: invalid offset ret"
+        # Non-conventional functions.
+        - "\\[amd64\\].*sysret: RET without writing to 8-byte"
+        - "\\[amd64\\].*iret: RET without writing to 8-byte"
+        - "\\[amd64\\].*exception: use of .* points beyond argument frame"
+        - "\\[arm64\\].*HaltEl1ExceptionAndResume: unknown variable"
+        - "\\[arm64\\].*HaltEl1ExceptionAndResume: use of .* points beyond argument frame"
   assign:
     external:
       exclude:
@@ -76,48 +123,7 @@ analyzers:
   checklocks:
     internal:
       exclude:
-        - "^-$"                                                             # b/181776900: analyzer fails on buildkite
-        - pkg/sentry/fs/dirent.go                                          # unsupported usage.
-        - pkg/sentry/fs/fsutil/inode_cached.go                             # unsupported usage.
-        - pkg/sentry/fs/gofer/inode_state.go                               # unsupported usage.
-        - pkg/sentry/fs/gofer/session.go                                   # unsupported usage.
-        - pkg/sentry/fs/ramfs/dir.go                                       # unsupported usage.
-        - pkg/sentry/fsimpl/fuse/connection.go                             # unsupported usage.
-        - pkg/sentry/fsimpl/kernfs/filesystem.go                           # unsupported usage.
-        - pkg/sentry/fsimpl/kernfs/inode_impl_util.go                      # unsupported usage.
-        - pkg/sentry/fsimpl/fuse/dev_test.go                               # unsupported usage.
-        - pkg/sentry/fsimpl/gofer/filesystem.go                            # unsupported usage.
-        - pkg/sentry/fsimpl/gofer/gofer.go                                 # unsupported usage.
-        - pkg/sentry/fsimpl/gofer/regular_file.go                          # unsupported usage.
-        - pkg/sentry/fsimpl/gofer/special_file.go                          # unsupported usage.
-        - pkg/sentry/fsimpl/gofer/symlink.go                               # unsupported usage.
-        - pkg/sentry/fsimpl/overlay/copy_up.go                             # unsupported usage.
-        - pkg/sentry/fsimpl/overlay/filesystem.go                          # unsupported usage.
-        - pkg/sentry/fsimpl/tmpfs/filesystem.go                            # unsupported usage.
-        - pkg/sentry/fsimpl/verity/filesystem.go                           # unsupported usage.
-        - pkg/sentry/kernel/futex/futex.go                                 # unsupported usage.
-        - pkg/sentry/kernel/pipe/vfs.go                                    # unsupported usage.
-        - pkg/sentry/mm/syscalls.go                                        # unsupported usage.
-        - pkg/sentry/kernel/fd_table.go                                    # unsupported usage.
-        - pkg/sentry/kernel/ptrace.go                                      # unsupported usage.
-        - pkg/sentry/time/calibrated_clock_test.go                         # unsupported usage.
-        - pkg/sentry/kernel/task_context.go                                # unsupported usage.
-        - pkg/sentry/pgalloc/pgalloc.go                                    # unsupported usage.
-        - pkg/sentry/socket/unix/transport/connectioned.go                 # unsupported usage.
-        - pkg/sentry/vfs/dentry.go                                         # unsupported usage.
-        - pkg/tcpip/network/internal/ip/generic_multicast_protocol_test.go # unsupported usage.
-        - pkg/tcpip/stack/conntrack.go                                     # unsupported usage.        
-        - pkg/tcpip/transport/packet/endpoint_state.go                     # unsupported usage.
-        - pkg/tcpip/transport/raw/endpoint_state.go                        # unsupported usage.
-        - pkg/tcpip/transport/icmp/endpoint.go                             # unsupported usage.
-        - pkg/tcpip/transport/icmp/endpoint_state.go                       # unsupported usage.
-        - pkg/tcpip/transport/tcp/accept.go                                # unsupported usage.
-        - pkg/tcpip/transport/tcp/connect.go                               # unsupported usage.
-        - pkg/tcpip/transport/tcp/dispatcher.go                            # unsupported usage (TryLock)
-        - pkg/tcpip/transport/tcp/endpoint.go                              # unsupported usage.
-        - pkg/tcpip/transport/tcp/endpoint_state.go                        # unsupported usage.
-        - pkg/tcpip/transport/udp/endpoint.go                              # unsupported usage (defer unlock in anonymous function)
-        - pkg/tcpip/transport/udp/endpoint_state.go                        # unsupported usage (missing nested mutex annotation support)
+        - "^-$" # b/181776900: analyzer fails on buildkite.
   shadow: # Disable for now.
     generated:
       exclude: [".*"]
@@ -130,6 +136,9 @@ analyzers:
       exclude: [".*"]
   errorsas:
     external: # Enabled.
+      exclude:
+        # Specific broken case.
+        - ".*/cmd/go/internal/modload/list.go"
   httpresponse:
     external: # Enabled.
   loopclosure:
@@ -141,12 +150,17 @@ analyzers:
       exclude:
         - pkg/sentry/platform/kvm/kvm_test.go # Intentional.
         - tools/bigquery/bigquery.go          # False positive.
+        - "-"                                 # No filename.
   printf:
     external: # Enabled.
+      suppress:
+        - "fmt.Fprintln arg list ends with redundant newline"
   shift:
     generated: # Disabled for generated code; these shifts are well-defined.
       exclude: [".*"]
-    external: # Enabled.
+    external:
+      exclude:
+        - ".*unix/syscall_linux.go" # False positive on line 2002.
   stringintconv:
     external:
       exclude:
@@ -165,46 +179,77 @@ analyzers:
     external: # Enabled.
   unreachable:
     external: # Enabled.
+      exclude:
+        - ".*protobuf/.*.go"
   unsafeptr:
     internal:
       exclude:
         - ".*_test.go"                                             # Exclude tests.
         - "pkg/flipcall/.*_unsafe.go"                              # Special case.
-        - pkg/gohacks/gohacks_unsafe.go                            # Special case.
+        - pkg/gohacks/noescape_unsafe.go                           # Special case.
         - pkg/ring0/pagetables/allocator_unsafe.go                 # Special case.
-        - pkg/sentry/fs/fsutil/host_file_mapper_unsafe.go          # Special case.
+        - pkg/sentry/fsutil/host_file_mapper_unsafe.go             # Special case.
         - pkg/sentry/platform/kvm/bluepill_unsafe.go               # Special case.
         - pkg/sentry/platform/kvm/machine_unsafe.go                # Special case.
+        - pkg/sentry/platform/systrap/stub_unsafe.go               # Special case.
+        - pkg/sentry/platform/systrap/syscall_thread_unsafe.go     # Special case.
+        - pkg/sentry/platform/systrap/sysmsg_thread_unsafe.go      # Special case.
+        - pkg/sentry/platform/systrap/subprocess_unsafe.go         # Special case.
         - pkg/sentry/platform/safecopy/safecopy_unsafe.go          # Special case.
+        - pkg/sentry/usage/memory_unsafe.go                        # Special case.
         - pkg/sentry/vfs/mount_unsafe.go                           # Special case.
         - pkg/state/decode_unsafe.go                               # Special case.
   unusedresult:
     external: # Enabled.
   checkescape:
     external: # Enabled.
-  SA4016:
-    internal:
+      suppress:
+        # External libraries may not have binaries (e.g. stdlib testdata, etc.),
+        # so these cases can be safely ignored.
+        - "no such file or directory"
+  checklinkname:
+    external: # Enabled.
+      suppress:
+        # Suppress bad linkname directives in the internals. These will be fixed
+        # in the bug: https://github.com/golang/go/issues/58440
+        - "symbol \"runtime_pollWaitCanceled\".*"
+        - "symbol \"runtime_procPin\".*"
+        - "symbol \"registerMetric\".*"
       exclude:
-        - pkg/gohacks/gohacks_unsafe.go # x ^ 0 always equals x.
-  SA2001:
+        - ".*/containerd/sys/subprocess_unsafe_linux.go"
+    internal:
+      suppress:
+        # See above.
+        - "symbol \"runtime_pollWaitCanceled\".*"
+        - "symbol \"runtime_procPin\".*"
+    generated:
+      suppress:
+        # See above.
+        - "symbol \"runtime_pollWaitCanceled\".*"
+        - "symbol \"runtime_procPin\".*"
+  SA1019: # Use of deprecated identifier.
+    # disable for now due to misattribution from golang.org/issue/44195.
+    generated:
+      exclude: [".*"]
+    internal:
+      exclude: [".*"]
+  SA2001: # Empty critical section.
     internal:
       exclude:
         - pkg/sentry/fs/fs.go          # Intentional.
         - pkg/sentry/fs/gofer/inode.go # Intentional.
         - pkg/refs/refcounter_test.go  # Intentional.
-  ST1019:
+  SA4016: # Useless bitwise operations.
+    internal:
+      exclude:
+        - pkg/gohacks/noescape_unsafe.go # x ^ 0 always equals x.
+  ST1019: # Multiple imports of the same package.
     generated:
       exclude:
         # package ".../kubeapi/core/v1/v1" is being imported more than once
         - generated.gen.pb.go
-  ST1021:
+  ST1021: # Doc should start with type name.
     internal:
       suppress:
         - "comment on exported type Translation" # Intentional.
         - "comment on exported type PinnedRange" # Intentional.
-  SA5011:
-    internal:
-      exclude:
-        # https://github.com/dominikh/go-tools/issues/924
-        - pkg/sentry/fs/fdpipe/pipe_opener_test.go
-        - pkg/tcpip/tests/integration/link_resolution_test.go

@@ -16,10 +16,10 @@ package mm
 
 import (
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -97,14 +97,14 @@ func translateIOError(ctx context.Context, err error) error {
 	if logIOErrors {
 		ctx.Debugf("MM I/O error: %v", err)
 	}
-	return syserror.EFAULT
+	return linuxerr.EFAULT
 }
 
 // CopyOut implements usermem.IO.CopyOut.
 func (mm *MemoryManager) CopyOut(ctx context.Context, addr hostarch.Addr, src []byte, opts usermem.IOOpts) (int, error) {
 	ar, ok := mm.CheckIORange(addr, int64(len(src)))
 	if !ok {
-		return 0, syserror.EFAULT
+		return 0, linuxerr.EFAULT
 	}
 
 	if len(src) == 0 {
@@ -147,7 +147,7 @@ func (mm *MemoryManager) asCopyOut(ctx context.Context, addr hostarch.Addr, src 
 func (mm *MemoryManager) CopyIn(ctx context.Context, addr hostarch.Addr, dst []byte, opts usermem.IOOpts) (int, error) {
 	ar, ok := mm.CheckIORange(addr, int64(len(dst)))
 	if !ok {
-		return 0, syserror.EFAULT
+		return 0, linuxerr.EFAULT
 	}
 
 	if len(dst) == 0 {
@@ -190,7 +190,7 @@ func (mm *MemoryManager) asCopyIn(ctx context.Context, addr hostarch.Addr, dst [
 func (mm *MemoryManager) ZeroOut(ctx context.Context, addr hostarch.Addr, toZero int64, opts usermem.IOOpts) (int64, error) {
 	ar, ok := mm.CheckIORange(addr, toZero)
 	if !ok {
-		return 0, syserror.EFAULT
+		return 0, linuxerr.EFAULT
 	}
 
 	if toZero == 0 {
@@ -231,7 +231,7 @@ func (mm *MemoryManager) asZeroOut(ctx context.Context, addr hostarch.Addr, toZe
 // CopyOutFrom implements usermem.IO.CopyOutFrom.
 func (mm *MemoryManager) CopyOutFrom(ctx context.Context, ars hostarch.AddrRangeSeq, src safemem.Reader, opts usermem.IOOpts) (int64, error) {
 	if !mm.checkIOVec(ars) {
-		return 0, syserror.EFAULT
+		return 0, linuxerr.EFAULT
 	}
 
 	if ars.NumBytes() == 0 {
@@ -276,7 +276,7 @@ func (mm *MemoryManager) CopyOutFrom(ctx context.Context, ars hostarch.AddrRange
 // CopyInTo implements usermem.IO.CopyInTo.
 func (mm *MemoryManager) CopyInTo(ctx context.Context, ars hostarch.AddrRangeSeq, dst safemem.Writer, opts usermem.IOOpts) (int64, error) {
 	if !mm.checkIOVec(ars) {
-		return 0, syserror.EFAULT
+		return 0, linuxerr.EFAULT
 	}
 
 	if ars.NumBytes() == 0 {
@@ -310,11 +310,26 @@ func (mm *MemoryManager) CopyInTo(ctx context.Context, ars hostarch.AddrRangeSeq
 	return mm.withVecInternalMappings(ctx, ars, hostarch.Read, opts.IgnorePermissions, dst.WriteFromBlocks)
 }
 
+// EnsurePMAsExist attempts to ensure that PMAs exist for the given addr with the
+// requested length. It returns the length to which it was able to either
+// initialize PMAs for, or ascertain that PMAs exist for. If this length is
+// smaller than the requested length it returns an error explaining why.
+func (mm *MemoryManager) EnsurePMAsExist(ctx context.Context, addr hostarch.Addr, length int64, opts usermem.IOOpts) (int64, error) {
+	ar, ok := mm.CheckIORange(addr, length)
+	if !ok {
+		return 0, linuxerr.EFAULT
+	}
+	n64, err := mm.withInternalMappings(ctx, ar, hostarch.Write, opts.IgnorePermissions, func(ims safemem.BlockSeq) (uint64, error) {
+		return uint64(ims.NumBytes()), nil
+	})
+	return int64(n64), err
+}
+
 // SwapUint32 implements usermem.IO.SwapUint32.
 func (mm *MemoryManager) SwapUint32(ctx context.Context, addr hostarch.Addr, new uint32, opts usermem.IOOpts) (uint32, error) {
 	ar, ok := mm.CheckIORange(addr, 4)
 	if !ok {
-		return 0, syserror.EFAULT
+		return 0, linuxerr.EFAULT
 	}
 
 	// Do AddressSpace IO if applicable.
@@ -339,7 +354,7 @@ func (mm *MemoryManager) SwapUint32(ctx context.Context, addr hostarch.Addr, new
 	_, err := mm.withInternalMappings(ctx, ar, hostarch.ReadWrite, opts.IgnorePermissions, func(ims safemem.BlockSeq) (uint64, error) {
 		if ims.NumBlocks() != 1 || ims.NumBytes() != 4 {
 			// Atomicity is unachievable across mappings.
-			return 0, syserror.EFAULT
+			return 0, linuxerr.EFAULT
 		}
 		im := ims.Head()
 		var err error
@@ -357,7 +372,7 @@ func (mm *MemoryManager) SwapUint32(ctx context.Context, addr hostarch.Addr, new
 func (mm *MemoryManager) CompareAndSwapUint32(ctx context.Context, addr hostarch.Addr, old, new uint32, opts usermem.IOOpts) (uint32, error) {
 	ar, ok := mm.CheckIORange(addr, 4)
 	if !ok {
-		return 0, syserror.EFAULT
+		return 0, linuxerr.EFAULT
 	}
 
 	// Do AddressSpace IO if applicable.
@@ -382,7 +397,7 @@ func (mm *MemoryManager) CompareAndSwapUint32(ctx context.Context, addr hostarch
 	_, err := mm.withInternalMappings(ctx, ar, hostarch.ReadWrite, opts.IgnorePermissions, func(ims safemem.BlockSeq) (uint64, error) {
 		if ims.NumBlocks() != 1 || ims.NumBytes() != 4 {
 			// Atomicity is unachievable across mappings.
-			return 0, syserror.EFAULT
+			return 0, linuxerr.EFAULT
 		}
 		im := ims.Head()
 		var err error
@@ -400,7 +415,7 @@ func (mm *MemoryManager) CompareAndSwapUint32(ctx context.Context, addr hostarch
 func (mm *MemoryManager) LoadUint32(ctx context.Context, addr hostarch.Addr, opts usermem.IOOpts) (uint32, error) {
 	ar, ok := mm.CheckIORange(addr, 4)
 	if !ok {
-		return 0, syserror.EFAULT
+		return 0, linuxerr.EFAULT
 	}
 
 	// Do AddressSpace IO if applicable.
@@ -425,7 +440,7 @@ func (mm *MemoryManager) LoadUint32(ctx context.Context, addr hostarch.Addr, opt
 	_, err := mm.withInternalMappings(ctx, ar, hostarch.Read, opts.IgnorePermissions, func(ims safemem.BlockSeq) (uint64, error) {
 		if ims.NumBlocks() != 1 || ims.NumBytes() != 4 {
 			// Atomicity is unachievable across mappings.
-			return 0, syserror.EFAULT
+			return 0, linuxerr.EFAULT
 		}
 		im := ims.Head()
 		var err error
@@ -443,9 +458,9 @@ func (mm *MemoryManager) LoadUint32(ctx context.Context, addr hostarch.Addr, opt
 // operation spanning ioar.
 //
 // Preconditions:
-// * mm.as != nil.
-// * ioar.Length() != 0.
-// * ioar.Contains(addr).
+//   - mm.as != nil.
+//   - ioar.Length() != 0.
+//   - ioar.Contains(addr).
 func (mm *MemoryManager) handleASIOFault(ctx context.Context, addr hostarch.Addr, ioar hostarch.AddrRange, at hostarch.AccessType) error {
 	// Try to map all remaining pages in the I/O operation. This RoundUp can't
 	// overflow because otherwise it would have been caught by CheckIORange.
@@ -634,8 +649,8 @@ func (mm *MemoryManager) withVecInternalMappings(ctx context.Context, ars hostar
 // truncate hostarch.AddrRangeSeq when errors occur.
 //
 // Preconditions:
-// * !arsit.IsEmpty().
-// * end <= arsit.Head().End.
+//   - !arsit.IsEmpty().
+//   - end <= arsit.Head().End.
 func truncatedAddrRangeSeq(ars, arsit hostarch.AddrRangeSeq, end hostarch.Addr) hostarch.AddrRangeSeq {
 	ar := arsit.Head()
 	if end <= ar.Start {

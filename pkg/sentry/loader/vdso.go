@@ -19,10 +19,10 @@ import (
 	"debug/elf"
 	"fmt"
 	"io"
-	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/safemem"
@@ -33,7 +33,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/uniqueid"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -43,7 +42,7 @@ type fileContext struct {
 	context.Context
 }
 
-func (f *fileContext) Value(key interface{}) interface{} {
+func (f *fileContext) Value(key any) any {
 	switch key {
 	case uniqueid.CtxGlobalUniqueID:
 		return uint64(0)
@@ -56,9 +55,10 @@ type byteFullReader struct {
 	data []byte
 }
 
+// ReadFull implements fullReader.ReadFull.
 func (b *byteFullReader) ReadFull(ctx context.Context, dst usermem.IOSequence, offset int64) (int64, error) {
 	if offset < 0 {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	if offset >= int64(len(b.data)) {
 		return 0, io.EOF
@@ -74,12 +74,12 @@ func (b *byteFullReader) ReadFull(ctx context.Context, dst usermem.IOSequence, o
 // segments have the same layout in the ELF as they expect to have in memory.
 //
 // Namely, this means that we must verify:
-// * PT_LOAD file offsets are equivalent to the memory offset from the first
-//   segment.
-// * No extra zeroed space (memsz) is required.
-// * PT_LOAD segments are in order.
-// * No two PT_LOAD segments occupy parts of the same page.
-// * PT_LOAD segments don't extend beyond the end of the file.
+//   - PT_LOAD file offsets are equivalent to the memory offset from the first
+//     segment.
+//   - No extra zeroed space (memsz) is required.
+//   - PT_LOAD segments are in order.
+//   - No two PT_LOAD segments occupy parts of the same page.
+//   - PT_LOAD segments don't extend beyond the end of the file.
 //
 // ctx may be nil if f does not need it.
 func validateVDSO(ctx context.Context, f fullReader, size uint64) (elfInfo, error) {
@@ -101,14 +101,14 @@ func validateVDSO(ctx context.Context, f fullReader, size uint64) (elfInfo, erro
 			first = &info.phdrs[i]
 			if phdr.Off != 0 {
 				log.Warningf("First PT_LOAD segment has non-zero file offset")
-				return elfInfo{}, syserror.ENOEXEC
+				return elfInfo{}, linuxerr.ENOEXEC
 			}
 		}
 
 		memoryOffset := phdr.Vaddr - first.Vaddr
 		if memoryOffset != phdr.Off {
 			log.Warningf("PT_LOAD segment memory offset %#x != file offset %#x", memoryOffset, phdr.Off)
-			return elfInfo{}, syserror.ENOEXEC
+			return elfInfo{}, linuxerr.ENOEXEC
 		}
 
 		// memsz larger than filesz means that extra zeroed space should be
@@ -117,24 +117,24 @@ func validateVDSO(ctx context.Context, f fullReader, size uint64) (elfInfo, erro
 		// zeroes.
 		if phdr.Memsz != phdr.Filesz {
 			log.Warningf("PT_LOAD segment memsz %#x != filesz %#x", phdr.Memsz, phdr.Filesz)
-			return elfInfo{}, syserror.ENOEXEC
+			return elfInfo{}, linuxerr.ENOEXEC
 		}
 
 		start := hostarch.Addr(memoryOffset)
 		end, ok := start.AddLength(phdr.Memsz)
 		if !ok {
 			log.Warningf("PT_LOAD segment size overflows: %#x + %#x", start, end)
-			return elfInfo{}, syserror.ENOEXEC
+			return elfInfo{}, linuxerr.ENOEXEC
 		}
 		if uint64(end) > size {
 			log.Warningf("PT_LOAD segment end %#x extends beyond end of file %#x", end, size)
-			return elfInfo{}, syserror.ENOEXEC
+			return elfInfo{}, linuxerr.ENOEXEC
 		}
 
 		if prev != nil {
 			if start < prevEnd {
 				log.Warningf("PT_LOAD segments out of order")
-				return elfInfo{}, syserror.ENOEXEC
+				return elfInfo{}, linuxerr.ENOEXEC
 			}
 
 			// We mprotect entire pages, so each segment must be in
@@ -143,7 +143,7 @@ func validateVDSO(ctx context.Context, f fullReader, size uint64) (elfInfo, erro
 			startPage := start.RoundDown()
 			if prevEndPage >= startPage {
 				log.Warningf("PT_LOAD segments share a page: %#x", prevEndPage)
-				return elfInfo{}, syserror.ENOEXEC
+				return elfInfo{}, linuxerr.ENOEXEC
 			}
 		}
 		prev = &info.phdrs[i]
@@ -177,27 +177,6 @@ type VDSO struct {
 	phdrs []elf.ProgHeader `state:".([]elfProgHeader)"`
 }
 
-// getSymbolValueFromVDSO returns the specific symbol value in vdso.so.
-func getSymbolValueFromVDSO(symbol string) (uint64, error) {
-	f, err := elf.NewFile(bytes.NewReader(vdsodata.Binary))
-	if err != nil {
-		return 0, err
-	}
-	syms, err := f.Symbols()
-	if err != nil {
-		return 0, err
-	}
-
-	for _, sym := range syms {
-		if elf.ST_BIND(sym.Info) != elf.STB_LOCAL && sym.Section != elf.SHN_UNDEF {
-			if strings.Contains(sym.Name, symbol) {
-				return sym.Value, nil
-			}
-		}
-	}
-	return 0, fmt.Errorf("no %v in vdso.so", symbol)
-}
-
 // PrepareVDSO validates the system VDSO and returns a VDSO, containing the
 // param page for updating by the kernel.
 func PrepareVDSO(mfp pgalloc.MemoryFileProvider) (*VDSO, error) {
@@ -217,7 +196,7 @@ func PrepareVDSO(mfp pgalloc.MemoryFileProvider) (*VDSO, error) {
 	}
 
 	mf := mfp.MemoryFile()
-	vdso, err := mf.Allocate(uint64(size), usage.System)
+	vdso, err := mf.Allocate(uint64(size), pgalloc.AllocOpts{Kind: usage.System})
 	if err != nil {
 		return nil, fmt.Errorf("unable to allocate VDSO memory: %v", err)
 	}
@@ -235,7 +214,7 @@ func PrepareVDSO(mfp pgalloc.MemoryFileProvider) (*VDSO, error) {
 	}
 
 	// Finally, allocate a param page for this VDSO.
-	paramPage, err := mf.Allocate(hostarch.PageSize, usage.System)
+	paramPage, err := mf.Allocate(hostarch.PageSize, pgalloc.AllocOpts{Kind: usage.System})
 	if err != nil {
 		mf.DecRef(vdso)
 		return nil, fmt.Errorf("unable to allocate VDSO param page: %v", err)
@@ -270,11 +249,11 @@ func PrepareVDSO(mfp pgalloc.MemoryFileProvider) (*VDSO, error) {
 func loadVDSO(ctx context.Context, m *mm.MemoryManager, v *VDSO, bin loadedELF) (hostarch.Addr, error) {
 	if v.os != bin.os {
 		ctx.Warningf("Binary ELF OS %v and VDSO ELF OS %v differ", bin.os, v.os)
-		return 0, syserror.ENOEXEC
+		return 0, linuxerr.ENOEXEC
 	}
 	if v.arch != bin.arch {
 		ctx.Warningf("Binary ELF arch %v and VDSO ELF arch %v differ", bin.arch, v.arch)
-		return 0, syserror.ENOEXEC
+		return 0, linuxerr.ENOEXEC
 	}
 
 	// Reserve address space for the VDSO and its parameter page, which is
@@ -347,35 +326,35 @@ func loadVDSO(ctx context.Context, m *mm.MemoryManager, v *VDSO, bin loadedELF) 
 		segAddr, ok := vdsoAddr.AddLength(memoryOffset)
 		if !ok {
 			ctx.Warningf("PT_LOAD segment address overflows: %#x + %#x", segAddr, memoryOffset)
-			return 0, syserror.ENOEXEC
+			return 0, linuxerr.ENOEXEC
 		}
 		segPage := segAddr.RoundDown()
 		segSize := hostarch.Addr(phdr.Memsz)
 		segSize, ok = segSize.AddLength(segAddr.PageOffset())
 		if !ok {
 			ctx.Warningf("PT_LOAD segment memsize %#x + offset %#x overflows", phdr.Memsz, segAddr.PageOffset())
-			return 0, syserror.ENOEXEC
+			return 0, linuxerr.ENOEXEC
 		}
 		segSize, ok = segSize.RoundUp()
 		if !ok {
 			ctx.Warningf("PT_LOAD segment size overflows: %#x", phdr.Memsz+segAddr.PageOffset())
-			return 0, syserror.ENOEXEC
+			return 0, linuxerr.ENOEXEC
 		}
 		segEnd, ok := segPage.AddLength(uint64(segSize))
 		if !ok {
 			ctx.Warningf("PT_LOAD segment range overflows: %#x + %#x", segAddr, segSize)
-			return 0, syserror.ENOEXEC
+			return 0, linuxerr.ENOEXEC
 		}
 		if segEnd > vdsoEnd {
 			ctx.Warningf("PT_LOAD segment ends beyond VDSO: %#x > %#x", segEnd, vdsoEnd)
-			return 0, syserror.ENOEXEC
+			return 0, linuxerr.ENOEXEC
 		}
 
 		perms := progFlagsAsPerms(phdr.Flags)
 		if perms != hostarch.Read {
 			if err := m.MProtect(segPage, uint64(segSize), perms, false); err != nil {
 				ctx.Warningf("Unable to set PT_LOAD segment protections %+v at [%#x, %#x): %v", perms, segAddr, segEnd, err)
-				return 0, syserror.ENOEXEC
+				return 0, linuxerr.ENOEXEC
 			}
 		}
 	}
@@ -388,3 +367,21 @@ func (v *VDSO) Release(ctx context.Context) {
 	v.ParamPage.DecRef(ctx)
 	v.vdso.DecRef(ctx)
 }
+
+var vdsoSigreturnOffset = func() uint64 {
+	f, err := elf.NewFile(bytes.NewReader(vdsodata.Binary))
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse vdso.so as ELF file: %v", err))
+	}
+	syms, err := f.Symbols()
+	if err != nil {
+		panic(fmt.Sprintf("failed to read symbols from vdso.so: %v", err))
+	}
+	const sigreturnSymbol = "__kernel_rt_sigreturn"
+	for _, sym := range syms {
+		if elf.ST_BIND(sym.Info) != elf.STB_LOCAL && sym.Section != elf.SHN_UNDEF && sym.Name == sigreturnSymbol {
+			return sym.Value
+		}
+	}
+	panic(fmt.Sprintf("no symbol %q in vdso.so", sigreturnSymbol))
+}()

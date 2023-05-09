@@ -14,47 +14,30 @@
 
 package container
 
-// Status enumerates container statuses. The statuses and their semantics are
-// part of the runtime CLI spec.
-type Status int
+import (
+	specs "github.com/opencontainers/runtime-spec/specs-go"
+)
+
+// Status is a local type alias.
+type Status = specs.ContainerState
 
 const (
 	// Created indicates "the runtime has finished the create operation and
 	// the container process has neither exited nor executed the
-	// user-specified program".
-	Created Status = iota
+	// user-specified program"
+	Created = specs.StateCreated
 
 	// Creating indicates "the container is being created".
-	Creating
-
-	// Paused indicates that the process within the container has been
-	// suspended.
-	Paused
+	Creating = specs.StateCreating
 
 	// Running indicates "the container process has executed the
 	// user-specified program but has not exited".
-	Running
+	Running = specs.StateRunning
 
 	// Stopped indicates "the container process has exited".
-	Stopped
+	Stopped = specs.StateStopped
+
+	// Paused indicates that the process within the container has been
+	// suspended. This is a local status, not part of the spec.
+	Paused = Status("paused")
 )
-
-// String converts a Status to a string. These strings are part of the runtime
-// CLI spec and should not be changed.
-func (s Status) String() string {
-	switch s {
-	case Created:
-		return "created"
-	case Creating:
-		return "creating"
-	case Paused:
-		return "paused"
-	case Running:
-		return "running"
-	case Stopped:
-		return "stopped"
-	default:
-		return "unknown"
-	}
-
-}

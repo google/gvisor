@@ -49,9 +49,9 @@ const (
 	// EthernetAddressSize is the size, in bytes, of an ethernet address.
 	EthernetAddressSize = 6
 
-	// unspecifiedEthernetAddress is the unspecified ethernet address
+	// UnspecifiedEthernetAddress is the unspecified ethernet address
 	// (all bits set to 0).
-	unspecifiedEthernetAddress = tcpip.LinkAddress("\x00\x00\x00\x00\x00\x00")
+	UnspecifiedEthernetAddress = tcpip.LinkAddress("\x00\x00\x00\x00\x00\x00")
 
 	// EthernetBroadcastAddress is an ethernet address that addresses every node
 	// on a local link.
@@ -134,7 +134,7 @@ func IsValidUnicastEthernetAddress(addr tcpip.LinkAddress) bool {
 		return false
 	}
 
-	if addr == unspecifiedEthernetAddress {
+	if addr == UnspecifiedEthernetAddress {
 		return false
 	}
 

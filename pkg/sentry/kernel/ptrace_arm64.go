@@ -12,16 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build arm64
 // +build arm64
 
 package kernel
 
 import (
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // ptraceArch implements arch-specific ptrace commands.
 func (t *Task) ptraceArch(target *Task, req int64, addr, data hostarch.Addr) error {
-	return syserror.EIO
+	return linuxerr.EIO
 }

@@ -1,10 +1,19 @@
 """Defines a rule for syscall test targets."""
 
-load("//tools:defs.bzl", "default_platform", "platforms")
+load("//tools:defs.bzl", "default_platform", "platform_capabilities", "platforms")
+
+# Maps platform names to a GVISOR_PLATFORM_SUPPORT environment variable consumed by platform_util.cc
+_platform_support_env_vars = {
+    platform: ",".join(sorted([
+        ("%s:%s" % (capability, "TRUE" if supported else "FALSE"))
+        for capability, supported in support.items()
+    ]))
+    for platform, support in platform_capabilities.items()
+}
 
 def _runner_test_impl(ctx):
     # Generate a runner binary.
-    runner = ctx.actions.declare_file("%s-runner" % ctx.label.name)
+    runner = ctx.actions.declare_file(ctx.label.name)
     runner_content = "\n".join([
         "#!/bin/bash",
         "set -euf -x -o pipefail",
@@ -59,9 +68,14 @@ def _syscall_test(
         network = "none",
         file_access = "exclusive",
         overlay = False,
-        add_uds_tree = False,
-        vfs2 = False,
-        fuse = False,
+        add_host_uds = False,
+        add_host_connector = False,
+        add_host_fifo = False,
+        iouring = False,
+        container = None,
+        one_sandbox = True,
+        fusefs = False,
+        directfs = False,
         **kwargs):
     # Prepend "runsc" to non-native platform names.
     full_platform = platform if platform == "native" else "runsc_" + platform
@@ -72,30 +86,27 @@ def _syscall_test(
         name += "_shared"
     if overlay:
         name += "_overlay"
-    if vfs2:
-        name += "_vfs2"
-        if fuse:
-            name += "_fuse"
     if network != "none":
         name += "_" + network + "net"
+    if fusefs:
+        name += "_fuse"
+    if directfs:
+        name += "_directfs"
 
     # Apply all tags.
     if tags == None:
         tags = []
 
     # Add the full_platform and file access in a tag to make it easier to run
-    # all the tests on a specific flavor. Use --test_tag_filters=ptrace,file_shared.
+    # all the tests on a specific flavor. Use --test_tag_filters=runsc_ptrace,file_shared.
+    tags = list(tags)
     tags += [full_platform, "file_" + file_access]
 
     # Hash this target into one of 15 buckets. This can be used to
     # randomly split targets between different workflows.
     hash15 = hash(native.package_name() + name) % 15
     tags.append("hash15:" + str(hash15))
-
-    # TODO(b/139838000): Tests using hostinet must be disabled on Guitar until
-    # we figure out how to request ipv4 sockets on Guitar machines.
-    if network == "host":
-        tags.append("noguitar")
+    tags.append("hash15")
 
     # Disable off-host networking.
     tags.append("requires-net:loopback")
@@ -106,19 +117,45 @@ def _syscall_test(
     if platform == "native":
         tags.append("nogotsan")
 
+    if container == None:
+        # Containerize in the following cases:
+        #  - "container" is explicitly specified as a tag
+        #  - Running tests natively
+        #  - Running tests with host networking
+        container = "container" in tags or network == "host"
+
+    if platform == "native":
+        # The "native" platform supports everything.
+        platform_support = ",".join(sorted([
+            ("%s:TRUE" % key)
+            for key in platform_capabilities[default_platform].keys()
+        ]))
+    else:
+        platform_support = _platform_support_env_vars.get(platform, "")
+
     runner_args = [
         # Arguments are passed directly to runner binary.
         "--platform=" + platform,
+        "--platform-support=" + platform_support,
         "--network=" + network,
         "--use-tmpfs=" + str(use_tmpfs),
+        "--fusefs=" + str(fusefs),
         "--file-access=" + file_access,
         "--overlay=" + str(overlay),
-        "--add-uds-tree=" + str(add_uds_tree),
-        "--vfs2=" + str(vfs2),
-        "--fuse=" + str(fuse),
+        "--add-host-uds=" + str(add_host_uds),
+        "--add-host-connector=" + str(add_host_connector),
+        "--add-host-fifo=" + str(add_host_fifo),
         "--strace=" + str(debug),
         "--debug=" + str(debug),
+        "--container=" + str(container),
+        "--one-sandbox=" + str(one_sandbox),
+        "--iouring=" + str(iouring),
+        "--directfs=" + str(directfs),
     ]
+
+    # Trace points are platform agnostic, so enable them for ptrace only.
+    if platform == "ptrace":
+        runner_args.append("--trace")
 
     # Call the rule above.
     _runner_test(
@@ -129,15 +166,27 @@ def _syscall_test(
         **kwargs
     )
 
+def all_platforms():
+    """All platforms returns a list of all platforms."""
+    available = dict(platforms.items())
+    available[default_platform] = platforms.get(default_platform, [])
+    return available.items()
+
 def syscall_test(
         test,
         use_tmpfs = False,
+        add_fusefs = False,
         add_overlay = False,
-        add_uds_tree = False,
+        add_host_uds = False,
+        add_host_connector = False,
+        add_host_fifo = False,
         add_hostinet = False,
-        vfs2 = True,
-        fuse = False,
+        add_directfs = True,
+        one_sandbox = True,
+        iouring = False,
+        allow_native = True,
         debug = True,
+        container = None,
         tags = None,
         **kwargs):
     """syscall_test is a macro that will create targets for all platforms.
@@ -145,64 +194,56 @@ def syscall_test(
     Args:
       test: the test target.
       use_tmpfs: use tmpfs in the defined tests.
+      add_fusefs: add a fusefs test.
       add_overlay: add an overlay test.
-      add_uds_tree: add a UDS test.
+      add_host_uds: setup bound UDS on the host.
+      add_host_connector: setup host threads to connect to bound UDS created by sandbox.
+      add_host_fifo: setup FIFO files on the host.
       add_hostinet: add a hostinet test.
-      vfs2: enable VFS2 support.
-      fuse: enable FUSE support.
+      add_directfs: add a directfs test.
+      one_sandbox: runs each unit test in a new sandbox instance.
+      iouring: enable IO_URING support.
+      allow_native: generate a native test variant.
       debug: enable debug output.
+      container: Run the test in a container. If None, determined from other information.
       tags: starting test tags.
       **kwargs: additional test arguments.
     """
     if not tags:
         tags = []
 
-    vfs2_tags = list(tags)
-    if vfs2:
-        # Add tag to easily run VFS2 tests with --test_tag_filters=vfs2
-        vfs2_tags.append("vfs2")
-        if fuse:
-            vfs2_tags.append("fuse")
+    if allow_native:
+        _syscall_test(
+            test = test,
+            platform = "native",
+            use_tmpfs = False,
+            add_host_uds = add_host_uds,
+            add_host_connector = add_host_connector,
+            add_host_fifo = add_host_fifo,
+            tags = tags,
+            iouring = iouring,
+            debug = debug,
+            container = container,
+            one_sandbox = one_sandbox,
+            **kwargs
+        )
 
-    else:
-        # Don't automatically run tests tests not yet passing.
-        vfs2_tags.append("manual")
-        vfs2_tags.append("noguitar")
-        vfs2_tags.append("notap")
-
-    _syscall_test(
-        test = test,
-        platform = default_platform,
-        use_tmpfs = use_tmpfs,
-        add_uds_tree = add_uds_tree,
-        tags = platforms[default_platform] + vfs2_tags,
-        debug = debug,
-        vfs2 = True,
-        fuse = fuse,
-        **kwargs
-    )
-    if fuse:
-        # Only generate *_vfs2_fuse target if fuse parameter is enabled.
-        return
-
-    _syscall_test(
-        test = test,
-        platform = "native",
-        use_tmpfs = False,
-        add_uds_tree = add_uds_tree,
-        tags = list(tags),
-        debug = debug,
-        **kwargs
-    )
-
-    for (platform, platform_tags) in platforms.items():
+    for platform, platform_tags in all_platforms():
+        # Add directfs to the default platform variant.
+        directfs = add_directfs and platform == default_platform
         _syscall_test(
             test = test,
             platform = platform,
             use_tmpfs = use_tmpfs,
-            add_uds_tree = add_uds_tree,
+            add_host_uds = add_host_uds,
+            add_host_connector = add_host_connector,
+            add_host_fifo = add_host_fifo,
             tags = platform_tags + tags,
+            iouring = iouring,
+            directfs = directfs,
             debug = debug,
+            container = container,
+            one_sandbox = one_sandbox,
             **kwargs
         )
 
@@ -211,62 +252,62 @@ def syscall_test(
             test = test,
             platform = default_platform,
             use_tmpfs = use_tmpfs,
-            add_uds_tree = add_uds_tree,
-            tags = platforms[default_platform] + tags,
+            add_host_uds = add_host_uds,
+            add_host_connector = add_host_connector,
+            add_host_fifo = add_host_fifo,
+            tags = platforms.get(default_platform, []) + tags,
             debug = debug,
+            iouring = iouring,
+            container = container,
+            one_sandbox = one_sandbox,
             overlay = True,
             **kwargs
         )
-
-        # TODO(gvisor.dev/issue/4407): Remove tags to enable VFS2 overlay tests.
-        overlay_vfs2_tags = list(vfs2_tags)
-        overlay_vfs2_tags.append("manual")
-        overlay_vfs2_tags.append("noguitar")
-        overlay_vfs2_tags.append("notap")
-        _syscall_test(
-            test = test,
-            platform = default_platform,
-            use_tmpfs = use_tmpfs,
-            add_uds_tree = add_uds_tree,
-            tags = platforms[default_platform] + overlay_vfs2_tags,
-            debug = debug,
-            overlay = True,
-            vfs2 = True,
-            **kwargs
-        )
-
     if add_hostinet:
         _syscall_test(
             test = test,
             platform = default_platform,
             use_tmpfs = use_tmpfs,
             network = "host",
-            add_uds_tree = add_uds_tree,
-            tags = platforms[default_platform] + tags,
+            add_host_uds = add_host_uds,
+            add_host_connector = add_host_connector,
+            add_host_fifo = add_host_fifo,
+            tags = platforms.get(default_platform, []) + tags,
             debug = debug,
+            iouring = iouring,
+            container = container,
+            one_sandbox = one_sandbox,
             **kwargs
         )
-
     if not use_tmpfs:
         # Also test shared gofer access.
         _syscall_test(
             test = test,
             platform = default_platform,
             use_tmpfs = use_tmpfs,
-            add_uds_tree = add_uds_tree,
-            tags = platforms[default_platform] + tags,
+            add_host_uds = add_host_uds,
+            add_host_connector = add_host_connector,
+            add_host_fifo = add_host_fifo,
+            tags = platforms.get(default_platform, []) + tags,
+            iouring = iouring,
             debug = debug,
+            container = container,
+            one_sandbox = one_sandbox,
             file_access = "shared",
             **kwargs
         )
+    if add_fusefs:
         _syscall_test(
             test = test,
             platform = default_platform,
-            use_tmpfs = use_tmpfs,
-            add_uds_tree = add_uds_tree,
-            tags = platforms[default_platform] + vfs2_tags,
+            use_tmpfs = True,
+            fusefs = True,
+            add_host_uds = add_host_uds,
+            add_host_connector = add_host_connector,
+            add_host_fifo = add_host_fifo,
+            tags = platforms.get(default_platform, []) + tags,
             debug = debug,
-            file_access = "shared",
-            vfs2 = True,
+            container = container,
+            one_sandbox = one_sandbox,
             **kwargs
         )

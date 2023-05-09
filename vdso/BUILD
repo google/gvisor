@@ -3,9 +3,15 @@
 #   normal system VDSO (time, gettimeofday, clock_gettimeofday) but which uses
 #   timekeeping parameters managed by the sandbox kernel.
 
-load("//tools:defs.bzl", "cc_flags_supplier", "cc_toolchain", "select_arch", "vdso_linker_option")
+load("//tools:arch.bzl", "select_arch")
+load("//tools:defs.bzl", "cc_flags_supplier", "cc_toolchain", "vdso_linker_option")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
+
+exports_files(["check_vdso.py"])
 
 genrule(
     name = "vdso",
@@ -34,10 +40,6 @@ genrule(
           # VDSO has no hooks to handle failures.
           "-fno-stack-protector " +
           vdso_linker_option +
-          select_arch(
-              amd64 = "-m64 ",
-              arm64 = "",
-          ) +
           "-shared " +
           "-nostdlib " +
           "-Wl,-soname=linux-vdso.so.1 " +
@@ -53,13 +55,7 @@ genrule(
           ) +
           "-o $(location vdso.so) " +
           "$(location vdso.cc) " +
-          "$(location vdso_time.cc) " +
-          "&& $(location :check_vdso) " +
-          "--check-data " +
-          "--vdso $(location vdso.so) ",
-    exec_tools = [
-        ":check_vdso",
-    ],
+          "$(location vdso_time.cc)",
     features = ["-pie"],
     toolchains = [
         cc_toolchain,
@@ -73,9 +69,14 @@ cc_flags_supplier(
     features = ["-pie"],
 )
 
-py_binary(
-    name = "check_vdso",
+py_test(
+    name = "vdso_test",
     srcs = ["check_vdso.py"],
+    args = [
+        "--check-data",
+        "--vdso=$(location :vdso)",
+    ],
+    data = [":vdso"],
+    main = "check_vdso.py",
     python_version = "PY3",
-    visibility = ["//:sandbox"],
 )

@@ -14,32 +14,6 @@
 
 package tcp
 
-import (
-	"time"
-
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
-)
-
-// saveData is invoked by stateify.
-func (s *segment) saveData() buffer.VectorisedView {
-	// We cannot save s.data directly as s.data.views may alias to s.views,
-	// which is not allowed by state framework (in-struct pointer).
-	vs := make([]buffer.View, len(s.data.Views()))
-	for i, v := range s.data.Views() {
-		vs[i] = v
-	}
-	return buffer.NewVectorisedView(s.data.Size(), vs)
-}
-
-// loadData is invoked by stateify.
-func (s *segment) loadData(data buffer.VectorisedView) {
-	// NOTE: We cannot do the s.data = data.Clone(s.views[:]) optimization
-	// here because data.views is not guaranteed to be loaded by now. Plus,
-	// data.views will be allocated anyway so there really is little point
-	// of utilizing s.views for data.views.
-	s.data = data
-}
-
 // saveOptions is invoked by stateify.
 func (s *segment) saveOptions() []byte {
 	// We cannot save s.options directly as it may point to s.data's trimmed
@@ -54,24 +28,4 @@ func (s *segment) loadOptions(options []byte) {
 	// it is OK as they do not need to aliased. Plus, options is already
 	// allocated so there is no cost here.
 	s.options = options
-}
-
-// saveRcvdTime is invoked by stateify.
-func (s *segment) saveRcvdTime() unixTime {
-	return unixTime{s.rcvdTime.Unix(), s.rcvdTime.UnixNano()}
-}
-
-// loadRcvdTime is invoked by stateify.
-func (s *segment) loadRcvdTime(unix unixTime) {
-	s.rcvdTime = time.Unix(unix.second, unix.nano)
-}
-
-// saveXmitTime is invoked by stateify.
-func (s *segment) saveXmitTime() unixTime {
-	return unixTime{s.rcvdTime.Unix(), s.rcvdTime.UnixNano()}
-}
-
-// loadXmitTime is invoked by stateify.
-func (s *segment) loadXmitTime(unix unixTime) {
-	s.rcvdTime = time.Unix(unix.second, unix.nano)
 }

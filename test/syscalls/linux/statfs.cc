@@ -19,6 +19,7 @@
 
 #include "gtest/gtest.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/fs_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 
@@ -28,23 +29,25 @@ namespace testing {
 namespace {
 
 TEST(StatfsTest, CannotStatBadPath) {
-  auto temp_file = NewTempAbsPathInDir("/tmp");
+  auto temp_file = NewTempAbsPath();
 
   struct statfs st;
   EXPECT_THAT(statfs(temp_file.c_str(), &st), SyscallFailsWithErrno(ENOENT));
 }
 
-TEST(StatfsTest, InternalTmpfs) {
+TEST(StatfsTest, TempPath) {
   auto temp_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
 
   struct statfs st;
   EXPECT_THAT(statfs(temp_file.path().c_str(), &st), SyscallSucceeds());
+  EXPECT_GT(st.f_namelen, 0);
 }
 
 TEST(StatfsTest, InternalDevShm) {
   struct statfs st;
   EXPECT_THAT(statfs("/dev/shm", &st), SyscallSucceeds());
 
+  EXPECT_GT(st.f_namelen, 0);
   // This assumes that /dev/shm is tmpfs.
   // Note: We could be an overlay on some configurations.
   EXPECT_TRUE(st.f_type == TMPFS_MAGIC || st.f_type == OVERLAYFS_SUPER_MAGIC);
@@ -55,17 +58,17 @@ TEST(FstatfsTest, CannotStatBadFd) {
   EXPECT_THAT(fstatfs(-1, &st), SyscallFailsWithErrno(EBADF));
 }
 
-TEST(FstatfsTest, InternalTmpfs) {
+TEST(FstatfsTest, TempPath) {
   auto temp_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(temp_file.path(), O_RDONLY));
 
   struct statfs st;
   EXPECT_THAT(fstatfs(fd.get(), &st), SyscallSucceeds());
+  EXPECT_GT(st.f_namelen, 0);
 }
 
 TEST(FstatfsTest, CanStatFileWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   auto temp_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(temp_file.path(), O_PATH));
@@ -81,6 +84,28 @@ TEST(FstatfsTest, InternalDevShm) {
 
   struct statfs st;
   EXPECT_THAT(fstatfs(fd.get(), &st), SyscallSucceeds());
+  EXPECT_GT(st.f_namelen, 0);
+  // This assumes that /dev/shm is tmpfs.
+  // Note: We could be an overlay on some configurations.
+  EXPECT_TRUE(st.f_type == TMPFS_MAGIC || st.f_type == OVERLAYFS_SUPER_MAGIC);
+}
+
+// Tests that the number of blocks free in the filesystem, as reported by
+// statfs(2) updates appropriately when pages are allocated.
+TEST(FstatfsTest, BlocksFree) {
+  const std::string file_path = NewTempAbsPath();
+  const std::string dir = std::string(Dirname(file_path));
+  struct statfs st_before;
+  EXPECT_THAT(statfs(dir.c_str(), &st_before), SyscallSucceeds());
+  // Only test for tmpfs. Passthru gofer does not expose host filesystem
+  // statfs(2) results. It always returns 0 for blocks free.
+  SKIP_IF(st_before.f_type != TMPFS_MAGIC);
+
+  ASSERT_NO_ERRNO(CreateWithContents(file_path, "abcd"));
+  struct statfs st_after;
+  EXPECT_THAT(statfs(dir.c_str(), &st_after), SyscallSucceeds());
+  EXPECT_GT(st_before.f_bfree, st_after.f_bfree);
+  EXPECT_GT(st_before.f_bavail, st_after.f_bavail);
 }
 
 }  // namespace

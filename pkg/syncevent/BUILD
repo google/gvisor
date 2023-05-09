@@ -1,5 +1,7 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 
+package(default_applicable_licenses = ["//:license"])
+
 licenses(["notice"])
 
 go_library(
@@ -28,6 +30,7 @@ go_test(
     ],
     library = ":syncevent",
     deps = [
+        "//pkg/atomicbitops",
         "//pkg/sleep",
         "//pkg/sync",
         "//pkg/waiter",

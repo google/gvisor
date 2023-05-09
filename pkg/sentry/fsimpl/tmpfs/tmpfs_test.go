@@ -16,9 +16,10 @@ package tmpfs
 
 import (
 	"fmt"
-	"sync/atomic"
+	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -26,7 +27,7 @@ import (
 )
 
 // nextFileID is used to generate unique file names.
-var nextFileID int64
+var nextFileID atomicbitops.Int64
 
 // newTmpfsRoot creates a new tmpfs mount, and returns the root. If the error
 // is not nil, then cleanup should be called when the root is no longer needed.
@@ -63,7 +64,7 @@ func newFileFD(ctx context.Context, mode linux.FileMode) (*vfs.FileDescription, 
 		return nil, nil, err
 	}
 
-	filename := fmt.Sprintf("tmpfs-test-file-%d", atomic.AddInt64(&nextFileID, 1))
+	filename := fmt.Sprintf("tmpfs-test-file-%d", nextFileID.Add(1))
 
 	// Create the file that will be write/read.
 	fd, err := vfsObj.OpenAt(ctx, creds, &vfs.PathOperation{
@@ -90,7 +91,7 @@ func newDirFD(ctx context.Context, mode linux.FileMode) (*vfs.FileDescription, f
 		return nil, nil, err
 	}
 
-	dirname := fmt.Sprintf("tmpfs-test-dir-%d", atomic.AddInt64(&nextFileID, 1))
+	dirname := fmt.Sprintf("tmpfs-test-dir-%d", nextFileID.Add(1))
 
 	// Create the dir.
 	if err := vfsObj.MkdirAt(ctx, creds, &vfs.PathOperation{
@@ -128,7 +129,7 @@ func newPipeFD(ctx context.Context, mode linux.FileMode) (*vfs.FileDescription, 
 		return nil, nil, err
 	}
 
-	name := fmt.Sprintf("tmpfs-test-%d", atomic.AddInt64(&nextFileID, 1))
+	name := fmt.Sprintf("tmpfs-test-%d", nextFileID.Add(1))
 
 	if err := vfsObj.MknodAt(ctx, creds, &vfs.PathOperation{
 		Root:  root,
@@ -154,4 +155,40 @@ func newPipeFD(ctx context.Context, mode linux.FileMode) (*vfs.FileDescription, 
 	}
 
 	return fd, cleanup, nil
+}
+
+func TestParseSize(t *testing.T) {
+	var tests = []struct {
+		s         string
+		want      uint64
+		wantError bool
+	}{
+		{"500", 500, false},
+		{"5k", (5 * 1024), false},
+		{"5m", (5 * 1024 * 1024), false},
+		{"5G", (5 * 1024 * 1024 * 1024), false},
+		{"5t", (5 * 1024 * 1024 * 1024 * 1024), false},
+		{"5P", (5 * 1024 * 1024 * 1024 * 1024 * 1024), false},
+		{"5e", (5 * 1024 * 1024 * 1024 * 1024 * 1024 * 1024), false},
+		{"5e3", 0, true},
+		{"", 0, true},
+		{"9999999999999999P", 0, true},
+	}
+	for _, tt := range tests {
+		testname := fmt.Sprintf("%s", tt.s)
+		t.Run(testname, func(t *testing.T) {
+			size, err := parseSize(tt.s)
+			if tt.wantError && err == nil {
+				t.Errorf("Invalid input: %v parsed", tt.s)
+			}
+			if !tt.wantError {
+				if err != nil {
+					t.Errorf("Couldn't parse size, Error: %v", err)
+				}
+				if size != tt.want {
+					t.Errorf("got: %v, want %v", size, tt.want)
+				}
+			}
+		})
+	}
 }

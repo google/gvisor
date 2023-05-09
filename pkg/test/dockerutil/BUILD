@@ -1,6 +1,9 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_library(
     name = "dockerutil",
@@ -15,6 +18,7 @@ go_library(
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/test/testutil",
+        "//runsc/cgroup",
         "@com_github_docker_docker//api/types:go_default_library",
         "@com_github_docker_docker//api/types/container:go_default_library",
         "@com_github_docker_docker//api/types/mount:go_default_library",
@@ -36,8 +40,8 @@ go_test(
     tags = [
         # Requires docker and runsc to be configured before test runs.
         # Also requires the test to be run as root.
-        "manual",
         "local",
+        "manual",
     ],
     visibility = ["//:sandbox"],
 )

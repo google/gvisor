@@ -1,0 +1,24 @@
+FROM ubuntu:18.04
+
+RUN set -x \
+        && apt-get update \
+        && apt-get install -y \
+            autoconf \
+            build-essential \
+            clang \
+            curl \
+            libtool \
+            pkg-config \
+            git \
+            unzip \
+            wget \
+        && rm -rf /var/lib/apt/lists/*
+
+
+RUN wget https://github.com/bazelbuild/bazel/releases/download/4.2.1/bazel-4.2.1-installer-linux-x86_64.sh
+RUN chmod +x bazel-4.2.1-installer-linux-x86_64.sh
+RUN ./bazel-4.2.1-installer-linux-x86_64.sh
+
+RUN mkdir grpc && cd grpc \
+   && git init && git remote add origin https://github.com/grpc/grpc.git \
+   && git fetch --depth 1 origin a672e22bd1e10b3ff2a91aaae5aee3a65cc95bfe && git checkout FETCH_HEAD

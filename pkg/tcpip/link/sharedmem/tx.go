@@ -18,7 +18,8 @@ import (
 	"math"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/eventfd"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sharedmem/queue"
 )
 
@@ -28,10 +29,13 @@ const (
 
 // tx holds all state associated with a tx queue.
 type tx struct {
-	data []byte
-	q    queue.Tx
-	ids  idManager
-	bufs bufferManager
+	data         []byte
+	q            queue.Tx
+	ids          idManager
+	bufs         bufferManager
+	eventFD      eventfd.Eventfd
+	sharedData   []byte
+	sharedDataFD int
 }
 
 // init initializes all state needed by the tx queue based on the information
@@ -39,7 +43,7 @@ type tx struct {
 //
 // The caller always retains ownership of all file descriptors passed in. The
 // queue implementation will duplicate any that it may need in the future.
-func (t *tx) init(mtu uint32, c *QueueConfig) error {
+func (t *tx) init(bufferSize uint32, c *QueueConfig) error {
 	// Map in all buffers.
 	txPipe, err := getBuffer(c.TxPipeFD)
 	if err != nil {
@@ -59,11 +63,21 @@ func (t *tx) init(mtu uint32, c *QueueConfig) error {
 		return err
 	}
 
+	sharedData, err := getBuffer(c.SharedDataFD)
+	if err != nil {
+		unix.Munmap(txPipe)
+		unix.Munmap(rxPipe)
+		unix.Munmap(data)
+	}
+
 	// Initialize state based on buffers.
-	t.q.Init(txPipe, rxPipe)
+	t.q.Init(txPipe, rxPipe, sharedDataPointer(sharedData))
 	t.ids.init()
-	t.bufs.init(0, len(data), int(mtu))
+	t.bufs.init(0, len(data), int(bufferSize))
 	t.data = data
+	t.eventFD = c.EventFD
+	t.sharedDataFD = c.SharedDataFD
+	t.sharedData = sharedData
 
 	return nil
 }
@@ -79,7 +93,7 @@ func (t *tx) cleanup() {
 
 // transmit sends a packet made of bufs. Returns a boolean that specifies
 // whether the packet was successfully transmitted.
-func (t *tx) transmit(bufs ...buffer.View) bool {
+func (t *tx) transmit(buffer bufferv2.Buffer) bool {
 	// Pull completions from the tx queue and add their buffers back to the
 	// pool so that we can reuse them.
 	for {
@@ -94,10 +108,7 @@ func (t *tx) transmit(bufs ...buffer.View) bool {
 	}
 
 	bSize := t.bufs.entrySize
-	total := uint32(0)
-	for _, data := range bufs {
-		total += uint32(len(data))
-	}
+	total := uint32(buffer.Size())
 	bufCount := (total + bSize - 1) / bSize
 
 	// Allocate enough buffers to hold all the data.
@@ -119,17 +130,17 @@ func (t *tx) transmit(bufs ...buffer.View) bool {
 	// Copy data into allocated buffers.
 	nBuf := buf
 	var dBuf []byte
-	for _, data := range bufs {
-		for len(data) > 0 {
+	buffer.Apply(func(v *bufferv2.View) {
+		for v.Size() > 0 {
 			if len(dBuf) == 0 {
 				dBuf = t.data[nBuf.Offset:][:nBuf.Size]
 				nBuf = nBuf.Next
 			}
-			n := copy(dBuf, data)
-			data = data[n:]
+			n := copy(dBuf, v.AsSlice())
+			v.TrimFront(n)
 			dBuf = dBuf[n:]
 		}
-	}
+	})
 
 	// Get an id for this packet and send it out.
 	id := t.ids.add(buf)
@@ -142,20 +153,12 @@ func (t *tx) transmit(bufs ...buffer.View) bool {
 	return true
 }
 
-// getBuffer returns a memory region mapped to the full contents of the given
-// file descriptor.
-func getBuffer(fd int) ([]byte, error) {
-	var s unix.Stat_t
-	if err := unix.Fstat(fd, &s); err != nil {
-		return nil, err
+// notify writes to the tx.eventFD to indicate to the peer that there is data to
+// be read.
+func (t *tx) notify() {
+	if t.q.NotificationsEnabled() {
+		t.eventFD.Notify()
 	}
-
-	// Check that size doesn't overflow an int.
-	if s.Size > int64(^uint(0)>>1) {
-		return nil, unix.EDOM
-	}
-
-	return unix.Mmap(fd, 0, int(s.Size), unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED|unix.MAP_FILE)
 }
 
 // idDescriptor is used by idManager to either point to a tx buffer (in case

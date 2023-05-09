@@ -17,6 +17,7 @@ package raw
 import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/internal/noop"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/packet"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -32,4 +33,19 @@ func (EndpointFactory) NewUnassociatedEndpoint(stack *stack.Stack, netProto tcpi
 // NewPacketEndpoint implements stack.RawFactory.NewPacketEndpoint.
 func (EndpointFactory) NewPacketEndpoint(stack *stack.Stack, cooked bool, netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, tcpip.Error) {
 	return packet.NewEndpoint(stack, cooked, netProto, waiterQueue)
+}
+
+// CreateOnlyFactory implements stack.RawFactory. It allows creation of raw
+// endpoints that do not support reading, writing, binding, etc.
+type CreateOnlyFactory struct{}
+
+// NewUnassociatedEndpoint implements stack.RawFactory.NewUnassociatedEndpoint.
+func (CreateOnlyFactory) NewUnassociatedEndpoint(stk *stack.Stack, _ tcpip.NetworkProtocolNumber, _ tcpip.TransportProtocolNumber, _ *waiter.Queue) (tcpip.Endpoint, tcpip.Error) {
+	return noop.New(stk), nil
+}
+
+// NewPacketEndpoint implements stack.RawFactory.NewPacketEndpoint.
+func (CreateOnlyFactory) NewPacketEndpoint(*stack.Stack, bool, tcpip.NetworkProtocolNumber, *waiter.Queue) (tcpip.Endpoint, tcpip.Error) {
+	// This isn't needed by anything, so it isn't implemented.
+	return nil, &tcpip.ErrNotPermitted{}
 }

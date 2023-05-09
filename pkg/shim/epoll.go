@@ -13,6 +13,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build linux
 // +build linux
 
 package shim
@@ -80,9 +81,13 @@ func (e *epoller) run(ctx context.Context) {
 	}
 }
 
-func (e *epoller) add(id string, cg cgroups.Cgroup) error {
+func (e *epoller) add(id string, cgx any) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	cg, ok := cgx.(cgroups.Cgroup)
+	if !ok {
+		return fmt.Errorf("expected cgroups.Cgroup, got: %T", cgx)
+	}
 	fd, err := cg.OOMEventFD()
 	if err != nil {
 		return err

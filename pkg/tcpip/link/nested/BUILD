@@ -1,6 +1,9 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_library(
     name = "nested",
@@ -23,6 +26,7 @@ go_test(
         "nested_test.go",
     ],
     deps = [
+        "//pkg/refs",
         "//pkg/tcpip",
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/nested",

@@ -112,13 +112,13 @@ type encodeState struct {
 //
 // isSameSizeParent deals with objects like this:
 //
-// struct child {
-//     // fields..
-// }
+//	struct child {
+//		// fields..
+//	}
 //
-// struct parent {
-//     c child
-// }
+//	struct parent {
+//		c child
+//	}
 //
 // var p parent
 // record(&p.c)
@@ -127,9 +127,9 @@ type encodeState struct {
 //
 // Or like this:
 //
-// struct child {
-//     // fields
-// }
+//	struct child {
+//		// fields
+//	}
 //
 // var arr [1]parent
 // record(&arr[0])
@@ -838,11 +838,6 @@ func WriteHeader(w wire.Writer, length uint64, object bool) error {
 		wire.SaveUint(w, length)
 	})
 }
-
-// deferredMapper is for the deferred list.
-type deferredMapper struct{}
-
-func (deferredMapper) linkerFor(oes *objectEncodeState) *deferredEntry { return &oes.deferredEntry }
 
 // addrSetFunctions is used by addrSet.
 type addrSetFunctions struct{}

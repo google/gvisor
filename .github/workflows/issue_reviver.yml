@@ -1,5 +1,5 @@
 # This workflow revives issues that are still referenced in the code, and may
-# have been accidentally closed or marked stale.
+# have been accidentally closed.
 name: "Issue reviver"
 "on":
   schedule:
@@ -9,9 +9,9 @@ jobs:
   issue_reviver:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
       if: github.repository == 'google/gvisor'
-    - run: make run TARGETS="//tools/github" ARGS="revive"
+    - run: make run TARGETS="//tools/github" ARGS="-path=. revive"
       if: github.repository == 'google/gvisor'
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

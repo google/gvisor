@@ -18,23 +18,23 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
-	"reflect"
+	"strings"
 	"testing"
 	"time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"github.com/syndtr/gocapability/capability"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/control/server"
-	"gvisor.dev/gvisor/pkg/fd"
+	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/p9"
-	"gvisor.dev/gvisor/pkg/sentry/contexttest"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/runsc/config"
+	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/fsgofer"
 )
 
@@ -44,11 +44,12 @@ func init() {
 	if err := fsgofer.OpenProcSelfFD(); err != nil {
 		panic(err)
 	}
-	config.RegisterFlags()
 }
 
 func testConfig() *config.Config {
-	conf, err := config.NewFromFlags()
+	testFlags := flag.NewFlagSet("test", flag.ContinueOnError)
+	config.RegisterFlags(testFlags)
+	conf, err := config.NewFromFlags(testFlags)
 	if err != nil {
 		panic(err)
 	}
@@ -89,33 +90,29 @@ func startGofer(root string) (int, func(), error) {
 		unix.Close(goferEnd)
 		return 0, nil, fmt.Errorf("error creating server on FD %d: %v", goferEnd, err)
 	}
-	at, err := fsgofer.NewAttachPoint(root, fsgofer.Config{ROMount: true})
+	server := fsgofer.NewLisafsServer(fsgofer.Config{})
+	c, err := server.CreateConnection(socket, root, true /* readonly */)
 	if err != nil {
 		return 0, nil, err
 	}
-	go func() {
-		s := p9.NewServer(at)
-		if err := s.Handle(socket); err != nil {
-			log.Infof("Gofer is stopping. FD: %d, err: %v\n", goferEnd, err)
-		}
-	}()
+	server.StartConnection(c)
 	// Closing the gofer socket will stop the gofer and exit goroutine above.
 	cleanup := func() {
 		if err := socket.Close(); err != nil {
 			log.Warningf("Error closing gofer socket: %v", err)
 		}
+		server.Wait()
+		server.Destroy()
 	}
 	return sandboxEnd, cleanup, nil
 }
 
-func createLoader(vfsEnabled bool, spec *specs.Spec) (*Loader, func(), error) {
-	fd, err := server.CreateSocket(ControlSocketAddr(fmt.Sprintf("%010d", rand.Int())[:10]))
+func createLoader(conf *config.Config, spec *specs.Spec) (*Loader, func(), error) {
+	sock := fmt.Sprintf("\x00loader-test.%010d", rand.Int())
+	fd, err := server.CreateSocket(sock)
 	if err != nil {
 		return nil, nil, err
 	}
-	conf := testConfig()
-	conf.VFS2 = vfsEnabled
-
 	sandEnd, cleanup, err := startGofer(spec.Root.Path)
 	if err != nil {
 		return nil, nil, err
@@ -132,12 +129,15 @@ func createLoader(vfsEnabled bool, spec *specs.Spec) (*Loader, func(), error) {
 	}
 
 	args := Args{
-		ID:           "foo",
-		Spec:         spec,
-		Conf:         conf,
-		ControllerFD: fd,
-		GoferFDs:     []int{sandEnd},
-		StdioFDs:     stdio,
+		ID:              "foo",
+		Spec:            spec,
+		Conf:            conf,
+		ControllerFD:    fd,
+		GoferFDs:        []int{sandEnd},
+		StdioFDs:        stdio,
+		OverlayMediums:  []OverlayMedium{NoOverlay},
+		PodInitConfigFD: -1,
+		ExecFD:          -1,
 	}
 	l, err := New(args)
 	if err != nil {
@@ -149,16 +149,7 @@ func createLoader(vfsEnabled bool, spec *specs.Spec) (*Loader, func(), error) {
 
 // TestRun runs a simple application in a sandbox and checks that it succeeds.
 func TestRun(t *testing.T) {
-	doRun(t, false)
-}
-
-// TestRunVFS2 runs TestRun in VFSv2.
-func TestRunVFS2(t *testing.T) {
-	doRun(t, true)
-}
-
-func doRun(t *testing.T, vfsEnabled bool) {
-	l, cleanup, err := createLoader(vfsEnabled, testSpec())
+	l, cleanup, err := createLoader(testConfig(), testSpec())
 	if err != nil {
 		t.Fatalf("error creating loader: %v", err)
 	}
@@ -188,24 +179,15 @@ func doRun(t *testing.T, vfsEnabled bool) {
 	}
 
 	// Wait for the application to exit.  It should succeed.
-	if status := l.WaitExit(); status.Code != 0 || status.Signo != 0 {
-		t.Errorf("application exited with status %+v, want 0", status)
+	if status := l.WaitExit(); !status.Exited() || status.ExitStatus() != 0 {
+		t.Errorf("application exited with %s, want exit status 0", status)
 	}
 }
 
 // TestStartSignal tests that the controller Start message will cause
 // WaitForStartSignal to return.
 func TestStartSignal(t *testing.T) {
-	doStartSignal(t, false)
-}
-
-// TestStartSignalVFS2 does TestStartSignal with VFS2.
-func TestStartSignalVFS2(t *testing.T) {
-	doStartSignal(t, true)
-}
-
-func doStartSignal(t *testing.T, vfsEnabled bool) {
-	l, cleanup, err := createLoader(vfsEnabled, testSpec())
+	l, cleanup, err := createLoader(testConfig(), testSpec())
 	if err != nil {
 		t.Fatalf("error creating loader: %v", err)
 	}
@@ -214,7 +196,7 @@ func doStartSignal(t *testing.T, vfsEnabled bool) {
 
 	// We aren't going to wait on this application, so the control server
 	// needs to be shut down manually.
-	defer l.ctrl.srv.Stop()
+	defer l.ctrl.srv.Stop(time.Hour)
 
 	// Start a goroutine that calls WaitForStartSignal and writes to a
 	// channel when it returns.
@@ -250,7 +232,53 @@ func doStartSignal(t *testing.T, vfsEnabled bool) {
 	case <-time.After(50 * time.Millisecond):
 		t.Errorf("WaitForStartSignal did not complete but it should have")
 	}
+}
 
+// Test that network=host with raw sockets enabled requires CAP_NET_RAW on the
+// host.
+func TestHostnetWithRawSockets(t *testing.T) {
+	// Drop CAP_NET_RAW from effective capabilities, if we have it.
+	pid := os.Getpid()
+	caps, err := capability.NewPid2(os.Getpid())
+	if err != nil {
+		t.Fatalf("error getting capabilities for pid %d: %v", pid, err)
+	}
+	if err := caps.Load(); err != nil {
+		t.Fatalf("error loading capabilities: %v", err)
+	}
+	if caps.Get(capability.EFFECTIVE, capability.CAP_NET_RAW) {
+		caps.Unset(capability.EFFECTIVE, capability.CAP_NET_RAW)
+		if err := caps.Apply(capability.EFFECTIVE); err != nil {
+			t.Fatalf("error applying capabilities")
+		}
+		// Be nice and add it back when we are done.
+		defer func() {
+			caps.Set(capability.EFFECTIVE, capability.CAP_NET_RAW)
+			if err := caps.Apply(capability.EFFECTIVE); err != nil {
+				t.Fatalf("error restoring capabilities")
+			}
+		}()
+	}
+
+	// Configure host network with raw sockets.
+	conf := testConfig()
+	conf.Network = config.NetworkHost
+	conf.EnableRaw = true
+
+	// Creating loader should fail.
+	l, err := New(Args{
+		ID:   "should-fail",
+		Spec: testSpec(),
+		Conf: conf,
+	})
+	if err == nil {
+		l.Destroy()
+		t.Fatalf("expected loader.New() to fail but it did not")
+	}
+	// Error message must be about CAP_NET_RAW.
+	if !strings.Contains(err.Error(), "CAP_NET_RAW") {
+		t.Errorf("expected error to contain CAP_NET_RAW but got %q", err)
+	}
 }
 
 type CreateMountTestcase struct {
@@ -430,62 +458,19 @@ func createMountTestcases() []*CreateMountTestcase {
 func TestCreateMountNamespace(t *testing.T) {
 	for _, tc := range createMountTestcases() {
 		t.Run(tc.name, func(t *testing.T) {
-			conf := testConfig()
-			ctx := contexttest.Context(t)
-
-			sandEnd, cleanup, err := startGofer(tc.spec.Root.Path)
-			if err != nil {
-				t.Fatalf("failed to create gofer: %v", err)
-			}
-			defer cleanup()
-
-			info := containerInfo{
-				conf:     conf,
-				spec:     &tc.spec,
-				goferFDs: []*fd.FD{fd.New(sandEnd)},
-			}
-
-			mntr := newContainerMounter(&info, nil, &podMountHints{}, false /* vfs2Enabled */)
-			mns, err := mntr.createMountNamespace(ctx, conf)
-			if err != nil {
-				t.Fatalf("failed to create mount namespace: %v", err)
-			}
-			ctx = fs.WithRoot(ctx, mns.Root())
-			if err := mntr.mountSubmounts(ctx, conf, mns); err != nil {
-				t.Fatalf("failed to create mount namespace: %v", err)
-			}
-
-			root := mns.Root()
-			defer root.DecRef(ctx)
-			for _, p := range tc.expectedPaths {
-				maxTraversals := uint(0)
-				if d, err := mns.FindInode(ctx, root, root, p, &maxTraversals); err != nil {
-					t.Errorf("expected path %v to exist with spec %v, but got error %v", p, tc.spec, err)
-				} else {
-					d.DecRef(ctx)
-				}
-			}
-		})
-	}
-}
-
-// Test that MountNamespace can be created with various specs.
-func TestCreateMountNamespaceVFS2(t *testing.T) {
-	for _, tc := range createMountTestcases() {
-		t.Run(tc.name, func(t *testing.T) {
 			spec := testSpec()
 			spec.Mounts = tc.spec.Mounts
 			spec.Root = tc.spec.Root
 
 			t.Logf("Using root: %q", spec.Root.Path)
-			l, loaderCleanup, err := createLoader(true /* VFS2 Enabled */, spec)
+			l, loaderCleanup, err := createLoader(testConfig(), spec)
 			if err != nil {
 				t.Fatalf("failed to create loader: %v", err)
 			}
 			defer l.Destroy()
 			defer loaderCleanup()
 
-			mntr := newContainerMounter(&l.root, l.k, l.mountHints, true /* vfs2Enabled */)
+			mntr := newContainerMounter(&l.root, l.k, l.mountHints, "", l.sandboxID)
 			if err := mntr.processHints(l.root.conf, l.root.procArgs.Credentials); err != nil {
 				t.Fatalf("failed process hints: %v", err)
 			}
@@ -516,216 +501,8 @@ func TestCreateMountNamespaceVFS2(t *testing.T) {
 	}
 }
 
-// TestRestoreEnvironment tests that the correct mounts are collected from the spec and config
-// in order to build the environment for restoring.
-func TestRestoreEnvironment(t *testing.T) {
-	testCases := []struct {
-		name          string
-		spec          *specs.Spec
-		ioFDs         []int
-		errorExpected bool
-		expectedRenv  fs.RestoreEnvironment
-	}{
-		{
-			name: "basic spec test",
-			spec: &specs.Spec{
-				Root: &specs.Root{
-					Path:     os.TempDir(),
-					Readonly: true,
-				},
-				Mounts: []specs.Mount{
-					{
-						Destination: "/some/very/very/deep/path",
-						Type:        "tmpfs",
-					},
-					{
-						Destination: "/proc",
-						Type:        "tmpfs",
-					},
-				},
-			},
-			ioFDs:         []int{0},
-			errorExpected: false,
-			expectedRenv: fs.RestoreEnvironment{
-				MountSources: map[string][]fs.MountArgs{
-					"9p": {
-						{
-							Dev:        "9pfs-/",
-							Flags:      fs.MountSourceFlags{ReadOnly: true},
-							DataString: "trans=fd,rfdno=0,wfdno=0,privateunixsocket=true",
-						},
-					},
-					"tmpfs": {
-						{
-							Dev: "none",
-						},
-						{
-							Dev: "none",
-						},
-						{
-							Dev: "none",
-						},
-					},
-					"devtmpfs": {
-						{
-							Dev: "none",
-						},
-					},
-					"devpts": {
-						{
-							Dev: "none",
-						},
-					},
-					"sysfs": {
-						{
-							Dev: "none",
-						},
-					},
-				},
-			},
-		},
-		{
-			name: "bind type test",
-			spec: &specs.Spec{
-				Root: &specs.Root{
-					Path:     os.TempDir(),
-					Readonly: true,
-				},
-				Mounts: []specs.Mount{
-					{
-						Destination: "/dev/fd-foo",
-						Type:        "bind",
-					},
-				},
-			},
-			ioFDs:         []int{0, 1},
-			errorExpected: false,
-			expectedRenv: fs.RestoreEnvironment{
-				MountSources: map[string][]fs.MountArgs{
-					"9p": {
-						{
-							Dev:        "9pfs-/",
-							Flags:      fs.MountSourceFlags{ReadOnly: true},
-							DataString: "trans=fd,rfdno=0,wfdno=0,privateunixsocket=true",
-						},
-						{
-							Dev:        "9pfs-/dev/fd-foo",
-							DataString: "trans=fd,rfdno=1,wfdno=1,privateunixsocket=true,cache=remote_revalidating",
-						},
-					},
-					"tmpfs": {
-						{
-							Dev: "none",
-						},
-					},
-					"devtmpfs": {
-						{
-							Dev: "none",
-						},
-					},
-					"devpts": {
-						{
-							Dev: "none",
-						},
-					},
-					"proc": {
-						{
-							Dev: "none",
-						},
-					},
-					"sysfs": {
-						{
-							Dev: "none",
-						},
-					},
-				},
-			},
-		},
-		{
-			name: "options test",
-			spec: &specs.Spec{
-				Root: &specs.Root{
-					Path:     os.TempDir(),
-					Readonly: true,
-				},
-				Mounts: []specs.Mount{
-					{
-						Destination: "/dev/fd-foo",
-						Type:        "tmpfs",
-						Options:     []string{"uid=1022", "noatime"},
-					},
-				},
-			},
-			ioFDs:         []int{0},
-			errorExpected: false,
-			expectedRenv: fs.RestoreEnvironment{
-				MountSources: map[string][]fs.MountArgs{
-					"9p": {
-						{
-							Dev:        "9pfs-/",
-							Flags:      fs.MountSourceFlags{ReadOnly: true},
-							DataString: "trans=fd,rfdno=0,wfdno=0,privateunixsocket=true",
-						},
-					},
-					"tmpfs": {
-						{
-							Dev:        "none",
-							Flags:      fs.MountSourceFlags{NoAtime: true},
-							DataString: "uid=1022",
-						},
-						{
-							Dev: "none",
-						},
-					},
-					"devtmpfs": {
-						{
-							Dev: "none",
-						},
-					},
-					"devpts": {
-						{
-							Dev: "none",
-						},
-					},
-					"proc": {
-						{
-							Dev: "none",
-						},
-					},
-					"sysfs": {
-						{
-							Dev: "none",
-						},
-					},
-				},
-			},
-		},
-	}
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			conf := testConfig()
-			var ioFDs []*fd.FD
-			for _, ioFD := range tc.ioFDs {
-				ioFDs = append(ioFDs, fd.New(ioFD))
-			}
-			info := containerInfo{
-				conf:     conf,
-				spec:     tc.spec,
-				goferFDs: ioFDs,
-			}
-			mntr := newContainerMounter(&info, nil, &podMountHints{}, false /* vfs2Enabled */)
-			actualRenv, err := mntr.createRestoreEnvironment(conf)
-			if !tc.errorExpected && err != nil {
-				t.Fatalf("could not create restore environment for test:%s", tc.name)
-			} else if tc.errorExpected {
-				if err == nil {
-					t.Errorf("expected an error, but no error occurred.")
-				}
-			} else {
-				if !reflect.DeepEqual(*actualRenv, tc.expectedRenv) {
-					t.Errorf("restore environments did not match for test:%s\ngot:%+v\nwant:%+v\n", tc.name, *actualRenv, tc.expectedRenv)
-				}
-			}
-		})
-	}
+func TestMain(m *testing.M) {
+	cpuid.Initialize()
+	seccheck.Initialize()
+	os.Exit(m.Run())
 }

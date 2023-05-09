@@ -3,6 +3,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
+//go:build checklocks
 // +build checklocks
 
 package sync
@@ -86,7 +87,7 @@ func noteUnlock(l unsafe.Pointer) {
 
 func dumpLocks() string {
 	var s strings.Builder
-	locksHeld.Range(func(key, value interface{}) bool {
+	locksHeld.Range(func(key, value any) bool {
 		goid := key.(int64)
 		locks := value.(*gLocks)
 

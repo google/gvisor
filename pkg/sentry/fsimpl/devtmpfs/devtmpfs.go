@@ -36,7 +36,7 @@ const Name = "devtmpfs"
 //
 // +stateify savable
 type FilesystemType struct {
-	initOnce sync.Once `state:"nosave"` // FIXME(gvisor.dev/issue/1664): not yet supported.
+	initOnce sync.Once `state:"nosave"` // FIXME(gvisor.dev/issue/1663): not yet supported.
 	initErr  error
 
 	// fs is the tmpfs filesystem that backs all mounts of this FilesystemType.
@@ -127,7 +127,7 @@ func (a *Accessor) wrapContext(ctx context.Context) *accessorContext {
 }
 
 // Value implements context.Context.Value.
-func (ac *accessorContext) Value(key interface{}) interface{} {
+func (ac *accessorContext) Value(key any) any {
 	switch key {
 	case vfs.CtxMountNamespace:
 		ac.a.mntns.IncRef()

@@ -25,12 +25,18 @@ TEXT ·swapUint32(SB), NOSPLIT, $0-24
 	// handleSwapUint32Fault will store a different value in this address.
 	MOVW $0, sig+20(FP)
 again:
-	MOVD addr+0(FP), R0
+	MOVD ptr+0(FP), R0
 	MOVW new+8(FP), R1
 	LDAXRW (R0), R2
 	STLXRW R1, (R0), R3
 	CBNZ R3, again
 	MOVW R2, old+16(FP)
+	RET
+
+// func addrOfSwapUint32() uintptr
+TEXT ·addrOfSwapUint32(SB), $0-8
+	MOVD	$·swapUint32(SB), R0
+	MOVD	R0, ret+0(FP)
 	RET
 
 // handleSwapUint64Fault returns the value stored in R1. Control is transferred
@@ -54,12 +60,18 @@ TEXT ·swapUint64(SB), NOSPLIT, $0-28
 	// handleSwapUint64Fault will store a different value in this address.
 	MOVW $0, sig+24(FP)
 again:
-	MOVD addr+0(FP), R0
+	MOVD ptr+0(FP), R0
 	MOVD new+8(FP), R1
 	LDAXR (R0), R2
 	STLXR R1, (R0), R3
 	CBNZ R3, again
 	MOVD R2, old+16(FP)
+	RET
+
+// func addrOfSwapUint64() uintptr
+TEXT ·addrOfSwapUint64(SB), $0-8
+	MOVD	$·swapUint64(SB), R0
+	MOVD	R0, ret+0(FP)
 	RET
 
 // handleCompareAndSwapUint32Fault returns the value stored in R1. Control is
@@ -84,7 +96,7 @@ TEXT ·compareAndSwapUint32(SB), NOSPLIT, $0-24
 	// address.
 	MOVW $0, sig+20(FP)
 
-	MOVD addr+0(FP), R0
+	MOVD ptr+0(FP), R0
 	MOVW old+8(FP), R1
 	MOVW new+12(FP), R2
 again:
@@ -97,6 +109,12 @@ done:
 	MOVW R3, prev+16(FP)
 	RET
 
+// func addrOfCompareAndSwapUint32() uintptr
+TEXT ·addrOfCompareAndSwapUint32(SB), $0-8
+	MOVD	$·compareAndSwapUint32(SB), R0
+	MOVD	R0, ret+0(FP)
+	RET
+
 // handleLoadUint32Fault returns the value stored in DI. Control is transferred
 // to it when LoadUint32 below receives SIGSEGV or SIGBUS, with the signal
 // number stored in DI.
@@ -107,11 +125,11 @@ TEXT handleLoadUint32Fault(SB), NOSPLIT, $0-16
 	MOVW R1, sig+12(FP)
 	RET
 
-// loadUint32 atomically loads *addr and returns it. If a SIGSEGV or SIGBUS
+// loadUint32 atomically loads *ptr and returns it. If a SIGSEGV or SIGBUS
 // signal is received, the value returned is unspecified, and sig is the number
 // of the signal that was received.
 //
-// Preconditions: addr must be aligned to a 4-byte boundary.
+// Preconditions: ptr must be aligned to a 4-byte boundary.
 //
 //func loadUint32(ptr unsafe.Pointer) (val uint32, sig int32)
 TEXT ·loadUint32(SB), NOSPLIT, $0-16
@@ -120,7 +138,13 @@ TEXT ·loadUint32(SB), NOSPLIT, $0-16
 	// handleLoadUint32Fault will store a different value in this address.
 	MOVW $0, sig+12(FP)
 
-	MOVD addr+0(FP), R0
+	MOVD ptr+0(FP), R0
 	LDARW (R0), R1
 	MOVW R1, val+8(FP)
+	RET
+
+// func addrOfLoadUint32() uintptr
+TEXT ·addrOfLoadUint32(SB), $0-8
+	MOVD	$·loadUint32(SB), R0
+	MOVD	R0, ret+0(FP)
 	RET

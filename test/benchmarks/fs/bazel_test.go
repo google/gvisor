@@ -4,34 +4,25 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+
+// Package bazel_test benchmarks builds using bazel.
 package bazel_test
 
 import (
 	"context"
-	"fmt"
 	"os"
-	"strings"
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/cleanup"
-	"gvisor.dev/gvisor/pkg/test/dockerutil"
+	"gvisor.dev/gvisor/test/benchmarks/fs/fsbench"
 	"gvisor.dev/gvisor/test/benchmarks/harness"
-	"gvisor.dev/gvisor/test/benchmarks/tools"
 )
-
-// Dimensions here are clean/dirty cache (do or don't drop caches)
-// and if the mount on which we are compiling is a tmpfs/bind mount.
-type benchmark struct {
-	clearCache bool                   // clearCache drops caches before running.
-	fstype     harness.FileSystemType // type of filesystem to use.
-}
 
 // Note: CleanCache versions of this test require running with root permissions.
 func BenchmarkBuildABSL(b *testing.B) {
@@ -39,117 +30,27 @@ func BenchmarkBuildABSL(b *testing.B) {
 }
 
 // Note: CleanCache versions of this test require running with root permissions.
-// Note: This test takes on the order of 10m per permutation for runsc on kvm.
-func BenchmarkBuildRunsc(b *testing.B) {
-	runBuildBenchmark(b, "benchmarks/runsc", "/gvisor", "runsc:runsc")
+// Note: This test takes on the order of 6m per permutation for runsc on kvm.
+func BenchmarkBuildGRPC(b *testing.B) {
+	runBuildBenchmark(b, "benchmarks/build-grpc", "/grpc", ":grpc")
 }
 
-func runBuildBenchmark(b *testing.B, image, workdir, target string) {
+func runBuildBenchmark(b *testing.B, image, workDir, target string) {
 	b.Helper()
+	ctx := context.Background()
 	// Get a machine from the Harness on which to run.
 	machine, err := harness.GetMachine()
 	if err != nil {
 		b.Fatalf("Failed to get machine: %v", err)
 	}
 	defer machine.CleanUp()
-
-	benchmarks := make([]benchmark, 0, 6)
-	for _, filesys := range []harness.FileSystemType{harness.BindFS, harness.TmpFS, harness.RootFS} {
-		benchmarks = append(benchmarks, benchmark{
-			clearCache: true,
-			fstype:     filesys,
-		})
-		benchmarks = append(benchmarks, benchmark{
-			clearCache: false,
-			fstype:     filesys,
-		})
-	}
-
-	for _, bm := range benchmarks {
-		pageCache := tools.Parameter{
-			Name:  "page_cache",
-			Value: "dirty",
-		}
-		if bm.clearCache {
-			pageCache.Value = "clean"
-		}
-
-		filesystem := tools.Parameter{
-			Name:  "filesystem",
-			Value: string(bm.fstype),
-		}
-		name, err := tools.ParametersToName(pageCache, filesystem)
-		if err != nil {
-			b.Fatalf("Failed to parse parameters: %v", err)
-		}
-
-		b.Run(name, func(b *testing.B) {
-			// Grab a container.
-			ctx := context.Background()
-			container := machine.GetContainer(ctx, b)
-			cu := cleanup.Make(func() {
-				container.CleanUp(ctx)
-			})
-			defer cu.Clean()
-			mts, prefix, err := harness.MakeMount(machine, bm.fstype, &cu)
-			if err != nil {
-				b.Fatalf("Failed to make mount: %v", err)
-			}
-
-			runOpts := dockerutil.RunOpts{
-				Image:  image,
-				Mounts: mts,
-			}
-
-			// Start a container and sleep.
-			if err := container.Spawn(ctx, runOpts, "sleep", fmt.Sprintf("%d", 1000000)); err != nil {
-				b.Fatalf("run failed with: %v", err)
-			}
-
-			cpCmd := fmt.Sprintf("mkdir -p %s && cp -r %s %s/.", prefix, workdir, prefix)
-			if out, err := container.Exec(ctx, dockerutil.ExecOpts{},
-				"/bin/sh", "-c", cpCmd); err != nil {
-				b.Fatalf("failed to copy directory: %v (%s)", err, out)
-			}
-
-			b.ResetTimer()
-			b.StopTimer()
-
-			// Drop Caches and bazel clean should happen inside the loop as we may use
-			// time options with b.N. (e.g. Run for an hour.)
-			for i := 0; i < b.N; i++ {
-				// Drop Caches for clear cache runs.
-				if bm.clearCache {
-					if err := harness.DropCaches(machine); err != nil {
-						b.Skipf("failed to drop caches: %v. You probably need root.", err)
-					}
-				}
-
-				b.StartTimer()
-				got, err := container.Exec(ctx, dockerutil.ExecOpts{
-					WorkDir: prefix + workdir,
-				}, "bazel", "build", "-c", "opt", target)
-				if err != nil {
-					b.Fatalf("build failed with: %v logs: %s", err, got)
-				}
-				b.StopTimer()
-
-				want := "Build completed successfully"
-				if !strings.Contains(got, want) {
-					b.Fatalf("string %s not in: %s", want, got)
-				}
-
-				// Clean bazel in the case we are doing another run.
-				if i < b.N-1 {
-					if _, err = container.Exec(ctx, dockerutil.ExecOpts{
-						WorkDir: prefix + workdir,
-					}, "bazel", "clean"); err != nil {
-						b.Fatalf("build failed with: %v", err)
-					}
-				}
-			}
-		})
-	}
+	fsbench.RunWithDifferentFilesystems(ctx, b, machine, fsbench.FSBenchmark{
+		Image:      image,
+		WorkDir:    workDir,
+		RunCmd:     []string{"bazel", "build", "-c", "opt", target},
+		WantOutput: "Build completed successfully",
+		CleanCmd:   []string{"blaze", "clean"},
+	})
 }
 
 // TestMain is the main method for package fs.

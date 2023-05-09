@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build arm64
 // +build arm64
 
 package kvm
@@ -61,8 +62,8 @@ type kvmVcpuEvents struct {
 
 // updateGlobalOnce does global initialization. It has to be called only once.
 func updateGlobalOnce(fd int) error {
-	physicalInit()
 	err := updateSystemValues(int(fd))
 	ring0.Init()
+	physicalInit()
 	return err
 }

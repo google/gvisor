@@ -17,10 +17,12 @@ package proc
 import (
 	"bytes"
 	"fmt"
+	"runtime"
 	"strconv"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -28,7 +30,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // +stateify savable
@@ -37,6 +38,7 @@ type selfSymlink struct {
 	kernfs.InodeAttrs
 	kernfs.InodeNoopRefCount
 	kernfs.InodeSymlink
+	kernfs.InodeWatches
 
 	pidns *kernel.PIDNamespace
 }
@@ -53,11 +55,11 @@ func (s *selfSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string, error
 	t := kernel.TaskFromContext(ctx)
 	if t == nil {
 		// Who is reading this link?
-		return "", syserror.EINVAL
+		return "", linuxerr.EINVAL
 	}
 	tgid := s.pidns.IDOfThreadGroup(t.ThreadGroup())
 	if tgid == 0 {
-		return "", syserror.ENOENT
+		return "", linuxerr.ENOENT
 	}
 	return strconv.FormatUint(uint64(tgid), 10), nil
 }
@@ -69,7 +71,7 @@ func (s *selfSymlink) Getlink(ctx context.Context, mnt *vfs.Mount) (vfs.VirtualD
 
 // SetStat implements kernfs.Inode.SetStat not allowing inode attributes to be changed.
 func (*selfSymlink) SetStat(context.Context, *vfs.Filesystem, *auth.Credentials, vfs.SetStatOptions) error {
-	return syserror.EPERM
+	return linuxerr.EPERM
 }
 
 // +stateify savable
@@ -78,6 +80,7 @@ type threadSelfSymlink struct {
 	kernfs.InodeAttrs
 	kernfs.InodeNoopRefCount
 	kernfs.InodeSymlink
+	kernfs.InodeWatches
 
 	pidns *kernel.PIDNamespace
 }
@@ -94,12 +97,12 @@ func (s *threadSelfSymlink) Readlink(ctx context.Context, _ *vfs.Mount) (string,
 	t := kernel.TaskFromContext(ctx)
 	if t == nil {
 		// Who is reading this link?
-		return "", syserror.EINVAL
+		return "", linuxerr.EINVAL
 	}
 	tgid := s.pidns.IDOfThreadGroup(t.ThreadGroup())
 	tid := s.pidns.IDOfTask(t)
 	if tid == 0 || tgid == 0 {
-		return "", syserror.ENOENT
+		return "", linuxerr.ENOENT
 	}
 	return fmt.Sprintf("%d/task/%d", tgid, tid), nil
 }
@@ -111,7 +114,7 @@ func (s *threadSelfSymlink) Getlink(ctx context.Context, mnt *vfs.Mount) (vfs.Vi
 
 // SetStat implements kernfs.Inode.SetStat not allowing inode attributes to be changed.
 func (*threadSelfSymlink) SetStat(context.Context, *vfs.Filesystem, *auth.Credentials, vfs.SetStatOptions) error {
-	return syserror.EPERM
+	return linuxerr.EPERM
 }
 
 // dynamicBytesFileSetAttr implements a special file that allows inode
@@ -262,9 +265,8 @@ var _ dynamicInode = (*meminfoData)(nil)
 
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (*meminfoData) Generate(ctx context.Context, buf *bytes.Buffer) error {
-	k := kernel.KernelFromContext(ctx)
-	mf := k.MemoryFile()
-	mf.UpdateUsage()
+	mf := kernel.KernelFromContext(ctx).MemoryFile()
+	_ = mf.UpdateUsage() // Best effort
 	snapshot, totalUsage := usage.MemoryAccounting.Copy()
 	totalSize := usage.TotalMemory(mf.TotalSize(), totalUsage)
 	anon := snapshot.Anonymous + snapshot.Tmpfs
@@ -336,27 +338,18 @@ var _ dynamicInode = (*versionData)(nil)
 
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (*versionData) Generate(ctx context.Context, buf *bytes.Buffer) error {
-	k := kernel.KernelFromContext(ctx)
-	init := k.GlobalInit()
-	if init == nil {
-		// Attempted to read before the init Task is created. This can
-		// only occur during startup, which should never need to read
-		// this file.
-		panic("Attempted to read version before initial Task is available")
-	}
-
 	// /proc/version takes the form:
 	//
 	// "SYSNAME version RELEASE (COMPILE_USER@COMPILE_HOST)
 	// (COMPILER_VERSION) VERSION"
 	//
 	// where:
-	// - SYSNAME, RELEASE, and VERSION are the same as returned by
-	// sys_utsname
-	// - COMPILE_USER is the user that build the kernel
-	// - COMPILE_HOST is the hostname of the machine on which the kernel
-	// was built
-	// - COMPILER_VERSION is the version reported by the building compiler
+	//	- SYSNAME, RELEASE, and VERSION are the same as returned by
+	//		sys_utsname
+	//	- COMPILE_USER is the user that build the kernel
+	//	- COMPILE_HOST is the hostname of the machine on which the kernel
+	//		was built
+	//	- COMPILER_VERSION is the version reported by the building compiler
 	//
 	// Since we don't really want to expose build information to
 	// applications, those fields are omitted.
@@ -364,7 +357,7 @@ func (*versionData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	// FIXME(mpratt): Using Version from the init task SyscallTable
 	// disregards the different version a task may have (e.g., in a uts
 	// namespace).
-	ver := init.Leader().SyscallTable().Version
+	ver := kernelVersion(ctx)
 	fmt.Fprintf(buf, "%s version %s %s\n", ver.Sysname, ver.Release, ver.Version)
 	return nil
 }
@@ -398,5 +391,59 @@ var _ dynamicInode = (*cgroupsData)(nil)
 func (*cgroupsData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	r := kernel.KernelFromContext(ctx).CgroupRegistry()
 	r.GenerateProcCgroups(buf)
+	return nil
+}
+
+// cmdLineData backs /proc/cmdline.
+//
+// +stateify savable
+type cmdLineData struct {
+	dynamicBytesFileSetAttr
+}
+
+var _ dynamicInode = (*cmdLineData)(nil)
+
+// Generate implements vfs.DynamicByteSource.Generate.
+func (*cmdLineData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	fmt.Fprintf(buf, "BOOT_IMAGE=/vmlinuz-%s-gvisor quiet\n", kernelVersion(ctx).Release)
+	return nil
+}
+
+// kernelVersion returns the kernel version.
+func kernelVersion(ctx context.Context) kernel.Version {
+	k := kernel.KernelFromContext(ctx)
+	init := k.GlobalInit()
+	if init == nil {
+		// Attempted to read before the init Task is created. This can
+		// only occur during startup, which should never need to read
+		// this file.
+		panic("Attempted to read version before initial Task is available")
+	}
+	return init.Leader().SyscallTable().Version
+}
+
+// sentryMeminfoData implements vfs.DynamicBytesSource for /proc/sentry-meminfo.
+//
+// +stateify savable
+type sentryMeminfoData struct {
+	dynamicBytesFileSetAttr
+}
+
+var _ dynamicInode = (*sentryMeminfoData)(nil)
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (*sentryMeminfoData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	var sentryMeminfo runtime.MemStats
+	runtime.ReadMemStats(&sentryMeminfo)
+
+	fmt.Fprintf(buf, "Alloc:          %8d kB\n", sentryMeminfo.Alloc/1024)
+	fmt.Fprintf(buf, "TotalAlloc:     %8d kB\n", sentryMeminfo.TotalAlloc/1024)
+	fmt.Fprintf(buf, "Sys:            %8d kB\n", sentryMeminfo.Sys/1024)
+	fmt.Fprintf(buf, "Mallocs:        %8d\n", sentryMeminfo.Mallocs)
+	fmt.Fprintf(buf, "Frees:          %8d\n", sentryMeminfo.Frees)
+	fmt.Fprintf(buf, "Live Objects:   %8d\n", sentryMeminfo.Mallocs-sentryMeminfo.Frees)
+	fmt.Fprintf(buf, "HeapAlloc:      %8d kB\n", sentryMeminfo.HeapAlloc/1024)
+	fmt.Fprintf(buf, "HeapSys:        %8d kB\n", sentryMeminfo.HeapSys/1024)
+	fmt.Fprintf(buf, "HeapObjects:    %8d\n", sentryMeminfo.HeapObjects)
 	return nil
 }

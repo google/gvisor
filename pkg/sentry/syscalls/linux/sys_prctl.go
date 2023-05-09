@@ -18,27 +18,26 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
-	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
-	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
 // Prctl implements linux syscall prctl(2).
 // It has a list of subfunctions which operate on the process. The arguments are
 // all based on each subfunction.
-func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Prctl(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	option := args[0].Int()
 
 	switch option {
 	case linux.PR_SET_PDEATHSIG:
 		sig := linux.Signal(args[1].Int())
 		if sig != 0 && !sig.IsValid() {
-			return 0, nil, syserror.EINVAL
+			return 0, nil, linuxerr.EINVAL
 		}
 		t.SetParentDeathSignal(sig)
 		return 0, nil, nil
@@ -69,7 +68,7 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 			d = mm.UserDumpable
 		default:
 			// N.B. Userspace may not pass SUID_DUMP_ROOT.
-			return 0, nil, syserror.EINVAL
+			return 0, nil, linuxerr.EINVAL
 		}
 		t.MemoryManager().SetDumpability(d)
 		return 0, nil, nil
@@ -90,7 +89,7 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		} else if val == 1 {
 			t.SetKeepCaps(true)
 		} else {
-			return 0, nil, syserror.EINVAL
+			return 0, nil, linuxerr.EINVAL
 		}
 
 		return 0, nil, nil
@@ -98,7 +97,7 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	case linux.PR_SET_NAME:
 		addr := args[1].Pointer()
 		name, err := t.CopyInString(addr, linux.TASK_COMM_LEN-1)
-		if err != nil && err != syserror.ENAMETOOLONG {
+		if err != nil && !linuxerr.Equals(linuxerr.ENAMETOOLONG, err) {
 			return 0, nil, err
 		}
 		t.SetName(name)
@@ -118,7 +117,7 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	case linux.PR_SET_MM:
 		if !t.HasCapability(linux.CAP_SYS_RESOURCE) {
-			return 0, nil, syserror.EPERM
+			return 0, nil, linuxerr.EPERM
 		}
 
 		switch args[1].Int() {
@@ -127,17 +126,21 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 			file := t.GetFile(fd)
 			if file == nil {
-				return 0, nil, syserror.EBADF
+				return 0, nil, linuxerr.EBADF
 			}
 			defer file.DecRef(t)
 
 			// They trying to set exe to a non-file?
-			if !fs.IsFile(file.Dirent.Inode.StableAttr) {
-				return 0, nil, syserror.EBADF
+			stat, err := file.Stat(t, vfs.StatOptions{Mask: linux.STATX_TYPE})
+			if err != nil {
+				return 0, nil, err
+			}
+			if stat.Mask&linux.STATX_TYPE == 0 || stat.Mode&linux.FileTypeMask != linux.ModeRegular {
+				return 0, nil, linuxerr.EBADF
 			}
 
 			// Set the underlying executable.
-			t.MemoryManager().SetExecutable(t, fsbridge.NewFSFile(file))
+			t.MemoryManager().SetExecutable(t, file)
 
 		case linux.PR_SET_MM_AUXV,
 			linux.PR_SET_MM_START_CODE,
@@ -152,15 +155,15 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 			linux.PR_SET_MM_ENV_START,
 			linux.PR_SET_MM_ENV_END:
 
-			t.Kernel().EmitUnimplementedEvent(t)
+			t.Kernel().EmitUnimplementedEvent(t, sysno)
 			fallthrough
 		default:
-			return 0, nil, syserror.EINVAL
+			return 0, nil, linuxerr.EINVAL
 		}
 
 	case linux.PR_SET_NO_NEW_PRIVS:
 		if args[1].Int() != 1 || args[2].Int() != 0 || args[3].Int() != 0 || args[4].Int() != 0 {
-			return 0, nil, syserror.EINVAL
+			return 0, nil, linuxerr.EINVAL
 		}
 		// PR_SET_NO_NEW_PRIVS is assumed to always be set.
 		// See kernel.Task.updateCredsForExecLocked.
@@ -168,7 +171,7 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 
 	case linux.PR_GET_NO_NEW_PRIVS:
 		if args[1].Int() != 0 || args[2].Int() != 0 || args[3].Int() != 0 || args[4].Int() != 0 {
-			return 0, nil, syserror.EINVAL
+			return 0, nil, linuxerr.EINVAL
 		}
 		return 1, nil, nil
 
@@ -184,7 +187,7 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		default:
 			tracer := t.PIDNamespace().TaskWithID(kernel.ThreadID(pid))
 			if tracer == nil {
-				return 0, nil, syserror.EINVAL
+				return 0, nil, linuxerr.EINVAL
 			}
 			t.SetYAMAException(tracer)
 			return 0, nil, nil
@@ -193,7 +196,7 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	case linux.PR_SET_SECCOMP:
 		if args[1].Int() != linux.SECCOMP_MODE_FILTER {
 			// Unsupported mode.
-			return 0, nil, syserror.EINVAL
+			return 0, nil, linuxerr.EINVAL
 		}
 
 		return 0, nil, seccomp(t, linux.SECCOMP_SET_MODE_FILTER, 0, args[2].Pointer())
@@ -204,7 +207,7 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	case linux.PR_CAPBSET_READ:
 		cp := linux.Capability(args[1].Uint64())
 		if !cp.Ok() {
-			return 0, nil, syserror.EINVAL
+			return 0, nil, linuxerr.EINVAL
 		}
 		var rv uintptr
 		if auth.CapabilitySetOf(cp)&t.Credentials().BoundingCaps != 0 {
@@ -215,9 +218,24 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 	case linux.PR_CAPBSET_DROP:
 		cp := linux.Capability(args[1].Uint64())
 		if !cp.Ok() {
-			return 0, nil, syserror.EINVAL
+			return 0, nil, linuxerr.EINVAL
 		}
 		return 0, nil, t.DropBoundingCapability(cp)
+
+	case linux.PR_SET_CHILD_SUBREAPER:
+		// "If arg2 is nonzero, set the "child subreaper" attribute of
+		// the calling process; if arg2 is zero, unset the attribute."
+		//
+		// TODO(gvisor.dev/issues/2323): We only support setting, and
+		// only if the task is already TID 1 in the PID namespace,
+		// because it already acts as a subreaper in that case.
+		isPid1 := t.PIDNamespace().IDOfTask(t) == kernel.InitTID
+		if args[1].Int() != 0 && isPid1 {
+			return 0, nil, nil
+		}
+
+		t.Kernel().EmitUnimplementedEvent(t, sysno)
+		return 0, nil, linuxerr.EINVAL
 
 	case linux.PR_GET_TIMING,
 		linux.PR_SET_TIMING,
@@ -230,17 +248,16 @@ func Prctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		linux.PR_MCE_KILL,
 		linux.PR_MCE_KILL_GET,
 		linux.PR_GET_TID_ADDRESS,
-		linux.PR_SET_CHILD_SUBREAPER,
 		linux.PR_GET_CHILD_SUBREAPER,
 		linux.PR_GET_THP_DISABLE,
 		linux.PR_SET_THP_DISABLE,
 		linux.PR_MPX_ENABLE_MANAGEMENT,
 		linux.PR_MPX_DISABLE_MANAGEMENT:
 
-		t.Kernel().EmitUnimplementedEvent(t)
+		t.Kernel().EmitUnimplementedEvent(t, sysno)
 		fallthrough
 	default:
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	return 0, nil, nil

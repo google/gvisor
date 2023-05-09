@@ -19,8 +19,8 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/prependable"
 )
 
 func TestIPv4OptionsSerializer(t *testing.T) {
@@ -150,7 +150,7 @@ func TestIPv4EncodeOptions(t *testing.T) {
 				t.Fatalf("IP header length too large: got = %d, want <= %d ", ipHeaderLength, header.IPv4MaximumHeaderSize)
 			}
 			totalLen := uint16(ipHeaderLength)
-			hdr := buffer.NewPrependable(int(totalLen))
+			hdr := prependable.New(int(totalLen))
 			ip := header.IPv4(hdr.Prepend(ipHeaderLength))
 			// To check the padding works, poison the last byte of the options space.
 			if paddedOptionLength != serializeOpts.Length() {

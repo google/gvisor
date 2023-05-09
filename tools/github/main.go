@@ -22,12 +22,10 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/google/go-github/github"
 	"golang.org/x/oauth2"
-	"gvisor.dev/gvisor/tools/github/nogo"
 	"gvisor.dev/gvisor/tools/github/reviver"
 )
 
@@ -53,11 +51,10 @@ func (s *stringList) Set(value string) error {
 
 // Keep the options simple for now. Supports only a single path and repo.
 func init() {
-	flag.StringVar(&owner, "owner", "", "GitHub project org/owner (required, except nogo dry-run)")
-	flag.StringVar(&repo, "repo", "", "GitHub repo (required, except nogo dry-run)")
+	flag.StringVar(&owner, "owner", "", "GitHub project org/owner")
+	flag.StringVar(&repo, "repo", "", "GitHub repo")
 	flag.StringVar(&tokenFile, "oauth-token-file", "", "file containing the GitHub token (or GITHUB_TOKEN is set)")
-	flag.Var(&paths, "path", "path(s) to scan (required for revive and nogo)")
-	flag.StringVar(&commit, "commit", "", "commit to associated (required for nogo, except dry-run)")
+	flag.Var(&paths, "path", "path(s) to scan (required for revive)")
 	flag.BoolVar(&dryRun, "dry-run", false, "just print changes to be made")
 }
 
@@ -96,12 +93,12 @@ func main() {
 
 	// Check for mandatory parameters.
 	command := args[0]
-	if len(owner) == 0 && (command != "nogo" || !dryRun) {
+	if len(owner) == 0 {
 		fmt.Fprintln(flag.CommandLine.Output(), "missing --owner option.")
 		flag.Usage()
 		os.Exit(1)
 	}
-	if len(repo) == 0 && (command != "nogo" || !dryRun) {
+	if len(repo) == 0 {
 		fmt.Fprintln(flag.CommandLine.Output(), "missing --repo option.")
 		flag.Usage()
 		os.Exit(1)
@@ -154,28 +151,6 @@ func main() {
 				fmt.Fprintf(os.Stderr, "\t%v\n", err)
 			}
 			os.Exit(1)
-		}
-	case "nogo":
-		// Did we get a commit? Try to extract one.
-		if len(commit) == 0 && !dryRun {
-			cmd := exec.Command("git", "rev-parse", "HEAD")
-			revBytes, err := cmd.Output()
-			if err != nil {
-				fmt.Fprintf(flag.CommandLine.Output(), "missing --commit option, unable to infer: %v\n", err)
-				flag.Usage()
-				os.Exit(1)
-			}
-			commit = strings.TrimSpace(string(revBytes))
-		}
-		// Scan all findings.
-		poster := nogo.NewFindingsPoster(client, owner, repo, commit, dryRun)
-		if err := poster.Walk(filteredPaths); err != nil {
-			fmt.Fprintln(os.Stderr, "Error finding nogo findings:", err)
-			os.Exit(1)
-		}
-		// Post to GitHub.
-		if err := poster.Post(); err != nil {
-			fmt.Fprintln(os.Stderr, "Error posting nogo findings:", err)
 		}
 	default:
 		// Not a known command.

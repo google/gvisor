@@ -121,7 +121,8 @@ TEST(LseekTest, InvalidFD) {
 }
 
 TEST(LseekTest, DirCurEnd) {
-  const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open("/tmp", O_RDONLY));
+  const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(GetAbsoluteTestTmpdir().c_str(), O_RDONLY));
   ASSERT_THAT(lseek(fd.get(), 0, SEEK_CUR), SyscallSucceedsWithValue(0));
 }
 
@@ -150,7 +151,7 @@ TEST(LseekTest, SeekCurrentDir) {
   // From include/linux/fs.h.
   constexpr loff_t MAX_LFS_FILESIZE = 0x7fffffffffffffff;
 
-  char* dir = get_current_dir_name();
+  char* dir = getcwd(NULL, 0);
   const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(dir, O_RDONLY));
 
   ASSERT_THAT(lseek(fd.get(), 0, SEEK_CUR), SyscallSucceeds());
@@ -192,6 +193,25 @@ TEST(LseekTest, EtcPasswdDup) {
 
   const FileDescriptor fd3 = ASSERT_NO_ERRNO_AND_VALUE(fd1.Dup());
   ASSERT_THAT(lseek(fd3.get(), 0, SEEK_CUR), SyscallSucceedsWithValue(1000));
+}
+
+TEST(LseekTest, SeekDataAndSeekHole) {
+  auto file_name = NewTempAbsPath();
+  std::string contents("DEADBEEF");
+  ASSERT_NO_ERRNO(CreateWithContents(file_name, contents, 0666));
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file_name, O_RDWR));
+
+  // Not all filesystems support SEEK_DATA and SEEK_HOLE yet.
+  SKIP_IF(lseek(fd.get(), 0, SEEK_DATA) == -1 && errno == EINVAL);
+
+  int mid = contents.size() / 2, end = contents.size();
+  ASSERT_THAT(lseek(fd.get(), mid, SEEK_DATA), SyscallSucceedsWithValue(mid));
+  ASSERT_THAT(lseek(fd.get(), mid, SEEK_HOLE), SyscallSucceedsWithValue(end));
+
+  // "ENXIO   whence is SEEK_DATA or SEEK_HOLE, and offset is beyond the end of
+  //          the file"  - lseek(2)
+  ASSERT_THAT(lseek(fd.get(), end, SEEK_DATA), SyscallFailsWithErrno(ENXIO));
+  ASSERT_THAT(lseek(fd.get(), end, SEEK_HOLE), SyscallFailsWithErrno(ENXIO));
 }
 
 // TODO(magi): Add tests where we have donated in sockets.

@@ -51,22 +51,22 @@ func (e *Endpoint) Init(child stack.LinkEndpoint, embedder stack.NetworkDispatch
 }
 
 // DeliverNetworkPacket implements stack.NetworkDispatcher.
-func (e *Endpoint) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+func (e *Endpoint) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr) {
 	e.mu.RLock()
 	d := e.dispatcher
 	e.mu.RUnlock()
 	if d != nil {
-		d.DeliverNetworkPacket(remote, local, protocol, pkt)
+		d.DeliverNetworkPacket(protocol, pkt)
 	}
 }
 
-// DeliverOutboundPacket implements stack.NetworkDispatcher.DeliverOutboundPacket.
-func (e *Endpoint) DeliverOutboundPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+// DeliverLinkPacket implements stack.NetworkDispatcher.
+func (e *Endpoint) DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr) {
 	e.mu.RLock()
 	d := e.dispatcher
 	e.mu.RUnlock()
 	if d != nil {
-		d.DeliverOutboundPacket(remote, local, protocol, pkt)
+		d.DeliverLinkPacket(protocol, pkt)
 	}
 }
 
@@ -112,14 +112,9 @@ func (e *Endpoint) LinkAddress() tcpip.LinkAddress {
 	return e.child.LinkAddress()
 }
 
-// WritePacket implements stack.LinkEndpoint.
-func (e *Endpoint) WritePacket(r stack.RouteInfo, gso *stack.GSO, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
-	return e.child.WritePacket(r, gso, protocol, pkt)
-}
-
 // WritePackets implements stack.LinkEndpoint.
-func (e *Endpoint) WritePackets(r stack.RouteInfo, gso *stack.GSO, pkts stack.PacketBufferList, protocol tcpip.NetworkProtocolNumber) (int, tcpip.Error) {
-	return e.child.WritePackets(r, gso, pkts, protocol)
+func (e *Endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
+	return e.child.WritePackets(pkts)
 }
 
 // Wait implements stack.LinkEndpoint.
@@ -135,12 +130,20 @@ func (e *Endpoint) GSOMaxSize() uint32 {
 	return 0
 }
 
+// SupportedGSO implements stack.GSOEndpoint.
+func (e *Endpoint) SupportedGSO() stack.SupportedGSO {
+	if e, ok := e.child.(stack.GSOEndpoint); ok {
+		return e.SupportedGSO()
+	}
+	return stack.GSONotSupported
+}
+
 // ARPHardwareType implements stack.LinkEndpoint.ARPHardwareType
 func (e *Endpoint) ARPHardwareType() header.ARPHardwareType {
 	return e.child.ARPHardwareType()
 }
 
 // AddHeader implements stack.LinkEndpoint.AddHeader.
-func (e *Endpoint) AddHeader(local, remote tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
-	e.child.AddHeader(local, remote, protocol, pkt)
+func (e *Endpoint) AddHeader(pkt stack.PacketBufferPtr) {
+	e.child.AddHeader(pkt)
 }

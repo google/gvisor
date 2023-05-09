@@ -15,8 +15,6 @@
 package kvm
 
 import (
-	"sync/atomic"
-
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
@@ -27,7 +25,7 @@ import (
 
 // dirtySet tracks vCPUs for invalidation.
 type dirtySet struct {
-	vCPUMasks []uint64
+	vCPUMasks []atomicbitops.Uint64
 }
 
 // forEach iterates over all CPUs in the dirty set.
@@ -35,7 +33,7 @@ type dirtySet struct {
 //go:nosplit
 func (ds *dirtySet) forEach(m *machine, fn func(c *vCPU)) {
 	for index := range ds.vCPUMasks {
-		mask := atomic.SwapUint64(&ds.vCPUMasks[index], 0)
+		mask := ds.vCPUMasks[index].Swap(0)
 		if mask != 0 {
 			for bit := 0; bit < 64; bit++ {
 				if mask&(1<<uint64(bit)) == 0 {
@@ -54,7 +52,7 @@ func (ds *dirtySet) mark(c *vCPU) bool {
 	index := uint64(c.id) / 64
 	bit := uint64(1) << uint(c.id%64)
 
-	oldValue := atomic.LoadUint64(&ds.vCPUMasks[index])
+	oldValue := ds.vCPUMasks[index].Load()
 	if oldValue&bit != 0 {
 		return false // Not clean.
 	}
@@ -83,15 +81,6 @@ type addressSpace struct {
 
 	// dirtySet is the set of dirty vCPUs.
 	dirtySet *dirtySet
-}
-
-// invalidate is the implementation for Invalidate.
-func (as *addressSpace) invalidate() {
-	as.dirtySet.forEach(as.machine, func(c *vCPU) {
-		if c.active.get() == as { // If this happens to be active,
-			c.BounceToKernel() // ... force a kernel transition.
-		}
-	})
 }
 
 // Invalidate interrupts all dirty contexts.
@@ -132,7 +121,7 @@ func (as *addressSpace) mapLocked(addr hostarch.Addr, m hostMapEntry, at hostarc
 		// not have physical mappings, the KVM module may inject
 		// spurious exceptions when emulation fails (i.e. it tries to
 		// emulate because the RIP is pointed at those pages).
-		as.machine.mapPhysical(physical, length, physicalRegions, _KVM_MEM_FLAGS_NONE)
+		as.machine.mapPhysical(physical, length, physicalRegions)
 
 		// Install the page table mappings. Note that the ordering is
 		// important; if the pagetable mappings were installed before

@@ -16,7 +16,6 @@ package control
 
 import (
 	"fmt"
-	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/strace"
@@ -50,20 +49,20 @@ type LoggingArgs struct {
 	// enable strace at all. If this flag is false then a completely
 	// pristine copy of the syscall table will be swapped in. This
 	// approach is used to remain consistent with an empty strace
-	// whitelist meaning trace all system calls.
+	// allowlist meaning trace all system calls.
 	EnableStrace bool
 
-	// Strace is the whitelist of syscalls to trace to log. If this
-	// and StraceEventWhitelist are empty trace all system calls.
-	StraceWhitelist []string
+	// Strace is the allowlist of syscalls to trace to log. If this
+	// and StraceEventAllowlist are empty trace all system calls.
+	StraceAllowlist []string
 
 	// SetEventStrace is a flag used to indicate that event strace
 	// related arguments were passed in.
 	SetEventStrace bool
 
-	// StraceEventWhitelist is the whitelist of syscalls to trace
+	// StraceEventAllowlist is the allowlist of syscalls to trace
 	// to event log.
-	StraceEventWhitelist []string
+	StraceEventAllowlist []string
 }
 
 // Logging provides functions related to logging.
@@ -83,11 +82,11 @@ func (l *Logging) Change(args *LoggingArgs, code *int) error {
 
 	if args.SetLogPackets {
 		if args.LogPackets {
-			atomic.StoreUint32(&sniffer.LogPackets, 1)
+			sniffer.LogPackets.Store(1)
 		} else {
-			atomic.StoreUint32(&sniffer.LogPackets, 0)
+			sniffer.LogPackets.Store(0)
 		}
-		log.Infof("LogPackets set to: %v", atomic.LoadUint32(&sniffer.LogPackets))
+		log.Infof("LogPackets set to: %v", sniffer.LogPackets.Load())
 	}
 
 	if args.SetStrace {
@@ -107,13 +106,13 @@ func (l *Logging) Change(args *LoggingArgs, code *int) error {
 
 func (l *Logging) configureStrace(args *LoggingArgs) error {
 	if args.EnableStrace {
-		// Install the whitelist specified.
-		if len(args.StraceWhitelist) > 0 {
-			if err := strace.Enable(args.StraceWhitelist, strace.SinkTypeLog); err != nil {
+		// Install the allowlist specified.
+		if len(args.StraceAllowlist) > 0 {
+			if err := strace.Enable(args.StraceAllowlist, strace.SinkTypeLog); err != nil {
 				return err
 			}
 		} else {
-			// For convenience, if strace is enabled but whitelist
+			// For convenience, if strace is enabled but allowlist
 			// is empty, enable everything to log.
 			strace.EnableAll(strace.SinkTypeLog)
 		}
@@ -125,8 +124,8 @@ func (l *Logging) configureStrace(args *LoggingArgs) error {
 }
 
 func (l *Logging) configureEventStrace(args *LoggingArgs) error {
-	if len(args.StraceEventWhitelist) > 0 {
-		if err := strace.Enable(args.StraceEventWhitelist, strace.SinkTypeEvent); err != nil {
+	if len(args.StraceEventAllowlist) > 0 {
+		if err := strace.Enable(args.StraceEventAllowlist, strace.SinkTypeEvent); err != nil {
 			return err
 		}
 	} else {

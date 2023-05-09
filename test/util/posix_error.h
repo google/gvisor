@@ -64,6 +64,7 @@ class ABSL_MUST_USE_RESULT PosixError {
 
  private:
   int errno_ = 0;
+  // std::string is not async-signal-safe. We must use a c string instead.
   char msg_[1024] = {};
 };
 
@@ -231,8 +232,8 @@ template <typename PosixErrorOrType>
 class IsPosixErrorOkAndHoldsMatcherImpl
     : public ::testing::MatcherInterface<PosixErrorOrType> {
  public:
-  using ValueType = typename std::remove_reference<decltype(
-      std::declval<PosixErrorOrType>().ValueOrDie())>::type;
+  using ValueType = typename std::remove_reference<
+      decltype(std::declval<PosixErrorOrType>().ValueOrDie())>::type;
 
   template <typename InnerMatcher>
   explicit IsPosixErrorOkAndHoldsMatcherImpl(InnerMatcher&& inner_matcher)
@@ -385,7 +386,7 @@ class PosixErrorIsMatcher {
 };
 
 // Returns a gMock matcher that matches a PosixError or PosixErrorOr<> whose
-// whose error code matches code_matcher, and whose error message matches
+// error code matches code_matcher, and whose error message matches
 // message_matcher.
 template <typename ErrorCodeMatcher>
 PosixErrorIsMatcher PosixErrorIs(
@@ -393,6 +394,14 @@ PosixErrorIsMatcher PosixErrorIs(
     ::testing::Matcher<const std::string&> message_matcher) {
   return PosixErrorIsMatcher(std::forward<ErrorCodeMatcher>(code_matcher),
                              std::move(message_matcher));
+}
+
+// Returns a gMock matcher that matches a PosixError or PosixErrorOr<> whose
+// error code matches code_matcher.
+template <typename ErrorCodeMatcher>
+PosixErrorIsMatcher PosixErrorIs(ErrorCodeMatcher&& code_matcher) {
+  return PosixErrorIsMatcher(std::forward<ErrorCodeMatcher>(code_matcher),
+                             ::testing::_);
 }
 
 // Returns a gMock matcher that matches a PosixErrorOr<> which is ok() and
@@ -427,7 +436,7 @@ IsPosixErrorOkAndHolds(InnerMatcher&& inner_matcher) {
 #define RETURN_IF_ERRNO(s) \
   do {                     \
     if (!s.ok()) {         \
-      return s;            \
+      return s.error();    \
     }                      \
   } while (false);
 
@@ -435,6 +444,13 @@ IsPosixErrorOkAndHolds(InnerMatcher&& inner_matcher) {
   ({                                      \
     auto _expr_result = (expr);           \
     ASSERT_NO_ERRNO(_expr_result);        \
+    std::move(_expr_result).ValueOrDie(); \
+  })
+
+#define EXPECT_NO_ERRNO_AND_VALUE(expr)   \
+  ({                                      \
+    auto _expr_result = (expr);           \
+    EXPECT_NO_ERRNO(_expr_result);        \
     std::move(_expr_result).ValueOrDie(); \
   })
 

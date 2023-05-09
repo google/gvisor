@@ -12,17 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <net/if.h>
-#include <sched.h>
-#include <sys/ioctl.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-
-#include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "test/syscalls/linux/socket_test_util.h"
+#include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/util/capability_util.h"
-#include "test/util/posix_error.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
@@ -31,19 +23,16 @@ namespace testing {
 namespace {
 
 TEST(NetworkNamespaceTest, LoopbackExists) {
+  // TODO(b/267210840): Fix this tests for hostinet.
+  SKIP_IF(IsRunningWithHostinet());
+
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
 
   ScopedThread t([&] {
     ASSERT_THAT(unshare(CLONE_NEWNET), SyscallSucceedsWithValue(0));
 
     // TODO(gvisor.dev/issue/1833): Update this to test that only "lo" exists.
-    // Check loopback device exists.
-    int sock = socket(AF_INET, SOCK_DGRAM, 0);
-    ASSERT_THAT(sock, SyscallSucceeds());
-    struct ifreq ifr;
-    strncpy(ifr.ifr_name, "lo", IFNAMSIZ);
-    EXPECT_THAT(ioctl(sock, SIOCGIFINDEX, &ifr), SyscallSucceeds())
-        << "lo cannot be found";
+    ASSERT_NE(ASSERT_NO_ERRNO_AND_VALUE(GetLoopbackIndex()), 0);
   });
 }
 

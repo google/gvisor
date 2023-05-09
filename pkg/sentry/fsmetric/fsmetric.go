@@ -12,11 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package fsmetric defines filesystem metrics that are used by both VFS1 and
-// VFS2.
-//
-// TODO(gvisor.dev/issue/1624): Once VFS1 is deleted, inline these metrics into
-// VFS2.
+// Package fsmetric defines filesystem metrics.
 package fsmetric
 
 import (
@@ -42,7 +38,6 @@ var (
 
 // Metrics that only apply to fs/gofer and fsimpl/gofer.
 var (
-	GoferOpensWX      = metric.MustCreateNewUint64Metric("/gofer/opened_write_execute_file", true /* sync */, "Number of times a executable file was opened writably from a gofer.")
 	GoferOpens9P      = metric.MustCreateNewUint64Metric("/gofer/opens_9p", false /* sync */, "Number of times a file was opened from a gofer and did not have a host file descriptor.")
 	GoferOpensHost    = metric.MustCreateNewUint64Metric("/gofer/opens_host", false /* sync */, "Number of times a file was opened from a gofer and did have a host file descriptor.")
 	GoferReads9P      = metric.MustCreateNewUint64Metric("/gofer/reads_9p", false /* sync */, "Number of 9P file reads from a gofer.")
@@ -74,6 +69,7 @@ func StartReadWait() time.Time {
 // FinishReadWait is marked nosplit for performance since it's often called
 // from defer statements, which prevents it from being inlined
 // (https://github.com/golang/go/issues/38471).
+//
 //go:nosplit
 func FinishReadWait(m *metric.Uint64Metric, start time.Time) {
 	if !RecordWaitTime {

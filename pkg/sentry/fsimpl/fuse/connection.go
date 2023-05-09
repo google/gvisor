@@ -18,10 +18,11 @@ import (
 	"sync"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -40,41 +41,41 @@ const (
 // connection is the struct by which the sentry communicates with the FUSE server daemon.
 //
 // Lock order:
-// - conn.fd.mu
-// - conn.mu
-// - conn.asyncMu
+//   - conn.fd.mu
+//   - conn.mu
+//   - conn.asyncMu
 //
 // +stateify savable
 type connection struct {
 	fd *DeviceFD
 
-	// mu protects access to struct memebers.
+	// mu protects access to struct members.
 	mu sync.Mutex `state:"nosave"`
 
 	// attributeVersion is the version of connection's attributes.
-	attributeVersion uint64
+	attributeVersion atomicbitops.Uint64
 
 	// We target FUSE 7.23.
 	// The following FUSE_INIT flags are currently unsupported by this implementation:
-	// - FUSE_EXPORT_SUPPORT
-	// - FUSE_POSIX_LOCKS: requires POSIX locks
-	// - FUSE_FLOCK_LOCKS: requires POSIX locks
-	// - FUSE_AUTO_INVAL_DATA: requires page caching eviction
-	// - FUSE_DO_READDIRPLUS/FUSE_READDIRPLUS_AUTO: requires FUSE_READDIRPLUS implementation
-	// - FUSE_ASYNC_DIO
-	// - FUSE_PARALLEL_DIROPS (7.25)
-	// - FUSE_HANDLE_KILLPRIV (7.26)
-	// - FUSE_POSIX_ACL: affects defaultPermissions, posixACL, xattr handler (7.26)
-	// - FUSE_ABORT_ERROR (7.27)
-	// - FUSE_CACHE_SYMLINKS (7.28)
-	// - FUSE_NO_OPENDIR_SUPPORT (7.29)
-	// - FUSE_EXPLICIT_INVAL_DATA: requires page caching eviction (7.30)
-	// - FUSE_MAP_ALIGNMENT (7.31)
+	//	- FUSE_EXPORT_SUPPORT
+	//	- FUSE_POSIX_LOCKS: requires POSIX locks
+	//	- FUSE_FLOCK_LOCKS: requires POSIX locks
+	//	- FUSE_AUTO_INVAL_DATA: requires page caching eviction
+	//	- FUSE_DO_READDIRPLUS/FUSE_READDIRPLUS_AUTO: requires FUSE_READDIRPLUS implementation
+	//	- FUSE_ASYNC_DIO
+	//	- FUSE_PARALLEL_DIROPS (7.25)
+	//	- FUSE_HANDLE_KILLPRIV (7.26)
+	//	- FUSE_POSIX_ACL: affects defaultPermissions, posixACL, xattr handler (7.26)
+	//	- FUSE_ABORT_ERROR (7.27)
+	//	- FUSE_CACHE_SYMLINKS (7.28)
+	//	- FUSE_NO_OPENDIR_SUPPORT (7.29)
+	//	- FUSE_EXPLICIT_INVAL_DATA: requires page caching eviction (7.30)
+	//	- FUSE_MAP_ALIGNMENT (7.31)
 
 	// initialized after receiving FUSE_INIT reply.
 	// Until it's set, suspend sending FUSE requests.
 	// Use SetInitialized() and IsInitialized() for atomic access.
-	initialized int32
+	initialized atomicbitops.Int32
 
 	// initializedChan is used to block requests before initialization.
 	initializedChan chan struct{} `state:".(bool)"`
@@ -84,15 +85,18 @@ type connection struct {
 	//   umount,
 	//   connection abort,
 	//   device release.
+	// +checklocks:mu
 	connected bool
 
 	// connInitError if FUSE_INIT encountered error (major version mismatch).
 	// Only set in INIT.
+	// +checklocks:mu
 	connInitError bool
 
 	// connInitSuccess if FUSE_INIT is successful.
 	// Only set in INIT.
-	// Used for destory (not yet implemented).
+	// Used for destroy (not yet implemented).
+	// +checklocks:mu
 	connInitSuccess bool
 
 	// aborted via sysfs, and will send ECONNABORTED to read after disconnection (instead of ENODEV).
@@ -100,15 +104,15 @@ type connection struct {
 	// TODO(gvisor.dev/issue/3525): set this to true when user aborts.
 	aborted bool
 
-	// numWating is the number of requests waiting to be
+	// numWaiting is the number of requests waiting to be
 	// sent to FUSE device or being processed by FUSE daemon.
 	numWaiting uint32
 
 	// Terminology note:
 	//
-	// - `asyncNumMax` is the `MaxBackground` in the FUSE_INIT_IN struct.
+	//	- `asyncNumMax` is the `MaxBackground` in the FUSE_INIT_IN struct.
 	//
-	// - `asyncCongestionThreshold` is the `CongestionThreshold` in the FUSE_INIT_IN struct.
+	//	- `asyncCongestionThreshold` is the `CongestionThreshold` in the FUSE_INIT_IN struct.
 	//
 	// We call the "background" requests in unix term as async requests.
 	// The "async requests" in unix term is our async requests that expect a reply,
@@ -118,19 +122,19 @@ type connection struct {
 	asyncMu sync.Mutex `state:"nosave"`
 
 	// asyncNum is the number of async requests.
-	// Protected by asyncMu.
+	// +checklocks:asyncMu
 	asyncNum uint16
 
 	// asyncCongestionThreshold the number of async requests.
 	// Negotiated in FUSE_INIT as "CongestionThreshold".
 	// TODO(gvisor.dev/issue/3529): add congestion control.
-	// Protected by asyncMu.
+	// +checklocks:asyncMu
 	asyncCongestionThreshold uint16
 
 	// asyncNumMax is the maximum number of asyncNum.
 	// Connection blocks the async requests when it is reached.
 	// Negotiated in FUSE_INIT as "MaxBackground".
-	// Protected by asyncMu.
+	// +checklocks:asyncMu
 	asyncNumMax uint16
 
 	// maxRead is the maximum size of a read buffer in in bytes.
@@ -144,6 +148,11 @@ type connection struct {
 	// maxPages is the maximum number of pages for a single request to use.
 	// Negotiated in FUSE_INIT.
 	maxPages uint16
+
+	// maxActiveRequests specifies the maximum number of active requests that can
+	// exist at any time. Any further requests will block when trying to CAll
+	// the server.
+	maxActiveRequests uint64
 
 	// minor version of the FUSE protocol.
 	// Negotiated and only set in INIT.
@@ -172,7 +181,7 @@ type connection struct {
 	dontMask bool
 
 	// noOpen if FUSE server doesn't support open operation.
-	// This flag only influence performance, not correctness of the program.
+	// This flag only influences performance, not correctness of the program.
 	noOpen bool
 }
 
@@ -193,6 +202,7 @@ func (conn *connection) loadInitializedChan(closed bool) {
 }
 
 // newFUSEConnection creates a FUSE connection to fuseFD.
+// +checklocks:fuseFD.mu
 func newFUSEConnection(_ context.Context, fuseFD *DeviceFD, opts *filesystemOptions) (*connection, error) {
 	// Mark the device as ready so it can be used.
 	// FIXME(gvisor.dev/issue/4813): fuseFD's fields are accessed without
@@ -200,11 +210,8 @@ func newFUSEConnection(_ context.Context, fuseFD *DeviceFD, opts *filesystemOpti
 	// mount another filesystem.
 
 	// Create the writeBuf for the header to be stored in.
-	hdrLen := uint32((*linux.FUSEHeaderOut)(nil).SizeBytes())
-	fuseFD.writeBuf = make([]byte, hdrLen)
 	fuseFD.completions = make(map[linux.FUSEOpID]*futureResponse)
 	fuseFD.fullQueueCh = make(chan struct{}, opts.maxActiveRequests)
-	fuseFD.writeCursor = 0
 
 	return &connection{
 		fd:                       fuseFD,
@@ -212,6 +219,7 @@ func newFUSEConnection(_ context.Context, fuseFD *DeviceFD, opts *filesystemOpti
 		asyncCongestionThreshold: fuseDefaultCongestionThreshold,
 		maxRead:                  opts.maxRead,
 		maxPages:                 fuseDefaultMaxPagesPerReq,
+		maxActiveRequests:        opts.maxActiveRequests,
 		initializedChan:          make(chan struct{}),
 		connected:                true,
 	}, nil
@@ -244,22 +252,31 @@ func (conn *connection) CallAsync(t *kernel.Task, r *Request) error {
 // The forget request does not have a reply,
 // as documented in include/uapi/linux/fuse.h:FUSE_FORGET.
 func (conn *connection) Call(t *kernel.Task, r *Request) (*Response, error) {
-	// Block requests sent before connection is initalized.
+	// Block requests sent before connection is initialized.
 	if !conn.Initialized() && r.hdr.Opcode != linux.FUSE_INIT {
 		if err := t.Block(conn.initializedChan); err != nil {
 			return nil, err
 		}
 	}
 
-	if !conn.connected {
-		return nil, syserror.ENOTCONN
+	conn.fd.mu.Lock()
+	conn.mu.Lock()
+	connected := conn.connected
+	connInitError := conn.connInitError
+	conn.mu.Unlock()
+
+	if !connected {
+		conn.fd.mu.Unlock()
+		return nil, linuxerr.ENOTCONN
 	}
 
-	if conn.connInitError {
-		return nil, syserror.ECONNREFUSED
+	if connInitError {
+		conn.fd.mu.Unlock()
+		return nil, linuxerr.ECONNREFUSED
 	}
 
 	fut, err := conn.callFuture(t, r)
+	conn.fd.mu.Unlock()
 	if err != nil {
 		return nil, err
 	}
@@ -269,10 +286,8 @@ func (conn *connection) Call(t *kernel.Task, r *Request) (*Response, error) {
 
 // callFuture makes a request to the server and returns a future response.
 // Call resolve() when the response needs to be fulfilled.
+// +checklocks:conn.fd.mu
 func (conn *connection) callFuture(t *kernel.Task, r *Request) (*futureResponse, error) {
-	conn.fd.mu.Lock()
-	defer conn.fd.mu.Unlock()
-
 	// Is the queue full?
 	//
 	// We must busy wait here until the request can be queued. We don't
@@ -284,7 +299,7 @@ func (conn *connection) callFuture(t *kernel.Task, r *Request) (*futureResponse,
 	// This can potentially starve a request forever but this can only happen
 	// if there are always too many ongoing requests all the time. The
 	// supported maxActiveRequests setting should be really high to avoid this.
-	for conn.fd.numActiveRequests == conn.fd.fs.opts.maxActiveRequests {
+	for conn.fd.numActiveRequests == conn.maxActiveRequests {
 		log.Infof("Blocking request %v from being queued. Too many active requests: %v",
 			r.id, conn.fd.numActiveRequests)
 		conn.fd.mu.Unlock()
@@ -299,6 +314,7 @@ func (conn *connection) callFuture(t *kernel.Task, r *Request) (*futureResponse,
 }
 
 // callFutureLocked makes a request to the server and returns a future response.
+// +checklocks:conn.fd.mu
 func (conn *connection) callFutureLocked(t *kernel.Task, r *Request) (*futureResponse, error) {
 	// Check connected again holding conn.mu.
 	conn.mu.Lock()
@@ -306,7 +322,7 @@ func (conn *connection) callFutureLocked(t *kernel.Task, r *Request) (*futureRes
 		conn.mu.Unlock()
 		// we checked connected before,
 		// this must be due to aborted connection.
-		return nil, syserror.ECONNABORTED
+		return nil, linuxerr.ECONNABORTED
 	}
 	conn.mu.Unlock()
 

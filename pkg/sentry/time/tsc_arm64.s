@@ -20,3 +20,9 @@ TEXT ·Rdtsc(SB),NOSPLIT,$0-8
 	WORD	$0xd53be040     //MRS	CNTVCT_EL0, R0
 	MOVD	R0, ret+0(FP)
 	RET
+
+TEXT ·getCNTFRQ(SB),NOSPLIT,$0-8
+	// Get the virtual counter frequency.
+	WORD	$0xd53be000     //MRS	CNTFRQ_EL0, R0
+	MOVD	R0, ret+0(FP)
+	RET

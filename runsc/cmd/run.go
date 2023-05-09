@@ -16,9 +16,12 @@ package cmd
 
 import (
 	"context"
+	"os"
 
 	"github.com/google/subcommands"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -32,6 +35,13 @@ type Run struct {
 
 	// detach indicates that runsc has to start a process and exit without waiting it.
 	detach bool
+
+	// passFDs are user-supplied FDs from the host to be exposed to the
+	// sandboxed app.
+	passFDs fdMappings
+
+	// execFD is the host file descriptor used for program execution.
+	execFD int
 }
 
 // Name implements subcommands.Command.Name.
@@ -53,11 +63,13 @@ func (*Run) Usage() string {
 // SetFlags implements subcommands.Command.SetFlags.
 func (r *Run) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&r.detach, "detach", false, "detach from the container's process")
+	f.Var(&r.passFDs, "pass-fd", "file descriptor passed to the container in M:N format, where M is the host and N is the guest descriptor (can be supplied multiple times)")
+	f.IntVar(&r.execFD, "exec-fd", -1, "host file descriptor used for program execution")
 	r.Create.SetFlags(f)
 }
 
 // Execute implements subcommands.Command.Execute.
-func (r *Run) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (r *Run) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if f.NArg() != 1 {
 		f.Usage()
 		return subcommands.ExitUsageError
@@ -68,7 +80,14 @@ func (r *Run) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) s
 	waitStatus := args[1].(*unix.WaitStatus)
 
 	if conf.Rootless {
-		return Errorf("Rootless mode not supported with %q", r.Name())
+		if conf.Network == config.NetworkSandbox {
+			return util.Errorf("sandbox network isn't supported with --rootless, use --network=none or --network=host")
+		}
+
+		if err := specutils.MaybeRunAsRoot(); err != nil {
+			return util.Errorf("Error executing inside namespace: %v", err)
+		}
+		// Execution will continue here if no more capabilities are needed...
 	}
 
 	bundleDir := r.bundleDir
@@ -77,9 +96,38 @@ func (r *Run) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) s
 	}
 	spec, err := specutils.ReadSpec(bundleDir, conf)
 	if err != nil {
-		return Errorf("reading spec: %v", err)
+		return util.Errorf("reading spec: %v", err)
 	}
-	specutils.LogSpec(spec)
+	specutils.LogSpecDebug(spec, conf.OCISeccomp)
+
+	// Create files from file descriptors.
+	fdMap := make(map[int]*os.File)
+	for _, mapping := range r.passFDs {
+		file := os.NewFile(uintptr(mapping.Host), "")
+		if file == nil {
+			return util.Errorf("Failed to create file from file descriptor %d", mapping.Host)
+		}
+		fdMap[mapping.Guest] = file
+	}
+
+	var execFile *os.File
+	if r.execFD >= 0 {
+		execFile = os.NewFile(uintptr(r.execFD), "exec-fd")
+	}
+
+	// Close the underlying file descriptors after we have passed them.
+	defer func() {
+		for _, file := range fdMap {
+			fd := file.Fd()
+			if file.Close() != nil {
+				log.Debugf("Failed to close FD %d", fd)
+			}
+		}
+
+		if execFile != nil && execFile.Close() != nil {
+			log.Debugf("Failed to close exec FD")
+		}
+	}()
 
 	runArgs := container.Args{
 		ID:            id,
@@ -89,10 +137,12 @@ func (r *Run) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) s
 		PIDFile:       r.pidFile,
 		UserLog:       r.userLog,
 		Attached:      !r.detach,
+		PassFiles:     fdMap,
+		ExecFile:      execFile,
 	}
 	ws, err := container.Run(conf, runArgs)
 	if err != nil {
-		return Errorf("running container: %v", err)
+		return util.Errorf("running container: %v", err)
 	}
 
 	*waitStatus = ws

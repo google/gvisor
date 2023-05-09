@@ -85,6 +85,8 @@ const (
 )
 
 // InterfaceInfoMessage is struct ifinfomsg, from uapi/linux/rtnetlink.h.
+//
+// +marshal
 type InterfaceInfoMessage struct {
 	Family uint8
 	_      uint8
@@ -93,6 +95,9 @@ type InterfaceInfoMessage struct {
 	Flags  uint32
 	Change uint32
 }
+
+// InterfaceInfoMessageSize is the size of InterfaceInfoMessage.
+const InterfaceInfoMessageSize = 16
 
 // Interface flags, from uapi/linux/if.h.
 const (
@@ -164,6 +169,8 @@ const (
 )
 
 // InterfaceAddrMessage is struct ifaddrmsg, from uapi/linux/if_addr.h.
+//
+// +marshal
 type InterfaceAddrMessage struct {
 	Family    uint8
 	PrefixLen uint8
@@ -171,6 +178,9 @@ type InterfaceAddrMessage struct {
 	Scope     uint8
 	Index     uint32
 }
+
+// InterfaceAddrMessageSize is the size of InterfaceAddrMessage.
+const InterfaceAddrMessageSize = 8
 
 // Interface attributes, from uapi/linux/if_addr.h.
 const (
@@ -193,6 +203,8 @@ const (
 )
 
 // RouteMessage is struct rtmsg, from uapi/linux/rtnetlink.h.
+//
+// +marshal
 type RouteMessage struct {
 	Family uint8
 	DstLen uint8
@@ -339,6 +351,8 @@ const (
 
 // RtAttr is the header of optional addition route information, as a netlink
 // attribute. From include/uapi/linux/rtnetlink.h.
+//
+// +marshal
 type RtAttr struct {
 	Len  uint16
 	Type uint16

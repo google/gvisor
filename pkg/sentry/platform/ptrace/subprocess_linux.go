@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build linux
 // +build linux
 
 package ptrace
@@ -21,8 +22,8 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/hosttid"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/procid"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
@@ -120,6 +121,16 @@ func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, erro
 		return nil, err
 	}
 
+	return forkStub(flags, instrs)
+}
+
+// In the child, this function must not acquire any locks, because they might
+// have been locked at the time of the fork. This means no rescheduling, no
+// malloc calls, and no new stack segments.  For the same reason compiler does
+// not race instrument it.
+//
+//go:norace
+func forkStub(flags uintptr, instrs []linux.BPFInstruction) (*thread, error) {
 	// Declare all variables up front in order to ensure that there's no
 	// need for allocations between beforeFork & afterFork.
 	var (
@@ -181,7 +192,7 @@ func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, erro
 
 	// Set an aggressive BPF filter for the stub and all it's children. See
 	// the description of the BPF program built above.
-	if errno := seccomp.SetFilter(instrs); errno != 0 {
+	if errno := seccomp.SetFilterInChild(instrs); errno != 0 {
 		unix.RawSyscall(unix.SYS_EXIT, uintptr(errno), 0, 0)
 	}
 
@@ -199,7 +210,7 @@ func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, erro
 func (s *subprocess) createStub() (*thread, error) {
 	// There's no need to lock the runtime thread here, as this can only be
 	// called from a context that is already locked.
-	currentTID := int32(procid.Current())
+	currentTID := int32(hosttid.Current())
 	t := s.syscallThreads.lookupOrCreate(currentTID, s.newThread)
 
 	// Pass the expected PPID to the child via R15.

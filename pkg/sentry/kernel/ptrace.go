@@ -16,14 +16,12 @@ package kernel
 
 import (
 	"fmt"
-	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
-	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -125,12 +123,7 @@ func (t *Task) CanTrace(target *Task, attach bool) bool {
 		return false
 	}
 
-	// YAMA only supported for vfs2.
-	if !VFS2Enabled {
-		return true
-	}
-
-	if atomic.LoadInt32(&t.k.YAMAPtraceScope) == linux.YAMA_SCOPE_RELATIONAL {
+	if t.k.YAMAPtraceScope.Load() == linux.YAMA_SCOPE_RELATIONAL {
 		t.tg.pidns.owner.mu.RLock()
 		defer t.tg.pidns.owner.mu.RUnlock()
 		if !t.canTraceYAMALocked(target) {
@@ -151,12 +144,7 @@ func (t *Task) canTraceLocked(target *Task, attach bool) bool {
 		return false
 	}
 
-	// YAMA only supported for vfs2.
-	if !VFS2Enabled {
-		return true
-	}
-
-	if atomic.LoadInt32(&t.k.YAMAPtraceScope) == linux.YAMA_SCOPE_RELATIONAL {
+	if t.k.YAMAPtraceScope.Load() == linux.YAMA_SCOPE_RELATIONAL {
 		if !t.canTraceYAMALocked(target) {
 			return false
 		}
@@ -181,12 +169,12 @@ func (t *Task) canTraceStandard(target *Task, attach bool) bool {
 	//
 	// 2. Deny access if neither of the following is true:
 	//
-	// - The real, effective, and saved-set user IDs of the target match the
-	// caller's user ID, *and* the real, effective, and saved-set group IDs of
-	// the target match the caller's group ID.
+	//	- The real, effective, and saved-set user IDs of the target match the
+	//		caller's user ID, *and* the real, effective, and saved-set group IDs of
+	//		the target match the caller's group ID.
 	//
-	// - The caller has the CAP_SYS_PTRACE capability in the user namespace of
-	// the target.
+	//	- The caller has the CAP_SYS_PTRACE capability in the user namespace of
+	//		the target.
 	//
 	// 3. Deny access if the target process "dumpable" attribute has a value
 	// other than 1 (SUID_DUMP_USER; see the discussion of PR_SET_DUMPABLE in
@@ -201,12 +189,12 @@ func (t *Task) canTraceStandard(target *Task, attach bool) bool {
 	//
 	// b) Deny access if neither of the following is true:
 	//
-	// - The caller and the target process are in the same user namespace, and
-	// the caller's capabilities are a proper superset of the target process's
-	// permitted capabilities.
+	//	- The caller and the target process are in the same user namespace, and
+	//		the caller's capabilities are a proper superset of the target process's
+	//		permitted capabilities.
 	//
-	// - The caller has the CAP_SYS_PTRACE capability in the target process's
-	// user namespace.
+	//	- The caller has the CAP_SYS_PTRACE capability in the target process's
+	//		user namespace.
 	//
 	// Note that the commoncap LSM does not distinguish between
 	// PTRACE_MODE_READ and PTRACE_MODE_ATTACH. (ED: From earlier in this
@@ -295,7 +283,7 @@ func (t *Task) isYAMADescendantOfLocked(ancestor *Task) bool {
 
 // Precondition: the TaskSet mutex must be locked (for reading or writing).
 func (t *Task) hasYAMAExceptionForLocked(tracer *Task) bool {
-	allowed, ok := t.k.ptraceExceptions[t]
+	allowed, ok := t.k.ptraceExceptions[t.tg.leader]
 	if !ok {
 		return false
 	}
@@ -365,8 +353,8 @@ func (s *ptraceStop) Killable() bool {
 // waiting.
 //
 // Preconditions:
-// * The TaskSet mutex must be locked.
-// * The caller must be running on the task goroutine.
+//   - The TaskSet mutex must be locked.
+//   - The caller must be running on the task goroutine.
 func (t *Task) beginPtraceStopLocked() bool {
 	t.tg.signalHandlers.mu.Lock()
 	defer t.tg.signalHandlers.mu.Unlock()
@@ -394,7 +382,7 @@ func (t *Task) ptraceTrapLocked(code int32) {
 	t.trapStopPending = false
 	t.tg.signalHandlers.mu.Unlock()
 	t.ptraceCode = code
-	t.ptraceSiginfo = &arch.SignalInfo{
+	t.ptraceSiginfo = &linux.SignalInfo{
 		Signo: int32(linux.SIGTRAP),
 		Code:  code,
 	}
@@ -402,7 +390,7 @@ func (t *Task) ptraceTrapLocked(code int32) {
 	t.ptraceSiginfo.SetUID(int32(t.Credentials().RealKUID.In(t.UserNamespace()).OrOverflow()))
 	if t.beginPtraceStopLocked() {
 		tracer := t.Tracer()
-		tracer.signalStop(t, arch.CLD_TRAPPED, int32(linux.SIGTRAP))
+		tracer.signalStop(t, linux.CLD_TRAPPED, int32(linux.SIGTRAP))
 		tracer.tg.eventQueue.Notify(EventTraceeStop)
 	}
 }
@@ -412,8 +400,8 @@ func (t *Task) ptraceTrapLocked(code int32) {
 // Task.Kill, and returns true. Otherwise it returns false.
 //
 // Preconditions:
-// * The TaskSet mutex must be locked.
-// * The caller must be running on the task goroutine of t's tracer.
+//   - The TaskSet mutex must be locked.
+//   - The caller must be running on the task goroutine of t's tracer.
 func (t *Task) ptraceFreeze() bool {
 	t.tg.signalHandlers.mu.Lock()
 	defer t.tg.signalHandlers.mu.Unlock()
@@ -444,8 +432,8 @@ func (t *Task) ptraceUnfreeze() {
 }
 
 // Preconditions:
-// * t must be in a frozen ptraceStop.
-// * t's signal mutex must be locked.
+//   - t must be in a frozen ptraceStop.
+//   - t's signal mutex must be locked.
 func (t *Task) ptraceUnfreezeLocked() {
 	// Do this even if the task has been killed to ensure a panic if t.stop is
 	// nil or not a ptraceStop.
@@ -465,7 +453,7 @@ func (t *Task) ptraceUnfreezeLocked() {
 // stop.
 func (t *Task) ptraceUnstop(mode ptraceSyscallMode, singlestep bool, sig linux.Signal) error {
 	if sig != 0 && !sig.IsValid() {
-		return syserror.EIO
+		return linuxerr.EIO
 	}
 	t.tg.pidns.owner.mu.Lock()
 	defer t.tg.pidns.owner.mu.Unlock()
@@ -482,7 +470,7 @@ func (t *Task) ptraceTraceme() error {
 	t.tg.pidns.owner.mu.Lock()
 	defer t.tg.pidns.owner.mu.Unlock()
 	if t.hasTracer() {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 	if t.parent == nil {
 		// In Linux, only init can not have a parent, and init is assumed never
@@ -498,7 +486,7 @@ func (t *Task) ptraceTraceme() error {
 		return nil
 	}
 	if !t.parent.canTraceLocked(t, true) {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 	if t.parent.exitState != TaskExitNone {
 		// Fail silently, as if we were successfully attached but then
@@ -514,25 +502,25 @@ func (t *Task) ptraceTraceme() error {
 // ptrace(PTRACE_SEIZE, target, 0, opts) if seize is true. t is the caller.
 func (t *Task) ptraceAttach(target *Task, seize bool, opts uintptr) error {
 	if t.tg == target.tg {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 	t.tg.pidns.owner.mu.Lock()
 	defer t.tg.pidns.owner.mu.Unlock()
 	if !t.canTraceLocked(target, true) {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 	if target.hasTracer() {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 	// Attaching to zombies and dead tasks is not permitted; the exit
 	// notification logic relies on this. Linux allows attaching to PF_EXITING
 	// tasks, though.
 	if target.exitState >= TaskExitZombie {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 	if seize {
 		if err := target.ptraceSetOptionsLocked(opts); err != nil {
-			return syserror.EIO
+			return linuxerr.EIO
 		}
 	}
 	target.ptraceTracer.Store(t)
@@ -542,9 +530,9 @@ func (t *Task) ptraceAttach(target *Task, seize bool, opts uintptr) error {
 	// "Unlike PTRACE_ATTACH, PTRACE_SEIZE does not stop the process." -
 	// ptrace(2)
 	if !seize {
-		target.sendSignalLocked(&arch.SignalInfo{
+		target.sendSignalLocked(&linux.SignalInfo{
 			Signo: int32(linux.SIGSTOP),
-			Code:  arch.SignalInfoUser,
+			Code:  linux.SI_USER,
 		}, false /* group */)
 	}
 	// Undocumented Linux feature: If the tracee is already group-stopped (and
@@ -569,7 +557,7 @@ func (t *Task) ptraceAttach(target *Task, seize bool, opts uintptr) error {
 // ptrace stop.
 func (t *Task) ptraceDetach(target *Task, sig linux.Signal) error {
 	if sig != 0 && !sig.IsValid() {
-		return syserror.EIO
+		return linuxerr.EIO
 	}
 	t.tg.pidns.owner.mu.Lock()
 	defer t.tg.pidns.owner.mu.Unlock()
@@ -586,7 +574,7 @@ func (t *Task) exitPtrace() {
 	for target := range t.ptraceTracees {
 		if target.ptraceOpts.ExitKill {
 			target.tg.signalHandlers.mu.Lock()
-			target.sendSignalLocked(&arch.SignalInfo{
+			target.sendSignalLocked(&linux.SignalInfo{
 				Signo: int32(linux.SIGKILL),
 			}, false /* group */)
 			target.tg.signalHandlers.mu.Unlock()
@@ -650,9 +638,11 @@ func (t *Task) forgetTracerLocked() {
 // enter ptrace signal-delivery-stop.
 //
 // Preconditions:
-// * The signal mutex must be locked.
-// * The caller must be running on the task goroutine.
-func (t *Task) ptraceSignalLocked(info *arch.SignalInfo) bool {
+//   - The signal mutex must be locked.
+//   - The caller must be running on the task goroutine.
+//
+// +checklocks:t.tg.signalHandlers.mu
+func (t *Task) ptraceSignalLocked(info *linux.SignalInfo) bool {
 	if linux.Signal(info.Signo) == linux.SIGKILL {
 		return false
 	}
@@ -678,7 +668,7 @@ func (t *Task) ptraceSignalLocked(info *arch.SignalInfo) bool {
 	t.ptraceSiginfo = info
 	t.Debugf("Entering signal-delivery-stop for signal %d", info.Signo)
 	if t.beginPtraceStopLocked() {
-		tracer.signalStop(t, arch.CLD_TRAPPED, info.Signo)
+		tracer.signalStop(t, linux.CLD_TRAPPED, info.Signo)
 		tracer.tg.eventQueue.Notify(EventTraceeStop)
 	}
 	return true
@@ -767,14 +757,14 @@ const (
 // ptraceClone is called at the end of a clone or fork syscall to check if t
 // should enter PTRACE_EVENT_CLONE, PTRACE_EVENT_FORK, or PTRACE_EVENT_VFORK
 // stop. child is the new task.
-func (t *Task) ptraceClone(kind ptraceCloneKind, child *Task, opts *CloneOptions) bool {
+func (t *Task) ptraceClone(kind ptraceCloneKind, child *Task, args *linux.CloneArgs) bool {
 	if !t.hasTracer() {
 		return false
 	}
 	t.tg.pidns.owner.mu.Lock()
 	defer t.tg.pidns.owner.mu.Unlock()
 	event := false
-	if !opts.Untraced {
+	if args.Flags&linux.CLONE_UNTRACED == 0 {
 		switch kind {
 		case ptraceCloneKindClone:
 			if t.ptraceOpts.TraceClone {
@@ -809,7 +799,7 @@ func (t *Task) ptraceClone(kind ptraceCloneKind, child *Task, opts *CloneOptions
 	// clone(2)'s documentation of CLONE_UNTRACED and CLONE_PTRACE is
 	// confusingly wrong; see kernel/fork.c:_do_fork() => copy_process() =>
 	// include/linux/ptrace.h:ptrace_init_task().
-	if event || opts.InheritTracer {
+	if event || args.Flags&linux.CLONE_PTRACE != 0 {
 		tracer := t.Tracer()
 		if tracer != nil {
 			child.ptraceTracer.Store(tracer)
@@ -829,7 +819,7 @@ func (t *Task) ptraceClone(kind ptraceCloneKind, child *Task, opts *CloneOptions
 			if child.ptraceSeized {
 				child.trapStopPending = true
 			} else {
-				child.pendingSignals.enqueue(&arch.SignalInfo{
+				child.pendingSignals.enqueue(&linux.SignalInfo{
 					Signo: int32(linux.SIGSTOP),
 				}, nil)
 			}
@@ -893,9 +883,9 @@ func (t *Task) ptraceExec(oldTID ThreadID) {
 	}
 	t.tg.signalHandlers.mu.Lock()
 	defer t.tg.signalHandlers.mu.Unlock()
-	t.sendSignalLocked(&arch.SignalInfo{
+	t.sendSignalLocked(&linux.SignalInfo{
 		Signo: int32(linux.SIGTRAP),
-		Code:  arch.SignalInfoUser,
+		Code:  linux.SI_USER,
 	}, false /* group */)
 }
 
@@ -911,7 +901,7 @@ func (t *Task) ptraceExit() {
 		return
 	}
 	t.tg.signalHandlers.mu.Lock()
-	status := t.exitStatus.Status()
+	status := t.exitStatus
 	t.tg.signalHandlers.mu.Unlock()
 	t.Debugf("Entering PTRACE_EVENT_EXIT stop")
 	t.ptraceEventLocked(linux.PTRACE_EVENT_EXIT, uint64(status))
@@ -939,7 +929,7 @@ func (t *Task) ptraceKill(target *Task) error {
 	t.tg.pidns.owner.mu.Lock()
 	defer t.tg.pidns.owner.mu.Unlock()
 	if target.Tracer() != t {
-		return syserror.ESRCH
+		return linuxerr.ESRCH
 	}
 	target.tg.signalHandlers.mu.Lock()
 	defer target.tg.signalHandlers.mu.Unlock()
@@ -963,10 +953,10 @@ func (t *Task) ptraceInterrupt(target *Task) error {
 	t.tg.pidns.owner.mu.Lock()
 	defer t.tg.pidns.owner.mu.Unlock()
 	if target.Tracer() != t {
-		return syserror.ESRCH
+		return linuxerr.ESRCH
 	}
 	if !target.ptraceSeized {
-		return syserror.EIO
+		return linuxerr.EIO
 	}
 	target.tg.signalHandlers.mu.Lock()
 	defer target.tg.signalHandlers.mu.Unlock()
@@ -982,8 +972,8 @@ func (t *Task) ptraceInterrupt(target *Task) error {
 }
 
 // Preconditions:
-// * The TaskSet mutex must be locked for writing.
-// * t must have a tracer.
+//   - The TaskSet mutex must be locked for writing.
+//   - t must have a tracer.
 func (t *Task) ptraceSetOptionsLocked(opts uintptr) error {
 	const valid = uintptr(linux.PTRACE_O_EXITKILL |
 		linux.PTRACE_O_TRACESYSGOOD |
@@ -995,7 +985,7 @@ func (t *Task) ptraceSetOptionsLocked(opts uintptr) error {
 		linux.PTRACE_O_TRACEVFORK |
 		linux.PTRACE_O_TRACEVFORKDONE)
 	if opts&^valid != 0 {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	t.ptraceOpts = ptraceOptions{
 		ExitKill:       opts&linux.PTRACE_O_EXITKILL != 0,
@@ -1021,7 +1011,7 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data hostarch.Addr) error {
 	// specified by pid.
 	target := t.tg.pidns.TaskWithID(pid)
 	if target == nil {
-		return syserror.ESRCH
+		return linuxerr.ESRCH
 	}
 
 	// PTRACE_ATTACH and PTRACE_SEIZE do not require that target is not already
@@ -1029,7 +1019,7 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data hostarch.Addr) error {
 	if req == linux.PTRACE_ATTACH || req == linux.PTRACE_SEIZE {
 		seize := req == linux.PTRACE_SEIZE
 		if seize && addr != 0 {
-			return syserror.EIO
+			return linuxerr.EIO
 		}
 		return t.ptraceAttach(target, seize, uintptr(data))
 	}
@@ -1046,7 +1036,7 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data hostarch.Addr) error {
 	t.tg.pidns.owner.mu.RLock()
 	if target.Tracer() != t {
 		t.tg.pidns.owner.mu.RUnlock()
-		return syserror.ESRCH
+		return linuxerr.ESRCH
 	}
 	if !target.ptraceFreeze() {
 		t.tg.pidns.owner.mu.RUnlock()
@@ -1054,7 +1044,7 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data hostarch.Addr) error {
 		// PTRACE_TRACEME, PTRACE_INTERRUPT, and PTRACE_KILL) require the
 		// tracee to be in a ptrace-stop, otherwise they fail with ESRCH." -
 		// ptrace(2)
-		return syserror.ESRCH
+		return linuxerr.ESRCH
 	}
 	t.tg.pidns.owner.mu.RUnlock()
 	// Even if the target has a ptrace-stop active, the tracee's task goroutine
@@ -1119,13 +1109,13 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data hostarch.Addr) error {
 		t.tg.pidns.owner.mu.RLock()
 		defer t.tg.pidns.owner.mu.RUnlock()
 		if !target.ptraceSeized {
-			return syserror.EIO
+			return linuxerr.EIO
 		}
 		if target.ptraceSiginfo == nil {
-			return syserror.EIO
+			return linuxerr.EIO
 		}
 		if target.ptraceSiginfo.Code>>8 != linux.PTRACE_EVENT_STOP {
-			return syserror.EIO
+			return linuxerr.EIO
 		}
 		target.tg.signalHandlers.mu.Lock()
 		defer target.tg.signalHandlers.mu.Unlock()
@@ -1170,8 +1160,6 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data hostarch.Addr) error {
 			return err
 		}
 
-		t.p.PullFullState(t.MemoryManager().AddressSpace(), t.Arch())
-
 		ar := ars.Head()
 		n, err := target.Arch().PtraceGetRegSet(uintptr(addr), &usermem.IOReadWriter{
 			Ctx:  t,
@@ -1180,7 +1168,7 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data hostarch.Addr) error {
 			Opts: usermem.IOOpts{
 				AddressSpaceActive: true,
 			},
-		}, int(ar.Length()))
+		}, int(ar.Length()), target.Kernel().FeatureSet())
 		if err != nil {
 			return err
 		}
@@ -1199,22 +1187,19 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data hostarch.Addr) error {
 			return err
 		}
 
-		mm := t.MemoryManager()
-		t.p.PullFullState(mm.AddressSpace(), t.Arch())
-
 		ar := ars.Head()
 		n, err := target.Arch().PtraceSetRegSet(uintptr(addr), &usermem.IOReadWriter{
 			Ctx:  t,
-			IO:   mm,
+			IO:   t.MemoryManager(),
 			Addr: ar.Start,
 			Opts: usermem.IOOpts{
 				AddressSpaceActive: true,
 			},
-		}, int(ar.Length()))
+		}, int(ar.Length()), target.Kernel().FeatureSet())
 		if err != nil {
 			return err
 		}
-		t.p.FullStateChanged()
+		target.p.FullStateChanged()
 		ar.End -= hostarch.Addr(n)
 		return t.CopyOutIovecs(data, hostarch.AddrRangeSeqOf(ar))
 
@@ -1222,27 +1207,27 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data hostarch.Addr) error {
 		t.tg.pidns.owner.mu.RLock()
 		defer t.tg.pidns.owner.mu.RUnlock()
 		if target.ptraceSiginfo == nil {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		_, err := target.ptraceSiginfo.CopyOut(t, data)
 		return err
 
 	case linux.PTRACE_SETSIGINFO:
-		var info arch.SignalInfo
+		var info linux.SignalInfo
 		if _, err := info.CopyIn(t, data); err != nil {
 			return err
 		}
 		t.tg.pidns.owner.mu.RLock()
 		defer t.tg.pidns.owner.mu.RUnlock()
 		if target.ptraceSiginfo == nil {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		target.ptraceSiginfo = &info
 		return nil
 
 	case linux.PTRACE_GETSIGMASK:
 		if addr != linux.SignalSetSize {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		mask := target.SignalMask()
 		_, err := mask.CopyOut(t, data)
@@ -1250,7 +1235,7 @@ func (t *Task) Ptrace(req int64, pid ThreadID, addr, data hostarch.Addr) error {
 
 	case linux.PTRACE_SETSIGMASK:
 		if addr != linux.SignalSetSize {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		var mask linux.SignalSet
 		if _, err := mask.CopyIn(t, data); err != nil {

@@ -20,9 +20,9 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"math/rand"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -37,7 +37,7 @@ import (
 const enableLogging = false
 
 // nflog logs messages related to the writing and reading of iptables.
-func nflog(format string, args ...interface{}) {
+func nflog(format string, args ...any) {
 	if enableLogging && log.IsLogging(log.Debug) {
 		log.Debugf("netfilter: "+format, args...)
 	}
@@ -59,8 +59,8 @@ var nameToID = map[string]stack.TableID{
 
 // DefaultLinuxTables returns the rules of stack.DefaultTables() wrapped for
 // compatibility with netfilter extensions.
-func DefaultLinuxTables() *stack.IPTables {
-	tables := stack.DefaultTables()
+func DefaultLinuxTables(clock tcpip.Clock, rand *rand.Rand) *stack.IPTables {
+	tables := stack.DefaultTables(clock, rand)
 	tables.VisitTargets(func(oldTarget stack.Target) stack.Target {
 		switch val := oldTarget.(type) {
 		case *stack.AcceptTarget:
@@ -121,7 +121,7 @@ func GetEntries4(t *kernel.Task, stack *stack.Stack, outPtr hostarch.Addr, outLe
 		nflog("couldn't read entries: %v", err)
 		return linux.KernelIPTGetEntries{}, syserr.ErrInvalidArgument
 	}
-	if binary.Size(entries) > uintptr(outLen) {
+	if entries.SizeBytes() > outLen {
 		nflog("insufficient GetEntries output size: %d", uintptr(outLen))
 		return linux.KernelIPTGetEntries{}, syserr.ErrInvalidArgument
 	}
@@ -146,7 +146,7 @@ func GetEntries6(t *kernel.Task, stack *stack.Stack, outPtr hostarch.Addr, outLe
 		nflog("couldn't read entries: %v", err)
 		return linux.KernelIP6TGetEntries{}, syserr.ErrInvalidArgument
 	}
-	if binary.Size(entries) > uintptr(outLen) {
+	if entries.SizeBytes() > outLen {
 		nflog("insufficient GetEntries output size: %d", uintptr(outLen))
 		return linux.KernelIP6TGetEntries{}, syserr.ErrInvalidArgument
 	}
@@ -175,13 +175,10 @@ func setHooksAndUnderflow(info *linux.IPTGetinfo, table stack.Table, offset uint
 
 // SetEntries sets iptables rules for a single table. See
 // net/ipv4/netfilter/ip_tables.c:translate_table for reference.
-func SetEntries(stk *stack.Stack, optVal []byte, ipv6 bool) *syserr.Error {
+func SetEntries(task *kernel.Task, stk *stack.Stack, optVal []byte, ipv6 bool) *syserr.Error {
 	var replace linux.IPTReplace
-	replaceBuf := optVal[:linux.SizeOfIPTReplace]
-	optVal = optVal[linux.SizeOfIPTReplace:]
-	binary.Unmarshal(replaceBuf, hostarch.ByteOrder, &replace)
+	optVal = replace.UnmarshalBytes(optVal)
 
-	// TODO(gvisor.dev/issue/170): Support other tables.
 	var table stack.Table
 	switch replace.Name.String() {
 	case filterTable:
@@ -189,16 +186,16 @@ func SetEntries(stk *stack.Stack, optVal []byte, ipv6 bool) *syserr.Error {
 	case natTable:
 		table = stack.EmptyNATTable()
 	default:
-		nflog("we don't yet support writing to the %q table (gvisor.dev/issue/170)", replace.Name.String())
+		nflog("unknown iptables table %q", replace.Name.String())
 		return syserr.ErrInvalidArgument
 	}
 
 	var err *syserr.Error
 	var offsets map[uint32]int
 	if ipv6 {
-		offsets, err = modifyEntries6(stk, optVal, &replace, &table)
+		offsets, err = modifyEntries6(task, stk, optVal, &replace, &table)
 	} else {
-		offsets, err = modifyEntries4(stk, optVal, &replace, &table)
+		offsets, err = modifyEntries4(task, stk, optVal, &replace, &table)
 	}
 	if err != nil {
 		return err
@@ -242,8 +239,8 @@ func SetEntries(stk *stack.Stack, optVal []byte, ipv6 bool) *syserr.Error {
 
 		// We found a user chain. Before inserting it into the table,
 		// check that:
-		// - There's some other rule after it.
-		// - There are no matchers.
+		//	- There's some other rule after it.
+		//	- There are no matchers.
 		if ruleIdx == len(table.Rules)-1 {
 			nflog("user chain must have a rule or default policy")
 			return syserr.ErrInvalidArgument
@@ -273,7 +270,6 @@ func SetEntries(stk *stack.Stack, optVal []byte, ipv6 bool) *syserr.Error {
 		table.Rules[ruleIdx] = rule
 	}
 
-	// TODO(gvisor.dev/issue/170): Support other chains.
 	// Since we don't support FORWARD, yet, make sure all other chains point to
 	// ACCEPT rules.
 	for hook, ruleIdx := range table.BuiltinChains {
@@ -288,17 +284,18 @@ func SetEntries(stk *stack.Stack, optVal []byte, ipv6 bool) *syserr.Error {
 		}
 	}
 
-	// TODO(gvisor.dev/issue/170): Check the following conditions:
-	// - There are no loops.
-	// - There are no chains without an unconditional final rule.
-	// - There are no chains without an unconditional underflow rule.
+	// TODO(gvisor.dev/issue/6167): Check the following conditions:
+	//	- There are no loops.
+	//	- There are no chains without an unconditional final rule.
+	//	- There are no chains without an unconditional underflow rule.
 
-	return syserr.TranslateNetstackError(stk.IPTables().ReplaceTable(nameToID[replace.Name.String()], table, ipv6))
+	stk.IPTables().ReplaceTable(nameToID[replace.Name.String()], table, ipv6)
+	return nil
 }
 
 // parseMatchers parses 0 or more matchers from optVal. optVal should contain
 // only the matchers.
-func parseMatchers(filter stack.IPHeaderFilter, optVal []byte) ([]stack.Matcher, error) {
+func parseMatchers(task *kernel.Task, filter stack.IPHeaderFilter, optVal []byte) ([]stack.Matcher, error) {
 	nflog("set entries: parsing matchers of size %d", len(optVal))
 	var matchers []stack.Matcher
 	for len(optVal) > 0 {
@@ -309,8 +306,7 @@ func parseMatchers(filter stack.IPHeaderFilter, optVal []byte) ([]stack.Matcher,
 			return nil, fmt.Errorf("optVal has insufficient size for entry match: %d", len(optVal))
 		}
 		var match linux.XTEntryMatch
-		buf := optVal[:linux.SizeOfXTEntryMatch]
-		binary.Unmarshal(buf, hostarch.ByteOrder, &match)
+		match.UnmarshalUnsafe(optVal)
 		nflog("set entries: parsed entry match %q: %+v", match.Name.String(), match)
 
 		// Check some invariants.
@@ -322,13 +318,13 @@ func parseMatchers(filter stack.IPHeaderFilter, optVal []byte) ([]stack.Matcher,
 		}
 
 		// Parse the specific matcher.
-		matcher, err := unmarshalMatcher(match, filter, optVal[linux.SizeOfXTEntryMatch:match.MatchSize])
+		matcher, err := unmarshalMatcher(task, match, filter, optVal[linux.SizeOfXTEntryMatch:match.MatchSize])
 		if err != nil {
 			return nil, fmt.Errorf("failed to create matcher: %v", err)
 		}
 		matchers = append(matchers, matcher)
 
-		// TODO(gvisor.dev/issue/170): Check the revision field.
+		// TODO(gvisor.dev/issue/6167): Check the revision field.
 		optVal = optVal[match.MatchSize:]
 	}
 

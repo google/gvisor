@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build arm64
 // +build arm64
 
 package filter
@@ -40,4 +41,8 @@ func init() {
 			seccomp.MatchAny{}, // child_tidptr
 		},
 	}
+}
+
+func archFstatAtSysNo() uintptr {
+	return unix.SYS_FSTATAT
 }

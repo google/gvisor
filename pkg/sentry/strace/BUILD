@@ -1,16 +1,21 @@
 load("//tools:defs.bzl", "go_library", "proto_library")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_library(
     name = "strace",
     srcs = [
         "capability.go",
         "clone.go",
+        "close_range.go",
         "epoll.go",
         "futex.go",
         "linux64_amd64.go",
         "linux64_arm64.go",
+        "mmap.go",
         "open.go",
         "poll.go",
         "ptrace.go",
@@ -25,7 +30,6 @@ go_library(
         ":strace_go_proto",
         "//pkg/abi",
         "//pkg/abi/linux",
-        "//pkg/binary",
         "//pkg/bits",
         "//pkg/eventchannel",
         "//pkg/hostarch",
@@ -36,7 +40,6 @@ go_library(
         "//pkg/sentry/socket",
         "//pkg/sentry/socket/netlink",
         "//pkg/sentry/syscalls/linux",
-        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 

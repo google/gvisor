@@ -10,7 +10,7 @@
 //
 // It must have the same frame configuration as memclr so that it can undo any
 // potential call frame set up by the assembler.
-TEXT handleMemclrFault(SB), NOSPLIT, $0-28
+TEXT handleMemclrFault(SB), NOSPLIT|NOFRAME, $0-28
 	MOVQ	AX, addr+16(FP)
 	MOVL	DI, sig+24(FP)
 	RET
@@ -27,7 +27,7 @@ TEXT handleMemclrFault(SB), NOSPLIT, $0-28
 // The code is derived from runtime.memclrNoHeapPointers.
 //
 // func memclr(ptr unsafe.Pointer, n uintptr) (fault unsafe.Pointer, sig int32)
-TEXT ·memclr(SB), NOSPLIT, $0-28
+TEXT ·memclr(SB), NOSPLIT|NOFRAME, $0-28
 	// Store 0 as the returned signal number. If we run to completion,
 	// this is the value the caller will see; if a signal is received,
 	// handleMemclrFault will store a different value in this address.
@@ -144,4 +144,10 @@ _129through256:
 	MOVOU	X0, -48(DI)(BX*1)
 	MOVOU	X0, -32(DI)(BX*1)
 	MOVOU	X0, -16(DI)(BX*1)
+	RET
+
+// func addrOfMemclr() uintptr
+TEXT ·addrOfMemclr(SB), $0-8
+	MOVQ	$·memclr(SB), AX
+	MOVQ	AX, ret+0(FP)
 	RET

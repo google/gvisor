@@ -88,7 +88,7 @@ syscalls. {{if .Undocumented}}{{.Undocumented}} syscalls are not yet documented.
 `))
 
 // Fatalf writes a message to stderr and exits with error code 1
-func Fatalf(format string, a ...interface{}) {
+func Fatalf(format string, a ...any) {
 	fmt.Fprintf(os.Stderr, format, a...)
 	os.Exit(1)
 }

@@ -101,8 +101,8 @@ func executeHook(h specs.Hook, s specs.State) error {
 			return fmt.Errorf("failure executing hook %q, err: %v\nstdout: %s\nstderr: %s", h.Path, err, stdout.String(), stderr.String())
 		}
 	case <-timer:
-		cmd.Process.Kill()
-		cmd.Wait()
+		_ = cmd.Process.Kill()
+		_ = cmd.Wait()
 		return fmt.Errorf("timeout executing hook %q\nstdout: %s\nstderr: %s", h.Path, stdout.String(), stderr.String())
 	}
 

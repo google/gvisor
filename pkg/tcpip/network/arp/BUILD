@@ -1,6 +1,9 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_library(
     name = "arp",
@@ -10,9 +13,9 @@ go_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/atomicbitops",
         "//pkg/sync",
         "//pkg/tcpip",
-        "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
         "//pkg/tcpip/header/parse",
         "//pkg/tcpip/network/internal/ip",
@@ -26,14 +29,16 @@ go_test(
     srcs = ["arp_test.go"],
     deps = [
         ":arp",
+        "//pkg/bufferv2",
+        "//pkg/refs",
         "//pkg/tcpip",
-        "//pkg/tcpip/buffer",
+        "//pkg/tcpip/faketime",
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/channel",
         "//pkg/tcpip/link/sniffer",
         "//pkg/tcpip/network/ipv4",
         "//pkg/tcpip/stack",
-        "//pkg/tcpip/transport/icmp",
+        "//pkg/tcpip/testutil",
         "@com_github_google_go_cmp//cmp:go_default_library",
         "@com_github_google_go_cmp//cmp/cmpopts:go_default_library",
     ],
@@ -45,8 +50,9 @@ go_test(
     srcs = ["stats_test.go"],
     library = ":arp",
     deps = [
+        "//pkg/refs",
         "//pkg/tcpip",
-        "//pkg/tcpip/network/internal/testutil",
         "//pkg/tcpip/stack",
+        "//pkg/tcpip/testutil",
     ],
 )

@@ -19,12 +19,12 @@ package fragmentation
 import (
 	"errors"
 	"fmt"
-	"log"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -97,7 +97,7 @@ type TimeoutHandler interface {
 	// OnReassemblyTimeout will be called with the first fragment (or nil, if the
 	// first fragment has not been received) of a packet whose reassembly has
 	// timed out.
-	OnReassemblyTimeout(pkt *stack.PacketBuffer)
+	OnReassemblyTimeout(pkt stack.PacketBufferPtr)
 }
 
 // NewFragmentation creates a new Fragmentation.
@@ -155,26 +155,30 @@ func NewFragmentation(blockSize uint16, highMemoryLimit, lowMemoryLimit int, rea
 // to be given here outside of the FragmentID struct because IPv6 should not use
 // the protocol to identify a fragment.
 func (f *Fragmentation) Process(
-	id FragmentID, first, last uint16, more bool, proto uint8, pkt *stack.PacketBuffer) (
-	*stack.PacketBuffer, uint8, bool, error) {
+	id FragmentID, first, last uint16, more bool, proto uint8, pkt stack.PacketBufferPtr) (
+	stack.PacketBufferPtr, uint8, bool, error) {
 	if first > last {
-		return nil, 0, false, fmt.Errorf("first=%d is greater than last=%d: %w", first, last, ErrInvalidArgs)
+		return stack.PacketBufferPtr{}, 0, false, fmt.Errorf("first=%d is greater than last=%d: %w", first, last, ErrInvalidArgs)
 	}
 
 	if first%f.blockSize != 0 {
-		return nil, 0, false, fmt.Errorf("first=%d is not a multiple of block size=%d: %w", first, f.blockSize, ErrInvalidArgs)
+		return stack.PacketBufferPtr{}, 0, false, fmt.Errorf("first=%d is not a multiple of block size=%d: %w", first, f.blockSize, ErrInvalidArgs)
 	}
 
 	fragmentSize := last - first + 1
 	if more && fragmentSize%f.blockSize != 0 {
-		return nil, 0, false, fmt.Errorf("fragment size=%d bytes is not a multiple of block size=%d on non-final fragment: %w", fragmentSize, f.blockSize, ErrInvalidArgs)
+		return stack.PacketBufferPtr{}, 0, false, fmt.Errorf("fragment size=%d bytes is not a multiple of block size=%d on non-final fragment: %w", fragmentSize, f.blockSize, ErrInvalidArgs)
 	}
 
 	if l := pkt.Data().Size(); l != int(fragmentSize) {
-		return nil, 0, false, fmt.Errorf("got fragment size=%d bytes not equal to the expected fragment size=%d bytes (first=%d last=%d): %w", l, fragmentSize, first, last, ErrInvalidArgs)
+		return stack.PacketBufferPtr{}, 0, false, fmt.Errorf("got fragment size=%d bytes not equal to the expected fragment size=%d bytes (first=%d last=%d): %w", l, fragmentSize, first, last, ErrInvalidArgs)
 	}
 
 	f.mu.Lock()
+	if f.reassemblers == nil {
+		return stack.PacketBufferPtr{}, 0, false, fmt.Errorf("Release() called before fragmentation processing could finish")
+	}
+
 	r, ok := f.reassemblers[id]
 	if !ok {
 		r = newReassembler(id, f.clock)
@@ -197,7 +201,7 @@ func (f *Fragmentation) Process(
 		f.mu.Lock()
 		f.release(r, false /* timedOut */)
 		f.mu.Unlock()
-		return nil, 0, false, fmt.Errorf("fragmentation processing error: %w", err)
+		return stack.PacketBufferPtr{}, 0, false, fmt.Errorf("fragmentation processing error: %w", err)
 	}
 	f.mu.Lock()
 	f.memSize += memConsumed
@@ -219,6 +223,16 @@ func (f *Fragmentation) Process(
 	return resPkt, firstFragmentProto, done, nil
 }
 
+// Release releases all underlying resources.
+func (f *Fragmentation) Release() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, r := range f.reassemblers {
+		f.release(r, false /* timedOut */)
+	}
+	f.reassemblers = nil
+}
+
 func (f *Fragmentation) release(r *reassembler, timedOut bool) {
 	// Before releasing a fragment we need to check if r is already marked as done.
 	// Otherwise, we would delete it twice.
@@ -230,13 +244,24 @@ func (f *Fragmentation) release(r *reassembler, timedOut bool) {
 	f.rList.Remove(r)
 	f.memSize -= r.memSize
 	if f.memSize < 0 {
-		log.Printf("memory counter < 0 (%d), this is an accounting bug that requires investigation", f.memSize)
+		log.Warningf("memory counter < 0 (%d), this is an accounting bug that requires investigation", f.memSize)
 		f.memSize = 0
 	}
 
 	if h := f.timeoutHandler; timedOut && h != nil {
 		h.OnReassemblyTimeout(r.pkt)
 	}
+	if !r.pkt.IsNil() {
+		r.pkt.DecRef()
+		r.pkt = stack.PacketBufferPtr{}
+	}
+	for _, h := range r.holes {
+		if !h.pkt.IsNil() {
+			h.pkt.DecRef()
+			h.pkt = stack.PacketBufferPtr{}
+		}
+	}
+	r.holes = nil
 }
 
 // releaseReassemblersLocked releases already-expired reassemblers, then
@@ -251,7 +276,7 @@ func (f *Fragmentation) releaseReassemblersLocked() {
 			// The list is empty.
 			break
 		}
-		elapsed := time.Duration(now-r.creationTime) * time.Nanosecond
+		elapsed := now.Sub(r.createdAt)
 		if f.timeout > elapsed {
 			// If the oldest reassembler has not expired, schedule the release
 			// job so that this function is called back when it has expired.
@@ -265,8 +290,8 @@ func (f *Fragmentation) releaseReassemblersLocked() {
 
 // PacketFragmenter is the book-keeping struct for packet fragmentation.
 type PacketFragmenter struct {
-	transportHeader    buffer.View
-	data               buffer.VectorisedView
+	transportHeader    []byte
+	data               bufferv2.Buffer
 	reserve            int
 	fragmentPayloadLen int
 	fragmentCount      int
@@ -283,7 +308,7 @@ type PacketFragmenter struct {
 //
 // reserve is the number of bytes that should be reserved for the headers in
 // each generated fragment.
-func MakePacketFragmenter(pkt *stack.PacketBuffer, fragmentPayloadLen uint32, reserve int) PacketFragmenter {
+func MakePacketFragmenter(pkt stack.PacketBufferPtr, fragmentPayloadLen uint32, reserve int) PacketFragmenter {
 	// As per RFC 8200 Section 4.5, some IPv6 extension headers should not be
 	// repeated in each fragment. However we do not currently support any header
 	// of that kind yet, so the following computation is valid for both IPv4 and
@@ -291,9 +316,10 @@ func MakePacketFragmenter(pkt *stack.PacketBuffer, fragmentPayloadLen uint32, re
 	// TODO(gvisor.dev/issue/3912): Once Authentication or ESP Headers are
 	// supported for outbound packets, the fragmentable data should not include
 	// these headers.
-	var fragmentableData buffer.VectorisedView
-	fragmentableData.AppendView(pkt.TransportHeader().View())
-	fragmentableData.Append(pkt.Data().ExtractVV())
+	var fragmentableData bufferv2.Buffer
+	fragmentableData.Append(pkt.TransportHeader().View())
+	pktBuf := pkt.Data().ToBuffer()
+	fragmentableData.Merge(&pktBuf)
 	fragmentCount := (uint32(fragmentableData.Size()) + fragmentPayloadLen - 1) / fragmentPayloadLen
 
 	return PacketFragmenter{
@@ -313,7 +339,7 @@ func MakePacketFragmenter(pkt *stack.PacketBuffer, fragmentPayloadLen uint32, re
 // Note that the returned packet will not have its network and link headers
 // populated, but space for them will be reserved. The transport header will be
 // stored in the packet's data.
-func (pf *PacketFragmenter) BuildNextFragment() (*stack.PacketBuffer, int, int, bool) {
+func (pf *PacketFragmenter) BuildNextFragment() (stack.PacketBufferPtr, int, int, bool) {
 	if pf.currentFragment >= pf.fragmentCount {
 		panic("BuildNextFragment should not be called again after the last fragment was returned")
 	}
@@ -323,7 +349,7 @@ func (pf *PacketFragmenter) BuildNextFragment() (*stack.PacketBuffer, int, int, 
 	})
 
 	// Copy data for the fragment.
-	copied := fragPkt.Data().ReadFromVV(&pf.data, pf.fragmentPayloadLen)
+	copied := fragPkt.Data().ReadFrom(&pf.data, pf.fragmentPayloadLen)
 
 	offset := pf.fragmentOffset
 	pf.fragmentOffset += copied
@@ -336,4 +362,9 @@ func (pf *PacketFragmenter) BuildNextFragment() (*stack.PacketBuffer, int, int, 
 // RemainingFragmentCount returns the number of fragments left to be built.
 func (pf *PacketFragmenter) RemainingFragmentCount() int {
 	return pf.fragmentCount - pf.currentFragment
+}
+
+// Release frees resources owned by the packet fragmenter.
+func (pf *PacketFragmenter) Release() {
+	pf.data.Release()
 }

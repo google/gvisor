@@ -41,7 +41,6 @@ const (
 
 // IP6T_ORIGINAL_DST is the ip6tables SOL_IPV6 socket option. Corresponds to
 // the value in include/uapi/linux/netfilter_ipv6/ip6_tables.h.
-// TODO(gvisor.dev/issue/3549): Support IPv6 original destination.
 const IP6T_ORIGINAL_DST = 80
 
 // IP6TReplace is the argument for the IP6T_SO_SET_REPLACE sockopt. It
@@ -85,23 +84,21 @@ func (ke *KernelIP6TGetEntries) SizeBytes() int {
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (ke *KernelIP6TGetEntries) MarshalBytes(dst []byte) {
-	ke.IPTGetEntries.MarshalBytes(dst)
-	marshalledUntil := ke.IPTGetEntries.SizeBytes()
+func (ke *KernelIP6TGetEntries) MarshalBytes(dst []byte) []byte {
+	dst = ke.IPTGetEntries.MarshalUnsafe(dst)
 	for i := range ke.Entrytable {
-		ke.Entrytable[i].MarshalBytes(dst[marshalledUntil:])
-		marshalledUntil += ke.Entrytable[i].SizeBytes()
+		dst = ke.Entrytable[i].MarshalBytes(dst)
 	}
+	return dst
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (ke *KernelIP6TGetEntries) UnmarshalBytes(src []byte) {
-	ke.IPTGetEntries.UnmarshalBytes(src)
-	unmarshalledUntil := ke.IPTGetEntries.SizeBytes()
+func (ke *KernelIP6TGetEntries) UnmarshalBytes(src []byte) []byte {
+	src = ke.IPTGetEntries.UnmarshalUnsafe(src)
 	for i := range ke.Entrytable {
-		ke.Entrytable[i].UnmarshalBytes(src[unmarshalledUntil:])
-		unmarshalledUntil += ke.Entrytable[i].SizeBytes()
+		src = ke.Entrytable[i].UnmarshalBytes(src)
 	}
+	return src
 }
 
 var _ marshal.Marshallable = (*KernelIP6TGetEntries)(nil)
@@ -149,8 +146,8 @@ type IP6TEntry struct {
 const SizeOfIP6TEntry = 168
 
 // KernelIP6TEntry is identical to IP6TEntry, but includes the Elems field.
-// KernelIP6TEntry itself is not Marshallable but it implements some methods of
-// marshal.Marshallable that help in other implementations of Marshallable.
+//
+// +marshal dynamic
 type KernelIP6TEntry struct {
 	Entry IP6TEntry
 
@@ -167,16 +164,18 @@ func (ke *KernelIP6TEntry) SizeBytes() int {
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (ke *KernelIP6TEntry) MarshalBytes(dst []byte) {
-	ke.Entry.MarshalBytes(dst)
-	ke.Elems.MarshalBytes(dst[ke.Entry.SizeBytes():])
+func (ke *KernelIP6TEntry) MarshalBytes(dst []byte) []byte {
+	dst = ke.Entry.MarshalUnsafe(dst)
+	return ke.Elems.MarshalBytes(dst)
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (ke *KernelIP6TEntry) UnmarshalBytes(src []byte) {
-	ke.Entry.UnmarshalBytes(src)
-	ke.Elems.UnmarshalBytes(src[ke.Entry.SizeBytes():])
+func (ke *KernelIP6TEntry) UnmarshalBytes(src []byte) []byte {
+	src = ke.Entry.UnmarshalUnsafe(src)
+	return ke.Elems.UnmarshalBytes(src)
 }
+
+var _ marshal.Marshallable = (*KernelIP6TEntry)(nil)
 
 // IP6TIP contains information for matching a packet's IP header.
 // It corresponds to struct ip6t_ip6 in
@@ -264,6 +263,8 @@ const (
 
 // NFNATRange corresponds to struct nf_nat_range in
 // include/uapi/linux/netfilter/nf_nat.h.
+//
+// +marshal
 type NFNATRange struct {
 	Flags    uint32
 	MinAddr  Inet6Addr

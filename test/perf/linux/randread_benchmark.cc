@@ -85,7 +85,7 @@ void BM_RandRead(benchmark::State& state) {
   unsigned int seed = 1;
   for (auto _ : state) {
     TEST_CHECK(PreadFd(fd.get(), buf.data(), buf.size(),
-                       rand_r(&seed) % kFileSize) == size);
+                       rand_r(&seed) % (kFileSize - buf.size())) == size);
   }
 
   state.SetBytesProcessed(static_cast<int64_t>(size) *

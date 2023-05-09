@@ -60,6 +60,7 @@ void sigusr2(int s, siginfo_t* siginfo, void* _uc) {
 
 void sigusr1(int s, siginfo_t* siginfo, void* _uc) {
   uint64_t val = SIGUSR1;
+  int64_t ret;
 
   // Record the value of %xmm0 on entry and then clobber it.
   GET_FP0(entryxmm[0]);
@@ -68,27 +69,20 @@ void sigusr1(int s, siginfo_t* siginfo, void* _uc) {
   // Send a SIGUSR2 to ourself. The signal mask is configured such that
   // the SIGUSR2 handler will run before this handler returns.
 #ifdef __x86_64__
-  asm volatile(
-      "movl %[killnr], %%eax;"
-      "movl %[pid], %%edi;"
-      "movl %[tid], %%esi;"
-      "movl %[sig], %%edx;"
-      "syscall;"
-      :
-      : [ killnr ] "i"(__NR_tgkill), [ pid ] "rm"(pid), [ tid ] "rm"(tid),
-        [ sig ] "i"(SIGUSR2)
-      : "rax", "rdi", "rsi", "rdx",
-        // Clobbered by syscall.
-        "rcx", "r11");
+  asm volatile("syscall;"
+               : "=a"(ret)
+               : "a"(__NR_tgkill), "D"(pid), "S"(tid), "d"(SIGUSR2)
+               :  // Clobbered by syscall.
+               "rcx", "r11");
 #elif __aarch64__
-  asm volatile(
-      "mov x8, %0\n"
-      "mov x0, %1\n"
-      "mov x1, %2\n"
-      "mov x2, %3\n"
-      "svc #0\n" ::"r"(__NR_tgkill),
-      "r"(pid), "r"(tid), "r"(SIGUSR2));
+  register uint64_t x8 __asm__("x8") = __NR_tgkill;
+  register uint64_t x0 __asm__("x0") = pid;
+  register uint64_t x1 __asm__("x1") = tid;
+  register uint64_t x2 __asm__("x2") = SIGUSR2;
+  asm volatile("svc #0\n" : "=r"(x0) : "r"(x0), "r"(x1), "r"(x2), "r"(x8) :);
+  ret = x0;
 #endif
+  EXPECT_EQ(ret, 0);
 
   // Record value of %xmm0 again to verify that the nested signal handler
   // does not clobber it.
@@ -123,28 +117,22 @@ TEST(FPSigTest, NestedSignals) {
   uint64_t expected = 0xdeadbeeffacefeed;
   SET_FP0(expected);
 
+  int64_t ret;
 #ifdef __x86_64__
-  asm volatile(
-      "movl %[killnr], %%eax;"
-      "movl %[pid], %%edi;"
-      "movl %[tid], %%esi;"
-      "movl %[sig], %%edx;"
-      "syscall;"
-      :
-      : [ killnr ] "i"(__NR_tgkill), [ pid ] "rm"(pid), [ tid ] "rm"(tid),
-        [ sig ] "i"(SIGUSR1)
-      : "rax", "rdi", "rsi", "rdx",
-        // Clobbered by syscall.
-        "rcx", "r11");
+  asm volatile("syscall;"
+               : "=a"(ret)
+               : "a"(__NR_tgkill), "D"(pid), "S"(tid), "d"(SIGUSR1)
+               :  // Clobbered by syscall.
+               "rcx", "r11");
 #elif __aarch64__
-  asm volatile(
-      "mov x8, %0\n"
-      "mov x0, %1\n"
-      "mov x1, %2\n"
-      "mov x2, %3\n"
-      "svc #0\n" ::"r"(__NR_tgkill),
-      "r"(pid), "r"(tid), "r"(SIGUSR1));
+  register uint64_t x8 __asm__("x8") = __NR_tgkill;
+  register uint64_t x0 __asm__("x0") = pid;
+  register uint64_t x1 __asm__("x1") = tid;
+  register uint64_t x2 __asm__("x2") = SIGUSR1;
+  asm volatile("svc #0\n" : "=r"(x0) : "r"(x0), "r"(x1), "r"(x2), "r"(x8) :);
+  ret = x0;
 #endif
+  EXPECT_EQ(ret, 0);
 
   uint64_t got;
   GET_FP0(got);
@@ -155,8 +143,10 @@ TEST(FPSigTest, NestedSignals) {
   // - sigreturn(2) must restore fpstate of the interrupted context.
   //
   EXPECT_EQ(expected, got);
+#ifdef __x86_64__
   EXPECT_EQ(entryxmm[0], 0);
   EXPECT_EQ(entryxmm[1], 0);
+#endif
   EXPECT_EQ(exitxmm[0], SIGUSR1);
   EXPECT_EQ(exitxmm[1], SIGUSR2);
 }

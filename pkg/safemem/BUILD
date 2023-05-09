@@ -1,6 +1,9 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_library(
     name = "safemem",
@@ -14,6 +17,7 @@ go_library(
     deps = [
         "//pkg/gohacks",
         "//pkg/safecopy",
+        "//pkg/sync",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

@@ -17,6 +17,7 @@ package ipv6
 import (
 	"fmt"
 
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -163,7 +164,7 @@ func (e *endpoint) checkLocalAddress(addr tcpip.Address) bool {
 // the original packet that caused the ICMP one to be sent. This information is
 // used to find out which transport endpoint must be notified about the ICMP
 // packet.
-func (e *endpoint) handleControl(transErr stack.TransportError, pkt *stack.PacketBuffer) {
+func (e *endpoint) handleControl(transErr stack.TransportError, pkt stack.PacketBufferPtr) {
 	h, ok := pkt.Data().PullUp(header.IPv6MinimumSize)
 	if !ok {
 		return
@@ -181,10 +182,15 @@ func (e *endpoint) handleControl(transErr stack.TransportError, pkt *stack.Packe
 		return
 	}
 
+	// Keep needed information before trimming header.
+	p := hdr.TransportProtocol()
+	dstAddr := hdr.DestinationAddress()
+
 	// Skip the IP header, then handle the fragmentation header if there
 	// is one.
-	pkt.Data().TrimFront(header.IPv6MinimumSize)
-	p := hdr.TransportProtocol()
+	if _, ok := pkt.Data().Consume(header.IPv6MinimumSize); !ok {
+		panic("could not consume IPv6MinimumSize bytes")
+	}
 	if p == header.IPv6FragmentHeader {
 		f, ok := pkt.Data().PullUp(header.IPv6FragmentHeaderSize)
 		if !ok {
@@ -196,14 +202,16 @@ func (e *endpoint) handleControl(transErr stack.TransportError, pkt *stack.Packe
 			// because they don't have the transport headers.
 			return
 		}
+		p = fragHdr.TransportProtocol()
 
 		// Skip fragmentation header and find out the actual protocol
 		// number.
-		pkt.Data().TrimFront(header.IPv6FragmentHeaderSize)
-		p = fragHdr.TransportProtocol()
+		if _, ok := pkt.Data().Consume(header.IPv6FragmentHeaderSize); !ok {
+			panic("could not consume IPv6FragmentHeaderSize bytes")
+		}
 	}
 
-	e.dispatcher.DeliverTransportError(srcAddr, hdr.DestinationAddress(), ProtocolNumber, p, transErr, pkt)
+	e.dispatcher.DeliverTransportError(srcAddr, dstAddr, ProtocolNumber, p, transErr, pkt)
 }
 
 // getLinkAddrOption searches NDP options for a given link address option using
@@ -259,7 +267,7 @@ func getTargetLinkAddr(it header.NDPOptionIterator) (tcpip.LinkAddress, bool) {
 	})
 }
 
-func isMLDValid(pkt *stack.PacketBuffer, iph header.IPv6, routerAlert *header.IPv6RouterAlertOption) bool {
+func isMLDValid(pkt stack.PacketBufferPtr, iph header.IPv6, routerAlert *header.IPv6RouterAlertOption) bool {
 	// As per RFC 2710 section 3:
 	//   All MLD messages described in this document are sent with a link-local
 	//   IPv6 Source Address, an IPv6 Hop Limit of 1, and an IPv6 Router Alert
@@ -267,7 +275,7 @@ func isMLDValid(pkt *stack.PacketBuffer, iph header.IPv6, routerAlert *header.IP
 	if routerAlert == nil || routerAlert.Value != header.IPv6RouterAlertMLD {
 		return false
 	}
-	if pkt.Data().Size() < header.ICMPv6HeaderSize+header.MLDMinimumSize {
+	if len(pkt.TransportHeader().Slice()) < header.ICMPv6HeaderSize+header.MLDMinimumSize {
 		return false
 	}
 	if iph.HopLimit() != header.MLDHopLimit {
@@ -279,23 +287,20 @@ func isMLDValid(pkt *stack.PacketBuffer, iph header.IPv6, routerAlert *header.IP
 	return true
 }
 
-func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, routerAlert *header.IPv6RouterAlertOption) {
+func (e *endpoint) handleICMP(pkt stack.PacketBufferPtr, hasFragmentHeader bool, routerAlert *header.IPv6RouterAlertOption) {
 	sent := e.stats.icmp.packetsSent
 	received := e.stats.icmp.packetsReceived
-	// TODO(gvisor.dev/issue/170): ICMP packets don't have their TransportHeader
-	// fields set. See icmp/protocol.go:protocol.Parse for a full explanation.
-	v, ok := pkt.Data().PullUp(header.ICMPv6HeaderSize)
-	if !ok {
+	h := header.ICMPv6(pkt.TransportHeader().Slice())
+	if len(h) < header.ICMPv6MinimumSize {
 		received.invalid.Increment()
 		return
 	}
-	h := header.ICMPv6(v)
-	iph := header.IPv6(pkt.NetworkHeader().View())
+	iph := header.IPv6(pkt.NetworkHeader().Slice())
 	srcAddr := iph.SourceAddress()
 	dstAddr := iph.DestinationAddress()
 
 	// Validate ICMPv6 checksum before processing the packet.
-	payload := pkt.Data().AsRange().SubRange(len(h))
+	payload := pkt.Data()
 	if got, want := h.Checksum(), header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
 		Header:      h,
 		Src:         srcAddr,
@@ -322,13 +327,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 	switch icmpType := h.Type(); icmpType {
 	case header.ICMPv6PacketTooBig:
 		received.packetTooBig.Increment()
-		hdr, ok := pkt.Data().PullUp(header.ICMPv6PacketTooBigMinimumSize)
-		if !ok {
-			received.invalid.Increment()
-			return
-		}
-		pkt.Data().TrimFront(header.ICMPv6PacketTooBigMinimumSize)
-		networkMTU, err := calculateNetworkMTU(header.ICMPv6(hdr).MTU(), header.IPv6MinimumSize)
+		networkMTU, err := calculateNetworkMTU(h.MTU(), header.IPv6MinimumSize)
 		if err != nil {
 			networkMTU = 0
 		}
@@ -336,13 +335,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 
 	case header.ICMPv6DstUnreachable:
 		received.dstUnreachable.Increment()
-		hdr, ok := pkt.Data().PullUp(header.ICMPv6DstUnreachableMinimumSize)
-		if !ok {
-			received.invalid.Increment()
-			return
-		}
-		pkt.Data().TrimFront(header.ICMPv6DstUnreachableMinimumSize)
-		switch header.ICMPv6(hdr).Code() {
+		switch h.Code() {
 		case header.ICMPv6NetworkUnreachable:
 			e.handleControl(&icmpv6DestinationNetworkUnreachableSockError{}, pkt)
 		case header.ICMPv6PortUnreachable:
@@ -350,16 +343,12 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 		}
 	case header.ICMPv6NeighborSolicit:
 		received.neighborSolicit.Increment()
-		if !isNDPValid() || pkt.Data().Size() < header.ICMPv6NeighborSolicitMinimumSize {
+		if !isNDPValid() || len(h) < header.ICMPv6NeighborSolicitMinimumSize {
 			received.invalid.Increment()
 			return
 		}
 
-		// The remainder of payload must be only the neighbor solicitation, so
-		// payload.AsView() always returns the solicitation. Per RFC 6980 section 5,
-		// NDP messages cannot be fragmented. Also note that in the common case NDP
-		// datagrams are very small and AsView() will not incur allocations.
-		ns := header.NDPNeighborSolicit(payload.AsView())
+		ns := header.NDPNeighborSolicit(h.MessageBody())
 		targetAddr := ns.TargetAddress()
 
 		// As per RFC 4861 section 4.3, the Target Address MUST NOT be a multicast
@@ -537,6 +526,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			ReserveHeaderBytes: int(r.MaxHeaderLength()) + neighborAdvertSize,
 		})
+		defer pkt.DecRef()
 		pkt.TransportProtocolNumber = header.ICMPv6ProtocolNumber
 		packet := header.ICMPv6(pkt.TransportHeader().Push(neighborAdvertSize))
 		packet.SetType(header.ICMPv6NeighborAdvert)
@@ -564,7 +554,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 		//
 		// The IP Hop Limit field has a value of 255, i.e., the packet
 		// could not possibly have been forwarded by a router.
-		if err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: header.ICMPv6ProtocolNumber, TTL: header.NDPHopLimit, TOS: stack.DefaultTOS}, pkt); err != nil {
+		if err := r.WritePacket(stack.NetworkHeaderParams{Protocol: header.ICMPv6ProtocolNumber, TTL: header.NDPHopLimit, TOS: stack.DefaultTOS}, pkt); err != nil {
 			sent.dropped.Increment()
 			return
 		}
@@ -572,16 +562,12 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 
 	case header.ICMPv6NeighborAdvert:
 		received.neighborAdvert.Increment()
-		if !isNDPValid() || pkt.Data().Size() < header.ICMPv6NeighborAdvertMinimumSize {
+		if !isNDPValid() || len(h) < header.ICMPv6NeighborAdvertMinimumSize {
 			received.invalid.Increment()
 			return
 		}
 
-		// The remainder of payload must be only the neighbor advertisement, so
-		// payload.AsView() always returns the advertisement. Per RFC 6980 section
-		// 5, NDP messages cannot be fragmented. Also note that in the common case
-		// NDP datagrams are very small and AsView() will not incur allocations.
-		na := header.NDPNeighborAdvert(payload.AsView())
+		na := header.NDPNeighborAdvert(h.MessageBody())
 
 		it, err := na.Options().Iter(false /* check */)
 		if err != nil {
@@ -668,12 +654,6 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 
 	case header.ICMPv6EchoRequest:
 		received.echoRequest.Increment()
-		icmpHdr, ok := pkt.TransportHeader().Consume(header.ICMPv6EchoMinimumSize)
-		if !ok {
-			received.invalid.Increment()
-			return
-		}
-
 		// As per RFC 4291 section 2.7, multicast addresses must not be used as
 		// source addresses in IPv6 packets.
 		localAddr := dstAddr
@@ -688,26 +668,36 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 		}
 		defer r.Release()
 
+		if !e.protocol.allowICMPReply(header.ICMPv6EchoReply) {
+			sent.rateLimited.Increment()
+			return
+		}
+
 		replyPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			ReserveHeaderBytes: int(r.MaxHeaderLength()) + header.ICMPv6EchoMinimumSize,
-			Data:               pkt.Data().ExtractVV(),
+			Payload:            pkt.Data().ToBuffer(),
 		})
+		defer replyPkt.DecRef()
 		icmp := header.ICMPv6(replyPkt.TransportHeader().Push(header.ICMPv6EchoMinimumSize))
-		pkt.TransportProtocolNumber = header.ICMPv6ProtocolNumber
-		copy(icmp, icmpHdr)
+		replyPkt.TransportProtocolNumber = header.ICMPv6ProtocolNumber
+		copy(icmp, h)
 		icmp.SetType(header.ICMPv6EchoReply)
-		dataRange := replyPkt.Data().AsRange()
+		replyData := replyPkt.Data()
 		icmp.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
 			Header:      icmp,
 			Src:         r.LocalAddress(),
 			Dst:         r.RemoteAddress(),
-			PayloadCsum: dataRange.Checksum(),
-			PayloadLen:  dataRange.Size(),
+			PayloadCsum: replyData.Checksum(),
+			PayloadLen:  replyData.Size(),
 		}))
-		if err := r.WritePacket(nil /* gso */, stack.NetworkHeaderParams{
+		replyTClass, _ := iph.TOS()
+		if err := r.WritePacket(stack.NetworkHeaderParams{
 			Protocol: header.ICMPv6ProtocolNumber,
 			TTL:      r.DefaultTTL(),
-			TOS:      stack.DefaultTOS,
+			// Even though RFC 4443 does not mention anything about it, Linux uses the
+			// TrafficClass of the received echo request when replying.
+			// https://github.com/torvalds/linux/blob/0280e3c58f9/net/ipv6/icmp.c#L797
+			TOS: replyTClass,
 		}, replyPkt); err != nil {
 			sent.dropped.Increment()
 			return
@@ -716,7 +706,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 
 	case header.ICMPv6EchoReply:
 		received.echoReply.Increment()
-		if pkt.Data().Size() < header.ICMPv6EchoMinimumSize {
+		if len(h) < header.ICMPv6EchoMinimumSize {
 			received.invalid.Increment()
 			return
 		}
@@ -736,23 +726,17 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 		//
 
 		// Is the NDP payload of sufficient size to hold a Router Solictation?
-		if !isNDPValid() || pkt.Data().Size()-header.ICMPv6HeaderSize < header.NDPRSMinimumSize {
+		if !isNDPValid() || len(h)-header.ICMPv6HeaderSize < header.NDPRSMinimumSize {
 			received.invalid.Increment()
 			return
 		}
 
-		stack := e.protocol.stack
-
-		// Is the networking stack operating as a router?
-		if !stack.Forwarding(ProtocolNumber) {
-			// ... No, silently drop the packet.
+		if !e.Forwarding() {
 			received.routerOnlyPacketsDroppedByHost.Increment()
 			return
 		}
 
-		// Note that in the common case NDP datagrams are very small and AsView()
-		// will not incur allocations.
-		rs := header.NDPRouterSolicit(payload.AsView())
+		rs := header.NDPRouterSolicit(h.MessageBody())
 		it, err := rs.Options().Iter(false /* check */)
 		if err != nil {
 			// Options are not valid as per the wire format, silently drop the packet.
@@ -796,7 +780,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 		//
 
 		// Is the NDP payload of sufficient size to hold a Router Advertisement?
-		if !isNDPValid() || pkt.Data().Size()-header.ICMPv6HeaderSize < header.NDPRAMinimumSize {
+		if !isNDPValid() || len(h)-header.ICMPv6HeaderSize < header.NDPRAMinimumSize {
 			received.invalid.Increment()
 			return
 		}
@@ -810,9 +794,7 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 			return
 		}
 
-		// Note that in the common case NDP datagrams are very small and AsView()
-		// will not incur allocations.
-		ra := header.NDPRouterAdvert(payload.AsView())
+		ra := header.NDPRouterAdvert(h.MessageBody())
 		it, err := ra.Options().Iter(false /* check */)
 		if err != nil {
 			// Options are not valid as per the wire format, silently drop the packet.
@@ -870,12 +852,18 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 			return
 		}
 
-	case header.ICMPv6MulticastListenerQuery, header.ICMPv6MulticastListenerReport, header.ICMPv6MulticastListenerDone:
+	case header.ICMPv6MulticastListenerQuery,
+		header.ICMPv6MulticastListenerReport,
+		header.ICMPv6MulticastListenerV2Report,
+		header.ICMPv6MulticastListenerDone:
+		icmpBody := h.MessageBody()
 		switch icmpType {
 		case header.ICMPv6MulticastListenerQuery:
 			received.multicastListenerQuery.Increment()
 		case header.ICMPv6MulticastListenerReport:
 			received.multicastListenerReport.Increment()
+		case header.ICMPv6MulticastListenerV2Report:
+			received.multicastListenerReportV2.Increment()
 		case header.ICMPv6MulticastListenerDone:
 			received.multicastListenerDone.Increment()
 		default:
@@ -890,13 +878,17 @@ func (e *endpoint) handleICMP(pkt *stack.PacketBuffer, hasFragmentHeader bool, r
 		switch icmpType {
 		case header.ICMPv6MulticastListenerQuery:
 			e.mu.Lock()
-			e.mu.mld.handleMulticastListenerQuery(header.MLD(payload.AsView()))
+			if len(icmpBody) >= header.MLDv2QueryMinimumSize {
+				e.mu.mld.handleMulticastListenerQueryV2(header.MLDv2Query(icmpBody))
+			} else {
+				e.mu.mld.handleMulticastListenerQuery(header.MLD(icmpBody))
+			}
 			e.mu.Unlock()
 		case header.ICMPv6MulticastListenerReport:
 			e.mu.Lock()
-			e.mu.mld.handleMulticastListenerReport(header.MLD(payload.AsView()))
+			e.mu.mld.handleMulticastListenerReport(header.MLD(icmpBody))
 			e.mu.Unlock()
-		case header.ICMPv6MulticastListenerDone:
+		case header.ICMPv6MulticastListenerDone, header.ICMPv6MulticastListenerV2Report:
 		default:
 			panic(fmt.Sprintf("unrecognized MLD message = %d", icmpType))
 		}
@@ -951,24 +943,22 @@ func (*endpoint) ResolveStaticAddress(addr tcpip.Address) (tcpip.LinkAddress, bo
 // icmpReason is a marker interface for IPv6 specific ICMP errors.
 type icmpReason interface {
 	isICMPReason()
+	// respondToMulticast indicates whether this error falls under the exception
+	// outlined by RFC 4443 section 2.4 point e.3 exception 2:
+	//
+	//   (e.3) A packet destined to an IPv6 multicast address. (There are two
+	//   exceptions to this rule: (1) the Packet Too Big Message (Section 3.2) to
+	//   allow Path MTU discovery to work for IPv6 multicast, and (2) the Parameter
+	//   Problem Message, Code 2 (Section 3.4) reporting an unrecognized IPv6
+	//   option (see Section 4.2 of [IPv6]) that has the Option Type highest-
+	//   order two bits set to 10).
+	respondsToMulticast() bool
 }
 
 // icmpReasonParameterProblem is an error during processing of extension headers
 // or the fixed header defined in RFC 4443 section 3.4.
 type icmpReasonParameterProblem struct {
 	code header.ICMPv6Code
-
-	// respondToMulticast indicates that we are sending a packet that falls under
-	// the exception outlined by RFC 4443 section 2.4 point e.3 exception 2:
-	//
-	//       (e.3) A packet destined to an IPv6 multicast address.  (There are
-	//             two exceptions to this rule: (1) the Packet Too Big Message
-	//             (Section 3.2) to allow Path MTU discovery to work for IPv6
-	//             multicast, and (2) the Parameter Problem Message, Code 2
-	//             (Section 3.4) reporting an unrecognized IPv6 option (see
-	//             Section 4.2 of [IPv6]) that has the Option Type highest-
-	//             order two bits set to 10).
-	respondToMulticast bool
 
 	// pointer is defined in the RFC 4443 setion 3.4 which reads:
 	//
@@ -979,9 +969,25 @@ type icmpReasonParameterProblem struct {
 	//                  packet if the field in error is beyond what can fit
 	//                  in the maximum size of an ICMPv6 error message.
 	pointer uint32
+
+	respondToMulticast bool
 }
 
 func (*icmpReasonParameterProblem) isICMPReason() {}
+
+func (p *icmpReasonParameterProblem) respondsToMulticast() bool {
+	return p.respondToMulticast
+}
+
+// icmpReasonAdministrativelyProhibited is an error where the destination is
+// administratively prohibited.
+type icmpReasonAdministrativelyProhibited struct{}
+
+func (*icmpReasonAdministrativelyProhibited) isICMPReason() {}
+
+func (*icmpReasonAdministrativelyProhibited) respondsToMulticast() bool {
+	return false
+}
 
 // icmpReasonPortUnreachable is an error where the transport protocol has no
 // listener and no alternative means to inform the sender.
@@ -989,11 +995,49 @@ type icmpReasonPortUnreachable struct{}
 
 func (*icmpReasonPortUnreachable) isICMPReason() {}
 
+func (*icmpReasonPortUnreachable) respondsToMulticast() bool {
+	return false
+}
+
+// icmpReasonNetUnreachable is an error where no route can be found to the
+// network of the final destination.
+type icmpReasonNetUnreachable struct{}
+
+func (*icmpReasonNetUnreachable) isICMPReason() {}
+
+func (*icmpReasonNetUnreachable) respondsToMulticast() bool {
+	return false
+}
+
+// icmpReasonHostUnreachable is an error in which the host specified in the
+// internet destination field of the datagram is unreachable.
+type icmpReasonHostUnreachable struct{}
+
+func (*icmpReasonHostUnreachable) isICMPReason() {}
+
+func (*icmpReasonHostUnreachable) respondsToMulticast() bool {
+	return false
+}
+
+// icmpReasonFragmentationNeeded is an error where a packet is to big to be sent
+// out through the outgoing MTU, as per RFC 4443 page 9, Packet Too Big Message.
+type icmpReasonPacketTooBig struct{}
+
+func (*icmpReasonPacketTooBig) isICMPReason() {}
+
+func (*icmpReasonPacketTooBig) respondsToMulticast() bool {
+	return true
+}
+
 // icmpReasonHopLimitExceeded is an error where a packet's hop limit exceeded in
 // transit to its final destination, as per RFC 4443 section 3.3.
 type icmpReasonHopLimitExceeded struct{}
 
 func (*icmpReasonHopLimitExceeded) isICMPReason() {}
+
+func (*icmpReasonHopLimitExceeded) respondsToMulticast() bool {
+	return false
+}
 
 // icmpReasonReassemblyTimeout is an error where insufficient fragments are
 // received to complete reassembly of a packet within a configured time after
@@ -1002,10 +1046,14 @@ type icmpReasonReassemblyTimeout struct{}
 
 func (*icmpReasonReassemblyTimeout) isICMPReason() {}
 
+func (*icmpReasonReassemblyTimeout) respondsToMulticast() bool {
+	return false
+}
+
 // returnError takes an error descriptor and generates the appropriate ICMP
 // error packet for IPv6 and sends it.
-func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) tcpip.Error {
-	origIPHdr := header.IPv6(pkt.NetworkHeader().View())
+func (p *protocol) returnError(reason icmpReason, pkt stack.PacketBufferPtr, deliveredLocally bool) tcpip.Error {
+	origIPHdr := header.IPv6(pkt.NetworkHeader().Slice())
 	origIPHdrSrc := origIPHdr.SourceAddress()
 	origIPHdrDst := origIPHdr.DestinationAddress()
 
@@ -1030,26 +1078,13 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) tcpip
 	//             Section 4.2 of [IPv6]) that has the Option Type highest-
 	//             order two bits set to 10).
 	//
-	var allowResponseToMulticast bool
-	if reason, ok := reason.(*icmpReasonParameterProblem); ok {
-		allowResponseToMulticast = reason.respondToMulticast
-	}
-
+	allowResponseToMulticast := reason.respondsToMulticast()
 	isOrigDstMulticast := header.IsV6MulticastAddress(origIPHdrDst)
 	if (!allowResponseToMulticast && isOrigDstMulticast) || origIPHdrSrc == header.IPv6Any {
 		return nil
 	}
 
-	// If we hit a Hop Limit Exceeded error, then we know we are operating as a
-	// router. As per RFC 4443 section 3.3:
-	//
-	//   If a router receives a packet with a Hop Limit of zero, or if a
-	//   router decrements a packet's Hop Limit to zero, it MUST discard the
-	//   packet and originate an ICMPv6 Time Exceeded message with Code 0 to
-	//   the source of the packet.  This indicates either a routing loop or
-	//   too small an initial Hop Limit value.
-	//
-	// If we are operating as a router, do not use the packet's destination
+	// If the packet wasn't delivered locally, do not use the packet's destination
 	// address as the response's source address as we should not own the
 	// destination address of a packet we are forwarding.
 	//
@@ -1058,7 +1093,7 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) tcpip
 	// packet as "multicast addresses must not be used as source addresses in IPv6
 	// packets", as per RFC 4291 section 2.7.
 	localAddr := origIPHdrDst
-	if _, ok := reason.(*icmpReasonHopLimitExceeded); ok || isOrigDstMulticast {
+	if !deliveredLocally || isOrigDstMulticast {
 		localAddr = ""
 	}
 	// Even if we were able to receive a packet from some remote, we may not have
@@ -1072,34 +1107,50 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) tcpip
 	defer route.Release()
 
 	p.mu.Lock()
-	netEP, ok := p.mu.eps[pkt.NICID]
+	// We retrieve an endpoint using the newly constructed route's NICID rather
+	// than the packet's NICID. The packet's NICID corresponds to the NIC on
+	// which it arrived, which isn't necessarily the same as the NIC on which it
+	// will be transmitted. On the other hand, the route's NIC *is* guaranteed
+	// to be the NIC on which the packet will be transmitted.
+	netEP, ok := p.mu.eps[route.NICID()]
 	p.mu.Unlock()
 	if !ok {
 		return &tcpip.ErrNotConnected{}
 	}
 
-	sent := netEP.stats.icmp.packetsSent
-
-	if !p.stack.AllowICMPMessage() {
-		sent.rateLimited.Increment()
-		return nil
+	if pkt.TransportProtocolNumber == header.ICMPv6ProtocolNumber {
+		if typ := header.ICMPv6(pkt.TransportHeader().Slice()).Type(); typ.IsErrorType() || typ == header.ICMPv6RedirectMsg {
+			return nil
+		}
 	}
 
-	if pkt.TransportProtocolNumber == header.ICMPv6ProtocolNumber {
-		// TODO(gvisor.dev/issues/3810): Sort this out when ICMP headers are stored.
-		// Unfortunately at this time ICMP Packets do not have a transport
-		// header separated out. It is in the Data part so we need to
-		// separate it out now. We will just pretend it is a minimal length
-		// ICMP packet as we don't really care if any later bits of a
-		// larger ICMP packet are in the header view or in the Data view.
-		transport, ok := pkt.TransportHeader().Consume(header.ICMPv6MinimumSize)
-		if !ok {
-			return nil
+	sent := netEP.stats.icmp.packetsSent
+	icmpType, icmpCode, counter, typeSpecific := func() (header.ICMPv6Type, header.ICMPv6Code, tcpip.MultiCounterStat, uint32) {
+		switch reason := reason.(type) {
+		case *icmpReasonParameterProblem:
+			return header.ICMPv6ParamProblem, reason.code, sent.paramProblem, reason.pointer
+		case *icmpReasonAdministrativelyProhibited:
+			return header.ICMPv6DstUnreachable, header.ICMPv6Prohibited, sent.dstUnreachable, 0
+		case *icmpReasonPortUnreachable:
+			return header.ICMPv6DstUnreachable, header.ICMPv6PortUnreachable, sent.dstUnreachable, 0
+		case *icmpReasonNetUnreachable:
+			return header.ICMPv6DstUnreachable, header.ICMPv6NetworkUnreachable, sent.dstUnreachable, 0
+		case *icmpReasonHostUnreachable:
+			return header.ICMPv6DstUnreachable, header.ICMPv6AddressUnreachable, sent.dstUnreachable, 0
+		case *icmpReasonPacketTooBig:
+			return header.ICMPv6PacketTooBig, header.ICMPv6UnusedCode, sent.packetTooBig, 0
+		case *icmpReasonHopLimitExceeded:
+			return header.ICMPv6TimeExceeded, header.ICMPv6HopLimitExceeded, sent.timeExceeded, 0
+		case *icmpReasonReassemblyTimeout:
+			return header.ICMPv6TimeExceeded, header.ICMPv6ReassemblyTimeout, sent.timeExceeded, 0
+		default:
+			panic(fmt.Sprintf("unsupported ICMP type %T", reason))
 		}
-		typ := header.ICMPv6(transport).Type()
-		if typ.IsErrorType() || typ == header.ICMPv6RedirectMsg {
-			return nil
-		}
+	}()
+
+	if !p.allowICMPReply(icmpType) {
+		sent.rateLimited.Increment()
+		return nil
 	}
 
 	network, transport := pkt.NetworkHeader().View(), pkt.TransportHeader().View()
@@ -1124,50 +1175,33 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) tcpip
 	if payloadLen > available {
 		payloadLen = available
 	}
-	payload := network.ToVectorisedView()
-	payload.AppendView(transport)
-	payload.Append(pkt.Data().ExtractVV())
-	payload.CapLength(payloadLen)
+	payload := bufferv2.MakeWithView(network)
+	payload.Append(transport)
+	dataBuf := pkt.Data().ToBuffer()
+	payload.Merge(&dataBuf)
+	payload.Truncate(int64(payloadLen))
 
 	newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(route.MaxHeaderLength()) + header.ICMPv6ErrorHeaderSize,
-		Data:               payload,
+		Payload:            payload,
 	})
+	defer newPkt.DecRef()
 	newPkt.TransportProtocolNumber = header.ICMPv6ProtocolNumber
 
 	icmpHdr := header.ICMPv6(newPkt.TransportHeader().Push(header.ICMPv6DstUnreachableMinimumSize))
-	var counter tcpip.MultiCounterStat
-	switch reason := reason.(type) {
-	case *icmpReasonParameterProblem:
-		icmpHdr.SetType(header.ICMPv6ParamProblem)
-		icmpHdr.SetCode(reason.code)
-		icmpHdr.SetTypeSpecific(reason.pointer)
-		counter = sent.paramProblem
-	case *icmpReasonPortUnreachable:
-		icmpHdr.SetType(header.ICMPv6DstUnreachable)
-		icmpHdr.SetCode(header.ICMPv6PortUnreachable)
-		counter = sent.dstUnreachable
-	case *icmpReasonHopLimitExceeded:
-		icmpHdr.SetType(header.ICMPv6TimeExceeded)
-		icmpHdr.SetCode(header.ICMPv6HopLimitExceeded)
-		counter = sent.timeExceeded
-	case *icmpReasonReassemblyTimeout:
-		icmpHdr.SetType(header.ICMPv6TimeExceeded)
-		icmpHdr.SetCode(header.ICMPv6ReassemblyTimeout)
-		counter = sent.timeExceeded
-	default:
-		panic(fmt.Sprintf("unsupported ICMP type %T", reason))
-	}
-	dataRange := newPkt.Data().AsRange()
+	icmpHdr.SetType(icmpType)
+	icmpHdr.SetCode(icmpCode)
+	icmpHdr.SetTypeSpecific(typeSpecific)
+
+	pktData := newPkt.Data()
 	icmpHdr.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
 		Header:      icmpHdr,
 		Src:         route.LocalAddress(),
 		Dst:         route.RemoteAddress(),
-		PayloadCsum: dataRange.Checksum(),
-		PayloadLen:  dataRange.Size(),
+		PayloadCsum: pktData.Checksum(),
+		PayloadLen:  pktData.Size(),
 	}))
 	if err := route.WritePacket(
-		nil, /* gso */
 		stack.NetworkHeaderParams{
 			Protocol: header.ICMPv6ProtocolNumber,
 			TTL:      route.DefaultTTL(),
@@ -1183,14 +1217,14 @@ func (p *protocol) returnError(reason icmpReason, pkt *stack.PacketBuffer) tcpip
 }
 
 // OnReassemblyTimeout implements fragmentation.TimeoutHandler.
-func (p *protocol) OnReassemblyTimeout(pkt *stack.PacketBuffer) {
+func (p *protocol) OnReassemblyTimeout(pkt stack.PacketBufferPtr) {
 	// OnReassemblyTimeout sends a Time Exceeded Message as per RFC 2460 Section
 	// 4.5:
 	//
 	//   If the first fragment (i.e., the one with a Fragment Offset of zero) has
 	//   been received, an ICMP Time Exceeded -- Fragment Reassembly Time Exceeded
 	//   message should be sent to the source of that fragment.
-	if pkt != nil {
-		p.returnError(&icmpReasonReassemblyTimeout{}, pkt)
+	if !pkt.IsNil() {
+		p.returnError(&icmpReasonReassemblyTimeout{}, pkt, true /* deliveredLocally */)
 	}
 }

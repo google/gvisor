@@ -1,6 +1,9 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_library(
     name = "tcpconntrack",
@@ -18,6 +21,7 @@ go_test(
     srcs = ["tcp_conntrack_test.go"],
     deps = [
         ":tcpconntrack",
+        "//pkg/refs",
         "//pkg/tcpip/header",
     ],
 )

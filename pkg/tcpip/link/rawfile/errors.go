@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build linux
 // +build linux
 
 package rawfile
@@ -33,7 +34,7 @@ func TranslateErrno(e unix.Errno) tcpip.Error {
 	case unix.EEXIST:
 		return &tcpip.ErrDuplicateAddress{}
 	case unix.ENETUNREACH:
-		return &tcpip.ErrNoRoute{}
+		return &tcpip.ErrHostUnreachable{}
 	case unix.EINVAL:
 		return &tcpip.ErrInvalidEndpointState{}
 	case unix.EALREADY:

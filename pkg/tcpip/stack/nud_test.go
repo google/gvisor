@@ -16,6 +16,7 @@ package stack_test
 
 import (
 	"math"
+	"math/rand"
 	"testing"
 	"time"
 
@@ -28,17 +29,15 @@ import (
 )
 
 const (
-	defaultBaseReachableTime           = 30 * time.Second
-	minimumBaseReachableTime           = time.Millisecond
-	defaultMinRandomFactor             = 0.5
-	defaultMaxRandomFactor             = 1.5
-	defaultRetransmitTimer             = time.Second
-	minimumRetransmitTimer             = time.Millisecond
-	defaultDelayFirstProbeTime         = 5 * time.Second
-	defaultMaxMulticastProbes          = 3
-	defaultMaxUnicastProbes            = 3
-	defaultMaxAnycastDelayTime         = time.Second
-	defaultMaxReachbilityConfirmations = 3
+	defaultBaseReachableTime   = 30 * time.Second
+	minimumBaseReachableTime   = time.Millisecond
+	defaultMinRandomFactor     = 0.5
+	defaultMaxRandomFactor     = 1.5
+	defaultRetransmitTimer     = time.Second
+	minimumRetransmitTimer     = time.Millisecond
+	defaultDelayFirstProbeTime = 5 * time.Second
+	defaultMaxMulticastProbes  = 3
+	defaultMaxUnicastProbes    = 3
 
 	defaultFakeRandomNum = 0.5
 )
@@ -48,11 +47,13 @@ type fakeRand struct {
 	num float32
 }
 
-var _ stack.Rand = (*fakeRand)(nil)
+var _ rand.Source = (*fakeRand)(nil)
 
-func (f *fakeRand) Float32() float32 {
-	return f.num
+func (f *fakeRand) Int63() int64 {
+	return int64(f.num * float32(1<<63))
 }
+
+func (*fakeRand) Seed(int64) {}
 
 func TestNUDFunctions(t *testing.T) {
 	const nicID = 1
@@ -169,8 +170,9 @@ func TestNUDFunctions(t *testing.T) {
 					t.Errorf("s.Neigbors(%d, %d) error mismatch (-want +got):\n%s", test.nicID, ipv6.ProtocolNumber, diff)
 				} else if test.expectedErr == nil {
 					if diff := cmp.Diff(
-						[]stack.NeighborEntry{{Addr: llAddr2, LinkAddr: linkAddr1, State: stack.Static, UpdatedAtNanos: clock.NowNanoseconds()}},
+						[]stack.NeighborEntry{{Addr: llAddr2, LinkAddr: linkAddr1, State: stack.Static, UpdatedAt: clock.NowMonotonic()}},
 						neighbors,
+						cmp.AllowUnexported(tcpip.MonotonicTime{}),
 					); diff != "" {
 						t.Errorf("neighbors mismatch (-want +got):\n%s", diff)
 					}
@@ -710,7 +712,8 @@ func TestNUDStateReachableTime(t *testing.T) {
 			rng := fakeRand{
 				num: defaultFakeRandomNum,
 			}
-			s := stack.NewNUDState(c, &rng)
+			var clock faketime.NullClock
+			s := stack.NewNUDState(c, &clock, rand.New(&rng))
 			if got, want := s.ReachableTime(), test.want; got != want {
 				t.Errorf("got ReachableTime = %q, want = %q", got, want)
 			}
@@ -782,7 +785,8 @@ func TestNUDStateRecomputeReachableTime(t *testing.T) {
 			rng := fakeRand{
 				num: defaultFakeRandomNum,
 			}
-			s := stack.NewNUDState(c, &rng)
+			var clock faketime.NullClock
+			s := stack.NewNUDState(c, &clock, rand.New(&rng))
 			old := s.ReachableTime()
 
 			if got, want := s.ReachableTime(), old; got != want {

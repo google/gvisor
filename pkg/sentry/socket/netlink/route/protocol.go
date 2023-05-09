@@ -18,9 +18,10 @@ package route
 import (
 	"bytes"
 
-	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -160,6 +161,47 @@ func (p *Protocol) getLink(ctx context.Context, msg *netlink.Message, ms *netlin
 	return nil
 }
 
+// delLink handles RTM_DELLINK requests.
+func (p *Protocol) delLink(ctx context.Context, msg *netlink.Message, ms *netlink.MessageSet) *syserr.Error {
+	stack := inet.StackFromContext(ctx)
+	if stack == nil {
+		// No network stack.
+		return syserr.ErrProtocolNotSupported
+	}
+
+	var ifinfomsg linux.InterfaceInfoMessage
+	attrs, ok := msg.GetData(&ifinfomsg)
+	if !ok {
+		return syserr.ErrInvalidArgument
+	}
+	if ifinfomsg.Index == 0 {
+		// The index is unspecified, search by the interface name.
+		ahdr, value, _, ok := attrs.ParseFirst()
+		if !ok {
+			return syserr.ErrInvalidArgument
+		}
+		switch ahdr.Type {
+		case linux.IFLA_IFNAME:
+			if len(value) < 1 {
+				return syserr.ErrInvalidArgument
+			}
+			ifname := string(value[:len(value)-1])
+			for idx, ifa := range stack.Interfaces() {
+				if ifname == ifa.Name {
+					ifinfomsg.Index = idx
+					break
+				}
+			}
+		default:
+			return syserr.ErrInvalidArgument
+		}
+		if ifinfomsg.Index == 0 {
+			return syserr.ErrNoDevice
+		}
+	}
+	return syserr.FromError(stack.RemoveInterface(ifinfomsg.Index))
+}
+
 // addNewLinkMessage appends RTM_NEWLINK message for the given interface into
 // the message set.
 func addNewLinkMessage(ms *netlink.MessageSet, idx int32, i inet.Interface) {
@@ -167,7 +209,7 @@ func addNewLinkMessage(ms *netlink.MessageSet, idx int32, i inet.Interface) {
 		Type: linux.RTM_NEWLINK,
 	})
 
-	m.Put(linux.InterfaceInfoMessage{
+	m.Put(&linux.InterfaceInfoMessage{
 		Family: linux.AF_UNSPEC,
 		Type:   i.DeviceType,
 		Index:  idx,
@@ -175,7 +217,7 @@ func addNewLinkMessage(ms *netlink.MessageSet, idx int32, i inet.Interface) {
 	})
 
 	m.PutAttrString(linux.IFLA_IFNAME, i.Name)
-	m.PutAttr(linux.IFLA_MTU, i.MTU)
+	m.PutAttr(linux.IFLA_MTU, primitive.AllocateUint32(i.MTU))
 
 	mac := make([]byte, 6)
 	brd := mac
@@ -183,8 +225,8 @@ func addNewLinkMessage(ms *netlink.MessageSet, idx int32, i inet.Interface) {
 		mac = i.Addr
 		brd = bytes.Repeat([]byte{0xff}, len(i.Addr))
 	}
-	m.PutAttr(linux.IFLA_ADDRESS, mac)
-	m.PutAttr(linux.IFLA_BROADCAST, brd)
+	m.PutAttr(linux.IFLA_ADDRESS, primitive.AsByteSlice(mac))
+	m.PutAttr(linux.IFLA_BROADCAST, primitive.AsByteSlice(brd))
 
 	// TODO(gvisor.dev/issue/578): There are many more attributes.
 }
@@ -216,14 +258,15 @@ func (p *Protocol) dumpAddrs(ctx context.Context, msg *netlink.Message, ms *netl
 				Type: linux.RTM_NEWADDR,
 			})
 
-			m.Put(linux.InterfaceAddrMessage{
+			m.Put(&linux.InterfaceAddrMessage{
 				Family:    a.Family,
 				PrefixLen: a.PrefixLen,
 				Index:     uint32(id),
 			})
 
-			m.PutAttr(linux.IFA_LOCAL, []byte(a.Addr))
-			m.PutAttr(linux.IFA_ADDRESS, []byte(a.Addr))
+			addr := primitive.ByteSlice([]byte(a.Addr))
+			m.PutAttr(linux.IFA_LOCAL, &addr)
+			m.PutAttr(linux.IFA_ADDRESS, &addr)
 
 			// TODO(gvisor.dev/issue/578): There are many more attributes.
 		}
@@ -292,7 +335,7 @@ func fillRoute(routes []inet.Route, addr []byte) (inet.Route, *syserr.Error) {
 		idx = idxDef
 	}
 	if idx == -1 {
-		return inet.Route{}, syserr.ErrNoRoute
+		return inet.Route{}, syserr.ErrHostUnreachable
 	}
 
 	route := routes[idx]
@@ -366,7 +409,7 @@ func (p *Protocol) dumpRoutes(ctx context.Context, msg *netlink.Message, ms *net
 			Type: linux.RTM_NEWROUTE,
 		})
 
-		m.Put(linux.RouteMessage{
+		m.Put(&linux.RouteMessage{
 			Family: rt.Family,
 			DstLen: rt.DstLen,
 			SrcLen: rt.SrcLen,
@@ -382,18 +425,18 @@ func (p *Protocol) dumpRoutes(ctx context.Context, msg *netlink.Message, ms *net
 			Flags: rt.Flags,
 		})
 
-		m.PutAttr(254, []byte{123})
+		m.PutAttr(254, primitive.AsByteSlice([]byte{123}))
 		if rt.DstLen > 0 {
-			m.PutAttr(linux.RTA_DST, rt.DstAddr)
+			m.PutAttr(linux.RTA_DST, primitive.AsByteSlice(rt.DstAddr))
 		}
 		if rt.SrcLen > 0 {
-			m.PutAttr(linux.RTA_SRC, rt.SrcAddr)
+			m.PutAttr(linux.RTA_SRC, primitive.AsByteSlice(rt.SrcAddr))
 		}
 		if rt.OutputInterface != 0 {
-			m.PutAttr(linux.RTA_OIF, rt.OutputInterface)
+			m.PutAttr(linux.RTA_OIF, primitive.AllocateInt32(rt.OutputInterface))
 		}
 		if len(rt.GatewayAddr) > 0 {
-			m.PutAttr(linux.RTA_GATEWAY, rt.GatewayAddr)
+			m.PutAttr(linux.RTA_GATEWAY, primitive.AsByteSlice(rt.GatewayAddr))
 		}
 
 		// TODO(gvisor.dev/issue/578): There are many more attributes.
@@ -436,7 +479,7 @@ func (p *Protocol) newAddr(ctx context.Context, msg *netlink.Message, ms *netlin
 				Flags:     ifa.Flags,
 				Addr:      value,
 			})
-			if err == unix.EEXIST {
+			if linuxerr.Equals(linuxerr.EEXIST, err) {
 				flags := msg.Header().Flags
 				if flags&linux.NLM_F_EXCL != 0 {
 					return syserr.ErrExists
@@ -503,7 +546,7 @@ func (p *Protocol) ProcessMessage(ctx context.Context, msg *netlink.Message, ms 
 	hdr := msg.Header()
 
 	// All messages start with a 1 byte protocol family.
-	var family uint8
+	var family primitive.Uint8
 	if _, ok := msg.GetData(&family); !ok {
 		// Linux ignores messages missing the protocol family. See
 		// net/core/rtnetlink.c:rtnetlink_rcv_msg.
@@ -535,6 +578,8 @@ func (p *Protocol) ProcessMessage(ctx context.Context, msg *netlink.Message, ms 
 		switch hdr.Type {
 		case linux.RTM_GETLINK:
 			return p.getLink(ctx, msg, ms)
+		case linux.RTM_DELLINK:
+			return p.delLink(ctx, msg, ms)
 		case linux.RTM_GETROUTE:
 			return p.dumpRoutes(ctx, msg, ms)
 		case linux.RTM_NEWADDR:

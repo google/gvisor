@@ -1,11 +1,15 @@
 load("//tools:defs.bzl", "go_library")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_library(
     name = "console",
     srcs = [
         "console.go",
+        "pty_linux.go",
     ],
     visibility = [
         "//runsc:__subpackages__",

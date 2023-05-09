@@ -19,16 +19,11 @@ package time
 import (
 	"time"
 
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
-
-// fallbackMetric tracks failed updates. It is not sync, as it is not critical
-// that all occurrences are captured and CalibratedClock may fallback many
-// times.
-var fallbackMetric = metric.MustCreateNewUint64Metric("/time/fallback", false /* sync */, "Incremented when a clock falls back to system calls due to a failed update")
 
 // CalibratedClock implements a clock that tracks a reference clock.
 //
@@ -63,27 +58,27 @@ func NewCalibratedClock(c ClockID) *CalibratedClock {
 }
 
 // Debugf logs at debug level.
-func (c *CalibratedClock) Debugf(format string, v ...interface{}) {
+func (c *CalibratedClock) Debugf(format string, v ...any) {
 	if log.IsLogging(log.Debug) {
-		args := []interface{}{c.ref.clockID}
+		args := []any{c.ref.clockID}
 		args = append(args, v...)
 		log.Debugf("CalibratedClock(%v): "+format, args...)
 	}
 }
 
 // Infof logs at debug level.
-func (c *CalibratedClock) Infof(format string, v ...interface{}) {
+func (c *CalibratedClock) Infof(format string, v ...any) {
 	if log.IsLogging(log.Info) {
-		args := []interface{}{c.ref.clockID}
+		args := []any{c.ref.clockID}
 		args = append(args, v...)
 		log.Infof("CalibratedClock(%v): "+format, args...)
 	}
 }
 
 // Warningf logs at debug level.
-func (c *CalibratedClock) Warningf(format string, v ...interface{}) {
+func (c *CalibratedClock) Warningf(format string, v ...any) {
 	if log.IsLogging(log.Warning) {
-		args := []interface{}{c.ref.clockID}
+		args := []any{c.ref.clockID}
 		args = append(args, v...)
 		log.Warningf("CalibratedClock(%v): "+format, args...)
 	}
@@ -91,18 +86,18 @@ func (c *CalibratedClock) Warningf(format string, v ...interface{}) {
 
 // reset forces the clock to restart the calibration process, logging the
 // passed message.
-func (c *CalibratedClock) reset(str string, v ...interface{}) {
+func (c *CalibratedClock) reset(str string, v ...any) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.resetLocked(str, v...)
 }
 
 // resetLocked is equivalent to reset with c.mu already held for writing.
-func (c *CalibratedClock) resetLocked(str string, v ...interface{}) {
+func (c *CalibratedClock) resetLocked(str string, v ...any) {
 	c.Warningf(str+" Resetting clock; time may jump.", v...)
 	c.ready = false
 	c.ref.Reset()
-	fallbackMetric.Increment()
+	metric.WeirdnessMetric.Increment(&metric.WeirdnessTypeTimeFallback)
 }
 
 // updateParams updates the timekeeping parameters based on the passed
@@ -264,6 +259,6 @@ func (c *CalibratedClocks) GetTime(id ClockID) (int64, error) {
 	case Realtime:
 		return c.realtime.GetTime()
 	default:
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 }

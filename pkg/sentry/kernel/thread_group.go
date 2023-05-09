@@ -18,15 +18,14 @@ import (
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // A ThreadGroup is a logical grouping of tasks that has widespread
@@ -112,13 +111,13 @@ type ThreadGroup struct {
 	//
 	// Analogues in Linux:
 	//
-	// - groupContNotify && groupContInterrupted is represented by
-	// SIGNAL_CLD_STOPPED.
+	//	- groupContNotify && groupContInterrupted is represented by
+	//		SIGNAL_CLD_STOPPED.
 	//
-	// - groupContNotify && !groupContInterrupted is represented by
-	// SIGNAL_CLD_CONTINUED.
+	//	- groupContNotify && !groupContInterrupted is represented by
+	//		SIGNAL_CLD_CONTINUED.
 	//
-	// - !groupContNotify is represented by neither flag being set.
+	//	- !groupContNotify is represented by neither flag being set.
 	//
 	// groupContNotify and groupContInterrupted are protected by the signal
 	// mutex.
@@ -144,7 +143,7 @@ type ThreadGroup struct {
 	//
 	// While exiting is false, exitStatus is protected by the signal mutex.
 	// When exiting becomes true, exitStatus becomes immutable.
-	exitStatus ExitStatus
+	exitStatus linux.WaitStatus
 
 	// terminationSignal is the signal that this thread group's leader will
 	// send to its parent when it exits.
@@ -159,7 +158,7 @@ type ThreadGroup struct {
 	// restarted by Task.Start.
 	liveGoroutines sync.WaitGroup `state:"nosave"`
 
-	timerMu sync.Mutex `state:"nosave"`
+	timerMu threadGroupTimerMutex `state:"nosave"`
 
 	// itimerRealTimer implements ITIMER_REAL for the thread group.
 	itimerRealTimer *ktime.Timer
@@ -184,9 +183,8 @@ type ThreadGroup struct {
 	// itimerProfSetting.Enabled is true, rlimitCPUSoftSetting.Enabled is true,
 	// or limits.Get(CPU) is finite.
 	//
-	// cpuTimersEnabled is protected by the signal mutex. cpuTimersEnabled is
-	// accessed using atomic memory operations.
-	cpuTimersEnabled uint32
+	// cpuTimersEnabled is protected by the signal mutex.
+	cpuTimersEnabled atomicbitops.Uint32
 
 	// timers is the thread group's POSIX interval timers. nextTimerID is the
 	// TimerID at which allocation should begin searching for an unused ID.
@@ -209,11 +207,11 @@ type ThreadGroup struct {
 
 	// maxRSS is the historical maximum resident set size of the thread group, updated when:
 	//
-	// - A task in the thread group exits, since after all tasks have
-	// exited the MemoryManager is no longer reachable.
+	//	- A task in the thread group exits, since after all tasks have
+	//		exited the MemoryManager is no longer reachable.
 	//
-	// - The thread group completes an execve, since this changes
-	// MemoryManagers.
+	//	- The thread group completes an execve, since this changes
+	//		MemoryManagers.
 	//
 	// maxRSS is protected by the TaskSet mutex.
 	maxRSS uint64
@@ -242,14 +240,6 @@ type ThreadGroup struct {
 	// oldRSeqCritical is the thread group's old rseq critical region.
 	oldRSeqCritical atomic.Value `state:".(*OldRSeqCriticalRegion)"`
 
-	// mounts is the thread group's mount namespace. This does not really
-	// correspond to a "mount namespace" in Linux, but is more like a
-	// complete VFS that need not be shared between processes. See the
-	// comment in mounts.go  for more information.
-	//
-	// mounts is immutable.
-	mounts *fs.MountNamespace
-
 	// tty is the thread group's controlling terminal. If nil, there is no
 	// controlling terminal.
 	//
@@ -259,16 +249,14 @@ type ThreadGroup struct {
 	// oomScoreAdj is the thread group's OOM score adjustment. This is
 	// currently not used but is maintained for consistency.
 	// TODO(gvisor.dev/issue/1967)
-	//
-	// oomScoreAdj is accessed using atomic memory operations.
-	oomScoreAdj int32
+	oomScoreAdj atomicbitops.Int32
 }
 
 // NewThreadGroup returns a new, empty thread group in PID namespace pidns. The
 // thread group leader will send its parent terminationSignal when it exits.
 // The new thread group isn't visible to the system until a task has been
 // created inside of it by a successful call to TaskSet.NewTask.
-func (k *Kernel) NewThreadGroup(mntns *fs.MountNamespace, pidns *PIDNamespace, sh *SignalHandlers, terminationSignal linux.Signal, limits *limits.LimitSet) *ThreadGroup {
+func (k *Kernel) NewThreadGroup(pidns *PIDNamespace, sh *SignalHandlers, terminationSignal linux.Signal, limits *limits.LimitSet) *ThreadGroup {
 	tg := &ThreadGroup{
 		threadGroupNode: threadGroupNode{
 			pidns: pidns,
@@ -277,9 +265,8 @@ func (k *Kernel) NewThreadGroup(mntns *fs.MountNamespace, pidns *PIDNamespace, s
 		terminationSignal: terminationSignal,
 		ioUsage:           &usage.IO{},
 		limits:            limits,
-		mounts:            mntns,
 	}
-	tg.itimerRealTimer = ktime.NewTimer(k.monotonicClock, &itimerRealListener{tg: tg})
+	tg.itimerRealTimer = ktime.NewTimer(k.timekeeper.monotonicClock, &itimerRealListener{tg: tg})
 	tg.timers = make(map[linux.TimerID]*IntervalTimer)
 	tg.oldRSeqCritical.Store(&OldRSeqCriticalRegion{})
 	return tg
@@ -325,9 +312,6 @@ func (tg *ThreadGroup) Release(ctx context.Context) {
 	for _, it := range its {
 		it.DestroyTimer()
 	}
-	if tg.mounts != nil {
-		tg.mounts.DecRef(ctx)
-	}
 }
 
 // forEachChildThreadGroupLocked indicates over all child ThreadGroups.
@@ -358,7 +342,7 @@ func (tg *ThreadGroup) SetControllingTTY(tty *TTY, steal bool, isReadable bool) 
 	// "The calling process must be a session leader and not have a
 	// controlling terminal already." - tty_ioctl(4)
 	if tg.processGroup.session.leader != tg || tg.tty != nil {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	creds := auth.CredentialsFromContext(tg.leader)
@@ -372,27 +356,27 @@ func (tg *ThreadGroup) SetControllingTTY(tty *TTY, steal bool, isReadable bool) 
 	if tty.tg != nil && tg.processGroup.session != tty.tg.processGroup.session {
 		// Stealing requires CAP_SYS_ADMIN in the root user namespace.
 		if !hasAdmin || !steal {
-			return syserror.EPERM
+			return linuxerr.EPERM
 		}
 		// Steal the TTY away. Unlike TIOCNOTTY, don't send signals.
 		for othertg := range tg.pidns.owner.Root.tgids {
 			// This won't deadlock by locking tg.signalHandlers
 			// because at this point:
-			// - We only lock signalHandlers if it's in the same
-			//   session as the tty's controlling thread group.
-			// - We know that the calling thread group is not in
-			//   the same session as the tty's controlling thread
-			//   group.
+			//	- We only lock signalHandlers if it's in the same
+			//		session as the tty's controlling thread group.
+			//	- We know that the calling thread group is not in
+			//		the same session as the tty's controlling thread
+			//		group.
 			if othertg.processGroup.session == tty.tg.processGroup.session {
-				othertg.signalHandlers.mu.Lock()
+				othertg.signalHandlers.mu.NestedLock(signalHandlersLockTg)
 				othertg.tty = nil
-				othertg.signalHandlers.mu.Unlock()
+				othertg.signalHandlers.mu.NestedUnlock(signalHandlersLockTg)
 			}
 		}
 	}
 
 	if !isReadable && !hasAdmin {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 
 	// Set the controlling terminal and foreground process group.
@@ -420,7 +404,7 @@ func (tg *ThreadGroup) ReleaseControllingTTY(tty *TTY) error {
 
 	if tg.tty == nil || tg.tty != tty {
 		tg.signalHandlers.mu.Unlock()
-		return syserror.ENOTTY
+		return linuxerr.ENOTTY
 	}
 
 	// "If the process was session leader, then send SIGHUP and SIGCONT to
@@ -446,10 +430,10 @@ func (tg *ThreadGroup) ReleaseControllingTTY(tty *TTY) error {
 			othertg.signalHandlers.mu.Lock()
 			othertg.tty = nil
 			if othertg.processGroup == tg.processGroup.session.foreground {
-				if err := othertg.leader.sendSignalLocked(&arch.SignalInfo{Signo: int32(linux.SIGHUP)}, true /* group */); err != nil {
+				if err := othertg.leader.sendSignalLocked(&linux.SignalInfo{Signo: int32(linux.SIGHUP)}, true /* group */); err != nil {
 					lastErr = err
 				}
-				if err := othertg.leader.sendSignalLocked(&arch.SignalInfo{Signo: int32(linux.SIGCONT)}, true /* group */); err != nil {
+				if err := othertg.leader.sendSignalLocked(&linux.SignalInfo{Signo: int32(linux.SIGCONT)}, true /* group */); err != nil {
 					lastErr = err
 				}
 			}
@@ -460,9 +444,9 @@ func (tg *ThreadGroup) ReleaseControllingTTY(tty *TTY) error {
 	return lastErr
 }
 
-// ForegroundProcessGroup returns the process group ID of the foreground
-// process group.
-func (tg *ThreadGroup) ForegroundProcessGroup(tty *TTY) (int32, error) {
+// ForegroundProcessGroupID returns the foreground process group ID of the
+// thread group.
+func (tg *ThreadGroup) ForegroundProcessGroupID(tty *TTY) (ProcessGroupID, error) {
 	tty.mu.Lock()
 	defer tty.mu.Unlock()
 
@@ -471,17 +455,18 @@ func (tg *ThreadGroup) ForegroundProcessGroup(tty *TTY) (int32, error) {
 	tg.signalHandlers.mu.Lock()
 	defer tg.signalHandlers.mu.Unlock()
 
-	// "When fd does not refer to the controlling terminal of the calling
-	// process, -1 is returned" - tcgetpgrp(3)
+	// fd must refer to the controlling terminal of the calling process.
+	// See tcgetpgrp(3)
 	if tg.tty != tty {
-		return -1, syserror.ENOTTY
+		return 0, linuxerr.ENOTTY
 	}
 
-	return int32(tg.processGroup.session.foreground.id), nil
+	return tg.processGroup.session.foreground.id, nil
 }
 
-// SetForegroundProcessGroup sets the foreground process group of tty to pgid.
-func (tg *ThreadGroup) SetForegroundProcessGroup(tty *TTY, pgid ProcessGroupID) (int32, error) {
+// SetForegroundProcessGroupID sets the foreground process group of tty to
+// pgid.
+func (tg *ThreadGroup) SetForegroundProcessGroupID(tty *TTY, pgid ProcessGroupID) error {
 	tty.mu.Lock()
 	defer tty.mu.Unlock()
 
@@ -489,36 +474,42 @@ func (tg *ThreadGroup) SetForegroundProcessGroup(tty *TTY, pgid ProcessGroupID) 
 	defer tg.pidns.owner.mu.Unlock()
 	tg.signalHandlers.mu.Lock()
 	defer tg.signalHandlers.mu.Unlock()
-
-	// TODO(b/129283598): "If tcsetpgrp() is called by a member of a
-	// background process group in its session, and the calling process is
-	// not blocking or ignoring SIGTTOU, a SIGTTOU signal is sent to all
-	// members of this background process group."
 
 	// tty must be the controlling terminal.
 	if tg.tty != tty {
-		return -1, syserror.ENOTTY
+		return linuxerr.ENOTTY
 	}
 
 	// pgid must be positive.
 	if pgid < 0 {
-		return -1, syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 
 	// pg must not be empty. Empty process groups are removed from their
 	// pid namespaces.
 	pg, ok := tg.pidns.processGroups[pgid]
 	if !ok {
-		return -1, syserror.ESRCH
+		return linuxerr.ESRCH
 	}
 
 	// pg must be part of this process's session.
 	if tg.processGroup.session != pg.session {
-		return -1, syserror.EPERM
+		return linuxerr.EPERM
 	}
 
-	tg.processGroup.session.foreground.id = pgid
-	return 0, nil
+	signalAction := tg.signalHandlers.actions[linux.SIGTTOU]
+	// If the calling process is a member of a background group, a SIGTTOU
+	// signal is sent to all members of this background process group.
+	// We need also need to check whether it is ignoring or blocking SIGTTOU.
+	ignored := signalAction.Handler == linux.SIG_IGN
+	blocked := (linux.SignalSet(tg.leader.signalMask.RacyLoad()) & linux.SignalSetOf(linux.SIGTTOU)) != 0
+	if tg.processGroup.id != tg.processGroup.session.foreground.id && !ignored && !blocked {
+		tg.leader.sendSignalLocked(SignalInfoPriv(linux.SIGTTOU), true)
+		return linuxerr.ERESTARTSYS
+	}
+
+	tg.processGroup.session.foreground = pg
+	return nil
 }
 
 // itimerRealListener implements ktime.Listener for ITIMER_REAL expirations.
@@ -528,12 +519,8 @@ type itimerRealListener struct {
 	tg *ThreadGroup
 }
 
-// Notify implements ktime.TimerListener.Notify.
-func (l *itimerRealListener) Notify(exp uint64, setting ktime.Setting) (ktime.Setting, bool) {
+// NotifyTimer implements ktime.TimerListener.NotifyTimer.
+func (l *itimerRealListener) NotifyTimer(exp uint64, setting ktime.Setting) (ktime.Setting, bool) {
 	l.tg.SendSignal(SignalInfoPriv(linux.SIGALRM))
 	return ktime.Setting{}, false
-}
-
-// Destroy implements ktime.TimerListener.Destroy.
-func (l *itimerRealListener) Destroy() {
 }

@@ -219,14 +219,13 @@ constexpr char kNative[] = "native";
 constexpr char kPtrace[] = "ptrace";
 constexpr char kKVM[] = "kvm";
 constexpr char kFuchsia[] = "fuchsia";
+constexpr char kSystrap[] = "systrap";
 }  // namespace Platform
 
 bool IsRunningOnGvisor();
 const std::string GvisorPlatform();
 bool IsRunningWithHostinet();
-// TODO(gvisor.dev/issue/1624): Delete once VFS1 is gone.
-bool IsRunningWithVFS1();
-bool IsFUSEEnabled();
+bool IsIOUringEnabled();
 
 #ifdef __linux__
 void SetupGvisorDeathTest();
@@ -272,10 +271,15 @@ PosixErrorOr<std::vector<OpenFd>> GetOpenFDs();
 // Returns the number of hard links to a path.
 PosixErrorOr<uint64_t> Links(const std::string& path);
 
+inline uint64_t ns_elapsed(const struct timespec& begin,
+                           const struct timespec& end) {
+  return (end.tv_sec - begin.tv_sec) * 1000000000 +
+         (end.tv_nsec - begin.tv_nsec);
+}
+
 inline uint64_t ms_elapsed(const struct timespec& begin,
                            const struct timespec& end) {
-  return (end.tv_sec - begin.tv_sec) * 1000 +
-         (end.tv_nsec - begin.tv_nsec) / 1000000;
+  return ns_elapsed(begin, end) / 1000000;
 }
 
 namespace internal {

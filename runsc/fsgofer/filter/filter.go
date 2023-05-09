@@ -18,27 +18,45 @@
 package filter
 
 import (
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/seccomp"
 )
 
+// Options are seccomp filter related options.
+type Options struct {
+	UDSOpenEnabled   bool
+	UDSCreateEnabled bool
+	ProfileEnabled   bool
+}
+
 // Install installs seccomp filters.
-func Install() error {
+func Install(opt Options) error {
+	s := allowedSyscalls
+
+	if opt.ProfileEnabled {
+		report("profile enabled: syscall filters less restrictive!")
+		s.Merge(profileFilters)
+	}
+
+	if opt.UDSOpenEnabled || opt.UDSCreateEnabled {
+		report("host UDS enabled: syscall filters less restrictive!")
+		s.Merge(udsCommonSyscalls)
+		if opt.UDSOpenEnabled {
+			s.Merge(udsOpenSyscalls)
+		}
+		if opt.UDSCreateEnabled {
+			s.Merge(udsCreateSyscalls)
+		}
+	}
+
 	// Set of additional filters used by -race and -msan. Returns empty
 	// when not enabled.
-	allowedSyscalls.Merge(instrumentationFilters())
+	s.Merge(instrumentationFilters())
 
-	return seccomp.Install(allowedSyscalls)
+	return seccomp.Install(s, seccomp.DenyNewExecMappings)
 }
 
-// InstallUDSFilters extends the allowed syscalls to include those necessary for
-// connecting to a host UDS.
-func InstallUDSFilters() {
-	// Add additional filters required for connecting to the host's sockets.
-	allowedSyscalls.Merge(udsSyscalls)
-}
-
-// InstallXattrFilters extends the allowed syscalls to include xattr calls that
-// are necessary for Verity enabled file systems.
-func InstallXattrFilters() {
-	allowedSyscalls.Merge(xattrSyscalls)
+// report writes a warning message to the log.
+func report(msg string) {
+	log.Warningf("*** SECCOMP WARNING: %s", msg)
 }

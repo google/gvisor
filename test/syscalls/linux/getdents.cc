@@ -431,8 +431,6 @@ TYPED_TEST(GetdentsTest, NotDir) {
 
 // Test that getdents returns EBADF when called on an opath file.
 TYPED_TEST(GetdentsTest, OpathFile) {
-  SKIP_IF(IsRunningWithVFS1());
-
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_PATH));
 
@@ -444,8 +442,6 @@ TYPED_TEST(GetdentsTest, OpathFile) {
 
 // Test that getdents returns EBADF when called on an opath directory.
 TYPED_TEST(GetdentsTest, OpathDirectory) {
-  SKIP_IF(IsRunningWithVFS1());
-
   auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_PATH | O_DIRECTORY));
 
@@ -487,6 +483,17 @@ TYPED_TEST(GetdentsTest, Issue128ProcSeekEnd) {
   ASSERT_THAT(RetryEINTR(syscall)(this->SyscallNum(), fd.get(), dirents.Data(),
                                   dirents.Size()),
               SyscallSucceeds());
+}
+
+// Tests that getdents() fails when called with a zero-length buffer.
+TYPED_TEST(GetdentsTest, ZeroLengthOutBuffer) {
+  auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_DIRECTORY));
+
+  typename TestFixture::DirentBufferType dirents(0);
+  ASSERT_THAT(RetryEINTR(syscall)(this->SyscallNum(), fd.get(), dirents.Data(),
+                                  dirents.Size()),
+              SyscallFailsWithErrno(EINVAL));
 }
 
 // Some tests using the glibc readdir interface.

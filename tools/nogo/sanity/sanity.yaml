@@ -1,0 +1,7 @@
+groups:
+  - name: all
+    regex: ".*"
+    default: false
+analyzers:
+  printf:
+    all: # Enabled.

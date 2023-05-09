@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.dev/gvisor/pkg/urpc"
 )
 
 func TestUser(t *testing.T) {
@@ -76,10 +75,14 @@ func TestCLIArgs(t *testing.T) {
 			expected: control.ExecArgs{
 				Argv:             []string{"ls", "/"},
 				WorkingDirectory: "/foo/bar",
-				FilePayload:      urpc.FilePayload{Files: []*os.File{os.Stdin, os.Stdout, os.Stderr}},
-				KUID:             0,
-				KGID:             0,
-				ExtraKGIDs:       []auth.KGID{1, 2, 3},
+				FilePayload: control.NewFilePayload(map[int]*os.File{
+					0: os.Stdin,
+					1: os.Stdout,
+					2: os.Stderr,
+				}, nil),
+				KUID:       0,
+				KGID:       0,
+				ExtraKGIDs: []auth.KGID{1, 2, 3},
 				Capabilities: &auth.TaskCapabilities{
 					BoundingCaps:    auth.CapabilitySetOf(linux.CAP_DAC_OVERRIDE),
 					EffectiveCaps:   auth.CapabilitySetOf(linux.CAP_DAC_OVERRIDE),
@@ -129,10 +132,14 @@ func TestJSONArgs(t *testing.T) {
 			expected: control.ExecArgs{
 				Argv:             []string{"ls", "/"},
 				WorkingDirectory: "/foo/bar",
-				FilePayload:      urpc.FilePayload{Files: []*os.File{os.Stdin, os.Stdout, os.Stderr}},
-				KUID:             0,
-				KGID:             0,
-				ExtraKGIDs:       []auth.KGID{1, 2, 3},
+				FilePayload: control.NewFilePayload(map[int]*os.File{
+					0: os.Stdin,
+					1: os.Stdout,
+					2: os.Stderr,
+				}, nil),
+				KUID:       0,
+				KGID:       0,
+				ExtraKGIDs: []auth.KGID{1, 2, 3},
 				Capabilities: &auth.TaskCapabilities{
 					BoundingCaps:    auth.CapabilitySetOf(linux.CAP_DAC_OVERRIDE),
 					EffectiveCaps:   auth.CapabilitySetOf(linux.CAP_DAC_OVERRIDE),

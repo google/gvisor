@@ -26,8 +26,11 @@
 
 #include "gtest/gtest.h"
 #include "absl/strings/string_view.h"
-#include "test/syscalls/linux/socket_test_util.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
+#include "test/util/file_descriptor.h"
+#include "test/util/memory_util.h"
+#include "test/util/socket_util.h"
+#include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
@@ -256,9 +259,6 @@ TEST_P(UnixSocketPairTest, ShutdownWrite) {
 }
 
 TEST_P(UnixSocketPairTest, SocketReopenFromProcfs) {
-  // TODO(gvisor.dev/issue/1624): In VFS1, we return EIO instead of ENXIO (see
-  // b/122310852). Remove this skip once VFS1 is deleted.
-  SKIP_IF(IsRunningWithVFS1());
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
   // Opening a socket pair via /proc/self/fd/X is a ENXIO.
@@ -266,6 +266,18 @@ TEST_P(UnixSocketPairTest, SocketReopenFromProcfs) {
     ASSERT_THAT(Open(absl::StrCat("/proc/self/fd/", fd), O_WRONLY),
                 PosixErrorIs(ENXIO, ::testing::_));
   }
+}
+
+// Repro for b/196804997.
+TEST_P(UnixSocketPairTest, SendFromMmapBeyondEof) {
+  TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDONLY));
+  Mapping m = ASSERT_NO_ERRNO_AND_VALUE(
+      Mmap(nullptr, kPageSize, PROT_READ, MAP_SHARED, fd.get(), 0));
+
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  ASSERT_THAT(send(sockets->first_fd(), m.ptr(), m.len(), 0),
+              SyscallFailsWithErrno(EFAULT));
 }
 
 }  // namespace

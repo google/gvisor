@@ -15,9 +15,9 @@
 package linux
 
 import (
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 const (
@@ -32,7 +32,7 @@ const logBufLen = 1 << 17
 //
 // Only the unpriviledged commands are implemented, allowing applications to
 // read a fun dmesg.
-func Syslog(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Syslog(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	command := args[0].Int()
 	buf := args[1].Pointer()
 	size := int(args[2].Int())
@@ -40,7 +40,7 @@ func Syslog(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	switch command {
 	case _SYSLOG_ACTION_READ_ALL:
 		if size < 0 {
-			return 0, nil, syserror.EINVAL
+			return 0, nil, linuxerr.EINVAL
 		}
 		if size > logBufLen {
 			size = logBufLen
@@ -56,6 +56,6 @@ func Syslog(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscal
 	case _SYSLOG_ACTION_SIZE_BUFFER:
 		return logBufLen, nil, nil
 	default:
-		return 0, nil, syserror.ENOSYS
+		return 0, nil, linuxerr.ENOSYS
 	}
 }

@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,13 +15,16 @@
 package netstack
 
 import (
+	"time"
+
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -32,13 +35,13 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-// LINT.IfChange
-
 // provider is an inet socket provider.
 type provider struct {
 	family   int
 	netProto tcpip.NetworkProtocolNumber
 }
+
+var rawMissingLogger = log.BasicRateLimitedLogger(time.Minute)
 
 // getTransportProtocol figures out transport protocol. Currently only TCP,
 // UDP, and ICMP are supported. The bool return value is true when this socket
@@ -66,6 +69,7 @@ func getTransportProtocol(ctx context.Context, stype linux.SockType, protocol in
 		// Raw sockets require CAP_NET_RAW.
 		creds := auth.CredentialsFromContext(ctx)
 		if !creds.HasCapability(linux.CAP_NET_RAW) {
+			rawMissingLogger.Infof("A process tried to create a raw socket without CAP_NET_RAW. Should the container config enable CAP_NET_RAW?")
 			return 0, true, syserr.ErrNotPermitted
 		}
 
@@ -90,7 +94,7 @@ func getTransportProtocol(ctx context.Context, stype linux.SockType, protocol in
 
 // Socket creates a new socket object for the AF_INET, AF_INET6, or AF_PACKET
 // family.
-func (p *provider) Socket(t *kernel.Task, stype linux.SockType, protocol int) (*fs.File, *syserr.Error) {
+func (p *provider) Socket(t *kernel.Task, stype linux.SockType, protocol int) (*vfs.FileDescription, *syserr.Error) {
 	// Fail right away if we don't have a stack.
 	stack := t.NetworkContext()
 	if stack == nil {
@@ -137,10 +141,11 @@ func (p *provider) Socket(t *kernel.Task, stype linux.SockType, protocol int) (*
 	return New(t, p.family, stype, int(transProto), wq, ep)
 }
 
-func packetSocket(t *kernel.Task, epStack *Stack, stype linux.SockType, protocol int) (*fs.File, *syserr.Error) {
+func packetSocket(t *kernel.Task, epStack *Stack, stype linux.SockType, protocol int) (*vfs.FileDescription, *syserr.Error) {
 	// Packet sockets require CAP_NET_RAW.
 	creds := auth.CredentialsFromContext(t)
 	if !creds.HasCapability(linux.CAP_NET_RAW) {
+		rawMissingLogger.Infof("A process tried to create a raw socket without CAP_NET_RAW. Should the container config enable CAP_NET_RAW?")
 		return nil, syserr.ErrNotPermitted
 	}
 
@@ -168,10 +173,8 @@ func packetSocket(t *kernel.Task, epStack *Stack, stype linux.SockType, protocol
 	return New(t, linux.AF_PACKET, stype, protocol, wq, ep)
 }
 
-// LINT.ThenChange(./provider_vfs2.go)
-
 // Pair just returns nil sockets (not supported).
-func (*provider) Pair(*kernel.Task, linux.SockType, int) (*fs.File, *fs.File, *syserr.Error) {
+func (*provider) Pair(*kernel.Task, linux.SockType, int) (*vfs.FileDescription, *vfs.FileDescription, *syserr.Error) {
 	return nil, nil, nil
 }
 

@@ -1,14 +1,28 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
+load("//pkg/sync/locking:locking.bzl", "declare_mutex")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
+
+declare_mutex(
+    name = "futex_mutex",
+    out = "futex_mutex.go",
+    nested_lock_names = [
+        "b",
+    ],
+    package = "futex",
+    prefix = "futexBucket",
+)
 
 go_template_instance(
     name = "atomicptr_bucket",
     out = "atomicptr_bucket_unsafe.go",
     package = "futex",
     suffix = "Bucket",
-    template = "//pkg/sync:generic_atomicptr",
+    template = "//pkg/sync/atomicptr:generic_atomicptr",
     types = {
         "Value": "bucket",
     },
@@ -31,17 +45,19 @@ go_library(
     srcs = [
         "atomicptr_bucket_unsafe.go",
         "futex.go",
+        "futex_mutex.go",
         "waiter_list.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/sentry/memmap",
         "//pkg/sync",
-        "//pkg/syserror",
+        "//pkg/sync/locking",
         "//pkg/usermem",
     ],
 )
@@ -52,9 +68,10 @@ go_test(
     srcs = ["futex_test.go"],
     library = ":futex",
     deps = [
+        "//pkg/atomicbitops",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/hostarch",
         "//pkg/sync",
-        "@org_golang_x_sys//unix:go_default_library",
     ],
 )

@@ -26,7 +26,10 @@
 
 #include "absl/strings/numbers.h"
 
-// Pretty-print a sigset_t.
+// Pretty-print a sigset_t when it is a struct type.
+// This is disabled for targets such as Android x86_64, which define sigset_t as
+// an integral type, to prevent conflicts with the std library.
+template <typename = std::enable_if<std::is_class<sigset_t>::value>>
 std::ostream& operator<<(std::ostream& out, const sigset_t& s) {
   out << "{ ";
 

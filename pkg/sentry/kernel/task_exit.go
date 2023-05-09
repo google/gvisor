@@ -16,13 +16,13 @@ package kernel
 
 // This file implements the task exit cycle:
 //
-// - Tasks are asynchronously requested to exit with Task.Kill.
+//	- Tasks are asynchronously requested to exit with Task.Kill.
 //
-// - When able, the task goroutine enters the exit path starting from state
-// runExit.
+//	- When able, the task goroutine enters the exit path starting from state
+//		runExit.
 //
-// - Other tasks observe completed exits with Task.Wait (which implements the
-// wait*() family of syscalls).
+//	- Other tasks observe completed exits with Task.Wait (which implements the
+//		wait*() family of syscalls).
 
 import (
 	"errors"
@@ -30,46 +30,13 @@ import (
 	"strconv"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/sentry/seccheck"
+	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
-
-// An ExitStatus is a value communicated from an exiting task or thread group
-// to the party that reaps it.
-//
-// +stateify savable
-type ExitStatus struct {
-	// Code is the numeric value passed to the call to exit or exit_group that
-	// caused the exit. If the exit was not caused by such a call, Code is 0.
-	Code int
-
-	// Signo is the signal that caused the exit. If the exit was not caused by
-	// a signal, Signo is 0.
-	Signo int
-}
-
-// Signaled returns true if the ExitStatus indicates that the exiting task or
-// thread group was killed by a signal.
-func (es ExitStatus) Signaled() bool {
-	return es.Signo != 0
-}
-
-// Status returns the numeric representation of the ExitStatus returned by e.g.
-// the wait4() system call.
-func (es ExitStatus) Status() uint32 {
-	return ((uint32(es.Code) & 0xff) << 8) | (uint32(es.Signo) & 0xff)
-}
-
-// ShellExitCode returns the numeric exit code that Bash would return for an
-// exit status of es.
-func (es ExitStatus) ShellExitCode() int {
-	if es.Signaled() {
-		return 128 + es.Signo
-	}
-	return es.Code
-}
 
 // TaskExitState represents a step in the task exit path.
 //
@@ -122,12 +89,12 @@ func (t *Task) killLocked() {
 	if t.stop != nil && t.stop.Killable() {
 		t.endInternalStopLocked()
 	}
-	t.pendingSignals.enqueue(&arch.SignalInfo{
+	t.pendingSignals.enqueue(&linux.SignalInfo{
 		Signo: int32(linux.SIGKILL),
 		// Linux just sets SIGKILL in the pending signal bitmask without
 		// enqueueing an actual siginfo, such that
 		// kernel/signal.c:collect_signal() initializes si_code to SI_USER.
-		Code: arch.SignalInfoUser,
+		Code: linux.SI_USER,
 	}, nil)
 	t.interrupt()
 }
@@ -146,13 +113,22 @@ func (t *Task) killedLocked() bool {
 	return t.pendingSignals.pendingSet&linux.SignalSetOf(linux.SIGKILL) != 0
 }
 
-// PrepareExit indicates an exit with status es.
+// PrepareExit indicates an exit with the given status.
 //
 // Preconditions: The caller must be running on the task goroutine.
-func (t *Task) PrepareExit(es ExitStatus) {
+func (t *Task) PrepareExit(ws linux.WaitStatus) {
+	t.tg.pidns.owner.mu.RLock()
+	defer t.tg.pidns.owner.mu.RUnlock()
 	t.tg.signalHandlers.mu.Lock()
 	defer t.tg.signalHandlers.mu.Unlock()
-	t.exitStatus = es
+
+	last := t.tg.activeTasks == 1
+	if last {
+		t.prepareGroupExitLocked(ws)
+		return
+	}
+
+	t.exitStatus = ws
 }
 
 // PrepareGroupExit indicates a group exit with status es to t's thread group.
@@ -163,9 +139,16 @@ func (t *Task) PrepareExit(es ExitStatus) {
 // ptrace.)
 //
 // Preconditions: The caller must be running on the task goroutine.
-func (t *Task) PrepareGroupExit(es ExitStatus) {
+func (t *Task) PrepareGroupExit(ws linux.WaitStatus) {
 	t.tg.signalHandlers.mu.Lock()
 	defer t.tg.signalHandlers.mu.Unlock()
+	t.prepareGroupExitLocked(ws)
+}
+
+// Preconditions:
+//   - The caller must be running on the task goroutine.
+//   - The signal mutex must be locked.
+func (t *Task) prepareGroupExitLocked(ws linux.WaitStatus) {
 	if t.tg.exiting || t.tg.execing != nil {
 		// Note that if t.tg.exiting is false but t.tg.execing is not nil, i.e.
 		// this "group exit" is being executed by the killed sibling of an
@@ -181,8 +164,8 @@ func (t *Task) PrepareGroupExit(es ExitStatus) {
 		return
 	}
 	t.tg.exiting = true
-	t.tg.exitStatus = es
-	t.exitStatus = es
+	t.tg.exitStatus = ws
+	t.exitStatus = ws
 	for sibling := t.tg.tasks.Front(); sibling != nil; sibling = sibling.Next() {
 		if sibling != t {
 			sibling.killLocked()
@@ -190,11 +173,11 @@ func (t *Task) PrepareGroupExit(es ExitStatus) {
 	}
 }
 
-// Kill requests that all tasks in ts exit as if group exiting with status es.
+// Kill requests that all tasks in ts exit as if group exiting with status ws.
 // Kill does not wait for tasks to exit.
 //
 // Kill has no analogue in Linux; it's provided for save/restore only.
-func (ts *TaskSet) Kill(es ExitStatus) {
+func (ts *TaskSet) Kill(ws linux.WaitStatus) {
 	ts.mu.Lock()
 	defer ts.mu.Unlock()
 	ts.Root.exiting = true
@@ -202,7 +185,7 @@ func (ts *TaskSet) Kill(es ExitStatus) {
 		t.tg.signalHandlers.mu.Lock()
 		if !t.tg.exiting {
 			t.tg.exiting = true
-			t.tg.exitStatus = es
+			t.tg.exitStatus = ws
 		}
 		t.killLocked()
 		t.tg.signalHandlers.mu.Unlock()
@@ -237,6 +220,21 @@ type runExitMain struct{}
 
 func (*runExitMain) execute(t *Task) taskRunState {
 	t.traceExitEvent()
+
+	if seccheck.Global.Enabled(seccheck.PointTaskExit) {
+		info := &pb.TaskExit{
+			ExitStatus: int32(t.tg.exitStatus),
+		}
+		fields := seccheck.Global.GetFieldSet(seccheck.PointTaskExit)
+		if !fields.Context.Empty() {
+			info.ContextData = &pb.ContextData{}
+			LoadSeccheckData(t, fields.Context, info.ContextData)
+		}
+		seccheck.Global.SentToSinks(func(c seccheck.Sink) error {
+			return c.TaskExit(t, fields, info)
+		})
+	}
+
 	lastExiter := t.exitThreadGroup()
 
 	t.ResetKcov()
@@ -265,9 +263,16 @@ func (*runExitMain) execute(t *Task) taskRunState {
 	t.tg.pidns.owner.mu.Lock()
 	t.updateRSSLocked()
 	t.tg.pidns.owner.mu.Unlock()
+
+	// Release the task image resources. Accessing these fields must be
+	// done with t.mu held, but the mm.DecUsers() call must be done outside
+	// of that lock.
 	t.mu.Lock()
-	t.image.release()
+	mm := t.image.MemoryManager
+	t.image.MemoryManager = nil
+	t.image.fu = nil
 	t.mu.Unlock()
+	mm.DecUsers(t)
 
 	// Releasing the MM unblocks a blocked CLONE_VFORK parent.
 	t.unstopVforkParent()
@@ -280,12 +285,16 @@ func (*runExitMain) execute(t *Task) taskRunState {
 	t.LeaveCgroups()
 
 	t.mu.Lock()
-	if t.mountNamespaceVFS2 != nil {
-		t.mountNamespaceVFS2.DecRef(t)
-		t.mountNamespaceVFS2 = nil
-	}
-	t.ipcns.DecRef(t)
+	mntns := t.mountNamespace
+	t.mountNamespace = nil
+	ipcns := t.ipcns
+	netns := t.NetworkNamespace()
 	t.mu.Unlock()
+	if mntns != nil {
+		mntns.DecRef(t)
+	}
+	ipcns.DecRef(t)
+	netns.DecRef()
 
 	// If this is the last task to exit from the thread group, release the
 	// thread group's resources.
@@ -332,7 +341,7 @@ func (t *Task) exitThreadGroup() bool {
 	// signalStop must be called with t's signal mutex unlocked.
 	t.tg.signalHandlers.mu.Unlock()
 	if notifyParent && t.tg.leader.parent != nil {
-		t.tg.leader.parent.signalStop(t, arch.CLD_STOPPED, int32(sig))
+		t.tg.leader.parent.signalStop(t, linux.CLD_STOPPED, int32(sig))
 		t.tg.leader.parent.tg.eventQueue.Notify(EventChildGroupStop)
 	}
 	return last
@@ -353,7 +362,7 @@ func (t *Task) exitChildren() {
 				continue
 			}
 			other.signalHandlers.mu.Lock()
-			other.leader.sendSignalLocked(&arch.SignalInfo{
+			other.leader.sendSignalLocked(&linux.SignalInfo{
 				Signo: int32(linux.SIGKILL),
 			}, true /* group */)
 			other.signalHandlers.mu.Unlock()
@@ -368,9 +377,9 @@ func (t *Task) exitChildren() {
 	// wait for a parent to reap them.)
 	for c := range t.children {
 		if sig := c.ParentDeathSignal(); sig != 0 {
-			siginfo := &arch.SignalInfo{
+			siginfo := &linux.SignalInfo{
 				Signo: int32(sig),
-				Code:  arch.SignalInfoUser,
+				Code:  linux.SI_USER,
 			}
 			siginfo.SetPID(int32(c.tg.pidns.tids[t]))
 			siginfo.SetUID(int32(t.Credentials().RealKUID.In(c.UserNamespace()).OrOverflow()))
@@ -463,24 +472,24 @@ func (t *Task) reparentLocked(parent *Task) {
 //
 // There are a few ways for an exit notification to be resolved:
 //
-// - The exit notification may be acknowledged by a call to Task.Wait with
-// WaitOptions.ConsumeEvent set (e.g. due to a wait4() syscall).
+//	- The exit notification may be acknowledged by a call to Task.Wait with
+//   WaitOptions.ConsumeEvent set (e.g. due to a wait4() syscall).
 //
-// - If the notified party is the parent, and the parent thread group is not
-// also the tracer thread group, and the notification signal is SIGCHLD, the
-// parent may explicitly ignore the notification (see quote in exitNotify).
-// Note that it's possible for the notified party to ignore the signal in other
-// cases, but the notification is only resolved under the above conditions.
-// (Actually, there is one exception; see the last paragraph of the "leader,
-// has tracer, tracer thread group is parent thread group" case below.)
+//	- If the notified party is the parent, and the parent thread group is not
+//		also the tracer thread group, and the notification signal is SIGCHLD, the
+//		parent may explicitly ignore the notification (see quote in exitNotify).
+//		Note that it's possible for the notified party to ignore the signal in other
+//		cases, but the notification is only resolved under the above conditions.
+//		(Actually, there is one exception; see the last paragraph of the "leader,
+//		has tracer, tracer thread group is parent thread group" case below.)
 //
-// - If the notified party is the parent, and the parent does not exist, the
-// notification is resolved as if ignored. (This is only possible in the
-// sentry. In Linux, the only task / thread group without a parent is global
-// init, and killing global init causes a kernel panic.)
+//	- If the notified party is the parent, and the parent does not exist, the
+//		notification is resolved as if ignored. (This is only possible in the
+//		sentry. In Linux, the only task / thread group without a parent is global
+//		init, and killing global init causes a kernel panic.)
 //
-// - If the notified party is a tracer, the tracer may detach the traced task.
-// (Zombie tasks cannot be ptrace-attached, so the reverse is not possible.)
+//	- If the notified party is a tracer, the tracer may detach the traced task.
+//		(Zombie tasks cannot be ptrace-attached, so the reverse is not possible.)
 //
 // In addition, if the notified party is the parent, the parent may exit and
 // cause the notifying task to be reparented to another thread group. This does
@@ -491,23 +500,23 @@ func (t *Task) reparentLocked(parent *Task) {
 // whether it is a thread group leader; whether the task is ptraced; and, if
 // so, whether the tracer thread group is the same as the parent thread group.
 //
-// - Non-leader, no tracer: No notification is generated; the task is reaped
-// immediately.
+//	- Non-leader, no tracer: No notification is generated; the task is reaped
+//		immediately.
 //
-// - Non-leader, has tracer: SIGCHLD is sent to the tracer. When the tracer
-// notification is resolved (by waiting or detaching), the task is reaped. (For
-// non-leaders, whether the tracer and parent thread groups are the same is
-// irrelevant.)
+//	- Non-leader, has tracer: SIGCHLD is sent to the tracer. When the tracer
+//		notification is resolved (by waiting or detaching), the task is reaped. (For
+//		non-leaders, whether the tracer and parent thread groups are the same is
+//		irrelevant.)
 //
-// - Leader, no tracer: The task remains a zombie, with no notification sent,
-// until all other tasks in the thread group are dead. (In Linux terms, this
-// condition is indicated by include/linux/sched.h:thread_group_empty(); tasks
-// are removed from their thread_group list in kernel/exit.c:release_task() =>
-// __exit_signal() => __unhash_process().) Then the thread group's termination
-// signal is sent to the parent. When the parent notification is resolved (by
-// waiting or ignoring), the task is reaped.
+//	- Leader, no tracer: The task remains a zombie, with no notification sent,
+//		until all other tasks in the thread group are dead. (In Linux terms, this
+//		condition is indicated by include/linux/sched.h:thread_group_empty(); tasks
+//		are removed from their thread_group list in kernel/exit.c:release_task() =>
+// 		__exit_signal() => __unhash_process().) Then the thread group's termination
+//		signal is sent to the parent. When the parent notification is resolved (by
+//		waiting or ignoring), the task is reaped.
 //
-// - Leader, has tracer, tracer thread group is not parent thread group:
+//	- Leader, has tracer, tracer thread group is not parent thread group:
 // SIGCHLD is sent to the tracer. When the tracer notification is resolved (by
 // waiting or detaching), and all other tasks in the thread group are dead, the
 // thread group's termination signal is sent to the parent. (Note that the
@@ -515,7 +524,7 @@ func (t *Task) reparentLocked(parent *Task) {
 // group is empty.) When the parent notification is resolved, the task is
 // reaped.
 //
-// - Leader, has tracer, tracer thread group is parent thread group:
+//	- Leader, has tracer, tracer thread group is parent thread group:
 //
 // If all other tasks in the thread group are dead, the thread group's
 // termination signal is sent to the parent. At this point, the notification
@@ -643,19 +652,19 @@ func (t *Task) exitNotifyLocked(fromPtraceDetach bool) {
 				//
 				// Some undocumented Linux-specific details:
 				//
-				// - All of the above is ignored if the termination signal isn't
-				// SIGCHLD.
+				//	- All of the above is ignored if the termination signal isn't
+				//		SIGCHLD.
 				//
-				// - SA_NOCLDWAIT causes the leader to be immediately reaped, but
-				// does not suppress the SIGCHLD.
+				//	- SA_NOCLDWAIT causes the leader to be immediately reaped, but
+				//		does not suppress the SIGCHLD.
 				signalParent := t.tg.terminationSignal.IsValid()
 				t.parent.tg.signalHandlers.mu.Lock()
 				if t.tg.terminationSignal == linux.SIGCHLD || fromPtraceDetach {
 					if act, ok := t.parent.tg.signalHandlers.actions[linux.SIGCHLD]; ok {
-						if act.Handler == arch.SignalActIgnore {
+						if act.Handler == linux.SIG_IGN {
 							t.exitParentAcked = true
 							signalParent = false
-						} else if act.Flags&arch.SignalFlagNoCldWait != 0 {
+						} else if act.Flags&linux.SA_NOCLDWAIT != 0 {
 							t.exitParentAcked = true
 						}
 					}
@@ -670,18 +679,25 @@ func (t *Task) exitNotifyLocked(fromPtraceDetach bool) {
 				// should return ECHILD).
 				t.parent.tg.eventQueue.Notify(EventExit | EventChildGroupStop | EventGroupContinue)
 			}
+
+			// We don't send exit events for the root process because we don't send
+			// Clone or Exec events for the initial process.
+			if t.tg != t.k.globalInit && seccheck.Global.Enabled(seccheck.PointExitNotifyParent) {
+				mask, info := getExitNotifyParentSeccheckInfo(t)
+				if err := seccheck.Global.SentToSinks(func(c seccheck.Sink) error {
+					return c.ExitNotifyParent(t, mask, info)
+				}); err != nil {
+					log.Infof("Ignoring error from ExitNotifyParent point: %v", err)
+				}
+			}
 		}
 	}
 	if t.exitTracerAcked && t.exitParentAcked {
 		t.advanceExitStateLocked(TaskExitZombie, TaskExitDead)
 		for ns := t.tg.pidns; ns != nil; ns = ns.parent {
-			tid := ns.tids[t]
-			delete(ns.tasks, tid)
-			delete(ns.tids, t)
-			if t == t.tg.leader {
-				delete(ns.tgids, t.tg)
-			}
+			ns.deleteTask(t)
 		}
+		t.userCounters.decRLimitNProc()
 		t.tg.exitedCPUStats.Accumulate(t.CPUStats())
 		t.tg.ioUsage.Accumulate(t.ioUsage)
 		t.tg.signalHandlers.mu.Lock()
@@ -694,6 +710,7 @@ func (t *Task) exitNotifyLocked(fromPtraceDetach bool) {
 			// is via a call to release_task()).
 			t.tg.leader.exitNotifyLocked(false)
 		} else if tc == 0 {
+			t.tg.pidWithinNS.Store(0)
 			t.tg.processGroup.decRefWithParent(t.tg.parentPG())
 		}
 		if t.parent != nil {
@@ -705,26 +722,43 @@ func (t *Task) exitNotifyLocked(fromPtraceDetach bool) {
 }
 
 // Preconditions: The TaskSet mutex must be locked.
-func (t *Task) exitNotificationSignal(sig linux.Signal, receiver *Task) *arch.SignalInfo {
-	info := &arch.SignalInfo{
+func (t *Task) exitNotificationSignal(sig linux.Signal, receiver *Task) *linux.SignalInfo {
+	info := &linux.SignalInfo{
 		Signo: int32(sig),
 	}
 	info.SetPID(int32(receiver.tg.pidns.tids[t]))
 	info.SetUID(int32(t.Credentials().RealKUID.In(receiver.UserNamespace()).OrOverflow()))
 	if t.exitStatus.Signaled() {
-		info.Code = arch.CLD_KILLED
-		info.SetStatus(int32(t.exitStatus.Signo))
+		info.Code = linux.CLD_KILLED
+		info.SetStatus(int32(t.exitStatus.TerminationSignal()))
 	} else {
-		info.Code = arch.CLD_EXITED
-		info.SetStatus(int32(t.exitStatus.Code))
+		info.Code = linux.CLD_EXITED
+		info.SetStatus(int32(t.exitStatus.ExitStatus()))
 	}
 	// TODO(b/72102453): Set utime, stime.
 	return info
 }
 
+// Preconditions: The TaskSet mutex must be locked.
+func getExitNotifyParentSeccheckInfo(t *Task) (seccheck.FieldSet, *pb.ExitNotifyParentInfo) {
+	fields := seccheck.Global.GetFieldSet(seccheck.PointExitNotifyParent)
+
+	info := &pb.ExitNotifyParentInfo{
+		ExitStatus: int32(t.tg.exitStatus),
+	}
+	if !fields.Context.Empty() {
+		info.ContextData = &pb.ContextData{}
+		// cwd isn't used for notifyExit seccheck so it's ok to pass an empty
+		// string.
+		LoadSeccheckDataLocked(t, fields.Context, info.ContextData, "")
+	}
+
+	return fields, info
+}
+
 // ExitStatus returns t's exit status, which is only guaranteed to be
 // meaningful if t.ExitState() != TaskExitNone.
-func (t *Task) ExitStatus() ExitStatus {
+func (t *Task) ExitStatus() linux.WaitStatus {
 	t.tg.pidns.owner.mu.RLock()
 	defer t.tg.pidns.owner.mu.RUnlock()
 	t.tg.signalHandlers.mu.Lock()
@@ -734,7 +768,7 @@ func (t *Task) ExitStatus() ExitStatus {
 
 // ExitStatus returns the exit status that would be returned by a consuming
 // wait*() on tg.
-func (tg *ThreadGroup) ExitStatus() ExitStatus {
+func (tg *ThreadGroup) ExitStatus() linux.WaitStatus {
 	tg.pidns.owner.mu.RLock()
 	defer tg.pidns.owner.mu.RUnlock()
 	tg.signalHandlers.mu.Lock()
@@ -745,7 +779,9 @@ func (tg *ThreadGroup) ExitStatus() ExitStatus {
 	return tg.leader.exitStatus
 }
 
-// TerminationSignal returns the thread group's termination signal.
+// TerminationSignal returns the thread group's termination signal, which is
+// the signal that will be sent to its leader's parent when all threads have
+// exited.
 func (tg *ThreadGroup) TerminationSignal() linux.Signal {
 	tg.pidns.owner.mu.RLock()
 	defer tg.pidns.owner.mu.RUnlock()
@@ -871,8 +907,8 @@ type WaitResult struct {
 	// Event is exactly one of the events defined above.
 	Event waiter.EventMask
 
-	// Status is the numeric status associated with the event.
-	Status uint32
+	// Status is the wait status associated with the event.
+	Status linux.WaitStatus
 }
 
 // Wait waits for an event from a thread group that is a child of t's thread
@@ -882,8 +918,8 @@ func (t *Task) Wait(opts *WaitOptions) (*WaitResult, error) {
 	if opts.BlockInterruptErr == nil {
 		return t.waitOnce(opts)
 	}
-	w, ch := waiter.NewChannelEntry(nil)
-	t.tg.eventQueue.EventRegister(&w, opts.Events)
+	w, ch := waiter.NewChannelEntry(opts.Events)
+	t.tg.eventQueue.EventRegister(&w)
 	defer t.tg.eventQueue.EventUnregister(&w)
 	for {
 		wr, err := t.waitOnce(opts)
@@ -892,7 +928,7 @@ func (t *Task) Wait(opts *WaitOptions) (*WaitResult, error) {
 			return wr, err
 		}
 		if err := t.Block(ch); err != nil {
-			return wr, syserror.ConvertIntr(err, opts.BlockInterruptErr)
+			return wr, linuxerr.ConvertIntr(err, opts.BlockInterruptErr)
 		}
 	}
 }
@@ -925,7 +961,7 @@ func (t *Task) waitOnce(opts *WaitOptions) (*WaitResult, error) {
 	if anyWaitableTasks {
 		return nil, ErrNoWaitableEvent
 	}
-	return nil, syserror.ECHILD
+	return nil, linuxerr.ECHILD
 }
 
 // Preconditions: The TaskSet mutex must be locked for writing.
@@ -1025,7 +1061,7 @@ func (t *Task) waitCollectZombieLocked(target *Task, opts *WaitOptions, asPtrace
 	}
 	pid := t.tg.pidns.tids[target]
 	uid := target.Credentials().RealKUID.In(t.UserNamespace()).OrOverflow()
-	status := target.exitStatus.Status()
+	status := target.exitStatus
 	if !opts.ConsumeEvent {
 		return &WaitResult{
 			Task:   target,
@@ -1039,7 +1075,7 @@ func (t *Task) waitCollectZombieLocked(target *Task, opts *WaitOptions, asPtrace
 	// differ from that reported by a consuming wait; the latter will return
 	// the group exit code if one is available.
 	if target.tg.exiting {
-		status = target.tg.exitStatus.Status()
+		status = target.tg.exitStatus
 	}
 	// t may be (in the thread group of) target's parent, tracer, or both. We
 	// don't need to check for !exitTracerAcked because tracees are detached
@@ -1105,12 +1141,11 @@ func (t *Task) waitCollectChildGroupStopLocked(target *Task, opts *WaitOptions) 
 		target.tg.groupStopWaitable = false
 	}
 	return &WaitResult{
-		Task:  target,
-		TID:   pid,
-		UID:   uid,
-		Event: EventChildGroupStop,
-		// There is no name for these status constants.
-		Status: (uint32(sig)&0xff)<<8 | 0x7f,
+		Task:   target,
+		TID:    pid,
+		UID:    uid,
+		Event:  EventChildGroupStop,
+		Status: linux.WaitStatusStopped(uint32(sig)),
 	}
 }
 
@@ -1131,7 +1166,7 @@ func (t *Task) waitCollectGroupContinueLocked(target *Task, opts *WaitOptions) *
 		TID:    pid,
 		UID:    uid,
 		Event:  EventGroupContinue,
-		Status: 0xffff,
+		Status: linux.WaitStatusContinued(),
 	}
 }
 
@@ -1159,7 +1194,7 @@ func (t *Task) waitCollectTraceeStopLocked(target *Task, opts *WaitOptions) *Wai
 		TID:    pid,
 		UID:    uid,
 		Event:  EventTraceeStop,
-		Status: uint32(code)<<8 | 0x7f,
+		Status: linux.WaitStatusStopped(uint32(code)),
 	}
 }
 

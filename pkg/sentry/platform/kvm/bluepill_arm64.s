@@ -29,25 +29,28 @@
 // Only limited use of the context is done in the assembly stub below, most is
 // done in the Go handlers.
 #define SIGINFO_SIGNO 0x0
+#define SIGINFO_CODE 0x8
 #define CONTEXT_PC  0x1B8
 #define CONTEXT_R0 0xB8
+
+#define SYS_MMAP 222
 
 // getTLS returns the value of TPIDR_EL0 register.
 TEXT ·getTLS(SB),NOSPLIT,$0-8
 	MRS TPIDR_EL0, R1
-	MOVD R1, ret+0(FP)
+	MOVD R1, value+0(FP)
 	RET
 
 // setTLS writes the TPIDR_EL0 value.
 TEXT ·setTLS(SB),NOSPLIT,$0-8
-	MOVD addr+0(FP), R1
+	MOVD value+0(FP), R1
 	MSR R1, TPIDR_EL0
 	RET
 
 // See bluepill.go.
 TEXT ·bluepill(SB),NOSPLIT,$0
 begin:
-	MOVD	vcpu+0(FP), R8
+	MOVD	arg+0(FP), R8
 	MOVD	$VCPU_CPU(R8), R9
 	ORR	$0xffff000000000000, R9, R9
 	// Trigger sigill.
@@ -92,6 +95,43 @@ fallback:
 	MOVD	·savedHandler(SB), R7
 	B	(R7)
 
+// func addrOfSighandler() uintptr
+TEXT ·addrOfSighandler(SB), $0-8
+	MOVD	$·sighandler(SB), R0
+	MOVD	R0, ret+0(FP)
+	RET
+
+// The arguments are the following:
+//
+// 	R0 - The signal number.
+// 	R1 - Pointer to siginfo_t structure.
+// 	R2 - Pointer to ucontext structure.
+//
+TEXT ·sigsysHandler(SB),NOSPLIT,$0
+	// si_code should be SYS_SECCOMP.
+	MOVD	SIGINFO_CODE(R1), R7
+	CMPW	$1, R7
+	BNE	fallback
+
+	CMPW	$SYS_MMAP, R8
+	BNE	fallback
+
+	MOVD	R2, 8(RSP)
+	BL	·seccompMmapHandler(SB)   // Call the handler.
+
+	RET
+
+fallback:
+	// Jump to the previous signal handler.
+	MOVD	·savedHandler(SB), R7
+	B	(R7)
+
+// func addrOfSighandler() uintptr
+TEXT ·addrOfSigsysHandler(SB), $0-8
+	MOVD	$·sigsysHandler(SB), R0
+	MOVD	R0, ret+0(FP)
+	RET
+
 // dieTrampoline: see bluepill.go, bluepill_arm64_unsafe.go for documentation.
 TEXT ·dieTrampoline(SB),NOSPLIT,$0
 	// R0: Fake the old PC as caller
@@ -99,3 +139,9 @@ TEXT ·dieTrampoline(SB),NOSPLIT,$0
 	MOVD.P R1, 8(RSP) // R1: First argument (vCPU)
 	MOVD.P R0, 8(RSP) // R0: Fake the old PC as caller
 	B ·dieHandler(SB)
+
+// func addrOfDieTrampoline() uintptr
+TEXT ·addrOfDieTrampoline(SB), $0-8
+	MOVD	$·dieTrampoline(SB), R0
+	MOVD	R0, ret+0(FP)
+	RET

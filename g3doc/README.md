@@ -23,7 +23,7 @@ links below to see detailed instructions for each of them:
 
 gVisor provides a virtualized environment in order to sandbox containers. The
 system interfaces normally implemented by the host kernel are moved into a
-distinct, per-sandbox application kernel in order to minimize the risk of an
+distinct, per-sandbox application kernel in order to minimize the risk of a
 container escape exploit. gVisor does not introduce large fixed overheads
 however, and still retains a process-like model with respect to resource
 utilization.
@@ -139,8 +139,8 @@ pipes, etc) are sent to the Gofer, described below.
 The Gofer is a standard host process which is started with each container and
 communicates with the Sentry via the [9P protocol][9p] over a socket or shared
 memory channel. The Sentry process is started in a restricted seccomp container
-without access to file system resources. The Gofer mediates all access to the
-these resources, providing an additional level of isolation.
+without access to file system resources. The Gofer mediates all access to these
+resources, providing an additional level of isolation.
 
 ### Application {#application}
 

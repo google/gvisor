@@ -45,8 +45,8 @@ func TestPanic(t *testing.T) {
 	})
 
 	// Attach to the client.
-	if _, err := c.Attach("/"); err != unix.EFAULT {
-		t.Fatalf("got attach err %v, want EFAULT", err)
+	if _, err := c.Attach("/"); err != unix.EREMOTEIO {
+		t.Fatalf("got attach err %v, want EREMOTEIO", err)
 	}
 }
 
@@ -130,25 +130,27 @@ func newTypeMap(h *Harness) map[string]Generator {
 // This is set up in a deterministic way for testing most operations.
 //
 // The represented file system looks like:
-// - file
-// - symlink
-// - directory
+//   - file
+//   - symlink
+//   - directory
+//
 // ...
 // + one
 //   - file
 //   - symlink
 //   - directory
-//   ...
-//   + two
-//     - file
-//     - symlink
-//     - directory
 //     ...
+//   - two
+//   - file
+//   - symlink
+//   - directory
+//     ...
+//
 // + three
 //   - file
 //   - symlink
 //   - directory
-//   ...
+//     ...
 func newRoot(h *Harness, c *p9.Client) (*Mock, p9.File) {
 	root := newTypeMap(h)
 	one := newTypeMap(h)
@@ -257,9 +259,9 @@ func TestWalkInvalid(t *testing.T) {
 // fileGenerator is a function to generate files via walk or create.
 //
 // Examples are:
-//	- walkHelper
-//	- walkAndOpenHelper
-//	- createHelper
+//   - walkHelper
+//   - walkAndOpenHelper
+//   - createHelper
 type fileGenerator func(*Harness, string, p9.File) (*Mock, *Mock, p9.File)
 
 // walkHelper walks to the given file.
@@ -379,7 +381,7 @@ func checkDeleted(h *Harness, file p9.File) {
 	if _, err := file.Readdir(0, 1); err != unix.EINVAL {
 		h.t.Errorf("readdir while deleted, got %v, want EINVAL", err)
 	}
-	if _, err := file.Connect(p9.ConnectFlags(0)); err != unix.EINVAL {
+	if _, err := file.Connect(p9.SocketType(0)); err != unix.EINVAL {
 		h.t.Errorf("connect while deleted, got %v, want EINVAL", err)
 	}
 
@@ -998,7 +1000,7 @@ func TestConnect(t *testing.T) {
 			// Catch all the non-socket cases.
 			if !backend.Attr.Mode.IsSocket() {
 				// This has been set up to fail if Connect is called.
-				if _, err := f.Connect(p9.ConnectFlags(0)); err != unix.EINVAL {
+				if _, err := f.Connect(p9.SocketType(0)); err != unix.EINVAL {
 					t.Errorf("connect got %v, wanted EINVAL", err)
 				}
 				return
@@ -1006,8 +1008,8 @@ func TestConnect(t *testing.T) {
 
 			// Ensure the fd exchange works.
 			fdTest(t, func(send *fd.FD) *fd.FD {
-				backend.EXPECT().Connect(p9.ConnectFlags(0)).Return(send, nil)
-				recv, err := backend.Connect(p9.ConnectFlags(0))
+				backend.EXPECT().Connect(p9.SocketType(0)).Return(send, nil)
+				recv, err := backend.Connect(p9.SocketType(0))
 				if err != nil {
 					t.Fatalf("connect got %v, wanted nil", err)
 				}
@@ -1151,8 +1153,8 @@ func TestOpen(t *testing.T) {
 	}
 
 	// Open(flags OpenFlags) (*fd.FD, QID, uint32, error)
-	// - only works on Regular, NamedPipe, BLockDevice, CharacterDevice
-	// - returning a file works as expected
+	//	- only works on Regular, NamedPipe, BLockDevice, CharacterDevice
+	//	- returning a file works as expected
 	for name := range newTypeMap(nil) {
 		for _, tc := range cases {
 			t.Run(fmt.Sprintf("%s-%s", tc.name, name), func(t *testing.T) {
@@ -1334,7 +1336,7 @@ func TestClose(t *testing.T) {
 				if _, _, _, _, err := f.WalkGetAttr(nil); err != unix.EBADF {
 					t.Errorf("walkgetattr got %v, wanted EBADF", err)
 				}
-				if _, err := f.Connect(p9.ConnectFlags(0)); err != unix.EBADF {
+				if _, err := f.Connect(p9.SocketType(0)); err != unix.EBADF {
 					t.Errorf("connect got %v, wanted EBADF", err)
 				}
 			})
@@ -1953,7 +1955,7 @@ func TestConcurrency(t *testing.T) {
 			name:  "connect",
 			match: func(mode p9.FileMode) bool { return mode.IsSocket() },
 			op: func(h *Harness, backend *Mock, f p9.File, callback func()) {
-				backend.EXPECT().Connect(gomock.Any()).Do(func(p9.ConnectFlags) {
+				backend.EXPECT().Connect(gomock.Any()).Do(func(p9.SocketType) {
 					callback()
 				})
 				f.Connect(0)

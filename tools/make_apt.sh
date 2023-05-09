@@ -30,10 +30,11 @@ readonly root
 shift; shift; shift # For "$@" below.
 
 # Ensure that we have the correct packages installed.
+export DEBIAN_FRONTEND=noninteractive
 function apt_install() {
   while true; do
-    sudo apt-get update &&
-      sudo apt-get install -y "$@" &&
+    sudo -E apt-get update &&
+      sudo -E apt-get install -y "$@" &&
       true
     result="${?}"
     case $result in
@@ -81,10 +82,17 @@ trap cleanup EXIT
 # is not found. This isn't actually a failure for us, because we don't require
 # the public key (this may be stored separately). The second import will succeed
 # because, in reality, the first import succeeded and it's a no-op.
-gpg "${gpg_opts[@]}" --import "${private_key}" || \
-  gpg "${gpg_opts[@]}" --import "${private_key}"
+declare keyid
+keyid=$(
+  (gpg "${gpg_opts[@]}" --import "${private_key}" 2>&1 ||
+   gpg "${gpg_opts[@]}" --import "${private_key}" 2>&1) |
+  grep "secret key imported" |
+  head -1 |
+  cut -d':' -f2 |
+  awk '{print $2;}')
+readonly keyid
 
-# Copy the packages into the root.
+# Copy the packages into the pool.
 for pkg in "$@"; do
   if ! [[ -f "${pkg}" ]]; then
     continue
@@ -102,15 +110,22 @@ for pkg in "$@"; do
   version=${version// /} # Ditto.
   destdir="${root}/pool/${version}/binary-${arch}"
 
-  # Copy & sign the package.
+  # Copy & sign the package, only if not in the pool already.
   mkdir -p "${destdir}"
-  cp -a -L "$(dirname "${pkg}")/${name}.deb" "${destdir}"
-  cp -a -L "$(dirname "${pkg}")/${name}.changes" "${destdir}"
-  chmod 0644 "${destdir}"/"${name}".*
-  # Sign a package only if it isn't signed yet.
-  # We use [*] here to expand the gpg_opts array into a single shell-word.
-  dpkg-sig -g "${gpg_opts[*]}" --verify "${destdir}/${name}.deb" ||
-  dpkg-sig -g "${gpg_opts[*]}" --sign builder "${destdir}/${name}.deb"
+  if ! [[ -f "${destdir}/${name}.deb" ]]; then
+    # Copy the file.
+    cp -a -L "$(dirname "${pkg}")/${name}.deb" "${destdir}"
+    chmod 0644 "${destdir}"/"${name}".deb
+    # Sign a package only if it isn't signed yet.
+    # We use [*] here to expand the gpg_opts array into a single shell-word.
+    dpkg-sig -g "${gpg_opts[*]}" --verify "${destdir}/${name}.deb" ||
+    dpkg-sig -g "${gpg_opts[*]}" --sign builder -k "${keyid}" "${destdir}/${name}.deb"
+  fi
+  if [[ -f "$(dirname "${pkg}")/${name}.changes" ]] && ! [[ -f "${destdir}/${name}.changes" ]]; then
+    # Copy the changes file.
+    cp -a -L "$(dirname "${pkg}")/${name}.changes" "${destdir}"
+    chmod 0644 "${destdir}"/"${name}".changes
+  fi
 done
 
 # Build the package list.
@@ -138,6 +153,7 @@ APT {
       Architectures "${arches[@]}";
       Suite "${suite}";
       Components "main";
+      Origin "Google";
     };
   };
 };

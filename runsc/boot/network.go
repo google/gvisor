@@ -17,17 +17,22 @@ package boot
 import (
 	"fmt"
 	"net"
+	"os"
 	"runtime"
 	"strings"
+	"time"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/hostos"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/link/ethernet"
 	"gvisor.dev/gvisor/pkg/tcpip/link/fdbased"
 	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
 	"gvisor.dev/gvisor/pkg/tcpip/link/packetsocket"
 	"gvisor.dev/gvisor/pkg/tcpip/link/qdisc/fifo"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
+	"gvisor.dev/gvisor/pkg/tcpip/link/xdp"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -78,29 +83,57 @@ type DefaultRoute struct {
 	Name  string
 }
 
+type Neighbor struct {
+	IP           net.IP
+	HardwareAddr net.HardwareAddr
+}
+
 // FDBasedLink configures an fd-based link.
 type FDBasedLink struct {
-	Name               string
-	MTU                int
-	Addresses          []IPWithPrefix
-	Routes             []Route
-	GSOMaxSize         uint32
-	SoftwareGSOEnabled bool
-	TXChecksumOffload  bool
-	RXChecksumOffload  bool
-	LinkAddress        net.HardwareAddr
-	QDisc              config.QueueingDiscipline
+	Name              string
+	InterfaceIndex    int
+	MTU               int
+	Addresses         []IPWithPrefix
+	Routes            []Route
+	GSOMaxSize        uint32
+	GvisorGSOEnabled  bool
+	GvisorGROTimeout  time.Duration
+	TXChecksumOffload bool
+	RXChecksumOffload bool
+	LinkAddress       net.HardwareAddr
+	QDisc             config.QueueingDiscipline
+	Neighbors         []Neighbor
 
-	// NumChannels controls how many underlying FD's are to be used to
+	// NumChannels controls how many underlying FDs are to be used to
 	// create this endpoint.
 	NumChannels int
 }
 
-// LoopbackLink configures a loopback li nk.
+// XDPLink configures an XDP link.
+type XDPLink struct {
+	Name              string
+	InterfaceIndex    int
+	MTU               int
+	Addresses         []IPWithPrefix
+	Routes            []Route
+	TXChecksumOffload bool
+	RXChecksumOffload bool
+	LinkAddress       net.HardwareAddr
+	QDisc             config.QueueingDiscipline
+	Neighbors         []Neighbor
+	GvisorGROTimeout  time.Duration
+
+	// NumChannels controls how many underlying FDs are to be used to
+	// create this endpoint.
+	NumChannels int
+}
+
+// LoopbackLink configures a loopback link.
 type LoopbackLink struct {
-	Name      string
-	Addresses []IPWithPrefix
-	Routes    []Route
+	Name             string
+	Addresses        []IPWithPrefix
+	Routes           []Route
+	GvisorGROTimeout time.Duration
 }
 
 // CreateLinksAndRoutesArgs are arguments to CreateLinkAndRoutes.
@@ -112,9 +145,13 @@ type CreateLinksAndRoutesArgs struct {
 
 	LoopbackLinks []LoopbackLink
 	FDBasedLinks  []FDBasedLink
+	XDPLinks      []XDPLink
 
 	Defaultv4Gateway DefaultRoute
 	Defaultv6Gateway DefaultRoute
+
+	// PCAP indicates that FilePayload also contains a PCAP log file.
+	PCAP bool
 }
 
 // IPWithPrefix is an address with its subnet prefix length.
@@ -150,12 +187,21 @@ func (r *Route) toTcpipRoute(id tcpip.NICID) (tcpip.Route, error) {
 // CreateLinksAndRoutes creates links and routes in a network stack.  It should
 // only be called once.
 func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct{}) error {
+	if len(args.FDBasedLinks) > 0 && len(args.XDPLinks) > 0 {
+		return fmt.Errorf("received both fdbased and XDP links, but only one can be used at a time")
+	}
 	wantFDs := 0
 	for _, l := range args.FDBasedLinks {
 		wantFDs += l.NumChannels
 	}
+	if len(args.XDPLinks) > 0 {
+		wantFDs += 4
+	}
+	if args.PCAP {
+		wantFDs++
+	}
 	if got := len(args.FilePayload.Files); got != wantFDs {
-		return fmt.Errorf("args.FilePayload.Files has %d FD's but we need %d entries based on FDBasedLinks", got, wantFDs)
+		return fmt.Errorf("args.FilePayload.Files has %d FDs but we need %d entries based on FDBasedLinks, XDPLinks, and PCAP", got, wantFDs)
 	}
 
 	var nicID tcpip.NICID
@@ -169,10 +215,14 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 		nicID++
 		nicids[link.Name] = nicID
 
-		linkEP := loopback.New()
+		linkEP := packetsocket.New(ethernet.New(loopback.New()))
 
 		log.Infof("Enabling loopback interface %q with id %d on addresses %+v", link.Name, nicID, link.Addresses)
-		if err := n.createNICWithAddrs(nicID, link.Name, linkEP, link.Addresses); err != nil {
+		opts := stack.NICOptions{
+			Name:       link.Name,
+			GROTimeout: link.GvisorGROTimeout,
+		}
+		if err := n.createNICWithAddrs(nicID, linkEP, opts, link.Addresses); err != nil {
 			return err
 		}
 
@@ -186,53 +236,163 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 		}
 	}
 
-	fdOffset := 0
-	for _, link := range args.FDBasedLinks {
+	// Setup fdbased or XDP links.
+	if len(args.FDBasedLinks) > 0 {
+		// Choose a dispatch mode.
+		dispatchMode := fdbased.RecvMMsg
+		version, err := hostos.KernelVersion()
+		if err != nil {
+			return err
+		}
+		if version.AtLeast(5, 6) {
+			dispatchMode = fdbased.PacketMMap
+		} else {
+			log.Infof("Host kernel version < 5.6, falling back to RecvMMsg dispatch")
+		}
+
+		fdOffset := 0
+		for _, link := range args.FDBasedLinks {
+			nicID++
+			nicids[link.Name] = nicID
+
+			FDs := make([]int, 0, link.NumChannels)
+			for j := 0; j < link.NumChannels; j++ {
+				// Copy the underlying FD.
+				oldFD := args.FilePayload.Files[fdOffset].Fd()
+				newFD, err := unix.Dup(int(oldFD))
+				if err != nil {
+					return fmt.Errorf("failed to dup FD %v: %v", oldFD, err)
+				}
+				FDs = append(FDs, newFD)
+				fdOffset++
+			}
+
+			mac := tcpip.LinkAddress(link.LinkAddress)
+			log.Infof("gso max size is: %d", link.GSOMaxSize)
+
+			linkEP, err := fdbased.New(&fdbased.Options{
+				FDs:                FDs,
+				MTU:                uint32(link.MTU),
+				EthernetHeader:     mac != "",
+				Address:            mac,
+				PacketDispatchMode: dispatchMode,
+				GSOMaxSize:         link.GSOMaxSize,
+				GvisorGSOEnabled:   link.GvisorGSOEnabled,
+				TXChecksumOffload:  link.TXChecksumOffload,
+				RXChecksumOffload:  link.RXChecksumOffload,
+			})
+			if err != nil {
+				return err
+			}
+
+			// Wrap linkEP in a sniffer to enable packet logging.
+			sniffEP := sniffer.New(packetsocket.New(linkEP))
+
+			var qDisc stack.QueueingDiscipline
+			switch link.QDisc {
+			case config.QDiscNone:
+			case config.QDiscFIFO:
+				log.Infof("Enabling FIFO QDisc on %q", link.Name)
+				qDisc = fifo.New(sniffEP, runtime.GOMAXPROCS(0), 1000)
+			}
+
+			log.Infof("Enabling interface %q with id %d on addresses %+v (%v) w/ %d channels", link.Name, nicID, link.Addresses, mac, link.NumChannels)
+			opts := stack.NICOptions{
+				Name:       link.Name,
+				QDisc:      qDisc,
+				GROTimeout: link.GvisorGROTimeout,
+			}
+			if err := n.createNICWithAddrs(nicID, sniffEP, opts, link.Addresses); err != nil {
+				return err
+			}
+
+			// Collect the routes from this link.
+			for _, r := range link.Routes {
+				route, err := r.toTcpipRoute(nicID)
+				if err != nil {
+					return err
+				}
+				routes = append(routes, route)
+			}
+
+			for _, neigh := range link.Neighbors {
+				proto, tcpipAddr := ipToAddressAndProto(neigh.IP)
+				n.Stack.AddStaticNeighbor(nicID, proto, tcpipAddr, tcpip.LinkAddress(neigh.HardwareAddr))
+			}
+		}
+	} else if len(args.XDPLinks) > 0 {
+		if nlinks := len(args.XDPLinks); nlinks > 1 {
+			return fmt.Errorf("XDP only supports one link device, but got %d", nlinks)
+		}
+		link := args.XDPLinks[0]
 		nicID++
 		nicids[link.Name] = nicID
 
-		FDs := []int{}
-		for j := 0; j < link.NumChannels; j++ {
-			// Copy the underlying FD.
+		// Get the AF_XDP socket.
+		fdOffset := 0
+		oldFD := args.FilePayload.Files[fdOffset].Fd()
+		fd, err := unix.Dup(int(oldFD))
+		if err != nil {
+			return fmt.Errorf("failed to dup AF_XDP fd %v: %v", oldFD, err)
+		}
+		fdOffset++
+
+		// The parent process sends several other FDs in order
+		// to keep them open and alive. These are for BPF
+		// programs and maps that, if closed, will break the
+		// dispatcher.
+		for _, fdName := range []string{"program-fd", "sockmap-fd", "link-fd"} {
 			oldFD := args.FilePayload.Files[fdOffset].Fd()
-			newFD, err := unix.Dup(int(oldFD))
-			if err != nil {
-				return fmt.Errorf("failed to dup FD %v: %v", oldFD, err)
+			if _, err := unix.Dup(int(oldFD)); err != nil {
+				return fmt.Errorf("failed to dup %s with FD %d: %v", fdName, oldFD, err)
 			}
-			FDs = append(FDs, newFD)
 			fdOffset++
 		}
 
 		mac := tcpip.LinkAddress(link.LinkAddress)
-		log.Infof("gso max size is: %d", link.GSOMaxSize)
-
-		linkEP, err := fdbased.New(&fdbased.Options{
-			FDs:                FDs,
-			MTU:                uint32(link.MTU),
-			EthernetHeader:     true,
-			Address:            mac,
-			PacketDispatchMode: fdbased.RecvMMsg,
-			GSOMaxSize:         link.GSOMaxSize,
-			SoftwareGSOEnabled: link.SoftwareGSOEnabled,
-			TXChecksumOffload:  link.TXChecksumOffload,
-			RXChecksumOffload:  link.RXChecksumOffload,
+		linkEP, err := xdp.New(&xdp.Options{
+			FD:                fd,
+			Address:           mac,
+			TXChecksumOffload: link.TXChecksumOffload,
+			RXChecksumOffload: link.RXChecksumOffload,
+			InterfaceIndex:    link.InterfaceIndex,
 		})
 		if err != nil {
 			return err
 		}
 
+		// Wrap linkEP in a sniffer to enable packet logging.
+		var sniffEP stack.LinkEndpoint
+		if args.PCAP {
+			newFD, err := unix.Dup(int(args.FilePayload.Files[fdOffset].Fd()))
+			if err != nil {
+				return fmt.Errorf("failed to dup pcap FD: %v", err)
+			}
+			const packetTruncateSize = 4096
+			sniffEP, err = sniffer.NewWithWriter(packetsocket.New(linkEP), os.NewFile(uintptr(newFD), "pcap-file"), packetTruncateSize)
+			if err != nil {
+				return fmt.Errorf("failed to create PCAP logger: %v", err)
+			}
+			fdOffset++
+		} else {
+			sniffEP = sniffer.New(packetsocket.New(linkEP))
+		}
+
+		var qDisc stack.QueueingDiscipline
 		switch link.QDisc {
 		case config.QDiscNone:
 		case config.QDiscFIFO:
 			log.Infof("Enabling FIFO QDisc on %q", link.Name)
-			linkEP = fifo.New(linkEP, runtime.GOMAXPROCS(0), 1000)
+			qDisc = fifo.New(sniffEP, runtime.GOMAXPROCS(0), 1000)
 		}
 
-		// Enable support for AF_PACKET sockets to receive outgoing packets.
-		linkEP = packetsocket.New(linkEP)
-
 		log.Infof("Enabling interface %q with id %d on addresses %+v (%v) w/ %d channels", link.Name, nicID, link.Addresses, mac, link.NumChannels)
-		if err := n.createNICWithAddrs(nicID, link.Name, linkEP, link.Addresses); err != nil {
+		opts := stack.NICOptions{
+			Name:       link.Name,
+			QDisc:      qDisc,
+			GROTimeout: link.GvisorGROTimeout,
+		}
+		if err := n.createNICWithAddrs(nicID, sniffEP, opts, link.Addresses); err != nil {
 			return err
 		}
 
@@ -243,6 +403,11 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 				return err
 			}
 			routes = append(routes, route)
+		}
+
+		for _, neigh := range link.Neighbors {
+			proto, tcpipAddr := ipToAddressAndProto(neigh.IP)
+			n.Stack.AddStaticNeighbor(nicID, proto, tcpipAddr, tcpip.LinkAddress(neigh.HardwareAddr))
 		}
 	}
 
@@ -277,20 +442,22 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 
 // createNICWithAddrs creates a NIC in the network stack and adds the given
 // addresses.
-func (n *Network) createNICWithAddrs(id tcpip.NICID, name string, ep stack.LinkEndpoint, addrs []IPWithPrefix) error {
-	opts := stack.NICOptions{Name: name}
-	if err := n.Stack.CreateNICWithOptions(id, sniffer.New(ep), opts); err != nil {
+func (n *Network) createNICWithAddrs(id tcpip.NICID, ep stack.LinkEndpoint, opts stack.NICOptions, addrs []IPWithPrefix) error {
+	if err := n.Stack.CreateNICWithOptions(id, ep, opts); err != nil {
 		return fmt.Errorf("CreateNICWithOptions(%d, _, %+v) failed: %v", id, opts, err)
 	}
 
 	for _, addr := range addrs {
 		proto, tcpipAddr := ipToAddressAndProto(addr.Address)
-		ap := tcpip.AddressWithPrefix{
-			Address:   tcpipAddr,
-			PrefixLen: addr.PrefixLen,
+		protocolAddr := tcpip.ProtocolAddress{
+			Protocol: proto,
+			AddressWithPrefix: tcpip.AddressWithPrefix{
+				Address:   tcpipAddr,
+				PrefixLen: addr.PrefixLen,
+			},
 		}
-		if err := n.Stack.AddAddressWithPrefix(id, proto, ap); err != nil {
-			return fmt.Errorf("AddAddress(%v, %v, %v) failed: %v", id, proto, tcpipAddr, err)
+		if err := n.Stack.AddProtocolAddress(id, protocolAddr, stack.AddressProperties{}); err != nil {
+			return fmt.Errorf("AddProtocolAddress(%d, %+v, {}) failed: %s", id, protocolAddr, err)
 		}
 	}
 	return nil

@@ -21,13 +21,11 @@ To run, use the Makefile:
     -   The above command will place several configurations of runsc in your
         /etc/docker/daemon.json file. Choose one without the debug option set.
 -   Run your benchmark: `make run-benchmark
-    RUNTIME=[RUNTIME_FROM_DAEMON.JSON/runc]
-    BENCHMARKS_TARGETS=//path/to/target"`
+    RUNTIME=[RUNTIME_FROM_DAEMON.JSON/runc] BENCHMARKS_TARGETS=path/to/target`
 -   Additionally, you can benchmark several platforms in one command:
 
 ```
-make benchmark-platforms BENCHMARKS_PLATFORMS=ptrace,kvm \
-BENCHMARKS_TARGET=//path/to/target"
+make benchmark-platforms BENCHMARKS_TARGET=path/to/target
 ```
 
 The above command will install runtimes/run benchmarks on ptrace and kvm as well
@@ -123,7 +121,7 @@ To profile, simply run the `benchmark-platforms` command from above and profiles
 will be in /tmp/profile.
 
 Or run with: `make run-benchmark RUNTIME=[RUNTIME_UNDER_TEST]
-BENCHMARKS_TARGETS=//path/to/target`
+BENCHMARKS_TARGETS=path/to/target`
 
 Profiles will be in /tmp/profile. Note: runtimes must have the `--profile` flag
 set in /etc/docker/daemon.conf and profiling will not work on runc.

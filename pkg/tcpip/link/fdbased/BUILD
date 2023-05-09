@@ -1,6 +1,9 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_library(
     name = "fdbased",
@@ -14,13 +17,13 @@ go_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
-        "//pkg/binary",
-        "//pkg/iovec",
+        "//pkg/atomicbitops",
+        "//pkg/bufferv2",
         "//pkg/sync",
         "//pkg/tcpip",
-        "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/rawfile",
+        "//pkg/tcpip/link/stopfd",
         "//pkg/tcpip/stack",
         "@org_golang_x_sys//unix:go_default_library",
     ],
@@ -32,8 +35,9 @@ go_test(
     srcs = ["endpoint_test.go"],
     library = ":fdbased",
     deps = [
+        "//pkg/bufferv2",
+        "//pkg/refs",
         "//pkg/tcpip",
-        "//pkg/tcpip/buffer",
         "//pkg/tcpip/header",
         "//pkg/tcpip/stack",
         "@com_github_google_go_cmp//cmp:go_default_library",

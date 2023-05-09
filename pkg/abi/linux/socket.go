@@ -15,7 +15,6 @@
 package linux
 
 import (
-	"gvisor.dev/gvisor/pkg/binary"
 	"gvisor.dev/gvisor/pkg/marshal"
 )
 
@@ -240,6 +239,9 @@ const SockAddrMax = 128
 // +marshal
 type InetAddr [4]byte
 
+// SizeOfInetAddr is the size of InetAddr.
+var SizeOfInetAddr = uint32((*InetAddr)(nil).SizeBytes())
+
 // SockAddrInet is struct sockaddr_in, from uapi/linux/in.h.
 //
 // +marshal
@@ -251,18 +253,24 @@ type SockAddrInet struct {
 }
 
 // Inet6MulticastRequest is struct ipv6_mreq, from uapi/linux/in6.h.
+//
+// +marshal
 type Inet6MulticastRequest struct {
 	MulticastAddr  Inet6Addr
 	InterfaceIndex int32
 }
 
 // InetMulticastRequest is struct ip_mreq, from uapi/linux/in.h.
+//
+// +marshal
 type InetMulticastRequest struct {
 	MulticastAddr InetAddr
 	InterfaceAddr InetAddr
 }
 
 // InetMulticastRequestWithNIC is struct ip_mreqn, from uapi/linux/in.h.
+//
+// +marshal
 type InetMulticastRequestWithNIC struct {
 	InetMulticastRequest
 	InterfaceIndex int32
@@ -491,7 +499,7 @@ type TCPInfo struct {
 }
 
 // SizeOfTCPInfo is the binary size of a TCPInfo struct.
-var SizeOfTCPInfo = int(binary.Size(TCPInfo{}))
+var SizeOfTCPInfo = (*TCPInfo)(nil).SizeBytes()
 
 // Control message types, from linux/socket.h.
 const (
@@ -502,6 +510,8 @@ const (
 // A ControlMessageHeader is the header for a socket control message.
 //
 // ControlMessageHeader represents struct cmsghdr from linux/socket.h.
+//
+// +marshal
 type ControlMessageHeader struct {
 	Length uint64
 	Level  int32
@@ -510,7 +520,7 @@ type ControlMessageHeader struct {
 
 // SizeOfControlMessageHeader is the binary size of a ControlMessageHeader
 // struct.
-var SizeOfControlMessageHeader = int(binary.Size(ControlMessageHeader{}))
+var SizeOfControlMessageHeader = (*ControlMessageHeader)(nil).SizeBytes()
 
 // A ControlMessageCredentials is an SCM_CREDENTIALS socket control message.
 //
@@ -527,6 +537,7 @@ type ControlMessageCredentials struct {
 //
 // ControlMessageIPPacketInfo represents struct in_pktinfo from linux/in.h.
 //
+// +marshal
 // +stateify savable
 type ControlMessageIPPacketInfo struct {
 	NIC             int32
@@ -534,12 +545,18 @@ type ControlMessageIPPacketInfo struct {
 	DestinationAddr InetAddr
 }
 
+// ControlMessageIPv6PacketInfo represents struct in6_pktinfo from linux/ipv6.h.
+//
+// +marshal
+// +stateify savable
+type ControlMessageIPv6PacketInfo struct {
+	Addr Inet6Addr
+	NIC  uint32
+}
+
 // SizeOfControlMessageCredentials is the binary size of a
 // ControlMessageCredentials struct.
-var SizeOfControlMessageCredentials = int(binary.Size(ControlMessageCredentials{}))
-
-// A ControlMessageRights is an SCM_RIGHTS socket control message.
-type ControlMessageRights []int32
+var SizeOfControlMessageCredentials = (*ControlMessageCredentials)(nil).SizeBytes()
 
 // SizeOfControlMessageRight is the size of a single element in
 // ControlMessageRights.
@@ -551,12 +568,22 @@ const SizeOfControlMessageInq = 4
 // SizeOfControlMessageTOS is the size of an IP_TOS control message.
 const SizeOfControlMessageTOS = 1
 
+// SizeOfControlMessageTTL is the size of an IP_TTL control message.
+const SizeOfControlMessageTTL = 4
+
 // SizeOfControlMessageTClass is the size of an IPV6_TCLASS control message.
 const SizeOfControlMessageTClass = 4
 
-// SizeOfControlMessageIPPacketInfo is the size of an IP_PKTINFO
-// control message.
+// SizeOfControlMessageHopLimit is the size of an IPV6_HOPLIMIT control message.
+const SizeOfControlMessageHopLimit = 4
+
+// SizeOfControlMessageIPPacketInfo is the size of an IP_PKTINFO control
+// message.
 const SizeOfControlMessageIPPacketInfo = 12
+
+// SizeOfControlMessageIPv6PacketInfo is the size of a
+// ControlMessageIPv6PacketInfo.
+const SizeOfControlMessageIPv6PacketInfo = 20
 
 // SCM_MAX_FD is the maximum number of FDs accepted in a single sendmsg call.
 // From net/scm.h.
@@ -568,3 +595,14 @@ const SCM_MAX_FD = 253
 // socket option for querying whether a socket is in a listening
 // state.
 const SO_ACCEPTCON = 1 << 16
+
+// ICMP6Filter represents struct icmp6_filter from linux/icmpv6.h.
+//
+// +marshal
+// +stateify savable
+type ICMP6Filter struct {
+	Filter [8]uint32
+}
+
+// SizeOfICMP6Filter is the size of ICMP6Filter struct.
+var SizeOfICMP6Filter = uint32((*ICMP6Filter)(nil).SizeBytes())

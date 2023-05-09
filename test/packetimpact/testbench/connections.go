@@ -594,32 +594,50 @@ func (conn *Connection) Expect(t *testing.T, layer Layer, timeout time.Duration)
 func (conn *Connection) ExpectFrame(t *testing.T, layers Layers, timeout time.Duration) (Layers, error) {
 	t.Helper()
 
-	deadline := time.Now().Add(timeout)
+	frames, ok := conn.ListenForFrame(t, layers, timeout)
+	if ok {
+		return frames[len(frames)-1], nil
+	}
+	if len(frames) == 0 {
+		return nil, fmt.Errorf("got no frames matching %s during %s", layers, timeout)
+	}
+
 	var errs error
-	for {
-		var gotLayers Layers
-		if timeout := time.Until(deadline); timeout > 0 {
-			gotLayers = conn.recvFrame(t, timeout)
-		}
-		if gotLayers == nil {
-			if errs == nil {
-				return nil, fmt.Errorf("got no frames matching %s during %s", layers, timeout)
-			}
-			return nil, fmt.Errorf("got frames:\n%w want %s during %s", errs, layers, timeout)
-		}
-		if conn.match(layers, gotLayers) {
-			for i, s := range conn.layerStates {
-				if err := s.received(gotLayers[i]); err != nil {
-					t.Fatalf("failed to update test connection's layer states based on received frame: %s", err)
-				}
-			}
-			return gotLayers, nil
-		}
+	for _, got := range frames {
 		want := conn.incoming(layers)
 		if err := want.merge(layers); err != nil {
 			errs = multierr.Combine(errs, err)
 		} else {
-			errs = multierr.Combine(errs, &layersError{got: gotLayers, want: want})
+			errs = multierr.Combine(errs, &layersError{got: got, want: want})
+		}
+	}
+	return nil, fmt.Errorf("got frames:\n%w want %s during %s", errs, layers, timeout)
+}
+
+// ListenForFrame captures all frames until a frame matches the provided Layers,
+// or until the timeout specified. Returns all captured frames, including the
+// matched frame, and true if the desired frame was found.
+func (conn *Connection) ListenForFrame(t *testing.T, layers Layers, timeout time.Duration) ([]Layers, bool) {
+	t.Helper()
+
+	deadline := time.Now().Add(timeout)
+	var frames []Layers
+	for {
+		var got Layers
+		if timeout := time.Until(deadline); timeout > 0 {
+			got = conn.recvFrame(t, timeout)
+		}
+		if got == nil {
+			return frames, false
+		}
+		frames = append(frames, got)
+		if conn.match(layers, got) {
+			for i, s := range conn.layerStates {
+				if err := s.received(got[i]); err != nil {
+					t.Fatalf("failed to update test connection's layer states based on received frame: %s", err)
+				}
+			}
+			return frames, true
 		}
 	}
 }
@@ -1025,6 +1043,8 @@ func (conn *UDPIPv4) SendIP(t *testing.T, ip IPv4, udp UDP, additionalLayers ...
 
 // SendFrame sends a frame on the wire and updates the state of all layers.
 func (conn *UDPIPv4) SendFrame(t *testing.T, overrideLayers Layers, additionalLayers ...Layer) {
+	t.Helper()
+
 	conn.send(t, overrideLayers, additionalLayers...)
 }
 

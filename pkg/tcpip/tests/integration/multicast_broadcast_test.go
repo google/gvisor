@@ -19,17 +19,21 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
+	"gvisor.dev/gvisor/pkg/tcpip/prependable"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/tests/utils"
+	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
+	"gvisor.dev/gvisor/pkg/tcpip/transport/raw"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -114,16 +118,17 @@ func TestPingMulticastBroadcast(t *testing.T) {
 			})
 			// We only expect a single packet in response to our ICMP Echo Request.
 			e := channel.New(1, defaultMTU, "")
+			defer e.Close()
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
 			}
 			ipv4ProtoAddr := tcpip.ProtocolAddress{Protocol: header.IPv4ProtocolNumber, AddressWithPrefix: utils.Ipv4Addr}
-			if err := s.AddProtocolAddress(nicID, ipv4ProtoAddr); err != nil {
-				t.Fatalf("AddProtocolAddress(%d, %#v): %s", nicID, ipv4ProtoAddr, err)
+			if err := s.AddProtocolAddress(nicID, ipv4ProtoAddr, stack.AddressProperties{}); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, ipv4ProtoAddr, err)
 			}
 			ipv6ProtoAddr := tcpip.ProtocolAddress{Protocol: header.IPv6ProtocolNumber, AddressWithPrefix: utils.Ipv6Addr}
-			if err := s.AddProtocolAddress(nicID, ipv6ProtoAddr); err != nil {
-				t.Fatalf("AddProtocolAddress(%d, %#v): %s", nicID, ipv6ProtoAddr, err)
+			if err := s.AddProtocolAddress(nicID, ipv6ProtoAddr, stack.AddressProperties{}); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, ipv6ProtoAddr, err)
 			}
 
 			// Default routes for IPv4 and IPv6 so ICMP can find a route to the remote
@@ -140,21 +145,24 @@ func TestPingMulticastBroadcast(t *testing.T) {
 			})
 
 			test.rxICMP(e, test.srcAddr, test.dstAddr, ttl)
-			pkt, ok := e.Read()
-			if !ok {
+			pkt := e.Read()
+			if pkt.IsNil() {
 				t.Fatal("expected ICMP response")
 			}
+			defer pkt.DecRef()
 
-			if pkt.Route.LocalAddress != test.expectedSrc {
-				t.Errorf("got pkt.Route.LocalAddress = %s, want = %s", pkt.Route.LocalAddress, test.expectedSrc)
+			if pkt.EgressRoute.LocalAddress != test.expectedSrc {
+				t.Errorf("got pkt.EgressRoute.LocalAddress = %s, want = %s", pkt.EgressRoute.LocalAddress, test.expectedSrc)
 			}
 			// The destination of the response packet should be the source of the
 			// original packet.
-			if pkt.Route.RemoteAddress != test.srcAddr {
-				t.Errorf("got pkt.Route.RemoteAddress = %s, want = %s", pkt.Route.RemoteAddress, test.srcAddr)
+			if pkt.EgressRoute.RemoteAddress != test.srcAddr {
+				t.Errorf("got pkt.EgressRoute.RemoteAddress = %s, want = %s", pkt.EgressRoute.RemoteAddress, test.srcAddr)
 			}
 
-			src, dst := s.NetworkProtocolInstance(test.protoNum).ParseAddresses(stack.PayloadSince(pkt.Pkt.NetworkHeader()))
+			v := stack.PayloadSince(pkt.NetworkHeader())
+			defer v.Release()
+			src, dst := s.NetworkProtocolInstance(test.protoNum).ParseAddresses(v.AsSlice())
 			if src != test.expectedSrc {
 				t.Errorf("got pkt source = %s, want = %s", src, test.expectedSrc)
 			}
@@ -171,7 +179,7 @@ func TestPingMulticastBroadcast(t *testing.T) {
 func rxIPv4UDP(e *channel.Endpoint, src, dst tcpip.Address, data []byte) {
 	payloadLen := header.UDPMinimumSize + len(data)
 	totalLen := header.IPv4MinimumSize + payloadLen
-	hdr := buffer.NewPrependable(totalLen)
+	hdr := prependable.New(totalLen)
 	u := header.UDP(hdr.Prepend(payloadLen))
 	u.Encode(&header.UDPFields{
 		SrcPort: utils.RemotePort,
@@ -180,7 +188,7 @@ func rxIPv4UDP(e *channel.Endpoint, src, dst tcpip.Address, data []byte) {
 	})
 	copy(u.Payload(), data)
 	sum := header.PseudoHeaderChecksum(udp.ProtocolNumber, src, dst, uint16(payloadLen))
-	sum = header.Checksum(data, sum)
+	sum = checksum.Checksum(data, sum)
 	u.SetChecksum(^u.CalculateChecksum(sum))
 
 	ip := header.IPv4(hdr.Prepend(header.IPv4MinimumSize))
@@ -194,13 +202,13 @@ func rxIPv4UDP(e *channel.Endpoint, src, dst tcpip.Address, data []byte) {
 	ip.SetChecksum(^ip.CalculateChecksum())
 
 	e.InjectInbound(header.IPv4ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: hdr.View().ToVectorisedView(),
+		Payload: bufferv2.MakeWithData(hdr.View()),
 	}))
 }
 
 func rxIPv6UDP(e *channel.Endpoint, src, dst tcpip.Address, data []byte) {
 	payloadLen := header.UDPMinimumSize + len(data)
-	hdr := buffer.NewPrependable(header.IPv6MinimumSize + payloadLen)
+	hdr := prependable.New(header.IPv6MinimumSize + payloadLen)
 	u := header.UDP(hdr.Prepend(payloadLen))
 	u.Encode(&header.UDPFields{
 		SrcPort: utils.RemotePort,
@@ -209,7 +217,7 @@ func rxIPv6UDP(e *channel.Endpoint, src, dst tcpip.Address, data []byte) {
 	})
 	copy(u.Payload(), data)
 	sum := header.PseudoHeaderChecksum(udp.ProtocolNumber, src, dst, uint16(payloadLen))
-	sum = header.Checksum(data, sum)
+	sum = checksum.Checksum(data, sum)
 	u.SetChecksum(^u.CalculateChecksum(sum))
 
 	ip := header.IPv6(hdr.Prepend(header.IPv6MinimumSize))
@@ -222,7 +230,7 @@ func rxIPv6UDP(e *channel.Endpoint, src, dst tcpip.Address, data []byte) {
 	})
 
 	e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: hdr.View().ToVectorisedView(),
+		Payload: bufferv2.MakeWithData(hdr.View()),
 	}))
 }
 
@@ -391,12 +399,13 @@ func TestIncomingMulticastAndBroadcast(t *testing.T) {
 				TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 			})
 			e := channel.New(0, defaultMTU, "")
+			defer e.Close()
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
 			}
 			protoAddr := tcpip.ProtocolAddress{Protocol: test.proto, AddressWithPrefix: test.localAddr}
-			if err := s.AddProtocolAddress(nicID, protoAddr); err != nil {
-				t.Fatalf("AddProtocolAddress(%d, %#v): %s", nicID, protoAddr, err)
+			if err := s.AddProtocolAddress(nicID, protoAddr, stack.AddressProperties{}); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protoAddr, err)
 			}
 
 			var wq waiter.Queue
@@ -438,10 +447,10 @@ func TestIncomingMulticastAndBroadcast(t *testing.T) {
 // interested endpoints.
 func TestReuseAddrAndBroadcast(t *testing.T) {
 	const (
-		nicID             = 1
-		localPort         = 9000
-		loopbackBroadcast = tcpip.Address("\x7f\xff\xff\xff")
+		nicID     = 1
+		localPort = 9000
 	)
+	loopbackBroadcast := testutil.MustParse4("127.255.255.255")
 
 	tests := []struct {
 		name          string
@@ -473,8 +482,8 @@ func TestReuseAddrAndBroadcast(t *testing.T) {
 					PrefixLen: 8,
 				},
 			}
-			if err := s.AddProtocolAddress(nicID, protoAddr); err != nil {
-				t.Fatalf("AddProtocolAddress(%d, %#v): %s", nicID, protoAddr, err)
+			if err := s.AddProtocolAddress(nicID, protoAddr, stack.AddressProperties{}); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protoAddr, err)
 			}
 
 			s.SetRouteTable([]tcpip.Route{
@@ -500,8 +509,8 @@ func TestReuseAddrAndBroadcast(t *testing.T) {
 				// packet.
 				for i := 0; i < 2; i++ {
 					var wq waiter.Queue
-					we, ch := waiter.NewChannelEntry(nil)
-					wq.EventRegister(&we, waiter.ReadableEvents)
+					we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
+					wq.EventRegister(&we)
 					ep, err := s.NewEndpoint(udp.ProtocolNumber, ipv4.ProtocolNumber, &wq)
 					if err != nil {
 						t.Fatalf("(eps[%d]) NewEndpoint(%d, %d, _): %s", len(eps), udp.ProtocolNumber, ipv4.ProtocolNumber, err)
@@ -637,12 +646,13 @@ func TestUDPAddRemoveMembershipSocketOption(t *testing.T) {
 						TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
 					})
 					e := channel.New(0, defaultMTU, "")
+					defer e.Close()
 					if err := s.CreateNIC(nicID, e); err != nil {
 						t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
 					}
 					protoAddr := tcpip.ProtocolAddress{Protocol: test.proto, AddressWithPrefix: test.localAddr}
-					if err := s.AddProtocolAddress(nicID, protoAddr); err != nil {
-						t.Fatalf("AddProtocolAddress(%d, %#v): %s", nicID, protoAddr, err)
+					if err := s.AddProtocolAddress(nicID, protoAddr, stack.AddressProperties{}); err != nil {
+						t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protoAddr, err)
 					}
 
 					// Set the route table so that UDP can find a NIC that is
@@ -718,5 +728,105 @@ func TestUDPAddRemoveMembershipSocketOption(t *testing.T) {
 				})
 			}
 		})
+	}
+}
+
+func TestAddMembershipInterfacePrecedence(t *testing.T) {
+	const nicID = 1
+	multicastAddr := tcpip.Address("\xe0\x01\x02\x03")
+	proto := header.IPv4ProtocolNumber
+	// This address is nonsensical. If the precedence is correct, this should not
+	// matter, because ADD_IP_MEMBERSHIP should consider the interface index
+	// and use that before checking the address.
+	localAddr := tcpip.AddressWithPrefix{
+		Address:   testutil.MustParse4("8.0.8.0"),
+		PrefixLen: 24,
+	}
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+		TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
+	})
+	e := channel.New(0, defaultMTU, "")
+	defer e.Close()
+	if err := s.CreateNIC(nicID, e); err != nil {
+		t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
+	}
+	protoAddr := tcpip.ProtocolAddress{Protocol: proto, AddressWithPrefix: localAddr}
+	if err := s.AddProtocolAddress(nicID, protoAddr, stack.AddressProperties{}); err != nil {
+		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protoAddr, err)
+	}
+
+	var wq waiter.Queue
+	ep, err := s.NewEndpoint(udp.ProtocolNumber, proto, &wq)
+	if err != nil {
+		t.Fatalf("NewEndpoint(%d, %d, _): %s", udp.ProtocolNumber, proto, err)
+	}
+	defer ep.Close()
+
+	bindAddr := tcpip.FullAddress{Port: utils.LocalPort}
+	if err := ep.Bind(bindAddr); err != nil {
+		t.Fatalf("ep.Bind(%#v): %s", bindAddr, err)
+	}
+
+	memOpt := tcpip.MembershipOption{MulticastAddr: multicastAddr}
+	memOpt.NIC = nicID
+	memOpt.InterfaceAddr = localAddr.Address
+
+	// Add membership should succeed when the interface index is specified,
+	// even if a bad interface address is specified.
+	addOpt := tcpip.AddMembershipOption(memOpt)
+	if err := ep.SetSockOpt(&addOpt); err != nil {
+		t.Fatalf("ep.SetSockOpt(&%#v): %s", addOpt, err)
+	}
+}
+
+func TestMismatchedMulticastAddressAndProtocol(t *testing.T) {
+	const nicID = 1
+	// MulticastAddr is IPv4, but proto is IPv6.
+	multicastAddr := tcpip.Address("\xe0\x01\x02\x03")
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+		TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol6},
+		RawFactory:         raw.EndpointFactory{},
+	})
+	e := channel.New(0, defaultMTU, "")
+	defer e.Close()
+	if err := s.CreateNIC(nicID, e); err != nil {
+		t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
+	}
+	protoAddr := tcpip.ProtocolAddress{Protocol: header.IPv4ProtocolNumber, AddressWithPrefix: utils.Ipv4Addr}
+	if err := s.AddProtocolAddress(nicID, protoAddr, stack.AddressProperties{}); err != nil {
+		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protoAddr, err)
+	}
+
+	var wq waiter.Queue
+	ep, err := s.NewRawEndpoint(header.ICMPv6ProtocolNumber, header.IPv6ProtocolNumber, &wq, false)
+	if err != nil {
+		t.Fatalf("NewEndpoint(%d, %d, _): %s", udp.ProtocolNumber, header.IPv6ProtocolNumber, err)
+	}
+	defer ep.Close()
+
+	bindAddr := tcpip.FullAddress{Port: utils.LocalPort}
+	if err := ep.Bind(bindAddr); err != nil {
+		t.Fatalf("ep.Bind(%#v): %s", bindAddr, err)
+	}
+
+	memOpt := tcpip.MembershipOption{
+		MulticastAddr: multicastAddr,
+		NIC:           0,
+		InterfaceAddr: utils.Ipv4Addr.Address,
+	}
+
+	// Add/remove membership should succeed when the interface index is specified,
+	// even if a bad interface address is specified.
+	addOpt := tcpip.AddMembershipOption(memOpt)
+	expErr := &tcpip.ErrInvalidOptionValue{}
+	if err := ep.SetSockOpt(&addOpt); err != expErr {
+		t.Fatalf("ep.SetSockOpt(&%#v): want %q, got %q", addOpt, expErr, err)
+	}
+
+	removeOpt := tcpip.RemoveMembershipOption(memOpt)
+	if err := ep.SetSockOpt(&removeOpt); err != expErr {
+		t.Fatalf("ep.SetSockOpt(&%#v): want %q, got %q", addOpt, expErr, err)
 	}
 }

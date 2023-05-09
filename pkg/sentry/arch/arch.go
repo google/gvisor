@@ -23,7 +23,6 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/hostarch"
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
@@ -51,14 +50,22 @@ func (a Arch) String() string {
 	}
 }
 
-// Context provides architecture-dependent information for a specific thread.
+// contextInterface provides architecture-dependent information for a thread.
+// This is currently not referenced, because there exists only one concrete
+// implementation of this interface (*Context64), which we reference directly
+// wherever this interface could otherwise be used in order to avoid the
+// overhead involved in calling functions on interfaces in Go.
+// This interface is still useful in order to see the entire
+// architecture-dependent call surface it must support, as this is difficult
+// to follow across the rest of this module due to the conditional compilation
+// of the files that make it up.
 //
 // NOTE(b/34169503): Currently we use uintptr here to refer to a generic native
 // register value. While this will work for the foreseeable future, it isn't
 // strictly correct. We may want to create some abstraction that makes this
 // more clear or enables us to store values of arbitrary widths. This is
 // particularly true for RegisterMap().
-type Context interface {
+type contextInterface interface {
 	// Arch returns the architecture for this Context.
 	Arch() Arch
 
@@ -79,7 +86,7 @@ type Context interface {
 	Width() uint
 
 	// Fork creates a clone of the context.
-	Fork() Context
+	Fork() *Context64
 
 	// SyscallNo returns the syscall number.
 	SyscallNo() uintptr
@@ -134,21 +141,13 @@ type Context interface {
 	// RegisterMap returns a map of all registers.
 	RegisterMap() (map[string]uintptr, error)
 
-	// NewSignalAct returns a new object that is equivalent to struct sigaction
-	// in the guest architecture.
-	NewSignalAct() NativeSignalAct
-
-	// NewSignalStack returns a new object that is equivalent to stack_t in the
-	// guest architecture.
-	NewSignalStack() NativeSignalStack
-
 	// SignalSetup modifies the context in preparation for handling the
 	// given signal.
 	//
 	// st is the stack where the signal handler frame should be
 	// constructed.
 	//
-	// act is the SignalAct that specifies how this signal is being
+	// act is the SigAction that specifies how this signal is being
 	// handled.
 	//
 	// info is the SignalInfo of the signal being delivered.
@@ -157,7 +156,9 @@ type Context interface {
 	// stack is not going to be used).
 	//
 	// sigset is the signal mask before entering the signal handler.
-	SignalSetup(st *Stack, act *SignalAct, info *SignalInfo, alt *SignalStack, sigset linux.SignalSet) error
+	//
+	// featureSet is the application CPU feature set.
+	SignalSetup(st *Stack, act *linux.SigAction, info *linux.SignalInfo, alt *linux.SignalStack, sigset linux.SignalSet, featureSet cpuid.FeatureSet) error
 
 	// SignalRestore restores context after returning from a signal
 	// handler.
@@ -166,11 +167,11 @@ type Context interface {
 	//
 	// rt is true if SignalRestore is being entered from rt_sigreturn and
 	// false if SignalRestore is being entered from sigreturn.
+	//
+	// featureSet is the application CPU feature set.
+	//
 	// SignalRestore returns the thread's new signal mask.
-	SignalRestore(st *Stack, rt bool) (linux.SignalSet, SignalStack, error)
-
-	// CPUIDEmulate emulates a CPUID instruction according to current register state.
-	CPUIDEmulate(l log.Logger)
+	SignalRestore(st *Stack, rt bool, featureSet cpuid.FeatureSet) (linux.SignalSet, linux.SignalStack, error)
 
 	// SingleStep returns true if single stepping is enabled.
 	SingleStep() bool
@@ -193,9 +194,6 @@ type Context interface {
 	// PIELoadAddress returns a preferred load address for a
 	// position-independent executable within l.
 	PIELoadAddress(l MmapLayout) hostarch.Addr
-
-	// FeatureSet returns the FeatureSet in use in this context.
-	FeatureSet() *cpuid.FeatureSet
 
 	// Hack around our package dependences being too broken to support the
 	// equivalent of arch_ptrace():
@@ -220,13 +218,13 @@ type Context interface {
 	// register set given by architecture-defined value regset from this
 	// Context to dst and returning the number of bytes written, which must be
 	// less than or equal to maxlen.
-	PtraceGetRegSet(regset uintptr, dst io.Writer, maxlen int) (int, error)
+	PtraceGetRegSet(regset uintptr, dst io.Writer, maxlen int, fs cpuid.FeatureSet) (int, error)
 
 	// PtraceSetRegSet implements ptrace(PTRACE_SETREGSET) by reading the
 	// register set given by architecture-defined value regset from src and
 	// returning the number of bytes read, which must be less than or equal to
 	// maxlen.
-	PtraceSetRegSet(regset uintptr, src io.Reader, maxlen int) (int, error)
+	PtraceSetRegSet(regset uintptr, src io.Reader, maxlen int, fs cpuid.FeatureSet) (int, error)
 
 	// FullRestore returns 'true' if all CPU registers must be restored
 	// when switching to the untrusted application. Typically a task enters
@@ -237,6 +235,9 @@ type Context interface {
 	// must be disabled and all registers restored.
 	FullRestore() bool
 }
+
+// Compile-time assertion that Context64 implements contextInterface.
+var _ = (contextInterface)((*Context64)(nil))
 
 // MmapDirection is a search direction for mmaps.
 type MmapDirection int

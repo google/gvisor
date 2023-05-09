@@ -48,7 +48,7 @@ PosixErrorOr<int> ReplicaID(const FileDescriptor& master) {
   int unlock = 0;
   ret = ioctl(master.get(), TIOCSPTLCK, &unlock);
   if (ret < 0) {
-    return PosixError(errno, "ioctl(TIOSPTLCK) failed");
+    return PosixError(errno, "ioctl(TIOCSPTLCK) failed");
   }
 
   return n;

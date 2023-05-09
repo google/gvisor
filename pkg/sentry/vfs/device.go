@@ -18,7 +18,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 )
 
 // DeviceKind indicates whether a device is a block or character device.
@@ -100,9 +100,38 @@ func (vfs *VirtualFilesystem) OpenDeviceSpecialFile(ctx context.Context, mnt *Mo
 	defer vfs.devicesMu.RUnlock()
 	rd, ok := vfs.devices[tup]
 	if !ok {
-		return nil, syserror.ENXIO
+		return nil, linuxerr.ENXIO
 	}
 	return rd.dev.Open(ctx, mnt, d, *opts)
+}
+
+// GetDynamicCharDevMajor allocates and returns an unused major device number
+// for a character device or set of character devices.
+func (vfs *VirtualFilesystem) GetDynamicCharDevMajor() (uint32, error) {
+	vfs.dynCharDevMajorMu.Lock()
+	defer vfs.dynCharDevMajorMu.Unlock()
+	// Compare Linux's fs/char_dev.c:find_dynamic_major().
+	for major := uint32(254); major >= 234; major-- {
+		if _, ok := vfs.dynCharDevMajorUsed[major]; !ok {
+			vfs.dynCharDevMajorUsed[major] = struct{}{}
+			return major, nil
+		}
+	}
+	for major := uint32(511); major >= 384; major-- {
+		if _, ok := vfs.dynCharDevMajorUsed[major]; !ok {
+			vfs.dynCharDevMajorUsed[major] = struct{}{}
+			return major, nil
+		}
+	}
+	return 0, linuxerr.EBUSY
+}
+
+// PutDynamicCharDevMajor deallocates a major device number returned by a
+// previous call to GetDynamicCharDevMajor.
+func (vfs *VirtualFilesystem) PutDynamicCharDevMajor(major uint32) {
+	vfs.dynCharDevMajorMu.Lock()
+	defer vfs.dynCharDevMajorMu.Unlock()
+	delete(vfs.dynCharDevMajorUsed, major)
 }
 
 // GetAnonBlockDevMinor allocates and returns an unused minor device number for
@@ -120,7 +149,7 @@ func (vfs *VirtualFilesystem) GetAnonBlockDevMinor() (uint32, error) {
 		}
 		minor++
 	}
-	return 0, syserror.EMFILE
+	return 0, linuxerr.EMFILE
 }
 
 // PutAnonBlockDevMinor deallocates a minor device number returned by a

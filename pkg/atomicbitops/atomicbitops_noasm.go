@@ -12,93 +12,100 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build !amd64 && !arm64
 // +build !amd64,!arm64
 
 package atomicbitops
 
-import (
-	"sync/atomic"
-)
+import "sync/atomic"
 
-func AndUint32(addr *uint32, val uint32) {
+//go:nosplit
+func AndUint32(addr *Uint32, val uint32) {
 	for {
-		o := atomic.LoadUint32(addr)
+		o := addr.Load()
 		n := o & val
-		if atomic.CompareAndSwapUint32(addr, o, n) {
+		if atomic.CompareAndSwapUint32(&addr.value, o, n) {
 			break
 		}
 	}
 }
 
-func OrUint32(addr *uint32, val uint32) {
+//go:nosplit
+func OrUint32(addr *Uint32, val uint32) {
 	for {
-		o := atomic.LoadUint32(addr)
+		o := addr.Load()
 		n := o | val
-		if atomic.CompareAndSwapUint32(addr, o, n) {
+		if atomic.CompareAndSwapUint32(&addr.value, o, n) {
 			break
 		}
 	}
 }
 
-func XorUint32(addr *uint32, val uint32) {
+//go:nosplit
+func XorUint32(addr *Uint32, val uint32) {
 	for {
-		o := atomic.LoadUint32(addr)
+		o := addr.Load()
 		n := o ^ val
-		if atomic.CompareAndSwapUint32(addr, o, n) {
+		if atomic.CompareAndSwapUint32(&addr.value, o, n) {
 			break
 		}
 	}
 }
 
-func CompareAndSwapUint32(addr *uint32, old, new uint32) (prev uint32) {
+//go:nosplit
+func CompareAndSwapUint32(addr *Uint32, old, new uint32) (prev uint32) {
 	for {
-		prev = atomic.LoadUint32(addr)
+		prev = addr.Load()
 		if prev != old {
 			return
 		}
-		if atomic.CompareAndSwapUint32(addr, old, new) {
+		if atomic.CompareAndSwapUint32(&addr.value, old, new) {
 			return
 		}
 	}
 }
 
-func AndUint64(addr *uint64, val uint64) {
+//go:nosplit
+func AndUint64(addr *Uint64, val uint64) {
 	for {
-		o := atomic.LoadUint64(addr)
+		o := atomic.LoadUint64(addr.ptr())
 		n := o & val
-		if atomic.CompareAndSwapUint64(addr, o, n) {
+		if atomic.CompareAndSwapUint64(addr.ptr(), o, n) {
 			break
 		}
 	}
 }
 
-func OrUint64(addr *uint64, val uint64) {
+//go:nosplit
+func OrUint64(addr *Uint64, val uint64) {
 	for {
-		o := atomic.LoadUint64(addr)
+		o := atomic.LoadUint64(addr.ptr())
 		n := o | val
-		if atomic.CompareAndSwapUint64(addr, o, n) {
+		if atomic.CompareAndSwapUint64(addr.ptr(), o, n) {
 			break
 		}
 	}
 }
 
-func XorUint64(addr *uint64, val uint64) {
+//go:nosplit
+func XorUint64(addr *Uint64, val uint64) {
 	for {
-		o := atomic.LoadUint64(addr)
+		o := atomic.LoadUint64(addr.ptr())
 		n := o ^ val
-		if atomic.CompareAndSwapUint64(addr, o, n) {
+		if atomic.CompareAndSwapUint64(addr.ptr(), o, n) {
 			break
 		}
 	}
 }
 
-func CompareAndSwapUint64(addr *uint64, old, new uint64) (prev uint64) {
+//go:nosplit
+func CompareAndSwapUint64(addr *Uint64, old, new uint64) (prev uint64) {
 	for {
-		prev = atomic.LoadUint64(addr)
+		prev = atomic.LoadUint64(addr.ptr())
 		if prev != old {
 			return
 		}
-		if atomic.CompareAndSwapUint64(addr, old, new) {
+		if atomic.CompareAndSwapUint64(addr.ptr(), old, new) {
 			return
 		}
 	}

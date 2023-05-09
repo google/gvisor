@@ -17,9 +17,10 @@ package p9
 import (
 	"io"
 	"runtime/debug"
-	"sync/atomic"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fdchannel"
 	"gvisor.dev/gvisor/pkg/flipcall"
@@ -32,6 +33,8 @@ import (
 type Server struct {
 	// attacher provides the attach function.
 	attacher Attacher
+
+	options AttacherOptions
 
 	// pathTree is the full set of paths opened on this server.
 	//
@@ -47,10 +50,15 @@ type Server struct {
 	renameMu sync.RWMutex
 }
 
-// NewServer returns a new server.
+// NewServer returns a new server. attacher may be nil.
 func NewServer(attacher Attacher) *Server {
+	opts := AttacherOptions{}
+	if attacher != nil {
+		opts = attacher.ServerOptions()
+	}
 	return &Server{
 		attacher: attacher,
+		options:  opts,
 		pathTree: newPathNode(),
 	}
 }
@@ -75,24 +83,23 @@ type connState struct {
 
 	// messageSize is the maximum message size. The server does not
 	// do automatic splitting of messages.
-	messageSize uint32
+	messageSize atomicbitops.Uint32
 
 	// version is the agreed upon version X of 9P2000.L.Google.X.
 	// version 0 implies 9P2000.L.
-	version uint32
+	version atomicbitops.Uint32
 
 	// reqGate counts requests that are still being handled.
 	reqGate sync.Gate
 
-	// -- below relates to the legacy handler --
+	//	-- below relates to the legacy handler --
 
 	// recvMu serializes receiving from conn.
 	recvMu sync.Mutex
 
 	// recvIdle is the number of goroutines in handleRequests() attempting to
-	// lock recvMu so that they can receive from conn. recvIdle is accessed
-	// using atomic memory operations.
-	recvIdle int32
+	// lock recvMu so that they can receive from conn.
+	recvIdle atomicbitops.Int32
 
 	// If recvShutdown is true, at least one goroutine has observed a
 	// connection error while receiving from conn, and all goroutines in
@@ -106,7 +113,7 @@ type connState struct {
 	// conn is the connection used by the legacy transport.
 	conn *unet.Socket
 
-	// -- below relates to the flipcall handler --
+	//	-- below relates to the flipcall handler --
 
 	// channelMu protects below.
 	channelMu sync.Mutex
@@ -132,7 +139,7 @@ type fidRef struct {
 	// refs is an active refence count.
 	//
 	// The node above will be closed only when refs reaches zero.
-	refs int64
+	refs atomicbitops.Int64
 
 	// opened indicates whether this has been opened already.
 	//
@@ -171,21 +178,16 @@ type fidRef struct {
 	// isRoot should be used to check for root over looking at parent
 	// directly.
 	parent *fidRef
-
-	// deleted indicates that the backing file has been deleted. We stop
-	// many operations at the API level if they are incompatible with a
-	// file that has already been unlinked.
-	deleted uint32
 }
 
 // IncRef increases the references on a fid.
 func (f *fidRef) IncRef() {
-	atomic.AddInt64(&f.refs, 1)
+	f.refs.Add(1)
 }
 
 // DecRef should be called when you're finished with a fid.
 func (f *fidRef) DecRef() {
-	if atomic.AddInt64(&f.refs, -1) == 0 {
+	if f.refs.Add(-1) == 0 {
 		f.file.Close()
 
 		// Drop the parent reference.
@@ -202,9 +204,26 @@ func (f *fidRef) DecRef() {
 	}
 }
 
+// TryIncRef returns true if a new reference is taken on the fid, and false if
+// the fid has been destroyed.
+func (f *fidRef) TryIncRef() bool {
+	for {
+		r := f.refs.Load()
+		if r <= 0 {
+			return false
+		}
+		if f.refs.CompareAndSwap(r, r+1) {
+			return true
+		}
+	}
+}
+
 // isDeleted returns true if this fidRef has been deleted.
+//
+// Precondition: this must be called via safelyRead, safelyWrite or
+// safelyGlobal.
 func (f *fidRef) isDeleted() bool {
-	return atomic.LoadUint32(&f.deleted) != 0
+	return f.pathNode.deleted.Load() != 0
 }
 
 // isRoot indicates whether this is a root fid.
@@ -224,10 +243,7 @@ func (f *fidRef) maybeParent() *fidRef {
 //
 // Precondition: this must be called via safelyWrite or safelyGlobal.
 func notifyDelete(pn *pathNode) {
-	// Call on all local references.
-	pn.forEachChildRef(func(ref *fidRef, _ string) {
-		atomic.StoreUint32(&ref.deleted, 1)
-	})
+	pn.deleted.Store(1)
 
 	// Call on all subtrees.
 	pn.forEachChildNode(func(pn *pathNode) {
@@ -239,11 +255,7 @@ func notifyDelete(pn *pathNode) {
 //
 // Precondition: this must be called via safelyWrite or safelyGlobal.
 func (f *fidRef) markChildDeleted(name string) {
-	origPathNode := f.pathNode.removeWithName(name, func(ref *fidRef) {
-		atomic.StoreUint32(&ref.deleted, 1)
-	})
-
-	if origPathNode != nil {
+	if origPathNode := f.pathNode.removeWithName(name, nil); origPathNode != nil {
 		// Mark all children as deleted.
 		notifyDelete(origPathNode)
 	}
@@ -483,7 +495,7 @@ func (cs *connState) lookupChannel(id uint32) *channel {
 func (cs *connState) handle(m message) (r message) {
 	if !cs.reqGate.Enter() {
 		// connState.stop() has been called; the connection is shutting down.
-		r = newErr(unix.ECONNRESET)
+		r = newErrFromLinuxerr(linuxerr.ECONNRESET)
 		return
 	}
 	defer func() {
@@ -495,18 +507,26 @@ func (cs *connState) handle(m message) (r message) {
 			// Include a useful log message.
 			log.Warningf("panic in handler: %v\n%s", err, debug.Stack())
 
-			// Wrap in an EFAULT error; we don't really have a
+			// Wrap in an EREMOTEIO error; we don't really have a
 			// better way to describe this kind of error. It will
 			// usually manifest as a result of the test framework.
-			r = newErr(unix.EFAULT)
+			r = newErrFromLinuxerr(linuxerr.EREMOTEIO)
 		}
 	}()
 	if handler, ok := m.(handler); ok {
 		// Call the message handler.
 		r = handler.handle(cs)
+		// TODO(b/34162363):This is only here to make sure the server works with
+		// only linuxerr Errors, as the handlers work with both client and server.
+		// It will be removed a followup, when all the unix.Errno errors are
+		// replaced with linuxerr.
+		if rlError, ok := r.(*Rlerror); ok {
+			e := linuxerr.ErrorFromUnix(unix.Errno(rlError.Error))
+			r = newErrFromLinuxerr(e)
+		}
 	} else {
 		// Produce an ENOSYS error.
-		r = newErr(unix.ENOSYS)
+		r = newErrFromLinuxerr(linuxerr.ENOSYS)
 	}
 	return
 }
@@ -515,9 +535,9 @@ func (cs *connState) handle(m message) (r message) {
 // continue handling requests and false if it should terminate.
 func (cs *connState) handleRequest() bool {
 	// Obtain the right to receive a message from cs.conn.
-	atomic.AddInt32(&cs.recvIdle, 1)
+	cs.recvIdle.Add(1)
 	cs.recvMu.Lock()
-	atomic.AddInt32(&cs.recvIdle, -1)
+	cs.recvIdle.Add(-1)
 
 	if cs.recvShutdown {
 		// Another goroutine already detected a connection problem; exit
@@ -526,7 +546,7 @@ func (cs *connState) handleRequest() bool {
 		return false
 	}
 
-	messageSize := atomic.LoadUint32(&cs.messageSize)
+	messageSize := cs.messageSize.Load()
 	if messageSize == 0 {
 		// Default or not yet negotiated.
 		messageSize = maximumLength
@@ -543,7 +563,7 @@ func (cs *connState) handleRequest() bool {
 	}
 
 	// Ensure that another goroutine is available to receive from cs.conn.
-	if atomic.LoadInt32(&cs.recvIdle) == 0 {
+	if cs.recvIdle.Load() == 0 {
 		go cs.handleRequests() // S/R-SAFE: Irrelevant.
 	}
 	cs.recvMu.Unlock()
@@ -553,7 +573,7 @@ func (cs *connState) handleRequest() bool {
 		// If it's not a connection error, but some other protocol error,
 		// we can send a response immediately.
 		cs.sendMu.Lock()
-		err := send(cs.conn, tag, newErr(err))
+		err := send(cs.conn, tag, newErrFromLinuxerr(err))
 		cs.sendMu.Unlock()
 		if err != nil {
 			log.Debugf("p9.send: %v", err)

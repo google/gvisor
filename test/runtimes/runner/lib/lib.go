@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -31,20 +32,39 @@ import (
 	"gvisor.dev/gvisor/pkg/test/testutil"
 )
 
+// ProctorSettings contains settings passed directly to the proctor process.
+type ProctorSettings struct {
+	// PerTestTimeout is the timeout for each individual test.
+	PerTestTimeout time.Duration
+	// RunsPerTest is the number of times to run each test.
+	// A value of 0 is the same as a value of 1, i.e. "run once".
+	RunsPerTest int
+	// If FlakyIsError is true, a flaky test will be considered as a failure.
+	// If it is false, a flaky test will be considered as passing.
+	FlakyIsError bool
+	// If FlakyShortCircuit is true, when runnins with RunsPerTest > 1 and a test is detected as
+	// flaky, exit immediately rather than running for all RunsPerTest attempts.
+	FlakyShortCircuit bool
+}
+
+// ToArgs converts these settings to command-line arguments to pass to the proctor binary.
+func (p ProctorSettings) ToArgs() []string {
+	return []string{
+		fmt.Sprintf("--per_test_timeout=%v", p.PerTestTimeout),
+		fmt.Sprintf("--runs_per_test=%d", p.RunsPerTest),
+		fmt.Sprintf("--flaky_is_error=%v", p.FlakyIsError),
+		fmt.Sprintf("--flaky_short_circuit=%v", p.FlakyShortCircuit),
+	}
+}
+
+// Filter is a predicate function for filtering tests.
+// It returns true if the given test name should be run.
+type Filter func(test string) bool
+
 // RunTests is a helper that is called by main. It exists so that we can run
 // defered functions before exiting. It returns an exit code that should be
 // passed to os.Exit.
-func RunTests(lang, image, excludeFile string, batchSize int, timeout time.Duration) int {
-	// TODO(gvisor.dev/issue/1624): Remove those tests from all exclude lists
-	// that only fail with VFS1.
-
-	// Get tests to exclude.
-	excludes, err := getExcludes(excludeFile)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error getting exclude list: %s\n", err.Error())
-		return 1
-	}
-
+func RunTests(lang, image string, filter Filter, batchSize int, timeout time.Duration, proctorSettings ProctorSettings) int {
 	// Construct the shared docker instance.
 	ctx := context.Background()
 	d := dockerutil.MakeContainer(ctx, testutil.DefaultLogger(lang))
@@ -55,21 +75,26 @@ func RunTests(lang, image, excludeFile string, batchSize int, timeout time.Durat
 		return 1
 	}
 
+	timeoutChan := make(chan struct{})
+	// Add one minute to let proctor handle timeout.
+	timer := time.AfterFunc(timeout+time.Minute, func() { close(timeoutChan) })
+	defer timer.Stop()
 	// Get a slice of tests to run. This will also start a single Docker
 	// container that will be used to run each test. The final test will
 	// stop the Docker container.
-	tests, err := getTests(ctx, d, lang, image, batchSize, timeout, excludes)
+	tests, err := getTests(ctx, d, lang, image, batchSize, timeoutChan, timeout, filter, proctorSettings)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s\n", err.Error())
 		return 1
 	}
-
-	m := testing.MainStart(testDeps{}, tests, nil, nil)
+	m := mainStart(tests)
 	return m.Run()
 }
 
 // getTests executes all tests as table tests.
-func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, batchSize int, timeout time.Duration, excludes map[string]struct{}) ([]testing.InternalTest, error) {
+func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, batchSize int, timeoutChan chan struct{}, timeout time.Duration, filter Filter, proctorSettings ProctorSettings) ([]testing.InternalTest, error) {
+	startTime := time.Now()
+
 	// Start the container.
 	opts := dockerutil.RunOpts{
 		Image: fmt.Sprintf("runtimes/%s", image),
@@ -79,11 +104,23 @@ func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, 
 		return nil, fmt.Errorf("docker run failed: %v", err)
 	}
 
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-done:
+			return
+		// Make sure that the useful load takes 2/3 of timeout.
+		case <-time.After((timeout - time.Since(startTime)) / 3):
+		case <-timeoutChan:
+		}
+		panic("TIMEOUT: Unable to get a list of tests")
+	}()
 	// Get a list of all tests in the image.
-	list, err := d.Exec(ctx, dockerutil.ExecOpts{}, "/proctor/proctor", "--runtime", lang, "--list")
+	list, err := d.Exec(ctx, dockerutil.ExecOpts{Privileged: true, User: "0"}, "/proctor/proctor", "--runtime", lang, "--list")
 	if err != nil {
 		return nil, fmt.Errorf("docker exec failed: %v", err)
 	}
+	close(done)
 
 	// Calculate a subset of tests.
 	tests := strings.Fields(list)
@@ -91,6 +128,19 @@ func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, 
 	indices, err := testutil.TestIndicesForShard(len(tests))
 	if err != nil {
 		return nil, fmt.Errorf("TestsForShard() failed: %v", err)
+	}
+	indicesMap := make(map[int]struct{}, len(indices))
+	for _, i := range indices {
+		indicesMap[i] = struct{}{}
+	}
+	var testsNotInShard []string
+	for i, tc := range tests {
+		if _, found := indicesMap[i]; !found {
+			testsNotInShard = append(testsNotInShard, tc)
+		}
+	}
+	if len(testsNotInShard) > 0 {
+		log.Infof("Tests not in this shard: %s", strings.Join(testsNotInShard, ","))
 	}
 
 	var itests []testing.InternalTest
@@ -101,8 +151,8 @@ func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, 
 			end = len(indices)
 		}
 		for _, tc := range indices[i:end] {
-			// Add test if not excluded.
-			if _, ok := excludes[tests[tc]]; ok {
+			// Add test if not filtered.
+			if filter != nil && !filter(tests[tc]) {
 				log.Infof("Skipping test case %s\n", tests[tc])
 				continue
 			}
@@ -129,9 +179,16 @@ func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, 
 				if !state.Running {
 					t.Fatalf("container is not running: state = %s", state.Status)
 				}
+				log.Infof("Running test case batch: %s", strings.Join(tcs, ","))
 
 				go func() {
-					output, err = d.Exec(ctx, dockerutil.ExecOpts{}, "/proctor/proctor", "--runtime", lang, "--tests", strings.Join(tcs, ","))
+					argv := []string{
+						"/proctor/proctor", "--runtime", lang,
+						"--tests", strings.Join(tcs, ","),
+						fmt.Sprintf("--timeout=%s", timeout-time.Since(startTime)),
+					}
+					argv = append(argv, proctorSettings.ToArgs()...)
+					output, err = d.Exec(ctx, dockerutil.ExecOpts{Privileged: true, User: "0"}, argv...)
 					close(done)
 				}()
 
@@ -141,9 +198,10 @@ func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, 
 						fmt.Printf("PASS: (%v) %d tests passed\n", time.Since(now), len(tcs))
 						return
 					}
-					t.Errorf("FAIL: (%v):\nBatch:\n%s\nOutput:\n%s\n", time.Since(now), strings.Join(tcs, "\n"), output)
-				case <-time.After(timeout):
-					t.Errorf("TIMEOUT: (%v):\nBatch:\n%s\nOutput:\n%s\n", time.Since(now), strings.Join(tcs, "\n"), output)
+					t.Fatalf("FAIL: (%v):\nBatch:\n%s\nOutput:\n%s\n", time.Since(now), strings.Join(tcs, "\n"), output)
+				// Add one minute to let proctor handle timeout.
+				case <-timeoutChan:
+					t.Fatalf("TIMEOUT: (%v):\nBatch:\n%s\nOutput:\n%s\n", time.Since(now), strings.Join(tcs, "\n"), output)
 				}
 			},
 		})
@@ -152,12 +210,12 @@ func getTests(ctx context.Context, d *dockerutil.Container, lang, image string, 
 	return itests, nil
 }
 
-// getBlacklist reads the exclude file and returns a set of test names to
-// exclude.
-func getExcludes(excludeFile string) (map[string]struct{}, error) {
+// ExcludeFilter reads the exclude file and returns a filter that excludes the tests listed in
+// the given CSV file.
+func ExcludeFilter(excludeFile string) (Filter, error) {
 	excludes := make(map[string]struct{})
 	if excludeFile == "" {
-		return excludes, nil
+		return nil, nil
 	}
 	f, err := os.Open(excludeFile)
 	if err != nil {
@@ -182,7 +240,10 @@ func getExcludes(excludeFile string) (map[string]struct{}, error) {
 		}
 		excludes[record[0]] = struct{}{}
 	}
-	return excludes, nil
+	return func(test string) bool {
+		_, found := excludes[test]
+		return !found
+	}, nil
 }
 
 // testDeps implements testing.testDeps (an unexported interface), and is
@@ -197,3 +258,21 @@ func (f testDeps) ImportPath() string                          { return "" }
 func (f testDeps) StartTestLog(io.Writer)                      {}
 func (f testDeps) StopTestLog() error                          { return nil }
 func (f testDeps) SetPanicOnExit0(bool)                        {}
+func (f testDeps) CoordinateFuzzing(time.Duration, int64, time.Duration, int64, int, []corpusEntry, []reflect.Type, string, string) error {
+	return nil
+}
+func (f testDeps) RunFuzzWorker(func(corpusEntry) error) error              { return nil }
+func (f testDeps) ReadCorpus(string, []reflect.Type) ([]corpusEntry, error) { return nil, nil }
+func (f testDeps) CheckCorpus([]any, []reflect.Type) error                  { return nil }
+func (f testDeps) ResetCoverage()                                           {}
+func (f testDeps) SnapshotCoverage()                                        {}
+
+// Copied from testing/fuzz.go.
+type corpusEntry = struct {
+	Parent     string
+	Path       string
+	Data       []byte
+	Values     []any
+	Generation int
+	IsSeed     bool
+}

@@ -17,6 +17,7 @@ package kernel
 import (
 	"fmt"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -57,7 +58,7 @@ const InitTID ThreadID = 1
 type TaskSet struct {
 	// mu protects all relationships between tasks and thread groups in the
 	// TaskSet. (mu is approximately equivalent to Linux's tasklist_lock.)
-	mu sync.RWMutex `state:"nosave"`
+	mu taskSetRWMutex `state:"nosave"`
 
 	// Root is the root PID namespace, in which all tasks in the TaskSet are
 	// visible. The Root pointer is immutable.
@@ -187,6 +188,9 @@ type PIDNamespace struct {
 	// exiting indicates that the namespace's init process is exiting or has
 	// exited.
 	exiting bool
+
+	// pidNamespaceData contains additional per-PID-namespace data.
+	extra pidNamespaceData
 }
 
 func newPIDNamespace(ts *TaskSet, parent *PIDNamespace, userns *auth.UserNamespace) *PIDNamespace {
@@ -201,6 +205,7 @@ func newPIDNamespace(ts *TaskSet, parent *PIDNamespace, userns *auth.UserNamespa
 		sids:          make(map[*Session]SessionID),
 		processGroups: make(map[ProcessGroupID]*ProcessGroup),
 		pgids:         make(map[*ProcessGroup]ProcessGroupID),
+		extra:         newPIDNamespaceData(),
 	}
 }
 
@@ -321,14 +326,15 @@ type threadGroupNode struct {
 	// member tasks. The pidns pointer is immutable.
 	pidns *PIDNamespace
 
+	// pidWithinNS the thread ID of the leader of this thread group within pidns.
+	// Useful to avoid using locks when determining a thread group leader's own
+	// TID.
+	pidWithinNS atomicbitops.Int32
+
 	// eventQueue is notified whenever a event of interest to Task.Wait occurs
 	// in a child of this thread group, or a ptrace tracee of a task in this
 	// thread group. Events are defined in task_exit.go.
-	//
-	// Note that we cannot check and save this wait queue similarly to other
-	// wait queues, as the queue will not be empty by the time of saving, due
-	// to the wait sourced from Exec().
-	eventQueue waiter.Queue `state:"nosave"`
+	eventQueue waiter.Queue
 
 	// leader is the thread group's leader, which is the oldest task in the
 	// thread group; usually the last task in the thread group to call
@@ -425,13 +431,10 @@ func (tg *ThreadGroup) MemberIDs(pidns *PIDNamespace) []ThreadID {
 	return tasks
 }
 
-// ID returns tg's leader's thread ID in its own PID namespace. If tg's leader
-// is dead, ID returns 0.
+// ID returns tg's leader's thread ID in its own PID namespace.
+// If tg's leader is dead, ID returns 0.
 func (tg *ThreadGroup) ID() ThreadID {
-	tg.pidns.owner.mu.RLock()
-	id := tg.pidns.tgids[tg]
-	tg.pidns.owner.mu.RUnlock()
-	return id
+	return ThreadID(tg.pidWithinNS.Load())
 }
 
 // A taskNode defines the relationship between a task and the rest of the
@@ -491,6 +494,14 @@ func (t *Task) Timekeeper() *Timekeeper {
 func (t *Task) Parent() *Task {
 	t.tg.pidns.owner.mu.RLock()
 	defer t.tg.pidns.owner.mu.RUnlock()
+	return t.parent
+}
+
+// ParentLocked returns t's parent. Caller must ensure t's TaskSet mu
+// is locked for at least reading.
+//
+// +checklocks:t.tg.pidns.owner.mu
+func (t *Task) ParentLocked() *Task {
 	return t.parent
 }
 

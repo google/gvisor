@@ -16,8 +16,8 @@
 #include <sys/un.h>
 
 #include "gtest/gtest.h"
-#include "test/syscalls/linux/socket_test_util.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
+#include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {
@@ -70,6 +70,48 @@ TEST_P(UnboundAbstractUnixSocketPairTest, BindNothing) {
   ASSERT_THAT(bind(sockets->first_fd(),
                    reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)),
               SyscallSucceeds());
+}
+
+TEST_P(UnboundAbstractUnixSocketPairTest, ListenZeroBacklog) {
+  SKIP_IF((GetParam().type & SOCK_DGRAM) != 0);
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  struct sockaddr_un addr = {};
+  addr.sun_family = AF_UNIX;
+  constexpr char kPath[] = "\x00/foo_bar";
+  memcpy(addr.sun_path, kPath, sizeof(kPath));
+  ASSERT_THAT(bind(sockets->first_fd(),
+                   reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)),
+              SyscallSucceeds());
+  ASSERT_THAT(listen(sockets->first_fd(), 0 /* backlog */), SyscallSucceeds());
+  ASSERT_THAT(connect(sockets->second_fd(),
+                      reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)),
+              SyscallSucceeds());
+  auto sockets2 = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  {
+    // Set the FD to O_NONBLOCK.
+    int opts;
+    ASSERT_THAT(opts = fcntl(sockets2->first_fd(), F_GETFL), SyscallSucceeds());
+    opts |= O_NONBLOCK;
+    ASSERT_THAT(fcntl(sockets2->first_fd(), F_SETFL, opts), SyscallSucceeds());
+
+    ASSERT_THAT(
+        connect(sockets2->first_fd(), reinterpret_cast<struct sockaddr*>(&addr),
+                sizeof(addr)),
+        SyscallFailsWithErrno(EAGAIN));
+  }
+  {
+    // Set the FD to O_NONBLOCK.
+    int opts;
+    ASSERT_THAT(opts = fcntl(sockets2->second_fd(), F_GETFL),
+                SyscallSucceeds());
+    opts |= O_NONBLOCK;
+    ASSERT_THAT(fcntl(sockets2->second_fd(), F_SETFL, opts), SyscallSucceeds());
+
+    ASSERT_THAT(
+        connect(sockets2->second_fd(),
+                reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)),
+        SyscallFailsWithErrno(EAGAIN));
+  }
 }
 
 TEST_P(UnboundAbstractUnixSocketPairTest, GetSockNameFullLength) {

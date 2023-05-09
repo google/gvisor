@@ -1,13 +1,13 @@
 load("//tools:defs.bzl", "go_library")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_library(
     name = "uniqueid",
     srcs = ["context.go"],
     visibility = ["//pkg/sentry:internal"],
-    deps = [
-        "//pkg/context",
-        "//pkg/sentry/socket/unix/transport",
-    ],
+    deps = ["//pkg/context"],
 )

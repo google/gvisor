@@ -17,6 +17,7 @@ package p9
 import (
 	"fmt"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -25,17 +26,23 @@ import (
 // These are shared by all fidRefs that point to the same path.
 //
 // Lock ordering:
-//   opMu
-//     childMu
 //
-//   Two different pathNodes may only be locked if Server.renameMu is held for
-//   write, in which case they can be acquired in any order.
+//	opMu
+//	  childMu
+//
+// Two different pathNodes may only be locked if Server.renameMu is held for
+// write, in which case they can be acquired in any order.
 type pathNode struct {
 	// opMu synchronizes high-level, sematic operations, such as the
 	// simultaneous creation and deletion of a file.
-	//
-	// opMu does not directly protect any fields in pathNode.
 	opMu sync.RWMutex
+
+	// deleted indicates that the backing file has been deleted. We stop many
+	// operations at the API level if they are incompatible with a file that has
+	// already been unlinked. deleted is protected by opMu. However, it may be
+	// changed without opMu if this node is deleted as part of an entire subtree
+	// on unlink. So deleted must only be accessed/mutated using atomics.
+	deleted atomicbitops.Uint32
 
 	// childMu protects the fields below.
 	childMu sync.RWMutex
@@ -211,7 +218,18 @@ func (p *pathNode) removeWithName(name string, fn func(ref *fidRef)) *pathNode {
 		for ref := range m {
 			delete(m, ref)
 			delete(p.childRefNames, ref)
-			fn(ref)
+			if fn == nil {
+				// No callback provided.
+				continue
+			}
+			// Attempt to hold a reference while calling fn() to
+			// prevent concurrent destruction of the child, which
+			// can lead to data races. If the child has already
+			// been destroyed, then we can skip the callback.
+			if ref.TryIncRef() {
+				fn(ref)
+				ref.DecRef()
+			}
 		}
 	}
 

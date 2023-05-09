@@ -2,7 +2,10 @@ load("//tools:defs.bzl", "bzl_library", "pkg_tar")
 load("//website:defs.bzl", "doc", "docs")
 load("//images:defs.bzl", "docker_image")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 docker_image(
     name = "website",
@@ -14,7 +17,7 @@ docker_image(
     tags = [
         "local",
         "manual",
-        "nosandbox",
+        "no-sandbox",
     ],
 )
 
@@ -69,7 +72,7 @@ genrule(
     tags = [
         "local",
         "manual",
-        "nosandbox",
+        "no-sandbox",
     ],
 )
 
@@ -109,8 +112,8 @@ genrule(
 pkg_tar(
     name = "config",
     srcs = [
-        ":css",
         "_config.yml",
+        ":css",
         "//website/blog:index.html",
     ] + glob([
         "assets/**",
@@ -155,7 +158,10 @@ docs(
         "//g3doc/user_guide:filesystem",
         "//g3doc/user_guide:install",
         "//g3doc/user_guide:networking",
+        "//g3doc/user_guide:observability",
         "//g3doc/user_guide:platforms",
+        "//g3doc/user_guide:production",
+        "//g3doc/user_guide:runtime_monitoring",
         "//g3doc/user_guide/containerd:configuration",
         "//g3doc/user_guide/containerd:containerd_11",
         "//g3doc/user_guide/containerd:quick_start",
@@ -165,6 +171,8 @@ docs(
         "//g3doc/user_guide/tutorials:cni",
         "//g3doc/user_guide/tutorials:docker",
         "//g3doc/user_guide/tutorials:docker_compose",
+        "//g3doc/user_guide/tutorials:falco",
+        "//g3doc/user_guide/tutorials:knative",
         "//g3doc/user_guide/tutorials:kubernetes",
     ],
 )

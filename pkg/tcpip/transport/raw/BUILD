@@ -1,7 +1,10 @@
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_template_instance(
     name = "raw_packet_list",
@@ -23,17 +26,35 @@ go_library(
         "protocol.go",
         "raw_packet_list.go",
     ],
-    imports = ["gvisor.dev/gvisor/pkg/tcpip/buffer"],
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/bufferv2",
         "//pkg/log",
         "//pkg/sleep",
         "//pkg/sync",
         "//pkg/tcpip",
-        "//pkg/tcpip/buffer",
+        "//pkg/tcpip/checksum",
         "//pkg/tcpip/header",
         "//pkg/tcpip/stack",
+        "//pkg/tcpip/transport",
+        "//pkg/tcpip/transport/internal/network",
+        "//pkg/tcpip/transport/internal/noop",
         "//pkg/tcpip/transport/packet",
         "//pkg/waiter",
+    ],
+)
+
+go_test(
+    name = "raw_x_test",
+    size = "small",
+    srcs = ["raw_test.go"],
+    deps = [
+        "//pkg/refs",
+        "//pkg/tcpip",
+        "//pkg/tcpip/checker",
+        "//pkg/tcpip/header",
+        "//pkg/tcpip/stack",
+        "//pkg/tcpip/transport/testing/context",
+        "//pkg/tcpip/transport/udp",
     ],
 )

@@ -16,7 +16,6 @@ package container
 
 import (
 	"bytes"
-	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -25,6 +24,7 @@ import (
 	"path"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -39,13 +39,82 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/test/testutil"
-	"gvisor.dev/gvisor/pkg/urpc"
-	"gvisor.dev/gvisor/runsc/boot/platforms"
+	"gvisor.dev/gvisor/runsc/cgroup"
 	"gvisor.dev/gvisor/runsc/config"
+	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
+
+func TestMain(m *testing.M) {
+	config.RegisterFlags(flag.CommandLine)
+	log.SetLevel(log.Debug)
+	if err := testutil.ConfigureExePath(); err != nil {
+		panic(err.Error())
+	}
+	if err := specutils.MaybeRunAsRoot(); err != nil {
+		fmt.Fprintf(os.Stderr, "Error running as root: %v", err)
+		os.Exit(123)
+	}
+	os.Exit(m.Run())
+}
+
+func execute(conf *config.Config, cont *Container, name string, arg ...string) (unix.WaitStatus, error) {
+	args := &control.ExecArgs{
+		Filename: name,
+		Argv:     append([]string{name}, arg...),
+	}
+	return cont.executeSync(conf, args)
+}
+
+// executeCombinedOutput executes a process in the container and captures
+// stdout and stderr. If execFile is supplied, a host file will be executed.
+// Otherwise, the name argument is used to resolve the executable in the guest.
+func executeCombinedOutput(conf *config.Config, cont *Container, execFile *os.File, name string, arg ...string) ([]byte, error) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+
+	// Unset the filename when we execute via FD.
+	if execFile != nil {
+		name = ""
+	}
+	args := &control.ExecArgs{
+		Filename: name,
+		Argv:     append([]string{name}, arg...),
+		FilePayload: control.NewFilePayload(map[int]*os.File{
+			0: os.Stdin, 1: w, 2: w,
+		}, execFile),
+	}
+	ws, err := cont.executeSync(conf, args)
+	w.Close()
+	if err != nil {
+		return nil, err
+	}
+	if ws != 0 {
+		return nil, fmt.Errorf("exec failed, status: %v", ws)
+	}
+
+	out, err := ioutil.ReadAll(r)
+	return out, err
+}
+
+// executeSync synchronously executes a new process.
+func (c *Container) executeSync(conf *config.Config, args *control.ExecArgs) (unix.WaitStatus, error) {
+	pid, err := c.Execute(conf, args)
+	if err != nil {
+		return 0, fmt.Errorf("error executing: %v", err)
+	}
+	ws, err := c.WaitPID(pid)
+	if err != nil {
+		return 0, fmt.Errorf("error waiting: %v", err)
+	}
+	return ws, nil
+}
 
 // waitForProcessList waits for the given process list to show up in the container.
 func waitForProcessList(cont *Container, want []*control.Process) error {
@@ -113,8 +182,8 @@ func blockUntilWaitable(pid int) error {
 }
 
 // execPS executes `ps` inside the container and return the processes.
-func execPS(c *Container) ([]*control.Process, error) {
-	out, err := executeCombinedOutput(c, "/bin/ps", "-e")
+func execPS(conf *config.Config, c *Container) ([]*control.Process, error) {
+	out, err := executeCombinedOutput(conf, c, nil, "/bin/ps", "-e")
 	if err != nil {
 		return nil, err
 	}
@@ -331,56 +400,43 @@ func run(spec *specs.Spec, conf *config.Config) error {
 	return nil
 }
 
-type configOption int
+// platforms must be provided by the BUILD rule, or all platforms are included.
+var platforms = flag.String("test_platforms", os.Getenv("TEST_PLATFORMS"), "Platforms to test with.")
 
-const (
-	overlay configOption = iota
-	ptrace
-	kvm
-	nonExclusiveFS
-)
+// configs generates different configurations to run tests.
+func configs(t *testing.T, noOverlay bool) map[string]*config.Config {
+	var ps []string
+	if *platforms == "" {
+		ps = platform.List()
+	} else {
+		ps = strings.Split(*platforms, ",")
+	}
 
-var (
-	noOverlay = append(platformOptions, nonExclusiveFS)
-	all       = append(noOverlay, overlay)
-)
-
-func configsHelper(t *testing.T, opts ...configOption) map[string]*config.Config {
-	// Always load the default config.
+	// Non-overlay versions.
 	cs := make(map[string]*config.Config)
-	testutil.TestConfig(t)
-	for _, o := range opts {
+	for _, p := range ps {
 		c := testutil.TestConfig(t)
-		switch o {
-		case overlay:
-			c.Overlay = true
-			cs["overlay"] = c
-		case ptrace:
-			c.Platform = platforms.Ptrace
-			cs["ptrace"] = c
-		case kvm:
-			c.Platform = platforms.KVM
-			cs["kvm"] = c
-		case nonExclusiveFS:
-			c.FileAccess = config.FileAccessShared
-			cs["non-exclusive"] = c
-		default:
-			panic(fmt.Sprintf("unknown config option %v", o))
+		c.Overlay2 = config.Overlay2{RootMount: false, SubMounts: false, Medium: ""}
+		c.Platform = p
+		cs[p] = c
+	}
+
+	// Overlay versions.
+	if !noOverlay {
+		for _, p := range ps {
+			c := testutil.TestConfig(t)
+			c.Platform = p
+			c.Overlay2 = config.Overlay2{RootMount: true, SubMounts: true, Medium: "memory"}
+			cs[p+"-overlay"] = c
 		}
 	}
+
 	return cs
 }
 
-// configs generates different configurations to run tests.
-//
-// TODO(gvisor.dev/issue/1624): Remove VFS1 dimension.
-func configs(t *testing.T, opts ...configOption) map[string]*config.Config {
-	all := configsHelper(t, opts...)
-	for key, value := range configsHelper(t, opts...) {
-		value.VFS2 = true
-		all[key+"VFS2"] = value
-	}
-	return all
+// sleepSpec generates a spec with sleep 1000 and a conf.
+func sleepSpecConf(t *testing.T) (*specs.Spec, *config.Config) {
+	return testutil.NewSpecWithArgs("sleep", "1000"), testutil.TestConfig(t)
 }
 
 // TestLifecycle tests the basic Create/Start/Signal/Destroy container lifecycle.
@@ -392,11 +448,11 @@ func TestLifecycle(t *testing.T) {
 	childReaper.Start()
 	defer childReaper.Stop()
 
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			// The container will just sleep for a long time.  We will kill it before
 			// it finishes sleeping.
-			spec := testutil.NewSpecWithArgs("sleep", "100")
+			spec, _ := sleepSpecConf(t)
 
 			rootDir, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 			if err != nil {
@@ -467,9 +523,11 @@ func TestLifecycle(t *testing.T) {
 				ws, err := c.Wait()
 				if err != nil {
 					ch <- err
+					return
 				}
 				if got, want := ws.Signal(), unix.SIGTERM; got != want {
 					ch <- fmt.Errorf("got signal %v, want %v", got, want)
+					return
 				}
 				ch <- nil
 			}()
@@ -563,7 +621,14 @@ func TestExePath(t *testing.T) {
 		t.Fatalf("error making directory: %v", err)
 	}
 
-	for name, conf := range configs(t, all...) {
+	configs := map[string]*config.Config{
+		"default": testutil.TestConfig(t),
+		"overlay": testutil.TestConfig(t),
+	}
+	configs["default"].Overlay2 = config.Overlay2{RootMount: false, SubMounts: false, Medium: ""}
+	configs["overlay"].Overlay2 = config.Overlay2{RootMount: true, SubMounts: true, Medium: "memory"}
+
+	for name, conf := range configs {
 		t.Run(name, func(t *testing.T) {
 			for _, test := range []struct {
 				path    string
@@ -588,37 +653,20 @@ func TestExePath(t *testing.T) {
 				{path: filepath.Join(firstPath, "masked2"), success: false},
 				{path: filepath.Join(secondPath, "masked2"), success: true},
 			} {
-				t.Run(fmt.Sprintf("path=%s,success=%t", test.path, test.success), func(t *testing.T) {
+				name := fmt.Sprintf("path=%s,success=%t", test.path, test.success)
+				t.Run(name, func(t *testing.T) {
 					spec := testutil.NewSpecWithArgs(test.path)
 					spec.Process.Env = []string{
 						fmt.Sprintf("PATH=%s:%s:%s", firstPath, secondPath, os.Getenv("PATH")),
 					}
 
-					_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
-					if err != nil {
-						t.Fatalf("exec: error setting up container: %v", err)
-					}
-					defer cleanup()
-
-					args := Args{
-						ID:        testutil.RandomContainerID(),
-						Spec:      spec,
-						BundleDir: bundleDir,
-						Attached:  true,
-					}
-					ws, err := Run(conf, args)
-
+					err := run(spec, conf)
 					if test.success {
 						if err != nil {
 							t.Errorf("exec: error running container: %v", err)
 						}
-						if ws.ExitStatus() != 0 {
-							t.Errorf("exec: got exit status %v want %v", ws.ExitStatus(), 0)
-						}
-					} else {
-						if err == nil {
-							t.Errorf("exec: got: no error, want: error")
-						}
+					} else if err == nil {
+						t.Errorf("exec: got: no error, want: error")
 					}
 				})
 			}
@@ -628,19 +676,9 @@ func TestExePath(t *testing.T) {
 
 // Test the we can retrieve the application exit status from the container.
 func TestAppExitStatus(t *testing.T) {
-	doAppExitStatus(t, false)
-}
-
-// This is TestAppExitStatus for VFSv2.
-func TestAppExitStatusVFS2(t *testing.T) {
-	doAppExitStatus(t, true)
-}
-
-func doAppExitStatus(t *testing.T, vfs2 bool) {
 	// First container will succeed.
 	succSpec := testutil.NewSpecWithArgs("true")
 	conf := testutil.TestConfig(t)
-	conf.VFS2 = vfs2
 	_, bundleDir, cleanup, err := testutil.SetupContainer(succSpec, conf)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
@@ -688,7 +726,7 @@ func doAppExitStatus(t *testing.T, vfs2 bool) {
 
 // TestExec verifies that a container can exec a new program.
 func TestExec(t *testing.T) {
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			dir, err := ioutil.TempDir(testutil.TmpDir(), "exec-test")
 			if err != nil {
@@ -803,7 +841,7 @@ func TestExec(t *testing.T) {
 			} {
 				t.Run(tc.name, func(t *testing.T) {
 					// t.Parallel()
-					if ws, err := cont.executeSync(&tc.args); err != nil {
+					if ws, err := cont.executeSync(conf, &tc.args); err != nil {
 						t.Fatalf("executeAsync(%+v): %v", tc.args, err)
 					} else if ws != 0 {
 						t.Fatalf("executeAsync(%+v) failed with exit: %v", tc.args, ws)
@@ -821,11 +859,11 @@ func TestExec(t *testing.T) {
 				}
 				defer unix.Close(fds[0])
 
-				_, err = cont.executeSync(&control.ExecArgs{
+				_, err = cont.executeSync(conf, &control.ExecArgs{
 					Argv: []string{"/nonexist"},
-					FilePayload: urpc.FilePayload{
-						Files: []*os.File{os.NewFile(uintptr(fds[1]), "sock")},
-					},
+					FilePayload: control.NewFilePayload(map[int]*os.File{
+						0: os.NewFile(uintptr(fds[1]), "sock"),
+					}, nil),
 				})
 				want := "failed to load /nonexist"
 				if err == nil || !strings.Contains(err.Error(), want) {
@@ -839,10 +877,10 @@ func TestExec(t *testing.T) {
 // TestExecProcList verifies that a container can exec a new program and it
 // shows correcly in the process list.
 func TestExecProcList(t *testing.T) {
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			const uid = 343
-			spec := testutil.NewSpecWithArgs("sleep", "100")
+			spec, _ := sleepSpecConf(t)
 
 			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 			if err != nil {
@@ -876,7 +914,7 @@ func TestExecProcList(t *testing.T) {
 			// start running exec (which blocks).
 			ch := make(chan error)
 			go func() {
-				exitStatus, err := cont.executeSync(execArgs)
+				exitStatus, err := cont.executeSync(conf, execArgs)
 				if err != nil {
 					ch <- err
 				} else if exitStatus != 0 {
@@ -894,23 +932,13 @@ func TestExecProcList(t *testing.T) {
 			if err := waitForProcessList(cont, expectedPL); err != nil {
 				t.Fatalf("error waiting for processes: %v", err)
 			}
-
-			// Ensure that exec finished without error.
-			select {
-			case <-time.After(10 * time.Second):
-				t.Fatalf("container timed out waiting for exec to finish.")
-			case err := <-ch:
-				if err != nil {
-					t.Errorf("container failed to exec %v: %v", args, err)
-				}
-			}
 		})
 	}
 }
 
 // TestKillPid verifies that we can signal individual exec'd processes.
 func TestKillPid(t *testing.T) {
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			app, err := testutil.FindFile("test/cmd/test_app/test_app")
 			if err != nil {
@@ -950,6 +978,7 @@ func TestKillPid(t *testing.T) {
 			if err != nil {
 				t.Fatalf("failed to get process list: %v", err)
 			}
+			t.Logf("current process list: %v", procs)
 			var pid int32
 			for _, p := range procs {
 				if pid < int32(p.PID) {
@@ -962,7 +991,8 @@ func TestKillPid(t *testing.T) {
 
 			// Verify that one process is gone.
 			if err := waitForProcessCount(cont, nProcs-1); err != nil {
-				t.Fatalf("error waiting for processes: %v", err)
+				procs, procsErr := cont.Processes()
+				t.Fatalf("error waiting for processes: %v; current processes: %v / %v", err, procs, procsErr)
 			}
 
 			procs, err = cont.Processes()
@@ -986,7 +1016,7 @@ func TestKillPid(t *testing.T) {
 // number after the last number from the checkpointed container.
 func TestCheckpointRestore(t *testing.T) {
 	// Skip overlay because test requires writing to host file.
-	for name, conf := range configs(t, noOverlay...) {
+	for name, conf := range configs(t, true /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			dir, err := ioutil.TempDir(testutil.TmpDir(), "checkpoint-test")
 			if err != nil {
@@ -1147,7 +1177,7 @@ func TestCheckpointRestore(t *testing.T) {
 // with filesystem Unix Domain Socket use.
 func TestUnixDomainSockets(t *testing.T) {
 	// Skip overlay because test requires writing to host file.
-	for name, conf := range configs(t, noOverlay...) {
+	for name, conf := range configs(t, true /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			// UDS path is limited to 108 chars for compatibility with older systems.
 			// Use '/tmp' (instead of testutil.TmpDir) to ensure the size limit is
@@ -1284,7 +1314,7 @@ func TestUnixDomainSockets(t *testing.T) {
 // recreated. Then it resumes the container, verify that the file gets created
 // again.
 func TestPauseResume(t *testing.T) {
-	for name, conf := range configs(t, noOverlay...) {
+	for name, conf := range configs(t, true /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			tmpDir, err := ioutil.TempDir(testutil.TmpDir(), "lock")
 			if err != nil {
@@ -1361,8 +1391,7 @@ func TestPauseResume(t *testing.T) {
 // with calls to pause and resume and that pausing and resuming only
 // occurs given the correct state.
 func TestPauseResumeStatus(t *testing.T) {
-	spec := testutil.NewSpecWithArgs("sleep", "20")
-	conf := testutil.TestConfig(t)
+	spec, conf := sleepSpecConf(t)
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
@@ -1418,18 +1447,18 @@ func TestPauseResumeStatus(t *testing.T) {
 }
 
 // TestCapabilities verifies that:
-// - Running exec as non-root UID and GID will result in an error (because the
-//   executable file can't be read).
-// - Running exec as non-root with CAP_DAC_OVERRIDE succeeds because it skips
-//   this check.
+//   - Running exec as non-root UID and GID will result in an error (because the
+//     executable file can't be read).
+//   - Running exec as non-root with CAP_DAC_OVERRIDE succeeds because it skips
+//     this check.
 func TestCapabilities(t *testing.T) {
 	// Pick uid/gid different than ours.
 	uid := auth.KUID(os.Getuid() + 1)
 	gid := auth.KGID(os.Getgid() + 1)
 
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
-			spec := testutil.NewSpecWithArgs("sleep", "100")
+			spec, _ := sleepSpecConf(t)
 			rootDir, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 			if err != nil {
 				t.Fatalf("error setting up container: %v", err)
@@ -1469,7 +1498,9 @@ func TestCapabilities(t *testing.T) {
 			defer os.Remove(exePath)
 
 			// Need to traverse the intermediate directory.
-			os.Chmod(rootDir, 0755)
+			if err := os.Chmod(rootDir, 0755); err != nil {
+				t.Fatal(err)
+			}
 
 			execArgs := &control.ExecArgs{
 				Filename:         exePath,
@@ -1481,7 +1512,7 @@ func TestCapabilities(t *testing.T) {
 			}
 
 			// "exe" should fail because we don't have the necessary permissions.
-			if _, err := cont.executeSync(execArgs); err == nil {
+			if _, err := cont.executeSync(conf, execArgs); err == nil {
 				t.Fatalf("container executed without error, but an error was expected")
 			}
 
@@ -1490,7 +1521,7 @@ func TestCapabilities(t *testing.T) {
 				EffectiveCaps: auth.CapabilitySetOf(linux.CAP_DAC_OVERRIDE),
 			}
 			// "exe" should not fail this time.
-			if _, err := cont.executeSync(execArgs); err != nil {
+			if _, err := cont.executeSync(conf, execArgs); err != nil {
 				t.Fatalf("container failed to exec %v: %v", args, err)
 			}
 		})
@@ -1500,7 +1531,7 @@ func TestCapabilities(t *testing.T) {
 // TestRunNonRoot checks that sandbox can be configured when running as
 // non-privileged user.
 func TestRunNonRoot(t *testing.T) {
-	for name, conf := range configs(t, noOverlay...) {
+	for name, conf := range configs(t, true /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			spec := testutil.NewSpecWithArgs("/bin/true")
 
@@ -1544,7 +1575,7 @@ func TestRunNonRoot(t *testing.T) {
 // TestMountNewDir checks that runsc will create destination directory if it
 // doesn't exit.
 func TestMountNewDir(t *testing.T) {
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			root, err := ioutil.TempDir(testutil.TmpDir(), "root")
 			if err != nil {
@@ -1575,9 +1606,9 @@ func TestMountNewDir(t *testing.T) {
 }
 
 func TestReadonlyRoot(t *testing.T) {
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
-			spec := testutil.NewSpecWithArgs("sleep", "100")
+			spec, _ := sleepSpecConf(t)
 			spec.Root.Readonly = true
 
 			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
@@ -1601,7 +1632,7 @@ func TestReadonlyRoot(t *testing.T) {
 			}
 
 			// Read mounts to check that root is readonly.
-			out, err := executeCombinedOutput(c, "/bin/sh", "-c", "mount | grep ' / ' | grep -o -e '(.*)'")
+			out, err := executeCombinedOutput(conf, c, nil, "/bin/sh", "-c", "mount | grep ' / ' | grep -o -e '(.*)'")
 			if err != nil {
 				t.Fatalf("exec failed: %v", err)
 			}
@@ -1611,7 +1642,7 @@ func TestReadonlyRoot(t *testing.T) {
 			}
 
 			// Check that file cannot be created.
-			ws, err := execute(c, "/bin/touch", "/foo")
+			ws, err := execute(conf, c, "/bin/touch", "/foo")
 			if err != nil {
 				t.Fatalf("touch file in ro mount: %v", err)
 			}
@@ -1623,13 +1654,13 @@ func TestReadonlyRoot(t *testing.T) {
 }
 
 func TestReadonlyMount(t *testing.T) {
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			dir, err := ioutil.TempDir(testutil.TmpDir(), "ro-mount")
 			if err != nil {
 				t.Fatalf("ioutil.TempDir() failed: %v", err)
 			}
-			spec := testutil.NewSpecWithArgs("sleep", "100")
+			spec, _ := sleepSpecConf(t)
 			spec.Mounts = append(spec.Mounts, specs.Mount{
 				Destination: dir,
 				Source:      dir,
@@ -1660,7 +1691,7 @@ func TestReadonlyMount(t *testing.T) {
 
 			// Read mounts to check that volume is readonly.
 			cmd := fmt.Sprintf("mount | grep ' %s ' | grep -o -e '(.*)'", dir)
-			out, err := executeCombinedOutput(c, "/bin/sh", "-c", cmd)
+			out, err := executeCombinedOutput(conf, c, nil, "/bin/sh", "-c", cmd)
 			if err != nil {
 				t.Fatalf("exec failed, err: %v", err)
 			}
@@ -1670,7 +1701,7 @@ func TestReadonlyMount(t *testing.T) {
 			}
 
 			// Check that file cannot be created.
-			ws, err := execute(c, "/bin/touch", path.Join(dir, "file"))
+			ws, err := execute(conf, c, "/bin/touch", path.Join(dir, "file"))
 			if err != nil {
 				t.Fatalf("touch file in ro mount: %v", err)
 			}
@@ -1682,7 +1713,7 @@ func TestReadonlyMount(t *testing.T) {
 }
 
 func TestUIDMap(t *testing.T) {
-	for name, conf := range configs(t, noOverlay...) {
+	for name, conf := range configs(t, true /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			testDir, err := ioutil.TempDir(testutil.TmpDir(), "test-mount")
 			if err != nil {
@@ -1765,14 +1796,6 @@ func TestUIDMap(t *testing.T) {
 // TestAbbreviatedIDs checks that runsc supports using abbreviated container
 // IDs in place of full IDs.
 func TestAbbreviatedIDs(t *testing.T) {
-	doAbbreviatedIDsTest(t, false)
-}
-
-func TestAbbreviatedIDsVFS2(t *testing.T) {
-	doAbbreviatedIDsTest(t, true)
-}
-
-func doAbbreviatedIDsTest(t *testing.T, vfs2 bool) {
 	rootDir, cleanup, err := testutil.SetupRootDir()
 	if err != nil {
 		t.Fatalf("error creating root dir: %v", err)
@@ -1781,7 +1804,6 @@ func doAbbreviatedIDsTest(t *testing.T, vfs2 bool) {
 
 	conf := testutil.TestConfig(t)
 	conf.RootDir = rootDir
-	conf.VFS2 = vfs2
 
 	cids := []string{
 		"foo-" + testutil.RandomContainerID(),
@@ -1789,7 +1811,7 @@ func doAbbreviatedIDsTest(t *testing.T, vfs2 bool) {
 		"baz-" + testutil.RandomContainerID(),
 	}
 	for _, cid := range cids {
-		spec := testutil.NewSpecWithArgs("sleep", "100")
+		spec, _ := sleepSpecConf(t)
 		bundleDir, cleanup, err := testutil.SetupBundleDir(spec)
 		if err != nil {
 			t.Fatalf("error setting up container: %v", err)
@@ -1837,17 +1859,8 @@ func doAbbreviatedIDsTest(t *testing.T, vfs2 bool) {
 }
 
 func TestGoferExits(t *testing.T) {
-	doGoferExitTest(t, false)
-}
-
-func TestGoferExitsVFS2(t *testing.T) {
-	doGoferExitTest(t, true)
-}
-
-func doGoferExitTest(t *testing.T, vfs2 bool) {
 	spec := testutil.NewSpecWithArgs("/bin/sleep", "10000")
 	conf := testutil.TestConfig(t)
-	conf.VFS2 = vfs2
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 
 	if err != nil {
@@ -1871,7 +1884,7 @@ func doGoferExitTest(t *testing.T, vfs2 bool) {
 	}
 
 	// Kill sandbox and expect gofer to exit on its own.
-	sandboxProc, err := os.FindProcess(c.Sandbox.Pid)
+	sandboxProc, err := os.FindProcess(c.Sandbox.Getpid())
 	if err != nil {
 		t.Fatalf("error finding sandbox process: %v", err)
 	}
@@ -1970,7 +1983,7 @@ func TestUserLog(t *testing.T) {
 }
 
 func TestWaitOnExitedSandbox(t *testing.T) {
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			// Run a shell that sleeps for 1 second and then exits with a
 			// non-zero code.
@@ -2023,17 +2036,8 @@ func TestWaitOnExitedSandbox(t *testing.T) {
 }
 
 func TestDestroyNotStarted(t *testing.T) {
-	doDestroyNotStartedTest(t, false)
-}
-
-func TestDestroyNotStartedVFS2(t *testing.T) {
-	doDestroyNotStartedTest(t, true)
-}
-
-func doDestroyNotStartedTest(t *testing.T, vfs2 bool) {
 	spec := testutil.NewSpecWithArgs("/bin/sleep", "100")
 	conf := testutil.TestConfig(t)
-	conf.VFS2 = vfs2
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
@@ -2057,18 +2061,9 @@ func doDestroyNotStartedTest(t *testing.T, vfs2 bool) {
 
 // TestDestroyStarting attempts to force a race between start and destroy.
 func TestDestroyStarting(t *testing.T) {
-	doDestroyStartingTest(t, false)
-}
-
-func TestDestroyStartedVFS2(t *testing.T) {
-	doDestroyStartingTest(t, true)
-}
-
-func doDestroyStartingTest(t *testing.T, vfs2 bool) {
 	for i := 0; i < 10; i++ {
 		spec := testutil.NewSpecWithArgs("/bin/sleep", "100")
 		conf := testutil.TestConfig(t)
-		conf.VFS2 = vfs2
 		rootDir, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 		if err != nil {
 			t.Fatalf("error setting up container: %v", err)
@@ -2097,7 +2092,7 @@ func doDestroyStartingTest(t *testing.T, vfs2 bool) {
 		go func() {
 			defer wg.Done()
 			// Ignore failures, start can fail if destroy runs first.
-			startCont.Start(conf)
+			_ = startCont.Start(conf)
 		}()
 
 		wg.Add(1)
@@ -2112,7 +2107,7 @@ func doDestroyStartingTest(t *testing.T, vfs2 bool) {
 }
 
 func TestCreateWorkingDir(t *testing.T) {
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			tmpDir, err := ioutil.TempDir(testutil.TmpDir(), "cwd-create")
 			if err != nil {
@@ -2166,7 +2161,7 @@ func TestMountPropagation(t *testing.T) {
 		t.Fatalf("mount(%q, MS_SHARED): %v", srcMnt, err)
 	}
 
-	spec := testutil.NewSpecWithArgs("sleep", "1000")
+	spec, conf := sleepSpecConf(t)
 
 	priv := filepath.Join(tmpDir, "priv")
 	slave := filepath.Join(tmpDir, "slave")
@@ -2185,7 +2180,6 @@ func TestMountPropagation(t *testing.T) {
 		},
 	}
 
-	conf := testutil.TestConfig(t)
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
@@ -2215,19 +2209,19 @@ func TestMountPropagation(t *testing.T) {
 
 	// Check that mount didn't propagate to private mount.
 	privFile := filepath.Join(priv, "mnt", "file")
-	if ws, err := execute(cont, "/usr/bin/test", "!", "-f", privFile); err != nil || ws != 0 {
+	if ws, err := execute(conf, cont, "/usr/bin/test", "!", "-f", privFile); err != nil || ws != 0 {
 		t.Fatalf("exec: test ! -f %q, ws: %v, err: %v", privFile, ws, err)
 	}
 
 	// Check that mount propagated to slave mount.
 	slaveFile := filepath.Join(slave, "mnt", "file")
-	if ws, err := execute(cont, "/usr/bin/test", "-f", slaveFile); err != nil || ws != 0 {
+	if ws, err := execute(conf, cont, "/usr/bin/test", "-f", slaveFile); err != nil || ws != 0 {
 		t.Fatalf("exec: test -f %q, ws: %v, err: %v", privFile, ws, err)
 	}
 }
 
 func TestMountSymlink(t *testing.T) {
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			dir, err := ioutil.TempDir(testutil.TmpDir(), "mount-symlink")
 			if err != nil {
@@ -2287,7 +2281,7 @@ func TestMountSymlink(t *testing.T) {
 			// Check that symlink was resolved and mount was created where the symlink
 			// is pointing to.
 			file := path.Join(target, "file")
-			if ws, err := execute(cont, "/usr/bin/test", "-f", file); err != nil || ws != 0 {
+			if ws, err := execute(conf, cont, "/usr/bin/test", "-f", file); err != nil || ws != 0 {
 				t.Fatalf("exec: test -f %q, ws: %v, err: %v", file, ws, err)
 			}
 		})
@@ -2346,70 +2340,63 @@ func TestTTYField(t *testing.T) {
 	}
 
 	for _, test := range testCases {
-		for _, vfs2 := range []bool{false, true} {
-			name := test.name
-			if vfs2 {
-				name += "-vfs2"
+		t.Run(test.name, func(t *testing.T) {
+			conf := testutil.TestConfig(t)
+
+			// We will run /bin/sleep, possibly with an open TTY.
+			cmd := []string{"/bin/sleep", "10000"}
+			if test.useTTY {
+				// Run inside the "pty-runner".
+				cmd = append([]string{testApp, "pty-runner"}, cmd...)
 			}
-			t.Run(name, func(t *testing.T) {
-				conf := testutil.TestConfig(t)
-				conf.VFS2 = vfs2
 
-				// We will run /bin/sleep, possibly with an open TTY.
-				cmd := []string{"/bin/sleep", "10000"}
-				if test.useTTY {
-					// Run inside the "pty-runner".
-					cmd = append([]string{testApp, "pty-runner"}, cmd...)
-				}
+			spec := testutil.NewSpecWithArgs(cmd...)
+			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+			if err != nil {
+				t.Fatalf("error setting up container: %v", err)
+			}
+			defer cleanup()
 
-				spec := testutil.NewSpecWithArgs(cmd...)
-				_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+			// Create and start the container.
+			args := Args{
+				ID:        testutil.RandomContainerID(),
+				Spec:      spec,
+				BundleDir: bundleDir,
+			}
+			c, err := New(conf, args)
+			if err != nil {
+				t.Fatalf("error creating container: %v", err)
+			}
+			defer c.Destroy()
+			if err := c.Start(conf); err != nil {
+				t.Fatalf("error starting container: %v", err)
+			}
+
+			// Wait for sleep to be running, and check the TTY
+			// field.
+			var gotTTYField string
+			cb := func() error {
+				ps, err := c.Processes()
 				if err != nil {
-					t.Fatalf("error setting up container: %v", err)
+					err = fmt.Errorf("error getting process data from container: %v", err)
+					return &backoff.PermanentError{Err: err}
 				}
-				defer cleanup()
-
-				// Create and start the container.
-				args := Args{
-					ID:        testutil.RandomContainerID(),
-					Spec:      spec,
-					BundleDir: bundleDir,
-				}
-				c, err := New(conf, args)
-				if err != nil {
-					t.Fatalf("error creating container: %v", err)
-				}
-				defer c.Destroy()
-				if err := c.Start(conf); err != nil {
-					t.Fatalf("error starting container: %v", err)
-				}
-
-				// Wait for sleep to be running, and check the TTY
-				// field.
-				var gotTTYField string
-				cb := func() error {
-					ps, err := c.Processes()
-					if err != nil {
-						err = fmt.Errorf("error getting process data from container: %v", err)
-						return &backoff.PermanentError{Err: err}
+				for _, p := range ps {
+					if strings.Contains(p.Cmd, "sleep") {
+						gotTTYField = p.TTY
+						return nil
 					}
-					for _, p := range ps {
-						if strings.Contains(p.Cmd, "sleep") {
-							gotTTYField = p.TTY
-							return nil
-						}
-					}
-					return fmt.Errorf("sleep not running")
 				}
-				if err := testutil.Poll(cb, 30*time.Second); err != nil {
-					t.Fatalf("error waiting for sleep process: %v", err)
-				}
+				return fmt.Errorf("sleep not running")
+			}
+			if err := testutil.Poll(cb, 30*time.Second); err != nil {
+				t.Fatalf("error waiting for sleep process: %v", err)
+			}
 
-				if gotTTYField != test.wantTTYField {
-					t.Errorf("tty field got %q, want %q", gotTTYField, test.wantTTYField)
-				}
-			})
-		}
+			if gotTTYField != test.wantTTYField {
+				t.Errorf("tty field got %q, want %q", gotTTYField, test.wantTTYField)
+			}
+		})
 	}
 }
 
@@ -2449,58 +2436,599 @@ func TestCreateWithCorruptedStateFile(t *testing.T) {
 	}
 }
 
-func execute(cont *Container, name string, arg ...string) (unix.WaitStatus, error) {
-	args := &control.ExecArgs{
-		Filename: name,
-		Argv:     append([]string{name}, arg...),
+func TestBindMountByOption(t *testing.T) {
+	for name, conf := range configs(t, false /* noOverlay */) {
+		t.Run(name, func(t *testing.T) {
+			dir, err := ioutil.TempDir(testutil.TmpDir(), "bind-mount")
+			spec := testutil.NewSpecWithArgs("/bin/touch", path.Join(dir, "file"))
+			if err != nil {
+				t.Fatalf("ioutil.TempDir(): %v", err)
+			}
+			spec.Mounts = append(spec.Mounts, specs.Mount{
+				Destination: dir,
+				Source:      dir,
+				Type:        "none",
+				Options:     []string{"rw", "bind"},
+			})
+			if err := run(spec, conf); err != nil {
+				t.Fatalf("error running sandbox: %v", err)
+			}
+		})
 	}
-	return cont.executeSync(args)
 }
 
-func executeCombinedOutput(cont *Container, name string, arg ...string) ([]byte, error) {
+// TestRlimits sets limit to number of open files and checks that the limit
+// is propagated to the container.
+func TestRlimits(t *testing.T) {
+	file, err := ioutil.TempFile(testutil.TmpDir(), "ulimit")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := fmt.Sprintf("ulimit -n > %q", file.Name())
+
+	spec := testutil.NewSpecWithArgs("sh", "-c", cmd)
+	spec.Process.Rlimits = []specs.POSIXRlimit{
+		{Type: "RLIMIT_NOFILE", Hard: 1000, Soft: 100},
+	}
+
+	conf := testutil.TestConfig(t)
+	if err := run(spec, conf); err != nil {
+		t.Fatalf("Error running container: %v", err)
+	}
+	got, err := ioutil.ReadFile(file.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "100\n"; string(got) != want {
+		t.Errorf("ulimit result, got: %q, want: %q", got, want)
+	}
+}
+
+// TestRlimitsExec sets limit to number of open files and checks that the limit
+// is propagated to exec'd processes.
+func TestRlimitsExec(t *testing.T) {
+	spec, conf := sleepSpecConf(t)
+	spec.Process.Rlimits = []specs.POSIXRlimit{
+		{Type: "RLIMIT_NOFILE", Hard: 1000, Soft: 100},
+	}
+
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont.Destroy()
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	got, err := executeCombinedOutput(conf, cont, nil, "/bin/sh", "-c", "ulimit -n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "100\n"; string(got) != want {
+		t.Errorf("ulimit result, got: %q, want: %q", got, want)
+	}
+}
+
+// TestUsage checks that usage generates the expected memory usage.
+func TestUsage(t *testing.T) {
+	spec, conf := sleepSpecConf(t)
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("Creating container: %v", err)
+	}
+	defer cont.Destroy()
+
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("starting container: %v", err)
+	}
+
+	for _, full := range []bool{false, true} {
+		m, err := cont.Sandbox.Usage(full)
+		if err != nil {
+			t.Fatalf("error usage from container: %v", err)
+		}
+		if m.Mapped == 0 {
+			t.Errorf("Usage mapped got zero")
+		}
+		if m.Total == 0 {
+			t.Errorf("Usage total got zero")
+		}
+		if full {
+			if m.System == 0 {
+				t.Errorf("Usage system got zero")
+			}
+			if m.Anonymous == 0 {
+				t.Errorf("Usage anonymous got zero")
+			}
+		}
+	}
+}
+
+// TestUsageFD checks that usagefd generates the expected memory usage.
+func TestUsageFD(t *testing.T) {
+	spec, conf := sleepSpecConf(t)
+
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("Creating container: %v", err)
+	}
+	defer cont.Destroy()
+
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("starting container: %v", err)
+	}
+
+	m, err := cont.Sandbox.UsageFD()
+	if err != nil {
+		t.Fatalf("error usageFD from container: %v", err)
+	}
+
+	mapped, unknown, total, err := m.Fetch()
+	if err != nil {
+		t.Fatalf("error Fetch memory usage: %v", err)
+	}
+
+	if mapped == 0 {
+		t.Errorf("UsageFD Mapped got zero")
+	}
+	if unknown == 0 {
+		t.Errorf("UsageFD unknown got zero")
+	}
+	if total == 0 {
+		t.Errorf("UsageFD total got zero")
+	}
+}
+
+// TestProfile checks that profiling options generate profiles.
+func TestProfile(t *testing.T) {
+	// Perform a non-trivial amount of work so we actually capture
+	// something in the profiles.
+	spec := testutil.NewSpecWithArgs("/bin/bash", "-c", "true")
+	conf := testutil.TestConfig(t)
+	conf.ProfileEnable = true
+	conf.ProfileBlock = filepath.Join(t.TempDir(), "block.pprof")
+	conf.ProfileCPU = filepath.Join(t.TempDir(), "cpu.pprof")
+	conf.ProfileHeap = filepath.Join(t.TempDir(), "heap.pprof")
+	conf.ProfileMutex = filepath.Join(t.TempDir(), "mutex.pprof")
+	conf.TraceFile = filepath.Join(t.TempDir(), "trace.out")
+
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+		Attached:  true,
+	}
+
+	_, err = Run(conf, args)
+	if err != nil {
+		t.Fatalf("Creating container: %v", err)
+	}
+
+	// Basic test; simply assert that the profiles are not empty.
+	for _, name := range []string{conf.ProfileBlock, conf.ProfileCPU, conf.ProfileHeap, conf.ProfileMutex, conf.TraceFile} {
+		fi, err := os.Stat(name)
+		if err != nil {
+			t.Fatalf("Unable to stat profile file %s: %v", name, err)
+		}
+		if fi.Size() == 0 {
+			t.Errorf("Profile file %s is empty: %+v", name, fi)
+		}
+	}
+}
+
+// TestSaveSystemdCgroup emulates a sandbox saving while configured with the
+// systemd cgroup driver.
+func TestSaveSystemdCgroup(t *testing.T) {
+	spec, conf := sleepSpecConf(t)
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	// Create and start the container.
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont.Destroy()
+
+	cont.CompatCgroup = cgroup.CgroupJSON{Cgroup: cgroup.CreateMockSystemdCgroup()}
+	if err := cont.Saver.lock(BlockAcquire); err != nil {
+		t.Fatalf("cannot lock container metadata file: %v", err)
+	}
+	if err := cont.saveLocked(); err != nil {
+		t.Fatalf("error saving cgroup: %v", err)
+	}
+	cont.Saver.unlock()
+	loadCont := Container{}
+	cont.Saver.load(&loadCont, LoadOpts{})
+	if !reflect.DeepEqual(cont.CompatCgroup, loadCont.CompatCgroup) {
+		t.Errorf("CompatCgroup not properly saved: want %v, got %v", cont.CompatCgroup, loadCont.CompatCgroup)
+	}
+}
+
+// TestSandboxCommunicationUnshare checks that communication with sandboxes do
+// not require being in the same network namespace. This is required to allow
+// Kubernetes daemonsets/containers to communicate with sandboxes without the
+// need to join the host network namespaces.
+func TestSandboxCommunicationUnshare(t *testing.T) {
+	spec, conf := sleepSpecConf(t)
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("Creating container: %v", err)
+	}
+	defer cont.Destroy()
+
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("starting container: %v", err)
+	}
+
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	if err := unix.Unshare(unix.CLONE_NEWNET); err != nil {
+		t.Fatalf("unix.Unshare(): %v", err)
+	}
+
+	// Send a simple command to test that the sandbox can be reached.
+	if err := cont.SignalContainer(0, true); err != nil {
+		t.Errorf("SignalContainer(): %v", err)
+	}
+}
+
+// writeAndReadFromPipe writes the bytes to the write end of the pipe, then
+// reads from the read end and returns the result.
+func writeAndReadFromPipe(write, read *os.File, msg string) (string, error) {
+	// Write the message to be read by the guest.
+	if _, err := io.StringWriter(write).WriteString(msg); err != nil {
+		return "", fmt.Errorf("failed to write message to pipe: %w", err)
+	}
+	write.Close()
+
+	// Read and return the message.
+	response, err := io.ReadAll(read)
+	if err != nil {
+		return "", fmt.Errorf("failed to read from pipe: %w", err)
+	}
+	read.Close()
+
+	return string(response), nil
+}
+
+func createPipes() (*os.File, *os.File, *os.File, *os.File, func(), error) {
+	// This is the first pipe which the host writes to and the guest reads
+	// from.
+	guestRead, hostWrite, err := os.Pipe()
+	if err != nil {
+		return nil, nil, nil, nil, nil, err
+	}
+
+	// This is the second pipe which the guest writes to and the host reads
+	// from.
+	hostRead, guestWrite, err := os.Pipe()
+	if err != nil {
+		guestRead.Close()
+		hostWrite.Close()
+		return nil, nil, nil, nil, nil, err
+	}
+
+	cleanup := func() {
+		guestRead.Close()
+		hostWrite.Close()
+		hostRead.Close()
+		guestWrite.Close()
+	}
+
+	return guestRead, hostWrite, hostRead, guestWrite, cleanup, nil
+}
+
+// TestFDPassingRun checks that file descriptors passed into a new container
+// work as expected.
+func TestFDPassingRun(t *testing.T) {
+	guestRead, hostWrite, hostRead, guestWrite, cleanup, err := createPipes()
+	if err != nil {
+		t.Fatalf("error creating pipes: %v", err)
+	}
+	defer cleanup()
+
+	// In the guest, read from the host and write the result back to the host.
+	conf := testutil.TestConfig(t)
+	cmd := fmt.Sprintf("cat /proc/self/fd/%d > /proc/self/fd/%d", int(guestRead.Fd()), int(guestWrite.Fd()))
+	spec := testutil.NewSpecWithArgs("bash", "-c", cmd)
+
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+		PassFiles: map[int]*os.File{
+			int(guestRead.Fd()):  guestRead,
+			int(guestWrite.Fd()): guestWrite,
+		},
+	}
+
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("Creating container: %v", err)
+	}
+	defer cont.Destroy()
+
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("starting container: %v", err)
+	}
+
+	// We close guestWrite here because it has been passed into the container.
+	// If we do not close it, we will never see an EOF.
+	guestWrite.Close()
+
+	msg := "hello"
+	got, err := writeAndReadFromPipe(hostWrite, hostRead, msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != msg {
+		t.Errorf("got message %q, want %q", got, msg)
+	}
+}
+
+// TestFDPassingExec checks that file descriptors passed into an already
+// running container work as expected.
+func TestFDPassingExec(t *testing.T) {
+	guestRead, hostWrite, hostRead, guestWrite, cleanup, err := createPipes()
+	if err != nil {
+		t.Fatalf("error creating pipes: %v", err)
+	}
+	defer cleanup()
+
+	conf := testutil.TestConfig(t)
+
+	// We just sleep here because we want to test file descriptor passing
+	// inside a process executed inside an already running container.
+	spec := testutil.NewSpecWithArgs("bash", "-c", "sleep infinity")
+
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("Creating container: %v", err)
+	}
+	defer cont.Destroy()
+
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("starting container: %v", err)
+	}
+
+	// Prepare executing a command in the running container.
+	cmd := fmt.Sprintf("cat /proc/self/fd/%d > /proc/self/fd/%d", int(guestRead.Fd()), int(guestWrite.Fd()))
+	execArgs := &control.ExecArgs{
+		Argv: []string{"/bin/bash", "-c", cmd},
+		FilePayload: control.NewFilePayload(map[int]*os.File{
+			int(guestRead.Fd()):  guestRead,
+			int(guestWrite.Fd()): guestWrite,
+		}, nil),
+	}
+
+	if _, err = cont.Execute(conf, execArgs); err != nil {
+		t.Fatalf("Failed to execute command: %v", err)
+	}
+
+	// We close guestWrite here because it has been passed into the container.
+	// If we do not close it, we will never see an EOF.
+	guestWrite.Close()
+
+	msg := "hello"
+	got, err := writeAndReadFromPipe(hostWrite, hostRead, msg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != msg {
+		t.Errorf("got message %q, want %q", got, msg)
+	}
+}
+
+// findInPath finds a filename in the PATH environment variable.
+func findInPath(filename string) string {
+	for _, dir := range strings.Split(os.Getenv("PATH"), ":") {
+		fullPath := filepath.Join(dir, filename)
+		if _, err := os.Stat(fullPath); err == nil {
+			return fullPath
+		}
+	}
+	return ""
+}
+
+// TestExecFDRun checks that an executable from the host can be started inside
+// a container.
+func TestExecFDRun(t *testing.T) {
+	// In the guest, read from the host and write the result back to the host.
+	conf := testutil.TestConfig(t)
+	// Note that we do not supply the name or path of the echo binary here.
+	// Thus, the guest does not know the binary path or name either.
+	// argv[0] inside echo is "can be anything".
+	spec := testutil.NewSpecWithArgs("can be anything", "hello world")
+
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	// Find the echo binary on the host.
+	echoPath := findInPath("echo")
+	if echoPath == "" {
+		t.Fatalf("failed to find echo executable in PATH")
+	}
+
+	// Open the echo binary as a file.
+	echoFile, err := os.Open(echoPath)
+	if err != nil {
+		t.Fatalf("opening echo binary: %v", err)
+	}
+	defer echoFile.Close()
+
 	r, w, err := os.Pipe()
 	if err != nil {
-		return nil, err
+		t.Fatalf("creating pipe: %v", err)
 	}
 	defer r.Close()
 
-	args := &control.ExecArgs{
-		Filename:    name,
-		Argv:        append([]string{name}, arg...),
-		FilePayload: urpc.FilePayload{Files: []*os.File{os.Stdin, w, w}},
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+		PassFiles: map[int]*os.File{
+			0: os.Stdin, 1: w, 2: w,
+		},
+		ExecFile: echoFile,
 	}
-	ws, err := cont.executeSync(args)
+
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("Creating container: %v", err)
+	}
+	defer cont.Destroy()
+
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("starting container: %v", err)
+	}
+
 	w.Close()
-	if err != nil {
-		return nil, err
-	}
-	if ws != 0 {
-		return nil, fmt.Errorf("exec failed, status: %v", ws)
-	}
 
-	out, err := ioutil.ReadAll(r)
-	return out, err
+	got, err := io.ReadAll(r)
+	if err != nil {
+		t.Errorf("reading container output: %v", err)
+	}
+	if want := "hello world\n"; string(got) != want {
+		t.Errorf("got message %q, want %q", got, want)
+	}
 }
 
-// executeSync synchronously executes a new process.
-func (c *Container) executeSync(args *control.ExecArgs) (unix.WaitStatus, error) {
-	pid, err := c.Execute(args)
-	if err != nil {
-		return 0, fmt.Errorf("error executing: %v", err)
-	}
-	ws, err := c.WaitPID(pid)
-	if err != nil {
-		return 0, fmt.Errorf("error waiting: %v", err)
-	}
-	return ws, nil
-}
+// TestExecFDExec checks that an executable from the host can be started from a
+// file descriptor inside an already running container.
+func TestExecFDExec(t *testing.T) {
+	conf := testutil.TestConfig(t)
 
-func TestMain(m *testing.M) {
-	log.SetLevel(log.Debug)
-	flag.Parse()
-	if err := testutil.ConfigureExePath(); err != nil {
-		panic(err.Error())
+	// We just sleep here because we want to test execution in an already
+	// running container.
+	spec := testutil.NewSpecWithArgs("bash", "-c", "sleep infinity")
+
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
 	}
-	specutils.MaybeRunAsRoot()
-	os.Exit(m.Run())
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("Creating container: %v", err)
+	}
+	defer cont.Destroy()
+
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("starting container: %v", err)
+	}
+
+	// Find the echo binary on the host.
+	echoPath := findInPath("echo")
+	if echoPath == "" {
+		t.Fatalf("failed to find echo executable in PATH")
+	}
+
+	// Open the echo binary as a file.
+	echoFile, err := os.Open(echoPath)
+	if err != nil {
+		t.Fatalf("opening echo binary: %v", err)
+	}
+	defer echoFile.Close()
+
+	// Note that we do not supply the name or path of the echo binary here.
+	// Thus, the guest does not know the binary path or name either.
+	// argv[0] inside echo is "can be anything".
+	got, err := executeCombinedOutput(conf, cont, echoFile, "can be anything", "hello world")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "hello world\n"; string(got) != want {
+		t.Errorf("echo result, got: %q, want: %q", got, want)
+	}
 }

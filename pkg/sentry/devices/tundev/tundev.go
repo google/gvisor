@@ -16,8 +16,13 @@
 package tundev
 
 import (
+	"io"
+
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/devtmpfs"
@@ -25,7 +30,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/tcpip/link/tun"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -65,7 +69,7 @@ type tunFD struct {
 }
 
 // Ioctl implements vfs.FileDescriptionImpl.Ioctl.
-func (fd *tunFD) Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+func (fd *tunFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
 	request := args[1].Uint()
 	data := args[2].Pointer()
 
@@ -77,11 +81,11 @@ func (fd *tunFD) Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallArg
 	switch request {
 	case linux.TUNSETIFF:
 		if !t.HasCapability(linux.CAP_NET_ADMIN) {
-			return 0, syserror.EPERM
+			return 0, linuxerr.EPERM
 		}
 		stack, ok := t.NetworkContext().(*netstack.Stack)
 		if !ok {
-			return 0, syserror.EINVAL
+			return 0, linuxerr.EINVAL
 		}
 
 		var req linux.IFReq
@@ -104,7 +108,7 @@ func (fd *tunFD) Ioctl(ctx context.Context, uio usermem.IO, args arch.SyscallArg
 		return 0, err
 
 	default:
-		return 0, syserror.ENOTTY
+		return 0, linuxerr.ENOTTY
 	}
 }
 
@@ -124,8 +128,11 @@ func (fd *tunFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.Read
 	if err != nil {
 		return 0, err
 	}
-	n, err := dst.CopyOut(ctx, data)
-	if n > 0 && n < len(data) {
+	defer data.Release()
+
+	size := data.Size()
+	n, err := io.CopyN(dst.Writer(ctx), data, dst.NumBytes())
+	if n > 0 && n < int64(size) {
 		// Not an error for partial copying. Packet truncated.
 		err = nil
 	}
@@ -139,8 +146,19 @@ func (fd *tunFD) PWrite(ctx context.Context, src usermem.IOSequence, offset int6
 
 // Write implements vfs.FileDescriptionImpl.Write.
 func (fd *tunFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
-	data := make([]byte, src.NumBytes())
-	if _, err := src.CopyIn(ctx, data); err != nil {
+	if src.NumBytes() == 0 {
+		return 0, unix.EINVAL
+	}
+	mtu, err := fd.device.MTU()
+	if err != nil {
+		return 0, err
+	}
+	if int64(mtu) < src.NumBytes() {
+		return 0, unix.EMSGSIZE
+	}
+	data := bufferv2.NewView(int(src.NumBytes()))
+	defer data.Release()
+	if _, err := io.CopyN(data, src.Reader(ctx), src.NumBytes()); err != nil {
 		return 0, err
 	}
 	return fd.device.Write(data)
@@ -152,13 +170,19 @@ func (fd *tunFD) Readiness(mask waiter.EventMask) waiter.EventMask {
 }
 
 // EventRegister implements watier.Waitable.EventRegister.
-func (fd *tunFD) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
-	fd.device.EventRegister(e, mask)
+func (fd *tunFD) EventRegister(e *waiter.Entry) error {
+	fd.device.EventRegister(e)
+	return nil
 }
 
 // EventUnregister implements watier.Waitable.EventUnregister.
 func (fd *tunFD) EventUnregister(e *waiter.Entry) {
 	fd.device.EventUnregister(e)
+}
+
+// Epollable implements FileDescriptionImpl.Epollable.
+func (fd *tunFD) Epollable() bool {
+	return true
 }
 
 // IsNetTunSupported returns whether /dev/net/tun device is supported for s.

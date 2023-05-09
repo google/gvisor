@@ -13,9 +13,13 @@
 // limitations under the License.
 
 #include <fcntl.h>
+#include <sys/resource.h>
 #include <unistd.h>
 
+#include <memory>
+
 #include "gtest/gtest.h"
+#include "absl/memory/memory.h"
 #include "test/util/eventfd_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
@@ -68,7 +72,6 @@ TEST(DupTest, DupClearsCloExec) {
 }
 
 TEST(DupTest, DupWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   auto f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(f.path(), O_PATH));
   int flags;
@@ -98,6 +101,45 @@ TEST(DupTest, Dup2) {
   ASSERT_NO_ERRNO(CheckSameFile(fd, nfd2));
 }
 
+TEST(DupTest, Rlimit) {
+  auto f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(f.path(), O_RDONLY));
+
+  struct rlimit rl = {};
+  EXPECT_THAT(getrlimit(RLIMIT_NOFILE, &rl), SyscallSucceeds());
+
+  ASSERT_THAT(setrlimit(RLIMIT_NOFILE, &rl), SyscallSucceeds());
+
+  constexpr int kFDLimit = 101;
+  // Create a file descriptor that will be above the limit.
+  FileDescriptor aboveLimitFD =
+      ASSERT_NO_ERRNO_AND_VALUE(Dup2(fd, kFDLimit * 2 - 1));
+
+  rl.rlim_cur = kFDLimit;
+  ASSERT_THAT(setrlimit(RLIMIT_NOFILE, &rl), SyscallSucceeds());
+  ASSERT_THAT(dup3(fd.get(), kFDLimit, 0), SyscallFails());
+
+  std::vector<std::unique_ptr<FileDescriptor>> fds;
+  int prev_fd = fd.get();
+  int used_fds = 0;
+  for (int i = 0; i < kFDLimit; ++i) {
+    int new_fd = dup(fd.get());
+    if (new_fd == -1) {
+      break;
+    }
+    auto f = std::make_unique<FileDescriptor>(new_fd);
+    EXPECT_LT(new_fd, kFDLimit);
+    EXPECT_GT(new_fd, prev_fd);
+    // Check that all fds in (prev_fd, new_fd) are used.
+    for (int j = prev_fd + 1; j < new_fd; ++j) {
+      if (fcntl(j, F_GETFD) != -1) used_fds++;
+    }
+    prev_fd = new_fd;
+    fds.push_back(std::move(f));
+  }
+  EXPECT_EQ(fds.size() + used_fds, kFDLimit - fd.get() - 1);
+}
+
 TEST(DupTest, Dup2SameFD) {
   auto f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(f.path(), O_RDONLY));
@@ -107,7 +149,6 @@ TEST(DupTest, Dup2SameFD) {
 }
 
 TEST(DupTest, Dup2WithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   auto f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(f.path(), O_PATH));
   int flags;
@@ -157,7 +198,6 @@ TEST(DupTest, Dup3FailsSameFD) {
 }
 
 TEST(DupTest, Dup3WithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   auto f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(f.path(), O_PATH));
   EXPECT_THAT(fcntl(fd.get(), F_GETFD), SyscallSucceedsWithValue(0));

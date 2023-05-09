@@ -25,8 +25,8 @@
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/syscalls/linux/socket_netlink_route_util.h"
-#include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/capability_util.h"
+#include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {
@@ -35,7 +35,7 @@ namespace testing {
 // Test fixture for tests that apply to pairs of IP sockets.
 using IPv6UnboundSocketTest = SimpleSocketTest;
 
-TEST_P(IPv6UnboundSocketTest, ConnectToBadLocalAddress_NoRandomSave) {
+TEST_P(IPv6UnboundSocketTest, ConnectToBadLocalAddress) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
 
   // TODO(gvisor.dev/issue/4595): Addresses on net devices are not saved
@@ -57,8 +57,7 @@ TEST_P(IPv6UnboundSocketTest, ConnectToBadLocalAddress_NoRandomSave) {
   TestAddress addr = V6Loopback();
   reinterpret_cast<sockaddr_in6*>(&addr.addr)->sin6_port = 65535;
   auto sock = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
-  EXPECT_THAT(connect(sock->get(), reinterpret_cast<sockaddr*>(&addr.addr),
-                      addr.addr_len),
+  EXPECT_THAT(connect(sock->get(), AsSockAddr(&addr.addr), addr.addr_len),
               SyscallFailsWithErrno(EADDRNOTAVAIL));
 }
 
@@ -69,7 +68,7 @@ INSTANTIATE_TEST_SUITE_P(IPUnboundSockets, IPv6UnboundSocketTest,
 
 using IPv4UnboundSocketTest = SimpleSocketTest;
 
-TEST_P(IPv4UnboundSocketTest, ConnectToBadLocalAddress_NoRandomSave) {
+TEST_P(IPv4UnboundSocketTest, ConnectToBadLocalAddress) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
 
   // TODO(gvisor.dev/issue/4595): Addresses on net devices are not saved
@@ -90,8 +89,7 @@ TEST_P(IPv4UnboundSocketTest, ConnectToBadLocalAddress_NoRandomSave) {
   TestAddress addr = V4Loopback();
   reinterpret_cast<sockaddr_in*>(&addr.addr)->sin_port = 65535;
   auto sock = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
-  EXPECT_THAT(connect(sock->get(), reinterpret_cast<sockaddr*>(&addr.addr),
-                      addr.addr_len),
+  EXPECT_THAT(connect(sock->get(), AsSockAddr(&addr.addr), addr.addr_len),
               SyscallFailsWithErrno(ENETUNREACH));
 }
 

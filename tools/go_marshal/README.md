@@ -140,3 +140,6 @@ options, depending on how go-marshal is being invoked:
 -   Set `debug = True` on the `go_marshal` BUILD rule.
 
 -   Pass `-debug` to the go-marshal tool invocation.
+
+If bazel complains about stdout output being too large, set a larger value
+through `--experimental_ui_max_stdouterr_bytes`, or `-1` for unlimited output.

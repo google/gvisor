@@ -19,9 +19,10 @@ import (
 	"testing"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // TestConnectionInitBlock tests if initialization
@@ -69,22 +70,22 @@ func TestConnectionAbort(t *testing.T) {
 		t.Fatalf("newTestConnection: %v", err)
 	}
 
-	testObj := &testPayload{
-		data: rand.Uint32(),
-	}
-
 	var futNormal []*futureResponse
-
+	testObj := primitive.Uint32(rand.Uint32())
 	for i := 0; i < int(numRequests); i++ {
-		req := conn.NewRequest(creds, uint32(i), uint64(i), 0, testObj)
+		req := conn.NewRequest(creds, uint32(i), uint64(i), 0, &testObj)
+		conn.fd.mu.Lock()
 		fut, err := conn.callFutureLocked(task, req)
+		conn.fd.mu.Unlock()
 		if err != nil {
 			t.Fatalf("callFutureLocked failed: %v", err)
 		}
 		futNormal = append(futNormal, fut)
 	}
 
+	conn.fd.mu.Lock()
 	conn.Abort(s.Ctx)
+	conn.fd.mu.Unlock()
 
 	// Abort should unblock the initialization channel.
 	// Note: no test requests are actually blocked on `conn.initializedChan`.
@@ -102,9 +103,9 @@ func TestConnectionAbort(t *testing.T) {
 	}
 
 	// After abort, Call() should return directly with ENOTCONN.
-	req := conn.NewRequest(creds, 0, 0, 0, testObj)
+	req := conn.NewRequest(creds, 0, 0, 0, &testObj)
 	_, err = conn.Call(task, req)
-	if err != syserror.ENOTCONN {
+	if !linuxerr.Equals(linuxerr.ENOTCONN, err) {
 		t.Fatalf("Incorrect error code received for Call() after connection aborted")
 	}
 

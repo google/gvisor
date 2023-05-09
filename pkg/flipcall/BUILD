@@ -1,5 +1,7 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 
+package(default_applicable_licenses = ["//:license"])
+
 licenses(["notice"])
 
 go_library(
@@ -10,13 +12,12 @@ go_library(
         "flipcall_unsafe.go",
         "futex_linux.go",
         "io.go",
-        "packet_window_allocator.go",
-        "packet_window_mmap_amd64.go",
-        "packet_window_mmap_arm64.go",
+        "packet_window.go",
     ],
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/atomicbitops",
         "//pkg/log",
         "//pkg/memutil",
         "//pkg/sync",

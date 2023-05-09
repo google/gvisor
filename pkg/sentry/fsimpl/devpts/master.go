@@ -17,6 +17,7 @@ package devpts
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
@@ -24,7 +25,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/unimpl"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -38,6 +38,7 @@ type masterInode struct {
 	kernfs.InodeNoopRefCount
 	kernfs.InodeNotDirectory
 	kernfs.InodeNotSymlink
+	kernfs.InodeWatches
 
 	locks vfs.FileLocks
 
@@ -80,7 +81,7 @@ func (mi *masterInode) Stat(ctx context.Context, vfsfs *vfs.Filesystem, opts vfs
 // SetStat implements kernfs.Inode.SetStat
 func (mi *masterInode) SetStat(ctx context.Context, vfsfs *vfs.Filesystem, creds *auth.Credentials, opts vfs.SetStatOptions) error {
 	if opts.Stat.Mask&linux.STATX_SIZE != 0 {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	return mi.InodeAttrs.SetStat(ctx, vfsfs, creds, opts)
 }
@@ -103,8 +104,9 @@ func (mfd *masterFileDescription) Release(ctx context.Context) {
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (mfd *masterFileDescription) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
-	mfd.t.ld.masterWaiter.EventRegister(e, mask)
+func (mfd *masterFileDescription) EventRegister(e *waiter.Entry) error {
+	mfd.t.ld.masterWaiter.EventRegister(e)
+	return nil
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
@@ -115,6 +117,11 @@ func (mfd *masterFileDescription) EventUnregister(e *waiter.Entry) {
 // Readiness implements waiter.Waitable.Readiness.
 func (mfd *masterFileDescription) Readiness(mask waiter.EventMask) waiter.EventMask {
 	return mfd.t.ld.masterReadiness()
+}
+
+// Epollable implements FileDescriptionImpl.Epollable.
+func (mfd *masterFileDescription) Epollable() bool {
+	return true
 }
 
 // Read implements vfs.FileDescriptionImpl.Read.
@@ -128,11 +135,11 @@ func (mfd *masterFileDescription) Write(ctx context.Context, src usermem.IOSeque
 }
 
 // Ioctl implements vfs.FileDescriptionImpl.Ioctl.
-func (mfd *masterFileDescription) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+func (mfd *masterFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
 	t := kernel.TaskFromContext(ctx)
 	if t == nil {
 		// ioctl(2) may only be called from a task goroutine.
-		return 0, syserror.ENOTTY
+		return 0, linuxerr.ENOTTY
 	}
 
 	switch cmd := args[1].Uint(); cmd {
@@ -165,19 +172,29 @@ func (mfd *masterFileDescription) Ioctl(ctx context.Context, io usermem.IO, args
 		// Make the given terminal the controlling terminal of the
 		// calling process.
 		steal := args[2].Int() == 1
-		return 0, mfd.t.setControllingTTY(ctx, steal, true /* isMaster */, mfd.vfsfd.IsReadable())
+		return 0, t.ThreadGroup().SetControllingTTY(mfd.t.masterKTTY, steal, mfd.vfsfd.IsReadable())
 	case linux.TIOCNOTTY:
 		// Release this process's controlling terminal.
-		return 0, mfd.t.releaseControllingTTY(ctx, true /* isMaster */)
+		return 0, t.ThreadGroup().ReleaseControllingTTY(mfd.t.masterKTTY)
 	case linux.TIOCGPGRP:
-		// Get the foreground process group.
-		return mfd.t.foregroundProcessGroup(ctx, args, true /* isMaster */)
+		// Get the foreground process group id.
+		pgid, err := t.ThreadGroup().ForegroundProcessGroupID(mfd.t.masterKTTY)
+		if err != nil {
+			return 0, err
+		}
+		ret := primitive.Int32(pgid)
+		_, err = ret.CopyOut(t, args[2].Pointer())
+		return 0, err
 	case linux.TIOCSPGRP:
-		// Set the foreground process group.
-		return mfd.t.setForegroundProcessGroup(ctx, args, true /* isMaster */)
+		// Set the foreground process group id.
+		var pgid primitive.Int32
+		if _, err := pgid.CopyIn(t, args[2].Pointer()); err != nil {
+			return 0, err
+		}
+		return 0, t.ThreadGroup().SetForegroundProcessGroupID(mfd.t.masterKTTY, kernel.ProcessGroupID(pgid))
 	default:
-		maybeEmitUnimplementedEvent(ctx, cmd)
-		return 0, syserror.ENOTTY
+		maybeEmitUnimplementedEvent(ctx, sysno, cmd)
+		return 0, linuxerr.ENOTTY
 	}
 }
 
@@ -195,7 +212,7 @@ func (mfd *masterFileDescription) Stat(ctx context.Context, opts vfs.StatOptions
 }
 
 // maybeEmitUnimplementedEvent emits unimplemented event if cmd is valid.
-func maybeEmitUnimplementedEvent(ctx context.Context, cmd uint32) {
+func maybeEmitUnimplementedEvent(ctx context.Context, sysno uintptr, cmd uint32) {
 	switch cmd {
 	case linux.TCGETS,
 		linux.TCSETS,
@@ -227,6 +244,6 @@ func maybeEmitUnimplementedEvent(ctx context.Context, cmd uint32) {
 		linux.TIOCSSERIAL,
 		linux.TIOCGPTPEER:
 
-		unimpl.EmitUnimplementedEvent(ctx)
+		unimpl.EmitUnimplementedEvent(ctx, sysno)
 	}
 }

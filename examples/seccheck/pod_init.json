@@ -1,0 +1,56 @@
+{
+  "trace_session": {
+    "name": "Default",
+    "points": [
+      {
+        "name": "container/start"
+      },
+      {
+        "name": "sentry/clone"
+      },
+      {
+        "name": "sentry/task_exit"
+      },
+      {
+        "name": "syscall/openat/enter"
+      },
+      {
+        "name": "syscall/openat/exit"
+      },
+      {
+        "name": "syscall/read/enter",
+        "optional_fields": [
+          "fd_path"
+        ],
+        "context_fields": [
+          "time",
+          "container_id",
+          "thread_id"
+        ]
+      },
+      {
+        "name": "syscall/read/exit"
+      },
+      {
+        "name": "syscall/sysno/1/enter",
+        "context_fields": [
+          "time",
+          "container_id"
+        ]
+      },
+      {
+        "name": "syscall/sysno/1/exit"
+      }
+    ],
+    "sinks": [
+      {
+        "name": "remote",
+        "config": {
+          "endpoint": "/tmp/gvisor_events.sock",
+          "retries": 3
+        },
+        "ignore_setup_error": true
+      }
+    ]
+  }
+}

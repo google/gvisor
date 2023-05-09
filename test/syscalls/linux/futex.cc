@@ -176,7 +176,7 @@ TEST_P(PrivateAndSharedFutexTest, Wait_ZeroTimeout) {
 }
 
 TEST_P(PrivateAndSharedFutexTest, Wait_Timeout) {
-  std::atomic<int> a = ATOMIC_VAR_INIT(1);
+  std::atomic<int> a(1);
 
   MonotonicTimer timer;
   timer.Start();
@@ -187,7 +187,7 @@ TEST_P(PrivateAndSharedFutexTest, Wait_Timeout) {
 }
 
 TEST_P(PrivateAndSharedFutexTest, Wait_BitsetTimeout) {
-  std::atomic<int> a = ATOMIC_VAR_INIT(1);
+  std::atomic<int> a(1);
 
   MonotonicTimer timer;
   timer.Start();
@@ -199,7 +199,7 @@ TEST_P(PrivateAndSharedFutexTest, Wait_BitsetTimeout) {
 }
 
 TEST_P(PrivateAndSharedFutexTest, WaitBitset_NegativeTimeout) {
-  std::atomic<int> a = ATOMIC_VAR_INIT(1);
+  std::atomic<int> a(1);
 
   MonotonicTimer timer;
   timer.Start();
@@ -209,20 +209,20 @@ TEST_P(PrivateAndSharedFutexTest, WaitBitset_NegativeTimeout) {
 }
 
 TEST_P(PrivateAndSharedFutexTest, Wait_WrongVal) {
-  std::atomic<int> a = ATOMIC_VAR_INIT(1);
+  std::atomic<int> a(1);
   EXPECT_THAT(futex_wait(IsPrivate(), &a, a + 1),
               SyscallFailsWithErrno(EAGAIN));
 }
 
 TEST_P(PrivateAndSharedFutexTest, Wait_ZeroBitset) {
-  std::atomic<int> a = ATOMIC_VAR_INIT(1);
+  std::atomic<int> a(1);
   EXPECT_THAT(futex_wait_bitset(IsPrivate(), &a, a, 0),
               SyscallFailsWithErrno(EINVAL));
 }
 
-TEST_P(PrivateAndSharedFutexTest, Wake1_NoRandomSave) {
+TEST_P(PrivateAndSharedFutexTest, Wake1) {
   constexpr int kInitialValue = 1;
-  std::atomic<int> a = ATOMIC_VAR_INIT(kInitialValue);
+  std::atomic<int> a(kInitialValue);
 
   // Prevent save/restore from interrupting futex_wait, which will cause it to
   // return EAGAIN instead of the expected result if futex_wait is restarted
@@ -240,9 +240,9 @@ TEST_P(PrivateAndSharedFutexTest, Wake1_NoRandomSave) {
   EXPECT_THAT(futex_wake(IsPrivate(), &a, 1), SyscallSucceedsWithValue(1));
 }
 
-TEST_P(PrivateAndSharedFutexTest, Wake0_NoRandomSave) {
+TEST_P(PrivateAndSharedFutexTest, Wake0) {
   constexpr int kInitialValue = 1;
-  std::atomic<int> a = ATOMIC_VAR_INIT(kInitialValue);
+  std::atomic<int> a(kInitialValue);
 
   // Prevent save/restore from interrupting futex_wait, which will cause it to
   // return EAGAIN instead of the expected result if futex_wait is restarted
@@ -261,16 +261,16 @@ TEST_P(PrivateAndSharedFutexTest, Wake0_NoRandomSave) {
   EXPECT_THAT(futex_wake(IsPrivate(), &a, 0), SyscallSucceedsWithValue(1));
 }
 
-TEST_P(PrivateAndSharedFutexTest, WakeAll_NoRandomSave) {
+TEST_P(PrivateAndSharedFutexTest, WakeAll) {
   constexpr int kInitialValue = 1;
-  std::atomic<int> a = ATOMIC_VAR_INIT(kInitialValue);
+  std::atomic<int> a(kInitialValue);
 
   DisableSave ds;
   constexpr int kThreads = 5;
   std::vector<std::unique_ptr<ScopedThread>> threads;
   threads.reserve(kThreads);
   for (int i = 0; i < kThreads; i++) {
-    threads.push_back(absl::make_unique<ScopedThread>([&] {
+    threads.push_back(std::make_unique<ScopedThread>([&] {
       EXPECT_THAT(futex_wait(IsPrivate(), &a, kInitialValue),
                   SyscallSucceeds());
     }));
@@ -282,9 +282,9 @@ TEST_P(PrivateAndSharedFutexTest, WakeAll_NoRandomSave) {
               SyscallSucceedsWithValue(kThreads));
 }
 
-TEST_P(PrivateAndSharedFutexTest, WakeSome_NoRandomSave) {
+TEST_P(PrivateAndSharedFutexTest, WakeSome) {
   constexpr int kInitialValue = 1;
-  std::atomic<int> a = ATOMIC_VAR_INIT(kInitialValue);
+  std::atomic<int> a(kInitialValue);
 
   DisableSave ds;
   constexpr int kThreads = 5;
@@ -302,7 +302,7 @@ TEST_P(PrivateAndSharedFutexTest, WakeSome_NoRandomSave) {
     errs.push_back(0);
   }
   for (int i = 0; i < kThreads; i++) {
-    threads.push_back(absl::make_unique<ScopedThread>([&, i] {
+    threads.push_back(std::make_unique<ScopedThread>([&, i] {
       rets[i] =
           futex_wait(IsPrivate(), &a, kInitialValue, kIneffectiveWakeTimeout);
       errs[i] = errno;
@@ -331,9 +331,9 @@ TEST_P(PrivateAndSharedFutexTest, WakeSome_NoRandomSave) {
   EXPECT_EQ(timedout, kThreads - kWokenThreads);
 }
 
-TEST_P(PrivateAndSharedFutexTest, WaitBitset_Wake_NoRandomSave) {
+TEST_P(PrivateAndSharedFutexTest, WaitBitset_Wake) {
   constexpr int kInitialValue = 1;
-  std::atomic<int> a = ATOMIC_VAR_INIT(kInitialValue);
+  std::atomic<int> a(kInitialValue);
 
   DisableSave ds;
   ScopedThread thread([&] {
@@ -346,9 +346,9 @@ TEST_P(PrivateAndSharedFutexTest, WaitBitset_Wake_NoRandomSave) {
   EXPECT_THAT(futex_wake(IsPrivate(), &a, 1), SyscallSucceedsWithValue(1));
 }
 
-TEST_P(PrivateAndSharedFutexTest, Wait_WakeBitset_NoRandomSave) {
+TEST_P(PrivateAndSharedFutexTest, Wait_WakeBitset) {
   constexpr int kInitialValue = 1;
-  std::atomic<int> a = ATOMIC_VAR_INIT(kInitialValue);
+  std::atomic<int> a(kInitialValue);
 
   DisableSave ds;
   ScopedThread thread([&] {
@@ -361,9 +361,9 @@ TEST_P(PrivateAndSharedFutexTest, Wait_WakeBitset_NoRandomSave) {
               SyscallSucceedsWithValue(1));
 }
 
-TEST_P(PrivateAndSharedFutexTest, WaitBitset_WakeBitsetMatch_NoRandomSave) {
+TEST_P(PrivateAndSharedFutexTest, WaitBitset_WakeBitsetMatch) {
   constexpr int kInitialValue = 1;
-  std::atomic<int> a = ATOMIC_VAR_INIT(kInitialValue);
+  std::atomic<int> a(kInitialValue);
 
   constexpr int kBitset = 0b01001000;
 
@@ -379,9 +379,9 @@ TEST_P(PrivateAndSharedFutexTest, WaitBitset_WakeBitsetMatch_NoRandomSave) {
               SyscallSucceedsWithValue(1));
 }
 
-TEST_P(PrivateAndSharedFutexTest, WaitBitset_WakeBitsetNoMatch_NoRandomSave) {
+TEST_P(PrivateAndSharedFutexTest, WaitBitset_WakeBitsetNoMatch) {
   constexpr int kInitialValue = 1;
-  std::atomic<int> a = ATOMIC_VAR_INIT(kInitialValue);
+  std::atomic<int> a(kInitialValue);
 
   constexpr int kWaitBitset = 0b01000001;
   constexpr int kWakeBitset = 0b00101000;
@@ -401,10 +401,10 @@ TEST_P(PrivateAndSharedFutexTest, WaitBitset_WakeBitsetNoMatch_NoRandomSave) {
               SyscallSucceedsWithValue(0));
 }
 
-TEST_P(PrivateAndSharedFutexTest, WakeOpCondSuccess_NoRandomSave) {
+TEST_P(PrivateAndSharedFutexTest, WakeOpCondSuccess) {
   constexpr int kInitialValue = 1;
-  std::atomic<int> a = ATOMIC_VAR_INIT(kInitialValue);
-  std::atomic<int> b = ATOMIC_VAR_INIT(kInitialValue);
+  std::atomic<int> a(kInitialValue);
+  std::atomic<int> b(kInitialValue);
 
   DisableSave ds;
   ScopedThread thread_a([&] {
@@ -428,10 +428,10 @@ TEST_P(PrivateAndSharedFutexTest, WakeOpCondSuccess_NoRandomSave) {
   EXPECT_EQ(b, kInitialValue + 2);
 }
 
-TEST_P(PrivateAndSharedFutexTest, WakeOpCondFailure_NoRandomSave) {
+TEST_P(PrivateAndSharedFutexTest, WakeOpCondFailure) {
   constexpr int kInitialValue = 1;
-  std::atomic<int> a = ATOMIC_VAR_INIT(kInitialValue);
-  std::atomic<int> b = ATOMIC_VAR_INIT(kInitialValue);
+  std::atomic<int> a(kInitialValue);
+  std::atomic<int> b(kInitialValue);
 
   DisableSave ds;
   ScopedThread thread_a([&] {
@@ -457,7 +457,7 @@ TEST_P(PrivateAndSharedFutexTest, WakeOpCondFailure_NoRandomSave) {
   EXPECT_EQ(b, kInitialValue + 2);
 }
 
-TEST_P(PrivateAndSharedFutexTest, NoWakeInterprocessPrivateAnon_NoRandomSave) {
+TEST_P(PrivateAndSharedFutexTest, NoWakeInterprocessPrivateAnon) {
   auto const mapping = ASSERT_NO_ERRNO_AND_VALUE(
       MmapAnon(kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE));
   auto const ptr = static_cast<std::atomic<int>*>(mapping.ptr());
@@ -484,7 +484,7 @@ TEST_P(PrivateAndSharedFutexTest, NoWakeInterprocessPrivateAnon_NoRandomSave) {
       << " status " << status;
 }
 
-TEST_P(PrivateAndSharedFutexTest, WakeAfterCOWBreak_NoRandomSave) {
+TEST_P(PrivateAndSharedFutexTest, WakeAfterCOWBreak) {
   // Use a futex on a non-stack mapping so we can be sure that the child process
   // below isn't the one that breaks copy-on-write.
   auto const mapping = ASSERT_NO_ERRNO_AND_VALUE(
@@ -520,9 +520,9 @@ TEST_P(PrivateAndSharedFutexTest, WakeAfterCOWBreak_NoRandomSave) {
   EXPECT_THAT(futex_wake(IsPrivate(), ptr, 1), SyscallSucceedsWithValue(1));
 }
 
-TEST_P(PrivateAndSharedFutexTest, WakeWrongKind_NoRandomSave) {
+TEST_P(PrivateAndSharedFutexTest, WakeWrongKind) {
   constexpr int kInitialValue = 1;
-  std::atomic<int> a = ATOMIC_VAR_INIT(kInitialValue);
+  std::atomic<int> a(kInitialValue);
 
   DisableSave ds;
   ScopedThread thread([&] {
@@ -544,7 +544,7 @@ INSTANTIATE_TEST_SUITE_P(SharedPrivate, PrivateAndSharedFutexTest,
 // Passing null as the address only works for private futexes.
 
 TEST(PrivateFutexTest, WakeOp0Set) {
-  std::atomic<int> a = ATOMIC_VAR_INIT(1);
+  std::atomic<int> a(1);
 
   int futex_op = FUTEX_OP(FUTEX_OP_SET, 2, 0, 0);
   EXPECT_THAT(futex_wake_op(true, nullptr, &a, 0, 0, futex_op),
@@ -553,7 +553,7 @@ TEST(PrivateFutexTest, WakeOp0Set) {
 }
 
 TEST(PrivateFutexTest, WakeOp0Add) {
-  std::atomic<int> a = ATOMIC_VAR_INIT(1);
+  std::atomic<int> a(1);
   int futex_op = FUTEX_OP(FUTEX_OP_ADD, 1, 0, 0);
   EXPECT_THAT(futex_wake_op(true, nullptr, &a, 0, 0, futex_op),
               SyscallSucceedsWithValue(0));
@@ -561,7 +561,7 @@ TEST(PrivateFutexTest, WakeOp0Add) {
 }
 
 TEST(PrivateFutexTest, WakeOp0Or) {
-  std::atomic<int> a = ATOMIC_VAR_INIT(0b01);
+  std::atomic<int> a(0b01);
   int futex_op = FUTEX_OP(FUTEX_OP_OR, 0b10, 0, 0);
   EXPECT_THAT(futex_wake_op(true, nullptr, &a, 0, 0, futex_op),
               SyscallSucceedsWithValue(0));
@@ -569,7 +569,7 @@ TEST(PrivateFutexTest, WakeOp0Or) {
 }
 
 TEST(PrivateFutexTest, WakeOp0Andn) {
-  std::atomic<int> a = ATOMIC_VAR_INIT(0b11);
+  std::atomic<int> a(0b11);
   int futex_op = FUTEX_OP(FUTEX_OP_ANDN, 0b10, 0, 0);
   EXPECT_THAT(futex_wake_op(true, nullptr, &a, 0, 0, futex_op),
               SyscallSucceedsWithValue(0));
@@ -577,14 +577,14 @@ TEST(PrivateFutexTest, WakeOp0Andn) {
 }
 
 TEST(PrivateFutexTest, WakeOp0Xor) {
-  std::atomic<int> a = ATOMIC_VAR_INIT(0b1010);
+  std::atomic<int> a(0b1010);
   int futex_op = FUTEX_OP(FUTEX_OP_XOR, 0b1100, 0, 0);
   EXPECT_THAT(futex_wake_op(true, nullptr, &a, 0, 0, futex_op),
               SyscallSucceedsWithValue(0));
   EXPECT_EQ(a, 0b0110);
 }
 
-TEST(SharedFutexTest, WakeInterprocessSharedAnon_NoRandomSave) {
+TEST(SharedFutexTest, WakeInterprocessSharedAnon) {
   auto const mapping = ASSERT_NO_ERRNO_AND_VALUE(
       MmapAnon(kPageSize, PROT_READ | PROT_WRITE, MAP_SHARED));
   auto const ptr = static_cast<std::atomic<int>*>(mapping.ptr());
@@ -615,7 +615,7 @@ TEST(SharedFutexTest, WakeInterprocessSharedAnon_NoRandomSave) {
       << " status " << status;
 }
 
-TEST(SharedFutexTest, WakeInterprocessFile_NoRandomSave) {
+TEST(SharedFutexTest, WakeInterprocessFile) {
   auto const file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   ASSERT_THAT(truncate(file.path().c_str(), kPageSize), SyscallSucceeds());
   auto const fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR));
@@ -650,7 +650,7 @@ TEST(SharedFutexTest, WakeInterprocessFile_NoRandomSave) {
 }
 
 TEST_P(PrivateAndSharedFutexTest, PIBasic) {
-  std::atomic<int> a = ATOMIC_VAR_INIT(0);
+  std::atomic<int> a(0);
 
   ASSERT_THAT(futex_lock_pi(IsPrivate(), &a), SyscallSucceeds());
   EXPECT_EQ(a.load(), gettid());
@@ -661,15 +661,15 @@ TEST_P(PrivateAndSharedFutexTest, PIBasic) {
   EXPECT_THAT(futex_unlock_pi(IsPrivate(), &a), SyscallFailsWithErrno(EPERM));
 }
 
-TEST_P(PrivateAndSharedFutexTest, PIConcurrency_NoRandomSave) {
+TEST_P(PrivateAndSharedFutexTest, PIConcurrency) {
   DisableSave ds;  // Too many syscalls.
 
-  std::atomic<int> a = ATOMIC_VAR_INIT(0);
+  std::atomic<int> a(0);
   const bool is_priv = IsPrivate();
 
   std::unique_ptr<ScopedThread> threads[100];
   for (size_t i = 0; i < ABSL_ARRAYSIZE(threads); ++i) {
-    threads[i] = absl::make_unique<ScopedThread>([is_priv, &a] {
+    threads[i] = std::make_unique<ScopedThread>([is_priv, &a] {
       for (size_t j = 0; j < 10; ++j) {
         ASSERT_THAT(futex_lock_pi(is_priv, &a), SyscallSucceeds());
         EXPECT_EQ(a.load() & FUTEX_TID_MASK, gettid());
@@ -681,7 +681,7 @@ TEST_P(PrivateAndSharedFutexTest, PIConcurrency_NoRandomSave) {
 }
 
 TEST_P(PrivateAndSharedFutexTest, PIWaiters) {
-  std::atomic<int> a = ATOMIC_VAR_INIT(0);
+  std::atomic<int> a(0);
   const bool is_priv = IsPrivate();
 
   ASSERT_THAT(futex_lock_pi(is_priv, &a), SyscallSucceeds());
@@ -694,7 +694,7 @@ TEST_P(PrivateAndSharedFutexTest, PIWaiters) {
 
   // Wait until the thread blocks on the futex, setting the waiters bit.
   auto start = absl::Now();
-  while (a.load() != (FUTEX_WAITERS | gettid())) {
+  while (a.load() != (int)(gettid() | FUTEX_WAITERS)) {
     ASSERT_LT(absl::Now() - start, absl::Seconds(5));
     absl::SleepFor(absl::Milliseconds(100));
   }
@@ -702,7 +702,7 @@ TEST_P(PrivateAndSharedFutexTest, PIWaiters) {
 }
 
 TEST_P(PrivateAndSharedFutexTest, PITryLock) {
-  std::atomic<int> a = ATOMIC_VAR_INIT(0);
+  std::atomic<int> a(0);
   const bool is_priv = IsPrivate();
 
   ASSERT_THAT(futex_trylock_pi(IsPrivate(), &a), SyscallSucceeds());
@@ -717,15 +717,15 @@ TEST_P(PrivateAndSharedFutexTest, PITryLock) {
   ASSERT_THAT(futex_unlock_pi(IsPrivate(), &a), SyscallSucceeds());
 }
 
-TEST_P(PrivateAndSharedFutexTest, PITryLockConcurrency_NoRandomSave) {
+TEST_P(PrivateAndSharedFutexTest, PITryLockConcurrency) {
   DisableSave ds;  // Too many syscalls.
 
-  std::atomic<int> a = ATOMIC_VAR_INIT(0);
+  std::atomic<int> a(0);
   const bool is_priv = IsPrivate();
 
   std::unique_ptr<ScopedThread> threads[10];
   for (size_t i = 0; i < ABSL_ARRAYSIZE(threads); ++i) {
-    threads[i] = absl::make_unique<ScopedThread>([is_priv, &a] {
+    threads[i] = std::make_unique<ScopedThread>([is_priv, &a] {
       for (size_t j = 0; j < 10;) {
         if (futex_trylock_pi(is_priv, &a) == 0) {
           ++j;
@@ -737,6 +737,10 @@ TEST_P(PrivateAndSharedFutexTest, PITryLockConcurrency_NoRandomSave) {
     });
   }
 }
+
+// Robust mutex tests are disabled on Android because Bionic (Android's libc)
+// doesn't support robust pthread mutexes.
+#ifndef __ANDROID__
 
 int get_robust_list(int pid, struct robust_list_head** head_ptr,
                     size_t* len_ptr) {
@@ -828,6 +832,8 @@ TEST(RobustFutexTest, PthreadMutexAttr) {
     EXPECT_EQ(pthread_mutex_unlock(&mtxs[i]), 0);
   }
 }
+
+#endif  // __ANDROID__
 
 }  // namespace
 }  // namespace testing

@@ -18,6 +18,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	gtime "time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
@@ -25,8 +26,8 @@ import (
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
 	"gvisor.dev/gvisor/pkg/sentry/state"
 	"gvisor.dev/gvisor/pkg/sentry/time"
@@ -35,91 +36,112 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/boot/pprof"
+	"gvisor.dev/gvisor/runsc/boot/procfs"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
 const (
-	// ContainerCheckpoint checkpoints a container.
-	ContainerCheckpoint = "containerManager.Checkpoint"
+	// ContMgrCheckpoint checkpoints a container.
+	ContMgrCheckpoint = "containerManager.Checkpoint"
 
-	// ContainerCreate creates a container.
-	ContainerCreate = "containerManager.Create"
+	// ContMgrCreateSubcontainer creates a sub-container.
+	ContMgrCreateSubcontainer = "containerManager.CreateSubcontainer"
 
-	// ContainerDestroy is used to stop a non-root container and free all
+	// ContMgrDestroySubcontainer is used to stop a sub-container and free all
 	// associated resources in the sandbox.
-	ContainerDestroy = "containerManager.Destroy"
+	ContMgrDestroySubcontainer = "containerManager.DestroySubcontainer"
 
-	// ContainerEvent is the URPC endpoint for getting stats about the
-	// container used by "runsc events".
-	ContainerEvent = "containerManager.Event"
+	// ContMgrEvent gets stats about the container used by "runsc events".
+	ContMgrEvent = "containerManager.Event"
 
-	// ContainerExecuteAsync is the URPC endpoint for executing a command in a
-	// container.
-	ContainerExecuteAsync = "containerManager.ExecuteAsync"
+	// ContMgrExecuteAsync executes a command in a container.
+	ContMgrExecuteAsync = "containerManager.ExecuteAsync"
 
-	// ContainerPause pauses the container.
-	ContainerPause = "containerManager.Pause"
+	// ContMgrPortForward starts port forwarding with the sandbox.
+	ContMgrPortForward = "containerManager.PortForward"
 
-	// ContainerProcesses is the URPC endpoint for getting the list of
-	// processes running in a container.
-	ContainerProcesses = "containerManager.Processes"
+	// ContMgrProcesses lists processes running in a container.
+	ContMgrProcesses = "containerManager.Processes"
 
-	// ContainerRestore restores a container from a statefile.
-	ContainerRestore = "containerManager.Restore"
+	// ContMgrRestore restores a container from a statefile.
+	ContMgrRestore = "containerManager.Restore"
 
-	// ContainerResume unpauses the paused container.
-	ContainerResume = "containerManager.Resume"
+	// ContMgrSignal sends a signal to a container.
+	ContMgrSignal = "containerManager.Signal"
 
-	// ContainerSignal is used to send a signal to a container.
-	ContainerSignal = "containerManager.Signal"
+	// ContMgrStartSubcontainer starts a sub-container inside a running sandbox.
+	ContMgrStartSubcontainer = "containerManager.StartSubcontainer"
 
-	// ContainerSignalProcess is used to send a signal to a particular
-	// process in a container.
-	ContainerSignalProcess = "containerManager.SignalProcess"
+	// ContMgrWait waits on the init process of the container and returns its
+	// ExitStatus.
+	ContMgrWait = "containerManager.Wait"
 
-	// ContainerStart is the URPC endpoint for running a non-root container
-	// within a sandbox.
-	ContainerStart = "containerManager.Start"
+	// ContMgrWaitPID waits on a process with a certain PID in the sandbox and
+	// return its ExitStatus.
+	ContMgrWaitPID = "containerManager.WaitPID"
 
-	// ContainerWait is used to wait on the init process of the container
-	// and return its ExitStatus.
-	ContainerWait = "containerManager.Wait"
+	// ContMgrRootContainerStart starts a new sandbox with a root container.
+	ContMgrRootContainerStart = "containerManager.StartRoot"
 
-	// ContainerWaitPID is used to wait on a process with a certain PID in
-	// the sandbox and return its ExitStatus.
-	ContainerWaitPID = "containerManager.WaitPID"
+	// ContMgrCreateTraceSession starts a trace session.
+	ContMgrCreateTraceSession = "containerManager.CreateTraceSession"
 
-	// NetworkCreateLinksAndRoutes is the URPC endpoint for creating links
-	// and routes in a network stack.
+	// ContMgrDeleteTraceSession deletes a trace session.
+	ContMgrDeleteTraceSession = "containerManager.DeleteTraceSession"
+
+	// ContMgrListTraceSessions lists a trace session.
+	ContMgrListTraceSessions = "containerManager.ListTraceSessions"
+
+	// ContMgrProcfsDump dumps sandbox procfs state.
+	ContMgrProcfsDump = "containerManager.ProcfsDump"
+)
+
+const (
+	// NetworkCreateLinksAndRoutes creates links and routes in a network stack.
 	NetworkCreateLinksAndRoutes = "Network.CreateLinksAndRoutes"
 
-	// RootContainerStart is the URPC endpoint for starting a new sandbox
-	// with root container.
-	RootContainerStart = "containerManager.StartRoot"
-
-	// SandboxStacks collects sandbox stacks for debugging.
-	SandboxStacks = "debug.Stacks"
+	// DebugStacks collects sandbox stacks for debugging.
+	DebugStacks = "debug.Stacks"
 )
 
 // Profiling related commands (see pprof.go for more details).
 const (
-	CPUProfile   = "Profile.CPU"
-	HeapProfile  = "Profile.Heap"
-	BlockProfile = "Profile.Block"
-	MutexProfile = "Profile.Mutex"
-	Trace        = "Profile.Trace"
+	ProfileCPU   = "Profile.CPU"
+	ProfileHeap  = "Profile.Heap"
+	ProfileBlock = "Profile.Block"
+	ProfileMutex = "Profile.Mutex"
+	ProfileTrace = "Profile.Trace"
 )
 
 // Logging related commands (see logging.go for more details).
 const (
-	ChangeLogging = "Logging.Change"
+	LoggingChange = "Logging.Change"
 )
 
-// ControlSocketAddr generates an abstract unix socket name for the given ID.
-func ControlSocketAddr(id string) string {
-	return fmt.Sprintf("\x00runsc-sandbox.%s", id)
-}
+// Lifecycle related commands (see lifecycle.go for more details).
+const (
+	LifecyclePause  = "Lifecycle.Pause"
+	LifecycleResume = "Lifecycle.Resume"
+)
+
+// Usage related commands (see usage.go for more details).
+const (
+	UsageCollect = "Usage.Collect"
+	UsageUsageFD = "Usage.UsageFD"
+)
+
+// Metrics related commands (see metrics.go).
+const (
+	MetricsGetRegistered = "Metrics.GetRegisteredMetrics"
+	MetricsExport        = "Metrics.Export"
+)
+
+// Commands for interacting with cgroupfs within the sandbox.
+const (
+	CgroupsReadControlFiles  = "Cgroups.ReadControlFiles"
+	CgroupsWriteControlFiles = "Cgroups.WriteControlFiles"
+)
 
 // controller holds the control server, and is used for communication into the
 // sandbox.
@@ -134,39 +156,43 @@ type controller struct {
 // newController creates a new controller. The caller must call
 // controller.srv.StartServing() to start the controller.
 func newController(fd int, l *Loader) (*controller, error) {
-	ctrl := &controller{}
-	var err error
-	ctrl.srv, err = server.CreateFromFD(fd)
+	srv, err := server.CreateFromFD(fd)
 	if err != nil {
 		return nil, err
 	}
 
-	ctrl.manager = &containerManager{
-		startChan:       make(chan struct{}),
-		startResultChan: make(chan error),
-		l:               l,
+	ctrl := &controller{
+		manager: &containerManager{
+			startChan:       make(chan struct{}),
+			startResultChan: make(chan error),
+			l:               l,
+		},
+		srv: srv,
 	}
 	ctrl.srv.Register(ctrl.manager)
+	ctrl.srv.Register(&control.Cgroups{Kernel: l.k})
+	ctrl.srv.Register(&control.Lifecycle{Kernel: l.k})
+	ctrl.srv.Register(&control.Logging{})
+	ctrl.srv.Register(&control.Proc{Kernel: l.k})
+	ctrl.srv.Register(&control.State{Kernel: l.k})
+	ctrl.srv.Register(&control.Usage{Kernel: l.k})
+	ctrl.srv.Register(&control.Metrics{})
+	ctrl.srv.Register(&debug{})
 
 	if eps, ok := l.k.RootNetworkNamespace().Stack().(*netstack.Stack); ok {
-		net := &Network{
-			Stack: eps.Stack,
-		}
-		ctrl.srv.Register(net)
+		ctrl.srv.Register(&Network{Stack: eps.Stack})
 	}
-
-	ctrl.srv.Register(&debug{})
-	ctrl.srv.Register(&control.Logging{})
-
 	if l.root.conf.ProfileEnable {
 		ctrl.srv.Register(control.NewProfile(l.k))
 	}
-
 	return ctrl, nil
 }
 
+// stopRPCTimeout is the time for clients to complete ongoing RPCs.
+const stopRPCTimeout = 15 * gtime.Second
+
 func (c *controller) stop() {
-	c.srv.Stop()
+	c.srv.Stop(stopRPCTimeout)
 }
 
 // containerManager manages sandbox containers.
@@ -210,9 +236,9 @@ type CreateArgs struct {
 	urpc.FilePayload
 }
 
-// Create creates a container within a sandbox.
-func (cm *containerManager) Create(args *CreateArgs, _ *struct{}) error {
-	log.Debugf("containerManager.Create: %s", args.CID)
+// CreateSubcontainer creates a container within a sandbox.
+func (cm *containerManager) CreateSubcontainer(args *CreateArgs, _ *struct{}) error {
+	log.Debugf("containerManager.CreateSubcontainer: %s", args.CID)
 
 	if len(args.Files) > 1 {
 		return fmt.Errorf("start arguments must have at most 1 files for TTY")
@@ -225,7 +251,7 @@ func (cm *containerManager) Create(args *CreateArgs, _ *struct{}) error {
 			return fmt.Errorf("error dup'ing TTY file: %w", err)
 		}
 	}
-	return cm.l.createContainer(args.CID, tty)
+	return cm.l.createSubcontainer(args.CID, tty)
 }
 
 // StartArgs contains arguments to the Start method.
@@ -239,19 +265,29 @@ type StartArgs struct {
 	// CID is the ID of the container to start.
 	CID string
 
+	// NumOverlayFilestoreFDs is the number of overlay filestore FDs donated.
+	// Optionally configured with the overlay2 flag.
+	NumOverlayFilestoreFDs int
+
+	// OverlayMediums contains information about how the gofer mounts have been
+	// overlaid. The first entry is for rootfs and the following entries are for
+	// bind mounts in Spec.Mounts (in the same order).
+	OverlayMediums []OverlayMedium
+
 	// FilePayload contains, in order:
 	//   * stdin, stdout, and stderr (optional: if terminal is disabled).
+	//   * file descriptors to overlay-backing host files (optional: for overlay2).
 	//   * file descriptors to connect to gofer to serve the root filesystem.
 	urpc.FilePayload
 }
 
-// Start runs a created container within a sandbox.
-func (cm *containerManager) Start(args *StartArgs, _ *struct{}) error {
+// StartSubcontainer runs a created container within a sandbox.
+func (cm *containerManager) StartSubcontainer(args *StartArgs, _ *struct{}) error {
 	// Validate arguments.
 	if args == nil {
 		return errors.New("start missing arguments")
 	}
-	log.Debugf("containerManager.Start, cid: %s, args: %+v", args.CID, args)
+	log.Debugf("containerManager.StartSubcontainer, cid: %s, args: %+v", args.CID, args)
 	if args.Spec == nil {
 		return errors.New("start arguments missing spec")
 	}
@@ -261,21 +297,23 @@ func (cm *containerManager) Start(args *StartArgs, _ *struct{}) error {
 	if args.CID == "" {
 		return errors.New("start argument missing container ID")
 	}
-	if len(args.Files) < 1 {
-		return fmt.Errorf("start arguments must contain at least one file for the container root gofer")
+	expectedFDs := 1 // At least one FD for the root filesystem.
+	expectedFDs += args.NumOverlayFilestoreFDs
+	if !args.Spec.Process.Terminal {
+		expectedFDs += 3
+	}
+	if len(args.Files) < expectedFDs {
+		return fmt.Errorf("start arguments must contain at least %d FDs, but only got %d", expectedFDs, len(args.Files))
 	}
 
 	// All validation passed, logs the spec for debugging.
-	specutils.LogSpec(args.Spec)
+	specutils.LogSpecDebug(args.Spec, args.Conf.OCISeccomp)
 
 	goferFiles := args.Files
 	var stdios []*fd.FD
 	if !args.Spec.Process.Terminal {
 		// When not using a terminal, stdios come as the first 3 files in the
 		// payload.
-		if l := len(args.Files); l < 4 {
-			return fmt.Errorf("start arguments (len: %d) must contain stdios and files for the container root gofer", l)
-		}
 		var err error
 		stdios, err = fd.NewFromFiles(goferFiles[:3])
 		if err != nil {
@@ -289,6 +327,16 @@ func (cm *containerManager) Start(args *StartArgs, _ *struct{}) error {
 		}
 	}()
 
+	var overlayFilestoreFDs []*fd.FD
+	for i := 0; i < args.NumOverlayFilestoreFDs; i++ {
+		overlayFilestoreFD, err := fd.NewFromFile(goferFiles[i])
+		if err != nil {
+			return fmt.Errorf("error dup'ing overlay filestore file: %w", err)
+		}
+		overlayFilestoreFDs = append(overlayFilestoreFDs, overlayFilestoreFD)
+	}
+	goferFiles = goferFiles[args.NumOverlayFilestoreFDs:]
+
 	goferFDs, err := fd.NewFromFiles(goferFiles)
 	if err != nil {
 		return fmt.Errorf("error dup'ing gofer files: %w", err)
@@ -299,19 +347,19 @@ func (cm *containerManager) Start(args *StartArgs, _ *struct{}) error {
 		}
 	}()
 
-	if err := cm.l.startContainer(args.Spec, args.Conf, args.CID, stdios, goferFDs); err != nil {
-		log.Debugf("containerManager.Start failed, cid: %s, args: %+v, err: %v", args.CID, args, err)
+	if err := cm.l.startSubcontainer(args.Spec, args.Conf, args.CID, stdios, goferFDs, overlayFilestoreFDs, args.OverlayMediums); err != nil {
+		log.Debugf("containerManager.StartSubcontainer failed, cid: %s, args: %+v, err: %v", args.CID, args, err)
 		return err
 	}
 	log.Debugf("Container started, cid: %s", args.CID)
 	return nil
 }
 
-// Destroy stops a container if it is still running and cleans up its
-// filesystem.
-func (cm *containerManager) Destroy(cid *string, _ *struct{}) error {
-	log.Debugf("containerManager.destroy, cid: %s", *cid)
-	return cm.l.destroyContainer(*cid)
+// DestroySubcontainer stops a container if it is still running and cleans up
+// its filesystem.
+func (cm *containerManager) DestroySubcontainer(cid *string, _ *struct{}) error {
+	log.Debugf("containerManager.DestroySubcontainer, cid: %s", *cid)
+	return cm.l.destroySubcontainer(*cid)
 }
 
 // ExecuteAsync starts running a command on a created or running sandbox. It
@@ -330,6 +378,11 @@ func (cm *containerManager) ExecuteAsync(args *control.ExecArgs, pid *int32) err
 // Checkpoint pauses a sandbox and saves its state.
 func (cm *containerManager) Checkpoint(o *control.SaveOpts, _ *struct{}) error {
 	log.Debugf("containerManager.Checkpoint")
+	// TODO(gvisor.dev/issues/6243): save/restore not supported w/ hostinet
+	if cm.l.root.conf.Network == config.NetworkHost {
+		return errors.New("checkpoint not supported when using hostinet")
+	}
+
 	state := control.State{
 		Kernel:   cm.l.k,
 		Watchdog: cm.l.watchdog,
@@ -337,10 +390,26 @@ func (cm *containerManager) Checkpoint(o *control.SaveOpts, _ *struct{}) error {
 	return state.Save(o, nil)
 }
 
-// Pause suspends a container.
-func (cm *containerManager) Pause(_, _ *struct{}) error {
-	log.Debugf("containerManager.Pause")
-	cm.l.k.Pause()
+// PortForwardOpts contains options for port forwarding to a port in a
+// container.
+type PortForwardOpts struct {
+	// FilePayload contains one fd for a UDS (or local port) used for port
+	// forwarding.
+	urpc.FilePayload
+
+	// ContainerID is the container for the process being executed.
+	ContainerID string
+	// Port is the port to to forward.
+	Port uint16
+}
+
+// PortForward initiates a port forward to the container.
+func (cm *containerManager) PortForward(opts *PortForwardOpts, _ *struct{}) error {
+	log.Debugf("containerManager.PortForward, cid: %s, port: %d", opts.ContainerID, opts.Port)
+	if err := cm.l.portForward(opts); err != nil {
+		log.Debugf("containerManager.PortForward failed, opts: %+v, err: %v", opts, err)
+		return err
+	}
 	return nil
 }
 
@@ -400,18 +469,10 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 
 	// Set up the restore environment.
 	ctx := k.SupervisorContext()
-	mntr := newContainerMounter(&cm.l.root, cm.l.k, cm.l.mountHints, kernel.VFS2Enabled)
-	if kernel.VFS2Enabled {
-		ctx, err = mntr.configureRestore(ctx, cm.l.root.conf)
-		if err != nil {
-			return fmt.Errorf("configuring filesystem restore: %v", err)
-		}
-	} else {
-		renv, err := mntr.createRestoreEnvironment(cm.l.root.conf)
-		if err != nil {
-			return fmt.Errorf("creating RestoreEnvironment: %v", err)
-		}
-		fs.SetRestoreEnvironment(*renv)
+	mntr := newContainerMounter(&cm.l.root, cm.l.k, cm.l.mountHints, cm.l.productName, o.SandboxID)
+	ctx, err = mntr.configureRestore(ctx)
+	if err != nil {
+		return fmt.Errorf("configuring filesystem restore: %v", err)
 	}
 
 	// Prepare to load from the state file.
@@ -439,7 +500,7 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 
 	// Load the state.
 	loadOpts := state.LoadOpts{Source: specFile}
-	if err := loadOpts.Load(ctx, k, networkStack, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}); err != nil {
+	if err := loadOpts.Load(ctx, k, nil, networkStack, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}); err != nil {
 		return err
 	}
 
@@ -472,13 +533,6 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 		return fmt.Errorf("starting sandbox: %v", err)
 	}
 
-	return nil
-}
-
-// Resume unpauses a container.
-func (cm *containerManager) Resume(_, _ *struct{}) error {
-	log.Debugf("containerManager.Resume")
-	cm.l.k.Unpause()
 	return nil
 }
 
@@ -564,4 +618,57 @@ type SignalArgs struct {
 func (cm *containerManager) Signal(args *SignalArgs, _ *struct{}) error {
 	log.Debugf("containerManager.Signal: cid: %s, PID: %d, signal: %d, mode: %v", args.CID, args.PID, args.Signo, args.Mode)
 	return cm.l.signal(args.CID, args.PID, args.Signo, args.Mode)
+}
+
+// CreateTraceSessionArgs are arguments to the CreateTraceSession method.
+type CreateTraceSessionArgs struct {
+	Config seccheck.SessionConfig
+	Force  bool
+	urpc.FilePayload
+}
+
+// CreateTraceSession creates a new trace session.
+func (cm *containerManager) CreateTraceSession(args *CreateTraceSessionArgs, _ *struct{}) error {
+	log.Debugf("containerManager.CreateTraceSession: config: %+v", args.Config)
+	for i, sinkFile := range args.Files {
+		if sinkFile != nil {
+			fd, err := fd.NewFromFile(sinkFile)
+			if err != nil {
+				return err
+			}
+			args.Config.Sinks[i].FD = fd
+		}
+	}
+	return seccheck.Create(&args.Config, args.Force)
+}
+
+// DeleteTraceSession deletes an existing trace session.
+func (cm *containerManager) DeleteTraceSession(name *string, _ *struct{}) error {
+	log.Debugf("containerManager.DeleteTraceSession: name: %q", *name)
+	return seccheck.Delete(*name)
+}
+
+// ListTraceSessions lists trace sessions.
+func (cm *containerManager) ListTraceSessions(_ *struct{}, out *[]seccheck.SessionConfig) error {
+	log.Debugf("containerManager.ListTraceSessions")
+	seccheck.List(out)
+	return nil
+}
+
+// ProcfsDump dumps procfs state of the sandbox.
+func (cm *containerManager) ProcfsDump(_ *struct{}, out *[]procfs.ProcessProcfsDump) error {
+	log.Debugf("containerManager.ProcfsDump")
+	ts := cm.l.k.TaskSet()
+	pidns := ts.Root
+	*out = make([]procfs.ProcessProcfsDump, 0, len(cm.l.processes))
+	for _, tg := range pidns.ThreadGroups() {
+		pid := pidns.IDOfThreadGroup(tg)
+		procDump, err := procfs.Dump(tg.Leader(), pid, pidns)
+		if err != nil {
+			log.Warningf("skipping procfs dump for PID %s: %v", pid, err)
+			continue
+		}
+		*out = append(*out, procDump)
+	}
+	return nil
 }

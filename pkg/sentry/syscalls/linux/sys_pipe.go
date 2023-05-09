@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,63 +16,52 @@ package linux
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/pipefs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
-	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
-// LINT.IfChange
+// Pipe implements Linux syscall pipe(2).
+func Pipe(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	addr := args[0].Pointer()
+	return 0, nil, pipe2(t, addr, 0)
+}
 
-// pipe2 implements the actual system call with flags.
-func pipe2(t *kernel.Task, addr hostarch.Addr, flags uint) (uintptr, error) {
+// Pipe2 implements Linux syscall pipe2(2).
+func Pipe2(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	addr := args[0].Pointer()
+	flags := args[1].Int()
+	return 0, nil, pipe2(t, addr, flags)
+}
+
+func pipe2(t *kernel.Task, addr hostarch.Addr, flags int32) error {
 	if flags&^(linux.O_NONBLOCK|linux.O_CLOEXEC) != 0 {
-		return 0, syserror.EINVAL
+		return linuxerr.EINVAL
 	}
-	r, w := pipe.NewConnectedPipe(t, pipe.DefaultPipeSize)
-
-	r.SetFlags(linuxToFlags(flags).Settable())
+	r, w, err := pipefs.NewConnectedPipeFDs(t, t.Kernel().PipeMount(), uint32(flags&linux.O_NONBLOCK))
+	if err != nil {
+		return err
+	}
 	defer r.DecRef(t)
-
-	w.SetFlags(linuxToFlags(flags).Settable())
 	defer w.DecRef(t)
 
-	fds, err := t.NewFDs(0, []*fs.File{r, w}, kernel.FDFlags{
+	fds, err := t.NewFDs(0, []*vfs.FileDescription{r, w}, kernel.FDFlags{
 		CloseOnExec: flags&linux.O_CLOEXEC != 0,
 	})
 	if err != nil {
-		return 0, err
+		return err
 	}
-
 	if _, err := primitive.CopyInt32SliceOut(t, addr, fds); err != nil {
 		for _, fd := range fds {
-			if file, _ := t.FDTable().Remove(t, fd); file != nil {
+			if file := t.FDTable().Remove(t, fd); file != nil {
 				file.DecRef(t)
 			}
 		}
-		return 0, err
+		return err
 	}
-	return 0, nil
+	return nil
 }
-
-// Pipe implements linux syscall pipe(2).
-func Pipe(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	addr := args[0].Pointer()
-
-	n, err := pipe2(t, addr, 0)
-	return n, nil, err
-}
-
-// Pipe2 implements linux syscall pipe2(2).
-func Pipe2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	addr := args[0].Pointer()
-	flags := uint(args[1].Uint())
-
-	n, err := pipe2(t, addr, flags)
-	return n, nil, err
-}
-
-// LINT.ThenChange(vfs2/pipe.go)

@@ -1,0 +1,67 @@
+name: Bug report
+description: Create a bug report to help us improve
+labels:
+  - 'type: bug'
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: >
+        A clear description of the bug. If possible, explicitly indicate the
+        expected behavior vs. the observed behavior.
+      placeholder: Describe the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: >
+        If available, please include detailed reproduction steps.
+
+        If the bug requires software that is not publicly available, see if it
+        can be reproduced with software that is publicly available.
+      placeholder: How can others reproduce the issue?
+  - type: markdown
+    attributes:
+      value: |
+        # Environment
+
+        Please include the following details of your environment.
+  - type: textarea
+    id: runscVersion
+    attributes:
+        label: "runsc version"
+        placeholder: "`runsc -version`"
+        render: shell
+  - type: textarea
+    id: docker
+    attributes:
+        label: "docker version (if using docker)"
+        placeholder: "`docker version` or `docker info`"
+        render: shell
+  - type: input
+    id: uname
+    attributes:
+        label: "uname"
+        placeholder: "`uname -a`"
+  - type: textarea
+    id: kubectl
+    attributes:
+        label: "kubectl (if using Kubernetes)"
+        placeholder: "`kubectl version` and `kubectl get nodes`"
+        render: shell
+  - type: input
+    id: gitDescribe
+    attributes:
+        label: "repo state (if built from source)"
+        placeholder: "`git describe`"
+  - type: textarea
+    id: runscLogs
+    attributes:
+        label: "runsc debug logs (if available)"
+        description: >
+          See the [debug guide](https://gvisor.dev/docs/user_guide/debugging/)
+          to learn about logging.
+        render: shell

@@ -16,20 +16,23 @@ package tcp
 
 import (
 	"encoding/binary"
+	"fmt"
 	"math"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/rand"
-	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/hash/jenkins"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
+
+// InitialRTO is the initial retransmission timeout.
+// https://github.com/torvalds/linux/blob/7c636d4d20f/include/net/tcp.h#L142
+const InitialRTO = time.Second
 
 // maxSegmentsPerWake is the maximum number of segments to process in the main
 // protocol goroutine per wake-up. Yielding [after this number of segments are
@@ -48,13 +51,6 @@ const (
 	handshakeCompleted
 )
 
-// The following are used to set up sleepers.
-const (
-	wakerForNotification = iota
-	wakerForNewSegment
-	wakerForResend
-)
-
 const (
 	// Maximum space available for options.
 	maxOptionSize = 40
@@ -64,6 +60,8 @@ const (
 //
 // NOTE: handshake.ep.mu is held during handshake processing. It is released if
 // we are going to block and reacquired when we start processing an event.
+//
+// +stateify savable
 type handshake struct {
 	ep       *endpoint
 	listenEP *endpoint
@@ -92,7 +90,7 @@ type handshake struct {
 	rcvWndScale int
 
 	// startTime is the time at which the first SYN/SYN-ACK was sent.
-	startTime time.Time
+	startTime tcpip.MonotonicTime
 
 	// deferAccept if non-zero will drop the final ACK for a passive
 	// handshake till an ACK segment with data is received or the timeout is
@@ -106,23 +104,104 @@ type handshake struct {
 
 	// sendSYNOpts is the cached values for the SYN options to be sent.
 	sendSYNOpts header.TCPSynOptions
+
+	// sampleRTTWithTSOnly is true when the segment was retransmitted or we can't
+	// tell; then RTT can only be sampled when the incoming segment has timestamp
+	// options enabled.
+	sampleRTTWithTSOnly bool
+
+	// retransmitTimer is used to retransmit SYN/SYN-ACK with exponential backoff
+	// till handshake is either completed or timesout.
+	retransmitTimer *backoffTimer `state:"nosave"`
 }
 
-func (e *endpoint) newHandshake() *handshake {
-	h := &handshake{
+// maybeFailTimerHandler takes a handler function for a timer that may fail and
+// returns a function that will invoke the provided handler with the endpoint
+// mutex held. In addition the returned function will perform any cleanup that
+// maybe required if the timer handler returns an error and in case of no errors
+// will notify the processor if there are pending segments that need to be
+// processed.
+
+// NOTE: e.mu is held for the duration of the call to f().
+func maybeFailTimerHandler(e *endpoint, f func() tcpip.Error) func() {
+	return func() {
+		e.mu.Lock()
+		if err := f(); err != nil {
+			e.lastErrorMu.Lock()
+			// If the handler timed out and we have a lastError recorded (maybe due
+			// to an ICMP message received), promote it to be the hard error.
+			if _, isTimeout := err.(*tcpip.ErrTimeout); e.lastError != nil && isTimeout {
+				e.hardError = e.lastError
+			} else {
+				e.hardError = err
+			}
+			e.lastError = err
+			e.lastErrorMu.Unlock()
+			e.cleanupLocked()
+			e.setEndpointState(StateError)
+			e.mu.Unlock()
+			e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.ReadableEvents | waiter.WritableEvents)
+			return
+		}
+		processor := e.protocol.dispatcher.selectProcessor(e.ID)
+		e.mu.Unlock()
+
+		// notify processor if there are pending segments to be
+		// processed.
+		if !e.segmentQueue.empty() {
+			processor.queueEndpoint(e)
+		}
+	}
+}
+
+// timerHandler takes a handler function for a timer that never results in a
+// connection being aborted and returns a function that will invoke the provided
+// handler with the endpoint mutex held. In addition the returned function will
+// notify the processor if there are pending segments that need to be processed
+// once the handler function completes.
+//
+// NOTE: e.mu is held for the duration of the call to f()
+func timerHandler(e *endpoint, f func()) func() {
+	return func() {
+		e.mu.Lock()
+		f()
+		processor := e.protocol.dispatcher.selectProcessor(e.ID)
+		e.mu.Unlock()
+		// notify processor if there are pending segments to be
+		// processed.
+		if !e.segmentQueue.empty() {
+			processor.queueEndpoint(e)
+		}
+	}
+}
+
+// +checklocks:e.mu
+// +checklocksacquire:h.ep.mu
+func (e *endpoint) newHandshake() (h *handshake) {
+	h = &handshake{
 		ep:          e,
 		active:      true,
 		rcvWnd:      seqnum.Size(e.initialReceiveWindow()),
 		rcvWndScale: e.rcvWndScaleForHandshake(),
 	}
+	h.ep.AssertLockHeld(e)
 	h.resetState()
 	// Store reference to handshake state in endpoint.
 	e.h = h
+	// By the time handshake is created, e.ID is already initialized.
+	e.TSOffset = e.protocol.tsOffset(e.ID.LocalAddress, e.ID.RemoteAddress)
+	timer, err := newBackoffTimer(h.ep.stack.Clock(), InitialRTO, MaxRTO, maybeFailTimerHandler(e, h.retransmitHandlerLocked))
+	if err != nil {
+		panic(fmt.Sprintf("newBackOffTimer(_, %s, %s, _) failed: %s", InitialRTO, MaxRTO, err))
+	}
+	h.retransmitTimer = timer
 	return h
 }
 
-func (e *endpoint) newPassiveHandshake(isn, irs seqnum.Value, opts *header.TCPSynOptions, deferAccept time.Duration) *handshake {
-	h := e.newHandshake()
+// +checklocks:e.mu
+// +checklocksacquire:h.ep.mu
+func (e *endpoint) newPassiveHandshake(isn, irs seqnum.Value, opts header.TCPSynOptions, deferAccept time.Duration) (h *handshake) {
+	h = e.newHandshake()
 	h.resetToSynRcvd(isn, irs, opts, deferAccept)
 	return h
 }
@@ -147,29 +226,27 @@ func FindWndScale(wnd seqnum.Size) int {
 // resetState resets the state of the handshake object such that it becomes
 // ready for a new 3-way handshake.
 func (h *handshake) resetState() {
-	b := make([]byte, 4)
-	if _, err := rand.Read(b); err != nil {
-		panic(err)
-	}
-
 	h.state = handshakeSynSent
 	h.flags = header.TCPFlagSyn
 	h.ackNum = 0
 	h.mss = 0
-	h.iss = generateSecureISN(h.ep.ID, h.ep.stack.Seed())
+	h.iss = generateSecureISN(h.ep.TransportEndpointInfo.ID, h.ep.stack.Clock(), h.ep.protocol.seqnumSecret)
 }
 
 // generateSecureISN generates a secure Initial Sequence number based on the
 // recommendation here https://tools.ietf.org/html/rfc6528#page-3.
-func generateSecureISN(id stack.TransportEndpointID, seed uint32) seqnum.Value {
+func generateSecureISN(id stack.TransportEndpointID, clock tcpip.Clock, seed uint32) seqnum.Value {
 	isnHasher := jenkins.Sum32(seed)
-	isnHasher.Write([]byte(id.LocalAddress))
-	isnHasher.Write([]byte(id.RemoteAddress))
+	// Per hash.Hash.Writer:
+	//
+	// It never returns an error.
+	_, _ = isnHasher.Write([]byte(id.LocalAddress))
+	_, _ = isnHasher.Write([]byte(id.RemoteAddress))
 	portBuf := make([]byte, 2)
 	binary.LittleEndian.PutUint16(portBuf, id.LocalPort)
-	isnHasher.Write(portBuf)
+	_, _ = isnHasher.Write(portBuf)
 	binary.LittleEndian.PutUint16(portBuf, id.RemotePort)
-	isnHasher.Write(portBuf)
+	_, _ = isnHasher.Write(portBuf)
 	// The time period here is 64ns. This is similar to what linux uses
 	// generate a sequence number that overlaps less than one
 	// time per MSL (2 minutes).
@@ -180,7 +257,7 @@ func generateSecureISN(id stack.TransportEndpointID, seed uint32) seqnum.Value {
 	//
 	// Which sort of guarantees that we won't reuse the ISN for a new
 	// connection for the same tuple for at least 274s.
-	isn := isnHasher.Sum32() + uint32(time.Now().UnixNano()>>6)
+	isn := isnHasher.Sum32() + uint32(clock.NowMonotonic().Sub(tcpip.MonotonicTime{}).Nanoseconds()>>6)
 	return seqnum.Value(isn)
 }
 
@@ -196,7 +273,8 @@ func (h *handshake) effectiveRcvWndScale() uint8 {
 
 // resetToSynRcvd resets the state of the handshake object to the SYN-RCVD
 // state.
-func (h *handshake) resetToSynRcvd(iss seqnum.Value, irs seqnum.Value, opts *header.TCPSynOptions, deferAccept time.Duration) {
+// +checklocks:h.ep.mu
+func (h *handshake) resetToSynRcvd(iss seqnum.Value, irs seqnum.Value, opts header.TCPSynOptions, deferAccept time.Duration) {
 	h.active = false
 	h.state = handshakeSynRcvd
 	h.flags = header.TCPFlagSyn | header.TCPFlagAck
@@ -212,13 +290,12 @@ func (h *handshake) resetToSynRcvd(iss seqnum.Value, irs seqnum.Value, opts *hea
 // a TCP 3-way handshake is valid. If it's not, a RST segment is sent back in
 // response.
 func (h *handshake) checkAck(s *segment) bool {
-	if s.flagIsSet(header.TCPFlagAck) && s.ackNumber != h.iss+1 {
-		// RFC 793, page 36, states that a reset must be generated when
-		// the connection is in any non-synchronized state and an
-		// incoming segment acknowledges something not yet sent. The
-		// connection remains in the same state.
-		ack := s.sequenceNumber.Add(s.logicalLen())
-		h.ep.sendRaw(buffer.VectorisedView{}, header.TCPFlagRst|header.TCPFlagAck, s.ackNumber, ack, 0)
+	if s.flags.Contains(header.TCPFlagAck) && s.ackNumber != h.iss+1 {
+		// RFC 793, page 72 (https://datatracker.ietf.org/doc/html/rfc793#page-72):
+		//   If the segment acknowledgment is not acceptable, form a reset segment,
+		//        <SEQ=SEG.ACK><CTL=RST>
+		//   and send it.
+		h.ep.sendEmptyRaw(header.TCPFlagRst, s.ackNumber, 0, 0)
 		return false
 	}
 
@@ -227,15 +304,15 @@ func (h *handshake) checkAck(s *segment) bool {
 
 // synSentState handles a segment received when the TCP 3-way handshake is in
 // the SYN-SENT state.
+// +checklocks:h.ep.mu
 func (h *handshake) synSentState(s *segment) tcpip.Error {
 	// RFC 793, page 37, states that in the SYN-SENT state, a reset is
 	// acceptable if the ack field acknowledges the SYN.
-	if s.flagIsSet(header.TCPFlagRst) {
-		if s.flagIsSet(header.TCPFlagAck) && s.ackNumber == h.iss+1 {
+	if s.flags.Contains(header.TCPFlagRst) {
+		if s.flags.Contains(header.TCPFlagAck) && s.ackNumber == h.iss+1 {
 			// RFC 793, page 67, states that "If the RST bit is set [and] If the ACK
 			// was acceptable then signal the user "error: connection reset", drop
 			// the segment, enter CLOSED state, delete TCB, and return."
-			h.ep.workerCleanup = true
 			// Although the RFC above calls out ECONNRESET, Linux actually returns
 			// ECONNREFUSED here so we do as well.
 			return &tcpip.ErrConnectionRefused{}
@@ -249,7 +326,7 @@ func (h *handshake) synSentState(s *segment) tcpip.Error {
 
 	// We are in the SYN-SENT state. We only care about segments that have
 	// the SYN flag.
-	if !s.flagIsSet(header.TCPFlagSyn) {
+	if !s.flags.Contains(header.TCPFlagSyn) {
 		return nil
 	}
 
@@ -257,10 +334,10 @@ func (h *handshake) synSentState(s *segment) tcpip.Error {
 	rcvSynOpts := parseSynSegmentOptions(s)
 
 	// Remember if the Timestamp option was negotiated.
-	h.ep.maybeEnableTimestamp(&rcvSynOpts)
+	h.ep.maybeEnableTimestamp(rcvSynOpts)
 
 	// Remember if the SACKPermitted option was negotiated.
-	h.ep.maybeEnableSACKPermitted(&rcvSynOpts)
+	h.ep.maybeEnableSACKPermitted(rcvSynOpts)
 
 	// Remember the sequence we'll ack from now on.
 	h.ackNum = s.sequenceNumber + 1
@@ -270,12 +347,11 @@ func (h *handshake) synSentState(s *segment) tcpip.Error {
 
 	// If this is a SYN ACK response, we only need to acknowledge the SYN
 	// and the handshake is completed.
-	if s.flagIsSet(header.TCPFlagAck) {
+	if s.flags.Contains(header.TCPFlagAck) {
 		h.state = handshakeCompleted
+		h.transitionToStateEstablishedLocked(s)
 
-		h.ep.transitionToStateEstablishedLocked(h)
-
-		h.ep.sendRaw(buffer.VectorisedView{}, header.TCPFlagAck, h.iss+1, h.ackNum, h.rcvWnd>>h.effectiveRcvWndScale())
+		h.ep.sendEmptyRaw(header.TCPFlagAck, h.iss+1, h.ackNum, h.rcvWnd>>h.effectiveRcvWndScale())
 		return nil
 	}
 
@@ -283,13 +359,13 @@ func (h *handshake) synSentState(s *segment) tcpip.Error {
 	// but resend our own SYN and wait for it to be acknowledged in the
 	// SYN-RCVD state.
 	h.state = handshakeSynRcvd
-	ttl := h.ep.ttl
+	ttl := calculateTTL(h.ep.route, h.ep.ipv4TTL, h.ep.ipv6HopLimit)
 	amss := h.ep.amss
 	h.ep.setEndpointState(StateSynRecv)
 	synOpts := header.TCPSynOptions{
 		WS:    int(h.effectiveRcvWndScale()),
 		TS:    rcvSynOpts.TS,
-		TSVal: h.ep.timestamp(),
+		TSVal: h.ep.tsValNow(),
 		TSEcr: h.ep.recentTimestamp(),
 
 		// We only send SACKPermitted if the other side indicated it
@@ -302,7 +378,7 @@ func (h *handshake) synSentState(s *segment) tcpip.Error {
 		ttl = h.ep.route.DefaultTTL()
 	}
 	h.ep.sendSynTCP(h.ep.route, tcpFields{
-		id:     h.ep.ID,
+		id:     h.ep.TransportEndpointInfo.ID,
 		ttl:    ttl,
 		tos:    h.ep.sendTOS,
 		flags:  h.flags,
@@ -315,8 +391,9 @@ func (h *handshake) synSentState(s *segment) tcpip.Error {
 
 // synRcvdState handles a segment received when the TCP 3-way handshake is in
 // the SYN-RCVD state.
+// +checklocks:h.ep.mu
 func (h *handshake) synRcvdState(s *segment) tcpip.Error {
-	if s.flagIsSet(header.TCPFlagRst) {
+	if s.flags.Contains(header.TCPFlagRst) {
 		// RFC 793, page 37, states that in the SYN-RCVD state, a reset
 		// is acceptable if the sequence number is in the window.
 		if s.sequenceNumber.InWindow(h.ackNum, h.rcvWnd) {
@@ -335,21 +412,21 @@ func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 	// segment and return."
 	if !s.sequenceNumber.InWindow(h.ackNum, h.rcvWnd) {
 		if h.ep.allowOutOfWindowAck() {
-			h.ep.sendRaw(buffer.VectorisedView{}, header.TCPFlagAck, h.iss+1, h.ackNum, h.rcvWnd)
+			h.ep.sendEmptyRaw(header.TCPFlagAck, h.iss+1, h.ackNum, h.rcvWnd)
 		}
 		return nil
 	}
 
-	if s.flagIsSet(header.TCPFlagSyn) && s.sequenceNumber != h.ackNum-1 {
+	if s.flags.Contains(header.TCPFlagSyn) && s.sequenceNumber != h.ackNum-1 {
 		// We received two SYN segments with different sequence
 		// numbers, so we reset this and restart the whole
 		// process, except that we don't reset the timer.
 		ack := s.sequenceNumber.Add(s.logicalLen())
 		seq := seqnum.Value(0)
-		if s.flagIsSet(header.TCPFlagAck) {
+		if s.flags.Contains(header.TCPFlagAck) {
 			seq = s.ackNumber
 		}
-		h.ep.sendRaw(buffer.VectorisedView{}, header.TCPFlagRst|header.TCPFlagAck, seq, ack, 0)
+		h.ep.sendEmptyRaw(header.TCPFlagRst|header.TCPFlagAck, seq, ack, 0)
 
 		if !h.active {
 			return &tcpip.ErrInvalidEndpointState{}
@@ -358,15 +435,15 @@ func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 		h.resetState()
 		synOpts := header.TCPSynOptions{
 			WS:            h.rcvWndScale,
-			TS:            h.ep.sendTSOk,
-			TSVal:         h.ep.timestamp(),
+			TS:            h.ep.SendTSOk,
+			TSVal:         h.ep.tsValNow(),
 			TSEcr:         h.ep.recentTimestamp(),
-			SACKPermitted: h.ep.sackPermitted,
+			SACKPermitted: h.ep.SACKPermitted,
 			MSS:           h.ep.amss,
 		}
 		h.ep.sendSynTCP(h.ep.route, tcpFields{
-			id:     h.ep.ID,
-			ttl:    h.ep.ttl,
+			id:     h.ep.TransportEndpointInfo.ID,
+			ttl:    calculateTTL(h.ep.route, h.ep.ipv4TTL, h.ep.ipv6HopLimit),
 			tos:    h.ep.sendTOS,
 			flags:  h.flags,
 			seq:    h.iss,
@@ -378,10 +455,10 @@ func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 
 	// We have previously received (and acknowledged) the peer's SYN. If the
 	// peer acknowledges our SYN, the handshake is completed.
-	if s.flagIsSet(header.TCPFlagAck) {
+	if s.flags.Contains(header.TCPFlagAck) {
 		// If deferAccept is not zero and this is a bare ACK and the
 		// timeout is not hit then drop the ACK.
-		if h.deferAccept != 0 && s.data.Size() == 0 && time.Since(h.startTime) < h.deferAccept {
+		if h.deferAccept != 0 && s.payloadSize() == 0 && h.ep.stack.Clock().NowMonotonic().Sub(h.startTime) < h.deferAccept {
 			h.acked = true
 			h.ep.stack.Stats().DroppedPackets.Increment()
 			return nil
@@ -390,7 +467,7 @@ func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 		// If the timestamp option is negotiated and the segment does
 		// not carry a timestamp option then the segment must be dropped
 		// as per https://tools.ietf.org/html/rfc7323#section-3.2.
-		if h.ep.sendTSOk && !s.parsedOptions.TS {
+		if h.ep.SendTSOk && !s.parsedOptions.TS {
 			h.ep.stack.Stats().DroppedPackets.Increment()
 			return nil
 		}
@@ -405,18 +482,18 @@ func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 		}
 
 		// Update timestamp if required. See RFC7323, section-4.3.
-		if h.ep.sendTSOk && s.parsedOptions.TS {
+		if h.ep.SendTSOk && s.parsedOptions.TS {
 			h.ep.updateRecentTimestamp(s.parsedOptions.TSVal, h.ackNum, s.sequenceNumber)
 		}
+
 		h.state = handshakeCompleted
+		h.transitionToStateEstablishedLocked(s)
 
-		h.ep.transitionToStateEstablishedLocked(h)
+		// Requeue the segment if the ACK completing the handshake has more info
+		// to be processed by the newly established endpoint.
+		if (s.flags.Contains(header.TCPFlagFin) || s.payloadSize() > 0) && h.ep.enqueueSegment(s) {
+			h.ep.protocol.dispatcher.selectProcessor(h.ep.ID).queueEndpoint(h.ep)
 
-		// If the segment has data then requeue it for the receiver
-		// to process it again once main loop is started.
-		if s.data.Size() > 0 {
-			s.incRef()
-			h.ep.enqueueSegment(s)
 		}
 		return nil
 	}
@@ -424,9 +501,10 @@ func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 	return nil
 }
 
+// +checklocks:h.ep.mu
 func (h *handshake) handleSegment(s *segment) tcpip.Error {
 	h.sndWnd = s.window
-	if !s.flagIsSet(header.TCPFlagSyn) && h.sndWndScale > 0 {
+	if !s.flags.Contains(header.TCPFlagSyn) && h.sndWndScale > 0 {
 		h.sndWnd <<= uint8(h.sndWndScale)
 	}
 
@@ -441,6 +519,7 @@ func (h *handshake) handleSegment(s *segment) tcpip.Error {
 
 // processSegments goes through the segment queue and processes up to
 // maxSegmentsPerWake (if they're available).
+// +checklocks:h.ep.mu
 func (h *handshake) processSegments() tcpip.Error {
 	for i := 0; i < maxSegmentsPerWake; i++ {
 		s := h.ep.segmentQueue.dequeue()
@@ -449,7 +528,7 @@ func (h *handshake) processSegments() tcpip.Error {
 		}
 
 		err := h.handleSegment(s)
-		s.decRef()
+		s.DecRef()
 		if err != nil {
 			return err
 		}
@@ -462,19 +541,13 @@ func (h *handshake) processSegments() tcpip.Error {
 		}
 	}
 
-	// If the queue is not empty, make sure we'll wake up in the next
-	// iteration.
-	if !h.ep.segmentQueue.empty() {
-		h.ep.newSegmentWaker.Assert()
-	}
-
 	return nil
 }
 
 // start sends the first SYN/SYN-ACK. It does not block, even if link address
 // resolution is required.
 func (h *handshake) start() {
-	h.startTime = time.Now()
+	h.startTime = h.ep.stack.Clock().NowMonotonic()
 	h.ep.amss = calculateAdvertisedMSS(h.ep.userMSS, h.ep.route)
 	var sackEnabled tcpip.TCPSACKEnabled
 	if err := h.ep.stack.TransportProtocolOption(ProtocolNumber, &sackEnabled); err != nil {
@@ -486,7 +559,7 @@ func (h *handshake) start() {
 	synOpts := header.TCPSynOptions{
 		WS:            h.rcvWndScale,
 		TS:            true,
-		TSVal:         h.ep.timestamp(),
+		TSVal:         h.ep.tsValNow(),
 		TSEcr:         h.ep.recentTimestamp(),
 		SACKPermitted: bool(sackEnabled),
 		MSS:           h.ep.amss,
@@ -495,8 +568,8 @@ func (h *handshake) start() {
 	// start() is also called in a listen context so we want to make sure we only
 	// send the TS/SACK option when we received the TS/SACK in the initial SYN.
 	if h.state == handshakeSynRcvd {
-		synOpts.TS = h.ep.sendTSOk
-		synOpts.SACKPermitted = h.ep.sackPermitted && bool(sackEnabled)
+		synOpts.TS = h.ep.SendTSOk
+		synOpts.SACKPermitted = h.ep.SACKPermitted && bool(sackEnabled)
 		if h.sndWndScale < 0 {
 			// Disable window scaling if the peer did not send us
 			// the window scaling option.
@@ -506,8 +579,8 @@ func (h *handshake) start() {
 
 	h.sendSYNOpts = synOpts
 	h.ep.sendSynTCP(h.ep.route, tcpFields{
-		id:     h.ep.ID,
-		ttl:    h.ep.ttl,
+		id:     h.ep.TransportEndpointInfo.ID,
+		ttl:    calculateTTL(h.ep.route, h.ep.ipv4TTL, h.ep.ipv6HopLimit),
 		tos:    h.ep.sendTOS,
 		flags:  h.flags,
 		seq:    h.iss,
@@ -516,101 +589,108 @@ func (h *handshake) start() {
 	}, synOpts)
 }
 
-// complete completes the TCP 3-way handshake initiated by h.start().
-func (h *handshake) complete() tcpip.Error {
-	// Set up the wakers.
-	var s sleep.Sleeper
-	resendWaker := sleep.Waker{}
-	s.AddWaker(&resendWaker, wakerForResend)
-	s.AddWaker(&h.ep.notificationWaker, wakerForNotification)
-	s.AddWaker(&h.ep.newSegmentWaker, wakerForNewSegment)
-	defer s.Done()
+// retransmitHandler handles retransmissions of un-acked SYNs.
+// +checklocks:h.ep.mu
+func (h *handshake) retransmitHandlerLocked() tcpip.Error {
+	e := h.ep
+	// If the endpoint has already transition out of a connecting state due
+	// to say an error (e.g) peer send RST or an ICMP error. Then just
+	// return. Any required cleanup should have been done when the RST/error
+	// was handled.
+	if !e.EndpointState().connecting() {
+		return nil
+	}
 
-	// Initialize the resend timer.
-	timer, err := newBackoffTimer(time.Second, MaxRTO, resendWaker.Assert)
-	if err != nil {
+	if err := h.retransmitTimer.reset(); err != nil {
 		return err
 	}
-	defer timer.stop()
-	for h.state != handshakeCompleted {
-		// Unlock before blocking, and reacquire again afterwards (h.ep.mu is held
-		// throughout handshake processing).
-		h.ep.mu.Unlock()
-		index, _ := s.Fetch(true /* block */)
-		h.ep.mu.Lock()
-		switch index {
 
-		case wakerForResend:
-			if err := timer.reset(); err != nil {
-				return err
-			}
-			// Resend the SYN/SYN-ACK only if the following conditions hold.
-			//  - It's an active handshake (deferAccept does not apply)
-			//  - It's a passive handshake and we have not yet got the final-ACK.
-			//  - It's a passive handshake and we got an ACK but deferAccept is
-			//    enabled and we are now past the deferAccept duration.
-			// The last is required to provide a way for the peer to complete
-			// the connection with another ACK or data (as ACKs are never
-			// retransmitted on their own).
-			if h.active || !h.acked || h.deferAccept != 0 && time.Since(h.startTime) > h.deferAccept {
-				h.ep.sendSynTCP(h.ep.route, tcpFields{
-					id:     h.ep.ID,
-					ttl:    h.ep.ttl,
-					tos:    h.ep.sendTOS,
-					flags:  h.flags,
-					seq:    h.iss,
-					ack:    h.ackNum,
-					rcvWnd: h.rcvWnd,
-				}, h.sendSYNOpts)
-			}
+	// Resend the SYN/SYN-ACK only if the following conditions hold.
+	//  - It's an active handshake (deferAccept does not apply)
+	//  - It's a passive handshake and we have not yet got the final-ACK.
+	//  - It's a passive handshake and we got an ACK but deferAccept is
+	//    enabled and we are now past the deferAccept duration.
+	// The last is required to provide a way for the peer to complete
+	// the connection with another ACK or data (as ACKs are never
+	// retransmitted on their own).
+	if h.active || !h.acked || h.deferAccept != 0 && e.stack.Clock().NowMonotonic().Sub(h.startTime) > h.deferAccept {
+		e.sendSynTCP(e.route, tcpFields{
+			id:     e.TransportEndpointInfo.ID,
+			ttl:    calculateTTL(e.route, e.ipv4TTL, e.ipv6HopLimit),
+			tos:    e.sendTOS,
+			flags:  h.flags,
+			seq:    h.iss,
+			ack:    h.ackNum,
+			rcvWnd: h.rcvWnd,
+		}, h.sendSYNOpts)
+		// If we have ever retransmitted the SYN-ACK or
+		// SYN segment, we should only measure RTT if
+		// TS option is present.
+		h.sampleRTTWithTSOnly = true
+	}
+	return nil
+}
 
-		case wakerForNotification:
-			n := h.ep.fetchNotifications()
-			if (n&notifyClose)|(n&notifyAbort) != 0 {
-				return &tcpip.ErrAborted{}
-			}
-			if n&notifyDrain != 0 {
-				for !h.ep.segmentQueue.empty() {
-					s := h.ep.segmentQueue.dequeue()
-					err := h.handleSegment(s)
-					s.decRef()
-					if err != nil {
-						return err
-					}
-					if h.state == handshakeCompleted {
-						return nil
-					}
-				}
-				close(h.ep.drainDone)
-				h.ep.mu.Unlock()
-				<-h.ep.undrain
-				h.ep.mu.Lock()
-			}
-			if n&notifyError != 0 {
-				return h.ep.lastErrorLocked()
-			}
-		case wakerForNewSegment:
-			if err := h.processSegments(); err != nil {
-				return err
-			}
-		}
+// transitionToStateEstablisedLocked transitions the endpoint of the handshake
+// to an established state given the last segment received from peer. It also
+// initializes sender/receiver.
+// +checklocks:h.ep.mu
+func (h *handshake) transitionToStateEstablishedLocked(s *segment) {
+	// Stop the SYN retransmissions now that handshake is complete.
+	if h.retransmitTimer != nil {
+		h.retransmitTimer.stop()
 	}
 
-	return nil
+	// Transfer handshake state to TCP connection. We disable
+	// receive window scaling if the peer doesn't support it
+	// (indicated by a negative send window scale).
+	h.ep.snd = newSender(h.ep, h.iss, h.ackNum-1, h.sndWnd, h.mss, h.sndWndScale)
+
+	now := h.ep.stack.Clock().NowMonotonic()
+
+	var rtt time.Duration
+	if h.ep.SendTSOk && s.parsedOptions.TSEcr != 0 {
+		rtt = h.ep.elapsed(now, s.parsedOptions.TSEcr)
+	}
+	if !h.sampleRTTWithTSOnly && rtt == 0 {
+		rtt = now.Sub(h.startTime)
+	}
+
+	if rtt > 0 {
+		h.ep.snd.updateRTO(rtt)
+	}
+
+	h.ep.rcvQueueMu.Lock()
+	h.ep.rcv = newReceiver(h.ep, h.ackNum-1, h.rcvWnd, h.effectiveRcvWndScale())
+	// Bootstrap the auto tuning algorithm. Starting at zero will
+	// result in a really large receive window after the first auto
+	// tuning adjustment.
+	h.ep.RcvAutoParams.PrevCopiedBytes = int(h.rcvWnd)
+	h.ep.rcvQueueMu.Unlock()
+
+	h.ep.setEndpointState(StateEstablished)
+
+	// Completing the 3-way handshake is an indication that the route is valid
+	// and the remote is reachable as the only way we can complete a handshake
+	// is if our SYN reached the remote and their ACK reached us.
+	h.ep.route.ConfirmReachable()
+
+	// Tell waiters that the endpoint is connected and writable.
+	h.ep.waiterQueue.Notify(waiter.WritableEvents)
 }
 
 type backoffTimer struct {
 	timeout    time.Duration
 	maxTimeout time.Duration
-	t          *time.Timer
+	t          tcpip.Timer
 }
 
-func newBackoffTimer(timeout, maxTimeout time.Duration, f func()) (*backoffTimer, tcpip.Error) {
+func newBackoffTimer(clock tcpip.Clock, timeout, maxTimeout time.Duration, f func()) (*backoffTimer, tcpip.Error) {
 	if timeout > maxTimeout {
 		return nil, &tcpip.ErrTimeout{}
 	}
 	bt := &backoffTimer{timeout: timeout, maxTimeout: maxTimeout}
-	bt.t = time.AfterFunc(timeout, f)
+	bt.t = clock.AfterFunc(timeout, f)
 	return bt, nil
 }
 
@@ -628,7 +708,7 @@ func (bt *backoffTimer) stop() {
 }
 
 func parseSynSegmentOptions(s *segment) header.TCPSynOptions {
-	synOpts := header.ParseSynOptions(s.options, s.flagIsSet(header.TCPFlagAck))
+	synOpts := header.ParseSynOptions(s.options, s.flags.Contains(header.TCPFlagAck))
 	if synOpts.TS {
 		s.parsedOptions.TSVal = synOpts.TSVal
 		s.parsedOptions.TSEcr = synOpts.TSEcr
@@ -637,7 +717,7 @@ func parseSynSegmentOptions(s *segment) header.TCPSynOptions {
 }
 
 var optionPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return &[maxOptionSize]byte{}
 	},
 }
@@ -721,16 +801,19 @@ type tcpFields struct {
 func (e *endpoint) sendSynTCP(r *stack.Route, tf tcpFields, opts header.TCPSynOptions) tcpip.Error {
 	tf.opts = makeSynOptions(opts)
 	// We ignore SYN send errors and let the callers re-attempt send.
-	if err := e.sendTCP(r, tf, buffer.VectorisedView{}, nil); err != nil {
+	p := stack.NewPacketBuffer(stack.PacketBufferOptions{ReserveHeaderBytes: header.TCPMinimumSize + int(r.MaxHeaderLength()) + len(tf.opts)})
+	defer p.DecRef()
+	if err := e.sendTCP(r, tf, p, stack.GSO{}); err != nil {
 		e.stats.SendErrors.SynSendToNetworkFailed.Increment()
 	}
 	putOptions(tf.opts)
 	return nil
 }
 
-func (e *endpoint) sendTCP(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso *stack.GSO) tcpip.Error {
+// This method takes ownership of pkt.
+func (e *endpoint) sendTCP(r *stack.Route, tf tcpFields, pkt stack.PacketBufferPtr, gso stack.GSO) tcpip.Error {
 	tf.txHash = e.txHash
-	if err := sendTCP(r, tf, data, gso, e.owner); err != nil {
+	if err := sendTCP(r, tf, pkt, gso, e.owner); err != nil {
 		e.stats.SendErrors.SegmentSendToNetworkFailed.Increment()
 		return err
 	}
@@ -738,7 +821,7 @@ func (e *endpoint) sendTCP(r *stack.Route, tf tcpFields, data buffer.VectorisedV
 	return nil
 }
 
-func buildTCPHdr(r *stack.Route, tf tcpFields, pkt *stack.PacketBuffer, gso *stack.GSO) {
+func buildTCPHdr(r *stack.Route, tf tcpFields, pkt stack.PacketBufferPtr, gso stack.GSO) {
 	optLen := len(tf.opts)
 	tcp := header.TCP(pkt.TransportHeader().Push(header.TCPMinimumSize + optLen))
 	pkt.TransportProtocolNumber = header.TCPProtocolNumber
@@ -755,88 +838,84 @@ func buildTCPHdr(r *stack.Route, tf tcpFields, pkt *stack.PacketBuffer, gso *sta
 
 	xsum := r.PseudoHeaderChecksum(ProtocolNumber, uint16(pkt.Size()))
 	// Only calculate the checksum if offloading isn't supported.
-	if gso != nil && gso.NeedsCsum {
+	if gso.Type != stack.GSONone && gso.NeedsCsum {
 		// This is called CHECKSUM_PARTIAL in the Linux kernel. We
 		// calculate a checksum of the pseudo-header and save it in the
 		// TCP header, then the kernel calculate a checksum of the
 		// header and data and get the right sum of the TCP packet.
 		tcp.SetChecksum(xsum)
 	} else if r.RequiresTXTransportChecksum() {
-		xsum = header.ChecksumCombine(xsum, pkt.Data().AsRange().Checksum())
+		xsum = checksum.Combine(xsum, pkt.Data().Checksum())
 		tcp.SetChecksum(^tcp.CalculateChecksum(xsum))
 	}
 }
 
-func sendTCPBatch(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso *stack.GSO, owner tcpip.PacketOwner) tcpip.Error {
-	// We need to shallow clone the VectorisedView here as ReadToView will
-	// split the VectorisedView and Trim underlying views as it splits. Not
-	// doing the clone here will cause the underlying views of data itself
-	// to be altered.
-	data = data.Clone(nil)
-
+func sendTCPBatch(r *stack.Route, tf tcpFields, pkt stack.PacketBufferPtr, gso stack.GSO, owner tcpip.PacketOwner) tcpip.Error {
 	optLen := len(tf.opts)
 	if tf.rcvWnd > math.MaxUint16 {
 		tf.rcvWnd = math.MaxUint16
 	}
 
 	mss := int(gso.MSS)
-	n := (data.Size() + mss - 1) / mss
+	n := (pkt.Data().Size() + mss - 1) / mss
 
-	size := data.Size()
+	size := pkt.Data().Size()
 	hdrSize := header.TCPMinimumSize + int(r.MaxHeaderLength()) + optLen
-	var pkts stack.PacketBufferList
 	for i := 0; i < n; i++ {
 		packetSize := mss
 		if packetSize > size {
 			packetSize = size
 		}
 		size -= packetSize
-		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-			ReserveHeaderBytes: hdrSize,
-		})
+
+		pkt := pkt
+		// No need to split the packet in the final iteration. The original
+		// packet already has the truncated data.
+		shouldSplitPacket := i != n-1
+		if shouldSplitPacket {
+			splitPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{ReserveHeaderBytes: hdrSize})
+			splitPkt.Data().ReadFromPacketData(pkt.Data(), packetSize)
+			pkt = splitPkt
+		}
 		pkt.Hash = tf.txHash
 		pkt.Owner = owner
-		pkt.Data().ReadFromVV(&data, packetSize)
+
 		buildTCPHdr(r, tf, pkt, gso)
 		tf.seq = tf.seq.Add(seqnum.Size(packetSize))
-		pkts.PushBack(pkt)
+		pkt.GSOOptions = gso
+		if err := r.WritePacket(stack.NetworkHeaderParams{Protocol: ProtocolNumber, TTL: tf.ttl, TOS: tf.tos}, pkt); err != nil {
+			r.Stats().TCP.SegmentSendErrors.Increment()
+			if shouldSplitPacket {
+				pkt.DecRef()
+			}
+			return err
+		}
+		r.Stats().TCP.SegmentsSent.Increment()
+		if shouldSplitPacket {
+			pkt.DecRef()
+		}
 	}
-
-	if tf.ttl == 0 {
-		tf.ttl = r.DefaultTTL()
-	}
-	sent, err := r.WritePackets(gso, pkts, stack.NetworkHeaderParams{Protocol: ProtocolNumber, TTL: tf.ttl, TOS: tf.tos})
-	if err != nil {
-		r.Stats().TCP.SegmentSendErrors.IncrementBy(uint64(n - sent))
-	}
-	r.Stats().TCP.SegmentsSent.IncrementBy(uint64(sent))
-	return err
+	return nil
 }
 
 // sendTCP sends a TCP segment with the provided options via the provided
-// network endpoint and under the provided identity.
-func sendTCP(r *stack.Route, tf tcpFields, data buffer.VectorisedView, gso *stack.GSO, owner tcpip.PacketOwner) tcpip.Error {
-	optLen := len(tf.opts)
+// network endpoint and under the provided identity. This method takes
+// ownership of pkt.
+func sendTCP(r *stack.Route, tf tcpFields, pkt stack.PacketBufferPtr, gso stack.GSO, owner tcpip.PacketOwner) tcpip.Error {
 	if tf.rcvWnd > math.MaxUint16 {
 		tf.rcvWnd = math.MaxUint16
 	}
 
-	if r.Loop()&stack.PacketLoop == 0 && gso != nil && gso.Type == stack.GSOSW && int(gso.MSS) < data.Size() {
-		return sendTCPBatch(r, tf, data, gso, owner)
+	if r.Loop()&stack.PacketLoop == 0 && gso.Type == stack.GSOGvisor && int(gso.MSS) < pkt.Data().Size() {
+		return sendTCPBatch(r, tf, pkt, gso, owner)
 	}
 
-	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		ReserveHeaderBytes: header.TCPMinimumSize + int(r.MaxHeaderLength()) + optLen,
-		Data:               data,
-	})
+	pkt.GSOOptions = gso
 	pkt.Hash = tf.txHash
 	pkt.Owner = owner
 	buildTCPHdr(r, tf, pkt, gso)
 
-	if tf.ttl == 0 {
-		tf.ttl = r.DefaultTTL()
-	}
-	if err := r.WritePacket(gso, stack.NetworkHeaderParams{Protocol: ProtocolNumber, TTL: tf.ttl, TOS: tf.tos}, pkt); err != nil {
+	if err := r.WritePacket(stack.NetworkHeaderParams{Protocol: ProtocolNumber, TTL: tf.ttl, TOS: tf.tos}, pkt); err != nil {
 		r.Stats().TCP.SegmentSendErrors.Increment()
 		return err
 	}
@@ -855,7 +934,7 @@ func (e *endpoint) makeOptions(sackBlocks []header.SACKBlock) []byte {
 	// N.B. the ordering here matches the ordering used by Linux internally
 	// and described in the raw makeOptions function. We don't include
 	// unnecessary cases here (post connection.)
-	if e.sendTSOk {
+	if e.SendTSOk {
 		// Embed the timestamp if timestamp has been enabled.
 		//
 		// We only use the lower 32 bits of the unix time in
@@ -870,9 +949,9 @@ func (e *endpoint) makeOptions(sackBlocks []header.SACKBlock) []byte {
 		// Ref: https://tools.ietf.org/html/rfc7323#section-5.4.
 		offset += header.EncodeNOP(options[offset:])
 		offset += header.EncodeNOP(options[offset:])
-		offset += header.EncodeTSOption(e.timestamp(), e.recentTimestamp(), options[offset:])
+		offset += header.EncodeTSOption(e.tsValNow(), e.recentTimestamp(), options[offset:])
 	}
-	if e.sackPermitted && len(sackBlocks) > 0 {
+	if e.SACKPermitted && len(sackBlocks) > 0 {
 		offset += header.EncodeNOP(options[offset:])
 		offset += header.EncodeNOP(options[offset:])
 		offset += header.EncodeSACKBlocks(sackBlocks, options[offset:])
@@ -886,77 +965,58 @@ func (e *endpoint) makeOptions(sackBlocks []header.SACKBlock) []byte {
 	return options[:offset]
 }
 
-// sendRaw sends a TCP segment to the endpoint's peer.
-func (e *endpoint) sendRaw(data buffer.VectorisedView, flags header.TCPFlags, seq, ack seqnum.Value, rcvWnd seqnum.Size) tcpip.Error {
+// sendEmptyRaw sends a TCP segment with no payload to the endpoint's peer.
+func (e *endpoint) sendEmptyRaw(flags header.TCPFlags, seq, ack seqnum.Value, rcvWnd seqnum.Size) tcpip.Error {
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{})
+	defer pkt.DecRef()
+	return e.sendRaw(pkt, flags, seq, ack, rcvWnd)
+}
+
+// sendRaw sends a TCP segment to the endpoint's peer. This method takes
+// ownership of pkt. pkt must not have any headers set.
+func (e *endpoint) sendRaw(pkt stack.PacketBufferPtr, flags header.TCPFlags, seq, ack seqnum.Value, rcvWnd seqnum.Size) tcpip.Error {
 	var sackBlocks []header.SACKBlock
 	if e.EndpointState() == StateEstablished && e.rcv.pendingRcvdSegments.Len() > 0 && (flags&header.TCPFlagAck != 0) {
 		sackBlocks = e.sack.Blocks[:e.sack.NumBlocks]
 	}
 	options := e.makeOptions(sackBlocks)
-	err := e.sendTCP(e.route, tcpFields{
-		id:     e.ID,
-		ttl:    e.ttl,
+	defer putOptions(options)
+	pkt.ReserveHeaderBytes(header.TCPMinimumSize + int(e.route.MaxHeaderLength()) + len(options))
+	return e.sendTCP(e.route, tcpFields{
+		id:     e.TransportEndpointInfo.ID,
+		ttl:    calculateTTL(e.route, e.ipv4TTL, e.ipv6HopLimit),
 		tos:    e.sendTOS,
 		flags:  flags,
 		seq:    seq,
 		ack:    ack,
 		rcvWnd: rcvWnd,
 		opts:   options,
-	}, data, e.gso)
-	putOptions(options)
-	return err
+	}, pkt, e.gso)
 }
 
-func (e *endpoint) handleWrite() {
-	e.sndBufMu.Lock()
-	next := e.drainSendQueueLocked()
-	e.sndBufMu.Unlock()
-
-	e.sendData(next)
-}
-
-// Move packets from send queue to send list.
-//
-// Precondition: e.sndBufMu must be locked.
-func (e *endpoint) drainSendQueueLocked() *segment {
-	first := e.sndQueue.Front()
-	if first != nil {
-		e.snd.writeList.PushBackList(&e.sndQueue)
-		e.sndBufInQueue = 0
-	}
-	return first
-}
-
-// Precondition: e.mu must be locked.
+// +checklocks:e.mu
+// +checklocksalias:e.snd.ep.mu=e.mu
 func (e *endpoint) sendData(next *segment) {
 	// Initialize the next segment to write if it's currently nil.
 	if e.snd.writeNext == nil {
-		e.snd.writeNext = next
+		if next == nil {
+			return
+		}
+		e.snd.updateWriteNext(next)
 	}
 
 	// Push out any new packets.
 	e.snd.sendData()
 }
 
-func (e *endpoint) handleClose() {
-	if !e.EndpointState().connected() {
-		return
-	}
-	// Drain the send queue.
-	e.handleWrite()
-
-	// Mark send side as closed.
-	e.snd.closed = true
-}
-
 // resetConnectionLocked puts the endpoint in an error state with the given
 // error code and sends a RST if and only if the error is not ErrConnectionReset
 // indicating that the connection is being reset due to receiving a RST. This
 // method must only be called from the protocol goroutine.
+// +checklocks:e.mu
 func (e *endpoint) resetConnectionLocked(err tcpip.Error) {
 	// Only send a reset if the connection is being aborted for a reason
 	// other than receiving a reset.
-	e.setEndpointState(StateError)
 	e.hardError = err
 	switch err.(type) {
 	case *tcpip.ErrConnectionReset, *tcpip.ErrTimeout:
@@ -968,46 +1028,19 @@ func (e *endpoint) resetConnectionLocked(err tcpip.Error) {
 		//
 		// See: https://www.snellman.net/blog/archive/2016-02-01-tcp-rst/ for more
 		// information.
-		sndWndEnd := e.snd.sndUna.Add(e.snd.sndWnd)
+		sndWndEnd := e.snd.SndUna.Add(e.snd.SndWnd)
 		resetSeqNum := sndWndEnd
-		if !sndWndEnd.LessThan(e.snd.sndNxt) || e.snd.sndNxt.Size(sndWndEnd) < (1<<e.snd.sndWndScale) {
-			resetSeqNum = e.snd.sndNxt
+		if !sndWndEnd.LessThan(e.snd.SndNxt) || e.snd.SndNxt.Size(sndWndEnd) < (1<<e.snd.SndWndScale) {
+			resetSeqNum = e.snd.SndNxt
 		}
-		e.sendRaw(buffer.VectorisedView{}, header.TCPFlagAck|header.TCPFlagRst, resetSeqNum, e.rcv.rcvNxt, 0)
+		e.sendEmptyRaw(header.TCPFlagAck|header.TCPFlagRst, resetSeqNum, e.rcv.RcvNxt, 0)
 	}
-}
-
-// completeWorkerLocked is called by the worker goroutine when it's about to
-// exit.
-func (e *endpoint) completeWorkerLocked() {
-	// Worker is terminating(either due to moving to
-	// CLOSED or ERROR state, ensure we release all
-	// registrations port reservations even if the socket
-	// itself is not yet closed by the application.
-	e.workerRunning = false
-	if e.workerCleanup {
-		e.cleanupLocked()
-	}
-}
-
-// transitionToStateEstablisedLocked transitions a given endpoint
-// to an established state using the handshake parameters provided.
-// It also initializes sender/receiver.
-func (e *endpoint) transitionToStateEstablishedLocked(h *handshake) {
-	// Transfer handshake state to TCP connection. We disable
-	// receive window scaling if the peer doesn't support it
-	// (indicated by a negative send window scale).
-	e.snd = newSender(e, h.iss, h.ackNum-1, h.sndWnd, h.mss, h.sndWndScale)
-
-	e.rcvListMu.Lock()
-	e.rcv = newReceiver(e, h.ackNum-1, h.rcvWnd, h.effectiveRcvWndScale())
-	// Bootstrap the auto tuning algorithm. Starting at zero will
-	// result in a really large receive window after the first auto
-	// tuning adjustment.
-	e.rcvAutoParams.prevCopied = int(h.rcvWnd)
-	e.rcvListMu.Unlock()
-
-	e.setEndpointState(StateEstablished)
+	// Don't purge read queues here. If there's buffered data, it's still allowed
+	// to be read.
+	e.purgeWriteQueue()
+	e.purgePendingRcvQueue()
+	e.cleanupLocked()
+	e.setEndpointState(StateError)
 }
 
 // transitionToStateCloseLocked ensures that the endpoint is
@@ -1015,6 +1048,7 @@ func (e *endpoint) transitionToStateEstablishedLocked(h *handshake) {
 // StateClose. This will ensure that no packet will be
 // delivered to this endpoint from the demuxer when the endpoint
 // is transitioned to StateClose.
+// +checklocks:e.mu
 func (e *endpoint) transitionToStateCloseLocked() {
 	s := e.EndpointState()
 	if s == StateClose {
@@ -1022,12 +1056,11 @@ func (e *endpoint) transitionToStateCloseLocked() {
 	}
 
 	if s.connected() {
-		e.stack.Stats().TCP.CurrentConnected.Decrement()
 		e.stack.Stats().TCP.EstablishedClosed.Increment()
 	}
 
-	// Mark the endpoint as fully closed for reads/writes.
 	e.cleanupLocked()
+	// Mark the endpoint as fully closed for reads/writes.
 	e.setEndpointState(StateClose)
 }
 
@@ -1036,23 +1069,29 @@ func (e *endpoint) transitionToStateCloseLocked() {
 // only when the endpoint is in StateClose and we want to deliver the segment
 // to any other listening endpoint. We reply with RST if we cannot find one.
 func (e *endpoint) tryDeliverSegmentFromClosedEndpoint(s *segment) {
-	ep := e.stack.FindTransportEndpoint(e.NetProto, e.TransProto, e.ID, s.nicID)
+	ep := e.stack.FindTransportEndpoint(e.NetProto, e.TransProto, e.TransportEndpointInfo.ID, s.pkt.NICID)
 	if ep == nil && e.NetProto == header.IPv6ProtocolNumber && e.TransportEndpointInfo.ID.LocalAddress.To4() != "" {
 		// Dual-stack socket, try IPv4.
-		ep = e.stack.FindTransportEndpoint(header.IPv4ProtocolNumber, e.TransProto, e.ID, s.nicID)
+		ep = e.stack.FindTransportEndpoint(
+			header.IPv4ProtocolNumber,
+			e.TransProto,
+			e.TransportEndpointInfo.ID,
+			s.pkt.NICID,
+		)
 	}
 	if ep == nil {
-		replyWithReset(e.stack, s, stack.DefaultTOS, 0 /* ttl */)
-		s.decRef()
+		if !s.flags.Contains(header.TCPFlagRst) {
+			replyWithReset(e.stack, s, stack.DefaultTOS, tcpip.UseDefaultIPv4TTL, tcpip.UseDefaultIPv6HopLimit)
+		}
 		return
 	}
 
 	if e == ep {
-		panic("current endpoint not removed from demuxer, enqueing segments to itself")
+		panic(fmt.Sprintf("current endpoint not removed from demuxer, enqueing segments to itself, endpoint in state %v", e.EndpointState()))
 	}
 
 	if ep := ep.(*endpoint); ep.enqueueSegment(s) {
-		ep.newSegmentWaker.Assert()
+		ep.notifyProcessor()
 	}
 }
 
@@ -1067,9 +1106,11 @@ func (e *endpoint) drainClosingSegmentQueue() {
 		}
 
 		e.tryDeliverSegmentFromClosedEndpoint(s)
+		s.DecRef()
 	}
 }
 
+// +checklocks:e.mu
 func (e *endpoint) handleReset(s *segment) (ok bool, err tcpip.Error) {
 	if e.rcv.acceptable(s.sequenceNumber, 0) {
 		// RFC 793, page 37 states that "in all states
@@ -1099,7 +1140,6 @@ func (e *endpoint) handleReset(s *segment) (ok bool, err tcpip.Error) {
 		case StateCloseWait:
 			e.transitionToStateCloseLocked()
 			e.hardError = &tcpip.ErrAborted{}
-			e.notifyProtocolGoroutine(notifyTickleWorker)
 			return false, nil
 		default:
 			// RFC 793, page 37 states that "in all states
@@ -1110,7 +1150,6 @@ func (e *endpoint) handleReset(s *segment) (ok bool, err tcpip.Error) {
 			// Notify protocol goroutine. This is required when
 			// handleSegment is invoked from the processor goroutine
 			// rather than the worker goroutine.
-			e.notifyProtocolGoroutine(notifyResetByPeer)
 			return false, &tcpip.ErrConnectionReset{}
 		}
 	}
@@ -1118,20 +1157,21 @@ func (e *endpoint) handleReset(s *segment) (ok bool, err tcpip.Error) {
 }
 
 // handleSegments processes all inbound segments.
-func (e *endpoint) handleSegments(fastPath bool) tcpip.Error {
-	checkRequeue := true
+//
+// +checklocks:e.mu
+// +checklocksalias:e.snd.ep.mu=e.mu
+func (e *endpoint) handleSegmentsLocked() tcpip.Error {
+	sndUna := e.snd.SndUna
 	for i := 0; i < maxSegmentsPerWake; i++ {
-		if e.EndpointState().closed() {
+		if state := e.EndpointState(); state.closed() || state == StateTimeWait || state == StateError {
 			return nil
 		}
 		s := e.segmentQueue.dequeue()
 		if s == nil {
-			checkRequeue = false
 			break
 		}
-
-		cont, err := e.handleSegment(s)
-		s.decRef()
+		cont, err := e.handleSegmentLocked(s)
+		s.DecRef()
 		if err != nil {
 			return err
 		}
@@ -1140,15 +1180,19 @@ func (e *endpoint) handleSegments(fastPath bool) tcpip.Error {
 		}
 	}
 
-	// When fastPath is true we don't want to wake up the worker
-	// goroutine. If the endpoint has more segments to process the
-	// dispatcher will call handleSegments again anyway.
-	if !fastPath && checkRequeue && !e.segmentQueue.empty() {
-		e.newSegmentWaker.Assert()
+	// The remote ACK-ing at least 1 byte is an indication that we have a
+	// full-duplex connection to the remote as the only way we will receive an
+	// ACK is if the remote received data that we previously sent.
+	//
+	// As of writing, Linux seems to only confirm a route as reachable when
+	// forward progress is made which is indicated by an ACK that removes data
+	// from the retransmit queue, i.e. sender makes forward progress.
+	if sndUna.LessThan(e.snd.SndUna) {
+		e.route.ConfirmReachable()
 	}
 
 	// Send an ACK for all processed packets if needed.
-	if e.rcv.rcvNxt != e.snd.maxSentAck {
+	if e.rcv.RcvNxt != e.snd.MaxSentAck {
 		e.snd.sendAck()
 	}
 
@@ -1157,24 +1201,31 @@ func (e *endpoint) handleSegments(fastPath bool) tcpip.Error {
 	return nil
 }
 
-func (e *endpoint) probeSegment() {
-	if e.probe != nil {
-		e.probe(e.completeState())
+// +checklocks:e.mu
+func (e *endpoint) probeSegmentLocked() {
+	if fn := e.probe; fn != nil {
+		var state stack.TCPEndpointState
+		e.completeStateLocked(&state)
+		fn(&state)
 	}
 }
 
 // handleSegment handles a given segment and notifies the worker goroutine if
 // if the connection should be terminated.
-func (e *endpoint) handleSegment(s *segment) (cont bool, err tcpip.Error) {
+//
+// +checklocks:e.mu
+// +checklocksalias:e.rcv.ep.mu=e.mu
+// +checklocksalias:e.snd.ep.mu=e.mu
+func (e *endpoint) handleSegmentLocked(s *segment) (cont bool, err tcpip.Error) {
 	// Invoke the tcp probe if installed. The tcp probe function will update
 	// the TCPEndpointState after the segment is processed.
-	defer e.probeSegment()
+	defer e.probeSegmentLocked()
 
-	if s.flagIsSet(header.TCPFlagRst) {
+	if s.flags.Contains(header.TCPFlagRst) {
 		if ok, err := e.handleReset(s); !ok {
 			return false, err
 		}
-	} else if s.flagIsSet(header.TCPFlagSyn) {
+	} else if s.flags.Contains(header.TCPFlagSyn) {
 		// See: https://tools.ietf.org/html/rfc5961#section-4.1
 		//   1) If the SYN bit is set, irrespective of the sequence number, TCP
 		//    MUST send an ACK (also referred to as challenge ACK) to the remote
@@ -1198,10 +1249,10 @@ func (e *endpoint) handleSegment(s *segment) (cont bool, err tcpip.Error) {
 		// should then rely on SYN retransmission from the remote end to
 		// re-establish the connection.
 		e.snd.maybeSendOutOfWindowAck(s)
-	} else if s.flagIsSet(header.TCPFlagAck) {
+	} else if s.flags.Contains(header.TCPFlagAck) {
 		// Patch the window size in the segment according to the
 		// send window scale.
-		s.window <<= e.snd.sndWndScale
+		s.window <<= e.snd.SndWndScale
 
 		// RFC 793, page 41 states that "once in the ESTABLISHED
 		// state all segments must carry current acknowledgment
@@ -1217,7 +1268,7 @@ func (e *endpoint) handleSegment(s *segment) (cont bool, err tcpip.Error) {
 		// Now check if the received segment has caused us to transition
 		// to a CLOSED state, if yes then terminate processing and do
 		// not invoke the sender.
-		state := e.state
+		state := e.EndpointState()
 		if state == StateClose {
 			// When we get into StateClose while processing from the queue,
 			// return immediately and let the protocolMainloop handle it.
@@ -1238,18 +1289,20 @@ func (e *endpoint) handleSegment(s *segment) (cont bool, err tcpip.Error) {
 // keepaliveTimerExpired is called when the keepaliveTimer fires. We send TCP
 // keepalive packets periodically when the connection is idle. If we don't hear
 // from the other side after a number of tries, we terminate the connection.
+// +checklocks:e.mu
+// +checklocksalias:e.snd.ep.mu=e.mu
 func (e *endpoint) keepaliveTimerExpired() tcpip.Error {
 	userTimeout := e.userTimeout
 
 	e.keepalive.Lock()
-	if !e.SocketOptions().GetKeepAlive() || !e.keepalive.timer.checkExpiration() {
+	if !e.SocketOptions().GetKeepAlive() || e.keepalive.timer.isZero() || !e.keepalive.timer.checkExpiration() {
 		e.keepalive.Unlock()
 		return nil
 	}
 
 	// If a userTimeout is set then abort the connection if it is
 	// exceeded.
-	if userTimeout != 0 && time.Since(e.rcv.lastRcvdAckTime) >= userTimeout && e.keepalive.unacked > 0 {
+	if userTimeout != 0 && e.stack.Clock().NowMonotonic().Sub(e.rcv.lastRcvdAckTime) >= userTimeout && e.keepalive.unacked > 0 {
 		e.keepalive.Unlock()
 		e.stack.Stats().TCP.EstablishedTimedout.Increment()
 		return &tcpip.ErrTimeout{}
@@ -1265,7 +1318,7 @@ func (e *endpoint) keepaliveTimerExpired() tcpip.Error {
 	// seg.seq = snd.nxt-1.
 	e.keepalive.unacked++
 	e.keepalive.Unlock()
-	e.snd.sendSegmentFromView(buffer.VectorisedView{}, header.TCPFlagAck, e.snd.sndNxt-1)
+	e.snd.sendEmptySegment(header.TCPFlagAck, e.snd.SndNxt-1)
 	e.resetKeepaliveTimer(false)
 	return nil
 }
@@ -1274,14 +1327,20 @@ func (e *endpoint) keepaliveTimerExpired() tcpip.Error {
 // whether it is enabled for this endpoint.
 func (e *endpoint) resetKeepaliveTimer(receivedData bool) {
 	e.keepalive.Lock()
+	defer e.keepalive.Unlock()
+	if e.keepalive.timer.isZero() {
+		if state := e.EndpointState(); !state.closed() {
+			panic(fmt.Sprintf("Unexpected state when the keepalive time is cleaned up, got %s, want %s or %s", state, StateClose, StateError))
+		}
+		return
+	}
 	if receivedData {
 		e.keepalive.unacked = 0
 	}
 	// Start the keepalive timer IFF it's enabled and there is no pending
 	// data to send.
-	if !e.SocketOptions().GetKeepAlive() || e.snd == nil || e.snd.sndUna != e.snd.sndNxt {
+	if !e.SocketOptions().GetKeepAlive() || e.snd == nil || e.snd.SndUna != e.snd.SndNxt {
 		e.keepalive.timer.disable()
-		e.keepalive.Unlock()
 		return
 	}
 	if e.keepalive.unacked > 0 {
@@ -1289,7 +1348,6 @@ func (e *endpoint) resetKeepaliveTimer(receivedData bool) {
 	} else {
 		e.keepalive.timer.enable(e.keepalive.idle)
 	}
-	e.keepalive.Unlock()
 }
 
 // disableKeepaliveTimer stops the keepalive timer.
@@ -1299,320 +1357,41 @@ func (e *endpoint) disableKeepaliveTimer() {
 	e.keepalive.Unlock()
 }
 
-// protocolMainLoop is the main loop of the TCP protocol. It runs in its own
-// goroutine and is responsible for sending segments and handling received
-// segments.
-func (e *endpoint) protocolMainLoop(handshake bool, wakerInitDone chan<- struct{}) tcpip.Error {
+// finWait2TimerExpired is called when the FIN-WAIT-2 timeout is hit
+// and the peer hasn't sent us a FIN.
+func (e *endpoint) finWait2TimerExpired() {
 	e.mu.Lock()
-	var closeTimer *time.Timer
-	var closeWaker sleep.Waker
-
-	epilogue := func() {
-		// e.mu is expected to be hold upon entering this section.
-		if e.snd != nil {
-			e.snd.resendTimer.cleanup()
-			e.snd.probeTimer.cleanup()
-			e.snd.reorderTimer.cleanup()
-		}
-
-		if closeTimer != nil {
-			closeTimer.Stop()
-		}
-
-		e.completeWorkerLocked()
-
-		if e.drainDone != nil {
-			close(e.drainDone)
-		}
-
-		e.mu.Unlock()
-
-		e.drainClosingSegmentQueue()
-
-		// When the protocol loop exits we should wake up our waiters.
-		e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.ReadableEvents | waiter.WritableEvents)
-	}
-
-	if handshake {
-		if err := e.h.complete(); err != nil {
-			e.lastErrorMu.Lock()
-			e.lastError = err
-			e.lastErrorMu.Unlock()
-
-			e.setEndpointState(StateError)
-			e.hardError = err
-
-			e.workerCleanup = true
-			// Lock released below.
-			epilogue()
-			return err
-		}
-	}
-
-	// Reaching this point means that we successfully completed the 3-way
-	// handshake with our peer.
-	//
-	// Completing the 3-way handshake is an indication that the route is valid
-	// and the remote is reachable as the only way we can complete a handshake
-	// is if our SYN reached the remote and their ACK reached us.
-	e.route.ConfirmReachable()
-
-	drained := e.drainDone != nil
-	if drained {
-		close(e.drainDone)
-		e.mu.Unlock()
-		<-e.undrain
-		e.mu.Lock()
-	}
-
-	// Set up the functions that will be called when the main protocol loop
-	// wakes up.
-	funcs := []struct {
-		w *sleep.Waker
-		f func() tcpip.Error
-	}{
-		{
-			w: &e.sndWaker,
-			f: func() tcpip.Error {
-				e.handleWrite()
-				return nil
-			},
-		},
-		{
-			w: &e.sndCloseWaker,
-			f: func() tcpip.Error {
-				e.handleClose()
-				return nil
-			},
-		},
-		{
-			w: &closeWaker,
-			f: func() tcpip.Error {
-				// This means the socket is being closed due
-				// to the TCP-FIN-WAIT2 timeout was hit. Just
-				// mark the socket as closed.
-				e.transitionToStateCloseLocked()
-				e.workerCleanup = true
-				return nil
-			},
-		},
-		{
-			w: &e.snd.resendWaker,
-			f: func() tcpip.Error {
-				if !e.snd.retransmitTimerExpired() {
-					e.stack.Stats().TCP.EstablishedTimedout.Increment()
-					return &tcpip.ErrTimeout{}
-				}
-				return nil
-			},
-		},
-		{
-			w: &e.snd.probeWaker,
-			f: e.snd.probeTimerExpired,
-		},
-		{
-			w: &e.newSegmentWaker,
-			f: func() tcpip.Error {
-				return e.handleSegments(false /* fastPath */)
-			},
-		},
-		{
-			w: &e.keepalive.waker,
-			f: e.keepaliveTimerExpired,
-		},
-		{
-			w: &e.notificationWaker,
-			f: func() tcpip.Error {
-				n := e.fetchNotifications()
-				if n&notifyNonZeroReceiveWindow != 0 {
-					e.rcv.nonZeroWindow()
-				}
-
-				if n&notifyMTUChanged != 0 {
-					e.sndBufMu.Lock()
-					count := e.packetTooBigCount
-					e.packetTooBigCount = 0
-					mtu := e.sndMTU
-					e.sndBufMu.Unlock()
-
-					e.snd.updateMaxPayloadSize(mtu, count)
-				}
-
-				if n&notifyReset != 0 || n&notifyAbort != 0 {
-					return &tcpip.ErrConnectionAborted{}
-				}
-
-				if n&notifyResetByPeer != 0 {
-					return &tcpip.ErrConnectionReset{}
-				}
-
-				if n&notifyClose != 0 && closeTimer == nil {
-					if e.EndpointState() == StateFinWait2 && e.closed {
-						// The socket has been closed and we are in FIN_WAIT2
-						// so start the FIN_WAIT2 timer.
-						closeTimer = time.AfterFunc(e.tcpLingerTimeout, closeWaker.Assert)
-					}
-				}
-
-				if n&notifyKeepaliveChanged != 0 {
-					// The timer could fire in background
-					// when the endpoint is drained. That's
-					// OK. See above.
-					e.resetKeepaliveTimer(true)
-				}
-
-				if n&notifyDrain != 0 {
-					for !e.segmentQueue.empty() {
-						if err := e.handleSegments(false /* fastPath */); err != nil {
-							return err
-						}
-					}
-					if !e.EndpointState().closed() {
-						// Only block the worker if the endpoint
-						// is not in closed state or error state.
-						close(e.drainDone)
-						e.mu.Unlock()
-						<-e.undrain
-						e.mu.Lock()
-					}
-				}
-
-				if n&notifyTickleWorker != 0 {
-					// Just a tickle notification. No need to do
-					// anything.
-					return nil
-				}
-
-				return nil
-			},
-		},
-		{
-			w: &e.snd.reorderWaker,
-			f: e.snd.rc.reorderTimerExpired,
-		},
-	}
-
-	// Initialize the sleeper based on the wakers in funcs.
-	var s sleep.Sleeper
-	for i := range funcs {
-		s.AddWaker(funcs[i].w, i)
-	}
-
-	// Notify the caller that the waker initialization is complete and the
-	// endpoint is ready.
-	if wakerInitDone != nil {
-		close(wakerInitDone)
-	}
-
-	// Tell waiters that the endpoint is connected and writable.
-	e.waiterQueue.Notify(waiter.WritableEvents)
-
-	// The following assertions and notifications are needed for restored
-	// endpoints. Fresh newly created endpoints have empty states and should
-	// not invoke any.
-	if !e.segmentQueue.empty() {
-		e.newSegmentWaker.Assert()
-	}
-
-	e.rcvListMu.Lock()
-	if !e.rcvList.Empty() {
-		e.waiterQueue.Notify(waiter.ReadableEvents)
-	}
-	e.rcvListMu.Unlock()
-
-	if e.workerCleanup {
-		e.notifyProtocolGoroutine(notifyClose)
-	}
-
-	// Main loop. Handle segments until both send and receive ends of the
-	// connection have completed.
-	cleanupOnError := func(err tcpip.Error) {
-		e.stack.Stats().TCP.CurrentConnected.Decrement()
-		e.workerCleanup = true
-		if err != nil {
-			e.resetConnectionLocked(err)
-		}
-		// Lock released below.
-		epilogue()
-	}
-
-loop:
-	for {
-		switch e.EndpointState() {
-		case StateTimeWait, StateClose, StateError:
-			break loop
-		}
-
-		e.mu.Unlock()
-		v, _ := s.Fetch(true /* block */)
-		e.mu.Lock()
-
-		// We need to double check here because the notification may be
-		// stale by the time we got around to processing it.
-		switch e.EndpointState() {
-		case StateError:
-			// If the endpoint has already transitioned to an ERROR
-			// state just pass nil here as any reset that may need
-			// to be sent etc should already have been done and we
-			// just want to terminate the loop and cleanup the
-			// endpoint.
-			cleanupOnError(nil)
-			return nil
-		case StateTimeWait:
-			fallthrough
-		case StateClose:
-			break loop
-		default:
-			if err := funcs[v].f(); err != nil {
-				cleanupOnError(err)
-				return nil
-			}
-		}
-	}
-
-	var reuseTW func()
-	if e.EndpointState() == StateTimeWait {
-		// Disable close timer as we now entering real TIME_WAIT.
-		if closeTimer != nil {
-			closeTimer.Stop()
-		}
-		// Mark the current sleeper done so as to free all associated
-		// wakers.
-		s.Done()
-		// Wake up any waiters before we enter TIME_WAIT.
-		e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.ReadableEvents | waiter.WritableEvents)
-		e.workerCleanup = true
-		reuseTW = e.doTimeWait()
-	}
-
-	// Handle any StateError transition from StateTimeWait.
-	if e.EndpointState() == StateError {
-		cleanupOnError(nil)
-		return nil
-	}
-
 	e.transitionToStateCloseLocked()
+	e.mu.Unlock()
+	e.drainClosingSegmentQueue()
+	e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.ReadableEvents | waiter.WritableEvents)
+}
 
-	// Lock released below.
-	epilogue()
-
-	// A new SYN was received during TIME_WAIT and we need to abort
-	// the timewait and redirect the segment to the listener queue
-	if reuseTW != nil {
-		reuseTW()
+// +checklocks:e.mu
+func (e *endpoint) handshakeFailed(err tcpip.Error) {
+	e.lastErrorMu.Lock()
+	e.lastError = err
+	e.lastErrorMu.Unlock()
+	// handshakeFailed is also called from startHandshake when a listener
+	// transitions out of Listen state by the time the SYN is processed. In
+	// such cases the handshake is never initialized and the newly created
+	// endpoint is closed right away.
+	if e.h != nil && e.h.retransmitTimer != nil {
+		e.h.retransmitTimer.stop()
 	}
-
-	return nil
+	e.hardError = err
+	e.cleanupLocked()
+	e.setEndpointState(StateError)
 }
 
 // handleTimeWaitSegments processes segments received during TIME_WAIT
 // state.
+// +checklocks:e.mu
+// +checklocksalias:e.rcv.ep.mu=e.mu
 func (e *endpoint) handleTimeWaitSegments() (extendTimeWait bool, reuseTW func()) {
-	checkRequeue := true
 	for i := 0; i < maxSegmentsPerWake; i++ {
 		s := e.segmentQueue.dequeue()
 		if s == nil {
-			checkRequeue = false
 			break
 		}
 		extTW, newSyn := e.rcv.handleTimeWaitSegment(s)
@@ -1629,20 +1408,18 @@ func (e *endpoint) handleTimeWaitSegments() (extendTimeWait bool, reuseTW func()
 				netProtos = []tcpip.NetworkProtocolNumber{header.IPv4ProtocolNumber, header.IPv6ProtocolNumber}
 			}
 			for _, netProto := range netProtos {
-				if listenEP := e.stack.FindTransportEndpoint(netProto, info.TransProto, newID, s.nicID); listenEP != nil {
+				if listenEP := e.stack.FindTransportEndpoint(netProto, info.TransProto, newID, s.pkt.NICID); listenEP != nil {
 					tcpEP := listenEP.(*endpoint)
 					if EndpointState(tcpEP.State()) == StateListen {
 						reuseTW = func() {
 							if !tcpEP.enqueueSegment(s) {
-								s.decRef()
 								return
 							}
-							tcpEP.newSegmentWaker.Assert()
+							tcpEP.notifyProcessor()
+							s.DecRef()
 						}
-						// We explicitly do not decRef
-						// the segment as it's still
-						// valid and being reflected to
-						// a listening endpoint.
+						// We explicitly do not DecRef the segment as it's still valid and
+						// being reflected to a listening endpoint.
 						return false, reuseTW
 					}
 				}
@@ -1651,23 +1428,13 @@ func (e *endpoint) handleTimeWaitSegments() (extendTimeWait bool, reuseTW func()
 		if extTW {
 			extendTimeWait = true
 		}
-		s.decRef()
-	}
-	if checkRequeue && !e.segmentQueue.empty() {
-		e.newSegmentWaker.Assert()
+		s.DecRef()
 	}
 	return extendTimeWait, nil
 }
 
-// doTimeWait is responsible for handling the TCP behaviour once a socket
-// enters the TIME_WAIT state. Optionally it can return a closure that
-// should be executed after releasing the endpoint registrations. This is
-// done in cases where a new SYN is received during TIME_WAIT that carries
-// a sequence number larger than one see on the connection.
-func (e *endpoint) doTimeWait() (twReuse func()) {
-	// Trigger a 2 * MSL time wait state. During this period
-	// we will drop all incoming segments.
-	// NOTE: On Linux this is not configurable and is fixed at 60 seconds.
+// +checklocks:e.mu
+func (e *endpoint) getTimeWaitDuration() time.Duration {
 	timeWaitDuration := DefaultTCPTimeWaitTimeout
 
 	// Get the stack wide configuration.
@@ -1675,54 +1442,36 @@ func (e *endpoint) doTimeWait() (twReuse func()) {
 	if err := e.stack.TransportProtocolOption(ProtocolNumber, &tcpTW); err == nil {
 		timeWaitDuration = time.Duration(tcpTW)
 	}
+	return timeWaitDuration
+}
 
-	const newSegment = 1
-	const notification = 2
-	const timeWaitDone = 3
-
-	var s sleep.Sleeper
-	defer s.Done()
-	s.AddWaker(&e.newSegmentWaker, newSegment)
-	s.AddWaker(&e.notificationWaker, notification)
-
-	var timeWaitWaker sleep.Waker
-	s.AddWaker(&timeWaitWaker, timeWaitDone)
-	timeWaitTimer := time.AfterFunc(timeWaitDuration, timeWaitWaker.Assert)
-	defer timeWaitTimer.Stop()
-
-	for {
+// timeWaitTimerExpired is called when an endpoint completes the required time
+// (typically 2 * MSL unless configured to something else at a stack level) in
+// TIME-WAIT state.
+func (e *endpoint) timeWaitTimerExpired() {
+	e.mu.Lock()
+	if e.EndpointState() != StateTimeWait {
 		e.mu.Unlock()
-		v, _ := s.Fetch(true /* block */)
-		e.mu.Lock()
-		switch v {
-		case newSegment:
-			extendTimeWait, reuseTW := e.handleTimeWaitSegments()
-			if reuseTW != nil {
-				return reuseTW
-			}
-			if extendTimeWait {
-				timeWaitTimer.Reset(timeWaitDuration)
-			}
-		case notification:
-			n := e.fetchNotifications()
-			if n&notifyAbort != 0 {
-				return nil
-			}
-			if n&notifyDrain != 0 {
-				for !e.segmentQueue.empty() {
-					// Ignore extending TIME_WAIT during a
-					// save. For sockets in TIME_WAIT we just
-					// terminate the TIME_WAIT early.
-					e.handleTimeWaitSegments()
-				}
-				close(e.drainDone)
-				e.mu.Unlock()
-				<-e.undrain
-				e.mu.Lock()
-				return nil
-			}
-		case timeWaitDone:
-			return nil
-		}
+		return
 	}
+	e.transitionToStateCloseLocked()
+	e.mu.Unlock()
+	e.drainClosingSegmentQueue()
+	e.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.ReadableEvents | waiter.WritableEvents)
+}
+
+// notifyProcessor queues this endpoint for processing to its TCP processor.
+func (e *endpoint) notifyProcessor() {
+	// We use TryLock here to avoid deadlocks in cases where a listening endpoint that is being
+	// closed tries to abort half completed connections which in turn try to queue any segments
+	// queued to that endpoint back to the same listening endpoint (because it may have got
+	// segments that matched its id but were either a RST or a new SYN which must be handled
+	// by a listening endpoint). In such cases the Close() on the listening endpoint will handle
+	// any queued segments after it releases the lock.
+	if !e.mu.TryLock() {
+		return
+	}
+	processor := e.protocol.dispatcher.selectProcessor(e.ID)
+	e.mu.Unlock()
+	processor.queueEndpoint(e)
 }

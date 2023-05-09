@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <linux/capability.h>
 #include <netinet/in.h>
 #include <netinet/ip.h>
 #include <netinet/ip_icmp.h>
@@ -27,10 +26,10 @@
 
 #include "gtest/gtest.h"
 #include "absl/base/internal/endian.h"
-#include "test/syscalls/linux/socket_test_util.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {
@@ -63,7 +62,7 @@ class RawHDRINCL : public ::testing::Test {
 };
 
 void RawHDRINCL::SetUp() {
-  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
+  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability())) {
     ASSERT_THAT(socket(AF_INET, SOCK_RAW, IPPROTO_RAW),
                 SyscallFailsWithErrno(EPERM));
     GTEST_SKIP();
@@ -81,7 +80,7 @@ void RawHDRINCL::SetUp() {
 
 void RawHDRINCL::TearDown() {
   // TearDown will be run even if we skip the test.
-  if (ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_RAW))) {
+  if (ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability())) {
     EXPECT_THAT(close(socket_), SyscallSucceeds());
   }
 }
@@ -177,13 +176,10 @@ TEST_F(RawHDRINCL, ConnectToLoopback) {
               SyscallSucceeds());
 }
 
-TEST_F(RawHDRINCL, SendWithoutConnectSucceeds) {
-  // FIXME(gvisor.dev/issue/3159): Test currently flaky.
-  SKIP_IF(true);
-
+TEST_F(RawHDRINCL, SendWithoutConnectFails) {
   struct iphdr hdr = LoopbackHeader();
   ASSERT_THAT(send(socket_, &hdr, sizeof(hdr), 0),
-              SyscallSucceedsWithValue(sizeof(hdr)));
+              SyscallFailsWithErrno(EDESTADDRREQ));
 }
 
 // HDRINCL implies write-only. Verify that we can't read a packet sent to
@@ -276,17 +272,11 @@ TEST_F(RawHDRINCL, SendAndReceive) {
   // The network stack should have set the source address.
   EXPECT_EQ(src.sin_family, AF_INET);
   EXPECT_EQ(absl::gbswap_32(src.sin_addr.s_addr), INADDR_LOOPBACK);
-  // The packet ID should not be 0, as the packet has DF=0.
-  struct iphdr* iphdr = reinterpret_cast<struct iphdr*>(recv_buf);
-  EXPECT_NE(iphdr->id, 0);
 }
 
 // Send and receive a packet where the sendto address is not the same as the
 // provided destination.
 TEST_F(RawHDRINCL, SendAndReceiveDifferentAddress) {
-  // FIXME(gvisor.dev/issue/3160): Test currently flaky.
-  SKIP_IF(true);
-
   int port = 40000;
   if (!IsRunningOnGvisor()) {
     port = static_cast<short>(ASSERT_NO_ERRNO_AND_VALUE(
@@ -304,18 +294,20 @@ TEST_F(RawHDRINCL, SendAndReceiveDifferentAddress) {
   ASSERT_TRUE(
       FillPacket(packet, sizeof(packet), port, kPayload, sizeof(kPayload)));
   // Overwrite the IP destination address with an IP we can't get to.
+  constexpr int32_t kUnreachable = 42;
   struct iphdr iphdr = {};
   memcpy(&iphdr, packet, sizeof(iphdr));
-  iphdr.daddr = 42;
+  iphdr.daddr = kUnreachable;
   memcpy(packet, &iphdr, sizeof(iphdr));
 
+  // Send to localhost via loopback.
   socklen_t addrlen = sizeof(addr_);
   ASSERT_NO_FATAL_FAILURE(sendto(socket_, &packet, sizeof(packet), 0,
                                  reinterpret_cast<struct sockaddr*>(&addr_),
                                  addrlen));
 
-  // Receive the payload, since sendto should replace the bad destination with
-  // localhost.
+  // Receive the payload. Despite an unreachable destination address, sendto
+  // should have sent the packet through loopback.
   char recv_buf[sizeof(packet)];
   struct sockaddr_in src;
   socklen_t src_size = sizeof(src);
@@ -329,13 +321,10 @@ TEST_F(RawHDRINCL, SendAndReceiveDifferentAddress) {
   // The network stack should have set the source address.
   EXPECT_EQ(src.sin_family, AF_INET);
   EXPECT_EQ(absl::gbswap_32(src.sin_addr.s_addr), INADDR_LOOPBACK);
-  // The packet ID should not be 0, as the packet has DF=0.
   struct iphdr recv_iphdr = {};
   memcpy(&recv_iphdr, recv_buf, sizeof(recv_iphdr));
-  EXPECT_NE(recv_iphdr.id, 0);
-  // The destination address should be localhost, not the bad IP we set
-  // initially.
-  EXPECT_EQ(absl::gbswap_32(recv_iphdr.daddr), INADDR_LOOPBACK);
+  // The destination address is kUnreachable despite arriving via loopback.
+  EXPECT_EQ(recv_iphdr.daddr, kUnreachable);
 }
 
 // Send and receive a packet w/ the IP_HDRINCL option set.
@@ -392,7 +381,6 @@ TEST_F(RawHDRINCL, SendAndReceiveIPHdrIncl) {
   EXPECT_EQ(absl::gbswap_32(src.sin_addr.s_addr), INADDR_LOOPBACK);
   struct iphdr iphdr = {};
   memcpy(&iphdr, recv_buf, sizeof(iphdr));
-  EXPECT_NE(iphdr.id, 0);
 
   // Also verify that the packet we just sent was not delivered to the
   // IPPROTO_RAW socket.

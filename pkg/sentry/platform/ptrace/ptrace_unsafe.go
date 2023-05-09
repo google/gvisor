@@ -63,16 +63,16 @@ func (t *thread) setRegs(regs *arch.Registers) error {
 }
 
 // getFPRegs gets the floating-point data via the GETREGSET ptrace unix.
-func (t *thread) getFPRegs(fpState *fpu.State, fpLen uint64, useXsave bool) error {
+func (t *thread) getFPRegs(fpState *fpu.State, ac *archContext) error {
 	iovec := unix.Iovec{
 		Base: fpState.BytePointer(),
-		Len:  fpLen,
+		Len:  ac.floatingPointLength(),
 	}
 	_, _, errno := unix.RawSyscall6(
 		unix.SYS_PTRACE,
 		unix.PTRACE_GETREGSET,
 		uintptr(t.tid),
-		fpRegSet(useXsave),
+		ac.floatingPointRegSet(),
 		uintptr(unsafe.Pointer(&iovec)),
 		0, 0)
 	if errno != 0 {
@@ -82,16 +82,16 @@ func (t *thread) getFPRegs(fpState *fpu.State, fpLen uint64, useXsave bool) erro
 }
 
 // setFPRegs sets the floating-point data via the SETREGSET ptrace unix.
-func (t *thread) setFPRegs(fpState *fpu.State, fpLen uint64, useXsave bool) error {
+func (t *thread) setFPRegs(fpState *fpu.State, ac *archContext) error {
 	iovec := unix.Iovec{
 		Base: fpState.BytePointer(),
-		Len:  fpLen,
+		Len:  ac.floatingPointLength(),
 	}
 	_, _, errno := unix.RawSyscall6(
 		unix.SYS_PTRACE,
 		unix.PTRACE_SETREGSET,
 		uintptr(t.tid),
-		fpRegSet(useXsave),
+		ac.floatingPointRegSet(),
 		uintptr(unsafe.Pointer(&iovec)),
 		0, 0)
 	if errno != 0 {
@@ -101,7 +101,7 @@ func (t *thread) setFPRegs(fpState *fpu.State, fpLen uint64, useXsave bool) erro
 }
 
 // getSignalInfo retrieves information about the signal that caused the stop.
-func (t *thread) getSignalInfo(si *arch.SignalInfo) error {
+func (t *thread) getSignalInfo(si *linux.SignalInfo) error {
 	_, _, errno := unix.RawSyscall6(
 		unix.SYS_PTRACE,
 		unix.PTRACE_GETSIGINFO,

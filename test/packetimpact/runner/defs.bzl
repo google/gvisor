@@ -3,8 +3,12 @@
 load("//tools:defs.bzl", "go_test")
 
 def _packetimpact_test_impl(ctx):
-    test_runner = ctx.executable._test_runner
+    test_runner = ctx.executable.test_runner
     bench = ctx.actions.declare_file("%s-bench" % ctx.label.name)
+    dut_binary_flag = [] if ctx.attr.dut_binary == None else [
+        "--dut_binary",
+        ctx.file.dut_binary.short_path,
+    ]
     bench_content = "\n".join([
         "#!/bin/bash",
         # This test will run part in a distinct user namespace. This can cause
@@ -14,7 +18,7 @@ def _packetimpact_test_impl(ctx):
         "find . -type f -or -type d -exec chmod a+rx {} \\;",
         "%s %s --testbench_binary %s --num_duts %d $@\n" % (
             test_runner.short_path,
-            " ".join(ctx.attr.flags),
+            " ".join(ctx.attr.flags + dut_binary_flag),
             ctx.files.testbench_binary[0].short_path,
             ctx.attr.num_duts,
         ),
@@ -22,9 +26,11 @@ def _packetimpact_test_impl(ctx):
     ctx.actions.write(bench, bench_content, is_executable = True)
 
     transitive_files = []
-    if hasattr(ctx.attr._test_runner, "data_runfiles"):
-        transitive_files.append(ctx.attr._test_runner.data_runfiles.files)
-    files = [test_runner] + ctx.files.testbench_binary + ctx.files._posix_server
+    if hasattr(ctx.attr.test_runner, "data_runfiles"):
+        transitive_files.append(ctx.attr.test_runner.data_runfiles.files)
+    if hasattr(ctx.attr.dut_binary, "data_runfiles"):
+        transitive_files.append(ctx.attr.dut_binary.data_runfiles.files)
+    files = [test_runner] + ctx.files.testbench_binary + ctx.files._posix_server + ctx.files.dut_binary
     runfiles = ctx.runfiles(
         files = files,
         transitive_files = depset(transitive = transitive_files),
@@ -35,7 +41,7 @@ def _packetimpact_test_impl(ctx):
 
 _packetimpact_test = rule(
     attrs = {
-        "_test_runner": attr.label(
+        "test_runner": attr.label(
             executable = True,
             cfg = "target",
             default = ":packetimpact_test",
@@ -55,6 +61,11 @@ _packetimpact_test = rule(
         "num_duts": attr.int(
             mandatory = False,
             default = 1,
+        ),
+        "dut_binary": attr.label(
+            executable = True,
+            cfg = "target",
+            allow_single_file = True,
         ),
     },
     test = True,
@@ -82,9 +93,11 @@ def packetimpact_native_test(
     """
     expect_failure_flag = ["--expect_failure"] if expect_failure else []
     _packetimpact_test(
+        test_runner = "//test/packetimpact/runner:main",
         name = name + "_native_test",
         testbench_binary = testbench_binary,
-        flags = ["--native"] + expect_failure_flag,
+        flags = expect_failure_flag + ["--variant", "native"],
+        dut_binary = "//test/packetimpact/dut/native",
         tags = PACKETIMPACT_TAGS,
         **kwargs
     )
@@ -106,16 +119,16 @@ def packetimpact_netstack_test(
     if expect_failure:
         expect_failure_flag = ["--expect_failure"]
     _packetimpact_test(
+        test_runner = "//test/packetimpact/runner:main",
         name = name + "_netstack_test",
         testbench_binary = testbench_binary,
-        # Note that a distinct runtime must be provided in the form
-        # --test_arg=--runtime=other when invoking bazel.
-        flags = expect_failure_flag,
+        flags = expect_failure_flag + ["--variant", "gvisor"],
+        dut_binary = "//test/packetimpact/dut/runsc",
         tags = PACKETIMPACT_TAGS,
         **kwargs
     )
 
-def packetimpact_go_test(name, expect_native_failure = False, expect_netstack_failure = False, num_duts = 1):
+def packetimpact_go_test(name, expect_native_failure = False, expect_netstack_failure = False, num_duts = 1, **kwargs):
     """Add packetimpact tests written in go.
 
     Args:
@@ -123,6 +136,7 @@ def packetimpact_go_test(name, expect_native_failure = False, expect_netstack_fa
         expect_native_failure: the test must fail natively
         expect_netstack_failure: the test must fail for Netstack
         num_duts: how many DUTs are needed for the test
+        **kwargs: all the other args, forwarded to packetimpact_native_test and packetimpact_netstack_test
     """
     testbench_binary = name + "_test"
     packetimpact_native_test(
@@ -130,12 +144,14 @@ def packetimpact_go_test(name, expect_native_failure = False, expect_netstack_fa
         expect_failure = expect_native_failure,
         num_duts = num_duts,
         testbench_binary = testbench_binary,
+        **kwargs
     )
     packetimpact_netstack_test(
         name = name,
         expect_failure = expect_netstack_failure,
         num_duts = num_duts,
         testbench_binary = testbench_binary,
+        **kwargs
     )
 
 def packetimpact_testbench(name, size = "small", pure = True, **kwargs):
@@ -163,6 +179,7 @@ PacketimpactTestInfo = provider(
     doc = "Provide information for packetimpact tests",
     fields = [
         "name",
+        "timeout",
         "expect_netstack_failure",
         "num_duts",
     ],
@@ -252,6 +269,9 @@ ALL_TESTS = [
         name = "tcp_syncookie",
     ),
     PacketimpactTestInfo(
+        name = "tcp_connect_icmp_error",
+    ),
+    PacketimpactTestInfo(
         name = "icmpv6_param_problem",
     ),
     PacketimpactTestInfo(
@@ -268,9 +288,6 @@ ALL_TESTS = [
         num_duts = 3,
     ),
     PacketimpactTestInfo(
-        name = "udp_send_recv_dgram",
-    ),
-    PacketimpactTestInfo(
         name = "tcp_linger",
     ),
     PacketimpactTestInfo(
@@ -285,6 +302,13 @@ ALL_TESTS = [
     ),
     PacketimpactTestInfo(
         name = "tcp_fin_retransmission",
+    ),
+    PacketimpactTestInfo(
+        name = "generic_dgram_socket_send_recv",
+        timeout = "long",
+    ),
+    PacketimpactTestInfo(
+        name = "tcp_acceptable_ack_syn_rcvd",
     ),
 ]
 

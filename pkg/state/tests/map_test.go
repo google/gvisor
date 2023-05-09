@@ -19,7 +19,7 @@ import (
 	"testing"
 )
 
-var allMapPrimitives = []interface{}{
+var allMapPrimitives = []any{
 	bool(true),
 	int(1),
 	int8(1),
@@ -40,12 +40,12 @@ var allMapKeys = flatten(allMapPrimitives, pointersTo(allMapPrimitives))
 
 var allMapValues = flatten(allMapPrimitives, pointersTo(allMapPrimitives), interfacesTo(allMapPrimitives))
 
-var emptyMaps = combine(allMapKeys, allMapValues, func(v1, v2 interface{}) interface{} {
+var emptyMaps = combine(allMapKeys, allMapValues, func(v1, v2 any) any {
 	m := reflect.MakeMap(reflect.MapOf(reflect.TypeOf(v1), reflect.TypeOf(v2)))
 	return m.Interface()
 })
 
-var fullMaps = combine(allMapKeys, allMapValues, func(v1, v2 interface{}) interface{} {
+var fullMaps = combine(allMapKeys, allMapValues, func(v1, v2 any) any {
 	m := reflect.MakeMap(reflect.MapOf(reflect.TypeOf(v1), reflect.TypeOf(v2)))
 	m.SetMapIndex(reflect.Zero(reflect.TypeOf(v1)), reflect.Zero(reflect.TypeOf(v2)))
 	return m.Interface()
@@ -55,7 +55,7 @@ func TestMapAliasing(t *testing.T) {
 	v := make(map[int]int)
 	ptrToV := &v
 	aliases := []map[int]int{v, v}
-	runTestCases(t, false, "", []interface{}{ptrToV, aliases})
+	runTestCases(t, false, "", []any{ptrToV, aliases})
 }
 
 func TestMapsEmpty(t *testing.T) {
@@ -74,11 +74,11 @@ func TestMapsFull(t *testing.T) {
 
 func TestMapContainers(t *testing.T) {
 	var (
-		nilMap   map[int]interface{}
-		emptyMap = make(map[int]interface{})
-		fullMap  = map[int]interface{}{0: nil}
+		nilMap   map[int]any
+		emptyMap = make(map[int]any)
+		fullMap  = map[int]any{0: nil}
 	)
-	runTestCases(t, false, "", []interface{}{
+	runTestCases(t, false, "", []any{
 		mapContainer{v: nilMap},
 		mapContainer{v: emptyMap},
 		mapContainer{v: fullMap},

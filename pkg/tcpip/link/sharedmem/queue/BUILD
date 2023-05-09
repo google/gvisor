@@ -1,6 +1,9 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_library(
     name = "queue",
@@ -10,6 +13,7 @@ go_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/atomicbitops",
         "//pkg/log",
         "//pkg/tcpip/link/sharedmem/pipe",
     ],
@@ -22,6 +26,7 @@ go_test(
     ],
     library = ":queue",
     deps = [
+        "//pkg/atomicbitops",
         "//pkg/tcpip/link/sharedmem/pipe",
     ],
 )

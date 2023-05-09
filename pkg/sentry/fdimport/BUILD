@@ -1,6 +1,9 @@
 load("//tools:defs.bzl", "go_library")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_library(
     name = "fdimport",
@@ -11,10 +14,9 @@ go_library(
     deps = [
         "//pkg/context",
         "//pkg/fd",
-        "//pkg/sentry/fs",
-        "//pkg/sentry/fs/host",
         "//pkg/sentry/fsimpl/host",
         "//pkg/sentry/kernel",
+        "//pkg/sentry/kernel/auth",
         "//pkg/sentry/vfs",
     ],
 )

@@ -1,6 +1,9 @@
 load("//tools:defs.bzl", "cc_binary", "go_binary")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_binary(
     name = "tcp_proxy",
@@ -13,7 +16,9 @@ go_binary(
         "//pkg/tcpip/link/qdisc/fifo",
         "//pkg/tcpip/network/arp",
         "//pkg/tcpip/network/ipv4",
+        "//pkg/tcpip/network/ipv6",
         "//pkg/tcpip/stack",
+        "//pkg/tcpip/transport/icmp",
         "//pkg/tcpip/transport/tcp",
         "//pkg/tcpip/transport/udp",
         "@org_golang_x_sys//unix:go_default_library",

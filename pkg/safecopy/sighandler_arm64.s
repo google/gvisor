@@ -141,3 +141,9 @@ handle_fault:
 	MOVW R0, REG_R1(R2)
 
 	RET
+
+// func addrOfSignalHandler() uintptr
+TEXT ·addrOfSignalHandler(SB), $0-8
+	MOVD	$·signalHandler(SB), R0
+	MOVD	R0, ret+0(FP)
+	RET

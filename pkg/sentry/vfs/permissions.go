@@ -20,9 +20,9 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // AccessTypes is a bitmask of Unix file permissions.
@@ -77,7 +77,7 @@ func GenericCheckPermissions(creds *auth.Credentials, ats AccessTypes, mode linu
 	// the caller's user namespace; compare
 	// kernel/capability.c:privileged_wrt_inode_uidgid().
 	if !kuid.In(creds.UserNamespace).Ok() || !kgid.In(creds.UserNamespace).Ok() {
-		return syserror.EACCES
+		return linuxerr.EACCES
 	}
 	// CAP_DAC_READ_SEARCH allows the caller to read and search arbitrary
 	// directories, and read arbitrary non-directory files.
@@ -94,7 +94,7 @@ func GenericCheckPermissions(creds *auth.Credentials, ats AccessTypes, mode linu
 			return nil
 		}
 	}
-	return syserror.EACCES
+	return linuxerr.EACCES
 }
 
 // MayLink determines whether creating a hard link to a file with the given
@@ -110,12 +110,12 @@ func MayLink(creds *auth.Credentials, mode linux.FileMode, kuid auth.KUID, kgid 
 
 	// Only regular files can be hard linked.
 	if mode.FileType() != linux.S_IFREG {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 
 	// Setuid files should not get pinned to the filesystem.
 	if mode&linux.S_ISUID != 0 {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 
 	// Executable setgid files should not get pinned to the filesystem, but we
@@ -123,7 +123,7 @@ func MayLink(creds *auth.Credentials, mode linux.FileMode, kuid auth.KUID, kgid 
 
 	// Hardlinking to unreadable or unwritable sources is dangerous.
 	if err := GenericCheckPermissions(creds, MayRead|MayWrite, mode, kuid, kgid); err != nil {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 	return nil
 }
@@ -132,14 +132,14 @@ func MayLink(creds *auth.Credentials, mode linux.FileMode, kuid auth.KUID, kgid 
 // with the given OpenOptions.Flags. Note that this is NOT the same thing as
 // the set of accesses permitted for the opened file:
 //
-// - O_TRUNC causes MayWrite to be set in the returned AccessTypes (since it
-// mutates the file), but does not permit writing to the open file description
-// thereafter.
+//   - O_TRUNC causes MayWrite to be set in the returned AccessTypes (since it
+//     mutates the file), but does not permit writing to the open file description
+//     thereafter.
 //
-// - "Linux reserves the special, nonstandard access mode 3 (binary 11) in
-// flags to mean: check for read and write permission on the file and return a
-// file descriptor that can't be used for reading or writing." - open(2). Thus
-// AccessTypesForOpenFlags returns MayRead|MayWrite in this case.
+//   - "Linux reserves the special, nonstandard access mode 3 (binary 11) in
+//     flags to mean: check for read and write permission on the file and return a
+//     file descriptor that can't be used for reading or writing." - open(2). Thus
+//     AccessTypesForOpenFlags returns MayRead|MayWrite in this case.
 //
 // Use May{Read,Write}FileWithOpenFlags() for these checks instead.
 func AccessTypesForOpenFlags(opts *OpenOptions) AccessTypes {
@@ -194,12 +194,12 @@ func CheckSetStat(ctx context.Context, creds *auth.Credentials, opts *SetStatOpt
 			return err
 		}
 		if limit < int64(stat.Size) {
-			return syserror.ErrExceedsFileSizeLimit
+			return linuxerr.ErrExceedsFileSizeLimit
 		}
 	}
 	if stat.Mask&linux.STATX_MODE != 0 {
 		if !CanActAsOwner(creds, kuid) {
-			return syserror.EPERM
+			return linuxerr.EPERM
 		}
 		// TODO(b/30815691): "If the calling process is not privileged (Linux:
 		// does not have the CAP_FSETID capability), and the group of the file
@@ -210,13 +210,13 @@ func CheckSetStat(ctx context.Context, creds *auth.Credentials, opts *SetStatOpt
 	if stat.Mask&linux.STATX_UID != 0 {
 		if !((creds.EffectiveKUID == kuid && auth.KUID(stat.UID) == kuid) ||
 			HasCapabilityOnFile(creds, linux.CAP_CHOWN, kuid, kgid)) {
-			return syserror.EPERM
+			return linuxerr.EPERM
 		}
 	}
 	if stat.Mask&linux.STATX_GID != 0 {
 		if !((creds.EffectiveKUID == kuid && creds.InGroup(auth.KGID(stat.GID))) ||
 			HasCapabilityOnFile(creds, linux.CAP_CHOWN, kuid, kgid)) {
-			return syserror.EPERM
+			return linuxerr.EPERM
 		}
 	}
 	if opts.NeedWritePerm && !creds.HasCapability(linux.CAP_DAC_OVERRIDE) {
@@ -229,7 +229,7 @@ func CheckSetStat(ctx context.Context, creds *auth.Credentials, opts *SetStatOpt
 			if (stat.Mask&linux.STATX_ATIME != 0 && stat.Atime.Nsec != linux.UTIME_NOW) ||
 				(stat.Mask&linux.STATX_MTIME != 0 && stat.Mtime.Nsec != linux.UTIME_NOW) ||
 				(stat.Mask&linux.STATX_CTIME != 0 && stat.Ctime.Nsec != linux.UTIME_NOW) {
-				return syserror.EPERM
+				return linuxerr.EPERM
 			}
 			if err := GenericCheckPermissions(creds, MayWrite, mode, kuid, kgid); err != nil {
 				return err
@@ -252,7 +252,7 @@ func CheckDeleteSticky(creds *auth.Credentials, parentMode linux.FileMode, paren
 		HasCapabilityOnFile(creds, linux.CAP_FOWNER, childKUID, childKGID) {
 		return nil
 	}
-	return syserror.EPERM
+	return linuxerr.EPERM
 }
 
 // CanActAsOwner returns true if creds can act as the owner of a file with the
@@ -281,7 +281,7 @@ func CheckLimit(ctx context.Context, offset, size int64) (int64, error) {
 		return size, nil
 	}
 	if offset >= int64(fileSizeLimit) {
-		return 0, syserror.ErrExceedsFileSizeLimit
+		return 0, linuxerr.ErrExceedsFileSizeLimit
 	}
 	remaining := int64(fileSizeLimit) - offset
 	if remaining < size {
@@ -292,11 +292,11 @@ func CheckLimit(ctx context.Context, offset, size int64) (int64, error) {
 
 // CheckXattrPermissions checks permissions for extended attribute access.
 // This is analogous to fs/xattr.c:xattr_permission(). Some key differences:
-// * Does not check for read-only filesystem property.
-// * Does not check inode immutability or append only mode. In both cases EPERM
-//   must be returned by filesystem implementations.
-// * Does not do inode permission checks. Filesystem implementations should
-//   handle inode permission checks as they may differ across implementations.
+//   - Does not check for read-only filesystem property.
+//   - Does not check inode immutability or append only mode. In both cases EPERM
+//     must be returned by filesystem implementations.
+//   - Does not do inode permission checks. Filesystem implementations should
+//     handle inode permission checks as they may differ across implementations.
 func CheckXattrPermissions(creds *auth.Credentials, ats AccessTypes, mode linux.FileMode, kuid auth.KUID, name string) error {
 	switch {
 	case strings.HasPrefix(name, linux.XATTR_TRUSTED_PREFIX):
@@ -306,9 +306,9 @@ func CheckXattrPermissions(creds *auth.Credentials, ats AccessTypes, mode linux.
 			return nil
 		}
 		if ats.MayWrite() {
-			return syserror.EPERM
+			return linuxerr.EPERM
 		}
-		return syserror.ENODATA
+		return linuxerr.ENODATA
 	case strings.HasPrefix(name, linux.XATTR_USER_PREFIX):
 		// In the user.* namespace, only regular files and directories can have
 		// extended attributes. For sticky directories, only the owner and
@@ -316,12 +316,12 @@ func CheckXattrPermissions(creds *auth.Credentials, ats AccessTypes, mode linux.
 		filetype := mode.FileType()
 		if filetype != linux.ModeRegular && filetype != linux.ModeDirectory {
 			if ats.MayWrite() {
-				return syserror.EPERM
+				return linuxerr.EPERM
 			}
-			return syserror.ENODATA
+			return linuxerr.ENODATA
 		}
 		if filetype == linux.ModeDirectory && mode&linux.ModeSticky != 0 && ats.MayWrite() && !CanActAsOwner(creds, kuid) {
-			return syserror.EPERM
+			return linuxerr.EPERM
 		}
 	}
 	return nil

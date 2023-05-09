@@ -1,12 +1,15 @@
 load("//tools:defs.bzl", "bzl_library", "go_binary")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_binary(
     name = "go_generics",
     srcs = [
-        "generics.go",
         "imports.go",
+        "main.go",
         "remove.go",
     ],
     visibility = ["//:sandbox"],

@@ -17,17 +17,11 @@ package time
 import (
 	"errors"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
 )
 
 const (
-	// defaultOverheadTSC is the default estimated syscall overhead in TSC cycles.
-	// It is further refined as syscalls are made.
-	defaultOverheadCycles = 1 * 1000
-
-	// maxOverheadCycles is the maximum allowed syscall overhead in TSC cycles.
-	maxOverheadCycles = 100 * defaultOverheadCycles
-
 	// maxSampleLoops is the maximum number of times to try to get a clock sample
 	// under the expected overhead.
 	maxSampleLoops = 5
@@ -222,4 +216,36 @@ func (s *sampler) Range() (sample, sample, bool) {
 	}
 
 	return s.samples[0], s.samples[len(s.samples)-1], true
+}
+
+// syscallTSCReferenceClocks is the standard referenceClocks, collecting
+// samples using CLOCK_GETTIME and RDTSC.
+type syscallTSCReferenceClocks struct {
+	tscCycleClock
+}
+
+// Sample implements sampler.Sample.
+func (syscallTSCReferenceClocks) Sample(c ClockID) (sample, error) {
+	var s sample
+
+	s.before = Rdtsc()
+
+	// Don't call clockGettime to avoid a call which may call morestack.
+	var ts unix.Timespec
+
+	vdsoClockGettime(c, &ts)
+
+	s.after = Rdtsc()
+	s.ref = ReferenceNS(ts.Nano())
+
+	return s, nil
+}
+
+// clockGettime calls SYS_CLOCK_GETTIME, returning time in nanoseconds.
+func clockGettime(c ClockID) (ReferenceNS, error) {
+	var ts unix.Timespec
+
+	vdsoClockGettime(c, &ts)
+
+	return ReferenceNS(ts.Nano()), nil
 }

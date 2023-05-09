@@ -19,6 +19,7 @@ import (
 	"reflect"
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sharedmem/pipe"
 )
 
@@ -35,7 +36,8 @@ func TestBasicTxQueue(t *testing.T) {
 	txp.Init(pb2)
 
 	var q Tx
-	q.Init(pb1, pb2)
+	var state atomicbitops.Uint32
+	q.Init(pb1, pb2, &state)
 
 	// Enqueue two buffers.
 	b := []TxBuffer{
@@ -203,7 +205,8 @@ func TestBadTxCompletion(t *testing.T) {
 	txp.Init(pb2)
 
 	var q Tx
-	q.Init(pb1, pb2)
+	var state atomicbitops.Uint32
+	q.Init(pb1, pb2, &state)
 
 	// Post a completion that is too short, and check that it is ignored.
 	if d := txp.Push(7); d == nil {
@@ -318,7 +321,8 @@ func TestFillTxPipe(t *testing.T) {
 	txp.Init(pb2)
 
 	var q Tx
-	q.Init(pb1, pb2)
+	var state atomicbitops.Uint32
+	q.Init(pb1, pb2, &state)
 
 	// Transmit twice, which should fill the tx pipe.
 	b := []TxBuffer{
@@ -386,7 +390,8 @@ func TestLotsOfTransmissions(t *testing.T) {
 	txp.Init(pb2)
 
 	var q Tx
-	q.Init(pb1, pb2)
+	var state atomicbitops.Uint32
+	q.Init(pb1, pb2, &state)
 
 	// Prepare packet with two buffers.
 	b := []TxBuffer{
@@ -491,13 +496,13 @@ func TestRxEnableNotification(t *testing.T) {
 	pb1 := make([]byte, 100)
 	pb2 := make([]byte, 100)
 
-	var state uint32
+	var state atomicbitops.Uint32
 	var q Rx
 	q.Init(pb1, pb2, &state)
 
 	q.EnableNotification()
-	if state != eventFDEnabled {
-		t.Fatalf("Bad value in shared state: got %v, want %v", state, eventFDEnabled)
+	if state.Load() != EventFDEnabled {
+		t.Fatalf("Bad value in shared state: got %v, want %v", state.Load(), EventFDEnabled)
 	}
 }
 
@@ -506,12 +511,12 @@ func TestRxDisableNotification(t *testing.T) {
 	pb1 := make([]byte, 100)
 	pb2 := make([]byte, 100)
 
-	var state uint32
+	var state atomicbitops.Uint32
 	var q Rx
 	q.Init(pb1, pb2, &state)
 
 	q.DisableNotification()
-	if state != eventFDDisabled {
-		t.Fatalf("Bad value in shared state: got %v, want %v", state, eventFDDisabled)
+	if state.Load() != EventFDDisabled {
+		t.Fatalf("Bad value in shared state: got %v, want %v", state.Load(), EventFDDisabled)
 	}
 }

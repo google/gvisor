@@ -26,7 +26,7 @@ func TestManualClockAdvance(t *testing.T) {
 	clock := faketime.NewManualClock()
 	start := clock.NowMonotonic()
 	clock.Advance(timeout)
-	if got, want := time.Duration(clock.NowMonotonic()-start)*time.Nanosecond, timeout; got != want {
+	if got, want := clock.NowMonotonic().Sub(start), timeout; got != want {
 		t.Errorf("got = %d, want = %d", got, want)
 	}
 }
@@ -87,7 +87,7 @@ func TestManualClockAfterFunc(t *testing.T) {
 			if got, want := counter2, test.wantCounter2; got != want {
 				t.Errorf("got counter2 = %d, want = %d", got, want)
 			}
-			if got, want := time.Duration(clock.NowMonotonic()-start)*time.Nanosecond, test.advance; got != want {
+			if got, want := clock.NowMonotonic().Sub(start), test.advance; got != want {
 				t.Errorf("got elapsed = %d, want = %d", got, want)
 			}
 		})

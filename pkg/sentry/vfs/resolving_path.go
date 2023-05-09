@@ -19,10 +19,10 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // ResolvingPath represents the state of an in-progress path resolution, shared
@@ -44,13 +44,10 @@ type ResolvingPath struct {
 	start *Dentry
 	pit   fspath.Iterator
 
-	flags         uint16
-	mustBeDir     bool // final file must be a directory?
-	mustBeDirOrig bool
-	symlinks      uint8 // number of symlinks traversed
-	symlinksOrig  uint8
-	curPart       uint8 // index into parts
-	numOrigParts  uint8
+	flags     uint16
+	mustBeDir bool  // final file must be a directory?
+	symlinks  uint8 // number of symlinks traversed
+	curPart   uint8 // index into parts
 
 	creds *auth.Credentials
 
@@ -60,14 +57,9 @@ type ResolvingPath struct {
 	nextStart        *Dentry // ref held if not nil
 	absSymlinkTarget fspath.Path
 
-	// ResolvingPath must track up to two relative paths: the "current"
-	// relative path, which is updated whenever a relative symlink is
-	// encountered, and the "original" relative path, which is updated from the
-	// current relative path by handleError() when resolution must change
-	// filesystems (due to reaching a mount boundary or absolute symlink) and
-	// overwrites the current relative path when Restart() is called.
-	parts     [1 + linux.MaxSymlinkTraversals]fspath.Iterator
-	origParts [1 + linux.MaxSymlinkTraversals]fspath.Iterator
+	// ResolvingPath tracks relative paths, which is updated whenever a relative
+	// symlink is encountered.
+	parts [1 + linux.MaxSymlinkTraversals]fspath.Iterator
 }
 
 const (
@@ -115,11 +107,13 @@ func (resolveAbsSymlinkError) Error() string {
 }
 
 var resolvingPathPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return &ResolvingPath{}
 	},
 }
 
+// getResolvingPath gets a new ResolvingPath from the pool. Caller must call
+// ResolvingPath.Release() when done.
 func (vfs *VirtualFilesystem) getResolvingPath(creds *auth.Credentials, pop *PathOperation) *ResolvingPath {
 	rp := resolvingPathPool.Get().(*ResolvingPath)
 	rp.vfs = vfs
@@ -132,17 +126,37 @@ func (vfs *VirtualFilesystem) getResolvingPath(creds *auth.Credentials, pop *Pat
 		rp.flags |= rpflagsFollowFinalSymlink
 	}
 	rp.mustBeDir = pop.Path.Dir
-	rp.mustBeDirOrig = pop.Path.Dir
 	rp.symlinks = 0
 	rp.curPart = 0
-	rp.numOrigParts = 1
 	rp.creds = creds
 	rp.parts[0] = pop.Path.Begin
-	rp.origParts[0] = pop.Path.Begin
 	return rp
 }
 
-func (vfs *VirtualFilesystem) putResolvingPath(ctx context.Context, rp *ResolvingPath) {
+// Copy creates another ResolvingPath with the same state as the original.
+// Copies are independent, using the copy does not change the original and
+// vice-versa.
+//
+// Caller must call Resease() when done.
+func (rp *ResolvingPath) Copy() *ResolvingPath {
+	copy := resolvingPathPool.Get().(*ResolvingPath)
+	*copy = *rp // All fields all shallow copiable.
+
+	// Take extra reference for the copy if the original had them.
+	if copy.flags&rpflagsHaveStartRef != 0 {
+		copy.start.IncRef()
+	}
+	if copy.flags&rpflagsHaveMountRef != 0 {
+		copy.mount.IncRef()
+	}
+	// Reset error state.
+	copy.nextStart = nil
+	copy.nextMount = nil
+	return copy
+}
+
+// Release decrements references if needed and returns the object to the pool.
+func (rp *ResolvingPath) Release(ctx context.Context) {
 	rp.root = VirtualDentry{}
 	rp.decRefStartAndMount(ctx)
 	rp.mount = nil
@@ -240,23 +254,26 @@ func (rp *ResolvingPath) Advance() {
 	}
 }
 
-// Restart resets the stream of path components represented by rp to its state
-// on entry to the current FilesystemImpl method.
-func (rp *ResolvingPath) Restart(ctx context.Context) {
-	rp.pit = rp.origParts[rp.numOrigParts-1]
-	rp.mustBeDir = rp.mustBeDirOrig
-	rp.symlinks = rp.symlinksOrig
-	rp.curPart = rp.numOrigParts - 1
-	copy(rp.parts[:], rp.origParts[:rp.numOrigParts])
-	rp.releaseErrorState(ctx)
-}
-
-func (rp *ResolvingPath) relpathCommit() {
-	rp.mustBeDirOrig = rp.mustBeDir
-	rp.symlinksOrig = rp.symlinks
-	rp.numOrigParts = rp.curPart + 1
-	copy(rp.origParts[:rp.curPart], rp.parts[:])
-	rp.origParts[rp.curPart] = rp.pit
+// GetComponents emits all the remaining path components in rp. It does *not*
+// update rp state. It halts if emit() returns false. If excludeLast is true,
+// then the last path component is not emitted.
+func (rp *ResolvingPath) GetComponents(excludeLast bool, emit func(string) bool) {
+	// Copy rp state.
+	cur := rp.pit
+	curPart := rp.curPart
+	for cur.Ok() {
+		if excludeLast && curPart == 0 && !cur.NextOk() {
+			break
+		}
+		if !emit(cur.String()) {
+			break
+		}
+		cur = cur.Next()
+		if !cur.Ok() && curPart > 0 {
+			curPart--
+			cur = rp.parts[curPart]
+		}
+	}
 }
 
 // CheckRoot is called before resolving the parent of the Dentry d. If the
@@ -306,6 +323,7 @@ func (rp *ResolvingPath) CheckMount(ctx context.Context, d *Dentry) error {
 //
 // If path is terminated with '/', the '/' is considered the last element and
 // any symlink before that is followed:
+//
 //   - For most non-creating walks, the last path component is handled by
 //     fs/namei.c:lookup_last(), which sets LOOKUP_FOLLOW if the first byte
 //     after the path component is non-NULL (which is only possible if it's '/')
@@ -325,23 +343,25 @@ func (rp *ResolvingPath) ShouldFollowSymlink() bool {
 // HandleSymlink is called when the current path component is a symbolic link
 // to the given target. If the calling Filesystem method should continue path
 // traversal, HandleSymlink updates the path component stream to reflect the
-// symlink target and returns nil. Otherwise it returns a non-nil error.
+// symlink target and returns nil. Otherwise it returns a non-nil error. It
+// also returns whether the symlink was successfully followed, which can be
+// true even when a non-nil error like resolveAbsSymlinkError is returned.
 //
 // Preconditions: !rp.Done().
 //
 // Postconditions: If HandleSymlink returns a nil error, then !rp.Done().
-func (rp *ResolvingPath) HandleSymlink(target string) error {
+func (rp *ResolvingPath) HandleSymlink(target string) (bool, error) {
 	if rp.symlinks >= linux.MaxSymlinkTraversals {
-		return syserror.ELOOP
+		return false, linuxerr.ELOOP
 	}
 	if len(target) == 0 {
-		return syserror.ENOENT
+		return false, linuxerr.ENOENT
 	}
 	rp.symlinks++
 	targetPath := fspath.Parse(target)
 	if targetPath.Absolute {
 		rp.absSymlinkTarget = targetPath
-		return resolveAbsSymlinkError{}
+		return true, resolveAbsSymlinkError{}
 	}
 	// Consume the path component that represented the symlink.
 	rp.Advance()
@@ -352,7 +372,7 @@ func (rp *ResolvingPath) HandleSymlink(target string) error {
 		}
 	}
 	rp.relpathPrepend(targetPath)
-	return nil
+	return true, nil
 }
 
 // Preconditions: path.HasComponents().
@@ -375,14 +395,16 @@ func (rp *ResolvingPath) relpathPrepend(path fspath.Path) {
 
 // HandleJump is called when the current path component is a "magic" link to
 // the given VirtualDentry, like /proc/[pid]/fd/[fd]. If the calling Filesystem
-// method should continue path traversal, HandleMagicSymlink updates the path
+// method should continue path traversal, HandleJump updates the path
 // component stream to reflect the magic link target and returns nil. Otherwise
-// it returns a non-nil error.
+// it returns a non-nil error. It also returns whether the magic link was
+// followed, which can be true even when a non-nil error like
+// resolveMountRootOrJumpError is returned.
 //
 // Preconditions: !rp.Done().
-func (rp *ResolvingPath) HandleJump(target VirtualDentry) error {
+func (rp *ResolvingPath) HandleJump(target VirtualDentry) (bool, error) {
 	if rp.symlinks >= linux.MaxSymlinkTraversals {
-		return syserror.ELOOP
+		return false, linuxerr.ELOOP
 	}
 	rp.symlinks++
 	// Consume the path component that represented the magic link.
@@ -392,7 +414,7 @@ func (rp *ResolvingPath) HandleJump(target VirtualDentry) error {
 	target.IncRef()
 	rp.nextMount = target.mount
 	rp.nextStart = target.dentry
-	return resolveMountRootOrJumpError{}
+	return true, resolveMountRootOrJumpError{}
 }
 
 func (rp *ResolvingPath) handleError(ctx context.Context, err error) bool {
@@ -405,11 +427,10 @@ func (rp *ResolvingPath) handleError(ctx context.Context, err error) bool {
 		rp.flags |= rpflagsHaveMountRef | rpflagsHaveStartRef
 		rp.nextMount = nil
 		rp.nextStart = nil
-		// Commit the previous FileystemImpl's progress through the relative
-		// path. (Don't consume the path component that caused us to traverse
+		// Don't consume the path component that caused us to traverse
 		// through the mount root - i.e. the ".." - because we still need to
-		// resolve the mount point's parent in the new FilesystemImpl.)
-		rp.relpathCommit()
+		// resolve the mount point's parent in the new FilesystemImpl.
+		//
 		// Restart path resolution on the new Mount. Don't bother calling
 		// rp.releaseErrorState() since we already set nextMount and nextStart
 		// to nil above.
@@ -425,9 +446,6 @@ func (rp *ResolvingPath) handleError(ctx context.Context, err error) bool {
 		rp.nextMount = nil
 		// Consume the path component that represented the mount point.
 		rp.Advance()
-		// Commit the previous FilesystemImpl's progress through the relative
-		// path.
-		rp.relpathCommit()
 		// Restart path resolution on the new Mount.
 		rp.releaseErrorState(ctx)
 		return true
@@ -440,11 +458,10 @@ func (rp *ResolvingPath) handleError(ctx context.Context, err error) bool {
 		rp.flags &^= rpflagsHaveMountRef | rpflagsHaveStartRef
 		// Consume the path component that represented the symlink.
 		rp.Advance()
-		// Prepend the symlink target to the relative path.
-		rp.relpathPrepend(rp.absSymlinkTarget)
-		// Commit the previous FilesystemImpl's progress through the relative
-		// path, including the symlink target we just prepended.
-		rp.relpathCommit()
+		if rp.absSymlinkTarget.HasComponents() {
+			// Prepend the symlink target to the relative path.
+			rp.relpathPrepend(rp.absSymlinkTarget)
+		}
 		// Restart path resolution on the new Mount.
 		rp.releaseErrorState(ctx)
 		return true

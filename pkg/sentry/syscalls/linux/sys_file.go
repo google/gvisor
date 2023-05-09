@@ -15,522 +15,169 @@
 package linux
 
 import (
-	"golang.org/x/sys/unix"
+	"math"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/gohacks"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
-	"gvisor.dev/gvisor/pkg/sentry/fs/lock"
-	"gvisor.dev/gvisor/pkg/sentry/fs/tmpfs"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/lock"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/fasync"
-	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
-	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
-// fileOpAt performs an operation on the second last component in the path.
-func fileOpAt(t *kernel.Task, dirFD int32, path string, fn func(root *fs.Dirent, d *fs.Dirent, name string, remainingTraversals uint) error) error {
-	// Extract the last component.
-	dir, name := fs.SplitLast(path)
-	if dir == "/" {
-		// Common case: we are accessing a file in the root.
-		root := t.FSContext().RootDirectory()
-		err := fn(root, root, name, linux.MaxSymlinkTraversals)
-		root.DecRef(t)
-		return err
-	} else if dir == "." && dirFD == linux.AT_FDCWD {
-		// Common case: we are accessing a file relative to the current
-		// working directory; skip the look-up.
-		wd := t.FSContext().WorkingDirectory()
-		root := t.FSContext().RootDirectory()
-		err := fn(root, wd, name, linux.MaxSymlinkTraversals)
-		wd.DecRef(t)
-		root.DecRef(t)
-		return err
-	}
-
-	return fileOpOn(t, dirFD, dir, true /* resolve */, func(root *fs.Dirent, d *fs.Dirent, remainingTraversals uint) error {
-		return fn(root, d, name, remainingTraversals)
-	})
-}
-
-// fileOpOn performs an operation on the last entry of the path.
-func fileOpOn(t *kernel.Task, dirFD int32, path string, resolve bool, fn func(root *fs.Dirent, d *fs.Dirent, remainingTraversals uint) error) error {
-	var (
-		d   *fs.Dirent // The file.
-		wd  *fs.Dirent // The working directory (if required.)
-		rel *fs.Dirent // The relative directory for search (if required.)
-		f   *fs.File   // The file corresponding to dirFD (if required.)
-		err error
-	)
-
-	// Extract the working directory (maybe).
-	if len(path) > 0 && path[0] == '/' {
-		// Absolute path; rel can be nil.
-	} else if dirFD == linux.AT_FDCWD {
-		// Need to reference the working directory.
-		wd = t.FSContext().WorkingDirectory()
-		rel = wd
-	} else {
-		// Need to extract the given FD.
-		f = t.GetFile(dirFD)
-		if f == nil {
-			return syserror.EBADF
-		}
-		rel = f.Dirent
-		if !fs.IsDir(rel.Inode.StableAttr) {
-			f.DecRef(t)
-			return syserror.ENOTDIR
-		}
-	}
-
-	// Grab the root (always required.)
-	root := t.FSContext().RootDirectory()
-
-	// Lookup the node.
-	remainingTraversals := uint(linux.MaxSymlinkTraversals)
-	if resolve {
-		d, err = t.MountNamespace().FindInode(t, root, rel, path, &remainingTraversals)
-	} else {
-		d, err = t.MountNamespace().FindLink(t, root, rel, path, &remainingTraversals)
-	}
-	root.DecRef(t)
-	if wd != nil {
-		wd.DecRef(t)
-	}
-	if f != nil {
-		f.DecRef(t)
-	}
-	if err != nil {
-		return err
-	}
-
-	err = fn(root, d, remainingTraversals)
-	d.DecRef(t)
-	return err
-}
-
-// copyInPath copies a path in.
-func copyInPath(t *kernel.Task, addr hostarch.Addr, allowEmpty bool) (path string, dirPath bool, err error) {
-	path, err = t.CopyInString(addr, linux.PATH_MAX)
-	if err != nil {
-		return "", false, err
-	}
-	if path == "" && !allowEmpty {
-		return "", false, syserror.ENOENT
-	}
-
-	// If the path ends with a /, then checks must be enforced in various
-	// ways in the different callers. We pass this back to the caller.
-	path, dirPath = fs.TrimTrailingSlashes(path)
-
-	return path, dirPath, nil
-}
-
-// LINT.IfChange
-
-func openAt(t *kernel.Task, dirFD int32, addr hostarch.Addr, flags uint) (fd uintptr, err error) {
-	path, dirPath, err := copyInPath(t, addr, false /* allowEmpty */)
-	if err != nil {
-		return 0, err
-	}
-
-	resolve := flags&linux.O_NOFOLLOW == 0
-	err = fileOpOn(t, dirFD, path, resolve, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
-		// First check a few things about the filesystem before trying to get the file
-		// reference.
-		//
-		// It's required that Check does not try to open files not that aren't backed by
-		// this dirent (e.g. pipes and sockets) because this would result in opening these
-		// files an extra time just to check permissions.
-		if err := d.Inode.CheckPermission(t, flagsToPermissions(flags)); err != nil {
-			return err
-		}
-
-		if fs.IsSymlink(d.Inode.StableAttr) && !resolve {
-			return syserror.ELOOP
-		}
-
-		fileFlags := linuxToFlags(flags)
-		// Linux always adds the O_LARGEFILE flag when running in 64-bit mode.
-		fileFlags.LargeFile = true
-		if fs.IsDir(d.Inode.StableAttr) {
-			// Don't allow directories to be opened writable.
-			if fileFlags.Write {
-				return syserror.EISDIR
-			}
-		} else {
-			// If O_DIRECTORY is set, but the file is not a directory, then fail.
-			if fileFlags.Directory {
-				return syserror.ENOTDIR
-			}
-			// If it's a directory, then make sure.
-			if dirPath {
-				return syserror.ENOTDIR
-			}
-		}
-
-		file, err := d.Inode.GetFile(t, d, fileFlags)
-		if err != nil {
-			return syserror.ConvertIntr(err, syserror.ERESTARTSYS)
-		}
-		defer file.DecRef(t)
-
-		// Truncate is called when O_TRUNC is specified for any kind of
-		// existing Dirent. Behavior is delegated to the entry's Truncate
-		// implementation.
-		if flags&linux.O_TRUNC != 0 {
-			if err := d.Inode.Truncate(t, d, 0); err != nil {
-				return err
-			}
-		}
-
-		// Success.
-		newFD, err := t.NewFDFrom(0, file, kernel.FDFlags{
-			CloseOnExec: flags&linux.O_CLOEXEC != 0,
-		})
-		if err != nil {
-			return err
-		}
-
-		// Set return result in frame.
-		fd = uintptr(newFD)
-
-		// Generate notification for opened file.
-		d.InotifyEvent(linux.IN_OPEN, 0)
-
-		return nil
-	})
-	return fd, err // Use result in frame.
-}
-
-func mknodAt(t *kernel.Task, dirFD int32, addr hostarch.Addr, mode linux.FileMode) error {
-	path, dirPath, err := copyInPath(t, addr, false /* allowEmpty */)
-	if err != nil {
-		return err
-	}
-	if dirPath {
-		return syserror.ENOENT
-	}
-
-	return fileOpAt(t, dirFD, path, func(root *fs.Dirent, d *fs.Dirent, name string, _ uint) error {
-		if !fs.IsDir(d.Inode.StableAttr) {
-			return syserror.ENOTDIR
-		}
-
-		// Do we have the appropriate permissions on the parent?
-		if err := d.Inode.CheckPermission(t, fs.PermMask{Write: true, Execute: true}); err != nil {
-			return err
-		}
-
-		// Attempt a creation.
-		perms := fs.FilePermsFromMode(mode &^ linux.FileMode(t.FSContext().Umask()))
-
-		switch mode.FileType() {
-		case 0:
-			// "Zero file type is equivalent to type S_IFREG." - mknod(2)
-			fallthrough
-		case linux.ModeRegular:
-			// We are not going to return the file, so the actual
-			// flags used don't matter, but they cannot be empty or
-			// Create will complain.
-			flags := fs.FileFlags{Read: true, Write: true}
-			file, err := d.Create(t, root, name, flags, perms)
-			if err != nil {
-				return err
-			}
-			file.DecRef(t)
-			return nil
-
-		case linux.ModeNamedPipe:
-			return d.CreateFifo(t, root, name, perms)
-
-		case linux.ModeSocket:
-			// While it is possible create a unix domain socket file on linux
-			// using mknod(2), in practice this is pretty useless from an
-			// application. Linux internally uses mknod() to create the socket
-			// node during bind(2), but we implement bind(2) independently. If
-			// an application explicitly creates a socket node using mknod(),
-			// you can't seem to bind() or connect() to the resulting socket.
-			//
-			// Instead of emulating this seemingly useless behaviour, we'll
-			// indicate that the filesystem doesn't support the creation of
-			// sockets.
-			return syserror.EOPNOTSUPP
-
-		case linux.ModeCharacterDevice:
-			fallthrough
-		case linux.ModeBlockDevice:
-			// TODO(b/72101894): We don't support creating block or character
-			// devices at the moment.
-			//
-			// When we start supporting block and character devices, we'll
-			// need to check for CAP_MKNOD here.
-			return syserror.EPERM
-
-		default:
-			// "EINVAL - mode requested creation of something other than a
-			// regular file, device special file, FIFO or socket." - mknod(2)
-			return syserror.EINVAL
-		}
-	})
-}
-
-// Mknod implements the linux syscall mknod(2).
-func Mknod(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	path := args[0].Pointer()
-	mode := linux.FileMode(args[1].ModeT())
-	// We don't need this argument until we support creation of device nodes.
-	_ = args[2].Uint() // dev
-
-	return 0, nil, mknodAt(t, linux.AT_FDCWD, path, mode)
-}
-
-// Mknodat implements the linux syscall mknodat(2).
-func Mknodat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	dirFD := args[0].Int()
-	path := args[1].Pointer()
-	mode := linux.FileMode(args[2].ModeT())
-	// We don't need this argument until we support creation of device nodes.
-	_ = args[3].Uint() // dev
-
-	return 0, nil, mknodAt(t, dirFD, path, mode)
-}
-
-func createAt(t *kernel.Task, dirFD int32, addr hostarch.Addr, flags uint, mode linux.FileMode) (fd uintptr, err error) {
-	path, dirPath, err := copyInPath(t, addr, false /* allowEmpty */)
-	if err != nil {
-		return 0, err
-	}
-	if dirPath {
-		return 0, syserror.ENOENT
-	}
-
-	fileFlags := linuxToFlags(flags)
-	// Linux always adds the O_LARGEFILE flag when running in 64-bit mode.
-	fileFlags.LargeFile = true
-
-	err = fileOpAt(t, dirFD, path, func(root *fs.Dirent, parent *fs.Dirent, name string, remainingTraversals uint) error {
-		// Resolve the name to see if it exists, and follow any
-		// symlinks along the way. We must do the symlink resolution
-		// manually because if the symlink target does not exist, we
-		// must create the target (and not the symlink itself).
-		var (
-			found *fs.Dirent
-			err   error
-		)
-		for {
-			if !fs.IsDir(parent.Inode.StableAttr) {
-				return syserror.ENOTDIR
-			}
-
-			// Start by looking up the dirent at 'name'.
-			found, err = t.MountNamespace().FindLink(t, root, parent, name, &remainingTraversals)
-			if err != nil {
-				break
-			}
-			defer found.DecRef(t)
-
-			// We found something (possibly a symlink). If the
-			// O_EXCL flag was passed, then we can immediately
-			// return EEXIST.
-			if flags&linux.O_EXCL != 0 {
-				return syserror.EEXIST
-			}
-
-			// If we have a non-symlink, then we can proceed.
-			if !fs.IsSymlink(found.Inode.StableAttr) {
-				break
-			}
-
-			// If O_NOFOLLOW was passed, then don't try to resolve
-			// anything.
-			if flags&linux.O_NOFOLLOW != 0 {
-				return syserror.ELOOP
-			}
-
-			// Try to resolve the symlink directly to a Dirent.
-			var resolved *fs.Dirent
-			resolved, err = found.Inode.Getlink(t)
-			if err == nil {
-				// No more resolution necessary.
-				defer resolved.DecRef(t)
-				break
-			}
-			if err != fs.ErrResolveViaReadlink {
-				return err
-			}
-
-			// Are we able to resolve further?
-			if remainingTraversals == 0 {
-				return unix.ELOOP
-			}
-
-			// Resolve the symlink to a path via Readlink.
-			var path string
-			path, err = found.Inode.Readlink(t)
-			if err != nil {
-				break
-			}
-			remainingTraversals--
-
-			// Get the new parent from the target path.
-			var newParent *fs.Dirent
-			newParentPath, newName := fs.SplitLast(path)
-			newParent, err = t.MountNamespace().FindInode(t, root, parent, newParentPath, &remainingTraversals)
-			if err != nil {
-				break
-			}
-			defer newParent.DecRef(t)
-
-			// Repeat the process with the parent and name of the
-			// symlink target.
-			parent = newParent
-			name = newName
-		}
-
-		var newFile *fs.File
-		switch err {
-		case nil:
-			// Like sys_open, check for a few things about the
-			// filesystem before trying to get a reference to the
-			// fs.File. The same constraints on Check apply.
-			if err := found.Inode.CheckPermission(t, flagsToPermissions(flags)); err != nil {
-				return err
-			}
-
-			// Truncate is called when O_TRUNC is specified for any kind of
-			// existing Dirent. Behavior is delegated to the entry's Truncate
-			// implementation.
-			if flags&linux.O_TRUNC != 0 {
-				if err := found.Inode.Truncate(t, found, 0); err != nil {
-					return err
-				}
-			}
-
-			// Create a new fs.File.
-			newFile, err = found.Inode.GetFile(t, found, fileFlags)
-			if err != nil {
-				return syserror.ConvertIntr(err, syserror.ERESTARTSYS)
-			}
-			defer newFile.DecRef(t)
-		case syserror.ENOENT:
-			// File does not exist. Proceed with creation.
-
-			// Do we have write permissions on the parent?
-			if err := parent.Inode.CheckPermission(t, fs.PermMask{Write: true, Execute: true}); err != nil {
-				return err
-			}
-
-			// Attempt a creation.
-			perms := fs.FilePermsFromMode(mode &^ linux.FileMode(t.FSContext().Umask()))
-			newFile, err = parent.Create(t, root, name, fileFlags, perms)
-			if err != nil {
-				// No luck, bail.
-				return err
-			}
-			defer newFile.DecRef(t)
-			found = newFile.Dirent
-		default:
-			return err
-		}
-
-		// Success.
-		newFD, err := t.NewFDFrom(0, newFile, kernel.FDFlags{
-			CloseOnExec: flags&linux.O_CLOEXEC != 0,
-		})
-		if err != nil {
-			return err
-		}
-
-		// Set result in frame.
-		fd = uintptr(newFD)
-
-		// Queue the open inotify event. The creation event is
-		// automatically queued when the dirent is found. The open
-		// events are implemented at the syscall layer so we need to
-		// manually queue one here.
-		found.InotifyEvent(linux.IN_OPEN, 0)
-
-		return nil
-	})
-	return fd, err // Use result in frame.
-}
-
-// Open implements linux syscall open(2).
-func Open(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+// Mknod implements Linux syscall mknod(2).
+func Mknod(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
-	flags := uint(args[1].Uint())
-	if flags&linux.O_CREAT != 0 {
-		mode := linux.FileMode(args[2].ModeT())
-		n, err := createAt(t, linux.AT_FDCWD, addr, flags, mode)
-		return n, nil, err
-	}
-	n, err := openAt(t, linux.AT_FDCWD, addr, flags)
-	return n, nil, err
+	mode := args[1].ModeT()
+	dev := args[2].Uint()
+	return 0, nil, mknodat(t, linux.AT_FDCWD, addr, linux.FileMode(mode), dev)
 }
 
-// Openat implements linux syscall openat(2).
-func Openat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	dirFD := args[0].Int()
+// Mknodat implements Linux syscall mknodat(2).
+func Mknodat(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	dirfd := args[0].Int()
 	addr := args[1].Pointer()
-	flags := uint(args[2].Uint())
-	if flags&linux.O_CREAT != 0 {
-		mode := linux.FileMode(args[3].ModeT())
-		n, err := createAt(t, dirFD, addr, flags, mode)
-		return n, nil, err
-	}
-	n, err := openAt(t, dirFD, addr, flags)
-	return n, nil, err
+	mode := args[2].ModeT()
+	dev := args[3].Uint()
+	return 0, nil, mknodat(t, dirfd, addr, linux.FileMode(mode), dev)
 }
 
-// Creat implements linux syscall creat(2).
-func Creat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func mknodat(t *kernel.Task, dirfd int32, addr hostarch.Addr, mode linux.FileMode, dev uint32) error {
+	path, err := copyInPath(t, addr)
+	if err != nil {
+		return err
+	}
+	tpop, err := getTaskPathOperation(t, dirfd, path, disallowEmptyPath, nofollowFinalSymlink)
+	if err != nil {
+		return err
+	}
+	defer tpop.Release(t)
+
+	// "Zero file type is equivalent to type S_IFREG." - mknod(2)
+	if mode.FileType() == 0 {
+		mode |= linux.ModeRegular
+	}
+	major, minor := linux.DecodeDeviceID(dev)
+	return t.Kernel().VFS().MknodAt(t, t.Credentials(), &tpop.pop, &vfs.MknodOptions{
+		Mode:     mode &^ linux.FileMode(t.FSContext().Umask()),
+		DevMajor: uint32(major),
+		DevMinor: minor,
+	})
+}
+
+// Open implements Linux syscall open(2).
+func Open(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
-	mode := linux.FileMode(args[1].ModeT())
-	n, err := createAt(t, linux.AT_FDCWD, addr, linux.O_WRONLY|linux.O_TRUNC, mode)
-	return n, nil, err
+	flags := args[1].Uint()
+	mode := args[2].ModeT()
+	return openat(t, linux.AT_FDCWD, addr, flags, mode)
 }
 
-// accessContext is a context that overrides the credentials used, but
-// otherwise carries the same values as the embedded context.
-//
-// accessContext should only be used for access(2).
-type accessContext struct {
-	context.Context
-	creds *auth.Credentials
+// Openat implements Linux syscall openat(2).
+func Openat(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	dirfd := args[0].Int()
+	addr := args[1].Pointer()
+	flags := args[2].Uint()
+	mode := args[3].ModeT()
+	return openat(t, dirfd, addr, flags, mode)
 }
 
-// Value implements context.Context.
-func (ac accessContext) Value(key interface{}) interface{} {
-	switch key {
-	case auth.CtxCredentials:
-		return ac.creds
-	default:
-		return ac.Context.Value(key)
+// Creat implements Linux syscall creat(2).
+func Creat(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	addr := args[0].Pointer()
+	mode := args[1].ModeT()
+	return openat(t, linux.AT_FDCWD, addr, linux.O_WRONLY|linux.O_CREAT|linux.O_TRUNC, mode)
+}
+
+func openat(t *kernel.Task, dirfd int32, pathAddr hostarch.Addr, flags uint32, mode uint) (uintptr, *kernel.SyscallControl, error) {
+	path, err := copyInPath(t, pathAddr)
+	if err != nil {
+		return 0, nil, err
 	}
+	tpop, err := getTaskPathOperation(t, dirfd, path, disallowEmptyPath, shouldFollowFinalSymlink(flags&linux.O_NOFOLLOW == 0))
+	if err != nil {
+		return 0, nil, err
+	}
+	defer tpop.Release(t)
+
+	file, err := t.Kernel().VFS().OpenAt(t, t.Credentials(), &tpop.pop, &vfs.OpenOptions{
+		Flags: flags | linux.O_LARGEFILE,
+		Mode:  linux.FileMode(mode & (0777 | linux.S_ISUID | linux.S_ISGID | linux.S_ISVTX) &^ t.FSContext().Umask()),
+	})
+	if err != nil {
+		return 0, nil, err
+	}
+	defer file.DecRef(t)
+
+	fd, err := t.NewFDFrom(0, file, kernel.FDFlags{
+		CloseOnExec: flags&linux.O_CLOEXEC != 0,
+	})
+	return uintptr(fd), nil, err
 }
 
-func accessAt(t *kernel.Task, dirFD int32, addr hostarch.Addr, mode uint) error {
+// Access implements Linux syscall access(2).
+func Access(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	addr := args[0].Pointer()
+	mode := args[1].ModeT()
+
+	return 0, nil, accessAt(t, linux.AT_FDCWD, addr, mode, 0 /* flags */)
+}
+
+// Faccessat implements Linux syscall faccessat(2).
+func Faccessat(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	dirfd := args[0].Int()
+	addr := args[1].Pointer()
+	mode := args[2].ModeT()
+
+	return 0, nil, accessAt(t, dirfd, addr, mode, 0 /* flags */)
+}
+
+// Faccessat2 implements Linux syscall faccessat2(2).
+func Faccessat2(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	dirfd := args[0].Int()
+	addr := args[1].Pointer()
+	mode := args[2].ModeT()
+	flags := args[3].Int()
+
+	return 0, nil, accessAt(t, dirfd, addr, mode, flags)
+}
+
+func accessAt(t *kernel.Task, dirfd int32, pathAddr hostarch.Addr, mode uint, flags int32) error {
 	const rOK = 4
 	const wOK = 2
 	const xOK = 1
 
-	path, _, err := copyInPath(t, addr, false /* allowEmpty */)
+	// Sanity check the mode.
+	if mode&^(rOK|wOK|xOK) != 0 {
+		return linuxerr.EINVAL
+	}
+
+	// faccessat2(2) isn't documented as supporting AT_EMPTY_PATH, but it does.
+	if flags&^(linux.AT_EACCESS|linux.AT_SYMLINK_NOFOLLOW|linux.AT_EMPTY_PATH) != 0 {
+		return linuxerr.EINVAL
+	}
+
+	path, err := copyInPath(t, pathAddr)
 	if err != nil {
 		return err
 	}
-
-	// Sanity check the mode.
-	if mode&^(rOK|wOK|xOK) != 0 {
-		return syserror.EINVAL
+	tpop, err := getTaskPathOperation(t, dirfd, path, shouldAllowEmptyPath(flags&linux.AT_EMPTY_PATH != 0), shouldFollowFinalSymlink(flags&linux.AT_SYMLINK_NOFOLLOW == 0))
+	if err != nil {
+		return err
 	}
+	defer tpop.Release(t)
 
-	return fileOpOn(t, dirFD, path, true /* resolve */, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
+	creds := t.Credentials()
+	if flags&linux.AT_EACCESS == 0 {
 		// access(2) and faccessat(2) check permissions using real
 		// UID/GID, not effective UID/GID.
 		//
@@ -538,7 +185,7 @@ func accessAt(t *kernel.Task, dirFD int32, addr hostarch.Addr, mode uint) error 
 		// uid/gid. We do this by temporarily clearing all FS-related
 		// capabilities and switching the fsuid/fsgid around to the
 		// real ones." -fs/open.c:faccessat
-		creds := t.Credentials().Fork()
+		creds = creds.Fork()
 		creds.EffectiveKUID = creds.RealKUID
 		creds.EffectiveKGID = creds.RealKGID
 		if creds.EffectiveKUID.In(creds.UserNamespace) == auth.RootUID {
@@ -546,66 +193,33 @@ func accessAt(t *kernel.Task, dirFD int32, addr hostarch.Addr, mode uint) error 
 		} else {
 			creds.EffectiveCaps = 0
 		}
+	}
 
-		ctx := &accessContext{
-			Context: t,
-			creds:   creds,
-		}
-
-		return d.Inode.CheckPermission(ctx, fs.PermMask{
-			Read:    mode&rOK != 0,
-			Write:   mode&wOK != 0,
-			Execute: mode&xOK != 0,
-		})
-	})
+	return t.Kernel().VFS().AccessAt(t, creds, vfs.AccessTypes(mode), &tpop.pop)
 }
 
-// Access implements linux syscall access(2).
-func Access(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	addr := args[0].Pointer()
-	mode := args[1].ModeT()
-
-	return 0, nil, accessAt(t, linux.AT_FDCWD, addr, mode)
-}
-
-// Faccessat implements linux syscall faccessat(2).
-//
-// Note that the faccessat() system call does not take a flags argument:
-// "The raw faccessat() system call takes only the first three arguments. The
-// AT_EACCESS and AT_SYMLINK_NOFOLLOW flags are actually implemented within
-// the glibc wrapper function for faccessat().  If either of these flags is
-// specified, then the wrapper function employs fstatat(2) to determine access
-// permissions." - faccessat(2)
-func Faccessat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	dirFD := args[0].Int()
-	addr := args[1].Pointer()
-	mode := args[2].ModeT()
-
-	return 0, nil, accessAt(t, dirFD, addr, mode)
-}
-
-// LINT.ThenChange(vfs2/filesystem.go)
-
-// LINT.IfChange
-
-// Ioctl implements linux syscall ioctl(2).
-func Ioctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+// Ioctl implements Linux syscall ioctl(2).
+func Ioctl(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
-	request := int(args[1].Int())
 
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
-	// Shared flags between file and socket.
-	switch request {
+	if file.StatusFlags()&linux.O_PATH != 0 {
+		return 0, nil, linuxerr.EBADF
+	}
+
+	// Handle ioctls that apply to all FDs.
+	switch args[1].Int() {
 	case linux.FIONCLEX:
 		t.FDTable().SetFlags(t, fd, kernel.FDFlags{
 			CloseOnExec: false,
 		})
 		return 0, nil, nil
+
 	case linux.FIOCLEX:
 		t.FDTable().SetFlags(t, fd, kernel.FDFlags{
 			CloseOnExec: true,
@@ -617,320 +231,377 @@ func Ioctl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		if _, err := primitive.CopyInt32In(t, args[2].Pointer(), &set); err != nil {
 			return 0, nil, err
 		}
-		flags := file.Flags()
+		flags := file.StatusFlags()
 		if set != 0 {
-			flags.NonBlocking = true
+			flags |= linux.O_NONBLOCK
 		} else {
-			flags.NonBlocking = false
+			flags &^= linux.O_NONBLOCK
 		}
-		file.SetFlags(flags.Settable())
-		return 0, nil, nil
+		return 0, nil, file.SetStatusFlags(t, t.Credentials(), flags)
 
 	case linux.FIOASYNC:
 		var set int32
 		if _, err := primitive.CopyInt32In(t, args[2].Pointer(), &set); err != nil {
 			return 0, nil, err
 		}
-		flags := file.Flags()
+		flags := file.StatusFlags()
 		if set != 0 {
-			flags.Async = true
+			flags |= linux.O_ASYNC
 		} else {
-			flags.Async = false
+			flags &^= linux.O_ASYNC
 		}
-		file.SetFlags(flags.Settable())
-		return 0, nil, nil
-
-	case linux.FIOSETOWN, linux.SIOCSPGRP:
-		var set int32
-		if _, err := primitive.CopyInt32In(t, args[2].Pointer(), &set); err != nil {
-			return 0, nil, err
-		}
-		fSetOwn(t, int(fd), file, set)
+		file.SetStatusFlags(t, t.Credentials(), flags)
 		return 0, nil, nil
 
 	case linux.FIOGETOWN, linux.SIOCGPGRP:
-		_, err := primitive.CopyInt32Out(t, args[2].Pointer(), fGetOwn(t, file))
+		var who int32
+		owner, hasOwner := getAsyncOwner(t, file)
+		if hasOwner {
+			if owner.Type == linux.F_OWNER_PGRP {
+				who = -owner.PID
+			} else {
+				who = owner.PID
+			}
+		}
+		_, err := primitive.CopyInt32Out(t, args[2].Pointer(), who)
 		return 0, nil, err
 
-	default:
-		ret, err := file.FileOperations.Ioctl(t, file, t.MemoryManager(), args)
-		if err != nil {
+	case linux.FIOSETOWN, linux.SIOCSPGRP:
+		var who int32
+		if _, err := primitive.CopyInt32In(t, args[2].Pointer(), &who); err != nil {
 			return 0, nil, err
 		}
-
-		return ret, nil, nil
+		ownerType := int32(linux.F_OWNER_PID)
+		if who < 0 {
+			// Check for overflow before flipping the sign.
+			if who-1 > who {
+				return 0, nil, linuxerr.EINVAL
+			}
+			ownerType = linux.F_OWNER_PGRP
+			who = -who
+		}
+		return 0, nil, setAsyncOwner(t, int(fd), file, ownerType, who)
 	}
+
+	ret, err := file.Ioctl(t, t.MemoryManager(), sysno, args)
+	return ret, nil, err
 }
 
-// LINT.ThenChange(vfs2/ioctl.go)
-
-// LINT.IfChange
-
-// Getcwd implements the linux syscall getcwd(2).
-func Getcwd(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+// Getcwd implements Linux syscall getcwd(2).
+func Getcwd(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
 	size := args[1].SizeT()
-	cwd := t.FSContext().WorkingDirectory()
-	defer cwd.DecRef(t)
-	root := t.FSContext().RootDirectory()
-	defer root.DecRef(t)
 
-	// Get our fullname from the root and preprend unreachable if the root was
-	// unreachable from our current dirent this is the same behavior as on linux.
-	s, reachable := cwd.FullName(root)
-	if !reachable {
-		s = "(unreachable)" + s
+	root := t.FSContext().RootDirectory()
+	wd := t.FSContext().WorkingDirectory()
+	s, err := t.Kernel().VFS().PathnameForGetcwd(t, root, wd)
+	root.DecRef(t)
+	wd.DecRef(t)
+	if err != nil {
+		return 0, nil, err
 	}
 
 	// Note this is >= because we need a terminator.
 	if uint(len(s)) >= size {
-		return 0, nil, syserror.ERANGE
+		return 0, nil, linuxerr.ERANGE
 	}
 
-	// Copy out the path name for the node.
-	bytes, err := t.CopyOutBytes(addr, []byte(s))
+	// Construct a byte slice containing a NUL terminator.
+	buf := t.CopyScratchBuffer(len(s) + 1)
+	copy(buf, s)
+	buf[len(buf)-1] = 0
+
+	// Write the pathname slice.
+	n, err := t.CopyOutBytes(addr, buf)
 	if err != nil {
 		return 0, nil, err
 	}
-
-	// Top it off with a terminator.
-	_, err = t.CopyOutBytes(addr+hostarch.Addr(bytes), []byte("\x00"))
-	return uintptr(bytes + 1), nil, err
+	return uintptr(n), nil, nil
 }
 
-// Chroot implements the linux syscall chroot(2).
-func Chroot(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+// Chdir implements Linux syscall chdir(2).
+func Chdir(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
 
-	if !t.HasCapability(linux.CAP_SYS_CHROOT) {
-		return 0, nil, syserror.EPERM
-	}
-
-	path, _, err := copyInPath(t, addr, false /* allowEmpty */)
+	path, err := copyInPath(t, addr)
 	if err != nil {
 		return 0, nil, err
 	}
-
-	return 0, nil, fileOpOn(t, linux.AT_FDCWD, path, true /* resolve */, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
-		// Is it a directory?
-		if !fs.IsDir(d.Inode.StableAttr) {
-			return syserror.ENOTDIR
-		}
-
-		// Does it have execute permissions?
-		if err := d.Inode.CheckPermission(t, fs.PermMask{Execute: true}); err != nil {
-			return err
-		}
-
-		t.FSContext().SetRootDirectory(t, d)
-		return nil
-	})
-}
-
-// Chdir implements the linux syscall chdir(2).
-func Chdir(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	addr := args[0].Pointer()
-
-	path, _, err := copyInPath(t, addr, false /* allowEmpty */)
+	tpop, err := getTaskPathOperation(t, linux.AT_FDCWD, path, disallowEmptyPath, followFinalSymlink)
 	if err != nil {
 		return 0, nil, err
 	}
+	defer tpop.Release(t)
 
-	return 0, nil, fileOpOn(t, linux.AT_FDCWD, path, true /* resolve */, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
-		// Is it a directory?
-		if !fs.IsDir(d.Inode.StableAttr) {
-			return syserror.ENOTDIR
-		}
-
-		// Does it have execute permissions?
-		if err := d.Inode.CheckPermission(t, fs.PermMask{Execute: true}); err != nil {
-			return err
-		}
-
-		t.FSContext().SetWorkingDirectory(t, d)
-		return nil
+	vd, err := t.Kernel().VFS().GetDentryAt(t, t.Credentials(), &tpop.pop, &vfs.GetDentryOptions{
+		CheckSearchable: true,
 	})
-}
-
-// Fchdir implements the linux syscall fchdir(2).
-func Fchdir(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	fd := args[0].Int()
-
-	file := t.GetFile(fd)
-	if file == nil {
-		return 0, nil, syserror.EBADF
-	}
-	defer file.DecRef(t)
-
-	// Is it a directory?
-	if !fs.IsDir(file.Dirent.Inode.StableAttr) {
-		return 0, nil, syserror.ENOTDIR
-	}
-
-	// Does it have execute permissions?
-	if err := file.Dirent.Inode.CheckPermission(t, fs.PermMask{Execute: true}); err != nil {
+	if err != nil {
 		return 0, nil, err
 	}
-
-	t.FSContext().SetWorkingDirectory(t, file.Dirent)
+	t.FSContext().SetWorkingDirectory(t, vd)
+	vd.DecRef(t)
 	return 0, nil, nil
 }
 
-// LINT.ThenChange(vfs2/fscontext.go)
+// Fchdir implements Linux syscall fchdir(2).
+func Fchdir(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	fd := args[0].Int()
 
-// LINT.IfChange
+	tpop, err := getTaskPathOperation(t, fd, fspath.Path{}, allowEmptyPath, nofollowFinalSymlink)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer tpop.Release(t)
 
-// Close implements linux syscall close(2).
-func Close(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	vd, err := t.Kernel().VFS().GetDentryAt(t, t.Credentials(), &tpop.pop, &vfs.GetDentryOptions{
+		CheckSearchable: true,
+	})
+	if err != nil {
+		return 0, nil, err
+	}
+	t.FSContext().SetWorkingDirectory(t, vd)
+	vd.DecRef(t)
+	return 0, nil, nil
+}
+
+// Chroot implements Linux syscall chroot(2).
+func Chroot(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	addr := args[0].Pointer()
+
+	if !t.HasCapability(linux.CAP_SYS_CHROOT) {
+		return 0, nil, linuxerr.EPERM
+	}
+
+	path, err := copyInPath(t, addr)
+	if err != nil {
+		return 0, nil, err
+	}
+	tpop, err := getTaskPathOperation(t, linux.AT_FDCWD, path, disallowEmptyPath, followFinalSymlink)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer tpop.Release(t)
+
+	vd, err := t.Kernel().VFS().GetDentryAt(t, t.Credentials(), &tpop.pop, &vfs.GetDentryOptions{
+		CheckSearchable: true,
+	})
+	if err != nil {
+		return 0, nil, err
+	}
+	t.FSContext().SetRootDirectory(t, vd)
+	vd.DecRef(t)
+	return 0, nil, nil
+}
+
+// PivotRoot implements Linux syscall pivot_root(2).
+func PivotRoot(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	addr1 := args[0].Pointer()
+	addr2 := args[1].Pointer()
+
+	if !t.HasCapability(linux.CAP_SYS_ADMIN) {
+		return 0, nil, linuxerr.EPERM
+	}
+
+	newRootPath, err := copyInPath(t, addr1)
+	if err != nil {
+		return 0, nil, err
+	}
+	newRootTpop, err := getTaskPathOperation(t, linux.AT_FDCWD, newRootPath, disallowEmptyPath, followFinalSymlink)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer newRootTpop.Release(t)
+	putOldPath, err := copyInPath(t, addr2)
+	if err != nil {
+		return 0, nil, err
+	}
+	putOldTpop, err := getTaskPathOperation(t, linux.AT_FDCWD, putOldPath, disallowEmptyPath, followFinalSymlink)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer putOldTpop.Release(t)
+
+	oldRootVd := t.FSContext().RootDirectory()
+	defer oldRootVd.DecRef(t)
+	newRootVd, err := t.Kernel().VFS().GetDentryAt(t, t.Credentials(), &newRootTpop.pop, &vfs.GetDentryOptions{
+		CheckSearchable: true,
+	})
+	if err != nil {
+		return 0, nil, err
+	}
+	defer newRootVd.DecRef(t)
+
+	if err := t.Kernel().VFS().PivotRoot(t, t.Credentials(), &newRootTpop.pop, &putOldTpop.pop); err != nil {
+		return 0, nil, err
+	}
+	t.Kernel().ReplaceFSContextRoots(t, oldRootVd, newRootVd)
+	return 0, nil, nil
+}
+
+// Close implements Linux syscall close(2).
+func Close(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 
 	// Note that Remove provides a reference on the file that we may use to
 	// flush. It is still active until we drop the final reference below
 	// (and other reference-holding operations complete).
-	file, _ := t.FDTable().Remove(t, fd)
+	file := t.FDTable().Remove(t, fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
-	err := file.Flush(t)
-	return 0, nil, handleIOError(t, false /* partial */, err, syserror.EINTR, "close", file)
+	err := file.OnClose(t)
+	return 0, nil, HandleIOError(t, false /* partial */, err, linuxerr.EINTR, "close", file)
 }
 
-// Dup implements linux syscall dup(2).
-func Dup(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+// CloseRange implements linux syscall close_range(2).
+func CloseRange(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	first := args[0].Uint()
+	last := args[1].Uint()
+	flags := args[2].Uint()
+
+	if (first > last) || (last > math.MaxInt32) {
+		return 0, nil, linuxerr.EINVAL
+	}
+
+	if (flags & ^(linux.CLOSE_RANGE_CLOEXEC | linux.CLOSE_RANGE_UNSHARE)) != 0 {
+		return 0, nil, linuxerr.EINVAL
+	}
+
+	cloexec := flags & linux.CLOSE_RANGE_CLOEXEC
+	unshare := flags & linux.CLOSE_RANGE_UNSHARE
+
+	if unshare != 0 {
+		// If possible, we don't want to copy FDs to the new unshared table, because those FDs will
+		// be promptly closed and no longer used. So in the case where we know the range extends all
+		// the way to the end of the FdTable, we can simply copy the FdTable only up to the start of
+		// the range that we are closing.
+		if cloexec == 0 && int32(last) >= t.FDTable().GetLastFd() {
+			t.UnshareFdTable(int32(first))
+		} else {
+			t.UnshareFdTable(math.MaxInt32)
+		}
+	}
+
+	if cloexec != 0 {
+		flagToApply := kernel.FDFlags{
+			CloseOnExec: true,
+		}
+		t.FDTable().SetFlagsForRange(t.AsyncContext(), int32(first), int32(last), flagToApply)
+		return 0, nil, nil
+	}
+
+	fdTable := t.FDTable()
+	fd := int32(first)
+	for {
+		fd, file := fdTable.RemoveNextInRange(t, fd, int32(last))
+		if file == nil {
+			break
+		}
+
+		fd++
+		// Per the close_range(2) documentation, errors upon closing file descriptors are ignored.
+		_ = file.OnClose(t)
+		file.DecRef(t)
+	}
+
+	return 0, nil, nil
+}
+
+// Dup implements Linux syscall dup(2).
+func Dup(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
 	newFD, err := t.NewFDFrom(0, file, kernel.FDFlags{})
 	if err != nil {
-		return 0, nil, syserror.EMFILE
+		return 0, nil, linuxerr.EMFILE
 	}
 	return uintptr(newFD), nil, nil
 }
 
-// Dup2 implements linux syscall dup2(2).
-func Dup2(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+// Dup2 implements Linux syscall dup2(2).
+func Dup2(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	oldfd := args[0].Int()
 	newfd := args[1].Int()
 
-	// If oldfd is a valid file descriptor, and newfd has the same value as oldfd,
-	// then dup2() does nothing, and returns newfd.
 	if oldfd == newfd {
-		oldFile := t.GetFile(oldfd)
-		if oldFile == nil {
-			return 0, nil, syserror.EBADF
+		// As long as oldfd is valid, dup2() does nothing and returns newfd.
+		file := t.GetFile(oldfd)
+		if file == nil {
+			return 0, nil, linuxerr.EBADF
 		}
-		defer oldFile.DecRef(t)
-
+		file.DecRef(t)
 		return uintptr(newfd), nil, nil
 	}
 
-	// Zero out flags arg to be used by Dup3.
-	args[2].Value = 0
-	return Dup3(t, args)
+	return dup3(t, oldfd, newfd, 0)
 }
 
-// Dup3 implements linux syscall dup3(2).
-func Dup3(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+// Dup3 implements Linux syscall dup3(2).
+func Dup3(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	oldfd := args[0].Int()
 	newfd := args[1].Int()
 	flags := args[2].Uint()
 
 	if oldfd == newfd {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
-	oldFile := t.GetFile(oldfd)
-	if oldFile == nil {
-		return 0, nil, syserror.EBADF
-	}
-	defer oldFile.DecRef(t)
+	return dup3(t, oldfd, newfd, flags)
+}
 
-	err := t.NewFDAt(newfd, oldFile, kernel.FDFlags{CloseOnExec: flags&linux.O_CLOEXEC != 0})
+func dup3(t *kernel.Task, oldfd, newfd int32, flags uint32) (uintptr, *kernel.SyscallControl, error) {
+	if flags&^linux.O_CLOEXEC != 0 {
+		return 0, nil, linuxerr.EINVAL
+	}
+
+	file := t.GetFile(oldfd)
+	if file == nil {
+		return 0, nil, linuxerr.EBADF
+	}
+	defer file.DecRef(t)
+
+	err := t.NewFDAt(newfd, file, kernel.FDFlags{
+		CloseOnExec: flags&linux.O_CLOEXEC != 0,
+	})
 	if err != nil {
 		return 0, nil, err
 	}
-
 	return uintptr(newfd), nil, nil
 }
 
-func fGetOwnEx(t *kernel.Task, file *fs.File) linux.FOwnerEx {
-	ma := file.Async(nil)
-	if ma == nil {
-		return linux.FOwnerEx{}
-	}
-	a := ma.(*fasync.FileAsync)
-	ot, otg, opg := a.Owner()
-	switch {
-	case ot != nil:
-		return linux.FOwnerEx{
-			Type: linux.F_OWNER_TID,
-			PID:  int32(t.PIDNamespace().IDOfTask(ot)),
-		}
-	case otg != nil:
-		return linux.FOwnerEx{
-			Type: linux.F_OWNER_PID,
-			PID:  int32(t.PIDNamespace().IDOfThreadGroup(otg)),
-		}
-	case opg != nil:
-		return linux.FOwnerEx{
-			Type: linux.F_OWNER_PGRP,
-			PID:  int32(t.PIDNamespace().IDOfProcessGroup(opg)),
-		}
-	default:
-		return linux.FOwnerEx{}
-	}
-}
-
-func fGetOwn(t *kernel.Task, file *fs.File) int32 {
-	owner := fGetOwnEx(t, file)
-	if owner.Type == linux.F_OWNER_PGRP {
-		return -owner.PID
-	}
-	return owner.PID
-}
-
-// fSetOwn sets the file's owner with the semantics of F_SETOWN in Linux.
-//
-// If who is positive, it represents a PID. If negative, it represents a PGID.
-// If the PID or PGID is invalid, the owner is silently unset.
-func fSetOwn(t *kernel.Task, fd int, file *fs.File, who int32) error {
-	a := file.Async(fasync.New(fd)).(*fasync.FileAsync)
-	if who < 0 {
-		// Check for overflow before flipping the sign.
-		if who-1 > who {
-			return syserror.EINVAL
-		}
-		pg := t.PIDNamespace().ProcessGroupWithID(kernel.ProcessGroupID(-who))
-		a.SetOwnerProcessGroup(t, pg)
-	} else {
-		tg := t.PIDNamespace().ThreadGroupWithID(kernel.ThreadID(who))
-		a.SetOwnerThreadGroup(t, tg)
-	}
-	return nil
-}
-
 // Fcntl implements linux syscall fcntl(2).
-func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Fcntl(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	cmd := args[1].Int()
 
 	file, flags := t.FDTable().Get(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
+	if file.StatusFlags()&linux.O_PATH != 0 {
+		switch cmd {
+		case linux.F_DUPFD, linux.F_DUPFD_CLOEXEC, linux.F_GETFD, linux.F_SETFD, linux.F_GETFL:
+			// allowed
+		default:
+			return 0, nil, linuxerr.EBADF
+		}
+	}
+
 	switch cmd {
 	case linux.F_DUPFD, linux.F_DUPFD_CLOEXEC:
-		from := args[2].Int()
-		fd, err := t.NewFDFrom(from, file, kernel.FDFlags{
+		minfd := args[2].Int()
+		fd, err := t.NewFDFrom(minfd, file, kernel.FDFlags{
 			CloseOnExec: cmd == linux.F_DUPFD_CLOEXEC,
 		})
 		if err != nil {
@@ -946,203 +617,291 @@ func Fcntl(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Syscall
 		})
 		return 0, nil, err
 	case linux.F_GETFL:
-		return uintptr(file.Flags().ToLinux()), nil, nil
+		return uintptr(file.StatusFlags()), nil, nil
 	case linux.F_SETFL:
-		flags := uint(args[2].Uint())
-		file.SetFlags(linuxToFlags(flags).Settable())
-		return 0, nil, nil
-	case linux.F_SETLK, linux.F_SETLKW:
-		// In Linux the file system can choose to provide lock operations for an inode.
-		// Normally pipe and socket types lack lock operations. We diverge and use a heavy
-		// hammer by only allowing locks on files and directories.
-		if !fs.IsFile(file.Dirent.Inode.StableAttr) && !fs.IsDir(file.Dirent.Inode.StableAttr) {
-			return 0, nil, syserror.EBADF
-		}
-
-		// Copy in the lock request.
-		flockAddr := args[2].Pointer()
-		var flock linux.Flock
-		if _, err := flock.CopyIn(t, flockAddr); err != nil {
-			return 0, nil, err
-		}
-
-		// Compute the lock whence.
-		var sw fs.SeekWhence
-		switch flock.Whence {
-		case 0:
-			sw = fs.SeekSet
-		case 1:
-			sw = fs.SeekCurrent
-		case 2:
-			sw = fs.SeekEnd
-		default:
-			return 0, nil, syserror.EINVAL
-		}
-
-		// Compute the lock offset.
-		var off int64
-		switch sw {
-		case fs.SeekSet:
-			off = 0
-		case fs.SeekCurrent:
-			// Note that Linux does not hold any mutexes while retrieving the file offset,
-			// see fs/locks.c:flock_to_posix_lock and fs/locks.c:fcntl_setlk.
-			off = file.Offset()
-		case fs.SeekEnd:
-			uattr, err := file.Dirent.Inode.UnstableAttr(t)
-			if err != nil {
-				return 0, nil, err
-			}
-			off = uattr.Size
-		default:
-			return 0, nil, syserror.EINVAL
-		}
-
-		// Compute the lock range.
-		rng, err := lock.ComputeRange(flock.Start, flock.Len, off)
-		if err != nil {
-			return 0, nil, err
-		}
-
-		// These locks don't block; execute the non-blocking operation using the inode's lock
-		// context directly.
-		switch flock.Type {
-		case linux.F_RDLCK:
-			if !file.Flags().Read {
-				return 0, nil, syserror.EBADF
-			}
-			if cmd == linux.F_SETLK {
-				// Non-blocking lock, provide a nil lock.Blocker.
-				if !file.Dirent.Inode.LockCtx.Posix.LockRegionVFS1(t.FDTable(), lock.ReadLock, rng, nil) {
-					return 0, nil, syserror.EAGAIN
-				}
-			} else {
-				// Blocking lock, pass in the task to satisfy the lock.Blocker interface.
-				if !file.Dirent.Inode.LockCtx.Posix.LockRegionVFS1(t.FDTable(), lock.ReadLock, rng, t) {
-					return 0, nil, syserror.EINTR
-				}
-			}
-			return 0, nil, nil
-		case linux.F_WRLCK:
-			if !file.Flags().Write {
-				return 0, nil, syserror.EBADF
-			}
-			if cmd == linux.F_SETLK {
-				// Non-blocking lock, provide a nil lock.Blocker.
-				if !file.Dirent.Inode.LockCtx.Posix.LockRegionVFS1(t.FDTable(), lock.WriteLock, rng, nil) {
-					return 0, nil, syserror.EAGAIN
-				}
-			} else {
-				// Blocking lock, pass in the task to satisfy the lock.Blocker interface.
-				if !file.Dirent.Inode.LockCtx.Posix.LockRegionVFS1(t.FDTable(), lock.WriteLock, rng, t) {
-					return 0, nil, syserror.EINTR
-				}
-			}
-			return 0, nil, nil
-		case linux.F_UNLCK:
-			file.Dirent.Inode.LockCtx.Posix.UnlockRegion(t.FDTable(), rng)
-			return 0, nil, nil
-		default:
-			return 0, nil, syserror.EINVAL
-		}
+		return 0, nil, file.SetStatusFlags(t, t.Credentials(), args[2].Uint())
 	case linux.F_GETOWN:
-		return uintptr(fGetOwn(t, file)), nil, nil
+		owner, hasOwner := getAsyncOwner(t, file)
+		if !hasOwner {
+			return 0, nil, nil
+		}
+		if owner.Type == linux.F_OWNER_PGRP {
+			return uintptr(-owner.PID), nil, nil
+		}
+		return uintptr(owner.PID), nil, nil
 	case linux.F_SETOWN:
-		return 0, nil, fSetOwn(t, int(fd), file, args[2].Int())
+		who := args[2].Int()
+		ownerType := int32(linux.F_OWNER_PID)
+		if who < 0 {
+			// Check for overflow before flipping the sign.
+			if who-1 > who {
+				return 0, nil, linuxerr.EINVAL
+			}
+			ownerType = linux.F_OWNER_PGRP
+			who = -who
+		}
+		return 0, nil, setAsyncOwner(t, int(fd), file, ownerType, who)
 	case linux.F_GETOWN_EX:
-		addr := args[2].Pointer()
-		owner := fGetOwnEx(t, file)
-		_, err := owner.CopyOut(t, addr)
+		owner, hasOwner := getAsyncOwner(t, file)
+		if !hasOwner {
+			return 0, nil, nil
+		}
+		_, err := owner.CopyOut(t, args[2].Pointer())
 		return 0, nil, err
 	case linux.F_SETOWN_EX:
-		addr := args[2].Pointer()
 		var owner linux.FOwnerEx
-		_, err := owner.CopyIn(t, addr)
+		_, err := owner.CopyIn(t, args[2].Pointer())
 		if err != nil {
 			return 0, nil, err
 		}
-		a := file.Async(fasync.New(int(fd))).(*fasync.FileAsync)
-		switch owner.Type {
-		case linux.F_OWNER_TID:
-			task := t.PIDNamespace().TaskWithID(kernel.ThreadID(owner.PID))
-			if task == nil {
-				return 0, nil, syserror.ESRCH
-			}
-			a.SetOwnerTask(t, task)
-			return 0, nil, nil
-		case linux.F_OWNER_PID:
-			tg := t.PIDNamespace().ThreadGroupWithID(kernel.ThreadID(owner.PID))
-			if tg == nil {
-				return 0, nil, syserror.ESRCH
-			}
-			a.SetOwnerThreadGroup(t, tg)
-			return 0, nil, nil
-		case linux.F_OWNER_PGRP:
-			pg := t.PIDNamespace().ProcessGroupWithID(kernel.ProcessGroupID(owner.PID))
-			if pg == nil {
-				return 0, nil, syserror.ESRCH
-			}
-			a.SetOwnerProcessGroup(t, pg)
-			return 0, nil, nil
-		default:
-			return 0, nil, syserror.EINVAL
+		return 0, nil, setAsyncOwner(t, int(fd), file, owner.Type, owner.PID)
+	case linux.F_SETPIPE_SZ:
+		pipefile, ok := file.Impl().(*pipe.VFSPipeFD)
+		if !ok {
+			return 0, nil, linuxerr.EBADF
 		}
+		n, err := pipefile.SetPipeSize(int64(args[2].Int()))
+		if err != nil {
+			return 0, nil, err
+		}
+		return uintptr(n), nil, nil
+	case linux.F_GETPIPE_SZ:
+		pipefile, ok := file.Impl().(*pipe.VFSPipeFD)
+		if !ok {
+			return 0, nil, linuxerr.EBADF
+		}
+		return uintptr(pipefile.PipeSize()), nil, nil
 	case linux.F_GET_SEALS:
-		val, err := tmpfs.GetSeals(file.Dirent.Inode)
+		val, err := tmpfs.GetSeals(file)
 		return uintptr(val), nil, err
 	case linux.F_ADD_SEALS:
-		if !file.Flags().Write {
-			return 0, nil, syserror.EPERM
+		if !file.IsWritable() {
+			return 0, nil, linuxerr.EPERM
 		}
-		err := tmpfs.AddSeals(file.Dirent.Inode, args[2].Uint())
+		err := tmpfs.AddSeals(file, args[2].Uint())
 		return 0, nil, err
-	case linux.F_GETPIPE_SZ:
-		sz, ok := file.FileOperations.(fs.FifoSizer)
-		if !ok {
-			return 0, nil, syserror.EINVAL
-		}
-		size, err := sz.FifoSize(t, file)
-		return uintptr(size), nil, err
-	case linux.F_SETPIPE_SZ:
-		sz, ok := file.FileOperations.(fs.FifoSizer)
-		if !ok {
-			return 0, nil, syserror.EINVAL
-		}
-		n, err := sz.SetFifoSize(int64(args[2].Int()))
-		return uintptr(n), nil, err
+	case linux.F_SETLK:
+		return 0, nil, posixLock(t, args, file, false /* ofd */, false /* block */)
+	case linux.F_SETLKW:
+		return 0, nil, posixLock(t, args, file, false /* ofd */, true /* block */)
+	case linux.F_GETLK:
+		return 0, nil, posixTestLock(t, args, file, false /* ofd */)
+	case linux.F_OFD_SETLK:
+		return 0, nil, posixLock(t, args, file, true /* ofd */, false /* block */)
+	case linux.F_OFD_SETLKW:
+		return 0, nil, posixLock(t, args, file, true /* ofd */, true /* block */)
+	case linux.F_OFD_GETLK:
+		return 0, nil, posixTestLock(t, args, file, true /* ofd */)
 	case linux.F_GETSIG:
-		a := file.Async(fasync.New(int(fd))).(*fasync.FileAsync)
-		return uintptr(a.Signal()), nil, nil
+		a := file.AsyncHandler()
+		if a == nil {
+			// Default behavior aka SIGIO.
+			return 0, nil, nil
+		}
+		return uintptr(a.(*fasync.FileAsync).Signal()), nil, nil
 	case linux.F_SETSIG:
-		a := file.Async(fasync.New(int(fd))).(*fasync.FileAsync)
-		return 0, nil, a.SetSignal(linux.Signal(args[2].Int()))
+		a, err := file.SetAsyncHandler(fasync.New(int(fd)))
+		if err != nil {
+			return 0, nil, err
+		}
+		async := a.(*fasync.FileAsync)
+		return 0, nil, async.SetSignal(linux.Signal(args[2].Int()))
 	default:
 		// Everything else is not yet supported.
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 }
 
-// Fadvise64 implements linux syscall fadvise64(2).
+func getAsyncOwner(t *kernel.Task, fd *vfs.FileDescription) (ownerEx linux.FOwnerEx, hasOwner bool) {
+	a := fd.AsyncHandler()
+	if a == nil {
+		return linux.FOwnerEx{}, false
+	}
+
+	ot, otg, opg := a.(*fasync.FileAsync).Owner()
+	switch {
+	case ot != nil:
+		return linux.FOwnerEx{
+			Type: linux.F_OWNER_TID,
+			PID:  int32(t.PIDNamespace().IDOfTask(ot)),
+		}, true
+	case otg != nil:
+		return linux.FOwnerEx{
+			Type: linux.F_OWNER_PID,
+			PID:  int32(t.PIDNamespace().IDOfThreadGroup(otg)),
+		}, true
+	case opg != nil:
+		return linux.FOwnerEx{
+			Type: linux.F_OWNER_PGRP,
+			PID:  int32(t.PIDNamespace().IDOfProcessGroup(opg)),
+		}, true
+	default:
+		return linux.FOwnerEx{}, true
+	}
+}
+
+func setAsyncOwner(t *kernel.Task, fd int, file *vfs.FileDescription, ownerType, pid int32) error {
+	switch ownerType {
+	case linux.F_OWNER_TID, linux.F_OWNER_PID, linux.F_OWNER_PGRP:
+		// Acceptable type.
+	default:
+		return linuxerr.EINVAL
+	}
+
+	a, err := file.SetAsyncHandler(fasync.New(fd))
+	if err != nil {
+		return err
+	}
+	async := a.(*fasync.FileAsync)
+	if pid == 0 {
+		async.ClearOwner()
+		return nil
+	}
+
+	switch ownerType {
+	case linux.F_OWNER_TID:
+		task := t.PIDNamespace().TaskWithID(kernel.ThreadID(pid))
+		if task == nil {
+			return linuxerr.ESRCH
+		}
+		async.SetOwnerTask(t, task)
+		return nil
+	case linux.F_OWNER_PID:
+		tg := t.PIDNamespace().ThreadGroupWithID(kernel.ThreadID(pid))
+		if tg == nil {
+			return linuxerr.ESRCH
+		}
+		async.SetOwnerThreadGroup(t, tg)
+		return nil
+	case linux.F_OWNER_PGRP:
+		pg := t.PIDNamespace().ProcessGroupWithID(kernel.ProcessGroupID(pid))
+		if pg == nil {
+			return linuxerr.ESRCH
+		}
+		async.SetOwnerProcessGroup(t, pg)
+		return nil
+	default:
+		return linuxerr.EINVAL
+	}
+}
+
+func posixTestLock(t *kernel.Task, args arch.SyscallArguments, file *vfs.FileDescription, ofd bool) error {
+	// Copy in the lock request.
+	flockAddr := args[2].Pointer()
+	var flock linux.Flock
+	if _, err := flock.CopyIn(t, flockAddr); err != nil {
+		return err
+	}
+	var typ lock.LockType
+	switch flock.Type {
+	case linux.F_RDLCK:
+		typ = lock.ReadLock
+	case linux.F_WRLCK:
+		typ = lock.WriteLock
+	default:
+		return linuxerr.EINVAL
+	}
+	r, err := file.ComputeLockRange(t, uint64(flock.Start), uint64(flock.Len), flock.Whence)
+	if err != nil {
+		return err
+	}
+	uid := lock.UniqueID(t.FDTable())
+	if ofd {
+		uid = lock.UniqueID(file)
+	}
+
+	newFlock, err := file.TestPOSIX(t, uid, typ, r)
+	if err != nil {
+		return err
+	}
+	if !ofd {
+		newFlock.PID = translatePID(t.PIDNamespace().Root(), t.PIDNamespace(), newFlock.PID)
+	}
+	if _, err = newFlock.CopyOut(t, flockAddr); err != nil {
+		return err
+	}
+	return nil
+}
+
+// translatePID translates a pid from one namespace to another. Note that this
+// may race with task termination/creation, in which case the original task
+// corresponding to pid may no longer exist. This is used to implement the
+// F_GETLK fcntl, which has the same potential race in Linux as well (i.e.,
+// there is no synchronization between retrieving the lock PID and translating
+// it). See fs/locks.c:posix_lock_to_flock.
+func translatePID(old, new *kernel.PIDNamespace, pid int32) int32 {
+	return int32(new.IDOfTask(old.TaskWithID(kernel.ThreadID(pid))))
+}
+
+func posixLock(t *kernel.Task, args arch.SyscallArguments, file *vfs.FileDescription, ofd bool, block bool) error {
+	// Copy in the lock request.
+	flockAddr := args[2].Pointer()
+	var flock linux.Flock
+	if _, err := flock.CopyIn(t, flockAddr); err != nil {
+		return err
+	}
+	if ofd && flock.PID != 0 {
+		return linuxerr.EINVAL
+	}
+
+	uid := lock.UniqueID(t.FDTable())
+	pid := int32(t.TGIDInRoot())
+	if ofd {
+		uid = lock.UniqueID(file)
+		pid = -1
+	}
+
+	r, err := file.ComputeLockRange(t, uint64(flock.Start), uint64(flock.Len), flock.Whence)
+	if err != nil {
+		return err
+	}
+
+	switch flock.Type {
+	case linux.F_RDLCK:
+		if !file.IsReadable() {
+			return linuxerr.EBADF
+		}
+		return file.LockPOSIX(t, uid, pid, lock.ReadLock, r, block)
+
+	case linux.F_WRLCK:
+		if !file.IsWritable() {
+			return linuxerr.EBADF
+		}
+		return file.LockPOSIX(t, uid, pid, lock.WriteLock, r, block)
+
+	case linux.F_UNLCK:
+		return file.UnlockPOSIX(t, uid, r)
+
+	default:
+		return linuxerr.EINVAL
+	}
+}
+
+// Fadvise64 implements fadvise64(2).
 // This implementation currently ignores the provided advice.
-func Fadvise64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Fadvise64(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	length := args[2].Int64()
 	advice := args[3].Int()
 
 	// Note: offset is allowed to be negative.
 	if length < 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
+	if file.StatusFlags()&linux.O_PATH != 0 {
+		return 0, nil, linuxerr.EBADF
+	}
+
 	// If the FD refers to a pipe or FIFO, return error.
-	if fs.IsPipe(file.Dirent.Inode.StableAttr) {
-		return 0, nil, syserror.ESPIPE
+	if _, isPipe := file.Impl().(*pipe.VFSPipeFD); isPipe {
+		return 0, nil, linuxerr.ESPIPE
 	}
 
 	switch advice {
@@ -1153,1096 +912,809 @@ func Fadvise64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	case linux.POSIX_FADV_DONTNEED:
 	case linux.POSIX_FADV_NOREUSE:
 	default:
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// Sure, whatever.
 	return 0, nil, nil
 }
 
-// LINT.ThenChange(vfs2/fd.go)
-
-// LINT.IfChange
-
-func mkdirAt(t *kernel.Task, dirFD int32, addr hostarch.Addr, mode linux.FileMode) error {
-	path, _, err := copyInPath(t, addr, false /* allowEmpty */)
-	if err != nil {
-		return err
-	}
-
-	return fileOpAt(t, dirFD, path, func(root *fs.Dirent, d *fs.Dirent, name string, _ uint) error {
-		if !fs.IsDir(d.Inode.StableAttr) {
-			return syserror.ENOTDIR
-		}
-
-		// Does this directory exist already?
-		remainingTraversals := uint(linux.MaxSymlinkTraversals)
-		f, err := t.MountNamespace().FindInode(t, root, d, name, &remainingTraversals)
-		switch err {
-		case nil:
-			// The directory existed.
-			defer f.DecRef(t)
-			return syserror.EEXIST
-		case syserror.EACCES:
-			// Permission denied while walking to the directory.
-			return err
-		default:
-			// Do we have write permissions on the parent?
-			if err := d.Inode.CheckPermission(t, fs.PermMask{Write: true, Execute: true}); err != nil {
-				return err
-			}
-
-			// Create the directory.
-			perms := fs.FilePermsFromMode(mode &^ linux.FileMode(t.FSContext().Umask()))
-			return d.CreateDirectory(t, root, name, perms)
-		}
-	})
-}
-
-// Mkdir implements linux syscall mkdir(2).
-func Mkdir(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+// Mkdir implements Linux syscall mkdir(2).
+func Mkdir(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
-	mode := linux.FileMode(args[1].ModeT())
-
-	return 0, nil, mkdirAt(t, linux.AT_FDCWD, addr, mode)
+	mode := args[1].ModeT()
+	return 0, nil, mkdirat(t, linux.AT_FDCWD, addr, mode)
 }
 
-// Mkdirat implements linux syscall mkdirat(2).
-func Mkdirat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	dirFD := args[0].Int()
+// Mkdirat implements Linux syscall mkdirat(2).
+func Mkdirat(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	dirfd := args[0].Int()
 	addr := args[1].Pointer()
-	mode := linux.FileMode(args[2].ModeT())
-
-	return 0, nil, mkdirAt(t, dirFD, addr, mode)
+	mode := args[2].ModeT()
+	return 0, nil, mkdirat(t, dirfd, addr, mode)
 }
 
-func rmdirAt(t *kernel.Task, dirFD int32, addr hostarch.Addr) error {
-	path, _, err := copyInPath(t, addr, false /* allowEmpty */)
+func mkdirat(t *kernel.Task, dirfd int32, addr hostarch.Addr, mode uint) error {
+	path, err := copyInPath(t, addr)
 	if err != nil {
 		return err
 	}
-
-	// Special case: removing the root always returns EBUSY.
-	if path == "/" {
-		return syserror.EBUSY
+	tpop, err := getTaskPathOperation(t, dirfd, path, disallowEmptyPath, nofollowFinalSymlink)
+	if err != nil {
+		return err
 	}
-
-	return fileOpAt(t, dirFD, path, func(root *fs.Dirent, d *fs.Dirent, name string, _ uint) error {
-		if !fs.IsDir(d.Inode.StableAttr) {
-			return syserror.ENOTDIR
-		}
-
-		// Linux returns different ernos when the path ends in single
-		// dot vs. double dots.
-		switch name {
-		case ".":
-			return syserror.EINVAL
-		case "..":
-			return syserror.ENOTEMPTY
-		}
-
-		if err := d.MayDelete(t, root, name); err != nil {
-			return err
-		}
-
-		return d.RemoveDirectory(t, root, name)
+	defer tpop.Release(t)
+	return t.Kernel().VFS().MkdirAt(t, t.Credentials(), &tpop.pop, &vfs.MkdirOptions{
+		Mode: linux.FileMode(mode & (0777 | linux.S_ISVTX) &^ t.FSContext().Umask()),
 	})
 }
 
-// Rmdir implements linux syscall rmdir(2).
-func Rmdir(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	addr := args[0].Pointer()
-
-	return 0, nil, rmdirAt(t, linux.AT_FDCWD, addr)
+// Rmdir implements Linux syscall rmdir(2).
+func Rmdir(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	pathAddr := args[0].Pointer()
+	return 0, nil, rmdirat(t, linux.AT_FDCWD, pathAddr)
 }
 
-func symlinkAt(t *kernel.Task, dirFD int32, newAddr hostarch.Addr, oldAddr hostarch.Addr) error {
-	newPath, dirPath, err := copyInPath(t, newAddr, false /* allowEmpty */)
+func rmdirat(t *kernel.Task, dirfd int32, pathAddr hostarch.Addr) error {
+	path, err := copyInPath(t, pathAddr)
 	if err != nil {
 		return err
 	}
-	if dirPath {
-		return syserror.ENOENT
-	}
-
-	// The oldPath is copied in verbatim. This is because the symlink
-	// will include all details, including trailing slashes.
-	oldPath, err := t.CopyInString(oldAddr, linux.PATH_MAX)
+	tpop, err := getTaskPathOperation(t, dirfd, path, disallowEmptyPath, nofollowFinalSymlink)
 	if err != nil {
 		return err
 	}
-	if oldPath == "" {
-		return syserror.ENOENT
-	}
-
-	return fileOpAt(t, dirFD, newPath, func(root *fs.Dirent, d *fs.Dirent, name string, _ uint) error {
-		if !fs.IsDir(d.Inode.StableAttr) {
-			return syserror.ENOTDIR
-		}
-
-		// Make sure we have write permissions on the parent directory.
-		if err := d.Inode.CheckPermission(t, fs.PermMask{Write: true, Execute: true}); err != nil {
-			return err
-		}
-		return d.CreateLink(t, root, oldPath, name)
-	})
+	defer tpop.Release(t)
+	return t.Kernel().VFS().RmdirAt(t, t.Credentials(), &tpop.pop)
 }
 
-// Symlink implements linux syscall symlink(2).
-func Symlink(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	oldAddr := args[0].Pointer()
-	newAddr := args[1].Pointer()
-
-	return 0, nil, symlinkAt(t, linux.AT_FDCWD, newAddr, oldAddr)
+// Symlink implements Linux syscall symlink(2).
+func Symlink(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	targetAddr := args[0].Pointer()
+	linkpathAddr := args[1].Pointer()
+	return 0, nil, symlinkat(t, targetAddr, linux.AT_FDCWD, linkpathAddr)
 }
 
-// Symlinkat implements linux syscall symlinkat(2).
-func Symlinkat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	oldAddr := args[0].Pointer()
-	dirFD := args[1].Int()
-	newAddr := args[2].Pointer()
-
-	return 0, nil, symlinkAt(t, dirFD, newAddr, oldAddr)
+// Symlinkat implements Linux syscall symlinkat(2).
+func Symlinkat(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	targetAddr := args[0].Pointer()
+	newdirfd := args[1].Int()
+	linkpathAddr := args[2].Pointer()
+	return 0, nil, symlinkat(t, targetAddr, newdirfd, linkpathAddr)
 }
 
-// mayLinkAt determines whether t can create a hard link to target.
-//
-// This corresponds to Linux's fs/namei.c:may_linkat.
-func mayLinkAt(t *kernel.Task, target *fs.Inode) error {
-	// Linux will impose the following restrictions on hard links only if
-	// sysctl_protected_hardlinks is enabled. The kernel disables this
-	// setting by default for backward compatibility (see commit
-	// 561ec64ae67e), but also recommends that distributions enable it (and
-	// Debian does:
-	// https://bugs.debian.org/cgi-bin/bugreport.cgi?bug=889098).
-	//
-	// gVisor currently behaves as though sysctl_protected_hardlinks is
-	// always enabled, and thus imposes the following restrictions on hard
-	// links.
-
-	if target.CheckOwnership(t) {
-		// fs/namei.c:may_linkat: "Source inode owner (or CAP_FOWNER)
-		// can hardlink all they like."
-		return nil
-	}
-
-	// If we are not the owner, then the file must be regular and have
-	// Read+Write permissions.
-	if !fs.IsRegular(target.StableAttr) {
-		return syserror.EPERM
-	}
-	if target.CheckPermission(t, fs.PermMask{Read: true, Write: true}) != nil {
-		return syserror.EPERM
-	}
-
-	return nil
-}
-
-// linkAt creates a hard link to the target specified by oldDirFD and oldAddr,
-// specified by newDirFD and newAddr.  If resolve is true, then the symlinks
-// will be followed when evaluating the target.
-func linkAt(t *kernel.Task, oldDirFD int32, oldAddr hostarch.Addr, newDirFD int32, newAddr hostarch.Addr, resolve, allowEmpty bool) error {
-	oldPath, _, err := copyInPath(t, oldAddr, allowEmpty)
+func symlinkat(t *kernel.Task, targetAddr hostarch.Addr, newdirfd int32, linkpathAddr hostarch.Addr) error {
+	target, err := t.CopyInString(targetAddr, linux.PATH_MAX)
 	if err != nil {
 		return err
 	}
-	newPath, dirPath, err := copyInPath(t, newAddr, false /* allowEmpty */)
+	if len(target) == 0 {
+		return linuxerr.ENOENT
+	}
+	linkpath, err := copyInPath(t, linkpathAddr)
 	if err != nil {
 		return err
 	}
-	if dirPath {
-		return syserror.ENOENT
+	tpop, err := getTaskPathOperation(t, newdirfd, linkpath, disallowEmptyPath, nofollowFinalSymlink)
+	if err != nil {
+		return err
 	}
-
-	if allowEmpty && oldPath == "" {
-		target := t.GetFile(oldDirFD)
-		if target == nil {
-			return syserror.EBADF
-		}
-		defer target.DecRef(t)
-		if err := mayLinkAt(t, target.Dirent.Inode); err != nil {
-			return err
-		}
-
-		// Resolve the target directory.
-		return fileOpAt(t, newDirFD, newPath, func(root *fs.Dirent, newParent *fs.Dirent, newName string, _ uint) error {
-			if !fs.IsDir(newParent.Inode.StableAttr) {
-				return syserror.ENOTDIR
-			}
-
-			// Make sure we have write permissions on the parent directory.
-			if err := newParent.Inode.CheckPermission(t, fs.PermMask{Write: true, Execute: true}); err != nil {
-				return err
-			}
-			return newParent.CreateHardLink(t, root, target.Dirent, newName)
-		})
-	}
-
-	// Resolve oldDirFD and oldAddr to a dirent.  The "resolve" argument
-	// only applies to this name.
-	return fileOpOn(t, oldDirFD, oldPath, resolve, func(root *fs.Dirent, target *fs.Dirent, _ uint) error {
-		if err := mayLinkAt(t, target.Inode); err != nil {
-			return err
-		}
-
-		// Next resolve newDirFD and newAddr to the parent dirent and name.
-		return fileOpAt(t, newDirFD, newPath, func(root *fs.Dirent, newParent *fs.Dirent, newName string, _ uint) error {
-			if !fs.IsDir(newParent.Inode.StableAttr) {
-				return syserror.ENOTDIR
-			}
-
-			// Make sure we have write permissions on the parent directory.
-			if err := newParent.Inode.CheckPermission(t, fs.PermMask{Write: true, Execute: true}); err != nil {
-				return err
-			}
-			return newParent.CreateHardLink(t, root, target, newName)
-		})
-	})
+	defer tpop.Release(t)
+	return t.Kernel().VFS().SymlinkAt(t, t.Credentials(), &tpop.pop, target)
 }
 
-// Link implements linux syscall link(2).
-func Link(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	oldAddr := args[0].Pointer()
-	newAddr := args[1].Pointer()
-
-	// man link(2):
-	// POSIX.1-2001 says that link() should dereference oldpath if it is a
-	// symbolic link. However, since kernel 2.0, Linux does not do so: if
-	// oldpath is a symbolic link, then newpath is created as a (hard) link
-	// to the same symbolic link file (i.e., newpath becomes a symbolic
-	// link to the same file that oldpath refers to).
-	resolve := false
-	return 0, nil, linkAt(t, linux.AT_FDCWD, oldAddr, linux.AT_FDCWD, newAddr, resolve, false /* allowEmpty */)
+// Link implements Linux syscall link(2).
+func Link(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	oldpathAddr := args[0].Pointer()
+	newpathAddr := args[1].Pointer()
+	return 0, nil, linkat(t, linux.AT_FDCWD, oldpathAddr, linux.AT_FDCWD, newpathAddr, 0 /* flags */)
 }
 
-// Linkat implements linux syscall linkat(2).
-func Linkat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	oldDirFD := args[0].Int()
-	oldAddr := args[1].Pointer()
-	newDirFD := args[2].Int()
-	newAddr := args[3].Pointer()
-
-	// man linkat(2):
-	// By default, linkat(), does not dereference oldpath if it is a
-	// symbolic link (like link(2)). Since Linux 2.6.18, the flag
-	// AT_SYMLINK_FOLLOW can be specified in flags to cause oldpath to be
-	// dereferenced if it is a symbolic link.
+// Linkat implements Linux syscall linkat(2).
+func Linkat(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	olddirfd := args[0].Int()
+	oldpathAddr := args[1].Pointer()
+	newdirfd := args[2].Int()
+	newpathAddr := args[3].Pointer()
 	flags := args[4].Int()
-
-	// Sanity check flags.
-	if flags&^(linux.AT_SYMLINK_FOLLOW|linux.AT_EMPTY_PATH) != 0 {
-		return 0, nil, syserror.EINVAL
-	}
-
-	resolve := flags&linux.AT_SYMLINK_FOLLOW == linux.AT_SYMLINK_FOLLOW
-	allowEmpty := flags&linux.AT_EMPTY_PATH == linux.AT_EMPTY_PATH
-
-	if allowEmpty && !t.HasCapabilityIn(linux.CAP_DAC_READ_SEARCH, t.UserNamespace().Root()) {
-		return 0, nil, syserror.ENOENT
-	}
-
-	return 0, nil, linkAt(t, oldDirFD, oldAddr, newDirFD, newAddr, resolve, allowEmpty)
+	return 0, nil, linkat(t, olddirfd, oldpathAddr, newdirfd, newpathAddr, flags)
 }
 
-// LINT.ThenChange(vfs2/filesystem.go)
+func linkat(t *kernel.Task, olddirfd int32, oldpathAddr hostarch.Addr, newdirfd int32, newpathAddr hostarch.Addr, flags int32) error {
+	if flags&^(linux.AT_EMPTY_PATH|linux.AT_SYMLINK_FOLLOW) != 0 {
+		return linuxerr.EINVAL
+	}
+	if flags&linux.AT_EMPTY_PATH != 0 && !t.HasCapability(linux.CAP_DAC_READ_SEARCH) {
+		return linuxerr.ENOENT
+	}
 
-// LINT.IfChange
-
-func readlinkAt(t *kernel.Task, dirFD int32, addr hostarch.Addr, bufAddr hostarch.Addr, size uint) (copied uintptr, err error) {
-	path, dirPath, err := copyInPath(t, addr, false /* allowEmpty */)
+	oldpath, err := copyInPath(t, oldpathAddr)
 	if err != nil {
-		return 0, err
-	}
-	if dirPath {
-		return 0, syserror.ENOENT
-	}
-
-	err = fileOpOn(t, dirFD, path, false /* resolve */, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
-		// Check for Read permission.
-		if err := d.Inode.CheckPermission(t, fs.PermMask{Read: true}); err != nil {
-			return err
-		}
-
-		s, err := d.Inode.Readlink(t)
-		if err == syserror.ENOLINK {
-			return syserror.EINVAL
-		}
-		if err != nil {
-			return err
-		}
-
-		buffer := []byte(s)
-		if uint(len(buffer)) > size {
-			buffer = buffer[:size]
-		}
-
-		n, err := t.CopyOutBytes(bufAddr, buffer)
-
-		// Update frame return value.
-		copied = uintptr(n)
-
 		return err
-	})
-	return copied, err // Return frame value.
+	}
+	oldtpop, err := getTaskPathOperation(t, olddirfd, oldpath, shouldAllowEmptyPath(flags&linux.AT_EMPTY_PATH != 0), shouldFollowFinalSymlink(flags&linux.AT_SYMLINK_FOLLOW != 0))
+	if err != nil {
+		return err
+	}
+	defer oldtpop.Release(t)
+
+	newpath, err := copyInPath(t, newpathAddr)
+	if err != nil {
+		return err
+	}
+	newtpop, err := getTaskPathOperation(t, newdirfd, newpath, disallowEmptyPath, nofollowFinalSymlink)
+	if err != nil {
+		return err
+	}
+	defer newtpop.Release(t)
+
+	return t.Kernel().VFS().LinkAt(t, t.Credentials(), &oldtpop.pop, &newtpop.pop)
 }
 
-// Readlink implements linux syscall readlink(2).
-func Readlink(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	addr := args[0].Pointer()
-	bufAddr := args[1].Pointer()
-	size := args[2].SizeT()
-
-	n, err := readlinkAt(t, linux.AT_FDCWD, addr, bufAddr, size)
-	return n, nil, err
-}
-
-// Readlinkat implements linux syscall readlinkat(2).
-func Readlinkat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	dirFD := args[0].Int()
-	addr := args[1].Pointer()
+// Readlinkat implements Linux syscall readlinkat(2).
+func Readlinkat(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	dirfd := args[0].Int()
+	pathAddr := args[1].Pointer()
 	bufAddr := args[2].Pointer()
 	size := args[3].SizeT()
-
-	n, err := readlinkAt(t, dirFD, addr, bufAddr, size)
-	return n, nil, err
+	return readlinkat(t, dirfd, pathAddr, bufAddr, size)
 }
 
-// LINT.ThenChange(vfs2/stat.go)
+// Readlink implements Linux syscall readlink(2).
+func Readlink(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	pathAddr := args[0].Pointer()
+	bufAddr := args[1].Pointer()
+	size := args[2].SizeT()
+	return readlinkat(t, linux.AT_FDCWD, pathAddr, bufAddr, size)
+}
 
-// LINT.IfChange
+func readlinkat(t *kernel.Task, dirfd int32, pathAddr, bufAddr hostarch.Addr, size uint) (uintptr, *kernel.SyscallControl, error) {
+	if int(size) <= 0 {
+		return 0, nil, linuxerr.EINVAL
+	}
 
-func unlinkAt(t *kernel.Task, dirFD int32, addr hostarch.Addr) error {
-	path, dirPath, err := copyInPath(t, addr, false /* allowEmpty */)
+	path, err := copyInPath(t, pathAddr)
+	if err != nil {
+		return 0, nil, err
+	}
+	// "Since Linux 2.6.39, pathname can be an empty string, in which case the
+	// call operates on the symbolic link referred to by dirfd ..." -
+	// readlinkat(2)
+	tpop, err := getTaskPathOperation(t, dirfd, path, allowEmptyPath, nofollowFinalSymlink)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer tpop.Release(t)
+
+	target, err := t.Kernel().VFS().ReadlinkAt(t, t.Credentials(), &tpop.pop)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	if len(target) > int(size) {
+		target = target[:size]
+	}
+	n, err := t.CopyOutBytes(bufAddr, gohacks.ImmutableBytesFromString(target))
+	if n == 0 {
+		return 0, nil, err
+	}
+	return uintptr(n), nil, nil
+}
+
+// Unlink implements Linux syscall unlink(2).
+func Unlink(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	pathAddr := args[0].Pointer()
+	return 0, nil, unlinkat(t, linux.AT_FDCWD, pathAddr)
+}
+
+func unlinkat(t *kernel.Task, dirfd int32, pathAddr hostarch.Addr) error {
+	path, err := copyInPath(t, pathAddr)
 	if err != nil {
 		return err
 	}
-
-	return fileOpAt(t, dirFD, path, func(root *fs.Dirent, d *fs.Dirent, name string, _ uint) error {
-		if !fs.IsDir(d.Inode.StableAttr) {
-			return syserror.ENOTDIR
-		}
-
-		if err := d.MayDelete(t, root, name); err != nil {
-			return err
-		}
-
-		return d.Remove(t, root, name, dirPath)
-	})
-}
-
-// Unlink implements linux syscall unlink(2).
-func Unlink(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	addr := args[0].Pointer()
-	return 0, nil, unlinkAt(t, linux.AT_FDCWD, addr)
-}
-
-// Unlinkat implements linux syscall unlinkat(2).
-func Unlinkat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	dirFD := args[0].Int()
-	addr := args[1].Pointer()
-	flags := args[2].Uint()
-	if flags&linux.AT_REMOVEDIR != 0 {
-		return 0, nil, rmdirAt(t, dirFD, addr)
+	tpop, err := getTaskPathOperation(t, dirfd, path, disallowEmptyPath, nofollowFinalSymlink)
+	if err != nil {
+		return err
 	}
-	return 0, nil, unlinkAt(t, dirFD, addr)
+	defer tpop.Release(t)
+	return t.Kernel().VFS().UnlinkAt(t, t.Credentials(), &tpop.pop)
 }
 
-// LINT.ThenChange(vfs2/filesystem.go)
+// Unlinkat implements Linux syscall unlinkat(2).
+func Unlinkat(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	dirfd := args[0].Int()
+	pathAddr := args[1].Pointer()
+	flags := args[2].Int()
 
-// LINT.IfChange
+	if flags&^linux.AT_REMOVEDIR != 0 {
+		return 0, nil, linuxerr.EINVAL
+	}
 
-// Truncate implements linux syscall truncate(2).
-func Truncate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	if flags&linux.AT_REMOVEDIR != 0 {
+		return 0, nil, rmdirat(t, dirfd, pathAddr)
+	}
+	return 0, nil, unlinkat(t, dirfd, pathAddr)
+}
+
+func setstatat(t *kernel.Task, dirfd int32, path fspath.Path, shouldAllowEmptyPath shouldAllowEmptyPath, shouldFollowFinalSymlink shouldFollowFinalSymlink, opts *vfs.SetStatOptions) error {
+	root := t.FSContext().RootDirectory()
+	defer root.DecRef(t)
+	start := root
+	if !path.Absolute {
+		if !path.HasComponents() && !bool(shouldAllowEmptyPath) {
+			return linuxerr.ENOENT
+		}
+		if dirfd == linux.AT_FDCWD {
+			start = t.FSContext().WorkingDirectory()
+			defer start.DecRef(t)
+		} else {
+			dirfile := t.GetFile(dirfd)
+			if dirfile == nil {
+				return linuxerr.EBADF
+			}
+			if !path.HasComponents() {
+				// Use FileDescription.SetStat() instead of
+				// VirtualFilesystem.SetStatAt(), since the former may be able
+				// to use opened file state to expedite the SetStat.
+				err := dirfile.SetStat(t, *opts)
+				dirfile.DecRef(t)
+				return err
+			}
+			start = dirfile.VirtualDentry()
+			start.IncRef()
+			defer start.DecRef(t)
+			dirfile.DecRef(t)
+		}
+	}
+	return t.Kernel().VFS().SetStatAt(t, t.Credentials(), &vfs.PathOperation{
+		Root:               root,
+		Start:              start,
+		Path:               path,
+		FollowFinalSymlink: bool(shouldFollowFinalSymlink),
+	}, opts)
+}
+
+func handleSetSizeError(t *kernel.Task, err error) error {
+	if err == linuxerr.ErrExceedsFileSizeLimit {
+		// Convert error to EFBIG and send a SIGXFSZ per setrlimit(2).
+		t.SendSignal(kernel.SignalInfoNoInfo(linux.SIGXFSZ, t, t))
+		return linuxerr.EFBIG
+	}
+	return err
+}
+
+// Truncate implements Linux syscall truncate(2).
+func Truncate(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
 	length := args[1].Int64()
 
 	if length < 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
-	path, dirPath, err := copyInPath(t, addr, false /* allowEmpty */)
+	path, err := copyInPath(t, addr)
 	if err != nil {
 		return 0, nil, err
 	}
-	if dirPath {
-		return 0, nil, syserror.EINVAL
-	}
 
-	if uint64(length) >= t.ThreadGroup().Limits().Get(limits.FileSize).Cur {
-		t.SendSignal(&arch.SignalInfo{
-			Signo: int32(linux.SIGXFSZ),
-			Code:  arch.SignalInfoUser,
-		})
-		return 0, nil, syserror.EFBIG
-	}
-
-	return 0, nil, fileOpOn(t, linux.AT_FDCWD, path, true /* resolve */, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
-		if fs.IsDir(d.Inode.StableAttr) {
-			return syserror.EISDIR
-		}
-		// In contrast to open(O_TRUNC), truncate(2) is only valid for file
-		// types.
-		if !fs.IsFile(d.Inode.StableAttr) {
-			return syserror.EINVAL
-		}
-
-		// Reject truncation if the access permissions do not allow truncation.
-		// This is different from the behavior of sys_ftruncate, see below.
-		if err := d.Inode.CheckPermission(t, fs.PermMask{Write: true}); err != nil {
-			return err
-		}
-
-		if err := d.Inode.Truncate(t, d, length); err != nil {
-			return err
-		}
-
-		// File length modified, generate notification.
-		d.InotifyEvent(linux.IN_MODIFY, 0)
-
-		return nil
+	err = setstatat(t, linux.AT_FDCWD, path, disallowEmptyPath, followFinalSymlink, &vfs.SetStatOptions{
+		Stat: linux.Statx{
+			Mask: linux.STATX_SIZE,
+			Size: uint64(length),
+		},
+		NeedWritePerm: true,
 	})
+	return 0, nil, handleSetSizeError(t, err)
 }
 
-// Ftruncate implements linux syscall ftruncate(2).
-func Ftruncate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+// Ftruncate implements Linux syscall ftruncate(2).
+func Ftruncate(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	length := args[1].Int64()
 
+	if length < 0 {
+		return 0, nil, linuxerr.EINVAL
+	}
+
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
-	// Reject truncation if the file flags do not permit this operation.
-	// This is different from truncate(2) above.
-	if !file.Flags().Write {
-		return 0, nil, syserror.EINVAL
+	if !file.IsWritable() {
+		return 0, nil, linuxerr.EINVAL
 	}
 
-	// In contrast to open(O_TRUNC), truncate(2) is only valid for file
-	// types. Note that this is different from truncate(2) above, where a
-	// directory returns EISDIR.
-	if !fs.IsFile(file.Dirent.Inode.StableAttr) {
-		return 0, nil, syserror.EINVAL
-	}
-
-	if length < 0 {
-		return 0, nil, syserror.EINVAL
-	}
-
-	if uint64(length) >= t.ThreadGroup().Limits().Get(limits.FileSize).Cur {
-		t.SendSignal(&arch.SignalInfo{
-			Signo: int32(linux.SIGXFSZ),
-			Code:  arch.SignalInfoUser,
-		})
-		return 0, nil, syserror.EFBIG
-	}
-
-	if err := file.Dirent.Inode.Truncate(t, file.Dirent, length); err != nil {
-		return 0, nil, err
-	}
-
-	// File length modified, generate notification.
-	file.Dirent.InotifyEvent(linux.IN_MODIFY, 0)
-
-	return 0, nil, nil
+	err := file.SetStat(t, vfs.SetStatOptions{
+		Stat: linux.Statx{
+			Mask: linux.STATX_SIZE,
+			Size: uint64(length),
+		},
+	})
+	return 0, nil, handleSetSizeError(t, err)
 }
 
-// LINT.ThenChange(vfs2/setstat.go)
-
 // Umask implements linux syscall umask(2).
-func Umask(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Umask(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	mask := args[0].ModeT()
 	mask = t.FSContext().SwapUmask(mask & 0777)
 	return uintptr(mask), nil, nil
 }
 
-// LINT.IfChange
-
-// Change ownership of a file.
-//
-// uid and gid may be -1, in which case they will not be changed.
-func chown(t *kernel.Task, d *fs.Dirent, uid auth.UID, gid auth.GID) error {
-	owner := fs.FileOwner{
-		UID: auth.NoID,
-		GID: auth.NoID,
-	}
-
-	uattr, err := d.Inode.UnstableAttr(t)
-	if err != nil {
-		return err
-	}
-	c := t.Credentials()
-	hasCap := d.Inode.CheckCapability(t, linux.CAP_CHOWN)
-	isOwner := uattr.Owner.UID == c.EffectiveKUID
-	if uid.Ok() {
-		kuid := c.UserNamespace.MapToKUID(uid)
-		// Valid UID must be supplied if UID is to be changed.
-		if !kuid.Ok() {
-			return syserror.EINVAL
-		}
-
-		// "Only a privileged process (CAP_CHOWN) may change the owner
-		// of a file." -chown(2)
-		//
-		// Linux also allows chown if you own the file and are
-		// explicitly not changing its UID.
-		isNoop := uattr.Owner.UID == kuid
-		if !(hasCap || (isOwner && isNoop)) {
-			return syserror.EPERM
-		}
-
-		owner.UID = kuid
-	}
-	if gid.Ok() {
-		kgid := c.UserNamespace.MapToKGID(gid)
-		// Valid GID must be supplied if GID is to be changed.
-		if !kgid.Ok() {
-			return syserror.EINVAL
-		}
-
-		// "The owner of a file may change the group of the file to any
-		// group of which that owner is a member. A privileged process
-		// (CAP_CHOWN) may change the group arbitrarily." -chown(2)
-		isNoop := uattr.Owner.GID == kgid
-		isMemberGroup := c.InGroup(kgid)
-		if !(hasCap || (isOwner && (isNoop || isMemberGroup))) {
-			return syserror.EPERM
-		}
-
-		owner.GID = kgid
-	}
-
-	// FIXME(b/62949101): This is racy; the inode's owner may have changed in
-	// the meantime. (Linux holds i_mutex while calling
-	// fs/attr.c:notify_change() => inode_operations::setattr =>
-	// inode_change_ok().)
-	if err := d.Inode.SetOwner(t, d, owner); err != nil {
-		return err
-	}
-
-	// When the owner or group are changed by an unprivileged user,
-	// chown(2) also clears the set-user-ID and set-group-ID bits, but
-	// we do not support them.
-	return nil
+// Chown implements Linux syscall chown(2).
+func Chown(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	pathAddr := args[0].Pointer()
+	owner := args[1].Int()
+	group := args[2].Int()
+	return 0, nil, fchownat(t, linux.AT_FDCWD, pathAddr, owner, group, 0 /* flags */)
 }
 
-func chownAt(t *kernel.Task, fd int32, addr hostarch.Addr, resolve, allowEmpty bool, uid auth.UID, gid auth.GID) error {
-	path, _, err := copyInPath(t, addr, allowEmpty)
-	if err != nil {
-		return err
-	}
-
-	if path == "" {
-		// Annoying. What's wrong with fchown?
-		file := t.GetFile(fd)
-		if file == nil {
-			return syserror.EBADF
-		}
-		defer file.DecRef(t)
-
-		return chown(t, file.Dirent, uid, gid)
-	}
-
-	return fileOpOn(t, fd, path, resolve, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
-		return chown(t, d, uid, gid)
-	})
-}
-
-// Chown implements linux syscall chown(2).
-func Chown(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	addr := args[0].Pointer()
-	uid := auth.UID(args[1].Uint())
-	gid := auth.GID(args[2].Uint())
-
-	return 0, nil, chownAt(t, linux.AT_FDCWD, addr, true /* resolve */, false /* allowEmpty */, uid, gid)
-}
-
-// Lchown implements linux syscall lchown(2).
-func Lchown(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	addr := args[0].Pointer()
-	uid := auth.UID(args[1].Uint())
-	gid := auth.GID(args[2].Uint())
-
-	return 0, nil, chownAt(t, linux.AT_FDCWD, addr, false /* resolve */, false /* allowEmpty */, uid, gid)
-}
-
-// Fchown implements linux syscall fchown(2).
-func Fchown(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	fd := args[0].Int()
-	uid := auth.UID(args[1].Uint())
-	gid := auth.GID(args[2].Uint())
-
-	file := t.GetFile(fd)
-	if file == nil {
-		return 0, nil, syserror.EBADF
-	}
-	defer file.DecRef(t)
-
-	return 0, nil, chown(t, file.Dirent, uid, gid)
+// Lchown implements Linux syscall lchown(2).
+func Lchown(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	pathAddr := args[0].Pointer()
+	owner := args[1].Int()
+	group := args[2].Int()
+	return 0, nil, fchownat(t, linux.AT_FDCWD, pathAddr, owner, group, linux.AT_SYMLINK_NOFOLLOW)
 }
 
 // Fchownat implements Linux syscall fchownat(2).
-func Fchownat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	dirFD := args[0].Int()
-	addr := args[1].Pointer()
-	uid := auth.UID(args[2].Uint())
-	gid := auth.GID(args[3].Uint())
+func Fchownat(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	dirfd := args[0].Int()
+	pathAddr := args[1].Pointer()
+	owner := args[2].Int()
+	group := args[3].Int()
 	flags := args[4].Int()
-
-	if flags&^(linux.AT_EMPTY_PATH|linux.AT_SYMLINK_NOFOLLOW) != 0 {
-		return 0, nil, syserror.EINVAL
-	}
-
-	return 0, nil, chownAt(t, dirFD, addr, flags&linux.AT_SYMLINK_NOFOLLOW == 0, flags&linux.AT_EMPTY_PATH != 0, uid, gid)
+	return 0, nil, fchownat(t, dirfd, pathAddr, owner, group, flags)
 }
 
-func chmod(t *kernel.Task, d *fs.Dirent, mode linux.FileMode) error {
-	// Must own file to change mode.
-	if !d.Inode.CheckOwnership(t) {
-		return syserror.EPERM
+func fchownat(t *kernel.Task, dirfd int32, pathAddr hostarch.Addr, owner, group, flags int32) error {
+	if flags&^(linux.AT_EMPTY_PATH|linux.AT_SYMLINK_NOFOLLOW) != 0 {
+		return linuxerr.EINVAL
 	}
 
-	p := fs.FilePermsFromMode(mode)
-	if !d.Inode.SetPermissions(t, d, p) {
-		return syserror.EPERM
+	path, err := copyInPath(t, pathAddr)
+	if err != nil {
+		return err
 	}
 
-	// File attribute changed, generate notification.
-	d.InotifyEvent(linux.IN_ATTRIB, 0)
+	var opts vfs.SetStatOptions
+	if err := populateSetStatOptionsForChown(t, owner, group, &opts); err != nil {
+		return err
+	}
 
+	return setstatat(t, dirfd, path, shouldAllowEmptyPath(flags&linux.AT_EMPTY_PATH != 0), shouldFollowFinalSymlink(flags&linux.AT_SYMLINK_NOFOLLOW == 0), &opts)
+}
+
+func populateSetStatOptionsForChown(t *kernel.Task, owner, group int32, opts *vfs.SetStatOptions) error {
+	userns := t.UserNamespace()
+	if owner != -1 {
+		kuid := userns.MapToKUID(auth.UID(owner))
+		if !kuid.Ok() {
+			return linuxerr.EINVAL
+		}
+		opts.Stat.Mask |= linux.STATX_UID
+		opts.Stat.UID = uint32(kuid)
+	}
+	if group != -1 {
+		kgid := userns.MapToKGID(auth.GID(group))
+		if !kgid.Ok() {
+			return linuxerr.EINVAL
+		}
+		opts.Stat.Mask |= linux.STATX_GID
+		opts.Stat.GID = uint32(kgid)
+	}
 	return nil
 }
 
-func chmodAt(t *kernel.Task, fd int32, addr hostarch.Addr, mode linux.FileMode) error {
-	path, _, err := copyInPath(t, addr, false /* allowEmpty */)
-	if err != nil {
-		return err
-	}
-
-	return fileOpOn(t, fd, path, true /* resolve */, func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
-		return chmod(t, d, mode)
-	})
-}
-
-// Chmod implements linux syscall chmod(2).
-func Chmod(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	addr := args[0].Pointer()
-	mode := linux.FileMode(args[1].ModeT())
-
-	return 0, nil, chmodAt(t, linux.AT_FDCWD, addr, mode)
-}
-
-// Fchmod implements linux syscall fchmod(2).
-func Fchmod(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+// Fchown implements Linux syscall fchown(2).
+func Fchown(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
-	mode := linux.FileMode(args[1].ModeT())
+	owner := args[1].Int()
+	group := args[2].Int()
 
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
-	return 0, nil, chmod(t, file.Dirent, mode)
+	var opts vfs.SetStatOptions
+	if err := populateSetStatOptionsForChown(t, owner, group, &opts); err != nil {
+		return 0, nil, err
+	}
+	return 0, nil, file.SetStat(t, opts)
 }
 
-// Fchmodat implements linux syscall fchmodat(2).
-func Fchmodat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	fd := args[0].Int()
-	addr := args[1].Pointer()
-	mode := linux.FileMode(args[2].ModeT())
+const chmodMask = 0777 | linux.S_ISUID | linux.S_ISGID | linux.S_ISVTX
 
-	return 0, nil, chmodAt(t, fd, addr, mode)
+// Chmod implements Linux syscall chmod(2).
+func Chmod(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	pathAddr := args[0].Pointer()
+	mode := args[1].ModeT()
+	return 0, nil, fchmodat(t, linux.AT_FDCWD, pathAddr, mode)
 }
 
-// defaultSetToSystemTimeSpec returns a TimeSpec that will set ATime and MTime
-// to the system time.
-func defaultSetToSystemTimeSpec() fs.TimeSpec {
-	return fs.TimeSpec{
-		ATimeSetSystemTime: true,
-		MTimeSetSystemTime: true,
-	}
+// Fchmodat implements Linux syscall fchmodat(2).
+func Fchmodat(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	dirfd := args[0].Int()
+	pathAddr := args[1].Pointer()
+	mode := args[2].ModeT()
+	return 0, nil, fchmodat(t, dirfd, pathAddr, mode)
 }
 
-func utimes(t *kernel.Task, dirFD int32, addr hostarch.Addr, ts fs.TimeSpec, resolve bool) error {
-	setTimestamp := func(root *fs.Dirent, d *fs.Dirent, _ uint) error {
-		// Does the task own the file?
-		if !d.Inode.CheckOwnership(t) {
-			// Trying to set a specific time? Must be owner.
-			if (ts.ATimeOmit || !ts.ATimeSetSystemTime) && (ts.MTimeOmit || !ts.MTimeSetSystemTime) {
-				return syserror.EPERM
-			}
-
-			// Trying to set to current system time? Must have write access.
-			if err := d.Inode.CheckPermission(t, fs.PermMask{Write: true}); err != nil {
-				return err
-			}
-		}
-
-		if err := d.Inode.SetTimestamps(t, d, ts); err != nil {
-			return err
-		}
-
-		// File attribute changed, generate notification.
-		d.InotifyEvent(linux.IN_ATTRIB, 0)
-		return nil
-	}
-
-	// From utimes.c:
-	// "If filename is NULL and dfd refers to an open file, then operate on
-	// the file.  Otherwise look up filename, possibly using dfd as a
-	// starting point."
-	if addr == 0 && dirFD != linux.AT_FDCWD {
-		if !resolve {
-			// Linux returns EINVAL in this case. See utimes.c.
-			return syserror.EINVAL
-		}
-		f := t.GetFile(dirFD)
-		if f == nil {
-			return syserror.EBADF
-		}
-		defer f.DecRef(t)
-
-		root := t.FSContext().RootDirectory()
-		defer root.DecRef(t)
-
-		return setTimestamp(root, f.Dirent, linux.MaxSymlinkTraversals)
-	}
-
-	path, _, err := copyInPath(t, addr, false /* allowEmpty */)
+func fchmodat(t *kernel.Task, dirfd int32, pathAddr hostarch.Addr, mode uint) error {
+	path, err := copyInPath(t, pathAddr)
 	if err != nil {
 		return err
 	}
 
-	return fileOpOn(t, dirFD, path, resolve, setTimestamp)
+	return setstatat(t, dirfd, path, disallowEmptyPath, followFinalSymlink, &vfs.SetStatOptions{
+		Stat: linux.Statx{
+			Mask: linux.STATX_MODE,
+			Mode: uint16(mode & chmodMask),
+		},
+	})
 }
 
-// Utime implements linux syscall utime(2).
-func Utime(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	filenameAddr := args[0].Pointer()
+// Fchmod implements Linux syscall fchmod(2).
+func Fchmod(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	fd := args[0].Int()
+	mode := args[1].ModeT()
+
+	file := t.GetFile(fd)
+	if file == nil {
+		return 0, nil, linuxerr.EBADF
+	}
+	defer file.DecRef(t)
+
+	return 0, nil, file.SetStat(t, vfs.SetStatOptions{
+		Stat: linux.Statx{
+			Mask: linux.STATX_MODE,
+			Mode: uint16(mode & chmodMask),
+		},
+	})
+}
+
+// Utime implements Linux syscall utime(2).
+func Utime(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	pathAddr := args[0].Pointer()
 	timesAddr := args[1].Pointer()
 
-	// No timesAddr argument will be interpreted as current system time.
-	ts := defaultSetToSystemTimeSpec()
-	if timesAddr != 0 {
+	path, err := copyInPath(t, pathAddr)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	opts := vfs.SetStatOptions{
+		Stat: linux.Statx{
+			Mask: linux.STATX_ATIME | linux.STATX_MTIME,
+		},
+	}
+	if timesAddr == 0 {
+		opts.Stat.Atime.Nsec = linux.UTIME_NOW
+		opts.Stat.Mtime.Nsec = linux.UTIME_NOW
+	} else {
 		var times linux.Utime
 		if _, err := times.CopyIn(t, timesAddr); err != nil {
 			return 0, nil, err
 		}
-		ts = fs.TimeSpec{
-			ATime: ktime.FromSeconds(times.Actime),
-			MTime: ktime.FromSeconds(times.Modtime),
-		}
+		opts.Stat.Atime.Sec = times.Actime
+		opts.Stat.Mtime.Sec = times.Modtime
 	}
-	return 0, nil, utimes(t, linux.AT_FDCWD, filenameAddr, ts, true)
+
+	return 0, nil, setstatat(t, linux.AT_FDCWD, path, disallowEmptyPath, followFinalSymlink, &opts)
 }
 
-// Utimes implements linux syscall utimes(2).
-func Utimes(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	filenameAddr := args[0].Pointer()
+// Utimes implements Linux syscall utimes(2).
+func Utimes(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	pathAddr := args[0].Pointer()
 	timesAddr := args[1].Pointer()
 
-	// No timesAddr argument will be interpreted as current system time.
-	ts := defaultSetToSystemTimeSpec()
-	if timesAddr != 0 {
-		var times [2]linux.Timeval
-		if _, err := linux.CopyTimevalSliceIn(t, timesAddr, times[:]); err != nil {
+	path, err := copyInPath(t, pathAddr)
+	if err != nil {
+		return 0, nil, err
+	}
+
+	var opts vfs.SetStatOptions
+	if err := populateSetStatOptionsForUtimes(t, timesAddr, &opts); err != nil {
+		return 0, nil, err
+	}
+
+	return 0, nil, setstatat(t, linux.AT_FDCWD, path, disallowEmptyPath, followFinalSymlink, &opts)
+}
+
+// Futimesat implements Linux syscall futimesat(2).
+func Futimesat(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	dirfd := args[0].Int()
+	pathAddr := args[1].Pointer()
+	timesAddr := args[2].Pointer()
+
+	// "If filename is NULL and dfd refers to an open file, then operate on the
+	// file. Otherwise look up filename, possibly using dfd as a starting
+	// point." - fs/utimes.c
+	var path fspath.Path
+	shouldAllowEmptyPath := allowEmptyPath
+	if dirfd == linux.AT_FDCWD || pathAddr != 0 {
+		var err error
+		path, err = copyInPath(t, pathAddr)
+		if err != nil {
 			return 0, nil, err
 		}
-		ts = fs.TimeSpec{
-			ATime: ktime.FromTimeval(times[0]),
-			MTime: ktime.FromTimeval(times[1]),
-		}
+		shouldAllowEmptyPath = disallowEmptyPath
 	}
-	return 0, nil, utimes(t, linux.AT_FDCWD, filenameAddr, ts, true)
+
+	var opts vfs.SetStatOptions
+	if err := populateSetStatOptionsForUtimes(t, timesAddr, &opts); err != nil {
+		return 0, nil, err
+	}
+
+	return 0, nil, setstatat(t, dirfd, path, shouldAllowEmptyPath, followFinalSymlink, &opts)
 }
 
-// timespecIsValid checks that the timespec is valid for use in utimensat.
-func timespecIsValid(ts linux.Timespec) bool {
-	// Nsec must be UTIME_OMIT, UTIME_NOW, or less than 10^9.
-	return ts.Nsec == linux.UTIME_OMIT || ts.Nsec == linux.UTIME_NOW || ts.Nsec < 1e9
+func populateSetStatOptionsForUtimes(t *kernel.Task, timesAddr hostarch.Addr, opts *vfs.SetStatOptions) error {
+	if timesAddr == 0 {
+		opts.Stat.Mask = linux.STATX_ATIME | linux.STATX_MTIME
+		opts.Stat.Atime.Nsec = linux.UTIME_NOW
+		opts.Stat.Mtime.Nsec = linux.UTIME_NOW
+		return nil
+	}
+	var times [2]linux.Timeval
+	if _, err := linux.CopyTimevalSliceIn(t, timesAddr, times[:]); err != nil {
+		return err
+	}
+	if times[0].Usec < 0 || times[0].Usec > 999999 || times[1].Usec < 0 || times[1].Usec > 999999 {
+		return linuxerr.EINVAL
+	}
+	opts.Stat.Mask = linux.STATX_ATIME | linux.STATX_MTIME
+	opts.Stat.Atime = linux.StatxTimestamp{
+		Sec:  times[0].Sec,
+		Nsec: uint32(times[0].Usec * 1000),
+	}
+	opts.Stat.Mtime = linux.StatxTimestamp{
+		Sec:  times[1].Sec,
+		Nsec: uint32(times[1].Usec * 1000),
+	}
+	return nil
 }
 
-// Utimensat implements linux syscall utimensat(2).
-func Utimensat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	dirFD := args[0].Int()
-	pathnameAddr := args[1].Pointer()
+// Utimensat implements Linux syscall utimensat(2).
+func Utimensat(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	dirfd := args[0].Int()
+	pathAddr := args[1].Pointer()
 	timesAddr := args[2].Pointer()
 	flags := args[3].Int()
 
-	// No timesAddr argument will be interpreted as current system time.
-	ts := defaultSetToSystemTimeSpec()
-	if timesAddr != 0 {
-		var times [2]linux.Timespec
-		if _, err := linux.CopyTimespecSliceIn(t, timesAddr, times[:]); err != nil {
+	// Linux requires that the UTIME_OMIT check occur before checking path or
+	// flags.
+	var opts vfs.SetStatOptions
+	if err := populateSetStatOptionsForUtimens(t, timesAddr, &opts); err != nil {
+		return 0, nil, err
+	}
+	if opts.Stat.Mask == 0 {
+		return 0, nil, nil
+	}
+
+	if flags&^linux.AT_SYMLINK_NOFOLLOW != 0 {
+		return 0, nil, linuxerr.EINVAL
+	}
+
+	// "If filename is NULL and dfd refers to an open file, then operate on the
+	// file. Otherwise look up filename, possibly using dfd as a starting
+	// point." - fs/utimes.c
+	var path fspath.Path
+	shouldAllowEmptyPath := allowEmptyPath
+	if dirfd == linux.AT_FDCWD || pathAddr != 0 {
+		var err error
+		path, err = copyInPath(t, pathAddr)
+		if err != nil {
 			return 0, nil, err
 		}
-		if !timespecIsValid(times[0]) || !timespecIsValid(times[1]) {
-			return 0, nil, syserror.EINVAL
-		}
-
-		// If both are UTIME_OMIT, this is a noop.
-		if times[0].Nsec == linux.UTIME_OMIT && times[1].Nsec == linux.UTIME_OMIT {
-			return 0, nil, nil
-		}
-
-		ts = fs.TimeSpec{
-			ATime:              ktime.FromTimespec(times[0]),
-			ATimeOmit:          times[0].Nsec == linux.UTIME_OMIT,
-			ATimeSetSystemTime: times[0].Nsec == linux.UTIME_NOW,
-			MTime:              ktime.FromTimespec(times[1]),
-			MTimeOmit:          times[1].Nsec == linux.UTIME_OMIT,
-			MTimeSetSystemTime: times[0].Nsec == linux.UTIME_NOW,
-		}
+		shouldAllowEmptyPath = disallowEmptyPath
 	}
-	return 0, nil, utimes(t, dirFD, pathnameAddr, ts, flags&linux.AT_SYMLINK_NOFOLLOW == 0)
+
+	return 0, nil, setstatat(t, dirfd, path, shouldAllowEmptyPath, shouldFollowFinalSymlink(flags&linux.AT_SYMLINK_NOFOLLOW == 0), &opts)
 }
 
-// Futimesat implements linux syscall futimesat(2).
-func Futimesat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	dirFD := args[0].Int()
-	pathnameAddr := args[1].Pointer()
-	timesAddr := args[2].Pointer()
-
-	// No timesAddr argument will be interpreted as current system time.
-	ts := defaultSetToSystemTimeSpec()
-	if timesAddr != 0 {
-		var times [2]linux.Timeval
-		if _, err := linux.CopyTimevalSliceIn(t, timesAddr, times[:]); err != nil {
-			return 0, nil, err
+func populateSetStatOptionsForUtimens(t *kernel.Task, timesAddr hostarch.Addr, opts *vfs.SetStatOptions) error {
+	if timesAddr == 0 {
+		opts.Stat.Mask = linux.STATX_ATIME | linux.STATX_MTIME
+		opts.Stat.Atime.Nsec = linux.UTIME_NOW
+		opts.Stat.Mtime.Nsec = linux.UTIME_NOW
+		return nil
+	}
+	var times [2]linux.Timespec
+	if _, err := linux.CopyTimespecSliceIn(t, timesAddr, times[:]); err != nil {
+		return err
+	}
+	if times[0].Nsec != linux.UTIME_OMIT {
+		if times[0].Nsec != linux.UTIME_NOW && (times[0].Nsec < 0 || times[0].Nsec > 999999999) {
+			return linuxerr.EINVAL
 		}
-		if times[0].Usec >= 1e6 || times[0].Usec < 0 ||
-			times[1].Usec >= 1e6 || times[1].Usec < 0 {
-			return 0, nil, syserror.EINVAL
-		}
-
-		ts = fs.TimeSpec{
-			ATime: ktime.FromTimeval(times[0]),
-			MTime: ktime.FromTimeval(times[1]),
+		opts.Stat.Mask |= linux.STATX_ATIME
+		opts.Stat.Atime = linux.StatxTimestamp{
+			Sec:  times[0].Sec,
+			Nsec: uint32(times[0].Nsec),
 		}
 	}
-	return 0, nil, utimes(t, dirFD, pathnameAddr, ts, true)
+	if times[1].Nsec != linux.UTIME_OMIT {
+		if times[1].Nsec != linux.UTIME_NOW && (times[1].Nsec < 0 || times[1].Nsec > 999999999) {
+			return linuxerr.EINVAL
+		}
+		opts.Stat.Mask |= linux.STATX_MTIME
+		opts.Stat.Mtime = linux.StatxTimestamp{
+			Sec:  times[1].Sec,
+			Nsec: uint32(times[1].Nsec),
+		}
+	}
+	return nil
 }
 
-// LINT.ThenChange(vfs2/setstat.go)
+// Rename implements Linux syscall rename(2).
+func Rename(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	oldpathAddr := args[0].Pointer()
+	newpathAddr := args[1].Pointer()
+	return 0, nil, renameat(t, linux.AT_FDCWD, oldpathAddr, linux.AT_FDCWD, newpathAddr, 0 /* flags */)
+}
 
-// LINT.IfChange
+// Renameat implements Linux syscall renameat(2).
+func Renameat(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	olddirfd := args[0].Int()
+	oldpathAddr := args[1].Pointer()
+	newdirfd := args[2].Int()
+	newpathAddr := args[3].Pointer()
+	return 0, nil, renameat(t, olddirfd, oldpathAddr, newdirfd, newpathAddr, 0 /* flags */)
+}
 
-func renameAt(t *kernel.Task, oldDirFD int32, oldAddr hostarch.Addr, newDirFD int32, newAddr hostarch.Addr) error {
-	newPath, _, err := copyInPath(t, newAddr, false /* allowEmpty */)
+// Renameat2 implements Linux syscall renameat2(2).
+func Renameat2(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	olddirfd := args[0].Int()
+	oldpathAddr := args[1].Pointer()
+	newdirfd := args[2].Int()
+	newpathAddr := args[3].Pointer()
+	flags := args[4].Uint()
+	return 0, nil, renameat(t, olddirfd, oldpathAddr, newdirfd, newpathAddr, flags)
+}
+
+func renameat(t *kernel.Task, olddirfd int32, oldpathAddr hostarch.Addr, newdirfd int32, newpathAddr hostarch.Addr, flags uint32) error {
+	oldpath, err := copyInPath(t, oldpathAddr)
 	if err != nil {
 		return err
 	}
-	oldPath, _, err := copyInPath(t, oldAddr, false /* allowEmpty */)
+	// "If oldpath refers to a symbolic link, the link is renamed" - rename(2)
+	oldtpop, err := getTaskPathOperation(t, olddirfd, oldpath, disallowEmptyPath, nofollowFinalSymlink)
 	if err != nil {
 		return err
 	}
+	defer oldtpop.Release(t)
 
-	return fileOpAt(t, oldDirFD, oldPath, func(root *fs.Dirent, oldParent *fs.Dirent, oldName string, _ uint) error {
-		if !fs.IsDir(oldParent.Inode.StableAttr) {
-			return syserror.ENOTDIR
-		}
+	newpath, err := copyInPath(t, newpathAddr)
+	if err != nil {
+		return err
+	}
+	newtpop, err := getTaskPathOperation(t, newdirfd, newpath, disallowEmptyPath, nofollowFinalSymlink)
+	if err != nil {
+		return err
+	}
+	defer newtpop.Release(t)
 
-		// Rename rejects paths that end in ".", "..", or empty (i.e.
-		// the root) with EBUSY.
-		switch oldName {
-		case "", ".", "..":
-			return syserror.EBUSY
-		}
-
-		return fileOpAt(t, newDirFD, newPath, func(root *fs.Dirent, newParent *fs.Dirent, newName string, _ uint) error {
-			if !fs.IsDir(newParent.Inode.StableAttr) {
-				return syserror.ENOTDIR
-			}
-
-			// Rename rejects paths that end in ".", "..", or empty
-			// (i.e.  the root) with EBUSY.
-			switch newName {
-			case "", ".", "..":
-				return syserror.EBUSY
-			}
-
-			return fs.Rename(t, root, oldParent, oldName, newParent, newName)
-		})
+	return t.Kernel().VFS().RenameAt(t, t.Credentials(), &oldtpop.pop, &newtpop.pop, &vfs.RenameOptions{
+		Flags: flags,
 	})
 }
 
-// Rename implements linux syscall rename(2).
-func Rename(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	oldPathAddr := args[0].Pointer()
-	newPathAddr := args[1].Pointer()
-	return 0, nil, renameAt(t, linux.AT_FDCWD, oldPathAddr, linux.AT_FDCWD, newPathAddr)
-}
-
-// Renameat implements linux syscall renameat(2).
-func Renameat(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	oldDirFD := args[0].Int()
-	oldPathAddr := args[1].Pointer()
-	newDirFD := args[2].Int()
-	newPathAddr := args[3].Pointer()
-	return 0, nil, renameAt(t, oldDirFD, oldPathAddr, newDirFD, newPathAddr)
-}
-
-// LINT.ThenChange(vfs2/filesystem.go)
-
 // Fallocate implements linux system call fallocate(2).
-func Fallocate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Fallocate(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
-	mode := args[1].Int64()
+	mode := args[1].Uint64()
 	offset := args[2].Int64()
 	length := args[3].Int64()
 
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
-	if offset < 0 || length <= 0 {
-		return 0, nil, syserror.EINVAL
+	if !file.IsWritable() {
+		return 0, nil, linuxerr.EBADF
 	}
 	if mode != 0 {
-		t.Kernel().EmitUnimplementedEvent(t)
-		return 0, nil, syserror.ENOTSUP
+		return 0, nil, linuxerr.ENOTSUP
 	}
-	if !file.Flags().Write {
-		return 0, nil, syserror.EBADF
+	if offset < 0 || length <= 0 {
+		return 0, nil, linuxerr.EINVAL
 	}
-	if fs.IsPipe(file.Dirent.Inode.StableAttr) {
-		return 0, nil, syserror.ESPIPE
-	}
-	if fs.IsDir(file.Dirent.Inode.StableAttr) {
-		return 0, nil, syserror.EISDIR
-	}
-	if !fs.IsRegular(file.Dirent.Inode.StableAttr) {
-		return 0, nil, syserror.ENODEV
-	}
+
 	size := offset + length
 	if size < 0 {
-		return 0, nil, syserror.EFBIG
+		return 0, nil, linuxerr.EFBIG
 	}
-	if uint64(size) >= t.ThreadGroup().Limits().Get(limits.FileSize).Cur {
-		t.SendSignal(&arch.SignalInfo{
+	limit := limits.FromContext(t).Get(limits.FileSize).Cur
+	if uint64(size) >= limit {
+		t.SendSignal(&linux.SignalInfo{
 			Signo: int32(linux.SIGXFSZ),
-			Code:  arch.SignalInfoUser,
+			Code:  linux.SI_USER,
 		})
-		return 0, nil, syserror.EFBIG
+		return 0, nil, linuxerr.EFBIG
 	}
 
-	if err := file.Dirent.Inode.Allocate(t, file.Dirent, offset, length); err != nil {
-		return 0, nil, err
-	}
-
-	// File length modified, generate notification.
-	file.Dirent.InotifyEvent(linux.IN_MODIFY, 0)
-
-	return 0, nil, nil
+	return 0, nil, file.Allocate(t, mode, uint64(offset), uint64(length))
 }
 
 // Flock implements linux syscall flock(2).
-func Flock(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Flock(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	operation := args[1].Int()
 
 	file := t.GetFile(fd)
 	if file == nil {
 		// flock(2): EBADF fd is not an open file descriptor.
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
 	nonblocking := operation&linux.LOCK_NB != 0
 	operation &^= linux.LOCK_NB
 
-	// A BSD style lock spans the entire file.
-	rng := lock.LockRange{
-		Start: 0,
-		End:   lock.LockEOF,
-	}
-
 	switch operation {
 	case linux.LOCK_EX:
-		if nonblocking {
-			// Since we're nonblocking we pass a nil lock.Blocker implementation.
-			if !file.Dirent.Inode.LockCtx.BSD.LockRegionVFS1(file, lock.WriteLock, rng, nil) {
-				return 0, nil, syserror.EWOULDBLOCK
-			}
-		} else {
-			// Because we're blocking we will pass the task to satisfy the lock.Blocker interface.
-			if !file.Dirent.Inode.LockCtx.BSD.LockRegionVFS1(file, lock.WriteLock, rng, t) {
-				return 0, nil, syserror.EINTR
-			}
+		if err := file.LockBSD(t, int32(t.TGIDInRoot()), lock.WriteLock, !nonblocking /* block */); err != nil {
+			return 0, nil, err
 		}
 	case linux.LOCK_SH:
-		if nonblocking {
-			// Since we're nonblocking we pass a nil lock.Blocker implementation.
-			if !file.Dirent.Inode.LockCtx.BSD.LockRegionVFS1(file, lock.ReadLock, rng, nil) {
-				return 0, nil, syserror.EWOULDBLOCK
-			}
-		} else {
-			// Because we're blocking we will pass the task to satisfy the lock.Blocker interface.
-			if !file.Dirent.Inode.LockCtx.BSD.LockRegionVFS1(file, lock.ReadLock, rng, t) {
-				return 0, nil, syserror.EINTR
-			}
+		if err := file.LockBSD(t, int32(t.TGIDInRoot()), lock.ReadLock, !nonblocking /* block */); err != nil {
+			return 0, nil, err
 		}
 	case linux.LOCK_UN:
-		file.Dirent.Inode.LockCtx.BSD.UnlockRegion(file, rng)
+		if err := file.UnlockBSD(t); err != nil {
+			return 0, nil, err
+		}
 	default:
 		// flock(2): EINVAL operation is invalid.
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	return 0, nil, nil
 }
 
 const (
-	memfdPrefix     = "/memfd:"
+	memfdPrefix     = "memfd:"
+	memfdMaxNameLen = linux.NAME_MAX - len(memfdPrefix)
 	memfdAllFlags   = uint32(linux.MFD_CLOEXEC | linux.MFD_ALLOW_SEALING)
-	memfdMaxNameLen = linux.NAME_MAX - len(memfdPrefix) + 1
 )
 
 // MemfdCreate implements the linux syscall memfd_create(2).
-func MemfdCreate(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func MemfdCreate(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
 	flags := args[1].Uint()
 
 	if flags&^memfdAllFlags != 0 {
 		// Unknown bits in flags.
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	allowSeals := flags&linux.MFD_ALLOW_SEALING != 0
 	cloExec := flags&linux.MFD_CLOEXEC != 0
 
-	name, err := t.CopyInString(addr, unix.PathMax-len(memfdPrefix))
-	if err != nil {
-		return 0, nil, err
-	}
-	if len(name) > memfdMaxNameLen {
-		return 0, nil, syserror.EINVAL
-	}
-	name = memfdPrefix + name
-
-	inode := tmpfs.NewMemfdInode(t, allowSeals)
-	dirent := fs.NewDirent(t, inode, name)
-	// Per Linux, mm/shmem.c:__shmem_file_setup(), memfd files are set up with
-	// FMODE_READ | FMODE_WRITE.
-	file, err := inode.GetFile(t, dirent, fs.FileFlags{Read: true, Write: true})
+	name, err := t.CopyInString(addr, memfdMaxNameLen)
 	if err != nil {
 		return 0, nil, err
 	}
 
-	defer dirent.DecRef(t)
+	shmMount := t.Kernel().ShmMount()
+	file, err := tmpfs.NewMemfd(t, t.Credentials(), shmMount, allowSeals, memfdPrefix+name)
+	if err != nil {
+		return 0, nil, err
+	}
 	defer file.DecRef(t)
 
-	newFD, err := t.NewFDFrom(0, file, kernel.FDFlags{
+	fd, err := t.NewFDFrom(0, file, kernel.FDFlags{
 		CloseOnExec: cloExec,
 	})
 	if err != nil {
 		return 0, nil, err
 	}
 
-	return uintptr(newFD), nil, nil
+	return uintptr(fd), nil, nil
 }

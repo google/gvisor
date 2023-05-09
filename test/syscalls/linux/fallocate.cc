@@ -31,11 +31,11 @@
 #include "absl/strings/str_cat.h"
 #include "absl/time/time.h"
 #include "test/syscalls/linux/file_base.h"
-#include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/cleanup.h"
 #include "test/util/eventfd_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
+#include "test/util/socket_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 
@@ -109,7 +109,6 @@ TEST_F(AllocateTest, FallocateReadonly) {
 }
 
 TEST_F(AllocateTest, FallocateWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_PATH));
   EXPECT_THAT(fallocate(fd.get(), 0, 0, 10), SyscallFailsWithErrno(EBADF));

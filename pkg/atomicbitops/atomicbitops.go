@@ -12,36 +12,71 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build amd64 || arm64
 // +build amd64 arm64
 
 // Package atomicbitops provides extensions to the sync/atomic package.
 //
 // All read-modify-write operations implemented by this package have
 // acquire-release memory ordering (like sync/atomic).
+//
+// +checkalignedignore
 package atomicbitops
 
 // AndUint32 atomically applies bitwise AND operation to *addr with val.
-func AndUint32(addr *uint32, val uint32)
+func AndUint32(addr *Uint32, val uint32) {
+	andUint32(&addr.value, val)
+}
+
+func andUint32(addr *uint32, val uint32)
 
 // OrUint32 atomically applies bitwise OR operation to *addr with val.
-func OrUint32(addr *uint32, val uint32)
+func OrUint32(addr *Uint32, val uint32) {
+	orUint32(&addr.value, val)
+}
+
+func orUint32(addr *uint32, val uint32)
 
 // XorUint32 atomically applies bitwise XOR operation to *addr with val.
-func XorUint32(addr *uint32, val uint32)
+func XorUint32(addr *Uint32, val uint32) {
+	xorUint32(&addr.value, val)
+}
+
+func xorUint32(addr *uint32, val uint32)
 
 // CompareAndSwapUint32 is like sync/atomic.CompareAndSwapUint32, but returns
 // the value previously stored at addr.
-func CompareAndSwapUint32(addr *uint32, old, new uint32) uint32
+func CompareAndSwapUint32(addr *Uint32, old, new uint32) uint32 {
+	return compareAndSwapUint32(&addr.value, old, new)
+}
+
+func compareAndSwapUint32(addr *uint32, old, new uint32) uint32
 
 // AndUint64 atomically applies bitwise AND operation to *addr with val.
-func AndUint64(addr *uint64, val uint64)
+func AndUint64(addr *Uint64, val uint64) {
+	andUint64(&addr.value, val)
+}
+
+func andUint64(addr *uint64, val uint64)
 
 // OrUint64 atomically applies bitwise OR operation to *addr with val.
-func OrUint64(addr *uint64, val uint64)
+func OrUint64(addr *Uint64, val uint64) {
+	orUint64(&addr.value, val)
+}
+
+func orUint64(addr *uint64, val uint64)
 
 // XorUint64 atomically applies bitwise XOR operation to *addr with val.
-func XorUint64(addr *uint64, val uint64)
+func XorUint64(addr *Uint64, val uint64) {
+	xorUint64(&addr.value, val)
+}
+
+func xorUint64(addr *uint64, val uint64)
 
 // CompareAndSwapUint64 is like sync/atomic.CompareAndSwapUint64, but returns
 // the value previously stored at addr.
-func CompareAndSwapUint64(addr *uint64, old, new uint64) uint64
+func CompareAndSwapUint64(addr *Uint64, old, new uint64) uint64 {
+	return compareAndSwapUint64(&addr.value, old, new)
+}
+
+func compareAndSwapUint64(addr *uint64, old, new uint64) uint64

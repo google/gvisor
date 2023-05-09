@@ -20,8 +20,8 @@
 #include <unistd.h>
 
 #include "gtest/gtest.h"
-#include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/socket_util.h"
 #include "test/util/temp_umask.h"
 #include "test/util/test_util.h"
 
@@ -47,7 +47,7 @@ TEST(SocketTest, ProtocolUnix) {
       {AF_UNIX, SOCK_SEQPACKET, PF_UNIX},
       {AF_UNIX, SOCK_DGRAM, PF_UNIX},
   };
-  for (long unsigned int i = 0; i < ABSL_ARRAYSIZE(tests); i++) {
+  for (size_t i = 0; i < ABSL_ARRAYSIZE(tests); i++) {
     ASSERT_NO_ERRNO_AND_VALUE(
         Socket(tests[i].domain, tests[i].type, tests[i].protocol));
   }
@@ -60,15 +60,13 @@ TEST(SocketTest, ProtocolInet) {
       {AF_INET, SOCK_DGRAM, IPPROTO_UDP},
       {AF_INET, SOCK_STREAM, IPPROTO_TCP},
   };
-  for (long unsigned int i = 0; i < ABSL_ARRAYSIZE(tests); i++) {
+  for (size_t i = 0; i < ABSL_ARRAYSIZE(tests); i++) {
     ASSERT_NO_ERRNO_AND_VALUE(
         Socket(tests[i].domain, tests[i].type, tests[i].protocol));
   }
 }
 
 TEST(SocketTest, UnixSocketStat) {
-  SKIP_IF(IsRunningWithVFS1());
-
   FileDescriptor bound =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_STREAM, PF_UNIX));
 
@@ -91,16 +89,12 @@ TEST(SocketTest, UnixSocketStat) {
   EXPECT_EQ(statbuf.st_mode, S_IFSOCK | (sock_perm & ~mask));
 
   // Timestamps should be equal and non-zero.
-  if (!IsRunningWithVFS1()) {
-    EXPECT_NE(statbuf.st_atime, 0);
-    EXPECT_EQ(statbuf.st_atime, statbuf.st_mtime);
-    EXPECT_EQ(statbuf.st_atime, statbuf.st_ctime);
-  }
+  EXPECT_NE(statbuf.st_atime, 0);
+  EXPECT_EQ(statbuf.st_atime, statbuf.st_mtime);
+  EXPECT_EQ(statbuf.st_atime, statbuf.st_ctime);
 }
 
 TEST(SocketTest, UnixSocketStatFS) {
-  SKIP_IF(IsRunningWithVFS1());
-
   FileDescriptor bound =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_STREAM, PF_UNIX));
 
@@ -111,7 +105,7 @@ TEST(SocketTest, UnixSocketStatFS) {
   EXPECT_EQ(st.f_namelen, NAME_MAX);
 }
 
-TEST(SocketTest, UnixSCMRightsOnlyPassedOnce_NoRandomSave) {
+TEST(SocketTest, UnixSCMRightsOnlyPassedOnce) {
   const DisableSave ds;
 
   int sockets[2];
@@ -119,6 +113,9 @@ TEST(SocketTest, UnixSCMRightsOnlyPassedOnce_NoRandomSave) {
   // Send more than what will fit inside the send/receive buffers, so that it is
   // split into multiple messages.
   constexpr int kBufSize = 0x100000;
+  // Heap allocation is async-signal-unsafe and thus cannot occur between fork()
+  // and execve().
+  std::vector<char> buf(kBufSize);
 
   pid_t pid = fork();
   if (pid == 0) {
@@ -127,7 +124,6 @@ TEST(SocketTest, UnixSCMRightsOnlyPassedOnce_NoRandomSave) {
     // Construct a message with some control message.
     struct msghdr msg = {};
     char control[CMSG_SPACE(sizeof(int))] = {};
-    std::vector<char> buf(kBufSize);
     struct iovec iov = {};
     msg.msg_control = control;
     msg.msg_controllen = sizeof(control);
@@ -154,7 +150,6 @@ TEST(SocketTest, UnixSCMRightsOnlyPassedOnce_NoRandomSave) {
 
   struct msghdr msg = {};
   char control[CMSG_SPACE(sizeof(int))] = {};
-  std::vector<char> buf(kBufSize);
   struct iovec iov = {};
   msg.msg_control = &control;
   msg.msg_controllen = sizeof(control);
@@ -182,13 +177,18 @@ TEST(SocketTest, UnixSCMRightsOnlyPassedOnce_NoRandomSave) {
   ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
 }
 
+TEST(SocketTest, Permission) {
+  FileDescriptor socket =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_DGRAM, 0));
+
+  auto stat = ASSERT_NO_ERRNO_AND_VALUE(Fstat(socket.get()));
+  EXPECT_EQ(0777, stat.st_mode & ~S_IFMT);
+}
+
 using SocketOpenTest = ::testing::TestWithParam<int>;
 
 // UDS cannot be opened.
 TEST_P(SocketOpenTest, Unix) {
-  // FIXME(b/142001530): Open incorrectly succeeds on gVisor.
-  SKIP_IF(IsRunningWithVFS1());
-
   FileDescriptor bound =
       ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_STREAM, PF_UNIX));
 

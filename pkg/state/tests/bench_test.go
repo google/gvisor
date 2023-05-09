@@ -26,7 +26,7 @@ import (
 )
 
 // buildPtrObject builds a benchmark object.
-func buildPtrObject(n int) interface{} {
+func buildPtrObject(n int) any {
 	b := new(benchStruct)
 	for i := 0; i < n; i++ {
 		b = &benchStruct{B: b}
@@ -35,7 +35,7 @@ func buildPtrObject(n int) interface{} {
 }
 
 // buildMapObject builds a benchmark object.
-func buildMapObject(n int) interface{} {
+func buildMapObject(n int) any {
 	b := new(benchStruct)
 	m := make(map[int]*benchStruct)
 	for i := 0; i < n; i++ {
@@ -45,7 +45,7 @@ func buildMapObject(n int) interface{} {
 }
 
 // buildSliceObject builds a benchmark object.
-func buildSliceObject(n int) interface{} {
+func buildSliceObject(n int) any {
 	b := new(benchStruct)
 	s := make([]*benchStruct, 0, n)
 	for i := 0; i < n; i++ {
@@ -55,7 +55,7 @@ func buildSliceObject(n int) interface{} {
 }
 
 var allObjects = map[string]struct {
-	New func(int) interface{}
+	New func(int) any
 }{
 	"ptr": {
 		New: buildPtrObject,
@@ -68,7 +68,7 @@ var allObjects = map[string]struct {
 	},
 }
 
-func buildObjects(n int, fn func(int) interface{}) (iters int, v interface{}) {
+func buildObjects(n int, fn func(int) any) (iters int, v any) {
 	// maxSize is the maximum size of an individual object below. For an N
 	// larger than this, we start to return multiple objects.
 	const maxSize = 1024
@@ -80,22 +80,22 @@ func buildObjects(n int, fn func(int) interface{}) (iters int, v interface{}) {
 }
 
 // gobSave is a version of save using gob (no stats available).
-func gobSave(_ context.Context, w wire.Writer, v interface{}) (_ state.Stats, err error) {
+func gobSave(_ context.Context, w wire.Writer, v any) (_ state.Stats, err error) {
 	enc := gob.NewEncoder(w)
 	err = enc.Encode(v)
 	return
 }
 
 // gobLoad is a version of load using gob (no stats available).
-func gobLoad(_ context.Context, r wire.Reader, v interface{}) (_ state.Stats, err error) {
+func gobLoad(_ context.Context, r wire.Reader, v any) (_ state.Stats, err error) {
 	dec := gob.NewDecoder(r)
 	err = dec.Decode(v)
 	return
 }
 
 var allAlgos = map[string]struct {
-	Save   func(context.Context, wire.Writer, interface{}) (state.Stats, error)
-	Load   func(context.Context, wire.Reader, interface{}) (state.Stats, error)
+	Save   func(context.Context, wire.Writer, any) (state.Stats, error)
+	Load   func(context.Context, wire.Reader, any) (state.Stats, error)
 	MaxPtr int
 }{
 	"state": {

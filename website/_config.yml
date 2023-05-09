@@ -25,6 +25,13 @@ defaults:
       layout: default
 analytics: "UA-150193582-1"
 authors:
+  bogomolov:
+    name: Konstantin Bogomolov
+    email: bogomolov@google.com
+  lucasmanning:
+    name: Lucas Manning
+    email: lucasmanning@google.com
+    url: https://twitter.com/lucassmanning
   jsprad:
     name: Jeremiah Spradlin
     email: jsprad@google.com
@@ -44,3 +51,12 @@ authors:
   mpratt:
     name: Michael Pratt
     email: mpratt@google.com
+  nybidari:
+    name: Nayana Bidari
+    email: nybidari@google.com
+  jianfengt:
+    name: Jianfeng Tan
+    email: henry.tjf@antgroup.com
+  yonghe:
+    name: Yong He
+    email: chenglang.hy@antgroup.com

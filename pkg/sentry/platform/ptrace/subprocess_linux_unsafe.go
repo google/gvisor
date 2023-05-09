@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build linux && (amd64 || arm64)
 // +build linux
 // +build amd64 arm64
 
@@ -26,6 +27,7 @@ import (
 
 // unmaskAllSignals unmasks all signals on the current thread.
 //
+//go:norace
 //go:nosplit
 func unmaskAllSignals() unix.Errno {
 	var set linux.SignalSet

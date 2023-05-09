@@ -21,8 +21,9 @@ import (
 	"testing"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/link/fdbased"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -31,7 +32,9 @@ import (
 func TestInjectableEndpointRawDispatch(t *testing.T) {
 	endpoint, sock, dstIP := makeTestInjectableEndpoint(t)
 
-	endpoint.InjectOutbound(dstIP, []byte{0xFA})
+	v := bufferv2.NewViewWithData([]byte{0xFA})
+	defer v.Release()
+	endpoint.InjectOutbound(dstIP, v)
 
 	buf := make([]byte, ipv4.MaxTotalSize)
 	bytesRead, err := sock.Read(buf)
@@ -48,13 +51,18 @@ func TestInjectableEndpointDispatch(t *testing.T) {
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: 1,
-		Data:               buffer.NewViewFromBytes([]byte{0xFB}).ToVectorisedView(),
+		Payload:            bufferv2.MakeWithData([]byte{0xFB}),
 	})
+	defer pkt.DecRef()
 	pkt.TransportHeader().Push(1)[0] = 0xFA
-	var packetRoute stack.RouteInfo
-	packetRoute.RemoteAddress = dstIP
+	pkt.EgressRoute.RemoteAddress = dstIP
+	pkt.NetworkProtocolNumber = ipv4.ProtocolNumber
 
-	endpoint.WritePacket(packetRoute, nil /* gso */, ipv4.ProtocolNumber, pkt)
+	var pkts stack.PacketBufferList
+	pkts.PushBack(pkt)
+	if _, err := endpoint.WritePackets(pkts); err != nil {
+		t.Fatalf("Unable to write packets: %s", err)
+	}
 
 	buf := make([]byte, 6500)
 	bytesRead, err := sock.Read(buf)
@@ -71,12 +79,17 @@ func TestInjectableEndpointDispatchHdrOnly(t *testing.T) {
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: 1,
-		Data:               buffer.NewView(0).ToVectorisedView(),
 	})
+	defer pkt.DecRef()
 	pkt.TransportHeader().Push(1)[0] = 0xFA
-	var packetRoute stack.RouteInfo
-	packetRoute.RemoteAddress = dstIP
-	endpoint.WritePacket(packetRoute, nil /* gso */, ipv4.ProtocolNumber, pkt)
+	pkt.EgressRoute.RemoteAddress = dstIP
+	pkt.NetworkProtocolNumber = ipv4.ProtocolNumber
+
+	var pkts stack.PacketBufferList
+	pkts.PushBack(pkt)
+	if _, err := endpoint.WritePackets(pkts); err != nil {
+		t.Fatalf("Unable to write packets: %s", err)
+	}
 	buf := make([]byte, 6500)
 	bytesRead, err := sock.Read(buf)
 	if err != nil {
@@ -94,8 +107,18 @@ func makeTestInjectableEndpoint(t *testing.T) (*InjectableEndpoint, *os.File, tc
 	if err != nil {
 		t.Fatal("Failed to create socket pair:", err)
 	}
-	underlyingEndpoint := fdbased.NewInjectable(pair[1], 6500, stack.CapabilityNone)
+	underlyingEndpoint, err := fdbased.NewInjectable(pair[1], 6500, stack.CapabilityNone)
+	if err != nil {
+		t.Fatalf("fdbased.NewInjectable(%d, 6500, stack.CapabilityNone) failed: %s", pair[1], err)
+	}
 	routes := map[tcpip.Address]stack.InjectableLinkEndpoint{dstIP: underlyingEndpoint}
 	endpoint := NewInjectableEndpoint(routes)
 	return endpoint, os.NewFile(uintptr(pair[0]), "test route end"), dstIP
+}
+
+func TestMain(m *testing.M) {
+	refs.SetLeakMode(refs.LeaksPanic)
+	code := m.Run()
+	refs.DoLeakCheck()
+	os.Exit(code)
 }

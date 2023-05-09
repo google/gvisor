@@ -22,16 +22,22 @@ import (
 	"log"
 	"os"
 	"strings"
+	"time"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/test/runtimes/proctor/lib"
 )
 
 var (
-	runtime   = flag.String("runtime", "", "name of runtime")
-	list      = flag.Bool("list", false, "list all available tests")
-	testNames = flag.String("tests", "", "run a subset of the available tests")
-	pause     = flag.Bool("pause", false, "cause container to pause indefinitely, reaping any zombie children")
+	runtime           = flag.String("runtime", "", "name of runtime")
+	list              = flag.Bool("list", false, "list all available tests")
+	testNames         = flag.String("tests", "", "run a subset of the available tests")
+	pause             = flag.Bool("pause", false, "cause container to pause indefinitely, reaping any zombie children")
+	timeout           = flag.Duration("timeout", 90*time.Minute, "batch timeout")
+	perTestTimeout    = flag.Duration("per_test_timeout", 20*time.Minute, "per-test timeout (a value of 0 disables per-test timeouts)")
+	runsPerTest       = flag.Int("runs_per_test", 1, "number of times to run each test (a value of 0 is the same as a value of 1, i.e. running once)")
+	flakyIsError      = flag.Bool("flaky_is_error", true, "if true, when running with multiple --runs_per_test, tests with inconsistent status will result in a failure status code for the batch; if false, they will be considered as passing")
+	flakyShortCircuit = flag.Bool("flaky_short_circuit", true, "if true, when running with multiple --runs_per_test and a test is detected as flaky, exit immediately rather than running all --runs_per_test")
 )
 
 // setNumFilesLimit changes the NOFILE soft rlimit if it is too high.
@@ -69,6 +75,8 @@ func main() {
 		log.Fatalf("runtime flag must be provided")
 	}
 
+	timer := time.NewTimer(*timeout)
+
 	tr, err := lib.TestRunnerForRuntime(*runtime)
 	if err != nil {
 		log.Fatalf("%v", err)
@@ -85,6 +93,14 @@ func main() {
 		}
 		return
 	}
+
+	// heartbeat
+	go func() {
+		for {
+			time.Sleep(15 * time.Second)
+			log.Println("Proctor checking in " + time.Now().String())
+		}
+	}()
 
 	var tests []string
 	if *testNames == "" {
@@ -104,10 +120,97 @@ func main() {
 
 	// Run tests.
 	cmds := tr.TestCmds(tests)
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		select {
+		case <-done:
+			return
+		case <-timer.C:
+			log.Println("The batch timeout duration is exceeded")
+			killed := false
+			for _, cmd := range cmds {
+				p := cmd.Process
+				if p == nil || cmd.ProcessState != nil {
+					continue
+				}
+				pid := p.Pid
+				if pid > 0 {
+					unix.Kill(pid, unix.SIGTERM)
+					killed = true
+				}
+			}
+			if killed {
+				// Let tests to handle signals
+				time.Sleep(5 * time.Second)
+			}
+			panic("FAIL: The batch timeout duration is exceeded")
+		}
+	}()
+	numIterations := *runsPerTest
+	if numIterations == 0 {
+		numIterations = 1
+	}
 	for _, cmd := range cmds {
-		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
-		if err := cmd.Run(); err != nil {
-			log.Fatalf("FAIL: %v", err)
+		iterations := 0
+		successes := 0
+		var firstFailure error
+		for iteration := 1; iteration <= *runsPerTest; iteration++ {
+			// Make a copy of the command, as the same exec.Cmd object cannot be started multiple times.
+			cmdCopy := *cmd
+
+			// Handle test timeout.
+			testDone := make(chan struct{})
+			testTimedOutCh := make(chan bool, 1)
+			if *perTestTimeout != 0 {
+				go func() {
+					timer := time.NewTimer(*perTestTimeout)
+					defer timer.Stop()
+					select {
+					case <-timer.C:
+						testTimedOutCh <- true
+						cmdCopy.Process.Kill()
+					case <-done:
+						testTimedOutCh <- false
+					case <-testDone:
+						testTimedOutCh <- false
+					}
+				}()
+			}
+
+			// Run the test.
+			cmdCopy.Stdout, cmdCopy.Stderr = os.Stdout, os.Stderr
+			testErr := cmdCopy.Run()
+			close(testDone)
+			if <-testTimedOutCh {
+				testErr = fmt.Errorf("test timed out after %v", *perTestTimeout)
+			}
+
+			// Tally result.
+			iterations++
+			if testErr == nil {
+				successes++
+			} else if firstFailure == nil {
+				firstFailure = testErr
+			}
+			if *flakyShortCircuit && successes > 0 && firstFailure != nil {
+				break
+			}
+		}
+		if successes > 0 && firstFailure != nil {
+			// Test is flaky.
+			if *flakyIsError {
+				log.Fatalf("FLAKY: %v (%d failures out of %d)", firstFailure, iterations-successes, iterations)
+			} else {
+				log.Println(fmt.Sprintf("FLAKY: %v (%d failures out of %d)", firstFailure, iterations-successes, iterations))
+			}
+		} else if successes == 0 && firstFailure != nil {
+			// Test is 100% failing.
+			log.Fatalf("FAIL: %v", firstFailure)
+		} else if successes > 0 && firstFailure == nil {
+			// Test is 100% succeeding, do nothing.
+		} else {
+			log.Fatalf("Internal logic error")
 		}
 	}
 }

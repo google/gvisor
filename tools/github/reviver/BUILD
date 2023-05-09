@@ -1,6 +1,9 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_library(
     name = "reviver",
@@ -12,7 +15,7 @@ go_library(
     visibility = [
         "//tools/github:__subpackages__",
     ],
-    deps = ["@com_github_google_go_github_v32//github:go_default_library"],
+    deps = ["@com_github_google_go_github_v42//github:go_default_library"],
 )
 
 go_test(

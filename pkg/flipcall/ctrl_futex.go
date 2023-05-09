@@ -12,19 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build go1.1
+// +build go1.1
+
 package flipcall
 
 import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"sync/atomic"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/log"
 )
 
 type endpointControlImpl struct {
-	state int32
+	state atomicbitops.Int32
 }
 
 // Bits in endpointControlImpl.state.
@@ -51,7 +54,7 @@ func (ep *Endpoint) ctrlConnect() error {
 	if err := json.NewEncoder(w).Encode(struct{}{}); err != nil {
 		return fmt.Errorf("error writing connection request: %v", err)
 	}
-	*ep.dataLen() = w.Len()
+	*ep.dataLen() = atomicbitops.FromUint32(w.Len())
 
 	// Exchange control with the server.
 	if err := ep.futexSetPeerActive(); err != nil {
@@ -66,7 +69,7 @@ func (ep *Endpoint) ctrlConnect() error {
 
 	// Read the connection response.
 	var resp struct{}
-	respLen := atomic.LoadUint32(ep.dataLen())
+	respLen := ep.dataLen().Load()
 	if respLen > ep.dataCap {
 		return fmt.Errorf("invalid connection response length %d (maximum %d)", respLen, ep.dataCap)
 	}
@@ -89,7 +92,7 @@ func (ep *Endpoint) ctrlWaitFirst() error {
 	}
 
 	// Read the connection request.
-	reqLen := atomic.LoadUint32(ep.dataLen())
+	reqLen := ep.dataLen().Load()
 	if reqLen > ep.dataCap {
 		return fmt.Errorf("invalid connection request length %d (maximum %d)", reqLen, ep.dataCap)
 	}
@@ -103,7 +106,7 @@ func (ep *Endpoint) ctrlWaitFirst() error {
 	if err := json.NewEncoder(w).Encode(struct{}{}); err != nil {
 		return fmt.Errorf("error writing connection response: %v", err)
 	}
-	*ep.dataLen() = w.Len()
+	*ep.dataLen() = atomicbitops.FromUint32(w.Len())
 
 	// Return control to the client.
 	raceBecomeInactive()
@@ -118,7 +121,7 @@ func (ep *Endpoint) ctrlWaitFirst() error {
 	return ep.futexWaitUntilActive()
 }
 
-func (ep *Endpoint) ctrlRoundTrip() error {
+func (ep *Endpoint) ctrlRoundTrip(mayRetainP bool) error {
 	if err := ep.enterFutexWait(); err != nil {
 		return err
 	}
@@ -130,6 +133,9 @@ func (ep *Endpoint) ctrlRoundTrip() error {
 	if err := ep.futexWakePeer(); err != nil {
 		return err
 	}
+	// Since we don't know if the peer Endpoint is in the same process as this
+	// one (in which case it may need our P to run), we allow our P to be
+	// retaken regardless of mayRetainP.
 	return ep.futexWaitUntilActive()
 }
 
@@ -141,11 +147,11 @@ func (ep *Endpoint) ctrlWakeLast() error {
 }
 
 func (ep *Endpoint) enterFutexWait() error {
-	switch eps := atomic.AddInt32(&ep.ctrl.state, epsBlocked); eps {
+	switch eps := ep.ctrl.state.Add(epsBlocked); eps {
 	case epsBlocked:
 		return nil
 	case epsBlocked | epsShutdown:
-		atomic.AddInt32(&ep.ctrl.state, -epsBlocked)
+		ep.ctrl.state.Add(-epsBlocked)
 		return ShutdownError{}
 	default:
 		// Most likely due to ep.enterFutexWait() being called concurrently
@@ -155,12 +161,12 @@ func (ep *Endpoint) enterFutexWait() error {
 }
 
 func (ep *Endpoint) exitFutexWait() {
-	switch eps := atomic.AddInt32(&ep.ctrl.state, -epsBlocked); eps {
+	switch eps := ep.ctrl.state.Add(-epsBlocked); eps {
 	case 0:
 		return
 	case epsShutdown:
 		// ep.ctrlShutdown() was called while we were blocked, so we are
-		// repsonsible for indicating connection shutdown.
+		// responsible for indicating connection shutdown.
 		ep.shutdownConn()
 	default:
 		panic(fmt.Sprintf("invalid flipcall.Endpoint.ctrl.state after flipcall.Endpoint.exitFutexWait(): %v", eps+epsBlocked))
@@ -169,7 +175,7 @@ func (ep *Endpoint) exitFutexWait() {
 
 func (ep *Endpoint) ctrlShutdown() {
 	// Set epsShutdown to ensure that future calls to ep.enterFutexWait() fail.
-	if atomic.AddInt32(&ep.ctrl.state, epsShutdown)&epsBlocked != 0 {
+	if ep.ctrl.state.Add(epsShutdown)&epsBlocked != 0 {
 		// Wake the blocked thread. This must loop because it's possible that
 		// FUTEX_WAKE occurs after the waiter sets epsBlocked, but before it
 		// blocks in FUTEX_WAIT.
@@ -181,7 +187,7 @@ func (ep *Endpoint) ctrlShutdown() {
 				break
 			}
 			yieldThread()
-			if atomic.LoadInt32(&ep.ctrl.state)&epsBlocked == 0 {
+			if ep.ctrl.state.Load()&epsBlocked == 0 {
 				break
 			}
 		}
@@ -193,7 +199,7 @@ func (ep *Endpoint) ctrlShutdown() {
 }
 
 func (ep *Endpoint) shutdownConn() {
-	switch cs := atomic.SwapUint32(ep.connState(), csShutdown); cs {
+	switch cs := ep.connState().Swap(csShutdown); cs {
 	case ep.activeState:
 		if err := ep.futexWakeConnState(1); err != nil {
 			log.Warningf("failed to FUTEX_WAKE peer Endpoint for shutdown: %v", err)

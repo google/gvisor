@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build arm64
 // +build arm64
 
 package ring0
@@ -75,3 +76,7 @@ func FPSIMDEnableTrap()
 //
 // This must be called prior to using ring0.
 func Init() {}
+
+// InitDefault calls Init with default parameters.
+// On ARM, this is not much.
+func InitDefault() {}

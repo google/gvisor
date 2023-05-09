@@ -30,7 +30,7 @@ func createSyscallTable() *SyscallTable {
 	for i := uintptr(0); i <= maxTestSyscall; i++ {
 		j := i
 		m[i] = Syscall{
-			Fn: func(*Task, arch.SyscallArguments) (uintptr, *SyscallControl, error) {
+			Fn: func(t *Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *SyscallControl, error) {
 				return j, nil, nil
 			},
 		}
@@ -61,7 +61,7 @@ func TestTable(t *testing.T) {
 			continue
 		}
 
-		v, _, _ := fn(nil, arch.SyscallArguments{})
+		v, _, _ := fn(nil, i, arch.SyscallArguments{})
 		if v != i {
 			t.Errorf("Wrong return value for syscall %v: expected %v, got %v", i, i, v)
 		}

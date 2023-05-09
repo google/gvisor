@@ -16,8 +16,9 @@ package syncevent
 
 import (
 	"fmt"
-	"sync/atomic"
 	"time"
+
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 )
 
 func Example_ioReadinessInterrputible() {
@@ -30,10 +31,10 @@ func Example_ioReadinessInterrputible() {
 	// State of some I/O object.
 	var (
 		br    Broadcaster
-		ready uint32
+		ready atomicbitops.Uint32
 	)
 	doIO := func() error {
-		if atomic.LoadUint32(&ready) == 0 {
+		if ready.Load() == 0 {
 			return errNotReady
 		}
 		return nil
@@ -43,7 +44,7 @@ func Example_ioReadinessInterrputible() {
 		time.Sleep(100 * time.Millisecond)
 		// When it does, it first ensures that future calls to isReady() return
 		// true, then broadcasts the readiness event to Receivers.
-		atomic.StoreUint32(&ready, 1)
+		ready.Store(1)
 		br.Broadcast(evReady)
 	}()
 
@@ -97,12 +98,12 @@ func Example_ioReadinessInterrputible() {
 		// Note that, in a concurrent context, the I/O object might become
 		// ready and then not ready again. To handle this:
 		//
-		// - evReady must be acknowledged before calling doIO() again (rather
-		// than after), so that if the I/O object becomes ready *again* after
-		// the call to doIO(), the readiness event is not lost.
+		//	- evReady must be acknowledged before calling doIO() again (rather
+		//		than after), so that if the I/O object becomes ready *again* after
+		//		the call to doIO(), the readiness event is not lost.
 		//
-		// - We must loop instead of just calling doIO() once after receiving
-		// evReady.
+		//	- We must loop instead of just calling doIO() once after receiving
+		//		evReady.
 		w.Ack(evReady)
 	}
 }

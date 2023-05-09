@@ -18,17 +18,18 @@ import (
 	"reflect"
 	"unsafe"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // Packets consist of a 16-byte header followed by an arbitrarily-sized
 // datagram. The header consists of:
 //
-// - A 4-byte native-endian connection state.
+//   - A 4-byte native-endian connection state.
 //
-// - A 4-byte native-endian datagram length in bytes.
+//   - A 4-byte native-endian datagram length in bytes.
 //
-// - 8 reserved bytes.
+//   - 8 reserved bytes.
 const (
 	// PacketHeaderBytes is the size of a flipcall packet header in bytes. The
 	// maximum datagram size supported by a flipcall connection is equal to the
@@ -40,12 +41,12 @@ const (
 	PacketHeaderBytes = 16
 )
 
-func (ep *Endpoint) connState() *uint32 {
-	return (*uint32)(unsafe.Pointer(ep.packet))
+func (ep *Endpoint) connState() *atomicbitops.Uint32 {
+	return (*atomicbitops.Uint32)(unsafe.Pointer(ep.packet))
 }
 
-func (ep *Endpoint) dataLen() *uint32 {
-	return (*uint32)(unsafe.Pointer(ep.packet + 4))
+func (ep *Endpoint) dataLen() *atomicbitops.Uint32 {
+	return (*atomicbitops.Uint32)(unsafe.Pointer(ep.packet + 4))
 }
 
 // Data returns the datagram part of ep's packet window as a byte slice.
@@ -54,13 +55,13 @@ func (ep *Endpoint) dataLen() *uint32 {
 // Endpoint, which may concurrently mutate the contents of the packet window.
 // Thus:
 //
-// - Readers must not assume that two reads of the same byte in Data() will
-// return the same result. In other words, readers should read any given byte
-// in Data() at most once.
+//   - Readers must not assume that two reads of the same byte in Data() will
+//     return the same result. In other words, readers should read any given byte
+//     in Data() at most once.
 //
-// - Writers must not assume that they will read back the same data that they
-// have written. In other words, writers should avoid reading from Data() at
-// all.
+//   - Writers must not assume that they will read back the same data that they
+//     have written. In other words, writers should avoid reading from Data() at
+//     all.
 func (ep *Endpoint) Data() (bs []byte) {
 	bshdr := (*reflect.SliceHeader)(unsafe.Pointer(&bs))
 	bshdr.Data = ep.packet + PacketHeaderBytes

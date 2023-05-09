@@ -15,23 +15,20 @@
 package overlay
 
 import (
-	"sync/atomic"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 func (d *dentry) isDir() bool {
-	return atomic.LoadUint32(&d.mode)&linux.S_IFMT == linux.S_IFDIR
+	return d.mode.Load()&linux.S_IFMT == linux.S_IFDIR
 }
 
 // Preconditions:
-// * d.dirMu must be locked.
-// * d.isDir().
+//   - d.dirMu must be locked.
+//   - d.isDir().
 func (d *dentry) collectWhiteoutsForRmdirLocked(ctx context.Context) (map[string]bool, error) {
 	vfsObj := d.fs.vfsfs.VirtualFilesystem()
 	var readdirErr error
@@ -69,7 +66,7 @@ func (d *dentry) collectWhiteoutsForRmdirLocked(ctx context.Context) (map[string
 				return nil
 			}
 			// Non-whiteout file in the directory prevents rmdir.
-			return syserror.ENOTEMPTY
+			return linuxerr.ENOTEMPTY
 		}))
 		if err != nil {
 			readdirErr = err
@@ -88,7 +85,7 @@ func (d *dentry) collectWhiteoutsForRmdirLocked(ctx context.Context) (map[string
 			}
 			if stat.RdevMajor != 0 || stat.RdevMinor != 0 {
 				// This file is a real character device, not a whiteout.
-				readdirErr = syserror.ENOTEMPTY
+				readdirErr = linuxerr.ENOTEMPTY
 				return false
 			}
 			whiteouts[maybeWhiteoutName] = isUpper
@@ -106,7 +103,7 @@ type directoryFD struct {
 	vfs.DirectoryFileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
 
-	mu      sync.Mutex `state:"nosave"`
+	mu      directoryFDMutex `state:"nosave"`
 	off     int64
 	dirents []vfs.Dirent
 }
@@ -118,8 +115,6 @@ func (fd *directoryFD) Release(ctx context.Context) {
 // IterDirents implements vfs.FileDescriptionImpl.IterDirents.
 func (fd *directoryFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback) error {
 	d := fd.dentry()
-	defer d.InotifyWithParent(ctx, linux.IN_ACCESS, 0, vfs.PathEvent)
-
 	fd.mu.Lock()
 	defer fd.mu.Unlock()
 
@@ -150,9 +145,9 @@ func (d *dentry) getDirents(ctx context.Context) ([]vfs.Dirent, error) {
 }
 
 // Preconditions:
-// * filesystem.renameMu must be locked.
-// * d.dirMu must be locked.
-// * d.isDir().
+//   - filesystem.renameMu must be locked.
+//   - d.dirMu must be locked.
+//   - d.isDir().
 func (d *dentry) getDirentsLocked(ctx context.Context) ([]vfs.Dirent, error) {
 	if d.dirents != nil {
 		return d.dirents, nil
@@ -163,13 +158,13 @@ func (d *dentry) getDirentsLocked(ctx context.Context) ([]vfs.Dirent, error) {
 		{
 			Name:    ".",
 			Type:    linux.DT_DIR,
-			Ino:     d.ino,
+			Ino:     d.ino.Load(),
 			NextOff: 1,
 		},
 		{
 			Name:    "..",
-			Type:    uint8(atomic.LoadUint32(&parent.mode) >> 12),
-			Ino:     parent.ino,
+			Type:    uint8(parent.mode.Load() >> 12),
+			Ino:     parent.ino.Load(),
 			NextOff: 2,
 		},
 	}
@@ -256,7 +251,7 @@ func (fd *directoryFD) Seek(ctx context.Context, offset int64, whence int32) (in
 	switch whence {
 	case linux.SEEK_SET:
 		if offset < 0 {
-			return 0, syserror.EINVAL
+			return 0, linuxerr.EINVAL
 		}
 		if offset == 0 {
 			// Ensure that the next call to fd.IterDirents() calls
@@ -268,13 +263,13 @@ func (fd *directoryFD) Seek(ctx context.Context, offset int64, whence int32) (in
 	case linux.SEEK_CUR:
 		offset += fd.off
 		if offset < 0 {
-			return 0, syserror.EINVAL
+			return 0, linuxerr.EINVAL
 		}
 		// Don't clear fd.dirents in this case, even if offset == 0.
 		fd.off = offset
 		return fd.off, nil
 	default:
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 }
 

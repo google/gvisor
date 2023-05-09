@@ -16,7 +16,9 @@ package auth
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/sentry/seccheck"
+	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 )
 
 // Credentials contains information required to authorize privileged operations
@@ -125,7 +127,7 @@ func NewUserCredentials(kuid KUID, kgid KGID, extraKGIDs []KGID, capabilities *T
 		creds.EffectiveCaps = capabilities.EffectiveCaps
 		creds.BoundingCaps = capabilities.BoundingCaps
 		creds.InheritableCaps = capabilities.InheritableCaps
-		// TODO(nlacasse): Support ambient capabilities.
+		// TODO(gvisor.dev/issue/3166): Support ambient capabilities.
 	} else {
 		// If no capabilities are specified, grant capabilities consistent with
 		// setresuid + setresgid from NewRootCredentials to the given uid and
@@ -203,7 +205,7 @@ func (c *Credentials) UseUID(uid UID) (KUID, error) {
 	// uid must be mapped.
 	kuid := c.UserNamespace.MapToKUID(uid)
 	if !kuid.Ok() {
-		return NoID, syserror.EINVAL
+		return NoID, linuxerr.EINVAL
 	}
 	// If c has CAP_SETUID, then it can use any UID in its user namespace.
 	if c.HasCapability(linux.CAP_SETUID) {
@@ -214,7 +216,7 @@ func (c *Credentials) UseUID(uid UID) (KUID, error) {
 	if kuid == c.RealKUID || kuid == c.EffectiveKUID || kuid == c.SavedKUID {
 		return kuid, nil
 	}
-	return NoID, syserror.EPERM
+	return NoID, linuxerr.EPERM
 }
 
 // UseGID checks that c can use gid in its user namespace, then translates it
@@ -222,7 +224,7 @@ func (c *Credentials) UseUID(uid UID) (KUID, error) {
 func (c *Credentials) UseGID(gid GID) (KGID, error) {
 	kgid := c.UserNamespace.MapToKGID(gid)
 	if !kgid.Ok() {
-		return NoID, syserror.EINVAL
+		return NoID, linuxerr.EINVAL
 	}
 	if c.HasCapability(linux.CAP_SETGID) {
 		return kgid, nil
@@ -230,7 +232,7 @@ func (c *Credentials) UseGID(gid GID) (KGID, error) {
 	if kgid == c.RealKGID || kgid == c.EffectiveKGID || kgid == c.SavedKGID {
 		return kgid, nil
 	}
-	return NoID, syserror.EPERM
+	return NoID, linuxerr.EPERM
 }
 
 // SetUID translates the provided uid to the root user namespace and updates c's
@@ -239,7 +241,7 @@ func (c *Credentials) UseGID(gid GID) (KGID, error) {
 func (c *Credentials) SetUID(uid UID) error {
 	kuid := c.UserNamespace.MapToKUID(uid)
 	if !kuid.Ok() {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	c.RealKUID = kuid
 	c.EffectiveKUID = kuid
@@ -253,10 +255,24 @@ func (c *Credentials) SetUID(uid UID) error {
 func (c *Credentials) SetGID(gid GID) error {
 	kgid := c.UserNamespace.MapToKGID(gid)
 	if !kgid.Ok() {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	c.RealKGID = kgid
 	c.EffectiveKGID = kgid
 	c.SavedKGID = kgid
 	return nil
+}
+
+// LoadSeccheckData sets credential data based on mask.
+func (c *Credentials) LoadSeccheckData(mask seccheck.FieldMask, info *pb.ContextData) {
+	if mask.Contains(seccheck.FieldCtxtCredentials) {
+		info.Credentials = &pb.Credentials{
+			RealUid:      uint32(c.RealKUID),
+			EffectiveUid: uint32(c.EffectiveKUID),
+			SavedUid:     uint32(c.SavedKUID),
+			RealGid:      uint32(c.RealKGID),
+			EffectiveGid: uint32(c.EffectiveKGID),
+			SavedGid:     uint32(c.SavedKGID),
+		}
+	}
 }

@@ -1,7 +1,10 @@
 load("//tools:defs.bzl", "go_library")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_template_instance(
     name = "deferred_list",
@@ -11,8 +14,7 @@ go_template_instance(
     template = "//pkg/ilist:generic_list",
     types = {
         "Element": "*objectEncodeState",
-        "ElementMapper": "deferredMapper",
-        "Linker": "*deferredEntry",
+        "Linker": "*objectEncodeState",
     },
 )
 
@@ -80,7 +82,6 @@ go_library(
     stateify = False,
     visibility = ["//:sandbox"],
     deps = [
-        "//pkg/log",
         "//pkg/state/wire",
     ],
 )

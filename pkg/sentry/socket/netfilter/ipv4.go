@@ -18,8 +18,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/binary"
-	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -82,6 +81,8 @@ func getEntries4(table stack.Table, tablename linux.TableName) (linux.KernelIPTG
 		copy(entry.Entry.IP.SrcMask[:], rule.Filter.SrcMask)
 		copy(entry.Entry.IP.OutputInterface[:], rule.Filter.OutputInterface)
 		copy(entry.Entry.IP.OutputInterfaceMask[:], rule.Filter.OutputInterfaceMask)
+		copy(entry.Entry.IP.InputInterface[:], rule.Filter.InputInterface)
+		copy(entry.Entry.IP.InputInterfaceMask[:], rule.Filter.InputInterfaceMask)
 		if rule.Filter.DstInvert {
 			entry.Entry.IP.InverseFlags |= linux.IPT_INV_DSTIP
 		}
@@ -125,7 +126,7 @@ func getEntries4(table stack.Table, tablename linux.TableName) (linux.KernelIPTG
 	return entries, info
 }
 
-func modifyEntries4(stk *stack.Stack, optVal []byte, replace *linux.IPTReplace, table *stack.Table) (map[uint32]int, *syserr.Error) {
+func modifyEntries4(task *kernel.Task, stk *stack.Stack, optVal []byte, replace *linux.IPTReplace, table *stack.Table) (map[uint32]int, *syserr.Error) {
 	nflog("set entries: setting entries in table %q", replace.Name.String())
 
 	// Convert input into a list of rules and their offsets.
@@ -140,34 +141,28 @@ func modifyEntries4(stk *stack.Stack, optVal []byte, replace *linux.IPTReplace, 
 			nflog("optVal has insufficient size for entry %d", len(optVal))
 			return nil, syserr.ErrInvalidArgument
 		}
-		var entry linux.IPTEntry
-		buf := optVal[:linux.SizeOfIPTEntry]
-		binary.Unmarshal(buf, hostarch.ByteOrder, &entry)
 		initialOptValLen := len(optVal)
-		optVal = optVal[linux.SizeOfIPTEntry:]
+		var entry linux.IPTEntry
+		optVal = entry.UnmarshalUnsafe(optVal)
 
 		if entry.TargetOffset < linux.SizeOfIPTEntry {
 			nflog("entry has too-small target offset %d", entry.TargetOffset)
 			return nil, syserr.ErrInvalidArgument
 		}
 
-		// TODO(gvisor.dev/issue/170): We should support more IPTIP
-		// filtering fields.
 		filter, err := filterFromIPTIP(entry.IP)
 		if err != nil {
 			nflog("bad iptip: %v", err)
 			return nil, syserr.ErrInvalidArgument
 		}
 
-		// TODO(gvisor.dev/issue/170): Matchers and targets can specify
-		// that they only work for certain protocols, hooks, tables.
 		// Get matchers.
 		matchersSize := entry.TargetOffset - linux.SizeOfIPTEntry
 		if len(optVal) < int(matchersSize) {
 			nflog("entry doesn't have enough room for its matchers (only %d bytes remain)", len(optVal))
 			return nil, syserr.ErrInvalidArgument
 		}
-		matchers, err := parseMatchers(filter, optVal[:matchersSize])
+		matchers, err := parseMatchers(task, filter, optVal[:matchersSize])
 		if err != nil {
 			nflog("failed to parse matchers: %v", err)
 			return nil, syserr.ErrInvalidArgument
@@ -240,12 +235,12 @@ func filterFromIPTIP(iptip linux.IPTIP) (stack.IPHeaderFilter, error) {
 
 func containsUnsupportedFields4(iptip linux.IPTIP) bool {
 	// The following features are supported:
-	// - Protocol
-	// - Dst and DstMask
-	// - Src and SrcMask
-	// - The inverse destination IP check flag
-	// - InputInterface, InputInterfaceMask and its inverse.
-	// - OutputInterface, OutputInterfaceMask and its inverse.
+	//	- Protocol
+	//	- Dst and DstMask
+	//	- Src and SrcMask
+	//	- The inverse destination IP check flag
+	//	- InputInterface, InputInterfaceMask and its inverse.
+	//	- OutputInterface, OutputInterfaceMask and its inverse.
 	const flagMask = 0
 	// Disable any supported inverse flags.
 	const inverseMask = linux.IPT_INV_DSTIP | linux.IPT_INV_SRCIP |

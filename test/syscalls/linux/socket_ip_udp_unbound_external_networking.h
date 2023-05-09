@@ -16,29 +16,13 @@
 #define GVISOR_TEST_SYSCALLS_LINUX_SOCKET_IP_UDP_UNBOUND_EXTERNAL_NETWORKING_H_
 
 #include "test/syscalls/linux/ip_socket_test_util.h"
-#include "test/syscalls/linux/socket_test_util.h"
 
 namespace gvisor {
 namespace testing {
 
 // Test fixture for tests that apply to unbound IP UDP sockets in a sandbox
 // with external networking support.
-class IPUDPUnboundExternalNetworkingSocketTest : public SimpleSocketTest {
- protected:
-  void SetUp() override;
-
-  IfAddrHelper if_helper_;
-
-  // found_net_interfaces_ is set to false if SetUp() could not obtain
-  // all interface infos that we need.
-  bool found_net_interfaces_;
-
-  // Interface infos.
-  int lo_if_idx_;
-  int eth_if_idx_;
-  sockaddr_in lo_if_addr_;
-  sockaddr_in eth_if_addr_;
-};
+class IPUDPUnboundExternalNetworkingSocketTest : public SimpleSocketTest {};
 
 }  // namespace testing
 }  // namespace gvisor

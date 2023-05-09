@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build amd64
 // +build amd64
 
 package arch
@@ -22,7 +23,6 @@ import (
 	"math/rand"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
@@ -101,76 +101,67 @@ const (
 	minMmapRand64 = (1 << 26) * hostarch.PageSize
 )
 
-// context64 represents an AMD64 context.
+// Context64 represents an AMD64 context.
 //
 // +stateify savable
-type context64 struct {
+type Context64 struct {
 	State
-	sigFPState []fpu.State // fpstate to be restored on sigreturn.
 }
 
 // Arch implements Context.Arch.
-func (c *context64) Arch() Arch {
+func (c *Context64) Arch() Arch {
 	return AMD64
 }
 
-func (c *context64) copySigFPState() []fpu.State {
-	var sigfps []fpu.State
-	for _, s := range c.sigFPState {
-		sigfps = append(sigfps, s.Fork())
-	}
-	return sigfps
-}
-
-func (c *context64) FloatingPointData() *fpu.State {
+// FloatingPointData returns the state of the floating-point unit.
+func (c *Context64) FloatingPointData() *fpu.State {
 	return &c.State.fpState
 }
 
 // Fork returns an exact copy of this context.
-func (c *context64) Fork() Context {
-	return &context64{
-		State:      c.State.Fork(),
-		sigFPState: c.copySigFPState(),
+func (c *Context64) Fork() *Context64 {
+	return &Context64{
+		State: c.State.Fork(),
 	}
 }
 
 // Return returns the current syscall return value.
-func (c *context64) Return() uintptr {
+func (c *Context64) Return() uintptr {
 	return uintptr(c.Regs.Rax)
 }
 
 // SetReturn sets the syscall return value.
-func (c *context64) SetReturn(value uintptr) {
+func (c *Context64) SetReturn(value uintptr) {
 	c.Regs.Rax = uint64(value)
 }
 
 // IP returns the current instruction pointer.
-func (c *context64) IP() uintptr {
+func (c *Context64) IP() uintptr {
 	return uintptr(c.Regs.Rip)
 }
 
 // SetIP sets the current instruction pointer.
-func (c *context64) SetIP(value uintptr) {
+func (c *Context64) SetIP(value uintptr) {
 	c.Regs.Rip = uint64(value)
 }
 
 // Stack returns the current stack pointer.
-func (c *context64) Stack() uintptr {
+func (c *Context64) Stack() uintptr {
 	return uintptr(c.Regs.Rsp)
 }
 
 // SetStack sets the current stack pointer.
-func (c *context64) SetStack(value uintptr) {
+func (c *Context64) SetStack(value uintptr) {
 	c.Regs.Rsp = uint64(value)
 }
 
 // TLS returns the current TLS pointer.
-func (c *context64) TLS() uintptr {
+func (c *Context64) TLS() uintptr {
 	return uintptr(c.Regs.Fs_base)
 }
 
 // SetTLS sets the current TLS pointer. Returns false if value is invalid.
-func (c *context64) SetTLS(value uintptr) bool {
+func (c *Context64) SetTLS(value uintptr) bool {
 	if !isValidSegmentBase(uint64(value)) {
 		return false
 	}
@@ -181,29 +172,24 @@ func (c *context64) SetTLS(value uintptr) bool {
 }
 
 // SetOldRSeqInterruptedIP implements Context.SetOldRSeqInterruptedIP.
-func (c *context64) SetOldRSeqInterruptedIP(value uintptr) {
+func (c *Context64) SetOldRSeqInterruptedIP(value uintptr) {
 	c.Regs.R10 = uint64(value)
 }
 
 // Native returns the native type for the given val.
-func (c *context64) Native(val uintptr) marshal.Marshallable {
+func (c *Context64) Native(val uintptr) marshal.Marshallable {
 	v := primitive.Uint64(val)
 	return &v
 }
 
 // Value returns the generic val for the given native type.
-func (c *context64) Value(val marshal.Marshallable) uintptr {
+func (c *Context64) Value(val marshal.Marshallable) uintptr {
 	return uintptr(*val.(*primitive.Uint64))
 }
 
 // Width returns the byte width of this architecture.
-func (c *context64) Width() uint {
+func (c *Context64) Width() uint {
 	return 8
-}
-
-// FeatureSet returns the FeatureSet in use.
-func (c *context64) FeatureSet() *cpuid.FeatureSet {
-	return c.State.FeatureSet
 }
 
 // mmapRand returns a random adjustment for randomizing an mmap layout.
@@ -212,7 +198,7 @@ func mmapRand(max uint64) hostarch.Addr {
 }
 
 // NewMmapLayout implements Context.NewMmapLayout consistently with Linux.
-func (c *context64) NewMmapLayout(min, max hostarch.Addr, r *limits.LimitSet) (MmapLayout, error) {
+func (c *Context64) NewMmapLayout(min, max hostarch.Addr, r *limits.LimitSet) (MmapLayout, error) {
 	min, ok := min.RoundUp()
 	if !ok {
 		return MmapLayout{}, unix.EINVAL
@@ -278,7 +264,7 @@ func (c *context64) NewMmapLayout(min, max hostarch.Addr, r *limits.LimitSet) (M
 }
 
 // PIELoadAddress implements Context.PIELoadAddress.
-func (c *context64) PIELoadAddress(l MmapLayout) hostarch.Addr {
+func (c *Context64) PIELoadAddress(l MmapLayout) hostarch.Addr {
 	base := preferredPIELoadAddr
 	max, ok := base.AddLength(maxMmapRand64)
 	if !ok {
@@ -300,7 +286,7 @@ func (c *context64) PIELoadAddress(l MmapLayout) hostarch.Addr {
 const userStructSize = 928
 
 // PtracePeekUser implements Context.PtracePeekUser.
-func (c *context64) PtracePeekUser(addr uintptr) (marshal.Marshallable, error) {
+func (c *Context64) PtracePeekUser(addr uintptr) (marshal.Marshallable, error) {
 	if addr&7 != 0 || addr >= userStructSize {
 		return nil, unix.EIO
 	}
@@ -318,7 +304,7 @@ func (c *context64) PtracePeekUser(addr uintptr) (marshal.Marshallable, error) {
 }
 
 // PtracePokeUser implements Context.PtracePokeUser.
-func (c *context64) PtracePokeUser(addr, data uintptr) error {
+func (c *Context64) PtracePokeUser(addr, data uintptr) error {
 	if addr&7 != 0 || addr >= userStructSize {
 		return unix.EIO
 	}

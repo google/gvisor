@@ -17,7 +17,6 @@ package host
 import (
 	"fmt"
 	"io"
-	"sync/atomic"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
@@ -52,14 +51,14 @@ func (i *inode) beforeSave() {
 			}
 		}
 		if len(i.buf) != 0 {
-			atomic.StoreUint32(&i.haveBuf, 1)
+			i.haveBuf.Store(1)
 		}
 	}
 }
 
 // afterLoad is invoked by stateify.
 func (i *inode) afterLoad() {
-	if i.mayBlock {
+	if i.epollable {
 		if err := unix.SetNonblock(i.hostFD, true); err != nil {
 			panic(fmt.Sprintf("host.inode.afterLoad: failed to set host FD %d non-blocking: %v", i.hostFD, err))
 		}

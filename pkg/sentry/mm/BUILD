@@ -1,7 +1,54 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
+load("//pkg/sync/locking:locking.bzl", "declare_mutex", "declare_rwmutex")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
+
+declare_mutex(
+    name = "aio_context_mutex",
+    out = "aio_context_mutex.go",
+    package = "mm",
+    prefix = "aioContext",
+)
+
+declare_mutex(
+    name = "aio_manager_mutex",
+    out = "aio_manager_mutex.go",
+    package = "mm",
+    prefix = "aioManager",
+)
+
+declare_rwmutex(
+    name = "mapping_mutex",
+    out = "mapping_mutex.go",
+    package = "mm",
+    prefix = "mapping",
+)
+
+declare_rwmutex(
+    name = "active_mutex",
+    out = "active_mutex.go",
+    nested_lock_names = ["forked"],
+    package = "mm",
+    prefix = "active",
+)
+
+declare_mutex(
+    name = "metadata_mutex",
+    out = "metadata_mutex.go",
+    package = "mm",
+    prefix = "metadata",
+)
+
+declare_mutex(
+    name = "private_refs_mutex",
+    out = "private_refs_mutex.go",
+    package = "mm",
+    prefix = "privateRefs",
+)
 
 go_template_instance(
     name = "file_refcount_set",
@@ -78,7 +125,7 @@ go_template_instance(
     out = "aio_mappable_refs.go",
     package = "mm",
     prefix = "aioMappable",
-    template = "//pkg/refsvfs2:refs_template",
+    template = "//pkg/refs:refs_template",
     types = {
         "T": "aioMappable",
     },
@@ -89,7 +136,7 @@ go_template_instance(
     out = "special_mappable_refs.go",
     package = "mm",
     prefix = "SpecialMappable",
-    template = "//pkg/refsvfs2:refs_template",
+    template = "//pkg/refs:refs_template",
     types = {
         "T": "SpecialMappable",
     },
@@ -98,19 +145,25 @@ go_template_instance(
 go_library(
     name = "mm",
     srcs = [
+        "active_mutex.go",
         "address_space.go",
         "aio_context.go",
+        "aio_context_mutex.go",
         "aio_context_state.go",
+        "aio_manager_mutex.go",
         "aio_mappable_refs.go",
         "debug.go",
         "file_refcount_set.go",
         "io.go",
         "io_list.go",
         "lifecycle.go",
+        "mapping_mutex.go",
         "metadata.go",
+        "metadata_mutex.go",
         "mm.go",
         "pma.go",
         "pma_set.go",
+        "private_refs_mutex.go",
         "procfs.go",
         "save_restore.go",
         "shm.go",
@@ -125,15 +178,13 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/atomicbitops",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/refs",
-        "//pkg/refsvfs2",
         "//pkg/safecopy",
         "//pkg/safemem",
         "//pkg/sentry/arch",
-        "//pkg/sentry/fs/proc/seqfile",
-        "//pkg/sentry/fsbridge",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/futex",
         "//pkg/sentry/kernel/shm",
@@ -142,9 +193,9 @@ go_library(
         "//pkg/sentry/pgalloc",
         "//pkg/sentry/platform",
         "//pkg/sentry/usage",
+        "//pkg/sentry/vfs",
         "//pkg/sync",
-        "//pkg/syserror",
-        "//pkg/tcpip/buffer",
+        "//pkg/sync/locking",
         "//pkg/usermem",
     ],
 )
@@ -156,6 +207,7 @@ go_test(
     library = ":mm",
     deps = [
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/hostarch",
         "//pkg/sentry/arch",
         "//pkg/sentry/contexttest",
@@ -163,7 +215,6 @@ go_test(
         "//pkg/sentry/memmap",
         "//pkg/sentry/pgalloc",
         "//pkg/sentry/platform",
-        "//pkg/syserror",
         "//pkg/usermem",
     ],
 )

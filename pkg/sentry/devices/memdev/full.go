@@ -16,8 +16,8 @@ package memdev
 
 import (
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -66,12 +66,12 @@ func (fd *fullFD) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.Rea
 
 // PWrite implements vfs.FileDescriptionImpl.PWrite.
 func (fd *fullFD) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
-	return 0, syserror.ENOSPC
+	return 0, linuxerr.ENOSPC
 }
 
 // Write implements vfs.FileDescriptionImpl.Write.
 func (fd *fullFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.WriteOptions) (int64, error) {
-	return 0, syserror.ENOSPC
+	return 0, linuxerr.ENOSPC
 }
 
 // Seek implements vfs.FileDescriptionImpl.Seek.

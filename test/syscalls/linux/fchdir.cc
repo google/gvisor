@@ -46,8 +46,8 @@ TEST(FchdirTest, InvalidFD) {
 
 TEST(FchdirTest, PermissionDenied) {
   // Drop capabilities that allow us to override directory permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
 
   auto temp_dir = ASSERT_NO_ERRNO_AND_VALUE(
       TempPath::CreateDirWith(GetAbsoluteTestTmpdir(), 0666 /* mode */));
@@ -72,7 +72,6 @@ TEST(FchdirTest, NotDir) {
 }
 
 TEST(FchdirTest, FchdirWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   auto temp_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(temp_dir.path(), O_PATH));
   ASSERT_THAT(open(temp_dir.path().c_str(), O_DIRECTORY | O_PATH),

@@ -21,7 +21,7 @@
 
 #include <string>
 
-#include "test/syscalls/linux/socket_test_util.h"
+#include "test/util/socket_util.h"
 
 namespace gvisor {
 namespace testing {
@@ -34,6 +34,9 @@ uint16_t PortFromInetSockaddr(const struct sockaddr* addr);
 
 // InterfaceIndex returns the index of the named interface.
 PosixErrorOr<int> InterfaceIndex(std::string name);
+
+// GetLoopbackIndex returns the index of the loopback interface.
+inline PosixErrorOr<int> GetLoopbackIndex() { return InterfaceIndex("lo"); }
 
 // IPv6TCPAcceptBindSocketPair returns a SocketPairKind that represents
 // SocketPairs created with bind() and accept() syscalls with AF_INET6 and the
@@ -84,40 +87,33 @@ SocketPairKind DualStackUDPBidirectionalBindSocketPair(int type);
 // SocketPairs created with AF_INET and the given type.
 SocketPairKind IPv4UDPUnboundSocketPair(int type);
 
+// ICMPUnboundSocket returns a SocketKind that represents a SimpleSocket created
+// with AF_INET, SOCK_DGRAM, IPPROTO_ICMP, and the given type.
+SocketKind ICMPUnboundSocket(int type);
+
+// ICMPv6UnboundSocket returns a SocketKind that represents a SimpleSocket
+// created with AF_INET6, SOCK_DGRAM, IPPROTO_ICMPV6, and the given type.
+SocketKind ICMPv6UnboundSocket(int type);
+
+// IPv4RawUDPUnboundSocket returns a SocketKind that represents a SimpleSocket
+// created with AF_INET, SOCK_RAW, IPPROTO_UDP, and the given type.
+SocketKind IPv4RawUDPUnboundSocket(int type);
+
 // IPv4UDPUnboundSocket returns a SocketKind that represents a SimpleSocket
-// created with AF_INET, SOCK_DGRAM, and the given type.
+// created with AF_INET, SOCK_DGRAM, IPPROTO_UDP, and the given type.
 SocketKind IPv4UDPUnboundSocket(int type);
 
 // IPv6UDPUnboundSocket returns a SocketKind that represents a SimpleSocket
-// created with AF_INET6, SOCK_DGRAM, and the given type.
+// created with AF_INET6, SOCK_DGRAM, IPPROTO_UDP, and the given type.
 SocketKind IPv6UDPUnboundSocket(int type);
 
 // IPv4TCPUnboundSocket returns a SocketKind that represents a SimpleSocket
-// created with AF_INET, SOCK_STREAM and the given type.
+// created with AF_INET, SOCK_STREAM, IPPROTO_TCP and the given type.
 SocketKind IPv4TCPUnboundSocket(int type);
 
 // IPv6TCPUnboundSocket returns a SocketKind that represents a SimpleSocket
-// created with AF_INET6, SOCK_STREAM and the given type.
+// created with AF_INET6, SOCK_STREAM, IPPROTO_TCP and the given type.
 SocketKind IPv6TCPUnboundSocket(int type);
-
-// IfAddrHelper is a helper class that determines the local interfaces present
-// and provides functions to obtain their names, index numbers, and IP address.
-class IfAddrHelper {
- public:
-  IfAddrHelper() : ifaddr_(nullptr) {}
-  ~IfAddrHelper() { Release(); }
-
-  PosixError Load();
-  void Release();
-
-  std::vector<std::string> InterfaceList(int family) const;
-
-  const sockaddr* GetAddr(int family, std::string name) const;
-  PosixErrorOr<int> GetIndex(std::string name) const;
-
- private:
-  struct ifaddrs* ifaddr_;
-};
 
 // GetAddr4Str returns the given IPv4 network address structure as a string.
 std::string GetAddr4Str(const in_addr* a);
@@ -128,6 +124,57 @@ std::string GetAddr6Str(const in6_addr* a);
 // GetAddrStr returns the given IPv4 or IPv6 network address structure as a
 // string.
 std::string GetAddrStr(const sockaddr* a);
+
+// RecvTOS attempts to read buf_size bytes into buf, and then updates buf_size
+// with the numbers of bytes actually read. It expects the IP_TOS cmsg to be
+// received. The buffer must already be allocated with at least buf_size size.
+void RecvTOS(int sock, char buf[], size_t* buf_size, uint8_t* out_tos);
+
+// SendTOS sends a message using buf as payload and tos as IP_TOS control
+// message.
+void SendTOS(int sock, char buf[], size_t buf_size, uint8_t tos);
+
+// RecvTClass attempts to read buf_size bytes into buf, and then updates
+// buf_size with the numbers of bytes actually read. It expects the IPV6_TCLASS
+// cmsg to be received. The buffer must already be allocated with at least
+// buf_size size.
+void RecvTClass(int sock, char buf[], size_t* buf_size, int* out_tclass);
+
+// SendTClass sends a message using buf as payload and tclass as IP_TOS control
+// message.
+void SendTClass(int sock, char buf[], size_t buf_size, int tclass);
+
+// RecvTTL attempts to read buf_size bytes into buf, and then updates buf_size
+// with the numbers of bytes actually read. It expects the IP_TTL cmsg to be
+// received. The buffer must already be allocated with at least buf_size size.
+void RecvTTL(int sock, char buf[], size_t* buf_size, int* out_ttl);
+
+// SendTTL sends a message using buf as payload and ttl as IP_TOS control
+// message.
+void SendTTL(int sock, char buf[], size_t buf_size, int ttl);
+
+// RecvHopLimit attempts to read buf_size bytes into buf, and then updates
+// buf_size with the numbers of bytes actually read. It expects the
+// IPV6_HOPLIMIT cmsg to be received. The buffer must already be allocated with
+// at least buf_size size.
+void RecvHopLimit(int sock, char buf[], size_t* buf_size, int* out_hoplimit);
+
+// SendHopLimit sends a message using buf as payload and hoplimit as IP_HOPLIMIT
+// control message.
+void SendHopLimit(int sock, char buf[], size_t buf_size, int hoplimit);
+// RecvPktInfo attempts to read buf_size bytes into buf, and then updates
+// buf_size with the numbers of bytes actually read. It expects the
+// IP_PKTINFO cmsg to be received. The buffer must already be allocated with
+// at least buf_size size.
+void RecvPktInfo(int sock, char buf[], size_t* buf_size,
+                 in_pktinfo* out_pktinfo);
+
+// RecvIPv6PktInfo attempts to read buf_size bytes into buf, and then updates
+// buf_size with the numbers of bytes actually read. It expects the
+// IPV6_PKTINFO cmsg to be received. The buffer must already be allocated with
+// at least buf_size size.
+void RecvIPv6PktInfo(int sock, char buf[], size_t* buf_size,
+                     in6_pktinfo* out_pktinfo);
 
 }  // namespace testing
 }  // namespace gvisor

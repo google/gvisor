@@ -1,8 +1,15 @@
 load("//tools:defs.bzl", "cc_binary", "gbenchmark", "gtest")
 
 package(
+    default_applicable_licenses = ["//:license"],
     default_visibility = ["//:sandbox"],
     licenses = ["notice"],
+)
+
+filegroup(
+    name = "all_benchmarks",
+    testonly = 1,
+    data = [":%s" % f[:-3] for f in glob(["*_benchmark.cc"])],
 )
 
 cc_binary(
@@ -27,10 +34,10 @@ cc_binary(
     deps = [
         gbenchmark,
         gtest,
-        "//test/syscalls/linux:socket_test_util",
         "//test/util:file_descriptor",
         "//test/util:logging",
         "//test/util:posix_error",
+        "//test/util:socket_util",
         "//test/util:test_main",
         "//test/util:test_util",
         "//test/util:thread_util",
@@ -97,6 +104,22 @@ cc_binary(
     testonly = 1,
     srcs = [
         "open_benchmark.cc",
+    ],
+    deps = [
+        gbenchmark,
+        gtest,
+        "//test/util:fs_util",
+        "//test/util:logging",
+        "//test/util:temp_path",
+        "//test/util:test_main",
+    ],
+)
+
+cc_binary(
+    name = "dup_benchmark",
+    testonly = 1,
+    srcs = [
+        "dup_benchmark.cc",
     ],
     deps = [
         gbenchmark,

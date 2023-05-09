@@ -17,11 +17,12 @@ package kernel
 import (
 	"time"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/ipc"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
@@ -33,24 +34,24 @@ import (
 )
 
 // Deadline implements context.Context.Deadline.
-func (t *Task) Deadline() (time.Time, bool) {
+func (*Task) Deadline() (time.Time, bool) {
 	return time.Time{}, false
 }
 
 // Done implements context.Context.Done.
-func (t *Task) Done() <-chan struct{} {
+func (*Task) Done() <-chan struct{} {
 	return nil
 }
 
 // Err implements context.Context.Err.
-func (t *Task) Err() error {
+func (*Task) Err() error {
 	return nil
 }
 
 // Value implements context.Context.Value.
 //
 // Preconditions: The caller must be running on the task goroutine.
-func (t *Task) Value(key interface{}) interface{} {
+func (t *Task) Value(key any) any {
 	// This function is very hot; skip this check outside of +race builds.
 	if sync.RaceEnabled {
 		t.assertTaskGoroutine()
@@ -58,7 +59,7 @@ func (t *Task) Value(key interface{}) interface{} {
 	return t.contextValue(key, true /* isTaskGoroutine */)
 }
 
-func (t *Task) contextValue(key interface{}, isTaskGoroutine bool) interface{} {
+func (t *Task) contextValue(key any, isTaskGoroutine bool) any {
 	switch key {
 	case CtxCanTrace:
 		return t.CanTrace
@@ -72,7 +73,7 @@ func (t *Task) contextValue(key interface{}, isTaskGoroutine bool) interface{} {
 			defer t.mu.Unlock()
 		}
 		return t.utsns
-	case CtxIPCNamespace:
+	case ipc.CtxIPCNamespace:
 		if !isTaskGoroutine {
 			t.mu.Lock()
 			defer t.mu.Unlock()
@@ -84,35 +85,31 @@ func (t *Task) contextValue(key interface{}, isTaskGoroutine bool) interface{} {
 		return t
 	case auth.CtxCredentials:
 		return t.creds.Load()
-	case context.CtxThreadGroupID:
+	case auth.CtxThreadGroupID:
 		return int32(t.tg.ID())
-	case fs.CtxRoot:
-		if !isTaskGoroutine {
-			t.mu.Lock()
-			defer t.mu.Unlock()
-		}
-		return t.fsContext.RootDirectory()
 	case vfs.CtxRoot:
 		if !isTaskGoroutine {
 			t.mu.Lock()
 			defer t.mu.Unlock()
 		}
-		return t.fsContext.RootDirectoryVFS2()
+		return t.fsContext.RootDirectory()
 	case vfs.CtxMountNamespace:
 		if !isTaskGoroutine {
 			t.mu.Lock()
 			defer t.mu.Unlock()
 		}
-		t.mountNamespaceVFS2.IncRef()
-		return t.mountNamespaceVFS2
-	case fs.CtxDirentCacheLimiter:
-		return t.k.DirentCacheLimiter
+		t.mountNamespace.IncRef()
+		return t.mountNamespace
 	case inet.CtxStack:
 		return t.NetworkContext()
 	case ktime.CtxRealtimeClock:
 		return t.k.RealtimeClock()
 	case limits.CtxLimits:
 		return t.tg.limits
+	case linux.CtxSignalNoInfoFunc:
+		return func(sig linux.Signal) error {
+			return t.SendSignal(SignalInfoNoInfo(sig, t, t))
+		}
 	case pgalloc.CtxMemoryFile:
 		return t.k.mf
 	case pgalloc.CtxMemoryFileProvider:
@@ -127,17 +124,29 @@ func (t *Task) contextValue(key interface{}, isTaskGoroutine bool) interface{} {
 		return t.k.GenerateInotifyCookie()
 	case unimpl.CtxEvents:
 		return t.k
+	case cpuid.CtxFeatureSet:
+		return t.k.featureSet
 	default:
 		return nil
 	}
 }
 
+// fallbackContext adds a level of indirection for embedding to resolve
+// ambiguity for method resolution. We favor context.NoTask.
+type fallbackTask struct {
+	*Task
+}
+
 // taskAsyncContext implements context.Context for a goroutine that performs
 // work on behalf of a Task, but is not the task goroutine.
 type taskAsyncContext struct {
-	context.NoopSleeper
+	context.NoTask
+	fallbackTask
+}
 
-	t *Task
+// Value implements context.Context.Value.
+func (t *taskAsyncContext) Value(key any) any {
+	return t.fallbackTask.contextValue(key, false /* isTaskGoroutine */)
 }
 
 // AsyncContext returns a context.Context representing t. The returned
@@ -145,45 +154,7 @@ type taskAsyncContext struct {
 // goroutine; for example, signal delivery to t will not interrupt goroutines
 // that are blocking using the returned context.Context.
 func (t *Task) AsyncContext() context.Context {
-	return taskAsyncContext{t: t}
-}
-
-// Debugf implements log.Logger.Debugf.
-func (ctx taskAsyncContext) Debugf(format string, v ...interface{}) {
-	ctx.t.Debugf(format, v...)
-}
-
-// Infof implements log.Logger.Infof.
-func (ctx taskAsyncContext) Infof(format string, v ...interface{}) {
-	ctx.t.Infof(format, v...)
-}
-
-// Warningf implements log.Logger.Warningf.
-func (ctx taskAsyncContext) Warningf(format string, v ...interface{}) {
-	ctx.t.Warningf(format, v...)
-}
-
-// IsLogging implements log.Logger.IsLogging.
-func (ctx taskAsyncContext) IsLogging(level log.Level) bool {
-	return ctx.t.IsLogging(level)
-}
-
-// Deadline implements context.Context.Deadline.
-func (ctx taskAsyncContext) Deadline() (time.Time, bool) {
-	return time.Time{}, false
-}
-
-// Done implements context.Context.Done.
-func (ctx taskAsyncContext) Done() <-chan struct{} {
-	return nil
-}
-
-// Err implements context.Context.Err.
-func (ctx taskAsyncContext) Err() error {
-	return nil
-}
-
-// Value implements context.Context.Value.
-func (ctx taskAsyncContext) Value(key interface{}) interface{} {
-	return ctx.t.contextValue(key, false /* isTaskGoroutine */)
+	return &taskAsyncContext{
+		fallbackTask: fallbackTask{t},
+	}
 }

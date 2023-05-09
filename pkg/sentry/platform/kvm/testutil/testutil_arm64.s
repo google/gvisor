@@ -28,29 +28,54 @@ TEXT ·Getpid(SB),NOSPLIT,$0
 	SVC
 	RET
 
-TEXT ·Touch(SB),NOSPLIT,$0
+TEXT ·AddrOfGetpid(SB),NOSPLIT,$0-8
+	MOVD $·Getpid(SB), R0
+	MOVD R0, ret+0(FP)
+	RET
+
+TEXT ·touch(SB),NOSPLIT,$0
 start:
 	MOVD 0(R8), R1
 	MOVD $SYS_GETPID, R8   // getpid
 	SVC
 	B start
 
-TEXT ·HaltLoop(SB),NOSPLIT,$0
+TEXT ·AddrOfTouch(SB),NOSPLIT,$0-8
+	MOVD $·touch(SB), R0
+	MOVD R0, ret+0(FP)
+	RET
+
+TEXT ·haltLoop(SB),NOSPLIT,$0
 start:
 	HLT
 	B start
 
+TEXT ·AddrOfHaltLoop(SB),NOSPLIT,$0-8
+	MOVD $·haltLoop(SB), R0
+	MOVD R0, ret+0(FP)
+	RET
+
 // This function simulates a loop of syscall.
-TEXT ·SyscallLoop(SB),NOSPLIT,$0
+TEXT ·syscallLoop(SB),NOSPLIT,$0
 start:
 	SVC
 	B start
 
-TEXT ·SpinLoop(SB),NOSPLIT,$0
+TEXT ·AddrOfSyscallLoop(SB),NOSPLIT,$0-8
+	MOVD $·syscallLoop(SB), R0
+	MOVD R0, ret+0(FP)
+	RET
+
+TEXT ·spinLoop(SB),NOSPLIT,$0
 start:
 	B start
 
-TEXT ·TLSWorks(SB),NOSPLIT,$0-8
+TEXT ·AddrOfSpinLoop(SB),NOSPLIT,$0-8
+	MOVD $·spinLoop(SB), R0
+	MOVD R0, ret+0(FP)
+	RET
+
+TEXT ·TLSWorks(SB),NOSPLIT,$0
         NO_LOCAL_POINTERS
         MOVD $0x6789, R5
         MSR R5, TPIDR_EL0
@@ -66,7 +91,7 @@ isNaN:
         MOVD $0, ret+0(FP)
         RET
 
-TEXT ·FloatingPointWorks(SB),NOSPLIT,$0-8
+TEXT ·FloatingPointWorks(SB),NOSPLIT,$0
 	NO_LOCAL_POINTERS
 	// gc will touch fpsimd, so we should test it.
 	// such as in <runtime.deductSweepCredit>.
@@ -118,17 +143,27 @@ isNaN:
         MVN R29, R29; \
         MVN R30, R30;
 
-TEXT ·TwiddleRegsSyscall(SB),NOSPLIT,$0
+TEXT ·twiddleRegsSyscall(SB),NOSPLIT,$0
 	TWIDDLE_REGS()
 	MSR R10, TPIDR_EL0
 	// Trapped in el0_svc.
 	SVC
 	RET // never reached
 
-TEXT ·TwiddleRegsFault(SB),NOSPLIT,$0
+TEXT ·AddrOfTwiddleRegsSyscall(SB),NOSPLIT,$0-8
+	MOVD $·twiddleRegsSyscall(SB), R0
+	MOVD R0, ret+0(FP)
+	RET
+
+TEXT ·twiddleRegsFault(SB),NOSPLIT,$0
 	TWIDDLE_REGS()
 	MSR R10, TPIDR_EL0
 	// Trapped in el0_ia.
 	// Branch to Register branches unconditionally to an address in <Rn>.
 	JMP (R6) // <=> br x6, must fault
 	RET // never reached
+
+TEXT ·AddrOfTwiddleRegsFault(SB),NOSPLIT,$0-8
+	MOVD $·twiddleRegsFault(SB), R0
+	MOVD R0, ret+0(FP)
+	RET

@@ -64,10 +64,10 @@ TEST(UnlinkTest, AtDir) {
   ASSERT_THAT(close(dirfd), SyscallSucceeds());
 }
 
-TEST(UnlinkTest, AtDirDegradedPermissions_NoRandomSave) {
+TEST(UnlinkTest, AtDirDegradedPermissions) {
   // Drop capabilities that allow us to override file and directory permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
 
   auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
 
@@ -86,8 +86,8 @@ TEST(UnlinkTest, AtDirDegradedPermissions_NoRandomSave) {
 // Files cannot be unlinked if the parent is not writable and executable.
 TEST(UnlinkTest, ParentDegradedPermissions) {
   // Drop capabilities that allow us to override file and directory permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
 
   auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(dir.path()));
@@ -152,17 +152,16 @@ TEST(UnlinkTest, BadNamePtr) {
 }
 
 TEST(UnlinkTest, AtFile) {
-  int dirfd;
-  EXPECT_THAT(dirfd = open(GetAbsoluteTestTmpdir().c_str(), O_DIRECTORY, 0666),
-              SyscallSucceeds());
+  const FileDescriptor dirfd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(GetAbsoluteTestTmpdir(), O_DIRECTORY, 0666));
   int fd;
-  EXPECT_THAT(fd = openat(dirfd, "UnlinkAtFile", O_RDWR | O_CREAT, 0666),
+  EXPECT_THAT(fd = openat(dirfd.get(), "UnlinkAtFile", O_RDWR | O_CREAT, 0666),
               SyscallSucceeds());
   EXPECT_THAT(close(fd), SyscallSucceeds());
-  EXPECT_THAT(unlinkat(dirfd, "UnlinkAtFile", 0), SyscallSucceeds());
+  EXPECT_THAT(unlinkat(dirfd.get(), "UnlinkAtFile", 0), SyscallSucceeds());
 }
 
-TEST(UnlinkTest, OpenFile_NoRandomSave) {
+TEST(UnlinkTest, OpenFile) {
   // We can't save unlinked file unless they are on tmpfs.
   const DisableSave ds;
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());

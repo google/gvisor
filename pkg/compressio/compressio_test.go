@@ -27,9 +27,9 @@ import (
 )
 
 type harness interface {
-	Errorf(format string, v ...interface{})
-	Fatalf(format string, v ...interface{})
-	Logf(format string, v ...interface{})
+	Errorf(format string, v ...any)
+	Fatalf(format string, v ...any)
+	Logf(format string, v ...any)
 }
 
 func initTest(t harness, size int) []byte {

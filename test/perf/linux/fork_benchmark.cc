@@ -58,7 +58,7 @@ void BM_CPUBoundAsymmetric(benchmark::State& state) {
   const size_t max = state.max_iterations;
   pid_t child = fork();
   if (child == 0) {
-    for (int i = 0; i < max; i++) {
+    for (size_t i = 0; i < max; i++) {
       busy(kBusyMax);
     }
     _exit(0);
@@ -95,7 +95,7 @@ void BM_CPUBoundSymmetric(benchmark::State& state) {
     }
     pid_t child = fork();
     if (child == 0) {
-      for (int i = 0; i < cur; i++) {
+      for (size_t i = 0; i < cur; i++) {
         busy(kBusyMax);
       }
       _exit(0);
@@ -296,7 +296,7 @@ void BM_ThreadStart(benchmark::State& state) {
 
     state.ResumeTiming();
 
-    for (size_t i = 0; i < num_threads; ++i) {
+    for (int i = 0; i < num_threads; ++i) {
       threads.emplace_back(std::make_unique<ScopedThread>([barrier] {
         if (barrier->Block()) {
           delete barrier;
@@ -326,7 +326,7 @@ void BM_ProcessLifecycle(benchmark::State& state) {
 
   std::vector<pid_t> pids(num_procs);
   for (auto _ : state) {
-    for (size_t i = 0; i < num_procs; ++i) {
+    for (int i = 0; i < num_procs; ++i) {
       int pid = fork();
       if (pid == 0) {
         _exit(0);

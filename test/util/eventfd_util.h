@@ -14,7 +14,7 @@
 
 #ifndef GVISOR_TEST_UTIL_EVENTFD_UTIL_H_
 #define GVISOR_TEST_UTIL_EVENTFD_UTIL_H_
-
+#include <asm/unistd.h>
 #include <sys/eventfd.h>
 
 #include <cerrno>
@@ -35,6 +35,11 @@ inline PosixErrorOr<FileDescriptor> NewEventFD(unsigned int initval = 0,
     return PosixError(errno, "eventfd");
   }
   return FileDescriptor(fd);
+}
+
+// This is a wrapper for the eventfd2(2) system call.
+inline int Eventdfd2Setup(unsigned int initval, int flags) {
+  return syscall(__NR_eventfd2, initval, flags);
 }
 
 }  // namespace testing

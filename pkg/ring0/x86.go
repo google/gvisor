@@ -12,18 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build 386 || amd64
 // +build 386 amd64
 
 package ring0
-
-import (
-	"gvisor.dev/gvisor/pkg/cpuid"
-)
 
 // Useful bits.
 const (
 	_CR0_PE = 1 << 0
 	_CR0_ET = 1 << 4
+	_CR0_NE = 1 << 5
 	_CR0_AM = 1 << 18
 	_CR0_PG = 1 << 31
 
@@ -36,6 +34,7 @@ const (
 	_CR4_PCIDE      = 1 << 17
 	_CR4_OSXSAVE    = 1 << 18
 	_CR4_SMEP       = 1 << 20
+	_CR4_SMAP       = 1 << 21
 
 	_RFLAGS_AC       = 1 << 18
 	_RFLAGS_NT       = 1 << 14
@@ -103,7 +102,7 @@ const (
 
 // IsKernelFlags returns true if rflags coresponds to the kernel mode.
 //
-// go:nosplit
+//go:nosplit
 func IsKernelFlags(rflags uint64) bool {
 	return rflags&_RFLAGS_IOPL0 == 0
 }
@@ -143,24 +142,6 @@ const (
 const (
 	Syscall Vector = _NR_INTERRUPTS
 )
-
-// VirtualAddressBits returns the number bits available for virtual addresses.
-//
-// Note that sign-extension semantics apply to the highest order bit.
-//
-// FIXME(b/69382326): This should use the cpuid passed to Init.
-func VirtualAddressBits() uint32 {
-	ax, _, _, _ := cpuid.HostID(0x80000008, 0)
-	return (ax >> 8) & 0xff
-}
-
-// PhysicalAddressBits returns the number of bits available for physical addresses.
-//
-// FIXME(b/69382326): This should use the cpuid passed to Init.
-func PhysicalAddressBits() uint32 {
-	ax, _, _, _ := cpuid.HostID(0x80000008, 0)
-	return ax & 0xff
-}
 
 // Selector is a segment Selector.
 type Selector uint16

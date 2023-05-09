@@ -16,73 +16,23 @@ package ipv6
 
 import (
 	"bytes"
-	"context"
+	"math/rand"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
+	"gvisor.dev/gvisor/pkg/tcpip/prependable"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/icmp"
 )
-
-// setupStackAndEndpoint creates a stack with a single NIC with a link-local
-// address llladdr and an IPv6 endpoint to a remote with link-local address
-// rlladdr
-func setupStackAndEndpoint(t *testing.T, llladdr, rlladdr tcpip.Address) (*stack.Stack, stack.NetworkEndpoint) {
-	t.Helper()
-
-	s := stack.New(stack.Options{
-		NetworkProtocols:   []stack.NetworkProtocolFactory{NewProtocol},
-		TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol6},
-	})
-
-	if err := s.CreateNIC(1, &stubLinkEndpoint{}); err != nil {
-		t.Fatalf("CreateNIC(_) = %s", err)
-	}
-	{
-		subnet, err := tcpip.NewSubnet(rlladdr, tcpip.AddressMask(strings.Repeat("\xff", len(rlladdr))))
-		if err != nil {
-			t.Fatal(err)
-		}
-		s.SetRouteTable(
-			[]tcpip.Route{{
-				Destination: subnet,
-				NIC:         1,
-			}},
-		)
-	}
-
-	netProto := s.NetworkProtocolInstance(ProtocolNumber)
-	if netProto == nil {
-		t.Fatalf("cannot find protocol instance for network protocol %d", ProtocolNumber)
-	}
-
-	ep := netProto.NewEndpoint(&testInterface{}, &stubDispatcher{})
-	if err := ep.Enable(); err != nil {
-		t.Fatalf("ep.Enable(): %s", err)
-	}
-	t.Cleanup(ep.Close)
-
-	addressableEndpoint, ok := ep.(stack.AddressableEndpoint)
-	if !ok {
-		t.Fatalf("expected network endpoint to implement stack.AddressableEndpoint")
-	}
-	addr := llladdr.WithPrefix()
-	if addressEP, err := addressableEndpoint.AddAndAcquirePermanentAddress(addr, stack.CanBePrimaryEndpoint, stack.AddressConfigStatic, false /* deprecated */); err != nil {
-		t.Fatalf("addressableEndpoint.AddAndAcquirePermanentAddress(%s, CanBePrimaryEndpoint, AddressConfigStatic, false): %s", addr, err)
-	} else {
-		addressEP.DecRef()
-	}
-
-	return s, ep
-}
 
 var _ NDPDispatcher = (*testNDPDispatcher)(nil)
 
@@ -94,24 +44,22 @@ type testNDPDispatcher struct {
 func (*testNDPDispatcher) OnDuplicateAddressDetectionResult(tcpip.NICID, tcpip.Address, stack.DADResult) {
 }
 
-func (t *testNDPDispatcher) OnDefaultRouterDiscovered(_ tcpip.NICID, addr tcpip.Address) bool {
-	t.addr = addr
-	return true
-}
-
-func (t *testNDPDispatcher) OnDefaultRouterInvalidated(_ tcpip.NICID, addr tcpip.Address) {
+func (t *testNDPDispatcher) OnOffLinkRouteUpdated(_ tcpip.NICID, _ tcpip.Subnet, addr tcpip.Address, _ header.NDPRoutePreference) {
 	t.addr = addr
 }
 
-func (*testNDPDispatcher) OnOnLinkPrefixDiscovered(tcpip.NICID, tcpip.Subnet) bool {
-	return false
+func (t *testNDPDispatcher) OnOffLinkRouteInvalidated(_ tcpip.NICID, _ tcpip.Subnet, addr tcpip.Address) {
+	t.addr = addr
+}
+
+func (*testNDPDispatcher) OnOnLinkPrefixDiscovered(tcpip.NICID, tcpip.Subnet) {
 }
 
 func (*testNDPDispatcher) OnOnLinkPrefixInvalidated(tcpip.NICID, tcpip.Subnet) {
 }
 
-func (*testNDPDispatcher) OnAutoGenAddress(tcpip.NICID, tcpip.AddressWithPrefix) bool {
-	return false
+func (*testNDPDispatcher) OnAutoGenAddress(tcpip.NICID, tcpip.AddressWithPrefix) stack.AddressDispatcher {
+	return nil
 }
 
 func (*testNDPDispatcher) OnAutoGenAddressDeprecated(tcpip.NICID, tcpip.AddressWithPrefix) {
@@ -136,6 +84,7 @@ func TestStackNDPEndpointInvalidateDefaultRouter(t *testing.T) {
 			NDPDisp: &ndpDisp,
 		})},
 	})
+	defer s.Close()
 
 	if err := s.CreateNIC(nicID, &stubLinkEndpoint{}); err != nil {
 		t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
@@ -148,7 +97,7 @@ func TestStackNDPEndpointInvalidateDefaultRouter(t *testing.T) {
 
 	ipv6EP := ep.(*endpoint)
 	ipv6EP.mu.Lock()
-	ipv6EP.mu.ndp.rememberDefaultRouter(lladdr1, time.Hour)
+	ipv6EP.mu.ndp.handleOffLinkRouteDiscovery(offLinkRoute{dest: header.IPv6EmptySubnet, router: lladdr1}, time.Hour, header.MediumRoutePreference)
 	ipv6EP.mu.Unlock()
 
 	if ndpDisp.addr != lladdr1 {
@@ -161,11 +110,6 @@ func TestStackNDPEndpointInvalidateDefaultRouter(t *testing.T) {
 	if ndpDisp.addr != lladdr1 {
 		t.Fatalf("got ndpDisp.addr = %s, want = %s", ndpDisp.addr, lladdr1)
 	}
-}
-
-type linkResolutionResult struct {
-	linkAddr tcpip.LinkAddress
-	ok       bool
 }
 
 // TestNeighborSolicitationWithSourceLinkLayerOption tests that receiving a
@@ -196,20 +140,26 @@ func TestNeighborSolicitationWithSourceLinkLayerOption(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			s := stack.New(stack.Options{
-				NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
-			})
+			c := newTestContext()
+			defer c.cleanup()
+			s := c.s
+
 			e := channel.New(0, 1280, linkAddr0)
+			defer e.Close()
 			e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
-			if err := s.AddAddress(nicID, ProtocolNumber, lladdr0); err != nil {
-				t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, ProtocolNumber, lladdr0, err)
+			protocolAddr := tcpip.ProtocolAddress{
+				Protocol:          ProtocolNumber,
+				AddressWithPrefix: lladdr0.WithPrefix(),
+			}
+			if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
 			}
 
 			ndpNSSize := header.ICMPv6NeighborSolicitMinimumSize + len(test.optsBuf)
-			hdr := buffer.NewPrependable(header.IPv6MinimumSize + ndpNSSize)
+			hdr := prependable.New(header.IPv6MinimumSize + ndpNSSize)
 			pkt := header.ICMPv6(hdr.Prepend(ndpNSSize))
 			pkt.SetType(header.ICMPv6NeighborSolicit)
 			ns := header.NDPNeighborSolicit(pkt.MessageBody())
@@ -238,9 +188,11 @@ func TestNeighborSolicitationWithSourceLinkLayerOption(t *testing.T) {
 				t.Fatalf("got invalid = %d, want = 0", got)
 			}
 
-			e.InjectInbound(ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-				Data: hdr.View().ToVectorisedView(),
-			}))
+			pktBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
+				Payload: bufferv2.MakeWithData(hdr.View()),
+			})
+			e.InjectInbound(ProtocolNumber, pktBuf)
+			pktBuf.DecRef()
 
 			neighbors, err := s.Neighbors(nicID, ProtocolNumber)
 			if err != nil {
@@ -299,7 +251,6 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 	tests := []struct {
 		name                   string
 		nsOpts                 header.NDPOptionsSerializer
-		nsSrcLinkAddr          tcpip.LinkAddress
 		nsSrc                  tcpip.Address
 		nsDst                  tcpip.Address
 		nsInvalid              bool
@@ -312,7 +263,6 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 		{
 			name:          "Unspecified source to solicited-node multicast destination",
 			nsOpts:        nil,
-			nsSrcLinkAddr: remoteLinkAddr0,
 			nsSrc:         header.IPv6Any,
 			nsDst:         nicAddrSNMC,
 			nsInvalid:     false,
@@ -326,35 +276,31 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 			nsOpts: header.NDPOptionsSerializer{
 				header.NDPSourceLinkLayerAddressOption(remoteLinkAddr0[:]),
 			},
-			nsSrcLinkAddr: remoteLinkAddr0,
-			nsSrc:         header.IPv6Any,
-			nsDst:         nicAddrSNMC,
-			nsInvalid:     true,
+			nsSrc:     header.IPv6Any,
+			nsDst:     nicAddrSNMC,
+			nsInvalid: true,
 		},
 		{
-			name:          "Unspecified source to unicast destination",
-			nsOpts:        nil,
-			nsSrcLinkAddr: remoteLinkAddr0,
-			nsSrc:         header.IPv6Any,
-			nsDst:         nicAddr,
-			nsInvalid:     true,
+			name:      "Unspecified source to unicast destination",
+			nsOpts:    nil,
+			nsSrc:     header.IPv6Any,
+			nsDst:     nicAddr,
+			nsInvalid: true,
 		},
 		{
 			name: "Unspecified source with source ll option to unicast destination",
 			nsOpts: header.NDPOptionsSerializer{
 				header.NDPSourceLinkLayerAddressOption(remoteLinkAddr0[:]),
 			},
-			nsSrcLinkAddr: remoteLinkAddr0,
-			nsSrc:         header.IPv6Any,
-			nsDst:         nicAddr,
-			nsInvalid:     true,
+			nsSrc:     header.IPv6Any,
+			nsDst:     nicAddr,
+			nsInvalid: true,
 		},
 		{
 			name: "Specified source with 1 source ll to multicast destination",
 			nsOpts: header.NDPOptionsSerializer{
 				header.NDPSourceLinkLayerAddressOption(remoteLinkAddr0[:]),
 			},
-			nsSrcLinkAddr: remoteLinkAddr0,
 			nsSrc:         remoteAddr,
 			nsDst:         nicAddrSNMC,
 			nsInvalid:     false,
@@ -368,7 +314,6 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 			nsOpts: header.NDPOptionsSerializer{
 				header.NDPSourceLinkLayerAddressOption(remoteLinkAddr1[:]),
 			},
-			nsSrcLinkAddr: remoteLinkAddr0,
 			nsSrc:         remoteAddr,
 			nsDst:         nicAddrSNMC,
 			nsInvalid:     false,
@@ -378,12 +323,11 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 			naDst:         remoteAddr,
 		},
 		{
-			name:          "Specified source to multicast destination",
-			nsOpts:        nil,
-			nsSrcLinkAddr: remoteLinkAddr0,
-			nsSrc:         remoteAddr,
-			nsDst:         nicAddrSNMC,
-			nsInvalid:     true,
+			name:      "Specified source to multicast destination",
+			nsOpts:    nil,
+			nsSrc:     remoteAddr,
+			nsDst:     nicAddrSNMC,
+			nsInvalid: true,
 		},
 		{
 			name: "Specified source with 2 source ll to multicast destination",
@@ -391,16 +335,14 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 				header.NDPSourceLinkLayerAddressOption(remoteLinkAddr0[:]),
 				header.NDPSourceLinkLayerAddressOption(remoteLinkAddr1[:]),
 			},
-			nsSrcLinkAddr: remoteLinkAddr0,
-			nsSrc:         remoteAddr,
-			nsDst:         nicAddrSNMC,
-			nsInvalid:     true,
+			nsSrc:     remoteAddr,
+			nsDst:     nicAddrSNMC,
+			nsInvalid: true,
 		},
 
 		{
 			name:          "Specified source to unicast destination",
 			nsOpts:        nil,
-			nsSrcLinkAddr: remoteLinkAddr0,
 			nsSrc:         remoteAddr,
 			nsDst:         nicAddr,
 			nsInvalid:     false,
@@ -418,7 +360,6 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 			nsOpts: header.NDPOptionsSerializer{
 				header.NDPSourceLinkLayerAddressOption(remoteLinkAddr0[:]),
 			},
-			nsSrcLinkAddr: remoteLinkAddr0,
 			nsSrc:         remoteAddr,
 			nsDst:         nicAddr,
 			nsInvalid:     false,
@@ -432,7 +373,6 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 			nsOpts: header.NDPOptionsSerializer{
 				header.NDPSourceLinkLayerAddressOption(remoteLinkAddr1[:]),
 			},
-			nsSrcLinkAddr: remoteLinkAddr0,
 			nsSrc:         remoteAddr,
 			nsDst:         nicAddr,
 			nsInvalid:     false,
@@ -447,25 +387,30 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 				header.NDPSourceLinkLayerAddressOption(remoteLinkAddr0[:]),
 				header.NDPSourceLinkLayerAddressOption(remoteLinkAddr1[:]),
 			},
-			nsSrcLinkAddr: remoteLinkAddr0,
-			nsSrc:         remoteAddr,
-			nsDst:         nicAddr,
-			nsInvalid:     true,
+			nsSrc:     remoteAddr,
+			nsDst:     nicAddr,
+			nsInvalid: true,
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			s := stack.New(stack.Options{
-				NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
-			})
+			c := newTestContext()
+			defer c.cleanup()
+			s := c.s
+
 			e := channel.New(1, 1280, nicLinkAddr)
+			defer e.Close()
 			e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
-			if err := s.AddAddress(nicID, ProtocolNumber, nicAddr); err != nil {
-				t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, ProtocolNumber, nicAddr, err)
+			protocolAddr := tcpip.ProtocolAddress{
+				Protocol:          ProtocolNumber,
+				AddressWithPrefix: nicAddr.WithPrefix(),
+			}
+			if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
 			}
 
 			s.SetRouteTable([]tcpip.Route{
@@ -476,7 +421,7 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 			})
 
 			ndpNSSize := header.ICMPv6NeighborSolicitMinimumSize + test.nsOpts.Length()
-			hdr := buffer.NewPrependable(header.IPv6MinimumSize + ndpNSSize)
+			hdr := prependable.New(header.IPv6MinimumSize + ndpNSSize)
 			pkt := header.ICMPv6(hdr.Prepend(ndpNSSize))
 			pkt.SetType(header.ICMPv6NeighborSolicit)
 			ns := header.NDPNeighborSolicit(pkt.MessageBody())
@@ -505,17 +450,19 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 				t.Fatalf("got invalid = %d, want = 0", got)
 			}
 
-			e.InjectLinkAddr(ProtocolNumber, test.nsSrcLinkAddr, stack.NewPacketBuffer(stack.PacketBufferOptions{
-				Data: hdr.View().ToVectorisedView(),
-			}))
+			pktBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
+				Payload: bufferv2.MakeWithData(hdr.View()),
+			})
+			e.InjectInbound(ProtocolNumber, pktBuf)
+			pktBuf.DecRef()
 
 			if test.nsInvalid {
 				if got := invalid.Value(); got != 1 {
 					t.Fatalf("got invalid = %d, want = 1", got)
 				}
 
-				if p, got := e.Read(); got {
-					t.Fatalf("unexpected response to an invalid NS = %+v", p.Pkt)
+				if p := e.Read(); !p.IsNil() {
+					t.Fatalf("unexpected response to an invalid NS = %+v", p)
 				}
 
 				// If we expected the NS to be invalid, we have nothing else to check.
@@ -527,20 +474,24 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 			}
 
 			if test.performsLinkResolution {
-				p, got := e.ReadContext(context.Background())
-				if !got {
+				c.clock.RunImmediatelyScheduledJobs()
+				p := e.Read()
+				if p.IsNil() {
 					t.Fatal("expected an NDP NS response")
 				}
 
 				respNSDst := header.SolicitedNodeAddr(test.nsSrc)
 				var want stack.RouteInfo
 				want.NetProto = ProtocolNumber
+				want.LocalLinkAddress = nicLinkAddr
 				want.RemoteLinkAddress = header.EthernetAddressFromMulticastIPv6Address(respNSDst)
-				if diff := cmp.Diff(want, p.Route, cmp.AllowUnexported(want)); diff != "" {
+				if diff := cmp.Diff(want, p.EgressRoute, cmp.AllowUnexported(want)); diff != "" {
 					t.Errorf("route info mismatch (-want +got):\n%s", diff)
 				}
 
-				checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
+				payload := stack.PayloadSince(p.NetworkHeader())
+				defer payload.Release()
+				checker.IPv6(t, payload,
 					checker.SrcAddr(nicAddr),
 					checker.DstAddr(respNSDst),
 					checker.TTL(header.NDPHopLimit),
@@ -550,12 +501,13 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 							header.NDPSourceLinkLayerAddressOption(nicLinkAddr),
 						}),
 					))
+				p.DecRef()
 
 				ser := header.NDPOptionsSerializer{
 					header.NDPTargetLinkLayerAddressOption(linkAddr1),
 				}
 				ndpNASize := header.ICMPv6NeighborAdvertMinimumSize + ser.Length()
-				hdr := buffer.NewPrependable(header.IPv6MinimumSize + ndpNASize)
+				hdr := prependable.New(header.IPv6MinimumSize + ndpNASize)
 				pkt := header.ICMPv6(hdr.Prepend(ndpNASize))
 				pkt.SetType(header.ICMPv6NeighborAdvert)
 				na := header.NDPNeighborAdvert(pkt.MessageBody())
@@ -577,30 +529,36 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 					SrcAddr:           test.nsSrc,
 					DstAddr:           nicAddr,
 				})
-				e.InjectLinkAddr(ProtocolNumber, "", stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Data: hdr.View().ToVectorisedView(),
-				}))
+				pktBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
+					Payload: bufferv2.MakeWithData(hdr.View()),
+				})
+				e.InjectInbound(ProtocolNumber, pktBuf)
+				pktBuf.DecRef()
 			}
 
-			p, got := e.ReadContext(context.Background())
-			if !got {
+			c.clock.RunImmediatelyScheduledJobs()
+			p := e.Read()
+			if p.IsNil() {
 				t.Fatal("expected an NDP NA response")
 			}
+			defer p.DecRef()
 
-			if p.Route.LocalAddress != test.naSrc {
-				t.Errorf("got p.Route.LocalAddress = %s, want = %s", p.Route.LocalAddress, test.naSrc)
+			if p.EgressRoute.LocalAddress != test.naSrc {
+				t.Errorf("got p.EgressRoute.LocalAddress = %s, want = %s", p.EgressRoute.LocalAddress, test.naSrc)
 			}
-			if p.Route.LocalLinkAddress != nicLinkAddr {
-				t.Errorf("p.Route.LocalLinkAddress = %s, want = %s", p.Route.LocalLinkAddress, nicLinkAddr)
+			if p.EgressRoute.LocalLinkAddress != nicLinkAddr {
+				t.Errorf("p.EgressRoute.LocalLinkAddress = %s, want = %s", p.EgressRoute.LocalLinkAddress, nicLinkAddr)
 			}
-			if p.Route.RemoteAddress != test.naDst {
-				t.Errorf("got p.Route.RemoteAddress = %s, want = %s", p.Route.RemoteAddress, test.naDst)
+			if p.EgressRoute.RemoteAddress != test.naDst {
+				t.Errorf("got p.EgressRoute.RemoteAddress = %s, want = %s", p.EgressRoute.RemoteAddress, test.naDst)
 			}
-			if p.Route.RemoteLinkAddress != test.naDstLinkAddr {
-				t.Errorf("got p.Route.RemoteLinkAddress = %s, want = %s", p.Route.RemoteLinkAddress, test.naDstLinkAddr)
+			if p.EgressRoute.RemoteLinkAddress != test.naDstLinkAddr {
+				t.Errorf("got p.EgressRoute.RemoteLinkAddress = %s, want = %s", p.EgressRoute.RemoteLinkAddress, test.naDstLinkAddr)
 			}
 
-			checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
+			payload := stack.PayloadSince(p.NetworkHeader())
+			defer payload.Release()
+			checker.IPv6(t, payload,
 				checker.SrcAddr(test.naSrc),
 				checker.DstAddr(test.naDst),
 				checker.TTL(header.NDPHopLimit),
@@ -650,20 +608,26 @@ func TestNeighborAdvertisementWithTargetLinkLayerOption(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			s := stack.New(stack.Options{
-				NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
-			})
+			c := newTestContext()
+			defer c.cleanup()
+			s := c.s
+
 			e := channel.New(0, 1280, linkAddr0)
+			defer e.Close()
 			e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
-			if err := s.AddAddress(nicID, ProtocolNumber, lladdr0); err != nil {
-				t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, ProtocolNumber, lladdr0, err)
+			protocolAddr := tcpip.ProtocolAddress{
+				Protocol:          ProtocolNumber,
+				AddressWithPrefix: lladdr0.WithPrefix(),
+			}
+			if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
 			}
 
 			ndpNASize := header.ICMPv6NeighborAdvertMinimumSize + len(test.optsBuf)
-			hdr := buffer.NewPrependable(header.IPv6MinimumSize + ndpNASize)
+			hdr := prependable.New(header.IPv6MinimumSize + ndpNASize)
 			pkt := header.ICMPv6(hdr.Prepend(ndpNASize))
 			pkt.SetType(header.ICMPv6NeighborAdvert)
 			ns := header.NDPNeighborAdvert(pkt.MessageBody())
@@ -691,10 +655,11 @@ func TestNeighborAdvertisementWithTargetLinkLayerOption(t *testing.T) {
 			if got := invalid.Value(); got != 0 {
 				t.Fatalf("got invalid = %d, want = 0", got)
 			}
-
-			e.InjectInbound(ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-				Data: hdr.View().ToVectorisedView(),
-			}))
+			pktBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
+				Payload: bufferv2.MakeWithData(hdr.View()),
+			})
+			e.InjectInbound(ProtocolNumber, pktBuf)
+			pktBuf.DecRef()
 
 			neighbors, err := s.Neighbors(nicID, ProtocolNumber)
 			if err != nil {
@@ -732,24 +697,16 @@ func TestNeighborAdvertisementWithTargetLinkLayerOption(t *testing.T) {
 }
 
 func TestNDPValidation(t *testing.T) {
-	setup := func(t *testing.T) (*stack.Stack, stack.NetworkEndpoint) {
-		t.Helper()
+	const nicID = 1
 
-		// Create a stack with the assigned link-local address lladdr0
-		// and an endpoint to lladdr1.
-		s, ep := setupStackAndEndpoint(t, lladdr0, lladdr1)
-
-		return s, ep
-	}
-
-	handleIPv6Payload := func(payload buffer.View, hopLimit uint8, atomicFragment bool, ep stack.NetworkEndpoint) {
+	handleIPv6Payload := func(payload []byte, hopLimit uint8, atomicFragment bool, ep stack.NetworkEndpoint) {
 		var extHdrs header.IPv6ExtHdrSerializer
 		if atomicFragment {
 			extHdrs = append(extHdrs, &header.IPv6SerializableFragmentExtHdr{})
 		}
 		extHdrsLen := extHdrs.Length()
 
-		ip := buffer.NewView(header.IPv6MinimumSize + extHdrsLen)
+		ip := make([]byte, header.IPv6MinimumSize+extHdrsLen)
 		header.IPv6(ip).Encode(&header.IPv6Fields{
 			PayloadLength:     uint16(len(payload) + extHdrsLen),
 			TransportProtocol: header.ICMPv6ProtocolNumber,
@@ -758,11 +715,13 @@ func TestNDPValidation(t *testing.T) {
 			DstAddr:           lladdr0,
 			ExtensionHeaders:  extHdrs,
 		})
-		vv := ip.ToVectorisedView()
-		vv.AppendView(payload)
-		ep.HandlePacket(stack.NewPacketBuffer(stack.PacketBufferOptions{
-			Data: vv,
-		}))
+		buf := bufferv2.MakeWithData(ip)
+		buf.Append(bufferv2.NewViewWithData(payload))
+		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+			Payload: buf,
+		})
+		ep.HandlePacket(pkt)
+		pkt.DecRef()
 	}
 
 	var tllData [header.NDPLinkLayerAddressSize]byte
@@ -865,6 +824,11 @@ func TestNDPValidation(t *testing.T) {
 		},
 	}
 
+	subnet, err := tcpip.NewSubnet(lladdr1, tcpip.AddressMask(strings.Repeat("\xff", len(lladdr0))))
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	for _, typ := range types {
 		for _, isRouter := range []bool{false, true} {
 			name := typ.name
@@ -875,27 +839,52 @@ func TestNDPValidation(t *testing.T) {
 			t.Run(name, func(t *testing.T) {
 				for _, test := range subTests {
 					t.Run(test.name, func(t *testing.T) {
-						s, ep := setup(t)
+						c := newTestContext()
+						defer c.cleanup()
+						s := c.s
 
 						if isRouter {
-							// Enabling forwarding makes the stack act as a router.
-							s.SetForwarding(ProtocolNumber, true)
+							if err := s.SetForwardingDefaultAndAllNICs(ProtocolNumber, true); err != nil {
+								t.Fatalf("SetForwardingDefaultAndAllNICs(%d, true): %s", ProtocolNumber, err)
+							}
 						}
+
+						if err := s.CreateNIC(nicID, &stubLinkEndpoint{}); err != nil {
+							t.Fatalf("CreateNIC(%d, _): %s", nicID, err)
+						}
+
+						protocolAddr := tcpip.ProtocolAddress{
+							Protocol:          ProtocolNumber,
+							AddressWithPrefix: lladdr0.WithPrefix(),
+						}
+						if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+							t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
+						}
+
+						ep, err := s.GetNetworkEndpoint(nicID, ProtocolNumber)
+						if err != nil {
+							t.Fatal("cannot find network endpoint instance for IPv6")
+						}
+
+						s.SetRouteTable([]tcpip.Route{{
+							Destination: subnet,
+							NIC:         nicID,
+						}})
 
 						stats := s.Stats().ICMP.V6.PacketsReceived
 						invalid := stats.Invalid
 						routerOnly := stats.RouterOnlyPacketsDroppedByHost
 						typStat := typ.statCounter(stats)
 
-						icmp := header.ICMPv6(buffer.NewView(typ.size + len(typ.extraData)))
-						copy(icmp[typ.size:], typ.extraData)
-						icmp.SetType(typ.typ)
-						icmp.SetCode(test.code)
-						icmp.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
-							Header:      icmp[:typ.size],
+						icmpH := header.ICMPv6(make([]byte, typ.size+len(typ.extraData)))
+						copy(icmpH[typ.size:], typ.extraData)
+						icmpH.SetType(typ.typ)
+						icmpH.SetCode(test.code)
+						icmpH.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
+							Header:      icmpH[:typ.size],
 							Src:         lladdr0,
 							Dst:         lladdr1,
-							PayloadCsum: header.Checksum(typ.extraData /* initial */, 0),
+							PayloadCsum: checksum.Checksum(typ.extraData /* initial */, 0),
 							PayloadLen:  len(typ.extraData),
 						}))
 
@@ -906,19 +895,19 @@ func TestNDPValidation(t *testing.T) {
 
 						// Invalid count should initially be 0.
 						if got := invalid.Value(); got != 0 {
-							t.Errorf("got invalid = %d, want = 0", got)
+							t.Errorf("got invalid.Value() = %d, want = 0", got)
 						}
 
-						// RouterOnlyPacketsReceivedByHost count should initially be 0.
+						// Should initially not have dropped any packets.
 						if got := routerOnly.Value(); got != 0 {
-							t.Errorf("got RouterOnlyPacketsReceivedByHost = %d, want = 0", got)
+							t.Errorf("got routerOnly.Value() = %d, want = 0", got)
 						}
 
 						if t.Failed() {
 							t.FailNow()
 						}
 
-						handleIPv6Payload(buffer.View(icmp), test.hopLimit, test.atomicFragment, ep)
+						handleIPv6Payload(icmpH, test.hopLimit, test.atomicFragment, ep)
 
 						// Rx count of the NDP packet should have increased.
 						if got := typStat.Value(); got != 1 {
@@ -931,18 +920,18 @@ func TestNDPValidation(t *testing.T) {
 							want = 1
 						}
 						if got := invalid.Value(); got != want {
-							t.Errorf("got invalid = %d, want = %d", got, want)
+							t.Errorf("got invalid.Value() = %d, want = %d", got, want)
 						}
 
 						want = 0
 						if test.valid && !isRouter && typ.routerOnly {
-							// RouterOnlyPacketsReceivedByHost count should have increased.
+							// Router only packets are expected to be dropped when operating
+							// as a host.
 							want = 1
 						}
 						if got := routerOnly.Value(); got != want {
-							t.Errorf("got RouterOnlyPacketsReceivedByHost = %d, want = %d", got, want)
+							t.Errorf("got routerOnly.Value() = %d, want = %d", got, want)
 						}
-
 					})
 				}
 			})
@@ -991,20 +980,26 @@ func TestNeighborAdvertisementValidation(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			s := stack.New(stack.Options{
-				NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
-			})
+			c := newTestContext()
+			defer c.cleanup()
+			s := c.s
+
 			e := channel.New(0, header.IPv6MinimumMTU, linkAddr0)
+			defer e.Close()
 			e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
 			if err := s.CreateNIC(nicID, e); err != nil {
 				t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
 			}
-			if err := s.AddAddress(nicID, ProtocolNumber, lladdr0); err != nil {
-				t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, ProtocolNumber, lladdr0, err)
+			protocolAddr := tcpip.ProtocolAddress{
+				Protocol:          ProtocolNumber,
+				AddressWithPrefix: lladdr0.WithPrefix(),
+			}
+			if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
 			}
 
 			ndpNASize := header.ICMPv6NeighborAdvertMinimumSize
-			hdr := buffer.NewPrependable(header.IPv6MinimumSize + ndpNASize)
+			hdr := prependable.New(header.IPv6MinimumSize + ndpNASize)
 			pkt := header.ICMPv6(hdr.Prepend(ndpNASize))
 			pkt.SetType(header.ICMPv6NeighborAdvert)
 			na := header.NDPNeighborAdvert(pkt.MessageBody())
@@ -1036,9 +1031,11 @@ func TestNeighborAdvertisementValidation(t *testing.T) {
 				t.Fatalf("got invalid = %d, want = 0", got)
 			}
 
-			e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-				Data: hdr.View().ToVectorisedView(),
-			}))
+			pktBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
+				Payload: bufferv2.MakeWithData(hdr.View()),
+			})
+			e.InjectInbound(header.IPv6ProtocolNumber, pktBuf)
+			pktBuf.DecRef()
 
 			if got := rxNA.Value(); got != 1 {
 				t.Fatalf("got rxNA = %d, want = 1", got)
@@ -1192,18 +1189,19 @@ func TestRouterAdvertValidation(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			e := channel.New(10, 1280, linkAddr1)
-			e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
-			s := stack.New(stack.Options{
-				NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocol},
-			})
+			c := newTestContext()
+			defer c.cleanup()
+			s := c.s
 
+			e := channel.New(10, 1280, linkAddr1)
+			defer e.Close()
+			e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
 			if err := s.CreateNIC(1, e); err != nil {
 				t.Fatalf("CreateNIC(_) = %s", err)
 			}
 
 			icmpSize := header.ICMPv6HeaderSize + len(test.ndpPayload)
-			hdr := buffer.NewPrependable(header.IPv6MinimumSize + icmpSize)
+			hdr := prependable.New(header.IPv6MinimumSize + icmpSize)
 			pkt := header.ICMPv6(hdr.Prepend(icmpSize))
 			pkt.SetType(header.ICMPv6RouterAdvert)
 			pkt.SetCode(test.code)
@@ -1234,9 +1232,11 @@ func TestRouterAdvertValidation(t *testing.T) {
 				t.Fatalf("got rxRA = %d, want = 0", got)
 			}
 
-			e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-				Data: hdr.View().ToVectorisedView(),
-			}))
+			pktBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
+				Payload: bufferv2.MakeWithData(hdr.View()),
+			})
+			e.InjectInbound(header.IPv6ProtocolNumber, pktBuf)
+			pktBuf.DecRef()
 
 			if got := rxRA.Value(); got != 1 {
 				t.Fatalf("got rxRA = %d, want = 1", got)
@@ -1278,15 +1278,22 @@ func TestCheckDuplicateAddress(t *testing.T) {
 	var secureRNG bytes.Reader
 	secureRNG.Reset(secureRNGBytes[:])
 	s := stack.New(stack.Options{
-		SecureRNG: &secureRNG,
-		Clock:     clock,
+		Clock:      clock,
+		RandSource: rand.NewSource(time.Now().UnixNano()),
+		SecureRNG:  &secureRNG,
 		NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocolWithOptions(Options{
 			DADConfigs: dadConfigs,
 		})},
 	})
+	defer func() {
+		s.Close()
+		s.Wait()
+	}()
+
 	// This test is expected to send at max 2 DAD messages. We allow an extra
 	// packet to be stored to catch unexpected packets.
 	e := channel.New(3, header.IPv6MinimumMTU, linkAddr0)
+	defer e.Close()
 	e.LinkEPCapabilities |= stack.CapabilityResolutionRequired
 	if err := s.CreateNIC(nicID, e); err != nil {
 		t.Fatalf("CreateNIC(%d, _) = %s", nicID, err)
@@ -1296,20 +1303,24 @@ func TestCheckDuplicateAddress(t *testing.T) {
 	snmc := header.SolicitedNodeAddr(lladdr0)
 	remoteLinkAddr := header.EthernetAddressFromMulticastIPv6Address(snmc)
 	checkDADMsg := func() {
-		p, ok := e.ReadContext(context.Background())
-		if !ok {
+		clock.RunImmediatelyScheduledJobs()
+		p := e.Read()
+		if p.IsNil() {
 			t.Fatalf("expected %d-th DAD message", dadPacketsSent)
 		}
+		defer p.DecRef()
 
-		if p.Proto != header.IPv6ProtocolNumber {
-			t.Errorf("(i=%d) got p.Proto = %d, want = %d", dadPacketsSent, p.Proto, header.IPv6ProtocolNumber)
+		if p.NetworkProtocolNumber != header.IPv6ProtocolNumber {
+			t.Errorf("(i=%d) got p.NetworkProtocolNumber = %d, want = %d", dadPacketsSent, p.NetworkProtocolNumber, header.IPv6ProtocolNumber)
 		}
 
-		if p.Route.RemoteLinkAddress != remoteLinkAddr {
-			t.Errorf("(i=%d) got p.Route.RemoteLinkAddress = %s, want = %s", dadPacketsSent, p.Route.RemoteLinkAddress, remoteLinkAddr)
+		if p.EgressRoute.RemoteLinkAddress != remoteLinkAddr {
+			t.Errorf("(i=%d) got p.EgressRoute.RemoteLinkAddress = %s, want = %s", dadPacketsSent, p.EgressRoute.RemoteLinkAddress, remoteLinkAddr)
 		}
 
-		checker.IPv6(t, stack.PayloadSince(p.Pkt.NetworkHeader()),
+		payload := stack.PayloadSince(p.NetworkHeader())
+		defer payload.Release()
+		checker.IPv6(t, payload,
 			checker.SrcAddr(header.IPv6Any),
 			checker.DstAddr(snmc),
 			checker.TTL(header.NDPHopLimit),
@@ -1318,8 +1329,12 @@ func TestCheckDuplicateAddress(t *testing.T) {
 				checker.NDPNSOptions([]header.NDPOption{header.NDPNonceOption(nonces[dadPacketsSent])}),
 			))
 	}
-	if err := s.AddAddress(nicID, ProtocolNumber, lladdr0); err != nil {
-		t.Fatalf("AddAddress(%d, %d, %s) = %s", nicID, ProtocolNumber, lladdr0, err)
+	protocolAddr := tcpip.ProtocolAddress{
+		Protocol:          ProtocolNumber,
+		AddressWithPrefix: lladdr0.WithPrefix(),
+	}
+	if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
+		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
 	}
 	checkDADMsg()
 
@@ -1344,7 +1359,7 @@ func TestCheckDuplicateAddress(t *testing.T) {
 		t.Fatalf("RemoveAddress(%d, %s): %s", nicID, lladdr0, err)
 	}
 	// Should not restart DAD since we already requested DAD above - the handler
-	// should be called when the original request compeletes so we should not send
+	// should be called when the original request completes so we should not send
 	// an extra DAD message here.
 	dadRequestsMade++
 	if res, err := s.CheckDuplicateAddress(nicID, ProtocolNumber, lladdr0, func(r stack.DADResult) {
@@ -1370,7 +1385,7 @@ func TestCheckDuplicateAddress(t *testing.T) {
 	}
 
 	// Should have no more packets.
-	if p, ok := e.Read(); ok {
+	if p := e.Read(); !p.IsNil() {
 		t.Errorf("got unexpected packet = %#v", p)
 	}
 }

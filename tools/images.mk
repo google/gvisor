@@ -76,7 +76,7 @@ dockerfile = $$(if [ -f "$(call path,$(1))/Dockerfile.$(ARCH)" ]; then echo Dock
 # The tag construct is used to memoize the image generated (see README.md).
 # This scheme is used to enable aggressive caching in a central repository, but
 # ensuring that images will always be sourced using the local files.
-tag = $(shell cd images && find $(subst _,/,$(1)) -type f | sort | xargs -n 1 sha256sum | sha256sum - | cut -c 1-16)
+tag = $(shell cd images && find $(subst _,/,$(1)) -type f | sort -f -d | xargs -n 1 sha256sum | sha256sum - | cut -c 1-16)
 remote_image = $(REMOTE_IMAGE_PREFIX)/$(subst _,/,$(1))_$(ARCH)
 local_image = $(LOCAL_IMAGE_PREFIX)/$(subst _,/,$(1))
 
@@ -135,6 +135,7 @@ rebuild = \
   docker build $(DOCKER_PLATFORM_ARGS) \
     -f "$$T/$(call dockerfile,$(1))" \
     -t "$(call remote_image,$(1)):$(call tag,$(1))" \
+    -t "$(call remote_image,$(1))":latest \
     $$T >&2 && \
   rm -rf $$T) && \
   $(call local_tag,$(1)) && \
@@ -152,7 +153,7 @@ load-%: register-cross ## Pull or build an image locally.
 # already exists) or building manually. Note that this generic rule will match
 # the fully-expanded remote image tag.
 push-%: load-% ## Push a given image.
-	@docker push $(call remote_image,$*):$(call tag,$*) >&2
+	@docker image push $(call remote_image,$*):$(call tag,$*) >&2
 
 # register-cross registers the necessary qemu binaries for cross-compilation.
 # This may be used by any target that may execute containers that are not the

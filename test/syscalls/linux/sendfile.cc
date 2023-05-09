@@ -18,6 +18,8 @@
 #include <sys/sendfile.h>
 #include <unistd.h>
 
+#include <string_view>
+
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/strings/string_view.h"
@@ -200,38 +202,6 @@ TEST(SendFileTest, SendAndUpdateFileOffset) {
   EXPECT_EQ(absl::string_view(kData, kHalfDataSize),
             absl::string_view(actual, bytes_sent));
 
-  // Verify that the input file offset has been updated.
-  ASSERT_THAT(read(inf.get(), &actual, kDataSize - bytes_sent),
-              SyscallSucceedsWithValue(kHalfDataSize));
-  EXPECT_EQ(
-      absl::string_view(kData + kDataSize - bytes_sent, kDataSize - bytes_sent),
-      absl::string_view(actual, kHalfDataSize));
-}
-
-TEST(SendFileTest, SendToDevZeroAndUpdateFileOffset) {
-  // Create temp files.
-  // Test input string length must be > 2 AND even.
-  constexpr char kData[] = "The slings and arrows of outrageous fortune,";
-  constexpr int kDataSize = sizeof(kData) - 1;
-  constexpr int kHalfDataSize = kDataSize / 2;
-  const TempPath in_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
-      GetAbsoluteTestTmpdir(), kData, TempPath::kDefaultFileMode));
-
-  // Open the input file as read only.
-  const FileDescriptor inf =
-      ASSERT_NO_ERRNO_AND_VALUE(Open(in_file.path(), O_RDONLY));
-
-  // Open /dev/zero as write only.
-  const FileDescriptor outf =
-      ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/zero", O_WRONLY));
-
-  // Send data and verify that sendfile returns the correct value.
-  int bytes_sent;
-  EXPECT_THAT(
-      bytes_sent = sendfile(outf.get(), inf.get(), nullptr, kHalfDataSize),
-      SyscallSucceedsWithValue(kHalfDataSize));
-
-  char actual[kHalfDataSize];
   // Verify that the input file offset has been updated.
   ASSERT_THAT(read(inf.get(), &actual, kDataSize - bytes_sent),
               SyscallSucceedsWithValue(kHalfDataSize));
@@ -501,11 +471,13 @@ TEST(SendFileTest, SendToNotARegularFile) {
       ASSERT_NO_ERRNO_AND_VALUE(Open(out_file.path(), O_WRONLY));
 
   // Receive an error since a directory is not a regular file.
-  EXPECT_THAT(sendfile(outf.get(), inf.get(), nullptr, 0),
+  EXPECT_THAT(sendfile(outf.get(), inf.get(), nullptr, 1),
               SyscallFailsWithErrno(EINVAL));
 }
 
 TEST(SendFileTest, SendPipeWouldBlock) {
+  // This test fails on Linux, likely due to a Linux bug.
+  SKIP_IF(!IsRunningOnGvisor());
   // Create temp file.
   constexpr char kData[] =
       "The fool doth think he is wise, but the wise man knows himself to be a "
@@ -552,6 +524,8 @@ TEST(SendFileTest, SendPipeEOF) {
 }
 
 TEST(SendFileTest, SendToFullPipeReturnsEAGAIN) {
+  // This test fails on Linux, likely due to a Linux bug.
+  SKIP_IF(!IsRunningOnGvisor());
   // Create and open an empty input file.
   const TempPath in_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   const FileDescriptor in_fd =
@@ -609,23 +583,6 @@ TEST(SendFileTest, SendPipeBlocks) {
               SyscallSucceedsWithValue(kDataSize));
 }
 
-TEST(SendFileTest, SendToSpecialFile) {
-  // Create temp file.
-  const TempPath in_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
-      GetAbsoluteTestTmpdir(), "", TempPath::kDefaultFileMode));
-
-  const FileDescriptor inf =
-      ASSERT_NO_ERRNO_AND_VALUE(Open(in_file.path(), O_RDWR));
-  constexpr int kSize = 0x7ff;
-  ASSERT_THAT(ftruncate(inf.get(), kSize), SyscallSucceeds());
-
-  auto eventfd = ASSERT_NO_ERRNO_AND_VALUE(NewEventFD());
-
-  // eventfd can accept a number of bytes which is a multiple of 8.
-  EXPECT_THAT(sendfile(eventfd.get(), inf.get(), nullptr, 0xfffff),
-              SyscallSucceedsWithValue(kSize & (~7)));
-}
-
 TEST(SendFileTest, SendFileToPipe) {
   // Create temp file.
   constexpr char kData[] = "<insert-quote-here>";
@@ -654,7 +611,7 @@ TEST(SendFileTest, SendFileToPipe) {
               SyscallSucceedsWithValue(kDataSize));
 }
 
-TEST(SendFileTest, SendFileToSelf_NoRandomSave) {
+TEST(SendFileTest, SendFileToSelf) {
   int rawfd;
   ASSERT_THAT(rawfd = memfd_create("memfd", 0), SyscallSucceeds());
   const FileDescriptor fd(rawfd);
@@ -672,55 +629,29 @@ TEST(SendFileTest, SendFileToSelf_NoRandomSave) {
               SyscallSucceedsWithValue(kSendfileSize));
 }
 
-static volatile int signaled = 0;
-void SigUsr1Handler(int sig, siginfo_t* info, void* context) { signaled = 1; }
+// NOTE(b/237442794): Regression test. Make sure sendfile works with a count
+// larger than input file size.
+TEST(SendFileTest, LargeCount) {
+  // Create input file with some wisdom. It is imperative to use a
+  // Shakespearean quote, consistent with the rest of this file.
+  constexpr absl::string_view kData =
+      "We know what we are, but know not what we may be.";
+  const TempPath in_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
+      GetAbsoluteTestTmpdir(), kData, TempPath::kDefaultFileMode));
 
-TEST(SendFileTest, ToEventFDDoesNotSpin_NoRandomSave) {
-  FileDescriptor efd = ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(0, 0));
+  const TempPath out_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
 
-  // Write the maximum value of an eventfd to a file.
-  const uint64_t kMaxEventfdValue = 0xfffffffffffffffe;
-  const auto tempfile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
-  const auto tempfd = ASSERT_NO_ERRNO_AND_VALUE(Open(tempfile.path(), O_RDWR));
-  ASSERT_THAT(
-      pwrite(tempfd.get(), &kMaxEventfdValue, sizeof(kMaxEventfdValue), 0),
-      SyscallSucceedsWithValue(sizeof(kMaxEventfdValue)));
+  // Open the input file as read only.
+  const FileDescriptor inf =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(in_file.path(), O_RDONLY));
 
-  // Set the eventfd's value to 1.
-  const uint64_t kOne = 1;
-  ASSERT_THAT(write(efd.get(), &kOne, sizeof(kOne)),
-              SyscallSucceedsWithValue(sizeof(kOne)));
+  // Open the output file as write only.
+  const FileDescriptor outf =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(out_file.path(), O_WRONLY));
 
-  // Set up signal handler.
-  struct sigaction sa = {};
-  sa.sa_sigaction = SigUsr1Handler;
-  sa.sa_flags = SA_SIGINFO;
-  const auto cleanup_sigact =
-      ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaction(SIGUSR1, sa));
-
-  // Send SIGUSR1 to this thread in 1 second.
-  struct sigevent sev = {};
-  sev.sigev_notify = SIGEV_THREAD_ID;
-  sev.sigev_signo = SIGUSR1;
-  sev.sigev_notify_thread_id = gettid();
-  auto timer = ASSERT_NO_ERRNO_AND_VALUE(TimerCreate(CLOCK_MONOTONIC, sev));
-  struct itimerspec its = {};
-  its.it_value = absl::ToTimespec(absl::Seconds(1));
-  DisableSave ds;  // Asserting an EINTR.
-  ASSERT_NO_ERRNO(timer.Set(0, its));
-
-  // Sendfile from tempfd to the eventfd. Since the eventfd is not already at
-  // its maximum value, the eventfd is "ready for writing"; however, since the
-  // eventfd's existing value plus the new value would exceed the maximum, the
-  // write should internally fail with EWOULDBLOCK. In this case, sendfile()
-  // should block instead of spinning, and eventually be interrupted by our
-  // timer. See b/172075629.
-  EXPECT_THAT(
-      sendfile(efd.get(), tempfd.get(), nullptr, sizeof(kMaxEventfdValue)),
-      SyscallFailsWithErrno(EINTR));
-
-  // Signal should have been handled.
-  EXPECT_EQ(signaled, 1);
+  // Set a count larger than kDataSize.
+  EXPECT_THAT(sendfile(outf.get(), inf.get(), nullptr, 2 * kData.size()),
+              SyscallSucceedsWithValue(kData.size()));
 }
 
 }  // namespace

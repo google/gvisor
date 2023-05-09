@@ -24,15 +24,17 @@ import (
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
+	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 )
 
-const (
-	linkAddr               = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x06")
-	linkLocalAddr          = tcpip.Address("\xfe\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
-	linkLocalMulticastAddr = tcpip.Address("\xff\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
-	uniqueLocalAddr1       = tcpip.Address("\xfc\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
-	uniqueLocalAddr2       = tcpip.Address("\xfd\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
-	globalAddr             = tcpip.Address("\xa0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
+const linkAddr = tcpip.LinkAddress("\x02\x02\x03\x04\x05\x06")
+
+var (
+	linkLocalAddr          = testutil.MustParse6("fe80::1")
+	linkLocalMulticastAddr = testutil.MustParse6("ff02::1")
+	uniqueLocalAddr1       = testutil.MustParse6("fc00::1")
+	uniqueLocalAddr2       = testutil.MustParse6("fd00::2")
+	globalAddr             = testutil.MustParse6("a000::1")
 )
 
 func TestEthernetAdddressToModifiedEUI64(t *testing.T) {
@@ -50,7 +52,7 @@ func TestEthernetAdddressToModifiedEUI64(t *testing.T) {
 }
 
 func TestLinkLocalAddr(t *testing.T) {
-	if got, want := header.LinkLocalAddr(linkAddr), tcpip.Address("\xfe\x80\x00\x00\x00\x00\x00\x00\x00\x02\x03\xff\xfe\x04\x05\x06"); got != want {
+	if got, want := header.LinkLocalAddr(linkAddr), testutil.MustParse6("fe80::2:3ff:fe04:506"); got != want {
 		t.Errorf("got LinkLocalAddr(%s) = %s, want = %s", linkAddr, got, want)
 	}
 }

@@ -14,6 +14,10 @@
 
 package ring0
 
+import (
+	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
+)
+
 // Init initializes a new kernel.
 //
 //go:nosplit
@@ -80,6 +84,7 @@ func (c *CPU) Init(k *Kernel, cpuID int, hooks Hooks) {
 	c.self = c    // Set self reference.
 	c.kernel = k  // Set kernel reference.
 	c.init(cpuID) // Perform architectural init.
+	c.floatingPointState = fpu.NewState()
 
 	// Require hooks.
 	if hooks != nil {

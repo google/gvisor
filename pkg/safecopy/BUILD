@@ -1,6 +1,9 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_library(
     name = "safecopy",
@@ -18,7 +21,9 @@ go_library(
     ],
     visibility = ["//:sandbox"],
     deps = [
-        "//pkg/syserror",
+        "//pkg/errors",
+        "//pkg/errors/linuxerr",
+        "//pkg/sighandling",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

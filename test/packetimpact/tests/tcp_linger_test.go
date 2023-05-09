@@ -98,20 +98,19 @@ func TestTCPLingerNonZeroTimeout(t *testing.T) {
 
 			dut.SetSockLingerOption(t, acceptFD, lingerDuration, tt.lingerOn)
 
-			// Increase timeout as Close will take longer time to
-			// return when SO_LINGER is set with non-zero timeout.
-			timeout := lingerDuration + 1*time.Second
-			ctx, cancel := context.WithTimeout(context.Background(), timeout)
-			defer cancel()
 			start := time.Now()
-			dut.CloseWithErrno(ctx, t, acceptFD)
-			end := time.Now()
-			diff := end.Sub(start)
+			dut.CloseWithErrno(context.Background(), t, acceptFD)
+			elapsed := time.Since(start)
 
-			if tt.lingerOn && diff < lingerDuration {
-				t.Errorf("expected close to return after %v seconds, but returned sooner", lingerDuration)
-			} else if !tt.lingerOn && diff > 1*time.Second {
-				t.Errorf("expected close to return within a second, but returned later")
+			expectedMaximum := time.Second
+			if tt.lingerOn {
+				expectedMaximum += lingerDuration
+				if elapsed < lingerDuration {
+					t.Errorf("expected close to take at least %s, but took %s", lingerDuration, elapsed)
+				}
+			}
+			if elapsed >= expectedMaximum {
+				t.Errorf("expected close to take at most %s, but took %s", expectedMaximum, elapsed)
 			}
 
 			if _, err := conn.Expect(t, testbench.TCP{Flags: testbench.TCPFlags(header.TCPFlagFin | header.TCPFlagAck)}, time.Second); err != nil {
@@ -144,20 +143,19 @@ func TestTCPLingerSendNonZeroTimeout(t *testing.T) {
 			sampleData := []byte("Sample Data")
 			dut.Send(t, acceptFD, sampleData, 0)
 
-			// Increase timeout as Close will take longer time to
-			// return when SO_LINGER is set with non-zero timeout.
-			timeout := lingerDuration + 1*time.Second
-			ctx, cancel := context.WithTimeout(context.Background(), timeout)
-			defer cancel()
 			start := time.Now()
-			dut.CloseWithErrno(ctx, t, acceptFD)
-			end := time.Now()
-			diff := end.Sub(start)
+			dut.CloseWithErrno(context.Background(), t, acceptFD)
+			elapsed := time.Since(start)
 
-			if tt.lingerOn && diff < lingerDuration {
-				t.Errorf("expected close to return after %v seconds, but returned sooner", lingerDuration)
-			} else if !tt.lingerOn && diff > 1*time.Second {
-				t.Errorf("expected close to return within a second, but returned later")
+			expectedMaximum := time.Second
+			if tt.lingerOn {
+				expectedMaximum += lingerDuration
+				if elapsed < lingerDuration {
+					t.Errorf("expected close to take at least %s, but took %s", lingerDuration, elapsed)
+				}
+			}
+			if elapsed >= expectedMaximum {
+				t.Errorf("expected close to take at most %s, but took %s", expectedMaximum, elapsed)
 			}
 
 			samplePayload := &testbench.Payload{Bytes: sampleData}
@@ -221,20 +219,19 @@ func TestTCPLingerShutdownSendNonZeroTimeout(t *testing.T) {
 
 			dut.Shutdown(t, acceptFD, unix.SHUT_RDWR)
 
-			// Increase timeout as Close will take longer time to
-			// return when SO_LINGER is set with non-zero timeout.
-			timeout := lingerDuration + 1*time.Second
-			ctx, cancel := context.WithTimeout(context.Background(), timeout)
-			defer cancel()
 			start := time.Now()
-			dut.CloseWithErrno(ctx, t, acceptFD)
-			end := time.Now()
-			diff := end.Sub(start)
+			dut.CloseWithErrno(context.Background(), t, acceptFD)
+			elapsed := time.Since(start)
 
-			if tt.lingerOn && diff < lingerDuration {
-				t.Errorf("expected close to return after %v seconds, but returned sooner", lingerDuration)
-			} else if !tt.lingerOn && diff > 1*time.Second {
-				t.Errorf("expected close to return within a second, but returned later")
+			expectedMaximum := time.Second
+			if tt.lingerOn {
+				expectedMaximum += lingerDuration
+				if elapsed < lingerDuration {
+					t.Errorf("expected close to take at least %s, but took %s", lingerDuration, elapsed)
+				}
+			}
+			if elapsed >= expectedMaximum {
+				t.Errorf("expected close to take at most %s, but took %s", expectedMaximum, elapsed)
 			}
 
 			samplePayload := &testbench.Payload{Bytes: sampleData}
@@ -259,9 +256,10 @@ func TestTCPLingerNonEstablished(t *testing.T) {
 	// and return immediately.
 	start := time.Now()
 	dut.CloseWithErrno(context.Background(), t, newFD)
-	diff := time.Since(start)
+	elapsed := time.Since(start)
 
-	if diff > lingerDuration {
-		t.Errorf("expected close to return within %s, but returned after %s", lingerDuration, diff)
+	expectedMaximum := time.Second
+	if elapsed >= time.Second {
+		t.Errorf("expected close to take at most %s, but took %s", expectedMaximum, elapsed)
 	}
 }

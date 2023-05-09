@@ -81,11 +81,13 @@ func (p *profile) createProcess(c *Container) error {
 		return fmt.Errorf("failed to get runtime path: %v", err)
 	}
 
-	// The root directory of this container's runtime.
-	root := fmt.Sprintf("--root=/var/run/docker/runtime-%s/moby", c.runtime)
+	rootDir, err := c.RootDirectory()
+	if err != nil {
+		return fmt.Errorf("failed to get root directory: %v", err)
+	}
 
-	// Format is `runsc --root=rootdir debug --profile-*=file --duration=24h containerID`.
-	args := []string{root, "debug"}
+	// Format is `runsc --root=rootDir debug --profile-*=file --duration=24h containerID`.
+	args := []string{fmt.Sprintf("--root=%s", rootDir), "debug"}
 	for _, profileArg := range p.Types {
 		outputPath := filepath.Join(p.BasePath, fmt.Sprintf("%s.pprof", profileArg))
 		args = append(args, fmt.Sprintf("--profile-%s=%s", profileArg, outputPath))

@@ -21,6 +21,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
@@ -28,7 +29,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -47,14 +47,18 @@ func (fs *filesystem) newSysDir(ctx context.Context, root *auth.Credentials, k *
 		"kernel": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
 			"hostname": fs.newInode(ctx, root, 0444, &hostnameData{}),
 			"sem":      fs.newInode(ctx, root, 0444, newStaticFile(fmt.Sprintf("%d\t%d\t%d\t%d\n", linux.SEMMSL, linux.SEMMNS, linux.SEMOPM, linux.SEMMNI))),
-			"shmall":   fs.newInode(ctx, root, 0444, shmData(linux.SHMALL)),
-			"shmmax":   fs.newInode(ctx, root, 0444, shmData(linux.SHMMAX)),
-			"shmmni":   fs.newInode(ctx, root, 0444, shmData(linux.SHMMNI)),
+			"shmall":   fs.newInode(ctx, root, 0444, ipcData(linux.SHMALL)),
+			"shmmax":   fs.newInode(ctx, root, 0444, ipcData(linux.SHMMAX)),
+			"shmmni":   fs.newInode(ctx, root, 0444, ipcData(linux.SHMMNI)),
+			"msgmni":   fs.newInode(ctx, root, 0444, ipcData(linux.MSGMNI)),
+			"msgmax":   fs.newInode(ctx, root, 0444, ipcData(linux.MSGMAX)),
+			"msgmnb":   fs.newInode(ctx, root, 0444, ipcData(linux.MSGMNB)),
 			"yama": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
 				"ptrace_scope": fs.newYAMAPtraceScopeFile(ctx, k, root),
 			}),
 		}),
 		"vm": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
+			"max_map_count":     fs.newInode(ctx, root, 0444, newStaticFile("2147483647\n")),
 			"mmap_min_addr":     fs.newInode(ctx, root, 0444, &mmapMinAddrData{k: k}),
 			"overcommit_memory": fs.newInode(ctx, root, 0444, newStaticFile("0\n")),
 		}),
@@ -205,10 +209,10 @@ func (d *tcpSackData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 }
 
 // Write implements vfs.WritableDynamicBytesSource.Write.
-func (d *tcpSackData) Write(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error) {
+func (d *tcpSackData) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
 	if offset != 0 {
 		// No need to handle partial writes thus far.
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	if src.NumBytes() == 0 {
 		return 0, nil
@@ -253,10 +257,10 @@ func (d *tcpRecoveryData) Generate(ctx context.Context, buf *bytes.Buffer) error
 }
 
 // Write implements vfs.WritableDynamicBytesSource.Write.
-func (d *tcpRecoveryData) Write(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error) {
+func (d *tcpRecoveryData) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
 	if offset != 0 {
 		// No need to handle partial writes thus far.
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	if src.NumBytes() == 0 {
 		return 0, nil
@@ -307,10 +311,10 @@ func (d *tcpMemData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 }
 
 // Write implements vfs.WritableDynamicBytesSource.Write.
-func (d *tcpMemData) Write(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error) {
+func (d *tcpMemData) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
 	if offset != 0 {
 		// No need to handle partial writes thus far.
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	if src.NumBytes() == 0 {
 		return 0, nil
@@ -365,27 +369,22 @@ func (d *tcpMemData) writeSizeLocked(size inet.TCPBufferSize) error {
 }
 
 // ipForwarding implements vfs.WritableDynamicBytesSource for
-// /proc/sys/net/ipv4/ip_forwarding.
+// /proc/sys/net/ipv4/ip_forward.
 //
 // +stateify savable
 type ipForwarding struct {
 	kernfs.DynamicBytesFile
 
 	stack   inet.Stack `state:"wait"`
-	enabled *bool
+	enabled bool
 }
 
 var _ vfs.WritableDynamicBytesSource = (*ipForwarding)(nil)
 
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (ipf *ipForwarding) Generate(ctx context.Context, buf *bytes.Buffer) error {
-	if ipf.enabled == nil {
-		enabled := ipf.stack.Forwarding(ipv4.ProtocolNumber)
-		ipf.enabled = &enabled
-	}
-
 	val := "0\n"
-	if *ipf.enabled {
+	if ipf.enabled {
 		// Technically, this is not quite compatible with Linux. Linux stores these
 		// as an integer, so if you write "2" into tcp_sack, you should get 2 back.
 		// Tough luck.
@@ -397,10 +396,10 @@ func (ipf *ipForwarding) Generate(ctx context.Context, buf *bytes.Buffer) error 
 }
 
 // Write implements vfs.WritableDynamicBytesSource.Write.
-func (ipf *ipForwarding) Write(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error) {
+func (ipf *ipForwarding) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
 	if offset != 0 {
 		// No need to handle partial writes thus far.
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	if src.NumBytes() == 0 {
 		return 0, nil
@@ -414,11 +413,8 @@ func (ipf *ipForwarding) Write(ctx context.Context, src usermem.IOSequence, offs
 	if err != nil {
 		return 0, err
 	}
-	if ipf.enabled == nil {
-		ipf.enabled = new(bool)
-	}
-	*ipf.enabled = v != 0
-	if err := ipf.stack.SetForwarding(ipv4.ProtocolNumber, *ipf.enabled); err != nil {
+	ipf.enabled = v != 0
+	if err := ipf.stack.SetForwarding(ipv4.ProtocolNumber, ipf.enabled); err != nil {
 		return 0, err
 	}
 	return n, nil
@@ -453,10 +449,10 @@ func (pr *portRange) Generate(ctx context.Context, buf *bytes.Buffer) error {
 }
 
 // Write implements vfs.WritableDynamicBytesSource.Write.
-func (pr *portRange) Write(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error) {
+func (pr *portRange) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
 	if offset != 0 {
 		// No need to handle partial writes thus far.
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	if src.NumBytes() == 0 {
 		return 0, nil
@@ -474,7 +470,7 @@ func (pr *portRange) Write(ctx context.Context, src usermem.IOSequence, offset i
 
 	// Port numbers must be uint16s.
 	if ports[0] < 0 || ports[1] < 0 || ports[0] > math.MaxUint16 || ports[1] > math.MaxUint16 {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 
 	if err := pr.stack.SetPortRange(uint16(ports[0]), uint16(ports[1])); err != nil {

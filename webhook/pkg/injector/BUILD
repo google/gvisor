@@ -1,6 +1,9 @@
 load("//tools:defs.bzl", "go_library")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_library(
     name = "injector",
@@ -19,16 +22,4 @@ go_library(
         "@io_k8s_apimachinery//pkg/apis/meta/v1:go_default_library",
         "@io_k8s_client_go//kubernetes:go_default_library",
     ],
-)
-
-genrule(
-    name = "certs",
-    srcs = [":gencerts"],
-    outs = ["certs.go"],
-    cmd = "$$(cut -d ' ' -f 1 <<< \"$(locations :gencerts)\") $@",
-)
-
-sh_binary(
-    name = "gencerts",
-    srcs = ["gencerts.sh"],
 )

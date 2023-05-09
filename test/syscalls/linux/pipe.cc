@@ -13,10 +13,13 @@
 // limitations under the License.
 
 #include <fcntl.h> /* Obtain O_* constant definitions */
+#include <linux/futex.h>
 #include <linux/magic.h>
+#include <signal.h>
 #include <sys/ioctl.h>
 #include <sys/statfs.h>
 #include <sys/uio.h>
+#include <syscall.h>
 #include <unistd.h>
 
 #include <vector>
@@ -29,6 +32,7 @@
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/signal_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
@@ -43,6 +47,35 @@ constexpr int kTestValue = 0x12345678;
 
 // Used for synchronization in race tests.
 const absl::Duration syncDelay = absl::Seconds(2);
+
+std::atomic<int> global_num_signals_received = 0;
+void SigRecordingHandler(int signum, siginfo_t* siginfo,
+                         void* unused_ucontext) {
+  global_num_signals_received++;
+  ASSERT_THAT(syscall(SYS_futex, &global_num_signals_received,
+                      FUTEX_WAKE | FUTEX_PRIVATE_FLAG, INT_MAX, 0, 0, 0),
+              SyscallSucceeds());
+}
+
+PosixErrorOr<Cleanup> RegisterSignalHandler(int signum) {
+  global_num_signals_received = 0;
+  struct sigaction handler;
+  handler.sa_sigaction = SigRecordingHandler;
+  sigemptyset(&handler.sa_mask);
+  handler.sa_flags = SA_SIGINFO;
+  return ScopedSigaction(signum, handler);
+}
+
+void WaitForSignalDelivery(int expected) {
+  while (1) {
+    int v = global_num_signals_received;
+    if (v >= expected) {
+      break;
+    }
+    RetryEINTR(syscall)(SYS_futex, &global_num_signals_received,
+                        FUTEX_WAIT | FUTEX_PRIVATE_FLAG, v, 0, 0, 0);
+  }
+}
 
 struct PipeCreator {
   std::string name_;
@@ -267,6 +300,9 @@ TEST_P(PipeTest, Seek) {
   }
 }
 
+#ifndef ANDROID
+// Android does not support preadv or pwritev in r22.
+
 TEST_P(PipeTest, OffsetCalls) {
   SKIP_IF(!CreateBlocking());
 
@@ -282,6 +318,8 @@ TEST_P(PipeTest, OffsetCalls) {
   EXPECT_THAT(preadv(wfd_.get(), &iov, 1, 0), SyscallFailsWithErrno(ESPIPE));
   EXPECT_THAT(pwritev(rfd_.get(), &iov, 1, 0), SyscallFailsWithErrno(ESPIPE));
 }
+
+#endif  // ANDROID
 
 TEST_P(PipeTest, WriterSideCloses) {
   SKIP_IF(!CreateBlocking());
@@ -333,10 +371,16 @@ TEST_P(PipeTest, WriterSideClosesReadDataFirst) {
 TEST_P(PipeTest, ReaderSideCloses) {
   SKIP_IF(!CreateBlocking());
 
+  const auto signal_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(RegisterSignalHandler(SIGPIPE));
+
   ASSERT_THAT(close(rfd_.release()), SyscallSucceeds());
   int buf = kTestValue;
   EXPECT_THAT(write(wfd_.get(), &buf, sizeof(buf)),
               SyscallFailsWithErrno(EPIPE));
+
+  WaitForSignalDelivery(1);
+  ASSERT_EQ(global_num_signals_received, 1);
 }
 
 TEST_P(PipeTest, CloseTwice) {
@@ -355,6 +399,9 @@ TEST_P(PipeTest, CloseTwice) {
 TEST_P(PipeTest, BlockWriteClosed) {
   SKIP_IF(!CreateBlocking());
 
+  const auto signal_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(RegisterSignalHandler(SIGPIPE));
+
   absl::Notification notify;
   ScopedThread t([this, &notify]() {
     std::vector<char> buf(Size());
@@ -371,6 +418,10 @@ TEST_P(PipeTest, BlockWriteClosed) {
 
   notify.WaitForNotification();
   ASSERT_THAT(close(rfd_.release()), SyscallSucceeds());
+
+  WaitForSignalDelivery(1);
+  ASSERT_EQ(global_num_signals_received, 1);
+
   t.Join();
 }
 
@@ -378,6 +429,9 @@ TEST_P(PipeTest, BlockWriteClosed) {
 // been written.
 TEST_P(PipeTest, BlockPartialWriteClosed) {
   SKIP_IF(!CreateBlocking());
+
+  const auto signal_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(RegisterSignalHandler(SIGPIPE));
 
   ScopedThread t([this]() {
     const int pipe_size = Size();
@@ -396,10 +450,14 @@ TEST_P(PipeTest, BlockPartialWriteClosed) {
 
   // Unblock the above.
   ASSERT_THAT(close(rfd_.release()), SyscallSucceeds());
+
+  WaitForSignalDelivery(2);
+  ASSERT_EQ(global_num_signals_received, 2);
+
   t.Join();
 }
 
-TEST_P(PipeTest, ReadFromClosedFd_NoRandomSave) {
+TEST_P(PipeTest, ReadFromClosedFd) {
   SKIP_IF(!CreateBlocking());
 
   absl::Notification notify;
@@ -604,6 +662,13 @@ TEST_P(PipeTest, Streaming) {
       notify.Notify();
     }
   }
+}
+
+TEST_P(PipeTest, ZeroSize) {
+  SKIP_IF(!CreateBlocking());
+
+  ASSERT_THAT(write(wfd_.get(), nullptr, 0), SyscallSucceedsWithValue(0));
+  ASSERT_THAT(read(rfd_.get(), nullptr, 0), SyscallSucceedsWithValue(0));
 }
 
 std::string PipeCreatorName(::testing::TestParamInfo<PipeCreator> info) {

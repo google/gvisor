@@ -15,14 +15,12 @@
 package tmpfs
 
 import (
-	"sync/atomic"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // +stateify savable
@@ -39,28 +37,28 @@ type directory struct {
 
 	// numChildren is len(childMap), but accessed using atomic memory
 	// operations to avoid locking in inode.statTo().
-	numChildren int64
+	numChildren atomicbitops.Int64
 
 	// childList is a list containing (1) child dentries and (2) fake dentries
 	// (with inode == nil) that represent the iteration position of
 	// directoryFDs. childList is used to support directoryFD.IterDirents()
 	// efficiently. childList is protected by iterMu.
-	iterMu    sync.Mutex `state:"nosave"`
+	iterMu    iterMutex `state:"nosave"`
 	childList dentryList
 }
 
 func (fs *filesystem) newDirectory(kuid auth.KUID, kgid auth.KGID, mode linux.FileMode, parentDir *directory) *directory {
 	dir := &directory{}
 	dir.inode.init(dir, fs, kuid, kgid, linux.S_IFDIR|mode, parentDir)
-	dir.inode.nlink = 2 // from "." and parent directory or ".." for root
+	dir.inode.nlink = atomicbitops.FromUint32(2) // from "." and parent directory or ".." for root
 	dir.dentry.inode = &dir.inode
 	dir.dentry.vfsd.Init(&dir.dentry)
 	return dir
 }
 
 // Preconditions:
-// * filesystem.mu must be locked for writing.
-// * dir must not already contain a child with the given name.
+//   - filesystem.mu must be locked for writing.
+//   - dir must not already contain a child with the given name.
 func (dir *directory) insertChildLocked(child *dentry, name string) {
 	child.parent = &dir.dentry
 	child.name = name
@@ -68,7 +66,7 @@ func (dir *directory) insertChildLocked(child *dentry, name string) {
 		dir.childMap = make(map[string]*dentry)
 	}
 	dir.childMap[name] = child
-	atomic.AddInt64(&dir.numChildren, 1)
+	dir.numChildren.Add(1)
 	dir.iterMu.Lock()
 	dir.childList.PushBack(child)
 	dir.iterMu.Unlock()
@@ -77,7 +75,7 @@ func (dir *directory) insertChildLocked(child *dentry, name string) {
 // Preconditions: filesystem.mu must be locked for writing.
 func (dir *directory) removeChildLocked(child *dentry) {
 	delete(dir.childMap, child.name)
-	atomic.AddInt64(&dir.numChildren, -1)
+	dir.numChildren.Add(-1)
 	dir.iterMu.Lock()
 	dir.childList.Remove(child)
 	dir.iterMu.Unlock()
@@ -86,10 +84,10 @@ func (dir *directory) removeChildLocked(child *dentry) {
 func (dir *directory) mayDelete(creds *auth.Credentials, child *dentry) error {
 	return vfs.CheckDeleteSticky(
 		creds,
-		linux.FileMode(atomic.LoadUint32(&dir.inode.mode)),
-		auth.KUID(atomic.LoadUint32(&dir.inode.uid)),
-		auth.KUID(atomic.LoadUint32(&child.inode.uid)),
-		auth.KGID(atomic.LoadUint32(&child.inode.gid)),
+		linux.FileMode(dir.inode.mode.Load()),
+		auth.KUID(dir.inode.uid.Load()),
+		auth.KUID(child.inode.uid.Load()),
+		auth.KGID(child.inode.gid.Load()),
 	)
 }
 
@@ -118,8 +116,6 @@ func (fd *directoryFD) Release(ctx context.Context) {
 func (fd *directoryFD) IterDirents(ctx context.Context, cb vfs.IterDirentsCallback) error {
 	fs := fd.filesystem()
 	dir := fd.inode().impl.(*directory)
-
-	defer fd.dentry().InotifyWithParent(ctx, linux.IN_ACCESS, 0, vfs.PathEvent)
 
 	// fs.mu is required to read d.parent and dentry.name.
 	fs.mu.RLock()
@@ -196,10 +192,10 @@ func (fd *directoryFD) Seek(ctx context.Context, offset int64, whence int32) (in
 	case linux.SEEK_CUR:
 		offset += fd.off
 	default:
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 	if offset < 0 {
-		return 0, syserror.EINVAL
+		return 0, linuxerr.EINVAL
 	}
 
 	// If the offset isn't changing (e.g. due to lseek(0, SEEK_CUR)), don't

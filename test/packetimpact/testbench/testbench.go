@@ -31,8 +31,6 @@ var (
 	Native = false
 	// RPCKeepalive is the gRPC keepalive.
 	RPCKeepalive = 10 * time.Second
-	// RPCTimeout is the gRPC timeout.
-	RPCTimeout = 100 * time.Millisecond
 
 	// dutInfosJSON is the json string that describes information about all the
 	// duts available to use.
@@ -55,6 +53,21 @@ type DUTUname struct {
 	KernelRelease   string
 	KernelVersion   string
 	OperatingSystem string
+}
+
+// IsLinux returns true if the DUT is running Linux.
+func (n *DUTUname) IsLinux() bool {
+	return Native && n.OperatingSystem == "GNU/Linux"
+}
+
+// IsGvisor returns true if the DUT is running gVisor.
+func (*DUTUname) IsGvisor() bool {
+	return !Native
+}
+
+// IsFuchsia returns true if the DUT is running Fuchsia.
+func (n *DUTUname) IsFuchsia() bool {
+	return Native && n.OperatingSystem == "Fuchsia"
 }
 
 // DUTTestNet describes the test network setup on dut and how the testbench
@@ -94,12 +107,21 @@ type DUTTestNet struct {
 	POSIXServerPort uint16
 }
 
+// SubnetBroadcast returns the test network's subnet broadcast address.
+func (n *DUTTestNet) SubnetBroadcast() net.IP {
+	addr := append([]byte(nil), n.RemoteIPv4...)
+	mask := net.CIDRMask(n.IPv4PrefixLength, net.IPv4len*8)
+	for i := range addr {
+		addr[i] |= ^mask[i]
+	}
+	return addr
+}
+
 // registerFlags defines flags and associates them with the package-level
 // exported variables above. It should be called by tests in their init
 // functions.
 func registerFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&Native, "native", Native, "whether the test is running natively")
-	fs.DurationVar(&RPCTimeout, "rpc_timeout", RPCTimeout, "gRPC timeout")
 	fs.DurationVar(&RPCKeepalive, "rpc_keepalive", RPCKeepalive, "gRPC keepalive")
 	fs.StringVar(&dutInfosJSON, "dut_infos_json", dutInfosJSON, "json that describes the DUTs")
 }
@@ -107,6 +129,7 @@ func registerFlags(fs *flag.FlagSet) {
 // Initialize initializes the testbench, it parse the flags and sets up the
 // pool of test networks for testbench's later use.
 func Initialize(fs *flag.FlagSet) {
+	testing.Init()
 	registerFlags(fs)
 	flag.Parse()
 	if err := loadDUTInfos(); err != nil {

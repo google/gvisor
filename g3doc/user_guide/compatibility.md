@@ -42,6 +42,9 @@ Most common utilities work. Note that:
 
 *   Some tools, such as `tcpdump` and old versions of `ping`, require explicitly
     enabling raw sockets via the unsafe `--net-raw` runsc flag.
+    *   In case of tcpdump the following invocations will work
+        *   tcpdump -i any
+        *   tcpdump -i \<device-name\> -p (-p disables promiscuous mode)
 *   Different Docker images can behave differently. For example, Alpine Linux
     and Ubuntu have different `ip` binaries.
 
@@ -49,43 +52,44 @@ Most common utilities work. Note that:
 
 <!-- mdformat off(don't wrap the table) -->
 
-| Tool     | Status                                    |
-|:--------:|:-----------------------------------------:|
-| apt-get  | Working.                                  |
-| bundle   | Working.                                  |
-| cat      | Working.                                  |
-| curl     | Working.                                  |
-| dd       | Working.                                  |
-| df       | Working.                                  |
-| dig      | Working.                                  |
-| drill    | Working.                                  |
-| env      | Working.                                  |
-| find     | Working.                                  |
-| gdb      | Working.                                  |
-| gosu     | Working.                                  |
-| grep     | Working (unless stdin is a pipe and stdout is /dev/null). |
-| ifconfig | Works partially, like ip. Full support [in progress](https://gvisor.dev/issue/578). |
-| ip       | Some subcommands work (e.g. addr, route). Full support [in progress](https://gvisor.dev/issue/578). |
-| less     | Working.                                  |
-| ls       | Working.                                  |
-| lsof     | Working.                                  |
-| mount    | Works in readonly mode. gVisor doesn't currently support creating new mounts at runtime. |
-| nc       | Working.                                  |
-| nmap     | Not working.                              |
-| netstat  | [In progress](https://gvisor.dev/issue/2112). |
-| nslookup | Working.                                  |
-| ping     | Working.                                  |
-| ps       | Working.                                  |
-| route    | Working.                                  |
-| ss       | [In progress](https://gvisor.dev/issue/2114). |
-| sshd     | Partially working. Job control [in progress](https://gvisor.dev/issue/154). |
-| strace   | Working.                                  |
-| tar      | Working.                                  |
-| tcpdump  | [In progress](https://gvisor.dev/issue/173). |
-| top      | Working.                                  |
-| uptime   | Working.                                  |
-| vim      | Working.                                  |
-| wget     | Working.                                  |
+| Tool       | Status                                                                                              |
+| :--------: | :-----------------------------------------:                                                         |
+| apt-get    | Working.                                                                                            |
+| bundle     | Working.                                                                                            |
+| cat        | Working.                                                                                            |
+| curl       | Working.                                                                                            |
+| dd         | Working.                                                                                            |
+| df         | Working.                                                                                            |
+| dig        | Working.                                                                                            |
+| drill      | Working.                                                                                            |
+| env        | Working.                                                                                            |
+| find       | Working.                                                                                            |
+| gcore      | Working.                                                                                            |
+| gdb        | Working.                                                                                            |
+| gosu       | Working.                                                                                            |
+| grep       | Working (unless stdin is a pipe and stdout is /dev/null).                                           |
+| ifconfig   | Works partially, like ip. Full support [in progress](https://gvisor.dev/issue/578).                 |
+| ip         | Some subcommands work (e.g. addr, route). Full support [in progress](https://gvisor.dev/issue/578). |
+| less       | Working.                                                                                            |
+| ls         | Working.                                                                                            |
+| lsof       | Working.                                                                                            |
+| mount      | Works in readonly mode. gVisor doesn't currently support creating new mounts at runtime.            |
+| nc         | Working.                                                                                            |
+| nmap       | Not working.                                                                                        |
+| netstat    | [In progress](https://gvisor.dev/issue/2112).                                                       |
+| nslookup   | Working.                                                                                            |
+| ping       | Working.                                                                                            |
+| ps         | Working.                                                                                            |
+| route      | Working.                                                                                            |
+| ss         | [In progress](https://gvisor.dev/issue/2114).                                                       |
+| sshd       | Partially working. Job control [in progress](https://gvisor.dev/issue/154).                         |
+| strace     | Working.                                                                                            |
+| tar        | Working.                                                                                            |
+| tcpdump    | Working [only with libpcap versions < 1.10](https://github.com/google/gvisor/issues/6699), [Promiscuous mode in progress](https://gvisor.dev/issue/3333).                             |
+| top        | Working.                                                                                            |
+| uptime     | Working.                                                                                            |
+| vim        | Working.                                                                                            |
+| wget       | Working.                                                                                            |
 
 <!-- mdformat on -->
 

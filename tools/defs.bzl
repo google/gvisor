@@ -8,20 +8,19 @@ change for Google-internal and bazel-compatible rules.
 load("//tools/go_stateify:defs.bzl", "go_stateify")
 load("//tools/go_marshal:defs.bzl", "go_marshal", "marshal_deps", "marshal_test_deps")
 load("//tools/nogo:defs.bzl", "nogo_test")
-load("//tools/bazeldefs:defs.bzl", _arch_genrule = "arch_genrule", _build_test = "build_test", _bzl_library = "bzl_library", _coreutil = "coreutil", _default_installer = "default_installer", _default_net_util = "default_net_util", _more_shards = "more_shards", _most_shards = "most_shards", _proto_library = "proto_library", _select_arch = "select_arch", _select_system = "select_system", _short_path = "short_path", _version = "version")
-load("//tools/bazeldefs:cc.bzl", _cc_binary = "cc_binary", _cc_flags_supplier = "cc_flags_supplier", _cc_grpc_library = "cc_grpc_library", _cc_library = "cc_library", _cc_proto_library = "cc_proto_library", _cc_test = "cc_test", _cc_toolchain = "cc_toolchain", _gbenchmark = "gbenchmark", _grpcpp = "grpcpp", _gtest = "gtest", _vdso_linker_option = "vdso_linker_option")
-load("//tools/bazeldefs:go.bzl", _gazelle = "gazelle", _go_binary = "go_binary", _go_embed_data = "go_embed_data", _go_grpc_and_proto_libraries = "go_grpc_and_proto_libraries", _go_library = "go_library", _go_path = "go_path", _go_proto_library = "go_proto_library", _go_rule = "go_rule", _go_test = "go_test", _select_goarch = "select_goarch", _select_goos = "select_goos")
+load("//tools/bazeldefs:defs.bzl", _BuildSettingInfo = "BuildSettingInfo", _bool_flag = "bool_flag", _bpf_program = "bpf_program", _build_test = "build_test", _bzl_library = "bzl_library", _coreutil = "coreutil", _default_net_util = "default_net_util", _more_shards = "more_shards", _most_shards = "most_shards", _proto_library = "proto_library", _select_system = "select_system", _short_path = "short_path", _version = "version")
+load("//tools/bazeldefs:cc.bzl", _cc_binary = "cc_binary", _cc_flags_supplier = "cc_flags_supplier", _cc_grpc_library = "cc_grpc_library", _cc_library = "cc_library", _cc_proto_library = "cc_proto_library", _cc_test = "cc_test", _cc_toolchain = "cc_toolchain", _gbenchmark = "gbenchmark", _gbenchmark_internal = "gbenchmark_internal", _grpcpp = "grpcpp", _gtest = "gtest", _vdso_linker_option = "vdso_linker_option")
+load("//tools/bazeldefs:go.bzl", _gazelle = "gazelle", _go_binary = "go_binary", _go_grpc_and_proto_libraries = "go_grpc_and_proto_libraries", _go_library = "go_library", _go_path = "go_path", _go_proto_library = "go_proto_library", _go_test = "go_test", _gotsan_flag_values = "gotsan_flag_values", _gotsan_values = "gotsan_values", _select_goarch = "select_goarch", _select_goos = "select_goos")
 load("//tools/bazeldefs:pkg.bzl", _pkg_deb = "pkg_deb", _pkg_tar = "pkg_tar")
-load("//tools/bazeldefs:platforms.bzl", _default_platform = "default_platform", _platforms = "platforms")
+load("//tools/bazeldefs:platforms.bzl", _default_platform = "default_platform", _platform_capabilities = "platform_capabilities", _platforms = "platforms")
 load("//tools/bazeldefs:tags.bzl", "go_suffixes")
 
 # Core rules.
-arch_genrule = _arch_genrule
 build_test = _build_test
 bzl_library = _bzl_library
-default_installer = _default_installer
+bool_flag = _bool_flag
+BuildSettingInfo = _BuildSettingInfo
 default_net_util = _default_net_util
-select_arch = _select_arch
 select_system = _select_system
 short_path = _short_path
 coreutil = _coreutil
@@ -37,6 +36,7 @@ cc_library = _cc_library
 cc_test = _cc_test
 cc_toolchain = _cc_toolchain
 gbenchmark = _gbenchmark
+gbenchmark_internal = _gbenchmark_internal
 gtest = _gtest
 grpcpp = _grpcpp
 vdso_linker_option = _vdso_linker_option
@@ -46,7 +46,12 @@ gazelle = _gazelle
 go_path = _go_path
 select_goos = _select_goos
 select_goarch = _select_goarch
-go_embed_data = _go_embed_data
+go_proto_library = _go_proto_library
+gotsan_values = _gotsan_values
+gotsan_flag_values = _gotsan_flag_values
+
+# BPF rules.
+bpf_program = _bpf_program
 
 # Packaging rules.
 pkg_deb = _pkg_deb
@@ -55,35 +60,7 @@ pkg_tar = _pkg_tar
 # Platform options.
 default_platform = _default_platform
 platforms = _platforms
-
-def _go_add_tags(ctx):
-    """ Adds tags to the given source file. """
-    output = ctx.outputs.out
-    runner = ctx.actions.declare_file(ctx.label.name + ".sh")
-    lines = ["#!/bin/bash"]
-    lines += ["echo '// +build %s' >> %s" % (tag, output.path) for tag in ctx.attr.go_tags]
-    lines.append("echo '' >> %s" % output.path)
-    lines += ["cat %s >> %s" % (f.path, output.path) for f in ctx.files.src]
-    lines.append("")
-    ctx.actions.write(runner, "\n".join(lines), is_executable = True)
-    ctx.actions.run(
-        inputs = ctx.files.src,
-        outputs = [output],
-        executable = runner,
-    )
-    return [DefaultInfo(
-        files = depset([output]),
-    )]
-
-go_add_tags = _go_rule(
-    rule,
-    implementation = _go_add_tags,
-    attrs = {
-        "go_tags": attr.string_list(doc = "Go build tags to be added.", mandatory = True),
-        "src": attr.label(doc = "Source file.", allow_single_file = True, mandatory = True),
-        "out": attr.output(doc = "Output file.", mandatory = True),
-    },
-)
+platform_capabilities = _platform_capabilities
 
 def go_binary(name, nogo = True, pure = False, static = False, x_defs = None, **kwargs):
     """Wraps the standard go_binary.
@@ -112,6 +89,7 @@ def go_binary(name, nogo = True, pure = False, static = False, x_defs = None, **
             name = name + "_nogo_library",
             srcs = kwargs.get("srcs", []),
             deps = kwargs.get("deps", []),
+            embedsrcs = kwargs.get("embedsrcs", []),
             testonly = 1,
         )
         nogo_test(

@@ -14,3 +14,13 @@
 
 // Package bits includes all bit related types and operations.
 package bits
+
+// AlignUp rounds a length up to an alignment. align must be a power of 2.
+func AlignUp(length int, align uint) int {
+	return (length + int(align) - 1) & ^(int(align) - 1)
+}
+
+// AlignDown rounds a length down to an alignment. align must be a power of 2.
+func AlignDown(length int, align uint) int {
+	return length & ^(int(align) - 1)
+}

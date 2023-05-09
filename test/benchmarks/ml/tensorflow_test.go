@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -23,6 +23,15 @@ import (
 	"gvisor.dev/gvisor/test/benchmarks/tools"
 )
 
+func BenchmarkTensorflowDashboard(b *testing.B) {
+	workloads := map[string]string{
+		"ConvolutionalNetwork": "3_NeuralNetworks/convolutional_network.py",
+		"LogisticRegression":   "2_BasicModels/logistic_regression.py",
+		"NeuralNetwork":        "3_NeuralNetworks/neural_network.py",
+	}
+	doTensorflowTest(b, workloads)
+}
+
 // BenchmarkTensorflow runs workloads from a TensorFlow tutorial.
 // See: https://github.com/aymericdamien/TensorFlow-Examples
 func BenchmarkTensorflow(b *testing.B) {
@@ -36,20 +45,23 @@ func BenchmarkTensorflow(b *testing.B) {
 		"MultilayerPerceptron": "3_NeuralNetworks/multilayer_perceptron.py",
 		"NeuralNetwork":        "3_NeuralNetworks/neural_network.py",
 	}
+	doTensorflowTest(b, workloads)
+}
 
+func doTensorflowTest(b *testing.B, workloads map[string]string) {
 	machine, err := harness.GetMachine()
 	if err != nil {
 		b.Fatalf("failed to get machine: %v", err)
 	}
 	defer machine.CleanUp()
 
-	for name, workload := range workloads {
+	for name, file := range workloads {
 		runName, err := tools.ParametersToName(tools.Parameter{
 			Name:  "operation",
 			Value: name,
 		})
 		if err != nil {
-			b.Fatalf("Faile to parse param: %v", err)
+			b.Fatalf("Failed to parse param: %v", err)
 		}
 
 		b.Run(runName, func(b *testing.B) {
@@ -71,8 +83,8 @@ func BenchmarkTensorflow(b *testing.B) {
 					Image:   "benchmarks/tensorflow",
 					Env:     []string{"PYTHONPATH=$PYTHONPATH:/TensorFlow-Examples/examples"},
 					WorkDir: "/TensorFlow-Examples/examples",
-				}, "python", workload); err != nil {
-					b.Fatalf("failed to run container: %v logs: %s", err, out)
+				}, "python", file); err != nil {
+					b.Errorf("failed to run container: %v logs: %s", err, out)
 				}
 				b.StopTimer()
 			}

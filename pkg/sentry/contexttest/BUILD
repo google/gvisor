@@ -1,6 +1,9 @@
 load("//tools:defs.bzl", "go_library")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_library(
     name = "contexttest",
@@ -8,6 +11,7 @@ go_library(
     srcs = ["contexttest.go"],
     visibility = ["//pkg/sentry:internal"],
     deps = [
+        "//pkg/atomicbitops",
         "//pkg/context",
         "//pkg/memutil",
         "//pkg/sentry/kernel/auth",

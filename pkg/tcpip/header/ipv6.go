@@ -537,26 +537,26 @@ type IPv6MulticastScope uint8
 
 // The various values for IPv6 multicast scopes, as per RFC 7346 section 2:
 //
-//      +------+--------------------------+-------------------------+
-//      | scop | NAME                     | REFERENCE               |
-//      +------+--------------------------+-------------------------+
-//      |  0   | Reserved                 | [RFC4291], RFC 7346     |
-//      |  1   | Interface-Local scope    | [RFC4291], RFC 7346     |
-//      |  2   | Link-Local scope         | [RFC4291], RFC 7346     |
-//      |  3   | Realm-Local scope        | [RFC4291], RFC 7346     |
-//      |  4   | Admin-Local scope        | [RFC4291], RFC 7346     |
-//      |  5   | Site-Local scope         | [RFC4291], RFC 7346     |
-//      |  6   | Unassigned               |                         |
-//      |  7   | Unassigned               |                         |
-//      |  8   | Organization-Local scope | [RFC4291], RFC 7346     |
-//      |  9   | Unassigned               |                         |
-//      |  A   | Unassigned               |                         |
-//      |  B   | Unassigned               |                         |
-//      |  C   | Unassigned               |                         |
-//      |  D   | Unassigned               |                         |
-//      |  E   | Global scope             | [RFC4291], RFC 7346     |
-//      |  F   | Reserved                 | [RFC4291], RFC 7346     |
-//      +------+--------------------------+-------------------------+
+//	+------+--------------------------+-------------------------+
+//	| scop | NAME                     | REFERENCE               |
+//	+------+--------------------------+-------------------------+
+//	|  0   | Reserved                 | [RFC4291], RFC 7346     |
+//	|  1   | Interface-Local scope    | [RFC4291], RFC 7346     |
+//	|  2   | Link-Local scope         | [RFC4291], RFC 7346     |
+//	|  3   | Realm-Local scope        | [RFC4291], RFC 7346     |
+//	|  4   | Admin-Local scope        | [RFC4291], RFC 7346     |
+//	|  5   | Site-Local scope         | [RFC4291], RFC 7346     |
+//	|  6   | Unassigned               |                         |
+//	|  7   | Unassigned               |                         |
+//	|  8   | Organization-Local scope | [RFC4291], RFC 7346     |
+//	|  9   | Unassigned               |                         |
+//	|  A   | Unassigned               |                         |
+//	|  B   | Unassigned               |                         |
+//	|  C   | Unassigned               |                         |
+//	|  D   | Unassigned               |                         |
+//	|  E   | Global scope             | [RFC4291], RFC 7346     |
+//	|  F   | Reserved                 | [RFC4291], RFC 7346     |
+//	+------+--------------------------+-------------------------+
 const (
 	IPv6Reserved0MulticastScope         = IPv6MulticastScope(0x0)
 	IPv6InterfaceLocalMulticastScope    = IPv6MulticastScope(0x1)

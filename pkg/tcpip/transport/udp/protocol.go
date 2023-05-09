@@ -17,7 +17,6 @@ package udp
 
 import (
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/header/parse"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -71,21 +70,30 @@ func (*protocol) MinimumPacketSize() int {
 
 // ParsePorts returns the source and destination ports stored in the given udp
 // packet.
-func (*protocol) ParsePorts(v buffer.View) (src, dst uint16, err tcpip.Error) {
+func (*protocol) ParsePorts(v []byte) (src, dst uint16, err tcpip.Error) {
 	h := header.UDP(v)
 	return h.SourcePort(), h.DestinationPort(), nil
 }
 
 // HandleUnknownDestinationPacket handles packets that are targeted at this
 // protocol but don't match any existing endpoint.
-func (p *protocol) HandleUnknownDestinationPacket(id stack.TransportEndpointID, pkt *stack.PacketBuffer) stack.UnknownDestinationPacketDisposition {
-	hdr := header.UDP(pkt.TransportHeader().View())
-	if int(hdr.Length()) > pkt.Data().Size()+header.UDPMinimumSize {
+func (p *protocol) HandleUnknownDestinationPacket(id stack.TransportEndpointID, pkt stack.PacketBufferPtr) stack.UnknownDestinationPacketDisposition {
+	hdr := header.UDP(pkt.TransportHeader().Slice())
+	netHdr := pkt.Network()
+	lengthValid, csumValid := header.UDPValid(
+		hdr,
+		func() uint16 { return pkt.Data().Checksum() },
+		uint16(pkt.Data().Size()),
+		pkt.NetworkProtocolNumber,
+		netHdr.SourceAddress(),
+		netHdr.DestinationAddress(),
+		pkt.RXChecksumValidated)
+	if !lengthValid {
 		p.stack.Stats().UDP.MalformedPacketsReceived.Increment()
 		return stack.UnknownDestinationPacketMalformed
 	}
 
-	if !verifyChecksum(hdr, pkt) {
+	if !csumValid {
 		p.stack.Stats().UDP.ChecksumErrors.Increment()
 		return stack.UnknownDestinationPacketMalformed
 	}
@@ -109,8 +117,14 @@ func (*protocol) Close() {}
 // Wait implements stack.TransportProtocol.Wait.
 func (*protocol) Wait() {}
 
+// Pause implements stack.TransportProtocol.Pause.
+func (*protocol) Pause() {}
+
+// Resume implements stack.TransportProtocol.Resume.
+func (*protocol) Resume() {}
+
 // Parse implements stack.TransportProtocol.Parse.
-func (*protocol) Parse(pkt *stack.PacketBuffer) bool {
+func (*protocol) Parse(pkt stack.PacketBufferPtr) bool {
 	return parse.UDP(pkt)
 }
 

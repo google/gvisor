@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build arm64
 // +build arm64
 
 package strace
@@ -60,7 +61,7 @@ var linuxARM64 = SyscallMap{
 	33:  makeSyscallInfo("mknodat", FD, Path, Mode, Hex),
 	34:  makeSyscallInfo("mkdirat", FD, Path, Hex),
 	35:  makeSyscallInfo("unlinkat", FD, Path, Hex),
-	36:  makeSyscallInfo("symlinkat", Path, Hex, Path),
+	36:  makeSyscallInfo("symlinkat", Path, FD, Path),
 	37:  makeSyscallInfo("linkat", FD, Path, Hex, Path, Hex),
 	38:  makeSyscallInfo("renameat", FD, Path, Hex, Path),
 	39:  makeSyscallInfo("umount2", Path, Hex),
@@ -246,7 +247,7 @@ var linuxARM64 = SyscallMap{
 	219: makeSyscallInfo("keyctl", Hex, Hex, Hex, Hex, Hex),
 	220: makeSyscallInfo("clone", CloneFlags, Hex, Hex, Hex, Hex),
 	221: makeSyscallInfo("execve", Path, ExecveStringVector, ExecveStringVector),
-	222: makeSyscallInfo("mmap", Hex, Hex, Hex, Hex, FD, Hex),
+	222: makeSyscallInfo("mmap", Hex, Hex, MmapProt, MmapFlags, FD, Hex),
 	223: makeSyscallInfo("fadvise64", FD, Hex, Hex, Hex),
 	224: makeSyscallInfo("swapon", Hex, Hex),
 	225: makeSyscallInfo("swapoff", Hex),
@@ -312,6 +313,8 @@ var linuxARM64 = SyscallMap{
 	433: makeSyscallInfo("fspick", FD, Path, Hex),
 	434: makeSyscallInfo("pidfd_open", Hex, Hex),
 	435: makeSyscallInfo("clone3", Hex, Hex),
+	436: makeSyscallInfo("close_range", FD, FD, CloseRangeFlags),
+	441: makeSyscallInfo("epoll_pwait2", FD, EpollEvents, Hex, Timespec, SigSet),
 }
 
 func init() {

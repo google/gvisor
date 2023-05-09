@@ -18,8 +18,8 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/binary"
-	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/marshal"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -47,12 +47,11 @@ func (tcpMarshaler) marshal(mr matcher) []byte {
 		DestinationPortStart: matcher.destinationPortStart,
 		DestinationPortEnd:   matcher.destinationPortEnd,
 	}
-	buf := make([]byte, 0, linux.SizeOfXTTCP)
-	return marshalEntryMatch(matcherNameTCP, binary.Marshal(buf, hostarch.ByteOrder, xttcp))
+	return marshalEntryMatch(matcherNameTCP, marshal.Marshal(&xttcp))
 }
 
 // unmarshal implements matchMaker.unmarshal.
-func (tcpMarshaler) unmarshal(buf []byte, filter stack.IPHeaderFilter) (stack.Matcher, error) {
+func (tcpMarshaler) unmarshal(_ *kernel.Task, buf []byte, filter stack.IPHeaderFilter) (stack.Matcher, error) {
 	if len(buf) < linux.SizeOfXTTCP {
 		return nil, fmt.Errorf("buf has insufficient size for TCP match: %d", len(buf))
 	}
@@ -60,7 +59,7 @@ func (tcpMarshaler) unmarshal(buf []byte, filter stack.IPHeaderFilter) (stack.Ma
 	// For alignment reasons, the match's total size may
 	// exceed what's strictly necessary to hold matchData.
 	var matchData linux.XTTCP
-	binary.Unmarshal(buf[:linux.SizeOfXTTCP], hostarch.ByteOrder, &matchData)
+	matchData.UnmarshalUnsafe(buf)
 	nflog("parseMatchers: parsed XTTCP: %+v", matchData)
 
 	if matchData.Option != 0 ||
@@ -96,12 +95,10 @@ func (*TCPMatcher) name() string {
 }
 
 // Match implements Matcher.Match.
-func (tm *TCPMatcher) Match(hook stack.Hook, pkt *stack.PacketBuffer, _, _ string) (bool, bool) {
-	// TODO(gvisor.dev/issue/170): Proto checks should ultimately be moved
-	// into the stack.Check codepath as matchers are added.
+func (tm *TCPMatcher) Match(hook stack.Hook, pkt stack.PacketBufferPtr, _, _ string) (bool, bool) {
 	switch pkt.NetworkProtocolNumber {
 	case header.IPv4ProtocolNumber:
-		netHeader := header.IPv4(pkt.NetworkHeader().View())
+		netHeader := header.IPv4(pkt.NetworkHeader().Slice())
 		if netHeader.TransportProtocol() != header.TCPProtocolNumber {
 			return false, false
 		}
@@ -118,7 +115,7 @@ func (tm *TCPMatcher) Match(hook stack.Hook, pkt *stack.PacketBuffer, _, _ strin
 		// As in Linux, we do not perform an IPv6 fragment check. See
 		// xt_action_param.fragoff in
 		// include/linux/netfilter/x_tables.h.
-		if header.IPv6(pkt.NetworkHeader().View()).TransportProtocol() != header.TCPProtocolNumber {
+		if header.IPv6(pkt.NetworkHeader().Slice()).TransportProtocol() != header.TCPProtocolNumber {
 			return false, false
 		}
 
@@ -127,7 +124,7 @@ func (tm *TCPMatcher) Match(hook stack.Hook, pkt *stack.PacketBuffer, _, _ strin
 		return false, false
 	}
 
-	tcpHeader := header.TCP(pkt.TransportHeader().View())
+	tcpHeader := header.TCP(pkt.TransportHeader().Slice())
 	if len(tcpHeader) < header.TCPMinimumSize {
 		// There's no valid TCP header here, so we drop the packet immediately.
 		return false, true

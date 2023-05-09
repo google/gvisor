@@ -23,13 +23,13 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/testutil"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -47,18 +47,20 @@ var (
 
 var (
 	tasksStaticFiles = map[string]testutil.DirentType{
-		"cpuinfo":     linux.DT_REG,
-		"filesystems": linux.DT_REG,
-		"loadavg":     linux.DT_REG,
-		"meminfo":     linux.DT_REG,
-		"mounts":      linux.DT_LNK,
-		"net":         linux.DT_LNK,
-		"self":        linux.DT_LNK,
-		"stat":        linux.DT_REG,
-		"sys":         linux.DT_DIR,
-		"thread-self": linux.DT_LNK,
-		"uptime":      linux.DT_REG,
-		"version":     linux.DT_REG,
+		"cmdline":        linux.DT_REG,
+		"cpuinfo":        linux.DT_REG,
+		"filesystems":    linux.DT_REG,
+		"loadavg":        linux.DT_REG,
+		"meminfo":        linux.DT_REG,
+		"mounts":         linux.DT_LNK,
+		"net":            linux.DT_LNK,
+		"self":           linux.DT_LNK,
+		"sentry-meminfo": linux.DT_REG,
+		"stat":           linux.DT_REG,
+		"sys":            linux.DT_DIR,
+		"thread-self":    linux.DT_LNK,
+		"uptime":         linux.DT_REG,
+		"version":        linux.DT_REG,
 	}
 	tasksStaticFilesNextOffs = map[string]int64{
 		"self":        selfLink.NextOff,
@@ -76,6 +78,7 @@ var (
 		"fdinfo":        linux.DT_DIR,
 		"gid_map":       linux.DT_REG,
 		"io":            linux.DT_REG,
+		"limits":        linux.DT_REG,
 		"maps":          linux.DT_REG,
 		"mem":           linux.DT_REG,
 		"mountinfo":     linux.DT_REG,
@@ -84,6 +87,7 @@ var (
 		"ns":            linux.DT_DIR,
 		"oom_score":     linux.DT_REG,
 		"oom_score_adj": linux.DT_REG,
+		"root":          linux.DT_LNK,
 		"smaps":         linux.DT_REG,
 		"stat":          linux.DT_REG,
 		"statm":         linux.DT_REG,
@@ -164,7 +168,7 @@ func TestTasks(t *testing.T) {
 	k := kernel.KernelFromContext(s.Ctx)
 	var tasks []*kernel.Task
 	for i := 0; i < 5; i++ {
-		tc := k.NewThreadGroup(nil, k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, k.GlobalInit().Limits())
+		tc := k.NewThreadGroup(k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, k.GlobalInit().Limits())
 		task, err := testutil.CreateTask(s.Ctx, fmt.Sprintf("name-%d", i), tc, s.MntNs, s.Root, s.Root)
 		if err != nil {
 			t.Fatalf("CreateTask(): %v", err)
@@ -226,7 +230,7 @@ func TestTasks(t *testing.T) {
 		defer fd.DecRef(s.Ctx)
 		buf := make([]byte, 1)
 		bufIOSeq := usermem.BytesIOSequence(buf)
-		if _, err := fd.Read(s.Ctx, bufIOSeq, vfs.ReadOptions{}); err != syserror.EISDIR {
+		if _, err := fd.Read(s.Ctx, bufIOSeq, vfs.ReadOptions{}); !linuxerr.Equals(linuxerr.EISDIR, err) {
 			t.Errorf("wrong error reading directory: %v", err)
 		}
 	}
@@ -236,7 +240,7 @@ func TestTasks(t *testing.T) {
 		s.Creds,
 		s.PathOpAtRoot("/proc/9999"),
 		&vfs.OpenOptions{},
-	); err != syserror.ENOENT {
+	); !linuxerr.Equals(linuxerr.ENOENT, err) {
 		t.Fatalf("wrong error from vfsfs.OpenAt(/proc/9999): %v", err)
 	}
 }
@@ -247,7 +251,7 @@ func TestTasksOffset(t *testing.T) {
 
 	k := kernel.KernelFromContext(s.Ctx)
 	for i := 0; i < 3; i++ {
-		tc := k.NewThreadGroup(nil, k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, k.GlobalInit().Limits())
+		tc := k.NewThreadGroup(k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, k.GlobalInit().Limits())
 		if _, err := testutil.CreateTask(s.Ctx, fmt.Sprintf("name-%d", i), tc, s.MntNs, s.Root, s.Root); err != nil {
 			t.Fatalf("CreateTask(): %v", err)
 		}
@@ -372,7 +376,7 @@ func TestTask(t *testing.T) {
 	defer s.Destroy()
 
 	k := kernel.KernelFromContext(s.Ctx)
-	tc := k.NewThreadGroup(nil, k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, k.GlobalInit().Limits())
+	tc := k.NewThreadGroup(k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, k.GlobalInit().Limits())
 	_, err := testutil.CreateTask(s.Ctx, "name", tc, s.MntNs, s.Root, s.Root)
 	if err != nil {
 		t.Fatalf("CreateTask(): %v", err)
@@ -387,7 +391,7 @@ func TestProcSelf(t *testing.T) {
 	defer s.Destroy()
 
 	k := kernel.KernelFromContext(s.Ctx)
-	tc := k.NewThreadGroup(nil, k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, k.GlobalInit().Limits())
+	tc := k.NewThreadGroup(k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, k.GlobalInit().Limits())
 	task, err := testutil.CreateTask(s.Ctx, "name", tc, s.MntNs, s.Root, s.Root)
 	if err != nil {
 		t.Fatalf("CreateTask(): %v", err)
@@ -485,13 +489,13 @@ func TestTree(t *testing.T) {
 
 	var tasks []*kernel.Task
 	for i := 0; i < 5; i++ {
-		tc := k.NewThreadGroup(nil, k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, k.GlobalInit().Limits())
+		tc := k.NewThreadGroup(k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, k.GlobalInit().Limits())
 		task, err := testutil.CreateTask(s.Ctx, fmt.Sprintf("name-%d", i), tc, s.MntNs, s.Root, s.Root)
 		if err != nil {
 			t.Fatalf("CreateTask(): %v", err)
 		}
 		// Add file to populate /proc/[pid]/fd and fdinfo directories.
-		task.FDTable().NewFDVFS2(task.AsyncContext(), 0, file, kernel.FDFlags{})
+		task.FDTable().NewFD(task.AsyncContext(), 0, file, kernel.FDFlags{})
 		tasks = append(tasks, task)
 	}
 

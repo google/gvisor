@@ -29,57 +29,19 @@
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
-#include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
 namespace gvisor {
 namespace testing {
 
-constexpr char kRangeFile[] = "/proc/sys/net/ipv4/ip_local_port_range";
-
-PosixErrorOr<int> NumPorts() {
-  int min = 0;
-  int max = 1 << 16;
-
-  // Read the ephemeral range from /proc.
-  ASSIGN_OR_RETURN_ERRNO(std::string rangefile, GetContents(kRangeFile));
-  const std::string err_msg =
-      absl::StrFormat("%s has invalid content: %s", kRangeFile, rangefile);
-  if (rangefile.back() != '\n') {
-    return PosixError(EINVAL, err_msg);
-  }
-  rangefile.pop_back();
-  std::vector<std::string> range =
-      absl::StrSplit(rangefile, absl::ByAnyChar("\t "));
-  if (range.size() < 2 || !absl::SimpleAtoi(range.front(), &min) ||
-      !absl::SimpleAtoi(range.back(), &max)) {
-    return PosixError(EINVAL, err_msg);
-  }
-
-  // If we can open as writable, limit the range.
-  if (!access(kRangeFile, W_OK)) {
-    ASSIGN_OR_RETURN_ERRNO(FileDescriptor fd,
-                           Open(kRangeFile, O_WRONLY | O_TRUNC, 0));
-    max = min + 50;
-    const std::string small_range = absl::StrFormat("%d %d", min, max);
-    int n = write(fd.get(), small_range.c_str(), small_range.size());
-    if (n < 0) {
-      return PosixError(
-          errno,
-          absl::StrFormat("write(%d [%s], \"%s\", %d)", fd.get(), kRangeFile,
-                          small_range.c_str(), small_range.size()));
-    }
-  }
-  return max - min;
-}
-
 // Test fixture for tests that apply to pairs of connected sockets.
 using ConnectStressTest = SocketPairTest;
 
 TEST_P(ConnectStressTest, Reset) {
-  const int nports = ASSERT_NO_ERRNO_AND_VALUE(NumPorts());
+  const int nports = ASSERT_NO_ERRNO_AND_VALUE(MaybeLimitEphemeralPorts());
   for (int i = 0; i < nports * 2; i++) {
     const std::unique_ptr<SocketPair> sockets =
         ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
@@ -103,7 +65,7 @@ TEST_P(ConnectStressTest, Reset) {
 // Tests that opening too many connections -- without closing them -- does lead
 // to port exhaustion.
 TEST_P(ConnectStressTest, TooManyOpen) {
-  const int nports = ASSERT_NO_ERRNO_AND_VALUE(NumPorts());
+  const int nports = ASSERT_NO_ERRNO_AND_VALUE(MaybeLimitEphemeralPorts());
   int err_num = 0;
   std::vector<std::unique_ptr<SocketPair>> sockets =
       std::vector<std::unique_ptr<SocketPair>>(nports);
@@ -164,7 +126,7 @@ class PersistentListenerConnectStressTest : public SocketPairTest {
 };
 
 TEST_P(PersistentListenerConnectStressTest, ShutdownCloseFirst) {
-  const int nports = ASSERT_NO_ERRNO_AND_VALUE(NumPorts());
+  const int nports = ASSERT_NO_ERRNO_AND_VALUE(MaybeLimitEphemeralPorts());
   for (int i = 0; i < nports * 2; i++) {
     std::unique_ptr<SocketPair> sockets =
         ASSERT_NO_ERRNO_AND_VALUE(NewSocketSleep());
@@ -185,7 +147,7 @@ TEST_P(PersistentListenerConnectStressTest, ShutdownCloseFirst) {
 }
 
 TEST_P(PersistentListenerConnectStressTest, ShutdownCloseSecond) {
-  const int nports = ASSERT_NO_ERRNO_AND_VALUE(NumPorts());
+  const int nports = ASSERT_NO_ERRNO_AND_VALUE(MaybeLimitEphemeralPorts());
   for (int i = 0; i < nports * 2; i++) {
     const std::unique_ptr<SocketPair> sockets =
         ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
@@ -206,7 +168,7 @@ TEST_P(PersistentListenerConnectStressTest, ShutdownCloseSecond) {
 }
 
 TEST_P(PersistentListenerConnectStressTest, Close) {
-  const int nports = ASSERT_NO_ERRNO_AND_VALUE(NumPorts());
+  const int nports = ASSERT_NO_ERRNO_AND_VALUE(MaybeLimitEphemeralPorts());
   for (int i = 0; i < nports * 2; i++) {
     std::unique_ptr<SocketPair> sockets =
         ASSERT_NO_ERRNO_AND_VALUE(NewSocketSleep());
@@ -231,9 +193,6 @@ INSTANTIATE_TEST_SUITE_P(
 using DataTransferStressTest = SocketPairTest;
 
 TEST_P(DataTransferStressTest, BigDataTransfer) {
-  // TODO(b/165912341): These are too slow on KVM platform with nested virt.
-  SKIP_IF(GvisorPlatform() == Platform::kKVM);
-
   const std::unique_ptr<SocketPair> sockets =
       ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
   int client_fd = sockets->first_fd();
@@ -247,7 +206,7 @@ TEST_P(DataTransferStressTest, BigDataTransfer) {
       if (r == 0) {
         break;
       }
-      for (size_t i = 0; i < r;) {
+      for (ssize_t i = 0; i < r;) {
         ssize_t w = write(server_fd, buf.data() + i, r - i);
         ASSERT_GE(w, 0);
         i += w;
@@ -256,9 +215,12 @@ TEST_P(DataTransferStressTest, BigDataTransfer) {
     ASSERT_THAT(shutdown(server_fd, SHUT_WR), SyscallSucceeds());
   });
 
+  // Tests can be prohibitively slow on the KVM platform with nested virt.
+  const int kShift = GvisorPlatform() == Platform::kKVM ? 10 : 20;
+
   const std::string chunk = "Though this upload be but little, it is fierce.";
   std::string big_string;
-  while (big_string.size() < 31 << 20) {
+  while (big_string.size() < size_t(31 << kShift)) {
     big_string += chunk;
   }
   absl::string_view data = big_string;
@@ -274,12 +236,12 @@ TEST_P(DataTransferStressTest, BigDataTransfer) {
   });
 
   std::string buf;
-  buf.resize(1 << 20);
+  buf.resize(1 << kShift);
   while (!data.empty()) {
     ssize_t n = read(client_fd, buf.data(), buf.size());
     ASSERT_GE(n, 0);
-    for (size_t i = 0; i < n; i += chunk.size()) {
-      size_t c = std::min(chunk.size(), n - i);
+    for (ssize_t i = 0; i < n; i += chunk.size()) {
+      ssize_t c = std::min(ssize_t(chunk.size()), n - i);
       ASSERT_EQ(buf.substr(i, c), data.substr(i, c)) << "offset " << i;
     }
     data = data.substr(n);

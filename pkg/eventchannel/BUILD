@@ -1,24 +1,27 @@
 load("//tools:defs.bzl", "go_library", "go_test", "proto_library")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_library(
     name = "eventchannel",
     srcs = [
         "event.go",
-        "event_any.go",
+        "processor.go",
         "rate.go",
     ],
     visibility = ["//:sandbox"],
     deps = [
         ":eventchannel_go_proto",
+        "//pkg/errors/linuxerr",
         "//pkg/log",
         "//pkg/sync",
         "//pkg/unet",
         "@org_golang_google_protobuf//encoding/prototext:go_default_library",
         "@org_golang_google_protobuf//proto:go_default_library",
         "@org_golang_google_protobuf//types/known/anypb:go_default_library",
-        "@org_golang_x_sys//unix:go_default_library",
         "@org_golang_x_time//rate:go_default_library",
     ],
 )

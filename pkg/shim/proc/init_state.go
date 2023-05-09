@@ -19,16 +19,39 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/containerd/console"
 	"github.com/containerd/containerd/errdefs"
 	"github.com/containerd/containerd/pkg/process"
+	runc "github.com/containerd/go-runc"
+	"golang.org/x/sys/unix"
 )
 
+type stateTransition int
+
+const (
+	running stateTransition = iota
+	stopped
+	deleted
+)
+
+func (s stateTransition) String() string {
+	switch s {
+	case running:
+		return "running"
+	case stopped:
+		return "stopped"
+	case deleted:
+		return "deleted"
+	default:
+		panic(fmt.Sprintf("unknown state: %d", s))
+	}
+}
+
 type initState interface {
-	Resize(console.WinSize) error
 	Start(context.Context) error
 	Delete(context.Context) error
 	Exec(context.Context, string, *ExecConfig) (process.Process, error)
+	State(ctx context.Context) (string, error)
+	Stats(context.Context, string) (*runc.Stats, error)
 	Kill(context.Context, uint32, bool) error
 	SetExited(int)
 }
@@ -37,22 +60,21 @@ type createdState struct {
 	p *Init
 }
 
-func (s *createdState) transition(name string) error {
-	switch name {
-	case "running":
-		s.p.initState = &runningState{p: s.p}
-	case "stopped":
-		s.p.initState = &stoppedState{p: s.p}
-	case "deleted":
-		s.p.initState = &deletedState{}
-	default:
-		return fmt.Errorf("invalid state transition %q to %q", stateName(s), name)
-	}
-	return nil
+func (s *createdState) name() string {
+	return "created"
 }
 
-func (s *createdState) Resize(ws console.WinSize) error {
-	return s.p.resize(ws)
+func (s *createdState) transition(transition stateTransition) {
+	switch transition {
+	case running:
+		s.p.initState = &runningState{p: s.p}
+	case stopped:
+		s.p.initState = &stoppedState{process: s.p}
+	case deleted:
+		s.p.initState = &deletedState{}
+	default:
+		panic(fmt.Sprintf("invalid state transition %q to %q", s.name(), transition))
+	}
 }
 
 func (s *createdState) Start(ctx context.Context) error {
@@ -66,20 +88,20 @@ func (s *createdState) Start(ctx context.Context) error {
 		if !s.p.Sandbox {
 			s.p.io.Close()
 			s.p.setExited(internalErrorCode)
-			if err := s.transition("stopped"); err != nil {
-				panic(err)
-			}
+			s.transition(stopped)
 		}
 		return err
 	}
-	return s.transition("running")
+	s.transition(running)
+	return nil
 }
 
 func (s *createdState) Delete(ctx context.Context) error {
 	if err := s.p.delete(ctx); err != nil {
 		return err
 	}
-	return s.transition("deleted")
+	s.transition(deleted)
+	return nil
 }
 
 func (s *createdState) Kill(ctx context.Context, sig uint32, all bool) error {
@@ -88,40 +110,48 @@ func (s *createdState) Kill(ctx context.Context, sig uint32, all bool) error {
 
 func (s *createdState) SetExited(status int) {
 	s.p.setExited(status)
-
-	if err := s.transition("stopped"); err != nil {
-		panic(err)
-	}
+	s.transition(stopped)
 }
 
 func (s *createdState) Exec(ctx context.Context, path string, r *ExecConfig) (process.Process, error) {
 	return s.p.exec(path, r)
 }
 
+func (s *createdState) State(ctx context.Context) (string, error) {
+	state, err := s.p.state(ctx)
+	if err == nil && state == statusStopped {
+		s.transition(stopped)
+	}
+	return state, err
+}
+
+func (s *createdState) Stats(ctx context.Context, id string) (*runc.Stats, error) {
+	return s.p.stats(ctx, id)
+}
+
 type runningState struct {
 	p *Init
 }
 
-func (s *runningState) transition(name string) error {
-	switch name {
-	case "stopped":
-		s.p.initState = &stoppedState{p: s.p}
-	default:
-		return fmt.Errorf("invalid state transition %q to %q", stateName(s), name)
-	}
-	return nil
+func (s *runningState) name() string {
+	return "running"
 }
 
-func (s *runningState) Resize(ws console.WinSize) error {
-	return s.p.resize(ws)
+func (s *runningState) transition(transition stateTransition) {
+	switch transition {
+	case stopped:
+		s.p.initState = &stoppedState{process: s.p}
+	default:
+		panic(fmt.Sprintf("invalid state transition %q to %q", s.name(), transition))
+	}
 }
 
 func (s *runningState) Start(ctx context.Context) error {
-	return fmt.Errorf("cannot start a running process.ss")
+	return fmt.Errorf("cannot start a running container")
 }
 
 func (s *runningState) Delete(ctx context.Context) error {
-	return fmt.Errorf("cannot delete a running process.ss")
+	return fmt.Errorf("cannot delete a running container")
 }
 
 func (s *runningState) Kill(ctx context.Context, sig uint32, all bool) error {
@@ -130,53 +160,81 @@ func (s *runningState) Kill(ctx context.Context, sig uint32, all bool) error {
 
 func (s *runningState) SetExited(status int) {
 	s.p.setExited(status)
-
-	if err := s.transition("stopped"); err != nil {
-		panic(err)
-	}
+	s.transition(stopped)
 }
 
-func (s *runningState) Exec(ctx context.Context, path string, r *ExecConfig) (process.Process, error) {
+func (s *runningState) Exec(_ context.Context, path string, r *ExecConfig) (process.Process, error) {
 	return s.p.exec(path, r)
 }
 
-type stoppedState struct {
-	p *Init
-}
-
-func (s *stoppedState) transition(name string) error {
-	switch name {
-	case "deleted":
-		s.p.initState = &deletedState{}
-	default:
-		return fmt.Errorf("invalid state transition %q to %q", stateName(s), name)
+func (s *runningState) State(ctx context.Context) (string, error) {
+	state, err := s.p.state(ctx)
+	if err == nil && state == "stopped" {
+		s.transition(stopped)
 	}
-	return nil
+	return state, err
 }
 
-func (s *stoppedState) Resize(ws console.WinSize) error {
-	return fmt.Errorf("cannot resize a stopped container")
+func (s *runningState) Stats(ctx context.Context, id string) (*runc.Stats, error) {
+	return s.p.stats(ctx, id)
 }
 
-func (s *stoppedState) Start(ctx context.Context) error {
-	return fmt.Errorf("cannot start a stopped process.ss")
+type stoppedState struct {
+	process *Init
+}
+
+func (s *stoppedState) name() string {
+	return "stopped"
+}
+
+func (s *stoppedState) transition(transition stateTransition) {
+	switch transition {
+	case deleted:
+		s.process.initState = &deletedState{}
+	default:
+		panic(fmt.Sprintf("invalid state transition %q to %q", s.name(), transition))
+	}
+}
+
+func (s *stoppedState) Start(context.Context) error {
+	return fmt.Errorf("cannot start a stopped container")
 }
 
 func (s *stoppedState) Delete(ctx context.Context) error {
-	if err := s.p.delete(ctx); err != nil {
+	if err := s.process.delete(ctx); err != nil {
 		return err
 	}
-	return s.transition("deleted")
+	s.transition(deleted)
+	return nil
 }
 
-func (s *stoppedState) Kill(ctx context.Context, sig uint32, all bool) error {
-	return errdefs.ToGRPCf(errdefs.ErrNotFound, "process.ss %s not found", s.p.id)
+func (s *stoppedState) Kill(_ context.Context, signal uint32, _ bool) error {
+	return handleStoppedKill(signal)
 }
 
 func (s *stoppedState) SetExited(status int) {
-	// no op
+	s.process.setExited(status)
 }
 
-func (s *stoppedState) Exec(ctx context.Context, path string, r *ExecConfig) (process.Process, error) {
+func (s *stoppedState) Exec(context.Context, string, *ExecConfig) (process.Process, error) {
 	return nil, fmt.Errorf("cannot exec in a stopped state")
+}
+
+func (s *stoppedState) State(context.Context) (string, error) {
+	return "stopped", nil
+}
+
+func (s *stoppedState) Stats(context.Context, string) (*runc.Stats, error) {
+	return nil, fmt.Errorf("cannot stat a stopped container")
+}
+
+func handleStoppedKill(signal uint32) error {
+	switch unix.Signal(signal) {
+	case unix.SIGTERM, unix.SIGKILL:
+		// Container is already stopped, so everything inside the container has
+		// already been killed.
+		return nil
+	default:
+		return errdefs.ToGRPCf(errdefs.ErrNotFound, "process not found")
+	}
 }

@@ -16,6 +16,7 @@
 #include <fcntl.h>
 #include <stdlib.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -162,6 +163,89 @@ TEST_F(AccessTest, UsrReadWriteExec) {
   const std::string filename = CreateTempFile(0700);
   EXPECT_THAT(access(filename.c_str(), R_OK | W_OK | X_OK), SyscallSucceeds());
   EXPECT_THAT(unlink(filename.c_str()), SyscallSucceeds());
+}
+
+// glibc faccessat() is a wrapper around either the faccessat syscall that tries
+// to implement flags in userspace, or the faccessat2 syscall. We want to test
+// syscalls specifically, so use syscall(2) directly.
+int sys_faccessat(int dirfd, const char* pathname, int mode) {
+  return syscall(SYS_faccessat, dirfd, pathname, mode);
+}
+
+#ifndef SYS_faccessat2
+#define SYS_faccessat2 439
+#endif  // SYS_faccessat2
+
+int sys_faccessat2(int dirfd, const char* pathname, int mode, int flags) {
+  return syscall(SYS_faccessat2, dirfd, pathname, mode, flags);
+}
+
+TEST(FaccessatTest, SymlinkFollowed) {
+  const std::string target_path = NewTempAbsPath();
+  const std::string symlink_path = NewTempAbsPath();
+  ASSERT_THAT(symlink(target_path.c_str(), symlink_path.c_str()),
+              SyscallSucceeds());
+
+  // faccessat() should initially fail with ENOENT since it follows the symlink
+  // to a file that doesn't exist.
+  EXPECT_THAT(sys_faccessat(-1, symlink_path.c_str(), F_OK),
+              SyscallFailsWithErrno(ENOENT));
+
+  // After creating the symlink target, faccessat() should succeed.
+  int fd;
+  ASSERT_THAT(fd = open(target_path.c_str(), O_CREAT | O_EXCL, 0644),
+              SyscallSucceeds());
+  close(fd);
+  EXPECT_THAT(sys_faccessat(-1, symlink_path.c_str(), F_OK), SyscallSucceeds());
+}
+
+PosixErrorOr<bool> Faccessat2Supported() {
+  if (IsRunningOnGvisor()) {
+    return true;
+  }
+  int ret = sys_faccessat2(-1, "/", F_OK, 0);
+  if (ret == 0) {
+    return true;
+  }
+  if (errno == ENOSYS) {
+    return false;
+  }
+  return PosixError(errno, "unexpected errno from faccessat2(/)");
+}
+
+TEST(Faccessat2Test, SymlinkFollowedByDefault) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(Faccessat2Supported()));
+
+  const std::string target_path = NewTempAbsPath();
+  const std::string symlink_path = NewTempAbsPath();
+  ASSERT_THAT(symlink(target_path.c_str(), symlink_path.c_str()),
+              SyscallSucceeds());
+
+  // faccessat2() should initially fail with ENOENT since, by default, it
+  // follows the symlink to a file that doesn't exist.
+  EXPECT_THAT(sys_faccessat2(-1, symlink_path.c_str(), F_OK, 0 /* flags */),
+              SyscallFailsWithErrno(ENOENT));
+
+  // After creating the symlink target, faccessat2() should succeed.
+  int fd;
+  ASSERT_THAT(fd = open(target_path.c_str(), O_CREAT | O_EXCL, 0644),
+              SyscallSucceeds());
+  close(fd);
+  EXPECT_THAT(sys_faccessat2(-1, symlink_path.c_str(), F_OK, 0 /* flags */),
+              SyscallSucceeds());
+}
+
+TEST(Faccessat2Test, SymlinkNofollow) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(Faccessat2Supported()));
+
+  const std::string target_path = NewTempAbsPath();
+  const std::string symlink_path = NewTempAbsPath();
+  ASSERT_THAT(symlink(target_path.c_str(), symlink_path.c_str()),
+              SyscallSucceeds());
+
+  EXPECT_THAT(
+      sys_faccessat2(-1, symlink_path.c_str(), F_OK, AT_SYMLINK_NOFOLLOW),
+      SyscallSucceeds());
 }
 
 }  // namespace

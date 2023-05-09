@@ -20,6 +20,7 @@ import (
 
 	"github.com/google/subcommands"
 	"gvisor.dev/gvisor/pkg/sentry/control"
+	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -51,7 +52,7 @@ func (ps *PS) SetFlags(f *flag.FlagSet) {
 }
 
 // Execute implements subcommands.Command.Execute.
-func (ps *PS) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (ps *PS) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if f.NArg() != 1 {
 		f.Usage()
 		return subcommands.ExitUsageError
@@ -60,13 +61,13 @@ func (ps *PS) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{})
 	id := f.Arg(0)
 	conf := args[0].(*config.Config)
 
-	c, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
+	c, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{SkipCheck: true})
 	if err != nil {
-		Fatalf("loading sandbox: %v", err)
+		util.Fatalf("loading sandbox: %v", err)
 	}
 	pList, err := c.Processes()
 	if err != nil {
-		Fatalf("getting processes for container: %v", err)
+		util.Fatalf("getting processes for container: %v", err)
 	}
 
 	switch ps.format {
@@ -75,11 +76,11 @@ func (ps *PS) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{})
 	case "json":
 		o, err := control.PrintPIDsJSON(pList)
 		if err != nil {
-			Fatalf("generating JSON: %v", err)
+			util.Fatalf("generating JSON: %v", err)
 		}
 		fmt.Println(o)
 	default:
-		Fatalf("unsupported format: %s", ps.format)
+		util.Fatalf("unsupported format: %s", ps.format)
 	}
 
 	return subcommands.ExitSuccess

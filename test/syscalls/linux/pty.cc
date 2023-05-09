@@ -40,6 +40,7 @@
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
 #include "test/util/pty_util.h"
+#include "test/util/signal_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
@@ -387,6 +388,20 @@ PosixErrorOr<size_t> PollAndReadFd(int fd, void* buf, size_t count,
 }
 
 TEST(PtyTrunc, Truncate) {
+  // setsid either puts us in a new session or fails because we're already the
+  // session leader. Either way, this ensures we're the session leader and have
+  // no controlling terminal.
+  ASSERT_THAT(setsid(), AnyOf(SyscallSucceeds(), SyscallFailsWithErrno(EPERM)));
+
+  // Make sure we're ignoring SIGHUP, which will be sent to this process once we
+  // disconnect the TTY.
+  struct sigaction sa = {};
+  sa.sa_handler = SIG_IGN;
+  sa.sa_flags = 0;
+  sigemptyset(&sa.sa_mask);
+  const Cleanup cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaction(SIGHUP, sa));
+
   // Opening PTYs with O_TRUNC shouldn't cause an error, but calls to
   // (f)truncate should.
   FileDescriptor master =
@@ -395,6 +410,7 @@ TEST(PtyTrunc, Truncate) {
   std::string spath = absl::StrCat("/dev/pts/", n);
   FileDescriptor replica =
       ASSERT_NO_ERRNO_AND_VALUE(Open(spath, O_RDWR | O_NONBLOCK | O_TRUNC));
+  ASSERT_THAT(ioctl(replica.get(), TIOCNOTTY), SyscallSucceeds());
 
   EXPECT_THAT(truncate(kMasterPath, 0), SyscallFailsWithErrno(EINVAL));
   EXPECT_THAT(truncate(spath.c_str(), 0), SyscallFailsWithErrno(EINVAL));
@@ -461,13 +477,12 @@ TEST(BasicPtyTest, OpenMasterReplica) {
 }
 
 TEST(BasicPtyTest, OpenSetsControllingTTY) {
-  SKIP_IF(IsRunningWithVFS1());
   // setsid either puts us in a new session or fails because we're already the
   // session leader. Either way, this ensures we're the session leader.
-  setsid();
+  ASSERT_THAT(setsid(), AnyOf(SyscallSucceeds(), SyscallFailsWithErrno(EPERM)));
 
   // Make sure we're ignoring SIGHUP, which will be sent to this process once we
-  // disconnect they TTY.
+  // disconnect the TTY.
   struct sigaction sa = {};
   sa.sa_handler = SIG_IGN;
   sa.sa_flags = 0;
@@ -488,10 +503,9 @@ TEST(BasicPtyTest, OpenSetsControllingTTY) {
 }
 
 TEST(BasicPtyTest, OpenMasterDoesNotSetsControllingTTY) {
-  SKIP_IF(IsRunningWithVFS1());
   // setsid either puts us in a new session or fails because we're already the
   // session leader. Either way, this ensures we're the session leader.
-  setsid();
+  ASSERT_THAT(setsid(), AnyOf(SyscallSucceeds(), SyscallFailsWithErrno(EPERM)));
   FileDescriptor master = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR));
 
   // Opening master does not set the controlling TTY, and therefore we are
@@ -500,10 +514,9 @@ TEST(BasicPtyTest, OpenMasterDoesNotSetsControllingTTY) {
 }
 
 TEST(BasicPtyTest, OpenNOCTTY) {
-  SKIP_IF(IsRunningWithVFS1());
   // setsid either puts us in a new session or fails because we're already the
   // session leader. Either way, this ensures we're the session leader.
-  setsid();
+  ASSERT_THAT(setsid(), AnyOf(SyscallSucceeds(), SyscallFailsWithErrno(EPERM)));
   FileDescriptor master = ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/ptmx", O_RDWR));
   FileDescriptor replica = ASSERT_NO_ERRNO_AND_VALUE(
       OpenReplica(master, O_NOCTTY | O_NONBLOCK | O_RDWR));
@@ -1107,7 +1120,10 @@ TEST_F(PtyTest, TermiosICANONEOF) {
   ExpectReadable(replica_, sizeof(input), buf);
   EXPECT_STREQ(buf, "abc");
 
-  ExpectFinished(replica_);
+  // New Linux kernels can return zero.
+  EXPECT_THAT(
+      ReadFd(replica_.get(), buf, 1),
+      AnyOf(SyscallSucceedsWithValue(0), SyscallFailsWithErrno(EAGAIN)));
 }
 
 // ICANON limits us to 4096 bytes including a terminating character. Anything
@@ -1405,7 +1421,7 @@ TEST_F(JobControlTest, ReleaseTTY) {
   ASSERT_THAT(ioctl(replica_.get(), TIOCSCTTY, 0), SyscallSucceeds());
 
   // Make sure we're ignoring SIGHUP, which will be sent to this process once we
-  // disconnect they TTY.
+  // disconnect the TTY.
   struct sigaction sa = {};
   sa.sa_handler = SIG_IGN;
   sa.sa_flags = 0;
@@ -1526,7 +1542,7 @@ TEST_F(JobControlTest, ReleaseTTYSignals) {
   EXPECT_THAT(setpgid(diff_pgrp_child, diff_pgrp_child), SyscallSucceeds());
 
   // Make sure we're ignoring SIGHUP, which will be sent to this process once we
-  // disconnect they TTY.
+  // disconnect the TTY.
   struct sigaction sighup_sa = {};
   sighup_sa.sa_handler = SIG_IGN;
   sighup_sa.sa_flags = 0;
@@ -1576,9 +1592,9 @@ TEST_F(JobControlTest, GetForegroundProcessGroupNonControlling) {
 // - creates a child process in a new process group
 // - sets that child as the foreground process group
 // - kills its child and sets itself as the foreground process group.
-// TODO(gvisor.dev/issue/5357): Fix and enable.
-TEST_F(JobControlTest, DISABLED_SetForegroundProcessGroup) {
+TEST_F(JobControlTest, SetForegroundProcessGroup) {
   auto res = RunInChild([=]() {
+    TEST_PCHECK(setsid() >= 0);
     TEST_PCHECK(!ioctl(replica_.get(), TIOCSCTTY, 0));
 
     // Ignore SIGTTOU so that we don't stop ourself when calling tcsetpgrp.
@@ -1616,8 +1632,100 @@ TEST_F(JobControlTest, DISABLED_SetForegroundProcessGroup) {
 
     // Set ourself as the foreground process.
     pid_t pgid;
-    TEST_PCHECK(pgid = getpgid(0) == 0);
+    TEST_PCHECK((pgid = getpgid(0)) >= 0);
     TEST_PCHECK(!tcsetpgrp(replica_.get(), pgid));
+  });
+  ASSERT_NO_ERRNO(res);
+}
+
+// This test verifies if a SIGTTOU signal is sent to the calling process's group
+// when tcsetpgrp is called by a background process
+TEST_F(JobControlTest, SetForegroundProcessGroupSIGTTOUBackground) {
+  auto res = RunInChild([=]() {
+    TEST_PCHECK(setsid() >= 0);
+    TEST_PCHECK(!ioctl(replica_.get(), TIOCSCTTY, 0));
+    pid_t grandchild = fork();
+    if (!grandchild) {
+      // Assign a different pgid to the child so it will result as
+      // a background process.
+      TEST_PCHECK(!setpgid(grandchild, getpid()));
+      TEST_PCHECK(!tcsetpgrp(replica_.get(), getpgid(0)));
+      // We should never reach this.
+      _exit(1);
+    }
+    int wstatus;
+    TEST_PCHECK(waitpid(grandchild, &wstatus, WSTOPPED) == grandchild);
+    TEST_PCHECK(WSTOPSIG(wstatus) == SIGTTOU);
+
+    // The child's `tcsetpgrp` got signalled and so should not have
+    // taken effect. Verify that.
+    TEST_PCHECK(tcgetpgrp(replica_.get()) == getpid());
+    EXPECT_THAT(kill(grandchild, SIGKILL), SyscallSucceeds());
+  });
+  ASSERT_NO_ERRNO(res);
+}
+
+// This test verifies that a SIGTTOU signal is not delivered to
+// a background process which calls tcsetpgrp and is ignoring SIGTTOU
+TEST_F(JobControlTest, SetForegroundProcessGroupSIGTTOUIgnored) {
+  auto res = RunInChild([=]() {
+    TEST_PCHECK(setsid() >= 0);
+    TEST_PCHECK(!ioctl(replica_.get(), TIOCSCTTY, 0));
+    pid_t grandchild = fork();
+    if (!grandchild) {
+      // Ignore SIGTTOU so the child in background won't
+      // be stopped when it will call tcsetpgrp
+      struct sigaction sa = {};
+      sa.sa_handler = SIG_IGN;
+      sa.sa_flags = 0;
+      sigemptyset(&sa.sa_mask);
+      sigaction(SIGTTOU, &sa, NULL);
+      // Assign a different pgid to the child so it will result as
+      // a background process.
+      TEST_PCHECK(!setpgid(grandchild, getpid()));
+      TEST_PCHECK(!tcsetpgrp(replica_.get(), getpgid(0)));
+      _exit(0);
+    }
+    int wstatus;
+    TEST_PCHECK(waitpid(grandchild, &wstatus, WSTOPPED) == grandchild);
+    TEST_PCHECK(WSTOPSIG(wstatus) != SIGTTOU);
+    TEST_PCHECK(WIFEXITED(wstatus));
+  });
+  ASSERT_NO_ERRNO(res);
+}
+
+// This test verifies that a SIGTTOU signal is not delivered to
+// a background process which calls tcsetpgrp and is blocking SIGTTOU
+TEST_F(JobControlTest, SetForegroundProcessGroupSIGTTOUBlocked) {
+  auto res = RunInChild([=]() {
+    TEST_PCHECK(setsid() >= 0);
+    TEST_PCHECK(!ioctl(replica_.get(), TIOCSCTTY, 0));
+    pid_t grandchild = fork();
+    if (!grandchild) {
+      // Block SIGTTOU so the child in background won't
+      // be stopped when it will call tcsetpgrp
+      sigset_t signal_set;
+      sigemptyset(&signal_set);
+      sigaddset(&signal_set, SIGTTOU);
+      // Block SIGTTIN as well, to make sure that the kernel isn't
+      // checking for "blocked == [SIGTTOU]" (see issue 7941 for
+      // context).
+      sigaddset(&signal_set, SIGTTIN);
+      sigprocmask(SIG_BLOCK, &signal_set, NULL);
+      // Assign a different pgid to the child so it will result as
+      // a background process.
+      TEST_PCHECK(!setpgid(grandchild, getpid()));
+      TEST_PCHECK(!tcsetpgrp(replica_.get(), getpgid(0)));
+      // Unmask the signals to make sure we still don't get
+      // signaled. That would happen if `tcsetpgrp` enqueued the
+      // signal through the mask -- we would not yet have received it,
+      // because of the mask.
+      sigprocmask(SIG_UNBLOCK, &signal_set, NULL);
+      _exit(0);
+    }
+    int wstatus;
+    TEST_PCHECK(waitpid(grandchild, &wstatus, WSTOPPED) == grandchild);
+    TEST_PCHECK(WSTOPSIG(wstatus) != SIGTTOU);
   });
   ASSERT_NO_ERRNO(res);
 }
@@ -1639,9 +1747,9 @@ TEST_F(JobControlTest, SetForegroundProcessGroupNegPgid) {
   ASSERT_NO_ERRNO(ret);
 }
 
-// TODO(gvisor.dev/issue/5357): Fix and enable.
-TEST_F(JobControlTest, DISABLED_SetForegroundProcessGroupEmptyProcessGroup) {
+TEST_F(JobControlTest, SetForegroundProcessGroupEmptyProcessGroup) {
   auto res = RunInChild([=]() {
+    TEST_PCHECK(setsid() >= 0);
     TEST_PCHECK(!ioctl(replica_.get(), TIOCSCTTY, 0));
 
     // Create a new process, put it in a new process group, make that group the

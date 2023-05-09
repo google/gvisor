@@ -16,6 +16,7 @@
 package injector
 
 import (
+	"context"
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
@@ -83,7 +84,7 @@ func CreateConfiguration(clientset kubeclientset.Interface, selector *metav1.Lab
 		},
 	}
 	log.Infof("Creating MutatingWebhookConfiguration %q", config.Name)
-	if _, err := clientset.AdmissionregistrationV1beta1().MutatingWebhookConfigurations().Create(config); err != nil {
+	if _, err := clientset.AdmissionregistrationV1beta1().MutatingWebhookConfigurations().Create(context.TODO(), config, metav1.CreateOptions{}); err != nil {
 		if !apierrors.IsAlreadyExists(err) {
 			return fmt.Errorf("failed to create MutatingWebhookConfiguration %q: %s", config.Name, err)
 		}
@@ -94,13 +95,13 @@ func CreateConfiguration(clientset kubeclientset.Interface, selector *metav1.Lab
 
 // GetTLSConfig retrieves the CA cert that signed the cert used by the webhook.
 func GetTLSConfig() *tls.Config {
-	serverCert, err := tls.X509KeyPair(serverCert, serverKey)
+	sc, err := tls.X509KeyPair(serverCert, serverKey)
 	if err != nil {
 		log.Warningf("Failed to generate X509 key pair: %v", err)
 		os.Exit(1)
 	}
 	return &tls.Config{
-		Certificates: []tls.Certificate{serverCert},
+		Certificates: []tls.Certificate{sc},
 	}
 }
 
@@ -132,7 +133,7 @@ func Admit(writer http.ResponseWriter, req *http.Request) {
 	sendResponse(writer, review)
 }
 
-func sendResponse(writer http.ResponseWriter, response interface{}) {
+func sendResponse(writer http.ResponseWriter, response any) {
 	b, err := json.Marshal(response)
 	if err != nil {
 		log.Warningf("Failed with error (%v) to marshal response: %+v", err, response)
@@ -198,7 +199,7 @@ func updatePod(pod *v1.Pod) {
 	}
 }
 
-func createPatch(old []byte, newObj interface{}) ([]byte, error) {
+func createPatch(old []byte, newObj any) ([]byte, error) {
 	new, err := json.Marshal(newObj)
 	if err != nil {
 		return nil, err

@@ -19,8 +19,8 @@
 #include "gtest/gtest.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
-#include "test/syscalls/linux/socket_test_util.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
+#include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {
@@ -179,6 +179,21 @@ TEST_P(StreamUnixSocketPairTest, SetSocketSendBuf) {
   // Linux doubles the value set by SO_SNDBUF/SO_SNDBUF.
   quarter_sz *= 2;
   ASSERT_EQ(quarter_sz, val);
+}
+
+TEST_P(StreamUnixSocketPairTest, SendBufferOverflow) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  auto s = sockets->first_fd();
+
+  constexpr int kBufSz = 4096;
+  std::vector<char> buf(kBufSz * 4);
+  ASSERT_THAT(RetryEINTR(send)(s, buf.data(), buf.size(), MSG_DONTWAIT),
+              SyscallSucceeds());
+  // The new buffer size should be smaller that the amount of data in the queue.
+  ASSERT_THAT(setsockopt(s, SOL_SOCKET, SO_SNDBUF, &kBufSz, sizeof(kBufSz)),
+              SyscallSucceeds());
+  ASSERT_THAT(RetryEINTR(send)(s, buf.data(), buf.size(), MSG_DONTWAIT),
+              SyscallFailsWithErrno(EAGAIN));
 }
 
 TEST_P(StreamUnixSocketPairTest, IncreasedSocketSendBufUnblocksWrites) {

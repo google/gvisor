@@ -1,0 +1,136 @@
+// Copyright 2022 The gVisor Authors.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package gvisor.common;
+
+// Handshake message is used when establishing a connection. Version information
+// is exchanged to determine if the communication can proceed. Each side reports
+// a single version of the protocol that it supports. If they can't support the
+// version reported by the peer, they must close the connection. If the peer
+// version is higher (newer), it should continue to communicate, making the peer
+// responsible to send messages that are compatible with your version. If the
+// peer can't support it, the peer should close the connection.
+//
+// In short:
+//   1. sentry and remote exchange versions
+//   2. sentry continues if remote >= min(sentry)
+//   3. remote continues if sentry >= min(remote)
+//
+// Suppose that peer A is at version 1 and peer B is at 2. Peer A sees that B is
+// at a newer version and continues with communication. Peer B will see that A
+// is at version 1 (older) and will check if it can send messages that are
+// compatible with version 1. If yes, then the communication can continue. If
+// not, A should close the connection.
+//
+// Here are 2 practical examples:
+//   1. New field added to the header: this requires a change in protocol
+//      version (e.g. 1 => 2). However, if not essential to communication, the
+//      new field can be ignored by a peer that is still using version 1.
+//      Sentry version 1, remote version 2: remote doesn't get the new field,
+//      but can still receive messages.
+//      Sentry version 2, remote version 1: remote gets the new field, but
+//      ignores it since it's not aware the field exists yet. Note that remote
+//      must rely on header length to determine where the payload is.
+//
+//   2. Change in message format for batching: this requires a change in
+//      protocol version (2 => 3). Batching can only be used if both sides can
+//      handle it.
+//      Sentry version 2, remote version 3: remote gets a message at a time. If
+//      it still can do that, remote can accept that sentry is in version 2.
+//      Sentry version 3, remote version 2: remote is not able to process
+//      batched messages. If the sentry can still produce one message at a time
+//      the communication can continue, otherwise the sentry should close the
+//      connection.
+//
+// Note that addition of new message types do not require version changes.
+// Server implementations should gracefully handle messages that it doesn't
+// understand. Similarly, payload for message can change following protobuf
+// rules for compatibilty. For example, adding new fields to a protobuf type
+// doesn't require version bump.
+message Handshake {
+  uint32 version = 1;
+}
+
+message Credentials {
+  uint32 real_uid = 1;
+  uint32 effective_uid = 2;
+  uint32 saved_uid = 3;
+
+  uint32 real_gid = 4;
+  uint32 effective_gid = 5;
+  uint32 saved_gid = 6;
+}
+
+message ContextData {
+  int64 time_ns = 1;
+
+  int32 thread_id = 2;
+
+  int64 thread_start_time_ns = 3;
+
+  int32 thread_group_id = 4;
+
+  int64 thread_group_start_time_ns = 5;
+
+  string container_id = 6;
+
+  Credentials credentials = 7;
+
+  string cwd = 8;
+
+  string process_name = 9;
+}
+
+// MessageType describes the payload of a message sent to the remote process.
+// LINT.IfChange
+enum MessageType {
+  MESSAGE_UNKNOWN = 0;
+  MESSAGE_CONTAINER_START = 1;
+  MESSAGE_SENTRY_CLONE = 2;
+  MESSAGE_SENTRY_EXEC = 3;
+  MESSAGE_SENTRY_EXIT_NOTIFY_PARENT = 4;
+  MESSAGE_SENTRY_TASK_EXIT = 5;
+  MESSAGE_SYSCALL_RAW = 6;
+  MESSAGE_SYSCALL_OPEN = 7;
+  MESSAGE_SYSCALL_CLOSE = 8;
+  MESSAGE_SYSCALL_READ = 9;
+  MESSAGE_SYSCALL_CONNECT = 10;
+  MESSAGE_SYSCALL_EXECVE = 11;
+  MESSAGE_SYSCALL_SOCKET = 12;
+  MESSAGE_SYSCALL_CHDIR = 13;
+  MESSAGE_SYSCALL_SETID = 14;
+  MESSAGE_SYSCALL_SETRESID = 15;
+  MESSAGE_SYSCALL_PRLIMIT64 = 16;
+  MESSAGE_SYSCALL_PIPE = 17;
+  MESSAGE_SYSCALL_FCNTL = 18;
+  MESSAGE_SYSCALL_DUP = 19;
+  MESSAGE_SYSCALL_SIGNALFD = 20;
+  MESSAGE_SYSCALL_CHROOT = 21;
+  MESSAGE_SYSCALL_EVENTFD = 22;
+  MESSAGE_SYSCALL_CLONE = 23;
+  MESSAGE_SYSCALL_BIND = 24;
+  MESSAGE_SYSCALL_ACCEPT = 25;
+  MESSAGE_SYSCALL_TIMERFD_CREATE = 26;
+  MESSAGE_SYSCALL_TIMERFD_SETTIME = 27;
+  MESSAGE_SYSCALL_TIMERFD_GETTIME = 28;
+  MESSAGE_SYSCALL_FORK = 29;
+  MESSAGE_SYSCALL_INOTIFY_INIT = 30;
+  MESSAGE_SYSCALL_INOTIFY_ADD_WATCH = 31;
+  MESSAGE_SYSCALL_INOTIFY_RM_WATCH = 32;
+  MESSAGE_SYSCALL_SOCKETPAIR = 33;
+  MESSAGE_SYSCALL_WRITE = 34;
+}
+// LINT.ThenChange(../../../../examples/seccheck/server.cc)

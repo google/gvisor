@@ -15,6 +15,10 @@
 #include <errno.h>
 #include <string.h>
 #include <sys/mman.h>
+#ifdef __linux__
+#include <sys/syscall.h>
+#endif
+#include <unistd.h>
 
 #include <string>
 
@@ -35,6 +39,15 @@ namespace testing {
 
 namespace {
 
+// libc mremap isn't guaranteed to be async-signal-safe by signal-safety(7) and
+// therefore isn't necessarily safe to call between fork(2) and execve(2);
+// provide our own version that is.
+void* MremapSafe(void* old_addr, size_t old_size, size_t new_size,
+                 unsigned long flags, void* new_address = nullptr) {  // NOLINT
+  return reinterpret_cast<void*>(
+      syscall(SYS_mremap, old_addr, old_size, new_size, flags, new_address));
+}
+
 // Fixture for mremap tests parameterized by mmap flags.
 using MremapParamTest = ::testing::TestWithParam<int>;
 
@@ -54,7 +67,7 @@ TEST_P(MremapParamTest, InPlace_ShrinkingWholeVMA) {
   const auto rest = [&] {
     // N.B. we must be in a single-threaded subprocess to ensure a
     // background thread doesn't concurrently map the second page.
-    void* addr = mremap(m.ptr(), 2 * kPageSize, kPageSize, 0, nullptr);
+    void* addr = MremapSafe(m.ptr(), 2 * kPageSize, kPageSize, 0, nullptr);
     TEST_PCHECK_MSG(addr != MAP_FAILED, "mremap failed");
     TEST_CHECK(addr == m.ptr());
     MaybeSave();
@@ -71,7 +84,7 @@ TEST_P(MremapParamTest, InPlace_ShrinkingPartialVMA) {
       ASSERT_NO_ERRNO_AND_VALUE(MmapAnon(3 * kPageSize, PROT_NONE, GetParam()));
 
   const auto rest = [&] {
-    void* addr = mremap(m.ptr(), 2 * kPageSize, kPageSize, 0, nullptr);
+    void* addr = MremapSafe(m.ptr(), 2 * kPageSize, kPageSize, 0, nullptr);
     TEST_PCHECK_MSG(addr != MAP_FAILED, "mremap failed");
     TEST_CHECK(addr == m.ptr());
     MaybeSave();
@@ -93,7 +106,7 @@ TEST_P(MremapParamTest, InPlace_ShrinkingAcrossVMAs) {
   const auto rest = [&] {
     // Both old_size and new_size now span two vmas; mremap
     // shouldn't care.
-    void* addr = mremap(m.ptr(), 3 * kPageSize, 2 * kPageSize, 0, nullptr);
+    void* addr = MremapSafe(m.ptr(), 3 * kPageSize, 2 * kPageSize, 0, nullptr);
     TEST_PCHECK_MSG(addr != MAP_FAILED, "mremap failed");
     TEST_CHECK(addr == m.ptr());
     MaybeSave();
@@ -115,11 +128,11 @@ TEST_P(MremapParamTest, InPlace_ExpansionSuccess) {
     //
     // N.B. we must be in a single-threaded subprocess to ensure a
     // background thread doesn't concurrently map this page.
-    TEST_PCHECK(
-        munmap(reinterpret_cast<void*>(m.addr() + kPageSize), kPageSize) == 0);
+    TEST_PCHECK(MunmapSafe(reinterpret_cast<void*>(m.addr() + kPageSize),
+                           kPageSize) == 0);
     MaybeSave();
 
-    void* addr = mremap(m.ptr(), kPageSize, 2 * kPageSize, 0, nullptr);
+    void* addr = MremapSafe(m.ptr(), kPageSize, 2 * kPageSize, 0, nullptr);
     TEST_PCHECK_MSG(addr != MAP_FAILED, "mremap failed");
     TEST_CHECK(addr == m.ptr());
     MaybeSave();
@@ -139,11 +152,11 @@ TEST_P(MremapParamTest, InPlace_ExpansionFailure) {
     // Unmap the second page, leaving a one-page hole. Trying to expand the
     // first page to three pages should fail since the original third page
     // is still mapped.
-    TEST_PCHECK(
-        munmap(reinterpret_cast<void*>(m.addr() + kPageSize), kPageSize) == 0);
+    TEST_PCHECK(MunmapSafe(reinterpret_cast<void*>(m.addr() + kPageSize),
+                           kPageSize) == 0);
     MaybeSave();
 
-    void* addr = mremap(m.ptr(), kPageSize, 3 * kPageSize, 0, nullptr);
+    void* addr = MremapSafe(m.ptr(), kPageSize, 3 * kPageSize, 0, nullptr);
     TEST_CHECK_MSG(addr == MAP_FAILED, "mremap unexpectedly succeeded");
     TEST_PCHECK_MSG(errno == ENOMEM, "mremap failed with wrong errno");
     MaybeSave();
@@ -165,12 +178,12 @@ TEST_P(MremapParamTest, MayMove_Expansion) {
     // first page to three pages with MREMAP_MAYMOVE should force the
     // mapping to be relocated since the original third page is still
     // mapped.
-    TEST_PCHECK(
-        munmap(reinterpret_cast<void*>(m.addr() + kPageSize), kPageSize) == 0);
+    TEST_PCHECK(MunmapSafe(reinterpret_cast<void*>(m.addr() + kPageSize),
+                           kPageSize) == 0);
     MaybeSave();
 
     void* addr2 =
-        mremap(m.ptr(), kPageSize, 3 * kPageSize, MREMAP_MAYMOVE, nullptr);
+        MremapSafe(m.ptr(), kPageSize, 3 * kPageSize, MREMAP_MAYMOVE, nullptr);
     TEST_PCHECK_MSG(addr2 != MAP_FAILED, "mremap failed");
     MaybeSave();
 
@@ -206,11 +219,11 @@ TEST_P(MremapParamTest, Fixed_SameSize) {
 
   const auto rest = [&] {
     // Unmap dst to create a hole.
-    TEST_PCHECK(munmap(dst.ptr(), kPageSize) == 0);
+    TEST_PCHECK(MunmapSafe(dst.ptr(), kPageSize) == 0);
     MaybeSave();
 
-    void* addr = mremap(src.ptr(), kPageSize, kPageSize,
-                        MREMAP_MAYMOVE | MREMAP_FIXED, dst.ptr());
+    void* addr = MremapSafe(src.ptr(), kPageSize, kPageSize,
+                            MREMAP_MAYMOVE | MREMAP_FIXED, dst.ptr());
     TEST_PCHECK_MSG(addr != MAP_FAILED, "mremap failed");
     TEST_CHECK(addr == dst.ptr());
     MaybeSave();
@@ -231,8 +244,8 @@ TEST_P(MremapParamTest, Fixed_SameSize_Unmapping) {
       ASSERT_NO_ERRNO_AND_VALUE(MmapAnon(kPageSize, PROT_NONE, GetParam()));
 
   const auto rest = [&] {
-    void* addr = mremap(src.ptr(), kPageSize, kPageSize,
-                        MREMAP_MAYMOVE | MREMAP_FIXED, dst.ptr());
+    void* addr = MremapSafe(src.ptr(), kPageSize, kPageSize,
+                            MREMAP_MAYMOVE | MREMAP_FIXED, dst.ptr());
     TEST_PCHECK_MSG(addr != MAP_FAILED, "mremap failed");
     TEST_CHECK(addr == dst.ptr());
     MaybeSave();
@@ -253,11 +266,11 @@ TEST_P(MremapParamTest, Fixed_ShrinkingWholeVMA) {
   const auto rest = [&] {
     // Unmap dst so we can check that mremap does not keep the
     // second page.
-    TEST_PCHECK(munmap(dst.ptr(), 2 * kPageSize) == 0);
+    TEST_PCHECK(MunmapSafe(dst.ptr(), 2 * kPageSize) == 0);
     MaybeSave();
 
-    void* addr = mremap(src.ptr(), 2 * kPageSize, kPageSize,
-                        MREMAP_MAYMOVE | MREMAP_FIXED, dst.ptr());
+    void* addr = MremapSafe(src.ptr(), 2 * kPageSize, kPageSize,
+                            MREMAP_MAYMOVE | MREMAP_FIXED, dst.ptr());
     TEST_PCHECK_MSG(addr != MAP_FAILED, "mremap failed");
     TEST_CHECK(addr == dst.ptr());
     MaybeSave();
@@ -280,11 +293,11 @@ TEST_P(MremapParamTest, Fixed_ShrinkingPartialVMA) {
   const auto rest = [&] {
     // Unmap dst so we can check that mremap does not keep the
     // second page.
-    TEST_PCHECK(munmap(dst.ptr(), 2 * kPageSize) == 0);
+    TEST_PCHECK(MunmapSafe(dst.ptr(), 2 * kPageSize) == 0);
     MaybeSave();
 
-    void* addr = mremap(src.ptr(), 2 * kPageSize, kPageSize,
-                        MREMAP_MAYMOVE | MREMAP_FIXED, dst.ptr());
+    void* addr = MremapSafe(src.ptr(), 2 * kPageSize, kPageSize,
+                            MREMAP_MAYMOVE | MREMAP_FIXED, dst.ptr());
     TEST_PCHECK_MSG(addr != MAP_FAILED, "mremap failed");
     TEST_CHECK(addr == dst.ptr());
     MaybeSave();
@@ -310,8 +323,8 @@ TEST_P(MremapParamTest, Fixed_ShrinkingAcrossVMAs) {
   const auto rest = [&] {
     // Unlike flags=0, MREMAP_FIXED requires that [old_address,
     // old_address+new_size) only spans a single vma.
-    void* addr = mremap(src.ptr(), 3 * kPageSize, 2 * kPageSize,
-                        MREMAP_MAYMOVE | MREMAP_FIXED, dst.ptr());
+    void* addr = MremapSafe(src.ptr(), 3 * kPageSize, 2 * kPageSize,
+                            MREMAP_MAYMOVE | MREMAP_FIXED, dst.ptr());
     TEST_CHECK_MSG(addr == MAP_FAILED, "mremap unexpectedly succeeded");
     TEST_PCHECK_MSG(errno == EFAULT, "mremap failed with wrong errno");
     MaybeSave();
@@ -338,11 +351,11 @@ TEST_P(MremapParamTest, Fixed_Expansion) {
   const auto rest = [&] {
     // Unmap dst so we can check that mremap actually maps all pages
     // at the destination.
-    TEST_PCHECK(munmap(dst.ptr(), 2 * kPageSize) == 0);
+    TEST_PCHECK(MunmapSafe(dst.ptr(), 2 * kPageSize) == 0);
     MaybeSave();
 
-    void* addr = mremap(src.ptr(), kPageSize, 2 * kPageSize,
-                        MREMAP_MAYMOVE | MREMAP_FIXED, dst.ptr());
+    void* addr = MremapSafe(src.ptr(), kPageSize, 2 * kPageSize,
+                            MREMAP_MAYMOVE | MREMAP_FIXED, dst.ptr());
     TEST_PCHECK_MSG(addr != MAP_FAILED, "mremap failed");
     TEST_CHECK(addr == dst.ptr());
     MaybeSave();
@@ -376,7 +389,7 @@ TEST(MremapTest, MayMove_Copy) {
   // Remainder of this test executes in a subprocess to ensure that if mremap
   // incorrectly removes m, it is not remapped by another thread.
   const auto rest = [&] {
-    void* ptr = mremap(m.ptr(), 0, kPageSize, MREMAP_MAYMOVE, nullptr);
+    void* ptr = MremapSafe(m.ptr(), 0, kPageSize, MREMAP_MAYMOVE, nullptr);
     MaybeSave();
     TEST_PCHECK_MSG(ptr != MAP_FAILED, "mremap failed");
     TEST_CHECK(ptr != m.ptr());
@@ -395,8 +408,8 @@ TEST(MremapTest, MustMove_Copy) {
   // Remainder of this test executes in a subprocess to ensure that if mremap
   // incorrectly removes src, it is not remapped by another thread.
   const auto rest = [&] {
-    void* ptr = mremap(src.ptr(), 0, kPageSize, MREMAP_MAYMOVE | MREMAP_FIXED,
-                       dst.ptr());
+    void* ptr = MremapSafe(src.ptr(), 0, kPageSize,
+                           MREMAP_MAYMOVE | MREMAP_FIXED, dst.ptr());
     MaybeSave();
     TEST_PCHECK_MSG(ptr != MAP_FAILED, "mremap failed");
     TEST_CHECK(ptr == dst.ptr());

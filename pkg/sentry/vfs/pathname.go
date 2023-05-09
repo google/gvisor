@@ -16,13 +16,13 @@ package vfs
 
 import (
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 var fspathBuilderPool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return &fspath.Builder{}
 	},
 }
@@ -133,11 +133,34 @@ loop:
 	return b.String(), nil
 }
 
+// PathnameInFilesystem returns an absolute path to vd relative to vd's
+// Filesystem root. It also appends //deleted to for disowned entries. It is
+// equivalent to Linux's dentry_path().
+func (vfs *VirtualFilesystem) PathnameInFilesystem(ctx context.Context, vd VirtualDentry) (string, error) {
+	b := getFSPathBuilder()
+	defer putFSPathBuilder(b)
+	if vd.dentry.IsDead() {
+		b.PrependString("//deleted")
+	}
+	if err := vd.mount.fs.impl.PrependPath(ctx, VirtualDentry{}, VirtualDentry{dentry: vd.dentry}, b); err != nil {
+		// PrependPath returns an error if it encounters a filesystem root before
+		// the provided vfsroot. We don't provide a vfsroot, so encountering this
+		// error is expected and can be ignored.
+		switch err.(type) {
+		case PrependPathAtNonMountRootError:
+		default:
+			return "", err
+		}
+	}
+	b.PrependByte('/')
+	return b.String(), nil
+}
+
 // PathnameForGetcwd returns an absolute pathname to vd, consistent with
 // Linux's sys_getcwd().
 func (vfs *VirtualFilesystem) PathnameForGetcwd(ctx context.Context, vfsroot, vd VirtualDentry) (string, error) {
 	if vd.dentry.IsDead() {
-		return "", syserror.ENOENT
+		return "", linuxerr.ENOENT
 	}
 
 	b := getFSPathBuilder()
@@ -185,11 +208,11 @@ loop:
 
 // As of this writing, we do not have equivalents to:
 //
-// - d_absolute_path(), which returns EINVAL if (effectively) any call to
-// FilesystemImpl.PrependPath() would return PrependPathAtNonMountRootError.
+//	- d_absolute_path(), which returns EINVAL if (effectively) any call to
+//		FilesystemImpl.PrependPath() would return PrependPathAtNonMountRootError.
 //
-// - dentry_path(), which does not walk up mounts (and only returns the path
-// relative to Filesystem root), but also appends "//deleted" for disowned
-// Dentries.
+//	- dentry_path(), which does not walk up mounts (and only returns the path
+//		relative to Filesystem root), but also appends "//deleted" for disowned
+//		Dentries.
 //
 // These should be added as necessary.

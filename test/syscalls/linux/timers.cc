@@ -26,6 +26,7 @@
 #include "absl/flags/flag.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "benchmark/benchmark.h"
 #include "test/util/cleanup.h"
 #include "test/util/logging.h"
 #include "test/util/multiprocess_util.h"
@@ -92,6 +93,8 @@ TEST(TimerTest, ProcessKilledOnCPUSoftLimit) {
     TEST_PCHECK(setrlimit(RLIMIT_CPU, &cpu_limits) == 0);
     MaybeSave();
     for (;;) {
+      int x = 0;
+      benchmark::DoNotOptimize(x);  // Don't optimize this loop away.
     }
   }
   ASSERT_THAT(pid, SyscallSucceeds());
@@ -151,6 +154,8 @@ TEST(TimerTest, ProcessPingedRepeatedlyAfterCPUSoftLimit) {
     TEST_PCHECK(setrlimit(RLIMIT_CPU, &cpu_limits) == 0);
     MaybeSave();
     for (;;) {
+      int x = 0;
+      benchmark::DoNotOptimize(x);  // Don't optimize this loop away.
     }
   }
   ASSERT_THAT(pid, SyscallSucceeds());
@@ -197,6 +202,8 @@ TEST(TimerTest, ProcessKilledOnCPUHardLimit) {
     TEST_PCHECK(setrlimit(RLIMIT_CPU, &cpu_limits) == 0);
     MaybeSave();
     for (;;) {
+      int x = 0;
+      benchmark::DoNotOptimize(x);  // Don't optimize this loop away.
     }
   }
   ASSERT_THAT(pid, SyscallSucceeds());

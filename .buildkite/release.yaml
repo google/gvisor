@@ -1,0 +1,41 @@
+agents:
+  queue: release
+_templates:
+  common: &common
+    timeout_in_minutes: 120
+    retry:
+      automatic:
+        - exit_status: -1
+          limit: 10
+        - exit_status: "*"
+          limit: 2
+
+env:
+  # Force a clean checkout every time to avoid reuse of files between runs.
+  BUILDKITE_CLEAN_CHECKOUT: true
+
+steps:
+  - <<: *common
+    label: ":ship: Push all images (x86_64)"
+    if: build.branch == "master" && build.tag == null
+    commands:
+      - make ARCH=x86_64 push-all-images
+  - <<: *common
+    label: ":ship: Push all images (aarch64)"
+    if: build.branch == "master" && build.tag == null
+    commands:
+      - make ARCH=aarch64 push-all-images
+  - <<: *common
+    label: ":ship: Release"
+    if: build.branch == "master" || build.tag != null
+    commands:
+      - make BAZEL_OPTIONS=--config=x86_64 artifacts/x86_64
+      - make BAZEL_OPTIONS=--config=aarch64 artifacts/aarch64
+      - make release RELEASE_NIGHTLY=$$RELEASE_NIGHTLY
+      - cd repo && gsutil cp -r . gs://gvisor/releases/
+  - <<: *common
+    label: ":ship: Website Deploy"
+    if: build.branch == "master" && build.tag == null
+    commands:
+      # The built website image must be x86_64.
+      - make BAZEL_OPTIONS=--config=x86_64 website-deploy

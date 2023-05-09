@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -39,12 +39,22 @@ func BenchmarkFio(b *testing.B) {
 		},
 		{
 			Test:      "write",
+			BlockSize: 64,
+			IODepth:   4,
+		},
+		{
+			Test:      "write",
 			BlockSize: 1024,
 			IODepth:   4,
 		},
 		{
 			Test:      "read",
 			BlockSize: 4,
+			IODepth:   4,
+		},
+		{
+			Test:      "read",
+			BlockSize: 64,
 			IODepth:   4,
 		},
 		{
@@ -126,7 +136,7 @@ func BenchmarkFio(b *testing.B) {
 
 				// For reads, we need a file to read so make one inside the container.
 				if strings.Contains(tc.Test, "read") {
-					fallocateCmd := fmt.Sprintf("fallocate -l %dK %s", tc.Size, outfile)
+					fallocateCmd := fmt.Sprintf("fallocate -l %dM %s", tc.Size, outfile)
 					if out, err := container.Exec(ctx, dockerutil.ExecOpts{},
 						strings.Split(fallocateCmd, " ")...); err != nil {
 						b.Fatalf("failed to create readable file on mount: %v, %s", err, out)

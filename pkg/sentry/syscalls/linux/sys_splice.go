@@ -1,4 +1,4 @@
-// Copyright 2019 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -15,329 +15,522 @@
 package linux
 
 import (
+	"io"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-// doSplice implements a blocking splice operation.
-func doSplice(t *kernel.Task, outFile, inFile *fs.File, opts fs.SpliceOpts, nonBlocking bool) (int64, error) {
-	if opts.Length < 0 || opts.SrcStart < 0 || opts.DstStart < 0 || (opts.SrcStart+opts.Length < 0) {
-		return 0, syserror.EINVAL
-	}
-	if opts.Length == 0 {
-		return 0, nil
-	}
-	if opts.Length > int64(kernel.MAX_RW_COUNT) {
-		opts.Length = int64(kernel.MAX_RW_COUNT)
-	}
-
-	var (
-		n     int64
-		err   error
-		inCh  chan struct{}
-		outCh chan struct{}
-	)
-
-	for {
-		n, err = fs.Splice(t, outFile, inFile, opts)
-		if n != 0 || err != syserror.ErrWouldBlock {
-			break
-		} else if err == syserror.ErrWouldBlock && nonBlocking {
-			break
-		}
-
-		// Note that the blocking behavior here is a bit different than the
-		// normal pattern. Because we need to have both data to read and data
-		// to write simultaneously, we actually explicitly block on both of
-		// these cases in turn before returning to the splice operation.
-		if inFile.Readiness(EventMaskRead) == 0 {
-			if inCh == nil {
-				inCh = make(chan struct{}, 1)
-				inW, _ := waiter.NewChannelEntry(inCh)
-				inFile.EventRegister(&inW, EventMaskRead)
-				defer inFile.EventUnregister(&inW)
-				// Need to refresh readiness.
-				continue
-			}
-			if err = t.Block(inCh); err != nil {
-				break
-			}
-		}
-		// Don't bother checking readiness of the outFile, because it's not a
-		// guarantee that it won't return EWOULDBLOCK. Both pipes and eventfds
-		// can be "ready" but will reject writes of certain sizes with
-		// EWOULDBLOCK.
-		if outCh == nil {
-			outCh = make(chan struct{}, 1)
-			outW, _ := waiter.NewChannelEntry(outCh)
-			outFile.EventRegister(&outW, EventMaskWrite)
-			defer outFile.EventUnregister(&outW)
-			// We might be ready to write now. Try again before
-			// blocking.
-			continue
-		}
-		if err = t.Block(outCh); err != nil {
-			break
-		}
-	}
-
-	if n > 0 {
-		// On Linux, inotify behavior is not very consistent with splice(2). We try
-		// our best to emulate Linux for very basic calls to splice, where for some
-		// reason, events are generated for output files, but not input files.
-		outFile.Dirent.InotifyEvent(linux.IN_MODIFY, 0)
-	}
-	return n, err
-}
-
-// Sendfile implements linux system call sendfile(2).
-func Sendfile(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	outFD := args[0].Int()
-	inFD := args[1].Int()
-	offsetAddr := args[2].Pointer()
-	count := int64(args[3].SizeT())
-
-	// Get files.
-	inFile := t.GetFile(inFD)
-	if inFile == nil {
-		return 0, nil, syserror.EBADF
-	}
-	defer inFile.DecRef(t)
-
-	if !inFile.Flags().Read {
-		return 0, nil, syserror.EBADF
-	}
-
-	outFile := t.GetFile(outFD)
-	if outFile == nil {
-		return 0, nil, syserror.EBADF
-	}
-	defer outFile.DecRef(t)
-
-	if !outFile.Flags().Write {
-		return 0, nil, syserror.EBADF
-	}
-
-	// Verify that the outfile Append flag is not set.
-	if outFile.Flags().Append {
-		return 0, nil, syserror.EINVAL
-	}
-
-	// Verify that we have a regular infile. This is a requirement; the
-	// same check appears in Linux (fs/splice.c:splice_direct_to_actor).
-	if !fs.IsRegular(inFile.Dirent.Inode.StableAttr) {
-		return 0, nil, syserror.EINVAL
-	}
-
-	var (
-		n   int64
-		err error
-	)
-	if offsetAddr != 0 {
-		// Verify that when offset address is not null, infile must be
-		// seekable. The fs.Splice routine itself validates basic read.
-		if !inFile.Flags().Pread {
-			return 0, nil, syserror.ESPIPE
-		}
-
-		// Copy in the offset.
-		var offset int64
-		if _, err := primitive.CopyInt64In(t, offsetAddr, &offset); err != nil {
-			return 0, nil, err
-		}
-
-		// Do the splice.
-		n, err = doSplice(t, outFile, inFile, fs.SpliceOpts{
-			Length:    count,
-			SrcOffset: true,
-			SrcStart:  int64(offset),
-		}, outFile.Flags().NonBlocking)
-
-		// Copy out the new offset.
-		if _, err := primitive.CopyInt64Out(t, offsetAddr, offset+n); err != nil {
-			return 0, nil, err
-		}
-	} else {
-		// Send data using splice.
-		n, err = doSplice(t, outFile, inFile, fs.SpliceOpts{
-			Length: count,
-		}, outFile.Flags().NonBlocking)
-	}
-
-	// Sendfile can't lose any data because inFD is always a regual file.
-	if n != 0 {
-		err = nil
-	}
-
-	// We can only pass a single file to handleIOError, so pick inFile
-	// arbitrarily. This is used only for debugging purposes.
-	return uintptr(n), nil, handleIOError(t, false, err, syserror.ERESTARTSYS, "sendfile", inFile)
-}
-
-// Splice implements splice(2).
-func Splice(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+// Splice implements Linux syscall splice(2).
+func Splice(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	inFD := args[0].Int()
-	inOffset := args[1].Pointer()
+	inOffsetPtr := args[1].Pointer()
 	outFD := args[2].Int()
-	outOffset := args[3].Pointer()
+	outOffsetPtr := args[3].Pointer()
 	count := int64(args[4].SizeT())
 	flags := args[5].Int()
 
-	// Check for invalid flags.
-	if flags&^(linux.SPLICE_F_MOVE|linux.SPLICE_F_NONBLOCK|linux.SPLICE_F_MORE|linux.SPLICE_F_GIFT) != 0 {
-		return 0, nil, syserror.EINVAL
+	if count == 0 {
+		return 0, nil, nil
+	}
+	if count > int64(kernel.MAX_RW_COUNT) {
+		count = int64(kernel.MAX_RW_COUNT)
+	}
+	if count < 0 {
+		return 0, nil, linuxerr.EINVAL
 	}
 
-	// Get files.
+	// Check for invalid flags.
+	if flags&^(linux.SPLICE_F_MOVE|linux.SPLICE_F_NONBLOCK|linux.SPLICE_F_MORE|linux.SPLICE_F_GIFT) != 0 {
+		return 0, nil, linuxerr.EINVAL
+	}
+
+	// Get file descriptions.
+	inFile := t.GetFile(inFD)
+	if inFile == nil {
+		return 0, nil, linuxerr.EBADF
+	}
+	defer inFile.DecRef(t)
 	outFile := t.GetFile(outFD)
 	if outFile == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer outFile.DecRef(t)
 
-	inFile := t.GetFile(inFD)
-	if inFile == nil {
-		return 0, nil, syserror.EBADF
+	// Check that both files support the required directionality.
+	if !inFile.IsReadable() || !outFile.IsWritable() {
+		return 0, nil, linuxerr.EBADF
 	}
-	defer inFile.DecRef(t)
+	if outFile.Options().DenySpliceIn {
+		return 0, nil, linuxerr.EINVAL
+	}
 
 	// The operation is non-blocking if anything is non-blocking.
 	//
 	// N.B. This is a rather simplistic heuristic that avoids some
 	// poor edge case behavior since the exact semantics here are
 	// underspecified and vary between versions of Linux itself.
-	nonBlock := inFile.Flags().NonBlocking || outFile.Flags().NonBlocking || (flags&linux.SPLICE_F_NONBLOCK != 0)
+	nonBlock := ((inFile.StatusFlags()|outFile.StatusFlags())&linux.O_NONBLOCK != 0) || (flags&linux.SPLICE_F_NONBLOCK != 0)
 
-	// Construct our options.
-	//
-	// Note that exactly one of the underlying buffers must be a pipe. We
-	// don't actually have this constraint internally, but we enforce it
-	// for the semantics of the call.
-	opts := fs.SpliceOpts{
-		Length: count,
-	}
-	inFileAttr := inFile.Dirent.Inode.StableAttr
-	outFileAttr := outFile.Dirent.Inode.StableAttr
-	switch {
-	case fs.IsPipe(inFileAttr) && !fs.IsPipe(outFileAttr):
-		if inOffset != 0 {
-			return 0, nil, syserror.ESPIPE
-		}
-		if outOffset != 0 {
-			if !outFile.Flags().Pwrite {
-				return 0, nil, syserror.EINVAL
-			}
-
-			var offset int64
-			if _, err := primitive.CopyInt64In(t, outOffset, &offset); err != nil {
-				return 0, nil, err
-			}
-
-			// Use the destination offset.
-			opts.DstOffset = true
-			opts.DstStart = offset
-		}
-	case !fs.IsPipe(inFileAttr) && fs.IsPipe(outFileAttr):
-		if outOffset != 0 {
-			return 0, nil, syserror.ESPIPE
-		}
-		if inOffset != 0 {
-			if !inFile.Flags().Pread {
-				return 0, nil, syserror.EINVAL
-			}
-
-			var offset int64
-			if _, err := primitive.CopyInt64In(t, inOffset, &offset); err != nil {
-				return 0, nil, err
-			}
-
-			// Use the source offset.
-			opts.SrcOffset = true
-			opts.SrcStart = offset
-		}
-	case fs.IsPipe(inFileAttr) && fs.IsPipe(outFileAttr):
-		if inOffset != 0 || outOffset != 0 {
-			return 0, nil, syserror.ESPIPE
-		}
-
-		// We may not refer to the same pipe; otherwise it's a continuous loop.
-		if inFileAttr.InodeID == outFileAttr.InodeID {
-			return 0, nil, syserror.EINVAL
-		}
-	default:
-		return 0, nil, syserror.EINVAL
+	// At least one file description must represent a pipe.
+	inPipeFD, inIsPipe := inFile.Impl().(*pipe.VFSPipeFD)
+	outPipeFD, outIsPipe := outFile.Impl().(*pipe.VFSPipeFD)
+	if !inIsPipe && !outIsPipe {
+		return 0, nil, linuxerr.EINVAL
 	}
 
-	// Splice data.
-	n, err := doSplice(t, outFile, inFile, opts, nonBlock)
-
-	// Special files can have additional requirements for granularity.  For
-	// example, read from eventfd returns EINVAL if a size is less 8 bytes.
-	// Inotify is another example. read will return EINVAL is a buffer is
-	// too small to return the next event, but a size of an event isn't
-	// fixed, it is sizeof(struct inotify_event) + {NAME_LEN} + 1.
-	if n != 0 && err != nil && (fs.IsAnonymous(inFileAttr) || fs.IsAnonymous(outFileAttr)) {
-		err = nil
+	// Copy in offsets.
+	inOffset := int64(-1)
+	if inOffsetPtr != 0 {
+		if inIsPipe {
+			return 0, nil, linuxerr.ESPIPE
+		}
+		if inFile.Options().DenyPRead {
+			return 0, nil, linuxerr.EINVAL
+		}
+		if _, err := primitive.CopyInt64In(t, inOffsetPtr, &inOffset); err != nil {
+			return 0, nil, err
+		}
+		if inOffset < 0 {
+			return 0, nil, linuxerr.EINVAL
+		}
+	}
+	outOffset := int64(-1)
+	if outOffsetPtr != 0 {
+		if outIsPipe {
+			return 0, nil, linuxerr.ESPIPE
+		}
+		if outFile.Options().DenyPWrite {
+			return 0, nil, linuxerr.EINVAL
+		}
+		if _, err := primitive.CopyInt64In(t, outOffsetPtr, &outOffset); err != nil {
+			return 0, nil, err
+		}
+		if outOffset < 0 {
+			return 0, nil, linuxerr.EINVAL
+		}
 	}
 
-	// See above; inFile is chosen arbitrarily here.
-	return uintptr(n), nil, handleIOError(t, n != 0, err, syserror.ERESTARTSYS, "splice", inFile)
+	// Move data.
+	var (
+		n   int64
+		err error
+	)
+	dw := dualWaiter{
+		inFile:  inFile,
+		outFile: outFile,
+	}
+	defer dw.destroy()
+	for {
+		// If both input and output are pipes, delegate to the pipe
+		// implementation. Otherwise, exactly one end is a pipe, which
+		// we ensure is consistently ordered after the non-pipe FD's
+		// locks by passing the pipe FD as usermem.IO to the non-pipe
+		// end.
+		switch {
+		case inIsPipe && outIsPipe:
+			n, err = pipe.Splice(t, outPipeFD, inPipeFD, count)
+		case inIsPipe:
+			n, err = inPipeFD.SpliceToNonPipe(t, outFile, outOffset, count)
+			if outOffset != -1 {
+				outOffset += n
+			}
+		case outIsPipe:
+			n, err = outPipeFD.SpliceFromNonPipe(t, inFile, inOffset, count)
+			if inOffset != -1 {
+				inOffset += n
+			}
+		default:
+			panic("at least one end of splice must be a pipe")
+		}
+
+		if n != 0 || !linuxerr.Equals(linuxerr.ErrWouldBlock, err) || nonBlock {
+			break
+		}
+		if err = dw.waitForBoth(t); err != nil {
+			break
+		}
+	}
+
+	// Copy updated offsets out.
+	if inOffsetPtr != 0 {
+		if _, err := primitive.CopyInt64Out(t, inOffsetPtr, inOffset); err != nil {
+			return 0, nil, err
+		}
+	}
+	if outOffsetPtr != 0 {
+		if _, err := primitive.CopyInt64Out(t, outOffsetPtr, outOffset); err != nil {
+			return 0, nil, err
+		}
+	}
+
+	// We can only pass a single file to handleIOError, so pick inFile arbitrarily.
+	// This is used only for debugging purposes.
+	return uintptr(n), nil, HandleIOError(t, n != 0, err, linuxerr.ERESTARTSYS, "splice", outFile)
 }
 
-// Tee imlements tee(2).
-func Tee(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+// Tee implements Linux syscall tee(2).
+func Tee(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	inFD := args[0].Int()
 	outFD := args[1].Int()
 	count := int64(args[2].SizeT())
 	flags := args[3].Int()
 
-	// Check for invalid flags.
-	if flags&^(linux.SPLICE_F_MOVE|linux.SPLICE_F_NONBLOCK|linux.SPLICE_F_MORE|linux.SPLICE_F_GIFT) != 0 {
-		return 0, nil, syserror.EINVAL
+	if count == 0 {
+		return 0, nil, nil
+	}
+	if count > int64(kernel.MAX_RW_COUNT) {
+		count = int64(kernel.MAX_RW_COUNT)
+	}
+	if count < 0 {
+		return 0, nil, linuxerr.EINVAL
 	}
 
-	// Get files.
+	// Check for invalid flags.
+	if flags&^(linux.SPLICE_F_MOVE|linux.SPLICE_F_NONBLOCK|linux.SPLICE_F_MORE|linux.SPLICE_F_GIFT) != 0 {
+		return 0, nil, linuxerr.EINVAL
+	}
+
+	// Get file descriptions.
+	inFile := t.GetFile(inFD)
+	if inFile == nil {
+		return 0, nil, linuxerr.EBADF
+	}
+	defer inFile.DecRef(t)
 	outFile := t.GetFile(outFD)
 	if outFile == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer outFile.DecRef(t)
 
-	inFile := t.GetFile(inFD)
-	if inFile == nil {
-		return 0, nil, syserror.EBADF
+	// Check that both files support the required directionality.
+	if !inFile.IsReadable() || !outFile.IsWritable() {
+		return 0, nil, linuxerr.EBADF
 	}
-	defer inFile.DecRef(t)
-
-	// All files must be pipes.
-	if !fs.IsPipe(inFile.Dirent.Inode.StableAttr) || !fs.IsPipe(outFile.Dirent.Inode.StableAttr) {
-		return 0, nil, syserror.EINVAL
-	}
-
-	// We may not refer to the same pipe; see above.
-	if inFile.Dirent.Inode.StableAttr.InodeID == outFile.Dirent.Inode.StableAttr.InodeID {
-		return 0, nil, syserror.EINVAL
+	if outFile.Options().DenySpliceIn {
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	// The operation is non-blocking if anything is non-blocking.
-	nonBlock := inFile.Flags().NonBlocking || outFile.Flags().NonBlocking || (flags&linux.SPLICE_F_NONBLOCK != 0)
+	//
+	// N.B. This is a rather simplistic heuristic that avoids some
+	// poor edge case behavior since the exact semantics here are
+	// underspecified and vary between versions of Linux itself.
+	nonBlock := ((inFile.StatusFlags()|outFile.StatusFlags())&linux.O_NONBLOCK != 0) || (flags&linux.SPLICE_F_NONBLOCK != 0)
 
-	// Splice data.
-	n, err := doSplice(t, outFile, inFile, fs.SpliceOpts{
-		Length: count,
-		Dup:    true,
-	}, nonBlock)
-
-	// Tee doesn't change a state of inFD, so it can't lose any data.
-	if n != 0 {
-		err = nil
+	// Both file descriptions must represent pipes.
+	inPipeFD, inIsPipe := inFile.Impl().(*pipe.VFSPipeFD)
+	outPipeFD, outIsPipe := outFile.Impl().(*pipe.VFSPipeFD)
+	if !inIsPipe || !outIsPipe {
+		return 0, nil, linuxerr.EINVAL
 	}
 
-	// See above; inFile is chosen arbitrarily here.
-	return uintptr(n), nil, handleIOError(t, false, err, syserror.ERESTARTSYS, "tee", inFile)
+	// Copy data.
+	var (
+		n   int64
+		err error
+	)
+	dw := dualWaiter{
+		inFile:  inFile,
+		outFile: outFile,
+	}
+	defer dw.destroy()
+	for {
+		n, err = pipe.Tee(t, outPipeFD, inPipeFD, count)
+		if n != 0 || !linuxerr.Equals(linuxerr.ErrWouldBlock, err) || nonBlock {
+			break
+		}
+		if err = dw.waitForBoth(t); err != nil {
+			break
+		}
+	}
+
+	if n != 0 {
+		// If a partial write is completed, the error is dropped. Log it here.
+		if err != nil && err != io.EOF && !linuxerr.Equals(linuxerr.ErrWouldBlock, err) {
+			log.Debugf("tee completed a partial write with error: %v", err)
+			err = nil
+		}
+	}
+
+	// We can only pass a single file to handleIOError, so pick inFile arbitrarily.
+	// This is used only for debugging purposes.
+	return uintptr(n), nil, HandleIOError(t, n != 0, err, linuxerr.ERESTARTSYS, "tee", inFile)
+}
+
+// Sendfile implements linux system call sendfile(2).
+func Sendfile(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	outFD := args[0].Int()
+	inFD := args[1].Int()
+	offsetAddr := args[2].Pointer()
+	count := int64(args[3].SizeT())
+
+	inFile := t.GetFile(inFD)
+	if inFile == nil {
+		return 0, nil, linuxerr.EBADF
+	}
+	defer inFile.DecRef(t)
+	if !inFile.IsReadable() {
+		return 0, nil, linuxerr.EBADF
+	}
+
+	outFile := t.GetFile(outFD)
+	if outFile == nil {
+		return 0, nil, linuxerr.EBADF
+	}
+	defer outFile.DecRef(t)
+	if !outFile.IsWritable() {
+		return 0, nil, linuxerr.EBADF
+	}
+	if outFile.Options().DenySpliceIn {
+		return 0, nil, linuxerr.EINVAL
+	}
+
+	// Verify that the outFile Append flag is not set.
+	if outFile.StatusFlags()&linux.O_APPEND != 0 {
+		return 0, nil, linuxerr.EINVAL
+	}
+
+	// Verify that inFile is a regular file or block device. This is a
+	// requirement; the same check appears in Linux
+	// (fs/splice.c:splice_direct_to_actor).
+	if stat, err := inFile.Stat(t, vfs.StatOptions{Mask: linux.STATX_TYPE}); err != nil {
+		return 0, nil, err
+	} else if stat.Mask&linux.STATX_TYPE == 0 ||
+		(stat.Mode&linux.S_IFMT != linux.S_IFREG && stat.Mode&linux.S_IFMT != linux.S_IFBLK) {
+		return 0, nil, linuxerr.EINVAL
+	}
+
+	// Copy offset if it exists.
+	offset := int64(-1)
+	if offsetAddr != 0 {
+		if inFile.Options().DenyPRead {
+			return 0, nil, linuxerr.ESPIPE
+		}
+		var offsetP primitive.Int64
+		if _, err := offsetP.CopyIn(t, offsetAddr); err != nil {
+			return 0, nil, err
+		}
+		offset = int64(offsetP)
+
+		if offset < 0 {
+			return 0, nil, linuxerr.EINVAL
+		}
+		if offset+count < 0 {
+			return 0, nil, linuxerr.EINVAL
+		}
+	}
+
+	// Validate count. This must come after offset checks.
+	if count < 0 {
+		return 0, nil, linuxerr.EINVAL
+	}
+	if count == 0 {
+		return 0, nil, nil
+	}
+	if count > int64(kernel.MAX_RW_COUNT) {
+		count = int64(kernel.MAX_RW_COUNT)
+	}
+
+	// Copy data.
+	var (
+		total int64
+		err   error
+	)
+	dw := dualWaiter{
+		inFile:  inFile,
+		outFile: outFile,
+	}
+	defer dw.destroy()
+	outPipeFD, outIsPipe := outFile.Impl().(*pipe.VFSPipeFD)
+	// Reading from input file should never block, since it is regular or
+	// block device. We only need to check if writing to the output file
+	// can block.
+	nonBlock := outFile.StatusFlags()&linux.O_NONBLOCK != 0
+	if outIsPipe {
+		for {
+			var n int64
+			n, err = outPipeFD.SpliceFromNonPipe(t, inFile, offset, count-total)
+			if offset != -1 {
+				offset += n
+			}
+			total += n
+			if total == count {
+				break
+			}
+			if err == nil && t.Interrupted() {
+				err = linuxerr.ErrInterrupted
+				break
+			}
+			if linuxerr.Equals(linuxerr.ErrWouldBlock, err) && !nonBlock {
+				err = dw.waitForBoth(t)
+			}
+			if err != nil {
+				break
+			}
+		}
+	} else {
+		// Read inFile to buffer, then write the contents to outFile.
+		//
+		// The buffer size has to be limited to avoid large memory
+		// allocations and long delays. In Linux, the buffer size is
+		// limited by a size of an internl pipe. Here, we repeat this
+		// behavior.
+		bufSize := count
+		if bufSize > pipe.MaximumPipeSize {
+			bufSize = pipe.MaximumPipeSize
+		}
+		buf := make([]byte, bufSize)
+		for {
+			if int64(len(buf)) > count-total {
+				buf = buf[:count-total]
+			}
+			var readN int64
+			if offset != -1 {
+				readN, err = inFile.PRead(t, usermem.BytesIOSequence(buf), offset, vfs.ReadOptions{})
+				offset += readN
+			} else {
+				readN, err = inFile.Read(t, usermem.BytesIOSequence(buf), vfs.ReadOptions{})
+			}
+
+			// Write all of the bytes that we read. This may need
+			// multiple write calls to complete.
+			wbuf := buf[:readN]
+			for len(wbuf) > 0 {
+				var writeN int64
+				writeN, err = outFile.Write(t, usermem.BytesIOSequence(wbuf), vfs.WriteOptions{})
+				wbuf = wbuf[writeN:]
+				if linuxerr.Equals(linuxerr.ErrWouldBlock, err) && !nonBlock {
+					err = dw.waitForOut(t)
+				}
+				if err != nil {
+					// We didn't complete the write. Only report the bytes that were actually
+					// written, and rewind offsets as needed.
+					notWritten := int64(len(wbuf))
+					readN -= notWritten
+					if offset == -1 {
+						// We modified the offset of the input file itself during the read
+						// operation. Rewind it.
+						if _, seekErr := inFile.Seek(t, -notWritten, linux.SEEK_CUR); seekErr != nil {
+							// Log the error but don't return it, since the write has already
+							// completed successfully.
+							log.Warningf("failed to roll back input file offset: %v", seekErr)
+						}
+					} else {
+						// The sendfile call was provided an offset parameter that should be
+						// adjusted to reflect the number of bytes sent. Rewind it.
+						offset -= notWritten
+					}
+					break
+				}
+			}
+
+			total += readN
+			if total == count {
+				break
+			}
+			if err == nil && t.Interrupted() {
+				err = linuxerr.ErrInterrupted
+				break
+			}
+			if linuxerr.Equals(linuxerr.ErrWouldBlock, err) && !nonBlock {
+				err = dw.waitForBoth(t)
+			}
+			if err != nil {
+				break
+			}
+		}
+	}
+
+	if offsetAddr != 0 {
+		// Copy out the new offset.
+		offsetP := primitive.Uint64(offset)
+		if _, err := offsetP.CopyOut(t, offsetAddr); err != nil {
+			return 0, nil, err
+		}
+	}
+
+	if total != 0 {
+		if err != nil && err != io.EOF && !linuxerr.Equals(linuxerr.ErrWouldBlock, err) {
+			// If a partial write is completed, the error is dropped. Log it here.
+			log.Debugf("sendfile completed a partial write with error: %v", err)
+			err = nil
+		}
+	}
+
+	// We can only pass a single file to handleIOError, so pick inFile arbitrarily.
+	// This is used only for debugging purposes.
+	return uintptr(total), nil, HandleIOError(t, total != 0, err, linuxerr.ERESTARTSYS, "sendfile", inFile)
+}
+
+// dualWaiter is used to wait on one or both vfs.FileDescriptions. It is not
+// thread-safe, and does not take a reference on the vfs.FileDescriptions.
+//
+// Users must call destroy() when finished.
+type dualWaiter struct {
+	inFile  *vfs.FileDescription
+	outFile *vfs.FileDescription
+
+	inW   waiter.Entry
+	inCh  chan struct{}
+	outW  waiter.Entry
+	outCh chan struct{}
+}
+
+// waitForBoth waits for both dw.inFile and dw.outFile to be ready.
+func (dw *dualWaiter) waitForBoth(t *kernel.Task) error {
+	if dw.inFile.Readiness(eventMaskRead)&eventMaskRead == 0 {
+		if dw.inCh == nil {
+			dw.inW, dw.inCh = waiter.NewChannelEntry(eventMaskRead)
+			if err := dw.inFile.EventRegister(&dw.inW); err != nil {
+				return err
+			}
+			// We might be ready now. Try again before blocking.
+			return nil
+		}
+		if err := t.Block(dw.inCh); err != nil {
+			return err
+		}
+	}
+	return dw.waitForOut(t)
+}
+
+// waitForOut waits for dw.outfile to be read.
+func (dw *dualWaiter) waitForOut(t *kernel.Task) error {
+	// Don't bother checking readiness of the outFile, because it's not a
+	// guarantee that it won't return EWOULDBLOCK. Both pipes and eventfds
+	// can be "ready" but will reject writes of certain sizes with
+	// EWOULDBLOCK. See b/172075629, b/170743336.
+	if dw.outCh == nil {
+		dw.outW, dw.outCh = waiter.NewChannelEntry(eventMaskWrite)
+		if err := dw.outFile.EventRegister(&dw.outW); err != nil {
+			return err
+		}
+		// We might be ready to write now. Try again before blocking.
+		return nil
+	}
+	return t.Block(dw.outCh)
+}
+
+// destroy cleans up resources help by dw. No more calls to wait* can occur
+// after destroy is called.
+func (dw *dualWaiter) destroy() {
+	if dw.inCh != nil {
+		dw.inFile.EventUnregister(&dw.inW)
+		dw.inCh = nil
+	}
+	if dw.outCh != nil {
+		dw.outFile.EventUnregister(&dw.outW)
+		dw.outCh = nil
+	}
+	dw.inFile = nil
+	dw.outFile = nil
 }

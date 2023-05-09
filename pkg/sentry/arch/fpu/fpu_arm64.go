@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build arm64
 // +build arm64
 
 package fpu
@@ -31,7 +32,6 @@ const (
 //
 // Currently, aarch64FPState is only a space of 0x210 length for fpstate.
 // The fp head is useless in sentry/ptrace/kvm.
-//
 func initAarch64FPState(data *State) {
 }
 

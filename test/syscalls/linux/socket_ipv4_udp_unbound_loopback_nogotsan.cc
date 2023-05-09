@@ -18,7 +18,7 @@
 #include "gtest/gtest.h"
 #include "absl/memory/memory.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
-#include "test/syscalls/linux/socket_test_util.h"
+#include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {
@@ -29,18 +29,15 @@ using IPv4UDPUnboundSocketNogotsanTest = SimpleSocketTest;
 
 // Check that connect returns EAGAIN when out of local ephemeral ports.
 // We disable S/R because this test creates a large number of sockets.
-TEST_P(IPv4UDPUnboundSocketNogotsanTest,
-       UDPConnectPortExhaustion_NoRandomSave) {
+TEST_P(IPv4UDPUnboundSocketNogotsanTest, UDPConnectPortExhaustion) {
   auto receiver1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
-  constexpr int kClients = 65536;
+  const int kClients = ASSERT_NO_ERRNO_AND_VALUE(MaybeLimitEphemeralPorts());
   // Bind the first socket to the loopback and take note of the selected port.
   auto addr = V4Loopback();
-  ASSERT_THAT(bind(receiver1->get(), reinterpret_cast<sockaddr*>(&addr.addr),
-                   addr.addr_len),
+  ASSERT_THAT(bind(receiver1->get(), AsSockAddr(&addr.addr), addr.addr_len),
               SyscallSucceeds());
   socklen_t addr_len = addr.addr_len;
-  ASSERT_THAT(getsockname(receiver1->get(),
-                          reinterpret_cast<sockaddr*>(&addr.addr), &addr_len),
+  ASSERT_THAT(getsockname(receiver1->get(), AsSockAddr(&addr.addr), &addr_len),
               SyscallSucceeds());
   EXPECT_EQ(addr_len, addr.addr_len);
 
@@ -50,8 +47,7 @@ TEST_P(IPv4UDPUnboundSocketNogotsanTest,
   for (int i = 0; i < kClients; i++) {
     auto s = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
-    int ret = connect(s->get(), reinterpret_cast<sockaddr*>(&addr.addr),
-                      addr.addr_len);
+    int ret = connect(s->get(), AsSockAddr(&addr.addr), addr.addr_len);
     if (ret == 0) {
       sockets.push_back(std::move(s));
       continue;
@@ -63,9 +59,9 @@ TEST_P(IPv4UDPUnboundSocketNogotsanTest,
 
 // Check that bind returns EADDRINUSE when out of local ephemeral ports.
 // We disable S/R because this test creates a large number of sockets.
-TEST_P(IPv4UDPUnboundSocketNogotsanTest, UDPBindPortExhaustion_NoRandomSave) {
+TEST_P(IPv4UDPUnboundSocketNogotsanTest, UDPBindPortExhaustion) {
   auto receiver1 = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
-  constexpr int kClients = 65536;
+  const int kClients = ASSERT_NO_ERRNO_AND_VALUE(MaybeLimitEphemeralPorts());
   auto addr = V4Loopback();
   // Disable cooperative S/R as we are making too many syscalls.
   DisableSave ds;
@@ -73,8 +69,7 @@ TEST_P(IPv4UDPUnboundSocketNogotsanTest, UDPBindPortExhaustion_NoRandomSave) {
   for (int i = 0; i < kClients; i++) {
     auto s = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
 
-    int ret =
-        bind(s->get(), reinterpret_cast<sockaddr*>(&addr.addr), addr.addr_len);
+    int ret = bind(s->get(), AsSockAddr(&addr.addr), addr.addr_len);
     if (ret == 0) {
       sockets.push_back(std::move(s));
       continue;

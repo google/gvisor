@@ -14,6 +14,9 @@
 
 #include "test/syscalls/linux/socket_generic.h"
 
+#ifdef __linux__
+#include <linux/capability.h>
+#endif  // __linux__
 #include <stdio.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
@@ -22,8 +25,9 @@
 #include "gtest/gtest.h"
 #include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
-#include "test/syscalls/linux/socket_test_util.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
+#include "test/util/capability_util.h"
+#include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
 // This file is a generic socket test file. It must be built with another file
@@ -330,7 +334,7 @@ TEST_P(AllSocketPairTest, RecvmmsgInvalidTimeout) {
 TEST_P(AllSocketPairTest, RecvmmsgTimeoutBeforeRecv) {
   // There is a known bug in the Linux recvmmsg(2) causing it to block forever
   // if the timeout expires while blocking for the first message.
-  SKIP_IF(!IsRunningOnGvisor());
+  SKIP_IF(!IsRunningOnGvisor() || IsRunningWithHostinet());
 
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
   char buf[10];
@@ -399,6 +403,50 @@ TEST_P(AllSocketPairTest, RcvBufSucceeds) {
       SyscallSucceeds());
   EXPECT_GT(size, 0);
 }
+
+#ifdef __linux__
+
+// Check that setting SO_RCVBUFFORCE above max is not clamped to the maximum
+// receive buffer size.
+TEST_P(AllSocketPairTest, SetSocketRecvBufForceAboveMax) {
+  // TODO(b/267210840): This test requires CAP_NET_ADMIN on the host to run,
+  // which we do not have in some test environments.
+  SKIP_IF(IsRunningWithHostinet());
+
+  std::unique_ptr<SocketPair> sockets =
+      ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  // Discover maxmimum buffer size by setting to a really large value.
+  constexpr int kRcvBufSz = 0xffffffff;
+  ASSERT_THAT(setsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVBUF, &kRcvBufSz,
+                         sizeof(kRcvBufSz)),
+              SyscallSucceeds());
+
+  int max = 0;
+  socklen_t max_len = sizeof(max);
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVBUF, &max, &max_len),
+      SyscallSucceeds());
+
+  int above_max = max + 1;
+  int sso = setsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVBUFFORCE,
+                       &above_max, sizeof(above_max));
+  if (!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN))) {
+    ASSERT_THAT(sso, SyscallFailsWithErrno(EPERM));
+    return;
+  }
+  ASSERT_THAT(sso, SyscallSucceeds());
+
+  int val = 0;
+  socklen_t val_len = sizeof(val);
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVBUF, &val, &val_len),
+      SyscallSucceeds());
+  // The system doubles the passed-in maximum.
+  ASSERT_EQ(above_max * 2, val);
+}
+
+#endif  // __linux__
 
 TEST_P(AllSocketPairTest, GetSndBufSucceeds) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
@@ -779,7 +827,7 @@ TEST_P(AllSocketPairTest, RecvTimeoutWaitAll) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
   struct timeval tv {
-    .tv_sec = 0, .tv_usec = 200000  // 200ms
+    .tv_sec = 1, .tv_usec = 0
   };
   EXPECT_THAT(setsockopt(sockets->second_fd(), SOL_SOCKET, SO_RCVTIMEO, &tv,
                          sizeof(tv)),
@@ -884,8 +932,8 @@ TEST_P(AllSocketPairTest, SetAndGetBooleanSocketOptions) {
 }
 
 TEST_P(AllSocketPairTest, GetSocketOutOfBandInlineOption) {
-  // We do not support disabling this option. It is always enabled.
-  SKIP_IF(!IsRunningOnGvisor());
+  // gVisor does not support this option, unless using Hostinet.
+  SKIP_IF(!IsRunningOnGvisor() || IsRunningWithHostinet());
 
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
   int enable = -1;
@@ -899,5 +947,60 @@ TEST_P(AllSocketPairTest, GetSocketOutOfBandInlineOption) {
   EXPECT_EQ(enable, want);
 }
 
+TEST_P(AllSocketPairTest, GetSocketRcvbufOption) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  int rcvBufSz = 0;
+  ASSERT_THAT(setsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVBUF, &rcvBufSz,
+                         sizeof(rcvBufSz)),
+              SyscallSucceeds());
+
+  int opt = 0;
+  socklen_t opt_len = sizeof(opt);
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVBUF, &opt, &opt_len),
+      SyscallSucceeds());
+  ASSERT_EQ(opt_len, sizeof(opt));
+
+  if (IsRunningOnGvisor() && !IsRunningWithHostinet()) {
+    // Minimum buffer size in gVisor is 4KiB.
+    const int minRcvBufSizeGvisor = 4096;
+    EXPECT_EQ(opt, minRcvBufSizeGvisor);
+  } else {
+    // This value is derived as (2048 + sizeof(sk_buff)).
+    const int minRcvBufSizeLinux = 2304;
+    EXPECT_EQ(opt, minRcvBufSizeLinux);
+  }
+}
+
+TEST_P(AllSocketPairTest, GetSetSocketRcvlowatOption) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  int opt = 0;
+  socklen_t opt_len = sizeof(opt);
+  constexpr int defaultSz = 1;
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVLOWAT, &opt, &opt_len),
+      SyscallSucceeds());
+  ASSERT_EQ(opt_len, sizeof(opt));
+  EXPECT_EQ(opt, defaultSz);
+
+  int rcvlowatSz = 100;
+  ASSERT_THAT(setsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVLOWAT,
+                         &rcvlowatSz, sizeof(rcvlowatSz)),
+              SyscallSucceeds());
+
+  ASSERT_THAT(
+      getsockopt(sockets->first_fd(), SOL_SOCKET, SO_RCVLOWAT, &opt, &opt_len),
+      SyscallSucceeds());
+  ASSERT_EQ(opt_len, sizeof(opt));
+
+  if (IsRunningOnGvisor() && !IsRunningWithHostinet()) {
+    // TODO(b/226603727): Add support for setting SO_RCVLOWAT option in gVisor.
+    EXPECT_EQ(opt, defaultSz);
+  } else {
+    EXPECT_EQ(opt, rcvlowatSz);
+  }
+}
 }  // namespace testing
 }  // namespace gvisor

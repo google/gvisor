@@ -1,5 +1,8 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
+load("//pkg/sync/locking:locking.bzl", "declare_mutex", "declare_rwmutex")
+
+package(default_applicable_licenses = ["//:license"])
 
 licenses(["notice"])
 
@@ -31,10 +34,38 @@ go_template_instance(
     out = "inode_refs.go",
     package = "tmpfs",
     prefix = "inode",
-    template = "//pkg/refsvfs2:refs_template",
+    template = "//pkg/refs:refs_template",
     types = {
         "T": "inode",
     },
+)
+
+declare_mutex(
+    name = "inode_mutex",
+    out = "inode_mutex.go",
+    package = "tmpfs",
+    prefix = "inode",
+)
+
+declare_mutex(
+    name = "pages_used_mutex",
+    out = "pages_used_mutex.go",
+    package = "tmpfs",
+    prefix = "pagesUsed",
+)
+
+declare_mutex(
+    name = "iter_mutex",
+    out = "iter_mutex.go",
+    package = "tmpfs",
+    prefix = "iter",
+)
+
+declare_rwmutex(
+    name = "filesystem_mutex",
+    out = "filesystem_mutex.go",
+    package = "tmpfs",
+    prefix = "filesystem",
 )
 
 go_library(
@@ -44,9 +75,13 @@ go_library(
         "device_file.go",
         "directory.go",
         "filesystem.go",
+        "filesystem_mutex.go",
         "fstree.go",
+        "inode_mutex.go",
         "inode_refs.go",
+        "iter_mutex.go",
         "named_pipe.go",
+        "pages_used_mutex.go",
         "regular_file.go",
         "save_restore.go",
         "socket_file.go",
@@ -56,19 +91,19 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/amutex",
+        "//pkg/atomicbitops",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
+        "//pkg/fd",
         "//pkg/fspath",
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/refs",
-        "//pkg/refsvfs2",
         "//pkg/safemem",
         "//pkg/sentry/arch",
-        "//pkg/sentry/fs",
-        "//pkg/sentry/fs/fsutil",
-        "//pkg/sentry/fs/lock",
+        "//pkg/sentry/fsimpl/lock",
         "//pkg/sentry/fsmetric",
+        "//pkg/sentry/fsutil",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/pipe",
         "//pkg/sentry/kernel/time",
@@ -81,7 +116,7 @@ go_library(
         "//pkg/sentry/vfs",
         "//pkg/sentry/vfs/memxattr",
         "//pkg/sync",
-        "//pkg/syserror",
+        "//pkg/sync/locking",
         "//pkg/usermem",
     ],
 )
@@ -93,15 +128,11 @@ go_test(
     deps = [
         ":tmpfs",
         "//pkg/abi/linux",
-        "//pkg/context",
         "//pkg/fspath",
         "//pkg/refs",
         "//pkg/sentry/contexttest",
-        "//pkg/sentry/fs",
-        "//pkg/sentry/fs/tmpfs",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/vfs",
-        "//pkg/syserror",
     ],
 )
 
@@ -117,13 +148,14 @@ go_test(
     library = ":tmpfs",
     deps = [
         "//pkg/abi/linux",
+        "//pkg/atomicbitops",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/fspath",
         "//pkg/sentry/contexttest",
-        "//pkg/sentry/fs/lock",
+        "//pkg/sentry/fsimpl/lock",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/vfs",
-        "//pkg/syserror",
         "//pkg/usermem",
     ],
 )

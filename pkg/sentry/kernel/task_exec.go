@@ -66,11 +66,12 @@ package kernel
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
+	"gvisor.dev/gvisor/pkg/cleanup"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
+	"gvisor.dev/gvisor/pkg/sentry/seccheck"
+	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // execStop is a TaskStop that a task sets on itself when it wants to execve
@@ -86,9 +87,26 @@ func (*execStop) Killable() bool { return true }
 // thread group and switching to newImage. Execve always takes ownership of
 // newImage.
 //
+// If executable is not nil, it is the first executable file that was loaded in
+// the process of obtaining newImage, and pathname is a path to it.
+//
 // Preconditions: The caller must be running Task.doSyscallInvoke on the task
 // goroutine.
-func (t *Task) Execve(newImage *TaskImage) (*SyscallControl, error) {
+func (t *Task) Execve(newImage *TaskImage, argv, env []string, executable *vfs.FileDescription, pathname string) (*SyscallControl, error) {
+	cu := cleanup.Make(func() {
+		newImage.release()
+	})
+	defer cu.Clean()
+	// We can't clearly hold kernel package locks while stat'ing executable.
+	if seccheck.Global.Enabled(seccheck.PointExecve) {
+		mask, info := getExecveSeccheckInfo(t, argv, env, executable, pathname)
+		if err := seccheck.Global.SentToSinks(func(c seccheck.Sink) error {
+			return c.Execve(t, mask, info)
+		}); err != nil {
+			return nil, err
+		}
+	}
+
 	t.tg.pidns.owner.mu.Lock()
 	defer t.tg.pidns.owner.mu.Unlock()
 	t.tg.signalHandlers.mu.Lock()
@@ -97,8 +115,7 @@ func (t *Task) Execve(newImage *TaskImage) (*SyscallControl, error) {
 	if t.tg.exiting || t.tg.execing != nil {
 		// We lost to a racing group-exit, kill, or exec from another thread
 		// and should just exit.
-		newImage.release()
-		return nil, syserror.EINTR
+		return nil, linuxerr.EINTR
 	}
 
 	// Cancel any racing group stops.
@@ -119,6 +136,7 @@ func (t *Task) Execve(newImage *TaskImage) (*SyscallControl, error) {
 		t.beginInternalStopLocked((*execStop)(nil))
 	}
 
+	cu.Release()
 	return &SyscallControl{next: &runSyscallAfterExecStop{newImage}, ignoreReturn: true}, nil
 }
 
@@ -170,18 +188,18 @@ func (r *runSyscallAfterExecStop) execute(t *Task) taskRunState {
 	//
 	// Details:
 	//
-	// - If the thread group is sharing its signal handlers with another thread
-	// group via CLONE_SIGHAND, execve forces the signal handlers to be copied
-	// (see Linux's fs/exec.c:de_thread). We're not reference-counting signal
-	// handlers, so we always make a copy.
+	//	- If the thread group is sharing its signal handlers with another thread
+	//		group via CLONE_SIGHAND, execve forces the signal handlers to be copied
+	//		(see Linux's fs/exec.c:de_thread). We're not reference-counting signal
+	//		handlers, so we always make a copy.
 	//
-	// - "Disposition" only means sigaction::sa_handler/sa_sigaction; flags,
-	// restorer (if present), and mask are always reset. (See Linux's
-	// fs/exec.c:setup_new_exec => kernel/signal.c:flush_signal_handlers.)
+	//	- "Disposition" only means sigaction::sa_handler/sa_sigaction; flags,
+	//		restorer (if present), and mask are always reset. (See Linux's
+	//		fs/exec.c:setup_new_exec => kernel/signal.c:flush_signal_handlers.)
 	t.tg.signalHandlers = t.tg.signalHandlers.CopyForExec()
 	t.endStopCond.L = &t.tg.signalHandlers.mu
 	// "Any alternate signal stack is not preserved (sigaltstack(2))." - execve(2)
-	t.signalStack = arch.SignalStack{Flags: arch.SignalStackFlagDisable}
+	t.signalStack = linux.SignalStack{Flags: linux.SS_DISABLE}
 	// "The termination signal is reset to SIGCHLD (see clone(2))."
 	t.tg.terminationSignal = linux.SIGCHLD
 	// execed indicates that the process can no longer join a process group
@@ -200,11 +218,11 @@ func (r *runSyscallAfterExecStop) execute(t *Task) taskRunState {
 	t.tg.pidns.owner.mu.Unlock()
 
 	oldFDTable := t.fdTable
-	t.fdTable = t.fdTable.Fork(t)
+	t.fdTable = t.fdTable.Fork(t, int32(t.fdTable.CurrentMaxFDs()))
 	oldFDTable.DecRef(t)
 
 	// Remove FDs with the CloseOnExec flag set.
-	t.fdTable.RemoveIf(t, func(_ *fs.File, _ *vfs.FileDescription, flags FDFlags) bool {
+	t.fdTable.RemoveIf(t, func(_ *vfs.FileDescription, flags FDFlags) bool {
 		return flags.CloseOnExec
 	})
 
@@ -223,9 +241,15 @@ func (r *runSyscallAfterExecStop) execute(t *Task) taskRunState {
 	// Update credentials to reflect the execve. This should precede switching
 	// MMs to ensure that dumpability has been reset first, if needed.
 	t.updateCredsForExecLocked()
-	t.image.release()
+	oldImage := t.image
 	t.image = *r.image
 	t.mu.Unlock()
+
+	// Don't hold t.mu while calling t.image.release(), that may
+	// attempt to acquire TaskImage.MemoryManager.mappingMu, a lock order
+	// violation.
+	oldImage.release()
+
 	t.unstopVforkParent()
 	t.p.FullStateChanged()
 	// NOTE(b/30316266): All locks must be dropped prior to calling Activate.
@@ -239,9 +263,9 @@ func (r *runSyscallAfterExecStop) execute(t *Task) taskRunState {
 // thread group leader, promoteLocked is a no-op.
 //
 // Preconditions:
-// * All other tasks in t's thread group, including the existing leader (if it
-//   is not t), have reached TaskExitZombie.
-// * The TaskSet mutex must be locked for writing.
+//   - All other tasks in t's thread group, including the existing leader (if it
+//     is not t), have reached TaskExitZombie.
+//   - The TaskSet mutex must be locked for writing.
 func (t *Task) promoteLocked() {
 	oldLeader := t.tg.leader
 	if t == oldLeader {
@@ -280,4 +304,37 @@ func (t *Task) promoteLocked() {
 		tracer.tg.eventQueue.Notify(EventExit | EventTraceeStop | EventGroupContinue)
 	}
 	oldLeader.exitNotifyLocked(false)
+}
+
+func getExecveSeccheckInfo(t *Task, argv, env []string, executable *vfs.FileDescription, pathname string) (seccheck.FieldSet, *pb.ExecveInfo) {
+	fields := seccheck.Global.GetFieldSet(seccheck.PointExecve)
+	info := &pb.ExecveInfo{
+		Argv: argv,
+		Env:  env,
+	}
+	if executable != nil {
+		info.BinaryPath = pathname
+		if fields.Local.Contains(seccheck.FieldSentryExecveBinaryInfo) {
+			statOpts := vfs.StatOptions{
+				Mask: linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID,
+			}
+			if stat, err := executable.Stat(t, statOpts); err == nil {
+				if stat.Mask&(linux.STATX_TYPE|linux.STATX_MODE) == (linux.STATX_TYPE | linux.STATX_MODE) {
+					info.BinaryMode = uint32(stat.Mode)
+				}
+				if stat.Mask&linux.STATX_UID != 0 {
+					info.BinaryUid = stat.UID
+				}
+				if stat.Mask&linux.STATX_GID != 0 {
+					info.BinaryGid = stat.GID
+				}
+			}
+		}
+	}
+
+	if !fields.Context.Empty() {
+		info.ContextData = &pb.ContextData{}
+		LoadSeccheckData(t, fields.Context, info.ContextData)
+	}
+	return fields, info
 }

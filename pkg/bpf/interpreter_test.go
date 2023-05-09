@@ -15,10 +15,12 @@
 package bpf
 
 import (
+	"encoding/binary"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/marshal"
 )
 
 func TestCompilationErrors(t *testing.T) {
@@ -750,29 +752,29 @@ func TestSimpleFilter(t *testing.T) {
 		// desc is the test's description.
 		desc string
 
-		// seccompData is the input data.
-		seccompData
+		// SeccompData is the input data.
+		data linux.SeccompData
 
 		// expectedRet is the expected return value of the BPF program.
 		expectedRet uint32
 	}{
 		{
 			desc:        "Invalid arch is rejected",
-			seccompData: seccompData{nr: 1 /* x86 exit */, arch: 0x40000003 /* AUDIT_ARCH_I386 */},
+			data:        linux.SeccompData{Nr: 1 /* x86 exit */, Arch: 0x40000003 /* AUDIT_ARCH_I386 */},
 			expectedRet: 0,
 		},
 		{
 			desc:        "Disallowed syscall is rejected",
-			seccompData: seccompData{nr: 105 /* __NR_setuid */, arch: 0xc000003e},
+			data:        linux.SeccompData{Nr: 105 /* __NR_setuid */, Arch: 0xc000003e},
 			expectedRet: 0,
 		},
 		{
 			desc:        "Allowed syscall is indeed allowed",
-			seccompData: seccompData{nr: 231 /* __NR_exit_group */, arch: 0xc000003e},
+			data:        linux.SeccompData{Nr: 231 /* __NR_exit_group */, Arch: 0xc000003e},
 			expectedRet: 0x7fff0000,
 		},
 	} {
-		ret, err := Exec(p, test.seccompData.asInput())
+		ret, err := Exec(p, dataAsInput(&test.data))
 		if err != nil {
 			t.Errorf("%s: expected return value of %d, got execution error: %v", test.desc, test.expectedRet, err)
 			continue
@@ -792,6 +794,6 @@ type seccompData struct {
 }
 
 // asInput converts a seccompData to a bpf.Input.
-func (d *seccompData) asInput() Input {
-	return InputBytes{binary.Marshal(nil, binary.LittleEndian, d), binary.LittleEndian}
+func dataAsInput(data *linux.SeccompData) Input {
+	return InputBytes{marshal.Marshal(data), hostarch.ByteOrder}
 }

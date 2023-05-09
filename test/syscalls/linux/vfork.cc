@@ -87,7 +87,7 @@ TEST(VforkTest, ParentStopsUntilChildExits) {
   EXPECT_THAT(InForkedProcess(test), IsPosixErrorOkAndHolds(0));
 }
 
-TEST(VforkTest, ParentStopsUntilChildExecves_NoRandomSave) {
+TEST(VforkTest, ParentStopsUntilChildExecves) {
   ExecveArray const owned_child_argv = {"/proc/self/exe", "--vfork_test_child"};
   char* const* const child_argv = owned_child_argv.get();
 
@@ -127,7 +127,7 @@ TEST(VforkTest, ParentStopsUntilChildExecves_NoRandomSave) {
 
 // A vfork child does not unstop the parent a second time when it exits after
 // exec.
-TEST(VforkTest, ExecedChildExitDoesntUnstopParent_NoRandomSave) {
+TEST(VforkTest, ExecedChildExitDoesntUnstopParent) {
   ExecveArray const owned_child_argv = {"/proc/self/exe", "--vfork_test_child"};
   char* const* const child_argv = owned_child_argv.get();
 

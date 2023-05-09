@@ -107,10 +107,10 @@ TEST_F(XattrTest, XattrInvalidPrefix) {
 
 // Do not allow save/restore cycles after making the test file read-only, as
 // the restore will fail to open it with r/w permissions.
-TEST_F(XattrTest, XattrReadOnly_NoRandomSave) {
+TEST_F(XattrTest, XattrReadOnly) {
   // Drop capabilities that allow us to override file and directory permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
 
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
@@ -138,10 +138,10 @@ TEST_F(XattrTest, XattrReadOnly_NoRandomSave) {
 
 // Do not allow save/restore cycles after making the test file write-only, as
 // the restore will fail to open it with r/w permissions.
-TEST_F(XattrTest, XattrWriteOnly_NoRandomSave) {
+TEST_F(XattrTest, XattrWriteOnly) {
   // Drop capabilities that allow us to override file and directory permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
 
   DisableSave ds;
   ASSERT_NO_ERRNO(testing::Chmod(test_file_name_, S_IWUSR));
@@ -254,8 +254,7 @@ TEST_F(XattrTest, SetXattrZeroSize) {
   EXPECT_THAT(setxattr(path, name, &val, 0, /*flags=*/0), SyscallSucceeds());
 
   char buf = '-';
-  EXPECT_THAT(getxattr(path, name, &buf, XATTR_SIZE_MAX),
-              SyscallSucceedsWithValue(0));
+  EXPECT_THAT(getxattr(path, name, &buf, 1), SyscallSucceedsWithValue(0));
   EXPECT_EQ(buf, '-');
 }
 
@@ -277,8 +276,11 @@ TEST_F(XattrTest, SetXattrSizeTooLarge) {
 TEST_F(XattrTest, SetXattrNullValueAndNonzeroSize) {
   const char* path = test_file_name_.c_str();
   const char name[] = "user.test";
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnonnull"
   EXPECT_THAT(setxattr(path, name, nullptr, 1, /*flags=*/0),
               SyscallFailsWithErrno(EFAULT));
+#pragma GCC diagnostic pop
 
   EXPECT_THAT(getxattr(path, name, nullptr, 0), SyscallFailsWithErrno(ENODATA));
 }
@@ -441,8 +443,11 @@ TEST_F(XattrTest, GetXattrNullValue) {
   size_t size = sizeof(val);
   EXPECT_THAT(setxattr(path, name, &val, size, /*flags=*/0), SyscallSucceeds());
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnonnull"
   EXPECT_THAT(getxattr(path, name, nullptr, size),
               SyscallFailsWithErrno(EFAULT));
+#pragma GCC diagnostic pop
 }
 
 TEST_F(XattrTest, GetXattrNullValueAndZeroSize) {
@@ -453,7 +458,10 @@ TEST_F(XattrTest, GetXattrNullValueAndZeroSize) {
   // Set value with zero size.
   EXPECT_THAT(setxattr(path, name, &val, 0, /*flags=*/0), SyscallSucceeds());
   // Get value with nonzero size.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnonnull"
   EXPECT_THAT(getxattr(path, name, nullptr, size), SyscallSucceedsWithValue(0));
+#pragma GCC diagnostic pop
 
   // Set value with nonzero size.
   EXPECT_THAT(setxattr(path, name, &val, size, /*flags=*/0), SyscallSucceeds());
@@ -503,8 +511,11 @@ TEST_F(XattrTest, ListXattrNoXattrs) {
 
   // ListXattr should succeed if there are no attributes, even if the buffer
   // passed in is a nullptr.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnonnull"
   EXPECT_THAT(listxattr(path, nullptr, sizeof(list)),
               SyscallSucceedsWithValue(0));
+#pragma GCC diagnostic pop
 }
 
 TEST_F(XattrTest, ListXattrNullBuffer) {
@@ -512,8 +523,11 @@ TEST_F(XattrTest, ListXattrNullBuffer) {
   const char name[] = "user.test";
   EXPECT_THAT(setxattr(path, name, nullptr, 0, /*flags=*/0), SyscallSucceeds());
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnonnull"
   EXPECT_THAT(listxattr(path, nullptr, sizeof(name)),
               SyscallFailsWithErrno(EFAULT));
+#pragma GCC diagnostic pop
 }
 
 TEST_F(XattrTest, ListXattrSizeTooSmall) {
@@ -608,31 +622,32 @@ TEST_F(XattrTest, XattrWithFD) {
 }
 
 TEST_F(XattrTest, XattrWithOPath) {
-  SKIP_IF(IsRunningWithVFS1());
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(test_file_name_.c_str(), O_PATH));
   const char name[] = "user.test";
   int val = 1234;
   size_t size = sizeof(val);
-  EXPECT_THAT(fsetxattr(fd.get(), name, &val, size, /*flags=*/0),
+
+  // Bionic's implementations of f*xattr() use *xattr() when O_PATH is set
+  // to circumvent the behavior this is testing for.
+  // Use syscall() here to avoid running through Bionic on Android.
+  EXPECT_THAT(syscall(SYS_fsetxattr, fd.get(), name, &val, size, /*flags=*/0),
               SyscallFailsWithErrno(EBADF));
 
   int buf;
-  EXPECT_THAT(fgetxattr(fd.get(), name, &buf, size),
+  EXPECT_THAT(syscall(SYS_fgetxattr, fd.get(), name, &buf, size),
               SyscallFailsWithErrno(EBADF));
 
   char list[sizeof(name)];
-  EXPECT_THAT(flistxattr(fd.get(), list, sizeof(list)),
+  EXPECT_THAT(syscall(SYS_flistxattr, fd.get(), list, sizeof(list)),
               SyscallFailsWithErrno(EBADF));
 
-  EXPECT_THAT(fremovexattr(fd.get(), name), SyscallFailsWithErrno(EBADF));
+  EXPECT_THAT(syscall(SYS_fremovexattr, fd.get(), name),
+              SyscallFailsWithErrno(EBADF));
 }
 
 TEST_F(XattrTest, TrustedNamespaceWithCapSysAdmin) {
-  // Trusted namespace not supported in VFS1.
-  SKIP_IF(IsRunningWithVFS1());
-
-  // TODO(b/66162845): Only gVisor tmpfs currently supports trusted namespace.
+  // TODO(b/166162845): Only gVisor tmpfs currently supports trusted namespace.
   SKIP_IF(IsRunningOnGvisor() &&
           !ASSERT_NO_ERRNO_AND_VALUE(IsTmpfs(test_file_name_)));
 
@@ -672,17 +687,12 @@ TEST_F(XattrTest, TrustedNamespaceWithCapSysAdmin) {
 }
 
 TEST_F(XattrTest, TrustedNamespaceWithoutCapSysAdmin) {
-  // Trusted namespace not supported in VFS1.
-  SKIP_IF(IsRunningWithVFS1());
-
   // TODO(b/66162845): Only gVisor tmpfs currently supports trusted namespace.
   SKIP_IF(IsRunningOnGvisor() &&
           !ASSERT_NO_ERRNO_AND_VALUE(IsTmpfs(test_file_name_)));
 
   // Drop CAP_SYS_ADMIN if we have it.
-  if (ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN))) {
-    EXPECT_NO_ERRNO(SetCapability(CAP_SYS_ADMIN, false));
-  }
+  AutoCapability cap(CAP_SYS_ADMIN, false);
 
   const char* path = test_file_name_.c_str();
   const char name[] = "trusted.test";

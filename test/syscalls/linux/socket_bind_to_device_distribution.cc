@@ -35,8 +35,8 @@
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/syscalls/linux/socket_bind_to_device_util.h"
-#include "test/syscalls/linux/socket_test_util.h"
 #include "test/util/capability_util.h"
+#include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
@@ -77,34 +77,6 @@ class BindToDeviceDistributionTest
   }
 };
 
-PosixErrorOr<uint16_t> AddrPort(int family, sockaddr_storage const& addr) {
-  switch (family) {
-    case AF_INET:
-      return static_cast<uint16_t>(
-          reinterpret_cast<sockaddr_in const*>(&addr)->sin_port);
-    case AF_INET6:
-      return static_cast<uint16_t>(
-          reinterpret_cast<sockaddr_in6 const*>(&addr)->sin6_port);
-    default:
-      return PosixError(EINVAL,
-                        absl::StrCat("unknown socket family: ", family));
-  }
-}
-
-PosixError SetAddrPort(int family, sockaddr_storage* addr, uint16_t port) {
-  switch (family) {
-    case AF_INET:
-      reinterpret_cast<sockaddr_in*>(addr)->sin_port = port;
-      return NoError();
-    case AF_INET6:
-      reinterpret_cast<sockaddr_in6*>(addr)->sin6_port = port;
-      return NoError();
-    default:
-      return PosixError(EINVAL,
-                        absl::StrCat("unknown socket family: ", family));
-  }
-}
-
 // Binds sockets to different devices and then creates many TCP connections.
 // Checks that the distribution of connections received on the sockets matches
 // the expectation.
@@ -141,9 +113,8 @@ TEST_P(BindToDeviceDistributionTest, Tcp) {
                            endpoint.bind_to_device.c_str(),
                            endpoint.bind_to_device.size() + 1),
                 SyscallSucceeds());
-    ASSERT_THAT(
-        bind(fd, reinterpret_cast<sockaddr*>(&listen_addr), listener.addr_len),
-        SyscallSucceeds());
+    ASSERT_THAT(bind(fd, AsSockAddr(&listen_addr), listener.addr_len),
+                SyscallSucceeds());
     ASSERT_THAT(listen(fd, 40), SyscallSucceeds());
 
     // On the first bind we need to determine which port was bound.
@@ -154,8 +125,7 @@ TEST_P(BindToDeviceDistributionTest, Tcp) {
     // Get the port bound by the listening socket.
     socklen_t addrlen = listener.addr_len;
     ASSERT_THAT(
-        getsockname(listener_fds[0].get(),
-                    reinterpret_cast<sockaddr*>(&listen_addr), &addrlen),
+        getsockname(listener_fds[0].get(), AsSockAddr(&listen_addr), &addrlen),
         SyscallSucceeds());
     uint16_t const port =
         ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
@@ -163,13 +133,13 @@ TEST_P(BindToDeviceDistributionTest, Tcp) {
   }
 
   constexpr int kConnectAttempts = 10000;
-  std::atomic<int> connects_received = ATOMIC_VAR_INIT(0);
+  std::atomic<int> connects_received(0);
   std::vector<int> accept_counts(listener_fds.size(), 0);
   std::vector<std::unique_ptr<ScopedThread>> listen_threads(
       listener_fds.size());
 
-  for (long unsigned int i = 0; i < listener_fds.size(); i++) {
-    listen_threads[i] = absl::make_unique<ScopedThread>(
+  for (size_t i = 0; i < listener_fds.size(); i++) {
+    listen_threads[i] = std::make_unique<ScopedThread>(
         [&listener_fds, &accept_counts, &connects_received, i,
          kConnectAttempts]() {
           do {
@@ -207,10 +177,9 @@ TEST_P(BindToDeviceDistributionTest, Tcp) {
   for (int32_t i = 0; i < kConnectAttempts; i++) {
     const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(
         Socket(connector.family(), SOCK_STREAM, IPPROTO_TCP));
-    ASSERT_THAT(
-        RetryEINTR(connect)(fd.get(), reinterpret_cast<sockaddr*>(&conn_addr),
-                            connector.addr_len),
-        SyscallSucceeds());
+    ASSERT_THAT(RetryEINTR(connect)(fd.get(), AsSockAddr(&conn_addr),
+                                    connector.addr_len),
+                SyscallSucceeds());
 
     EXPECT_THAT(RetryEINTR(send)(fd.get(), &i, sizeof(i), 0),
                 SyscallSucceedsWithValue(sizeof(i)));
@@ -221,7 +190,7 @@ TEST_P(BindToDeviceDistributionTest, Tcp) {
     listen_thread->Join();
   }
   // Check that connections are distributed correctly among listening sockets.
-  for (long unsigned int i = 0; i < accept_counts.size(); i++) {
+  for (size_t i = 0; i < accept_counts.size(); i++) {
     EXPECT_THAT(
         accept_counts[i],
         EquivalentWithin(static_cast<int>(kConnectAttempts *
@@ -267,9 +236,8 @@ TEST_P(BindToDeviceDistributionTest, Udp) {
                            endpoint.bind_to_device.c_str(),
                            endpoint.bind_to_device.size() + 1),
                 SyscallSucceeds());
-    ASSERT_THAT(
-        bind(fd, reinterpret_cast<sockaddr*>(&listen_addr), listener.addr_len),
-        SyscallSucceeds());
+    ASSERT_THAT(bind(fd, AsSockAddr(&listen_addr), listener.addr_len),
+                SyscallSucceeds());
 
     // On the first bind we need to determine which port was bound.
     if (listener_fds.size() > 1) {
@@ -279,8 +247,7 @@ TEST_P(BindToDeviceDistributionTest, Udp) {
     // Get the port bound by the listening socket.
     socklen_t addrlen = listener.addr_len;
     ASSERT_THAT(
-        getsockname(listener_fds[0].get(),
-                    reinterpret_cast<sockaddr*>(&listen_addr), &addrlen),
+        getsockname(listener_fds[0].get(), AsSockAddr(&listen_addr), &addrlen),
         SyscallSucceeds());
     uint16_t const port =
         ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
@@ -289,22 +256,22 @@ TEST_P(BindToDeviceDistributionTest, Udp) {
   }
 
   constexpr int kConnectAttempts = 10000;
-  std::atomic<int> packets_received = ATOMIC_VAR_INIT(0);
+  std::atomic<int> packets_received(0);
   std::vector<int> packets_per_socket(listener_fds.size(), 0);
   std::vector<std::unique_ptr<ScopedThread>> receiver_threads(
       listener_fds.size());
 
-  for (long unsigned int i = 0; i < listener_fds.size(); i++) {
-    receiver_threads[i] = absl::make_unique<ScopedThread>(
+  for (size_t i = 0; i < listener_fds.size(); i++) {
+    receiver_threads[i] = std::make_unique<ScopedThread>(
         [&listener_fds, &packets_per_socket, &packets_received, i]() {
           do {
             struct sockaddr_storage addr = {};
             socklen_t addrlen = sizeof(addr);
             int data;
 
-            auto ret = RetryEINTR(recvfrom)(
-                listener_fds[i].get(), &data, sizeof(data), 0,
-                reinterpret_cast<struct sockaddr*>(&addr), &addrlen);
+            auto ret =
+                RetryEINTR(recvfrom)(listener_fds[i].get(), &data, sizeof(data),
+                                     0, AsSockAddr(&addr), &addrlen);
 
             if (packets_received < kConnectAttempts) {
               ASSERT_THAT(ret, SyscallSucceedsWithValue(sizeof(data)));
@@ -322,10 +289,10 @@ TEST_P(BindToDeviceDistributionTest, Udp) {
             // A response is required to synchronize with the main thread,
             // otherwise the main thread can send more than can fit into receive
             // queues.
-            EXPECT_THAT(RetryEINTR(sendto)(
-                            listener_fds[i].get(), &data, sizeof(data), 0,
-                            reinterpret_cast<sockaddr*>(&addr), addrlen),
-                        SyscallSucceedsWithValue(sizeof(data)));
+            EXPECT_THAT(
+                RetryEINTR(sendto)(listener_fds[i].get(), &data, sizeof(data),
+                                   0, AsSockAddr(&addr), addrlen),
+                SyscallSucceedsWithValue(sizeof(data)));
           } while (packets_received < kConnectAttempts);
 
           // Shutdown all sockets to wake up other threads.
@@ -339,8 +306,7 @@ TEST_P(BindToDeviceDistributionTest, Udp) {
     FileDescriptor const fd =
         ASSERT_NO_ERRNO_AND_VALUE(Socket(connector.family(), SOCK_DGRAM, 0));
     EXPECT_THAT(RetryEINTR(sendto)(fd.get(), &i, sizeof(i), 0,
-                                   reinterpret_cast<sockaddr*>(&conn_addr),
-                                   connector.addr_len),
+                                   AsSockAddr(&conn_addr), connector.addr_len),
                 SyscallSucceedsWithValue(sizeof(i)));
     int data;
     EXPECT_THAT(RetryEINTR(recv)(fd.get(), &data, sizeof(data), 0),
@@ -352,7 +318,7 @@ TEST_P(BindToDeviceDistributionTest, Udp) {
     receiver_thread->Join();
   }
   // Check that packets are distributed correctly among listening sockets.
-  for (long unsigned int i = 0; i < packets_per_socket.size(); i++) {
+  for (size_t i = 0; i < packets_per_socket.size(); i++) {
     EXPECT_THAT(
         packets_per_socket[i],
         EquivalentWithin(static_cast<int>(kConnectAttempts *

@@ -32,6 +32,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
+	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
@@ -77,15 +78,24 @@ func TestExecPrivileged(t *testing.T) {
 	d := dockerutil.MakeContainer(ctx, t)
 	defer d.CleanUp(ctx)
 
-	// Start the container with all capabilities dropped.
-	if err := d.Spawn(ctx, dockerutil.RunOpts{
+	// Container will drop all capabilities.
+	opts := dockerutil.RunOpts{
 		Image:   "basic/alpine",
 		CapDrop: []string{"all"},
-	}, "sh", "-c", "cat /proc/self/status; sleep 100"); err != nil {
+	}
+
+	// But if we are running with host network stack and raw sockets, then
+	// we require CAP_NET_RAW, so add that back.
+	if testutil.IsRunningWithHostNet() && testutil.IsRunningWithNetRaw() {
+		opts.CapAdd = []string{"NET_RAW"}
+	}
+
+	// Start the container.
+	if err := d.Spawn(ctx, opts, "sh", "-c", "cat /proc/self/status; sleep 100"); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
 
-	// Check that all capabilities where dropped from container.
+	// Grab the capabilities from inside container.
 	matches, err := d.WaitForOutputSubmatch(ctx, "CapEff:\t([0-9a-f]+)\n", 5*time.Second)
 	if err != nil {
 		t.Fatalf("WaitForOutputSubmatch() timeout: %v", err)
@@ -98,12 +108,18 @@ func TestExecPrivileged(t *testing.T) {
 		t.Fatalf("failed to convert capabilities %q: %v", matches[1], err)
 	}
 	t.Logf("Container capabilities: %#x", containerCaps)
-	if containerCaps != 0 {
-		t.Fatalf("Container should have no capabilities: %x", containerCaps)
+
+	// Expect no capabilities, unless raw sockets configured.
+	var wantContainerCaps uint64
+	if testutil.IsRunningWithNetRaw() {
+		wantContainerCaps |= bits.MaskOf64(int(linux.CAP_NET_RAW))
+	}
+	if containerCaps != wantContainerCaps {
+		t.Fatalf("Container caps got %x want %x", containerCaps, wantContainerCaps)
 	}
 
-	// Check that 'exec --privileged' adds all capabilities, except for
-	// CAP_NET_RAW.
+	// Check that 'exec --privileged' adds all capabilities except
+	// CAP_NET_RAW, unless raw sockets configured.
 	got, err := d.Exec(ctx, dockerutil.ExecOpts{
 		Privileged: true,
 	}, "grep", "CapEff:", "/proc/self/status")
@@ -111,9 +127,24 @@ func TestExecPrivileged(t *testing.T) {
 		t.Fatalf("docker exec failed: %v", err)
 	}
 	t.Logf("Exec CapEff: %v", got)
-	want := fmt.Sprintf("CapEff:\t%016x\n", specutils.AllCapabilitiesUint64()&^bits.MaskOf64(int(linux.CAP_NET_RAW)))
-	if got != want {
-		t.Errorf("Wrong capabilities, got: %q, want: %q. Make sure runsc is not using '--net-raw'", got, want)
+	wantCaps := specutils.AllCapabilitiesUint64()
+	if !testutil.IsRunningWithNetRaw() {
+		wantCaps &= ^bits.MaskOf64(int(linux.CAP_NET_RAW))
+	}
+	wantStr := fmt.Sprintf("CapEff:\t%016x\n", wantCaps)
+	if got == wantStr {
+		// All good.
+		return
+	}
+	// Older versions of Docker don't support CAP_PERFMON, _BPF, or
+	// _CHECKPOINT_RESTORE. Mask those and see if we are equal.
+	oldWantCaps := wantCaps
+	for _, cap := range []linux.Capability{linux.CAP_PERFMON, linux.CAP_BPF, linux.CAP_CHECKPOINT_RESTORE} {
+		oldWantCaps = oldWantCaps &^ bits.MaskOf64(int(cap))
+	}
+	oldWantStr := fmt.Sprintf("CapEff:\t%016x\n", oldWantCaps)
+	if got != oldWantStr {
+		t.Errorf("Wrong capabilities, got: %q, want: %q or %q. Make sure runsc is not using '--net-raw'", got, wantStr, oldWantStr)
 	}
 }
 

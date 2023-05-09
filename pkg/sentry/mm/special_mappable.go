@@ -16,11 +16,10 @@ package mm
 
 import (
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
-	"gvisor.dev/gvisor/pkg/sentry/usage"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // SpecialMappable implements memmap.MappingIdentity and memmap.Mappable with
@@ -94,7 +93,7 @@ func (*SpecialMappable) CopyMapping(context.Context, memmap.MappingSpace, hostar
 func (m *SpecialMappable) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
 	var err error
 	if required.End > m.fr.Length() {
-		err = &memmap.BusError{syserror.EFAULT}
+		err = &memmap.BusError{linuxerr.EFAULT}
 	}
 	if source := optional.Intersect(memmap.MappableRange{0, m.fr.Length()}); source.Length() != 0 {
 		return []memmap.Translation{
@@ -131,28 +130,4 @@ func (m *SpecialMappable) FileRange() memmap.FileRange {
 // Length returns the length of the SpecialMappable.
 func (m *SpecialMappable) Length() uint64 {
 	return m.fr.Length()
-}
-
-// NewSharedAnonMappable returns a SpecialMappable that implements the
-// semantics of mmap(MAP_SHARED|MAP_ANONYMOUS) and mappings of /dev/zero.
-//
-// TODO(gvisor.dev/issue/1624): Linux uses an ephemeral file created by
-// mm/shmem.c:shmem_zero_setup(), and VFS2 does something analogous. VFS1 uses
-// a SpecialMappable instead, incorrectly getting device and inode IDs of zero
-// and causing memory for shared anonymous mappings to be allocated up-front
-// instead of on first touch; this is to avoid exacerbating the fs.MountSource
-// leak (b/143656263). Delete this function along with VFS1.
-func NewSharedAnonMappable(length uint64, mfp pgalloc.MemoryFileProvider) (*SpecialMappable, error) {
-	if length == 0 {
-		return nil, syserror.EINVAL
-	}
-	alignedLen, ok := hostarch.Addr(length).RoundUp()
-	if !ok {
-		return nil, syserror.EINVAL
-	}
-	fr, err := mfp.MemoryFile().Allocate(uint64(alignedLen), usage.Anonymous)
-	if err != nil {
-		return nil, err
-	}
-	return NewSpecialMappable("/dev/zero (deleted)", mfp, fr), nil
 }

@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build arm64
 // +build arm64
 
 package linux
@@ -24,8 +25,9 @@ import (
 // Clone implements linux syscall clone(2).
 // sys_clone has so many flavors, and we implement the default one in linux 3.11
 // arm64(kernel/fork.c with CONFIG_CLONE_BACKWARDS defined in the config file):
-//    sys_clone(clone_flags, newsp, parent_tidptr, tls_val, child_tidptr)
-func Clone(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+//
+//	sys_clone(clone_flags, newsp, parent_tidptr, tls_val, child_tidptr)
+func Clone(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	flags := int(args[0].Int())
 	stack := args[1].Pointer()
 	parentTID := args[2].Pointer()

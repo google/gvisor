@@ -1,11 +1,16 @@
 load("//tools:defs.bzl", "go_library")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_library(
     name = "platform",
     srcs = [
         "context.go",
+        "cpuid_amd64.go",
+        "cpuid_arm64.go",
         "mmap_min_addr.go",
         "platform.go",
     ],
@@ -13,6 +18,7 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/cpuid",
         "//pkg/hostarch",
         "//pkg/seccomp",
         "//pkg/sentry/arch",

@@ -22,14 +22,12 @@
 #include "test/util/posix_error.h"
 #include "test/util/test_util.h"
 
-#ifndef __x86_64__
-#error "This test is x86-64 specific."
-#endif
-
 namespace gvisor {
 namespace testing {
 
 namespace {
+
+#ifdef __x86_64__
 
 constexpr char kInt3 = '\xcc';
 constexpr char kInt80[2] = {'\xcd', '\x80'};
@@ -73,7 +71,7 @@ void ExitGroup32(const char instruction[2], int code) {
       "iretl\n"
       "int $3\n"
       :
-      : [ code ] "m"(code), [ ip ] "d"(m.ptr())
+      : [code] "m"(code), [ip] "d"(m.ptr())
       : "rax", "rbx");
 }
 
@@ -133,6 +131,20 @@ TEST(Syscall32Bit, Sysenter) {
   }
 }
 
+class KilledByOneOfSignals {
+ public:
+  KilledByOneOfSignals(int signum1, int signum2)
+      : signum1_(signum1), signum2_(signum2) {}
+  bool operator()(int exit_status) const {
+    if (!WIFSIGNALED(exit_status)) return false;
+    int sig = WTERMSIG(exit_status);
+    return sig == signum1_ || sig == signum2_;
+  }
+
+ private:
+  const int signum1_, signum2_;
+};
+
 TEST(Syscall32Bit, Syscall) {
   if ((PlatformSupport32Bit() == PlatformSupport::Allowed ||
        PlatformSupport32Bit() == PlatformSupport::Ignored) &&
@@ -153,9 +165,11 @@ TEST(Syscall32Bit, Syscall) {
       break;
 
     case PlatformSupport::Ignored:
-      // See above.
+      // NOTE(b/241819530): SIGSEGV was returned due to a kernel bug that has
+      // been fixed recently. Let's continue accept SIGSEGV while bad kernels
+      // are running in prod.
       EXPECT_EXIT(ExitGroup32(kSyscall, kExitCode),
-                  ::testing::KilledBySignal(SIGSEGV), "");
+                  KilledByOneOfSignals(SIGTRAP, SIGSEGV), "");
       break;
 
     case PlatformSupport::Allowed:
@@ -241,6 +255,8 @@ TEST(Call32Bit, Disallowed) {
       FarCall32();
   }
 }
+
+#endif
 
 }  // namespace
 

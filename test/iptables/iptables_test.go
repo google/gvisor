@@ -28,11 +28,11 @@ import (
 )
 
 // singleTest runs a TestCase. Each test follows a pattern:
-// - Create a container.
-// - Get the container's IP.
-// - Send the container our IP.
-// - Start a new goroutine running the local action of the test.
-// - Wait for both the container and local actions to finish.
+//   - Create a container.
+//   - Get the container's IP.
+//   - Send the container our IP.
+//   - Start a new goroutine running the local action of the test.
+//   - Wait for both the container and local actions to finish.
 //
 // Container output is logged to $TEST_UNDECLARED_OUTPUTS_DIR if it exists, or
 // to stderr.

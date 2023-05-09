@@ -29,11 +29,8 @@ func TestMain(m *testing.M) {
 
 // Test that the exclude file parses without error.
 func TestExcludelist(t *testing.T) {
-	ex, err := getExcludes(*excludeFile)
+	_, err := ExcludeFilter(*excludeFile)
 	if err != nil {
 		t.Fatalf("error parsing exclude file: %v", err)
-	}
-	if *excludeFile != "" && len(ex) == 0 {
-		t.Errorf("got empty excludes for file %q", *excludeFile)
 	}
 }

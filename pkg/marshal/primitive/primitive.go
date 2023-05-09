@@ -19,50 +19,48 @@ package primitive
 import (
 	"io"
 
-	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal"
-	"gvisor.dev/gvisor/pkg/usermem"
 )
 
 // Int8 is a marshal.Marshallable implementation for int8.
 //
-// +marshal slice:Int8Slice:inner
+// +marshal boundCheck slice:Int8Slice:inner
 type Int8 int8
 
 // Uint8 is a marshal.Marshallable implementation for uint8.
 //
-// +marshal slice:Uint8Slice:inner
+// +marshal boundCheck slice:Uint8Slice:inner
 type Uint8 uint8
 
 // Int16 is a marshal.Marshallable implementation for int16.
 //
-// +marshal slice:Int16Slice:inner
+// +marshal boundCheck slice:Int16Slice:inner
 type Int16 int16
 
 // Uint16 is a marshal.Marshallable implementation for uint16.
 //
-// +marshal slice:Uint16Slice:inner
+// +marshal boundCheck slice:Uint16Slice:inner
 type Uint16 uint16
 
 // Int32 is a marshal.Marshallable implementation for int32.
 //
-// +marshal slice:Int32Slice:inner
+// +marshal boundCheck slice:Int32Slice:inner
 type Int32 int32
 
 // Uint32 is a marshal.Marshallable implementation for uint32.
 //
-// +marshal slice:Uint32Slice:inner
+// +marshal boundCheck slice:Uint32Slice:inner
 type Uint32 uint32
 
 // Int64 is a marshal.Marshallable implementation for int64.
 //
-// +marshal slice:Int64Slice:inner
+// +marshal boundCheck slice:Int64Slice:inner
 type Int64 int64
 
 // Uint64 is a marshal.Marshallable implementation for uint64.
 //
-// +marshal slice:Uint64Slice:inner
+// +marshal boundCheck slice:Uint64Slice:inner
 type Uint64 uint64
 
 // ByteSlice is a marshal.Marshallable implementation for []byte.
@@ -78,13 +76,13 @@ func (b *ByteSlice) SizeBytes() int {
 }
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (b *ByteSlice) MarshalBytes(dst []byte) {
-	copy(dst, *b)
+func (b *ByteSlice) MarshalBytes(dst []byte) []byte {
+	return dst[copy(dst, *b):]
 }
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (b *ByteSlice) UnmarshalBytes(src []byte) {
-	copy(*b, src)
+func (b *ByteSlice) UnmarshalBytes(src []byte) []byte {
+	return src[copy(*b, src):]
 }
 
 // Packed implements marshal.Marshallable.Packed.
@@ -93,13 +91,13 @@ func (b *ByteSlice) Packed() bool {
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (b *ByteSlice) MarshalUnsafe(dst []byte) {
-	b.MarshalBytes(dst)
+func (b *ByteSlice) MarshalUnsafe(dst []byte) []byte {
+	return b.MarshalBytes(dst)
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (b *ByteSlice) UnmarshalUnsafe(src []byte) {
-	b.UnmarshalBytes(src)
+func (b *ByteSlice) UnmarshalUnsafe(src []byte) []byte {
+	return b.UnmarshalBytes(src)
 }
 
 // CopyIn implements marshal.Marshallable.CopyIn.
@@ -124,6 +122,81 @@ func (b *ByteSlice) WriteTo(w io.Writer) (int64, error) {
 }
 
 var _ marshal.Marshallable = (*ByteSlice)(nil)
+
+// The following set of functions are convenient shorthands for wrapping a
+// built-in type in a marshallable primitive type. For example:
+//
+// func useMarshallable(m marshal.Marshallable) { ... }
+//
+// // Compare:
+//
+// buf = []byte{...}
+// // useMarshallable(&primitive.ByteSlice(buf)) // Not allowed, can't address temp value.
+// bufP := primitive.ByteSlice(buf)
+// useMarshallable(&bufP)
+//
+// // Vs:
+//
+// useMarshallable(AsByteSlice(buf))
+//
+// Note that the argument to these function escapes, so avoid using them on very
+// hot code paths. But generally if a function accepts an interface as an
+// argument, the argument escapes anyways.
+
+// AllocateInt8 returns x as a marshallable.
+func AllocateInt8(x int8) marshal.Marshallable {
+	p := Int8(x)
+	return &p
+}
+
+// AllocateUint8 returns x as a marshallable.
+func AllocateUint8(x uint8) marshal.Marshallable {
+	p := Uint8(x)
+	return &p
+}
+
+// AllocateInt16 returns x as a marshallable.
+func AllocateInt16(x int16) marshal.Marshallable {
+	p := Int16(x)
+	return &p
+}
+
+// AllocateUint16 returns x as a marshallable.
+func AllocateUint16(x uint16) marshal.Marshallable {
+	p := Uint16(x)
+	return &p
+}
+
+// AllocateInt32 returns x as a marshallable.
+func AllocateInt32(x int32) marshal.Marshallable {
+	p := Int32(x)
+	return &p
+}
+
+// AllocateUint32 returns x as a marshallable.
+func AllocateUint32(x uint32) marshal.Marshallable {
+	p := Uint32(x)
+	return &p
+}
+
+// AllocateInt64 returns x as a marshallable.
+func AllocateInt64(x int64) marshal.Marshallable {
+	p := Int64(x)
+	return &p
+}
+
+// AllocateUint64 returns x as a marshallable.
+func AllocateUint64(x uint64) marshal.Marshallable {
+	p := Uint64(x)
+	return &p
+}
+
+// AsByteSlice returns b as a marshallable. Note that this allocates a new slice
+// header, but does not copy the slice contents.
+func AsByteSlice(b []byte) marshal.Marshallable {
+	bs := ByteSlice(b)
+	return &bs
+}
 
 // Below, we define some convenience functions for marshalling primitive types
 // using the newtypes above, without requiring superfluous casts.
@@ -324,27 +397,4 @@ func CopyStringIn(cc marshal.CopyContext, addr hostarch.Addr, dst *string) (int,
 func CopyStringOut(cc marshal.CopyContext, addr hostarch.Addr, src string) (int, error) {
 	srcP := ByteSlice(src)
 	return srcP.CopyOut(cc, addr)
-}
-
-// IOCopyContext wraps an object implementing hostarch.IO to implement
-// marshal.CopyContext.
-type IOCopyContext struct {
-	Ctx  context.Context
-	IO   usermem.IO
-	Opts usermem.IOOpts
-}
-
-// CopyScratchBuffer implements marshal.CopyContext.CopyScratchBuffer.
-func (i *IOCopyContext) CopyScratchBuffer(size int) []byte {
-	return make([]byte, size)
-}
-
-// CopyOutBytes implements marshal.CopyContext.CopyOutBytes.
-func (i *IOCopyContext) CopyOutBytes(addr hostarch.Addr, b []byte) (int, error) {
-	return i.IO.CopyOut(i.Ctx, addr, b, i.Opts)
-}
-
-// CopyInBytes implements marshal.CopyContext.CopyInBytes.
-func (i *IOCopyContext) CopyInBytes(addr hostarch.Addr, b []byte) (int, error) {
-	return i.IO.CopyIn(i.Ctx, addr, b, i.Opts)
 }

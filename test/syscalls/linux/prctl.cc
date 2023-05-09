@@ -101,11 +101,11 @@ TEST(PrctlTest, NoNewPrivsPreservedAcrossCloneForkAndExecve) {
   int no_new_privs;
   ASSERT_THAT(no_new_privs = prctl(PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0),
               SyscallSucceeds());
-  ScopedThread([] {
+  ScopedThread thread = ScopedThread([] {
     ASSERT_THAT(prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0), SyscallSucceeds());
     EXPECT_THAT(prctl(PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0),
                 SyscallSucceedsWithValue(1));
-    ScopedThread([] {
+    ScopedThread threadInner = ScopedThread([] {
       EXPECT_THAT(prctl(PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0),
                   SyscallSucceedsWithValue(1));
       // Note that these ASSERT_*s failing will only return from this thread,
@@ -129,9 +129,11 @@ TEST(PrctlTest, NoNewPrivsPreservedAcrossCloneForkAndExecve) {
       EXPECT_THAT(prctl(PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0),
                   SyscallSucceedsWithValue(1));
     });
+    threadInner.Join();
     EXPECT_THAT(prctl(PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0),
                 SyscallSucceedsWithValue(1));
   });
+  thread.Join();
   EXPECT_THAT(prctl(PR_GET_NO_NEW_PRIVS, 0, 0, 0, 0),
               SyscallSucceedsWithValue(no_new_privs));
 }
@@ -141,7 +143,7 @@ TEST(PrctlTest, PDeathSig) {
 
   // Make the new process' parent a separate thread since the parent death
   // signal fires when the parent *thread* exits.
-  ScopedThread([&] {
+  ScopedThread thread = ScopedThread([&] {
     child_pid = fork();
     TEST_CHECK(child_pid >= 0);
     if (child_pid == 0) {
@@ -172,6 +174,7 @@ TEST(PrctlTest, PDeathSig) {
     // Suppress the SIGSTOP and detach from the child.
     ASSERT_THAT(ptrace(PTRACE_DETACH, child_pid, 0, 0), SyscallSucceeds());
   });
+  thread.Join();
 
   // The child should have been killed by its parent death SIGKILL.
   int status;
@@ -184,10 +187,8 @@ TEST(PrctlTest, PDeathSig) {
 // This test is to validate that calling prctl with PR_SET_MM without the
 // CAP_SYS_RESOURCE returns EPERM.
 TEST(PrctlTest, InvalidPrSetMM) {
-  if (ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_RESOURCE))) {
-    ASSERT_NO_ERRNO(SetCapability(CAP_SYS_RESOURCE,
-                                  false));  // Drop capability to test below.
-  }
+  // Drop capability to test below.
+  AutoCapability cap(CAP_SYS_RESOURCE, false);
   ASSERT_THAT(prctl(PR_SET_MM, 0, 0, 0, 0), SyscallFailsWithErrno(EPERM));
 }
 
@@ -211,6 +212,12 @@ TEST(PrctlTest, SetGetDumpability) {
 TEST(PrctlTest, RootDumpability) {
   EXPECT_THAT(prctl(PR_SET_DUMPABLE, SUID_DUMP_ROOT),
               SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(PrctlTest, SetGetSubreaper) {
+  // Setting subreaper on PID 1 works vacuously because PID 1 is always a
+  // subreaper.
+  EXPECT_THAT(prctl(PR_SET_CHILD_SUBREAPER, 1), SyscallSucceeds());
 }
 
 }  // namespace

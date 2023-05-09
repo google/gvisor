@@ -16,10 +16,14 @@ package cmd
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 
 	"github.com/google/subcommands"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/cleanup"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -70,7 +74,7 @@ func (r *Restore) SetFlags(f *flag.FlagSet) {
 }
 
 // Execute implements subcommands.Command.Execute.
-func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	if f.NArg() != 1 {
 		f.Usage()
 		return subcommands.ExitUsageError
@@ -81,39 +85,83 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...interface{
 	waitStatus := args[1].(*unix.WaitStatus)
 
 	if conf.Rootless {
-		return Errorf("Rootless mode not supported with %q", r.Name())
+		return util.Errorf("Rootless mode not supported with %q", r.Name())
 	}
 
 	bundleDir := r.bundleDir
 	if bundleDir == "" {
 		bundleDir = getwdOrDie()
 	}
-	spec, err := specutils.ReadSpec(bundleDir, conf)
-	if err != nil {
-		return Errorf("reading spec: %v", err)
-	}
-	specutils.LogSpec(spec)
-
 	if r.imagePath == "" {
-		return Errorf("image-path flag must be provided")
+		return util.Errorf("image-path flag must be provided")
 	}
+
+	var cu cleanup.Cleanup
+	defer cu.Clean()
 
 	conf.RestoreFile = filepath.Join(r.imagePath, checkpointFileName)
 
 	runArgs := container.Args{
 		ID:            id,
-		Spec:          spec,
+		Spec:          nil,
 		BundleDir:     bundleDir,
 		ConsoleSocket: r.consoleSocket,
 		PIDFile:       r.pidFile,
 		UserLog:       r.userLog,
 		Attached:      !r.detach,
 	}
-	ws, err := container.Run(conf, runArgs)
+
+	log.Debugf("Restore container, cid: %s, rootDir: %q", id, conf.RootDir)
+	c, err := container.Load(conf.RootDir, container.FullID{ContainerID: id}, container.LoadOpts{})
 	if err != nil {
-		return Errorf("running container: %v", err)
+		if err != os.ErrNotExist {
+			return util.Errorf("loading container: %v", err)
+		}
+
+		log.Warningf("Container not found, creating new one, cid: %s, spec from: %s", id, bundleDir)
+
+		// Read the spec again here to ensure flag annotations from the spec are
+		// applied to "conf".
+		if runArgs.Spec, err = specutils.ReadSpec(bundleDir, conf); err != nil {
+			return util.Errorf("reading spec: %v", err)
+		}
+		specutils.LogSpecDebug(runArgs.Spec, conf.OCISeccomp)
+
+		if c, err = container.New(conf, runArgs); err != nil {
+			return util.Errorf("creating container: %v", err)
+		}
+
+		// Clean up partially created container if an error occurs.
+		// Any errors returned by Destroy() itself are ignored.
+		cu.Add(func() {
+			c.Destroy()
+		})
+	} else {
+		runArgs.Spec = c.Spec
+	}
+
+	log.Debugf("Restore: %v", conf.RestoreFile)
+	if err := c.Restore(runArgs.Spec, conf, conf.RestoreFile); err != nil {
+		return util.Errorf("starting container: %v", err)
+	}
+
+	// If we allocate a terminal, forward signals to the sandbox process.
+	// Otherwise, Ctrl+C will terminate this process and its children,
+	// including the terminal.
+	if c.Spec.Process.Terminal {
+		stopForwarding := c.ForwardSignals(0, true /* fgProcess */)
+		defer stopForwarding()
+	}
+
+	var ws unix.WaitStatus
+	if runArgs.Attached {
+		if ws, err = c.Wait(); err != nil {
+			return util.Errorf("running container: %v", err)
+		}
 	}
 	*waitStatus = ws
+
+	cu.Release()
 
 	return subcommands.ExitSuccess
 }

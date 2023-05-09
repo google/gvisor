@@ -26,10 +26,10 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
-#include "test/syscalls/linux/socket_test_util.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/signal_util.h"
+#include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {
@@ -77,7 +77,6 @@ TEST_F(IoctlTest, InvalidControlNumber) {
 }
 
 TEST_F(IoctlTest, IoctlWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/null", O_PATH));
 
@@ -348,6 +347,22 @@ TEST_P(IoctlTestSIOCGIFCONF, ValidateNoPartialIfrsReturned) {
   ASSERT_THAT(ioctl(fd->get(), SIOCGIFCONF, &ifconf), SyscallSucceeds());
   ASSERT_GT(ifconf.ifc_len, 0);
   ASSERT_NE(ifr.ifr_name[0], '\0');  // An interface can now be returned.
+}
+
+// This test validates that nested pointers aren't allowed to escape the
+// address space.
+TEST_P(IoctlTestSIOCGIFCONF, ValidateNestedPointerCheck) {
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
+
+  struct ifconf ifconf = {};
+  ifconf.ifc_len = sizeof(ifreq);
+  // Address chosen with ASLR disabled, pausing here, and inspecting the
+  // process with /proc/<pid>/maps to find a writable mapping in the low range
+  // of gr0 memory.
+  ifconf.ifc_ifcu.ifcu_req = reinterpret_cast<ifreq*>(0x3f9000d51000);
+
+  ASSERT_THAT(ioctl(fd->get(), SIOCGIFCONF, &ifconf),
+              SyscallFailsWithErrno(EFAULT));
 }
 
 TEST_P(IoctlTestSIOCGIFCONF, ValidateLoopbackIsPresent) {

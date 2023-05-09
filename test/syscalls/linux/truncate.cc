@@ -181,7 +181,7 @@ TEST(TruncateTest, FtruncateDir) {
 TEST(TruncateTest, TruncateNonWriteable) {
   // Make sure we don't have CAP_DAC_OVERRIDE, since that allows the user to
   // always override write permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
+  AutoCapability cap(CAP_DAC_OVERRIDE, false);
   auto temp_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
       GetAbsoluteTestTmpdir(), absl::string_view(), 0555 /* mode */));
   EXPECT_THAT(truncate(temp_file.path().c_str(), 0),
@@ -197,7 +197,6 @@ TEST(TruncateTest, FtruncateNonWriteable) {
 }
 
 TEST(TruncateTest, FtruncateWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   auto temp_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
       GetAbsoluteTestTmpdir(), absl::string_view(), 0555 /* mode */));
   const FileDescriptor fd =
@@ -208,9 +207,9 @@ TEST(TruncateTest, FtruncateWithOpath) {
 
 // ftruncate(2) should succeed as long as the file descriptor is writeable,
 // regardless of whether the file permissions allow writing.
-TEST(TruncateTest, FtruncateWithoutWritePermission_NoRandomSave) {
+TEST(TruncateTest, FtruncateWithoutWritePermission) {
   // Drop capabilities that allow us to override file permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
+  AutoCapability cap(CAP_DAC_OVERRIDE, false);
 
   // The only time we can open a file with flags forbidden by its permissions
   // is when we are creating the file. We cannot re-open with the same flags,
@@ -230,7 +229,7 @@ TEST(TruncateTest, TruncateNonExist) {
   EXPECT_THAT(truncate("/foo/bar", 0), SyscallFailsWithErrno(ENOENT));
 }
 
-TEST(TruncateTest, FtruncateVirtualTmp_NoRandomSave) {
+TEST(TruncateTest, FtruncateVirtualTmp) {
   auto temp_file = NewTempAbsPathInDir("/dev/shm");
   const DisableSave ds;  // Incompatible permissions.
   const FileDescriptor fd =

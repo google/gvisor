@@ -1,49 +1,9 @@
 load("//tools:defs.bzl", "go_library", "go_test")
-load("//tools/go_generics:defs.bzl", "go_template")
 
 package(
+    default_applicable_licenses = ["//:license"],
     default_visibility = ["//:sandbox"],
     licenses = ["notice"],
-)
-
-exports_files(["LICENSE"])
-
-go_template(
-    name = "generic_atomicptr",
-    srcs = ["generic_atomicptr_unsafe.go"],
-    types = [
-        "Value",
-    ],
-)
-
-go_template(
-    name = "generic_atomicptrmap",
-    srcs = ["generic_atomicptrmap_unsafe.go"],
-    opt_consts = [
-        "ShardOrder",
-    ],
-    opt_types = [
-        "Hasher",
-    ],
-    types = [
-        "Key",
-        "Value",
-    ],
-    deps = [
-        ":sync",
-        "//pkg/gohacks",
-    ],
-)
-
-go_template(
-    name = "generic_seqatomic",
-    srcs = ["generic_seqatomic_unsafe.go"],
-    types = [
-        "Value",
-    ],
-    deps = [
-        ":sync",
-    ],
 )
 
 go_library(
@@ -61,6 +21,12 @@ go_library(
         "race_amd64.s",
         "race_arm64.s",
         "race_unsafe.go",
+        "runtime.go",
+        "runtime_amd64.go",
+        "runtime_constants.go",
+        "runtime_other.go",
+        "runtime_spinning_amd64.s",
+        "runtime_spinning_other.s",
         "runtime_unsafe.go",
         "rwmutex_unsafe.go",
         "seqcount.go",
@@ -80,7 +46,6 @@ go_test(
     size = "small",
     srcs = [
         "gate_test.go",
-        "mutex_test.go",
         "rwmutex_test.go",
         "seqcount_test.go",
     ],

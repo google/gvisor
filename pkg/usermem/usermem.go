@@ -22,11 +22,10 @@ import (
 	"strconv"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/gohacks"
-	"gvisor.dev/gvisor/pkg/safemem"
-	"gvisor.dev/gvisor/pkg/syserror"
-
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/safemem"
 )
 
 // IO provides access to the contents of a virtual memory space.
@@ -56,9 +55,9 @@ type IO interface {
 	// non-nil error explaining why.
 	//
 	// Preconditions:
-	// * The caller must not hold mm.MemoryManager.mappingMu or any
-	//   following locks in the lock order.
-	// * toZero >= 0.
+	//	* The caller must not hold mm.MemoryManager.mappingMu or any
+	//		following locks in the lock order.
+	//	* toZero >= 0.
 	ZeroOut(ctx context.Context, addr hostarch.Addr, toZero int64, opts IOOpts) (int64, error)
 
 	// CopyOutFrom copies ars.NumBytes() bytes from src to the memory mapped at
@@ -70,10 +69,10 @@ type IO interface {
 	// CopyOutFrom calls src.ReadToBlocks at most once.
 	//
 	// Preconditions:
-	// * The caller must not hold mm.MemoryManager.mappingMu or any
-	//   following locks in the lock order.
-	// * src.ReadToBlocks must not block on mm.MemoryManager.activeMu or
-	//   any preceding locks in the lock order.
+	//	* The caller must not hold mm.MemoryManager.mappingMu or any
+	//		following locks in the lock order.
+	//	* src.ReadToBlocks must not block on mm.MemoryManager.activeMu or
+	//		any preceding locks in the lock order.
 	CopyOutFrom(ctx context.Context, ars hostarch.AddrRangeSeq, src safemem.Reader, opts IOOpts) (int64, error)
 
 	// CopyInTo copies ars.NumBytes() bytes from the memory mapped at ars to
@@ -84,10 +83,10 @@ type IO interface {
 	// CopyInTo calls dst.WriteFromBlocks at most once.
 	//
 	// Preconditions:
-	// * The caller must not hold mm.MemoryManager.mappingMu or any
-	//   following locks in the lock order.
-	// * dst.WriteFromBlocks must not block on mm.MemoryManager.activeMu or
-	//   any preceding locks in the lock order.
+	//	* The caller must not hold mm.MemoryManager.mappingMu or any
+	//		following locks in the lock order.
+	//	* dst.WriteFromBlocks must not block on mm.MemoryManager.activeMu or
+	//		any preceding locks in the lock order.
 	CopyInTo(ctx context.Context, ars hostarch.AddrRangeSeq, dst safemem.Writer, opts IOOpts) (int64, error)
 
 	// TODO(jamieliu): The requirement that CopyOutFrom/CopyInTo call src/dst
@@ -100,9 +99,9 @@ type IO interface {
 	// returns the previous value.
 	//
 	// Preconditions:
-	// * The caller must not hold mm.MemoryManager.mappingMu or any
-	//   following locks in the lock order.
-	// * addr must be aligned to a 4-byte boundary.
+	//	* The caller must not hold mm.MemoryManager.mappingMu or any
+	//		following locks in the lock order.
+	//	* addr must be aligned to a 4-byte boundary.
 	SwapUint32(ctx context.Context, addr hostarch.Addr, new uint32, opts IOOpts) (uint32, error)
 
 	// CompareAndSwapUint32 atomically compares the uint32 value at addr to
@@ -110,17 +109,17 @@ type IO interface {
 	// either case, the previous value stored in memory is returned.
 	//
 	// Preconditions:
-	// * The caller must not hold mm.MemoryManager.mappingMu or any
-	//   following locks in the lock order.
-	// * addr must be aligned to a 4-byte boundary.
+	//	* The caller must not hold mm.MemoryManager.mappingMu or any
+	//		following locks in the lock order.
+	//	* addr must be aligned to a 4-byte boundary.
 	CompareAndSwapUint32(ctx context.Context, addr hostarch.Addr, old, new uint32, opts IOOpts) (uint32, error)
 
 	// LoadUint32 atomically loads the uint32 value at addr and returns it.
 	//
 	// Preconditions:
-	// * The caller must not hold mm.MemoryManager.mappingMu or any
-	//   following locks in the lock order.
-	// * addr must be aligned to a 4-byte boundary.
+	//	* The caller must not hold mm.MemoryManager.mappingMu or any
+	//		following locks in the lock order.
+	//	* addr must be aligned to a 4-byte boundary.
 	LoadUint32(ctx context.Context, addr hostarch.Addr, opts IOOpts) (uint32, error)
 }
 
@@ -163,7 +162,7 @@ func (rw *IOReadWriter) Read(dst []byte) (int, error) {
 		// Disallow wraparound.
 		rw.Addr = ^hostarch.Addr(0)
 		if err != nil {
-			err = syserror.EFAULT
+			err = linuxerr.EFAULT
 		}
 	}
 	return n, err
@@ -179,7 +178,7 @@ func (rw *IOReadWriter) Write(src []byte) (int, error) {
 		// Disallow wraparound.
 		rw.Addr = ^hostarch.Addr(0)
 		if err != nil {
-			err = syserror.EFAULT
+			err = linuxerr.EFAULT
 		}
 	}
 	return n, err
@@ -198,7 +197,7 @@ const (
 // ENAMETOOLONG.
 //
 // Preconditions: Same as IO.CopyFromUser, plus:
-// * maxlen >= 0.
+//   - maxlen >= 0.
 func CopyStringIn(ctx context.Context, uio IO, addr hostarch.Addr, maxlen int, opts IOOpts) (string, error) {
 	initLen := maxlen
 	if initLen > copyStringMaxInitBufLen {
@@ -214,7 +213,7 @@ func CopyStringIn(ctx context.Context, uio IO, addr hostarch.Addr, maxlen int, o
 		}
 		end, ok := addr.AddLength(uint64(readlen))
 		if !ok {
-			return gohacks.StringFromImmutableBytes(buf[:done]), syserror.EFAULT
+			return gohacks.StringFromImmutableBytes(buf[:done]), linuxerr.EFAULT
 		}
 		// Shorten the read to avoid crossing page boundaries, since faulting
 		// in a page unnecessarily is expensive. This also ensures that partial
@@ -244,7 +243,7 @@ func CopyStringIn(ctx context.Context, uio IO, addr hostarch.Addr, maxlen int, o
 		}
 		addr = end
 	}
-	return gohacks.StringFromImmutableBytes(buf), syserror.ENAMETOOLONG
+	return gohacks.StringFromImmutableBytes(buf), linuxerr.ENAMETOOLONG
 }
 
 // CopyOutVec copies bytes from src to the memory mapped at ars in uio. The
@@ -336,22 +335,22 @@ func isASCIIWhitespace(b byte) bool {
 // CopyInt32StringsInVec shares the following properties with Linux's
 // kernel/sysctl.c:proc_dointvec(write=1):
 //
-// - If any read value overflows the range of int32, or any invalid characters
-// are encountered during the read, CopyInt32StringsInVec returns EINVAL.
+//   - If any read value overflows the range of int32, or any invalid characters
+//     are encountered during the read, CopyInt32StringsInVec returns EINVAL.
 //
-// - If, upon reaching the end of ars, fewer than len(dsts) values have been
-// read, CopyInt32StringsInVec returns no error if at least 1 value was read
-// and EINVAL otherwise.
+//   - If, upon reaching the end of ars, fewer than len(dsts) values have been
+//     read, CopyInt32StringsInVec returns no error if at least 1 value was read
+//     and EINVAL otherwise.
 //
-// - Trailing whitespace after the last successfully read value is counted in
-// the number of bytes read.
+//   - Trailing whitespace after the last successfully read value is counted in
+//     the number of bytes read.
 //
 // Unlike proc_dointvec():
 //
-// - CopyInt32StringsInVec does not implicitly limit ars.NumBytes() to
-// PageSize-1; callers that require this must do so explicitly.
+//   - CopyInt32StringsInVec does not implicitly limit ars.NumBytes() to
+//     PageSize-1; callers that require this must do so explicitly.
 //
-// - CopyInt32StringsInVec returns EINVAL if ars.NumBytes() == 0.
+//   - CopyInt32StringsInVec returns EINVAL if ars.NumBytes() == 0.
 //
 // Preconditions: Same as CopyInVec.
 func CopyInt32StringsInVec(ctx context.Context, uio IO, ars hostarch.AddrRangeSeq, dsts []int32, opts IOOpts) (int64, error) {
@@ -382,7 +381,7 @@ func CopyInt32StringsInVec(ctx context.Context, uio IO, ars hostarch.AddrRangeSe
 		// Parse a single value.
 		val, err := strconv.ParseInt(string(buf[i:nextI]), 10, 32)
 		if err != nil {
-			return int64(i), syserror.EINVAL
+			return int64(i), linuxerr.EINVAL
 		}
 		dsts[j] = int32(val)
 
@@ -398,7 +397,7 @@ func CopyInt32StringsInVec(ctx context.Context, uio IO, ars hostarch.AddrRangeSe
 		return int64(i), cperr
 	}
 	if j == 0 {
-		return int64(i), syserror.EINVAL
+		return int64(i), linuxerr.EINVAL
 	}
 	return int64(i), nil
 }
@@ -426,13 +425,13 @@ type IOSequence struct {
 // Many clients of
 // IOSequence currently do something like:
 //
-//     if ioseq.NumBytes() == 0 {
-//       return 0, nil
-//     }
-//     if f.availableBytes == 0 {
-//       return 0, syserror.ErrWouldBlock
-//     }
-//     return ioseq.CopyOutFrom(..., reader)
+//	if ioseq.NumBytes() == 0 {
+//	  return 0, nil
+//	}
+//	if f.availableBytes == 0 {
+//	  return 0, linuxerr.ErrWouldBlock
+//	}
+//	return ioseq.CopyOutFrom(..., reader)
 //
 // In such cases, using s.Addrs.IsEmpty() will cause them to have the wrong
 // behavior for zero-length I/O. However, using s.NumBytes() == 0 instead means

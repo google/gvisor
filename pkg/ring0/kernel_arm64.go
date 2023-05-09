@@ -12,19 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build arm64
 // +build arm64
 
 package ring0
 
 // HaltAndResume halts execution and point the pointer to the resume function.
+//
 //go:nosplit
 func HaltAndResume()
 
 // HaltEl1SvcAndResume calls Hooks.KernelSyscall and resume.
+//
 //go:nosplit
 func HaltEl1SvcAndResume()
 
 // HaltEl1ExceptionAndResume calls Hooks.KernelException and resume.
+//
 //go:nosplit
 func HaltEl1ExceptionAndResume()
 
@@ -50,7 +54,7 @@ func (c *CPU) StackTop() uint64 {
 //
 //go:nosplit
 func IsCanonical(addr uint64) bool {
-	return addr <= 0x0000ffffffffffff || addr > 0xffff000000000000
+	return addr <= 0x0000ffffffffffff || addr >= 0xffff000000000000
 }
 
 // SwitchToUser performs an eret.
@@ -88,10 +92,4 @@ func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
 	vector = c.vecCode
 
 	return
-}
-
-// RestoreKernelFPState restores the Sentry floating point state.
-//
-//go:nosplit
-func RestoreKernelFPState() {
 }

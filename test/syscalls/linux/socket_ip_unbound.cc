@@ -24,7 +24,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
-#include "test/syscalls/linux/socket_test_util.h"
+#include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {
@@ -96,6 +96,7 @@ TEST_P(IPUnboundSocketTest, ResetTtlToDefault) {
   EXPECT_THAT(getsockopt(socket->get(), IPPROTO_IP, IP_TTL, &get2, &get2_sz),
               SyscallSucceedsWithValue(0));
   EXPECT_EQ(get2_sz, sizeof(get2));
+  EXPECT_TRUE(get2 == 64 || get2 == 127);
   EXPECT_EQ(get2, get1);
 }
 
@@ -218,7 +219,7 @@ TEST_P(IPUnboundSocketTest, InvalidLargeTOS) {
 
 TEST_P(IPUnboundSocketTest, CheckSkipECN) {
   // Test is inconsistant on different kernels.
-  SKIP_IF(!IsRunningOnGvisor());
+  SKIP_IF(!IsRunningOnGvisor() || IsRunningWithHostinet());
   auto socket = ASSERT_NO_ERRNO_AND_VALUE(NewSocket());
   int set = 0xFF;
   socklen_t set_sz = sizeof(set);
@@ -283,7 +284,7 @@ TEST_P(IPUnboundSocketTest, SmallTOSOptionSize) {
     EXPECT_EQ(get_sz, expect_sz);
     // Account for partial copies by getsockopt, retrieve the lower
     // bits specified by get_sz, while comparing against expect_tos.
-    EXPECT_EQ(get & ~(~0 << (get_sz * 8)), expect_tos);
+    EXPECT_EQ(get & ~(~static_cast<uint>(0) << (get_sz * 8)), expect_tos);
   }
 }
 

@@ -12,23 +12,38 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build amd64
 // +build amd64
 
 package ring0
 
-import (
-	"gvisor.dev/gvisor/pkg/hostarch"
-)
-
 var (
+	// VirtualAddressBits is the number of bits available in the virtual
+	// address space.
+	//
+	// Initialized by ring0.Init.
+	VirtualAddressBits uintptr
+
+	// PhysicalAddressBits is the number of bits available in the physical
+	// address space.
+	//
+	// Initialized by ring0.Init.
+	PhysicalAddressBits uintptr
+
 	// UserspaceSize is the total size of userspace.
-	UserspaceSize = uintptr(1) << (VirtualAddressBits() - 1)
+	//
+	// Initialized by ring0.Init.
+	UserspaceSize uintptr
 
 	// MaximumUserAddress is the largest possible user address.
-	MaximumUserAddress = (UserspaceSize - 1) & ^uintptr(hostarch.PageSize-1)
+	//
+	// Initialized by ring0.Init.
+	MaximumUserAddress uintptr
 
 	// KernelStartAddress is the starting kernel address.
-	KernelStartAddress = ^uintptr(0) - (UserspaceSize - 1)
+	//
+	// Initialized by ring0.Init.
+	KernelStartAddress uintptr
 )
 
 // Segment indices and Selectors.
@@ -114,7 +129,18 @@ type CPUArchState struct {
 	// exception.
 	errorType uintptr
 
+	// vector is the vector of the last exception.
+	vector uintptr
+
+	// faultAddr is the value of the cr2 register.
+	faultAddr uintptr
+
 	*kernelEntry
+
+	// Copies of global variables, stored in CPU so that they can be used by
+	// syscall and exception handlers (in the upper address space).
+	hasXSAVE    bool
+	hasXSAVEOPT bool
 }
 
 // ErrorCode returns the last error code.
@@ -135,6 +161,20 @@ func (c *CPU) ErrorCode() (value uintptr, user bool) {
 func (c *CPU) ClearErrorCode() {
 	c.errorCode = 0 // No code.
 	c.errorType = 1 // User mode.
+}
+
+// Vector returns the vector of the last exception.
+//
+//go:nosplit
+func (c *CPU) Vector() uintptr {
+	return c.vector
+}
+
+// FaultAddr returns the last fault address.
+//
+//go:nosplit
+func (c *CPU) FaultAddr() uintptr {
+	return c.faultAddr
 }
 
 // SwitchArchOpts are embedded in SwitchOpts.

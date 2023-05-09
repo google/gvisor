@@ -15,17 +15,14 @@
 package fuse
 
 import (
-	"io"
+	"fmt"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/testutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-
-	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 func setup(t *testing.T) *testutil.System {
@@ -64,64 +61,37 @@ func newTestConnection(system *testutil.System, k *kernel.Kernel, maxActiveReque
 	fsopts := filesystemOptions{
 		maxActiveRequests: maxActiveRequests,
 	}
-	fs, err := newFUSEFilesystem(system.Ctx, system.VFS, &FilesystemType{}, fuseDev, 0, &fsopts)
+	fuseDev.mu.Lock()
+	conn, err := newFUSEConnection(system.Ctx, fuseDev, &fsopts)
 	if err != nil {
 		return nil, nil, err
 	}
-	return fs.conn, &fuseDev.vfsfd, nil
+	fuseDev.conn = conn
+	fuseDev.mu.Unlock()
+
+	// Fake the connection being properly initialized for testing purposes.
+	conn.mu.Lock()
+	conn.connInitSuccess = true
+	conn.mu.Unlock()
+	return conn, &fuseDev.vfsfd, nil
 }
 
-type testPayload struct {
-	marshal.StubMarshallable
-	data uint32
-}
+// newTestFilesystem creates a filesystem that the sentry can communicate with
+// and the FD for the server to communicate with.
+func newTestFilesystem(system *testutil.System, fd *vfs.FileDescription, maxActiveRequests uint64) (*filesystem, error) {
+	fuseFD, ok := fd.Impl().(*DeviceFD)
+	if !ok {
+		return nil, fmt.Errorf("newTestFilesystem: FD is %T, not a FUSE device", fd)
+	}
+	fsopts := filesystemOptions{
+		maxActiveRequests: maxActiveRequests,
+	}
 
-// SizeBytes implements marshal.Marshallable.SizeBytes.
-func (t *testPayload) SizeBytes() int {
-	return 4
-}
-
-// MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (t *testPayload) MarshalBytes(dst []byte) {
-	hostarch.ByteOrder.PutUint32(dst[:4], t.data)
-}
-
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (t *testPayload) UnmarshalBytes(src []byte) {
-	*t = testPayload{data: hostarch.ByteOrder.Uint32(src[:4])}
-}
-
-// Packed implements marshal.Marshallable.Packed.
-func (t *testPayload) Packed() bool {
-	return true
-}
-
-// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (t *testPayload) MarshalUnsafe(dst []byte) {
-	t.MarshalBytes(dst)
-}
-
-// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (t *testPayload) UnmarshalUnsafe(src []byte) {
-	t.UnmarshalBytes(src)
-}
-
-// CopyOutN implements marshal.Marshallable.CopyOutN.
-func (t *testPayload) CopyOutN(task marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
-	panic("not implemented")
-}
-
-// CopyOut implements marshal.Marshallable.CopyOut.
-func (t *testPayload) CopyOut(task marshal.CopyContext, addr hostarch.Addr) (int, error) {
-	panic("not implemented")
-}
-
-// CopyIn implements marshal.Marshallable.CopyIn.
-func (t *testPayload) CopyIn(task marshal.CopyContext, addr hostarch.Addr) (int, error) {
-	panic("not implemented")
-}
-
-// WriteTo implements io.WriterTo.WriteTo.
-func (t *testPayload) WriteTo(w io.Writer) (int64, error) {
-	panic("not implemented")
+	fuseFD.mu.Lock()
+	defer fuseFD.mu.Unlock()
+	fs, err := newFUSEFilesystem(system.Ctx, system.VFS, &FilesystemType{}, fuseFD, 0, &fsopts)
+	if err != nil {
+		return nil, err
+	}
+	return fs, nil
 }

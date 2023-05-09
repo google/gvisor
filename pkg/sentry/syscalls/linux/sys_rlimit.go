@@ -16,12 +16,12 @@ package linux
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // rlimit describes an implementation of 'struct rlimit', which may vary from
@@ -43,7 +43,7 @@ func newRlimit(t *kernel.Task) (rlimit, error) {
 		// On 64-bit system, struct rlimit and struct rlimit64 are identical.
 		return &rlimit64{}, nil
 	default:
-		return nil, syserror.ENOSYS
+		return nil, linuxerr.ENOSYS
 	}
 }
 
@@ -105,7 +105,7 @@ func prlimit64(t *kernel.Task, resource limits.LimitType, newLim *limits.Limit) 
 	}
 
 	if _, ok := setableLimits[resource]; !ok {
-		return limits.Limit{}, syserror.EPERM
+		return limits.Limit{}, linuxerr.EPERM
 	}
 
 	// "A privileged process (under Linux: one with the CAP_SYS_RESOURCE
@@ -125,11 +125,11 @@ func prlimit64(t *kernel.Task, resource limits.LimitType, newLim *limits.Limit) 
 }
 
 // Getrlimit implements linux syscall getrlimit(2).
-func Getrlimit(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Getrlimit(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	resource, ok := limits.FromLinuxResource[int(args[0].Int())]
 	if !ok {
 		// Return err; unknown limit.
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	addr := args[1].Pointer()
 	rlim, err := newRlimit(t)
@@ -146,11 +146,11 @@ func Getrlimit(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 }
 
 // Setrlimit implements linux syscall setrlimit(2).
-func Setrlimit(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Setrlimit(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	resource, ok := limits.FromLinuxResource[int(args[0].Int())]
 	if !ok {
 		// Return err; unknown limit.
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	addr := args[1].Pointer()
 	rlim, err := newRlimit(t)
@@ -158,19 +158,19 @@ func Setrlimit(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 		return 0, nil, err
 	}
 	if _, err := rlim.CopyIn(t, addr); err != nil {
-		return 0, nil, syserror.EFAULT
+		return 0, nil, linuxerr.EFAULT
 	}
 	_, err = prlimit64(t, resource, rlim.toLimit())
 	return 0, nil, err
 }
 
 // Prlimit64 implements linux syscall prlimit64(2).
-func Prlimit64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Prlimit64(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	tid := kernel.ThreadID(args[0].Int())
 	resource, ok := limits.FromLinuxResource[int(args[1].Int())]
 	if !ok {
 		// Return err; unknown limit.
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	newRlimAddr := args[2].Pointer()
 	oldRlimAddr := args[3].Pointer()
@@ -179,18 +179,18 @@ func Prlimit64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	if newRlimAddr != 0 {
 		var nrl rlimit64
 		if err := nrl.copyIn(t, newRlimAddr); err != nil {
-			return 0, nil, syserror.EFAULT
+			return 0, nil, linuxerr.EFAULT
 		}
 		newLim = nrl.toLimit()
 	}
 
 	if tid < 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	ot := t
 	if tid > 0 {
 		if ot = t.PIDNamespace().TaskWithID(tid); ot == nil {
-			return 0, nil, syserror.ESRCH
+			return 0, nil, linuxerr.ESRCH
 		}
 	}
 
@@ -207,7 +207,7 @@ func Prlimit64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 			cred.RealKGID != tcred.RealKGID ||
 			cred.RealKGID != tcred.EffectiveKGID ||
 			cred.RealKGID != tcred.SavedKGID {
-			return 0, nil, syserror.EPERM
+			return 0, nil, linuxerr.EPERM
 		}
 	}
 
@@ -218,7 +218,7 @@ func Prlimit64(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 
 	if oldRlimAddr != 0 {
 		if err := makeRlimit64(oldLim).copyOut(t, oldRlimAddr); err != nil {
-			return 0, nil, syserror.EFAULT
+			return 0, nil, linuxerr.EFAULT
 		}
 	}
 

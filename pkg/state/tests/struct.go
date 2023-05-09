@@ -88,13 +88,20 @@ func (ifv *innerFieldValue) loadV(sfv *savedFieldValue) {
 
 // +stateify savable
 type system struct {
-	v1 interface{}
-	v2 interface{}
+	v1 any
+	v2 any
 }
 
 // +stateify savable
 type system3 struct {
-	v1 interface{}
-	v2 interface{}
-	v3 interface{}
+	v1 any
+	v2 any
+	v3 any
+}
+
+// +stateify savable
+type multiName struct {
+	_, b, c string
+	x, y    int64
+	z       int32
 }

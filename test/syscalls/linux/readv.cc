@@ -104,16 +104,21 @@ TEST_F(ReadvTest, BadFileDescriptor) {
   iov[0].iov_base = buffer;
   iov[0].iov_len = 1024;
 
-  ASSERT_THAT(readv(-1, iov, 1024), SyscallFailsWithErrno(EBADF));
+  ASSERT_THAT(readv(-1, iov, 1), SyscallFailsWithErrno(EBADF));
 }
-
 TEST_F(ReadvTest, BadIovecsPointer_File) {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnonnull"
   ASSERT_THAT(readv(test_file_fd_.get(), nullptr, 1),
               SyscallFailsWithErrno(EFAULT));
+#pragma GCC diagnostic pop
 }
 
 TEST_F(ReadvTest, BadIovecsPointer_Pipe) {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnonnull"
   ASSERT_THAT(readv(test_pipe_[0], nullptr, 1), SyscallFailsWithErrno(EFAULT));
+#pragma GCC diagnostic pop
 }
 
 TEST_F(ReadvTest, BadIovecBase_File) {
@@ -252,7 +257,6 @@ TEST_F(ReadvTest, IovecOutsideTaskAddressRangeInNonemptyArray) {
 }
 
 TEST_F(ReadvTest, ReadvWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   char buffer[1024];
   struct iovec iov[1];
   iov[0].iov_base = buffer;
@@ -267,7 +271,7 @@ TEST_F(ReadvTest, ReadvWithOpath) {
 
 // This test depends on the maximum extent of a single readv() syscall, so
 // we can't tolerate interruption from saving.
-TEST(ReadvTestNoFixture, TruncatedAtMax_NoRandomSave) {
+TEST(ReadvTestNoFixture, TruncatedAtMax) {
   // Ensure that we won't be interrupted by ITIMER_PROF. This is particularly
   // important in environments where automated profiling tools may start
   // ITIMER_PROF automatically.

@@ -19,6 +19,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <memory>
+
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/memory/memory.h"
@@ -94,21 +96,20 @@ TEST_F(OpenTest, OTruncAndReadOnlyFile) {
 }
 
 TEST_F(OpenTest, OCreateDirectory) {
-  SKIP_IF(IsRunningWithVFS1());
   auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
 
   // Normal case: existing directory.
-  ASSERT_THAT(open(dir.path().c_str(), O_RDWR | O_CREAT, 0666),
+  ASSERT_THAT(open(dir.path().c_str(), O_RDONLY | O_CREAT, 0666),
               SyscallFailsWithErrno(EISDIR));
   // Trailing separator on existing directory.
-  ASSERT_THAT(open(dir.path().append("/").c_str(), O_RDWR | O_CREAT, 0666),
+  ASSERT_THAT(open(dir.path().append("/").c_str(), O_RDONLY | O_CREAT, 0666),
               SyscallFailsWithErrno(EISDIR));
   // Trailing separator on non-existing directory.
   ASSERT_THAT(open(JoinPath(dir.path(), "non-existent").append("/").c_str(),
-                   O_RDWR | O_CREAT, 0666),
+                   O_RDONLY | O_CREAT, 0666),
               SyscallFailsWithErrno(EISDIR));
   // "." special case.
-  ASSERT_THAT(open(JoinPath(dir.path(), ".").c_str(), O_RDWR | O_CREAT, 0666),
+  ASSERT_THAT(open(JoinPath(dir.path(), ".").c_str(), O_RDONLY | O_CREAT, 0666),
               SyscallFailsWithErrno(EISDIR));
 }
 
@@ -326,7 +327,7 @@ TEST_F(OpenTest, AppendConcurrentWrite) {
   // Start kThreadCount threads which will write concurrently into the same
   // file.
   for (int i = 0; i < kThreadCount; i++) {
-    threads[i] = absl::make_unique<ScopedThread>([filename]() {
+    threads[i] = std::make_unique<ScopedThread>([filename]() {
       const FileDescriptor fd =
           ASSERT_NO_ERRNO_AND_VALUE(Open(filename, O_RDWR | O_APPEND));
 
@@ -398,6 +399,11 @@ TEST_F(OpenTest, DirectoryWritableFails) {
               SyscallFailsWithErrno(EISDIR));
 }
 
+TEST_F(OpenTest, DirectoryDirectFails) {
+  ASSERT_THAT(open(GetAbsoluteTestTmpdir().c_str(), O_RDONLY | O_DIRECT),
+              SyscallFailsWithErrno(EINVAL));
+}
+
 TEST_F(OpenTest, FileNotDirectory) {
   // Create a file and try to open it with O_DIRECTORY.
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
@@ -431,9 +437,9 @@ TEST_F(OpenTest, CanTruncateReadOnly) {
 
 // If we don't have read permission on the file, opening with
 // O_TRUNC should fail.
-TEST_F(OpenTest, CanTruncateReadOnlyNoWritePermission_NoRandomSave) {
+TEST_F(OpenTest, CanTruncateReadOnlyNoWritePermission) {
   // Drop capabilities that allow us to override file permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
+  AutoCapability cap(CAP_DAC_OVERRIDE, false);
 
   const DisableSave ds;  // Permissions are dropped.
   ASSERT_THAT(chmod(test_file_name_.c_str(), S_IRUSR | S_IRGRP),
@@ -452,7 +458,7 @@ TEST_F(OpenTest, CanTruncateReadOnlyNoWritePermission_NoRandomSave) {
 
 // If we don't have read permission but have write permission, opening O_WRONLY
 // and O_TRUNC should succeed.
-TEST_F(OpenTest, CanTruncateWriteOnlyNoReadPermission_NoRandomSave) {
+TEST_F(OpenTest, CanTruncateWriteOnlyNoReadPermission) {
   const DisableSave ds;  // Permissions are dropped.
 
   EXPECT_THAT(fchmod(test_file_fd_.get(), S_IWUSR | S_IWGRP),
@@ -473,8 +479,8 @@ TEST_F(OpenTest, CanTruncateWriteOnlyNoReadPermission_NoRandomSave) {
 }
 
 TEST_F(OpenTest, CanTruncateWithStrangePermissions) {
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
   const DisableSave ds;  // Permissions are dropped.
   std::string path = NewTempAbsPath();
   // Create a file without user permissions.
@@ -497,9 +503,6 @@ TEST_F(OpenTest, OpenNonDirectoryWithTrailingSlash) {
 }
 
 TEST_F(OpenTest, OpenWithStrangeFlags) {
-  // VFS1 incorrectly allows read/write operations on such file descriptors.
-  SKIP_IF(IsRunningWithVFS1());
-
   const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_WRONLY | O_RDWR));
@@ -509,9 +512,8 @@ TEST_F(OpenTest, OpenWithStrangeFlags) {
 }
 
 TEST_F(OpenTest, OpenWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
   const DisableSave ds;  // Permissions are dropped.
   std::string path = NewTempAbsPath();
 
@@ -526,6 +528,14 @@ TEST_F(OpenTest, OpenWithOpath) {
   // Can open file with O_PATH because don't need permissions on the object when
   // opening with O_PATH.
   ASSERT_NO_ERRNO(Open(path, O_PATH));
+}
+
+// NOTE(b/236445327): Regression test. Opening a non-directory with O_PATH and
+// O_DIRECTORY should fail with ENOTDIR.
+TEST_F(OpenTest, OPathWithODirectory) {
+  auto newFile = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  EXPECT_THAT(open(newFile.path().c_str(), O_RDONLY | O_DIRECTORY | O_PATH),
+              SyscallFailsWithErrno(ENOTDIR));
 }
 
 }  // namespace

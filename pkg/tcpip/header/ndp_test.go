@@ -21,11 +21,13 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 )
 
 // TestNDPNeighborSolicit tests the functions of NDPNeighborSolicit.
@@ -40,13 +42,13 @@ func TestNDPNeighborSolicit(t *testing.T) {
 
 	// Test getting the Target Address.
 	ns := NDPNeighborSolicit(b)
-	addr := tcpip.Address("\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10")
+	addr := testutil.MustParse6("102:304:506:708:90a:b0c:d0e:f10")
 	if got := ns.TargetAddress(); got != addr {
 		t.Errorf("got ns.TargetAddress = %s, want %s", got, addr)
 	}
 
 	// Test updating the Target Address.
-	addr2 := tcpip.Address("\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f\x11")
+	addr2 := testutil.MustParse6("1112:1314:1516:1718:191a:1b1c:1d1e:1f11")
 	ns.SetTargetAddress(addr2)
 	if got := ns.TargetAddress(); got != addr2 {
 		t.Errorf("got ns.TargetAddress = %s, want %s", got, addr2)
@@ -54,6 +56,224 @@ func TestNDPNeighborSolicit(t *testing.T) {
 	// Make sure the address got updated in the backing buffer.
 	if got := tcpip.Address(b[ndpNSTargetAddessOffset:][:IPv6AddressSize]); got != addr2 {
 		t.Errorf("got targetaddress buffer = %s, want %s", got, addr2)
+	}
+}
+
+func TestNDPRouteInformationOption(t *testing.T) {
+	tests := []struct {
+		name string
+
+		length         uint8
+		prefixLength   uint8
+		prf            NDPRoutePreference
+		lifetimeS      uint32
+		prefixBytes    []byte
+		expectedPrefix tcpip.Subnet
+
+		expectedErr error
+	}{
+		{
+			name:           "Length=1 with Prefix Length = 0",
+			length:         1,
+			prefixLength:   0,
+			prf:            MediumRoutePreference,
+			lifetimeS:      1,
+			prefixBytes:    nil,
+			expectedPrefix: IPv6EmptySubnet,
+		},
+		{
+			name:         "Length=1 but Prefix Length > 0",
+			length:       1,
+			prefixLength: 1,
+			prf:          MediumRoutePreference,
+			lifetimeS:    1,
+			prefixBytes:  nil,
+			expectedErr:  ErrNDPOptMalformedBody,
+		},
+		{
+			name:           "Length=2 with Prefix Length = 0",
+			length:         2,
+			prefixLength:   0,
+			prf:            MediumRoutePreference,
+			lifetimeS:      1,
+			prefixBytes:    nil,
+			expectedPrefix: IPv6EmptySubnet,
+		},
+		{
+			name:         "Length=2 with Prefix Length in [1, 64] (1)",
+			length:       2,
+			prefixLength: 1,
+			prf:          LowRoutePreference,
+			lifetimeS:    1,
+			prefixBytes:  nil,
+			expectedPrefix: tcpip.AddressWithPrefix{
+				Address:   tcpip.Address(strings.Repeat("\x00", IPv6AddressSize)),
+				PrefixLen: 1,
+			}.Subnet(),
+		},
+		{
+			name:         "Length=2 with Prefix Length in [1, 64] (64)",
+			length:       2,
+			prefixLength: 64,
+			prf:          HighRoutePreference,
+			lifetimeS:    1,
+			prefixBytes:  nil,
+			expectedPrefix: tcpip.AddressWithPrefix{
+				Address:   tcpip.Address(strings.Repeat("\x00", IPv6AddressSize)),
+				PrefixLen: 64,
+			}.Subnet(),
+		},
+		{
+			name:         "Length=2 with Prefix Length > 64",
+			length:       2,
+			prefixLength: 65,
+			prf:          HighRoutePreference,
+			lifetimeS:    1,
+			prefixBytes:  nil,
+			expectedErr:  ErrNDPOptMalformedBody,
+		},
+		{
+			name:           "Length=3 with Prefix Length = 0",
+			length:         3,
+			prefixLength:   0,
+			prf:            MediumRoutePreference,
+			lifetimeS:      1,
+			prefixBytes:    nil,
+			expectedPrefix: IPv6EmptySubnet,
+		},
+		{
+			name:         "Length=3 with Prefix Length in [1, 64] (1)",
+			length:       3,
+			prefixLength: 1,
+			prf:          LowRoutePreference,
+			lifetimeS:    1,
+			prefixBytes:  nil,
+			expectedPrefix: tcpip.AddressWithPrefix{
+				Address:   tcpip.Address(strings.Repeat("\x00", IPv6AddressSize)),
+				PrefixLen: 1,
+			}.Subnet(),
+		},
+		{
+			name:         "Length=3 with Prefix Length in [1, 64] (64)",
+			length:       3,
+			prefixLength: 64,
+			prf:          HighRoutePreference,
+			lifetimeS:    1,
+			prefixBytes:  nil,
+			expectedPrefix: tcpip.AddressWithPrefix{
+				Address:   tcpip.Address(strings.Repeat("\x00", IPv6AddressSize)),
+				PrefixLen: 64,
+			}.Subnet(),
+		},
+		{
+			name:         "Length=3 with Prefix Length in [65, 128] (65)",
+			length:       3,
+			prefixLength: 65,
+			prf:          HighRoutePreference,
+			lifetimeS:    1,
+			prefixBytes:  nil,
+			expectedPrefix: tcpip.AddressWithPrefix{
+				Address:   tcpip.Address(strings.Repeat("\x00", IPv6AddressSize)),
+				PrefixLen: 65,
+			}.Subnet(),
+		},
+		{
+			name:         "Length=3 with Prefix Length in [65, 128] (128)",
+			length:       3,
+			prefixLength: 128,
+			prf:          HighRoutePreference,
+			lifetimeS:    1,
+			prefixBytes:  nil,
+			expectedPrefix: tcpip.AddressWithPrefix{
+				Address:   tcpip.Address(strings.Repeat("\x00", IPv6AddressSize)),
+				PrefixLen: 128,
+			}.Subnet(),
+		},
+		{
+			name:         "Length=3 with (invalid) Prefix Length > 128",
+			length:       3,
+			prefixLength: 129,
+			prf:          HighRoutePreference,
+			lifetimeS:    1,
+			prefixBytes:  nil,
+			expectedErr:  ErrNDPOptMalformedBody,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			expectedRouteInformationBytes := [...]byte{
+				// Type, Length
+				24, test.length,
+
+				// Prefix Length, Prf
+				uint8(test.prefixLength), uint8(test.prf) << 3,
+
+				// Route Lifetime
+				0, 0, 0, 0,
+
+				0, 0, 0, 0,
+				0, 0, 0, 0,
+				0, 0, 0, 0,
+				0, 0, 0, 0,
+			}
+			binary.BigEndian.PutUint32(expectedRouteInformationBytes[4:], test.lifetimeS)
+			_ = copy(expectedRouteInformationBytes[8:], test.prefixBytes)
+
+			opts := NDPOptions(expectedRouteInformationBytes[:test.length*lengthByteUnits])
+			it, err := opts.Iter(false)
+			if err != nil {
+				t.Fatalf("got Iter(false) = (_, %s), want = (_, nil)", err)
+			}
+			opt, done, err := it.Next()
+			if !errors.Is(err, test.expectedErr) {
+				t.Fatalf("got Next() = (_, _, %s), want = (_, _, %s)", err, test.expectedErr)
+			}
+			if want := test.expectedErr != nil; done != want {
+				t.Fatalf("got Next() = (_, %t, _), want = (_, %t, _)", done, want)
+			}
+			if test.expectedErr != nil {
+				return
+			}
+
+			if got := opt.kind(); got != ndpRouteInformationType {
+				t.Errorf("got kind() = %d, want = %d", got, ndpRouteInformationType)
+			}
+
+			ri, ok := opt.(NDPRouteInformation)
+			if !ok {
+				t.Fatalf("got opt = %T, want = NDPRouteInformation", opt)
+			}
+
+			if got := ri.PrefixLength(); got != test.prefixLength {
+				t.Errorf("got PrefixLength() = %d, want = %d", got, test.prefixLength)
+			}
+			if got := ri.RoutePreference(); got != test.prf {
+				t.Errorf("got RoutePreference() = %d, want = %d", got, test.prf)
+			}
+			if got, want := ri.RouteLifetime(), time.Duration(test.lifetimeS)*time.Second; got != want {
+				t.Errorf("got RouteLifetime() = %s, want = %s", got, want)
+			}
+			if got, err := ri.Prefix(); err != nil {
+				t.Errorf("Prefix(): %s", err)
+			} else if got != test.expectedPrefix {
+				t.Errorf("got Prefix() = %s, want = %s", got, test.expectedPrefix)
+			}
+
+			// Iterator should not return anything else.
+			{
+				next, done, err := it.Next()
+				if err != nil {
+					t.Errorf("got Next() = (_, _, %s), want = (_, _, nil)", err)
+				}
+				if !done {
+					t.Error("got Next() = (_, false, _), want = (_, true, _)")
+				}
+				if next != nil {
+					t.Errorf("got Next() = (%x, _, _), want = (nil, _, _)", next)
+				}
+			}
+		})
 	}
 }
 
@@ -69,7 +289,7 @@ func TestNDPNeighborAdvert(t *testing.T) {
 
 	// Test getting the Target Address.
 	na := NDPNeighborAdvert(b)
-	addr := tcpip.Address("\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10")
+	addr := testutil.MustParse6("102:304:506:708:90a:b0c:d0e:f10")
 	if got := na.TargetAddress(); got != addr {
 		t.Errorf("got TargetAddress = %s, want %s", got, addr)
 	}
@@ -90,7 +310,7 @@ func TestNDPNeighborAdvert(t *testing.T) {
 	}
 
 	// Test updating the Target Address.
-	addr2 := tcpip.Address("\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1a\x1b\x1c\x1d\x1e\x1f\x11")
+	addr2 := testutil.MustParse6("1112:1314:1516:1718:191a:1b1c:1d1e:1f11")
 	na.SetTargetAddress(addr2)
 	if got := na.TargetAddress(); got != addr2 {
 		t.Errorf("got TargetAddress = %s, want %s", got, addr2)
@@ -125,36 +345,83 @@ func TestNDPNeighborAdvert(t *testing.T) {
 }
 
 func TestNDPRouterAdvert(t *testing.T) {
-	b := []byte{
-		64, 128, 1, 2,
-		3, 4, 5, 6,
-		7, 8, 9, 10,
+	tests := []struct {
+		hopLimit                        uint8
+		managedFlag, otherConfFlag      bool
+		prf                             NDPRoutePreference
+		routerLifetimeS                 uint16
+		reachableTimeMS, retransTimerMS uint32
+	}{
+		{
+			hopLimit:        1,
+			managedFlag:     false,
+			otherConfFlag:   true,
+			prf:             HighRoutePreference,
+			routerLifetimeS: 2,
+			reachableTimeMS: 3,
+			retransTimerMS:  4,
+		},
+		{
+			hopLimit:        64,
+			managedFlag:     true,
+			otherConfFlag:   false,
+			prf:             LowRoutePreference,
+			routerLifetimeS: 258,
+			reachableTimeMS: 78492,
+			retransTimerMS:  13213,
+		},
 	}
 
-	ra := NDPRouterAdvert(b)
+	for i, test := range tests {
+		t.Run(fmt.Sprintf("%d", i), func(t *testing.T) {
+			flags := uint8(0)
+			if test.managedFlag {
+				flags |= 1 << 7
+			}
+			if test.otherConfFlag {
+				flags |= 1 << 6
+			}
+			flags |= uint8(test.prf) << 3
 
-	if got := ra.CurrHopLimit(); got != 64 {
-		t.Errorf("got ra.CurrHopLimit = %d, want = 64", got)
-	}
+			b := []byte{
+				test.hopLimit, flags, 1, 2,
+				3, 4, 5, 6,
+				7, 8, 9, 10,
+			}
+			binary.BigEndian.PutUint16(b[2:], test.routerLifetimeS)
+			binary.BigEndian.PutUint32(b[4:], test.reachableTimeMS)
+			binary.BigEndian.PutUint32(b[8:], test.retransTimerMS)
 
-	if got := ra.ManagedAddrConfFlag(); !got {
-		t.Errorf("got ManagedAddrConfFlag = false, want = true")
-	}
+			ra := NDPRouterAdvert(b)
 
-	if got := ra.OtherConfFlag(); got {
-		t.Errorf("got OtherConfFlag = true, want = false")
-	}
+			if got := ra.CurrHopLimit(); got != test.hopLimit {
+				t.Errorf("got ra.CurrHopLimit() = %d, want = %d", got, test.hopLimit)
+			}
 
-	if got, want := ra.RouterLifetime(), time.Second*258; got != want {
-		t.Errorf("got ra.RouterLifetime = %d, want = %d", got, want)
-	}
+			if got := ra.ManagedAddrConfFlag(); got != test.managedFlag {
+				t.Errorf("got ManagedAddrConfFlag() = %t, want = %t", got, test.managedFlag)
+			}
 
-	if got, want := ra.ReachableTime(), time.Millisecond*50595078; got != want {
-		t.Errorf("got ra.ReachableTime = %d, want = %d", got, want)
-	}
+			if got := ra.OtherConfFlag(); got != test.otherConfFlag {
+				t.Errorf("got OtherConfFlag() = %t, want = %t", got, test.otherConfFlag)
+			}
 
-	if got, want := ra.RetransTimer(), time.Millisecond*117967114; got != want {
-		t.Errorf("got ra.RetransTimer = %d, want = %d", got, want)
+			if got := ra.DefaultRouterPreference(); got != test.prf {
+				t.Errorf("got DefaultRouterPreference() = %d, want = %d", got, test.prf)
+			}
+
+			if got, want := ra.RouterLifetime(), time.Second*time.Duration(test.routerLifetimeS); got != want {
+				t.Errorf("got ra.RouterLifetime() = %d, want = %d", got, want)
+			}
+
+			if got, want := ra.ReachableTime(), time.Millisecond*time.Duration(test.reachableTimeMS); got != want {
+				t.Errorf("got ra.ReachableTime() = %d, want = %d", got, want)
+			}
+
+			if got, want := ra.RetransTimer(), time.Millisecond*time.Duration(test.retransTimerMS); got != want {
+				t.Errorf("got ra.RetransTimer() = %d, want = %d", got, want)
+			}
+		})
 	}
 }
 
@@ -277,7 +544,7 @@ func TestOpts(t *testing.T) {
 	}
 
 	const validLifetimeSeconds = 16909060
-	const address = tcpip.Address("\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10\x11\x12\x13\x14\x15\x16\x17\x18")
+	address := testutil.MustParse6("90a:b0c:d0e:f10:1112:1314:1516:1718")
 
 	expectedRDNSSBytes := [...]byte{
 		// Type, Length
@@ -1448,5 +1715,34 @@ func TestNDPOptionsIter(t *testing.T) {
 	}
 	if next != nil {
 		t.Errorf("got Next = (%x, _, _), want = (nil, _, _)", next)
+	}
+}
+
+func TestNDPRoutePreferenceStringer(t *testing.T) {
+	p := NDPRoutePreference(0)
+	for {
+		var wantStr string
+		switch p {
+		case 0b01:
+			wantStr = "HighRoutePreference"
+		case 0b00:
+			wantStr = "MediumRoutePreference"
+		case 0b11:
+			wantStr = "LowRoutePreference"
+		case 0b10:
+			wantStr = "ReservedRoutePreference"
+		default:
+			wantStr = fmt.Sprintf("NDPRoutePreference(%d)", p)
+		}
+
+		if gotStr := p.String(); gotStr != wantStr {
+			t.Errorf("got NDPRoutePreference(%d).String() = %s, want = %s", p, gotStr, wantStr)
+		}
+
+		p++
+		if p == 0 {
+			// Overflowed, we hit all values.
+			break
+		}
 	}
 }

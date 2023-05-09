@@ -20,36 +20,36 @@ import (
 )
 
 func TestEmptyStruct(t *testing.T) {
-	runTestCases(t, false, "plain", []interface{}{
+	runTestCases(t, false, "plain", []any{
 		unregisteredEmptyStruct{},
 		typeOnlyEmptyStruct{},
 		savableEmptyStruct{},
 	})
-	runTestCases(t, false, "pointers", pointersTo([]interface{}{
+	runTestCases(t, false, "pointers", pointersTo([]any{
 		unregisteredEmptyStruct{},
 		typeOnlyEmptyStruct{},
 		savableEmptyStruct{},
 	}))
-	runTestCases(t, false, "interfaces-pass", interfacesTo([]interface{}{
+	runTestCases(t, false, "interfaces-pass", interfacesTo([]any{
 		// Only registered types can be dispatched via interfaces. All
 		// other types should fail, even if it is the empty struct.
 		savableEmptyStruct{},
 	}))
-	runTestCases(t, true, "interfaces-fail", interfacesTo([]interface{}{
+	runTestCases(t, true, "interfaces-fail", interfacesTo([]any{
 		unregisteredEmptyStruct{},
 		typeOnlyEmptyStruct{},
 	}))
-	runTestCases(t, false, "interfacesToPointers-pass", interfacesTo(pointersTo([]interface{}{
+	runTestCases(t, false, "interfacesToPointers-pass", interfacesTo(pointersTo([]any{
 		savableEmptyStruct{},
 	})))
-	runTestCases(t, true, "interfacesToPointers-fail", interfacesTo(pointersTo([]interface{}{
+	runTestCases(t, true, "interfacesToPointers-fail", interfacesTo(pointersTo([]any{
 		unregisteredEmptyStruct{},
 		typeOnlyEmptyStruct{},
 	})))
 
 	// Ensuring empty struct aliasing works.
 	es := emptyStructPointer{new(struct{})}
-	runTestCases(t, false, "empty-struct-pointers", []interface{}{
+	runTestCases(t, false, "empty-struct-pointers", []any{
 		emptyStructPointer{},
 		es,
 		[]emptyStructPointer{es, es}, // Same pointer.
@@ -75,7 +75,7 @@ func TestEmbeddedPointers(t *testing.T) {
 	osl := outerSlice{oa.inner[:]}
 	ofv := outerFieldValue{innerFieldValue{magic()}}
 
-	runTestCases(t, false, "embedded-pointers", []interface{}{
+	runTestCases(t, false, "embedded-pointers", []any{
 		system{&ofs, &ofs.inner},
 		system{&ofs.inner, &ofs},
 		system{&of1, &of1.inner},
@@ -96,5 +96,11 @@ func TestEmbeddedPointers(t *testing.T) {
 		system{&osl, &oa},
 		system{&ofv, &ofv.inner},
 		system{&ofv.inner, &ofv},
+	})
+}
+
+func TestMultiNameFields(t *testing.T) {
+	runTestCases(t, false, "multi-name-field", []any{
+		multiName{b: "foo", c: "bar", x: 10, y: 20, z: -30},
 	})
 }

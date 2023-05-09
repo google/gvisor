@@ -26,8 +26,8 @@
 
 #include "gtest/gtest.h"
 #include "absl/strings/string_view.h"
-#include "test/syscalls/linux/socket_test_util.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
+#include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
@@ -1421,6 +1421,36 @@ TEST_P(UnixSocketPairCmsgTest, FDPassAfterSoPassCredWithoutCredSpace) {
   EXPECT_EQ(cmsg->cmsg_len, sizeof(control));
   EXPECT_EQ(cmsg->cmsg_level, SOL_SOCKET);
   EXPECT_EQ(cmsg->cmsg_type, SCM_CREDENTIALS);
+}
+
+TEST_P(UnixSocketPairCmsgTest, InheritPasscred) {
+  // Create an abstract server, but set SO_PASSCRED on it
+  struct sockaddr_un bind_addr =
+      ASSERT_NO_ERRNO_AND_VALUE(UniqueUnixAddr(true, AF_UNIX));
+  auto bound = ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_STREAM, 0));
+  SetSoPassCred(bound.get());
+  ASSERT_THAT(bind(bound.get(), AsSockAddr(&bind_addr), sizeof(bind_addr)),
+              SyscallSucceeds());
+  ASSERT_THAT(listen(bound.get(),
+                     /* backlog = */ 5),  // NOLINT(bugprone-argument-comment)
+              SyscallSucceeds());
+
+  // Create a connected socket pair using the server
+  auto connected = ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_STREAM, 0));
+  ASSERT_THAT(
+      connect(connected.get(), AsSockAddr(&bind_addr), sizeof(bind_addr)),
+      SyscallSucceeds());
+  auto accepted =
+      ASSERT_NO_ERRNO_AND_VALUE(Accept4(bound.get(), nullptr, nullptr, 0));
+  ASSERT_THAT(close(bound.release()), SyscallSucceeds());
+
+  // The accepted socket should have SO_PASSCRED set
+  int opt;
+  socklen_t optLen = sizeof(opt);
+  EXPECT_THAT(
+      getsockopt(accepted.get(), SOL_SOCKET, SO_PASSCRED, &opt, &optLen),
+      SyscallSucceeds());
+  EXPECT_TRUE(opt);
 }
 
 // This test will validate that MSG_CTRUNC as an input flag to recvmsg will

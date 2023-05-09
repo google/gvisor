@@ -22,10 +22,12 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/cleanup/cleanup.h"
 #include "absl/strings/string_view.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/memory_util.h"
 #include "test/util/signal_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
@@ -193,81 +195,6 @@ TEST(SpliceTest, PipeOffsets) {
               SyscallFailsWithErrno(ESPIPE));
   EXPECT_THAT(splice(rfd1.get(), &in_offset, wfd2.get(), nullptr, 1, 0),
               SyscallFailsWithErrno(ESPIPE));
-}
-
-// Event FDs may be used with splice without an offset.
-TEST(SpliceTest, FromEventFD) {
-  // Open the input eventfd with an initial value so that it is readable.
-  constexpr uint64_t kEventFDValue = 1;
-  int efd;
-  ASSERT_THAT(efd = eventfd(kEventFDValue, 0), SyscallSucceeds());
-  const FileDescriptor in_fd(efd);
-
-  // Create a new pipe.
-  int fds[2];
-  ASSERT_THAT(pipe(fds), SyscallSucceeds());
-  const FileDescriptor rfd(fds[0]);
-  const FileDescriptor wfd(fds[1]);
-
-  // Splice 8-byte eventfd value to pipe.
-  constexpr int kEventFDSize = 8;
-  EXPECT_THAT(splice(in_fd.get(), nullptr, wfd.get(), nullptr, kEventFDSize, 0),
-              SyscallSucceedsWithValue(kEventFDSize));
-
-  // Contents should be equal.
-  std::vector<char> rbuf(kEventFDSize);
-  ASSERT_THAT(read(rfd.get(), rbuf.data(), rbuf.size()),
-              SyscallSucceedsWithValue(kEventFDSize));
-  EXPECT_EQ(memcmp(rbuf.data(), &kEventFDValue, rbuf.size()), 0);
-}
-
-// Event FDs may not be used with splice with an offset.
-TEST(SpliceTest, FromEventFDOffset) {
-  int efd;
-  ASSERT_THAT(efd = eventfd(0, 0), SyscallSucceeds());
-  const FileDescriptor in_fd(efd);
-
-  // Create a new pipe.
-  int fds[2];
-  ASSERT_THAT(pipe(fds), SyscallSucceeds());
-  const FileDescriptor rfd(fds[0]);
-  const FileDescriptor wfd(fds[1]);
-
-  // Attempt to splice 8-byte eventfd value to pipe with offset.
-  //
-  // This is not allowed because eventfd doesn't support pread.
-  constexpr int kEventFDSize = 8;
-  loff_t in_off = 0;
-  EXPECT_THAT(splice(in_fd.get(), &in_off, wfd.get(), nullptr, kEventFDSize, 0),
-              SyscallFailsWithErrno(EINVAL));
-}
-
-// Event FDs may not be used with splice with an offset.
-TEST(SpliceTest, ToEventFDOffset) {
-  // Create a new pipe.
-  int fds[2];
-  ASSERT_THAT(pipe(fds), SyscallSucceeds());
-  const FileDescriptor rfd(fds[0]);
-  const FileDescriptor wfd(fds[1]);
-
-  // Fill with a value.
-  constexpr int kEventFDSize = 8;
-  std::vector<char> buf(kEventFDSize);
-  buf[0] = 1;
-  ASSERT_THAT(write(wfd.get(), buf.data(), buf.size()),
-              SyscallSucceedsWithValue(kEventFDSize));
-
-  int efd;
-  ASSERT_THAT(efd = eventfd(0, 0), SyscallSucceeds());
-  const FileDescriptor out_fd(efd);
-
-  // Attempt to splice 8-byte eventfd value to pipe with offset.
-  //
-  // This is not allowed because eventfd doesn't support pwrite.
-  loff_t out_off = 0;
-  EXPECT_THAT(
-      splice(rfd.get(), nullptr, out_fd.get(), &out_off, kEventFDSize, 0),
-      SyscallFailsWithErrno(EINVAL));
 }
 
 TEST(SpliceTest, ToPipe) {
@@ -590,11 +517,6 @@ TEST(TeeTest, TwoPipesPartialWrite) {
 }
 
 TEST(SpliceTest, TwoPipesCircular) {
-  // This test deadlocks the sentry on VFS1 because VFS1 splice ordering is
-  // based on fs.File.UniqueID, which does not prevent circular ordering between
-  // e.g. inode-level locks taken by fs.FileOperations.
-  SKIP_IF(IsRunningWithVFS1());
-
   // Create two pipes.
   int fds[2];
   ASSERT_THAT(pipe(fds), SyscallSucceeds());
@@ -852,38 +774,10 @@ TEST(SpliceTest, FromPipeMaxFileSize) {
   EXPECT_EQ(memcmp(rbuf.data(), buf.data(), buf.size()), 0);
 }
 
-TEST(SpliceTest, FromPipeToDevZero) {
-  // Create a new pipe.
-  int fds[2];
-  ASSERT_THAT(pipe(fds), SyscallSucceeds());
-  const FileDescriptor rfd(fds[0]);
-  FileDescriptor wfd(fds[1]);
-
-  // Fill with some random data.
-  std::vector<char> buf(kPageSize);
-  RandomizeBuffer(buf.data(), buf.size());
-  ASSERT_THAT(write(wfd.get(), buf.data(), buf.size()),
-              SyscallSucceedsWithValue(kPageSize));
-
-  const FileDescriptor zero =
-      ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/zero", O_WRONLY));
-
-  // Close the write end to prevent blocking below.
-  wfd.reset();
-
-  // Splice to /dev/zero. The first call should empty the pipe, and the return
-  // value should not exceed the number of bytes available for reading.
-  EXPECT_THAT(
-      splice(rfd.get(), nullptr, zero.get(), nullptr, kPageSize + 123, 0),
-      SyscallSucceedsWithValue(kPageSize));
-  EXPECT_THAT(splice(rfd.get(), nullptr, zero.get(), nullptr, 1, 0),
-              SyscallSucceedsWithValue(0));
-}
-
 static volatile int signaled = 0;
 void SigUsr1Handler(int sig, siginfo_t* info, void* context) { signaled = 1; }
 
-TEST(SpliceTest, ToPipeWithSmallCapacityDoesNotSpin_NoRandomSave) {
+TEST(SpliceTest, ToPipeWithSmallCapacityDoesNotSpin) {
   // Writes to a pipe that are less than PIPE_BUF must be atomic. This test
   // creates a pipe with only 128 bytes of capacity (< PIPE_BUF) and checks that
   // splicing to the pipe does not spin. See b/170743336.
@@ -931,6 +825,100 @@ TEST(SpliceTest, ToPipeWithSmallCapacityDoesNotSpin_NoRandomSave) {
 
   // Alarm should have been handled.
   EXPECT_EQ(signaled, 1);
+}
+
+// Regression test for b/208679047.
+TEST(SpliceTest, FromPipeWithConcurrentIo) {
+  // Create a file containing two copies of the same byte. Two bytes are
+  // necessary because both the read() and splice() loops below advance the file
+  // offset by one byte before lseek(); use of the file offset is required since
+  // the mutex protecting the file offset is implicated in the circular lock
+  // ordering that this test attempts to reproduce.
+  //
+  // This can't use memfd_create() because, in Linux, memfd_create(2) creates a
+  // struct file using alloc_file_pseudo() without going through
+  // do_dentry_open(), so FMODE_ATOMIC_POS is not set despite the created file
+  // having type S_IFREG ("regular file").
+  const TempPath file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR));
+  constexpr char kSplicedByte = 0x01;
+  for (int i = 0; i < 2; i++) {
+    ASSERT_THAT(WriteFd(fd.get(), &kSplicedByte, 1),
+                SyscallSucceedsWithValue(1));
+  }
+
+  // Create a pipe.
+  int pipe_fds[2];
+  ASSERT_THAT(pipe(pipe_fds), SyscallSucceeds());
+  const FileDescriptor rfd(pipe_fds[0]);
+  FileDescriptor wfd(pipe_fds[1]);
+
+  DisableSave ds;
+  std::atomic<bool> done(false);
+
+  // Create a thread that reads from fd until the end of the test.
+  ScopedThread memfd_reader([&] {
+    char file_buf;
+    while (!done.load()) {
+      ASSERT_THAT(lseek(fd.get(), 0, SEEK_SET), SyscallSucceeds());
+      int n = ReadFd(fd.get(), &file_buf, 1);
+      if (n == 0) {
+        // fd was at offset 2 (EOF). In Linux, this is possible even after
+        // lseek(0) because splice() doesn't attempt atomicity with respect to
+        // concurrent lseek(), so the effect of lseek() may be lost.
+        continue;
+      }
+      ASSERT_THAT(n, SyscallSucceedsWithValue(1));
+      ASSERT_EQ(file_buf, kSplicedByte);
+    }
+  });
+
+  // Create a thread that reads from the pipe until the end of the test.
+  ScopedThread pipe_reader([&] {
+    char pipe_buf;
+    while (!done.load()) {
+      int n = ReadFd(rfd.get(), &pipe_buf, 1);
+      if (n == 0) {
+        // This should only happen due to cleanup_threads (below) closing wfd.
+        EXPECT_TRUE(done.load());
+        return;
+      }
+      ASSERT_THAT(n, SyscallSucceedsWithValue(1));
+      ASSERT_EQ(pipe_buf, kSplicedByte);
+    }
+  });
+
+  // Create a thread that repeatedly invokes madvise(MADV_DONTNEED) on the same
+  // page of memory. (Having a thread attempt to lock MM.activeMu for writing is
+  // necessary to create a deadlock from the circular lock ordering, since
+  // otherwise both uses of MM.activeMu are for reading and may proceed
+  // concurrently.)
+  ScopedThread mm_locker([&] {
+    const Mapping m = ASSERT_NO_ERRNO_AND_VALUE(
+        MmapAnon(kPageSize, PROT_READ | PROT_WRITE, MAP_PRIVATE));
+    while (!done.load()) {
+      madvise(m.ptr(), kPageSize, MADV_DONTNEED);
+    }
+  });
+
+  // This must come after the ScopedThreads since its destructor must run before
+  // theirs.
+  const absl::Cleanup cleanup_threads = [&] {
+    done.store(true);
+    // Ensure that pipe_reader is unblocked after setting done, so that it will
+    // be able to observe done being true.
+    wfd.reset();
+  };
+
+  // Repeatedly splice from memfd to the pipe. The test passes if this does not
+  // deadlock.
+  const int kIterations = 5000;
+  for (int i = 0; i < kIterations; i++) {
+    ASSERT_THAT(lseek(fd.get(), 0, SEEK_SET), SyscallSucceeds());
+    ASSERT_THAT(splice(fd.get(), nullptr, wfd.get(), nullptr, 1, 0),
+                SyscallSucceedsWithValue(1));
+  }
 }
 
 }  // namespace

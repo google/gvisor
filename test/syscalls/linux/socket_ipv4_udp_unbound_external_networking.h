@@ -22,8 +22,22 @@ namespace testing {
 
 // Test fixture for tests that apply to unbound IPv4 UDP sockets in a sandbox
 // with external networking support.
-using IPv4UDPUnboundExternalNetworkingSocketTest =
-    IPUDPUnboundExternalNetworkingSocketTest;
+class IPv4UDPUnboundExternalNetworkingSocketTest
+    : public IPUDPUnboundExternalNetworkingSocketTest {
+ protected:
+  void SetUp() override;
+
+  int lo_if_idx() const { return std::get<0>(lo_if_.value()); }
+  int eth_if_idx() const { return std::get<0>(eth_if_.value()); }
+
+  const sockaddr_in& lo_if_addr() const { return std::get<1>(lo_if_.value()); }
+  const sockaddr_in& eth_if_addr() const {
+    return std::get<1>(eth_if_.value());
+  }
+
+ private:
+  std::optional<std::pair<int, sockaddr_in>> lo_if_, eth_if_;
+};
 
 }  // namespace testing
 }  // namespace gvisor

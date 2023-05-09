@@ -1,6 +1,8 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
+package(default_applicable_licenses = ["//:license"])
+
 licenses(["notice"])
 
 go_template_instance(
@@ -8,7 +10,7 @@ go_template_instance(
     out = "fd_dir_inode_refs.go",
     package = "proc",
     prefix = "fdDirInode",
-    template = "//pkg/refsvfs2:refs_template",
+    template = "//pkg/refs:refs_template",
     types = {
         "T": "fdDirInode",
     },
@@ -19,7 +21,7 @@ go_template_instance(
     out = "fd_info_dir_inode_refs.go",
     package = "proc",
     prefix = "fdInfoDirInode",
-    template = "//pkg/refsvfs2:refs_template",
+    template = "//pkg/refs:refs_template",
     types = {
         "T": "fdInfoDirInode",
     },
@@ -30,7 +32,7 @@ go_template_instance(
     out = "subtasks_inode_refs.go",
     package = "proc",
     prefix = "subtasksInode",
-    template = "//pkg/refsvfs2:refs_template",
+    template = "//pkg/refs:refs_template",
     types = {
         "T": "subtasksInode",
     },
@@ -41,7 +43,7 @@ go_template_instance(
     out = "task_inode_refs.go",
     package = "proc",
     prefix = "taskInode",
-    template = "//pkg/refsvfs2:refs_template",
+    template = "//pkg/refs:refs_template",
     types = {
         "T": "taskInode",
     },
@@ -52,7 +54,7 @@ go_template_instance(
     out = "tasks_inode_refs.go",
     package = "proc",
     prefix = "tasksInode",
-    template = "//pkg/refsvfs2:refs_template",
+    template = "//pkg/refs:refs_template",
     types = {
         "T": "tasksInode",
     },
@@ -80,15 +82,15 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/atomicbitops",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/refs",
-        "//pkg/refsvfs2",
         "//pkg/safemem",
-        "//pkg/sentry/fs/lock",
-        "//pkg/sentry/fsbridge",
         "//pkg/sentry/fsimpl/kernfs",
+        "//pkg/sentry/fsimpl/lock",
         "//pkg/sentry/inet",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
@@ -101,7 +103,6 @@ go_library(
         "//pkg/sentry/usage",
         "//pkg/sentry/vfs",
         "//pkg/sync",
-        "//pkg/syserror",
         "//pkg/tcpip/header",
         "//pkg/tcpip/network/ipv4",
         "//pkg/usermem",
@@ -119,6 +120,7 @@ go_test(
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/fspath",
         "//pkg/sentry/contexttest",
         "//pkg/sentry/fsimpl/testutil",
@@ -127,7 +129,6 @@ go_test(
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/vfs",
-        "//pkg/syserror",
         "//pkg/usermem",
     ],
 )

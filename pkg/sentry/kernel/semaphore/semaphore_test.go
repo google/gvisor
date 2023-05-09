@@ -19,9 +19,10 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
-	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/ipc"
 )
 
 func executeOps(ctx context.Context, t *testing.T, set *Set, ops []linux.Sembuf, block bool) chan struct{} {
@@ -55,7 +56,7 @@ func signalled(ch chan struct{}) bool {
 
 func TestBasic(t *testing.T) {
 	ctx := contexttest.Context(t)
-	set := &Set{ID: 123, sems: make([]sem, 1)}
+	set := &Set{obj: &ipc.Object{ID: 123}, sems: make([]sem, 1)}
 	ops := []linux.Sembuf{
 		{SemOp: 1},
 	}
@@ -76,7 +77,7 @@ func TestBasic(t *testing.T) {
 
 func TestWaitForZero(t *testing.T) {
 	ctx := contexttest.Context(t)
-	set := &Set{ID: 123, sems: make([]sem, 1)}
+	set := &Set{obj: &ipc.Object{ID: 123}, sems: make([]sem, 1)}
 	ops := []linux.Sembuf{
 		{SemOp: 0},
 	}
@@ -115,7 +116,7 @@ func TestWaitForZero(t *testing.T) {
 
 func TestNoWait(t *testing.T) {
 	ctx := contexttest.Context(t)
-	set := &Set{ID: 123, sems: make([]sem, 1)}
+	set := &Set{obj: &ipc.Object{ID: 123}, sems: make([]sem, 1)}
 	ops := []linux.Sembuf{
 		{SemOp: 1},
 	}
@@ -123,14 +124,14 @@ func TestNoWait(t *testing.T) {
 
 	ops[0].SemOp = -2
 	ops[0].SemFlg = linux.IPC_NOWAIT
-	if _, _, err := set.executeOps(ctx, ops, 123); err != syserror.ErrWouldBlock {
-		t.Fatalf("ExecuteOps(ops) wrong result, got: %v, expected: %v", err, syserror.ErrWouldBlock)
+	if _, _, err := set.executeOps(ctx, ops, 123); err != linuxerr.ErrWouldBlock {
+		t.Fatalf("ExecuteOps(ops) wrong result, got: %v, expected: %v", err, linuxerr.ErrWouldBlock)
 	}
 
 	ops[0].SemOp = 0
 	ops[0].SemFlg = linux.IPC_NOWAIT
-	if _, _, err := set.executeOps(ctx, ops, 123); err != syserror.ErrWouldBlock {
-		t.Fatalf("ExecuteOps(ops) wrong result, got: %v, expected: %v", err, syserror.ErrWouldBlock)
+	if _, _, err := set.executeOps(ctx, ops, 123); err != linuxerr.ErrWouldBlock {
+		t.Fatalf("ExecuteOps(ops) wrong result, got: %v, expected: %v", err, linuxerr.ErrWouldBlock)
 	}
 }
 
@@ -138,11 +139,12 @@ func TestUnregister(t *testing.T) {
 	ctx := contexttest.Context(t)
 	r := NewRegistry(auth.NewRootUserNamespace())
 	set, err := r.FindOrCreate(ctx, 123, 2, linux.FileMode(0x600), true, true, true)
+
 	if err != nil {
 		t.Fatalf("FindOrCreate() failed, err: %v", err)
 	}
-	if got := r.FindByID(set.ID); got.ID != set.ID {
-		t.Fatalf("FindById(%d) failed, got: %+v, expected: %+v", set.ID, got, set)
+	if got := r.FindByID(set.obj.ID); got.obj.ID != set.obj.ID {
+		t.Fatalf("FindById(%d) failed, got: %+v, expected: %+v", set.obj.ID, got, set)
 	}
 
 	ops := []linux.Sembuf{
@@ -155,14 +157,14 @@ func TestUnregister(t *testing.T) {
 	}
 
 	creds := auth.CredentialsFromContext(ctx)
-	if err := r.RemoveID(set.ID, creds); err != nil {
-		t.Fatalf("RemoveID(%d) failed, err: %v", set.ID, err)
+	if err := r.Remove(set.obj.ID, creds); err != nil {
+		t.Fatalf("Remove(%d) failed, err: %v", set.obj.ID, err)
 	}
 	if !set.dead {
 		t.Fatalf("set is not dead: %+v", set)
 	}
-	if got := r.FindByID(set.ID); got != nil {
-		t.Fatalf("FindById(%d) failed, got: %+v, expected: nil", set.ID, got)
+	if got := r.FindByID(set.obj.ID); got != nil {
+		t.Fatalf("FindById(%d) failed, got: %+v, expected: nil", set.obj.ID, got)
 	}
 	for i, ch := range chs {
 		if !signalled(ch) {

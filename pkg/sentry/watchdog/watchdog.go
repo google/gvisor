@@ -22,11 +22,10 @@
 // without blocking are considered stuck and are reported.
 //
 // When a stuck task is detected, the watchdog can take one of the following actions:
-//		1. LogWarning: Logs a warning message followed by a stack dump of all goroutines.
-//			 If a tasks continues to be stuck, the message will repeat every minute, unless
-//			 a new stuck task is detected
-//		2. Panic: same as above, followed by panic()
-//
+//  1. LogWarning: Logs a warning message followed by a stack dump of all goroutines.
+//     If a tasks continues to be stuck, the message will repeat every minute, unless
+//     a new stuck task is detected
+//  2. Panic: same as above, followed by panic()
 package watchdog
 
 import (
@@ -77,11 +76,6 @@ var DefaultOpts = Opts{
 // trigger it.
 const descheduleThreshold = 1 * time.Second
 
-var (
-	stuckStartup = metric.MustCreateNewUint64Metric("/watchdog/stuck_startup_detected", true /* sync */, "Incremented once on startup watchdog timeout")
-	stuckTasks   = metric.MustCreateNewUint64Metric("/watchdog/stuck_tasks_detected", true /* sync */, "Cumulative count of stuck tasks detected")
-)
-
 // Amount of time to wait before dumping the stack to the log again when the same task(s) remains stuck.
 var stackDumpSameTaskPeriod = time.Minute
 
@@ -110,19 +104,19 @@ func (a *Action) Set(v string) error {
 }
 
 // Get implements flag.Value.
-func (a *Action) Get() interface{} {
+func (a *Action) Get() any {
 	return *a
 }
 
 // String returns Action's string representation.
-func (a *Action) String() string {
-	switch *a {
+func (a Action) String() string {
+	switch a {
 	case LogWarning:
 		return "logWarning"
 	case Panic:
 		return "panic"
 	default:
-		panic(fmt.Sprintf("Invalid watchdog action: %d", *a))
+		panic(fmt.Sprintf("Invalid watchdog action: %d", a))
 	}
 }
 
@@ -242,7 +236,7 @@ func (w *Watchdog) waitForStart() {
 		return
 	}
 
-	stuckStartup.Increment()
+	metric.WeirdnessMetric.Increment(&metric.WeirdnessTypeWatchdogStuckStartup)
 
 	var buf bytes.Buffer
 	buf.WriteString(fmt.Sprintf("Watchdog.Start() not called within %s", w.StartupTimeout))
@@ -312,10 +306,10 @@ func (w *Watchdog) runTurn() {
 					// New stuck task detected.
 					//
 					// Note that tasks blocked doing IO may be considered stuck in kernel,
-					// unless they are surrounded b
+					// unless they are surrounded by
 					// Task.UninterruptibleSleepStart/Finish.
 					tc = &offender{lastUpdateTime: lastUpdateTime}
-					stuckTasks.Increment()
+					metric.WeirdnessMetric.Increment(&metric.WeirdnessTypeWatchdogStuckTasks)
 					newTaskFound = true
 				}
 				newOffenders[t] = tc

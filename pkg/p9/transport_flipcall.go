@@ -58,11 +58,11 @@ type channel struct {
 	fds  fdchannel.Endpoint
 	buf  buffer
 
-	// -- client only --
+	//	-- client only --
 	connected bool
 	active    bool
 
-	// -- server only --
+	//	-- server only --
 	client *fd.FD
 	done   chan struct{}
 }
@@ -85,7 +85,7 @@ func (ch *channel) service(cs *connState) error {
 		}
 		r := cs.handle(m)
 		msgRegistry.put(m)
-		rsz, err = ch.send(r)
+		rsz, err = ch.send(r, true /* isServer */)
 		if err != nil {
 			return err
 		}
@@ -122,7 +122,7 @@ func (ch *channel) Close() error {
 //
 // The return value is the size of the received response. Not that in the
 // server case, this is the size of the next request.
-func (ch *channel) send(m message) (uint32, error) {
+func (ch *channel) send(m message, isServer bool) (uint32, error) {
 	if log.IsLogging(log.Debug) {
 		log.Debugf("send [channel @%p] %s", ch, m.String())
 	}
@@ -162,7 +162,11 @@ func (ch *channel) send(m message) (uint32, error) {
 	}
 
 	// Perform the one-shot communication.
-	return ch.data.SendRecv(ssz)
+	if isServer {
+		return ch.data.SendRecv(ssz)
+	}
+	// RPCs are expected to return quickly rather than block.
+	return ch.data.SendRecvFast(ssz)
 }
 
 // recv decodes a message that exists on the channel.

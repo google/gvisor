@@ -25,10 +25,10 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Name is the filesystem name.
@@ -56,7 +56,7 @@ func (*FilesystemType) Name() string {
 func (fstype *FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
 	// No data allowed.
 	if opts.Data != "" {
-		return nil, nil, syserror.EINVAL
+		return nil, nil, linuxerr.EINVAL
 	}
 
 	fstype.initOnce.Do(func() {
@@ -152,6 +152,7 @@ type rootInode struct {
 	kernfs.InodeDirectoryNoNewChildren
 	kernfs.InodeNotSymlink
 	kernfs.InodeTemporary // This holds no meaning as this inode can't be Looked up and is always valid.
+	kernfs.InodeWatches
 	kernfs.OrderedChildren
 	rootInodeRefs
 
@@ -179,7 +180,7 @@ func (i *rootInode) allocateTerminal(ctx context.Context, creds *auth.Credential
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	if i.nextIdx == math.MaxUint32 {
-		return nil, syserror.ENOMEM
+		return nil, linuxerr.ENOMEM
 	}
 	idx := i.nextIdx
 	i.nextIdx++
@@ -221,6 +222,8 @@ func (i *rootInode) masterClose(ctx context.Context, t *Terminal) {
 
 // Open implements kernfs.Inode.Open.
 func (i *rootInode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
+	opts.Flags &= linux.O_ACCMODE | linux.O_CREAT | linux.O_EXCL | linux.O_TRUNC |
+		linux.O_DIRECTORY | linux.O_NOFOLLOW | linux.O_NONBLOCK | linux.O_NOCTTY
 	fd, err := kernfs.NewGenericDirectoryFD(rp.Mount(), d, &i.OrderedChildren, &i.locks, &opts, kernfs.GenericDirectoryFDOptions{
 		SeekEnd: kernfs.SeekEndStaticEntries,
 	})
@@ -240,7 +243,7 @@ func (i *rootInode) Lookup(ctx context.Context, name string) (kernfs.Inode, erro
 	// Not a static entry.
 	idx, err := strconv.ParseUint(name, 10, 32)
 	if err != nil {
-		return nil, syserror.ENOENT
+		return nil, linuxerr.ENOENT
 	}
 	i.mu.Lock()
 	defer i.mu.Unlock()
@@ -249,7 +252,7 @@ func (i *rootInode) Lookup(ctx context.Context, name string) (kernfs.Inode, erro
 		return ri, nil
 
 	}
-	return nil, syserror.ENOENT
+	return nil, linuxerr.ENOENT
 }
 
 // IterDirents implements kernfs.Inode.IterDirents.

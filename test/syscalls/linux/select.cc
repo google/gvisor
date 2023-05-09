@@ -98,7 +98,7 @@ TEST_F(SelectTest, ZeroTimeout) {
 
 // If random S/R interrupts the select, SIGALRM may be delivered before select
 // restarts, causing the select to hang forever.
-TEST_F(SelectTest, NoTimeout_NoRandomSave) {
+TEST_F(SelectTest, NoTimeout) {
   // When there's no timeout, select may never return so set a timer.
   SetTimer(absl::Milliseconds(100));
   // See that we get interrupted by the timer.
@@ -118,7 +118,7 @@ TEST_F(SelectTest, InvalidTimeoutNegative) {
 //
 // If random S/R interrupts the select, SIGALRM may be delivered before select
 // restarts, causing the select to hang forever.
-TEST_F(SelectTest, InterruptedBySignal_NoRandomSave) {
+TEST_F(SelectTest, InterruptedBySignal) {
   absl::Duration duration(absl::Seconds(5));
   struct timeval timeout = absl::ToTimeval(duration);
   SetTimer(absl::Milliseconds(100));

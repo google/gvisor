@@ -20,9 +20,9 @@
 #include <vector>
 
 #include "gtest/gtest.h"
-#include "test/syscalls/linux/socket_test_util.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {
@@ -37,8 +37,7 @@ TEST_P(AllSocketPairTest, Listen) {
                    sockets->first_addr_size()),
               SyscallSucceeds());
 
-  ASSERT_THAT(listen(sockets->first_fd(), /* backlog = */ 5),
-              SyscallSucceeds());
+  ASSERT_THAT(listen(sockets->first_fd(), 5), SyscallSucceeds());
 }
 
 TEST_P(AllSocketPairTest, ListenIncreaseBacklog) {
@@ -48,10 +47,8 @@ TEST_P(AllSocketPairTest, ListenIncreaseBacklog) {
                    sockets->first_addr_size()),
               SyscallSucceeds());
 
-  ASSERT_THAT(listen(sockets->first_fd(), /* backlog = */ 5),
-              SyscallSucceeds());
-  ASSERT_THAT(listen(sockets->first_fd(), /* backlog = */ 10),
-              SyscallSucceeds());
+  ASSERT_THAT(listen(sockets->first_fd(), 5), SyscallSucceeds());
+  ASSERT_THAT(listen(sockets->first_fd(), 10), SyscallSucceeds());
 }
 
 TEST_P(AllSocketPairTest, ListenDecreaseBacklog) {
@@ -61,13 +58,11 @@ TEST_P(AllSocketPairTest, ListenDecreaseBacklog) {
                    sockets->first_addr_size()),
               SyscallSucceeds());
 
-  ASSERT_THAT(listen(sockets->first_fd(), /* backlog = */ 5),
-              SyscallSucceeds());
-  ASSERT_THAT(listen(sockets->first_fd(), /* backlog = */ 1),
-              SyscallSucceeds());
+  ASSERT_THAT(listen(sockets->first_fd(), 5), SyscallSucceeds());
+  ASSERT_THAT(listen(sockets->first_fd(), 1), SyscallSucceeds());
 }
 
-TEST_P(AllSocketPairTest, ListenBacklogSizes_NoRandomSave) {
+TEST_P(AllSocketPairTest, ListenBacklogSizes) {
   DisableSave ds;
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
@@ -321,8 +316,7 @@ TEST_P(AllSocketPairTest, AcceptValidAddrLen) {
   struct sockaddr_un addr = {};
   socklen_t addr_len = sizeof(addr);
   ASSERT_THAT(
-      accepted = accept(sockets->first_fd(),
-                        reinterpret_cast<struct sockaddr*>(&addr), &addr_len),
+      accepted = accept(sockets->first_fd(), AsSockAddr(&addr), &addr_len),
       SyscallSucceeds());
   ASSERT_THAT(close(accepted), SyscallSucceeds());
 }
@@ -343,8 +337,7 @@ TEST_P(AllSocketPairTest, AcceptNegativeAddrLen) {
   // With a negative addr_len, accept returns EINVAL,
   struct sockaddr_un addr = {};
   socklen_t addr_len = -1;
-  ASSERT_THAT(accept(sockets->first_fd(),
-                     reinterpret_cast<struct sockaddr*>(&addr), &addr_len),
+  ASSERT_THAT(accept(sockets->first_fd(), AsSockAddr(&addr), &addr_len),
               SyscallFailsWithErrno(EINVAL));
 }
 
@@ -535,10 +528,9 @@ TEST_P(AllSocketPairTest, UnboundSenderAddr) {
 
   struct sockaddr_storage addr;
   socklen_t addr_len = sizeof(addr);
-  ASSERT_THAT(
-      RetryEINTR(recvfrom)(accepted_fd.get(), &i, sizeof(i), 0,
-                           reinterpret_cast<sockaddr*>(&addr), &addr_len),
-      SyscallSucceedsWithValue(sizeof(i)));
+  ASSERT_THAT(RetryEINTR(recvfrom)(accepted_fd.get(), &i, sizeof(i), 0,
+                                   AsSockAddr(&addr), &addr_len),
+              SyscallSucceedsWithValue(sizeof(i)));
   EXPECT_EQ(addr_len, 0);
 }
 
@@ -570,10 +562,9 @@ TEST_P(AllSocketPairTest, BoundSenderAddr) {
 
   struct sockaddr_storage addr;
   socklen_t addr_len = sizeof(addr);
-  ASSERT_THAT(
-      RetryEINTR(recvfrom)(accepted_fd.get(), &i, sizeof(i), 0,
-                           reinterpret_cast<sockaddr*>(&addr), &addr_len),
-      SyscallSucceedsWithValue(sizeof(i)));
+  ASSERT_THAT(RetryEINTR(recvfrom)(accepted_fd.get(), &i, sizeof(i), 0,
+                                   AsSockAddr(&addr), &addr_len),
+              SyscallSucceedsWithValue(sizeof(i)));
   EXPECT_EQ(addr_len, sockets->second_addr_len());
   EXPECT_EQ(
       memcmp(&addr, sockets->second_addr(),
@@ -609,10 +600,9 @@ TEST_P(AllSocketPairTest, BindAfterConnectSenderAddr) {
 
   struct sockaddr_storage addr;
   socklen_t addr_len = sizeof(addr);
-  ASSERT_THAT(
-      RetryEINTR(recvfrom)(accepted_fd.get(), &i, sizeof(i), 0,
-                           reinterpret_cast<sockaddr*>(&addr), &addr_len),
-      SyscallSucceedsWithValue(sizeof(i)));
+  ASSERT_THAT(RetryEINTR(recvfrom)(accepted_fd.get(), &i, sizeof(i), 0,
+                                   AsSockAddr(&addr), &addr_len),
+              SyscallSucceedsWithValue(sizeof(i)));
   EXPECT_EQ(addr_len, sockets->second_addr_len());
   EXPECT_EQ(
       memcmp(&addr, sockets->second_addr(),
@@ -648,10 +638,9 @@ TEST_P(AllSocketPairTest, BindAfterAcceptSenderAddr) {
 
   struct sockaddr_storage addr;
   socklen_t addr_len = sizeof(addr);
-  ASSERT_THAT(
-      RetryEINTR(recvfrom)(accepted_fd.get(), &i, sizeof(i), 0,
-                           reinterpret_cast<sockaddr*>(&addr), &addr_len),
-      SyscallSucceedsWithValue(sizeof(i)));
+  ASSERT_THAT(RetryEINTR(recvfrom)(accepted_fd.get(), &i, sizeof(i), 0,
+                                   AsSockAddr(&addr), &addr_len),
+              SyscallSucceedsWithValue(sizeof(i)));
   EXPECT_EQ(addr_len, sockets->second_addr_len());
   EXPECT_EQ(
       memcmp(&addr, sockets->second_addr(),

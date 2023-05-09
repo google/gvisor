@@ -51,7 +51,7 @@ go_template = rule(
         "opt_types": attr.string_list(doc = "the list of generic types in the template that can but aren't required to be specified"),
         "consts": attr.string_list(doc = "the list of constants in the template that are required to be specified"),
         "opt_consts": attr.string_list(doc = "the list of constants in the template that can but aren't required to be specified"),
-        "_tool": attr.label(executable = True, cfg = "host", default = Label("//tools/go_generics/go_merge")),
+        "_tool": attr.label(executable = True, cfg = "exec", default = Label("//tools/go_generics/go_merge")),
     },
 )
 
@@ -93,6 +93,8 @@ def _go_template_instance_impl(ctx):
     args += [("-t=%s=%s" % (p[0], p[1])) for p in ctx.attr.types.items()]
     args += [("-c=%s=%s" % (p[0], p[1])) for p in ctx.attr.consts.items()]
     args += [("-import=%s=%s" % (p[0], p[1])) for p in ctx.attr.imports.items()]
+    args += [("-in-substr=%s=%s" % (p[0], p[1])) for p in ctx.attr.input_substrs.items()]
+    args += [("-out-substr=%s=%s" % (p[0], p[1])) for p in ctx.attr.substrs.items()]
 
     if ctx.attr.anon:
         args.append("-anon")
@@ -119,9 +121,11 @@ go_template_instance = rule(
         "types": attr.string_dict(doc = "the map from generic type names to concrete ones"),
         "consts": attr.string_dict(doc = "the map from constant names to their values"),
         "imports": attr.string_dict(doc = "the map from imports used in types/consts to their import paths"),
+        "input_substrs": attr.string_dict(doc = "the map from sub-strings to their replacements, applied just after reading the template code"),
+        "substrs": attr.string_dict(doc = "the map from sub-strings to their replacements, applied just before writing the template instance code"),
         "anon": attr.bool(doc = "whether anoymous fields should be processed", mandatory = False, default = False),
         "package": attr.string(doc = "the package for the generated source file", mandatory = False),
         "out": attr.output(doc = "output file", mandatory = True),
-        "_tool": attr.label(executable = True, cfg = "host", default = Label("//tools/go_generics")),
+        "_tool": attr.label(executable = True, cfg = "exec", default = Label("//tools/go_generics")),
     },
 )

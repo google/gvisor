@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build amd64
 // +build amd64
 
 package ring0
@@ -20,8 +21,14 @@ import (
 	"encoding/binary"
 	"reflect"
 
+	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
+
+// HaltAndWriteFSBase halts execution. On resume, it sets FS_BASE from the
+// value in regs.
+func HaltAndWriteFSBase(regs *arch.Registers)
 
 // init initializes architecture-specific state.
 func (k *Kernel) init(maxCPUs int) {
@@ -134,6 +141,9 @@ func (c *CPU) init(cpuID int) {
 
 	// Set mandatory flags.
 	c.registers.Eflags = KernelFlagsSet
+
+	c.hasXSAVE = hasXSAVE
+	c.hasXSAVEOPT = hasXSAVEOPT
 }
 
 // StackTop returns the kernel's stack address.
@@ -168,7 +178,7 @@ func (c *CPU) TSS() (uint64, uint16, *SegmentDescriptor) {
 //
 //go:nosplit
 func (c *CPU) CR0() uint64 {
-	return _CR0_PE | _CR0_PG | _CR0_AM | _CR0_ET
+	return _CR0_PE | _CR0_PG | _CR0_AM | _CR0_ET | _CR0_NE
 }
 
 // CR4 returns the CPU's CR4 value.
@@ -184,6 +194,9 @@ func (c *CPU) CR4() uint64 {
 	}
 	if hasSMEP {
 		cr4 |= _CR4_SMEP
+	}
+	if hasSMAP {
+		cr4 |= _CR4_SMAP
 	}
 	if hasFSGSBASE {
 		cr4 |= _CR4_FSGSBASE
@@ -202,7 +215,7 @@ func (c *CPU) EFER() uint64 {
 //
 //go:nosplit
 func IsCanonical(addr uint64) bool {
-	return addr <= 0x00007fffffffffff || addr > 0xffff800000000000
+	return addr <= 0x00007fffffffffff || addr >= 0xffff800000000000
 }
 
 // SwitchToUser performs either a sysret or an iret.
@@ -239,60 +252,63 @@ func (c *CPU) SwitchToUser(switchOpts SwitchOpts) (vector Vector) {
 	regs.Ss = uint64(Udata)   // Ditto.
 
 	// Perform the switch.
-	swapgs()                                                       // GS will be swapped on return.
-	WriteFS(uintptr(regs.Fs_base))                                 // escapes: no. Set application FS.
-	WriteGS(uintptr(regs.Gs_base))                                 // escapes: no. Set application GS.
-	LoadFloatingPoint(switchOpts.FloatingPointState.BytePointer()) // escapes: no. Copy in floating point.
+	needIRET := uint64(0)
 	if switchOpts.FullRestore {
-		vector = iret(c, regs, uintptr(userCR3))
-	} else {
-		vector = sysret(c, regs, uintptr(userCR3))
+		needIRET = 1
 	}
-	SaveFloatingPoint(switchOpts.FloatingPointState.BytePointer()) // escapes: no. Copy out floating point.
-	WriteFS(uintptr(c.registers.Fs_base))                          // escapes: no. Restore kernel FS.
-	RestoreKernelFPState()                                         // escapes: no. Restore kernel MXCSR.
+	vector = doSwitchToUser(c, regs, switchOpts.FloatingPointState.BytePointer(), userCR3, needIRET) // escapes: no.
 	return
 }
 
-// start is the CPU entrypoint.
+func doSwitchToUser(
+	cpu *CPU, // +0(FP)
+	regs *arch.Registers, // +8(FP)
+	fpState *byte, // +16(FP)
+	userCR3 uint64, // +24(FP)
+	needIRET uint64) Vector // +32(FP), +40(FP)
+
+// startGo is the CPU entrypoint.
 //
-// This is called from the Start asm stub (see entry_amd64.go); on return the
+// This is called from the start asm stub (see entry_amd64.go); on return the
 // registers in c.registers will be restored (not segments).
 //
+// Note that any code written in Go should adhere to Go expected environment:
+//   - Initialized floating point state (required for optimizations using
+//     floating point instructions).
+//   - Go TLS in FS_BASE (this is required by splittable functions, calls into
+//     the runtime, calls to assembly functions (Go 1.17+ ABI wrappers access
+//     TLS)).
+//
 //go:nosplit
-func start(c *CPU) {
-	// Save per-cpu & FS segment.
-	WriteGS(kernelAddr(c.kernelEntry))
-	WriteFS(uintptr(c.registers.Fs_base))
+func startGo(c *CPU) {
+	// Save per-cpu.
+	writeGS(kernelAddr(c.kernelEntry))
 
-	// Initialize floating point.
 	//
-	// Note that on skylake, the valid XCR0 mask reported seems to be 0xff.
-	// This breaks down as:
-	//
-	//	bit0   - x87
-	//	bit1   - SSE
-	//	bit2   - AVX
-	//	bit3-4 - MPX
-	//	bit5-7 - AVX512
-	//
-	// For some reason, enabled MPX & AVX512 on platforms that report them
-	// seems to be cause a general protection fault. (Maybe there are some
-	// virtualization issues and these aren't exported to the guest cpuid.)
-	// This needs further investigation, but we can limit the floating
-	// point operations to x87, SSE & AVX for now.
+	// TODO(mpratt): Note that per the note above, this should be done
+	// before entering Go code. However for simplicity we leave it here for
+	// now, since the small critical sections with undefined FPU state
+	// should only contain very limited use of floating point instructions
+	// (notably, use of XMM15 as a zero register).
 	fninit()
-	xsetbv(0, validXCR0Mask&0x7)
+	// Need to sync XCR0 with the host, because xsave and xrstor can be
+	// called from different contexts.
+	if hasXSAVE {
+		// Exclude MPX bits. MPX has been deprecated and we have seen
+		// cases when it isn't supported in VM.
+		xcr0 := localXCR0 &^ (cpuid.XSAVEFeatureBNDCSR | cpuid.XSAVEFeatureBNDREGS)
+		xsetbv(0, xcr0)
+	}
 
 	// Set the syscall target.
-	wrmsr(_MSR_LSTAR, kernelFunc(sysenter))
+	wrmsr(_MSR_LSTAR, kernelFunc(addrOfSysenter()))
 	wrmsr(_MSR_SYSCALL_MASK, KernelFlagsClear|_RFLAGS_DF)
 
 	// NOTE: This depends on having the 64-bit segments immediately
 	// following the 32-bit user segments. This is simply the way the
 	// sysret instruction is designed to work (it assumes they follow).
 	wrmsr(_MSR_STAR, uintptr(uint64(Kcode)<<32|uint64(Ucode32)<<48))
-	wrmsr(_MSR_CSTAR, kernelFunc(sysenter))
+	wrmsr(_MSR_CSTAR, kernelFunc(addrOfSysenter()))
 }
 
 // SetCPUIDFaulting sets CPUID faulting per the boolean value.
@@ -321,22 +337,4 @@ func SetCPUIDFaulting(on bool) bool {
 //go:nosplit
 func ReadCR2() uintptr {
 	return readCR2()
-}
-
-// kernelMXCSR is the value of the mxcsr register in the Sentry.
-//
-// The MXCSR control configuration is initialized once and never changed. Look
-// at src/cmd/compile/abi-internal.md in the golang sources for more details.
-var kernelMXCSR uint32
-
-// RestoreKernelFPState restores the Sentry floating point state.
-//
-//go:nosplit
-func RestoreKernelFPState() {
-	// Restore the MXCSR control configuration.
-	ldmxcsr(&kernelMXCSR)
-}
-
-func init() {
-	stmxcsr(&kernelMXCSR)
 }

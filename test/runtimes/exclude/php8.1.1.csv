@@ -1,0 +1,58 @@
+test name,bug id,comment
+Zend/tests/concat_003.phpt,b/162896021,
+ext/opcache/tests/bug78014.phpt,,Broken test
+ext/opcache/tests/bug78175.phpt,,Broken test
+ext/opcache/tests/bug78175_2.phpt,,Broken test
+ext/opcache/tests/bug78376.phpt,,Broken test
+ext/opcache/tests/bug78937_1.phpt,,Broken test
+ext/opcache/tests/bug78937_2.phpt,,Broken test
+ext/opcache/tests/bug78937_3.phpt,,Broken test
+ext/opcache/tests/bug78937_4.phpt,,Broken test
+ext/opcache/tests/bug78937_5.phpt,,Broken test
+ext/opcache/tests/bug78937_6.phpt,,Broken test
+ext/opcache/tests/jit/bug80634.phpt,,Broken test
+ext/opcache/tests/jit/bug81256.phpt,,Broken test
+ext/opcache/tests/preload_001.phpt,,Broken test
+ext/opcache/tests/preload_002.phpt,,Broken test
+ext/opcache/tests/preload_003.phpt,,Broken test
+ext/opcache/tests/preload_004.phpt,,Broken test
+ext/opcache/tests/preload_005.phpt,,Broken test
+ext/opcache/tests/preload_006.phpt,,Broken test
+ext/opcache/tests/preload_007.phpt,,Broken test
+ext/opcache/tests/preload_008.phpt,,Broken test
+ext/opcache/tests/preload_009.phpt,,Broken test
+ext/opcache/tests/preload_010.phpt,,Broken test
+ext/opcache/tests/preload_011.phpt,,Broken test
+ext/opcache/tests/preload_012.phpt,,Broken test
+ext/opcache/tests/preload_013.phpt,,Broken test
+ext/opcache/tests/preload_bug79114.phpt,,Broken test
+ext/opcache/tests/preload_class_alias.phpt,,Broken test
+ext/opcache/tests/preload_class_alias_2.phpt,,Broken test
+ext/opcache/tests/preload_dynamic_def_removal.phpt,,Broken test
+ext/opcache/tests/preload_dynamic_function.phpt,,Broken test
+ext/opcache/tests/preload_early_binding.phpt,,Broken test
+ext/opcache/tests/preload_enum.phpt,,Broken test
+ext/opcache/tests/preload_error_handler.phpt,,Broken test
+ext/opcache/tests/preload_ind.phpt,,Broken test
+ext/opcache/tests/preload_loadable_classes_1.phpt,,Broken test
+ext/opcache/tests/preload_loadable_classes_2.phpt,,Broken test
+ext/opcache/tests/preload_loadable_classes_3.phpt,,Broken test
+ext/opcache/tests/preload_method_static_vars.phpt,,Broken test
+ext/opcache/tests/preload_parse_error.phpt,,Broken test
+ext/opcache/tests/preload_prop_info_table.phpt,,Broken test
+ext/opcache/tests/preload_static_var_inheritance.phpt,,Broken test
+ext/opcache/tests/preload_trait_alias.phpt,,Broken test
+ext/opcache/tests/preload_trait_multiple_fixup.phpt,,Broken test
+ext/opcache/tests/preload_trait_static.phpt,,Broken test
+ext/opcache/tests/preload_unresolved_prop_type.phpt,,Broken test
+ext/openssl/tests/openssl_dh_compute_key.phpt,,Broken test
+ext/standard/tests/file/bug69442.phpt,,
+ext/standard/tests/file/bug60120.phpt,b/241944760,Flakily times out
+ext/standard/tests/file/fopen_variation19.phpt,b/162894964,
+ext/standard/tests/file/symlink_link_linkinfo_is_link_variation4.phpt,b/162895341,
+sapi/cli/tests/upload_2G.phpt,,
+tests/output/stream_isatty_err.phpt,b/68720279,
+tests/output/stream_isatty_in-err.phpt,b/68720282,
+tests/output/stream_isatty_in-out.phpt,b/68720299,
+tests/output/stream_isatty_out-err.phpt,b/68720311,
+tests/output/stream_isatty_out.phpt,b/68720325,

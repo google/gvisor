@@ -17,13 +17,14 @@ package cleanup
 
 // Cleanup allows defers to be aborted when cleanup needs to happen
 // conditionally. Usage:
-// 	 cu := cleanup.Make(func() { f.Close() })
-// 	 defer cu.Clean() // failure before release is called will close the file.
-// 	 ...
-//   cu.Add(func() { f2.Close() })  // Adds another cleanup function
-//   ...
-// 	 cu.Release() // on success, aborts closing the file.
-// 	 return f
+//
+//		 cu := cleanup.Make(func() { f.Close() })
+//		 defer cu.Clean() // failure before release is called will close the file.
+//		 ...
+//	   cu.Add(func() { f2.Close() })  // Adds another cleanup function
+//	   ...
+//		 cu.Release() // on success, aborts closing the file.
+//		 return f
 type Cleanup struct {
 	cleaners []func()
 }

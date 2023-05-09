@@ -12,7 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build go1.1
+// +build go1.1
+
 package hostfd
 
-// maxIov is the maximum permitted size of a struct iovec array.
-const maxIov = 1024 // UIO_MAXIOV
+// MaxReadWriteIov is the maximum permitted size of a struct iovec array in a
+// readv, writev, preadv, or pwritev host syscall.
+const MaxReadWriteIov = 1024 // UIO_MAXIOV
+
+// MaxSendRecvMsgIov is the maximum permitted size of a struct iovec array in a
+// sendmsg or recvmsg host syscall.
+const MaxSendRecvMsgIov = 1024 // UIO_MAXIOV

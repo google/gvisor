@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build linux
 // +build linux
 
 // This sample creates a stack with TCP and IPv4 protocols on top of a TUN
@@ -145,8 +146,12 @@ func main() {
 		log.Fatal(err)
 	}
 
-	if err := s.AddAddress(1, ipv4.ProtocolNumber, addr); err != nil {
-		log.Fatal(err)
+	protocolAddr := tcpip.ProtocolAddress{
+		Protocol:          ipv4.ProtocolNumber,
+		AddressWithPrefix: addr.WithPrefix(),
+	}
+	if err := s.AddProtocolAddress(1, protocolAddr, stack.AddressProperties{}); err != nil {
+		log.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", 1, protocolAddr, err)
 	}
 
 	// Add default route.
@@ -172,8 +177,8 @@ func main() {
 	}
 
 	// Issue connect request and wait for it to complete.
-	waitEntry, notifyCh := waiter.NewChannelEntry(nil)
-	wq.EventRegister(&waitEntry, waiter.WritableEvents)
+	waitEntry, notifyCh := waiter.NewChannelEntry(waiter.WritableEvents)
+	wq.EventRegister(&waitEntry)
 	terr := ep.Connect(remote)
 	if _, ok := terr.(*tcpip.ErrConnectStarted); ok {
 		fmt.Println("Connect is pending...")
@@ -194,7 +199,8 @@ func main() {
 
 	// Read data and write to standard output until the peer closes the
 	// connection from its side.
-	wq.EventRegister(&waitEntry, waiter.ReadableEvents)
+	waitEntry, notifyCh = waiter.NewChannelEntry(waiter.ReadableEvents)
+	wq.EventRegister(&waitEntry)
 	for {
 		_, err := ep.Read(os.Stdout, tcpip.ReadOptions{})
 		if err != nil {

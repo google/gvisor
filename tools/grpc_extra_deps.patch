@@ -1,0 +1,19 @@
+diff --git a/bazel/grpc_extra_deps.bzl b/bazel/grpc_extra_deps.bzl
+index 4d8afa3131..b42224501f 100644
+--- a/bazel/grpc_extra_deps.bzl
++++ b/bazel/grpc_extra_deps.bzl
+@@ -52,14 +52,6 @@ def grpc_extra_deps(ignore_version_differences = False):
+ 
+     api_dependencies()
+ 
+-    go_rules_dependencies()
+-    go_register_toolchains(version = "1.18")
+-    gazelle_dependencies()
+-
+-    # Pull-in the go 3rd party dependencies for protoc_gen_validate, which is
+-    # needed for building C++ xDS protos
+-    go_third_party()
+-
+     apple_rules_dependencies(ignore_version_differences = ignore_version_differences)
+ 
+     apple_support_dependencies()

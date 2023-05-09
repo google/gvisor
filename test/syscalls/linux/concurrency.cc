@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <signal.h>
+#include <time.h>
 
 #include <atomic>
 
@@ -20,6 +21,7 @@
 #include "absl/strings/string_view.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
+#include "benchmark/benchmark.h"
 #include "test/util/platform_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
@@ -77,9 +79,12 @@ TEST(ConcurrencyTest, MultiProcessMultithreaded) {
 
   pid_t child_pid = fork();
   if (child_pid == 0) {
+    struct timespec now;
+    TEST_CHECK(clock_gettime(CLOCK_MONOTONIC, &now) == 0);
     // Busy wait without making any blocking syscalls.
-    auto end = absl::Now() + absl::Seconds(5);
-    while (absl::Now() < end) {
+    auto end = now.tv_sec + 5;
+    while (now.tv_sec < end) {
+      TEST_CHECK(clock_gettime(CLOCK_MONOTONIC, &now) == 0);
     }
     _exit(0);
   }
@@ -106,6 +111,8 @@ TEST(ConcurrencyTest, MultiProcessConcurrency) {
   pid_t child_pid = fork();
   if (child_pid == 0) {
     while (true) {
+      int x = 0;
+      benchmark::DoNotOptimize(x);  // Don't optimize this loop away.
     }
   }
   ASSERT_THAT(child_pid, SyscallSucceeds());

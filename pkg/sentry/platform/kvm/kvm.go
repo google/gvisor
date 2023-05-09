@@ -20,6 +20,7 @@ import (
 	"os"
 
 	"golang.org/x/sys/unix"
+	pkgcontext "gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/ring0/pagetables"
@@ -75,11 +76,15 @@ var (
 	globalErr  error
 )
 
-// OpenDevice opens the KVM device at /dev/kvm and returns the File.
-func OpenDevice() (*os.File, error) {
-	f, err := os.OpenFile("/dev/kvm", unix.O_RDWR, 0)
+// OpenDevice opens the KVM device and returns the File.
+// If the devicePath is empty, it will default to /dev/kvm.
+func OpenDevice(devicePath string) (*os.File, error) {
+	if devicePath == "" {
+		devicePath = "/dev/kvm"
+	}
+	f, err := os.OpenFile(devicePath, unix.O_RDWR, 0)
 	if err != nil {
-		return nil, fmt.Errorf("error opening /dev/kvm: %v", err)
+		return nil, fmt.Errorf("error opening KVM device file (%s): %v", devicePath, err)
 	}
 	return f, nil
 }
@@ -156,7 +161,7 @@ func (*KVM) MaxUserAddress() hostarch.Addr {
 }
 
 // NewAddressSpace returns a new pagetable root.
-func (k *KVM) NewAddressSpace(_ interface{}) (platform.AddressSpace, <-chan struct{}, error) {
+func (k *KVM) NewAddressSpace(any) (platform.AddressSpace, <-chan struct{}, error) {
 	// Allocate page tables and install system mappings.
 	pageTables := pagetables.NewWithUpper(newAllocator(), k.machine.upperSharedPageTables, ring0.KernelStartAddress)
 
@@ -169,7 +174,7 @@ func (k *KVM) NewAddressSpace(_ interface{}) (platform.AddressSpace, <-chan stru
 }
 
 // NewContext returns an interruptible context.
-func (k *KVM) NewContext() platform.Context {
+func (k *KVM) NewContext(pkgcontext.Context) platform.Context {
 	return &context{
 		machine: k.machine,
 	}
@@ -181,8 +186,8 @@ func (*constructor) New(f *os.File) (platform.Platform, error) {
 	return New(f)
 }
 
-func (*constructor) OpenDevice() (*os.File, error) {
-	return OpenDevice()
+func (*constructor) OpenDevice(devicePath string) (*os.File, error) {
+	return OpenDevice(devicePath)
 }
 
 // Flags implements platform.Constructor.Flags().

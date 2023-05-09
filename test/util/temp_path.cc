@@ -32,21 +32,7 @@ namespace testing {
 
 namespace {
 
-std::atomic<uint64_t> global_temp_file_number = ATOMIC_VAR_INIT(1);
-
-// Return a new temp filename, intended to be unique system-wide.
-//
-// The global file number helps maintain file naming consistency across
-// different runs of a test.
-//
-// The timestamp is necessary because the test infrastructure invokes each
-// test case in a separate process (resetting global_temp_file_number) and
-// potentially in parallel, which allows for races between selecting and using a
-// name.
-std::string NextTempBasename() {
-  return absl::StrCat("gvisor_test_temp_", global_temp_file_number++, "_",
-                      absl::ToUnixNanos(absl::Now()));
-}
+std::atomic<uint64_t> global_temp_file_number(1);
 
 void TryDeleteRecursively(std::string const& path) {
   if (!path.empty()) {
@@ -83,6 +69,18 @@ std::string GetAbsoluteTestTmpdir() {
       env_tmpdir != nullptr ? std::string(env_tmpdir) : "/tmp";
 
   return MakeAbsolute(tmp_dir, "").ValueOrDie();
+}
+
+// The global file number helps maintain file naming consistency across
+// different runs of a test.
+//
+// The timestamp is necessary because the test infrastructure invokes each
+// test case in a separate process (resetting global_temp_file_number) and
+// potentially in parallel, which allows for races between selecting and using a
+// name.
+std::string NextTempBasename() {
+  return absl::StrCat("gvisor_test_temp_", global_temp_file_number++, "_",
+                      absl::ToUnixNanos(absl::Now()));
 }
 
 PosixErrorOr<TempPath> TempPath::CreateFileWith(absl::string_view const parent,

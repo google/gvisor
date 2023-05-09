@@ -16,7 +16,6 @@ package mm
 
 import (
 	"fmt"
-	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -27,7 +26,7 @@ import (
 //
 // Preconditions: The caller must have called mm.Activate().
 func (mm *MemoryManager) AddressSpace() platform.AddressSpace {
-	if atomic.LoadInt32(&mm.active) == 0 {
+	if mm.active.Load() == 0 {
 		panic("trying to use inactive address space?")
 	}
 	return mm.as
@@ -43,12 +42,12 @@ func (mm *MemoryManager) Activate(ctx context.Context) error {
 	// Fast path: the MemoryManager already has an active
 	// platform.AddressSpace, and we just need to indicate that we need it too.
 	for {
-		active := atomic.LoadInt32(&mm.active)
+		active := mm.active.Load()
 		if active == 0 {
 			// Fall back to the slow path.
 			break
 		}
-		if atomic.CompareAndSwapInt32(&mm.active, active, active+1) {
+		if mm.active.CompareAndSwap(active, active+1) {
 			return nil
 		}
 	}
@@ -61,10 +60,10 @@ func (mm *MemoryManager) Activate(ctx context.Context) error {
 		// method is commonly in the hot-path.
 
 		// Check if we raced with another goroutine performing activation.
-		if atomic.LoadInt32(&mm.active) > 0 {
+		if mm.active.Load() > 0 {
 			// This can't race; Deactivate can't decrease mm.active from 1 to 0
 			// without holding activeMu.
-			atomic.AddInt32(&mm.active, 1)
+			mm.active.Add(1)
 			mm.activeMu.Unlock()
 			return nil
 		}
@@ -72,7 +71,7 @@ func (mm *MemoryManager) Activate(ctx context.Context) error {
 		// Do we have a context? If so, then we never unmapped it. This can
 		// only be the case if !mm.p.CooperativelySchedulesAddressSpace().
 		if mm.as != nil {
-			atomic.StoreInt32(&mm.active, 1)
+			mm.active.Store(1)
 			mm.activeMu.Unlock()
 			return nil
 		}
@@ -80,7 +79,7 @@ func (mm *MemoryManager) Activate(ctx context.Context) error {
 		// Get a new address space. We must force unmapping by passing nil to
 		// NewAddressSpace if requested. (As in the nil interface object, not a
 		// typed nil.)
-		mappingsID := (interface{})(mm)
+		mappingsID := (any)(mm)
 		if mm.unmapAllOnActivate {
 			mappingsID = nil
 		}
@@ -118,7 +117,7 @@ func (mm *MemoryManager) Activate(ctx context.Context) error {
 
 		// Now that m.as has been assigned, we can set m.active to a non-zero value
 		// to enable the fast path.
-		atomic.StoreInt32(&mm.active, 1)
+		mm.active.Store(1)
 
 		mm.activeMu.Unlock()
 		return nil
@@ -130,12 +129,12 @@ func (mm *MemoryManager) Deactivate() {
 	// Fast path: this is not the last goroutine to deactivate the
 	// MemoryManager.
 	for {
-		active := atomic.LoadInt32(&mm.active)
+		active := mm.active.Load()
 		if active == 1 {
 			// Fall back to the slow path.
 			break
 		}
-		if atomic.CompareAndSwapInt32(&mm.active, active, active-1) {
+		if mm.active.CompareAndSwap(active, active-1) {
 			return
 		}
 	}
@@ -144,7 +143,7 @@ func (mm *MemoryManager) Deactivate() {
 	// Same as Activate.
 
 	// Still active?
-	if atomic.AddInt32(&mm.active, -1) > 0 {
+	if mm.active.Add(-1) > 0 {
 		mm.activeMu.Unlock()
 		return
 	}
@@ -167,11 +166,11 @@ func (mm *MemoryManager) Deactivate() {
 // for all addresses in ar should be precommitted.
 //
 // Preconditions:
-// * mm.activeMu must be locked.
-// * mm.as != nil.
-// * ar.Length() != 0.
-// * ar must be page-aligned.
-// * pseg == mm.pmas.LowerBoundSegment(ar.Start).
+//   - mm.activeMu must be locked.
+//   - mm.as != nil.
+//   - ar.Length() != 0.
+//   - ar must be page-aligned.
+//   - pseg == mm.pmas.LowerBoundSegment(ar.Start).
 func (mm *MemoryManager) mapASLocked(pseg pmaIterator, ar hostarch.AddrRange, precommit bool) error {
 	// By default, map entire pmas at a time, under the assumption that there
 	// is no cost to mapping more of a pma than necessary.

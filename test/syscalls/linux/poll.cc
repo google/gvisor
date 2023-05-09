@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <fcntl.h>
 #include <poll.h>
 #include <sys/resource.h>
 #include <sys/socket.h>
@@ -41,6 +42,9 @@ class PollTest : public BasePollTest {
   void TearDown() override { BasePollTest::TearDown(); }
 };
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wnonnull"
+#pragma GCC diagnostic ignored "-Wstringop-overflow"
 TEST_F(PollTest, InvalidFds) {
   // fds is invalid because it's null, but we tell ppoll the length is non-zero.
   EXPECT_THAT(poll(nullptr, 1, 1), SyscallFailsWithErrno(EFAULT));
@@ -57,12 +61,13 @@ TEST_F(PollTest, ZeroTimeout) {
 
 // If random S/R interrupts the poll, SIGALRM may be delivered before poll
 // restarts, causing the poll to hang forever.
-TEST_F(PollTest, NegativeTimeout_NoRandomSave) {
+TEST_F(PollTest, NegativeTimeout) {
   // Negative timeout mean wait forever so set a timer.
   SetTimer(absl::Milliseconds(100));
   EXPECT_THAT(poll(nullptr, 0, -1), SyscallFailsWithErrno(EINTR));
   EXPECT_TRUE(TimerFired());
 }
+#pragma GCC diagnostic pop
 
 void NonBlockingReadableTest(int16_t mask) {
   // Create a pipe.
@@ -116,7 +121,7 @@ void BlockingReadableTest(int16_t mask) {
   });
 
   notify.WaitForNotification();
-  absl::SleepFor(absl::Seconds(1.0));
+  absl::SleepFor(absl::Seconds(1));
 
   // Write some data to the pipe.
   char s[] = "foo\n";
@@ -221,7 +226,7 @@ TEST_F(PollTest, BlockingEventPOLLHUP) {
   });
 
   notify.WaitForNotification();
-  absl::SleepFor(absl::Seconds(1.0));
+  absl::SleepFor(absl::Seconds(1));
 
   // Write some data and close the writer fd.
   fd1.reset();
@@ -348,6 +353,15 @@ TEST_F(PollTest, Nfds) {
 
   // If 'nfds' exceeds RLIMIT_NOFILE then it must fail with EINVAL.
   EXPECT_THAT(poll(fds.data(), max_fds + 1, 1), SyscallFailsWithErrno(EINVAL));
+}
+
+// Polling on a file that doesn't support blocking, like a directory, should
+// immediately return.
+TEST_F(PollTest, UnpollableFile) {
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open("/", O_RDONLY));
+  struct pollfd poll_fd = {fd.get(), POLLIN | POLLOUT, 0};
+  EXPECT_THAT(RetryEINTR(poll)(&poll_fd, 1, -1), SyscallSucceedsWithValue(1));
+  EXPECT_EQ(poll_fd.revents, POLLIN | POLLOUT);
 }
 
 }  // namespace

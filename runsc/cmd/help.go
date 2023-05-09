@@ -58,10 +58,10 @@ func (*Help) Usage() string {
 }
 
 // SetFlags implements subcommands.Command.SetFlags.
-func (h *Help) SetFlags(f *flag.FlagSet) {}
+func (h *Help) SetFlags(*flag.FlagSet) {}
 
 // Execute implements subcommands.Command.Execute.
-func (h *Help) Execute(ctx context.Context, f *flag.FlagSet, args ...interface{}) subcommands.ExitStatus {
+func (h *Help) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	switch f.NArg() {
 	case 0:
 		fmt.Fprintf(h.cdr.Output, "Usage: %s <flags> <subcommand> <subcommand args>\n\n", h.cdr.Name())

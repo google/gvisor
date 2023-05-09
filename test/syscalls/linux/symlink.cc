@@ -100,8 +100,8 @@ TEST(SymlinkTest, CanCreateSymlinkDir) {
 
 TEST(SymlinkTest, CannotCreateSymlinkInReadOnlyDir) {
   // Drop capabilities that allow us to override file and directory permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
 
   const std::string olddir = NewTempAbsPath();
   ASSERT_THAT(mkdir(olddir.c_str(), 0444), SyscallSucceeds());
@@ -248,10 +248,10 @@ TEST(SymlinkTest, PwriteToSymlink) {
   EXPECT_THAT(unlink(linkname.c_str()), SyscallSucceeds());
 }
 
-TEST(SymlinkTest, SymlinkAtDegradedPermissions_NoRandomSave) {
+TEST(SymlinkTest, SymlinkAtDegradedPermissions) {
   // Drop capabilities that allow us to override file and directory permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
 
   auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(dir.path()));
@@ -270,7 +270,6 @@ TEST(SymlinkTest, SymlinkAtDegradedPermissions_NoRandomSave) {
 }
 
 TEST(SymlinkTest, SymlinkAtDirWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   const std::string filepath = NewTempAbsPathInDir(dir.path());
   const std::string base = std::string(Basename(filepath));
@@ -282,7 +281,6 @@ TEST(SymlinkTest, SymlinkAtDirWithOpath) {
 }
 
 TEST(SymlinkTest, ReadlinkAtDirWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   const std::string filepath = NewTempAbsPathInDir(dir.path());
   const std::string base = std::string(Basename(filepath));
@@ -299,10 +297,10 @@ TEST(SymlinkTest, ReadlinkAtDirWithOpath) {
   EXPECT_EQ(0, strncmp("/dangling", buf.data(), linksize));
 }
 
-TEST(SymlinkTest, ReadlinkAtDegradedPermissions_NoRandomSave) {
+TEST(SymlinkTest, ReadlinkAtDegradedPermissions) {
   // Drop capabilities that allow us to override file and directory permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
 
   auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   const std::string oldpath = NewTempAbsPathInDir(dir.path());
@@ -365,6 +363,15 @@ TEST(SymlinkTest, SymlinkAtEmptyPath) {
       ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_RDONLY | O_DIRECTORY, 0666));
   EXPECT_THAT(symlinkat(file.path().c_str(), fd.get(), ""),
               SyscallFailsWithErrno(ENOENT));
+}
+
+// NOTE(b/266111750): Regression test.
+TEST(SymlinkTest, AbsoluteSymlinkDouble) {
+  const std::string symlinkPath = NewTempAbsPath();
+  EXPECT_THAT(symlink("/", symlinkPath.c_str()), SyscallSucceeds());
+  auto doubleSymlinkPath = symlinkPath + symlinkPath;
+  EXPECT_THAT(mkdir(doubleSymlinkPath.c_str(), 0777),
+              SyscallFailsWithErrno(EEXIST));
 }
 
 class ParamSymlinkTest : public ::testing::TestWithParam<std::string> {};

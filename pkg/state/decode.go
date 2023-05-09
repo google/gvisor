@@ -21,7 +21,6 @@ import (
 	"math"
 	"reflect"
 
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/state/wire"
 )
 
@@ -639,7 +638,7 @@ func (ds *decodeState) Load(obj reflect.Value) {
 				ods = nil
 				encoded = nil
 			default:
-				Failf("wanted type or object ID, got %#v", encoded)
+				Failf("wanted type or object ID, got %T", encoded)
 			}
 		}
 	}); err != nil {
@@ -660,9 +659,9 @@ func (ds *decodeState) Load(obj reflect.Value) {
 		numDeferred++
 		if s, ok := encoded.(*wire.Struct); ok && s.TypeID != 0 {
 			typ := ds.types.LookupType(typeID(s.TypeID))
-			log.Warningf("unused deferred object: ID %d, type %v", id, typ)
+			Failf("unused deferred object: ID %d, type %v", id, typ)
 		} else {
-			log.Warningf("unused deferred object: ID %d, %#v", id, encoded)
+			Failf("unused deferred object: ID %d, %#v", id, encoded)
 		}
 	}
 	if numDeferred != 0 {

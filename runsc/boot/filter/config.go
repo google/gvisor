@@ -134,9 +134,15 @@ var allowedSyscalls = seccomp.SyscallRules{
 	},
 	unix.SYS_GETTID:       {},
 	unix.SYS_GETTIMEOFDAY: {},
-	// SYS_IOCTL is needed for terminal support, but we only allow
-	// setting/getting termios and winsize.
 	unix.SYS_IOCTL: []seccomp.Rule{
+		// These commands are needed for host FD.
+		{
+			seccomp.MatchAny{}, /* fd */
+			seccomp.EqualTo(linux.FIONREAD),
+			seccomp.MatchAny{}, /* int* */
+		},
+		// These commands are needed for terminal support, but we only allow
+		// setting/getting termios and winsize.
 		{
 			seccomp.MatchAny{}, /* fd */
 			seccomp.EqualTo(linux.TCGETS),
@@ -167,6 +173,11 @@ var allowedSyscalls = seccomp.SyscallRules{
 			seccomp.EqualTo(linux.TIOCGWINSZ),
 			seccomp.MatchAny{}, /* winsize struct */
 		},
+		{
+			seccomp.MatchAny{}, /* fd */
+			seccomp.EqualTo(linux.SIOCGIFTXQLEN),
+			seccomp.MatchAny{}, /* ifreq struct */
+		},
 	},
 	unix.SYS_LSEEK:   {},
 	unix.SYS_MADVISE: {},
@@ -177,24 +188,19 @@ var allowedSyscalls = seccomp.SyscallRules{
 		},
 	},
 	unix.SYS_MINCORE: {},
-	// Used by the Go runtime as a temporarily workaround for a Linux
-	// 5.2-5.4 bug.
-	//
-	// See src/runtime/os_linux_x86.go.
-	//
-	// TODO(b/148688965): Remove once this is gone from Go.
-	unix.SYS_MLOCK: []seccomp.Rule{
-		{
-			seccomp.MatchAny{},
-			seccomp.EqualTo(4096),
-		},
-	},
+	unix.SYS_MLOCK:   {},
 	unix.SYS_MMAP: []seccomp.Rule{
 		{
 			seccomp.MatchAny{},
 			seccomp.MatchAny{},
 			seccomp.MatchAny{},
 			seccomp.EqualTo(unix.MAP_SHARED),
+		},
+		{
+			seccomp.MatchAny{},
+			seccomp.MatchAny{},
+			seccomp.MatchAny{},
+			seccomp.EqualTo(unix.MAP_SHARED | unix.MAP_FIXED),
 		},
 		{
 			seccomp.MatchAny{},
@@ -228,6 +234,7 @@ var allowedSyscalls = seccomp.SyscallRules{
 		},
 	},
 	unix.SYS_MPROTECT:  {},
+	unix.SYS_MUNLOCK:   {},
 	unix.SYS_MUNMAP:    {},
 	unix.SYS_NANOSLEEP: {},
 	unix.SYS_PPOLL:     {},
@@ -265,7 +272,6 @@ var allowedSyscalls = seccomp.SyscallRules{
 			seccomp.MatchAny{},
 			seccomp.MatchAny{},
 			seccomp.EqualTo(unix.MSG_DONTWAIT),
-			seccomp.EqualTo(0),
 		},
 	},
 	unix.SYS_RESTART_SYSCALL: {},
@@ -299,6 +305,22 @@ var allowedSyscalls = seccomp.SyscallRules{
 			seccomp.EqualTo(unix.SPLICE_F_NONBLOCK), /* flags */
 		},
 	},
+	unix.SYS_TIMER_CREATE: []seccomp.Rule{
+		{
+			seccomp.EqualTo(unix.CLOCK_THREAD_CPUTIME_ID), /* which */
+			seccomp.MatchAny{},                            /* sevp */
+			seccomp.MatchAny{},                            /* timerid */
+		},
+	},
+	unix.SYS_TIMER_DELETE: []seccomp.Rule{},
+	unix.SYS_TIMER_SETTIME: []seccomp.Rule{
+		{
+			seccomp.MatchAny{}, /* timerid */
+			seccomp.EqualTo(0), /* flags */
+			seccomp.MatchAny{}, /* new_value */
+			seccomp.EqualTo(0), /* old_value */
+		},
+	},
 	unix.SYS_TGKILL: []seccomp.Rule{
 		{
 			seccomp.EqualTo(uint64(os.Getpid())),
@@ -323,301 +345,9 @@ var allowedSyscalls = seccomp.SyscallRules{
 	},
 }
 
-// hostInetFilters contains syscalls that are needed by sentry/socket/hostinet.
-func hostInetFilters() seccomp.SyscallRules {
-	return seccomp.SyscallRules{
-		unix.SYS_ACCEPT4: []seccomp.Rule{
-			{
-				seccomp.MatchAny{},
-				seccomp.MatchAny{},
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOCK_NONBLOCK | unix.SOCK_CLOEXEC),
-			},
-		},
-		unix.SYS_BIND:        {},
-		unix.SYS_CONNECT:     {},
-		unix.SYS_GETPEERNAME: {},
-		unix.SYS_GETSOCKNAME: {},
-		unix.SYS_GETSOCKOPT: []seccomp.Rule{
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOL_IP),
-				seccomp.EqualTo(unix.IP_TOS),
-			},
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOL_IP),
-				seccomp.EqualTo(unix.IP_RECVTOS),
-			},
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOL_IP),
-				seccomp.EqualTo(unix.IP_PKTINFO),
-			},
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOL_IP),
-				seccomp.EqualTo(unix.IP_RECVORIGDSTADDR),
-			},
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOL_IP),
-				seccomp.EqualTo(unix.IP_RECVERR),
-			},
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOL_IPV6),
-				seccomp.EqualTo(unix.IPV6_TCLASS),
-			},
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOL_IPV6),
-				seccomp.EqualTo(unix.IPV6_RECVTCLASS),
-			},
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOL_IPV6),
-				seccomp.EqualTo(unix.IPV6_RECVERR),
-			},
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOL_IPV6),
-				seccomp.EqualTo(unix.IPV6_V6ONLY),
-			},
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOL_IPV6),
-				seccomp.EqualTo(linux.IPV6_RECVORIGDSTADDR),
-			},
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOL_SOCKET),
-				seccomp.EqualTo(unix.SO_ERROR),
-			},
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOL_SOCKET),
-				seccomp.EqualTo(unix.SO_KEEPALIVE),
-			},
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOL_SOCKET),
-				seccomp.EqualTo(unix.SO_SNDBUF),
-			},
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOL_SOCKET),
-				seccomp.EqualTo(unix.SO_RCVBUF),
-			},
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOL_SOCKET),
-				seccomp.EqualTo(unix.SO_REUSEADDR),
-			},
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOL_SOCKET),
-				seccomp.EqualTo(unix.SO_TYPE),
-			},
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOL_SOCKET),
-				seccomp.EqualTo(unix.SO_LINGER),
-			},
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOL_SOCKET),
-				seccomp.EqualTo(unix.SO_TIMESTAMP),
-			},
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOL_TCP),
-				seccomp.EqualTo(unix.TCP_NODELAY),
-			},
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOL_TCP),
-				seccomp.EqualTo(unix.TCP_INFO),
-			},
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOL_TCP),
-				seccomp.EqualTo(linux.TCP_INQ),
-			},
-		},
-		unix.SYS_IOCTL: []seccomp.Rule{
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.TIOCOUTQ),
-			},
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.TIOCINQ),
-			},
-		},
-		unix.SYS_LISTEN:   {},
-		unix.SYS_READV:    {},
-		unix.SYS_RECVFROM: {},
-		unix.SYS_RECVMSG:  {},
-		unix.SYS_SENDMSG:  {},
-		unix.SYS_SENDTO:   {},
-		unix.SYS_SETSOCKOPT: []seccomp.Rule{
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOL_SOCKET),
-				seccomp.EqualTo(unix.SO_SNDBUF),
-				seccomp.MatchAny{},
-				seccomp.EqualTo(4),
-			},
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOL_SOCKET),
-				seccomp.EqualTo(unix.SO_RCVBUF),
-				seccomp.MatchAny{},
-				seccomp.EqualTo(4),
-			},
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOL_SOCKET),
-				seccomp.EqualTo(unix.SO_REUSEADDR),
-				seccomp.MatchAny{},
-				seccomp.EqualTo(4),
-			},
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOL_SOCKET),
-				seccomp.EqualTo(unix.SO_TIMESTAMP),
-				seccomp.MatchAny{},
-				seccomp.EqualTo(4),
-			},
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOL_TCP),
-				seccomp.EqualTo(unix.TCP_NODELAY),
-				seccomp.MatchAny{},
-				seccomp.EqualTo(4),
-			},
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOL_TCP),
-				seccomp.EqualTo(linux.TCP_INQ),
-				seccomp.MatchAny{},
-				seccomp.EqualTo(4),
-			},
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOL_IP),
-				seccomp.EqualTo(unix.IP_TOS),
-				seccomp.MatchAny{},
-				seccomp.EqualTo(4),
-			},
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOL_IP),
-				seccomp.EqualTo(unix.IP_RECVTOS),
-				seccomp.MatchAny{},
-				seccomp.EqualTo(4),
-			},
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOL_IP),
-				seccomp.EqualTo(unix.IP_PKTINFO),
-				seccomp.MatchAny{},
-				seccomp.EqualTo(4),
-			},
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOL_IP),
-				seccomp.EqualTo(unix.IP_RECVORIGDSTADDR),
-				seccomp.MatchAny{},
-				seccomp.EqualTo(4),
-			},
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOL_IP),
-				seccomp.EqualTo(unix.IP_RECVERR),
-				seccomp.MatchAny{},
-				seccomp.EqualTo(4),
-			},
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOL_IPV6),
-				seccomp.EqualTo(unix.IPV6_TCLASS),
-				seccomp.MatchAny{},
-				seccomp.EqualTo(4),
-			},
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOL_IPV6),
-				seccomp.EqualTo(unix.IPV6_RECVTCLASS),
-				seccomp.MatchAny{},
-				seccomp.EqualTo(4),
-			},
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOL_IPV6),
-				seccomp.EqualTo(linux.IPV6_RECVORIGDSTADDR),
-				seccomp.MatchAny{},
-				seccomp.EqualTo(4),
-			},
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOL_IPV6),
-				seccomp.EqualTo(unix.IPV6_RECVERR),
-				seccomp.MatchAny{},
-				seccomp.EqualTo(4),
-			},
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SOL_IPV6),
-				seccomp.EqualTo(unix.IPV6_V6ONLY),
-				seccomp.MatchAny{},
-				seccomp.EqualTo(4),
-			},
-		},
-		unix.SYS_SHUTDOWN: []seccomp.Rule{
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SHUT_RD),
-			},
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SHUT_WR),
-			},
-			{
-				seccomp.MatchAny{},
-				seccomp.EqualTo(unix.SHUT_RDWR),
-			},
-		},
-		unix.SYS_SOCKET: []seccomp.Rule{
-			{
-				seccomp.EqualTo(unix.AF_INET),
-				seccomp.EqualTo(unix.SOCK_STREAM | unix.SOCK_NONBLOCK | unix.SOCK_CLOEXEC),
-				seccomp.EqualTo(0),
-			},
-			{
-				seccomp.EqualTo(unix.AF_INET),
-				seccomp.EqualTo(unix.SOCK_DGRAM | unix.SOCK_NONBLOCK | unix.SOCK_CLOEXEC),
-				seccomp.EqualTo(0),
-			},
-			{
-				seccomp.EqualTo(unix.AF_INET6),
-				seccomp.EqualTo(unix.SOCK_STREAM | unix.SOCK_NONBLOCK | unix.SOCK_CLOEXEC),
-				seccomp.EqualTo(0),
-			},
-			{
-				seccomp.EqualTo(unix.AF_INET6),
-				seccomp.EqualTo(unix.SOCK_DGRAM | unix.SOCK_NONBLOCK | unix.SOCK_CLOEXEC),
-				seccomp.EqualTo(0),
-			},
-		},
-		unix.SYS_WRITEV: {},
-	}
-}
-
 func controlServerFilters(fd int) seccomp.SyscallRules {
 	return seccomp.SyscallRules{
-		unix.SYS_ACCEPT: []seccomp.Rule{
+		unix.SYS_ACCEPT4: []seccomp.Rule{
 			{
 				seccomp.EqualTo(fd),
 			},
@@ -633,6 +363,130 @@ func controlServerFilters(fd int) seccomp.SyscallRules {
 				seccomp.MatchAny{},
 				seccomp.EqualTo(unix.SOL_SOCKET),
 				seccomp.EqualTo(unix.SO_PEERCRED),
+			},
+		},
+	}
+}
+
+func nonNegativeFDCheck() seccomp.LessThanOrEqual {
+	// Negative int32 has the MSB (31st bit) set. So the raw uint FD value must
+	// be less than or equal to 0x7fffffff.
+	return seccomp.LessThanOrEqual(0x7fffffff)
+}
+
+// hostFilesystemFilters contains syscalls that are needed by directfs.
+func hostFilesystemFilters() seccomp.SyscallRules {
+	// Directfs allows FD-based filesystem syscalls. We deny these syscalls with
+	// negative FD values (like AT_FDCWD or invalid FD numbers). We try to be as
+	// restrictive as possible because any restriction here improves security. We
+	// don't know what set of arguments will trigger a future vulnerability.
+	validFDCheck := nonNegativeFDCheck()
+	return seccomp.SyscallRules{
+		unix.SYS_FCHOWNAT: []seccomp.Rule{
+			{
+				validFDCheck,
+				seccomp.MatchAny{},
+				seccomp.MatchAny{},
+				seccomp.MatchAny{},
+				seccomp.EqualTo(unix.AT_EMPTY_PATH | unix.AT_SYMLINK_NOFOLLOW),
+			},
+		},
+		unix.SYS_FCHMODAT: []seccomp.Rule{
+			{
+				validFDCheck,
+				seccomp.MatchAny{},
+				seccomp.MatchAny{},
+			},
+		},
+		unix.SYS_UNLINKAT: []seccomp.Rule{
+			{
+				validFDCheck,
+				seccomp.MatchAny{},
+				seccomp.MatchAny{},
+			},
+		},
+		unix.SYS_GETDENTS64: []seccomp.Rule{
+			{
+				validFDCheck,
+				seccomp.MatchAny{},
+				seccomp.MatchAny{},
+			},
+		},
+		unix.SYS_OPENAT: []seccomp.Rule{
+			{
+				validFDCheck,
+				seccomp.MatchAny{},
+				seccomp.MaskedEqual(unix.O_NOFOLLOW, unix.O_NOFOLLOW),
+				seccomp.MatchAny{},
+			},
+		},
+		unix.SYS_LINKAT: []seccomp.Rule{
+			{
+				validFDCheck,
+				seccomp.MatchAny{},
+				validFDCheck,
+				seccomp.MatchAny{},
+				seccomp.EqualTo(0),
+			},
+		},
+		unix.SYS_MKDIRAT: []seccomp.Rule{
+			{
+				validFDCheck,
+				seccomp.MatchAny{},
+				seccomp.MatchAny{},
+			},
+		},
+		unix.SYS_MKNODAT: []seccomp.Rule{
+			{
+				validFDCheck,
+				seccomp.MatchAny{},
+				seccomp.MatchAny{},
+				seccomp.MatchAny{},
+			},
+		},
+		unix.SYS_SYMLINKAT: []seccomp.Rule{
+			{
+				seccomp.MatchAny{},
+				validFDCheck,
+				seccomp.MatchAny{},
+			},
+		},
+		unix.SYS_FSTATFS: []seccomp.Rule{
+			{
+				validFDCheck,
+				seccomp.MatchAny{},
+			},
+		},
+		unix.SYS_READLINKAT: []seccomp.Rule{
+			{
+				validFDCheck,
+				seccomp.MatchAny{},
+				seccomp.MatchAny{},
+				seccomp.MatchAny{},
+			},
+		},
+		unix.SYS_UTIMENSAT: []seccomp.Rule{
+			{
+				validFDCheck,
+				seccomp.MatchAny{},
+				seccomp.MatchAny{},
+				seccomp.MatchAny{},
+			},
+		},
+		unix.SYS_RENAMEAT: []seccomp.Rule{
+			{
+				validFDCheck,
+				seccomp.MatchAny{},
+				validFDCheck,
+				seccomp.MatchAny{},
+			},
+		},
+		archFstatAtSysNo(): []seccomp.Rule{
+			{
+				validFDCheck,
+				seccomp.MatchAny{},
+				seccomp.MatchAny{},
+				seccomp.MatchAny{},
 			},
 		},
 	}

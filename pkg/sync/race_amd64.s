@@ -12,13 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build race
-// +build amd64
+//go:build race && amd64
+// +build race,amd64
 
 #include "textflag.h"
 
 // func RaceUncheckedAtomicCompareAndSwapUintptr(ptr *uintptr, old, new uintptr) bool
-TEXT ·RaceUncheckedAtomicCompareAndSwapUintptr(SB),NOSPLIT,$0-25
+TEXT ·RaceUncheckedAtomicCompareAndSwapUintptr(SB),NOSPLIT|NOFRAME,$0-25
 	MOVQ ptr+0(FP), DI
 	MOVQ old+8(FP), AX
 	MOVQ new+16(FP), SI

@@ -1,4 +1,4 @@
-// Copyright 2018 The gVisor Authors.
+// Copyright 2020 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,127 +16,104 @@ package linux
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
-// LINT.IfChange
-
-// Sync implements linux system call sync(2).
-func Sync(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	t.MountNamespace().SyncAll(t)
-	// Sync is always successful.
-	return 0, nil, nil
+// Sync implements Linux syscall sync(2).
+func Sync(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	return 0, nil, t.Kernel().VFS().SyncAllFilesystems(t)
 }
 
-// Syncfs implements linux system call syncfs(2).
-func Syncfs(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+// Syncfs implements Linux syscall syncfs(2).
+func Syncfs(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
-	// Use "sync-the-world" for now, it's guaranteed that fd is at least
-	// on the root filesystem.
-	return Sync(t, args)
+	if file.StatusFlags()&linux.O_PATH != 0 {
+		return 0, nil, linuxerr.EBADF
+	}
+
+	return 0, nil, file.SyncFS(t)
 }
 
-// Fsync implements linux syscall fsync(2).
-func Fsync(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+// Fsync implements Linux syscall fsync(2).
+func Fsync(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
-	err := file.Fsync(t, 0, fs.FileMaxOffset, fs.SyncAll)
-	return 0, nil, syserror.ConvertIntr(err, syserror.ERESTARTSYS)
+	return 0, nil, file.Sync(t)
 }
 
-// Fdatasync implements linux syscall fdatasync(2).
-//
-// At the moment, it just calls Fsync, which is a big hammer, but correct.
-func Fdatasync(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	fd := args[0].Int()
-
-	file := t.GetFile(fd)
-	if file == nil {
-		return 0, nil, syserror.EBADF
-	}
-	defer file.DecRef(t)
-
-	err := file.Fsync(t, 0, fs.FileMaxOffset, fs.SyncData)
-	return 0, nil, syserror.ConvertIntr(err, syserror.ERESTARTSYS)
+// Fdatasync implements Linux syscall fdatasync(2).
+func Fdatasync(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	// TODO(gvisor.dev/issue/1897): Avoid writeback of unnecessary metadata.
+	return Fsync(t, sysno, args)
 }
 
-// SyncFileRange implements linux syscall sync_file_rage(2)
-func SyncFileRange(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	var err error
-
+// SyncFileRange implements Linux syscall sync_file_range(2).
+func SyncFileRange(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	offset := args[1].Int64()
 	nbytes := args[2].Int64()
-	uflags := args[3].Uint()
+	flags := args[3].Uint()
 
-	if offset < 0 || offset+nbytes < offset {
-		return 0, nil, syserror.EINVAL
+	// Check for negative values and overflow.
+	if offset < 0 || offset+nbytes < 0 {
+		return 0, nil, linuxerr.EINVAL
 	}
-
-	if uflags&^(linux.SYNC_FILE_RANGE_WAIT_BEFORE|
-		linux.SYNC_FILE_RANGE_WRITE|
-		linux.SYNC_FILE_RANGE_WAIT_AFTER) != 0 {
-		return 0, nil, syserror.EINVAL
-	}
-
-	if nbytes == 0 {
-		nbytes = fs.FileMaxOffset
+	if flags&^(linux.SYNC_FILE_RANGE_WAIT_BEFORE|linux.SYNC_FILE_RANGE_WRITE|linux.SYNC_FILE_RANGE_WAIT_AFTER) != 0 {
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	file := t.GetFile(fd)
 	if file == nil {
-		return 0, nil, syserror.EBADF
+		return 0, nil, linuxerr.EBADF
 	}
 	defer file.DecRef(t)
 
-	// SYNC_FILE_RANGE_WAIT_BEFORE waits upon write-out of all pages in the
-	// specified range that have already been submitted to the device
-	// driver for write-out before performing any write.
-	if uflags&linux.SYNC_FILE_RANGE_WAIT_BEFORE != 0 &&
-		uflags&linux.SYNC_FILE_RANGE_WAIT_AFTER == 0 {
-		t.Kernel().EmitUnimplementedEvent(t)
-		return 0, nil, syserror.ENOSYS
+	// TODO(gvisor.dev/issue/1897): Currently, the only file syncing we support
+	// is a full-file sync, i.e. fsync(2). As a result, there are severe
+	// limitations on how much we support sync_file_range:
+	//	- In Linux, sync_file_range(2) doesn't write out the file's metadata, even
+	//		if the file size is changed. We do.
+	//	- We always sync the entire file instead of [offset, offset+nbytes).
+	//	- We do not support the use of WAIT_BEFORE without WAIT_AFTER. For
+	//		correctness, we would have to perform a write-out every time WAIT_BEFORE
+	//		was used, but this would be much more expensive than expected if there
+	//		were no write-out operations in progress.
+	//	- Whenever WAIT_AFTER is used, we sync the file.
+	//	- Ignore WRITE. If this flag is used with WAIT_AFTER, then the file will
+	//		be synced anyway. If this flag is used without WAIT_AFTER, then it is
+	//		safe (and less expensive) to do nothing, because the syscall will not
+	//		wait for the write-out to complete--we only need to make sure that the
+	//		next time WAIT_BEFORE or WAIT_AFTER are used, the write-out completes.
+	//	- According to fs/sync.c, WAIT_BEFORE|WAIT_AFTER "will detect any I/O
+	//		errors or ENOSPC conditions and will return those to the caller, after
+	//		clearing the EIO and ENOSPC flags in the address_space." We don't do
+	//		this.
+
+	if flags&linux.SYNC_FILE_RANGE_WAIT_BEFORE != 0 &&
+		flags&linux.SYNC_FILE_RANGE_WAIT_AFTER == 0 {
+		t.Kernel().EmitUnimplementedEvent(t, sysno)
+		return 0, nil, linuxerr.ENOSYS
 	}
 
-	// SYNC_FILE_RANGE_WRITE initiates write-out of all dirty pages in the
-	// specified range which are not presently submitted write-out.
-	//
-	// It looks impossible to implement this functionality without a
-	// massive rework of the vfs subsystem. file.Fsync() take a file lock
-	// for the entire operation, so even if it is running in a go routing,
-	// it blocks other file operations instead of flushing data in the
-	// background.
-	//
-	// It should be safe to skipped this flag while nobody uses
-	// SYNC_FILE_RANGE_WAIT_BEFORE.
-	_ = nbytes
-
-	// SYNC_FILE_RANGE_WAIT_AFTER waits upon write-out of all pages in the
-	// range after performing any write.
-	//
-	// In Linux, sync_file_range() doesn't writes out the  file's
-	// meta-data, but fdatasync() does if a file size is changed.
-	if uflags&linux.SYNC_FILE_RANGE_WAIT_AFTER != 0 {
-		err = file.Fsync(t, offset, fs.FileMaxOffset, fs.SyncData)
+	if flags&linux.SYNC_FILE_RANGE_WAIT_AFTER != 0 {
+		if err := file.Sync(t); err != nil {
+			return 0, nil, linuxerr.ConvertIntr(err, linuxerr.ERESTARTSYS)
+		}
 	}
-
-	return 0, nil, syserror.ConvertIntr(err, syserror.ERESTARTSYS)
+	return 0, nil, nil
 }
-
-// LINT.ThenChange(vfs2/sync.go)

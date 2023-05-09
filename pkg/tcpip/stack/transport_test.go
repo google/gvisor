@@ -19,8 +19,8 @@ import (
 	"io"
 	"testing"
 
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/ports"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -70,13 +70,15 @@ func (f *fakeTransportEndpoint) SocketOptions() *tcpip.SocketOptions {
 
 func newFakeTransportEndpoint(proto *fakeTransportProtocol, netProto tcpip.NetworkProtocolNumber, s *stack.Stack) tcpip.Endpoint {
 	ep := &fakeTransportEndpoint{TransportEndpointInfo: stack.TransportEndpointInfo{NetProto: netProto}, proto: proto, uniqueID: s.UniqueID()}
-	ep.ops.InitHandler(ep, s, tcpip.GetStackSendBufferLimits)
+	ep.ops.InitHandler(ep, s, tcpip.GetStackSendBufferLimits, tcpip.GetStackReceiveBufferLimits)
 	return ep
 }
 
 func (f *fakeTransportEndpoint) Abort() {
 	f.Close()
 }
+
+func (*fakeTransportEndpoint) Release() {}
 
 func (f *fakeTransportEndpoint) Close() {
 	// TODO(gvisor.dev/issue/5153): Consider retaining the route.
@@ -93,7 +95,7 @@ func (*fakeTransportEndpoint) Read(io.Writer, tcpip.ReadOptions) (tcpip.ReadResu
 
 func (f *fakeTransportEndpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcpip.Error) {
 	if len(f.route.RemoteAddress()) == 0 {
-		return 0, &tcpip.ErrNoRoute{}
+		return 0, &tcpip.ErrHostUnreachable{}
 	}
 
 	v := make([]byte, p.Len())
@@ -103,10 +105,10 @@ func (f *fakeTransportEndpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(f.route.MaxHeaderLength()) + fakeTransHeaderLen,
-		Data:               buffer.View(v).ToVectorisedView(),
+		Payload:            bufferv2.MakeWithData(v),
 	})
 	_ = pkt.TransportHeader().Push(fakeTransHeaderLen)
-	if err := f.route.WritePacket(nil /* gso */, stack.NetworkHeaderParams{Protocol: fakeTransNumber, TTL: 123, TOS: stack.DefaultTOS}, pkt); err != nil {
+	if err := f.route.WritePacket(stack.NetworkHeaderParams{Protocol: fakeTransNumber, TTL: 123, TOS: stack.DefaultTOS}, pkt); err != nil {
 		return 0, err
 	}
 
@@ -144,7 +146,7 @@ func (f *fakeTransportEndpoint) Connect(addr tcpip.FullAddress) tcpip.Error {
 	// Find the route.
 	r, err := f.proto.stack.FindRoute(addr.NIC, "", addr.Addr, fakeNetNumber, false /* multicastLoop */)
 	if err != nil {
-		return &tcpip.ErrNoRoute{}
+		return &tcpip.ErrHostUnreachable{}
 	}
 
 	// Try to register so that we can start receiving packets.
@@ -211,14 +213,14 @@ func (*fakeTransportEndpoint) GetRemoteAddress() (tcpip.FullAddress, tcpip.Error
 	return tcpip.FullAddress{}, nil
 }
 
-func (f *fakeTransportEndpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketBuffer) {
+func (f *fakeTransportEndpoint) HandlePacket(id stack.TransportEndpointID, pkt stack.PacketBufferPtr) {
 	// Increment the number of received packets.
 	f.proto.packetCount++
 	if f.acceptQueue == nil {
 		return
 	}
 
-	netHdr := pkt.NetworkHeader().View()
+	netHdr := pkt.NetworkHeader().Slice()
 	route, err := f.proto.stack.FindRoute(pkt.NICID, tcpip.Address(netHdr[dstAddrOffset]), tcpip.Address(netHdr[srcAddrOffset]), pkt.NetworkProtocolNumber, false /* multicastLoop */)
 	if err != nil {
 		return
@@ -233,11 +235,11 @@ func (f *fakeTransportEndpoint) HandlePacket(id stack.TransportEndpointID, pkt *
 		peerAddr: route.RemoteAddress(),
 		route:    route,
 	}
-	ep.ops.InitHandler(ep, f.proto.stack, tcpip.GetStackSendBufferLimits)
+	ep.ops.InitHandler(ep, f.proto.stack, tcpip.GetStackSendBufferLimits, tcpip.GetStackReceiveBufferLimits)
 	f.acceptQueue = append(f.acceptQueue, ep)
 }
 
-func (f *fakeTransportEndpoint) HandleError(stack.TransportError, *stack.PacketBuffer) {
+func (f *fakeTransportEndpoint) HandleError(stack.TransportError, stack.PacketBufferPtr) {
 	// Increment the number of received control packets.
 	f.proto.controlCount++
 }
@@ -292,11 +294,11 @@ func (*fakeTransportProtocol) MinimumPacketSize() int {
 	return fakeTransHeaderLen
 }
 
-func (*fakeTransportProtocol) ParsePorts(buffer.View) (src, dst uint16, err tcpip.Error) {
+func (*fakeTransportProtocol) ParsePorts([]byte) (src, dst uint16, err tcpip.Error) {
 	return 0, 0, nil
 }
 
-func (*fakeTransportProtocol) HandleUnknownDestinationPacket(stack.TransportEndpointID, *stack.PacketBuffer) stack.UnknownDestinationPacketDisposition {
+func (*fakeTransportProtocol) HandleUnknownDestinationPacket(stack.TransportEndpointID, stack.PacketBufferPtr) stack.UnknownDestinationPacketDisposition {
 	return stack.UnknownDestinationPacketHandled
 }
 
@@ -329,10 +331,19 @@ func (*fakeTransportProtocol) Close() {}
 // Wait implements TransportProtocol.Wait.
 func (*fakeTransportProtocol) Wait() {}
 
+// Pause implements TransportProtocol.Pause.
+func (*fakeTransportProtocol) Pause() {}
+
+// Resume implements TransportProtocol.Resume.
+func (*fakeTransportProtocol) Resume() {}
+
 // Parse implements TransportProtocol.Parse.
-func (*fakeTransportProtocol) Parse(pkt *stack.PacketBuffer) bool {
-	_, ok := pkt.TransportHeader().Consume(fakeTransHeaderLen)
-	return ok
+func (*fakeTransportProtocol) Parse(pkt stack.PacketBufferPtr) bool {
+	if _, ok := pkt.TransportHeader().Consume(fakeTransHeaderLen); ok {
+		pkt.TransportProtocolNumber = fakeTransNumber
+		return true
+	}
+	return false
 }
 
 func fakeTransFactory(s *stack.Stack) stack.TransportProtocol {
@@ -357,8 +368,15 @@ func TestTransportReceive(t *testing.T) {
 		s.SetRouteTable([]tcpip.Route{{Destination: subnet, Gateway: "\x00", NIC: 1}})
 	}
 
-	if err := s.AddAddress(1, fakeNetNumber, "\x01"); err != nil {
-		t.Fatalf("AddAddress failed: %v", err)
+	protocolAddr := tcpip.ProtocolAddress{
+		Protocol: fakeNetNumber,
+		AddressWithPrefix: tcpip.AddressWithPrefix{
+			Address:   "\x01",
+			PrefixLen: fakeDefaultPrefixLen,
+		},
+	}
+	if err := s.AddProtocolAddress(1, protocolAddr, stack.AddressProperties{}); err != nil {
+		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", 1, protocolAddr, err)
 	}
 
 	// Create endpoint and connect to remote address.
@@ -375,13 +393,13 @@ func TestTransportReceive(t *testing.T) {
 	fakeTrans := s.TransportProtocolInstance(fakeTransNumber).(*fakeTransportProtocol)
 
 	// Create buffer that will hold the packet.
-	buf := buffer.NewView(30)
+	buf := make([]byte, 30)
 
 	// Make sure packet with wrong protocol is not delivered.
 	buf[0] = 1
 	buf[2] = 0
 	linkEP.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: buf.ToVectorisedView(),
+		Payload: bufferv2.MakeWithData(buf),
 	}))
 	if fakeTrans.packetCount != 0 {
 		t.Errorf("packetCount = %d, want %d", fakeTrans.packetCount, 0)
@@ -392,7 +410,7 @@ func TestTransportReceive(t *testing.T) {
 	buf[1] = 3
 	buf[2] = byte(fakeTransNumber)
 	linkEP.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: buf.ToVectorisedView(),
+		Payload: bufferv2.MakeWithData(buf),
 	}))
 	if fakeTrans.packetCount != 0 {
 		t.Errorf("packetCount = %d, want %d", fakeTrans.packetCount, 0)
@@ -403,7 +421,7 @@ func TestTransportReceive(t *testing.T) {
 	buf[1] = 2
 	buf[2] = byte(fakeTransNumber)
 	linkEP.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: buf.ToVectorisedView(),
+		Payload: bufferv2.MakeWithData(buf),
 	}))
 	if fakeTrans.packetCount != 1 {
 		t.Errorf("packetCount = %d, want %d", fakeTrans.packetCount, 1)
@@ -428,8 +446,15 @@ func TestTransportControlReceive(t *testing.T) {
 		s.SetRouteTable([]tcpip.Route{{Destination: subnet, Gateway: "\x00", NIC: 1}})
 	}
 
-	if err := s.AddAddress(1, fakeNetNumber, "\x01"); err != nil {
-		t.Fatalf("AddAddress failed: %v", err)
+	protocolAddr := tcpip.ProtocolAddress{
+		Protocol: fakeNetNumber,
+		AddressWithPrefix: tcpip.AddressWithPrefix{
+			Address:   "\x01",
+			PrefixLen: fakeDefaultPrefixLen,
+		},
+	}
+	if err := s.AddProtocolAddress(1, protocolAddr, stack.AddressProperties{}); err != nil {
+		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", 1, protocolAddr, err)
 	}
 
 	// Create endpoint and connect to remote address.
@@ -446,7 +471,7 @@ func TestTransportControlReceive(t *testing.T) {
 	fakeTrans := s.TransportProtocolInstance(fakeTransNumber).(*fakeTransportProtocol)
 
 	// Create buffer that will hold the control packet.
-	buf := buffer.NewView(2*fakeNetHeaderLen + 30)
+	buf := make([]byte, 2*fakeNetHeaderLen+30)
 
 	// Outer packet contains the control protocol number.
 	buf[0] = 1
@@ -458,7 +483,7 @@ func TestTransportControlReceive(t *testing.T) {
 	buf[fakeNetHeaderLen+1] = 1
 	buf[fakeNetHeaderLen+2] = 0
 	linkEP.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: buf.ToVectorisedView(),
+		Payload: bufferv2.MakeWithData(buf),
 	}))
 	if fakeTrans.controlCount != 0 {
 		t.Errorf("controlCount = %d, want %d", fakeTrans.controlCount, 0)
@@ -469,7 +494,7 @@ func TestTransportControlReceive(t *testing.T) {
 	buf[fakeNetHeaderLen+1] = 1
 	buf[fakeNetHeaderLen+2] = byte(fakeTransNumber)
 	linkEP.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: buf.ToVectorisedView(),
+		Payload: bufferv2.MakeWithData(buf),
 	}))
 	if fakeTrans.controlCount != 0 {
 		t.Errorf("controlCount = %d, want %d", fakeTrans.controlCount, 0)
@@ -480,7 +505,7 @@ func TestTransportControlReceive(t *testing.T) {
 	buf[fakeNetHeaderLen+1] = 1
 	buf[fakeNetHeaderLen+2] = byte(fakeTransNumber)
 	linkEP.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: buf.ToVectorisedView(),
+		Payload: bufferv2.MakeWithData(buf),
 	}))
 	if fakeTrans.controlCount != 1 {
 		t.Errorf("controlCount = %d, want %d", fakeTrans.controlCount, 1)
@@ -497,8 +522,15 @@ func TestTransportSend(t *testing.T) {
 		t.Fatalf("CreateNIC failed: %v", err)
 	}
 
-	if err := s.AddAddress(1, fakeNetNumber, "\x01"); err != nil {
-		t.Fatalf("AddAddress failed: %v", err)
+	protocolAddr := tcpip.ProtocolAddress{
+		Protocol: fakeNetNumber,
+		AddressWithPrefix: tcpip.AddressWithPrefix{
+			Address:   "\x01",
+			PrefixLen: fakeDefaultPrefixLen,
+		},
+	}
+	if err := s.AddProtocolAddress(1, protocolAddr, stack.AddressProperties{}); err != nil {
+		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", 1, protocolAddr, err)
 	}
 
 	{

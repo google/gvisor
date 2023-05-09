@@ -43,11 +43,11 @@ func NewForwarder(s *stack.Stack, handler func(*ForwarderRequest)) *Forwarder {
 //
 // This function is expected to be passed as an argument to the
 // stack.SetTransportProtocolHandler function.
-func (f *Forwarder) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketBuffer) bool {
+func (f *Forwarder) HandlePacket(id stack.TransportEndpointID, pkt stack.PacketBufferPtr) bool {
 	f.handler(&ForwarderRequest{
 		stack: f.stack,
 		id:    id,
-		pkt:   pkt,
+		pkt:   pkt.IncRef(),
 	})
 
 	return true
@@ -59,7 +59,7 @@ func (f *Forwarder) HandlePacket(id stack.TransportEndpointID, pkt *stack.Packet
 type ForwarderRequest struct {
 	stack *stack.Stack
 	id    stack.TransportEndpointID
-	pkt   *stack.PacketBuffer
+	pkt   stack.PacketBufferPtr
 }
 
 // ID returns the 4-tuple (src address, src port, dst address, dst port) that
@@ -70,27 +70,28 @@ func (r *ForwarderRequest) ID() stack.TransportEndpointID {
 
 // CreateEndpoint creates a connected UDP endpoint for the session request.
 func (r *ForwarderRequest) CreateEndpoint(queue *waiter.Queue) (tcpip.Endpoint, tcpip.Error) {
+	ep := newEndpoint(r.stack, r.pkt.NetworkProtocolNumber, queue)
+	ep.mu.Lock()
+	defer ep.mu.Unlock()
+
 	netHdr := r.pkt.Network()
-	route, err := r.stack.FindRoute(r.pkt.NICID, netHdr.DestinationAddress(), netHdr.SourceAddress(), r.pkt.NetworkProtocolNumber, false /* multicastLoop */)
-	if err != nil {
+	if err := ep.net.Bind(tcpip.FullAddress{NIC: r.pkt.NICID, Addr: netHdr.DestinationAddress(), Port: r.id.LocalPort}); err != nil {
 		return nil, err
 	}
 
-	ep := newEndpoint(r.stack, r.pkt.NetworkProtocolNumber, queue)
+	if err := ep.net.Connect(tcpip.FullAddress{NIC: r.pkt.NICID, Addr: netHdr.SourceAddress(), Port: r.id.RemotePort}); err != nil {
+		return nil, err
+	}
+
 	if err := r.stack.RegisterTransportEndpoint([]tcpip.NetworkProtocolNumber{r.pkt.NetworkProtocolNumber}, ProtocolNumber, r.id, ep, ep.portFlags, tcpip.NICID(ep.ops.GetBindToDevice())); err != nil {
 		ep.Close()
-		route.Release()
 		return nil, err
 	}
 
-	ep.ID = r.id
-	ep.route = route
-	ep.dstPort = r.id.RemotePort
+	ep.localPort = r.id.LocalPort
+	ep.remotePort = r.id.RemotePort
 	ep.effectiveNetProtos = []tcpip.NetworkProtocolNumber{r.pkt.NetworkProtocolNumber}
-	ep.RegisterNICID = r.pkt.NICID
 	ep.boundPortFlags = ep.portFlags
-
-	ep.state = StateConnected
 
 	ep.rcvMu.Lock()
 	ep.rcvReady = true

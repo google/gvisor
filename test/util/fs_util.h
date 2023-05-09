@@ -71,6 +71,7 @@ PosixError MknodAt(const FileDescriptor& dfd, absl::string_view path, int mode,
                    dev_t dev);
 
 // Unlink the file.
+PosixError Unlink(absl::string_view path);
 PosixError UnlinkAt(const FileDescriptor& dfd, absl::string_view path,
                     int flags);
 
@@ -232,6 +233,38 @@ inline std::string JoinPath(absl::string_view path1, absl::string_view path2,
                             absl::string_view path3, const T&... args) {
   return internal::JoinPathImpl({path1, path2, path3, args...});
 }
+
+// A matcher which checks whether the file permissions bits for a mode value
+// matches an expected value.
+class ModePermissionMatcher : public ::testing::MatcherInterface<mode_t> {
+ public:
+  explicit ModePermissionMatcher(mode_t want) : want_(want) {}
+
+  bool MatchAndExplain(
+      mode_t got,
+      ::testing::MatchResultListener* const listener) const override {
+    const mode_t masked = got & (S_IRWXU | S_IRWXG | S_IRWXO);
+    if (masked == want_) {
+      return true;
+    }
+    *listener << "Permission 0" << std::oct << masked;
+    return false;
+  }
+
+  void DescribeTo(std::ostream* const os) const override {
+    *os << "File permission is 0" << std::oct << want_;
+  }
+
+  void DescribeNegationTo(std::ostream* const os) const override {
+    *os << "File permission is not 0" << std::oct << want_;
+  }
+
+ private:
+  mode_t want_;
+};
+
+::testing::Matcher<mode_t> PermissionIs(mode_t want);
+
 }  // namespace testing
 }  // namespace gvisor
 #endif  // GVISOR_TEST_UTIL_FS_UTIL_H_

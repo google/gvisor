@@ -180,7 +180,7 @@ func (tbd *typeDecodeDatabase) LookupType(id typeID) reflect.Type {
 		typ, ok = primitiveTypeDatabase[name]
 		if !ok && name == interfaceType {
 			// Matches the built-in interface type.
-			var i interface{}
+			var i any
 			return reflect.TypeOf(&i).Elem()
 		}
 		if !ok {
@@ -323,6 +323,14 @@ var globalTypeDatabase = map[string]reflect.Type{}
 
 // reverseTypeDatabase is a reverse mapping.
 var reverseTypeDatabase = map[reflect.Type]string{}
+
+// Release releases references to global type databases.
+// Must only be called in contexts where they will definitely never be used,
+// in order to save memory.
+func Release() {
+	globalTypeDatabase = nil
+	reverseTypeDatabase = nil
+}
 
 // Register registers a type.
 //

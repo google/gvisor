@@ -1,22 +1,41 @@
 load("//tools:defs.bzl", "go_library", "go_test")
+load("//tools/go_generics:defs.bzl", "go_template_instance")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
+
+go_template_instance(
+    name = "atomicptr_machine",
+    out = "atomicptr_machine_unsafe.go",
+    package = "kvm",
+    prefix = "machine",
+    template = "//pkg/sync/atomicptr:generic_atomicptr",
+    types = {
+        "Value": "machine",
+    },
+)
 
 go_library(
     name = "kvm",
     srcs = [
         "address_space.go",
+        "address_space_amd64.go",
+        "address_space_arm64.go",
+        "atomicptr_machine_unsafe.go",
         "bluepill.go",
         "bluepill_allocator.go",
         "bluepill_amd64.go",
+        "bluepill_amd64.s",
         "bluepill_amd64_unsafe.go",
         "bluepill_arm64.go",
         "bluepill_arm64.s",
         "bluepill_arm64_unsafe.go",
         "bluepill_fault.go",
-        "bluepill_impl_amd64.s",
         "bluepill_unsafe.go",
         "context.go",
+        "filters.go",
         "filters_amd64.go",
         "filters_arm64.go",
         "kvm.go",
@@ -25,6 +44,7 @@ go_library(
         "kvm_arm64.go",
         "kvm_arm64_unsafe.go",
         "kvm_const.go",
+        "kvm_const_amd64.go",
         "kvm_const_arm64.go",
         "machine.go",
         "machine_amd64.go",
@@ -44,11 +64,11 @@ go_library(
         "//pkg/context",
         "//pkg/cpuid",
         "//pkg/hostarch",
+        "//pkg/hosttid",
         "//pkg/log",
-        "//pkg/procid",
+        "//pkg/metric",
         "//pkg/ring0",
         "//pkg/ring0/pagetables",
-        "//pkg/safecopy",
         "//pkg/seccomp",
         "//pkg/sentry/arch",
         "//pkg/sentry/arch/fpu",
@@ -56,6 +76,7 @@ go_library(
         "//pkg/sentry/platform",
         "//pkg/sentry/platform/interrupt",
         "//pkg/sentry/time",
+        "//pkg/sighandling",
         "//pkg/sync",
         "@org_golang_x_sys//unix:go_default_library",
     ],
@@ -67,19 +88,30 @@ go_test(
         "kvm_amd64_test.go",
         "kvm_amd64_test.s",
         "kvm_arm64_test.go",
+        "kvm_safecopy_test.go",
         "kvm_test.go",
         "virtual_map_test.go",
     ],
     library = ":kvm",
+    # FIXME(gvisor.dev/issue/3374): Not working with all build systems.
+    nogo = False,
+    # cgo has to be disabled. We have seen libc that blocks all signals and
+    # calls mmap from pthread_create, but we use SIGSYS to trap mmap system
+    # calls.
+    pure = True,
     tags = [
         "manual",
         "nogotsan",
         "requires-kvm",
     ],
     deps = [
+        "//pkg/abi/linux",
+        "//pkg/cpuid",
         "//pkg/hostarch",
+        "//pkg/memutil",
         "//pkg/ring0",
         "//pkg/ring0/pagetables",
+        "//pkg/safecopy",
         "//pkg/sentry/arch",
         "//pkg/sentry/arch/fpu",
         "//pkg/sentry/platform",
@@ -87,12 +119,4 @@ go_test(
         "//pkg/sentry/time",
         "@org_golang_x_sys//unix:go_default_library",
     ],
-)
-
-genrule(
-    name = "bluepill_impl_amd64",
-    srcs = ["bluepill_amd64.s"],
-    outs = ["bluepill_impl_amd64.s"],
-    cmd = "(echo -e '// build +amd64\\n' && $(location //pkg/ring0/gen_offsets) && cat $(SRCS)) > $@",
-    tools = ["//pkg/ring0/gen_offsets"],
 )

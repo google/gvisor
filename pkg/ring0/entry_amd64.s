@@ -15,9 +15,76 @@
 #include "funcdata.h"
 #include "textflag.h"
 
-// NB: Offsets are programmatically generated (see BUILD).
-//
-// This file is concatenated with the definitions.
+// CPU offsets.
+#define CPU_REGISTERS    64  // +checkoffset . CPU.registers
+#define CPU_FPU_STATE    280 // +checkoffset . CPU.floatingPointState
+#define CPU_ARCH_STATE   16  // +checkoffset . CPU.CPUArchState
+#define CPU_ERROR_CODE   CPU_ARCH_STATE+0  // +checkoffset . CPUArchState.errorCode
+#define CPU_ERROR_TYPE   CPU_ARCH_STATE+8  // +checkoffset . CPUArchState.errorType
+#define CPU_VECTOR       CPU_ARCH_STATE+16 // +checkoffset . CPUArchState.vector
+#define CPU_FAULT_ADDR   CPU_ARCH_STATE+24 // +checkoffset . CPUArchState.faultAddr
+#define CPU_ENTRY        CPU_ARCH_STATE+32 // +checkoffset . CPUArchState.kernelEntry
+#define CPU_HAS_XSAVE    CPU_ARCH_STATE+40 // +checkoffset . CPUArchState.hasXSAVE
+#define CPU_HAS_XSAVEOPT CPU_ARCH_STATE+41 // +checkoffset . CPUArchState.hasXSAVEOPT
+
+#define ENTRY_SCRATCH0   256 // +checkoffset . kernelEntry.scratch0
+#define ENTRY_STACK_TOP  264 // +checkoffset . kernelEntry.stackTop
+#define ENTRY_CPU_SELF   272 // +checkoffset . kernelEntry.cpuSelf
+#define ENTRY_KERNEL_CR3 280 // +checkoffset . kernelEntry.kernelCR3
+
+// Bits.
+#define _RFLAGS_IF    512  // +checkconst . _RFLAGS_IF
+#define _RFLAGS_IOPL0 4096 // +checkconst . _RFLAGS_IOPL0
+#define _KERNEL_FLAGS 2    // +checkconst . KernelFlagsSet
+
+// Vectors.
+#define DivideByZero               0 // +checkconst . DivideByZero
+#define Debug                      1 // +checkconst . Debug
+#define NMI                        2 // +checkconst . NMI
+#define Breakpoint                 3 // +checkconst . Breakpoint
+#define Overflow                   4 // +checkconst . Overflow
+#define BoundRangeExceeded         5 // +checkconst . BoundRangeExceeded
+#define InvalidOpcode              6 // +checkconst . InvalidOpcode
+#define DeviceNotAvailable         7 // +checkconst . DeviceNotAvailable
+#define DoubleFault                8 // +checkconst . DoubleFault
+#define CoprocessorSegmentOverrun  9 // +checkconst . CoprocessorSegmentOverrun
+#define InvalidTSS                 10 // +checkconst . InvalidTSS
+#define SegmentNotPresent          11 // +checkconst . SegmentNotPresent
+#define StackSegmentFault          12 // +checkconst . StackSegmentFault
+#define GeneralProtectionFault     13 // +checkconst . GeneralProtectionFault
+#define PageFault                  14 // +checkconst . PageFault
+#define X87FloatingPointException  16 // +checkconst . X87FloatingPointException
+#define AlignmentCheck             17 // +checkconst . AlignmentCheck
+#define MachineCheck               18 // +checkconst . MachineCheck
+#define SIMDFloatingPointException 19 // +checkconst . SIMDFloatingPointException
+#define VirtualizationException    20 // +checkconst . VirtualizationException
+#define SecurityException          30 // +checkconst . SecurityException
+#define SyscallInt80               128 // +checkconst . SyscallInt80
+#define Syscall                    256 // +checkconst . Syscall
+
+#define PTRACE_R15      0   // +checkoffset linux PtraceRegs.R15
+#define PTRACE_R14      8   // +checkoffset linux PtraceRegs.R14
+#define PTRACE_R13      16  // +checkoffset linux PtraceRegs.R13
+#define PTRACE_R12      24  // +checkoffset linux PtraceRegs.R12
+#define PTRACE_RBP      32  // +checkoffset linux PtraceRegs.Rbp
+#define PTRACE_RBX      40  // +checkoffset linux PtraceRegs.Rbx
+#define PTRACE_R11      48  // +checkoffset linux PtraceRegs.R11
+#define PTRACE_R10      56  // +checkoffset linux PtraceRegs.R10
+#define PTRACE_R9       64  // +checkoffset linux PtraceRegs.R9
+#define PTRACE_R8       72  // +checkoffset linux PtraceRegs.R8
+#define PTRACE_RAX      80  // +checkoffset linux PtraceRegs.Rax
+#define PTRACE_RCX      88  // +checkoffset linux PtraceRegs.Rcx
+#define PTRACE_RDX      96  // +checkoffset linux PtraceRegs.Rdx
+#define PTRACE_RSI      104 // +checkoffset linux PtraceRegs.Rsi
+#define PTRACE_RDI      112 // +checkoffset linux PtraceRegs.Rdi
+#define PTRACE_ORIGRAX  120 // +checkoffset linux PtraceRegs.Orig_rax
+#define PTRACE_RIP      128 // +checkoffset linux PtraceRegs.Rip
+#define PTRACE_CS       136 // +checkoffset linux PtraceRegs.Cs
+#define PTRACE_FLAGS    144 // +checkoffset linux PtraceRegs.Eflags
+#define PTRACE_RSP      152 // +checkoffset linux PtraceRegs.Rsp
+#define PTRACE_SS       160 // +checkoffset linux PtraceRegs.Ss
+#define PTRACE_FS_BASE  168 // +checkoffset linux PtraceRegs.Fs_base
+#define PTRACE_GS_BASE  176 // +checkoffset linux PtraceRegs.Gs_base
 
 // Saves a register set.
 //
@@ -88,27 +155,160 @@
 #define LOAD_KERNEL_STACK(entry) \
 	MOVQ ENTRY_STACK_TOP(entry), SP;
 
+// ADDR_OF_FUNC defines a function named 'name' that returns the address of
+// 'symbol'.
+#define ADDR_OF_FUNC(name, symbol) \
+TEXT name,$0-8; \
+	MOVQ $symbol, AX; \
+	MOVQ AX, ret+0(FP); \
+	RET
+
 // See kernel.go.
-TEXT ·Halt(SB),NOSPLIT,$0
+TEXT ·Halt(SB),NOSPLIT|NOFRAME,$0
 	HLT
 	RET
 
-// See entry_amd64.go.
-TEXT ·swapgs(SB),NOSPLIT,$0
-	SWAP_GS()
+// See kernel_amd64.go.
+TEXT ·HaltAndWriteFSBase(SB),NOSPLIT,$8-8
+	HLT
+
+	// Restore FS_BASE.
+	MOVQ regs+0(FP), AX
+	MOVQ PTRACE_FS_BASE(AX), AX
+
+	PUSHQ AX  // First argument (FS_BASE)
+	CALL ·writeFS(SB)
+	POPQ AX
+
 	RET
 
 // jumpToKernel changes execution to the kernel address space.
 //
 // This works by changing the return value to the kernel version.
-TEXT ·jumpToKernel(SB),NOSPLIT,$0
+TEXT ·jumpToKernel(SB),NOSPLIT|NOFRAME,$0
 	MOVQ 0(SP), AX
 	ORQ ·KernelStartAddress(SB), AX // Future return value.
 	MOVQ AX, 0(SP)
 	RET
 
+// jumpToUser changes execution to the user address space.
+//
+// This works by changing the return value to the user version.
+TEXT ·jumpToUser(SB),NOSPLIT|NOFRAME,$0
+	// N.B. we can't access KernelStartAddress from the upper half (data
+	// pages not available), so just naively clear all the upper bits.
+	// We are assuming a 47-bit virtual address space.
+	MOVQ $0x00007fffffffffff, AX
+	MOVQ 0(SP), BX
+	ANDQ BX, AX // Future return value.
+	MOVQ AX, 0(SP)
+	RET
+
+// See kernel_amd64.go.
+//
+// The 16-byte frame size is for the saved values of MXCSR and the x87 control
+// word.
+TEXT ·doSwitchToUser(SB),NOSPLIT,$16-48
+	// We are passed pointers to heap objects, but do not store them in our
+	// local frame.
+	NO_LOCAL_POINTERS
+
+	// MXCSR and the x87 control word are the only floating point state
+	// that is callee-save and thus we must save.
+	STMXCSR mxcsr-0(SP)
+	FSTCW cw-8(SP)
+
+	// Restore application floating point state.
+	MOVQ cpu+0(FP), SI
+	MOVQ fpState+16(FP), DI
+	MOVB ·hasXSAVE(SB), BX
+	TESTB BX, BX
+	JZ no_xrstor
+	// Use xrstor to restore all available fp state. For now, we restore
+	// everything unconditionally by setting the implicit operand edx:eax
+	// (the "requested feature bitmap") to all 1's.
+	MOVL $0xffffffff, AX
+	MOVL $0xffffffff, DX
+	BYTE $0x48; BYTE $0x0f; BYTE $0xae; BYTE $0x2f // XRSTOR64 0(DI)
+	JMP fprestore_done
+no_xrstor:
+	// Fall back to fxrstor if xsave is not available.
+	FXRSTOR64 0(DI)
+fprestore_done:
+
+	// Set application GS.
+	MOVQ regs+8(FP), R8
+	SWAP_GS()
+	MOVQ PTRACE_GS_BASE(R8), AX
+	PUSHQ AX
+	CALL ·writeGS(SB)
+	POPQ AX
+
+	// Call sysret() or iret().
+	MOVQ userCR3+24(FP), CX
+	MOVQ needIRET+32(FP), R9
+	ADDQ $-32, SP
+	MOVQ SI, 0(SP)  // cpu
+	MOVQ R8, 8(SP)  // regs
+	MOVQ CX, 16(SP) // userCR3
+	TESTQ R9, R9
+	JNZ do_iret
+	CALL ·sysret(SB)
+	JMP done_sysret_or_iret
+do_iret:
+	CALL ·iret(SB)
+done_sysret_or_iret:
+	MOVQ 24(SP), AX // vector
+	ADDQ $32, SP
+	MOVQ AX, ret+40(FP)
+
+	// Save application floating point state.
+	MOVQ fpState+16(FP), DI
+	MOVB ·hasXSAVE(SB), BX
+	MOVB ·hasXSAVEOPT(SB), CX
+	TESTB BX, BX
+	JZ no_xsave
+	// Use xsave/xsaveopt to save all extended state.
+	// We save everything unconditionally by setting RFBM to all 1's.
+	MOVL $0xffffffff, AX
+	MOVL $0xffffffff, DX
+	TESTB CX, CX
+	JZ no_xsaveopt
+	BYTE $0x48; BYTE $0x0f; BYTE $0xae; BYTE $0x37; // XSAVEOPT64 0(DI)
+	JMP fpsave_done
+no_xsaveopt:
+	BYTE $0x48; BYTE $0x0f; BYTE $0xae; BYTE $0x27; // XSAVE64 0(DI)
+	JMP fpsave_done
+no_xsave:
+	FXSAVE64 0(DI)
+fpsave_done:
+
+	// Restore MXCSR and the x87 control word after one of the two floating
+	// point save cases above, to ensure the application versions are saved
+	// before being clobbered here.
+	LDMXCSR mxcsr-0(SP)
+
+	// FLDCW is a "waiting" x87 instruction, meaning it checks for pending
+	// unmasked exceptions before executing. Thus if userspace has unmasked
+	// an exception and has one pending, it can be raised by FLDCW even
+	// though the new control word will mask exceptions. To prevent this,
+	// we must first clear pending exceptions (which will be restored by
+	// XRSTOR, et al).
+	BYTE $0xDB; BYTE $0xE2; // FNCLEX
+	FLDCW cw-8(SP)
+
+	RET
+
 // See entry_amd64.go.
-TEXT ·sysret(SB),NOSPLIT,$0-24
+TEXT ·sysret(SB),NOSPLIT|NOFRAME,$0-32
+	// Set application FS. We can't do this in Go because Go code needs FS.
+	MOVQ regs+8(FP), AX
+	MOVQ PTRACE_FS_BASE(AX), AX
+
+	PUSHQ AX
+	CALL ·writeFS(SB)
+	POPQ AX
+
 	CALL ·jumpToKernel(SB)
 	// Save original state and stack. sysenter() or exception()
 	// from APP(gr3) will switch to this stack, set the return
@@ -139,9 +339,19 @@ TEXT ·sysret(SB),NOSPLIT,$0-24
 	POPQ AX                             // Restore AX.
 	POPQ SP                             // Restore SP.
 	SYSRET64()
+	// sysenter or exception will write our return value and return to our
+	// caller.
 
 // See entry_amd64.go.
-TEXT ·iret(SB),NOSPLIT,$0-24
+TEXT ·iret(SB),NOSPLIT|NOFRAME,$0-32
+	// Set application FS. We can't do this in Go because Go code needs FS.
+	MOVQ regs+8(FP), AX
+	MOVQ PTRACE_FS_BASE(AX), AX
+
+	PUSHQ AX // First argument (FS_BASE)
+	CALL ·writeFS(SB)
+	POPQ AX
+
 	CALL ·jumpToKernel(SB)
 	// Save original state and stack. sysenter() or exception()
 	// from APP(gr3) will switch to this stack, set the return
@@ -169,9 +379,11 @@ TEXT ·iret(SB),NOSPLIT,$0-24
 	WRITE_CR3()                         // Switch to userCR3.
 	POPQ AX                             // Restore AX.
 	IRET()
+	// sysenter or exception will write our return value and return to our
+	// caller.
 
 // See entry_amd64.go.
-TEXT ·resume(SB),NOSPLIT,$0
+TEXT ·resume(SB),NOSPLIT|NOFRAME,$0
 	// See iret, above.
 	MOVQ ENTRY_CPU_SELF(GS), AX                 // Load vCPU.
 	PUSHQ CPU_REGISTERS+PTRACE_SS(AX)
@@ -184,15 +396,29 @@ TEXT ·resume(SB),NOSPLIT,$0
 	IRET()
 
 // See entry_amd64.go.
-TEXT ·Start(SB),NOSPLIT,$0
-	PUSHQ $0x0            // Previous frame pointer.
-	MOVQ SP, BP           // Set frame pointer.
-	PUSHQ AX              // First argument (CPU).
-	CALL ·start(SB)       // Call Go hook.
-	JMP ·resume(SB)       // Restore to registers.
+TEXT ·start(SB),NOSPLIT|NOFRAME,$0
+	// N.B. This is the vCPU entrypoint. It is not called from Go code and
+	// thus pushes and pops values on the stack until calling into Go
+	// (startGo) because we aren't usually a typical Go assembly frame.
+	PUSHQ $0x0  // Previous frame pointer.
+	MOVQ SP, BP // Set frame pointer.
+	PUSHQ AX    // Save CPU.
+
+	// Set up environment required by Go before calling startGo: Go needs
+	// FS_BASE and floating point initialized.
+	MOVQ CPU_REGISTERS+PTRACE_FS_BASE(AX), BX
+	PUSHQ BX          // First argument (FS_BASE)
+	CALL ·writeFS(SB)
+	POPQ BX
+
+	// First argument (CPU) already at bottom of stack.
+	CALL ·startGo(SB) // Call Go hook.
+	JMP ·resume(SB)   // Restore to registers.
+
+ADDR_OF_FUNC(·AddrOfStart(SB), ·start(SB));
 
 // See entry_amd64.go.
-TEXT ·sysenter(SB),NOSPLIT,$0
+TEXT ·sysenter(SB),NOSPLIT|NOFRAME,$0
 	// _RFLAGS_IOPL0 is always set in the user mode and it is never set in
 	// the kernel mode. See the comment of UserFlagsSet for more details.
 	TESTL $_RFLAGS_IOPL0, R11
@@ -217,6 +443,18 @@ user:
 	MOVQ CPU_REGISTERS+PTRACE_RSP(AX), SP  // Get stacks.
 	MOVQ $0, CPU_ERROR_CODE(AX)            // Clear error code.
 	MOVQ $1, CPU_ERROR_TYPE(AX)            // Set error type to user.
+
+	CALL ·jumpToUser(SB)
+
+	// Restore kernel FS_BASE.
+	MOVQ ENTRY_CPU_SELF(GS), AX            // Load vCPU.
+	MOVQ CPU_REGISTERS+PTRACE_FS_BASE(AX), BX
+
+	PUSHQ BX                               // First argument (FS_BASE)
+	CALL ·writeFS(SB)
+	POPQ BX
+
+	MOVQ ENTRY_CPU_SELF(GS), AX            // Load vCPU.
 
 	// Return to the kernel, where the frame is:
 	//
@@ -244,13 +482,44 @@ kernel:
 	MOVQ BX,  CPU_REGISTERS+PTRACE_RAX(AX)
 	MOVQ $0,  CPU_ERROR_CODE(AX)                // Clear error code.
 	MOVQ $0,  CPU_ERROR_TYPE(AX)                // Set error type to kernel.
+	MOVQ $0xffffffffffffffff,  CPU_VECTOR(AX)                // Set error type to kernel.
+
+	// Save floating point state. CPU.floatingPointState is a slice, so the
+	// first word of CPU.floatingPointState is a pointer to the destination
+	// array.
+	MOVQ CPU_FPU_STATE(AX), DI
+	MOVB CPU_HAS_XSAVE(AX), BX
+	MOVB CPU_HAS_XSAVEOPT(AX), CX
+	TESTB BX, BX
+	JZ no_xsave
+	// Use xsave/xsaveopt to save all extended state.
+	// We save everything unconditionally by setting RFBM to all 1's.
+	MOVL $0xffffffff, AX
+	MOVL $0xffffffff, DX
+	TESTB CX, CX
+	JZ no_xsaveopt
+	BYTE $0x48; BYTE $0x0f; BYTE $0xae; BYTE $0x37; // XSAVEOPT64 0(DI)
+	JMP fpsave_done
+no_xsaveopt:
+	BYTE $0x48; BYTE $0x0f; BYTE $0xae; BYTE $0x27; // XSAVE64 0(DI)
+	JMP fpsave_done
+no_xsave:
+	FXSAVE64 0(DI)
+fpsave_done:
 
 	// Call the syscall trampoline.
 	LOAD_KERNEL_STACK(GS)
-	PUSHQ AX                // First argument (vCPU).
-	CALL ·kernelSyscall(SB) // Call the trampoline.
-	POPQ AX                 // Pop vCPU.
+	MOVQ ENTRY_CPU_SELF(GS), AX // AX contains the vCPU.
+	PUSHQ AX                    // First argument (vCPU).
+	CALL ·kernelSyscall(SB)     // Call the trampoline.
+	POPQ AX                     // Pop vCPU.
+
+	// We only trigger a bluepill entry in the bluepill function, and can
+	// therefore be guaranteed that there is no floating point state to be
+	// loaded on resuming from halt.
 	JMP ·resume(SB)
+
+ADDR_OF_FUNC(·addrOfSysenter(SB), ·sysenter(SB));
 
 // exception is a generic exception handler.
 //
@@ -263,7 +532,7 @@ kernel:
 // the vector & error codes are pushed as return values.
 //
 // See below for the stubs that call exception.
-TEXT ·exception(SB),NOSPLIT,$0
+TEXT ·exception(SB),NOSPLIT|NOFRAME,$0
 	// Determine whether the exception occurred in kernel mode or user
 	// mode, based on the flags. We expect the following stack:
 	//
@@ -298,6 +567,16 @@ user:
 	MOVQ 40(SP), DI; MOVQ DI, PTRACE_RSP(AX)
 	MOVQ 48(SP), SI; MOVQ SI, PTRACE_SS(AX)
 
+	CALL ·jumpToUser(SB)
+
+	// Restore kernel FS_BASE.
+	MOVQ ENTRY_CPU_SELF(GS), AX            // Load vCPU.
+	MOVQ CPU_REGISTERS+PTRACE_FS_BASE(AX), BX
+
+	PUSHQ BX                               // First argument (FS_BASE)
+	CALL ·writeFS(SB)
+	POPQ BX
+
 	// Copy out and return.
 	MOVQ ENTRY_CPU_SELF(GS), AX           // Load vCPU.
 	MOVQ 0(SP), BX                        // Load vector.
@@ -324,48 +603,82 @@ kernel:
 	// Set the error code and adjust the stack.
 	MOVQ 8(SP), BX              // Load the error code.
 	MOVQ BX, CPU_ERROR_CODE(AX) // Copy out to the CPU.
+	MOVQ 0(SP), BX              // Load the error code.
+	MOVQ BX, CPU_VECTOR(AX) // Copy out to the CPU.
+	BYTE $0x0f; BYTE $0x20; BYTE $0xd3; // MOV CR2, RBX
+	MOVQ BX, CPU_FAULT_ADDR(AX)
 	MOVQ $0, CPU_ERROR_TYPE(AX) // Set error type to kernel.
-	MOVQ 0(SP), BX              // BX contains the vector.
+
+	// Save floating point state. CPU.floatingPointState is a slice, so the
+	// first word of CPU.floatingPointState is a pointer to the destination
+	// array.
+	MOVQ CPU_FPU_STATE(AX), DI
+	MOVB CPU_HAS_XSAVE(AX), BX
+	MOVB CPU_HAS_XSAVEOPT(AX), CX
+	TESTB BX, BX
+	JZ no_xsave
+	// Use xsave/xsaveopt to save all extended state.
+	// We save everything unconditionally by setting RFBM to all 1's.
+	MOVL $0xffffffff, AX
+	MOVL $0xffffffff, DX
+	TESTB CX, CX
+	JZ no_xsaveopt
+	BYTE $0x48; BYTE $0x0f; BYTE $0xae; BYTE $0x37; // XSAVEOPT64 0(DI)
+	JMP fpsave_done
+no_xsaveopt:
+	BYTE $0x48; BYTE $0x0f; BYTE $0xae; BYTE $0x27; // XSAVE64 0(DI)
+	JMP fpsave_done
+no_xsave:
+	FXSAVE64 0(DI)
+fpsave_done:
 
 	// Call the exception trampoline.
+	MOVQ 0(SP), BX              // BX contains the vector.
 	LOAD_KERNEL_STACK(GS)
-	PUSHQ BX                  // Second argument (vector).
-	PUSHQ AX                  // First argument (vCPU).
-	CALL ·kernelException(SB) // Call the trampoline.
-	POPQ BX                   // Pop vector.
-	POPQ AX                   // Pop vCPU.
+	MOVQ ENTRY_CPU_SELF(GS), AX // AX contains the vCPU.
+	PUSHQ BX                    // Second argument (vector).
+	PUSHQ AX                    // First argument (vCPU).
+	CALL ·kernelException(SB)   // Call the trampoline.
+	POPQ BX                     // Pop vector.
+	POPQ AX                     // Pop vCPU.
+
+	// We only trigger a bluepill entry in the bluepill function, and can
+	// therefore be guaranteed that there is no floating point state to be
+	// loaded on resuming from halt.
 	JMP ·resume(SB)
 
-#define EXCEPTION_WITH_ERROR(value, symbol) \
-TEXT symbol,NOSPLIT,$0; \
+#define EXCEPTION_WITH_ERROR(value, symbol, addr) \
+ADDR_OF_FUNC(addr, symbol); \
+TEXT symbol,NOSPLIT|NOFRAME,$0; \
 	PUSHQ $value; \
 	JMP ·exception(SB);
 
-#define EXCEPTION_WITHOUT_ERROR(value, symbol) \
-TEXT symbol,NOSPLIT,$0; \
+#define EXCEPTION_WITHOUT_ERROR(value, symbol, addr) \
+ADDR_OF_FUNC(addr, symbol); \
+TEXT symbol,NOSPLIT|NOFRAME,$0; \
 	PUSHQ $0x0; \
 	PUSHQ $value; \
 	JMP ·exception(SB);
 
-EXCEPTION_WITHOUT_ERROR(DivideByZero, ·divideByZero(SB))
-EXCEPTION_WITHOUT_ERROR(Debug, ·debug(SB))
-EXCEPTION_WITHOUT_ERROR(NMI, ·nmi(SB))
-EXCEPTION_WITHOUT_ERROR(Breakpoint, ·breakpoint(SB))
-EXCEPTION_WITHOUT_ERROR(Overflow, ·overflow(SB))
-EXCEPTION_WITHOUT_ERROR(BoundRangeExceeded, ·boundRangeExceeded(SB))
-EXCEPTION_WITHOUT_ERROR(InvalidOpcode, ·invalidOpcode(SB))
-EXCEPTION_WITHOUT_ERROR(DeviceNotAvailable, ·deviceNotAvailable(SB))
-EXCEPTION_WITH_ERROR(DoubleFault, ·doubleFault(SB))
-EXCEPTION_WITHOUT_ERROR(CoprocessorSegmentOverrun, ·coprocessorSegmentOverrun(SB))
-EXCEPTION_WITH_ERROR(InvalidTSS, ·invalidTSS(SB))
-EXCEPTION_WITH_ERROR(SegmentNotPresent, ·segmentNotPresent(SB))
-EXCEPTION_WITH_ERROR(StackSegmentFault, ·stackSegmentFault(SB))
-EXCEPTION_WITH_ERROR(GeneralProtectionFault, ·generalProtectionFault(SB))
-EXCEPTION_WITH_ERROR(PageFault, ·pageFault(SB))
-EXCEPTION_WITHOUT_ERROR(X87FloatingPointException, ·x87FloatingPointException(SB))
-EXCEPTION_WITH_ERROR(AlignmentCheck, ·alignmentCheck(SB))
-EXCEPTION_WITHOUT_ERROR(MachineCheck, ·machineCheck(SB))
-EXCEPTION_WITHOUT_ERROR(SIMDFloatingPointException, ·simdFloatingPointException(SB))
-EXCEPTION_WITHOUT_ERROR(VirtualizationException, ·virtualizationException(SB))
-EXCEPTION_WITH_ERROR(SecurityException, ·securityException(SB))
-EXCEPTION_WITHOUT_ERROR(SyscallInt80, ·syscallInt80(SB))
+EXCEPTION_WITHOUT_ERROR(DivideByZero, ·divideByZero(SB), ·addrOfDivideByZero(SB))
+EXCEPTION_WITHOUT_ERROR(Debug, ·debug(SB), ·addrOfDebug(SB))
+EXCEPTION_WITHOUT_ERROR(NMI, ·nmi(SB), ·addrOfNMI(SB))
+EXCEPTION_WITHOUT_ERROR(Breakpoint, ·breakpoint(SB), ·addrOfBreakpoint(SB))
+EXCEPTION_WITHOUT_ERROR(Overflow, ·overflow(SB), ·addrOfOverflow(SB))
+EXCEPTION_WITHOUT_ERROR(BoundRangeExceeded, ·boundRangeExceeded(SB), ·addrOfBoundRangeExceeded(SB))
+EXCEPTION_WITHOUT_ERROR(InvalidOpcode, ·invalidOpcode(SB), ·addrOfInvalidOpcode(SB))
+EXCEPTION_WITHOUT_ERROR(DeviceNotAvailable, ·deviceNotAvailable(SB), ·addrOfDeviceNotAvailable(SB))
+EXCEPTION_WITH_ERROR(DoubleFault, ·doubleFault(SB), ·addrOfDoubleFault(SB))
+EXCEPTION_WITHOUT_ERROR(CoprocessorSegmentOverrun, ·coprocessorSegmentOverrun(SB), ·addrOfCoprocessorSegmentOverrun(SB))
+EXCEPTION_WITH_ERROR(InvalidTSS, ·invalidTSS(SB), ·addrOfInvalidTSS(SB))
+EXCEPTION_WITH_ERROR(SegmentNotPresent, ·segmentNotPresent(SB), ·addrOfSegmentNotPresent(SB))
+EXCEPTION_WITH_ERROR(StackSegmentFault, ·stackSegmentFault(SB), ·addrOfStackSegmentFault(SB))
+EXCEPTION_WITH_ERROR(GeneralProtectionFault, ·generalProtectionFault(SB), ·addrOfGeneralProtectionFault(SB))
+EXCEPTION_WITH_ERROR(PageFault, ·pageFault(SB), ·addrOfPageFault(SB))
+EXCEPTION_WITHOUT_ERROR(X87FloatingPointException, ·x87FloatingPointException(SB), ·addrOfX87FloatingPointException(SB))
+EXCEPTION_WITH_ERROR(AlignmentCheck, ·alignmentCheck(SB), ·addrOfAlignmentCheck(SB))
+EXCEPTION_WITHOUT_ERROR(MachineCheck, ·machineCheck(SB), ·addrOfMachineCheck(SB))
+EXCEPTION_WITHOUT_ERROR(SIMDFloatingPointException, ·simdFloatingPointException(SB), ·addrOfSimdFloatingPointException(SB))
+EXCEPTION_WITHOUT_ERROR(VirtualizationException, ·virtualizationException(SB), ·addrOfVirtualizationException(SB))
+EXCEPTION_WITH_ERROR(SecurityException, ·securityException(SB), ·addrOfSecurityException(SB))
+EXCEPTION_WITHOUT_ERROR(SyscallInt80, ·syscallInt80(SB), ·addrOfSyscallInt80(SB))

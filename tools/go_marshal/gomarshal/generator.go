@@ -25,7 +25,7 @@ import (
 	"sort"
 	"strings"
 
-	"gvisor.dev/gvisor/tools/tags"
+	"gvisor.dev/gvisor/tools/constraintutil"
 )
 
 // List of identifiers we use in generated code that may conflict with a
@@ -112,10 +112,8 @@ func NewGenerator(srcs []string, out, outTest, outTestUnconditional, pkg string,
 	g.imports.add("runtime")
 	g.imports.add("unsafe")
 	g.imports.add("gvisor.dev/gvisor/pkg/gohacks")
-	g.imports.add("gvisor.dev/gvisor/pkg/safecopy")
 	g.imports.add("gvisor.dev/gvisor/pkg/hostarch")
 	g.imports.add("gvisor.dev/gvisor/pkg/marshal")
-
 	return &g, nil
 }
 
@@ -125,16 +123,18 @@ func (g *Generator) writeHeader() error {
 	var b sourceBuffer
 	b.emit("// Automatically generated marshal implementation. See tools/go_marshal.\n\n")
 
-	// Emit build tags.
-	b.emit("// If there are issues with build tag aggregation, see\n")
-	b.emit("// tools/go_marshal/gomarshal/generator.go:writeHeader(). The build tags here\n")
-	b.emit("// come from the input set of files used to generate this file. This input set\n")
-	b.emit("// is filtered based on pre-defined file suffixes related to build tags, see \n")
-	b.emit("// tools/defs.bzl:calculate_sets().\n\n")
-
-	if t := tags.Aggregate(g.inputs); len(t) > 0 {
-		b.emit(strings.Join(t.Lines(), "\n"))
-		b.emit("\n\n")
+	bcexpr, err := constraintutil.CombineFromFiles(g.inputs)
+	if err != nil {
+		return err
+	}
+	if bcexpr != nil {
+		// Emit build constraints.
+		b.emit("// If there are issues with build constraint aggregation, see\n")
+		b.emit("// tools/go_marshal/gomarshal/generator.go:writeHeader(). The constraints here\n")
+		b.emit("// come from the input set of files used to generate this file. This input set\n")
+		b.emit("// is filtered based on pre-defined file suffixes related to build constraints,\n")
+		b.emit("// see tools/defs.bzl:calculate_sets().\n\n")
+		b.emit(constraintutil.Lines(bcexpr))
 	}
 
 	// Package header.
@@ -217,10 +217,11 @@ type sliceAPI struct {
 // marshallableType carries information about a type marked with the '+marshal'
 // directive.
 type marshallableType struct {
-	spec    *ast.TypeSpec
-	slice   *sliceAPI
-	recv    string
-	dynamic bool
+	spec       *ast.TypeSpec
+	slice      *sliceAPI
+	recv       string
+	dynamic    bool
+	boundCheck bool
 }
 
 func newMarshallableType(fset *token.FileSet, tagLine *ast.Comment, spec *ast.TypeSpec) *marshallableType {
@@ -257,6 +258,9 @@ func newMarshallableType(fset *token.FileSet, tagLine *ast.Comment, spec *ast.Ty
 			continue
 		} else if tag == "dynamic" {
 			mt.dynamic = true
+			continue
+		} else if tag == "boundCheck" {
+			mt.boundCheck = true
 			continue
 		}
 
@@ -391,6 +395,9 @@ func (g *Generator) generateOne(t *marshallableType, fset *token.FileSet) *inter
 		if t.slice != nil {
 			abortAt(fset.Position(t.slice.comment.Slash), "Slice API is not supported for dynamic types because it assumes that each slice element is statically sized.")
 		}
+		if t.boundCheck {
+			abortAt(fset.Position(t.slice.comment.Slash), "Can not generate Checked methods for dynamic types. Has to be implemented manually.")
+		}
 		// No validation needed, assume the user knows what they are doing.
 		i.emitMarshallableForDynamicType()
 		return i
@@ -399,12 +406,18 @@ func (g *Generator) generateOne(t *marshallableType, fset *token.FileSet) *inter
 	case *ast.StructType:
 		i.validateStruct(t.spec, ty)
 		i.emitMarshallableForStruct(ty)
+		if t.boundCheck {
+			i.emitCheckedMarshallableForStruct()
+		}
 		if t.slice != nil {
 			i.emitMarshallableSliceForStruct(ty, t.slice)
 		}
 	case *ast.Ident:
 		i.validatePrimitiveNewtype(ty)
 		i.emitMarshallableForPrimitiveNewtype(ty)
+		if t.boundCheck {
+			i.emitCheckedMarshallableForPrimitiveNewtype()
+		}
 		if t.slice != nil {
 			i.emitMarshallableSliceForPrimitiveNewtype(ty, t.slice)
 		}
@@ -412,6 +425,9 @@ func (g *Generator) generateOne(t *marshallableType, fset *token.FileSet) *inter
 		i.validateArrayNewtype(t.spec.Name, ty)
 		// After validate, we can safely call arrayLen.
 		i.emitMarshallableForArrayNewtype(t.spec.Name, ty, ty.Elt.(*ast.Ident))
+		if t.boundCheck {
+			i.emitCheckedMarshallableForArrayNewtype()
+		}
 		if t.slice != nil {
 			abortAt(fset.Position(t.slice.comment.Slash), "Array type marked as '+marshal slice:...', but this is not supported. Perhaps fold one of the dimensions?")
 		}
@@ -426,7 +442,7 @@ func (g *Generator) generateOne(t *marshallableType, fset *token.FileSet) *inter
 // implementations type t.
 func (g *Generator) generateOneTestSuite(t *marshallableType) *testGenerator {
 	i := newTestGenerator(t.spec, t.recv)
-	i.emitTests(t.slice)
+	i.emitTests(t.slice, t.boundCheck)
 	return i
 }
 
@@ -555,11 +571,12 @@ func (g *Generator) writeTests(ts []*testGenerator) error {
 	b.reset()
 	b.emit("// Automatically generated marshal tests. See tools/go_marshal.\n\n")
 
-	// Emit build tags.
-	if t := tags.Aggregate(g.inputs); len(t) > 0 {
-		b.emit(strings.Join(t.Lines(), "\n"))
-		b.emit("\n\n")
+	// Emit build constraints.
+	bcexpr, err := constraintutil.CombineFromFiles(g.inputs)
+	if err != nil {
+		return err
 	}
+	b.emit(constraintutil.Lines(bcexpr))
 
 	b.emit("package %s\n\n", g.pkg)
 	if err := b.write(g.outputTest); err != nil {

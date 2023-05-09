@@ -17,6 +17,7 @@ package queue
 import (
 	"encoding/binary"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sharedmem/pipe"
 )
@@ -49,14 +50,23 @@ type TxBuffer struct {
 //
 // This struct is thread-compatible.
 type Tx struct {
-	tx pipe.Tx
-	rx pipe.Rx
+	tx                 pipe.Tx
+	rx                 pipe.Rx
+	sharedEventFDState *atomicbitops.Uint32
 }
 
 // Init initializes the transmit queue with the given pipes.
-func (t *Tx) Init(tx, rx []byte) {
+func (t *Tx) Init(tx, rx []byte, sharedEventFDState *atomicbitops.Uint32) {
 	t.tx.Init(tx)
 	t.rx.Init(rx)
+	t.sharedEventFDState = sharedEventFDState
+}
+
+// NotificationsEnabled returns true if eventFD should be used to notify the
+// peer of events (eg. packet transmit etc).
+func (t *Tx) NotificationsEnabled() bool {
+	// Notifications are considered enabled unless explicitly disabled.
+	return t.sharedEventFDState.Load() != EventFDDisabled
 }
 
 // Enqueue queues the given linked list of buffers for transmission as one

@@ -142,8 +142,8 @@ TEST(ExceptionTest, X87DivideByZeroMasked) {
   asm("fildl %[value]\r\n"
       "fidivl %[divisor]\r\n"
       "fistpl %[quotient]\r\n"
-      : [ quotient ] "=m"(quotient)
-      : [ value ] "m"(value), [ divisor ] "m"(divisor));
+      : [quotient] "=m"(quotient)
+      : [value] "m"(value), [divisor] "m"(divisor));
 
   EXPECT_EQ(quotient, INT32_MIN);
 }
@@ -169,9 +169,9 @@ TEST(ExceptionTest, X87DivideByZeroUnmasked) {
             "fildl %[value]\r\n"
             "fidivl %[divisor]\r\n"
             "fistpl %[quotient]\r\n"
-            : [ quotient ] "=m"(quotient)
-            : [ cw ] "m"(kControlWord), [ value ] "m"(value),
-              [ divisor ] "m"(divisor));
+            : [quotient] "=m"(quotient)
+            :
+            [cw] "m"(kControlWord), [value] "m"(value), [divisor] "m"(divisor));
       },
       ::testing::KilledBySignal(SIGFPE), "");
 }
@@ -208,9 +208,9 @@ TEST(ExceptionTest, X87StatusClobber) {
             // of the *next* floating-point instruction".
             "fldcw %[cw]\r\n"
             "fwait\r\n"
-            : [ quotient ] "=m"(quotient)
-            : [ value ] "m"(value), [ divisor ] "m"(divisor), "a"(SYS_getpid),
-              [ cw ] "m"(kControlWord)
+            : [quotient] "=m"(quotient)
+            : [value] "m"(value), [divisor] "m"(divisor),
+              "a"(SYS_getpid), [cw] "m"(kControlWord)
             : "rcx", "r11");
       },
       ::testing::KilledBySignal(SIGFPE), "");
@@ -226,8 +226,8 @@ TEST(ExceptionTest, SSEDivideByZeroMasked) {
       "cvtsi2ssl %[divisor], %%xmm1\r\n"
       "divss %%xmm1, %%xmm0\r\n"
       "cvtss2sil %%xmm0, %[quotient]\r\n"
-      : [ quotient ] "=r"(quotient), [ status ] "=r"(status)
-      : [ value ] "r"(value), [ divisor ] "r"(divisor)
+      : [quotient] "=r"(quotient), [status] "=r"(status)
+      : [value] "r"(value), [divisor] "r"(divisor)
       : "xmm0", "xmm1");
 
   EXPECT_EQ(quotient, INT32_MIN);
@@ -254,9 +254,8 @@ TEST(ExceptionTest, SSEDivideByZeroUnmasked) {
             "cvtsi2ssl %[divisor], %%xmm1\r\n"
             "divss %%xmm1, %%xmm0\r\n"
             "cvtss2sil %%xmm0, %[quotient]\r\n"
-            : [ quotient ] "=r"(quotient)
-            : [ mxcsr ] "m"(kMXCSR), [ value ] "r"(value),
-              [ divisor ] "r"(divisor)
+            : [quotient] "=r"(quotient)
+            : [mxcsr] "m"(kMXCSR), [value] "r"(value), [divisor] "r"(divisor)
             : "xmm0", "xmm1");
       },
       ::testing::KilledBySignal(SIGFPE), "");
@@ -291,8 +290,8 @@ TEST(ExceptionTest, SSEStatusClobber) {
       // Thus here we just check for the flag itself rather than trying to raise
       // the exception.
       "stmxcsr %[mxcsr]\r\n"
-      : [ quotient ] "=r"(quotient), [ mxcsr ] "+m"(mxcsr)
-      : [ value ] "r"(value), [ divisor ] "r"(divisor), "a"(SYS_getpid)
+      : [quotient] "=r"(quotient), [mxcsr] "+m"(mxcsr)
+      : [value] "r"(value), [divisor] "r"(divisor), "a"(SYS_getpid)
       : "xmm0", "xmm1", "rcx", "r11");
 
   EXPECT_TRUE(mxcsr & kMXCSRDiv0Flag);

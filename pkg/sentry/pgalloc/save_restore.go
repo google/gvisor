@@ -20,9 +20,9 @@ import (
 	"fmt"
 	"io"
 	"runtime"
-	"sync/atomic"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
@@ -136,11 +136,11 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r wire.Reader) error {
 	// other since it doesn't do any work between mmaps. The rest of this
 	// function doesn't mutate f.usage, so it's safe to iterate concurrently.
 	mapperDone := make(chan struct{})
-	mapperCanceled := int32(0)
+	mapperCanceled := atomicbitops.FromInt32(0)
 	go func() { // S/R-SAFE: see comment
 		defer func() { close(mapperDone) }()
 		for seg := f.usage.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
-			if atomic.LoadInt32(&mapperCanceled) != 0 {
+			if mapperCanceled.Load() != 0 {
 				return
 			}
 			if seg.Value().knownCommitted {
@@ -149,7 +149,7 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r wire.Reader) error {
 		}
 	}()
 	defer func() {
-		atomic.StoreInt32(&mapperCanceled, 1)
+		mapperCanceled.Store(1)
 		<-mapperDone
 	}()
 

@@ -22,9 +22,9 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // newContext returns a context.Context that we can use in these tests (we
@@ -51,7 +51,7 @@ func TestBytesIOCopyOutSuccess(t *testing.T) {
 func TestBytesIOCopyOutFailure(t *testing.T) {
 	b := newBytesIOString("ABC")
 	n, err := b.CopyOut(newContext(), 1, []byte("foo"), IOOpts{})
-	if wantN, wantErr := 2, syserror.EFAULT; n != wantN || err != wantErr {
+	if wantN, wantErr := 2, linuxerr.EFAULT; n != wantN || err != wantErr {
 		t.Errorf("CopyOut: got (%v, %v), wanted (%v, %v)", n, err, wantN, wantErr)
 	}
 	if got, want := b.Bytes, []byte("Afo"); !bytes.Equal(got, want) {
@@ -75,7 +75,7 @@ func TestBytesIOCopyInFailure(t *testing.T) {
 	b := newBytesIOString("Afo")
 	var dst [3]byte
 	n, err := b.CopyIn(newContext(), 1, dst[:], IOOpts{})
-	if wantN, wantErr := 2, syserror.EFAULT; n != wantN || err != wantErr {
+	if wantN, wantErr := 2, linuxerr.EFAULT; n != wantN || err != wantErr {
 		t.Errorf("CopyIn: got (%v, %v), wanted (%v, %v)", n, err, wantN, wantErr)
 	}
 	if got, want := dst[:], []byte("fo\x00"); !bytes.Equal(got, want) {
@@ -97,7 +97,7 @@ func TestBytesIOZeroOutSuccess(t *testing.T) {
 func TestBytesIOZeroOutFailure(t *testing.T) {
 	b := newBytesIOString("ABC")
 	n, err := b.ZeroOut(newContext(), 1, 3, IOOpts{})
-	if wantN, wantErr := int64(2), syserror.EFAULT; n != wantN || err != wantErr {
+	if wantN, wantErr := int64(2), linuxerr.EFAULT; n != wantN || err != wantErr {
 		t.Errorf("ZeroOut: got (%v, %v), wanted (%v, %v)", n, err, wantN, wantErr)
 	}
 	if got, want := b.Bytes, []byte("A\x00\x00"); !bytes.Equal(got, want) {
@@ -125,7 +125,7 @@ func TestBytesIOCopyOutFromFailure(t *testing.T) {
 		{Start: 1, End: 4},
 		{Start: 4, End: 7},
 	}), safemem.FromIOReader{bytes.NewBufferString("foobar")}, IOOpts{})
-	if wantN, wantErr := int64(4), syserror.EFAULT; n != wantN || err != wantErr {
+	if wantN, wantErr := int64(4), linuxerr.EFAULT; n != wantN || err != wantErr {
 		t.Errorf("CopyOutFrom: got (%v, %v), wanted (%v, %v)", n, err, wantN, wantErr)
 	}
 	if got, want := b.Bytes, []byte("Afoob"); !bytes.Equal(got, want) {
@@ -155,7 +155,7 @@ func TestBytesIOCopyInToFailure(t *testing.T) {
 		{Start: 1, End: 4},
 		{Start: 4, End: 7},
 	}), safemem.FromIOWriter{&dst}, IOOpts{})
-	if wantN, wantErr := int64(4), syserror.EFAULT; n != wantN || err != wantErr {
+	if wantN, wantErr := int64(4), linuxerr.EFAULT; n != wantN || err != wantErr {
 		t.Errorf("CopyOutFrom: got (%v, %v), wanted (%v, %v)", n, err, wantN, wantErr)
 	}
 	if got, want := dst.Bytes(), []byte("foob"); !bytes.Equal(got, want) {
@@ -206,14 +206,14 @@ func TestCopyStringInVeryLong(t *testing.T) {
 func TestCopyStringInNoTerminatingZeroByte(t *testing.T) {
 	want := strings.Repeat("A", copyStringIncrement-1)
 	got, err := CopyStringIn(newContext(), newBytesIOString(want), 0, 2*copyStringIncrement, IOOpts{})
-	if wantErr := syserror.EFAULT; got != want || err != wantErr {
+	if wantErr := linuxerr.EFAULT; got != want || err != wantErr {
 		t.Errorf("CopyStringIn: got (%q, %v), wanted (%q, %v)", got, err, want, wantErr)
 	}
 }
 
 func TestCopyStringInTruncatedByMaxlen(t *testing.T) {
 	got, err := CopyStringIn(newContext(), newBytesIOString(strings.Repeat("A", 10)), 0, 5, IOOpts{})
-	if want, wantErr := strings.Repeat("A", 5), syserror.ENAMETOOLONG; got != want || err != wantErr {
+	if want, wantErr := strings.Repeat("A", 5), linuxerr.ENAMETOOLONG; got != want || err != wantErr {
 		t.Errorf("CopyStringIn: got (%q, %v), wanted (%q, %v)", got, err, want, wantErr)
 	}
 }
@@ -272,8 +272,8 @@ func TestCopyInt32StringsInVecRequiresOneValidValue(t *testing.T) {
 			src := BytesIOSequence([]byte(s))
 			initial := []int32{1, 2}
 			dsts := append([]int32(nil), initial...)
-			if n, err := CopyInt32StringsInVec(newContext(), src.IO, src.Addrs, dsts, src.Opts); err != syserror.EINVAL {
-				t.Errorf("CopyInt32StringsInVec: got (%d, %v), wanted (_, %v)", n, err, syserror.EINVAL)
+			if n, err := CopyInt32StringsInVec(newContext(), src.IO, src.Addrs, dsts, src.Opts); !linuxerr.Equals(linuxerr.EINVAL, err) {
+				t.Errorf("CopyInt32StringsInVec: got (%d, %v), wanted (_, %v)", n, err, linuxerr.EINVAL)
 			}
 			if !reflect.DeepEqual(dsts, initial) {
 				t.Errorf("dsts: got %v, wanted %v", dsts, initial)

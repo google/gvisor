@@ -1,6 +1,7 @@
 load("//website:defs.bzl", "doc", "docs")
 
 package(
+    default_applicable_licenses = ["//:license"],
     default_visibility = ["//website:__pkg__"],
     licenses = ["notice"],
 )
@@ -47,6 +48,57 @@ doc(
     ],
     layout = "post",
     permalink = "/blog/2020/10/22/platform-portability/",
+)
+
+doc(
+    name = "gvisor-rack",
+    src = "2021-08-31-gvisor-rack.md",
+    authors = [
+        "nybidari",
+    ],
+    layout = "post",
+    permalink = "/blog/2021/08/31/gvisor-rack/",
+)
+
+doc(
+    name = "tune_gvisor_for_production_adoption",
+    src = "2021-12-02-running-gvisor-in-production-at-scale-in-ant.md",
+    authors = [
+        "jianfengt",
+        "yonghe",
+    ],
+    layout = "post",
+    permalink = "/blog/2021/12/02/running-gvisor-in-production-at-scale-in-ant/",
+)
+
+doc(
+    name = "threat_detection",
+    src = "2022-08-31-threat-detection.md",
+    authors = [
+        "fvoznika",
+    ],
+    layout = "post",
+    permalink = "/blog/2022/08/01/threat-detection/",
+)
+
+doc(
+    name = "buffer_pooling",
+    src = "2022-10-24-buffer-pooling.md",
+    authors = [
+        "lucasmanning",
+    ],
+    layout = "post",
+    permalink = "/blog/2022/10/24/buffer-pooling/",
+)
+
+doc(
+    name = "systrap_release",
+    src = "2023-04-28-systrap-release.md",
+    authors = [
+        "bogomolov",
+    ],
+    layout = "post",
+    permalink = "/blog/2023/04/28/systrap-release/",
 )
 
 docs(

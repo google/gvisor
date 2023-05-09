@@ -27,16 +27,16 @@ TEXT ·BlockingPoll(SB),NOSPLIT,$0-40
 	MOVD	$0x0, R3  // sigmask parameter which isn't used here
 	MOVD	$0x49, R8 // SYS_PPOLL
 	SVC
-	CMP	$0xfffffffffffff001, R0
+	CMP	$0xfffffffffffff002, R0
 	BLS	ok
 	MOVD	$-1, R1
-	MOVD	R1, n+24(FP)
+	MOVD	R1, ret+24(FP)
 	NEG	R0, R0
-	MOVD	R0, err+32(FP)
+	MOVD	R0, ret1+32(FP)
 	BL	·callExitsyscall(SB)
 	RET
 ok:
-	MOVD	R0, n+24(FP)
-	MOVD	$0, err+32(FP)
+	MOVD	R0, ret+24(FP)
+	MOVD	$0, ret1+32(FP)
 	BL	·callExitsyscall(SB)
 	RET

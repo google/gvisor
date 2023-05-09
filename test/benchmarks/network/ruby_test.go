@@ -4,7 +4,7 @@
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
 //
-//     http://www.apache.org/licenses/LICENSE-2.0
+//	http://www.apache.org/licenses/LICENSE-2.0
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -73,16 +73,12 @@ func runRuby(b *testing.B, hey *tools.Hey) {
 	if err := redis.Spawn(ctx, dockerutil.RunOpts{
 		Image: "benchmarks/redis",
 	}); err != nil {
-		b.Fatalf("failed to spwan redis instance: %v", err)
+		b.Fatalf("failed to spawn redis instance: %v", err)
 	}
 	defer redis.CleanUp(ctx)
 
 	if out, err := redis.WaitForOutput(ctx, "Ready to accept connections", 3*time.Second); err != nil {
 		b.Fatalf("failed to start redis server: %v %s", err, out)
-	}
-	redisIP, err := redis.FindIP(ctx, false)
-	if err != nil {
-		b.Fatalf("failed to get IP from redis instance: %v", err)
 	}
 
 	// Ruby runs on port 9292.
@@ -100,7 +96,7 @@ func runRuby(b *testing.B, hey *tools.Hey) {
 			"WEB_CONCURRENCY=20",
 			"WEB_MAX_THREADS=20",
 			"RACK_ENV=production",
-			fmt.Sprintf("HOST=%s", redisIP),
+			"HOST=redis",
 		},
 		User: "nobody",
 	}, "sh", "-c", "/usr/bin/puma"); err != nil {
@@ -108,21 +104,11 @@ func runRuby(b *testing.B, hey *tools.Hey) {
 	}
 	defer rubyApp.CleanUp(ctx)
 
-	servingIP, err := serverMachine.IPAddress()
-	if err != nil {
-		b.Fatalf("failed to get ip from server: %v", err)
-	}
-
-	servingPort, err := rubyApp.FindPort(ctx, port)
-	if err != nil {
-		b.Fatalf("failed to port from node instance: %v", err)
-	}
-
 	// Wait until the Client sees the server as up.
-	if err := harness.WaitUntilServing(ctx, clientMachine, servingIP, servingPort); err != nil {
+	if err := harness.WaitUntilContainerServing(ctx, clientMachine, rubyApp, port); err != nil {
 		b.Fatalf("failed to wait until  serving: %v", err)
 	}
-	heyCmd := hey.MakeCmd(servingIP, servingPort)
+	heyCmd := hey.MakeCmd("ruby", port)
 
 	// the client should run on Native.
 	b.ResetTimer()
@@ -130,6 +116,7 @@ func runRuby(b *testing.B, hey *tools.Hey) {
 	defer client.CleanUp(ctx)
 	out, err := client.Run(ctx, dockerutil.RunOpts{
 		Image: "benchmarks/hey",
+		Links: []string{rubyApp.MakeLink("ruby")},
 	}, heyCmd...)
 	if err != nil {
 		b.Fatalf("hey container failed: %v logs: %s", err, out)

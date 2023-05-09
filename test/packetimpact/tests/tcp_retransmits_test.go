@@ -21,9 +21,6 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/binary"
-	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
@@ -33,12 +30,7 @@ func init() {
 }
 
 func getRTO(t *testing.T, dut testbench.DUT, acceptFd int32) (rto time.Duration) {
-	info := linux.TCPInfo{}
-	infoBytes := dut.GetSockOpt(t, acceptFd, unix.SOL_TCP, unix.TCP_INFO, int32(linux.SizeOfTCPInfo))
-	if got, want := len(infoBytes), linux.SizeOfTCPInfo; got != want {
-		t.Fatalf("unexpected size for TCP_INFO, got %d bytes want %d bytes", got, want)
-	}
-	binary.Unmarshal(infoBytes, hostarch.ByteOrder, &info)
+	info := dut.GetSockOptTCPInfo(t, acceptFd)
 	return time.Duration(info.RTO) * time.Microsecond
 }
 

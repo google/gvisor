@@ -21,13 +21,20 @@
 ##   container to simplify development. Some options are available to
 ##   control the behavior of this container:
 ##
-##     USER               - The in-container user.
-##     DOCKER_RUN_OPTIONS - Options for the container (default: --privileged, required for tests).
-##     DOCKER_NAME        - The container name (default: gvisor-bazel-HASH).
-##     DOCKER_PRIVILEGED  - Docker privileged flags (default: --privileged).
-##     BAZEL_CACHE        - The bazel cache directory (default: detected).
-##     GCLOUD_CONFIG      - The gcloud config directory (detect: detected).
-##     DOCKER_SOCKET      - The Docker socket (default: detected).
+##     USER                - The in-container user.
+##     DOCKER_RUN_OPTIONS  - Options for the container (default: --privileged, required for tests).
+##     DOCKER_NAME         - The container name (default: gvisor-bazel-HASH).
+##     DOCKER_HOSTNAME     - The container name (default: same as DOCKER_NAME).
+##     DOCKER_PRIVILEGED   - Docker privileged flags (default: --privileged).
+##     UNSANDBOXED_RUNTIME - Name of the Docker runtime to use for the
+##                           unsandboxed build container. Defaults to runc.
+##     PRE_BAZEL_INIT      - If set, run this command with bash outside the Bazel
+##                           server container.
+##     BAZEL_CACHE         - The bazel cache directory (default: detected).
+##     GCLOUD_CONFIG       - The gcloud config directory (detect: detected).
+##     DOCKER_SOCKET       - The Docker socket (default: detected).
+##     DEVICE_FILE         - An optional device file to expose in the container
+##                           (default: no device file is exposed).
 ##
 ##   To opt out of these wrappers, set DOCKER_BUILD=false.
 DOCKER_BUILD := true
@@ -40,17 +47,23 @@ BRANCH_NAME := $(shell (git branch --show-current 2>/dev/null || \
   git rev-parse --abbrev-ref HEAD 2>/dev/null) | \
   xargs -n 1 basename 2>/dev/null)
 BUILD_ROOTS := bazel-bin/ bazel-out/
+RACE_FLAGS := --config=race
 
 # Bazel container configuration (see below).
 USER := $(shell whoami)
-HASH := $(shell readlink -m $(CURDIR) | md5sum | cut -c1-8)
+HASH := $(shell realpath -m $(CURDIR) | md5sum | cut -c1-8)
 BUILDER_NAME := gvisor-builder-$(HASH)-$(ARCH)
+BUILDER_HOSTNAME := $(BUILDER_NAME)
 DOCKER_NAME := gvisor-bazel-$(HASH)-$(ARCH)
+DOCKER_HOSTNAME := $(DOCKER_NAME)
 DOCKER_PRIVILEGED := --privileged
+UNSANDBOXED_RUNTIME ?= runc
 BAZEL_CACHE := $(HOME)/.cache/bazel/
 GCLOUD_CONFIG := $(HOME)/.config/gcloud/
 DOCKER_SOCKET := /var/run/docker.sock
 DOCKER_CONFIG := /etc/docker
+DEVICE_FILE ?=
+PRE_BAZEL_INIT ?=
 
 ##
 ## Bazel helpers.
@@ -61,10 +74,10 @@ DOCKER_CONFIG := /etc/docker
 ##     STARTUP_OPTIONS - Startup options passed to Bazel.
 ##
 STARTUP_OPTIONS :=
-BAZEL_OPTIONS   :=
+BAZEL_OPTIONS   ?=
 BAZEL           := bazel $(STARTUP_OPTIONS)
 BASE_OPTIONS    := --color=no --curses=no
-TEST_OPTIONS := $(BASE_OPTIONS) \
+TEST_OPTIONS += $(BASE_OPTIONS) \
   --test_output=errors \
   --keep_going \
   --verbose_failures=true \
@@ -79,13 +92,29 @@ DOCKER_RUN_OPTIONS += --rm
 DOCKER_RUN_OPTIONS += --user $(UID):$(GID)
 DOCKER_RUN_OPTIONS += --entrypoint ""
 DOCKER_RUN_OPTIONS += --init
-DOCKER_RUN_OPTIONS += -v "$(shell readlink -m $(BAZEL_CACHE)):$(BAZEL_CACHE)"
-DOCKER_RUN_OPTIONS += -v "$(shell readlink -m $(GCLOUD_CONFIG)):$(GCLOUD_CONFIG)"
+ifneq (,$(UNSANDBOXED_RUNTIME))
+DOCKER_RUN_OPTIONS += --runtime=$(UNSANDBOXED_RUNTIME)
+endif
+DOCKER_RUN_OPTIONS += -v "$(shell realpath -m $(BAZEL_CACHE)):$(BAZEL_CACHE)"
+DOCKER_RUN_OPTIONS += -v "$(shell realpath -m $(GCLOUD_CONFIG)):$(GCLOUD_CONFIG)"
 DOCKER_RUN_OPTIONS += -v "/tmp:/tmp"
 DOCKER_EXEC_OPTIONS := --user $(UID):$(GID)
 DOCKER_EXEC_OPTIONS += --interactive
-ifeq (true,$(shell test -t 0 && echo true))
+ifeq (true,$(shell test -t 1 && echo true))
 DOCKER_EXEC_OPTIONS += --tty
+endif
+
+# If kernel headers are available, mount them too.
+ifneq (,$(wildcard /lib/modules))
+DOCKER_RUN_OPTIONS += -v "/lib/modules:/lib/modules"
+endif
+KERNEL_HEADERS_DIR := $(shell realpath -m /lib/modules/$(shell uname -r)/build)
+ifneq (,$(wildcard $(KERNEL_HEADERS_DIR)))
+DOCKER_RUN_OPTIONS += -v "$(KERNEL_HEADERS_DIR):$(KERNEL_HEADERS_DIR)"
+ifneq ($(shell realpath -m $(KERNEL_HEADERS_DIR)/Makefile),$(KERNEL_HEADERS_DIR)/Makefile)
+KERNEL_HEADERS_DIR_LINKED := $(dir $(shell realpath -m $(KERNEL_HEADERS_DIR)/Makefile))
+DOCKER_RUN_OPTIONS += -v "$(KERNEL_HEADERS_DIR_LINKED):$(KERNEL_HEADERS_DIR_LINKED)"
+endif
 endif
 
 # Add basic UID/GID options.
@@ -112,6 +141,7 @@ ifneq ($(DOCKER_PRIVILEGED),)
 DOCKER_RUN_OPTIONS += -v "$(DOCKER_SOCKET):$(DOCKER_SOCKET)"
 DOCKER_RUN_OPTIONS += -v "$(DOCKER_CONFIG):$(DOCKER_CONFIG)"
 DOCKER_RUN_OPTIONS += $(DOCKER_PRIVILEGED)
+DOCKER_RUN_OPTIONS += --cap-add SYS_MODULE
 DOCKER_EXEC_OPTIONS += $(DOCKER_PRIVILEGED)
 DOCKER_GROUP := $(shell stat -c '%g' $(DOCKER_SOCKET))
 ifneq ($(GID),$(DOCKER_GROUP))
@@ -132,6 +162,26 @@ DOCKER_RUN_OPTIONS += --group-add $(KVM_GROUP)
 endif
 endif
 
+# Add other device file, if specified.
+ifneq ($(DEVICE_FILE),)
+DOCKER_RUN_OPTIONS += --device "$(DEVICE_FILE):$(DEVICE_FILE)"
+endif
+
+# Check if Docker API version supports cgroupns (supported in >=1.41).
+# If not, don't include it in options.
+ifeq ($(DOCKER_BUILD),true)
+DOCKER_API_VERSION := $(shell docker version --format='{{.Server.APIVersion}}')
+ifeq ($(shell echo $(DOCKER_API_VERSION) | tr '.' '\n' | wc -l),2)
+ifeq ($(shell test $(shell echo $(DOCKER_API_VERSION) | cut -d. -f1) -gt 1 && echo true),true)
+DOCKER_RUN_OPTIONS += --cgroupns=host
+else  # If API version 1, check second version component.
+ifeq ($(shell test $(shell echo $(DOCKER_API_VERSION) | cut -d. -f2) -ge 41 && echo true),true)
+DOCKER_RUN_OPTIONS += --cgroupns=host
+endif
+endif
+endif
+endif
+
 # Top-level functions.
 #
 # This command runs a bazel server, and the container sticks around
@@ -141,12 +191,24 @@ endif
 # container in order to perform work via the bazel client.
 ifeq ($(DOCKER_BUILD),true)
 wrapper = docker exec $(DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) $(1)
+wrapper_timeout = timeout $(1) docker exec $(DOCKER_EXEC_OPTIONS) $(DOCKER_NAME) $(2)
 else
 wrapper = $(1)
+wrapper_timeout = timeout $(1) $(2)
 endif
 
 bazel-shutdown: ## Shuts down a running bazel server.
-	@$(call wrapper,$(BAZEL) shutdown)
+	@$(call wrapper_timeout,--signal=KILL 30s,$(BAZEL) shutdown) || true
+ifeq ($(DOCKER_BUILD),true)
+# Docker can bug out and get stuck in `docker exec` despite the container
+# already having been terminated. So this uses multiple ways to try to get the
+# container to exit, and ignores which ones work and which ones don't.
+# Instead, it just checks that the container no longer exists by the end of it.
+	@timeout --signal=KILL 10s docker wait $(DOCKER_NAME) 2>/dev/null || true
+	@docker stop --time=10 $(DOCKER_NAME) 2>/dev/null || true
+# Double check that the container isn't running.
+	@bash -c "! docker inspect $(DOCKER_NAME) &>/dev/null"
+endif
 .PHONY: bazel-shutdown
 
 bazel-alias: ## Emits an alias that can be used within the shell.
@@ -156,20 +218,28 @@ bazel-alias: ## Emits an alias that can be used within the shell.
 bazel-image: load-default ## Ensures that the local builder exists.
 	@$(call header,DOCKER BUILD)
 	@docker rm -f $(BUILDER_NAME) 2>/dev/null || true
-	@docker run --user 0:0 --entrypoint "" --name $(BUILDER_NAME) gvisor.dev/images/default \
+	@docker run --user 0:0 --entrypoint "" \
+    --name $(BUILDER_NAME) --hostname $(BUILDER_HOSTNAME) \
+    $(shell test -n "$(UNSANDBOXED_RUNTIME)" && echo "--runtime=$(UNSANDBOXED_RUNTIME)") \
+    gvisor.dev/images/default \
 	  bash -c "$(GROUPADD_DOCKER) $(USERADD_DOCKER) if test -e /dev/kvm; then chmod a+rw /dev/kvm; fi" >&2
 	@docker commit $(BUILDER_NAME) gvisor.dev/images/builder >&2
 .PHONY: bazel-image
 
 ifneq (true,$(shell $(wrapper echo true)))
 bazel-server: bazel-image ## Ensures that the server exists.
+ifneq (,$(PRE_BAZEL_INIT))
+	@$(call header,PRE_BAZEL_INIT)
+	@bash -euxo pipefail -c "$(PRE_BAZEL_INIT)"
+endif
 	@$(call header,DOCKER RUN)
 	@docker rm -f $(DOCKER_NAME) 2>/dev/null || true
 	@mkdir -p $(BAZEL_CACHE)
 	@mkdir -p $(GCLOUD_CONFIG)
-	@docker run -d --name $(DOCKER_NAME) \
+	@docker run -d --name $(DOCKER_NAME) --hostname $(DOCKER_HOSTNAME) \
 	  -v "$(CURDIR):$(CURDIR)" \
 	  --workdir "$(CURDIR)" \
+	  --pid=host \
 	  $(DOCKER_RUN_OPTIONS) \
 	  gvisor.dev/images/builder \
 	  bash -c "set -x; tail -f --pid=\$$($(BAZEL) info server_pid) /dev/null"
@@ -181,34 +251,28 @@ endif
 
 # build_paths extracts the built binary from the bazel stderr output.
 #
-# This could be alternately done by parsing the bazel build event stream, but
-# this is a complex schema, and begs the question: what will build the thing
-# that parses the output? Bazel? Do we need a separate bootstrapping build
-# command here? Yikes, let's just stick with the ugly shell pipeline.
-#
 # The last line is used to prevent terminal shenanigans.
 build_paths = \
   (set -euo pipefail; \
-  $(call wrapper,$(BAZEL) build $(BASE_OPTIONS) $(BAZEL_OPTIONS) $(1)) 2>&1 \
-  | tee /dev/fd/2 \
-  | sed -n -e '/^Target/,$$p' \
-  | sed -n -e '/^  \($(subst /,\/,$(subst $(SPACE),\|,$(BUILD_ROOTS)))\)/p' \
-  | sed -e 's/ /\n/g' \
-  | awk '{$$1=$$1};1' \
-  | strings \
-  | xargs -r -n 1 -I {} readlink -f "{}" \
-  | xargs -r -n 1 -I {} bash -c 'set -xeuo pipefail; $(2)')
+  $(call wrapper,$(BAZEL) build $(BASE_OPTIONS) $(BAZEL_OPTIONS) $(1)) && \
+  $(call wrapper,$(BAZEL) cquery $(BASE_OPTIONS) $(BAZEL_OPTIONS) $(1) --output=starlark --starlark:file=tools/show_paths.bzl) \
+  | xargs -r -I {} bash -c 'test -e "{}" || exit 0; realpath -m "{}"' \
+  | xargs -r -I {} bash -c 'set -euo pipefail; $(2)')
 
-clean = $(call header,CLEAN) && $(call wrapper,$(BAZEL) clean)
-build = $(call header,BUILD $(1)) && $(call build_paths,$(1),echo {})
-copy  = $(call header,COPY $(1) $(2)) && $(call build_paths,$(1),cp -fa {} $(2))
-run   = $(call header,RUN $(1) $(2)) && $(call build_paths,$(1),{} $(2))
-sudo  = $(call header,SUDO $(1) $(2)) && $(call build_paths,$(1),sudo -E {} $(2))
-test  = $(call header,TEST $(1)) && $(call wrapper,$(BAZEL) test $(TEST_OPTIONS) $(1))
+clean    = $(call header,CLEAN) && $(call wrapper,$(BAZEL) clean)
+build    = $(call header,BUILD $(1)) && $(call build_paths,$(1),echo {})
+copy     = $(call header,COPY $(1) $(2)) && $(call build_paths,$(1),cp -fa {} $(2))
+run      = $(call header,RUN $(1) $(2)) && $(call build_paths,$(1),{} $(2))
+sudo     = $(call header,SUDO $(1) $(2)) && $(call build_paths,$(1),sudo -E {} $(2))
+test     = $(call header,TEST $(1)) && $(call wrapper,$(BAZEL) test $(BAZEL_OPTIONS) $(TEST_OPTIONS) $(1))
+sudocopy = $(call header,COPY $(1) $(2)) && $(call build_paths,$(1),sudo cp -fa {} $(2))
 
 clean: ## Cleans the bazel cache.
 	@$(call clean)
 .PHONY: clean
+
+runsc-race:
+	@$(call build,--@io_bazel_rules_go//go/config:race runsc:runsc-race)
 
 testlogs: ## Returns the most recent set of test logs.
 	@if test -f .build_events.json; then \

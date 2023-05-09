@@ -1,6 +1,9 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_library(
     name = "log",
@@ -9,6 +12,7 @@ go_library(
         "json.go",
         "json_k8s.go",
         "log.go",
+        "rate_limited.go",
     ],
     marshal = False,
     stateify = False,
@@ -18,6 +22,7 @@ go_library(
     deps = [
         "//pkg/linewriter",
         "//pkg/sync",
+        "@org_golang_x_time//rate:go_default_library",
     ],
 )
 

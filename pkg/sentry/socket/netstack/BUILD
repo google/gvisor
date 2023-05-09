@@ -1,15 +1,17 @@
 load("//tools:defs.bzl", "go_library")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_library(
     name = "netstack",
     srcs = [
         "device.go",
         "netstack.go",
-        "netstack_vfs2.go",
+        "netstack_state.go",
         "provider.go",
-        "provider_vfs2.go",
         "save_restore.go",
         "stack.go",
         "tun.go",
@@ -19,17 +21,17 @@ go_library(
     ],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/binary",
+        "//pkg/abi/linux/errno",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/marshal",
         "//pkg/marshal/primitive",
         "//pkg/metric",
+        "//pkg/refs",
         "//pkg/sentry/arch",
         "//pkg/sentry/device",
-        "//pkg/sentry/fs",
-        "//pkg/sentry/fs/fsutil",
         "//pkg/sentry/fsimpl/sockfs",
         "//pkg/sentry/inet",
         "//pkg/sentry/kernel",
@@ -37,17 +39,16 @@ go_library(
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/socket",
         "//pkg/sentry/socket/netfilter",
-        "//pkg/sentry/unimpl",
         "//pkg/sentry/vfs",
         "//pkg/sync",
         "//pkg/syserr",
-        "//pkg/syserror",
         "//pkg/tcpip",
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/tun",
         "//pkg/tcpip/network/ipv4",
         "//pkg/tcpip/network/ipv6",
         "//pkg/tcpip/stack",
+        "//pkg/tcpip/transport",
         "//pkg/tcpip/transport/tcp",
         "//pkg/tcpip/transport/udp",
         "//pkg/usermem",

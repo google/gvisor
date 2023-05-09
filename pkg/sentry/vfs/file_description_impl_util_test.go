@@ -18,13 +18,13 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"sync/atomic"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -39,12 +39,12 @@ type fileDescription struct {
 // genCount contains the number of times its DynamicBytesSource.Generate()
 // implementation has been called.
 type genCount struct {
-	count uint64 // accessed using atomic memory ops
+	count atomicbitops.Uint64
 }
 
 // Generate implements DynamicBytesSource.Generate.
 func (g *genCount) Generate(ctx context.Context, buf *bytes.Buffer) error {
-	fmt.Fprintf(buf, "%d", atomic.AddUint64(&g.count, 1))
+	fmt.Fprintf(buf, "%d", g.count.Add(1))
 	return nil
 }
 
@@ -61,7 +61,7 @@ func (d *storeData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 }
 
 // Generate implements WritableDynamicBytesSource.
-func (d *storeData) Write(ctx context.Context, src usermem.IOSequence, offset int64) (int64, error) {
+func (d *storeData) Write(ctx context.Context, _ *FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
 	buf := make([]byte, src.NumBytes())
 	n, err := src.CopyIn(ctx, buf)
 	if err != nil {
@@ -76,6 +76,7 @@ func (d *storeData) Write(ctx context.Context, src usermem.IOSequence, offset in
 type testFD struct {
 	fileDescription
 	DynamicBytesFileDescriptionImpl
+	DentryMetadataFileDescriptionImpl
 
 	data DynamicBytesSource
 }
@@ -84,25 +85,13 @@ func newTestFD(ctx context.Context, vfsObj *VirtualFilesystem, statusFlags uint3
 	vd := vfsObj.NewAnonVirtualDentry("genCountFD")
 	defer vd.DecRef(ctx)
 	var fd testFD
-	fd.vfsfd.Init(&fd, statusFlags, vd.Mount(), vd.Dentry(), &FileDescriptionOptions{})
-	fd.DynamicBytesFileDescriptionImpl.SetDataSource(data)
-	return &fd.vfsfd
+	fd.fileDescription.vfsfd.Init(&fd, statusFlags, vd.Mount(), vd.Dentry(), &FileDescriptionOptions{})
+	fd.DynamicBytesFileDescriptionImpl.Init(&fd.fileDescription.vfsfd, data)
+	return &fd.fileDescription.vfsfd
 }
 
 // Release implements FileDescriptionImpl.Release.
 func (fd *testFD) Release(context.Context) {
-}
-
-// SetStatusFlags implements FileDescriptionImpl.SetStatusFlags.
-// Stat implements FileDescriptionImpl.Stat.
-func (fd *testFD) Stat(ctx context.Context, opts StatOptions) (linux.Statx, error) {
-	// Note that Statx.Mask == 0 in the return value.
-	return linux.Statx{}, nil
-}
-
-// SetStat implements FileDescriptionImpl.SetStat.
-func (fd *testFD) SetStat(ctx context.Context, opts SetStatOptions) error {
-	return syserror.EPERM
 }
 
 func TestGenCountFD(t *testing.T) {
@@ -155,11 +144,11 @@ func TestGenCountFD(t *testing.T) {
 	}
 
 	// Write and PWrite fails.
-	if _, err := fd.Write(ctx, ioseq, WriteOptions{}); err != syserror.EIO {
-		t.Errorf("Write: got err %v, wanted %v", err, syserror.EIO)
+	if _, err := fd.Write(ctx, ioseq, WriteOptions{}); !linuxerr.Equals(linuxerr.EIO, err) {
+		t.Errorf("Write: got err %v, wanted %v", err, linuxerr.EIO)
 	}
-	if _, err := fd.PWrite(ctx, ioseq, 0, WriteOptions{}); err != syserror.EIO {
-		t.Errorf("Write: got err %v, wanted %v", err, syserror.EIO)
+	if _, err := fd.PWrite(ctx, ioseq, 0, WriteOptions{}); !linuxerr.Equals(linuxerr.EIO, err) {
+		t.Errorf("Write: got err %v, wanted %v", err, linuxerr.EIO)
 	}
 }
 
@@ -215,10 +204,10 @@ func TestWritable(t *testing.T) {
 	if n, err := fd.Seek(ctx, 1, linux.SEEK_SET); n != 0 && err != nil {
 		t.Errorf("Seek: got err (%v, %v), wanted (0, nil)", n, err)
 	}
-	if n, err := fd.Write(ctx, writeIOSeq, WriteOptions{}); n != 0 && err != syserror.EINVAL {
+	if n, err := fd.Write(ctx, writeIOSeq, WriteOptions{}); n != 0 && !linuxerr.Equals(linuxerr.EINVAL, err) {
 		t.Errorf("Write: got err (%v, %v), wanted (0, EINVAL)", n, err)
 	}
-	if n, err := fd.PWrite(ctx, writeIOSeq, 2, WriteOptions{}); n != 0 && err != syserror.EINVAL {
+	if n, err := fd.PWrite(ctx, writeIOSeq, 2, WriteOptions{}); n != 0 && !linuxerr.Equals(linuxerr.EINVAL, err) {
 		t.Errorf("PWrite: got err (%v, %v), wanted (0, EINVAL)", n, err)
 	}
 }

@@ -1,7 +1,10 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_template_instance(
     name = "waiter_list",
@@ -25,12 +28,12 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
-        "//pkg/log",
-        "//pkg/sentry/fs",
+        "//pkg/errors/linuxerr",
         "//pkg/sentry/kernel/auth",
+        "//pkg/sentry/kernel/ipc",
         "//pkg/sentry/kernel/time",
+        "//pkg/sentry/vfs",
         "//pkg/sync",
-        "//pkg/syserror",
     ],
 )
 
@@ -40,10 +43,11 @@ go_test(
     srcs = ["semaphore_test.go"],
     library = ":semaphore",
     deps = [
-        "//pkg/abi/linux",
-        "//pkg/context",
-        "//pkg/sentry/contexttest",
-        "//pkg/sentry/kernel/auth",
-        "//pkg/syserror",
+        "//pkg/abi/linux",  # keep
+        "//pkg/context",  # keep
+        "//pkg/errors/linuxerr",  #keep
+        "//pkg/sentry/contexttest",  # keep
+        "//pkg/sentry/kernel/auth",  # keep
+        "//pkg/sentry/kernel/ipc",  # keep
     ],
 )

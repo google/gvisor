@@ -17,7 +17,7 @@ package syserr
 import (
 	"fmt"
 
-	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/abi/linux/errno"
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
@@ -25,33 +25,36 @@ import (
 
 // Mapping for tcpip.Error types.
 var (
-	ErrUnknownProtocol       = New((&tcpip.ErrUnknownProtocol{}).String(), linux.EINVAL)
-	ErrUnknownNICID          = New((&tcpip.ErrUnknownNICID{}).String(), linux.ENODEV)
-	ErrUnknownDevice         = New((&tcpip.ErrUnknownDevice{}).String(), linux.ENODEV)
-	ErrUnknownProtocolOption = New((&tcpip.ErrUnknownProtocolOption{}).String(), linux.ENOPROTOOPT)
-	ErrDuplicateNICID        = New((&tcpip.ErrDuplicateNICID{}).String(), linux.EEXIST)
-	ErrDuplicateAddress      = New((&tcpip.ErrDuplicateAddress{}).String(), linux.EEXIST)
-	ErrAlreadyBound          = New((&tcpip.ErrAlreadyBound{}).String(), linux.EINVAL)
-	ErrInvalidEndpointState  = New((&tcpip.ErrInvalidEndpointState{}).String(), linux.EINVAL)
-	ErrAlreadyConnecting     = New((&tcpip.ErrAlreadyConnecting{}).String(), linux.EALREADY)
-	ErrNoPortAvailable       = New((&tcpip.ErrNoPortAvailable{}).String(), linux.EAGAIN)
-	ErrPortInUse             = New((&tcpip.ErrPortInUse{}).String(), linux.EADDRINUSE)
-	ErrBadLocalAddress       = New((&tcpip.ErrBadLocalAddress{}).String(), linux.EADDRNOTAVAIL)
-	ErrClosedForSend         = New((&tcpip.ErrClosedForSend{}).String(), linux.EPIPE)
-	ErrClosedForReceive      = New((&tcpip.ErrClosedForReceive{}).String(), nil)
-	ErrTimeout               = New((&tcpip.ErrTimeout{}).String(), linux.ETIMEDOUT)
-	ErrAborted               = New((&tcpip.ErrAborted{}).String(), linux.EPIPE)
-	ErrConnectStarted        = New((&tcpip.ErrConnectStarted{}).String(), linux.EINPROGRESS)
-	ErrDestinationRequired   = New((&tcpip.ErrDestinationRequired{}).String(), linux.EDESTADDRREQ)
-	ErrNotSupported          = New((&tcpip.ErrNotSupported{}).String(), linux.EOPNOTSUPP)
-	ErrQueueSizeNotSupported = New((&tcpip.ErrQueueSizeNotSupported{}).String(), linux.ENOTTY)
-	ErrNoSuchFile            = New((&tcpip.ErrNoSuchFile{}).String(), linux.ENOENT)
-	ErrInvalidOptionValue    = New((&tcpip.ErrInvalidOptionValue{}).String(), linux.EINVAL)
-	ErrBroadcastDisabled     = New((&tcpip.ErrBroadcastDisabled{}).String(), linux.EACCES)
-	ErrNotPermittedNet       = New((&tcpip.ErrNotPermitted{}).String(), linux.EPERM)
-	ErrBadBuffer             = New((&tcpip.ErrBadBuffer{}).String(), linux.EFAULT)
-	ErrMalformedHeader       = New((&tcpip.ErrMalformedHeader{}).String(), linux.EINVAL)
-	ErrInvalidPortRange      = New((&tcpip.ErrInvalidPortRange{}).String(), linux.EINVAL)
+	ErrUnknownProtocol              = New((&tcpip.ErrUnknownProtocol{}).String(), errno.EINVAL)
+	ErrUnknownNICID                 = New((&tcpip.ErrUnknownNICID{}).String(), errno.ENODEV)
+	ErrUnknownDevice                = New((&tcpip.ErrUnknownDevice{}).String(), errno.ENODEV)
+	ErrUnknownProtocolOption        = New((&tcpip.ErrUnknownProtocolOption{}).String(), errno.ENOPROTOOPT)
+	ErrDuplicateNICID               = New((&tcpip.ErrDuplicateNICID{}).String(), errno.EEXIST)
+	ErrDuplicateAddress             = New((&tcpip.ErrDuplicateAddress{}).String(), errno.EEXIST)
+	ErrAlreadyBound                 = New((&tcpip.ErrAlreadyBound{}).String(), errno.EINVAL)
+	ErrInvalidEndpointState         = New((&tcpip.ErrInvalidEndpointState{}).String(), errno.EINVAL)
+	ErrAlreadyConnecting            = New((&tcpip.ErrAlreadyConnecting{}).String(), errno.EALREADY)
+	ErrNoPortAvailable              = New((&tcpip.ErrNoPortAvailable{}).String(), errno.EAGAIN)
+	ErrPortInUse                    = New((&tcpip.ErrPortInUse{}).String(), errno.EADDRINUSE)
+	ErrBadLocalAddress              = New((&tcpip.ErrBadLocalAddress{}).String(), errno.EADDRNOTAVAIL)
+	ErrClosedForSend                = New((&tcpip.ErrClosedForSend{}).String(), errno.EPIPE)
+	ErrClosedForReceive             = New((&tcpip.ErrClosedForReceive{}).String(), errno.NOERRNO)
+	ErrTimeout                      = New((&tcpip.ErrTimeout{}).String(), errno.ETIMEDOUT)
+	ErrAborted                      = New((&tcpip.ErrAborted{}).String(), errno.EPIPE)
+	ErrConnectStarted               = New((&tcpip.ErrConnectStarted{}).String(), errno.EINPROGRESS)
+	ErrDestinationRequired          = New((&tcpip.ErrDestinationRequired{}).String(), errno.EDESTADDRREQ)
+	ErrNotSupported                 = New((&tcpip.ErrNotSupported{}).String(), errno.EOPNOTSUPP)
+	ErrQueueSizeNotSupported        = New((&tcpip.ErrQueueSizeNotSupported{}).String(), errno.ENOTTY)
+	ErrNoSuchFile                   = New((&tcpip.ErrNoSuchFile{}).String(), errno.ENOENT)
+	ErrInvalidOptionValue           = New((&tcpip.ErrInvalidOptionValue{}).String(), errno.EINVAL)
+	ErrBroadcastDisabled            = New((&tcpip.ErrBroadcastDisabled{}).String(), errno.EACCES)
+	ErrNotPermittedNet              = New((&tcpip.ErrNotPermitted{}).String(), errno.EPERM)
+	ErrBadBuffer                    = New((&tcpip.ErrBadBuffer{}).String(), errno.EFAULT)
+	ErrMalformedHeader              = New((&tcpip.ErrMalformedHeader{}).String(), errno.EINVAL)
+	ErrInvalidPortRange             = New((&tcpip.ErrInvalidPortRange{}).String(), errno.EINVAL)
+	ErrMulticastInputCannotBeOutput = New((&tcpip.ErrMulticastInputCannotBeOutput{}).String(), errno.EINVAL)
+	ErrMissingRequiredFields        = New((&tcpip.ErrMissingRequiredFields{}).String(), errno.EINVAL)
+	ErrNoNet                        = New((&tcpip.ErrNoNet{}).String(), errno.ENONET)
 )
 
 // TranslateNetstackError converts an error from the tcpip package to a sentry
@@ -72,8 +75,12 @@ func TranslateNetstackError(err tcpip.Error) *Error {
 		return ErrDuplicateNICID
 	case *tcpip.ErrDuplicateAddress:
 		return ErrDuplicateAddress
-	case *tcpip.ErrNoRoute:
-		return ErrNoRoute
+	case *tcpip.ErrHostUnreachable:
+		return ErrHostUnreachable
+	case *tcpip.ErrHostDown:
+		return ErrHostDown
+	case *tcpip.ErrNoNet:
+		return ErrNoNet
 	case *tcpip.ErrAlreadyBound:
 		return ErrAlreadyBound
 	case *tcpip.ErrInvalidEndpointState:
@@ -138,6 +145,10 @@ func TranslateNetstackError(err tcpip.Error) *Error {
 		return ErrMalformedHeader
 	case *tcpip.ErrInvalidPortRange:
 		return ErrInvalidPortRange
+	case *tcpip.ErrMulticastInputCannotBeOutput:
+		return ErrMulticastInputCannotBeOutput
+	case *tcpip.ErrMissingRequiredFields:
+		return ErrMissingRequiredFields
 	default:
 		panic(fmt.Sprintf("unknown error %T", err))
 	}

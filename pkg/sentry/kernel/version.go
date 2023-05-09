@@ -25,9 +25,9 @@ type Version struct {
 	// Operating system version. On Linux this takes the shape
 	// "#VERSION CONFIG_FLAGS TIMESTAMP"
 	// where:
-	// - VERSION is a sequence counter incremented on every successful build
-	// - CONFIG_FLAGS is a space-separated list of major enabled kernel features
-	//   (e.g. "SMP" and "PREEMPT")
-	// - TIMESTAMP is the build timestamp as returned by `date`
+	//	- VERSION is a sequence counter incremented on every successful build
+	//	- CONFIG_FLAGS is a space-separated list of major enabled kernel features
+	//    (e.g. "SMP" and "PREEMPT")
+	//	- TIMESTAMP is the build timestamp as returned by `date`
 	Version string
 }

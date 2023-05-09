@@ -1,6 +1,9 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_library(
     name = "ports",
@@ -10,8 +13,10 @@ go_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/atomicbitops",
         "//pkg/sync",
         "//pkg/tcpip",
+        "//pkg/tcpip/header",
     ],
 )
 
@@ -21,6 +26,7 @@ go_test(
     library = ":ports",
     deps = [
         "//pkg/tcpip",
+        "//pkg/tcpip/testutil",
         "@com_github_google_go_cmp//cmp:go_default_library",
     ],
 )

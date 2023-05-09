@@ -20,9 +20,9 @@ fi
 
 # Update docker configuration.
 if [ -f /etc/docker/daemon.json ]; then
-  runsc install
+  runsc install --clobber=false
   if systemctl is-active -q docker; then
-    systemctl restart docker || echo "unable to restart docker; you must do so manually." >&2
+    systemctl reload docker || echo "unable to reload docker; you must do so manually." >&2
   fi
 fi
 

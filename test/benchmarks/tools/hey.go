@@ -16,7 +16,6 @@ package tools
 
 import (
 	"fmt"
-	"net"
 	"regexp"
 	"strconv"
 	"testing"
@@ -30,7 +29,7 @@ type Hey struct {
 }
 
 // MakeCmd returns a 'hey' command.
-func (h *Hey) MakeCmd(ip net.IP, port int) []string {
+func (h *Hey) MakeCmd(host string, port int) []string {
 	c := h.Concurrency
 	if c > h.Requests {
 		c = h.Requests
@@ -39,7 +38,7 @@ func (h *Hey) MakeCmd(ip net.IP, port int) []string {
 		"hey",
 		"-n", fmt.Sprintf("%d", h.Requests),
 		"-c", fmt.Sprintf("%d", c),
-		fmt.Sprintf("http://%s:%d/%s", ip.String(), port, h.Doc),
+		fmt.Sprintf("http://%s:%d/%s", host, port, h.Doc),
 	}
 }
 

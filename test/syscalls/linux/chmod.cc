@@ -14,6 +14,7 @@
 
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
 #include <unistd.h>
 
@@ -33,7 +34,7 @@ namespace {
 
 TEST(ChmodTest, ChmodFileSucceeds) {
   // Drop capabilities that allow us to override file permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
+  AutoCapability cap(CAP_DAC_OVERRIDE, false);
 
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
 
@@ -43,8 +44,8 @@ TEST(ChmodTest, ChmodFileSucceeds) {
 
 TEST(ChmodTest, ChmodDirSucceeds) {
   // Drop capabilities that allow us to override file and directory permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
 
   auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   const std::string fileInDir = NewTempAbsPathInDir(dir.path());
@@ -53,9 +54,9 @@ TEST(ChmodTest, ChmodDirSucceeds) {
   EXPECT_THAT(open(fileInDir.c_str(), O_RDONLY), SyscallFailsWithErrno(EACCES));
 }
 
-TEST(ChmodTest, FchmodFileSucceeds_NoRandomSave) {
+TEST(ChmodTest, FchmodFileSucceeds) {
   // Drop capabilities that allow us to file directory permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
+  AutoCapability cap(CAP_DAC_OVERRIDE, false);
 
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileMode(0666));
   int fd;
@@ -70,10 +71,10 @@ TEST(ChmodTest, FchmodFileSucceeds_NoRandomSave) {
   EXPECT_THAT(open(file.path().c_str(), O_RDWR), SyscallFailsWithErrno(EACCES));
 }
 
-TEST(ChmodTest, FchmodDirSucceeds_NoRandomSave) {
+TEST(ChmodTest, FchmodDirSucceeds) {
   // Drop capabilities that allow us to override file and directory permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
 
   auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   int fd;
@@ -99,26 +100,28 @@ TEST(ChmodTest, FchmodatBadF) {
 }
 
 TEST(ChmodTest, FchmodFileWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_PATH));
 
-  ASSERT_THAT(fchmod(fd.get(), 0444), SyscallFailsWithErrno(EBADF));
+  // Bionic's implementation of fchmod() uses chmod() when O_PATH is set
+  // to circumvent the behavior this is testing for.
+  // Use syscall() here to avoid running through Bionic on Android.
+  ASSERT_THAT(syscall(SYS_fchmod, fd.get(), 0444),
+              SyscallFailsWithErrno(EBADF));
 }
 
 TEST(ChmodTest, FchmodDirWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   const auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   const auto fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_DIRECTORY | O_PATH));
 
-  ASSERT_THAT(fchmod(fd.get(), 0444), SyscallFailsWithErrno(EBADF));
+  ASSERT_THAT(syscall(SYS_fchmod, fd.get(), 0444),
+              SyscallFailsWithErrno(EBADF));
 }
 
 TEST(ChmodTest, FchmodatWithOpath) {
-  SKIP_IF(IsRunningWithVFS1());
   // Drop capabilities that allow us to override file permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
+  AutoCapability cap(CAP_DAC_OVERRIDE, false);
 
   auto temp_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
 
@@ -140,7 +143,7 @@ TEST(ChmodTest, FchmodatNotDir) {
 
 TEST(ChmodTest, FchmodatFileAbsolutePath) {
   // Drop capabilities that allow us to override file permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
+  AutoCapability cap(CAP_DAC_OVERRIDE, false);
 
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
 
@@ -150,8 +153,8 @@ TEST(ChmodTest, FchmodatFileAbsolutePath) {
 
 TEST(ChmodTest, FchmodatDirAbsolutePath) {
   // Drop capabilities that allow us to override file and directory permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
 
   auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
 
@@ -167,7 +170,7 @@ TEST(ChmodTest, FchmodatDirAbsolutePath) {
 
 TEST(ChmodTest, FchmodatFile) {
   // Drop capabilities that allow us to override file permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
+  AutoCapability cap(CAP_DAC_OVERRIDE, false);
 
   auto temp_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
 
@@ -188,8 +191,8 @@ TEST(ChmodTest, FchmodatFile) {
 
 TEST(ChmodTest, FchmodatDir) {
   // Drop capabilities that allow us to override file and directory permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
 
   auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
 
@@ -212,7 +215,7 @@ TEST(ChmodTest, FchmodatDir) {
               SyscallFailsWithErrno(EACCES));
 }
 
-TEST(ChmodTest, ChmodDowngradeWritability_NoRandomSave) {
+TEST(ChmodTest, ChmodDowngradeWritability) {
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileMode(0666));
 
   int fd;
@@ -227,8 +230,8 @@ TEST(ChmodTest, ChmodDowngradeWritability_NoRandomSave) {
 
 TEST(ChmodTest, ChmodFileToNoPermissionsSucceeds) {
   // Drop capabilities that allow us to override file permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
 
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileMode(0666));
 
@@ -238,7 +241,7 @@ TEST(ChmodTest, ChmodFileToNoPermissionsSucceeds) {
               SyscallFailsWithErrno(EACCES));
 }
 
-TEST(ChmodTest, FchmodDowngradeWritability_NoRandomSave) {
+TEST(ChmodTest, FchmodDowngradeWritability) {
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
 
   int fd;
@@ -252,10 +255,10 @@ TEST(ChmodTest, FchmodDowngradeWritability_NoRandomSave) {
   EXPECT_THAT(close(fd), SyscallSucceeds());
 }
 
-TEST(ChmodTest, FchmodFileToNoPermissionsSucceeds_NoRandomSave) {
+TEST(ChmodTest, FchmodFileToNoPermissionsSucceeds) {
   // Drop capabilities that allow us to override file permissions.
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_OVERRIDE, false));
-  ASSERT_NO_ERRNO(SetCapability(CAP_DAC_READ_SEARCH, false));
+  AutoCapability cap1(CAP_DAC_OVERRIDE, false);
+  AutoCapability cap2(CAP_DAC_READ_SEARCH, false);
 
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileMode(0666));
 

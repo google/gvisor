@@ -15,59 +15,43 @@
 package packet
 
 import (
+	"fmt"
+	"time"
+
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
-// saveData saves packet.data field.
-func (p *packet) saveData() buffer.VectorisedView {
-	// We cannot save p.data directly as p.data.views may alias to p.views,
-	// which is not allowed by state framework (in-struct pointer).
-	return p.data.Clone(nil)
+// saveReceivedAt is invoked by stateify.
+func (p *packet) saveReceivedAt() int64 {
+	return p.receivedAt.UnixNano()
 }
 
-// loadData loads packet.data field.
-func (p *packet) loadData(data buffer.VectorisedView) {
-	// NOTE: We cannot do the p.data = data.Clone(p.views[:]) optimization
-	// here because data.views is not guaranteed to be loaded by now. Plus,
-	// data.views will be allocated anyway so there really is little point
-	// of utilizing p.views for data.views.
-	p.data = data
+// loadReceivedAt is invoked by stateify.
+func (p *packet) loadReceivedAt(nsec int64) {
+	p.receivedAt = time.Unix(0, nsec)
 }
 
 // beforeSave is invoked by stateify.
 func (ep *endpoint) beforeSave() {
-	// Stop incoming packets from being handled (and mutate endpoint state).
-	// The lock will be released after saveRcvBufSizeMax(), which would have
-	// saved ep.rcvBufSizeMax and set it to 0 to continue blocking incoming
-	// packets.
 	ep.rcvMu.Lock()
-}
-
-// saveRcvBufSizeMax is invoked by stateify.
-func (ep *endpoint) saveRcvBufSizeMax() int {
-	max := ep.rcvBufSizeMax
-	// Make sure no new packets will be handled regardless of the lock.
-	ep.rcvBufSizeMax = 0
-	// Release the lock acquired in beforeSave() so regular endpoint closing
-	// logic can proceed after save.
-	ep.rcvMu.Unlock()
-	return max
-}
-
-// loadRcvBufSizeMax is invoked by stateify.
-func (ep *endpoint) loadRcvBufSizeMax(max int) {
-	ep.rcvBufSizeMax = max
+	defer ep.rcvMu.Unlock()
+	ep.rcvDisabled = true
 }
 
 // afterLoad is invoked by stateify.
 func (ep *endpoint) afterLoad() {
-	ep.stack = stack.StackFromEnv
-	ep.ops.InitHandler(ep, ep.stack, tcpip.GetStackSendBufferLimits)
+	ep.mu.Lock()
+	defer ep.mu.Unlock()
 
-	// TODO(gvisor.dev/173): Once bind is supported, choose the right NIC.
-	if err := ep.stack.RegisterPacketEndpoint(0, ep.netProto, ep); err != nil {
-		panic(err)
+	ep.stack = stack.StackFromEnv
+	ep.ops.InitHandler(ep, ep.stack, tcpip.GetStackSendBufferLimits, tcpip.GetStackReceiveBufferLimits)
+
+	if err := ep.stack.RegisterPacketEndpoint(ep.boundNIC, ep.boundNetProto, ep); err != nil {
+		panic(fmt.Sprintf("RegisterPacketEndpoint(%d, %d, _): %s", ep.boundNIC, ep.boundNetProto, err))
 	}
+
+	ep.rcvMu.Lock()
+	ep.rcvDisabled = false
+	ep.rcvMu.Unlock()
 }

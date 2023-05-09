@@ -15,21 +15,19 @@
 package kernel
 
 import (
-	"bytes"
 	"fmt"
 	"runtime"
 	"runtime/trace"
-	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/goid"
 	"gvisor.dev/gvisor/pkg/hostarch"
-	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/hostcpu"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // A taskRunState is a reified state in the task state machine. See README.md
@@ -59,7 +57,10 @@ type taskRunState interface {
 // make it visible in stack dumps. A goroutine for a given task can be identified
 // searching for Task.run()'s argument value.
 func (t *Task) run(threadID uintptr) {
-	atomic.StoreInt64(&t.goid, goid.Get())
+	t.goid.Store(goid.Get())
+
+	refs.CleanupSync.Add(1)
+	defer refs.CleanupSync.Done()
 
 	// Construct t.blockingTimer here. We do this here because we can't
 	// reconstruct t.blockingTimer during restore in Task.afterLoad(), because
@@ -85,14 +86,14 @@ func (t *Task) run(threadID uintptr) {
 	for {
 		// Explanation for this ordering:
 		//
-		// - A freshly-started task that is stopped should not do anything
-		// before it enters the stop.
+		//	- A freshly-started task that is stopped should not do anything
+		//		before it enters the stop.
 		//
-		// - If taskRunState.execute returns nil, the task goroutine should
-		// exit without checking for a stop.
+		//	- If taskRunState.execute returns nil, the task goroutine should
+		//		exit without checking for a stop.
 		//
-		// - Task.Start won't start Task.run if t.runState is nil, so this
-		// ordering is safe.
+		//	- Task.Start won't start Task.run if t.runState is nil, so this
+		//		ordering is safe.
 		t.doStop()
 		t.runState = t.runState.execute(t)
 		if t.runState == nil {
@@ -105,7 +106,7 @@ func (t *Task) run(threadID uintptr) {
 
 			// Deferring this store triggers a false positive in the race
 			// detector (https://github.com/golang/go/issues/42599).
-			atomic.StoreInt64(&t.goid, 0)
+			t.goid.Store(0)
 			// Keep argument alive because stack trace for dead variables may not be correct.
 			runtime.KeepAlive(threadID)
 			return
@@ -115,7 +116,7 @@ func (t *Task) run(threadID uintptr) {
 
 // doStop is called by Task.run to block until the task is not stopped.
 func (t *Task) doStop() {
-	if atomic.LoadInt32(&t.stopCount) == 0 {
+	if t.stopCount.Load() == 0 {
 		return
 	}
 	t.Deactivate()
@@ -130,35 +131,9 @@ func (t *Task) doStop() {
 	defer t.tg.pidns.owner.runningGoroutines.Add(1)
 	t.goroutineStopped.Add(-1)
 	defer t.goroutineStopped.Add(1)
-	for t.stopCount > 0 {
+	for t.stopCount.RacyLoad() > 0 {
 		t.endStopCond.Wait()
 	}
-}
-
-func (*runApp) handleCPUIDInstruction(t *Task) error {
-	if len(arch.CPUIDInstruction) == 0 {
-		// CPUID emulation isn't supported, but this code can be
-		// executed, because the ptrace platform returns
-		// ErrContextSignalCPUID on page faults too. Look at
-		// pkg/sentry/platform/ptrace/ptrace.go:context.Switch for more
-		// details.
-		return platform.ErrContextSignal
-	}
-	// Is this a CPUID instruction?
-	region := trace.StartRegion(t.traceContext, cpuidRegion)
-	expected := arch.CPUIDInstruction[:]
-	found := make([]byte, len(expected))
-	_, err := t.CopyInBytes(hostarch.Addr(t.Arch().IP()), found)
-	if err == nil && bytes.Equal(expected, found) {
-		// Skip the cpuid instruction.
-		t.Arch().CPUIDEmulate(t)
-		t.Arch().SetIP(t.Arch().IP() + uintptr(len(expected)))
-		region.End()
-
-		return nil
-	}
-	region.End() // Not an actual CPUID, but required copy-in.
-	return platform.ErrContextSignal
 }
 
 // The runApp state checks for interrupts before executing untrusted
@@ -176,11 +151,11 @@ func (app *runApp) execute(t *Task) taskRunState {
 	}
 
 	// Execute any task work callbacks before returning to user space.
-	if atomic.LoadInt32(&t.taskWorkCount) > 0 {
+	if t.taskWorkCount.Load() > 0 {
 		t.taskWorkMu.Lock()
 		queue := t.taskWork
 		t.taskWork = nil
-		atomic.StoreInt32(&t.taskWorkCount, 0)
+		t.taskWorkCount.Store(0)
 		t.taskWorkMu.Unlock()
 
 		// Do not hold taskWorkMu while executing task work, which may register
@@ -197,12 +172,18 @@ func (app *runApp) execute(t *Task) taskRunState {
 	// a pending signal, causing another interruption, but that signal should
 	// not interact with the interrupted syscall.)
 	if t.haveSyscallReturn {
-		if sre, ok := syserror.SyscallRestartErrnoFromReturn(t.Arch().Return()); ok {
-			if sre == syserror.ERESTART_RESTARTBLOCK {
-				t.Debugf("Restarting syscall %d with restart block after errno %d: not interrupted by handled signal", t.Arch().SyscallNo(), sre)
+		if err := t.p.PullFullState(t.MemoryManager().AddressSpace(), t.Arch()); err != nil {
+			t.Warningf("Unable to pull a full state: %v", err)
+			t.PrepareExit(linux.WaitStatusExit(int32(ExtractErrno(err, -1))))
+			return (*runExit)(nil)
+		}
+
+		if sre, ok := linuxerr.SyscallRestartErrorFromReturn(t.Arch().Return()); ok {
+			if sre == linuxerr.ERESTART_RESTARTBLOCK {
+				t.Debugf("Restarting syscall %d with restart block: not interrupted by handled signal", t.Arch().SyscallNo())
 				t.Arch().RestartSyscallWithRestartBlock()
 			} else {
-				t.Debugf("Restarting syscall %d after errno %d: not interrupted by handled signal", t.Arch().SyscallNo(), sre)
+				t.Debugf("Restarting syscall %d: not interrupted by handled signal", t.Arch().SyscallNo())
 				t.Arch().RestartSyscall()
 			}
 		}
@@ -275,6 +256,12 @@ func (app *runApp) execute(t *Task) taskRunState {
 	if clearSinglestep {
 		t.Arch().ClearSingleStep()
 	}
+	if t.hasTracer() {
+		if e := t.p.PullFullState(t.MemoryManager().AddressSpace(), t.Arch()); e != nil {
+			t.Warningf("Unable to pull a full state: %v", e)
+			err = e
+		}
+	}
 
 	switch err {
 	case nil:
@@ -286,16 +273,6 @@ func (app *runApp) execute(t *Task) taskRunState {
 		// loop to figure out why.
 		return (*runApp)(nil)
 
-	case platform.ErrContextSignalCPUID:
-		if err := app.handleCPUIDInstruction(t); err == nil {
-			// Resume execution.
-			return (*runApp)(nil)
-		}
-
-		// The instruction at the given RIP was not a CPUID, and we
-		// fallthrough to the default signal deliver behavior below.
-		fallthrough
-
 	case platform.ErrContextSignal:
 		// Looks like a signal has been delivered to us. If it's a synchronous
 		// signal (SEGV, SIGBUS, etc.), it should be sent to the application
@@ -306,6 +283,8 @@ func (app *runApp) execute(t *Task) taskRunState {
 		// an application-generated signal and we should continue execution
 		// normally.
 		if at.Any() {
+			faultCounter.Increment()
+
 			region := trace.StartRegion(t.traceContext, faultRegion)
 			addr := hostarch.Addr(info.Addr())
 			err := t.MemoryManager().HandleUserFault(t, addr, at, hostarch.Addr(t.Arch().Stack()))
@@ -330,7 +309,7 @@ func (app *runApp) execute(t *Task) taskRunState {
 			}
 
 			// Faults are common, log only at debug level.
-			t.Debugf("Unhandled user fault: addr=%x ip=%x access=%v err=%v", addr, t.Arch().IP(), at, err)
+			t.Debugf("Unhandled user fault: addr=%x ip=%x access=%v sig=%v err=%v", addr, t.Arch().IP(), at, sig, err)
 			t.DebugDumpState()
 
 			// Continue to signal handling.
@@ -377,7 +356,7 @@ func (app *runApp) execute(t *Task) taskRunState {
 	default:
 		// What happened? Can't continue.
 		t.Warningf("Unexpected SwitchToApp error: %v", err)
-		t.PrepareExit(ExitStatus{Code: ExtractErrno(err, -1)})
+		t.PrepareExit(linux.WaitStatusExit(int32(ExtractErrno(err, -1))))
 		return (*runExit)(nil)
 	}
 }
@@ -385,14 +364,14 @@ func (app *runApp) execute(t *Task) taskRunState {
 // assertTaskGoroutine panics if the caller is not running on t's task
 // goroutine.
 func (t *Task) assertTaskGoroutine() {
-	if got, want := goid.Get(), atomic.LoadInt64(&t.goid); got != want {
+	if got, want := goid.Get(), t.goid.Load(); got != want {
 		panic(fmt.Sprintf("running on goroutine %d (task goroutine for kernel.Task %p is %d)", got, t, want))
 	}
 }
 
 // GoroutineID returns the ID of t's task goroutine.
 func (t *Task) GoroutineID() int64 {
-	return atomic.LoadInt64(&t.goid)
+	return t.goid.Load()
 }
 
 // waitGoroutineStoppedOrExited blocks until t's task goroutine stops or exits.
@@ -411,6 +390,6 @@ func (tg *ThreadGroup) WaitExited() {
 
 // Yield yields the processor for the calling task.
 func (t *Task) Yield() {
-	atomic.AddUint64(&t.yieldCount, 1)
+	t.yieldCount.Add(1)
 	runtime.Gosched()
 }

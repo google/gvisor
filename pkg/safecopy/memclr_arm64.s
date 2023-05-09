@@ -72,3 +72,9 @@ head_loop:
 	CMP $16, R1
 	BLT tail_zero
 	B aligned_to_16
+
+// func addrOfMemclr() uintptr
+TEXT ·addrOfMemclr(SB), $0-8
+	MOVD	$·memclr(SB), R0
+	MOVD	R0, ret+0(FP)
+	RET

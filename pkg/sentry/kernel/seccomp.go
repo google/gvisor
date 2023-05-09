@@ -18,9 +18,9 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bpf"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 const maxSyscallFilterInstructions = 1 << 15
@@ -39,11 +39,11 @@ func dataAsBPFInput(t *Task, d *linux.SeccompData) bpf.Input {
 	}
 }
 
-func seccompSiginfo(t *Task, errno, sysno int32, ip hostarch.Addr) *arch.SignalInfo {
-	si := &arch.SignalInfo{
+func seccompSiginfo(t *Task, errno, sysno int32, ip hostarch.Addr) *linux.SignalInfo {
+	si := &linux.SignalInfo{
 		Signo: int32(linux.SIGSYS),
 		Errno: errno,
-		Code:  arch.SYS_SECCOMP,
+		Code:  linux.SYS_SECCOMP,
 	}
 	si.SetCallAddr(uint64(ip))
 	si.SetSyscall(sysno)
@@ -176,7 +176,7 @@ func (t *Task) AppendSyscallFilter(p bpf.Program, syncAll bool) error {
 	}
 
 	if totalLength > maxSyscallFilterInstructions {
-		return syserror.ENOMEM
+		return linuxerr.ENOMEM
 	}
 
 	newFilters = append(newFilters, p)

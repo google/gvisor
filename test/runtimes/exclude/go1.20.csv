@@ -1,0 +1,10 @@
+test name,bug id,comment
+cgo_errors,,FLAKY
+cgo_test,,
+go_test:cmd/go,,FLAKY
+go_test:net,b/162473575,setsockopt: protocol not available.
+go_test:os/signal,b/118780860,/dev/pts not properly supported. Also being tracked in b/29356795.
+go_test:syscall,b/118781998,bad bytes -- bad mem addr; FcntlFlock(F_GETLK) not supported.
+test:0_1,,FLAKY
+testcarchive,b/118782924,FLAKY
+testshared,,FLAKY

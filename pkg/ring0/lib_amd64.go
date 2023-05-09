@@ -12,39 +12,33 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build amd64
 // +build amd64
 
 package ring0
 
 import (
 	"gvisor.dev/gvisor/pkg/cpuid"
+	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
-// LoadFloatingPoint loads floating point state by the most efficient mechanism
-// available (set by Init).
-var LoadFloatingPoint func(*byte)
+// fxrstor restores floating point state.
+func fxrstor(addr uintptr)
 
-// SaveFloatingPoint saves floating point state by the most efficient mechanism
-// available (set by Init).
-var SaveFloatingPoint func(*byte)
+// xrstor restores floating point state.
+func xrstor(addr uintptr)
 
-// fxrstor uses fxrstor64 to load floating point state.
-func fxrstor(*byte)
+// fxsave saves floating point state.
+func fxsave(addr uintptr)
 
-// xrstor uses xrstor to load floating point state.
-func xrstor(*byte)
+// xsave saves floating point state.
+func xsave(addr uintptr)
 
-// fxsave uses fxsave64 to save floating point state.
-func fxsave(*byte)
+// xsaveopt saves floating point state.
+func xsaveopt(addr uintptr)
 
-// xsave uses xsave to save floating point state.
-func xsave(*byte)
-
-// xsaveopt uses xsaveopt to save floating point state.
-func xsaveopt(*byte)
-
-// WriteFS sets the GS address (set by init).
-var WriteFS func(addr uintptr)
+// writeFS sets the FS base address (selects one of wrfsbase or wrfsmsr).
+func writeFS(addr uintptr)
 
 // wrfsbase writes to the GS base address.
 func wrfsbase(addr uintptr)
@@ -52,8 +46,8 @@ func wrfsbase(addr uintptr)
 // wrfsmsr writes to the GS_BASE MSR.
 func wrfsmsr(addr uintptr)
 
-// WriteGS sets the GS address (set by init).
-var WriteGS func(addr uintptr)
+// writeGS sets the GS address (selects one of wrgsbase or wrgsmsr).
+func writeGS(addr uintptr)
 
 // wrgsbase writes to the GS base address.
 func wrgsbase(addr uintptr)
@@ -88,38 +82,49 @@ func rdmsr(reg uintptr) uintptr
 // Mostly-constants set by Init.
 var (
 	hasSMEP       bool
+	hasSMAP       bool
 	hasPCID       bool
 	hasXSAVEOPT   bool
 	hasXSAVE      bool
 	hasFSGSBASE   bool
 	validXCR0Mask uintptr
+	localXCR0     uintptr
 )
 
 // Init sets function pointers based on architectural features.
 //
-// This must be called prior to using ring0.
-func Init(featureSet *cpuid.FeatureSet) {
-	hasSMEP = featureSet.HasFeature(cpuid.X86FeatureSMEP)
-	hasPCID = featureSet.HasFeature(cpuid.X86FeaturePCID)
-	hasXSAVEOPT = featureSet.UseXsaveopt()
-	hasXSAVE = featureSet.UseXsave()
-	hasFSGSBASE = featureSet.HasFeature(cpuid.X86FeatureFSGSBase)
-	validXCR0Mask = uintptr(featureSet.ValidXCR0Mask())
-	if hasXSAVEOPT {
-		SaveFloatingPoint = xsaveopt
-		LoadFloatingPoint = xrstor
-	} else if hasXSAVE {
-		SaveFloatingPoint = xsave
-		LoadFloatingPoint = xrstor
-	} else {
-		SaveFloatingPoint = fxsave
-		LoadFloatingPoint = fxrstor
+// This must be called prior to using ring0. It may be called with the
+// auto-detected feature set using InitDefault. It may also be called at
+// another time with a  different FeatureSet.
+func Init(fs cpuid.FeatureSet) {
+	// Initialize all sizes.
+	VirtualAddressBits = uintptr(fs.VirtualAddressBits())
+	// TODO(gvisor.dev/issue/7349): introduce support for 5-level paging.
+	// Four-level page tables allows to address up to 48-bit virtual
+	// addresses.
+	if VirtualAddressBits > 48 {
+		VirtualAddressBits = 48
 	}
-	if hasFSGSBASE {
-		WriteFS = wrfsbase
-		WriteGS = wrgsbase
-	} else {
-		WriteFS = wrfsmsr
-		WriteGS = wrgsmsr
+	PhysicalAddressBits = uintptr(fs.PhysicalAddressBits())
+	UserspaceSize = uintptr(1) << (VirtualAddressBits - 1)
+	MaximumUserAddress = (UserspaceSize - 1) & ^uintptr(hostarch.PageSize-1)
+	KernelStartAddress = ^uintptr(0) - (UserspaceSize - 1)
+
+	// Initialize all functions.
+	hasSMEP = fs.HasFeature(cpuid.X86FeatureSMEP)
+	hasSMAP = fs.HasFeature(cpuid.X86FeatureSMAP)
+	hasPCID = fs.HasFeature(cpuid.X86FeaturePCID)
+	hasXSAVEOPT = fs.UseXsaveopt()
+	hasXSAVE = fs.UseXsave()
+	hasFSGSBASE = fs.HasFeature(cpuid.X86FeatureFSGSBase)
+	validXCR0Mask = uintptr(fs.ValidXCR0Mask())
+	if hasXSAVE {
+		localXCR0 = xgetbv(0)
 	}
+}
+
+// InitDefault initializes ring0 with the auto-detected host feature set.
+func InitDefault() {
+	cpuid.Initialize()
+	Init(cpuid.HostFeatureSet())
 }

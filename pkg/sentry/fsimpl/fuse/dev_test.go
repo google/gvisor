@@ -20,11 +20,12 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/testutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -135,6 +136,29 @@ func TestFUSECommunication(t *testing.T) {
 	}
 }
 
+func TestReuseFd(t *testing.T) {
+	s := setup(t)
+	defer s.Destroy()
+	k := kernel.KernelFromContext(s.Ctx)
+	_, fd, err := newTestConnection(s, k, maxActiveRequestsDefault)
+	if err != nil {
+		t.Fatalf("newTestConnection: %v", err)
+	}
+	fs1, err := newTestFilesystem(s, fd, maxActiveRequestsDefault)
+	if err != nil {
+		t.Fatalf("newTestFilesystem: %v", err)
+	}
+	defer fs1.Release(s.Ctx)
+	fs2, err := newTestFilesystem(s, fd, maxActiveRequestsDefault)
+	if err != nil {
+		t.Fatalf("newTestFilesystem: %v", err)
+	}
+	defer fs2.Release(s.Ctx)
+	if fs1.conn != fs2.conn {
+		t.Errorf("second fs connection = %v, want = %v", fs2.conn, fs1.conn)
+	}
+}
+
 // CallTest makes a request to the server and blocks the invoking
 // goroutine until a server responds with a response. Doesn't block
 // a kernel.Task. Analogous to Connection.Call but used for testing.
@@ -142,7 +166,7 @@ func CallTest(conn *connection, t *kernel.Task, r *Request, i uint32) (*Response
 	conn.fd.mu.Lock()
 
 	// Wait until we're certain that a new request can be processed.
-	for conn.fd.numActiveRequests == conn.fd.fs.opts.maxActiveRequests {
+	for conn.fd.numActiveRequests == conn.maxActiveRequests {
 		conn.fd.mu.Unlock()
 		select {
 		case <-conn.fd.fullQueueCh:
@@ -179,14 +203,14 @@ func ReadTest(serverTask *kernel.Task, fd *vfs.FileDescription, inIOseq usermem.
 	dev := fd.Impl().(*DeviceFD)
 
 	// Register for notifications.
-	w, ch := waiter.NewChannelEntry(nil)
-	dev.EventRegister(&w, waiter.ReadableEvents)
+	w, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
+	dev.EventRegister(&w)
 	for {
 		// Issue the request and break out if it completes with anything other than
 		// "would block".
 		n, err = dev.Read(serverTask, inIOseq, vfs.ReadOptions{})
 		total += n
-		if err != syserror.ErrWouldBlock {
+		if err != linuxerr.ErrWouldBlock {
 			break
 		}
 
@@ -208,18 +232,20 @@ func ReadTest(serverTask *kernel.Task, fd *vfs.FileDescription, inIOseq usermem.
 // a header, a payload, calls the server, waits for the response, and processes
 // the response.
 func fuseClientRun(t *testing.T, s *testutil.System, k *kernel.Kernel, conn *connection, creds *auth.Credentials, pid uint32, inode uint64, clientDone chan struct{}) {
-	defer func() { clientDone <- struct{}{} }()
+	defer func() {
+		if !t.Failed() {
+			clientDone <- struct{}{}
+		}
+	}()
 
-	tc := k.NewThreadGroup(nil, k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, k.GlobalInit().Limits())
+	tc := k.NewThreadGroup(k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, k.GlobalInit().Limits())
 	clientTask, err := testutil.CreateTask(s.Ctx, fmt.Sprintf("fuse-client-%v", pid), tc, s.MntNs, s.Root, s.Root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	testObj := &testPayload{
-		data: rand.Uint32(),
-	}
 
-	req := conn.NewRequest(creds, pid, inode, echoTestOpcode, testObj)
+	testObj := primitive.Uint32(rand.Uint32())
+	req := conn.NewRequest(creds, pid, inode, echoTestOpcode, &testObj)
 
 	// Queue up a request.
 	// Analogous to Call except it doesn't block on the task.
@@ -232,7 +258,7 @@ func fuseClientRun(t *testing.T, s *testutil.System, k *kernel.Kernel, conn *con
 		t.Fatalf("Server responded with an error: %v", err)
 	}
 
-	var respTestPayload testPayload
+	var respTestPayload primitive.Uint32
 	if err := resp.UnmarshalPayload(&respTestPayload); err != nil {
 		t.Fatalf("Unmarshalling payload error: %v", err)
 	}
@@ -242,8 +268,8 @@ func fuseClientRun(t *testing.T, s *testutil.System, k *kernel.Kernel, conn *con
 			req.hdr.Unique, resp.hdr.Unique)
 	}
 
-	if respTestPayload.data != testObj.data {
-		t.Fatalf("read incorrect data. Data expected: %v, but got %v", testObj.data, respTestPayload.data)
+	if respTestPayload != testObj {
+		t.Fatalf("read incorrect data. Data expected: %d, but got %d", testObj, respTestPayload)
 	}
 
 }
@@ -252,12 +278,16 @@ func fuseClientRun(t *testing.T, s *testutil.System, k *kernel.Kernel, conn *con
 // that simply reads a request and echos the same struct back as a response using the
 // appropriate headers.
 func fuseServerRun(t *testing.T, s *testutil.System, k *kernel.Kernel, fd *vfs.FileDescription, serverDone, killServer chan struct{}) {
-	defer func() { serverDone <- struct{}{} }()
+	defer func() {
+		if !t.Failed() {
+			serverDone <- struct{}{}
+		}
+	}()
 
 	// Create the tasks that the server will be using.
-	tc := k.NewThreadGroup(nil, k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, k.GlobalInit().Limits())
-	var readPayload testPayload
+	tc := k.NewThreadGroup(k.RootPIDNamespace(), kernel.NewSignalHandlers(), linux.SIGCHLD, k.GlobalInit().Limits())
 
+	var readPayload primitive.Uint32
 	serverTask, err := testutil.CreateTask(s.Ctx, "fuse-server", tc, s.MntNs, s.Root, s.Root)
 	if err != nil {
 		t.Fatal(err)
@@ -265,11 +295,10 @@ func fuseServerRun(t *testing.T, s *testutil.System, k *kernel.Kernel, fd *vfs.F
 
 	// Read the request.
 	for {
-		inHdrLen := uint32((*linux.FUSEHeaderIn)(nil).SizeBytes())
 		payloadLen := uint32(readPayload.SizeBytes())
 
-		// The raed buffer must meet some certain size criteria.
-		buffSize := inHdrLen + payloadLen
+		// The read buffer must meet some certain size criteria.
+		buffSize := linux.SizeOfFUSEHeaderIn + payloadLen
 		if buffSize < linux.FUSE_MIN_READ_BUFFER {
 			buffSize = linux.FUSE_MIN_READ_BUFFER
 		}
@@ -281,7 +310,7 @@ func fuseServerRun(t *testing.T, s *testutil.System, k *kernel.Kernel, fd *vfs.F
 			t.Fatalf("Read failed :%v", err)
 		}
 
-		// Server should shut down. No new requests are going to be made.
+		// The server should shut down. No new requests are going to be made.
 		if serverKilled {
 			break
 		}
@@ -291,25 +320,24 @@ func fuseServerRun(t *testing.T, s *testutil.System, k *kernel.Kernel, fd *vfs.F
 		}
 
 		var readFUSEHeaderIn linux.FUSEHeaderIn
-		readFUSEHeaderIn.UnmarshalUnsafe(inBuf[:inHdrLen])
-		readPayload.UnmarshalUnsafe(inBuf[inHdrLen : inHdrLen+payloadLen])
+		inBuf = readFUSEHeaderIn.UnmarshalUnsafe(inBuf)
+		readPayload.UnmarshalUnsafe(inBuf)
 
 		if readFUSEHeaderIn.Opcode != echoTestOpcode {
 			t.Fatalf("read incorrect data. Header: %v, Payload: %v", readFUSEHeaderIn, readPayload)
 		}
 
 		// Write the response.
-		outHdrLen := uint32((*linux.FUSEHeaderOut)(nil).SizeBytes())
-		outBuf := make([]byte, outHdrLen+payloadLen)
+		outBuf := make([]byte, linux.SizeOfFUSEHeaderOut+payloadLen)
 		outHeader := linux.FUSEHeaderOut{
-			Len:    outHdrLen + payloadLen,
+			Len:    linux.SizeOfFUSEHeaderOut + payloadLen,
 			Error:  0,
 			Unique: readFUSEHeaderIn.Unique,
 		}
 
 		// Echo the payload back.
-		outHeader.MarshalUnsafe(outBuf[:outHdrLen])
-		readPayload.MarshalUnsafe(outBuf[outHdrLen:])
+		outHeader.MarshalUnsafe(outBuf[:linux.SizeOfFUSEHeaderOut])
+		readPayload.MarshalUnsafe(outBuf[linux.SizeOfFUSEHeaderOut:])
 		outIOseq := usermem.BytesIOSequence(outBuf)
 
 		_, err = fd.Write(s.Ctx, outIOseq, vfs.WriteOptions{})

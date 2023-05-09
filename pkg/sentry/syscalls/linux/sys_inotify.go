@@ -16,33 +16,28 @@ package linux
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
-	"gvisor.dev/gvisor/pkg/sentry/fs/anon"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
-const allFlags = int(linux.IN_NONBLOCK | linux.IN_CLOEXEC)
+const allFlags = linux.IN_NONBLOCK | linux.IN_CLOEXEC
 
 // InotifyInit1 implements the inotify_init1() syscalls.
-func InotifyInit1(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	flags := int(args[0].Int())
-
+func InotifyInit1(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	flags := args[0].Int()
 	if flags&^allFlags != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
-	dirent := fs.NewDirent(t, anon.NewInode(t), "inotify")
-	fileFlags := fs.FileFlags{
-		Read:        true,
-		Write:       true,
-		NonBlocking: flags&linux.IN_NONBLOCK != 0,
+	ino, err := vfs.NewInotifyFD(t, t.Kernel().VFS(), uint32(flags))
+	if err != nil {
+		return 0, nil, err
 	}
-	n := fs.NewFile(t, dirent, fileFlags, fs.NewInotify(t))
-	defer n.DecRef(t)
+	defer ino.DecRef(t)
 
-	fd, err := t.NewFDFrom(0, n, kernel.FDFlags{
+	fd, err := t.NewFDFrom(0, ino, kernel.FDFlags{
 		CloseOnExec: flags&linux.IN_CLOEXEC != 0,
 	})
 
@@ -54,80 +49,85 @@ func InotifyInit1(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.
 }
 
 // InotifyInit implements the inotify_init() syscalls.
-func InotifyInit(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func InotifyInit(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	args[0].Value = 0
-	return InotifyInit1(t, args)
+	return InotifyInit1(t, sysno, args)
 }
 
 // fdToInotify resolves an fd to an inotify object. If successful, the file will
 // have an extra ref and the caller is responsible for releasing the ref.
-func fdToInotify(t *kernel.Task, fd int32) (*fs.Inotify, *fs.File, error) {
-	file := t.GetFile(fd)
-	if file == nil {
+func fdToInotify(t *kernel.Task, fd int32) (*vfs.Inotify, *vfs.FileDescription, error) {
+	f := t.GetFile(fd)
+	if f == nil {
 		// Invalid fd.
-		return nil, nil, syserror.EBADF
+		return nil, nil, linuxerr.EBADF
 	}
 
-	ino, ok := file.FileOperations.(*fs.Inotify)
+	ino, ok := f.Impl().(*vfs.Inotify)
 	if !ok {
 		// Not an inotify fd.
-		file.DecRef(t)
-		return nil, nil, syserror.EINVAL
+		f.DecRef(t)
+		return nil, nil, linuxerr.EINVAL
 	}
 
-	return ino, file, nil
+	return ino, f, nil
 }
 
 // InotifyAddWatch implements the inotify_add_watch() syscall.
-func InotifyAddWatch(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func InotifyAddWatch(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	addr := args[1].Pointer()
 	mask := args[2].Uint()
 
+	// "EINVAL: The given event mask contains no valid events."
+	//	-- inotify_add_watch(2)
+	if mask&linux.ALL_INOTIFY_BITS == 0 {
+		return 0, nil, linuxerr.EINVAL
+	}
+
 	// "IN_DONT_FOLLOW: Don't dereference pathname if it is a symbolic link."
 	//  -- inotify(7)
-	resolve := mask&linux.IN_DONT_FOLLOW == 0
-
-	// "EINVAL: The given event mask contains no valid events."
-	// -- inotify_add_watch(2)
-	if validBits := mask & linux.ALL_INOTIFY_BITS; validBits == 0 {
-		return 0, nil, syserror.EINVAL
+	follow := followFinalSymlink
+	if mask&linux.IN_DONT_FOLLOW != 0 {
+		follow = nofollowFinalSymlink
 	}
 
-	ino, file, err := fdToInotify(t, fd)
+	ino, f, err := fdToInotify(t, fd)
 	if err != nil {
 		return 0, nil, err
 	}
-	defer file.DecRef(t)
+	defer f.DecRef(t)
 
-	path, _, err := copyInPath(t, addr, false /* allowEmpty */)
+	path, err := copyInPath(t, addr)
 	if err != nil {
 		return 0, nil, err
 	}
+	if mask&linux.IN_ONLYDIR != 0 {
+		path.Dir = true
+	}
+	tpop, err := getTaskPathOperation(t, linux.AT_FDCWD, path, disallowEmptyPath, follow)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer tpop.Release(t)
+	d, err := t.Kernel().VFS().GetDentryAt(t, t.Credentials(), &tpop.pop, &vfs.GetDentryOptions{})
+	if err != nil {
+		return 0, nil, err
+	}
+	defer d.DecRef(t)
 
-	err = fileOpOn(t, linux.AT_FDCWD, path, resolve, func(root *fs.Dirent, dirent *fs.Dirent, _ uint) error {
-		// "IN_ONLYDIR: Only watch pathname if it is a directory." -- inotify(7)
-		if onlyDir := mask&linux.IN_ONLYDIR != 0; onlyDir && !fs.IsDir(dirent.Inode.StableAttr) {
-			return syserror.ENOTDIR
-		}
-
-		// Copy out to the return frame.
-		fd = ino.AddWatch(dirent, mask)
-
-		return nil
-	})
-	return uintptr(fd), nil, err // Return from the existing value.
+	return uintptr(ino.AddWatch(d.Dentry(), mask)), nil, nil
 }
 
 // InotifyRmWatch implements the inotify_rm_watch() syscall.
-func InotifyRmWatch(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func InotifyRmWatch(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	fd := args[0].Int()
 	wd := args[1].Int()
 
-	ino, file, err := fdToInotify(t, fd)
+	ino, f, err := fdToInotify(t, fd)
 	if err != nil {
 		return 0, nil, err
 	}
-	defer file.DecRef(t)
+	defer f.DecRef(t)
 	return 0, nil, ino.RmWatch(t, wd)
 }

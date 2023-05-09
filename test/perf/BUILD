@@ -1,6 +1,10 @@
+load("//tools:defs.bzl", "more_shards")
 load("//test/runner:defs.bzl", "syscall_test")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 syscall_test(
     debug = False,
@@ -37,6 +41,7 @@ syscall_test(
 syscall_test(
     size = "large",
     debug = False,
+    shard_count = more_shards,
     tags = ["nogotsan"],
     test = "//test/perf/linux:getdents_benchmark",
 )
@@ -65,6 +70,13 @@ syscall_test(
     add_overlay = True,
     debug = False,
     test = "//test/perf/linux:open_benchmark",
+)
+
+syscall_test(
+    size = "large",
+    add_overlay = True,
+    debug = False,
+    test = "//test/perf/linux:dup_benchmark",
 )
 
 syscall_test(

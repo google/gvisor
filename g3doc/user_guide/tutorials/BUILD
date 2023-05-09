@@ -1,6 +1,7 @@
 load("//website:defs.bzl", "doc")
 
 package(
+    default_applicable_licenses = ["//:license"],
     default_visibility = ["//website:__pkg__"],
     licenses = ["notice"],
 )
@@ -37,10 +38,28 @@ doc(
 )
 
 doc(
+    name = "falco",
+    src = "falco.md",
+    category = "User Guide",
+    permalink = "/docs/tutorials/falco/",
+    subcategory = "Tutorials",
+    weight = "35",
+)
+
+doc(
+    name = "knative",
+    src = "knative.md",
+    category = "User Guide",
+    permalink = "/docs/tutorials/knative/",
+    subcategory = "Tutorials",
+    weight = "40",
+)
+
+doc(
     name = "cni",
     src = "cni.md",
     category = "User Guide",
     permalink = "/docs/tutorials/cni/",
     subcategory = "Tutorials",
-    weight = "40",
+    weight = "50",
 )

@@ -19,23 +19,23 @@ import (
 )
 
 func TestLoadHooks(t *testing.T) {
-	runTestCases(t, false, "load-hooks", []interface{}{
+	runTestCases(t, false, "load-hooks", []any{
 		// Root object being a struct.
 		afterLoadStruct{v: 1},
 		valueLoadStruct{v: 1},
 		genericContainer{v: &afterLoadStruct{v: 1}},
 		genericContainer{v: &valueLoadStruct{v: 1}},
-		sliceContainer{v: []interface{}{&afterLoadStruct{v: 1}}},
-		sliceContainer{v: []interface{}{&valueLoadStruct{v: 1}}},
+		sliceContainer{v: []any{&afterLoadStruct{v: 1}}},
+		sliceContainer{v: []any{&valueLoadStruct{v: 1}}},
 		// Root object being a pointer.
 		&afterLoadStruct{v: 1},
 		&valueLoadStruct{v: 1},
 		&genericContainer{v: &afterLoadStruct{v: 1}},
 		&genericContainer{v: &valueLoadStruct{v: 1}},
-		&sliceContainer{v: []interface{}{&afterLoadStruct{v: 1}}},
-		&sliceContainer{v: []interface{}{&valueLoadStruct{v: 1}}},
-		&mapContainer{v: map[int]interface{}{0: &afterLoadStruct{v: 1}}},
-		&mapContainer{v: map[int]interface{}{0: &valueLoadStruct{v: 1}}},
+		&sliceContainer{v: []any{&afterLoadStruct{v: 1}}},
+		&sliceContainer{v: []any{&valueLoadStruct{v: 1}}},
+		&mapContainer{v: map[int]any{0: &afterLoadStruct{v: 1}}},
+		&mapContainer{v: map[int]any{0: &valueLoadStruct{v: 1}}},
 	})
 }
 
@@ -50,7 +50,7 @@ func TestCycles(t *testing.T) {
 	cs1.c = &cs2
 	cs2.c = &cs1
 
-	runTestCases(t, false, "cycles", []interface{}{
+	runTestCases(t, false, "cycles", []any{
 		cs,
 		cs1,
 	})
@@ -62,7 +62,7 @@ func TestDeadlock(t *testing.T) {
 	bs := badCycleStruct{nil}
 	bs.b = &bs
 
-	runTestCases(t, false, "self", []interface{}{
+	runTestCases(t, false, "self", []any{
 		&bs,
 	})
 
@@ -72,7 +72,7 @@ func TestDeadlock(t *testing.T) {
 	bs1.b = &bs2
 	bs2.b = &bs1
 
-	runTestCases(t, true, "deadlock", []interface{}{
+	runTestCases(t, true, "deadlock", []any{
 		&bs1,
 	})
 }

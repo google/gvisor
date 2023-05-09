@@ -19,8 +19,8 @@ import (
 	"io"
 
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/sentry/fsbridge"
-	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -37,20 +37,20 @@ const (
 )
 
 // parseInterpreterScript returns the interpreter path and argv.
-func parseInterpreterScript(ctx context.Context, filename string, f fsbridge.File, argv []string) (newpath string, newargv []string, err error) {
+func parseInterpreterScript(ctx context.Context, filename string, fd *vfs.FileDescription, argv []string) (newpath string, newargv []string, err error) {
 	line := make([]byte, interpMaxLineLength)
-	n, err := f.ReadFull(ctx, usermem.BytesIOSequence(line), 0)
+	n, err := fd.ReadFull(ctx, usermem.BytesIOSequence(line), 0)
 	// Short read is OK.
 	if err != nil && err != io.ErrUnexpectedEOF {
 		if err == io.EOF {
-			err = syserror.ENOEXEC
+			err = linuxerr.ENOEXEC
 		}
 		return "", []string{}, err
 	}
 	line = line[:n]
 
 	if !bytes.Equal(line[:2], []byte(interpreterScriptMagic)) {
-		return "", []string{}, syserror.ENOEXEC
+		return "", []string{}, linuxerr.ENOEXEC
 	}
 	// Ignore #!.
 	line = line[2:]
@@ -59,7 +59,7 @@ func parseInterpreterScript(ctx context.Context, filename string, f fsbridge.Fil
 	// Linux silently truncates the remainder of the line if it exceeds
 	// interpMaxLineLength.
 	i := bytes.IndexByte(line, '\n')
-	if i > 0 {
+	if i >= 0 {
 		line = line[:i]
 	}
 
@@ -82,7 +82,7 @@ func parseInterpreterScript(ctx context.Context, filename string, f fsbridge.Fil
 
 	if string(interp) == "" {
 		ctx.Infof("Interpreter script contains no interpreter: %v", line)
-		return "", []string{}, syserror.ENOEXEC
+		return "", []string{}, linuxerr.ENOEXEC
 	}
 
 	// Build the new argument list:

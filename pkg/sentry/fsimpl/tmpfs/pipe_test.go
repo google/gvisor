@@ -20,11 +20,11 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -114,7 +114,7 @@ func TestNonblockingWriteError(t *testing.T) {
 	}
 	openOpts := vfs.OpenOptions{Flags: linux.O_WRONLY | linux.O_NONBLOCK}
 	_, err := vfsObj.OpenAt(ctx, creds, &pop, &openOpts)
-	if err != syserror.ENXIO {
+	if !linuxerr.Equals(linuxerr.ENXIO, err) {
 		t.Fatalf("expected ENXIO, but got error: %v", err)
 	}
 }
@@ -201,7 +201,7 @@ func checkEmpty(ctx context.Context, t *testing.T, fd *vfs.FileDescription) {
 	readData := make([]byte, 1)
 	dst := usermem.BytesIOSequence(readData)
 	bytesRead, err := fd.Read(ctx, dst, vfs.ReadOptions{})
-	if err != syserror.ErrWouldBlock {
+	if err != linuxerr.ErrWouldBlock {
 		t.Fatalf("expected ErrWouldBlock reading from empty pipe %q, but got: %v", fileName, err)
 	}
 	if bytesRead != 0 {

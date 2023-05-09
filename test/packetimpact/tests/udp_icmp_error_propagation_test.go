@@ -58,16 +58,20 @@ func (e icmpError) String() string {
 	return "Unknown ICMP error"
 }
 
-func (e icmpError) ToICMPv4() *testbench.ICMPv4 {
+func (e icmpError) ToICMPv4(payload []byte) *testbench.ICMPv4 {
 	switch e {
 	case portUnreachable:
 		return &testbench.ICMPv4{
-			Type: testbench.ICMPv4Type(header.ICMPv4DstUnreachable),
-			Code: testbench.ICMPv4Code(header.ICMPv4PortUnreachable)}
+			Type:    testbench.ICMPv4Type(header.ICMPv4DstUnreachable),
+			Code:    testbench.ICMPv4Code(header.ICMPv4PortUnreachable),
+			Payload: payload,
+		}
 	case timeToLiveExceeded:
 		return &testbench.ICMPv4{
-			Type: testbench.ICMPv4Type(header.ICMPv4TimeExceeded),
-			Code: testbench.ICMPv4Code(header.ICMPv4TTLExceeded)}
+			Type:    testbench.ICMPv4Type(header.ICMPv4TimeExceeded),
+			Code:    testbench.ICMPv4Code(header.ICMPv4TTLExceeded),
+			Payload: payload,
+		}
 	}
 	return nil
 }
@@ -101,8 +105,6 @@ func wantErrno(c connectionMode, icmpErr icmpError) unix.Errno {
 func sendICMPError(t *testing.T, conn *testbench.UDPIPv4, icmpErr icmpError, udp *testbench.UDP) {
 	t.Helper()
 
-	layers := conn.CreateFrame(t, nil)
-	layers = layers[:len(layers)-1]
 	ip, ok := udp.Prev().(*testbench.IPv4)
 	if !ok {
 		t.Fatalf("expected %s to be IPv4", udp.Prev())
@@ -113,12 +115,15 @@ func sendICMPError(t *testing.T, conn *testbench.UDPIPv4, icmpErr icmpError, udp
 		// to 1.
 		ip.Checksum = nil
 	}
-	// Note that the ICMP payload is valid in this case because the UDP
-	// payload is empty. If the UDP payload were not empty, the packet
-	// length during serialization may not be calculated correctly,
-	// resulting in a mal-formed packet.
-	layers = append(layers, icmpErr.ToICMPv4(), ip, udp)
 
+	icmpPayload := testbench.Layers{ip, udp}
+	bytes, err := icmpPayload.ToBytes()
+	if err != nil {
+		t.Fatalf("got icmpPayload.ToBytes() = (_, %s), want = (_, nil)", err)
+	}
+
+	layers := conn.CreateFrame(t, nil)
+	layers[len(layers)-1] = icmpErr.ToICMPv4(bytes)
 	conn.SendFrameStateless(t, layers)
 }
 
@@ -136,8 +141,6 @@ func testRecv(ctx context.Context, t *testing.T, d testData) {
 	d.conn.Send(t, testbench.UDP{})
 
 	if d.wantErrno != unix.Errno(0) {
-		ctx, cancel := context.WithTimeout(ctx, time.Second)
-		defer cancel()
 		ret, _, err := d.dut.RecvWithErrno(ctx, t, d.remoteFD, 100, 0)
 		if ret != -1 {
 			t.Fatalf("recv after ICMP error succeeded unexpectedly, expected (%[1]d) %[1]v", d.wantErrno)
@@ -152,7 +155,7 @@ func testRecv(ctx context.Context, t *testing.T, d testData) {
 
 // testSendTo tests observing the ICMP error through the send syscall. If
 // wantErrno is non-zero, the first send should fail and a subsequent send
-// should suceed; while if wantErrno is zero then the first send should just
+// should succeed; while if wantErrno is zero then the first send should just
 // succeed.
 func testSendTo(ctx context.Context, t *testing.T, d testData) {
 	// Check that sending on the clean socket works.
@@ -162,8 +165,6 @@ func testSendTo(ctx context.Context, t *testing.T, d testData) {
 	}
 
 	if d.wantErrno != unix.Errno(0) {
-		ctx, cancel := context.WithTimeout(ctx, time.Second)
-		defer cancel()
 		ret, err := d.dut.SendToWithErrno(ctx, t, d.remoteFD, nil, 0, d.conn.LocalAddr(t))
 
 		if ret != -1 {
@@ -310,10 +311,7 @@ func TestICMPErrorDuringUDPRecv(t *testing.T) {
 					defer wg.Done()
 
 					if wantErrno != unix.Errno(0) {
-						ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-						defer cancel()
-
-						ret, _, err := dut.RecvWithErrno(ctx, t, remoteFD, 100, 0)
+						ret, _, err := dut.RecvWithErrno(context.Background(), t, remoteFD, 100, 0)
 						if ret != -1 {
 							t.Errorf("recv during ICMP error succeeded unexpectedly, expected (%[1]d) %[1]v", wantErrno)
 							return
@@ -324,10 +322,7 @@ func TestICMPErrorDuringUDPRecv(t *testing.T) {
 						}
 					}
 
-					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-					defer cancel()
-
-					if ret, _, err := dut.RecvWithErrno(ctx, t, remoteFD, 100, 0); ret == -1 {
+					if ret, _, err := dut.RecvWithErrno(context.Background(), t, remoteFD, 100, 0); ret == -1 {
 						t.Errorf("recv after ICMP error failed with (%[1]d) %[1]", err)
 					}
 				}()
@@ -335,10 +330,7 @@ func TestICMPErrorDuringUDPRecv(t *testing.T) {
 				go func() {
 					defer wg.Done()
 
-					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-					defer cancel()
-
-					if ret, _, err := dut.RecvWithErrno(ctx, t, cleanFD, 100, 0); ret == -1 {
+					if ret, _, err := dut.RecvWithErrno(context.Background(), t, cleanFD, 100, 0); ret == -1 {
 						t.Errorf("recv on clean socket failed with (%[1]d) %[1]", err)
 					}
 				}()

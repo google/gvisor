@@ -18,14 +18,13 @@ import (
 	"io"
 	"math"
 
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
-
-	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 const (
@@ -40,14 +39,14 @@ const (
 // possible. The urandom pool is also expected to have plenty of entropy, thus
 // the GRND_RANDOM flag is ignored. The GRND_NONBLOCK flag does not apply, as
 // the pool will already be initialized.
-func GetRandom(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func GetRandom(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
 	length := args[1].SizeT()
 	flags := args[2].Int()
 
 	// Flags are checked for validity but otherwise ignored. See above.
 	if flags & ^(_GRND_NONBLOCK|_GRND_RANDOM) != 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	if length > math.MaxInt32 {
@@ -55,7 +54,7 @@ func GetRandom(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 	}
 	ar, ok := addr.ToRange(uint64(length))
 	if !ok {
-		return 0, nil, syserror.EFAULT
+		return 0, nil, linuxerr.EFAULT
 	}
 
 	// "If the urandom source has been initialized, reads of up to 256 bytes

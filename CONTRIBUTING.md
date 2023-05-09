@@ -32,8 +32,9 @@ will need to be added to the appropriate `BUILD` files, and the `:gopath` target
 will need to be re-run to generate appropriate symlinks in the `GOPATH`
 directory tree.
 
-Dependencies can be added by using `go mod get`. In order to keep the
-`WORKSPACE` file in sync, run `tools/go_mod.sh` in place of `go mod`.
+Dependencies can be added by using `go get`. In order to keep the `WORKSPACE`
+file in sync, run `bazel run //:gazelle -- update-repos -from_file=go.mod` in
+place of `go mod`.
 
 ### Coding Guidelines
 
@@ -65,10 +66,12 @@ Rules:
 
     *   Itself.
     *   Go standard library.
-        *   Except (transitively) package "net" (this will result in a non-cgo
-            binary). Use `//pkg/unet` instead.
     *   `@org_golang_x_sys//unix:go_default_library` (Go import
         `golang.org/x/sys/unix`).
+    *   `@org_golang_x_time//rate:go_default_library` (Go import
+        `golang.org/x/time/rate`).
+    *   `@com_github_google_btree//:go_default_library"` (Go import
+        `github.com/google/btree`).
     *   Generated Go protobuf packages.
     *   `@org_golang_google_protobuf//proto:go_default_library` (Go import
         `google.golang.org/protobuf`).
@@ -80,6 +83,8 @@ Rules:
         `github.com/google/subcommands`).
     *   `@com_github_opencontainers_runtime_spec//specs_go:go_default_library`
         (Go import `github.com/opencontainers/runtime-spec/specs_go`).
+
+*   For performance reasons, `runsc boot` may not run the `netpoller` goroutine.
 
 ### Code reviews
 

@@ -114,7 +114,7 @@ TEST_P(TimerfdTest, BlockingRead) {
   EXPECT_GE((end_time - start_time) + TimerSlack(), kDelay);
 }
 
-TEST_P(TimerfdTest, NonblockingRead_NoRandomSave) {
+TEST_P(TimerfdTest, NonblockingRead) {
   constexpr absl::Duration kDelay = absl::Seconds(5);
 
   auto const tfd =
@@ -204,11 +204,22 @@ TEST_P(TimerfdTest, SetAbsoluteTime) {
   EXPECT_EQ(1, val);
 }
 
+TEST_P(TimerfdTest, SetToPastExpiresEventually) {
+  auto const tfd = ASSERT_NO_ERRNO_AND_VALUE(TimerfdCreate(GetParam(), 0));
+  struct itimerspec its = {};
+  its.it_value.tv_nsec = 1;
+  ASSERT_THAT(timerfd_settime(tfd.get(), TFD_TIMER_ABSTIME, &its, nullptr),
+              SyscallSucceeds());
+
+  uint64_t val = 0;
+  ASSERT_THAT(ReadFd(tfd.get(), &val, sizeof(uint64_t)),
+              SyscallSucceedsWithValue(sizeof(uint64_t)));
+  ASSERT_EQ(val, 1);
+}
+
 TEST_P(TimerfdTest, IllegalSeek) {
   auto const tfd = ASSERT_NO_ERRNO_AND_VALUE(TimerfdCreate(GetParam(), 0));
-  if (!IsRunningWithVFS1()) {
-    EXPECT_THAT(lseek(tfd.get(), 0, SEEK_SET), SyscallFailsWithErrno(ESPIPE));
-  }
+  EXPECT_THAT(lseek(tfd.get(), 0, SEEK_SET), SyscallFailsWithErrno(ESPIPE));
 }
 
 TEST_P(TimerfdTest, IllegalPread) {
@@ -221,8 +232,6 @@ TEST_P(TimerfdTest, IllegalPread) {
 TEST_P(TimerfdTest, IllegalPwrite) {
   auto const tfd = ASSERT_NO_ERRNO_AND_VALUE(TimerfdCreate(GetParam(), 0));
   EXPECT_THAT(pwrite(tfd.get(), "x", 1, 0), SyscallFailsWithErrno(ESPIPE));
-  if (!IsRunningWithVFS1()) {
-  }
 }
 
 TEST_P(TimerfdTest, IllegalWrite) {
@@ -259,6 +268,25 @@ TEST(TimerfdClockRealtimeTest, ClockRealtime) {
   struct itimerspec its = {};
   its.it_value.tv_sec = kDelaySecs;
   ASSERT_THAT(timerfd_settime(tfd.get(), /* flags = */ 0, &its, nullptr),
+              SyscallSucceeds());
+
+  uint64_t val = 0;
+  ASSERT_THAT(ReadFd(tfd.get(), &val, sizeof(uint64_t)),
+              SyscallSucceedsWithValue(sizeof(uint64_t)));
+  EXPECT_EQ(1, val);
+}
+
+// Same as the above ClockRealtime test but expresses the input as an absolute
+// time value rather than an interval.
+TEST(TimerfdClockRealtimeTest, ClockAbsoluteRealtime) {
+  constexpr int kDelaySecs = 1;
+
+  struct itimerspec its = {};
+  ASSERT_EQ(0, clock_gettime(CLOCK_REALTIME, &its.it_value));
+  its.it_value.tv_sec += kDelaySecs;
+
+  auto const tfd = ASSERT_NO_ERRNO_AND_VALUE(TimerfdCreate(CLOCK_REALTIME, 0));
+  ASSERT_THAT(timerfd_settime(tfd.get(), TFD_TIMER_ABSTIME, &its, nullptr),
               SyscallSucceeds());
 
   uint64_t val = 0;

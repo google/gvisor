@@ -95,75 +95,75 @@ const (
 // ioctl(2) directions. Used to calculate requests number.
 // Constants from asm-generic/ioctl.h.
 const (
-	_IOC_NONE  = 0
-	_IOC_WRITE = 1
-	_IOC_READ  = 2
+	IOC_NONE  = 0
+	IOC_WRITE = 1
+	IOC_READ  = 2
 )
 
 // Constants from asm-generic/ioctl.h.
 const (
-	_IOC_NRBITS   = 8
-	_IOC_TYPEBITS = 8
-	_IOC_SIZEBITS = 14
-	_IOC_DIRBITS  = 2
+	IOC_NRBITS   = 8
+	IOC_TYPEBITS = 8
+	IOC_SIZEBITS = 14
+	IOC_DIRBITS  = 2
 
-	_IOC_NRSHIFT   = 0
-	_IOC_TYPESHIFT = _IOC_NRSHIFT + _IOC_NRBITS
-	_IOC_SIZESHIFT = _IOC_TYPESHIFT + _IOC_TYPEBITS
-	_IOC_DIRSHIFT  = _IOC_SIZESHIFT + _IOC_SIZEBITS
+	IOC_NRSHIFT   = 0
+	IOC_TYPESHIFT = IOC_NRSHIFT + IOC_NRBITS
+	IOC_SIZESHIFT = IOC_TYPESHIFT + IOC_TYPEBITS
+	IOC_DIRSHIFT  = IOC_SIZESHIFT + IOC_SIZEBITS
 )
 
-// Constants from uapi/linux/fs.h.
-const (
-	FS_IOC_GETFLAGS = 2148034049
-	FS_VERITY_FL    = 1048576
-)
-
-// Constants from uapi/linux/fsverity.h.
-const (
-	FS_VERITY_HASH_ALG_SHA256 = 1
-	FS_VERITY_HASH_ALG_SHA512 = 2
-
-	FS_IOC_ENABLE_VERITY  = 1082156677
-	FS_IOC_MEASURE_VERITY = 3221513862
-)
-
-// DigestMetadata is a helper struct for VerityDigest.
-//
-// +marshal
-type DigestMetadata struct {
-	DigestAlgorithm uint16
-	DigestSize      uint16
-}
-
-// SizeOfDigestMetadata is the size of struct DigestMetadata.
-const SizeOfDigestMetadata = 4
-
-// VerityDigest is struct from uapi/linux/fsverity.h.
-type VerityDigest struct {
-	Metadata DigestMetadata
-	Digest   []byte
-}
-
-// IOC outputs the result of _IOC macro in asm-generic/ioctl.h.
+// IOC outputs the result of _IOC macro in include/uapi/asm-generic/ioctl.h.
 func IOC(dir, typ, nr, size uint32) uint32 {
-	return uint32(dir)<<_IOC_DIRSHIFT | typ<<_IOC_TYPESHIFT | nr<<_IOC_NRSHIFT | size<<_IOC_SIZESHIFT
+	return uint32(dir)<<IOC_DIRSHIFT | typ<<IOC_TYPESHIFT | nr<<IOC_NRSHIFT | size<<IOC_SIZESHIFT
 }
 
-// Kcov ioctls from kernel/kcov.h.
+// IO outputs the result of _IO macro in include/uapi/asm-generic/ioctl.h.
+func IO(typ, nr uint32) uint32 {
+	return IOC(IOC_NONE, typ, nr, 0)
+}
+
+// IOR outputs the result of _IOR macro in include/uapi/asm-generic/ioctl.h.
+func IOR(typ, nr, size uint32) uint32 {
+	return IOC(IOC_READ, typ, nr, size)
+}
+
+// IOW outputs the result of _IOW macro in include/uapi/asm-generic/ioctl.h.
+func IOW(typ, nr, size uint32) uint32 {
+	return IOC(IOC_WRITE, typ, nr, size)
+}
+
+// IOWR outputs the result of _IOWR macro in include/uapi/asm-generic/ioctl.h.
+func IOWR(typ, nr, size uint32) uint32 {
+	return IOC(IOC_READ|IOC_WRITE, typ, nr, size)
+}
+
+// IOC_NR outputs the result of IOC_NR macro in
+// include/uapi/asm-generic/ioctl.h.
+func IOC_NR(nr uint32) uint32 {
+	return (nr >> IOC_NRSHIFT) & ((1 << IOC_NRBITS) - 1)
+}
+
+// IOC_SIZE outputs the result of IOC_SIZE macro in
+// include/uapi/asm-generic/ioctl.h.
+func IOC_SIZE(nr uint32) uint32 {
+	return (nr >> IOC_SIZESHIFT) & ((1 << IOC_SIZEBITS) - 1)
+}
+
+// Kcov ioctls from include/uapi/linux/kcov.h.
 var (
-	KCOV_INIT_TRACE = IOC(_IOC_READ, 'c', 1, 8)
-	KCOV_ENABLE     = IOC(_IOC_NONE, 'c', 100, 0)
-	KCOV_DISABLE    = IOC(_IOC_NONE, 'c', 101, 0)
+	KCOV_INIT_TRACE = IOR('c', 1, 8)
+	KCOV_ENABLE     = IO('c', 100)
+	KCOV_DISABLE    = IO('c', 101)
 )
 
-// Kcov trace types from kernel/kcov.h.
+// Kcov trace types from include/uapi/linux/kcov.h.
 const (
 	KCOV_TRACE_PC  = 0
 	KCOV_TRACE_CMP = 1
 )
 
-// Kcov state constants from kernel/kcov.h.
+// Kcov state constants from include/uapi/linux/kcov.h.
 const (
 	KCOV_MODE_DISABLED  = 0
 	KCOV_MODE_INIT      = 1

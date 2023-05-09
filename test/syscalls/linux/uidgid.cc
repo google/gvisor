@@ -76,7 +76,10 @@ TEST(UidGidTest, Getgroups) {
 
   // "EINVAL: size is less than the number of supplementary group IDs, but is
   // not zero."
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstringop-overflow="
   EXPECT_THAT(getgroups(-1, nullptr), SyscallFailsWithErrno(EINVAL));
+#pragma GCC diagnostic pop
 
   // Testing for EFAULT requires actually having groups, which isn't guaranteed
   // here; see the setgroups test below.
@@ -170,7 +173,9 @@ TEST(UidGidRootTest, SetgidNotFromThreadGroupLeader) {
   const gid_t gid = absl::GetFlag(FLAGS_scratch_gid1);
   // NOTE(b/64676707): Do setgid in a separate thread so that we can test if
   // info.si_pid is set correctly.
-  ScopedThread([gid] { ASSERT_THAT(setgid(gid), SyscallSucceeds()); });
+  ScopedThread thread =
+      ScopedThread([gid] { ASSERT_THAT(setgid(gid), SyscallSucceeds()); });
+  thread.Join();
   EXPECT_NO_ERRNO(CheckGIDs(gid, gid, gid));
 
 #pragma pop_macro("allow_setgid")

@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build amd64 || i386
 // +build amd64 i386
 
 package fpu
@@ -21,9 +22,9 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cpuid"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // initX86FPState (defined in asm files) sets up initial state.
@@ -62,6 +63,15 @@ func (s *State) Fork() State {
 	return n
 }
 
+// Reset resets s to its initial state.
+func (s *State) Reset() {
+	f := *s
+	for i := range f {
+		f[i] = 0
+	}
+	initX86FPState(&f[0], cpuid.HostFeatureSet().UseXsave())
+}
+
 // ptraceFPRegsSize is the size in bytes of Linux's user_i387_struct, the type
 // manipulated by PTRACE_GETFPREGS and PTRACE_SETFPREGS on x86. Equivalently,
 // ptraceFPRegsSize is the size in bytes of the x86 FXSAVE area.
@@ -70,7 +80,7 @@ const ptraceFPRegsSize = 512
 // PtraceGetFPRegs implements Context.PtraceGetFPRegs.
 func (s *State) PtraceGetFPRegs(dst io.Writer, maxlen int) (int, error) {
 	if maxlen < ptraceFPRegsSize {
-		return 0, syserror.EFAULT
+		return 0, linuxerr.EFAULT
 	}
 
 	return dst.Write((*s)[:ptraceFPRegsSize])
@@ -79,7 +89,7 @@ func (s *State) PtraceGetFPRegs(dst io.Writer, maxlen int) (int, error) {
 // PtraceSetFPRegs implements Context.PtraceSetFPRegs.
 func (s *State) PtraceSetFPRegs(src io.Reader, maxlen int) (int, error) {
 	if maxlen < ptraceFPRegsSize {
-		return 0, syserror.EFAULT
+		return 0, linuxerr.EFAULT
 	}
 
 	var f [ptraceFPRegsSize]byte
@@ -104,11 +114,6 @@ const (
 	// mxcsrMaskOffset is the offset in bytes of the MXCSR_MASK field from the
 	// start of the FXSAVE area.
 	mxcsrMaskOffset = 28
-)
-
-var (
-	mxcsrMask     uint32
-	initMXCSRMask sync.Once
 )
 
 const (
@@ -141,32 +146,10 @@ const (
 	xsaveHeaderZeroedBytes  = 64 - 8
 )
 
-// sanitizeMXCSR coerces reserved bits in the MXCSR field of f to 0. ("FXRSTOR
-// generates a general-protection fault (#GP) in response to an attempt to set
-// any of the reserved bits of the MXCSR register." - Intel SDM Vol. 1, Section
-// 10.5.1.2 "SSE State")
-func sanitizeMXCSR(f State) {
-	mxcsr := hostarch.ByteOrder.Uint32(f[mxcsrOffset:])
-	initMXCSRMask.Do(func() {
-		temp := State(alignedBytes(uint(ptraceFPRegsSize), 16))
-		initX86FPState(&temp[0], false /* useXsave */)
-		mxcsrMask = hostarch.ByteOrder.Uint32(temp[mxcsrMaskOffset:])
-		if mxcsrMask == 0 {
-			// "If the value of the MXCSR_MASK field is 00000000H, then the
-			// MXCSR_MASK value is the default value of 0000FFBFH." - Intel SDM
-			// Vol. 1, Section 11.6.6 "Guidelines for Writing to the MXCSR
-			// Register"
-			mxcsrMask = 0xffbf
-		}
-	})
-	mxcsr &= mxcsrMask
-	hostarch.ByteOrder.PutUint32(f[mxcsrOffset:], mxcsr)
-}
-
 // PtraceGetXstateRegs implements ptrace(PTRACE_GETREGS, NT_X86_XSTATE) by
 // writing the floating point registers from this state to dst and returning the
 // number of bytes written, which must be less than or equal to maxlen.
-func (s *State) PtraceGetXstateRegs(dst io.Writer, maxlen int, featureSet *cpuid.FeatureSet) (int, error) {
+func (s *State) PtraceGetXstateRegs(dst io.Writer, maxlen int, featureSet cpuid.FeatureSet) (int, error) {
 	// N.B. s.x86FPState may contain more state than the application
 	// expects. We only copy the subset that would be in their XSAVE area.
 	ess, _ := featureSet.ExtendedStateSize()
@@ -187,7 +170,7 @@ func (s *State) PtraceGetXstateRegs(dst io.Writer, maxlen int, featureSet *cpuid
 // PtraceSetXstateRegs implements ptrace(PTRACE_SETREGS, NT_X86_XSTATE) by
 // reading floating point registers from src and returning the number of bytes
 // read, which must be less than or equal to maxlen.
-func (s *State) PtraceSetXstateRegs(src io.Reader, maxlen int, featureSet *cpuid.FeatureSet) (int, error) {
+func (s *State) PtraceSetXstateRegs(src io.Reader, maxlen int, featureSet cpuid.FeatureSet) (int, error) {
 	// Allow users to pass an xstate register set smaller than ours (they can
 	// mask bits out of XSTATE_BV), as long as it's at least minXstateBytes.
 	// Also allow users to pass a register set larger than ours; anything after
@@ -205,18 +188,56 @@ func (s *State) PtraceSetXstateRegs(src io.Reader, maxlen int, featureSet *cpuid
 	if _, err := io.ReadFull(src, f); err != nil {
 		return 0, err
 	}
+	n := copy(*s, f)
+	s.SanitizeUser(featureSet)
+	return n, nil
+}
+
+// SanitizeUser mutates s to ensure that restoring it is safe.
+func (s *State) SanitizeUser(featureSet cpuid.FeatureSet) {
+	f := *s
+
 	// Force reserved bits in MXCSR to 0. This is consistent with Linux.
-	sanitizeMXCSR(State(f))
-	// Users can't enable *more* XCR0 bits than what we, and the CPU, support.
-	xstateBV := hostarch.ByteOrder.Uint64(f[xstateBVOffset:])
-	xstateBV &= featureSet.ValidXCR0Mask()
-	hostarch.ByteOrder.PutUint64(f[xstateBVOffset:], xstateBV)
-	// Force XCOMP_BV and reserved bytes in the XSAVE header to 0.
-	reserved := f[xsaveHeaderZeroedOffset : xsaveHeaderZeroedOffset+xsaveHeaderZeroedBytes]
-	for i := range reserved {
-		reserved[i] = 0
+	sanitizeMXCSR(f)
+
+	if len(f) >= minXstateBytes {
+		// Users can't enable *more* XCR0 bits than what we, and the CPU, support.
+		xstateBV := hostarch.ByteOrder.Uint64(f[xstateBVOffset:])
+		xstateBV &= featureSet.ValidXCR0Mask()
+		hostarch.ByteOrder.PutUint64(f[xstateBVOffset:], xstateBV)
+		// Force XCOMP_BV and reserved bytes in the XSAVE header to 0.
+		reserved := f[xsaveHeaderZeroedOffset : xsaveHeaderZeroedOffset+xsaveHeaderZeroedBytes]
+		for i := range reserved {
+			reserved[i] = 0
+		}
 	}
-	return copy(*s, f), nil
+}
+
+var (
+	mxcsrMask     uint32
+	initMXCSRMask sync.Once
+)
+
+// sanitizeMXCSR coerces reserved bits in the MXCSR field of f to 0. ("FXRSTOR
+// generates a general-protection fault (#GP) in response to an attempt to set
+// any of the reserved bits of the MXCSR register." - Intel SDM Vol. 1, Section
+// 10.5.1.2 "SSE State")
+func sanitizeMXCSR(f State) {
+	mxcsr := hostarch.ByteOrder.Uint32(f[mxcsrOffset:])
+	initMXCSRMask.Do(func() {
+		temp := State(alignedBytes(uint(ptraceFPRegsSize), 16))
+		initX86FPState(&temp[0], false /* useXsave */)
+		mxcsrMask = hostarch.ByteOrder.Uint32(temp[mxcsrMaskOffset:])
+		if mxcsrMask == 0 {
+			// "If the value of the MXCSR_MASK field is 00000000H, then the
+			// MXCSR_MASK value is the default value of 0000FFBFH." - Intel SDM
+			// Vol. 1, Section 11.6.6 "Guidelines for Writing to the MXCSR
+			// Register"
+			mxcsrMask = 0xffbf
+		}
+	})
+	mxcsr &= mxcsrMask
+	hostarch.ByteOrder.PutUint32(f[mxcsrOffset:], mxcsr)
 }
 
 // SetMXCSR sets the MXCSR control/status register in the state.

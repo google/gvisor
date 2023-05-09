@@ -132,11 +132,11 @@ func TestConfigureIPForwarding(t *testing.T) {
 		t.Run(c.comment, func(t *testing.T) {
 			s.IPForwarding = c.initial
 
-			file := &ipForwarding{stack: s, enabled: &c.initial}
+			file := &ipForwarding{stack: s, enabled: c.initial}
 
 			// Write the values.
 			src := usermem.BytesIOSequence([]byte(c.str))
-			if n, err := file.Write(ctx, src, 0); n != int64(len(c.str)) || err != nil {
+			if n, err := file.Write(ctx, nil, src, 0); n != int64(len(c.str)) || err != nil {
 				t.Errorf("file.Write(ctx, nil, %q, 0) = (%d, %v); want (%d, nil)", c.str, n, err, len(c.str))
 			}
 

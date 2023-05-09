@@ -1,7 +1,10 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_template_instance(
     name = "mappable_range",
@@ -54,7 +57,6 @@ go_library(
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/safemem",
-        "//pkg/syserror",
         "//pkg/usermem",
     ],
 )

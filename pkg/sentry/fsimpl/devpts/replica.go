@@ -17,13 +17,13 @@ package devpts
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -37,6 +37,7 @@ type replicaInode struct {
 	kernfs.InodeNoopRefCount
 	kernfs.InodeNotDirectory
 	kernfs.InodeNotSymlink
+	kernfs.InodeWatches
 
 	locks vfs.FileLocks
 
@@ -51,6 +52,10 @@ var _ kernfs.Inode = (*replicaInode)(nil)
 
 // Open implements kernfs.Inode.Open.
 func (ri *replicaInode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
+	t := kernel.TaskFromContext(ctx)
+	if t == nil {
+		panic("open must be called from a task goroutine")
+	}
 	fd := &replicaFileDescription{
 		inode: ri,
 	}
@@ -62,7 +67,7 @@ func (ri *replicaInode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kern
 		// Opening a replica sets the process' controlling TTY when
 		// possible. An error indicates it cannot be set, and is
 		// ignored silently.
-		_ = fd.inode.t.setControllingTTY(ctx, false /* steal */, false /* isMaster */, fd.vfsfd.IsReadable())
+		_ = t.ThreadGroup().SetControllingTTY(fd.inode.t.replicaKTTY, false /* steal */, fd.vfsfd.IsReadable())
 	}
 	return &fd.vfsfd, nil
 
@@ -92,7 +97,7 @@ func (ri *replicaInode) Stat(ctx context.Context, vfsfs *vfs.Filesystem, opts vf
 // SetStat implements kernfs.Inode.SetStat
 func (ri *replicaInode) SetStat(ctx context.Context, vfsfs *vfs.Filesystem, creds *auth.Credentials, opts vfs.SetStatOptions) error {
 	if opts.Stat.Mask&linux.STATX_SIZE != 0 {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	return ri.InodeAttrs.SetStat(ctx, vfsfs, creds, opts)
 }
@@ -112,8 +117,9 @@ var _ vfs.FileDescriptionImpl = (*replicaFileDescription)(nil)
 func (rfd *replicaFileDescription) Release(ctx context.Context) {}
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (rfd *replicaFileDescription) EventRegister(e *waiter.Entry, mask waiter.EventMask) {
-	rfd.inode.t.ld.replicaWaiter.EventRegister(e, mask)
+func (rfd *replicaFileDescription) EventRegister(e *waiter.Entry) error {
+	rfd.inode.t.ld.replicaWaiter.EventRegister(e)
+	return nil
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
@@ -124,6 +130,11 @@ func (rfd *replicaFileDescription) EventUnregister(e *waiter.Entry) {
 // Readiness implements waiter.Waitable.Readiness.
 func (rfd *replicaFileDescription) Readiness(mask waiter.EventMask) waiter.EventMask {
 	return rfd.inode.t.ld.replicaReadiness()
+}
+
+// Epollable implements FileDescriptionImpl.Epollable.
+func (rfd *replicaFileDescription) Epollable() bool {
+	return true
 }
 
 // Read implements vfs.FileDescriptionImpl.Read.
@@ -137,11 +148,11 @@ func (rfd *replicaFileDescription) Write(ctx context.Context, src usermem.IOSequ
 }
 
 // Ioctl implements vfs.FileDescriptionImpl.Ioctl.
-func (rfd *replicaFileDescription) Ioctl(ctx context.Context, io usermem.IO, args arch.SyscallArguments) (uintptr, error) {
+func (rfd *replicaFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
 	t := kernel.TaskFromContext(ctx)
 	if t == nil {
 		// ioctl(2) may only be called from a task goroutine.
-		return 0, syserror.ENOTTY
+		return 0, linuxerr.ENOTTY
 	}
 
 	switch cmd := args[1].Uint(); cmd {
@@ -167,19 +178,29 @@ func (rfd *replicaFileDescription) Ioctl(ctx context.Context, io usermem.IO, arg
 		// Make the given terminal the controlling terminal of the
 		// calling process.
 		steal := args[2].Int() == 1
-		return 0, rfd.inode.t.setControllingTTY(ctx, steal, false /* isMaster */, rfd.vfsfd.IsReadable())
+		return 0, t.ThreadGroup().SetControllingTTY(rfd.inode.t.replicaKTTY, steal, rfd.vfsfd.IsReadable())
 	case linux.TIOCNOTTY:
 		// Release this process's controlling terminal.
-		return 0, rfd.inode.t.releaseControllingTTY(ctx, false /* isMaster */)
+		return 0, t.ThreadGroup().ReleaseControllingTTY(rfd.inode.t.replicaKTTY)
 	case linux.TIOCGPGRP:
-		// Get the foreground process group.
-		return rfd.inode.t.foregroundProcessGroup(ctx, args, false /* isMaster */)
+		// Get the foreground process group id.
+		pgid, err := t.ThreadGroup().ForegroundProcessGroupID(rfd.inode.t.replicaKTTY)
+		if err != nil {
+			return 0, err
+		}
+		ret := primitive.Int32(pgid)
+		_, err = ret.CopyOut(t, args[2].Pointer())
+		return 0, err
 	case linux.TIOCSPGRP:
-		// Set the foreground process group.
-		return rfd.inode.t.setForegroundProcessGroup(ctx, args, false /* isMaster */)
+		// Set the foreground process group id.
+		var pgid primitive.Int32
+		if _, err := pgid.CopyIn(t, args[2].Pointer()); err != nil {
+			return 0, err
+		}
+		return 0, t.ThreadGroup().SetForegroundProcessGroupID(rfd.inode.t.replicaKTTY, kernel.ProcessGroupID(pgid))
 	default:
-		maybeEmitUnimplementedEvent(ctx, cmd)
-		return 0, syserror.ENOTTY
+		maybeEmitUnimplementedEvent(ctx, sysno, cmd)
+		return 0, linuxerr.ENOTTY
 	}
 }
 

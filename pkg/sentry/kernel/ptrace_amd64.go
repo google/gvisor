@@ -12,14 +12,15 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build amd64
 // +build amd64
 
 package kernel
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -72,6 +73,9 @@ func (t *Task) ptraceArch(target *Task, req int64, addr, data hostarch.Addr) err
 				AddressSpaceActive: true,
 			},
 		})
+		if err == nil {
+			target.p.FullStateChanged()
+		}
 		return err
 
 	case linux.PTRACE_SETFPREGS:
@@ -84,9 +88,12 @@ func (t *Task) ptraceArch(target *Task, req int64, addr, data hostarch.Addr) err
 				AddressSpaceActive: true,
 			},
 		}, len(*s))
+		if err == nil {
+			target.p.FullStateChanged()
+		}
 		return err
 
 	default:
-		return syserror.EIO
+		return linuxerr.EIO
 	}
 }

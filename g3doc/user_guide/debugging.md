@@ -61,22 +61,37 @@ You can debug gVisor like any other Golang program. If you're running with
 Docker, you'll need to find the sandbox PID and attach the debugger as root.
 Here is an example:
 
+Install a runsc with debug symbols (you can also use the
+[nightly release](../install/#nightly)):
+
 ```bash
-# Get a runsc with debug symbols (download nightly or build with symbols).
-bazel build -c dbg //runsc:runsc
+make dev BAZEL_OPTIONS="-c dbg"
+```
 
-# Start the container you want to debug.
-docker run --runtime=runsc --rm --name=test -d alpine sleep 1000
+Start the container you want to debug using the runsc runtime with debug
+options:
 
-# Find the sandbox PID.
-docker inspect test | grep Pid | head -n 1
+```bash
+docker run --runtime=$(git branch --show-current)-d --rm --name=test -p 8080:80 -d nginx
+```
 
-# Attach your favorite debugger.
-sudo dlv attach <PID>
+Find the PID and attach your favorite debugger:
 
-# Set a breakpoint and resume.
-break mm.MemoryManager.MMap
+```bash
+sudo dlv attach $(docker inspect test | grep Pid | head -n 1 | grep -oe "[0-9]*")
+```
+
+Set a breakpoint for accept:
+
+```bash
+break gvisor.dev/gvisor/pkg/sentry/socket/netstack.(*SocketOperations).Accept
 continue
+```
+
+In a different window connect to nginx to trigger the breakpoint:
+
+```bash
+curl http://localhost:8080/
 ```
 
 ## Profiling

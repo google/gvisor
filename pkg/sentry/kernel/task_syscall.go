@@ -22,15 +22,16 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bits"
+	"gvisor.dev/gvisor/pkg/errors"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
-	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/sentry/seccheck"
+	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 )
-
-var vsyscallCount = metric.MustCreateNewUint64Metric("/kernel/vsyscall_count", false /* sync */, "Number of times vsyscalls were invoked by the application")
 
 // SyscallRestartBlock represents the restart block for a syscall restartable
 // with a custom function. It encapsulates the state required to restart a
@@ -84,9 +85,46 @@ func (t *Task) executeSyscall(sysno uintptr, args arch.SyscallArguments) (rval u
 
 	fe := s.FeatureEnable.Word(sysno)
 
-	var straceContext interface{}
+	var straceContext any
 	if bits.IsAnyOn32(fe, StraceEnableBits) {
 		straceContext = s.Stracer.SyscallEnter(t, sysno, args, fe)
+	}
+
+	if bits.IsAnyOn32(fe, SecCheckRawEnter) {
+		info := pb.Syscall{
+			Sysno: uint64(sysno),
+			Arg1:  args[0].Uint64(),
+			Arg2:  args[1].Uint64(),
+			Arg3:  args[2].Uint64(),
+			Arg4:  args[3].Uint64(),
+			Arg5:  args[4].Uint64(),
+			Arg6:  args[5].Uint64(),
+		}
+		fields := seccheck.Global.GetFieldSet(seccheck.GetPointForSyscall(seccheck.SyscallRawEnter, sysno))
+		if !fields.Context.Empty() {
+			info.ContextData = &pb.ContextData{}
+			LoadSeccheckData(t, fields.Context, info.ContextData)
+		}
+		seccheck.Global.SentToSinks(func(c seccheck.Sink) error {
+			return c.RawSyscall(t, fields, &info)
+		})
+	}
+	if bits.IsAnyOn32(fe, SecCheckEnter) {
+		fields := seccheck.Global.GetFieldSet(seccheck.GetPointForSyscall(seccheck.SyscallEnter, sysno))
+		var ctxData *pb.ContextData
+		if !fields.Context.Empty() {
+			ctxData = &pb.ContextData{}
+			LoadSeccheckData(t, fields.Context, ctxData)
+		}
+		info := SyscallInfo{
+			Sysno: sysno,
+			Args:  args,
+		}
+		cb := s.LookupSyscallToProto(sysno)
+		msg, msgType := cb(t, fields, ctxData, info)
+		seccheck.Global.SentToSinks(func(c seccheck.Sink) error {
+			return c.Syscall(t, fields, ctxData, msgType, msg)
+		})
 	}
 
 	if bits.IsOn32(fe, ExternalBeforeEnable) && (s.ExternalFilterBefore == nil || s.ExternalFilterBefore(t, sysno, args)) {
@@ -101,7 +139,7 @@ func (t *Task) executeSyscall(sysno uintptr, args arch.SyscallArguments) (rval u
 		}
 		if fn != nil {
 			// Call our syscall implementation.
-			rval, ctrl, err = fn(t, args)
+			rval, ctrl, err = fn(t, sysno, args)
 		} else {
 			// Use the missing function if not found.
 			rval, err = t.SyscallTable().Missing(t, sysno, args)
@@ -118,6 +156,50 @@ func (t *Task) executeSyscall(sysno uintptr, args arch.SyscallArguments) (rval u
 
 	if bits.IsAnyOn32(fe, StraceEnableBits) {
 		s.Stracer.SyscallExit(straceContext, t, sysno, rval, err)
+	}
+
+	if bits.IsAnyOn32(fe, SecCheckRawExit) {
+		info := pb.Syscall{
+			Sysno: uint64(sysno),
+			Arg1:  args[0].Uint64(),
+			Arg2:  args[1].Uint64(),
+			Arg3:  args[2].Uint64(),
+			Arg4:  args[3].Uint64(),
+			Arg5:  args[4].Uint64(),
+			Arg6:  args[5].Uint64(),
+			Exit: &pb.Exit{
+				Result:  int64(rval),
+				Errorno: int64(ExtractErrno(err, int(sysno))),
+			},
+		}
+		fields := seccheck.Global.GetFieldSet(seccheck.GetPointForSyscall(seccheck.SyscallRawEnter, sysno))
+		if !fields.Context.Empty() {
+			info.ContextData = &pb.ContextData{}
+			LoadSeccheckData(t, fields.Context, info.ContextData)
+		}
+		seccheck.Global.SentToSinks(func(c seccheck.Sink) error {
+			return c.RawSyscall(t, fields, &info)
+		})
+	}
+	if bits.IsAnyOn32(fe, SecCheckExit) {
+		fields := seccheck.Global.GetFieldSet(seccheck.GetPointForSyscall(seccheck.SyscallExit, sysno))
+		var ctxData *pb.ContextData
+		if !fields.Context.Empty() {
+			ctxData = &pb.ContextData{}
+			LoadSeccheckData(t, fields.Context, ctxData)
+		}
+		info := SyscallInfo{
+			Exit:  true,
+			Sysno: sysno,
+			Args:  args,
+			Rval:  rval,
+			Errno: ExtractErrno(err, int(sysno)),
+		}
+		cb := s.LookupSyscallToProto(sysno)
+		msg, msgType := cb(t, fields, ctxData, info)
+		seccheck.Global.SentToSinks(func(c seccheck.Sink) error {
+			return c.Syscall(t, fields, ctxData, msgType, msg)
+		})
 	}
 
 	return
@@ -161,7 +243,7 @@ func (t *Task) doSyscall() taskRunState {
 			// ok
 		case linux.SECCOMP_RET_KILL_THREAD:
 			t.Debugf("Syscall %d: killed by seccomp", sysno)
-			t.PrepareExit(ExitStatus{Signo: int(linux.SIGSYS)})
+			t.PrepareExit(linux.WaitStatusTerminationSignal(linux.SIGSYS))
 			return (*runExit)(nil)
 		case linux.SECCOMP_RET_TRACE:
 			t.Debugf("Syscall %d: stopping for PTRACE_EVENT_SECCOMP", sysno)
@@ -171,6 +253,7 @@ func (t *Task) doSyscall() taskRunState {
 		}
 	}
 
+	syscallCounter.Increment()
 	return t.doSyscallEnter(sysno, args)
 }
 
@@ -284,7 +367,7 @@ func (*runSyscallExit) execute(t *Task) taskRunState {
 // indicated by an execution fault at address addr. doVsyscall returns the
 // task's next run state.
 func (t *Task) doVsyscall(addr hostarch.Addr, sysno uintptr) taskRunState {
-	vsyscallCount.Increment()
+	metric.WeirdnessMetric.Increment(&metric.WeirdnessTypeVsyscallCount)
 
 	// Grab the caller up front, to make sure there's a sensible stack.
 	caller := t.Arch().Native(uintptr(0))
@@ -311,7 +394,7 @@ func (t *Task) doVsyscall(addr hostarch.Addr, sysno uintptr) taskRunState {
 			return &runVsyscallAfterPtraceEventSeccomp{addr, sysno, caller}
 		case linux.SECCOMP_RET_KILL_THREAD:
 			t.Debugf("vsyscall %d: killed by seccomp", sysno)
-			t.PrepareExit(ExitStatus{Signo: int(linux.SIGSYS)})
+			t.PrepareExit(linux.WaitStatusTerminationSignal(linux.SIGSYS))
 			return (*runExit)(nil)
 		default:
 			panic(fmt.Sprintf("Unknown seccomp result %d", r))
@@ -338,7 +421,7 @@ func (r *runVsyscallAfterPtraceEventSeccomp) execute(t *Task) taskRunState {
 	// Documentation/prctl/seccomp_filter.txt. On Linux, changing orig_ax or ip
 	// causes do_exit(SIGSYS), and changing sp is ignored.
 	if (sysno != ^uintptr(0) && sysno != r.sysno) || hostarch.Addr(t.Arch().IP()) != r.addr {
-		t.PrepareExit(ExitStatus{Signo: int(linux.SIGSYS)})
+		t.PrepareExit(linux.WaitStatusTerminationSignal(linux.SIGSYS))
 		return (*runExit)(nil)
 	}
 	if sysno == ^uintptr(0) {
@@ -359,7 +442,7 @@ func (t *Task) doVsyscallInvoke(sysno uintptr, args arch.SyscallArguments, calle
 		t.Arch().SetReturn(uintptr(rval))
 	} else {
 		t.Debugf("vsyscall %d, caller %x: emulated syscall returned error: %v", sysno, t.Arch().Value(caller), err)
-		if err == syserror.EFAULT {
+		if linuxerr.Equals(linuxerr.EFAULT, err) {
 			t.forceSignal(linux.SIGSEGV, false /* unconditional */)
 			t.SendSignal(SignalInfoPriv(linux.SIGSEGV))
 			// A return is not emulated in this case.
@@ -381,8 +464,8 @@ func ExtractErrno(err error, sysno int) int {
 		return 0
 	case unix.Errno:
 		return int(err)
-	case syserror.SyscallRestartErrno:
-		return int(err)
+	case *errors.Error:
+		return int(linuxerr.ToUnix(err))
 	case *memmap.BusError:
 		// Bus errors may generate SIGBUS, but for syscalls they still
 		// return EFAULT. See case in task_run.go where the fault is
@@ -395,8 +478,8 @@ func ExtractErrno(err error, sysno int) int {
 	case *os.SyscallError:
 		return ExtractErrno(err.Err, sysno)
 	default:
-		if errno, ok := syserror.TranslateError(err); ok {
-			return int(errno)
+		if errno, ok := linuxerr.TranslateError(err); ok {
+			return int(linuxerr.ToUnix(errno))
 		}
 	}
 	panic(fmt.Sprintf("Unknown syscall %d error: %v", sysno, err))

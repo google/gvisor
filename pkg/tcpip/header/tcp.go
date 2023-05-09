@@ -19,6 +19,7 @@ import (
 
 	"github.com/google/btree"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 )
 
@@ -48,9 +49,19 @@ const (
 // TCPFlags is the dedicated type for TCP flags.
 type TCPFlags uint8
 
+// Intersects returns true iff there are flags common to both f and o.
+func (f TCPFlags) Intersects(o TCPFlags) bool {
+	return f&o != 0
+}
+
+// Contains returns true iff all the flags in o are contained within f.
+func (f TCPFlags) Contains(o TCPFlags) bool {
+	return f&o == o
+}
+
 // String implements Stringer.String.
 func (f TCPFlags) String() string {
-	flagsStr := []byte("FSRPAU")
+	flagsStr := []byte("FSRPAUEC")
 	for i := range flagsStr {
 		if f&(1<<uint(i)) == 0 {
 			flagsStr[i] = ' '
@@ -67,6 +78,8 @@ const (
 	TCPFlagPsh
 	TCPFlagAck
 	TCPFlagUrg
+	TCPFlagEce
+	TCPFlagCwr
 )
 
 // Options that may be present in a TCP segment.
@@ -122,6 +135,8 @@ type TCPFields struct {
 
 // TCPSynOptions is used to return the parsed TCP Options in a syn
 // segment.
+//
+// +stateify savable
 type TCPSynOptions struct {
 	// MSS is the maximum segment size provided by the peer in the SYN.
 	MSS uint16
@@ -142,6 +157,10 @@ type TCPSynOptions struct {
 
 	// SACKPermitted is true if the SACK option was provided in the SYN/SYN-ACK.
 	SACKPermitted bool
+
+	// Flags if specified are set on the outgoing SYN. The SYN flag is
+	// always set.
+	Flags TCPFlags
 }
 
 // SACKBlock represents a single contiguous SACK block.
@@ -204,6 +223,10 @@ const (
 	// same as the value TCP_MIN_MSS defined net/tcp.h.
 	TCPMinimumMSS = IPv4MaximumHeaderSize + TCPHeaderMaximumSize + MinIPFragmentPayloadSize - IPv4MinimumSize - TCPMinimumSize
 
+	// TCPMinimumSendMSS is the minimum value for MSS in a sender. This is the
+	// same as the value TCP_MIN_SND_MSS in net/tcp.h.
+	TCPMinimumSendMSS = TCPOptionsMaximumSize + MinIPFragmentPayloadSize
+
 	// TCPMaximumMSS is the maximum acceptable value for MSS.
 	TCPMaximumMSS = 0xffff
 
@@ -216,109 +239,116 @@ const (
 	TCPDefaultMSS = 536
 )
 
-// SourcePort returns the "source port" field of the tcp header.
+// SourcePort returns the "source port" field of the TCP header.
 func (b TCP) SourcePort() uint16 {
 	return binary.BigEndian.Uint16(b[TCPSrcPortOffset:])
 }
 
-// DestinationPort returns the "destination port" field of the tcp header.
+// DestinationPort returns the "destination port" field of the TCP header.
 func (b TCP) DestinationPort() uint16 {
 	return binary.BigEndian.Uint16(b[TCPDstPortOffset:])
 }
 
-// SequenceNumber returns the "sequence number" field of the tcp header.
+// SequenceNumber returns the "sequence number" field of the TCP header.
 func (b TCP) SequenceNumber() uint32 {
 	return binary.BigEndian.Uint32(b[TCPSeqNumOffset:])
 }
 
-// AckNumber returns the "ack number" field of the tcp header.
+// AckNumber returns the "ack number" field of the TCP header.
 func (b TCP) AckNumber() uint32 {
 	return binary.BigEndian.Uint32(b[TCPAckNumOffset:])
 }
 
-// DataOffset returns the "data offset" field of the tcp header. The return
+// DataOffset returns the "data offset" field of the TCP header. The return
 // value is the length of the TCP header in bytes.
 func (b TCP) DataOffset() uint8 {
 	return (b[TCPDataOffset] >> 4) * 4
 }
 
-// Payload returns the data in the tcp packet.
+// Payload returns the data in the TCP packet.
 func (b TCP) Payload() []byte {
 	return b[b.DataOffset():]
 }
 
-// Flags returns the flags field of the tcp header.
+// Flags returns the flags field of the TCP header.
 func (b TCP) Flags() TCPFlags {
 	return TCPFlags(b[TCPFlagsOffset])
 }
 
-// WindowSize returns the "window size" field of the tcp header.
+// WindowSize returns the "window size" field of the TCP header.
 func (b TCP) WindowSize() uint16 {
 	return binary.BigEndian.Uint16(b[TCPWinSizeOffset:])
 }
 
-// Checksum returns the "checksum" field of the tcp header.
+// Checksum returns the "checksum" field of the TCP header.
 func (b TCP) Checksum() uint16 {
 	return binary.BigEndian.Uint16(b[TCPChecksumOffset:])
 }
 
-// UrgentPointer returns the "urgent pointer" field of the tcp header.
+// UrgentPointer returns the "urgent pointer" field of the TCP header.
 func (b TCP) UrgentPointer() uint16 {
 	return binary.BigEndian.Uint16(b[TCPUrgentPtrOffset:])
 }
 
-// SetSourcePort sets the "source port" field of the tcp header.
+// SetSourcePort sets the "source port" field of the TCP header.
 func (b TCP) SetSourcePort(port uint16) {
 	binary.BigEndian.PutUint16(b[TCPSrcPortOffset:], port)
 }
 
-// SetDestinationPort sets the "destination port" field of the tcp header.
+// SetDestinationPort sets the "destination port" field of the TCP header.
 func (b TCP) SetDestinationPort(port uint16) {
 	binary.BigEndian.PutUint16(b[TCPDstPortOffset:], port)
 }
 
-// SetChecksum sets the checksum field of the tcp header.
-func (b TCP) SetChecksum(checksum uint16) {
-	binary.BigEndian.PutUint16(b[TCPChecksumOffset:], checksum)
+// SetChecksum sets the checksum field of the TCP header.
+func (b TCP) SetChecksum(xsum uint16) {
+	checksum.Put(b[TCPChecksumOffset:], xsum)
 }
 
-// SetDataOffset sets the data offset field of the tcp header. headerLen should
+// SetDataOffset sets the data offset field of the TCP header. headerLen should
 // be the length of the TCP header in bytes.
 func (b TCP) SetDataOffset(headerLen uint8) {
 	b[TCPDataOffset] = (headerLen / 4) << 4
 }
 
-// SetSequenceNumber sets the sequence number field of the tcp header.
+// SetSequenceNumber sets the sequence number field of the TCP header.
 func (b TCP) SetSequenceNumber(seqNum uint32) {
 	binary.BigEndian.PutUint32(b[TCPSeqNumOffset:], seqNum)
 }
 
-// SetAckNumber sets the ack number field of the tcp header.
+// SetAckNumber sets the ack number field of the TCP header.
 func (b TCP) SetAckNumber(ackNum uint32) {
 	binary.BigEndian.PutUint32(b[TCPAckNumOffset:], ackNum)
 }
 
-// SetFlags sets the flags field of the tcp header.
+// SetFlags sets the flags field of the TCP header.
 func (b TCP) SetFlags(flags uint8) {
 	b[TCPFlagsOffset] = flags
 }
 
-// SetWindowSize sets the window size field of the tcp header.
+// SetWindowSize sets the window size field of the TCP header.
 func (b TCP) SetWindowSize(rcvwnd uint16) {
 	binary.BigEndian.PutUint16(b[TCPWinSizeOffset:], rcvwnd)
 }
 
-// SetUrgentPoiner sets the window size field of the tcp header.
-func (b TCP) SetUrgentPoiner(urgentPointer uint16) {
+// SetUrgentPointer sets the window size field of the TCP header.
+func (b TCP) SetUrgentPointer(urgentPointer uint16) {
 	binary.BigEndian.PutUint16(b[TCPUrgentPtrOffset:], urgentPointer)
 }
 
-// CalculateChecksum calculates the checksum of the tcp segment.
+// CalculateChecksum calculates the checksum of the TCP segment.
 // partialChecksum is the checksum of the network-layer pseudo-header
 // and the checksum of the segment data.
 func (b TCP) CalculateChecksum(partialChecksum uint16) uint16 {
 	// Calculate the rest of the checksum.
-	return Checksum(b[:b.DataOffset()], partialChecksum)
+	return checksum.Checksum(b[:b.DataOffset()], partialChecksum)
+}
+
+// IsChecksumValid returns true iff the TCP header's checksum is valid.
+func (b TCP) IsChecksumValid(src, dst tcpip.Address, payloadChecksum, payloadLength uint16) bool {
+	xsum := PseudoHeaderChecksum(TCPProtocolNumber, src, dst, uint16(b.DataOffset())+payloadLength)
+	xsum = checksum.Combine(xsum, payloadChecksum)
+	return b.CalculateChecksum(xsum) == 0xffff
 }
 
 // Options returns a slice that holds the unparsed TCP options in the segment.
@@ -340,17 +370,17 @@ func (b TCP) encodeSubset(seq, ack uint32, flags TCPFlags, rcvwnd uint16) {
 	binary.BigEndian.PutUint16(b[TCPWinSizeOffset:], rcvwnd)
 }
 
-// Encode encodes all the fields of the tcp header.
+// Encode encodes all the fields of the TCP header.
 func (b TCP) Encode(t *TCPFields) {
 	b.encodeSubset(t.SeqNum, t.AckNum, t.Flags, t.WindowSize)
-	binary.BigEndian.PutUint16(b[TCPSrcPortOffset:], t.SrcPort)
-	binary.BigEndian.PutUint16(b[TCPDstPortOffset:], t.DstPort)
-	b[TCPDataOffset] = (t.DataOffset / 4) << 4
-	binary.BigEndian.PutUint16(b[TCPChecksumOffset:], t.Checksum)
-	binary.BigEndian.PutUint16(b[TCPUrgentPtrOffset:], t.UrgentPointer)
+	b.SetSourcePort(t.SrcPort)
+	b.SetDestinationPort(t.DstPort)
+	b.SetDataOffset(t.DataOffset)
+	b.SetChecksum(t.Checksum)
+	b.SetUrgentPointer(t.UrgentPointer)
 }
 
-// EncodePartial updates a subset of the fields of the tcp header. It is useful
+// EncodePartial updates a subset of the fields of the TCP header. It is useful
 // in cases when similar segments are produced.
 func (b TCP) EncodePartial(partialChecksum, length uint16, seqnum, acknum uint32, flags TCPFlags, rcvwnd uint16) {
 	// Add the total length and "flags" field contributions to the checksum.
@@ -360,21 +390,50 @@ func (b TCP) EncodePartial(partialChecksum, length uint16, seqnum, acknum uint32
 	tmp := make([]byte, 4)
 	binary.BigEndian.PutUint16(tmp, length)
 	binary.BigEndian.PutUint16(tmp[2:], uint16(flags))
-	checksum := Checksum(tmp, partialChecksum)
+	xsum := checksum.Checksum(tmp, partialChecksum)
 
 	// Encode the passed-in fields.
 	b.encodeSubset(seqnum, acknum, flags, rcvwnd)
 
 	// Add the contributions of the passed-in fields to the checksum.
-	checksum = Checksum(b[TCPSeqNumOffset:TCPSeqNumOffset+8], checksum)
-	checksum = Checksum(b[TCPWinSizeOffset:TCPWinSizeOffset+2], checksum)
+	xsum = checksum.Checksum(b[TCPSeqNumOffset:TCPSeqNumOffset+8], xsum)
+	xsum = checksum.Checksum(b[TCPWinSizeOffset:TCPWinSizeOffset+2], xsum)
 
 	// Encode the checksum.
-	b.SetChecksum(^checksum)
+	b.SetChecksum(^xsum)
+}
+
+// SetSourcePortWithChecksumUpdate implements ChecksummableTransport.
+func (b TCP) SetSourcePortWithChecksumUpdate(new uint16) {
+	old := b.SourcePort()
+	b.SetSourcePort(new)
+	b.SetChecksum(^checksumUpdate2ByteAlignedUint16(^b.Checksum(), old, new))
+}
+
+// SetDestinationPortWithChecksumUpdate implements ChecksummableTransport.
+func (b TCP) SetDestinationPortWithChecksumUpdate(new uint16) {
+	old := b.DestinationPort()
+	b.SetDestinationPort(new)
+	b.SetChecksum(^checksumUpdate2ByteAlignedUint16(^b.Checksum(), old, new))
+}
+
+// UpdateChecksumPseudoHeaderAddress implements ChecksummableTransport.
+func (b TCP) UpdateChecksumPseudoHeaderAddress(old, new tcpip.Address, fullChecksum bool) {
+	xsum := b.Checksum()
+	if fullChecksum {
+		xsum = ^xsum
+	}
+
+	xsum = checksumUpdate2ByteAlignedAddress(xsum, old, new)
+	if fullChecksum {
+		xsum = ^xsum
+	}
+
+	b.SetChecksum(xsum)
 }
 
 // ParseSynOptions parses the options received in a SYN segment and returns the
-// relevant ones. opts should point to the option part of the TCP Header.
+// relevant ones. opts should point to the option part of the TCP header.
 func ParseSynOptions(opts []byte, isAck bool) TCPSynOptions {
 	limit := len(opts)
 
@@ -404,6 +463,9 @@ func ParseSynOptions(opts []byte, isAck bool) TCPSynOptions {
 				return synOpts
 			}
 			synOpts.MSS = mss
+			if mss < TCPMinimumSendMSS {
+				synOpts.MSS = TCPMinimumSendMSS
+			}
 			i += 4
 
 		case TCPOptionWS:
@@ -632,4 +694,24 @@ func Acceptable(segSeq seqnum.Value, segLen seqnum.Size, rcvNxt, rcvAcc seqnum.V
 	// differently, it uses segSeq <= rcvAcc, we'd want to keep the same behavior
 	// as Linux.
 	return rcvNxt.LessThan(segSeq.Add(segLen)) && segSeq.LessThanEq(rcvAcc)
+}
+
+// TCPValid returns true if the pkt has a valid TCP header. It checks whether:
+//   - The data offset is too small.
+//   - The data offset is too large.
+//   - The checksum is invalid.
+//
+// TCPValid corresponds to net/netfilter/nf_conntrack_proto_tcp.c:tcp_error.
+func TCPValid(hdr TCP, payloadChecksum func() uint16, payloadSize uint16, srcAddr, dstAddr tcpip.Address, skipChecksumValidation bool) (csum uint16, csumValid, ok bool) {
+	if offset := int(hdr.DataOffset()); offset < TCPMinimumSize || offset > len(hdr) {
+		return
+	}
+
+	if skipChecksumValidation {
+		csumValid = true
+	} else {
+		csum = hdr.Checksum()
+		csumValid = hdr.IsChecksumValid(srcAddr, dstAddr, payloadChecksum(), payloadSize)
+	}
+	return csum, csumValid, true
 }

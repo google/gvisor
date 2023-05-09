@@ -237,7 +237,7 @@ R:
 
 	// Type switch statements.
 	{
-		var interfaceFunc func(T) interface{}
+		var interfaceFunc func(T) any
 
 		switch interfaceFunc(T(0)).(type) {
 		case *T, T, int:

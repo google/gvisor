@@ -1,6 +1,7 @@
 load("//tools:defs.bzl", "proto_library")
 
 package(
+    default_applicable_licenses = ["//:license"],
     default_visibility = ["//test/packetimpact:__subpackages__"],
     licenses = ["notice"],
 )

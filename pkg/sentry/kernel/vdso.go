@@ -45,11 +45,11 @@ type vdsoParams struct {
 //
 // Its memory layout looks like:
 //
-// type page struct {
-//	// seq is a sequence counter that protects the fields below.
-//	seq uint64
-//	vdsoParams
-// }
+//	type page struct {
+//		// seq is a sequence counter that protects the fields below.
+//		seq uint64
+//		vdsoParams
+//	}
 //
 // Everything in the struct is 8 bytes for easy alignment.
 //
@@ -81,11 +81,11 @@ type VDSOParamPage struct {
 // NewVDSOParamPage returns a VDSOParamPage.
 //
 // Preconditions:
-// * fr is a single page allocated from mfp.MemoryFile(). VDSOParamPage does
-//   not take ownership of fr; it must remain allocated for the lifetime of the
-//   VDSOParamPage.
-// * VDSOParamPage must be the only writer to fr.
-// * mfp.MemoryFile().MapInternal(fr) must return a single safemem.Block.
+//   - fr is a single page allocated from mfp.MemoryFile(). VDSOParamPage does
+//     not take ownership of fr; it must remain allocated for the lifetime of the
+//     VDSOParamPage.
+//   - VDSOParamPage must be the only writer to fr.
+//   - mfp.MemoryFile().MapInternal(fr) must return a single safemem.Block.
 func NewVDSOParamPage(mfp pgalloc.MemoryFileProvider, fr memmap.FileRange) *VDSOParamPage {
 	return &VDSOParamPage{
 		mfp:               mfp,

@@ -17,7 +17,7 @@ package auth
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/syserror"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 )
 
 // MapFromKUID translates kuid, a UID in the root namespace, to a UID in ns.
@@ -69,8 +69,8 @@ func (ns *UserNamespace) mapID(m *idMapSet, id uint32) uint32 {
 //
 // Preconditions: end >= start.
 func (ns *UserNamespace) allIDsMapped(m *idMapSet, start, end uint32) bool {
-	ns.mu.Lock()
-	defer ns.mu.Unlock()
+	ns.mu.NestedLock(userNamespaceLockNs)
+	defer ns.mu.NestedUnlock(userNamespaceLockNs)
 	return m.SpanRange(idMapRange{start, end}) == end-start
 }
 
@@ -106,11 +106,11 @@ func (ns *UserNamespace) SetUIDMap(ctx context.Context, entries []IDMapEntry) er
 	// than once to a uid_map file in a user namespace fails with the error
 	// EPERM. Similar rules apply for gid_map files." - user_namespaces(7)
 	if !ns.uidMapFromParent.IsEmpty() {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 	// "At least one line must be written to the file."
 	if len(entries) == 0 {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	// """
 	// In order for a process to write to the /proc/[pid]/uid_map
@@ -121,38 +121,38 @@ func (ns *UserNamespace) SetUIDMap(ctx context.Context, entries []IDMapEntry) er
 	// in the user namespace of the process pid.
 	// """
 	if !c.HasCapabilityIn(linux.CAP_SETUID, ns) {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 	// "2. The writing process must either be in the user namespace of the process
 	// pid or be in the parent user namespace of the process pid."
 	if c.UserNamespace != ns && c.UserNamespace != ns.parent {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 	// """
 	// 3. (see trySetUIDMap)
 	//
 	// 4. One of the following two cases applies:
 	//
-	// * Either the writing process has the CAP_SETUID (CAP_SETGID) capability
-	// in the parent user namespace.
+	//	* Either the writing process has the CAP_SETUID (CAP_SETGID) capability
+	//		in the parent user namespace.
 	// """
 	if !c.HasCapabilityIn(linux.CAP_SETUID, ns.parent) {
 		// """
-		// * Or otherwise all of the following restrictions apply:
+		//	* Or otherwise all of the following restrictions apply:
 		//
-		//   + The data written to uid_map (gid_map) must consist of a single line
-		//   that maps the writing process' effective user ID (group ID) in the
-		//   parent user namespace to a user ID (group ID) in the user namespace.
+		//		+ The data written to uid_map (gid_map) must consist of a single line
+		//			that maps the writing process' effective user ID (group ID) in the
+		//			parent user namespace to a user ID (group ID) in the user namespace.
 		// """
 		if len(entries) != 1 || ns.parent.MapToKUID(UID(entries[0].FirstParentID)) != c.EffectiveKUID || entries[0].Length != 1 {
-			return syserror.EPERM
+			return linuxerr.EPERM
 		}
 		// """
 		//   + The writing process must have the same effective user ID as the
 		//   process that created the user namespace.
 		// """
 		if c.EffectiveKUID != ns.owner {
-			return syserror.EPERM
+			return linuxerr.EPERM
 		}
 	}
 	// trySetUIDMap leaves data in maps if it fails.
@@ -170,11 +170,11 @@ func (ns *UserNamespace) trySetUIDMap(entries []IDMapEntry) error {
 		// checks for NoID.
 		lastID := e.FirstID + e.Length
 		if lastID <= e.FirstID {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		lastParentID := e.FirstParentID + e.Length
 		if lastParentID <= e.FirstParentID {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		// "3. The mapped user IDs (group IDs) must in turn have a mapping in
 		// the parent user namespace."
@@ -182,14 +182,14 @@ func (ns *UserNamespace) trySetUIDMap(entries []IDMapEntry) error {
 		// mappings when it's created, so SetUIDMap would have returned EPERM
 		// without reaching this point if ns is root.
 		if !ns.parent.allIDsMapped(&ns.parent.uidMapToParent, e.FirstParentID, lastParentID) {
-			return syserror.EPERM
+			return linuxerr.EPERM
 		}
 		// If either of these Adds fail, we have an overlapping range.
 		if !ns.uidMapFromParent.Add(idMapRange{e.FirstParentID, lastParentID}, e.FirstID) {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		if !ns.uidMapToParent.Add(idMapRange{e.FirstID, lastID}, e.FirstParentID) {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 	}
 	return nil
@@ -202,24 +202,24 @@ func (ns *UserNamespace) SetGIDMap(ctx context.Context, entries []IDMapEntry) er
 	ns.mu.Lock()
 	defer ns.mu.Unlock()
 	if !ns.gidMapFromParent.IsEmpty() {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 	if len(entries) == 0 {
-		return syserror.EINVAL
+		return linuxerr.EINVAL
 	}
 	if !c.HasCapabilityIn(linux.CAP_SETGID, ns) {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 	if c.UserNamespace != ns && c.UserNamespace != ns.parent {
-		return syserror.EPERM
+		return linuxerr.EPERM
 	}
 	if !c.HasCapabilityIn(linux.CAP_SETGID, ns.parent) {
 		if len(entries) != 1 || ns.parent.MapToKGID(GID(entries[0].FirstParentID)) != c.EffectiveKGID || entries[0].Length != 1 {
-			return syserror.EPERM
+			return linuxerr.EPERM
 		}
 		// It's correct for this to still be UID.
 		if c.EffectiveKUID != ns.owner {
-			return syserror.EPERM
+			return linuxerr.EPERM
 		}
 		// "In the case of gid_map, use of the setgroups(2) system call must
 		// first be denied by writing "deny" to the /proc/[pid]/setgroups file
@@ -239,20 +239,20 @@ func (ns *UserNamespace) trySetGIDMap(entries []IDMapEntry) error {
 	for _, e := range entries {
 		lastID := e.FirstID + e.Length
 		if lastID <= e.FirstID {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		lastParentID := e.FirstParentID + e.Length
 		if lastParentID <= e.FirstParentID {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		if !ns.parent.allIDsMapped(&ns.parent.gidMapToParent, e.FirstParentID, lastParentID) {
-			return syserror.EPERM
+			return linuxerr.EPERM
 		}
 		if !ns.gidMapFromParent.Add(idMapRange{e.FirstParentID, lastParentID}, e.FirstID) {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 		if !ns.gidMapToParent.Add(idMapRange{e.FirstID, lastID}, e.FirstParentID) {
-			return syserror.EINVAL
+			return linuxerr.EINVAL
 		}
 	}
 	return nil

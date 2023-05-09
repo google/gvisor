@@ -20,10 +20,11 @@ import (
 	"math"
 	"os"
 	"strings"
-	"sync/atomic"
 	"syscall"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 )
 
 // OpenFlags is the mode passed to Open and Create operations.
@@ -49,25 +50,53 @@ const (
 	OpenTruncate OpenFlags = 01000
 )
 
-// ConnectFlags is the mode passed to Connect operations.
+// SocketType is the socket type passed in Connect and Bind operations.
 //
 // These correspond to bits sent over the wire.
-type ConnectFlags uint32
+type SocketType uint32
 
 const (
-	// StreamSocket is a Tlconnect flag indicating SOCK_STREAM mode.
-	StreamSocket ConnectFlags = 0
+	// StreamSocket indicates SOCK_STREAM mode.
+	StreamSocket SocketType = 0
 
-	// DgramSocket is a Tlconnect flag indicating SOCK_DGRAM mode.
-	DgramSocket ConnectFlags = 1
+	// DgramSocket indicates SOCK_DGRAM mode.
+	DgramSocket SocketType = 1
 
-	// SeqpacketSocket is a Tlconnect flag indicating SOCK_SEQPACKET mode.
-	SeqpacketSocket ConnectFlags = 2
+	// SeqpacketSocket indicates SOCK_SEQPACKET mode.
+	SeqpacketSocket SocketType = 2
 
-	// AnonymousSocket is a Tlconnect flag indicating that the mode does not
-	// matter and that the requester will accept any socket type.
-	AnonymousSocket ConnectFlags = 3
+	// AnonymousSocket is only valid for Connect calls, and indicates that
+	// the caller will accept any socket type.
+	AnonymousSocket SocketType = 3
 )
+
+// ToLinux maps the SocketType to a Linux socket type.
+func (st SocketType) ToLinux() (linux.SockType, bool) {
+	switch st {
+	case StreamSocket:
+		return linux.SOCK_STREAM, true
+	case DgramSocket:
+		return linux.SOCK_DGRAM, true
+	case SeqpacketSocket:
+		return linux.SOCK_SEQPACKET, true
+	default:
+		return 0, false
+	}
+}
+
+// SocketTypeFromLinux maps a Linux socket type to a SocketType.
+func SocketTypeFromLinux(st linux.SockType) (SocketType, bool) {
+	switch st {
+	case linux.SOCK_STREAM:
+		return StreamSocket, true
+	case linux.SOCK_DGRAM:
+		return DgramSocket, true
+	case linux.SOCK_SEQPACKET:
+		return SeqpacketSocket, true
+	default:
+		return 0, false
+	}
+}
 
 // OSFlags converts a p9.OpenFlags to an int compatible with open(2).
 func (o OpenFlags) OSFlags() int {
@@ -402,6 +431,10 @@ const (
 	MsgRallocate     MsgType = 139
 	MsgTsetattrclunk MsgType = 140
 	MsgRsetattrclunk MsgType = 141
+	MsgTmultigetattr MsgType = 142
+	MsgRmultigetattr MsgType = 143
+	MsgTbind         MsgType = 144
+	MsgRbind         MsgType = 145
 	MsgTchannel      MsgType = 250
 	MsgRchannel      MsgType = 251
 )
@@ -478,7 +511,7 @@ func (q *QID) encode(b *buffer) {
 type QIDGenerator struct {
 	// uids is an ever increasing value that can be atomically incremented
 	// to provide unique Path values for QIDs.
-	uids uint64
+	uids atomicbitops.Uint64
 }
 
 // Get returns a new 9P unique ID with a unique Path given a QID type.
@@ -490,7 +523,7 @@ func (q *QIDGenerator) Get(t QIDType) QID {
 	return QID{
 		Type:    t,
 		Version: 0,
-		Path:    atomic.AddUint64(&q.uids, 1),
+		Path:    q.uids.Add(1),
 	}
 }
 
@@ -1051,6 +1084,10 @@ func (a *Attr) Apply(mask SetAttrMask, attr SetAttr) {
 	}
 }
 
+// DirentSizeStatic is the number of bytes required to encode a p9.Dirent
+// with an empty name. In other words, it is the static part of its size.
+const DirentSizeStatic = 24
+
 // Dirent is used for readdir.
 type Dirent struct {
 	// QID is the entry QID.
@@ -1177,4 +1214,30 @@ func (a *AllocateMode) encode(b *buffer) {
 		mask |= 0x40
 	}
 	b.Write32(mask)
+}
+
+// FullStat is used in the result of a MultiGetAttr call.
+type FullStat struct {
+	QID   QID
+	Valid AttrMask
+	Attr  Attr
+}
+
+// String implements fmt.Stringer.
+func (f *FullStat) String() string {
+	return fmt.Sprintf("FullStat{QID: %v, Valid: %v, Attr: %v}", f.QID, f.Valid, f.Attr)
+}
+
+// decode implements encoder.decode.
+func (f *FullStat) decode(b *buffer) {
+	f.QID.decode(b)
+	f.Valid.decode(b)
+	f.Attr.decode(b)
+}
+
+// encode implements encoder.encode.
+func (f *FullStat) encode(b *buffer) {
+	f.QID.encode(b)
+	f.Valid.encode(b)
+	f.Attr.encode(b)
 }

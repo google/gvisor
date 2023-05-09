@@ -22,12 +22,13 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/sentry/contexttest"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/testutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -94,7 +95,7 @@ type attrs struct {
 }
 
 func (*attrs) SetStat(context.Context, *vfs.Filesystem, *auth.Credentials, vfs.SetStatOptions) error {
-	return syserror.EPERM
+	return linuxerr.EPERM
 }
 
 type readonlyDir struct {
@@ -105,6 +106,7 @@ type readonlyDir struct {
 	kernfs.InodeNoStatFS
 	kernfs.InodeNotSymlink
 	kernfs.InodeTemporary
+	kernfs.InodeWatches
 	kernfs.OrderedChildren
 
 	locks vfs.FileLocks
@@ -140,6 +142,7 @@ type dir struct {
 	kernfs.InodeNotSymlink
 	kernfs.InodeNoStatFS
 	kernfs.InodeTemporary
+	kernfs.InodeWatches
 	kernfs.OrderedChildren
 
 	locks vfs.FileLocks
@@ -196,15 +199,15 @@ func (d *dir) NewFile(ctx context.Context, name string, opts vfs.OpenOptions) (k
 }
 
 func (*dir) NewLink(context.Context, string, kernfs.Inode) (kernfs.Inode, error) {
-	return nil, syserror.EPERM
+	return nil, linuxerr.EPERM
 }
 
 func (*dir) NewSymlink(context.Context, string, string) (kernfs.Inode, error) {
-	return nil, syserror.EPERM
+	return nil, linuxerr.EPERM
 }
 
 func (*dir) NewNode(context.Context, string, vfs.MknodOptions) (kernfs.Inode, error) {
-	return nil, syserror.EPERM
+	return nil, linuxerr.EPERM
 }
 
 func (fsType) Name() string {
@@ -318,10 +321,10 @@ func TestDirFDReadWrite(t *testing.T) {
 	defer fd.DecRef(sys.Ctx)
 
 	// Read/Write should fail for directory FDs.
-	if _, err := fd.Read(sys.Ctx, usermem.BytesIOSequence([]byte{}), vfs.ReadOptions{}); err != syserror.EISDIR {
+	if _, err := fd.Read(sys.Ctx, usermem.BytesIOSequence([]byte{}), vfs.ReadOptions{}); !linuxerr.Equals(linuxerr.EISDIR, err) {
 		t.Fatalf("Read for directory FD failed with unexpected error: %v", err)
 	}
-	if _, err := fd.Write(sys.Ctx, usermem.BytesIOSequence([]byte{}), vfs.WriteOptions{}); err != syserror.EBADF {
+	if _, err := fd.Write(sys.Ctx, usermem.BytesIOSequence([]byte{}), vfs.WriteOptions{}); !linuxerr.Equals(linuxerr.EBADF, err) {
 		t.Fatalf("Write for directory FD failed with unexpected error: %v", err)
 	}
 }
@@ -345,4 +348,64 @@ func TestDirFDIterDirents(t *testing.T) {
 		"dir2":  linux.DT_DIR,
 		"file1": linux.DT_REG,
 	})
+}
+
+func TestDirWalkDentryTree(t *testing.T) {
+	sys := newTestSystem(t, func(ctx context.Context, creds *auth.Credentials, fs *filesystem) kernfs.Inode {
+		return fs.newDir(ctx, creds, 0755, map[string]kernfs.Inode{
+			"dir1": fs.newDir(ctx, creds, 0755, nil),
+			"dir2": fs.newDir(ctx, creds, 0755, map[string]kernfs.Inode{
+				"file1": fs.newFile(ctx, creds, staticFileContent),
+				"dir3":  fs.newDir(ctx, creds, 0755, nil),
+			}),
+		})
+	})
+	defer sys.Destroy()
+
+	testWalk := func(from *kernfs.Dentry, getDentryPath, walkPath string, expectedErr error) {
+		var d *kernfs.Dentry
+		if getDentryPath != "" {
+			pop := sys.PathOpAtRoot(getDentryPath)
+			vd := sys.GetDentryOrDie(pop)
+			defer vd.DecRef(sys.Ctx)
+			d = vd.Dentry().Impl().(*kernfs.Dentry)
+		}
+
+		match, err := from.WalkDentryTree(sys.Ctx, sys.VFS, fspath.Parse(walkPath))
+		if err == nil {
+			defer match.DecRef(sys.Ctx)
+		}
+
+		if err != expectedErr {
+			t.Fatalf("WalkDentryTree from %q to %q (with expected error: %v) unexpected error, want: %v, got: %v", from.FSLocalPath(), walkPath, expectedErr, expectedErr, err)
+		}
+		if expectedErr != nil {
+			return
+		}
+
+		if d != match {
+			t.Fatalf("WalkDentryTree from %q to %q (with expected error: %v) found unexpected dentry; want: %v, got: %v", from.FSLocalPath(), walkPath, expectedErr, d, match)
+		}
+	}
+
+	rootD := sys.Root.Dentry().Impl().(*kernfs.Dentry)
+
+	testWalk(rootD, "dir1", "/dir1", nil)
+	testWalk(rootD, "", "/dir-non-existent", linuxerr.ENOENT)
+	testWalk(rootD, "", "/dir1/child-non-existent", linuxerr.ENOENT)
+	testWalk(rootD, "", "/dir2/inner-non-existent/dir3", linuxerr.ENOENT)
+
+	testWalk(rootD, "dir2/dir3", "/dir2/../dir2/dir3", nil)
+	testWalk(rootD, "dir2/dir3", "/dir2/././dir3", nil)
+	testWalk(rootD, "dir2/dir3", "/dir2/././dir3/.././dir3", nil)
+
+	pop := sys.PathOpAtRoot("dir2")
+	dir2VD := sys.GetDentryOrDie(pop)
+	defer dir2VD.DecRef(sys.Ctx)
+	dir2D := dir2VD.Dentry().Impl().(*kernfs.Dentry)
+
+	testWalk(dir2D, "dir2/dir3", "/dir3", nil)
+	testWalk(dir2D, "dir2/dir3", "/../../../dir3", nil)
+	testWalk(dir2D, "dir2/file1", "/file1", nil)
+	testWalk(dir2D, "dir2/file1", "file1", nil)
 }

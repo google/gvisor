@@ -16,13 +16,13 @@ package linux
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // RSeq implements syscall rseq(2).
-func RSeq(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func RSeq(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
 	length := args[1].Uint()
 	flags := args[2].Int()
@@ -31,8 +31,8 @@ func RSeq(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 	if !t.RSeqAvailable() {
 		// Event for applications that want rseq on a configuration
 		// that doesn't support them.
-		t.Kernel().EmitUnimplementedEvent(t)
-		return 0, nil, syserror.ENOSYS
+		t.Kernel().EmitUnimplementedEvent(t, sysno)
+		return 0, nil, linuxerr.ENOSYS
 	}
 
 	switch flags {
@@ -43,6 +43,6 @@ func RSeq(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallC
 		return 0, nil, t.ClearRSeq(addr, length, signature)
 	default:
 		// Unknown flag.
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 }

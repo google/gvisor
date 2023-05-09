@@ -15,11 +15,10 @@
 package fuse
 
 import (
-	"sync/atomic"
-
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 )
 
@@ -44,6 +43,9 @@ const (
 	// The FUSE_INIT_IN flags sent to the daemon.
 	// TODO(gvisor.dev/issue/3199): complete the flags.
 	fuseDefaultInitFlags = linux.FUSE_MAX_PAGES
+
+	// An INIT response needs to be at least this long.
+	minInitSize = 24
 )
 
 // Adjustable maximums for Connection's cogestion control parameters.
@@ -65,13 +67,13 @@ func (conn *connection) SetInitialized() {
 	// And it prevents the newer tasks from gaining
 	// unnecessary higher chance to be issued before the blocked one.
 
-	atomic.StoreInt32(&(conn.initialized), int32(1))
+	conn.initialized.Store(1)
 }
 
-// IsInitialized atomically check if the connection is initialized.
-// pairs with SetInitialized().
+// Initialized atomically check if the connection is initialized. pairs with
+// SetInitialized().
 func (conn *connection) Initialized() bool {
-	return atomic.LoadInt32(&(conn.initialized)) != 0
+	return conn.initialized.Load() != 0
 }
 
 // InitSend sends a FUSE_INIT request.
@@ -98,6 +100,9 @@ func (conn *connection) InitRecv(res *Response, hasSysAdminCap bool) error {
 		return err
 	}
 
+	if res.DataLen() < minInitSize {
+		return linuxerr.EINVAL
+	}
 	initRes := fuseInitRes{initLen: res.DataLen()}
 	if err := res.UnmarshalPayload(&initRes); err != nil {
 		return err
@@ -109,9 +114,13 @@ func (conn *connection) InitRecv(res *Response, hasSysAdminCap bool) error {
 // Process the FUSE_INIT reply from the FUSE server.
 // It tries to acquire the conn.asyncMu lock if minor version is newer than 13.
 func (conn *connection) initProcessReply(out *linux.FUSEInitOut, hasSysAdminCap bool) error {
+	conn.mu.Lock()
 	// No matter error or not, always set initialzied.
 	// to unblock the blocked requests.
-	defer conn.SetInitialized()
+	defer func() {
+		conn.SetInitialized()
+		conn.mu.Unlock()
+	}()
 
 	// No support for old major fuse versions.
 	if out.Major != linux.FUSE_KERNEL_VERSION {
@@ -139,6 +148,7 @@ func (conn *connection) initProcessReply(out *linux.FUSEInitOut, hasSysAdminCap 
 		conn.bigWrites = out.Flags&linux.FUSE_BIG_WRITES != 0
 		conn.dontMask = out.Flags&linux.FUSE_DONT_MASK != 0
 		conn.writebackCache = out.Flags&linux.FUSE_WRITEBACK_CACHE != 0
+		conn.atomicOTrunc = out.Flags&linux.FUSE_ATOMIC_O_TRUNC != 0
 
 		// TODO(gvisor.dev/issue/3195): figure out how to use TimeGran (0 < TimeGran <= fuseMaxTimeGranNs).
 
@@ -186,7 +196,7 @@ func (conn *connection) initProcessReply(out *linux.FUSEInitOut, hasSysAdminCap 
 // It tries to acquire conn.fd.mu, conn.lock, conn.bgLock in order.
 // All possible requests waiting or blocking will be aborted.
 //
-// Preconditions: conn.fd.mu is locked.
+// +checklocks:conn.fd.mu
 func (conn *connection) Abort(ctx context.Context) {
 	conn.mu.Lock()
 	conn.asyncMu.Lock()
@@ -219,7 +229,7 @@ func (conn *connection) Abort(ctx context.Context) {
 	conn.asyncMu.Unlock()
 	conn.mu.Unlock()
 
-	// 1. The requets blocked before initialization.
+	// 1. The request blocked before initialization.
 	// Will reach call() `connected` check and return.
 	if !conn.Initialized() {
 		conn.SetInitialized()

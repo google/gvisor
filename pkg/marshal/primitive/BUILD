@@ -1,5 +1,7 @@
 load("//tools:defs.bzl", "go_library")
 
+package(default_applicable_licenses = ["//:license"])
+
 licenses(["notice"])
 
 go_library(
@@ -12,9 +14,7 @@ go_library(
         "//:sandbox",
     ],
     deps = [
-        "//pkg/context",
         "//pkg/hostarch",
         "//pkg/marshal",
-        "//pkg/usermem",
     ],
 )

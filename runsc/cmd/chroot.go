@@ -30,7 +30,7 @@ func mountInChroot(chroot, src, dst, typ string, flags uint32) error {
 	chrootDst := filepath.Join(chroot, dst)
 	log.Infof("Mounting %q at %q", src, chrootDst)
 
-	if err := specutils.Mount(src, chrootDst, typ, flags); err != nil {
+	if err := specutils.SafeSetupAndMount(src, chrootDst, typ, flags, "/proc"); err != nil {
 		return fmt.Errorf("error mounting %q at %q: %v", src, chrootDst, err)
 	}
 	return nil
@@ -59,6 +59,23 @@ func pivotRoot(root string) error {
 	return nil
 }
 
+func copyFile(dst, src string) error {
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = out.ReadFrom(in)
+	return err
+}
+
 // setUpChroot creates an empty directory with runsc mounted at /runsc and proc
 // mounted at /proc.
 func setUpChroot(pidns bool) error {
@@ -70,12 +87,20 @@ func setUpChroot(pidns bool) error {
 
 	// Convert all shared mounts into slave to be sure that nothing will be
 	// propagated outside of our namespace.
-	if err := unix.Mount("", "/", "", unix.MS_SLAVE|unix.MS_REC, ""); err != nil {
+	if err := specutils.SafeMount("", "/", "", unix.MS_SLAVE|unix.MS_REC, "", "/proc"); err != nil {
 		return fmt.Errorf("error converting mounts: %v", err)
 	}
 
-	if err := unix.Mount("runsc-root", chroot, "tmpfs", unix.MS_NOSUID|unix.MS_NODEV|unix.MS_NOEXEC, ""); err != nil {
+	if err := specutils.SafeMount("runsc-root", chroot, "tmpfs", unix.MS_NOSUID|unix.MS_NODEV|unix.MS_NOEXEC, "", "/proc"); err != nil {
 		return fmt.Errorf("error mounting tmpfs in choot: %v", err)
+	}
+
+	if err := os.Mkdir(filepath.Join(chroot, "etc"), 0755); err != nil {
+		return fmt.Errorf("error creating /etc in chroot: %v", err)
+	}
+
+	if err := copyFile(filepath.Join(chroot, "etc/localtime"), "/etc/localtime"); err != nil {
+		log.Warningf("Failed to copy /etc/localtime: %v. UTC timezone will be used.", err)
 	}
 
 	if pidns {
@@ -89,7 +114,7 @@ func setUpChroot(pidns bool) error {
 		}
 	}
 
-	if err := unix.Mount("", chroot, "", unix.MS_REMOUNT|unix.MS_RDONLY|unix.MS_BIND, ""); err != nil {
+	if err := specutils.SafeMount("", chroot, "", unix.MS_REMOUNT|unix.MS_RDONLY|unix.MS_BIND, "", "/proc"); err != nil {
 		return fmt.Errorf("error remounting chroot in read-only: %v", err)
 	}
 

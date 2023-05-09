@@ -15,10 +15,11 @@
 package syncevent
 
 import (
-	"sync/atomic"
+	"fmt"
 	"testing"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/sync"
 )
@@ -52,16 +53,16 @@ func TestWaiterWaitFor(t *testing.T) {
 	evWaited := Set(1)
 	evOther := Set(2)
 	w.Notify(evOther)
-	notifiedEvent := uint32(0)
+	notifiedEvent := atomicbitops.FromUint32(0)
 	go func() {
 		time.Sleep(100 * time.Millisecond)
-		atomic.StoreUint32(&notifiedEvent, 1)
+		notifiedEvent.Store(1)
 		w.Notify(evWaited)
 	}()
 	if got, want := w.WaitFor(evWaited), evWaited|evOther; got != want {
 		t.Errorf("Waiter.WaitFor: got %#x, wanted %#x", got, want)
 	}
-	if atomic.LoadUint32(&notifiedEvent) == 0 {
+	if notifiedEvent.Load() == 0 {
 		t.Errorf("Waiter.WaitFor returned before goroutine notified waited-for event")
 	}
 }
@@ -105,7 +106,7 @@ func BenchmarkWaiterNotifyRedundant(b *testing.B) {
 func BenchmarkSleeperNotifyRedundant(b *testing.B) {
 	var s sleep.Sleeper
 	var w sleep.Waker
-	s.AddWaker(&w, 0)
+	s.AddWaker(&w)
 	w.Assert()
 
 	b.ResetTimer()
@@ -146,7 +147,7 @@ func BenchmarkWaiterNotifyWaitAck(b *testing.B) {
 func BenchmarkSleeperNotifyWaitAck(b *testing.B) {
 	var s sleep.Sleeper
 	var w sleep.Waker
-	s.AddWaker(&w, 0)
+	s.AddWaker(&w)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -189,7 +190,7 @@ func BenchmarkSleeperMultiNotifyWaitAck(b *testing.B) {
 	// The sleep package doesn't provide sync.Pool allocation of Wakers;
 	// we do for a fairer comparison.
 	wakerPool := sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			return &sleep.Waker{}
 		},
 	}
@@ -197,7 +198,7 @@ func BenchmarkSleeperMultiNotifyWaitAck(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		w := wakerPool.Get().(*sleep.Waker)
-		s.AddWaker(w, 0)
+		s.AddWaker(w)
 		w.Assert()
 		s.Fetch(true)
 		s.Done()
@@ -228,7 +229,7 @@ func BenchmarkSleeperTempNotifyWaitAck(b *testing.B) {
 	// The sleep package doesn't provide sync.Pool allocation of Sleepers;
 	// we do for a fairer comparison.
 	sleeperPool := sync.Pool{
-		New: func() interface{} {
+		New: func() any {
 			return &sleep.Sleeper{}
 		},
 	}
@@ -237,7 +238,7 @@ func BenchmarkSleeperTempNotifyWaitAck(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		s := sleeperPool.Get().(*sleep.Sleeper)
-		s.AddWaker(&w, 0)
+		s.AddWaker(&w)
 		w.Assert()
 		s.Fetch(true)
 		s.Done()
@@ -266,14 +267,14 @@ func BenchmarkSleeperNotifyWaitMultiAck(b *testing.B) {
 	var s sleep.Sleeper
 	var ws [3]sleep.Waker
 	for i := range ws {
-		s.AddWaker(&ws[i], i)
+		s.AddWaker(&ws[i])
 	}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		ws[0].Assert()
-		if id, _ := s.Fetch(true); id != 0 {
-			b.Fatalf("Fetch: got %d, wanted 0", id)
+		if v := s.Fetch(true); v != &ws[0] {
+			b.Fatalf("Fetch: got %v, wanted %v", v, &ws[0])
 		}
 	}
 }
@@ -303,112 +304,186 @@ func BenchmarkChannelNotifyWaitMultiAck(b *testing.B) {
 	}
 }
 
-// BenchmarkXxxNotifyAsyncWaitAck measures how long it takes to wait for an
-// event while another goroutine signals the event. This assumes that a new
-// goroutine doesn't run immediately (i.e. the creator of a new goroutine is
-// allowed to go to sleep before the new goroutine has a chance to run).
+// BenchmarkXxxPingPong exchanges control between two goroutines.
 
-func BenchmarkWaiterNotifyAsyncWaitAck(b *testing.B) {
-	var w Waiter
-	w.Init()
+func BenchmarkWaiterPingPong(b *testing.B) {
+	var w1, w2 Waiter
+	w1.Init()
+	w2.Init()
+	var wg sync.WaitGroup
+	defer wg.Wait()
 
+	w1.Notify(evBench)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		go func() {
-			w.Notify(1)
-		}()
-		w.Wait()
-		w.Ack(evBench)
-	}
-}
-
-func BenchmarkSleeperNotifyAsyncWaitAck(b *testing.B) {
-	var s sleep.Sleeper
-	var w sleep.Waker
-	s.AddWaker(&w, 0)
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		go func() {
-			w.Assert()
-		}()
-		s.Fetch(true)
-	}
-}
-
-func BenchmarkChannelNotifyAsyncWaitAck(b *testing.B) {
-	ch := make(chan struct{}, 1)
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		go func() {
-			select {
-			case ch <- struct{}{}:
-			default:
-			}
-		}()
-		<-ch
-	}
-}
-
-// BenchmarkXxxNotifyAsyncWaitMultiAck is equivalent to NotifyAsyncWaitAck, but
-// allows for multiple event sources.
-
-func BenchmarkWaiterNotifyAsyncWaitMultiAck(b *testing.B) {
-	var w Waiter
-	w.Init()
-
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		go func() {
-			w.Notify(evBench)
-		}()
-		if e := w.Wait(); e != evBench {
-			b.Fatalf("Wait: got %#x, wanted %#x", e, evBench)
+	go func() {
+		for i := 0; i < b.N; i++ {
+			w1.Wait()
+			w1.Ack(evBench)
+			w2.Notify(evBench)
 		}
-		w.Ack(evBench)
-	}
-}
-
-func BenchmarkSleeperNotifyAsyncWaitMultiAck(b *testing.B) {
-	var s sleep.Sleeper
-	var ws [3]sleep.Waker
-	for i := range ws {
-		s.AddWaker(&ws[i], i)
-	}
-
-	b.ResetTimer()
+	}()
 	for i := 0; i < b.N; i++ {
-		go func() {
-			ws[0].Assert()
-		}()
-		if id, _ := s.Fetch(true); id != 0 {
-			b.Fatalf("Fetch: got %d, expected 0", id)
-		}
+		w2.Wait()
+		w2.Ack(evBench)
+		w1.Notify(evBench)
 	}
 }
 
-func BenchmarkChannelNotifyAsyncWaitMultiAck(b *testing.B) {
-	ch0 := make(chan struct{}, 1)
+func BenchmarkSleeperPingPong(b *testing.B) {
+	var (
+		s1 sleep.Sleeper
+		w1 sleep.Waker
+		s2 sleep.Sleeper
+		w2 sleep.Waker
+	)
+	s1.AddWaker(&w1)
+	s2.AddWaker(&w2)
+	var wg sync.WaitGroup
+	defer wg.Wait()
+
+	w1.Assert()
+	wg.Add(1)
+	b.ResetTimer()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < b.N; i++ {
+			s1.Fetch(true)
+			w2.Assert()
+		}
+	}()
+	for i := 0; i < b.N; i++ {
+		s2.Fetch(true)
+		w1.Assert()
+	}
+}
+
+func BenchmarkChannelPingPong(b *testing.B) {
 	ch1 := make(chan struct{}, 1)
 	ch2 := make(chan struct{}, 1)
+	var wg sync.WaitGroup
+	defer wg.Wait()
 
+	ch1 <- struct{}{}
+	wg.Add(1)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		go func() {
-			select {
-			case ch0 <- struct{}{}:
-			default:
-			}
-		}()
-
-		select {
-		case <-ch0:
-			// ok
-		case <-ch1:
-			b.Fatalf("received from ch1")
-		case <-ch2:
-			b.Fatalf("received from ch2")
+	go func() {
+		defer wg.Done()
+		for i := 0; i < b.N; i++ {
+			<-ch1
+			ch2 <- struct{}{}
 		}
+	}()
+	for i := 0; i < b.N; i++ {
+		<-ch2
+		ch1 <- struct{}{}
+	}
+}
+
+// BenchmarkXxxPingPongMulti is equivalent to PingPong, but allows each
+// goroutine to receive from multiple event sources (although only one is ever
+// signaled).
+
+func BenchmarkWaiterPingPongMulti(b *testing.B) {
+	var w1, w2 Waiter
+	w1.Init()
+	w2.Init()
+	var wg sync.WaitGroup
+	defer wg.Wait()
+
+	w1.Notify(evBench)
+	wg.Add(1)
+	b.ResetTimer()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < b.N; i++ {
+			if e := w1.Wait(); e != evBench {
+				// b.Fatalf() can only be called from the main goroutine.
+				panic(fmt.Sprintf("Wait: got %#x, wanted %#x", e, evBench))
+			}
+			w1.Ack(evBench)
+			w2.Notify(evBench)
+		}
+	}()
+	for i := 0; i < b.N; i++ {
+		if e := w2.Wait(); e != evBench {
+			b.Fatalf("Wait: got %#x, wanted %#x", e, evBench)
+		}
+		w2.Ack(evBench)
+		w1.Notify(evBench)
+	}
+}
+
+func BenchmarkSleeperPingPongMulti(b *testing.B) {
+	var (
+		s1           sleep.Sleeper
+		w1, w1a, w1b sleep.Waker
+		s2           sleep.Sleeper
+		w2, w2a, w2b sleep.Waker
+	)
+	s1.AddWaker(&w1)
+	s1.AddWaker(&w1a)
+	s1.AddWaker(&w1b)
+	s2.AddWaker(&w2)
+	s2.AddWaker(&w2a)
+	s2.AddWaker(&w2b)
+	var wg sync.WaitGroup
+	defer wg.Wait()
+
+	w1.Assert()
+	wg.Add(1)
+	b.ResetTimer()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < b.N; i++ {
+			if w := s1.Fetch(true); w != &w1 {
+				// b.Fatalf() can only be called from the main goroutine.
+				panic(fmt.Sprintf("Fetch: got %p, wanted %p", w, &w1))
+			}
+			w2.Assert()
+		}
+	}()
+	for i := 0; i < b.N; i++ {
+		if w := s2.Fetch(true); w != &w2 {
+			b.Fatalf("Fetch: got %p, wanted %p", w, &w2)
+		}
+		w1.Assert()
+	}
+}
+
+func BenchmarkChannelPingPongMulti(b *testing.B) {
+	ch1 := make(chan struct{}, 1)
+	ch1a := make(chan struct{}, 1)
+	ch1b := make(chan struct{}, 1)
+	ch2 := make(chan struct{}, 1)
+	ch2a := make(chan struct{}, 1)
+	ch2b := make(chan struct{}, 1)
+	var wg sync.WaitGroup
+	defer wg.Wait()
+
+	ch1 <- struct{}{}
+	wg.Add(1)
+	b.ResetTimer()
+	go func() {
+		defer wg.Done()
+		for i := 0; i < b.N; i++ {
+			select {
+			case <-ch1:
+			case <-ch1a:
+				panic("received from ch1a")
+			case <-ch1b:
+				panic("received from ch1a")
+			}
+			ch2 <- struct{}{}
+		}
+	}()
+	for i := 0; i < b.N; i++ {
+		select {
+		case <-ch2:
+		case <-ch2a:
+			panic("received from ch2a")
+		case <-ch2b:
+			panic("received from ch2a")
+		}
+		ch1 <- struct{}{}
 	}
 }

@@ -140,7 +140,7 @@ Available commands:
 	log.Printf(usage, initCmd.Name(), initDescription, parseCmd.Name(), parseDescription)
 }
 
-func debugLog(msg string, args ...interface{}) {
+func debugLog(msg string, args ...any) {
 	if *debug {
 		log.Printf(msg, args...)
 	}

@@ -50,6 +50,7 @@ func TestConstantFrequency(t *testing.T) {
 	if !c.ready {
 		c.mu.RUnlock()
 		t.Fatalf("clock not ready")
+		return // For checklocks consistency.
 	}
 	// A bit after the last sample.
 	now, ok := c.params.ComputeTime(750000)

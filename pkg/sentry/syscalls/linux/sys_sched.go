@@ -16,9 +16,9 @@ package linux
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 const (
@@ -34,17 +34,17 @@ type SchedParam struct {
 }
 
 // SchedGetparam implements linux syscall sched_getparam(2).
-func SchedGetparam(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func SchedGetparam(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	pid := args[0].Int()
 	param := args[1].Pointer()
 	if param == 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	if pid < 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	if pid != 0 && t.PIDNamespace().TaskWithID(kernel.ThreadID(pid)) == nil {
-		return 0, nil, syserror.ESRCH
+		return 0, nil, linuxerr.ESRCH
 	}
 	r := SchedParam{schedPriority: onlyPriority}
 	if _, err := r.CopyOut(t, param); err != nil {
@@ -55,47 +55,47 @@ func SchedGetparam(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel
 }
 
 // SchedGetscheduler implements linux syscall sched_getscheduler(2).
-func SchedGetscheduler(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func SchedGetscheduler(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	pid := args[0].Int()
 	if pid < 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	if pid != 0 && t.PIDNamespace().TaskWithID(kernel.ThreadID(pid)) == nil {
-		return 0, nil, syserror.ESRCH
+		return 0, nil, linuxerr.ESRCH
 	}
 	return onlyScheduler, nil, nil
 }
 
 // SchedSetscheduler implements linux syscall sched_setscheduler(2).
-func SchedSetscheduler(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func SchedSetscheduler(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	pid := args[0].Int()
 	policy := args[1].Int()
 	param := args[2].Pointer()
 	if pid < 0 {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	if policy != onlyScheduler {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	if pid != 0 && t.PIDNamespace().TaskWithID(kernel.ThreadID(pid)) == nil {
-		return 0, nil, syserror.ESRCH
+		return 0, nil, linuxerr.ESRCH
 	}
 	var r SchedParam
 	if _, err := r.CopyIn(t, param); err != nil {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	if r.schedPriority != onlyPriority {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 	return 0, nil, nil
 }
 
 // SchedGetPriorityMax implements linux syscall sched_get_priority_max(2).
-func SchedGetPriorityMax(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func SchedGetPriorityMax(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	return onlyPriority, nil, nil
 }
 
 // SchedGetPriorityMin implements linux syscall sched_get_priority_min(2).
-func SchedGetPriorityMin(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func SchedGetPriorityMin(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	return onlyPriority, nil, nil
 }

@@ -45,7 +45,7 @@ import (
 // containerd instance.
 func Sandbox(name string) string {
 	// Sandbox is a default JSON config for a sandbox.
-	s := map[string]interface{}{
+	s := map[string]any{
 		"metadata": map[string]string{
 			"name":      name,
 			"namespace": "default",
@@ -65,8 +65,8 @@ func Sandbox(name string) string {
 
 // SimpleSpec returns a JSON config for a simple container that runs the
 // specified command in the specified image.
-func SimpleSpec(name, image string, cmd []string, extra map[string]interface{}) string {
-	s := map[string]interface{}{
+func SimpleSpec(name, image string, cmd []string, extra map[string]any) string {
+	s := map[string]any{
 		"metadata": map[string]string{
 			"name": name,
 		},
@@ -122,8 +122,8 @@ func TestCrictlSanity(t *testing.T) {
 
 // HttpdMountPaths is a JSON config for an httpd container with additional
 // mounts.
-var HttpdMountPaths = SimpleSpec("httpd", "basic/httpd", nil, map[string]interface{}{
-	"mounts": []map[string]interface{}{
+var HttpdMountPaths = SimpleSpec("httpd", "basic/httpd", nil, map[string]any{
+	"mounts": []map[string]any{
 		{
 			"container_path": "/var/run/secrets/kubernetes.io/serviceaccount",
 			"host_path":      "/var/lib/kubelet/pods/82bae206-cdf5-11e8-b245-8cdcd43ac064/volumes/kubernetes.io~secret/default-token-2rpfx",
@@ -145,7 +145,7 @@ var HttpdMountPaths = SimpleSpec("httpd", "basic/httpd", nil, map[string]interfa
 			"readonly":       true,
 		},
 	},
-	"linux": map[string]interface{}{},
+	"linux": map[string]any{},
 })
 
 // TestMountPaths refers to b/117635704.
@@ -181,8 +181,8 @@ func TestMountOverSymlinks(t *testing.T) {
 	}
 	defer cleanup()
 
-	spec := SimpleSpec("busybox", "basic/resolv", []string{"sleep", "1000"}, nil)
-	podID, contID, err := crictl.StartPodAndContainer(containerdRuntime, "basic/resolv", Sandbox("default"), spec)
+	spec := SimpleSpec("busybox", "basic/symlink-resolv", []string{"sleep", "1000"}, nil)
+	podID, contID, err := crictl.StartPodAndContainer(containerdRuntime, "basic/symlink-resolv", Sandbox("default"), spec)
 	if err != nil {
 		t.Fatalf("start failed: %v", err)
 	}
@@ -270,10 +270,11 @@ func TestHomeDir(t *testing.T) {
 
 const containerdRuntime = "runsc"
 
-// Template is the containerd configuration file that configures containerd with
-// the gVisor shim, Note that the v2 shim binary name must be
-// containerd-shim-<runtime>-v1.
-const template = `
+// containerdConfigv14 is the containerd (1.4-) configuration file that
+// configures the gVisor shim.
+//
+// Note that the v2 shim binary name must be containerd-shim-<runtime>-v1.
+const containerdConfigv14 = `
 disabled_plugins = ["restart"]
 [plugins.cri]
   disable_tcp_service = true
@@ -285,10 +286,29 @@ disabled_plugins = ["restart"]
   TypeUrl = "io.containerd.` + containerdRuntime + `.v1.options"
 `
 
+// containerdConfig is the containerd (1.5+) configuration file that
+// configures the gVisor shim.
+//
+// Note that the v2 shim binary name must be containerd-shim-<runtime>-v1.
+const containerdConfig = `
+version=2
+disabled_plugins = ["io.containerd.internal.v1.restart"]
+[plugins."io.containerd.grpc.v1.cri"]
+  disable_tcp_service = true
+[plugins."io.containerd.runtime.v1.linux"]
+  shim_debug = true
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc]
+  runtime_type = "io.containerd.runc.v2"
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.` + containerdRuntime + `]
+  runtime_type = "io.containerd.` + containerdRuntime + `.v1"
+[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.` + containerdRuntime + `.options]
+  TypeUrl = "io.containerd.` + containerdRuntime + `.v1.options"
+`
+
 // setup sets up before a test. Specifically it:
-// * Creates directories and a socket for containerd to utilize.
-// * Runs containerd and waits for it to reach a "ready" state for testing.
-// * Returns a cleanup function that should be called at the end of the test.
+//   - Creates directories and a socket for containerd to utilize.
+//   - Runs containerd and waits for it to reach a "ready" state for testing.
+//   - Returns a cleanup function that should be called at the end of the test.
 func setup(t *testing.T) (*criutil.Crictl, func(), error) {
 	// Create temporary containerd root and state directories, and a socket
 	// via which crictl and containerd communicate.
@@ -362,8 +382,9 @@ func setup(t *testing.T) (*criutil.Crictl, func(), error) {
 	t.Logf("Using PATH: %v", modifiedPath)
 
 	// Generate the configuration for the test.
-	t.Logf("Using config: %s", template)
-	configFile, configCleanup, err := testutil.WriteTmpFile("containerd-config", template)
+	config := getContainerdConfig(major, minor)
+	t.Logf("Using config: %s", config)
+	configFile, configCleanup, err := testutil.WriteTmpFile("containerd-config", config)
 	if err != nil {
 		t.Fatalf("failed to write containerd config")
 	}
@@ -473,4 +494,11 @@ func getContainerd() string {
 		return "/usr/local/bin/containerd"
 	}
 	return "/usr/bin/containerd"
+}
+
+func getContainerdConfig(major, minor uint64) string {
+	if major == 1 && minor <= 4 {
+		return containerdConfigv14
+	}
+	return containerdConfig
 }

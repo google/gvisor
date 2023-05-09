@@ -16,11 +16,11 @@ package linux
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 func getrusage(t *kernel.Task, which int32) linux.Rusage {
@@ -51,6 +51,7 @@ func getrusage(t *kernel.Task, which int32) linux.Rusage {
 }
 
 // Getrusage implements linux syscall getrusage(2).
+//
 //	marked "y" are supported now
 //	marked "*" are not used on Linux
 //	marked "p" are pending for support
@@ -71,12 +72,12 @@ func getrusage(t *kernel.Task, which int32) linux.Rusage {
 //	*    long   ru_nsignals;      /* signals received */
 //	y    long   ru_nvcsw;         /* voluntary context switches */
 //	y    long   ru_nivcsw;        /* involuntary context switches */
-func Getrusage(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Getrusage(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	which := args[0].Int()
 	addr := args[1].Pointer()
 
 	if which != linux.RUSAGE_SELF && which != linux.RUSAGE_CHILDREN && which != linux.RUSAGE_THREAD {
-		return 0, nil, syserror.EINVAL
+		return 0, nil, linuxerr.EINVAL
 	}
 
 	ru := getrusage(t, which)
@@ -85,7 +86,7 @@ func Getrusage(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.Sys
 }
 
 // Times implements linux syscall times(2).
-func Times(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+func Times(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	addr := args[0].Pointer()
 
 	// Calculate the ticks first, and figure out if any additional work is

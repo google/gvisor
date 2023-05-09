@@ -17,8 +17,8 @@
 //
 // Lock order:
 //
-// pgalloc.MemoryFile.mu
-//   pgalloc.MemoryFile.mappingsMu
+//	 pgalloc.MemoryFile.mu
+//		pgalloc.MemoryFile.mappingsMu
 package pgalloc
 
 import (
@@ -30,7 +30,9 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/safemem"
@@ -38,8 +40,28 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sync"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
+
+// Direction describes how to allocate offsets from MemoryFile.
+type Direction int
+
+const (
+	// BottomUp allocates offsets in increasing offsets.
+	BottomUp Direction = iota
+	// TopDown allocates offsets in decreasing offsets.
+	TopDown
+)
+
+// String implements fmt.Stringer.
+func (d Direction) String() string {
+	switch d {
+	case BottomUp:
+		return "up"
+	case TopDown:
+		return "down"
+	}
+	panic(fmt.Sprintf("invalid direction: %d", d))
+}
 
 // MemoryFile is a memmap.File whose pages may be allocated to arbitrary
 // users.
@@ -141,7 +163,7 @@ type MemoryFile struct {
 	// is protected by mu.
 	reclaimable bool
 
-	// relcaim is the collection of regions for reclaim. relcaim is protected
+	// reclaim is the collection of regions for reclaim. reclaim is protected
 	// by mu.
 	reclaim reclaimSet
 
@@ -174,10 +196,19 @@ type MemoryFileOpts struct {
 	// no effect unless DelayedEviction is DelayedEvictionEnabled.
 	UseHostMemcgPressure bool
 
+	// DecommitOnDestroy indicates whether the entire host file should be
+	// decommitted on destruction. This is appropriate for host filesystem based
+	// files that need to be explicitly cleaned up to release disk space.
+	DecommitOnDestroy bool
+
 	// If ManualZeroing is true, MemoryFile must not assume that new pages
 	// obtained from the host are zero-filled, such that MemoryFile must manually
 	// zero newly-allocated pages.
 	ManualZeroing bool
+
+	// If DisableIMAWorkAround is true, NewMemoryFile will not call
+	// IMAWorkAroundForMemFile().
+	DisableIMAWorkAround bool
 }
 
 // DelayedEvictionType is the type of MemoryFileOpts.DelayedEviction.
@@ -198,11 +229,11 @@ const (
 	// As of this writing, the behavior of DelayedEvictionEnabled depends on
 	// whether or not MemoryFileOpts.UseHostMemcgPressure is enabled:
 	//
-	// - If UseHostMemcgPressure is true, evictions are delayed until memory
-	// pressure is indicated.
+	//	- If UseHostMemcgPressure is true, evictions are delayed until memory
+	//		pressure is indicated.
 	//
-	// - Otherwise, evictions are only delayed until the reclaimer goroutine
-	// is out of work (pages to reclaim).
+	//	- Otherwise, evictions are only delayed until the reclaimer goroutine
+	//		is out of work (pages to reclaim).
 	DelayedEvictionEnabled
 
 	// DelayedEvictionManual requires that evictable allocations are only
@@ -330,24 +361,31 @@ func NewMemoryFile(file *os.File, opts MemoryFileOpts) (*MemoryFile, error) {
 
 	go f.runReclaim() // S/R-SAFE: f.mu
 
-	// The Linux kernel contains an optional feature called "Integrity
-	// Measurement Architecture" (IMA). If IMA is enabled, it will checksum
-	// binaries the first time they are mapped PROT_EXEC. This is bad news for
-	// executable pages mapped from our backing file, which can grow to
-	// terabytes in (sparse) size. If IMA attempts to checksum a file that
-	// large, it will allocate all of the sparse pages and quickly exhaust all
-	// memory.
-	//
-	// Work around IMA by immediately creating a temporary PROT_EXEC mapping,
-	// while the backing file is still small. IMA will ignore any future
-	// mappings.
+	if !opts.DisableIMAWorkAround {
+		IMAWorkAroundForMemFile(file.Fd())
+	}
+	return f, nil
+}
+
+// IMAWorkAroundForMemFile works around IMA by immediately creating a temporary
+// PROT_EXEC mapping, while the backing file is still small. IMA will ignore
+// any future mappings.
+//
+// The Linux kernel contains an optional feature called "Integrity
+// Measurement Architecture" (IMA). If IMA is enabled, it will checksum
+// binaries the first time they are mapped PROT_EXEC. This is bad news for
+// executable pages mapped from our backing file, which can grow to
+// terabytes in (sparse) size. If IMA attempts to checksum a file that
+// large, it will allocate all of the sparse pages and quickly exhaust all
+// memory.
+func IMAWorkAroundForMemFile(fd uintptr) {
 	m, _, errno := unix.Syscall6(
 		unix.SYS_MMAP,
 		0,
 		hostarch.PageSize,
 		unix.PROT_EXEC,
 		unix.MAP_SHARED,
-		file.Fd(),
+		fd,
 		0)
 	if errno != 0 {
 		// This isn't fatal (IMA may not even be in use). Log the error, but
@@ -362,8 +400,6 @@ func NewMemoryFile(file *os.File, opts MemoryFileOpts) (*MemoryFile, error) {
 			panic(fmt.Sprintf("failed to unmap PROT_EXEC MemoryFile mapping: %v", errno))
 		}
 	}
-
-	return f, nil
 }
 
 // Destroy releases all resources used by f.
@@ -378,6 +414,12 @@ func (f *MemoryFile) Destroy() {
 	f.reclaimCond.Signal()
 }
 
+// AllocOpts are options used in MemoryFile.Allocate.
+type AllocOpts struct {
+	Kind usage.MemoryKind
+	Dir  Direction
+}
+
 // Allocate returns a range of initially-zeroed pages of the given length with
 // the given accounting kind and a single reference held by the caller. When
 // the last reference on an allocated page is released, ownership of the page
@@ -385,7 +427,7 @@ func (f *MemoryFile) Destroy() {
 // to Allocate.
 //
 // Preconditions: length must be page-aligned and non-zero.
-func (f *MemoryFile) Allocate(length uint64, kind usage.MemoryKind) (memmap.FileRange, error) {
+func (f *MemoryFile) Allocate(length uint64, opts AllocOpts) (memmap.FileRange, error) {
 	if length == 0 || length%hostarch.PageSize != 0 {
 		panic(fmt.Sprintf("invalid allocation length: %#x", length))
 	}
@@ -401,9 +443,9 @@ func (f *MemoryFile) Allocate(length uint64, kind usage.MemoryKind) (memmap.File
 	}
 
 	// Find a range in the underlying file.
-	fr, ok := findAvailableRange(&f.usage, f.fileSize, length, alignment)
+	fr, ok := f.findAvailableRange(length, alignment, opts.Dir)
 	if !ok {
-		return memmap.FileRange{}, syserror.ENOMEM
+		return memmap.FileRange{}, linuxerr.ENOMEM
 	}
 
 	// Expand the file if needed.
@@ -429,7 +471,7 @@ func (f *MemoryFile) Allocate(length uint64, kind usage.MemoryKind) (memmap.File
 	}
 	// Mark selected pages as in use.
 	if !f.usage.Add(fr, usageInfo{
-		kind: kind,
+		kind: opts.Kind,
 		refs: 1,
 	}) {
 		panic(fmt.Sprintf("allocating %v: failed to insert into usage set:\n%v", fr, &f.usage))
@@ -448,7 +490,14 @@ func (f *MemoryFile) Allocate(length uint64, kind usage.MemoryKind) (memmap.File
 // space for mappings to be allocated downwards.
 //
 // Precondition: alignment must be a power of 2.
-func findAvailableRange(usage *usageSet, fileSize int64, length, alignment uint64) (memmap.FileRange, bool) {
+func (f *MemoryFile) findAvailableRange(length, alignment uint64, dir Direction) (memmap.FileRange, bool) {
+	if dir == BottomUp {
+		return findAvailableRangeBottomUp(&f.usage, length, alignment)
+	}
+	return findAvailableRangeTopDown(&f.usage, f.fileSize, length, alignment)
+}
+
+func findAvailableRangeTopDown(usage *usageSet, fileSize int64, length, alignment uint64) (memmap.FileRange, bool) {
 	alignmentMask := alignment - 1
 
 	// Search for space in existing gaps, starting at the current end of the
@@ -510,17 +559,44 @@ func findAvailableRange(usage *usageSet, fileSize int64, length, alignment uint6
 	}
 }
 
+func findAvailableRangeBottomUp(usage *usageSet, length, alignment uint64) (memmap.FileRange, bool) {
+	alignmentMask := alignment - 1
+	for gap := usage.FirstGap(); gap.Ok(); gap = gap.NextLargeEnoughGap(length) {
+		// Align the start address and check if allocation still fits in the gap.
+		start := (gap.Start() + alignmentMask) &^ alignmentMask
+
+		// File offsets are int64s. Since length must be strictly positive, end
+		// cannot legitimately be 0.
+		end := start + length
+		if end < start || int64(end) <= 0 {
+			return memmap.FileRange{}, false
+		}
+		if end <= gap.End() {
+			return memmap.FileRange{start, end}, true
+		}
+	}
+
+	// NextLargeEnoughGap should have returned a gap at the end.
+	panic(fmt.Sprintf("NextLargeEnoughGap didn't return a gap at the end, length: %d", length))
+}
+
 // AllocateAndFill allocates memory of the given kind and fills it by calling
 // r.ReadToBlocks() repeatedly until either length bytes are read or a non-nil
 // error is returned. It returns the memory filled by r, truncated down to the
 // nearest page. If this is shorter than length bytes due to an error returned
 // by r.ReadToBlocks(), it returns that error.
 //
+// If populate is true, AllocateAndFill will attempt to pre-fault pages in bulk
+// in the safemem.BlockSeq passed to r. Callers that will fill the allocated
+// memory by writing to it in the sentry should pass populate = true to avoid
+// faulting page-by-page. Callers that will fill the allocated memory by
+// invoking host system calls should pass populate = false.
+//
 // Preconditions:
-// * length > 0.
-// * length must be page-aligned.
-func (f *MemoryFile) AllocateAndFill(length uint64, kind usage.MemoryKind, r safemem.Reader) (memmap.FileRange, error) {
-	fr, err := f.Allocate(length, kind)
+//   - length > 0.
+//   - length must be page-aligned.
+func (f *MemoryFile) AllocateAndFill(length uint64, kind usage.MemoryKind, populate bool, r safemem.Reader) (memmap.FileRange, error) {
+	fr, err := f.Allocate(length, AllocOpts{Kind: kind})
 	if err != nil {
 		return memmap.FileRange{}, err
 	}
@@ -528,6 +604,18 @@ func (f *MemoryFile) AllocateAndFill(length uint64, kind usage.MemoryKind, r saf
 	if err != nil {
 		f.DecRef(fr)
 		return memmap.FileRange{}, err
+	}
+	if populate && canPopulate() {
+		rem := dsts
+		for {
+			if !tryPopulate(rem.Head()) {
+				break
+			}
+			rem = rem.Tail()
+			if rem.IsEmpty() {
+				break
+			}
+		}
 	}
 	n, err := safemem.ReadFullToBlocks(r, dsts)
 	un := uint64(hostarch.Addr(n).RoundDown())
@@ -538,6 +626,43 @@ func (f *MemoryFile) AllocateAndFill(length uint64, kind usage.MemoryKind, r saf
 		fr.End = fr.Start + un
 	}
 	return fr, err
+}
+
+var mlockDisabled atomicbitops.Uint32
+
+func canPopulate() bool {
+	return mlockDisabled.Load() == 0
+}
+
+func tryPopulate(b safemem.Block) bool {
+	// Call mlock to populate pages, then munlock to cancel the mlock (but keep
+	// the pages populated). Only do so for hugepage-aligned address ranges to
+	// ensure that splitting the VMA in mlock doesn't split any existing
+	// hugepages. This assumes that two host syscalls, plus the MM overhead of
+	// mlock + munlock, is faster on average than trapping for
+	// HugePageSize/PageSize small page faults.
+	start, ok := hostarch.Addr(b.Addr()).HugeRoundUp()
+	if !ok {
+		return true
+	}
+	end := hostarch.Addr(b.Addr() + uintptr(b.Len())).HugeRoundDown()
+	if start >= end {
+		return true
+	}
+	_, _, errno := unix.Syscall(unix.SYS_MLOCK, uintptr(start), uintptr(end-start), 0)
+	unix.RawSyscall(unix.SYS_MUNLOCK, uintptr(start), uintptr(end-start), 0)
+	if errno != 0 {
+		if errno == unix.ENOMEM || errno == unix.EPERM {
+			// These errors are expected from hitting non-zero RLIMIT_MEMLOCK, or
+			// hitting zero RLIMIT_MEMLOCK without CAP_IPC_LOCK, respectively.
+			log.Infof("Disabling pgalloc.MemoryFile.AllocateAndFill pre-population: mlock failed: %s", errno)
+		} else {
+			log.Warningf("Disabling pgalloc.MemoryFile.AllocateAndFill pre-population: mlock failed: %s", errno)
+		}
+		mlockDisabled.Store(1)
+		return false
+	}
+	return true
 }
 
 // fallocate(2) modes, defined in Linux's include/uapi/linux/falloc.h.
@@ -674,7 +799,7 @@ func (f *MemoryFile) MapInternal(fr memmap.FileRange, at hostarch.AccessType) (s
 		panic(fmt.Sprintf("invalid range: %v", fr))
 	}
 	if at.Execute {
-		return safemem.BlockSeq{}, syserror.EACCES
+		return safemem.BlockSeq{}, linuxerr.EACCES
 	}
 
 	chunks := ((fr.End + chunkMask) >> chunkShift) - (fr.Start >> chunkShift)
@@ -944,7 +1069,7 @@ func (f *MemoryFile) updateUsageLocked(currentUsage uint64, checkCommitted func(
 				// NOTE(b/165896008): mincore (which is passed as checkCommitted)
 				// by f.UpdateUsage() might take a really long time. So unlock f.mu
 				// while checkCommitted runs.
-				f.mu.Unlock()
+				f.mu.Unlock() // +checklocksforce
 				err := checkCommitted(s, buf)
 				f.mu.Lock()
 				if err != nil {
@@ -1062,10 +1187,20 @@ func (f *MemoryFile) runReclaim() {
 			break
 		}
 
-		// If ManualZeroing is in effect, pages will be zeroed on allocation
-		// and may not be freed by decommitFile, so calling decommitFile is
-		// unnecessary.
-		if !f.opts.ManualZeroing {
+		if f.opts.ManualZeroing {
+			// If ManualZeroing is in effect, only hugepage-aligned regions may
+			// be safely passed to decommitFile. Pages will be zeroed on
+			// reallocation, so we don't need to perform any manual zeroing
+			// here, whether or not decommitFile succeeds.
+			if startAddr, ok := hostarch.Addr(fr.Start).HugeRoundUp(); ok {
+				if endAddr := hostarch.Addr(fr.End).HugeRoundDown(); startAddr < endAddr {
+					decommitFR := memmap.FileRange{uint64(startAddr), uint64(endAddr)}
+					if err := f.decommitFile(decommitFR); err != nil {
+						log.Warningf("Reclaim failed to decommit %v: %v", decommitFR, err)
+					}
+				}
+			}
+		} else {
 			if err := f.decommitFile(fr); err != nil {
 				log.Warningf("Reclaim failed to decommit %v: %v", fr, err)
 				// Zero the pages manually. This won't reduce memory usage, but at
@@ -1085,6 +1220,12 @@ func (f *MemoryFile) runReclaim() {
 	if !f.destroyed {
 		f.mu.Unlock()
 		panic("findReclaimable broke out of reclaim loop, but destroyed is no longer set")
+	}
+	if f.opts.DecommitOnDestroy && f.fileSize > 0 {
+		if err := f.decommitFile(memmap.FileRange{Start: 0, End: uint64(f.fileSize)}); err != nil {
+			f.mu.Unlock()
+			panic(fmt.Sprintf("failed to decommit entire memory file during destruction: %v", err))
+		}
 	}
 	f.file.Close()
 	// Ensure that any attempts to use f.file.Fd() fail instead of getting a fd
@@ -1134,9 +1275,10 @@ func (f *MemoryFile) findReclaimable() (memmap.FileRange, bool) {
 			}
 			f.reclaimCond.Wait()
 		}
-		// Allocate works from the back of the file inwards, so reclaim
-		// preserves this order to minimize the cost of the search.
-		if seg := f.reclaim.LastSegment(); seg.Ok() {
+		// Most allocations are done upwards, with exceptions being stacks and some
+		// allocators that allocate top-down. Reclaim preserves this order to
+		// minimize the cost of the search.
+		if seg := f.reclaim.FirstSegment(); seg.Ok() {
 			fr := seg.Range()
 			f.reclaim.Remove(seg)
 			return fr, true
@@ -1194,9 +1336,9 @@ func (f *MemoryFile) startEvictionsLocked() bool {
 }
 
 // Preconditions:
-// * info == f.evictable[user].
-// * !info.evicting.
-// * f.mu must be locked.
+//   - info == f.evictable[user].
+//   - !info.evicting.
+//   - f.mu must be locked.
 func (f *MemoryFile) startEvictionGoroutineLocked(user EvictableMemoryUser, info *evictableMemoryUserInfo) {
 	info.evicting = true
 	f.evictionWG.Add(1)

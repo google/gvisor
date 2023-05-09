@@ -17,7 +17,6 @@ package fpu
 
 import (
 	"fmt"
-	"reflect"
 )
 
 // State represents floating point state.
@@ -39,16 +38,4 @@ type ErrLoadingState struct {
 // Error returns a sensible description of the restore error.
 func (e ErrLoadingState) Error() string {
 	return fmt.Sprintf("floating point state contains unsupported features; supported: %#x saved: %#x", e.supportedFeatures, e.savedFeatures)
-}
-
-// alignedBytes returns a slice of size bytes, aligned in memory to the given
-// alignment. This is used because we require certain structures to be aligned
-// in a specific way (for example, the X86 floating point data).
-func alignedBytes(size, alignment uint) []byte {
-	data := make([]byte, size+alignment-1)
-	offset := uint(reflect.ValueOf(data).Index(0).Addr().Pointer() % uintptr(alignment))
-	if offset == 0 {
-		return data[:size:size]
-	}
-	return data[alignment-offset:][:size:size]
 }

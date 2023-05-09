@@ -3,11 +3,16 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build go1.13
-// +build !go1.18
+//go:build go1.18 && !go1.22
+// +build go1.18,!go1.22
 
-// Check go:linkname function signatures, type definitions, and constants when
-// updating Go version.
+// //go:linkname directives type-checked by checklinkname. Any other
+// non-linkname assumptions outside the Go 1 compatibility guarantee should
+// have an accompanied vet check or version guard build tag.
+
+// Check type definitions and constants when updating Go version.
+//
+// TODO(b/165820485): add these checks to checklinkname.
 
 package sync
 
@@ -17,19 +22,14 @@ import (
 	"unsafe"
 )
 
-// Note that go:linkname silently doesn't work if the local name is exported,
-// necessitating an indirection for exported functions.
-
-// Memmove is runtime.memmove, exported for SeqAtomicLoad/SeqAtomicTryLoad<T>.
+// Goyield is runtime.goyield, which is similar to runtime.Gosched but only
+// yields the processor to other goroutines already on the processor's
+// runqueue.
 //
 //go:nosplit
-func Memmove(to, from unsafe.Pointer, n uintptr) {
-	memmove(to, from, n)
+func Goyield() {
+	goyield()
 }
-
-//go:linkname memmove runtime.memmove
-//go:noescape
-func memmove(to, from unsafe.Pointer, n uintptr)
 
 // Gopark is runtime.gopark. Gopark calls unlockf(pointer to runtime.g, lock);
 // if unlockf returns true, Gopark blocks until Goready(pointer to runtime.g)
@@ -44,29 +44,39 @@ func Gopark(unlockf func(uintptr, unsafe.Pointer) bool, lock unsafe.Pointer, rea
 //go:linkname gopark runtime.gopark
 func gopark(unlockf func(uintptr, unsafe.Pointer) bool, lock unsafe.Pointer, reason uint8, traceEv byte, traceskip int)
 
-// Goready is runtime.goready.
+//go:linkname wakep runtime.wakep
+func wakep()
+
+// Wakep is runtime.wakep.
 //
 //go:nosplit
-func Goready(gp uintptr, traceskip int) {
-	goready(gp, traceskip)
+func Wakep() {
+	// This is only supported if we can suppress the wakep called
+	// from  Goready below, which is in certain architectures only.
+	if supportsWakeSuppression {
+		wakep()
+	}
 }
 
 //go:linkname goready runtime.goready
 func goready(gp uintptr, traceskip int)
 
-// Values for the reason argument to gopark, from Go's src/runtime/runtime2.go.
-const (
-	WaitReasonSelect      uint8 = 9
-	WaitReasonChanReceive uint8 = 14
-	WaitReasonSemacquire  uint8 = 18
-)
-
-// Values for the traceEv argument to gopark, from Go's src/runtime/trace.go.
-const (
-	TraceEvGoBlockRecv   byte = 23
-	TraceEvGoBlockSelect byte = 24
-	TraceEvGoBlockSync   byte = 25
-)
+// Goready is runtime.goready.
+//
+// The additional wakep argument controls whether a new thread will be kicked to
+// execute the P. This should be true in most circumstances. However, if the
+// current thread is about to sleep, then this can be false for efficiency.
+//
+//go:nosplit
+func Goready(gp uintptr, traceskip int, wakep bool) {
+	if supportsWakeSuppression && !wakep {
+		preGoReadyWakeSuppression()
+	}
+	goready(gp, traceskip)
+	if supportsWakeSuppression && !wakep {
+		postGoReadyWakeSuppression()
+	}
+}
 
 // Rand32 returns a non-cryptographically-secure random uint32.
 func Rand32() uint32 {
@@ -92,7 +102,7 @@ func RandUintptr() uintptr {
 // MapKeyHasher returns a hash function for pointers of m's key type.
 //
 // Preconditions: m must be a map.
-func MapKeyHasher(m interface{}) func(unsafe.Pointer, uintptr) uintptr {
+func MapKeyHasher(m any) func(unsafe.Pointer, uintptr) uintptr {
 	if rtyp := reflect.TypeOf(m); rtyp.Kind() != reflect.Map {
 		panic(fmt.Sprintf("sync.MapKeyHasher: m is %v, not map", rtyp))
 	}
@@ -123,10 +133,10 @@ type maptype struct {
 // These functions are only used within the sync package.
 
 //go:linkname semacquire sync.runtime_Semacquire
-func semacquire(s *uint32)
+func semacquire(addr *uint32)
 
 //go:linkname semrelease sync.runtime_Semrelease
-func semrelease(s *uint32, handoff bool, skipframes int)
+func semrelease(addr *uint32, handoff bool, skipframes int)
 
 //go:linkname canSpin sync.runtime_canSpin
 func canSpin(i int) bool

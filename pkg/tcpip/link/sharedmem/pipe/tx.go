@@ -61,6 +61,9 @@ func (t *Tx) Push(payloadSize uint64) []byte {
 		return nil
 	}
 
+	// True if TxPipe currently has a pushed message, i.e., it is not
+	// Flush()'ed.
+	messageAhead := t.next != t.tail
 	totalLen := payloadToSlotSize(payloadSize)
 	newNext := t.next + totalLen
 	nextWrap := (t.next & revolutionMask) | uint64(len(t.p.buffer))
@@ -69,21 +72,19 @@ func (t *Tx) Push(payloadSize uint64) []byte {
 		// slot, then try to add the actual slot to the front of the
 		// pipe.
 		newNext = (newNext & revolutionMask) + jump
-		wrappingPayloadSize := slotToPayloadSize(newNext - t.next)
 		if !t.reclaim(newNext) {
 			return nil
 		}
-
+		wrappingPayloadSize := slotToPayloadSize(newNext - t.next)
 		oldNext := t.next
 		t.next = newNext
-		if oldNext != t.tail {
+		if messageAhead {
 			t.p.write(oldNext, wrappingPayloadSize)
 		} else {
 			t.tailHeader = wrappingPayloadSize
 			t.Flush()
 		}
-
-		newNext += totalLen
+		return t.Push(payloadSize)
 	}
 
 	// Check that we have enough room for the buffer.
@@ -91,7 +92,7 @@ func (t *Tx) Push(payloadSize uint64) []byte {
 		return nil
 	}
 
-	if t.next != t.tail {
+	if messageAhead {
 		t.p.write(t.next, payloadSize)
 	} else {
 		t.tailHeader = payloadSize

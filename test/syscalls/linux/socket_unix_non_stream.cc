@@ -19,9 +19,9 @@
 #include <sys/un.h>
 
 #include "gtest/gtest.h"
-#include "test/syscalls/linux/socket_test_util.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
 #include "test/util/memory_util.h"
+#include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
 namespace gvisor {
@@ -239,7 +239,7 @@ TEST_P(UnixNonStreamSocketPairTest, SendTimeout) {
               SyscallSucceeds());
 
   // The buffer size should be big enough to avoid many iterations in the next
-  // loop. Otherwise, this will slow down cooperative_save tests.
+  // loop. Otherwise, this will slow down save tests.
   std::vector<char> buf(kPageSize);
   for (;;) {
     int ret;

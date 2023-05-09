@@ -27,7 +27,7 @@ type eface struct {
 // kernelAddr returns the kernel virtual address for the given object.
 //
 //go:nosplit
-func kernelAddr(obj interface{}) uintptr {
+func kernelAddr(obj any) uintptr {
 	e := (*eface)(unsafe.Pointer(&obj))
 	return KernelStartAddress | uintptr(e.data)
 }
@@ -35,7 +35,6 @@ func kernelAddr(obj interface{}) uintptr {
 // kernelFunc returns the address of the given function.
 //
 //go:nosplit
-func kernelFunc(fn func()) uintptr {
-	fnptr := (**uintptr)(unsafe.Pointer(&fn))
-	return KernelStartAddress | **fnptr
+func kernelFunc(fn uintptr) uintptr {
+	return KernelStartAddress | fn
 }

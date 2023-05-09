@@ -61,7 +61,7 @@ type response struct {
 }
 
 var responsePool = sync.Pool{
-	New: func() interface{} {
+	New: func() any {
 		return &response{
 			done: make(chan error, 1),
 		}
@@ -103,7 +103,7 @@ type Client struct {
 	// efficient, and does not require tags).
 	sendRecv func(message, message) error
 
-	// -- below corresponds to sendRecvChannel --
+	//	-- below corresponds to sendRecvChannel --
 
 	// channelsMu protects channels.
 	channelsMu sync.Mutex
@@ -115,10 +115,10 @@ type Client struct {
 	// channels is the set of all initialized channels.
 	channels []*channel
 
-	// availableChannels is a FIFO of inactive channels.
+	// availableChannels is a LIFO of inactive channels.
 	availableChannels []*channel
 
-	// -- below corresponds to sendRecvLegacy --
+	//	-- below corresponds to sendRecvLegacy --
 
 	// pending is the set of pending messages.
 	pending   map[Tag]*response
@@ -528,7 +528,7 @@ func (c *Client) sendRecvChannel(t message, r message) error {
 	}
 
 	// Send the request and receive the server's response.
-	rsz, err := ch.send(t)
+	rsz, err := ch.send(t, false /* isServer */)
 	if err != nil {
 		// See above.
 		c.channelsMu.Lock()

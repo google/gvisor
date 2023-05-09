@@ -1,6 +1,9 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_library(
     name = "pipe",
@@ -10,7 +13,12 @@ go_library(
         "rx.go",
         "tx.go",
     ],
-    visibility = ["//visibility:public"],
+    visibility = [
+        "//visibility:public",
+    ],
+    deps = [
+        "//pkg/atomicbitops",
+    ],
 )
 
 go_test(

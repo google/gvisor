@@ -19,13 +19,13 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/transport/udp"
@@ -47,10 +47,11 @@ func (e *timeoutError) Temporary() bool { return true }
 // A TCPListener is a wrapper around a TCP tcpip.Endpoint that implements
 // net.Listener.
 type TCPListener struct {
-	stack  *stack.Stack
-	ep     tcpip.Endpoint
-	wq     *waiter.Queue
-	cancel chan struct{}
+	stack      *stack.Stack
+	ep         tcpip.Endpoint
+	wq         *waiter.Queue
+	cancelOnce sync.Once
+	cancel     chan struct{}
 }
 
 // NewTCPListener creates a new TCPListener from a listening tcpip.Endpoint.
@@ -62,6 +63,14 @@ func NewTCPListener(s *stack.Stack, wq *waiter.Queue, ep tcpip.Endpoint) *TCPLis
 		cancel: make(chan struct{}),
 	}
 }
+
+// maxListenBacklog is set to be reasonably high for most uses of gonet. Go net
+// package uses the value in /proc/sys/net/core/somaxconn file in Linux as the
+// default listen backlog. The value below matches the default in common linux
+// distros.
+//
+// See: https://cs.opensource.google/go/go/+/refs/tags/go1.18.1:src/net/sock_linux.go;drc=refs%2Ftags%2Fgo1.18.1;l=66
+const maxListenBacklog = 4096
 
 // ListenTCP creates a new TCPListener.
 func ListenTCP(s *stack.Stack, addr tcpip.FullAddress, network tcpip.NetworkProtocolNumber) (*TCPListener, error) {
@@ -82,7 +91,7 @@ func ListenTCP(s *stack.Stack, addr tcpip.FullAddress, network tcpip.NetworkProt
 		}
 	}
 
-	if err := ep.Listen(10); err != nil {
+	if err := ep.Listen(maxListenBacklog); err != nil {
 		ep.Close()
 		return nil, &net.OpError{
 			Op:   "listen",
@@ -104,7 +113,9 @@ func (l *TCPListener) Close() error {
 // Shutdown stops the HTTP server.
 func (l *TCPListener) Shutdown() {
 	l.ep.Shutdown(tcpip.ShutdownWrite | tcpip.ShutdownRead)
-	close(l.cancel) // broadcast cancellation
+	l.cancelOnce.Do(func() {
+		close(l.cancel) // broadcast cancellation
+	})
 }
 
 // Addr implements net.Listener.Addr.
@@ -231,7 +242,7 @@ type TCPConn struct {
 
 	// read contains bytes that have been read from the endpoint,
 	// but haven't yet been returned.
-	read buffer.View
+	read []byte
 }
 
 // NewTCPConn creates a new TCPConn.
@@ -250,8 +261,8 @@ func (l *TCPListener) Accept() (net.Conn, error) {
 
 	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 		// Create wait queue entry that notifies a channel.
-		waitEntry, notifyCh := waiter.NewChannelEntry(nil)
-		l.wq.EventRegister(&waitEntry, waiter.ReadableEvents)
+		waitEntry, notifyCh := waiter.NewChannelEntry(waiter.ReadableEvents)
+		l.wq.EventRegister(&waitEntry)
 		defer l.wq.EventUnregister(&waitEntry)
 
 		for {
@@ -300,8 +311,8 @@ func commonRead(b []byte, ep tcpip.Endpoint, wq *waiter.Queue, deadline <-chan s
 
 	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 		// Create wait queue entry that notifies a channel.
-		waitEntry, notifyCh := waiter.NewChannelEntry(nil)
-		wq.EventRegister(&waitEntry, waiter.ReadableEvents)
+		waitEntry, notifyCh := waiter.NewChannelEntry(waiter.ReadableEvents)
+		wq.EventRegister(&waitEntry)
 		defer wq.EventUnregister(&waitEntry)
 		for {
 			res, err = ep.Read(&w, opts)
@@ -380,9 +391,8 @@ func (c *TCPConn) Write(b []byte) (int, error) {
 		case nil:
 		case *tcpip.ErrWouldBlock:
 			if ch == nil {
-				entry, ch = waiter.NewChannelEntry(nil)
-
-				c.wq.EventRegister(&entry, waiter.WritableEvents)
+				entry, ch = waiter.NewChannelEntry(waiter.WritableEvents)
+				c.wq.EventRegister(&entry)
 				defer c.wq.EventUnregister(&entry)
 			} else {
 				// Don't wait immediately after registration in case more data
@@ -471,9 +481,9 @@ func DialTCP(s *stack.Stack, addr tcpip.FullAddress, network tcpip.NetworkProtoc
 	return DialContextTCP(context.Background(), s, addr, network)
 }
 
-// DialContextTCP creates a new TCPConn connected to the specified address
-// with the option of adding cancellation and timeouts.
-func DialContextTCP(ctx context.Context, s *stack.Stack, addr tcpip.FullAddress, network tcpip.NetworkProtocolNumber) (*TCPConn, error) {
+// DialTCPWithBind creates a new TCPConn connected to the specified
+// remoteAddress with its local address bound to localAddr.
+func DialTCPWithBind(ctx context.Context, s *stack.Stack, localAddr, remoteAddr tcpip.FullAddress, network tcpip.NetworkProtocolNumber) (*TCPConn, error) {
 	// Create TCP endpoint, then connect.
 	var wq waiter.Queue
 	ep, err := s.NewEndpoint(tcp.ProtocolNumber, network, &wq)
@@ -484,8 +494,8 @@ func DialContextTCP(ctx context.Context, s *stack.Stack, addr tcpip.FullAddress,
 	// Create wait queue entry that notifies a channel.
 	//
 	// We do this unconditionally as Connect will always return an error.
-	waitEntry, notifyCh := waiter.NewChannelEntry(nil)
-	wq.EventRegister(&waitEntry, waiter.WritableEvents)
+	waitEntry, notifyCh := waiter.NewChannelEntry(waiter.WritableEvents)
+	wq.EventRegister(&waitEntry)
 	defer wq.EventUnregister(&waitEntry)
 
 	select {
@@ -494,7 +504,14 @@ func DialContextTCP(ctx context.Context, s *stack.Stack, addr tcpip.FullAddress,
 	default:
 	}
 
-	err = ep.Connect(addr)
+	// Bind before connect if requested.
+	if localAddr != (tcpip.FullAddress{}) {
+		if err = ep.Bind(localAddr); err != nil {
+			return nil, fmt.Errorf("ep.Bind(%+v) = %s", localAddr, err)
+		}
+	}
+
+	err = ep.Connect(remoteAddr)
 	if _, ok := err.(*tcpip.ErrConnectStarted); ok {
 		select {
 		case <-ctx.Done():
@@ -510,12 +527,18 @@ func DialContextTCP(ctx context.Context, s *stack.Stack, addr tcpip.FullAddress,
 		return nil, &net.OpError{
 			Op:   "connect",
 			Net:  "tcp",
-			Addr: fullToTCPAddr(addr),
+			Addr: fullToTCPAddr(remoteAddr),
 			Err:  errors.New(err.String()),
 		}
 	}
 
 	return NewTCPConn(&wq, ep), nil
+}
+
+// DialContextTCP creates a new TCPConn connected to the specified address
+// with the option of adding cancellation and timeouts.
+func DialContextTCP(ctx context.Context, s *stack.Stack, addr tcpip.FullAddress, network tcpip.NetworkProtocolNumber) (*TCPConn, error) {
+	return DialTCPWithBind(ctx, s, tcpip.FullAddress{} /* localAddr */, addr /* remoteAddr */, network)
 }
 
 // A UDPConn is a wrapper around a UDP tcpip.Endpoint that implements
@@ -651,8 +674,8 @@ func (c *UDPConn) WriteTo(b []byte, addr net.Addr) (int, error) {
 	n, err := c.ep.Write(&r, writeOptions)
 	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 		// Create wait queue entry that notifies a channel.
-		waitEntry, notifyCh := waiter.NewChannelEntry(nil)
-		c.wq.EventRegister(&waitEntry, waiter.WritableEvents)
+		waitEntry, notifyCh := waiter.NewChannelEntry(waiter.WritableEvents)
+		c.wq.EventRegister(&waitEntry)
 		defer c.wq.EventUnregister(&waitEntry)
 		for {
 			select {

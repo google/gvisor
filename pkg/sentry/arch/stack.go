@@ -31,7 +31,7 @@ type Stack struct {
 	// Our arch info.
 	// We use this for automatic Native conversion of hostarch.Addrs during
 	// Push() and Pop().
-	Arch Context
+	Arch *Context64
 
 	// The interface used to actually copy user memory.
 	IO usermem.IO
@@ -45,7 +45,7 @@ type Stack struct {
 }
 
 // scratchBufLen is the default length of Stack.scratchBuf. The
-// largest structs the stack regularly serializes are arch.SignalInfo
+// largest structs the stack regularly serializes are linux.SignalInfo
 // and arch.UContext64. We'll set the default size as the larger of
 // the two, arch.UContext64.
 var scratchBufLen = (*UContext64)(nil).SizeBytes()
@@ -190,7 +190,7 @@ func (s *Stack) Load(args []string, env []string, aux Auxv) (StackLayout, error)
 	// NOTE: We need an extra zero here per spec.
 	// The Push function will automatically terminate
 	// strings and arrays with a single null value.
-	auxv := make([]hostarch.Addr, 0, len(aux))
+	auxv := make([]hostarch.Addr, 0, len(aux)*2+1)
 	for _, a := range aux {
 		auxv = append(auxv, hostarch.Addr(a.Key), a.Value)
 	}

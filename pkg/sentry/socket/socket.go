@@ -20,17 +20,14 @@ package socket
 import (
 	"bytes"
 	"fmt"
-	"sync/atomic"
+	"time"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/binary"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal"
-	"gvisor.dev/gvisor/pkg/sentry/device"
-	"gvisor.dev/gvisor/pkg/sentry/fs"
-	"gvisor.dev/gvisor/pkg/sentry/fs/fsutil"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
@@ -52,8 +49,19 @@ type ControlMessages struct {
 func packetInfoToLinux(packetInfo tcpip.IPPacketInfo) linux.ControlMessageIPPacketInfo {
 	var p linux.ControlMessageIPPacketInfo
 	p.NIC = int32(packetInfo.NIC)
-	copy(p.LocalAddr[:], []byte(packetInfo.LocalAddr))
-	copy(p.DestinationAddr[:], []byte(packetInfo.DestinationAddr))
+	copy(p.LocalAddr[:], packetInfo.LocalAddr)
+	copy(p.DestinationAddr[:], packetInfo.DestinationAddr)
+	return p
+}
+
+// ipv6PacketInfoToLinux converts IPv6PacketInfo from tcpip format to Linux
+// format.
+func ipv6PacketInfoToLinux(packetInfo tcpip.IPv6PacketInfo) linux.ControlMessageIPv6PacketInfo {
+	var p linux.ControlMessageIPv6PacketInfo
+	if n := copy(p.Addr[:], packetInfo.Addr); n != len(p.Addr) {
+		panic(fmt.Sprintf("got copy(%x, %x) = %d, want = %d", p.Addr, packetInfo.Addr, n, len(p.Addr)))
+	}
+	p.NIC = uint32(packetInfo.NIC)
 	return p
 }
 
@@ -81,7 +89,7 @@ func sockErrCmsgToLinux(sockErr *tcpip.SockError) linux.SockErrCMsg {
 	}
 
 	ee := linux.SockExtendedErr{
-		Errno:  uint32(syserr.TranslateNetstackError(sockErr.Err).ToLinux().Number()),
+		Errno:  uint32(syserr.TranslateNetstackError(sockErr.Err).ToLinux()),
 		Origin: errOriginToLinux(sockErr.Cause.Origin()),
 		Type:   sockErr.Cause.Type(),
 		Code:   sockErr.Cause.Code(),
@@ -108,27 +116,38 @@ func sockErrCmsgToLinux(sockErr *tcpip.SockError) linux.SockErrCMsg {
 	}
 }
 
-// NewIPControlMessages converts the tcpip ControlMessgaes (which does not
-// have Linux specific format) to Linux format.
-func NewIPControlMessages(family int, cmgs tcpip.ControlMessages) IPControlMessages {
+// NewIPControlMessages converts the tcpip.ReceivableControlMessages (which does
+// not have Linux specific format) to Linux format.
+func NewIPControlMessages(family int, cmgs tcpip.ReceivableControlMessages) IPControlMessages {
 	var orgDstAddr linux.SockAddr
 	if cmgs.HasOriginalDstAddress {
 		orgDstAddr, _ = ConvertAddress(family, cmgs.OriginalDstAddress)
 	}
-	return IPControlMessages{
+	cm := IPControlMessages{
 		HasTimestamp:       cmgs.HasTimestamp,
 		Timestamp:          cmgs.Timestamp,
 		HasInq:             cmgs.HasInq,
 		Inq:                cmgs.Inq,
 		HasTOS:             cmgs.HasTOS,
 		TOS:                cmgs.TOS,
+		HasTTL:             cmgs.HasTTL,
+		TTL:                uint32(cmgs.TTL),
+		HasHopLimit:        cmgs.HasHopLimit,
+		HopLimit:           uint32(cmgs.HopLimit),
 		HasTClass:          cmgs.HasTClass,
 		TClass:             cmgs.TClass,
 		HasIPPacketInfo:    cmgs.HasIPPacketInfo,
 		PacketInfo:         packetInfoToLinux(cmgs.PacketInfo),
+		HasIPv6PacketInfo:  cmgs.HasIPv6PacketInfo,
 		OriginalDstAddress: orgDstAddr,
 		SockErr:            sockErrCmsgToLinux(cmgs.SockErr),
 	}
+
+	if cm.HasIPv6PacketInfo {
+		cm.IPv6PacketInfo = ipv6PacketInfoToLinux(cmgs.IPv6PacketInfo)
+	}
+
+	return cm
 }
 
 // IPControlMessages contains socket control messages for IP sockets.
@@ -139,9 +158,9 @@ type IPControlMessages struct {
 	// HasTimestamp indicates whether Timestamp is valid/set.
 	HasTimestamp bool
 
-	// Timestamp is the time (in ns) that the last packet used to create
-	// the read data was received.
-	Timestamp int64
+	// Timestamp is the time that the last packet used to create the read data
+	// was received.
+	Timestamp time.Time `state:".(int64)"`
 
 	// HasInq indicates whether Inq is valid/set.
 	HasInq bool
@@ -155,6 +174,18 @@ type IPControlMessages struct {
 	// TOS is the IPv4 type of service of the associated packet.
 	TOS uint8
 
+	// HasTTL indicates whether TTL is valid/set.
+	HasTTL bool
+
+	// TTL is the IPv4 Time To Live of the associated packet.
+	TTL uint32
+
+	// HasHopLimit indicates whether HopLimit is valid/set.
+	HasHopLimit bool
+
+	// HopLimit is the IPv6 Hop Limit of the associated packet.
+	HopLimit uint32
+
 	// HasTClass indicates whether TClass is valid/set.
 	HasTClass bool
 
@@ -166,6 +197,12 @@ type IPControlMessages struct {
 
 	// PacketInfo holds interface and address data on an incoming packet.
 	PacketInfo linux.ControlMessageIPPacketInfo
+
+	// HasIPv6PacketInfo indicates whether IPv6PacketInfo is set.
+	HasIPv6PacketInfo bool
+
+	// PacketInfo holds interface and address data on an incoming packet.
+	IPv6PacketInfo linux.ControlMessageIPv6PacketInfo
 
 	// OriginalDestinationAddress holds the original destination address
 	// and port of the incoming packet.
@@ -180,25 +217,11 @@ func (c *ControlMessages) Release(ctx context.Context) {
 	c.Unix.Release(ctx)
 }
 
-// Socket is an interface combining fs.FileOperations and SocketOps,
-// representing a VFS1 socket file.
-type Socket interface {
-	fs.FileOperations
-	SocketOps
-}
-
-// SocketVFS2 is an interface combining vfs.FileDescription and SocketOps,
-// representing a VFS2 socket file.
-type SocketVFS2 interface {
-	vfs.FileDescriptionImpl
-	SocketOps
-}
-
-// SocketOps is the interface containing socket syscalls used by the syscall
+// Socket is an interface containing socket syscalls used by the syscall
 // layer to redirect them to the appropriate implementation.
-//
-// It is implemented by both Socket and SocketVFS2.
-type SocketOps interface {
+type Socket interface {
+	vfs.FileDescriptionImpl
+
 	// Connect implements the connect(2) linux unix.
 	Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr.Error
 
@@ -277,20 +300,20 @@ type SocketOps interface {
 	Type() (family int, skType linux.SockType, protocol int)
 }
 
-// Provider is the interface implemented by providers of sockets for specific
-// address families (e.g., AF_INET).
+// Provider is the interface implemented by providers of sockets for
+// specific address families (e.g., AF_INET).
 type Provider interface {
 	// Socket creates a new socket.
 	//
 	// If a nil Socket _and_ a nil error is returned, it means that the
 	// protocol is not supported. A non-nil error should only be returned
 	// if the protocol is supported, but an error occurs during creation.
-	Socket(t *kernel.Task, stype linux.SockType, protocol int) (*fs.File, *syserr.Error)
+	Socket(t *kernel.Task, stype linux.SockType, protocol int) (*vfs.FileDescription, *syserr.Error)
 
 	// Pair creates a pair of connected sockets.
 	//
 	// See Socket for error information.
-	Pair(t *kernel.Task, stype linux.SockType, protocol int) (*fs.File, *fs.File, *syserr.Error)
+	Pair(t *kernel.Task, stype linux.SockType, protocol int) (*vfs.FileDescription, *vfs.FileDescription, *syserr.Error)
 }
 
 // families holds a map of all known address families and their providers.
@@ -306,7 +329,7 @@ func RegisterProvider(family int, provider Provider) {
 }
 
 // New creates a new socket with the given family, type and protocol.
-func New(t *kernel.Task, family int, stype linux.SockType, protocol int) (*fs.File, *syserr.Error) {
+func New(t *kernel.Task, family int, stype linux.SockType, protocol int) (*vfs.FileDescription, *syserr.Error) {
 	for _, p := range families[family] {
 		s, err := p.Socket(t, stype, protocol)
 		if err != nil {
@@ -323,7 +346,7 @@ func New(t *kernel.Task, family int, stype linux.SockType, protocol int) (*fs.Fi
 
 // Pair creates a new connected socket pair with the given family, type and
 // protocol.
-func Pair(t *kernel.Task, family int, stype linux.SockType, protocol int) (*fs.File, *fs.File, *syserr.Error) {
+func Pair(t *kernel.Task, family int, stype linux.SockType, protocol int) (*vfs.FileDescription, *vfs.FileDescription, *syserr.Error) {
 	providers, ok := families[family]
 	if !ok {
 		return nil, nil, syserr.ErrAddressFamilyNotSupported
@@ -345,93 +368,6 @@ func Pair(t *kernel.Task, family int, stype linux.SockType, protocol int) (*fs.F
 	return nil, nil, syserr.ErrSocketNotSupported
 }
 
-// NewDirent returns a sockfs fs.Dirent that resides on device d.
-func NewDirent(ctx context.Context, d *device.Device) *fs.Dirent {
-	ino := d.NextIno()
-	iops := &fsutil.SimpleFileInode{
-		InodeSimpleAttributes: fsutil.NewInodeSimpleAttributes(ctx, fs.FileOwnerFromContext(ctx), fs.FilePermissions{
-			User: fs.PermMask{Read: true, Write: true},
-		}, linux.SOCKFS_MAGIC),
-	}
-	inode := fs.NewInode(ctx, iops, fs.NewPseudoMountSource(ctx), fs.StableAttr{
-		Type:      fs.Socket,
-		DeviceID:  d.DeviceID(),
-		InodeID:   ino,
-		BlockSize: hostarch.PageSize,
-	})
-
-	// Dirent name matches net/socket.c:sockfs_dname.
-	return fs.NewDirent(ctx, inode, fmt.Sprintf("socket:[%d]", ino))
-}
-
-// ProviderVFS2 is the vfs2 interface implemented by providers of sockets for
-// specific address families (e.g., AF_INET).
-type ProviderVFS2 interface {
-	// Socket creates a new socket.
-	//
-	// If a nil Socket _and_ a nil error is returned, it means that the
-	// protocol is not supported. A non-nil error should only be returned
-	// if the protocol is supported, but an error occurs during creation.
-	Socket(t *kernel.Task, stype linux.SockType, protocol int) (*vfs.FileDescription, *syserr.Error)
-
-	// Pair creates a pair of connected sockets.
-	//
-	// See Socket for error information.
-	Pair(t *kernel.Task, stype linux.SockType, protocol int) (*vfs.FileDescription, *vfs.FileDescription, *syserr.Error)
-}
-
-// familiesVFS2 holds a map of all known address families and their providers.
-var familiesVFS2 = make(map[int][]ProviderVFS2)
-
-// RegisterProviderVFS2 registers the provider of a given address family so that
-// sockets of that type can be created via socket() and/or socketpair()
-// syscalls.
-//
-// This should only be called during the initialization of the address family.
-func RegisterProviderVFS2(family int, provider ProviderVFS2) {
-	familiesVFS2[family] = append(familiesVFS2[family], provider)
-}
-
-// NewVFS2 creates a new socket with the given family, type and protocol.
-func NewVFS2(t *kernel.Task, family int, stype linux.SockType, protocol int) (*vfs.FileDescription, *syserr.Error) {
-	for _, p := range familiesVFS2[family] {
-		s, err := p.Socket(t, stype, protocol)
-		if err != nil {
-			return nil, err
-		}
-		if s != nil {
-			t.Kernel().RecordSocketVFS2(s)
-			return s, nil
-		}
-	}
-
-	return nil, syserr.ErrAddressFamilyNotSupported
-}
-
-// PairVFS2 creates a new connected socket pair with the given family, type and
-// protocol.
-func PairVFS2(t *kernel.Task, family int, stype linux.SockType, protocol int) (*vfs.FileDescription, *vfs.FileDescription, *syserr.Error) {
-	providers, ok := familiesVFS2[family]
-	if !ok {
-		return nil, nil, syserr.ErrAddressFamilyNotSupported
-	}
-
-	for _, p := range providers {
-		s1, s2, err := p.Pair(t, stype, protocol)
-		if err != nil {
-			return nil, nil, err
-		}
-		if s1 != nil && s2 != nil {
-			k := t.Kernel()
-			k.RecordSocketVFS2(s1)
-			k.RecordSocketVFS2(s2)
-			return s1, s2, nil
-		}
-	}
-
-	return nil, nil, syserr.ErrSocketNotSupported
-}
-
 // SendReceiveTimeout stores timeouts for send and receive calls.
 //
 // It is meant to be embedded into Socket implementations to help satisfy the
@@ -445,122 +381,32 @@ type SendReceiveTimeout struct {
 	// send is length of the send timeout in nanoseconds.
 	//
 	// send must be accessed atomically.
-	send int64
+	send atomicbitops.Int64
 
 	// recv is length of the receive timeout in nanoseconds.
 	//
 	// recv must be accessed atomically.
-	recv int64
+	recv atomicbitops.Int64
 }
 
 // SetRecvTimeout implements Socket.SetRecvTimeout.
 func (to *SendReceiveTimeout) SetRecvTimeout(nanoseconds int64) {
-	atomic.StoreInt64(&to.recv, nanoseconds)
+	to.recv.Store(nanoseconds)
 }
 
 // RecvTimeout implements Socket.RecvTimeout.
 func (to *SendReceiveTimeout) RecvTimeout() int64 {
-	return atomic.LoadInt64(&to.recv)
+	return to.recv.Load()
 }
 
 // SetSendTimeout implements Socket.SetSendTimeout.
 func (to *SendReceiveTimeout) SetSendTimeout(nanoseconds int64) {
-	atomic.StoreInt64(&to.send, nanoseconds)
+	to.send.Store(nanoseconds)
 }
 
 // SendTimeout implements Socket.SendTimeout.
 func (to *SendReceiveTimeout) SendTimeout() int64 {
-	return atomic.LoadInt64(&to.send)
-}
-
-// GetSockOptEmitUnimplementedEvent emits unimplemented event if name is valid.
-// It contains names that are valid for GetSockOpt when level is SOL_SOCKET.
-func GetSockOptEmitUnimplementedEvent(t *kernel.Task, name int) {
-	switch name {
-	case linux.SO_ACCEPTCONN,
-		linux.SO_BPF_EXTENSIONS,
-		linux.SO_COOKIE,
-		linux.SO_DOMAIN,
-		linux.SO_ERROR,
-		linux.SO_GET_FILTER,
-		linux.SO_INCOMING_NAPI_ID,
-		linux.SO_MEMINFO,
-		linux.SO_PEERCRED,
-		linux.SO_PEERGROUPS,
-		linux.SO_PEERNAME,
-		linux.SO_PEERSEC,
-		linux.SO_PROTOCOL,
-		linux.SO_SNDLOWAT,
-		linux.SO_TYPE:
-
-		t.Kernel().EmitUnimplementedEvent(t)
-
-	default:
-		emitUnimplementedEvent(t, name)
-	}
-}
-
-// SetSockOptEmitUnimplementedEvent emits unimplemented event if name is valid.
-// It contains names that are valid for SetSockOpt when level is SOL_SOCKET.
-func SetSockOptEmitUnimplementedEvent(t *kernel.Task, name int) {
-	switch name {
-	case linux.SO_ATTACH_BPF,
-		linux.SO_ATTACH_FILTER,
-		linux.SO_ATTACH_REUSEPORT_CBPF,
-		linux.SO_ATTACH_REUSEPORT_EBPF,
-		linux.SO_CNX_ADVICE,
-		linux.SO_DETACH_FILTER,
-		linux.SO_RCVBUFFORCE,
-		linux.SO_SNDBUFFORCE:
-
-		t.Kernel().EmitUnimplementedEvent(t)
-
-	default:
-		emitUnimplementedEvent(t, name)
-	}
-}
-
-// emitUnimplementedEvent emits unimplemented event if name is valid. It
-// contains names that are common between Get and SetSocketOpt when level is
-// SOL_SOCKET.
-func emitUnimplementedEvent(t *kernel.Task, name int) {
-	switch name {
-	case linux.SO_BINDTODEVICE,
-		linux.SO_BROADCAST,
-		linux.SO_BSDCOMPAT,
-		linux.SO_BUSY_POLL,
-		linux.SO_DEBUG,
-		linux.SO_DONTROUTE,
-		linux.SO_INCOMING_CPU,
-		linux.SO_KEEPALIVE,
-		linux.SO_LINGER,
-		linux.SO_LOCK_FILTER,
-		linux.SO_MARK,
-		linux.SO_MAX_PACING_RATE,
-		linux.SO_NOFCS,
-		linux.SO_OOBINLINE,
-		linux.SO_PASSCRED,
-		linux.SO_PASSSEC,
-		linux.SO_PEEK_OFF,
-		linux.SO_PRIORITY,
-		linux.SO_RCVBUF,
-		linux.SO_RCVLOWAT,
-		linux.SO_RCVTIMEO,
-		linux.SO_REUSEADDR,
-		linux.SO_REUSEPORT,
-		linux.SO_RXQ_OVFL,
-		linux.SO_SELECT_ERR_QUEUE,
-		linux.SO_SNDBUF,
-		linux.SO_SNDTIMEO,
-		linux.SO_TIMESTAMP,
-		linux.SO_TIMESTAMPING,
-		linux.SO_TIMESTAMPNS,
-		linux.SO_TXTIME,
-		linux.SO_WIFI_STATUS,
-		linux.SO_ZEROCOPY:
-
-		t.Kernel().EmitUnimplementedEvent(t)
-	}
+	return to.send.Load()
 }
 
 // UnmarshalSockAddr unmarshals memory representing a struct sockaddr to one of
@@ -572,19 +418,23 @@ func UnmarshalSockAddr(family int, data []byte) linux.SockAddr {
 	switch family {
 	case unix.AF_INET:
 		var addr linux.SockAddrInet
-		binary.Unmarshal(data[:unix.SizeofSockaddrInet4], hostarch.ByteOrder, &addr)
+		addr.UnmarshalUnsafe(data)
 		return &addr
 	case unix.AF_INET6:
 		var addr linux.SockAddrInet6
-		binary.Unmarshal(data[:unix.SizeofSockaddrInet6], hostarch.ByteOrder, &addr)
+		addr.UnmarshalUnsafe(data)
 		return &addr
 	case unix.AF_UNIX:
 		var addr linux.SockAddrUnix
-		binary.Unmarshal(data[:unix.SizeofSockaddrUnix], hostarch.ByteOrder, &addr)
+		addr.UnmarshalUnsafe(data)
 		return &addr
 	case unix.AF_NETLINK:
 		var addr linux.SockAddrNetlink
-		binary.Unmarshal(data[:unix.SizeofSockaddrNetlink], hostarch.ByteOrder, &addr)
+		addr.UnmarshalUnsafe(data)
+		return &addr
+	case unix.AF_PACKET:
+		var addr linux.SockAddrLink
+		addr.UnmarshalUnsafe(data)
 		return &addr
 	default:
 		panic(fmt.Sprintf("Unsupported socket family %v", family))
@@ -617,24 +467,6 @@ func isLinkLocal(addr tcpip.Address) bool {
 // ConvertAddress converts the given address to a native format.
 func ConvertAddress(family int, addr tcpip.FullAddress) (linux.SockAddr, uint32) {
 	switch family {
-	case linux.AF_UNIX:
-		var out linux.SockAddrUnix
-		out.Family = linux.AF_UNIX
-		l := len([]byte(addr.Addr))
-		for i := 0; i < l; i++ {
-			out.Path[i] = int8(addr.Addr[i])
-		}
-
-		// Linux returns the used length of the address struct (including the
-		// null terminator) for filesystem paths. The Family field is 2 bytes.
-		// It is sometimes allowed to exclude the null terminator if the
-		// address length is the max. Abstract and empty paths always return
-		// the full exact length.
-		if l == 0 || out.Path[0] == 0 || l == len(out.Path) {
-			return &out, uint32(2 + l)
-		}
-		return &out, uint32(3 + l)
-
 	case linux.AF_INET:
 		var out linux.SockAddrInet
 		copy(out.Addr[:], addr.Addr)
@@ -660,7 +492,6 @@ func ConvertAddress(family int, addr tcpip.FullAddress) (linux.SockAddr, uint32)
 		return &out, uint32(sockAddrInet6Size)
 
 	case linux.AF_PACKET:
-		// TODO(gvisor.dev/issue/173): Return protocol too.
 		var out linux.SockAddrLink
 		out.Family = linux.AF_PACKET
 		out.InterfaceIndex = int32(addr.NIC)
@@ -716,7 +547,7 @@ func AddressAndFamily(addr []byte) (tcpip.FullAddress, uint16, *syserr.Error) {
 		if len(addr) < sockAddrInetSize {
 			return tcpip.FullAddress{}, family, syserr.ErrInvalidArgument
 		}
-		binary.Unmarshal(addr[:sockAddrInetSize], hostarch.ByteOrder, &a)
+		a.UnmarshalUnsafe(addr)
 
 		out := tcpip.FullAddress{
 			Addr: BytesToIPAddress(a.Addr[:]),
@@ -729,7 +560,7 @@ func AddressAndFamily(addr []byte) (tcpip.FullAddress, uint16, *syserr.Error) {
 		if len(addr) < sockAddrInet6Size {
 			return tcpip.FullAddress{}, family, syserr.ErrInvalidArgument
 		}
-		binary.Unmarshal(addr[:sockAddrInet6Size], hostarch.ByteOrder, &a)
+		a.UnmarshalUnsafe(addr)
 
 		out := tcpip.FullAddress{
 			Addr: BytesToIPAddress(a.Addr[:]),
@@ -745,15 +576,17 @@ func AddressAndFamily(addr []byte) (tcpip.FullAddress, uint16, *syserr.Error) {
 		if len(addr) < sockAddrLinkSize {
 			return tcpip.FullAddress{}, family, syserr.ErrInvalidArgument
 		}
-		binary.Unmarshal(addr[:sockAddrLinkSize], hostarch.ByteOrder, &a)
+		a.UnmarshalUnsafe(addr)
+		// TODO(https://gvisor.dev/issue/6530): Do not assume all interfaces have
+		// an ethernet address.
 		if a.Family != linux.AF_PACKET || a.HardwareAddrLen != header.EthernetAddressSize {
 			return tcpip.FullAddress{}, family, syserr.ErrInvalidArgument
 		}
 
-		// TODO(gvisor.dev/issue/173): Return protocol too.
 		return tcpip.FullAddress{
 			NIC:  tcpip.NICID(a.InterfaceIndex),
 			Addr: tcpip.Address(a.HardwareAddr[:header.EthernetAddressSize]),
+			Port: Ntohs(a.Protocol),
 		}, family, nil
 
 	case linux.AF_UNSPEC:
@@ -762,4 +595,40 @@ func AddressAndFamily(addr []byte) (tcpip.FullAddress, uint16, *syserr.Error) {
 	default:
 		return tcpip.FullAddress{}, 0, syserr.ErrAddressFamilyNotSupported
 	}
+}
+
+// IsTCP returns true if the socket is a TCP socket.
+func IsTCP(s Socket) bool {
+	fam, typ, proto := s.Type()
+	if fam != linux.AF_INET && fam != linux.AF_INET6 {
+		return false
+	}
+	return typ == linux.SOCK_STREAM && (proto == 0 || proto == linux.IPPROTO_TCP)
+}
+
+// IsUDP returns true if the socket is a UDP socket.
+func IsUDP(s Socket) bool {
+	fam, typ, proto := s.Type()
+	if fam != linux.AF_INET && fam != linux.AF_INET6 {
+		return false
+	}
+	return typ == linux.SOCK_DGRAM && (proto == 0 || proto == linux.IPPROTO_UDP)
+}
+
+// IsICMP returns true if the socket is an ICMP socket.
+func IsICMP(s Socket) bool {
+	fam, typ, proto := s.Type()
+	if fam != linux.AF_INET && fam != linux.AF_INET6 {
+		return false
+	}
+	return typ == linux.SOCK_DGRAM && (proto == linux.IPPROTO_ICMP || proto == linux.IPPROTO_ICMPV6)
+}
+
+// IsRaw returns true if the socket is a raw socket.
+func IsRaw(s Socket) bool {
+	fam, typ, _ := s.Type()
+	if fam != linux.AF_INET && fam != linux.AF_INET6 {
+		return false
+	}
+	return typ == linux.SOCK_RAW
 }

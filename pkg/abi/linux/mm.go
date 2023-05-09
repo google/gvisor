@@ -14,6 +14,12 @@
 
 package linux
 
+import (
+	"fmt"
+
+	"golang.org/x/sys/unix"
+)
+
 // Protections for mmap(2).
 const (
 	PROT_NONE      = 0
@@ -128,3 +134,26 @@ const (
 
 	MPOL_MF_VALID = MPOL_MF_STRICT | MPOL_MF_MOVE | MPOL_MF_MOVE_ALL
 )
+
+// TaskSize is the address space size.
+var TaskSize = func() uintptr {
+	pageSize := uintptr(unix.Getpagesize())
+	for _, s := range feasibleTaskSizes {
+		// mmap returns ENOMEM if addr is greater than TASK_SIZE,
+		// otherwise it returns EINVAL, because addr isn't aligned to
+		// the page size.
+		_, _, errno := unix.RawSyscall6(
+			unix.SYS_MMAP,
+			s-pageSize-1,
+			512,
+			uintptr(unix.PROT_NONE),
+			uintptr(unix.MAP_ANONYMOUS|unix.MAP_PRIVATE|unix.MAP_FIXED), 0, 0)
+		if errno == unix.EINVAL {
+			return s
+		}
+		if errno != unix.ENOMEM {
+			panic(fmt.Sprintf("mmap returned unexpected error: %d", errno))
+		}
+	}
+	panic("None of the address space sizes could be successfully mmaped")
+}()

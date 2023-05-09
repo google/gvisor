@@ -31,6 +31,7 @@ type Type struct {
 }
 
 // Foo implements Interface.Foo.
+//
 //go:nosplit
 func (t Type) Foo() {
 	fmt.Printf("%v", t) // Never executed.
@@ -38,6 +39,7 @@ func (t Type) Foo() {
 
 // InterfaceFunction is passed an interface argument.
 // +checkescape:all,hard
+//
 //go:nosplit
 func InterfaceFunction(i Interface) {
 	// Do nothing; exported for tests.
@@ -45,12 +47,14 @@ func InterfaceFunction(i Interface) {
 
 // TypeFunction is passed a concrete pointer argument.
 // +checkesacape:all,hard
+//
 //go:nosplit
 func TypeFunction(t *Type) {
 }
 
 // BuiltinMap creates a new map.
 // +mustescape:local,builtin
+//
 //go:noinline
 //go:nosplit
 func BuiltinMap(x int) map[string]bool {
@@ -58,6 +62,7 @@ func BuiltinMap(x int) map[string]bool {
 }
 
 // +mustescape:builtin
+//
 //go:noinline
 //go:nosplit
 func builtinMapRec(x int) map[string]bool {
@@ -66,6 +71,7 @@ func builtinMapRec(x int) map[string]bool {
 
 // BuiltinClosure returns a closure around x.
 // +mustescape:local,builtin
+//
 //go:noinline
 //go:nosplit
 func BuiltinClosure(x int) func() {
@@ -75,6 +81,7 @@ func BuiltinClosure(x int) func() {
 }
 
 // +mustescape:builtin
+//
 //go:noinline
 //go:nosplit
 func builtinClosureRec(x int) func() {
@@ -83,6 +90,7 @@ func builtinClosureRec(x int) func() {
 
 // BuiltinMakeSlice makes a new slice.
 // +mustescape:local,builtin
+//
 //go:noinline
 //go:nosplit
 func BuiltinMakeSlice(x int) []byte {
@@ -90,6 +98,7 @@ func BuiltinMakeSlice(x int) []byte {
 }
 
 // +mustescape:builtin
+//
 //go:noinline
 //go:nosplit
 func builtinMakeSliceRec(x int) []byte {
@@ -98,6 +107,7 @@ func builtinMakeSliceRec(x int) []byte {
 
 // BuiltinAppend calls append on a slice.
 // +mustescape:local,builtin
+//
 //go:noinline
 //go:nosplit
 func BuiltinAppend(x []byte) []byte {
@@ -105,6 +115,7 @@ func BuiltinAppend(x []byte) []byte {
 }
 
 // +mustescape:builtin
+//
 //go:noinline
 //go:nosplit
 func builtinAppendRec() []byte {
@@ -113,6 +124,7 @@ func builtinAppendRec() []byte {
 
 // BuiltinChan makes a channel.
 // +mustescape:local,builtin
+//
 //go:noinline
 //go:nosplit
 func BuiltinChan() chan int {
@@ -120,6 +132,7 @@ func BuiltinChan() chan int {
 }
 
 // +mustescape:builtin
+//
 //go:noinline
 //go:nosplit
 func builtinChanRec() chan int {
@@ -128,6 +141,7 @@ func builtinChanRec() chan int {
 
 // Heap performs an explicit heap allocation.
 // +mustescape:local,heap
+//
 //go:noinline
 //go:nosplit
 func Heap() *Type {
@@ -136,6 +150,7 @@ func Heap() *Type {
 }
 
 // +mustescape:heap
+//
 //go:noinline
 //go:nosplit
 func heapRec() *Type {
@@ -144,6 +159,7 @@ func heapRec() *Type {
 
 // Dispatch dispatches via an interface.
 // +mustescape:local,interface
+//
 //go:noinline
 //go:nosplit
 func Dispatch(i Interface) {
@@ -151,6 +167,7 @@ func Dispatch(i Interface) {
 }
 
 // +mustescape:interface
+//
 //go:noinline
 //go:nosplit
 func dispatchRec(i Interface) {
@@ -159,6 +176,7 @@ func dispatchRec(i Interface) {
 
 // Dynamic invokes a dynamic function.
 // +mustescape:local,dynamic
+//
 //go:noinline
 //go:nosplit
 func Dynamic(f func()) {
@@ -166,6 +184,7 @@ func Dynamic(f func()) {
 }
 
 // +mustescape:dynamic
+//
 //go:noinline
 //go:nosplit
 func dynamicRec(f func()) {
@@ -179,12 +198,14 @@ func internalFunc() {
 
 // Split includes a guaranteed stack split.
 // +mustescape:local,stack
+//
 //go:noinline
 func Split() {
 	internalFunc()
 }
 
 // +mustescape:stack
+//
 //go:noinline
 //go:nosplit
 func splitRec() {

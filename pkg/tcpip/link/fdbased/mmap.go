@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build (linux && amd64) || (linux && arm64)
 // +build linux,amd64 linux,arm64
 
 package fdbased
@@ -21,10 +22,11 @@ import (
 	"fmt"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/rawfile"
+	"gvisor.dev/gvisor/pkg/tcpip/link/stopfd"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
@@ -42,11 +44,12 @@ const (
 // Memory allocated for the ring buffer: tpBlockSize * tpBlockNR = 2 MiB
 //
 // NOTE:
-//   Frames need to be aligned at 16 byte boundaries.
-//   BlockSize needs to be page aligned.
 //
-//   For details see PACKET_MMAP setting constraints in
-//   https://www.kernel.org/doc/Documentation/networking/packet_mmap.txt
+//	Frames need to be aligned at 16 byte boundaries.
+//	BlockSize needs to be page aligned.
+//
+//	For details see PACKET_MMAP setting constraints in
+//	https://www.kernel.org/doc/Documentation/networking/packet_mmap.txt
 const (
 	tpFrameSize = 65536 + 128
 	tpBlockSize = tpFrameSize * 32
@@ -113,6 +116,7 @@ func (t tPacketHdr) Payload() []byte {
 // packetMMapDispatcher uses PACKET_RX_RING's to read/dispatch inbound packets.
 // See: mmap_amd64_unsafe.go for implementation details.
 type packetMMapDispatcher struct {
+	stopfd.StopFD
 	// fd is the file descriptor used to send and receive packets.
 	fd int
 
@@ -128,18 +132,20 @@ type packetMMapDispatcher struct {
 	ringOffset int
 }
 
-func (d *packetMMapDispatcher) readMMappedPacket() ([]byte, tcpip.Error) {
+func (*packetMMapDispatcher) release() {}
+
+func (d *packetMMapDispatcher) readMMappedPacket() (*bufferv2.View, bool, tcpip.Error) {
 	hdr := tPacketHdr(d.ringBuffer[d.ringOffset*tpFrameSize:])
 	for hdr.tpStatus()&tpStatusUser == 0 {
-		event := rawfile.PollEvent{
-			FD:     int32(d.fd),
-			Events: unix.POLLIN | unix.POLLERR,
-		}
-		if _, errno := rawfile.BlockingPoll(&event, 1, nil); errno != 0 {
+		stopped, errno := rawfile.BlockingPollUntilStopped(d.EFD, d.fd, unix.POLLIN|unix.POLLERR)
+		if errno != 0 {
 			if errno == unix.EINTR {
 				continue
 			}
-			return nil, rawfile.TranslateErrno(errno)
+			return nil, stopped, rawfile.TranslateErrno(errno)
+		}
+		if stopped {
+			return nil, true, nil
 		}
 		if hdr.tpStatus()&tpStatusCopy != 0 {
 			// This frame is truncated so skip it after flipping the
@@ -152,34 +158,28 @@ func (d *packetMMapDispatcher) readMMappedPacket() ([]byte, tcpip.Error) {
 	}
 
 	// Copy out the packet from the mmapped frame to a locally owned buffer.
-	pkt := make([]byte, hdr.tpSnapLen())
-	copy(pkt, hdr.Payload())
+	pkt := bufferv2.NewView(int(hdr.tpSnapLen()))
+	pkt.Write(hdr.Payload())
 	// Release packet to kernel.
 	hdr.setTPStatus(tpStatusKernel)
 	d.ringOffset = (d.ringOffset + 1) % tpFrameNR
-	return pkt, nil
+	return pkt, false, nil
 }
 
 // dispatch reads packets from an mmaped ring buffer and dispatches them to the
 // network stack.
 func (d *packetMMapDispatcher) dispatch() (bool, tcpip.Error) {
-	pkt, err := d.readMMappedPacket()
-	if err != nil {
+	pkt, stopped, err := d.readMMappedPacket()
+	if err != nil || stopped {
 		return false, err
 	}
-	var (
-		p             tcpip.NetworkProtocolNumber
-		remote, local tcpip.LinkAddress
-	)
+	var p tcpip.NetworkProtocolNumber
 	if d.e.hdrSize > 0 {
-		eth := header.Ethernet(pkt)
-		p = eth.Type()
-		remote = eth.SourceAddress()
-		local = eth.DestinationAddress()
+		p = header.Ethernet(pkt.AsSlice()).Type()
 	} else {
 		// We don't get any indication of what the packet is, so try to guess
 		// if it's an IPv4 or IPv6 packet.
-		switch header.IPVersion(pkt) {
+		switch header.IPVersion(pkt.AsSlice()) {
 		case header.IPv4Version:
 			p = header.IPv4ProtocolNumber
 		case header.IPv6Version:
@@ -190,13 +190,17 @@ func (d *packetMMapDispatcher) dispatch() (bool, tcpip.Error) {
 	}
 
 	pbuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Data: buffer.View(pkt).ToVectorisedView(),
+		Payload: bufferv2.MakeWithView(pkt),
 	})
+	defer pbuf.DecRef()
 	if d.e.hdrSize > 0 {
 		if _, ok := pbuf.LinkHeader().Consume(d.e.hdrSize); !ok {
 			panic(fmt.Sprintf("LinkHeader().Consume(%d) must succeed", d.e.hdrSize))
 		}
 	}
-	d.e.dispatcher.DeliverNetworkPacket(remote, local, p, pbuf)
+	d.e.mu.RLock()
+	dsp := d.e.dispatcher
+	d.e.mu.RUnlock()
+	dsp.DeliverNetworkPacket(p, pbuf)
 	return true, nil
 }

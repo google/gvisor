@@ -19,7 +19,7 @@
 // to be called in cases when the syscall is expected to block.
 //
 // func BlockingPoll(fds *PollEvent, nfds int, timeout *syscall.Timespec) (n int, err syscall.Errno)
-TEXT ·BlockingPoll(SB),NOSPLIT,$0-40
+TEXT ·BlockingPoll(SB),NOSPLIT|NOFRAME,$0-40
 	CALL	·callEntersyscallblock(SB)
 	MOVQ	fds+0(FP), DI
 	MOVQ	nfds+8(FP), SI
@@ -27,15 +27,15 @@ TEXT ·BlockingPoll(SB),NOSPLIT,$0-40
 	MOVQ	$0x0, R10  // sigmask parameter which isn't used here
 	MOVQ	$0x10f, AX // SYS_PPOLL
 	SYSCALL
-	CMPQ	AX, $0xfffffffffffff001
+	CMPQ	AX, $0xfffffffffffff002
 	JLS	ok
-	MOVQ	$-1, n+24(FP)
+	MOVQ	$-1, ret+24(FP)
 	NEGQ	AX
-	MOVQ	AX, err+32(FP)
+	MOVQ	AX, ret1+32(FP)
 	CALL	·callExitsyscall(SB)
 	RET
 ok:
-	MOVQ	AX, n+24(FP)
-	MOVQ	$0, err+32(FP)
+	MOVQ	AX, ret+24(FP)
+	MOVQ	$0, ret1+32(FP)
 	CALL	·callExitsyscall(SB)
 	RET

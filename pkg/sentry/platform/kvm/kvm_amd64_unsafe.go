@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build amd64
 // +build amd64
 
 package kvm
@@ -59,18 +60,6 @@ func updateSystemValues(fd int) error {
 	if errno != 0 {
 		// Didn't work with the right number.
 		return fmt.Errorf("getting supported CPUID (2nd attempt): %v", errno)
-	}
-
-	// Calculate whether guestPCID is supported.
-	//
-	// FIXME(ascannell): These should go through the much more pleasant
-	// cpuid package interfaces, once a way to accept raw kvm CPUID entries
-	// is plumbed (or some rough equivalent).
-	for i := 0; i < int(cpuidSupported.nr); i++ {
-		entry := cpuidSupported.entries[i]
-		if entry.function == 1 && entry.index == 0 && entry.ecx&(1<<17) != 0 {
-			hasGuestPCID = true // Found matching PCID in guest feature set.
-		}
 	}
 
 	// Success.

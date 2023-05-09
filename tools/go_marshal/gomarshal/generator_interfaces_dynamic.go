@@ -28,18 +28,18 @@ func (g *interfaceGenerator) emitMarshallableForDynamicType() {
 	g.emit("}\n\n")
 
 	g.emit("// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.\n")
-	g.emit("func (%s *%s) MarshalUnsafe(dst []byte) {\n", g.r, g.typeName())
+	g.emit("func (%s *%s) MarshalUnsafe(dst []byte) []byte {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		g.emit("// Type %s doesn't have a packed layout in memory, fallback to MarshalBytes.\n", g.typeName())
-		g.emit("%s.MarshalBytes(dst)\n", g.r)
+		g.emit("return %s.MarshalBytes(dst)\n", g.r)
 	})
 	g.emit("}\n\n")
 
 	g.emit("// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.\n")
-	g.emit("func (%s *%s) UnmarshalUnsafe(src []byte) {\n", g.r, g.typeName())
+	g.emit("func (%s *%s) UnmarshalUnsafe(src []byte) []byte {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		g.emit("// Type %s doesn't have a packed layout in memory, fallback to UnmarshalBytes.\n", g.typeName())
-		g.emit("%s.UnmarshalBytes(src)\n", g.r)
+		g.emit("return %s.UnmarshalBytes(src)\n", g.r)
 	})
 	g.emit("}\n\n")
 
@@ -57,7 +57,6 @@ func (g *interfaceGenerator) emitMarshallableForDynamicType() {
 	g.emit("}\n\n")
 
 	g.emit("// CopyOut implements marshal.Marshallable.CopyOut.\n")
-	g.emit("//go:nosplit\n")
 	g.recordUsedImport("marshal")
 	g.recordUsedImport("hostarch")
 	g.emit("func (%s *%s) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {\n", g.r, g.typeName())
@@ -67,7 +66,6 @@ func (g *interfaceGenerator) emitMarshallableForDynamicType() {
 	g.emit("}\n\n")
 
 	g.emit("// CopyIn implements marshal.Marshallable.CopyIn.\n")
-	g.emit("//go:nosplit\n")
 	g.recordUsedImport("marshal")
 	g.recordUsedImport("hostarch")
 	g.emit("func (%s *%s) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {\n", g.r, g.typeName())

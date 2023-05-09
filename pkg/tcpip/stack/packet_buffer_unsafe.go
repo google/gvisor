@@ -16,4 +16,13 @@ package stack
 
 import "unsafe"
 
-const packetBufferStructSize = int(unsafe.Sizeof(PacketBuffer{}))
+// PacketBufferStructSize is the minimal size of the packet buffer overhead.
+const PacketBufferStructSize = int(unsafe.Sizeof(packetBuffer{}))
+
+// ID returns a unique ID for the underlying storage of the packet.
+//
+// Two PacketBufferPtrs have the same IDs if and only if they point to the same
+// location in memory.
+func (pk PacketBufferPtr) ID() uintptr {
+	return uintptr(unsafe.Pointer(pk.packetBuffer))
+}

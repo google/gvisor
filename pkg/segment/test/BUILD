@@ -2,6 +2,7 @@ load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(
+    default_applicable_licenses = ["//:license"],
     default_visibility = ["//visibility:private"],
     licenses = ["notice"],
 )

@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+//go:build linux
 // +build linux
 
 package fdbased
@@ -20,6 +21,7 @@ import (
 	"bytes"
 	"fmt"
 	"math/rand"
+	"os"
 	"reflect"
 	"testing"
 	"time"
@@ -27,8 +29,9 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -43,31 +46,30 @@ const (
 )
 
 type packetInfo struct {
-	Raddr    tcpip.LinkAddress
 	Proto    tcpip.NetworkProtocolNumber
-	Contents *stack.PacketBuffer
+	Contents stack.PacketBufferPtr
 }
 
 type packetContents struct {
-	LinkHeader      buffer.View
-	NetworkHeader   buffer.View
-	TransportHeader buffer.View
-	Data            buffer.View
+	LinkHeader      []byte
+	NetworkHeader   []byte
+	TransportHeader []byte
+	Data            []byte
 }
 
 func checkPacketInfoEqual(t *testing.T, got, want packetInfo) {
 	t.Helper()
 	if diff := cmp.Diff(
 		want, got,
-		cmp.Transformer("ExtractPacketBuffer", func(pk *stack.PacketBuffer) *packetContents {
-			if pk == nil {
+		cmp.Transformer("ExtractPacketBuffer", func(pk stack.PacketBufferPtr) *packetContents {
+			if pk.IsNil() {
 				return nil
 			}
 			return &packetContents{
-				LinkHeader:      pk.LinkHeader().View(),
-				NetworkHeader:   pk.NetworkHeader().View(),
-				TransportHeader: pk.TransportHeader().View(),
-				Data:            pk.Data().AsRange().ToOwnedView(),
+				LinkHeader:      pk.LinkHeader().Slice(),
+				NetworkHeader:   pk.NetworkHeader().Slice(),
+				TransportHeader: pk.TransportHeader().Slice(),
+				Data:            pk.Data().AsRange().ToSlice(),
 			}
 		}),
 	); diff != "" {
@@ -130,12 +132,13 @@ func (c *context) cleanup() {
 	}
 }
 
-func (c *context) DeliverNetworkPacket(remote tcpip.LinkAddress, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
-	c.ch <- packetInfo{remote, protocol, pkt}
+func (c *context) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr) {
+	pkt.IncRef()
+	c.ch <- packetInfo{protocol, pkt}
 }
 
-func (c *context) DeliverOutboundPacket(remote tcpip.LinkAddress, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
-	panic("unimplemented")
+func (c *context) DeliverLinkPacket(tcpip.NetworkProtocolNumber, stack.PacketBufferPtr) {
+	c.t.Fatal("DeliverLinkPacket not implemented")
 }
 
 func TestNoEthernetProperties(t *testing.T) {
@@ -182,11 +185,8 @@ func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32, hash u
 	c := newContext(t, &Options{Address: laddr, MTU: mtu, EthernetHeader: eth, GSOMaxSize: gsoMaxSize})
 	defer c.cleanup()
 
-	var r stack.RouteInfo
-	r.RemoteLinkAddress = raddr
-
 	// Build payload.
-	payload := buffer.NewView(plen)
+	payload := make([]byte, plen)
 	if _, err := rand.Read(payload); err != nil {
 		t.Fatalf("rand.Read(payload): %s", err)
 	}
@@ -195,9 +195,15 @@ func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32, hash u
 	const netHdrLen = 100
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(c.ep.MaxHeaderLength()) + netHdrLen,
-		Data:               payload.ToVectorisedView(),
+		Payload:            bufferv2.MakeWithData(payload),
 	})
+	defer pkt.DecRef()
 	pkt.Hash = hash
+	// Every PacketBuffer must have these set:
+	// See nic.writePacket.
+	pkt.EgressRoute.LocalLinkAddress = laddr
+	pkt.EgressRoute.RemoteLinkAddress = raddr
+	pkt.NetworkProtocolNumber = proto
 
 	// Build header.
 	b := pkt.NetworkHeader().Push(netHdrLen)
@@ -206,20 +212,24 @@ func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32, hash u
 	}
 
 	// Write.
-	want := append(append(buffer.View(nil), b...), payload...)
-	var gso *stack.GSO
+	want := append(append([]byte{}, b...), payload...)
+	const l3HdrLen = header.IPv6MinimumSize
 	if gsoMaxSize != 0 {
-		gso = &stack.GSO{
+		pkt.GSOOptions = stack.GSO{
 			Type:       stack.GSOTCPv6,
 			NeedsCsum:  true,
 			CsumOffset: csumOffset,
 			MSS:        gsoMSS,
-			MaxSize:    gsoMaxSize,
-			L3HdrLen:   header.IPv4MaximumHeaderSize,
+			L3HdrLen:   l3HdrLen,
 		}
 	}
-	if err := c.ep.WritePacket(r, gso, proto, pkt); err != nil {
-		t.Fatalf("WritePacket failed: %v", err)
+
+	c.ep.AddHeader(pkt)
+
+	var pkts stack.PacketBufferList
+	pkts.PushBack(pkt)
+	if _, err := c.ep.WritePackets(pkts); err != nil {
+		t.Fatalf("WritePackets failed: %s", err)
 	}
 
 	// Read from the corresponding FD, then compare with what we wrote.
@@ -235,7 +245,7 @@ func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32, hash u
 		if vnetHdr.flags&_VIRTIO_NET_HDR_F_NEEDS_CSUM == 0 {
 			t.Fatalf("virtioNetHdr.flags %v  doesn't contain %v", vnetHdr.flags, _VIRTIO_NET_HDR_F_NEEDS_CSUM)
 		}
-		csumStart := header.EthernetMinimumSize + gso.L3HdrLen
+		const csumStart = header.EthernetMinimumSize + l3HdrLen
 		if vnetHdr.csumStart != csumStart {
 			t.Fatalf("vnetHdr.csumStart = %v, want %v", vnetHdr.csumStart, csumStart)
 		}
@@ -243,7 +253,7 @@ func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32, hash u
 			t.Fatalf("vnetHdr.csumOffset = %v, want %v", vnetHdr.csumOffset, csumOffset)
 		}
 		gsoType := uint8(0)
-		if int(gso.MSS) < plen {
+		if plen > gsoMSS {
 			gsoType = _VIRTIO_NET_HDR_GSO_TCPV6
 		}
 		if vnetHdr.gsoType != gsoType {
@@ -321,20 +331,25 @@ func TestPreserveSrcAddress(t *testing.T) {
 	c := newContext(t, &Options{Address: laddr, MTU: mtu, EthernetHeader: true})
 	defer c.cleanup()
 
-	// Set LocalLinkAddress in route to the value of the bridged address.
-	var r stack.RouteInfo
-	r.LocalLinkAddress = baddr
-	r.RemoteLinkAddress = raddr
-
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		// WritePacket panics given a prependable with anything less than
 		// the minimum size of the ethernet header.
 		// TODO(b/153685824): Figure out if this should use c.ep.MaxHeaderLength().
 		ReserveHeaderBytes: header.EthernetMinimumSize,
-		Data:               buffer.VectorisedView{},
 	})
-	if err := c.ep.WritePacket(r, nil /* gso */, proto, pkt); err != nil {
-		t.Fatalf("WritePacket failed: %v", err)
+	defer pkt.DecRef()
+	// Every PacketBuffer must have these set:
+	// See nic.writePacket.
+	pkt.NetworkProtocolNumber = proto
+	// Set LocalLinkAddress in route to the value of the bridged address.
+	pkt.EgressRoute.LocalLinkAddress = baddr
+	pkt.EgressRoute.RemoteLinkAddress = raddr
+	c.ep.AddHeader(pkt)
+
+	var pkts stack.PacketBufferList
+	pkts.PushBack(pkt)
+	if _, err := c.ep.WritePackets(pkts); err != nil {
+		t.Fatalf("WritePackets failed: %s", err)
 	}
 
 	// Read from the FD, then compare with what we wrote.
@@ -371,8 +386,9 @@ func TestDeliverPacket(t *testing.T) {
 
 				wantPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 					ReserveHeaderBytes: header.EthernetMinimumSize,
-					Data:               buffer.NewViewFromBytes(all).ToVectorisedView(),
+					Payload:            bufferv2.MakeWithData(all),
 				})
+				defer wantPkt.DecRef()
 				if eth {
 					hdr := header.Ethernet(wantPkt.LinkHeader().Push(header.EthernetMinimumSize))
 					hdr.Encode(&header.EthernetFields{
@@ -391,14 +407,13 @@ func TestDeliverPacket(t *testing.T) {
 				// Receive packet through the endpoint.
 				select {
 				case pi := <-c.ch:
+					defer pi.Contents.DecRef()
 					want := packetInfo{
-						Raddr:    raddr,
 						Proto:    proto,
 						Contents: wantPkt,
 					}
 					if !eth {
 						want.Proto = header.IPv4ProtocolNumber
-						want.Raddr = ""
 					}
 					checkPacketInfoEqual(t, pi, want)
 				case <-time.After(10 * time.Second):
@@ -440,31 +455,31 @@ var capLengthTestCases = []struct {
 }{
 	{
 		comment:     "Single slice",
-		config:      []int{2},
-		n:           1,
+		config:      []int{256},
+		n:           128,
 		wantUsed:    1,
-		wantLengths: []int{1},
+		wantLengths: []int{128},
 	},
 	{
 		comment:     "Multiple slices",
-		config:      []int{1, 2},
-		n:           2,
+		config:      []int{128, 256},
+		n:           256,
 		wantUsed:    2,
-		wantLengths: []int{1, 1},
+		wantLengths: []int{128, 128},
 	},
 	{
 		comment:     "Entire buffer",
-		config:      []int{1, 2},
-		n:           3,
+		config:      []int{128, 256},
+		n:           384,
 		wantUsed:    2,
-		wantLengths: []int{1, 2},
+		wantLengths: []int{128, 256},
 	},
 	{
 		comment:     "Entire buffer but not on the last slice",
-		config:      []int{1, 2, 3},
-		n:           3,
+		config:      []int{128, 256, 512},
+		n:           384,
 		wantUsed:    2,
-		wantLengths: []int{1, 2},
+		wantLengths: []int{128, 256},
 	},
 }
 
@@ -472,6 +487,7 @@ func TestIovecBuffer(t *testing.T) {
 	for _, c := range capLengthTestCases {
 		t.Run(c.comment, func(t *testing.T) {
 			b := newIovecBuffer(c.config, false /* skipsVnetHdr */)
+			defer b.release()
 
 			// Test initial allocation.
 			iovecs := b.nextIovecs()
@@ -483,12 +499,13 @@ func TestIovecBuffer(t *testing.T) {
 			// later.
 			oldIovecs := append([]unix.Iovec(nil), iovecs...)
 
-			// Test the views that get pulled.
-			vv := b.pullViews(c.n)
+			// Test the buffer that get pulled.
+			buf := b.pullBuffer(c.n)
+			defer buf.Release()
 			var lengths []int
-			for _, v := range vv.Views() {
-				lengths = append(lengths, len(v))
-			}
+			buf.Apply(func(v *bufferv2.View) {
+				lengths = append(lengths, v.Size())
+			})
 			if !reflect.DeepEqual(lengths, c.wantLengths) {
 				t.Errorf("Pulled view lengths = %v, want %v", lengths, c.wantLengths)
 			}
@@ -527,19 +544,21 @@ func TestIovecBufferSkipVnetHdr(t *testing.T) {
 		},
 		{
 			desc:    "header skipped",
-			readN:   virtioNetHdrSize + 100,
-			wantLen: 100,
+			readN:   virtioNetHdrSize + 512,
+			wantLen: 512,
 		},
 	} {
 		t.Run(test.desc, func(t *testing.T) {
-			b := newIovecBuffer([]int{10, 20, 50, 50}, true)
+			b := newIovecBuffer([]int{128, 256, 512, 1024}, true)
+			defer b.release()
 			// Pretend a read happend.
 			b.nextIovecs()
-			vv := b.pullViews(test.readN)
-			if got, want := vv.Size(), test.wantLen; got != want {
+			buf := b.pullBuffer(test.readN)
+			defer buf.Release()
+			if got, want := int(buf.Size()), test.wantLen; got != want {
 				t.Errorf("b.pullView(%d).Size() = %d; want %d", test.readN, got, want)
 			}
-			if got, want := len(vv.ToOwnedView()), test.wantLen; got != want {
+			if got, want := len(buf.Flatten()), test.wantLen; got != want {
 				t.Errorf("b.pullView(%d).ToOwnedView() has length %d; want %d", test.readN, got, want)
 			}
 		})
@@ -548,15 +567,16 @@ func TestIovecBufferSkipVnetHdr(t *testing.T) {
 
 // fakeNetworkDispatcher delivers packets to pkts.
 type fakeNetworkDispatcher struct {
-	pkts []*stack.PacketBuffer
+	pkts []stack.PacketBufferPtr
 }
 
-func (d *fakeNetworkDispatcher) DeliverNetworkPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+func (d *fakeNetworkDispatcher) DeliverNetworkPacket(_ tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr) {
+	pkt.IncRef()
 	d.pkts = append(d.pkts, pkt)
 }
 
-func (d *fakeNetworkDispatcher) DeliverOutboundPacket(remote, local tcpip.LinkAddress, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
-	panic("unimplemented")
+func (*fakeNetworkDispatcher) DeliverLinkPacket(tcpip.NetworkProtocolNumber, stack.PacketBufferPtr) {
+	panic("not implemented")
 }
 
 func TestDispatchPacketFormat(t *testing.T) {
@@ -579,8 +599,6 @@ func TestDispatchPacketFormat(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			defer unix.Close(fds[0])
-			defer unix.Close(fds[1])
 
 			data := []byte{
 				// Ethernet header.
@@ -604,6 +622,7 @@ func TestDispatchPacketFormat(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			defer d.release()
 			if ok, err := d.dispatch(); !ok || err != nil {
 				t.Fatalf("d.dispatch() = %v, %v", ok, err)
 			}
@@ -613,7 +632,8 @@ func TestDispatchPacketFormat(t *testing.T) {
 				t.Fatalf("len(sink.pkts) = %d, want %d", got, want)
 			}
 			pkt := sink.pkts[0]
-			if got, want := pkt.LinkHeader().View().Size(), header.EthernetMinimumSize; got != want {
+			defer pkt.DecRef()
+			if got, want := len(pkt.LinkHeader().Slice()), header.EthernetMinimumSize; got != want {
 				t.Errorf("pkt.LinkHeader().View().Size() = %d, want %d", got, want)
 			}
 			if got, want := pkt.Data().Size(), 4; got != want {
@@ -621,4 +641,11 @@ func TestDispatchPacketFormat(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestMain(m *testing.M) {
+	refs.SetLeakMode(refs.LeaksPanic)
+	code := m.Run()
+	refs.DoLeakCheck()
+	os.Exit(code)
 }

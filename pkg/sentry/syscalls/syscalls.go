@@ -28,9 +28,9 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
-	"gvisor.dev/gvisor/pkg/syserror"
 )
 
 // Supported returns a syscall that is fully supported.
@@ -41,6 +41,14 @@ func Supported(name string, fn kernel.SyscallFn) kernel.Syscall {
 		SupportLevel: kernel.SupportFull,
 		Note:         "Fully Supported.",
 	}
+}
+
+// SupportedPoint returns a syscall that is fully supported with a correspoding
+// seccheck.Point.
+func SupportedPoint(name string, fn kernel.SyscallFn, cb kernel.SyscallToProto) kernel.Syscall {
+	sys := Supported(name, fn)
+	sys.PointCallback = cb
+	return sys
 }
 
 // PartiallySupported returns a syscall that has a partial implementation.
@@ -54,6 +62,14 @@ func PartiallySupported(name string, fn kernel.SyscallFn, note string, urls []st
 	}
 }
 
+// PartiallySupportedPoint returns a syscall that has a partial implementation
+// with a correspoding seccheck.Point.
+func PartiallySupportedPoint(name string, fn kernel.SyscallFn, cb kernel.SyscallToProto, note string, urls []string) kernel.Syscall {
+	sys := PartiallySupported(name, fn, note, urls)
+	sys.PointCallback = cb
+	return sys
+}
+
 // Error returns a syscall handler that will always give the passed error.
 func Error(name string, err error, note string, urls []string) kernel.Syscall {
 	if note != "" {
@@ -61,7 +77,8 @@ func Error(name string, err error, note string, urls []string) kernel.Syscall {
 	}
 	return kernel.Syscall{
 		Name: name,
-		Fn: func(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+		Fn: func(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+			kernel.IncrementUnimplementedSyscallCounter(sysno)
 			return 0, nil, err
 		},
 		SupportLevel: kernel.SupportUnimplemented,
@@ -78,8 +95,8 @@ func ErrorWithEvent(name string, err error, note string, urls []string) kernel.S
 	}
 	return kernel.Syscall{
 		Name: name,
-		Fn: func(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-			t.Kernel().EmitUnimplementedEvent(t)
+		Fn: func(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+			t.Kernel().EmitUnimplementedEvent(t, sysno)
 			return 0, nil, err
 		},
 		SupportLevel: kernel.SupportUnimplemented,
@@ -97,15 +114,15 @@ func CapError(name string, c linux.Capability, note string, urls []string) kerne
 	}
 	return kernel.Syscall{
 		Name: name,
-		Fn: func(t *kernel.Task, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+		Fn: func(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 			if !t.HasCapability(c) {
-				return 0, nil, syserror.EPERM
+				return 0, nil, linuxerr.EPERM
 			}
-			t.Kernel().EmitUnimplementedEvent(t)
-			return 0, nil, syserror.ENOSYS
+			t.Kernel().EmitUnimplementedEvent(t, sysno)
+			return 0, nil, linuxerr.ENOSYS
 		},
 		SupportLevel: kernel.SupportUnimplemented,
-		Note:         fmt.Sprintf("%sReturns %q if the process does not have %s; %q otherwise.", note, syserror.EPERM, c.String(), syserror.ENOSYS),
+		Note:         fmt.Sprintf("%sReturns %q if the process does not have %s; %q otherwise.", note, linuxerr.EPERM, c.String(), linuxerr.ENOSYS),
 		URLs:         urls,
 	}
 }

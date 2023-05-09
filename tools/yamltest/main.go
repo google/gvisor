@@ -26,11 +26,16 @@ import (
 	yaml "gopkg.in/yaml.v2"
 )
 
-func fixup(v interface{}) (interface{}, error) {
+var (
+	schema = flag.String("schema", "", "path to JSON schema file.")
+	strict = flag.Bool("strict", true, "Whether to enable strict mode for YAML decoding")
+)
+
+func fixup(v any) (any, error) {
 	switch x := v.(type) {
-	case map[interface{}]interface{}:
+	case map[any]any:
 		// Coerse into a string-based map, required for yaml.
-		strMap := make(map[string]interface{})
+		strMap := make(map[string]any)
 		for k, v := range x {
 			strK, ok := k.(string)
 			if !ok {
@@ -44,7 +49,7 @@ func fixup(v interface{}) (interface{}, error) {
 			strMap[strK] = fv
 		}
 		return strMap, nil
-	case []interface{}:
+	case []any:
 		for i := range x {
 			fv, err := fixup(x[i])
 			if err != nil {
@@ -65,8 +70,8 @@ func loadFile(filename string) (gojsonschema.JSONLoader, error) {
 	}
 	defer f.Close()
 	dec := yaml.NewDecoder(f)
-	dec.SetStrict(true)
-	var object interface{}
+	dec.SetStrict(*strict)
+	var object any
 	if err := dec.Decode(&object); err != nil {
 		return nil, err
 	}
@@ -80,8 +85,6 @@ func loadFile(filename string) (gojsonschema.JSONLoader, error) {
 	}
 	return gojsonschema.NewStringLoader(string(bytes)), nil
 }
-
-var schema = flag.String("schema", "", "path to JSON schema file.")
 
 func main() {
 	flag.Parse()

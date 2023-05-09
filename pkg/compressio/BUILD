@@ -1,15 +1,15 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_library(
     name = "compressio",
     srcs = ["compressio.go"],
     visibility = ["//:sandbox"],
-    deps = [
-        "//pkg/binary",
-        "//pkg/sync",
-    ],
+    deps = ["//pkg/sync"],
 )
 
 go_test(

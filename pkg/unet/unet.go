@@ -20,9 +20,10 @@ package unet
 
 import (
 	"errors"
-	"sync/atomic"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/eventfd"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -55,15 +56,6 @@ func socket(packet bool) (int, error) {
 	return fd, nil
 }
 
-// eventFD returns a new event FD with initial value 0.
-func eventFD() (int, error) {
-	f, _, e := unix.Syscall(unix.SYS_EVENTFD2, 0, 0, 0)
-	if e != 0 {
-		return -1, e
-	}
-	return int(f), nil
-}
-
 // Socket is a connected unix domain socket.
 type Socket struct {
 	// gate protects use of fd.
@@ -71,18 +63,17 @@ type Socket struct {
 
 	// fd is the bound socket.
 	//
-	// fd must be read atomically, and only remains valid if read while
-	// within gate.
-	fd int32
+	// fd only remains valid if read while within gate.
+	fd atomicbitops.Int32
 
 	// efd is an event FD that is signaled when the socket is closing.
 	//
 	// efd is immutable and remains valid until Close/Release.
-	efd int
+	efd eventfd.Eventfd
 
 	// race is an atomic variable used to avoid triggering the race
 	// detector. See comment in SocketPair below.
-	race *int32
+	race *atomicbitops.Int32
 }
 
 // NewSocket returns a socket from an existing FD.
@@ -95,13 +86,13 @@ func NewSocket(fd int) (*Socket, error) {
 		return nil, err
 	}
 
-	efd, err := eventFD()
+	efd, err := eventfd.Create()
 	if err != nil {
 		return nil, err
 	}
 
 	return &Socket{
-		fd:  int32(fd),
+		fd:  atomicbitops.FromInt32(int32(fd)),
 		efd: efd,
 	}, nil
 }
@@ -110,23 +101,21 @@ func NewSocket(fd int) (*Socket, error) {
 // closing the event FD.
 func (s *Socket) finish() error {
 	// Signal any blocked or future polls.
-	//
-	// N.B. eventfd writes must be 8 bytes.
-	if _, err := unix.Write(s.efd, []byte{1, 0, 0, 0, 0, 0, 0, 0}); err != nil {
+	if err := s.efd.Notify(); err != nil {
 		return err
 	}
 
 	// Close the gate, blocking until all FD users leave.
 	s.gate.Close()
 
-	return unix.Close(s.efd)
+	return s.efd.Close()
 }
 
 // Close closes the socket.
 func (s *Socket) Close() error {
 	// Set the FD in the socket to -1, to ensure that all future calls to
 	// FD/Release get nothing and Close calls return immediately.
-	fd := int(atomic.SwapInt32(&s.fd, -1))
+	fd := int(s.fd.Swap(-1))
 	if fd < 0 {
 		// Already closed or closing.
 		return unix.EBADF
@@ -150,7 +139,7 @@ func (s *Socket) Close() error {
 func (s *Socket) Release() (int, error) {
 	// Set the FD in the socket to -1, to ensure that all future calls to
 	// FD/Release get nothing and Close calls return immediately.
-	fd := int(atomic.SwapInt32(&s.fd, -1))
+	fd := int(s.fd.Swap(-1))
 	if fd < 0 {
 		// Already closed or closing.
 		return -1, unix.EBADF
@@ -175,7 +164,7 @@ func (s *Socket) Release() (int, error) {
 //
 // Use Release to take ownership of the FD.
 func (s *Socket) FD() int {
-	return int(atomic.LoadInt32(&s.fd))
+	return int(s.fd.Load())
 }
 
 // enterFD enters the FD gate and returns the FD value.
@@ -189,7 +178,7 @@ func (s *Socket) enterFD() (int, bool) {
 		return -1, false
 	}
 
-	fd := int(atomic.LoadInt32(&s.fd))
+	fd := int(s.fd.Load())
 	if fd < 0 {
 		s.gate.Leave()
 		return -1, false
@@ -213,13 +202,13 @@ func SocketPair(packet bool) (*Socket, *Socket, error) {
 	//
 	// NOTE(b/27107811): This is purely due to the fact that the raw
 	// syscall does not serve as a boundary for the sanitizer.
-	var race int32
 	a, err := NewSocket(fds[0])
 	if err != nil {
 		unix.Close(fds[0])
 		unix.Close(fds[1])
 		return nil, nil, err
 	}
+	var race atomicbitops.Int32
 	a.race = &race
 	b, err := NewSocket(fds[1])
 	if err != nil {
@@ -318,7 +307,7 @@ type SocketWriter struct {
 	socket   *Socket
 	to       []byte
 	blocking bool
-	race     *int32
+	race     *atomicbitops.Int32
 
 	ControlMessage
 }
@@ -427,7 +416,7 @@ type SocketReader struct {
 	socket   *Socket
 	source   []byte
 	blocking bool
-	race     *int32
+	race     *atomicbitops.Int32
 
 	ControlMessage
 }
@@ -522,7 +511,7 @@ func (s *ServerSocket) Listen() error {
 // This is always blocking.
 //
 // Preconditions:
-// * ServerSocket is listening (Listen called).
+//   - ServerSocket is listening (Listen called).
 func (s *ServerSocket) Accept() (*Socket, error) {
 	fd, ok := s.socket.enterFD()
 	if !ok {

@@ -12,30 +12,33 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// +build linux
-
-// Package memutil provides a wrapper for the memfd_create() system call.
+// Package memutil provides utilities for working with shared memory files.
 package memutil
 
 import (
-	"fmt"
+	"reflect"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
 )
 
-// CreateMemFD creates a memfd file and returns the fd.
-func CreateMemFD(name string, flags int) (int, error) {
-	p, err := unix.BytePtrFromString(name)
+// MapSlice is like MapFile, but returns a slice instead of a uintptr.
+func MapSlice(addr, size, prot, flags, fd, offset uintptr) ([]byte, error) {
+	addr, err := MapFile(addr, size, prot, flags, fd, offset)
 	if err != nil {
-		return -1, err
+		return nil, err
 	}
-	fd, _, e := unix.Syscall(unix.SYS_MEMFD_CREATE, uintptr(unsafe.Pointer(p)), uintptr(flags), 0)
-	if e != 0 {
-		if e == unix.ENOSYS {
-			return -1, fmt.Errorf("memfd_create(2) is not implemented. Check that you have Linux 3.17 or higher")
-		}
-		return -1, e
-	}
-	return int(fd), nil
+	var slice []byte
+	hdr := (*reflect.SliceHeader)(unsafe.Pointer(&slice))
+	hdr.Data = addr
+	hdr.Len = int(size)
+	hdr.Cap = int(size)
+	return slice, nil
+}
+
+// UnmapSlice unmaps a mapping returned by MapSlice.
+func UnmapSlice(slice []byte) error {
+	hdr := (*reflect.SliceHeader)(unsafe.Pointer(&slice))
+	_, _, err := unix.RawSyscall6(unix.SYS_MUNMAP, uintptr(unsafe.Pointer(hdr.Data)), uintptr(hdr.Cap), 0, 0, 0, 0)
+	return err
 }

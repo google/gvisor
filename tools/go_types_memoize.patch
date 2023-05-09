@@ -1,0 +1,45 @@
+diff --git a/go/src/go/types/scope.go b/src/go/types/scope.go
+index 010727eb72..0f134b872e 100644
+--- a/go/src/go/types/scope.go
++++ b/go/src/go/types/scope.go
+@@ -25,6 +25,7 @@ type Scope struct {
+ 	children []*Scope
+ 	number   int               // parent.children[number-1] is this scope; 0 if there is no parent
+ 	elems    map[string]Object // lazily allocated
++	sorted   []string          // lazily allocated
+ 	pos, end token.Pos         // scope extent; may be invalid
+ 	comment  string            // for debugging only
+ 	isFunc   bool              // set if this is a function scope (internal use only)
+@@ -33,7 +34,7 @@ type Scope struct {
+ // NewScope returns a new, empty scope contained in the given parent
+ // scope, if any. The comment is for debugging only.
+ func NewScope(parent *Scope, pos, end token.Pos, comment string) *Scope {
+-	s := &Scope{parent, nil, 0, nil, pos, end, comment, false}
++	s := &Scope{parent, nil, 0, nil, nil, pos, end, comment, false}
+ 	// don't add children to Universe scope!
+ 	if parent != nil && parent != Universe {
+ 		parent.children = append(parent.children, s)
+@@ -50,14 +51,16 @@ func (s *Scope) Len() int { return len(s.elems) }
+ 
+ // Names returns the scope's element names in sorted order.
+ func (s *Scope) Names() []string {
+-	names := make([]string, len(s.elems))
+-	i := 0
+-	for name := range s.elems {
+-		names[i] = name
+-		i++
++	if len(s.sorted) != len(s.elems) {
++		s.sorted = make([]string, len(s.elems))
++		i := 0
++		for name := range s.elems {
++			s.sorted[i] = name
++			i++
++		}
++		sort.Strings(s.sorted)
+ 	}
+-	sort.Strings(names)
+-	return names
++	return s.sorted
+ }
+ 
+ // NumChildren returns the number of scopes nested in s.

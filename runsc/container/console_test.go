@@ -30,7 +30,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/pkg/unet"
-	"gvisor.dev/gvisor/pkg/urpc"
 )
 
 // socketPath creates a path inside bundleDir and ensures that the returned
@@ -121,7 +120,7 @@ func receiveConsolePTY(srv *unet.ServerSocket) (*os.File, error) {
 
 // Test that an pty FD is sent over the console socket if one is provided.
 func TestConsoleSocket(t *testing.T) {
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			spec := testutil.NewSpecWithArgs("true")
 			spec.Process.Terminal = true
@@ -163,7 +162,7 @@ func TestConsoleSocket(t *testing.T) {
 
 // Test that an pty FD is sent over the console socket if one is provided.
 func TestMultiContainerConsoleSocket(t *testing.T) {
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			rootDir, cleanup, err := testutil.SetupRootDir()
 			if err != nil {
@@ -282,13 +281,13 @@ func TestJobControlSignalExec(t *testing.T) {
 		// our PID counts get messed up.
 		Argv: []string{"/bin/bash", "--noprofile", "--norc"},
 		// Pass the pty replica as FD 0, 1, and 2.
-		FilePayload: urpc.FilePayload{
-			Files: []*os.File{ptyReplica, ptyReplica, ptyReplica},
-		},
+		FilePayload: control.NewFilePayload(map[int]*os.File{
+			0: ptyReplica, 1: ptyReplica, 2: ptyReplica,
+		}, nil),
 		StdioIsPty: true,
 	}
 
-	pid, err := c.Execute(execArgs)
+	pid, err := c.Execute(conf, execArgs)
 	if err != nil {
 		t.Fatalf("error executing: %v", err)
 	}
@@ -308,7 +307,9 @@ func TestJobControlSignalExec(t *testing.T) {
 	}
 
 	// Execute sleep.
-	ptyMaster.Write([]byte("sleep 100\n"))
+	if _, err := ptyMaster.Write([]byte("sleep 100\n")); err != nil {
+		t.Fatalf("ptyMaster.Write: %v", err)
+	}
 
 	// Wait for it to start. Sleep's PPID is bash's PID.
 	expectedPL = append(expectedPL, newProcessBuilder().PID(3).PPID(2).Cmd("sleep").Process())
@@ -411,7 +412,9 @@ func TestJobControlSignalRootContainer(t *testing.T) {
 	// which makes this a suitable Reader for WaitUntilRead.
 	ptyBuf := newBlockingBuffer()
 	tee := io.TeeReader(ptyMaster, ptyBuf)
-	go io.Copy(os.Stderr, tee)
+	go func() {
+		_, _ = io.Copy(os.Stderr, tee)
+	}()
 
 	// Start the container.
 	if err := c.Start(conf); err != nil {
@@ -444,7 +447,9 @@ func TestJobControlSignalRootContainer(t *testing.T) {
 	}
 
 	// Execute sleep via the terminal.
-	ptyMaster.Write([]byte("sleep 100\n"))
+	if _, err := ptyMaster.Write([]byte("sleep 100\n")); err != nil {
+		t.Fatalf("ptyMaster.Write(): %v", err)
+	}
 
 	// Wait for sleep to start.
 	expectedPL = append(expectedPL, newProcessBuilder().PID(2).PPID(1).Cmd("sleep").Process())
@@ -494,7 +499,7 @@ func TestJobControlSignalRootContainer(t *testing.T) {
 
 // Test that terminal works with root and sub-containers.
 func TestMultiContainerTerminal(t *testing.T) {
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			rootDir, cleanup, err := testutil.SetupRootDir()
 			if err != nil {
@@ -563,13 +568,15 @@ func TestMultiContainerTerminal(t *testing.T) {
 				// file. Writes after a certain point will block unless we drain the
 				// PTY, so we must continually copy from it.
 				//
-				// We log the output to stderr for debugabilitly, and also to a buffer,
+				// We log the output to stderr for debuggability, and also to a buffer,
 				// since we wait on particular output from bash below. We use a custom
 				// blockingBuffer which is thread-safe and also blocks on Read calls,
 				// which makes this a suitable Reader for WaitUntilRead.
 				ptyBuf := newBlockingBuffer()
 				tee := io.TeeReader(tc.master, ptyBuf)
-				go io.Copy(os.Stderr, tee)
+				go func() {
+					_, _ = io.Copy(os.Stderr, tee)
+				}()
 
 				// Wait for bash to start.
 				expectedPL := []*control.Process{
@@ -581,7 +588,9 @@ func TestMultiContainerTerminal(t *testing.T) {
 
 				// Execute echo command and check that it was executed correctly. Use
 				// a variable to ensure it's not matching against command echo.
-				tc.master.Write([]byte("echo foo-${PWD}-123\n"))
+				if _, err := tc.master.Write([]byte("echo foo-${PWD}-123\n")); err != nil {
+					t.Fatalf("master.Write(): %v", err)
+				}
 				if err := testutil.WaitUntilRead(ptyBuf, "foo-/-123", 5*time.Second); err != nil {
 					t.Fatalf("echo didn't execute: %v", err)
 				}

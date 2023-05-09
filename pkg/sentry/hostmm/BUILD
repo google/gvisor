@@ -1,6 +1,9 @@
 load("//tools:defs.bzl", "go_library")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_library(
     name = "hostmm",
@@ -12,8 +15,7 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/fd",
-        "//pkg/hostarch",
+        "//pkg/eventfd",
         "//pkg/log",
         "@org_golang_x_sys//unix:go_default_library",
     ],

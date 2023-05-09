@@ -1,6 +1,7 @@
 load("//test/packetimpact/runner:defs.bzl", "ALL_TESTS", "packetimpact_go_test", "packetimpact_testbench", "validate_all_tests")
 
 package(
+    default_applicable_licenses = ["//:license"],
     default_visibility = ["//test/packetimpact:__subpackages__"],
     licenses = ["notice"],
 )
@@ -8,6 +9,16 @@ package(
 packetimpact_testbench(
     name = "fin_wait2_timeout",
     srcs = ["fin_wait2_timeout_test.go"],
+    deps = [
+        "//pkg/tcpip/header",
+        "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+packetimpact_testbench(
+    name = "tcp_acceptable_ack_syn_rcvd",
+    srcs = ["tcp_acceptable_ack_syn_rcvd_test.go"],
     deps = [
         "//pkg/tcpip/header",
         "//test/packetimpact/testbench",
@@ -104,8 +115,6 @@ packetimpact_testbench(
     srcs = ["tcp_retransmits_test.go"],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/binary",
-        "//pkg/hostarch",
         "//pkg/tcpip/header",
         "//test/packetimpact/testbench",
         "@org_golang_x_sys//unix:go_default_library",
@@ -189,6 +198,7 @@ packetimpact_testbench(
     name = "tcp_synsent_reset",
     srcs = ["tcp_synsent_reset_test.go"],
     deps = [
+        "//pkg/abi/linux",
         "//pkg/tcpip/header",
         "//test/packetimpact/testbench",
         "@org_golang_x_sys//unix:go_default_library",
@@ -271,7 +281,7 @@ packetimpact_testbench(
     name = "ipv4_fragment_reassembly",
     srcs = ["ipv4_fragment_reassembly_test.go"],
     deps = [
-        "//pkg/tcpip/buffer",
+        "//pkg/tcpip/checksum",
         "//pkg/tcpip/header",
         "//test/packetimpact/testbench",
         "@com_github_google_go_cmp//cmp:go_default_library",
@@ -284,7 +294,7 @@ packetimpact_testbench(
     srcs = ["ipv6_fragment_reassembly_test.go"],
     deps = [
         "//pkg/tcpip",
-        "//pkg/tcpip/buffer",
+        "//pkg/tcpip/checksum",
         "//pkg/tcpip/header",
         "//test/packetimpact/testbench",
         "@com_github_google_go_cmp//cmp:go_default_library",
@@ -297,21 +307,9 @@ packetimpact_testbench(
     srcs = ["ipv6_fragment_icmp_error_test.go"],
     deps = [
         "//pkg/tcpip",
-        "//pkg/tcpip/buffer",
+        "//pkg/tcpip/checksum",
         "//pkg/tcpip/header",
         "//pkg/tcpip/network/ipv6",
-        "//test/packetimpact/testbench",
-        "@com_github_google_go_cmp//cmp:go_default_library",
-        "@org_golang_x_sys//unix:go_default_library",
-    ],
-)
-
-packetimpact_testbench(
-    name = "udp_send_recv_dgram",
-    srcs = ["udp_send_recv_dgram_test.go"],
-    deps = [
-        "//pkg/tcpip",
-        "//pkg/tcpip/header",
         "//test/packetimpact/testbench",
         "@com_github_google_go_cmp//cmp:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
@@ -343,6 +341,7 @@ packetimpact_testbench(
     srcs = ["tcp_zero_receive_window_test.go"],
     deps = [
         "//pkg/tcpip/header",
+        "//pkg/tcpip/transport/tcp",
         "//test/packetimpact/testbench",
         "@org_golang_x_sys//unix:go_default_library",
     ],
@@ -353,8 +352,6 @@ packetimpact_testbench(
     srcs = ["tcp_rack_test.go"],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/binary",
-        "//pkg/hostarch",
         "//pkg/tcpip/header",
         "//pkg/tcpip/seqnum",
         "//test/packetimpact/testbench",
@@ -367,8 +364,6 @@ packetimpact_testbench(
     srcs = ["tcp_info_test.go"],
     deps = [
         "//pkg/abi/linux",
-        "//pkg/binary",
-        "//pkg/hostarch",
         "//pkg/tcpip/header",
         "//test/packetimpact/testbench",
         "@org_golang_x_sys//unix:go_default_library",
@@ -401,6 +396,29 @@ packetimpact_testbench(
     deps = [
         "//pkg/tcpip/header",
         "//test/packetimpact/testbench",
+        "@com_github_google_go_cmp//cmp:go_default_library",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+packetimpact_testbench(
+    name = "tcp_connect_icmp_error",
+    srcs = ["tcp_connect_icmp_error_test.go"],
+    deps = [
+        "//pkg/tcpip/header",
+        "//test/packetimpact/testbench",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+packetimpact_testbench(
+    name = "generic_dgram_socket_send_recv",
+    srcs = ["generic_dgram_socket_send_recv_test.go"],
+    deps = [
+        "//pkg/tcpip",
+        "//pkg/tcpip/header",
+        "//test/packetimpact/testbench",
+        "@com_github_google_go_cmp//cmp:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
@@ -409,6 +427,7 @@ validate_all_tests()
 
 [packetimpact_go_test(
     name = t.name,
+    timeout = t.timeout if hasattr(t, "timeout") else "moderate",
     expect_netstack_failure = hasattr(t, "expect_netstack_failure"),
     num_duts = t.num_duts if hasattr(t, "num_duts") else 1,
 ) for t in ALL_TESTS]
@@ -416,6 +435,7 @@ validate_all_tests()
 test_suite(
     name = "all_tests",
     tags = [
+        "local",
         "manual",
         "packetimpact",
     ],

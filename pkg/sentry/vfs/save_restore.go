@@ -15,14 +15,24 @@
 package vfs
 
 import (
-	"fmt"
 	"sync/atomic"
 
-	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/refsvfs2"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
+
+// ErrCorruption indicates a failed restore due to external file system state in
+// corruption.
+type ErrCorruption struct {
+	// Err is the wrapped error.
+	Err error
+}
+
+// Error returns a sensible description of the restore error.
+func (e ErrCorruption) Error() string {
+	return "restore failed due to external file system state in corruption: " + e.Err.Error()
+}
 
 // FilesystemImplSaveRestoreExtension is an optional extension to
 // FilesystemImpl.
@@ -37,18 +47,14 @@ type FilesystemImplSaveRestoreExtension interface {
 
 // PrepareSave prepares all filesystems for serialization.
 func (vfs *VirtualFilesystem) PrepareSave(ctx context.Context) error {
-	failures := 0
 	for fs := range vfs.getFilesystems() {
 		if ext, ok := fs.impl.(FilesystemImplSaveRestoreExtension); ok {
 			if err := ext.PrepareSave(ctx); err != nil {
-				ctx.Warningf("%T.PrepareSave failed: %v", fs.impl, err)
-				failures++
+				fs.DecRef(ctx)
+				return err
 			}
 		}
 		fs.DecRef(ctx)
-	}
-	if failures != 0 {
-		return fmt.Errorf("%d filesystems failed to prepare for serialization", failures)
 	}
 	return nil
 }
@@ -56,18 +62,14 @@ func (vfs *VirtualFilesystem) PrepareSave(ctx context.Context) error {
 // CompleteRestore completes restoration from checkpoint for all filesystems
 // after deserialization.
 func (vfs *VirtualFilesystem) CompleteRestore(ctx context.Context, opts *CompleteRestoreOptions) error {
-	failures := 0
 	for fs := range vfs.getFilesystems() {
 		if ext, ok := fs.impl.(FilesystemImplSaveRestoreExtension); ok {
 			if err := ext.CompleteRestore(ctx, *opts); err != nil {
-				ctx.Warningf("%T.CompleteRestore failed: %v", fs.impl, err)
-				failures++
+				fs.DecRef(ctx)
+				return err
 			}
 		}
 		fs.DecRef(ctx)
-	}
-	if failures != 0 {
-		return fmt.Errorf("%d filesystems failed to complete restore after deserialization", failures)
 	}
 	return nil
 }
@@ -118,9 +120,10 @@ func (vfs *VirtualFilesystem) loadMounts(mounts []*Mount) {
 // loadKey is called by stateify.
 func (mnt *Mount) loadKey(vd VirtualDentry) { mnt.setKey(vd) }
 
+// afterLoad is called by stateify.
 func (mnt *Mount) afterLoad() {
-	if atomic.LoadInt64(&mnt.refs) != 0 {
-		refsvfs2.Register(mnt)
+	if mnt.refs.Load() != 0 {
+		refs.Register(mnt)
 	}
 }
 
@@ -128,20 +131,5 @@ func (mnt *Mount) afterLoad() {
 func (epi *epollInterest) afterLoad() {
 	// Mark all epollInterests as ready after restore so that the next call to
 	// EpollInstance.ReadEvents() rechecks their readiness.
-	epi.Callback(nil, waiter.EventMaskFromLinux(epi.mask))
-}
-
-// beforeSave is called by stateify.
-func (fd *FileDescription) beforeSave() {
-	fd.saved = true
-	if fd.statusFlags&linux.O_ASYNC != 0 && fd.asyncHandler != nil {
-		fd.asyncHandler.Unregister(fd)
-	}
-}
-
-// afterLoad is called by stateify.
-func (fd *FileDescription) afterLoad() {
-	if fd.statusFlags&linux.O_ASYNC != 0 && fd.asyncHandler != nil {
-		fd.asyncHandler.Register(fd)
-	}
+	epi.waiter.NotifyEvent(waiter.EventMaskFromLinux(epi.mask))
 }

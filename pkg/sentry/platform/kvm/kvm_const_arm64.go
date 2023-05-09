@@ -40,6 +40,10 @@ const (
 	_KVM_ARM64_REGS_VBAR_EL1   = 0x603000000013c600
 	_KVM_ARM64_REGS_TIMER_CNT  = 0x603000000013df1a
 	_KVM_ARM64_REGS_CNTFRQ_EL0 = 0x603000000013df00
+
+	_KVM_ARM64_REGS_MDSCR_EL1   = 0x6030000000138012
+	_KVM_ARM64_REGS_CNTKCTL_EL1 = 0x603000000013c708
+	_KVM_ARM64_REGS_TPIDR_EL1   = 0x603000000013c684
 )
 
 // Arm64: Architectural Feature Access Control Register EL1.
@@ -50,9 +54,21 @@ const (
 
 // Arm64: System Control Register EL1.
 const (
-	_SCTLR_M = 1 << 0
-	_SCTLR_C = 1 << 2
-	_SCTLR_I = 1 << 12
+	_SCTLR_M           = 1 << 0
+	_SCTLR_C           = 1 << 2
+	_SCTLR_I           = 1 << 12
+	_SCTLR_DZE         = 1 << 14
+	_SCTLR_UCT         = 1 << 15
+	_SCTLR_UCI         = 1 << 26
+	_SCTLR_EL1_DEFAULT = _SCTLR_M | _SCTLR_C | _SCTLR_I | _SCTLR_UCT | _SCTLR_UCI | _SCTLR_DZE
+)
+
+// Arm64: Counter-timer Kernel Control Register el1.
+const (
+	_CNTKCTL_EL0PCTEN = 1 << 0
+	_CNTKCTL_EL0VCTEN = 1 << 1
+
+	_CNTKCTL_EL1_DEFAULT = _CNTKCTL_EL0PCTEN | _CNTKCTL_EL0VCTEN
 )
 
 // Arm64: Translation Control Register EL1.

@@ -19,9 +19,9 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/syserror"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -40,10 +40,12 @@ type DynamicBytesFile struct {
 	InodeNoopRefCount
 	InodeNotDirectory
 	InodeNotSymlink
+	InodeWatches
 
 	locks vfs.FileLocks
 	// data can additionally implement vfs.WritableDynamicBytesSource to support
-	// writes.
+	// writes. This field cannot be changed to a different bytes source after
+	// Init.
 	data vfs.DynamicBytesSource
 }
 
@@ -71,7 +73,17 @@ func (f *DynamicBytesFile) Open(ctx context.Context, rp *vfs.ResolvingPath, d *D
 // inode attributes to be changed. Override SetStat() making it call
 // f.InodeAttrs to allow it.
 func (*DynamicBytesFile) SetStat(context.Context, *vfs.Filesystem, *auth.Credentials, vfs.SetStatOptions) error {
-	return syserror.EPERM
+	return linuxerr.EPERM
+}
+
+// Locks returns the file locks for this file.
+func (f *DynamicBytesFile) Locks() *vfs.FileLocks {
+	return &f.locks
+}
+
+// Data returns the underlying data source.
+func (f *DynamicBytesFile) Data() vfs.DynamicBytesSource {
+	return f.data
 }
 
 // DynamicBytesFD implements vfs.FileDescriptionImpl for an FD backed by a
@@ -96,7 +108,7 @@ func (fd *DynamicBytesFD) Init(m *vfs.Mount, d *Dentry, data vfs.DynamicBytesSou
 		return err
 	}
 	fd.inode = d.inode
-	fd.SetDataSource(data)
+	fd.DynamicBytesFileDescriptionImpl.Init(&fd.vfsfd, data)
 	return nil
 }
 
@@ -137,5 +149,5 @@ func (fd *DynamicBytesFD) Stat(ctx context.Context, opts vfs.StatOptions) (linux
 // SetStat implements vfs.FileDescriptionImpl.SetStat.
 func (fd *DynamicBytesFD) SetStat(context.Context, vfs.SetStatOptions) error {
 	// DynamicBytesFiles are immutable.
-	return syserror.EPERM
+	return linuxerr.EPERM
 }

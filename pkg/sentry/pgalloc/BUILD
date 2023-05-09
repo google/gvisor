@@ -1,7 +1,10 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
 
 go_template_instance(
     name = "evictable_range",
@@ -84,7 +87,9 @@ go_library(
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
+        "//pkg/atomicbitops",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/memutil",
@@ -96,7 +101,6 @@ go_library(
         "//pkg/state",
         "//pkg/state/wire",
         "//pkg/sync",
-        "//pkg/syserror",
         "//pkg/usermem",
         "@org_golang_x_sys//unix:go_default_library",
     ],

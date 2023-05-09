@@ -21,10 +21,12 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/cenkalti/backoff"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cleanup"
@@ -100,18 +102,23 @@ func startContainers(conf *config.Config, specs []*specs.Spec, ids []string) ([]
 type execDesc struct {
 	c    *Container
 	cmd  []string
-	want int
 	name string
+	want int
+	err  string
 }
 
-func execMany(t *testing.T, execs []execDesc) {
+func execMany(t *testing.T, conf *config.Config, execs []execDesc) {
 	for _, exec := range execs {
 		t.Run(exec.name, func(t *testing.T) {
 			args := &control.ExecArgs{Argv: exec.cmd}
-			if ws, err := exec.c.executeSync(args); err != nil {
-				t.Errorf("error executing %+v: %v", args, err)
+			if ws, err := exec.c.executeSync(conf, args); err != nil {
+				if len(exec.err) == 0 || !strings.Contains(err.Error(), exec.err) {
+					t.Errorf("error executing %+v: %v", args, err)
+				}
+			} else if len(exec.err) > 0 {
+				t.Errorf("exec %q didn't fail as expected", exec.cmd)
 			} else if ws.ExitStatus() != exec.want {
-				t.Errorf("%q: exec %q got exit status: %d, want: %d", exec.name, exec.cmd, ws.ExitStatus(), exec.want)
+				t.Errorf("exec %q got exit status: %d, want: %d", exec.cmd, ws.ExitStatus(), exec.want)
 			}
 		})
 	}
@@ -131,7 +138,7 @@ func createSharedMount(mount specs.Mount, name string, pod ...*specs.Spec) {
 // TestMultiContainerSanity checks that it is possible to run 2 dead-simple
 // containers in the same sandbox.
 func TestMultiContainerSanity(t *testing.T) {
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			rootDir, cleanup, err := testutil.SetupRootDir()
 			if err != nil {
@@ -169,7 +176,7 @@ func TestMultiContainerSanity(t *testing.T) {
 // TestMultiPIDNS checks that it is possible to run 2 dead-simple containers in
 // the same sandbox with different pidns.
 func TestMultiPIDNS(t *testing.T) {
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			rootDir, cleanup, err := testutil.SetupRootDir()
 			if err != nil {
@@ -216,7 +223,7 @@ func TestMultiPIDNS(t *testing.T) {
 				newProcessBuilder().PID(2).Cmd("sleep").Process(),
 				newProcessBuilder().Cmd("ps").Process(),
 			}
-			got, err := execPS(containers[0])
+			got, err := execPS(conf, containers[0])
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -228,7 +235,7 @@ func TestMultiPIDNS(t *testing.T) {
 				newProcessBuilder().PID(1).Cmd("sleep").Process(),
 				newProcessBuilder().Cmd("ps").Process(),
 			}
-			got, err = execPS(containers[1])
+			got, err = execPS(conf, containers[1])
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -241,7 +248,7 @@ func TestMultiPIDNS(t *testing.T) {
 
 // TestMultiPIDNSPath checks the pidns path.
 func TestMultiPIDNSPath(t *testing.T) {
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			rootDir, cleanup, err := testutil.SetupRootDir()
 			if err != nil {
@@ -312,7 +319,7 @@ func TestMultiPIDNSPath(t *testing.T) {
 				newProcessBuilder().PID(3).Cmd("sleep").Process(),
 				newProcessBuilder().Cmd("ps").Process(),
 			}
-			got, err := execPS(containers[0])
+			got, err := execPS(conf, containers[0])
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -327,7 +334,7 @@ func TestMultiPIDNSPath(t *testing.T) {
 				newProcessBuilder().PID(3).Cmd("sleep").Process(),
 				newProcessBuilder().Cmd("ps").Process(),
 			}
-			got, err = execPS(containers[1])
+			got, err = execPS(conf, containers[1])
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -340,7 +347,7 @@ func TestMultiPIDNSPath(t *testing.T) {
 				newProcessBuilder().PID(1).Cmd("sleep").Process(),
 				newProcessBuilder().Cmd("ps").Process(),
 			}
-			got, err = execPS(containers[2])
+			got, err = execPS(conf, containers[2])
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -359,7 +366,7 @@ func TestMultiPIDNSKill(t *testing.T) {
 		t.Fatal("error finding test_app:", err)
 	}
 
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			rootDir, cleanup, err := testutil.SetupRootDir()
 			if err != nil {
@@ -540,7 +547,7 @@ func TestExecWait(t *testing.T) {
 		WorkingDirectory: "/",
 		KUID:             0,
 	}
-	pid, err := containers[0].Execute(args)
+	pid, err := containers[0].Execute(conf, args)
 	if err != nil {
 		t.Fatalf("error executing: %v", err)
 	}
@@ -613,7 +620,7 @@ func TestMultiContainerMount(t *testing.T) {
 // TestMultiContainerSignal checks that it is possible to signal individual
 // containers without killing the entire sandbox.
 func TestMultiContainerSignal(t *testing.T) {
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			rootDir, cleanup, err := testutil.SetupRootDir()
 			if err != nil {
@@ -688,7 +695,7 @@ func TestMultiContainerSignal(t *testing.T) {
 				t.Errorf("error waiting for gofer to exit: %v", err)
 			}
 
-			err = blockUntilWaitable(containers[0].Sandbox.Pid)
+			err = blockUntilWaitable(containers[0].Sandbox.Getpid())
 			if err != nil && err != unix.ECHILD {
 				t.Errorf("error waiting for sandbox to exit: %v", err)
 			}
@@ -713,7 +720,7 @@ func TestMultiContainerDestroy(t *testing.T) {
 		t.Fatal("error finding test_app:", err)
 	}
 
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			rootDir, cleanup, err := testutil.SetupRootDir()
 			if err != nil {
@@ -743,7 +750,7 @@ func TestMultiContainerDestroy(t *testing.T) {
 				Filename: app,
 				Argv:     []string{app, "fork-bomb"},
 			}
-			if _, err := containers[1].Execute(args); err != nil {
+			if _, err := containers[1].Execute(conf, args); err != nil {
 				t.Fatalf("error exec'ing: %v", err)
 			}
 
@@ -820,7 +827,7 @@ func TestMultiContainerProcesses(t *testing.T) {
 		Filename: "/bin/sleep",
 		Argv:     []string{"/bin/sleep", "100"},
 	}
-	if _, err := containers[1].Execute(args); err != nil {
+	if _, err := containers[1].Execute(conf, args); err != nil {
 		t.Fatalf("error exec'ing: %v", err)
 	}
 	expectedPL1 = append(expectedPL1, newProcessBuilder().PID(4).Cmd("sleep").Process())
@@ -881,7 +888,7 @@ func TestMultiContainerKillAll(t *testing.T) {
 			Filename: app,
 			Argv:     []string{app, "task-tree", "--depth=2", "--width=2"},
 		}
-		if _, err := containers[1].Execute(args); err != nil {
+		if _, err := containers[1].Execute(conf, args); err != nil {
 			t.Fatalf("error exec'ing: %v", err)
 		}
 		// Wait for these new processes to start.
@@ -893,7 +900,9 @@ func TestMultiContainerKillAll(t *testing.T) {
 		if tc.killContainer {
 			// First kill the init process to make the container be stopped with
 			// processes still running inside.
-			containers[1].SignalContainer(unix.SIGKILL, false)
+			if err := containers[1].SignalContainer(unix.SIGKILL, false); err != nil {
+				t.Fatalf("SignalContainer(): %v", err)
+			}
 			op := func() error {
 				c, err := Load(conf.RootDir, FullID{ContainerID: ids[1]}, LoadOpts{})
 				if err != nil {
@@ -911,7 +920,7 @@ func TestMultiContainerKillAll(t *testing.T) {
 
 		c, err := Load(conf.RootDir, FullID{ContainerID: ids[1]}, LoadOpts{})
 		if err != nil {
-			t.Fatalf("failed to load child container %q: %v", c.ID, err)
+			t.Fatalf("failed to load child container %q: %v", ids[1], err)
 		}
 		// Kill'Em All
 		if err := c.SignalContainer(unix.SIGKILL, true); err != nil {
@@ -1039,7 +1048,8 @@ func TestMultiContainerDestroyStarting(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			startCont.Start(conf) // ignore failures, start can fail if destroy runs first.
+			// Ignore failures, start can fail if destroy runs first.
+			_ = startCont.Start(conf)
 		}()
 
 		wg.Add(1)
@@ -1076,7 +1086,7 @@ func TestMultiContainerDifferentFilesystems(t *testing.T) {
 
 	// Make sure overlay is enabled, and none of the root filesystems are
 	// read-only, otherwise we won't be able to create the file.
-	conf.Overlay = true
+	conf.Overlay2 = config.Overlay2{RootMount: true, SubMounts: true, Medium: "memory"}
 	specs, ids := createSpecs(cmdRoot, cmd, cmd)
 	for _, s := range specs {
 		s.Root.Readonly = false
@@ -1207,7 +1217,7 @@ func TestMultiContainerContainerDestroyStress(t *testing.T) {
 // Test that pod shared mounts are properly mounted in 2 containers and that
 // changes from one container is reflected in the other.
 func TestMultiContainerSharedMount(t *testing.T) {
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			rootDir, cleanup, err := testutil.SetupRootDir()
 			if err != nil {
@@ -1313,14 +1323,14 @@ func TestMultiContainerSharedMount(t *testing.T) {
 					name: "dir removed from container1",
 				},
 			}
-			execMany(t, execs)
+			execMany(t, conf, execs)
 		})
 	}
 }
 
 // Test that pod mounts are mounted as readonly when requested.
 func TestMultiContainerSharedMountReadonly(t *testing.T) {
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			rootDir, cleanup, err := testutil.SetupRootDir()
 			if err != nil {
@@ -1378,14 +1388,83 @@ func TestMultiContainerSharedMountReadonly(t *testing.T) {
 					name: "fails to write to container1",
 				},
 			}
-			execMany(t, execs)
+			execMany(t, conf, execs)
 		})
 	}
 }
 
+// Test that pod mounts can be mounted with less restrictive options in
+// container mounts.
+func TestMultiContainerSharedMountCompatible(t *testing.T) {
+	rootDir, cleanup, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer cleanup()
+	conf := testutil.TestConfig(t)
+	conf.RootDir = rootDir
+
+	sleep := []string{"sleep", "100"}
+	podSpec, ids := createSpecs(sleep, sleep)
+
+	// Init container and annotations allow read-write and exec.
+	mnt0 := specs.Mount{
+		Destination: "/mydir/test",
+		Source:      "/some/dir",
+		Type:        "tmpfs",
+		Options:     []string{"rw", "exec"},
+	}
+	podSpec[0].Mounts = append(podSpec[0].Mounts, mnt0)
+
+	// While subcontainer mount has more restrictive options: read-only, noexec.
+	mnt1 := mnt0
+	mnt1.Destination = "/mydir2/test2"
+	mnt1.Options = []string{"ro", "noexec"}
+	podSpec[1].Mounts = append(podSpec[1].Mounts, mnt1)
+
+	createSharedMount(mnt0, "test-mount", podSpec...)
+
+	containers, cleanup, err := startContainers(conf, podSpec, ids)
+	if err != nil {
+		t.Fatalf("error starting containers: %v", err)
+	}
+	defer cleanup()
+
+	execs := []execDesc{
+		{
+			c:    containers[1],
+			cmd:  []string{"/bin/touch", path.Join(mnt1.Destination, "fail")},
+			want: 1,
+			name: "fails write to container1",
+		},
+		{
+			c:    containers[0],
+			cmd:  []string{"/bin/cp", "/usr/bin/test", mnt0.Destination},
+			name: "writes to container0",
+		},
+		{
+			c:    containers[1],
+			cmd:  []string{"/usr/bin/test", "-f", path.Join(mnt1.Destination, "test")},
+			name: "file appears in container1",
+		},
+		{
+			c:    containers[0],
+			cmd:  []string{path.Join(mnt0.Destination, "test"), "-d", mnt0.Destination},
+			name: "container0 can execute",
+		},
+		{
+			c:    containers[1],
+			cmd:  []string{path.Join(mnt1.Destination, "test"), "-d", mnt1.Destination},
+			err:  "permission denied",
+			name: "container1 cannot execute",
+		},
+	}
+	execMany(t, conf, execs)
+}
+
 // Test that shared pod mounts continue to work after container is restarted.
 func TestMultiContainerSharedMountRestart(t *testing.T) {
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			rootDir, cleanup, err := testutil.SetupRootDir()
 			if err != nil {
@@ -1436,7 +1515,7 @@ func TestMultiContainerSharedMountRestart(t *testing.T) {
 					name: "file appears in container1",
 				},
 			}
-			execMany(t, execs)
+			execMany(t, conf, execs)
 
 			containers[1].Destroy()
 
@@ -1486,7 +1565,7 @@ func TestMultiContainerSharedMountRestart(t *testing.T) {
 					name: "file removed from container1",
 				},
 			}
-			execMany(t, execs)
+			execMany(t, conf, execs)
 		})
 	}
 }
@@ -1494,7 +1573,7 @@ func TestMultiContainerSharedMountRestart(t *testing.T) {
 // Test that unsupported pod mounts options are ignored when matching master and
 // replica mounts.
 func TestMultiContainerSharedMountUnsupportedOptions(t *testing.T) {
-	for name, conf := range configs(t, all...) {
+	for name, conf := range configs(t, false /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
 			rootDir, cleanup, err := testutil.SetupRootDir()
 			if err != nil {
@@ -1510,7 +1589,7 @@ func TestMultiContainerSharedMountUnsupportedOptions(t *testing.T) {
 				Destination: "/mydir/test",
 				Source:      "/some/dir",
 				Type:        "tmpfs",
-				Options:     []string{"rw", "rbind", "relatime"},
+				Options:     []string{"rw", "relatime"},
 			}
 			podSpec[0].Mounts = append(podSpec[0].Mounts, mnt0)
 
@@ -1539,7 +1618,7 @@ func TestMultiContainerSharedMountUnsupportedOptions(t *testing.T) {
 					name: "directory is mounted in container1",
 				},
 			}
-			execMany(t, execs)
+			execMany(t, conf, execs)
 		})
 	}
 }
@@ -1650,7 +1729,7 @@ func TestMultiContainerGoferKilled(t *testing.T) {
 	}
 
 	// Check that container isn't running anymore.
-	if _, err := execute(c, "/bin/true"); err == nil {
+	if _, err := execute(conf, c, "/bin/true"); err == nil {
 		t.Fatalf("Container %q was not stopped after gofer death", c.ID)
 	}
 
@@ -1665,7 +1744,7 @@ func TestMultiContainerGoferKilled(t *testing.T) {
 		if err := waitForProcessList(c, pl); err != nil {
 			t.Errorf("Container %q was affected by another container: %v", c.ID, err)
 		}
-		if _, err := execute(c, "/bin/true"); err != nil {
+		if _, err := execute(conf, c, "/bin/true"); err != nil {
 			t.Fatalf("Container %q was affected by another container: %v", c.ID, err)
 		}
 	}
@@ -1687,7 +1766,7 @@ func TestMultiContainerGoferKilled(t *testing.T) {
 
 	// Check that entire sandbox isn't running anymore.
 	for _, c := range containers {
-		if _, err := execute(c, "/bin/true"); err == nil {
+		if _, err := execute(conf, c, "/bin/true"); err == nil {
 			t.Fatalf("Container %q was not stopped after gofer death", c.ID)
 		}
 	}
@@ -1738,7 +1817,7 @@ func TestMultiContainerLoadSandbox(t *testing.T) {
 
 	// Load the sandbox and check that the correct containers were returned.
 	id := wants[0].Sandbox.ID
-	gots, err := loadSandbox(conf.RootDir, id)
+	gots, err := LoadSandbox(conf.RootDir, id, LoadOpts{})
 	if err != nil {
 		t.Fatalf("loadSandbox()=%v", err)
 	}
@@ -1828,7 +1907,7 @@ func TestMultiContainerRunNonRoot(t *testing.T) {
 func TestMultiContainerHomeEnvDir(t *testing.T) {
 	// NOTE: Don't use overlay since we need changes to persist to the temp dir
 	// outside the sandbox.
-	for testName, conf := range configs(t, noOverlay...) {
+	for testName, conf := range configs(t, true /* noOverlay */) {
 		t.Run(testName, func(t *testing.T) {
 
 			rootDir, cleanup, err := testutil.SetupRootDir()
@@ -1863,7 +1942,7 @@ func TestMultiContainerHomeEnvDir(t *testing.T) {
 			defer cleanup()
 
 			// Exec into the root container synchronously.
-			if _, err := execute(containers[0], "/bin/sh", "-c", execCmd); err != nil {
+			if _, err := execute(conf, containers[0], "/bin/sh", "-c", execCmd); err != nil {
 				t.Errorf("error executing %+v: %v", execCmd, err)
 			}
 
@@ -1917,9 +1996,9 @@ func TestMultiContainerEvent(t *testing.T) {
 	}
 	defer cleanup()
 
-	for _, cont := range containers {
-		t.Logf("Running containerd %s", cont.ID)
-	}
+	t.Logf("Running container sleep %s", containers[0].ID)
+	t.Logf("Running container busy %s", containers[1].ID)
+	t.Logf("Running container quick %s", containers[2].ID)
 
 	// Wait for last container to stabilize the process count that is
 	// checked further below.
@@ -1940,50 +2019,61 @@ func TestMultiContainerEvent(t *testing.T) {
 	}
 
 	// Check events for running containers.
-	var prevUsage uint64
 	for _, cont := range containers[:2] {
 		ret, err := cont.Event()
 		if err != nil {
-			t.Errorf("Container.Events(): %v", err)
+			t.Errorf("Container.Event(%q): %v", cont.ID, err)
 		}
 		evt := ret.Event
 		if want := "stats"; evt.Type != want {
-			t.Errorf("Wrong event type, want: %s, got: %s", want, evt.Type)
+			t.Errorf("Wrong event type, cid: %q, want: %s, got: %s", cont.ID, want, evt.Type)
 		}
 		if cont.ID != evt.ID {
 			t.Errorf("Wrong container ID, want: %s, got: %s", cont.ID, evt.ID)
 		}
 		// One process per remaining container.
 		if got, want := evt.Data.Pids.Current, uint64(2); got != want {
-			t.Errorf("Wrong number of PIDs, want: %d, got: %d", want, got)
+			t.Errorf("Wrong number of PIDs, cid: %q, want: %d, got: %d", cont.ID, want, got)
 		}
 
-		// Both remaining containers should have nonzero usage, and
-		// 'busy' should have higher usage than 'sleep'.
-		usage := evt.Data.CPU.Usage.Total
-		if usage == 0 {
-			t.Errorf("Running container should report nonzero CPU usage, but got %d", usage)
-		}
-		if usage <= prevUsage {
-			t.Errorf("Expected container %s to use more than %d ns of CPU, but used %d", cont.ID, prevUsage, usage)
-		}
-		t.Logf("Container %s usage: %d", cont.ID, usage)
-		prevUsage = usage
-
-		// The exited container should have a usage of zero.
+		// The exited container should always have a usage of zero.
 		if exited := ret.ContainerUsage[containers[2].ID]; exited != 0 {
-			t.Errorf("Exited container should report 0 CPU usage, but got %d", exited)
+			t.Errorf("Exited container should report 0 CPU usage, got: %d", exited)
 		}
 	}
 
-	// Check that stop and destroyed containers return error.
+	// Check that CPU reported by busy container is higher than sleep.
+	cb := func() error {
+		sleepEvt, err := containers[0].Event()
+		if err != nil {
+			return &backoff.PermanentError{Err: err}
+		}
+		sleepUsage := sleepEvt.Event.Data.CPU.Usage.Total
+
+		busyEvt, err := containers[1].Event()
+		if err != nil {
+			return &backoff.PermanentError{Err: err}
+		}
+		busyUsage := busyEvt.Event.Data.CPU.Usage.Total
+
+		if busyUsage <= sleepUsage {
+			t.Logf("Busy container usage lower than sleep (busy: %d, sleep: %d), retrying...", busyUsage, sleepUsage)
+			return fmt.Errorf("busy container should have higher usage than sleep, busy: %d, sleep: %d", busyUsage, sleepUsage)
+		}
+		return nil
+	}
+	// Give time for busy container to run and use more CPU than sleep.
+	if err := testutil.Poll(cb, 10*time.Second); err != nil {
+		t.Fatal(err)
+	}
+
+	// Check that stopped and destroyed containers return error.
 	if err := containers[1].Destroy(); err != nil {
 		t.Fatalf("container.Destroy: %v", err)
 	}
 	for _, cont := range containers[1:] {
-		_, err := cont.Event()
-		if err == nil {
-			t.Errorf("Container.Events() should have failed, cid:%s, state: %v", cont.ID, cont.Status)
+		if _, err := cont.Event(); err == nil {
+			t.Errorf("Container.Event() should have failed, cid: %q, state: %v", cont.ID, cont.Status)
 		}
 	}
 }
@@ -2041,7 +2131,7 @@ func TestDuplicateEnvVariable(t *testing.T) {
 		Argv:     []string{"/bin/sh", "-c", cmdExec},
 		Envv:     []string{"VAR=foo", "VAR=bar"},
 	}
-	if ws, err := containers[0].executeSync(execArgs); err != nil || ws.ExitStatus() != 0 {
+	if ws, err := containers[0].executeSync(conf, execArgs); err != nil || ws.ExitStatus() != 0 {
 		t.Fatalf("exec failed, ws: %v, err: %v", ws, err)
 	}
 
@@ -2069,6 +2159,276 @@ func TestDuplicateEnvVariable(t *testing.T) {
 		}
 		if _, ok := envs["VAR"]; !ok {
 			t.Errorf("variable VAR missing: %v", envs)
+		}
+	}
+}
+
+// Test that /dev/shm can be shared between containers.
+func TestMultiContainerShm(t *testing.T) {
+	conf := testutil.TestConfig(t)
+
+	rootDir, cleanup, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer cleanup()
+	conf.RootDir = rootDir
+
+	sleep := []string{"sleep", "100"}
+	testSpecs, ids := createSpecs(sleep, sleep)
+
+	sharedMount := specs.Mount{
+		Destination: "/dev/shm",
+		Source:      "/some/path",
+		Type:        "tmpfs",
+	}
+
+	// Add shared /dev/shm mount to all containers.
+	for _, spec := range testSpecs {
+		spec.Mounts = append(spec.Mounts, sharedMount)
+	}
+
+	// Create annotation hints for the init container.
+	createSharedMount(sharedMount, "devshm", testSpecs[0])
+
+	containers, cleanup, err := startContainers(conf, testSpecs, ids)
+	if err != nil {
+		t.Fatalf("error starting containers: %v", err)
+	}
+	defer cleanup()
+
+	// Write file to shared /dev/shm directory in one container.
+	const output = "/dev/shm/file.txt"
+	exec0 := fmt.Sprintf("echo 123 > %s", output)
+	if ws, err := execute(conf, containers[0], "/bin/sh", "-c", exec0); err != nil || ws.ExitStatus() != 0 {
+		t.Fatalf("exec failed, ws: %v, err: %v", ws, err)
+	}
+
+	// Check that file can be found in the other container.
+	out, err := executeCombinedOutput(conf, containers[1], nil, "/bin/cat", output)
+	if err != nil {
+		t.Fatalf("exec failed: %v", err)
+	}
+	if want := "123\n"; string(out) != want {
+		t.Fatalf("wrong output, want: %q, got: %v", want, out)
+	}
+}
+
+// Test that using file-backed overlay does not lead to memory leak or leaks
+// in the host-file backing the overlay.
+func TestMultiContainerOverlayLeaks(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	app, err := testutil.FindFile("test/cmd/test_app/test_app")
+	if err != nil {
+		t.Fatal("error finding test_app:", err)
+	}
+
+	rootDir, cleanup, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer cleanup()
+	conf.RootDir = rootDir
+
+	// Configure root overlay backed by rootfs itself.
+	conf.Overlay2 = config.Overlay2{
+		RootMount: true,
+		Medium:    "self",
+	}
+
+	// Root container will just sleep.
+	sleep := []string{"sleep", "100"}
+	// Since all containers share the same conf.RootDir, and root filesystems
+	// have overlay enabled, the root directory should never be modified. Hence,
+	// creating files at the same locations should not lead to EEXIST error.
+	createFsTree := []string{"/app", "fsTreeCreate", "--depth=10", "--file-per-level=10", "--file-size=4096"}
+	testSpecs, ids := createSpecs(sleep, createFsTree, createFsTree, createFsTree)
+	for i, s := range testSpecs {
+		if i == 0 {
+			// Root container just sleeps, so should be fine.
+			continue
+		}
+		// For subcontainers, make sure the root filesystems is writable because
+		// the app will create files in it.
+		s.Root.Readonly = false
+		// createSpecs assigns the host's root as the container's root. But self
+		// overlay2 medium creates the filestore file inside container's root. That
+		// will fail. So create a temporary writable directory to represent the
+		// container's root filesystem and copy the app binary there.
+		contRoot, rootfsCU, err := testutil.SetupRootDir()
+		if err != nil {
+			t.Fatalf("error creating container's root filesystem: %v", err)
+		}
+		defer rootfsCU()
+		s.Root.Path = contRoot
+		appDst := path.Join(contRoot, "app")
+		if err := copyFile(app, appDst); err != nil {
+			t.Fatalf("error copying app binary from %q to %q: %v", app, appDst, err)
+		}
+	}
+
+	// Start the containers.
+	conts, cleanup, err := startContainers(conf, testSpecs, ids)
+	if err != nil {
+		t.Fatalf("error starting containers: %v", err)
+	}
+	defer cleanup()
+
+	sandboxID := conts[0].Sandbox.ID
+	for i, c := range conts {
+		if i == 0 {
+			// Don't wait for the root container which just sleeps.
+			continue
+		}
+		// Wait for the sub-container to stop.
+		if ws, err := c.Wait(); err != nil {
+			t.Errorf("failed to wait for subcontainer number %d: %v", i, err)
+		} else if es := ws.ExitStatus(); es != 0 {
+			t.Errorf("subcontainer number %d exited with non-zero status %d", i, es)
+		}
+	}
+
+	// Give the reclaimer goroutine some time to reclaim.
+	time.Sleep(3 * time.Second)
+
+	for i, s := range testSpecs {
+		if i == 0 {
+			continue
+		}
+
+		// Stat filestoreFile to see its usage. It should have been cleaned up.
+		filestoreFile := boot.SelfOverlayFilestorePath(s.Root.Path, sandboxID)
+		var stat unix.Stat_t
+		if err := unix.Stat(filestoreFile, &stat); err != nil {
+			t.Errorf("unix.Stat(%q) failed for rootfs filestore: %v", filestoreFile, err)
+			continue
+		}
+		if stat.Blocks > 0 {
+			t.Errorf("rootfs filestore file %q for sub container %d is not cleaned up, has %d blocks", filestoreFile, i, stat.Blocks)
+		}
+	}
+}
+
+func copyFile(src, dst string) error {
+	bytesRead, err := ioutil.ReadFile(src)
+	if err != nil {
+		return err
+	}
+
+	return ioutil.WriteFile(dst, bytesRead, 0755)
+}
+
+// Test that spawning many subcontainers that do a lot of filesystem operations
+// does not lead to memory leaks.
+func TestMultiContainerMemoryLeakStress(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	app, err := testutil.FindFile("test/cmd/test_app/test_app")
+	if err != nil {
+		t.Fatal("error finding test_app:", err)
+	}
+
+	rootDir, cleanup, err := testutil.SetupRootDir()
+	if err != nil {
+		t.Fatalf("error creating root dir: %v", err)
+	}
+	defer cleanup()
+	conf.RootDir = rootDir
+
+	// Configure root overlay (backed by memory) so that containers can create
+	// files in the root directory.
+	conf.Overlay2 = config.Overlay2{
+		RootMount: true,
+		Medium:    "memory",
+	}
+
+	// Root container will just sleep.
+	sleep := []string{"sleep", "1000"}
+
+	// Subcontainers will do a lot of filesystem work. Create a lot of them.
+	createFsTree := []string{app, "fsTreeCreate", "--depth=10", "--file-per-level=10", "--file-size=1048576"}
+	const warmupContainers = 5
+	const stressContainers = 45
+	cmds := make([][]string, 0, warmupContainers+stressContainers+1)
+	cmds = append(cmds, sleep)
+	for i := 0; i < warmupContainers+stressContainers; i++ {
+		cmds = append(cmds, createFsTree)
+	}
+	testSpecs, ids := createSpecs(cmds...)
+	// Make sure none of the root filesystems are read-only, otherwise we won't
+	// be able to create the file.
+	for _, s := range testSpecs {
+		s.Root.Readonly = false
+	}
+
+	// Start the root container.
+	rootCont, cleanup, err := startContainers(conf, testSpecs[:1], ids[:1])
+	if err != nil {
+		t.Fatalf("error starting containers: %v", err)
+	}
+	defer cleanup()
+
+	// Warm up the sandbox.
+	warmUpContainers, cleanUp2, err := startContainers(conf, testSpecs[1:1+warmupContainers], ids[1:1+warmupContainers])
+	if err != nil {
+		t.Fatalf("error starting containers: %v", err)
+	}
+	defer cleanUp2()
+	// Wait for all warm up subcontainers to stop.
+	for i, c := range warmUpContainers {
+		// Wait for the sub-container to stop.
+		if ws, err := c.Wait(); err != nil {
+			t.Errorf("failed to wait for warm up subcontainer number %d: %v", i, err)
+		} else if es := ws.ExitStatus(); es != 0 {
+			t.Errorf("warm up subcontainer number %d exited with non-zero status %d", i, es)
+		}
+	}
+
+	// Give the reclaimer goroutine some time to reclaim.
+	time.Sleep(3 * time.Second)
+
+	// Measure the memory usage after the warm up.
+	oldUsage, err := rootCont[0].Sandbox.Usage(true /* Full */)
+	if err != nil {
+		t.Fatalf("sandbox.Usage failed: %v", err)
+	}
+
+	// Hammer the sandbox with sub containers.
+	subConts, cleanup3, err := startContainers(conf, testSpecs[1+warmupContainers:1+warmupContainers+stressContainers], ids[1+warmupContainers:1+warmupContainers+stressContainers])
+	if err != nil {
+		t.Fatalf("error starting containers: %v", err)
+	}
+	defer cleanup3()
+	// Wait for all subcontainers to stop.
+	for i, c := range subConts {
+		if ws, err := c.Wait(); err != nil {
+			t.Errorf("failed to wait for subcontainer number %d: %v", i, err)
+		} else if es := ws.ExitStatus(); es != 0 {
+			t.Errorf("subcontainer number %d exited with non-zero status %d", i, es)
+		}
+	}
+
+	// Give the reclaimer goroutine some time to reclaim.
+	time.Sleep(3 * time.Second)
+
+	// Compare memory usage.
+	newUsage, err := rootCont[0].Sandbox.Usage(true /* Full */)
+	if err != nil {
+		t.Fatalf("sandbox.Usage failed: %v", err)
+	}
+	// Note that all fields of control.MemoryUsage are exported and uint64.
+	oldUsageV := reflect.ValueOf(oldUsage)
+	newUsageV := reflect.ValueOf(newUsage)
+	numFields := oldUsageV.NumField()
+	for i := 0; i < numFields; i++ {
+		name := oldUsageV.Type().Field(i).Name
+		oldVal := oldUsageV.Field(i).Interface().(uint64)
+		newVal := newUsageV.Field(i).Interface().(uint64)
+		if newVal <= oldVal {
+			continue
+		}
+
+		if ((newVal-oldVal)*100)/oldVal > 5 {
+			t.Errorf("%s usage increased by more than 5%%: old=%d, new=%d", name, oldVal, newVal)
 		}
 	}
 }

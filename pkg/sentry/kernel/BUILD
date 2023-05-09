@@ -1,7 +1,76 @@
 load("//tools:defs.bzl", "go_library", "go_test", "proto_library")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
+load("//pkg/sync/locking:locking.bzl", "declare_mutex", "declare_rwmutex")
 
-package(licenses = ["notice"])
+package(
+    default_applicable_licenses = ["//:license"],
+    licenses = ["notice"],
+)
+
+declare_mutex(
+    name = "cpu_clock_mutex",
+    out = "cpu_clock_mutex.go",
+    package = "kernel",
+    prefix = "cpuClock",
+)
+
+declare_mutex(
+    name = "user_counters_mutex",
+    out = "user_counters_mutex.go",
+    package = "kernel",
+    prefix = "userCounters",
+)
+
+declare_rwmutex(
+    name = "taskset_mutex",
+    out = "taskset_mutex.go",
+    package = "kernel",
+    prefix = "taskSet",
+)
+
+declare_mutex(
+    name = "task_mutex",
+    out = "task_mutex.go",
+    nested_lock_names = ["child"],
+    package = "kernel",
+    prefix = "task",
+)
+
+declare_mutex(
+    name = "cgroup_mutex",
+    out = "cgroup_mutex.go",
+    package = "kernel",
+    prefix = "cgroup",
+)
+
+declare_mutex(
+    name = "fd_table_mutex",
+    out = "fd_table_mutex.go",
+    package = "kernel",
+    prefix = "fdTable",
+)
+
+declare_mutex(
+    name = "running_tasks_mutex",
+    out = "running_tasks_mutex.go",
+    package = "kernel",
+    prefix = "runningTasks",
+)
+
+declare_mutex(
+    name = "signal_handlers_mutex",
+    out = "signal_handlers_mutex.go",
+    nested_lock_names = ["tg"],
+    package = "kernel",
+    prefix = "signalHandlers",
+)
+
+declare_mutex(
+    name = "thread_group_timer_mutex",
+    out = "thread_group_timer_mutex.go",
+    package = "kernel",
+    prefix = "threadGroupTimer",
+)
 
 go_template_instance(
     name = "pending_signals_list",
@@ -32,7 +101,7 @@ go_template_instance(
     out = "seqatomic_taskgoroutineschedinfo_unsafe.go",
     package = "kernel",
     suffix = "TaskGoroutineSchedInfo",
-    template = "//pkg/sync:generic_seqatomic",
+    template = "//pkg/sync/seqatomic:generic_seqatomic",
     types = {
         "Value": "TaskGoroutineSchedInfo",
     },
@@ -63,23 +132,11 @@ go_template_instance(
 )
 
 go_template_instance(
-    name = "socket_list",
-    out = "socket_list.go",
-    package = "kernel",
-    prefix = "socket",
-    template = "//pkg/ilist:generic_list",
-    types = {
-        "Element": "*SocketRecordVFS1",
-        "Linker": "*SocketRecordVFS1",
-    },
-)
-
-go_template_instance(
     name = "fd_table_refs",
     out = "fd_table_refs.go",
     package = "kernel",
     prefix = "FDTable",
-    template = "//pkg/refsvfs2:refs_template",
+    template = "//pkg/refs:refs_template",
     types = {
         "T": "FDTable",
     },
@@ -90,7 +147,7 @@ go_template_instance(
     out = "fs_context_refs.go",
     package = "kernel",
     prefix = "FSContext",
-    template = "//pkg/refsvfs2:refs_template",
+    template = "//pkg/refs:refs_template",
     types = {
         "T": "FSContext",
     },
@@ -101,7 +158,7 @@ go_template_instance(
     out = "ipc_namespace_refs.go",
     package = "kernel",
     prefix = "IPCNamespace",
-    template = "//pkg/refsvfs2:refs_template",
+    template = "//pkg/refs:refs_template",
     types = {
         "T": "IPCNamespace",
     },
@@ -112,7 +169,7 @@ go_template_instance(
     out = "process_group_refs.go",
     package = "kernel",
     prefix = "ProcessGroup",
-    template = "//pkg/refsvfs2:refs_template",
+    template = "//pkg/refs:refs_template",
     types = {
         "T": "ProcessGroup",
     },
@@ -123,7 +180,7 @@ go_template_instance(
     out = "session_refs.go",
     package = "kernel",
     prefix = "Session",
-    template = "//pkg/refsvfs2:refs_template",
+    template = "//pkg/refs:refs_template",
     types = {
         "T": "Session",
     },
@@ -142,8 +199,11 @@ go_library(
         "abstract_socket_namespace.go",
         "aio.go",
         "cgroup.go",
+        "cgroup_mutex.go",
         "context.go",
+        "cpu_clock_mutex.go",
         "fd_table.go",
+        "fd_table_mutex.go",
         "fd_table_refs.go",
         "fd_table_unsafe.go",
         "fs_context.go",
@@ -165,6 +225,8 @@ go_library(
         "ptrace_amd64.go",
         "ptrace_arm64.go",
         "rseq.go",
+        "running_tasks_mutex.go",
+        "seccheck.go",
         "seccomp.go",
         "seqatomic_taskgoroutineschedinfo_unsafe.go",
         "session_list.go",
@@ -172,7 +234,7 @@ go_library(
         "sessions.go",
         "signal.go",
         "signal_handlers.go",
-        "socket_list.go",
+        "signal_handlers_mutex.go",
         "syscalls.go",
         "syscalls_state.go",
         "syslog.go",
@@ -189,6 +251,7 @@ go_library(
         "task_image.go",
         "task_list.go",
         "task_log.go",
+        "task_mutex.go",
         "task_net.go",
         "task_run.go",
         "task_sched.go",
@@ -198,11 +261,15 @@ go_library(
         "task_syscall.go",
         "task_usermem.go",
         "task_work.go",
+        "taskset_mutex.go",
         "thread_group.go",
+        "thread_group_timer_mutex.go",
         "threads.go",
+        "threads_impl.go",
         "timekeeper.go",
         "timekeeper_state.go",
         "tty.go",
+        "user_counters_mutex.go",
         "uts_namespace.go",
         "vdso.go",
         "version.go",
@@ -218,13 +285,17 @@ go_library(
         ":uncaught_signal_go_proto",
         "//pkg/abi",
         "//pkg/abi/linux",
-        "//pkg/amutex",
+        "//pkg/abi/linux/errno",
+        "//pkg/atomicbitops",
+        "//pkg/bitmap",
         "//pkg/bits",
         "//pkg/bpf",
         "//pkg/cleanup",
         "//pkg/context",
         "//pkg/coverage",
         "//pkg/cpuid",
+        "//pkg/errors",
+        "//pkg/errors/linuxerr",
         "//pkg/eventchannel",
         "//pkg/fspath",
         "//pkg/goid",
@@ -234,16 +305,13 @@ go_library(
         "//pkg/marshal/primitive",
         "//pkg/metric",
         "//pkg/refs",
-        "//pkg/refsvfs2",
         "//pkg/safemem",
         "//pkg/secio",
         "//pkg/sentry/arch",
         "//pkg/sentry/device",
-        "//pkg/sentry/fs",
-        "//pkg/sentry/fs/lock",
-        "//pkg/sentry/fs/timerfd",
-        "//pkg/sentry/fsbridge",
         "//pkg/sentry/fsimpl/kernfs",
+        "//pkg/sentry/fsimpl/lock",
+        "//pkg/sentry/fsimpl/mqfs",
         "//pkg/sentry/fsimpl/pipefs",
         "//pkg/sentry/fsimpl/sockfs",
         "//pkg/sentry/fsimpl/timerfd",
@@ -251,8 +319,10 @@ go_library(
         "//pkg/sentry/hostcpu",
         "//pkg/sentry/inet",
         "//pkg/sentry/kernel/auth",
-        "//pkg/sentry/kernel/epoll",
         "//pkg/sentry/kernel/futex",
+        "//pkg/sentry/kernel/ipc",
+        "//pkg/sentry/kernel/mq",
+        "//pkg/sentry/kernel/msgqueue",
         "//pkg/sentry/kernel/sched",
         "//pkg/sentry/kernel/semaphore",
         "//pkg/sentry/kernel/shm",
@@ -263,6 +333,8 @@ go_library(
         "//pkg/sentry/mm",
         "//pkg/sentry/pgalloc",
         "//pkg/sentry/platform",
+        "//pkg/sentry/seccheck",
+        "//pkg/sentry/seccheck/points:points_go_proto",
         "//pkg/sentry/socket/netlink/port",
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sentry/time",
@@ -275,12 +347,13 @@ go_library(
         "//pkg/state/statefile",
         "//pkg/state/wire",
         "//pkg/sync",
+        "//pkg/sync/locking",
         "//pkg/syserr",
-        "//pkg/syserror",
         "//pkg/tcpip",
         "//pkg/tcpip/stack",
         "//pkg/usermem",
         "//pkg/waiter",
+        "@org_golang_google_protobuf//proto:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
@@ -298,17 +371,16 @@ go_test(
     deps = [
         "//pkg/abi",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/hostarch",
         "//pkg/sentry/arch",
         "//pkg/sentry/contexttest",
-        "//pkg/sentry/fs",
-        "//pkg/sentry/fs/filetest",
         "//pkg/sentry/kernel/sched",
         "//pkg/sentry/limits",
         "//pkg/sentry/pgalloc",
         "//pkg/sentry/time",
         "//pkg/sentry/usage",
+        "//pkg/sentry/vfs",
         "//pkg/sync",
-        "//pkg/syserror",
     ],
 )
