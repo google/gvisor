@@ -504,6 +504,15 @@ func (q *streamQueueReceiver) RecvMaxQueueSize() int64 {
 
 // Recv implements Receiver.Recv.
 func (q *streamQueueReceiver) Recv(ctx context.Context, data [][]byte, wantCreds bool, numRights int, peek bool) (int64, int64, ControlMessages, bool, Address, bool, *syserr.Error) {
+	// RightsControlMessages must be released without q.mu held. We do this in a
+	// defer to simplify control flow logic.
+	var rightsToRelease []RightsControlMessage
+	defer func() {
+		for _, rcm := range rightsToRelease {
+			rcm.Release(ctx)
+		}
+	}()
+
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
@@ -549,7 +558,7 @@ func (q *streamQueueReceiver) Recv(ctx context.Context, data [][]byte, wantCreds
 
 	var cmTruncated bool
 	if c.Rights != nil && numRights == 0 {
-		c.Rights.Release(ctx)
+		rightsToRelease = append(rightsToRelease, c.Rights)
 		c.Rights = nil
 		cmTruncated = true
 	}
@@ -604,7 +613,7 @@ func (q *streamQueueReceiver) Recv(ctx context.Context, data [][]byte, wantCreds
 			// Consume rights.
 			if numRights == 0 {
 				cmTruncated = true
-				q.control.Rights.Release(ctx)
+				rightsToRelease = append(rightsToRelease, q.control.Rights)
 			} else {
 				c.Rights = q.control.Rights
 				haveRights = true
