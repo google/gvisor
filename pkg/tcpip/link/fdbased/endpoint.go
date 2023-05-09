@@ -543,7 +543,7 @@ func (e *endpoint) writePacket(pkt stack.PacketBufferPtr) tcpip.Error {
 				vnetHdr.csumStart = header.EthernetMinimumSize + pkt.GSOOptions.L3HdrLen
 				vnetHdr.csumOffset = pkt.GSOOptions.CsumOffset
 			}
-			if pkt.GSOOptions.Type != stack.GSONone && uint16(pkt.Data().Size()) > pkt.GSOOptions.MSS {
+			if uint16(pkt.Data().Size()) > pkt.GSOOptions.MSS {
 				switch pkt.GSOOptions.Type {
 				case stack.GSOTCPv4:
 					vnetHdr.gsoType = _VIRTIO_NET_HDR_GSO_TCPV4
