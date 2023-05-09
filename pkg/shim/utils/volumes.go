@@ -28,8 +28,15 @@ const (
 	// devshmName is the volume name used for /dev/shm. Pick a name that is
 	// unlikely to be used.
 	devshmName = "gvisorinternaldevshm"
+
+	// emptyDirVolumesDir is the directory inside kubeletPodsDir/{uid}/volumes/
+	// that hosts all the EmptyDir volumes used by the pod.
+	emptyDirVolumesDir = "kubernetes.io~empty-dir"
 )
 
+// The directory structure for volumes is as follows:
+// /var/lib/kubelet/pods/{uid}/volumes/{type} where `uid` is the pod UID and
+// `type` is the volume type.
 var kubeletPodsDir = "/var/lib/kubelet/pods"
 
 // volumeName gets volume name from volume annotation key, example:
@@ -71,6 +78,11 @@ func isVolumeKey(k string) bool {
 // volumeSourceKey constructs the annotation key for volume source.
 func volumeSourceKey(volume string) string {
 	return volumeKeyPrefix + volume + ".source"
+}
+
+// volumeLifecycleKey constructs the annotation key for volume lifecycle.
+func volumeLifecycleKey(volume string) string {
+	return volumeKeyPrefix + volume + ".lifecycle"
 }
 
 // volumePath searches the volume path in the kubelet pod directory.
@@ -117,12 +129,22 @@ func UpdateVolumeAnnotations(s *specs.Spec) (bool, error) {
 		}
 		volume := volumeName(k)
 		if uid != "" {
-			// This is a sandbox.
+			// This is a sandbox. Add source and lifecycle annotations for volumes.
 			path, err := volumePath(volume, uid)
 			if err != nil {
 				return false, fmt.Errorf("get volume path for %q: %w", volume, err)
 			}
 			s.Annotations[volumeSourceKey(volume)] = path
+			// TODO(b/142076984): Remove the lifecycle setting logic after it has
+			// been adopted in GKE admission plugin.
+			lifecycleKey := volumeLifecycleKey(volume)
+			if _, ok := s.Annotations[lifecycleKey]; !ok {
+				// Only set lifecycle annotation if not already set.
+				if strings.Contains(path, emptyDirVolumesDir) {
+					// Emptydir is created and destroyed with the pod.
+					s.Annotations[lifecycleKey] = "pod"
+				}
+			}
 			updated = true
 		} else {
 			// This is a container.
@@ -188,6 +210,7 @@ func configureShm(s *specs.Spec) (bool, error) {
 				s.Annotations[volumeKeyPrefix+devshmName+".source"] = m.Source
 				s.Annotations[volumeKeyPrefix+devshmName+".type"] = devshmType
 				s.Annotations[volumeKeyPrefix+devshmName+".share"] = "pod"
+				s.Annotations[volumeKeyPrefix+devshmName+".lifecycle"] = "pod"
 				// Given that we don't have visibility into mount options for all
 				// containers, assume broad access for the master mount (it's tmpfs
 				// inside the sandbox anyways) and apply options to subcontainers as

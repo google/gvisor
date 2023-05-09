@@ -29,35 +29,24 @@ import (
 // MountPrefix is the annotation prefix for mount hints.
 const MountPrefix = "dev.gvisor.spec.mount."
 
+// shareType indicates who can access/mutate the volume contents.
 type shareType int
 
 const (
 	invalid shareType = iota
 
-	// container shareType indicates that the mount is used by a single container.
+	// container shareType indicates that the mount is used by a single
+	// container. There are no external observers.
 	container
 
 	// pod shareType indicates that the mount is used by more than one container
-	// inside the pod.
+	// inside the pod. There are no external observers.
 	pod
 
 	// shared shareType indicates that the mount can also be shared with a process
 	// outside the pod, e.g. NFS.
 	shared
 )
-
-func parseShare(val string) (shareType, error) {
-	switch val {
-	case "container":
-		return container, nil
-	case "pod":
-		return pod, nil
-	case "shared":
-		return shared, nil
-	default:
-		return 0, fmt.Errorf("invalid share value %q", val)
-	}
-}
 
 func (s shareType) String() string {
 	switch s {
@@ -71,6 +60,37 @@ func (s shareType) String() string {
 		return "shared"
 	default:
 		return fmt.Sprintf("invalid share value %d", s)
+	}
+}
+
+// lifecycleType indicates whether creation/deletion of the volume is tied to
+// the pod or container's lifecycle.
+type lifecycleType int
+
+const (
+	// sharedLife indicates that the volume's lifecycle is not tied to the pod.
+	// The volume persists beyond the pod's life. This is the safe default.
+	sharedLife lifecycleType = iota
+
+	// podLife indicates that the volume's lifecycle is tied to the pod's
+	// lifecycle. The volume is destroyed with the pod.
+	podLife
+
+	// containerLife indicates that the volume's lifecycle is tied to the
+	// container's lifecycle. The volume is destroyed with the container.
+	containerLife
+)
+
+func (o lifecycleType) String() string {
+	switch o {
+	case sharedLife:
+		return "shared"
+	case podLife:
+		return "pod"
+	case containerLife:
+		return "container"
+	default:
+		return fmt.Sprintf("invalid lifecycle value %d", o)
 	}
 }
 
@@ -129,9 +149,10 @@ func NewPodMountHints(spec *specs.Spec) (*PodMountHints, error) {
 // annotations. They can override mount type, and provide sharing information
 // so that mounts can be correctly shared inside the pod.
 type MountHint struct {
-	name  string
-	share shareType
-	mount specs.Mount
+	name      string
+	share     shareType
+	mount     specs.Mount
+	lifecycle lifecycleType
 
 	// vfsMount is the master mount for the volume. For mounts with 'pod' share
 	// the master volume is bind mounted inside the containers.
@@ -148,13 +169,11 @@ func (m *MountHint) setField(key, val string) error {
 	case "type":
 		return m.setType(val)
 	case "share":
-		share, err := parseShare(val)
-		if err != nil {
-			return err
-		}
-		m.share = share
+		return m.setShare(val)
 	case "options":
 		m.mount.Options = specutils.FilterMountOptions(strings.Split(val, ","))
+	case "lifecycle":
+		return m.setLifecycle(val)
 	default:
 		return fmt.Errorf("invalid mount annotation: %s=%s", key, val)
 	}
@@ -171,11 +190,47 @@ func (m *MountHint) setType(val string) error {
 	return nil
 }
 
-// isShared returns true if this mount should be configured as a shared mount.
-func (m *MountHint) isShared() bool {
+func (m *MountHint) setShare(val string) error {
+	switch val {
+	case container.String():
+		m.share = container
+	case pod.String():
+		m.share = pod
+	case shared.String():
+		m.share = shared
+	default:
+		return fmt.Errorf("invalid share value %q", val)
+	}
+	return nil
+}
+
+func (m *MountHint) setLifecycle(val string) error {
+	switch val {
+	case containerLife.String():
+		m.lifecycle = containerLife
+	case podLife.String():
+		m.lifecycle = podLife
+	case sharedLife.String():
+		m.lifecycle = sharedLife
+	default:
+		return fmt.Errorf("invalid lifecycle %q", val)
+	}
+	return nil
+}
+
+// shouldShareMount returns true if this mount should be configured as a shared
+// mount that is shared among multiple containers in a pod.
+func (m *MountHint) shouldShareMount() bool {
 	// TODO(b/142076984): Only support tmpfs for now. Bind mounts require a
 	// common gofer to mount all shared volumes.
 	return m.mount.Type == tmpfs.Name && m.share == pod
+}
+
+// ShouldOverlay returns true if this mount should be overlaid.
+func (m *MountHint) ShouldOverlay() bool {
+	// TODO(b/142076984): Only support share=container for now. Once shared gofer
+	// support is added, we can overlay shared bind mounts too.
+	return m.mount.Type == Bind && m.share == container && m.lifecycle != sharedLife
 }
 
 // checkCompatible verifies that shared mount is compatible with master.
@@ -197,7 +252,14 @@ func (m *MountHint) checkCompatible(replica *specs.Mount) error {
 	return nil
 }
 
+// Precondition: m.mount.Type == Bind.
 func (m *MountHint) fileAccessType() config.FileAccessType {
+	if m.share == shared {
+		return config.FileAccessShared
+	}
+	if m.shouldShareMount() {
+		return config.FileAccessExclusive
+	}
 	if m.share == container {
 		return config.FileAccessExclusive
 	}
