@@ -623,7 +623,7 @@ func (c *containerMounter) mountSubmounts(ctx context.Context, conf *config.Conf
 			err error
 		)
 
-		if submount.hint != nil && submount.hint.isShared() {
+		if submount.hint != nil && submount.hint.shouldShareMount() {
 			mnt, err = c.mountSharedSubmount(ctx, conf, mns, creds, submount.mount, submount.hint)
 			if err != nil {
 				return fmt.Errorf("mount shared mount %q to %q: %v", submount.hint.name, submount.mount.Destination, err)
@@ -922,7 +922,7 @@ func (c *containerMounter) mountTmp(ctx context.Context, conf *config.Config, cr
 func (c *containerMounter) processHints(conf *config.Config, creds *auth.Credentials) error {
 	ctx := c.k.SupervisorContext()
 	for _, hint := range c.hints.mounts {
-		if !hint.isShared() {
+		if !hint.shouldShareMount() {
 			continue
 		}
 

@@ -285,7 +285,11 @@ func New(conf *config.Config, args Args) (*Container, error) {
 			}
 		}
 		c.CompatCgroup = cgroup.CgroupJSON{Cgroup: subCgroup}
-		overlayFilestoreFiles, overlayMediums, err := c.createOverlayFilestores()
+		mountHints, err := boot.NewPodMountHints(args.Spec)
+		if err != nil {
+			return nil, fmt.Errorf("error creating pod mount hints: %w", err)
+		}
+		overlayFilestoreFiles, overlayMediums, err := c.createOverlayFilestores(mountHints)
 		if err != nil {
 			return nil, err
 		}
@@ -310,6 +314,7 @@ func New(conf *config.Config, args Args) (*Container, error) {
 				Attached:              args.Attached,
 				OverlayFilestoreFiles: overlayFilestoreFiles,
 				OverlayMediums:        overlayMediums,
+				MountHints:            mountHints,
 				PassFiles:             args.PassFiles,
 				ExecFile:              args.ExecFile,
 			}
@@ -426,7 +431,7 @@ func (c *Container) Start(conf *config.Config) error {
 			return err
 		}
 	} else {
-		overlayFilestoreFiles, overlayMediums, err := c.createOverlayFilestores()
+		overlayFilestoreFiles, overlayMediums, err := c.createOverlayFilestores(c.Sandbox.MountHints)
 		if err != nil {
 			return err
 		}
@@ -861,13 +866,13 @@ func (c *Container) forEachSelfOverlay(fn func(mountSrc string)) {
 // createOverlayFilestores creates the regular files that will back the tmpfs
 // upper mount for overlay mounts. It also returns information about the
 // overlay medium used for each bind mount.
-func (c *Container) createOverlayFilestores() ([]*os.File, []boot.OverlayMedium, error) {
+func (c *Container) createOverlayFilestores(mountHints *boot.PodMountHints) ([]*os.File, []boot.OverlayMedium, error) {
 	var filestoreFiles []*os.File
 	var overlayMediums []boot.OverlayMedium
 
 	// Handle root mount first.
 	shouldOverlay := c.OverlayConf.RootMount && !c.Spec.Root.Readonly
-	filestore, medium, err := c.createOverlayFilestore(c.Spec.Root.Path, shouldOverlay)
+	filestore, medium, err := c.createOverlayFilestore(c.Spec.Root.Path, shouldOverlay, nil /* hint */)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -881,8 +886,9 @@ func (c *Container) createOverlayFilestores() ([]*os.File, []boot.OverlayMedium,
 		if !specutils.IsGoferMount(c.Spec.Mounts[i]) {
 			continue
 		}
+		hint := mountHints.FindMount(&c.Spec.Mounts[i])
 		shouldOverlay := c.OverlayConf.SubMounts && !specutils.IsReadonlyMount(c.Spec.Mounts[i].Options)
-		filestore, medium, err := c.createOverlayFilestore(c.Spec.Mounts[i].Source, shouldOverlay)
+		filestore, medium, err := c.createOverlayFilestore(c.Spec.Mounts[i].Source, shouldOverlay, hint)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -899,7 +905,11 @@ func (c *Container) createOverlayFilestores() ([]*os.File, []boot.OverlayMedium,
 	return filestoreFiles, overlayMediums, nil
 }
 
-func (c *Container) createOverlayFilestore(mountSrc string, shouldOverlay bool) (*os.File, boot.OverlayMedium, error) {
+func (c *Container) createOverlayFilestore(mountSrc string, shouldOverlay bool, hint *boot.MountHint) (*os.File, boot.OverlayMedium, error) {
+	if hint != nil && hint.ShouldOverlay() {
+		// MountHint information takes precedence over shouldOverlay.
+		return c.createOverlayFilestoreInSelf(mountSrc)
+	}
 	switch {
 	case !shouldOverlay:
 		return nil, boot.NoOverlay, nil

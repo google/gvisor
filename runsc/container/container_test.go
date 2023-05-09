@@ -42,6 +42,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/test/testutil"
+	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/cgroup"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -3030,5 +3031,96 @@ func TestExecFDExec(t *testing.T) {
 	}
 	if want := "hello world\n"; string(got) != want {
 		t.Errorf("echo result, got: %q, want: %q", got, want)
+	}
+}
+
+// This test checks that a bind mount which is annotated to be fully owned by
+// the sandbox is overlaid using "self" overlay medium.
+func TestOverlayByMountAnnotation(t *testing.T) {
+	conf := testutil.TestConfig(t)
+	// Disable overlay settings.
+	conf.Overlay2.Set("none")
+
+	// We just sleep here because we want to test execution in an already
+	// running container.
+	spec := testutil.NewSpecWithArgs("bash", "-c", "sleep infinity")
+
+	// Set up a bind mount at "/submount".
+	subMount, err := ioutil.TempDir(testutil.TmpDir(), "submount")
+	if err != nil {
+		t.Fatalf("ioutil.TempDir failed: %v", err)
+	}
+	defer os.RemoveAll(subMount)
+	spec.Mounts = append(spec.Mounts, specs.Mount{
+		Destination: subMount,
+		Source:      subMount,
+		Type:        "bind",
+	})
+
+	// Add mount annotation to self-overlay the submount.
+	volumeName := "mount1"
+	if spec.Annotations == nil {
+		spec.Annotations = make(map[string]string)
+	}
+	spec.Annotations[boot.MountPrefix+volumeName+".source"] = subMount
+	spec.Annotations[boot.MountPrefix+volumeName+".type"] = "bind"
+	spec.Annotations[boot.MountPrefix+volumeName+".share"] = "container"
+	spec.Annotations[boot.MountPrefix+volumeName+".lifecycle"] = "pod"
+
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("Creating container: %v", err)
+	}
+	destroyed := false
+	destroy := func() {
+		if destroyed {
+			return
+		}
+		destroyed = true
+		cont.Destroy()
+	}
+	defer destroy()
+
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("starting container: %v", err)
+	}
+
+	// Create a file in submount with a few bytes.
+	testFilePath := path.Join(subMount, "testfile")
+	if ws, err := execute(conf, cont, "/bin/sh", "-c", "echo hello > "+testFilePath); err != nil || ws != 0 {
+		t.Fatalf("exec command failed to write a file in submount, ws: %v, err: %v", ws, err)
+	}
+
+	// Check that the filestore file is created and is not empty.
+	filestoreFile := boot.SelfOverlayFilestorePath(subMount, cont.Sandbox.ID)
+	var stat unix.Stat_t
+	if err := unix.Stat(filestoreFile, &stat); err != nil {
+		t.Fatalf("unix.Stat(%q) failed for submount filestore: %v", filestoreFile, err)
+	}
+	if stat.Blocks == 0 {
+		t.Errorf("submount filestore file %q is empty", filestoreFile)
+	}
+
+	// Check that the file is not created on the host.
+	if err := unix.Stat(path.Join(subMount, testFilePath), &stat); err == nil {
+		t.Errorf("%q file created on the host in spite of overlay", testFilePath)
+	}
+
+	// Destroying the container should delete the filestore file.
+	destroy()
+	if err := unix.Stat(filestoreFile, &stat); err == nil {
+		t.Fatalf("overlay filestore at %q was not deleted after container.Destroy()", filestoreFile)
 	}
 }
