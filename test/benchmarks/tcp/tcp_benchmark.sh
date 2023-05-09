@@ -414,7 +414,7 @@ trap cleanup EXIT
 while ${nsjoin_binary} /tmp/client.netns iperf \\
     ${iperf_version_arg} -p ${proxy_port} -c ${client_addr} -t ${duration} -f m -P ${num_client_threads} 2>&1 \\
     | tee \$results_file \\
-    | grep "connect failed" >/dev/null; do
+    | grep -E "connect failed|unable to connect" >/dev/null; do
   sleep 0.1 # Wait for all services.
 done
 
