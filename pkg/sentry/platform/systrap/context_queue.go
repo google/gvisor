@@ -40,8 +40,13 @@ type contextQueue struct {
 	start uint32
 	// end is an index used for putting new contexts into the ringbuffer.
 	end uint32
+
 	// numActiveThreads indicates to the sentry how many stubs are running.
+	// It is changed only by stub threads.
 	numActiveThreads uint32
+	// numThreadsToWakeup is the number of threads requested by Sentry to wake up.
+	// The Sentry increments it and stub threads decrements.
+	numThreadsToWakeup uint32
 	// numActiveContext is a number of running and waiting contexts
 	numActiveContexts uint32
 	// numAwakeContexts is the number of awake contexts. It includes all
@@ -73,6 +78,7 @@ func (q *contextQueue) init() {
 	atomic.StoreUint64(&q.fastPathDisabledTS, 0)
 	atomic.StoreUint32(&q.fastPathFailedInRow, 0)
 	atomic.StoreUint32(&q.numActiveThreads, 0)
+	atomic.StoreUint32(&q.numThreadsToWakeup, 0)
 	atomic.StoreUint32(&q.numActiveContexts, 0)
 	atomic.StoreUint32(&q.numAwakeContexts, 0)
 	atomic.StoreUint32(&q.fastPathDisabled, 0)
