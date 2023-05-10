@@ -249,7 +249,7 @@ func (gb *groBucket) found(gd *groDispatcher, groPkt *groPacket, flushGROPkt boo
 		// Add flags from the packet to the GRO packet.
 		groPkt.tcpHdr.SetFlags(uint8(groPkt.tcpHdr.Flags() | (flags & (header.TCPFlagFin | header.TCPFlagPsh))))
 
-		pkt = PacketBufferPtr{}
+		pkt = nil
 	}
 
 	// Flush if the packet isn't the same size as the previous packets or

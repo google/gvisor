@@ -158,25 +158,25 @@ func (f *Fragmentation) Process(
 	id FragmentID, first, last uint16, more bool, proto uint8, pkt stack.PacketBufferPtr) (
 	stack.PacketBufferPtr, uint8, bool, error) {
 	if first > last {
-		return stack.PacketBufferPtr{}, 0, false, fmt.Errorf("first=%d is greater than last=%d: %w", first, last, ErrInvalidArgs)
+		return nil, 0, false, fmt.Errorf("first=%d is greater than last=%d: %w", first, last, ErrInvalidArgs)
 	}
 
 	if first%f.blockSize != 0 {
-		return stack.PacketBufferPtr{}, 0, false, fmt.Errorf("first=%d is not a multiple of block size=%d: %w", first, f.blockSize, ErrInvalidArgs)
+		return nil, 0, false, fmt.Errorf("first=%d is not a multiple of block size=%d: %w", first, f.blockSize, ErrInvalidArgs)
 	}
 
 	fragmentSize := last - first + 1
 	if more && fragmentSize%f.blockSize != 0 {
-		return stack.PacketBufferPtr{}, 0, false, fmt.Errorf("fragment size=%d bytes is not a multiple of block size=%d on non-final fragment: %w", fragmentSize, f.blockSize, ErrInvalidArgs)
+		return nil, 0, false, fmt.Errorf("fragment size=%d bytes is not a multiple of block size=%d on non-final fragment: %w", fragmentSize, f.blockSize, ErrInvalidArgs)
 	}
 
 	if l := pkt.Data().Size(); l != int(fragmentSize) {
-		return stack.PacketBufferPtr{}, 0, false, fmt.Errorf("got fragment size=%d bytes not equal to the expected fragment size=%d bytes (first=%d last=%d): %w", l, fragmentSize, first, last, ErrInvalidArgs)
+		return nil, 0, false, fmt.Errorf("got fragment size=%d bytes not equal to the expected fragment size=%d bytes (first=%d last=%d): %w", l, fragmentSize, first, last, ErrInvalidArgs)
 	}
 
 	f.mu.Lock()
 	if f.reassemblers == nil {
-		return stack.PacketBufferPtr{}, 0, false, fmt.Errorf("Release() called before fragmentation processing could finish")
+		return nil, 0, false, fmt.Errorf("Release() called before fragmentation processing could finish")
 	}
 
 	r, ok := f.reassemblers[id]
@@ -201,7 +201,7 @@ func (f *Fragmentation) Process(
 		f.mu.Lock()
 		f.release(r, false /* timedOut */)
 		f.mu.Unlock()
-		return stack.PacketBufferPtr{}, 0, false, fmt.Errorf("fragmentation processing error: %w", err)
+		return nil, 0, false, fmt.Errorf("fragmentation processing error: %w", err)
 	}
 	f.mu.Lock()
 	f.memSize += memConsumed
@@ -253,12 +253,12 @@ func (f *Fragmentation) release(r *reassembler, timedOut bool) {
 	}
 	if !r.pkt.IsNil() {
 		r.pkt.DecRef()
-		r.pkt = stack.PacketBufferPtr{}
+		r.pkt = nil
 	}
 	for _, h := range r.holes {
 		if !h.pkt.IsNil() {
 			h.pkt.DecRef()
-			h.pkt = stack.PacketBufferPtr{}
+			h.pkt = nil
 		}
 	}
 	r.holes = nil

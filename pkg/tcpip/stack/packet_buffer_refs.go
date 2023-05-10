@@ -15,7 +15,7 @@ const packetBufferenableLogging = false
 
 // obj is used to customize logging. Note that we use a pointer to T so that
 // we do not copy the entire object when passed as a format parameter.
-var packetBufferobj *packetBuffer
+var packetBufferobj *PacketBuffer
 
 // Refs implements refs.RefCounter. It keeps a reference count using atomic
 // operations and calls the destructor when the count reaches zero.
