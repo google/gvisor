@@ -179,7 +179,7 @@ go_template_instance(
     prefix = "packetBuffer",
     template = "//pkg/refs:refs_template",
     types = {
-        "T": "packetBuffer",
+        "T": "PacketBuffer",
     },
 )
 

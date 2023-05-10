@@ -63,7 +63,7 @@ func (q *queue) Read() stack.PacketBufferPtr {
 	case p := <-q.c:
 		return p
 	default:
-		return stack.PacketBufferPtr{}
+		return nil
 	}
 }
 
@@ -72,7 +72,7 @@ func (q *queue) ReadContext(ctx context.Context) stack.PacketBufferPtr {
 	case pkt := <-q.c:
 		return pkt
 	case <-ctx.Done():
-		return stack.PacketBufferPtr{}
+		return nil
 	}
 }
 
