@@ -22,6 +22,7 @@
 #include <stdint.h>
 #include <stdlib.h>
 
+#include "atomic.h"
 #include "sysmsg.h"
 
 // __export_deep_sleep_timeout is the timeout after which the stub thread stops
@@ -57,14 +58,12 @@ struct context_queue *__export_context_queue_addr;
 // LINT.ThenChange(../context_queue.go)
 
 uint32_t is_empty(struct context_queue *queue) {
-  return __atomic_load_n(&queue->start, __ATOMIC_ACQUIRE) ==
-         __atomic_load_n(&queue->end, __ATOMIC_ACQUIRE);
+  return atomic_load(&queue->start) == atomic_load(&queue->end);
 }
 
 int32_t queued_contexts(struct context_queue *queue) {
-  return (__atomic_load_n(&queue->end, __ATOMIC_ACQUIRE) +
-          MAX_CONTEXT_QUEUE_ENTRIES -
-          __atomic_load_n(&queue->start, __ATOMIC_ACQUIRE)) %
+  return (atomic_load(&queue->end) + MAX_CONTEXT_QUEUE_ENTRIES -
+          atomic_load(&queue->start)) %
          MAX_CONTEXT_QUEUE_ENTRIES;
 }
 
@@ -130,16 +129,15 @@ static bool spinning_queue_push(void) {
 
   BUILD_BUG_ON(sizeof(struct spinning_queue) > SPINNING_QUEUE_MEM_SIZE);
 
-  end = __atomic_add_fetch(&queue->end, 1, __ATOMIC_SEQ_CST);
-  start = __atomic_load_n(&queue->start, __ATOMIC_SEQ_CST);
+  end = atomic_add(&queue->end, 1);
+  start = atomic_load(&queue->start);
   if (end - start > MAX_SPINNING_THREADS) {
-    __atomic_sub_fetch(&queue->end, 1, __ATOMIC_SEQ_CST);
+    atomic_sub(&queue->end, 1);
     return false;
   }
 
   idx = end - 1;
-  __atomic_store_n(&queue->start_times[idx % SPINNING_QUEUE_SIZE], rdtsc(),
-                   __ATOMIC_SEQ_CST);
+  atomic_store(&queue->start_times[idx % SPINNING_QUEUE_SIZE], rdtsc());
   return true;
 }
 
@@ -148,7 +146,7 @@ static bool spinning_queue_push(void) {
 static void spinning_queue_pop() {
   struct spinning_queue *queue = __export_spinning_queue_addr;
 
-  __atomic_add_fetch(&queue->end, -1, __ATOMIC_SEQ_CST);
+  atomic_sub(&queue->end, 1);
 }
 
 // spinning_queue_remove_first removes one thread from a queue that has been
@@ -162,18 +160,15 @@ static bool spinning_queue_remove_first(uint64_t timeout) {
   uint64_t ts;
   uint32_t idx;
 
-  idx = __atomic_load_n(&queue->start, __ATOMIC_SEQ_CST);
-  ts = __atomic_load_n(&queue->start_times[idx % SPINNING_QUEUE_SIZE],
-                       __ATOMIC_SEQ_CST);
+  idx = atomic_load(&queue->start);
+  ts = atomic_load(&queue->start_times[idx % SPINNING_QUEUE_SIZE]);
   if (ts == 0 || rdtsc() - ts < timeout) return false;
 
   // The current thread is still in a queue and the length of the queue is twice
   // of the maximum number of threads, so we can zero the element and be sure
   // that nobody is trying to set it in a  non-zero value.
-  __atomic_store_n(&queue->start_times[idx % SPINNING_QUEUE_SIZE], 0,
-                   __ATOMIC_SEQ_CST);
-  if (!__atomic_compare_exchange_n(&queue->start, &idx, idx + 1, false,
-                                   __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) {
+  atomic_store(&queue->start_times[idx % SPINNING_QUEUE_SIZE], 0);
+  if (!atomic_compare_exchange(&queue->start, &idx, idx + 1)) {
     return false;
   }
 
@@ -188,29 +183,29 @@ struct thread_context *queue_get_context(struct sysmsg *sysmsg) {
                MAX_CONTEXT_QUEUE_ENTRIES - 1);
 
   while (!is_empty(queue)) {
-    uint64_t idx = __atomic_load_n(&queue->start, __ATOMIC_ACQUIRE);
+    uint64_t idx = atomic_load(&queue->start);
     uint32_t next = idx % MAX_CONTEXT_QUEUE_ENTRIES;
-    uint64_t v = __atomic_load_n(&queue->ringbuffer[next], __ATOMIC_ACQUIRE);
+    uint64_t v = atomic_load(&queue->ringbuffer[next]);
 
     // We need to check the index to be sure that a ring buffer hasn't been
     // recycled.
     if ((v >> CQ_INDEX_SHIFT) != idx) continue;
-    if (!__atomic_compare_exchange_n(&queue->ringbuffer[next], &v,
-                                     INVALID_CONTEXT_ID, false,
-                                     __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE))
+    if (!atomic_compare_exchange(&queue->ringbuffer[next], &v,
+                                 INVALID_CONTEXT_ID)) {
       continue;
+    }
 
     uint32_t context_id = v & CQ_CONTEXT_MASK;
     if (context_id == INVALID_CONTEXT_ID) continue;
 
-    __atomic_add_fetch(&queue->start, 1, __ATOMIC_ACQ_REL);
+    atomic_add(&queue->start, 1);
     if (context_id > MAX_GUEST_CONTEXTS) {
       panic(context_id);
     }
     struct thread_context *ctx = thread_context_addr(context_id);
     sysmsg->context = ctx;
-    __atomic_store_n(&ctx->acked, 1, __ATOMIC_RELEASE);
-    __atomic_store_n(&ctx->thread_id, sysmsg->thread_id, __ATOMIC_RELEASE);
+    atomic_store(&ctx->acked, 1);
+    atomic_store(&ctx->thread_id, sysmsg->thread_id);
     return ctx;
   }
   return NULL;
@@ -232,26 +227,22 @@ static struct thread_context *get_context_fast(struct sysmsg *sysmsg,
 
     ctx = queue_get_context(sysmsg);
     if (ctx) {
-      __atomic_store_n(&queue->fast_path_failed_in_row, 0, __ATOMIC_RELEASE);
+      atomic_store(&queue->fast_path_failed_in_row, 0);
       spinning_queue_pop();
       return ctx;
     }
 
-    if (__atomic_load_n(&queue->fast_path_disabled, __ATOMIC_ACQUIRE) != 0 &&
+    if (atomic_load(&queue->fast_path_disabled) != 0 &&
         spinning_queue_remove_first(0)) {
       break;
     }
 
-    nr_active_threads =
-        __atomic_load_n(&queue->num_active_threads, __ATOMIC_ACQUIRE);
-    nr_awake_contexts =
-        __atomic_load_n(&queue->num_awake_contexts, __ATOMIC_ACQUIRE);
+    nr_active_threads = atomic_load(&queue->num_active_threads);
+    nr_awake_contexts = atomic_load(&queue->num_awake_contexts);
 
     if (nr_awake_contexts < nr_active_threads) {
-      if (__atomic_compare_exchange_n(&queue->num_active_threads,
-                                      &nr_active_threads, nr_active_threads - 1,
-                                      false, __ATOMIC_SEQ_CST,
-                                      __ATOMIC_SEQ_CST)) {
+      if (atomic_compare_exchange(&queue->num_active_threads,
+                                  &nr_active_threads, nr_active_threads - 1)) {
         nr_active_threads -= 1;
         if (spinning_queue_remove_first(0)) {
           *nr_active_threads_p = nr_active_threads;
@@ -260,16 +251,14 @@ static struct thread_context *get_context_fast(struct sysmsg *sysmsg,
 
         // spinning_queue_remove_first can fail due to a race with another
         // thread.
-        __atomic_add_fetch(&queue->num_active_threads, 1, __ATOMIC_ACQ_REL);
+        atomic_add(&queue->num_active_threads, 1);
       }
     }
 
     if (spinning_queue_remove_first(__export_deep_sleep_timeout)) {
-      uint32_t nr = __atomic_add_fetch(&queue->fast_path_failed_in_row, 1,
-                                       __ATOMIC_ACQ_REL);
+      uint32_t nr = atomic_add(&queue->fast_path_failed_in_row, 1);
       if (nr >= FAILED_FAST_PATH_LIMIT) {
-        __atomic_store_n(&queue->fast_path_disalbed_ts, rdtsc(),
-                         __ATOMIC_RELEASE);
+        atomic_store(&queue->fast_path_disalbed_ts, rdtsc());
       }
       break;
     }
@@ -290,26 +279,25 @@ struct thread_context *get_context(struct sysmsg *sysmsg) {
     struct thread_context *ctx;
 
     // Change sysmsg thread state just to indicate thread is not asleep.
-    __atomic_store_n(&sysmsg->state, THREAD_STATE_PREP, __ATOMIC_RELEASE);
+    atomic_store(&sysmsg->state, THREAD_STATE_PREP);
     ctx = queue_get_context(sysmsg);
     if (ctx) {
-      __atomic_store_n(&queue->fast_path_failed_in_row, 0, __ATOMIC_RELEASE);
+      atomic_store(&queue->fast_path_failed_in_row, 0);
       return ctx;
     }
 
-    uint64_t slow_path_ts =
-        __atomic_load_n(&queue->fast_path_disalbed_ts, __ATOMIC_ACQUIRE);
+    uint64_t slow_path_ts = atomic_load(&queue->fast_path_disalbed_ts);
     bool fast_path_enabled = true;
 
     if (!slow_path_ts) {
       if (rdtsc() - slow_path_ts > FAILED_FAST_PATH_TIMEOUT) {
-        __atomic_store_n(&queue->fast_path_failed_in_row, 0, __ATOMIC_RELEASE);
-        __atomic_store_n(&queue->fast_path_disalbed_ts, 0, __ATOMIC_RELEASE);
+        atomic_store(&queue->fast_path_failed_in_row, 0);
+        atomic_store(&queue->fast_path_disalbed_ts, 0);
       } else {
         fast_path_enabled = false;
       }
     }
-    if (__atomic_load_n(&queue->fast_path_disabled, __ATOMIC_ACQUIRE) != 0) {
+    if (atomic_load(&queue->fast_path_disabled) != 0) {
       fast_path_enabled = false;
     }
 
@@ -319,13 +307,11 @@ struct thread_context *get_context(struct sysmsg *sysmsg) {
       if (ctx) return ctx;
     }
     if (nr_active_threads == NR_IF_THREAD_IS_ACTIVE) {
-      nr_active_threads =
-          __atomic_sub_fetch(&queue->num_active_threads, 1, __ATOMIC_ACQ_REL);
+      nr_active_threads = atomic_sub(&queue->num_active_threads, 1);
     }
 
-    __atomic_store_n(&sysmsg->state, THREAD_STATE_ASLEEP, __ATOMIC_RELEASE);
-    uint32_t nr_active_contexts =
-        __atomic_load_n(&queue->num_active_contexts, __ATOMIC_ACQUIRE);
+    atomic_store(&sysmsg->state, THREAD_STATE_ASLEEP);
+    uint32_t nr_active_contexts = atomic_load(&queue->num_active_contexts);
     // We have to make another attempt to get a context here to prevent TOCTTOU
     // races with waitOnState and kickSysmsgThread. There are two assumptions:
     // * If the queue isn't empty, one or more threads have to be active.
@@ -334,17 +320,16 @@ struct thread_context *get_context(struct sysmsg *sysmsg) {
     if (nr_active_threads == 0 || nr_active_threads < nr_active_contexts) {
       ctx = queue_get_context(sysmsg);
       if (ctx) {
-        __atomic_store_n(&sysmsg->state, THREAD_STATE_PREP, __ATOMIC_RELEASE);
-        __atomic_add_fetch(&queue->num_active_threads, 1, __ATOMIC_ACQ_REL);
+        atomic_store(&sysmsg->state, THREAD_STATE_PREP);
+        atomic_add(&queue->num_active_threads, 1);
         return ctx;
       }
     }
 
-    while (__atomic_load_n(&sysmsg->state, __ATOMIC_ACQUIRE) ==
-           THREAD_STATE_ASLEEP) {
+    while (atomic_load(&sysmsg->state) == THREAD_STATE_ASLEEP) {
       sys_futex(&sysmsg->state, FUTEX_WAIT, THREAD_STATE_ASLEEP, NULL, NULL, 0);
     }
-    __atomic_add_fetch(&queue->num_active_threads, 1, __ATOMIC_ACQ_REL);
+    atomic_add(&queue->num_active_threads, 1);
   }
 }
 
@@ -356,11 +341,11 @@ struct thread_context *switch_context(struct sysmsg *sysmsg,
   struct context_queue *queue = __export_context_queue_addr;
 
   if (ctx) {
-    __atomic_sub_fetch(&queue->num_active_contexts, 1, __ATOMIC_ACQ_REL);
-    __atomic_store_n(&ctx->thread_id, INVALID_THREAD_ID, __ATOMIC_RELEASE);
-    __atomic_store_n(&ctx->last_thread_id, sysmsg->thread_id, __ATOMIC_RELEASE);
-    __atomic_store_n(&ctx->state, new_context_state, __ATOMIC_RELEASE);
-    if (__atomic_load_n(&ctx->sentry_fast_path, __ATOMIC_ACQUIRE) == 0) {
+    atomic_sub(&queue->num_active_contexts, 1);
+    atomic_store(&ctx->thread_id, INVALID_THREAD_ID);
+    atomic_store(&ctx->last_thread_id, sysmsg->thread_id);
+    atomic_store(&ctx->state, new_context_state);
+    if (atomic_load(&ctx->sentry_fast_path) == 0) {
       int ret = sys_futex(&ctx->state, FUTEX_WAKE, 1, NULL, NULL, 0);
       if (ret < 0) {
         panic(ret);
