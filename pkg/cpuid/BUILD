@@ -49,6 +49,9 @@ go_test(
         "cpuid_parse_test.go",
     ],
     library = ":cpuid",
-    tags = ["manual"],
+    tags = [
+        "manual",
+        "not_run:arm",
+    ],
     deps = ["//pkg/hostos"],
 )
