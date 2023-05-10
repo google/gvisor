@@ -33,7 +33,7 @@ import (
 // into and out of the sandbox.
 func TestSharedVolume(t *testing.T) {
 	conf := testutil.TestConfig(t)
-	conf.Overlay2 = config.Overlay2{RootMount: false, SubMounts: false, Medium: ""}
+	conf.Overlay2.Set("none")
 	conf.FileAccess = config.FileAccessShared
 
 	// Main process just sleeps. We will use "exec" to probe the state of
@@ -182,7 +182,7 @@ func checkFile(conf *config.Config, c *Container, filename string, want []byte) 
 // is reflected inside.
 func TestSharedVolumeFile(t *testing.T) {
 	conf := testutil.TestConfig(t)
-	conf.Overlay2 = config.Overlay2{RootMount: false, SubMounts: false, Medium: ""}
+	conf.Overlay2.Set("none")
 	conf.FileAccess = config.FileAccessShared
 
 	// Main process just sleeps. We will use "exec" to probe the state of
@@ -266,11 +266,7 @@ func TestSharedVolumeFile(t *testing.T) {
 // wrapped in an overlay are not visible externally.
 func TestSharedVolumeOverlay(t *testing.T) {
 	conf := testutil.TestConfig(t)
-	conf.Overlay2 = config.Overlay2{
-		RootMount: true,
-		SubMounts: true,
-		Medium:    "dir=/tmp",
-	}
+	conf.Overlay2.Set("all:dir=/tmp")
 
 	// File that will be used to check consistency inside/outside sandbox.
 	// Note that TmpDir() is set up as a shared volume by NewSpecWithArgs(). So

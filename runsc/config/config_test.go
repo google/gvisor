@@ -477,7 +477,7 @@ func TestOverrideAllowlist(t *testing.T) {
 func TestBundles(t *testing.T) {
 	noChange := func(t *testing.T, old, new *Config) {
 		t.Helper()
-		if diff := cmp.Diff(old, new, cmp.AllowUnexported(Config{})); diff != "" {
+		if diff := cmp.Diff(old, new, cmp.AllowUnexported(Config{}, Overlay2{})); diff != "" {
 			t.Errorf("different configs:\n%+v\nvs\n%+v\nDiff:\n%s", old, new, diff)
 		}
 	}

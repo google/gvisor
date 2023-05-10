@@ -1086,7 +1086,7 @@ func TestMultiContainerDifferentFilesystems(t *testing.T) {
 
 	// Make sure overlay is enabled, and none of the root filesystems are
 	// read-only, otherwise we won't be able to create the file.
-	conf.Overlay2 = config.Overlay2{RootMount: true, SubMounts: true, Medium: "memory"}
+	conf.Overlay2.Set("all:memory")
 	specs, ids := createSpecs(cmdRoot, cmd, cmd)
 	for _, s := range specs {
 		s.Root.Readonly = false
@@ -2231,10 +2231,7 @@ func TestMultiContainerOverlayLeaks(t *testing.T) {
 	conf.RootDir = rootDir
 
 	// Configure root overlay backed by rootfs itself.
-	conf.Overlay2 = config.Overlay2{
-		RootMount: true,
-		Medium:    "self",
-	}
+	conf.Overlay2.Set("root:self")
 
 	// Root container will just sleep.
 	sleep := []string{"sleep", "100"}
@@ -2336,10 +2333,7 @@ func TestMultiContainerMemoryLeakStress(t *testing.T) {
 
 	// Configure root overlay (backed by memory) so that containers can create
 	// files in the root directory.
-	conf.Overlay2 = config.Overlay2{
-		RootMount: true,
-		Medium:    "memory",
-	}
+	conf.Overlay2.Set("root:memory")
 
 	// Root container will just sleep.
 	sleep := []string{"sleep", "1000"}

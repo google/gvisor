@@ -360,7 +360,7 @@ func (c *Config) GetOverlay2() Overlay2 {
 			panic(fmt.Sprintf("Overlay2 cannot be set when --overlay=true"))
 		}
 		// Using a deprecated flag, honor it to avoid breaking users.
-		return Overlay2{RootMount: true, SubMounts: true, Medium: "memory"}
+		return Overlay2{rootMount: true, subMounts: true, medium: "memory"}
 	}
 	return c.Overlay2
 }
@@ -692,22 +692,22 @@ func (g HostFifo) AllowOpen() bool {
 // Overlay2 holds the configuration for setting up overlay filesystems for the
 // container.
 type Overlay2 struct {
-	RootMount bool
-	SubMounts bool
-	Medium    string
+	rootMount bool
+	subMounts bool
+	medium    string
 }
 
 func defaultOverlay2() *Overlay2 {
 	// Rootfs overlay is enabled by default and backed by a file in rootfs itself.
-	return &Overlay2{RootMount: true, SubMounts: false, Medium: "self"}
+	return &Overlay2{rootMount: true, subMounts: false, medium: "self"}
 }
 
 // Set implements flag.Value.
 func (o *Overlay2) Set(v string) error {
 	if v == "none" {
-		o.RootMount = false
-		o.SubMounts = false
-		o.Medium = ""
+		o.rootMount = false
+		o.subMounts = false
+		o.medium = ""
 		return nil
 	}
 	vs := strings.Split(v, ":")
@@ -717,22 +717,22 @@ func (o *Overlay2) Set(v string) error {
 
 	switch mount := vs[0]; mount {
 	case "root":
-		o.RootMount = true
+		o.rootMount = true
 	case "all":
-		o.RootMount = true
-		o.SubMounts = true
+		o.rootMount = true
+		o.subMounts = true
 	default:
 		return fmt.Errorf("unexpected mount specifier for --overlay2: %q", mount)
 	}
 
-	o.Medium = vs[1]
-	switch o.Medium {
+	o.medium = vs[1]
+	switch o.medium {
 	case "memory", "self": // OK
 	default:
-		if !strings.HasPrefix(o.Medium, "dir=") {
-			return fmt.Errorf("unexpected medium specifier for --overlay2: %q", o.Medium)
+		if !strings.HasPrefix(o.medium, "dir=") {
+			return fmt.Errorf("unexpected medium specifier for --overlay2: %q", o.medium)
 		}
-		if hostFileDir := strings.TrimPrefix(o.Medium, "dir="); !filepath.IsAbs(hostFileDir) {
+		if hostFileDir := strings.TrimPrefix(o.medium, "dir="); !filepath.IsAbs(hostFileDir) {
 			return fmt.Errorf("overlay host file directory should be an absolute path, got %q", hostFileDir)
 		}
 	}
@@ -746,36 +746,46 @@ func (o *Overlay2) Get() any {
 
 // String implements flag.Value.
 func (o Overlay2) String() string {
-	if !o.RootMount && !o.SubMounts {
+	if !o.rootMount && !o.subMounts {
 		return "none"
 	}
 	res := ""
 	switch {
-	case o.RootMount && o.SubMounts:
+	case o.rootMount && o.subMounts:
 		res = "all"
-	case o.RootMount:
+	case o.rootMount:
 		res = "root"
 	default:
 		panic("invalid state of subMounts = true and rootMount = false")
 	}
 
-	return res + ":" + o.Medium
+	return res + ":" + o.medium
 }
 
 // Enabled returns true if the overlay option is enabled for any mounts.
 func (o *Overlay2) Enabled() bool {
-	return o.RootMount || o.SubMounts
+	return o.rootMount || o.subMounts
+}
+
+// RootEnabled returns true if the overlay is enabled for the root mount.
+func (o *Overlay2) RootEnabled() bool {
+	return o.rootMount
+}
+
+// SubMountEnabled returns true if the overlay is enabled for submounts.
+func (o *Overlay2) SubMountEnabled() bool {
+	return o.subMounts
 }
 
 // IsBackedByMemory indicates whether the overlay is backed by app memory.
 func (o *Overlay2) IsBackedByMemory() bool {
-	return o.Enabled() && o.Medium == "memory"
+	return o.Enabled() && o.medium == "memory"
 }
 
 // IsBackedBySelf indicates whether the overlaid mounts are backed by
 // themselves.
 func (o *Overlay2) IsBackedBySelf() bool {
-	return o.Enabled() && o.Medium == "self"
+	return o.Enabled() && o.medium == "self"
 }
 
 // HostFileDir indicates the directory in which the overlay-backing host file
@@ -783,10 +793,10 @@ func (o *Overlay2) IsBackedBySelf() bool {
 //
 // Precondition: o.IsBackedByHostFile() && !o.IsBackedBySelf().
 func (o *Overlay2) HostFileDir() string {
-	if !strings.HasPrefix(o.Medium, "dir=") {
-		panic(fmt.Sprintf("Overlay2.Medium = %q does not have dir= prefix when overlay is backed by a host file", o.Medium))
+	if !strings.HasPrefix(o.medium, "dir=") {
+		panic(fmt.Sprintf("Overlay2.Medium = %q does not have dir= prefix when overlay is backed by a host file", o.medium))
 	}
-	hostFileDir := strings.TrimPrefix(o.Medium, "dir=")
+	hostFileDir := strings.TrimPrefix(o.medium, "dir=")
 	if !filepath.IsAbs(hostFileDir) {
 		panic(fmt.Sprintf("overlay host file directory should be an absolute path, got %q", hostFileDir))
 	}
