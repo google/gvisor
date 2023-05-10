@@ -364,12 +364,12 @@ void __syshandler() {
 }
 
 void __export_start(struct sysmsg *sysmsg, void *_ucontext) {
-#if defined(__x86_64__)
+  init_new_thread();
+
   asm volatile("movq %%gs:0, %0\n" : "=r"(sysmsg) : :);
   if (sysmsg->self != sysmsg) {
     panic(0xdeaddead);
   }
-#endif
 
   struct thread_context *ctx =
       switch_context_amd64(sysmsg, NULL, CONTEXT_STATE_INVALID);

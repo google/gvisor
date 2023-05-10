@@ -46,6 +46,7 @@ go_library(
     srcs = [
         "context_list.go",
         "context_queue.go",
+        "context_queue_unsafe.go",
         "filters.go",
         "filters_amd64.go",
         "filters_arm64.go",

@@ -315,9 +315,8 @@ func newSubprocess(create func() (*thread, error), memoryFile *pgalloc.MemoryFil
 	sp.mapPrivateRegions()
 
 	// Create the initial sysmsg thread.
-	atomic.AddUint32(&sp.contextQueue.numActiveThreads, 1)
+	atomic.AddUint32(&sp.contextQueue.numThreadsToWakeup, 1)
 	if err := sp.createSysmsgThread(); err != nil {
-		atomic.AddUint32(&sp.contextQueue.numActiveThreads, ^uint32(0))
 		return nil, err
 	}
 	sp.numSysmsgThreads++
@@ -829,62 +828,58 @@ func (s *subprocess) waitOnState(ctx *sharedContext, stubFastPathEnabled bool) {
 	ctx.enableSentryFastPath()
 }
 
-func (s *subprocess) kickSysmsgThread() bool {
+// canKickSysmsgThread returns true if a new thread can be kicked.
+// The second return value is the expected number of threads after kicking a
+// new one.
+func (s *subprocess) canKickSysmsgThread() (bool, uint32) {
 	// numActiveContexts and numActiveThreads can be changed from stub
-	// threads that work with the contextQueue without any locks. The idea
+	// threads that handles the contextQueue without any locks. The idea
 	// here is that any stub thread that gets CPU time can make some
 	// progress. In stub threads, we can use only spinlock-like
 	// synchronizations, but they don't work well because a thread that
-	// holds a lock can be preempted by another threads that is waiting for
+	// holds a lock can be preempted by another thread that is waiting for
 	// the same lock.
-	nrActiveContexts := atomic.LoadUint32(&s.contextQueue.numActiveContexts)
 	nrActiveThreads := atomic.LoadUint32(&s.contextQueue.numActiveThreads)
-	if nrActiveContexts != 0 && nrActiveThreads >= nrActiveContexts {
+	nrThreadsToWakeup := atomic.LoadUint32(&s.contextQueue.numThreadsToWakeup)
+	nrActiveContexts := atomic.LoadUint32(&s.contextQueue.numActiveContexts)
+
+	nrActiveThreads += nrThreadsToWakeup + 1
+	if nrActiveThreads > nrActiveContexts {
 		// This can happen when one or more stub threads are
 		// waiting for cpu time. The host probably has more
 		// running tasks than a number of cpu-s.
+		return false, nrActiveThreads
+	}
+	return true, nrActiveThreads
+}
+
+func (s *subprocess) kickSysmsgThread() bool {
+	kick, _ := s.canKickSysmsgThread()
+	if !kick {
 		return false
 	}
 
 	s.sysmsgThreadsMu.Lock()
-	nrActiveContexts = atomic.LoadUint32(&s.contextQueue.numActiveContexts)
-	nrActiveThreads = atomic.LoadUint32(&s.contextQueue.numActiveThreads)
-	if nrActiveContexts != 0 && nrActiveThreads >= nrActiveContexts {
+	kick, nrThreads := s.canKickSysmsgThread()
+	if !kick {
 		s.sysmsgThreadsMu.Unlock()
 		return false
 	}
-
-	if s.numSysmsgThreads > int(nrActiveThreads) {
-		for _, t := range s.sysmsgThreads {
-			if kicked, _ := t.msg.WakeSysmsgThread(); kicked {
-				s.sysmsgThreadsMu.Unlock()
-				return true
-			}
-		}
-		s.sysmsgThreadsMu.Unlock()
-		// Threads are kicked only here under sysmsgThreadsMu. It means
-		// that this case is possible only if one thread decides to
-		// fall asleep but then change its mind. Look at
-		// sysmsg_lib.c:get_context for more details.
-		return false
-	}
-
-	if s.numSysmsgThreads < maxSysmsgThreads {
+	atomic.AddUint32(&s.contextQueue.numThreadsToWakeup, 1)
+	if s.numSysmsgThreads < maxSysmsgThreads && s.numSysmsgThreads < int(nrThreads) {
 		s.numSysmsgThreads++
 		s.sysmsgThreadsMu.Unlock()
-		atomic.AddUint32(&s.contextQueue.numActiveThreads, 1)
 		if err := s.createSysmsgThread(); err != nil {
 			log.Warningf("Unable to create a new stub thread: %s", err)
-			atomic.AddUint32(&s.contextQueue.numActiveThreads, ^uint32(0))
 			s.sysmsgThreadsMu.Lock()
 			s.numSysmsgThreads--
 			s.sysmsgThreadsMu.Unlock()
-			return false
 		}
-		return true
+	} else {
+		s.sysmsgThreadsMu.Unlock()
 	}
+	s.contextQueue.wakeupSysmsgThread()
 
-	s.sysmsgThreadsMu.Unlock()
 	return false
 }
 
