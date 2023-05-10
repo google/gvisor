@@ -871,7 +871,7 @@ func (c *Container) createOverlayFilestores(mountHints *boot.PodMountHints) ([]*
 	var overlayMediums []boot.OverlayMedium
 
 	// Handle root mount first.
-	shouldOverlay := c.OverlayConf.RootMount && !c.Spec.Root.Readonly
+	shouldOverlay := c.OverlayConf.RootEnabled() && !c.Spec.Root.Readonly
 	filestore, medium, err := c.createOverlayFilestore(c.Spec.Root.Path, shouldOverlay, nil /* hint */)
 	if err != nil {
 		return nil, nil, err
@@ -887,7 +887,7 @@ func (c *Container) createOverlayFilestores(mountHints *boot.PodMountHints) ([]*
 			continue
 		}
 		hint := mountHints.FindMount(&c.Spec.Mounts[i])
-		shouldOverlay := c.OverlayConf.SubMounts && !specutils.IsReadonlyMount(c.Spec.Mounts[i].Options)
+		shouldOverlay := c.OverlayConf.SubMountEnabled() && !specutils.IsReadonlyMount(c.Spec.Mounts[i].Options)
 		filestore, medium, err := c.createOverlayFilestore(c.Spec.Mounts[i].Source, shouldOverlay, hint)
 		if err != nil {
 			return nil, nil, err
