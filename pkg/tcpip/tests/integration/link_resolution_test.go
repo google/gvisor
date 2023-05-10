@@ -1698,7 +1698,7 @@ func newMonitorableLinkEndpoint(e stack.LinkEndpoint) *monitorableLinkEndpoint {
 }
 
 func (e *monitorableLinkEndpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
-	for _, pkt := range pkts.AsSlice() {
+	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
 		dstAddr := header.Ethernet(pkt.LinkHeader().Slice()).DestinationAddress()
 		e.ch <- dstAddr
 	}

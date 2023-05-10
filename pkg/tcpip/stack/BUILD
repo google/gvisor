@@ -161,6 +161,18 @@ go_template_instance(
 )
 
 go_template_instance(
+    name = "packet_buffer_list",
+    out = "packet_buffer_list.go",
+    package = "stack",
+    prefix = "PacketBuffer",
+    template = "//pkg/ilist:generic_list",
+    types = {
+        "Element": "*PacketBuffer",
+        "Linker": "*PacketBuffer",
+    },
+)
+
+go_template_instance(
     name = "tuple_list",
     out = "tuple_list.go",
     package = "stack",

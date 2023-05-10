@@ -306,7 +306,7 @@ func (e *fwdTestLinkEndpoint) LinkAddress() tcpip.LinkAddress {
 // WritePackets stores outbound packets into the channel.
 func (e *fwdTestLinkEndpoint) WritePackets(pkts PacketBufferList) (int, tcpip.Error) {
 	n := 0
-	for _, pkt := range pkts.AsSlice() {
+	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
 		select {
 		case e.C <- pkt:
 		default:
