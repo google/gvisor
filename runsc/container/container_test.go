@@ -417,7 +417,7 @@ func configs(t *testing.T, noOverlay bool) map[string]*config.Config {
 	cs := make(map[string]*config.Config)
 	for _, p := range ps {
 		c := testutil.TestConfig(t)
-		c.Overlay2 = config.Overlay2{RootMount: false, SubMounts: false, Medium: ""}
+		c.Overlay2.Set("none")
 		c.Platform = p
 		cs[p] = c
 	}
@@ -427,7 +427,7 @@ func configs(t *testing.T, noOverlay bool) map[string]*config.Config {
 		for _, p := range ps {
 			c := testutil.TestConfig(t)
 			c.Platform = p
-			c.Overlay2 = config.Overlay2{RootMount: true, SubMounts: true, Medium: "memory"}
+			c.Overlay2.Set("all:memory")
 			cs[p+"-overlay"] = c
 		}
 	}
@@ -622,12 +622,14 @@ func TestExePath(t *testing.T) {
 		t.Fatalf("error making directory: %v", err)
 	}
 
+	defaultConf := testutil.TestConfig(t)
+	defaultConf.Overlay2.Set("none")
+	overlayConf := testutil.TestConfig(t)
+	overlayConf.Overlay2.Set("all:memory")
 	configs := map[string]*config.Config{
-		"default": testutil.TestConfig(t),
-		"overlay": testutil.TestConfig(t),
+		"default": defaultConf,
+		"overlay": overlayConf,
 	}
-	configs["default"].Overlay2 = config.Overlay2{RootMount: false, SubMounts: false, Medium: ""}
-	configs["overlay"].Overlay2 = config.Overlay2{RootMount: true, SubMounts: true, Medium: "memory"}
 
 	for name, conf := range configs {
 		t.Run(name, func(t *testing.T) {

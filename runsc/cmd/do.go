@@ -149,9 +149,9 @@ func (c *Do) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcommand
 	// If c.overlay is set, then enable overlay.
 	conf.Overlay = false // conf.Overlay is deprecated.
 	if c.overlay {
-		conf.Overlay2 = config.Overlay2{RootMount: true, SubMounts: true, Medium: "memory"}
+		conf.Overlay2.Set("all:memory")
 	} else {
-		conf.Overlay2 = config.Overlay2{RootMount: false, SubMounts: false, Medium: ""}
+		conf.Overlay2.Set("none")
 	}
 	absRoot, err := resolvePath(c.root)
 	if err != nil {
