@@ -27,6 +27,7 @@ server_proxy_addr=10.0.0.3
 server_addr=10.0.0.4
 full_server_addr=${server_addr}:${iperf_port}
 full_server_proxy_addr=${server_proxy_addr}:${proxy_port}
+iperf_binary_name=iperf
 iperf_version_arg=
 
 # Defaults; this provides a reasonable approximation of a decent internet link.
@@ -180,6 +181,11 @@ while [[ $# -gt 0 ]]; do
       shift
       [[ "$#" -le 0 ]] && echo "no helper dir provided" && exit 1
       helper_dir=$1
+      ;;
+    --iperf-binary)
+      shift
+      [[ "$#" -le 0 ]] && echo "no iperf name provided" && exit 1
+      iperf_binary_name=$1
       ;;
     *)
       echo "unknown option: $1"
@@ -382,7 +388,7 @@ ${nsjoin_binary} /tmp/server.netns ${server_args} &
 server_pid=\$!
 
 # Start the iperf server.
-${nsjoin_binary} /tmp/server.netns iperf ${iperf_version_arg} -p ${iperf_port} -s >&2 &
+${nsjoin_binary} /tmp/server.netns ${iperf_binary_name} ${iperf_version_arg} -p ${iperf_port} -s >&2 &
 iperf_pid=\$!
 
 # Give services time to start.
@@ -411,7 +417,7 @@ set +e
 trap cleanup EXIT
 
 # Run the benchmark, recording the results file.
-while ${nsjoin_binary} /tmp/client.netns iperf \\
+while ${nsjoin_binary} /tmp/client.netns ${iperf_binary_name} \\
     ${iperf_version_arg} -p ${proxy_port} -c ${client_addr} -t ${duration} -f m -P ${num_client_threads} 2>&1 \\
     | tee \$results_file \\
     | grep -E "connect failed|unable to connect" >/dev/null; do
