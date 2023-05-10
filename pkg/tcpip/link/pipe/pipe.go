@@ -57,7 +57,7 @@ func (e *Endpoint) deliverPackets(pkts stack.PacketBufferList) {
 		return
 	}
 
-	for _, pkt := range pkts.AsSlice() {
+	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
 		// Create a fresh packet with pkt's payload but without struct fields
 		// or headers set so the next link protocol can properly set the link
 		// header.

@@ -53,10 +53,13 @@ type discipline struct {
 // through the lower LinkWriter.
 type queueDispatcher struct {
 	lower stack.LinkWriter
+	limit int
 
 	mu sync.Mutex
 	// +checklocks:mu
-	queue packetBufferCircularList
+	queue stack.PacketBufferList
+	// +checklocks:mu
+	used int
 
 	newPacketWaker sleep.Waker
 	closeWaker     sleep.Waker
@@ -64,8 +67,6 @@ type queueDispatcher struct {
 
 // New creates a new fifo queuing discipline with the n queues with maximum
 // capacity of queueLen.
-//
-// +checklocksignore: we don't have to hold locks during initialization.
 func New(lower stack.LinkWriter, n int, queueLen int) stack.QueueingDiscipline {
 	d := &discipline{
 		dispatchers: make([]queueDispatcher, n),
@@ -74,7 +75,7 @@ func New(lower stack.LinkWriter, n int, queueLen int) stack.QueueingDiscipline {
 	for i := range d.dispatchers {
 		qd := &d.dispatchers[i]
 		qd.lower = lower
-		qd.queue.init(queueLen)
+		qd.limit = queueLen
 
 		d.wg.Add(1)
 		go func() {
@@ -97,23 +98,28 @@ func (qd *queueDispatcher) dispatchLoop() {
 		case &qd.newPacketWaker:
 		case &qd.closeWaker:
 			qd.mu.Lock()
-			for p := qd.queue.removeFront(); !p.IsNil(); p = qd.queue.removeFront() {
+			for p := qd.queue.Front(); !p.IsNil(); p = qd.queue.Front() {
+				qd.queue.Remove(p)
 				p.DecRef()
+				qd.used--
 			}
-			qd.queue.decRef()
+			qd.queue.DecRef()
 			qd.mu.Unlock()
 			return
 		default:
 			panic("unknown waker")
 		}
 		qd.mu.Lock()
-		for pkt := qd.queue.removeFront(); !pkt.IsNil(); pkt = qd.queue.removeFront() {
+		for pkt := qd.queue.Front(); !pkt.IsNil(); pkt = qd.queue.Front() {
+			qd.queue.Remove(pkt)
+			qd.used--
 			batch.PushBack(pkt)
-			if batch.Len() < BatchSize && !qd.queue.isEmpty() {
+			if batch.Len() < BatchSize && qd.used != 0 {
 				continue
 			}
 			qd.mu.Unlock()
 			_, _ = qd.lower.WritePackets(batch)
+			batch.DecRef()
 			batch.Reset()
 			qd.mu.Lock()
 		}
@@ -133,9 +139,10 @@ func (d *discipline) WritePacket(pkt stack.PacketBufferPtr) tcpip.Error {
 	}
 	qd := &d.dispatchers[int(pkt.Hash)%len(d.dispatchers)]
 	qd.mu.Lock()
-	haveSpace := qd.queue.hasSpace()
+	haveSpace := qd.used < qd.limit
 	if haveSpace {
-		qd.queue.pushBack(pkt.IncRef())
+		qd.queue.PushBack(pkt.IncRef())
+		qd.used++
 	}
 	qd.mu.Unlock()
 	if !haveSpace {
