@@ -272,7 +272,7 @@ func (c *WriteContext) TryNewPacketBuffer(reserveHdrBytes int, data bufferv2.Buf
 	defer e.sendBufferSizeInUseMu.Unlock()
 
 	if !e.hasSendSpaceRLocked() {
-		return stack.PacketBufferPtr{}
+		return nil
 	}
 
 	// Note that we allow oversubscription - if there is any space at all in the

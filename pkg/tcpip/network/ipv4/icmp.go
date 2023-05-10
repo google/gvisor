@@ -361,8 +361,7 @@ func (e *endpoint) handleICMP(pkt stack.PacketBufferPtr) {
 
 		// It's possible that a raw socket expects to receive this.
 		e.dispatcher.DeliverTransportPacket(header.ICMPv4ProtocolNumber, pkt)
-		pkt = stack.PacketBufferPtr{}
-		_ = pkt // Suppress unused variable warning.
+		pkt = nil
 
 		sent := e.stats.icmp.packetsSent
 		if !e.protocol.allowICMPReply(header.ICMPv4EchoReply, header.ICMPv4UnusedCode) {

@@ -194,6 +194,7 @@ func (s *segment) DecRef() {
 			}
 		}
 		s.pkt.DecRef()
+		s.pkt = nil
 		segmentPool.Put(s)
 	})
 }

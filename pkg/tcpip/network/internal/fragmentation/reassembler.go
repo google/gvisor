@@ -67,7 +67,7 @@ func (r *reassembler) process(first, last uint16, more bool, proto uint8, pkt st
 		// A concurrent goroutine might have already reassembled
 		// the packet and emptied the heap while this goroutine
 		// was waiting on the mutex. We don't have to do anything in this case.
-		return stack.PacketBufferPtr{}, 0, false, 0, nil
+		return nil, 0, false, 0, nil
 	}
 
 	var holeFound bool
@@ -91,12 +91,12 @@ func (r *reassembler) process(first, last uint16, more bool, proto uint8, pkt st
 		// https://github.com/torvalds/linux/blob/38525c6/net/ipv4/inet_fragment.c#L349
 		if first < currentHole.first || currentHole.last < last {
 			// Incoming fragment only partially fits in the free hole.
-			return stack.PacketBufferPtr{}, 0, false, 0, ErrFragmentOverlap
+			return nil, 0, false, 0, ErrFragmentOverlap
 		}
 		if !more {
 			if !currentHole.final || currentHole.filled && currentHole.last != last {
 				// We have another final fragment, which does not perfectly overlap.
-				return stack.PacketBufferPtr{}, 0, false, 0, ErrFragmentConflict
+				return nil, 0, false, 0, ErrFragmentConflict
 			}
 		}
 
@@ -155,12 +155,12 @@ func (r *reassembler) process(first, last uint16, more bool, proto uint8, pkt st
 	}
 	if !holeFound {
 		// Incoming fragment is beyond end.
-		return stack.PacketBufferPtr{}, 0, false, 0, ErrFragmentConflict
+		return nil, 0, false, 0, ErrFragmentConflict
 	}
 
 	// Check if all the holes have been filled and we are ready to reassemble.
 	if r.filled < len(r.holes) {
-		return stack.PacketBufferPtr{}, 0, false, memConsumed, nil
+		return nil, 0, false, memConsumed, nil
 	}
 
 	sort.Slice(r.holes, func(i, j int) bool {

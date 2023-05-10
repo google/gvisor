@@ -83,7 +83,7 @@ func TestWriteRefusedAfterClosed(t *testing.T) {
 	linkEp := fifo.New(nil, 1, 2)
 
 	linkEp.Close()
-	err := linkEp.WritePacket(stack.PacketBufferPtr{})
+	err := linkEp.WritePacket(nil)
 	_, ok := err.(*tcpip.ErrClosedForSend)
 	if !ok {
 		t.Errorf("got err = %s, want %s", err, &tcpip.ErrClosedForSend{})
