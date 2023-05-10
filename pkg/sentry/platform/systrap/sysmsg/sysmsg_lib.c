@@ -45,6 +45,7 @@ struct context_queue {
   uint32_t start;
   uint32_t end;
   uint32_t num_active_threads;
+  uint32_t num_threads_to_wakeup;
   uint32_t num_active_contexts;
   uint32_t num_awake_contexts;
   uint64_t fast_path_disalbed_ts;
@@ -152,6 +153,8 @@ static void spinning_queue_pop() {
 // spinning_queue_remove_first removes one thread from a queue that has been
 // spinning longer than others and longer than a specified timeout.
 //
+// If `timeout` is zero, it always removes one element and never returns false.
+//
 // Returns true if one thread has been removed from the queue.
 static bool spinning_queue_remove_first(uint64_t timeout)
     __attribute__((warn_unused_result));
@@ -160,16 +163,19 @@ static bool spinning_queue_remove_first(uint64_t timeout) {
   uint64_t ts;
   uint32_t idx;
 
-  idx = atomic_load(&queue->start);
-  ts = atomic_load(&queue->start_times[idx % SPINNING_QUEUE_SIZE]);
-  if (ts == 0 || rdtsc() - ts < timeout) return false;
+  while (1) {
+    idx = atomic_load(&queue->start);
+    ts = atomic_load(&queue->start_times[idx % SPINNING_QUEUE_SIZE]);
+    if (ts == 0 && timeout == 0) continue;
+    if (ts == 0 || rdtsc() - ts < timeout) return false;
 
-  // The current thread is still in a queue and the length of the queue is twice
-  // of the maximum number of threads, so we can zero the element and be sure
-  // that nobody is trying to set it in a  non-zero value.
-  atomic_store(&queue->start_times[idx % SPINNING_QUEUE_SIZE], 0);
-  if (!atomic_compare_exchange(&queue->start, &idx, idx + 1)) {
-    return false;
+    // The current thread is still in a queue and the length of the queue is
+    // twice of the maximum number of threads, so we can zero the element and be
+    // sure that nobody is trying to set it in a  non-zero value.
+    atomic_store(&queue->start_times[idx % SPINNING_QUEUE_SIZE], 0);
+    if (atomic_compare_exchange(&queue->start, &idx, idx + 1)) {
+      break;
+    }
   }
 
   return true;
@@ -232,8 +238,8 @@ static struct thread_context *get_context_fast(struct sysmsg *sysmsg,
       return ctx;
     }
 
-    if (atomic_load(&queue->fast_path_disabled) != 0 &&
-        spinning_queue_remove_first(0)) {
+    if (atomic_load(&queue->fast_path_disabled) != 0) {
+      if (!spinning_queue_remove_first(0)) panic(0);
       break;
     }
 
@@ -244,14 +250,9 @@ static struct thread_context *get_context_fast(struct sysmsg *sysmsg,
       if (atomic_compare_exchange(&queue->num_active_threads,
                                   &nr_active_threads, nr_active_threads - 1)) {
         nr_active_threads -= 1;
-        if (spinning_queue_remove_first(0)) {
-          *nr_active_threads_p = nr_active_threads;
-          break;
-        }
-
-        // spinning_queue_remove_first can fail due to a race with another
-        // thread.
-        atomic_add(&queue->num_active_threads, 1);
+        if (!spinning_queue_remove_first(0)) panic(0);
+        *nr_active_threads_p = nr_active_threads;
+        break;
       }
     }
 
@@ -268,6 +269,25 @@ static struct thread_context *get_context_fast(struct sysmsg *sysmsg,
 }
 
 #define NR_IF_THREAD_IS_ACTIVE (~0)
+
+static bool try_to_dec_threads_to_wakeup(struct context_queue *queue) {
+  while (1) {
+    uint32_t nr = atomic_load(&queue->num_threads_to_wakeup);
+    if (nr == 0) {
+      return false;
+    }
+    if (atomic_compare_exchange(&queue->num_threads_to_wakeup, &nr, nr - 1)) {
+      return true;
+    };
+  }
+}
+
+void init_new_thread() {
+  struct context_queue *queue = __export_context_queue_addr;
+
+  atomic_add(&queue->num_active_threads, 1);
+  try_to_dec_threads_to_wakeup(queue);
+}
 
 // get_context retrieves a context that is ready to be restored to the user.
 // This populates sysmsg->thread_context_id.
@@ -317,7 +337,7 @@ struct thread_context *get_context(struct sysmsg *sysmsg) {
     // * If the queue isn't empty, one or more threads have to be active.
     // * A new thread isn't kicked, if the number of active threads are not less
     //   than a number of active contexts.
-    if (nr_active_threads == 0 || nr_active_threads < nr_active_contexts) {
+    if (nr_active_threads < nr_active_contexts) {
       ctx = queue_get_context(sysmsg);
       if (ctx) {
         atomic_store(&sysmsg->state, THREAD_STATE_PREP);
@@ -326,10 +346,19 @@ struct thread_context *get_context(struct sysmsg *sysmsg) {
       }
     }
 
-    while (atomic_load(&sysmsg->state) == THREAD_STATE_ASLEEP) {
-      sys_futex(&sysmsg->state, FUTEX_WAIT, THREAD_STATE_ASLEEP, NULL, NULL, 0);
+    while (1) {
+      if (!try_to_dec_threads_to_wakeup(queue)) {
+        sys_futex(&queue->num_threads_to_wakeup, FUTEX_WAIT, 0, NULL, NULL, 0);
+        continue;
+      }
+      // Mark this thread as being active only if it can get a context.
+      ctx = queue_get_context(sysmsg);
+      if (ctx) {
+        atomic_store(&sysmsg->state, THREAD_STATE_PREP);
+        atomic_add(&queue->num_active_threads, 1);
+        return ctx;
+      }
     }
-    atomic_add(&queue->num_active_threads, 1);
   }
 }
 

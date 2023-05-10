@@ -107,6 +107,7 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
   struct thread_context *ctx = NULL, *old_ctx = NULL;
   if (thread_state == THREAD_STATE_INITIALIZING) {
     // Find a new context and exit to restore it.
+    init_new_thread();
     goto init;
   }
 
