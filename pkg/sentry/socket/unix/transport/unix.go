@@ -870,15 +870,14 @@ func (e *baseEndpoint) Connected() bool {
 // RecvMsg reads data and a control message from the endpoint.
 func (e *baseEndpoint) RecvMsg(ctx context.Context, data [][]byte, creds bool, numRights int, peek bool, addr *Address) (int64, int64, ControlMessages, bool, func(), *syserr.Error) {
 	e.Lock()
-
 	receiver := e.receiver
+	e.Unlock()
+
 	if receiver == nil {
-		e.Unlock()
 		return 0, 0, ControlMessages{}, false, nil, syserr.ErrNotConnected
 	}
 
 	recvLen, msgLen, cms, cmt, a, notify, err := receiver.Recv(ctx, data, creds, numRights, peek)
-	e.Unlock()
 	if err != nil {
 		return 0, 0, ControlMessages{}, false, nil, err
 	}
