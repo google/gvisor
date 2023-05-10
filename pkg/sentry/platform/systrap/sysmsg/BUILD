@@ -21,6 +21,7 @@ cc_pie_obj(
         ],
         arm64 = ["sighandler_arm64.c"],
     ) + [
+        "atomic.h",
         "sysmsg.h",
         "sysmsg_offsets.h",
     ],
@@ -30,6 +31,7 @@ cc_pie_obj(
 cc_pie_obj(
     name = "sysmsg_lib",
     srcs = [
+        "atomic.h",
         "sysmsg.h",
         "sysmsg_lib.c",
         "sysmsg_offsets.h",
