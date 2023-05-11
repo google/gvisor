@@ -45,7 +45,7 @@ type Create struct {
 	// userLog is the path to send user-visible logs to. This log is different
 	// from debug logs. The former is meant to be consumed by the users and should
 	// contain only information that is relevant to the person running the
-	// container, e.g. unsuported syscalls, while the later is more verbose and
+	// container, e.g. unsupported syscalls, while the later is more verbose and
 	// consumed by developers.
 	userLog string
 }
