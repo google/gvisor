@@ -77,6 +77,12 @@ func (g *interfaceGenerator) recordUsedImport(i string) {
 }
 
 func (g *interfaceGenerator) recordPotentiallyNonPackedField(fieldName string) {
+	// Some calls to g.unmarshalScalar() occur in emitted loops that use "idx"
+	// as a loop variable, passing "field[idx]" as the accessor. When
+	// g.unmarshalScalar() calls this function, we need to convert such cases
+	// to "field[0]" for g.areFieldsPackedExpression(), which is used in
+	// contexts where "idx" is not defined.
+	fieldName = strings.ReplaceAll(fieldName, "[idx]", "[0]")
 	g.as[fieldName] = struct{}{}
 }
 
