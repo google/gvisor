@@ -801,12 +801,14 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 		if ns.Path != "" {
 			for _, p := range l.processes {
 				if ns.Path == p.pidnsPath {
+					log.Debugf("Joining PID namespace named %q", ns.Path)
 					pidns = p.tg.PIDNamespace()
 					break
 				}
 			}
 		}
 		if pidns == nil {
+			log.Warningf("PID namespace %q not found, running in new PID namespace", ns.Path)
 			pidns = l.k.RootPIDNamespace().NewChild(l.k.RootUserNamespace())
 		}
 		ep.pidnsPath = ns.Path
