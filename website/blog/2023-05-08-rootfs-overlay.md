@@ -1,6 +1,8 @@
 # Rootfs Overlay
 
-This blog was
+Root filesystem overlay is now the default in runsc. This improves performance
+for filesystem-heavy workloads by overlaying the container root filesystem with
+a tmpfs filesystem. Learn more about this feature in the following blog that was
 [originally posted](https://opensource.googleblog.com/2023/04/gvisor-improves-performance-with-root-filesystem-overlay.html)
 on [Google Open Source Blog](https://opensource.googleblog.com/).
 
