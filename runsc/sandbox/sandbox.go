@@ -403,6 +403,7 @@ func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid s
 	if err := s.configureStdios(conf, stdios); err != nil {
 		return err
 	}
+	s.fixPidns(spec)
 
 	// The payload contains (in this specific order):
 	// * stdin/stdout/stderr (optional: only present when not using TTY)
@@ -1517,4 +1518,30 @@ func (s *Sandbox) CgroupsWriteControlFile(file control.CgroupControlFile, value 
 		return fmt.Errorf("expected 1 result, got %d, raw: %+v", len(out.Results), out)
 	}
 	return out.Results[0].AsError()
+}
+
+// fixPidns looks at the PID namespace path. If that path corresponds to the
+// sandbox process PID namespace, then change the spec so that the container
+// joins the sandbox root namespace.
+func (s *Sandbox) fixPidns(spec *specs.Spec) {
+	pidns, ok := specutils.GetNS(specs.PIDNamespace, spec)
+	if !ok {
+		// pidns was not set, nothing to fix.
+		return
+	}
+	if pidns.Path != fmt.Sprintf("/proc/%d/ns/pid", s.Pid.load()) {
+		// Fix only if the PID namespace corresponds to the sandbox's.
+		return
+	}
+
+	for i := range spec.Linux.Namespaces {
+		if spec.Linux.Namespaces[i].Type == specs.PIDNamespace {
+			// Removing the namespace makes the container join the sandbox root
+			// namespace.
+			log.Infof("Fixing PID namespace in spec from %q to make the container join the sandbox root namespace", pidns.Path)
+			spec.Linux.Namespaces = append(spec.Linux.Namespaces[:i], spec.Linux.Namespaces[i+1:]...)
+			return
+		}
+	}
+	panic("unreachable")
 }
