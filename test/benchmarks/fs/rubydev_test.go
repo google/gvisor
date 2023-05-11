@@ -26,6 +26,7 @@ import (
 
 	"gvisor.dev/gvisor/test/benchmarks/fs/fsbench"
 	"gvisor.dev/gvisor/test/benchmarks/harness"
+	"gvisor.dev/gvisor/test/benchmarks/tools"
 )
 
 func runRubyBenchmark(b *testing.B, bm fsbench.FSBenchmark, cleanupDirPatterns []string) {
@@ -76,7 +77,7 @@ func BenchmarkRubySpecTest(b *testing.B) {
 				b.Errorf("failed to extract load time from fastlane test suite output: %v", err)
 				return
 			}
-			b.ReportMetric(loadTime, "load-sec")
+			tools.ReportCustomMetric(b, loadTime, "load", "sec")
 		},
 	}, []string{
 		// Fastlane tests pollute the filesystem a lot.

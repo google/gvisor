@@ -40,5 +40,6 @@ benchmark_test(
         "//pkg/test/dockerutil",
         "//test/benchmarks/fs/fsbench",
         "//test/benchmarks/harness",
+        "//test/benchmarks/tools",
     ],
 )

@@ -31,7 +31,7 @@ type Parameter struct {
 // Output is parsed and split by these values. Make them illegal in input methods.
 // We are constrained on what characters these can be by 1) docker's allowable
 // container names, 2) golang allowable benchmark names, and 3) golangs allowable
-// charecters in b.ReportMetric calls.
+// characters in b.ReportMetric calls.
 var illegalChars = regexp.MustCompile(`[/\.]`)
 
 // ParametersToName joins parameters into a string format for parsing.
