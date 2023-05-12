@@ -306,6 +306,48 @@ TEST(ChrootTest, ProcMemSelfFdsNoEscapeProcOpen) {
   EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
 }
 
+// This test will verify that when you hold a fd to proc before entering
+// a chroot that any files outside the chroot will appear rooted outside the
+// chroot when examining /proc/self/fd/{num}.
+TEST(ChrootTest, ProcMemSelfFdsYesEscapeProcOpen) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_CHROOT)));
+
+  // Get a FD to /proc before we enter the chroot.
+  const FileDescriptor proc =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc", O_RDONLY));
+
+  const auto temp_dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const std::string temp_dir_path = temp_dir.path();
+
+  auto temp_file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const FileDescriptor temp_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(temp_file.path(), O_RDONLY));
+
+  const auto rest = [&] {
+    // Enter the chroot directory.
+    TEST_CHECK_SUCCESS(chroot(temp_dir_path.c_str()));
+
+    // Examine /proc/self/fd/{temp_fd} to see if it exposes the fact that we're
+    // inside a chroot, the path should be outside the chroot.
+    constexpr char kSelfFdRelpath[] = "self/fd/";
+    char path_buf[20];
+    strcpy(path_buf, kSelfFdRelpath);  // NOLINT: need async-signal-safety
+    TEST_CHECK(SafeItoa(temp_fd.get(), path_buf + sizeof(kSelfFdRelpath) - 1,
+                        sizeof(path_buf) - (sizeof(kSelfFdRelpath) - 1), 10));
+    char buf[1024] = {};
+    size_t bytes_read = 0;
+    TEST_CHECK_SUCCESS(
+        bytes_read = readlinkat(proc.get(), path_buf, buf, sizeof(buf) - 1));
+
+    // The link should resolve to something.
+    TEST_CHECK(bytes_read > 0);
+
+    // Assert that the link contains full path.
+    TEST_CHECK(strcmp(buf, temp_file.path().c_str()) == 0);
+  };
+  EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
+}
+
 // This test will verify that a file inside a chroot when mmapped will not
 // expose the full file path via /proc/self/maps and instead honor the chroot.
 TEST(ChrootTest, ProcMemSelfMapsNoEscapeProcOpen) {
