@@ -16,12 +16,14 @@
 package container
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"path"
 	"regexp"
 	"strconv"
 	"strings"
@@ -1648,28 +1650,64 @@ func modifySpecForDirectfs(conf *config.Config, spec *specs.Spec) error {
 		return fmt.Errorf("spec defines UID/GID mappings without defining userns")
 	}
 	// Run the sandbox in a new user namespace with identity UID/GID mappings.
+	log.Debugf("Configuring container with a new userns with identity user mappings into current userns")
 	spec.Linux.Namespaces = append(spec.Linux.Namespaces, specs.LinuxNamespace{Type: specs.UserNamespace})
-	// The maximum range of UID/GID mapping should be the largest uint32 integer.
-	// This is similar to what Linux does for identity mappings. Also note:
-	// "This leaves 4294967295 (the 32-bit signed -1 value) unmapped. This is
-	// deliberate: (uid_t) -1 is used in several interfaces (e.g., setreuid(2))
-	// as a way to specify "no user ID".  Leaving (uid_t) -1 unmapped and
-	// unusable guarantees that there will be no confusion when using these
-	// interfaces." -- user_namespaces(7).
-	maxRange := ^uint32(0)
-	spec.Linux.UIDMappings = []specs.LinuxIDMapping{
-		{
-			ContainerID: 0,
-			HostID:      0,
-			Size:        maxRange,
-		},
+	uidMappings, err := getIdentityMapping("uid_map")
+	if err != nil {
+		return err
 	}
-	spec.Linux.GIDMappings = []specs.LinuxIDMapping{
-		{
-			ContainerID: 0,
-			HostID:      0,
-			Size:        maxRange,
-		},
+	spec.Linux.UIDMappings = uidMappings
+	logIDMappings(uidMappings, "UID")
+	gidMappings, err := getIdentityMapping("gid_map")
+	if err != nil {
+		return err
 	}
+	spec.Linux.GIDMappings = gidMappings
+	logIDMappings(gidMappings, "GID")
 	return nil
+}
+
+func getIdentityMapping(mapFileName string) ([]specs.LinuxIDMapping, error) {
+	// See user_namespaces(7) to understand how /proc/self/{uid/gid}_map files
+	// are organized.
+	mapFile := path.Join("/proc/self", mapFileName)
+	file, err := os.Open(mapFile)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open %s: %v", mapFile, err)
+	}
+	defer file.Close()
+
+	var mappings []specs.LinuxIDMapping
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := scanner.Text()
+		var myStart, parentStart, rangeLen uint32
+		numParsed, err := fmt.Sscanf(line, "%d %d %d", &myStart, &parentStart, &rangeLen)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse line %q in file %s: %v", line, mapFile, err)
+		}
+		if numParsed != 3 {
+			return nil, fmt.Errorf("failed to parse 3 integers from line %q in file %s", line, mapFile)
+		}
+		// Create an identity mapping with the current userns.
+		mappings = append(mappings, specs.LinuxIDMapping{
+			ContainerID: myStart,
+			HostID:      myStart,
+			Size:        rangeLen,
+		})
+	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("failed to scan file %s: %v", mapFile, err)
+	}
+	return mappings, nil
+}
+
+func logIDMappings(mappings []specs.LinuxIDMapping, idType string) {
+	if !log.IsLogging(log.Debug) {
+		return
+	}
+	log.Debugf("%s Mappings:", idType)
+	for _, m := range mappings {
+		log.Debugf("\tContainer ID: %d, Host ID: %d, Range Length: %d", m.ContainerID, m.HostID, m.Size)
+	}
 }
