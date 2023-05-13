@@ -31,7 +31,7 @@ make copy TARGETS=runsc DESTINATION="${test_dir}"
 cat > "${podman_runtime}" <<EOF
 #!/bin/bash
 
-exec $test_dir/runsc --ignore-cgroups --debug --debug-log ${test_dir}/runsc.log "\$@"
+exec $test_dir/runsc --ignore-cgroups --debug --debug-log ${test_dir}/runsc.log ${RUNTIME_ARGS:-} "\$@"
 EOF
 chmod ugo+x "${podman_runtime}"
 chmod ugo+x "${test_dir}/runsc"
