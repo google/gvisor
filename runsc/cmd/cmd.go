@@ -89,6 +89,10 @@ func callSelfAsNobody(args []string) error {
 	if _, _, err := unix.RawSyscall(unix.SYS_SETUID, uintptr(nobody), 0, 0); err != 0 {
 		return fmt.Errorf("error setting gid: %v", err)
 	}
+	// Drop all capabilities.
+	if err := applyCaps(&specs.LinuxCapabilities{}); err != nil {
+		return fmt.Errorf("error dropping capabilities: %w", err)
+	}
 
 	binPath := specutils.ExePath
 
