@@ -291,7 +291,6 @@ steps:
     agents:
       <<: *ubuntu_agents
       arch: "amd64"
-    soft_fail: true
   - <<: *common
     <<: *docker
     label: ":safety_pin: Host network tests"
