@@ -23,7 +23,6 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/sysmsg"
-	gsync "gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syncevent"
 )
 
@@ -351,7 +350,7 @@ func (q *fastPathDispatcher) loop(target *sharedContext) {
 				// q.list has to be empty at the end.
 				continue
 			}
-			gsync.Goyield()
+			yield()
 		}
 	}
 }

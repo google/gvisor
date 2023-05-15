@@ -53,6 +53,8 @@ go_library(
         "lib_amd64.s",
         "lib_arm64.s",
         "shared_context.go",
+        "shared_context_norace.go",
+        "shared_context_race.go",
         "stub_amd64.s",
         "stub_arm64.s",
         "stub_defs.go",
