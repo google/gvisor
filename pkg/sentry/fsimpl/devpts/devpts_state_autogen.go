@@ -158,6 +158,7 @@ func (l *lineDiscipline) StateFields() []string {
 		"outQueue",
 		"termios",
 		"column",
+		"numReplicas",
 		"masterWaiter",
 		"replicaWaiter",
 		"terminal",
@@ -174,9 +175,10 @@ func (l *lineDiscipline) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &l.outQueue)
 	stateSinkObject.Save(3, &l.termios)
 	stateSinkObject.Save(4, &l.column)
-	stateSinkObject.Save(5, &l.masterWaiter)
-	stateSinkObject.Save(6, &l.replicaWaiter)
-	stateSinkObject.Save(7, &l.terminal)
+	stateSinkObject.Save(5, &l.numReplicas)
+	stateSinkObject.Save(6, &l.masterWaiter)
+	stateSinkObject.Save(7, &l.replicaWaiter)
+	stateSinkObject.Save(8, &l.terminal)
 }
 
 func (l *lineDiscipline) afterLoad() {}
@@ -188,9 +190,10 @@ func (l *lineDiscipline) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &l.outQueue)
 	stateSourceObject.Load(3, &l.termios)
 	stateSourceObject.Load(4, &l.column)
-	stateSourceObject.Load(5, &l.masterWaiter)
-	stateSourceObject.Load(6, &l.replicaWaiter)
-	stateSourceObject.Load(7, &l.terminal)
+	stateSourceObject.Load(5, &l.numReplicas)
+	stateSourceObject.Load(6, &l.masterWaiter)
+	stateSourceObject.Load(7, &l.replicaWaiter)
+	stateSourceObject.Load(8, &l.terminal)
 }
 
 func (o *outputQueueTransformer) StateTypeName() string {

@@ -106,6 +106,9 @@ type lineDiscipline struct {
 	// handling certain special characters like backspace.
 	column int
 
+	// numReplicas is the number of replica file descriptors.
+	numReplicas int
+
 	// masterWaiter is used to wait on the master end of the TTY.
 	masterWaiter waiter.Queue
 
@@ -267,6 +270,20 @@ func (l *lineDiscipline) outputQueueWrite(ctx context.Context, src usermem.IOSeq
 		return n, nil
 	}
 	return 0, linuxerr.ErrWouldBlock
+}
+
+// replicaOpen is called when a replica file descriptor is opened.
+func (l *lineDiscipline) replicaOpen() {
+	l.termiosMu.Lock()
+	defer l.termiosMu.Unlock()
+	l.numReplicas++
+}
+
+// replicaClose is called when a replica file descriptor is closed.
+func (l *lineDiscipline) replicaClose() {
+	l.termiosMu.Lock()
+	defer l.termiosMu.Unlock()
+	l.numReplicas--
 }
 
 // transformer is a helper interface to make it easier to stateify queue.
