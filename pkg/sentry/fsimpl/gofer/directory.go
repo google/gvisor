@@ -272,8 +272,7 @@ func (d *dentry) getDirents(ctx context.Context) ([]vfs.Dirent, error) {
 			// have been opened when the calling directoryFD was opened.
 			panic("gofer.dentry.getDirents called without a readable handle")
 		}
-		const count = 64 * 1024 // for consistency with the vfs1 client
-		err := d.getDirentsLocked(ctx, count, func(name string, key inoKey, dType uint8) {
+		err := d.getDirentsLocked(ctx, func(name string, key inoKey, dType uint8) {
 			dirent := vfs.Dirent{
 				Name:    name,
 				Ino:     d.fs.inoFromKey(key),
