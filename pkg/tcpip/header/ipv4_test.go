@@ -182,7 +182,7 @@ func TestIPv4EncodeOptions(t *testing.T) {
 func TestIsV4LinkLocalUnicastAddress(t *testing.T) {
 	tests := []struct {
 		name     string
-		addr     tcpip.Address
+		addr     string
 		expected bool
 	}{
 		{
@@ -209,7 +209,7 @@ func TestIsV4LinkLocalUnicastAddress(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := header.IsV4LinkLocalUnicastAddress(test.addr); got != test.expected {
+			if got := header.IsV4LinkLocalUnicastAddress(tcpip.AddrFromSlice([]byte(test.addr))); got != test.expected {
 				t.Errorf("got header.IsV4LinkLocalUnicastAddress(%s) = %t, want = %t", test.addr, got, test.expected)
 			}
 		})
@@ -219,7 +219,7 @@ func TestIsV4LinkLocalUnicastAddress(t *testing.T) {
 func TestIsV4LinkLocalMulticastAddress(t *testing.T) {
 	tests := []struct {
 		name     string
-		addr     tcpip.Address
+		addr     string
 		expected bool
 	}{
 		{
@@ -246,7 +246,7 @@ func TestIsV4LinkLocalMulticastAddress(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := header.IsV4LinkLocalMulticastAddress(test.addr); got != test.expected {
+			if got := header.IsV4LinkLocalMulticastAddress(tcpip.AddrFrom4Slice([]byte(test.addr))); got != test.expected {
 				t.Errorf("got header.IsV4LinkLocalMulticastAddress(%s) = %t, want = %t", test.addr, got, test.expected)
 			}
 		})

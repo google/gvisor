@@ -24,16 +24,6 @@ import (
 )
 
 const (
-	// MLDv2RoutersAddress is the address to send MLDv2 reports to.
-	//
-	// As per RFC 3810 section 5.2.14,
-	//
-	//   Version 2 Multicast Listener Reports are sent with an IP destination
-	//   address of FF02:0:0:0:0:0:0:16, to which all MLDv2-capable multicast
-	//   routers listen (see section 11 for IANA considerations related to
-	//   this special destination address).
-	MLDv2RoutersAddress tcpip.Address = "\xff\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x16"
-
 	// MLDv2QueryMinimumSize is the minimum size for an MLDv2 message.
 	MLDv2QueryMinimumSize = 24
 
@@ -51,6 +41,18 @@ const (
 	// mldv2QuerySourcesOffset is the offset to the Sources field within
 	// MLDv2Query.
 	mldv2QuerySourcesOffset = 24
+)
+
+var (
+	// MLDv2RoutersAddress is the address to send MLDv2 reports to.
+	//
+	// As per RFC 3810 section 5.2.14,
+	//
+	//   Version 2 Multicast Listener Reports are sent with an IP destination
+	//   address of FF02:0:0:0:0:0:0:16, to which all MLDv2-capable multicast
+	//   routers listen (see section 11 for IANA considerations related to
+	//   this special destination address).
+	MLDv2RoutersAddress = tcpip.AddrFrom16([16]byte{0xff, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x16})
 )
 
 // MLDv2Query is a Multicast Listener Discovery Version 2 Query message in an
@@ -166,7 +168,7 @@ func (m MLDv2Query) MulticastAddress() tcpip.Address {
 	//   In a Report or Done message, the Multicast Address field holds a
 	//   specific IPv6 multicast address to which the message sender is
 	//   listening or is ceasing to listen, respectively.
-	return tcpip.Address(m[mldMulticastAddressOffset:][:IPv6AddressSize])
+	return tcpip.AddrFrom16([16]byte(m[mldMulticastAddressOffset:][:IPv6AddressSize]))
 }
 
 // QuerierRobustnessVariable returns the querier's robustness variable.
@@ -277,7 +279,7 @@ func (s *MLDv2ReportMulticastAddressRecordSerializer) Length() int {
 }
 
 func copyIPv6Address(dst []byte, src tcpip.Address) {
-	if n := copy(dst, src); n != IPv6AddressSize {
+	if n := copy(dst, src.AsSlice()); n != IPv6AddressSize {
 		panic(fmt.Sprintf("got copy(...) = %d, want = %d", n, IPv6AddressSize))
 	}
 }
@@ -432,7 +434,7 @@ func (r MLDv2ReportMulticastAddressRecord) numberOfSources() uint16 {
 
 // MulticastAddress returns the multicast address this record targets.
 func (r MLDv2ReportMulticastAddressRecord) MulticastAddress() tcpip.Address {
-	return tcpip.Address(r[mldv2ReportMulticastAddressRecordMulticastAddressOffset:][:IPv6AddressSize])
+	return tcpip.AddrFrom16([16]byte(r[mldv2ReportMulticastAddressRecordMulticastAddressOffset:][:IPv6AddressSize]))
 }
 
 // Sources returns an iterator over source addresses in the query.

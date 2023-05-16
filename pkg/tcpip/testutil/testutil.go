@@ -31,7 +31,7 @@ func MustParse4(addr string) tcpip.Address {
 	if ip == nil {
 		panic(fmt.Sprintf("Parse4 expects IPv4 addresses, but was passed %q", addr))
 	}
-	return tcpip.Address(ip)
+	return tcpip.AddrFrom4Slice(ip)
 }
 
 // MustParse6 parses an IPv6 string (e.g. "fe80::1") into a tcpip.Address. Passing
@@ -41,7 +41,7 @@ func MustParse6(addr string) tcpip.Address {
 	if ip == nil {
 		panic(fmt.Sprintf("Parse6 was passed malformed address %q", addr))
 	}
-	return tcpip.Address(ip)
+	return tcpip.AddrFrom16Slice(ip)
 }
 
 func checkFieldCounts(ref, multi reflect.Value) error {

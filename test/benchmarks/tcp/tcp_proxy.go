@@ -163,30 +163,33 @@ func newNetstackImpl(mode string) (impl, error) {
 	}
 
 	// Parse details.
-	parsedAddr := tcpip.Address(net.ParseIP(*addr).To4())
+	var parsedAddr tcpip.Address
 	if *useIpv6 {
-		parsedAddr = tcpip.Address(net.ParseIP(*addr).To16())
+		parsedAddr = tcpip.AddrFrom16Slice(net.ParseIP(*addr).To16())
+	} else {
+		parsedAddr = tcpip.AddrFrom4Slice(net.ParseIP(*addr).To4())
 	}
-	parsedDest := tcpip.Address("")      // Filled in below.
-	parsedMask := tcpip.AddressMask("")  // Filled in below.
-	parsedDest6 := tcpip.Address("")     // Filled in below.
-	parsedMask6 := tcpip.AddressMask("") // Filled in below.
+	parsedBytes := parsedAddr.AsSlice()
+	var parsedDest tcpip.Address      // Filled in below.
+	var parsedMask tcpip.AddressMask  // Filled in below.
+	var parsedDest6 tcpip.Address     // Filled in below.
+	var parsedMask6 tcpip.AddressMask // Filled in below.
 	switch *mask {
 	case 8:
-		parsedDest = tcpip.Address([]byte{parsedAddr[0], 0, 0, 0})
-		parsedMask = tcpip.AddressMask([]byte{0xff, 0, 0, 0})
-		parsedDest6 = tcpip.Address(append([]byte{parsedAddr[0]}, make([]byte, 15)...))
-		parsedMask6 = tcpip.AddressMask(append([]byte{0xff}, make([]byte, 15)...))
+		parsedDest = tcpip.AddrFrom4([4]byte{parsedBytes[0], 0, 0, 0})
+		parsedMask = tcpip.MaskFromBytes([]byte{0xff, 0, 0, 0})
+		parsedDest6 = tcpip.AddrFrom16Slice(append([]byte{parsedBytes[0]}, make([]byte, 15)...))
+		parsedMask6 = tcpip.MaskFromBytes(append([]byte{0xff}, make([]byte, 15)...))
 	case 16:
-		parsedDest = tcpip.Address([]byte{parsedAddr[0], parsedAddr[1], 0, 0})
-		parsedMask = tcpip.AddressMask([]byte{0xff, 0xff, 0, 0})
-		parsedDest6 = tcpip.Address(append([]byte{parsedAddr[0], parsedAddr[1]}, make([]byte, 14)...))
-		parsedMask6 = tcpip.AddressMask(append([]byte{0xff, 0xff}, make([]byte, 14)...))
+		parsedDest = tcpip.AddrFrom4([4]byte{parsedBytes[0], parsedBytes[1], 0, 0})
+		parsedMask = tcpip.MaskFromBytes([]byte{0xff, 0xff, 0, 0})
+		parsedDest6 = tcpip.AddrFrom16Slice(append([]byte{parsedBytes[0], parsedBytes[1]}, make([]byte, 14)...))
+		parsedMask6 = tcpip.MaskFromBytes(append([]byte{0xff, 0xff}, make([]byte, 14)...))
 	case 24:
-		parsedDest = tcpip.Address([]byte{parsedAddr[0], parsedAddr[1], parsedAddr[2], 0})
-		parsedMask = tcpip.AddressMask([]byte{0xff, 0xff, 0xff, 0})
-		parsedDest6 = tcpip.Address(append([]byte{parsedAddr[0], parsedAddr[1], parsedAddr[2]}, make([]byte, 13)...))
-		parsedMask6 = tcpip.AddressMask(append([]byte{0xff, 0xff, 0xff}, make([]byte, 13)...))
+		parsedDest = tcpip.AddrFrom4([4]byte{parsedBytes[0], parsedBytes[1], parsedBytes[2], 0})
+		parsedMask = tcpip.MaskFromBytes([]byte{0xff, 0xff, 0xff, 0})
+		parsedDest6 = tcpip.AddrFrom16Slice(append([]byte{parsedBytes[0], parsedBytes[1], parsedBytes[2]}, make([]byte, 13)...))
+		parsedMask6 = tcpip.MaskFromBytes(append([]byte{0xff, 0xff, 0xff}, make([]byte, 13)...))
 	default:
 		// This is just laziness; we don't expect a different mask.
 		return nil, fmt.Errorf("mask %d not supported", mask)
@@ -315,13 +318,9 @@ func (n netstackImpl) dial(address string) (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	hostAddr := net.ParseIP(host).To4()
-	if *useIpv6 {
-		hostAddr = net.ParseIP(host).To16()
-	}
 	addr := tcpip.FullAddress{
 		NIC:  nicID,
-		Addr: tcpip.Address(hostAddr),
+		Addr: tcpip.AddrFromSlice(net.ParseIP(host)),
 		Port: uint16(portNumber),
 	}
 	proto := ipv4.ProtocolNumber

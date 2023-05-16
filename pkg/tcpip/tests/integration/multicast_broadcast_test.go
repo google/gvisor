@@ -478,7 +478,7 @@ func TestReuseAddrAndBroadcast(t *testing.T) {
 			protoAddr := tcpip.ProtocolAddress{
 				Protocol: header.IPv4ProtocolNumber,
 				AddressWithPrefix: tcpip.AddressWithPrefix{
-					Address:   "\x7f\x00\x00\x01",
+					Address:   tcpip.AddrFromSlice([]byte("\x7f\x00\x00\x01")),
 					PrefixLen: 8,
 				},
 			}
@@ -594,7 +594,7 @@ func TestUDPAddRemoveMembershipSocketOption(t *testing.T) {
 	}{
 		{
 			name:          "IPv4 unicast binding to unicast",
-			multicastAddr: "\xe0\x01\x02\x03",
+			multicastAddr: tcpip.AddrFromSlice([]byte("\xe0\x01\x02\x03")),
 			proto:         header.IPv4ProtocolNumber,
 			remoteAddr:    utils.RemoteIPv4Addr,
 			localAddr:     utils.Ipv4Addr,
@@ -602,7 +602,7 @@ func TestUDPAddRemoveMembershipSocketOption(t *testing.T) {
 		},
 		{
 			name:          "IPv6 broadcast-like address binding to wildcard",
-			multicastAddr: "\xff\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x02\x03\x04",
+			multicastAddr: tcpip.AddrFromSlice([]byte("\xff\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x02\x03\x04")),
 			proto:         header.IPv6ProtocolNumber,
 			remoteAddr:    utils.RemoteIPv6Addr,
 			localAddr:     utils.Ipv6Addr,
@@ -733,7 +733,7 @@ func TestUDPAddRemoveMembershipSocketOption(t *testing.T) {
 
 func TestAddMembershipInterfacePrecedence(t *testing.T) {
 	const nicID = 1
-	multicastAddr := tcpip.Address("\xe0\x01\x02\x03")
+	multicastAddr := tcpip.AddrFromSlice([]byte("\xe0\x01\x02\x03"))
 	proto := header.IPv4ProtocolNumber
 	// This address is nonsensical. If the precedence is correct, this should not
 	// matter, because ADD_IP_MEMBERSHIP should consider the interface index
@@ -783,7 +783,7 @@ func TestAddMembershipInterfacePrecedence(t *testing.T) {
 func TestMismatchedMulticastAddressAndProtocol(t *testing.T) {
 	const nicID = 1
 	// MulticastAddr is IPv4, but proto is IPv6.
-	multicastAddr := tcpip.Address("\xe0\x01\x02\x03")
+	multicastAddr := tcpip.AddrFromSlice([]byte("\xe0\x01\x02\x03"))
 	s := stack.New(stack.Options{
 		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
 		TransportProtocols: []stack.TransportProtocolFactory{icmp.NewProtocol6},

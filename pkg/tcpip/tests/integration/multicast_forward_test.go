@@ -97,7 +97,7 @@ func (m *fakeMulticastEventDispatcher) OnUnexpectedInputInterface(context stack.
 var (
 	v4Addrs = map[addrType]tcpip.Address{
 		anyAddr:                header.IPv4Any,
-		emptyAddr:              "",
+		emptyAddr:              tcpip.Address{},
 		linkLocalMulticastAddr: testutil.MustParse4("224.0.0.1"),
 		linkLocalUnicastAddr:   testutil.MustParse4("169.254.0.10"),
 		multicastAddr:          testutil.MustParse4("225.0.0.0"),
@@ -107,7 +107,7 @@ var (
 
 	v6Addrs = map[addrType]tcpip.Address{
 		anyAddr:                header.IPv6Any,
-		emptyAddr:              "",
+		emptyAddr:              tcpip.Address{},
 		linkLocalMulticastAddr: testutil.MustParse6("ff02::a"),
 		linkLocalUnicastAddr:   testutil.MustParse6("fe80::a"),
 		multicastAddr:          testutil.MustParse6("ff0e::a"),

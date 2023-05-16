@@ -102,10 +102,10 @@ func main() {
 
 	rand.Seed(time.Now().UnixNano())
 
-	addr := tcpip.Address(net.ParseIP(addrName).To4())
+	addr := tcpip.AddrFromSlice(net.ParseIP(addrName).To4())
 	remote := tcpip.FullAddress{
 		NIC:  1,
-		Addr: tcpip.Address(net.ParseIP(remoteAddrName).To4()),
+		Addr: tcpip.AddrFromSlice(net.ParseIP(remoteAddrName).To4()),
 	}
 
 	var localPort uint16
@@ -171,7 +171,7 @@ func main() {
 
 	// Bind if a port is specified.
 	if localPort != 0 {
-		if err := ep.Bind(tcpip.FullAddress{0, "", localPort}); err != nil {
+		if err := ep.Bind(tcpip.FullAddress{0, tcpip.Address{}, localPort}); err != nil {
 			log.Fatal("Bind failed: ", err)
 		}
 	}

@@ -773,7 +773,7 @@ func (e *endpoint) forwardUnicastPacket(pkt stack.PacketBufferPtr) ip.Forwarding
 		return nil
 	}
 
-	r, err := stk.FindRoute(0, "", dstAddr, ProtocolNumber, false /* multicastLoop */)
+	r, err := stk.FindRoute(0, tcpip.Address{}, dstAddr, ProtocolNumber, false /* multicastLoop */)
 	switch err.(type) {
 	case nil:
 	// TODO(https://gvisor.dev/issues/8105): We should not observe ErrHostUnreachable from route
@@ -1727,7 +1727,7 @@ func (p *protocol) forwardPendingMulticastPacket(pkt stack.PacketBufferPtr, inst
 }
 
 func (p *protocol) isUnicastAddress(addr tcpip.Address) bool {
-	if len(addr) != header.IPv4AddressSize {
+	if addr.BitLen() != header.IPv4AddressSizeBits {
 		return false
 	}
 
@@ -1884,8 +1884,9 @@ func packetMustBeFragmented(pkt stack.PacketBufferPtr, networkMTU uint32) bool {
 // on a tcpip.Address (a string) without the need to convert it to a byte slice,
 // which would cause an allocation.
 func addressToUint32(addr tcpip.Address) uint32 {
-	_ = addr[3] // bounds check hint to compiler
-	return uint32(addr[0]) | uint32(addr[1])<<8 | uint32(addr[2])<<16 | uint32(addr[3])<<24
+	addrBytes := addr.As4()
+	_ = addrBytes[3] // bounds check hint to compiler
+	return uint32(addrBytes[0]) | uint32(addrBytes[1])<<8 | uint32(addrBytes[2])<<16 | uint32(addrBytes[3])<<24
 }
 
 // hashRoute calculates a hash value for the given source/destination pair using
@@ -2302,7 +2303,7 @@ func (e *endpoint) processIPOptions(pkt stack.PacketBufferPtr, opts header.IPv4O
 	// really forwarding packets as we may need to get two addresses, for rx and
 	// tx interfaces. We will also have to take usage into account.
 	localAddress := e.MainAddress().Address
-	if len(localAddress) == 0 {
+	if localAddress.BitLen() == 0 {
 		h := header.IPv4(pkt.NetworkHeader().Slice())
 		dstAddr := h.DestinationAddress()
 		if pkt.NetworkPacketInfo.LocalAddressBroadcast || header.IsV4MulticastAddress(dstAddr) {

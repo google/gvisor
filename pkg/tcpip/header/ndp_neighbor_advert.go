@@ -54,12 +54,12 @@ const (
 
 // TargetAddress returns the value within the Target Address field.
 func (b NDPNeighborAdvert) TargetAddress() tcpip.Address {
-	return tcpip.Address(b[ndpNATargetAddressOffset:][:IPv6AddressSize])
+	return tcpip.AddrFrom16Slice(b[ndpNATargetAddressOffset:][:IPv6AddressSize])
 }
 
 // SetTargetAddress sets the value within the Target Address field.
 func (b NDPNeighborAdvert) SetTargetAddress(addr tcpip.Address) {
-	copy(b[ndpNATargetAddressOffset:][:IPv6AddressSize], addr)
+	copy(b[ndpNATargetAddressOffset:][:IPv6AddressSize], addr.AsSlice())
 }
 
 // RouterFlag returns the value of the Router Flag field.

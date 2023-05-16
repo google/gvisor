@@ -63,7 +63,7 @@ var (
 	llAddr3 = header.LinkLocalAddr(linkAddr3)
 	llAddr4 = header.LinkLocalAddr(linkAddr4)
 	dstAddr = tcpip.FullAddress{
-		Addr: "\x0a\x0b\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01",
+		Addr: tcpip.AddrFromSlice([]byte("\x0a\x0b\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")),
 		Port: 25,
 	}
 )
@@ -73,10 +73,10 @@ func addrForSubnet(subnet tcpip.Subnet, linkAddr tcpip.LinkAddress) tcpip.Addres
 		return tcpip.AddressWithPrefix{}
 	}
 
-	addrBytes := []byte(subnet.ID())
+	addrBytes := subnet.ID().AsSlice()
 	header.EthernetAdddressToModifiedEUI64IntoBuf(linkAddr, addrBytes[header.IIDOffsetInIPv6Address:])
 	return tcpip.AddressWithPrefix{
-		Address:   tcpip.Address(addrBytes),
+		Address:   tcpip.AddrFromSlice(addrBytes),
 		PrefixLen: 64,
 	}
 }
@@ -87,7 +87,7 @@ func addrForSubnet(subnet tcpip.Subnet, linkAddr tcpip.LinkAddress) tcpip.Addres
 func prefixSubnetAddr(offset uint8, linkAddr tcpip.LinkAddress) (tcpip.AddressWithPrefix, tcpip.Subnet, tcpip.AddressWithPrefix) {
 	prefixBytes := []byte{1, 2, 3, 4, 5, 6, 7, 8 + offset, 0, 0, 0, 0, 0, 0, 0, 0}
 	prefix := tcpip.AddressWithPrefix{
-		Address:   tcpip.Address(prefixBytes),
+		Address:   tcpip.AddrFrom16Slice(prefixBytes),
 		PrefixLen: 64,
 	}
 
@@ -625,7 +625,7 @@ func TestDADResolve(t *testing.T) {
 			// Should not get a route even if we specify the local address as the
 			// tentative address.
 			{
-				r, err := s.FindRoute(nicID, "", addr2, header.IPv6ProtocolNumber, false)
+				r, err := s.FindRoute(nicID, tcpip.Address{}, addr2, header.IPv6ProtocolNumber, false)
 				if _, ok := err.(*tcpip.ErrHostUnreachable); !ok {
 					t.Errorf("got FindRoute(%d, '', %s, %d, false) = (%+v, %v), want = (_, %s)", nicID, addr2, header.IPv6ProtocolNumber, r, err, &tcpip.ErrHostUnreachable{})
 				}
@@ -665,7 +665,7 @@ func TestDADResolve(t *testing.T) {
 			}
 			// Should get a route using the address now that it is resolved.
 			{
-				r, err := s.FindRoute(nicID, "", addr2, header.IPv6ProtocolNumber, false)
+				r, err := s.FindRoute(nicID, tcpip.Address{}, addr2, header.IPv6ProtocolNumber, false)
 				if err != nil {
 					t.Errorf("got FindRoute(%d, '', %s, %d, false): %s", nicID, addr2, header.IPv6ProtocolNumber, err)
 				} else if r.LocalAddress() != addr1 {
@@ -1342,7 +1342,7 @@ func raBufWithPI(ip tcpip.Address, rl uint16, prefix tcpip.AddressWithPrefix, on
 	binary.BigEndian.PutUint32(buf[6:], pl)
 	// The Prefix Address field starts after the 14th byte within a
 	// header.NDPPrefixInformation.
-	copy(buf[14:], prefix.Address)
+	copy(buf[14:], prefix.Address.AsSlice())
 	return raBufWithOpts(ip, rl, header.NDPOptionsSerializer{
 		header.NDPPrefixInformation(buf[:]),
 	})
@@ -1373,8 +1373,8 @@ func raBufWithRIO(t *testing.T, ip tcpip.Address, prefix tcpip.AddressWithPrefix
 	buf[0] = uint8(prefix.PrefixLen)
 	buf[1] = byte(prf) << 3
 	binary.BigEndian.PutUint32(buf[2:], lifetimeSeconds)
-	if n := copy(buf[6:], prefix.Address); n != len(prefix.Address) {
-		t.Fatalf("got copy(...) = %d, want = %d", n, len(prefix.Address))
+	if n := copy(buf[6:], prefix.Address.AsSlice()); n != prefix.Address.Len() {
+		t.Fatalf("got copy(...) = %d, want = %d", n, prefix.Address.Len())
 	}
 	return raBufWithOpts(ip, 0 /* router lifetime */, header.NDPOptionsSerializer{
 		header.NDPRouteInformation(buf[:]),
@@ -2003,7 +2003,7 @@ func TestPrefixDiscoveryMaxOnLinkPrefixes(t *testing.T) {
 		prefixAddr := [16]byte{1, 2, 3, 4, 5, 6, 7, 8, 0, 0, 0, 0, 0, 0, 0, 0}
 		prefixAddr[7] = byte(i)
 		prefix := tcpip.AddressWithPrefix{
-			Address:   tcpip.Address(prefixAddr[:]),
+			Address:   tcpip.AddrFromSlice(prefixAddr[:]),
 			PrefixLen: 64,
 		}
 		prefixes[i] = prefix.Subnet()
@@ -2011,7 +2011,7 @@ func TestPrefixDiscoveryMaxOnLinkPrefixes(t *testing.T) {
 		buf[0] = uint8(prefix.PrefixLen)
 		buf[1] = 128
 		binary.BigEndian.PutUint32(buf[2:], 10)
-		copy(buf[14:], prefix.Address)
+		copy(buf[14:], prefix.Address.AsSlice())
 
 		optSer[i] = header.NDPPrefixInformation(buf[:])
 	}
@@ -2132,7 +2132,7 @@ func TestMaxSlaacPrefixes(t *testing.T) {
 	for i := 0; i < slaacPrefixesInRA; i++ {
 		prefixAddr := [16]byte{1, 2, 3, 4, 5, 6, 7, byte(i), 0, 0, 0, 0, 0, 0, 0, 0}
 		prefix := tcpip.AddressWithPrefix{
-			Address:   tcpip.Address(prefixAddr[:]),
+			Address:   tcpip.AddrFromSlice(prefixAddr[:]),
 			PrefixLen: 64,
 		}
 		prefixes[i] = prefix.Subnet()
@@ -2144,8 +2144,8 @@ func TestMaxSlaacPrefixes(t *testing.T) {
 		// Set the preferred and valid lifetimes to the maxiumum possible value.
 		binary.BigEndian.PutUint32(buf[2:], math.MaxUint32)
 		binary.BigEndian.PutUint32(buf[6:], math.MaxUint32)
-		if n := copy(buf[14:], prefix.Address); n != len(prefix.Address) {
-			t.Fatalf("got copy(...) = %d, want = %d", n, len(prefix.Address))
+		if n := copy(buf[14:], prefix.Address.AsSlice()); n != prefix.Address.Len() {
+			t.Fatalf("got copy(...) = %d, want = %d", n, prefix.Address.Len())
 		}
 		optSer = append(optSer, header.NDPPrefixInformation(buf[:]))
 	}
@@ -3214,10 +3214,10 @@ func TestMixedSLAACAddrConflictRegen(t *testing.T) {
 	var stableAddrsWithOpaqueIID [maxAddrs]tcpip.AddressWithPrefix
 	var tempAddrsWithOpaqueIID [maxAddrs]tcpip.AddressWithPrefix
 	var tempAddrsWithModifiedEUI64 [maxAddrs]tcpip.AddressWithPrefix
-	addrBytes := []byte(subnet.ID())
+	addrBytes := subnet.ID().AsSlice()
 	for i := 0; i < maxAddrs; i++ {
 		stableAddrsWithOpaqueIID[i] = tcpip.AddressWithPrefix{
-			Address:   tcpip.Address(header.AppendOpaqueInterfaceIdentifier(addrBytes[:header.IIDOffsetInIPv6Address], subnet, nicName, uint8(i), nil)),
+			Address:   tcpip.AddrFromSlice(header.AppendOpaqueInterfaceIdentifier(addrBytes[:header.IIDOffsetInIPv6Address], subnet, nicName, uint8(i), nil)),
 			PrefixLen: header.IIDOffsetInIPv6Address * 8,
 		}
 		// When generating temporary addresses, the resolved stable address for the
@@ -4302,14 +4302,14 @@ func TestAutoGenAddrWithOpaqueIID(t *testing.T) {
 	// addr1 and addr2 are the addresses that are expected to be generated when
 	// stack.Stack is configured to generate opaque interface identifiers as
 	// defined by RFC 7217.
-	addrBytes := []byte(subnet1.ID())
+	addrBytes := subnet1.ID().AsSlice()
 	addr1 := tcpip.AddressWithPrefix{
-		Address:   tcpip.Address(header.AppendOpaqueInterfaceIdentifier(addrBytes[:header.IIDOffsetInIPv6Address], subnet1, nicName, 0, secretKey)),
+		Address:   tcpip.AddrFromSlice(header.AppendOpaqueInterfaceIdentifier(addrBytes[:header.IIDOffsetInIPv6Address], subnet1, nicName, 0, secretKey)),
 		PrefixLen: 64,
 	}
-	addrBytes = []byte(subnet2.ID())
+	addrBytes = subnet2.ID().AsSlice()
 	addr2 := tcpip.AddressWithPrefix{
-		Address:   tcpip.Address(header.AppendOpaqueInterfaceIdentifier(addrBytes[:header.IIDOffsetInIPv6Address], subnet2, nicName, 0, secretKey)),
+		Address:   tcpip.AddrFromSlice(header.AppendOpaqueInterfaceIdentifier(addrBytes[:header.IIDOffsetInIPv6Address], subnet2, nicName, 0, secretKey)),
 		PrefixLen: 64,
 	}
 
@@ -4394,9 +4394,9 @@ func TestAutoGenAddrInResponseToDADConflicts(t *testing.T) {
 	prefix, subnet, _ := prefixSubnetAddr(0, linkAddr1)
 
 	addrForSubnet := func(subnet tcpip.Subnet, dadCounter uint8) tcpip.AddressWithPrefix {
-		addrBytes := []byte(subnet.ID())
+		addrBytes := subnet.ID().AsSlice()
 		return tcpip.AddressWithPrefix{
-			Address:   tcpip.Address(header.AppendOpaqueInterfaceIdentifier(addrBytes[:header.IIDOffsetInIPv6Address], subnet, nicName, dadCounter, secretKey)),
+			Address:   tcpip.AddrFromSlice(header.AppendOpaqueInterfaceIdentifier(addrBytes[:header.IIDOffsetInIPv6Address], subnet, nicName, dadCounter, secretKey)),
 			PrefixLen: 64,
 		}
 	}
@@ -4676,10 +4676,10 @@ func TestAutoGenAddrWithEUI64IIDNoDADRetries(t *testing.T) {
 
 			addrType.triggerSLAACFn(e)
 
-			addrBytes := []byte(addrType.subnet.ID())
+			addrBytes := addrType.subnet.ID().AsSlice()
 			header.EthernetAdddressToModifiedEUI64IntoBuf(linkAddr1, addrBytes[header.IIDOffsetInIPv6Address:])
 			addr := tcpip.AddressWithPrefix{
-				Address:   tcpip.Address(addrBytes),
+				Address:   tcpip.AddrFromSlice(addrBytes),
 				PrefixLen: 64,
 			}
 			if _, err := expectAutoGenAddrNewEvent(&ndpDisp, addr); err != nil {
@@ -4762,9 +4762,9 @@ func TestAutoGenAddrContinuesLifetimesAfterRetry(t *testing.T) {
 	received := clock.NowMonotonic()
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix, true, true, lifetimeSeconds, lifetimeSeconds))
 
-	addrBytes := []byte(subnet.ID())
+	addrBytes := subnet.ID().AsSlice()
 	addr := tcpip.AddressWithPrefix{
-		Address:   tcpip.Address(header.AppendOpaqueInterfaceIdentifier(addrBytes[:header.IIDOffsetInIPv6Address], subnet, nicName, 0, secretKey)),
+		Address:   tcpip.AddrFromSlice(header.AppendOpaqueInterfaceIdentifier(addrBytes[:header.IIDOffsetInIPv6Address], subnet, nicName, 0, secretKey)),
 		PrefixLen: 64,
 	}
 	addrDisp, err := expectAutoGenAddrNewEvent(&ndpDisp, addr)
@@ -4792,7 +4792,7 @@ func TestAutoGenAddrContinuesLifetimesAfterRetry(t *testing.T) {
 	}
 
 	// Let the next address resolve.
-	addr.Address = tcpip.Address(header.AppendOpaqueInterfaceIdentifier(addrBytes[:header.IIDOffsetInIPv6Address], subnet, nicName, 1, secretKey))
+	addr.Address = tcpip.AddrFromSlice(header.AppendOpaqueInterfaceIdentifier(addrBytes[:header.IIDOffsetInIPv6Address], subnet, nicName, 1, secretKey))
 	addrDisp, err = expectAutoGenAddrNewEvent(&ndpDisp, addr)
 	if err != nil {
 		t.Fatalf("error expecting stable auto-gen address generated event: %s", err)
@@ -4905,7 +4905,7 @@ func TestNDPRecursiveDNSServerDispatch(t *testing.T) {
 			}),
 			&ndpRDNSS{
 				[]tcpip.Address{
-					"\x01\x02\x03\x04\x05\x06\x07\x08\x00\x00\x00\x00\x00\x00\x00\x01",
+					tcpip.AddrFromSlice([]byte("\x01\x02\x03\x04\x05\x06\x07\x08\x00\x00\x00\x00\x00\x00\x00\x01")),
 				},
 				2 * time.Second,
 			},
@@ -4920,8 +4920,8 @@ func TestNDPRecursiveDNSServerDispatch(t *testing.T) {
 			}),
 			&ndpRDNSS{
 				[]tcpip.Address{
-					"\x01\x02\x03\x04\x05\x06\x07\x08\x00\x00\x00\x00\x00\x00\x00\x01",
-					"\x01\x02\x03\x04\x05\x06\x07\x08\x00\x00\x00\x00\x00\x00\x00\x02",
+					tcpip.AddrFromSlice([]byte("\x01\x02\x03\x04\x05\x06\x07\x08\x00\x00\x00\x00\x00\x00\x00\x01")),
+					tcpip.AddrFromSlice([]byte("\x01\x02\x03\x04\x05\x06\x07\x08\x00\x00\x00\x00\x00\x00\x00\x02")),
 				},
 				time.Second,
 			},
@@ -4937,9 +4937,9 @@ func TestNDPRecursiveDNSServerDispatch(t *testing.T) {
 			}),
 			&ndpRDNSS{
 				[]tcpip.Address{
-					"\x01\x02\x03\x04\x05\x06\x07\x08\x00\x00\x00\x00\x00\x00\x00\x01",
-					"\x01\x02\x03\x04\x05\x06\x07\x08\x00\x00\x00\x00\x00\x00\x00\x02",
-					"\x01\x02\x03\x04\x05\x06\x07\x08\x00\x00\x00\x00\x00\x00\x00\x03",
+					tcpip.AddrFromSlice([]byte("\x01\x02\x03\x04\x05\x06\x07\x08\x00\x00\x00\x00\x00\x00\x00\x01")),
+					tcpip.AddrFromSlice([]byte("\x01\x02\x03\x04\x05\x06\x07\x08\x00\x00\x00\x00\x00\x00\x00\x02")),
+					tcpip.AddrFromSlice([]byte("\x01\x02\x03\x04\x05\x06\x07\x08\x00\x00\x00\x00\x00\x00\x00\x03")),
 				},
 				0,
 			},
@@ -5868,7 +5868,7 @@ func TestRouterSolicitation(t *testing.T) {
 						t.Fatalf("CreateNICWithOptions(%d, _, %#v) = %s", nicID, opts, err)
 					}
 
-					if addr := test.nicAddr; addr != "" {
+					if addr := test.nicAddr; addr != (tcpip.Address{}) {
 						protocolAddr := tcpip.ProtocolAddress{
 							Protocol:          header.IPv6ProtocolNumber,
 							AddressWithPrefix: addr.WithPrefix(),

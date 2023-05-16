@@ -20,7 +20,6 @@ import (
 	"testing"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
@@ -145,8 +144,9 @@ func TestIPv6UnknownOptionAction(t *testing.T) {
 
 			outgoingOverride := testbench.Layers{}
 			if tt.multicastDst {
+				ip := net.ParseIP("ff02::1")
 				outgoingOverride = testbench.Layers{&testbench.IPv6{
-					DstAddr: testbench.Address(tcpip.Address(net.ParseIP("ff02::1"))),
+					DstAddr: &ip,
 				}}
 			}
 

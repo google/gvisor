@@ -28,8 +28,8 @@ import (
 // destination protocol and network address. Pseudo-headers are needed by
 // transport layers when calculating their own checksum.
 func PseudoHeaderChecksum(protocol tcpip.TransportProtocolNumber, srcAddr tcpip.Address, dstAddr tcpip.Address, totalLen uint16) uint16 {
-	xsum := checksum.Checksum([]byte(srcAddr), 0)
-	xsum = checksum.Checksum([]byte(dstAddr), xsum)
+	xsum := checksum.Checksum(srcAddr.AsSlice(), 0)
+	xsum = checksum.Checksum(dstAddr.AsSlice(), xsum)
 
 	// Add the length portion of the checksum to the pseudo-checksum.
 	tmp := make([]byte, 2)
@@ -68,12 +68,32 @@ func checksumUpdate2ByteAlignedUint16(xsum, old, new uint16) uint16 {
 func checksumUpdate2ByteAlignedAddress(xsum uint16, old, new tcpip.Address) uint16 {
 	const uint16Bytes = 2
 
-	if len(old) != len(new) {
-		panic(fmt.Sprintf("buffer lengths are different; old = %d, new = %d", len(old), len(new)))
+	if old.BitLen() != new.BitLen() {
+		panic(fmt.Sprintf("buffer lengths are different; old = %d, new = %d", old.BitLen()/8, new.BitLen()/8))
 	}
 
-	if len(old)%uint16Bytes != 0 {
-		panic(fmt.Sprintf("buffer has an odd number of bytes; got = %d", len(old)))
+	if oldBytes := old.BitLen() % 16; oldBytes != 0 {
+		panic(fmt.Sprintf("buffer has an odd number of bytes; got = %d", oldBytes))
+	}
+
+	// Try to avoid allocating.
+	var oldAddr []byte
+	var newAddr []byte
+	switch old.BitLen() {
+	case 32:
+		var oldAddr4 [4]byte
+		var newAddr4 [4]byte
+		oldAddr4 = old.As4()
+		newAddr4 = new.As4()
+		oldAddr = oldAddr4[:]
+		newAddr = newAddr4[:]
+	case 128:
+		var oldAddr16 [16]byte
+		var newAddr16 [16]byte
+		oldAddr16 = old.As16()
+		newAddr16 = new.As16()
+		oldAddr = oldAddr16[:]
+		newAddr = newAddr16[:]
 	}
 
 	// As per RFC 1071 page 4,
@@ -89,12 +109,12 @@ func checksumUpdate2ByteAlignedAddress(xsum uint16, old, new tcpip.Address) uint
 	//        checksum C, the new checksum C' is:
 	//
 	//                C' = C + (-m) + m' = C + (m' - m)
-	for len(old) != 0 {
+	for len(oldAddr) != 0 {
 		// Convert the 2 byte sequences to uint16 values then apply the increment
 		// update.
-		xsum = checksumUpdate2ByteAlignedUint16(xsum, (uint16(old[0])<<8)+uint16(old[1]), (uint16(new[0])<<8)+uint16(new[1]))
-		old = old[uint16Bytes:]
-		new = new[uint16Bytes:]
+		xsum = checksumUpdate2ByteAlignedUint16(xsum, (uint16(oldAddr[0])<<8)+uint16(oldAddr[1]), (uint16(newAddr[0])<<8)+uint16(newAddr[1]))
+		oldAddr = oldAddr[uint16Bytes:]
+		newAddr = newAddr[uint16Bytes:]
 	}
 
 	return xsum

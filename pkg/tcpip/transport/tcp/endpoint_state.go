@@ -162,14 +162,17 @@ func (e *endpoint) Resume(s *stack.Stack) {
 	switch {
 	case epState.connected():
 		bind()
-		if len(e.connectingAddress) == 0 {
+		if e.connectingAddress.BitLen() == 0 {
 			e.connectingAddress = e.TransportEndpointInfo.ID.RemoteAddress
 			// This endpoint is accepted by netstack but not yet by
 			// the app. If the endpoint is IPv6 but the remote
 			// address is IPv4, we need to connect as IPv6 so that
 			// dual-stack mode can be properly activated.
-			if e.NetProto == header.IPv6ProtocolNumber && len(e.TransportEndpointInfo.ID.RemoteAddress) != header.IPv6AddressSize {
-				e.connectingAddress = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff" + e.TransportEndpointInfo.ID.RemoteAddress
+			if e.NetProto == header.IPv6ProtocolNumber && e.TransportEndpointInfo.ID.RemoteAddress.BitLen() != header.IPv6AddressSizeBits {
+				e.connectingAddress = tcpip.AddrFrom16Slice(append(
+					[]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff},
+					e.TransportEndpointInfo.ID.RemoteAddress.AsSlice()...,
+				))
 			}
 		}
 		// Reset the scoreboard to reinitialize the sack information as

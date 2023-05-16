@@ -316,10 +316,10 @@ func matchIfName(nicName string, ifName string, invert bool) bool {
 // NetworkProtocol returns the protocol (IPv4 or IPv6) on to which the header
 // applies.
 func (fl IPHeaderFilter) NetworkProtocol() tcpip.NetworkProtocolNumber {
-	switch len(fl.Src) {
-	case header.IPv4AddressSize:
+	switch fl.Src.BitLen() {
+	case header.IPv4AddressSizeBits:
 		return header.IPv4ProtocolNumber
-	case header.IPv6AddressSize:
+	case header.IPv6AddressSizeBits:
 		return header.IPv6ProtocolNumber
 	}
 	panic(fmt.Sprintf("invalid address in IPHeaderFilter: %s", fl.Src))
@@ -328,8 +328,11 @@ func (fl IPHeaderFilter) NetworkProtocol() tcpip.NetworkProtocolNumber {
 // filterAddress returns whether addr matches the filter.
 func filterAddress(addr, mask, filterAddr tcpip.Address, invert bool) bool {
 	matches := true
-	for i := range filterAddr {
-		if addr[i]&mask[i] != filterAddr[i] {
+	addrBytes := addr.AsSlice()
+	maskBytes := mask.AsSlice()
+	filterBytes := filterAddr.AsSlice()
+	for i := range filterAddr.AsSlice() {
+		if addrBytes[i]&maskBytes[i] != filterBytes[i] {
 			matches = false
 			break
 		}

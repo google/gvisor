@@ -457,10 +457,10 @@ func TestForwardingWithLinkResolutionFailure(t *testing.T) {
 		if got := tcpip.LinkAddress(rep.HardwareAddressSender()); got != outgoingLinkAddr {
 			t.Errorf("got HardwareAddressSender = %s, want = %s", got, outgoingLinkAddr)
 		}
-		if got := tcpip.Address(rep.ProtocolAddressSender()); got != src {
+		if got := tcpip.AddrFromSlice(rep.ProtocolAddressSender()); got != src {
 			t.Errorf("got ProtocolAddressSender = %s, want = %s", got, src)
 		}
-		if got := tcpip.Address(rep.ProtocolAddressTarget()); got != dst {
+		if got := tcpip.AddrFromSlice(rep.ProtocolAddressTarget()); got != dst {
 			t.Errorf("got ProtocolAddressTarget = %s, want = %s", got, dst)
 		}
 	}
@@ -532,11 +532,11 @@ func TestForwardingWithLinkResolutionFailure(t *testing.T) {
 			sourceAddr:             tcptestutil.MustParse4("10.0.0.2"),
 			destAddr:               tcptestutil.MustParse4("11.0.0.2"),
 			incomingAddr: tcpip.AddressWithPrefix{
-				Address:   tcpip.Address(net.ParseIP("10.0.0.1").To4()),
+				Address:   tcpip.AddrFromSlice(net.ParseIP("10.0.0.1").To4()),
 				PrefixLen: 8,
 			},
 			outgoingAddr: tcpip.AddressWithPrefix{
-				Address:   tcpip.Address(net.ParseIP("11.0.0.1").To4()),
+				Address:   tcpip.AddrFromSlice(net.ParseIP("11.0.0.1").To4()),
 				PrefixLen: 8,
 			},
 			transportProtocol:            icmp.NewProtocol4,
@@ -552,11 +552,11 @@ func TestForwardingWithLinkResolutionFailure(t *testing.T) {
 			sourceAddr:             tcptestutil.MustParse6("10::2"),
 			destAddr:               tcptestutil.MustParse6("11::2"),
 			incomingAddr: tcpip.AddressWithPrefix{
-				Address:   tcpip.Address(net.ParseIP("10::1").To16()),
+				Address:   tcpip.AddrFromSlice(net.ParseIP("10::1").To16()),
 				PrefixLen: 64,
 			},
 			outgoingAddr: tcpip.AddressWithPrefix{
-				Address:   tcpip.Address(net.ParseIP("11::1").To16()),
+				Address:   tcpip.AddrFromSlice(net.ParseIP("11::1").To16()),
 				PrefixLen: 64,
 			},
 			transportProtocol:            icmp.NewProtocol6,
@@ -961,7 +961,7 @@ func TestWritePacketsLinkResolution(t *testing.T) {
 				t.Fatalf("serverEP.Bind(%#v): %s", serverAddr, err)
 			}
 
-			r, err := host1Stack.FindRoute(host1NICID, "", test.remoteAddr, test.netProto, false /* multicastLoop */)
+			r, err := host1Stack.FindRoute(host1NICID, tcpip.Address{}, test.remoteAddr, test.netProto, false /* multicastLoop */)
 			if err != nil {
 				t.Fatalf("host1Stack.FindRoute(%d, '', %s, %d, false): %s", host1NICID, test.remoteAddr, test.netProto, err)
 			}
@@ -1337,7 +1337,7 @@ func TestTCPConfirmNeighborReachability(t *testing.T) {
 			// Add a reachable dynamic entry to our neighbor table for the remote.
 			{
 				ch := make(chan stack.LinkResolutionResult, 1)
-				err := host1Stack.GetLinkAddress(utils.Host1NICID, test.neighborAddr, "", test.netProto, func(r stack.LinkResolutionResult) {
+				err := host1Stack.GetLinkAddress(utils.Host1NICID, test.neighborAddr, tcpip.Address{}, test.netProto, func(r stack.LinkResolutionResult) {
 					ch <- r
 				})
 				if _, ok := err.(*tcpip.ErrWouldBlock); !ok {

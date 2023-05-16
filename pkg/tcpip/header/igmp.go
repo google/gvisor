@@ -132,12 +132,13 @@ func (b IGMP) SetChecksum(checksum uint16) {
 
 // GroupAddress gets the Group Address field.
 func (b IGMP) GroupAddress() tcpip.Address {
-	return tcpip.Address(b[igmpGroupAddressOffset:][:IPv4AddressSize])
+	return tcpip.AddrFrom4([4]byte(b[igmpGroupAddressOffset:][:IPv4AddressSize]))
 }
 
 // SetGroupAddress sets the Group Address field.
 func (b IGMP) SetGroupAddress(address tcpip.Address) {
-	if n := copy(b[igmpGroupAddressOffset:], address); n != IPv4AddressSize {
+	addrBytes := address.As4()
+	if n := copy(b[igmpGroupAddressOffset:], addrBytes[:]); n != IPv4AddressSize {
 		panic(fmt.Sprintf("copied %d bytes, expected %d", n, IPv4AddressSize))
 	}
 }

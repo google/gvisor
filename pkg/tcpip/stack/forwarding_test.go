@@ -38,8 +38,8 @@ const (
 	fwdTestNetDefaultMTU = 65536
 
 	dstAddrOffset        = 0
-	srcAddrOffset        = 1
-	protocolNumberOffset = 2
+	srcAddrOffset        = 4
+	protocolNumberOffset = 8
 )
 
 var _ LinkAddressResolver = (*fwdTestNetworkEndpoint)(nil)
@@ -96,7 +96,7 @@ func (f *fwdTestNetworkEndpoint) HandlePacket(pkt PacketBufferPtr) {
 		return
 	}
 
-	r, err := f.proto.stack.FindRoute(0, "", dst, fwdTestNetNumber, false /* multicastLoop */)
+	r, err := f.proto.stack.FindRoute(0, tcpip.Address{}, dst, fwdTestNetNumber, false /* multicastLoop */)
 	if err != nil {
 		return
 	}
@@ -122,8 +122,8 @@ func (f *fwdTestNetworkEndpoint) WritePacket(r *Route, params NetworkHeaderParam
 	// Add the protocol's header to the packet and send it to the link
 	// endpoint.
 	b := pkt.NetworkHeader().Push(fwdTestNetHeaderLen)
-	b[dstAddrOffset] = r.RemoteAddress()[0]
-	b[srcAddrOffset] = r.LocalAddress()[0]
+	copy(b[dstAddrOffset:], r.RemoteAddress().AsSlice())
+	copy(b[srcAddrOffset:], r.LocalAddress().AsSlice())
 	b[protocolNumberOffset] = byte(params.Protocol)
 	pkt.NetworkProtocolNumber = fwdTestNetNumber
 
@@ -178,7 +178,7 @@ func (*fwdTestNetworkProtocol) MinimumPacketSize() int {
 }
 
 func (*fwdTestNetworkProtocol) ParseAddresses(v []byte) (src, dst tcpip.Address) {
-	return tcpip.Address(v[srcAddrOffset : srcAddrOffset+1]), tcpip.Address(v[dstAddrOffset : dstAddrOffset+1])
+	return tcpip.AddrFrom4Slice(v[srcAddrOffset : srcAddrOffset+4]), tcpip.AddrFrom4Slice(v[dstAddrOffset : dstAddrOffset+4])
 }
 
 func (*fwdTestNetworkProtocol) Parse(pkt PacketBufferPtr) (tcpip.TransportProtocolNumber, bool, bool) {
@@ -357,7 +357,7 @@ func fwdTestNetFactory(t *testing.T, proto *fwdTestNetworkProtocol) (*faketime.M
 	protocolAddr1 := tcpip.ProtocolAddress{
 		Protocol: fwdTestNetNumber,
 		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   "\x01",
+			Address:   tcpip.AddrFrom4Slice([]byte("\x01\x00\x00\x00")),
 			PrefixLen: fwdTestNetDefaultPrefixLen,
 		},
 	}
@@ -377,7 +377,7 @@ func fwdTestNetFactory(t *testing.T, proto *fwdTestNetworkProtocol) (*faketime.M
 	protocolAddr2 := tcpip.ProtocolAddress{
 		Protocol: fwdTestNetNumber,
 		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   "\x02",
+			Address:   tcpip.AddrFrom4Slice([]byte("\x02\x00\x00\x00")),
 			PrefixLen: fwdTestNetDefaultPrefixLen,
 		},
 	}
@@ -398,7 +398,7 @@ func fwdTestNetFactory(t *testing.T, proto *fwdTestNetworkProtocol) (*faketime.M
 
 	// Route all packets to NIC 2.
 	{
-		subnet, err := tcpip.NewSubnet("\x00", "\x00")
+		subnet, err := tcpip.NewSubnet(tcpip.AddrFrom4Slice([]byte("\x00\x00\x00\x00")), tcpip.MaskFrom("\x00\x00\x00\x00"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -414,7 +414,7 @@ func TestForwardingWithStaticResolver(t *testing.T) {
 		onResolveStaticAddress:
 		// The network address 3 is resolved to the link address "c".
 		func(addr tcpip.Address) (tcpip.LinkAddress, bool) {
-			if addr == "\x03" {
+			if addr == tcpip.AddrFrom4Slice([]byte("\x03\x00\x00\x00")) {
 				return "c", true
 			}
 			return "", false
@@ -426,7 +426,7 @@ func TestForwardingWithStaticResolver(t *testing.T) {
 	// Inject an inbound packet to address 3 on NIC 1, and see if it is
 	// forwarded to NIC 2.
 	buf := make([]byte, 30)
-	buf[dstAddrOffset] = 3
+	copy(buf[dstAddrOffset:], []byte("\x03\x00\x00\x00"))
 	ep1.InjectInbound(fwdTestNetNumber, NewPacketBuffer(PacketBufferOptions{
 		Payload: bufferv2.MakeWithData(buf),
 	}))
@@ -559,7 +559,7 @@ func TestForwardingWithFakeResolverPartialTimeout(t *testing.T) {
 			}
 			// Only packets to address 3 will be resolved to the
 			// link address "c".
-			if addr == "\x03" {
+			if addr == tcpip.AddrFrom4Slice([]byte("\x03\x00\x00\x00")) {
 				neigh.handleConfirmation(addr, "c", ReachabilityConfirmationFlags{
 					Solicited: true,
 					Override:  false,

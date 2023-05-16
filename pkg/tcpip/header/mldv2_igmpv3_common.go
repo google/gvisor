@@ -112,7 +112,7 @@ func (it *AddressIterator) Next() (tcpip.Address, bool) {
 		panic(fmt.Sprintf("got len(buf.Next(%d)) = %d, want = %d", it.addressSize, len(b), it.addressSize))
 	}
 
-	return tcpip.Address(b), true
+	return tcpip.AddrFromSlice(b), true
 }
 
 func makeAddressIterator(b []byte, expectedAddresses uint16, addressSize int) (AddressIterator, bool) {

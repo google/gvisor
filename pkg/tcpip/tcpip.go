@@ -151,24 +151,104 @@ type Timer interface {
 
 // Address is a byte slice cast as a string that represents the address of a
 // network node. Or, in the case of unix endpoints, it may represent a path.
-type Address string
+//
+// +stateify savable
+type Address struct {
+	addr string
+}
+
+// AddrFrom4 converts addr to an Address.
+func AddrFrom4(addr [4]byte) Address {
+	return Address{addr: string(addr[:])}
+}
+
+// AddrFrom4Slice converts addr to an Address. It panics if len(addr) != 4.
+func AddrFrom4Slice(addr []byte) Address {
+	if len(addr) != 4 {
+		panic(fmt.Sprintf("bad address length for address %v", addr))
+	}
+	return AddrFrom4([4]byte(addr))
+}
+
+// AddrFrom16 converts addr to an Address.
+func AddrFrom16(addr [16]byte) Address {
+	return Address{addr: string(addr[:])}
+}
+
+// AddrFrom16Slice converts addr to an Address. It panics if len(addr) != 16.
+func AddrFrom16Slice(addr []byte) Address {
+	if len(addr) != 16 {
+		panic(fmt.Sprintf("bad address length for address %v", addr))
+	}
+	return AddrFrom16([16]byte(addr))
+}
+
+// AddrFromSlice converts addr to an Address. It returns the Address zero value
+// if len(addr) != 4 or 16.
+func AddrFromSlice(addr []byte) Address {
+	switch len(addr) {
+	case ipv4AddressSize:
+		return AddrFrom4Slice(addr)
+	case ipv6AddressSize:
+		return AddrFrom16Slice(addr)
+	}
+	return Address{}
+}
+
+// As4 returns a as a 4 byte array. It panics if the address length is not 4.
+func (a Address) As4() [4]byte {
+	if a.Len() != 4 {
+		panic(fmt.Sprintf("bad address length for address %v", a.addr))
+	}
+	return ([4]byte)([]byte(a.addr))
+}
+
+// As16 returns a as a 16 byte array. It panics if the address length is not 16.
+func (a Address) As16() [16]byte {
+	if a.Len() != 16 {
+		panic(fmt.Sprintf("bad address length for address %v", a.addr))
+	}
+	return ([16]byte)([]byte(a.addr))
+}
+
+// AsSlice returns a as a byte slice. It may return a new slice or a window
+// into existing memory.
+func (a Address) AsSlice() []byte {
+	return []byte(a.addr)
+}
+
+// BitLen returns the length in bits of a.
+func (a Address) BitLen() int {
+	return a.Len() * 8
+}
+
+// Len returns the length in bytes of a.
+func (a Address) Len() int {
+	return len(a.addr)
+}
 
 // WithPrefix returns the address with a prefix that represents a point subnet.
 func (a Address) WithPrefix() AddressWithPrefix {
 	return AddressWithPrefix{
 		Address:   a,
-		PrefixLen: len(a) * 8,
+		PrefixLen: a.BitLen(),
 	}
 }
 
 // Unspecified returns true if the address is unspecified.
 func (a Address) Unspecified() bool {
-	for _, b := range a {
+	for _, b := range a.addr {
 		if b != 0 {
 			return false
 		}
 	}
 	return true
+}
+
+// Equal returns whether a and other are equal. It exists for use by the cmp
+// library.
+func (a Address) Equal(other Address) bool {
+	return a == other
 }
 
 // MatchingPrefix returns the matching prefix length in bits.
@@ -177,14 +257,14 @@ func (a Address) Unspecified() bool {
 func (a Address) MatchingPrefix(b Address) uint8 {
 	const bitsInAByte = 8
 
-	if len(a) != len(b) {
+	if a.Len() != b.Len() {
 		panic(fmt.Sprintf("addresses %s and %s do not have the same length", a, b))
 	}
 
 	var prefix uint8
-	for i := range a {
-		aByte := a[i]
-		bByte := b[i]
+	for i := range a.addr {
+		aByte := a.addr[i]
+		bByte := b.addr[i]
 
 		if aByte == bByte {
 			prefix += bitsInAByte
@@ -210,17 +290,41 @@ func (a Address) MatchingPrefix(b Address) uint8 {
 }
 
 // AddressMask is a bitmask for an address.
-type AddressMask string
+//
+// +stateify savable
+type AddressMask struct {
+	mask string
+}
+
+// MaskFrom returns a Mask based on str.
+func MaskFrom(str string) AddressMask {
+	return AddressMask{mask: str}
+}
+
+// MaskFromBytes returns a Mask based on bs.
+func MaskFromBytes(bs []byte) AddressMask {
+	return AddressMask{mask: string(bs)}
+}
 
 // String implements Stringer.
 func (m AddressMask) String() string {
-	return Address(m).String()
+	return fmt.Sprintf("%x", []byte(m.mask))
+}
+
+// BitLen returns the length of the mask in bits.
+func (m AddressMask) BitLen() int {
+	return len(m.mask) * 8
+}
+
+// Len returns the length of the mask in bytes.
+func (m AddressMask) Len() int {
+	return len(m.mask)
 }
 
 // Prefix returns the number of bits before the first host bit.
 func (m AddressMask) Prefix() int {
 	p := 0
-	for _, b := range []byte(m) {
+	for _, b := range []byte(m.mask) {
 		p += bits.LeadingZeros8(^b)
 	}
 	return p
@@ -234,11 +338,11 @@ type Subnet struct {
 
 // NewSubnet creates a new Subnet, checking that the address and mask are the same length.
 func NewSubnet(a Address, m AddressMask) (Subnet, error) {
-	if len(a) != len(m) {
+	if a.Len() != m.Len() {
 		return Subnet{}, errSubnetLengthMismatch
 	}
-	for i := 0; i < len(a); i++ {
-		if a[i]&^m[i] != 0 {
+	for i := 0; i < a.Len(); i++ {
+		if a.addr[i]&^m.mask[i] != 0 {
 			return Subnet{}, errSubnetAddressMasked
 		}
 	}
@@ -253,11 +357,11 @@ func (s Subnet) String() string {
 // Contains returns true iff the address is of the same length and matches the
 // subnet address and mask.
 func (s *Subnet) Contains(a Address) bool {
-	if len(a) != len(s.address) {
+	if a.Len() != s.address.Len() {
 		return false
 	}
-	for i := 0; i < len(a); i++ {
-		if a[i]&s.mask[i] != s.address[i] {
+	for i := 0; i < a.Len(); i++ {
+		if a.addr[i]&s.mask.mask[i] != s.address.addr[i] {
 			return false
 		}
 	}
@@ -273,7 +377,7 @@ func (s *Subnet) ID() Address {
 // subnet mask.
 func (s *Subnet) Bits() (ones int, zeros int) {
 	ones = s.mask.Prefix()
-	return ones, len(s.mask)*8 - ones
+	return ones, s.mask.BitLen() - ones
 }
 
 // Prefix returns the number of bits before the first host bit.
@@ -288,17 +392,17 @@ func (s *Subnet) Mask() AddressMask {
 
 // Broadcast returns the subnet's broadcast address.
 func (s *Subnet) Broadcast() Address {
-	addr := []byte(s.address)
+	addr := []byte(s.address.addr)
 	for i := range addr {
-		addr[i] |= ^s.mask[i]
+		addr[i] |= ^s.mask.mask[i]
 	}
-	return Address(addr)
+	return Address{addr: string(addr)}
 }
 
 // IsBroadcast returns true if the address is considered a broadcast address.
 func (s *Subnet) IsBroadcast(address Address) bool {
 	// Only IPv4 supports the notion of a broadcast address.
-	if len(address) != ipv4AddressSize {
+	if address.Len() != ipv4AddressSize {
 		return false
 	}
 
@@ -1358,7 +1462,7 @@ type Route struct {
 func (r Route) String() string {
 	var out strings.Builder
 	_, _ = fmt.Fprintf(&out, "%s", r.Destination)
-	if len(r.Gateway) > 0 {
+	if len(r.Gateway.addr) > 0 {
 		_, _ = fmt.Fprintf(&out, " via %s", r.Gateway)
 	}
 	_, _ = fmt.Fprintf(&out, " nic %d", r.NIC)
@@ -2375,15 +2479,15 @@ func clone(dst reflect.Value, src reflect.Value) {
 
 // String implements the fmt.Stringer interface.
 func (a Address) String() string {
-	switch len(a) {
+	switch a.Len() {
 	case 4:
-		return fmt.Sprintf("%d.%d.%d.%d", int(a[0]), int(a[1]), int(a[2]), int(a[3]))
+		return fmt.Sprintf("%d.%d.%d.%d", int(a.addr[0]), int(a.addr[1]), int(a.addr[2]), int(a.addr[3]))
 	case 16:
 		// Find the longest subsequence of hexadecimal zeros.
 		start, end := -1, -1
-		for i := 0; i < len(a); i += 2 {
+		for i := 0; i < a.Len(); i += 2 {
 			j := i
-			for j < len(a) && a[j] == 0 && a[j+1] == 0 {
+			for j < a.Len() && a.addr[j] == 0 && a.addr[j+1] == 0 {
 				j += 2
 			}
 			if j > i+2 && j-i > end-start {
@@ -2392,17 +2496,17 @@ func (a Address) String() string {
 		}
 
 		var b strings.Builder
-		for i := 0; i < len(a); i += 2 {
+		for i := 0; i < a.Len(); i += 2 {
 			if i == start {
 				b.WriteString("::")
 				i = end
-				if end >= len(a) {
+				if end >= a.Len() {
 					break
 				}
 			} else if i > 0 {
 				b.WriteByte(':')
 			}
-			v := uint16(a[i+0])<<8 | uint16(a[i+1])
+			v := uint16(a.addr[i+0])<<8 | uint16(a.addr[i+1])
 			if v == 0 {
 				b.WriteByte('0')
 			} else {
@@ -2416,33 +2520,33 @@ func (a Address) String() string {
 		}
 		return b.String()
 	default:
-		return fmt.Sprintf("%x", []byte(a))
+		return fmt.Sprintf("%x", []byte(a.addr))
 	}
 }
 
 // To4 converts the IPv4 address to a 4-byte representation.
-// If the address is not an IPv4 address, To4 returns "".
+// If the address is not an IPv4 address, To4 returns the empty Address.
 func (a Address) To4() Address {
 	const (
 		ipv4len = 4
 		ipv6len = 16
 	)
-	if len(a) == ipv4len {
+	if a.Len() == ipv4len {
 		return a
 	}
-	if len(a) == ipv6len &&
-		isZeros(a[0:10]) &&
-		a[10] == 0xff &&
-		a[11] == 0xff {
-		return a[12:16]
+	if a.Len() == ipv6len &&
+		isZeros(Address{addr: a.addr[0:10]}) &&
+		a.addr[10] == 0xff &&
+		a.addr[11] == 0xff {
+		return Address{addr: a.addr[12:16]}
 	}
-	return ""
+	return Address{}
 }
 
 // isZeros reports whether a is all zeros.
 func isZeros(a Address) bool {
-	for i := 0; i < len(a); i++ {
-		if a[i] != 0 {
+	for i := 0; i < a.Len(); i++ {
+		if a.addr[i] != 0 {
 			return false
 		}
 	}
@@ -2485,6 +2589,8 @@ func ParseMACAddress(s string) (LinkAddress, error) {
 }
 
 // AddressWithPrefix is an address with its subnet prefix length.
+//
+// +stateify savable
 type AddressWithPrefix struct {
 	// Address is a network address.
 	Address Address
@@ -2500,17 +2606,17 @@ func (a AddressWithPrefix) String() string {
 
 // Subnet converts the address and prefix into a Subnet value and returns it.
 func (a AddressWithPrefix) Subnet() Subnet {
-	addrLen := len(a.Address)
+	addrLen := len(a.Address.addr)
 	if a.PrefixLen <= 0 {
 		return Subnet{
-			address: Address(strings.Repeat("\x00", addrLen)),
-			mask:    AddressMask(strings.Repeat("\x00", addrLen)),
+			address: Address{addr: strings.Repeat("\x00", addrLen)},
+			mask:    AddressMask{mask: strings.Repeat("\x00", addrLen)},
 		}
 	}
 	if a.PrefixLen >= addrLen*8 {
 		return Subnet{
 			address: a.Address,
-			mask:    AddressMask(strings.Repeat("\xff", addrLen)),
+			mask:    AddressMask{mask: strings.Repeat("\xff", addrLen)},
 		}
 	}
 
@@ -2519,20 +2625,20 @@ func (a AddressWithPrefix) Subnet() Subnet {
 	n := uint(a.PrefixLen)
 	for i := 0; i < addrLen; i++ {
 		if n >= 8 {
-			sa[i] = a.Address[i]
+			sa[i] = a.Address.addr[i]
 			sm[i] = 0xff
 			n -= 8
 			continue
 		}
 		sm[i] = ^byte(0xff >> n)
-		sa[i] = a.Address[i] & sm[i]
+		sa[i] = a.Address.addr[i] & sm[i]
 		n = 0
 	}
 
 	// For extra caution, call NewSubnet rather than directly creating the Subnet
 	// value. If that fails it indicates a serious bug in this code, so panic is
 	// in order.
-	s, err := NewSubnet(Address(sa), AddressMask(sm))
+	s, err := NewSubnet(Address{addr: string(sa)}, AddressMask{mask: string(sm)})
 	if err != nil {
 		panic("invalid subnet: " + err.Error())
 	}

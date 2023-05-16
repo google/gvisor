@@ -162,8 +162,8 @@ var _ layerState = (*ipv4State)(nil)
 
 // newIPv4State creates a new ipv4State.
 func (n *DUTTestNet) newIPv4State(out, in IPv4) (*ipv4State, error) {
-	lIP := tcpip.Address(n.LocalIPv4)
-	rIP := tcpip.Address(n.RemoteIPv4)
+	lIP := n.LocalIPv4
+	rIP := n.RemoteIPv4
 	s := ipv4State{
 		out: IPv4{SrcAddr: &lIP, DstAddr: &rIP},
 		in:  IPv4{SrcAddr: &rIP, DstAddr: &lIP},
@@ -207,8 +207,8 @@ var _ layerState = (*ipv6State)(nil)
 
 // newIPv6State creates a new ipv6State.
 func (n *DUTTestNet) newIPv6State(out, in IPv6) (*ipv6State, error) {
-	lIP := tcpip.Address(n.LocalIPv6)
-	rIP := tcpip.Address(n.RemoteIPv6)
+	lIP := n.LocalIPv6
+	rIP := n.RemoteIPv6
 	s := ipv6State{
 		out: IPv6{SrcAddr: &lIP, DstAddr: &rIP},
 		in:  IPv6{SrcAddr: &rIP, DstAddr: &lIP},

@@ -108,8 +108,8 @@ func TestIPv6FragmentReassembly(t *testing.T) {
 			conn := dut.Net.NewIPv6Conn(t, testbench.IPv6{}, testbench.IPv6{})
 			defer conn.Close(t)
 
-			lIP := tcpip.Address(dut.Net.LocalIPv6)
-			rIP := tcpip.Address(dut.Net.RemoteIPv6)
+			lIP := tcpip.AddrFrom16Slice(dut.Net.LocalIPv6)
+			rIP := tcpip.AddrFrom16Slice(dut.Net.RemoteIPv6)
 
 			data := make([]byte, test.ipPayloadLen)
 			icmp := header.ICMPv6(data[:header.ICMPv6HeaderSize])

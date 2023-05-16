@@ -18,6 +18,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"reflect"
 	"strings"
 
@@ -156,9 +157,15 @@ func stringLayer(l Layer) string {
 			continue
 		}
 		v = reflect.Indirect(v)
-		if v.Kind() == reflect.Slice && v.Type().Elem().Kind() == reflect.Uint8 {
+		switch {
+		// Try to use Stringers appropriately.
+		case v.Type().Implements(reflect.TypeOf((*fmt.Stringer)(nil)).Elem()):
+			ret = append(ret, fmt.Sprintf("%s:%v", t.Name, v))
+		// Print byte slices as hex.
+		case v.Kind() == reflect.Slice && v.Type().Elem().Kind() == reflect.Uint8:
 			ret = append(ret, fmt.Sprintf("%s:\n%v", t.Name, hex.Dump(v.Bytes())))
-		} else {
+		// Otherwise just let Go decide how to print.
+		default:
 			ret = append(ret, fmt.Sprintf("%s:%v", t.Name, v))
 		}
 	}
@@ -296,8 +303,8 @@ type IPv4 struct {
 	TTL            *uint8
 	Protocol       *uint8
 	Checksum       *uint16
-	SrcAddr        *tcpip.Address
-	DstAddr        *tcpip.Address
+	SrcAddr        *net.IP
+	DstAddr        *net.IP
 	Options        *header.IPv4Options
 }
 
@@ -329,8 +336,8 @@ func (l *IPv4) ToBytes() ([]byte, error) {
 		TTL:            64,
 		Protocol:       0,
 		Checksum:       0,
-		SrcAddr:        tcpip.Address(""),
-		DstAddr:        tcpip.Address(""),
+		SrcAddr:        tcpip.Address{},
+		DstAddr:        tcpip.Address{},
 		Options:        nil,
 	}
 	if l.TOS != nil {
@@ -373,11 +380,11 @@ func (l *IPv4) ToBytes() ([]byte, error) {
 			return nil, fmt.Errorf("ipv4 header's next layer is unrecognized: %#v", n)
 		}
 	}
-	if l.SrcAddr != nil {
-		fields.SrcAddr = *l.SrcAddr
+	if l.SrcAddr != nil && len(*l.SrcAddr) > 0 {
+		fields.SrcAddr = tcpip.AddrFrom4Slice(*l.SrcAddr)
 	}
-	if l.DstAddr != nil {
-		fields.DstAddr = *l.DstAddr
+	if l.DstAddr != nil && len(*l.DstAddr) > 0 {
+		fields.DstAddr = tcpip.AddrFrom4Slice(*l.DstAddr)
 	}
 
 	h.Encode(fields)
@@ -425,10 +432,13 @@ func TCPFlags(v header.TCPFlags) *header.TCPFlags {
 	return &v
 }
 
-// Address is a helper routine that allocates a new tcpip.Address value to
+// Address is a helper routine that allocates a new net.IP value to
 // store v and returns a pointer to it.
-func Address(v tcpip.Address) *tcpip.Address {
-	return &v
+func Address(v tcpip.Address) *net.IP {
+	bs := make([]byte, v.Len())
+	copy(bs, v.AsSlice())
+	ret := net.IP(bs)
+	return &ret
 }
 
 // parseIPv4 parses the bytes assuming that they start with an ipv4 header and
@@ -494,8 +504,8 @@ type IPv6 struct {
 	PayloadLength *uint16
 	NextHeader    *uint8
 	HopLimit      *uint8
-	SrcAddr       *tcpip.Address
-	DstAddr       *tcpip.Address
+	SrcAddr       *net.IP
+	DstAddr       *net.IP
 }
 
 func (l *IPv6) String() string {
@@ -534,11 +544,11 @@ func (l *IPv6) ToBytes() ([]byte, error) {
 	if l.HopLimit != nil {
 		fields.HopLimit = *l.HopLimit
 	}
-	if l.SrcAddr != nil {
-		fields.SrcAddr = *l.SrcAddr
+	if l.SrcAddr != nil && len(*l.SrcAddr) > 0 {
+		fields.SrcAddr = tcpip.AddrFrom16Slice(*l.SrcAddr)
 	}
-	if l.DstAddr != nil {
-		fields.DstAddr = *l.DstAddr
+	if l.DstAddr != nil && len(*l.DstAddr) > 0 {
+		fields.DstAddr = tcpip.AddrFrom16Slice(*l.DstAddr)
 	}
 	h.Encode(fields)
 	return h, nil
@@ -881,8 +891,8 @@ func (l *ICMPv6) ToBytes() ([]byte, error) {
 			if ipv6, ok := layer.(*IPv6); ok {
 				h.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
 					Header:      h[:header.ICMPv6PayloadOffset],
-					Src:         *ipv6.SrcAddr,
-					Dst:         *ipv6.DstAddr,
+					Src:         tcpip.AddrFrom16Slice(*ipv6.SrcAddr),
+					Dst:         tcpip.AddrFrom16Slice(*ipv6.DstAddr),
 					PayloadCsum: checksum.Checksum(l.Payload, 0 /* initial */),
 					PayloadLen:  len(l.Payload),
 				}))
@@ -1134,9 +1144,9 @@ func layerChecksum(l Layer, protoNumber tcpip.TransportProtocolNumber) (uint16, 
 	var xsum uint16
 	switch p := l.Prev().(type) {
 	case *IPv4:
-		xsum = header.PseudoHeaderChecksum(protoNumber, *p.SrcAddr, *p.DstAddr, totalLength)
+		xsum = header.PseudoHeaderChecksum(protoNumber, tcpip.AddrFrom4Slice(*p.SrcAddr), tcpip.AddrFrom4Slice(*p.DstAddr), totalLength)
 	case *IPv6:
-		xsum = header.PseudoHeaderChecksum(protoNumber, *p.SrcAddr, *p.DstAddr, totalLength)
+		xsum = header.PseudoHeaderChecksum(protoNumber, tcpip.AddrFrom16Slice(*p.SrcAddr), tcpip.AddrFrom16Slice(*p.DstAddr), totalLength)
 	default:
 		// TODO(b/161246171): Support more protocols.
 		return 0, fmt.Errorf("checksum for protocol %d is not supported when previous layer is %T", protoNumber, p)

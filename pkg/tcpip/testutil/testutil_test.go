@@ -25,7 +25,7 @@ import (
 func TestMustParse4(t *testing.T) {
 	tcs := []struct {
 		str         string
-		addr        tcpip.Address
+		addr        string
 		shouldPanic bool
 	}{
 		{
@@ -55,7 +55,7 @@ func TestMustParse4(t *testing.T) {
 					}
 				}()
 			}
-			if got := MustParse4(tc.str); got != tc.addr {
+			if got := MustParse4(tc.str); got != tcpip.AddrFromSlice([]byte(tc.addr)) {
 				t.Errorf("got MustParse4(%s) = %s, want = %s", tc.str, got, tc.addr)
 			}
 		})
@@ -65,7 +65,7 @@ func TestMustParse4(t *testing.T) {
 func TestMustParse6(t *testing.T) {
 	tcs := []struct {
 		str         string
-		addr        tcpip.Address
+		addr        string
 		shouldPanic bool
 	}{
 		{
@@ -95,7 +95,7 @@ func TestMustParse6(t *testing.T) {
 					}
 				}()
 			}
-			if got := MustParse6(tc.str); got != tc.addr {
+			if got := MustParse6(tc.str); got != tcpip.AddrFromSlice([]byte(tc.addr)) {
 				t.Errorf("got MustParse6(%s) = %s, want = %s", tc.str, got, tc.addr)
 			}
 		})

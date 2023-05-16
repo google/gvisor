@@ -449,7 +449,7 @@ func TestLeaveGroup(t *testing.T) {
 				}}}}
 			},
 			handleQuery: func(mgp *mockMulticastGroupProtocol, groupAddress tcpip.Address) {
-				mgp.handleQueryV2(groupAddress, maxRespCode, header.MakeAddressIterator(len(addr1), bytes.NewBuffer(nil)), 0, 0)
+				mgp.handleQueryV2(groupAddress, maxRespCode, header.MakeAddressIterator(addr1.Len(), bytes.NewBuffer(nil)), 0, 0)
 			},
 		},
 	}
@@ -458,7 +458,7 @@ func TestLeaveGroup(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			for _, subTest := range subTests {
 				t.Run(subTest.name, func(t *testing.T) {
-					for _, queryAddr := range []tcpip.Address{test.addr, ""} {
+					for _, queryAddr := range []tcpip.Address{test.addr, tcpip.Address{}} {
 						t.Run(fmt.Sprintf("QueryAddr=%s", queryAddr), func(t *testing.T) {
 							mgp := mockMulticastGroupProtocol{t: t, skipProtocolAddress: addr2}
 							clock := faketime.NewManualClock()
@@ -525,12 +525,12 @@ func TestHandleReport(t *testing.T) {
 	}{
 		{
 			name:             "Unpecified empty",
-			reportAddr:       "",
+			reportAddr:       tcpip.Address{},
 			expectReportsFor: []tcpip.Address{addr1, addr2},
 		},
 		{
 			name:             "Unpecified any",
-			reportAddr:       "\x00",
+			reportAddr:       tcpip.AddrFromSlice([]byte("\x00\x00\x00\x00")),
 			expectReportsFor: []tcpip.Address{addr1, addr2},
 		},
 		{
@@ -637,14 +637,14 @@ func TestHandleQuery(t *testing.T) {
 	}{
 		{
 			name:                    "Unpecified empty",
-			queryAddr:               "",
+			queryAddr:               tcpip.Address{},
 			maxDelay:                0,
 			expectQueriedReportsFor: []tcpip.Address{addr1, addr2},
 			expectDelayedReportsFor: nil,
 		},
 		{
 			name:                    "Unpecified any",
-			queryAddr:               "\x00",
+			queryAddr:               tcpip.AddrFromSlice([]byte("\x00\x00\x00\x00")),
 			maxDelay:                1,
 			expectQueriedReportsFor: []tcpip.Address{addr1, addr2},
 			expectDelayedReportsFor: nil,
@@ -769,14 +769,14 @@ func TestHandleQueryV2Response(t *testing.T) {
 	}{
 		{
 			name:                    "Unpecified empty",
-			queryAddr:               "",
+			queryAddr:               tcpip.Address{},
 			maxDelay:                0,
 			expectQueriedReportsFor: []tcpip.Address{addr1, addr2},
 			expectDelayedReportsFor: nil,
 		},
 		{
 			name:                    "Unpecified any",
-			queryAddr:               "\x00",
+			queryAddr:               tcpip.AddrFromSlice([]byte("\x00\x00\x00\x00")),
 			maxDelay:                1,
 			expectQueriedReportsFor: []tcpip.Address{addr1, addr2},
 			expectDelayedReportsFor: nil,
@@ -877,7 +877,7 @@ func TestHandleQueryV2Response(t *testing.T) {
 					//
 					// Note that if we are in V1 compatbility mode, the V2 query will be
 					// handled as a V1 query.
-					mgp.handleQueryV2(test.queryAddr, test.maxDelay, header.MakeAddressIterator(len(addr1), bytes.NewBuffer(nil)), 0, 0)
+					mgp.handleQueryV2(test.queryAddr, test.maxDelay, header.MakeAddressIterator(addr1.Len(), bytes.NewBuffer(nil)), 0, 0)
 					if subTest.v1Compatibility {
 						clock.Advance(mgp.V2QueryMaxRespCodeToV1Delay(test.maxDelay))
 					} else {
@@ -1018,7 +1018,7 @@ func TestV1CompatbilityModeTimer(t *testing.T) {
 					clock.Advance(minDuration)
 					v2Check(t)
 					// Should update the Robustness variable and Querier's Query interval.
-					mgp.handleQueryV2(addr3, 0, header.MakeAddressIterator(len(addr1), bytes.NewBuffer(nil)), test.robustnessVariable, test.queryInterval)
+					mgp.handleQueryV2(addr3, 0, header.MakeAddressIterator(addr1.Len(), bytes.NewBuffer(nil)), test.robustnessVariable, test.queryInterval)
 				})
 			}
 		})

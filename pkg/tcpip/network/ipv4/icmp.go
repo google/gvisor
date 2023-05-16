@@ -374,7 +374,7 @@ func (e *endpoint) handleICMP(pkt stack.PacketBufferPtr) {
 		// or multicast address).
 		localAddr := ipHdr.DestinationAddress()
 		if localAddressBroadcast || header.IsV4MulticastAddress(localAddr) {
-			localAddr = ""
+			localAddr = tcpip.Address{}
 		}
 
 		r, err := e.protocol.stack.FindRoute(e.nic.ID(), localAddr, ipHdr.SourceAddress(), ProtocolNumber, false /* multicastLoop */)
@@ -644,7 +644,7 @@ func (p *protocol) returnError(reason icmpReason, pkt stack.PacketBufferPtr, del
 	// destination address of a packet we are forwarding.
 	localAddr := origIPHdrDst
 	if !deliveredLocally {
-		localAddr = ""
+		localAddr = tcpip.Address{}
 	}
 
 	// Even if we were able to receive a packet from some remote, we may not have

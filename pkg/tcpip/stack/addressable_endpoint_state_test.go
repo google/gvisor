@@ -33,8 +33,8 @@ func TestAddressableEndpointStateCleanup(t *testing.T) {
 	s.Init(&ep, stack.AddressableEndpointStateOptions{HiddenWhileDisabled: false})
 
 	addr := tcpip.AddressWithPrefix{
-		Address:   "\x01",
-		PrefixLen: 8,
+		Address:   tcpip.AddrFromSlice([]byte("\x01\x00\x00\x00")),
+		PrefixLen: 32,
 	}
 
 	{
@@ -71,8 +71,8 @@ func TestAddressDispatcherExpiredToAssigned(t *testing.T) {
 	s.Init(&networkEp, stack.AddressableEndpointStateOptions{HiddenWhileDisabled: false})
 
 	addr := tcpip.AddressWithPrefix{
-		Address:   "\x01",
-		PrefixLen: 8,
+		Address:   tcpip.AddrFromSlice([]byte("\x01\x00\x00\x00")),
+		PrefixLen: 32,
 	}
 
 	ep, err := s.AddAndAcquirePermanentAddress(addr, stack.AddressProperties{})
