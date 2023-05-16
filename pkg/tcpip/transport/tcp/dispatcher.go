@@ -504,7 +504,7 @@ func (j jenkinsHasher) hash(id stack.TransportEndpointID) uint32 {
 
 	h := jenkins.Sum32(j.seed)
 	h.Write(payload[:])
-	h.Write([]byte(id.LocalAddress))
-	h.Write([]byte(id.RemoteAddress))
+	h.Write(id.LocalAddress.AsSlice())
+	h.Write(id.RemoteAddress.AsSlice())
 	return h.Sum32()
 }

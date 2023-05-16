@@ -120,7 +120,7 @@ func (s *Stack) InterfaceAddrs() map[int32][]inet.InterfaceAddr {
 			addrs = append(addrs, inet.InterfaceAddr{
 				Family:    family,
 				PrefixLen: uint8(a.AddressWithPrefix.PrefixLen),
-				Addr:      []byte(a.AddressWithPrefix.Address),
+				Addr:      a.AddressWithPrefix.Address.AsSlice(),
 				// TODO(b/68878065): Other fields.
 			})
 		}
@@ -145,7 +145,7 @@ func convertAddr(addr inet.InterfaceAddr) (tcpip.ProtocolAddress, error) {
 			return protocolAddress, linuxerr.EINVAL
 		}
 		protocol = ipv4.ProtocolNumber
-		address = tcpip.Address(addr.Addr)
+		address = tcpip.AddrFrom4Slice(addr.Addr)
 	case linux.AF_INET6:
 		if len(addr.Addr) != header.IPv6AddressSize {
 			return protocolAddress, linuxerr.EINVAL
@@ -154,7 +154,7 @@ func convertAddr(addr inet.InterfaceAddr) (tcpip.ProtocolAddress, error) {
 			return protocolAddress, linuxerr.EINVAL
 		}
 		protocol = ipv6.ProtocolNumber
-		address = tcpip.Address(addr.Addr)
+		address = tcpip.AddrFrom16Slice(addr.Addr)
 	default:
 		return protocolAddress, linuxerr.ENOTSUP
 	}
@@ -185,7 +185,7 @@ func (s *Stack) AddInterfaceAddr(idx int32, addr inet.InterfaceAddr) error {
 	// Add route for local network if it doesn't exist already.
 	localRoute := tcpip.Route{
 		Destination: protocolAddress.AddressWithPrefix.Subnet(),
-		Gateway:     "", // No gateway for local network.
+		Gateway:     tcpip.Address{}, // No gateway for local network.
 		NIC:         nicID,
 	}
 
@@ -217,7 +217,7 @@ func (s *Stack) RemoveInterfaceAddr(idx int32, addr inet.InterfaceAddr) error {
 	// Remove the corresponding local network route if it exists.
 	localRoute := tcpip.Route{
 		Destination: protocolAddress.AddressWithPrefix.Subnet(),
-		Gateway:     "", // No gateway for local network.
+		Gateway:     tcpip.Address{}, // No gateway for local network.
 		NIC:         nicID,
 	}
 	s.Stack.RemoveRoutes(func(rt tcpip.Route) bool {
@@ -430,10 +430,10 @@ func (s *Stack) RouteTable() []inet.Route {
 
 	for _, rt := range s.Stack.GetRouteTable() {
 		var family uint8
-		switch len(rt.Destination.ID()) {
-		case header.IPv4AddressSize:
+		switch rt.Destination.ID().BitLen() {
+		case header.IPv4AddressSizeBits:
 			family = linux.AF_INET
-		case header.IPv6AddressSize:
+		case header.IPv6AddressSizeBits:
 			family = linux.AF_INET6
 		default:
 			log.Warningf("Unknown network protocol in route %+v", rt)
@@ -453,9 +453,9 @@ func (s *Stack) RouteTable() []inet.Route {
 			Scope: linux.RT_SCOPE_LINK,
 			Type:  linux.RTN_UNICAST,
 
-			DstAddr:         []byte(rt.Destination.ID()),
+			DstAddr:         rt.Destination.ID().AsSlice(),
 			OutputInterface: int32(rt.NIC),
-			GatewayAddr:     []byte(rt.Gateway),
+			GatewayAddr:     rt.Gateway.AsSlice(),
 		})
 	}
 

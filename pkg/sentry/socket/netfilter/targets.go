@@ -346,7 +346,7 @@ func (*redirectTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (
 		return nil, syserr.ErrInvalidArgument
 	}
 
-	target.addr = tcpip.Address(nfRange.RangeIPV4.MinIP[:])
+	target.addr = tcpip.AddrFrom4(nfRange.RangeIPV4.MinIP)
 	target.Port = ntohs(nfRange.RangeIPV4.MinPort)
 
 	return &target, nil
@@ -382,8 +382,8 @@ func (*nfNATTargetMaker) marshal(target target) []byte {
 		},
 	}
 	copy(nt.Target.Name[:], RedirectTargetName)
-	copy(nt.Range.MinAddr[:], rt.addr)
-	copy(nt.Range.MaxAddr[:], rt.addr)
+	copy(nt.Range.MinAddr[:], rt.addr.AsSlice())
+	copy(nt.Range.MaxAddr[:], rt.addr.AsSlice())
 
 	nt.Range.MinProto = htons(rt.Port)
 	nt.Range.MaxProto = nt.Range.MinProto
@@ -426,7 +426,7 @@ func (*nfNATTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (tar
 			NetworkProtocol: filter.NetworkProtocol(),
 			Port:            ntohs(natRange.MinProto),
 		},
-		addr: tcpip.Address(natRange.MinAddr[:]),
+		addr: tcpip.AddrFrom16(natRange.MinAddr),
 	}
 
 	return &target, nil
@@ -457,8 +457,8 @@ func (*snatTargetMakerV4) marshal(target target) []byte {
 	xt.NfRange.RangeIPV4.Flags |= linux.NF_NAT_RANGE_MAP_IPS | linux.NF_NAT_RANGE_PROTO_SPECIFIED
 	xt.NfRange.RangeIPV4.MinPort = htons(st.Port)
 	xt.NfRange.RangeIPV4.MaxPort = xt.NfRange.RangeIPV4.MinPort
-	copy(xt.NfRange.RangeIPV4.MinIP[:], st.Addr)
-	copy(xt.NfRange.RangeIPV4.MaxIP[:], st.Addr)
+	copy(xt.NfRange.RangeIPV4.MinIP[:], st.Addr.AsSlice())
+	copy(xt.NfRange.RangeIPV4.MaxIP[:], st.Addr.AsSlice())
 	return marshal.Marshal(&xt)
 }
 
@@ -504,7 +504,7 @@ func (*snatTargetMakerV4) unmarshal(buf []byte, filter stack.IPHeaderFilter) (ta
 		return nil, syserr.ErrInvalidArgument
 	}
 
-	target.Addr = tcpip.Address(nfRange.RangeIPV4.MinIP[:])
+	target.Addr = tcpip.AddrFrom4(nfRange.RangeIPV4.MinIP)
 	target.Port = ntohs(nfRange.RangeIPV4.MinPort)
 
 	return &target, nil
@@ -533,8 +533,8 @@ func (*snatTargetMakerV6) marshal(target target) []byte {
 		},
 	}
 	copy(nt.Target.Name[:], SNATTargetName)
-	copy(nt.Range.MinAddr[:], st.Addr)
-	copy(nt.Range.MaxAddr[:], st.Addr)
+	copy(nt.Range.MinAddr[:], st.Addr.AsSlice())
+	copy(nt.Range.MaxAddr[:], st.Addr.AsSlice())
 	nt.Range.MinProto = htons(st.Port)
 	nt.Range.MaxProto = nt.Range.MinProto
 
@@ -574,7 +574,7 @@ func (*snatTargetMakerV6) unmarshal(buf []byte, filter stack.IPHeaderFilter) (ta
 	target := snatTarget{
 		SNATTarget: stack.SNATTarget{
 			NetworkProtocol: filter.NetworkProtocol(),
-			Addr:            tcpip.Address(natRange.MinAddr[:]),
+			Addr:            tcpip.AddrFrom16(natRange.MinAddr),
 			Port:            ntohs(natRange.MinProto),
 		},
 	}

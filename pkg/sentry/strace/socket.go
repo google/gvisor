@@ -352,7 +352,7 @@ func sockAddr(t *kernel.Task, addr hostarch.Addr, length uint32) string {
 		}
 
 		if family == linux.AF_UNIX {
-			return fmt.Sprintf("%#x {Family: %s, Addr: %q}", addr, familyStr, string(fa.Addr))
+			return fmt.Sprintf("%#x {Family: %s, Addr: %q}", addr, familyStr, string(fa.Addr.AsSlice()))
 		}
 
 		return fmt.Sprintf("%#x {Family: %s, Addr: %v, Port: %d}", addr, familyStr, fa.Addr, fa.Port)

@@ -23,15 +23,17 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
-const (
+var (
 	// IGMPv3RoutersAddress is the address to send IGMPv3 reports to.
 	//
 	// As per RFC 3376 section 4.2.14,
 	//
 	//   Version 3 Reports are sent with an IP destination address of
 	//   224.0.0.22, to which all IGMPv3-capable multicast routers listen.
-	IGMPv3RoutersAddress tcpip.Address = "\xe0\x00\x00\x16"
+	IGMPv3RoutersAddress = tcpip.AddrFrom4([4]byte{0xe0, 0x00, 0x00, 0x16})
+)
 
+const (
 	// IGMPv3QueryMinimumSize is the mimum size of a valid IGMPv3 query,
 	// as per RFC 3376 section 4.1.
 	IGMPv3QueryMinimumSize = 12
@@ -116,7 +118,7 @@ func IGMPv3MaximumResponseDelay(codeRaw uint8) time.Duration {
 
 // GroupAddress returns the group address.
 func (i IGMPv3Query) GroupAddress() tcpip.Address {
-	return tcpip.Address(i[igmpv3QueryGroupAddressOffset:][:IPv4AddressSize])
+	return tcpip.AddrFrom4([4]byte(i[igmpv3QueryGroupAddressOffset:][:IPv4AddressSize]))
 }
 
 // QuerierRobustnessVariable returns the querier's robustness variable.
@@ -227,7 +229,8 @@ func (s *IGMPv3ReportGroupAddressRecordSerializer) Length() int {
 }
 
 func copyIPv4Address(dst []byte, src tcpip.Address) {
-	if n := copy(dst, src); n != IPv4AddressSize {
+	srcBytes := src.As4()
+	if n := copy(dst, srcBytes[:]); n != IPv4AddressSize {
 		panic(fmt.Sprintf("got copy(...) = %d, want = %d", n, IPv4AddressSize))
 	}
 }
@@ -387,7 +390,7 @@ func (r IGMPv3ReportGroupAddressRecord) numberOfSources() uint16 {
 
 // GroupAddress returns the multicast address this record targets.
 func (r IGMPv3ReportGroupAddressRecord) GroupAddress() tcpip.Address {
-	return tcpip.Address(r[igmpv3ReportGroupAddressRecordGroupAddressOffset:][:IPv4AddressSize])
+	return tcpip.AddrFrom4([4]byte(r[igmpv3ReportGroupAddressRecordGroupAddressOffset:][:IPv4AddressSize]))
 }
 
 // Sources returns an iterator over source addresses in the query.

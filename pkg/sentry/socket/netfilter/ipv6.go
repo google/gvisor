@@ -28,10 +28,10 @@ import (
 // emptyIPv6Filter is for comparison with a rule's filters to determine whether
 // it is also empty. It is immutable.
 var emptyIPv6Filter = stack.IPHeaderFilter{
-	Dst:     "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
-	DstMask: "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
-	Src:     "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
-	SrcMask: "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+	Dst:     tcpip.AddrFrom16([16]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}),
+	DstMask: tcpip.AddrFrom16([16]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}),
+	Src:     tcpip.AddrFrom16([16]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}),
+	SrcMask: tcpip.AddrFrom16([16]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}),
 }
 
 // convertNetstackToBinary6 converts the ip6tables as stored in netstack to the
@@ -75,10 +75,10 @@ func getEntries6(table stack.Table, tablename linux.TableName) (linux.KernelIP6T
 				TargetOffset: linux.SizeOfIP6TEntry,
 			},
 		}
-		copy(entry.Entry.IPv6.Dst[:], rule.Filter.Dst)
-		copy(entry.Entry.IPv6.DstMask[:], rule.Filter.DstMask)
-		copy(entry.Entry.IPv6.Src[:], rule.Filter.Src)
-		copy(entry.Entry.IPv6.SrcMask[:], rule.Filter.SrcMask)
+		copy(entry.Entry.IPv6.Dst[:], rule.Filter.Dst.AsSlice())
+		copy(entry.Entry.IPv6.DstMask[:], rule.Filter.DstMask.AsSlice())
+		copy(entry.Entry.IPv6.Src[:], rule.Filter.Src.AsSlice())
+		copy(entry.Entry.IPv6.SrcMask[:], rule.Filter.SrcMask.AsSlice())
 		copy(entry.Entry.IPv6.OutputInterface[:], rule.Filter.OutputInterface)
 		copy(entry.Entry.IPv6.OutputInterfaceMask[:], rule.Filter.OutputInterfaceMask)
 		copy(entry.Entry.IPv6.InputInterface[:], rule.Filter.InputInterface)
@@ -221,11 +221,11 @@ func filterFromIP6TIP(iptip linux.IP6TIP) (stack.IPHeaderFilter, error) {
 		Protocol: tcpip.TransportProtocolNumber(iptip.Protocol),
 		// In ip6tables a flag controls whether to check the protocol.
 		CheckProtocol:         iptip.Flags&linux.IP6T_F_PROTO != 0,
-		Dst:                   tcpip.Address(iptip.Dst[:]),
-		DstMask:               tcpip.Address(iptip.DstMask[:]),
+		Dst:                   tcpip.AddrFrom16(iptip.Dst),
+		DstMask:               tcpip.AddrFrom16(iptip.DstMask),
 		DstInvert:             iptip.InverseFlags&linux.IP6T_INV_DSTIP != 0,
-		Src:                   tcpip.Address(iptip.Src[:]),
-		SrcMask:               tcpip.Address(iptip.SrcMask[:]),
+		Src:                   tcpip.AddrFrom16(iptip.Src),
+		SrcMask:               tcpip.AddrFrom16(iptip.SrcMask),
 		SrcInvert:             iptip.InverseFlags&linux.IP6T_INV_SRCIP != 0,
 		InputInterface:        string(trimNullBytes(iptip.InputInterface[:])),
 		InputInterfaceMask:    string(trimNullBytes(iptip.InputInterfaceMask[:])),

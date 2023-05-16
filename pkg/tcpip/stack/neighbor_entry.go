@@ -317,7 +317,7 @@ func (e *neighborEntry) setStateLocked(next NeighborState) {
 			timer: e.cache.nic.stack.Clock().AfterFunc(immediateDuration, func() {
 				var err tcpip.Error = &tcpip.ErrTimeout{}
 				if remaining != 0 {
-					err = e.cache.linkRes.LinkAddressRequest(addr, "" /* localAddr */, linkAddr)
+					err = e.cache.linkRes.LinkAddressRequest(addr, tcpip.Address{} /* localAddr */, linkAddr)
 				}
 
 				e.mu.Lock()

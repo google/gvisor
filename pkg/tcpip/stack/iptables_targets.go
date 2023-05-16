@@ -233,7 +233,7 @@ func (rt *RedirectTarget) Action(pkt PacketBufferPtr, hook Hook, r *Route, addre
 	switch hook {
 	case Output:
 		if pkt.NetworkProtocolNumber == header.IPv4ProtocolNumber {
-			address = tcpip.Address([]byte{127, 0, 0, 1})
+			address = tcpip.AddrFrom4([4]byte{127, 0, 0, 1})
 		} else {
 			address = header.IPv6Loopback
 		}

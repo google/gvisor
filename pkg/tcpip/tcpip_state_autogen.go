@@ -1188,6 +1188,56 @@ func (mt *MonotonicTime) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &mt.nanoseconds)
 }
 
+func (a *Address) StateTypeName() string {
+	return "pkg/tcpip.Address"
+}
+
+func (a *Address) StateFields() []string {
+	return []string{
+		"addr",
+	}
+}
+
+func (a *Address) beforeSave() {}
+
+// +checklocksignore
+func (a *Address) StateSave(stateSinkObject state.Sink) {
+	a.beforeSave()
+	stateSinkObject.Save(0, &a.addr)
+}
+
+func (a *Address) afterLoad() {}
+
+// +checklocksignore
+func (a *Address) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &a.addr)
+}
+
+func (m *AddressMask) StateTypeName() string {
+	return "pkg/tcpip.AddressMask"
+}
+
+func (m *AddressMask) StateFields() []string {
+	return []string{
+		"mask",
+	}
+}
+
+func (m *AddressMask) beforeSave() {}
+
+// +checklocksignore
+func (m *AddressMask) StateSave(stateSinkObject state.Sink) {
+	m.beforeSave()
+	stateSinkObject.Save(0, &m.mask)
+}
+
+func (m *AddressMask) afterLoad() {}
+
+// +checklocksignore
+func (m *AddressMask) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &m.mask)
+}
+
 func (f *FullAddress) StateTypeName() string {
 	return "pkg/tcpip.FullAddress"
 }
@@ -1669,6 +1719,34 @@ func (src *TransportEndpointStats) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(5, &src.WriteErrors)
 }
 
+func (a *AddressWithPrefix) StateTypeName() string {
+	return "pkg/tcpip.AddressWithPrefix"
+}
+
+func (a *AddressWithPrefix) StateFields() []string {
+	return []string{
+		"Address",
+		"PrefixLen",
+	}
+}
+
+func (a *AddressWithPrefix) beforeSave() {}
+
+// +checklocksignore
+func (a *AddressWithPrefix) StateSave(stateSinkObject state.Sink) {
+	a.beforeSave()
+	stateSinkObject.Save(0, &a.Address)
+	stateSinkObject.Save(1, &a.PrefixLen)
+}
+
+func (a *AddressWithPrefix) afterLoad() {}
+
+// +checklocksignore
+func (a *AddressWithPrefix) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &a.Address)
+	stateSourceObject.Load(1, &a.PrefixLen)
+}
+
 func init() {
 	state.Register((*ErrAborted)(nil))
 	state.Register((*ErrAddressFamilyNotSupported)(nil))
@@ -1720,6 +1798,8 @@ func init() {
 	state.Register((*SockError)(nil))
 	state.Register((*stdClock)(nil))
 	state.Register((*MonotonicTime)(nil))
+	state.Register((*Address)(nil))
+	state.Register((*AddressMask)(nil))
 	state.Register((*FullAddress)(nil))
 	state.Register((*SendableControlMessages)(nil))
 	state.Register((*ReceivableControlMessages)(nil))
@@ -1734,4 +1814,5 @@ func init() {
 	state.Register((*ReadErrors)(nil))
 	state.Register((*WriteErrors)(nil))
 	state.Register((*TransportEndpointStats)(nil))
+	state.Register((*AddressWithPrefix)(nil))
 }

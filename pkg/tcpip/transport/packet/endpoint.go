@@ -25,6 +25,7 @@
 package packet
 
 import (
+	"fmt"
 	"io"
 	"time"
 
@@ -219,7 +220,11 @@ func (ep *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tc
 
 	var remote tcpip.LinkAddress
 	if to := opts.To; to != nil {
-		remote = tcpip.LinkAddress(to.Addr)
+		// This is a hack. FullAddress is designed to carry IP
+		// addresses, but it's overloaded here to carry a link address.
+		// Assume the address is a 6 byte link address prepended to 10
+		// zeroed bytes.
+		remote = tcpip.LinkAddress(to.Addr.AsSlice()[:header.EthernetAddressSize])
 
 		if n := to.NIC; n != 0 {
 			nicID = n
@@ -451,7 +456,16 @@ func (ep *endpoint) HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtoc
 
 	if len(pkt.LinkHeader().Slice()) != 0 {
 		hdr := header.Ethernet(pkt.LinkHeader().Slice())
-		rcvdPkt.senderAddr.Addr = tcpip.Address(hdr.SourceAddress())
+		// This is a hack. FullAddress is designed to carry IP
+		// addresses, but it's overloaded here to carry a link address.
+		// Assume the address is a 6 byte link address prepended to 10
+		// zeroed bytes.
+		if len(hdr.SourceAddress()) != 6 {
+			panic(fmt.Sprintf("invalid ethernet address size: %d", len(hdr.SourceAddress())))
+		}
+		rcvdPkt.senderAddr.Addr = tcpip.AddrFrom16Slice(
+			append([]byte(hdr.SourceAddress()), []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0}...),
+		)
 	}
 
 	// Raw packet endpoints include link-headers in received packets.
