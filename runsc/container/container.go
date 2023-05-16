@@ -1177,43 +1177,23 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 	// namespace so the gofer's view of the filesystem aligns with the
 	// users in the sandbox.
 	if !rootlessEUID {
-		userNS := specutils.FilterNS([]specs.LinuxNamespaceType{specs.UserNamespace}, spec)
-		nss = append(nss, userNS...)
-		specutils.SetUIDGIDMappings(cmd, spec)
-		if len(userNS) != 0 {
+		if userNS, ok := specutils.GetNS(specs.UserNamespace, spec); ok {
+			nss = append(nss, userNS)
+			specutils.SetUIDGIDMappings(cmd, spec)
 			// We need to set UID and GID to have capabilities in a new user namespace.
 			cmd.SysProcAttr.Credential = &syscall.Credential{Uid: 0, Gid: 0}
 		}
 	} else {
-		userNS := specutils.FilterNS([]specs.LinuxNamespaceType{specs.UserNamespace}, spec)
-		if len(userNS) == 0 {
+		userNS, ok := specutils.GetNS(specs.UserNamespace, spec)
+		if !ok {
 			return nil, nil, fmt.Errorf("unable to run a rootless container without userns")
 		}
-		fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0)
+		nss = append(nss, userNS)
+		syncFile, err := sandbox.ConfigureCmdForRootless(cmd, &donations)
 		if err != nil {
 			return nil, nil, err
 		}
-		syncFile := os.NewFile(uintptr(fds[0]), "sync FD")
 		defer syncFile.Close()
-
-		f := os.NewFile(uintptr(fds[1]), "sync other FD")
-		donations.DonateAndClose("sync-userns-fd", f)
-		if cmd.SysProcAttr == nil {
-			cmd.SysProcAttr = &unix.SysProcAttr{}
-		}
-		cmd.SysProcAttr.AmbientCaps = []uintptr{
-			unix.CAP_CHOWN,
-			unix.CAP_DAC_OVERRIDE,
-			unix.CAP_DAC_READ_SEARCH,
-			unix.CAP_FOWNER,
-			unix.CAP_FSETID,
-			unix.CAP_SYS_CHROOT,
-			unix.CAP_SETUID,
-			unix.CAP_SETGID,
-			unix.CAP_SYS_ADMIN,
-			unix.CAP_SETPCAP,
-		}
-		nss = append(nss, specs.LinuxNamespace{Type: specs.UserNamespace})
 	}
 
 	donations.Transfer(cmd, nextFD)
@@ -1226,38 +1206,8 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 	}
 
 	if rootlessEUID {
-		log.Debugf("Setting user mappings")
-		args := []string{strconv.Itoa(cmd.Process.Pid)}
-		for _, idMap := range spec.Linux.UIDMappings {
-			log.Infof("Mapping host uid %d to container uid %d (size=%d)",
-				idMap.HostID, idMap.ContainerID, idMap.Size)
-			args = append(args,
-				strconv.Itoa(int(idMap.ContainerID)),
-				strconv.Itoa(int(idMap.HostID)),
-				strconv.Itoa(int(idMap.Size)),
-			)
-		}
-
-		out, err := exec.Command("newuidmap", args...).CombinedOutput()
-		log.Debugf("newuidmap: %#v\n%s", args, out)
-		if err != nil {
-			return nil, nil, fmt.Errorf("newuidmap failed: %w", err)
-		}
-
-		args = []string{strconv.Itoa(cmd.Process.Pid)}
-		for _, idMap := range spec.Linux.GIDMappings {
-			log.Infof("Mapping host uid %d to container uid %d (size=%d)",
-				idMap.HostID, idMap.ContainerID, idMap.Size)
-			args = append(args,
-				strconv.Itoa(int(idMap.ContainerID)),
-				strconv.Itoa(int(idMap.HostID)),
-				strconv.Itoa(int(idMap.Size)),
-			)
-		}
-		out, err = exec.Command("newgidmap", args...).CombinedOutput()
-		log.Debugf("newgidmap: %#v\n%s", args, out)
-		if err != nil {
-			return nil, nil, fmt.Errorf("newgidmap failed: %w", err)
+		if err := sandbox.SetUserMappings(spec, cmd.Process.Pid); err != nil {
+			return nil, nil, err
 		}
 	}
 
