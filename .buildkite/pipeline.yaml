@@ -402,7 +402,7 @@ steps:
     label: ":podman: Podman"
     commands:
       - sudo ./test/podman/run.sh
-      - sudo -E RUNTIME_ARGS=--directfs ./test/podman/run.sh
+      - sudo RUNTIME_ARGS=--directfs ./test/podman/run.sh
     agents:
       <<: *ubuntu_agents
       cgroup: "v2"
