@@ -59,7 +59,7 @@ var (
 	iface              = flag.String("iface", "", "network interface name to bind for netstack")
 	sack               = flag.Bool("sack", false, "enable SACK support for netstack")
 	rack               = flag.Bool("rack", false, "enable RACK in TCP")
-	moderateRecvBuf    = flag.Bool("moderate_recv_buf", false, "enable TCP Receive Buffer Auto-tuning")
+	moderateRecvBuf    = flag.Bool("moderate_recv_buf", true, "enable TCP Receive Buffer Auto-tuning")
 	cubic              = flag.Bool("cubic", false, "enable use of CUBIC congestion control for netstack")
 	gso                = flag.Int("gso", 0, "GSO maximum size")
 	swgso              = flag.Bool("swgso", false, "gVisor-level GSO")

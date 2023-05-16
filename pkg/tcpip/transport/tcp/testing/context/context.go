@@ -220,6 +220,13 @@ func NewWithOpts(t *testing.T, opts Options) *Context {
 		t.Fatalf("s.SetTransportProtocolOption(%d, &%T(%d)): %s", tcp.ProtocolNumber, minRTOOpt, minRTOOpt, err)
 	}
 
+	// Many tests verify the window size. Autotuning can change that value,
+	// so we turn it off.
+	autoTuneOpt := tcpip.TCPModerateReceiveBufferOption(false)
+	if err := s.SetTransportProtocolOption(tcp.ProtocolNumber, &autoTuneOpt); err != nil {
+		t.Fatalf("SetTransportProtocolOption(%d, &%T(%t)): %s", tcp.ProtocolNumber, autoTuneOpt, autoTuneOpt, err)
+	}
+
 	// Some of the congestion control tests send up to 640 packets, we so
 	// set the channel size to 1000.
 	ep := channel.New(1000, opts.MTU, "")
