@@ -1182,7 +1182,8 @@ func (ndp *ndpState) generateSLAACAddr(prefix tcpip.Subnet, state *slaacPrefixSt
 	}
 
 	var generatedAddr tcpip.AddressWithPrefix
-	addrBytes := []byte(prefix.ID().AsSlice())
+	prefixID := prefix.ID()
+	addrBytes := prefixID.AsSlice()
 
 	for i := 0; ; i++ {
 		// If we were unable to generate an address after the maximum SLAAC address

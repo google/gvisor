@@ -1381,7 +1381,7 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 			// requirement to do this from any RFC but simply a choice made to better
 			// follow a strong host model which the netstack follows at the time of
 			// writing.
-			if onlyGlobalAddresses && chosenRoute == (tcpip.Route{}) && isNICForwarding(nic, netProto) {
+			if onlyGlobalAddresses && chosenRoute.Equal(tcpip.Route{}) && isNICForwarding(nic, netProto) {
 				chosenRoute = route
 			}
 		}
@@ -1391,7 +1391,7 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 		return r, nil
 	}
 
-	if chosenRoute != (tcpip.Route{}) {
+	if !chosenRoute.Equal(tcpip.Route{}) {
 		// At this point we know the stack has forwarding enabled since chosenRoute is
 		// only set when forwarding is enabled.
 		nic, ok := s.nics[chosenRoute.NIC]

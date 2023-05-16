@@ -1195,6 +1195,7 @@ func (a *Address) StateTypeName() string {
 func (a *Address) StateFields() []string {
 	return []string{
 		"addr",
+		"length",
 	}
 }
 
@@ -1204,6 +1205,7 @@ func (a *Address) beforeSave() {}
 func (a *Address) StateSave(stateSinkObject state.Sink) {
 	a.beforeSave()
 	stateSinkObject.Save(0, &a.addr)
+	stateSinkObject.Save(1, &a.length)
 }
 
 func (a *Address) afterLoad() {}
@@ -1211,6 +1213,7 @@ func (a *Address) afterLoad() {}
 // +checklocksignore
 func (a *Address) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &a.addr)
+	stateSourceObject.Load(1, &a.length)
 }
 
 func (m *AddressMask) StateTypeName() string {
