@@ -19,12 +19,12 @@ RUN add-apt-repository \
 RUN apt-get -y install docker-ce-cli
 
 # Install gcloud.
-RUN curl https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-410.0.0-linux-x86_64.tar.gz | \
+RUN curl https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-430.0.0-linux-x86_64.tar.gz | \
     tar zxf - google-cloud-sdk && \
     google-cloud-sdk/install.sh --quiet && \
     ln -s /google-cloud-sdk/bin/gcloud /usr/bin/gcloud
 
 # Download the official bazel binary. The APT repository isn't used because there is not packages for arm64.
-RUN sh -c 'curl -o /usr/local/bin/bazel https://releases.bazel.build/6.1.1/release/bazel-6.1.1-linux-$(uname -m | sed s/aarch64/arm64/) && chmod ugo+x /usr/local/bin/bazel'
+RUN sh -c 'curl -o /usr/local/bin/bazel https://releases.bazel.build/6.2.0/release/bazel-6.2.0-linux-$(uname -m | sed s/aarch64/arm64/) && chmod ugo+x /usr/local/bin/bazel'
 WORKDIR /workspace
 ENTRYPOINT ["/usr/local/bin/bazel"]
