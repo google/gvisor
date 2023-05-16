@@ -816,14 +816,28 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	// filesystem is required. These features require to run inside the user
 	// namespace specified in the spec or the current namespace if none is
 	// configured.
+	rootlessEUID := unix.Getuid() != 0
+	setUserMappings := false
 	if conf.Network == config.NetworkHost || conf.DirectFS {
 		if userns, ok := specutils.GetNS(specs.UserNamespace, args.Spec); ok {
 			log.Infof("Sandbox will be started in container's user namespace: %+v", userns)
 			nss = append(nss, userns)
-			specutils.SetUIDGIDMappings(cmd, args.Spec)
-			// We need to set UID and GID to have capabilities in a new user namespace.
-			cmd.SysProcAttr.Credential = &syscall.Credential{Uid: 0, Gid: 0}
+			if rootlessEUID {
+				syncFile, err := ConfigureCmdForRootless(cmd, &donations)
+				if err != nil {
+					return err
+				}
+				defer syncFile.Close()
+				setUserMappings = true
+			} else {
+				specutils.SetUIDGIDMappings(cmd, args.Spec)
+				// We need to set UID and GID to have capabilities in a new user namespace.
+				cmd.SysProcAttr.Credential = &syscall.Credential{Uid: 0, Gid: 0}
+			}
 		} else {
+			if rootlessEUID {
+				return fmt.Errorf("unable to run a rootless container without userns")
+			}
 			log.Infof("Sandbox will be started in the current user namespace")
 		}
 		// When running in the caller's defined user namespace, apply the same
@@ -835,14 +849,13 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		// bind-mount the executable inside it.
 		if conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
 			log.Warningf("Running sandbox in test mode without chroot. This is only safe in tests!")
-		} else if specutils.HasCapabilities(capability.CAP_SYS_ADMIN) {
+		} else if specutils.HasCapabilities(capability.CAP_SYS_ADMIN) || rootlessEUID {
 			log.Infof("Sandbox will be started in minimal chroot")
 			cmd.Args = append(cmd.Args, "--setup-root")
 		} else {
 			return fmt.Errorf("can't run sandbox process in minimal chroot since we don't have CAP_SYS_ADMIN")
 		}
 	} else {
-		rootlessEUID := unix.Getuid() != 0
 		// If we have CAP_SETUID and CAP_SETGID, then we can also run
 		// as user nobody.
 		if conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
@@ -1040,6 +1053,11 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	s.OriginalOOMScoreAdj, err = specutils.GetOOMScoreAdj(cmd.Process.Pid)
 	if err != nil {
 		return err
+	}
+	if setUserMappings {
+		if err := SetUserMappings(args.Spec, cmd.Process.Pid); err != nil {
+			return err
+		}
 	}
 
 	s.child = true
@@ -1549,4 +1567,74 @@ func (s *Sandbox) fixPidns(spec *specs.Spec) {
 		}
 	}
 	panic("unreachable")
+}
+
+// ConfigureCmdForRootless configures cmd to donate a socket FD that can be
+// used to synchronize userns configuration.
+func ConfigureCmdForRootless(cmd *exec.Cmd, donations *donation.Agency) (*os.File, error) {
+	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0)
+	if err != nil {
+		return nil, err
+	}
+	f := os.NewFile(uintptr(fds[1]), "sync other FD")
+	donations.DonateAndClose("sync-userns-fd", f)
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &unix.SysProcAttr{}
+	}
+	cmd.SysProcAttr.AmbientCaps = []uintptr{
+		// Same as `cap` in cmd/gofer.go.
+		unix.CAP_CHOWN,
+		unix.CAP_DAC_OVERRIDE,
+		unix.CAP_DAC_READ_SEARCH,
+		unix.CAP_FOWNER,
+		unix.CAP_FSETID,
+		unix.CAP_SYS_CHROOT,
+		// Needed for setuid(2)/setgid(2).
+		unix.CAP_SETUID,
+		unix.CAP_SETGID,
+		// Needed for chroot.
+		unix.CAP_SYS_ADMIN,
+		// Needed to be able to clear bounding set (PR_CAPBSET_DROP).
+		unix.CAP_SETPCAP,
+	}
+	return os.NewFile(uintptr(fds[0]), "sync FD"), nil
+}
+
+// SetUserMappings uses newuidmap/newgidmap programs to set up user ID mappings
+// for process pid.
+func SetUserMappings(spec *specs.Spec, pid int) error {
+	log.Debugf("Setting user mappings")
+	args := []string{strconv.Itoa(pid)}
+	for _, idMap := range spec.Linux.UIDMappings {
+		log.Infof("Mapping host uid %d to container uid %d (size=%d)",
+			idMap.HostID, idMap.ContainerID, idMap.Size)
+		args = append(args,
+			strconv.Itoa(int(idMap.ContainerID)),
+			strconv.Itoa(int(idMap.HostID)),
+			strconv.Itoa(int(idMap.Size)),
+		)
+	}
+
+	out, err := exec.Command("newuidmap", args...).CombinedOutput()
+	log.Debugf("newuidmap: %#v\n%s", args, out)
+	if err != nil {
+		return fmt.Errorf("newuidmap failed: %w", err)
+	}
+
+	args = []string{strconv.Itoa(pid)}
+	for _, idMap := range spec.Linux.GIDMappings {
+		log.Infof("Mapping host uid %d to container uid %d (size=%d)",
+			idMap.HostID, idMap.ContainerID, idMap.Size)
+		args = append(args,
+			strconv.Itoa(int(idMap.ContainerID)),
+			strconv.Itoa(int(idMap.HostID)),
+			strconv.Itoa(int(idMap.Size)),
+		)
+	}
+	out, err = exec.Command("newgidmap", args...).CombinedOutput()
+	log.Debugf("newgidmap: %#v\n%s", args, out)
+	if err != nil {
+		return fmt.Errorf("newgidmap failed: %w", err)
+	}
+	return nil
 }

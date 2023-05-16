@@ -91,21 +91,6 @@ func GetNS(nst specs.LinuxNamespaceType, s *specs.Spec) (specs.LinuxNamespace, b
 	return specs.LinuxNamespace{}, false
 }
 
-// FilterNS returns a slice of namespaces from the spec with types that match
-// those in the `filter` slice.
-func FilterNS(filter []specs.LinuxNamespaceType, s *specs.Spec) []specs.LinuxNamespace {
-	if s.Linux == nil {
-		return nil
-	}
-	var out []specs.LinuxNamespace
-	for _, nst := range filter {
-		if ns, ok := GetNS(nst, s); ok {
-			out = append(out, ns)
-		}
-	}
-	return out
-}
-
 // setNS sets the namespace of the given type.  It must be called with
 // OSThreadLocked.
 func setNS(fd, nsType uintptr) error {

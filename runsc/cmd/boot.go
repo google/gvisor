@@ -144,6 +144,11 @@ type Boot struct {
 	// procMountSyncFD is a file descriptor that has to be closed when the
 	// procfs mount isn't needed anymore.
 	procMountSyncFD int
+
+	// syncUsernsFD is the file descriptor that has to be closed when the
+	// boot process should invoke setuid/setgid for root user. This is mainly
+	// used to synchronize rootless user namespace initialization.
+	syncUsernsFD int
 }
 
 // Name implements subcommands.Command.Name.
@@ -169,6 +174,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&b.pidns, "pidns", false, "if true, the sandbox is in its own PID namespace")
 	f.IntVar(&b.cpuNum, "cpu-num", 0, "number of CPUs to create inside the sandbox")
 	f.IntVar(&b.procMountSyncFD, "proc-mount-sync-fd", -1, "file descriptor that has to be written to when /proc isn't needed anymore and can be unmounted")
+	f.IntVar(&b.syncUsernsFD, "sync-userns-fd", -1, "file descriptor used to synchronize rootless user namespace initialization.")
 	f.Uint64Var(&b.totalMem, "total-memory", 0, "sets the initial amount of total memory to report back to the container")
 	f.BoolVar(&b.attached, "attached", false, "if attached is true, kills the sandbox process when the parent process terminates")
 	f.StringVar(&b.productName, "product-name", "", "value to show in /sys/devices/virtual/dmi/id/product_name")
@@ -231,6 +237,10 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		}
 	}
 
+	if b.syncUsernsFD >= 0 {
+		syncUsernsForRootless(b.syncUsernsFD)
+	}
+
 	if b.setUpRoot {
 		if err := setUpChroot(b.pidns); err != nil {
 			util.Fatalf("error setting up chroot: %v", err)
@@ -255,8 +265,8 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 			}
 
 			if !b.applyCaps {
-				// Remove --setup-root arg to call myself. It has already been done.
-				args := b.prepareArgs("setup-root")
+				// Remove the args that have already been done before calling self.
+				args := b.prepareArgs("setup-root", "sync-userns-fd")
 
 				// Note that we've already read the spec from the spec FD, and
 				// we will read it again after the exec call. This works
@@ -300,9 +310,8 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 			caps = specutils.MergeCapabilities(caps, directfsSandboxLinuxCaps)
 		}
 
-		// Remove --apply-caps and --setup-root arg to call myself. Both have
-		// already been done.
-		args := b.prepareArgs("setup-root", "apply-caps")
+		// Remove the args that have already been done before calling self.
+		args := b.prepareArgs("setup-root", "sync-userns-fd", "apply-caps")
 
 		// Note that we've already read the spec from the spec FD, and
 		// we will read it again after the exec call. This works
@@ -314,6 +323,12 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		// the specFD, which we have passed to ourselves when
 		// re-execing.
 		runtime.KeepAlive(specFile)
+		panic("unreachable")
+	}
+
+	if b.syncUsernsFD >= 0 {
+		// syncUsernsFD is set, but runsc hasn't been re-exeuted with a new UID and GID.
+		// We expect that setCapsAndCallSelf has to be called in this case.
 		panic("unreachable")
 	}
 
