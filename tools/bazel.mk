@@ -272,7 +272,7 @@ clean: ## Cleans the bazel cache.
 .PHONY: clean
 
 runsc-race:
-	@$(call build,--@io_bazel_rules_go//go/config:race runsc:runsc-race)
+	@$(call build,--config=race runsc:runsc-race)
 
 testlogs: ## Returns the most recent set of test logs.
 	@if test -f .build_events.json; then \
