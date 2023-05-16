@@ -69,6 +69,7 @@ func (ri *replicaInode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kern
 		// ignored silently.
 		_ = t.ThreadGroup().SetControllingTTY(fd.inode.t.replicaKTTY, false /* steal */, fd.vfsfd.IsReadable())
 	}
+	ri.t.ld.replicaOpen()
 	return &fd.vfsfd, nil
 
 }
@@ -114,7 +115,9 @@ type replicaFileDescription struct {
 var _ vfs.FileDescriptionImpl = (*replicaFileDescription)(nil)
 
 // Release implements fs.FileOperations.Release.
-func (rfd *replicaFileDescription) Release(ctx context.Context) {}
+func (rfd *replicaFileDescription) Release(ctx context.Context) {
+	rfd.inode.t.ld.replicaClose()
+}
 
 // EventRegister implements waiter.Waitable.EventRegister.
 func (rfd *replicaFileDescription) EventRegister(e *waiter.Entry) error {
