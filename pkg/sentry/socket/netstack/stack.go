@@ -117,10 +117,11 @@ func (s *Stack) InterfaceAddrs() map[int32][]inet.InterfaceAddr {
 				continue
 			}
 
+			addrCopy := a.AddressWithPrefix.Address
 			addrs = append(addrs, inet.InterfaceAddr{
 				Family:    family,
 				PrefixLen: uint8(a.AddressWithPrefix.PrefixLen),
-				Addr:      a.AddressWithPrefix.Address.AsSlice(),
+				Addr:      addrCopy.AsSlice(),
 				// TODO(b/68878065): Other fields.
 			})
 		}
@@ -440,6 +441,7 @@ func (s *Stack) RouteTable() []inet.Route {
 			continue
 		}
 
+		dstAddr := rt.Destination.ID()
 		routeTable = append(routeTable, inet.Route{
 			Family: family,
 			DstLen: uint8(rt.Destination.Prefix()), // The CIDR prefix for the destination.
@@ -453,7 +455,7 @@ func (s *Stack) RouteTable() []inet.Route {
 			Scope: linux.RT_SCOPE_LINK,
 			Type:  linux.RTN_UNICAST,
 
-			DstAddr:         rt.Destination.ID().AsSlice(),
+			DstAddr:         dstAddr.AsSlice(),
 			OutputInterface: int32(rt.NIC),
 			GatewayAddr:     rt.Gateway.AsSlice(),
 		})

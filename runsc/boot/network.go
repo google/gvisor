@@ -482,5 +482,6 @@ func ipToAddress(ip net.IP) tcpip.Address {
 // ipMaskToAddressMask converts IPMask to tcpip.AddressMask, ignoring the
 // protocol.
 func ipMaskToAddressMask(ipMask net.IPMask) tcpip.AddressMask {
-	return tcpip.MaskFromBytes(ipToAddress(net.IP(ipMask)).AsSlice())
+	addr := ipToAddress(net.IP(ipMask))
+	return tcpip.MaskFromBytes(addr.AsSlice())
 }

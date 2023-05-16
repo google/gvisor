@@ -180,14 +180,16 @@ func (f *fakeNetworkEndpoint) NetworkProtocolNumber() tcpip.NetworkProtocolNumbe
 
 func (f *fakeNetworkEndpoint) WritePacket(r *stack.Route, params stack.NetworkHeaderParams, pkt stack.PacketBufferPtr) tcpip.Error {
 	// Increment the sent packet count in the protocol descriptor.
-	f.proto.sendPacketCount[int(r.RemoteAddress().AsSlice()[0])%len(f.proto.sendPacketCount)]++
+	remote := r.RemoteAddress()
+	f.proto.sendPacketCount[int(remote.AsSlice()[0])%len(f.proto.sendPacketCount)]++
 
 	// Add the protocol's header to the packet and send it to the link
 	// endpoint.
 	hdr := pkt.NetworkHeader().Push(fakeNetHeaderLen)
 	pkt.NetworkProtocolNumber = fakeNetNumber
-	copy(hdr[dstAddrOffset:], r.RemoteAddress().AsSlice())
-	copy(hdr[srcAddrOffset:], r.LocalAddress().AsSlice())
+	copy(hdr[dstAddrOffset:], remote.AsSlice())
+	local := r.LocalAddress()
+	copy(hdr[srcAddrOffset:], local.AsSlice())
 	hdr[protocolNumberOffset] = byte(params.Protocol)
 
 	if r.Loop()&stack.PacketLoop != 0 {

@@ -969,7 +969,8 @@ func TestMGPQueryMessages(t *testing.T) {
 				{
 					name: "Specified other address",
 					multicastAddr: func() tcpip.Address {
-						addrBytes := test.multicastAddr.AsSlice()
+						addrCopy := test.multicastAddr
+						addrBytes := addrCopy.AsSlice()
 						addrBytes[len(addrBytes)-1]++
 						return tcpip.AddrFromSlice(addrBytes)
 					}(),

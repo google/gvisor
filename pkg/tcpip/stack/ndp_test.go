@@ -73,7 +73,8 @@ func addrForSubnet(subnet tcpip.Subnet, linkAddr tcpip.LinkAddress) tcpip.Addres
 		return tcpip.AddressWithPrefix{}
 	}
 
-	addrBytes := subnet.ID().AsSlice()
+	subnetID := subnet.ID()
+	addrBytes := subnetID.AsSlice()
 	header.EthernetAdddressToModifiedEUI64IntoBuf(linkAddr, addrBytes[header.IIDOffsetInIPv6Address:])
 	return tcpip.AddressWithPrefix{
 		Address:   tcpip.AddrFromSlice(addrBytes),
@@ -3214,7 +3215,8 @@ func TestMixedSLAACAddrConflictRegen(t *testing.T) {
 	var stableAddrsWithOpaqueIID [maxAddrs]tcpip.AddressWithPrefix
 	var tempAddrsWithOpaqueIID [maxAddrs]tcpip.AddressWithPrefix
 	var tempAddrsWithModifiedEUI64 [maxAddrs]tcpip.AddressWithPrefix
-	addrBytes := subnet.ID().AsSlice()
+	subnetID := subnet.ID()
+	addrBytes := subnetID.AsSlice()
 	for i := 0; i < maxAddrs; i++ {
 		stableAddrsWithOpaqueIID[i] = tcpip.AddressWithPrefix{
 			Address:   tcpip.AddrFromSlice(header.AppendOpaqueInterfaceIdentifier(addrBytes[:header.IIDOffsetInIPv6Address], subnet, nicName, uint8(i), nil)),
@@ -4302,12 +4304,14 @@ func TestAutoGenAddrWithOpaqueIID(t *testing.T) {
 	// addr1 and addr2 are the addresses that are expected to be generated when
 	// stack.Stack is configured to generate opaque interface identifiers as
 	// defined by RFC 7217.
-	addrBytes := subnet1.ID().AsSlice()
+	subnetID := subnet1.ID()
+	addrBytes := subnetID.AsSlice()
 	addr1 := tcpip.AddressWithPrefix{
 		Address:   tcpip.AddrFromSlice(header.AppendOpaqueInterfaceIdentifier(addrBytes[:header.IIDOffsetInIPv6Address], subnet1, nicName, 0, secretKey)),
 		PrefixLen: 64,
 	}
-	addrBytes = subnet2.ID().AsSlice()
+	subnetID = subnet2.ID()
+	addrBytes = subnetID.AsSlice()
 	addr2 := tcpip.AddressWithPrefix{
 		Address:   tcpip.AddrFromSlice(header.AppendOpaqueInterfaceIdentifier(addrBytes[:header.IIDOffsetInIPv6Address], subnet2, nicName, 0, secretKey)),
 		PrefixLen: 64,
@@ -4394,7 +4398,8 @@ func TestAutoGenAddrInResponseToDADConflicts(t *testing.T) {
 	prefix, subnet, _ := prefixSubnetAddr(0, linkAddr1)
 
 	addrForSubnet := func(subnet tcpip.Subnet, dadCounter uint8) tcpip.AddressWithPrefix {
-		addrBytes := subnet.ID().AsSlice()
+		subnetID := subnet.ID()
+		addrBytes := subnetID.AsSlice()
 		return tcpip.AddressWithPrefix{
 			Address:   tcpip.AddrFromSlice(header.AppendOpaqueInterfaceIdentifier(addrBytes[:header.IIDOffsetInIPv6Address], subnet, nicName, dadCounter, secretKey)),
 			PrefixLen: 64,
@@ -4676,7 +4681,8 @@ func TestAutoGenAddrWithEUI64IIDNoDADRetries(t *testing.T) {
 
 			addrType.triggerSLAACFn(e)
 
-			addrBytes := addrType.subnet.ID().AsSlice()
+			subnetID := addrType.subnet.ID()
+			addrBytes := subnetID.AsSlice()
 			header.EthernetAdddressToModifiedEUI64IntoBuf(linkAddr1, addrBytes[header.IIDOffsetInIPv6Address:])
 			addr := tcpip.AddressWithPrefix{
 				Address:   tcpip.AddrFromSlice(addrBytes),
@@ -4762,7 +4768,8 @@ func TestAutoGenAddrContinuesLifetimesAfterRetry(t *testing.T) {
 	received := clock.NowMonotonic()
 	e.InjectInbound(header.IPv6ProtocolNumber, raBufWithPI(llAddr2, 0, prefix, true, true, lifetimeSeconds, lifetimeSeconds))
 
-	addrBytes := subnet.ID().AsSlice()
+	subnetID := subnet.ID()
+	addrBytes := subnetID.AsSlice()
 	addr := tcpip.AddressWithPrefix{
 		Address:   tcpip.AddrFromSlice(header.AppendOpaqueInterfaceIdentifier(addrBytes[:header.IIDOffsetInIPv6Address], subnet, nicName, 0, secretKey)),
 		PrefixLen: 64,
