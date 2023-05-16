@@ -156,7 +156,10 @@ static void __panic(int err, long line) {
   // Normal user processes cannot map addresses lower than vm.mmap_min_addr
   // which is usually > 4K. So writing to an address <4K should crash the
   // process with a segfault.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
   *(int *)(line % 4096) = err;
+#pragma GCC diagnostic pop
 }
 
 void memcpy(uint8_t *dest, uint8_t *src, size_t n);

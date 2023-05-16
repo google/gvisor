@@ -1,8 +1,7 @@
 diff --git a/go/private/sdk.bzl b/go/private/sdk.bzl
-index 0d55d474..1b2a776b 100644
 --- a/go/private/sdk.bzl
 +++ b/go/private/sdk.bzl
-@@ -127,6 +127,8 @@ def _go_download_sdk_impl(ctx):
+@@ -126,6 +126,8 @@ def _go_download_sdk_impl(ctx):
              "sdks": ctx.attr.sdks,
              "urls": ctx.attr.urls,
              "version": version,
@@ -11,16 +10,16 @@ index 0d55d474..1b2a776b 100644
              "strip_prefix": ctx.attr.strip_prefix,
          }
      return None
-@@ -142,6 +144,8 @@ _go_download_sdk = repository_rule(
+@@ -141,6 +143,8 @@ go_download_sdk_rule = repository_rule(
          ),
          "urls": attr.string_list(default = ["https://dl.google.com/go/{}"]),
          "version": attr.string(),
 +        "patch": attr.label(default = None),
 +        "patch_strip": attr.int(default = 0),
          "strip_prefix": attr.string(default = "go"),
-     },
- )
-@@ -334,6 +338,8 @@ def _remote_sdk(ctx, urls, strip_prefix, sha256):
+         "_sdk_build_file": attr.label(
+             default = Label("//go/private:BUILD.sdk.bazel"),
+@@ -423,6 +427,8 @@ def _remote_sdk(ctx, urls, strip_prefix, sha256):
          res = ctx.execute(["tar", "-xf", "go_sdk.tar.gz", "--strip-components=1"])
          if res.return_code:
              fail("error extracting Go SDK:\n" + res.stdout + res.stderr)
