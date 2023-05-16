@@ -74,7 +74,7 @@ type Task struct {
 	taskWorkCount atomicbitops.Int32
 
 	// taskWorkMu protects taskWork.
-	taskWorkMu sync.Mutex `state:"nosave"`
+	taskWorkMu taskWorkMutex `state:"nosave"`
 
 	// taskWork is a queue of work to be executed before resuming user execution.
 	// It is similar to the task_work mechanism in Linux.

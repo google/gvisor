@@ -1,9 +1,24 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
+load("//pkg/sync/locking:locking.bzl", "declare_mutex")
 
 package(
     default_applicable_licenses = ["//:license"],
     licenses = ["notice"],
+)
+
+declare_mutex(
+    name = "memory_file_mutex",
+    out = "memory_file_mutex.go",
+    package = "pgalloc",
+    prefix = "memoryFile",
+)
+
+declare_mutex(
+    name = "mappings_mutex",
+    out = "mappings_mutex.go",
+    package = "pgalloc",
+    prefix = "mappings",
 )
 
 go_template_instance(
@@ -78,6 +93,8 @@ go_library(
         "context.go",
         "evictable_range.go",
         "evictable_range_set.go",
+        "mappings_mutex.go",
+        "memory_file_mutex.go",
         "pgalloc.go",
         "pgalloc_unsafe.go",
         "reclaim_set.go",
@@ -101,6 +118,7 @@ go_library(
         "//pkg/state",
         "//pkg/state/wire",
         "//pkg/sync",
+        "//pkg/sync/locking",
         "//pkg/usermem",
         "@org_golang_x_sys//unix:go_default_library",
     ],
