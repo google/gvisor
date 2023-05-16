@@ -558,27 +558,16 @@ func (d *directfsDentry) openCreate(name string, accessFlags uint32, mode linux.
 	return child, handle{fd: int32(childHandleFD)}, nil
 }
 
-func (d *directfsDentry) getDirentsLocked(count int, recordDirent func(name string, key inoKey, dType uint8)) error {
+func (d *directfsDentry) getDirentsLocked(recordDirent func(name string, key inoKey, dType uint8)) error {
 	readFD := int(d.readFD.RacyLoad())
 	if _, err := unix.Seek(readFD, 0, 0); err != nil {
 		return err
 	}
 
 	var direntsBuf [8192]byte
-	for bytesRead := 0; bytesRead < count; {
-		bufEnd := len(direntsBuf)
-		if remaining := int(count) - bytesRead; remaining < bufEnd {
-			bufEnd = remaining
-		}
-		n, err := unix.Getdents(readFD, direntsBuf[:bufEnd])
+	for {
+		n, err := unix.Getdents(readFD, direntsBuf[:])
 		if err != nil {
-			if err == unix.EINVAL && bufEnd < fsutil.UnixDirentMaxSize {
-				// getdents64(2) returns EINVAL is returned when the result
-				// buffer is too small. If bufEnd is smaller than the max
-				// size of unix.Dirent, then just break here to return all
-				// dirents collected till now.
-				return nil
-			}
 			return err
 		}
 		if n <= 0 {
@@ -594,12 +583,10 @@ func (d *directfsDentry) getDirentsLocked(count int, recordDirent func(name stri
 				log.Warningf("Getdent64: skipping file %q with failed stat, err: %v", path.Join(genericDebugPathname(&d.dentry), name), err)
 				return true
 			}
-			bytesRead += int(reclen)
 			recordDirent(name, inoKeyFromStat(&stat), ftype)
 			return true
 		})
 	}
-	return nil
 }
 
 // Precondition: fs.renameMu is locked.
