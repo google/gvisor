@@ -2446,8 +2446,8 @@ func TestSmallReceiveBufferReadiness(t *testing.T) {
 	protocolAddr := tcpip.ProtocolAddress{
 		Protocol: ipv4.ProtocolNumber,
 		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   tcpip.Address("\x7f\x00\x00\x01"),
-			PrefixLen: 8,
+			Address:   tcpip.AddrFromSlice([]byte("\x7f\x00\x00\x01")),
+			PrefixLen: 32,
 		},
 	}
 	if err := s.AddProtocolAddress(nicID, protocolAddr, stack.AddressProperties{}); err != nil {
@@ -2455,7 +2455,7 @@ func TestSmallReceiveBufferReadiness(t *testing.T) {
 	}
 
 	{
-		subnet, err := tcpip.NewSubnet("\x7f\x00\x00\x00", "\xff\x00\x00\x00")
+		subnet, err := tcpip.NewSubnet(tcpip.AddrFromSlice([]byte("\x7f\x00\x00\x00")), tcpip.MaskFrom("\xff\x00\x00\x00"))
 		if err != nil {
 			t.Fatalf("tcpip.NewSubnet failed: %s", err)
 		}
@@ -5560,12 +5560,12 @@ func TestConnectAvoidsBoundPorts(t *testing.T) {
 		switch addressType {
 		case "v4":
 			if isAny {
-				return ""
+				return tcpip.Address{}
 			}
 			return context.StackAddr
 		case "v6":
 			if isAny {
-				return ""
+				return tcpip.Address{}
 			}
 			return context.StackV6Addr
 		case "mapped":

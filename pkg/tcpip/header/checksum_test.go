@@ -130,7 +130,7 @@ func randomAddress(size int) tcpip.Address {
 	for i := 0; i < size; i++ {
 		s[i] = byte(rand.Uint32())
 	}
-	return tcpip.Address(s)
+	return tcpip.AddrFromSlice(s)
 }
 
 func TestChecksummableNetworkUpdateAddress(t *testing.T) {
@@ -272,7 +272,7 @@ func TestChecksummableTransportUpdatePort(t *testing.T) {
 }
 
 func TestChecksummableTransportUpdatePseudoHeaderAddress(t *testing.T) {
-	const addressSize = 6
+	const addressSize = 16
 
 	tests := []struct {
 		name         string

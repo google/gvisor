@@ -21,7 +21,6 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
 
@@ -39,7 +38,7 @@ func TestAnyRecvUnicastUDP(t *testing.T) {
 	payload := testbench.GenerateRandomPayload(t, 1<<10 /* 1 KiB */)
 	conn.SendIP(
 		t,
-		testbench.IPv4{DstAddr: testbench.Address(tcpip.Address(dut.Net.RemoteIPv4))},
+		testbench.IPv4{DstAddr: &dut.Net.RemoteIPv4},
 		testbench.UDP{},
 		&testbench.Payload{Bytes: payload},
 	)

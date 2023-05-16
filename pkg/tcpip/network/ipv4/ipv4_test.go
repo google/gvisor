@@ -105,7 +105,7 @@ func TestExcludeBroadcast(t *testing.T) {
 		NIC:         1,
 	}})
 
-	randomAddr := tcpip.FullAddress{NIC: 1, Addr: "\x0a\x00\x00\x01", Port: 53}
+	randomAddr := tcpip.FullAddress{NIC: 1, Addr: tcpip.AddrFromSlice([]byte("\x0a\x00\x00\x01")), Port: 53}
 
 	var wq waiter.Queue
 	t.Run("WithoutPrimaryAddress", func(t *testing.T) {
@@ -139,7 +139,7 @@ func TestExcludeBroadcast(t *testing.T) {
 		// Add a valid primary endpoint address, now we can connect.
 		protocolAddr := tcpip.ProtocolAddress{
 			Protocol:          ipv4.ProtocolNumber,
-			AddressWithPrefix: tcpip.Address("\x0a\x00\x00\x02").WithPrefix(),
+			AddressWithPrefix: tcpip.AddrFromSlice([]byte("\x0a\x00\x00\x02")).WithPrefix(),
 		}
 		if err := s.AddProtocolAddress(1, protocolAddr, stack.AddressProperties{}); err != nil {
 			t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", 1, protocolAddr, err)
@@ -505,7 +505,7 @@ func TestForwarding(t *testing.T) {
 		{
 			name:                             "initializing source",
 			TTL:                              2,
-			srcAddr:                          tcpip.Address(net.ParseIP("0.0.0.255").To4()),
+			srcAddr:                          tcpip.AddrFromSlice(net.ParseIP("0.0.0.255").To4()),
 			dstAddr:                          remoteIPv4Addr2,
 			expectedInitializingSourceErrors: 1,
 			expectPacketForwarded:            false,
@@ -1149,10 +1149,10 @@ func TestIPv4Sanity(t *testing.T) {
 	)
 	var (
 		ipv4Addr = tcpip.AddressWithPrefix{
-			Address:   tcpip.Address(net.ParseIP("192.168.1.58").To4()),
+			Address:   tcpip.AddrFromSlice(net.ParseIP("192.168.1.58").To4()),
 			PrefixLen: 24,
 		}
-		remoteIPv4Addr = tcpip.Address(net.ParseIP("10.0.0.1").To4())
+		remoteIPv4Addr = tcpip.AddrFromSlice(net.ParseIP("10.0.0.1").To4())
 	)
 
 	tests := []struct {
@@ -2267,12 +2267,15 @@ func TestInvalidFragments(t *testing.T) {
 	const (
 		nicID    = 1
 		linkAddr = tcpip.LinkAddress("\x0a\x0b\x0c\x0d\x0e\x0e")
-		addr1    = tcpip.Address("\x0a\x00\x00\x01")
-		addr2    = tcpip.Address("\x0a\x00\x00\x02")
 		tos      = 0
 		ident    = 1
 		ttl      = 48
 		protocol = 6
+	)
+
+	var (
+		addr1 = tcpip.AddrFromSlice([]byte("\x0a\x00\x00\x01"))
+		addr2 = tcpip.AddrFromSlice([]byte("\x0a\x00\x00\x02"))
 	)
 
 	payloadGen := func(payloadLen int) []byte {
@@ -2588,13 +2591,16 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 	const (
 		nicID    = 1
 		linkAddr = tcpip.LinkAddress("\x0a\x0b\x0c\x0d\x0e\x0e")
-		addr1    = tcpip.Address("\x0a\x00\x00\x01")
-		addr2    = tcpip.Address("\x0a\x00\x00\x02")
 		tos      = 0
 		ident    = 1
 		ttl      = 48
 		protocol = 99
 		data     = "TEST_FRAGMENT_REASSEMBLY_TIMEOUT"
+	)
+
+	var (
+		addr1 = tcpip.AddrFromSlice([]byte("\x0a\x00\x00\x01"))
+		addr2 = tcpip.AddrFromSlice([]byte("\x0a\x00\x00\x02"))
 	)
 
 	type fragmentData struct {
@@ -2842,10 +2848,12 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 func TestReceiveFragments(t *testing.T) {
 	const (
 		nicID = 1
+	)
 
-		addr1 = tcpip.Address("\x0c\xa8\x00\x01") // 192.168.0.1
-		addr2 = tcpip.Address("\x0c\xa8\x00\x02") // 192.168.0.2
-		addr3 = tcpip.Address("\x0c\xa8\x00\x03") // 192.168.0.3
+	var (
+		addr1 = tcpip.AddrFromSlice([]byte("\x0c\xa8\x00\x01")) // 192.168.0.1
+		addr2 = tcpip.AddrFromSlice([]byte("\x0c\xa8\x00\x02")) // 192.168.0.2
+		addr3 = tcpip.AddrFromSlice([]byte("\x0c\xa8\x00\x03")) // 192.168.0.3
 	)
 
 	// Build and return a UDP header containing payload.
@@ -3490,9 +3498,9 @@ func buildRoute(t *testing.T, c testContext, ep stack.LinkEndpoint) *stack.Route
 	if err := s.CreateNIC(1, ep); err != nil {
 		t.Fatalf("CreateNIC(1, _) failed: %s", err)
 	}
-	const (
-		src = tcpip.Address("\x10\x00\x00\x01")
-		dst = tcpip.Address("\x10\x00\x00\x02")
+	var (
+		src = tcpip.AddrFromSlice([]byte("\x10\x00\x00\x01"))
+		dst = tcpip.AddrFromSlice([]byte("\x10\x00\x00\x02"))
 	)
 	protocolAddr := tcpip.ProtocolAddress{
 		Protocol:          ipv4.ProtocolNumber,
@@ -3502,7 +3510,7 @@ func buildRoute(t *testing.T, c testContext, ep stack.LinkEndpoint) *stack.Route
 		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", 1, protocolAddr, err)
 	}
 	{
-		mask := tcpip.AddressMask(header.IPv4Broadcast)
+		mask := tcpip.MaskFromBytes(header.IPv4Broadcast.AsSlice())
 		subnet, err := tcpip.NewSubnet(dst, mask)
 		if err != nil {
 			t.Fatalf("NewSubnet(%s, %s) failed: %v", dst, mask, err)
@@ -3549,14 +3557,14 @@ func TestPacketQueuing(t *testing.T) {
 		host1IPv4Addr = tcpip.ProtocolAddress{
 			Protocol: ipv4.ProtocolNumber,
 			AddressWithPrefix: tcpip.AddressWithPrefix{
-				Address:   tcpip.Address(net.ParseIP("192.168.0.1").To4()),
+				Address:   tcpip.AddrFromSlice(net.ParseIP("192.168.0.1").To4()),
 				PrefixLen: 24,
 			},
 		}
 		host2IPv4Addr = tcpip.ProtocolAddress{
 			Protocol: ipv4.ProtocolNumber,
 			AddressWithPrefix: tcpip.AddressWithPrefix{
-				Address:   tcpip.Address(net.ParseIP("192.168.0.2").To4()),
+				Address:   tcpip.AddrFromSlice(net.ParseIP("192.168.0.2").To4()),
 				PrefixLen: 8,
 			},
 		}
@@ -3716,10 +3724,10 @@ func TestPacketQueuing(t *testing.T) {
 				if got := tcpip.LinkAddress(rep.HardwareAddressSender()); got != host1NICLinkAddr {
 					t.Errorf("got HardwareAddressSender = %s, want = %s", got, host1NICLinkAddr)
 				}
-				if got := tcpip.Address(rep.ProtocolAddressSender()); got != host1IPv4Addr.AddressWithPrefix.Address {
+				if got := tcpip.AddrFromSlice(rep.ProtocolAddressSender()); got != host1IPv4Addr.AddressWithPrefix.Address {
 					t.Errorf("got ProtocolAddressSender = %s, want = %s", got, host1IPv4Addr.AddressWithPrefix.Address)
 				}
-				if got := tcpip.Address(rep.ProtocolAddressTarget()); got != host2IPv4Addr.AddressWithPrefix.Address {
+				if got := tcpip.AddrFromSlice(rep.ProtocolAddressTarget()); got != host2IPv4Addr.AddressWithPrefix.Address {
 					t.Errorf("got ProtocolAddressTarget = %s, want = %s", got, host2IPv4Addr.AddressWithPrefix.Address)
 				}
 			}
@@ -3731,9 +3739,9 @@ func TestPacketQueuing(t *testing.T) {
 				packet.SetIPv4OverEthernet()
 				packet.SetOp(header.ARPReply)
 				copy(packet.HardwareAddressSender(), host2NICLinkAddr)
-				copy(packet.ProtocolAddressSender(), host2IPv4Addr.AddressWithPrefix.Address)
+				copy(packet.ProtocolAddressSender(), host2IPv4Addr.AddressWithPrefix.Address.AsSlice())
 				copy(packet.HardwareAddressTarget(), host1NICLinkAddr)
-				copy(packet.ProtocolAddressTarget(), host1IPv4Addr.AddressWithPrefix.Address)
+				copy(packet.ProtocolAddressTarget(), host1IPv4Addr.AddressWithPrefix.Address.AsSlice())
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 					Payload: bufferv2.MakeWithData(hdr),
 				})
@@ -3881,14 +3889,14 @@ func TestIcmpRateLimit(t *testing.T) {
 		host1IPv4Addr = tcpip.ProtocolAddress{
 			Protocol: ipv4.ProtocolNumber,
 			AddressWithPrefix: tcpip.AddressWithPrefix{
-				Address:   tcpip.Address(net.ParseIP("192.168.0.1").To4()),
+				Address:   tcpip.AddrFromSlice(net.ParseIP("192.168.0.1").To4()),
 				PrefixLen: 24,
 			},
 		}
 		host2IPv4Addr = tcpip.ProtocolAddress{
 			Protocol: ipv4.ProtocolNumber,
 			AddressWithPrefix: tcpip.AddressWithPrefix{
-				Address:   tcpip.Address(net.ParseIP("192.168.0.2").To4()),
+				Address:   tcpip.AddrFromSlice(net.ParseIP("192.168.0.2").To4()),
 				PrefixLen: 24,
 			},
 		}

@@ -713,7 +713,7 @@ func TestIPv6PacketInfo(t *testing.T) {
 		{
 			name: "Bind wildcard & SendTo with packet info NIC",
 			bindAddr: tcpip.FullAddress{
-				Addr: "",
+				Addr: tcpip.Address{},
 				Port: port,
 			},
 			toAddr: tcpip.FullAddress{
@@ -730,7 +730,7 @@ func TestIPv6PacketInfo(t *testing.T) {
 			name:       "BindToDevice & Bind wildcard & SendTo with packet info NIC not matching",
 			boundNICID: nicID2,
 			bindAddr: tcpip.FullAddress{
-				Addr: "",
+				Addr: tcpip.Address{},
 				Port: port,
 			},
 			toAddr: tcpip.FullAddress{
@@ -746,7 +746,7 @@ func TestIPv6PacketInfo(t *testing.T) {
 			name: "Bind wildcard and NIC & SendTo with packet info NIC matching",
 			bindAddr: tcpip.FullAddress{
 				NIC:  nicID1,
-				Addr: "",
+				Addr: tcpip.Address{},
 				Port: port,
 			},
 			toAddr: tcpip.FullAddress{
@@ -763,7 +763,7 @@ func TestIPv6PacketInfo(t *testing.T) {
 			name: "Bind wildcard and NIC & SendTo with packet info NIC not matching",
 			bindAddr: tcpip.FullAddress{
 				NIC:  nicID2,
-				Addr: "",
+				Addr: tcpip.Address{},
 				Port: port,
 			},
 			toAddr: tcpip.FullAddress{
@@ -813,7 +813,7 @@ func TestIPv6PacketInfo(t *testing.T) {
 		{
 			name: "Bind wildcard & Connect then Send with packet info NIC",
 			bindAddr: tcpip.FullAddress{
-				Addr: "",
+				Addr: tcpip.Address{},
 				Port: port,
 			},
 			connectAddr: tcpip.FullAddress{
@@ -830,7 +830,7 @@ func TestIPv6PacketInfo(t *testing.T) {
 			name: "Bind wildcard and NIC & Connect then Send with packet info NIC matching",
 			bindAddr: tcpip.FullAddress{
 				NIC:  nicID1,
-				Addr: "",
+				Addr: tcpip.Address{},
 				Port: port,
 			},
 			connectAddr: tcpip.FullAddress{
@@ -847,7 +847,7 @@ func TestIPv6PacketInfo(t *testing.T) {
 			name: "Bind wildcard and NIC & Connect then Send with packet info NIC not matching",
 			bindAddr: tcpip.FullAddress{
 				NIC:  nicID2,
-				Addr: "",
+				Addr: tcpip.Address{},
 				Port: port,
 			},
 			connectAddr: tcpip.FullAddress{
@@ -862,7 +862,7 @@ func TestIPv6PacketInfo(t *testing.T) {
 		{
 			name: "Bind wildcard & Connect with NIC then Send with packet info NIC matching",
 			bindAddr: tcpip.FullAddress{
-				Addr: "",
+				Addr: tcpip.Address{},
 				Port: port,
 			},
 			connectAddr: tcpip.FullAddress{
@@ -879,7 +879,7 @@ func TestIPv6PacketInfo(t *testing.T) {
 		{
 			name: "Bind wildcard & Connect with NIC then Send with packet info NIC not matching",
 			bindAddr: tcpip.FullAddress{
-				Addr: "",
+				Addr: tcpip.Address{},
 				Port: port,
 			},
 			connectAddr: tcpip.FullAddress{

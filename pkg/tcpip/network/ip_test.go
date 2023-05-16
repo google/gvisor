@@ -435,13 +435,13 @@ func TestSourceAddressValidation(t *testing.T) {
 	}{
 		{
 			name:       "IPv4 valid",
-			srcAddress: "\x01\x02\x03\x04",
+			srcAddress: tcpip.AddrFromSlice([]byte("\x01\x02\x03\x04")),
 			rxICMP:     rxIPv4ICMP,
 			valid:      true,
 		},
 		{
 			name:       "IPv6 valid",
-			srcAddress: "\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10",
+			srcAddress: tcpip.AddrFromSlice([]byte("\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x10")),
 			rxICMP:     rxIPv6ICMP,
 			valid:      true,
 		},
@@ -459,13 +459,13 @@ func TestSourceAddressValidation(t *testing.T) {
 		},
 		{
 			name:       "IPv4 multicast",
-			srcAddress: "\xe0\x00\x00\x01",
+			srcAddress: tcpip.AddrFromSlice([]byte("\xe0\x00\x00\x01")),
 			rxICMP:     rxIPv4ICMP,
 			valid:      false,
 		},
 		{
 			name:       "IPv6 multicast",
-			srcAddress: "\xff\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01",
+			srcAddress: tcpip.AddrFromSlice([]byte("\xff\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")),
 			rxICMP:     rxIPv6ICMP,
 			valid:      false,
 		},
@@ -888,7 +888,7 @@ func TestIPv4ReceiveControl(t *testing.T) {
 				TotalLength: uint16(len(view) - c.trunc),
 				TTL:         20,
 				Protocol:    uint8(header.ICMPv4ProtocolNumber),
-				SrcAddr:     "\x0a\x00\x00\xbb",
+				SrcAddr:     tcpip.AddrFromSlice([]byte("\x0a\x00\x00\xbb")),
 				DstAddr:     localIPv4Addr,
 			})
 			ip.SetChecksum(^ip.CalculateChecksum())
@@ -1104,10 +1104,10 @@ func TestIPv6Send(t *testing.T) {
 
 func TestIPv6ReceiveControl(t *testing.T) {
 	const (
-		mtu          = 0xffff
-		outerSrcAddr = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xaa"
-		dataLen      = 8
+		mtu     = 0xffff
+		dataLen = 8
 	)
+	outerSrcAddr := tcpip.AddrFromSlice([]byte("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xaa\x00\x00\x00"))
 
 	newUint16 := func(v uint16) *uint16 { return &v }
 
@@ -1739,11 +1739,11 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 			}{
 				{
 					name:    "unspecified source",
-					srcAddr: tcpip.Address(strings.Repeat("\x00", len(test.nicAddr.Address))),
+					srcAddr: tcpip.AddrFromSlice([]byte(strings.Repeat("\x00", test.nicAddr.Address.Len()))),
 				},
 				{
 					name:    "random source",
-					srcAddr: tcpip.Address(strings.Repeat("\xab", len(test.nicAddr.Address))),
+					srcAddr: tcpip.AddrFromSlice([]byte(strings.Repeat("\xab", test.nicAddr.Address.Len()))),
 				},
 			}
 

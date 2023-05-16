@@ -83,7 +83,7 @@ func TestAppendOpaqueInterfaceIdentifier(t *testing.T) {
 			name: "SecretKey of less than minimum size",
 			prefix: func() tcpip.Subnet {
 				addrWithPrefix := tcpip.AddressWithPrefix{
-					Address:   "\x01\x02\x03\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+					Address:   tcpip.AddrFrom16Slice([]byte("\x01\x02\x03\x03\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00")),
 					PrefixLen: header.IIDOffsetInIPv6Address * 8,
 				}
 				return addrWithPrefix.Subnet()
@@ -96,7 +96,7 @@ func TestAppendOpaqueInterfaceIdentifier(t *testing.T) {
 			name: "SecretKey of more than minimum size",
 			prefix: func() tcpip.Subnet {
 				addrWithPrefix := tcpip.AddressWithPrefix{
-					Address:   "\x01\x02\x03\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+					Address:   tcpip.AddrFrom16Slice([]byte("\x01\x02\x03\x04\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00")),
 					PrefixLen: header.IIDOffsetInIPv6Address * 8,
 				}
 				return addrWithPrefix.Subnet()
@@ -109,7 +109,7 @@ func TestAppendOpaqueInterfaceIdentifier(t *testing.T) {
 			name: "Nil SecretKey and empty nicName",
 			prefix: func() tcpip.Subnet {
 				addrWithPrefix := tcpip.AddressWithPrefix{
-					Address:   "\x01\x02\x03\x05\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+					Address:   tcpip.AddrFrom16Slice([]byte("\x01\x02\x03\x05\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00")),
 					PrefixLen: header.IIDOffsetInIPv6Address * 8,
 				}
 				return addrWithPrefix.Subnet()
@@ -123,7 +123,7 @@ func TestAppendOpaqueInterfaceIdentifier(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			h := sha256.New()
-			h.Write([]byte(test.prefix.ID()[:header.IIDOffsetInIPv6Address]))
+			h.Write(test.prefix.ID().AsSlice()[:header.IIDOffsetInIPv6Address])
 			h.Write([]byte(test.nicName))
 			h.Write([]byte{test.dadCounter})
 			if k := test.secretKey; k != nil {
@@ -202,7 +202,7 @@ func TestLinkLocalAddrWithOpaqueIID(t *testing.T) {
 				1: 0x80,
 			}
 
-			want := tcpip.Address(header.AppendOpaqueInterfaceIdentifier(
+			want := tcpip.AddrFromSlice(header.AppendOpaqueInterfaceIdentifier(
 				addrBytes[:header.IIDOffsetInIPv6Address],
 				prefix,
 				test.nicName,
@@ -220,12 +220,12 @@ func TestLinkLocalAddrWithOpaqueIID(t *testing.T) {
 func TestIsV6LinkLocalMulticastAddress(t *testing.T) {
 	tests := []struct {
 		name     string
-		addr     tcpip.Address
+		addr     string
 		expected bool
 	}{
 		{
 			name:     "Valid Link Local Multicast",
-			addr:     linkLocalMulticastAddr,
+			addr:     string(linkLocalMulticastAddr.AsSlice()),
 			expected: true,
 		},
 		{
@@ -235,7 +235,7 @@ func TestIsV6LinkLocalMulticastAddress(t *testing.T) {
 		},
 		{
 			name:     "Link Local Unicast",
-			addr:     linkLocalAddr,
+			addr:     string(linkLocalAddr.AsSlice()),
 			expected: false,
 		},
 		{
@@ -247,7 +247,7 @@ func TestIsV6LinkLocalMulticastAddress(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := header.IsV6LinkLocalMulticastAddress(test.addr); got != test.expected {
+			if got := header.IsV6LinkLocalMulticastAddress(tcpip.AddrFromSlice([]byte(test.addr))); got != test.expected {
 				t.Errorf("got header.IsV6LinkLocalMulticastAddress(%s) = %t, want = %t", test.addr, got, test.expected)
 			}
 		})
@@ -282,7 +282,7 @@ func TestIsV6LinkLocalUnicastAddress(t *testing.T) {
 		},
 		{
 			name:     "IPv4 Link Local",
-			addr:     "\xa9\xfe\x00\x01",
+			addr:     tcpip.AddrFrom4Slice([]byte("\xa9\xfe\x00\x01")),
 			expected: false,
 		},
 	}
@@ -329,7 +329,7 @@ func TestScopeForIPv6Address(t *testing.T) {
 		},
 		{
 			name:  "IPv4",
-			addr:  "\x01\x02\x03\x04",
+			addr:  tcpip.AddrFrom4Slice([]byte("\x01\x02\x03\x04")),
 			scope: header.GlobalScope,
 			err:   &tcpip.ErrBadAddress{},
 		},
@@ -350,8 +350,8 @@ func TestScopeForIPv6Address(t *testing.T) {
 
 func TestSolicitedNodeAddr(t *testing.T) {
 	tests := []struct {
-		addr tcpip.Address
-		want tcpip.Address
+		addr string
+		want string
 	}{
 		{
 			addr: "\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\xa0",
@@ -369,7 +369,7 @@ func TestSolicitedNodeAddr(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(fmt.Sprintf("%s", test.addr), func(t *testing.T) {
-			if got := header.SolicitedNodeAddr(test.addr); got != test.want {
+			if got := header.SolicitedNodeAddr(tcpip.AddrFrom16Slice([]byte(test.addr))); got != tcpip.AddrFrom16Slice([]byte(test.want)) {
 				t.Fatalf("got header.SolicitedNodeAddr(%s) = %s, want = %s", test.addr, got, test.want)
 			}
 		})
@@ -378,7 +378,7 @@ func TestSolicitedNodeAddr(t *testing.T) {
 
 func TestV6MulticastScope(t *testing.T) {
 	tests := []struct {
-		addr tcpip.Address
+		addr string
 		want header.IPv6MulticastScope
 	}{
 		{
@@ -449,7 +449,7 @@ func TestV6MulticastScope(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(fmt.Sprintf("%s", test.addr), func(t *testing.T) {
-			if got := header.V6MulticastScope(test.addr); got != test.want {
+			if got := header.V6MulticastScope(tcpip.AddrFrom16Slice([]byte(test.addr))); got != test.want {
 				t.Fatalf("got header.V6MulticastScope(%s) = %d, want = %d", test.addr, got, test.want)
 			}
 		})

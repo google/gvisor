@@ -45,11 +45,9 @@ import (
 )
 
 const (
-	localLinkAddr     = "\xde\xad\xbe\xef\x56\x78"
-	remoteLinkAddr    = "\xde\xad\xbe\xef\x12\x34"
-	localIPv4Address  = tcpip.Address("\x0a\x00\x00\x01")
-	remoteIPv4Address = tcpip.Address("\x0a\x00\x00\x02")
-	serverPort        = 10001
+	localLinkAddr  = "\xde\xad\xbe\xef\x56\x78"
+	remoteLinkAddr = "\xde\xad\xbe\xef\x12\x34"
+	serverPort     = 10001
 
 	defaultMTU        = 65536
 	defaultBufferSize = 1500
@@ -57,6 +55,11 @@ const (
 	// qDisc options
 	numQueues = 1
 	queueLen  = 1000
+)
+
+var (
+	localIPv4Address  = tcpip.AddrFromSlice([]byte("\x0a\x00\x00\x01"))
+	remoteIPv4Address = tcpip.AddrFromSlice([]byte("\x0a\x00\x00\x02"))
 )
 
 type stackOptions struct {
@@ -94,7 +97,7 @@ func newStackWithOptions(stackOpts stackOptions) (*stack.Stack, error) {
 	// Add Protocol Address.
 	protocolNum := ipv4.ProtocolNumber
 	routeTable := []tcpip.Route{{Destination: header.IPv4EmptySubnet, NIC: nicID}}
-	if len(stackOpts.addr) == 16 {
+	if stackOpts.addr.Len() == 16 {
 		routeTable = []tcpip.Route{{Destination: header.IPv6EmptySubnet, NIC: nicID}}
 		protocolNum = ipv6.ProtocolNumber
 	}
@@ -210,7 +213,7 @@ func makeRequest(serverAddr tcpip.FullAddress, clientStk *stack.Stack) (*http.Re
 	// Close idle "keep alive" connections. If any connections remain open after
 	// a test ends, DoLeakCheck() will erroneously detect leaked packets.
 	defer httpClient.CloseIdleConnections()
-	serverURL := fmt.Sprintf("http://[%s]:%d/", net.IP(serverAddr.Addr), serverAddr.Port)
+	serverURL := fmt.Sprintf("http://[%s]:%d/", net.IP(serverAddr.Addr.AsSlice()), serverAddr.Port)
 	response, err := httpClient.Get(serverURL)
 	return response, err
 }

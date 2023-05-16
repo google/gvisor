@@ -468,9 +468,9 @@ func (n *Network) createNICWithAddrs(id tcpip.NICID, ep stack.LinkEndpoint, opts
 // Note: don't use 'len(ip)' to determine IP version because length is always 16.
 func ipToAddressAndProto(ip net.IP) (tcpip.NetworkProtocolNumber, tcpip.Address) {
 	if i4 := ip.To4(); i4 != nil {
-		return ipv4.ProtocolNumber, tcpip.Address(i4)
+		return ipv4.ProtocolNumber, tcpip.AddrFromSlice(i4)
 	}
-	return ipv6.ProtocolNumber, tcpip.Address(ip)
+	return ipv6.ProtocolNumber, tcpip.AddrFromSlice(ip)
 }
 
 // ipToAddress converts IP to tcpip.Address, ignoring the protocol.
@@ -482,5 +482,5 @@ func ipToAddress(ip net.IP) tcpip.Address {
 // ipMaskToAddressMask converts IPMask to tcpip.AddressMask, ignoring the
 // protocol.
 func ipMaskToAddressMask(ipMask net.IPMask) tcpip.AddressMask {
-	return tcpip.AddressMask(ipToAddress(net.IP(ipMask)))
+	return tcpip.MaskFromBytes(ipToAddress(net.IP(ipMask)).AsSlice())
 }

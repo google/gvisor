@@ -21,6 +21,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/bufferv2"
 	"gvisor.dev/gvisor/pkg/tcpip"
+	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
 	"gvisor.dev/gvisor/pkg/tcpip/ports"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -29,15 +30,14 @@ import (
 
 const (
 	fakeTransNumber    tcpip.TransportProtocolNumber = 1
-	fakeTransHeaderLen int                           = 3
+	fakeTransHeaderLen int                           = 12
 )
 
 // fakeTransportEndpoint is a transport-layer protocol endpoint. It counts
 // received packets; the counts of all endpoints are aggregated in the protocol
 // descriptor.
 //
-// Headers of this protocol are fakeTransHeaderLen bytes, but we currently don't
-// use it.
+// Headers of this protocol are fakeTransHeaderLen bytes.
 type fakeTransportEndpoint struct {
 	stack.TransportEndpointInfo
 	tcpip.DefaultSocketOptionsHandler
@@ -94,7 +94,7 @@ func (*fakeTransportEndpoint) Read(io.Writer, tcpip.ReadOptions) (tcpip.ReadResu
 }
 
 func (f *fakeTransportEndpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcpip.Error) {
-	if len(f.route.RemoteAddress()) == 0 {
+	if f.route.RemoteAddress().Len() == 0 {
 		return 0, &tcpip.ErrHostUnreachable{}
 	}
 
@@ -144,7 +144,7 @@ func (f *fakeTransportEndpoint) Connect(addr tcpip.FullAddress) tcpip.Error {
 	f.peerAddr = addr.Addr
 
 	// Find the route.
-	r, err := f.proto.stack.FindRoute(addr.NIC, "", addr.Addr, fakeNetNumber, false /* multicastLoop */)
+	r, err := f.proto.stack.FindRoute(addr.NIC, tcpip.Address{}, addr.Addr, fakeNetNumber, false /* multicastLoop */)
 	if err != nil {
 		return &tcpip.ErrHostUnreachable{}
 	}
@@ -221,7 +221,12 @@ func (f *fakeTransportEndpoint) HandlePacket(id stack.TransportEndpointID, pkt s
 	}
 
 	netHdr := pkt.NetworkHeader().Slice()
-	route, err := f.proto.stack.FindRoute(pkt.NICID, tcpip.Address(netHdr[dstAddrOffset]), tcpip.Address(netHdr[srcAddrOffset]), pkt.NetworkProtocolNumber, false /* multicastLoop */)
+	route, err := f.proto.stack.FindRoute(
+		pkt.NICID,
+		tcpip.AddrFromSlice(netHdr[dstAddrOffset:][:header.IPv4AddressSize]),
+		tcpip.AddrFromSlice(netHdr[srcAddrOffset:][:header.IPv4AddressSize]),
+		pkt.NetworkProtocolNumber,
+		false /* multicastLoop */)
 	if err != nil {
 		return
 	}
@@ -361,17 +366,17 @@ func TestTransportReceive(t *testing.T) {
 	}
 
 	{
-		subnet, err := tcpip.NewSubnet("\x00", "\x00")
+		subnet, err := tcpip.NewSubnet(tcpip.AddrFromSlice([]byte("\x00\x00\x00\x00")), tcpip.MaskFrom("\x00\x00\x00\x00"))
 		if err != nil {
 			t.Fatal(err)
 		}
-		s.SetRouteTable([]tcpip.Route{{Destination: subnet, Gateway: "\x00", NIC: 1}})
+		s.SetRouteTable([]tcpip.Route{{Destination: subnet, Gateway: tcpip.AddrFromSlice([]byte("\x00\x00\x00\x00")), NIC: 1}})
 	}
 
 	protocolAddr := tcpip.ProtocolAddress{
 		Protocol: fakeNetNumber,
 		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   "\x01",
+			Address:   tcpip.AddrFromSlice([]byte("\x01\x00\x00\x00")),
 			PrefixLen: fakeDefaultPrefixLen,
 		},
 	}
@@ -386,7 +391,7 @@ func TestTransportReceive(t *testing.T) {
 		t.Fatalf("NewEndpoint failed: %v", err)
 	}
 
-	if err := ep.Connect(tcpip.FullAddress{0, "\x02", 0}); err != nil {
+	if err := ep.Connect(tcpip.FullAddress{0, tcpip.AddrFromSlice([]byte("\x02\x00\x00\x00")), 0}); err != nil {
 		t.Fatalf("Connect failed: %v", err)
 	}
 
@@ -396,8 +401,8 @@ func TestTransportReceive(t *testing.T) {
 	buf := make([]byte, 30)
 
 	// Make sure packet with wrong protocol is not delivered.
-	buf[0] = 1
-	buf[2] = 0
+	copy(buf[dstAddrOffset:], []byte("\x01\x00\x00\x00"))
+	buf[protocolNumberOffset] = 0
 	linkEP.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Payload: bufferv2.MakeWithData(buf),
 	}))
@@ -406,9 +411,9 @@ func TestTransportReceive(t *testing.T) {
 	}
 
 	// Make sure packet from the wrong source is not delivered.
-	buf[0] = 1
-	buf[1] = 3
-	buf[2] = byte(fakeTransNumber)
+	copy(buf[dstAddrOffset:], []byte("\x01\x00\x00\x00"))
+	copy(buf[srcAddrOffset:], []byte("\x03\x00\x00\x00"))
+	buf[protocolNumberOffset] = byte(fakeTransNumber)
 	linkEP.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Payload: bufferv2.MakeWithData(buf),
 	}))
@@ -417,9 +422,9 @@ func TestTransportReceive(t *testing.T) {
 	}
 
 	// Make sure packet is delivered.
-	buf[0] = 1
-	buf[1] = 2
-	buf[2] = byte(fakeTransNumber)
+	copy(buf[dstAddrOffset:], []byte("\x01\x00\x00\x00"))
+	copy(buf[srcAddrOffset:], []byte("\x02\x00\x00\x00"))
+	buf[protocolNumberOffset] = byte(fakeTransNumber)
 	linkEP.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Payload: bufferv2.MakeWithData(buf),
 	}))
@@ -439,17 +444,17 @@ func TestTransportControlReceive(t *testing.T) {
 	}
 
 	{
-		subnet, err := tcpip.NewSubnet("\x00", "\x00")
+		subnet, err := tcpip.NewSubnet(tcpip.AddrFromSlice([]byte("\x00\x00\x00\x00")), tcpip.MaskFrom("\x00\x00\x00\x00"))
 		if err != nil {
 			t.Fatal(err)
 		}
-		s.SetRouteTable([]tcpip.Route{{Destination: subnet, Gateway: "\x00", NIC: 1}})
+		s.SetRouteTable([]tcpip.Route{{Destination: subnet, Gateway: tcpip.AddrFromSlice([]byte("\x00\x00\x00\x00")), NIC: 1}})
 	}
 
 	protocolAddr := tcpip.ProtocolAddress{
 		Protocol: fakeNetNumber,
 		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   "\x01",
+			Address:   tcpip.AddrFromSlice([]byte("\x01\x00\x00\x00")),
 			PrefixLen: fakeDefaultPrefixLen,
 		},
 	}
@@ -464,7 +469,7 @@ func TestTransportControlReceive(t *testing.T) {
 		t.Fatalf("NewEndpoint failed: %v", err)
 	}
 
-	if err := ep.Connect(tcpip.FullAddress{0, "\x02", 0}); err != nil {
+	if err := ep.Connect(tcpip.FullAddress{0, tcpip.AddrFromSlice([]byte("\x02\x00\x00\x00")), 0}); err != nil {
 		t.Fatalf("Connect failed: %v", err)
 	}
 
@@ -474,14 +479,14 @@ func TestTransportControlReceive(t *testing.T) {
 	buf := make([]byte, 2*fakeNetHeaderLen+30)
 
 	// Outer packet contains the control protocol number.
-	buf[0] = 1
-	buf[1] = 0xfe
-	buf[2] = uint8(fakeControlProtocol)
+	copy(buf[dstAddrOffset:], []byte("\x01\x00\x00\x00"))
+	copy(buf[srcAddrOffset:], []byte("\xfe\x00\x00\x00"))
+	buf[protocolNumberOffset] = byte(fakeControlProtocol)
 
 	// Make sure packet with wrong protocol is not delivered.
-	buf[fakeNetHeaderLen+0] = 0
-	buf[fakeNetHeaderLen+1] = 1
-	buf[fakeNetHeaderLen+2] = 0
+	copy(buf[fakeNetHeaderLen:][dstAddrOffset:], []byte("\x00\x00\x00\x00"))
+	copy(buf[fakeNetHeaderLen:][srcAddrOffset:], []byte("\x01\x00\x00\x00"))
+	buf[fakeNetHeaderLen:][protocolNumberOffset] = 0
 	linkEP.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Payload: bufferv2.MakeWithData(buf),
 	}))
@@ -490,9 +495,9 @@ func TestTransportControlReceive(t *testing.T) {
 	}
 
 	// Make sure packet from the wrong source is not delivered.
-	buf[fakeNetHeaderLen+0] = 3
-	buf[fakeNetHeaderLen+1] = 1
-	buf[fakeNetHeaderLen+2] = byte(fakeTransNumber)
+	copy(buf[fakeNetHeaderLen:][dstAddrOffset:], []byte("\x03\x00\x00\x00"))
+	copy(buf[fakeNetHeaderLen:][srcAddrOffset:], []byte("\x01\x00\x00\x00"))
+	buf[fakeNetHeaderLen:][protocolNumberOffset] = byte(fakeTransNumber)
 	linkEP.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Payload: bufferv2.MakeWithData(buf),
 	}))
@@ -501,9 +506,9 @@ func TestTransportControlReceive(t *testing.T) {
 	}
 
 	// Make sure packet is delivered.
-	buf[fakeNetHeaderLen+0] = 2
-	buf[fakeNetHeaderLen+1] = 1
-	buf[fakeNetHeaderLen+2] = byte(fakeTransNumber)
+	copy(buf[fakeNetHeaderLen:][dstAddrOffset:], []byte("\x02\x00\x00\x00"))
+	copy(buf[fakeNetHeaderLen:][srcAddrOffset:], []byte("\x01\x00\x00\x00"))
+	buf[fakeNetHeaderLen:][protocolNumberOffset] = byte(fakeTransNumber)
 	linkEP.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Payload: bufferv2.MakeWithData(buf),
 	}))
@@ -525,7 +530,7 @@ func TestTransportSend(t *testing.T) {
 	protocolAddr := tcpip.ProtocolAddress{
 		Protocol: fakeNetNumber,
 		AddressWithPrefix: tcpip.AddressWithPrefix{
-			Address:   "\x01",
+			Address:   tcpip.AddrFromSlice([]byte("\x01\x00\x00\x00")),
 			PrefixLen: fakeDefaultPrefixLen,
 		},
 	}
@@ -534,11 +539,11 @@ func TestTransportSend(t *testing.T) {
 	}
 
 	{
-		subnet, err := tcpip.NewSubnet("\x00", "\x00")
+		subnet, err := tcpip.NewSubnet(tcpip.AddrFromSlice([]byte("\x00\x00\x00\x00")), tcpip.MaskFrom("\x00\x00\x00\x00"))
 		if err != nil {
 			t.Fatal(err)
 		}
-		s.SetRouteTable([]tcpip.Route{{Destination: subnet, Gateway: "\x00", NIC: 1}})
+		s.SetRouteTable([]tcpip.Route{{Destination: subnet, Gateway: tcpip.AddrFromSlice([]byte("\x00\x00\x00\x00")), NIC: 1}})
 	}
 
 	// Create endpoint and bind it.
@@ -548,7 +553,7 @@ func TestTransportSend(t *testing.T) {
 		t.Fatalf("NewEndpoint failed: %v", err)
 	}
 
-	if err := ep.Connect(tcpip.FullAddress{0, "\x02", 0}); err != nil {
+	if err := ep.Connect(tcpip.FullAddress{0, tcpip.AddrFromSlice([]byte("\x02\x00\x00\x00")), 0}); err != nil {
 		t.Fatalf("Connect failed: %v", err)
 	}
 

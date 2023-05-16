@@ -234,7 +234,7 @@ func TestICMPCounts(t *testing.T) {
 		t.Fatalf("CreateNIC(_, _) = %s", err)
 	}
 	{
-		subnet, err := tcpip.NewSubnet(lladdr1, tcpip.AddressMask(strings.Repeat("\xff", len(lladdr1))))
+		subnet, err := tcpip.NewSubnet(lladdr1, tcpip.MaskFrom(strings.Repeat("\xff", lladdr1.Len())))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -473,7 +473,7 @@ func newMultiStackTestContext(t *testing.T) multiStackTestContext {
 		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, llProtocolAddr1, err)
 	}
 
-	subnet0, err := tcpip.NewSubnet(lladdr1, tcpip.AddressMask(strings.Repeat("\xff", len(lladdr1))))
+	subnet0, err := tcpip.NewSubnet(lladdr1, tcpip.MaskFrom(strings.Repeat("\xff", lladdr1.Len())))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -483,7 +483,7 @@ func newMultiStackTestContext(t *testing.T) multiStackTestContext {
 			NIC:         nicID,
 		}},
 	)
-	subnet1, err := tcpip.NewSubnet(lladdr0, tcpip.AddressMask(strings.Repeat("\xff", len(lladdr0))))
+	subnet1, err := tcpip.NewSubnet(lladdr0, tcpip.MaskFrom(strings.Repeat("\xff", lladdr0.Len())))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -608,7 +608,7 @@ func TestLinkResolution(t *testing.T) {
 		{src: c.linkEP1, dst: c.linkEP0, typ: header.ICMPv6NeighborAdvert},
 	} {
 		routeICMPv6Packet(t, c.clock, args, func(t *testing.T, icmpv6 header.ICMPv6) {
-			if got, want := tcpip.Address(icmpv6[8:][:16]), lladdr1; got != want {
+			if got, want := tcpip.AddrFromSlice(icmpv6[8:][:16]), lladdr1; got != want {
 				t.Errorf("%d: got target = %s, want = %s", icmpv6.Type(), got, want)
 			}
 		})
@@ -763,7 +763,7 @@ func TestICMPChecksumValidationSimple(t *testing.T) {
 					t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
 				}
 				{
-					subnet, err := tcpip.NewSubnet(lladdr1, tcpip.AddressMask(strings.Repeat("\xff", len(lladdr1))))
+					subnet, err := tcpip.NewSubnet(lladdr1, tcpip.MaskFrom(strings.Repeat("\xff", lladdr1.Len())))
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -964,7 +964,7 @@ func TestICMPChecksumValidationWithPayload(t *testing.T) {
 				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
 			}
 			{
-				subnet, err := tcpip.NewSubnet(lladdr1, tcpip.AddressMask(strings.Repeat("\xff", len(lladdr1))))
+				subnet, err := tcpip.NewSubnet(lladdr1, tcpip.MaskFrom(strings.Repeat("\xff", lladdr1.Len())))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -1153,7 +1153,7 @@ func TestICMPChecksumValidationWithPayloadMultipleViews(t *testing.T) {
 				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID, protocolAddr, err)
 			}
 			{
-				subnet, err := tcpip.NewSubnet(lladdr1, tcpip.AddressMask(strings.Repeat("\xff", len(lladdr1))))
+				subnet, err := tcpip.NewSubnet(lladdr1, tcpip.MaskFrom(strings.Repeat("\xff", lladdr1.Len())))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -1325,7 +1325,7 @@ func TestLinkAddressRequest(t *testing.T) {
 				t.Fatalf("expected %T to implement stack.LinkAddressResolver", ep)
 			}
 
-			if len(test.nicAddr) != 0 {
+			if test.nicAddr.Len() != 0 {
 				protocolAddr := tcpip.ProtocolAddress{
 					Protocol:          ProtocolNumber,
 					AddressWithPrefix: test.nicAddr.WithPrefix(),
@@ -1383,14 +1383,14 @@ func TestPacketQueing(t *testing.T) {
 		host1IPv6Addr = tcpip.ProtocolAddress{
 			Protocol: ProtocolNumber,
 			AddressWithPrefix: tcpip.AddressWithPrefix{
-				Address:   tcpip.Address(net.ParseIP("a::1").To16()),
+				Address:   tcpip.AddrFromSlice(net.ParseIP("a::1").To16()),
 				PrefixLen: 64,
 			},
 		}
 		host2IPv6Addr = tcpip.ProtocolAddress{
 			Protocol: ProtocolNumber,
 			AddressWithPrefix: tcpip.AddressWithPrefix{
-				Address:   tcpip.Address(net.ParseIP("a::2").To16()),
+				Address:   tcpip.AddrFromSlice(net.ParseIP("a::2").To16()),
 				PrefixLen: 64,
 			},
 		}
@@ -1786,7 +1786,7 @@ func TestCallsToNeighborCache(t *testing.T) {
 				}
 			}
 			{
-				subnet, err := tcpip.NewSubnet(lladdr1, tcpip.AddressMask(strings.Repeat("\xff", len(lladdr1))))
+				subnet, err := tcpip.NewSubnet(lladdr1, tcpip.MaskFrom(strings.Repeat("\xff", lladdr1.Len())))
 				if err != nil {
 					t.Fatal(err)
 				}

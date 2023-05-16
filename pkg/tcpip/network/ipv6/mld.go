@@ -443,7 +443,7 @@ func (mld *mldState) writePacketInner(buf *bufferv2.View, mldType header.ICMPv6T
 	//   Report and Done messages sent with the unspecified address as the
 	//   IPv6 source address.
 	localAddress := mld.ep.getLinkLocalAddressRLocked()
-	if len(localAddress) == 0 {
+	if localAddress.BitLen() == 0 {
 		localAddress = header.IPv6Any
 	}
 

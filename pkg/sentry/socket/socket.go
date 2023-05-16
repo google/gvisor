@@ -49,8 +49,8 @@ type ControlMessages struct {
 func packetInfoToLinux(packetInfo tcpip.IPPacketInfo) linux.ControlMessageIPPacketInfo {
 	var p linux.ControlMessageIPPacketInfo
 	p.NIC = int32(packetInfo.NIC)
-	copy(p.LocalAddr[:], packetInfo.LocalAddr)
-	copy(p.DestinationAddr[:], packetInfo.DestinationAddr)
+	copy(p.LocalAddr[:], packetInfo.LocalAddr.AsSlice())
+	copy(p.DestinationAddr[:], packetInfo.DestinationAddr.AsSlice())
 	return p
 }
 
@@ -58,7 +58,7 @@ func packetInfoToLinux(packetInfo tcpip.IPPacketInfo) linux.ControlMessageIPPack
 // format.
 func ipv6PacketInfoToLinux(packetInfo tcpip.IPv6PacketInfo) linux.ControlMessageIPv6PacketInfo {
 	var p linux.ControlMessageIPv6PacketInfo
-	if n := copy(p.Addr[:], packetInfo.Addr); n != len(p.Addr) {
+	if n := copy(p.Addr[:], packetInfo.Addr.AsSlice()); n != len(p.Addr) {
 		panic(fmt.Sprintf("got copy(%x, %x) = %d, want = %d", p.Addr, packetInfo.Addr, n, len(p.Addr)))
 	}
 	p.NIC = uint32(packetInfo.NIC)
@@ -99,14 +99,14 @@ func sockErrCmsgToLinux(sockErr *tcpip.SockError) linux.SockErrCMsg {
 	switch sockErr.NetProto {
 	case header.IPv4ProtocolNumber:
 		errMsg := &linux.SockErrCMsgIPv4{SockExtendedErr: ee}
-		if len(sockErr.Offender.Addr) > 0 {
+		if len(sockErr.Offender.Addr.AsSlice()) > 0 {
 			addr, _ := ConvertAddress(linux.AF_INET, sockErr.Offender)
 			errMsg.Offender = *addr.(*linux.SockAddrInet)
 		}
 		return errMsg
 	case header.IPv6ProtocolNumber:
 		errMsg := &linux.SockErrCMsgIPv6{SockExtendedErr: ee}
-		if len(sockErr.Offender.Addr) > 0 {
+		if len(sockErr.Offender.Addr.AsSlice()) > 0 {
 			addr, _ := ConvertAddress(linux.AF_INET6, sockErr.Offender)
 			errMsg.Offender = *addr.(*linux.SockAddrInet6)
 		}
@@ -461,7 +461,8 @@ func Htons(v uint16) uint16 {
 // case when it has the fe80::/10 prefix. This check is used to determine when
 // the NICID is relevant for a given IPv6 address.
 func isLinkLocal(addr tcpip.Address) bool {
-	return len(addr) >= 2 && addr[0] == 0xfe && addr[1]&0xc0 == 0x80
+	addrBytes := addr.AsSlice()
+	return len(addrBytes) >= 2 && addrBytes[0] == 0xfe && addrBytes[1]&0xc0 == 0x80
 }
 
 // ConvertAddress converts the given address to a native format.
@@ -469,20 +470,21 @@ func ConvertAddress(family int, addr tcpip.FullAddress) (linux.SockAddr, uint32)
 	switch family {
 	case linux.AF_INET:
 		var out linux.SockAddrInet
-		copy(out.Addr[:], addr.Addr)
+		copy(out.Addr[:], addr.Addr.AsSlice())
 		out.Family = linux.AF_INET
 		out.Port = Htons(addr.Port)
 		return &out, uint32(sockAddrInetSize)
 
 	case linux.AF_INET6:
 		var out linux.SockAddrInet6
-		if len(addr.Addr) == header.IPv4AddressSize {
+		addrBytes := addr.Addr.AsSlice()
+		if len(addrBytes) == header.IPv4AddressSize {
 			// Copy address in v4-mapped format.
-			copy(out.Addr[12:], addr.Addr)
+			copy(out.Addr[12:], addrBytes)
 			out.Addr[10] = 0xff
 			out.Addr[11] = 0xff
 		} else {
-			copy(out.Addr[:], addr.Addr)
+			copy(out.Addr[:], addrBytes)
 		}
 		out.Family = linux.AF_INET6
 		out.Port = Htons(addr.Port)
@@ -496,7 +498,7 @@ func ConvertAddress(family int, addr tcpip.FullAddress) (linux.SockAddr, uint32)
 		out.Family = linux.AF_PACKET
 		out.InterfaceIndex = int32(addr.NIC)
 		out.HardwareAddrLen = header.EthernetAddressSize
-		copy(out.HardwareAddr[:], addr.Addr)
+		copy(out.HardwareAddr[:], addr.Addr.AsSlice())
 		return &out, uint32(sockAddrLinkSize)
 
 	default:
@@ -508,9 +510,9 @@ func ConvertAddress(family int, addr tcpip.FullAddress) (linux.SockAddr, uint32)
 // netstack representation taking any addresses into account.
 func BytesToIPAddress(addr []byte) tcpip.Address {
 	if bytes.Equal(addr, make([]byte, 4)) || bytes.Equal(addr, make([]byte, 16)) {
-		return ""
+		return tcpip.Address{}
 	}
-	return tcpip.Address(addr)
+	return tcpip.AddrFromSlice(addr)
 }
 
 // AddressAndFamily reads an sockaddr struct from the given address and
@@ -526,22 +528,6 @@ func AddressAndFamily(addr []byte) (tcpip.FullAddress, uint16, *syserr.Error) {
 
 	// Get the rest of the fields based on the address family.
 	switch family := hostarch.ByteOrder.Uint16(addr); family {
-	case linux.AF_UNIX:
-		path := addr[2:]
-		if len(path) > linux.UnixPathMax {
-			return tcpip.FullAddress{}, family, syserr.ErrInvalidArgument
-		}
-		// Drop the terminating NUL (if one exists) and everything after
-		// it for filesystem (non-abstract) addresses.
-		if len(path) > 0 && path[0] != 0 {
-			if n := bytes.IndexByte(path[1:], 0); n >= 0 {
-				path = path[:n+1]
-			}
-		}
-		return tcpip.FullAddress{
-			Addr: tcpip.Address(path),
-		}, family, nil
-
 	case linux.AF_INET:
 		var a linux.SockAddrInet
 		if len(addr) < sockAddrInetSize {
@@ -584,8 +570,15 @@ func AddressAndFamily(addr []byte) (tcpip.FullAddress, uint16, *syserr.Error) {
 		}
 
 		return tcpip.FullAddress{
-			NIC:  tcpip.NICID(a.InterfaceIndex),
-			Addr: tcpip.Address(a.HardwareAddr[:header.EthernetAddressSize]),
+			NIC: tcpip.NICID(a.InterfaceIndex),
+			// This is a hack. FullAddress is designed to carry IP
+			// addresses, but it's overloaded here to carry a link
+			// address. We stick the 6 byte link address to 10
+			// zeroed bytes.
+			Addr: tcpip.AddrFrom16Slice(append(
+				a.HardwareAddr[:header.EthernetAddressSize],
+				[]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}...,
+			)),
 			Port: Ntohs(a.Protocol),
 		}, family, nil
 

@@ -22,7 +22,6 @@ import (
 	"testing"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/test/packetimpact/testbench"
 )
 
@@ -47,9 +46,10 @@ func TestDiscardsUDPPacketsWithMcastSourceAddressV4(t *testing.T) {
 		net.IPv4(232, 1, 2, 3),
 	} {
 		t.Run(fmt.Sprintf("srcaddr=%s", mcastAddr), func(t *testing.T) {
+			addr := mcastAddr.To4()
 			conn.SendIP(
 				t,
-				testbench.IPv4{SrcAddr: testbench.Address(tcpip.Address(mcastAddr.To4()))},
+				testbench.IPv4{SrcAddr: &addr},
 				testbench.UDP{},
 				&testbench.Payload{Bytes: []byte("test payload")},
 			)
@@ -78,9 +78,10 @@ func TestDiscardsUDPPacketsWithMcastSourceAddressV6(t *testing.T) {
 		net.ParseIP("ff02::4242"),
 	} {
 		t.Run(fmt.Sprintf("srcaddr=%s", mcastAddr), func(t *testing.T) {
+			addr := mcastAddr.To16()
 			conn.SendIPv6(
 				t,
-				testbench.IPv6{SrcAddr: testbench.Address(tcpip.Address(mcastAddr.To16()))},
+				testbench.IPv6{SrcAddr: &addr},
 				testbench.UDP{},
 				&testbench.Payload{Bytes: []byte("test payload")},
 			)

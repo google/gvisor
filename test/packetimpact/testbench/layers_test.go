@@ -219,8 +219,8 @@ func TestLayerStringFormat(t *testing.T) {
 				TTL:            Uint8(64),
 				Protocol:       Uint8(6),
 				Checksum:       Uint16(0x2e2b),
-				SrcAddr:        Address(tcpip.Address([]byte{197, 34, 63, 10})),
-				DstAddr:        Address(tcpip.Address([]byte{197, 34, 63, 20})),
+				SrcAddr:        Address(tcpip.AddrFrom4Slice([]byte{197, 34, 63, 10})),
+				DstAddr:        Address(tcpip.AddrFrom4Slice([]byte{197, 34, 63, 20})),
 			},
 			want: "&testbench.IPv4{" +
 				"IHL:5 " +
@@ -429,8 +429,8 @@ func TestTCPOptions(t *testing.T) {
 					TTL:            Uint8(64),
 					Protocol:       Uint8(uint8(header.TCPProtocolNumber)),
 					Checksum:       Uint16(0xf977),
-					SrcAddr:        Address(tcpip.Address(net.ParseIP("192.168.0.2").To4())),
-					DstAddr:        Address(tcpip.Address(net.ParseIP("192.168.0.1").To4())),
+					SrcAddr:        Address(tcpip.AddrFrom4Slice(net.ParseIP("192.168.0.2").To4())),
+					DstAddr:        Address(tcpip.AddrFrom4Slice(net.ParseIP("192.168.0.1").To4())),
 				},
 				&TCP{
 					SrcPort:       Uint16(12345),
@@ -473,8 +473,8 @@ func TestTCPOptions(t *testing.T) {
 					TTL:            Uint8(64),
 					Protocol:       Uint8(uint8(header.TCPProtocolNumber)),
 					Checksum:       Uint16(0xf96c),
-					SrcAddr:        Address(tcpip.Address(net.ParseIP("192.168.0.2").To4())),
-					DstAddr:        Address(tcpip.Address(net.ParseIP("192.168.0.1").To4())),
+					SrcAddr:        Address(tcpip.AddrFrom4Slice(net.ParseIP("192.168.0.2").To4())),
+					DstAddr:        Address(tcpip.AddrFrom4Slice(net.ParseIP("192.168.0.1").To4())),
 				},
 				&TCP{
 					SrcPort:       Uint16(12345),
@@ -526,8 +526,8 @@ func TestIPv6ExtHdrOptions(t *testing.T) {
 			},
 			wantLayers: []Layer{
 				&IPv6{
-					SrcAddr: Address(tcpip.Address(net.ParseIP("::1"))),
-					DstAddr: Address(tcpip.Address(net.ParseIP("fe80::dead:beef"))),
+					SrcAddr: Address(tcpip.AddrFrom16Slice(net.ParseIP("::1"))),
+					DstAddr: Address(tcpip.AddrFrom16Slice(net.ParseIP("fe80::dead:beef"))),
 				},
 				&IPv6HopByHopOptionsExtHdr{
 					NextHeader: IPv6ExtHdrIdent(header.IPv6NoNextHeaderIdentifier),
@@ -553,8 +553,8 @@ func TestIPv6ExtHdrOptions(t *testing.T) {
 			},
 			wantLayers: []Layer{
 				&IPv6{
-					SrcAddr: Address(tcpip.Address(net.ParseIP("::1"))),
-					DstAddr: Address(tcpip.Address(net.ParseIP("fe80::dead:beef"))),
+					SrcAddr: Address(tcpip.AddrFromSlice(net.ParseIP("::1"))),
+					DstAddr: Address(tcpip.AddrFromSlice(net.ParseIP("fe80::dead:beef"))),
 				},
 				&IPv6HopByHopOptionsExtHdr{
 					NextHeader: IPv6ExtHdrIdent(header.IPv6NoNextHeaderIdentifier),
@@ -582,8 +582,8 @@ func TestIPv6ExtHdrOptions(t *testing.T) {
 			},
 			wantLayers: []Layer{
 				&IPv6{
-					SrcAddr: Address(tcpip.Address(net.ParseIP("::1"))),
-					DstAddr: Address(tcpip.Address(net.ParseIP("fe80::dead:beef"))),
+					SrcAddr: Address(tcpip.AddrFromSlice(net.ParseIP("::1"))),
+					DstAddr: Address(tcpip.AddrFromSlice(net.ParseIP("fe80::dead:beef"))),
 				},
 				&IPv6HopByHopOptionsExtHdr{
 					NextHeader: IPv6ExtHdrIdent(header.IPv6DestinationOptionsExtHdrIdentifier),
@@ -616,8 +616,8 @@ func TestIPv6ExtHdrOptions(t *testing.T) {
 			},
 			wantLayers: []Layer{
 				&IPv6{
-					SrcAddr: Address(tcpip.Address(net.ParseIP("::1"))),
-					DstAddr: Address(tcpip.Address(net.ParseIP("fe80::dead:beef"))),
+					SrcAddr: Address(tcpip.AddrFromSlice(net.ParseIP("::1"))),
+					DstAddr: Address(tcpip.AddrFromSlice(net.ParseIP("fe80::dead:beef"))),
 				},
 				&IPv6HopByHopOptionsExtHdr{
 					NextHeader: IPv6ExtHdrIdent(header.IPv6FragmentExtHdrIdentifier),
@@ -651,8 +651,8 @@ func TestIPv6ExtHdrOptions(t *testing.T) {
 			},
 			wantLayers: []Layer{
 				&IPv6{
-					SrcAddr: Address(tcpip.Address(net.ParseIP("::1"))),
-					DstAddr: Address(tcpip.Address(net.ParseIP("fe80::dead:beef"))),
+					SrcAddr: Address(tcpip.AddrFromSlice(net.ParseIP("::1"))),
+					DstAddr: Address(tcpip.AddrFromSlice(net.ParseIP("fe80::dead:beef"))),
 				},
 				&IPv6DestinationOptionsExtHdr{
 					NextHeader: IPv6ExtHdrIdent(header.IPv6FragmentExtHdrIdentifier),
@@ -684,8 +684,8 @@ func TestIPv6ExtHdrOptions(t *testing.T) {
 			},
 			wantLayers: []Layer{
 				&IPv6{
-					SrcAddr: Address(tcpip.Address(net.ParseIP("::1"))),
-					DstAddr: Address(tcpip.Address(net.ParseIP("fe80::dead:beef"))),
+					SrcAddr: Address(tcpip.AddrFromSlice(net.ParseIP("::1"))),
+					DstAddr: Address(tcpip.AddrFromSlice(net.ParseIP("fe80::dead:beef"))),
 				},
 				&IPv6FragmentExtHdr{
 					NextHeader:     IPv6ExtHdrIdent(header.IPv6NoNextHeaderIdentifier),
@@ -754,8 +754,8 @@ func TestEthernetPadding(t *testing.T) {
 			TTL:            Uint8(64),
 			Protocol:       Uint8(uint8(header.TCPProtocolNumber)),
 			Checksum:       Uint16(0x2dba),
-			SrcAddr:        Address(tcpip.Address("\xac\x00\x00\x02")),
-			DstAddr:        Address(tcpip.Address("\xac\x00\x00\x01")),
+			SrcAddr:        Address(tcpip.AddrFromSlice([]byte("\xac\x00\x00\x02"))),
+			DstAddr:        Address(tcpip.AddrFromSlice([]byte("\xac\x00\x00\x01"))),
 		},
 		&TCP{
 			SrcPort:       Uint16(31806),

@@ -146,8 +146,8 @@ func (l *listenContext) cookieHash(id stack.TransportEndpointID, ts uint32, nonc
 	// It never returns an error.
 	l.hasher.Write(payload[:])
 	l.hasher.Write(l.nonce[nonceIndex][:])
-	l.hasher.Write([]byte(id.LocalAddress))
-	l.hasher.Write([]byte(id.RemoteAddress))
+	l.hasher.Write(id.LocalAddress.AsSlice())
+	l.hasher.Write(id.RemoteAddress.AsSlice())
 
 	// Finalize the calculation of the hash and return the first 4 bytes.
 	h := l.hasher.Sum(nil)
@@ -589,7 +589,7 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 		netProtos := []tcpip.NetworkProtocolNumber{s.pkt.NetworkProtocolNumber}
 		// If the local address is an IPv4 Address then also look for IPv6
 		// dual stack endpoints.
-		if s.id.LocalAddress.To4() != "" {
+		if s.id.LocalAddress.To4() != (tcpip.Address{}) {
 			netProtos = []tcpip.NetworkProtocolNumber{header.IPv4ProtocolNumber, header.IPv6ProtocolNumber}
 		}
 		for _, netProto := range netProtos {

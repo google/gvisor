@@ -82,7 +82,7 @@ func (eps *transportEndpoints) iterEndpointsLocked(id TransportEndpointID, yield
 	// Try to find a match with the id minus the local address.
 	nid := id
 
-	nid.LocalAddress = ""
+	nid.LocalAddress = tcpip.Address{}
 	if ep, ok := eps.endpoints[nid]; ok {
 		if !yield(ep) {
 			return
@@ -91,7 +91,7 @@ func (eps *transportEndpoints) iterEndpointsLocked(id TransportEndpointID, yield
 
 	// Try to find a match with the id minus the remote part.
 	nid.LocalAddress = id.LocalAddress
-	nid.RemoteAddress = ""
+	nid.RemoteAddress = tcpip.Address{}
 	nid.RemotePort = 0
 	if ep, ok := eps.endpoints[nid]; ok {
 		if !yield(ep) {
@@ -100,7 +100,7 @@ func (eps *transportEndpoints) iterEndpointsLocked(id TransportEndpointID, yield
 	}
 
 	// Try to find a match with only the local port.
-	nid.LocalAddress = ""
+	nid.LocalAddress = tcpip.Address{}
 	if ep, ok := eps.endpoints[nid]; ok {
 		if !yield(ep) {
 			return
@@ -392,8 +392,8 @@ func (ep *multiPortEndpoint) selectEndpoint(id TransportEndpointID, seed uint32)
 
 	h := jenkins.Sum32(seed)
 	h.Write(payload)
-	h.Write([]byte(id.LocalAddress))
-	h.Write([]byte(id.RemoteAddress))
+	h.Write(id.LocalAddress.AsSlice())
+	h.Write(id.RemoteAddress.AsSlice())
 	hash := h.Sum32()
 
 	idx := reciprocalScale(hash, uint32(len(ep.endpoints)))

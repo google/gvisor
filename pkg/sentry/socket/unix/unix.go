@@ -17,6 +17,7 @@
 package unix
 
 import (
+	"bytes"
 	"fmt"
 
 	"golang.org/x/sys/unix"
@@ -435,7 +436,7 @@ func (s *Socket) Endpoint() transport.Endpoint {
 
 // extractPath extracts and validates the address.
 func extractPath(sockaddr []byte) (string, *syserr.Error) {
-	addr, family, err := socket.AddressAndFamily(sockaddr)
+	addr, family, err := addressAndFamily(sockaddr)
 	if err != nil {
 		if err == syserr.ErrAddressFamilyNotSupported {
 			err = syserr.ErrInvalidArgument
@@ -447,7 +448,7 @@ func extractPath(sockaddr []byte) (string, *syserr.Error) {
 	}
 
 	// The address is trimmed by GetAddress.
-	p := string(addr.Addr)
+	p := addr.Addr
 	if p == "" {
 		// Not allowed.
 		return "", syserr.ErrInvalidArgument
@@ -458,6 +459,33 @@ func extractPath(sockaddr []byte) (string, *syserr.Error) {
 	}
 
 	return p, nil
+}
+
+func addressAndFamily(addr []byte) (transport.Address, uint16, *syserr.Error) {
+	// Make sure we have at least 2 bytes for the address family.
+	if len(addr) < 2 {
+		return transport.Address{}, 0, syserr.ErrInvalidArgument
+	}
+
+	// Get the rest of the fields based on the address family.
+	switch family := hostarch.ByteOrder.Uint16(addr); family {
+	case linux.AF_UNIX:
+		path := addr[2:]
+		if len(path) > linux.UnixPathMax {
+			return transport.Address{}, family, syserr.ErrInvalidArgument
+		}
+		// Drop the terminating NUL (if one exists) and everything after
+		// it for filesystem (non-abstract) addresses.
+		if len(path) > 0 && path[0] != 0 {
+			if n := bytes.IndexByte(path[1:], 0); n >= 0 {
+				path = path[:n+1]
+			}
+		}
+		return transport.Address{
+			Addr: string(path),
+		}, family, nil
+	}
+	return transport.Address{}, 0, syserr.ErrAddressFamilyNotSupported
 }
 
 // GetPeerName implements the linux syscall getpeername(2) for sockets backed by

@@ -591,7 +591,7 @@ func TestMLDSkipProtocol(t *testing.T) {
 
 	tests := []struct {
 		name         string
-		group        tcpip.Address
+		group        string
 		expectReport bool
 	}{
 		{
@@ -730,13 +730,14 @@ func TestMLDSkipProtocol(t *testing.T) {
 						p.DecRef()
 					}
 
-					if err := s.JoinGroup(ipv6.ProtocolNumber, nicID, test.group); err != nil {
-						t.Fatalf("s.JoinGroup(%d, %d, %s): %s", ipv6.ProtocolNumber, nicID, test.group, err)
+					testGroup := tcpip.AddrFromSlice([]byte(test.group))
+					if err := s.JoinGroup(ipv6.ProtocolNumber, nicID, testGroup); err != nil {
+						t.Fatalf("s.JoinGroup(%d, %d, %s): %s", ipv6.ProtocolNumber, nicID, testGroup, err)
 					}
-					if isInGroup, err := s.IsInGroup(nicID, test.group); err != nil {
-						t.Fatalf("IsInGroup(%d, %s): %s", nicID, test.group, err)
+					if isInGroup, err := s.IsInGroup(nicID, testGroup); err != nil {
+						t.Fatalf("IsInGroup(%d, %s): %s", nicID, testGroup, err)
 					} else if !isInGroup {
-						t.Fatalf("got IsInGroup(%d, %s) = false, want = true", nicID, test.group)
+						t.Fatalf("got IsInGroup(%d, %s) = false, want = true", nicID, testGroup)
 					}
 
 					if !test.expectReport {
@@ -750,7 +751,7 @@ func TestMLDSkipProtocol(t *testing.T) {
 					if p := e.Read(); p.IsNil() {
 						t.Fatal("expected a report message to be sent")
 					} else {
-						subTest.validate(t, stack.PayloadSince(p.NetworkHeader()), linkLocalAddr, test.group)
+						subTest.validate(t, stack.PayloadSince(p.NetworkHeader()), linkLocalAddr, testGroup)
 						p.DecRef()
 					}
 				})

@@ -312,7 +312,7 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 
 	if opts.To != nil {
 		// Raw sockets do not support sending to a IPv4 address on a IPv6 endpoint.
-		if netProto == header.IPv6ProtocolNumber && len(opts.To.Addr) != header.IPv6AddressSize {
+		if netProto == header.IPv6ProtocolNumber && opts.To.Addr.BitLen() != header.IPv6AddressSizeBits {
 			return 0, &tcpip.ErrInvalidOptionValue{}
 		}
 	}
@@ -399,7 +399,7 @@ func (e *endpoint) Connect(addr tcpip.FullAddress) tcpip.Error {
 	netProto := e.net.NetProto()
 
 	// Raw sockets do not support connecting to a IPv4 address on a IPv6 endpoint.
-	if netProto == header.IPv6ProtocolNumber && len(addr.Addr) != header.IPv6AddressSize {
+	if netProto == header.IPv6ProtocolNumber && addr.Addr.BitLen() != header.IPv6AddressSizeBits {
 		return &tcpip.ErrAddressFamilyNotSupported{}
 	}
 
@@ -638,7 +638,7 @@ func (e *endpoint) HandlePacket(pkt stack.PacketBufferPtr) {
 			}
 
 			// If bound to an address, only accept data for that address.
-			if info.BindAddr != "" && info.BindAddr != dstAddr {
+			if info.BindAddr != (tcpip.Address{}) && info.BindAddr != dstAddr {
 				return false
 			}
 		default:

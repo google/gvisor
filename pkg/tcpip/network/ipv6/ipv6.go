@@ -133,7 +133,7 @@ var policyTable = [...]struct {
 	// 2001::/32 (Teredo prefix as per RFC 4380 section 2.6).
 	{
 		subnet: tcpip.AddressWithPrefix{
-			Address:   "\x20\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+			Address:   tcpip.AddrFrom16([16]byte{0x20, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}),
 			PrefixLen: 32,
 		}.Subnet(),
 		label: 5,
@@ -141,7 +141,7 @@ var policyTable = [...]struct {
 	// 2002::/16 (6to4 prefix as per RFC 3056 section 2).
 	{
 		subnet: tcpip.AddressWithPrefix{
-			Address:   "\x20\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+			Address:   tcpip.AddrFrom16([16]byte{0x20, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}),
 			PrefixLen: 16,
 		}.Subnet(),
 		label: 2,
@@ -149,7 +149,7 @@ var policyTable = [...]struct {
 	// fc00::/7 (Unique local addresses as per RFC 4193 section 3.1).
 	{
 		subnet: tcpip.AddressWithPrefix{
-			Address:   "\xfc\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00",
+			Address:   tcpip.AddrFrom16([16]byte{0xfc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}),
 			PrefixLen: 7,
 		}.Subnet(),
 		label: 13,
@@ -999,7 +999,7 @@ func (e *endpoint) forwardUnicastPacket(pkt stack.PacketBufferPtr) ip.Forwarding
 		return &ip.ErrParameterProblem{}
 	}
 
-	r, err := stk.FindRoute(0, "", dstAddr, ProtocolNumber, false /* multicastLoop */)
+	r, err := stk.FindRoute(0, tcpip.Address{}, dstAddr, ProtocolNumber, false /* multicastLoop */)
 	switch err.(type) {
 	case nil:
 	// TODO(https://gvisor.dev/issues/8105): We should not observe ErrHostUnreachable from route
@@ -2096,7 +2096,7 @@ func (e *endpoint) acquireOutgoingPrimaryAddressRLocked(remoteAddr tcpip.Address
 		matchingPrefix uint8
 	}
 
-	if len(remoteAddr) == 0 {
+	if remoteAddr.BitLen() == 0 {
 		return e.mu.addressableEndpointState.AcquireOutgoingPrimaryAddress(remoteAddr, allowExpired)
 	}
 
@@ -2806,11 +2806,11 @@ func hashRoute(r *stack.Route, hashIV uint32) uint32 {
 	// The FNV-1a was chosen because it is a fast hashing algorithm, and
 	// cryptographic properties are not needed here.
 	h := fnv.New32a()
-	if _, err := h.Write([]byte(r.LocalAddress())); err != nil {
+	if _, err := h.Write(r.LocalAddress().AsSlice()); err != nil {
 		panic(fmt.Sprintf("Hash.Write: %s, but Hash' implementation of Write is not expected to ever return an error", err))
 	}
 
-	if _, err := h.Write([]byte(r.RemoteAddress())); err != nil {
+	if _, err := h.Write(r.RemoteAddress().AsSlice()); err != nil {
 		panic(fmt.Sprintf("Hash.Write: %s, but Hash' implementation of Write is not expected to ever return an error", err))
 	}
 

@@ -2226,8 +2226,8 @@ func (e *endpoint) registerEndpoint(addr tcpip.FullAddress, netProto tcpip.Netwo
 
 		h := jenkins.Sum32(e.protocol.portOffsetSecret)
 		for _, s := range [][]byte{
-			[]byte(e.ID.LocalAddress),
-			[]byte(e.ID.RemoteAddress),
+			e.ID.LocalAddress.AsSlice(),
+			e.ID.RemoteAddress.AsSlice(),
 			portBuf,
 		} {
 			// Per io.Writer.Write:
@@ -2714,7 +2714,7 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) (err tcpip.Error) {
 	// v6only set to false.
 	if netProto == header.IPv6ProtocolNumber {
 		stackHasV4 := e.stack.CheckNetworkProtocol(header.IPv4ProtocolNumber)
-		alsoBindToV4 := !e.ops.GetV6Only() && addr.Addr == "" && stackHasV4
+		alsoBindToV4 := !e.ops.GetV6Only() && addr.Addr == tcpip.Address{} && stackHasV4
 		if alsoBindToV4 {
 			netProtos = append(netProtos, header.IPv4ProtocolNumber)
 		}
@@ -2723,7 +2723,7 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) (err tcpip.Error) {
 	var nic tcpip.NICID
 	// If an address is specified, we must ensure that it's one of our
 	// local addresses.
-	if len(addr.Addr) != 0 {
+	if addr.Addr.Len() != 0 {
 		nic = e.stack.CheckLocalAddress(addr.NIC, netProto, addr.Addr)
 		if nic == 0 {
 			return &tcpip.ErrBadLocalAddress{}

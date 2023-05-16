@@ -284,21 +284,21 @@ func doNetlinkInterfaceRequest(typ, flags uint16, idx uint32, addr inet.Interfac
 		Flags:     addr.Flags,
 	}
 	// Local address.
-	localAddr := tcpip.Address(addr.Addr)
+	localAddr := tcpip.AddrFromSlice(addr.Addr)
 	if addr.Family == linux.AF_INET {
 		localAddr = localAddr.To4()
 	}
 	rtLocal := linux.RtAttr{
-		Len:  linux.SizeOfRtAttr + uint16(len(localAddr)),
+		Len:  linux.SizeOfRtAttr + uint16(localAddr.Len()),
 		Type: linux.IFA_LOCAL,
 	}
-	localAddrBs := primitive.ByteSlice(localAddr)
+	localAddrBs := primitive.ByteSlice(localAddr.AsSlice())
 	// Peer is always the local address for us.
 	rtPeer := linux.RtAttr{
-		Len:  linux.SizeOfRtAttr + uint16(len(localAddr)),
+		Len:  linux.SizeOfRtAttr + uint16(localAddr.Len()),
 		Type: linux.IFA_ADDRESS,
 	}
-	peerAddrBs := primitive.ByteSlice(localAddr)
+	peerAddrBs := primitive.ByteSlice(localAddr.AsSlice())
 
 	msgs := []marshal.Marshallable{
 		&hdr,

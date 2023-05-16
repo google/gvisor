@@ -469,11 +469,11 @@ func (c *TCPConn) newOpError(op string, err error) *net.OpError {
 }
 
 func fullToTCPAddr(addr tcpip.FullAddress) *net.TCPAddr {
-	return &net.TCPAddr{IP: net.IP(addr.Addr), Port: int(addr.Port)}
+	return &net.TCPAddr{IP: net.IP(addr.Addr.AsSlice()), Port: int(addr.Port)}
 }
 
 func fullToUDPAddr(addr tcpip.FullAddress) *net.UDPAddr {
-	return &net.UDPAddr{IP: net.IP(addr.Addr), Port: int(addr.Port)}
+	return &net.UDPAddr{IP: net.IP(addr.Addr.AsSlice()), Port: int(addr.Port)}
 }
 
 // DialTCP creates a new TCPConn connected to the specified address.
@@ -664,7 +664,7 @@ func (c *UDPConn) WriteTo(b []byte, addr net.Addr) (int, error) {
 	if addr != nil {
 		ua := addr.(*net.UDPAddr)
 		writeOptions.To = &tcpip.FullAddress{
-			Addr: tcpip.Address(ua.IP),
+			Addr: tcpip.AddrFromSlice(ua.IP),
 			Port: uint16(ua.Port),
 		}
 	}

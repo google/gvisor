@@ -60,11 +60,14 @@ const (
 	nicName        = "nic1"
 	anotherNicName = "nic2"
 	linkAddr       = tcpip.LinkAddress("\x0a\x0b\x0c\x0d\x0e\x0e")
-	srcAddrV4      = tcpip.Address("\x0a\x00\x00\x01")
-	dstAddrV4      = tcpip.Address("\x0a\x00\x00\x02")
-	srcAddrV6      = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
-	dstAddrV6      = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
 	payloadSize    = 20
+)
+
+var (
+	srcAddrV4 = tcpip.AddrFromSlice([]byte("\x0a\x00\x00\x01"))
+	dstAddrV4 = tcpip.AddrFromSlice([]byte("\x0a\x00\x00\x02"))
+	srcAddrV6 = tcpip.AddrFromSlice([]byte("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01"))
+	dstAddrV6 = tcpip.AddrFromSlice([]byte("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02"))
 )
 
 func genStackV6(t *testing.T) (*stack.Stack, *channel.Endpoint) {
@@ -625,7 +628,7 @@ func TestIPTableWritePackets(t *testing.T) {
 
 			test.setupFilter(t, s)
 
-			r, err := s.FindRoute(nicID, "", test.remoteAddr, test.proto, false)
+			r, err := s.FindRoute(nicID, tcpip.Address{}, test.remoteAddr, test.proto, false)
 			if err != nil {
 				t.Fatalf("FindRoute(%d, '', %s, %d, false): %s", nicID, test.remoteAddr, test.proto, err)
 			}

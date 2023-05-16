@@ -41,14 +41,16 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-const (
-	addr1 = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
-	addr2 = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
+var (
+	addr1 = tcpip.AddrFromSlice([]byte("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01"))
+	addr2 = tcpip.AddrFromSlice([]byte("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02"))
 	// The least significant 3 bytes are the same as addr2 so both addr2 and
 	// addr3 will have the same solicited-node address.
-	addr3 = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x02")
-	addr4 = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x03")
+	addr3 = tcpip.AddrFromSlice([]byte("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x02"))
+	addr4 = tcpip.AddrFromSlice([]byte("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\x00\x00\x03"))
+)
 
+const (
 	// Tests use the extension header identifier values as uint8 instead of
 	// header.IPv6ExtensionHeaderIdentifier.
 	hopByHopExtHdrID    = uint8(header.IPv6HopByHopOptionsExtHdrIdentifier)
@@ -378,7 +380,7 @@ func TestAddIpv6Address(t *testing.T) {
 		// This test is in response to b/140943433.
 		{
 			"Nil",
-			tcpip.Address([]byte(nil)),
+			tcpip.Address{},
 		},
 		{
 			"ValidUnicast",
@@ -2057,13 +2059,16 @@ func TestConcurrentFragmentWrites(t *testing.T) {
 
 func TestInvalidIPv6Fragments(t *testing.T) {
 	const (
-		addr1     = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
-		addr2     = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
 		linkAddr1 = tcpip.LinkAddress("\x0a\x0b\x0c\x0d\x0e\x0e")
 		nicID     = 1
 		hoplimit  = 255
 		ident     = 1
 		data      = "TEST_INVALID_IPV6_FRAGMENTS"
+	)
+
+	var (
+		addr1 = tcpip.AddrFromSlice([]byte("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01"))
+		addr2 = tcpip.AddrFromSlice([]byte("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02"))
 	)
 
 	type fragmentData struct {
@@ -2221,13 +2226,15 @@ func TestInvalidIPv6Fragments(t *testing.T) {
 
 func TestFragmentReassemblyTimeout(t *testing.T) {
 	const (
-		addr1     = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
-		addr2     = tcpip.Address("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
 		linkAddr1 = tcpip.LinkAddress("\x0a\x0b\x0c\x0d\x0e\x0e")
 		nicID     = 1
 		hoplimit  = 255
 		ident     = 1
 		data      = "TEST_FRAGMENT_REASSEMBLY_TIMEOUT"
+	)
+	var (
+		addr1 = tcpip.AddrFromSlice([]byte("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01"))
+		addr2 = tcpip.AddrFromSlice([]byte("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02"))
 	)
 
 	type fragmentData struct {
@@ -2624,9 +2631,9 @@ func buildRoute(t *testing.T, c testContext, ep stack.LinkEndpoint) *stack.Route
 	if err := s.CreateNIC(1, ep); err != nil {
 		t.Fatalf("CreateNIC(1, _) failed: %s", err)
 	}
-	const (
-		src = tcpip.Address("\xfc\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01")
-		dst = tcpip.Address("\xfc\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02")
+	var (
+		src = tcpip.AddrFromSlice([]byte("\xfc\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01"))
+		dst = tcpip.AddrFromSlice([]byte("\xfc\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02"))
 	)
 	protocolAddr := tcpip.ProtocolAddress{
 		Protocol:          ProtocolNumber,
@@ -2636,7 +2643,7 @@ func buildRoute(t *testing.T, c testContext, ep stack.LinkEndpoint) *stack.Route
 		t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", 1, protocolAddr, err)
 	}
 	{
-		mask := tcpip.AddressMask("\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff")
+		mask := tcpip.MaskFrom("\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff\xff")
 		subnet, err := tcpip.NewSubnet(dst, mask)
 		if err != nil {
 			t.Fatalf("NewSubnet(%s, %s) failed: %v", dst, mask, err)
@@ -2931,21 +2938,21 @@ const (
 
 var (
 	incomingIPv6Addr = tcpip.AddressWithPrefix{
-		Address:   tcpip.Address(net.ParseIP("10::1").To16()),
+		Address:   tcpip.AddrFromSlice(net.ParseIP("10::1").To16()),
 		PrefixLen: 64,
 	}
 	outgoingIPv6Addr = tcpip.AddressWithPrefix{
-		Address:   tcpip.Address(net.ParseIP("11::1").To16()),
+		Address:   tcpip.AddrFromSlice(net.ParseIP("11::1").To16()),
 		PrefixLen: 64,
 	}
 	multicastIPv6Addr = tcpip.AddressWithPrefix{
-		Address:   tcpip.Address(net.ParseIP("ff00::").To16()),
+		Address:   tcpip.AddrFromSlice(net.ParseIP("ff00::").To16()),
 		PrefixLen: 64,
 	}
-	remoteIPv6Addr1        = tcpip.Address(net.ParseIP("10::2").To16())
-	remoteIPv6Addr2        = tcpip.Address(net.ParseIP("11::2").To16())
-	unreachableIPv6Addr    = tcpip.Address(net.ParseIP("12::2").To16())
-	linkLocalIPv6Addr      = tcpip.Address(net.ParseIP("fe80::").To16())
+	remoteIPv6Addr1        = tcpip.AddrFromSlice(net.ParseIP("10::2").To16())
+	remoteIPv6Addr2        = tcpip.AddrFromSlice(net.ParseIP("11::2").To16())
+	unreachableIPv6Addr    = tcpip.AddrFromSlice(net.ParseIP("12::2").To16())
+	linkLocalIPv6Addr      = tcpip.AddrFromSlice(net.ParseIP("fe80::").To16())
 	defaultEndpointConfigs = map[tcpip.NICID]tcpip.AddressWithPrefix{
 		incomingNICID: incomingIPv6Addr,
 		outgoingNICID: outgoingIPv6Addr,
@@ -3731,14 +3738,14 @@ func TestIcmpRateLimit(t *testing.T) {
 		host1IPv6Addr = tcpip.ProtocolAddress{
 			Protocol: ProtocolNumber,
 			AddressWithPrefix: tcpip.AddressWithPrefix{
-				Address:   tcpip.Address(net.ParseIP("10::1").To16()),
+				Address:   tcpip.AddrFromSlice(net.ParseIP("10::1").To16()),
 				PrefixLen: 64,
 			},
 		}
 		host2IPv6Addr = tcpip.ProtocolAddress{
 			Protocol: ProtocolNumber,
 			AddressWithPrefix: tcpip.AddressWithPrefix{
-				Address:   tcpip.Address(net.ParseIP("10::2").To16()),
+				Address:   tcpip.AddrFromSlice(net.ParseIP("10::2").To16()),
 				PrefixLen: 64,
 			},
 		}

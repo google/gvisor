@@ -807,7 +807,7 @@ func (e *endpoint) bindLocked(addr tcpip.FullAddress) tcpip.Error {
 		// wildcard (empty) address, and this is an IPv6 endpoint with v6only
 		// set to false.
 		netProtos := []tcpip.NetworkProtocolNumber{boundNetProto}
-		if boundNetProto == header.IPv6ProtocolNumber && !e.ops.GetV6Only() && boundAddr == "" && e.stack.CheckNetworkProtocol(header.IPv4ProtocolNumber) {
+		if boundNetProto == header.IPv6ProtocolNumber && !e.ops.GetV6Only() && boundAddr == (tcpip.Address{}) && e.stack.CheckNetworkProtocol(header.IPv4ProtocolNumber) {
 			netProtos = []tcpip.NetworkProtocolNumber{
 				header.IPv6ProtocolNumber,
 				header.IPv4ProtocolNumber,

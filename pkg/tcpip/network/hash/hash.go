@@ -68,9 +68,9 @@ func Hash3Words(a, b, c, initval uint32) uint32 {
 // IPv4FragmentHash computes the hash of the IPv4 fragment as suggested in RFC 791.
 func IPv4FragmentHash(h header.IPv4) uint32 {
 	x := uint32(h.ID())<<16 | uint32(h.Protocol())
-	t := h.SourceAddress()
+	t := h.SourceAddress().As4()
 	y := uint32(t[0]) | uint32(t[1])<<8 | uint32(t[2])<<16 | uint32(t[3])<<24
-	t = h.DestinationAddress()
+	t = h.DestinationAddress().As4()
 	z := uint32(t[0]) | uint32(t[1])<<8 | uint32(t[2])<<16 | uint32(t[3])<<24
 	return Hash3Words(x, y, z, hashIV)
 }
@@ -81,9 +81,9 @@ func IPv4FragmentHash(h header.IPv4) uint32 {
 // As a reference, also Linux ignores the protocol to compute
 // the hash (inet6_hash_frag).
 func IPv6FragmentHash(h header.IPv6, id uint32) uint32 {
-	t := h.SourceAddress()
+	t := h.SourceAddress().As16()
 	y := uint32(t[0]) | uint32(t[1])<<8 | uint32(t[2])<<16 | uint32(t[3])<<24
-	t = h.DestinationAddress()
+	t = h.DestinationAddress().As16()
 	z := uint32(t[0]) | uint32(t[1])<<8 | uint32(t[2])<<16 | uint32(t[3])<<24
 	return Hash3Words(id, y, z, hashIV)
 }

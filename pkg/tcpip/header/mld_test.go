@@ -51,11 +51,11 @@ func TestMLD(t *testing.T) {
 		t.Errorf("got mld.MaximumResponseDelay() = %s, want = %s", got, want)
 	}
 
-	if got, want := mld.MulticastAddress(), tcpip.Address([]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6}); got != want {
+	if got, want := mld.MulticastAddress(), tcpip.AddrFrom16([16]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6}); got != want {
 		t.Errorf("got mld.MulticastAddress() = %s, want = %s", got, want)
 	}
 
-	multicastAddress := tcpip.Address([]byte{15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0})
+	multicastAddress := tcpip.AddrFrom16([16]byte{15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0})
 	mld.SetMulticastAddress(multicastAddress)
 	if got := mld.MulticastAddress(); got != multicastAddress {
 		t.Errorf("got mld.MulticastAddress() = %s, want = %s", got, multicastAddress)
@@ -226,7 +226,7 @@ func TestMLDv2Query(t *testing.T) {
 						if got := query.QuerierQueryInterval(); got != qqic.expectedInterval {
 							t.Errorf("got query.QuerierQueryInterval() = %s, want = %s", got, qqic.expectedInterval)
 						}
-						if got, want := query.MulticastAddress(), tcpip.Address([]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6}); got != want {
+						if got, want := query.MulticastAddress(), tcpip.AddrFrom16([16]byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 0, 1, 2, 3, 4, 5, 6}); got != want {
 							t.Errorf("got query.MulticastAddress() = %s, want = %s", got, want)
 						}
 

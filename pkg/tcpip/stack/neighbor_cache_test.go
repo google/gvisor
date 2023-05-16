@@ -42,10 +42,6 @@ const (
 	// to a router and back.
 	typicalLatency = time.Millisecond
 
-	// testEntryBroadcastAddr is a special address that indicates a packet should
-	// be sent to all nodes.
-	testEntryBroadcastAddr = tcpip.Address("broadcast")
-
 	// testEntryBroadcastLinkAddr is a special link address sent back to
 	// multicast neighbor probes.
 	testEntryBroadcastLinkAddr = tcpip.LinkAddress("mac_broadcast")
@@ -54,12 +50,18 @@ const (
 	infiniteDuration = time.Duration(math.MaxInt64)
 )
 
+var (
+	// testEntryBroadcastAddr is a special address that indicates a packet should
+	// be sent to all nodes.
+	testEntryBroadcastAddr = tcpip.AddrFrom4Slice([]byte("\xde\xad\xbe\xef"))
+)
+
 // unorderedEventsDiffOpts returns options passed to cmp.Diff to sort slices of
 // events for cases where ordering must be ignored.
 func unorderedEventsDiffOpts() []cmp.Option {
 	return []cmp.Option{
 		cmpopts.SortSlices(func(a, b testEntryEventInfo) bool {
-			return strings.Compare(string(a.Entry.Addr), string(b.Entry.Addr)) < 0
+			return strings.Compare(string(a.Entry.Addr.AsSlice()), string(b.Entry.Addr.AsSlice())) < 0
 		}),
 		cmp.AllowUnexported(tcpip.MonotonicTime{}),
 	}
@@ -70,7 +72,7 @@ func unorderedEventsDiffOpts() []cmp.Option {
 func unorderedEntriesDiffOpts() []cmp.Option {
 	return []cmp.Option{
 		cmpopts.SortSlices(func(a, b NeighborEntry) bool {
-			return strings.Compare(string(a.Addr), string(b.Addr)) < 0
+			return strings.Compare(string(a.Addr.AsSlice()), string(b.Addr.AsSlice())) < 0
 		}),
 		cmp.AllowUnexported(tcpip.MonotonicTime{}),
 	}
@@ -107,7 +109,7 @@ type testEntryStore struct {
 }
 
 func toAddress(i uint16) tcpip.Address {
-	return tcpip.Address([]byte{
+	return tcpip.AddrFrom4Slice([]byte{
 		1,
 		0,
 		byte(i >> 8),
@@ -283,7 +285,7 @@ func TestNeighborCacheSetConfig(t *testing.T) {
 func addReachableEntryWithRemoved(nudDisp *testNUDDispatcher, clock *faketime.ManualClock, linkRes *testNeighborResolver, entry NeighborEntry, removed []NeighborEntry) error {
 	var gotLinkResolutionResult LinkResolutionResult
 
-	_, ch, err := linkRes.neigh.entry(entry.Addr, "", func(r LinkResolutionResult) {
+	_, ch, err := linkRes.neigh.entry(entry.Addr, tcpip.Address{}, func(r LinkResolutionResult) {
 		gotLinkResolutionResult = r
 	})
 	if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
@@ -381,7 +383,7 @@ func TestNeighborCacheEntry(t *testing.T) {
 		t.Fatalf("addReachableEntry(...) = %s", err)
 	}
 
-	if _, _, err := linkRes.neigh.entry(entry.Addr, "", nil); err != nil {
+	if _, _, err := linkRes.neigh.entry(entry.Addr, tcpip.Address{}, nil); err != nil {
 		t.Fatalf("unexpected error from linkRes.neigh.entry(%s, '', nil): %s", entry.Addr, err)
 	}
 
@@ -432,7 +434,7 @@ func TestNeighborCacheRemoveEntry(t *testing.T) {
 	}
 
 	{
-		_, _, err := linkRes.neigh.entry(entry.Addr, "", nil)
+		_, _, err := linkRes.neigh.entry(entry.Addr, tcpip.Address{}, nil)
 		if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
 			t.Errorf("got linkRes.neigh.entry(%s, '', nil) = %v, want = %s", entry.Addr, err, &tcpip.ErrWouldBlock{})
 		}
@@ -867,7 +869,7 @@ func TestNeighborCacheAddStaticEntryThenOverflow(t *testing.T) {
 		t.Fatal("got c.linkRes.entries.entry(0) = _, false, want = true ")
 	}
 	c.linkRes.neigh.addStaticEntry(entry.Addr, entry.LinkAddr)
-	e, _, err := c.linkRes.neigh.entry(entry.Addr, "", nil)
+	e, _, err := c.linkRes.neigh.entry(entry.Addr, tcpip.Address{}, nil)
 	if err != nil {
 		t.Errorf("unexpected error from c.linkRes.neigh.entry(%s, \"\", nil): %s", entry.Addr, err)
 	}
@@ -1084,7 +1086,7 @@ func TestNeighborCacheKeepFrequentlyUsed(t *testing.T) {
 	for i := uint16(NeighborCacheSize); i < linkRes.entries.size(); i++ {
 		// Periodically refresh the frequently used entry
 		if i%(NeighborCacheSize/2) == 0 {
-			if _, _, err := linkRes.neigh.entry(frequentlyUsedEntry.Addr, "", nil); err != nil {
+			if _, _, err := linkRes.neigh.entry(frequentlyUsedEntry.Addr, tcpip.Address{}, nil); err != nil {
 				t.Errorf("unexpected error from linkRes.neigh.entry(%s, '', nil): %s", frequentlyUsedEntry.Addr, err)
 			}
 		}
@@ -1161,7 +1163,7 @@ func TestNeighborCacheConcurrent(t *testing.T) {
 			wg.Add(1)
 			go func(entry NeighborEntry) {
 				defer wg.Done()
-				switch e, _, err := linkRes.neigh.entry(entry.Addr, "", nil); err.(type) {
+				switch e, _, err := linkRes.neigh.entry(entry.Addr, tcpip.Address{}, nil); err.(type) {
 				case nil, *tcpip.ErrWouldBlock:
 				default:
 					t.Errorf("got linkRes.neigh.entry(%s, '', nil) = (%+v, _, %s), want (_, _, nil) or (_, _, %s)", entry.Addr, e, err, &tcpip.ErrWouldBlock{})
@@ -1236,7 +1238,7 @@ func TestNeighborCacheReplace(t *testing.T) {
 	//
 	// Verify the entry's new link address and the new state.
 	{
-		e, _, err := linkRes.neigh.entry(entry.Addr, "", nil)
+		e, _, err := linkRes.neigh.entry(entry.Addr, tcpip.Address{}, nil)
 		if err != nil {
 			t.Fatalf("linkRes.neigh.entry(%s, '', nil): %s", entry.Addr, err)
 		}
@@ -1255,7 +1257,7 @@ func TestNeighborCacheReplace(t *testing.T) {
 
 	// Verify that the neighbor is now reachable.
 	{
-		e, _, err := linkRes.neigh.entry(entry.Addr, "", nil)
+		e, _, err := linkRes.neigh.entry(entry.Addr, tcpip.Address{}, nil)
 		if err != nil {
 			t.Errorf("unexpected error from linkRes.neigh.entry(%s, '', nil): %s", entry.Addr, err)
 		}
@@ -1293,7 +1295,7 @@ func TestNeighborCacheResolutionFailed(t *testing.T) {
 		t.Fatalf("addReachableEntry(...) = %s", err)
 	}
 
-	got, _, err := linkRes.neigh.entry(entry.Addr, "", nil)
+	got, _, err := linkRes.neigh.entry(entry.Addr, tcpip.Address{}, nil)
 	if err != nil {
 		t.Fatalf("unexpected error from linkRes.neigh.entry(%s, '', nil): %s", entry.Addr, err)
 	}
@@ -1310,9 +1312,9 @@ func TestNeighborCacheResolutionFailed(t *testing.T) {
 	// Verify address resolution fails for an unknown address.
 	before := requestCount.Load()
 
-	entry.Addr += "2"
+	entry.Addr = tcpip.AddrFrom4Slice([]byte("\xfe\xee\xee\xed"))
 	{
-		_, ch, err := linkRes.neigh.entry(entry.Addr, "", func(r LinkResolutionResult) {
+		_, ch, err := linkRes.neigh.entry(entry.Addr, tcpip.Address{}, func(r LinkResolutionResult) {
 			if diff := cmp.Diff(LinkResolutionResult{Err: &tcpip.ErrTimeout{}}, r); diff != "" {
 				t.Fatalf("got link resolution result mismatch (-want +got):\n%s", diff)
 			}
@@ -1352,7 +1354,7 @@ func TestNeighborCacheResolutionTimeout(t *testing.T) {
 		t.Fatal("got linkRes.entries.entry(0) = _, false, want = true ")
 	}
 
-	_, ch, err := linkRes.neigh.entry(entry.Addr, "", func(r LinkResolutionResult) {
+	_, ch, err := linkRes.neigh.entry(entry.Addr, tcpip.Address{}, func(r LinkResolutionResult) {
 		if diff := cmp.Diff(LinkResolutionResult{Err: &tcpip.ErrTimeout{}}, r); diff != "" {
 			t.Fatalf("got link resolution result mismatch (-want +got):\n%s", diff)
 		}
@@ -1387,7 +1389,7 @@ func TestNeighborCacheRetryResolution(t *testing.T) {
 
 	// Perform address resolution with a faulty link, which will fail.
 	{
-		_, ch, err := linkRes.neigh.entry(entry.Addr, "", func(r LinkResolutionResult) {
+		_, ch, err := linkRes.neigh.entry(entry.Addr, tcpip.Address{}, func(r LinkResolutionResult) {
 			if diff := cmp.Diff(LinkResolutionResult{Err: &tcpip.ErrTimeout{}}, r); diff != "" {
 				t.Fatalf("got link resolution result mismatch (-want +got):\n%s", diff)
 			}
@@ -1467,7 +1469,7 @@ func TestNeighborCacheRetryResolution(t *testing.T) {
 	// Retry address resolution with a working link.
 	linkRes.dropReplies = false
 	{
-		incompleteEntry, ch, err := linkRes.neigh.entry(entry.Addr, "", func(r LinkResolutionResult) {
+		incompleteEntry, ch, err := linkRes.neigh.entry(entry.Addr, tcpip.Address{}, func(r LinkResolutionResult) {
 			if diff := cmp.Diff(LinkResolutionResult{LinkAddress: entry.LinkAddr, Err: nil}, r); diff != "" {
 				t.Fatalf("got link resolution result mismatch (-want +got):\n%s", diff)
 			}
@@ -1532,7 +1534,7 @@ func TestNeighborCacheRetryResolution(t *testing.T) {
 		}
 
 		{
-			gotEntry, _, err := linkRes.neigh.entry(entry.Addr, "", nil)
+			gotEntry, _, err := linkRes.neigh.entry(entry.Addr, tcpip.Address{}, nil)
 			if err != nil {
 				t.Fatalf("linkRes.neigh.entry(%s, '', _): %s", entry.Addr, err)
 			}
@@ -1585,7 +1587,7 @@ func TestNeighborCacheIgnoreInvalidLinkAddress(t *testing.T) {
 		t.Fatal("got linkRes.entries.entry(0) = _, false, want = true ")
 	}
 
-	_, _, err := linkRes.neigh.entry(entry.Addr, "", nil)
+	_, _, err := linkRes.neigh.entry(entry.Addr, tcpip.Address{}, nil)
 	if _, ok := err.(*tcpip.ErrWouldBlock); !ok {
 		t.Fatalf("linkRes.neigh.entry(%s, \"\", nil): %s", entry.Addr, err)
 	}
@@ -1623,7 +1625,7 @@ func BenchmarkCacheClear(b *testing.B) {
 				b.Fatalf("got linkRes.entries.entry(%d) = _, false, want = true", i)
 			}
 
-			_, ch, err := linkRes.neigh.entry(entry.Addr, "", func(r LinkResolutionResult) {
+			_, ch, err := linkRes.neigh.entry(entry.Addr, tcpip.Address{}, func(r LinkResolutionResult) {
 				if diff := cmp.Diff(LinkResolutionResult{LinkAddress: entry.LinkAddr, Err: nil}, r); diff != "" {
 					b.Fatalf("got link resolution result mismatch (-want +got):\n%s", diff)
 				}

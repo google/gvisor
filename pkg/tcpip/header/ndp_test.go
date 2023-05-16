@@ -54,7 +54,7 @@ func TestNDPNeighborSolicit(t *testing.T) {
 		t.Errorf("got ns.TargetAddress = %s, want %s", got, addr2)
 	}
 	// Make sure the address got updated in the backing buffer.
-	if got := tcpip.Address(b[ndpNSTargetAddessOffset:][:IPv6AddressSize]); got != addr2 {
+	if got := tcpip.AddrFrom16Slice(b[ndpNSTargetAddessOffset:][:IPv6AddressSize]); got != addr2 {
 		t.Errorf("got targetaddress buffer = %s, want %s", got, addr2)
 	}
 }
@@ -107,7 +107,7 @@ func TestNDPRouteInformationOption(t *testing.T) {
 			lifetimeS:    1,
 			prefixBytes:  nil,
 			expectedPrefix: tcpip.AddressWithPrefix{
-				Address:   tcpip.Address(strings.Repeat("\x00", IPv6AddressSize)),
+				Address:   tcpip.AddrFrom16Slice([]byte(strings.Repeat("\x00", IPv6AddressSize))),
 				PrefixLen: 1,
 			}.Subnet(),
 		},
@@ -119,7 +119,7 @@ func TestNDPRouteInformationOption(t *testing.T) {
 			lifetimeS:    1,
 			prefixBytes:  nil,
 			expectedPrefix: tcpip.AddressWithPrefix{
-				Address:   tcpip.Address(strings.Repeat("\x00", IPv6AddressSize)),
+				Address:   tcpip.AddrFrom16Slice([]byte(strings.Repeat("\x00", IPv6AddressSize))),
 				PrefixLen: 64,
 			}.Subnet(),
 		},
@@ -149,7 +149,7 @@ func TestNDPRouteInformationOption(t *testing.T) {
 			lifetimeS:    1,
 			prefixBytes:  nil,
 			expectedPrefix: tcpip.AddressWithPrefix{
-				Address:   tcpip.Address(strings.Repeat("\x00", IPv6AddressSize)),
+				Address:   tcpip.AddrFrom16Slice([]byte(strings.Repeat("\x00", IPv6AddressSize))),
 				PrefixLen: 1,
 			}.Subnet(),
 		},
@@ -161,7 +161,7 @@ func TestNDPRouteInformationOption(t *testing.T) {
 			lifetimeS:    1,
 			prefixBytes:  nil,
 			expectedPrefix: tcpip.AddressWithPrefix{
-				Address:   tcpip.Address(strings.Repeat("\x00", IPv6AddressSize)),
+				Address:   tcpip.AddrFrom16Slice([]byte(strings.Repeat("\x00", IPv6AddressSize))),
 				PrefixLen: 64,
 			}.Subnet(),
 		},
@@ -173,7 +173,7 @@ func TestNDPRouteInformationOption(t *testing.T) {
 			lifetimeS:    1,
 			prefixBytes:  nil,
 			expectedPrefix: tcpip.AddressWithPrefix{
-				Address:   tcpip.Address(strings.Repeat("\x00", IPv6AddressSize)),
+				Address:   tcpip.AddrFrom16Slice([]byte(strings.Repeat("\x00", IPv6AddressSize))),
 				PrefixLen: 65,
 			}.Subnet(),
 		},
@@ -185,7 +185,7 @@ func TestNDPRouteInformationOption(t *testing.T) {
 			lifetimeS:    1,
 			prefixBytes:  nil,
 			expectedPrefix: tcpip.AddressWithPrefix{
-				Address:   tcpip.Address(strings.Repeat("\x00", IPv6AddressSize)),
+				Address:   tcpip.AddrFrom16Slice([]byte(strings.Repeat("\x00", IPv6AddressSize))),
 				PrefixLen: 128,
 			}.Subnet(),
 		},
@@ -316,7 +316,7 @@ func TestNDPNeighborAdvert(t *testing.T) {
 		t.Errorf("got TargetAddress = %s, want %s", got, addr2)
 	}
 	// Make sure the address got updated in the backing buffer.
-	if got := tcpip.Address(b[ndpNATargetAddressOffset:][:IPv6AddressSize]); got != addr2 {
+	if got := tcpip.AddrFrom16Slice(b[ndpNATargetAddressOffset:][:IPv6AddressSize]); got != addr2 {
 		t.Errorf("got targetaddress buffer = %s, want %s", got, addr2)
 	}
 
@@ -560,7 +560,7 @@ func TestOpts(t *testing.T) {
 		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
 	}
 	binary.BigEndian.PutUint32(expectedRDNSSBytes[4:], validLifetimeSeconds)
-	if n := copy(expectedRDNSSBytes[8:], address); n != IPv6AddressSize {
+	if n := copy(expectedRDNSSBytes[8:], address.AsSlice()); n != IPv6AddressSize {
 		t.Fatalf("got copy(...) = %d, want = %d", n, IPv6AddressSize)
 	}
 	// Update reserved fields to non zero values to make sure serializing sets
@@ -631,7 +631,7 @@ func TestOpts(t *testing.T) {
 	}
 	binary.BigEndian.PutUint32(expectedPrefixInformationBytes[4:], validLifetimeSeconds)
 	binary.BigEndian.PutUint32(expectedPrefixInformationBytes[8:], preferredLifetimeSeconds)
-	if n := copy(expectedPrefixInformationBytes[16:], address); n != IPv6AddressSize {
+	if n := copy(expectedPrefixInformationBytes[16:], address.AsSlice()); n != IPv6AddressSize {
 		t.Fatalf("got copy(...) = %d, want = %d", n, IPv6AddressSize)
 	}
 	// Update reserved fields to non zero values to make sure serializing sets
@@ -862,7 +862,7 @@ func TestNDPRecursiveDNSServerOption(t *testing.T) {
 			},
 			0,
 			[]tcpip.Address{
-				"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
+				tcpip.AddrFrom16Slice([]byte("\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f")),
 			},
 		},
 		{
@@ -875,8 +875,8 @@ func TestNDPRecursiveDNSServerOption(t *testing.T) {
 			},
 			0,
 			[]tcpip.Address{
-				"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
-				"\x11\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x10",
+				tcpip.AddrFrom16Slice([]byte("\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f")),
+				tcpip.AddrFrom16Slice([]byte("\x11\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x10")),
 			},
 		},
 		{
@@ -890,9 +890,9 @@ func TestNDPRecursiveDNSServerOption(t *testing.T) {
 			},
 			0,
 			[]tcpip.Address{
-				"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
-				"\x11\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x10",
-				"\x11\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x11",
+				tcpip.AddrFrom16Slice([]byte("\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f")),
+				tcpip.AddrFrom16Slice([]byte("\x11\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x10")),
+				tcpip.AddrFrom16Slice([]byte("\x11\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x11")),
 			},
 		},
 	}
@@ -917,6 +917,10 @@ func TestNDPRecursiveDNSServerOption(t *testing.T) {
 				t.Fatalf("got Type = %d, want = %d", got, ndpRecursiveDNSServerOptionType)
 			}
 
+			comparer := cmp.Comparer(func(addrA, addrB tcpip.Address) bool {
+				return addrA == addrB
+			})
+
 			opt, ok := next.(NDPRecursiveDNSServer)
 			if !ok {
 				t.Fatalf("next (type = %T) cannot be casted to an NDPRecursiveDNSServer", next)
@@ -928,7 +932,7 @@ func TestNDPRecursiveDNSServerOption(t *testing.T) {
 			if err != nil {
 				t.Errorf("opt.Addresses() = %s", err)
 			}
-			if diff := cmp.Diff(addrs, test.addrs); diff != "" {
+			if diff := cmp.Diff(addrs, test.addrs, comparer); diff != "" {
 				t.Errorf("mismatched addresses (-want +got):\n%s", diff)
 			}
 

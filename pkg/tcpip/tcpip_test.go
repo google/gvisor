@@ -56,9 +56,9 @@ func TestLimitedWriter_Write(t *testing.T) {
 
 func TestSubnetContains(t *testing.T) {
 	tests := []struct {
-		s    Address
-		m    AddressMask
-		a    Address
+		s    string
+		m    string
+		a    string
 		want bool
 	}{
 		{"\xa0", "\xf0", "\x90", false},
@@ -67,43 +67,51 @@ func TestSubnetContains(t *testing.T) {
 		{"\xa0", "\xf0", "\xaf", true},
 		{"\xa0", "\xf0", "\xb0", false},
 		{"\xa0", "\xf0", "", false},
-		{"\xa0", "\xf0", "\xa0\x00", false},
 		{"\xc2\x80", "\xff\xf0", "\xc2\x80", true},
 		{"\xc2\x80", "\xff\xf0", "\xc2\x00", false},
 		{"\xc2\x00", "\xff\xf0", "\xc2\x00", true},
 		{"\xc2\x00", "\xff\xf0", "\xc2\x80", false},
 	}
 	for _, tt := range tests {
-		s, err := NewSubnet(tt.s, tt.m)
+		s, err := NewSubnet(AddrFromSlice(padTo4(tt.s)), MaskFromBytes(padTo4(tt.m)))
 		if err != nil {
 			t.Errorf("NewSubnet(%v, %v) = %v", tt.s, tt.m, err)
 			continue
 		}
-		if got := s.Contains(tt.a); got != tt.want {
+		if got := s.Contains(AddrFromSlice(padTo4(tt.a))); got != tt.want {
 			t.Errorf("Subnet(%v).Contains(%v) = %v, want %v", s, tt.a, got, tt.want)
 		}
 	}
 }
 
+func TestSubnetContainsDifferentLength(t *testing.T) {
+	s, err := NewSubnet(AddrFromSlice([]byte("\xa0\x00\x00\x00")), MaskFromBytes([]byte("\xf0\x00\x00\x00")))
+	if err != nil {
+		t.Fatalf("NewSubnet(a0::, f0::) = %v", err)
+	}
+	if got := s.Contains(AddrFrom16Slice([]byte("\xa0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"))); got != false {
+		t.Fatalf("Subnet(%v).Contains(a0::) = %v, want %v", s, got, false)
+	}
+}
+
 func TestSubnetBits(t *testing.T) {
 	tests := []struct {
-		a     AddressMask
+		a     string
 		want1 int
 		want0 int
 	}{
-		{"\x00", 0, 8},
-		{"\x00\x00", 0, 16},
-		{"\x36", 0, 8},
-		{"\x5c", 0, 8},
-		{"\x5c\x5c", 0, 16},
-		{"\x5c\x36", 0, 16},
-		{"\x36\x5c", 0, 16},
-		{"\x36\x36", 0, 16},
-		{"\xff", 8, 0},
-		{"\xff\xff", 16, 0},
+		{"\x00", 0, 32},
+		{"\x36", 0, 32},
+		{"\x5c", 0, 32},
+		{"\x5c\x5c", 0, 32},
+		{"\x5c\x36", 0, 32},
+		{"\x36\x5c", 0, 32},
+		{"\x36\x36", 0, 32},
+		{"\xff", 8, 24},
+		{"\xff\xff", 16, 16},
 	}
 	for _, tt := range tests {
-		s := &Subnet{mask: tt.a}
+		s := &Subnet{mask: MaskFromBytes(padTo4(tt.a))}
 		got1, got0 := s.Bits()
 		if got1 != tt.want1 || got0 != tt.want0 {
 			t.Errorf("Subnet{mask: %x}.Bits() = %d, %d, want %d, %d", tt.a, got1, got0, tt.want1, tt.want0)
@@ -113,7 +121,7 @@ func TestSubnetBits(t *testing.T) {
 
 func TestSubnetPrefix(t *testing.T) {
 	tests := []struct {
-		a    AddressMask
+		a    string
 		want int
 	}{
 		{"\x00", 0},
@@ -129,7 +137,7 @@ func TestSubnetPrefix(t *testing.T) {
 		{"\xff\xff", 16},
 	}
 	for _, tt := range tests {
-		s := &Subnet{mask: tt.a}
+		s := &Subnet{mask: MaskFromBytes(padTo4(tt.a))}
 		got := s.Prefix()
 		if got != tt.want {
 			t.Errorf("Subnet{mask: %x}.Bits() = %d want %d", tt.a, got, tt.want)
@@ -139,19 +147,26 @@ func TestSubnetPrefix(t *testing.T) {
 
 func TestSubnetCreation(t *testing.T) {
 	tests := []struct {
-		a    Address
-		m    AddressMask
+		a    string
+		m    string
 		want error
 	}{
 		{"\xa0", "\xf0", nil},
-		{"\xa0\xa0", "\xf0", errSubnetLengthMismatch},
 		{"\xaa", "\xf0", errSubnetAddressMasked},
 		{"", "", nil},
 	}
 	for _, tt := range tests {
-		if _, err := NewSubnet(tt.a, tt.m); err != tt.want {
+		if _, err := NewSubnet(AddrFromSlice(padTo4(tt.a)), MaskFromBytes(padTo4(tt.m))); err != tt.want {
 			t.Errorf("NewSubnet(%v, %v) = %v, want %v", tt.a, tt.m, err, tt.want)
 		}
+	}
+}
+
+func TestSubnetCreationDifferentLength(t *testing.T) {
+	addr := []byte("\xa0\xa0\x00\x00")
+	mask := []byte("\xf0\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00")
+	if _, err := NewSubnet(AddrFromSlice(addr), MaskFromBytes(mask)); err != errSubnetLengthMismatch {
+		t.Errorf("NewSubnet(%v, %v) = %v, want %v", addr, mask, err, errSubnetLengthMismatch)
 	}
 }
 
@@ -202,7 +217,7 @@ func TestAddressString(t *testing.T) {
 		// the end.
 		"1:0:1::1:0:1",
 	} {
-		addr := Address(net.ParseIP(want))
+		addr := AddrFromSlice(net.ParseIP(want))
 		if got := addr.String(); got != want {
 			t.Errorf("Address(%x).String() = '%s', want = '%s'", addr, got, want)
 		}
@@ -211,10 +226,10 @@ func TestAddressString(t *testing.T) {
 
 func TestAddressWithPrefixSubnet(t *testing.T) {
 	tests := []struct {
-		addr       Address
+		addr       string
 		prefixLen  int
-		subnetAddr Address
-		subnetMask AddressMask
+		subnetAddr string
+		subnetMask string
 	}{
 		{"\xaa\x55\x33\x42", -1, "\x00\x00\x00\x00", "\x00\x00\x00\x00"},
 		{"\xaa\x55\x33\x42", 0, "\x00\x00\x00\x00", "\x00\x00\x00\x00"},
@@ -227,9 +242,9 @@ func TestAddressWithPrefixSubnet(t *testing.T) {
 		{"\xaa\x55\x33\x42", 33, "\xaa\x55\x33\x42", "\xff\xff\xff\xff"},
 	}
 	for _, tt := range tests {
-		ap := AddressWithPrefix{Address: tt.addr, PrefixLen: tt.prefixLen}
+		ap := AddressWithPrefix{Address: AddrFromSlice([]byte(tt.addr)), PrefixLen: tt.prefixLen}
 		gotSubnet := ap.Subnet()
-		wantSubnet, err := NewSubnet(tt.subnetAddr, tt.subnetMask)
+		wantSubnet, err := NewSubnet(AddrFromSlice([]byte(tt.subnetAddr)), MaskFromBytes([]byte(tt.subnetMask)))
 		if err != nil {
 			t.Errorf("NewSubnet(%q, %q) failed: %s", tt.subnetAddr, tt.subnetMask, err)
 			continue
@@ -242,7 +257,7 @@ func TestAddressWithPrefixSubnet(t *testing.T) {
 
 func TestAddressUnspecified(t *testing.T) {
 	tests := []struct {
-		addr        Address
+		addr        string
 		unspecified bool
 	}{
 		{
@@ -277,7 +292,7 @@ func TestAddressUnspecified(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(fmt.Sprintf("addr=%s", test.addr), func(t *testing.T) {
-			if got := test.addr.Unspecified(); got != test.unspecified {
+			if got := AddrFromSlice(padTo4(test.addr)).Unspecified(); got != test.unspecified {
 				t.Fatalf("got addr.Unspecified() = %t, want = %t", got, test.unspecified)
 			}
 		})
@@ -286,14 +301,14 @@ func TestAddressUnspecified(t *testing.T) {
 
 func TestAddressMatchingPrefix(t *testing.T) {
 	tests := []struct {
-		addrA  Address
-		addrB  Address
+		addrA  string
+		addrB  string
 		prefix uint8
 	}{
 		{
 			addrA:  "\x01\x01",
 			addrB:  "\x01\x01",
-			prefix: 16,
+			prefix: 32,
 		},
 		{
 			addrA:  "\x01\x01",
@@ -318,8 +333,15 @@ func TestAddressMatchingPrefix(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		if got := test.addrA.MatchingPrefix(test.addrB); got != test.prefix {
+		if got := AddrFromSlice(padTo4(test.addrA)).MatchingPrefix(AddrFromSlice(padTo4(test.addrB))); got != test.prefix {
 			t.Errorf("got (%s).MatchingPrefix(%s) = %d, want = %d", test.addrA, test.addrB, got, test.prefix)
 		}
 	}
+}
+
+func padTo4(partial string) []byte {
+	for len(partial) < 4 {
+		partial += "\x00"
+	}
+	return []byte(partial)
 }

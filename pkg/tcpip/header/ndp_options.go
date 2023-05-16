@@ -647,7 +647,7 @@ func (o NDPPrefixInformation) PreferredLifetime() time.Duration {
 // Hosts SHOULD ignore an NDP Prefix Information option where the Prefix field
 // holds the link-local prefix (fe80::).
 func (o NDPPrefixInformation) Prefix() tcpip.Address {
-	return tcpip.Address(o[ndpPrefixInformationPrefixOffset:][:IPv6AddressSize])
+	return tcpip.AddrFrom16Slice(o[ndpPrefixInformationPrefixOffset:][:IPv6AddressSize])
 }
 
 // Subnet returns the Prefix field and Prefix Length field represented in a
@@ -748,7 +748,7 @@ func (o NDPRecursiveDNSServer) iterAddresses(fn func(tcpip.Address)) error {
 	}
 
 	for i := 0; len(o) != 0; i++ {
-		addr := tcpip.Address(o[:IPv6AddressSize])
+		addr := tcpip.AddrFrom16Slice(o[:IPv6AddressSize])
 		if !IsV6UnicastAddress(addr) {
 			return fmt.Errorf("%d-th address (%s) in NDP Recursive DNS Server option is not a valid unicast IPv6 address: %w", i, addr, ErrNDPOptMalformedBody)
 		}
@@ -1037,7 +1037,7 @@ func (o NDPRouteInformation) Prefix() (tcpip.Subnet, error) {
 	}
 
 	return tcpip.AddressWithPrefix{
-		Address:   tcpip.Address(addrBytes[:]),
+		Address:   tcpip.AddrFrom16(addrBytes),
 		PrefixLen: prefixLength,
 	}.Subnet(), nil
 }

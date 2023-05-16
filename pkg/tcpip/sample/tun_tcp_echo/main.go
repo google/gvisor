@@ -126,10 +126,10 @@ func main() {
 	var addrWithPrefix tcpip.AddressWithPrefix
 	var proto tcpip.NetworkProtocolNumber
 	if parsedAddr.To4() != nil {
-		addrWithPrefix = tcpip.Address(parsedAddr.To4()).WithPrefix()
+		addrWithPrefix = tcpip.AddrFromSlice(parsedAddr.To4()).WithPrefix()
 		proto = ipv4.ProtocolNumber
 	} else if parsedAddr.To16() != nil {
-		addrWithPrefix = tcpip.Address(parsedAddr.To16()).WithPrefix()
+		addrWithPrefix = tcpip.AddrFromSlice(parsedAddr.To16()).WithPrefix()
 		proto = ipv6.ProtocolNumber
 	} else {
 		log.Fatalf("Unknown IP type: %v", addrName)
@@ -183,7 +183,7 @@ func main() {
 		log.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", 1, protocolAddr, err)
 	}
 
-	subnet, err := tcpip.NewSubnet(tcpip.Address(strings.Repeat("\x00", len(addrWithPrefix.Address))), tcpip.AddressMask(strings.Repeat("\x00", len(addrWithPrefix.Address))))
+	subnet, err := tcpip.NewSubnet(tcpip.AddrFromSlice([]byte(strings.Repeat("\x00", addrWithPrefix.Address.Len()))), tcpip.MaskFrom(strings.Repeat("\x00", addrWithPrefix.Address.Len())))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -205,7 +205,7 @@ func main() {
 
 	defer ep.Close()
 
-	if err := ep.Bind(tcpip.FullAddress{0, "", uint16(localPort)}); err != nil {
+	if err := ep.Bind(tcpip.FullAddress{0, tcpip.Address{}, uint16(localPort)}); err != nil {
 		log.Fatal("Bind failed: ", err)
 	}
 

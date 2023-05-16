@@ -185,7 +185,7 @@ func TestLocalPing(t *testing.T) {
 						t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
 					}
 
-					if len(test.localAddr.Address) != 0 {
+					if test.localAddr.Address.Len() != 0 {
 						protocolAddr := tcpip.ProtocolAddress{
 							Protocol:          test.netProto,
 							AddressWithPrefix: test.localAddr,

@@ -62,9 +62,9 @@ func expectedEthLayer(t *testing.T, dut testbench.DUT, socketFD int32, sendTo ne
 		}
 		if sendTo.IsMulticast() {
 			if sendTo4 := sendTo.To4(); sendTo4 != nil {
-				return header.EthernetAddressFromMulticastIPv4Address(tcpip.Address(sendTo4))
+				return header.EthernetAddressFromMulticastIPv4Address(tcpip.AddrFrom4Slice(sendTo4))
 			}
-			return header.EthernetAddressFromMulticastIPv6Address(tcpip.Address(sendTo.To16()))
+			return header.EthernetAddressFromMulticastIPv6Address(tcpip.AddrFrom16Slice(sendTo.To16()))
 		}
 		return ""
 	}()
@@ -170,6 +170,7 @@ func (test *icmpV4Test) setup(t *testing.T, dut testbench.DUT, bindTo, sendTo ne
 		conn.Close(t)
 	})
 
+	dstAddr := sendTo.To4()
 	return icmpV4TestEnv{
 		socketFD: socketFD,
 		ident:    ident,
@@ -177,7 +178,7 @@ func (test *icmpV4Test) setup(t *testing.T, dut testbench.DUT, bindTo, sendTo ne
 		layers: testbench.Layers{
 			expectedEthLayer(t, dut, socketFD, sendTo),
 			&testbench.IPv4{
-				DstAddr: testbench.Address(tcpip.Address(sendTo.To4())),
+				DstAddr: &dstAddr,
 			},
 		},
 	}
@@ -392,6 +393,7 @@ func (test *icmpV6Test) setup(t *testing.T, dut testbench.DUT, bindTo, sendTo ne
 		conn.Close(t)
 	})
 
+	dstAddr := sendTo.To16()
 	return icmpV6TestEnv{
 		socketFD: socketFD,
 		ident:    ident,
@@ -399,7 +401,7 @@ func (test *icmpV6Test) setup(t *testing.T, dut testbench.DUT, bindTo, sendTo ne
 		layers: testbench.Layers{
 			expectedEthLayer(t, dut, socketFD, sendTo),
 			&testbench.IPv6{
-				DstAddr: testbench.Address(tcpip.Address(sendTo.To16())),
+				DstAddr: &dstAddr,
 			},
 		},
 	}
@@ -602,13 +604,13 @@ func (test *udpTest) setup(t *testing.T, dut testbench.DUT, bindTo, sendTo net.I
 		udpConn := dut.Net.NewUDPIPv4(t, outgoingUDP, incomingUDP)
 		conn = &udpConn
 		ipLayer = &testbench.IPv4{
-			DstAddr: testbench.Address(tcpip.Address(addr)),
+			DstAddr: testbench.Address(tcpip.AddrFrom4Slice(addr)),
 		}
 	} else {
 		udpConn := dut.Net.NewUDPIPv6(t, outgoingUDP, incomingUDP)
 		conn = &udpConn
 		ipLayer = &testbench.IPv6{
-			DstAddr: testbench.Address(tcpip.Address(sendTo.To16())),
+			DstAddr: testbench.Address(tcpip.AddrFrom16Slice(sendTo.To16())),
 		}
 	}
 	t.Cleanup(func() {

@@ -38,40 +38,43 @@ import (
 )
 
 const (
-	// StackAddr is the IPv4 address assigned to the stack.
-	StackAddr = "\x0a\x00\x00\x01"
 
 	// StackPort is used as the listening port in tests for passive
 	// connects.
 	StackPort = 1234
 
-	// TestAddr is the source address for packets sent to the stack via the
-	// link layer endpoint.
-	TestAddr = "\x0a\x00\x00\x02"
-
 	// TestPort is the TCP port used for packets sent to the stack
 	// via the link layer endpoint.
 	TestPort = 4096
 
-	// StackV6Addr is the IPv6 address assigned to the stack.
-	StackV6Addr = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01"
-
-	// TestV6Addr is the source address for packets sent to the stack via
-	// the link layer endpoint.
-	TestV6Addr = "\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02"
-
-	// StackV4MappedAddr is StackAddr as a mapped v6 address.
-	StackV4MappedAddr = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff" + StackAddr
-
-	// TestV4MappedAddr is TestAddr as a mapped v6 address.
-	TestV4MappedAddr = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff" + TestAddr
-
-	// V4MappedWildcardAddr is the mapped v6 representation of 0.0.0.0.
-	V4MappedWildcardAddr = "\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff\x00\x00\x00\x00"
-
 	// TestInitialSequenceNumber is the initial sequence number sent in packets that
 	// are sent in response to a SYN or in the initial SYN sent to the stack.
 	TestInitialSequenceNumber = 789
+)
+
+var (
+	// StackAddr is the IPv4 address assigned to the stack.
+	StackAddr = tcpip.AddrFromSlice([]byte("\x0a\x00\x00\x01"))
+
+	// TestAddr is the source address for packets sent to the stack via the
+	// link layer endpoint.
+	TestAddr = tcpip.AddrFromSlice([]byte("\x0a\x00\x00\x02"))
+
+	// StackV6Addr is the IPv6 address assigned to the stack.
+	StackV6Addr = tcpip.AddrFromSlice([]byte("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01"))
+
+	// TestV6Addr is the source address for packets sent to the stack via
+	// the link layer endpoint.
+	TestV6Addr = tcpip.AddrFromSlice([]byte("\x0a\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x02"))
+
+	// StackV4MappedAddr is StackAddr as a mapped v6 address.
+	StackV4MappedAddr = tcpip.AddrFromSlice([]byte("\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff" + string(StackAddr.AsSlice())))
+
+	// TestV4MappedAddr is TestAddr as a mapped v6 address.
+	TestV4MappedAddr = tcpip.AddrFromSlice([]byte("\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff" + string(TestAddr.AsSlice())))
+
+	// V4MappedWildcardAddr is the mapped v6 representation of 0.0.0.0.
+	V4MappedWildcardAddr = tcpip.AddrFromSlice([]byte("\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xff\x00\x00\x00\x00"))
 )
 
 // StackAddrWithPrefix is StackAddr with its associated prefix length.

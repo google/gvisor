@@ -234,7 +234,7 @@ func TestIGMPv3Query(t *testing.T) {
 						if got := query.QuerierQueryInterval(); got != qqic.expectedInterval {
 							t.Errorf("got query.QuerierQueryInterval() = %s, want = %s", got, qqic.expectedInterval)
 						}
-						if got, want := query.GroupAddress(), tcpip.Address([]byte{1, 2, 3, 4}); got != want {
+						if got, want := query.GroupAddress(), tcpip.AddrFrom4([4]byte{1, 2, 3, 4}); got != want {
 							t.Errorf("got query.GroupAddress() = %s, want = %s", got, want)
 						}
 

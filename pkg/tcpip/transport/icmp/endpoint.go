@@ -641,7 +641,7 @@ func (e *endpoint) isBroadcastOrMulticast(nicID tcpip.NICID, addr tcpip.Address)
 // Bind binds the endpoint to a specific local address and port.
 // Specifying a NIC is optional.
 func (e *endpoint) Bind(addr tcpip.FullAddress) tcpip.Error {
-	if len(addr.Addr) != 0 && e.isBroadcastOrMulticast(addr.NIC, addr.Addr) {
+	if addr.Addr.BitLen() != 0 && e.isBroadcastOrMulticast(addr.NIC, addr.Addr) {
 		return &tcpip.ErrBadLocalAddress{}
 	}
 

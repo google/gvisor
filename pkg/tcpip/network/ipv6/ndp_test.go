@@ -104,7 +104,7 @@ func TestStackNDPEndpointInvalidateDefaultRouter(t *testing.T) {
 		t.Fatalf("got ndpDisp.addr = %s, want = %s", ndpDisp.addr, lladdr1)
 	}
 
-	ndpDisp.addr = ""
+	ndpDisp.addr = tcpip.Address{}
 	ndpEP := ep.(stack.NDPEndpoint)
 	ndpEP.InvalidateDefaultRouter(lladdr1)
 	if ndpDisp.addr != lladdr1 {
@@ -824,7 +824,7 @@ func TestNDPValidation(t *testing.T) {
 		},
 	}
 
-	subnet, err := tcpip.NewSubnet(lladdr1, tcpip.AddressMask(strings.Repeat("\xff", len(lladdr0))))
+	subnet, err := tcpip.NewSubnet(lladdr1, tcpip.MaskFrom(strings.Repeat("\xff", lladdr0.Len())))
 	if err != nil {
 		t.Fatal(err)
 	}

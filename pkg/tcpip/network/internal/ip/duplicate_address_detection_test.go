@@ -101,11 +101,11 @@ func (m *mockDADProtocol) setConfigs(c stack.DADConfigurations) {
 	m.mu.dad.SetConfigsLocked(c)
 }
 
-const (
-	addr1 = tcpip.Address("\x01")
-	addr2 = tcpip.Address("\x02")
-	addr3 = tcpip.Address("\x03")
-	addr4 = tcpip.Address("\x04")
+var (
+	addr1 = tcpip.AddrFromSlice([]byte("\x01\x00\x00\x00"))
+	addr2 = tcpip.AddrFromSlice([]byte("\x02\x00\x00\x00"))
+	addr3 = tcpip.AddrFromSlice([]byte("\x03\x00\x00\x00"))
+	addr4 = tcpip.AddrFromSlice([]byte("\x04\x00\x00\x00"))
 )
 
 type dadResult struct {
@@ -129,7 +129,7 @@ func TestDADCheckDuplicateAddress(t *testing.T) {
 	ch := make(chan dadResult, 2)
 
 	// DAD should initially be disabled.
-	if res := dad.checkDuplicateAddress(addr1, handler(nil, "")); res != stack.DADDisabled {
+	if res := dad.checkDuplicateAddress(addr1, handler(nil, tcpip.Address{})); res != stack.DADDisabled {
 		t.Errorf("got dad.checkDuplicateAddress(%s, _) = %d, want = %d", addr1, res, stack.DADDisabled)
 	}
 	// Wait for any initially fired timers to complete.
