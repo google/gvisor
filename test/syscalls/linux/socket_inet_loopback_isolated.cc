@@ -13,7 +13,9 @@
 // limitations under the License.
 
 #include <netinet/tcp.h>
+#include <sys/socket.h>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
@@ -289,6 +291,65 @@ TEST_P(SocketInetLoopbackIsolatedTest, TCPLinger2TimeoutAfterClose) {
   ASSERT_THAT(
       RetryEINTR(connect)(conn_fd2.get(), AsSockAddr(&conn_addr), conn_addrlen),
       SyscallSucceeds());
+}
+
+TEST_P(SocketInetLoopbackIsolatedTest, TCPConnectionReuseAddrConflicts) {
+  SocketInetTestParam const& param = GetParam();
+  TestAddress const& listener = param.listener;
+  TestAddress const& connector = param.connector;
+
+  const FileDescriptor listen_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(listener.family(), SOCK_STREAM, 0));
+
+  sockaddr_storage listen_addr = listener.addr;
+  ASSERT_THAT(
+      bind(listen_fd.get(), AsSockAddr(&listen_addr), listener.addr_len),
+      SyscallSucceeds());
+  ASSERT_THAT(listen(listen_fd.get(), SOMAXCONN), SyscallSucceeds());
+
+  // Get the port bound by the listening socket.
+  socklen_t addrlen = listener.addr_len;
+  ASSERT_THAT(getsockname(listen_fd.get(), AsSockAddr(&listen_addr), &addrlen),
+              SyscallSucceeds());
+
+  const uint16_t port =
+      ASSERT_NO_ERRNO_AND_VALUE(AddrPort(listener.family(), listen_addr));
+
+  // Create a first connection.
+  FileDescriptor conn_fd1 = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(connector.family(), SOCK_STREAM, IPPROTO_TCP));
+  ASSERT_THAT(setsockopt(conn_fd1.get(), SOL_SOCKET, SO_REUSEADDR, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+
+  sockaddr_storage conn_addr = connector.addr;
+  ASSERT_NO_ERRNO(SetAddrPort(connector.family(), &conn_addr, port));
+  ASSERT_THAT(RetryEINTR(connect)(conn_fd1.get(), AsSockAddr(&conn_addr),
+                                  connector.addr_len),
+              SyscallSucceeds());
+  sockaddr_storage conn_bound_addr;
+  addrlen = sizeof(conn_bound_addr);
+  ASSERT_THAT(
+      getsockname(conn_fd1.get(), AsSockAddr(&conn_bound_addr), &addrlen),
+      SyscallSucceeds());
+  ASSERT_EQ(addrlen, connector.addr_len);
+
+  // Create the second connection that is bind to the same local address as the
+  // first.
+  FileDescriptor conn_fd2 = ASSERT_NO_ERRNO_AND_VALUE(
+      Socket(connector.family(), SOCK_STREAM, IPPROTO_TCP));
+  ASSERT_THAT(setsockopt(conn_fd2.get(), SOL_SOCKET, SO_REUSEADDR, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallSucceeds());
+  // Bind should succeed.
+  ASSERT_THAT(bind(conn_fd2.get(), AsSockAddr(&conn_bound_addr), addrlen),
+              SyscallSucceeds());
+
+  // Connect should fail.
+  ASSERT_NO_ERRNO(SetAddrPort(connector.family(), &conn_addr, port));
+  ASSERT_THAT(RetryEINTR(connect)(conn_fd2.get(), AsSockAddr(&conn_addr),
+                                  connector.addr_len),
+              SyscallFailsWithErrno(EADDRNOTAVAIL));
 }
 
 INSTANTIATE_TEST_SUITE_P(All, SocketInetLoopbackIsolatedTest,
