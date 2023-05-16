@@ -2425,6 +2425,9 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool) tcpip.Error {
 	e.setEndpointState(StateConnecting)
 	if err := e.registerEndpoint(addr, netProto, r.NICID()); err != nil {
 		e.setEndpointState(oldState)
+		if _, ok := err.(*tcpip.ErrPortInUse); ok {
+			return &tcpip.ErrBadLocalAddress{}
+		}
 		return err
 	}
 
