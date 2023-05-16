@@ -607,10 +607,12 @@ func (gd *groDispatcher) bucketForPacket(ipHdr header.Network, tcpHdr header.TCP
 	// TODO(b/256037250): Use jenkins or checksum. Write a test to print
 	// distribution.
 	var sum int
-	for _, val := range ipHdr.SourceAddress().AsSlice() {
+	srcAddr := ipHdr.SourceAddress()
+	for _, val := range srcAddr.AsSlice() {
 		sum += int(val)
 	}
-	for _, val := range ipHdr.DestinationAddress().AsSlice() {
+	dstAddr := ipHdr.DestinationAddress()
+	for _, val := range dstAddr.AsSlice() {
 		sum += int(val)
 	}
 	sum += int(tcpHdr.SourcePort())

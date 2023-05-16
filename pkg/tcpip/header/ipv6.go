@@ -437,7 +437,8 @@ func AppendOpaqueInterfaceIdentifier(buf []byte, prefix tcpip.Subnet, nicName st
 	// Note, we omit the optional Network_ID field.
 	h := sha256.New()
 	// h.Write never returns an error.
-	h.Write([]byte(prefix.ID().AsSlice()[:IIDOffsetInIPv6Address]))
+	prefixID := prefix.ID()
+	h.Write([]byte(prefixID.AsSlice()[:IIDOffsetInIPv6Address]))
 	h.Write([]byte(nicName))
 	h.Write([]byte{dadCounter})
 	h.Write(secretKey)

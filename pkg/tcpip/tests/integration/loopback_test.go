@@ -114,7 +114,8 @@ func TestLoopbackAcceptAllInSubnetUDP(t *testing.T) {
 		Protocol:          header.IPv4ProtocolNumber,
 		AddressWithPrefix: utils.Ipv4Addr,
 	}
-	ipv4Bytes := ipv4ProtocolAddress.AddressWithPrefix.Address.AsSlice()
+	addrCopy := ipv4ProtocolAddress.AddressWithPrefix.Address
+	ipv4Bytes := addrCopy.AsSlice()
 	ipv4Bytes[len(ipv4Bytes)-1]++
 	otherIPv4Address := tcpip.AddrFromSlice(ipv4Bytes)
 
@@ -122,7 +123,8 @@ func TestLoopbackAcceptAllInSubnetUDP(t *testing.T) {
 		Protocol:          header.IPv6ProtocolNumber,
 		AddressWithPrefix: utils.Ipv6Addr,
 	}
-	ipv6Bytes := utils.Ipv6Addr.Address.AsSlice()
+	addrCopy = utils.Ipv6Addr.Address
+	ipv6Bytes := addrCopy.AsSlice()
 	ipv6Bytes[len(ipv6Bytes)-1]++
 	otherIPv6Address := tcpip.AddrFromSlice(ipv6Bytes)
 
@@ -283,7 +285,8 @@ func TestLoopbackSubnetLifetimeBoundToAddr(t *testing.T) {
 		Protocol:          ipv4.ProtocolNumber,
 		AddressWithPrefix: utils.Ipv4Addr,
 	}
-	addrBytes := utils.Ipv4Addr.Address.AsSlice()
+	addrCopy := utils.Ipv4Addr.Address
+	addrBytes := addrCopy.AsSlice()
 	addrBytes[len(addrBytes)-1]++
 	otherAddr := tcpip.AddrFromSlice(addrBytes)
 
@@ -352,7 +355,8 @@ func TestLoopbackAcceptAllInSubnetTCP(t *testing.T) {
 		AddressWithPrefix: utils.Ipv4Addr,
 	}
 	ipv4ProtocolAddress.AddressWithPrefix.PrefixLen = 8
-	ipv4Bytes := ipv4ProtocolAddress.AddressWithPrefix.Address.AsSlice()
+	addrCopy := ipv4ProtocolAddress.AddressWithPrefix.Address
+	ipv4Bytes := addrCopy.AsSlice()
 	ipv4Bytes[len(ipv4Bytes)-1]++
 	otherIPv4Address := tcpip.AddrFromSlice(ipv4Bytes)
 
@@ -360,7 +364,8 @@ func TestLoopbackAcceptAllInSubnetTCP(t *testing.T) {
 		Protocol:          header.IPv6ProtocolNumber,
 		AddressWithPrefix: utils.Ipv6Addr,
 	}
-	ipv6Bytes := utils.Ipv6Addr.Address.AsSlice()
+	addrCopy = utils.Ipv6Addr.Address
+	ipv6Bytes := addrCopy.AsSlice()
 	ipv6Bytes[len(ipv6Bytes)-1]++
 	otherIPv6Address := tcpip.AddrFromSlice(ipv6Bytes)
 

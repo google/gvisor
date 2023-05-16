@@ -76,25 +76,8 @@ func checksumUpdate2ByteAlignedAddress(xsum uint16, old, new tcpip.Address) uint
 		panic(fmt.Sprintf("buffer has an odd number of bytes; got = %d", oldBytes))
 	}
 
-	// Try to avoid allocating.
-	var oldAddr []byte
-	var newAddr []byte
-	switch old.BitLen() {
-	case 32:
-		var oldAddr4 [4]byte
-		var newAddr4 [4]byte
-		oldAddr4 = old.As4()
-		newAddr4 = new.As4()
-		oldAddr = oldAddr4[:]
-		newAddr = newAddr4[:]
-	case 128:
-		var oldAddr16 [16]byte
-		var newAddr16 [16]byte
-		oldAddr16 = old.As16()
-		newAddr16 = new.As16()
-		oldAddr = oldAddr16[:]
-		newAddr = newAddr16[:]
-	}
+	oldAddr := old.AsSlice()
+	newAddr := new.AsSlice()
 
 	// As per RFC 1071 page 4,
 	//	(4)  Incremental Update

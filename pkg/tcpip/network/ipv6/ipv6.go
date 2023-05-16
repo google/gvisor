@@ -2806,11 +2806,12 @@ func hashRoute(r *stack.Route, hashIV uint32) uint32 {
 	// The FNV-1a was chosen because it is a fast hashing algorithm, and
 	// cryptographic properties are not needed here.
 	h := fnv.New32a()
-	if _, err := h.Write(r.LocalAddress().AsSlice()); err != nil {
+	localAddr := r.LocalAddress()
+	if _, err := h.Write(localAddr.AsSlice()); err != nil {
 		panic(fmt.Sprintf("Hash.Write: %s, but Hash' implementation of Write is not expected to ever return an error", err))
 	}
-
-	if _, err := h.Write(r.RemoteAddress().AsSlice()); err != nil {
+	remoteAddr := r.RemoteAddress()
+	if _, err := h.Write(remoteAddr.AsSlice()); err != nil {
 		panic(fmt.Sprintf("Hash.Write: %s, but Hash' implementation of Write is not expected to ever return an error", err))
 	}
 

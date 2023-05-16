@@ -154,12 +154,18 @@ type Timer interface {
 //
 // +stateify savable
 type Address struct {
-	addr string
+	addr   [16]byte
+	length int
 }
 
 // AddrFrom4 converts addr to an Address.
 func AddrFrom4(addr [4]byte) Address {
-	return Address{addr: string(addr[:])}
+	ret := Address{
+		length: 4,
+	}
+	// It's guaranteed that copy will return 4.
+	copy(ret.addr[:4], addr[:])
+	return ret
 }
 
 // AddrFrom4Slice converts addr to an Address. It panics if len(addr) != 4.
@@ -167,12 +173,18 @@ func AddrFrom4Slice(addr []byte) Address {
 	if len(addr) != 4 {
 		panic(fmt.Sprintf("bad address length for address %v", addr))
 	}
+	// TODO(281863522): This is probalby an extra copy, just do the init here.
 	return AddrFrom4([4]byte(addr))
 }
 
 // AddrFrom16 converts addr to an Address.
 func AddrFrom16(addr [16]byte) Address {
-	return Address{addr: string(addr[:])}
+	ret := Address{
+		length: 16,
+	}
+	// It's guaranteed that copy will return 16.
+	copy(ret.addr[:16], addr[:])
+	return ret
 }
 
 // AddrFrom16Slice converts addr to an Address. It panics if len(addr) != 16.
@@ -180,6 +192,7 @@ func AddrFrom16Slice(addr []byte) Address {
 	if len(addr) != 16 {
 		panic(fmt.Sprintf("bad address length for address %v", addr))
 	}
+	// TODO(281863522): This is probalby an extra copy, just do the init here.
 	return AddrFrom16([16]byte(addr))
 }
 
@@ -200,7 +213,7 @@ func (a Address) As4() [4]byte {
 	if a.Len() != 4 {
 		panic(fmt.Sprintf("bad address length for address %v", a.addr))
 	}
-	return ([4]byte)([]byte(a.addr))
+	return [4]byte(a.addr[:4])
 }
 
 // As16 returns a as a 16 byte array. It panics if the address length is not 16.
@@ -208,13 +221,15 @@ func (a Address) As16() [16]byte {
 	if a.Len() != 16 {
 		panic(fmt.Sprintf("bad address length for address %v", a.addr))
 	}
-	return ([16]byte)([]byte(a.addr))
+	return [16]byte(a.addr[:16])
 }
 
-// AsSlice returns a as a byte slice. It may return a new slice or a window
-// into existing memory.
-func (a Address) AsSlice() []byte {
-	return []byte(a.addr)
+// AsSlice returns a as a byte slice. Callers should be careful as it can
+// return a window into existing memory.
+//
+// +checkescape
+func (a *Address) AsSlice() []byte {
+	return a.addr[:a.length]
 }
 
 // BitLen returns the length in bits of a.
@@ -224,7 +239,7 @@ func (a Address) BitLen() int {
 
 // Len returns the length in bytes of a.
 func (a Address) Len() int {
-	return len(a.addr)
+	return a.length
 }
 
 // WithPrefix returns the address with a prefix that represents a point subnet.
@@ -262,7 +277,7 @@ func (a Address) MatchingPrefix(b Address) uint8 {
 	}
 
 	var prefix uint8
-	for i := range a.addr {
+	for i := 0; i < a.length; i++ {
 		aByte := a.addr[i]
 		bByte := b.addr[i]
 
@@ -308,7 +323,7 @@ func MaskFromBytes(bs []byte) AddressMask {
 
 // String implements Stringer.
 func (m AddressMask) String() string {
-	return fmt.Sprintf("%x", []byte(m.mask))
+	return fmt.Sprintf("%x", m.mask)
 }
 
 // BitLen returns the length of the mask in bits.
@@ -392,11 +407,11 @@ func (s *Subnet) Mask() AddressMask {
 
 // Broadcast returns the subnet's broadcast address.
 func (s *Subnet) Broadcast() Address {
-	addr := []byte(s.address.addr)
-	for i := range addr {
-		addr[i] |= ^s.mask.mask[i]
+	addrCopy := s.address
+	for i := 0; i < addrCopy.Len(); i++ {
+		addrCopy.addr[i] |= ^s.mask.mask[i]
 	}
-	return Address{addr: string(addr)}
+	return addrCopy
 }
 
 // IsBroadcast returns true if the address is considered a broadcast address.
@@ -1462,7 +1477,7 @@ type Route struct {
 func (r Route) String() string {
 	var out strings.Builder
 	_, _ = fmt.Fprintf(&out, "%s", r.Destination)
-	if len(r.Gateway.addr) > 0 {
+	if r.Gateway.length > 0 {
 		_, _ = fmt.Fprintf(&out, " via %s", r.Gateway)
 	}
 	_, _ = fmt.Fprintf(&out, " nic %d", r.NIC)
@@ -1472,7 +1487,7 @@ func (r Route) String() string {
 // Equal returns true if the given Route is equal to this Route.
 func (r Route) Equal(to Route) bool {
 	// NOTE: This relies on the fact that r.Destination == to.Destination
-	return r == to
+	return r.Destination.Equal(to.Destination) && r.Gateway == to.Gateway && r.NIC == to.NIC
 }
 
 // TransportProtocolNumber is the number of a transport protocol.
@@ -2520,7 +2535,7 @@ func (a Address) String() string {
 		}
 		return b.String()
 	default:
-		return fmt.Sprintf("%x", []byte(a.addr))
+		return fmt.Sprintf("%x", a.addr[:])
 	}
 }
 
@@ -2535,18 +2550,18 @@ func (a Address) To4() Address {
 		return a
 	}
 	if a.Len() == ipv6len &&
-		isZeros(Address{addr: a.addr[0:10]}) &&
+		isZeros(a.addr[:10]) &&
 		a.addr[10] == 0xff &&
 		a.addr[11] == 0xff {
-		return Address{addr: a.addr[12:16]}
+		return AddrFrom4Slice(a.addr[12:16])
 	}
 	return Address{}
 }
 
-// isZeros reports whether a is all zeros.
-func isZeros(a Address) bool {
-	for i := 0; i < a.Len(); i++ {
-		if a.addr[i] != 0 {
+// isZeros reports whether addr is all zeros.
+func isZeros(addr []byte) bool {
+	for _, b := range addr {
+		if b != 0 {
 			return false
 		}
 	}
@@ -2606,17 +2621,17 @@ func (a AddressWithPrefix) String() string {
 
 // Subnet converts the address and prefix into a Subnet value and returns it.
 func (a AddressWithPrefix) Subnet() Subnet {
-	addrLen := len(a.Address.addr)
+	addrLen := a.Address.length
 	if a.PrefixLen <= 0 {
 		return Subnet{
-			address: Address{addr: strings.Repeat("\x00", addrLen)},
-			mask:    AddressMask{mask: strings.Repeat("\x00", addrLen)},
+			address: AddrFromSlice(bytes.Repeat([]byte{0}, addrLen)),
+			mask:    MaskFromBytes(bytes.Repeat([]byte{0}, addrLen)),
 		}
 	}
 	if a.PrefixLen >= addrLen*8 {
 		return Subnet{
 			address: a.Address,
-			mask:    AddressMask{mask: strings.Repeat("\xff", addrLen)},
+			mask:    MaskFromBytes(bytes.Repeat([]byte{0xff}, addrLen)),
 		}
 	}
 
@@ -2638,7 +2653,7 @@ func (a AddressWithPrefix) Subnet() Subnet {
 	// For extra caution, call NewSubnet rather than directly creating the Subnet
 	// value. If that fails it indicates a serious bug in this code, so panic is
 	// in order.
-	s, err := NewSubnet(Address{addr: string(sa)}, AddressMask{mask: string(sm)})
+	s, err := NewSubnet(AddrFromSlice(sa), MaskFromBytes(sm))
 	if err != nil {
 		panic("invalid subnet: " + err.Error())
 	}

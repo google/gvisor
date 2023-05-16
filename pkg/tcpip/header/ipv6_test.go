@@ -123,7 +123,8 @@ func TestAppendOpaqueInterfaceIdentifier(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			h := sha256.New()
-			h.Write(test.prefix.ID().AsSlice()[:header.IIDOffsetInIPv6Address])
+			prefixID := test.prefix.ID()
+			h.Write(prefixID.AsSlice()[:header.IIDOffsetInIPv6Address])
 			h.Write([]byte(test.nicName))
 			h.Write([]byte{test.dadCounter})
 			if k := test.secretKey; k != nil {
