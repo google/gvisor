@@ -130,23 +130,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 	}
 
 	if g.syncUsernsFD >= 0 {
-		f := os.NewFile(uintptr(g.syncUsernsFD), "sync FD")
-		defer f.Close()
-		var b [1]byte
-		if n, err := f.Read(b[:]); n != 0 || err != io.EOF {
-			util.Fatalf("failed to sync: %v: %v", n, err)
-		}
-
-		f.Close()
-		// SETUID changes UID on the current system thread, so we have
-		// to re-execute current binary.
-		runtime.LockOSThread()
-		if _, _, errno := unix.RawSyscall(unix.SYS_SETUID, 0, 0, 0); errno != 0 {
-			util.Fatalf("failed to set UID: %v", errno)
-		}
-		if _, _, errno := unix.RawSyscall(unix.SYS_SETGID, 0, 0, 0); errno != 0 {
-			util.Fatalf("failed to set GID: %v", errno)
-		}
+		syncUsernsForRootless(g.syncUsernsFD)
 	}
 
 	if g.setUpRoot {
@@ -182,7 +166,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 
 	if g.syncUsernsFD >= 0 {
 		// syncUsernsFD is set, but runsc hasn't been re-exeuted with a new UID and GID.
-		// We expcec that setCapsAndCallSelfsetCapsAndCallSelf has to be called in this case.
+		// We expect that setCapsAndCallSelf has to be called in this case.
 		panic("unreachable")
 	}
 
@@ -597,4 +581,28 @@ func adjustMountOptions(conf *config.Config, path string, opts []string) ([]stri
 		rv = append(rv, "overlayfs_stale_read")
 	}
 	return rv, nil
+}
+
+// syncUsernsForRootless waits on syncUsernsFD to be closed and then sets
+// UID/GID to 0. Note that this function calls runtime.LockOSThread().
+//
+// Postcondition: All callers must re-exec themselves after this returns.
+func syncUsernsForRootless(syncUsernsFD int) {
+	f := os.NewFile(uintptr(syncUsernsFD), "sync FD")
+	defer f.Close()
+	var b [1]byte
+	if n, err := f.Read(b[:]); n != 0 || err != io.EOF {
+		util.Fatalf("failed to sync: %v: %v", n, err)
+	}
+
+	f.Close()
+	// SETUID changes UID on the current system thread, so we have
+	// to re-execute current binary.
+	runtime.LockOSThread()
+	if _, _, errno := unix.RawSyscall(unix.SYS_SETUID, 0, 0, 0); errno != 0 {
+		util.Fatalf("failed to set UID: %v", errno)
+	}
+	if _, _, errno := unix.RawSyscall(unix.SYS_SETGID, 0, 0, 0); errno != 0 {
+		util.Fatalf("failed to set GID: %v", errno)
+	}
 }
