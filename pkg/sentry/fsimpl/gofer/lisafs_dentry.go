@@ -462,20 +462,24 @@ func (d *lisafsDentry) openCreate(ctx context.Context, name string, flags uint32
 	return child, h, nil
 }
 
+// lisafsGetdentsCount is the number of bytes of dirents to read from the
+// server in each Getdents RPC. This value is consistent with vfs1 client.
+const lisafsGetdentsCount = int32(64 * 1024)
+
 // Preconditions:
 //   - getDirents may not be called concurrently with another getDirents call.
-func (d *lisafsDentry) getDirentsLocked(ctx context.Context, count int, recordDirent func(name string, key inoKey, dType uint8)) error {
+func (d *lisafsDentry) getDirentsLocked(ctx context.Context, recordDirent func(name string, key inoKey, dType uint8)) error {
 	// shouldSeek0 indicates whether the server should SEEK to 0 before reading
 	// directory entries.
 	shouldSeek0 := true
 	for {
-		countLisa := int32(count)
+		count := lisafsGetdentsCount
 		if shouldSeek0 {
 			// See lisafs.Getdents64Req.Count.
-			countLisa = -countLisa
+			count = -count
 			shouldSeek0 = false
 		}
-		dirents, err := d.readFDLisa.Getdents64(ctx, countLisa)
+		dirents, err := d.readFDLisa.Getdents64(ctx, count)
 		if err != nil {
 			return err
 		}
