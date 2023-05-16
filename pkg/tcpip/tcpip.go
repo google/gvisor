@@ -326,6 +326,12 @@ func (m AddressMask) String() string {
 	return fmt.Sprintf("%x", m.mask)
 }
 
+// AsSlice returns a as a byte slice. Callers should be careful as it can
+// return a window into existing memory.
+func (m *AddressMask) AsSlice() []byte {
+	return []byte(m.mask)
+}
+
 // BitLen returns the length of the mask in bits.
 func (m AddressMask) BitLen() int {
 	return len(m.mask) * 8
