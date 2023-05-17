@@ -3226,6 +3226,6 @@ go_repository(
 go_repository(
     name = "com_github_hanwen_go_fuse_v2",
     importpath = "github.com/hanwen/go-fuse/v2",
-    sum = "h1:fOTuYWxywhaliwMobGTP/6NUCgGdal6pCpuch4MHCnU=",
-    version = "v2.1.1-0.20220627082937-d01fda7edf17",
+    sum = "h1:t5ivNIH2PK+zw4OBul/iJjsoG9K6kXo4nMDoBpciC8A=",
+    version = "v2.3.0",
 )
