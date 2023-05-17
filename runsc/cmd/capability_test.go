@@ -70,6 +70,11 @@ func checkCaps(which capability.CapType, curCaps capability.Capabilities, wantCa
 }
 
 func TestCapabilities(t *testing.T) {
+	t.Run("directfs", func(t *testing.T) { testCapabilities(t, true) })
+	t.Run("lisafs", func(t *testing.T) { testCapabilities(t, false) })
+}
+
+func testCapabilities(t *testing.T, directfs bool) {
 	stop := testutil.StartReaper()
 	defer stop()
 
@@ -86,6 +91,7 @@ func TestCapabilities(t *testing.T) {
 	}
 
 	conf := testutil.TestConfig(t)
+	conf.DirectFS = directfs
 
 	// Use --network=host to make sandbox use spec's capabilities.
 	conf.Network = config.NetworkHost
@@ -111,8 +117,13 @@ func TestCapabilities(t *testing.T) {
 		t.Fatalf("error starting container: %v", err)
 	}
 
+	wantSandboxCaps := spec.Process.Capabilities
+	if directfs {
+		// With directfs, the sandbox has additional capabilities.
+		wantSandboxCaps = specutils.MergeCapabilities(wantSandboxCaps, directfsSandboxLinuxCaps)
+	}
 	// Check that sandbox and gofer have the proper capabilities.
-	if err := checkProcessCaps(c.Sandbox.Getpid(), spec.Process.Capabilities); err != nil {
+	if err := checkProcessCaps(c.Sandbox.Getpid(), wantSandboxCaps); err != nil {
 		t.Error(err)
 	}
 	if err := checkProcessCaps(c.GoferPid, goferCaps); err != nil {

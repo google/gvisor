@@ -401,8 +401,8 @@ steps:
     <<: *source_test
     label: ":podman: Podman"
     commands:
-      - sudo ./test/podman/run.sh
-      - sudo RUNTIME_ARGS=--directfs ./test/podman/run.sh
+      - sudo RUNTIME_ARGS=--directfs=false ./test/podman/run.sh
+      - sudo RUNTIME_ARGS=--directfs=true ./test/podman/run.sh
     agents:
       <<: *ubuntu_agents
       cgroup: "v2"
@@ -439,7 +439,7 @@ steps:
   - <<: *common
     <<: *docker
     label: ":php: PHP runtime tests"
-    command: make php8.1.1-runtime-tests
+    command: make php8.1.1-runtime-tests RUNTIME_ARGS=--directfs
     parallelism: 10
     agents:
       <<: *platform_specific_agents
@@ -448,7 +448,7 @@ steps:
   - <<: *common
     <<: *docker
     label: ":java: Java runtime tests"
-    command: make java17-runtime-tests
+    command: make java17-runtime-tests RUNTIME_ARGS=--directfs
     parallelism: 40
     agents:
       <<: *platform_specific_agents
@@ -457,7 +457,7 @@ steps:
   - <<: *common
     <<: *docker
     label: ":golang: Go runtime tests"
-    command: make go1.20-runtime-tests
+    command: make go1.20-runtime-tests RUNTIME_ARGS=--directfs
     parallelism: 10
     agents:
       <<: *platform_specific_agents
@@ -466,7 +466,7 @@ steps:
   - <<: *common
     <<: *docker
     label: ":node: NodeJS runtime tests"
-    command: make nodejs16.13.2-runtime-tests
+    command: make nodejs16.13.2-runtime-tests RUNTIME_ARGS=--directfs
     parallelism: 10
     agents:
       <<: *platform_specific_agents
@@ -475,18 +475,18 @@ steps:
   - <<: *common
     <<: *docker
     label: ":python: Python runtime tests"
-    command: make python3.10.2-runtime-tests
+    command: make python3.10.2-runtime-tests RUNTIME_ARGS=--directfs
     parallelism: 10
     agents:
       <<: *platform_specific_agents
       <<: *ubuntu_agents
       arch: "amd64"
 
-  # Runtime tests (directfs).
+  # Runtime tests (goferfs). Continuous only.
   - <<: *common
     <<: *docker
-    label: ":php: PHP runtime tests (directfs)"
-    command: make php8.1.1-runtime-tests RUNTIME_ARGS=--directfs
+    label: ":php: PHP runtime tests (goferfs)"
+    command: make php8.1.1-runtime-tests RUNTIME_ARGS=--directfs=false
     parallelism: 10
     if: build.branch == "master"
     agents:
@@ -495,8 +495,8 @@ steps:
       arch: "amd64"
   - <<: *common
     <<: *docker
-    label: ":java: Java runtime tests (directfs)"
-    command: make java17-runtime-tests RUNTIME_ARGS=--directfs
+    label: ":java: Java runtime tests (goferfs)"
+    command: make java17-runtime-tests RUNTIME_ARGS=--directfs=false
     parallelism: 40
     if: build.branch == "master"
     agents:
@@ -505,8 +505,8 @@ steps:
       arch: "amd64"
   - <<: *common
     <<: *docker
-    label: ":golang: Go runtime tests (directfs)"
-    command: make go1.20-runtime-tests RUNTIME_ARGS=--directfs
+    label: ":golang: Go runtime tests (goferfs)"
+    command: make go1.20-runtime-tests RUNTIME_ARGS=--directfs=false
     parallelism: 10
     if: build.branch == "master"
     agents:
@@ -515,8 +515,8 @@ steps:
       arch: "amd64"
   - <<: *common
     <<: *docker
-    label: ":node: NodeJS runtime tests (directfs)"
-    command: make nodejs16.13.2-runtime-tests RUNTIME_ARGS=--directfs
+    label: ":node: NodeJS runtime tests (goferfs)"
+    command: make nodejs16.13.2-runtime-tests RUNTIME_ARGS=--directfs=false
     parallelism: 10
     if: build.branch == "master"
     agents:
@@ -525,8 +525,8 @@ steps:
       arch: "amd64"
   - <<: *common
     <<: *docker
-    label: ":python: Python runtime tests (directfs)"
-    command: make python3.10.2-runtime-tests RUNTIME_ARGS=--directfs
+    label: ":python: Python runtime tests (goferfs)"
+    command: make python3.10.2-runtime-tests RUNTIME_ARGS=--directfs=false
     parallelism: 10
     if: build.branch == "master"
     agents:
