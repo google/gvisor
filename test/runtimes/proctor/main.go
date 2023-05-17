@@ -179,7 +179,7 @@ func main() {
 			}
 
 			// Run the test.
-			cmdCopy.Stdout, cmdCopy.Stderr = os.Stdout, os.Stderr
+			cmdCopy.Stdout, cmdCopy.Stderr = os.Stderr, os.Stderr
 			testErr := cmdCopy.Run()
 			close(testDone)
 			if <-testTimedOutCh {
