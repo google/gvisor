@@ -19,8 +19,10 @@ import (
 	"runtime"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/sysmsg"
 	"gvisor.dev/gvisor/pkg/syncevent"
@@ -186,9 +188,42 @@ func (sc *sharedContext) resetAcked() {
 	atomic.StoreUint32(&sc.shared.Acked, ackReset)
 }
 
+const (
+	contextPreemptTimeoutNsec = 10 * 1000 * 1000 // 10ms
+	contextCheckupTimeoutSec  = 5
+	stuckContextTimeout       = 30 * time.Second
+)
+
 func (sc *sharedContext) sleepOnState(state sysmsg.ContextState) {
-	if errno := sc.shared.SleepOnState(state, sc); errno != 0 {
-		panic(fmt.Sprintf("error waiting for state: %v", errno))
+	timeout := unix.Timespec{
+		Sec:  0,
+		Nsec: contextPreemptTimeoutNsec,
+	}
+	sentInterruptOnce := false
+	deadline := time.Now().Add(stuckContextTimeout)
+	for sc.state() == state {
+		errno := sc.shared.SleepOnState(state, &timeout)
+		if errno == 0 {
+			continue
+		}
+		if errno != unix.ETIMEDOUT {
+			panic(fmt.Sprintf("error waiting for state: %v", errno))
+		}
+		if time.Now().After(deadline) {
+			log.Warningf("Systrap task goroutine has been waiting on ThreadContext.State futex too long. ThreadContext: %s", sc.shared)
+		}
+		if sentInterruptOnce {
+			log.Warningf("The context is still running: %s", sc)
+			continue
+		}
+
+		if !sc.isAcked() || sc.subprocess.contextQueue.isEmpty() {
+			continue
+		}
+		sc.NotifyInterrupt()
+		sentInterruptOnce = true
+		timeout.Sec = contextCheckupTimeoutSec
+		timeout.Nsec = 0
 	}
 }
 
