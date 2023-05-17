@@ -24,6 +24,7 @@
 #include <unistd.h>
 
 #include <cstdint>
+#include <cstdlib>
 #include <functional>
 #include <iostream>
 #include <memory>
@@ -1415,6 +1416,26 @@ TEST(MountTest, MountInfoHasRoot) {
     if (e.mount_point == parent.path()) {
       ASSERT_EQ(e.root, "/");
     }
+  }
+}
+
+TEST(MountTest, DeadMountsAreDecRefd) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  DisableSave ds;
+  std::string home = NewTempAbsPath();
+  ASSERT_NO_ERRNO(Mkdir(home));
+  ASSERT_THAT(chdir(home.c_str()), SyscallSucceeds());
+  constexpr char dirpath[] = "./file";
+
+  for (int i = 0; i < 10; ++i) {
+    const auto rest = [&] {
+      mkdir(dirpath, 0);
+      mount(dirpath, ".", 0, MS_BIND, 0);
+      rmdir(dirpath);
+      mkdir(dirpath, 0);
+      mount(dirpath, ".", 0, MS_BIND, 0);
+    };
+    EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
   }
 }
 
