@@ -276,18 +276,18 @@ func (vfs *VirtualFilesystem) ConnectMountAt(ctx context.Context, creds *auth.Cr
 	tree := vfs.preparePropagationTree(mnt, vd)
 	cleanup := cleanup.Make(func() {
 		vfs.abortPropagationTree(ctx, tree) // +checklocksforce
+	})
+	defer cleanup.Clean()
+	// Check if the new mount + all the propagation mounts puts us over the max.
+	if uint32(len(tree)+1)+vd.mount.ns.mounts > MountMax {
 		// We need to unlock mountMu first because DecRef takes a lock on the
 		// filesystem mutex in some implementations, which can lead to circular
 		// locking.
 		vfs.mountMu.Unlock()
 		vd.DecRef(ctx)
-	})
-	defer cleanup.Clean()
-	// Check if the new mount + all the propagation mounts puts us over the max.
-	if uint32(len(tree)+1)+vd.mount.ns.mounts > MountMax {
 		return linuxerr.ENOSPC
 	}
-	if err := vfs.connectMountAt(ctx, mnt, vd); err != nil {
+	if err := vfs.connectMountAtLocked(ctx, mnt, vd); err != nil {
 		return err
 	}
 	vfs.commitPropagationTree(ctx, tree)
@@ -296,20 +296,20 @@ func (vfs *VirtualFilesystem) ConnectMountAt(ctx context.Context, creds *auth.Cr
 	return nil
 }
 
-// connectMountAtLocked attaches mnt at vd. If the method returns an error that
-// is not nil, then it did not consume a reference on vd and the caller is
-// responsible for calling DecRef.
+// connectMountAtLocked attaches mnt at vd. This method consumes a reference on
+// vd.
 //
 // Preconditions:
 //   - mnt must be disconnected.
 //   - vfs.mountMu must be locked.
 //
 // +checklocks:vfs.mountMu
-func (vfs *VirtualFilesystem) connectMountAt(ctx context.Context, mnt *Mount, vd VirtualDentry) error {
+func (vfs *VirtualFilesystem) connectMountAtLocked(ctx context.Context, mnt *Mount, vd VirtualDentry) error {
 	vd.dentry.mu.Lock()
 	for {
 		if vd.mount.umounted || vd.dentry.dead {
 			vd.dentry.mu.Unlock()
+			vd.DecRef(ctx)
 			return linuxerr.ENOENT
 		}
 		// vd might have been mounted over between vfs.GetDentryAt() and
@@ -408,14 +408,15 @@ func (vfs *VirtualFilesystem) BindAt(ctx context.Context, creds *auth.Credential
 		// Checklocks doesn't work with anon functions.
 		vfs.setPropagation(clone, Private)  // +checklocksforce
 		vfs.abortPropagationTree(ctx, tree) // +checklocksforce
-		vfs.mountMu.Unlock()
-		targetVd.DecRef(ctx)
 	})
 	defer cleanup.Clean()
 	if uint32(1+len(tree))+targetVd.mount.ns.mounts > MountMax {
+		vfs.mountMu.Unlock()
+		targetVd.DecRef(ctx)
 		return nil, linuxerr.ENOSPC
 	}
-	if err := vfs.connectMountAt(ctx, clone, targetVd); err != nil {
+	if err := vfs.connectMountAtLocked(ctx, clone, targetVd); err != nil {
+		vfs.mountMu.Unlock()
 		return nil, err
 	}
 	vfs.commitPropagationTree(ctx, tree)
