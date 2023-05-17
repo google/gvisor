@@ -71,7 +71,7 @@ steps:
   - <<: *common
     <<: *docker
     label: ":golang: Go runtime tests"
-    command: make go1.20-runtime-tests
+    command: make go1.20-runtime-tests RUNTIME_ARGS=--directfs
     parallelism: 10
     agents:
       <<: *platform_specific_agents
