@@ -271,6 +271,8 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 	}
 	if *directfs {
 		args = append(args, "-directfs")
+	} else {
+		args = append(args, "-directfs=false")
 	}
 
 	testLogDir := ""

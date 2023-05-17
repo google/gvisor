@@ -77,7 +77,7 @@ func testSpec() *specs.Spec {
 // startGofer starts a new gofer routine serving 'root' path. It returns the
 // sandbox side of the connection, and a function that when called will stop the
 // gofer.
-func startGofer(root string) (int, func(), error) {
+func startGofer(root string, conf *config.Config) (int, func(), error) {
 	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0)
 	if err != nil {
 		return 0, nil, err
@@ -90,7 +90,11 @@ func startGofer(root string) (int, func(), error) {
 		unix.Close(goferEnd)
 		return 0, nil, fmt.Errorf("error creating server on FD %d: %v", goferEnd, err)
 	}
-	server := fsgofer.NewLisafsServer(fsgofer.Config{})
+	server := fsgofer.NewLisafsServer(fsgofer.Config{
+		HostUDS:            conf.GetHostUDS(),
+		HostFifo:           conf.HostFifo,
+		DonateMountPointFD: conf.DirectFS,
+	})
 	c, err := server.CreateConnection(socket, root, true /* readonly */)
 	if err != nil {
 		return 0, nil, err
@@ -113,7 +117,7 @@ func createLoader(conf *config.Config, spec *specs.Spec) (*Loader, func(), error
 	if err != nil {
 		return nil, nil, err
 	}
-	sandEnd, cleanup, err := startGofer(spec.Root.Path)
+	sandEnd, cleanup, err := startGofer(spec.Root.Path, conf)
 	if err != nil {
 		return nil, nil, err
 	}
