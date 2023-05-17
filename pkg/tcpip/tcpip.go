@@ -164,7 +164,7 @@ func AddrFrom4(addr [4]byte) Address {
 		length: 4,
 	}
 	// It's guaranteed that copy will return 4.
-	copy(ret.addr[:4], addr[:])
+	copy(ret.addr[:], addr[:])
 	return ret
 }
 
@@ -173,8 +173,12 @@ func AddrFrom4Slice(addr []byte) Address {
 	if len(addr) != 4 {
 		panic(fmt.Sprintf("bad address length for address %v", addr))
 	}
-	// TODO(281863522): This is probalby an extra copy, just do the init here.
-	return AddrFrom4([4]byte(addr))
+	ret := Address{
+		length: 4,
+	}
+	// It's guaranteed that copy will return 4.
+	copy(ret.addr[:], addr)
+	return ret
 }
 
 // AddrFrom16 converts addr to an Address.
@@ -183,7 +187,7 @@ func AddrFrom16(addr [16]byte) Address {
 		length: 16,
 	}
 	// It's guaranteed that copy will return 16.
-	copy(ret.addr[:16], addr[:])
+	copy(ret.addr[:], addr[:])
 	return ret
 }
 
@@ -192,8 +196,12 @@ func AddrFrom16Slice(addr []byte) Address {
 	if len(addr) != 16 {
 		panic(fmt.Sprintf("bad address length for address %v", addr))
 	}
-	// TODO(281863522): This is probalby an extra copy, just do the init here.
-	return AddrFrom16([16]byte(addr))
+	ret := Address{
+		length: 16,
+	}
+	// It's guaranteed that copy will return 16.
+	copy(ret.addr[:], addr)
+	return ret
 }
 
 // AddrFromSlice converts addr to an Address. It returns the Address zero value
