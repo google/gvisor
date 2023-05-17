@@ -635,10 +635,7 @@ func TestIPTableWritePackets(t *testing.T) {
 			defer r.Release()
 
 			pkts := test.genPacket(r)
-			pktsLen := pkts.Len()
-			for i := 0; i < pktsLen; i++ {
-				pkt := pkts.Front()
-				pkts.Remove(pkt)
+			for _, pkt := range pkts.AsSlice() {
 				if err := r.WritePacket(stack.NetworkHeaderParams{
 					Protocol: header.UDPProtocolNumber,
 					TTL:      64,

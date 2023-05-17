@@ -256,7 +256,7 @@ func (e *serverEndpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.E
 	var err tcpip.Error
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
+	for _, pkt := range pkts.AsSlice() {
 		if err = e.writePacketLocked(pkt.EgressRoute, pkt.NetworkProtocolNumber, pkt); err != nil {
 			break
 		}
