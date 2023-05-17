@@ -700,7 +700,7 @@ func (e *endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) 
 	batch := make([]stack.PacketBufferPtr, 0, BatchSize)
 	batchFDInfo := fdInfo{fd: -1, isSocket: false}
 	sentPackets := 0
-	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
+	for _, pkt := range pkts.AsSlice() {
 		if len(batch) == 0 {
 			batchFDInfo = e.fds[pkt.Hash%uint32(len(e.fds))]
 		}

@@ -87,7 +87,7 @@ func (e *endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) 
 	e.mu.RLock()
 	d := e.dispatcher
 	e.mu.RUnlock()
-	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
+	for _, pkt := range pkts.AsSlice() {
 		// In order to properly loop back to the inbound side we must create a
 		// fresh packet that only contains the underlying payload with no headers
 		// or struct fields set.
