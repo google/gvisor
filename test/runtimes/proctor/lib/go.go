@@ -15,6 +15,7 @@
 package lib
 
 import (
+	"log"
 	"fmt"
 	"os"
 	"os/exec"
@@ -87,7 +88,9 @@ func (goRunner) TestCmds(tests []string) []*exec.Cmd {
 
 	var cmds []*exec.Cmd
 	if len(toolTests) > 0 {
-		cmd := exec.Command("go", "tool", "dist", "test", "-v", "-no-rebuild", "-run", strings.Join(toolTests, "|"))
+		args := []string{"tool", "dist", "test", "-v", "-no-rebuild", "-run", strings.Join(toolTests, "|")}
+		log.Printf("cmd: go %s", strings.Join(args, " "))
+		cmd := exec.Command("go", args...)
 		// Bump up timeout. Some go tool tests take more than 3 minutes to run.
 		// golang/go/src/cmd/dist/test.go:registerStdTest() sets default timeout to
 		// 3 minutes which can only be increased via GO_TEST_TIMEOUT_SCALE.
@@ -95,7 +98,9 @@ func (goRunner) TestCmds(tests []string) []*exec.Cmd {
 		cmds = append(cmds, cmd)
 	}
 	if len(onDiskTests) > 0 {
-		cmd := exec.Command("go", append([]string{"run", "run.go", "-v", "--"}, onDiskTests...)...)
+		args := append([]string{"run", "run.go", "-v", "--"}, onDiskTests...)
+		log.Printf("cmd: go %s", strings.Join(args, " "))
+		cmd := exec.Command("go", args...)
 		cmd.Dir = goTestDir
 		cmds = append(cmds, cmd)
 	}
