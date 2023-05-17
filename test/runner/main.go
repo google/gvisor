@@ -517,7 +517,9 @@ func runTestCaseRunsc(testBin string, tc *gtest.TestCase, args []string, t *test
 		if err != nil {
 			fatalf("cannot find fuse: %v", err)
 		}
-		spec = testutil.NewSpecWithArgs(append([]string{fuseServer, testBin}, args...)...)
+		cmdArgs := append([]string{testBin}, args...)
+		cmd := strings.Join(cmdArgs, " ")
+		spec = testutil.NewSpecWithArgs([]string{fuseServer, fmt.Sprintf("--debug=%t", *debug), fmt.Sprintf("--cmd=\"%s\"", cmd)}...)
 	} else {
 		spec = testutil.NewSpecWithArgs(append([]string{testBin}, args...)...)
 	}

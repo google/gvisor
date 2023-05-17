@@ -67,6 +67,7 @@ syscall_test(
 
 syscall_test(
     size = "large",
+    add_fusefs = True,
     add_overlay = True,
     debug = False,
     test = "//test/perf/linux:open_benchmark",
@@ -86,6 +87,7 @@ syscall_test(
 
 syscall_test(
     size = "large",
+    add_fusefs = True,
     add_overlay = True,
     debug = False,
     test = "//test/perf/linux:randread_benchmark",
@@ -93,6 +95,7 @@ syscall_test(
 
 syscall_test(
     size = "large",
+    add_fusefs = True,
     add_overlay = True,
     debug = False,
     test = "//test/perf/linux:read_benchmark",
@@ -112,6 +115,7 @@ syscall_test(
 
 syscall_test(
     size = "large",
+    add_fusefs = True,
     add_overlay = True,
     debug = False,
     test = "//test/perf/linux:seqwrite_benchmark",
@@ -130,6 +134,7 @@ syscall_test(
 
 syscall_test(
     size = "large",
+    add_fusefs = True,
     add_overlay = True,
     debug = False,
     test = "//test/perf/linux:stat_benchmark",
@@ -137,6 +142,7 @@ syscall_test(
 
 syscall_test(
     size = "large",
+    add_fusefs = True,
     add_overlay = True,
     debug = False,
     tags = ["nogotsan"],
@@ -145,6 +151,7 @@ syscall_test(
 
 syscall_test(
     size = "large",
+    add_fusefs = True,
     add_overlay = True,
     debug = False,
     test = "//test/perf/linux:write_benchmark",
