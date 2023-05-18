@@ -17,6 +17,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"runtime"
 	"strconv"
 
@@ -71,7 +72,7 @@ func setCapsAndCallSelf(args []string, caps *specs.LinuxCapabilities) error {
 	binPath := specutils.ExePath
 
 	log.Infof("Execve %q again, bye!", binPath)
-	err := unix.Exec(binPath, args, []string{})
+	err := unix.Exec(binPath, args, os.Environ())
 	return fmt.Errorf("error executing %s: %v", binPath, err)
 }
 
@@ -97,6 +98,6 @@ func callSelfAsNobody(args []string) error {
 	binPath := specutils.ExePath
 
 	log.Infof("Execve %q again, bye!", binPath)
-	err := unix.Exec(binPath, args, []string{})
+	err := unix.Exec(binPath, args, os.Environ())
 	return fmt.Errorf("error executing %s: %v", binPath, err)
 }

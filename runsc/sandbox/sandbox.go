@@ -708,6 +708,12 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	// All flags after this must be for the boot command
 	cmd.Args = append(cmd.Args, "boot", "--bundle="+args.BundleDir)
 
+	// Clear environment variables, unless --TESTONLY-unsafe-nonroot is set.
+	if !conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
+		// Setting cmd.Env = nil causes cmd to inherit the current process's env.
+		cmd.Env = []string{}
+	}
+
 	// If there is a gofer, sends all socket ends to the sandbox.
 	donations.DonateAndClose("io-fds", args.IOFiles...)
 	donations.DonateAndClose("overlay-filestore-fds", args.OverlayFilestoreFiles...)
