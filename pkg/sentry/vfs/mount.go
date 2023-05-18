@@ -275,15 +275,21 @@ func (vfs *VirtualFilesystem) ConnectMountAt(ctx context.Context, creds *auth.Cr
 	tree := vfs.preparePropagationTree(mnt, vd)
 	// Check if the new mount + all the propagation mounts puts us over the max.
 	if uint32(len(tree)+1)+vd.mount.ns.mounts > MountMax {
-		vfs.abortPropagationTree(ctx, tree)
 		// We need to unlock mountMu first because DecRef takes a lock on the
 		// filesystem mutex in some implementations, which can lead to circular
 		// locking.
+		vfs.abortPropagationTree(ctx, tree)
 		vfs.mountMu.Unlock()
 		vd.DecRef(ctx)
 		return linuxerr.ENOSPC
 	}
-	if err := vfs.connectMountAtLocked(ctx, mnt, vd); err != nil {
+	vdsToDecRef, err := vfs.connectMountAtLocked(ctx, mnt, vd)
+	defer func() {
+		for _, vd := range vdsToDecRef {
+			vd.DecRef(ctx)
+		}
+	}()
+	if err != nil {
 		vfs.abortPropagationTree(ctx, tree)
 		vfs.mountMu.Unlock()
 		return err
@@ -294,20 +300,22 @@ func (vfs *VirtualFilesystem) ConnectMountAt(ctx context.Context, creds *auth.Cr
 }
 
 // connectMountAtLocked attaches mnt at vd. This method consumes a reference on
-// vd.
+// vd and returns a list of VirtualDentry with an extra reference that must be
+// DecRef'd outside of vfs.mountMu.
 //
 // Preconditions:
 //   - mnt must be disconnected.
 //   - vfs.mountMu must be locked.
 //
 // +checklocks:vfs.mountMu
-func (vfs *VirtualFilesystem) connectMountAtLocked(ctx context.Context, mnt *Mount, vd VirtualDentry) error {
+func (vfs *VirtualFilesystem) connectMountAtLocked(ctx context.Context, mnt *Mount, vd VirtualDentry) ([]VirtualDentry, error) {
+	var vdsToDecRef []VirtualDentry
 	vd.dentry.mu.Lock()
 	for {
 		if vd.mount.umounted || vd.dentry.dead {
 			vd.dentry.mu.Unlock()
-			vd.DecRef(ctx)
-			return linuxerr.ENOENT
+			vdsToDecRef = append(vdsToDecRef, vd)
+			return vdsToDecRef, linuxerr.ENOENT
 		}
 		// vd might have been mounted over between vfs.GetDentryAt() and
 		// vfs.mountMu.Lock().
@@ -328,7 +336,7 @@ func (vfs *VirtualFilesystem) connectMountAtLocked(ctx context.Context, mnt *Mou
 		// This can't fail since we're holding vfs.mountMu.
 		nextmnt.root.IncRef()
 		vd.dentry.mu.Unlock()
-		vd.DecRef(ctx)
+		vdsToDecRef = append(vdsToDecRef, vd)
 		vd = VirtualDentry{
 			mount:  nextmnt,
 			dentry: nextmnt.root,
@@ -343,7 +351,7 @@ func (vfs *VirtualFilesystem) connectMountAtLocked(ctx context.Context, mnt *Mou
 	vfs.connectLocked(mnt, vd, mntns)
 	vfs.mounts.seq.EndWrite()
 	vd.dentry.mu.Unlock()
-	return nil
+	return vdsToDecRef, nil
 }
 
 // CloneMountAt returns a new mount with the same fs, specified root and
@@ -408,7 +416,14 @@ func (vfs *VirtualFilesystem) BindAt(ctx context.Context, creds *auth.Credential
 		targetVd.DecRef(ctx)
 		return nil, linuxerr.ENOSPC
 	}
-	if err := vfs.connectMountAtLocked(ctx, clone, targetVd); err != nil {
+
+	vdsToDecRef, err := vfs.connectMountAtLocked(ctx, clone, targetVd)
+	defer func() {
+		for _, vd := range vdsToDecRef {
+			vd.DecRef(ctx)
+		}
+	}()
+	if err != nil {
 		vfs.setPropagation(clone, Private)
 		vfs.abortPropagationTree(ctx, tree)
 		vfs.mountMu.Unlock()
