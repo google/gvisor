@@ -96,7 +96,7 @@ type MemoryFile struct {
 	// file is the backing file. The file pointer is immutable.
 	file *os.File
 
-	mu sync.Mutex
+	mu memoryFileMutex
 
 	// usage maps each page in the file to metadata for that page. Pages for
 	// which no segment exists in usage are both unallocated (not in use) and
@@ -152,7 +152,7 @@ type MemoryFile struct {
 	// only requires *either* holding mappingsMu or using atomic memory
 	// operations. This allows MemoryFile.MapInternal to avoid locking in the
 	// common case where chunk mappings already exist.
-	mappingsMu sync.Mutex
+	mappingsMu mappingsMutex
 	mappings   atomic.Value
 
 	// destroyed is set by Destroy to instruct the reclaimer goroutine to

@@ -22,7 +22,6 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
-	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // HostFileMapper caches mappings of an arbitrary host file descriptor. It is
@@ -35,13 +34,13 @@ type HostFileMapper struct {
 	// size and alignment chunkSize, and caches mappings of the file on a chunk
 	// granularity.
 
-	refsMu sync.Mutex `state:"nosave"`
+	refsMu refsMutex `state:"nosave"`
 
 	// refs maps chunk start offsets to the sum of reference counts for all
 	// pages in that chunk. refs is protected by refsMu.
 	refs map[uint64]int32
 
-	mapsMu sync.Mutex `state:"nosave"`
+	mapsMu mapsMutex `state:"nosave"`
 
 	// mappings maps chunk start offsets to mappings of those chunks,
 	// obtained by calling unix.Mmap. mappings is protected by
