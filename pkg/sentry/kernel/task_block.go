@@ -114,11 +114,7 @@ func (t *Task) BlockWithTimer(C <-chan struct{}, tchan <-chan struct{}) error {
 	return t.block(C, tchan)
 }
 
-// Block blocks t until an event is received from C or t is interrupted. It
-// returns nil if an event is received from C and linuxerr.ErrInterrupted if t
-// is interrupted.
-//
-// Preconditions: The caller must be running on the task goroutine.
+// Block implements context.Context.Block
 func (t *Task) Block(C <-chan struct{}) error {
 	return t.block(C, nil)
 }

@@ -20,7 +20,6 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
-	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -87,11 +86,10 @@ func (fd *fileDescription) Release(ctx context.Context) {
 	} else {
 		opcode = linux.FUSE_RELEASE
 	}
-	kernelTask := kernel.TaskFromContext(ctx)
 	// Ignoring errors and FUSE server replies is analogous to Linux's behavior.
-	req := conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), inode.nodeID, opcode, &in)
+	req := conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), inode.nodeID, opcode, &in)
 	// The reply will be ignored since no callback is defined in asyncCallBack().
-	conn.CallAsync(kernelTask, req)
+	conn.CallAsync(ctx, req)
 }
 
 // PRead implements vfs.FileDescriptionImpl.PRead.
@@ -149,15 +147,14 @@ func (fd *fileDescription) Sync(ctx context.Context) error {
 	if conn.noOpen {
 		return linuxerr.EINVAL
 	}
-	kernelTask := kernel.TaskFromContext(ctx)
 
 	in := linux.FUSEFsyncIn{
 		Fh:         fd.Fh,
 		FsyncFlags: fd.statusFlags(),
 	}
 	// Ignoring errors and FUSE server replies is analogous to Linux's behavior.
-	req := conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), inode.nodeID, linux.FUSE_FSYNC, &in)
+	req := conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), inode.nodeID, linux.FUSE_FSYNC, &in)
 	// The reply will be ignored since no callback is defined in asyncCallBack().
-	conn.CallAsync(kernelTask, req)
+	conn.CallAsync(ctx, req)
 	return nil
 }

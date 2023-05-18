@@ -21,8 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
-	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
@@ -35,12 +33,6 @@ import (
 // at this moment.
 func (fs *filesystem) ReadInPages(ctx context.Context, fd *regularFileFD, off uint64, size uint32) ([][]byte, uint32, error) {
 	attributeVersion := fs.conn.attributeVersion.Load()
-
-	t := kernel.TaskFromContext(ctx)
-	if t == nil {
-		log.Warningf("fusefs.Read: couldn't get kernel task from context")
-		return nil, 0, linuxerr.EINVAL
-	}
 
 	// Round up to a multiple of page size.
 	readSize, _ := hostarch.PageRoundUp(uint64(size))
@@ -80,9 +72,8 @@ func (fs *filesystem) ReadInPages(ctx context.Context, fd *regularFileFD, off ui
 		in.Size = pagesCanRead << hostarch.PageShift
 
 		// TODO(gvisor.dev/issue/3247): support async read.
-
-		req := fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(t.ThreadID()), fd.inode().nodeID, linux.FUSE_READ, &in)
-		res, err := fs.conn.Call(t, req)
+		req := fs.conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), fd.inode().nodeID, linux.FUSE_READ, &in)
+		res, err := fs.conn.Call(ctx, req)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -148,12 +139,6 @@ func (fs *filesystem) ReadCallback(ctx context.Context, i *inode, off uint64, si
 // Write sends FUSE_WRITE requests and return the bytes written according to the
 // response.
 func (fs *filesystem) Write(ctx context.Context, fd *regularFileFD, offset int64, src usermem.IOSequence) (int64, int64, error) {
-	t := kernel.TaskFromContext(ctx)
-	if t == nil {
-		log.Warningf("fusefs.Write: couldn't get kernel task from context")
-		return 0, offset, linuxerr.EINVAL
-	}
-
 	// One request cannot exceed either maxWrite or maxPages.
 	maxWrite := uint32(fs.conn.maxPages) << hostarch.PageShift
 	if maxWrite > fs.conn.maxWrite {
@@ -204,10 +189,9 @@ func (fs *filesystem) Write(ctx context.Context, fd *regularFileFD, offset int64
 		in.Header.Size = uint32(cp)
 		in.Payload = data
 
-		req := fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(t.ThreadID()), fd.inode().nodeID, linux.FUSE_WRITE, &in)
-
+		req := fs.conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), fd.inode().nodeID, linux.FUSE_WRITE, &in)
 		// TODO(gvisor.dev/issue/3247): support async write.
-		res, err := fs.conn.Call(t, req)
+		res, err := fs.conn.Call(ctx, req)
 		if err != nil {
 			return n, offset, err
 		}

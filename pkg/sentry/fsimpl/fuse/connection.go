@@ -22,7 +22,6 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -176,7 +175,7 @@ type connection struct {
 	// Negotiated and only set in INIT.
 	bigWrites bool
 
-	// dontMask if filestestem does not apply umask to creation modes.
+	// dontMask if filesystem does not apply umask to creation modes.
 	// Negotiated in INIT.
 	dontMask bool
 
@@ -227,9 +226,9 @@ func newFUSEConnection(_ context.Context, fuseFD *DeviceFD, opts *filesystemOpti
 
 // CallAsync makes an async (aka background) request.
 // It's a simple wrapper around Call().
-func (conn *connection) CallAsync(t *kernel.Task, r *Request) error {
+func (conn *connection) CallAsync(ctx context.Context, r *Request) error {
 	r.async = true
-	_, err := conn.Call(t, r)
+	_, err := conn.Call(ctx, r)
 	return err
 }
 
@@ -251,10 +250,11 @@ func (conn *connection) CallAsync(t *kernel.Task, r *Request) error {
 //
 // The forget request does not have a reply,
 // as documented in include/uapi/linux/fuse.h:FUSE_FORGET.
-func (conn *connection) Call(t *kernel.Task, r *Request) (*Response, error) {
+func (conn *connection) Call(ctx context.Context, r *Request) (*Response, error) {
+	b := blockerFromContext(ctx)
 	// Block requests sent before connection is initialized.
 	if !conn.Initialized() && r.hdr.Opcode != linux.FUSE_INIT {
-		if err := t.Block(conn.initializedChan); err != nil {
+		if err := b.Block(conn.initializedChan); err != nil {
 			return nil, err
 		}
 	}
@@ -275,19 +275,19 @@ func (conn *connection) Call(t *kernel.Task, r *Request) (*Response, error) {
 		return nil, linuxerr.ECONNREFUSED
 	}
 
-	fut, err := conn.callFuture(t, r)
+	fut, err := conn.callFuture(b, r)
 	conn.fd.mu.Unlock()
 	if err != nil {
 		return nil, err
 	}
 
-	return fut.resolve(t)
+	return fut.resolve(b)
 }
 
 // callFuture makes a request to the server and returns a future response.
 // Call resolve() when the response needs to be fulfilled.
 // +checklocks:conn.fd.mu
-func (conn *connection) callFuture(t *kernel.Task, r *Request) (*futureResponse, error) {
+func (conn *connection) callFuture(b context.Blocker, r *Request) (*futureResponse, error) {
 	// Is the queue full?
 	//
 	// We must busy wait here until the request can be queued. We don't
@@ -303,19 +303,19 @@ func (conn *connection) callFuture(t *kernel.Task, r *Request) (*futureResponse,
 		log.Infof("Blocking request %v from being queued. Too many active requests: %v",
 			r.id, conn.fd.numActiveRequests)
 		conn.fd.mu.Unlock()
-		err := t.Block(conn.fd.fullQueueCh)
+		err := b.Block(conn.fd.fullQueueCh)
 		conn.fd.mu.Lock()
 		if err != nil {
 			return nil, err
 		}
 	}
 
-	return conn.callFutureLocked(t, r)
+	return conn.callFutureLocked(r)
 }
 
 // callFutureLocked makes a request to the server and returns a future response.
 // +checklocks:conn.fd.mu
-func (conn *connection) callFutureLocked(t *kernel.Task, r *Request) (*futureResponse, error) {
+func (conn *connection) callFutureLocked(r *Request) (*futureResponse, error) {
 	// Check connected again holding conn.mu.
 	conn.mu.Lock()
 	if !conn.connected {
