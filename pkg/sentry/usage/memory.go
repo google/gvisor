@@ -22,7 +22,6 @@ import (
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/memutil"
-	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // MemoryKind represents a type of memory used by the application.
@@ -118,7 +117,7 @@ type RTMemoryStats struct {
 
 // MemoryLocked is Memory with access methods.
 type MemoryLocked struct {
-	mu sync.RWMutex
+	mu memoryRWMutex
 	// memoryStats records the memory stats.
 	memoryStats
 	// RTMemoryStats records the memory stats that need to be exposed through

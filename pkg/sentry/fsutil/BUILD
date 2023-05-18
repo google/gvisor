@@ -1,9 +1,24 @@
 load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
+load("//pkg/sync/locking:locking.bzl", "declare_mutex")
 
 package(
     default_applicable_licenses = ["//:license"],
     licenses = ["notice"],
+)
+
+declare_mutex(
+    name = "refs_mutex",
+    out = "refs_mutex.go",
+    package = "fsutil",
+    prefix = "refs",
+)
+
+declare_mutex(
+    name = "maps_mutex",
+    out = "maps_mutex.go",
+    package = "fsutil",
+    prefix = "maps",
 )
 
 go_template_instance(
@@ -70,6 +85,8 @@ go_library(
         "host_file_mapper.go",
         "host_file_mapper_state.go",
         "host_file_mapper_unsafe.go",
+        "maps_mutex.go",
+        "refs_mutex.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
@@ -88,6 +105,7 @@ go_library(
         "//pkg/sentry/usage",
         "//pkg/state",
         "//pkg/sync",
+        "//pkg/sync/locking",
         "//pkg/usermem",
         "//pkg/waiter",
         "@org_golang_x_sys//unix:go_default_library",

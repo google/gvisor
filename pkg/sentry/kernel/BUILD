@@ -37,6 +37,13 @@ declare_mutex(
 )
 
 declare_mutex(
+    name = "task_work_mutex",
+    out = "task_work_mutex.go",
+    package = "kernel",
+    prefix = "taskWork",
+)
+
+declare_mutex(
     name = "cgroup_mutex",
     out = "cgroup_mutex.go",
     package = "kernel",
@@ -261,6 +268,7 @@ go_library(
         "task_syscall.go",
         "task_usermem.go",
         "task_work.go",
+        "task_work_mutex.go",
         "taskset_mutex.go",
         "thread_group.go",
         "thread_group_timer_mutex.go",
