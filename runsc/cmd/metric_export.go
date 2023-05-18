@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
 	"gvisor.dev/gvisor/runsc/flag"
+	"gvisor.dev/gvisor/runsc/metricserver"
 )
 
 // MetricExport implements subcommands.Command for the "metric-export" command.
@@ -71,7 +72,7 @@ func (m *MetricExport) Execute(ctx context.Context, f *flag.FlagSet, args ...any
 		util.Fatalf("loading container: %v", err)
 	}
 
-	prometheusLabels, err := sandboxPrometheusLabels(cont)
+	prometheusLabels, err := metricserver.SandboxPrometheusLabels(cont)
 	if err != nil {
 		util.Fatalf("Cannot compute Prometheus labels of sandbox: %v", err)
 	}
