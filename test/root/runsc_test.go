@@ -16,6 +16,7 @@ package root
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -28,6 +29,7 @@ import (
 
 	"github.com/cenkalti/backoff"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
@@ -148,4 +150,29 @@ func sandboxPid(pid int) (int, error) {
 		// Not found, continue the search.
 	}
 	return 0, nil
+}
+
+// Tests that the sandbox process is running with no environment variables. We
+// don't want to leak any env vars from the caller to the sandbox process.
+func TestSandboxProcessEnv(t *testing.T) {
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	runOpts := dockerutil.RunOpts{Image: "basic/alpine"}
+	if err := d.Spawn(ctx, runOpts, "sleep", "infinity"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+
+	pid, err := d.SandboxPid(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(fmt.Sprintf("/proc/%d/environ", pid))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 0 {
+		t.Errorf("sandbox process's environment is not empty: got %s", string(got))
+	}
 }
