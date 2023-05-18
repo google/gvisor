@@ -210,11 +210,6 @@ type fastPathDispatcher struct {
 	// fastPathDisabledTS is the time stamp when the stub fast path was
 	// disabled. It is zero if the fast path is enabled.
 	fastPathDisabledTS atomic.Uint64
-
-	subprocessListMu sync.Mutex
-	// subprocessList contains subprocesses with at least one awake context.
-	// +checklocks:subprocessListMu
-	subprocessList subprocessList
 }
 
 var dispatcher fastPathDispatcher
@@ -256,27 +251,7 @@ func (q *fastPathDispatcher) stubFastPathEnabled() bool {
 // disableStubFastPath disables the fast path over all subprocesses with active
 // contexts.
 func (q *fastPathDispatcher) disableStubFastPath() {
-	q.subprocessListMu.Lock()
-	defer q.subprocessListMu.Unlock()
-
-	for s := q.subprocessList.Front(); s != nil; s = s.Next() {
-		s.contextQueue.disableFastPath()
-	}
 	q.fastPathDisabledTS.Store(uint64(cputicks()))
-}
-
-func (q *fastPathDispatcher) activateSubprocess(s *subprocess) {
-	q.subprocessListMu.Lock()
-	defer q.subprocessListMu.Unlock()
-
-	q.subprocessList.PushBack(s)
-}
-
-func (q *fastPathDispatcher) deactivateSubprocess(s *subprocess) {
-	q.subprocessListMu.Lock()
-	defer q.subprocessListMu.Unlock()
-
-	q.subprocessList.Remove(s)
 }
 
 // deep_sleep_timeout is the timeout after which we stops polling and fall asleep.
