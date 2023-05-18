@@ -23,9 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fsutil"
-	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -62,11 +60,6 @@ type regularFileFD struct {
 
 // Seek implements vfs.FileDescriptionImpl.Allocate.
 func (fd *regularFileFD) Allocate(ctx context.Context, mode, offset, length uint64) error {
-	task := kernel.TaskFromContext(ctx)
-	if task == nil {
-		log.Warningf("fusefs.regularFileFD.Allocate: couldn't get kernel task from context")
-		return linuxerr.EINVAL
-	}
 	if mode & ^uint64(linux.FALLOC_FL_KEEP_SIZE|linux.FALLOC_FL_PUNCH_HOLE|linux.FALLOC_FL_ZERO_RANGE) != 0 {
 		return linuxerr.EOPNOTSUPP
 	}
@@ -77,8 +70,8 @@ func (fd *regularFileFD) Allocate(ctx context.Context, mode, offset, length uint
 		Mode:   uint32(mode),
 	}
 	i := fd.inode()
-	req := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(task.ThreadID()), i.nodeID, linux.FUSE_FALLOCATE, &in)
-	res, err := i.fs.conn.Call(task, req)
+	req := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), i.nodeID, linux.FUSE_FALLOCATE, &in)
+	res, err := i.fs.conn.Call(ctx, req)
 	if err != nil {
 		return err
 	}

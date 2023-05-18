@@ -24,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
@@ -103,6 +102,31 @@ type inode struct {
 
 	// +checklocks:attrMu
 	blockSize atomicbitops.Uint32 // 0 if unknown.
+}
+
+func blockerFromContext(ctx context.Context) context.Blocker {
+	kernelTask := kernel.TaskFromContext(ctx)
+	if kernelTask == nil {
+		return ctx
+	}
+	return kernelTask
+}
+
+func pidFromContext(ctx context.Context) uint32 {
+	kernelTask := kernel.TaskFromContext(ctx)
+	if kernelTask == nil {
+		return 0
+	}
+	return uint32(kernelTask.ThreadID())
+}
+
+func umaskFromContext(ctx context.Context) uint32 {
+	kernelTask := kernel.TaskFromContext(ctx)
+	umask := uint32(0)
+	if kernelTask != nil {
+		umask = uint32(kernelTask.FSContext().Umask())
+	}
+	return umask
 }
 
 func (i *inode) Mode() linux.FileMode {
@@ -212,14 +236,9 @@ func (i *inode) CheckPermissions(ctx context.Context, creds *auth.Credentials, a
 		}
 		return err
 	} else if ats.MayRead() || ats.MayWrite() || ats.MayExec() {
-		kernelTask := kernel.TaskFromContext(ctx)
-		if kernelTask == nil {
-			log.Warningf("fusefs.Inode.CheckPermissions: couldn't get kernel task from context")
-			return linuxerr.EINVAL
-		}
 		in := linux.FUSEAccessIn{Mask: uint32(ats)}
-		req := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), i.nodeID, linux.FUSE_ACCESS, &in)
-		res, err := i.fs.conn.Call(kernelTask, req)
+		req := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), i.nodeID, linux.FUSE_ACCESS, &in)
+		res, err := i.fs.conn.Call(ctx, req)
 		if err != nil {
 			return err
 		}
@@ -269,7 +288,7 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentr
 	}
 
 	fd.LockFD.Init(&i.locks)
-	// FOPEN_KEEP_CACHE is the defualt flag for noOpen.
+	// FOPEN_KEEP_CACHE is the default flag for noOpen.
 	fd.OpenFlag = linux.FOPEN_KEEP_CACHE
 
 	if i.fh.new {
@@ -279,20 +298,14 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentr
 		// Only send an open request when the FUSE server supports open or is
 		// opening a directory.
 	} else if !i.fs.conn.noOpen || i.filemode().IsDir() {
-		kernelTask := kernel.TaskFromContext(ctx)
-		if kernelTask == nil {
-			log.Warningf("fusefs.Inode.Open: couldn't get kernel task from context")
-			return nil, linuxerr.EINVAL
-		}
-
 		in := linux.FUSEOpenIn{Flags: opts.Flags & ^uint32(linux.O_CREAT|linux.O_EXCL|linux.O_NOCTTY)}
 		// Truncating with SETATTR instead of O_TRUNC, so clear the flag.
 		if !i.fs.conn.atomicOTrunc {
 			in.Flags &= ^uint32(linux.O_TRUNC)
 		}
 
-		req := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), i.nodeID, opcode, &in)
-		res, err := i.fs.conn.Call(kernelTask, req)
+		req := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), i.nodeID, opcode, &in)
+		res, err := i.fs.conn.Call(ctx, req)
 		if err != nil {
 			return nil, err
 		}
@@ -370,16 +383,11 @@ func (*inode) IterDirents(ctx context.Context, mnt *vfs.Mount, callback vfs.Iter
 func (i *inode) NewFile(ctx context.Context, name string, opts vfs.OpenOptions) (kernfs.Inode, error) {
 	opts.Flags &= linux.O_ACCMODE | linux.O_CREAT | linux.O_EXCL | linux.O_TRUNC |
 		linux.O_DIRECTORY | linux.O_NOFOLLOW | linux.O_NONBLOCK | linux.O_NOCTTY
-	kernelTask := kernel.TaskFromContext(ctx)
-	if kernelTask == nil {
-		log.Warningf("fusefs.Inode.NewFile: couldn't get kernel task from context", i.nodeID)
-		return nil, linuxerr.EINVAL
-	}
 	in := linux.FUSECreateIn{
 		CreateMeta: linux.FUSECreateMeta{
 			Flags: opts.Flags,
 			Mode:  uint32(opts.Mode) | linux.S_IFREG,
-			Umask: uint32(kernelTask.FSContext().Umask()),
+			Umask: umaskFromContext(ctx),
 		},
 		Name: linux.CString(name),
 	}
@@ -392,7 +400,7 @@ func (i *inode) NewNode(ctx context.Context, name string, opts vfs.MknodOptions)
 		MknodMeta: linux.FUSEMknodMeta{
 			Mode:  uint32(opts.Mode),
 			Rdev:  linux.MakeDeviceID(uint16(opts.DevMajor), opts.DevMinor),
-			Umask: uint32(kernel.TaskFromContext(ctx).FSContext().Umask()),
+			Umask: umaskFromContext(ctx),
 		},
 		Name: linux.CString(name),
 	}
@@ -420,14 +428,9 @@ func (i *inode) NewLink(ctx context.Context, name string, target kernfs.Inode) (
 
 // Unlink implements kernfs.Inode.Unlink.
 func (i *inode) Unlink(ctx context.Context, name string, child kernfs.Inode) error {
-	kernelTask := kernel.TaskFromContext(ctx)
-	if kernelTask == nil {
-		log.Warningf("fusefs.Inode.newEntry: couldn't get kernel task from context", i.nodeID)
-		return linuxerr.EINVAL
-	}
 	in := linux.FUSEUnlinkIn{Name: linux.CString(name)}
-	req := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), i.nodeID, linux.FUSE_UNLINK, &in)
-	res, err := i.fs.conn.Call(kernelTask, req)
+	req := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), i.nodeID, linux.FUSE_UNLINK, &in)
+	res, err := i.fs.conn.Call(ctx, req)
 	if err != nil {
 		return err
 	}
@@ -440,7 +443,7 @@ func (i *inode) NewDir(ctx context.Context, name string, opts vfs.MkdirOptions) 
 	in := linux.FUSEMkdirIn{
 		MkdirMeta: linux.FUSEMkdirMeta{
 			Mode:  uint32(opts.Mode),
-			Umask: uint32(kernel.TaskFromContext(ctx).FSContext().Umask()),
+			Umask: umaskFromContext(ctx),
 		},
 		Name: linux.CString(name),
 	}
@@ -449,12 +452,9 @@ func (i *inode) NewDir(ctx context.Context, name string, opts vfs.MkdirOptions) 
 
 // RmDir implements kernfs.Inode.RmDir.
 func (i *inode) RmDir(ctx context.Context, name string, child kernfs.Inode) error {
-	fusefs := i.fs
-	task, creds := kernel.TaskFromContext(ctx), auth.CredentialsFromContext(ctx)
-
 	in := linux.FUSERmDirIn{Name: linux.CString(name)}
-	req := fusefs.conn.NewRequest(creds, uint32(task.ThreadID()), i.nodeID, linux.FUSE_RMDIR, &in)
-	res, err := i.fs.conn.Call(task, req)
+	req := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), i.nodeID, linux.FUSE_RMDIR, &in)
+	res, err := i.fs.conn.Call(ctx, req)
 	if err != nil {
 		return err
 	}
@@ -463,20 +463,14 @@ func (i *inode) RmDir(ctx context.Context, name string, child kernfs.Inode) erro
 
 // Rename implements kernfs.Inode.Rename.
 func (i *inode) Rename(ctx context.Context, oldname, newname string, child, dstDir kernfs.Inode) error {
-	kernelTask := kernel.TaskFromContext(ctx)
-	if kernelTask == nil {
-		log.Warningf("fusefs.Inode.newEntry: couldn't get kernel task from context", i.nodeID)
-		return linuxerr.EINVAL
-	}
-
 	dstDirInode := dstDir.(*inode)
 	in := linux.FUSERenameIn{
 		Newdir:  primitive.Uint64(dstDirInode.nodeID),
 		Oldname: linux.CString(oldname),
 		Newname: linux.CString(newname),
 	}
-	req := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), i.nodeID, linux.FUSE_RENAME, &in)
-	res, err := i.fs.conn.Call(kernelTask, req)
+	req := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), i.nodeID, linux.FUSE_RENAME, &in)
+	res, err := i.fs.conn.Call(ctx, req)
 	if err != nil {
 		return err
 	}
@@ -487,13 +481,8 @@ func (i *inode) Rename(ctx context.Context, oldname, newname string, child, dstD
 // entry according to response. Shared by FUSE_MKNOD, FUSE_MKDIR, FUSE_SYMLINK,
 // FUSE_LINK and FUSE_LOOKUP.
 func (i *inode) newEntry(ctx context.Context, name string, fileType linux.FileMode, opcode linux.FUSEOpcode, payload marshal.Marshallable) (kernfs.Inode, error) {
-	kernelTask := kernel.TaskFromContext(ctx)
-	if kernelTask == nil {
-		log.Warningf("fusefs.Inode.newEntry: couldn't get kernel task from context", i.nodeID)
-		return nil, linuxerr.EINVAL
-	}
-	req := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), i.nodeID, opcode, payload)
-	res, err := i.fs.conn.Call(kernelTask, req)
+	req := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), i.nodeID, opcode, payload)
+	res, err := i.fs.conn.Call(ctx, req)
 	if err != nil {
 		return nil, err
 	}
@@ -542,13 +531,8 @@ func (i *inode) Readlink(ctx context.Context, mnt *vfs.Mount) (string, error) {
 		return "", linuxerr.EINVAL
 	}
 	if len(i.link) == 0 {
-		kernelTask := kernel.TaskFromContext(ctx)
-		if kernelTask == nil {
-			log.Warningf("fusefs.Inode.Readlink: couldn't get kernel task from context")
-			return "", linuxerr.EINVAL
-		}
-		req := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(kernelTask.ThreadID()), i.nodeID, linux.FUSE_READLINK, &linux.FUSEEmptyIn{})
-		res, err := i.fs.conn.Call(kernelTask, req)
+		req := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), i.nodeID, linux.FUSE_READLINK, &linux.FUSEEmptyIn{})
+		res, err := i.fs.conn.Call(ctx, req)
 		if err != nil {
 			return "", err
 		}
@@ -649,21 +633,14 @@ func (i *inode) getAttr(ctx context.Context, fs *vfs.Filesystem, opts vfs.StatOp
 	// Currently we always send a request,
 	// and we always set the metadata with the new result,
 	// unless attributeVersion has changed.
-
-	task := kernel.TaskFromContext(ctx)
-	if task == nil {
-		log.Warningf("couldn't get kernel task from context")
-		return linux.FUSEAttr{}, linuxerr.EINVAL
-	}
-
 	creds := auth.CredentialsFromContext(ctx)
 
 	in := linux.FUSEGetAttrIn{
 		GetAttrFlags: flags,
 		Fh:           fh,
 	}
-	req := i.fs.conn.NewRequest(creds, uint32(task.ThreadID()), i.nodeID, linux.FUSE_GETATTR, &in)
-	res, err := i.fs.conn.Call(task, req)
+	req := i.fs.conn.NewRequest(creds, pidFromContext(ctx), i.nodeID, linux.FUSE_GETATTR, &in)
+	res, err := i.fs.conn.Call(ctx, req)
 	if err != nil {
 		return linux.FUSEAttr{}, err
 	}
@@ -719,16 +696,10 @@ func (i *inode) DecRef(ctx context.Context) {
 
 // StatFS implements kernfs.Inode.StatFS.
 func (i *inode) StatFS(ctx context.Context, fs *vfs.Filesystem) (linux.Statfs, error) {
-	task := kernel.TaskFromContext(ctx)
-	if task == nil {
-		log.Warningf("couldn't get kernel task from context")
-		return linux.Statfs{}, linuxerr.EINVAL
-	}
-
-	req := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), uint32(task.ThreadID()), i.nodeID,
+	req := i.fs.conn.NewRequest(auth.CredentialsFromContext(ctx), pidFromContext(ctx), i.nodeID,
 		linux.FUSE_STATFS, &linux.FUSEEmptyIn{},
 	)
-	res, err := i.fs.conn.Call(task, req)
+	res, err := i.fs.conn.Call(ctx, req)
 	if err != nil {
 		return linux.Statfs{}, err
 	}
@@ -795,12 +766,6 @@ type fhOptions struct {
 
 // +checklocks:i.attrMu
 func (i *inode) setAttr(ctx context.Context, fs *vfs.Filesystem, creds *auth.Credentials, opts vfs.SetStatOptions, fhOpts fhOptions) error {
-	task := kernel.TaskFromContext(ctx)
-	if task == nil {
-		log.Warningf("couldn't get kernel task from context")
-		return linuxerr.EINVAL
-	}
-
 	// We should retain the original file type when assigning a new mode.
 	fattrMask := fattrMaskFromStats(opts.Stat.Mask)
 	if fhOpts.useFh {
@@ -826,8 +791,8 @@ func (i *inode) setAttr(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 		UID:       opts.Stat.UID,
 		GID:       opts.Stat.GID,
 	}
-	req := i.fs.conn.NewRequest(creds, uint32(task.ThreadID()), i.nodeID, linux.FUSE_SETATTR, &in)
-	res, err := i.fs.conn.Call(task, req)
+	req := i.fs.conn.NewRequest(creds, pidFromContext(ctx), i.nodeID, linux.FUSE_SETATTR, &in)
+	res, err := i.fs.conn.Call(ctx, req)
 	if err != nil {
 		return err
 	}

@@ -21,7 +21,6 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
-	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 )
 
@@ -33,9 +32,7 @@ func TestConnectionInitBlock(t *testing.T) {
 	s := setup(t)
 	defer s.Destroy()
 
-	k := kernel.KernelFromContext(s.Ctx)
-
-	conn, _, err := newTestConnection(s, k, maxActiveRequestsDefault)
+	conn, _, err := newTestConnection(s, maxActiveRequestsDefault)
 	if err != nil {
 		t.Fatalf("newTestConnection: %v", err)
 	}
@@ -59,13 +56,11 @@ func TestConnectionAbort(t *testing.T) {
 	s := setup(t)
 	defer s.Destroy()
 
-	k := kernel.KernelFromContext(s.Ctx)
 	creds := auth.CredentialsFromContext(s.Ctx)
-	task := kernel.TaskFromContext(s.Ctx)
 
 	const numRequests uint64 = 256
 
-	conn, _, err := newTestConnection(s, k, numRequests)
+	conn, _, err := newTestConnection(s, numRequests)
 	if err != nil {
 		t.Fatalf("newTestConnection: %v", err)
 	}
@@ -75,7 +70,7 @@ func TestConnectionAbort(t *testing.T) {
 	for i := 0; i < int(numRequests); i++ {
 		req := conn.NewRequest(creds, uint32(i), uint64(i), 0, &testObj)
 		conn.fd.mu.Lock()
-		fut, err := conn.callFutureLocked(task, req)
+		fut, err := conn.callFutureLocked(req)
 		conn.fd.mu.Unlock()
 		if err != nil {
 			t.Fatalf("callFutureLocked failed: %v", err)
@@ -104,7 +99,7 @@ func TestConnectionAbort(t *testing.T) {
 
 	// After abort, Call() should return directly with ENOTCONN.
 	req := conn.NewRequest(creds, 0, 0, 0, &testObj)
-	_, err = conn.Call(task, req)
+	_, err = conn.Call(s.Ctx, req)
 	if !linuxerr.Equals(linuxerr.ENOTCONN, err) {
 		t.Fatalf("Incorrect error code received for Call() after connection aborted")
 	}
