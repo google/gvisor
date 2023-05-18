@@ -23,7 +23,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
-	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/refs"
@@ -274,12 +273,9 @@ func (vfs *VirtualFilesystem) ConnectMountAt(ctx context.Context, creds *auth.Cr
 	}
 	vfs.mountMu.Lock()
 	tree := vfs.preparePropagationTree(mnt, vd)
-	cleanup := cleanup.Make(func() {
-		vfs.abortPropagationTree(ctx, tree) // +checklocksforce
-	})
-	defer cleanup.Clean()
 	// Check if the new mount + all the propagation mounts puts us over the max.
 	if uint32(len(tree)+1)+vd.mount.ns.mounts > MountMax {
+		vfs.abortPropagationTree(ctx, tree)
 		// We need to unlock mountMu first because DecRef takes a lock on the
 		// filesystem mutex in some implementations, which can lead to circular
 		// locking.
@@ -288,11 +284,12 @@ func (vfs *VirtualFilesystem) ConnectMountAt(ctx context.Context, creds *auth.Cr
 		return linuxerr.ENOSPC
 	}
 	if err := vfs.connectMountAtLocked(ctx, mnt, vd); err != nil {
+		vfs.abortPropagationTree(ctx, tree)
+		vfs.mountMu.Unlock()
 		return err
 	}
 	vfs.commitPropagationTree(ctx, tree)
 	vfs.mountMu.Unlock()
-	cleanup.Release()
 	return nil
 }
 
@@ -404,24 +401,21 @@ func (vfs *VirtualFilesystem) BindAt(ctx context.Context, creds *auth.Credential
 			vfs.mergePeerGroup(sourceVd.mount, clone)
 		}
 	}
-	cleanup := cleanup.Make(func() {
-		// Checklocks doesn't work with anon functions.
-		vfs.setPropagation(clone, Private)  // +checklocksforce
-		vfs.abortPropagationTree(ctx, tree) // +checklocksforce
-	})
-	defer cleanup.Clean()
 	if uint32(1+len(tree))+targetVd.mount.ns.mounts > MountMax {
+		vfs.setPropagation(clone, Private)
+		vfs.abortPropagationTree(ctx, tree)
 		vfs.mountMu.Unlock()
 		targetVd.DecRef(ctx)
 		return nil, linuxerr.ENOSPC
 	}
 	if err := vfs.connectMountAtLocked(ctx, clone, targetVd); err != nil {
+		vfs.setPropagation(clone, Private)
+		vfs.abortPropagationTree(ctx, tree)
 		vfs.mountMu.Unlock()
 		return nil, err
 	}
 	vfs.commitPropagationTree(ctx, tree)
 	vfs.mountMu.Unlock()
-	cleanup.Release()
 	return clone, nil
 }
 
