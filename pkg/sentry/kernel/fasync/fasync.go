@@ -21,7 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
@@ -67,12 +66,12 @@ type FileAsync struct {
 	// through the registration action itself.
 	//
 	// Lock ordering: regMu, mu.
-	regMu sync.Mutex `state:"nosave"`
+	regMu regMutex `state:"nosave"`
 
 	// mu protects all following fields.
 	//
 	// Lock ordering: e.mu, mu.
-	mu         sync.Mutex `state:"nosave"`
+	mu         fileMutex `state:"nosave"`
 	requester  *auth.Credentials
 	registered bool
 	// signal is the signal to deliver upon I/O being available.
