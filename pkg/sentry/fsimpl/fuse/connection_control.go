@@ -88,13 +88,13 @@ func (conn *connection) InitSend(creds *auth.Credentials, pid uint32) error {
 
 	req := conn.NewRequest(creds, pid, 0, linux.FUSE_INIT, &in)
 	// Since there is no task to block on and FUSE_INIT is the request
-	// to unblock other requests, use nil.
-	return conn.CallAsync(nil, req)
+	// to unblock other requests, use context.Background().
+	return conn.CallAsync(context.Background(), req)
 }
 
 // InitRecv receives a FUSE_INIT reply and process it.
 //
-// Preconditions: conn.asyncMu must not be held if minor verion is newer than 13.
+// Preconditions: conn.asyncMu must not be held if minor version is newer than 13.
 func (conn *connection) InitRecv(res *Response, hasSysAdminCap bool) error {
 	if err := res.Error(); err != nil {
 		return err
@@ -115,7 +115,7 @@ func (conn *connection) InitRecv(res *Response, hasSysAdminCap bool) error {
 // It tries to acquire the conn.asyncMu lock if minor version is newer than 13.
 func (conn *connection) initProcessReply(out *linux.FUSEInitOut, hasSysAdminCap bool) error {
 	conn.mu.Lock()
-	// No matter error or not, always set initialzied.
+	// No matter error or not, always set initialized.
 	// to unblock the blocked requests.
 	defer func() {
 		conn.SetInitialized()

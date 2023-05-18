@@ -27,6 +27,8 @@ import (
 	"sync"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/abi/linux/errno"
+	"gvisor.dev/gvisor/pkg/errors"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -48,6 +50,11 @@ type Blocker interface {
 	// The return value should indicate whether the wake-up occurred as a
 	// result of the requested event (versus an external interrupt).
 	BlockOn(waiter.Waitable, waiter.EventMask) bool
+
+	// Block blocks until an event is received from C, or some external
+	// interrupt. It returns nil if an event is received from C and an err if t
+	// is interrupted.
+	Block(C <-chan struct{}) error
 
 	// BlockWithTimeoutOn blocks until either the conditions of Block are
 	// satisfied, or the timeout is hit. Note that deadlines are not supported
@@ -86,6 +93,19 @@ func (nt *NoTask) Interrupt() {
 // Interrupted implements Blocker.Interrupted.
 func (nt *NoTask) Interrupted() bool {
 	return nt.cancel != nil && len(nt.cancel) > 0
+}
+
+// Block implements Blocker.Block.
+func (nt *NoTask) Block(C <-chan struct{}) error {
+	if nt.cancel == nil {
+		nt.cancel = make(chan struct{}, 1)
+	}
+	select {
+	case <-nt.cancel:
+		return errors.New(errno.EINTR, "interrupted system call") // Interrupted.
+	case <-C:
+		return nil
+	}
 }
 
 // BlockOn implements Blocker.BlockOn.

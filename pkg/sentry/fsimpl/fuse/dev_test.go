@@ -90,7 +90,7 @@ func TestFUSECommunication(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(testCase.Name, func(t *testing.T) {
-			conn, fd, err := newTestConnection(s, k, testCase.MaxActiveRequests)
+			conn, fd, err := newTestConnection(s, testCase.MaxActiveRequests)
 			if err != nil {
 				t.Fatalf("newTestConnection: %v", err)
 			}
@@ -139,8 +139,7 @@ func TestFUSECommunication(t *testing.T) {
 func TestReuseFd(t *testing.T) {
 	s := setup(t)
 	defer s.Destroy()
-	k := kernel.KernelFromContext(s.Ctx)
-	_, fd, err := newTestConnection(s, k, maxActiveRequestsDefault)
+	_, fd, err := newTestConnection(s, maxActiveRequestsDefault)
 	if err != nil {
 		t.Fatalf("newTestConnection: %v", err)
 	}
@@ -174,7 +173,7 @@ func CallTest(conn *connection, t *kernel.Task, r *Request, i uint32) (*Response
 		conn.fd.mu.Lock()
 	}
 
-	fut, err := conn.callFutureLocked(t, r) // No task given.
+	fut, err := conn.callFutureLocked(r) // No task given.
 	conn.fd.mu.Unlock()
 
 	if err != nil {

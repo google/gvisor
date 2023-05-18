@@ -20,7 +20,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/testutil"
-	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
@@ -49,7 +48,7 @@ func setup(t *testing.T) *testutil.System {
 
 // newTestConnection creates a fuse connection that the sentry can communicate with
 // and the FD for the server to communicate with.
-func newTestConnection(system *testutil.System, k *kernel.Kernel, maxActiveRequests uint64) (*connection, *vfs.FileDescription, error) {
+func newTestConnection(system *testutil.System, maxActiveRequests uint64) (*connection, *vfs.FileDescription, error) {
 	fuseDev := &DeviceFD{}
 
 	vd := system.VFS.NewAnonVirtualDentry("fuse")

@@ -17,11 +17,11 @@ package fuse
 import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal"
-	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 )
 
@@ -156,13 +156,13 @@ func newFutureResponse(req *Request) *futureResponse {
 
 // resolve blocks the task until the server responds to its corresponding request,
 // then returns a resolved response.
-func (f *futureResponse) resolve(t *kernel.Task) (*Response, error) {
+func (f *futureResponse) resolve(b context.Blocker) (*Response, error) {
 	// Return directly for async requests.
 	if f.async {
 		return nil, nil
 	}
 
-	if err := t.Block(f.ch); err != nil {
+	if err := b.Block(f.ch); err != nil {
 		return nil, err
 	}
 
