@@ -20,60 +20,12 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/sentry/platform/interrupt"
 )
 
-const maxFutexSleepSeconds = 60
-
-// SleepOnState makes the caller sleep on the Msg.State futex.
-func (m *Msg) SleepOnState(curState ThreadState, interruptor interrupt.Receiver) syscall.Errno {
-	futexTimeout := unix.Timespec{
-		Sec:  maxFutexSleepSeconds,
-		Nsec: 0,
-	}
-	sentInterruptOnce := false
-	errno := syscall.Errno(0)
-	for {
-		_, _, errno = unix.Syscall6(unix.SYS_FUTEX, uintptr(unsafe.Pointer(&m.State)),
-			linux.FUTEX_WAIT, uintptr(curState), uintptr(unsafe.Pointer(&futexTimeout)), 0, 0)
-		if errno == unix.ETIMEDOUT {
-			interruptor.NotifyInterrupt()
-			if !sentInterruptOnce {
-				log.Warningf("Systrap task goroutine has been waiting on Msg.State futex too long. Msg: %s", m.String())
-			}
-			sentInterruptOnce = true
-		} else {
-			break
-		}
-	}
-	if errno == unix.EAGAIN || errno == unix.EINTR {
-		errno = 0
-	}
-	return errno
-}
-
 // SleepOnState makes the caller sleep on the ThreadContext.State futex.
-func (c *ThreadContext) SleepOnState(curState ContextState, interruptor interrupt.Receiver) syscall.Errno {
-	futexTimeout := unix.Timespec{
-		Sec:  maxFutexSleepSeconds,
-		Nsec: 0,
-	}
-	sentInterruptOnce := false
-	errno := syscall.Errno(0)
-	for {
-		_, _, errno = unix.Syscall6(unix.SYS_FUTEX, uintptr(unsafe.Pointer(&c.State)),
-			linux.FUTEX_WAIT, uintptr(curState), uintptr(unsafe.Pointer(&futexTimeout)), 0, 0)
-		if errno == unix.ETIMEDOUT {
-			interruptor.NotifyInterrupt()
-			if !sentInterruptOnce {
-				log.Warningf("Systrap task goroutine has been waiting on ThreadContext.State futex too long. ThreadContext: %s", c.String())
-			}
-			sentInterruptOnce = true
-		} else {
-			break
-		}
-	}
+func (c *ThreadContext) SleepOnState(curState ContextState, timeout *unix.Timespec) syscall.Errno {
+	_, _, errno := unix.Syscall6(unix.SYS_FUTEX, uintptr(unsafe.Pointer(&c.State)),
+		linux.FUTEX_WAIT, uintptr(curState), uintptr(unsafe.Pointer(timeout)), 0, 0)
 	if errno == unix.EAGAIN || errno == unix.EINTR {
 		errno = 0
 	}
