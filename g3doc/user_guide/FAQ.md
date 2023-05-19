@@ -84,6 +84,19 @@ Make sure that permissions is correct on the `runsc` binary.
 sudo chmod a+rx /usr/local/bin/runsc
 ```
 
+If your Kernel is configured with YAMA LSM (see
+https://www.kernel.org/doc/Documentation/security/Yama.txt and
+https://man7.org/linux/man-pages/man2/ptrace.2.html) gVisor may fail in certain
+modes (i.e., systrap and/or directfs) with this error if
+`/proc/sys/kernel/yama/ptrace_scope` is set to 2. If this is the case, try
+setting `/proc/sys/kernel/yama/ptrace_scope` to max of mode 1:
+
+```bash
+sudo cat /proc/sys/kernel/yama/ptrace_scope
+2
+sudo bash -c 'echo 1 > /proc/sys/kernel/yama/ptrace_scope'
+```
+
 ### I'm getting an error like `mount submount "/etc/hostname": creating mount with source ".../hostname": input/output error: unknown.` {#memlock}
 
 There is a bug in Linux kernel versions 5.1 to 5.3.15, 5.4.2, and 5.5. Upgrade
