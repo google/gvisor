@@ -62,62 +62,6 @@ func (e *contextEntry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &e.prev)
 }
 
-func (l *subprocessList) StateTypeName() string {
-	return "pkg/sentry/platform/systrap.subprocessList"
-}
-
-func (l *subprocessList) StateFields() []string {
-	return []string{
-		"head",
-		"tail",
-	}
-}
-
-func (l *subprocessList) beforeSave() {}
-
-// +checklocksignore
-func (l *subprocessList) StateSave(stateSinkObject state.Sink) {
-	l.beforeSave()
-	stateSinkObject.Save(0, &l.head)
-	stateSinkObject.Save(1, &l.tail)
-}
-
-func (l *subprocessList) afterLoad() {}
-
-// +checklocksignore
-func (l *subprocessList) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &l.head)
-	stateSourceObject.Load(1, &l.tail)
-}
-
-func (e *subprocessEntry) StateTypeName() string {
-	return "pkg/sentry/platform/systrap.subprocessEntry"
-}
-
-func (e *subprocessEntry) StateFields() []string {
-	return []string{
-		"next",
-		"prev",
-	}
-}
-
-func (e *subprocessEntry) beforeSave() {}
-
-// +checklocksignore
-func (e *subprocessEntry) StateSave(stateSinkObject state.Sink) {
-	e.beforeSave()
-	stateSinkObject.Save(0, &e.next)
-	stateSinkObject.Save(1, &e.prev)
-}
-
-func (e *subprocessEntry) afterLoad() {}
-
-// +checklocksignore
-func (e *subprocessEntry) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &e.next)
-	stateSourceObject.Load(1, &e.prev)
-}
-
 func (r *subprocessRefs) StateTypeName() string {
 	return "pkg/sentry/platform/systrap.subprocessRefs"
 }
@@ -145,7 +89,5 @@ func (r *subprocessRefs) StateLoad(stateSourceObject state.Source) {
 func init() {
 	state.Register((*contextList)(nil))
 	state.Register((*contextEntry)(nil))
-	state.Register((*subprocessList)(nil))
-	state.Register((*subprocessEntry)(nil))
 	state.Register((*subprocessRefs)(nil))
 }
