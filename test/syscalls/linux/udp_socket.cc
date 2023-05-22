@@ -1275,6 +1275,20 @@ TEST_P(UdpSocketTest, ReadShutdown) {
               SyscallSucceedsWithValue(0));
 }
 
+TEST_P(UdpSocketTest, ReconnectDoesNotClearReadShutdown) {
+  ASSERT_NO_ERRNO(BindLoopback());
+  ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
+  ASSERT_THAT(shutdown(sock_.get(), SHUT_RD), SyscallSucceeds());
+
+  char received[512];
+  EXPECT_THAT(recv(sock_.get(), received, sizeof(received), 0),
+              SyscallSucceedsWithValue(0));
+
+  EXPECT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
+  EXPECT_THAT(recv(sock_.get(), received, sizeof(received), 0),
+              SyscallSucceedsWithValue(0));
+}
+
 TEST_P(UdpSocketTest, ReadShutdownDifferentThread) {
   // TODO(gvisor.dev/issue/1202): Calling recv() after shutdown without
   // MSG_DONTWAIT blocks indefinitely.
@@ -1308,6 +1322,20 @@ TEST_P(UdpSocketTest, WriteShutdown) {
   EXPECT_THAT(shutdown(sock_.get(), SHUT_WR), SyscallFailsWithErrno(ENOTCONN));
   ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
   EXPECT_THAT(shutdown(sock_.get(), SHUT_WR), SyscallSucceeds());
+}
+
+TEST_P(UdpSocketTest, ReconnectDoesNotClearWriteShutdown) {
+  ASSERT_NO_ERRNO(BindLoopback());
+  ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
+
+  const char buf = 'A';
+  ASSERT_THAT(send(sock_.get(), &buf, 1, 0), SyscallSucceeds());
+
+  ASSERT_THAT(shutdown(sock_.get(), SHUT_WR), SyscallSucceeds());
+  EXPECT_THAT(send(sock_.get(), &buf, 1, 0), SyscallFailsWithErrno(EPIPE));
+
+  EXPECT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
+  EXPECT_THAT(send(sock_.get(), &buf, 1, 0), SyscallFailsWithErrno(EPIPE));
 }
 
 TEST_P(UdpSocketTest, SynchronousReceive) {
