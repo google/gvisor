@@ -12,6 +12,7 @@ go_library(
     name = "fsbench",
     testonly = 1,
     srcs = ["fsbench.go"],
+    data = ["//test/runner/fuse"],
     deps = [
         "//pkg/cleanup",
         "//pkg/test/dockerutil",

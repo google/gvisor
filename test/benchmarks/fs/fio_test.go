@@ -114,12 +114,13 @@ func BenchmarkFio(b *testing.B) {
 					b.Fatalf("failed to make mount: %v", err)
 				}
 
+				runOpts := dockerutil.RunOpts{
+					Image:  "benchmarks/fio",
+					Mounts: mnts,
+				}
 				// Start the container with the mount.
 				if err := container.Spawn(
-					ctx, dockerutil.RunOpts{
-						Image:  "benchmarks/fio",
-						Mounts: mnts,
-					},
+					ctx, runOpts,
 					// Sleep on the order of b.N.
 					"sleep", fmt.Sprintf("%d", 1000*b.N),
 				); err != nil {
@@ -129,6 +130,16 @@ func BenchmarkFio(b *testing.B) {
 				if out, err := container.Exec(ctx, dockerutil.ExecOpts{},
 					"mkdir", "-p", outdir); err != nil {
 					b.Fatalf("failed to copy directory: %v (%s)", err, out)
+				}
+
+				if fsType == harness.FuseFS {
+					container.CopyFiles(&runOpts, "/fusebin", "test/runner/fuse/fuse")
+					_, err := container.ExecProcess(ctx, dockerutil.ExecOpts{
+						Privileged: true,
+					}, "/fusebin/fuse", "--dir="+outdir, "--debug=false")
+					if err != nil {
+						b.Fatalf("starting fuse server failed with: %v", err)
+					}
 				}
 
 				// Directory and filename inside container where fio will read/write.

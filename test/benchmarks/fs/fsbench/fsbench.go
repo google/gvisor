@@ -42,7 +42,7 @@ type FSBenchmark struct {
 	WantOutput string
 	// CleanCmd, if set, is run to clean up between benchmarks.
 	CleanCmd []string
-	// Variants is a list of benchmarka variants to run.
+	// Variants is a list of benchmark variants to run.
 	// If unset, the typical set is used.
 	Variants []Variant
 	// Callback is an optional function that is called after each execution of
@@ -63,8 +63,8 @@ type Variant struct {
 
 // TypicalVariants returns the typical full set of benchmark variants.
 func TypicalVariants() []Variant {
-	variants := make([]Variant, 0, 6)
-	for _, filesys := range []harness.FileSystemType{harness.BindFS, harness.TmpFS, harness.RootFS} {
+	variants := make([]Variant, 0, 8)
+	for _, filesys := range []harness.FileSystemType{harness.FuseFS} {
 		variants = append(variants, Variant{
 			clearCache: true,
 			fsType:     filesys,
@@ -125,7 +125,24 @@ func RunWithDifferentFilesystems(ctx context.Context, b *testing.B, machine harn
 				b.Fatalf("run failed with: %v", err)
 			}
 
-			cpCmd := fmt.Sprintf("mkdir -p %s && cp -r %s %s/.", prefix, bm.WorkDir, prefix)
+			// Ignore safetext/shsprintf linter suggestion.
+			mkdirCmd := fmt.Sprintf("mkdir -p %s", prefix)
+			out, err := container.Exec(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", mkdirCmd)
+			if err != nil {
+				b.Fatalf("failed to make directory: %v (%s)", err, out)
+			}
+
+			if variant.fsType == harness.FuseFS {
+				container.CopyFiles(&runOpts, "/fusebin", "test/runner/fuse/fuse")
+				_, err := container.ExecProcess(ctx, dockerutil.ExecOpts{
+					Privileged: true,
+				}, "/fusebin/fuse", "--dir="+prefix, "--debug=false")
+				if err != nil {
+					b.Fatalf("starting fuse server failed with: %v", err)
+				}
+			}
+
+			cpCmd := fmt.Sprintf("cp -r %s %s/.", bm.WorkDir, prefix)
 			if out, err := container.Exec(ctx, dockerutil.ExecOpts{},
 				"/bin/sh", "-c", cpCmd); err != nil {
 				b.Fatalf("failed to copy directory: %v (%s)", err, out)

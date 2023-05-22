@@ -59,7 +59,7 @@ func main() {
 	}
 	opts := &fuse.MountOptions{DirectMountStrict: true, Debug: *debug, AllowOther: true, Options: []string{"default_permissions"}}
 	rawFS := fs.NewNodeFS(loopbackRoot, &fs.Options{NullPermissions: true, Logger: golog.Default()})
-	server, err := fuse.NewServer(rawFS, "/tmp", opts)
+	server, err := fuse.NewServer(rawFS, *dir, opts)
 	if err != nil {
 		log.Warningf("could not create fuse server: %v", err)
 		os.Exit(1)
