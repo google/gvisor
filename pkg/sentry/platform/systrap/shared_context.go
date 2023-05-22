@@ -17,6 +17,7 @@ package systrap
 import (
 	"fmt"
 	"runtime"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -61,6 +62,11 @@ type sharedContext struct {
 	kicked         bool
 	// The task associated with the context fell asleep.
 	sleeping bool
+}
+
+// String returns the ID of this shared context.
+func (sc *sharedContext) String() string {
+	return strconv.Itoa(int(sc.contextID))
 }
 
 const (
@@ -210,10 +216,10 @@ func (sc *sharedContext) sleepOnState(state sysmsg.ContextState) {
 			panic(fmt.Sprintf("error waiting for state: %v", errno))
 		}
 		if time.Now().After(deadline) {
-			log.Warningf("Systrap task goroutine has been waiting on ThreadContext.State futex too long. ThreadContext: %s", sc.shared)
+			log.Warningf("Systrap task goroutine has been waiting on ThreadContext.State futex too long. ThreadContext: %v", sc)
 		}
 		if sentInterruptOnce {
-			log.Warningf("The context is still running: %s", sc)
+			log.Warningf("The context is still running: %v", sc)
 			continue
 		}
 
