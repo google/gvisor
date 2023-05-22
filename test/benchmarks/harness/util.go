@@ -69,13 +69,15 @@ const (
 	TmpFS FileSystemType = "tmpfs"
 	// RootFS indicates no mount should be created and the root mount should be used.
 	RootFS FileSystemType = "rootfs"
+	// FuseFS indicates a passthrough fuse server should be created.
+	FuseFS FileSystemType = "fusefs"
 )
 
 // MakeMount makes a mount and cleanup based on the requested type. Bind
 // and volume mounts are backed by a temp directory made with mktemp.
 // tmpfs mounts require no such backing and are just made.
-// rootfs mounts do not make a mount, but instead return a target direectory at root.
-// It is up to the caller to call Clean on the passed *cleanup.Cleanup
+// rootfs mounts do not make a mount, but instead return a target directory at
+// root. It is up to the caller to call Clean on the passed *cleanup.Cleanup.
 func MakeMount(machine Machine, fsType FileSystemType, cu *cleanup.Cleanup) ([]mount.Mount, string, error) {
 	mounts := make([]mount.Mount, 0, 1)
 	target := "/data"
@@ -106,6 +108,18 @@ func MakeMount(machine Machine, fsType FileSystemType, cu *cleanup.Cleanup) ([]m
 			Target: target,
 			Type:   mount.TypeTmpfs,
 		})
+		return mounts, target, nil
+	case FuseFS:
+		mounts = append(mounts, []mount.Mount{
+			{
+				Target: target,
+				Type:   mount.TypeTmpfs,
+			},
+			{
+				Target: "/fuse",
+				Type:   mount.TypeTmpfs,
+			},
+		}...)
 		return mounts, target, nil
 	default:
 		return mounts, "", fmt.Errorf("illegal mount type not supported: %v", fsType)
