@@ -34,11 +34,14 @@ const (
 	TURING_CHANNEL_GPFIFO_A          = 0x0000c46f
 	AMPERE_CHANNEL_GPFIFO_A          = 0x0000c56f
 	TURING_DMA_COPY_A                = 0x0000c5b5
-	AMPERE_DMA_COPY_A                = 0x0000c6b5
-	AMPERE_DMA_COPY_B                = 0x0000c7b5
 	TURING_COMPUTE_A                 = 0x0000c5c0
+	HOPPER_USERMODE_A                = 0x0000c661
+	AMPERE_DMA_COPY_A                = 0x0000c6b5
 	AMPERE_COMPUTE_A                 = 0x0000c6c0
+	AMPERE_DMA_COPY_B                = 0x0000c7b5
+	HOPPER_DMA_COPY_A                = 0x0000c8b5
 	ADA_COMPUTE_A                    = 0x0000c9c0
+	HOPPER_COMPUTE_A                 = 0x0000cbc0
 )
 
 // NV0005_ALLOC_PARAMETERS is the alloc params type for NV01_EVENT_OS_EVENT,
@@ -196,4 +199,13 @@ type NV_GR_ALLOCATION_PARAMETERS struct {
 	Flags   uint32
 	Size    uint32
 	Caps    uint32
+}
+
+// NV_HOPPER_USERMODE_A_PARAMS is the alloc param type for HOPPER_USERMODE_A,
+// from src/common/sdk/nvidia/inc/nvos.h.
+//
+// +marshal
+type NV_HOPPER_USERMODE_A_PARAMS struct {
+	Bar1Mapping uint8
+	Priv        uint8
 }

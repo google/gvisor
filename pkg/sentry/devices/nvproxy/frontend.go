@@ -547,6 +547,7 @@ func rmControl(fi *frontendIoctlState) (uintptr, error) {
 		nvgpu.NV0000_CTRL_CMD_GPU_GET_MEMOP_ENABLE,
 		nvgpu.NV0000_CTRL_CMD_SYNC_GPU_BOOST_GROUP_INFO,
 		nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_FABRIC_STATUS,
+		nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_P2P_CAPS_MATRIX,
 		nvgpu.NV0080_CTRL_CMD_FB_GET_CAPS_V2,
 		nvgpu.NV0080_CTRL_CMD_GPU_GET_NUM_SUBDEVICES,
 		nvgpu.NV0080_CTRL_CMD_GPU_QUERY_SW_STATE_PERSISTENCE,
@@ -572,6 +573,7 @@ func rmControl(fi *frontendIoctlState) (uintptr, error) {
 		nvgpu.NV2080_CTRL_CMD_GPU_GET_ENGINES_V2,
 		nvgpu.NV2080_CTRL_CMD_GPU_GET_ACTIVE_PARTITION_IDS,
 		nvgpu.NV2080_CTRL_CMD_GPU_GET_COMPUTE_POLICY_CONFIG,
+		nvgpu.NV2080_CTRL_CMD_GET_GPU_FABRIC_PROBE_INFO,
 		nvgpu.NV2080_CTRL_CMD_GR_SET_CTXSW_PREEMPTION_MODE,
 		nvgpu.NV2080_CTRL_CMD_GR_GET_CTX_BUFFER_SIZE,
 		nvgpu.NV2080_CTRL_CMD_GR_GET_GLOBAL_SM_ORDER,
@@ -769,10 +771,12 @@ func rmAlloc(fi *frontendIoctlState) (uintptr, error) {
 		return rmAllocSimple[nvgpu.NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS](fi, &ioctlParams, isNVOS64)
 	case nvgpu.TURING_CHANNEL_GPFIFO_A, nvgpu.AMPERE_CHANNEL_GPFIFO_A:
 		return rmAllocSimple[nvgpu.NV_CHANNEL_ALLOC_PARAMS](fi, &ioctlParams, isNVOS64)
-	case nvgpu.TURING_DMA_COPY_A, nvgpu.AMPERE_DMA_COPY_A, nvgpu.AMPERE_DMA_COPY_B:
+	case nvgpu.TURING_DMA_COPY_A, nvgpu.AMPERE_DMA_COPY_A, nvgpu.AMPERE_DMA_COPY_B, nvgpu.HOPPER_DMA_COPY_A:
 		return rmAllocSimple[nvgpu.NVB0B5_ALLOCATION_PARAMETERS](fi, &ioctlParams, isNVOS64)
-	case nvgpu.TURING_COMPUTE_A, nvgpu.AMPERE_COMPUTE_A, nvgpu.ADA_COMPUTE_A:
+	case nvgpu.TURING_COMPUTE_A, nvgpu.AMPERE_COMPUTE_A, nvgpu.ADA_COMPUTE_A, nvgpu.HOPPER_COMPUTE_A:
 		return rmAllocSimple[nvgpu.NV_GR_ALLOCATION_PARAMETERS](fi, &ioctlParams, isNVOS64)
+	case nvgpu.HOPPER_USERMODE_A:
+		return rmAllocSimple[nvgpu.NV_HOPPER_USERMODE_A_PARAMS](fi, &ioctlParams, isNVOS64)
 	case
 		nvgpu.GF100_SUBDEVICE_MASTER,
 		nvgpu.TURING_USERMODE_A:
