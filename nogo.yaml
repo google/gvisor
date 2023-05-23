@@ -250,6 +250,8 @@ analyzers:
         - generated.gen.pb.go
   ST1021: # Doc should start with type name.
     internal:
+      exclude:
+        - "pkg/abi/nvgpu/.*.go"
       suppress:
         - "comment on exported type Translation" # Intentional.
         - "comment on exported type PinnedRange" # Intentional.
