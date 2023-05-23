@@ -483,88 +483,88 @@ func main() {
 
 	sigs := make(chan os.Signal, 1)
 	signal.Notify(sigs, unix.SIGTERM)
+
+	// Accept connections and proxy data between them.
 	go func() {
-		<-sigs
-		if *cpuprofile != "" {
-			pprof.StopCPUProfile()
-		}
-		if *memprofile != "" {
-			f, err := os.Create(*memprofile)
+		for {
+			// Forward all connections.
+			inConn, err := listener.Accept()
 			if err != nil {
-				log.Fatal("could not create memory profile: ", err)
+				// This should not happen; we are listening
+				// successfully. Exhausted all available FDs?
+				log.Fatalf("accept error: %v", err)
 			}
-			defer func() {
-				if err := f.Close(); err != nil {
-					log.Print("error closing memory profile: ", err)
+			log.Printf("incoming connection established.")
+
+			// Copy both ways.
+			go io.Copy(inConn, next)
+			go io.Copy(next, inConn)
+
+			// Print stats every second.
+			go func() {
+				t := time.NewTicker(time.Second)
+				defer t.Stop()
+				for {
+					<-t.C
+					in.printStats()
+					out.printStats()
 				}
 			}()
-			runtime.GC() // get up-to-date statistics
-			if err := pprof.WriteHeapProfile(f); err != nil {
-				log.Fatalf("Unable to write heap profile: %v", err)
-			}
-		}
-		if *blockprofile != "" {
-			f, err := os.Create(*blockprofile)
-			if err != nil {
-				log.Fatal("could not create block profile: ", err)
-			}
-			defer func() {
-				if err := f.Close(); err != nil {
-					log.Print("error closing block profile: ", err)
+
+			for {
+				// Dial again.
+				next, err = out.dial(*forward)
+				if err == nil {
+					break
 				}
-			}()
-			if err := pprof.Lookup("block").WriteTo(f, 0); err != nil {
-				log.Fatalf("Unable to write block profile: %v", err)
 			}
 		}
-		if *mutexprofile != "" {
-			f, err := os.Create(*mutexprofile)
-			if err != nil {
-				log.Fatal("could not create mutex profile: ", err)
-			}
-			defer func() {
-				if err := f.Close(); err != nil {
-					log.Print("error closing mutex profile: ", err)
-				}
-			}()
-			if err := pprof.Lookup("mutex").WriteTo(f, 0); err != nil {
-				log.Fatalf("Unable to write mutex profile: %v", err)
-			}
-		}
-		os.Exit(0)
 	}()
 
-	for {
-		// Forward all connections.
-		inConn, err := listener.Accept()
+	// Wait for the SIGTERM notifying us to stop.
+	<-sigs
+
+	if *memprofile != "" {
+		f, err := os.Create(*memprofile)
 		if err != nil {
-			// This should not happen; we are listening
-			// successfully. Exhausted all available FDs?
-			log.Fatalf("accept error: %v", err)
+			log.Fatal("could not create memory profile: ", err)
 		}
-		log.Printf("incoming connection established.")
-
-		// Copy both ways.
-		go io.Copy(inConn, next)
-		go io.Copy(next, inConn)
-
-		// Print stats every second.
-		go func() {
-			t := time.NewTicker(time.Second)
-			defer t.Stop()
-			for {
-				<-t.C
-				in.printStats()
-				out.printStats()
+		defer func() {
+			if err := f.Close(); err != nil {
+				log.Print("error closing memory profile: ", err)
 			}
 		}()
-
-		for {
-			// Dial again.
-			next, err = out.dial(*forward)
-			if err == nil {
-				break
+		runtime.GC() // get up-to-date statistics
+		if err := pprof.WriteHeapProfile(f); err != nil {
+			log.Fatalf("Unable to write heap profile: %v", err)
+		}
+	}
+	if *blockprofile != "" {
+		f, err := os.Create(*blockprofile)
+		if err != nil {
+			log.Fatal("could not create block profile: ", err)
+		}
+		defer func() {
+			if err := f.Close(); err != nil {
+				log.Print("error closing block profile: ", err)
 			}
+		}()
+		if err := pprof.Lookup("block").WriteTo(f, 0); err != nil {
+			log.Fatalf("Unable to write block profile: %v", err)
+		}
+	}
+	if *mutexprofile != "" {
+		f, err := os.Create(*mutexprofile)
+		if err != nil {
+			log.Fatal("could not create mutex profile: ", err)
+		}
+		defer func() {
+			if err := f.Close(); err != nil {
+				log.Print("error closing mutex profile: ", err)
+			}
+		}()
+		if err := pprof.Lookup("mutex").WriteTo(f, 0); err != nil {
+			log.Fatalf("Unable to write mutex profile: %v", err)
 		}
 	}
 }

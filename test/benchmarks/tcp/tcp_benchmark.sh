@@ -57,6 +57,13 @@ if [[ "$?" != "0" ]]; then
   echo "warning: sch_netem may not be installed." >&2
 fi
 
+function checktmp() {
+  if [[ "$1" =~ ^/tmp/ ]]; then
+    echo "Don't use /tmp for output files ('$1') -- tcp_benchmark mounts over /tmp and your file will never make it to the root /tmp."
+    exit 1
+  fi
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --client)
@@ -135,22 +142,27 @@ while [[ $# -gt 0 ]]; do
     --cpuprofile)
       shift
       netstack_opts="${netstack_opts} -cpuprofile=$1"
+      checktmp "$1"
       ;;
     --memprofile)
       shift
       netstack_opts="${netstack_opts} -memprofile=$1"
+      checktmp "$1"
       ;;
     --blockprofile)
       shift
       netstack_opts="${netstack_opts} -blockprofile=$1"
+      checktmp "$1"
       ;;
     --mutexprofile)
       shift
       netstack_opts="${netstack_opts} -mutexprofile=$1"
+      checktmp "$1"
       ;;
     --traceprofile)
       shift
       netstack_opts="${netstack_opts} -traceprofile=$1"
+      checktmp "$1"
       ;;
     --disable-linux-gso)
       disable_linux_gso=1
