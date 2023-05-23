@@ -110,16 +110,15 @@ func MakeMount(machine Machine, fsType FileSystemType, cu *cleanup.Cleanup) ([]m
 		})
 		return mounts, target, nil
 	case FuseFS:
-		mounts = append(mounts, []mount.Mount{
-			{
+		mounts = append(mounts,
+			mount.Mount{
 				Target: target,
 				Type:   mount.TypeTmpfs,
 			},
-			{
+			mount.Mount{
 				Target: "/fuse",
 				Type:   mount.TypeTmpfs,
-			},
-		}...)
+			})
 		return mounts, target, nil
 	default:
 		return mounts, "", fmt.Errorf("illegal mount type not supported: %v", fsType)
