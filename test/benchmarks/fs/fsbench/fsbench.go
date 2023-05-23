@@ -64,7 +64,7 @@ type Variant struct {
 // TypicalVariants returns the typical full set of benchmark variants.
 func TypicalVariants() []Variant {
 	variants := make([]Variant, 0, 8)
-	for _, filesys := range []harness.FileSystemType{harness.FuseFS} {
+	for _, filesys := range []harness.FileSystemType{harness.BindFS, harness.TmpFS, harness.RootFS, harness.FuseFS} {
 		variants = append(variants, Variant{
 			clearCache: true,
 			fsType:     filesys,
