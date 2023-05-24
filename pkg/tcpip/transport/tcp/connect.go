@@ -1166,7 +1166,7 @@ func (e *endpoint) handleSegmentsLocked() tcpip.Error {
 		if state := e.EndpointState(); state.closed() || state == StateTimeWait || state == StateError {
 			return nil
 		}
-		s := e.segmentQueue.dequeue()
+		s := e.segmentQueue.dequeueWithCoalescing(true)
 		if s == nil {
 			break
 		}

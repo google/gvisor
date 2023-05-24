@@ -55,6 +55,7 @@ func (q *segmentQueue) enqueue(s *segment) bool {
 	bufSz := q.ep.ops.GetReceiveBufferSize()
 	used := q.ep.receiveMemUsed()
 	q.mu.Lock()
+	defer q.mu.Unlock()
 	// Allow zero sized segments (ACK/FIN/RSTs etc even if the segment queue
 	// is currently full).
 	allow := (used <= int(bufSz) || s.payloadSize() == 0) && !q.frozen
@@ -65,7 +66,6 @@ func (q *segmentQueue) enqueue(s *segment) bool {
 		// Set the owner now that the endpoint owns the segment.
 		s.setOwner(q.ep, recvQ)
 	}
-	q.mu.Unlock()
 
 	return allow
 }
@@ -74,14 +74,28 @@ func (q *segmentQueue) enqueue(s *segment) bool {
 // Ownership is transferred to the caller, who is responsible for decrementing
 // the ref count when done.
 func (q *segmentQueue) dequeue() *segment {
-	q.mu.Lock()
-	s := q.list.Front()
-	if s != nil {
-		q.list.Remove(s)
-	}
-	q.mu.Unlock()
+	return q.dequeueWithCoalescing(false)
+}
 
-	return s
+func (q *segmentQueue) dequeueWithCoalescing(coalesce bool) *segment {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	seg := q.list.Front()
+	if seg == nil {
+		return nil
+	}
+	q.list.Remove(seg)
+	if !coalesce {
+		return seg
+	}
+
+	for other := q.list.Front(); seg.mergeIncoming(other); other = q.list.Front() {
+		q.list.Remove(other)
+		other.DecRef()
+	}
+
+	return seg
 }
 
 // freeze prevents any more segments from being added to the queue. i.e all

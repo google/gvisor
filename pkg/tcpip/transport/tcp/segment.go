@@ -15,6 +15,7 @@
 package tcp
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 
@@ -158,7 +159,7 @@ func newSegment() *segment {
 	return s
 }
 
-// merge merges data in oth and clears oth.
+// merge merges data in oth and clears oth's data.
 func (s *segment) merge(oth *segment) {
 	s.pkt.Data().Merge(oth.pkt.Data())
 	s.dataMemSize = s.pkt.MemSize()
@@ -234,4 +235,47 @@ func (s *segment) TrimFront(ackLeft seqnum.Size) {
 
 func (s *segment) ReadTo(dst io.Writer, peek bool) (int, error) {
 	return s.pkt.Data().ReadTo(dst, peek)
+}
+
+func (s *segment) mergeIncoming(other *segment) bool {
+	if other == nil {
+		return false
+	}
+
+	// Check fields that denote the packets are unmergeable.
+
+	// The new packet's sequence number must pick off right where s left off.
+	if s.sequenceNumber.Add(seqnum.Size(s.pkt.Data().Size())) != other.sequenceNumber {
+		return false
+	}
+	if !s.csumValid || !other.csumValid {
+		return false
+	}
+	// Options must be identical -- we don't want to mess up, for example, timestamps.
+	if !bytes.Equal(s.options, other.options) {
+		return false
+	}
+	// Don't merge packets with flags that require special handling.
+	const supportedFlags = header.TCPFlagAck | header.TCPFlagPsh | header.TCPFlagFin
+	if s.flags&^supportedFlags != 0 || other.flags&^supportedFlags != 0 {
+		return false
+	}
+
+	// We can merge!
+
+	buf := other.pkt.Data().ToBuffer()
+	merged := buf.Size()
+	s.pkt.Data().MergeBuffer(&buf)
+	buf.Release()
+	s.flags |= other.flags
+	// other may have a more up-to-date ACK and window.
+	if s.ackNumber < other.ackNumber {
+		s.ackNumber = other.ackNumber
+		s.window = other.window
+	}
+	// Adjust memory accounting for the merge.
+	s.dataMemSize += int(merged)
+	other.dataMemSize -= int(merged)
+
+	return true
 }
