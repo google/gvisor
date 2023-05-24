@@ -118,6 +118,9 @@ type containerInfo struct {
 	// overlaid. The first entry is for rootfs and the following entries are for
 	// bind mounts in spec.Mounts (in the same order).
 	overlayMediums []OverlayMedium
+
+	// nvidiaUVMDevMajor is the device major number used for nvidia-uvm.
+	nvidiaUVMDevMajor uint32
 }
 
 // Loader keeps state needed to start the kernel and run the container.
@@ -157,6 +160,9 @@ type Loader struct {
 	// productName is the value to show in
 	// /sys/devices/virtual/dmi/id/product_name.
 	productName string
+
+	// nvidiaUVMDevMajor is the device major number used for nvidia-uvm.
+	nvidiaUVMDevMajor uint32
 
 	// mu guards processes and porForwardProxies.
 	mu sync.Mutex
@@ -293,10 +299,15 @@ func New(args Args) (*Loader, error) {
 
 	kernel.IOUringEnabled = args.Conf.IOUring
 
+	info := containerInfo{
+		conf:           args.Conf,
+		spec:           args.Spec,
+		overlayMediums: args.OverlayMediums,
+	}
+
 	// Make host FDs stable between invocations. Host FDs must map to the exact
 	// same number when the sandbox is restored. Otherwise the wrong FD will be
 	// used.
-	info := containerInfo{overlayMediums: args.OverlayMediums}
 	newfd := startingStdioFD
 
 	for _, stdioFD := range args.StdioFDs {
@@ -338,6 +349,9 @@ func New(args Args) (*Loader, error) {
 	p, err := createPlatform(args.Conf, args.Device)
 	if err != nil {
 		return nil, fmt.Errorf("creating platform: %w", err)
+	}
+	if args.Conf.NVProxy && p.OwnsPageTables() {
+		return nil, fmt.Errorf("--nvproxy is incompatible with platform %s: owns page tables", args.Conf.Platform)
 	}
 	k := &kernel.Kernel{
 		Platform: p,
@@ -423,7 +437,7 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("initializing kernel: %w", err)
 	}
 
-	if err := registerFilesystems(k); err != nil {
+	if err := registerFilesystems(k, &info); err != nil {
 		return nil, fmt.Errorf("registering filesystems: %w", err)
 	}
 
@@ -456,9 +470,6 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("creating pod mount hints: %w", err)
 	}
 
-	info.conf = args.Conf
-	info.spec = args.Spec
-
 	// Set up host mount that will be used for imported fds.
 	hostFilesystem, err := host.NewFilesystem(k.VFS())
 	if err != nil {
@@ -475,14 +486,15 @@ func New(args Args) (*Loader, error) {
 
 	eid := execID{cid: args.ID}
 	l := &Loader{
-		k:             k,
-		watchdog:      dog,
-		sandboxID:     args.ID,
-		processes:     map[execID]*execProcess{eid: {}},
-		mountHints:    mountHints,
-		root:          info,
-		stopProfiling: stopProfiling,
-		productName:   args.ProductName,
+		k:                 k,
+		watchdog:          dog,
+		sandboxID:         args.ID,
+		processes:         map[execID]*execProcess{eid: {}},
+		mountHints:        mountHints,
+		root:              info,
+		stopProfiling:     stopProfiling,
+		productName:       args.ProductName,
+		nvidiaUVMDevMajor: info.nvidiaUVMDevMajor,
 	}
 
 	// We don't care about child signals; some platforms can generate a
@@ -627,6 +639,7 @@ func (l *Loader) installSeccompFilters() error {
 			HostNetworkRawSockets: hostnet && l.root.conf.EnableRaw,
 			HostFilesystem:        l.root.conf.DirectFS,
 			ProfileEnable:         l.root.conf.ProfileEnable,
+			NVProxy:               l.root.conf.NVProxy,
 			ControllerFD:          l.ctrl.srv.FD(),
 		}
 		if err := filter.Install(opts); err != nil {
@@ -822,6 +835,7 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 		goferFDs:            goferFDs,
 		overlayFilestoreFDs: overlayFilestoreFDs,
 		overlayMediums:      overlayMediums,
+		nvidiaUVMDevMajor:   l.nvidiaUVMDevMajor,
 	}
 	info.procArgs, err = createProcessArgs(cid, spec, creds, l.k, pidns)
 	if err != nil {
@@ -914,7 +928,7 @@ func (l *Loader) createContainerProcess(root bool, cid string, info *containerIn
 			return nil, nil, err
 		}
 	}
-	if err := setupContainerVFS(ctx, info.conf, mntr, &info.procArgs); err != nil {
+	if err := setupContainerVFS(ctx, info, mntr, &info.procArgs); err != nil {
 		return nil, nil, err
 	}
 

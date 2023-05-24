@@ -15,12 +15,15 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
@@ -78,7 +81,7 @@ func copyFile(dst, src string) error {
 
 // setUpChroot creates an empty directory with runsc mounted at /runsc and proc
 // mounted at /proc.
-func setUpChroot(pidns bool) error {
+func setUpChroot(pidns bool, conf *config.Config) error {
 	// We are a new mount namespace, so we can use /tmp as a directory to
 	// construct a new root.
 	chroot := os.TempDir()
@@ -92,7 +95,7 @@ func setUpChroot(pidns bool) error {
 	}
 
 	if err := specutils.SafeMount("runsc-root", chroot, "tmpfs", unix.MS_NOSUID|unix.MS_NODEV|unix.MS_NOEXEC, "", "/proc"); err != nil {
-		return fmt.Errorf("error mounting tmpfs in choot: %v", err)
+		return fmt.Errorf("error mounting tmpfs in chroot: %v", err)
 	}
 
 	if err := os.Mkdir(filepath.Join(chroot, "etc"), 0755); err != nil {
@@ -114,9 +117,43 @@ func setUpChroot(pidns bool) error {
 		}
 	}
 
+	if err := nvproxyUpdateChroot(chroot, conf); err != nil {
+		return fmt.Errorf("error configuring chroot for Nvidia GPUs: %w", err)
+	}
+
 	if err := specutils.SafeMount("", chroot, "", unix.MS_REMOUNT|unix.MS_RDONLY|unix.MS_BIND, "", "/proc"); err != nil {
 		return fmt.Errorf("error remounting chroot in read-only: %v", err)
 	}
 
 	return pivotRoot(chroot)
+}
+
+func nvproxyUpdateChroot(chroot string, conf *config.Config) error {
+	if !conf.NVProxy {
+		return nil
+	}
+	if err := os.Mkdir(filepath.Join(chroot, "dev"), 0755); err != nil && !errors.Is(err, os.ErrExist) {
+		return fmt.Errorf("error creating /dev in chroot: %w", err)
+	}
+	if err := mountInChroot(chroot, "/dev/nvidiactl", "/dev/nvidiactl", "bind", unix.MS_BIND); err != nil {
+		return fmt.Errorf("error mounting /dev/nvidiactl in chroot: %w", err)
+	}
+	if err := mountInChroot(chroot, "/dev/nvidia-uvm", "/dev/nvidia-uvm", "bind", unix.MS_BIND); err != nil {
+		return fmt.Errorf("error mounting /dev/nvidia-uvm in chroot: %w", err)
+	}
+	// We must bind-mount all available GPUs because in the Kubernetes case,
+	// the set of usable GPUs isn't known until time of subcontainer creation.
+	paths, err := filepath.Glob("/dev/nvidia*")
+	if err != nil {
+		return fmt.Errorf("enumerating Nvidia device files: %w", err)
+	}
+	re := regexp.MustCompile(`^/dev/nvidia\d+$`)
+	for _, path := range paths {
+		if re.MatchString(path) {
+			if err := mountInChroot(chroot, path, path, "bind", unix.MS_BIND); err != nil {
+				return fmt.Errorf("error mounting %q in chroot: %v", path, err)
+			}
+		}
+	}
+	return nil
 }

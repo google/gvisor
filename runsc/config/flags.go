@@ -115,6 +115,10 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool("buffer-pooling", true, "enable allocation of buffers from a shared pool instead of the heap.")
 	flagSet.Bool("EXPERIMENTAL-afxdp", false, "EXPERIMENTAL. Use an AF_XDP socket to receive packets.")
 
+	// Flags that control sandbox runtime behavior: accelerator related.
+	flagSet.Bool("nvproxy", false, "EXPERIMENTAL: enable support for Nvidia GPUs")
+	flagSet.Bool("nvproxy-docker", false, "Expose GPUs to containers based on NVIDIA_VISIBLE_DEVICES, as requested by the container or set by `docker --gpus`. Allows containers to self-serve GPU access and thus disabled by default for security. libnvidia-container must be installed on the host. No effect unless --nvproxy is enabled.")
+
 	// Test flags, not to be used outside tests, ever.
 	flagSet.Bool("TESTONLY-unsafe-nonroot", false, "TEST ONLY; do not ever use! This skips many security measures that isolate the host from the sandbox.")
 	flagSet.String("TESTONLY-test-name-env", "", "TEST ONLY; do not ever use! Used for automated tests to improve logging.")

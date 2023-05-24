@@ -58,6 +58,14 @@ type Platform interface {
 	// is supported.
 	HaveGlobalMemoryBarrier() bool
 
+	// OwnsPageTables returns true if the Platform implementation manages any
+	// page tables directly (rather than via host mmap(2) etc.) As of this
+	// writing, this property is relevant because the AddressSpace interface
+	// does not support specification of memory type (cacheability), such that
+	// host FDs specifying memory types (e.g. device drivers) can only set them
+	// correctly in host-managed page tables.
+	OwnsPageTables() bool
+
 	// MapUnit returns the alignment used for optional mappings into this
 	// platform's AddressSpaces. Higher values indicate lower per-page costs
 	// for AddressSpace.MapFile. As a special case, a MapUnit of 0 indicates
@@ -165,6 +173,22 @@ func (UseHostProcessMemoryBarrier) GlobalMemoryBarrier() error {
 		return hostmm.ProcessMemoryBarrier()
 	}
 	return hostmm.GlobalMemoryBarrier()
+}
+
+// DoesOwnPageTables implements Platform.OwnsPageTables in the positive.
+type DoesOwnPageTables struct{}
+
+// OwnsPageTables implements Platform.OwnsPageTables.
+func (DoesOwnPageTables) OwnsPageTables() bool {
+	return true
+}
+
+// DoesNotOwnPageTables implements Platform.OwnsPageTables in the negative.
+type DoesNotOwnPageTables struct{}
+
+// OwnsPageTables implements Platform.OwnsPageTables.
+func (DoesNotOwnPageTables) OwnsPageTables() bool {
+	return false
 }
 
 // MemoryManager represents an abstraction above the platform address space

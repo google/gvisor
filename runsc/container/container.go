@@ -297,6 +297,10 @@ func New(conf *config.Config, args Args) (*Container, error) {
 		}
 		c.OverlayMediums = overlayMediums
 		if err := runInCgroup(containerCgroup, func() error {
+			if err := nvproxyUpdateAppRootFilesystem(args.Spec, conf); err != nil {
+				return err
+			}
+
 			ioFiles, specFile, err := c.createGoferProcess(args.Spec, conf, args.BundleDir, args.Attached)
 			if err != nil {
 				return fmt.Errorf("cannot create gofer process: %w", err)
@@ -1660,4 +1664,76 @@ func logIDMappings(mappings []specs.LinuxIDMapping, idType string) {
 	for _, m := range mappings {
 		log.Debugf("\tContainer ID: %d, Host ID: %d, Range Length: %d", m.ContainerID, m.HostID, m.Size)
 	}
+}
+
+func nvproxyUpdateAppRootFilesystem(spec *specs.Spec, conf *config.Config) error {
+	if !specutils.HaveNvidiaVisibleDevices(spec, conf) {
+		return nil
+	}
+
+	// Delegate to nvidia-container-cli from libnvidia-container. This
+	// essentially replicates
+	// nvidia-container-toolkit:cmd/nvidia-container-runtime-hook, i.e. the
+	// binary that executeHook() is hard-coded to skip, with differences noted
+	// inline. We do this rather than move the prestart hook because the
+	// "runtime environment" in which prestart hooks execute is vaguely
+	// defined, such that nvidia-container-runtime-hook and existing runsc
+	// hooks differ in their expected environment.
+	//
+	// Note that nvidia-container-cli will set up files in /dev and /proc which
+	// are useless, since they will be hidden by sentry devtmpfs and procfs
+	// respectively (and some device files will have the wrong device numbers
+	// from the application's perspective since nvproxy may register device
+	// numbers in sentry VFS that differ from those on the host, e.g. for
+	// nvidia-uvm). These files are separately created during sandbox VFS
+	// construction. For this reason, we don't need to parse
+	// NVIDIA_VISIBLE_DEVICES or pass --device to nvidia-container-cli.
+
+	if spec.Root == nil {
+		return fmt.Errorf("spec missing root filesystem")
+	}
+
+	// Locate binaries. For security reasons, unlike
+	// nvidia-container-runtime-hook, we don't add the container's filesystem
+	// to the search path. We also don't support
+	// /etc/nvidia-container-runtime/config.toml to avoid importing a TOML
+	// parser.
+	cliPath, err := exec.LookPath("nvidia-container-cli")
+	if err != nil {
+		return fmt.Errorf("failed to locate nvidia-container-cli in PATH: %w", err)
+	}
+	ldconfigPath, err := exec.LookPath("ldconfig")
+	if err != nil {
+		return fmt.Errorf("failed to locate ldconfig in PATH: %w", err)
+	}
+
+	// nvidia-container-cli does not create this directory.
+	if err := os.MkdirAll(path.Join(spec.Root.Path, "proc", "driver", "nvidia"), 0555); err != nil {
+		return fmt.Errorf("failed to create /proc/driver/nvidia in app filesystem: %w", err)
+	}
+
+	argv := []string{
+		cliPath,
+		"--load-kmods",
+		"configure",
+		fmt.Sprintf("--ldconfig=@%s", ldconfigPath),
+		"--no-cgroups", // runsc doesn't configure device cgroups yet
+		"--utility",
+		"--compute",
+		fmt.Sprintf("--pid=%d", os.Getpid()),
+		spec.Root.Path,
+	}
+	log.Debugf("Executing %q", argv)
+	var stdout, stderr strings.Builder
+	cmd := exec.Cmd{
+		Path:   argv[0],
+		Args:   argv,
+		Env:    os.Environ(),
+		Stdout: &stdout,
+		Stderr: &stderr,
+	}
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("nvidia-container-cli failed, err: %v\nstdout: %s\nstderr: %s", err, stdout.String(), stderr.String())
+	}
+	return nil
 }
