@@ -9,8 +9,7 @@ go_binary(
     name = "fuse",
     srcs = ["fuse.go"],
     visibility = [
-        "//test/benchmarks:__subpackages__",
-        "//test/runner:__subpackages__",
+        "//visibility:public",
     ],
     deps = [
         "//pkg/log",

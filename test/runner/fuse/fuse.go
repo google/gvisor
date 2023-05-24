@@ -81,6 +81,8 @@ func main() {
 
 	cmdArgs := strings.Split(strings.Trim(*cmd, "\""), " ")
 	c := exec.Command(cmdArgs[0], cmdArgs[1:]...)
+	c.Stdout = os.Stdout
+	c.Stderr = os.Stderr
 	if err := c.Run(); err != nil {
 		log.Warningf(err.Error())
 		os.Exit(1)
