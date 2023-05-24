@@ -28,6 +28,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/log",
         "//pkg/seccomp",
+        "//pkg/sentry/devices/nvproxy",
         "//pkg/sentry/platform",
         "//pkg/sentry/socket/hostinet",
         "//pkg/tcpip/link/fdbased",

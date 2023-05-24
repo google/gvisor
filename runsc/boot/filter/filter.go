@@ -20,6 +20,7 @@ package filter
 import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/seccomp"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 )
 
@@ -30,6 +31,7 @@ type Options struct {
 	HostNetworkRawSockets bool
 	HostFilesystem        bool
 	ProfileEnable         bool
+	NVProxy               bool
 	ControllerFD          int
 }
 
@@ -57,6 +59,10 @@ func Install(opt Options) error {
 	if opt.HostFilesystem {
 		Report("host filesystem enabled: syscall filters less restrictive!")
 		s.Merge(hostFilesystemFilters())
+	}
+	if opt.NVProxy {
+		Report("Nvidia GPU driver proxy enabled: syscall filters less restrictive!")
+		s.Merge(nvproxy.Filters())
 	}
 
 	s.Merge(opt.Platform.SyscallFilters())

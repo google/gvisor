@@ -11,6 +11,7 @@ go_library(
         "cri.go",
         "fs.go",
         "namespace.go",
+        "nvidia.go",
         "specutils.go",
     ],
     visibility = ["//:sandbox"],

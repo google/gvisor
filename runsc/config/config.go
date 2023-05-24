@@ -282,6 +282,14 @@ type Config struct {
 	// exists, but is mostly idle. Not supported in rootless mode.
 	DirectFS bool `flag:"directfs"`
 
+	// NVProxy enables support for Nvidia GPUs.
+	NVProxy bool `flag:"nvproxy"`
+
+	// NVProxyDocker exposes GPUs to containers based on the
+	// NVIDIA_VISIBLE_DEVICES container environment variable, as requested by
+	// containers or set by `docker --gpus`.
+	NVProxyDocker bool `flag:"nvproxy-docker"`
+
 	// TestOnlyAllowRunAsCurrentUserWithoutChroot should only be used in
 	// tests. It allows runsc to start the sandbox process as the current
 	// user, and without chrooting the sandbox process. This can be

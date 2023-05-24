@@ -29,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -480,7 +481,8 @@ func TestCreateMountNamespace(t *testing.T) {
 			}
 
 			ctx := l.k.SupervisorContext()
-			mns, err := mntr.mountAll(l.root.conf, &l.root.procArgs)
+			creds := auth.NewRootCredentials(l.root.procArgs.Credentials.UserNamespace)
+			mns, err := mntr.mountAll(ctx, creds, l.root.conf, &l.root.procArgs)
 			if err != nil {
 				t.Fatalf("mountAll: %v", err)
 			}
