@@ -14,6 +14,7 @@ go_binary(
         "//pkg/tcpip/adapters/gonet",
         "//pkg/tcpip/link/fdbased",
         "//pkg/tcpip/link/qdisc/fifo",
+        "//pkg/tcpip/link/sniffer",
         "//pkg/tcpip/network/arp",
         "//pkg/tcpip/network/ipv4",
         "//pkg/tcpip/network/ipv6",

@@ -50,6 +50,7 @@ disable_linux_gso=
 disable_linux_gro=
 gro=0
 num_client_threads=1
+sniff=false
 
 # Check for netem support.
 lsmod_output=$(lsmod | grep sch_netem)
@@ -198,6 +199,9 @@ while [[ $# -gt 0 ]]; do
       shift
       [[ "$#" -le 0 ]] && echo "no iperf name provided" && exit 1
       iperf_binary_name=$1
+      ;;
+    --sniff)
+      netstack_opts="${netstack_opts} -sniff"
       ;;
     *)
       echo "unknown option: $1"

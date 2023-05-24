@@ -37,6 +37,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/adapters/gonet"
 	"gvisor.dev/gvisor/pkg/tcpip/link/fdbased"
 	"gvisor.dev/gvisor/pkg/tcpip/link/qdisc/fifo"
+	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
 	"gvisor.dev/gvisor/pkg/tcpip/network/arp"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv4"
 	"gvisor.dev/gvisor/pkg/tcpip/network/ipv6"
@@ -72,6 +73,7 @@ var (
 	mutexprofile       = flag.String("mutexprofile", "", "write a mutex profile to the specified file.")
 	traceprofile       = flag.String("traceprofile", "", "write a 5s trace of the benchmark to the specified file.")
 	useIpv6            = flag.Bool("ipv6", false, "use ipv6 instead of ipv4.")
+	sniff              = flag.Bool("sniff", false, "log sniffed packets")
 )
 
 type impl interface {
@@ -227,6 +229,10 @@ func newNetstackImpl(mode string) (impl, error) {
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create FD endpoint: %v", err)
+	}
+
+	if *sniff {
+		ep = sniffer.New(ep)
 	}
 
 	qDisc := fifo.New(ep, runtime.GOMAXPROCS(0), 1000)
