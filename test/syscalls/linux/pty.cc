@@ -374,6 +374,8 @@ PosixErrorOr<size_t> PollAndReadFd(int fd, void* buf, size_t count,
         continue;
       }
       return PosixError(errno, "read failed");
+    } else if (n > 0 && (pfd.revents & POLLIN) == 0) {
+      return PosixError(EINVAL, "Poll said not readable but data was read");
     }
     completed += n;
     if (completed >= count) {
