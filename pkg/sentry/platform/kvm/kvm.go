@@ -67,6 +67,8 @@ type KVM struct {
 	// KVM never changes mm_structs.
 	platform.UseHostProcessMemoryBarrier
 
+	platform.DoesOwnPageTables
+
 	// machine is the backing VM.
 	machine *machine
 }

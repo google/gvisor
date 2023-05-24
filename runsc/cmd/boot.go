@@ -242,7 +242,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	}
 
 	if b.setUpRoot {
-		if err := setUpChroot(b.pidns); err != nil {
+		if err := setUpChroot(b.pidns, conf); err != nil {
 			util.Fatalf("error setting up chroot: %v", err)
 		}
 
