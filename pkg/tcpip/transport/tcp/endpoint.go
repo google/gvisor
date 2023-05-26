@@ -461,6 +461,13 @@ type endpoint struct {
 	// and dropped when it is.
 	segmentQueue segmentQueue `state:"wait"`
 
+	// localSegmentList holds segments dequeued from segmentQueue. It
+	// enables the endpoint to process segments without contending for the
+	// segmentQueue lock.
+	//
+	// +checklocks:mu
+	localSegmentList segmentList
+
 	// userMSS if non-zero is the MSS value explicitly set by the user
 	// for this endpoint using the TCP_MAXSEG setsockopt.
 	userMSS uint16
@@ -980,6 +987,14 @@ func (e *endpoint) purgeReadQueue() {
 			s.DecRef()
 		}
 		e.RcvBufUsed = 0
+	}
+	for {
+		s := e.localSegmentList.Front()
+		if s == nil {
+			break
+		}
+		e.localSegmentList.Remove(s)
+		s.DecRef()
 	}
 }
 

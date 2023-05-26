@@ -84,6 +84,18 @@ func (q *segmentQueue) dequeue() *segment {
 	return s
 }
 
+// dequeueList removes and returns the entirety of the queue in O(1) time.
+// Ownership is transferred to the caller, who is responsible for decrementing
+// the ref counts when done.
+func (q *segmentQueue) dequeueList() segmentList {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	list := q.list
+	q.list.Reset()
+	return list
+}
+
 // freeze prevents any more segments from being added to the queue. i.e all
 // future segmentQueue.enqueue will return false and not add the segment to the
 // queue till the queue is unfroze with a corresponding segmentQueue.thaw call.

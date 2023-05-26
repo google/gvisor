@@ -1162,14 +1162,17 @@ func (e *endpoint) handleReset(s *segment) (ok bool, err tcpip.Error) {
 // +checklocksalias:e.snd.ep.mu=e.mu
 func (e *endpoint) handleSegmentsLocked() tcpip.Error {
 	sndUna := e.snd.SndUna
+	dequeued := e.segmentQueue.dequeueList()
+	e.localSegmentList.PushBackList(&dequeued)
 	for i := 0; i < maxSegmentsPerWake; i++ {
 		if state := e.EndpointState(); state.closed() || state == StateTimeWait || state == StateError {
 			return nil
 		}
-		s := e.segmentQueue.dequeue()
+		s := e.localSegmentList.Front()
 		if s == nil {
 			break
 		}
+		e.localSegmentList.Remove(s)
 		cont, err := e.handleSegmentLocked(s)
 		s.DecRef()
 		if err != nil {
