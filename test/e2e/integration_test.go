@@ -533,7 +533,32 @@ func TestStickyDir(t *testing.T) {
 }
 
 func TestHostFD(t *testing.T) {
-	runIntegrationTest(t, nil, "./host_fd")
+	t.Run("regular", func(t *testing.T) {
+		runIntegrationTest(t, nil, "./host_fd")
+	})
+	t.Run("tty", func(t *testing.T) {
+		ctx := context.Background()
+		d := dockerutil.MakeContainer(ctx, t)
+		defer d.CleanUp(ctx)
+
+		// Start the container with an attached PTY.
+		p, err := d.SpawnProcess(ctx, dockerutil.RunOpts{
+			Image:   "basic/integrationtest",
+			WorkDir: "/root",
+		}, "./host_fd", "-t")
+		if err != nil {
+			t.Fatalf("docker run failed: %v", err)
+		}
+
+		if err := d.Wait(ctx); err != nil {
+			t.Fatalf("Wait failed: %v", err)
+		}
+		if out, err := p.Logs(); err != nil {
+			t.Fatal(err)
+		} else if len(out) > 0 {
+			t.Errorf("test failed:\n%s", out)
+		}
+	})
 }
 
 func runIntegrationTest(t *testing.T, capAdd []string, args ...string) {
