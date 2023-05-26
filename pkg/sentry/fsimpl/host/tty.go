@@ -18,6 +18,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -154,6 +155,17 @@ func (t *TTYFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysno uin
 	fd := t.inode.hostFD
 	ioctl := args[1].Uint64()
 	switch ioctl {
+	case linux.FIONREAD:
+		v, err := ioctlFionread(fd)
+		if err != nil {
+			return 0, err
+		}
+
+		var buf [4]byte
+		hostarch.ByteOrder.PutUint32(buf[:], v)
+		_, err = io.CopyOut(ctx, args[2].Pointer(), buf[:], usermem.IOOpts{})
+		return 0, err
+
 	case linux.TCGETS:
 		termios, err := ioctlGetTermios(fd)
 		if err != nil {
