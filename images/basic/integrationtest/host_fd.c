@@ -14,11 +14,16 @@
 
 #include <err.h>
 #include <errno.h>
+#include <getopt.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <sys/epoll.h>
 #include <sys/ioctl.h>
 #include <sys/select.h>
 #include <unistd.h>
+
+// Flag to indicate that TTY is being used in the container.
+static int tty = 0;
 
 // Tests that FIONREAD is supported with host FD.
 void testFionread() {
@@ -34,6 +39,10 @@ void testFionread() {
 // Docker maps stdin to /dev/null which doesn't support epoll. Check that error
 // is correctly propagated.
 void testEpoll() {
+  if (tty) {
+    // stdin is not /dev/null when TTY is used for the container.
+    return;
+  }
   int fd = epoll_create(1);
   if (fd < 0) {
     err(1, "epoll_create");
@@ -67,6 +76,18 @@ void testSelect() {
 }
 
 int main(int argc, char** argv) {
+  int opt;
+  while ((opt = getopt(argc, argv, "t")) != -1) {
+    switch (opt) {
+      case 't':
+        tty = 1;
+        break;
+      default:
+        fprintf(stderr, "Usage: %s [-t]\n", argv[0]);
+        return 1;
+    }
+  }
+
   testFionread();
   testEpoll();
   testSelect();
