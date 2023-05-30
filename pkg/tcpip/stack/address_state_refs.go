@@ -43,7 +43,8 @@ type addressStateRefs struct {
 // InitRefs initializes r with one reference and, if enabled, activates leak
 // checking.
 func (r *addressStateRefs) InitRefs() {
-	r.refCount.Store(1)
+
+	r.refCount.RacyStore(1)
 	refs.Register(r)
 }
 
