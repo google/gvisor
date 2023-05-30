@@ -17,8 +17,6 @@ package tcpip
 import (
 	"fmt"
 	"time"
-
-	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // stdClock implements Clock with the time package.
@@ -57,14 +55,9 @@ type stdClock struct {
 
 	// monotonicOffset is the offset applied to the calculated monotonic time.
 	//
-	// monotonicOffset is assigned maxMonotonic after restore so that the
-	// monotonic time will continue from where it "left off" before saving as part
-	// of S/R.
-	monotonicOffset MonotonicTime `state:"nosave"`
-
-	// monotonicMU protects maxMonotonic.
-	monotonicMU  sync.Mutex `state:"nosave"`
-	maxMonotonic MonotonicTime
+	// monotonicOffset is assigned after restore so that the monotonic time
+	// will continue from where it "left off" before saving as part of S/R.
+	monotonicOffset MonotonicTime
 }
 
 // NewStdClock returns an instance of a clock that uses the time package.
@@ -88,17 +81,7 @@ func (s *stdClock) NowMonotonic() MonotonicTime {
 		panic(fmt.Sprintf("got negative duration = %s since base time = %s", sinceBase, s.baseTime))
 	}
 
-	monotonicValue := s.monotonicOffset.Add(sinceBase)
-
-	s.monotonicMU.Lock()
-	defer s.monotonicMU.Unlock()
-
-	// Monotonic time values must never decrease.
-	if s.maxMonotonic.Before(monotonicValue) {
-		s.maxMonotonic = monotonicValue
-	}
-
-	return s.maxMonotonic
+	return s.monotonicOffset.Add(sinceBase)
 }
 
 // AfterFunc implements Clock.AfterFunc.
