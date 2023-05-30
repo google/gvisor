@@ -19,7 +19,7 @@ import (
 	"io"
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/channel"
@@ -105,7 +105,7 @@ func (f *fakeTransportEndpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(f.route.MaxHeaderLength()) + fakeTransHeaderLen,
-		Payload:            bufferv2.MakeWithData(v),
+		Payload:            buffer.MakeWithData(v),
 	})
 	_ = pkt.TransportHeader().Push(fakeTransHeaderLen)
 	if err := f.route.WritePacket(stack.NetworkHeaderParams{Protocol: fakeTransNumber, TTL: 123, TOS: stack.DefaultTOS}, pkt); err != nil {
@@ -404,7 +404,7 @@ func TestTransportReceive(t *testing.T) {
 	copy(buf[dstAddrOffset:], []byte("\x01\x00\x00\x00"))
 	buf[protocolNumberOffset] = 0
 	linkEP.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: bufferv2.MakeWithData(buf),
+		Payload: buffer.MakeWithData(buf),
 	}))
 	if fakeTrans.packetCount != 0 {
 		t.Errorf("packetCount = %d, want %d", fakeTrans.packetCount, 0)
@@ -415,7 +415,7 @@ func TestTransportReceive(t *testing.T) {
 	copy(buf[srcAddrOffset:], []byte("\x03\x00\x00\x00"))
 	buf[protocolNumberOffset] = byte(fakeTransNumber)
 	linkEP.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: bufferv2.MakeWithData(buf),
+		Payload: buffer.MakeWithData(buf),
 	}))
 	if fakeTrans.packetCount != 0 {
 		t.Errorf("packetCount = %d, want %d", fakeTrans.packetCount, 0)
@@ -426,7 +426,7 @@ func TestTransportReceive(t *testing.T) {
 	copy(buf[srcAddrOffset:], []byte("\x02\x00\x00\x00"))
 	buf[protocolNumberOffset] = byte(fakeTransNumber)
 	linkEP.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: bufferv2.MakeWithData(buf),
+		Payload: buffer.MakeWithData(buf),
 	}))
 	if fakeTrans.packetCount != 1 {
 		t.Errorf("packetCount = %d, want %d", fakeTrans.packetCount, 1)
@@ -488,7 +488,7 @@ func TestTransportControlReceive(t *testing.T) {
 	copy(buf[fakeNetHeaderLen:][srcAddrOffset:], []byte("\x01\x00\x00\x00"))
 	buf[fakeNetHeaderLen:][protocolNumberOffset] = 0
 	linkEP.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: bufferv2.MakeWithData(buf),
+		Payload: buffer.MakeWithData(buf),
 	}))
 	if fakeTrans.controlCount != 0 {
 		t.Errorf("controlCount = %d, want %d", fakeTrans.controlCount, 0)
@@ -499,7 +499,7 @@ func TestTransportControlReceive(t *testing.T) {
 	copy(buf[fakeNetHeaderLen:][srcAddrOffset:], []byte("\x01\x00\x00\x00"))
 	buf[fakeNetHeaderLen:][protocolNumberOffset] = byte(fakeTransNumber)
 	linkEP.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: bufferv2.MakeWithData(buf),
+		Payload: buffer.MakeWithData(buf),
 	}))
 	if fakeTrans.controlCount != 0 {
 		t.Errorf("controlCount = %d, want %d", fakeTrans.controlCount, 0)
@@ -510,7 +510,7 @@ func TestTransportControlReceive(t *testing.T) {
 	copy(buf[fakeNetHeaderLen:][srcAddrOffset:], []byte("\x01\x00\x00\x00"))
 	buf[fakeNetHeaderLen:][protocolNumberOffset] = byte(fakeTransNumber)
 	linkEP.InjectInbound(fakeNetNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: bufferv2.MakeWithData(buf),
+		Payload: buffer.MakeWithData(buf),
 	}))
 	if fakeTrans.controlCount != 1 {
 		t.Errorf("controlCount = %d, want %d", fakeTrans.controlCount, 1)

@@ -17,7 +17,7 @@ package tun
 import (
 	"fmt"
 
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -181,7 +181,7 @@ func (d *Device) MTU() (uint32, error) {
 }
 
 // Write inject one inbound packet to the network interface.
-func (d *Device) Write(data *bufferv2.View) (int64, error) {
+func (d *Device) Write(data *buffer.View) (int64, error) {
 	d.mu.RLock()
 	endpoint := d.endpoint
 	d.mu.RUnlock()
@@ -242,7 +242,7 @@ func (d *Device) Write(data *bufferv2.View) (int64, error) {
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: len(ethHdr),
-		Payload:            bufferv2.MakeWithView(data.Clone()),
+		Payload:            buffer.MakeWithView(data.Clone()),
 	})
 	defer pkt.DecRef()
 	copy(pkt.LinkHeader().Push(len(ethHdr)), ethHdr)
@@ -251,7 +251,7 @@ func (d *Device) Write(data *bufferv2.View) (int64, error) {
 }
 
 // Read reads one outgoing packet from the network interface.
-func (d *Device) Read() (*bufferv2.View, error) {
+func (d *Device) Read() (*buffer.View, error) {
 	d.mu.RLock()
 	endpoint := d.endpoint
 	d.mu.RUnlock()
@@ -269,12 +269,12 @@ func (d *Device) Read() (*bufferv2.View, error) {
 }
 
 // encodePkt encodes packet for fd side.
-func (d *Device) encodePkt(pkt stack.PacketBufferPtr) *bufferv2.View {
-	var view *bufferv2.View
+func (d *Device) encodePkt(pkt stack.PacketBufferPtr) *buffer.View {
+	var view *buffer.View
 
 	// Packet information.
 	if !d.flags.NoPacketInfo {
-		view = bufferv2.NewView(PacketInfoHeaderSize + pkt.Size())
+		view = buffer.NewView(PacketInfoHeaderSize + pkt.Size())
 		view.Grow(PacketInfoHeaderSize)
 		hdr := PacketInfoHeader(view.AsSlice())
 		hdr.Encode(&PacketInfoFields{

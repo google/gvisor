@@ -74,7 +74,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/atomicbitops",
-        "//pkg/bufferv2",
+        "//pkg/buffer",
         "//pkg/log",
         "//pkg/rand",
         "//pkg/refs",
@@ -105,7 +105,7 @@ go_test(
     ],
     library = ":tcp",
     deps = [
-        "//pkg/bufferv2",
+        "//pkg/buffer",
         "//pkg/refs",
         "//pkg/sleep",
         "//pkg/tcpip/faketime",

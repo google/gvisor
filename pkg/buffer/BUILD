@@ -9,7 +9,7 @@ package(
 go_template_instance(
     name = "chunk_refs",
     out = "chunk_refs.go",
-    package = "bufferv2",
+    package = "buffer",
     prefix = "chunk",
     template = "//pkg/refs:refs_template",
     types = {
@@ -20,7 +20,7 @@ go_template_instance(
 go_template_instance(
     name = "view_list",
     out = "view_list.go",
-    package = "bufferv2",
+    package = "buffer",
     prefix = "view",
     template = "//pkg/ilist:generic_list",
     types = {
@@ -30,7 +30,7 @@ go_template_instance(
 )
 
 go_library(
-    name = "bufferv2",
+    name = "buffer",
     srcs = [
         "buffer.go",
         "buffer_state.go",
@@ -55,12 +55,12 @@ go_library(
 )
 
 go_test(
-    name = "bufferv2_test",
+    name = "buffer_test",
     srcs = [
         "buffer_test.go",
         "view_test.go",
     ],
-    library = ":bufferv2",
+    library = ":buffer",
     deps = [
         "//pkg/state",
         "//pkg/tcpip/checksum",

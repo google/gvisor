@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	cryptorand "gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
@@ -759,7 +759,7 @@ func rxNDPSolicit(e *channel.Endpoint, tgt tcpip.Address) {
 		SrcAddr:           header.IPv6Any,
 		DstAddr:           snmc,
 	})
-	e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: bufferv2.MakeWithData(hdr.View())}))
+	e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buffer.MakeWithData(hdr.View())}))
 }
 
 // TestDADFail tests to make sure that the DAD process fails if another node is
@@ -811,7 +811,7 @@ func TestDADFail(t *testing.T) {
 					SrcAddr:           tgt,
 					DstAddr:           header.IPv6AllNodesMulticastAddress,
 				})
-				e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: bufferv2.MakeWithData(hdr.View())}))
+				e.InjectInbound(header.IPv6ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buffer.MakeWithData(hdr.View())}))
 			},
 			getStat: func(s tcpip.ICMPv6ReceivedPacketStats) *tcpip.StatCounter {
 				return s.NeighborAdvert
@@ -1274,7 +1274,7 @@ func raBuf(ip tcpip.Address, rl uint16, managedAddress, otherConfigurations bool
 	})
 
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: bufferv2.MakeWithData(hdr.View()),
+		Payload: buffer.MakeWithData(hdr.View()),
 	})
 }
 

@@ -20,7 +20,7 @@ import (
 	"testing"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
@@ -430,7 +430,7 @@ func TestForwardingWithStaticResolver(t *testing.T) {
 	buf := make([]byte, 30)
 	copy(buf[dstAddrOffset:], []byte("\x03\x00\x00\x00"))
 	ep1.InjectInbound(fwdTestNetNumber, NewPacketBuffer(PacketBufferOptions{
-		Payload: bufferv2.MakeWithData(buf),
+		Payload: buffer.MakeWithData(buf),
 	}))
 
 	var p PacketBufferPtr
@@ -474,7 +474,7 @@ func TestForwardingWithFakeResolver(t *testing.T) {
 	buf := make([]byte, 30)
 	buf[dstAddrOffset] = 3
 	ep1.InjectInbound(fwdTestNetNumber, NewPacketBuffer(PacketBufferOptions{
-		Payload: bufferv2.MakeWithData(buf),
+		Payload: buffer.MakeWithData(buf),
 	}))
 
 	var p PacketBufferPtr
@@ -508,7 +508,7 @@ func TestForwardingWithNoResolver(t *testing.T) {
 	buf := make([]byte, 30)
 	buf[dstAddrOffset] = 3
 	ep1.InjectInbound(fwdTestNetNumber, NewPacketBuffer(PacketBufferOptions{
-		Payload: bufferv2.MakeWithData(buf),
+		Payload: buffer.MakeWithData(buf),
 	}))
 
 	clock.Advance(proto.addrResolveDelay)
@@ -536,7 +536,7 @@ func TestForwardingResolutionFailsForQueuedPackets(t *testing.T) {
 		buf := make([]byte, 30)
 		buf[dstAddrOffset] = 3
 		ep1.InjectInbound(fwdTestNetNumber, NewPacketBuffer(PacketBufferOptions{
-			Payload: bufferv2.MakeWithData(buf),
+			Payload: buffer.MakeWithData(buf),
 		}))
 	}
 
@@ -577,7 +577,7 @@ func TestForwardingWithFakeResolverPartialTimeout(t *testing.T) {
 	buf := make([]byte, 30)
 	buf[dstAddrOffset] = 4
 	ep1.InjectInbound(fwdTestNetNumber, NewPacketBuffer(PacketBufferOptions{
-		Payload: bufferv2.MakeWithData(buf),
+		Payload: buffer.MakeWithData(buf),
 	}))
 
 	// Inject an inbound packet to address 3 on NIC 1, and see if it is
@@ -585,7 +585,7 @@ func TestForwardingWithFakeResolverPartialTimeout(t *testing.T) {
 	buf = make([]byte, 30)
 	buf[dstAddrOffset] = 3
 	ep1.InjectInbound(fwdTestNetNumber, NewPacketBuffer(PacketBufferOptions{
-		Payload: bufferv2.MakeWithData(buf),
+		Payload: buffer.MakeWithData(buf),
 	}))
 
 	var p PacketBufferPtr
@@ -635,7 +635,7 @@ func TestForwardingWithFakeResolverTwoPackets(t *testing.T) {
 		buf := make([]byte, 30)
 		buf[dstAddrOffset] = 3
 		ep1.InjectInbound(fwdTestNetNumber, NewPacketBuffer(PacketBufferOptions{
-			Payload: bufferv2.MakeWithData(buf),
+			Payload: buffer.MakeWithData(buf),
 		}))
 	}
 
@@ -690,7 +690,7 @@ func TestForwardingWithFakeResolverManyPackets(t *testing.T) {
 		// Set the packet sequence number.
 		binary.BigEndian.PutUint16(buf[fwdTestNetHeaderLen:], uint16(i))
 		ep1.InjectInbound(fwdTestNetNumber, NewPacketBuffer(PacketBufferOptions{
-			Payload: bufferv2.MakeWithData(buf),
+			Payload: buffer.MakeWithData(buf),
 		}))
 	}
 
@@ -756,7 +756,7 @@ func TestForwardingWithFakeResolverManyResolutions(t *testing.T) {
 		buf := make([]byte, 30)
 		buf[dstAddrOffset] = byte(3 + i)
 		ep1.InjectInbound(fwdTestNetNumber, NewPacketBuffer(PacketBufferOptions{
-			Payload: bufferv2.MakeWithData(buf),
+			Payload: buffer.MakeWithData(buf),
 		}))
 	}
 

@@ -24,7 +24,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
@@ -486,7 +486,7 @@ func TestForwardingWithLinkResolutionFailure(t *testing.T) {
 			))
 	}
 
-	icmpv4Checker := func(t *testing.T, v *bufferv2.View, src, dst tcpip.Address) {
+	icmpv4Checker := func(t *testing.T, v *buffer.View, src, dst tcpip.Address) {
 		checker.IPv4(t, v,
 			checker.SrcAddr(src),
 			checker.DstAddr(dst),
@@ -499,7 +499,7 @@ func TestForwardingWithLinkResolutionFailure(t *testing.T) {
 		)
 	}
 
-	icmpv6Checker := func(t *testing.T, v *bufferv2.View, src, dst tcpip.Address) {
+	icmpv6Checker := func(t *testing.T, v *buffer.View, src, dst tcpip.Address) {
 		checker.IPv6(t, v,
 			checker.SrcAddr(src),
 			checker.DstAddr(dst),
@@ -522,7 +522,7 @@ func TestForwardingWithLinkResolutionFailure(t *testing.T) {
 		transportProtocol            func(*stack.Stack) stack.TransportProtocol
 		rx                           func(*channel.Endpoint, tcpip.Address, tcpip.Address)
 		linkResolutionRequestChecker func(*testing.T, stack.PacketBufferPtr, tcpip.Address, tcpip.Address)
-		icmpReplyChecker             func(*testing.T, *bufferv2.View, tcpip.Address, tcpip.Address)
+		icmpReplyChecker             func(*testing.T, *buffer.View, tcpip.Address, tcpip.Address)
 		mtu                          uint32
 	}{
 		{
@@ -975,7 +975,7 @@ func TestWritePacketsLinkResolution(t *testing.T) {
 			data := []byte{1, 2}
 			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 				ReserveHeaderBytes: header.UDPMinimumSize + int(r.MaxHeaderLength()),
-				Payload:            bufferv2.MakeWithData(data),
+				Payload:            buffer.MakeWithData(data),
 			})
 			pkt.TransportProtocolNumber = udp.ProtocolNumber
 			length := uint16(pkt.Data().Size() + header.UDPMinimumSize)
@@ -1732,7 +1732,7 @@ func TestUpdateCachedNeighborEntry(t *testing.T) {
 	writePacket := func(t *testing.T, r *stack.Route) {
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			ReserveHeaderBytes: header.UDPMinimumSize + int(r.MaxHeaderLength()),
-			Payload:            bufferv2.MakeWithData(d),
+			Payload:            buffer.MakeWithData(d),
 		})
 		if err := r.WritePacket(params, pkt); err != nil {
 			t.Fatalf("WritePacket(...): %s", err)

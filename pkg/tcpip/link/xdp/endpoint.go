@@ -22,7 +22,7 @@ import (
 	"fmt"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -304,7 +304,7 @@ func (ep *endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error)
 }
 
 func (ep *endpoint) dispatch() (bool, tcpip.Error) {
-	var views []*bufferv2.View
+	var views []*buffer.View
 
 	for {
 		stopped, errno := rawfile.BlockingPollUntilStopped(ep.stopFD.EFD, ep.fd, unix.POLLIN|unix.POLLERR)
@@ -339,7 +339,7 @@ func (ep *endpoint) dispatch() (bool, tcpip.Error) {
 				// buffer.
 				descriptor := ep.control.RX.Get(rxIndex + i)
 				data := ep.control.UMEM.Get(descriptor)
-				view := bufferv2.NewViewWithData(data)
+				view := buffer.NewViewWithData(data)
 				views = append(views, view)
 				ep.control.UMEM.FreeFrame(descriptor.Addr)
 			}
@@ -358,7 +358,7 @@ func (ep *endpoint) dispatch() (bool, tcpip.Error) {
 
 				// Wrap the packet in a PacketBuffer and send it up the stack.
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Payload: bufferv2.MakeWithView(view),
+					Payload: buffer.MakeWithView(view),
 				})
 				// AF_XDP packets always have a link header.
 				if _, ok := pkt.LinkHeader().Consume(header.EthernetMinimumSize); !ok {

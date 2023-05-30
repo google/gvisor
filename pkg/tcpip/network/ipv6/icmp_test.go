@@ -23,7 +23,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/time/rate"
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
@@ -191,8 +191,8 @@ func handleICMPInIPv6(ep stack.NetworkEndpoint, src, dst tcpip.Address, icmp hea
 		ExtensionHeaders:  extensionHeaders,
 	})
 
-	buf := bufferv2.MakeWithData(ip)
-	buf.Append(bufferv2.NewViewWithData([]byte(icmp)))
+	buf := buffer.MakeWithData(ip)
+	buf.Append(buffer.NewViewWithData([]byte(icmp)))
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Payload: buf,
 	})
@@ -794,7 +794,7 @@ func TestICMPChecksumValidationSimple(t *testing.T) {
 						SrcAddr:           lladdr1,
 						DstAddr:           lladdr0,
 					})
-					buf := bufferv2.MakeWithData(append(ip, icmp...))
+					buf := buffer.MakeWithData(append(ip, icmp...))
 					pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 						Payload: buf,
 					})
@@ -1000,7 +1000,7 @@ func TestICMPChecksumValidationWithPayload(t *testing.T) {
 					DstAddr:           lladdr0,
 				})
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Payload: bufferv2.MakeWithData(hdr.View()),
+					Payload: buffer.MakeWithData(hdr.View()),
 				})
 				e.InjectInbound(ProtocolNumber, pkt)
 				pkt.DecRef()
@@ -1191,7 +1191,7 @@ func TestICMPChecksumValidationWithPayloadMultipleViews(t *testing.T) {
 					SrcAddr:           lladdr1,
 					DstAddr:           lladdr0,
 				})
-				buf := bufferv2.MakeWithData(append(hdr.View(), payload...))
+				buf := buffer.MakeWithData(append(hdr.View(), payload...))
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 					Payload: buf,
 				})
@@ -1424,7 +1424,7 @@ func TestPacketQueing(t *testing.T) {
 					DstAddr:           host1IPv6Addr.AddressWithPrefix.Address,
 				})
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Payload: bufferv2.MakeWithData(hdr.View()),
+					Payload: buffer.MakeWithData(hdr.View()),
 				})
 				e.InjectInbound(ProtocolNumber, pkt)
 				pkt.DecRef()
@@ -1475,7 +1475,7 @@ func TestPacketQueing(t *testing.T) {
 					DstAddr:           host1IPv6Addr.AddressWithPrefix.Address,
 				})
 				pktBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Payload: bufferv2.MakeWithData(hdr.View()),
+					Payload: buffer.MakeWithData(hdr.View()),
 				})
 				e.InjectInbound(header.IPv6ProtocolNumber, pktBuf)
 				pktBuf.DecRef()
@@ -1588,7 +1588,7 @@ func TestPacketQueing(t *testing.T) {
 					DstAddr:           host1IPv6Addr.AddressWithPrefix.Address,
 				})
 				pktBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Payload: bufferv2.MakeWithData(hdr.View()),
+					Payload: buffer.MakeWithData(hdr.View()),
 				})
 				e.InjectInbound(ProtocolNumber, pktBuf)
 				pktBuf.DecRef()

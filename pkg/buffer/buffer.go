@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package bufferv2 provides the implementation of a non-contiguous buffer that
+// Package buffer provides the implementation of a non-contiguous buffer that
 // is reference counted, pooled, and copy-on-write. It allows O(1) append,
 // and prepend operations.
-package bufferv2
+package buffer
 
 import (
 	"fmt"

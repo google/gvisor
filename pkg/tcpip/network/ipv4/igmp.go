@@ -19,7 +19,7 @@ import (
 	"math"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/network/internal/ip"
@@ -238,7 +238,7 @@ func (b *igmpv3ReportBuilder) Send() (sent bool, err tcpip.Error) {
 		serializer := header.IGMPv3ReportSerializer{Records: records[:maxRecords]}
 		records = records[maxRecords:]
 
-		icmpView := bufferv2.NewViewSize(serializer.Length())
+		icmpView := buffer.NewViewSize(serializer.Length())
 		serializer.SerializeInto(icmpView.AsSlice())
 		if sentWithSpecifiedAddress, err := b.igmp.writePacketInner(
 			icmpView,
@@ -484,7 +484,7 @@ func (igmp *igmpState) handleMembershipReport(groupAddress tcpip.Address) {
 //
 // +checklocksread:igmp.ep.mu
 func (igmp *igmpState) writePacket(destAddress tcpip.Address, groupAddress tcpip.Address, igmpType header.IGMPType) (bool, tcpip.Error) {
-	igmpView := bufferv2.NewViewSize(header.IGMPReportMinimumSize)
+	igmpView := buffer.NewViewSize(header.IGMPReportMinimumSize)
 	igmpData := header.IGMP(igmpView.AsSlice())
 	igmpData.SetType(igmpType)
 	igmpData.SetGroupAddress(groupAddress)
@@ -514,10 +514,10 @@ func (igmp *igmpState) writePacket(destAddress tcpip.Address, groupAddress tcpip
 }
 
 // +checklocksread:igmp.ep.mu
-func (igmp *igmpState) writePacketInner(buf *bufferv2.View, reportStat tcpip.MultiCounterStat, options header.IPv4OptionsSerializer, destAddress tcpip.Address) (bool, tcpip.Error) {
+func (igmp *igmpState) writePacketInner(buf *buffer.View, reportStat tcpip.MultiCounterStat, options header.IPv4OptionsSerializer, destAddress tcpip.Address) (bool, tcpip.Error) {
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(igmp.ep.MaxHeaderLength()),
-		Payload:            bufferv2.MakeWithView(buf),
+		Payload:            buffer.MakeWithView(buf),
 	})
 	defer pkt.DecRef()
 

@@ -19,7 +19,7 @@ package sharedmem
 
 import (
 	"gvisor.dev/gvisor/pkg/atomicbitops"
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -294,7 +294,7 @@ func (e *serverEndpoint) dispatchLoop(d stack.NetworkDispatcher) {
 			}
 		}
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-			Payload: bufferv2.MakeWithView(b),
+			Payload: buffer.MakeWithView(b),
 		})
 		if e.virtioNetHeaderRequired {
 			_, ok := pkt.VirtioNetHeader().Consume(header.VirtioNetHeaderSize)

@@ -21,7 +21,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
@@ -182,7 +182,7 @@ func TestMalformedPacket(t *testing.T) {
 	defer c.cleanup()
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: bufferv2.MakeWithData(make([]byte, header.ARPSize)),
+		Payload: buffer.MakeWithData(make([]byte, header.ARPSize)),
 	})
 
 	c.linkEP.InjectInbound(arp.ProtocolNumber, pkt)
@@ -207,7 +207,7 @@ func TestDisabledEndpoint(t *testing.T) {
 	ep.Disable()
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: bufferv2.MakeWithData(make([]byte, header.ARPSize)),
+		Payload: buffer.MakeWithData(make([]byte, header.ARPSize)),
 	})
 
 	c.linkEP.InjectInbound(arp.ProtocolNumber, pkt)
@@ -239,7 +239,7 @@ func TestDirectReply(t *testing.T) {
 	copy(h.ProtocolAddressTarget(), stackAddr.AsSlice())
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: bufferv2.MakeWithData(v),
+		Payload: buffer.MakeWithData(v),
 	})
 
 	c.linkEP.InjectInbound(arp.ProtocolNumber, pkt)
@@ -303,7 +303,7 @@ func TestDirectRequest(t *testing.T) {
 			copy(h.ProtocolAddressSender(), test.senderAddr.AsSlice())
 			copy(h.ProtocolAddressTarget(), test.targetAddr.AsSlice())
 			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-				Payload: bufferv2.MakeWithData(v),
+				Payload: buffer.MakeWithData(v),
 			})
 			c.linkEP.InjectInbound(arp.ProtocolNumber, pkt)
 			pkt.DecRef()
@@ -456,7 +456,7 @@ func TestReplyPacketType(t *testing.T) {
 				t.Fatalf("got copy(_, _) = %d, want = %d", got, want)
 			}
 			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-				Payload: bufferv2.MakeWithData(v),
+				Payload: buffer.MakeWithData(v),
 			})
 			pkt.PktType = tcpip.PacketBroadcast
 			c.linkEP.InjectInbound(arp.ProtocolNumber, pkt)
@@ -483,7 +483,7 @@ func TestReplyPacketType(t *testing.T) {
 			h.SetIPv4OverEthernet()
 			h.SetOp(header.ARPReply)
 			pkt = stack.NewPacketBuffer(stack.PacketBufferOptions{
-				Payload: bufferv2.MakeWithData(v),
+				Payload: buffer.MakeWithData(v),
 			})
 			pkt.PktType = testCase.packetType
 			c.linkEP.InjectInbound(arp.ProtocolNumber, pkt)

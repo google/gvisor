@@ -17,7 +17,7 @@ package stack
 import (
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -323,7 +323,7 @@ func genTCPPacket(opts genTCPOpts) PacketBufferPtr {
 	packetLen := header.IPv4MinimumSize + uint16(tcpHdrSize)
 	pkt := NewPacketBuffer(PacketBufferOptions{
 		ReserveHeaderBytes: int(packetLen),
-		Payload:            bufferv2.MakeWithData(opts.data),
+		Payload:            buffer.MakeWithData(opts.data),
 	})
 	pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
 	pkt.TransportProtocolNumber = header.TCPProtocolNumber

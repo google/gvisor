@@ -16,7 +16,7 @@ package tcpip
 
 import (
 	"gvisor.dev/gvisor/pkg/atomicbitops"
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -606,7 +606,7 @@ type SockError struct {
 	Cause SockErrorCause
 
 	// Payload is the errant packet's payload.
-	Payload *bufferv2.View
+	Payload *buffer.View
 	// Dst is the original destination address of the errant packet.
 	Dst FullAddress
 	// Offender is the original sender address of the errant packet.
@@ -653,7 +653,7 @@ func (so *SocketOptions) QueueErr(err *SockError) {
 }
 
 // QueueLocalErr queues a local error onto the local queue.
-func (so *SocketOptions) QueueLocalErr(err Error, net NetworkProtocolNumber, info uint32, dst FullAddress, payload *bufferv2.View) {
+func (so *SocketOptions) QueueLocalErr(err Error, net NetworkProtocolNumber, info uint32, dst FullAddress, payload *buffer.View) {
 	so.QueueErr(&SockError{
 		Err:      err,
 		Cause:    &LocalSockError{info: info},
