@@ -57,15 +57,15 @@ type Refs struct {
 	// Speculative references are used for TryIncRef, to avoid a CompareAndSwap
 	// loop. See IncRef, DecRef and TryIncRef for details of how these fields are
 	// used.
+	//
+	// Real references are off-by-one to avoid needing to explicitly set
+	// the refCount to 1 during initialization.
 	refCount atomicbitops.Int64
 }
 
 // InitRefs initializes r with one reference and, if enabled, activates leak
 // checking.
 func (r *Refs) InitRefs() {
-	// We can use RacyStore because the refs can't be shared until after
-	// InitRefs is called, and thus it's safe to use non-atomic operations.
-	r.refCount.RacyStore(1)
 	refs.Register(r)
 }
 
@@ -87,7 +87,7 @@ func (r *Refs) LogRefs() bool {
 // ReadRefs returns the current number of references. The returned count is
 // inherently racy and is unsafe to use without external synchronization.
 func (r *Refs) ReadRefs() int64 {
-	return r.refCount.Load()
+	return r.refCount.Load() + 1
 }
 
 // IncRef implements refs.RefCounter.IncRef.
@@ -98,7 +98,7 @@ func (r *Refs) IncRef() {
 	if enableLogging {
 		refs.LogIncRef(r, v)
 	}
-	if v <= 1 {
+	if v <= 0 {
 		panic(fmt.Sprintf("Incrementing non-positive count %p on %s", r, r.RefType()))
 	}
 }
@@ -112,7 +112,7 @@ func (r *Refs) IncRef() {
 //go:nosplit
 func (r *Refs) TryIncRef() bool {
 	const speculativeRef = 1 << 32
-	if v := r.refCount.Add(speculativeRef); int32(v) == 0 {
+	if v := r.refCount.Add(speculativeRef); int32(v) == -1 {
 		// This object has already been freed.
 		r.refCount.Add(-speculativeRef)
 		return false
@@ -144,10 +144,10 @@ func (r *Refs) DecRef(destroy func()) {
 		refs.LogDecRef(r, v)
 	}
 	switch {
-	case v < 0:
+	case v < -1:
 		panic(fmt.Sprintf("Decrementing non-positive ref count %p, owned by %s", r, r.RefType()))
 
-	case v == 0:
+	case v == -1:
 		refs.Unregister(r)
 		// Call the destructor.
 		if destroy != nil {
