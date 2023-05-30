@@ -63,7 +63,9 @@ type Refs struct {
 // InitRefs initializes r with one reference and, if enabled, activates leak
 // checking.
 func (r *Refs) InitRefs() {
-	r.refCount.Store(1)
+	// We can use RacyStore because the refs can't be shared until after
+	// InitRefs is called, and thus it's safe to use non-atomic operations.
+	r.refCount.RacyStore(1)
 	refs.Register(r)
 }
 
