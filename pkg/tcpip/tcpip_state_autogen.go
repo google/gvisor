@@ -1145,21 +1145,19 @@ func (s *stdClock) StateTypeName() string {
 
 func (s *stdClock) StateFields() []string {
 	return []string{
-		"maxMonotonic",
+		"monotonicOffset",
 	}
 }
-
-func (s *stdClock) beforeSave() {}
 
 // +checklocksignore
 func (s *stdClock) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	stateSinkObject.Save(0, &s.maxMonotonic)
+	stateSinkObject.Save(0, &s.monotonicOffset)
 }
 
 // +checklocksignore
 func (s *stdClock) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &s.maxMonotonic)
+	stateSourceObject.Load(0, &s.monotonicOffset)
 	stateSourceObject.AfterLoad(s.afterLoad)
 }
 
