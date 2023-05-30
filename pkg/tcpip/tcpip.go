@@ -2508,7 +2508,7 @@ func clone(dst reflect.Value, src reflect.Value) {
 
 // String implements the fmt.Stringer interface.
 func (a Address) String() string {
-	switch a.Len() {
+	switch l := a.Len(); l {
 	case 4:
 		return fmt.Sprintf("%d.%d.%d.%d", int(a.addr[0]), int(a.addr[1]), int(a.addr[2]), int(a.addr[3]))
 	case 16:
@@ -2549,7 +2549,7 @@ func (a Address) String() string {
 		}
 		return b.String()
 	default:
-		return fmt.Sprintf("%x", a.addr[:])
+		return fmt.Sprintf("%x", a.addr[:l])
 	}
 }
 
