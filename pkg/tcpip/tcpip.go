@@ -359,6 +359,12 @@ func (m AddressMask) Prefix() int {
 	return p
 }
 
+// Equal returns whether m and other are equal. It exists for use by the cmp
+// library.
+func (m AddressMask) Equal(other AddressMask) bool {
+	return m == other
+}
+
 // Subnet is a subnet defined by its address and mask.
 type Subnet struct {
 	address Address
