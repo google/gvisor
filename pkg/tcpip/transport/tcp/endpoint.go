@@ -1600,7 +1600,6 @@ func (e *endpoint) queueSegment(p tcpip.Payloader, opts tcpip.WriteOptions) (*se
 	size := int(buf.Size())
 	s := newOutgoingSegment(e.TransportEndpointInfo.ID, e.stack.Clock(), buf)
 	e.sndQueueInfo.SndBufUsed += size
-	s.IncRef()
 	e.snd.writeList.PushBack(s)
 
 	return s, size, nil
@@ -1618,9 +1617,6 @@ func (e *endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 	// Return if either we didn't queue anything or if an error occurred while
 	// attempting to queue data.
 	nextSeg, n, err := e.queueSegment(p, opts)
-	if nextSeg != nil {
-		defer nextSeg.DecRef()
-	}
 	if n == 0 || err != nil {
 		return 0, err
 	}
