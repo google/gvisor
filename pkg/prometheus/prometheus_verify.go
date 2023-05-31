@@ -348,6 +348,19 @@ func (p *numberPacker) mustUnpackInt(n packedNumber) int64 {
 	return num.Int
 }
 
+// mustUnpackFloat unpacks a floating-point number.
+// It panics if the packedNumber is not an floating-point number.
+func (p *numberPacker) mustUnpackFloat(n packedNumber) float64 {
+	num := p.unpack(n)
+	if *num == zero {
+		return 0.0
+	}
+	if num.IsInteger() {
+		panic("not a float")
+	}
+	return num.Float
+}
+
 // portTo ports over a packedNumber from this numberPacker to a new one.
 // It is equivalent to `p.pack(other.unpack(n))` but avoids
 // allocations in the overwhelmingly-common case where the number is direct.
@@ -361,6 +374,32 @@ func (p *numberPacker) portTo(other *numberPacker, n packedNumber) packedNumber 
 	}
 	other.data = append(other.data, p.data[uint32(n)&valueField])
 	return packedNumber(uint32(n)&(typeField|storageField) | uint32(len(other.data)-1))
+}
+
+// distributionSnapshot contains the data for a single field combination of a
+// distribution ("histogram") metric.
+type distributionSnapshot struct {
+	// sum is the sum of all samples across all buckets.
+	sum packedNumber
+
+	// count is the number of samples across all buckets.
+	count packedNumber
+
+	// min is the lowest-recorded sample in the distribution.
+	// It is only meaningful when count >= 1.
+	min packedNumber
+
+	// max is the highest-recorded sample in the distribution.
+	// It is only meaningful when count >= 1.
+	max packedNumber
+
+	// ssd is the sum-of-squared-deviations computation of the distribution.
+	// If non-zero, it is always a floating-point number.
+	// It is only meaningful when count >= 2.
+	ssd packedNumber
+
+	// numSamples is the number of samples in each bucket.
+	numSamples []packedNumber
 }
 
 // verifiableMetric verifies a single metric within a Verifier.
@@ -379,8 +418,8 @@ type verifiableMetric struct {
 	// lastCounterValue is used for counter metrics.
 	lastCounterValue map[string]packedNumber
 
-	// lastBucketSamples is used for distribution ("histogram") metrics.
-	lastBucketSamples map[string][]packedNumber
+	// lastDistributionSnapshot is used for distribution ("histogram") metrics.
+	lastDistributionSnapshot map[string]*distributionSnapshot
 }
 
 // newVerifiableMetric creates a new verifiableMetric that can verify the
@@ -459,7 +498,7 @@ func newVerifiableMetric(metadata *pb.MetricMetadata, verifier *Verifier) (*veri
 			v.wantBucketUpperBounds[i] = Number{Int: boundary}
 		}
 		v.wantBucketUpperBounds[numBuckets-1] = Number{Float: math.Inf(1)}
-		v.lastBucketSamples = make(map[string][]packedNumber, numFieldCombinations)
+		v.lastDistributionSnapshot = make(map[string]*distributionSnapshot, numFieldCombinations)
 	default:
 		return nil, fmt.Errorf("invalid type: %v", metadata.GetType())
 	}
@@ -536,6 +575,9 @@ func (v *verifiableMetric) verify(data *Data, metricFieldsSeen map[string]struct
 		if len(data.HistogramValue.Buckets) != len(v.wantBucketUpperBounds) {
 			return fmt.Errorf("invalid number of buckets: got %d want %d", len(data.HistogramValue.Buckets), len(v.wantBucketUpperBounds))
 		}
+		if data.HistogramValue.SumOfSquaredDeviations.IsInteger() && data.HistogramValue.SumOfSquaredDeviations.Int != 0 {
+			return fmt.Errorf("sum of squared deviations must be a floating-point value, got %v", data.HistogramValue.SumOfSquaredDeviations)
+		}
 		for i, b := range data.HistogramValue.Buckets {
 			if want := v.wantBucketUpperBounds[i]; b.UpperBound != want {
 				return fmt.Errorf("invalid upper bound for bucket %d (0-based): got %v want %v", i, b.UpperBound, want)
@@ -566,14 +608,42 @@ func (v *verifiableMetric) verifyIncrement(data *Data, fieldValues string, packe
 			return fmt.Errorf("counter value decreased from %v to %v", last, data.Number)
 		}
 	case TypeHistogram:
-		lastBucketSamples := v.lastBucketSamples[v.verifier.internMap.Intern(fieldValues)]
-		if lastBucketSamples == nil {
-			lastBucketSamples = make([]packedNumber, len(v.wantBucketUpperBounds))
-			v.lastBucketSamples[v.verifier.internMap.Intern(fieldValues)] = lastBucketSamples
+		lastDistributionSnapshot := v.lastDistributionSnapshot[v.verifier.internMap.Intern(fieldValues)]
+		if lastDistributionSnapshot == nil {
+			lastDistributionSnapshot = &distributionSnapshot{
+				numSamples: make([]packedNumber, len(v.wantBucketUpperBounds)),
+			}
+			v.lastDistributionSnapshot[v.verifier.internMap.Intern(fieldValues)] = lastDistributionSnapshot
 		}
+		lastCount := packer.mustUnpackInt(lastDistributionSnapshot.count)
+		if lastCount >= 1 {
+			lastMin := packer.unpack(lastDistributionSnapshot.min)
+			if !lastMin.SameType(&data.HistogramValue.Min) {
+				return fmt.Errorf("minimum value type changed: %v vs %v", lastMin, data.HistogramValue.Min)
+			}
+			if data.HistogramValue.Min.GreaterThan(lastMin) {
+				return fmt.Errorf("minimum value strictly increased: from %v to %v", lastMin, data.HistogramValue.Min)
+			}
+			lastMax := packer.unpack(lastDistributionSnapshot.max)
+			if !lastMax.SameType(&data.HistogramValue.Max) {
+				return fmt.Errorf("maximum value type changed: %v vs %v", lastMax, data.HistogramValue.Max)
+			}
+			if lastMax.GreaterThan(&data.HistogramValue.Max) {
+				return fmt.Errorf("maximum value strictly decreased: from %v to %v", lastMax, data.HistogramValue.Max)
+			}
+		}
+		if lastCount >= 2 {
+			// We already verified that the new data is a floating-point number
+			// earlier, no need to double-check here.
+			lastSSD := packer.mustUnpackFloat(lastDistributionSnapshot.ssd)
+			if data.HistogramValue.SumOfSquaredDeviations.Float < lastSSD {
+				return fmt.Errorf("sum of squared deviations decreased from %v to %v", lastSSD, data.HistogramValue.SumOfSquaredDeviations.Float)
+			}
+		}
+		numSamples := lastDistributionSnapshot.numSamples
 		for i, b := range data.HistogramValue.Buckets {
-			if uint64(packer.mustUnpackInt(lastBucketSamples[i])) > b.Samples {
-				return fmt.Errorf("number of samples in bucket %d (0-based) decreased from %d to %d", i, packer.mustUnpackInt(lastBucketSamples[i]), b.Samples)
+			if uint64(packer.mustUnpackInt(numSamples[i])) > b.Samples {
+				return fmt.Errorf("number of samples in bucket %d (0-based) decreased from %d to %d", i, packer.mustUnpackInt(numSamples[i]), b.Samples)
 			}
 		}
 	}
@@ -587,11 +657,19 @@ func (v *verifiableMetric) packerCapacityNeededForData(data *Data, fieldValues s
 		return needsPackerStorage(data.Number)
 	case TypeHistogram:
 		var toPack uint64
+		var totalSamples uint64
 		var buf Number
 		for _, b := range data.HistogramValue.Buckets {
 			buf = Number{Int: int64(b.Samples)}
 			toPack += needsPackerStorage(&buf)
+			totalSamples += b.Samples
 		}
+		toPack += needsPackerStorage(&data.HistogramValue.Total)
+		toPack += needsPackerStorage(&data.HistogramValue.Min)
+		toPack += needsPackerStorage(&data.HistogramValue.Max)
+		toPack += needsPackerStorage(&data.HistogramValue.SumOfSquaredDeviations)
+		buf = Number{Int: int64(totalSamples)}
+		toPack += needsPackerStorage(&buf)
 		return toPack
 	default:
 		return 0
@@ -612,13 +690,18 @@ func (v *verifiableMetric) packerCapacityNeededForLast(metricFieldsSeen map[stri
 			capacity += lastCounterValue.isIndirect()
 		}
 	case TypeHistogram:
-		for fieldValues, bucketSamples := range v.lastBucketSamples {
+		for fieldValues, distributionSnapshot := range v.lastDistributionSnapshot {
 			if _, found := metricFieldsSeen[fieldValues]; found {
 				continue
 			}
-			for _, b := range bucketSamples {
+			for _, b := range distributionSnapshot.numSamples {
 				capacity += b.isIndirect()
 			}
+			capacity += distributionSnapshot.sum.isIndirect()
+			capacity += distributionSnapshot.count.isIndirect()
+			capacity += distributionSnapshot.min.isIndirect()
+			capacity += distributionSnapshot.max.isIndirect()
+			capacity += distributionSnapshot.ssd.isIndirect()
 		}
 	}
 	return capacity
@@ -633,10 +716,18 @@ func (v *verifiableMetric) update(data *Data, fieldValues string, packer *number
 	case TypeCounter:
 		v.lastCounterValue[v.verifier.internMap.Intern(fieldValues)] = packer.pack(data.Number)
 	case TypeHistogram:
-		lastBucketSamples := v.lastBucketSamples[v.verifier.internMap.Intern(fieldValues)]
+		lastDistributionSnapshot := v.lastDistributionSnapshot[v.verifier.internMap.Intern(fieldValues)]
+		lastBucketSamples := lastDistributionSnapshot.numSamples
+		var count uint64
 		for i, b := range data.HistogramValue.Buckets {
 			lastBucketSamples[i] = packer.packInt(int64(b.Samples))
+			count += b.Samples
 		}
+		lastDistributionSnapshot.sum = packer.pack(&data.HistogramValue.Total)
+		lastDistributionSnapshot.count = packer.packInt(int64(count))
+		lastDistributionSnapshot.min = packer.pack(&data.HistogramValue.Min)
+		lastDistributionSnapshot.max = packer.pack(&data.HistogramValue.Max)
+		lastDistributionSnapshot.ssd = packer.pack(&data.HistogramValue.SumOfSquaredDeviations)
 	}
 }
 
@@ -657,13 +748,19 @@ func (v *verifiableMetric) repackUnseen(metricFieldsSeen map[string]struct{}, ol
 			v.lastCounterValue[fieldValues] = oldPacker.portTo(newPacker, lastCounterValue)
 		}
 	case TypeHistogram:
-		for fieldValues, bucketSamples := range v.lastBucketSamples {
+		for fieldValues, lastDistributionSnapshot := range v.lastDistributionSnapshot {
 			if _, found := metricFieldsSeen[fieldValues]; found {
 				continue
 			}
-			for i, b := range bucketSamples {
-				bucketSamples[i] = oldPacker.portTo(newPacker, b)
+			lastBucketSamples := lastDistributionSnapshot.numSamples
+			for i, b := range lastBucketSamples {
+				lastBucketSamples[i] = oldPacker.portTo(newPacker, b)
 			}
+			lastDistributionSnapshot.sum = oldPacker.portTo(newPacker, lastDistributionSnapshot.sum)
+			lastDistributionSnapshot.count = oldPacker.portTo(newPacker, lastDistributionSnapshot.count)
+			lastDistributionSnapshot.min = oldPacker.portTo(newPacker, lastDistributionSnapshot.min)
+			lastDistributionSnapshot.max = oldPacker.portTo(newPacker, lastDistributionSnapshot.max)
+			lastDistributionSnapshot.ssd = oldPacker.portTo(newPacker, lastDistributionSnapshot.ssd)
 		}
 	}
 }
