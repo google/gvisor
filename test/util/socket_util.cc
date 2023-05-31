@@ -937,11 +937,43 @@ struct udp_pseudo_hdr {
   uint16_t udplen;
 };
 
+static_assert(sizeof(udp_pseudo_hdr) == 12);
+
 uint16_t UDPChecksum(struct iphdr iphdr, struct udphdr udphdr,
                      const char* payload, ssize_t payload_len) {
   struct udp_pseudo_hdr phdr = {};
   phdr.srcip = iphdr.saddr;
   phdr.destip = iphdr.daddr;
+  phdr.zero = 0;
+  phdr.protocol = IPPROTO_UDP;
+  phdr.udplen = udphdr.len;
+
+  ssize_t buf_size = sizeof(phdr) + sizeof(udphdr) + payload_len;
+  char* buf = static_cast<char*>(malloc(buf_size));
+  memcpy(buf, &phdr, sizeof(phdr));
+  memcpy(buf + sizeof(phdr), &udphdr, sizeof(udphdr));
+  memcpy(buf + sizeof(phdr) + sizeof(udphdr), payload, payload_len);
+
+  uint16_t csum = Checksum(reinterpret_cast<uint16_t*>(buf), buf_size);
+  free(buf);
+  return csum;
+}
+
+// IPv6 pseudo-header for UDP checksum calculation.
+struct udpv6_pseudo_hdr {
+  in6_addr srcip;
+  in6_addr destip;
+  char zero;
+  char protocol;
+  uint16_t udplen;
+};
+static_assert(sizeof(udpv6_pseudo_hdr) == 36);
+
+uint16_t UDPChecksum(struct ip6_hdr iphdr, struct udphdr udphdr,
+                     const char* payload, ssize_t payload_len) {
+  struct udpv6_pseudo_hdr phdr = {};
+  phdr.srcip = iphdr.ip6_src;
+  phdr.destip = iphdr.ip6_dst;
   phdr.zero = 0;
   phdr.protocol = IPPROTO_UDP;
   phdr.udplen = udphdr.len;
@@ -995,6 +1027,23 @@ PosixError SetAddrPort(int family, sockaddr_storage* addr, uint16_t port) {
       return PosixError(EINVAL,
                         absl::StrCat("unknown socket family: ", family));
   }
+}
+
+sockaddr_storage InetLoopbackAddr(int family) {
+  struct sockaddr_storage addr;
+  memset(&addr, 0, sizeof(addr));
+  AsSockAddr(&addr)->sa_family = family;
+
+  if (family == AF_INET) {
+    auto sin = reinterpret_cast<struct sockaddr_in*>(&addr);
+    sin->sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    sin->sin_port = htons(0);
+    return addr;
+  }
+  auto sin6 = reinterpret_cast<struct sockaddr_in6*>(&addr);
+  sin6->sin6_addr = in6addr_loopback;
+  sin6->sin6_port = htons(0);
+  return addr;
 }
 
 void SetupTimeWaitClose(const TestAddress* listener,
