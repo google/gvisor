@@ -24,11 +24,10 @@ package context
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/abi/linux/errno"
-	"gvisor.dev/gvisor/pkg/errors"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/waiter"
 )
@@ -102,7 +101,7 @@ func (nt *NoTask) Block(C <-chan struct{}) error {
 	}
 	select {
 	case <-nt.cancel:
-		return errors.New(errno.EINTR, "interrupted system call") // Interrupted.
+		return errors.New("interrupted system call") // Interrupted.
 	case <-C:
 		return nil
 	}

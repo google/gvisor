@@ -70,8 +70,6 @@ deps_test(
         "//pkg/sync/locking",
         "//pkg/waiter",
         "//pkg/xdp",
-        "//pkg/abi/linux/errno",
-        "//pkg/errors",
 
         # Other deps.
         "@com_github_google_btree//:go_default_library",
