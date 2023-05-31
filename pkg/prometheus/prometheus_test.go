@@ -171,14 +171,29 @@ func (m *metricMetadata) float(val float64) *Data {
 // value, and this value will be used as the value for that field.
 // If a field accepts multiple values, the function will panic.
 func (m *metricMetadata) dist(samples ...int64) *Data {
-	var total int64
+	var total, min, max int64
+	var ssd float64
 	buckets := make([]Bucket, len(m.PB.GetDistributionBucketLowerBounds())+1)
 	var bucket *Bucket
 	for i, lowerBound := range m.PB.GetDistributionBucketLowerBounds() {
 		(&buckets[i]).UpperBound = Number{Int: lowerBound}
 	}
 	(&buckets[len(buckets)-1]).UpperBound = Number{Float: math.Inf(1)}
-	for _, sample := range samples {
+	for i, sample := range samples {
+		if i == 0 {
+			min = sample
+			max = sample
+		} else {
+			if sample < min {
+				min = sample
+			}
+			if sample > max {
+				max = sample
+			}
+			oldMean := float64(total) / float64(i+1)
+			newMean := float64(total+sample) / float64(i+2)
+			ssd += (float64(sample) - oldMean) * (float64(sample) - newMean)
+		}
 		total += sample
 		bucket = &buckets[0]
 		for i, lowerBound := range m.PB.GetDistributionBucketLowerBounds() {
@@ -194,8 +209,11 @@ func (m *metricMetadata) dist(samples ...int64) *Data {
 		Metric: m.metric(),
 		Labels: m.labels(),
 		HistogramValue: &Histogram{
-			Total:   Number{Int: total},
-			Buckets: buckets,
+			Total:                  Number{Int: total},
+			Buckets:                buckets,
+			Min:                    Number{Int: min},
+			Max:                    Number{Int: max},
+			SumOfSquaredDeviations: Number{Float: ssd},
 		},
 	}
 }
@@ -1165,6 +1183,9 @@ func TestSnapshotToPrometheus(t *testing.T) {
 				foo_dist_bucket{le="+inf"} 8 {TIMESTAMP}
 				foo_dist_sum 126 {TIMESTAMP}
 				foo_dist_count 8 {TIMESTAMP}
+				foo_dist_min -1 {TIMESTAMP}
+				foo_dist_max 99 {TIMESTAMP}
+				foo_dist_ssd 8187.5 {TIMESTAMP}
 			`,
 		},
 		{
@@ -1193,6 +1214,9 @@ func TestSnapshotToPrometheus(t *testing.T) {
 				foo_dist_bucket{le="+inf"} 0 {TIMESTAMP}
 				foo_dist_sum 0 {TIMESTAMP}
 				foo_dist_count 0 {TIMESTAMP}
+				foo_dist_min 0 {TIMESTAMP}
+				foo_dist_max 0 {TIMESTAMP}
+				foo_dist_ssd 0 {TIMESTAMP}
 			`,
 		},
 		{
@@ -1214,6 +1238,9 @@ func TestSnapshotToPrometheus(t *testing.T) {
 				foo_dist_bucket{field1="val1a",le="+inf"} 8 {TIMESTAMP}
 				foo_dist_sum{field1="val1a"} 126 {TIMESTAMP}
 				foo_dist_count{field1="val1a"} 8 {TIMESTAMP}
+				foo_dist_min{field1="val1a"} -1 {TIMESTAMP}
+				foo_dist_max{field1="val1a"} 99 {TIMESTAMP}
+				foo_dist_ssd{field1="val1a"} 8187.5 {TIMESTAMP}
 				foo_dist_bucket{field1="val1b",le="0"} 0 {TIMESTAMP}
 				foo_dist_bucket{field1="val1b",le="1"} 0 {TIMESTAMP}
 				foo_dist_bucket{field1="val1b",le="2"} 0 {TIMESTAMP}
@@ -1222,6 +1249,9 @@ func TestSnapshotToPrometheus(t *testing.T) {
 				foo_dist_bucket{field1="val1b",le="+inf"} 3 {TIMESTAMP}
 				foo_dist_sum{field1="val1b"} 11 {TIMESTAMP}
 				foo_dist_count{field1="val1b"} 3 {TIMESTAMP}
+				foo_dist_min{field1="val1b"} 3 {TIMESTAMP}
+				foo_dist_max{field1="val1b"} 5 {TIMESTAMP}
+				foo_dist_ssd{field1="val1b"} 8.25 {TIMESTAMP}
 			`,
 		},
 		{
@@ -1250,6 +1280,9 @@ func TestSnapshotToPrometheus(t *testing.T) {
 				some_prefix_foo_dist_bucket{field1="val1a",field2="val2a",le="+inf"} 8 {TIMESTAMP}
 				some_prefix_foo_dist_sum{field1="val1a",field2="val2a"} 126 {TIMESTAMP}
 				some_prefix_foo_dist_count{field1="val1a",field2="val2a"} 8 {TIMESTAMP}
+				some_prefix_foo_dist_min{field1="val1a",field2="val2a"} -1 {TIMESTAMP}
+				some_prefix_foo_dist_max{field1="val1a",field2="val2a"} 99 {TIMESTAMP}
+				some_prefix_foo_dist_ssd{field1="val1a",field2="val2a"} 8187.5 {TIMESTAMP}
 				some_prefix_foo_dist_bucket{field1="val1b",field2="val2a",le="0"} 0 {TIMESTAMP}
 				some_prefix_foo_dist_bucket{field1="val1b",field2="val2a",le="1"} 0 {TIMESTAMP}
 				some_prefix_foo_dist_bucket{field1="val1b",field2="val2a",le="2"} 0 {TIMESTAMP}
@@ -1258,6 +1291,9 @@ func TestSnapshotToPrometheus(t *testing.T) {
 				some_prefix_foo_dist_bucket{field1="val1b",field2="val2a",le="+inf"} 3 {TIMESTAMP}
 				some_prefix_foo_dist_sum{field1="val1b",field2="val2a"} 11 {TIMESTAMP}
 				some_prefix_foo_dist_count{field1="val1b",field2="val2a"} 3 {TIMESTAMP}
+				some_prefix_foo_dist_min{field1="val1b",field2="val2a"} 3 {TIMESTAMP}
+				some_prefix_foo_dist_max{field1="val1b",field2="val2a"} 5 {TIMESTAMP}
+				some_prefix_foo_dist_ssd{field1="val1b",field2="val2a"} 8.25 {TIMESTAMP}
 			`,
 		},
 	} {
@@ -1473,7 +1509,7 @@ func TestGroupSameNameMetrics(t *testing.T) {
 			t.Fatalf("invalid line: %q", line)
 		}
 		metricName := line[:len(line)-len(strippedMetricName)]
-		for _, distribSuffix := range []string{"_sum", "_count", "_bucket"} {
+		for _, distribSuffix := range []string{"_sum", "_count", "_bucket", "_min", "_max", "_ssd"} {
 			metricName = strings.TrimSuffix(metricName, distribSuffix)
 		}
 		if lastMetric != "" && lastMetric != metricName && seenMetrics[metricName] {
