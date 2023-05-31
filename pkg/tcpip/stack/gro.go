@@ -15,6 +15,7 @@
 package stack
 
 import (
+	"bytes"
 	"fmt"
 	"time"
 
@@ -181,14 +182,7 @@ func (gb *groBucket) findGROPacket6(pkt PacketBufferPtr, ipHdr header.IPv6, tcpH
 			continue
 		}
 		// Unlike IPv4, IPv6 packets with extension headers can be coalesced.
-		hdrsEqual := true
-		for i := header.IPv6MinimumSize; i < len(ipHdr); i++ {
-			if ipHdr[i] != groIPHdr[i] {
-				hdrsEqual = false
-				break
-			}
-		}
-		if !hdrsEqual {
+		if !bytes.Equal(ipHdr[header.IPv6MinimumSize:], groIPHdr[header.IPv6MinimumSize:]) {
 			continue
 		}
 
@@ -723,12 +717,7 @@ func shouldFlushTCP(groPkt *groPacket, tcpHdr header.TCP) bool {
 		return true
 	}
 	// The options, including timestamps, must be identical.
-	for i := header.TCPMinimumSize; i < int(dataOff); i++ {
-		if tcpHdr[i] != groPkt.tcpHdr[i] {
-			return true
-		}
-	}
-	return false
+	return !bytes.Equal(tcpHdr[header.TCPMinimumSize:], groPkt.tcpHdr[header.TCPMinimumSize:])
 }
 
 func updateIPv4Hdr(ipHdrBytes []byte, newBytes int) {
