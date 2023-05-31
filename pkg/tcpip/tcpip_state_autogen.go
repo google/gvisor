@@ -1248,6 +1248,7 @@ func (f *FullAddress) StateFields() []string {
 		"NIC",
 		"Addr",
 		"Port",
+		"LinkAddr",
 	}
 }
 
@@ -1259,6 +1260,7 @@ func (f *FullAddress) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &f.NIC)
 	stateSinkObject.Save(1, &f.Addr)
 	stateSinkObject.Save(2, &f.Port)
+	stateSinkObject.Save(3, &f.LinkAddr)
 }
 
 func (f *FullAddress) afterLoad() {}
@@ -1268,6 +1270,7 @@ func (f *FullAddress) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.NIC)
 	stateSourceObject.Load(1, &f.Addr)
 	stateSourceObject.Load(2, &f.Port)
+	stateSourceObject.Load(3, &f.LinkAddr)
 }
 
 func (s *SendableControlMessages) StateTypeName() string {

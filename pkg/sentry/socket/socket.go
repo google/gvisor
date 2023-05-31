@@ -498,7 +498,7 @@ func ConvertAddress(family int, addr tcpip.FullAddress) (linux.SockAddr, uint32)
 		out.Family = linux.AF_PACKET
 		out.InterfaceIndex = int32(addr.NIC)
 		out.HardwareAddrLen = header.EthernetAddressSize
-		copy(out.HardwareAddr[:], addr.Addr.AsSlice())
+		copy(out.HardwareAddr[:], addr.LinkAddr)
 		return &out, uint32(sockAddrLinkSize)
 
 	default:
@@ -570,16 +570,9 @@ func AddressAndFamily(addr []byte) (tcpip.FullAddress, uint16, *syserr.Error) {
 		}
 
 		return tcpip.FullAddress{
-			NIC: tcpip.NICID(a.InterfaceIndex),
-			// This is a hack. FullAddress is designed to carry IP
-			// addresses, but it's overloaded here to carry a link
-			// address. We stick the 6 byte link address to 10
-			// zeroed bytes.
-			Addr: tcpip.AddrFrom16Slice(append(
-				a.HardwareAddr[:header.EthernetAddressSize],
-				[]byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}...,
-			)),
-			Port: Ntohs(a.Protocol),
+			NIC:      tcpip.NICID(a.InterfaceIndex),
+			LinkAddr: tcpip.LinkAddress(a.HardwareAddr[:a.HardwareAddrLen]),
+			Port:     Ntohs(a.Protocol),
 		}, family, nil
 
 	case linux.AF_UNSPEC:
