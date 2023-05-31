@@ -1109,6 +1109,11 @@ syscall_test(
 )
 
 syscall_test(
+    add_hostinet = True,
+    test = "//test/syscalls/linux:udp_raw_socket_test",
+)
+
+syscall_test(
     test = "//test/syscalls/linux:uidgid_test",
 )
 

@@ -219,20 +219,7 @@ sockaddr_storage UdpSocketTest::InetAnyAddr() {
 }
 
 sockaddr_storage UdpSocketTest::InetLoopbackAddr() {
-  struct sockaddr_storage addr;
-  memset(&addr, 0, sizeof(addr));
-  AsSockAddr(&addr)->sa_family = GetParam();
-
-  if (GetParam() == AF_INET) {
-    auto sin = reinterpret_cast<struct sockaddr_in*>(&addr);
-    sin->sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    sin->sin_port = htons(0);
-    return addr;
-  }
-  auto sin6 = reinterpret_cast<struct sockaddr_in6*>(&addr);
-  sin6->sin6_addr = in6addr_loopback;
-  sin6->sin6_port = htons(0);
-  return addr;
+  return gvisor::testing::InetLoopbackAddr(GetParam());
 }
 
 void UdpSocketTest::Disconnect(int sockfd) {
