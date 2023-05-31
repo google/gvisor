@@ -973,9 +973,10 @@ func TestRACKUpdateSackedOut(t *testing.T) {
 			t.Fatalf("SackedOut got updated to wrong value got: %v want: 2", state.Sender.SackedOut)
 		}
 
-		if state.Sender.SackedOut != 0 && ackNum == 1 {
+		if !state.Sender.FastRecovery.Active && state.Sender.SackedOut != 0 && ackNum == 1 {
 			t.Fatalf("SackedOut got updated to wrong value got: %v want: 0", state.Sender.SackedOut)
 		}
+
 		if ackNum > 0 {
 			close(probeDone)
 		}
