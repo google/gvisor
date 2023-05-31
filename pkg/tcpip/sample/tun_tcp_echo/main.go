@@ -205,7 +205,7 @@ func main() {
 
 	defer ep.Close()
 
-	if err := ep.Bind(tcpip.FullAddress{0, tcpip.Address{}, uint16(localPort)}); err != nil {
+	if err := ep.Bind(tcpip.FullAddress{Port: uint16(localPort)}); err != nil {
 		log.Fatal("Bind failed: ", err)
 	}
 

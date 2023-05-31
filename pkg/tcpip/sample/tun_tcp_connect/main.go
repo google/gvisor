@@ -171,7 +171,7 @@ func main() {
 
 	// Bind if a port is specified.
 	if localPort != 0 {
-		if err := ep.Bind(tcpip.FullAddress{0, tcpip.Address{}, localPort}); err != nil {
+		if err := ep.Bind(tcpip.FullAddress{Port: localPort}); err != nil {
 			log.Fatal("Bind failed: ", err)
 		}
 	}

@@ -509,13 +509,16 @@ type FullAddress struct {
 	// This may not be used by all endpoint types.
 	NIC NICID
 
-	// Addr is the network or link layer address.
+	// Addr is the network address.
 	Addr Address
 
 	// Port is the transport port.
 	//
 	// This may not be used by all endpoint types.
 	Port uint16
+
+	// LinkAddr is the link layer address.
+	LinkAddr LinkAddress
 }
 
 // Payloader is an interface that provides data.

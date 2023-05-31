@@ -391,7 +391,7 @@ func TestTransportReceive(t *testing.T) {
 		t.Fatalf("NewEndpoint failed: %v", err)
 	}
 
-	if err := ep.Connect(tcpip.FullAddress{0, tcpip.AddrFromSlice([]byte("\x02\x00\x00\x00")), 0}); err != nil {
+	if err := ep.Connect(tcpip.FullAddress{Addr: tcpip.AddrFromSlice([]byte("\x02\x00\x00\x00"))}); err != nil {
 		t.Fatalf("Connect failed: %v", err)
 	}
 
@@ -469,7 +469,7 @@ func TestTransportControlReceive(t *testing.T) {
 		t.Fatalf("NewEndpoint failed: %v", err)
 	}
 
-	if err := ep.Connect(tcpip.FullAddress{0, tcpip.AddrFromSlice([]byte("\x02\x00\x00\x00")), 0}); err != nil {
+	if err := ep.Connect(tcpip.FullAddress{Addr: tcpip.AddrFromSlice([]byte("\x02\x00\x00\x00"))}); err != nil {
 		t.Fatalf("Connect failed: %v", err)
 	}
 
@@ -553,7 +553,7 @@ func TestTransportSend(t *testing.T) {
 		t.Fatalf("NewEndpoint failed: %v", err)
 	}
 
-	if err := ep.Connect(tcpip.FullAddress{0, tcpip.AddrFromSlice([]byte("\x02\x00\x00\x00")), 0}); err != nil {
+	if err := ep.Connect(tcpip.FullAddress{Addr: tcpip.AddrFromSlice([]byte("\x02\x00\x00\x00"))}); err != nil {
 		t.Fatalf("Connect failed: %v", err)
 	}
 
