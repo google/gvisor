@@ -20,8 +20,10 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"strconv"
 	"strings"
 
 	"github.com/google/subcommands"
@@ -419,6 +421,8 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 
 	if b.procMountSyncFD != -1 {
 		l.PreSeccompCallback = func() {
+			// Call validateOpenFDs() before umounting /proc.
+			validateOpenFDs(bootArgs.PassFDs)
 			// Umount /proc right before installing seccomp filters.
 			umountProc(b.procMountSyncFD)
 		}
@@ -523,5 +527,52 @@ func umountProc(syncFD int) {
 	}
 	if err := unix.Access("/proc/self", unix.F_OK); err != unix.ENOENT {
 		util.Fatalf("/proc is still accessible")
+	}
+}
+
+// validateOpenFDs checks that the sandbox process does not have any open
+// directory FDs.
+func validateOpenFDs(passFDs []boot.FDMapping) {
+	passHostFDs := make(map[int]struct{})
+	for _, passFD := range passFDs {
+		passHostFDs[passFD.Host] = struct{}{}
+	}
+	const selfFDDir = "/proc/self/fd"
+	if err := filepath.WalkDir(selfFDDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.Type() != os.ModeSymlink {
+			// All entries are symlinks. Ignore the callback for fd directory itself.
+			return nil
+		}
+		if fdInfo, err := os.Stat(path); err != nil {
+			if os.IsNotExist(err) {
+				// Ignore FDs that are now closed. For example, the FD to selfFDDir that
+				// was opened by filepath.WalkDir() to read dirents.
+				return nil
+			}
+			return fmt.Errorf("os.Stat(%s) failed: %v", path, err)
+		} else if !fdInfo.IsDir() {
+			return nil
+		}
+		// Uh-oh. This is a directory FD.
+		fdNo, err := strconv.Atoi(d.Name())
+		if err != nil {
+			return fmt.Errorf("strconv.Atoi(%s) failed: %v", d.Name(), err)
+		}
+		dirLink, err := os.Readlink(path)
+		if err != nil {
+			return fmt.Errorf("os.Readlink(%s) failed: %v", path, err)
+		}
+		if _, ok := passHostFDs[fdNo]; ok {
+			// Passed FDs are allowed to be directories. The user must be knowing
+			// what they are doing. Log a warning regardless.
+			log.Warningf("Sandbox has access to FD %d, which is a directory for %s", fdNo, dirLink)
+			return nil
+		}
+		return fmt.Errorf("FD %d is a directory for %s", fdNo, dirLink)
+	}); err != nil {
+		util.Fatalf("WalkDir(%s) failed: %v", selfFDDir, err)
 	}
 }
