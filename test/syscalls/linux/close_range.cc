@@ -216,6 +216,9 @@ TEST_F(CloseRangeTest, CloexecFlagTest) {
   int num_files_in_range = 10;
   unsigned int flags = CLOSE_RANGE_CLOEXEC;
 
+  // CLOEXEC is only available on >=5.11 kernels.
+  SKIP_IF(close_range(1, 0, flags) < 0 && errno == EINVAL);
+
   CreateFiles(num_files_in_range);
   OpenFilesRdwr();
 
@@ -317,6 +320,9 @@ TEST_F(CloseRangeTest, CloexecAndUnshareFlagTest) {
   SKIP_IF(!IsRunningOnGvisor() && close_range(1, 0, 0) < 0 && errno == ENOSYS);
   int num_files_in_range = 10;
   unsigned int flags = CLOSE_RANGE_CLOEXEC | CLOSE_RANGE_UNSHARE;
+
+  // CLOEXEC is only available on >=5.11 kernels.
+  SKIP_IF(close_range(1, 0, flags) < 0 && errno == EINVAL);
 
   CreateFiles(num_files_in_range);
   OpenFilesRdwr();
