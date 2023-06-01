@@ -433,9 +433,11 @@ func (pk PacketBufferPtr) CloneToInbound() PacketBufferPtr {
 // The returned packet buffer will have the network and transport headers
 // set if the original packet buffer did.
 func (pk PacketBufferPtr) DeepCopyForForwarding(reservedHeaderBytes int) PacketBufferPtr {
+	payload := BufferSince(pk.NetworkHeader())
+	defer payload.Release()
 	newPk := NewPacketBuffer(PacketBufferOptions{
 		ReserveHeaderBytes: reservedHeaderBytes,
-		Payload:            BufferSince(pk.NetworkHeader()),
+		Payload:            payload.DeepClone(),
 		IsForwardedPacket:  true,
 	})
 
