@@ -16,6 +16,7 @@ go_library(
         "atomicbitops_amd64.s",
         "atomicbitops_arm64.go",
         "atomicbitops_arm64.s",
+        "atomicbitops_float64.go",
         "atomicbitops_noasm.go",
         "bool.go",
     ],
