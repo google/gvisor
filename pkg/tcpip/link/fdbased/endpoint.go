@@ -754,7 +754,7 @@ func (e *endpoint) GSOMaxSize() uint32 {
 	return e.gsoMaxSize
 }
 
-// SupportsHWGSO implements stack.GSOEndpoint.
+// SupportedGSO implements stack.GSOEndpoint.
 func (e *endpoint) SupportedGSO() stack.SupportedGSO {
 	return e.gsoKind
 }
