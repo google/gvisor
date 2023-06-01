@@ -133,7 +133,14 @@ type Options struct {
 	// VirtioNetHeaderRequired if true, indicates that all outbound packets should have
 	// a virtio header and inbound packets should have a virtio header as well.
 	VirtioNetHeaderRequired bool
+
+	// GSOMaxSize is the maximum GSO packet size. It is zero if GSO is
+	// disabled. Note that only gVisor GSO is supported, not host GSO.
+	GSOMaxSize uint32
 }
+
+var _ stack.LinkEndpoint = (*endpoint)(nil)
+var _ stack.GSOEndpoint = (*endpoint)(nil)
 
 type endpoint struct {
 	// mtu (maximum transmission unit) is the maximum size of a packet.
@@ -159,6 +166,11 @@ type endpoint struct {
 	// hdrSize is the size of the link layer header if any.
 	// hdrSize is immutable.
 	hdrSize uint32
+
+	// gSOMaxSize is the maximum GSO packet size. It is zero if GSO is
+	// disabled. Note that only gVisor GSO is supported, not host GSO.
+	// gsoMaxSize is immutable.
+	gsoMaxSize uint32
 
 	// virtioNetHeaderRequired if true indicates that a virtio header is expected
 	// in all inbound/outbound packets.
@@ -202,6 +214,7 @@ func New(opts Options) (stack.LinkEndpoint, error) {
 		peerFD:                  opts.PeerFD,
 		onClosed:                opts.OnClosed,
 		virtioNetHeaderRequired: opts.VirtioNetHeaderRequired,
+		gsoMaxSize:              opts.GSOMaxSize,
 	}
 
 	if err := e.tx.init(opts.BufferSize, &opts.TX); err != nil {
@@ -479,4 +492,14 @@ func (e *endpoint) dispatchLoop(d stack.NetworkDispatcher) {
 // ARPHardwareType implements stack.LinkEndpoint.ARPHardwareType
 func (*endpoint) ARPHardwareType() header.ARPHardwareType {
 	return header.ARPHardwareEther
+}
+
+// GSOMaxSize implements stack.GSOEndpoint.
+func (e *endpoint) GSOMaxSize() uint32 {
+	return e.gsoMaxSize
+}
+
+// SupportsGSO implements stack.GSOEndpoint.
+func (e *endpoint) SupportedGSO() stack.SupportedGSO {
+	return stack.GvisorGSOSupported
 }
