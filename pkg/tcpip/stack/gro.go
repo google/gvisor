@@ -234,10 +234,8 @@ func (gb *groBucket) found(gd *groDispatcher, groPkt *groPacket, flushGROPkt boo
 		groPkt = nil
 	} else if groPkt != nil {
 		// Merge pkt in to GRO packet.
-		buf := pkt.Data().ToBuffer()
-		buf.TrimFront(int64(len(ipHdr)) + int64(dataOff))
-		groPkt.pkt.Data().MergeBuffer(&buf)
-		buf.Release()
+		pkt.Data().TrimFront(len(ipHdr) + int(dataOff))
+		groPkt.pkt.Data().Merge(pkt.Data())
 		// Update the IP total length.
 		updateIPHdr(groPkt.ipHdr, tcpPayloadSize)
 		// Add flags from the packet to the GRO packet.
