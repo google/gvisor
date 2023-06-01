@@ -58,7 +58,7 @@ _templates:
         ./pkg/tcpip/transport/icmp
         ./pkg/tcpip/transport/tcp
         ./pkg/tcpip/transport/udp
-        ./pkg/bufferv2
+        ./pkg/buffer
         ./pkg/waiter
 env:
   # Force a clean checkout every time to avoid reuse of files between runs.
