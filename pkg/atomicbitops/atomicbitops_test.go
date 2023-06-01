@@ -16,6 +16,8 @@
 package atomicbitops
 
 import (
+	"fmt"
+	"math"
 	"runtime"
 	"testing"
 
@@ -194,6 +196,196 @@ func TestCompareAndSwapUint64(t *testing.T) {
 		}
 		if got, want := val.Load(), test.next; got != want {
 			t.Errorf("%s: incorrect value stored in val: got %d, expected %d", test.name, got, want)
+		}
+	}
+}
+
+var interestingFloats = []float64{
+	0.0,
+	1.0,
+	0.1,
+	2.1,
+	-1.0,
+	-0.1,
+	-2.1,
+	math.MaxFloat64,
+	-math.MaxFloat64,
+	math.SmallestNonzeroFloat64,
+	-math.SmallestNonzeroFloat64,
+	math.Inf(1),
+	math.Inf(-1),
+	math.NaN(),
+}
+
+// equalOrBothNaN returns true if a == b or if a and b are both NaN.
+func equalOrBothNaN(a, b float64) bool {
+	return a == b || (math.IsNaN(a) && math.IsNaN(b))
+}
+
+// getInterestingFloatPermutations returns a list of `num`-sized permutations
+// of the floating-point values in `interestingFloats`.
+func getInterestingFloatPermutations(num int) [][]float64 {
+	permutations := make([][]float64, 0, len(interestingFloats))
+	for _, f := range interestingFloats {
+		permutations = append(permutations, []float64{f})
+	}
+	for i := 1; i < num; i++ {
+		oldPermutations := permutations
+		permutations = make([][]float64, 0, len(permutations)*len(interestingFloats))
+		for _, oldPermutation := range oldPermutations {
+			for _, f := range interestingFloats {
+				alreadyInPermutation := false
+				for _, f2 := range oldPermutation {
+					if equalOrBothNaN(f, f2) {
+						alreadyInPermutation = true
+						break
+					}
+				}
+				if alreadyInPermutation {
+					continue
+				}
+				permutations = append(permutations, append(oldPermutation, f))
+			}
+		}
+
+	}
+	return permutations
+}
+
+func TestCompareAndSwapFloat64(t *testing.T) {
+	for _, floats := range getInterestingFloatPermutations(3) {
+		a, b, c := floats[0], floats[1], floats[2]
+		t.Run(fmt.Sprintf("a=%v b=%v c=%v", a, b, c), func(t *testing.T) {
+			tests := []struct {
+				name string
+				prev float64
+				old  float64
+				new  float64
+				next float64
+			}{
+				{
+					name: "Successful compare-and-swap with prev == new",
+					prev: a,
+					old:  a,
+					new:  a,
+					next: a,
+				},
+				{
+					name: "Successful compare-and-swap with prev != new",
+					prev: a,
+					old:  a,
+					new:  b,
+					next: b,
+				},
+				{
+					name: "Failed compare-and-swap with prev == new",
+					prev: a,
+					old:  b,
+					new:  a,
+					next: a,
+				},
+				{
+					name: "Failed compare-and-swap with prev != new",
+					prev: a,
+					old:  b,
+					new:  c,
+					next: a,
+				},
+			}
+			for _, test := range tests {
+				t.Run(test.name, func(t *testing.T) {
+					val := FromFloat64(test.prev)
+					success := val.CompareAndSwap(test.old, test.new)
+					wantSuccess := equalOrBothNaN(test.prev, test.old) && equalOrBothNaN(test.new, test.next)
+					if success != wantSuccess {
+						t.Errorf("incorrect success value: got %v, expected %v", success, wantSuccess)
+					}
+					if got, want := val.Load(), test.next; !equalOrBothNaN(got, want) {
+						t.Errorf("incorrect value stored in val: got %v, expected %v", got, want)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestAddFloat64(t *testing.T) {
+	runtime.GOMAXPROCS(100)
+	for _, floats := range getInterestingFloatPermutations(3) {
+		a, b, c := floats[0], floats[1], floats[2]
+		// This test computes the outcome of adding `b` and `c` to `a`.
+		// Because floating point numbers lose precision with each operation,
+		// it is not always the case that a + b + c = a + c + b.
+		// Therefore, it computes both a + b + c and a + c + b, and verifies that
+		// adding Float64s in that order works exactly, while Float64s to which
+		// `b` and `c` are added in separate goroutines may end up at either
+		// `a + b + c` or `a + c + b`.
+		testName := fmt.Sprintf("a=%v b=%v c=%v", a, b, c)
+		for i := 0; i < iterations; i++ {
+			fCanonical := a
+			fCanonicalReverse := a
+			fLinear := FromFloat64(a)
+			fLinearReverse := FromFloat64(a)
+			fParallel1 := FromFloat64(a)
+			fParallel2 := FromFloat64(a)
+			var wg sync.WaitGroup
+			spawn := func(f func()) {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					f()
+				}()
+			}
+			spawn(func() {
+				fCanonical += b
+				fCanonical += c
+			})
+			spawn(func() {
+				fCanonicalReverse += c
+				fCanonicalReverse += b
+			})
+			spawn(func() {
+				fLinear.Add(b)
+				fLinear.Add(c)
+			})
+			spawn(func() {
+				fLinearReverse.Add(c)
+				fLinearReverse.Add(b)
+			})
+			spawn(func() {
+				fParallel1.Add(b)
+			})
+			spawn(func() {
+				fParallel2.Add(c)
+			})
+			spawn(func() {
+				fParallel1.Add(c)
+			})
+			spawn(func() {
+				fParallel2.Add(b)
+			})
+			wg.Wait()
+			for _, f := range []struct {
+				name string
+				val  float64
+				want []float64
+			}{
+				{"linear", fLinear.Load(), []float64{fCanonical}},
+				{"linear reverse", fLinearReverse.Load(), []float64{fCanonicalReverse}},
+				{"parallel 1", fParallel1.Load(), []float64{fCanonical, fCanonicalReverse}},
+				{"parallel 2", fParallel2.Load(), []float64{fCanonical, fCanonicalReverse}},
+			} {
+				found := false
+				for _, want := range f.want {
+					if equalOrBothNaN(f.val, want) {
+						found = true
+						break
+					}
+				}
+				if !found {
+					t.Errorf("%s: %s was not equal to expected result: %v not in %v", testName, f.name, f.val, f.want)
+				}
+			}
 		}
 	}
 }
