@@ -414,6 +414,16 @@ func (b *Buffer) Clone() Buffer {
 	return other
 }
 
+// DeepClone creates a deep clone of b, copying data such that no bytes are
+// shared with any other Buffers.
+func (b *Buffer) DeepClone() Buffer {
+	newBuf := Buffer{}
+	buf := b.Clone()
+	reader := buf.AsBufferReader()
+	newBuf.WriteFromReader(&reader, b.size)
+	return newBuf
+}
+
 // Apply applies the given function across all valid data.
 func (b *Buffer) Apply(fn func(*View)) {
 	for v := b.data.Front(); v != nil; v = v.Next() {
@@ -468,13 +478,11 @@ func (b *Buffer) Checksum(offset int) uint16 {
 // The other Buffer will be appended to v, and other will be empty after this
 // operation completes.
 func (b *Buffer) Merge(other *Buffer) {
-	// Copy over all buffers.
-	for v := other.data.Front(); v != nil; v = other.data.Front() {
-		b.Append(v.Clone())
-		other.removeView(v)
-	}
+	b.data.PushBackList(&other.data)
+	other.data = viewList{}
 
 	// Adjust sizes.
+	b.size += other.size
 	other.size = 0
 }
 
