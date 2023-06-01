@@ -105,6 +105,10 @@ cc_library(
     testonly = 1,
     srcs = ["base_poll_test.cc"],
     hdrs = ["base_poll_test.h"],
+    copts = [
+        "-Wframe-larger-than=262144",
+        "-Wno-vla-extension",
+    ],
     deps = [
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/synchronization",
@@ -121,6 +125,10 @@ cc_library(
     name = "file_base",
     testonly = 1,
     hdrs = ["file_base.h"],
+    copts = [
+        "-Wframe-larger-than=262144",
+        "-Wno-vla-extension",
+    ],
     deps = [
         "//test/util:file_descriptor",
         "@com_google_absl//absl/strings",
@@ -136,6 +144,10 @@ cc_library(
     testonly = 1,
     srcs = ["socket_netlink_util.cc"],
     hdrs = ["socket_netlink_util.h"],
+    copts = [
+        "-Wframe-larger-than=262144",
+        "-Wno-vla-extension",
+    ],
     deps = [
         "//test/util:file_descriptor",
         "//test/util:posix_error",
@@ -149,6 +161,10 @@ cc_library(
     testonly = 1,
     srcs = ["socket_netlink_route_util.cc"],
     hdrs = ["socket_netlink_route_util.h"],
+    copts = [
+        "-Wframe-larger-than=262144",
+        "-Wno-vla-extension",
+    ],
     deps = [
         ":socket_netlink_util",
     ],
@@ -159,6 +175,10 @@ cc_library(
     testonly = 1,
     srcs = ["unix_domain_socket_test_util.cc"],
     hdrs = ["unix_domain_socket_test_util.h"],
+    copts = [
+        "-Wframe-larger-than=262144",
+        "-Wno-vla-extension",
+    ],
     deps = [
         "//test/util:socket_util",
         "@com_google_absl//absl/strings",
@@ -172,6 +192,10 @@ cc_library(
     testonly = 1,
     srcs = ["ip_socket_test_util.cc"],
     hdrs = ["ip_socket_test_util.h"],
+    copts = [
+        "-Wframe-larger-than=262144",
+        "-Wno-vla-extension",
+    ],
     deps = [
         "//test/util:socket_util",
         "@com_google_absl//absl/strings",
@@ -1099,6 +1123,10 @@ cc_library(
     testonly = 1,
     hdrs = [
         "iptables.h",
+    ],
+    copts = [
+        "-Wframe-larger-than=262144",
+        "-Wno-vla-extension",
     ],
 )
 
@@ -2466,6 +2494,10 @@ cc_library(
     hdrs = [
         "socket_generic.h",
     ],
+    copts = [
+        "-Wframe-larger-than=262144",
+        "-Wno-vla-extension",
+    ],
     deps = [
         ":unix_domain_socket_test_util",
         "//test/util:socket_util",
@@ -2503,6 +2535,10 @@ cc_library(
     testonly = 1,
     srcs = ["socket_unix_dgram.cc"],
     hdrs = ["socket_unix_dgram.h"],
+    copts = [
+        "-Wframe-larger-than=262144",
+        "-Wno-vla-extension",
+    ],
     deps = [
         ":unix_domain_socket_test_util",
         "//test/util:socket_util",
@@ -2518,6 +2554,10 @@ cc_library(
     testonly = 1,
     srcs = ["socket_unix_seqpacket.cc"],
     hdrs = ["socket_unix_seqpacket.h"],
+    copts = [
+        "-Wframe-larger-than=262144",
+        "-Wno-vla-extension",
+    ],
     deps = [
         ":unix_domain_socket_test_util",
         "//test/util:socket_util",
@@ -2536,6 +2576,10 @@ cc_library(
     ],
     hdrs = [
         "socket_ip_tcp_generic.h",
+    ],
+    copts = [
+        "-Wframe-larger-than=262144",
+        "-Wno-vla-extension",
     ],
     deps = [
         "//test/util:socket_util",
@@ -2558,6 +2602,10 @@ cc_library(
     hdrs = [
         "socket_non_blocking.h",
     ],
+    copts = [
+        "-Wframe-larger-than=262144",
+        "-Wno-vla-extension",
+    ],
     deps = [
         ":unix_domain_socket_test_util",
         "//test/util:socket_util",
@@ -2575,6 +2623,10 @@ cc_library(
     ],
     hdrs = [
         "socket_unix_non_stream.h",
+    ],
+    copts = [
+        "-Wframe-larger-than=262144",
+        "-Wno-vla-extension",
     ],
     deps = [
         ":unix_domain_socket_test_util",
@@ -2595,6 +2647,10 @@ cc_library(
     hdrs = [
         "socket_non_stream.h",
     ],
+    copts = [
+        "-Wframe-larger-than=262144",
+        "-Wno-vla-extension",
+    ],
     deps = [
         ":ip_socket_test_util",
         ":unix_domain_socket_test_util",
@@ -2614,6 +2670,10 @@ cc_library(
     hdrs = [
         "socket_ip_udp_generic.h",
     ],
+    copts = [
+        "-Wframe-larger-than=262144",
+        "-Wno-vla-extension",
+    ],
     deps = [
         ":ip_socket_test_util",
         "//test/util:socket_util",
@@ -2631,6 +2691,10 @@ cc_library(
     ],
     hdrs = [
         "socket_ipv4_datagram_based_socket_unbound.h",
+    ],
+    copts = [
+        "-Wframe-larger-than=262144",
+        "-Wno-vla-extension",
     ],
     deps = [
         ":ip_socket_test_util",
@@ -2650,6 +2714,10 @@ cc_library(
     hdrs = [
         "socket_ipv4_udp_unbound.h",
     ],
+    copts = [
+        "-Wframe-larger-than=262144",
+        "-Wno-vla-extension",
+    ],
     deps = [
         ":ip_socket_test_util",
         "//test/util:socket_util",
@@ -2668,6 +2736,10 @@ cc_library(
     ],
     hdrs = [
         "socket_ipv6_udp_unbound.h",
+    ],
+    copts = [
+        "-Wframe-larger-than=262144",
+        "-Wno-vla-extension",
     ],
     deps = [
         ":ip_socket_test_util",
@@ -2690,6 +2762,10 @@ cc_library(
     hdrs = [
         "socket_ipv4_udp_unbound_netlink.h",
     ],
+    copts = [
+        "-Wframe-larger-than=262144",
+        "-Wno-vla-extension",
+    ],
     deps = [
         ":socket_netlink_route_util",
         "//test/util:capability_util",
@@ -2709,6 +2785,10 @@ cc_library(
     hdrs = [
         "socket_ipv6_udp_unbound_netlink.h",
     ],
+    copts = [
+        "-Wframe-larger-than=262144",
+        "-Wno-vla-extension",
+    ],
     deps = [
         ":socket_netlink_route_util",
         "//test/util:capability_util",
@@ -2724,6 +2804,10 @@ cc_library(
     hdrs = [
         "socket_ip_udp_unbound_external_networking.h",
     ],
+    copts = [
+        "-Wframe-larger-than=262144",
+        "-Wno-vla-extension",
+    ],
     deps = [
         ":ip_socket_test_util",
     ],
@@ -2738,6 +2822,10 @@ cc_library(
     ],
     hdrs = [
         "socket_ipv4_udp_unbound_external_networking.h",
+    ],
+    copts = [
+        "-Wframe-larger-than=262144",
+        "-Wno-vla-extension",
     ],
     deps = [
         ":socket_ip_udp_unbound_external_networking",
@@ -2757,6 +2845,10 @@ cc_library(
     ],
     hdrs = [
         "socket_ipv6_udp_unbound_external_networking.h",
+    ],
+    copts = [
+        "-Wframe-larger-than=262144",
+        "-Wno-vla-extension",
     ],
     deps = [
         ":socket_ip_udp_unbound_external_networking",
@@ -3263,6 +3355,10 @@ cc_library(
     name = "socket_inet_loopback_test_params",
     testonly = 1,
     hdrs = ["socket_inet_loopback_test_params.h"],
+    copts = [
+        "-Wframe-larger-than=262144",
+        "-Wno-vla-extension",
+    ],
     deps = [
         "//test/util:socket_util",
         gtest,
@@ -3386,6 +3482,10 @@ cc_library(
     hdrs = [
         "socket_stream.h",
     ],
+    copts = [
+        "-Wframe-larger-than=262144",
+        "-Wno-vla-extension",
+    ],
     deps = [
         ":unix_domain_socket_test_util",
         "//test/util:socket_util",
@@ -3404,6 +3504,10 @@ cc_library(
     ],
     hdrs = [
         "socket_blocking.h",
+    ],
+    copts = [
+        "-Wframe-larger-than=262144",
+        "-Wno-vla-extension",
     ],
     deps = [
         ":unix_domain_socket_test_util",
@@ -3425,6 +3529,10 @@ cc_library(
     ],
     hdrs = [
         "socket_unix.h",
+    ],
+    copts = [
+        "-Wframe-larger-than=262144",
+        "-Wno-vla-extension",
     ],
     deps = [
         ":unix_domain_socket_test_util",
@@ -3449,6 +3557,10 @@ cc_library(
     hdrs = [
         "socket_unix_cmsg.h",
     ],
+    copts = [
+        "-Wframe-larger-than=262144",
+        "-Wno-vla-extension",
+    ],
     deps = [
         ":unix_domain_socket_test_util",
         "//test/util:socket_util",
@@ -3468,6 +3580,10 @@ cc_library(
     ],
     hdrs = [
         "socket_stream_blocking.h",
+    ],
+    copts = [
+        "-Wframe-larger-than=262144",
+        "-Wno-vla-extension",
     ],
     deps = [
         ":unix_domain_socket_test_util",
@@ -3490,6 +3606,10 @@ cc_library(
     hdrs = [
         "socket_stream_nonblock.h",
     ],
+    copts = [
+        "-Wframe-larger-than=262144",
+        "-Wno-vla-extension",
+    ],
     deps = [
         ":unix_domain_socket_test_util",
         "//test/util:socket_util",
@@ -3507,6 +3627,10 @@ cc_library(
     ],
     hdrs = [
         "socket_non_stream_blocking.h",
+    ],
+    copts = [
+        "-Wframe-larger-than=262144",
+        "-Wno-vla-extension",
     ],
     deps = [
         ":unix_domain_socket_test_util",
@@ -3527,6 +3651,10 @@ cc_library(
     ],
     hdrs = [
         "socket_bind_to_device_util.h",
+    ],
+    copts = [
+        "-Wframe-larger-than=262144",
+        "-Wno-vla-extension",
     ],
     deps = [
         "//test/util:test_util",
