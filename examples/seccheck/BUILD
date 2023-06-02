@@ -22,5 +22,6 @@ cc_binary(
         "//pkg/sentry/seccheck/points:points_cc_proto",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/strings",
+        "@com_google_protobuf//:protobuf",
     ],
 )

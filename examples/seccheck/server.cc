@@ -27,11 +27,13 @@
 #include <vector>
 
 #include "absl/cleanup/cleanup.h"
+#include "absl/strings/str_replace.h"
 #include "absl/strings/string_view.h"
 #include "pkg/sentry/seccheck/points/common.pb.h"
 #include "pkg/sentry/seccheck/points/container.pb.h"
 #include "pkg/sentry/seccheck/points/sentry.pb.h"
 #include "pkg/sentry/seccheck/points/syscall.pb.h"
+#include "google/protobuf/text_format.h"
 
 typedef std::function<void(absl::string_view buf)> Callback;
 
@@ -57,14 +59,21 @@ void log(const char* fmt, ...) {
 }
 
 template <class T>
+std::string shortfmt(T msg) {
+  std::string short_text_msg;
+  google::protobuf::TextFormat::PrintToString(msg, &short_text_msg);
+  return absl::StrReplaceAll(short_text_msg,
+                             {{"\r\n", " "}, {"\n", " "}, {"\r", " "}});
+}
+
+template <class T>
 void unpackSyscall(absl::string_view buf) {
   T evt;
   if (!evt.ParseFromArray(buf.data(), buf.size())) {
     err(1, "ParseFromString(): %.*s", static_cast<int>(buf.size()), buf.data());
   }
   log("%s %s %s\n", evt.has_exit() ? "X" : "E",
-      evt.GetMetadata().descriptor->name().c_str(),
-      evt.ShortDebugString().c_str());
+      evt.GetMetadata().descriptor->name().c_str(), shortfmt(evt).c_str());
 }
 
 template <class T>
@@ -74,7 +83,7 @@ void unpack(absl::string_view buf) {
     err(1, "ParseFromString(): %.*s", static_cast<int>(buf.size()), buf.data());
   }
   log("%s => %s\n", evt.GetMetadata().descriptor->name().c_str(),
-      evt.ShortDebugString().c_str());
+      shortfmt(evt).c_str());
 }
 
 // List of dispatchers indexed based on MessageType enum values.
