@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -1761,7 +1761,7 @@ func (p *protocol) isSubnetLocalBroadcastAddress(addr tcpip.Address) bool {
 // returns the parsed IP header.
 //
 // Returns true if the IP header was successfully parsed.
-func (p *protocol) parseAndValidate(pkt stack.PacketBufferPtr) (*bufferv2.View, bool) {
+func (p *protocol) parseAndValidate(pkt stack.PacketBufferPtr) (*buffer.View, bool) {
 	transProtoNum, hasTransportHdr, ok := p.Parse(pkt)
 	if !ok {
 		return nil, false

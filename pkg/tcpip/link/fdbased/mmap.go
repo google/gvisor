@@ -22,7 +22,7 @@ import (
 	"fmt"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/rawfile"
@@ -134,7 +134,7 @@ type packetMMapDispatcher struct {
 
 func (*packetMMapDispatcher) release() {}
 
-func (d *packetMMapDispatcher) readMMappedPacket() (*bufferv2.View, bool, tcpip.Error) {
+func (d *packetMMapDispatcher) readMMappedPacket() (*buffer.View, bool, tcpip.Error) {
 	hdr := tPacketHdr(d.ringBuffer[d.ringOffset*tpFrameSize:])
 	for hdr.tpStatus()&tpStatusUser == 0 {
 		stopped, errno := rawfile.BlockingPollUntilStopped(d.EFD, d.fd, unix.POLLIN|unix.POLLERR)
@@ -158,7 +158,7 @@ func (d *packetMMapDispatcher) readMMappedPacket() (*bufferv2.View, bool, tcpip.
 	}
 
 	// Copy out the packet from the mmapped frame to a locally owned buffer.
-	pkt := bufferv2.NewView(int(hdr.tpSnapLen()))
+	pkt := buffer.NewView(int(hdr.tpSnapLen()))
 	pkt.Write(hdr.Payload())
 	// Release packet to kernel.
 	hdr.setTPStatus(tpStatusKernel)
@@ -190,7 +190,7 @@ func (d *packetMMapDispatcher) dispatch() (bool, tcpip.Error) {
 	}
 
 	pbuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: bufferv2.MakeWithView(pkt),
+		Payload: buffer.MakeWithView(pkt),
 	})
 	defer pbuf.DecRef()
 	if d.e.hdrSize > 0 {

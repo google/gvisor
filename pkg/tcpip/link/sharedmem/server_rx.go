@@ -20,7 +20,7 @@ package sharedmem
 import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/eventfd"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sharedmem/pipe"
@@ -126,14 +126,14 @@ func (s *serverRx) DisableNotification() {
 const completionNotificationSize = 8
 
 // receive receives a single packet from the packetPipe.
-func (s *serverRx) receive() *bufferv2.View {
+func (s *serverRx) receive() *buffer.View {
 	desc := s.packetPipe.Pull()
 	if desc == nil {
 		return nil
 	}
 
 	pktInfo := queue.DecodeTxPacketHeader(desc)
-	contents := bufferv2.NewView(int(pktInfo.Size))
+	contents := buffer.NewView(int(pktInfo.Size))
 	toCopy := pktInfo.Size
 	for i := 0; i < pktInfo.BufferCount; i++ {
 		txBuf := queue.DecodeTxBufferHeader(desc, i)

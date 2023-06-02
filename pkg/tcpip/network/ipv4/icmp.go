@@ -17,7 +17,7 @@ package ipv4
 import (
 	"fmt"
 
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -414,7 +414,7 @@ func (e *endpoint) handleICMP(pkt stack.PacketBufferPtr) {
 		//
 		// Take the base of the incoming request IP header but replace the options.
 		replyHeaderLength := uint8(header.IPv4MinimumSize + len(newOptions))
-		replyIPHdrView := bufferv2.NewView(int(replyHeaderLength))
+		replyIPHdrView := buffer.NewView(int(replyHeaderLength))
 		replyIPHdrView.Write(iph[:header.IPv4MinimumSize])
 		replyIPHdrView.Write(newOptions)
 		replyIPHdr := header.IPv4(replyIPHdrView.AsSlice())
@@ -431,7 +431,7 @@ func (e *endpoint) handleICMP(pkt stack.PacketBufferPtr) {
 		replyICMPHdr.SetChecksum(0)
 		replyICMPHdr.SetChecksum(^checksum.Checksum(replyData.AsSlice(), 0))
 
-		replyBuf := bufferv2.MakeWithView(replyIPHdrView)
+		replyBuf := buffer.MakeWithView(replyIPHdrView)
 		replyBuf.Append(replyData.Clone())
 		replyPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			ReserveHeaderBytes: int(r.MaxHeaderLength()),
@@ -767,7 +767,7 @@ func (p *protocol) returnError(reason icmpReason, pkt stack.PacketBufferPtr, del
 	// required. This is now the payload of the new ICMP packet and no longer
 	// considered a packet in its own right.
 
-	payload := bufferv2.MakeWithView(pkt.NetworkHeader().View())
+	payload := buffer.MakeWithView(pkt.NetworkHeader().View())
 	payload.Append(pkt.TransportHeader().View())
 	if dataCap := payloadLen - int(payload.Size()); dataCap > 0 {
 		buf := pkt.Data().ToBuffer()
