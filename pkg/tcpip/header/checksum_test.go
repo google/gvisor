@@ -22,7 +22,7 @@ import (
 	"sync"
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -77,8 +77,8 @@ func TestICMPv4Checksum(t *testing.T) {
 	if _, err := rnd.Read(buf); err != nil {
 		t.Fatalf("rnd.Read failed: %v", err)
 	}
-	b := bufferv2.MakeWithData(buf[:5])
-	b.Append(bufferv2.NewViewWithData(buf[5:]))
+	b := buffer.MakeWithData(buf[:5])
+	b.Append(buffer.NewViewWithData(buf[5:]))
 
 	want := checksum.Checksum(b.Flatten(), 0)
 	want = ^checksum.Checksum(h, want)
@@ -102,9 +102,9 @@ func TestICMPv6Checksum(t *testing.T) {
 	if _, err := rnd.Read(buf); err != nil {
 		t.Fatalf("rnd.Read failed: %v", err)
 	}
-	b := bufferv2.MakeWithData(buf[:7])
-	b.Append(bufferv2.NewViewWithData(buf[7:10]))
-	b.Append(bufferv2.NewViewWithData(buf[10:]))
+	b := buffer.MakeWithData(buf[:7])
+	b.Append(buffer.NewViewWithData(buf[7:10]))
+	b.Append(buffer.NewViewWithData(buf[10:]))
 
 	dst := header.IPv6Loopback
 	src := header.IPv6Loopback

@@ -19,7 +19,7 @@ package fdbased
 
 import (
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/rawfile"
@@ -34,7 +34,7 @@ type iovecBuffer struct {
 	// buffer is the actual buffer that holds the packet contents. Some contents
 	// are reused across calls to pullBuffer if number of requested bytes is
 	// smaller than the number of bytes allocated in the buffer.
-	views []*bufferv2.View
+	views []*buffer.View
 
 	// iovecs are initialized with base pointers/len of the corresponding
 	// entries in the views defined above, except when GSO is enabled
@@ -58,7 +58,7 @@ type iovecBuffer struct {
 
 func newIovecBuffer(sizes []int, skipsVnetHdr bool) *iovecBuffer {
 	b := &iovecBuffer{
-		views:        make([]*bufferv2.View, len(sizes)),
+		views:        make([]*buffer.View, len(sizes)),
 		sizes:        sizes,
 		skipsVnetHdr: skipsVnetHdr,
 	}
@@ -86,7 +86,7 @@ func (b *iovecBuffer) nextIovecs() []unix.Iovec {
 		if b.views[i] != nil {
 			break
 		}
-		v := bufferv2.NewViewSize(b.sizes[i])
+		v := buffer.NewViewSize(b.sizes[i])
 		b.views[i] = v
 		b.iovecs[i+vnetHdrOff] = unix.Iovec{Base: v.BasePtr()}
 		b.iovecs[i+vnetHdrOff].SetLen(v.Size())
@@ -99,14 +99,14 @@ func (b *iovecBuffer) nextIovecs() []unix.Iovec {
 // that holds the storage, and updates pulledIndex to indicate which part
 // of b.buffer's storage must be reallocated during the next call to
 // nextIovecs.
-func (b *iovecBuffer) pullBuffer(n int) bufferv2.Buffer {
-	var views []*bufferv2.View
+func (b *iovecBuffer) pullBuffer(n int) buffer.Buffer {
+	var views []*buffer.View
 	c := 0
 	if b.skipsVnetHdr {
 		c += virtioNetHdrSize
 		if c >= n {
 			// Nothing in the packet.
-			return bufferv2.Buffer{}
+			return buffer.Buffer{}
 		}
 	}
 	// Remove the used views from the buffer.
@@ -125,7 +125,7 @@ func (b *iovecBuffer) pullBuffer(n int) bufferv2.Buffer {
 		// Exclude the size of the vnet header.
 		n -= virtioNetHdrSize
 	}
-	pulled := bufferv2.Buffer{}
+	pulled := buffer.Buffer{}
 	for _, v := range views {
 		pulled.Append(v)
 	}

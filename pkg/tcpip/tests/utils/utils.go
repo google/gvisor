@@ -18,7 +18,7 @@ package utils
 import (
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -380,7 +380,7 @@ func ICMPv4Echo(src, dst tcpip.Address, ttl uint8, ty header.ICMPv4Type) []byte 
 // the provided endpoint.
 func RxICMPv4EchoRequest(e *channel.Endpoint, src, dst tcpip.Address, ttl uint8) {
 	newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: bufferv2.MakeWithData(ICMPv4Echo(src, dst, ttl, header.ICMPv4Echo)),
+		Payload: buffer.MakeWithData(ICMPv4Echo(src, dst, ttl, header.ICMPv4Echo)),
 	})
 	defer newPkt.DecRef()
 	e.InjectInbound(header.IPv4ProtocolNumber, newPkt)
@@ -390,7 +390,7 @@ func RxICMPv4EchoRequest(e *channel.Endpoint, src, dst tcpip.Address, ttl uint8)
 // the provided endpoint.
 func RxICMPv4EchoReply(e *channel.Endpoint, src, dst tcpip.Address, ttl uint8) {
 	newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: bufferv2.MakeWithData(ICMPv4Echo(src, dst, ttl, header.ICMPv4EchoReply)),
+		Payload: buffer.MakeWithData(ICMPv4Echo(src, dst, ttl, header.ICMPv4EchoReply)),
 	})
 	defer newPkt.DecRef()
 	e.InjectInbound(header.IPv4ProtocolNumber, newPkt)
@@ -424,7 +424,7 @@ func ICMPv6Echo(src, dst tcpip.Address, ttl uint8, ty header.ICMPv6Type) []byte 
 // the provided endpoint.
 func RxICMPv6EchoRequest(e *channel.Endpoint, src, dst tcpip.Address, ttl uint8) {
 	newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: bufferv2.MakeWithData(ICMPv6Echo(src, dst, ttl, header.ICMPv6EchoRequest)),
+		Payload: buffer.MakeWithData(ICMPv6Echo(src, dst, ttl, header.ICMPv6EchoRequest)),
 	})
 	defer newPkt.DecRef()
 	e.InjectInbound(header.IPv6ProtocolNumber, newPkt)
@@ -434,7 +434,7 @@ func RxICMPv6EchoRequest(e *channel.Endpoint, src, dst tcpip.Address, ttl uint8)
 // the provided endpoint.
 func RxICMPv6EchoReply(e *channel.Endpoint, src, dst tcpip.Address, ttl uint8) {
 	newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: bufferv2.MakeWithData(ICMPv6Echo(src, dst, ttl, header.ICMPv6EchoReply)),
+		Payload: buffer.MakeWithData(ICMPv6Echo(src, dst, ttl, header.ICMPv6EchoReply)),
 	})
 	defer newPkt.DecRef()
 	e.InjectInbound(header.IPv6ProtocolNumber, newPkt)

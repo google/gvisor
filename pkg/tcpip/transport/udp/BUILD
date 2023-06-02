@@ -29,7 +29,7 @@ go_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
-        "//pkg/bufferv2",
+        "//pkg/buffer",
         "//pkg/log",
         "//pkg/sleep",
         "//pkg/sync",
@@ -52,7 +52,7 @@ go_test(
     srcs = ["udp_test.go"],
     deps = [
         ":udp",
-        "//pkg/bufferv2",
+        "//pkg/buffer",
         "//pkg/refs",
         "//pkg/tcpip",
         "//pkg/tcpip/checker",

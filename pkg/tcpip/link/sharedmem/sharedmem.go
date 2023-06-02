@@ -27,7 +27,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/eventfd"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -424,7 +424,7 @@ func (e *endpoint) dispatchLoop(d stack.NetworkDispatcher) {
 
 		// Copy data from the shared area to its own buffer, then
 		// prepare to repost the buffer.
-		v := bufferv2.NewView(int(n))
+		v := buffer.NewView(int(n))
 		v.Grow(int(n))
 		offset := uint32(0)
 		for i := range rxb {
@@ -435,7 +435,7 @@ func (e *endpoint) dispatchLoop(d stack.NetworkDispatcher) {
 		}
 
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-			Payload: bufferv2.MakeWithView(v),
+			Payload: buffer.MakeWithView(v),
 		})
 
 		if e.virtioNetHeaderRequired {

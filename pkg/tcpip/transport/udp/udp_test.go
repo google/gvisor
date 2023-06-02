@@ -24,7 +24,7 @@ import (
 	"os"
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
@@ -1562,7 +1562,7 @@ func TestV4UnknownDestination(t *testing.T) {
 				t.Fatalf("got an ICMP packet of size: %d, want: sz <= %d", got, want)
 			}
 
-			hdr := bufferv2.NewViewWithData(pkt)
+			hdr := buffer.NewViewWithData(pkt)
 			defer hdr.Release()
 			checker.IPv4(t, hdr, checker.ICMPv4(
 				checker.ICMPv4Type(header.ICMPv4DstUnreachable),
@@ -1659,7 +1659,7 @@ func TestV6UnknownDestination(t *testing.T) {
 				t.Fatalf("got an ICMP packet of size: %d, want: sz <= %d", got, want)
 			}
 
-			hdr := bufferv2.NewViewWithData(pkt)
+			hdr := buffer.NewViewWithData(pkt)
 			defer hdr.Release()
 			checker.IPv6(t, hdr, checker.ICMPv6(
 				checker.ICMPv6Type(header.ICMPv6DstUnreachable),

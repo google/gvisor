@@ -19,7 +19,7 @@ import (
 	"io"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
@@ -342,7 +342,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 		return 0, &tcpip.ErrMessageTooLong{}
 	}
 
-	v := bufferv2.NewView(p.Len())
+	v := buffer.NewView(p.Len())
 	defer v.Release()
 	if _, err := io.CopyN(v, p, int64(p.Len())); err != nil {
 		return 0, &tcpip.ErrBadBuffer{}
@@ -406,12 +406,12 @@ func (e *endpoint) GetSockOpt(opt tcpip.GettableSocketOption) tcpip.Error {
 	return e.net.GetSockOpt(opt)
 }
 
-func send4(s *stack.Stack, ctx *network.WriteContext, ident uint16, data *bufferv2.View, maxHeaderLength uint16) tcpip.Error {
+func send4(s *stack.Stack, ctx *network.WriteContext, ident uint16, data *buffer.View, maxHeaderLength uint16) tcpip.Error {
 	if data.Size() < header.ICMPv4MinimumSize {
 		return &tcpip.ErrInvalidEndpointState{}
 	}
 
-	pkt := ctx.TryNewPacketBuffer(header.ICMPv4MinimumSize+int(maxHeaderLength), bufferv2.Buffer{})
+	pkt := ctx.TryNewPacketBuffer(header.ICMPv4MinimumSize+int(maxHeaderLength), buffer.Buffer{})
 	if pkt.IsNil() {
 		return &tcpip.ErrWouldBlock{}
 	}
@@ -448,12 +448,12 @@ func send4(s *stack.Stack, ctx *network.WriteContext, ident uint16, data *buffer
 	return nil
 }
 
-func send6(s *stack.Stack, ctx *network.WriteContext, ident uint16, data *bufferv2.View, src, dst tcpip.Address, maxHeaderLength uint16) tcpip.Error {
+func send6(s *stack.Stack, ctx *network.WriteContext, ident uint16, data *buffer.View, src, dst tcpip.Address, maxHeaderLength uint16) tcpip.Error {
 	if data.Size() < header.ICMPv6EchoMinimumSize {
 		return &tcpip.ErrInvalidEndpointState{}
 	}
 
-	pkt := ctx.TryNewPacketBuffer(header.ICMPv6MinimumSize+int(maxHeaderLength), bufferv2.Buffer{})
+	pkt := ctx.TryNewPacketBuffer(header.ICMPv6MinimumSize+int(maxHeaderLength), buffer.Buffer{})
 	if pkt.IsNil() {
 		return &tcpip.ErrWouldBlock{}
 	}

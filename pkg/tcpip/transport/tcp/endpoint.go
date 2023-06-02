@@ -25,7 +25,7 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -1527,7 +1527,7 @@ func (e *endpoint) isEndpointWritableLocked() (int, tcpip.Error) {
 // readFromPayloader reads a slice from the Payloader.
 // +checklocks:e.mu
 // +checklocks:e.sndQueueInfo.sndQueueMu
-func (e *endpoint) readFromPayloader(p tcpip.Payloader, opts tcpip.WriteOptions, avail int) (bufferv2.Buffer, tcpip.Error) {
+func (e *endpoint) readFromPayloader(p tcpip.Payloader, opts tcpip.WriteOptions, avail int) (buffer.Buffer, tcpip.Error) {
 	// We can release locks while copying data.
 	//
 	// This is not possible if atomic is set, because we can't allow the
@@ -1542,7 +1542,7 @@ func (e *endpoint) readFromPayloader(p tcpip.Payloader, opts tcpip.WriteOptions,
 	}
 
 	// Fetch data.
-	var payload bufferv2.Buffer
+	var payload buffer.Buffer
 	if l := p.Len(); l < avail {
 		avail = l
 	}
@@ -1551,7 +1551,7 @@ func (e *endpoint) readFromPayloader(p tcpip.Payloader, opts tcpip.WriteOptions,
 	}
 	if _, err := payload.WriteFromReader(p, int64(avail)); err != nil {
 		payload.Release()
-		return bufferv2.Buffer{}, &tcpip.ErrBadBuffer{}
+		return buffer.Buffer{}, &tcpip.ErrBadBuffer{}
 	}
 	return payload, nil
 }
@@ -2525,7 +2525,7 @@ func (e *endpoint) shutdownLocked(flags tcpip.ShutdownFlags) tcpip.Error {
 			}
 
 			// Queue fin segment.
-			s := newOutgoingSegment(e.TransportEndpointInfo.ID, e.stack.Clock(), bufferv2.Buffer{})
+			s := newOutgoingSegment(e.TransportEndpointInfo.ID, e.stack.Clock(), buffer.Buffer{})
 			e.snd.writeList.PushBack(s)
 			// Mark endpoint as closed.
 			e.sndQueueInfo.SndClosed = true

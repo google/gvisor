@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -291,7 +291,7 @@ func (f *Fragmentation) releaseReassemblersLocked() {
 // PacketFragmenter is the book-keeping struct for packet fragmentation.
 type PacketFragmenter struct {
 	transportHeader    []byte
-	data               bufferv2.Buffer
+	data               buffer.Buffer
 	reserve            int
 	fragmentPayloadLen int
 	fragmentCount      int
@@ -316,7 +316,7 @@ func MakePacketFragmenter(pkt stack.PacketBufferPtr, fragmentPayloadLen uint32, 
 	// TODO(gvisor.dev/issue/3912): Once Authentication or ESP Headers are
 	// supported for outbound packets, the fragmentable data should not include
 	// these headers.
-	var fragmentableData bufferv2.Buffer
+	var fragmentableData buffer.Buffer
 	fragmentableData.Append(pkt.TransportHeader().View())
 	pktBuf := pkt.Data().ToBuffer()
 	fragmentableData.Merge(&pktBuf)

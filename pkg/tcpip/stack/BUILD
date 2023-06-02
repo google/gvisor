@@ -265,7 +265,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/atomicbitops",
-        "//pkg/bufferv2",
+        "//pkg/buffer",
         "//pkg/ilist",
         "//pkg/log",
         "//pkg/rand",
@@ -300,7 +300,7 @@ go_test(
     shard_count = most_shards,
     deps = [
         ":stack",
-        "//pkg/bufferv2",
+        "//pkg/buffer",
         "//pkg/rand",
         "//pkg/sync",
         "//pkg/tcpip",
@@ -340,7 +340,7 @@ go_test(
     library = ":stack",
     deps = [
         "//pkg/atomicbitops",
-        "//pkg/bufferv2",
+        "//pkg/buffer",
         "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/faketime",

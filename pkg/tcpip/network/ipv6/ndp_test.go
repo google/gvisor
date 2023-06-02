@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
@@ -189,7 +189,7 @@ func TestNeighborSolicitationWithSourceLinkLayerOption(t *testing.T) {
 			}
 
 			pktBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
-				Payload: bufferv2.MakeWithData(hdr.View()),
+				Payload: buffer.MakeWithData(hdr.View()),
 			})
 			e.InjectInbound(ProtocolNumber, pktBuf)
 			pktBuf.DecRef()
@@ -451,7 +451,7 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 			}
 
 			pktBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
-				Payload: bufferv2.MakeWithData(hdr.View()),
+				Payload: buffer.MakeWithData(hdr.View()),
 			})
 			e.InjectInbound(ProtocolNumber, pktBuf)
 			pktBuf.DecRef()
@@ -530,7 +530,7 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 					DstAddr:           nicAddr,
 				})
 				pktBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Payload: bufferv2.MakeWithData(hdr.View()),
+					Payload: buffer.MakeWithData(hdr.View()),
 				})
 				e.InjectInbound(ProtocolNumber, pktBuf)
 				pktBuf.DecRef()
@@ -656,7 +656,7 @@ func TestNeighborAdvertisementWithTargetLinkLayerOption(t *testing.T) {
 				t.Fatalf("got invalid = %d, want = 0", got)
 			}
 			pktBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
-				Payload: bufferv2.MakeWithData(hdr.View()),
+				Payload: buffer.MakeWithData(hdr.View()),
 			})
 			e.InjectInbound(ProtocolNumber, pktBuf)
 			pktBuf.DecRef()
@@ -715,8 +715,8 @@ func TestNDPValidation(t *testing.T) {
 			DstAddr:           lladdr0,
 			ExtensionHeaders:  extHdrs,
 		})
-		buf := bufferv2.MakeWithData(ip)
-		buf.Append(bufferv2.NewViewWithData(payload))
+		buf := buffer.MakeWithData(ip)
+		buf.Append(buffer.NewViewWithData(payload))
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Payload: buf,
 		})
@@ -1032,7 +1032,7 @@ func TestNeighborAdvertisementValidation(t *testing.T) {
 			}
 
 			pktBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
-				Payload: bufferv2.MakeWithData(hdr.View()),
+				Payload: buffer.MakeWithData(hdr.View()),
 			})
 			e.InjectInbound(header.IPv6ProtocolNumber, pktBuf)
 			pktBuf.DecRef()
@@ -1233,7 +1233,7 @@ func TestRouterAdvertValidation(t *testing.T) {
 			}
 
 			pktBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
-				Payload: bufferv2.MakeWithData(hdr.View()),
+				Payload: buffer.MakeWithData(hdr.View()),
 			})
 			e.InjectInbound(header.IPv6ProtocolNumber, pktBuf)
 			pktBuf.DecRef()

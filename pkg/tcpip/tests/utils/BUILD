@@ -11,7 +11,7 @@ go_library(
     srcs = ["utils.go"],
     visibility = ["//pkg/tcpip/tests:__subpackages__"],
     deps = [
-        "//pkg/bufferv2",
+        "//pkg/buffer",
         "//pkg/tcpip",
         "//pkg/tcpip/checksum",
         "//pkg/tcpip/header",

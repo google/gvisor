@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -1161,7 +1161,7 @@ type InjectableLinkEndpoint interface {
 	// link.
 	//
 	// dest is used by endpoints with multiple raw destinations.
-	InjectOutbound(dest tcpip.Address, packet *bufferv2.View) tcpip.Error
+	InjectOutbound(dest tcpip.Address, packet *buffer.View) tcpip.Error
 }
 
 // DADResult is a marker interface for the result of a duplicate address

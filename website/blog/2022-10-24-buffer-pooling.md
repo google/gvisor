@@ -91,9 +91,9 @@ changing any intermediate buffer processing logic.
 ## Introducing bufferv2
 
 Our solution was
-[bufferv2](https://github.com/google/gvisor/tree/master/pkg/bufferv2). Bufferv2
-is a non-contiguous, reference counted, pooled, copy-on-write, buffer-like data
-structure.
+[bufferv2](https://github.com/google/gvisor/tree/1ceb81454444981448ad57612139adfc0def1b85/pkg/bufferv2).
+Bufferv2 is a non-contiguous, reference counted, pooled, copy-on-write,
+buffer-like data structure.
 
 Internally, a bufferv2 `Buffer` is a linked list of `View`s. Each `View` has
 start/end indices and holds a pointer to a `Chunk`. A `Chunk` is a

@@ -20,7 +20,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -156,7 +156,7 @@ func (fd *tunFD) Write(ctx context.Context, src usermem.IOSequence, opts vfs.Wri
 	if int64(mtu) < src.NumBytes() {
 		return 0, unix.EMSGSIZE
 	}
-	data := bufferv2.NewView(int(src.NumBytes()))
+	data := buffer.NewView(int(src.NumBytes()))
 	defer data.Release()
 	if _, err := io.CopyN(data, src.Reader(ctx), src.NumBytes()); err != nil {
 		return 0, err

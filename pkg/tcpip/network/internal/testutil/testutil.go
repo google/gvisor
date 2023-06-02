@@ -22,7 +22,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -108,10 +108,10 @@ func (ep *MockLinkEndpoint) Close() {
 // the other headers. The payload is made from Views of the sizes listed in
 // viewSizes.
 func MakeRandPkt(transportHeaderLength int, extraHeaderReserveLength int, viewSizes []int, proto tcpip.NetworkProtocolNumber) stack.PacketBufferPtr {
-	var buf bufferv2.Buffer
+	var buf buffer.Buffer
 
 	for _, s := range viewSizes {
-		newView := bufferv2.NewViewSize(s)
+		newView := buffer.NewViewSize(s)
 		if _, err := rand.Read(newView.AsSlice()); err != nil {
 			panic(fmt.Sprintf("rand.Read: %s", err))
 		}
@@ -191,7 +191,7 @@ func CheckMLDv2Stats(t *testing.T, s *stack.Stack, reports, leaves, reportsV2 ui
 //
 // Note that observed records are removed from expectedRecords. No error is
 // logged if the report does not have all the records expected.
-func ValidateIGMPv3ReportWithRecords(t *testing.T, v *bufferv2.View, srcAddr tcpip.Address, expectedRecords map[tcpip.Address]header.IGMPv3ReportRecordType) {
+func ValidateIGMPv3ReportWithRecords(t *testing.T, v *buffer.View, srcAddr tcpip.Address, expectedRecords map[tcpip.Address]header.IGMPv3ReportRecordType) {
 	t.Helper()
 
 	checker.IPv4(t, v,
@@ -204,7 +204,7 @@ func ValidateIGMPv3ReportWithRecords(t *testing.T, v *bufferv2.View, srcAddr tcp
 }
 
 // ValidateIGMPv3Report validates an IGMPv3 report.
-func ValidateIGMPv3Report(t *testing.T, v *bufferv2.View, srcAddr tcpip.Address, addrs []tcpip.Address, recordType header.IGMPv3ReportRecordType) {
+func ValidateIGMPv3Report(t *testing.T, v *buffer.View, srcAddr tcpip.Address, addrs []tcpip.Address, recordType header.IGMPv3ReportRecordType) {
 	t.Helper()
 
 	records := make(map[tcpip.Address]header.IGMPv3ReportRecordType)
@@ -289,7 +289,7 @@ func ValidMultipleIGMPv2ReportLeaves(t *testing.T, e *channel.Endpoint, srcAddr 
 //
 // Note that observed records are removed from expectedRecords. No error is
 // logged if the report does not have all the records expected.
-func ValidateMLDv2ReportWithRecords(t *testing.T, v *bufferv2.View, srcAddr tcpip.Address, expectedRecords map[tcpip.Address]header.MLDv2ReportRecordType) {
+func ValidateMLDv2ReportWithRecords(t *testing.T, v *buffer.View, srcAddr tcpip.Address, expectedRecords map[tcpip.Address]header.MLDv2ReportRecordType) {
 	t.Helper()
 
 	checker.IPv6WithExtHdr(t, v,
@@ -304,7 +304,7 @@ func ValidateMLDv2ReportWithRecords(t *testing.T, v *bufferv2.View, srcAddr tcpi
 }
 
 // ValidateMLDv2Report validates an MLDv2 report.
-func ValidateMLDv2Report(t *testing.T, v *bufferv2.View, srcAddr tcpip.Address, addrs []tcpip.Address, recordType header.MLDv2ReportRecordType) {
+func ValidateMLDv2Report(t *testing.T, v *buffer.View, srcAddr tcpip.Address, addrs []tcpip.Address, recordType header.MLDv2ReportRecordType) {
 	t.Helper()
 
 	records := make(map[tcpip.Address]header.MLDv2ReportRecordType)

@@ -23,7 +23,7 @@ import (
 	"testing"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
@@ -717,7 +717,7 @@ func verifySpuriousRecoveryMetric(t *testing.T, c *context.Context, numSpuriousR
 	}
 }
 
-func checkReceivedPacket(t *testing.T, c *context.Context, tcpHdr header.TCP, bytesRead uint32, b *bufferv2.View, data []byte) {
+func checkReceivedPacket(t *testing.T, c *context.Context, tcpHdr header.TCP, bytesRead uint32, b *buffer.View, data []byte) {
 	payloadLen := uint32(len(tcpHdr.Payload()))
 	checker.IPv4(t, b,
 		checker.TCP(

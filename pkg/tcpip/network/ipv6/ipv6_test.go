@@ -25,7 +25,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
@@ -97,7 +97,7 @@ func testReceiveICMP(t *testing.T, s *stack.Stack, e *channel.Endpoint, src, dst
 	})
 
 	pktBuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: bufferv2.MakeWithData(hdr.View()),
+		Payload: buffer.MakeWithData(hdr.View()),
 	})
 	e.InjectInbound(ProtocolNumber, pktBuf)
 	pktBuf.DecRef()
@@ -157,7 +157,7 @@ func testReceiveUDP(t *testing.T, s *stack.Stack, e *channel.Endpoint, src, dst 
 	})
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: bufferv2.MakeWithData(hdr.View()),
+		Payload: buffer.MakeWithData(hdr.View()),
 	})
 	e.InjectInbound(ProtocolNumber, pkt)
 	pkt.DecRef()
@@ -178,7 +178,7 @@ func compareFragments(packets []stack.PacketBufferPtr, sourcePacket stack.Packet
 	defer view.Release()
 	source = append(source, view.AsSlice()...)
 
-	var reassembledPayload bufferv2.Buffer
+	var reassembledPayload buffer.Buffer
 	defer reassembledPayload.Release()
 	for i, fragment := range packets {
 		// Confirm that the packet is valid.
@@ -1018,7 +1018,7 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 			}
 
 			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-				Payload: bufferv2.MakeWithData(hdr.View()),
+				Payload: buffer.MakeWithData(hdr.View()),
 			})
 			e.InjectInbound(ProtocolNumber, pkt)
 			pkt.DecRef()
@@ -1048,7 +1048,7 @@ func TestReceiveIPv6ExtHdrs(t *testing.T) {
 				}
 				defer p.DecRef()
 
-				// Pack the output packet into a single bufferv2.View as the checkers
+				// Pack the output packet into a single buffer.View as the checkers
 				// assume that.
 				v := p.ToView()
 				defer v.Release()
@@ -1907,8 +1907,8 @@ func TestReceiveIPv6Fragments(t *testing.T) {
 					DstAddr:           f.dstAddr,
 				})
 
-				buf := bufferv2.MakeWithData(hdr.View())
-				buf.Append(bufferv2.NewViewWithData(f.data))
+				buf := buffer.MakeWithData(hdr.View())
+				buf.Append(buffer.NewViewWithData(f.data))
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 					Payload: buf,
 				})
@@ -2044,8 +2044,8 @@ func TestConcurrentFragmentWrites(t *testing.T) {
 						DstAddr:           f.dstAddr,
 					})
 
-					buf := bufferv2.MakeWithData(hdr.View())
-					buf.Append(bufferv2.NewViewWithData(f.data))
+					buf := buffer.MakeWithData(hdr.View())
+					buf.Append(buffer.NewViewWithData(f.data))
 					pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 						Payload: buf,
 					})
@@ -2173,7 +2173,7 @@ func TestInvalidIPv6Fragments(t *testing.T) {
 				encodeArgs.ExtensionHeaders = append(encodeArgs.ExtensionHeaders, &f.ipv6FragmentFields)
 				ip.Encode(&encodeArgs)
 
-				buf := bufferv2.MakeWithData(append(hdr.View(), f.payload...))
+				buf := buffer.MakeWithData(append(hdr.View(), f.payload...))
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 					Payload: buf,
 				})
@@ -2434,7 +2434,7 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 
 				fragHDR := header.IPv6Fragment(hdr.View()[header.IPv6MinimumSize:])
 
-				buf := bufferv2.MakeWithData(append(hdr.View(), f.payload...))
+				buf := buffer.MakeWithData(append(hdr.View(), f.payload...))
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 					Payload: buf,
 				})
@@ -2600,7 +2600,7 @@ func TestWriteStats(t *testing.T) {
 			for i := 0; i < nPackets; i++ {
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 					ReserveHeaderBytes: header.UDPMinimumSize + int(rt.MaxHeaderLength()),
-					Payload:            bufferv2.Buffer{},
+					Payload:            buffer.Buffer{},
 				})
 				defer pkt.DecRef()
 				pkt.TransportHeader().Push(header.UDPMinimumSize)
@@ -3271,7 +3271,7 @@ func TestForwarding(t *testing.T) {
 				DstAddr:           test.dstAddr,
 			})
 			request := stack.NewPacketBuffer(stack.PacketBufferOptions{
-				Payload: bufferv2.MakeWithData(hdr.View()),
+				Payload: buffer.MakeWithData(hdr.View()),
 			})
 
 			incomingEndpoint, ok := endpoints[incomingNICID]
@@ -3606,7 +3606,7 @@ func TestMulticastForwarding(t *testing.T) {
 				DstAddr:           dstAddr,
 			})
 			request := stack.NewPacketBuffer(stack.PacketBufferOptions{
-				Payload: bufferv2.MakeWithData(hdr.View()),
+				Payload: buffer.MakeWithData(hdr.View()),
 			})
 
 			incomingEndpoint, ok := endpoints[incomingNICID]
@@ -3879,7 +3879,7 @@ func TestIcmpRateLimit(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			for round := 0; round < icmpBurst+1; round++ {
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Payload: bufferv2.MakeWithData(testCase.createPacket()),
+					Payload: buffer.MakeWithData(testCase.createPacket()),
 				})
 				e.InjectInbound(header.IPv6ProtocolNumber, pkt)
 				pkt.DecRef()
@@ -3972,7 +3972,7 @@ func TestRejectMartianMappedPackets(t *testing.T) {
 
 			// Send the packet out.
 			pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-				Payload: bufferv2.MakeWithData(hdr.View()),
+				Payload: buffer.MakeWithData(hdr.View()),
 			})
 			channelEP.InjectInbound(ProtocolNumber, pkt)
 			pkt.DecRef()

@@ -20,7 +20,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
@@ -49,7 +49,7 @@ func TestEndpointStateTransitions(t *testing.T) {
 	const nicID = 1
 
 	data := []byte{1, 2, 4, 5}
-	v4Checker := func(t *testing.T, v *bufferv2.View) {
+	v4Checker := func(t *testing.T, v *buffer.View) {
 		checker.IPv4(t, v,
 			checker.SrcAddr(ipv4NICAddr),
 			checker.DstAddr(ipv4RemoteAddr),
@@ -57,7 +57,7 @@ func TestEndpointStateTransitions(t *testing.T) {
 		)
 	}
 
-	v6Checker := func(t *testing.T, v *bufferv2.View) {
+	v6Checker := func(t *testing.T, v *buffer.View) {
 		checker.IPv6(t, v,
 			checker.SrcAddr(ipv6NICAddr),
 			checker.DstAddr(ipv6RemoteAddr),
@@ -75,7 +75,7 @@ func TestEndpointStateTransitions(t *testing.T) {
 		expectedBoundAddr       tcpip.Address
 		remoteAddr              tcpip.Address
 		expectedRemoteAddr      tcpip.Address
-		checker                 func(*testing.T, *bufferv2.View)
+		checker                 func(*testing.T, *buffer.View)
 	}{
 		{
 			name:                    "IPv4",
@@ -205,7 +205,7 @@ func TestEndpointStateTransitions(t *testing.T) {
 			}
 			injectPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 				ReserveHeaderBytes: int(info.MaxHeaderLength),
-				Payload:            bufferv2.MakeWithData(data),
+				Payload:            buffer.MakeWithData(data),
 			})
 			defer injectPkt.DecRef()
 			if err := ctx.WritePacket(injectPkt, false /* headerIncluded */); err != nil {

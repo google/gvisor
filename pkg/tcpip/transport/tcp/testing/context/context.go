@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
@@ -331,7 +331,7 @@ func (c *Context) CheckNoPacket(errMsg string) {
 // that it is an IPv4 packet with the expected source and destination
 // addresses. If no packet is received in the specified timeout it will return
 // nil.
-func (c *Context) GetPacketWithTimeout(timeout time.Duration) *bufferv2.View {
+func (c *Context) GetPacketWithTimeout(timeout time.Duration) *buffer.View {
 	c.t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -367,7 +367,7 @@ func (c *Context) GetPacketWithTimeout(timeout time.Duration) *bufferv2.View {
 // GetPacket reads a packet from the link layer endpoint and verifies
 // that it is an IPv4 packet with the expected source and destination
 // addresses.
-func (c *Context) GetPacket() *bufferv2.View {
+func (c *Context) GetPacket() *buffer.View {
 	c.t.Helper()
 
 	p := c.GetPacketWithTimeout(5 * time.Second)
@@ -383,7 +383,7 @@ func (c *Context) GetPacket() *bufferv2.View {
 // and verifies that it is an IPv4 packet with the expected source
 // and destination address. If no packet is available it will return
 // nil immediately.
-func (c *Context) GetPacketNonBlocking() *bufferv2.View {
+func (c *Context) GetPacketNonBlocking() *buffer.View {
 	c.t.Helper()
 
 	pkt := c.linkEP.Read()
@@ -411,9 +411,9 @@ func (c *Context) GetPacketNonBlocking() *bufferv2.View {
 }
 
 // SendICMPPacket builds and sends an ICMPv4 packet via the link layer endpoint.
-func (c *Context) SendICMPPacket(typ header.ICMPv4Type, code header.ICMPv4Code, p1, p2 *bufferv2.View, maxTotalSize int) {
+func (c *Context) SendICMPPacket(typ header.ICMPv4Type, code header.ICMPv4Code, p1, p2 *buffer.View, maxTotalSize int) {
 	// Allocate a buffer data and headers.
-	buf := bufferv2.NewViewSize(header.IPv4MinimumSize + header.ICMPv4PayloadOffset + p2.Size())
+	buf := buffer.NewViewSize(header.IPv4MinimumSize + header.ICMPv4PayloadOffset + p2.Size())
 	if buf.Size() > maxTotalSize {
 		buf.CapLength(maxTotalSize)
 	}
@@ -440,20 +440,20 @@ func (c *Context) SendICMPPacket(typ header.ICMPv4Type, code header.ICMPv4Code, 
 
 	// Inject packet.
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: bufferv2.MakeWithView(buf),
+		Payload: buffer.MakeWithView(buf),
 	})
 	defer pkt.DecRef()
 	c.linkEP.InjectInbound(ipv4.ProtocolNumber, pkt)
 }
 
 // BuildSegment builds a TCP segment based on the given Headers and payload.
-func (c *Context) BuildSegment(payload []byte, h *Headers) bufferv2.Buffer {
+func (c *Context) BuildSegment(payload []byte, h *Headers) buffer.Buffer {
 	return c.BuildSegmentWithAddrs(payload, h, TestAddr, StackAddr)
 }
 
 // BuildSegmentWithAddrs builds a TCP segment based on the given Headers,
 // payload and source and destination IPv4 addresses.
-func (c *Context) BuildSegmentWithAddrs(payload []byte, h *Headers, src, dst tcpip.Address) bufferv2.Buffer {
+func (c *Context) BuildSegmentWithAddrs(payload []byte, h *Headers, src, dst tcpip.Address) buffer.Buffer {
 	// Allocate a buffer for data and headers.
 	buf := make([]byte, header.TCPMinimumSize+header.IPv4MinimumSize+len(h.TCPOpts)+len(payload))
 	copy(buf[len(buf)-len(payload):], payload)
@@ -490,12 +490,12 @@ func (c *Context) BuildSegmentWithAddrs(payload []byte, h *Headers, src, dst tcp
 	t.SetChecksum(^t.CalculateChecksum(xsum))
 
 	// Inject packet.
-	return bufferv2.MakeWithData(buf)
+	return buffer.MakeWithData(buf)
 }
 
 // SendSegment sends a TCP segment that has already been built and written to a
 // buffer.VectorisedView.
-func (c *Context) SendSegment(s bufferv2.Buffer) {
+func (c *Context) SendSegment(s buffer.Buffer) {
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Payload: s,
 	})
@@ -628,7 +628,7 @@ func (c *Context) CreateV6Endpoint(v6only bool) {
 
 // GetV6Packet reads a single packet from the link layer endpoint of the context
 // and asserts that it is an IPv6 Packet with the expected src/dest addresses.
-func (c *Context) GetV6Packet() *bufferv2.View {
+func (c *Context) GetV6Packet() *buffer.View {
 	c.t.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -695,7 +695,7 @@ func (c *Context) SendV6PacketWithAddrs(payload []byte, h *Headers, src, dst tcp
 
 	// Inject packet.
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: bufferv2.MakeWithData(buf),
+		Payload: buffer.MakeWithData(buf),
 	})
 	defer pkt.DecRef()
 	c.linkEP.InjectInbound(ipv6.ProtocolNumber, pkt)
@@ -851,7 +851,7 @@ func (r *RawEndpoint) SendPacket(payload []byte, opts []byte) {
 
 // VerifyAndReturnACKWithTS verifies that the tsEcr field int he ACK matches
 // the provided tsVal as well as returns the original packet.
-func (r *RawEndpoint) VerifyAndReturnACKWithTS(tsVal uint32) *bufferv2.View {
+func (r *RawEndpoint) VerifyAndReturnACKWithTS(tsVal uint32) *buffer.View {
 	r.C.t.Helper()
 	// Read ACK and verify that tsEcr of ACK packet is [1,2,3,4]
 	ackPacket := r.C.GetPacket()
@@ -1010,7 +1010,7 @@ func (c *Context) CreateConnectedWithOptions(wantOptions header.TCPSynOptions, d
 	})
 
 	// Read ACK.
-	var ackPacket *bufferv2.View
+	var ackPacket *buffer.View
 	// Ignore retransimitted SYN packets.
 	for {
 		packet := c.GetPacket()

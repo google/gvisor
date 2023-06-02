@@ -11,7 +11,7 @@ go_library(
     srcs = ["checker.go"],
     visibility = ["//visibility:public"],
     deps = [
-        "//pkg/bufferv2",
+        "//pkg/buffer",
         "//pkg/tcpip",
         "//pkg/tcpip/checksum",
         "//pkg/tcpip/header",

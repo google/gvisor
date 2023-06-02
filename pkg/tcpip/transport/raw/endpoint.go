@@ -30,7 +30,7 @@ import (
 	"io"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
@@ -356,7 +356,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 		return 0, &tcpip.ErrMessageTooLong{}
 	}
 
-	var payload bufferv2.Buffer
+	var payload buffer.Buffer
 	defer payload.Release()
 	if _, err := payload.WriteFromReader(p, int64(p.Len())); err != nil {
 		return 0, &tcpip.ErrBadBuffer{}
@@ -680,15 +680,15 @@ func (e *endpoint) HandlePacket(pkt stack.PacketBufferPtr) {
 		// TODO(https://gvisor.dev/issue/6517): Avoid the copy once S/R supports
 		// overlapping slices.
 		transportHeader := pkt.TransportHeader().Slice()
-		var combinedBuf bufferv2.Buffer
+		var combinedBuf buffer.Buffer
 		defer combinedBuf.Release()
 		switch info.NetProto {
 		case header.IPv4ProtocolNumber:
 			networkHeader := pkt.NetworkHeader().Slice()
-			headers := bufferv2.NewView(len(networkHeader) + len(transportHeader))
+			headers := buffer.NewView(len(networkHeader) + len(transportHeader))
 			headers.Write(networkHeader)
 			headers.Write(transportHeader)
-			combinedBuf = bufferv2.MakeWithView(headers)
+			combinedBuf = buffer.MakeWithView(headers)
 			pktBuf := pkt.Data().ToBuffer()
 			combinedBuf.Merge(&pktBuf)
 		case header.IPv6ProtocolNumber:
@@ -702,7 +702,7 @@ func (e *endpoint) HandlePacket(pkt stack.PacketBufferPtr) {
 				}
 			}
 
-			combinedBuf = bufferv2.MakeWithView(pkt.TransportHeader().View())
+			combinedBuf = buffer.MakeWithView(pkt.TransportHeader().View())
 			pktBuf := pkt.Data().ToBuffer()
 			combinedBuf.Merge(&pktBuf)
 
