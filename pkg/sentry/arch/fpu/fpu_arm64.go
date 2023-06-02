@@ -45,15 +45,17 @@ func newAarch64FPStateSlice() []byte {
 // supported by host, even if the app won't use much of it due to a restricted
 // FeatureSet.
 func NewState() State {
-	f := State(newAarch64FPStateSlice())
+	f := State{state: newAarch64FPStateSlice()}
 	initAarch64FPState(&f)
 	return f
 }
 
 // Fork creates and returns an identical copy of the aarch64 floating point state.
 func (s *State) Fork() State {
-	n := State(newAarch64FPStateSlice())
-	copy(n, *s)
+	n := State{
+		state: newAarch64FPStateSlice(),
+	}
+	copy(n.state, s.state)
 	return n
 }
 
@@ -61,5 +63,5 @@ func (s *State) Fork() State {
 //
 //go:nosplit
 func (s *State) BytePointer() *byte {
-	return &(*s)[0]
+	return &s.state[0]
 }

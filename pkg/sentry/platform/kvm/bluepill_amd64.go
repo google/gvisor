@@ -162,6 +162,7 @@ func bluepillArchExit(c *vCPU, context *arch.SignalContext64) {
 	context.Rip = regs.Rip
 	context.Eflags = regs.Eflags
 
+	c.FloatingPointState().PrepForHostSigframe()
 	// Set the context pointer to the saved floating point state. This is
 	// where the guest data has been serialized, the kernel will restore
 	// from this new pointer value.

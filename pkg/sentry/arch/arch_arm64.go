@@ -80,7 +80,7 @@ const (
 // +stateify savable
 type Context64 struct {
 	State
-	sigFPState []fpu.State // fpstate to be restored on sigreturn.
+	sigFPState []*fpu.State // fpstate to be restored on sigreturn.
 }
 
 // Arch implements Context.Arch.
@@ -88,10 +88,11 @@ func (c *Context64) Arch() Arch {
 	return ARM64
 }
 
-func (c *Context64) copySigFPState() []fpu.State {
-	var sigfps []fpu.State
+func (c *Context64) copySigFPState() []*fpu.State {
+	var sigfps []*fpu.State
 	for _, s := range c.sigFPState {
-		sigfps = append(sigfps, s.Fork())
+		state := s.Fork()
+		sigfps = append(sigfps, &state)
 	}
 	return sigfps
 }

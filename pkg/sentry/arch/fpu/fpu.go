@@ -23,7 +23,12 @@ import (
 //
 // This is a simple byte slice, but may have architecture-specific methods
 // attached to it.
-type State []byte
+//
+// +stateify savable
+type State struct {
+	state          []byte
+	stateWithMagic []byte
+}
 
 // ErrLoadingState indicates a failed restore due to unusable floating point
 // state.

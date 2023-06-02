@@ -132,7 +132,8 @@ func (c *Context64) SignalSetup(st *Stack, act *linux.SigAction, info *linux.Sig
 	c.Regs.Regs[30] = act.Restorer
 
 	// Save the thread's floating point state.
-	c.sigFPState = append(c.sigFPState, c.fpState)
+	state := c.fpState
+	c.sigFPState = append(c.sigFPState, &state)
 	// Signal handler gets a clean floating point state.
 	c.fpState = fpu.NewState()
 	return nil
@@ -186,7 +187,7 @@ func (c *Context64) SignalRestore(st *Stack, rt bool, featureSet cpuid.FeatureSe
 	// Restore floating point state.
 	l := len(c.sigFPState)
 	if l > 0 {
-		c.fpState = c.sigFPState[l-1]
+		c.fpState = *c.sigFPState[l-1]
 		// NOTE(cl/133042258): State save requires that any slice
 		// elements from '[len:cap]' to be zero value.
 		c.sigFPState[l-1] = nil

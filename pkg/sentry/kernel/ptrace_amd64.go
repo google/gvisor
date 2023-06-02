@@ -61,7 +61,7 @@ func (t *Task) ptraceArch(target *Task, req int64, addr, data hostarch.Addr) err
 			Opts: usermem.IOOpts{
 				AddressSpaceActive: true,
 			},
-		}, len(*s))
+		}, len(s.Slice()))
 		return err
 
 	case linux.PTRACE_SETREGS:
@@ -87,7 +87,7 @@ func (t *Task) ptraceArch(target *Task, req int64, addr, data hostarch.Addr) err
 			Opts: usermem.IOOpts{
 				AddressSpaceActive: true,
 			},
-		}, len(*s))
+		}, len(s.Slice()))
 		if err == nil {
 			target.p.FullStateChanged()
 		}

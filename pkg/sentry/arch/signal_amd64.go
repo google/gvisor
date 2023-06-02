@@ -195,9 +195,10 @@ func (c *Context64) SignalSetup(st *Stack, act *linux.SigAction, info *linux.Sig
 		return unix.EFAULT
 	}
 
+	fpState := c.fpState.Slice()
 	// Set up floating point state on the stack. Compare Linux's
 	// arch/x86/kernel/fpu/signal.c:copy_fpstate_to_sigframe().
-	if _, err := st.IO.CopyOut(context.Background(), fpStart, c.fpState[:464], usermem.IOOpts{}); err != nil {
+	if _, err := st.IO.CopyOut(context.Background(), fpStart, fpState[:464], usermem.IOOpts{}); err != nil {
 		return err
 	}
 	fpsw := FPSoftwareFrame{
@@ -210,8 +211,8 @@ func (c *Context64) SignalSetup(st *Stack, act *linux.SigAction, info *linux.Sig
 	if _, err := fpsw.CopyOut(st, StackBottomMagic); err != nil {
 		return err
 	}
-	if len(c.fpState) > 512 {
-		if _, err := st.IO.CopyOut(context.Background(), fpStart+512, c.fpState[512:], usermem.IOOpts{}); err != nil {
+	if len(fpState) > 512 {
+		if _, err := st.IO.CopyOut(context.Background(), fpStart+512, fpState[512:], usermem.IOOpts{}); err != nil {
 			return err
 		}
 	}
@@ -304,7 +305,7 @@ func (c *Context64) SignalRestore(st *Stack, rt bool, featureSet cpuid.FeatureSe
 	if uc.MContext.Fpstate == 0 {
 		c.fpState.Reset()
 	} else {
-		if _, err := st.IO.CopyIn(context.Background(), hostarch.Addr(uc.MContext.Fpstate), c.fpState, usermem.IOOpts{}); err != nil {
+		if _, err := st.IO.CopyIn(context.Background(), hostarch.Addr(uc.MContext.Fpstate), c.fpState.Slice(), usermem.IOOpts{}); err != nil {
 			c.fpState.Reset()
 			return 0, linux.SignalStack{}, err
 		}
