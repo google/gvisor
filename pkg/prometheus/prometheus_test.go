@@ -171,14 +171,29 @@ func (m *metricMetadata) float(val float64) *Data {
 // value, and this value will be used as the value for that field.
 // If a field accepts multiple values, the function will panic.
 func (m *metricMetadata) dist(samples ...int64) *Data {
-	var total int64
+	var total, min, max int64
+	var ssd float64
 	buckets := make([]Bucket, len(m.PB.GetDistributionBucketLowerBounds())+1)
 	var bucket *Bucket
 	for i, lowerBound := range m.PB.GetDistributionBucketLowerBounds() {
 		(&buckets[i]).UpperBound = Number{Int: lowerBound}
 	}
 	(&buckets[len(buckets)-1]).UpperBound = Number{Float: math.Inf(1)}
-	for _, sample := range samples {
+	for i, sample := range samples {
+		if i == 0 {
+			min = sample
+			max = sample
+		} else {
+			if sample < min {
+				min = sample
+			}
+			if sample > max {
+				max = sample
+			}
+			oldMean := float64(total) / float64(i+1)
+			newMean := float64(total+sample) / float64(i+2)
+			ssd += (float64(sample) - oldMean) * (float64(sample) - newMean)
+		}
 		total += sample
 		bucket = &buckets[0]
 		for i, lowerBound := range m.PB.GetDistributionBucketLowerBounds() {
@@ -194,8 +209,11 @@ func (m *metricMetadata) dist(samples ...int64) *Data {
 		Metric: m.metric(),
 		Labels: m.labels(),
 		HistogramValue: &Histogram{
-			Total:   Number{Int: total},
-			Buckets: buckets,
+			Total:                  Number{Int: total},
+			Buckets:                buckets,
+			Min:                    Number{Int: min},
+			Max:                    Number{Int: max},
+			SumOfSquaredDeviations: Number{Float: ssd},
 		},
 	}
 }
@@ -732,6 +750,188 @@ func TestVerifier(t *testing.T) {
 			),
 		},
 		{
+			Name:         "distribution sum-of-squared-deviations must be a floating-point number",
+			Registration: newMetricRegistration(fooDist),
+			WantFail: newSnapshotAt(epsilon(-1)).Add(
+				&Data{
+					Metric: fooDist.metric(),
+					Labels: fooDist.labels(),
+					HistogramValue: &Histogram{
+						Buckets: fooDist.dist(1, 2, 3).HistogramValue.Buckets,
+						Min:     fooDist.dist(1, 2, 3).HistogramValue.Min,
+						Max:     fooDist.dist(1, 2, 3).HistogramValue.Max,
+						SumOfSquaredDeviations: Number{
+							Int: int64(fooDist.dist(1, 2, 3).HistogramValue.SumOfSquaredDeviations.Float),
+						},
+					},
+				},
+			),
+		},
+		{
+			Name:         "distribution cannot have sum-of-squared-deviations regress",
+			Registration: newMetricRegistration(fooDist),
+			WantSuccess: []*Snapshot{
+				newSnapshotAt(epsilon(-2)).Add(
+					&Data{
+						Metric: fooDist.metric(),
+						Labels: fooDist.labels(),
+						HistogramValue: &Histogram{
+							Buckets:                fooDist.dist(1, 2, 3).HistogramValue.Buckets,
+							Min:                    fooDist.dist(1, 2, 3).HistogramValue.Min,
+							Max:                    fooDist.dist(1, 2, 3).HistogramValue.Max,
+							SumOfSquaredDeviations: fooDist.dist(1, 2, 3).HistogramValue.SumOfSquaredDeviations,
+						},
+					},
+				),
+			},
+			WantFail: newSnapshotAt(epsilon(-1)).Add(
+				&Data{
+					Metric: fooDist.metric(),
+					Labels: fooDist.labels(),
+					HistogramValue: &Histogram{
+						Buckets: fooDist.dist(1, 2, 3).HistogramValue.Buckets,
+						Min:     fooDist.dist(1, 2, 3).HistogramValue.Min,
+						Max:     fooDist.dist(1, 2, 3).HistogramValue.Max,
+						SumOfSquaredDeviations: Number{
+							Float: fooDist.dist(1, 2, 3).HistogramValue.SumOfSquaredDeviations.Float - 1.0,
+						},
+					},
+				},
+			),
+		},
+		{
+			Name:         "distribution cannot have minimum increase",
+			Registration: newMetricRegistration(fooDist),
+			WantSuccess: []*Snapshot{
+				newSnapshotAt(epsilon(-2)).Add(
+					&Data{
+						Metric: fooDist.metric(),
+						Labels: fooDist.labels(),
+						HistogramValue: &Histogram{
+							Buckets:                fooDist.dist(1, 2, 3).HistogramValue.Buckets,
+							Min:                    fooDist.dist(1, 2, 3).HistogramValue.Min,
+							Max:                    fooDist.dist(1, 2, 3).HistogramValue.Max,
+							SumOfSquaredDeviations: fooDist.dist(1, 2, 3).HistogramValue.SumOfSquaredDeviations,
+						},
+					},
+				),
+			},
+			WantFail: newSnapshotAt(epsilon(-1)).Add(
+				&Data{
+					Metric: fooDist.metric(),
+					Labels: fooDist.labels(),
+					HistogramValue: &Histogram{
+						Buckets: fooDist.dist(1, 2, 3).HistogramValue.Buckets,
+						Min: Number{
+							Int: fooDist.dist(1, 2, 3).HistogramValue.Min.Int + 1,
+						},
+						Max:                    fooDist.dist(1, 2, 3).HistogramValue.Max,
+						SumOfSquaredDeviations: fooDist.dist(1, 2, 3).HistogramValue.SumOfSquaredDeviations,
+					},
+				},
+			),
+		},
+		{
+			Name:         "distribution cannot have minimum value change type",
+			Registration: newMetricRegistration(fooDist),
+			WantSuccess: []*Snapshot{
+				newSnapshotAt(epsilon(-2)).Add(
+					&Data{
+						Metric: fooDist.metric(),
+						Labels: fooDist.labels(),
+						HistogramValue: &Histogram{
+							Buckets: fooDist.dist(1, 2, 3).HistogramValue.Buckets,
+							Min: Number{
+								Int: fooDist.dist(1, 2, 3).HistogramValue.Min.Int,
+							},
+							Max:                    fooDist.dist(1, 2, 3).HistogramValue.Max,
+							SumOfSquaredDeviations: fooDist.dist(1, 2, 3).HistogramValue.SumOfSquaredDeviations,
+						},
+					},
+				),
+			},
+			WantFail: newSnapshotAt(epsilon(-1)).Add(
+				&Data{
+					Metric: fooDist.metric(),
+					Labels: fooDist.labels(),
+					HistogramValue: &Histogram{
+						Buckets: fooDist.dist(1, 2, 3).HistogramValue.Buckets,
+						Min: Number{
+							Float: float64(fooDist.dist(1, 2, 3).HistogramValue.Min.Int),
+						},
+						Max:                    fooDist.dist(1, 2, 3).HistogramValue.Max,
+						SumOfSquaredDeviations: fooDist.dist(1, 2, 3).HistogramValue.SumOfSquaredDeviations,
+					},
+				},
+			),
+		},
+		{
+			Name:         "distribution cannot have maximum decrease",
+			Registration: newMetricRegistration(fooDist),
+			WantSuccess: []*Snapshot{
+				newSnapshotAt(epsilon(-2)).Add(
+					&Data{
+						Metric: fooDist.metric(),
+						Labels: fooDist.labels(),
+						HistogramValue: &Histogram{
+							Buckets:                fooDist.dist(1, 2, 3).HistogramValue.Buckets,
+							Min:                    fooDist.dist(1, 2, 3).HistogramValue.Min,
+							Max:                    fooDist.dist(1, 2, 3).HistogramValue.Max,
+							SumOfSquaredDeviations: fooDist.dist(1, 2, 3).HistogramValue.SumOfSquaredDeviations,
+						},
+					},
+				),
+			},
+			WantFail: newSnapshotAt(epsilon(-1)).Add(
+				&Data{
+					Metric: fooDist.metric(),
+					Labels: fooDist.labels(),
+					HistogramValue: &Histogram{
+						Buckets: fooDist.dist(1, 2, 3).HistogramValue.Buckets,
+						Min:     fooDist.dist(1, 2, 3).HistogramValue.Min,
+						Max: Number{
+							Int: fooDist.dist(1, 2, 3).HistogramValue.Max.Int - 1,
+						},
+						SumOfSquaredDeviations: fooDist.dist(1, 2, 3).HistogramValue.SumOfSquaredDeviations,
+					},
+				},
+			),
+		},
+		{
+			Name:         "distribution cannot have maximum value change type",
+			Registration: newMetricRegistration(fooDist),
+			WantSuccess: []*Snapshot{
+				newSnapshotAt(epsilon(-2)).Add(
+					&Data{
+						Metric: fooDist.metric(),
+						Labels: fooDist.labels(),
+						HistogramValue: &Histogram{
+							Buckets: fooDist.dist(1, 2, 3).HistogramValue.Buckets,
+							Min:     fooDist.dist(1, 2, 3).HistogramValue.Min,
+							Max: Number{
+								Int: fooDist.dist(1, 2, 3).HistogramValue.Max.Int,
+							},
+							SumOfSquaredDeviations: fooDist.dist(1, 2, 3).HistogramValue.SumOfSquaredDeviations,
+						},
+					},
+				),
+			},
+			WantFail: newSnapshotAt(epsilon(-1)).Add(
+				&Data{
+					Metric: fooDist.metric(),
+					Labels: fooDist.labels(),
+					HistogramValue: &Histogram{
+						Buckets: fooDist.dist(1, 2, 3).HistogramValue.Buckets,
+						Min:     fooDist.dist(1, 2, 3).HistogramValue.Min,
+						Max: Number{
+							Float: float64(fooDist.dist(1, 2, 3).HistogramValue.Max.Int),
+						},
+						SumOfSquaredDeviations: fooDist.dist(1, 2, 3).HistogramValue.SumOfSquaredDeviations,
+					},
+				},
+			),
+		},
+		{
 			Name:         "distribution with zero samples",
 			Registration: newMetricRegistration(fooDist),
 			WantSuccess: []*Snapshot{newSnapshotAt(epsilon(-1)).Add(
@@ -834,6 +1034,15 @@ func TestVerifier(t *testing.T) {
 			),
 		},
 		{
+			Name:         "partial incremental snapshot needing indirection",
+			Registration: newMetricRegistration(fooCounter),
+			WantSuccess: []*Snapshot{
+				newSnapshotAt(epsilon(-2)).Add(fooCounter.int(int64(maxDirectUint + 2))),
+				newSnapshotAt(epsilon(-1)).Add(),
+				newSnapshotAt(epsilon(0)).Add(fooCounter.int(int64(maxDirectUint + 3))),
+			},
+		},
+		{
 			Name: "worked example",
 			Registration: newMetricRegistration(
 				fooInt,
@@ -926,16 +1135,34 @@ func TestVerifier(t *testing.T) {
 					}
 				} else {
 					for i, snapshot := range test.WantSuccess {
-						if err = verifier.Verify(snapshot); err != nil {
-							t.Fatalf("snapshot WantSuccess[%d] failed verification: %v", i, err)
-						}
+						func() {
+							defer func() {
+								panicErr := recover()
+								t.Helper()
+								if panicErr != nil {
+									t.Fatalf("panic during verification of WantSuccess[%d] snapshot: %v", i, panicErr)
+								}
+							}()
+							if err = verifier.Verify(snapshot); err != nil {
+								t.Fatalf("snapshot WantSuccess[%d] failed verification: %v", i, err)
+							}
+						}()
 					}
 					if test.WantFail != nil {
-						if err = verifier.Verify(test.WantFail); err == nil {
-							t.Error("WantFail snapshot unexpectedly succeeded verification")
-						} else {
-							t.Logf("WantFail snapshot failed verification (as expected by this test): %v", err)
-						}
+						func() {
+							defer func() {
+								panicErr := recover()
+								t.Helper()
+								if panicErr != nil {
+									t.Fatalf("panic during verification of WantFail snapshot: %v", panicErr)
+								}
+							}()
+							if err = verifier.Verify(test.WantFail); err == nil {
+								t.Error("WantFail snapshot unexpectedly succeeded verification")
+							} else {
+								t.Logf("WantFail snapshot failed verification (as expected by this test): %v", err)
+							}
+						}()
 					}
 				}
 			})
@@ -1165,6 +1392,9 @@ func TestSnapshotToPrometheus(t *testing.T) {
 				foo_dist_bucket{le="+inf"} 8 {TIMESTAMP}
 				foo_dist_sum 126 {TIMESTAMP}
 				foo_dist_count 8 {TIMESTAMP}
+				foo_dist_min -1 {TIMESTAMP}
+				foo_dist_max 99 {TIMESTAMP}
+				foo_dist_ssd 8187.5 {TIMESTAMP}
 			`,
 		},
 		{
@@ -1193,6 +1423,9 @@ func TestSnapshotToPrometheus(t *testing.T) {
 				foo_dist_bucket{le="+inf"} 0 {TIMESTAMP}
 				foo_dist_sum 0 {TIMESTAMP}
 				foo_dist_count 0 {TIMESTAMP}
+				foo_dist_min 0 {TIMESTAMP}
+				foo_dist_max 0 {TIMESTAMP}
+				foo_dist_ssd 0 {TIMESTAMP}
 			`,
 		},
 		{
@@ -1214,6 +1447,9 @@ func TestSnapshotToPrometheus(t *testing.T) {
 				foo_dist_bucket{field1="val1a",le="+inf"} 8 {TIMESTAMP}
 				foo_dist_sum{field1="val1a"} 126 {TIMESTAMP}
 				foo_dist_count{field1="val1a"} 8 {TIMESTAMP}
+				foo_dist_min{field1="val1a"} -1 {TIMESTAMP}
+				foo_dist_max{field1="val1a"} 99 {TIMESTAMP}
+				foo_dist_ssd{field1="val1a"} 8187.5 {TIMESTAMP}
 				foo_dist_bucket{field1="val1b",le="0"} 0 {TIMESTAMP}
 				foo_dist_bucket{field1="val1b",le="1"} 0 {TIMESTAMP}
 				foo_dist_bucket{field1="val1b",le="2"} 0 {TIMESTAMP}
@@ -1222,6 +1458,9 @@ func TestSnapshotToPrometheus(t *testing.T) {
 				foo_dist_bucket{field1="val1b",le="+inf"} 3 {TIMESTAMP}
 				foo_dist_sum{field1="val1b"} 11 {TIMESTAMP}
 				foo_dist_count{field1="val1b"} 3 {TIMESTAMP}
+				foo_dist_min{field1="val1b"} 3 {TIMESTAMP}
+				foo_dist_max{field1="val1b"} 5 {TIMESTAMP}
+				foo_dist_ssd{field1="val1b"} 8.25 {TIMESTAMP}
 			`,
 		},
 		{
@@ -1250,6 +1489,9 @@ func TestSnapshotToPrometheus(t *testing.T) {
 				some_prefix_foo_dist_bucket{field1="val1a",field2="val2a",le="+inf"} 8 {TIMESTAMP}
 				some_prefix_foo_dist_sum{field1="val1a",field2="val2a"} 126 {TIMESTAMP}
 				some_prefix_foo_dist_count{field1="val1a",field2="val2a"} 8 {TIMESTAMP}
+				some_prefix_foo_dist_min{field1="val1a",field2="val2a"} -1 {TIMESTAMP}
+				some_prefix_foo_dist_max{field1="val1a",field2="val2a"} 99 {TIMESTAMP}
+				some_prefix_foo_dist_ssd{field1="val1a",field2="val2a"} 8187.5 {TIMESTAMP}
 				some_prefix_foo_dist_bucket{field1="val1b",field2="val2a",le="0"} 0 {TIMESTAMP}
 				some_prefix_foo_dist_bucket{field1="val1b",field2="val2a",le="1"} 0 {TIMESTAMP}
 				some_prefix_foo_dist_bucket{field1="val1b",field2="val2a",le="2"} 0 {TIMESTAMP}
@@ -1258,6 +1500,9 @@ func TestSnapshotToPrometheus(t *testing.T) {
 				some_prefix_foo_dist_bucket{field1="val1b",field2="val2a",le="+inf"} 3 {TIMESTAMP}
 				some_prefix_foo_dist_sum{field1="val1b",field2="val2a"} 11 {TIMESTAMP}
 				some_prefix_foo_dist_count{field1="val1b",field2="val2a"} 3 {TIMESTAMP}
+				some_prefix_foo_dist_min{field1="val1b",field2="val2a"} 3 {TIMESTAMP}
+				some_prefix_foo_dist_max{field1="val1b",field2="val2a"} 5 {TIMESTAMP}
+				some_prefix_foo_dist_ssd{field1="val1b",field2="val2a"} 8.25 {TIMESTAMP}
 			`,
 		},
 	} {
@@ -1473,7 +1718,7 @@ func TestGroupSameNameMetrics(t *testing.T) {
 			t.Fatalf("invalid line: %q", line)
 		}
 		metricName := line[:len(line)-len(strippedMetricName)]
-		for _, distribSuffix := range []string{"_sum", "_count", "_bucket"} {
+		for _, distribSuffix := range []string{"_sum", "_count", "_bucket", "_min", "_max", "_ssd"} {
 			metricName = strings.TrimSuffix(metricName, distribSuffix)
 		}
 		if lastMetric != "" && lastMetric != metricName && seenMetrics[metricName] {
@@ -1514,6 +1759,8 @@ func TestNumberPacker(t *testing.T) {
 		}
 	}
 	for _, i := range []int64{
+		0,
+		-1,
 		math.MinInt,
 		math.MaxInt,
 		math.MinInt8,
@@ -1527,6 +1774,7 @@ func TestNumberPacker(t *testing.T) {
 		math.MaxUint32,
 		math.MinInt64,
 		math.MaxInt64,
+		int64(maxDirectUint),
 	} {
 		for d := int64(-3); d <= int64(3); d++ {
 			interestingIntegers[uint64(i+d)] = struct{}{}
@@ -1541,22 +1789,61 @@ func TestNumberPacker(t *testing.T) {
 	interestingIntegers[math.MaxUint64-1] = struct{}{}
 	interestingIntegers[math.MaxUint64] = struct{}{}
 
-	p := &numberPacker{}
+	interestingFloats := make(map[float64]struct{}, len(interestingIntegers)+21*21+17)
+	for divExp := -10; divExp < 10; divExp++ {
+		div := math.Pow(10, float64(divExp))
+		for i := -10; i < 10; i++ {
+			interestingFloats[float64(i)*div] = struct{}{}
+		}
+	}
+	interestingFloats[0.0] = struct{}{}
+	interestingFloats[math.NaN()] = struct{}{}
+	interestingFloats[math.Inf(1)] = struct{}{}
+	interestingFloats[math.Inf(-1)] = struct{}{}
+	interestingFloats[math.Pi] = struct{}{}
+	interestingFloats[math.Sqrt2] = struct{}{}
+	interestingFloats[math.E] = struct{}{}
+	interestingFloats[math.SqrtE] = struct{}{}
+	interestingFloats[math.Ln2] = struct{}{}
+	interestingFloats[math.MaxFloat32] = struct{}{}
+	interestingFloats[-math.MaxFloat32] = struct{}{}
+	interestingFloats[math.MaxFloat64] = struct{}{}
+	interestingFloats[-math.MaxFloat64] = struct{}{}
+	interestingFloats[math.SmallestNonzeroFloat32] = struct{}{}
+	interestingFloats[-math.SmallestNonzeroFloat32] = struct{}{}
+	interestingFloats[math.SmallestNonzeroFloat64] = struct{}{}
+	interestingFloats[-math.SmallestNonzeroFloat64] = struct{}{}
+	for interestingInt := range interestingIntegers {
+		interestingFloats[math.Float64frombits(interestingInt)] = struct{}{}
+	}
+
+	p := &numberPacker{
+		data: make([]uint64, 0, len(interestingIntegers)+len(interestingFloats)),
+	}
+
 	t.Run("integers", func(t *testing.T) {
 		seenDirectInteger := false
 		seenIndirectInteger := false
 		for interestingInt := range interestingIntegers {
 			orig := NewInt(int64(interestingInt))
-			packed, err := p.pack(orig)
-			if err != nil {
-				t.Fatalf("integer %v (bits=%x): cannot pack: %v", orig, interestingInt, err)
-			}
+			packed := p.pack(orig)
 			unpacked := p.unpack(packed)
 			if !orig.SameType(unpacked) || orig.Int != unpacked.Int {
 				t.Errorf("integer %v (bits=%x): got packed=%v => unpacked version %v (int: %d)", orig, interestingInt, uint32(packed), unpacked, unpacked.Int)
 			}
-			seenDirectInteger = seenDirectInteger || (uint32(packed)&storageField) == storageFieldDirect
-			seenIndirectInteger = seenIndirectInteger || (uint32(packed)&storageField) == storageFieldIndirect
+			needsIndirection := needsPackerStorage(orig)
+			switch uint32(packed) & storageField {
+			case storageFieldDirect:
+				seenDirectInteger = true
+				if needsIndirection != 0 {
+					t.Errorf("integer %v (bits=%x): got needsIndirection=%v want %v", orig, interestingInt, needsIndirection, 0)
+				}
+			case storageFieldIndirect:
+				seenIndirectInteger = true
+				if needsIndirection != 1 {
+					t.Errorf("integer %v (bits=%x): got needsIndirection=%v want %v", orig, interestingInt, needsIndirection, 1)
+				}
+			}
 		}
 		if !seenDirectInteger {
 			t.Error("did not encounter any integer that could be packed directly")
@@ -1572,41 +1859,11 @@ func TestNumberPacker(t *testing.T) {
 		}
 	})
 	t.Run("floats", func(t *testing.T) {
-		interestingFloats := make(map[float64]struct{}, len(interestingIntegers)+21*21+17)
-		for divExp := -10; divExp < 10; divExp++ {
-			div := math.Pow(10, float64(divExp))
-			for i := -10; i < 10; i++ {
-				interestingFloats[float64(i)*div] = struct{}{}
-			}
-		}
-		interestingFloats[0.0] = struct{}{}
-		interestingFloats[math.NaN()] = struct{}{}
-		interestingFloats[math.Inf(1)] = struct{}{}
-		interestingFloats[math.Inf(-1)] = struct{}{}
-		interestingFloats[math.Pi] = struct{}{}
-		interestingFloats[math.Sqrt2] = struct{}{}
-		interestingFloats[math.E] = struct{}{}
-		interestingFloats[math.SqrtE] = struct{}{}
-		interestingFloats[math.Ln2] = struct{}{}
-		interestingFloats[math.MaxFloat32] = struct{}{}
-		interestingFloats[-math.MaxFloat32] = struct{}{}
-		interestingFloats[math.MaxFloat64] = struct{}{}
-		interestingFloats[-math.MaxFloat64] = struct{}{}
-		interestingFloats[math.SmallestNonzeroFloat32] = struct{}{}
-		interestingFloats[-math.SmallestNonzeroFloat32] = struct{}{}
-		interestingFloats[math.SmallestNonzeroFloat64] = struct{}{}
-		interestingFloats[-math.SmallestNonzeroFloat64] = struct{}{}
-		for interestingInt := range interestingIntegers {
-			interestingFloats[math.Float64frombits(interestingInt)] = struct{}{}
-		}
 		seenDirectFloat := false
 		seenIndirectFloat := false
 		for interestingFloat := range interestingFloats {
 			orig := NewFloat(interestingFloat)
-			packed, err := p.pack(orig)
-			if err != nil {
-				t.Fatalf("float %v (64bits=%x, 32bits=%x. float32-encodable=%v): cannot pack: %v", orig, math.Float64bits(interestingFloat), math.Float32bits(float32(interestingFloat)), float64(float32(interestingFloat)) == interestingFloat, err)
-			}
+			packed := p.pack(orig)
 			unpacked := p.unpack(packed)
 			switch {
 			case interestingFloat == 0: // Zero-valued float becomes an integer.
@@ -1624,8 +1881,19 @@ func TestNumberPacker(t *testing.T) {
 					t.Errorf("float %v (64bits=%x, 32bits=%x, float32-encodable=%v): got packed=%x => unpacked version %v (float: %f)", orig, math.Float64bits(interestingFloat), math.Float32bits(float32(interestingFloat)), float64(float32(interestingFloat)) == interestingFloat, uint32(packed), unpacked, unpacked.Float)
 				}
 			}
-			seenDirectFloat = seenDirectFloat || (uint32(packed)&storageField) == storageFieldDirect
-			seenIndirectFloat = seenIndirectFloat || (uint32(packed)&storageField) == storageFieldIndirect
+			needsIndirection := needsPackerStorage(orig)
+			switch uint32(packed) & storageField {
+			case storageFieldDirect:
+				seenDirectFloat = true
+				if needsIndirection != 0 {
+					t.Errorf("float %v (64bits=%x): got needsIndirection=%v want %v", orig, math.Float64bits(interestingFloat), needsIndirection, 0)
+				}
+			case storageFieldIndirect:
+				seenIndirectFloat = true
+				if needsIndirection != 1 {
+					t.Errorf("float %v (bits=%x): got needsIndirection=%v want %v", orig, math.Float64bits(interestingFloat), needsIndirection, 1)
+				}
+			}
 		}
 		if !seenDirectFloat {
 			t.Error("did not encounter any float that could be packed directly")
@@ -1633,5 +1901,49 @@ func TestNumberPacker(t *testing.T) {
 		if !seenIndirectFloat {
 			t.Error("did not encounter any float that was packed indirectly")
 		}
+	})
+}
+
+func TestNumberPackerCapacity(t *testing.T) {
+	packer := &numberPacker{
+		data: make([]uint64, 0, 2),
+	}
+	checkPanic := func(want bool, fn func()) {
+		t.Helper()
+		defer func() {
+			panicErr := recover()
+			t.Helper()
+			if want && panicErr == nil {
+				t.Error("function did not panic but wanted it to")
+			} else if !want && panicErr != nil {
+				t.Errorf("function unexpectedly panic'd: %v", panicErr)
+			}
+		}()
+		fn()
+	}
+	t.Run("number that does not need indirection", func(t *testing.T) {
+		checkPanic(false, func() {
+			packer.pack(&Number{Int: 1})
+		})
+	})
+	t.Run("first number that needs indirection fits", func(t *testing.T) {
+		checkPanic(false, func() {
+			packer.pack(&Number{Int: int64(maxDirectUint + 3)})
+		})
+	})
+	t.Run("second number that needs indirection also fits", func(t *testing.T) {
+		checkPanic(false, func() {
+			packer.pack(&Number{Int: int64(maxDirectUint + 2)})
+		})
+	})
+	t.Run("third number that needs indirection does not", func(t *testing.T) {
+		checkPanic(true, func() {
+			packer.pack(&Number{Int: int64(maxDirectUint + 1)})
+		})
+	})
+	t.Run("second number that does not need indirection still fits", func(t *testing.T) {
+		checkPanic(false, func() {
+			packer.pack(&Number{Int: int64(maxDirectUint)})
+		})
 	})
 }
