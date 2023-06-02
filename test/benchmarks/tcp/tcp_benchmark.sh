@@ -27,7 +27,7 @@ server_proxy_addr=10.0.0.3
 server_addr=10.0.0.4
 full_server_addr=${server_addr}:${iperf_port}
 full_server_proxy_addr=${server_proxy_addr}:${proxy_port}
-iperf_binary_name=iperf
+iperf_binary_name=iperf3
 iperf_version_arg=
 
 # Defaults; this provides a reasonable approximation of a decent internet link.
@@ -453,7 +453,7 @@ cat \$results_file >&2
 
 # Emit a useful result (final throughput).
 mbits=\$(grep Mbits/sec \$results_file \\
-  | sed -n -e 's/^.*[[:space:]]\\([[:digit:]]\\+\\(\\.[[:digit:]]\\+\\)\\?\\)[[:space:]]*Mbits\\/sec.*/\\1/p')
+  | grep 'sender' | awk '{print \$7};')
 client_cpu_ticks=\$(cat /proc/\$client_pid/stat \\
   | awk '{print (\$14+\$15);}')
 server_cpu_ticks=\$(cat /proc/\$server_pid/stat \\
