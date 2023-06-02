@@ -102,6 +102,7 @@ func (s Static) normalize() {
 		in := In{Eax: uint32(xSaveInfo)}
 		out := s[in]
 		out.Ecx = maxXsaveSize
+		out.Ebx = xsaveSize
 		s[in] = out
 	}
 }
