@@ -538,7 +538,7 @@ func runTestCaseRunsc(testBin string, tc *gtest.TestCase, args []string, t *test
 			Type:        "tmpfs",
 		})
 	} else {
-		// Use a gofer-backed directory as '/tmp'.
+		// Use a gofer-backed directory for $TEST_TMPDIR.
 		//
 		// Tests might be running in parallel, so make sure each has a
 		// unique test temp dir.
@@ -555,19 +555,9 @@ func runTestCaseRunsc(testBin string, tc *gtest.TestCase, args []string, t *test
 			t.Fatalf("could not chmod temp dir: %v", err)
 		}
 
-		// "/tmp" is not replaced with a tmpfs mount inside the sandbox
-		// when it's not empty. This ensures that testTmpDir uses gofer
-		// in exclusive mode.
 		testTmpDir = tmpDir
-		if *fileAccess == "shared" {
-			// All external mounts except the root mount are shared.
-			spec.Mounts = append(spec.Mounts, specs.Mount{
-				Type:        "bind",
-				Destination: "/tmp",
-				Source:      tmpDir,
-			})
-			testTmpDir = "/tmp"
-		}
+		// Note that tmpDir exists in container rootfs mount, whose cacheability is
+		// set by fileAccess flag appropriately.
 	}
 	if *fusefs {
 		// In fuse tests, the fuse server forwards all filesystem ops from /tmp
@@ -610,8 +600,7 @@ func runTestCaseRunsc(testBin string, tc *gtest.TestCase, args []string, t *test
 	// interpret them.
 	env = filterEnv(env, []string{"TEST_SHARD_INDEX", "TEST_TOTAL_SHARDS", "GTEST_SHARD_INDEX", "GTEST_TOTAL_SHARDS"})
 
-	// Set TEST_TMPDIR to /tmp, as some of the syscall tests require it to
-	// be backed by tmpfs.
+	// Set TEST_TMPDIR to testTmpDir, which has been appropriately configured.
 	env = filterEnv(env, []string{"TEST_TMPDIR"})
 	env = append(env, fmt.Sprintf("TEST_TMPDIR=%s", testTmpDir))
 
