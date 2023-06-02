@@ -25,7 +25,7 @@ import (
 	"github.com/cilium/ebpf"
 	"github.com/google/subcommands"
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -154,7 +154,7 @@ func (pc *TcpdumpCommand) execute() error {
 				descriptor := controlBlock.RX.Get(rxIndex + i)
 				data := controlBlock.UMEM.Get(descriptor)
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Payload: bufferv2.MakeWithData(data[header.EthernetMinimumSize:]),
+					Payload: buffer.MakeWithData(data[header.EthernetMinimumSize:]),
 				})
 
 				sniffer.LogPacket("",

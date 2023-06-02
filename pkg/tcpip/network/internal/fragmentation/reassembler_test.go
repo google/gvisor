@@ -20,7 +20,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -37,8 +37,8 @@ type processParams struct {
 func TestReassemblerProcess(t *testing.T) {
 	const proto = 99
 
-	v := func(size int) *bufferv2.View {
-		payload := bufferv2.NewViewSize(size)
+	v := func(size int) *buffer.View {
+		payload := buffer.NewViewSize(size)
 		for i := 1; i < size; i++ {
 			payload.WriteAt([]byte{uint8(i) * 3}, i)
 		}
@@ -46,7 +46,7 @@ func TestReassemblerProcess(t *testing.T) {
 	}
 
 	pkt := func(sizes ...int) stack.PacketBufferPtr {
-		var buf bufferv2.Buffer
+		var buf buffer.Buffer
 		for _, size := range sizes {
 			buf.Append(v(size))
 		}

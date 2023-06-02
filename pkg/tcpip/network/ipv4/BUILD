@@ -16,7 +16,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/atomicbitops",
-        "//pkg/bufferv2",
+        "//pkg/buffer",
         "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/checksum",
@@ -39,7 +39,7 @@ go_test(
         "main_test.go",
     ],
     deps = [
-        "//pkg/bufferv2",
+        "//pkg/buffer",
         "//pkg/refs",
         "//pkg/sync",
         "//pkg/tcpip",

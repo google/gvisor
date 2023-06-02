@@ -23,7 +23,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -45,7 +45,7 @@ type ControlMessagesChecker func(*testing.T, tcpip.ReceivableControlMessages)
 // would call:
 //
 // checker.IPv4(t, v, checker.SrcAddr(x), checker.DstAddr(y))
-func IPv4(t *testing.T, v *bufferv2.View, checkers ...NetworkChecker) {
+func IPv4(t *testing.T, v *buffer.View, checkers ...NetworkChecker) {
 	t.Helper()
 
 	ipv4 := header.IPv4(v.AsSlice())
@@ -68,7 +68,7 @@ func IPv4(t *testing.T, v *bufferv2.View, checkers ...NetworkChecker) {
 
 // IPv6 checks the validity and properties of the given IPv6 packet. The usage
 // is similar to IPv4.
-func IPv6(t *testing.T, v *bufferv2.View, checkers ...NetworkChecker) {
+func IPv6(t *testing.T, v *buffer.View, checkers ...NetworkChecker) {
 	t.Helper()
 
 	ipv6 := header.IPv6(v.AsSlice())
@@ -1703,7 +1703,7 @@ func IGMPv3Report(expectedRecords map[tcpip.Address]header.IGMPv3ReportRecordTyp
 type IPv6ExtHdrChecker func(*testing.T, header.IPv6PayloadHeader)
 
 // IPv6WithExtHdr is like IPv6 but allows IPv6 packets with extension headers.
-func IPv6WithExtHdr(t *testing.T, v *bufferv2.View, checkers ...NetworkChecker) {
+func IPv6WithExtHdr(t *testing.T, v *buffer.View, checkers ...NetworkChecker) {
 	t.Helper()
 
 	ipv6 := header.IPv6(v.AsSlice())
@@ -1714,7 +1714,7 @@ func IPv6WithExtHdr(t *testing.T, v *bufferv2.View, checkers ...NetworkChecker) 
 
 	payloadIterator := header.MakeIPv6PayloadIterator(
 		header.IPv6ExtensionHeaderIdentifier(ipv6.NextHeader()),
-		bufferv2.MakeWithData(ipv6.Payload()),
+		buffer.MakeWithData(ipv6.Payload()),
 	)
 	defer payloadIterator.Release()
 
@@ -1764,7 +1764,7 @@ func IPv6ExtHdr(headers ...IPv6ExtHdrChecker) NetworkChecker {
 
 		payloadIterator := header.MakeIPv6PayloadIterator(
 			header.IPv6ExtensionHeaderIdentifier(extHdrs.IPv6.NextHeader()),
-			bufferv2.MakeWithData(extHdrs.IPv6.Payload()),
+			buffer.MakeWithData(extHdrs.IPv6.Payload()),
 		)
 		defer payloadIterator.Release()
 

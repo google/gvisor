@@ -26,7 +26,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -300,7 +300,7 @@ func newICMPEchoPacket(t *testing.T, srcAddr, dstAddr tcpip.Address, ttl uint8, 
 	}
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: bufferv2.MakeWithData(hdr.View()),
+		Payload: buffer.MakeWithData(hdr.View()),
 	})
 	pkt.NetworkProtocolNumber = header.IPv4ProtocolNumber
 
@@ -1832,7 +1832,7 @@ func TestIPv4Sanity(t *testing.T) {
 			}
 			ip.SetChecksum(^ipHeaderChecksum)
 			requestPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-				Payload: bufferv2.MakeWithData(hdr.View()),
+				Payload: buffer.MakeWithData(hdr.View()),
 			})
 			defer requestPkt.DecRef()
 			e.InjectInbound(header.IPv4ProtocolNumber, requestPkt)
@@ -1980,7 +1980,7 @@ func compareFragments(packets []stack.PacketBufferPtr, sourcePacket stack.Packet
 	sourceCopy.SetFlagsFragmentOffset(0, 0)
 	sourceCopy.SetTotalLength(0)
 	// Build up an array of the bytes sent.
-	var reassembledPayload bufferv2.Buffer
+	var reassembledPayload buffer.Buffer
 	defer reassembledPayload.Release()
 	for i, packet := range packets {
 		// Confirm that the packet is valid.
@@ -2571,7 +2571,7 @@ func TestInvalidFragments(t *testing.T) {
 				}
 
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Payload: bufferv2.MakeWithData(hdr.View()),
+					Payload: buffer.MakeWithData(hdr.View()),
 				})
 				e.InjectInbound(header.IPv4ProtocolNumber, pkt)
 				pkt.DecRef()
@@ -2781,7 +2781,7 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 				NIC:         nicID,
 			}})
 
-			var firstFragmentSent bufferv2.Buffer
+			var firstFragmentSent buffer.Buffer
 			for _, f := range test.fragments {
 				pktSize := header.IPv4MinimumSize
 				hdr := prependable.New(pktSize)
@@ -2792,15 +2792,15 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 				ip.SetChecksum(0)
 				ip.SetChecksum(^ip.CalculateChecksum())
 
-				buf := bufferv2.MakeWithData(hdr.View())
-				buf.Append(bufferv2.NewViewWithData(f.payload))
+				buf := buffer.MakeWithData(hdr.View())
+				buf.Append(buffer.NewViewWithData(f.payload))
 
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 					Payload: buf,
 				})
 
 				if firstFragmentSent.Size() == 0 && ip.FragmentOffset() == 0 {
-					firstFragmentSent = bufferv2.MakeWithView(stack.PayloadSince(pkt.NetworkHeader()))
+					firstFragmentSent = buffer.MakeWithView(stack.PayloadSince(pkt.NetworkHeader()))
 					defer firstFragmentSent.Release()
 				}
 
@@ -3294,8 +3294,8 @@ func TestReceiveFragments(t *testing.T) {
 				})
 				ip.SetChecksum(^ip.CalculateChecksum())
 
-				buf := bufferv2.MakeWithData(hdr.View())
-				buf.Append(bufferv2.NewViewWithData(frag.payload))
+				buf := buffer.MakeWithData(hdr.View())
+				buf.Append(buffer.NewViewWithData(frag.payload))
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 					Payload: buf,
 				})
@@ -3467,7 +3467,7 @@ func TestWriteStats(t *testing.T) {
 			for i := 0; i < nPackets; i++ {
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 					ReserveHeaderBytes: header.UDPMinimumSize + int(rt.MaxHeaderLength()),
-					Payload:            bufferv2.Buffer{},
+					Payload:            buffer.Buffer{},
 				})
 				defer pkt.DecRef()
 				pkt.TransportHeader().Push(header.UDPMinimumSize)
@@ -3598,7 +3598,7 @@ func TestPacketQueuing(t *testing.T) {
 				})
 				ip.SetChecksum(^ip.CalculateChecksum())
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Payload: bufferv2.MakeWithData(hdr.View()),
+					Payload: buffer.MakeWithData(hdr.View()),
 				})
 				defer pkt.DecRef()
 				e.InjectInbound(ipv4.ProtocolNumber, pkt)
@@ -3646,7 +3646,7 @@ func TestPacketQueuing(t *testing.T) {
 				})
 				ip.SetChecksum(^ip.CalculateChecksum())
 				echoPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Payload: bufferv2.MakeWithData(hdr.View()),
+					Payload: buffer.MakeWithData(hdr.View()),
 				})
 				defer echoPkt.DecRef()
 				e.InjectInbound(header.IPv4ProtocolNumber, echoPkt)
@@ -3743,7 +3743,7 @@ func TestPacketQueuing(t *testing.T) {
 				copy(packet.HardwareAddressTarget(), host1NICLinkAddr)
 				copy(packet.ProtocolAddressTarget(), host1IPv4Addr.AddressWithPrefix.Address.AsSlice())
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Payload: bufferv2.MakeWithData(hdr),
+					Payload: buffer.MakeWithData(hdr),
 				})
 				e.InjectInbound(arp.ProtocolNumber, pkt)
 				pkt.DecRef()
@@ -4019,7 +4019,7 @@ func TestIcmpRateLimit(t *testing.T) {
 		t.Run(testCase.name, func(t *testing.T) {
 			for round := 0; round < icmpBurst+1; round++ {
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Payload: bufferv2.MakeWithData(testCase.createPacket()),
+					Payload: buffer.MakeWithData(testCase.createPacket()),
 				})
 				e.InjectInbound(header.IPv4ProtocolNumber, pkt)
 				pkt.DecRef()

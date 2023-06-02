@@ -17,7 +17,7 @@ package ipv6
 import (
 	"fmt"
 
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -1175,7 +1175,7 @@ func (p *protocol) returnError(reason icmpReason, pkt stack.PacketBufferPtr, del
 	if payloadLen > available {
 		payloadLen = available
 	}
-	payload := bufferv2.MakeWithView(network)
+	payload := buffer.MakeWithView(network)
 	payload.Append(transport)
 	dataBuf := pkt.Data().ToBuffer()
 	payload.Merge(&dataBuf)

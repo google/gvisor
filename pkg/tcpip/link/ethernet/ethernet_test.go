@@ -20,7 +20,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -102,7 +102,7 @@ func TestDeliverNetworkPacket(t *testing.T) {
 				DstAddr: testCase.dstAddr,
 				Type:    networkProtocol,
 			})
-			p := stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: bufferv2.MakeWithData(eth)})
+			p := stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buffer.MakeWithData(eth)})
 			defer p.DecRef()
 			e.DeliverNetworkPacket(0, p)
 			if got, want := len(networkDispatcher.networkPackets), 1; got != want {
@@ -187,7 +187,7 @@ func TestWritePacketToRemoteAddHeader(t *testing.T) {
 		t.Fatalf("s.CreateNIC(%d, _): %s", nicID, err)
 	}
 
-	if err := s.WritePacketToRemote(nicID, remoteLinkAddr, netProto, bufferv2.Buffer{}); err != nil {
+	if err := s.WritePacketToRemote(nicID, remoteLinkAddr, netProto, buffer.Buffer{}); err != nil {
 		t.Fatalf("s.WritePacketToRemote(%d, %s, _): %s", nicID, remoteLinkAddr, err)
 	}
 

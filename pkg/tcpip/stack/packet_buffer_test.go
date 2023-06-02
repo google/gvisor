@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 )
 
 func TestPacketHeaderPush(t *testing.T) {
@@ -76,7 +76,7 @@ func TestPacketHeaderPush(t *testing.T) {
 				ReserveHeaderBytes: test.reserved,
 				// Make a copy of data to make sure our truth data won't be taint by
 				// PacketBuffer.
-				Payload: bufferv2.MakeWithData(test.data),
+				Payload: buffer.MakeWithData(test.data),
 			})
 
 			allHdrSize := len(test.link) + len(test.network) + len(test.transport)
@@ -84,7 +84,7 @@ func TestPacketHeaderPush(t *testing.T) {
 			// Check the initial values for packet.
 			checkInitialPacketBuffer(t, pk, PacketBufferOptions{
 				ReserveHeaderBytes: test.reserved,
-				Payload:            bufferv2.MakeWithData(test.data),
+				Payload:            buffer.MakeWithData(test.data),
 			})
 
 			// Push headers.
@@ -148,12 +148,12 @@ func TestPacketHeaderConsume(t *testing.T) {
 			pk := NewPacketBuffer(PacketBufferOptions{
 				// Make a copy of data to make sure our truth data won't be taint by
 				// PacketBuffer.
-				Payload: bufferv2.MakeWithData(test.data),
+				Payload: buffer.MakeWithData(test.data),
 			})
 
 			// Check the initial values for packet.
 			checkInitialPacketBuffer(t, pk, PacketBufferOptions{
-				Payload: bufferv2.MakeWithData(test.data),
+				Payload: buffer.MakeWithData(test.data),
 			})
 
 			// Consume headers.
@@ -205,7 +205,7 @@ func TestPacketHeaderConsumeDataTooShort(t *testing.T) {
 	pk := NewPacketBuffer(PacketBufferOptions{
 		// Make a copy of data to make sure our truth data won't be taint by
 		// PacketBuffer.
-		Payload: bufferv2.MakeWithData(data),
+		Payload: buffer.MakeWithData(data),
 	})
 
 	// Consume should fail if pkt.Data is too short.
@@ -221,7 +221,7 @@ func TestPacketHeaderConsumeDataTooShort(t *testing.T) {
 
 	// Check packet should look the same as initial packet.
 	checkInitialPacketBuffer(t, pk, PacketBufferOptions{
-		Payload: bufferv2.MakeWithData(data),
+		Payload: buffer.MakeWithData(data),
 	})
 }
 
@@ -238,7 +238,7 @@ func TestPacketHeaderPushConsumeMixed(t *testing.T) {
 	initData = append(initData, data...)
 	pk := NewPacketBuffer(PacketBufferOptions{
 		ReserveHeaderBytes: len(link),
-		Payload:            bufferv2.MakeWithData(initData),
+		Payload:            buffer.MakeWithData(initData),
 	})
 
 	// 1. Consume network header
@@ -266,7 +266,7 @@ func TestPacketHeaderPushConsumeMixedTooLong(t *testing.T) {
 	initData := concatViews(network, data)
 	pk := NewPacketBuffer(PacketBufferOptions{
 		ReserveHeaderBytes: len(link),
-		Payload:            bufferv2.MakeWithData(initData),
+		Payload:            buffer.MakeWithData(initData),
 	})
 
 	// 1. Push link header
@@ -315,7 +315,7 @@ func TestPacketHeaderConsumeCalledAtMostOnce(t *testing.T) {
 	const headerSize = 10
 
 	pk := NewPacketBuffer(PacketBufferOptions{
-		Payload: bufferv2.MakeWithData(make([]byte, headerSize*int(numHeaderType))),
+		Payload: buffer.MakeWithData(make([]byte, headerSize*int(numHeaderType))),
 	})
 
 	for _, h := range []PacketHeader{
@@ -372,7 +372,7 @@ func TestPacketHeaderConsumeThenPushPanics(t *testing.T) {
 	const headerSize = 10
 
 	pk := NewPacketBuffer(PacketBufferOptions{
-		Payload: bufferv2.MakeWithData(make([]byte, headerSize*int(numHeaderType))),
+		Payload: buffer.MakeWithData(make([]byte, headerSize*int(numHeaderType))),
 	})
 
 	for _, h := range []PacketHeader{
@@ -493,7 +493,7 @@ func TestPacketBufferData(t *testing.T) {
 				s := "APPEND"
 
 				pkt := tc.makePkt(t)
-				pkt.Data().AppendView(bufferv2.NewViewWithData([]byte(s)))
+				pkt.Data().AppendView(buffer.NewViewWithData([]byte(s)))
 
 				checkData(t, pkt, []byte(tc.data+s))
 			})
@@ -529,7 +529,7 @@ func TestPacketBufferData(t *testing.T) {
 				t.Run(fmt.Sprintf("ReadFrom%d", n), func(t *testing.T) {
 					s := "TO READ"
 					s += s
-					srcBuf := bufferv2.MakeWithData([]byte(s))
+					srcBuf := buffer.MakeWithData([]byte(s))
 
 					pkt := tc.makePkt(t)
 					pkt.Data().ReadFrom(&srcBuf, n)
@@ -700,10 +700,10 @@ func checkRange(t *testing.T, r Range, data []byte) {
 	}
 }
 
-func buf(pieces ...string) bufferv2.Buffer {
-	b := bufferv2.Buffer{}
+func buf(pieces ...string) buffer.Buffer {
+	b := buffer.Buffer{}
 	for _, p := range pieces {
-		b.Append(bufferv2.NewViewWithData([]byte(p)))
+		b.Append(buffer.NewViewWithData([]byte(p)))
 	}
 	return b
 }

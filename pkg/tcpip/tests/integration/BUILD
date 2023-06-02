@@ -10,7 +10,7 @@ go_test(
     size = "small",
     srcs = ["forward_test.go"],
     deps = [
-        "//pkg/bufferv2",
+        "//pkg/buffer",
         "//pkg/tcpip",
         "//pkg/tcpip/checker",
         "//pkg/tcpip/header",
@@ -33,7 +33,7 @@ go_test(
     size = "small",
     srcs = ["iptables_test.go"],
     deps = [
-        "//pkg/bufferv2",
+        "//pkg/buffer",
         "//pkg/tcpip",
         "//pkg/tcpip/checker",
         "//pkg/tcpip/checksum",
@@ -60,7 +60,7 @@ go_test(
     size = "small",
     srcs = ["link_resolution_test.go"],
     deps = [
-        "//pkg/bufferv2",
+        "//pkg/buffer",
         "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/checker",
@@ -90,7 +90,7 @@ go_test(
     size = "small",
     srcs = ["loopback_test.go"],
     deps = [
-        "//pkg/bufferv2",
+        "//pkg/buffer",
         "//pkg/tcpip",
         "//pkg/tcpip/checker",
         "//pkg/tcpip/header",
@@ -114,7 +114,7 @@ go_test(
     size = "small",
     srcs = ["multicast_broadcast_test.go"],
     deps = [
-        "//pkg/bufferv2",
+        "//pkg/buffer",
         "//pkg/tcpip",
         "//pkg/tcpip/checker",
         "//pkg/tcpip/checksum",

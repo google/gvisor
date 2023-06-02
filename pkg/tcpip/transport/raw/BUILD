@@ -28,7 +28,7 @@ go_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
-        "//pkg/bufferv2",
+        "//pkg/buffer",
         "//pkg/log",
         "//pkg/sleep",
         "//pkg/sync",

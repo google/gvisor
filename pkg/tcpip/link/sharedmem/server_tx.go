@@ -20,7 +20,7 @@ package sharedmem
 import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/eventfd"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sharedmem/pipe"
@@ -115,7 +115,7 @@ func (s *serverTx) cleanup() {
 
 // acquireBuffers acquires enough buffers to hold all the data in views or
 // returns nil if not enough buffers are currently available.
-func (s *serverTx) acquireBuffers(pktBuffer bufferv2.Buffer, buffers []queue.RxBuffer) (acquiredBuffers []queue.RxBuffer) {
+func (s *serverTx) acquireBuffers(pktBuffer buffer.Buffer, buffers []queue.RxBuffer) (acquiredBuffers []queue.RxBuffer) {
 	acquiredBuffers = buffers[:0]
 	wantBytes := int(pktBuffer.Size())
 	for wantBytes > 0 {
@@ -137,7 +137,7 @@ func (s *serverTx) acquireBuffers(pktBuffer bufferv2.Buffer, buffers []queue.RxB
 //
 // To avoid allocations the filledBuffers are appended to the buffers slice
 // which will be grown as required. This method takes ownership of pktBuffer.
-func (s *serverTx) fillPacket(pktBuffer bufferv2.Buffer, buffers []queue.RxBuffer) (filledBuffers []queue.RxBuffer, totalCopied uint32) {
+func (s *serverTx) fillPacket(pktBuffer buffer.Buffer, buffers []queue.RxBuffer) (filledBuffers []queue.RxBuffer, totalCopied uint32) {
 	bufs := s.acquireBuffers(pktBuffer, buffers)
 	if bufs == nil {
 		pktBuffer.Release()

@@ -18,7 +18,7 @@ import (
 	"math"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/eventfd"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sharedmem/queue"
 )
@@ -93,7 +93,7 @@ func (t *tx) cleanup() {
 
 // transmit sends a packet made of bufs. Returns a boolean that specifies
 // whether the packet was successfully transmitted.
-func (t *tx) transmit(buffer bufferv2.Buffer) bool {
+func (t *tx) transmit(transmitBuf buffer.Buffer) bool {
 	// Pull completions from the tx queue and add their buffers back to the
 	// pool so that we can reuse them.
 	for {
@@ -108,7 +108,7 @@ func (t *tx) transmit(buffer bufferv2.Buffer) bool {
 	}
 
 	bSize := t.bufs.entrySize
-	total := uint32(buffer.Size())
+	total := uint32(transmitBuf.Size())
 	bufCount := (total + bSize - 1) / bSize
 
 	// Allocate enough buffers to hold all the data.
@@ -130,7 +130,7 @@ func (t *tx) transmit(buffer bufferv2.Buffer) bool {
 	// Copy data into allocated buffers.
 	nBuf := buf
 	var dBuf []byte
-	buffer.Apply(func(v *bufferv2.View) {
+	transmitBuf.Apply(func(v *buffer.View) {
 		for v.Size() > 0 {
 			if len(dBuf) == 0 {
 				dBuf = t.data[nBuf.Offset:][:nBuf.Size]

@@ -29,7 +29,7 @@ import (
 
 	"golang.org/x/time/rate"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/log"
 	cryptorand "gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -1856,7 +1856,7 @@ func (s *Stack) unregisterPacketEndpointLocked(nicID tcpip.NICID, netProto tcpip
 
 // WritePacketToRemote writes a payload on the specified NIC using the provided
 // network protocol and remote link address.
-func (s *Stack) WritePacketToRemote(nicID tcpip.NICID, remote tcpip.LinkAddress, netProto tcpip.NetworkProtocolNumber, payload bufferv2.Buffer) tcpip.Error {
+func (s *Stack) WritePacketToRemote(nicID tcpip.NICID, remote tcpip.LinkAddress, netProto tcpip.NetworkProtocolNumber, payload buffer.Buffer) tcpip.Error {
 	s.mu.Lock()
 	nic, ok := s.nics[nicID]
 	s.mu.Unlock()
@@ -1874,7 +1874,7 @@ func (s *Stack) WritePacketToRemote(nicID tcpip.NICID, remote tcpip.LinkAddress,
 
 // WriteRawPacket writes data directly to the specified NIC without adding any
 // headers.
-func (s *Stack) WriteRawPacket(nicID tcpip.NICID, proto tcpip.NetworkProtocolNumber, payload bufferv2.Buffer) tcpip.Error {
+func (s *Stack) WriteRawPacket(nicID tcpip.NICID, proto tcpip.NetworkProtocolNumber, payload buffer.Buffer) tcpip.Error {
 	s.mu.RLock()
 	nic, ok := s.nics[nicID]
 	s.mu.RUnlock()

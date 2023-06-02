@@ -21,15 +21,15 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
 var (
-	bufferTransformer = cmp.Transformer("buffer", func(b bufferv2.Buffer) []byte {
+	bufferTransformer = cmp.Transformer("buffer", func(b buffer.Buffer) []byte {
 		return b.Flatten()
 	})
-	viewTransformer = cmp.Transformer("view", func(v bufferv2.View) []byte {
+	viewTransformer = cmp.Transformer("view", func(v buffer.View) []byte {
 		return v.AsSlice()
 	})
 )
@@ -116,7 +116,7 @@ func TestIPv6UnknownExtHdrOption(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			opt := &IPv6UnknownExtHdrOption{Identifier: test.identifier, Data: bufferv2.NewViewWithData([]byte{1, 2, 3, 4})}
+			opt := &IPv6UnknownExtHdrOption{Identifier: test.identifier, Data: buffer.NewViewWithData([]byte{1, 2, 3, 4})}
 			if a := opt.UnknownAction(); a != test.expectedUnknownAction {
 				t.Fatalf("got UnknownAction() = %d, want = %d", a, test.expectedUnknownAction)
 			}
@@ -275,12 +275,12 @@ func TestIPv6OptionsExtHdrIterErr(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Run("Hop By Hop", func(t *testing.T) {
-				extHdr := IPv6HopByHopOptionsExtHdr{ipv6OptionsExtHdr{bufferv2.NewViewWithData(test.bytes)}}
+				extHdr := IPv6HopByHopOptionsExtHdr{ipv6OptionsExtHdr{buffer.NewViewWithData(test.bytes)}}
 				check(t, extHdr.Iter(), test.err)
 			})
 
 			t.Run("Destination", func(t *testing.T) {
-				extHdr := IPv6DestinationOptionsExtHdr{ipv6OptionsExtHdr{bufferv2.NewViewWithData(test.bytes)}}
+				extHdr := IPv6DestinationOptionsExtHdr{ipv6OptionsExtHdr{buffer.NewViewWithData(test.bytes)}}
 				check(t, extHdr.Iter(), test.err)
 			})
 		})
@@ -297,14 +297,14 @@ func TestIPv6OptionsExtHdrIter(t *testing.T) {
 			name:  "Single unknown with zero length",
 			bytes: []byte{255, 0},
 			expected: []IPv6ExtHdrOption{
-				&IPv6UnknownExtHdrOption{Identifier: 255, Data: bufferv2.NewViewWithData([]byte{})},
+				&IPv6UnknownExtHdrOption{Identifier: 255, Data: buffer.NewViewWithData([]byte{})},
 			},
 		},
 		{
 			name:  "Single unknown with non-zero length",
 			bytes: []byte{255, 3, 1, 2, 3},
 			expected: []IPv6ExtHdrOption{
-				&IPv6UnknownExtHdrOption{Identifier: 255, Data: bufferv2.NewViewWithData([]byte{1, 2, 3})},
+				&IPv6UnknownExtHdrOption{Identifier: 255, Data: buffer.NewViewWithData([]byte{1, 2, 3})},
 			},
 		},
 		{
@@ -367,9 +367,9 @@ func TestIPv6OptionsExtHdrIter(t *testing.T) {
 				1, 2, 1, 2,
 			},
 			expected: []IPv6ExtHdrOption{
-				&IPv6UnknownExtHdrOption{Identifier: 255, Data: bufferv2.NewViewWithData([]byte{})},
-				&IPv6UnknownExtHdrOption{Identifier: 254, Data: bufferv2.NewViewWithData([]byte{1})},
-				&IPv6UnknownExtHdrOption{Identifier: 253, Data: bufferv2.NewViewWithData([]byte{2, 3, 4, 5})},
+				&IPv6UnknownExtHdrOption{Identifier: 255, Data: buffer.NewViewWithData([]byte{})},
+				&IPv6UnknownExtHdrOption{Identifier: 254, Data: buffer.NewViewWithData([]byte{1})},
+				&IPv6UnknownExtHdrOption{Identifier: 253, Data: buffer.NewViewWithData([]byte{2, 3, 4, 5})},
 			},
 		},
 	}
@@ -407,12 +407,12 @@ func TestIPv6OptionsExtHdrIter(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Run("Hop By Hop", func(t *testing.T) {
-				extHdr := IPv6HopByHopOptionsExtHdr{ipv6OptionsExtHdr{bufferv2.NewViewWithData(test.bytes)}}
+				extHdr := IPv6HopByHopOptionsExtHdr{ipv6OptionsExtHdr{buffer.NewViewWithData(test.bytes)}}
 				checkIter(t, extHdr.Iter(), test.expected)
 			})
 
 			t.Run("Destination", func(t *testing.T) {
-				extHdr := IPv6DestinationOptionsExtHdr{ipv6OptionsExtHdr{bufferv2.NewViewWithData(test.bytes)}}
+				extHdr := IPv6DestinationOptionsExtHdr{ipv6OptionsExtHdr{buffer.NewViewWithData(test.bytes)}}
 				checkIter(t, extHdr.Iter(), test.expected)
 			})
 		})
@@ -444,7 +444,7 @@ func TestIPv6RoutingExtHdr(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			extHdr := IPv6RoutingExtHdr{bufferv2.NewViewWithData(test.bytes)}
+			extHdr := IPv6RoutingExtHdr{buffer.NewViewWithData(test.bytes)}
 			if got := extHdr.SegmentsLeft(); got != test.segmentsLeft {
 				t.Errorf("got SegmentsLeft() = %d, want = %d", got, test.segmentsLeft)
 			}
@@ -499,10 +499,10 @@ func TestIPv6FragmentExtHdr(t *testing.T) {
 	}
 }
 
-func makeBufferFromByteBuffers(bs ...[]byte) bufferv2.Buffer {
-	buf := bufferv2.Buffer{}
+func makeBufferFromByteBuffers(bs ...[]byte) buffer.Buffer {
+	buf := buffer.Buffer{}
 	for _, b := range bs {
-		buf.Append(bufferv2.NewViewWithData(b))
+		buf.Append(buffer.NewViewWithData(b))
 	}
 	return buf
 }
@@ -511,7 +511,7 @@ func TestIPv6ExtHdrIterErr(t *testing.T) {
 	tests := []struct {
 		name         string
 		firstNextHdr IPv6ExtensionHeaderIdentifier
-		payload      bufferv2.Buffer
+		payload      buffer.Buffer
 		err          error
 	}{
 		{
@@ -521,7 +521,7 @@ func TestIPv6ExtHdrIterErr(t *testing.T) {
 		{
 			name:         "Upper layer only with data",
 			firstNextHdr: 255,
-			payload:      bufferv2.MakeWithData([]byte{1, 2, 3, 4}),
+			payload:      buffer.MakeWithData([]byte{1, 2, 3, 4}),
 		},
 		{
 			name:         "No next header",
@@ -530,45 +530,45 @@ func TestIPv6ExtHdrIterErr(t *testing.T) {
 		{
 			name:         "No next header with data",
 			firstNextHdr: IPv6NoNextHeaderIdentifier,
-			payload:      bufferv2.MakeWithData([]byte{1, 2, 3, 4}),
+			payload:      buffer.MakeWithData([]byte{1, 2, 3, 4}),
 		},
 		{
 			name:         "Valid single hop by hop",
 			firstNextHdr: IPv6HopByHopOptionsExtHdrIdentifier,
-			payload:      bufferv2.MakeWithData([]byte{255, 0, 1, 4, 1, 2, 3, 4}),
+			payload:      buffer.MakeWithData([]byte{255, 0, 1, 4, 1, 2, 3, 4}),
 		},
 		{
 			name:         "Hop by hop too small",
 			firstNextHdr: IPv6HopByHopOptionsExtHdrIdentifier,
-			payload:      bufferv2.MakeWithData([]byte{255, 0, 1, 4, 1, 2, 3}),
+			payload:      buffer.MakeWithData([]byte{255, 0, 1, 4, 1, 2, 3}),
 			err:          io.ErrUnexpectedEOF,
 		},
 		{
 			name:         "Valid single fragment",
 			firstNextHdr: IPv6FragmentExtHdrIdentifier,
-			payload:      bufferv2.MakeWithData([]byte{255, 0, 68, 9, 128, 4, 2, 1}),
+			payload:      buffer.MakeWithData([]byte{255, 0, 68, 9, 128, 4, 2, 1}),
 		},
 		{
 			name:         "Fragment too small",
 			firstNextHdr: IPv6FragmentExtHdrIdentifier,
-			payload:      bufferv2.MakeWithData([]byte{255, 0, 68, 9, 128, 4, 2}),
+			payload:      buffer.MakeWithData([]byte{255, 0, 68, 9, 128, 4, 2}),
 			err:          io.ErrUnexpectedEOF,
 		},
 		{
 			name:         "Valid single destination",
 			firstNextHdr: IPv6DestinationOptionsExtHdrIdentifier,
-			payload:      bufferv2.MakeWithData([]byte{255, 0, 1, 4, 1, 2, 3, 4}),
+			payload:      buffer.MakeWithData([]byte{255, 0, 1, 4, 1, 2, 3, 4}),
 		},
 		{
 			name:         "Destination too small",
 			firstNextHdr: IPv6DestinationOptionsExtHdrIdentifier,
-			payload:      bufferv2.MakeWithData([]byte{255, 0, 1, 4, 1, 2, 3}),
+			payload:      buffer.MakeWithData([]byte{255, 0, 1, 4, 1, 2, 3}),
 			err:          io.ErrUnexpectedEOF,
 		},
 		{
 			name:         "Valid single routing",
 			firstNextHdr: IPv6RoutingExtHdrIdentifier,
-			payload:      bufferv2.MakeWithData([]byte{255, 0, 1, 2, 3, 4, 5, 6}),
+			payload:      buffer.MakeWithData([]byte{255, 0, 1, 2, 3, 4, 5, 6}),
 		},
 		{
 			name:         "Valid single routing across views",
@@ -578,13 +578,13 @@ func TestIPv6ExtHdrIterErr(t *testing.T) {
 		{
 			name:         "Routing too small with zero length field",
 			firstNextHdr: IPv6RoutingExtHdrIdentifier,
-			payload:      bufferv2.MakeWithData([]byte{255, 0, 1, 2, 3, 4, 5}),
+			payload:      buffer.MakeWithData([]byte{255, 0, 1, 2, 3, 4, 5}),
 			err:          io.ErrUnexpectedEOF,
 		},
 		{
 			name:         "Valid routing with non-zero length field",
 			firstNextHdr: IPv6RoutingExtHdrIdentifier,
-			payload:      bufferv2.MakeWithData([]byte{255, 1, 1, 2, 3, 4, 5, 6, 1, 2, 3, 4, 5, 6, 7, 8}),
+			payload:      buffer.MakeWithData([]byte{255, 1, 1, 2, 3, 4, 5, 6, 1, 2, 3, 4, 5, 6, 7, 8}),
 		},
 		{
 			name:         "Valid routing with non-zero length field across views",
@@ -594,7 +594,7 @@ func TestIPv6ExtHdrIterErr(t *testing.T) {
 		{
 			name:         "Routing too small with non-zero length field",
 			firstNextHdr: IPv6RoutingExtHdrIdentifier,
-			payload:      bufferv2.MakeWithData([]byte{255, 1, 1, 2, 3, 4, 5, 6, 1, 2, 3, 4, 5, 6, 7}),
+			payload:      buffer.MakeWithData([]byte{255, 1, 1, 2, 3, 4, 5, 6, 1, 2, 3, 4, 5, 6, 7}),
 			err:          io.ErrUnexpectedEOF,
 		},
 		{
@@ -606,7 +606,7 @@ func TestIPv6ExtHdrIterErr(t *testing.T) {
 		{
 			name:         "Mixed",
 			firstNextHdr: IPv6HopByHopOptionsExtHdrIdentifier,
-			payload: bufferv2.MakeWithData([]byte{
+			payload: buffer.MakeWithData([]byte{
 				// Hop By Hop Options extension header.
 				uint8(IPv6FragmentExtHdrIdentifier), 0, 1, 4, 1, 2, 3, 4,
 
@@ -628,7 +628,7 @@ func TestIPv6ExtHdrIterErr(t *testing.T) {
 		{
 			name:         "Mixed without upper layer data",
 			firstNextHdr: IPv6HopByHopOptionsExtHdrIdentifier,
-			payload: bufferv2.MakeWithData([]byte{
+			payload: buffer.MakeWithData([]byte{
 				// Hop By Hop Options extension header.
 				uint8(IPv6FragmentExtHdrIdentifier), 0, 1, 4, 1, 2, 3, 4,
 
@@ -647,7 +647,7 @@ func TestIPv6ExtHdrIterErr(t *testing.T) {
 		{
 			name:         "Mixed without upper layer data but last ext hdr too small",
 			firstNextHdr: IPv6HopByHopOptionsExtHdrIdentifier,
-			payload: bufferv2.MakeWithData([]byte{
+			payload: buffer.MakeWithData([]byte{
 				// Hop By Hop Options extension header.
 				uint8(IPv6FragmentExtHdrIdentifier), 0, 1, 4, 1, 2, 3, 4,
 
@@ -701,7 +701,7 @@ func TestIPv6ExtHdrIter(t *testing.T) {
 	tests := []struct {
 		name         string
 		firstNextHdr IPv6ExtensionHeaderIdentifier
-		payload      bufferv2.Buffer
+		payload      buffer.Buffer
 		expected     []IPv6PayloadHeader
 	}{
 		// With a non-atomic fragment that is not the first fragment, the payload
@@ -710,7 +710,7 @@ func TestIPv6ExtHdrIter(t *testing.T) {
 		{
 			name:         "hopbyhop - fragment (not first) - routing - upper",
 			firstNextHdr: IPv6HopByHopOptionsExtHdrIdentifier,
-			payload: bufferv2.MakeWithData([]byte{
+			payload: buffer.MakeWithData([]byte{
 				// Hop By Hop extension header.
 				uint8(IPv6FragmentExtHdrIdentifier), 0, 1, 4, 1, 2, 3, 4,
 
@@ -730,18 +730,18 @@ func TestIPv6ExtHdrIter(t *testing.T) {
 				1, 2, 3, 4,
 			}),
 			expected: []IPv6PayloadHeader{
-				IPv6HopByHopOptionsExtHdr{ipv6OptionsExtHdr{bufferv2.NewViewWithData([]byte{1, 4, 1, 2, 3, 4})}},
+				IPv6HopByHopOptionsExtHdr{ipv6OptionsExtHdr{buffer.NewViewWithData([]byte{1, 4, 1, 2, 3, 4})}},
 				IPv6FragmentExtHdr([6]byte{68, 9, 128, 4, 2, 1}),
 				IPv6RawPayloadHeader{
 					Identifier: IPv6RoutingExtHdrIdentifier,
-					Buf:        bufferv2.MakeWithData(routingExtHdrWithUpperLayerData),
+					Buf:        buffer.MakeWithData(routingExtHdrWithUpperLayerData),
 				},
 			},
 		},
 		{
 			name:         "hopbyhop - fragment (first) - routing - upper",
 			firstNextHdr: IPv6HopByHopOptionsExtHdrIdentifier,
-			payload: bufferv2.MakeWithData([]byte{
+			payload: buffer.MakeWithData([]byte{
 				// Hop By Hop extension header.
 				uint8(IPv6FragmentExtHdrIdentifier), 0, 1, 4, 1, 2, 3, 4,
 
@@ -757,12 +757,12 @@ func TestIPv6ExtHdrIter(t *testing.T) {
 				1, 2, 3, 4,
 			}),
 			expected: []IPv6PayloadHeader{
-				IPv6HopByHopOptionsExtHdr{ipv6OptionsExtHdr{bufferv2.NewViewWithData([]byte{1, 4, 1, 2, 3, 4})}},
+				IPv6HopByHopOptionsExtHdr{ipv6OptionsExtHdr{buffer.NewViewWithData([]byte{1, 4, 1, 2, 3, 4})}},
 				IPv6FragmentExtHdr([6]byte{0, 1, 128, 4, 2, 1}),
-				IPv6RoutingExtHdr{bufferv2.NewViewWithData([]byte{1, 2, 3, 4, 5, 6})},
+				IPv6RoutingExtHdr{buffer.NewViewWithData([]byte{1, 2, 3, 4, 5, 6})},
 				IPv6RawPayloadHeader{
 					Identifier: 255,
-					Buf:        bufferv2.MakeWithData(upperLayerData),
+					Buf:        buffer.MakeWithData(upperLayerData),
 				},
 			},
 		},
@@ -783,7 +783,7 @@ func TestIPv6ExtHdrIter(t *testing.T) {
 				IPv6FragmentExtHdr([6]byte{68, 9, 128, 4, 2, 1}),
 				IPv6RawPayloadHeader{
 					Identifier: IPv6RoutingExtHdrIdentifier,
-					Buf:        bufferv2.MakeWithData(routingExtHdrWithUpperLayerData),
+					Buf:        buffer.MakeWithData(routingExtHdrWithUpperLayerData),
 				},
 			},
 		},
@@ -793,7 +793,7 @@ func TestIPv6ExtHdrIter(t *testing.T) {
 		{
 			name:         "atomic fragment - routing - destination - upper",
 			firstNextHdr: IPv6FragmentExtHdrIdentifier,
-			payload: bufferv2.MakeWithData([]byte{
+			payload: buffer.MakeWithData([]byte{
 				// Fragment extension header.
 				//
 				// Reserved bits are 1 which should not affect anything.
@@ -810,11 +810,11 @@ func TestIPv6ExtHdrIter(t *testing.T) {
 			}),
 			expected: []IPv6PayloadHeader{
 				IPv6FragmentExtHdr([6]byte{0, 6, 128, 4, 2, 1}),
-				IPv6RoutingExtHdr{bufferv2.NewViewWithData([]byte{1, 2, 3, 4, 5, 6})},
-				IPv6DestinationOptionsExtHdr{ipv6OptionsExtHdr{bufferv2.NewViewWithData([]byte{1, 4, 1, 2, 3, 4})}},
+				IPv6RoutingExtHdr{buffer.NewViewWithData([]byte{1, 2, 3, 4, 5, 6})},
+				IPv6DestinationOptionsExtHdr{ipv6OptionsExtHdr{buffer.NewViewWithData([]byte{1, 4, 1, 2, 3, 4})}},
 				IPv6RawPayloadHeader{
 					Identifier: 255,
-					Buf:        bufferv2.MakeWithData(upperLayerData),
+					Buf:        buffer.MakeWithData(upperLayerData),
 				},
 			},
 		},
@@ -834,7 +834,7 @@ func TestIPv6ExtHdrIter(t *testing.T) {
 				1, 2}, []byte{3, 4}),
 			expected: []IPv6PayloadHeader{
 				IPv6FragmentExtHdr([6]byte{0, 6, 128, 4, 2, 1}),
-				IPv6RoutingExtHdr{bufferv2.NewViewWithData([]byte{1, 2, 3, 4, 5, 6})},
+				IPv6RoutingExtHdr{buffer.NewViewWithData([]byte{1, 2, 3, 4, 5, 6})},
 				IPv6RawPayloadHeader{
 					Identifier: 255,
 					Buf:        makeBufferFromByteBuffers(upperLayerData[:2], upperLayerData[2:]),
@@ -844,7 +844,7 @@ func TestIPv6ExtHdrIter(t *testing.T) {
 		{
 			name:         "atomic fragment - destination - no next header",
 			firstNextHdr: IPv6FragmentExtHdrIdentifier,
-			payload: bufferv2.MakeWithData([]byte{
+			payload: buffer.MakeWithData([]byte{
 				// Fragment extension header.
 				//
 				// Res (Reserved) bits are 1 which should not affect anything.
@@ -858,13 +858,13 @@ func TestIPv6ExtHdrIter(t *testing.T) {
 			}),
 			expected: []IPv6PayloadHeader{
 				IPv6FragmentExtHdr([6]byte{0, 6, 128, 4, 2, 1}),
-				IPv6DestinationOptionsExtHdr{ipv6OptionsExtHdr{bufferv2.NewViewWithData([]byte{1, 4, 1, 2, 3, 4})}},
+				IPv6DestinationOptionsExtHdr{ipv6OptionsExtHdr{buffer.NewViewWithData([]byte{1, 4, 1, 2, 3, 4})}},
 			},
 		},
 		{
 			name:         "routing - atomic fragment - no next header",
 			firstNextHdr: IPv6RoutingExtHdrIdentifier,
-			payload: bufferv2.MakeWithData([]byte{
+			payload: buffer.MakeWithData([]byte{
 				// Routing extension header.
 				uint8(IPv6FragmentExtHdrIdentifier), 0, 1, 2, 3, 4, 5, 6,
 
@@ -877,7 +877,7 @@ func TestIPv6ExtHdrIter(t *testing.T) {
 				1, 2, 3, 4,
 			}),
 			expected: []IPv6PayloadHeader{
-				IPv6RoutingExtHdr{bufferv2.NewViewWithData([]byte{1, 2, 3, 4, 5, 6})},
+				IPv6RoutingExtHdr{buffer.NewViewWithData([]byte{1, 2, 3, 4, 5, 6})},
 				IPv6FragmentExtHdr([6]byte{0, 6, 128, 4, 2, 1}),
 			},
 		},
@@ -897,14 +897,14 @@ func TestIPv6ExtHdrIter(t *testing.T) {
 				1, 2, 3, 4,
 			}),
 			expected: []IPv6PayloadHeader{
-				IPv6RoutingExtHdr{bufferv2.NewViewWithData([]byte{1, 2, 3, 4, 5, 6})},
+				IPv6RoutingExtHdr{buffer.NewViewWithData([]byte{1, 2, 3, 4, 5, 6})},
 				IPv6FragmentExtHdr([6]byte{0, 6, 128, 4, 2, 1}),
 			},
 		},
 		{
 			name:         "hopbyhop - routing - fragment - no next header",
 			firstNextHdr: IPv6HopByHopOptionsExtHdrIdentifier,
-			payload: bufferv2.MakeWithData([]byte{
+			payload: buffer.MakeWithData([]byte{
 				// Hop By Hop Options extension header.
 				uint8(IPv6RoutingExtHdrIdentifier), 0, 1, 4, 1, 2, 3, 4,
 
@@ -920,12 +920,12 @@ func TestIPv6ExtHdrIter(t *testing.T) {
 				1, 2, 3, 4,
 			}),
 			expected: []IPv6PayloadHeader{
-				IPv6HopByHopOptionsExtHdr{ipv6OptionsExtHdr{bufferv2.NewViewWithData([]byte{1, 4, 1, 2, 3, 4})}},
-				IPv6RoutingExtHdr{bufferv2.NewViewWithData([]byte{1, 2, 3, 4, 5, 6})},
+				IPv6HopByHopOptionsExtHdr{ipv6OptionsExtHdr{buffer.NewViewWithData([]byte{1, 4, 1, 2, 3, 4})}},
+				IPv6RoutingExtHdr{buffer.NewViewWithData([]byte{1, 2, 3, 4, 5, 6})},
 				IPv6FragmentExtHdr([6]byte{1, 6, 128, 4, 2, 1}),
 				IPv6RawPayloadHeader{
 					Identifier: IPv6NoNextHeaderIdentifier,
-					Buf:        bufferv2.MakeWithData(upperLayerData),
+					Buf:        buffer.MakeWithData(upperLayerData),
 				},
 			},
 		},
@@ -934,46 +934,46 @@ func TestIPv6ExtHdrIter(t *testing.T) {
 		{
 			name:         "TCP raw payload",
 			firstNextHdr: IPv6ExtensionHeaderIdentifier(TCPProtocolNumber),
-			payload:      bufferv2.MakeWithData(upperLayerData),
+			payload:      buffer.MakeWithData(upperLayerData),
 			expected: []IPv6PayloadHeader{IPv6RawPayloadHeader{
 				Identifier: IPv6ExtensionHeaderIdentifier(TCPProtocolNumber),
-				Buf:        bufferv2.MakeWithData(upperLayerData),
+				Buf:        buffer.MakeWithData(upperLayerData),
 			}},
 		},
 		{
 			name:         "UDP raw payload",
 			firstNextHdr: IPv6ExtensionHeaderIdentifier(UDPProtocolNumber),
-			payload:      bufferv2.MakeWithData(upperLayerData),
+			payload:      buffer.MakeWithData(upperLayerData),
 			expected: []IPv6PayloadHeader{IPv6RawPayloadHeader{
 				Identifier: IPv6ExtensionHeaderIdentifier(UDPProtocolNumber),
-				Buf:        bufferv2.MakeWithData(upperLayerData),
+				Buf:        buffer.MakeWithData(upperLayerData),
 			}},
 		},
 		{
 			name:         "ICMPv4 raw payload",
 			firstNextHdr: IPv6ExtensionHeaderIdentifier(ICMPv4ProtocolNumber),
-			payload:      bufferv2.MakeWithData(upperLayerData),
+			payload:      buffer.MakeWithData(upperLayerData),
 			expected: []IPv6PayloadHeader{IPv6RawPayloadHeader{
 				Identifier: IPv6ExtensionHeaderIdentifier(ICMPv4ProtocolNumber),
-				Buf:        bufferv2.MakeWithData(upperLayerData),
+				Buf:        buffer.MakeWithData(upperLayerData),
 			}},
 		},
 		{
 			name:         "ICMPv6 raw payload",
 			firstNextHdr: IPv6ExtensionHeaderIdentifier(ICMPv6ProtocolNumber),
-			payload:      bufferv2.MakeWithData(upperLayerData),
+			payload:      buffer.MakeWithData(upperLayerData),
 			expected: []IPv6PayloadHeader{IPv6RawPayloadHeader{
 				Identifier: IPv6ExtensionHeaderIdentifier(ICMPv6ProtocolNumber),
-				Buf:        bufferv2.MakeWithData(upperLayerData),
+				Buf:        buffer.MakeWithData(upperLayerData),
 			}},
 		},
 		{
 			name:         "Unknwon next header raw payload",
 			firstNextHdr: 255,
-			payload:      bufferv2.MakeWithData(upperLayerData),
+			payload:      buffer.MakeWithData(upperLayerData),
 			expected: []IPv6PayloadHeader{IPv6RawPayloadHeader{
 				Identifier: 255,
-				Buf:        bufferv2.MakeWithData(upperLayerData),
+				Buf:        buffer.MakeWithData(upperLayerData),
 			}},
 		},
 		{
@@ -1028,7 +1028,7 @@ var _ IPv6SerializableHopByHopOption = (*dummyHbHOptionSerializer)(nil)
 // IPv6SerializableHopByHopOption for use in tests.
 type dummyHbHOptionSerializer struct {
 	id          IPv6ExtHdrOptionIdentifier
-	payload     *bufferv2.View
+	payload     *buffer.View
 	align       int
 	alignOffset int
 }
@@ -1088,7 +1088,7 @@ func TestIPv6HopByHopSerializer(t *testing.T) {
 			options: []IPv6SerializableHopByHopOption{
 				&dummyHbHOptionSerializer{
 					id:      15,
-					payload: bufferv2.NewViewWithData([]byte{9, 8, 7, 6}),
+					payload: buffer.NewViewWithData([]byte{9, 8, 7, 6}),
 				},
 			},
 			expect:   []byte{13, 0, 15, 4, 9, 8, 7, 6},
@@ -1100,7 +1100,7 @@ func TestIPv6HopByHopSerializer(t *testing.T) {
 			options: []IPv6SerializableHopByHopOption{
 				&dummyHbHOptionSerializer{
 					id:      22,
-					payload: bufferv2.NewViewWithData([]byte{4, 5}),
+					payload: buffer.NewViewWithData([]byte{4, 5}),
 				},
 			},
 			expect:   []byte{88, 0, 22, 2, 4, 5, 1, 0},
@@ -1112,7 +1112,7 @@ func TestIPv6HopByHopSerializer(t *testing.T) {
 			options: []IPv6SerializableHopByHopOption{
 				&dummyHbHOptionSerializer{
 					id:      33,
-					payload: bufferv2.NewViewWithData([]byte{1, 2, 3}),
+					payload: buffer.NewViewWithData([]byte{1, 2, 3}),
 				},
 			},
 			expect:   []byte{11, 0, 33, 3, 1, 2, 3, 0},
@@ -1124,7 +1124,7 @@ func TestIPv6HopByHopSerializer(t *testing.T) {
 			options: []IPv6SerializableHopByHopOption{
 				&dummyHbHOptionSerializer{
 					id:      77,
-					payload: bufferv2.NewViewWithData([]byte{1, 2, 3, 4, 5, 6, 7, 8}),
+					payload: buffer.NewViewWithData([]byte{1, 2, 3, 4, 5, 6, 7, 8}),
 				},
 			},
 			expect:   []byte{55, 1, 77, 8, 1, 2, 3, 4, 5, 6, 7, 8, 1, 2, 0, 0},
@@ -1136,11 +1136,11 @@ func TestIPv6HopByHopSerializer(t *testing.T) {
 			options: []IPv6SerializableHopByHopOption{
 				&dummyHbHOptionSerializer{
 					id:      11,
-					payload: bufferv2.NewViewWithData([]byte{1, 2, 3}),
+					payload: buffer.NewViewWithData([]byte{1, 2, 3}),
 				},
 				&dummyHbHOptionSerializer{
 					id:      22,
-					payload: bufferv2.NewViewWithData([]byte{4, 5, 6}),
+					payload: buffer.NewViewWithData([]byte{4, 5, 6}),
 				},
 			},
 			expect:   []byte{33, 1, 11, 3, 1, 2, 3, 22, 3, 4, 5, 6, 1, 2, 0, 0},
@@ -1152,11 +1152,11 @@ func TestIPv6HopByHopSerializer(t *testing.T) {
 			options: []IPv6SerializableHopByHopOption{
 				&dummyHbHOptionSerializer{
 					id:      11,
-					payload: bufferv2.NewViewWithData([]byte{1, 2, 3}),
+					payload: buffer.NewViewWithData([]byte{1, 2, 3}),
 				},
 				&dummyHbHOptionSerializer{
 					id:      22,
-					payload: bufferv2.NewViewWithData([]byte{4, 5, 6}),
+					payload: buffer.NewViewWithData([]byte{4, 5, 6}),
 					align:   2,
 				},
 			},
@@ -1169,11 +1169,11 @@ func TestIPv6HopByHopSerializer(t *testing.T) {
 			options: []IPv6SerializableHopByHopOption{
 				&dummyHbHOptionSerializer{
 					id:      11,
-					payload: bufferv2.NewViewWithData([]byte{1, 2}),
+					payload: buffer.NewViewWithData([]byte{1, 2}),
 				},
 				&dummyHbHOptionSerializer{
 					id:          22,
-					payload:     bufferv2.NewViewWithData([]byte{4, 5, 6}),
+					payload:     buffer.NewViewWithData([]byte{4, 5, 6}),
 					align:       8,
 					alignOffset: 1,
 				},
@@ -1225,7 +1225,7 @@ func TestIPv6HopByHopSerializer(t *testing.T) {
 
 			// Deserialize the options and verify them.
 			optLen := (b[ipv6HopByHopExtHdrLengthOffset] + ipv6HopByHopExtHdrUnaccountedLenWords) * ipv6ExtHdrLenBytesPerUnit
-			iter := ipv6OptionsExtHdr{bufferv2.NewViewWithData(b[ipv6HopByHopExtHdrOptionsOffset:optLen])}.Iter()
+			iter := ipv6OptionsExtHdr{buffer.NewViewWithData(b[ipv6HopByHopExtHdrOptionsOffset:optLen])}.Iter()
 			for _, testOpt := range test.options {
 				opt, done, err := iter.Next()
 				if err != nil {

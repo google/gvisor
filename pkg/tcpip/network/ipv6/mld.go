@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"time"
 
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/network/internal/ip"
@@ -186,7 +186,7 @@ func (b *mldv2ReportBuilder) Send() (sent bool, err tcpip.Error) {
 		serializer := header.MLDv2ReportSerializer{Records: records[:maxRecords]}
 		records = records[maxRecords:]
 
-		icmpView := bufferv2.NewViewSize(header.ICMPv6HeaderSize + serializer.Length())
+		icmpView := buffer.NewViewSize(header.ICMPv6HeaderSize + serializer.Length())
 		icmp := header.ICMPv6(icmpView.AsSlice())
 		serializer.SerializeInto(icmp.MessageBody())
 		if sentWithSpecifiedAddress, err := b.mld.writePacketInner(
@@ -369,7 +369,7 @@ func (mld *mldState) writePacket(destAddress, groupAddress tcpip.Address, mldTyp
 		panic(fmt.Sprintf("unrecognized mld type = %d", mldType))
 	}
 
-	icmpView := bufferv2.NewViewSize(header.ICMPv6HeaderSize + header.MLDMinimumSize)
+	icmpView := buffer.NewViewSize(header.ICMPv6HeaderSize + header.MLDMinimumSize)
 
 	icmp := header.ICMPv6(icmpView.AsSlice())
 	header.MLD(icmp.MessageBody()).SetMulticastAddress(groupAddress)
@@ -388,7 +388,7 @@ func (mld *mldState) writePacket(destAddress, groupAddress tcpip.Address, mldTyp
 	)
 }
 
-func (mld *mldState) writePacketInner(buf *bufferv2.View, mldType header.ICMPv6Type, reportStat tcpip.MultiCounterStat, extensionHeaders header.IPv6ExtHdrSerializer, destAddress tcpip.Address) (bool, tcpip.Error) {
+func (mld *mldState) writePacketInner(buf *buffer.View, mldType header.ICMPv6Type, reportStat tcpip.MultiCounterStat, extensionHeaders header.IPv6ExtHdrSerializer, destAddress tcpip.Address) (bool, tcpip.Error) {
 	icmp := header.ICMPv6(buf.AsSlice())
 	icmp.SetType(mldType)
 
@@ -455,7 +455,7 @@ func (mld *mldState) writePacketInner(buf *bufferv2.View, mldType header.ICMPv6T
 
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(mld.ep.MaxHeaderLength()) + extensionHeaders.Length(),
-		Payload:            bufferv2.MakeWithView(buf),
+		Payload:            buffer.MakeWithView(buf),
 	})
 	defer pkt.DecRef()
 

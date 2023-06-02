@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"io"
 
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -125,7 +125,7 @@ func newIncomingSegment(id stack.TransportEndpointID, clock tcpip.Clock, pkt sta
 	return s, nil
 }
 
-func newOutgoingSegment(id stack.TransportEndpointID, clock tcpip.Clock, buf bufferv2.Buffer) *segment {
+func newOutgoingSegment(id stack.TransportEndpointID, clock tcpip.Clock, buf buffer.Buffer) *segment {
 	s := newSegment()
 	s.id = id
 	s.rcvdTime = clock.NowMonotonic()

@@ -13,7 +13,7 @@ go_library(
         "//visibility:public",
     ],
     deps = [
-        "//pkg/bufferv2",
+        "//pkg/buffer",
         "//pkg/tcpip",
         "//pkg/tcpip/checker",
         "//pkg/tcpip/checksum",

@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip/faketime"
 	"gvisor.dev/gvisor/pkg/tcpip/network/internal/testutil"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -31,12 +31,12 @@ import (
 const reassembleTimeout = 1
 
 // buf is a helper to build a Buffer from different strings.
-func buf(size int, pieces ...string) bufferv2.Buffer {
-	buf := bufferv2.Buffer{}
+func buf(size int, pieces ...string) buffer.Buffer {
+	buf := buffer.Buffer{}
 	c := buf.Clone()
 	defer c.Release()
 	for _, p := range pieces {
-		v := bufferv2.NewViewWithData([]byte(p))
+		v := buffer.NewViewWithData([]byte(p))
 		buf.Append(v)
 	}
 
@@ -59,7 +59,7 @@ type processInput struct {
 }
 
 type processOutput struct {
-	buf   bufferv2.Buffer
+	buf   buffer.Buffer
 	proto uint8
 	done  bool
 }
@@ -77,7 +77,7 @@ func TestFragmentationProcess(t *testing.T) {
 				{id: FragmentID{ID: 0}, first: 2, last: 3, more: false, pkt: pkt(2, "23")},
 			},
 			out: []processOutput{
-				{buf: bufferv2.Buffer{}, done: false},
+				{buf: buffer.Buffer{}, done: false},
 				{buf: buf(4, "01", "23"), done: true},
 			},
 		},
@@ -88,7 +88,7 @@ func TestFragmentationProcess(t *testing.T) {
 				{id: FragmentID{ID: 0}, first: 2, last: 3, more: false, proto: 17, pkt: pkt(2, "23")},
 			},
 			out: []processOutput{
-				{buf: bufferv2.Buffer{}, done: false},
+				{buf: buffer.Buffer{}, done: false},
 				{buf: buf(4, "01", "23"), proto: 6, done: true},
 			},
 		},
@@ -101,8 +101,8 @@ func TestFragmentationProcess(t *testing.T) {
 				{id: FragmentID{ID: 0}, first: 2, last: 3, more: false, pkt: pkt(2, "23")},
 			},
 			out: []processOutput{
-				{buf: bufferv2.Buffer{}, done: false},
-				{buf: bufferv2.Buffer{}, done: false},
+				{buf: buffer.Buffer{}, done: false},
+				{buf: buffer.Buffer{}, done: false},
 				{buf: buf(4, "ab", "cd"), done: true},
 				{buf: buf(4, "01", "23"), done: true},
 			},
@@ -533,7 +533,7 @@ func TestPacketFragmenter(t *testing.T) {
 			payloadView := stack.PayloadSince(pkt.TransportHeader())
 			defer payloadView.Release()
 			originalPayload := payloadView.AsSlice()
-			var reassembledPayload bufferv2.Buffer
+			var reassembledPayload buffer.Buffer
 			defer reassembledPayload.Release()
 			pf := MakePacketFragmenter(pkt, test.fragmentPayloadLen, reserve)
 			for i := 0; ; i++ {

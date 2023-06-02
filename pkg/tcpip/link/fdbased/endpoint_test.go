@@ -29,7 +29,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -195,7 +195,7 @@ func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32, hash u
 	const netHdrLen = 100
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		ReserveHeaderBytes: int(c.ep.MaxHeaderLength()) + netHdrLen,
-		Payload:            bufferv2.MakeWithData(payload),
+		Payload:            buffer.MakeWithData(payload),
 	})
 	defer pkt.DecRef()
 	pkt.Hash = hash
@@ -386,7 +386,7 @@ func TestDeliverPacket(t *testing.T) {
 
 				wantPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 					ReserveHeaderBytes: header.EthernetMinimumSize,
-					Payload:            bufferv2.MakeWithData(all),
+					Payload:            buffer.MakeWithData(all),
 				})
 				defer wantPkt.DecRef()
 				if eth {
@@ -503,7 +503,7 @@ func TestIovecBuffer(t *testing.T) {
 			buf := b.pullBuffer(c.n)
 			defer buf.Release()
 			var lengths []int
-			buf.Apply(func(v *bufferv2.View) {
+			buf.Apply(func(v *buffer.View) {
 				lengths = append(lengths, v.Size())
 			})
 			if !reflect.DeepEqual(lengths, c.wantLengths) {

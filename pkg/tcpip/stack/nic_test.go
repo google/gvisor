@@ -19,7 +19,7 @@ import (
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/testutil"
@@ -184,7 +184,7 @@ func TestDisabledRxStatsWhenNICDisabled(t *testing.T) {
 	}
 
 	nic.DeliverNetworkPacket(0, NewPacketBuffer(PacketBufferOptions{
-		Payload: bufferv2.MakeWithData([]byte{1, 2, 3, 4}),
+		Payload: buffer.MakeWithData([]byte{1, 2, 3, 4}),
 	}))
 
 	if got := nic.stats.local.DisabledRx.Packets.Value(); got != 1 {
@@ -209,7 +209,7 @@ func TestPacketWithUnknownNetworkProtocolNumber(t *testing.T) {
 	// IPv4 isn't recognized since we haven't initialized the NIC with an IPv4
 	// endpoint.
 	nic.DeliverNetworkPacket(header.IPv4ProtocolNumber, NewPacketBuffer(PacketBufferOptions{
-		Payload: bufferv2.MakeWithData([]byte{1, 2, 3, 4}),
+		Payload: buffer.MakeWithData([]byte{1, 2, 3, 4}),
 	}))
 	var count uint64
 	if got, ok := nic.stats.local.UnknownL3ProtocolRcvdPacketCounts.Get(uint64(header.IPv4ProtocolNumber)); ok {
@@ -229,7 +229,7 @@ func TestPacketWithUnknownTransportProtocolNumber(t *testing.T) {
 	// UDP isn't recognized since we haven't initialized the NIC with a UDP
 	// protocol.
 	nic.DeliverTransportPacket(header.UDPProtocolNumber, NewPacketBuffer(PacketBufferOptions{
-		Payload: bufferv2.MakeWithData([]byte{1, 2, 3, 4}),
+		Payload: buffer.MakeWithData([]byte{1, 2, 3, 4}),
 	}))
 	var count uint64
 	if got, ok := nic.stats.local.UnknownL4ProtocolRcvdPacketCounts.Get(uint64(header.UDPProtocolNumber)); ok {

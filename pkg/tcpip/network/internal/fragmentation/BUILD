@@ -30,7 +30,7 @@ go_library(
         "//pkg/tcpip/network/ipv6:__pkg__",
     ],
     deps = [
-        "//pkg/bufferv2",
+        "//pkg/buffer",
         "//pkg/log",
         "//pkg/sync",
         "//pkg/tcpip",
@@ -49,7 +49,7 @@ go_test(
     ],
     library = ":fragmentation",
     deps = [
-        "//pkg/bufferv2",
+        "//pkg/buffer",
         "//pkg/refs",
         "//pkg/tcpip/faketime",
         "//pkg/tcpip/network/internal/testutil",

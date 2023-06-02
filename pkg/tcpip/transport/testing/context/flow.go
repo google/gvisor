@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"testing"
 
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
@@ -275,7 +275,7 @@ func (flow TestFlow) SockProto() tcpip.NetworkProtocolNumber {
 }
 
 // CheckerFn returns the correct network checker for the current TestFlow.
-func (flow TestFlow) CheckerFn() func(*testing.T, *bufferv2.View, ...checker.NetworkChecker) {
+func (flow TestFlow) CheckerFn() func(*testing.T, *buffer.View, ...checker.NetworkChecker) {
 	if flow.IsV4() {
 		return checker.IPv4
 	}

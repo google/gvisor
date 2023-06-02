@@ -25,7 +25,7 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
-	"gvisor.dev/gvisor/pkg/bufferv2"
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -4911,7 +4911,7 @@ func TestReceivedInvalidSegmentCountIncrement(t *testing.T) {
 	tcpbuf := buf.Flatten()
 	tcpbuf[header.IPv4MinimumSize+header.TCPDataOffset] = ((header.TCPMinimumSize - 1) / 4) << 4
 
-	segbuf := bufferv2.MakeWithData(tcpbuf)
+	segbuf := buffer.MakeWithData(tcpbuf)
 	c.SendSegment(segbuf)
 
 	if got := stats.TCP.InvalidSegmentsReceived.Value(); got != want {
@@ -4943,9 +4943,9 @@ func TestReceivedIncorrectChecksumIncrement(t *testing.T) {
 	// verification to fail.
 	tcpbuf[header.IPv4MinimumSize+((tcpbuf[header.IPv4MinimumSize+header.TCPDataOffset]>>4)*4)] = 0x4
 
-	segbuf := bufferv2.MakeWithData(tcpbuf)
+	segbuf := buffer.MakeWithData(tcpbuf)
 	defer segbuf.Release()
-	c.SendSegment(bufferv2.MakeWithData(tcpbuf))
+	c.SendSegment(buffer.MakeWithData(tcpbuf))
 
 	if got := stats.TCP.ChecksumErrors.Value(); got != want {
 		t.Errorf("got stats.TCP.ChecksumErrors.Value() = %d, want = %d", got, want)
@@ -5716,8 +5716,8 @@ func TestPathMTUDiscovery(t *testing.T) {
 		t.Fatalf("Write failed: %s", err)
 	}
 
-	receivePackets := func(c *context.Context, sizes []int, which int, seqNum uint32) *bufferv2.View {
-		var ret *bufferv2.View
+	receivePackets := func(c *context.Context, sizes []int, which int, seqNum uint32) *buffer.View {
+		var ret *buffer.View
 		iss := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
 		for i, size := range sizes {
 			p := c.GetPacket()
@@ -5748,7 +5748,7 @@ func TestPathMTUDiscovery(t *testing.T) {
 	// Send "packet too big" messages back to netstack.
 	const newMTU = 1200
 	const newMaxPayload = newMTU - header.IPv4MinimumSize - header.TCPMinimumSize
-	mtu := bufferv2.NewViewWithData([]byte{0, 0, newMTU / 256, newMTU % 256})
+	mtu := buffer.NewViewWithData([]byte{0, 0, newMTU / 256, newMTU % 256})
 	defer mtu.Release()
 	c.SendICMPPacket(header.ICMPv4DstUnreachable, header.ICMPv4FragmentationNeeded, mtu, first, newMTU)
 

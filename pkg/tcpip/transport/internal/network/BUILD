@@ -18,7 +18,7 @@ go_library(
     ],
     deps = [
         "//pkg/atomicbitops",
-        "//pkg/bufferv2",
+        "//pkg/buffer",
         "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/header",
@@ -34,7 +34,7 @@ go_test(
     srcs = ["endpoint_test.go"],
     deps = [
         ":network",
-        "//pkg/bufferv2",
+        "//pkg/buffer",
         "//pkg/refs",
         "//pkg/tcpip",
         "//pkg/tcpip/checker",
