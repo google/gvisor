@@ -27,12 +27,46 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
+// FPSoftwareFrame is equivalent to struct _fpx_sw_bytes, the data stored by
+// Linux in bytes 464:511 of the fxsave/xsave frame.
+//
+// +marshal
+type FPSoftwareFrame struct {
+	Magic1       uint32
+	ExtendedSize uint32
+	Xfeatures    uint64
+	XstateSize   uint32
+	Padding      [7]uint32
+}
+
+// From Linux's arch/x86/include/uapi/asm/sigcontext.h.
+const (
+	// FP_XSTATE_MAGIC1 is the value of FPSoftwareFrame.Magic1.
+	FP_XSTATE_MAGIC1 = 0x46505853
+	// FP_SW_FRAME_OFFSET is the offset of FPSoftwareFrame in the
+	// fxsave/xsave area.
+	FP_SW_FRAME_OFFSET = 464
+
+	// FP_XSTATE_MAGIC2 is the value written to the 4 bytes inserted by
+	// Linux after the fxsave/xsave area in the signal frame.
+	FP_XSTATE_MAGIC2 = 0x46505845
+	// FP_XSTATE_MAGIC2_SIZE is the size of FP_XSTATE_MAGIC2.
+	FP_XSTATE_MAGIC2_SIZE = 4
+)
+
+// From Linux's arch/x86/include/asm/fpu/types.h.
+const (
+	// XFEATURE_MASK_FPSSE is xsave features that are always enabled in
+	// signal frame fpstate.
+	XFEATURE_MASK_FPSSE = 0x3
+)
+
 // initX86FPState (defined in asm files) sets up initial state.
 func initX86FPState(data *byte, useXsave bool)
 
 func newX86FPStateSlice() State {
 	size, align := cpuid.HostFeatureSet().ExtendedStateSize()
-	capacity := size
+	capacity := size + FP_XSTATE_MAGIC2_SIZE
 	// Always use at least 4096 bytes.
 	//
 	// For the KVM platform, this state is a fixed 4096 bytes, so make sure
@@ -41,7 +75,13 @@ func newX86FPStateSlice() State {
 	if capacity < 4096 {
 		capacity = 4096
 	}
-	return alignedBytes(capacity, align)[:size]
+	return alignedBytes(capacity, align)[:size+FP_XSTATE_MAGIC2_SIZE]
+}
+
+// Slice returns the byte array that contains only the fpu state. `s` has the
+// fpu state and FP_XSTATE_MAGIC2.
+func (s State) Slice() []byte {
+	return s[:len(s)-FP_XSTATE_MAGIC2_SIZE]
 }
 
 // NewState returns an initialized floating point state.
@@ -70,6 +110,23 @@ func (s *State) Reset() {
 		f[i] = 0
 	}
 	initX86FPState(&f[0], cpuid.HostFeatureSet().UseXsave())
+}
+
+var (
+	hostXCR0Mask      uint64
+	hostFPSize        uint
+	hostUseXsave      bool
+	initHostStateOnce sync.Once
+)
+
+// InitHostState initializes host parameters.
+func InitHostState() {
+	initHostStateOnce.Do(func() {
+		featureSet := cpuid.HostFeatureSet()
+		hostXCR0Mask = featureSet.ValidXCR0Mask()
+		hostUseXsave = featureSet.UseXsave()
+		hostFPSize, _ = featureSet.ExtendedStateSize()
+	})
 }
 
 // ptraceFPRegsSize is the size in bytes of Linux's user_i387_struct, the type
