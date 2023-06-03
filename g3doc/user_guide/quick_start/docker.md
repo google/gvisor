@@ -88,6 +88,9 @@ sudo runsc install --runtime runsc-debug -- \
   --log-packets
 ```
 
+> Note: Ensure that `SELinux` (Security Enhanced Linux) is disabled on your
+> system before running the runtime environment with debugging enabled.
+
 Next, look at the different options available for gVisor: [platform][platforms],
 [network][networking], [filesystem][filesystem].
 
