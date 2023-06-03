@@ -11,9 +11,11 @@ go_library(
         "fpu.go",
         "fpu_amd64.go",
         "fpu_amd64.s",
+        "fpu_amd64_unsafe.go",
         "fpu_arm64.go",
         "fpu_unsafe.go",
     ],
+    marshal = True,
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/cpuid",
