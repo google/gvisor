@@ -2440,7 +2440,7 @@ func (e *endpoint) connect(addr tcpip.FullAddress, handshake bool) tcpip.Error {
 	// connection setting here.
 	if !handshake {
 		e.segmentQueue.mu.Lock()
-		for _, l := range []segmentList{e.segmentQueue.list, e.snd.writeList} {
+		for _, l := range []segmentList{e.segmentQueue.exclusive, e.segmentQueue.shared, e.snd.writeList} {
 			for s := l.Front(); s != nil; s = s.Next() {
 				s.id = e.TransportEndpointInfo.ID
 				e.sndQueueInfo.sndWaker.Assert()

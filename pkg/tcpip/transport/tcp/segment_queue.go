@@ -22,16 +22,23 @@ import (
 //
 // +stateify savable
 type segmentQueue struct {
-	mu     sync.Mutex  `state:"nosave"`
-	list   segmentList `state:"wait"`
+	mu     sync.Mutex `state:"nosave"`
 	ep     *endpoint
 	frozen bool
+
+	// shared is the list shared with dispatchers, and thus requires
+	// locking to use.
+	shared segmentList `state:"wait"`
+
+	// exclusive is owned solely by the segment queue and accessed via the
+	// processor goroutine, so requires no locking.
+	exclusive segmentList `state:"wait"`
 }
 
 // emptyLocked determines if the queue is empty.
 // Preconditions: q.mu must be held.
 func (q *segmentQueue) emptyLocked() bool {
-	return q.list.Empty()
+	return q.shared.Empty() && q.exclusive.Empty()
 }
 
 // empty determines if the queue is empty.
@@ -62,7 +69,7 @@ func (q *segmentQueue) enqueue(s *segment) bool {
 
 	if allow {
 		s.IncRef()
-		q.list.PushBack(s)
+		q.shared.PushBack(s)
 		// Set the owner now that the endpoint owns the segment.
 		s.setOwner(q.ep, recvQ)
 	}
@@ -74,14 +81,24 @@ func (q *segmentQueue) enqueue(s *segment) bool {
 // Ownership is transferred to the caller, who is responsible for decrementing
 // the ref count when done.
 func (q *segmentQueue) dequeue() *segment {
-	q.mu.Lock()
-	defer q.mu.Unlock()
-
-	s := q.list.Front()
-	if s != nil {
-		q.list.Remove(s)
+	// Use the exclusive list if possible to avoid locking.
+	if s := q.exclusive.Front(); s != nil {
+		q.exclusive.Remove(s)
+		return s
 	}
 
+	// Take the shared list and add it to the exclusive list.
+	q.mu.Lock()
+	list := q.shared
+	q.shared.Reset()
+	q.mu.Unlock()
+	q.exclusive.PushBackList(&list)
+
+	// Try again.
+	s := q.exclusive.Front()
+	if s != nil {
+		q.exclusive.Remove(s)
+	}
 	return s
 }
 

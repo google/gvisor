@@ -461,5 +461,9 @@ server_cpu_ticks=\$(cat /proc/\$server_pid/stat \\
 ticks_per_sec=\$(getconf CLK_TCK)
 client_cpu_load=\$(bc -l <<< \$client_cpu_ticks/\$ticks_per_sec/${duration})
 server_cpu_load=\$(bc -l <<< \$server_cpu_ticks/\$ticks_per_sec/${duration})
-echo \$mbits \$client_cpu_load \$server_cpu_load
+if ${client}; then
+  echo mbps: \$mbits cpu: \$client_cpu_load
+elif ${server}; then
+  echo mbps: \$mbits cpu: \$server_cpu_load
+fi
 EOF
