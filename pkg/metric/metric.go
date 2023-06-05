@@ -1505,8 +1505,11 @@ func GetSnapshot(options SnapshotOptions) (*prometheus.Snapshot, error) {
 				Metric: m.prometheusMetric,
 				Labels: labels,
 				HistogramValue: &prometheus.Histogram{
-					Total:   prometheus.Number{Int: statistics[fieldKey].sampleSum},
-					Buckets: buckets,
+					Total:                  prometheus.Number{Int: statistics[fieldKey].sampleSum},
+					SumOfSquaredDeviations: prometheus.Number{Float: statistics[fieldKey].sumOfSquaredDeviations},
+					Min:                    prometheus.Number{Int: statistics[fieldKey].min},
+					Max:                    prometheus.Number{Int: statistics[fieldKey].max},
+					Buckets:                buckets,
 				},
 			})
 		}
