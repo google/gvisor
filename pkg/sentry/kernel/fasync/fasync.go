@@ -85,12 +85,12 @@ type FileAsync struct {
 	recipientT  *kernel.Task
 }
 
-// NotifyEvent implements waiter.EventListener.NotifyEvent.
-func (a *FileAsync) NotifyEvent(mask waiter.EventMask) {
+func (a *FileAsync) recipient() *kernel.Task {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if !a.registered {
-		return
+		// No recipient has been registered.
+		return nil
 	}
 	t := a.recipientT
 	tg := a.recipientTG
@@ -100,8 +100,13 @@ func (a *FileAsync) NotifyEvent(mask waiter.EventMask) {
 	if tg != nil {
 		t = tg.Leader()
 	}
+	return t
+}
+
+// NotifyEvent implements waiter.EventListener.NotifyEvent.
+func (a *FileAsync) NotifyEvent(mask waiter.EventMask) {
+	t := a.recipient()
 	if t == nil {
-		// No recipient has been registered.
 		return
 	}
 	c := t.Credentials()
