@@ -152,6 +152,11 @@ func globalInternVerifierReleased() {
 // numberPacker holds packedNumber data. It is useful to store large amounts of Number structs in a
 // small memory footprint.
 type numberPacker struct {
+	// `data` *must* be pre-allocated if there is any number to be stored in it.
+	// Attempts to pack a number that cannot fit into the existing space
+	// allocated for this slice will cause a panic.
+	// Callers may use `needsIndirection` to determine whether a number needs
+	// space in this slice or not ahead of packing it.
 	data []uint64
 }
 
@@ -187,6 +192,7 @@ const (
 	storageFieldDirect       = uint32(0)
 	storageFieldIndirect     = uint32(storageField)
 	valueField               = uint32(1<<30 - 1)
+	maxDirectUint            = uint64(valueField)
 	float32ExponentField     = uint32(0x7f800000)
 	float32ExponentShift     = uint32(23)
 	float32ExponentBias      = uint32(127)
@@ -198,35 +204,75 @@ const (
 	packedFloatInf           = packedNumber(typeFieldFloat | storageFieldDirect | 0x30000000)
 )
 
-// errOutOfPackerMemory is returned when the number cannot be packed into a numberPacker.
-var errOutOfPackerMemory = errors.New("out of numberPacker memory")
-
-// pack packs a Number into a packedNumber.
-func (p *numberPacker) pack(n *Number) (packedNumber, error) {
+// needsPackerStorage returns 0 for numbers that can be
+// stored directly into the 32 bits of a packedNumber, or 1 for numbers that
+// need more bits and would need to be stored into a numberPacker's `data`
+// field.
+//
+//go:nosplit
+func needsPackerStorage(n *Number) uint64 {
 	if n.Float == 0.0 {
 		v := n.Int
 		if v >= 0 && v <= int64(valueField) {
-			// We can store the integer value directly.
-			return packedNumber(typeFieldInteger | storageFieldDirect | uint32(v)), nil
+			return 0
 		}
-		// Need to allocate a new entry in packedNumber.
-		newIndex := uint32(len(p.data))
-		if newIndex > valueField {
-			return 0, errOutOfPackerMemory
+		return 1
+	}
+	// n is a float.
+	v := n.Float
+	if math.IsNaN(v) || v == math.Inf(-1) || v == math.Inf(1) {
+		return 0
+	}
+	if v >= 0.0 && float64(float32(v)) == v {
+		float32Bits := math.Float32bits(float32(v))
+		exponent := (float32Bits&float32ExponentField)>>float32ExponentShift - float32ExponentBias
+		packedExponent := (exponent + packedFloatExponentBias) << float32ExponentShift
+		if packedExponent&packedFloatExponentField == packedExponent {
+			return 0
+		}
+	}
+	return 1
+}
+
+// isIndirect returns 1 iff this packedNumber needs storage in a numberPacker.
+//
+//go:nosplit
+func (n packedNumber) isIndirect() uint64 {
+	if uint32(n)&storageField == storageFieldIndirect {
+		return 1
+	}
+	return 0
+}
+
+// errOutOfPackerMemory is emitted when the number cannot be packed into a numberPacker.
+var errOutOfPackerMemory = errors.New("out of numberPacker memory")
+
+// pack packs a Number into a packedNumber.
+//
+//go:nosplit
+func (p *numberPacker) pack(n *Number) packedNumber {
+	if n.Float == 0.0 {
+		v := n.Int
+		if v >= 0 && v <= int64(maxDirectUint) {
+			// We can store the integer value directly.
+			return packedNumber(typeFieldInteger | storageFieldDirect | uint32(v))
+		}
+		if len(p.data) == cap(p.data) {
+			panic(errOutOfPackerMemory)
 		}
 		p.data = append(p.data, uint64(v))
-		return packedNumber(typeFieldInteger | storageFieldIndirect | newIndex), nil
+		return packedNumber(typeFieldInteger | storageFieldIndirect | uint32(len(p.data)-1))
 	}
 	// n is a float.
 	v := n.Float
 	if math.IsNaN(v) {
-		return packedFloatNaN, nil
+		return packedFloatNaN
 	}
 	if v == math.Inf(-1) {
-		return packedFloatNegInf, nil
+		return packedFloatNegInf
 	}
 	if v == math.Inf(1) {
-		return packedFloatInf, nil
+		return packedFloatInf
 	}
 	if v >= 0.0 && float64(float32(v)) == v {
 		float32Bits := math.Float32bits(float32(v))
@@ -234,34 +280,30 @@ func (p *numberPacker) pack(n *Number) (packedNumber, error) {
 		packedExponent := (exponent + packedFloatExponentBias) << float32ExponentShift
 		if packedExponent&packedFloatExponentField == packedExponent {
 			float32Fraction := float32Bits & float32FractionField
-			return packedNumber(typeFieldFloat | storageFieldDirect | packedExponent | float32Fraction), nil
+			return packedNumber(typeFieldFloat | storageFieldDirect | packedExponent | float32Fraction)
 		}
 	}
-	// Need to allocate a new entry in packedNumber.
-	newIndex := uint32(len(p.data))
-	if newIndex > valueField {
-		return 0, errOutOfPackerMemory
+	if len(p.data) == cap(p.data) {
+		panic(errOutOfPackerMemory)
 	}
 	p.data = append(p.data, math.Float64bits(v))
-	return packedNumber(typeFieldFloat | storageFieldIndirect | newIndex), nil
+	return packedNumber(typeFieldFloat | storageFieldIndirect | uint32(len(p.data)-1))
 }
 
-func (p *numberPacker) mustPack(n *Number) packedNumber {
-	packed, err := p.pack(n)
-	if err != nil {
-		panic(err)
-	}
-	return packed
-}
-
-func (p *numberPacker) mustPackInt(val int64) packedNumber {
+// packInt packs an integer.
+//
+//go:nosplit
+func (p *numberPacker) packInt(val int64) packedNumber {
 	n := Number{Int: val}
-	return p.mustPack(&n)
+	return p.pack(&n)
 }
 
-func (p *numberPacker) mustPackFloat(val float64) packedNumber {
+// packFloat packs a floating-point number.
+//
+//go:nosplit
+func (p *numberPacker) packFloat(val float64) packedNumber {
 	n := Number{Float: val}
-	return p.mustPack(&n)
+	return p.pack(&n)
 }
 
 // unpack unpacks a packedNumber back into a Number.
@@ -296,12 +338,29 @@ func (p *numberPacker) unpack(n packedNumber) *Number {
 	panic("unreachable")
 }
 
+// mustUnpackInt unpacks an integer.
+// It panics if the packedNumber is not an integer.
 func (p *numberPacker) mustUnpackInt(n packedNumber) int64 {
 	num := p.unpack(n)
 	if !num.IsInteger() {
 		panic("not an integer")
 	}
 	return num.Int
+}
+
+// portTo ports over a packedNumber from this numberPacker to a new one.
+// It is equivalent to `p.pack(other.unpack(n))` but avoids
+// allocations in the overwhelmingly-common case where the number is direct.
+func (p *numberPacker) portTo(other *numberPacker, n packedNumber) packedNumber {
+	if uint32(n)&storageField == storageFieldDirect {
+		// `n` is self-contained, just return as-is.
+		return n
+	}
+	if len(other.data) == cap(other.data) {
+		panic(errOutOfPackerMemory)
+	}
+	other.data = append(other.data, p.data[uint32(n)&valueField])
+	return packedNumber(uint32(n)&(typeField|storageField) | uint32(len(other.data)-1))
 }
 
 // verifiableMetric verifies a single metric within a Verifier.
@@ -311,7 +370,7 @@ type verifiableMetric struct {
 	numFields             uint32
 	verifier              *Verifier
 	allowedFieldValues    map[string]map[string]struct{}
-	wantBucketUpperBounds []packedNumber
+	wantBucketUpperBounds []Number
 
 	// The following fields are used to verify that values are actually increasing monotonically.
 	// They are only read and modified when the parent Verifier.mu is held.
@@ -395,11 +454,11 @@ func newVerifiableMetric(metadata *pb.MetricMetadata, verifier *Verifier) (*veri
 		if numBuckets <= 1 || numBuckets > 256 {
 			return nil, fmt.Errorf("unsupported number of buckets: %d", numBuckets)
 		}
-		v.wantBucketUpperBounds = make([]packedNumber, numBuckets)
+		v.wantBucketUpperBounds = make([]Number, numBuckets)
 		for i, boundary := range metadata.GetDistributionBucketLowerBounds() {
-			v.wantBucketUpperBounds[i] = verifier.permanentPacker.mustPackInt(boundary)
+			v.wantBucketUpperBounds[i] = Number{Int: boundary}
 		}
-		v.wantBucketUpperBounds[numBuckets-1] = verifier.permanentPacker.mustPackFloat(math.Inf(1))
+		v.wantBucketUpperBounds[numBuckets-1] = Number{Float: math.Inf(1)}
 		v.lastBucketSamples = make(map[string][]packedNumber, numFieldCombinations)
 	default:
 		return nil, fmt.Errorf("invalid type: %v", metadata.GetType())
@@ -416,6 +475,7 @@ func (v *verifiableMetric) numFieldCombinations() int {
 // field values that have already been seen. `verify` should populate this.
 // `dataToFieldsSeen` is passed across calls to `verify` and other methods of `verifiableMetric`.
 // It is used to store the canonical representation of the field values seen for each *Data.
+//
 // Precondition: `Verifier.mu` is held.
 func (v *verifiableMetric) verify(data *Data, metricFieldsSeen map[string]struct{}, dataToFieldsSeen map[*Data]string) error {
 	if *data.Metric != v.wantMetric {
@@ -477,7 +537,7 @@ func (v *verifiableMetric) verify(data *Data, metricFieldsSeen map[string]struct
 			return fmt.Errorf("invalid number of buckets: got %d want %d", len(data.HistogramValue.Buckets), len(v.wantBucketUpperBounds))
 		}
 		for i, b := range data.HistogramValue.Buckets {
-			if want := v.wantBucketUpperBounds[i]; b.UpperBound != *v.verifier.permanentPacker.unpack(want) {
+			if want := v.wantBucketUpperBounds[i]; b.UpperBound != want {
 				return fmt.Errorf("invalid upper bound for bucket %d (0-based): got %v want %v", i, b.UpperBound, want)
 			}
 		}
@@ -493,6 +553,7 @@ func (v *verifiableMetric) verify(data *Data, metricFieldsSeen map[string]struct
 }
 
 // verifyIncrement verifies that incremental metrics are monotonically increasing.
+//
 // Preconditions: `verify` has succeeded on the given `data`, and `Verifier.mu` is held.
 func (v *verifiableMetric) verifyIncrement(data *Data, fieldValues string, packer *numberPacker) error {
 	switch v.wantMetric.Type {
@@ -519,16 +580,90 @@ func (v *verifiableMetric) verifyIncrement(data *Data, fieldValues string, packe
 	return nil
 }
 
+// packerCapacityNeeded returns the `numberPacker` capacity to store `Data`.
+func (v *verifiableMetric) packerCapacityNeededForData(data *Data, fieldValues string) uint64 {
+	switch v.wantMetric.Type {
+	case TypeCounter:
+		return needsPackerStorage(data.Number)
+	case TypeHistogram:
+		var toPack uint64
+		var buf Number
+		for _, b := range data.HistogramValue.Buckets {
+			buf = Number{Int: int64(b.Samples)}
+			toPack += needsPackerStorage(&buf)
+		}
+		return toPack
+	default:
+		return 0
+	}
+}
+
+// packerCapacityNeededForLast returns the `numberPacker` capacity needed to
+// store the last snapshot's data that was not seen in the current snapshot
+// (aka not in metricFieldsSeen).
+func (v *verifiableMetric) packerCapacityNeededForLast(metricFieldsSeen map[string]struct{}) uint64 {
+	var capacity uint64
+	switch v.wantMetric.Type {
+	case TypeCounter:
+		for fieldValues, lastCounterValue := range v.lastCounterValue {
+			if _, found := metricFieldsSeen[fieldValues]; found {
+				continue
+			}
+			capacity += lastCounterValue.isIndirect()
+		}
+	case TypeHistogram:
+		for fieldValues, bucketSamples := range v.lastBucketSamples {
+			if _, found := metricFieldsSeen[fieldValues]; found {
+				continue
+			}
+			for _, b := range bucketSamples {
+				capacity += b.isIndirect()
+			}
+		}
+	}
+	return capacity
+}
+
 // update updates incremental metrics' "last seen" data.
-// Preconditions: `verifyIncrement` has succeeded on the given `data`, and `Verifier.mu` is held.
+//
+// Preconditions: `verifyIncrement` has succeeded on the given `data`, `Verifier.mu` is held,
+// and `packer` is guaranteed to have enough room to store all numbers.
 func (v *verifiableMetric) update(data *Data, fieldValues string, packer *numberPacker) {
 	switch v.wantMetric.Type {
 	case TypeCounter:
-		v.lastCounterValue[v.verifier.internMap.Intern(fieldValues)] = packer.mustPack(data.Number)
+		v.lastCounterValue[v.verifier.internMap.Intern(fieldValues)] = packer.pack(data.Number)
 	case TypeHistogram:
 		lastBucketSamples := v.lastBucketSamples[v.verifier.internMap.Intern(fieldValues)]
 		for i, b := range data.HistogramValue.Buckets {
-			lastBucketSamples[i] = packer.mustPackInt(int64(b.Samples))
+			lastBucketSamples[i] = packer.packInt(int64(b.Samples))
+		}
+	}
+}
+
+// repackUnseen packs all numbers that must be carried over from snapshot to snapshot and which were
+// not seen in the latest snapshot's data.
+// This function should carry over all numbers typically packed in `v.update` but for all metric
+// field combinations that are not in `metricFieldsSeen`.
+//
+// Preconditions: `verifyIncrement` has succeeded on the given `data`,
+// and `newPacker` is guaranteed to have enough room to store all numbers.
+func (v *verifiableMetric) repackUnseen(metricFieldsSeen map[string]struct{}, oldPacker, newPacker *numberPacker) {
+	switch v.wantMetric.Type {
+	case TypeCounter:
+		for fieldValues, lastCounterValue := range v.lastCounterValue {
+			if _, found := metricFieldsSeen[fieldValues]; found {
+				continue
+			}
+			v.lastCounterValue[fieldValues] = oldPacker.portTo(newPacker, lastCounterValue)
+		}
+	case TypeHistogram:
+		for fieldValues, bucketSamples := range v.lastBucketSamples {
+			if _, found := metricFieldsSeen[fieldValues]; found {
+				continue
+			}
+			for i, b := range bucketSamples {
+				bucketSamples[i] = oldPacker.portTo(newPacker, b)
+			}
 		}
 	}
 }
@@ -539,9 +674,6 @@ func (v *verifiableMetric) update(data *Data, fieldValues string, packer *number
 // that it can enforce the export snapshot timestamp is strictly monotonically increasing.
 type Verifier struct {
 	knownMetrics map[string]*verifiableMetric
-
-	// permanentPacker is used to pack numbers seen at Verifier initialization time only.
-	permanentPacker *numberPacker
 
 	// mu protects the fields below.
 	mu sync.Mutex
@@ -564,9 +696,8 @@ type Verifier struct {
 func NewVerifier(registration *pb.MetricRegistration) (*Verifier, func(), error) {
 	globalInternVerifierCreated()
 	verifier := &Verifier{
-		knownMetrics:    make(map[string]*verifiableMetric),
-		permanentPacker: &numberPacker{},
-		internMap:       make(internedStringMap),
+		knownMetrics: make(map[string]*verifiableMetric),
+		internMap:    make(internedStringMap),
 	}
 	for _, metric := range registration.GetMetrics() {
 		metricName := metric.GetPrometheusName()
@@ -625,17 +756,42 @@ func (v *Verifier) Verify(snapshot *Snapshot) error {
 	if v.lastTimestamp.After(snapshot.When) {
 		return fmt.Errorf("consecutive snapshots are not chronologically ordered: last verified snapshot was exported at %v, this one is from %v", v.lastTimestamp, snapshot.When)
 	}
+
 	for _, data := range snapshot.Data {
-		if err = v.knownMetrics[data.Metric.Name].verifyIncrement(data, dataToFieldsSeen[data], v.lastPacker); err != nil {
+		if err := v.knownMetrics[data.Metric.Name].verifyIncrement(data, dataToFieldsSeen[data], v.lastPacker); err != nil {
 			return fmt.Errorf("metric %q: %v", data.Metric.Name, err)
 		}
 	}
+	var neededPackerCapacity uint64
+	for _, data := range snapshot.Data {
+		neededPackerCapacity += v.knownMetrics[data.Metric.Name].packerCapacityNeededForData(data, dataToFieldsSeen[data])
+	}
+	for name, metric := range v.knownMetrics {
+		neededPackerCapacity += metric.packerCapacityNeededForLast(fieldsSeen[name])
+	}
+	if neededPackerCapacity > uint64(valueField) {
+		return fmt.Errorf("snapshot contains too many large numbers to fit into packer memory (%d numbers needing indirection)", neededPackerCapacity)
+	}
 
 	// All checks succeeded, update last-seen data.
+	// We need to be guaranteed to not fail past this point in the function.
 	newPacker := &numberPacker{}
+	if neededPackerCapacity != 0 {
+		newPacker.data = make([]uint64, 0, neededPackerCapacity)
+	}
 	v.lastTimestamp = snapshot.When
 	for _, data := range snapshot.Data {
 		v.knownMetrics[globalIntern(data.Metric.Name)].update(data, v.internMap.Intern(dataToFieldsSeen[data]), newPacker)
+	}
+	if uint64(len(newPacker.data)) != neededPackerCapacity {
+		for name, metric := range v.knownMetrics {
+			metric.repackUnseen(fieldsSeen[name], v.lastPacker, newPacker)
+		}
+	}
+	if uint64(len(newPacker.data)) != neededPackerCapacity {
+		// We panic here because this represents an internal logic error,
+		// not something the user did wrong.
+		panic(fmt.Sprintf("did not pack the expected number of numbers in numberPacker: packed %d, expected %d; this indicates a logic error in verifyIncrement", len(newPacker.data), neededPackerCapacity))
 	}
 	v.lastPacker = newPacker
 	return nil
