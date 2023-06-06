@@ -455,10 +455,11 @@ func (q *queueReceiver) Release(ctx context.Context) {
 type streamQueueReceiver struct {
 	queueReceiver
 
-	mu      streamQueueReceiverMutex `state:"nosave"`
-	buffer  []byte
-	control ControlMessages
-	addr    Address
+	mu           streamQueueReceiverMutex `state:"nosave"`
+	buffer       []byte
+	control      ControlMessages
+	addr         Address
+	releaseQueue []RightsControlMessage
 }
 
 func vecCopy(data [][]byte, buf []byte) (int64, [][]byte, []byte) {
@@ -504,15 +505,6 @@ func (q *streamQueueReceiver) RecvMaxQueueSize() int64 {
 
 // Recv implements Receiver.Recv.
 func (q *streamQueueReceiver) Recv(ctx context.Context, data [][]byte, wantCreds bool, numRights int, peek bool) (int64, int64, ControlMessages, bool, Address, bool, *syserr.Error) {
-	// RightsControlMessages must be released without q.mu held. We do this in a
-	// defer to simplify control flow logic.
-	var rightsToRelease []RightsControlMessage
-	defer func() {
-		for _, rcm := range rightsToRelease {
-			rcm.Release(ctx)
-		}
-	}()
-
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
@@ -558,7 +550,7 @@ func (q *streamQueueReceiver) Recv(ctx context.Context, data [][]byte, wantCreds
 
 	var cmTruncated bool
 	if c.Rights != nil && numRights == 0 {
-		rightsToRelease = append(rightsToRelease, c.Rights)
+		q.addToReleaseQueue(c.Rights)
 		c.Rights = nil
 		cmTruncated = true
 	}
@@ -613,7 +605,7 @@ func (q *streamQueueReceiver) Recv(ctx context.Context, data [][]byte, wantCreds
 			// Consume rights.
 			if numRights == 0 {
 				cmTruncated = true
-				rightsToRelease = append(rightsToRelease, q.control.Rights)
+				q.addToReleaseQueue(q.control.Rights)
 			} else {
 				c.Rights = q.control.Rights
 				haveRights = true
@@ -628,6 +620,21 @@ func (q *streamQueueReceiver) Recv(ctx context.Context, data [][]byte, wantCreds
 func (q *streamQueueReceiver) Release(ctx context.Context) {
 	q.queueReceiver.Release(ctx)
 	q.control.Release(ctx)
+	for _, c := range q.releaseQueue {
+		c.Release(ctx)
+	}
+}
+
+// addToReleaseQueue adds to the queue of RightsControlMessages to be released on the
+// release of this streamQueueReceiver. We keep a queue of messages to be released to avoid
+// a circular lock ordering (see: b/281495751).
+//
+// Preconditions: q.mu must be held.
+func (q *streamQueueReceiver) addToReleaseQueue(msg RightsControlMessage) {
+	if q.releaseQueue == nil {
+		q.releaseQueue = make([]RightsControlMessage, 0, 16)
+	}
+	q.releaseQueue = append(q.releaseQueue, msg)
 }
 
 // A ConnectedEndpoint is an Endpoint that can be used to send Messages.
