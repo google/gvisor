@@ -239,7 +239,7 @@ func compareFragments(packets []stack.PacketBufferPtr, sourcePacket stack.Packet
 
 		// Store the reassembled payload as we parse each fragment. The payload
 		// includes the Transport header and everything after.
-		reassembledPayload.Append(fragment.TransportHeader().View())
+		reassembledPayload.Append(fragment.TransportHeader().ToView())
 		reassembledPayload.Append(fragment.Data().AsRange().ToView())
 	}
 

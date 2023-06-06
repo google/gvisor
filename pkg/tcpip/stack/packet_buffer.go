@@ -433,11 +433,9 @@ func (pk PacketBufferPtr) CloneToInbound() PacketBufferPtr {
 // The returned packet buffer will have the network and transport headers
 // set if the original packet buffer did.
 func (pk PacketBufferPtr) DeepCopyForForwarding(reservedHeaderBytes int) PacketBufferPtr {
-	payload := BufferSince(pk.NetworkHeader())
-	defer payload.Release()
 	newPk := NewPacketBuffer(PacketBufferOptions{
 		ReserveHeaderBytes: reservedHeaderBytes,
-		Payload:            payload.DeepClone(),
+		Payload:            BufferSince(pk.NetworkHeader()),
 		IsForwardedPacket:  true,
 	})
 
@@ -485,9 +483,8 @@ type PacketHeader struct {
 	typ headerType
 }
 
-// View returns an caller-owned copy of the underlying storage of h as a
-// *buffer.View.
-func (h PacketHeader) View() *buffer.View {
+// ToView returns an caller-owned copy of the underlying storage of h.
+func (h PacketHeader) ToView() *buffer.View {
 	view := h.pk.headerView(h.typ)
 	if view.Size() == 0 {
 		return nil
@@ -495,9 +492,9 @@ func (h PacketHeader) View() *buffer.View {
 	return view.Clone()
 }
 
-// Slice returns the underlying storage of h as a []byte. The returned slice
-// should not be modified if the underlying packet could be shared, cloned, or
-// borrowed.
+// Slice returns the PacketHeader-owned storage of h as a []byte. The slice is
+// guaranteed to be owned exclusively by h, so it's safe to modify the contents
+// directly.
 func (h PacketHeader) Slice() []byte {
 	view := h.pk.headerView(h.typ)
 	return view.AsSlice()
