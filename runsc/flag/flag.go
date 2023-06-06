@@ -36,6 +36,7 @@ var (
 	Float64     = flag.Float64
 	Int         = flag.Int
 	Int64       = flag.Int64
+	Lookup      = flag.Lookup
 	NewFlagSet  = flag.NewFlagSet
 	Parse       = flag.Parse
 	String      = flag.String
