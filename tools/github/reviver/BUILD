@@ -15,7 +15,7 @@ go_library(
     visibility = [
         "//tools/github:__subpackages__",
     ],
-    deps = ["@com_github_google_go_github_v42//github:go_default_library"],
+    deps = ["@com_github_google_go_github_v52//github:go_default_library"],
 )
 
 go_test(
