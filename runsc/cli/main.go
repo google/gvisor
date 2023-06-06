@@ -41,11 +41,12 @@ import (
 	"gvisor.dev/gvisor/runsc/version"
 )
 
-var (
-	// Although this flags is not part of the OCI spec, it is used by
-	// Docker, and thus should not be changed.
-	showVersion = flag.Bool("version", false, "show version and exit.")
+// versionFlagName is the name of a flag that triggers printing the version.
+// Although this flags is not part of the OCI spec, it is used by
+// Docker, and thus should not be removed.
+const versionFlagName = "version"
 
+var (
 	// These flags are unique to runsc, and are used to configure parts of the
 	// system that are not covered by the runtime spec.
 
@@ -114,11 +115,16 @@ func Main() {
 	// Register with the main command line.
 	config.RegisterFlags(flag.CommandLine)
 
+	// Register version flag if it is not already defined.
+	if flag.Lookup(versionFlagName) == nil {
+		flag.Bool(versionFlagName, false, "show version and exit.")
+	}
+
 	// All subcommands must be registered before flag parsing.
 	flag.Parse()
 
 	// Are we showing the version?
-	if *showVersion {
+	if flag.Get(flag.Lookup(versionFlagName).Value).(bool) {
 		// The format here is the same as runc.
 		fmt.Fprintf(os.Stdout, "runsc version %s\n", version.Version())
 		fmt.Fprintf(os.Stdout, "spec: %s\n", specutils.Version)

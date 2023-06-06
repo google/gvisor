@@ -52,7 +52,10 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool("log-packets", false, "enable network packet logging.")
 	flagSet.String("pcap-log", "", "location of PCAP log file.")
 	flagSet.String("debug-log-format", "text", "log format: text (default), json, or json-k8s.")
-	flagSet.Bool("alsologtostderr", false, "send log messages to stderr.")
+	// Only register -alsologtostderr flag if it is not already defined on this flagSet.
+	if flagSet.Lookup("alsologtostderr") == nil {
+		flagSet.Bool("alsologtostderr", false, "send log messages to stderr.")
+	}
 	flagSet.Bool("allow-flag-override", false, "allow OCI annotations (dev.gvisor.flag.<name>) to override flags for debugging.")
 	flagSet.String("traceback", "system", "golang runtime's traceback level")
 
