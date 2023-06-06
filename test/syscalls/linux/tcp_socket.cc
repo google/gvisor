@@ -14,8 +14,6 @@
 
 #include <fcntl.h>
 
-#include <cerrno>
-
 #ifdef __linux__
 #include <linux/filter.h>
 #include <sys/epoll.h>
@@ -102,31 +100,7 @@ PosixErrorOr<FileDescriptor> ReserveLocalPort(int family,
   return reserving;
 }
 
-// This is an adaptation of the following function:
-// https://cs.opensource.google/fuchsia/fuchsia/+/main:src/connectivity/network/tests/socket/util.cc;l=149;drc=5be41348ab659c2158210c56c9a99220fcde506a
 static void FillSocketBuffers(int sender, int receiver) {
-  const bool kIsFuchsia = GvisorPlatform() == Platform::kFuchsia;
-  {
-    // In Linux we prefer to get the smallest possible buffer size, but
-    // that causes an unnecessarily large amount of writes to fill the send and
-    // receive buffers on Fuchsia because of the zircon socket attached to both
-    // the sender and the receiver. Each zircon socket will artificially add
-    // 256KB (its depth) to the sender's and receiver's buffers.
-    //
-    // We'll arbitrarily select a larger size which will allow us to fill both
-    // zircon sockets faster.
-    //
-    // TODO(https://fxbug.dev/60337): We can use the minimum buffer size once
-    // zircon sockets are not artificially increasing the buffer sizes.
-    const int bufsize = kIsFuchsia ? 64 << 10 : 1;
-    ASSERT_THAT(
-        setsockopt(sender, SOL_SOCKET, SO_SNDBUF, &bufsize, sizeof(bufsize)),
-        SyscallSucceeds());
-    ASSERT_THAT(
-        setsockopt(receiver, SOL_SOCKET, SO_RCVBUF, &bufsize, sizeof(bufsize)),
-        SyscallSucceeds());
-  }
-
   // Set the FD to O_NONBLOCK.
   int opts;
   int orig_opts;
@@ -134,111 +108,36 @@ static void FillSocketBuffers(int sender, int receiver) {
   orig_opts = opts;
   opts |= O_NONBLOCK;
   ASSERT_THAT(fcntl(sender, F_SETFL, opts), SyscallSucceeds());
-  ASSERT_THAT(setsockopt(sender, IPPROTO_TCP, TCP_NODELAY, &kSockOptOn,
-                         sizeof(kSockOptOn)),
+
+  // Set TCP_NODELAY, which will cause linux to fill the receive buffer from the
+  // send buffer as quickly as possibly. This way we can fill up both buffers
+  // faster.
+  constexpr int tcp_nodelay_flag = 1;
+  ASSERT_THAT(setsockopt(sender, IPPROTO_TCP, TCP_NODELAY, &tcp_nodelay_flag,
+                         sizeof(tcp_nodelay_flag)),
               SyscallSucceeds());
 
-  int sndbuf_opt;
-  socklen_t sndbuf_optlen = sizeof(sndbuf_opt);
-  ASSERT_THAT(
-      getsockopt(sender, SOL_SOCKET, SO_SNDBUF, &sndbuf_opt, &sndbuf_optlen),
-      SyscallSucceeds());
-  ASSERT_EQ(sndbuf_optlen, sizeof(sndbuf_opt));
+  // Set a 256KB send/receive buffer.
+  int buf_sz = 1 << 18;
+  EXPECT_THAT(
+      setsockopt(receiver, SOL_SOCKET, SO_RCVBUF, &buf_sz, sizeof(buf_sz)),
+      SyscallSucceedsWithValue(0));
+  EXPECT_THAT(
+      setsockopt(sender, SOL_SOCKET, SO_SNDBUF, &buf_sz, sizeof(buf_sz)),
+      SyscallSucceedsWithValue(0));
 
-  int rcvbuf_opt;
-  socklen_t rcvbuf_optlen = sizeof(rcvbuf_opt);
-  ASSERT_THAT(
-      getsockopt(receiver, SOL_SOCKET, SO_RCVBUF, &rcvbuf_opt, &rcvbuf_optlen),
-      SyscallSucceeds());
-  ASSERT_EQ(rcvbuf_optlen, sizeof(rcvbuf_opt));
+  // Create a large buffer that will be used for sending.
+  std::vector<char> buf(buf_sz << 2);
 
-  ssize_t total_bytes_written = 0;
-  if (!kIsFuchsia) {
-    // If the send buffer is smaller than the receive buffer, the code below
-    // will not work because the first write will not be enough to fill the
+  // Write until we receive an error.
+  while (RetryEINTR(send)(sender, buf.data(), buf.size(), 0) != -1) {
+    // Sleep to give linux a chance to move data from the send buffer to the
     // receive buffer.
-    ASSERT_GE(sndbuf_opt, rcvbuf_opt);
-    // Write enough bytes at once to fill the receive buffer.
-    {
-      const std::vector<uint8_t> buf(rcvbuf_opt);
-      const ssize_t bytes_written = write(sender, buf.data(), buf.size());
-      ASSERT_GE(bytes_written, 0u) << strerror(errno);
-      ASSERT_EQ(bytes_written, ssize_t(buf.size()));
-      total_bytes_written += bytes_written;
-    }
-
-    // Wait for the bytes to be available; afterwards the receive buffer will be
-    // full.
-    while (true) {
-      int available_bytes;
-      ASSERT_THAT(ioctl(receiver, FIONREAD, &available_bytes),
-                  SyscallSucceeds());
-      ASSERT_LE(available_bytes, rcvbuf_opt);
-      if (available_bytes == rcvbuf_opt) {
-        break;
-      }
-    }
-
-    // Finally the send buffer can be filled with certainty.
-    {
-      const std::vector<uint8_t> buf(sndbuf_opt);
-      const ssize_t bytes_written = write(sender, buf.data(), buf.size());
-      // When loopback is slow, it is possible that:
-      // 1. we observed the receiver buffer to be full in the busy loop above,
-      // 2. but the ACK from the receiver has yet arrived at the sender,
-      // 3. now we have full buffers at both the receiver and the sender.
-      // because of the previous possible trace of events, we should be more
-      // permissive on the error reported by the write call, and wait if EAGAIN
-      // is reported.
-      if (bytes_written == -1) {
-        ASSERT_EQ(errno, EAGAIN) << strerror(errno);
-        pollfd poll_fd = {sender, POLLOUT, 0};
-        ASSERT_THAT(RetryEINTR(poll)(&poll_fd, 1, 1000),
-                    SyscallSucceedsWithValue(0));
-      } else {
-        ASSERT_EQ(bytes_written, ssize_t(buf.size()));
-      }
-    }
-  } else {
-    // On Fuchsia, it may take a while for a written packet to land in the
-    // netstack's send buffer because of the asynchronous copy from the zircon
-    // socket to the send buffer. So we use a small timeout which was
-    // empirically tested to ensure no flakiness is introduced.
-    timeval original_tv;
-    socklen_t tv_len = sizeof(original_tv);
-    ASSERT_THAT(
-        getsockopt(sender, SOL_SOCKET, SO_SNDTIMEO, &original_tv, &tv_len),
-        SyscallSucceeds());
-    ASSERT_EQ(tv_len, sizeof(original_tv));
-    const timeval tv = {
-        .tv_sec = 0,
-        .tv_usec = 1 << 14,  // ~16ms
-    };
-    ASSERT_THAT(setsockopt(sender, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv)),
-                SyscallSucceeds());
-
-    const std::vector<uint8_t> buf(sndbuf_opt + rcvbuf_opt);
-    // Clocks sometimes jump in infrastructure, which can cause the timeout set
-    // above to expire prematurely. Fortunately such jumps are rarely seen in
-    // quick succession - if we repeatedly reach the blocking condition we can
-    // be reasonably sure that the intended amount of time truly did elapse.
-    // Care is taken to reset the counter if data is written, as we are looking
-    // for a streak of blocking condition observances.
-    for (int i = 0; i < 1 << 6; i++) {
-      ssize_t size;
-      while ((size = write(sender, buf.data(), buf.size())) > 0) {
-        total_bytes_written += size;
-
-        i = 0;
-      }
-      ASSERT_EQ(size, -1);
-      EXPECT_EQ(errno, EAGAIN) << strerror(errno);
-    }
-    ASSERT_GT(total_bytes_written, 0);
-    ASSERT_THAT(
-        setsockopt(sender, SOL_SOCKET, SO_SNDTIMEO, &original_tv, tv_len),
-        SyscallSucceeds());
+    absl::SleepFor(absl::Milliseconds(100));  // 100ms.
   }
+  // The last error should have been EWOULDBLOCK.
+  ASSERT_EQ(errno, EWOULDBLOCK);
+
   // Restore the fcntl opts
   ASSERT_THAT(fcntl(sender, F_SETFL, orig_opts), SyscallSucceeds());
 }
@@ -1035,7 +934,7 @@ TEST_P(TcpSocketTest, SendUnblocksOnSendBufferIncrease) {
          -1) {
     // Sleep to give linux a chance to move data from the send buffer to the
     // receive buffer.
-    usleep(10000);  // 10ms.
+    absl::SleepFor(absl::Milliseconds(10));  // 10ms.
   }
 
   // The last error should have been EWOULDBLOCK.
@@ -2729,7 +2628,7 @@ TEST_P(SimpleTcpSocketTest, EpollListeningSocket) {
   // Start a thread that waits a bit, then connects to the listening socket.
   ScopedThread save_and_connect_thread([&]() {
     // Give epoll a chance to start blocking.
-    sleep(1);
+    absl::SleepFor(absl::Seconds(1));
 
     // Save while epoll is blocking.
     MaybeSave();
