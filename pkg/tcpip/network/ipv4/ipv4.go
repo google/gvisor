@@ -22,7 +22,6 @@ import (
 	"time"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
-	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -727,7 +726,7 @@ func (e *endpoint) forwardPacketWithRoute(route *stack.Route, pkt stack.PacketBu
 
 // forwardUnicastPacket attempts to forward a packet to its final destination.
 func (e *endpoint) forwardUnicastPacket(pkt stack.PacketBufferPtr) ip.ForwardingError {
-	hView := pkt.NetworkHeader().View()
+	hView := pkt.NetworkHeader().ToView()
 	defer hView.Release()
 	h := header.IPv4(hView.AsSlice())
 
@@ -814,13 +813,11 @@ func (e *endpoint) HandlePacket(pkt stack.PacketBufferPtr) {
 		return
 	}
 
-	hView, ok := e.protocol.parseAndValidate(pkt)
-	if !ok {
+	if ok := e.protocol.parseAndValidate(pkt); !ok {
 		stats.MalformedPacketsReceived.Increment()
 		return
 	}
-	h := header.IPv4(hView.AsSlice())
-	defer hView.Release()
+	h := header.IPv4(pkt.NetworkHeader().Slice())
 
 	if !e.nic.IsLoopback() {
 		if !e.protocol.options.AllowExternalLoopbackTraffic {
@@ -836,7 +833,7 @@ func (e *endpoint) HandlePacket(pkt stack.PacketBufferPtr) {
 		}
 
 		if e.protocol.stack.HandleLocal() {
-			addressEndpoint := e.AcquireAssignedAddress(header.IPv4(pkt.NetworkHeader().Slice()).SourceAddress(), e.nic.Promiscuous(), stack.CanBePrimaryEndpoint)
+			addressEndpoint := e.AcquireAssignedAddress(h.SourceAddress(), e.nic.Promiscuous(), stack.CanBePrimaryEndpoint)
 			if addressEndpoint != nil {
 				addressEndpoint.DecRef()
 
@@ -857,7 +854,9 @@ func (e *endpoint) HandlePacket(pkt stack.PacketBufferPtr) {
 		}
 	}
 
-	e.handleValidatedPacket(h, pkt, e.nic.Name() /* inNICName */)
+	hv := pkt.NetworkHeader().ToView()
+	defer hv.Release()
+	e.handleValidatedPacket(hv.AsSlice(), pkt, e.nic.Name() /* inNICName */)
 }
 
 // handleLocalPacket is like HandlePacket except it does not perform the
@@ -871,15 +870,14 @@ func (e *endpoint) handleLocalPacket(pkt stack.PacketBufferPtr, canSkipRXChecksu
 	defer pkt.DecRef()
 	pkt.RXChecksumValidated = canSkipRXChecksum
 
-	hView, ok := e.protocol.parseAndValidate(pkt)
-	if !ok {
+	if ok := e.protocol.parseAndValidate(pkt); !ok {
 		stats.MalformedPacketsReceived.Increment()
 		return
 	}
-	h := header.IPv4(hView.AsSlice())
-	defer hView.Release()
 
-	e.handleValidatedPacket(h, pkt, e.nic.Name() /* inNICName */)
+	h := pkt.NetworkHeader().ToView()
+	defer h.Release()
+	e.handleValidatedPacket(h.AsSlice(), pkt, e.nic.Name() /* inNICName */)
 }
 
 func validateAddressesForForwarding(h header.IPv4) ip.ForwardingError {
@@ -1758,31 +1756,29 @@ func (p *protocol) isSubnetLocalBroadcastAddress(addr tcpip.Address) bool {
 }
 
 // parseAndValidate parses the packet (including its transport layer header) and
-// returns the parsed IP header.
-//
-// Returns true if the IP header was successfully parsed.
-func (p *protocol) parseAndValidate(pkt stack.PacketBufferPtr) (*buffer.View, bool) {
+// returns true if the IP header was successfully parsed.
+func (p *protocol) parseAndValidate(pkt stack.PacketBufferPtr) bool {
 	transProtoNum, hasTransportHdr, ok := p.Parse(pkt)
 	if !ok {
-		return nil, false
+		return false
 	}
 
 	h := header.IPv4(pkt.NetworkHeader().Slice())
 	// Do not include the link header's size when calculating the size of the IP
 	// packet.
 	if !h.IsValid(pkt.Size() - len(pkt.LinkHeader().Slice())) {
-		return nil, false
+		return false
 	}
 
 	if !pkt.RXChecksumValidated && !h.IsChecksumValid() {
-		return nil, false
+		return false
 	}
 
 	if hasTransportHdr {
 		p.parseTransport(pkt, transProtoNum)
 	}
 
-	return pkt.NetworkHeader().View(), true
+	return true
 }
 
 func (p *protocol) parseTransport(pkt stack.PacketBufferPtr, transProtoNum tcpip.TransportProtocolNumber) {
