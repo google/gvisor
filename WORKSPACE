@@ -1594,6 +1594,17 @@ go_repository(
 )
 
 go_repository(
+  name = "com_github_cloudflare_circl",
+  importpath = "github.com/cloudflare/circl",
+  sum = "h1:fE/Qz0QdIGqeWfnwq0RE0R7MI51s0M2E4Ga9kq5AEMs=",
+  patch_args = ["-p1"],
+  patches = [
+    "//tools:com_github_cloudflare_circl.patch",
+  ],
+  version = "v1.3.3",
+)
+
+go_repository(
     name = "com_github_cockroachdb_datadriven",
     importpath = "github.com/cockroachdb/datadriven",
     sum = "h1:OaNxuTZr7kxeODyLWsRMC+OD03aFUH+mW6r2d+MWa5Y=",
@@ -1696,6 +1707,13 @@ go_repository(
     importpath = "github.com/google/go-github/v42",
     sum = "h1:YNT0FwjPrEysRkLIiKuEfSvBPCGKphW5aS5PxwaoLec=",
     version = "v42.0.0",
+)
+
+go_repository(
+    name = "com_github_google_go_github_v52",
+    importpath = "github.com/google/go-github/v52",
+    sum = "h1:uyGWOY+jMQ8GVGSX8dkSwCzlehU3WfdxQ7GweO/JP7M=",
+    version = "v52.0.0",
 )
 
 go_repository(
@@ -2123,6 +2141,13 @@ go_repository(
     importpath = "github.com/posener/complete",
     sum = "h1:ccV59UEOTzVDnDUEFdT95ZzHVZ+5+158q8+SJb2QV5w=",
     version = "v1.1.1",
+)
+
+go_repository(
+  name = "com_github_protonmail_go_crypto",
+  importpath = "github.com/ProtonMail/go-crypto",
+  sum = "h1:wPbRQzjjwFc0ih8puEVAOFGELsn1zoIIYdxvML7mDxA=",
+  version = "v0.0.0-20230217124315-7d5c6f04bbb8",
 )
 
 go_repository(
