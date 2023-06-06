@@ -767,8 +767,8 @@ func (p *protocol) returnError(reason icmpReason, pkt stack.PacketBufferPtr, del
 	// required. This is now the payload of the new ICMP packet and no longer
 	// considered a packet in its own right.
 
-	payload := buffer.MakeWithView(pkt.NetworkHeader().View())
-	payload.Append(pkt.TransportHeader().View())
+	payload := buffer.MakeWithView(pkt.NetworkHeader().ToView())
+	payload.Append(pkt.TransportHeader().ToView())
 	if dataCap := payloadLen - int(payload.Size()); dataCap > 0 {
 		buf := pkt.Data().ToBuffer()
 		buf.Truncate(int64(dataCap))
