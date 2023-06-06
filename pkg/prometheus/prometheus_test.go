@@ -750,6 +750,188 @@ func TestVerifier(t *testing.T) {
 			),
 		},
 		{
+			Name:         "distribution sum-of-squared-deviations must be a floating-point number",
+			Registration: newMetricRegistration(fooDist),
+			WantFail: newSnapshotAt(epsilon(-1)).Add(
+				&Data{
+					Metric: fooDist.metric(),
+					Labels: fooDist.labels(),
+					HistogramValue: &Histogram{
+						Buckets: fooDist.dist(1, 2, 3).HistogramValue.Buckets,
+						Min:     fooDist.dist(1, 2, 3).HistogramValue.Min,
+						Max:     fooDist.dist(1, 2, 3).HistogramValue.Max,
+						SumOfSquaredDeviations: Number{
+							Int: int64(fooDist.dist(1, 2, 3).HistogramValue.SumOfSquaredDeviations.Float),
+						},
+					},
+				},
+			),
+		},
+		{
+			Name:         "distribution cannot have sum-of-squared-deviations regress",
+			Registration: newMetricRegistration(fooDist),
+			WantSuccess: []*Snapshot{
+				newSnapshotAt(epsilon(-2)).Add(
+					&Data{
+						Metric: fooDist.metric(),
+						Labels: fooDist.labels(),
+						HistogramValue: &Histogram{
+							Buckets:                fooDist.dist(1, 2, 3).HistogramValue.Buckets,
+							Min:                    fooDist.dist(1, 2, 3).HistogramValue.Min,
+							Max:                    fooDist.dist(1, 2, 3).HistogramValue.Max,
+							SumOfSquaredDeviations: fooDist.dist(1, 2, 3).HistogramValue.SumOfSquaredDeviations,
+						},
+					},
+				),
+			},
+			WantFail: newSnapshotAt(epsilon(-1)).Add(
+				&Data{
+					Metric: fooDist.metric(),
+					Labels: fooDist.labels(),
+					HistogramValue: &Histogram{
+						Buckets: fooDist.dist(1, 2, 3).HistogramValue.Buckets,
+						Min:     fooDist.dist(1, 2, 3).HistogramValue.Min,
+						Max:     fooDist.dist(1, 2, 3).HistogramValue.Max,
+						SumOfSquaredDeviations: Number{
+							Float: fooDist.dist(1, 2, 3).HistogramValue.SumOfSquaredDeviations.Float - 1.0,
+						},
+					},
+				},
+			),
+		},
+		{
+			Name:         "distribution cannot have minimum increase",
+			Registration: newMetricRegistration(fooDist),
+			WantSuccess: []*Snapshot{
+				newSnapshotAt(epsilon(-2)).Add(
+					&Data{
+						Metric: fooDist.metric(),
+						Labels: fooDist.labels(),
+						HistogramValue: &Histogram{
+							Buckets:                fooDist.dist(1, 2, 3).HistogramValue.Buckets,
+							Min:                    fooDist.dist(1, 2, 3).HistogramValue.Min,
+							Max:                    fooDist.dist(1, 2, 3).HistogramValue.Max,
+							SumOfSquaredDeviations: fooDist.dist(1, 2, 3).HistogramValue.SumOfSquaredDeviations,
+						},
+					},
+				),
+			},
+			WantFail: newSnapshotAt(epsilon(-1)).Add(
+				&Data{
+					Metric: fooDist.metric(),
+					Labels: fooDist.labels(),
+					HistogramValue: &Histogram{
+						Buckets: fooDist.dist(1, 2, 3).HistogramValue.Buckets,
+						Min: Number{
+							Int: fooDist.dist(1, 2, 3).HistogramValue.Min.Int + 1,
+						},
+						Max:                    fooDist.dist(1, 2, 3).HistogramValue.Max,
+						SumOfSquaredDeviations: fooDist.dist(1, 2, 3).HistogramValue.SumOfSquaredDeviations,
+					},
+				},
+			),
+		},
+		{
+			Name:         "distribution cannot have minimum value change type",
+			Registration: newMetricRegistration(fooDist),
+			WantSuccess: []*Snapshot{
+				newSnapshotAt(epsilon(-2)).Add(
+					&Data{
+						Metric: fooDist.metric(),
+						Labels: fooDist.labels(),
+						HistogramValue: &Histogram{
+							Buckets: fooDist.dist(1, 2, 3).HistogramValue.Buckets,
+							Min: Number{
+								Int: fooDist.dist(1, 2, 3).HistogramValue.Min.Int,
+							},
+							Max:                    fooDist.dist(1, 2, 3).HistogramValue.Max,
+							SumOfSquaredDeviations: fooDist.dist(1, 2, 3).HistogramValue.SumOfSquaredDeviations,
+						},
+					},
+				),
+			},
+			WantFail: newSnapshotAt(epsilon(-1)).Add(
+				&Data{
+					Metric: fooDist.metric(),
+					Labels: fooDist.labels(),
+					HistogramValue: &Histogram{
+						Buckets: fooDist.dist(1, 2, 3).HistogramValue.Buckets,
+						Min: Number{
+							Float: float64(fooDist.dist(1, 2, 3).HistogramValue.Min.Int),
+						},
+						Max:                    fooDist.dist(1, 2, 3).HistogramValue.Max,
+						SumOfSquaredDeviations: fooDist.dist(1, 2, 3).HistogramValue.SumOfSquaredDeviations,
+					},
+				},
+			),
+		},
+		{
+			Name:         "distribution cannot have maximum decrease",
+			Registration: newMetricRegistration(fooDist),
+			WantSuccess: []*Snapshot{
+				newSnapshotAt(epsilon(-2)).Add(
+					&Data{
+						Metric: fooDist.metric(),
+						Labels: fooDist.labels(),
+						HistogramValue: &Histogram{
+							Buckets:                fooDist.dist(1, 2, 3).HistogramValue.Buckets,
+							Min:                    fooDist.dist(1, 2, 3).HistogramValue.Min,
+							Max:                    fooDist.dist(1, 2, 3).HistogramValue.Max,
+							SumOfSquaredDeviations: fooDist.dist(1, 2, 3).HistogramValue.SumOfSquaredDeviations,
+						},
+					},
+				),
+			},
+			WantFail: newSnapshotAt(epsilon(-1)).Add(
+				&Data{
+					Metric: fooDist.metric(),
+					Labels: fooDist.labels(),
+					HistogramValue: &Histogram{
+						Buckets: fooDist.dist(1, 2, 3).HistogramValue.Buckets,
+						Min:     fooDist.dist(1, 2, 3).HistogramValue.Min,
+						Max: Number{
+							Int: fooDist.dist(1, 2, 3).HistogramValue.Max.Int - 1,
+						},
+						SumOfSquaredDeviations: fooDist.dist(1, 2, 3).HistogramValue.SumOfSquaredDeviations,
+					},
+				},
+			),
+		},
+		{
+			Name:         "distribution cannot have maximum value change type",
+			Registration: newMetricRegistration(fooDist),
+			WantSuccess: []*Snapshot{
+				newSnapshotAt(epsilon(-2)).Add(
+					&Data{
+						Metric: fooDist.metric(),
+						Labels: fooDist.labels(),
+						HistogramValue: &Histogram{
+							Buckets: fooDist.dist(1, 2, 3).HistogramValue.Buckets,
+							Min:     fooDist.dist(1, 2, 3).HistogramValue.Min,
+							Max: Number{
+								Int: fooDist.dist(1, 2, 3).HistogramValue.Max.Int,
+							},
+							SumOfSquaredDeviations: fooDist.dist(1, 2, 3).HistogramValue.SumOfSquaredDeviations,
+						},
+					},
+				),
+			},
+			WantFail: newSnapshotAt(epsilon(-1)).Add(
+				&Data{
+					Metric: fooDist.metric(),
+					Labels: fooDist.labels(),
+					HistogramValue: &Histogram{
+						Buckets: fooDist.dist(1, 2, 3).HistogramValue.Buckets,
+						Min:     fooDist.dist(1, 2, 3).HistogramValue.Min,
+						Max: Number{
+							Float: float64(fooDist.dist(1, 2, 3).HistogramValue.Max.Int),
+						},
+						SumOfSquaredDeviations: fooDist.dist(1, 2, 3).HistogramValue.SumOfSquaredDeviations,
+					},
+				},
+			),
+		},
+		{
 			Name:         "distribution with zero samples",
 			Registration: newMetricRegistration(fooDist),
 			WantSuccess: []*Snapshot{newSnapshotAt(epsilon(-1)).Add(
