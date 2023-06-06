@@ -203,8 +203,7 @@ TEST_P(RawPacketTest, Receive) {
   EXPECT_EQ(strncmp(payload, kMessage, sizeof(kMessage)), 0);
 }
 
-// Send via a packet socket.
-TEST_P(RawPacketTest, Send) {
+void ValidateSend(int sendfd, in_addr_t src_addr, int dst_ifindex) {
   // TODO(b/267210840): Fix this test for hostinet. Something is wrong with
   // poll().
   SKIP_IF(IsRunningWithHostinet());
@@ -225,7 +224,7 @@ TEST_P(RawPacketTest, Send) {
   struct sockaddr_ll dest = {};
   dest.sll_family = AF_PACKET;
   dest.sll_halen = ETH_ALEN;
-  dest.sll_ifindex = GetLoopbackIndex();
+  dest.sll_ifindex = dst_ifindex;
   dest.sll_protocol = htons(ETH_P_IP);
   // We're sending to the loopback device, so the address is all 0s.
   memset(dest.sll_addr, 0x00, ETH_ALEN);
@@ -251,7 +250,7 @@ TEST_P(RawPacketTest, Send) {
   iphdr.ttl = 64;
   iphdr.protocol = IPPROTO_UDP;
   iphdr.daddr = htonl(INADDR_LOOPBACK);
-  iphdr.saddr = htonl(INADDR_LOOPBACK);
+  iphdr.saddr = htonl(src_addr);
   iphdr.check = IPChecksum(iphdr);
 
   // Set up the UDP header.
@@ -271,7 +270,7 @@ TEST_P(RawPacketTest, Send) {
          sizeof(kMessage));
 
   // Send it.
-  ASSERT_THAT(sendto(s_, send_buf, sizeof(send_buf), 0,
+  ASSERT_THAT(sendto(sendfd, send_buf, sizeof(send_buf), 0,
                      reinterpret_cast<struct sockaddr*>(&dest), sizeof(dest)),
               SyscallSucceedsWithValue(sizeof(send_buf)));
 
@@ -280,13 +279,13 @@ TEST_P(RawPacketTest, Send) {
   pfd.fd = udp_sock.get();
   pfd.events = POLLIN;
   ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, 5000), SyscallSucceedsWithValue(1));
-  pfd.fd = s_;
+  pfd.fd = sendfd;
   pfd.events = POLLIN;
   ASSERT_THAT(RetryEINTR(poll)(&pfd, 1, 5000), SyscallSucceedsWithValue(1));
 
   // Receive on the packet socket.
   char recv_buf[sizeof(send_buf)];
-  ASSERT_THAT(recv(s_, recv_buf, sizeof(recv_buf), 0),
+  ASSERT_THAT(recv(sendfd, recv_buf, sizeof(recv_buf), 0),
               SyscallSucceedsWithValue(sizeof(recv_buf)));
   ASSERT_EQ(memcmp(recv_buf, send_buf, sizeof(send_buf)), 0);
 
@@ -300,7 +299,17 @@ TEST_P(RawPacketTest, Send) {
   EXPECT_EQ(strncmp(recv_buf, kMessage, sizeof(kMessage)), 0);
   EXPECT_EQ(src.sin_family, AF_INET);
   EXPECT_EQ(src.sin_port, kPort);
-  EXPECT_EQ(src.sin_addr.s_addr, htonl(INADDR_LOOPBACK));
+  EXPECT_EQ(src.sin_addr.s_addr, htonl(src_addr));
+}
+
+// Send via a packet socket.
+TEST_P(RawPacketTest, SendFromLoopback) {
+  ASSERT_NO_FATAL_FAILURE(
+      ValidateSend(s_, INADDR_LOOPBACK, GetLoopbackIndex()));
+}
+
+TEST_P(RawPacketTest, SendFromUnspec) {
+  ASSERT_NO_FATAL_FAILURE(ValidateSend(s_, INADDR_ANY, GetLoopbackIndex()));
 }
 
 // Check that setting SO_RCVBUF below min is clamped to the minimum
