@@ -30,28 +30,6 @@ func Put(b []byte, xsum uint16) {
 	binary.BigEndian.PutUint16(b, xsum)
 }
 
-func calculateChecksum(buf []byte, odd bool, initial uint32) (uint16, bool) {
-	v := initial
-
-	if odd {
-		v += uint32(buf[0])
-		buf = buf[1:]
-	}
-
-	l := len(buf)
-	odd = l&1 != 0
-	if odd {
-		l--
-		v += uint32(buf[l]) << 8
-	}
-
-	for i := 0; i < l; i += 2 {
-		v += (uint32(buf[i]) << 8) + uint32(buf[i+1])
-	}
-
-	return Combine(uint16(v), uint16(v>>16)), odd
-}
-
 func unrolledCalculateChecksum(buf []byte, odd bool, initial uint32) (uint16, bool) {
 	v := initial
 
@@ -165,17 +143,6 @@ func unrolledCalculateChecksum(buf []byte, odd bool, initial uint32) (uint16, bo
 	}
 
 	return Combine(uint16(v), uint16(v>>16)), odd
-}
-
-// Old calculates the checksum (as defined in RFC 1071) of the bytes in
-// the given byte array. This function uses a non-optimized implementation. Its
-// only retained for reference and to use as a benchmark/test. Most code should
-// use the header.Checksum function.
-//
-// The initial checksum must have been computed on an even number of bytes.
-func Old(buf []byte, initial uint16) uint16 {
-	s, _ := calculateChecksum(buf, false, uint32(initial))
-	return s
 }
 
 // Checksum calculates the checksum (as defined in RFC 1071) of the bytes in the
