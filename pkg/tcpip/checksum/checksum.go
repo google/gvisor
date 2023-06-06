@@ -30,8 +30,8 @@ func Put(b []byte, xsum uint16) {
 	binary.BigEndian.PutUint16(b, xsum)
 }
 
-func unrolledCalculateChecksum(buf []byte, odd bool, initial uint32) (uint16, bool) {
-	v := initial
+func unrolledCalculateChecksum(buf []byte, odd bool, initial uint16) (uint16, bool) {
+	v := uint32(initial)
 
 	if odd {
 		v += uint32(buf[0])
@@ -151,7 +151,7 @@ func unrolledCalculateChecksum(buf []byte, odd bool, initial uint32) (uint16, bo
 //
 // The initial checksum must have been computed on an even number of bytes.
 func Checksum(buf []byte, initial uint16) uint16 {
-	s, _ := unrolledCalculateChecksum(buf, false, uint32(initial))
+	s, _ := unrolledCalculateChecksum(buf, false, initial)
 	return s
 }
 
@@ -164,7 +164,7 @@ type Checksumer struct {
 // Add adds b to checksum.
 func (c *Checksumer) Add(b []byte) {
 	if len(b) > 0 {
-		c.sum, c.odd = unrolledCalculateChecksum(b, c.odd, uint32(c.sum))
+		c.sum, c.odd = unrolledCalculateChecksum(b, c.odd, c.sum)
 	}
 }
 
