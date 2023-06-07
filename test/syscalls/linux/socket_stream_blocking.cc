@@ -39,6 +39,13 @@ TEST_P(BlockingStreamSocketPairTest, BlockPartialWriteClosed) {
 
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
+  // Set the send buffer size which will disable auto tuning and will block the
+  // partial write while sending the data more than the send buffer size.
+  constexpr int kSndBufSz = INT_MAX;
+  ASSERT_THAT(setsockopt(sockets->first_fd(), SOL_SOCKET, SO_SNDBUF, &kSndBufSz,
+                         sizeof(kSndBufSz)),
+              SyscallSucceeds());
+
   int buffer_size;
   socklen_t length = sizeof(buffer_size);
   ASSERT_THAT(getsockopt(sockets->first_fd(), SOL_SOCKET, SO_SNDBUF,
