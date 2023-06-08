@@ -21,6 +21,7 @@ go_library(
         "//pkg/cpuid",
         "//pkg/errors/linuxerr",
         "//pkg/hostarch",
+        "//pkg/safecopy",
         "//pkg/sync",
         "@org_golang_x_sys//unix:go_default_library",
     ],

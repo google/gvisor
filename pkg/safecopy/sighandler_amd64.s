@@ -110,6 +110,14 @@ not_casuint32:
 	JMP handle_fault
 
 not_loaduint32:
+	CMPQ CX, ·checkXstateBegin(SB)
+	JB not_checkXstate
+	CMPQ CX, ·checkXstateEnd(SB)
+	JAE not_checkXstate
+
+	LEAQ handleCheckXstateFault(SB), CX
+	JMP handle_fault
+not_checkXstate:
 original_handler:
 	// Jump to the previous signal handler, which is likely the golang one.
 	XORQ CX, CX
