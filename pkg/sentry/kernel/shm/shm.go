@@ -205,6 +205,10 @@ func (r *Registry) newShmLocked(ctx context.Context, pid int32, key ipc.Key, cre
 	if mfp == nil {
 		panic(fmt.Sprintf("context.Context %T lacks non-nil value for key %T", ctx, pgalloc.CtxMemoryFileProvider))
 	}
+	devID, ok := deviceIDFromContext(ctx)
+	if !ok {
+		panic(fmt.Sprintf("context.Context %T lacks value for key %T", ctx, CtxDeviceID))
+	}
 
 	effectiveSize := uint64(hostarch.Addr(size).MustRoundUp())
 	fr, err := mfp.MemoryFile().Allocate(effectiveSize, pgalloc.AllocOpts{Kind: usage.Anonymous})
@@ -215,6 +219,7 @@ func (r *Registry) newShmLocked(ctx context.Context, pid int32, key ipc.Key, cre
 	shm := &Shm{
 		mfp:           mfp,
 		registry:      r,
+		devID:         devID,
 		size:          size,
 		effectiveSize: effectiveSize,
 		obj:           ipc.NewObject(r.reg.UserNS, ipc.Key(key), creator, creator, mode),
@@ -331,6 +336,9 @@ type Shm struct {
 	// registry points to the shm registry containing this segment. Immutable.
 	registry *Registry
 
+	// devID is the segment's device ID. Immutable.
+	devID uint32
+
 	// size is the requested size of the segment at creation, in
 	// bytes. Immutable.
 	size uint64
@@ -413,7 +421,7 @@ func (s *Shm) MappedName(ctx context.Context) string {
 
 // DeviceID implements memmap.MappingIdentity.DeviceID.
 func (s *Shm) DeviceID() uint64 {
-	return shmDevice.DeviceID()
+	return uint64(s.devID)
 }
 
 // InodeID implements memmap.MappingIdentity.InodeID.

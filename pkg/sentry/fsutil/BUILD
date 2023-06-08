@@ -97,7 +97,6 @@ go_library(
         "//pkg/log",
         "//pkg/safemem",
         "//pkg/sentry/arch",
-        "//pkg/sentry/device",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/memmap",
         "//pkg/sentry/pgalloc",

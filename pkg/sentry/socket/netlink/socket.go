@@ -27,7 +27,6 @@ import (
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/device"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
@@ -56,9 +55,6 @@ const (
 )
 
 var errNoFilter = syserr.New("no filter attached", errno.ENOENT)
-
-// netlinkSocketDevice is the netlink socket virtual device.
-var netlinkSocketDevice = device.NewAnonDevice()
 
 // Socket is the base socket type for netlink sockets.
 //

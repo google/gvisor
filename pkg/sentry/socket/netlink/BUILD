@@ -23,7 +23,6 @@ go_library(
         "//pkg/marshal",
         "//pkg/marshal/primitive",
         "//pkg/sentry/arch",
-        "//pkg/sentry/device",
         "//pkg/sentry/fsimpl/sockfs",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",

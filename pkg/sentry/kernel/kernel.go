@@ -251,9 +251,6 @@ type Kernel struct {
 	// by extMu.
 	nextSocketRecord uint64
 
-	// deviceRegistry is used to save/restore device.SimpleDevices.
-	deviceRegistry struct{} `state:".(*device.Registry)"`
-
 	// unimplementedSyscallEmitterOnce is used in the initialization of
 	// unimplementedSyscallEmitter.
 	unimplementedSyscallEmitterOnce sync.Once `state:"nosave"`
@@ -288,6 +285,15 @@ type Kernel struct {
 	// 2. Socket fds imported from the host (Kernel.hostMount is used for these)
 	// 3. Socket files created by binding Unix sockets to a file path
 	socketMount *vfs.Mount
+
+	// sysVShmDevID is the device number used by SysV shm segments. In Linux,
+	// SysV shm uses shmem_file_setup() and thus uses shm_mnt's device number.
+	// In gVisor, the shm implementation does not use shmMount, extracting
+	// shmMount's device number is inconvenient, applications accept a
+	// different device number in practice, and using a distinct device number
+	// avoids the possibility of inode number collisions due to the hack
+	// described in shm.Shm.InodeID().
+	sysVShmDevID uint32
 
 	// If set to true, report address space activation waits as if the task is in
 	// external wait so that the watchdog doesn't report the task stuck.
@@ -447,6 +453,12 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	}
 	defer socketFilesystem.DecRef(ctx)
 	k.socketMount = k.vfs.NewDisconnectedMount(socketFilesystem, nil, &vfs.MountOptions{})
+
+	sysVShmDevMinor, err := k.vfs.GetAnonBlockDevMinor()
+	if err != nil {
+		return fmt.Errorf("failed to get device number for SysV shm: %v", err)
+	}
+	k.sysVShmDevID = linux.MakeDeviceID(linux.UNNAMED_MAJOR, sysVShmDevMinor)
 
 	k.sockets = make(map[*vfs.FileDescription]*SocketRecord)
 
