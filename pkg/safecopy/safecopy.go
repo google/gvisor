@@ -129,6 +129,7 @@ func initializeAddresses() {
 	compareAndSwapUint32End = FindEndAddress(compareAndSwapUint32Begin)
 	loadUint32Begin = addrOfLoadUint32()
 	loadUint32End = FindEndAddress(loadUint32Begin)
+	initializeArchAddresses()
 }
 
 func init() {
