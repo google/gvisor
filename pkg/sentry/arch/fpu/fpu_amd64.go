@@ -18,12 +18,14 @@
 package fpu
 
 import (
+	"fmt"
 	"io"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/safecopy"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -302,6 +304,11 @@ func (s *State) SetMXCSR(mxcsr uint32) {
 	hostarch.ByteOrder.PutUint32((*s)[mxcsrOffset:], mxcsr)
 }
 
+// GetMXCSR gets the MXCSR control/status register in the state.
+func (s *State) GetMXCSR() uint32 {
+	return hostarch.ByteOrder.Uint32((*s)[mxcsrOffset:])
+}
+
 // BytePointer returns a pointer to the first byte of the state.
 //
 //go:nosplit
@@ -339,25 +346,35 @@ func (s *State) AfterLoad() {
 	// FeatureSet. However, because we do not *prevent* them from using
 	// this state, we must verify here that there is no in-use state
 	// (according to XSTATE_BV) which we do not support.
-	if len(*s) < len(old) {
-		// What do we support?
-		supportedBV := fxsaveBV
-		if fs := cpuid.HostFeatureSet(); fs.UseXsave() {
-			supportedBV = fs.ValidXCR0Mask()
-		}
+	// What do we support?
+	supportedBV := fxsaveBV
+	if fs := cpuid.HostFeatureSet(); fs.UseXsave() {
+		supportedBV = fs.ValidXCR0Mask()
+	}
 
-		// What was in use?
-		savedBV := fxsaveBV
-		if len(old) >= xstateBVOffset+8 {
-			savedBV = hostarch.ByteOrder.Uint64(old[xstateBVOffset:])
-		}
+	// What was in use?
+	savedBV := fxsaveBV
+	if len(old) >= xstateBVOffset+8 {
+		savedBV = hostarch.ByteOrder.Uint64(old[xstateBVOffset:])
+	}
 
-		// Supported features must be a superset of saved features.
-		if savedBV&^supportedBV != 0 {
-			panic(ErrLoadingState{supportedFeatures: supportedBV, savedFeatures: savedBV})
-		}
+	// Supported features must be a superset of saved features.
+	if savedBV&^supportedBV != 0 {
+		panic(ErrLoadingState{supportedFeatures: supportedBV, savedFeatures: savedBV})
 	}
 
 	// Copy to the new, aligned location.
 	copy(*s, old)
+
+	mxcsrBefore := s.GetMXCSR()
+	sanitizeMXCSR(*s)
+	mxcsrAfter := s.GetMXCSR()
+	if mxcsrBefore != mxcsrAfter {
+		panic(fmt.Sprintf("incompatible mxcsr value: %x (%x)", mxcsrBefore, mxcsrAfter))
+	}
+	if fs := cpuid.HostFeatureSet(); fs.UseXsave() {
+		if err := safecopy.CheckXstate(s.BytePointer()); err != nil {
+			panic(fmt.Sprintf("incompatible state: %s (%#v)", err, *s))
+		}
+	}
 }
