@@ -283,11 +283,12 @@ func (d *dir) StateTypeName() string {
 
 func (d *dir) StateFields() []string {
 	return []string{
-		"InodeNoopRefCount",
 		"InodeAlwaysValid",
 		"InodeAttrs",
-		"InodeNotSymlink",
 		"InodeDirectoryNoNewChildren",
+		"InodeNoopRefCount",
+		"InodeNotAnonymous",
+		"InodeNotSymlink",
 		"InodeWatches",
 		"OrderedChildren",
 		"implStatFS",
@@ -302,34 +303,36 @@ func (d *dir) beforeSave() {}
 // +checklocksignore
 func (d *dir) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
-	stateSinkObject.Save(0, &d.InodeNoopRefCount)
-	stateSinkObject.Save(1, &d.InodeAlwaysValid)
-	stateSinkObject.Save(2, &d.InodeAttrs)
-	stateSinkObject.Save(3, &d.InodeNotSymlink)
-	stateSinkObject.Save(4, &d.InodeDirectoryNoNewChildren)
-	stateSinkObject.Save(5, &d.InodeWatches)
-	stateSinkObject.Save(6, &d.OrderedChildren)
-	stateSinkObject.Save(7, &d.implStatFS)
-	stateSinkObject.Save(8, &d.locks)
-	stateSinkObject.Save(9, &d.fs)
-	stateSinkObject.Save(10, &d.cgi)
+	stateSinkObject.Save(0, &d.InodeAlwaysValid)
+	stateSinkObject.Save(1, &d.InodeAttrs)
+	stateSinkObject.Save(2, &d.InodeDirectoryNoNewChildren)
+	stateSinkObject.Save(3, &d.InodeNoopRefCount)
+	stateSinkObject.Save(4, &d.InodeNotAnonymous)
+	stateSinkObject.Save(5, &d.InodeNotSymlink)
+	stateSinkObject.Save(6, &d.InodeWatches)
+	stateSinkObject.Save(7, &d.OrderedChildren)
+	stateSinkObject.Save(8, &d.implStatFS)
+	stateSinkObject.Save(9, &d.locks)
+	stateSinkObject.Save(10, &d.fs)
+	stateSinkObject.Save(11, &d.cgi)
 }
 
 func (d *dir) afterLoad() {}
 
 // +checklocksignore
 func (d *dir) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &d.InodeNoopRefCount)
-	stateSourceObject.Load(1, &d.InodeAlwaysValid)
-	stateSourceObject.Load(2, &d.InodeAttrs)
-	stateSourceObject.Load(3, &d.InodeNotSymlink)
-	stateSourceObject.Load(4, &d.InodeDirectoryNoNewChildren)
-	stateSourceObject.Load(5, &d.InodeWatches)
-	stateSourceObject.Load(6, &d.OrderedChildren)
-	stateSourceObject.Load(7, &d.implStatFS)
-	stateSourceObject.Load(8, &d.locks)
-	stateSourceObject.Load(9, &d.fs)
-	stateSourceObject.Load(10, &d.cgi)
+	stateSourceObject.Load(0, &d.InodeAlwaysValid)
+	stateSourceObject.Load(1, &d.InodeAttrs)
+	stateSourceObject.Load(2, &d.InodeDirectoryNoNewChildren)
+	stateSourceObject.Load(3, &d.InodeNoopRefCount)
+	stateSourceObject.Load(4, &d.InodeNotAnonymous)
+	stateSourceObject.Load(5, &d.InodeNotSymlink)
+	stateSourceObject.Load(6, &d.InodeWatches)
+	stateSourceObject.Load(7, &d.OrderedChildren)
+	stateSourceObject.Load(8, &d.implStatFS)
+	stateSourceObject.Load(9, &d.locks)
+	stateSourceObject.Load(10, &d.fs)
+	stateSourceObject.Load(11, &d.cgi)
 }
 
 func (f *controllerFile) StateTypeName() string {

@@ -46,10 +46,11 @@ func (i *inode) StateTypeName() string {
 
 func (i *inode) StateFields() []string {
 	return []string{
+		"CachedMappable",
 		"InodeNoStatFS",
+		"InodeAnonymous",
 		"InodeNotDirectory",
 		"InodeNotSymlink",
-		"CachedMappable",
 		"InodeTemporary",
 		"InodeWatches",
 		"locks",
@@ -72,50 +73,52 @@ func (i *inode) StateFields() []string {
 // +checklocksignore
 func (i *inode) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
-	stateSinkObject.Save(0, &i.InodeNoStatFS)
-	stateSinkObject.Save(1, &i.InodeNotDirectory)
-	stateSinkObject.Save(2, &i.InodeNotSymlink)
-	stateSinkObject.Save(3, &i.CachedMappable)
-	stateSinkObject.Save(4, &i.InodeTemporary)
-	stateSinkObject.Save(5, &i.InodeWatches)
-	stateSinkObject.Save(6, &i.locks)
-	stateSinkObject.Save(7, &i.inodeRefs)
-	stateSinkObject.Save(8, &i.hostFD)
-	stateSinkObject.Save(9, &i.ino)
-	stateSinkObject.Save(10, &i.ftype)
-	stateSinkObject.Save(11, &i.epollable)
-	stateSinkObject.Save(12, &i.seekable)
-	stateSinkObject.Save(13, &i.isTTY)
-	stateSinkObject.Save(14, &i.savable)
-	stateSinkObject.Save(15, &i.readonly)
-	stateSinkObject.Save(16, &i.queue)
-	stateSinkObject.Save(17, &i.virtualOwner)
-	stateSinkObject.Save(18, &i.haveBuf)
-	stateSinkObject.Save(19, &i.buf)
+	stateSinkObject.Save(0, &i.CachedMappable)
+	stateSinkObject.Save(1, &i.InodeNoStatFS)
+	stateSinkObject.Save(2, &i.InodeAnonymous)
+	stateSinkObject.Save(3, &i.InodeNotDirectory)
+	stateSinkObject.Save(4, &i.InodeNotSymlink)
+	stateSinkObject.Save(5, &i.InodeTemporary)
+	stateSinkObject.Save(6, &i.InodeWatches)
+	stateSinkObject.Save(7, &i.locks)
+	stateSinkObject.Save(8, &i.inodeRefs)
+	stateSinkObject.Save(9, &i.hostFD)
+	stateSinkObject.Save(10, &i.ino)
+	stateSinkObject.Save(11, &i.ftype)
+	stateSinkObject.Save(12, &i.epollable)
+	stateSinkObject.Save(13, &i.seekable)
+	stateSinkObject.Save(14, &i.isTTY)
+	stateSinkObject.Save(15, &i.savable)
+	stateSinkObject.Save(16, &i.readonly)
+	stateSinkObject.Save(17, &i.queue)
+	stateSinkObject.Save(18, &i.virtualOwner)
+	stateSinkObject.Save(19, &i.haveBuf)
+	stateSinkObject.Save(20, &i.buf)
 }
 
 // +checklocksignore
 func (i *inode) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &i.InodeNoStatFS)
-	stateSourceObject.Load(1, &i.InodeNotDirectory)
-	stateSourceObject.Load(2, &i.InodeNotSymlink)
-	stateSourceObject.Load(3, &i.CachedMappable)
-	stateSourceObject.Load(4, &i.InodeTemporary)
-	stateSourceObject.Load(5, &i.InodeWatches)
-	stateSourceObject.Load(6, &i.locks)
-	stateSourceObject.Load(7, &i.inodeRefs)
-	stateSourceObject.Load(8, &i.hostFD)
-	stateSourceObject.Load(9, &i.ino)
-	stateSourceObject.Load(10, &i.ftype)
-	stateSourceObject.Load(11, &i.epollable)
-	stateSourceObject.Load(12, &i.seekable)
-	stateSourceObject.Load(13, &i.isTTY)
-	stateSourceObject.Load(14, &i.savable)
-	stateSourceObject.Load(15, &i.readonly)
-	stateSourceObject.Load(16, &i.queue)
-	stateSourceObject.Load(17, &i.virtualOwner)
-	stateSourceObject.Load(18, &i.haveBuf)
-	stateSourceObject.Load(19, &i.buf)
+	stateSourceObject.Load(0, &i.CachedMappable)
+	stateSourceObject.Load(1, &i.InodeNoStatFS)
+	stateSourceObject.Load(2, &i.InodeAnonymous)
+	stateSourceObject.Load(3, &i.InodeNotDirectory)
+	stateSourceObject.Load(4, &i.InodeNotSymlink)
+	stateSourceObject.Load(5, &i.InodeTemporary)
+	stateSourceObject.Load(6, &i.InodeWatches)
+	stateSourceObject.Load(7, &i.locks)
+	stateSourceObject.Load(8, &i.inodeRefs)
+	stateSourceObject.Load(9, &i.hostFD)
+	stateSourceObject.Load(10, &i.ino)
+	stateSourceObject.Load(11, &i.ftype)
+	stateSourceObject.Load(12, &i.epollable)
+	stateSourceObject.Load(13, &i.seekable)
+	stateSourceObject.Load(14, &i.isTTY)
+	stateSourceObject.Load(15, &i.savable)
+	stateSourceObject.Load(16, &i.readonly)
+	stateSourceObject.Load(17, &i.queue)
+	stateSourceObject.Load(18, &i.virtualOwner)
+	stateSourceObject.Load(19, &i.haveBuf)
+	stateSourceObject.Load(20, &i.buf)
 	stateSourceObject.AfterLoad(i.afterLoad)
 }
 

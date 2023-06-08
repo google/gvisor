@@ -29,6 +29,7 @@ import (
 type rootInode struct {
 	rootInodeRefs
 	kernfs.InodeAlwaysValid
+	kernfs.InodeAnonymous
 	kernfs.InodeAttrs
 	kernfs.InodeDirectoryNoNewChildren
 	kernfs.InodeNotSymlink

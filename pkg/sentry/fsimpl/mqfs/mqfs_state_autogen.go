@@ -162,6 +162,7 @@ func (i *rootInode) StateFields() []string {
 	return []string{
 		"rootInodeRefs",
 		"InodeAlwaysValid",
+		"InodeAnonymous",
 		"InodeAttrs",
 		"InodeDirectoryNoNewChildren",
 		"InodeNotSymlink",
@@ -179,13 +180,14 @@ func (i *rootInode) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 	stateSinkObject.Save(0, &i.rootInodeRefs)
 	stateSinkObject.Save(1, &i.InodeAlwaysValid)
-	stateSinkObject.Save(2, &i.InodeAttrs)
-	stateSinkObject.Save(3, &i.InodeDirectoryNoNewChildren)
-	stateSinkObject.Save(4, &i.InodeNotSymlink)
-	stateSinkObject.Save(5, &i.InodeTemporary)
-	stateSinkObject.Save(6, &i.InodeWatches)
-	stateSinkObject.Save(7, &i.OrderedChildren)
-	stateSinkObject.Save(8, &i.locks)
+	stateSinkObject.Save(2, &i.InodeAnonymous)
+	stateSinkObject.Save(3, &i.InodeAttrs)
+	stateSinkObject.Save(4, &i.InodeDirectoryNoNewChildren)
+	stateSinkObject.Save(5, &i.InodeNotSymlink)
+	stateSinkObject.Save(6, &i.InodeTemporary)
+	stateSinkObject.Save(7, &i.InodeWatches)
+	stateSinkObject.Save(8, &i.OrderedChildren)
+	stateSinkObject.Save(9, &i.locks)
 }
 
 func (i *rootInode) afterLoad() {}
@@ -194,13 +196,14 @@ func (i *rootInode) afterLoad() {}
 func (i *rootInode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.rootInodeRefs)
 	stateSourceObject.Load(1, &i.InodeAlwaysValid)
-	stateSourceObject.Load(2, &i.InodeAttrs)
-	stateSourceObject.Load(3, &i.InodeDirectoryNoNewChildren)
-	stateSourceObject.Load(4, &i.InodeNotSymlink)
-	stateSourceObject.Load(5, &i.InodeTemporary)
-	stateSourceObject.Load(6, &i.InodeWatches)
-	stateSourceObject.Load(7, &i.OrderedChildren)
-	stateSourceObject.Load(8, &i.locks)
+	stateSourceObject.Load(2, &i.InodeAnonymous)
+	stateSourceObject.Load(3, &i.InodeAttrs)
+	stateSourceObject.Load(4, &i.InodeDirectoryNoNewChildren)
+	stateSourceObject.Load(5, &i.InodeNotSymlink)
+	stateSourceObject.Load(6, &i.InodeTemporary)
+	stateSourceObject.Load(7, &i.InodeWatches)
+	stateSourceObject.Load(8, &i.OrderedChildren)
+	stateSourceObject.Load(9, &i.locks)
 }
 
 func (r *rootInodeRefs) StateTypeName() string {

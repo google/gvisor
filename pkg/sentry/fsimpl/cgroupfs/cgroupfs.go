@@ -496,11 +496,12 @@ func (*implStatFS) StatFS(context.Context, *vfs.Filesystem) (linux.Statfs, error
 //
 // +stateify savable
 type dir struct {
-	kernfs.InodeNoopRefCount
 	kernfs.InodeAlwaysValid
 	kernfs.InodeAttrs
-	kernfs.InodeNotSymlink
 	kernfs.InodeDirectoryNoNewChildren
+	kernfs.InodeNoopRefCount
+	kernfs.InodeNotAnonymous
+	kernfs.InodeNotSymlink
 	kernfs.InodeWatches
 	kernfs.OrderedChildren
 	implStatFS

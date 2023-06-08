@@ -410,6 +410,7 @@ type memInode struct {
 	kernfs.InodeAttrs
 	kernfs.InodeNoStatFS
 	kernfs.InodeNoopRefCount
+	kernfs.InodeNotAnonymous
 	kernfs.InodeNotDirectory
 	kernfs.InodeNotSymlink
 	kernfs.InodeWatches
@@ -730,6 +731,7 @@ type statusInode struct {
 	kernfs.InodeAttrs
 	kernfs.InodeNoStatFS
 	kernfs.InodeNoopRefCount
+	kernfs.InodeNotAnonymous
 	kernfs.InodeNotDirectory
 	kernfs.InodeNotSymlink
 	kernfs.InodeWatches
@@ -963,6 +965,7 @@ type exeSymlink struct {
 	implStatFS
 	kernfs.InodeAttrs
 	kernfs.InodeNoopRefCount
+	kernfs.InodeNotAnonymous
 	kernfs.InodeSymlink
 	kernfs.InodeWatches
 
@@ -1035,6 +1038,7 @@ type cwdSymlink struct {
 	implStatFS
 	kernfs.InodeAttrs
 	kernfs.InodeNoopRefCount
+	kernfs.InodeNotAnonymous
 	kernfs.InodeSymlink
 	kernfs.InodeWatches
 
@@ -1096,6 +1100,7 @@ type rootSymlink struct {
 	implStatFS
 	kernfs.InodeAttrs
 	kernfs.InodeNoopRefCount
+	kernfs.InodeNotAnonymous
 	kernfs.InodeSymlink
 	kernfs.InodeWatches
 
@@ -1269,6 +1274,7 @@ type namespaceInode struct {
 	implStatFS
 	kernfs.InodeAttrs
 	kernfs.InodeNoopRefCount
+	kernfs.InodeNotAnonymous
 	kernfs.InodeNotDirectory
 	kernfs.InodeNotSymlink
 	kernfs.InodeWatches

@@ -39,6 +39,7 @@ func (fs *filesystem) newKcovFile(ctx context.Context, creds *auth.Credentials) 
 type kcovInode struct {
 	kernfs.InodeAttrs
 	kernfs.InodeNoopRefCount
+	kernfs.InodeNotAnonymous
 	kernfs.InodeNotDirectory
 	kernfs.InodeNotSymlink
 	kernfs.InodeWatches
