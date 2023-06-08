@@ -35,6 +35,7 @@ type taskInode struct {
 	implStatFS
 	kernfs.InodeAttrs
 	kernfs.InodeDirectoryNoNewChildren
+	kernfs.InodeNotAnonymous
 	kernfs.InodeNotSymlink
 	kernfs.InodeTemporary
 	kernfs.InodeWatches

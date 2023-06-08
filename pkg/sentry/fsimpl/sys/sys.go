@@ -199,8 +199,9 @@ type dir struct {
 	dirRefs
 	kernfs.InodeAlwaysValid
 	kernfs.InodeAttrs
-	kernfs.InodeNotSymlink
 	kernfs.InodeDirectoryNoNewChildren
+	kernfs.InodeNotAnonymous
+	kernfs.InodeNotSymlink
 	kernfs.InodeTemporary
 	kernfs.InodeWatches
 	kernfs.OrderedChildren

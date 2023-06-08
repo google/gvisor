@@ -514,12 +514,18 @@ func (d *Dentry) InotifyWithParent(ctx context.Context, events, cookie uint32, e
 		events |= linux.IN_ISDIR
 	}
 
-	d.fs.mu.RLock()
-	defer d.fs.mu.RUnlock()
-	// The ordering below is important, Linux always notifies the parent first.
-	if d.parent != nil {
-		d.parent.inode.Watches().Notify(ctx, d.name, events, cookie, et, d.isDeleted())
+	// Linux always notifies the parent first.
+
+	// Don't bother looking for a parent if the inode is anonymous. It
+	// won't have one.
+	if !d.inode.Anonymous() {
+		d.fs.mu.RLock()
+		if d.parent != nil {
+			d.parent.inode.Watches().Notify(ctx, d.name, events, cookie, et, d.isDeleted())
+		}
+		d.fs.mu.RUnlock()
 	}
+
 	d.inode.Watches().Notify(ctx, "", events, cookie, et, d.isDeleted())
 }
 
@@ -704,6 +710,10 @@ type Inode interface {
 
 	// Watches returns the set of inotify watches associated with this inode.
 	Watches() *vfs.Watches
+
+	// Anonymous indicates that the Inode is anonymous. It will never have
+	// a name or parent.
+	Anonymous() bool
 }
 
 type inodeRefs interface {

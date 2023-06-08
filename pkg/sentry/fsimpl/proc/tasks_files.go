@@ -37,6 +37,7 @@ type selfSymlink struct {
 	implStatFS
 	kernfs.InodeAttrs
 	kernfs.InodeNoopRefCount
+	kernfs.InodeNotAnonymous
 	kernfs.InodeSymlink
 	kernfs.InodeWatches
 
@@ -79,6 +80,7 @@ type threadSelfSymlink struct {
 	implStatFS
 	kernfs.InodeAttrs
 	kernfs.InodeNoopRefCount
+	kernfs.InodeNotAnonymous
 	kernfs.InodeSymlink
 	kernfs.InodeWatches
 

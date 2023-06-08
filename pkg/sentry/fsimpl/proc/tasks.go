@@ -41,6 +41,7 @@ type tasksInode struct {
 	kernfs.InodeAlwaysValid
 	kernfs.InodeAttrs
 	kernfs.InodeDirectoryNoNewChildren
+	kernfs.InodeNotAnonymous
 	kernfs.InodeNotSymlink
 	kernfs.InodeTemporary // This holds no meaning as this inode can't be Looked up and is always valid.
 	kernfs.InodeWatches

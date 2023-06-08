@@ -89,6 +89,7 @@ func (fs *filesystem) MountOptions() string {
 //
 // +stateify savable
 type inode struct {
+	kernfs.InodeAnonymous
 	kernfs.InodeNotDirectory
 	kernfs.InodeNotSymlink
 	kernfs.InodeNoopRefCount

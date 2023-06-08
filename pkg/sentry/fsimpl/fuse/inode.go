@@ -45,6 +45,7 @@ type fileHandle struct {
 type inode struct {
 	inodeRefs
 	kernfs.InodeAlwaysValid
+	kernfs.InodeNotAnonymous
 	kernfs.InodeNotSymlink
 	kernfs.InodeWatches
 	kernfs.OrderedChildren

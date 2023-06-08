@@ -35,6 +35,7 @@ type replicaInode struct {
 	implStatFS
 	kernfs.InodeAttrs
 	kernfs.InodeNoopRefCount
+	kernfs.InodeNotAnonymous
 	kernfs.InodeNotDirectory
 	kernfs.InodeNotSymlink
 	kernfs.InodeWatches

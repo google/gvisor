@@ -104,6 +104,7 @@ type readonlyDir struct {
 	kernfs.InodeAlwaysValid
 	kernfs.InodeDirectoryNoNewChildren
 	kernfs.InodeNoStatFS
+	kernfs.InodeNotAnonymous
 	kernfs.InodeNotSymlink
 	kernfs.InodeTemporary
 	kernfs.InodeWatches
@@ -139,8 +140,9 @@ type dir struct {
 	dirRefs
 	attrs
 	kernfs.InodeAlwaysValid
-	kernfs.InodeNotSymlink
 	kernfs.InodeNoStatFS
+	kernfs.InodeNotAnonymous
+	kernfs.InodeNotSymlink
 	kernfs.InodeTemporary
 	kernfs.InodeWatches
 	kernfs.OrderedChildren

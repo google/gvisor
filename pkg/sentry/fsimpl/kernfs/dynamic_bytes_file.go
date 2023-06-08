@@ -38,6 +38,7 @@ type DynamicBytesFile struct {
 	InodeAttrs
 	InodeNoStatFS
 	InodeNoopRefCount
+	InodeNotAnonymous
 	InodeNotDirectory
 	InodeNotSymlink
 	InodeWatches
