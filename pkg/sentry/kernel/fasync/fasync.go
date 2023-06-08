@@ -103,6 +103,23 @@ func (a *FileAsync) recipient() *kernel.Task {
 	return t
 }
 
+// getPermAndSignal checks the credentials and returns the result of the
+// credentials check and signal.
+//
+//go:nosplit
+func (a *FileAsync) getPermAndSignal(c *auth.Credentials) (int32, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	sig := int32(a.signal)
+	// Logic from sigio_perm in fs/fcntl.c.
+	permCheck := (a.requester.EffectiveKUID == 0 ||
+		a.requester.EffectiveKUID == c.SavedKUID ||
+		a.requester.EffectiveKUID == c.RealKUID ||
+		a.requester.RealKUID == c.SavedKUID ||
+		a.requester.RealKUID == c.RealKUID)
+	return sig, permCheck
+}
+
 // NotifyEvent implements waiter.EventListener.NotifyEvent.
 func (a *FileAsync) NotifyEvent(mask waiter.EventMask) {
 	t := a.recipient()
@@ -110,12 +127,7 @@ func (a *FileAsync) NotifyEvent(mask waiter.EventMask) {
 		return
 	}
 	c := t.Credentials()
-	// Logic from sigio_perm in fs/fcntl.c.
-	permCheck := (a.requester.EffectiveKUID == 0 ||
-		a.requester.EffectiveKUID == c.SavedKUID ||
-		a.requester.EffectiveKUID == c.RealKUID ||
-		a.requester.RealKUID == c.SavedKUID ||
-		a.requester.RealKUID == c.RealKUID)
+	sig, permCheck := a.getPermAndSignal(c)
 	if !permCheck {
 		return
 	}
@@ -123,8 +135,8 @@ func (a *FileAsync) NotifyEvent(mask waiter.EventMask) {
 		Signo: int32(linux.SIGIO),
 		Code:  linux.SI_KERNEL,
 	}
-	if a.signal != 0 {
-		signalInfo.Signo = int32(a.signal)
+	if sig != 0 {
+		signalInfo.Signo = sig
 		signalInfo.SetFD(uint32(a.fd))
 		var band int64
 		for m, bandCode := range bandTable {
