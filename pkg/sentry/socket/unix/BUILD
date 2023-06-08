@@ -20,7 +20,6 @@ go_template_instance(
 go_library(
     name = "unix",
     srcs = [
-        "device.go",
         "io.go",
         "socket_refs.go",
         "unix.go",
@@ -38,7 +37,6 @@ go_library(
         "//pkg/refs",
         "//pkg/safemem",
         "//pkg/sentry/arch",
-        "//pkg/sentry/device",
         "//pkg/sentry/fsimpl/lock",
         "//pkg/sentry/fsimpl/sockfs",
         "//pkg/sentry/fsutil",

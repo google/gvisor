@@ -8,7 +8,6 @@ package(
 go_library(
     name = "hostinet",
     srcs = [
-        "device.go",
         "hostinet.go",
         "netlink.go",
         "socket.go",
@@ -32,7 +31,6 @@ go_library(
         "//pkg/marshal/primitive",
         "//pkg/safemem",
         "//pkg/sentry/arch",
-        "//pkg/sentry/device",
         "//pkg/sentry/fsimpl/sockfs",
         "//pkg/sentry/hostfd",
         "//pkg/sentry/inet",

@@ -8,7 +8,6 @@ package(
 go_library(
     name = "netstack",
     srcs = [
-        "device.go",
         "netstack.go",
         "netstack_state.go",
         "provider.go",
@@ -31,7 +30,6 @@ go_library(
         "//pkg/metric",
         "//pkg/refs",
         "//pkg/sentry/arch",
-        "//pkg/sentry/device",
         "//pkg/sentry/fsimpl/sockfs",
         "//pkg/sentry/inet",
         "//pkg/sentry/kernel",

@@ -23,7 +23,7 @@ go_template_instance(
 go_library(
     name = "shm",
     srcs = [
-        "device.go",
+        "context.go",
         "shm.go",
         "shm_refs.go",
     ],
@@ -36,7 +36,6 @@ go_library(
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/refs",
-        "//pkg/sentry/device",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/ipc",
         "//pkg/sentry/kernel/time",

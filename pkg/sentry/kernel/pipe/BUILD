@@ -31,7 +31,6 @@ declare_mutex(
 go_library(
     name = "pipe",
     srcs = [
-        "device.go",
         "inode_mutex.go",
         "pipe.go",
         "pipe_mutex.go",
@@ -50,7 +49,6 @@ go_library(
         "//pkg/marshal/primitive",
         "//pkg/safemem",
         "//pkg/sentry/arch",
-        "//pkg/sentry/device",
         "//pkg/sentry/fsutil",
         "//pkg/sentry/vfs",
         "//pkg/sync",

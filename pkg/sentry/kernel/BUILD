@@ -284,7 +284,6 @@ go_library(
     ],
     imports = [
         "gvisor.dev/gvisor/pkg/bpf",
-        "gvisor.dev/gvisor/pkg/sentry/device",
         "gvisor.dev/gvisor/pkg/tcpip",
     ],
     marshal = True,
@@ -316,7 +315,6 @@ go_library(
         "//pkg/safemem",
         "//pkg/secio",
         "//pkg/sentry/arch",
-        "//pkg/sentry/device",
         "//pkg/sentry/fsimpl/kernfs",
         "//pkg/sentry/fsimpl/lock",
         "//pkg/sentry/fsimpl/mqfs",
