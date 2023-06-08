@@ -749,9 +749,10 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 			return err
 		}
 		if haveUpperWhiteout {
-			// There may be directories on lower layers (previously hidden by
-			// the whiteout) that the new directory should not be merged with.
-			// Mark it opaque to prevent merging.
+			// A whiteout is being replaced with this new directory. There may be
+			// directories on lower layers (previously hidden by the whiteout) that
+			// the new directory should not be merged with, so mark as opaque.
+			// See fs/overlayfs/dir.c:ovl_create_over_whiteout() -> ovl_set_opaque().
 			if err := vfsObj.SetXattrAt(ctx, fs.creds, &pop, &vfs.SetXattrOptions{
 				Name:  _OVL_XATTR_OPAQUE,
 				Value: "y",
@@ -763,6 +764,17 @@ func (fs *filesystem) MkdirAt(ctx context.Context, rp *vfs.ResolvingPath, opts v
 				}
 				return err
 			}
+		} else if len(parent.lowerVDs) > 0 {
+			// If haveUpperWhiteout is false and the parent is merged, then we should
+			// apply an optimization. We know that nothing exists on the parent's
+			// lower layers. Otherwise doCreateAt() would have failed with EEXIST.
+			// Mark the new directory opaque to avoid unnecessary lower lookups in
+			// fs.lookupLocked(). Allow it to fail since this is an optimization.
+			// See fs/overlayfs/dir.c:ovl_create_upper() -> ovl_set_opaque().
+			_ = vfsObj.SetXattrAt(ctx, fs.creds, &pop, &vfs.SetXattrOptions{
+				Name:  _OVL_XATTR_OPAQUE,
+				Value: "y",
+			})
 		}
 		return nil
 	})
