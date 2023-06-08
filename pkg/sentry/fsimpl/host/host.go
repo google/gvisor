@@ -94,10 +94,11 @@ func isEpollable(fd int) bool {
 //
 // +stateify savable
 type inode struct {
+	kernfs.CachedMappable
 	kernfs.InodeNoStatFS
+	kernfs.InodeAnonymous // inode is effectively anonymous because it represents a donated FD.
 	kernfs.InodeNotDirectory
 	kernfs.InodeNotSymlink
-	kernfs.CachedMappable
 	kernfs.InodeTemporary // This holds no meaning as this inode can't be Looked up and is always valid.
 	kernfs.InodeWatches
 

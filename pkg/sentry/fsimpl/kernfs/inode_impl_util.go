@@ -724,6 +724,7 @@ type StaticDirectory struct {
 	InodeAttrs
 	InodeDirectoryNoNewChildren
 	InodeNoStatFS
+	InodeNotAnonymous
 	InodeNotSymlink
 	InodeTemporary
 	InodeWatches
@@ -818,4 +819,24 @@ type InodeWatches struct {
 // Watches implements Inode.Watches.
 func (i *InodeWatches) Watches() *vfs.Watches {
 	return &i.watches
+}
+
+// InodeAnonymous partially implements Inode.
+//
+// +stateify savable
+type InodeAnonymous struct{}
+
+// Anonymous implements Inode.Anonymous
+func (*InodeAnonymous) Anonymous() bool {
+	return true
+}
+
+// InodeNotAnonymous partially implements Inode.
+//
+// +stateify savable
+type InodeNotAnonymous struct{}
+
+// Anonymous implements Inode.Anonymous
+func (*InodeNotAnonymous) Anonymous() bool {
+	return false
 }
