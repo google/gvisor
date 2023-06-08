@@ -7,9 +7,7 @@ package(
 
 go_binary(
     name = "runsc",
-    srcs = [
-        "main.go",
-    ],
+    srcs = ["main.go"],
     pure = True,
     tags = ["staging"],
     visibility = [
@@ -37,9 +35,7 @@ go_binary(
 # [1] https://github.com/bazelbuild/bazel/issues/1698
 go_binary(
     name = "runsc-race",
-    srcs = [
-        "main.go",
-    ],
+    srcs = ["main.go"],
     gotags = ["lockdep"],
     static = True,
     visibility = [
