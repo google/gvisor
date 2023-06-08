@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/ipc"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/shm"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
@@ -116,6 +117,8 @@ func (t *Task) contextValue(key any, isTaskGoroutine bool) any {
 		return t.k
 	case platform.CtxPlatform:
 		return t.k
+	case shm.CtxDeviceID:
+		return t.k.sysVShmDevID
 	case uniqueid.CtxGlobalUniqueID:
 		return t.k.UniqueID()
 	case uniqueid.CtxGlobalUniqueIDProvider:

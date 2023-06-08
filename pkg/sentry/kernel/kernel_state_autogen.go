@@ -4,7 +4,6 @@ package kernel
 
 import (
 	"gvisor.dev/gvisor/pkg/bpf"
-	"gvisor.dev/gvisor/pkg/sentry/device"
 	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
@@ -454,13 +453,13 @@ func (k *Kernel) StateFields() []string {
 		"danglingEndpoints",
 		"sockets",
 		"nextSocketRecord",
-		"deviceRegistry",
 		"SpecialOpts",
 		"vfs",
 		"hostMount",
 		"pipeMount",
 		"shmMount",
 		"socketMount",
+		"sysVShmDevID",
 		"SleepForAddressSpaceActivation",
 		"ptraceExceptions",
 		"YAMAPtraceScope",
@@ -477,9 +476,6 @@ func (k *Kernel) StateSave(stateSinkObject state.Sink) {
 	var danglingEndpointsValue []tcpip.Endpoint
 	danglingEndpointsValue = k.saveDanglingEndpoints()
 	stateSinkObject.SaveValue(21, danglingEndpointsValue)
-	var deviceRegistryValue *device.Registry
-	deviceRegistryValue = k.saveDeviceRegistry()
-	stateSinkObject.SaveValue(24, deviceRegistryValue)
 	stateSinkObject.Save(0, &k.featureSet)
 	stateSinkObject.Save(1, &k.timekeeper)
 	stateSinkObject.Save(2, &k.tasks)
@@ -503,12 +499,13 @@ func (k *Kernel) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(20, &k.netlinkPorts)
 	stateSinkObject.Save(22, &k.sockets)
 	stateSinkObject.Save(23, &k.nextSocketRecord)
-	stateSinkObject.Save(25, &k.SpecialOpts)
-	stateSinkObject.Save(26, &k.vfs)
-	stateSinkObject.Save(27, &k.hostMount)
-	stateSinkObject.Save(28, &k.pipeMount)
-	stateSinkObject.Save(29, &k.shmMount)
-	stateSinkObject.Save(30, &k.socketMount)
+	stateSinkObject.Save(24, &k.SpecialOpts)
+	stateSinkObject.Save(25, &k.vfs)
+	stateSinkObject.Save(26, &k.hostMount)
+	stateSinkObject.Save(27, &k.pipeMount)
+	stateSinkObject.Save(28, &k.shmMount)
+	stateSinkObject.Save(29, &k.socketMount)
+	stateSinkObject.Save(30, &k.sysVShmDevID)
 	stateSinkObject.Save(31, &k.SleepForAddressSpaceActivation)
 	stateSinkObject.Save(32, &k.ptraceExceptions)
 	stateSinkObject.Save(33, &k.YAMAPtraceScope)
@@ -543,19 +540,19 @@ func (k *Kernel) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(20, &k.netlinkPorts)
 	stateSourceObject.Load(22, &k.sockets)
 	stateSourceObject.Load(23, &k.nextSocketRecord)
-	stateSourceObject.Load(25, &k.SpecialOpts)
-	stateSourceObject.Load(26, &k.vfs)
-	stateSourceObject.Load(27, &k.hostMount)
-	stateSourceObject.Load(28, &k.pipeMount)
-	stateSourceObject.Load(29, &k.shmMount)
-	stateSourceObject.Load(30, &k.socketMount)
+	stateSourceObject.Load(24, &k.SpecialOpts)
+	stateSourceObject.Load(25, &k.vfs)
+	stateSourceObject.Load(26, &k.hostMount)
+	stateSourceObject.Load(27, &k.pipeMount)
+	stateSourceObject.Load(28, &k.shmMount)
+	stateSourceObject.Load(29, &k.socketMount)
+	stateSourceObject.Load(30, &k.sysVShmDevID)
 	stateSourceObject.Load(31, &k.SleepForAddressSpaceActivation)
 	stateSourceObject.Load(32, &k.ptraceExceptions)
 	stateSourceObject.Load(33, &k.YAMAPtraceScope)
 	stateSourceObject.Load(34, &k.cgroupRegistry)
 	stateSourceObject.Load(35, &k.userCountersMap)
 	stateSourceObject.LoadValue(21, new([]tcpip.Endpoint), func(y any) { k.loadDanglingEndpoints(y.([]tcpip.Endpoint)) })
-	stateSourceObject.LoadValue(24, new(*device.Registry), func(y any) { k.loadDeviceRegistry(y.(*device.Registry)) })
 }
 
 func (s *SocketRecord) StateTypeName() string {
