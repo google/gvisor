@@ -461,5 +461,20 @@ server_cpu_ticks=\$(cat /proc/\$server_pid/stat \\
 ticks_per_sec=\$(getconf CLK_TCK)
 client_cpu_load=\$(bc -l <<< \$client_cpu_ticks/\$ticks_per_sec/${duration})
 server_cpu_load=\$(bc -l <<< \$server_cpu_ticks/\$ticks_per_sec/${duration})
-echo \$mbits \$client_cpu_load \$server_cpu_load
+
+hostgso=true
+if [[ "${disable_linux_gso}" ]]; then
+  hostgso=false
+fi
+hostgro=true
+if [[ "${disable_linux_gro}" ]]; then
+  hostgro=false
+fi
+
+if ${client}; then
+  echo "BenchmarkTCPClient/role=client/host-gso=\$hostgso/host-gro=\$hostgro 1 \$mbits Mb/s \$client_cpu_load cpu-time"
+elif ${server}; then
+  echo "BenchmarkTCPClient/role=server/host-gso=\$hostgso/host-gro=\$hostgro 1 \$mbits Mb/s \$server_cpu_load cpu-time"
+fi
+
 EOF
