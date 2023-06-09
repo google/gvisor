@@ -1401,11 +1401,45 @@ func EmitMetricUpdate() {
 
 	if log.IsLogging(log.Debug) {
 		sort.Slice(m.Metrics, func(i, j int) bool {
-			return m.Metrics[i].Name < m.Metrics[j].Name
+			return m.Metrics[i].GetName() < m.Metrics[j].GetName()
 		})
 		log.Debugf("Emitting metrics:")
 		for _, metric := range m.Metrics {
-			log.Debugf("%s: %+v", metric.Name, metric.Value)
+			var valueStr string
+			switch metric.GetValue().(type) {
+			case *pb.MetricValue_Uint64Value:
+				valueStr = fmt.Sprintf("%d", metric.GetUint64Value())
+			case *pb.MetricValue_DistributionValue:
+				valueStr = fmt.Sprintf("new distribution samples: %+v", metric.GetDistributionValue())
+			default:
+				valueStr = "unsupported type"
+			}
+			if len(metric.GetFieldValues()) > 0 {
+				var foundMetadata *pb.MetricMetadata
+				if metricObj, found := allMetrics.uint64Metrics[metric.GetName()]; found {
+					foundMetadata = metricObj.metadata
+				} else if metricObj, found := allMetrics.distributionMetrics[metric.GetName()]; found {
+					foundMetadata = metricObj.metadata
+				}
+				if foundMetadata == nil || len(foundMetadata.GetFields()) != len(metric.GetFieldValues()) {
+					// This should never happen, but if it somehow does, we don't want to crash here, as
+					// this is debug output that may already be printed in the context of panic.
+					log.Debugf("%s%v (cannot find metric definition!): %s", metric.GetName(), metric.GetFieldValues(), valueStr)
+					continue
+				}
+				var sb strings.Builder
+				for i, fieldValue := range metric.GetFieldValues() {
+					if i > 0 {
+						sb.WriteRune(',')
+					}
+					sb.WriteString(foundMetadata.GetFields()[i].GetFieldName())
+					sb.WriteRune('=')
+					sb.WriteString(fieldValue)
+				}
+				log.Debugf("  Metric %s[%s]: %s", metric.GetName(), sb.String(), valueStr)
+			} else {
+				log.Debugf("  Metric %s: %s", metric.GetName(), valueStr)
+			}
 		}
 		for _, stage := range m.StageTiming {
 			duration := time.Duration(stage.Ended.Seconds-stage.Started.Seconds)*time.Second + time.Duration(stage.Ended.Nanos-stage.Started.Nanos)*time.Nanosecond
