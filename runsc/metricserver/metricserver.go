@@ -209,8 +209,8 @@ func (s *servedSandbox) cleanup() {
 	}
 }
 
-// queryMetrics queries the sandbox for metrics data.
-func (m *metricServer) queryMetrics(ctx context.Context, sand *sandbox.Sandbox, verifier *prometheus.Verifier, metricsFilter string) (*prometheus.Snapshot, error) {
+// querySandboxMetrics queries the sandbox for metrics data.
+func querySandboxMetrics(ctx context.Context, sand *sandbox.Sandbox, verifier *prometheus.Verifier, metricsFilter string) (*prometheus.Snapshot, error) {
 	ch := make(chan struct {
 		snapshot *prometheus.Snapshot
 		err      error
@@ -477,6 +477,140 @@ func (m *metricServer) refreshSandboxesLocked() {
 	}
 }
 
+// sandboxLoadResult contains the outcome of calling `load` on a `servedSandbox`.
+// It is used as an intermediary type that contains all that we know about a
+// sandbox after attempting to load its state file, but does not contain any
+// metric data from the sandbox.
+type sandboxLoadResult struct {
+	served   *servedSandbox
+	sandbox  *sandbox.Sandbox
+	verifier *prometheus.Verifier
+	err      error
+}
+
+// loadSandboxesLocked loads the state file data from all known sandboxes.
+// It does so in parallel, and avoids reloading sandboxes for which we have
+// already loaded data.
+func (m *metricServer) loadSandboxesLocked(ctx context.Context) []sandboxLoadResult {
+	m.refreshSandboxesLocked()
+
+	numGoroutines := exportParallelGoroutines
+	numSandboxes := len(m.sandboxes)
+	if numSandboxes < numGoroutines {
+		numGoroutines = numSandboxes
+	}
+
+	// First, load all the sandboxes in parallel. We need to do this while m.mu is held.
+	loadSandboxCh := make(chan *servedSandbox, numSandboxes)
+	loadedSandboxesCh := make(chan sandboxLoadResult, numSandboxes)
+	loadedSandboxes := make([]sandboxLoadResult, 0, numSandboxes)
+	for i := 0; i < numGoroutines; i++ {
+		go func() {
+			for served := range loadSandboxCh {
+				sand, verifier, err := served.load()
+				loadedSandboxesCh <- sandboxLoadResult{served, sand, verifier, err}
+			}
+		}()
+	}
+	for _, sandbox := range m.sandboxes {
+		loadSandboxCh <- sandbox
+	}
+	close(loadSandboxCh)
+	for i := 0; i < numSandboxes; i++ {
+		loadedSandboxes = append(loadedSandboxes, <-loadedSandboxesCh)
+	}
+	close(loadedSandboxesCh)
+	return loadedSandboxes
+}
+
+// sandboxMetricsResult is the result of calling querySandboxMetrics on a
+// single sandbox. It contains all of `sandboxLoadResult` but also has current
+// metric data (if querying metrics from the sandbox process succeeded).
+type sandboxMetricsResult struct {
+	sandboxLoadResult
+	isRunning bool
+	snapshot  *prometheus.Snapshot
+	err       error
+}
+
+// queryMultiSandboxMetrics queries metric data from multiple loaded sandboxes.
+// It does so in parallel and with random permutation ordering.
+// Only metrics matching the `metricsFilter` regular expression are queried.
+// For each sandbox, whether we were successful in querying its metrics or
+// not, the `processSandbox` function is called. This may be done in parallel,
+// so `processSandbox` should do its own locking so that multiple parallel
+// instances of itself behave appropriately.
+func queryMultiSandboxMetrics(ctx context.Context, loadedSandboxes []sandboxLoadResult, metricsFilter string, processSandbox func(sandboxMetricsResult)) {
+	numSandboxes := len(loadedSandboxes)
+	ctxDeadline, ok := ctx.Deadline()
+	if !ok {
+		panic("context had no deadline, this should never happen as it was created with a timeout")
+	}
+	exportStartTime := time.Now()
+	requestTimeLeft := ctxDeadline.Sub(exportStartTime)
+	perSandboxTime := requestTimeLeft
+	if numSandboxes != 0 {
+		perSandboxTime = requestTimeLeft / time.Duration(numSandboxes)
+	}
+	if perSandboxTime < metricsExportPerSandboxTimeout {
+		perSandboxTime = metricsExportPerSandboxTimeout
+	}
+	loadedSandboxCh := make(chan sandboxLoadResult, numSandboxes)
+	var wg sync.WaitGroup
+	numGoroutines := exportParallelGoroutines
+	if numSandboxes < numGoroutines {
+		numGoroutines = numSandboxes
+	}
+	wg.Add(numGoroutines)
+	for i := 0; i < numGoroutines; i++ {
+		go func() {
+			defer wg.Done()
+			for s := range loadedSandboxCh {
+				isRunning := false
+				var snapshot *prometheus.Snapshot
+				err := s.err
+				if err == nil {
+					queryCtx, queryCtxCancel := context.WithTimeout(ctx, perSandboxTime)
+					snapshot, err = querySandboxMetrics(queryCtx, s.sandbox, s.verifier, metricsFilter)
+					queryCtxCancel()
+					isRunning = s.sandbox.IsRunning()
+				}
+				processSandbox(sandboxMetricsResult{
+					sandboxLoadResult: s,
+					isRunning:         isRunning,
+					snapshot:          snapshot,
+					err:               err,
+				})
+			}
+		}()
+	}
+	// Iterate over all sandboxes.
+	// Important: This must be done in random order.
+	// A malicious/compromised sandbox may decide to stall when being asked for metrics.
+	// If at least `numGoroutines` sandboxes do this, this will starve other sandboxes
+	// from having their metrics exported, because all the goroutines will be stuck on
+	// the stalled sandboxes.
+	// One way to completely avoid this would be to spawn one goroutine per
+	// sandbox, but this can amount to ~hundreds of goroutines, which is not desirable
+	// for the metrics server.
+	// Another way would be to have a very strict timeout on each sandbox's export
+	// process, but in some cases a busy sandbox will take more than a decisecond
+	// or so to export its data, so this would miss some data from legitimate (but
+	// slow) sandboxes.
+	// Instead, we take a middle-of-the-road approach: we use a timeout that's not
+	// too strict but still ensures we make forward progress away from stalled
+	// sandboxes, and we also iterate across sandboxes in a different random order at
+	// each export. This ensures that all sandboxes eventually get a fair chance of
+	// being part of the "first `numGoroutines` sandboxes in line" to get their
+	// metric data loaded, such that a client repeatedly scraping metrics will
+	// eventually get data from each sandbox.
+	for _, sandboxIndex := range rand.Perm(len(loadedSandboxes)) {
+		loadedSandboxCh <- loadedSandboxes[sandboxIndex]
+	}
+	close(loadedSandboxCh)
+	wg.Wait()
+}
+
 // serveMetrics serves metrics requests.
 func (m *metricServer) serveMetrics(w http.ResponseWriter, req *http.Request) httpResult {
 	ctx, ctxCancel := context.WithTimeout(req.Context(), metricsExportTimeout)
@@ -511,63 +645,10 @@ func (m *metricServer) serveMetrics(w http.ResponseWriter, req *http.Request) ht
 		}
 	}
 
-	m.refreshSandboxesLocked()
-
-	numGoroutines := exportParallelGoroutines
-	numSandboxes := len(m.sandboxes)
-	if numSandboxes < numGoroutines {
-		numGoroutines = numSandboxes
-	}
-
-	// First, load all the sandboxes in parallel. We need to do this while m.mu is held.
-	loadSandboxCh := make(chan *servedSandbox, numSandboxes)
-	type sandboxLoadResult struct {
-		served   *servedSandbox
-		sandbox  *sandbox.Sandbox
-		verifier *prometheus.Verifier
-		err      error
-	}
-	loadedSandboxesCh := make(chan sandboxLoadResult, numSandboxes)
-	loadedSandboxes := make([]sandboxLoadResult, 0, numSandboxes)
-	for i := 0; i < numGoroutines; i++ {
-		go func() {
-			for served := range loadSandboxCh {
-				sand, verifier, err := served.load()
-				loadedSandboxesCh <- sandboxLoadResult{served, sand, verifier, err}
-			}
-		}()
-	}
-	for _, sandbox := range m.sandboxes {
-		loadSandboxCh <- sandbox
-	}
-	close(loadSandboxCh)
-	for i := 0; i < numSandboxes; i++ {
-		loadedSandboxes = append(loadedSandboxes, <-loadedSandboxesCh)
-	}
-	close(loadedSandboxesCh)
+	loadedSandboxes := m.loadSandboxesLocked(ctx)
+	numSandboxes := len(loadedSandboxes)
 	numSandboxesTotal := m.numSandboxes
 	m.mu.Unlock()
-
-	// Now iterate over all sandboxes.
-	// Important: This must be done in random order.
-	// A malicious/compromised sandbox may decide to stall when being asked for metrics.
-	// If at least `numGoroutines` sandboxes do this, this will starve other sandboxes
-	// from having their metrics exported, because all the goroutines will be stuck on
-	// the stalled sandboxes.
-	// One way to completely avoid this would be to spawn one goroutine per
-	// sandbox, but this can amount to ~hundreds of goroutines, which is not desirable
-	// for the metrics server.
-	// Another way would be to have a very strict timeout on each sandbox's export
-	// process, but in some cases a busy sandbox will take more than a decisecond
-	// or so to export its data, so this would miss some data from legitimate (but
-	// slow) sandboxes.
-	// Instead, we take a middle-of-the-road approach: we use a timeout that's not
-	// too strict but still ensures we make forward progress away from stalled
-	// sandboxes, and we also iterate across sandboxes in a different random order at
-	// each export. This ensures that all sandboxes eventually get a fair chance of
-	// being part of the "first `numGoroutines` sandboxes in line" to get their
-	// metric data loaded, such that a client repeatedly scraping metrics will
-	// eventually get data from each sandbox.
 
 	// Used to prevent goroutines from accessing the shared variables below.
 	var metricsMu sync.Mutex
@@ -580,92 +661,54 @@ func (m *metricServer) serveMetrics(w http.ResponseWriter, req *http.Request) ht
 	meta := metaMetrics{}                   // Protected by metricsMu.
 	selfMetrics := prometheus.NewSnapshot() // Protected by metricsMu.
 
-	ctxDeadline, ok := ctx.Deadline()
-	if !ok {
-		panic("context had no deadline, this should never happen as it was created with a timeout")
-	}
-	exportStartTime := time.Now()
-	requestTimeLeft := ctxDeadline.Sub(exportStartTime)
-	perSandboxTime := requestTimeLeft
-	if numSandboxes != 0 {
-		perSandboxTime = requestTimeLeft / time.Duration(numSandboxes)
-	}
-	if perSandboxTime < metricsExportPerSandboxTimeout {
-		perSandboxTime = metricsExportPerSandboxTimeout
-	}
-	loadedSandboxCh := make(chan sandboxLoadResult, numSandboxes)
 	type snapshotAndOptions struct {
 		snapshot *prometheus.Snapshot
 		options  prometheus.SnapshotExportOptions
 	}
 	snapshotCh := make(chan snapshotAndOptions, numSandboxes)
-	var wg sync.WaitGroup
-	wg.Add(numGoroutines)
-	for i := 0; i < numGoroutines; i++ {
-		go func(metricsMu *sync.Mutex, meta *metaMetrics, selfMetrics *prometheus.Snapshot) {
-			defer wg.Done()
-			for s := range loadedSandboxCh {
-				served, sand, verifier, loadErr := s.served, s.sandbox, s.verifier, s.err
-				isRunning := false
-				var snapshot *prometheus.Snapshot
-				sandboxErr := loadErr
-				if loadErr == nil {
-					queryCtx, queryCtxCancel := context.WithTimeout(ctx, perSandboxTime)
-					snapshot, sandboxErr = m.queryMetrics(queryCtx, sand, verifier, metricsFilter)
-					queryCtxCancel()
-					isRunning = sand.IsRunning()
-				}
-				func() {
-					metricsMu.Lock()
-					defer metricsMu.Unlock()
-					selfMetrics.Add(prometheus.LabeledIntData(&SandboxPresenceMetric, nil, 1).SetExternalLabels(served.extraLabels))
-					sandboxRunning := int64(0)
-					if isRunning {
-						sandboxRunning = 1
-						meta.numRunningSandboxes++
-					}
-					selfMetrics.Add(prometheus.LabeledIntData(&SandboxRunningMetric, nil, sandboxRunning).SetExternalLabels(served.extraLabels))
-					if loadErr == nil {
-						selfMetrics.Add(prometheus.LabeledIntData(&SandboxMetadataMetric, sand.MetricMetadata, 1).SetExternalLabels(served.extraLabels))
-						for _, cap := range served.capabilities {
-							if capabilityFilterReg != nil && !capabilityFilterReg.MatchString(cap.String()) && !capabilityFilterReg.MatchString(cap.TrimmedString()) {
-								continue
-							}
-							selfMetrics.Add(prometheus.LabeledIntData(&SandboxCapabilitiesMetric, map[string]string{
-								SandboxCapabilitiesMetricLabel: cap.TrimmedString(),
-							}, 1).SetExternalLabels(served.extraLabels))
-						}
-						selfMetrics.Add(prometheus.LabeledIntData(&SpecMetadataMetric, served.specMetadataLabels, 1).SetExternalLabels(served.extraLabels))
-						createdAt := float64(served.createdAt.Unix()) + (float64(served.createdAt.Nanosecond()) / 1e9)
-						selfMetrics.Add(prometheus.LabeledFloatData(&SandboxCreationMetric, nil, createdAt).SetExternalLabels(served.extraLabels))
-					}
-					if sandboxErr != nil {
-						// If the sandbox isn't running, it is normal that metrics are not exported for it, so
-						// do not report this case as an error.
-						if isRunning {
-							meta.numCannotExportSandboxes++
-							log.Warningf("Could not export metrics from sandbox %s: %v", served.rootContainerID.SandboxID, sandboxErr)
-						}
-						return
-					}
-					snapshotCh <- snapshotAndOptions{
-						snapshot: snapshot,
-						options: prometheus.SnapshotExportOptions{
-							ExporterPrefix: m.exporterPrefix,
-							ExtraLabels:    served.extraLabels,
-						},
-					}
-				}()
-			}
-		}(&metricsMu, &meta, selfMetrics)
-	}
-	// Feed the channel in random order:
-	for _, sandboxIndex := range rand.Perm(len(loadedSandboxes)) {
-		loadedSandboxCh <- loadedSandboxes[sandboxIndex]
-	}
-	close(loadedSandboxCh)
 
-	// Meanwhile, build the map of all snapshots we will be rendering.
+	queryMultiSandboxMetrics(ctx, loadedSandboxes, metricsFilter, func(r sandboxMetricsResult) {
+		metricsMu.Lock()
+		defer metricsMu.Unlock()
+		selfMetrics.Add(prometheus.LabeledIntData(&SandboxPresenceMetric, nil, 1).SetExternalLabels(r.served.extraLabels))
+		sandboxRunning := int64(0)
+		if r.isRunning {
+			sandboxRunning = 1
+			meta.numRunningSandboxes++
+		}
+		selfMetrics.Add(prometheus.LabeledIntData(&SandboxRunningMetric, nil, sandboxRunning).SetExternalLabels(r.served.extraLabels))
+		if r.err == nil {
+			selfMetrics.Add(prometheus.LabeledIntData(&SandboxMetadataMetric, r.sandbox.MetricMetadata, 1).SetExternalLabels(r.served.extraLabels))
+			for _, cap := range r.served.capabilities {
+				if capabilityFilterReg != nil && !capabilityFilterReg.MatchString(cap.String()) && !capabilityFilterReg.MatchString(cap.TrimmedString()) {
+					continue
+				}
+				selfMetrics.Add(prometheus.LabeledIntData(&SandboxCapabilitiesMetric, map[string]string{
+					SandboxCapabilitiesMetricLabel: cap.TrimmedString(),
+				}, 1).SetExternalLabels(r.served.extraLabels))
+			}
+			selfMetrics.Add(prometheus.LabeledIntData(&SpecMetadataMetric, r.served.specMetadataLabels, 1).SetExternalLabels(r.served.extraLabels))
+			createdAt := float64(r.served.createdAt.Unix()) + (float64(r.served.createdAt.Nanosecond()) / 1e9)
+			selfMetrics.Add(prometheus.LabeledFloatData(&SandboxCreationMetric, nil, createdAt).SetExternalLabels(r.served.extraLabels))
+		} else {
+			// If the sandbox isn't running, it is normal that metrics are not exported for it, so
+			// do not report this case as an error.
+			if r.isRunning {
+				meta.numCannotExportSandboxes++
+				log.Warningf("Could not export metrics from sandbox %s: %v", r.served.rootContainerID.SandboxID, r.err)
+			}
+			return
+		}
+		snapshotCh <- snapshotAndOptions{
+			snapshot: r.snapshot,
+			options: prometheus.SnapshotExportOptions{
+				ExporterPrefix: m.exporterPrefix,
+				ExtraLabels:    r.served.extraLabels,
+			},
+		}
+	})
+
+	// Build the map of all snapshots we will be rendering.
 	snapshotsToOptions := make(map[*prometheus.Snapshot]prometheus.SnapshotExportOptions, numSandboxes+2)
 	snapshotsToOptions[selfMetrics] = prometheus.SnapshotExportOptions{
 		ExporterPrefix: fmt.Sprintf("%s%s", m.exporterPrefix, prometheus.MetaMetricPrefix),
@@ -677,7 +720,6 @@ func (m *metricServer) serveMetrics(w http.ResponseWriter, req *http.Request) ht
 	}
 
 	// Aggregate all the snapshots from the sandboxes.
-	wg.Wait()
 	close(snapshotCh)
 	for snapshotAndOptions := range snapshotCh {
 		snapshotsToOptions[snapshotAndOptions.snapshot] = snapshotAndOptions.options
