@@ -17,8 +17,6 @@ package metricserver
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
@@ -31,7 +29,6 @@ import (
 	"regexp"
 	"runtime"
 	"runtime/debug"
-	"runtime/pprof"
 	"strconv"
 	"strings"
 	"syscall"
@@ -50,13 +47,6 @@ import (
 )
 
 const (
-	// verifyLoopInterval is the interval at which we check whether there are any sandboxes we need
-	// to serve metrics for. If there are none, the server exits.
-	verifyLoopInterval = 20 * time.Second
-
-	// httpTimeout is the timeout used for all connect/read/write operations of the HTTP server.
-	httpTimeout = 1 * time.Minute
-
 	// metricsExportTimeout is the maximum amount of time that the metrics export process should take.
 	metricsExportTimeout = 30 * time.Second
 
@@ -71,10 +61,9 @@ const (
 // servedSandbox is a sandbox that we serve metrics from.
 // A single metrics server will export data about multiple sandboxes.
 type servedSandbox struct {
-	rootContainerID  container.FullID
-	rootDir          string
-	metricServerAddr string
-	extraLabels      map[string]string
+	rootContainerID container.FullID
+	server          *metricServer
+	extraLabels     map[string]string
 
 	// mu protects the fields below.
 	mu sync.Mutex
@@ -111,66 +100,9 @@ type servedSandbox struct {
 
 	// cleanupVerifier holds a reference to the cleanup function of the verifier.
 	cleanupVerifier func()
-}
 
-// SandboxPrometheusLabels returns a set of Prometheus labels that identifies the sandbox running
-// the given root container.
-func SandboxPrometheusLabels(rootContainer *container.Container) (map[string]string, error) {
-	s := rootContainer.Sandbox
-	labels := make(map[string]string, 4)
-	labels[prometheus.SandboxIDLabel] = s.ID
-
-	// Compute iteration ID label in a stable manner.
-	// This uses sha256(ID + ":" + creation time).
-	h := sha256.New()
-	if _, err := io.WriteString(h, s.ID); err != nil {
-		return nil, err
-	}
-	if _, err := io.WriteString(h, ":"); err != nil {
-		return nil, err
-	}
-	if _, err := io.WriteString(h, rootContainer.CreatedAt.UTC().String()); err != nil {
-		return nil, err
-	}
-	labels[prometheus.IterationIDLabel] = strconv.FormatUint(binary.BigEndian.Uint64(h.Sum(nil)[:8]), 36)
-
-	if s.PodName != "" {
-		labels[prometheus.PodNameLabel] = s.PodName
-	}
-	if s.Namespace != "" {
-		labels[prometheus.NamespaceLabel] = s.Namespace
-	}
-	return labels, nil
-}
-
-// ComputeSpecMetadata returns the labels for the `spec_metadata` metric.
-// It merges data from the Specs of multiple containers running within the
-// same sandbox.
-// This function must support being called with `allContainers` being nil.
-// It must return the same set of label keys regardless of how many containers
-// are in `allContainers`.
-func ComputeSpecMetadata(allContainers []*container.Container) map[string]string {
-	const (
-		unknownOCIVersion      = "UNKNOWN"
-		inconsistentOCIVersion = "INCONSISTENT"
-	)
-
-	hasUID0Container := false
-	ociVersion := unknownOCIVersion
-	for _, cont := range allContainers {
-		if cont.RunsAsUID0() {
-			hasUID0Container = true
-		}
-		if ociVersion == unknownOCIVersion {
-			ociVersion = cont.Spec.Version
-		} else if ociVersion != cont.Spec.Version {
-			ociVersion = inconsistentOCIVersion
-		}
-	}
-	return map[string]string{
-		"hasuid0":    strconv.FormatBool(hasUID0Container),
-		"ociversion": ociVersion,
-	}
+	// extra contains additional per-sandbox data.
+	extra sandboxData
 }
 
 // load loads the sandbox being monitored and initializes its metric verifier.
@@ -182,7 +114,7 @@ func (s *servedSandbox) load() (*sandbox.Sandbox, *prometheus.Verifier, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.sandbox == nil {
-		allContainers, err := container.LoadSandbox(s.rootDir, s.rootContainerID.SandboxID, container.LoadOpts{
+		allContainers, err := container.LoadSandbox(s.server.rootDir, s.rootContainerID.SandboxID, container.LoadOpts{
 			TryLock: container.TryAcquire,
 		})
 		if err != nil {
@@ -200,12 +132,12 @@ func (s *servedSandbox) load() (*sandbox.Sandbox, *prometheus.Verifier, error) {
 		if rootContainer == nil {
 			return nil, nil, fmt.Errorf("no root container found for sandbox ID %q", s.rootContainerID.SandboxID)
 		}
-		sandboxMetricAddr := strings.ReplaceAll(rootContainer.Sandbox.MetricServerAddress, "%RUNTIME_ROOT%", s.rootDir)
+		sandboxMetricAddr := strings.ReplaceAll(rootContainer.Sandbox.MetricServerAddress, "%RUNTIME_ROOT%", s.server.rootDir)
 		if sandboxMetricAddr == "" {
 			return nil, nil, errors.New("sandbox did not request instrumentation")
 		}
-		if sandboxMetricAddr != s.metricServerAddr {
-			return nil, nil, fmt.Errorf("sandbox requested instrumentation by a metric server running at a different address (sandbox wants %q, this metric server serves %q)", sandboxMetricAddr, s.metricServerAddr)
+		if sandboxMetricAddr != s.server.address {
+			return nil, nil, fmt.Errorf("sandbox requested instrumentation by a metric server running at a different address (sandbox wants %q, this metric server serves %q)", sandboxMetricAddr, s.server.address)
 		}
 		// Update label data as read from the state file.
 		// Do not store empty labels.
@@ -262,6 +194,9 @@ func (s *servedSandbox) load() (*sandbox.Sandbox, *prometheus.Verifier, error) {
 		}
 		s.verifier = verifier
 		s.cleanupVerifier = cleanup
+	}
+	if err := s.extra.load(s); err != nil {
+		return nil, nil, err
 	}
 	return s.sandbox, s.verifier, nil
 }
@@ -333,7 +268,7 @@ type metricServer struct {
 	// This socket file will be deleted on server shutdown.
 	// This field is not set if binding to a network port, or when the UDS already existed prior to
 	// being bound by us (i.e. its ownership isn't ours), such that it isn't deleted in this case.
-	// The field is unset once the file is succesfully removed.
+	// The field is unset once the file is successfully removed.
 	udsPath string
 
 	// sandboxes is the list of sandboxes we serve metrics for.
@@ -377,6 +312,9 @@ type metricServer struct {
 
 	// shutdownCh is written to when receiving the signal to shut down gracefully.
 	shutdownCh chan os.Signal
+
+	// extraData contains additional server-wide data.
+	extra serverData
 }
 
 // sufficientlyEqualStats returns whether the given FileInfo's are sufficiently
@@ -518,9 +456,8 @@ func (m *metricServer) refreshSandboxesLocked() {
 
 		m.numSandboxes++
 		served := &servedSandbox{
-			rootContainerID:  sid,
-			rootDir:          m.rootDir,
-			metricServerAddr: m.address,
+			rootContainerID: sid,
+			server:          m,
 			extraLabels: map[string]string{
 				prometheus.SandboxIDLabel: sid.SandboxID,
 			},
@@ -538,101 +475,6 @@ func (m *metricServer) refreshSandboxesLocked() {
 		m.sandboxes[sid] = served
 		log.Infof("Registered new sandbox found in root directory: %q", sid)
 	}
-}
-
-// httpResult is returned by HTTP handlers.
-type httpResult struct {
-	code int
-	err  error
-}
-
-// httpOK is the "everything went fine" HTTP result.
-var httpOK = httpResult{code: http.StatusOK}
-
-// serveIndex serves the index page.
-func (m *metricServer) serveIndex(w http.ResponseWriter, req *http.Request) httpResult {
-	if req.URL.Path != "/" {
-		if strings.HasPrefix(req.URL.Path, "/metrics?") {
-			// Prometheus's scrape_config.metrics_path takes in a query path and automatically encodes
-			// all special characters in it to %-form, including the "?" character.
-			// This can prevent use of query parameters, and we end up here instead.
-			// To address this, rewrite the URL to undo this transformation.
-			// This means requesting "/metrics%3Ffoo=bar" is rewritten to "/metrics?foo=bar".
-			req.URL.RawQuery = strings.TrimPrefix(req.URL.Path, "/metrics?")
-			req.URL.Path = "/metrics"
-			return m.serveMetrics(w, req)
-		}
-		return httpResult{http.StatusNotFound, errors.New("path not found")}
-	}
-	fmt.Fprintf(w, "<html><head><title>runsc metrics</title></head><body>")
-	fmt.Fprintf(w, "<p>You have reached the runsc metrics server page!</p>")
-	fmt.Fprintf(w, `<p>To see actual metric data, head over to <a href="/metrics">/metrics</a>.</p>`)
-	fmt.Fprintf(w, "</body></html>")
-	return httpOK
-}
-
-// Metrics generated by the metrics server itself.
-var (
-	SandboxPresenceMetric = prometheus.Metric{
-		Name: "sandbox_presence",
-		Type: prometheus.TypeGauge,
-		Help: "Boolean metric set to 1 for each known sandbox.",
-	}
-	SandboxRunningMetric = prometheus.Metric{
-		Name: "sandbox_running",
-		Type: prometheus.TypeGauge,
-		Help: "Boolean metric set to 1 for each running sandbox.",
-	}
-	SandboxMetadataMetric = prometheus.Metric{
-		Name: "sandbox_metadata",
-		Type: prometheus.TypeGauge,
-		Help: "Key-value pairs about per-sandbox metadata.",
-	}
-	SandboxCapabilitiesMetric = prometheus.Metric{
-		Name: "sandbox_capabilities",
-		Type: prometheus.TypeGauge,
-		Help: "Linux capabilities added within containers of the sandbox.",
-	}
-	SandboxCapabilitiesMetricLabel = "capability"
-	SpecMetadataMetric             = prometheus.Metric{
-		Name: "spec_metadata",
-		Type: prometheus.TypeGauge,
-		Help: "Key-value pairs about OCI spec metadata.",
-	}
-	SandboxCreationMetric = prometheus.Metric{
-		Name: "sandbox_creation_time_seconds",
-		Type: prometheus.TypeGauge,
-		Help: "When the sandbox was created, as a unix timestamp in seconds.",
-	}
-	NumRunningSandboxesMetric = prometheus.Metric{
-		Name: "num_sandboxes_running",
-		Type: prometheus.TypeGauge,
-		Help: "Number of sandboxes running at present.",
-	}
-	NumCannotExportSandboxesMetric = prometheus.Metric{
-		Name: "num_sandboxes_broken_metrics",
-		Type: prometheus.TypeGauge,
-		Help: "Number of sandboxes from which we cannot export metrics.",
-	}
-	NumTotalSandboxesMetric = prometheus.Metric{
-		Name: "num_sandboxes_total",
-		Type: prometheus.TypeCounter,
-		Help: "Counter of sandboxes that have ever been started.",
-	}
-)
-
-// Metrics is a list of metrics that the metric server generates.
-var Metrics = []prometheus.Metric{
-	SandboxPresenceMetric,
-	SandboxRunningMetric,
-	SandboxMetadataMetric,
-	SandboxCapabilitiesMetric,
-	SpecMetadataMetric,
-	SandboxCreationMetric,
-	NumRunningSandboxesMetric,
-	NumCannotExportSandboxesMetric,
-	NumTotalSandboxesMetric,
-	prometheus.ProcessStartTimeSeconds,
 }
 
 // serveMetrics serves metrics requests.
@@ -905,139 +747,6 @@ func (m *metricServer) servePID(w http.ResponseWriter, req *http.Request) httpRe
 	return httpOK
 }
 
-// profileCPU returns a CPU profile over HTTP.
-func (m *metricServer) profileCPU(w http.ResponseWriter, req *http.Request) httpResult {
-	// Time to finish up profiling and flush out the results to the client.
-	const finishProfilingBuffer = 250 * time.Millisecond
-
-	m.mu.Lock()
-	if m.shuttingDown {
-		m.mu.Unlock()
-		return httpResult{http.StatusServiceUnavailable, errors.New("server is shutting down already")}
-	}
-	m.mu.Unlock()
-	w.WriteHeader(http.StatusOK)
-	if err := pprof.StartCPUProfile(w); err != nil {
-		// We cannot return this as an error, because we've already sent the HTTP 200 OK status.
-		log.Warningf("Failed to start recording CPU profile: %v", err)
-		return httpOK
-	}
-	deadline := time.Now().Add(httpTimeout - finishProfilingBuffer)
-	if seconds, err := strconv.Atoi(req.URL.Query().Get("seconds")); err == nil && time.Duration(seconds)*time.Second < httpTimeout {
-		deadline = time.Now().Add(time.Duration(seconds) * time.Second)
-	} else if ctxDeadline, hasDeadline := req.Context().Deadline(); hasDeadline {
-		deadline = ctxDeadline.Add(-finishProfilingBuffer)
-	}
-	log.Infof("Profiling CPU until %v...", deadline)
-	var wasInterrupted bool
-	select {
-	case <-time.After(time.Until(deadline)):
-		wasInterrupted = false
-	case <-req.Context().Done():
-		wasInterrupted = true
-	}
-	pprof.StopCPUProfile()
-	if wasInterrupted {
-		log.Warningf("Profiling CPU interrupted.")
-	} else {
-		log.Infof("Profiling CPU done.")
-	}
-	return httpOK
-}
-
-// profileHeap returns a heap profile over HTTP.
-func (m *metricServer) profileHeap(w http.ResponseWriter, req *http.Request) httpResult {
-	m.mu.Lock()
-	if m.shuttingDown {
-		m.mu.Unlock()
-		return httpResult{http.StatusServiceUnavailable, errors.New("server is shutting down already")}
-	}
-	m.mu.Unlock()
-	w.WriteHeader(http.StatusOK)
-	runtime.GC() // Run GC just before looking at the heap to get a clean view.
-	if err := pprof.Lookup("heap").WriteTo(w, 0); err != nil {
-		// We cannot return this as an error, because we've already sent the HTTP 200 OK status.
-		log.Warningf("Failed to record heap profile: %v", err)
-	}
-	return httpOK
-}
-
-// shutdownLocked shuts down the server. It assumes mu is held.
-func (m *metricServer) shutdownLocked(ctx context.Context) {
-	log.Infof("Server shutting down.")
-	m.shuttingDown = true
-	if m.udsPath != "" {
-		if err := os.Remove(m.udsPath); err != nil {
-			log.Warningf("Cannot remove UDS at %s: %v", m.udsPath, err)
-		} else {
-			m.udsPath = ""
-		}
-	}
-	if m.pidFile != "" {
-		if err := os.Remove(m.pidFile); err != nil {
-			log.Warningf("Cannot remove PID file at %s: %v", m.pidFile, err)
-		}
-	}
-	m.srv.Shutdown(ctx)
-}
-
-// logRequest wraps an HTTP handler and adds logging to it.
-func logRequest(f func(w http.ResponseWriter, req *http.Request) httpResult) func(w http.ResponseWriter, req *http.Request) {
-	return func(w http.ResponseWriter, req *http.Request) {
-		log.Infof("Request: %s %s", req.Method, req.URL.Path)
-		defer func() {
-			if r := recover(); r != nil {
-				log.Warningf("Request: %s %s: Panic:\n%v", req.Method, req.URL.Path, r)
-			}
-		}()
-		result := f(w, req)
-		if result.err != nil {
-			http.Error(w, result.err.Error(), result.code)
-			log.Warningf("Request: %s %s: Failed with HTTP code %d: %v", req.Method, req.URL.Path, result.code, result.err)
-		}
-		// Run GC after every request to keep memory usage as predictable and as flat as possible.
-		runtime.GC()
-	}
-}
-
-// verify is one iteration of verifyLoop.
-// It runs in a loop in the background which checks all sandboxes for liveness, tries to load
-// their metadata if that hasn't been loaded yet, and tries to pick up new sandboxes that
-// failed to register for whatever reason.
-func (m *metricServer) verify(ctx context.Context) {
-	_, err := container.ListSandboxes(m.rootDir)
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	if err != nil {
-		if !m.allowUnknownRoot {
-			log.Warningf("Cannot list sandboxes in root directory %s, it has likely gone away: %v. Server shutting down.", m.rootDir, err)
-			m.shutdownLocked(ctx)
-		}
-		return
-	}
-	m.refreshSandboxesLocked()
-}
-
-// verifyLoop runs in the background and periodically calls verify.
-func (m *metricServer) verifyLoop(ctx context.Context) {
-	ticker := time.NewTicker(verifyLoopInterval)
-	defer ticker.Stop()
-	for ctx.Err() == nil {
-		select {
-		case <-ctx.Done():
-			return
-		case <-m.shutdownCh:
-			log.Infof("Received interrupt signal, shutting down server.")
-			m.mu.Lock()
-			m.shutdownLocked(ctx)
-			m.mu.Unlock()
-			return
-		case <-ticker.C:
-			m.verify(ctx)
-		}
-	}
-}
-
 // Server is the set of options to run a metric server.
 // Initialize this struct and then call Run on it to run the metric server.
 type Server struct {
@@ -1081,7 +790,7 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 	if _, err := container.ListSandboxes(conf.RootDir); err != nil {
 		if !m.allowUnknownRoot {
-			return fmt.Errorf("invalid root directory %q: tried to list sandboxes within it and got: %v", conf.RootDir, err)
+			return fmt.Errorf("invalid root directory %q: tried to list sandboxes within it and got: %w", conf.RootDir, err)
 		}
 		log.Warningf("Invalid root directory %q: tried to list sandboxes within it and got: %v. Continuing anyway, as the server is configured to tolerate this.", conf.RootDir, err)
 	}
@@ -1089,7 +798,7 @@ func (s *Server) Run(ctx context.Context) error {
 	// permission errors. Double-check by actually listing the directory.
 	if _, err := ioutil.ReadDir(conf.RootDir); err != nil {
 		if !m.allowUnknownRoot {
-			return fmt.Errorf("invalid root directory %q: tried to list all entries within it and got: %v", conf.RootDir, err)
+			return fmt.Errorf("invalid root directory %q: tried to list all entries within it and got: %w", conf.RootDir, err)
 		}
 		log.Warningf("Invalid root directory %q: tried to list all entries within it and got: %v. Continuing anyway, as the server is configured to tolerate this.", conf.RootDir, err)
 	}
@@ -1112,11 +821,11 @@ func (s *Server) Run(ctx context.Context) error {
 	if strings.HasPrefix(conf.MetricServer, fmt.Sprintf("%c", os.PathSeparator)) {
 		beforeBindSt, beforeBindErr := os.Stat(conf.MetricServer)
 		if listener, listenErr = (&net.ListenConfig{}).Listen(ctx, "unix", conf.MetricServer); listenErr != nil {
-			return fmt.Errorf("cannot listen on unix domain socket %q: %v", conf.MetricServer, listenErr)
+			return fmt.Errorf("cannot listen on unix domain socket %q: %w", conf.MetricServer, listenErr)
 		}
 		afterBindSt, afterBindErr := os.Stat(conf.MetricServer)
 		if afterBindErr != nil {
-			return fmt.Errorf("cannot stat our own unix domain socket %q: %v", conf.MetricServer, afterBindErr)
+			return fmt.Errorf("cannot stat our own unix domain socket %q: %w", conf.MetricServer, afterBindErr)
 		}
 		ownUDS := true
 		if beforeBindErr == nil && beforeBindSt.Mode() == afterBindSt.Mode() {
@@ -1144,7 +853,7 @@ func (s *Server) Run(ctx context.Context) error {
 			log.Warningf("Binding on all interfaces. This will allow anyone to list all containers on your machine!")
 		}
 		if listener, listenErr = (&net.ListenConfig{}).Listen(ctx, "tcp", conf.MetricServer); listenErr != nil {
-			return fmt.Errorf("cannot listen on TCP address %q: %v", conf.MetricServer, listenErr)
+			return fmt.Errorf("cannot listen on TCP address %q: %w", conf.MetricServer, listenErr)
 		}
 	}
 
@@ -1164,10 +873,12 @@ func (s *Server) Run(ctx context.Context) error {
 	m.srv.Handler = mux
 	m.srv.ReadTimeout = httpTimeout
 	m.srv.WriteTimeout = httpTimeout
-	go m.verifyLoop(ctx)
+	if err := m.startVerifyLoop(ctx); err != nil {
+		return fmt.Errorf("cannot start background loop: %w", err)
+	}
 	if m.pidFile != "" {
 		if err := ioutil.WriteFile(m.pidFile, []byte(fmt.Sprintf("%d", m.pid)), 0644); err != nil {
-			return fmt.Errorf("cannot write PID to file %q: %v", m.pidFile, err)
+			return fmt.Errorf("cannot write PID to file %q: %w", m.pidFile, err)
 		}
 		defer os.Remove(m.pidFile)
 		log.Infof("Wrote PID %d to file %v.", m.pid, m.pidFile)
@@ -1193,7 +904,7 @@ func (s *Server) Run(ctx context.Context) error {
 		if serveErr == http.ErrServerClosed {
 			return nil
 		}
-		return fmt.Errorf("cannot serve on address %s: %v", conf.MetricServer, serveErr)
+		return fmt.Errorf("cannot serve on address %s: %w", conf.MetricServer, serveErr)
 	}
 	// Per documentation, http.Server.Serve can never return a nil error, so this is not a success.
 	return fmt.Errorf("HTTP server Serve() did not return expected error")
