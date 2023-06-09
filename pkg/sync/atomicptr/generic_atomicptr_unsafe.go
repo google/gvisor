@@ -47,3 +47,8 @@ func (p *AtomicPtr) Load() *Value {
 func (p *AtomicPtr) Store(x *Value) {
 	atomic.StorePointer(&p.ptr, (unsafe.Pointer)(x))
 }
+
+// Swap atomically stores `x` into *p and returns the previous *p value.
+func (p *AtomicPtr) Swap(x *Value) *Value {
+	return (*Value)(atomic.SwapPointer(&p.ptr, (unsafe.Pointer)(x)))
+}

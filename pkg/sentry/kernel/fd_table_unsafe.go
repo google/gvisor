@@ -16,19 +16,21 @@ package kernel
 
 import (
 	"math"
-	"sync/atomic"
-	"unsafe"
 
 	"gvisor.dev/gvisor/pkg/bitmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
+type descriptorBucket [fdsPerBucket]descriptorAtomicPtr
+type descriptorBucketSlice []descriptorBucketAtomicPtr
+
+// descriptorTable is a two level table. The first level is a slice of
+// *descriptorBucket where each bucket is a slice of *descriptor.
+//
+// All objects are updated atomically.
 type descriptorTable struct {
-	// slice is a *[]unsafe.Pointer, where each element is actually
-	// *descriptor object, updated atomically.
-	//
 	// Changes to the slice itself requiring holding FDTable.mu.
-	slice unsafe.Pointer `state:".(map[int32]*descriptor)"`
+	slice descriptorBucketSliceAtomicPtr `state:".(map[int32]*descriptor)"`
 }
 
 // initNoLeakCheck initializes the table without enabling leak checking.
@@ -36,8 +38,8 @@ type descriptorTable struct {
 // This is used when loading an FDTable after S/R, during which the ref count
 // object itself will enable leak checking if necessary.
 func (f *FDTable) initNoLeakCheck() {
-	var slice []unsafe.Pointer // Empty slice.
-	atomic.StorePointer(&f.slice, unsafe.Pointer(&slice))
+	var slice descriptorBucketSlice // Empty slice.
+	f.slice.Store(&slice)
 }
 
 // init initializes the table with leak checking.
@@ -47,17 +49,30 @@ func (f *FDTable) init() {
 	f.fdBitmap = bitmap.New(uint32(math.MaxUint16))
 }
 
+const (
+	// fdsPerBucketShift is chosen in such a way that the size of bucket is
+	// equal to one page.
+	fdsPerBucketShift = 9
+	fdsPerBucket      = 1 << fdsPerBucketShift
+	fdsPerBucketMask  = fdsPerBucket - 1
+)
+
 // get gets a file entry.
 //
 // The boolean indicates whether this was in range.
 //
 //go:nosplit
 func (f *FDTable) get(fd int32) (*vfs.FileDescription, FDFlags, bool) {
-	slice := *(*[]unsafe.Pointer)(atomic.LoadPointer(&f.slice))
-	if fd >= int32(len(slice)) {
+	slice := *f.slice.Load()
+	bucketN := fd >> fdsPerBucketShift
+	if bucketN >= int32(len(slice)) {
 		return nil, FDFlags{}, false
 	}
-	d := (*descriptor)(atomic.LoadPointer(&slice[fd]))
+	bucket := slice[bucketN].Load()
+	if bucket == nil {
+		return nil, FDFlags{}, false
+	}
+	d := bucket[fd&fdsPerBucketMask].Load()
 	if d == nil {
 		return nil, FDFlags{}, true
 	}
@@ -67,8 +82,8 @@ func (f *FDTable) get(fd int32) (*vfs.FileDescription, FDFlags, bool) {
 // CurrentMaxFDs returns the number of file descriptors that may be stored in f
 // without reallocation.
 func (f *FDTable) CurrentMaxFDs() int {
-	slice := *(*[]unsafe.Pointer)(atomic.LoadPointer(&f.slice))
-	return len(slice)
+	slice := *f.slice.Load()
+	return len(slice) * fdsPerBucket
 }
 
 // set sets the file description referred to by fd to file. If
@@ -79,11 +94,12 @@ func (f *FDTable) CurrentMaxFDs() int {
 //
 // Precondition: mu must be held.
 func (f *FDTable) set(fd int32, file *vfs.FileDescription, flags FDFlags) *vfs.FileDescription {
-	slicePtr := (*[]unsafe.Pointer)(atomic.LoadPointer(&f.slice))
+	slicePtr := f.slice.Load()
 
+	bucketN := fd >> fdsPerBucketShift
 	// Grow the table as required.
-	if length := len(*slicePtr); int(fd) >= length {
-		newLen := int(fd) + 1
+	if length := len(*slicePtr); int(bucketN) >= length {
+		newLen := int(bucketN) + 1
 		if newLen < 2*length {
 			// Ensure the table at least doubles in size without going over the limit.
 			newLen = 2 * length
@@ -91,12 +107,18 @@ func (f *FDTable) set(fd int32, file *vfs.FileDescription, flags FDFlags) *vfs.F
 				newLen = int(MaxFdLimit)
 			}
 		}
-		newSlice := append(*slicePtr, make([]unsafe.Pointer, newLen-length)...)
+		newSlice := append(*slicePtr, make([]descriptorBucketAtomicPtr, newLen-length)...)
 		slicePtr = &newSlice
-		atomic.StorePointer(&f.slice, unsafe.Pointer(slicePtr))
+		f.slice.Store(slicePtr)
 	}
 
 	slice := *slicePtr
+
+	bucket := slice[bucketN].Load()
+	if bucket == nil {
+		bucket = &descriptorBucket{}
+		slice[bucketN].Store(bucket)
+	}
 
 	var desc *descriptor
 	if file != nil {
@@ -107,7 +129,7 @@ func (f *FDTable) set(fd int32, file *vfs.FileDescription, flags FDFlags) *vfs.F
 	}
 
 	// Update the single element.
-	orig := (*descriptor)(atomic.SwapPointer(&slice[fd], unsafe.Pointer(desc)))
+	orig := bucket[fd%fdsPerBucket].Swap(desc)
 
 	// Acquire a table reference.
 	if desc != nil && desc.file != nil {

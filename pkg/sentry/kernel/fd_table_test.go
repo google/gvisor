@@ -219,6 +219,61 @@ func BenchmarkFDLookupAndDecRef(b *testing.B) {
 	})
 }
 
+func BenchmarkNewFDAt(b *testing.B) {
+	const maxLimit = 1 << 31
+	b.StopTimer() // Setup.
+
+	runTest(b, func(ctx context.Context, fdTable *FDTable, fd *vfs.FileDescription, limitSet *limits.LimitSet) {
+		// Remove the previous limit.
+		limitSet.Set(limits.NumberOfFiles, limits.Limit{maxLimit, maxLimit}, true)
+
+		b.StartTimer() // Benchmark.
+		for i := 0; i < b.N; i++ {
+			err := fdTable.NewFDAt(ctx, int32(i%maxLimit), fd, FDFlags{})
+			if err != nil {
+				b.Fatalf("fdTable.NewFDAt: got %v, wanted nil", err)
+			}
+		}
+	})
+}
+
+func BenchmarkFork(b *testing.B) {
+	b.StopTimer() // Setup.
+
+	runTest(b, func(ctx context.Context, fdTable *FDTable, fd *vfs.FileDescription, limitSet *limits.LimitSet) {
+		for i := 0; i < maxFD; i++ {
+			err := fdTable.NewFDAt(ctx, int32(i), fd, FDFlags{})
+			if err != nil {
+				b.Fatalf("fdTable.NewFDs: got %v, wanted nil", err)
+			}
+		}
+
+		b.StartTimer() // Benchmark.
+		for i := 0; i < b.N; i++ {
+			t := fdTable.Fork(ctx, maxFD)
+			t.DecRef(ctx)
+		}
+	})
+}
+
+func BenchmarkCreateWithMaxFD(b *testing.B) {
+	const maxLimit = 1 << 31
+	runTest(b, func(ctx context.Context, _ *FDTable, fd *vfs.FileDescription, limitSet *limits.LimitSet) {
+		// Remove the previous limit.
+		limitSet.Set(limits.NumberOfFiles, limits.Limit{maxLimit, maxLimit}, true)
+
+		for i := 0; i < b.N; i++ {
+			fdTable := new(FDTable)
+			fdTable.init()
+			err := fdTable.NewFDAt(ctx, maxLimit-1, fd, FDFlags{})
+			if err != nil {
+				b.Fatalf("fdTable.NewFDs: got %v, wanted nil", err)
+			}
+			fdTable.DecRef(ctx)
+		}
+	})
+}
+
 func BenchmarkFDLookupAndDecRefConcurrent(b *testing.B) {
 	b.StopTimer() // Setup.
 

@@ -294,6 +294,56 @@ func TestBitmapNumOnes(t *testing.T) {
 	}
 }
 
+type bitmapForEachTestcase struct {
+	start, end uint32
+	expected   map[uint32]bool
+}
+
+func TestForEach(t *testing.T) {
+	const bitmapSize = 1 << 20
+	bitmap := New(bitmapSize)
+	bitmap.FlipRange(200, 400)
+	bitmap.FlipRange(1003, 1004)
+	bitmap.FlipRange(1005, 1006)
+	bitmap.FlipRange(1096, 1098)
+	testcases := []bitmapForEachTestcase{
+		{0, 0, map[uint32]bool{}},
+		{0, 100, map[uint32]bool{}},
+		{1003, 1004, map[uint32]bool{1003: true}},
+		{1003, 1006, map[uint32]bool{1003: true, 1005: true}},
+		{1000, 2000, map[uint32]bool{1003: true, 1005: true, 1096: true, 1097: true}},
+		{1000, 1097, map[uint32]bool{1003: true, 1005: true, 1096: true}},
+		{1060, 1097, map[uint32]bool{1096: true}},
+		{0, bitmapSize, func() map[uint32]bool {
+			m := make(map[uint32]bool)
+			for _, i := range bitmap.ToSlice() {
+				m[i] = true
+			}
+			return m
+		}()},
+		{234, 356, func() map[uint32]bool {
+			m := make(map[uint32]bool)
+			for i := uint32(234); i < 356; i++ {
+				m[i] = true
+			}
+			return m
+		}()},
+	}
+	for _, tc := range testcases {
+		bitmap.ForEach(tc.start, tc.end, func(idx uint32) bool {
+			if _, ok := tc.expected[idx]; !ok {
+				t.Errorf("[%d, %d): unexpeced index: %d", tc.start, tc.end, idx)
+				return false
+			}
+			delete(tc.expected, idx)
+			return true
+		})
+		if len(tc.expected) != 0 {
+			t.Errorf("[%d-%d): leftover: %#v", tc.start, tc.end, tc.expected)
+		}
+	}
+}
+
 type BitmapGetFirstTestcase struct {
 	queryValue    uint32
 	expectedValue uint32

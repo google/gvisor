@@ -7,6 +7,39 @@ package(
     licenses = ["notice"],
 )
 
+go_template_instance(
+    name = "atomicptr_bucket_slice",
+    out = "atomicptr_bucket_slice_unsafe.go",
+    package = "kernel",
+    prefix = "descriptorBucketSlice",
+    template = "//pkg/sync/atomicptr:generic_atomicptr",
+    types = {
+        "Value": "descriptorBucketSlice",
+    },
+)
+
+go_template_instance(
+    name = "atomicptr_bucket",
+    out = "atomicptr_bucket_unsafe.go",
+    package = "kernel",
+    prefix = "descriptorBucket",
+    template = "//pkg/sync/atomicptr:generic_atomicptr",
+    types = {
+        "Value": "descriptorBucket",
+    },
+)
+
+go_template_instance(
+    name = "atomicptr_descriptor",
+    out = "atomicptr_descriptor_unsafe.go",
+    package = "kernel",
+    prefix = "descriptor",
+    template = "//pkg/sync/atomicptr:generic_atomicptr",
+    types = {
+        "Value": "descriptor",
+    },
+)
+
 declare_mutex(
     name = "cpu_clock_mutex",
     out = "cpu_clock_mutex.go",
@@ -205,6 +238,9 @@ go_library(
     srcs = [
         "abstract_socket_namespace.go",
         "aio.go",
+        "atomicptr_bucket_slice_unsafe.go",
+        "atomicptr_bucket_unsafe.go",
+        "atomicptr_descriptor_unsafe.go",
         "cgroup.go",
         "cgroup_mutex.go",
         "context.go",
