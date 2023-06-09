@@ -1,4 +1,4 @@
-package futex
+package kernel
 
 import (
 	"sync/atomic"
@@ -13,15 +13,15 @@ import (
 // this case, do `dst.Store(src.Load())` instead.
 //
 // +stateify savable
-type AtomicPtrBucket struct {
-	ptr unsafe.Pointer `state:".(*bucket)"`
+type descriptorBucketAtomicPtr struct {
+	ptr unsafe.Pointer `state:".(*descriptorBucket)"`
 }
 
-func (p *AtomicPtrBucket) savePtr() *bucket {
+func (p *descriptorBucketAtomicPtr) savePtr() *descriptorBucket {
 	return p.Load()
 }
 
-func (p *AtomicPtrBucket) loadPtr(v *bucket) {
+func (p *descriptorBucketAtomicPtr) loadPtr(v *descriptorBucket) {
 	p.Store(v)
 }
 
@@ -29,16 +29,16 @@ func (p *AtomicPtrBucket) loadPtr(v *bucket) {
 // has been no previous call to Store.
 //
 //go:nosplit
-func (p *AtomicPtrBucket) Load() *bucket {
-	return (*bucket)(atomic.LoadPointer(&p.ptr))
+func (p *descriptorBucketAtomicPtr) Load() *descriptorBucket {
+	return (*descriptorBucket)(atomic.LoadPointer(&p.ptr))
 }
 
 // Store sets the value returned by Load to x.
-func (p *AtomicPtrBucket) Store(x *bucket) {
+func (p *descriptorBucketAtomicPtr) Store(x *descriptorBucket) {
 	atomic.StorePointer(&p.ptr, (unsafe.Pointer)(x))
 }
 
 // Swap atomically stores `x` into *p and returns the previous *p value.
-func (p *AtomicPtrBucket) Swap(x *bucket) *bucket {
-	return (*bucket)(atomic.SwapPointer(&p.ptr, (unsafe.Pointer)(x)))
+func (p *descriptorBucketAtomicPtr) Swap(x *descriptorBucket) *descriptorBucket {
+	return (*descriptorBucket)(atomic.SwapPointer(&p.ptr, (unsafe.Pointer)(x)))
 }

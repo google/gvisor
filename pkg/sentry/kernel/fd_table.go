@@ -159,32 +159,22 @@ func (f *FDTable) DecRef(ctx context.Context) {
 //
 // It is the caller's responsibility to acquire an appropriate lock.
 func (f *FDTable) forEachUpTo(ctx context.Context, maxFd int32, fn func(fd int32, file *vfs.FileDescription, flags FDFlags)) {
-	// retries tracks the number of failed TryIncRef attempts for the same FD.
-	retries := 0
-	fds := f.fdBitmap.ToSlice()
 	// Iterate through the fdBitmap.
-	for _, ufd := range fds {
+	f.fdBitmap.ForEach(0, uint32(maxFd), func(ufd uint32) bool {
 		fd := int32(ufd)
-		if fd >= maxFd {
-			break
-		}
 		file, flags, ok := f.get(fd)
 		if !ok {
-			break
+			return true
 		}
 		if file != nil {
 			if !file.TryIncRef() {
-				retries++
-				if retries > 1000 {
-					panic(fmt.Sprintf("File in FD table has been destroyed. FD: %d, File: %+v, Impl: %+v", fd, file, file.Impl()))
-				}
-				continue // Race caught.
+				return true
 			}
 			fn(fd, file, flags)
 			file.DecRef(ctx)
 		}
-		retries = 0
-	}
+		return true
+	})
 }
 
 // forEach iterates over all non-nil files upto maxFd in sorted order.

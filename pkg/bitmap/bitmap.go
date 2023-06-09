@@ -250,6 +250,38 @@ func (b *Bitmap) FlipRange(begin, end uint32) {
 	}
 }
 
+// ForEach calls `f` for each set bit in the range [start, end).
+//
+// If f returns false, ForEach stops the iteration.
+func (b *Bitmap) ForEach(start, end uint32, f func(idx uint32) bool) {
+	blockEnd := (end + 63) / 64
+	if blockEnd > uint32(len(b.bitBlock)) {
+		blockEnd = uint32(len(b.bitBlock))
+	}
+	// base is the start number of a bitBlock
+	base := start / 64 * 64
+	blockMask := ^((uint64(1) << (start % 64)) - 1)
+	for i := start / 64; i < blockEnd; i++ {
+		if i == end/64 {
+			blockMask &= (uint64(1) << (end % 64)) - 1
+		}
+		bitBlock := b.bitBlock[i] & blockMask
+		blockMask = ^uint64(0)
+		// Iterate through all the numbers held by this bit block.
+		for bitBlock != 0 {
+			// Extract the lowest set 1 bit.
+			j := bitBlock & -bitBlock
+			// Interpret the bit as the in32 number it represents and add it to result.
+			idx := base + uint32(bits.OnesCount64(j-1))
+			if !f(idx) {
+				return
+			}
+			bitBlock ^= j
+		}
+		base += 64
+	}
+}
+
 // ToSlice transform the Bitmap into slice. For example, a bitmap of [0, 1, 0, 1]
 // will return the slice [1, 3].
 func (b *Bitmap) ToSlice() []uint32 {

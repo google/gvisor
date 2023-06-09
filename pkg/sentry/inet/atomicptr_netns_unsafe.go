@@ -37,3 +37,8 @@ func (p *NamespaceAtomicPtr) Load() *Namespace {
 func (p *NamespaceAtomicPtr) Store(x *Namespace) {
 	atomic.StorePointer(&p.ptr, (unsafe.Pointer)(x))
 }
+
+// Swap atomically stores `x` into *p and returns the previous *p value.
+func (p *NamespaceAtomicPtr) Swap(x *Namespace) *Namespace {
+	return (*Namespace)(atomic.SwapPointer(&p.ptr, (unsafe.Pointer)(x)))
+}

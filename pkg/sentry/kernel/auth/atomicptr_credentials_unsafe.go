@@ -37,3 +37,8 @@ func (p *AtomicPtrCredentials) Load() *Credentials {
 func (p *AtomicPtrCredentials) Store(x *Credentials) {
 	atomic.StorePointer(&p.ptr, (unsafe.Pointer)(x))
 }
+
+// Swap atomically stores `x` into *p and returns the previous *p value.
+func (p *AtomicPtrCredentials) Swap(x *Credentials) *Credentials {
+	return (*Credentials)(atomic.SwapPointer(&p.ptr, (unsafe.Pointer)(x)))
+}
