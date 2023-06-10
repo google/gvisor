@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -27,4 +27,10 @@ go_library(
         "//runsc/container",
         "//runsc/sandbox",
     ],
+)
+
+go_test(
+    name = "metricserver_test",
+    srcs = ["metricserver_test.go"],
+    library = ":metricserver",
 )
