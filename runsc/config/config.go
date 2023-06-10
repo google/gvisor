@@ -396,8 +396,24 @@ func (b Bundle) Validate() error {
 	return nil
 }
 
+// MetricMetadataKeys is the set of keys of metric metadata labels
+// as returned by `Config.MetricMetadata`.
+var MetricMetadataKeys = []string{
+	"version",
+	"platform",
+	"network",
+	"numcores",
+	"coretags",
+	"overlay",
+	"fsmode",
+	"cpuarch",
+	"go",
+	"experiment",
+}
+
 // MetricMetadata returns key-value pairs that are useful to include in metrics
 // exported about the sandbox this config represents.
+// It must return the same set of labels as listed in `MetricMetadataKeys`.
 func (c *Config) MetricMetadata() map[string]string {
 	var fsMode = "goferfs"
 	if c.DirectFS {
