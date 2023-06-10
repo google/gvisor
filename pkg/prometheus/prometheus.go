@@ -193,6 +193,19 @@ func (n *Number) IsInteger() bool {
 	return n.Float < float64(math.MaxInt64) && n.Float > float64(math.MinInt64) && math.Round(n.Float) == n.Float
 }
 
+// ToFloat returns this number as a floating-point number, regardless of which
+// type the number was encoded as. An integer Number will have its value cast
+// to a float, while a floating-point Number will have its value returned
+// as-is.
+//
+//go:nosplit
+func (n *Number) ToFloat() float64 {
+	if n.Int != 0 {
+		return float64(n.Int)
+	}
+	return n.Float
+}
+
 // String returns a string representation of this number.
 func (n *Number) String() string {
 	var s strings.Builder
