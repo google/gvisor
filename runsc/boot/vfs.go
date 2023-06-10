@@ -1076,7 +1076,7 @@ func createDeviceFiles(ctx context.Context, creds *auth.Credentials, info *conta
 		}
 		if err := vfsObj.MkdirAllAt(ctx, path.Dir(dev.Path), root, creds, &vfs.MkdirOptions{
 			Mode: 0o755,
-		}); err != nil {
+		}, true /* mustBeDir */); err != nil {
 			return fmt.Errorf("failed to create ancestor directories of %q: %w", dev.Path, err)
 		}
 		// EEXIST is silently ignored; compare

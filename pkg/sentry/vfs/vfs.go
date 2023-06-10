@@ -856,7 +856,7 @@ func (vfs *VirtualFilesystem) getFilesystems() map[*Filesystem]struct{} {
 
 // MkdirAllAt recursively creates non-existent directories on the given path
 // (including the last component).
-func (vfs *VirtualFilesystem) MkdirAllAt(ctx context.Context, currentPath string, root VirtualDentry, creds *auth.Credentials, mkdirOpts *MkdirOptions) error {
+func (vfs *VirtualFilesystem) MkdirAllAt(ctx context.Context, currentPath string, root VirtualDentry, creds *auth.Credentials, mkdirOpts *MkdirOptions, mustBeDir bool) error {
 	pop := &PathOperation{
 		Root:  root,
 		Start: root,
@@ -865,7 +865,7 @@ func (vfs *VirtualFilesystem) MkdirAllAt(ctx context.Context, currentPath string
 	stat, err := vfs.StatAt(ctx, creds, pop, &StatOptions{Mask: linux.STATX_TYPE})
 	switch {
 	case err == nil:
-		if stat.Mask&linux.STATX_TYPE == 0 || stat.Mode&linux.FileTypeMask != linux.ModeDirectory {
+		if mustBeDir && (stat.Mask&linux.STATX_TYPE == 0 || stat.Mode&linux.FileTypeMask != linux.ModeDirectory) {
 			return linuxerr.ENOTDIR
 		}
 		// Directory already exists.
@@ -877,7 +877,7 @@ func (vfs *VirtualFilesystem) MkdirAllAt(ctx context.Context, currentPath string
 	}
 
 	// Recurse to ensure parent is created and then create the final directory.
-	if err := vfs.MkdirAllAt(ctx, path.Dir(currentPath), root, creds, mkdirOpts); err != nil {
+	if err := vfs.MkdirAllAt(ctx, path.Dir(currentPath), root, creds, mkdirOpts, true /* mustBeDir */); err != nil {
 		return err
 	}
 	if err := vfs.MkdirAt(ctx, creds, pop, mkdirOpts); err != nil {
@@ -893,18 +893,14 @@ func (vfs *VirtualFilesystem) MakeSyntheticMountpoint(ctx context.Context, targe
 	mkdirOpts := &MkdirOptions{Mode: 0777, ForSyntheticMountpoint: true}
 
 	// Make sure the parent directory of target exists.
-	if err := vfs.MkdirAllAt(ctx, path.Dir(target), root, creds, mkdirOpts); err != nil {
+	if err := vfs.MkdirAllAt(ctx, path.Dir(target), root, creds, mkdirOpts, true /* mustBeDir */); err != nil {
 		return fmt.Errorf("failed to create parent directory of mountpoint %q: %w", target, err)
 	}
 
 	// Attempt to mkdir the final component. If a file (of any type) exists
 	// then we let allow mounting on top of that because we do not require the
 	// target to be an existing directory, unlike Linux mount(2).
-	if err := vfs.MkdirAt(ctx, creds, &PathOperation{
-		Root:  root,
-		Start: root,
-		Path:  fspath.Parse(target),
-	}, mkdirOpts); err != nil && !linuxerr.Equals(linuxerr.EEXIST, err) {
+	if err := vfs.MkdirAllAt(ctx, target, root, creds, mkdirOpts, false /* mustBeDir */); err != nil {
 		return fmt.Errorf("failed to create mountpoint %q: %w", target, err)
 	}
 	return nil
