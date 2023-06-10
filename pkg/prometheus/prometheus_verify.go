@@ -893,3 +893,13 @@ func (v *Verifier) Verify(snapshot *Snapshot) error {
 	v.lastPacker = newPacker
 	return nil
 }
+
+// AllMetrics returns the metadata of all the metrics that were declared as
+// part of this Verifier.
+func (v *Verifier) AllMetrics() []*pb.MetricMetadata {
+	metrics := make([]*pb.MetricMetadata, 0, len(v.knownMetrics))
+	for _, m := range v.knownMetrics {
+		metrics = append(metrics, m.metadata)
+	}
+	return metrics
+}
