@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	re "regexp"
 	"sort"
 	"strings"
 	"time"
@@ -486,6 +487,20 @@ func nameToPrometheusName(name string) string {
 	return strings.ReplaceAll(strings.TrimPrefix(name, "/"), "/", "_")
 }
 
+var validMetricNameRegexp = re.MustCompile("^(?:/[_\\w]+)+$")
+
+// verifyName verifies that the given metric name is a valid path-style metric
+// name.
+func verifyName(name string) error {
+	if !strings.HasPrefix(name, "/") {
+		return fmt.Errorf("metric name must start with a '/': %q", name)
+	}
+	if !validMetricNameRegexp.MatchString(name) {
+		return fmt.Errorf("invalid metric name: %q", name)
+	}
+	return nil
+}
+
 // RegisterCustomUint64Metric registers a metric with the given name.
 //
 // Register must only be called at init and will return and error if called
@@ -555,6 +570,9 @@ func MustRegisterCustomUint64Metric(name string, cumulative, sync bool, descript
 //
 // Metrics must be statically defined (i.e., at init).
 func NewUint64Metric(name string, sync bool, units pb.MetricMetadata_Units, description string, fields ...Field) (*Uint64Metric, error) {
+	if err := verifyName(name); err != nil {
+		return nil, err
+	}
 	f, err := newFieldMapper(fields...)
 	if err != nil {
 		return nil, err
@@ -832,6 +850,9 @@ type DistributionMetric struct {
 
 // NewDistributionMetric creates and registers a new distribution metric.
 func NewDistributionMetric(name string, sync bool, bucketer Bucketer, unit pb.MetricMetadata_Units, description string, fields ...Field) (*DistributionMetric, error) {
+	if err := verifyName(name); err != nil {
+		return nil, err
+	}
 	if initialized.Load() {
 		return nil, ErrInitializationDone
 	}

@@ -66,6 +66,32 @@ func verifyPrometheusParsing(t *testing.T) {
 	}
 }
 
+func TestVerifyName(t *testing.T) {
+	for name, wantErr := range map[string]bool{
+		"":              true,
+		"/":             true,
+		"/foo":          false,
+		"/foo/bar":      false,
+		"/foo/bar/baz":  false,
+		"/foo/bar/bar":  false,
+		"/foo//bar/baz": true,
+		"//foo/bar":     true,
+		"//":            true,
+		"foo":           true,
+		"foo/bar":       true,
+		"/foo-bar":      true,
+		"/foo bar":      true,
+		"/foo_bar":      false,
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := verifyName(name)
+			if gotErr := (err != nil); gotErr != wantErr {
+				t.Errorf("verifyName(%q) got err=%v wantErr=%v", name, err, wantErr)
+			}
+		})
+	}
+}
+
 func TestInitialize(t *testing.T) {
 	defer resetTest()
 
