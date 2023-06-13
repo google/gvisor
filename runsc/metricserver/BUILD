@@ -26,6 +26,8 @@ go_library(
         "//runsc/config",
         "//runsc/container",
         "//runsc/sandbox",
+        "@org_golang_google_api//option:go_default_library",
+        "@org_golang_google_grpc//:go_default_library",
     ],
 )
 

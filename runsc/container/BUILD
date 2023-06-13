@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "default_platform", "go_library", "go_test", "more_shards", "platforms")
+load("//tools:defs.bzl", "default_platform", "go_library", "go_test", "most_shards", "platforms")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -65,7 +65,7 @@ go_test(
         "//test/cmd/test_app",
     ],
     library = ":container",
-    shard_count = more_shards,
+    shard_count = most_shards,
     tags = ["requires-kvm"],
     deps = [
         "//pkg/abi/linux",
@@ -93,6 +93,7 @@ go_test(
         "@com_github_google_go_cmp//cmp:go_default_library",
         "@com_github_kr_pty//:go_default_library",
         "@com_github_opencontainers_runtime_spec//specs-go:go_default_library",
+        "@org_golang_google_grpc//:go_default_library",
         "@org_golang_google_protobuf//proto:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],
