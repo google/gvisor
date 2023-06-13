@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -151,6 +152,9 @@ type controller interface {
 type cgroupInode struct {
 	dir
 
+	// id is the id of this cgroup.
+	id uint32
+
 	// controllers is the set of controllers for this cgroup. This is used to
 	// store controller-specific state per cgroup. The set of controllers should
 	// match the controllers for this hierarchy as tracked by the filesystem
@@ -174,6 +178,16 @@ func (fs *filesystem) newCgroupInode(ctx context.Context, creds *auth.Credential
 		controllers: make(map[kernel.CgroupControllerType]controller),
 	}
 	c.dir.cgi = c
+
+	k := kernel.KernelFromContext(ctx)
+	r := k.CgroupRegistry()
+	// Assign id for the cgroup.
+	cid, err := r.NextCgroupID()
+	if err != nil {
+		log.Warningf("cgroupfs newCgroupInode: Failed to assign id to the cgroup: %v", err)
+	}
+	c.id = cid
+	r.AddCgroup(c)
 
 	contents := make(map[string]kernfs.Inode)
 	contents["cgroup.procs"] = fs.newControllerWritableFile(ctx, creds, &cgroupProcsData{c}, false)
@@ -380,6 +394,11 @@ func (c *cgroupInode) WriteControl(ctx context.Context, name string, value strin
 	}
 
 	return nil
+}
+
+// ID implements kernel.CgroupImpl.ID.
+func (c *cgroupInode) ID() uint32 {
+	return c.id
 }
 
 func sortTIDs(tids []kernel.ThreadID) {
