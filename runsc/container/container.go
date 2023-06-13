@@ -1702,9 +1702,12 @@ func nvproxyUpdateAppRootFilesystem(spec *specs.Spec, conf *config.Config) error
 	if err != nil {
 		return fmt.Errorf("failed to locate nvidia-container-cli in PATH: %w", err)
 	}
-	ldconfigPath, err := exec.LookPath("ldconfig")
-	if err != nil {
-		return fmt.Errorf("failed to locate ldconfig in PATH: %w", err)
+	// On Ubuntu, ldconfig is a wrapper around ldconfig.real, and we need the latter.
+	var ldconfigPath string
+	if _, err := os.Stat("/sbin/ldconfig.real"); err == nil {
+		ldconfigPath = "/sbin/ldconfig.real"
+	} else {
+		ldconfigPath = "/sbin/ldconfig"
 	}
 
 	// nvidia-container-cli does not create this directory.
