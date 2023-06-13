@@ -118,7 +118,10 @@ func (fs *Filesystem) revalidateChildLocked(ctx context.Context, vfsObj *vfs.Vir
 				// Drop the ref owned by kernfs.
 				fs.deferDecRef(child)
 			}
-			vfsObj.InvalidateDentry(ctx, child.VFSDentry())
+			vds := vfsObj.InvalidateDentry(ctx, child.VFSDentry())
+			for _, vd := range vds {
+				fs.deferDecRef(vd)
+			}
 			child = nil
 		}
 	}
