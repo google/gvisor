@@ -31,6 +31,9 @@ import (
 // InvalidCgroupHierarchyID indicates an uninitialized hierarchy ID.
 const InvalidCgroupHierarchyID uint32 = 0
 
+// InvalidCgroupID indicates an uninitialized cgroup ID.
+const InvalidCgroupID uint32 = 0
+
 // CgroupControllerType is the name of a cgroup controller.
 type CgroupControllerType string
 
@@ -212,6 +215,9 @@ type CgroupImpl interface {
 	// WriteControl allows a background context to write a cgroup's control
 	// values.
 	WriteControl(ctx context.Context, name string, val string) error
+
+	// ID returns the id of this cgroup.
+	ID() uint32
 }
 
 // hierarchy represents a cgroupfs filesystem instance, with a unique set of
@@ -268,6 +274,11 @@ type CgroupRegistry struct {
 	//
 	lastHierarchyID atomicbitops.Uint32
 
+	// lastCgroupID is the id of the last allocated cgroup. Valid ids are
+	// from 1 to math.MaxUint32.
+	//
+	lastCgroupID atomicbitops.Uint32
+
 	mu cgroupMutex `state:"nosave"`
 
 	// controllers is the set of currently known cgroup controllers on the
@@ -287,6 +298,12 @@ type CgroupRegistry struct {
 	//
 	// +checklocks:mu
 	hierarchiesByName map[string]hierarchy
+
+	// cgroups is the active set of cgroups. This contains all the cgroups
+	// on the system.
+	//
+	// +checklocks:mu
+	cgroups map[uint32]CgroupImpl
 }
 
 func newCgroupRegistry() *CgroupRegistry {
@@ -294,6 +311,7 @@ func newCgroupRegistry() *CgroupRegistry {
 		controllers:       make(map[CgroupControllerType]CgroupController),
 		hierarchies:       make(map[uint32]hierarchy),
 		hierarchiesByName: make(map[string]hierarchy),
+		cgroups:           make(map[uint32]CgroupImpl),
 	}
 }
 
@@ -511,4 +529,30 @@ func (r *CgroupRegistry) GenerateProcCgroups(buf *bytes.Buffer) {
 	for _, e := range entries {
 		fmt.Fprint(buf, e)
 	}
+}
+
+// NextCgroupID returns a newly allocated, unique cgroup ID.
+func (r *CgroupRegistry) NextCgroupID() (uint32, error) {
+	if cid := r.lastCgroupID.Add(1); cid != 0 {
+		return cid, nil
+	}
+	return InvalidCgroupID, fmt.Errorf("cgroup ID overflow")
+}
+
+// AddCgroup adds the ID and cgroup in the map.
+func (r *CgroupRegistry) AddCgroup(cg CgroupImpl) {
+	r.mu.Lock()
+	r.cgroups[cg.ID()] = cg
+	r.mu.Unlock()
+}
+
+// GetCgroup returns the cgroup associated with the cgroup ID.
+func (r *CgroupRegistry) GetCgroup(cid uint32) (CgroupImpl, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	cg, ok := r.cgroups[cid]
+	if !ok {
+		return nil, fmt.Errorf("cgroup with ID %d does not exist", cid)
+	}
+	return cg, nil
 }
