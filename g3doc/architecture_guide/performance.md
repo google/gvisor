@@ -36,7 +36,7 @@ improvements are possible and not possible.
 While we include a variety of workloads here, it’s worth emphasizing that gVisor
 may not be an appropriate solution for every workload, for reasons other than
 performance. For example, a sandbox may provide minimal benefit for a trusted
-database, since _user data would already be inside the sandbox_ and there is no
+database, since *user data would already be inside the sandbox* and there is no
 need for an attacker to break out in the first place.
 
 ## Methodology
@@ -45,9 +45,11 @@ All data below was generated using the [benchmark tools][benchmark-tools]
 repository, and the machines under test are uniform [Google Compute Engine][gce]
 Virtual Machines (VMs) with the following specifications:
 
-    Machine type: n1-standard-4 (broadwell)
-    Image: Debian GNU/Linux 9 (stretch) 4.19.0-0
-    BootDisk: 2048GB SSD persistent disk
+```
+Machine type: n1-standard-4 (broadwell)
+Image: Debian GNU/Linux 9 (stretch) 4.19.0-0
+BootDisk: 2048GB SSD persistent disk
+```
 
 Through this document, `runsc` is used to indicate the runtime provided by
 gVisor. When relevant, we use the name `runsc-platform` to describe a specific
@@ -57,9 +59,9 @@ gVisor. When relevant, we use the name `runsc-platform` to describe a specific
 platform. The `ptrace` platform works everywhere and does not require hardware
 virtualization or kernel modifications but suffers from the highest structural
 costs by far. This platform is used to provide a clear understanding of the
-performance model, but in no way represents an ideal scenario. In the future,
-this guide will be extended to bare metal environments and include additional
-platforms.**
+performance model, but in no way represents an ideal scenario; users should use
+Systrap for best performance in most cases. In the future, this guide will be
+extended to bare metal environments and include additional platforms.**
 
 ## Memory access
 
