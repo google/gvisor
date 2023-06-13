@@ -16,20 +16,23 @@ must be followed for new tests.
 Each test file generates three different test targets that run in different
 environments:
 
-* a `native` target that runs directly on the host machine,
-* a `runsc_ptrace` target that runs inside runsc using the ptrace platform, and
-* a `runsc_kvm` target that runs inside runsc using the KVM platform.
+*   a `native` target that runs directly on the host machine
+*   a `runsc_systrap` target that runs inside runsc using the systrap platform
+*   a `runsc_ptrace` target that runs inside runsc using the ptrace platform
+*   a `runsc_kvm` target that runs inside runsc using the KVM platform.
 
 For example, the test in `access_test.cc` generates the following targets:
 
-* `//test/syscalls:access_test_native`
-* `//test/syscalls:access_test_runsc_ptrace`
-* `//test/syscalls:access_test_runsc_kvm`
+*   `//test/syscalls:access_test_native`
+*   `//test/syscalls:access_test_runsc_systrap`
+*   `//test/syscalls:access_test_runsc_ptrace`
+*   `//test/syscalls:access_test_runsc_kvm`
 
 Any of these targets can be run directly via `bazel test`.
 
 ```bash
 $ bazel test //test/syscalls:access_test_native
+$ bazel test //test/syscalls:access_test_runsc_systrap
 $ bazel test //test/syscalls:access_test_runsc_ptrace
 $ bazel test //test/syscalls:access_test_runsc_kvm
 ```
@@ -40,6 +43,9 @@ tag:
 ```bash
 # Run all tests in native environment:
 $ bazel test --test_tag_filters=native //test/syscalls/...
+
+# Run all tests in runsc with systrap:
+$ bazel test --test_tag_filters=runsc_systrap //test/syscalls/...
 
 # Run all tests in runsc with ptrace:
 $ bazel test --test_tag_filters=runsc_ptrace //test/syscalls/...

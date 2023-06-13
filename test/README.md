@@ -34,7 +34,7 @@ There are a few other interesting variations for image and integration tests:
 
 *   overlay: sets writable overlay inside the sentry
 *   hostnet: configures host network pass-thru, instead of netstack
-*   kvm: runsc the test using the KVM platform, instead of ptrace
+*   kvm: runsc the test using the KVM platform, instead of systrap
 
 The test will build runsc, configure it with your local docker, restart
 `dockerd`, and run tests. The location for runsc logs is printed to the output.

@@ -28,8 +28,8 @@ To run, use the Makefile:
 make benchmark-platforms BENCHMARKS_TARGET=path/to/target
 ```
 
-The above command will install runtimes/run benchmarks on ptrace and kvm as well
-as run the benchmark on native runc.
+The above command will install runtimes/run benchmarks on systrap and kvm as
+well as run the benchmark on native runc.
 
 Benchmarks are run with root as some benchmarks require root privileges to do
 things like drop caches.

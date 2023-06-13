@@ -112,8 +112,8 @@ bare-metal machines** (not VMs). In such a setup, use the KVM platform for best
 performance.
 
 If you absolutely must run gVisor in a virtual machine, we recommend using the
-`ptrace` platform. This platform has the most flexibility, but its performance
-will lag behind that of KVM and the GKE Sandbox platform.
+`systrap` platform. This platform has the most flexibility, but its performance
+will lag behind that of KVM.
 
 <a class="button" href="/docs/user_guide/platforms/">Configure Platform
 &raquo;</a>
