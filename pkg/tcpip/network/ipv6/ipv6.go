@@ -1484,7 +1484,7 @@ func (e *endpoint) processExtensionHeaders(h header.IPv6, pkt stack.PacketBuffer
 		routerAlert       *header.IPv6RouterAlertOption
 	)
 	for {
-		if done, err := e.processExtensionHeader(&it, &pkt, h, &routerAlert, &hasFragmentHeader, forwarding); err != nil || done {
+		if done, err := e.processExtensionHeader(&it, &pkt, header.IPv6(pkt.NetworkHeader().Slice()), &routerAlert, &hasFragmentHeader, forwarding); err != nil || done {
 			return err
 		}
 	}
