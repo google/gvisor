@@ -233,21 +233,23 @@ func (vfs *VirtualFilesystem) CommitDeleteDentry(ctx context.Context, d *Dentry)
 	d.dead = true
 	d.mu.Unlock()
 	if d.isMounted() {
-		vfs.forgetDeadMountpoint(ctx, d)
+		vfs.forgetDeadMountpoint(ctx, d, false /*deferVdDecRef*/)
 	}
 }
 
 // InvalidateDentry is called when d ceases to represent the file it formerly
 // did for reasons outside of VFS' control (e.g. d represents the local state
 // of a file on a remote filesystem on which the file has already been
-// deleted).
-func (vfs *VirtualFilesystem) InvalidateDentry(ctx context.Context, d *Dentry) {
+// deleted). If d is mounted, the method returns a list of Virtual Dentries
+// mounted on d that the caller is responsible for DecRefing.
+func (vfs *VirtualFilesystem) InvalidateDentry(ctx context.Context, d *Dentry) []VirtualDentry {
 	d.mu.Lock()
 	d.dead = true
 	d.mu.Unlock()
 	if d.isMounted() {
-		vfs.forgetDeadMountpoint(ctx, d)
+		return vfs.forgetDeadMountpoint(ctx, d, true /*deferVdDecRef*/)
 	}
+	return nil
 }
 
 // PrepareRenameDentry must be called before attempting to rename the file
@@ -307,7 +309,7 @@ func (vfs *VirtualFilesystem) CommitRenameReplaceDentry(ctx context.Context, fro
 		to.dead = true
 		to.mu.Unlock()
 		if to.isMounted() {
-			vfs.forgetDeadMountpoint(ctx, to)
+			vfs.forgetDeadMountpoint(ctx, to, false /*deferVdDecRef*/)
 		}
 	}
 }
@@ -328,7 +330,7 @@ func (vfs *VirtualFilesystem) CommitRenameExchangeDentry(from, to *Dentry) {
 //
 // forgetDeadMountpoint is analogous to Linux's
 // fs/namespace.c:__detach_mounts().
-func (vfs *VirtualFilesystem) forgetDeadMountpoint(ctx context.Context, d *Dentry) {
+func (vfs *VirtualFilesystem) forgetDeadMountpoint(ctx context.Context, d *Dentry, deferVdDecRef bool) []VirtualDentry {
 	var (
 		vdsToDecRef    []VirtualDentry
 		mountsToDecRef []*Mount
@@ -340,10 +342,14 @@ func (vfs *VirtualFilesystem) forgetDeadMountpoint(ctx context.Context, d *Dentr
 	}
 	vfs.mounts.seq.EndWrite()
 	vfs.mountMu.Unlock()
-	for _, vd := range vdsToDecRef {
-		vd.DecRef(ctx)
-	}
 	for _, mnt := range mountsToDecRef {
 		mnt.DecRef(ctx)
 	}
+	if !deferVdDecRef {
+		for _, vd := range vdsToDecRef {
+			vd.DecRef(ctx)
+		}
+		return nil
+	}
+	return vdsToDecRef
 }
