@@ -32,6 +32,7 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/container/flat_hash_set.h"
 #include "absl/container/node_hash_map.h"
 #include "absl/container/node_hash_set.h"
 #include "absl/strings/numbers.h"
@@ -395,7 +396,7 @@ TYPED_TEST(GetdentsTest, ProcSelfFd) {
   // Make the buffer very small since we want to iterate.
   typename TestFixture::DirentBufferType dirents(
       2 * sizeof(typename TestFixture::LinuxDirentType));
-  absl::node_hash_set<int> prev_fds;
+  absl::flat_hash_set<int> prev_fds;
   while (true) {
     dirents.Reset();
     int rv;
