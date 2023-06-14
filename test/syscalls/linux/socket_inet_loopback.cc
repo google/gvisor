@@ -29,6 +29,7 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/container/btree_map.h"
 #include "absl/memory/memory.h"
 #include "absl/strings/str_cat.h"
 #include "absl/time/clock.h"
@@ -1671,7 +1672,7 @@ TEST_P(SocketInetReusePortTest, UdpPortReuseMultiThreadShort) {
     pollfds[i].events = POLLIN;
   }
 
-  std::map<uint16_t, int> portToFD;
+  absl::btree_map<uint16_t, int> portToFD;
 
   int received = 0;
   while (received < kConnectAttempts * 2) {

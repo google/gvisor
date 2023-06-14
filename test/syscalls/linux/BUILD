@@ -3279,6 +3279,7 @@ cc_binary(
         ":socket_inet_loopback_test_params",
         "//test/util:file_descriptor",
         "//test/util:socket_util",
+        "@com_google_absl//absl/container:btree",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/time",
