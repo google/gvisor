@@ -4312,6 +4312,7 @@ cc_binary(
     deps = [
         "//test/util:capability_util",
         "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/container:btree",
         "@com_google_absl//absl/memory",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/time",

@@ -26,6 +26,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/base/macros.h"
+#include "absl/container/btree_set.h"
 #include "absl/memory/memory.h"
 #include "absl/synchronization/mutex.h"
 #include "absl/time/clock.h"
@@ -868,7 +869,7 @@ TEST(SemaphoreTest, SemopGetncntOnSignal) {
 
 TEST(SemaphoreTest, IpcInfo) {
   constexpr int kLoops = 5;
-  std::set<int> sem_ids;
+  absl::btree_set<int> sem_ids;
   struct seminfo info;
   // Drop CAP_IPC_OWNER which allows us to bypass semaphore permissions.
   AutoCapability cap(CAP_IPC_OWNER, false);
@@ -883,7 +884,7 @@ TEST(SemaphoreTest, IpcInfo) {
   EXPECT_THAT(max_used_index = semctl(0, 0, IPC_INFO, &info),
               SyscallSucceeds());
 
-  std::set<int> sem_ids_before_max_index;
+  absl::btree_set<int> sem_ids_before_max_index;
   for (int i = 0; i <= max_used_index; i++) {
     struct semid_ds ds = {};
     int sem_id = semctl(i, 0, SEM_STAT, &ds);
@@ -938,7 +939,7 @@ TEST(SemaphoreTest, IpcInfo) {
 TEST(SemaphoreTest, SemInfo) {
   constexpr int kLoops = 5;
   constexpr int kSemSetSize = 3;
-  std::set<int> sem_ids;
+  absl::btree_set<int> sem_ids;
   struct seminfo info;
   // Drop CAP_IPC_OWNER which allows us to bypass semaphore permissions.
   AutoCapability cap(CAP_IPC_OWNER, false);
@@ -965,7 +966,7 @@ TEST(SemaphoreTest, SemInfo) {
   EXPECT_EQ(info.semvmx, kSemVmx);
   EXPECT_GE(info.semaem, sem_ids.size() * kSemSetSize);
 
-  std::set<int> sem_ids_before_max_index;
+  absl::btree_set<int> sem_ids_before_max_index;
   for (int i = 0; i <= max_used_index; i++) {
     struct semid_ds ds = {};
     int sem_id = semctl(i, 0, SEM_STAT, &ds);
