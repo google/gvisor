@@ -29,6 +29,7 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/container/btree_set.h"
 #include "absl/strings/ascii.h"
 #include "absl/strings/str_split.h"
 #include "test/syscalls/linux/socket_netlink_route_util.h"
@@ -55,9 +56,9 @@ constexpr const char kTunName[] = "tun0";
 constexpr const uint8_t kMacA[ETH_ALEN] = {0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA};
 constexpr const uint8_t kMacB[ETH_ALEN] = {0xBB, 0xBB, 0xBB, 0xBB, 0xBB, 0xBB};
 
-PosixErrorOr<std::set<std::string>> DumpLinkNames() {
+PosixErrorOr<absl::btree_set<std::string>> DumpLinkNames() {
   ASSIGN_OR_RETURN_ERRNO(auto links, DumpLinks());
-  std::set<std::string> names;
+  absl::btree_set<std::string> names;
   for (const auto& link : links) {
     names.emplace(link.name);
   }

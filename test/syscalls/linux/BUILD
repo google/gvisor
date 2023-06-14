@@ -4019,6 +4019,7 @@ cc_binary(
     linkstatic = 1,
     deps = [
         "//test/util:socket_util",
+        "@com_google_absl//absl/container:btree",
         gtest,
         ":socket_netlink_route_util",
         "//test/util:capability_util",
