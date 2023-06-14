@@ -50,6 +50,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/algorithm/container.h"
+#include "absl/container/btree_map.h"
 #include "absl/container/node_hash_set.h"
 #include "absl/strings/ascii.h"
 #include "absl/strings/match.h"
@@ -483,12 +484,12 @@ std::string AnonymousMapsEntryForMapping(const Mapping& m, int prot) {
   return AnonymousMapsEntry(m.addr(), m.len(), prot);
 }
 
-PosixErrorOr<std::map<uint64_t, uint64_t>> ReadProcSelfAuxv() {
+PosixErrorOr<absl::btree_map<uint64_t, uint64_t>> ReadProcSelfAuxv() {
   std::string auxv_file;
   RETURN_IF_ERRNO(GetContents("/proc/self/auxv", &auxv_file));
   const Elf64_auxv_t* auxv_data =
       reinterpret_cast<const Elf64_auxv_t*>(auxv_file.data());
-  std::map<uint64_t, uint64_t> auxv_entries;
+  absl::btree_map<uint64_t, uint64_t> auxv_entries;
   for (int i = 0; auxv_data[i].a_type != AT_NULL; i++) {
     auto a_type = auxv_data[i].a_type;
     EXPECT_EQ(0, auxv_entries.count(a_type)) << "a_type: " << a_type;
