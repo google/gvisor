@@ -947,6 +947,7 @@ func (vfs *VirtualFilesystem) maybeBlockOnMountPromise(ctx context.Context, rp *
 		rp.start = newMnt.root
 		rp.flags = rp.flags&^rpflagsHaveStartRef | rpflagsHaveMountRef
 	case <-time.After(mountPromiseTimeout):
+		panic("mount promise timeout")
 		log.Warningf("mount promise for %s timed out, proceeding with VFS operation", path)
 	}
 }
