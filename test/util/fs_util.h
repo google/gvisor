@@ -30,7 +30,7 @@ namespace testing {
 
 // O_LARGEFILE as defined by Linux. glibc tries to be clever by setting it to 0
 // because "it isn't needed", even though Linux can return it via F_GETFL.
-#if defined(__x86_64__)
+#if defined(__x86_64__) || defined(__riscv)
 constexpr int kOLargeFile = 00100000;
 #elif defined(__aarch64__)
 constexpr int kOLargeFile = 00400000;
