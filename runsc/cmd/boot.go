@@ -243,8 +243,17 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		syncUsernsForRootless(b.syncUsernsFD)
 	}
 
+	// Get the spec from the specFD. We *must* keep this os.File alive past
+	// the call setCapsAndCallSelf, otherwise the FD will be closed and the
+	// child process cannot read it
+	specFile := os.NewFile(uintptr(b.specFD), "spec file")
+	spec, err := specutils.ReadSpecFromFile(b.bundleDir, specFile, conf)
+	if err != nil {
+		util.Fatalf("reading spec: %v", err)
+	}
+
 	if b.setUpRoot {
-		if err := setUpChroot(b.pidns, conf); err != nil {
+		if err := setUpChroot(b.pidns, spec, conf); err != nil {
 			util.Fatalf("error setting up chroot: %v", err)
 		}
 
@@ -280,14 +289,6 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		}
 	}
 
-	// Get the spec from the specFD. We *must* keep this os.File alive past
-	// the call setCapsAndCallSelf, otherwise the FD will be closed and the
-	// child process cannot read it
-	specFile := os.NewFile(uintptr(b.specFD), "spec file")
-	spec, err := specutils.ReadSpecFromFile(b.bundleDir, specFile, conf)
-	if err != nil {
-		util.Fatalf("reading spec: %v", err)
-	}
 	specutils.LogSpecDebug(spec, conf.OCISeccomp)
 
 	if b.applyCaps {
