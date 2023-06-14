@@ -51,6 +51,7 @@
 #include "gtest/gtest.h"
 #include "absl/algorithm/container.h"
 #include "absl/container/btree_map.h"
+#include "absl/container/flat_hash_set.h"
 #include "absl/container/node_hash_set.h"
 #include "absl/strings/ascii.h"
 #include "absl/strings/match.h"
@@ -1169,7 +1170,7 @@ static void CheckFdDirGetdentsDuplicates(const std::string& path) {
   EXPECT_GE(newfd, 1024);
   auto fd_closer = Cleanup([newfd]() { close(newfd); });
   auto fd_files = ASSERT_NO_ERRNO_AND_VALUE(ListDir(path.c_str(), false));
-  absl::node_hash_set<std::string> fd_files_dedup(fd_files.begin(),
+  absl::flat_hash_set<std::string> fd_files_dedup(fd_files.begin(),
                                                   fd_files.end());
   EXPECT_EQ(fd_files.size(), fd_files_dedup.size());
 }
@@ -2673,7 +2674,7 @@ void CheckDuplicatesRecursively(std::string path) {
       return;
     }
     auto dir_closer = Cleanup([&dir]() { closedir(dir); });
-    absl::node_hash_set<std::string> children;
+    absl::flat_hash_set<std::string> children;
     while (true) {
       // Readdir(3): If the end of the directory stream is reached, NULL is
       // returned and errno is not changed.  If an error occurs, NULL is
