@@ -50,6 +50,7 @@
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/algorithm/container.h"
+#include "absl/container/btree_map.h"
 #include "absl/container/node_hash_set.h"
 #include "absl/strings/ascii.h"
 #include "absl/strings/match.h"
@@ -1659,9 +1660,9 @@ PosixErrorOr<std::string> ThreadName() {
 
 // Parses the contents of a /proc/[pid]/status file into a collection of
 // key-value pairs.
-PosixErrorOr<std::map<std::string, std::string>> ParseProcStatus(
+PosixErrorOr<absl::btree_map<std::string, std::string>> ParseProcStatus(
     absl::string_view status_str) {
-  std::map<std::string, std::string> fields;
+  absl::btree_map<std::string, std::string> fields;
   for (absl::string_view const line :
        absl::StrSplit(status_str, '\n', absl::SkipWhitespace())) {
     const std::pair<absl::string_view, absl::string_view> kv =
