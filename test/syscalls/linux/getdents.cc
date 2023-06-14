@@ -32,6 +32,7 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/container/btree_map.h"
 #include "absl/container/node_hash_map.h"
 #include "absl/container/node_hash_set.h"
 #include "absl/strings/numbers.h"
@@ -263,7 +264,7 @@ TYPED_TEST(GetdentsTest, VerifyEntries) {
   this->FillDirectory(2);
 
   // Map of all the entries we expect to find.
-  std::map<std::string, bool> found;
+  absl::btree_map<std::string, bool> found;
   found["."] = false;
   found[".."] = false;
   found["0"] = false;
