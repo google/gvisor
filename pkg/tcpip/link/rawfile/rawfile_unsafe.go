@@ -245,7 +245,7 @@ func BlockingPollUntilStopped(efd int, fd int, events int16) (bool, unix.Errno) 
 			Events: events,
 		},
 	}
-	_, errno := BlockingPoll(&pevents[0], len(pevents), nil)
+	_, _, errno := unix.Syscall6(unix.SYS_PPOLL, uintptr(unsafe.Pointer(&pevents[0])), uintptr(len(pevents)), 0, 0, 0, 0)
 	if errno != 0 {
 		return pevents[0].Revents&unix.POLLIN != 0, errno
 	}
