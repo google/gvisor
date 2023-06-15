@@ -702,7 +702,7 @@ func (e *endpoint) HandlePacket(pkt stack.PacketBufferPtr) {
 				}
 			}
 
-			combinedBuf = buffer.MakeWithView(pkt.TransportHeader().ToView())
+			combinedBuf = buffer.MakeWithView(pkt.TransportHeader().View())
 			pktBuf := pkt.Data().ToBuffer()
 			combinedBuf.Merge(&pktBuf)
 

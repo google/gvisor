@@ -272,7 +272,7 @@ func (v *View) ReadFrom(r io.Reader) (n int64, err error) {
 		v.chunk = v.chunk.Clone()
 	}
 	for {
-		// Check for EOF to avoid an unnecessary allocation.
+		// Check for EOF to avoid an unnnecesary allocation.
 		if _, e := r.Read(nil); e == io.EOF {
 			return n, nil
 		}
@@ -304,7 +304,10 @@ func (v *View) WriteAt(p []byte, off int) (int, error) {
 	if off < 0 || off > v.Size() {
 		return 0, fmt.Errorf("write offset out of bounds: want 0 < off < %d, got off=%d", v.Size(), off)
 	}
-	v.unshare()
+	if v.sharesChunk() {
+		defer v.chunk.DecRef()
+		v.chunk = v.chunk.Clone()
+	}
 	n := copy(v.AsSlice()[off:], p)
 	if n < len(p) {
 		return n, io.ErrShortWrite
@@ -354,16 +357,10 @@ func (v *View) CapLength(n int) {
 }
 
 func (v *View) availableSlice() []byte {
-	v.unshare()
-	return v.chunk.data[v.write:]
-}
-
-// Unshare ensures the backing chunk is exclusively owned by this view.
-// This incurs a copy so only use when necessary.
-func (v *View) unshare() {
 	if v.sharesChunk() {
 		defer v.chunk.DecRef()
 		c := v.chunk.Clone()
 		v.chunk = c
 	}
+	return v.chunk.data[v.write:]
 }
