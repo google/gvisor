@@ -146,12 +146,12 @@ func unrolledCalculateChecksum(buf []byte, odd bool, initial uint16) (uint16, bo
 }
 
 // Checksum calculates the checksum (as defined in RFC 1071) of the bytes in the
-// given byte array. This function uses an optimized unrolled version of the
-// checksum algorithm.
+// given byte array. This function uses an optimized version of the checksum
+// algorithm.
 //
 // The initial checksum must have been computed on an even number of bytes.
 func Checksum(buf []byte, initial uint16) uint16 {
-	s, _ := unrolledCalculateChecksum(buf, false, initial)
+	s, _ := calculateChecksum(buf, false, initial)
 	return s
 }
 
@@ -164,7 +164,7 @@ type Checksumer struct {
 // Add adds b to checksum.
 func (c *Checksumer) Add(b []byte) {
 	if len(b) > 0 {
-		c.sum, c.odd = unrolledCalculateChecksum(b, c.odd, c.sum)
+		c.sum, c.odd = calculateChecksum(b, c.odd, c.sum)
 	}
 }
 
