@@ -678,8 +678,9 @@ func (gd *groDispatcher) close() {
 	for i := range gd.buckets {
 		bucket := &gd.buckets[i]
 		bucket.mu.Lock()
-		for groPkt := bucket.packets.Front(); groPkt != nil; groPkt = groPkt.Next() {
+		for groPkt := bucket.packets.Front(); groPkt != nil; groPkt = bucket.packets.Front() {
 			groPkt.pkt.DecRef()
+			bucket.removeOne(groPkt)
 		}
 		bucket.mu.Unlock()
 	}
