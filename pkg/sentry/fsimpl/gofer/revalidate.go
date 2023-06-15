@@ -202,9 +202,9 @@ func (d *dentry) invalidate(ctx context.Context, vfsObj *vfs.VirtualFilesystem, 
 	// this, take a dentry reference first, then drop it while
 	// deferring the call to dentry.checkCachingLocked().
 	d.IncRef()
-	vds := vfsObj.InvalidateDentry(ctx, &d.vfsd)
-	for _, vd := range vds {
-		vd.DecRef(ctx)
+	rcs := vfsObj.InvalidateDentry(ctx, &d.vfsd)
+	for _, rc := range rcs {
+		rc.DecRef(ctx)
 	}
 	d.decRefNoCaching()
 
