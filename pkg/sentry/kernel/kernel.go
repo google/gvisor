@@ -716,6 +716,9 @@ type CreateProcessArgs struct {
 
 	// ContainerID is the container that the process belongs to.
 	ContainerID string
+
+	// InitialCgroups are the cgroups the container is initialized to.
+	InitialCgroups map[Cgroup]struct{}
 }
 
 // NewContext returns a context.Context that represents the task that will be
@@ -911,6 +914,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		AbstractSocketNamespace: args.AbstractSocketNamespace,
 		MountNamespace:          mntns,
 		ContainerID:             args.ContainerID,
+		InitialCgroups:          args.InitialCgroups,
 		UserCounters:            k.GetUserCounters(args.Credentials.RealKUID),
 	}
 	config.NetworkNamespace.IncRef()
