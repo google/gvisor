@@ -97,6 +97,9 @@ type TaskConfig struct {
 	// ContainerID is the container the new task belongs to.
 	ContainerID string
 
+	// InitialCgroups are the cgroups the container is initialised to.
+	InitialCgroups map[Cgroup]struct{}
+
 	// UserCounters is user resource counters.
 	UserCounters *userCounters
 }
@@ -237,8 +240,11 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 		t.parent.children[t] = struct{}{}
 	}
 
-	// srcT may be nil, in which case we default to root cgroups.
-	t.EnterInitialCgroups(srcT)
+	// If InitialCgroups is not nil, the new task will be placed in the
+	// specified cgroups. Otherwise, if srcT is not nil, the new task will
+	// be placed in the srcT's cgroups. If neither is specified, the new task
+	// will be in the root cgroups.
+	t.EnterInitialCgroups(srcT, cfg.InitialCgroups)
 	committed = true
 
 	if tg.leader == nil {
