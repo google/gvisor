@@ -25,13 +25,18 @@ import (
 )
 
 // EnterInitialCgroups moves t into an initial set of cgroups.
+// If initCgroups is not nil, the new task will be placed in the specified cgroups.
+// Otherwise, if parent is not nil, the new task will be placed in the parent's cgroups.
+// If neither is specified, the new task will be in the root cgroups.
 //
 // This is analogous to Linux's kernel/cgroup/cgroup.c:cgroup_css_set_fork().
 //
 // Precondition: t isn't in any cgroups yet, t.cgroups is empty.
-func (t *Task) EnterInitialCgroups(parent *Task) {
+func (t *Task) EnterInitialCgroups(parent *Task, initCgroups map[Cgroup]struct{}) {
 	var inherit map[Cgroup]struct{}
-	if parent != nil {
+	if initCgroups != nil {
+		inherit = initCgroups
+	} else if parent != nil {
 		parent.mu.Lock()
 		defer parent.mu.Unlock()
 		inherit = parent.cgroups
