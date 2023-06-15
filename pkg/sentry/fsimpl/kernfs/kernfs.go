@@ -336,9 +336,9 @@ func (d *Dentry) cacheLocked(ctx context.Context) {
 	// as described in Inode.Getlink.
 	if isDead := d.VFSDentry().IsDead(); isDead || d.parent == nil {
 		if !isDead {
-			vds := d.fs.vfsfs.VirtualFilesystem().InvalidateDentry(ctx, d.VFSDentry())
-			for _, vd := range vds {
-				d.fs.deferDecRef(vd)
+			rcs := d.fs.vfsfs.VirtualFilesystem().InvalidateDentry(ctx, d.VFSDentry())
+			for _, rc := range rcs {
+				d.fs.deferDecRef(rc)
 			}
 		}
 		if d.cached {
@@ -401,9 +401,9 @@ func (d *Dentry) evictLocked(ctx context.Context) {
 			d.parent.dirMu.Lock()
 			// Note that victim can't be a mount point (in any mount
 			// namespace), since VFS holds references on mount points.
-			vds := d.fs.vfsfs.VirtualFilesystem().InvalidateDentry(ctx, d.VFSDentry())
-			for _, vd := range vds {
-				d.fs.deferDecRef(vd)
+			rcs := d.fs.vfsfs.VirtualFilesystem().InvalidateDentry(ctx, d.VFSDentry())
+			for _, rc := range rcs {
+				d.fs.deferDecRef(rc)
 			}
 			delete(d.parent.children, d.name)
 			d.parent.dirMu.Unlock()
