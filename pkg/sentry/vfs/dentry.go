@@ -18,6 +18,7 @@ import (
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
@@ -233,7 +234,7 @@ func (vfs *VirtualFilesystem) CommitDeleteDentry(ctx context.Context, d *Dentry)
 	d.dead = true
 	d.mu.Unlock()
 	if d.isMounted() {
-		vfs.forgetDeadMountpoint(ctx, d, false /*deferVdDecRef*/)
+		vfs.forgetDeadMountpoint(ctx, d, false /*skipDecRef*/)
 	}
 }
 
@@ -242,12 +243,12 @@ func (vfs *VirtualFilesystem) CommitDeleteDentry(ctx context.Context, d *Dentry)
 // of a file on a remote filesystem on which the file has already been
 // deleted). If d is mounted, the method returns a list of Virtual Dentries
 // mounted on d that the caller is responsible for DecRefing.
-func (vfs *VirtualFilesystem) InvalidateDentry(ctx context.Context, d *Dentry) []VirtualDentry {
+func (vfs *VirtualFilesystem) InvalidateDentry(ctx context.Context, d *Dentry) []refs.RefCounter {
 	d.mu.Lock()
 	d.dead = true
 	d.mu.Unlock()
 	if d.isMounted() {
-		return vfs.forgetDeadMountpoint(ctx, d, true /*deferVdDecRef*/)
+		return vfs.forgetDeadMountpoint(ctx, d, true /*skipDecRef*/)
 	}
 	return nil
 }
@@ -309,7 +310,7 @@ func (vfs *VirtualFilesystem) CommitRenameReplaceDentry(ctx context.Context, fro
 		to.dead = true
 		to.mu.Unlock()
 		if to.isMounted() {
-			vfs.forgetDeadMountpoint(ctx, to, false /*deferVdDecRef*/)
+			vfs.forgetDeadMountpoint(ctx, to, false /*skipDecRef*/)
 		}
 	}
 }
@@ -326,11 +327,13 @@ func (vfs *VirtualFilesystem) CommitRenameExchangeDentry(from, to *Dentry) {
 }
 
 // forgetDeadMountpoint is called when a mount point is deleted or invalidated
-// to umount all mounts using it in all other mount namespaces.
+// to umount all mounts using it in all other mount namespaces. If skipDecRef
+// is true, the method returns a list of reference counted objects with an
+// an extra reference.
 //
 // forgetDeadMountpoint is analogous to Linux's
 // fs/namespace.c:__detach_mounts().
-func (vfs *VirtualFilesystem) forgetDeadMountpoint(ctx context.Context, d *Dentry, deferVdDecRef bool) []VirtualDentry {
+func (vfs *VirtualFilesystem) forgetDeadMountpoint(ctx context.Context, d *Dentry, skipDecRef bool) []refs.RefCounter {
 	var (
 		vdsToDecRef    []VirtualDentry
 		mountsToDecRef []*Mount
@@ -342,14 +345,18 @@ func (vfs *VirtualFilesystem) forgetDeadMountpoint(ctx context.Context, d *Dentr
 	}
 	vfs.mounts.seq.EndWrite()
 	vfs.mountMu.Unlock()
+	rcs := make([]refs.RefCounter, 0, len(vdsToDecRef)+len(mountsToDecRef))
+	for _, vd := range vdsToDecRef {
+		rcs = append(rcs, vd)
+	}
 	for _, mnt := range mountsToDecRef {
-		mnt.DecRef(ctx)
+		rcs = append(rcs, mnt)
 	}
-	if !deferVdDecRef {
-		for _, vd := range vdsToDecRef {
-			vd.DecRef(ctx)
-		}
-		return nil
+	if skipDecRef {
+		return rcs
 	}
-	return vdsToDecRef
+	for _, rc := range rcs {
+		rc.DecRef(ctx)
+	}
+	return nil
 }
