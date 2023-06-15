@@ -1082,11 +1082,13 @@ func (e *endpoint) HandlePacket(pkt stack.PacketBufferPtr) {
 		return
 	}
 
-	if ok := e.protocol.parseAndValidate(pkt); !ok {
+	hView, ok := e.protocol.parseAndValidate(pkt)
+	if !ok {
 		stats.MalformedPacketsReceived.Increment()
 		return
 	}
-	h := header.IPv6(pkt.NetworkHeader().Slice())
+	defer hView.Release()
+	h := header.IPv6(hView.AsSlice())
 
 	if !checkV4Mapped(h, stats) {
 		return
@@ -1106,7 +1108,7 @@ func (e *endpoint) HandlePacket(pkt stack.PacketBufferPtr) {
 		}
 
 		if e.protocol.stack.HandleLocal() {
-			addressEndpoint := e.AcquireAssignedAddress(h.SourceAddress(), e.nic.Promiscuous(), stack.CanBePrimaryEndpoint)
+			addressEndpoint := e.AcquireAssignedAddress(header.IPv6(pkt.NetworkHeader().Slice()).SourceAddress(), e.nic.Promiscuous(), stack.CanBePrimaryEndpoint)
 			if addressEndpoint != nil {
 				addressEndpoint.DecRef()
 
@@ -1127,9 +1129,7 @@ func (e *endpoint) HandlePacket(pkt stack.PacketBufferPtr) {
 		}
 	}
 
-	hv := pkt.NetworkHeader().ToView()
-	defer hv.Release()
-	e.handleValidatedPacket(hv.AsSlice(), pkt, e.nic.Name() /* inNICName */)
+	e.handleValidatedPacket(h, pkt, e.nic.Name() /* inNICName */)
 }
 
 // handleLocalPacket is like HandlePacket except it does not perform the
@@ -1143,18 +1143,19 @@ func (e *endpoint) handleLocalPacket(pkt stack.PacketBufferPtr, canSkipRXChecksu
 	defer pkt.DecRef()
 	pkt.RXChecksumValidated = canSkipRXChecksum
 
-	if ok := e.protocol.parseAndValidate(pkt); !ok {
+	hView, ok := e.protocol.parseAndValidate(pkt)
+	if !ok {
 		stats.MalformedPacketsReceived.Increment()
 		return
 	}
-	h := pkt.NetworkHeader().ToView()
-	defer h.Release()
+	defer hView.Release()
+	h := header.IPv6(hView.AsSlice())
 
-	if !checkV4Mapped(h.AsSlice(), stats) {
+	if !checkV4Mapped(h, stats) {
 		return
 	}
 
-	e.handleValidatedPacket(h.AsSlice(), pkt, e.nic.Name() /* inNICName */)
+	e.handleValidatedPacket(h, pkt, e.nic.Name() /* inNICName */)
 }
 
 // forwardMulticastPacket validates a multicast pkt and attempts to forward it.
@@ -1460,12 +1461,12 @@ func (e *endpoint) processExtensionHeaders(h header.IPv6, pkt stack.PacketBuffer
 	//	- Any IPv6 header bytes after the first 40 (i.e. extensions).
 	//	- The transport header, if present.
 	//	- Any other payload data.
-	v := pkt.NetworkHeader().ToView()
+	v := pkt.NetworkHeader().View()
 	if v != nil {
 		v.TrimFront(header.IPv6MinimumSize)
 	}
 	buf := buffer.MakeWithView(v)
-	buf.Append(pkt.TransportHeader().ToView())
+	buf.Append(pkt.TransportHeader().View())
 	dataBuf := pkt.Data().ToBuffer()
 	buf.Merge(&dataBuf)
 	it := header.MakeIPv6PayloadIterator(header.IPv6ExtensionHeaderIdentifier(h.NextHeader()), buf)
@@ -2587,25 +2588,28 @@ func (p *protocol) forwardPendingMulticastPacket(pkt stack.PacketBufferPtr, inst
 func (*protocol) Wait() {}
 
 // parseAndValidate parses the packet (including its transport layer header) and
-// returns true if the IP header was successfully parsed.
-func (p *protocol) parseAndValidate(pkt stack.PacketBufferPtr) bool {
+// returns a view containing the parsed IP header. The caller is responsible
+// for releasing the returned View.
+//
+// Returns true if the IP header was successfully parsed.
+func (p *protocol) parseAndValidate(pkt stack.PacketBufferPtr) (*buffer.View, bool) {
 	transProtoNum, hasTransportHdr, ok := p.Parse(pkt)
 	if !ok {
-		return false
+		return nil, false
 	}
 
 	h := header.IPv6(pkt.NetworkHeader().Slice())
 	// Do not include the link header's size when calculating the size of the IP
 	// packet.
 	if !h.IsValid(pkt.Size() - len(pkt.LinkHeader().Slice())) {
-		return false
+		return nil, false
 	}
 
 	if hasTransportHdr {
 		p.parseTransport(pkt, transProtoNum)
 	}
 
-	return true
+	return pkt.NetworkHeader().View(), true
 }
 
 func (p *protocol) parseTransport(pkt stack.PacketBufferPtr, transProtoNum tcpip.TransportProtocolNumber) {

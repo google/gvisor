@@ -321,10 +321,8 @@ func (b *Buffer) PullUp(offset, length int) (View, bool) {
 		if x := curr.Intersect(tgt); x.Len() == tgt.Len() {
 			// buf covers the whole requested target range.
 			sub := x.Offset(-curr.begin)
-			// Ensure that v has exclusive ownership over its chunk before returning.
-			// NAT rules sometimes write directly to the slices backing these views,
-			// which would break the ownership model if the chunks were shared.
-			v.unshare()
+			// Don't increment the reference count of the underlying chunk. Views
+			// returned by PullUp are explicitly unowned and read only
 			new := View{
 				read:  v.read + sub.begin,
 				write: v.read + sub.end,
