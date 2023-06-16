@@ -38,10 +38,12 @@ func Register(vfsObj *vfs.VirtualFilesystem, uvmDevMajor uint32) error {
 		return fmt.Errorf("failed to get Nvidia driver version: %w", err)
 	}
 	switch version {
-	case "525.60.13":
+	case
+		"525.60.13",
+		"525.105.17":
 		log.Infof("Nvidia driver version: %s", version)
 	default:
-		return fmt.Errorf("unknown Nvidia driver version: %s", version)
+		return fmt.Errorf("unsupported Nvidia driver version: %s", version)
 	}
 
 	nvp := &nvproxy{
