@@ -229,6 +229,11 @@ func (*testObject) AddHeader(stack.PacketBufferPtr) {
 	panic("not implemented")
 }
 
+// ParseHeader implements stack.LinkEndpoint.ParseHeader.
+func (*testObject) ParseHeader(stack.PacketBufferPtr) bool {
+	panic("not implemented")
+}
+
 type testContext struct {
 	s *stack.Stack
 }

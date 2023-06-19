@@ -94,6 +94,9 @@ func (*MockLinkEndpoint) ARPHardwareType() header.ARPHardwareType { return heade
 // AddHeader implements LinkEndpoint.AddHeader.
 func (*MockLinkEndpoint) AddHeader(stack.PacketBufferPtr) {}
 
+// ParseHeader implements LinkEndpoint.ParseHeader.
+func (*MockLinkEndpoint) ParseHeader(stack.PacketBufferPtr) bool { return true }
+
 // Close releases all resources.
 func (ep *MockLinkEndpoint) Close() {
 	for _, pkt := range ep.WrittenPackets {

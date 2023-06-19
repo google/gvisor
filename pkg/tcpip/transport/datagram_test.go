@@ -169,6 +169,7 @@ func (e *mockEndpoint) IsAttached() bool                      { return e.disp !=
 func (*mockEndpoint) Wait()                                   {}
 func (*mockEndpoint) ARPHardwareType() header.ARPHardwareType { return header.ARPHardwareNone }
 func (*mockEndpoint) AddHeader(stack.PacketBufferPtr)         {}
+func (*mockEndpoint) ParseHeader(stack.PacketBufferPtr) bool  { return true }
 func (e *mockEndpoint) releasePackets() {
 	e.pkts.DecRef()
 	e.pkts = stack.PacketBufferList{}

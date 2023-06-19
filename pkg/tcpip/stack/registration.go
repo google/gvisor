@@ -1065,6 +1065,9 @@ type LinkWriter interface {
 	// WritePackets writes packets. Must not be called with an empty list of
 	// packet buffers.
 	//
+	// Each packet must have the link-layer header set, if the link requires
+	// one.
+	//
 	// WritePackets may modify the packet buffers, and takes ownership of the PacketBufferList.
 	// it is not safe to use the PacketBufferList after a call to WritePackets.
 	WritePackets(PacketBufferList) (int, tcpip.Error)
@@ -1121,6 +1124,9 @@ type NetworkLinkEndpoint interface {
 
 	// AddHeader adds a link layer header to the packet if required.
 	AddHeader(PacketBufferPtr)
+
+	// ParseHeader parses the link layer header to the packet.
+	ParseHeader(PacketBufferPtr) bool
 }
 
 // QueueingDiscipline provides a queueing strategy for outgoing packets (e.g
