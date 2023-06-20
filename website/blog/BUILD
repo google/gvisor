@@ -111,6 +111,16 @@ doc(
     permalink = "/blog/2023/05/08/rootfs-overlay/",
 )
 
+doc(
+    name = "gpu_pytorch_stable_diffusion",
+    src = "2023-06-20-gpu-pytorch-stable-diffusion.md",
+    authors = [
+        "eperot",
+    ],
+    layout = "post",
+    permalink = "/blog/2023/06/20/gpu-pytorch-stable-diffusion/",
+)
+
 docs(
     name = "posts",
     deps = [
