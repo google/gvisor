@@ -7,6 +7,7 @@ $link-hover-color: darken($link-color, 10%);
 $inverse-link-hover-color: darken($inverse-link-color, 10%);
 
 $text-color: #444;
+$text-color-secondary: #666;
 
 $body-font-family: 'Roboto', 'Helvetica Neue', Helvetica, Arial, sans-serif;
 $code-font-family: 'Source Code Pro', monospace;
@@ -151,4 +152,23 @@ table th {
 .blog-content * img {
   display: block;
   margin: 20px auto;
+}
+
+.blog-content .attribution {
+  /* Stay close to the image. */
+  display: block;
+  margin-top: 6px;
+  padding-top: 0px;
+
+  /* Italics, centered, lighter text. */
+  text-align: center;
+  font-style: italic;
+  color: $text-color-secondary;
+}
+
+.blog-content * img:has(+ .attribution) {
+  /* Remove bottom margins from images where there is an attribution line
+   * immediately following the image.
+   */
+  margin-bottom: 0px;
 }
