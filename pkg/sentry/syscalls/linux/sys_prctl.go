@@ -251,6 +251,7 @@ func Prctl(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 		linux.PR_GET_CHILD_SUBREAPER,
 		linux.PR_GET_THP_DISABLE,
 		linux.PR_SET_THP_DISABLE,
+		linux.PR_SET_VMA,
 		linux.PR_MPX_ENABLE_MANAGEMENT,
 		linux.PR_MPX_DISABLE_MANAGEMENT:
 

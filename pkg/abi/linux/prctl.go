@@ -153,6 +153,9 @@ const (
 	// specified) to ptrace the current task.
 	PR_SET_PTRACER     = 0x59616d61
 	PR_SET_PTRACER_ANY = -1
+
+	// PR_SET_VMA is used to set attributes for virtual memory areas.
+	PR_SET_VMA = 0x53564d41
 )
 
 // From <asm/prctl.h>
