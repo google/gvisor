@@ -2432,6 +2432,21 @@ TEST_P(UdpSocketTest, SendPacketLargerThanSendBufOnNonBlockingSocket) {
             SyscallFailsWithErrno(EAGAIN)));
 }
 
+TEST_P(UdpSocketTest, ReadShutdownOnBoundSocket) {
+  ASSERT_NO_ERRNO(BindLoopback());
+
+  // Bind `sock_` to loopback.
+  struct sockaddr_storage addr_storage = InetLoopbackAddr();
+  struct sockaddr* addr = AsSockAddr(&addr_storage);
+  ASSERT_NO_ERRNO(BindSocket(sock_.get(), addr));
+
+  int shut_opts[] = {SHUT_RD, SHUT_WR, SHUT_RDWR};
+  for (int shut_opt : shut_opts) {
+    EXPECT_THAT(shutdown(sock_.get(), shut_opt),
+                SyscallFailsWithErrno(ENOTCONN));
+  }
+}
+
 INSTANTIATE_TEST_SUITE_P(AllInetTests, UdpSocketControlMessagesTest,
                          ::testing::Values(AddressFamily::kIpv4,
                                            AddressFamily::kIpv6,

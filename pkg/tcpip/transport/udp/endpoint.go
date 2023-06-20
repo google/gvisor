@@ -745,6 +745,9 @@ func (e *endpoint) Shutdown(flags tcpip.ShutdownFlags) tcpip.Error {
 		}
 	}
 
+	if e.net.State() == transport.DatagramEndpointStateBound {
+		return &tcpip.ErrNotConnected{}
+	}
 	return nil
 }
 
