@@ -162,12 +162,18 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			newFSType = tmpfsOpts.FilesystemType
 		}
 		if tmpfsOpts.FilestoreFD != nil {
-			// DecommitOnDestroy because tmpfsOpts.FilestoreFD may be backed by a
-			// host filesystem based file, which needs to be decommited on destroy.
-			// DisableIMAWorkAround because sentry's seccomp filters don't allow the
-			// mmap(2) syscalls that this work around uses. User of this feature is
-			// expected to have performed the work around outside the sandbox.
-			mfOpts := pgalloc.MemoryFileOpts{DecommitOnDestroy: true, DisableIMAWorkAround: true}
+			mfOpts := pgalloc.MemoryFileOpts{
+				// tmpfsOpts.FilestoreFD may be backed by a file on disk (not memfd),
+				// which needs to be decommited on destroy to release disk space.
+				DecommitOnDestroy: true,
+				// sentry's seccomp filters don't allow the mmap(2) syscalls that
+				// pgalloc.IMAWorkAroundForMemFile() uses. Users of tmpfsOpts.FilestoreFD
+				// are expected to have performed the work around outside the sandbox.
+				DisableIMAWorkAround: true,
+				// Custom filestore FDs are usually backed by files on disk. Ideally we
+				// would confirm with fstatfs(2) but that is prohibited by seccomp.
+				DiskBackedFile: true,
+			}
 			var err error
 			mf, err = pgalloc.NewMemoryFile(tmpfsOpts.FilestoreFD.ReleaseToFile("overlay-filestore"), mfOpts)
 			if err != nil {
