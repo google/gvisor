@@ -466,17 +466,16 @@ func (t *Task) Unshare(flags int32) error {
 		}
 		t.childPIDNamespace = t.tg.pidns.NewChild(t.UserNamespace())
 	}
-	t.mu.Lock()
-	// Can't defer unlock: DecRefs must occur without holding t.mu.
 	var oldNETNS *inet.Namespace
 	if flags&linux.CLONE_NEWNET != 0 {
 		if !haveCapSysAdmin {
-			t.mu.Unlock()
 			return linuxerr.EPERM
 		}
 		oldNETNS = t.netns.Load()
 		t.netns.Store(inet.NewNamespace(t.netns.Load()))
 	}
+	t.mu.Lock()
+	// Can't defer unlock: DecRefs must occur without holding t.mu.
 	if flags&linux.CLONE_NEWUTS != 0 {
 		if !haveCapSysAdmin {
 			t.mu.Unlock()
