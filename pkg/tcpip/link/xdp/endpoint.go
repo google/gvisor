@@ -246,6 +246,12 @@ func (ep *endpoint) AddHeader(pkt stack.PacketBufferPtr) {
 	})
 }
 
+// ParseHeader implements stack.LinkEndpoint.ParseHeader.
+func (ep *endpoint) ParseHeader(pkt stack.PacketBufferPtr) bool {
+	_, ok := pkt.LinkHeader().Consume(header.EthernetMinimumSize)
+	return ok
+}
+
 // ARPHardwareType implements stack.LinkEndpoint.ARPHardwareType.
 func (ep *endpoint) ARPHardwareType() header.ARPHardwareType {
 	return header.ARPHardwareEther
@@ -361,8 +367,8 @@ func (ep *endpoint) dispatch() (bool, tcpip.Error) {
 					Payload: buffer.MakeWithView(view),
 				})
 				// AF_XDP packets always have a link header.
-				if _, ok := pkt.LinkHeader().Consume(header.EthernetMinimumSize); !ok {
-					panic(fmt.Sprintf("LinkHeader().Consume(%d) must succeed", header.EthernetMinimumSize))
+				if !ep.ParseHeader(pkt) {
+					panic("ParseHeader(_) must succeed")
 				}
 				d.DeliverNetworkPacket(netProto, pkt)
 				pkt.DecRef()

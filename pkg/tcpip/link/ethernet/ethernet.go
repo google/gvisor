@@ -60,11 +60,10 @@ func (e *Endpoint) MTU() uint32 {
 
 // DeliverNetworkPacket implements stack.NetworkDispatcher.
 func (e *Endpoint) DeliverNetworkPacket(_ tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr) {
-	hdr, ok := pkt.LinkHeader().Consume(header.EthernetMinimumSize)
-	if !ok {
+	if !e.ParseHeader(pkt) {
 		return
 	}
-	eth := header.Ethernet(hdr)
+	eth := header.Ethernet(pkt.LinkHeader().Slice())
 	dst := eth.DestinationAddress()
 	if dst == header.EthernetBroadcastAddress {
 		pkt.PktType = tcpip.PacketBroadcast
@@ -112,4 +111,10 @@ func (*Endpoint) AddHeader(pkt stack.PacketBufferPtr) {
 		Type:    pkt.NetworkProtocolNumber,
 	}
 	eth.Encode(&fields)
+}
+
+// ParseHeader implements stack.LinkEndpoint.
+func (*Endpoint) ParseHeader(pkt stack.PacketBufferPtr) bool {
+	_, ok := pkt.LinkHeader().Consume(header.EthernetMinimumSize)
+	return ok
 }
