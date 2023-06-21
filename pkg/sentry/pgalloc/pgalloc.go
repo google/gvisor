@@ -209,6 +209,9 @@ type MemoryFileOpts struct {
 	// If DisableIMAWorkAround is true, NewMemoryFile will not call
 	// IMAWorkAroundForMemFile().
 	DisableIMAWorkAround bool
+
+	// DiskBackedFile indicates that the MemoryFile is backed by a file on disk.
+	DiskBackedFile bool
 }
 
 // DelayedEvictionType is the type of MemoryFileOpts.DelayedEviction.
@@ -580,35 +583,77 @@ func findAvailableRangeBottomUp(usage *usageSet, length, alignment uint64) (memm
 	panic(fmt.Sprintf("NextLargeEnoughGap didn't return a gap at the end, length: %d", length))
 }
 
+// AllocationMode provides a way to inform the pgalloc API how to allocate
+// memory and pages on the host.
+// A page will exist in one of the following incremental states:
+//  1. Allocated: A page is allocated if it was returned by Allocate() and its
+//     reference count hasn't dropped to 0 since then.
+//  2. Committed: As described in MemoryFile documentation above, a page is
+//     committed if the host kernel is spending resources to store its
+//     contents. A committed page is implicitly allocated.
+//  3. Populated: A page is populated for reading/writing in a page table
+//     hierarchy if it has a page table entry that permits reading/writing
+//     respectively. A populated page is implicitly committed, since the page
+//     table entry needs a physical page to point to, but not vice versa.
+type AllocationMode int
+
+const (
+	// AllocateOnly indicates that pages need to only be allocated.
+	AllocateOnly AllocationMode = iota
+	// AllocateAndCommit indicates that pages need to be committed, in addition
+	// to being allocated.
+	AllocateAndCommit
+	// AllocateAndWritePopulate indicates that writable pages should ideally be
+	// populated in the page table, in addition to being allocated. This is a
+	// suggestion, not a requirement.
+	AllocateAndWritePopulate
+)
+
 // AllocateAndFill allocates memory of the given kind and fills it by calling
 // r.ReadToBlocks() repeatedly until either length bytes are read or a non-nil
 // error is returned. It returns the memory filled by r, truncated down to the
 // nearest page. If this is shorter than length bytes due to an error returned
 // by r.ReadToBlocks(), it returns that error.
 //
-// If populate is true, AllocateAndFill will attempt to pre-fault pages in bulk
-// in the safemem.BlockSeq passed to r. Callers that will fill the allocated
-// memory by writing to it in the sentry should pass populate = true to avoid
-// faulting page-by-page. Callers that will fill the allocated memory by
-// invoking host system calls should pass populate = false.
+// allocMode allows the callers to select how the pages are allocated in the
+// MemoryFile. Callers that will fill the allocated memory by writing to it
+// should pass AllocateAndWritePopulate to avoid faulting page-by-page. Callers
+// that will fill the allocated memory by invoking host system calls should
+// pass AllocateOnly. Note that the mode may be upgraded in certain scenarios
+// for performance. See implementation for more details.
 //
 // Preconditions:
 //   - length > 0.
 //   - length must be page-aligned.
-func (f *MemoryFile) AllocateAndFill(length uint64, kind usage.MemoryKind, populate bool, r safemem.Reader) (memmap.FileRange, error) {
+func (f *MemoryFile) AllocateAndFill(length uint64, kind usage.MemoryKind, allocMode AllocationMode, r safemem.Reader) (memmap.FileRange, error) {
+	if !f.opts.DiskBackedFile && allocMode == AllocateAndCommit {
+		// Upgrade to AllocateAndWritePopulate for memory(shmem)-backed files. We
+		// take a more aggressive approach in populating pages for memory-backed
+		// MemoryFiles. shmem pages are subject to swap rather than disk writeback.
+		// They are not likely to be swapped before they are written to. Hence it
+		// is beneficial to populate (in addition to commit) shmem pages to avoid
+		// faulting page-by-page when these pages are written to in the future.
+		allocMode = AllocateAndWritePopulate
+	}
 	fr, err := f.Allocate(length, AllocOpts{Kind: kind})
 	if err != nil {
 		return memmap.FileRange{}, err
+	}
+	if allocMode == AllocateAndCommit {
+		if err := f.commitFile(fr); err != nil {
+			f.DecRef(fr)
+			return memmap.FileRange{}, err
+		}
 	}
 	dsts, err := f.MapInternal(fr, hostarch.Write)
 	if err != nil {
 		f.DecRef(fr)
 		return memmap.FileRange{}, err
 	}
-	if populate && canPopulate() {
+	if allocMode == AllocateAndWritePopulate && canPopulate() {
 		rem := dsts
 		for {
-			if !tryPopulate(rem.Head()) {
+			if !f.tryPopulate(rem.Head()) {
 				break
 			}
 			rem = rem.Tail()
@@ -634,7 +679,11 @@ func canPopulate() bool {
 	return mlockDisabled.Load() == 0
 }
 
-func tryPopulate(b safemem.Block) bool {
+func (f *MemoryFile) tryPopulate(b safemem.Block) bool {
+	// For disk-backed MemoryFiles, mlock+munlock will populate pages read-only.
+	if mlockDisabled.Load() != 0 || f.opts.DiskBackedFile {
+		return false
+	}
 	// Call mlock to populate pages, then munlock to cancel the mlock (but keep
 	// the pages populated). Only do so for hugepage-aligned address ranges to
 	// ensure that splitting the VMA in mlock doesn't split any existing
@@ -703,6 +752,16 @@ func (f *MemoryFile) manuallyZero(fr memmap.FileRange) error {
 			bs[i] = 0
 		}
 	})
+}
+
+func (f *MemoryFile) commitFile(fr memmap.FileRange) error {
+	// "The default operation (i.e., mode is zero) of fallocate() allocates the
+	// disk space within the range specified by offset and len." - fallocate(2)
+	return unix.Fallocate(
+		int(f.file.Fd()),
+		0, // mode
+		int64(fr.Start),
+		int64(fr.Length()))
 }
 
 func (f *MemoryFile) decommitFile(fr memmap.FileRange) error {
