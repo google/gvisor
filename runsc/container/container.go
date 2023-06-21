@@ -1667,7 +1667,7 @@ func logIDMappings(mappings []specs.LinuxIDMapping, idType string) {
 }
 
 func nvproxyUpdateAppRootFilesystem(spec *specs.Spec, conf *config.Config) error {
-	if !specutils.HaveNvidiaVisibleDevices(spec, conf) {
+	if !specutils.GPUFunctionalityRequested(spec, conf) || !conf.NVProxyDocker {
 		return nil
 	}
 
@@ -1710,12 +1710,45 @@ func nvproxyUpdateAppRootFilesystem(spec *specs.Spec, conf *config.Config) error
 		ldconfigPath = "/sbin/ldconfig"
 	}
 
+	// nvidia-container-cli --load-kmods seems to be a noop; load kernel modules ourselves.
+	nvproxyLoadKernelModules()
+
+	// Run `nvidia-container-cli info`.
+	// This has the side-effect of automatically creating GPU device files.
+	argv := []string{cliPath, "--load-kmods", "info"}
+	log.Debugf("Executing %q", argv)
+	var infoOut, infoErr strings.Builder
+	cmd := exec.Cmd{
+		Path:   argv[0],
+		Args:   argv,
+		Env:    os.Environ(),
+		Stdout: &infoOut,
+		Stderr: &infoErr,
+	}
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("nvidia-container-cli info failed, err: %v\nstdout: %s\nstderr: %s", err, infoOut.String(), infoErr.String())
+	}
+	log.Debugf("nvidia-container-cli info: %v", infoOut.String())
+
+	deviceIDs, err := specutils.NvidiaDeviceNumbers(spec, conf)
+	if err != nil {
+		return fmt.Errorf("failed to get nvidia device numbers: %w", err)
+	}
+
 	// nvidia-container-cli does not create this directory.
 	if err := os.MkdirAll(path.Join(spec.Root.Path, "proc", "driver", "nvidia"), 0555); err != nil {
 		return fmt.Errorf("failed to create /proc/driver/nvidia in app filesystem: %w", err)
 	}
 
-	argv := []string{
+	var nvidiaDevices strings.Builder
+	for i, deviceID := range deviceIDs {
+		if i > 0 {
+			nvidiaDevices.WriteRune(',')
+		}
+		nvidiaDevices.WriteString(fmt.Sprintf("%d", uint32(deviceID)))
+	}
+
+	argv = []string{
 		cliPath,
 		"--load-kmods",
 		"configure",
@@ -1724,11 +1757,12 @@ func nvproxyUpdateAppRootFilesystem(spec *specs.Spec, conf *config.Config) error
 		"--utility",
 		"--compute",
 		fmt.Sprintf("--pid=%d", os.Getpid()),
+		fmt.Sprintf("--device=%s", nvidiaDevices.String()),
 		spec.Root.Path,
 	}
 	log.Debugf("Executing %q", argv)
 	var stdout, stderr strings.Builder
-	cmd := exec.Cmd{
+	cmd = exec.Cmd{
 		Path:   argv[0],
 		Args:   argv,
 		Env:    os.Environ(),
@@ -1736,7 +1770,34 @@ func nvproxyUpdateAppRootFilesystem(spec *specs.Spec, conf *config.Config) error
 		Stderr: &stderr,
 	}
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("nvidia-container-cli failed, err: %v\nstdout: %s\nstderr: %s", err, stdout.String(), stderr.String())
+		return fmt.Errorf("nvidia-container-cli configure failed, err: %v\nstdout: %s\nstderr: %s", err, stdout.String(), stderr.String())
 	}
 	return nil
+}
+
+// nvproxyLoadKernelModules loads NVIDIA-related kernel modules with modprobe.
+func nvproxyLoadKernelModules() {
+	for _, mod := range [...]string{
+		"nvidia",
+		"nvidia-uvm",
+	} {
+		argv := []string{
+			"/sbin/modprobe",
+			mod,
+		}
+		log.Debugf("Executing %q", argv)
+		var stdout, stderr strings.Builder
+		cmd := exec.Cmd{
+			Path:   argv[0],
+			Args:   argv,
+			Env:    os.Environ(),
+			Stdout: &stdout,
+			Stderr: &stderr,
+		}
+		if err := cmd.Run(); err != nil {
+			// This might not be fatal since modules may already be loaded. Log
+			// the failure but continue.
+			log.Warningf("modprobe %s failed, err: %v\nstdout: %s\nstderr: %s", mod, err, stdout.String(), stderr.String())
+		}
+	}
 }

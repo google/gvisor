@@ -1108,7 +1108,7 @@ func createDeviceFiles(ctx context.Context, creds *auth.Credentials, info *conta
 }
 
 func nvproxyRegisterDevicesAndCreateFiles(ctx context.Context, info *containerInfo, k *kernel.Kernel, vfsObj *vfs.VirtualFilesystem, a *devtmpfs.Accessor) error {
-	if !info.conf.NVProxy {
+	if !specutils.GPUFunctionalityRequested(info.spec, info.conf) {
 		return nil
 	}
 	uvmDevMajor, err := k.VFS().GetDynamicCharDevMajor()
@@ -1119,13 +1119,16 @@ func nvproxyRegisterDevicesAndCreateFiles(ctx context.Context, info *containerIn
 		return fmt.Errorf("registering nvproxy driver: %w", err)
 	}
 	info.nvidiaUVMDevMajor = uvmDevMajor
-	if specutils.HaveNvidiaVisibleDevices(info.spec, info.conf) {
+	if info.conf.NVProxyDocker {
+		// In Docker mode, create all the device files now.
+		// In non-Docker mode, these are instead created as part of
+		// `createDeviceFiles`, using the spec's Device list.
+		nvd, err := specutils.NvidiaDeviceNumbers(info.spec, info.conf)
+		if err != nil {
+			return fmt.Errorf("getting nvidia devices: %w", err)
+		}
 		if err := nvproxy.CreateDriverDevtmpfsFiles(ctx, a, uvmDevMajor); err != nil {
 			return fmt.Errorf("creating nvproxy devtmpfs files: %w", err)
-		}
-		nvd, err := specutils.NvidiaVisibleDevices(info.spec, info.conf)
-		if err != nil {
-			return fmt.Errorf("getting NVIDIA_VISIBLE_DEVICES: %w", err)
 		}
 		for _, d := range nvd {
 			if err := nvproxy.CreateIndexDevtmpfsFile(ctx, a, d); err != nil {

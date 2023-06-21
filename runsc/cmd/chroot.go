@@ -19,8 +19,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 
+	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/runsc/config"
@@ -81,7 +81,7 @@ func copyFile(dst, src string) error {
 
 // setUpChroot creates an empty directory with runsc mounted at /runsc and proc
 // mounted at /proc.
-func setUpChroot(pidns bool, conf *config.Config) error {
+func setUpChroot(pidns bool, spec *specs.Spec, conf *config.Config) error {
 	// We are a new mount namespace, so we can use /tmp as a directory to
 	// construct a new root.
 	chroot := os.TempDir()
@@ -117,7 +117,7 @@ func setUpChroot(pidns bool, conf *config.Config) error {
 		}
 	}
 
-	if err := nvproxyUpdateChroot(chroot, conf); err != nil {
+	if err := nvproxyUpdateChroot(chroot, spec, conf); err != nil {
 		return fmt.Errorf("error configuring chroot for Nvidia GPUs: %w", err)
 	}
 
@@ -128,8 +128,8 @@ func setUpChroot(pidns bool, conf *config.Config) error {
 	return pivotRoot(chroot)
 }
 
-func nvproxyUpdateChroot(chroot string, conf *config.Config) error {
-	if !conf.NVProxy {
+func nvproxyUpdateChroot(chroot string, spec *specs.Spec, conf *config.Config) error {
+	if !specutils.GPUFunctionalityRequested(spec, conf) {
 		return nil
 	}
 	if err := os.Mkdir(filepath.Join(chroot, "dev"), 0755); err != nil && !errors.Is(err, os.ErrExist) {
@@ -141,18 +141,14 @@ func nvproxyUpdateChroot(chroot string, conf *config.Config) error {
 	if err := mountInChroot(chroot, "/dev/nvidia-uvm", "/dev/nvidia-uvm", "bind", unix.MS_BIND); err != nil {
 		return fmt.Errorf("error mounting /dev/nvidia-uvm in chroot: %w", err)
 	}
-	// We must bind-mount all available GPUs because in the Kubernetes case,
-	// the set of usable GPUs isn't known until time of subcontainer creation.
-	paths, err := filepath.Glob("/dev/nvidia*")
+	deviceIDs, err := specutils.NvidiaDeviceNumbers(spec, conf)
 	if err != nil {
-		return fmt.Errorf("enumerating Nvidia device files: %w", err)
+		return fmt.Errorf("enumerating nvidia device IDs: %w", err)
 	}
-	re := regexp.MustCompile(`^/dev/nvidia\d+$`)
-	for _, path := range paths {
-		if re.MatchString(path) {
-			if err := mountInChroot(chroot, path, path, "bind", unix.MS_BIND); err != nil {
-				return fmt.Errorf("error mounting %q in chroot: %v", path, err)
-			}
+	for _, deviceID := range deviceIDs {
+		path := fmt.Sprintf("/dev/nvidia%d", deviceID)
+		if err := mountInChroot(chroot, path, path, "bind", unix.MS_BIND); err != nil {
+			return fmt.Errorf("error mounting %q in chroot: %v", path, err)
 		}
 	}
 	return nil
