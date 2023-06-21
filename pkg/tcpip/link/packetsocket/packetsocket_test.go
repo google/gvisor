@@ -53,6 +53,7 @@ func (e *nullEndpoint) IsAttached() bool                      { return e.disp !=
 func (*nullEndpoint) Wait()                                   {}
 func (*nullEndpoint) ARPHardwareType() header.ARPHardwareType { return header.ARPHardwareNone }
 func (*nullEndpoint) AddHeader(stack.PacketBufferPtr)         {}
+func (*nullEndpoint) ParseHeader(stack.PacketBufferPtr) bool  { return true }
 
 var _ stack.NetworkDispatcher = (*testNetworkDispatcher)(nil)
 

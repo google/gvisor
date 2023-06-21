@@ -189,11 +189,10 @@ func (d *readVDispatcher) dispatch() (bool, tcpip.Error) {
 
 	var p tcpip.NetworkProtocolNumber
 	if d.e.hdrSize > 0 {
-		hdr, ok := pkt.LinkHeader().Consume(d.e.hdrSize)
-		if !ok {
+		if !d.e.parseHeader(pkt) {
 			return false, nil
 		}
-		p = header.Ethernet(hdr).Type()
+		p = header.Ethernet(pkt.LinkHeader().Slice()).Type()
 	} else {
 		// We don't get any indication of what the packet is, so try to guess
 		// if it's an IPv4 or IPv6 packet.

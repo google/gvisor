@@ -386,6 +386,13 @@ func (n *nic) writePacket(pkt PacketBufferPtr) tcpip.Error {
 	return n.writeRawPacket(pkt)
 }
 
+func (n *nic) writeRawPacketWithLinkHeaderInPayload(pkt PacketBufferPtr) tcpip.Error {
+	if !n.NetworkLinkEndpoint.ParseHeader(pkt) {
+		return &tcpip.ErrMalformedHeader{}
+	}
+	return n.writeRawPacket(pkt)
+}
+
 func (n *nic) writeRawPacket(pkt PacketBufferPtr) tcpip.Error {
 	// Always an outgoing packet.
 	pkt.PktType = tcpip.PacketOutgoing
