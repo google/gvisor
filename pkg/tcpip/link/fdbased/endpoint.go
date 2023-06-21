@@ -528,6 +528,20 @@ func (e *endpoint) AddHeader(pkt stack.PacketBufferPtr) {
 	}
 }
 
+func (e *endpoint) parseHeader(pkt stack.PacketBufferPtr) bool {
+	_, ok := pkt.LinkHeader().Consume(e.hdrSize)
+	return ok
+
+}
+
+// ParseHeader implements stack.LinkEndpoint.ParseHeader.
+func (e *endpoint) ParseHeader(pkt stack.PacketBufferPtr) bool {
+	if e.hdrSize > 0 {
+		return e.parseHeader(pkt)
+	}
+	return true
+}
+
 // writePacket writes outbound packets to the file descriptor. If it is not
 // currently writable, the packet is dropped.
 func (e *endpoint) writePacket(pkt stack.PacketBufferPtr) tcpip.Error {

@@ -331,6 +331,9 @@ func (*fwdTestLinkEndpoint) ARPHardwareType() header.ARPHardwareType {
 // AddHeader implements stack.LinkEndpoint.AddHeader.
 func (*fwdTestLinkEndpoint) AddHeader(PacketBufferPtr) {}
 
+// ParseHeader implements stack.LinkEndpoint.ParseHeader.
+func (*fwdTestLinkEndpoint) ParseHeader(PacketBufferPtr) bool { return true }
+
 func fwdTestNetFactory(t *testing.T, proto *fwdTestNetworkProtocol) (*faketime.ManualClock, *fwdTestLinkEndpoint, *fwdTestLinkEndpoint) {
 	clock := faketime.NewManualClock()
 	// Create a stack with the network protocol and two NICs.

@@ -147,6 +147,9 @@ func (*InjectableEndpoint) ARPHardwareType() header.ARPHardwareType {
 // AddHeader implements stack.LinkEndpoint.AddHeader.
 func (*InjectableEndpoint) AddHeader(stack.PacketBufferPtr) {}
 
+// ParseHeader implements stack.LinkEndpoint.ParseHeader.
+func (*InjectableEndpoint) ParseHeader(stack.PacketBufferPtr) bool { return true }
+
 // NewInjectableEndpoint creates a new multi-endpoint injectable endpoint.
 func NewInjectableEndpoint(routes map[tcpip.Address]stack.InjectableLinkEndpoint) *InjectableEndpoint {
 	return &InjectableEndpoint{

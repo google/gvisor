@@ -92,6 +92,11 @@ func (*countedEndpoint) AddHeader(stack.PacketBufferPtr) {
 	panic("unimplemented")
 }
 
+// ParseHeader implements stack.LinkEndpoint.ParseHeader.
+func (*countedEndpoint) ParseHeader(stack.PacketBufferPtr) bool {
+	panic("unimplemented")
+}
+
 func TestWaitWrite(t *testing.T) {
 	ep := &countedEndpoint{}
 	wep := New(ep)
