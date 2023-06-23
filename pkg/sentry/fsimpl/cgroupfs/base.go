@@ -340,9 +340,6 @@ func (c *cgroupInode) Charge(t *kernel.Task, d *kernfs.Dentry, ctlType kernel.Cg
 
 // ReadControl implements kernel.CgroupImpl.ReadControl.
 func (c *cgroupInode) ReadControl(ctx context.Context, name string) (string, error) {
-	c.fs.tasksMu.RLock()
-	defer c.fs.tasksMu.RUnlock()
-
 	cfi, err := c.Lookup(ctx, name)
 	if err != nil {
 		return "", fmt.Errorf("no such control file")
@@ -362,9 +359,6 @@ func (c *cgroupInode) ReadControl(ctx context.Context, name string) (string, err
 
 // WriteControl implements kernel.CgroupImpl.WriteControl.
 func (c *cgroupInode) WriteControl(ctx context.Context, name string, value string) error {
-	c.fs.tasksMu.RLock()
-	defer c.fs.tasksMu.RUnlock()
-
 	cfi, err := c.Lookup(ctx, name)
 	if err != nil {
 		return fmt.Errorf("no such control file")
