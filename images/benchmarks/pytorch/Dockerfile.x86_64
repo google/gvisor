@@ -1,0 +1,23 @@
+FROM pytorch/pytorch:2.0.1-cuda11.7-cudnn8-devel
+
+RUN apt-get update
+RUN DEBIAN_FRONTEND=noninteractive apt-get install -y git wget \
+    libgl1-mesa-glx libglib2.0-0
+
+RUN git clone https://github.com/pytorch/benchmark.git \
+    && cd /workspace/benchmark \
+    && git reset --hard 6d84522ec83997beefa4bb6e5154453b5fc653f7
+
+# For some reason, installing the suite's requirements.txt does not correctly
+# install "boto3", so install it explicitly.
+RUN pip install boto3 && pip install -r /workspace/benchmark/requirements.txt
+
+RUN cd /workspace/benchmark && python install.py \
+    DALLE2_pytorch \
+    LearningToPaint \
+    Super_SloMo
+
+RUN cd /workspace/benchmark/torchbenchmark/models && pip install \
+    -r DALLE2_pytorch/requirements.txt \
+    -r LearningToPaint/requirements.txt \
+    -r Super_SloMo/requirements.txt
