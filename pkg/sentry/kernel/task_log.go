@@ -190,12 +190,18 @@ const (
 //
 // Preconditions: The task's owning TaskSet.mu must be locked.
 func (t *Task) updateInfoLocked() {
-	// Use the task's TID and PID in the root PID namespace for logging.
-	pid := t.tg.pidns.owner.Root.tgids[t.tg]
-	tid := t.tg.pidns.owner.Root.tids[t]
-	t.logPrefix.Store(fmt.Sprintf("[% 4d:% 4d] ", pid, tid))
+	// Log the TID and PID in root pidns and t's pidns.
+	rootPID := t.tg.pidns.owner.Root.tgids[t.tg]
+	rootTID := t.tg.pidns.owner.Root.tids[t]
+	pid := t.tg.pidns.tgids[t.tg]
+	tid := t.tg.pidns.tids[t]
+	if rootPID == pid && rootTID == tid {
+		t.logPrefix.Store(fmt.Sprintf("[% 4d:% 4d] ", pid, tid))
+	} else {
+		t.logPrefix.Store(fmt.Sprintf("[% 4d(%4d):% 4d(%4d)] ", rootPID, pid, rootTID, tid))
+	}
 
-	t.rebuildTraceContext(tid)
+	t.rebuildTraceContext(rootTID)
 }
 
 // rebuildTraceContext rebuilds the trace context.
