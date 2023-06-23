@@ -667,7 +667,7 @@ type CreateProcessArgs struct {
 	// This is checked if and only if Filename is "".
 	File *vfs.FileDescription
 
-	// Argvv is a list of arguments.
+	// Argv is a list of arguments.
 	Argv []string
 
 	// Envv is a list of environment variables.
@@ -688,7 +688,7 @@ type CreateProcessArgs struct {
 	// Umask is the initial umask.
 	Umask uint
 
-	// Limits is the initial resource limits.
+	// Limits are the initial resource limits.
 	Limits *limits.LimitSet
 
 	// MaxSymlinkTraversals is the maximum number of symlinks to follow
