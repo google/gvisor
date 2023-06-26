@@ -822,7 +822,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	// filesystem is required. These features require to run inside the user
 	// namespace specified in the spec or the current namespace if none is
 	// configured.
-	rootlessEUID := unix.Getuid() != 0
+	rootlessEUID := unix.Geteuid() != 0
 	setUserMappings := false
 	if conf.Network == config.NetworkHost || conf.DirectFS {
 		if userns, ok := specutils.GetNS(specs.UserNamespace, args.Spec); ok {
