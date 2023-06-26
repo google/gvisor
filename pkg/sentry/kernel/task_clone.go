@@ -147,7 +147,7 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 		return 0, nil, err
 	}
 	cu.Add(func() {
-		image.release()
+		image.release(t)
 	})
 	// clone() returns 0 in the child.
 	image.Arch.SetReturn(0)

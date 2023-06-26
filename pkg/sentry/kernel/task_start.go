@@ -113,7 +113,7 @@ type TaskConfig struct {
 func (ts *TaskSet) NewTask(ctx context.Context, cfg *TaskConfig) (*Task, error) {
 	var err error
 	cleanup := func() {
-		cfg.TaskImage.release()
+		cfg.TaskImage.release(ctx)
 		cfg.FSContext.DecRef(ctx)
 		cfg.FDTable.DecRef(ctx)
 		cfg.IPCNamespace.DecRef(ctx)
