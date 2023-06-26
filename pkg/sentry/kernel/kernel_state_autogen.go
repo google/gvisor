@@ -2178,6 +2178,7 @@ func (ns *PIDNamespace) StateFields() []string {
 		"owner",
 		"parent",
 		"userns",
+		"id",
 		"last",
 		"tasks",
 		"tids",
@@ -2199,16 +2200,17 @@ func (ns *PIDNamespace) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &ns.owner)
 	stateSinkObject.Save(1, &ns.parent)
 	stateSinkObject.Save(2, &ns.userns)
-	stateSinkObject.Save(3, &ns.last)
-	stateSinkObject.Save(4, &ns.tasks)
-	stateSinkObject.Save(5, &ns.tids)
-	stateSinkObject.Save(6, &ns.tgids)
-	stateSinkObject.Save(7, &ns.sessions)
-	stateSinkObject.Save(8, &ns.sids)
-	stateSinkObject.Save(9, &ns.processGroups)
-	stateSinkObject.Save(10, &ns.pgids)
-	stateSinkObject.Save(11, &ns.exiting)
-	stateSinkObject.Save(12, &ns.extra)
+	stateSinkObject.Save(3, &ns.id)
+	stateSinkObject.Save(4, &ns.last)
+	stateSinkObject.Save(5, &ns.tasks)
+	stateSinkObject.Save(6, &ns.tids)
+	stateSinkObject.Save(7, &ns.tgids)
+	stateSinkObject.Save(8, &ns.sessions)
+	stateSinkObject.Save(9, &ns.sids)
+	stateSinkObject.Save(10, &ns.processGroups)
+	stateSinkObject.Save(11, &ns.pgids)
+	stateSinkObject.Save(12, &ns.exiting)
+	stateSinkObject.Save(13, &ns.extra)
 }
 
 func (ns *PIDNamespace) afterLoad() {}
@@ -2218,16 +2220,17 @@ func (ns *PIDNamespace) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &ns.owner)
 	stateSourceObject.Load(1, &ns.parent)
 	stateSourceObject.Load(2, &ns.userns)
-	stateSourceObject.Load(3, &ns.last)
-	stateSourceObject.Load(4, &ns.tasks)
-	stateSourceObject.Load(5, &ns.tids)
-	stateSourceObject.Load(6, &ns.tgids)
-	stateSourceObject.Load(7, &ns.sessions)
-	stateSourceObject.Load(8, &ns.sids)
-	stateSourceObject.Load(9, &ns.processGroups)
-	stateSourceObject.Load(10, &ns.pgids)
-	stateSourceObject.Load(11, &ns.exiting)
-	stateSourceObject.Load(12, &ns.extra)
+	stateSourceObject.Load(3, &ns.id)
+	stateSourceObject.Load(4, &ns.last)
+	stateSourceObject.Load(5, &ns.tasks)
+	stateSourceObject.Load(6, &ns.tids)
+	stateSourceObject.Load(7, &ns.tgids)
+	stateSourceObject.Load(8, &ns.sessions)
+	stateSourceObject.Load(9, &ns.sids)
+	stateSourceObject.Load(10, &ns.processGroups)
+	stateSourceObject.Load(11, &ns.pgids)
+	stateSourceObject.Load(12, &ns.exiting)
+	stateSourceObject.Load(13, &ns.extra)
 }
 
 func (t *threadGroupNode) StateTypeName() string {

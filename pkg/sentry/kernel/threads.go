@@ -149,6 +149,9 @@ type PIDNamespace struct {
 	// appropriate capabilities in userns. The userns pointer is immutable.
 	userns *auth.UserNamespace
 
+	// id is a unique ID assigned to the PID namespace. id is immutable.
+	id uint64
+
 	// The following fields are protected by owner.mu.
 
 	// last is the last ThreadID to be allocated in this namespace.
@@ -198,6 +201,7 @@ func newPIDNamespace(ts *TaskSet, parent *PIDNamespace, userns *auth.UserNamespa
 		owner:         ts,
 		parent:        parent,
 		userns:        userns,
+		id:            lastPIDNSID.Add(1),
 		tasks:         make(map[ThreadID]*Task),
 		tids:          make(map[*Task]ThreadID),
 		tgids:         make(map[*ThreadGroup]ThreadID),
@@ -208,6 +212,13 @@ func newPIDNamespace(ts *TaskSet, parent *PIDNamespace, userns *auth.UserNamespa
 		extra:         newPIDNamespaceData(),
 	}
 }
+
+// lastPIDNSID is the last value of PIDNamespace.ID assigned to a PID
+// namespace.
+//
+// This is global rather than being per-TaskSet or Kernel because
+// NewRootPIDNamespace() is called before the Kernel is initialized.
+var lastPIDNSID atomicbitops.Uint64
 
 // NewRootPIDNamespace creates the root PID namespace. 'owner' is not available
 // yet when root namespace is created and must be set by caller.
@@ -228,6 +239,11 @@ func (ns *PIDNamespace) TaskWithID(tid ThreadID) *Task {
 	t := ns.tasks[tid]
 	ns.owner.mu.RUnlock()
 	return t
+}
+
+// ID returns a non-zero ID that is unique across PID namespaces.
+func (ns *PIDNamespace) ID() uint64 {
+	return ns.id
 }
 
 // ThreadGroupWithID returns the thread group led by the task with thread ID

@@ -72,9 +72,9 @@ func (fs *filesystem) newTaskInode(ctx context.Context, task *kernel.Task, pidns
 		"mounts":    fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, &mountsData{fs: fs, task: task}),
 		"net":       fs.newTaskNetDir(ctx, task),
 		"ns": fs.newTaskOwnedDir(ctx, task, fs.NextIno(), 0511, map[string]kernfs.Inode{
-			"net":  fs.newNamespaceSymlink(ctx, task, fs.NextIno(), "net"),
-			"pid":  fs.newNamespaceSymlink(ctx, task, fs.NextIno(), "pid"),
-			"user": fs.newNamespaceSymlink(ctx, task, fs.NextIno(), "user"),
+			"net":  fs.newFakeNamespaceSymlink(ctx, task, fs.NextIno(), "net"),
+			"pid":  fs.newPIDNamespaceSymlink(ctx, task, fs.NextIno()),
+			"user": fs.newFakeNamespaceSymlink(ctx, task, fs.NextIno(), "user"),
 		}),
 		"oom_score":     fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, newStaticFile("0\n")),
 		"oom_score_adj": fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0644, &oomScoreAdj{task: task}),
