@@ -1,6 +1,6 @@
 # Nvidia Driver Proxy
 
-Status as of 2024-04-28: Under review
+Status as of 2023-06-23: Under review
 
 ## Synopsis
 
