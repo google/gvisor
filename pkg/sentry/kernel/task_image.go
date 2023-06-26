@@ -54,11 +54,11 @@ type TaskImage struct {
 
 // release releases all resources held by the TaskImage. release is called by
 // the task when it execs into a new TaskImage.
-func (image *TaskImage) release() {
+func (image *TaskImage) release(ctx context.Context) {
 	// Nil out pointers so that if the task is saved after release, it doesn't
 	// follow the pointers to possibly now-invalid objects.
 	if image.MemoryManager != nil {
-		image.MemoryManager.DecUsers(context.Background())
+		image.MemoryManager.DecUsers(ctx)
 		image.MemoryManager = nil
 	}
 	image.fu = nil
