@@ -94,7 +94,7 @@ func (*execStop) Killable() bool { return true }
 // goroutine.
 func (t *Task) Execve(newImage *TaskImage, argv, env []string, executable *vfs.FileDescription, pathname string) (*SyscallControl, error) {
 	cu := cleanup.Make(func() {
-		newImage.release()
+		newImage.release(t)
 	})
 	defer cu.Clean()
 	// We can't clearly hold kernel package locks while stat'ing executable.
@@ -154,7 +154,7 @@ func (r *runSyscallAfterExecStop) execute(t *Task) taskRunState {
 	t.tg.execing = nil
 	if t.killed() {
 		t.tg.pidns.owner.mu.Unlock()
-		r.image.release()
+		r.image.release(t)
 		return (*runInterrupt)(nil)
 	}
 	// We are the thread group leader now. Save our old thread ID for
@@ -248,7 +248,7 @@ func (r *runSyscallAfterExecStop) execute(t *Task) taskRunState {
 	// Don't hold t.mu while calling t.image.release(), that may
 	// attempt to acquire TaskImage.MemoryManager.mappingMu, a lock order
 	// violation.
-	oldImage.release()
+	oldImage.release(t)
 
 	t.unstopVforkParent()
 	t.p.FullStateChanged()
