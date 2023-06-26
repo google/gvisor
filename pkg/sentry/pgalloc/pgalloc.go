@@ -634,6 +634,14 @@ func (f *MemoryFile) AllocateAndFill(length uint64, kind usage.MemoryKind, alloc
 		// is beneficial to populate (in addition to commit) shmem pages to avoid
 		// faulting page-by-page when these pages are written to in the future.
 		allocMode = AllocateAndWritePopulate
+	} else if f.opts.DiskBackedFile && allocMode == AllocateAndWritePopulate {
+		// Don't populate pages for disk-backed files.
+		// Benchmarking showed that prepopulated pages are likely to be written
+		// back to disk before the application can write to them. The pages will
+		// fault again on write anyways. In total, prepopulating disk-backed pages
+		// deteriorates performance as it fails to eliminate future page faults
+		// and we also additionally incur useless disk writebacks.
+		allocMode = AllocateOnly
 	}
 	fr, err := f.Allocate(length, AllocOpts{Kind: kind})
 	if err != nil {
@@ -653,7 +661,7 @@ func (f *MemoryFile) AllocateAndFill(length uint64, kind usage.MemoryKind, alloc
 	if allocMode == AllocateAndWritePopulate && canPopulate() {
 		rem := dsts
 		for {
-			if !f.tryPopulate(rem.Head()) {
+			if !tryPopulate(rem.Head()) {
 				break
 			}
 			rem = rem.Tail()
@@ -674,14 +682,40 @@ func (f *MemoryFile) AllocateAndFill(length uint64, kind usage.MemoryKind, alloc
 }
 
 var mlockDisabled atomicbitops.Uint32
+var madvPopulateWriteDisabled atomicbitops.Uint32
 
 func canPopulate() bool {
-	return mlockDisabled.Load() == 0
+	return mlockDisabled.Load() == 0 || madvPopulateWriteDisabled.Load() == 0
 }
 
-func (f *MemoryFile) tryPopulate(b safemem.Block) bool {
-	// For disk-backed MemoryFiles, mlock+munlock will populate pages read-only.
-	if mlockDisabled.Load() != 0 || f.opts.DiskBackedFile {
+func tryPopulateMadv(b safemem.Block) bool {
+	if madvPopulateWriteDisabled.Load() != 0 {
+		return false
+	}
+	start, ok := hostarch.Addr(b.Addr()).RoundUp()
+	if !ok {
+		return true
+	}
+	end := hostarch.Addr(b.Addr() + uintptr(b.Len())).RoundDown()
+	if start >= end {
+		return true
+	}
+	_, _, errno := unix.RawSyscall(unix.SYS_MADVISE, uintptr(start), uintptr(end-start), unix.MADV_POPULATE_WRITE)
+	if errno != 0 {
+		if errno == unix.EINVAL {
+			// EINVAL is expected if MADV_POPULATE_WRITE is not supported (Linux <5.14).
+			log.Infof("Disabling pgalloc.MemoryFile.AllocateAndFill pre-population: madvise failed: %s", errno)
+		} else {
+			log.Warningf("Disabling pgalloc.MemoryFile.AllocateAndFill pre-population: madvise failed: %s", errno)
+		}
+		madvPopulateWriteDisabled.Store(1)
+		return false
+	}
+	return true
+}
+
+func tryPopulateMlock(b safemem.Block) bool {
+	if mlockDisabled.Load() != 0 {
 		return false
 	}
 	// Call mlock to populate pages, then munlock to cancel the mlock (but keep
@@ -712,6 +746,31 @@ func (f *MemoryFile) tryPopulate(b safemem.Block) bool {
 		return false
 	}
 	return true
+}
+
+func tryPopulate(b safemem.Block) bool {
+	// There are two approaches for populating writable pages:
+	// 1. madvise(MADV_POPULATE_WRITE). It has the desired effect: "Populate
+	//    (prefault) page tables writable, faulting in all pages in the range
+	//    just as if manually writing to each each page".
+	// 2. Call mlock to populate pages, then munlock to cancel the mlock (but
+	//    keep the pages populated).
+	//
+	// Prefer the madvise(MADV_POPULATE_WRITE) approach because:
+	// - Only requires 1 syscall, as opposed to 2 syscalls with mlock approach.
+	// - It is faster because it doesn't have to modify vmas like mlock does.
+	// - It works for disk-backed memory mappings too. The mlock approach doesn't
+	//   work for disk-backed filesystems (e.g. ext4). This is because
+	//   mlock(2) => mm/gup.c:__mm_populate() emulates a read fault on writable
+	//   MAP_SHARED mappings. For memory-backed (shmem) files,
+	//   mm/mmap.c:vma_set_page_prot() => vma_wants_writenotify() is false, so
+	//   the page table entries populated by a read fault are writable. For
+	//   disk-backed files, vma_set_page_prot() => vma_wants_writenotify() is
+	//   true, so the page table entries populated by a read fault are read-only.
+	if tryPopulateMadv(b) {
+		return true
+	}
+	return tryPopulateMlock(b)
 }
 
 // fallocate(2) modes, defined in Linux's include/uapi/linux/falloc.h.
