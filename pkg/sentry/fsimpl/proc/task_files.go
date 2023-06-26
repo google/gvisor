@@ -1226,7 +1226,18 @@ type namespaceSymlink struct {
 	task *kernel.Task
 }
 
-func (fs *filesystem) newNamespaceSymlink(ctx context.Context, task *kernel.Task, ino uint64, ns string) kernfs.Inode {
+func (fs *filesystem) newPIDNamespaceSymlink(ctx context.Context, task *kernel.Task, ino uint64) kernfs.Inode {
+	target := fmt.Sprintf("pid:[%d]", task.PIDNamespace().ID())
+
+	inode := &namespaceSymlink{task: task}
+	// Note: credentials are overridden by taskOwnedInode.
+	inode.Init(ctx, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, target)
+
+	taskInode := &taskOwnedInode{Inode: inode, owner: task}
+	return taskInode
+}
+
+func (fs *filesystem) newFakeNamespaceSymlink(ctx context.Context, task *kernel.Task, ino uint64, ns string) kernfs.Inode {
 	// Namespace symlinks should contain the namespace name and the inode number
 	// for the namespace instance, so for example user:[123456]. We currently fake
 	// the inode number by sticking the symlink inode in its place.
