@@ -121,6 +121,16 @@ doc(
     permalink = "/blog/2023/06/20/gpu-pytorch-stable-diffusion/",
 )
 
+doc(
+    name = "directfs",
+    src = "2023-06-27-directfs.md",
+    authors = [
+        "ayushranjan",
+    ],
+    layout = "post",
+    permalink = "/blog/2023/06/27/directfs/",
+)
+
 docs(
     name = "posts",
     deps = [
