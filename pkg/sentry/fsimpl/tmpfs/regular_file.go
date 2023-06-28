@@ -728,7 +728,10 @@ func (rw *regularFileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64,
 				goto exitLoop
 			}
 			gapMR.End = gapMR.Start + (hostarch.PageSize * pagesReserved)
-			fr, err := rw.file.inode.fs.mf.Allocate(gapMR.Length(), pgalloc.AllocOpts{Kind: rw.file.memoryUsageKind})
+			fr, err := rw.file.inode.fs.mf.AllocateAndFill(gapMR.Length(), rw.file.memoryUsageKind, pgalloc.AllocateAndWritePopulate, safemem.ReaderFunc(func(dsts safemem.BlockSeq) (uint64, error) {
+				// No-op here. The write to dsts will happen in the next iteration.
+				return dsts.NumBytes(), nil
+			}))
 			if err != nil {
 				retErr = err
 				rw.file.inode.fs.unaccountPages(pagesReserved)
