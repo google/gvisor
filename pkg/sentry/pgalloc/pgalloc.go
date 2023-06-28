@@ -697,10 +697,14 @@ func tryPopulateMadv(b safemem.Block) bool {
 		return true
 	}
 	end := hostarch.Addr(b.Addr() + uintptr(b.Len())).RoundDown()
-	if start >= end {
+	bLen := end - start
+	// Only call madvise(MADV_POPULATE_WRITE) if >=2 pages are being populated.
+	// 1 syscall overhead >= 1 page fault overhead. This is because syscalls are
+	// susceptible to additional overheads like seccomp-bpf filters and auditing.
+	if start >= end || bLen <= hostarch.PageSize {
 		return true
 	}
-	_, _, errno := unix.RawSyscall(unix.SYS_MADVISE, uintptr(start), uintptr(end-start), unix.MADV_POPULATE_WRITE)
+	_, _, errno := unix.RawSyscall(unix.SYS_MADVISE, uintptr(start), uintptr(bLen), unix.MADV_POPULATE_WRITE)
 	if errno != 0 {
 		if errno == unix.EINVAL {
 			// EINVAL is expected if MADV_POPULATE_WRITE is not supported (Linux <5.14).
