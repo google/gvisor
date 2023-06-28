@@ -345,6 +345,7 @@ func (f *controllerFile) StateTypeName() string {
 func (f *controllerFile) StateFields() []string {
 	return []string{
 		"DynamicBytesFile",
+		"implStatFS",
 		"allowBackgroundAccess",
 	}
 }
@@ -355,7 +356,8 @@ func (f *controllerFile) beforeSave() {}
 func (f *controllerFile) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
 	stateSinkObject.Save(0, &f.DynamicBytesFile)
-	stateSinkObject.Save(1, &f.allowBackgroundAccess)
+	stateSinkObject.Save(1, &f.implStatFS)
+	stateSinkObject.Save(2, &f.allowBackgroundAccess)
 }
 
 func (f *controllerFile) afterLoad() {}
@@ -363,7 +365,8 @@ func (f *controllerFile) afterLoad() {}
 // +checklocksignore
 func (f *controllerFile) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.DynamicBytesFile)
-	stateSourceObject.Load(1, &f.allowBackgroundAccess)
+	stateSourceObject.Load(1, &f.implStatFS)
+	stateSourceObject.Load(2, &f.allowBackgroundAccess)
 }
 
 func (f *staticControllerFile) StateTypeName() string {
