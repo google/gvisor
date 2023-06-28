@@ -16,7 +16,9 @@
 // which isn't expected to work, or be safe on a general linux system.
 
 #include <limits.h>
+#include <linux/magic.h>
 #include <sys/mount.h>
+#include <sys/statfs.h>
 #include <unistd.h>
 
 #include <cstdint>
@@ -155,6 +157,21 @@ TEST(Cgroup, ProcsAndTasks) {
     EXPECT_TRUE(tids.contains(*it))
         << absl::StreamFormat("Have pid %d, but no such tid", *it);
   }
+}
+
+TEST(Cgroup, Statfs) {
+  SKIP_IF(!CgroupsAvailable());
+
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs(""));
+
+  struct statfs st;
+  EXPECT_THAT(statfs(c.Relpath("cgroup.procs").c_str(), &st),
+              SyscallSucceeds());
+  EXPECT_EQ(st.f_type, CGROUP_SUPER_MAGIC);
+
+  EXPECT_THAT(statfs(c.Relpath(".").c_str(), &st), SyscallSucceeds());
+  EXPECT_EQ(st.f_type, CGROUP_SUPER_MAGIC);
 }
 
 TEST(Cgroup, ControllersMustBeInUniqueHierarchy) {

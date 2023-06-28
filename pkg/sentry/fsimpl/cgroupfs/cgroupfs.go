@@ -683,6 +683,8 @@ type writableControllerFileImpl interface {
 // +stateify savable
 type controllerFile struct {
 	kernfs.DynamicBytesFile
+	implStatFS
+
 	allowBackgroundAccess bool
 }
 
