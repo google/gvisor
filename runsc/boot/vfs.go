@@ -550,6 +550,9 @@ func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Co
 	tmpfsOpts := tmpfs.FilesystemOpts{
 		RootFileType: uint16(rootType),
 		FilestoreFD:  filestoreFD,
+		// If a mount is being overlaid, it should not be limited by the default
+		// tmpfs size limit.
+		DisableDefaultSizeLimit: true,
 	}
 	upperOpts.GetFilesystemOptions.InternalData = tmpfsOpts
 	upper, err := c.k.VFS().MountDisconnected(ctx, creds, "" /* source */, tmpfs.Name, &upperOpts)
