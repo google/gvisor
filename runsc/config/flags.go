@@ -140,6 +140,7 @@ var overrideAllowlist = map[string]struct {
 	"strace":          {},
 	"strace-syscalls": {},
 	"strace-log-size": {},
+	"host-uds":        {},
 
 	"oci-seccomp": {check: checkOciSeccomp},
 }
