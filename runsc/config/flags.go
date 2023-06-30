@@ -92,8 +92,8 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool("overlay", false, "DEPRECATED: use --overlay2=all:memory to achieve the same effect")
 	flagSet.Var(defaultOverlay2(), "overlay2", "wrap mounts with overlayfs. Format is {mount}:{medium}, where 'mount' can be 'root' or 'all' and medium can be 'memory', 'self' or 'dir=/abs/dir/path' in which filestore will be created. 'none' will turn overlay mode off.")
 	flagSet.Bool("fsgofer-host-uds", false, "DEPRECATED: use host-uds=all")
-	flagSet.Var(hostUDSPtr(HostUDSNone), "host-uds", "controls permission to access host Unix-domain sockets. Values: none|open|create|all, default: none")
-	flagSet.Var(hostFifoPtr(HostFifoNone), "host-fifo", "controls permission to access host FIFOs (or named pipes). Values: none|open, default: none")
+	flagSet.Var(hostUDSPtr(HostUDSAll), "host-uds", "controls permission to access host Unix-domain sockets. Values: none|open|create|all, default: none")
+	flagSet.Var(hostFifoPtr(HostFifoOpen), "host-fifo", "controls permission to access host FIFOs (or named pipes). Values: none|open, default: none")
 
 	flagSet.Bool("vfs2", true, "DEPRECATED: this flag has no effect.")
 	flagSet.Bool("fuse", true, "DEPRECATED: this flag has no effect.")
@@ -141,6 +141,7 @@ var overrideAllowlist = map[string]struct {
 	"strace-syscalls": {},
 	"strace-log-size": {},
 	"host-uds":        {},
+	"host-fifo":       {},
 
 	"oci-seccomp": {check: checkOciSeccomp},
 }
