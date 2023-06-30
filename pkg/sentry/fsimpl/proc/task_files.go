@@ -18,6 +18,8 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"strconv"
+	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
@@ -942,20 +944,25 @@ func (o *oomScoreAdj) Write(ctx context.Context, _ *vfs.FileDescription, src use
 	// Limit input size so as not to impact performance if input size is large.
 	src = src.TakeFirst(hostarch.PageSize - 1)
 
-	var v int32
-	n, err := usermem.CopyInt32StringInVec(ctx, src.IO, src.Addrs, &v, src.Opts)
-	if err != nil {
+	str, err := usermem.CopyStringIn(ctx, src.IO, src.Addrs.Head().Start, int(src.Addrs.Head().Length()), src.Opts)
+	if err != nil && err != linuxerr.ENAMETOOLONG {
 		return 0, err
+	}
+
+	str = strings.TrimSpace(str)
+	v, err := strconv.ParseInt(str, 0, 32)
+	if err != nil {
+		return 0, linuxerr.EINVAL
 	}
 
 	if o.task.ExitState() == kernel.TaskExitDead {
 		return 0, linuxerr.ESRCH
 	}
-	if err := o.task.SetOOMScoreAdj(v); err != nil {
+	if err := o.task.SetOOMScoreAdj(int32(v)); err != nil {
 		return 0, err
 	}
 
-	return n, nil
+	return src.NumBytes(), nil
 }
 
 // exeSymlink is an symlink for the /proc/[pid]/exe file.
