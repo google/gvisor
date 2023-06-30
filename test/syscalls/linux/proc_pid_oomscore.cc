@@ -66,6 +66,19 @@ TEST(ProcPidOomscoreAdjTest, BasicWrite) {
   EXPECT_EQ(oom_score, test_value);
 }
 
+TEST(ProcPidOomscoreAdjTest, WriteNullTerminatedString) {
+  constexpr int test_value = 7;
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/self/oom_score_adj", O_WRONLY));
+  ASSERT_THAT(
+      RetryEINTR(write)(fd.get(), std::to_string(test_value).c_str(), 2),
+      SyscallSucceeds());
+
+  auto const oom_score =
+      ASSERT_NO_ERRNO_AND_VALUE(ReadProcNumber("/proc/self/oom_score_adj"));
+  EXPECT_EQ(oom_score, test_value);
+}
+
 }  // namespace
 
 }  // namespace testing
