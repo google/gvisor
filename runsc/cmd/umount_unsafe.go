@@ -39,12 +39,12 @@ func (*Umount) Name() string {
 
 // Synopsis implements subcommands.Command.Synopsis.
 func (*Umount) Synopsis() string {
-	return "umount the specified directory lazily when one byte is read from synd-fd"
+	return "umount the specified directory lazily when one byte is read from sync-fd"
 }
 
 // Usage implements subcommands.Command.Usage.
 func (*Umount) Usage() string {
-	return `umount --synd-fd=FD <directory path>`
+	return `umount --sync-fd=FD <directory path>`
 }
 
 // SetFlags implements subcommands.Command.SetFlags.
