@@ -669,7 +669,10 @@ void TestListenHangupConnectingRead(const SocketInetTestParam& param,
         .fd = fd,
     };
     // When the listening socket is closed, the peer would reset the connection.
-    EXPECT_THAT(poll(&pfd, 1, kTimeout), SyscallSucceedsWithValue(1));
+    // NB: poll indefinitely on Fuchsia to avoid timing out in Infra.
+    EXPECT_THAT(
+        poll(&pfd, 1, GvisorPlatform() == Platform::kFuchsia ? -1 : kTimeout),
+        SyscallSucceedsWithValue(1));
     EXPECT_EQ(pfd.revents, POLLHUP | POLLERR);
     char c;
     EXPECT_THAT(read(fd, &c, sizeof(c)), SyscallFailsWithErrno(expected_errno));
