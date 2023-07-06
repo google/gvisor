@@ -1140,12 +1140,6 @@ func (ndp *ndpState) doSLAAC(prefix tcpip.Subnet, pl, vl time.Duration) {
 //
 // The IPv6 endpoint that ndp belongs to MUST be locked.
 func (ndp *ndpState) addAndAcquireSLAACAddr(addr tcpip.AddressWithPrefix, temporary bool, lifetimes stack.AddressLifetimes) stack.AddressEndpoint {
-	// Inform the integrator that we have a new SLAAC address.
-	ndpDisp := ndp.ep.protocol.options.NDPDisp
-	if ndpDisp == nil {
-		return nil
-	}
-
 	addressEndpoint, err := ndp.ep.addAndAcquirePermanentAddressLocked(addr, stack.AddressProperties{
 		PEB:        stack.FirstPrimaryEndpoint,
 		ConfigType: stack.AddressConfigSlaac,
@@ -1156,8 +1150,11 @@ func (ndp *ndpState) addAndAcquireSLAACAddr(addr tcpip.AddressWithPrefix, tempor
 		panic(fmt.Sprintf("ndp: error when adding SLAAC address %+v: %s", addr, err))
 	}
 
-	if disp := ndpDisp.OnAutoGenAddress(ndp.ep.nic.ID(), addr); disp != nil {
-		addressEndpoint.RegisterDispatcher(disp)
+	// Inform the integrator that we have a new SLAAC address.
+	if ndpDisp := ndp.ep.protocol.options.NDPDisp; ndpDisp != nil {
+		if disp := ndpDisp.OnAutoGenAddress(ndp.ep.nic.ID(), addr); disp != nil {
+			addressEndpoint.RegisterDispatcher(disp)
+		}
 	}
 
 	return addressEndpoint
