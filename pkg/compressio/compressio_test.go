@@ -96,6 +96,11 @@ func doTest(t harness, opts testOpts) {
 	compressionTime := time.Since(compressionStartTime)
 	compressionRatio := float32(compressed.Len()) / float32(len(opts.Data))
 
+	if compressed.Len() == 0 {
+		// Data can't be corrupted if there is no data.
+		opts.CorruptData = false
+	}
+
 	// Decompress.
 	var decompressed bytes.Buffer
 	decompressionStartTime := time.Now()

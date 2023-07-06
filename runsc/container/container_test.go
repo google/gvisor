@@ -40,6 +40,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/pkg/state/statefile"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/boot"
@@ -1076,7 +1077,7 @@ func TestCheckpointRestore(t *testing.T) {
 			}
 
 			// Checkpoint running container; save state into new file.
-			if err := cont.Checkpoint(file); err != nil {
+			if err := cont.Checkpoint(file, statefile.Options{Compression: statefile.CompressionLevelFlateBestSpeed}); err != nil {
 				t.Fatalf("error checkpointing container to empty file: %v", err)
 			}
 			defer os.RemoveAll(imagePath)
@@ -1255,7 +1256,7 @@ func TestUnixDomainSockets(t *testing.T) {
 			}
 
 			// Checkpoint running container; save state into new file.
-			if err := cont.Checkpoint(file); err != nil {
+			if err := cont.Checkpoint(file, statefile.Options{Compression: statefile.CompressionLevelFlateBestSpeed}); err != nil {
 				t.Fatalf("error checkpointing container to empty file: %v", err)
 			}
 

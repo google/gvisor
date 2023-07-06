@@ -32,6 +32,7 @@ go_library(
         "//pkg/sentry/control",
         "//pkg/sentry/platform",
         "//pkg/sentry/seccheck",
+        "//pkg/state/statefile",
         "//pkg/sync",
         "//pkg/tcpip/header",
         "//pkg/tcpip/stack",
