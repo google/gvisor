@@ -540,6 +540,7 @@ func (e *endpoint) handleICMP(pkt stack.PacketBufferPtr, hasFragmentHeader bool,
 		//
 		na.SetSolicitedFlag(!unspecifiedSource)
 		na.SetOverrideFlag(true)
+		na.SetRouterFlag(e.Forwarding())
 		na.SetTargetAddress(targetAddr)
 		na.Options().Serialize(optsSerializer)
 		packet.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
