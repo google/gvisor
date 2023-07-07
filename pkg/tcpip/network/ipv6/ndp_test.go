@@ -259,6 +259,7 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 		naSrc                  tcpip.Address
 		naDst                  tcpip.Address
 		performsLinkResolution bool
+		forwardingEnabled      bool
 	}{
 		{
 			name:          "Unspecified source to solicited-node multicast destination",
@@ -391,6 +392,20 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 			nsDst:     nicAddr,
 			nsInvalid: true,
 		},
+		{
+			name: "Specified source with 1 source ll to multicast destination with forwarding enabled",
+			nsOpts: header.NDPOptionsSerializer{
+				header.NDPSourceLinkLayerAddressOption(remoteLinkAddr0[:]),
+			},
+			nsSrc:             remoteAddr,
+			nsDst:             nicAddrSNMC,
+			nsInvalid:         false,
+			naDstLinkAddr:     remoteLinkAddr0,
+			naSolicited:       true,
+			naSrc:             nicAddr,
+			naDst:             remoteAddr,
+			forwardingEnabled: true,
+		},
 	}
 
 	for _, test := range tests {
@@ -398,6 +413,10 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 			c := newTestContext()
 			defer c.cleanup()
 			s := c.s
+
+			if err := s.SetForwardingDefaultAndAllNICs(header.IPv6ProtocolNumber, test.forwardingEnabled); err != nil {
+				t.Fatalf("SetForwardingDefaultAndAllNICs(%t): %s", test.forwardingEnabled, err)
+			}
 
 			e := channel.New(1, 1280, nicLinkAddr)
 			defer e.Close()
@@ -513,6 +532,7 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 				na := header.NDPNeighborAdvert(pkt.MessageBody())
 				na.SetSolicitedFlag(true)
 				na.SetOverrideFlag(true)
+				na.SetRouterFlag(test.forwardingEnabled)
 				na.SetTargetAddress(test.nsSrc)
 				na.Options().Serialize(ser)
 				pkt.SetChecksum(header.ICMPv6Checksum(header.ICMPv6ChecksumParams{
