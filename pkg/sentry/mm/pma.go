@@ -205,7 +205,8 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 		}
 	}
 
-	opts := pgalloc.AllocOpts{Kind: usage.Anonymous, Dir: pgalloc.BottomUp}
+	memCgID := pgalloc.MemoryCgroupIDFromContext(ctx)
+	opts := pgalloc.AllocOpts{Kind: usage.Anonymous, Dir: pgalloc.BottomUp, MemCgID: memCgID}
 	vma := vseg.ValuePtr()
 	if uintptr(ar.Start) < atomic.LoadUintptr(&vma.lastFault) {
 		// Detect cases where memory is accessed downwards and change memory file
@@ -373,7 +374,7 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 						return pstart, pseg.PrevGap(), err
 					}
 					// Copy contents.
-					fr, err := mf.AllocateAndFill(uint64(copyAR.Length()), usage.Anonymous, pgalloc.AllocateAndWritePopulate, &safemem.BlockSeqReader{mm.internalMappingsLocked(pseg, copyAR)})
+					fr, err := mf.AllocateAndFill(uint64(copyAR.Length()), usage.Anonymous, memCgID, pgalloc.AllocateAndWritePopulate, &safemem.BlockSeqReader{mm.internalMappingsLocked(pseg, copyAR)})
 					if _, ok := err.(safecopy.BusError); ok {
 						// If we got SIGBUS during the copy, deliver SIGBUS to
 						// userspace (instead of SIGSEGV) if we're breaking

@@ -252,8 +252,8 @@ type aioMappable struct {
 
 var aioRingBufferSize = uint64(hostarch.Addr(linux.AIORingSize).MustRoundUp())
 
-func newAIOMappable(mfp pgalloc.MemoryFileProvider) (*aioMappable, error) {
-	fr, err := mfp.MemoryFile().Allocate(aioRingBufferSize, pgalloc.AllocOpts{Kind: usage.Anonymous})
+func newAIOMappable(ctx context.Context, mfp pgalloc.MemoryFileProvider) (*aioMappable, error) {
+	fr, err := mfp.MemoryFile().Allocate(aioRingBufferSize, pgalloc.AllocOpts{Kind: usage.Anonymous, MemCgID: pgalloc.MemoryCgroupIDFromContext(ctx)})
 	if err != nil {
 		return nil, err
 	}
@@ -368,7 +368,7 @@ func (mm *MemoryManager) NewAIOContext(ctx context.Context, events uint32) (uint
 	// libaio peeks inside looking for a magic number. This function allocates
 	// a page per context and keeps it set to zeroes to ensure it will not
 	// match AIO_RING_MAGIC and make libaio happy.
-	m, err := newAIOMappable(mm.mfp)
+	m, err := newAIOMappable(ctx, mm.mfp)
 	if err != nil {
 		return 0, err
 	}

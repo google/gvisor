@@ -114,6 +114,7 @@ func (frs *FileRangeSet) PagesToFill(required, optional memmap.MappableRange) ui
 func (frs *FileRangeSet) Fill(ctx context.Context, required, optional memmap.MappableRange, fileSize uint64, mf *pgalloc.MemoryFile, kind usage.MemoryKind, allocMode pgalloc.AllocationMode, readAt func(ctx context.Context, dsts safemem.BlockSeq, offset uint64) (uint64, error)) (uint64, error) {
 	gap := frs.LowerBoundGap(required.Start)
 	var pagesAlloced uint64
+	memCgID := pgalloc.MemoryCgroupIDFromContext(ctx)
 	for gap.Ok() && gap.Start() < required.End {
 		if gap.Range().Length() == 0 {
 			gap = gap.NextGap()
@@ -122,7 +123,7 @@ func (frs *FileRangeSet) Fill(ctx context.Context, required, optional memmap.Map
 		gr := gap.Range().Intersect(optional)
 
 		// Read data into the gap.
-		fr, err := mf.AllocateAndFill(gr.Length(), kind, allocMode, safemem.ReaderFunc(func(dsts safemem.BlockSeq) (uint64, error) {
+		fr, err := mf.AllocateAndFill(gr.Length(), kind, memCgID, allocMode, safemem.ReaderFunc(func(dsts safemem.BlockSeq) (uint64, error) {
 			var done uint64
 			for !dsts.IsEmpty() {
 				n, err := func() (uint64, error) {
