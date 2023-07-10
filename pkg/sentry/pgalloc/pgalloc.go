@@ -421,6 +421,9 @@ func (f *MemoryFile) Destroy() {
 type AllocOpts struct {
 	Kind usage.MemoryKind
 	Dir  Direction
+	// MemCgID is the memory cgroup ID and the zero value indicates that
+	// the memory will not be accounted to any cgroup.
+	MemCgID uint32
 }
 
 // Allocate returns a range of initially-zeroed pages of the given length with
@@ -625,7 +628,7 @@ const (
 // Preconditions:
 //   - length > 0.
 //   - length must be page-aligned.
-func (f *MemoryFile) AllocateAndFill(length uint64, kind usage.MemoryKind, allocMode AllocationMode, r safemem.Reader) (memmap.FileRange, error) {
+func (f *MemoryFile) AllocateAndFill(length uint64, kind usage.MemoryKind, memCgID uint32, allocMode AllocationMode, r safemem.Reader) (memmap.FileRange, error) {
 	if !f.opts.DiskBackedFile && allocMode == AllocateAndCommit {
 		// Upgrade to AllocateAndWritePopulate for memory(shmem)-backed files. We
 		// take a more aggressive approach in populating pages for memory-backed
@@ -643,7 +646,7 @@ func (f *MemoryFile) AllocateAndFill(length uint64, kind usage.MemoryKind, alloc
 		// and we also additionally incur useless disk writebacks.
 		allocMode = AllocateOnly
 	}
-	fr, err := f.Allocate(length, AllocOpts{Kind: kind})
+	fr, err := f.Allocate(length, AllocOpts{Kind: kind, MemCgID: memCgID})
 	if err != nil {
 		return memmap.FileRange{}, err
 	}

@@ -774,6 +774,8 @@ func (ctx *createProcessContext) Value(key any) any {
 		return ctx.kernel.RealtimeClock()
 	case limits.CtxLimits:
 		return ctx.args.Limits
+	case pgalloc.CtxMemoryCgroupID:
+		return ctx.getMemoryCgroupID()
 	case pgalloc.CtxMemoryFile:
 		return ctx.kernel.mf
 	case pgalloc.CtxMemoryFileProvider:
@@ -791,6 +793,17 @@ func (ctx *createProcessContext) Value(key any) any {
 	default:
 		return nil
 	}
+}
+
+func (ctx *createProcessContext) getMemoryCgroupID() uint32 {
+	for cg := range ctx.args.InitialCgroups {
+		for _, ctl := range cg.Controllers() {
+			if ctl.Type() == CgroupControllerMemory {
+				return cg.ID()
+			}
+		}
+	}
+	return InvalidCgroupID
 }
 
 // CreateProcess creates a new task in a new thread group with the given
@@ -1656,6 +1669,7 @@ func (k *Kernel) ReleaseCgroupHierarchy(hid uint32) {
 		for cg := range t.cgroups {
 			if cg.HierarchyID() == hid {
 				cg.Leave(t)
+				t.resetMemCgID(cg)
 				delete(t.cgroups, cg)
 				releasedCGs = append(releasedCGs, cg)
 				// A task can't be part of multiple cgroups from the same

@@ -1308,6 +1308,7 @@ func (t *Task) StateFields() []string {
 		"startTime",
 		"kcov",
 		"cgroups",
+		"memCgID",
 		"userCounters",
 	}
 }
@@ -1386,7 +1387,8 @@ func (t *Task) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(62, &t.startTime)
 	stateSinkObject.Save(63, &t.kcov)
 	stateSinkObject.Save(64, &t.cgroups)
-	stateSinkObject.Save(65, &t.userCounters)
+	stateSinkObject.Save(65, &t.memCgID)
+	stateSinkObject.Save(66, &t.userCounters)
 }
 
 // +checklocksignore
@@ -1454,7 +1456,8 @@ func (t *Task) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(62, &t.startTime)
 	stateSourceObject.Load(63, &t.kcov)
 	stateSourceObject.Load(64, &t.cgroups)
-	stateSourceObject.Load(65, &t.userCounters)
+	stateSourceObject.Load(65, &t.memCgID)
+	stateSourceObject.Load(66, &t.userCounters)
 	stateSourceObject.LoadValue(32, new(*Task), func(y any) { t.loadPtraceTracer(y.(*Task)) })
 	stateSourceObject.LoadValue(49, new([]bpf.Program), func(y any) { t.loadSyscallFilters(y.([]bpf.Program)) })
 	stateSourceObject.AfterLoad(t.afterLoad)

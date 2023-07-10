@@ -427,7 +427,7 @@ func (fd *regularFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 		return 0, nil
 	}
 	f := fd.inode().impl.(*regularFile)
-	rw := getRegularFileReadWriter(f, offset)
+	rw := getRegularFileReadWriter(f, offset, 0)
 	n, err := dst.CopyOutFrom(ctx, rw)
 	putRegularFileReadWriter(rw)
 	fd.inode().touchAtime(fd.vfsfd.Mount())
@@ -489,7 +489,7 @@ func (fd *regularFileFD) pwrite(ctx context.Context, src usermem.IOSequence, off
 	src = src.TakeFirst64(srclen)
 
 	// Perform the write.
-	rw := getRegularFileReadWriter(f, offset)
+	rw := getRegularFileReadWriter(f, offset, pgalloc.MemoryCgroupIDFromContext(ctx))
 	n, err := src.CopyInTo(ctx, rw)
 
 	f.inode.touchCMtimeLocked()
@@ -559,6 +559,10 @@ type regularFileReadWriter struct {
 	// Offset into the file to read/write at. Note that this may be
 	// different from the FD offset if PRead/PWrite is used.
 	off uint64
+
+	// memCgID is the memory cgroup ID used for accounting the allocated
+	// pages.
+	memCgID uint32
 }
 
 var regularFileReadWriterPool = sync.Pool{
@@ -567,10 +571,11 @@ var regularFileReadWriterPool = sync.Pool{
 	},
 }
 
-func getRegularFileReadWriter(file *regularFile, offset int64) *regularFileReadWriter {
+func getRegularFileReadWriter(file *regularFile, offset int64, memCgID uint32) *regularFileReadWriter {
 	rw := regularFileReadWriterPool.Get().(*regularFileReadWriter)
 	rw.file = file
 	rw.off = uint64(offset)
+	rw.memCgID = memCgID
 	return rw
 }
 
@@ -728,7 +733,7 @@ func (rw *regularFileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64,
 				goto exitLoop
 			}
 			gapMR.End = gapMR.Start + (hostarch.PageSize * pagesReserved)
-			fr, err := rw.file.inode.fs.mf.AllocateAndFill(gapMR.Length(), rw.file.memoryUsageKind, pgalloc.AllocateAndWritePopulate, safemem.ReaderFunc(func(dsts safemem.BlockSeq) (uint64, error) {
+			fr, err := rw.file.inode.fs.mf.AllocateAndFill(gapMR.Length(), rw.file.memoryUsageKind, rw.memCgID, pgalloc.AllocateAndWritePopulate, safemem.ReaderFunc(func(dsts safemem.BlockSeq) (uint64, error) {
 				// No-op here. The write to dsts will happen in the next iteration.
 				return dsts.NumBytes(), nil
 			}))
