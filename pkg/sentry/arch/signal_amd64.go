@@ -24,6 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/cpuid"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
@@ -101,12 +102,9 @@ func (c *Context64) SignalSetup(st *Stack, act *linux.SigAction, info *linux.Sig
 	}
 
 	// Allocate space for floating point state on the stack.
-	fpSize, fpAlign := featureSet.ExtendedStateSize()
-	if fpSize < 512 {
-		// We expect support for at least FXSAVE.
-		fpSize = 512
-	}
-	fpSize += fpu.FP_XSTATE_MAGIC2_SIZE
+	_, fpAlign := featureSet.ExtendedStateSize()
+	fpState := c.fpState.Slice()
+	fpSize := len(fpState) + fpu.FP_XSTATE_MAGIC2_SIZE
 	fpStart := (sp - hostarch.Addr(fpSize)) & ^hostarch.Addr(fpAlign-1)
 
 	// Construct the UContext64 now since we need its size.
@@ -167,7 +165,6 @@ func (c *Context64) SignalSetup(st *Stack, act *linux.SigAction, info *linux.Sig
 		return unix.EFAULT
 	}
 
-	fpState := c.fpState.Slice()
 	// Set up floating point state on the stack. Compare Linux's
 	// arch/x86/kernel/fpu/signal.c:copy_fpstate_to_sigframe().
 	if _, err := st.IO.CopyOut(context.Background(), fpStart, fpState[:fpu.FP_SW_FRAME_OFFSET], usermem.IOOpts{}); err != nil {
@@ -277,7 +274,27 @@ func (c *Context64) SignalRestore(st *Stack, rt bool, featureSet cpuid.FeatureSe
 	if uc.MContext.Fpstate == 0 {
 		c.fpState.Reset()
 	} else {
+		fpsw := fpu.FPSoftwareFrame{}
+		st.Bottom = hostarch.Addr(uc.MContext.Fpstate + fpu.FP_SW_FRAME_OFFSET)
+		if _, err := fpsw.CopyIn(st, StackBottomMagic); err != nil {
+			c.fpState.Reset()
+			return 0, linux.SignalStack{}, err
+		}
+		if fpsw.Magic1 != fpu.FP_XSTATE_MAGIC1 ||
+			fpsw.XstateSize < fpu.FXSAVE_AREA_SIZE ||
+			fpsw.XstateSize > fpsw.ExtendedSize {
+			c.fpState.Reset()
+			return 0, linux.SignalStack{}, linuxerr.EFAULT
+		}
+
 		fpState := c.fpState.Slice()
+		fpSize := fpsw.XstateSize
+		if int(fpSize) < len(fpState) {
+			// The signal frame FPU state is smaller than expected. This can happen after S/R.
+			c.fpState.Reset()
+			fpState = fpState[:fpSize]
+		}
+
 		if _, err := st.IO.CopyIn(context.Background(), hostarch.Addr(uc.MContext.Fpstate), fpState, usermem.IOOpts{}); err != nil {
 			c.fpState.Reset()
 			return 0, linux.SignalStack{}, err
