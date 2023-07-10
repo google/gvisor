@@ -2544,5 +2544,12 @@ TEST_F(SocketInetLoopbackTest, LoopbackAddressRangeConnect) {
   }
 }
 
+TEST_P(SocketInetLoopbackTest, UdpIPV6Only) {
+  TestAddress const& listener = V4Any();
+  auto fd = ASSERT_NO_ERRNO_AND_VALUE(Socket(listener.family(), SOCK_DGRAM, 0));
+  EXPECT_THAT(setsockopt(fd.get(), IPPROTO_IPV6, IPV6_V6ONLY, &kSockOptOn,
+                         sizeof(kSockOptOn)),
+              SyscallFailsWithErrno(ENOPROTOOPT));
+}
 }  // namespace testing
 }  // namespace gvisor
