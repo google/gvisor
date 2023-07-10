@@ -27,6 +27,9 @@ const (
 
 	// CtxMemoryFileProvider is a Context.Value key for a MemoryFileProvider.
 	CtxMemoryFileProvider
+
+	// CtxMemoryCgroupID is the memory cgroup id which the task belongs to.
+	CtxMemoryCgroupID
 )
 
 // MemoryFileFromContext returns the MemoryFile used by ctx, or nil if no such
@@ -45,4 +48,13 @@ func MemoryFileProviderFromContext(ctx context.Context) MemoryFileProvider {
 		return v.(MemoryFileProvider)
 	}
 	return nil
+}
+
+// MemoryCgroupIDFromContext returns the memory cgroup id of the ctx, or
+// zero if the ctx does not belong to any memory cgroup.
+func MemoryCgroupIDFromContext(ctx context.Context) uint32 {
+	if v := ctx.Value(CtxMemoryCgroupID); v != nil {
+		return v.(uint32)
+	}
+	return 0
 }
