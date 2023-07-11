@@ -142,6 +142,8 @@ func (u *Usage) Reduce(opts *UsageReduceOpts, out *UsageReduceOutput) error {
 	if opts.Wait {
 		mf.WaitForEvictions()
 	}
+	// Also reduce Sentry memory usage by garbage-collecting now.
+	runtime.GC()
 	return nil
 }
 
