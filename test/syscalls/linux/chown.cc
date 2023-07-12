@@ -65,6 +65,43 @@ TEST(ChownTest, FchownDirWithOpath) {
               SyscallFailsWithErrno(EBADF));
 }
 
+TEST(ChownTest, FchownPipeFileSucceeds) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_CHOWN)));
+  const auto uid = absl::GetFlag(FLAGS_scratch_uid1);
+  const auto gid = absl::GetFlag(FLAGS_scratch_gid);
+  int fds[2];
+  ASSERT_THAT(pipe2(fds, O_CLOEXEC), SyscallSucceeds());
+  for (const auto& fd : fds) {
+    ASSERT_THAT(fchown(fd, uid, gid), SyscallSucceeds());
+    struct stat s = {};
+    ASSERT_THAT(fstat(fd, &s), SyscallSucceeds());
+    EXPECT_EQ(s.st_uid, uid);
+    EXPECT_EQ(s.st_gid, gid);
+  }
+}
+
+TEST(ChownTest, FchownPipeFileFails) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SETUID)));
+  int fds[2];
+  ASSERT_THAT(pipe2(fds, O_CLOEXEC), SyscallSucceeds());
+  ScopedThread([&] {
+    // Drop privileges.
+    AutoCapability cap(CAP_CHOWN, false);
+
+    // Change EUID and EGID.
+    //
+    // See note about POSIX below.
+    EXPECT_THAT(
+        syscall(SYS_setresgid, -1, absl::GetFlag(FLAGS_scratch_gid), -1),
+        SyscallSucceeds());
+    EXPECT_THAT(
+        syscall(SYS_setresuid, -1, absl::GetFlag(FLAGS_scratch_uid1), -1),
+        SyscallSucceeds());
+    EXPECT_THAT(fchown(fds[1], geteuid(), getegid()),
+                SyscallFailsWithErrno(EPERM));
+  });
+}
+
 TEST(ChownTest, FchownatWithOpath) {
   const auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto file = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileIn(dir.path()));

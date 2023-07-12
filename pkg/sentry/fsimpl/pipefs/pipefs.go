@@ -161,10 +161,19 @@ func (i *inode) Stat(_ context.Context, vfsfs *vfs.Filesystem, opts vfs.StatOpti
 
 // SetStat implements kernfs.Inode.SetStat.
 func (i *inode) SetStat(ctx context.Context, vfsfs *vfs.Filesystem, creds *auth.Credentials, opts vfs.SetStatOptions) error {
-	if opts.Stat.Mask == 0 {
-		return nil
+	if opts.Stat.Mask&^(linux.STATX_UID|linux.STATX_GID) != 0 {
+		return linuxerr.EPERM
 	}
-	return linuxerr.EPERM
+	if err := vfs.CheckSetStat(ctx, creds, &opts, i.Mode(), i.UID(), i.GID()); err != nil {
+		return err
+	}
+	if opts.Stat.Mask&linux.STATX_UID != 0 {
+		i.uid = auth.KUID(opts.Stat.UID)
+	}
+	if opts.Stat.Mask&linux.STATX_GID != 0 {
+		i.gid = auth.KGID(opts.Stat.GID)
+	}
+	return nil
 }
 
 // Open implements kernfs.Inode.Open.
