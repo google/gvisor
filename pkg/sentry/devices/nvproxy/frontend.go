@@ -773,13 +773,11 @@ func rmAlloc(fi *frontendIoctlState) (uintptr, error) {
 		return rmAllocSimple[nvgpu.NV_CHANNEL_ALLOC_PARAMS](fi, &ioctlParams, isNVOS64)
 	case nvgpu.TURING_DMA_COPY_A, nvgpu.AMPERE_DMA_COPY_A, nvgpu.AMPERE_DMA_COPY_B, nvgpu.HOPPER_DMA_COPY_A:
 		return rmAllocSimple[nvgpu.NVB0B5_ALLOCATION_PARAMETERS](fi, &ioctlParams, isNVOS64)
-	case nvgpu.TURING_COMPUTE_A, nvgpu.AMPERE_COMPUTE_A, nvgpu.ADA_COMPUTE_A, nvgpu.HOPPER_COMPUTE_A:
+	case nvgpu.TURING_COMPUTE_A, nvgpu.AMPERE_COMPUTE_A, nvgpu.AMPERE_COMPUTE_B, nvgpu.ADA_COMPUTE_A, nvgpu.HOPPER_COMPUTE_A:
 		return rmAllocSimple[nvgpu.NV_GR_ALLOCATION_PARAMETERS](fi, &ioctlParams, isNVOS64)
 	case nvgpu.HOPPER_USERMODE_A:
 		return rmAllocSimple[nvgpu.NV_HOPPER_USERMODE_A_PARAMS](fi, &ioctlParams, isNVOS64)
-	case
-		nvgpu.GF100_SUBDEVICE_MASTER,
-		nvgpu.TURING_USERMODE_A:
+	case nvgpu.GF100_SUBDEVICE_MASTER, nvgpu.TURING_USERMODE_A:
 		return rmAllocNoParams(fi, &ioctlParams, isNVOS64)
 	default:
 		fi.ctx.Warningf("nvproxy: unknown allocation class %#08x", ioctlParams.HClass)
