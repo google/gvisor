@@ -37,6 +37,20 @@ a {
   }
 }
 
+a.feature-link {
+  color: $primary;
+
+  &:hover,
+  &:focus {
+    color: $link-hover-color;
+    text-decoration: none;
+  }
+}
+
+span {
+  color: $primary;
+}
+
 h1,
 h2,
 h3,
@@ -97,6 +111,14 @@ p,
 li {
   font-size: 14px;
   line-height: 22px;
+}
+
+.info-text {
+  color: $text-color-secondary;
+  font-size: 16px;
+  line-height: 24px;
+  margin-top: 30px;
+  margin-bottom: 30px;
 }
 
 code {
@@ -171,4 +193,39 @@ table th {
    * immediately following the image.
    */
   margin-bottom: 0px;
+}
+
+@media (min-width: 480px) {
+  /* Set panel height smart phones landscape. */
+  .panel-solution {
+    height: 300px;
+  }
+}
+
+@media (min-width: 600px) {
+  /* Set panel height tablets portrait. */
+  .panel-solution {
+    height: 260px;
+  }
+}
+
+@media (min-width: 768px) {
+  /* Set panel height tablets. */
+  .panel-solution {
+    height: 240px;
+  }
+}
+
+@media (min-width: 992px) {
+  /* Set panel height tablets landscape. */
+  .panel-solution {
+    height: 330px;
+  }
+}
+
+@media (min-width: 1200px) {
+  /* Set panel height laptops and desktops. */
+  .panel-solution {
+    height: 300px;
+  }
 }
