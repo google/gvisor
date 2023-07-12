@@ -39,6 +39,7 @@ const (
 	AMPERE_DMA_COPY_A                = 0x0000c6b5
 	AMPERE_COMPUTE_A                 = 0x0000c6c0
 	AMPERE_DMA_COPY_B                = 0x0000c7b5
+	AMPERE_COMPUTE_B                 = 0x0000c7c0
 	HOPPER_DMA_COPY_A                = 0x0000c8b5
 	ADA_COMPUTE_A                    = 0x0000c9c0
 	HOPPER_COMPUTE_A                 = 0x0000cbc0
