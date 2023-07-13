@@ -293,6 +293,7 @@ func (r *receiver) consumeSegment(s *segment, segSeq seqnum.Value, segLen seqnum
 			r.pendingRcvdSegments[i] = nil
 		}
 		r.pendingRcvdSegments = r.pendingRcvdSegments[:first]
+		r.ep.updateConnDirectionState(connDirectionStateRcvClosed)
 
 		return true
 	}
