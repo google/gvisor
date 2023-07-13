@@ -19,5 +19,6 @@ go_library(
         "//pkg/sentry/kernel/pipe",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/vfs",
+        "//pkg/sync",
     ],
 )
