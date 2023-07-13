@@ -481,13 +481,26 @@ func (r *receiver) handleRcvdSegment(s *segment) (drop bool, err tcpip.Error) {
 	// Defer segment processing if it can't be consumed now.
 	if !r.consumeSegment(s, segSeq, segLen) {
 		if segLen > 0 || s.flags.Contains(header.TCPFlagFin) {
-			// We only store the segment if it's within our buffer size limit.
+			// We only store the segment if it's within our buffer
+			// size limit.
 			//
-			// Only use 75% of the receive buffer queue for out-of-order
-			// segments. This ensures that we always leave some space for the inorder
-			// segments to arrive allowing pending segments to be processed and
+			// Only use 75% of the receive buffer queue for
+			// out-of-order segments. This ensures that we always
+			// leave some space for the inorder segments to arrive
+			// allowing pending segments to be processed and
 			// delivered to the user.
-			if rcvBufSize := r.ep.ops.GetReceiveBufferSize(); rcvBufSize > 0 && (r.PendingBufUsed+int(segLen)) < int(rcvBufSize)>>2 {
+			//
+			// The ratio must be at least 50% (the size of rwnd) to
+			// leave space for retransmitted dropped packets. 51%
+			// would make recovery slow when there are multiple
+			// drops by necessitating multiple round trips. 100%
+			// would enable the buffer to be totally full of
+			// out-of-order data and stall the connection.
+			//
+			// An ideal solution is to ensure that there are at
+			// least N bytes free when N bytes are missing, but we
+			// don't have that computed at this point in the stack.
+			if rcvBufSize := r.ep.ops.GetReceiveBufferSize(); rcvBufSize > 0 && (r.PendingBufUsed+int(segLen)) < int(rcvBufSize-rcvBufSize/4) {
 				r.ep.rcvQueueMu.Lock()
 				r.PendingBufUsed += s.segMemSize()
 				r.ep.rcvQueueMu.Unlock()

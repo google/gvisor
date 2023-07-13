@@ -2099,7 +2099,8 @@ func TestOutOfOrderFlood(t *testing.T) {
 	ept := endpointTester{c.EP}
 	ept.CheckReadError(t, &tcpip.ErrWouldBlock{})
 
-	// Send 100 packets before the actual one that is expected.
+	// Send 100 packets with seqnum iss + 6 before the actual one that is
+	// expected.
 	data := []byte{1, 2, 3, 4, 5, 6}
 	iss := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
 	for i := 0; i < 100; i++ {
@@ -2123,8 +2124,11 @@ func TestOutOfOrderFlood(t *testing.T) {
 		)
 	}
 
-	// Send packet with seqnum as initial + 3. It must be discarded because the
-	// out-of-order buffer was filled by the previous packets.
+	// Send packet with seqnum as initial + 3. It won't be discarded
+	// because the receive window limits the sender to rcvBufSize/2 bytes,
+	// but we allow (3/4)*rcvBufSize to be used for out-of-order bytes. So
+	// the sender hasn't filled the buffer and we still have space to
+	// receive it.
 	c.SendPacket(data[3:], &context.Headers{
 		SrcPort: context.TestPort,
 		DstPort: c.Port,
@@ -2154,13 +2158,13 @@ func TestOutOfOrderFlood(t *testing.T) {
 		RcvWnd:  30000,
 	})
 
-	// Check that only packet with initial sequence number is acknowledged.
+	// Check that all packets are acknowledged.
 	v = c.GetPacket()
 	defer v.Release()
 	checker.IPv4(t, v, checker.TCP(
 		checker.DstPort(context.TestPort),
 		checker.TCPSeqNum(uint32(c.IRS)+1),
-		checker.TCPAckNum(uint32(iss)+3),
+		checker.TCPAckNum(uint32(iss)+9),
 		checker.TCPFlags(header.TCPFlagAck),
 	),
 	)
