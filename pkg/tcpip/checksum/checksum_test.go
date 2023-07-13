@@ -19,8 +19,11 @@ package checksum
 import (
 	"bytes"
 	"fmt"
+	"math"
+	"math/bits"
 	"math/rand"
 	"testing"
+	"unsafe"
 )
 
 func TestChecksumer(t *testing.T) {
@@ -95,7 +98,28 @@ func TestChecksumer(t *testing.T) {
 }
 
 func TestChecksum(t *testing.T) {
-	var bufSizes = []int{0, 1, 2, 3, 4, 7, 8, 15, 16, 31, 32, 63, 64, 127, 128, 255, 256, 257, 1023, 1024}
+	var bufSizes = []int{
+		0,
+		1,
+		2,
+		3,
+		4,
+		7,
+		8,
+		15,
+		16,
+		31,
+		32,
+		63,
+		64,
+		127,
+		128,
+		255,
+		256,
+		257,
+		1023,
+		1024,
+	}
 	type testCase struct {
 		buf      []byte
 		initial  uint16
@@ -112,10 +136,47 @@ func TestChecksum(t *testing.T) {
 	}
 
 	for i := range testCases {
-		testCases[i].csumOrig = Old(testCases[i].buf, testCases[i].initial)
+		testCases[i].csumOrig = old(testCases[i].buf, testCases[i].initial)
 		testCases[i].csumNew = Checksum(testCases[i].buf, testCases[i].initial)
 		if got, want := testCases[i].csumNew, testCases[i].csumOrig; got != want {
 			t.Fatalf("new checksum for (buf = %x, initial = %d) does not match old got: %d, want: %d", testCases[i].buf, testCases[i].initial, got, want)
+		}
+	}
+}
+
+// TestIncrementalChecksum tests for breakages of Checksummer as described in
+// b/289284842.
+func TestIncrementalChecksum(t *testing.T) {
+	buf := []byte{
+		0x27, 0x28, 0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f, 0x30, 0x31,
+		0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x3b, 0x3c,
+		0x3d, 0x3e, 0x3f, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47,
+		0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f, 0x50, 0x51, 0x52,
+		0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x5b, 0x5c, 0x5d,
+		0x5e, 0x5f, 0x60, 0x61, 0x62, 0x63,
+	}
+
+	// Go through buf and check that checksum(buf[:end]) is equivalent to
+	// an incremental checksum of two chunks of buf[:end].
+	for end := 2; end <= len(buf); end++ {
+		for start := 1; start < end; start++ {
+			t.Run(fmt.Sprintf("end=%d start=%d", end, start), func(t *testing.T) {
+				var cs Checksumer
+				cs.Add(buf[:end])
+				csum := cs.Checksum()
+
+				cs = Checksumer{}
+				cs.Add(buf[:start])
+				cs.Add(buf[start:end])
+				csumIncremental := cs.Checksum()
+
+				if want := old(buf[:end], 0); csum != want {
+					t.Fatalf("checksum is wrong: got %x, expected %x", csum, want)
+				}
+				if csum != csumIncremental {
+					t.Errorf("checksums should be the same: %x %x", csum, csumIncremental)
+				}
+			})
 		}
 	}
 }
@@ -127,8 +188,10 @@ func BenchmarkChecksum(b *testing.B) {
 		fn   func([]byte, uint16) uint16
 		name string
 	}{
-		{Old, fmt.Sprintf("checksum_old")},
-		{Checksum, fmt.Sprintf("checksum")},
+		{old, "checksum_old"},
+		{unrolled, "unrolled"},
+		{bitsLib, "bitslib"},
+		{Checksum, "checksum"},
 	}
 
 	for _, csumImpl := range checkSumImpls {
@@ -154,18 +217,18 @@ func BenchmarkChecksum(b *testing.B) {
 	}
 }
 
-// Old calculates the checksum (as defined in RFC 1071) of the bytes in
+// old calculates the checksum (as defined in RFC 1071) of the bytes in
 // the given byte array. This function uses a non-optimized implementation. Its
 // only retained for reference and to use as a benchmark/test. Most code should
 // use the header.Checksum function.
 //
 // The initial checksum must have been computed on an even number of bytes.
-func Old(buf []byte, initial uint16) uint16 {
-	s, _ := calculateChecksum(buf, false, uint32(initial))
+func old(buf []byte, initial uint16) uint16 {
+	s, _ := oldCalculateChecksum(buf, false, uint32(initial))
 	return s
 }
 
-func calculateChecksum(buf []byte, odd bool, initial uint32) (uint16, bool) {
+func oldCalculateChecksum(buf []byte, odd bool, initial uint32) (uint16, bool) {
 	v := initial
 
 	if odd {
@@ -185,4 +248,51 @@ func calculateChecksum(buf []byte, odd bool, initial uint32) (uint16, bool) {
 	}
 
 	return Combine(uint16(v), uint16(v>>16)), odd
+}
+
+func unrolled(buf []byte, initial uint16) uint16 {
+	s, _ := unrolledCalculateChecksum(buf, false, initial)
+	return s
+}
+
+func bitsLib(buf []byte, initial uint16) uint16 {
+	s, _ := bitsAdd(buf, false, initial)
+	return s
+}
+
+// bitsAdd is copied from checksum_noasm_unsafe.go so that it can be
+// benchmarked.
+func bitsAdd(buf []byte, odd bool, initial uint16) (uint16, bool) {
+	if bits.UintSize == 64 {
+		// Initialize the accumulator and account for odd byte input.
+		acc := uint(initial)
+		if odd {
+			acc += uint(buf[0])
+			buf = buf[1:]
+		}
+		// It doesn't matter what endianness we use, only that it's
+		// consistent throughout the calculation. See RFC ?.
+		acc = ((acc & 0xff00) >> 8) | ((acc & 0x00ff) << 8)
+
+		// Compute the checksum.
+		remaining := len(buf)
+		var carry uint
+		for remaining >= 8 {
+			acc, carry = bits.Add(acc, *(*uint)(unsafe.Pointer(&buf[0])), carry)
+			remaining -= 8
+			buf = buf[8:]
+		}
+		acc += carry
+
+		// Fold the checksum into 16 bits.
+		for acc > math.MaxUint16 {
+			acc = (acc & 0xffff) + acc>>16
+		}
+
+		// Swap back to little endian and let unrolledCalculateChecksum
+		// handle the remaining bytes.
+		acc = ((acc & 0xff00) >> 8) | ((acc & 0x00ff) << 8)
+		return unrolledCalculateChecksum(buf, false, uint16(acc))
+	}
+	return unrolledCalculateChecksum(buf, odd, initial)
 }

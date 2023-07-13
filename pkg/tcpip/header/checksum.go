@@ -32,9 +32,9 @@ func PseudoHeaderChecksum(protocol tcpip.TransportProtocolNumber, srcAddr tcpip.
 	xsum = checksum.Checksum(dstAddr.AsSlice(), xsum)
 
 	// Add the length portion of the checksum to the pseudo-checksum.
-	tmp := make([]byte, 2)
-	binary.BigEndian.PutUint16(tmp, totalLen)
-	xsum = checksum.Checksum(tmp, xsum)
+	var tmp [2]byte
+	binary.BigEndian.PutUint16(tmp[:], totalLen)
+	xsum = checksum.Checksum(tmp[:], xsum)
 
 	return checksum.Checksum([]byte{0, uint8(protocol)}, xsum)
 }
