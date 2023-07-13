@@ -29,7 +29,7 @@ import (
 )
 
 const (
-	eventMaskRead  = waiter.EventRdNorm | waiter.EventIn | waiter.EventHUp | waiter.EventErr
+	eventMaskRead  = waiter.EventRdNorm | waiter.EventIn | waiter.EventHUp | waiter.EventErr | waiter.EventRdHUp
 	eventMaskWrite = waiter.EventWrNorm | waiter.EventOut | waiter.EventHUp | waiter.EventErr
 )
 
