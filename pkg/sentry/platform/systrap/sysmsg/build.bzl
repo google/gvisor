@@ -23,6 +23,7 @@ def cc_pie_obj(name, srcs, outs):
               ) +
               " -fno-builtin " +
               "-ffreestanding " +
+              "-mgeneral-regs-only " +
               "-g " +
               "-Wa,--noexecstack " +
               "-fno-asynchronous-unwind-tables " +
