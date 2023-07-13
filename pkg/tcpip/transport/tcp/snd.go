@@ -799,6 +799,7 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 		segEnd = seg.sequenceNumber.Add(1)
 		// Update the state to reflect that we have now
 		// queued a FIN.
+		s.ep.updateConnDirectionState(connDirectionStateSndClosed)
 		switch s.ep.EndpointState() {
 		case StateCloseWait:
 			s.ep.setEndpointState(StateLastAck)
