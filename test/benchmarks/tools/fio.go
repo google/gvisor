@@ -39,6 +39,15 @@ func (f *Fio) MakeCmd(filename string) []string {
 	cmd = append(cmd, fmt.Sprintf("--filename=%s", filename))
 	cmd = append(cmd, fmt.Sprintf("--iodepth=%d", f.IODepth))
 	cmd = append(cmd, fmt.Sprintf("--rw=%s", f.Test))
+	if f.Test == "read" || f.Test == "randread" {
+		// Don't call `fallocate` during read-only tests.
+		// Calling `fallocate` is not a typical operation for an application to do
+		// when it is only trying to read a file.
+		// This has performance implications for gVisor, so we override fio's
+		// default behavior for read-only benchmarks to be more representative of
+		// real-world read-only performance.
+		cmd = append(cmd, "--fallocate=none")
+	}
 	return cmd
 }
 
