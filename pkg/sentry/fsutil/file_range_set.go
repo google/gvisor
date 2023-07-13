@@ -123,45 +123,53 @@ func (frs *FileRangeSet) Fill(ctx context.Context, required, optional memmap.Map
 		gr := gap.Range().Intersect(optional)
 
 		// Read data into the gap.
-		fr, err := mf.AllocateAndFill(gr.Length(), kind, memCgID, allocMode, safemem.ReaderFunc(func(dsts safemem.BlockSeq) (uint64, error) {
-			var done uint64
-			for !dsts.IsEmpty() {
-				n, err := func() (uint64, error) {
-					off := gr.Start + done
-					if off >= fileSize {
-						return 0, io.EOF
-					}
-					if off+dsts.NumBytes() > fileSize {
-						rd := fileSize - off
-						n, err := readAt(ctx, dsts.TakeFirst64(rd), off)
-						if n == rd && err == nil {
-							return n, io.EOF
+		opts := pgalloc.AllocOpts{
+			Kind:    kind,
+			Mode:    allocMode,
+			MemCgID: memCgID,
+		}
+		if readAt != nil {
+			opts.Reader = safemem.ReaderFunc(func(dsts safemem.BlockSeq) (uint64, error) {
+				var done uint64
+				for !dsts.IsEmpty() {
+					n, err := func() (uint64, error) {
+						off := gr.Start + done
+						if off >= fileSize {
+							return 0, io.EOF
 						}
-						return n, err
-					}
-					return readAt(ctx, dsts, off)
-				}()
-				done += n
-				dsts = dsts.DropFirst64(n)
-				if err != nil {
-					if err == io.EOF {
-						// MemoryFile.AllocateAndFill truncates down to a page
-						// boundary, but FileRangeSet.Fill is supposed to
-						// zero-fill to the end of the page in this case.
-						donepgaddr, ok := hostarch.Addr(done).RoundUp()
-						if donepg := uint64(donepgaddr); ok && donepg != done {
-							dsts.DropFirst64(donepg - done)
-							done = donepg
-							if dsts.IsEmpty() {
-								return done, nil
+						if off+dsts.NumBytes() > fileSize {
+							rd := fileSize - off
+							n, err := readAt(ctx, dsts.TakeFirst64(rd), off)
+							if n == rd && err == nil {
+								return n, io.EOF
+							}
+							return n, err
+						}
+						return readAt(ctx, dsts, off)
+					}()
+					done += n
+					dsts = dsts.DropFirst64(n)
+					if err != nil {
+						if err == io.EOF {
+							// MemoryFile.AllocateAndFill truncates down to a page
+							// boundary, but FileRangeSet.Fill is supposed to
+							// zero-fill to the end of the page in this case.
+							donepgaddr, ok := hostarch.Addr(done).RoundUp()
+							if donepg := uint64(donepgaddr); ok && donepg != done {
+								dsts.DropFirst64(donepg - done)
+								done = donepg
+								if dsts.IsEmpty() {
+									return done, nil
+								}
 							}
 						}
+						return done, err
 					}
-					return done, err
 				}
-			}
-			return done, nil
-		}))
+				return done, nil
+			})
+		}
+		fr, err := mf.Allocate(gr.Length(), opts)
 
 		// Store anything we managed to read into the cache.
 		if done := fr.Length(); done != 0 {
