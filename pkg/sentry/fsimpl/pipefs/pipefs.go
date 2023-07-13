@@ -29,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/pipe"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // +stateify savable
@@ -95,8 +96,9 @@ type inode struct {
 	kernfs.InodeNoopRefCount
 	kernfs.InodeWatches
 
-	locks vfs.FileLocks
-	pipe  *pipe.VFSPipe
+	locks  vfs.FileLocks
+	pipe   *pipe.VFSPipe
+	attrMu sync.Mutex `state:"nosave"`
 
 	ino uint64
 	uid auth.KUID
@@ -120,6 +122,8 @@ const pipeMode = 0600 | linux.S_IFIFO
 
 // CheckPermissions implements kernfs.Inode.CheckPermissions.
 func (i *inode) CheckPermissions(ctx context.Context, creds *auth.Credentials, ats vfs.AccessTypes) error {
+	i.attrMu.Lock()
+	defer i.attrMu.Unlock()
 	return vfs.GenericCheckPermissions(creds, ats, pipeMode, i.uid, i.gid)
 }
 
@@ -130,17 +134,23 @@ func (i *inode) Mode() linux.FileMode {
 
 // UID implements kernfs.Inode.UID.
 func (i *inode) UID() auth.KUID {
+	i.attrMu.Lock()
+	defer i.attrMu.Unlock()
 	return auth.KUID(i.uid)
 }
 
 // GID implements kernfs.Inode.GID.
 func (i *inode) GID() auth.KGID {
+	i.attrMu.Lock()
+	defer i.attrMu.Unlock()
 	return auth.KGID(i.gid)
 }
 
 // Stat implements kernfs.Inode.Stat.
 func (i *inode) Stat(_ context.Context, vfsfs *vfs.Filesystem, opts vfs.StatOptions) (linux.Statx, error) {
 	ts := linux.NsecToStatxTimestamp(i.ctime.Nanoseconds())
+	i.attrMu.Lock()
+	defer i.attrMu.Unlock()
 	return linux.Statx{
 		Mask:     linux.STATX_TYPE | linux.STATX_MODE | linux.STATX_NLINK | linux.STATX_UID | linux.STATX_GID | linux.STATX_ATIME | linux.STATX_MTIME | linux.STATX_CTIME | linux.STATX_INO | linux.STATX_SIZE | linux.STATX_BLOCKS,
 		Blksize:  hostarch.PageSize,
@@ -164,7 +174,9 @@ func (i *inode) SetStat(ctx context.Context, vfsfs *vfs.Filesystem, creds *auth.
 	if opts.Stat.Mask&^(linux.STATX_UID|linux.STATX_GID) != 0 {
 		return linuxerr.EPERM
 	}
-	if err := vfs.CheckSetStat(ctx, creds, &opts, i.Mode(), i.UID(), i.GID()); err != nil {
+	i.attrMu.Lock()
+	defer i.attrMu.Unlock()
+	if err := vfs.CheckSetStat(ctx, creds, &opts, pipeMode, auth.KUID(i.uid), auth.KGID(i.gid)); err != nil {
 		return err
 	}
 	if opts.Stat.Mask&linux.STATX_UID != 0 {
