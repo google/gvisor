@@ -2037,6 +2037,8 @@ func (tg *ThreadGroup) StateFields() []string {
 		"oldRSeqCritical",
 		"tty",
 		"oomScoreAdj",
+		"isChildSubreaper",
+		"hasChildSubreaper",
 	}
 }
 
@@ -2079,6 +2081,8 @@ func (tg *ThreadGroup) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(28, &tg.execed)
 	stateSinkObject.Save(30, &tg.tty)
 	stateSinkObject.Save(31, &tg.oomScoreAdj)
+	stateSinkObject.Save(32, &tg.isChildSubreaper)
+	stateSinkObject.Save(33, &tg.hasChildSubreaper)
 }
 
 func (tg *ThreadGroup) afterLoad() {}
@@ -2116,6 +2120,8 @@ func (tg *ThreadGroup) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(28, &tg.execed)
 	stateSourceObject.Load(30, &tg.tty)
 	stateSourceObject.Load(31, &tg.oomScoreAdj)
+	stateSourceObject.Load(32, &tg.isChildSubreaper)
+	stateSourceObject.Load(33, &tg.hasChildSubreaper)
 	stateSourceObject.LoadValue(29, new(*OldRSeqCriticalRegion), func(y any) { tg.loadOldRSeqCritical(y.(*OldRSeqCriticalRegion)) })
 }
 

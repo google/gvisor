@@ -46,11 +46,11 @@ func (tid ThreadID) String() string {
 	return fmt.Sprintf("%d", tid)
 }
 
-// InitTID is the TID given to the first task added to each PID namespace. The
-// thread group led by InitTID is called the namespace's init process. The
+// initTID is the TID given to the first task added to each PID namespace. The
+// thread group led by initTID is called the namespace's init process. The
 // death of a PID namespace's init process causes all tasks visible in that
 // namespace to be killed.
-const InitTID ThreadID = 1
+const initTID ThreadID = 1
 
 // A TaskSet comprises all tasks in a system.
 //
