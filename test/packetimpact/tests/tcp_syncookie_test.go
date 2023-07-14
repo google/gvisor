@@ -131,12 +131,7 @@ func TestTCPSynCookie(t *testing.T) {
 					if test.accept {
 						fd, _ := dut.Accept(t, listenFD)
 						if test.flags.Contains(header.TCPFlagFin) {
-							if dut.Uname.IsLinux() {
-								dut.PollOne(t, fd, unix.POLLIN|unix.POLLRDHUP, time.Second)
-							} else {
-								// TODO(gvisor.dev/issue/6015): Notify POLLIN|POLLRDHUP on incoming FIN.
-								dut.PollOne(t, fd, unix.POLLIN, time.Second)
-							}
+							dut.PollOne(t, fd, unix.POLLIN|unix.POLLRDHUP, time.Second)
 						}
 						got := dut.Recv(t, fd, int32(len(sampleData)), 0)
 						if diff := cmp.Diff(got, sampleData); diff != "" {
