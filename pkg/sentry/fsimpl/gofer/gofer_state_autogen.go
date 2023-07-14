@@ -279,6 +279,7 @@ func (f *filesystemOptions) StateFields() []string {
 		"limitHostFDTranslation",
 		"overlayfsStaleRead",
 		"regularFilesUseSpecialFileFD",
+		"disableFifoOpen",
 		"directfs",
 	}
 }
@@ -297,7 +298,8 @@ func (f *filesystemOptions) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(6, &f.limitHostFDTranslation)
 	stateSinkObject.Save(7, &f.overlayfsStaleRead)
 	stateSinkObject.Save(8, &f.regularFilesUseSpecialFileFD)
-	stateSinkObject.Save(9, &f.directfs)
+	stateSinkObject.Save(9, &f.disableFifoOpen)
+	stateSinkObject.Save(10, &f.directfs)
 }
 
 func (f *filesystemOptions) afterLoad() {}
@@ -313,7 +315,8 @@ func (f *filesystemOptions) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(6, &f.limitHostFDTranslation)
 	stateSourceObject.Load(7, &f.overlayfsStaleRead)
 	stateSourceObject.Load(8, &f.regularFilesUseSpecialFileFD)
-	stateSourceObject.Load(9, &f.directfs)
+	stateSourceObject.Load(9, &f.disableFifoOpen)
+	stateSourceObject.Load(10, &f.directfs)
 }
 
 func (d *directfsOpts) StateTypeName() string {
