@@ -80,7 +80,7 @@ go_download_sdk(
     # time on our continuous integration.
     patch = "//tools:go_types_memoize.patch",
     patch_strip = 2,
-    version = "1.20.4",
+    version = "1.20.6",
 )
 
 gazelle_dependencies()
@@ -98,8 +98,8 @@ go_repository(
 go_repository(
     name = "org_golang_x_sys",
     importpath = "golang.org/x/sys",
-    sum = "h1:Zr2JFtRQNX3BCZ8YtxRE9hNJYC8J6I1MVbMg6owUp18=",
-    version = "v0.4.0",
+    sum = "h1:SqMFp9UcQJZa+pmYuAKjd9xq1f0j5rLcDIk0mj4qAsA=",
+    version = "v0.10.0",
 )
 
 go_repository(
@@ -174,10 +174,10 @@ register_toolchains("//:cc_toolchain_k8", "//:cc_toolchain_aarch64")
 # Load protobuf dependencies.
 http_archive(
     name = "rules_proto",
-    sha256 = "c4ebe86f6b8d13ca5a10fdff4008d24788b3c6dd17e141a6f8ac381ff40c4585",
-    strip_prefix = "rules_proto-b5e5fc85f70cf6bbef66c69b679c86168ad1bea6",
+    sha256 = "5d4cd6780634eb2ecafa091df8be8009d395f70a02f722e07e063883dd8af861",
+    strip_prefix = "rules_proto-493169c1199dc21b9da860f7040a4502aa174676",
     urls = [
-        "https://github.com/bazelbuild/rules_proto/archive/b5e5fc85f70cf6bbef66c69b679c86168ad1bea6.tar.gz",
+        "https://github.com/bazelbuild/rules_proto/archive/493169c1199dc21b9da860f7040a4502aa174676.tar.gz",
     ],
 )
 
@@ -1430,10 +1430,10 @@ http_archive(
     name = "com_github_grpc_grpc",
     patch_args = ["-p1"],
     patches = ["//tools:grpc_extra_deps.patch"],
-    sha256 = "ec125d7fdb77ecc25b01050a0d5d32616594834d3fe163b016768e2ae42a2df6",
-    strip_prefix = "grpc-1.52.1",
+    sha256 = "cc3e039aedd7b76f59cf922215adc7c308347a662be1e5e26711ffbc7fd3ce48",
+    strip_prefix = "grpc-1.56.1",
     urls = [
-        "https://github.com/grpc/grpc/archive/v1.52.1.tar.gz",
+        "https://github.com/grpc/grpc/archive/v1.56.1.tar.gz",
     ],
 )
 
@@ -1594,14 +1594,14 @@ go_repository(
 )
 
 go_repository(
-  name = "com_github_cloudflare_circl",
-  importpath = "github.com/cloudflare/circl",
-  sum = "h1:fE/Qz0QdIGqeWfnwq0RE0R7MI51s0M2E4Ga9kq5AEMs=",
-  patch_args = ["-p1"],
-  patches = [
-    "//tools:com_github_cloudflare_circl.patch",
-  ],
-  version = "v1.3.3",
+    name = "com_github_cloudflare_circl",
+    importpath = "github.com/cloudflare/circl",
+    patch_args = ["-p1"],
+    patches = [
+        "//tools:com_github_cloudflare_circl.patch",
+    ],
+    sum = "h1:fE/Qz0QdIGqeWfnwq0RE0R7MI51s0M2E4Ga9kq5AEMs=",
+    version = "v1.3.3",
 )
 
 go_repository(
@@ -2144,10 +2144,10 @@ go_repository(
 )
 
 go_repository(
-  name = "com_github_protonmail_go_crypto",
-  importpath = "github.com/ProtonMail/go-crypto",
-  sum = "h1:wPbRQzjjwFc0ih8puEVAOFGELsn1zoIIYdxvML7mDxA=",
-  version = "v0.0.0-20230217124315-7d5c6f04bbb8",
+    name = "com_github_protonmail_go_crypto",
+    importpath = "github.com/ProtonMail/go-crypto",
+    sum = "h1:wPbRQzjjwFc0ih8puEVAOFGELsn1zoIIYdxvML7mDxA=",
+    version = "v0.0.0-20230217124315-7d5c6f04bbb8",
 )
 
 go_repository(
@@ -2688,8 +2688,8 @@ go_repository(
 go_repository(
     name = "com_github_gogo_googleapis",
     importpath = "github.com/gogo/googleapis",
-    sum = "h1:kFkMAZBNAn4j7K0GiZr8cRYzejq68VbheufiV3YuyFI=",
-    version = "v1.1.0",
+    sum = "h1:kFkMAZANAn4j7K0GiZr8cRYzejq68VbheufiV3YuyFI=",
+    version = "v1.4.1",
 )
 
 go_repository(
