@@ -439,7 +439,15 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	pipeMount := k.vfs.NewDisconnectedMount(pipeFilesystem, nil, &vfs.MountOptions{})
 	k.pipeMount = pipeMount
 
-	tmpfsFilesystem, tmpfsRoot, err := tmpfs.NewFilesystem(ctx, &k.vfs, auth.NewRootCredentials(k.rootUserNamespace))
+	tmpfsOpts := vfs.GetFilesystemOptions{
+		InternalData: tmpfs.FilesystemOpts{
+			// See mm/shmem.c:shmem_init() => vfs_kern_mount(flags=SB_KERNMOUNT).
+			// Note how mm/shmem.c:shmem_fill_super() does not provide a default
+			// value for sbinfo->max_blocks when SB_KERNMOUNT is set.
+			DisableDefaultSizeLimit: true,
+		},
+	}
+	tmpfsFilesystem, tmpfsRoot, err := tmpfs.FilesystemType{}.GetFilesystem(ctx, &k.vfs, auth.NewRootCredentials(k.rootUserNamespace), "", tmpfsOpts)
 	if err != nil {
 		return fmt.Errorf("failed to create tmpfs filesystem: %v", err)
 	}

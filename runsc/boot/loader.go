@@ -40,6 +40,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/fdimport"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/user"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -260,6 +261,8 @@ type Args struct {
 	// TotalMem is the initial amount of total memory to report back to the
 	// container.
 	TotalMem uint64
+	// TotalHostMem is the total memory reported by host /proc/meminfo.
+	TotalHostMem uint64
 	// UserLogFD is the file descriptor to write user logs to.
 	UserLogFD int
 	// ProductName is the value to show in
@@ -411,6 +414,12 @@ func New(args Args) (*Loader, error) {
 	}
 	log.Infof("CPUs: %d", args.NumCPU)
 	runtime.GOMAXPROCS(args.NumCPU)
+
+	if args.TotalHostMem > 0 {
+		// As per tmpfs(5), the default size limit is 50% of total physical RAM.
+		// See mm/shmem.c:shmem_default_max_blocks().
+		tmpfs.SetDefaultSizeLimit(args.TotalHostMem / 2)
+	}
 
 	if args.TotalMem > 0 {
 		// Adjust the total memory returned by the Sentry so that applications that

@@ -140,6 +140,32 @@ type FilesystemOpts struct {
 	// FilestoreFD is the FD for the memory file that will be used to store file
 	// data. If this is nil, then MemoryFileProviderFromContext() is used.
 	FilestoreFD *fd.FD
+
+	// DisableDefaultSizeLimit disables setting a default size limit. In Linux,
+	// SB_KERNMOUNT has this effect on tmpfs mounts; see mm/shmem.c:shmem_fill_super().
+	DisableDefaultSizeLimit bool
+}
+
+// Default size limit mount option. It is immutable after initialization.
+var defaultSizeLimit uint64
+
+// SetDefaultSizeLimit configures the size limit to be used for tmpfs mounts
+// that do not specify a size= mount option. This must be called only once,
+// before any tmpfs filesystems are created.
+func SetDefaultSizeLimit(sizeLimit uint64) {
+	defaultSizeLimit = sizeLimit
+}
+
+func getDefaultSizeLimit(disable bool) uint64 {
+	if disable || defaultSizeLimit == 0 {
+		// The size limit is used to populate statfs(2) results. If Linux tmpfs is
+		// mounted with no size option, then statfs(2) returns f_blocks == f_bfree
+		// == f_bavail == 0. However, many applications treat this as having a size
+		// limit of 0. To work around this, return a very large but non-zero size
+		// limit, chosen to ensure that it does not overflow int64.
+		return math.MaxInt64
+	}
+	return defaultSizeLimit
 }
 
 // GetFilesystem implements vfs.FilesystemType.GetFilesystem.
@@ -152,6 +178,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	privateMF := false
 
 	rootFileType := uint16(linux.S_IFDIR)
+	disableDefaultSizeLimit := false
 	newFSType := vfs.FilesystemType(&fstype)
 	tmpfsOpts, tmpfsOptsOk := opts.InternalData.(FilesystemOpts)
 	if tmpfsOptsOk {
@@ -161,6 +188,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		if tmpfsOpts.FilesystemType != nil {
 			newFSType = tmpfsOpts.FilesystemType
 		}
+		disableDefaultSizeLimit = tmpfsOpts.DisableDefaultSizeLimit
 		if tmpfsOpts.FilestoreFD != nil {
 			mfOpts := pgalloc.MemoryFileOpts{
 				// tmpfsOpts.FilestoreFD may be backed by a file on disk (not memfd),
@@ -231,15 +259,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		}
 		rootKGID = kgid
 	}
-	// In Linux, the default size limit is set to 50% of physical RAM. Such a
-	// default is not suitable in gVisor, because we don't want to reveal the
-	// host's RAM size. If Linux tmpfs is mounted with no size option, then
-	// statfs(2) returns f_blocks == f_bfree == f_bavail == 0.
-	// However, many applications treat this as having a size limit
-	// of 0. To work around these, set a very large but non-zero default size
-	// limit, chosen to ensure that BlockSize * Blocks does not overflow int64
-	// (which applications may also handle incorrectly).
-	maxSizeInPages := uint64(math.MaxInt64 / hostarch.PageSize)
+	maxSizeInPages := getDefaultSizeLimit(disableDefaultSizeLimit) / hostarch.PageSize
 	maxSizeStr, ok := mopts["size"]
 	if ok {
 		delete(mopts, "size")
@@ -301,11 +321,6 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	}
 	fs.root = root
 	return &fs.vfsfs, &root.vfsd, nil
-}
-
-// NewFilesystem returns a new tmpfs filesystem.
-func NewFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials) (*vfs.Filesystem, *vfs.Dentry, error) {
-	return FilesystemType{}.GetFilesystem(ctx, vfsObj, creds, "", vfs.GetFilesystemOptions{})
 }
 
 // Release implements vfs.FilesystemImpl.Release.
