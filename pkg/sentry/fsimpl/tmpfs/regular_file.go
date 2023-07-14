@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/fsmetric"
 	"gvisor.dev/gvisor/pkg/sentry/fsutil"
+	"gvisor.dev/gvisor/pkg/sentry/hostfd"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
@@ -703,15 +704,7 @@ func (rw *regularFileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64,
 		mr := memmap.MappableRange{uint64(rw.off), uint64(end)}
 		switch {
 		case seg.Ok():
-			// Get internal mappings.
-			ims, err := rw.file.inode.fs.mf.MapInternal(seg.FileRangeOf(seg.Range().Intersect(mr)), hostarch.Write)
-			if err != nil {
-				retErr = err
-				goto exitLoop
-			}
-
-			// Copy to internal mappings.
-			n, err := safemem.CopySeq(ims, srcs)
+			n, err := rw.writeToMF(seg.FileRangeOf(seg.Range().Intersect(mr)), srcs)
 			done += n
 			rw.off += uint64(n)
 			srcs = srcs.DropFirst64(n)
@@ -772,6 +765,29 @@ exitLoop:
 	}
 
 	return done, retErr
+}
+
+func (rw *regularFileReadWriter) writeToMF(fr memmap.FileRange, srcs safemem.BlockSeq) (uint64, error) {
+	if rw.file.inode.fs.mf.IsDiskBacked() {
+		// Disk-backed files are not prepopulated. The safemem.CopySeq() approach
+		// used below incurs a lot of page faults without page prepopulation, which
+		// causes a lot of context switching. Use write(2) host syscall instead,
+		// which makes one context switch and faults all the pages that are touched
+		// during the write.
+		return hostfd.Pwritev2(
+			int32(rw.file.inode.fs.mf.FD()), // fd
+			srcs.TakeFirst64(fr.Length()),   // srcs
+			int64(fr.Start),                 // offset
+			0,                               // flags
+		)
+	}
+	// Get internal mappings.
+	ims, err := rw.file.inode.fs.mf.MapInternal(fr, hostarch.Write)
+	if err != nil {
+		return 0, err
+	}
+	// Copy to internal mappings.
+	return safemem.CopySeq(ims, srcs)
 }
 
 // GetSeals returns the current set of seals on a memfd inode.
