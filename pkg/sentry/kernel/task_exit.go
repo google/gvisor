@@ -397,6 +397,8 @@ func (t *Task) exitChildren() {
 // findReparentTargetLocked returns the task to which t's children should be
 // reparented. If no such task exists, findNewParentLocked returns nil.
 //
+// This corresponds to Linux's find_new_reaper().
+//
 // Preconditions: The TaskSet mutex must be locked.
 func (t *Task) findReparentTargetLocked() *Task {
 	// Reparent to any sibling in the same thread group that hasn't begun
@@ -404,12 +406,35 @@ func (t *Task) findReparentTargetLocked() *Task {
 	if t2 := t.tg.anyNonExitingTaskLocked(); t2 != nil {
 		return t2
 	}
-	// "A child process that is orphaned within the namespace will be
-	// reparented to [the init process for the namespace] ..." -
-	// pid_namespaces(7)
-	if init := t.tg.pidns.tasks[InitTID]; init != nil {
-		return init.tg.anyNonExitingTaskLocked()
+
+	if !t.tg.hasChildSubreaper {
+		// No child subreaper exists. We can immediately return the
+		// init process in this PID namespace if it exists.
+		if init := t.tg.pidns.tasks[initTID]; init != nil {
+			return init.tg.anyNonExitingTaskLocked()
+		}
+		return nil
 	}
+
+	// Walk up the process tree until we either find a subreaper, or we hit
+	// the init process in the PID namespace.
+	for parent := t.parent; parent != nil; parent = parent.parent {
+		if parent.tg.isInitInLocked(parent.PIDNamespace()) {
+			// We found the init process for this pid namespace,
+			// return a task from it. If the init process is
+			// exiting, this might return nil.
+			return parent.tg.anyNonExitingTaskLocked()
+		}
+		if parent.tg.isChildSubreaper {
+			// We found a subreaper process. Return a non-exiting
+			// task if there is one, otherwise keep walking up the
+			// process tree.
+			if target := parent.tg.anyNonExitingTaskLocked(); target != nil {
+				return target
+			}
+		}
+	}
+
 	return nil
 }
 

@@ -1714,6 +1714,7 @@ cc_binary(
     name = "prctl_test",
     testonly = 1,
     srcs = ["prctl.cc"],
+    data = ["//test/cmd/test_app"],
     linkstatic = 1,
     deps = [
         "//test/util:capability_util",
@@ -1722,6 +1723,7 @@ cc_binary(
         gtest,
         "//test/util:multiprocess_util",
         "//test/util:posix_error",
+        "//test/util:signal_util",
         "//test/util:test_util",
         "//test/util:thread_util",
     ],
