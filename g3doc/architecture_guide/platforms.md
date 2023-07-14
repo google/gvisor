@@ -30,32 +30,10 @@ various trade-offs, generally around performance and hardware requirements.
 
 The choice of platform depends on the context in which `runsc` is executing. In
 general, when running on bare-metal (not inside a VM), the KVM platform will
-provide the best performance. The `ptrace` platform is a better choice when
+provide the best performance. The `systrap` platform is a better choice when
 running inside a VM, or on a machine without virtualization support.
 
 ![Platforms](platforms.png "Platform examples.")
-
-### ptrace
-
-The ptrace platform uses [`PTRACE_SYSEMU`][ptrace] to execute user code without
-allowing it to execute host system calls. This platform can run anywhere that
-`ptrace` works (even VMs without nested virtualization), which is ubiquitous.
-
-Unfortunately, the ptrace platform has high context switch overhead, so system
-call-heavy applications may pay a [performance penalty](./performance.md).
-
-### systrap
-
-The systrap platform is an **experimental, non-production-ready** platform aimed
-at replacing the ptrace platform (i.e. in VMs without nested virtualization). It
-relies `seccomp`'s `SECCOMP_RET_TRAP` feature in order to intercept system
-calls. This makes the kernel send `SIGSYS` to the triggering thread, which hands
-over control to gVisor to handle the system call. For more details, please see
-[the systrap `README` file](https://github.com/google/gvisor/blob/master/pkg/sentry/platform/systrap/README.md).
-
-As of 2023-03, this platform has not been battle-tested as `ptrace`, and is not
-recommended for production use. Users are encouraged to try it out in
-non-production environments and [report bugs and feedback](../community.md).
 
 ### KVM
 
@@ -67,13 +45,36 @@ processors in order to improve isolation and performance of address space
 switches.
 
 Note that while running within a nested VM is feasible with the KVM platform,
-the `ptrace` platform will often provide better performance in such a setup, due
-to the overhead of nested virtualization.
+the `systrap` platform will often provide better performance in such a setup,
+due to the overhead of nested virtualization.
 
-### GKE Sandbox
+### systrap
 
-[GKE Sandbox] uses a custom gVisor platform implementation which provides better
-performance than `ptrace` and KVM.
+The `systrap` platform relies `seccomp`'s `SECCOMP_RET_TRAP` feature in order to
+intercept system calls. This makes the kernel send `SIGSYS` to the triggering
+thread, which hands over control to gVisor to handle the system call. For more
+details, please see
+[the systrap `README` file](https://github.com/google/gvisor/blob/master/pkg/sentry/platform/systrap/README.md).
+
+`systrap` replaced `ptrace` as the default gVisor platform in mid-2023. If you
+depend on `ptrace`, and `systrap` doesn't fulfill your needs, please
+[voice your feedback](../community.md).
+
+### ptrace
+
+The ptrace platform uses [`PTRACE_SYSEMU`][ptrace] to execute user code without
+allowing it to execute host system calls. This platform can run anywhere that
+`ptrace` works (even VMs without nested virtualization), which is ubiquitous.
+
+Unfortunately, the ptrace platform has high context switch overhead, so system
+call-heavy applications may pay a [performance penalty](./performance.md). For
+this reason, `systrap` is almost always the better choice.
+
+`systrap` replaced `ptrace` as the default gVisor platform in mid-2023. While
+`ptrace` continues to exist in the codebase, it is no longer supported and is
+expected to eventually be removed entirely. If you depend on `ptrace`, and
+`systrap` doesn't fulfill your needs, please
+[voice your feedback](../community.md).
 
 ## Changing Platforms
 
