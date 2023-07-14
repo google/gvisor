@@ -258,6 +258,12 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 			tg.processGroup = parentPG
 			tg.tty = t.parent.tg.tty
 		}
+
+		// If our parent is a child subreaper, or if it has a child
+		// subreaper, then this new thread group does as well.
+		if t.parent != nil {
+			tg.hasChildSubreaper = t.parent.tg.isChildSubreaper || t.parent.tg.hasChildSubreaper
+		}
 	}
 	tg.tasks.PushBack(t)
 	tg.tasksCount++
@@ -330,7 +336,7 @@ func (ns *PIDNamespace) allocateTID() (ThreadID, error) {
 		// Next.
 		tid++
 		if tid > TasksLimit {
-			tid = InitTID + 1
+			tid = initTID + 1
 		}
 
 		// Is it available?

@@ -26,6 +26,7 @@
 #include "test/util/cleanup.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
+#include "test/util/signal_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
@@ -214,10 +215,96 @@ TEST(PrctlTest, RootDumpability) {
               SyscallFailsWithErrno(EINVAL));
 }
 
-TEST(PrctlTest, SetGetSubreaper) {
-  // Setting subreaper on PID 1 works vacuously because PID 1 is always a
-  // subreaper.
+TEST(PrctlTest, SimpleSetGetChildSubreaper) {
+  // Tasks start off not subreaper.
+  int is_subreaper = 0;
+  EXPECT_THAT(prctl(PR_GET_CHILD_SUBREAPER, &is_subreaper), SyscallSucceeds());
+  EXPECT_EQ(is_subreaper, 0);
+
+  // Set to 1.
   EXPECT_THAT(prctl(PR_SET_CHILD_SUBREAPER, 1), SyscallSucceeds());
+  EXPECT_THAT(prctl(PR_GET_CHILD_SUBREAPER, &is_subreaper), SyscallSucceeds());
+  EXPECT_EQ(is_subreaper, 1);
+
+  // Set to something positive but not 1.
+  EXPECT_THAT(prctl(PR_SET_CHILD_SUBREAPER, 42), SyscallSucceeds());
+  // Get still returns 1.
+  EXPECT_THAT(prctl(PR_GET_CHILD_SUBREAPER, &is_subreaper), SyscallSucceeds());
+  EXPECT_EQ(is_subreaper, 1);
+
+  // Set to something negative.
+  EXPECT_THAT(prctl(PR_SET_CHILD_SUBREAPER, -42), SyscallSucceeds());
+  // Get still returns 1.
+  EXPECT_THAT(prctl(PR_GET_CHILD_SUBREAPER, &is_subreaper), SyscallSucceeds());
+  EXPECT_EQ(is_subreaper, 1);
+}
+
+TEST(PrctlTest, ThreadsInheritChildSubreaperBit) {
+  // Set child subreaper bit.
+  ASSERT_THAT(prctl(PR_SET_CHILD_SUBREAPER, 1), SyscallSucceeds());
+  ScopedThread thread([&] {
+    int is_subreaper = 0;
+    ASSERT_THAT(prctl(PR_GET_CHILD_SUBREAPER, &is_subreaper),
+                SyscallSucceeds());
+    EXPECT_EQ(is_subreaper, 1);
+  });
+}
+
+TEST(PrctlTest, ProcessesDoNotInheritChildSubreaperBit) {
+  // Set child subreaper bit.
+  ASSERT_THAT(prctl(PR_SET_CHILD_SUBREAPER, 1), SyscallSucceeds());
+
+  const auto rest = [&] {
+    int is_subreaper = 0;
+    TEST_CHECK_SUCCESS(prctl(PR_GET_CHILD_SUBREAPER, &is_subreaper));
+    TEST_CHECK(is_subreaper == 0);
+  };
+
+  EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
+}
+
+static std::atomic<bool> got_sigchild;
+
+void sigchild_handler(int sig, siginfo_t* siginfo, void* arg) {
+  got_sigchild = true;
+}
+
+TEST(PrctlTest, OrphansReparentedToSubreaper) {
+  // Set the subreaper bit.
+  ASSERT_THAT(prctl(PR_SET_CHILD_SUBREAPER, 1), SyscallSucceeds());
+
+  // Set up a signal handler to listen for reparented children.
+  struct sigaction sa = {};
+  sa.sa_sigaction = sigchild_handler;
+  sigfillset(&sa.sa_mask);
+  auto const sig_cleanup =
+      ASSERT_NO_ERRNO_AND_VALUE(ScopedSigaction(SIGCHLD, sa));
+
+  // Execute the test_app zombie_test, which will create an orphaned process
+  // and expect that it is reaped.
+  constexpr char kTestApp[] = "test/cmd/test_app/test_app";
+  const std::string path = RunfilePath(kTestApp);
+  int execve_errno;
+  pid_t pid;
+  auto exec_cleanup = ASSERT_NO_ERRNO_AND_VALUE(
+      ForkAndExec(path, {path, "zombie_test"}, {}, &pid, &execve_errno));
+  ASSERT_EQ(execve_errno, 0);
+
+  // Wait for 2 children: the process we just started, and the orphan that will
+  // be reparented to us.
+  for (int i = 0; i < 2; i++) {
+    int status;
+    int wait_pid;
+    ASSERT_THAT(wait_pid = RetryEINTR(waitpid)(-1, &status, 0),
+                SyscallSucceeds());
+    if (wait_pid == pid) {
+      // Test app should have exited cleanly.
+      EXPECT_EQ(status, 0);
+    }
+  }
+
+  // We should have gotten a SIGCHILD for the reparented orphan.
+  EXPECT_TRUE(got_sigchild);
 }
 
 }  // namespace
