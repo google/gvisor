@@ -84,6 +84,7 @@ const (
 	moptLimitHostFDTranslation   = "limit_host_fd_translation"
 	moptOverlayfsStaleRead       = "overlayfs_stale_read"
 	moptDisableFileHandleSharing = "disable_file_handle_sharing"
+	moptDisableFifoOpen          = "disable_fifo_open"
 
 	// Directfs options.
 	moptDirectfs = "directfs"
@@ -276,6 +277,10 @@ type filesystemOptions struct {
 	// supported with overlayfsStaleRead for now.
 	regularFilesUseSpecialFileFD bool
 
+	// If disableFifoOpen is true, application attempts to open(2) a host FIFO
+	// are disallowed.
+	disableFifoOpen bool
+
 	// directfs holds options for directfs mode.
 	directfs directfsOpts
 }
@@ -459,6 +464,10 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	if _, ok := mopts[moptDisableFileHandleSharing]; ok {
 		delete(mopts, moptDisableFileHandleSharing)
 		fsopts.regularFilesUseSpecialFileFD = true
+	}
+	if _, ok := mopts[moptDisableFifoOpen]; ok {
+		delete(mopts, moptDisableFifoOpen)
+		fsopts.disableFifoOpen = true
 	}
 	if _, ok := mopts[moptForcePageCache]; ok {
 		delete(mopts, moptForcePageCache)
