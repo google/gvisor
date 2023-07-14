@@ -436,6 +436,7 @@ func (f *FilesystemOpts) StateFields() []string {
 		"Usage",
 		"MaxFilenameLen",
 		"FilestoreFD",
+		"DisableDefaultSizeLimit",
 	}
 }
 
@@ -450,6 +451,7 @@ func (f *FilesystemOpts) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &f.Usage)
 	stateSinkObject.Save(4, &f.MaxFilenameLen)
 	stateSinkObject.Save(5, &f.FilestoreFD)
+	stateSinkObject.Save(6, &f.DisableDefaultSizeLimit)
 }
 
 func (f *FilesystemOpts) afterLoad() {}
@@ -462,6 +464,7 @@ func (f *FilesystemOpts) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(3, &f.Usage)
 	stateSourceObject.Load(4, &f.MaxFilenameLen)
 	stateSourceObject.Load(5, &f.FilestoreFD)
+	stateSourceObject.Load(6, &f.DisableDefaultSizeLimit)
 }
 
 func (d *dentry) StateTypeName() string {

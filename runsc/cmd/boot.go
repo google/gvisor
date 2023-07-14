@@ -113,6 +113,9 @@ type Boot struct {
 	// container.
 	totalMem uint64
 
+	// totalHostMem is the total memory reported by host /proc/meminfo.
+	totalHostMem uint64
+
 	// userLogFD is the file descriptor to write user logs to.
 	userLogFD int
 
@@ -178,6 +181,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&b.procMountSyncFD, "proc-mount-sync-fd", -1, "file descriptor that has to be written to when /proc isn't needed anymore and can be unmounted")
 	f.IntVar(&b.syncUsernsFD, "sync-userns-fd", -1, "file descriptor used to synchronize rootless user namespace initialization.")
 	f.Uint64Var(&b.totalMem, "total-memory", 0, "sets the initial amount of total memory to report back to the container")
+	f.Uint64Var(&b.totalHostMem, "total-host-memory", 0, "total memory reported by host /proc/meminfo")
 	f.BoolVar(&b.attached, "attached", false, "if attached is true, kills the sandbox process when the parent process terminates")
 	f.StringVar(&b.productName, "product-name", "", "value to show in /sys/devices/virtual/dmi/id/product_name")
 
@@ -406,6 +410,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		OverlayMediums:      b.overlayMediums.GetArray(),
 		NumCPU:              b.cpuNum,
 		TotalMem:            b.totalMem,
+		TotalHostMem:        b.totalHostMem,
 		UserLogFD:           b.userLogFD,
 		ProductName:         b.productName,
 		PodInitConfigFD:     b.podInitConfigFD,
