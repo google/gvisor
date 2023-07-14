@@ -311,6 +311,9 @@ func goferMountData(fd int, fa config.FileAccessType, conf *config.Config) []str
 	if conf.DirectFS {
 		opts = append(opts, "directfs")
 	}
+	if !conf.HostFifo.AllowOpen() {
+		opts = append(opts, "disable_fifo_open")
+	}
 	return opts
 }
 

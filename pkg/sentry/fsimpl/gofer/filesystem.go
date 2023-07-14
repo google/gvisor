@@ -1117,6 +1117,9 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 		if d.isSynthetic() {
 			return d.pipe.Open(ctx, mnt, &d.vfsd, opts.Flags, &d.locks)
 		}
+		if d.fs.opts.disableFifoOpen {
+			return nil, linuxerr.EPERM
+		}
 	}
 
 	if vfd == nil {
@@ -1742,6 +1745,9 @@ func (fs *filesystem) MountOptions() string {
 	}
 	if fs.opts.regularFilesUseSpecialFileFD {
 		optsKV = append(optsKV, mopt{moptDisableFileHandleSharing, nil})
+	}
+	if fs.opts.disableFifoOpen {
+		optsKV = append(optsKV, mopt{moptDisableFifoOpen, nil})
 	}
 	if fs.opts.forcePageCache {
 		optsKV = append(optsKV, mopt{moptForcePageCache, nil})
