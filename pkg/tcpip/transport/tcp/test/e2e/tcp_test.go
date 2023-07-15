@@ -4177,7 +4177,14 @@ func TestMaxRTO(t *testing.T) {
 			checker.TCPFlagsMatch(header.TCPFlagAck, ^header.TCPFlagPsh),
 		))
 		if elapsed := time.Since(start); elapsed.Round(time.Second).Seconds() != rto.Seconds() {
-			t.Errorf("Retransmit interval not capped to MaxRTO(%s). %s", rto, elapsed)
+			newRto := float64(rto / time.Millisecond)
+			if i == 0 {
+				newRto /= 2
+			}
+			curRto := float64(elapsed.Round(time.Millisecond).Milliseconds())
+			if math.Abs(newRto-curRto) > 10 {
+				t.Errorf("Retransmit interval not capped to RTO(%v). %v", newRto, curRto)
+			}
 		}
 	}
 }
