@@ -283,9 +283,17 @@ func (d *Dentry) DecRef(ctx context.Context) {
 		refs.LogDecRef(d, r)
 	}
 	if r == 0 {
+		if d.inode.Anonymous() {
+			// Nothing to cache. Skip right to destroy. This avoids
+			// taking fs.mu in the DecRef() path for anonymous
+			// inodes.
+			d.destroy(ctx)
+			return
+		}
+
 		d.fs.mu.Lock()
+		defer d.fs.mu.Unlock()
 		d.cacheLocked(ctx)
-		d.fs.mu.Unlock()
 	} else if r < 0 {
 		panic("kernfs.Dentry.DecRef() called without holding a reference")
 	}
@@ -349,7 +357,10 @@ func (d *Dentry) cacheLocked(ctx context.Context) {
 		if d.isDeleted() {
 			d.inode.Watches().HandleDeletion(ctx)
 		}
-		d.destroyLocked(ctx)
+		d.destroy(ctx)
+		if d.parent != nil {
+			d.parent.decRefLocked(ctx)
+		}
 		return
 	}
 	if d.VFSDentry().IsEvictable() {
@@ -408,34 +419,32 @@ func (d *Dentry) evictLocked(ctx context.Context) {
 			delete(d.parent.children, d.name)
 			d.parent.dirMu.Unlock()
 		}
-		d.destroyLocked(ctx)
+		d.destroy(ctx)
+		if d.parent != nil {
+			d.parent.decRefLocked(ctx)
+		}
 	}
 }
 
-// destroyLocked destroys the dentry.
+// destroy destroys the dentry.
 //
 // Preconditions:
-//   - d.fs.mu must be locked for writing.
 //   - d.refs == 0.
 //   - d should have been removed from d.parent.children, i.e. d is not reachable
 //     by path traversal.
 //   - d.vfsd.IsDead() is true.
-func (d *Dentry) destroyLocked(ctx context.Context) {
+func (d *Dentry) destroy(ctx context.Context) {
 	switch refs := d.refs.Load(); refs {
 	case 0:
 		// Mark the dentry destroyed.
 		d.refs.Store(-1)
 	case -1:
-		panic("dentry.destroyLocked() called on already destroyed dentry")
+		panic("dentry.destroy() called on already destroyed dentry")
 	default:
-		panic("dentry.destroyLocked() called with references on the dentry")
+		panic("dentry.destroy() called with references on the dentry")
 	}
 
 	d.inode.DecRef(ctx) // IncRef from Init.
-
-	if d.parent != nil {
-		d.parent.decRefLocked(ctx)
-	}
 
 	refs.Unregister(d)
 }
