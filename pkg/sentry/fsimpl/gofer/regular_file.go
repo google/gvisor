@@ -141,10 +141,6 @@ func (fd *regularFileFD) PRead(ctx context.Context, dst usermem.IOSequence, offs
 		readErr error
 	)
 	if fd.vfsfd.StatusFlags()&linux.O_DIRECT != 0 {
-		// Lock d.metadataMu for the rest of the read to prevent d.size from
-		// changing.
-		d.metadataMu.Lock()
-		defer d.metadataMu.Unlock()
 		// Write dirty cached pages that will be touched by the read back to
 		// the remote file.
 		if err := d.writeback(ctx, offset, dst.NumBytes()); err != nil {
