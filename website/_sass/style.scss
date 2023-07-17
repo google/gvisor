@@ -195,6 +195,18 @@ table th {
   margin-bottom: 0px;
 }
 
+/* Reduce h2 margins in the big "solution" panels on the homepage. */
+.panel-solution h2 {
+  margin-top: 1em;
+  margin-bottom: 1em;
+}
+
+/* Same, but also remove the top-margin for the "features" panels. */
+.panel-default h2 {
+  margin-top: 0em;
+  margin-bottom: 1em;
+}
+
 @media (min-width: 480px) {
   /* Set panel height smart phones landscape. */
   .panel-solution {
