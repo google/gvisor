@@ -63,7 +63,8 @@ func (refs *FrameRefSet) IncRefAndAccount(fr memmap.FileRange) {
 			seg, gap = seg.NextNonEmpty()
 		case gap.Ok() && gap.Start() < fr.End:
 			newRange := gap.Range().Intersect(fr)
-			usage.MemoryAccounting.Inc(newRange.Length(), usage.Mapped)
+			// TODO(b/277772401): Get memCgID from memmap.File.IncRef method.
+			usage.MemoryAccounting.Inc(newRange.Length(), usage.Mapped, 0)
 			seg, gap = refs.InsertWithoutMerging(gap, newRange, 1).NextNonEmpty()
 		default:
 			refs.MergeAdjacent(fr)
@@ -80,7 +81,8 @@ func (refs *FrameRefSet) DecRefAndAccount(fr memmap.FileRange) {
 	for seg.Ok() && seg.Start() < fr.End {
 		seg = refs.Isolate(seg, fr)
 		if old := seg.Value(); old == 1 {
-			usage.MemoryAccounting.Dec(seg.Range().Length(), usage.Mapped)
+			// TODO(b/277772401): Get memCgID from memmap.File.DecRef method.
+			usage.MemoryAccounting.Dec(seg.Range().Length(), usage.Mapped, 0)
 			seg = refs.Remove(seg).NextSegment()
 		} else {
 			seg.SetValue(old - 1)
