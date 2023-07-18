@@ -190,7 +190,8 @@ type NV2080_CTRL_GR_GET_INFO_PARAMS struct {
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080mc.h:
 const (
-	NV2080_CTRL_CMD_MC_GET_ARCH_INFO = 0x20801701
+	NV2080_CTRL_CMD_MC_GET_ARCH_INFO      = 0x20801701
+	NV2080_CTRL_CMD_MC_SERVICE_INTERRUPTS = 0x20801702
 )
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080nvlink.h:
