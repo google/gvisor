@@ -183,11 +183,6 @@ func ConsumeCoverageData(w io.Writer) int {
 		}
 	}
 
-	if total == 0 {
-		// An empty profile indicates that coverage is not enabled, in which case
-		// there shouldn't be any task work registered.
-		panic("kcov task work is registered, but no coverage data was found")
-	}
 	return total
 }
 
