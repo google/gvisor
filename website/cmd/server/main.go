@@ -143,24 +143,57 @@ func redirectWithQuery(w http.ResponseWriter, r *http.Request, target string) {
 	http.Redirect(w, r, url, http.StatusFound)
 }
 
-// hostRedirectHandler redirects the www. domain to the naked domain.
-func hostRedirectHandler(h http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.Host, "www.") {
-			// Redirect to the naked domain.
-			r.URL.Scheme = "https"  // Assume https.
-			r.URL.Host = r.Host[4:] // Remove the 'www.'
-			http.Redirect(w, r, r.URL.String(), http.StatusMovedPermanently)
+// domainMatch returns whether the domain is accepted and if we should redirect
+// to a custom domain.
+func domainMatch(host string) (redirect bool, ok bool) {
+	if *customHost == "*" {
+		redirect = false
+		ok = true
+		return
+	}
+
+	// Custom Host handling.
+	if *customHost != "" {
+		if host == "www."+*customHost {
+			redirect = true
+			ok = true
 			return
 		}
 
-		if *projectID != "" && r.Host == *projectID+".appspot.com" && *customHost != "" {
-			// Redirect to the custom domain.
+		if host == *customHost {
+			ok = true
+			return
+		}
+	}
+
+	// Cloud Run App domain handling.
+	if strings.HasPrefix(host, *projectID+"-") && strings.HasSuffix(host, ".run.app") {
+		redirect = *customHost != ""
+		ok = true
+		return
+	}
+
+	return
+}
+
+// hostRedirectHandler redirects the www. domain to the naked domain.
+func hostRedirectHandler(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		redirect, ok := domainMatch(r.Host)
+		if !ok {
+			// Do not serve on invalid domains.
+			http.Error(w, "Bad Request", http.StatusBadRequest)
+			return
+		}
+
+		if redirect {
+			// Redirect to the naked domain.
 			r.URL.Scheme = "https" // Assume https.
 			r.URL.Host = *customHost
 			http.Redirect(w, r, r.URL.String(), http.StatusMovedPermanently)
 			return
 		}
+
 		h.ServeHTTP(w, r)
 	})
 }
@@ -376,13 +409,24 @@ var (
 	addr      = flag.String("http", envFlagString("HTTP", ":"+envFlagString("PORT", "8080")), "HTTP service address")
 	staticDir = flag.String("static-dir", envFlagString("STATIC_DIR", "_site"), "static files directory")
 
-	// Uses the standard GOOGLE_CLOUD_PROJECT environment variable set by App Engine.
-	projectID  = flag.String("project-id", envFlagString("GOOGLE_CLOUD_PROJECT", ""), "The App Engine project ID.")
+	// NOTE: GOOGLE_CLOUD_PROJECT environment variable does not seem to be used
+	// anymore by Google Cloud but we can continue to look for it and fall back
+	// to the default project.
+	projectID  = flag.String("project-id", envFlagString("GOOGLE_PROJECT_ID", "gvisordev"), "The Google Cloud project ID.")
 	customHost = flag.String("custom-domain", envFlagString("CUSTOM_DOMAIN", "gvisor.dev"), "The application's custom domain.")
 )
 
 func main() {
 	flag.Parse()
+
+	if *customHost == "*" {
+		fmt.Println("WARNING: custom domain of '*' matches anything and is potentially insecure.")
+	}
+
+	if *projectID == "" {
+		fmt.Fprintf(os.Stderr, "Project ID not set.\n")
+		os.Exit(1)
+	}
 
 	registerRedirects(http.DefaultServeMux)
 	registerStatic(http.DefaultServeMux, *staticDir)
