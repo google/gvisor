@@ -7,10 +7,12 @@ import (
 	"gvisor.dev/gvisor/pkg/sync/locking"
 )
 
-// RWMutex is sync.RWMutex with the correctness validator.
-type memoryRWMutex struct {
-	mu sync.RWMutex
+// Mutex is sync.Mutex with the correctness validator.
+type memoryMutex struct {
+	mu sync.Mutex
 }
+
+var memoryprefixIndex *locking.MutexClass
 
 // lockNames is a list of user-friendly lock names.
 // Populated in init.
@@ -27,70 +29,36 @@ const ()
 
 // Lock locks m.
 // +checklocksignore
-func (m *memoryRWMutex) Lock() {
+func (m *memoryMutex) Lock() {
 	locking.AddGLock(memoryprefixIndex, -1)
 	m.mu.Lock()
 }
 
 // NestedLock locks m knowing that another lock of the same type is held.
 // +checklocksignore
-func (m *memoryRWMutex) NestedLock(i memorylockNameIndex) {
+func (m *memoryMutex) NestedLock(i memorylockNameIndex) {
 	locking.AddGLock(memoryprefixIndex, int(i))
 	m.mu.Lock()
 }
 
 // Unlock unlocks m.
 // +checklocksignore
-func (m *memoryRWMutex) Unlock() {
-	m.mu.Unlock()
+func (m *memoryMutex) Unlock() {
 	locking.DelGLock(memoryprefixIndex, -1)
+	m.mu.Unlock()
 }
 
 // NestedUnlock unlocks m knowing that another lock of the same type is held.
 // +checklocksignore
-func (m *memoryRWMutex) NestedUnlock(i memorylockNameIndex) {
-	m.mu.Unlock()
+func (m *memoryMutex) NestedUnlock(i memorylockNameIndex) {
 	locking.DelGLock(memoryprefixIndex, int(i))
+	m.mu.Unlock()
 }
-
-// RLock locks m for reading.
-// +checklocksignore
-func (m *memoryRWMutex) RLock() {
-	locking.AddGLock(memoryprefixIndex, -1)
-	m.mu.RLock()
-}
-
-// RUnlock undoes a single RLock call.
-// +checklocksignore
-func (m *memoryRWMutex) RUnlock() {
-	m.mu.RUnlock()
-	locking.DelGLock(memoryprefixIndex, -1)
-}
-
-// RLockBypass locks m for reading without executing the validator.
-// +checklocksignore
-func (m *memoryRWMutex) RLockBypass() {
-	m.mu.RLock()
-}
-
-// RUnlockBypass undoes a single RLockBypass call.
-// +checklocksignore
-func (m *memoryRWMutex) RUnlockBypass() {
-	m.mu.RUnlock()
-}
-
-// DowngradeLock atomically unlocks rw for writing and locks it for reading.
-// +checklocksignore
-func (m *memoryRWMutex) DowngradeLock() {
-	m.mu.DowngradeLock()
-}
-
-var memoryprefixIndex *locking.MutexClass
 
 // DO NOT REMOVE: The following function is automatically replaced.
 func memoryinitLockNames() {}
 
 func init() {
 	memoryinitLockNames()
-	memoryprefixIndex = locking.NewMutexClass(reflect.TypeOf(memoryRWMutex{}), memorylockNames)
+	memoryprefixIndex = locking.NewMutexClass(reflect.TypeOf(memoryMutex{}), memorylockNames)
 }

@@ -189,7 +189,7 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r wire.Reader) error {
 		// Update accounting for restored pages. We need to do this here since
 		// these segments are marked as "known committed", and will be skipped
 		// over on accounting scans.
-		usage.MemoryAccounting.Inc(seg.End()-seg.Start(), seg.Value().kind)
+		usage.MemoryAccounting.Inc(seg.End()-seg.Start(), seg.Value().kind, seg.Value().memCgID)
 	}
 
 	return nil

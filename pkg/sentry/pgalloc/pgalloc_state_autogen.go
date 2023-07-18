@@ -147,6 +147,7 @@ func (u *usageInfo) StateFields() []string {
 		"kind",
 		"knownCommitted",
 		"refs",
+		"memCgID",
 	}
 }
 
@@ -158,6 +159,7 @@ func (u *usageInfo) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &u.kind)
 	stateSinkObject.Save(1, &u.knownCommitted)
 	stateSinkObject.Save(2, &u.refs)
+	stateSinkObject.Save(3, &u.memCgID)
 }
 
 func (u *usageInfo) afterLoad() {}
@@ -167,6 +169,7 @@ func (u *usageInfo) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &u.kind)
 	stateSourceObject.Load(1, &u.knownCommitted)
 	stateSourceObject.Load(2, &u.refs)
+	stateSourceObject.Load(3, &u.memCgID)
 }
 
 func (s *reclaimSet) StateTypeName() string {
