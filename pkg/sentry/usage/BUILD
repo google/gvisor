@@ -1,12 +1,12 @@
 load("//tools:defs.bzl", "go_library")
-load("//pkg/sync/locking:locking.bzl", "declare_rwmutex")
+load("//pkg/sync/locking:locking.bzl", "declare_mutex")
 
 package(
     default_applicable_licenses = ["//:license"],
     licenses = ["notice"],
 )
 
-declare_rwmutex(
+declare_mutex(
     name = "memory_mutex",
     out = "memory_mutex.go",
     package = "usage",

@@ -257,6 +257,9 @@ type usageInfo struct {
 	knownCommitted bool
 
 	refs uint64
+
+	// memCgID is the memory cgroup id to which this page is committed.
+	memCgID uint32
 }
 
 // canCommit returns true if the tracked region can be committed.
@@ -574,8 +577,9 @@ func (f *MemoryFile) allocate(length uint64, opts *AllocOpts) (memmap.FileRange,
 	}
 	// Mark selected pages as in use.
 	if !f.usage.Add(fr, usageInfo{
-		kind: opts.Kind,
-		refs: 1,
+		kind:    opts.Kind,
+		refs:    1,
+		memCgID: opts.MemCgID,
 	}) {
 		panic(fmt.Sprintf("allocating %v: failed to insert into usage set:\n%v", fr, &f.usage))
 	}
@@ -850,10 +854,11 @@ func (f *MemoryFile) markDecommitted(fr memmap.FileRange) {
 		if val.knownCommitted {
 			// Drop the usageExpected appropriately.
 			amount := seg.Range().Length()
-			usage.MemoryAccounting.Dec(amount, val.kind)
+			usage.MemoryAccounting.Dec(amount, val.kind, val.memCgID)
 			f.usageExpected -= amount
 			val.knownCommitted = false
 		}
+		val.memCgID = 0
 	})
 	if gap.Ok() {
 		panic(fmt.Sprintf("Decommit(%v): attempted to decommit unallocated pages %v:\n%v", fr, gap.Range(), &f.usage))
@@ -904,7 +909,7 @@ func (f *MemoryFile) DecRef(fr memmap.FileRange) {
 			// Reclassify memory as System, until it's freed by the reclaim
 			// goroutine.
 			if val.knownCommitted {
-				usage.MemoryAccounting.Move(seg.Range().Length(), usage.System, val.kind)
+				usage.MemoryAccounting.Move(seg.Range().Length(), usage.System, val.kind, val.memCgID)
 			}
 			val.kind = usage.System
 		}
@@ -1144,9 +1149,9 @@ func (f *MemoryFile) updateUsageLocked(currentUsage uint64, checkCommitted func(
 			// that have been swapped.
 			newUsageSwapped := currentUsage - f.usageExpected
 			if f.usageSwapped < newUsageSwapped {
-				usage.MemoryAccounting.Inc(newUsageSwapped-f.usageSwapped, usage.System)
+				usage.MemoryAccounting.Inc(newUsageSwapped-f.usageSwapped, usage.System, 0)
 			} else {
-				usage.MemoryAccounting.Dec(f.usageSwapped-newUsageSwapped, usage.System)
+				usage.MemoryAccounting.Dec(f.usageSwapped-newUsageSwapped, usage.System, 0)
 			}
 			f.usageSwapped = newUsageSwapped
 		} else if f.usageSwapped != 0 {
@@ -1154,7 +1159,7 @@ func (f *MemoryFile) updateUsageLocked(currentUsage uint64, checkCommitted func(
 			// That's fine, we probably caught a race where pages were
 			// being committed while the below loop was running. Just
 			// report the higher number that we found and ignore swap.
-			usage.MemoryAccounting.Dec(f.usageSwapped, usage.System)
+			usage.MemoryAccounting.Dec(f.usageSwapped, usage.System, 0)
 			f.usageSwapped = 0
 		}
 	}()
@@ -1229,7 +1234,7 @@ func (f *MemoryFile) updateUsageLocked(currentUsage uint64, checkCommitted func(
 							seg = f.usage.Isolate(seg, committedFR)
 							seg.ValuePtr().knownCommitted = true
 							amount := seg.Range().Length()
-							usage.MemoryAccounting.Inc(amount, seg.ValuePtr().kind)
+							usage.MemoryAccounting.Inc(amount, seg.ValuePtr().kind, seg.ValuePtr().memCgID)
 							f.usageExpected += amount
 							changedAny = true
 						}
@@ -1433,6 +1438,7 @@ func (f *MemoryFile) markReclaimed(fr memmap.FileRange) {
 		kind:           usage.System,
 		knownCommitted: false,
 		refs:           0,
+		memCgID:        0,
 	}); got != want {
 		panic(fmt.Sprintf("reclaimed pages %v in segment %v has incorrect state %v, wanted %v:\n%v", fr, seg.Range(), got, want, &f.usage))
 	}
