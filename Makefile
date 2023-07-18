@@ -453,7 +453,8 @@ website-build: load-jekyll ## Build the site image locally.
 .PHONY: website-build
 
 website-server: website-build ## Run a local server for development.
-	@docker run -i -p 8080:8080 $(WEBSITE_IMAGE)
+	@# NOTE: When running locally we use the localhost:8080 as custom domain.
+	@docker run -i -p 8080:8080 $(WEBSITE_IMAGE) --custom-domain='*'
 .PHONY: website-server
 
 website-push: website-build ## Push a new image and update the service.
