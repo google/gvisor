@@ -39,6 +39,7 @@ import (
 	"time"
 
 	"github.com/docker/docker/api/types/mount"
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 )
@@ -995,5 +996,53 @@ func TestCharDevice(t *testing.T) {
 	}
 	if want := [size]byte{}; !bytes.Equal(want[:], got) {
 		t.Errorf("Wrong bytes, want: [all zeros], got: %v", got)
+	}
+}
+
+func TestBlockHostUds(t *testing.T) {
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	dir, err := os.MkdirTemp(testutil.TmpDir(), "tmp-mount")
+	if err != nil {
+		t.Fatalf("MkdirTemp() failed: %v", err)
+	}
+	defer os.RemoveAll(dir)
+
+	dirFD, err := unix.Open(dir, unix.O_PATH, 0)
+	if err != nil {
+		t.Fatalf("failed to open %s: %v", dir, err)
+	}
+	defer unix.Close(dirFD)
+	// Use /proc/self/fd to generate path to avoid EINVAL on large path.
+	l, err := net.Listen("unix", filepath.Join("/proc/self/fd", strconv.Itoa(dirFD), "test.sock"))
+	if err != nil {
+		t.Fatalf("listen error: %v", err)
+	}
+	defer l.Close()
+
+	opts := dockerutil.RunOpts{
+		Image:   "basic/integrationtest",
+		WorkDir: "/root",
+		Mounts: []mount.Mount{
+			{
+				Type:   mount.TypeBind,
+				Source: dir,
+				Target: "/dir",
+			},
+		},
+	}
+	if err := d.Spawn(ctx, opts, "sleep", "infinity"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+	// Application should be able to walk/stat the UDS ...
+	if got, err := d.Exec(ctx, dockerutil.ExecOpts{}, "stat", "/dir/test.sock"); err != nil {
+		t.Fatalf("stat(2)-ing the UDS failed: output = %q, err = %v", got, err)
+	}
+	// ... but not connect to it.
+	const want = "connect: Connection refused"
+	if got, err := d.Exec(ctx, dockerutil.ExecOpts{}, "./host_connect", "/dir/test.sock"); err == nil || !strings.Contains(got, want) {
+		t.Errorf("err should be non-nil and output should contain %q, but got err = %v and output = %q", want, err, got)
 	}
 }
