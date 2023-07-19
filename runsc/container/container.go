@@ -296,11 +296,10 @@ func New(conf *config.Config, args Args) (*Container, error) {
 			return nil, err
 		}
 		c.OverlayMediums = overlayMediums
+		if err := nvProxyPreGoferHostSetup(args.Spec, conf); err != nil {
+			return nil, err
+		}
 		if err := runInCgroup(containerCgroup, func() error {
-			if err := nvproxyUpdateAppRootFilesystem(args.Spec, conf); err != nil {
-				return err
-			}
-
 			ioFiles, specFile, err := c.createGoferProcess(args.Spec, conf, args.BundleDir, args.Attached)
 			if err != nil {
 				return fmt.Errorf("cannot create gofer process: %w", err)
@@ -1200,6 +1199,11 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 		defer syncFile.Close()
 	}
 
+	nvProxySetup, err := nvproxySetupAfterGoferUserns(spec, conf, cmd, &donations)
+	if err != nil {
+		return nil, nil, fmt.Errorf("setting up nvproxy for gofer: %w", err)
+	}
+
 	donations.Transfer(cmd, nextFD)
 
 	// Start the gofer in the given namespace.
@@ -1208,16 +1212,22 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 	if err := specutils.StartInNS(cmd, nss); err != nil {
 		return nil, nil, fmt.Errorf("gofer: %v", err)
 	}
+	log.Infof("Gofer started, PID: %d", cmd.Process.Pid)
+	c.GoferPid = cmd.Process.Pid
+	c.goferIsChild = true
 
+	// Set up and synchronize rootless mode userns mappings.
 	if rootlessEUID {
 		if err := sandbox.SetUserMappings(spec, cmd.Process.Pid); err != nil {
 			return nil, nil, err
 		}
 	}
 
-	log.Infof("Gofer started, PID: %d", cmd.Process.Pid)
-	c.GoferPid = cmd.Process.Pid
-	c.goferIsChild = true
+	// Set up nvproxy within the Gofer namespace.
+	if err := nvProxySetup(); err != nil {
+		return nil, nil, fmt.Errorf("nvproxy setup: %w", err)
+	}
+
 	return sandEnds, mountsSand, nil
 }
 
@@ -1666,31 +1676,15 @@ func logIDMappings(mappings []specs.LinuxIDMapping, idType string) {
 	}
 }
 
-func nvproxyUpdateAppRootFilesystem(spec *specs.Spec, conf *config.Config) error {
+// nvProxyPreGoferHostSetup sets up nvproxy on the host. It runs before any
+// Gofers start.
+// It verifies that all the required dependencies are in place, loads kernel
+// modules, and ensures the correct device files exist and are accessible.
+// This should only be necessary once on the host. It should be run during the
+// root container setup sequence to make sure it has run at least once.
+func nvProxyPreGoferHostSetup(spec *specs.Spec, conf *config.Config) error {
 	if !specutils.GPUFunctionalityRequested(spec, conf) || !conf.NVProxyDocker {
 		return nil
-	}
-
-	// Delegate to nvidia-container-cli from libnvidia-container. This
-	// essentially replicates
-	// nvidia-container-toolkit:cmd/nvidia-container-runtime-hook, i.e. the
-	// binary that executeHook() is hard-coded to skip, with differences noted
-	// inline. We do this rather than move the prestart hook because the
-	// "runtime environment" in which prestart hooks execute is vaguely
-	// defined, such that nvidia-container-runtime-hook and existing runsc
-	// hooks differ in their expected environment.
-	//
-	// Note that nvidia-container-cli will set up files in /dev and /proc which
-	// are useless, since they will be hidden by sentry devtmpfs and procfs
-	// respectively (and some device files will have the wrong device numbers
-	// from the application's perspective since nvproxy may register device
-	// numbers in sentry VFS that differ from those on the host, e.g. for
-	// nvidia-uvm). These files are separately created during sandbox VFS
-	// construction. For this reason, we don't need to parse
-	// NVIDIA_VISIBLE_DEVICES or pass --device to nvidia-container-cli.
-
-	if spec.Root == nil {
-		return fmt.Errorf("spec missing root filesystem")
 	}
 
 	// Locate binaries. For security reasons, unlike
@@ -1701,13 +1695,6 @@ func nvproxyUpdateAppRootFilesystem(spec *specs.Spec, conf *config.Config) error
 	cliPath, err := exec.LookPath("nvidia-container-cli")
 	if err != nil {
 		return fmt.Errorf("failed to locate nvidia-container-cli in PATH: %w", err)
-	}
-	// On Ubuntu, ldconfig is a wrapper around ldconfig.real, and we need the latter.
-	var ldconfigPath string
-	if _, err := os.Stat("/sbin/ldconfig.real"); err == nil {
-		ldconfigPath = "/sbin/ldconfig.real"
-	} else {
-		ldconfigPath = "/sbin/ldconfig"
 	}
 
 	// nvidia-container-cli --load-kmods seems to be a noop; load kernel modules ourselves.
@@ -1730,48 +1717,6 @@ func nvproxyUpdateAppRootFilesystem(spec *specs.Spec, conf *config.Config) error
 	}
 	log.Debugf("nvidia-container-cli info: %v", infoOut.String())
 
-	deviceIDs, err := specutils.NvidiaDeviceNumbers(spec, conf)
-	if err != nil {
-		return fmt.Errorf("failed to get nvidia device numbers: %w", err)
-	}
-
-	// nvidia-container-cli does not create this directory.
-	if err := os.MkdirAll(path.Join(spec.Root.Path, "proc", "driver", "nvidia"), 0555); err != nil {
-		return fmt.Errorf("failed to create /proc/driver/nvidia in app filesystem: %w", err)
-	}
-
-	var nvidiaDevices strings.Builder
-	for i, deviceID := range deviceIDs {
-		if i > 0 {
-			nvidiaDevices.WriteRune(',')
-		}
-		nvidiaDevices.WriteString(fmt.Sprintf("%d", uint32(deviceID)))
-	}
-
-	argv = []string{
-		cliPath,
-		"--load-kmods",
-		"configure",
-		fmt.Sprintf("--ldconfig=@%s", ldconfigPath),
-		"--no-cgroups", // runsc doesn't configure device cgroups yet
-		"--utility",
-		"--compute",
-		fmt.Sprintf("--pid=%d", os.Getpid()),
-		fmt.Sprintf("--device=%s", nvidiaDevices.String()),
-		spec.Root.Path,
-	}
-	log.Debugf("Executing %q", argv)
-	var stdout, stderr strings.Builder
-	cmd = exec.Cmd{
-		Path:   argv[0],
-		Args:   argv,
-		Env:    os.Environ(),
-		Stdout: &stdout,
-		Stderr: &stderr,
-	}
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("nvidia-container-cli configure failed, err: %v\nstdout: %s\nstderr: %s", err, stdout.String(), stderr.String())
-	}
 	return nil
 }
 
@@ -1800,4 +1745,108 @@ func nvproxyLoadKernelModules() {
 			log.Warningf("modprobe %s failed, err: %v\nstdout: %s\nstderr: %s", mod, err, stdout.String(), stderr.String())
 		}
 	}
+}
+
+// nvproxySetupAfterGoferUserns runs `nvidia-container-cli configure`.
+// This sets up the container filesystem with bind mounts that allow it to
+// use NVIDIA devices.
+//
+// This should be called during the Gofer setup process, as the bind mounts
+// are created in the Gofer's mount namespace.
+// If successful, it returns a callback function that must be called once the
+// Gofer process has started.
+// This function has no effect if nvproxy functionality is not requested.
+//
+// This function essentially replicates
+// nvidia-container-toolkit:cmd/nvidia-container-runtime-hook, i.e. the
+// binary that executeHook() is hard-coded to skip, with differences noted
+// inline. We do this rather than move the prestart hook because the
+// "runtime environment" in which prestart hooks execute is vaguely
+// defined, such that nvidia-container-runtime-hook and existing runsc
+// hooks differ in their expected environment.
+//
+// Note that nvidia-container-cli will set up files in /dev and /proc which
+// are useless, since they will be hidden by sentry devtmpfs and procfs
+// respectively (and some device files will have the wrong device numbers
+// from the application's perspective since nvproxy may register device
+// numbers in sentry VFS that differ from those on the host, e.g. for
+// nvidia-uvm). These files are separately created during sandbox VFS
+// construction. For this reason, we don't need to parse
+// NVIDIA_VISIBLE_DEVICES or pass --device to nvidia-container-cli.
+func nvproxySetupAfterGoferUserns(spec *specs.Spec, conf *config.Config, goferCmd *exec.Cmd, goferDonations *donation.Agency) (func() error, error) {
+	if !specutils.GPUFunctionalityRequested(spec, conf) || !conf.NVProxyDocker {
+		return func() error { return nil }, nil
+	}
+
+	if spec.Root == nil {
+		return nil, fmt.Errorf("spec missing root filesystem")
+	}
+
+	// nvidia-container-cli does not create this directory.
+	if err := os.MkdirAll(path.Join(spec.Root.Path, "proc", "driver", "nvidia"), 0555); err != nil {
+		return nil, fmt.Errorf("failed to create /proc/driver/nvidia in app filesystem: %w", err)
+	}
+
+	cliPath, err := exec.LookPath("nvidia-container-cli")
+	if err != nil {
+		return nil, fmt.Errorf("failed to locate nvidia-container-cli in PATH: %w", err)
+	}
+
+	// On Ubuntu, ldconfig is a wrapper around ldconfig.real, and we need the latter.
+	var ldconfigPath string
+	if _, err := os.Stat("/sbin/ldconfig.real"); err == nil {
+		ldconfigPath = "/sbin/ldconfig.real"
+	} else {
+		ldconfigPath = "/sbin/ldconfig"
+	}
+
+	var nvidiaDevices strings.Builder
+	deviceIDs, err := specutils.NvidiaDeviceNumbers(spec, conf)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get nvidia device numbers: %w", err)
+	}
+	for i, deviceID := range deviceIDs {
+		if i > 0 {
+			nvidiaDevices.WriteRune(',')
+		}
+		nvidiaDevices.WriteString(fmt.Sprintf("%d", uint32(deviceID)))
+	}
+
+	// Create synchronization FD for nvproxy.
+	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0)
+	if err != nil {
+		return nil, err
+	}
+	ourEnd := os.NewFile(uintptr(fds[0]), "nvproxy sync runsc FD")
+	goferEnd := os.NewFile(uintptr(fds[1]), "nvproxy sync gofer FD")
+	goferDonations.DonateAndClose("sync-nvproxy-fd", goferEnd)
+
+	return func() error {
+		defer ourEnd.Close()
+		argv := []string{
+			cliPath,
+			"--load-kmods",
+			"configure",
+			fmt.Sprintf("--ldconfig=@%s", ldconfigPath),
+			"--no-cgroups", // runsc doesn't configure device cgroups yet
+			"--utility",
+			"--compute",
+			fmt.Sprintf("--pid=%d", goferCmd.Process.Pid),
+			fmt.Sprintf("--device=%s", nvidiaDevices.String()),
+			spec.Root.Path,
+		}
+		log.Debugf("Executing %q", argv)
+		var stdout, stderr strings.Builder
+		cmd := exec.Cmd{
+			Path:   argv[0],
+			Args:   argv,
+			Env:    os.Environ(),
+			Stdout: &stdout,
+			Stderr: &stderr,
+		}
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("nvidia-container-cli configure failed, err: %v\nstdout: %s\nstderr: %s", err, stdout.String(), stderr.String())
+		}
+		return nil
+	}, nil
 }

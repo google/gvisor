@@ -1584,7 +1584,7 @@ func ConfigureCmdForRootless(cmd *exec.Cmd, donations *donation.Agency) (*os.Fil
 	if err != nil {
 		return nil, err
 	}
-	f := os.NewFile(uintptr(fds[1]), "sync other FD")
+	f := os.NewFile(uintptr(fds[1]), "userns sync other FD")
 	donations.DonateAndClose("sync-userns-fd", f)
 	if cmd.SysProcAttr == nil {
 		cmd.SysProcAttr = &unix.SysProcAttr{}
@@ -1605,7 +1605,7 @@ func ConfigureCmdForRootless(cmd *exec.Cmd, donations *donation.Agency) (*os.Fil
 		// Needed to be able to clear bounding set (PR_CAPBSET_DROP).
 		unix.CAP_SETPCAP,
 	}
-	return os.NewFile(uintptr(fds[0]), "sync FD"), nil
+	return os.NewFile(uintptr(fds[0]), "userns sync FD"), nil
 }
 
 // SetUserMappings uses newuidmap/newgidmap programs to set up user ID mappings
