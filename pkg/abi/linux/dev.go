@@ -64,3 +64,9 @@ const (
 	// PTMX_MINOR is the minor device number for /dev/ptmx.
 	PTMX_MINOR = 2
 )
+
+// from Linux include/drm/drm_accel.h
+const (
+	// ACCEL_MAJOR is the major device number for compute accelerator devices.
+	ACCEL_MAJOR = 121
+)
