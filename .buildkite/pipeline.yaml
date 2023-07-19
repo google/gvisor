@@ -40,6 +40,7 @@ _templates:
       BENCHMARKS_PROJECT: gvisor-benchmarks
       BENCHMARKS_TABLE: benchmarks
       BENCHMARKS_UPLOAD: true
+      BENCHMARKS_PLATFORMS: "kvm systrap"
       BUILDKITE_PIPELINE_INSTALL_RUNTIME: true
     agents:
       <<: *kvm_agents
