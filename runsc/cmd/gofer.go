@@ -57,6 +57,26 @@ var goferCaps = &specs.LinuxCapabilities{
 	Permitted: caps,
 }
 
+// goferSyncFDs contains file descriptors that are used for synchronization
+// of the Gofer startup process against other processes.
+type goferSyncFDs struct {
+	// nvproxyFD is a file descriptor that is used to wait until
+	// nvproxy-related setup is done. This setup involves creating mounts in the
+	// Gofer process's mount namespace.
+	// If this is set, this FD is the first that the Gofer waits for.
+	nvproxyFD int
+	// usernsFD is a file descriptor that is used to wait until
+	// user namespace ID mappings are established in the Gofer's userns.
+	// If this is set, this FD is the second that the Gofer waits for.
+	usernsFD int
+	// procMountFD is a file descriptor that has to be closed when the
+	// procfs mount isn't needed anymore. It is read by the procfs unmounter
+	// process.
+	// If this is set, this FD is the last that the Gofer interacts with and
+	// closes.
+	procMountFD int
+}
+
 // Gofer implements subcommands.Command for the "gofer" command, which starts a
 // filesystem gofer.  This command should not be called directly.
 type Gofer struct {
@@ -66,14 +86,10 @@ type Gofer struct {
 	setUpRoot      bool
 	overlayMediums boot.OverlayMediumFlags
 
-	specFD       int
-	mountsFD     int
-	syncUsernsFD int
-	// procMountSyncFD is a file descriptor that has to be closed when the
-	// procfs mount isn't needed anymore.
-	procMountSyncFD int
-
+	specFD        int
+	mountsFD      int
 	profileFDs    profile.FDArgs
+	syncFDs       goferSyncFDs
 	stopProfiling func()
 }
 
@@ -103,8 +119,9 @@ func (g *Gofer) SetFlags(f *flag.FlagSet) {
 	f.Var(&g.overlayMediums, "overlay-mediums", "information about how the gofer mounts have been overlaid.")
 	f.IntVar(&g.specFD, "spec-fd", -1, "required fd with the container spec")
 	f.IntVar(&g.mountsFD, "mounts-fd", -1, "mountsFD is the file descriptor to write list of mounts after they have been resolved (direct paths, no symlinks).")
-	f.IntVar(&g.syncUsernsFD, "sync-userns-fd", -1, "file descriptor used to synchronize rootless user namespace initialization.")
-	f.IntVar(&g.procMountSyncFD, "proc-mount-sync-fd", -1, "file descriptor that has to be written to when /proc isn't needed anymore and can be unmounted")
+
+	// Add synchronization FD flags.
+	g.syncFDs.setFlags(f)
 
 	// Profiling flags.
 	g.profileFDs.SetFromFlags(f)
@@ -129,44 +146,29 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		util.Fatalf("reading spec: %v", err)
 	}
 
-	if g.syncUsernsFD >= 0 {
-		syncUsernsForRootless(g.syncUsernsFD)
-	}
+	g.syncFDs.syncNVProxy()
+	g.syncFDs.syncUsernsForRootless()
 
 	if g.setUpRoot {
 		if err := g.setupRootFS(spec, conf); err != nil {
 			util.Fatalf("Error setting up root FS: %v", err)
 		}
 		if !conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
-			// /proc is umounted from a forked process, because the
-			// current one may re-execute itself without capabilities.
-			cmd, w := execProcUmounter()
-			defer cmd.Wait()
-			defer w.Close()
-			if g.procMountSyncFD != -1 {
-				panic("procMountSyncFD is set")
-			}
-			g.procMountSyncFD = int(w.Fd())
-
-			// Clear FD_CLOEXEC. This process may be re-executed. procMountSyncFD
-			// should remain open.
-			if _, _, errno := unix.RawSyscall(unix.SYS_FCNTL, w.Fd(), unix.F_SETFD, 0); errno != 0 {
-				util.Fatalf("error clearing CLOEXEC: %v", errno)
-			}
+			cleanupUnmounter := g.syncFDs.spawnProcUnmounter()
+			defer cleanupUnmounter()
 		}
 	}
 	if g.applyCaps {
 		// Disable caps when calling myself again.
 		// Note: minimal argument handling for the default case to keep it simple.
 		args := os.Args
-		args = append(args, "--apply-caps=false", "--setup-root=false", "--sync-userns-fd=-1", fmt.Sprintf("--proc-mount-sync-fd=%d", g.procMountSyncFD))
+		args = append(
+			args,
+			"--apply-caps=false",
+			"--setup-root=false",
+		)
+		args = append(args, g.syncFDs.flags()...)
 		util.Fatalf("setCapsAndCallSelf(%v, %v): %v", args, goferCaps, setCapsAndCallSelf(args, goferCaps))
-		panic("unreachable")
-	}
-
-	if g.syncUsernsFD >= 0 {
-		// syncUsernsFD is set, but runsc hasn't been re-exeuted with a new UID and GID.
-		// We expect that setCapsAndCallSelf has to be called in this case.
 		panic("unreachable")
 	}
 
@@ -222,10 +224,9 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 	if err := fsgofer.OpenProcSelfFD(); err != nil {
 		util.Fatalf("failed to open /proc/self/fd: %v", err)
 	}
-	if g.procMountSyncFD != -1 {
-		// procfs isn't needed anymore.
-		umountProc(g.procMountSyncFD)
-	}
+
+	// procfs isn't needed anymore.
+	g.syncFDs.unmountProcfs()
 
 	if err := unix.Chroot(root); err != nil {
 		util.Fatalf("failed to chroot to %q: %v", root, err)
@@ -583,19 +584,98 @@ func adjustMountOptions(conf *config.Config, path string, opts []string) ([]stri
 	return rv, nil
 }
 
-// syncUsernsForRootless waits on syncUsernsFD to be closed and then sets
-// UID/GID to 0. Note that this function calls runtime.LockOSThread().
-//
-// Postcondition: All callers must re-exec themselves after this returns.
-func syncUsernsForRootless(syncUsernsFD int) {
-	f := os.NewFile(uintptr(syncUsernsFD), "sync FD")
+// setFlags sets sync FD flags on the given FlagSet.
+func (g *goferSyncFDs) setFlags(f *flag.FlagSet) {
+	f.IntVar(&g.nvproxyFD, "sync-nvproxy-fd", -1, "file descriptor that the gofer waits on until nvproxy setup is done")
+	f.IntVar(&g.usernsFD, "sync-userns-fd", -1, "file descriptor the the gofer waits on until userns mappings are set up")
+	f.IntVar(&g.procMountFD, "proc-mount-sync-fd", -1, "file descriptor that the gofer writes to when /proc isn't needed anymore and can be unmounted")
+}
+
+// flags returns the flags necessary to pass along the current sync FD values
+// to a re-executed version of this process.
+func (g *goferSyncFDs) flags() []string {
+	return []string{
+		fmt.Sprintf("--sync-nvproxy-fd=%d", g.nvproxyFD),
+		fmt.Sprintf("--sync-userns-fd=%d", g.usernsFD),
+		fmt.Sprintf("--proc-mount-sync-fd=%d", g.procMountFD),
+	}
+}
+
+// waitForFD waits for the other end of a given FD to be closed.
+// `fd` is closed unconditionally after that.
+// This should only be called for actual FDs (i.e. `fd` >= 0).
+func waitForFD(fd int, fdName string) error {
+	log.Debugf("Waiting on %s %d...", fdName, fd)
+	f := os.NewFile(uintptr(fd), fdName)
 	defer f.Close()
 	var b [1]byte
 	if n, err := f.Read(b[:]); n != 0 || err != io.EOF {
-		util.Fatalf("failed to sync: %v: %v", n, err)
+		return fmt.Errorf("failed to sync on %s: %v: %v", fdName, n, err)
+	}
+	log.Debugf("Synced on %s %d.", fdName, fd)
+	return nil
+}
+
+// spawnProcMounter executes the /proc unmounter process.
+// It returns a function to wait on the proc unmounter process, which
+// should be called (via defer) in case of errors in order to clean up the
+// unmounter process properly.
+// When procfs is no longer needed, `unmountProcfs` should be called.
+func (g *goferSyncFDs) spawnProcUnmounter() func() {
+	if g.procMountFD != -1 {
+		util.Fatalf("procMountFD is set")
+	}
+	// /proc is umounted from a forked process, because the
+	// current one may re-execute itself without capabilities.
+	cmd, w := execProcUmounter()
+	// Clear FD_CLOEXEC. This process may be re-executed. procMountFD
+	// should remain open.
+	if _, _, errno := unix.RawSyscall(unix.SYS_FCNTL, w.Fd(), unix.F_SETFD, 0); errno != 0 {
+		util.Fatalf("error clearing CLOEXEC: %v", errno)
+	}
+	g.procMountFD = int(w.Fd())
+	return func() {
+		g.procMountFD = -1
+		w.Close()
+		cmd.Wait()
+	}
+}
+
+// unmountProcfs signals the proc unmounter process that procfs is no longer
+// needed.
+func (g *goferSyncFDs) unmountProcfs() {
+	if g.procMountFD < 0 {
+		return
+	}
+	umountProc(g.procMountFD)
+	g.procMountFD = -1
+}
+
+// syncUsernsForRootless waits on usernsFD to be closed and then sets
+// UID/GID to 0. Note that this function calls runtime.LockOSThread().
+// This function is a no-op if usernsFD is -1.
+//
+// Postcondition: All callers must re-exec themselves after this returns,
+// unless usernsFD was -1.
+func (g *goferSyncFDs) syncUsernsForRootless() {
+	syncUsernsForRootless(g.usernsFD)
+	g.usernsFD = -1
+}
+
+// syncUsernsForRootless waits on usernsFD to be closed and then sets
+// UID/GID to 0. Note that this function calls runtime.LockOSThread().
+// This function is a no-op if usernsFD is -1.
+//
+// Postcondition: All callers must re-exec themselves after this returns,
+// unless fd is -1.
+func syncUsernsForRootless(fd int) {
+	if fd < 0 {
+		return
+	}
+	if err := waitForFD(fd, "userns sync FD"); err != nil {
+		util.Fatalf("failed to sync on userns FD: %v", err)
 	}
 
-	f.Close()
 	// SETUID changes UID on the current system thread, so we have
 	// to re-execute current binary.
 	runtime.LockOSThread()
@@ -605,4 +685,18 @@ func syncUsernsForRootless(syncUsernsFD int) {
 	if _, _, errno := unix.RawSyscall(unix.SYS_SETGID, 0, 0, 0); errno != 0 {
 		util.Fatalf("failed to set GID: %v", errno)
 	}
+}
+
+// syncNVProxy waits on nvproxyFD to be closed.
+// Used for synchronization during nvproxy setup which is done from the
+// non-gofer process.
+// This function is a no-op if nvProxySyncFD is -1.
+func (g *goferSyncFDs) syncNVProxy() {
+	if g.nvproxyFD < 0 {
+		return
+	}
+	if err := waitForFD(g.nvproxyFD, "nvproxy sync FD"); err != nil {
+		util.Fatalf("failed to sync on NVProxy FD: %v", err)
+	}
+	g.nvproxyFD = -1
 }
