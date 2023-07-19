@@ -243,9 +243,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		}
 	}
 
-	if b.syncUsernsFD >= 0 {
-		syncUsernsForRootless(b.syncUsernsFD)
-	}
+	syncUsernsForRootless(b.syncUsernsFD)
 
 	// Get the spec from the specFD. We *must* keep this os.File alive past
 	// the call setCapsAndCallSelf, otherwise the FD will be closed and the
@@ -334,7 +332,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	}
 
 	if b.syncUsernsFD >= 0 {
-		// syncUsernsFD is set, but runsc hasn't been re-exeuted with a new UID and GID.
+		// syncUsernsFD is set, but runsc hasn't been re-executed with a new UID and GID.
 		// We expect that setCapsAndCallSelf has to be called in this case.
 		panic("unreachable")
 	}
@@ -517,7 +515,7 @@ func execProcUmounter() (*exec.Cmd, *os.File) {
 // umountProc writes to syncFD signalling the process started by
 // execProcUmounter() to umount /proc.
 func umountProc(syncFD int) {
-	syncFile := os.NewFile(uintptr(syncFD), "sync file")
+	syncFile := os.NewFile(uintptr(syncFD), "procfs umount sync FD")
 	buf := make([]byte, 1)
 	if w, err := syncFile.Write(buf); err != nil || w != 1 {
 		util.Fatalf("unable to write into the proc umounter descriptor: %v", err)
