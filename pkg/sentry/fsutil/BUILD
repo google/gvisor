@@ -50,7 +50,7 @@ go_template_instance(
     types = {
         "Key": "uint64",
         "Range": "memmap.FileRange",
-        "Value": "uint64",
+        "Value": "FrameRefSegInfo",
         "Functions": "FrameRefSetFunctions",
     },
 )

@@ -485,10 +485,10 @@ func (fd *specialFileFD) InvalidateUnsavable(ctx context.Context) error {
 }
 
 // IncRef implements memmap.File.IncRef.
-func (fd *specialFileFD) IncRef(fr memmap.FileRange) {
+func (fd *specialFileFD) IncRef(fr memmap.FileRange, memCgID uint32) {
 	fd.fileRefsMu.Lock()
 	defer fd.fileRefsMu.Unlock()
-	fd.fileRefs.IncRefAndAccount(fr)
+	fd.fileRefs.IncRefAndAccount(fr, memCgID)
 }
 
 // DecRef implements memmap.File.DecRef.
