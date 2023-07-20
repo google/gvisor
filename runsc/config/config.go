@@ -290,6 +290,9 @@ type Config struct {
 	// containers or set by `docker --gpus`.
 	NVProxyDocker bool `flag:"nvproxy-docker"`
 
+	// TPUProxy enables support for TPUs.
+	TPUProxy bool `flag:"tpuproxy"`
+
 	// TestOnlyAllowRunAsCurrentUserWithoutChroot should only be used in
 	// tests. It allows runsc to start the sandbox process as the current
 	// user, and without chrooting the sandbox process. This can be
