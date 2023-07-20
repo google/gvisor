@@ -28,6 +28,7 @@ type Fio struct {
 	Size      int    // total size to be read/written in megabytes.
 	BlockSize int    // block size to be read/written in kilobytes.
 	IODepth   int    // I/O depth for reads/writes.
+	Direct    bool   // Whether to use direct I/O (O_DIRECT) or not.
 }
 
 // MakeCmd makes a 'fio' command.
@@ -38,6 +39,11 @@ func (f *Fio) MakeCmd(filename string) []string {
 	cmd = append(cmd, fmt.Sprintf("--blocksize=%dK", f.BlockSize))
 	cmd = append(cmd, fmt.Sprintf("--filename=%s", filename))
 	cmd = append(cmd, fmt.Sprintf("--iodepth=%d", f.IODepth))
+	if f.Direct {
+		cmd = append(cmd, "--direct=1")
+	} else {
+		cmd = append(cmd, "--direct=0")
+	}
 	cmd = append(cmd, fmt.Sprintf("--rw=%s", f.Test))
 	if f.Test == "read" || f.Test == "randread" {
 		// Don't call `fallocate` during read-only tests.
