@@ -169,6 +169,37 @@ func TestForwarderFailedConnect(t *testing.T) {
 	}
 }
 
+func TestForwarderDroppedStats(t *testing.T) {
+	const maxPayload = 100
+	const mtu = 1200
+	c := context.New(t, mtu)
+	defer c.Cleanup()
+
+	s := c.Stack()
+	const maxInFlight = 2
+	f := tcp.NewForwarder(s, 65536, maxInFlight, func(r *tcp.ForwarderRequest) {
+		// Complete all requests without doing anything
+		r.Complete(false)
+	})
+	s.SetTransportProtocolHandler(tcp.ProtocolNumber, f.HandlePacket)
+
+	for i := 0; i < maxInFlight*10; i++ {
+		iss := seqnum.Value(context.TestInitialSequenceNumber + i)
+		c.SendPacket(nil, &context.Headers{
+			SrcPort: uint16(context.TestPort + i),
+			DstPort: context.StackPort,
+			Flags:   header.TCPFlagSyn,
+			SeqNum:  iss,
+			RcvWnd:  30000,
+		})
+	}
+
+	// Verify that we got some ignored packets
+	if curr := s.Stats().TCP.ForwardMaxInFlightDrop.Value(); curr == 0 {
+		t.Errorf("Expected at least one dropped connection")
+	}
+}
+
 func TestMain(m *testing.M) {
 	refs.SetLeakMode(refs.LeaksPanic)
 	code := m.Run()

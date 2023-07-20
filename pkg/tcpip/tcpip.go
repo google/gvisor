@@ -2157,6 +2157,11 @@ type TCPStats struct {
 
 	// SpuriousRTORecovery is the number of spurious RTOs.
 	SpuriousRTORecovery *StatCounter
+
+	// ForwardMaxInFlightDrop is the number of connection requests that are
+	// dropped due to exceeding the maximum number of in-flight connection
+	// requests.
+	ForwardMaxInFlightDrop *StatCounter
 }
 
 // UDPStats collects UDP-specific stats.
