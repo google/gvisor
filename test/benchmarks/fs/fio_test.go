@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -72,6 +73,54 @@ func BenchmarkFio(b *testing.B) {
 			BlockSize: 4,
 			IODepth:   4,
 		},
+		{
+			Test:      "write",
+			BlockSize: 4,
+			IODepth:   4,
+			Direct:    true,
+		},
+		{
+			Test:      "write",
+			BlockSize: 64,
+			IODepth:   4,
+			Direct:    true,
+		},
+		{
+			Test:      "write",
+			BlockSize: 1024,
+			IODepth:   4,
+			Direct:    true,
+		},
+		{
+			Test:      "read",
+			BlockSize: 4,
+			IODepth:   4,
+			Direct:    true,
+		},
+		{
+			Test:      "read",
+			BlockSize: 64,
+			IODepth:   4,
+			Direct:    true,
+		},
+		{
+			Test:      "read",
+			BlockSize: 1024,
+			IODepth:   4,
+			Direct:    true,
+		},
+		{
+			Test:      "randwrite",
+			BlockSize: 4,
+			IODepth:   4,
+			Direct:    true,
+		},
+		{
+			Test:      "randread",
+			BlockSize: 4,
+			IODepth:   4,
+			Direct:    true,
+		},
 	}
 
 	machine, err := harness.GetMachine()
@@ -90,11 +139,15 @@ func BenchmarkFio(b *testing.B) {
 				Name:  "blockSize",
 				Value: fmt.Sprintf("%dK", tc.BlockSize),
 			}
+			directIO := tools.Parameter{
+				Name:  "directIO",
+				Value: strconv.FormatBool(tc.Direct),
+			}
 			filesystem := tools.Parameter{
 				Name:  "filesystem",
 				Value: string(fsType),
 			}
-			name, err := tools.ParametersToName(operation, blockSize, filesystem)
+			name, err := tools.ParametersToName(operation, blockSize, directIO, filesystem)
 			if err != nil {
 				b.Fatalf("Failed to parser paramters: %v", err)
 			}
