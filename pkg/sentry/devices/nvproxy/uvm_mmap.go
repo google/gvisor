@@ -67,7 +67,7 @@ type uvmFDMemmapFile struct {
 }
 
 // IncRef implements memmap.File.IncRef.
-func (mf *uvmFDMemmapFile) IncRef(fr memmap.FileRange) {
+func (mf *uvmFDMemmapFile) IncRef(fr memmap.FileRange, memCgID uint32) {
 }
 
 // DecRef implements memmap.File.DecRef.

@@ -931,9 +931,9 @@ type dentryPlatformFile struct {
 }
 
 // IncRef implements memmap.File.IncRef.
-func (d *dentryPlatformFile) IncRef(fr memmap.FileRange) {
+func (d *dentryPlatformFile) IncRef(fr memmap.FileRange, memCgID uint32) {
 	d.dataMu.Lock()
-	d.fdRefs.IncRefAndAccount(fr)
+	d.fdRefs.IncRefAndAccount(fr, memCgID)
 	d.dataMu.Unlock()
 }
 

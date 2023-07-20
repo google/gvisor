@@ -386,7 +386,9 @@ type MMapOpts struct {
 type File interface {
 	// All pages in a File are reference-counted.
 
-	// IncRef increments the reference count on all pages in fr.
+	// IncRef increments the reference count on all pages in fr and
+	// associates each page with a memCgID (memory cgroup id) to which it
+	// belongs. memCgID will not be changed if the page already exists.
 	//
 	// Preconditions:
 	//	* fr.Start and fr.End must be page-aligned.
@@ -394,7 +396,7 @@ type File interface {
 	//	* At least one reference must be held on all pages in fr. (The File
 	//		interface does not provide a way to acquire an initial reference;
 	//		implementors may define mechanisms for doing so.)
-	IncRef(fr FileRange)
+	IncRef(fr FileRange, memCgID uint32)
 
 	// DecRef decrements the reference count on all pages in fr.
 	//
