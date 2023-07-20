@@ -236,7 +236,7 @@ func (s *FrameRefSet) UpperBoundGap(max uint64) FrameRefGapIterator {
 // segment can be merged with adjacent segments, Add will do so. If the new
 // segment would overlap an existing segment, Add returns false. If Add
 // succeeds, all existing iterators are invalidated.
-func (s *FrameRefSet) Add(r __generics_imported0.FileRange, val uint64) bool {
+func (s *FrameRefSet) Add(r __generics_imported0.FileRange, val FrameRefSegInfo) bool {
 	if r.Length() <= 0 {
 		panic(fmt.Sprintf("invalid segment range %v", r))
 	}
@@ -255,7 +255,7 @@ func (s *FrameRefSet) Add(r __generics_imported0.FileRange, val uint64) bool {
 // If it would overlap an existing segment, AddWithoutMerging does nothing and
 // returns false. If AddWithoutMerging succeeds, all existing iterators are
 // invalidated.
-func (s *FrameRefSet) AddWithoutMerging(r __generics_imported0.FileRange, val uint64) bool {
+func (s *FrameRefSet) AddWithoutMerging(r __generics_imported0.FileRange, val FrameRefSegInfo) bool {
 	if r.Length() <= 0 {
 		panic(fmt.Sprintf("invalid segment range %v", r))
 	}
@@ -282,7 +282,7 @@ func (s *FrameRefSet) AddWithoutMerging(r __generics_imported0.FileRange, val ui
 // Merge, but may be more efficient. Note that there is no unchecked variant of
 // Insert since Insert must retrieve and inspect gap's predecessor and
 // successor segments regardless.
-func (s *FrameRefSet) Insert(gap FrameRefGapIterator, r __generics_imported0.FileRange, val uint64) FrameRefIterator {
+func (s *FrameRefSet) Insert(gap FrameRefGapIterator, r __generics_imported0.FileRange, val FrameRefSegInfo) FrameRefIterator {
 	if r.Length() <= 0 {
 		panic(fmt.Sprintf("invalid segment range %v", r))
 	}
@@ -333,7 +333,7 @@ func (s *FrameRefSet) Insert(gap FrameRefGapIterator, r __generics_imported0.Fil
 //
 // If the gap cannot accommodate the segment, or if r is invalid,
 // InsertWithoutMerging panics.
-func (s *FrameRefSet) InsertWithoutMerging(gap FrameRefGapIterator, r __generics_imported0.FileRange, val uint64) FrameRefIterator {
+func (s *FrameRefSet) InsertWithoutMerging(gap FrameRefGapIterator, r __generics_imported0.FileRange, val FrameRefSegInfo) FrameRefIterator {
 	if r.Length() <= 0 {
 		panic(fmt.Sprintf("invalid segment range %v", r))
 	}
@@ -350,7 +350,7 @@ func (s *FrameRefSet) InsertWithoutMerging(gap FrameRefGapIterator, r __generics
 // Preconditions:
 //   - r.Start >= gap.Start().
 //   - r.End <= gap.End().
-func (s *FrameRefSet) InsertWithoutMergingUnchecked(gap FrameRefGapIterator, r __generics_imported0.FileRange, val uint64) FrameRefIterator {
+func (s *FrameRefSet) InsertWithoutMergingUnchecked(gap FrameRefGapIterator, r __generics_imported0.FileRange, val FrameRefSegInfo) FrameRefIterator {
 	gap = gap.node.rebalanceBeforeInsert(gap)
 	splitMaxGap := FrameReftrackGaps != 0 && (gap.node.nrSegments == 0 || gap.Range().Length() == gap.node.maxGap.Get())
 	copy(gap.node.keys[gap.index+1:], gap.node.keys[gap.index:gap.node.nrSegments])
@@ -623,7 +623,7 @@ type FrameRefnode struct {
 	// Nodes store keys and values in separate arrays to maximize locality in
 	// the common case (scanning keys for lookup).
 	keys     [FrameRefmaxDegree - 1]__generics_imported0.FileRange
-	values   [FrameRefmaxDegree - 1]uint64
+	values   [FrameRefmaxDegree - 1]FrameRefSegInfo
 	children [FrameRefmaxDegree]*FrameRefnode
 }
 
@@ -1177,20 +1177,20 @@ func (seg FrameRefIterator) SetEnd(end uint64) {
 }
 
 // Value returns a copy of the iterated segment's value.
-func (seg FrameRefIterator) Value() uint64 {
+func (seg FrameRefIterator) Value() FrameRefSegInfo {
 	return seg.node.values[seg.index]
 }
 
 // ValuePtr returns a pointer to the iterated segment's value. The pointer is
 // invalidated if the iterator is invalidated. This operation does not
 // invalidate any iterators.
-func (seg FrameRefIterator) ValuePtr() *uint64 {
+func (seg FrameRefIterator) ValuePtr() *FrameRefSegInfo {
 	return &seg.node.values[seg.index]
 }
 
 // SetValue mutates the iterated segment's value. This operation does not
 // invalidate any iterators.
-func (seg FrameRefIterator) SetValue(val uint64) {
+func (seg FrameRefIterator) SetValue(val FrameRefSegInfo) {
 	seg.node.values[seg.index] = val
 }
 
@@ -1494,7 +1494,7 @@ func FrameRefsegmentAfterPosition(n *FrameRefnode, i int) FrameRefIterator {
 	return FrameRefIterator{n, i}
 }
 
-func FrameRefzeroValueSlice(slice []uint64) {
+func FrameRefzeroValueSlice(slice []FrameRefSegInfo) {
 
 	for i := range slice {
 		FrameRefSetFunctions{}.ClearValue(&slice[i])
@@ -1557,7 +1557,7 @@ func (n *FrameRefnode) writeDebugString(buf *bytes.Buffer, prefix string) {
 type FrameRefSegmentDataSlices struct {
 	Start  []uint64
 	End    []uint64
-	Values []uint64
+	Values []FrameRefSegInfo
 }
 
 // ExportSortedSlices returns a copy of all segments in the given set, in
@@ -1603,7 +1603,7 @@ func (s *FrameRefSet) ImportSortedSlices(sds *FrameRefSegmentDataSlices) error {
 //
 // This should be used only for testing, and has been added to this package for
 // templating convenience.
-func (s *FrameRefSet) segmentTestCheck(expectedSegments int, segFunc func(int, __generics_imported0.FileRange, uint64) error) error {
+func (s *FrameRefSet) segmentTestCheck(expectedSegments int, segFunc func(int, __generics_imported0.FileRange, FrameRefSegInfo) error) error {
 	havePrev := false
 	prev := uint64(0)
 	nrSegments := 0

@@ -52,9 +52,9 @@ type inodePlatformFile struct {
 var _ memmap.File = (*inodePlatformFile)(nil)
 
 // IncRef implements memmap.File.IncRef.
-func (i *inodePlatformFile) IncRef(fr memmap.FileRange) {
+func (i *inodePlatformFile) IncRef(fr memmap.FileRange, memCgID uint32) {
 	i.fdRefsMu.Lock()
-	i.fdRefs.IncRefAndAccount(fr)
+	i.fdRefs.IncRefAndAccount(fr, memCgID)
 	i.fdRefsMu.Unlock()
 }
 

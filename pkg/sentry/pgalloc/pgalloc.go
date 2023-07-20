@@ -867,7 +867,7 @@ func (f *MemoryFile) markDecommitted(fr memmap.FileRange) {
 }
 
 // IncRef implements memmap.File.IncRef.
-func (f *MemoryFile) IncRef(fr memmap.FileRange) {
+func (f *MemoryFile) IncRef(fr memmap.FileRange, memCgID uint32) {
 	if !fr.WellFormed() || fr.Length() == 0 || fr.Start%hostarch.PageSize != 0 || fr.End%hostarch.PageSize != 0 {
 		panic(fmt.Sprintf("invalid range: %v", fr))
 	}
