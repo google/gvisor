@@ -23,7 +23,7 @@ import (
 
 // Filters returns seccomp-bpf filters for this package.
 func Filters() seccomp.SyscallRules {
-	nonNegativeFD := seccomp.LessThanOrEqual(0x7fff_ffff /* max int32 */)
+	nonNegativeFD := seccomp.NonNegativeFDCheck()
 	notIocSizeMask := ^(((uintptr(1) << linux.IOC_SIZEBITS) - 1) << linux.IOC_SIZESHIFT) // for ioctls taking arbitrary size
 	return seccomp.SyscallRules{
 		unix.SYS_OPENAT: []seccomp.Rule{

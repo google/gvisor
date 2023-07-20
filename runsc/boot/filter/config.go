@@ -368,19 +368,13 @@ func controlServerFilters(fd int) seccomp.SyscallRules {
 	}
 }
 
-func nonNegativeFDCheck() seccomp.LessThanOrEqual {
-	// Negative int32 has the MSB (31st bit) set. So the raw uint FD value must
-	// be less than or equal to 0x7fffffff.
-	return seccomp.LessThanOrEqual(0x7fffffff)
-}
-
 // hostFilesystemFilters contains syscalls that are needed by directfs.
 func hostFilesystemFilters() seccomp.SyscallRules {
 	// Directfs allows FD-based filesystem syscalls. We deny these syscalls with
 	// negative FD values (like AT_FDCWD or invalid FD numbers). We try to be as
 	// restrictive as possible because any restriction here improves security. We
 	// don't know what set of arguments will trigger a future vulnerability.
-	validFDCheck := nonNegativeFDCheck()
+	validFDCheck := seccomp.NonNegativeFDCheck()
 	return seccomp.SyscallRules{
 		unix.SYS_FCHOWNAT: []seccomp.Rule{
 			{
