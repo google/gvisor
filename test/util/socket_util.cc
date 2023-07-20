@@ -24,7 +24,6 @@
 #include <stack>
 
 #include "gtest/gtest.h"
-#include "absl/memory/memory.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_split.h"
 #include "absl/time/clock.h"
@@ -36,6 +35,16 @@
 
 namespace gvisor {
 namespace testing {
+
+// Clears IPV6_V6ONLY for an IPv6 socket with dual_stack = false.
+PosixError MaybeForceDualStack(int fd, int domain, bool dual_stack) {
+  if (domain == AF_INET6 && dual_stack) {
+    constexpr int kDisableV6Only = 0;
+    return PosixError(setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &kDisableV6Only,
+                                 sizeof(kDisableV6Only)));
+  }
+  return NoError();
+}
 
 Creator<SocketPair> SyscallSocketPairCreator(int domain, int type,
                                              int protocol) {
@@ -412,9 +421,11 @@ Creator<SocketPair> TCPAcceptBindSocketPairCreator(int domain, int type,
                                                    bool dual_stack) {
   return [=]() -> PosixErrorOr<std::unique_ptr<AddrFDSocketPair>> {
     ASSIGN_OR_RETURN_ERRNO(auto bound, Socket(domain, type, protocol));
+    RETURN_IF_ERRNO(MaybeForceDualStack(bound.get(), domain, dual_stack));
     MaybeSave();  // Successful socket creation.
 
     ASSIGN_OR_RETURN_ERRNO(auto connected, Socket(domain, type, protocol));
+    RETURN_IF_ERRNO(MaybeForceDualStack(connected.get(), domain, dual_stack));
     MaybeSave();  // Successful socket creation.
 
     if (domain == AF_INET) {
@@ -448,16 +459,14 @@ Creator<SocketPair> TCPAcceptBindPersistentListenerSocketPairCreator(
 
   return [=]() -> PosixErrorOr<std::unique_ptr<AddrFDSocketPair>> {
     ASSIGN_OR_RETURN_ERRNO(auto connected, Socket(domain, type, protocol));
+    RETURN_IF_ERRNO(MaybeForceDualStack(connected.get(), domain, dual_stack));
     MaybeSave();  // Successful socket creation.
 
     // Share the listener across invocations.
     if (!listener->has_value()) {
-      int fd = socket(domain, type, protocol);
-      if (fd < 0) {
-        return PosixError(errno, absl::StrCat("socket(", domain, ", ", type,
-                                              ", ", protocol, ")"));
-      }
-      listener->emplace(fd);
+      ASSIGN_OR_RETURN_ERRNO(auto fd, Socket(domain, type, protocol));
+      RETURN_IF_ERRNO(MaybeForceDualStack(fd.get(), domain, dual_stack));
+      listener->emplace(fd.release());
       MaybeSave();  // Successful socket creation.
     }
 
@@ -520,9 +529,11 @@ Creator<SocketPair> UDPBidirectionalBindSocketPairCreator(int domain, int type,
                                                           bool dual_stack) {
   return [=]() -> PosixErrorOr<std::unique_ptr<AddrFDSocketPair>> {
     ASSIGN_OR_RETURN_ERRNO(auto sock1, Socket(domain, type, protocol));
+    RETURN_IF_ERRNO(MaybeForceDualStack(sock1.get(), domain, dual_stack));
     MaybeSave();  // Successful socket creation.
 
     ASSIGN_OR_RETURN_ERRNO(auto sock2, Socket(domain, type, protocol));
+    RETURN_IF_ERRNO(MaybeForceDualStack(sock2.get(), domain, dual_stack));
     MaybeSave();  // Successful socket creation.
 
     if (domain == AF_INET) {
@@ -538,9 +549,11 @@ Creator<SocketPair> UDPUnboundSocketPairCreator(int domain, int type,
                                                 int protocol, bool dual_stack) {
   return [=]() -> PosixErrorOr<std::unique_ptr<FDSocketPair>> {
     ASSIGN_OR_RETURN_ERRNO(auto sock1, Socket(domain, type, protocol));
+    RETURN_IF_ERRNO(MaybeForceDualStack(sock1.get(), domain, dual_stack));
     MaybeSave();  // Successful socket creation.
 
     ASSIGN_OR_RETURN_ERRNO(auto sock2, Socket(domain, type, protocol));
+    RETURN_IF_ERRNO(MaybeForceDualStack(sock2.get(), domain, dual_stack));
     MaybeSave();  // Successful socket creation.
 
     return std::make_unique<FDSocketPair>(std::move(sock1), std::move(sock2));
