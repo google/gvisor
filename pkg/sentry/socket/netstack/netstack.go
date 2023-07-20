@@ -287,6 +287,7 @@ var Metrics = tcpip.Stats{
 		SegmentsAckedWithDSACK:             mustCreateMetric("/netstack/tcp/segments_acked_with_dsack", "Number of segments for which DSACK was received."),
 		SpuriousRecovery:                   mustCreateMetric("/netstack/tcp/spurious_recovery", "Number of times the connection entered loss recovery spuriously."),
 		SpuriousRTORecovery:                mustCreateMetric("/netstack/tcp/spurious_rto_recovery", "Number of times the connection entered RTO spuriously."),
+		ForwardMaxInFlightDrop:             mustCreateMetric("/netstack/tcp/forward_max_in_flight_drop", "Number of connection requests dropped due to exceeding in-flight limit."),
 	},
 	UDP: tcpip.UDPStats{
 		PacketsReceived:          mustCreateMetric("/netstack/udp/packets_received", "Number of UDP datagrams received via HandlePacket."),
