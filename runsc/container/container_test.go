@@ -1108,7 +1108,7 @@ func TestCheckpointRestore(t *testing.T) {
 			}
 			defer cont2.Destroy()
 
-			if err := cont2.Restore(spec, conf, imagePath); err != nil {
+			if err := cont2.Restore(conf, imagePath); err != nil {
 				t.Fatalf("error restoring container: %v", err)
 			}
 
@@ -1152,7 +1152,7 @@ func TestCheckpointRestore(t *testing.T) {
 			}
 			defer cont3.Destroy()
 
-			if err := cont3.Restore(spec, conf, imagePath); err != nil {
+			if err := cont3.Restore(conf, imagePath); err != nil {
 				t.Fatalf("error restoring container: %v", err)
 			}
 
@@ -1287,7 +1287,7 @@ func TestUnixDomainSockets(t *testing.T) {
 			}
 			defer contRestore.Destroy()
 
-			if err := contRestore.Restore(spec, conf, imagePath); err != nil {
+			if err := contRestore.Restore(conf, imagePath); err != nil {
 				t.Fatalf("error restoring container: %v", err)
 			}
 

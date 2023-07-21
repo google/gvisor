@@ -141,7 +141,7 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subco
 	}
 
 	log.Debugf("Restore: %v", conf.RestoreFile)
-	if err := c.Restore(runArgs.Spec, conf, conf.RestoreFile); err != nil {
+	if err := c.Restore(conf, conf.RestoreFile); err != nil {
 		return util.Errorf("starting container: %v", err)
 	}
 
