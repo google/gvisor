@@ -432,7 +432,7 @@ func (c *Container) Start(conf *config.Config) error {
 	}
 
 	if isRoot(c.Spec) {
-		if err := c.Sandbox.StartRoot(c.Spec, conf); err != nil {
+		if err := c.Sandbox.StartRoot(conf); err != nil {
 			return err
 		}
 	} else {
@@ -502,7 +502,7 @@ func (c *Container) Start(conf *config.Config) error {
 
 // Restore takes a container and replaces its kernel and file system
 // to restore a container from its state file.
-func (c *Container) Restore(spec *specs.Spec, conf *config.Config, restoreFile string) error {
+func (c *Container) Restore(conf *config.Config, restoreFile string) error {
 	log.Debugf("Restore container, cid: %s", c.ID)
 	if err := c.Saver.lock(BlockAcquire); err != nil {
 		return err
@@ -519,7 +519,7 @@ func (c *Container) Restore(spec *specs.Spec, conf *config.Config, restoreFile s
 		log.Warningf("StartContainer hook skipped because running inside container namespace is not supported")
 	}
 
-	if err := c.Sandbox.Restore(c.ID, spec, conf, restoreFile); err != nil {
+	if err := c.Sandbox.Restore(conf, c.ID, restoreFile); err != nil {
 		return err
 	}
 	c.changeStatus(Running)
@@ -542,7 +542,7 @@ func Run(conf *config.Config, args Args) (unix.WaitStatus, error) {
 
 	if conf.RestoreFile != "" {
 		log.Debugf("Restore: %v", conf.RestoreFile)
-		if err := c.Restore(args.Spec, conf, conf.RestoreFile); err != nil {
+		if err := c.Restore(conf, conf.RestoreFile); err != nil {
 			return 0, fmt.Errorf("starting container: %v", err)
 		}
 	} else {
