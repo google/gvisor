@@ -6,6 +6,7 @@ go_library(
     name = "accel",
     srcs = [
         "accel.go",
+        "device.go",
         "seccomp_filters.go",
     ],
     visibility = ["//pkg/sentry:internal"],
@@ -16,6 +17,7 @@ go_library(
         "//pkg/errors/linuxerr",
         "//pkg/seccomp",
         "//pkg/sentry/arch",
+        "//pkg/sentry/fsimpl/devtmpfs",
         "//pkg/sentry/vfs",
         "//pkg/usermem",
         "//pkg/waiter",

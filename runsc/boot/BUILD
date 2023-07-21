@@ -50,6 +50,7 @@ go_library(
         "//pkg/sentry/arch",
         "//pkg/sentry/arch:registers_go_proto",
         "//pkg/sentry/control",
+        "//pkg/sentry/devices/accel",
         "//pkg/sentry/devices/memdev",
         "//pkg/sentry/devices/nvproxy",
         "//pkg/sentry/devices/ttydev",

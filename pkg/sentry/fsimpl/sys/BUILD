@@ -22,6 +22,7 @@ go_library(
         "dir_refs.go",
         "kcov.go",
         "net.go",
+        "pci.go",
         "sys.go",
     ],
     visibility = ["//pkg/sentry:internal"],
@@ -31,9 +32,11 @@ go_library(
         "//pkg/context",
         "//pkg/coverage",
         "//pkg/errors/linuxerr",
+        "//pkg/fsutil",
         "//pkg/log",
         "//pkg/refs",
         "//pkg/sentry/arch",
+        "//pkg/sentry/fsimpl/host",
         "//pkg/sentry/fsimpl/kernfs",
         "//pkg/sentry/inet",
         "//pkg/sentry/kernel",
@@ -41,6 +44,7 @@ go_library(
         "//pkg/sentry/memmap",
         "//pkg/sentry/vfs",
         "//pkg/usermem",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )
 
