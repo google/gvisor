@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"path"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -30,6 +31,7 @@ import (
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/devices/accel"
 	"gvisor.dev/gvisor/pkg/sentry/devices/memdev"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/devices/ttydev"
@@ -170,6 +172,10 @@ func registerFilesystems(k *kernel.Kernel, info *containerInfo) error {
 	}
 
 	if err := nvproxyRegisterDevicesAndCreateFiles(ctx, info, k, vfsObj, a); err != nil {
+		return err
+	}
+
+	if err := tpuProxyRegisterDevicesAndCreateFiles(ctx, info, k, vfsObj, a); err != nil {
 		return err
 	}
 
@@ -784,9 +790,11 @@ func (c *containerMounter) getMountNameAndOptions(conf *config.Config, m *mountI
 		fsName = sys.Name
 
 	case sys.Name:
+		sysData := &sys.InternalData{EnableAccelSysfs: conf.TPUProxy}
 		if len(c.productName) > 0 {
-			internalData = &sys.InternalData{ProductName: c.productName}
+			sysData.ProductName = c.productName
 		}
+		internalData = sysData
 
 	case tmpfs.Name:
 		var err error
@@ -1107,6 +1115,31 @@ func createDeviceFiles(ctx context.Context, creds *auth.Credentials, info *conta
 			}
 			if err := vfsObj.SetStatAt(ctx, creds, &pop, &opts); err != nil {
 				return fmt.Errorf("failed to set UID/GID for device file %q: %w", dev.Path, err)
+			}
+		}
+	}
+	return nil
+}
+
+func tpuProxyRegisterDevicesAndCreateFiles(ctx context.Context, info *containerInfo, k *kernel.Kernel, vfsObj *vfs.VirtualFilesystem, a *devtmpfs.Accessor) error {
+	if !info.conf.TPUProxy {
+		return nil
+	}
+	// At this point /dev/accel just contains the TPU devices have been mounted
+	// into the sandbox chroot. Enumerate all of them and create sentry devices.
+	paths, err := filepath.Glob("/dev/accel*")
+	if err != nil {
+		return fmt.Errorf("enumerating accel device files: %w", err)
+	}
+	for _, path := range paths {
+		accelDeviceRegex := regexp.MustCompile(`^/dev/accel(\d+)$`)
+		if ms := accelDeviceRegex.FindStringSubmatch(path); ms != nil {
+			deviceNum, _ := strconv.ParseUint(ms[1], 10, 32)
+			if err := accel.Register(vfsObj, uint32(deviceNum)); err != nil {
+				return fmt.Errorf("registering accel driver: %w", err)
+			}
+			if err := accel.CreateDevtmpfsFile(ctx, a, uint32(deviceNum)); err != nil {
+				return fmt.Errorf("creating accel device file %q: %w", deviceNum, err)
 			}
 		}
 	}

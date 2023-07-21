@@ -172,6 +172,7 @@ func (i *InternalData) StateTypeName() string {
 func (i *InternalData) StateFields() []string {
 	return []string{
 		"ProductName",
+		"EnableAccelSysfs",
 	}
 }
 
@@ -181,6 +182,7 @@ func (i *InternalData) beforeSave() {}
 func (i *InternalData) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 	stateSinkObject.Save(0, &i.ProductName)
+	stateSinkObject.Save(1, &i.EnableAccelSysfs)
 }
 
 func (i *InternalData) afterLoad() {}
@@ -188,6 +190,7 @@ func (i *InternalData) afterLoad() {}
 // +checklocksignore
 func (i *InternalData) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.ProductName)
+	stateSourceObject.Load(1, &i.EnableAccelSysfs)
 }
 
 func (fs *filesystem) StateTypeName() string {
@@ -350,6 +353,34 @@ func (s *staticFile) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &s.StaticData)
 }
 
+func (hf *hostFile) StateTypeName() string {
+	return "pkg/sentry/fsimpl/sys.hostFile"
+}
+
+func (hf *hostFile) StateFields() []string {
+	return []string{
+		"DynamicBytesFile",
+		"hostPath",
+	}
+}
+
+func (hf *hostFile) beforeSave() {}
+
+// +checklocksignore
+func (hf *hostFile) StateSave(stateSinkObject state.Sink) {
+	hf.beforeSave()
+	stateSinkObject.Save(0, &hf.DynamicBytesFile)
+	stateSinkObject.Save(1, &hf.hostPath)
+}
+
+func (hf *hostFile) afterLoad() {}
+
+// +checklocksignore
+func (hf *hostFile) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &hf.DynamicBytesFile)
+	stateSourceObject.Load(1, &hf.hostPath)
+}
+
 func init() {
 	state.Register((*dirRefs)(nil))
 	state.Register((*kcovInode)(nil))
@@ -362,4 +393,5 @@ func init() {
 	state.Register((*cpuFile)(nil))
 	state.Register((*implStatFS)(nil))
 	state.Register((*staticFile)(nil))
+	state.Register((*hostFile)(nil))
 }
