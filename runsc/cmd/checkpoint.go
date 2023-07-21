@@ -144,7 +144,7 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...any) su
 	}
 	defer cont.Destroy()
 
-	if err := cont.Restore(spec, conf, fullImagePath); err != nil {
+	if err := cont.Restore(conf, fullImagePath); err != nil {
 		util.Fatalf("starting container: %v", err)
 	}
 
