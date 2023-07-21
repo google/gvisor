@@ -21,10 +21,8 @@
 package checkconst
 
 import (
-	"bytes"
 	"fmt"
 	"go/ast"
-	"go/format"
 	"go/token"
 	"go/types"
 	"io/ioutil"
@@ -38,8 +36,8 @@ import (
 var (
 	checkconstMagic  = "\\+check(const|align|offset|size)"
 	checkconstRegexp = regexp.MustCompile(checkconstMagic)
-	constRegexp      = regexp.MustCompile("//\\s+" + checkconstMagic + "\\s+([A-Za-z0-9_\\.]+)\\s+([A-Za-z0-9_\\.]+)")
-	defineRegexp     = regexp.MustCompile("#define\\s+[A-Za-z0-9_]+\\s+([A-Za-z0-9_]+\\s*\\+\\s*)*([x0-9]+)\\s+//\\s+" + checkconstMagic + "\\s+([A-Za-z0-9_\\.]+)\\s+([A-Za-z0-9_\\.]+)")
+	constRegexp      = regexp.MustCompile("//\\s+" + checkconstMagic + "\\s+([A-Za-z0-9_\\./]+)\\s+([A-Za-z0-9_\\.]+)")
+	defineRegexp     = regexp.MustCompile("#define\\s+[A-Za-z0-9_]+\\s+([A-Za-z0-9_]+\\s*\\+\\s*)*([x0-9]+)\\s+//\\s+" + checkconstMagic + "\\s+([A-Za-z0-9_\\./]+)\\s+([A-Za-z0-9_\\.]+)")
 )
 
 // Analyzer defines the entrypoint.
@@ -83,7 +81,7 @@ func (c *Constants) walkObject(pass *analysis.Pass, parents []string, obj types.
 		// type parameter. If it is not an alias, then it must be
 		// package-local.
 		typ := x.Type()
-		if x.IsAlias() || typ == nil || typ.Underlying() == nil {
+		if typ == nil || typ.Underlying() == nil {
 			break
 		}
 		if _, ok := typ.(*types.TypeParam); ok {
@@ -151,19 +149,57 @@ func findPackage(pkg *types.Package, pkgName string) (*types.Package, error) {
 	if pkgName == "." || pkgName == "" {
 		return pkg, nil
 	}
+
 	// Attempt to resolve with the full path.
 	for _, importedPkg := range pkg.Imports() {
 		if importedPkg.Path() == pkgName {
 			return importedPkg, nil
 		}
 	}
+
 	// Attempt to resolve using the short name.
 	for _, importedPkg := range pkg.Imports() {
 		if importedPkg.Name() == pkgName {
 			return importedPkg, nil
 		}
 	}
-	return nil, fmt.Errorf("unable to locate package %q", pkgName)
+
+	// Attempt to resolve with the full path from transitive dependencies.
+	//
+	// This is needed for referencing internal/ packages which we cannot
+	// directly import, but can be reached indirectly (e.g., internal/abi
+	// is reachable from runtime).
+	//
+	// N.B. nogo/check.importer only loads facts on direct import, so
+	// ImportPackageFact may fail without an explicit import. See hack in
+	// nogo/check.Package.
+	visited := map[*types.Package]struct{}{}
+	var visit func(pkg *types.Package) *types.Package
+	visit = func(pkg *types.Package) *types.Package {
+		if _, ok := visited[pkg]; ok {
+			return nil
+		}
+		visited[pkg] = struct{}{}
+
+		if pkg.Path() == pkgName {
+			return pkg
+		}
+
+		for _, importedPkg := range pkg.Imports() {
+			if found := visit(importedPkg); found != nil {
+				return found
+			}
+		}
+
+		return nil
+	}
+	for _, importedPkg := range pkg.Imports() {
+		if found := visit(importedPkg); found != nil {
+			return found, nil
+		}
+	}
+
+	return nil, fmt.Errorf("unable to locate package %q (saw %v)", pkgName, visited)
 }
 
 // matchRegexp performs a regexp match with a sanity check.
@@ -320,14 +356,11 @@ func checkConsts(pass *analysis.Pass) error {
 					continue // Nothing was set.
 				}
 				// Format the expression.
-				var buf bytes.Buffer
-				for _, value := range vs.Values {
-					if err := format.Node(&buf, pass.Fset, value); err != nil {
-						pass.Reportf(value.Pos(), "unable to format expression: %v", err)
-						continue
-					}
-					if s := string(buf.Bytes()); s != expectedValue {
-						pass.Reportf(value.Pos(), "got value %q, wanted %q", s, expectedValue)
+				for _, valueExpr := range vs.Values {
+					val := pass.TypesInfo.Types[valueExpr].Value
+					s := fmt.Sprint(val)
+					if s != expectedValue {
+						pass.Reportf(valueExpr.Pos(), "got value %q, wanted %q", s, expectedValue)
 						continue
 					}
 				}

@@ -58,6 +58,19 @@ var (
 	releaseTagsErr error
 )
 
+// Hack! factFacts only provides facts loaded from directly imported packages
+// for efficiency (see importer.cache). In general, if you need a fact from a
+// package that isn't otherwise imported, the expectation is that you will add
+// a dummy import/use of the desired package to ensure it is a dependency.
+//
+// Unfortunately, some packages need facts from internal packages. Since
+// internal packages cannot be imported we explicitly import in this tool to
+// ensure the facts are available to ImportPackageFact.
+var internalPackages = []string{
+	// Required by pkg/sync for internal/abi.MapType.
+	"internal/abi",
+}
+
 // shouldInclude indicates whether the file should be included.
 func shouldInclude(path string) (bool, error) {
 	tagsOnce.Do(func() {
@@ -635,6 +648,14 @@ func Package(path string, srcs []string) (FindingSet, facts.Serializer, error) {
 		cache:   make(map[string]*importerEntry),
 		imports: make(map[string]*types.Package),
 	}
+
+	// See comment on internalPackages.
+	for _, pkg := range internalPackages {
+		if _, err := i.Import(pkg); err != nil {
+			return nil, nil, fmt.Errorf("error importing %s: %w", pkg, err)
+		}
+	}
+
 	_, findings, facts, err := i.checkPackage(path, srcs)
 	if err != nil {
 		return nil, nil, err
