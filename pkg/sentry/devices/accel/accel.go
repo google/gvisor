@@ -33,6 +33,8 @@ type accelFD struct {
 	vfs.FileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.NoLockFD
+
+	hostFD int32
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
