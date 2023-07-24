@@ -22,22 +22,42 @@ import (
 	"testing"
 )
 
+// IOEngine is a I/O engine name passed to `fio`.
+type IOEngine string
+
+// Names of FIO I/O engines.
+const (
+	EngineSync   = IOEngine("sync")
+	EngineLibAIO = IOEngine("libaio")
+)
+
 // Fio makes 'fio' commands and parses their output.
 type Fio struct {
-	Test      string // test to run: read, write, randread, randwrite.
-	Size      int    // total size to be read/written in megabytes.
-	BlockSize int    // block size to be read/written in kilobytes.
-	IODepth   int    // I/O depth for reads/writes.
-	Direct    bool   // Whether to use direct I/O (O_DIRECT) or not.
+	Test        string   // test to run: read, write, randread, randwrite.
+	IOEngine    IOEngine // ioengine to use: sync or libaio.
+	SizeMB      int      // total size to be read/written in megabytes.
+	BlockSizeKB int      // block size to be read/written in kilobytes.
+	IODepth     int      // I/O depth for reads/writes when using libaio.
+	Jobs        int      // Number of jobs running in concurrent threads.
+	Direct      bool     // Whether to use direct I/O (O_DIRECT) or not.
 }
 
 // MakeCmd makes a 'fio' command.
 func (f *Fio) MakeCmd(filename string) []string {
-	cmd := []string{"fio", "--output-format=json", "--ioengine=sync"}
+	cmd := []string{"fio", "--output-format=json"}
 	cmd = append(cmd, fmt.Sprintf("--name=%s", f.Test))
-	cmd = append(cmd, fmt.Sprintf("--size=%dM", f.Size))
-	cmd = append(cmd, fmt.Sprintf("--blocksize=%dK", f.BlockSize))
+	cmd = append(cmd, fmt.Sprintf("--ioengine=%s", string(f.IOEngine)))
+	if f.Jobs == 0 {
+		f.Jobs = 1
+	}
+	cmd = append(cmd, fmt.Sprintf("--numjobs=%d", f.Jobs))
+	cmd = append(cmd, fmt.Sprintf("--max-jobs=%d", f.Jobs))
+	cmd = append(cmd, fmt.Sprintf("--size=%dM", f.SizeMB))
+	cmd = append(cmd, fmt.Sprintf("--blocksize=%dK", f.BlockSizeKB))
 	cmd = append(cmd, fmt.Sprintf("--filename=%s", filename))
+	if f.IODepth != 1 && f.IOEngine != EngineLibAIO {
+		panic(fmt.Sprintf("iodepth=%d does not make sense with ioengine=%q", f.IODepth, f.IOEngine))
+	}
 	cmd = append(cmd, fmt.Sprintf("--iodepth=%d", f.IODepth))
 	if f.Direct {
 		cmd = append(cmd, "--direct=1")
@@ -55,6 +75,42 @@ func (f *Fio) MakeCmd(filename string) []string {
 		cmd = append(cmd, "--fallocate=none")
 	}
 	return cmd
+}
+
+// Parameters returns the test parameters and the overall test name derived
+// from them.
+func (f *Fio) Parameters(b *testing.B, additional ...Parameter) ([]Parameter, string) {
+	b.Helper()
+	if f.Jobs == 0 {
+		f.Jobs = 1
+	}
+	operation := Parameter{
+		Name:  "operation",
+		Value: f.Test,
+	}
+	ioEngine := Parameter{
+		Name:  "ioEngine",
+		Value: string(f.IOEngine),
+	}
+	jobs := Parameter{
+		Name:  "jobs",
+		Value: strconv.Itoa(f.Jobs),
+	}
+	blockSize := Parameter{
+		Name:  "blockSize",
+		Value: fmt.Sprintf("%dK", f.BlockSizeKB),
+	}
+	directIO := Parameter{
+		Name:  "directIO",
+		Value: strconv.FormatBool(f.Direct),
+	}
+	parameters := []Parameter{operation, ioEngine, jobs, blockSize, directIO}
+	parameters = append(parameters, additional...)
+	name, err := ParametersToName(parameters...)
+	if err != nil {
+		b.Fatalf("Failed to create parameter list: %v", err)
+	}
+	return parameters, name
 }
 
 // Report reports metrics based on output from an 'fio' command.
