@@ -288,13 +288,13 @@ func (*runExitMain) execute(t *Task) taskRunState {
 	mntns := t.mountNamespace
 	t.mountNamespace = nil
 	ipcns := t.ipcns
-	netns := t.NetworkNamespace()
+	netns := t.netns.Swap(nil)
 	t.mu.Unlock()
 	if mntns != nil {
 		mntns.DecRef(t)
 	}
 	ipcns.DecRef(t)
-	netns.DecRef()
+	netns.DecRef(t)
 
 	// If this is the last task to exit from the thread group, release the
 	// thread group's resources.

@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/nsfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/limits"
@@ -1230,7 +1231,18 @@ func (i *mountsData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 type namespaceSymlink struct {
 	kernfs.StaticSymlink
 
-	task *kernel.Task
+	task   *kernel.Task
+	nsType int
+}
+
+func (fs *filesystem) newNamespaceSymlink(ctx context.Context, task *kernel.Task, ino uint64, nsType int) kernfs.Inode {
+	inode := &namespaceSymlink{task: task, nsType: nsType}
+
+	// Note: credentials are overridden by taskOwnedInode.
+	inode.Init(ctx, task.Credentials(), linux.UNNAMED_MAJOR, fs.devMinor, ino, "")
+
+	taskInode := &taskOwnedInode{Inode: inode, owner: task}
+	return taskInode
 }
 
 func (fs *filesystem) newPIDNamespaceSymlink(ctx context.Context, task *kernel.Task, ino uint64) kernfs.Inode {
@@ -1258,10 +1270,28 @@ func (fs *filesystem) newFakeNamespaceSymlink(ctx context.Context, task *kernel.
 	return taskInode
 }
 
+func (s *namespaceSymlink) getInode(t *kernel.Task) *nsfs.Inode {
+	switch s.nsType {
+	case linux.CLONE_NEWNET:
+		return t.GetNetworkNamespace().GetInode()
+	default:
+		panic("unknown namespace")
+	}
+}
+
 // Readlink implements kernfs.Inode.Readlink.
 func (s *namespaceSymlink) Readlink(ctx context.Context, mnt *vfs.Mount) (string, error) {
 	if err := checkTaskState(s.task); err != nil {
 		return "", err
+	}
+	if s.nsType != 0 {
+		inode := s.getInode(s.task)
+		if inode == nil {
+			return "", linuxerr.ENOENT
+		}
+		target := inode.Name()
+		inode.DecRef(ctx)
+		return target, nil
 	}
 	return s.StaticSymlink.Readlink(ctx, mnt)
 }
@@ -1272,6 +1302,14 @@ func (s *namespaceSymlink) Getlink(ctx context.Context, mnt *vfs.Mount) (vfs.Vir
 		return vfs.VirtualDentry{}, "", err
 	}
 
+	if s.nsType != 0 {
+		inode := s.getInode(s.task)
+		if inode == nil {
+			return vfs.VirtualDentry{}, "", linuxerr.ENOENT
+		}
+		defer inode.DecRef(ctx)
+		return inode.VirtualDentry(), "", nil
+	}
 	// Create a synthetic inode to represent the namespace.
 	fs := mnt.Filesystem().Impl().(*filesystem)
 	nsInode := &namespaceInode{}

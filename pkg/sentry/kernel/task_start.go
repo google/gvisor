@@ -117,7 +117,7 @@ func (ts *TaskSet) NewTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 		cfg.FSContext.DecRef(ctx)
 		cfg.FDTable.DecRef(ctx)
 		cfg.IPCNamespace.DecRef(ctx)
-		cfg.NetworkNamespace.DecRef()
+		cfg.NetworkNamespace.DecRef(ctx)
 		if cfg.MountNamespace != nil {
 			cfg.MountNamespace.DecRef(ctx)
 		}

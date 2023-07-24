@@ -14,11 +14,17 @@
 
 package inet
 
+import (
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/nsfs"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+)
+
 // Namespace represents a network namespace. See network_namespaces(7).
 //
 // +stateify savable
 type Namespace struct {
-	namespaceRefs
+	inode *nsfs.Inode
 
 	// stack is the network stack implementation of this network namespace.
 	stack Stack `state:"nosave"`
@@ -32,38 +38,68 @@ type Namespace struct {
 
 	// isRoot indicates whether this is the root network namespace.
 	isRoot bool
+
+	userNS *auth.UserNamespace
 }
 
 // NewRootNamespace creates the root network namespace, with creator
 // allowing new network namespaces to be created. If creator is nil, no
 // networking will function if the network is namespaced.
-func NewRootNamespace(stack Stack, creator NetworkStackCreator) *Namespace {
+func NewRootNamespace(stack Stack, creator NetworkStackCreator, userNS *auth.UserNamespace) *Namespace {
 	n := &Namespace{
 		stack:   stack,
 		creator: creator,
 		isRoot:  true,
+		userNS:  userNS,
 	}
-	n.InitRefs()
 	return n
+}
+
+// UserNamespace returns the user namespace associated with this namespace.
+func (n *Namespace) UserNamespace() *auth.UserNamespace {
+	return n.userNS
+}
+
+// SetInode sets the nsfs `inode` to the namespace.
+func (n *Namespace) SetInode(inode *nsfs.Inode) {
+	n.inode = inode
+}
+
+// GetInode returns the nsfs inode associated with this namespace.
+func (n *Namespace) GetInode() *nsfs.Inode {
+	return n.inode
 }
 
 // NewNamespace creates a new network namespace from the root.
-func NewNamespace(root *Namespace) *Namespace {
+func NewNamespace(root *Namespace, userNS *auth.UserNamespace) *Namespace {
 	n := &Namespace{
 		creator: root.creator,
+		userNS:  userNS,
 	}
 	n.init()
-	n.InitRefs()
 	return n
 }
 
+// Destroy implements nsfs.Namespace.Destroy.
+func (n *Namespace) Destroy(ctx context.Context) {
+	if s := n.Stack(); s != nil {
+		s.Destroy()
+	}
+}
+
+// Type implements nsfs.Namespace.Type.
+func (n *Namespace) Type() string {
+	return "net"
+}
+
+// IncRef increments the Namespace's refcount.
+func (n *Namespace) IncRef() {
+	n.inode.IncRef()
+}
+
 // DecRef decrements the Namespace's refcount.
-func (n *Namespace) DecRef() {
-	n.namespaceRefs.DecRef(func() {
-		if s := n.Stack(); s != nil {
-			s.Destroy()
-		}
-	})
+func (n *Namespace) DecRef(ctx context.Context) {
+	n.inode.DecRef(ctx)
 }
 
 // Stack returns the network stack of n. Stack may return nil if no network

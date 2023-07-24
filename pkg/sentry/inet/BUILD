@@ -44,6 +44,8 @@ go_library(
         "//pkg/atomicbitops",
         "//pkg/context",
         "//pkg/refs",
+        "//pkg/sentry/fsimpl/nsfs",
+        "//pkg/sentry/kernel/auth",
         "//pkg/tcpip",
         "//pkg/tcpip/stack",
     ],
