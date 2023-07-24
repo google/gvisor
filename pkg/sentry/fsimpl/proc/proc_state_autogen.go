@@ -1371,6 +1371,7 @@ func (s *namespaceSymlink) StateFields() []string {
 	return []string{
 		"StaticSymlink",
 		"task",
+		"nsType",
 	}
 }
 
@@ -1381,6 +1382,7 @@ func (s *namespaceSymlink) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 	stateSinkObject.Save(0, &s.StaticSymlink)
 	stateSinkObject.Save(1, &s.task)
+	stateSinkObject.Save(2, &s.nsType)
 }
 
 func (s *namespaceSymlink) afterLoad() {}
@@ -1389,6 +1391,7 @@ func (s *namespaceSymlink) afterLoad() {}
 func (s *namespaceSymlink) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.StaticSymlink)
 	stateSourceObject.Load(1, &s.task)
+	stateSourceObject.Load(2, &s.nsType)
 }
 
 func (i *namespaceInode) StateTypeName() string {

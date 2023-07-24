@@ -463,6 +463,7 @@ func (k *Kernel) StateFields() []string {
 		"vfs",
 		"hostMount",
 		"pipeMount",
+		"nsfsMount",
 		"shmMount",
 		"socketMount",
 		"sysVShmDevID",
@@ -509,14 +510,15 @@ func (k *Kernel) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(25, &k.vfs)
 	stateSinkObject.Save(26, &k.hostMount)
 	stateSinkObject.Save(27, &k.pipeMount)
-	stateSinkObject.Save(28, &k.shmMount)
-	stateSinkObject.Save(29, &k.socketMount)
-	stateSinkObject.Save(30, &k.sysVShmDevID)
-	stateSinkObject.Save(31, &k.SleepForAddressSpaceActivation)
-	stateSinkObject.Save(32, &k.ptraceExceptions)
-	stateSinkObject.Save(33, &k.YAMAPtraceScope)
-	stateSinkObject.Save(34, &k.cgroupRegistry)
-	stateSinkObject.Save(35, &k.userCountersMap)
+	stateSinkObject.Save(28, &k.nsfsMount)
+	stateSinkObject.Save(29, &k.shmMount)
+	stateSinkObject.Save(30, &k.socketMount)
+	stateSinkObject.Save(31, &k.sysVShmDevID)
+	stateSinkObject.Save(32, &k.SleepForAddressSpaceActivation)
+	stateSinkObject.Save(33, &k.ptraceExceptions)
+	stateSinkObject.Save(34, &k.YAMAPtraceScope)
+	stateSinkObject.Save(35, &k.cgroupRegistry)
+	stateSinkObject.Save(36, &k.userCountersMap)
 }
 
 func (k *Kernel) afterLoad() {}
@@ -550,14 +552,15 @@ func (k *Kernel) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(25, &k.vfs)
 	stateSourceObject.Load(26, &k.hostMount)
 	stateSourceObject.Load(27, &k.pipeMount)
-	stateSourceObject.Load(28, &k.shmMount)
-	stateSourceObject.Load(29, &k.socketMount)
-	stateSourceObject.Load(30, &k.sysVShmDevID)
-	stateSourceObject.Load(31, &k.SleepForAddressSpaceActivation)
-	stateSourceObject.Load(32, &k.ptraceExceptions)
-	stateSourceObject.Load(33, &k.YAMAPtraceScope)
-	stateSourceObject.Load(34, &k.cgroupRegistry)
-	stateSourceObject.Load(35, &k.userCountersMap)
+	stateSourceObject.Load(28, &k.nsfsMount)
+	stateSourceObject.Load(29, &k.shmMount)
+	stateSourceObject.Load(30, &k.socketMount)
+	stateSourceObject.Load(31, &k.sysVShmDevID)
+	stateSourceObject.Load(32, &k.SleepForAddressSpaceActivation)
+	stateSourceObject.Load(33, &k.ptraceExceptions)
+	stateSourceObject.Load(34, &k.YAMAPtraceScope)
+	stateSourceObject.Load(35, &k.cgroupRegistry)
+	stateSourceObject.Load(36, &k.userCountersMap)
 	stateSourceObject.LoadValue(21, new([]tcpip.Endpoint), func(y any) { k.loadDanglingEndpoints(y.([]tcpip.Endpoint)) })
 }
 

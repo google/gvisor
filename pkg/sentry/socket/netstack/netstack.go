@@ -442,7 +442,7 @@ func (s *sock) Release(ctx context.Context) {
 			_ = t.BlockWithDeadline(ch, true, deadline)
 		}
 	}
-	s.namespace.DecRef()
+	s.namespace.DecRef(ctx)
 }
 
 // Epollable implements FileDescriptionImpl.Epollable.

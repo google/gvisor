@@ -47,6 +47,7 @@ import (
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/nsfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/pipefs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sockfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/timerfd"
@@ -274,6 +275,9 @@ type Kernel struct {
 	// syscalls (as opposed to named pipes created by mknod()).
 	pipeMount *vfs.Mount
 
+	// nsfsMount is the Mount used for namespaces.
+	nsfsMount *vfs.Mount
+
 	// shmMount is the Mount used for anonymous files created by the
 	// memfd_create() syscalls. It is analogous to Linux's shm_mnt.
 	shmMount *vfs.Mount
@@ -395,7 +399,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	k.rootAbstractSocketNamespace = args.RootAbstractSocketNamespace
 	k.rootNetworkNamespace = args.RootNetworkNamespace
 	if k.rootNetworkNamespace == nil {
-		k.rootNetworkNamespace = inet.NewRootNamespace(nil, nil)
+		k.rootNetworkNamespace = inet.NewRootNamespace(nil, nil, args.RootUserNamespace)
 	}
 	k.runningTasksCond.L = &k.runningTasksMu
 	k.cpuClockTickerWakeCh = make(chan struct{}, 1)
@@ -438,6 +442,15 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	defer pipeFilesystem.DecRef(ctx)
 	pipeMount := k.vfs.NewDisconnectedMount(pipeFilesystem, nil, &vfs.MountOptions{})
 	k.pipeMount = pipeMount
+
+	nsfsFilesystem, err := nsfs.NewFilesystem(&k.vfs)
+	if err != nil {
+		return fmt.Errorf("failed to create nsfs filesystem: %v", err)
+	}
+	defer nsfsFilesystem.DecRef(ctx)
+	nsfsMount := k.vfs.NewDisconnectedMount(nsfsFilesystem, nil, &vfs.MountOptions{})
+	k.nsfsMount = nsfsMount
+	k.rootNetworkNamespace.SetInode(nsfs.NewInode(ctx, nsfsMount, k.rootNetworkNamespace))
 
 	tmpfsOpts := vfs.GetFilesystemOptions{
 		InternalData: tmpfs.FilesystemOpts{
@@ -1607,6 +1620,11 @@ func (k *Kernel) PipeMount() *vfs.Mount {
 	return k.pipeMount
 }
 
+// NsfsMount returns the nsfs mount.
+func (k *Kernel) NsfsMount() *vfs.Mount {
+	return k.nsfsMount
+}
+
 // ShmMount returns the tmpfs mount.
 func (k *Kernel) ShmMount() *vfs.Mount {
 	return k.shmMount
@@ -1630,12 +1648,13 @@ func (k *Kernel) Release() {
 	ctx := k.SupervisorContext()
 	k.hostMount.DecRef(ctx)
 	k.pipeMount.DecRef(ctx)
+	k.nsfsMount.DecRef(ctx)
 	k.shmMount.DecRef(ctx)
 	k.socketMount.DecRef(ctx)
 	k.vfs.Release(ctx)
 	k.timekeeper.Destroy()
 	k.vdso.Release(ctx)
-	k.RootNetworkNamespace().DecRef()
+	k.RootNetworkNamespace().DecRef(ctx)
 }
 
 // PopulateNewCgroupHierarchy moves all tasks into a newly created cgroup

@@ -383,12 +383,6 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("enabling strace: %w", err)
 	}
 
-	// Create root network namespace/stack.
-	netns, err := newRootNetworkNamespace(args.Conf, tk, k)
-	if err != nil {
-		return nil, fmt.Errorf("creating network: %w", err)
-	}
-
 	// Create capabilities.
 	caps, err := specutils.Capabilities(args.Conf.EnableRaw, args.Spec.Process.Capabilities)
 	if err != nil {
@@ -408,6 +402,12 @@ func New(args Args) (*Loader, error) {
 		extraKGIDs,
 		caps,
 		auth.NewRootUserNamespace())
+
+	// Create root network namespace/stack.
+	netns, err := newRootNetworkNamespace(args.Conf, tk, k, creds.UserNamespace)
+	if err != nil {
+		return nil, fmt.Errorf("creating network: %w", err)
+	}
 
 	if args.NumCPU == 0 {
 		args.NumCPU = runtime.NumCPU()
@@ -1212,7 +1212,7 @@ func (l *Loader) WaitExit() linux.WaitStatus {
 	return l.k.GlobalInit().ExitStatus()
 }
 
-func newRootNetworkNamespace(conf *config.Config, clock tcpip.Clock, uniqueID stack.UniqueID) (*inet.Namespace, error) {
+func newRootNetworkNamespace(conf *config.Config, clock tcpip.Clock, uniqueID stack.UniqueID, userns *auth.UserNamespace) (*inet.Namespace, error) {
 	// Create an empty network stack because the network namespace may be empty at
 	// this point. Netns is configured before Run() is called. Netstack is
 	// configured using a control uRPC message. Host network is configured inside
@@ -1226,7 +1226,7 @@ func newRootNetworkNamespace(conf *config.Config, clock tcpip.Clock, uniqueID st
 			return nil, fmt.Errorf("configuring network=host with raw sockets requires CAP_NET_RAW capability")
 		}
 		// No network namespacing support for hostinet yet, hence creator is nil.
-		return inet.NewRootNamespace(hostinet.NewStack(), nil), nil
+		return inet.NewRootNamespace(hostinet.NewStack(), nil, userns), nil
 
 	case config.NetworkNone, config.NetworkSandbox:
 		s, err := newEmptySandboxNetworkStack(clock, uniqueID, conf.AllowPacketEndpointWrite)
@@ -1238,7 +1238,7 @@ func newRootNetworkNamespace(conf *config.Config, clock tcpip.Clock, uniqueID st
 			uniqueID:                 uniqueID,
 			allowPacketEndpointWrite: conf.AllowPacketEndpointWrite,
 		}
-		return inet.NewRootNamespace(s, creator), nil
+		return inet.NewRootNamespace(s, creator, userns), nil
 
 	default:
 		panic(fmt.Sprintf("invalid network configuration: %v", conf.Network))

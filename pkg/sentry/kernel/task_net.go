@@ -36,3 +36,17 @@ func (t *Task) NetworkContext() inet.Stack {
 func (t *Task) NetworkNamespace() *inet.Namespace {
 	return t.netns.Load()
 }
+
+// GetNetworkNamespace takes a reference on the task network namespace and
+// returns it. It can return nil if the task isn't alive.
+func (t *Task) GetNetworkNamespace() *inet.Namespace {
+	// t.mu is required to be sure that the network namespace will not be
+	// released.
+	t.mu.Lock()
+	netns := t.netns.Load()
+	if netns != nil {
+		netns.IncRef()
+	}
+	t.mu.Unlock()
+	return netns
+}

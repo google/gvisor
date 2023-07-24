@@ -43,9 +43,10 @@ func (n *Namespace) StateTypeName() string {
 
 func (n *Namespace) StateFields() []string {
 	return []string{
-		"namespaceRefs",
+		"inode",
 		"creator",
 		"isRoot",
+		"userNS",
 	}
 }
 
@@ -54,16 +55,18 @@ func (n *Namespace) beforeSave() {}
 // +checklocksignore
 func (n *Namespace) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
-	stateSinkObject.Save(0, &n.namespaceRefs)
+	stateSinkObject.Save(0, &n.inode)
 	stateSinkObject.Save(1, &n.creator)
 	stateSinkObject.Save(2, &n.isRoot)
+	stateSinkObject.Save(3, &n.userNS)
 }
 
 // +checklocksignore
 func (n *Namespace) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &n.namespaceRefs)
+	stateSourceObject.Load(0, &n.inode)
 	stateSourceObject.LoadWait(1, &n.creator)
 	stateSourceObject.Load(2, &n.isRoot)
+	stateSourceObject.Load(3, &n.userNS)
 	stateSourceObject.AfterLoad(n.afterLoad)
 }
 
