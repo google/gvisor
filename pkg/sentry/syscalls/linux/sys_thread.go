@@ -443,6 +443,20 @@ func SetTidAddress(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (u
 	return uintptr(t.ThreadID()), nil, nil
 }
 
+// Setns implements linux syscall setns(2).
+func Setns(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
+	fd := args[0].Int()
+
+	file := t.GetFile(fd)
+	if file == nil {
+		return 0, nil, linuxerr.EBADF
+	}
+	defer file.DecRef(t)
+
+	flags := args[1].Int()
+	return 0, nil, t.Setns(file, flags)
+}
+
 // Unshare implements linux syscall unshare(2).
 func Unshare(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	flags := args[0].Int()

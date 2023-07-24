@@ -360,7 +360,7 @@ var AMD64 = &kernel.SyscallTable{
 		305: syscalls.CapError("clock_adjtime", linux.CAP_SYS_TIME, "", nil),
 		306: syscalls.Supported("syncfs", Syncfs),
 		307: syscalls.Supported("sendmmsg", SendMMsg),
-		308: syscalls.ErrorWithEvent("setns", linuxerr.EOPNOTSUPP, "Needs filesystem support", []string{"gvisor.dev/issue/140"}), // TODO(b/29354995)
+		308: syscalls.Supported("setns", Setns),
 		309: syscalls.Supported("getcpu", Getcpu),
 		310: syscalls.ErrorWithEvent("process_vm_readv", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/158"}),  // TODO(b/260724654)
 		311: syscalls.ErrorWithEvent("process_vm_writev", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/158"}), // TODO(b/260724654)
@@ -683,7 +683,7 @@ var ARM64 = &kernel.SyscallTable{
 		265: syscalls.Error("open_by_handle_at", linuxerr.EOPNOTSUPP, "Not supported by gVisor filesystems", nil),
 		266: syscalls.CapError("clock_adjtime", linux.CAP_SYS_TIME, "", nil),
 		267: syscalls.Supported("syncfs", Syncfs),
-		268: syscalls.ErrorWithEvent("setns", linuxerr.EOPNOTSUPP, "Needs filesystem support", []string{"gvisor.dev/issue/140"}), // TODO(b/29354995)
+		268: syscalls.Supported("setns", Setns),
 		269: syscalls.Supported("sendmmsg", SendMMsg),
 		270: syscalls.ErrorWithEvent("process_vm_readv", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/158"}),  // TODO(b/260724654)
 		271: syscalls.ErrorWithEvent("process_vm_writev", linuxerr.ENOSYS, "", []string{"gvisor.dev/issue/158"}), // TODO(b/260724654)

@@ -21,9 +21,12 @@ import (
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/nsfs"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
@@ -117,14 +120,16 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 	})
 	defer cu.Clean()
 
-	netns := t.NetworkNamespace()
+	netns := t.netns.Load()
 	if args.Flags&linux.CLONE_NEWNET != 0 {
-		netns = inet.NewNamespace(netns)
+		netns = inet.NewNamespace(netns, userns)
+		inode := nsfs.NewInode(t, t.k.nsfsMount, netns)
+		netns.SetInode(inode)
 	} else {
 		netns.IncRef()
 	}
 	cu.Add(func() {
-		netns.DecRef()
+		netns.DecRef(t)
 	})
 
 	// TODO(b/63601033): Implement CLONE_NEWNS.
@@ -405,6 +410,38 @@ func (r *runSyscallAfterVforkStop) execute(t *Task) taskRunState {
 	return (*runSyscallExit)(nil)
 }
 
+// Setns reassociates thread with the specified namespace.
+func (t *Task) Setns(fd *vfs.FileDescription, flags int32) error {
+	d, ok := fd.Dentry().Impl().(*kernfs.Dentry)
+	if !ok {
+		return linuxerr.EINVAL
+	}
+	i, ok := d.Inode().(*nsfs.Inode)
+	if !ok {
+		return linuxerr.EINVAL
+	}
+
+	switch ns := i.Namespace().(type) {
+	case *inet.Namespace:
+		if flags != 0 && flags != linux.CLONE_NEWNET {
+			return linuxerr.EINVAL
+		}
+		if !t.HasCapabilityIn(linux.CAP_SYS_ADMIN, ns.UserNamespace()) ||
+			!t.Credentials().HasCapability(linux.CAP_SYS_ADMIN) {
+			return linuxerr.EPERM
+		}
+		oldNS := t.NetworkNamespace()
+		ns.IncRef()
+		t.mu.Lock()
+		t.netns.Store(ns)
+		t.mu.Unlock()
+		oldNS.DecRef(t)
+		return nil
+	default:
+		return linuxerr.EINVAL
+	}
+}
+
 // Unshare changes the set of resources t shares with other tasks, as specified
 // by flags.
 //
@@ -456,7 +493,7 @@ func (t *Task) Unshare(flags int32) error {
 		if err != nil {
 			return err
 		}
-		// Need to reload creds, becaue t.SetUserNamespace() changed task credentials.
+		// Need to reload creds, because t.SetUserNamespace() changed task credentials.
 		creds = t.Credentials()
 	}
 	haveCapSysAdmin := t.HasCapability(linux.CAP_SYS_ADMIN)
@@ -466,13 +503,18 @@ func (t *Task) Unshare(flags int32) error {
 		}
 		t.childPIDNamespace = t.tg.pidns.NewChild(t.UserNamespace())
 	}
-	var oldNETNS *inet.Namespace
 	if flags&linux.CLONE_NEWNET != 0 {
 		if !haveCapSysAdmin {
 			return linuxerr.EPERM
 		}
-		oldNETNS = t.netns.Load()
-		t.netns.Store(inet.NewNamespace(t.netns.Load()))
+		netns := t.NetworkNamespace()
+		netns = inet.NewNamespace(netns, t.UserNamespace())
+		netnsInode := nsfs.NewInode(t, t.k.nsfsMount, netns)
+		netns.SetInode(netnsInode)
+		t.mu.Lock()
+		netns = t.netns.Swap(netns)
+		t.mu.Unlock()
+		netns.DecRef(t)
 	}
 	t.mu.Lock()
 	// Can't defer unlock: DecRefs must occur without holding t.mu.
@@ -510,9 +552,6 @@ func (t *Task) Unshare(flags int32) error {
 	t.mu.Unlock()
 	if oldIPCNS != nil {
 		oldIPCNS.DecRef(t)
-	}
-	if oldNETNS != nil {
-		oldNETNS.DecRef()
 	}
 	if oldFDTable != nil {
 		oldFDTable.DecRef(t)

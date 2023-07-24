@@ -76,7 +76,7 @@ func Mount(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 			return 0, nil, err
 		}
 		var sourceTpop taskPathOperation
-		sourceTpop, err = getTaskPathOperation(t, linux.AT_FDCWD, sourcePath, disallowEmptyPath, nofollowFinalSymlink)
+		sourceTpop, err = getTaskPathOperation(t, linux.AT_FDCWD, sourcePath, disallowEmptyPath, followFinalSymlink)
 		if err != nil {
 			return 0, nil, err
 		}

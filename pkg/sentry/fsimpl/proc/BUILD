@@ -91,6 +91,7 @@ go_library(
         "//pkg/safemem",
         "//pkg/sentry/fsimpl/kernfs",
         "//pkg/sentry/fsimpl/lock",
+        "//pkg/sentry/fsimpl/nsfs",
         "//pkg/sentry/inet",
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",

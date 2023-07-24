@@ -506,7 +506,9 @@ type Task struct {
 	numaPolicy   linux.NumaPolicy
 	numaNodeMask uint64
 
-	// netns is the task's network namespace. netns is never nil.
+	// netns is the task's network namespace. It has to be changed under mu
+	// so that GetNetworkNamespace can take a reference before it is
+	// released.
 	netns inet.NamespaceAtomicPtr
 
 	// If rseqPreempted is true, before the next call to p.Switch(),
