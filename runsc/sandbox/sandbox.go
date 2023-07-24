@@ -577,12 +577,9 @@ func (s *Sandbox) Execute(conf *config.Config, args *control.ExecArgs) (int32, e
 func (s *Sandbox) Event(cid string) (*boot.EventOut, error) {
 	log.Debugf("Getting events for container %q in sandbox %q", cid, s.ID)
 	var e boot.EventOut
-	// TODO(b/129292330): Pass in the container id (cid) here. The sandbox
-	// should return events only for that container.
-	if err := s.call(boot.ContMgrEvent, nil, &e); err != nil {
+	if err := s.call(boot.ContMgrEvent, &cid, &e); err != nil {
 		return nil, fmt.Errorf("retrieving event data from sandbox: %w", err)
 	}
-	e.Event.ID = cid
 	return &e, nil
 }
 

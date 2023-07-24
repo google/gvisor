@@ -1009,7 +1009,7 @@ func (l *Loader) startGoferMonitor(cid string, rootfsGoferFD int32) {
 			},
 		}
 		_, _, err := specutils.RetryEintr(func() (uintptr, uintptr, error) {
-			// Use ppoll instead of poll because it's already whilelisted in seccomp.
+			// Use ppoll instead of poll because it's already allowed in seccomp.
 			n, err := unix.Ppoll(events, nil, nil)
 			return uintptr(n), 0, err
 		})
@@ -1607,4 +1607,19 @@ func (l *Loader) importFD(ctx context.Context, f *os.File) (*vfs.FileDescription
 	}
 	hostFD.Release()
 	return fd, nil
+}
+
+func (l *Loader) containerCount() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	containers := 0
+	for id := range l.processes {
+		if id.pid == 0 {
+			// pid==0 represents the init process of a container. There is
+			// only one of such process per container.
+			containers++
+		}
+	}
+	return containers
 }
