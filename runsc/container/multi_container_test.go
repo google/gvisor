@@ -2106,7 +2106,7 @@ func TestMultiContainerEvent(t *testing.T) {
 	}
 
 	// Check events for running containers.
-	for _, cont := range containers[:2] {
+	for i, cont := range containers[:2] {
 		ret, err := cont.Event()
 		if err != nil {
 			t.Errorf("Container.Event(%q): %v", cont.ID, err)
@@ -2121,6 +2121,17 @@ func TestMultiContainerEvent(t *testing.T) {
 		// One process per remaining container.
 		if got, want := evt.Data.Pids.Current, uint64(2); got != want {
 			t.Errorf("Wrong number of PIDs, cid: %q, want: %d, got: %d", cont.ID, want, got)
+		}
+
+		switch i {
+		case 0:
+			if evt.Data.Memory.Usage.Usage != uint64(0) {
+				t.Errorf("root container should report 0 memory usage, got: %v", evt.Data.Memory.Usage.Usage)
+			}
+		case 1:
+			if evt.Data.Memory.Usage.Usage == uint64(0) {
+				t.Error("sub-container should report non-zero memory usage")
+			}
 		}
 
 		// The exited container should always have a usage of zero.
