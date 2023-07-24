@@ -18,7 +18,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -34,92 +33,116 @@ import (
 func BenchmarkFio(b *testing.B) {
 	testCases := []tools.Fio{
 		{
-			Test:      "write",
-			BlockSize: 4,
-			IODepth:   4,
+			Test:        "write",
+			IOEngine:    tools.EngineSync,
+			BlockSizeKB: 4,
+			IODepth:     1,
 		},
 		{
-			Test:      "write",
-			BlockSize: 64,
-			IODepth:   4,
+			Test:        "write",
+			IOEngine:    tools.EngineSync,
+			BlockSizeKB: 64,
+			IODepth:     1,
 		},
 		{
-			Test:      "write",
-			BlockSize: 1024,
-			IODepth:   4,
+			Test:        "write",
+			IOEngine:    tools.EngineLibAIO,
+			BlockSizeKB: 1024,
+			IODepth:     4,
 		},
 		{
-			Test:      "read",
-			BlockSize: 4,
-			IODepth:   4,
+			Test:        "read",
+			IOEngine:    tools.EngineLibAIO,
+			BlockSizeKB: 4,
+			IODepth:     4,
 		},
 		{
-			Test:      "read",
-			BlockSize: 64,
-			IODepth:   4,
+			Test:        "read",
+			IOEngine:    tools.EngineLibAIO,
+			BlockSizeKB: 64,
+			IODepth:     4,
 		},
 		{
-			Test:      "read",
-			BlockSize: 1024,
-			IODepth:   4,
+			Test:        "read",
+			IOEngine:    tools.EngineLibAIO,
+			BlockSizeKB: 1024,
+			IODepth:     4,
 		},
 		{
-			Test:      "randwrite",
-			BlockSize: 4,
-			IODepth:   4,
+			Test:        "randwrite",
+			IOEngine:    tools.EngineLibAIO,
+			BlockSizeKB: 4,
+			IODepth:     4,
 		},
 		{
-			Test:      "randread",
-			BlockSize: 4,
-			IODepth:   4,
+			Test:        "randread",
+			IOEngine:    tools.EngineLibAIO,
+			BlockSizeKB: 4,
+			IODepth:     4,
 		},
 		{
-			Test:      "write",
-			BlockSize: 4,
-			IODepth:   4,
-			Direct:    true,
+			Test:        "write",
+			IOEngine:    tools.EngineLibAIO,
+			Jobs:        8,
+			BlockSizeKB: 4,
+			IODepth:     4,
+			Direct:      true,
 		},
 		{
-			Test:      "write",
-			BlockSize: 64,
-			IODepth:   4,
-			Direct:    true,
+			Test:        "write",
+			IOEngine:    tools.EngineLibAIO,
+			Jobs:        8,
+			BlockSizeKB: 64,
+			IODepth:     4,
+			Direct:      true,
 		},
 		{
-			Test:      "write",
-			BlockSize: 1024,
-			IODepth:   4,
-			Direct:    true,
+			Test:        "write",
+			IOEngine:    tools.EngineLibAIO,
+			Jobs:        8,
+			BlockSizeKB: 1024,
+			IODepth:     4,
+			Direct:      true,
 		},
 		{
-			Test:      "read",
-			BlockSize: 4,
-			IODepth:   4,
-			Direct:    true,
+			Test:        "read",
+			IOEngine:    tools.EngineLibAIO,
+			Jobs:        8,
+			BlockSizeKB: 4,
+			IODepth:     4,
+			Direct:      true,
 		},
 		{
-			Test:      "read",
-			BlockSize: 64,
-			IODepth:   4,
-			Direct:    true,
+			Test:        "read",
+			IOEngine:    tools.EngineLibAIO,
+			Jobs:        8,
+			BlockSizeKB: 64,
+			IODepth:     4,
+			Direct:      true,
 		},
 		{
-			Test:      "read",
-			BlockSize: 1024,
-			IODepth:   4,
-			Direct:    true,
+			Test:        "read",
+			IOEngine:    tools.EngineLibAIO,
+			Jobs:        8,
+			BlockSizeKB: 1024,
+			IODepth:     4,
+			Direct:      true,
 		},
 		{
-			Test:      "randwrite",
-			BlockSize: 4,
-			IODepth:   4,
-			Direct:    true,
+			Test:        "randwrite",
+			IOEngine:    tools.EngineLibAIO,
+			Jobs:        8,
+			BlockSizeKB: 4,
+			IODepth:     4,
+			Direct:      true,
 		},
 		{
-			Test:      "randread",
-			BlockSize: 4,
-			IODepth:   4,
-			Direct:    true,
+			Test:        "randread",
+			IOEngine:    tools.EngineLibAIO,
+			Jobs:        8,
+			BlockSizeKB: 4,
+			IODepth:     4,
+			Direct:      true,
 		},
 	}
 
@@ -131,29 +154,14 @@ func BenchmarkFio(b *testing.B) {
 
 	for _, fsType := range []harness.FileSystemType{harness.BindFS, harness.TmpFS, harness.RootFS} {
 		for _, tc := range testCases {
-			operation := tools.Parameter{
-				Name:  "operation",
-				Value: tc.Test,
-			}
-			blockSize := tools.Parameter{
-				Name:  "blockSize",
-				Value: fmt.Sprintf("%dK", tc.BlockSize),
-			}
-			directIO := tools.Parameter{
-				Name:  "directIO",
-				Value: strconv.FormatBool(tc.Direct),
-			}
 			filesystem := tools.Parameter{
 				Name:  "filesystem",
 				Value: string(fsType),
 			}
-			name, err := tools.ParametersToName(operation, blockSize, directIO, filesystem)
-			if err != nil {
-				b.Fatalf("Failed to parser paramters: %v", err)
-			}
+			_, name := tc.Parameters(b, filesystem)
 			b.Run(name, func(b *testing.B) {
 				b.StopTimer()
-				tc.Size = b.N
+				tc.SizeMB = b.N
 
 				ctx := context.Background()
 				container := machine.GetContainer(ctx, b)
@@ -200,7 +208,7 @@ func BenchmarkFio(b *testing.B) {
 
 				// For reads, we need a file to read so make one inside the container.
 				if strings.Contains(tc.Test, "read") {
-					fallocateCmd := fmt.Sprintf("fallocate -l %dM %s", tc.Size, outfile)
+					fallocateCmd := fmt.Sprintf("fallocate -l %dM %s", tc.SizeMB, outfile)
 					if out, err := container.Exec(ctx, dockerutil.ExecOpts{},
 						strings.Split(fallocateCmd, " ")...); err != nil {
 						b.Fatalf("failed to create readable file on mount: %v, %s", err, out)
