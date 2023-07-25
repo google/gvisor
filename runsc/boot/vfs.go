@@ -504,7 +504,7 @@ func (c *containerMounter) createMountNamespace(ctx context.Context, conf *confi
 		fsName = overlay.Name
 	}
 
-	mns, err := c.k.VFS().NewMountNamespace(ctx, creds, "", fsName, opts)
+	mns, err := c.k.VFS().NewMountNamespace(ctx, creds, "", fsName, opts, c.k)
 	if err != nil {
 		return nil, fmt.Errorf("setting up mount namespace: %w", err)
 	}

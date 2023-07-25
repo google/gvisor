@@ -93,7 +93,7 @@ go_template_instance(
     name = "mount_namespace_refs",
     out = "mount_namespace_refs.go",
     package = "vfs",
-    prefix = "MountNamespace",
+    prefix = "namespace",
     template = "//pkg/refs:refs_template",
     types = {
         "T": "MountNamespace",
@@ -145,6 +145,7 @@ go_library(
         "mount.go",
         "mount_namespace_refs.go",
         "mount_unsafe.go",
+        "namespace.go",
         "opath.go",
         "options.go",
         "pathname.go",

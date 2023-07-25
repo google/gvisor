@@ -38,7 +38,7 @@ func newTestSystem(t *testing.T) *testutil.System {
 		AllowUserMount: true,
 	})
 
-	mns, err := k.VFS().NewMountNamespace(ctx, creds, "", sys.Name, &vfs.MountOptions{})
+	mns, err := k.VFS().NewMountNamespace(ctx, creds, "", sys.Name, &vfs.MountOptions{}, nil)
 	if err != nil {
 		t.Fatalf("Failed to create new mount namespace: %v", err)
 	}

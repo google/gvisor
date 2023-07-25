@@ -86,7 +86,7 @@ type Inode struct {
 	inodeRefs
 
 	locks     vfs.FileLocks
-	namespace Namespace
+	namespace vfs.Namespace
 
 	mnt *vfs.Mount
 }
@@ -101,14 +101,8 @@ func (i *Inode) Keep() bool {
 	return false
 }
 
-// Namespace is the namespace interface.
-type Namespace interface {
-	Type() string
-	Destroy(ctx context.Context)
-}
-
 // NewInode creates a new nsfs inode.
-func NewInode(ctx context.Context, mnt *vfs.Mount, namespace Namespace) *Inode {
+func NewInode(ctx context.Context, mnt *vfs.Mount, namespace vfs.Namespace) *Inode {
 	fs := mnt.Filesystem().Impl().(*filesystem)
 	creds := auth.CredentialsFromContext(ctx)
 	i := &Inode{
@@ -123,7 +117,7 @@ func NewInode(ctx context.Context, mnt *vfs.Mount, namespace Namespace) *Inode {
 const nsfsMode = linux.S_IFREG | linux.ModeUserRead | linux.ModeGroupRead | linux.ModeOtherRead
 
 // Namespace returns the namespace associated with the inode.
-func (i *Inode) Namespace() Namespace {
+func (i *Inode) Namespace() vfs.Namespace {
 	return i.namespace
 }
 
