@@ -1,4 +1,4 @@
-FROM nginx:1.15.10
+FROM nginx:1.25.1
 
 # Generate a bunch of relevant files.
 RUN mkdir -p /local && \
@@ -8,5 +8,5 @@ RUN mkdir -p /local && \
 
 RUN touch /local/index.html
 
-COPY ./nginx.conf /etc/nginx/nginx.conf
+COPY ./nginx.conf       /etc/nginx/nginx.conf
 COPY ./nginx_gofer.conf /etc/nginx/nginx_gofer.conf
