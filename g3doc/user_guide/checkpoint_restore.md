@@ -31,9 +31,9 @@ continue to run after the checkpoint has been made. (By default, containers stop
 their processes after committing a checkpoint.)
 
 > Note: All top-level runsc flags needed when calling run must be provided to
-> checkpoint if --leave-running is used.
+> checkpoint if `--leave-running` is used.
 
-> Note: --leave-running functions by causing an immediate restore so the
+> Note: `--leave-running` functions by causing an immediate restore so the
 > container, although will maintain its given container id, may have a different
 > process id.
 
@@ -50,6 +50,9 @@ runsc create <container id>
 
 runsc restore --image-path=<path> <container id>
 ```
+
+> Note: All top-level runsc flags needed when calling run must be provided to
+> `restore`.
 
 ## How to use checkpoint/restore in Docker:
 
