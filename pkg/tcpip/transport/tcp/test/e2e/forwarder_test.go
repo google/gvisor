@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checker"
@@ -175,15 +176,22 @@ func TestForwarderDroppedStats(t *testing.T) {
 	c := context.New(t, mtu)
 	defer c.Cleanup()
 
-	s := c.Stack()
 	const maxInFlight = 2
+	iters := atomicbitops.FromInt64(maxInFlight)
+	s := c.Stack()
+	checkedStats := make(chan struct{})
+	done := make(chan struct{})
 	f := tcp.NewForwarder(s, 65536, maxInFlight, func(r *tcp.ForwarderRequest) {
+		<-checkedStats
 		// Complete all requests without doing anything
 		r.Complete(false)
+		if iter := iters.Add(-1); iter == 0 {
+			close(done)
+		}
 	})
 	s.SetTransportProtocolHandler(tcp.ProtocolNumber, f.HandlePacket)
 
-	for i := 0; i < maxInFlight*10; i++ {
+	for i := 0; i < maxInFlight+1; i++ {
 		iss := seqnum.Value(context.TestInitialSequenceNumber + i)
 		c.SendPacket(nil, &context.Headers{
 			SrcPort: uint16(context.TestPort + i),
@@ -194,10 +202,12 @@ func TestForwarderDroppedStats(t *testing.T) {
 		})
 	}
 
-	// Verify that we got some ignored packets
-	if curr := s.Stats().TCP.ForwardMaxInFlightDrop.Value(); curr == 0 {
-		t.Errorf("Expected at least one dropped connection")
+	// Verify that we got one ignored packet.
+	if curr := s.Stats().TCP.ForwardMaxInFlightDrop.Value(); curr != 1 {
+		t.Errorf("Expected one dropped connection, but got %d", curr)
 	}
+	close(checkedStats)
+	<-done
 }
 
 func TestMain(m *testing.M) {

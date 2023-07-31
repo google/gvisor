@@ -76,6 +76,7 @@ go_test(
     srcs = ["forwarder_test.go"],
     deps = [
         ":e2e",
+        "//pkg/atomicbitops",
         "//pkg/refs",
         "//pkg/tcpip",
         "//pkg/tcpip/checker",
