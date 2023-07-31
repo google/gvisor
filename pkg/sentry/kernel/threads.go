@@ -302,6 +302,20 @@ func (ns *PIDNamespace) NumTasks() int {
 	return len(ns.tids)
 }
 
+// NumTasksPerContainer returns the number of tasks in ns that belongs to given container.
+func (ns *PIDNamespace) NumTasksPerContainer(cid string) int {
+	ns.owner.mu.RLock()
+	defer ns.owner.mu.RUnlock()
+
+	tasks := 0
+	for t := range ns.tids {
+		if t.ContainerID() == cid {
+			tasks++
+		}
+	}
+	return tasks
+}
+
 // ThreadGroups returns a snapshot of the thread groups in ns.
 func (ns *PIDNamespace) ThreadGroups() []*ThreadGroup {
 	return ns.ThreadGroupsAppend(nil)
