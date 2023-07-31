@@ -233,7 +233,7 @@ type Args struct {
 	// OverlayMediums contains information about how the gofer mounts have been
 	// overlaid. The first entry is for rootfs and the following entries are for
 	// bind mounts in Spec.Mounts (in the same order).
-	OverlayMediums []boot.OverlayMedium
+	OverlayMediums boot.OverlayMediumFlags
 
 	// MountHints provides extra information about containers mounts that apply
 	// to the entire pod.
@@ -737,7 +737,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	}
 
 	// Pass overlay mediums.
-	cmd.Args = append(cmd.Args, "--overlay-mediums="+boot.ToOverlayMediumFlags(args.OverlayMediums))
+	cmd.Args = append(cmd.Args, "--overlay-mediums="+args.OverlayMediums.String())
 
 	// Create a socket for the control server and donate it to the sandbox.
 	controlAddress, sockFD, err := createControlSocket(conf.RootDir, s.ID)

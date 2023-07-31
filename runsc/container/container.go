@@ -140,7 +140,7 @@ type Container struct {
 	// OverlayMediums contains information about how the gofer mounts have been
 	// overlaid. The first entry is for rootfs and the following entries are for
 	// bind mounts in Spec.Mounts (in the same order).
-	OverlayMediums []boot.OverlayMedium `json:"overlayMediums"`
+	OverlayMediums boot.OverlayMediumFlags `json:"overlayMediums"`
 
 	//
 	// Fields below this line are not saved in the state file and will not
@@ -1117,7 +1117,7 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 	nextFD := donations.Transfer(cmd, 3)
 
 	cmd.Args = append(cmd.Args, "gofer", "--bundle", bundleDir)
-	cmd.Args = append(cmd.Args, "--overlay-mediums="+boot.ToOverlayMediumFlags(c.OverlayMediums))
+	cmd.Args = append(cmd.Args, "--overlay-mediums="+c.OverlayMediums.String())
 
 	// Open the spec file to donate to the sandbox.
 	specFile, err := specutils.OpenSpec(bundleDir)

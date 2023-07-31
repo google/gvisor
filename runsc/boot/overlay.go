@@ -57,7 +57,11 @@ type OverlayMediumFlags []OverlayMedium
 
 // String implements flag.Value.
 func (o *OverlayMediumFlags) String() string {
-	return fmt.Sprintf("%v", *o)
+	mediumVals := make([]string, 0, len(*o))
+	for _, medium := range *o {
+		mediumVals = append(mediumVals, strconv.Itoa(int(medium)))
+	}
+	return strings.Join(mediumVals, ",")
 }
 
 // Get implements flag.Value.
@@ -71,7 +75,7 @@ func (o *OverlayMediumFlags) GetArray() []OverlayMedium {
 }
 
 // Set implements flag.Value and appends an overlay medium from the command
-// line to the mediums array.
+// line to the mediums array. Set(String()) should be idempotent.
 func (o *OverlayMediumFlags) Set(s string) error {
 	mediums := strings.Split(s, ",")
 	for _, medium := range mediums {
@@ -85,14 +89,4 @@ func (o *OverlayMediumFlags) Set(s string) error {
 		*o = append(*o, OverlayMedium(mediumVal))
 	}
 	return nil
-}
-
-// ToOverlayMediumFlags converts []OverlayMedium to string format which can be
-// unpacked by OverlayMediumFlags.Set().
-func ToOverlayMediumFlags(mediums []OverlayMedium) string {
-	mediumVals := make([]string, 0, len(mediums))
-	for _, medium := range mediums {
-		mediumVals = append(mediumVals, strconv.Itoa(int(medium)))
-	}
-	return strings.Join(mediumVals, ",")
 }

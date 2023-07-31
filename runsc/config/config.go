@@ -462,7 +462,7 @@ func fileAccessTypePtr(v FileAccessType) *FileAccessType {
 	return &v
 }
 
-// Set implements flag.Value.
+// Set implements flag.Value. Set(String()) should be idempotent.
 func (f *FileAccessType) Set(v string) error {
 	switch v {
 	case "shared":
@@ -509,7 +509,7 @@ func networkTypePtr(v NetworkType) *NetworkType {
 	return &v
 }
 
-// Set implements flag.Value.
+// Set implements flag.Value. Set(String()) should be idempotent.
 func (n *NetworkType) Set(v string) error {
 	switch v {
 	case "sandbox":
@@ -558,7 +558,7 @@ func queueingDisciplinePtr(v QueueingDiscipline) *QueueingDiscipline {
 	return &v
 }
 
-// Set implements flag.Value.
+// Set implements flag.Value. Set(String()) should be idempotent.
 func (q *QueueingDiscipline) Set(v string) error {
 	switch v {
 	case "none":
@@ -616,7 +616,7 @@ func hostUDSPtr(v HostUDS) *HostUDS {
 	return &v
 }
 
-// Set implements flag.Value.
+// Set implements flag.Value. Set(String()) should be idempotent.
 func (g *HostUDS) Set(v string) error {
 	switch v {
 	case "", "none":
@@ -640,20 +640,18 @@ func (g *HostUDS) Get() any {
 
 // String implements flag.Value.
 func (g HostUDS) String() string {
-	// Note: the order of operations is important given that HostUDS is a bitmap.
-	if g == HostUDSNone {
+	switch g {
+	case HostUDSNone:
 		return "none"
-	}
-	if g == HostUDSAll {
-		return "all"
-	}
-	if g == HostUDSOpen {
+	case HostUDSOpen:
 		return "open"
-	}
-	if g == HostUDSCreate {
+	case HostUDSCreate:
 		return "create"
+	case HostUDSAll:
+		return "all"
+	default:
+		panic(fmt.Sprintf("Invalid host UDS type %d", g))
 	}
-	panic(fmt.Sprintf("Invalid host UDS type %d", g))
 }
 
 // AllowOpen returns true if it can consume UDS from the host.
@@ -682,7 +680,7 @@ func hostFifoPtr(v HostFifo) *HostFifo {
 	return &v
 }
 
-// Set implements flag.Value.
+// Set implements flag.Value. Set(String()) should be idempotent.
 func (g *HostFifo) Set(v string) error {
 	switch v {
 	case "", "none":
@@ -702,13 +700,14 @@ func (g *HostFifo) Get() any {
 
 // String implements flag.Value.
 func (g HostFifo) String() string {
-	if g == HostFifoNone {
+	switch g {
+	case HostFifoNone:
 		return "none"
-	}
-	if g == HostFifoOpen {
+	case HostFifoOpen:
 		return "open"
+	default:
+		panic(fmt.Sprintf("Invalid host fifo type %d", g))
 	}
-	panic(fmt.Sprintf("Invalid host fifo type %d", g))
 }
 
 // AllowOpen returns true if it can consume FIFOs from the host.
@@ -729,7 +728,7 @@ func defaultOverlay2() *Overlay2 {
 	return &Overlay2{rootMount: true, subMounts: false, medium: "self"}
 }
 
-// Set implements flag.Value.
+// Set implements flag.Value. Set(String()) should be idempotent.
 func (o *Overlay2) Set(v string) error {
 	if v == "none" {
 		o.rootMount = false
