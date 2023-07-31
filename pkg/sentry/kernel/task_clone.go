@@ -101,6 +101,9 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 		return 0, nil, linuxerr.EPERM
 	}
 
+	cu := cleanup.Make(func() {})
+	defer cu.Clean()
+
 	utsns := t.UTSNamespace()
 	if args.Flags&linux.CLONE_NEWUTS != 0 {
 		// Note that this must happen after NewUserNamespace so we get
@@ -108,17 +111,17 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 		utsns = t.UTSNamespace().Clone(userns)
 	}
 
-	ipcns := t.IPCNamespace()
+	ipcns := t.ipcns
 	if args.Flags&linux.CLONE_NEWIPC != 0 {
 		ipcns = NewIPCNamespace(userns)
 		ipcns.InitPosixQueues(t, t.k.VFS(), creds)
+		ipcns.SetInode(nsfs.NewInode(t, t.k.nsfsMount, ipcns))
 	} else {
 		ipcns.IncRef()
 	}
-	cu := cleanup.Make(func() {
+	cu.Add(func() {
 		ipcns.DecRef(t)
 	})
-	defer cu.Clean()
 
 	netns := t.netns.Load()
 	if args.Flags&linux.CLONE_NEWNET != 0 {
@@ -437,6 +440,21 @@ func (t *Task) Setns(fd *vfs.FileDescription, flags int32) error {
 		t.mu.Unlock()
 		oldNS.DecRef(t)
 		return nil
+	case *IPCNamespace:
+		if flags != 0 && flags != linux.CLONE_NEWIPC {
+			return linuxerr.EINVAL
+		}
+		if !t.HasCapabilityIn(linux.CAP_SYS_ADMIN, ns.UserNamespace()) ||
+			!t.Credentials().HasCapability(linux.CAP_SYS_ADMIN) {
+			return linuxerr.EPERM
+		}
+		oldNS := t.IPCNamespace()
+		ns.IncRef()
+		t.mu.Lock()
+		t.ipcns = ns
+		t.mu.Unlock()
+		oldNS.DecRef(t)
+		return nil
 	default:
 		return linuxerr.EINVAL
 	}
@@ -538,6 +556,10 @@ func (t *Task) Unshare(flags int32) error {
 		oldIPCNS = t.ipcns
 		t.ipcns = NewIPCNamespace(creds.UserNamespace)
 		t.ipcns.InitPosixQueues(t, t.k.VFS(), creds)
+		t.ipcns.SetInode(nsfs.NewInode(t, t.k.nsfsMount, t.ipcns))
+		if oldIPCNS != nil {
+			oldIPCNS.DecRef(t)
+		}
 	}
 	var oldFDTable *FDTable
 	if flags&linux.CLONE_FILES != 0 {
@@ -550,9 +572,6 @@ func (t *Task) Unshare(flags int32) error {
 		t.fsContext = oldFSContext.Fork()
 	}
 	t.mu.Unlock()
-	if oldIPCNS != nil {
-		oldIPCNS.DecRef(t)
-	}
 	if oldFDTable != nil {
 		oldFDTable.DecRef(t)
 	}

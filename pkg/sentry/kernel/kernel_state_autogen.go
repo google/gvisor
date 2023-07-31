@@ -343,7 +343,7 @@ func (i *IPCNamespace) StateTypeName() string {
 
 func (i *IPCNamespace) StateFields() []string {
 	return []string{
-		"IPCNamespaceRefs",
+		"inode",
 		"userNS",
 		"queues",
 		"semaphores",
@@ -357,7 +357,7 @@ func (i *IPCNamespace) beforeSave() {}
 // +checklocksignore
 func (i *IPCNamespace) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
-	stateSinkObject.Save(0, &i.IPCNamespaceRefs)
+	stateSinkObject.Save(0, &i.inode)
 	stateSinkObject.Save(1, &i.userNS)
 	stateSinkObject.Save(2, &i.queues)
 	stateSinkObject.Save(3, &i.semaphores)
@@ -369,36 +369,12 @@ func (i *IPCNamespace) afterLoad() {}
 
 // +checklocksignore
 func (i *IPCNamespace) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &i.IPCNamespaceRefs)
+	stateSourceObject.Load(0, &i.inode)
 	stateSourceObject.Load(1, &i.userNS)
 	stateSourceObject.Load(2, &i.queues)
 	stateSourceObject.Load(3, &i.semaphores)
 	stateSourceObject.Load(4, &i.shms)
 	stateSourceObject.Load(5, &i.posixQueues)
-}
-
-func (r *IPCNamespaceRefs) StateTypeName() string {
-	return "pkg/sentry/kernel.IPCNamespaceRefs"
-}
-
-func (r *IPCNamespaceRefs) StateFields() []string {
-	return []string{
-		"refCount",
-	}
-}
-
-func (r *IPCNamespaceRefs) beforeSave() {}
-
-// +checklocksignore
-func (r *IPCNamespaceRefs) StateSave(stateSinkObject state.Sink) {
-	r.beforeSave()
-	stateSinkObject.Save(0, &r.refCount)
-}
-
-// +checklocksignore
-func (r *IPCNamespaceRefs) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(r.afterLoad)
 }
 
 func (uc *userCounters) StateTypeName() string {
@@ -2502,7 +2478,6 @@ func init() {
 	state.Register((*FSContext)(nil))
 	state.Register((*FSContextRefs)(nil))
 	state.Register((*IPCNamespace)(nil))
-	state.Register((*IPCNamespaceRefs)(nil))
 	state.Register((*userCounters)(nil))
 	state.Register((*Kernel)(nil))
 	state.Register((*SocketRecord)(nil))
