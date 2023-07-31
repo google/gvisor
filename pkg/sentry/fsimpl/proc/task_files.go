@@ -1274,6 +1274,11 @@ func (s *namespaceSymlink) getInode(t *kernel.Task) *nsfs.Inode {
 	switch s.nsType {
 	case linux.CLONE_NEWNET:
 		return t.GetNetworkNamespace().GetInode()
+	case linux.CLONE_NEWIPC:
+		if ipcns := t.GetIPCNamespace(); ipcns != nil {
+			return ipcns.GetInode()
+		}
+		return nil
 	default:
 		panic("unknown namespace")
 	}

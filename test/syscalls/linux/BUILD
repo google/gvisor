@@ -2324,6 +2324,21 @@ cc_binary(
 )
 
 cc_binary(
+    name = "setns_test",
+    testonly = 1,
+    srcs = ["setns.cc"],
+    linkstatic = 1,
+    deps = [
+        "//test/util:capability_util",
+        "//test/util:file_descriptor",
+        "//test/util:posix_error",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        gtest,
+    ],
+)
+
+cc_binary(
     name = "splice_test",
     testonly = 1,
     srcs = ["splice.cc"],

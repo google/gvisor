@@ -451,6 +451,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	nsfsMount := k.vfs.NewDisconnectedMount(nsfsFilesystem, nil, &vfs.MountOptions{})
 	k.nsfsMount = nsfsMount
 	k.rootNetworkNamespace.SetInode(nsfs.NewInode(ctx, nsfsMount, k.rootNetworkNamespace))
+	k.rootIPCNamespace.SetInode(nsfs.NewInode(ctx, nsfsMount, k.rootIPCNamespace))
 
 	tmpfsOpts := vfs.GetFilesystemOptions{
 		InternalData: tmpfs.FilesystemOpts{
