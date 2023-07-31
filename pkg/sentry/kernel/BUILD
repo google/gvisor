@@ -194,17 +194,6 @@ go_template_instance(
 )
 
 go_template_instance(
-    name = "ipc_namespace_refs",
-    out = "ipc_namespace_refs.go",
-    package = "kernel",
-    prefix = "IPCNamespace",
-    template = "//pkg/refs:refs_template",
-    types = {
-        "T": "IPCNamespace",
-    },
-)
-
-go_template_instance(
     name = "process_group_refs",
     out = "process_group_refs.go",
     package = "kernel",
@@ -252,7 +241,6 @@ go_library(
         "fs_context.go",
         "fs_context_refs.go",
         "ipc_namespace.go",
-        "ipc_namespace_refs.go",
         "kcov.go",
         "kcov_unsafe.go",
         "kernel.go",

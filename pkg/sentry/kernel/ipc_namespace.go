@@ -19,6 +19,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/mqfs"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/nsfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/mq"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/msgqueue"
@@ -31,7 +32,7 @@ import (
 //
 // +stateify savable
 type IPCNamespace struct {
-	IPCNamespaceRefs
+	inode *nsfs.Inode
 
 	// User namespace which owns this IPC namespace. Immutable.
 	userNS *auth.UserNamespace
@@ -57,8 +58,35 @@ func NewIPCNamespace(userNS *auth.UserNamespace) *IPCNamespace {
 		semaphores: semaphore.NewRegistry(userNS),
 		shms:       shm.NewRegistry(userNS),
 	}
-	ns.InitRefs()
 	return ns
+}
+
+// Type implements nsfs.Namespace.Type.
+func (i *IPCNamespace) Type() string {
+	return "ipc"
+}
+
+// Destroy implements nsfs.Namespace.Destroy.
+func (i *IPCNamespace) Destroy(ctx context.Context) {
+	i.shms.Release(ctx)
+	if i.posixQueues != nil {
+		i.posixQueues.Destroy(ctx)
+	}
+}
+
+// SetInode sets the nsfs `inode` to the IPC namespace.
+func (i *IPCNamespace) SetInode(inode *nsfs.Inode) {
+	i.inode = inode
+}
+
+// GetInode returns the nsfs inode associated with the IPC namespace.
+func (i *IPCNamespace) GetInode() *nsfs.Inode {
+	return i.inode
+}
+
+// UserNamespace returns the user namespace associated with the namespace.
+func (i *IPCNamespace) UserNamespace() *auth.UserNamespace {
+	return i.userNS
 }
 
 // MsgqueueRegistry returns the message queue registry for this namespace.
@@ -98,19 +126,30 @@ func (i *IPCNamespace) PosixQueues() *mq.Registry {
 	return i.posixQueues
 }
 
-// DecRef implements refs.RefCounter.DecRef.
+// IncRef increments the Namespace's refcount.
+func (i *IPCNamespace) IncRef() {
+	i.inode.IncRef()
+}
+
+// DecRef decrements the namespace's refcount.
 func (i *IPCNamespace) DecRef(ctx context.Context) {
-	i.IPCNamespaceRefs.DecRef(func() {
-		i.shms.Release(ctx)
-		if i.posixQueues != nil {
-			i.posixQueues.Destroy(ctx)
-		}
-	})
+	i.inode.DecRef(ctx)
 }
 
 // IPCNamespace returns the task's IPC namespace.
 func (t *Task) IPCNamespace() *IPCNamespace {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	return t.ipcns
+}
+
+// GetIPCNamespace takes a reference on the task IPC namespace and
+// returns it. It will return nil if the task isn't alive.
+func (t *Task) GetIPCNamespace() *IPCNamespace {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.ipcns != nil {
+		t.ipcns.IncRef()
+	}
 	return t.ipcns
 }
