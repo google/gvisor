@@ -2073,7 +2073,7 @@ func TestMultiContainerEvent(t *testing.T) {
 	conf.RootDir = rootDir
 
 	// Setup the containers.
-	sleep := []string{"/bin/sleep", "100"}
+	sleep := []string{"/bin/sh", "-c", "/bin/sleep 100 | grep 123"}
 	busy := []string{"/bin/bash", "-c", "i=0 ; while true ; do (( i += 1 )) ; done"}
 	quick := []string{"/bin/true"}
 	podSpec, ids := createSpecs(sleep, busy, quick)
@@ -2087,22 +2087,15 @@ func TestMultiContainerEvent(t *testing.T) {
 	t.Logf("Running container busy %s", containers[1].ID)
 	t.Logf("Running container quick %s", containers[2].ID)
 
-	// Wait for last container to stabilize the process count that is
-	// checked further below.
-	if ws, err := containers[2].Wait(); err != nil || ws != 0 {
-		t.Fatalf("Container.Wait, status: %v, err: %v", ws, err)
-	}
-	expectedPL := []*control.Process{
-		newProcessBuilder().Cmd("sleep").Process(),
-	}
-	if err := waitForProcessList(containers[0], expectedPL); err != nil {
+	// Wait for containers to start (last container should complete).
+	if err := waitForProcessCount(containers[0], 3); err != nil {
 		t.Errorf("failed to wait for sleep to start: %v", err)
 	}
-	expectedPL = []*control.Process{
-		newProcessBuilder().Cmd("bash").Process(),
-	}
-	if err := waitForProcessList(containers[1], expectedPL); err != nil {
+	if err := waitForProcessCount(containers[1], 1); err != nil {
 		t.Errorf("failed to wait for bash to start: %v", err)
+	}
+	if ws, err := containers[2].Wait(); err != nil || ws != 0 {
+		t.Fatalf("Container.Wait, status: %v, err: %v", ws, err)
 	}
 
 	// Check events for running containers.
@@ -2118,9 +2111,14 @@ func TestMultiContainerEvent(t *testing.T) {
 		if cont.ID != evt.ID {
 			t.Errorf("Wrong container ID, want: %s, got: %s", cont.ID, evt.ID)
 		}
-		// One process per remaining container.
-		if got, want := evt.Data.Pids.Current, uint64(2); got != want {
-			t.Errorf("Wrong number of PIDs, cid: %q, want: %d, got: %d", cont.ID, want, got)
+
+		// container[0] expects 3 processes, while container[1] expects 1.
+		wantPids := 3
+		if i == 1 {
+			wantPids = 1
+		}
+		if got := evt.Data.Pids.Current; got != uint64(wantPids) {
+			t.Errorf("Wrong number of PIDs, cid: %q, want: %d, got: %d", cont.ID, wantPids, got)
 		}
 
 		switch i {

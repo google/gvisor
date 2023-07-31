@@ -91,6 +91,13 @@ func (cm *containerManager) Event(cid *string, out *EventOut) error {
 		},
 	}
 
+	// PIDs and check that container exists before going further.
+	pids, err := cm.l.pidsCount(*cid)
+	if err != nil {
+		return err
+	}
+	out.Event.Data.Pids.Current = uint64(pids)
+
 	// Memory usage.
 	mem := cm.l.k.MemoryFile()
 	_ = mem.UpdateUsage() // best effort to update.
@@ -117,10 +124,6 @@ func (cm *containerManager) Event(cid *string, out *EventOut) error {
 	}
 
 	out.Event.Data.Memory.Usage.Usage = totalUsage
-
-	// PIDs.
-	// TODO(gvisor.dev/issue/172): Per-container accounting.
-	out.Event.Data.Pids.Current = uint64(len(cm.l.k.TaskSet().Root.ThreadGroups()))
 
 	// CPU usage by container.
 	out.ContainerUsage = control.ContainerUsage(cm.l.k)

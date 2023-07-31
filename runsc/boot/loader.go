@@ -1623,3 +1623,14 @@ func (l *Loader) containerCount() int {
 	}
 	return containers
 }
+
+func (l *Loader) pidsCount(cid string) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if _, err := l.tryThreadGroupFromIDLocked(execID{cid: cid}); err != nil {
+		// Container doesn't exist.
+		return 0, err
+	}
+	return l.k.TaskSet().Root.NumTasksPerContainer(cid), nil
+}
