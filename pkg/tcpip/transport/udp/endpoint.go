@@ -1025,6 +1025,7 @@ func (e *endpoint) onICMPError(err tcpip.Error, transErr stack.TransportError, p
 		}
 
 		id := e.net.Info().ID
+		e.mu.RLock()
 		e.SocketOptions().QueueErr(&tcpip.SockError{
 			Err:     err,
 			Cause:   transErr,
@@ -1041,6 +1042,7 @@ func (e *endpoint) onICMPError(err tcpip.Error, transErr stack.TransportError, p
 			},
 			NetProto: pkt.NetworkProtocolNumber,
 		})
+		e.mu.RUnlock()
 	}
 
 	// Notify of the error.
