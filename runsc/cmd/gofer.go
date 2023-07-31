@@ -159,15 +159,10 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		}
 	}
 	if g.applyCaps {
-		// Disable caps when calling myself again.
-		// Note: minimal argument handling for the default case to keep it simple.
-		args := os.Args
-		args = append(
-			args,
-			"--apply-caps=false",
-			"--setup-root=false",
-		)
-		args = append(args, g.syncFDs.flags()...)
+		overrides := g.syncFDs.flags()
+		overrides["apply-caps"] = "false"
+		overrides["setup-root"] = "false"
+		args := prepareArgs(g.Name(), f, overrides)
 		util.Fatalf("setCapsAndCallSelf(%v, %v): %v", args, goferCaps, setCapsAndCallSelf(args, goferCaps))
 		panic("unreachable")
 	}
@@ -593,11 +588,11 @@ func (g *goferSyncFDs) setFlags(f *flag.FlagSet) {
 
 // flags returns the flags necessary to pass along the current sync FD values
 // to a re-executed version of this process.
-func (g *goferSyncFDs) flags() []string {
-	return []string{
-		fmt.Sprintf("--sync-nvproxy-fd=%d", g.nvproxyFD),
-		fmt.Sprintf("--sync-userns-fd=%d", g.usernsFD),
-		fmt.Sprintf("--proc-mount-sync-fd=%d", g.procMountFD),
+func (g *goferSyncFDs) flags() map[string]string {
+	return map[string]string{
+		"sync-nvproxy-fd":    fmt.Sprintf("%d", g.nvproxyFD),
+		"sync-userns-fd":     fmt.Sprintf("%d", g.usernsFD),
+		"proc-mount-sync-fd": fmt.Sprintf("%d", g.procMountFD),
 	}
 }
 
@@ -658,20 +653,18 @@ func (g *goferSyncFDs) unmountProcfs() {
 // Postcondition: All callers must re-exec themselves after this returns,
 // unless usernsFD was -1.
 func (g *goferSyncFDs) syncUsernsForRootless() {
+	if g.usernsFD < 0 {
+		return
+	}
 	syncUsernsForRootless(g.usernsFD)
 	g.usernsFD = -1
 }
 
 // syncUsernsForRootless waits on usernsFD to be closed and then sets
 // UID/GID to 0. Note that this function calls runtime.LockOSThread().
-// This function is a no-op if usernsFD is -1.
 //
-// Postcondition: All callers must re-exec themselves after this returns,
-// unless fd is -1.
+// Postcondition: All callers must re-exec themselves after this returns.
 func syncUsernsForRootless(fd int) {
-	if fd < 0 {
-		return
-	}
 	if err := waitForFD(fd, "userns sync FD"); err != nil {
 		util.Fatalf("failed to sync on userns FD: %v", err)
 	}
