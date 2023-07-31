@@ -224,6 +224,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	// Initialize ring0 library.
 	ring0.InitDefault()
 
+	argOverride := make(map[string]string)
 	if len(b.productName) == 0 {
 		// Do this before chroot takes effect, otherwise we can't read /sys.
 		if product, err := ioutil.ReadFile("/sys/devices/virtual/dmi/id/product_name"); err != nil {
@@ -231,6 +232,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		} else {
 			b.productName = strings.TrimSpace(string(product))
 			log.Infof("Setting product_name: %q", b.productName)
+			argOverride["product-name"] = b.productName
 		}
 	}
 
@@ -243,7 +245,10 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		}
 	}
 
-	syncUsernsForRootless(b.syncUsernsFD)
+	if b.syncUsernsFD >= 0 {
+		syncUsernsForRootless(b.syncUsernsFD)
+		argOverride["sync-userns-fd"] = "-1"
+	}
 
 	// Get the spec from the specFD. We *must* keep this os.File alive past
 	// the call setCapsAndCallSelf, otherwise the FD will be closed and the
@@ -258,6 +263,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		if err := setUpChroot(b.pidns, spec, conf); err != nil {
 			util.Fatalf("error setting up chroot: %v", err)
 		}
+		argOverride["setup-root"] = "false"
 
 		if !conf.Rootless {
 			// /proc is umounted from a forked process, because the
@@ -270,6 +276,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 				panic("procMountSyncFD is set")
 			}
 			b.procMountSyncFD = int(w.Fd())
+			argOverride["proc-mount-sync-fd"] = strconv.Itoa(b.procMountSyncFD)
 
 			// Clear FD_CLOEXEC. Regardless of b.applyCaps, this process will be
 			// re-executed. procMountSyncFD should remain open.
@@ -279,7 +286,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 
 			if !b.applyCaps {
 				// Remove the args that have already been done before calling self.
-				args := b.prepareArgs("setup-root", "sync-userns-fd")
+				args := prepareArgs(b.Name(), f, argOverride)
 
 				// Note that we've already read the spec from the spec FD, and
 				// we will read it again after the exec call. This works
@@ -314,9 +321,10 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		if conf.DirectFS {
 			caps = specutils.MergeCapabilities(caps, directfsSandboxLinuxCaps)
 		}
+		argOverride["apply-caps"] = "false"
 
 		// Remove the args that have already been done before calling self.
-		args := b.prepareArgs("setup-root", "sync-userns-fd", "apply-caps")
+		args := prepareArgs(b.Name(), f, argOverride)
 
 		// Note that we've already read the spec from the spec FD, and
 		// we will read it again after the exec call. This works
@@ -466,28 +474,38 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	return subcommands.ExitSuccess
 }
 
-func (b *Boot) prepareArgs(exclude ...string) []string {
+// prepareArgs returns the args that can be used to re-execute the current
+// program. It manipulates the flags of the subcommands.Command identified by
+// subCmdName and fSet is the flag.FlagSet of this subcommand. It applies the
+// flags specified by override map. In case of conflict, flag is overriden.
+//
+// Postcondition: prepareArgs() takes ownership of override map.
+func prepareArgs(subCmdName string, fSet *flag.FlagSet, override map[string]string) []string {
 	var args []string
+	// Add all args up until (and including) the sub command.
 	for _, arg := range os.Args {
-		for _, excl := range exclude {
-			if strings.Contains(arg, excl) {
-				goto skip
-			}
-		}
 		args = append(args, arg)
-		// Some parameters are not already part of os.Args because they are
-		// solely configured by Boot.Execute(). Strategically add these parameters
-		// after the command and before the container ID at the end.
-		if arg == "boot" {
-			if b.procMountSyncFD != -1 {
-				args = append(args, fmt.Sprintf("--proc-mount-sync-fd=%d", b.procMountSyncFD))
-			}
-			if len(b.productName) > 0 {
-				args = append(args, "--product-name", b.productName)
-			}
+		if arg == subCmdName {
+			break
 		}
-	skip:
 	}
+	// Set sub command flags. Iterate through all the explicitly set flags.
+	fSet.Visit(func(gf *flag.Flag) {
+		// If a conflict is found with override, then prefer override flag.
+		if ov, ok := override[gf.Name]; ok {
+			args = append(args, fmt.Sprintf("--%s=%s", gf.Name, ov))
+			delete(override, gf.Name)
+			return
+		}
+		// Otherwise pass through the original flag.
+		args = append(args, fmt.Sprintf("--%s=%s", gf.Name, gf.Value))
+	})
+	// Apply remaining override flags (that didn't conflict above).
+	for of, ov := range override {
+		args = append(args, fmt.Sprintf("--%s=%s", of, ov))
+	}
+	// Add the non-flag arguments at the end.
+	args = append(args, fSet.Args()...)
 	return args
 }
 
