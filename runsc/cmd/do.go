@@ -79,7 +79,11 @@ type idMapSlice []specs.LinuxIDMapping
 
 // String implements flag.Value.String.
 func (is *idMapSlice) String() string {
-	return fmt.Sprintf("%#v", is)
+	idMappings := make([]string, 0, len(*is))
+	for _, m := range *is {
+		idMappings = append(idMappings, fmt.Sprintf("%d %d %d", m.ContainerID, m.HostID, m.Size))
+	}
+	return strings.Join(idMappings, ",")
 }
 
 // Get implements flag.Value.Get.
@@ -87,29 +91,31 @@ func (is *idMapSlice) Get() any {
 	return is
 }
 
-// Set implements flag.Value.Set.
+// Set implements flag.Value.Set. Set(String()) should be idempotent.
 func (is *idMapSlice) Set(s string) error {
-	fs := strings.Fields(s)
-	if len(fs) != 3 {
-		return fmt.Errorf("invalid mapping: %s", s)
+	for _, idMap := range strings.Split(s, ",") {
+		fs := strings.Fields(idMap)
+		if len(fs) != 3 {
+			return fmt.Errorf("invalid mapping: %s", idMap)
+		}
+		var cid, hid, size int
+		var err error
+		if cid, err = strconv.Atoi(fs[0]); err != nil {
+			return fmt.Errorf("invalid mapping: %s", idMap)
+		}
+		if hid, err = strconv.Atoi(fs[1]); err != nil {
+			return fmt.Errorf("invalid mapping: %s", idMap)
+		}
+		if size, err = strconv.Atoi(fs[2]); err != nil {
+			return fmt.Errorf("invalid mapping: %s", idMap)
+		}
+		m := specs.LinuxIDMapping{
+			ContainerID: uint32(cid),
+			HostID:      uint32(hid),
+			Size:        uint32(size),
+		}
+		*is = append(*is, m)
 	}
-	var cid, hid, size int
-	var err error
-	if cid, err = strconv.Atoi(fs[0]); err != nil {
-		return fmt.Errorf("invalid mapping: %s", s)
-	}
-	if hid, err = strconv.Atoi(fs[1]); err != nil {
-		return fmt.Errorf("invalid mapping: %s", s)
-	}
-	if size, err = strconv.Atoi(fs[2]); err != nil {
-		return fmt.Errorf("invalid mapping: %s", s)
-	}
-	m := specs.LinuxIDMapping{
-		ContainerID: uint32(cid),
-		HostID:      uint32(hid),
-		Size:        uint32(size),
-	}
-	*is = append(*is, m)
 	return nil
 }
 
