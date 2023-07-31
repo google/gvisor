@@ -27,7 +27,11 @@ type fdMappings []boot.FDMapping
 
 // String implements flag.Value.
 func (i *fdMappings) String() string {
-	return fmt.Sprintf("%v", *i)
+	var mappings []string
+	for _, m := range *i {
+		mappings = append(mappings, fmt.Sprintf("%v:%v", m.Host, m.Guest))
+	}
+	return strings.Join(mappings, ",")
 }
 
 // Get implements flag.Value.
@@ -41,44 +45,46 @@ func (i *fdMappings) GetArray() []boot.FDMapping {
 }
 
 // Set implements flag.Value and appends a mapping from the command line to the
-// mappings array.
+// mappings array. Set(String()) should be idempotent.
 func (i *fdMappings) Set(s string) error {
-	split := strings.Split(s, ":")
-	if len(split) != 2 {
-		// Split returns a slice of length 1 if its first argument does not
-		// contain the separator. An additional length check is not necessary.
-		// In case no separator is used and the argument is a valid integer, we
-		// assume that host FD and guest FD should be identical.
-		fd, err := strconv.Atoi(split[0])
-		if err != nil {
-			return fmt.Errorf("invalid flag value: must be an integer or a mapping of format M:N")
+	for _, m := range strings.Split(s, ",") {
+		split := strings.Split(m, ":")
+		if len(split) != 2 {
+			// Split returns a slice of length 1 if its first argument does not
+			// contain the separator. An additional length check is not necessary.
+			// In case no separator is used and the argument is a valid integer, we
+			// assume that host FD and guest FD should be identical.
+			fd, err := strconv.Atoi(split[0])
+			if err != nil {
+				return fmt.Errorf("invalid flag value: must be an integer or a mapping of format M:N")
+			}
+			*i = append(*i, boot.FDMapping{
+				Host:  fd,
+				Guest: fd,
+			})
+			return nil
 		}
+
+		fdHost, err := strconv.Atoi(split[0])
+		if err != nil {
+			return fmt.Errorf("invalid flag host value: %v", err)
+		}
+		if fdHost < 0 {
+			return fmt.Errorf("flag host value must be >= 0: %d", fdHost)
+		}
+
+		fdGuest, err := strconv.Atoi(split[1])
+		if err != nil {
+			return fmt.Errorf("invalid flag guest value: %v", err)
+		}
+		if fdGuest < 0 {
+			return fmt.Errorf("flag guest value must be >= 0: %d", fdGuest)
+		}
+
 		*i = append(*i, boot.FDMapping{
-			Host:  fd,
-			Guest: fd,
+			Host:  fdHost,
+			Guest: fdGuest,
 		})
-		return nil
 	}
-
-	fdHost, err := strconv.Atoi(split[0])
-	if err != nil {
-		return fmt.Errorf("invalid flag host value: %v", err)
-	}
-	if fdHost < 0 {
-		return fmt.Errorf("flag host value must be >= 0: %d", fdHost)
-	}
-
-	fdGuest, err := strconv.Atoi(split[1])
-	if err != nil {
-		return fmt.Errorf("invalid flag guest value: %v", err)
-	}
-	if fdGuest < 0 {
-		return fmt.Errorf("flag guest value must be >= 0: %d", fdGuest)
-	}
-
-	*i = append(*i, boot.FDMapping{
-		Host:  fdHost,
-		Guest: fdGuest,
-	})
 	return nil
 }

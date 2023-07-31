@@ -51,9 +51,9 @@ func TestOverlayMedium(t *testing.T) {
 }
 
 func TestOverlayMediumFlags(t *testing.T) {
-	want := []OverlayMedium{MemoryMedium, SelfMedium, AnonDirMedium, NoOverlay}
+	want := OverlayMediumFlags{MemoryMedium, SelfMedium, AnonDirMedium, NoOverlay}
 	var got OverlayMediumFlags
-	got.Set(ToOverlayMediumFlags(want))
+	got.Set(want.String())
 	if len(got) != len(want) {
 		t.Fatalf("overlay medium flags is incorrect length: want = %d, got = %d", len(want), len(got))
 	}

@@ -463,7 +463,7 @@ type stringSlice []string
 
 // String implements flag.Value.String.
 func (ss *stringSlice) String() string {
-	return fmt.Sprintf("%v", *ss)
+	return strings.Join(*ss, ",")
 }
 
 // Get implements flag.Value.Get.
@@ -471,9 +471,9 @@ func (ss *stringSlice) Get() any {
 	return ss
 }
 
-// Set implements flag.Value.Set.
+// Set implements flag.Value.Set. Set(String()) should be idempotent.
 func (ss *stringSlice) Set(s string) error {
-	*ss = append(*ss, s)
+	*ss = append(*ss, strings.Split(s, ",")...)
 	return nil
 }
 
@@ -484,14 +484,17 @@ type user struct {
 	kgid auth.KGID
 }
 
+// String implements flag.Value.String.
 func (u *user) String() string {
-	return fmt.Sprintf("%+v", *u)
+	return fmt.Sprintf("%d:%d", u.kuid, u.kgid)
 }
 
+// Get implements flag.Value.Get.
 func (u *user) Get() any {
 	return u
 }
 
+// Set implements flag.Value.Set. Set(String()) should be idempotent.
 func (u *user) Set(s string) error {
 	parts := strings.SplitN(s, ":", 2)
 	kuid, err := strconv.Atoi(parts[0])
