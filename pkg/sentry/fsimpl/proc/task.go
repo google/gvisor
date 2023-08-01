@@ -73,6 +73,7 @@ func (fs *filesystem) newTaskInode(ctx context.Context, task *kernel.Task, pidns
 		"net":       fs.newTaskNetDir(ctx, task),
 		"ns": fs.newTaskOwnedDir(ctx, task, fs.NextIno(), 0511, map[string]kernfs.Inode{
 			"net":  fs.newNamespaceSymlink(ctx, task, fs.NextIno(), linux.CLONE_NEWNET),
+			"mnt":  fs.newNamespaceSymlink(ctx, task, fs.NextIno(), linux.CLONE_NEWNS),
 			"pid":  fs.newPIDNamespaceSymlink(ctx, task, fs.NextIno()),
 			"user": fs.newFakeNamespaceSymlink(ctx, task, fs.NextIno(), "user"),
 			"ipc":  fs.newNamespaceSymlink(ctx, task, fs.NextIno(), linux.CLONE_NEWIPC),

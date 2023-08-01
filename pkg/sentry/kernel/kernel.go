@@ -46,6 +46,7 @@ import (
 	"gvisor.dev/gvisor/pkg/eventchannel"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/nsfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/pipefs"
@@ -448,10 +449,9 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 		return fmt.Errorf("failed to create nsfs filesystem: %v", err)
 	}
 	defer nsfsFilesystem.DecRef(ctx)
-	nsfsMount := k.vfs.NewDisconnectedMount(nsfsFilesystem, nil, &vfs.MountOptions{})
-	k.nsfsMount = nsfsMount
-	k.rootNetworkNamespace.SetInode(nsfs.NewInode(ctx, nsfsMount, k.rootNetworkNamespace))
-	k.rootIPCNamespace.SetInode(nsfs.NewInode(ctx, nsfsMount, k.rootIPCNamespace))
+	k.nsfsMount = k.vfs.NewDisconnectedMount(nsfsFilesystem, nil, &vfs.MountOptions{})
+	k.rootNetworkNamespace.SetInode(nsfs.NewInode(ctx, k.nsfsMount, k.rootNetworkNamespace))
+	k.rootIPCNamespace.SetInode(nsfs.NewInode(ctx, k.nsfsMount, k.rootIPCNamespace))
 
 	tmpfsOpts := vfs.GetFilesystemOptions{
 		InternalData: tmpfs.FilesystemOpts{
@@ -1621,9 +1621,9 @@ func (k *Kernel) PipeMount() *vfs.Mount {
 	return k.pipeMount
 }
 
-// NsfsMount returns the nsfs mount.
-func (k *Kernel) NsfsMount() *vfs.Mount {
-	return k.nsfsMount
+// GetNamespaceInode returns a new nsfs inode which serves as a reference counter for the namespace.
+func (k *Kernel) GetNamespaceInode(ctx context.Context, ns vfs.Namespace) refs.TryRefCounter {
+	return nsfs.NewInode(ctx, k.nsfsMount, ns)
 }
 
 // ShmMount returns the tmpfs mount.

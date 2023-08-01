@@ -1273,12 +1273,23 @@ func (fs *filesystem) newFakeNamespaceSymlink(ctx context.Context, task *kernel.
 func (s *namespaceSymlink) getInode(t *kernel.Task) *nsfs.Inode {
 	switch s.nsType {
 	case linux.CLONE_NEWNET:
-		return t.GetNetworkNamespace().GetInode()
+		netns := t.GetNetworkNamespace()
+		if netns == nil {
+			return nil
+		}
+		return netns.GetInode()
 	case linux.CLONE_NEWIPC:
 		if ipcns := t.GetIPCNamespace(); ipcns != nil {
 			return ipcns.GetInode()
 		}
 		return nil
+	case linux.CLONE_NEWNS:
+		mntns := t.GetMountNamespace()
+		if mntns == nil {
+			return nil
+		}
+		inode, _ := mntns.Refs.(*nsfs.Inode)
+		return inode
 	default:
 		panic("unknown namespace")
 	}

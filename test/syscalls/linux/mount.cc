@@ -1468,6 +1468,30 @@ TEST(MountTest, MountNamespace) {
   EXPECT_NO_ERRNO(Open(JoinPath(dir.path(), "foo"), O_RDWR));
 }
 
+TEST(MountTest, MountNamespaceSetns) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir.path(), "tmpfs", 0, "mode=0700", MNT_DETACH));
+  EXPECT_NO_ERRNO(Open(JoinPath(dir.path(), "foo"), O_CREAT | O_RDWR, 0777));
+  const FileDescriptor nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/mnt", O_RDONLY));
+
+  pid_t child = fork();
+  if (child == 0) {
+    TEST_CHECK(unshare(CLONE_NEWNS) == 0);
+    TEST_CHECK(umount2(dir.path().c_str(), MNT_DETACH) == 0);
+    ASSERT_THAT(setns(nsfd.get(), CLONE_NEWNS), SyscallSucceedsWithValue(0));
+    TEST_CHECK(access(JoinPath(dir.path(), "foo").c_str(), F_OK) == 0);
+    exit(0);
+  }
+  ASSERT_THAT(child, SyscallSucceeds());
+  int status;
+  ASSERT_THAT(waitpid(child, &status, 0), SyscallSucceedsWithValue(child));
+  ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+
 TEST(MountTest, MountNamespacePropagation) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 

@@ -159,147 +159,6 @@ func (mnt *Mount) generateOptionalTags() string {
 	return optional
 }
 
-// A MountNamespace is a collection of Mounts.//
-// MountNamespaces are reference-counted. Unless otherwise specified, all
-// MountNamespace methods require that a reference is held.
-//
-// MountNamespace is analogous to Linux's struct mnt_namespace.
-//
-// +stateify savable
-type MountNamespace struct {
-	MountNamespaceRefs
-
-	// Owner is the usernamespace that owns this mount namespace.
-	Owner *auth.UserNamespace
-
-	// root is the MountNamespace's root mount.
-	root *Mount
-
-	// mountpoints maps all Dentries which are mount points in this namespace
-	// to the number of Mounts for which they are mount points. mountpoints is
-	// protected by VirtualFilesystem.mountMu.
-	//
-	// mountpoints is used to determine if a Dentry can be moved or removed
-	// (which requires that the Dentry is not a mount point in the calling
-	// namespace).
-	//
-	// mountpoints is maintained even if there are no references held on the
-	// MountNamespace; this is required to ensure that
-	// VFS.PrepareDeleteDentry() and VFS.PrepareRemoveDentry() operate
-	// correctly on unreferenced MountNamespaces.
-	mountpoints map[*Dentry]uint32
-
-	// mounts is the total number of mounts in this mount namespace.
-	mounts uint32
-}
-
-// NewMountNamespace returns a new mount namespace with a root filesystem
-// configured by the given arguments. A reference is taken on the returned
-// MountNamespace.
-func (vfs *VirtualFilesystem) NewMountNamespace(ctx context.Context, creds *auth.Credentials, source, fsTypeName string, opts *MountOptions) (*MountNamespace, error) {
-	rft := vfs.getFilesystemType(fsTypeName)
-	if rft == nil {
-		ctx.Warningf("Unknown filesystem type: %s", fsTypeName)
-		return nil, linuxerr.ENODEV
-	}
-	fs, root, err := rft.fsType.GetFilesystem(ctx, vfs, creds, source, opts.GetFilesystemOptions)
-	if err != nil {
-		return nil, err
-	}
-	return vfs.NewMountNamespaceFrom(ctx, creds, fs, root, opts), nil
-}
-
-// NewMountNamespaceFrom constructs a new mount namespace from an existing
-// filesystem and its root dentry. This is similar to NewMountNamespace, but
-// uses an existing filesystem instead of constructing a new one.
-func (vfs *VirtualFilesystem) NewMountNamespaceFrom(ctx context.Context, creds *auth.Credentials, fs *Filesystem, root *Dentry, opts *MountOptions) *MountNamespace {
-	mntns := &MountNamespace{
-		Owner:       creds.UserNamespace,
-		mountpoints: make(map[*Dentry]uint32),
-	}
-	mntns.InitRefs()
-	mntns.root = newMount(vfs, fs, root, mntns, opts)
-	return mntns
-}
-
-type cloneEntry struct {
-	prevMount   *Mount
-	parentMount *Mount
-}
-
-func (vfs *VirtualFilesystem) updateRootAndCWD(ctx context.Context, root *VirtualDentry, cwd *VirtualDentry, src *Mount, dst *Mount) {
-	if root.mount == src {
-		root.mount.DecRef(ctx)
-		root.mount = dst
-		root.mount.IncRef()
-	}
-	if cwd.mount == src {
-		cwd.mount.DecRef(ctx)
-		cwd.mount = dst
-		cwd.mount.IncRef()
-	}
-}
-
-// CloneMountNamespace makes a copy of the specified mount namespace.
-//
-// If `root` or `cwd` have mounts in the old namespace, they will be replaced
-// with proper mounts from the new namespace.
-func (vfs *VirtualFilesystem) CloneMountNamespace(ctx context.Context, creds *auth.Credentials, ns *MountNamespace, root *VirtualDentry, cwd *VirtualDentry) (*MountNamespace, error) {
-	newns := &MountNamespace{
-		Owner:       creds.UserNamespace,
-		mountpoints: make(map[*Dentry]uint32),
-	}
-	newns.InitRefs()
-
-	vdsToDecRef := []VirtualDentry{}
-	defer func() {
-		for _, vd := range vdsToDecRef {
-			vd.DecRef(ctx)
-		}
-	}()
-
-	vfs.mountMu.Lock()
-	defer vfs.mountMu.Unlock()
-
-	ns.root.root.IncRef()
-	ns.root.fs.IncRef()
-	newns.root = newMount(vfs, ns.root.fs, ns.root.root, newns, &MountOptions{Flags: ns.root.Flags, ReadOnly: ns.root.ReadOnly()})
-	if ns.root.propType == Shared {
-		vfs.addPeer(ns.root, newns.root)
-	}
-	vfs.updateRootAndCWD(ctx, root, cwd, ns.root, newns.root)
-
-	queue := []cloneEntry{cloneEntry{ns.root, newns.root}}
-	for len(queue) != 0 {
-		p := queue[0]
-		queue = queue[1:]
-		for c := range p.prevMount.children {
-			m := vfs.cloneMount(c, c.root, nil)
-			vd := VirtualDentry{
-				mount:  p.parentMount,
-				dentry: c.point(),
-			}
-			vd.IncRef()
-
-			vds, err := vfs.connectMountAtLocked(ctx, m, vd)
-			m.DecRef(ctx)
-			vdsToDecRef = append(vdsToDecRef, vds...)
-			if err != nil {
-				newns.DecRef(ctx)
-				return nil, err
-			}
-			if c.propType == Shared {
-				vfs.addPeer(c, m)
-			}
-			vfs.updateRootAndCWD(ctx, root, cwd, c, m)
-			if len(c.children) != 0 {
-				queue = append(queue, cloneEntry{c, m})
-			}
-		}
-	}
-	return newns, nil
-}
-
 // NewFilesystem creates a new filesystem object not yet associated with any
 // mounts. It can be installed into the filesystem tree with ConnectMountAt.
 // Note that only the filesystem-specific mount options from opts are used by
@@ -852,26 +711,6 @@ func (mnt *Mount) LogRefs() bool {
 	return false
 }
 
-// DecRef decrements mntns' reference count.
-func (mntns *MountNamespace) DecRef(ctx context.Context) {
-	vfs := mntns.root.fs.VirtualFilesystem()
-	mntns.MountNamespaceRefs.DecRef(func() {
-		vfs.mountMu.Lock()
-		vfs.mounts.seq.BeginWrite()
-		vdsToDecRef, mountsToDecRef := vfs.umountRecursiveLocked(mntns.root, &umountRecursiveOptions{
-			disconnectHierarchy: true,
-		}, nil, nil)
-		vfs.mounts.seq.EndWrite()
-		vfs.mountMu.Unlock()
-		for _, vd := range vdsToDecRef {
-			vd.DecRef(ctx)
-		}
-		for _, mnt := range mountsToDecRef {
-			mnt.DecRef(ctx)
-		}
-	})
-}
-
 // getMountAt returns the last Mount in the stack mounted at (mnt, d). It takes
 // a reference on the returned Mount. If (mnt, d) is not a mount point,
 // getMountAt returns nil.
@@ -1156,16 +995,6 @@ func (mnt *Mount) submountsLocked() []*Mount {
 // Dentry.
 func (mnt *Mount) Root() *Dentry {
 	return mnt.root
-}
-
-// Root returns mntns' root. It does not take a reference on the returned
-// Dentry.
-func (mntns *MountNamespace) Root() VirtualDentry {
-	vd := VirtualDentry{
-		mount:  mntns.root,
-		dentry: mntns.root.root,
-	}
-	return vd
 }
 
 // GenerateProcMounts emits the contents of /proc/[pid]/mounts for vfs to buf.
