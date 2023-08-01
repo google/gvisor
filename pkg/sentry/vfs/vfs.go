@@ -47,7 +47,6 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/eventchannel"
 	"gvisor.dev/gvisor/pkg/fspath"
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fsmetric"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
@@ -947,7 +946,7 @@ func (vfs *VirtualFilesystem) maybeBlockOnMountPromise(ctx context.Context, rp *
 		rp.start = newMnt.root
 		rp.flags = rp.flags&^rpflagsHaveStartRef | rpflagsHaveMountRef
 	case <-time.After(mountPromiseTimeout):
-		log.Warningf("mount promise for %s timed out, proceeding with VFS operation", path)
+		panic(fmt.Sprintf("mount promise for %s timed out, unable to proceed", path))
 	}
 }
 
