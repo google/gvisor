@@ -173,7 +173,7 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 	mntns := t.mountNamespace
 	if args.Flags&linux.CLONE_NEWNS != 0 {
 		var err error
-		mntns, err = t.k.vfs.CloneMountNamespace(t, creds, mntns, &fsContext.root, &fsContext.cwd)
+		mntns, err = t.k.vfs.CloneMountNamespace(t, creds, mntns, &fsContext.root, &fsContext.cwd, t.k)
 		if err != nil {
 			return 0, nil, err
 		}
@@ -463,6 +463,38 @@ func (t *Task) Setns(fd *vfs.FileDescription, flags int32) error {
 		t.mu.Unlock()
 		oldNS.DecRef(t)
 		return nil
+	case *vfs.MountNamespace:
+		if flags != 0 && flags != linux.CLONE_NEWNS {
+			return linuxerr.EINVAL
+		}
+		if !t.HasCapabilityIn(linux.CAP_SYS_ADMIN, ns.Owner) ||
+			!t.Credentials().HasCapability(linux.CAP_SYS_CHROOT) ||
+			!t.Credentials().HasCapability(linux.CAP_SYS_ADMIN) {
+			return linuxerr.EPERM
+		}
+		oldFSContext := t.fsContext
+		// The current task has to be an exclusive owner of its fs context.
+		if oldFSContext.ReadRefs() != 1 {
+			return linuxerr.EINVAL
+		}
+		fsContext := oldFSContext.Fork()
+		fsContext.root.DecRef(t)
+		fsContext.cwd.DecRef(t)
+		vd := ns.Root()
+		vd.IncRef()
+		fsContext.root = vd
+		vd.IncRef()
+		fsContext.cwd = vd
+
+		oldNS := t.mountNamespace
+		ns.IncRef()
+		t.mu.Lock()
+		t.mountNamespace = ns
+		t.fsContext = fsContext
+		t.mu.Unlock()
+		oldNS.DecRef(t)
+		oldFSContext.DecRef(t)
+		return nil
 	default:
 		return linuxerr.EINVAL
 	}
@@ -584,7 +616,7 @@ func (t *Task) Unshare(flags int32) error {
 			return linuxerr.EPERM
 		}
 		oldMountNS := t.mountNamespace
-		mntns, err := t.k.vfs.CloneMountNamespace(t, creds, oldMountNS, &t.fsContext.root, &t.fsContext.cwd)
+		mntns, err := t.k.vfs.CloneMountNamespace(t, creds, oldMountNS, &t.fsContext.root, &t.fsContext.cwd, t.k)
 		if err != nil {
 			return err
 		}
