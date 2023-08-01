@@ -1096,7 +1096,8 @@ func TestCheckpointRestore(t *testing.T) {
 			}
 			defer outputFile2.Close()
 
-			// Restore into a new container.
+			// Restore into a new container with different ID (e.g. clone). Keep the
+			// initial container running to ensure no conflict with it.
 			args2 := Args{
 				ID:        testutil.RandomContainerID(),
 				Spec:      spec,
@@ -1122,14 +1123,19 @@ func TestCheckpointRestore(t *testing.T) {
 				t.Fatalf("error with outputFile: %v", err)
 			}
 
-			// Check that lastNum is one less than firstNum and that the container picks
-			// up from where it left off.
+			// Check that lastNum is one less than firstNum and that the container
+			// picks up from where it left off.
 			if lastNum+1 != firstNum {
 				t.Errorf("error numbers not in order, previous: %d, next: %d", lastNum, firstNum)
 			}
 			cont2.Destroy()
+			cont2 = nil
 
-			// Restore into another container!
+			// Restore into a container using the same ID (e.g. save/resume). It requires
+			// the original container to cease to exist because they share the same identity.
+			cont.Destroy()
+			cont = nil
+
 			// Delete and recreate file before restoring.
 			if err := os.Remove(outputPath); err != nil {
 				t.Fatalf("error removing file")
@@ -1140,13 +1146,7 @@ func TestCheckpointRestore(t *testing.T) {
 			}
 			defer outputFile3.Close()
 
-			// Restore into a new container.
-			args3 := Args{
-				ID:        testutil.RandomContainerID(),
-				Spec:      spec,
-				BundleDir: bundleDir,
-			}
-			cont3, err := New(conf, args3)
+			cont3, err := New(conf, args)
 			if err != nil {
 				t.Fatalf("error creating container: %v", err)
 			}
@@ -1166,8 +1166,8 @@ func TestCheckpointRestore(t *testing.T) {
 				t.Fatalf("error with outputFile: %v", err)
 			}
 
-			// Check that lastNum is one less than firstNum and that the container picks
-			// up from where it left off.
+			// Check that lastNum is one less than firstNum and that the container
+			// picks up from where it left off.
 			if lastNum+1 != firstNum2 {
 				t.Errorf("error numbers not in order, previous: %d, next: %d", lastNum, firstNum2)
 			}
