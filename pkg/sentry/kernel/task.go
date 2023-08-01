@@ -783,11 +783,19 @@ func (t *Task) WithMuLocked(f func(*Task)) {
 	t.mu.Unlock()
 }
 
-// MountNamespace returns t's MountNamespace. A reference is taken on the
-// returned mount namespace.
+// MountNamespace returns t's MountNamespace.
 func (t *Task) MountNamespace() *vfs.MountNamespace {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	return t.mountNamespace
+}
+
+// GetMountNamespace returns t's MountNamespace. A reference is taken on the
+// returned mount namespace.
+func (t *Task) GetMountNamespace() *vfs.MountNamespace {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.mountNamespace.IncRef()
 	return t.mountNamespace
 }
 

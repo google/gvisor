@@ -1225,43 +1225,6 @@ func (mnt *Mount) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.AfterLoad(mnt.afterLoad)
 }
 
-func (mntns *MountNamespace) StateTypeName() string {
-	return "pkg/sentry/vfs.MountNamespace"
-}
-
-func (mntns *MountNamespace) StateFields() []string {
-	return []string{
-		"MountNamespaceRefs",
-		"Owner",
-		"root",
-		"mountpoints",
-		"mounts",
-	}
-}
-
-func (mntns *MountNamespace) beforeSave() {}
-
-// +checklocksignore
-func (mntns *MountNamespace) StateSave(stateSinkObject state.Sink) {
-	mntns.beforeSave()
-	stateSinkObject.Save(0, &mntns.MountNamespaceRefs)
-	stateSinkObject.Save(1, &mntns.Owner)
-	stateSinkObject.Save(2, &mntns.root)
-	stateSinkObject.Save(3, &mntns.mountpoints)
-	stateSinkObject.Save(4, &mntns.mounts)
-}
-
-func (mntns *MountNamespace) afterLoad() {}
-
-// +checklocksignore
-func (mntns *MountNamespace) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &mntns.MountNamespaceRefs)
-	stateSourceObject.Load(1, &mntns.Owner)
-	stateSourceObject.Load(2, &mntns.root)
-	stateSourceObject.Load(3, &mntns.mountpoints)
-	stateSourceObject.Load(4, &mntns.mounts)
-}
-
 func (u *umountRecursiveOptions) StateTypeName() string {
 	return "pkg/sentry/vfs.umountRecursiveOptions"
 }
@@ -1290,28 +1253,65 @@ func (u *umountRecursiveOptions) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &u.disconnectHierarchy)
 }
 
-func (r *MountNamespaceRefs) StateTypeName() string {
-	return "pkg/sentry/vfs.MountNamespaceRefs"
+func (r *namespaceRefs) StateTypeName() string {
+	return "pkg/sentry/vfs.namespaceRefs"
 }
 
-func (r *MountNamespaceRefs) StateFields() []string {
+func (r *namespaceRefs) StateFields() []string {
 	return []string{
 		"refCount",
 	}
 }
 
-func (r *MountNamespaceRefs) beforeSave() {}
+func (r *namespaceRefs) beforeSave() {}
 
 // +checklocksignore
-func (r *MountNamespaceRefs) StateSave(stateSinkObject state.Sink) {
+func (r *namespaceRefs) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
 	stateSinkObject.Save(0, &r.refCount)
 }
 
 // +checklocksignore
-func (r *MountNamespaceRefs) StateLoad(stateSourceObject state.Source) {
+func (r *namespaceRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
 	stateSourceObject.AfterLoad(r.afterLoad)
+}
+
+func (mntns *MountNamespace) StateTypeName() string {
+	return "pkg/sentry/vfs.MountNamespace"
+}
+
+func (mntns *MountNamespace) StateFields() []string {
+	return []string{
+		"Refs",
+		"Owner",
+		"root",
+		"mountpoints",
+		"mounts",
+	}
+}
+
+func (mntns *MountNamespace) beforeSave() {}
+
+// +checklocksignore
+func (mntns *MountNamespace) StateSave(stateSinkObject state.Sink) {
+	mntns.beforeSave()
+	stateSinkObject.Save(0, &mntns.Refs)
+	stateSinkObject.Save(1, &mntns.Owner)
+	stateSinkObject.Save(2, &mntns.root)
+	stateSinkObject.Save(3, &mntns.mountpoints)
+	stateSinkObject.Save(4, &mntns.mounts)
+}
+
+func (mntns *MountNamespace) afterLoad() {}
+
+// +checklocksignore
+func (mntns *MountNamespace) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &mntns.Refs)
+	stateSourceObject.Load(1, &mntns.Owner)
+	stateSourceObject.Load(2, &mntns.root)
+	stateSourceObject.Load(3, &mntns.mountpoints)
+	stateSourceObject.Load(4, &mntns.mounts)
 }
 
 func (fd *opathFD) StateTypeName() string {
@@ -2129,9 +2129,9 @@ func init() {
 	state.Register((*Event)(nil))
 	state.Register((*FileLocks)(nil))
 	state.Register((*Mount)(nil))
-	state.Register((*MountNamespace)(nil))
 	state.Register((*umountRecursiveOptions)(nil))
-	state.Register((*MountNamespaceRefs)(nil))
+	state.Register((*namespaceRefs)(nil))
+	state.Register((*MountNamespace)(nil))
 	state.Register((*opathFD)(nil))
 	state.Register((*GetDentryOptions)(nil))
 	state.Register((*MkdirOptions)(nil))
