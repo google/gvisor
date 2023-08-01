@@ -222,6 +222,84 @@ func (vfs *VirtualFilesystem) NewMountNamespaceFrom(ctx context.Context, creds *
 	return mntns
 }
 
+type cloneEntry struct {
+	prevMount   *Mount
+	parentMount *Mount
+}
+
+func (vfs *VirtualFilesystem) updateRootAndCWD(ctx context.Context, root *VirtualDentry, cwd *VirtualDentry, src *Mount, dst *Mount) {
+	if root.mount == src {
+		root.mount.DecRef(ctx)
+		root.mount = dst
+		root.mount.IncRef()
+	}
+	if cwd.mount == src {
+		cwd.mount.DecRef(ctx)
+		cwd.mount = dst
+		cwd.mount.IncRef()
+	}
+}
+
+// CloneMountNamespace makes a copy of the specified mount namespace.
+//
+// If `root` or `cwd` have mounts in the old namespace, they will be replaced
+// with proper mounts from the new namespace.
+func (vfs *VirtualFilesystem) CloneMountNamespace(ctx context.Context, creds *auth.Credentials, ns *MountNamespace, root *VirtualDentry, cwd *VirtualDentry) (*MountNamespace, error) {
+	newns := &MountNamespace{
+		Owner:       creds.UserNamespace,
+		mountpoints: make(map[*Dentry]uint32),
+	}
+	newns.InitRefs()
+
+	vdsToDecRef := []VirtualDentry{}
+	defer func() {
+		for _, vd := range vdsToDecRef {
+			vd.DecRef(ctx)
+		}
+	}()
+
+	vfs.mountMu.Lock()
+	defer vfs.mountMu.Unlock()
+
+	ns.root.root.IncRef()
+	ns.root.fs.IncRef()
+	newns.root = newMount(vfs, ns.root.fs, ns.root.root, newns, &MountOptions{Flags: ns.root.Flags, ReadOnly: ns.root.ReadOnly()})
+	if ns.root.propType == Shared {
+		vfs.addPeer(ns.root, newns.root)
+	}
+	vfs.updateRootAndCWD(ctx, root, cwd, ns.root, newns.root)
+
+	queue := []cloneEntry{cloneEntry{ns.root, newns.root}}
+	for len(queue) != 0 {
+		p := queue[0]
+		queue = queue[1:]
+		for c := range p.prevMount.children {
+			m := vfs.cloneMount(c, c.root, nil)
+			vd := VirtualDentry{
+				mount:  p.parentMount,
+				dentry: c.point(),
+			}
+			vd.IncRef()
+
+			vds, err := vfs.connectMountAtLocked(ctx, m, vd)
+			m.DecRef(ctx)
+			vdsToDecRef = append(vdsToDecRef, vds...)
+			if err != nil {
+				newns.DecRef(ctx)
+				return nil, err
+			}
+			if c.propType == Shared {
+				vfs.addPeer(c, m)
+			}
+			vfs.updateRootAndCWD(ctx, root, cwd, c, m)
+			if len(c.children) != 0 {
+				queue = append(queue, cloneEntry{c, m})
+			}
+		}
+	}
+	return newns, nil
+}
+
 // NewFilesystem creates a new filesystem object not yet associated with any
 // mounts. It can be installed into the filesystem tree with ConnectMountAt.
 // Note that only the filesystem-specific mount options from opts are used by

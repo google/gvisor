@@ -14,6 +14,8 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <linux/magic.h>
+#include <sched.h>
 #include <stdio.h>
 #include <sys/eventfd.h>
 #include <sys/mman.h>
@@ -21,6 +23,8 @@
 #include <sys/resource.h>
 #include <sys/signalfd.h>
 #include <sys/stat.h>
+#include <sys/statfs.h>
+#include <sys/vfs.h>
 #include <unistd.h>
 
 #include <cstdint>
@@ -1437,6 +1441,68 @@ TEST(MountTest, DeadMountsAreDecRefd) {
     };
     EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
   }
+}
+
+TEST(MountTest, MountNamespace) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir.path(), "tmpfs", 0, "mode=0700", 0));
+  EXPECT_NO_ERRNO(Open(JoinPath(dir.path(), "foo"), O_CREAT | O_RDWR, 0777));
+
+  pid_t child = fork();
+  if (child == 0) {
+    // Create a new mount namespace and umount the test mount from it.
+    TEST_CHECK(unshare(CLONE_NEWNS) == 0);
+    TEST_CHECK(access(JoinPath(dir.path(), "foo").c_str(), F_OK) == 0);
+    TEST_CHECK(umount2(dir.path().c_str(), MNT_DETACH) == 0);
+    exit(0);
+  }
+  ASSERT_THAT(child, SyscallSucceeds());
+  int status;
+  ASSERT_THAT(waitpid(child, &status, 0), SyscallSucceedsWithValue(child));
+  ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+
+  // Check that the test mount is still here.
+  EXPECT_NO_ERRNO(Open(JoinPath(dir.path(), "foo"), O_RDWR));
+}
+
+TEST(MountTest, MountNamespacePropagation) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir.path(), "tmpfs", 0, "mode=0700", MNT_DETACH));
+  auto child_dir = JoinPath(dir.path(), "test");
+
+  ASSERT_THAT(mount(NULL, dir.path().c_str(), NULL, MS_SHARED, NULL),
+              SyscallSucceeds());
+  ASSERT_THAT(mkdir(child_dir.c_str(), 0700), SyscallSucceeds());
+  ASSERT_THAT(mount("child", child_dir.c_str(), "tmpfs", 0, NULL),
+              SyscallSucceeds());
+  EXPECT_NO_ERRNO(Open(JoinPath(child_dir, "foo"), O_CREAT | O_RDWR, 0777));
+
+  pid_t child = fork();
+  if (child == 0) {
+    TEST_CHECK(unshare(CLONE_NEWNS) == 0);
+    TEST_CHECK(access(JoinPath(child_dir, "foo").c_str(), F_OK) == 0);
+    // The test mount has to be umounted from the second mount namespace too.
+    TEST_CHECK(umount2(child_dir.c_str(), MNT_DETACH) == 0);
+    // The new mount has to be propagated to the second mount namespace.
+    TEST_CHECK(mount("test2", child_dir.c_str(), "tmpfs", 0, NULL) == 0);
+    TEST_CHECK(mknod(JoinPath(child_dir, "boo").c_str(), 0777 | S_IFREG, 0) ==
+               0);
+    exit(0);
+  }
+  ASSERT_THAT(child, SyscallSucceeds());
+  int status;
+  ASSERT_THAT(waitpid(child, &status, 0), SyscallSucceedsWithValue(child));
+  ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+
+  // Check that the test mount is still here.
+  EXPECT_NO_ERRNO(Open(JoinPath(child_dir, "boo"), O_RDWR));
+  EXPECT_THAT(umount2(child_dir.c_str(), MNT_DETACH), SyscallSucceeds());
 }
 
 }  // namespace

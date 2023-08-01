@@ -65,6 +65,9 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 	if args.ExitSignal != 0 && !linux.Signal(args.ExitSignal).IsValid() {
 		return 0, nil, linuxerr.EINVAL
 	}
+	if args.Flags&(linux.CLONE_FS|linux.CLONE_NEWNS) == linux.CLONE_FS|linux.CLONE_NEWNS {
+		return 0, nil, linuxerr.EINVAL
+	}
 
 	// Pull task registers and FPU state, a cloned task will inherit the
 	// state of the current task.
@@ -135,15 +138,6 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 		netns.DecRef(t)
 	})
 
-	// TODO(b/63601033): Implement CLONE_NEWNS.
-	mntns := t.mountNamespace
-	if mntns != nil {
-		mntns.IncRef()
-		cu.Add(func() {
-			mntns.DecRef(t)
-		})
-	}
-
 	// We must hold t.mu to access t.image, but we can't hold it during Fork(),
 	// since TaskImage.Fork()=>mm.Fork() takes mm.addressSpaceMu, which is ordered
 	// above Task.mu. So we copy t.image with t.mu held and call Fork() on the copy.
@@ -169,12 +163,26 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 	}
 
 	var fsContext *FSContext
-	if args.Flags&linux.CLONE_FS == 0 {
+	if args.Flags&linux.CLONE_FS == 0 || args.Flags&linux.CLONE_NEWNS != 0 {
 		fsContext = t.fsContext.Fork()
 	} else {
 		fsContext = t.fsContext
 		fsContext.IncRef()
 	}
+
+	mntns := t.mountNamespace
+	if args.Flags&linux.CLONE_NEWNS != 0 {
+		var err error
+		mntns, err = t.k.vfs.CloneMountNamespace(t, creds, mntns, &fsContext.root, &fsContext.cwd)
+		if err != nil {
+			return 0, nil, err
+		}
+	} else {
+		mntns.IncRef()
+	}
+	cu.Add(func() {
+		mntns.DecRef(t)
+	})
 
 	var fdTable *FDTable
 	if args.Flags&linux.CLONE_FILES == 0 {
@@ -534,49 +542,54 @@ func (t *Task) Unshare(flags int32) error {
 		t.mu.Unlock()
 		netns.DecRef(t)
 	}
+
+	cu := cleanup.Cleanup{}
+	// All cu actions has to be executed after releasing t.mu.
+	defer cu.Clean()
 	t.mu.Lock()
+	defer t.mu.Unlock()
 	// Can't defer unlock: DecRefs must occur without holding t.mu.
 	if flags&linux.CLONE_NEWUTS != 0 {
 		if !haveCapSysAdmin {
-			t.mu.Unlock()
 			return linuxerr.EPERM
 		}
 		// Note that this must happen after NewUserNamespace, so the
 		// new user namespace is used if there is one.
 		t.utsns = t.utsns.Clone(creds.UserNamespace)
 	}
-	var oldIPCNS *IPCNamespace
 	if flags&linux.CLONE_NEWIPC != 0 {
 		if !haveCapSysAdmin {
-			t.mu.Unlock()
 			return linuxerr.EPERM
 		}
 		// Note that "If CLONE_NEWIPC is set, then create the process in a new IPC
 		// namespace"
-		oldIPCNS = t.ipcns
+		oldIPCNS := t.ipcns
 		t.ipcns = NewIPCNamespace(creds.UserNamespace)
 		t.ipcns.InitPosixQueues(t, t.k.VFS(), creds)
 		t.ipcns.SetInode(nsfs.NewInode(t, t.k.nsfsMount, t.ipcns))
-		if oldIPCNS != nil {
-			oldIPCNS.DecRef(t)
-		}
+		cu.Add(func() { oldIPCNS.DecRef(t) })
 	}
-	var oldFDTable *FDTable
 	if flags&linux.CLONE_FILES != 0 {
-		oldFDTable = t.fdTable
+		oldFDTable := t.fdTable
 		t.fdTable = oldFDTable.Fork(t, MaxFdLimit)
+		cu.Add(func() { oldFDTable.DecRef(t) })
 	}
-	var oldFSContext *FSContext
-	if flags&linux.CLONE_FS != 0 {
-		oldFSContext = t.fsContext
+	if flags&linux.CLONE_FS != 0 || flags&linux.CLONE_NEWNS != 0 {
+		oldFSContext := t.fsContext
 		t.fsContext = oldFSContext.Fork()
+		cu.Add(func() { oldFSContext.DecRef(t) })
 	}
-	t.mu.Unlock()
-	if oldFDTable != nil {
-		oldFDTable.DecRef(t)
-	}
-	if oldFSContext != nil {
-		oldFSContext.DecRef(t)
+	if flags&linux.CLONE_NEWNS != 0 {
+		if !haveCapSysAdmin {
+			return linuxerr.EPERM
+		}
+		oldMountNS := t.mountNamespace
+		mntns, err := t.k.vfs.CloneMountNamespace(t, creds, oldMountNS, &t.fsContext.root, &t.fsContext.cwd)
+		if err != nil {
+			return err
+		}
+		t.mountNamespace = mntns
+		cu.Add(func() { oldMountNS.DecRef(t) })
 	}
 	return nil
 }
