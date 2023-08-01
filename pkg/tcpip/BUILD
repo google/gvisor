@@ -54,7 +54,6 @@ deps_test(
         "//pkg/bits",
         "//pkg/context",
         "//pkg/buffer",
-        "//pkg/bufferv2",
         "//pkg/cpuid",
         "//pkg/gohacks",
         "//pkg/goid",
