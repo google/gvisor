@@ -40,6 +40,7 @@ go_library(
         "cpu.go",
         "cpuacct.go",
         "cpuset.go",
+        "devices.go",
         "dir_refs.go",
         "job.go",
         "memory.go",

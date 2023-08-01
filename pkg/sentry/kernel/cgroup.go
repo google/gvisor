@@ -42,6 +42,7 @@ const (
 	CgroupControllerCPU     = CgroupControllerType("cpu")
 	CgroupControllerCPUAcct = CgroupControllerType("cpuacct")
 	CgroupControllerCPUSet  = CgroupControllerType("cpuset")
+	CgroupControllerDevices = CgroupControllerType("devices")
 	CgroupControllerJob     = CgroupControllerType("job")
 	CgroupControllerMemory  = CgroupControllerType("memory")
 	CgroupControllerPIDs    = CgroupControllerType("pids")
@@ -56,6 +57,8 @@ func ParseCgroupController(val string) (CgroupControllerType, error) {
 		return CgroupControllerCPUAcct, nil
 	case "cpuset":
 		return CgroupControllerCPUSet, nil
+	case "devices":
+		return CgroupControllerDevices, nil
 	case "job":
 		return CgroupControllerJob, nil
 	case "memory":
