@@ -717,6 +717,127 @@ func (d *memsData) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.c)
 }
 
+func (d *deviceRule) StateTypeName() string {
+	return "pkg/sentry/fsimpl/cgroupfs.deviceRule"
+}
+
+func (d *deviceRule) StateFields() []string {
+	return []string{
+		"controllerType",
+		"major",
+		"minor",
+		"access",
+	}
+}
+
+func (d *deviceRule) beforeSave() {}
+
+// +checklocksignore
+func (d *deviceRule) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.controllerType)
+	stateSinkObject.Save(1, &d.major)
+	stateSinkObject.Save(2, &d.minor)
+	stateSinkObject.Save(3, &d.access)
+}
+
+func (d *deviceRule) afterLoad() {}
+
+// +checklocksignore
+func (d *deviceRule) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.controllerType)
+	stateSourceObject.Load(1, &d.major)
+	stateSourceObject.Load(2, &d.minor)
+	stateSourceObject.Load(3, &d.access)
+}
+
+func (c *devicesController) StateTypeName() string {
+	return "pkg/sentry/fsimpl/cgroupfs.devicesController"
+}
+
+func (c *devicesController) StateFields() []string {
+	return []string{
+		"controllerCommon",
+		"controllerStateless",
+		"controllerNoResource",
+		"allow",
+		"deviceRules",
+	}
+}
+
+func (c *devicesController) beforeSave() {}
+
+// +checklocksignore
+func (c *devicesController) StateSave(stateSinkObject state.Sink) {
+	c.beforeSave()
+	stateSinkObject.Save(0, &c.controllerCommon)
+	stateSinkObject.Save(1, &c.controllerStateless)
+	stateSinkObject.Save(2, &c.controllerNoResource)
+	stateSinkObject.Save(3, &c.allow)
+	stateSinkObject.Save(4, &c.deviceRules)
+}
+
+func (c *devicesController) afterLoad() {}
+
+// +checklocksignore
+func (c *devicesController) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &c.controllerCommon)
+	stateSourceObject.Load(1, &c.controllerStateless)
+	stateSourceObject.Load(2, &c.controllerNoResource)
+	stateSourceObject.Load(3, &c.allow)
+	stateSourceObject.Load(4, &c.deviceRules)
+}
+
+func (d *allowedDevicesData) StateTypeName() string {
+	return "pkg/sentry/fsimpl/cgroupfs.allowedDevicesData"
+}
+
+func (d *allowedDevicesData) StateFields() []string {
+	return []string{
+		"c",
+	}
+}
+
+func (d *allowedDevicesData) beforeSave() {}
+
+// +checklocksignore
+func (d *allowedDevicesData) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.c)
+}
+
+func (d *allowedDevicesData) afterLoad() {}
+
+// +checklocksignore
+func (d *allowedDevicesData) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.c)
+}
+
+func (d *deniedDevicesData) StateTypeName() string {
+	return "pkg/sentry/fsimpl/cgroupfs.deniedDevicesData"
+}
+
+func (d *deniedDevicesData) StateFields() []string {
+	return []string{
+		"c",
+	}
+}
+
+func (d *deniedDevicesData) beforeSave() {}
+
+// +checklocksignore
+func (d *deniedDevicesData) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.c)
+}
+
+func (d *deniedDevicesData) afterLoad() {}
+
+// +checklocksignore
+func (d *deniedDevicesData) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.c)
+}
+
 func (r *dirRefs) StateTypeName() string {
 	return "pkg/sentry/fsimpl/cgroupfs.dirRefs"
 }
@@ -953,6 +1074,10 @@ func init() {
 	state.Register((*cpusetController)(nil))
 	state.Register((*cpusData)(nil))
 	state.Register((*memsData)(nil))
+	state.Register((*deviceRule)(nil))
+	state.Register((*devicesController)(nil))
+	state.Register((*allowedDevicesData)(nil))
+	state.Register((*deniedDevicesData)(nil))
 	state.Register((*dirRefs)(nil))
 	state.Register((*jobController)(nil))
 	state.Register((*memoryController)(nil))
