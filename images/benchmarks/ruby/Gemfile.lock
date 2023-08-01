@@ -3,7 +3,7 @@ GEM
   specs:
     mustermann (1.0.3)
     puma (3.4.0)
-    rack (2.0.6)
+    rack (2.2.8)
     rack-protection (2.0.5)
       rack
     redis (4.1.0)
