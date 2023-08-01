@@ -508,8 +508,8 @@ type Task struct {
 
 	// netns is the task's network namespace. It has to be changed under mu
 	// so that GetNetworkNamespace can take a reference before it is
-	// released.
-	netns inet.NamespaceAtomicPtr
+	// released. It is changed only from the task goroutine.
+	netns *inet.Namespace
 
 	// If rseqPreempted is true, before the next call to p.Switch(),
 	// interrupt rseq critical regions as defined by rseqAddr and

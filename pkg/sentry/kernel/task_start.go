@@ -171,7 +171,7 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 		cgroups:         make(map[Cgroup]struct{}),
 		userCounters:    cfg.UserCounters,
 	}
-	t.netns.Store(cfg.NetworkNamespace)
+	t.netns = cfg.NetworkNamespace
 	t.creds.Store(cfg.Credentials)
 	t.endStopCond.L = &t.tg.signalHandlers.mu
 	t.ptraceTracer.Store((*Task)(nil))
