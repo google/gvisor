@@ -20,7 +20,7 @@ import (
 
 // IsNetworkNamespaced returns true if t is in a non-root network namespace.
 func (t *Task) IsNetworkNamespaced() bool {
-	return !t.netns.Load().IsRoot()
+	return !t.netns.IsRoot()
 }
 
 // NetworkContext returns the network stack used by the task. NetworkContext
@@ -29,12 +29,12 @@ func (t *Task) IsNetworkNamespaced() bool {
 // TODO(gvisor.dev/issue/1833): Migrate callers of this method to
 // NetworkNamespace().
 func (t *Task) NetworkContext() inet.Stack {
-	return t.netns.Load().Stack()
+	return t.netns.Stack()
 }
 
 // NetworkNamespace returns the network namespace observed by the task.
 func (t *Task) NetworkNamespace() *inet.Namespace {
-	return t.netns.Load()
+	return t.netns
 }
 
 // GetNetworkNamespace takes a reference on the task network namespace and
@@ -43,7 +43,7 @@ func (t *Task) GetNetworkNamespace() *inet.Namespace {
 	// t.mu is required to be sure that the network namespace will not be
 	// released.
 	t.mu.Lock()
-	netns := t.netns.Load()
+	netns := t.netns
 	if netns != nil {
 		netns.IncRef()
 	}

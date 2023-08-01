@@ -126,7 +126,7 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 		ipcns.DecRef(t)
 	})
 
-	netns := t.netns.Load()
+	netns := t.netns
 	if args.Flags&linux.CLONE_NEWNET != 0 {
 		netns = inet.NewNamespace(netns, userns)
 		inode := nsfs.NewInode(t, t.k.nsfsMount, netns)
@@ -444,7 +444,7 @@ func (t *Task) Setns(fd *vfs.FileDescription, flags int32) error {
 		oldNS := t.NetworkNamespace()
 		ns.IncRef()
 		t.mu.Lock()
-		t.netns.Store(ns)
+		t.netns = ns
 		t.mu.Unlock()
 		oldNS.DecRef(t)
 		return nil
@@ -570,9 +570,10 @@ func (t *Task) Unshare(flags int32) error {
 		netnsInode := nsfs.NewInode(t, t.k.nsfsMount, netns)
 		netns.SetInode(netnsInode)
 		t.mu.Lock()
-		netns = t.netns.Swap(netns)
+		oldNetns := t.netns
+		t.netns = netns
 		t.mu.Unlock()
-		netns.DecRef(t)
+		oldNetns.DecRef(t)
 	}
 
 	cu := cleanup.Cleanup{}
