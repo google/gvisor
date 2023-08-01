@@ -103,6 +103,13 @@ go_repository(
 )
 
 go_repository(
+  name = "org_golang_x_exp",
+  importpath = "golang.org/x/exp",
+  sum = "h1:Di6/M8l0O2lCLc6VVRWhgCiApHV8MnQurBnFSHsQtNY=",
+  version = "v0.0.0-20230725093048-515e97ebf090",
+)
+
+go_repository(
     name = "org_golang_x_net",
     importpath = "golang.org/x/net",
     sum = "h1:GyT4nK/YDHSqa1c4753ouYCDajOYKTja9Xb/OHtgvSw=",
@@ -2295,13 +2302,6 @@ go_repository(
     importpath = "sigs.k8s.io/structured-merge-diff/v4",
     sum = "h1:PRbqxJClWWYMNV1dhaG4NsibJbArud9kFxnAMREiWFE=",
     version = "v4.2.3",
-)
-
-go_repository(
-    name = "org_golang_x_exp",
-    importpath = "golang.org/x/exp",
-    sum = "h1:c2HOrn5iMezYjSlGPncknSEr/8x5LELb/ilJbXi9DEA=",
-    version = "v0.0.0-20190121172915-509febef88a4",
 )
 
 go_repository(

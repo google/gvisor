@@ -20,18 +20,28 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/devtmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // accelDevice implements vfs.Device for /dev/accel[0-9]+.
 //
 // +stateify savable
 type accelDevice struct {
+	mu sync.Mutex
+
 	minor uint32
+	// +checklocks:mu
+	openWriteFDs uint32
+	// +checklocks:mu
+	devAddrSet DevAddrSet
 }
 
 func (dev *accelDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
+	dev.mu.Lock()
+	defer dev.mu.Unlock()
 	hostPath := fmt.Sprintf("/dev/accel%d", dev.minor)
 	hostFD, err := unix.Openat(-1, hostPath, int((opts.Flags&unix.O_ACCMODE)|unix.O_NOFOLLOW), 0)
 	if err != nil {
@@ -40,12 +50,21 @@ func (dev *accelDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dent
 	}
 	fd := &accelFD{
 		hostFD: int32(hostFD),
+		device: dev,
 	}
 	if err := fd.vfsfd.Init(fd, opts.Flags, mnt, vfsd, &vfs.FileDescriptionOptions{
 		UseDentryMetadata: true,
 	}); err != nil {
 		unix.Close(hostFD)
 		return nil, err
+	}
+	if err := fdnotifier.AddFD(int32(hostFD), &fd.queue); err != nil {
+		unix.Close(hostFD)
+		return nil, err
+	}
+	fd.memmapFile.fd = fd
+	if vfs.MayWriteFileWithOpenFlags(opts.Flags) {
+		dev.openWriteFDs++
 	}
 	return &fd.vfsfd, nil
 }
