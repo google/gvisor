@@ -176,7 +176,7 @@ func tpuProxyUpdateChroot(chroot string, conf *config.Config) error {
 		if err != nil {
 			return fmt.Errorf("error parsing path %q: %v", sysAccelPath, err)
 		}
-		if err := mountInChroot(chroot, sysPCIDeviceDir, sysPCIDeviceDir, "bind", unix.MS_BIND); err != nil {
+		if err := mountInChroot(chroot, sysPCIDeviceDir, sysPCIDeviceDir, "bind", unix.MS_BIND|unix.MS_RDONLY); err != nil {
 			return fmt.Errorf("error mounting %q in chroot: %v", sysAccelPath, err)
 		}
 	}
