@@ -6,13 +6,148 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
+func (r *DevAddrRange) StateTypeName() string {
+	return "pkg/sentry/devices/accel.DevAddrRange"
+}
+
+func (r *DevAddrRange) StateFields() []string {
+	return []string{
+		"Start",
+		"End",
+	}
+}
+
+func (r *DevAddrRange) beforeSave() {}
+
+// +checklocksignore
+func (r *DevAddrRange) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.Start)
+	stateSinkObject.Save(1, &r.End)
+}
+
+func (r *DevAddrRange) afterLoad() {}
+
+// +checklocksignore
+func (r *DevAddrRange) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.Start)
+	stateSourceObject.Load(1, &r.End)
+}
+
+func (s *DevAddrSet) StateTypeName() string {
+	return "pkg/sentry/devices/accel.DevAddrSet"
+}
+
+func (s *DevAddrSet) StateFields() []string {
+	return []string{
+		"root",
+	}
+}
+
+func (s *DevAddrSet) beforeSave() {}
+
+// +checklocksignore
+func (s *DevAddrSet) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	var rootValue *DevAddrSegmentDataSlices
+	rootValue = s.saveRoot()
+	stateSinkObject.SaveValue(0, rootValue)
+}
+
+func (s *DevAddrSet) afterLoad() {}
+
+// +checklocksignore
+func (s *DevAddrSet) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.LoadValue(0, new(*DevAddrSegmentDataSlices), func(y any) { s.loadRoot(y.(*DevAddrSegmentDataSlices)) })
+}
+
+func (n *DevAddrnode) StateTypeName() string {
+	return "pkg/sentry/devices/accel.DevAddrnode"
+}
+
+func (n *DevAddrnode) StateFields() []string {
+	return []string{
+		"nrSegments",
+		"parent",
+		"parentIndex",
+		"hasChildren",
+		"maxGap",
+		"keys",
+		"values",
+		"children",
+	}
+}
+
+func (n *DevAddrnode) beforeSave() {}
+
+// +checklocksignore
+func (n *DevAddrnode) StateSave(stateSinkObject state.Sink) {
+	n.beforeSave()
+	stateSinkObject.Save(0, &n.nrSegments)
+	stateSinkObject.Save(1, &n.parent)
+	stateSinkObject.Save(2, &n.parentIndex)
+	stateSinkObject.Save(3, &n.hasChildren)
+	stateSinkObject.Save(4, &n.maxGap)
+	stateSinkObject.Save(5, &n.keys)
+	stateSinkObject.Save(6, &n.values)
+	stateSinkObject.Save(7, &n.children)
+}
+
+func (n *DevAddrnode) afterLoad() {}
+
+// +checklocksignore
+func (n *DevAddrnode) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &n.nrSegments)
+	stateSourceObject.Load(1, &n.parent)
+	stateSourceObject.Load(2, &n.parentIndex)
+	stateSourceObject.Load(3, &n.hasChildren)
+	stateSourceObject.Load(4, &n.maxGap)
+	stateSourceObject.Load(5, &n.keys)
+	stateSourceObject.Load(6, &n.values)
+	stateSourceObject.Load(7, &n.children)
+}
+
+func (d *DevAddrSegmentDataSlices) StateTypeName() string {
+	return "pkg/sentry/devices/accel.DevAddrSegmentDataSlices"
+}
+
+func (d *DevAddrSegmentDataSlices) StateFields() []string {
+	return []string{
+		"Start",
+		"End",
+		"Values",
+	}
+}
+
+func (d *DevAddrSegmentDataSlices) beforeSave() {}
+
+// +checklocksignore
+func (d *DevAddrSegmentDataSlices) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.Start)
+	stateSinkObject.Save(1, &d.End)
+	stateSinkObject.Save(2, &d.Values)
+}
+
+func (d *DevAddrSegmentDataSlices) afterLoad() {}
+
+// +checklocksignore
+func (d *DevAddrSegmentDataSlices) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.Start)
+	stateSourceObject.Load(1, &d.End)
+	stateSourceObject.Load(2, &d.Values)
+}
+
 func (dev *accelDevice) StateTypeName() string {
 	return "pkg/sentry/devices/accel.accelDevice"
 }
 
 func (dev *accelDevice) StateFields() []string {
 	return []string{
+		"mu",
 		"minor",
+		"openWriteFDs",
+		"devAddrSet",
 	}
 }
 
@@ -21,16 +156,26 @@ func (dev *accelDevice) beforeSave() {}
 // +checklocksignore
 func (dev *accelDevice) StateSave(stateSinkObject state.Sink) {
 	dev.beforeSave()
-	stateSinkObject.Save(0, &dev.minor)
+	stateSinkObject.Save(0, &dev.mu)
+	stateSinkObject.Save(1, &dev.minor)
+	stateSinkObject.Save(2, &dev.openWriteFDs)
+	stateSinkObject.Save(3, &dev.devAddrSet)
 }
 
 func (dev *accelDevice) afterLoad() {}
 
 // +checklocksignore
 func (dev *accelDevice) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &dev.minor)
+	stateSourceObject.Load(0, &dev.mu)
+	stateSourceObject.Load(1, &dev.minor)
+	stateSourceObject.Load(2, &dev.openWriteFDs)
+	stateSourceObject.Load(3, &dev.devAddrSet)
 }
 
 func init() {
+	state.Register((*DevAddrRange)(nil))
+	state.Register((*DevAddrSet)(nil))
+	state.Register((*DevAddrnode)(nil))
+	state.Register((*DevAddrSegmentDataSlices)(nil))
 	state.Register((*accelDevice)(nil))
 }
