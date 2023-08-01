@@ -1428,6 +1428,17 @@ TEST(PIDsCgroup, RaceFSDestructionChargeUncharge) {
   });
 }
 
+TEST(DevicesCgroup, ControlFilesExist) {
+  SKIP_IF(!CgroupsAvailable());
+
+  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
+  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("devices"));
+
+  // The root group starts with allowing rwm to all.
+  EXPECT_THAT(c.ReadControlFile("devices.allow"), IsPosixErrorOkAndHolds(""));
+  EXPECT_THAT(c.ReadControlFile("devices.deny"), IsPosixErrorOkAndHolds(""));
+}
+
 }  // namespace
 }  // namespace testing
 }  // namespace gvisor
