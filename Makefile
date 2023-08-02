@@ -205,7 +205,7 @@ nogo-tests:
 # For unit tests, we take everything in the root, pkg/... and tools/..., and
 # pull in all directories in runsc except runsc/container.
 unit-tests: ## Local package unit tests in pkg/..., tools/.., etc.
-	@$(call test,--test_tag_filters=-nogo --test_filter=-//runsc/container/... //:all pkg/... tools/... runsc/... vdso/... test/trace/...)
+	@$(call test,'--test_tag_filters=-nogo,-requires-kvm' //:all pkg/... tools/... runsc/... vdso/... test/trace/...)
 .PHONY: unit-tests
 
 # See unit-tests: this includes runsc/container.
