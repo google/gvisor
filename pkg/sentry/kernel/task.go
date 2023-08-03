@@ -795,8 +795,11 @@ func (t *Task) MountNamespace() *vfs.MountNamespace {
 func (t *Task) GetMountNamespace() *vfs.MountNamespace {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	t.mountNamespace.IncRef()
-	return t.mountNamespace
+	mntns := t.mountNamespace
+	if mntns != nil {
+		mntns.IncRef()
+	}
+	return mntns
 }
 
 // AbstractSockets returns t's AbstractSocketNamespace.
