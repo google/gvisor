@@ -288,12 +288,11 @@ func (*runExitMain) execute(t *Task) taskRunState {
 	mntns := t.mountNamespace
 	t.mountNamespace = nil
 	ipcns := t.ipcns
+	t.ipcns = nil
 	netns := t.netns
 	t.netns = nil
 	t.mu.Unlock()
-	if mntns != nil {
-		mntns.DecRef(t)
-	}
+	mntns.DecRef(t)
 	ipcns.DecRef(t)
 	netns.DecRef(t)
 
