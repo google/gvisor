@@ -112,6 +112,14 @@ type Marshallable interface {
 	// for UnmarshalBytes.
 	CopyIn(cc CopyContext, addr hostarch.Addr) (int, error)
 
+	// CopyInN is like CopyIn, but explicitly requests a partial
+	// copy-in. Note that this may yield unexpected results for non-packed
+	// types and the caller may only want to allow this for packed types. See
+	// comment on UnmarshalBytes.
+	//
+	// The limit must be less than or equal to SizeBytes().
+	CopyInN(cc CopyContext, addr hostarch.Addr, limit int) (int, error)
+
 	// CopyOut serializes a Marshallable type to a task's memory. This may only
 	// be called from a task goroutine. This is more efficient than calling
 	// MarshalUnsafe on Marshallable.Packed types, as the type being serialized

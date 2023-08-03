@@ -184,14 +184,21 @@ func (g *interfaceGenerator) emitMarshallableForPrimitiveNewtype(nt *ast.Ident) 
 	})
 	g.emit("}\n\n")
 
-	g.emit("// CopyIn implements marshal.Marshallable.CopyIn.\n")
-	g.emit("func (%s *%s) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {\n", g.r, g.typeName())
+	g.emit("// CopyInN implements marshal.Marshallable.CopyInN.\n")
+	g.emit("func (%s *%s) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {\n", g.r, g.typeName())
 	g.inIndent(func() {
 		g.emitCastToByteSlice(g.r, "buf", fmt.Sprintf("%s.SizeBytes()", g.r))
 
-		g.emit("length, err := cc.CopyInBytes(addr, buf) // escapes: okay.\n")
+		g.emit("length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.\n")
 		g.emitKeepAlive(g.r)
 		g.emit("return length, err\n")
+	})
+	g.emit("}\n\n")
+
+	g.emit("// CopyIn implements marshal.Marshallable.CopyIn.\n")
+	g.emit("func (%s *%s) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {\n", g.r, g.typeName())
+	g.inIndent(func() {
+		g.emit("return %s.CopyInN(cc, addr, %s.SizeBytes())\n", g.r, g.r)
 	})
 	g.emit("}\n\n")
 

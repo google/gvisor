@@ -222,6 +222,32 @@ func limitedCopyOut(t *testing.T, src marshal.Marshallable, limit int) {
 	compareMemory(t, expectedMem, actualMem, n)
 }
 
+// copyInN marshals src to task memory, requesting the marshalling to be
+// limited to limit bytes.
+func copyInN(t *testing.T, src, dst marshal.Marshallable, limit int) {
+	var cc mockCopyContext
+	cc.populate(src)
+	cc.setLimit(limit)
+
+	n, err := dst.CopyInN(&cc, hostarch.Addr(0), limit)
+	if err != nil {
+		t.Errorf("CopyInN returned unexpected error: %v", err)
+	}
+	if n != limit {
+		t.Errorf("CopyInN copied unexpected number of bytes, expected %d, got %d", limit, n)
+	}
+
+	expectedMem := unsafeMemory(src)
+	defer runtime.KeepAlive(src)
+	actualMem := unsafeMemory(dst)
+	defer runtime.KeepAlive(dst)
+
+	t.Logf("Expected: %v + %v\n", expectedMem[:n], expectedMem[n:])
+	t.Logf("Actual  : %v + %v\n", actualMem[:n], actualMem[n:])
+
+	compareMemory(t, expectedMem, actualMem, n)
+}
+
 // copyOutN marshals src to task memory, requesting the marshalling to be
 // limited to limit bytes.
 func copyOutN(t *testing.T, src marshal.Marshallable, limit int) {
@@ -295,6 +321,14 @@ func TestLimitedMarshalling(t *testing.T) {
 			analysis.RandomizeValue(expected)
 
 			copyOutN(t, expected, expected.SizeBytes()/2)
+		})
+
+		// Explicitly request partial copy-in.
+		t.Run(fmt.Sprintf("PartialCopyInN_%v", ty), func(t *testing.T) {
+			expected := reflect.New(ty).Interface().(marshal.Marshallable)
+			analysis.RandomizeValue(expected)
+
+			copyInN(t, expected, expected, expected.SizeBytes()/2)
 		})
 	}
 }
