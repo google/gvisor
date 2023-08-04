@@ -675,6 +675,7 @@ TEST(NetlinkRouteTest, GetRouteDump) {
 
   bool routeFound = false;
   bool dstFound = true;
+  bool defaultRouteDstFound = false;
   ASSERT_NO_ERRNO(NetlinkRequestResponse(
       fd, &req, sizeof(req),
       [&](const struct nlmsghdr* hdr) {
@@ -700,7 +701,8 @@ TEST(NetlinkRouteTest, GetRouteDump) {
         std::cout << "Found route table=" << static_cast<int>(msg->rtm_table)
                   << ", protocol=" << static_cast<int>(msg->rtm_protocol)
                   << ", scope=" << static_cast<int>(msg->rtm_scope)
-                  << ", type=" << static_cast<int>(msg->rtm_type);
+                  << ", type=" << static_cast<int>(msg->rtm_type)
+                  << ", prefixlen=" << static_cast<int>(msg->rtm_dst_len);
 
         int len = RTM_PAYLOAD(hdr);
         bool rtDstFound = false;
@@ -721,7 +723,11 @@ TEST(NetlinkRouteTest, GetRouteDump) {
         if (msg->rtm_table == RT_TABLE_MAIN ||
             (!IsRunningOnGvisor() && msg->rtm_table == RT_TABLE_LOCAL)) {
           routeFound = true;
-          dstFound = rtDstFound && dstFound;
+          if (msg->rtm_dst_len) {
+            dstFound = rtDstFound && dstFound;
+          } else {
+            defaultRouteDstFound = rtDstFound || defaultRouteDstFound;
+          }
         }
       },
       false));
@@ -729,6 +735,8 @@ TEST(NetlinkRouteTest, GetRouteDump) {
   EXPECT_TRUE(routeFound);
   // Found RTA_DST for each route in main table.
   EXPECT_TRUE(dstFound);
+  // RTA_DST should not be present for default routes.
+  EXPECT_FALSE(defaultRouteDstFound);
 }
 
 // GetRouteRequest tests a RTM_GETROUTE request with RTM_F_LOOKUP_TABLE flag.
