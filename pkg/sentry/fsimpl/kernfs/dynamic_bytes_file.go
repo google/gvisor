@@ -105,7 +105,11 @@ type DynamicBytesFD struct {
 // Init initializes a DynamicBytesFD.
 func (fd *DynamicBytesFD) Init(m *vfs.Mount, d *Dentry, data vfs.DynamicBytesSource, locks *vfs.FileLocks, flags uint32) error {
 	fd.LockFD.Init(locks)
-	if err := fd.vfsfd.Init(fd, flags, m, d.VFSDentry(), &vfs.FileDescriptionOptions{}); err != nil {
+	if err := fd.vfsfd.Init(fd, flags, m, d.VFSDentry(),
+		&vfs.FileDescriptionOptions{
+			DenySpliceIn: true,
+		},
+	); err != nil {
 		return err
 	}
 	fd.inode = d.inode
