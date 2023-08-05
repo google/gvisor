@@ -26,6 +26,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"time"
 
@@ -50,6 +51,14 @@ type LogMonitor struct {
 
 // Start implements runc.ProcessMonitor.
 func (l *LogMonitor) Start(cmd *exec.Cmd) (chan runc.Exit, error) {
+	log.L.Debugf("Executing: %s", cmd.Args)
+	return l.Next.Start(cmd)
+}
+
+// StartLocked implements runc.ProcessMonitor.
+func (l *LogMonitor) StartLocked(cmd *exec.Cmd) (chan runc.Exit, error) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	log.L.Debugf("Executing: %s", cmd.Args)
 	return l.Next.Start(cmd)
 }
