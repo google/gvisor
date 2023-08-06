@@ -107,12 +107,18 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 	cu := cleanup.Make(func() {})
 	defer cu.Clean()
 
-	utsns := t.UTSNamespace()
+	utsns := t.utsns
 	if args.Flags&linux.CLONE_NEWUTS != 0 {
 		// Note that this must happen after NewUserNamespace so we get
 		// the new userns if there is one.
-		utsns = t.UTSNamespace().Clone(userns)
+		utsns = utsns.Clone(userns)
+		utsns.SetInode(nsfs.NewInode(t, t.k.nsfsMount, utsns))
+	} else {
+		utsns.IncRef()
 	}
+	cu.Add(func() {
+		utsns.DecRef(t)
+	})
 
 	ipcns := t.ipcns
 	if args.Flags&linux.CLONE_NEWIPC != 0 {
@@ -495,6 +501,21 @@ func (t *Task) Setns(fd *vfs.FileDescription, flags int32) error {
 		oldNS.DecRef(t)
 		oldFSContext.DecRef(t)
 		return nil
+	case *UTSNamespace:
+		if flags != 0 && flags != linux.CLONE_NEWUTS {
+			return linuxerr.EINVAL
+		}
+		if !t.HasCapabilityIn(linux.CAP_SYS_ADMIN, ns.UserNamespace()) ||
+			!t.Credentials().HasCapability(linux.CAP_SYS_ADMIN) {
+			return linuxerr.EPERM
+		}
+		oldNS := t.UTSNamespace()
+		ns.IncRef()
+		t.mu.Lock()
+		t.utsns = ns
+		t.mu.Unlock()
+		oldNS.DecRef(t)
+		return nil
 	default:
 		return linuxerr.EINVAL
 	}
@@ -588,7 +609,10 @@ func (t *Task) Unshare(flags int32) error {
 		}
 		// Note that this must happen after NewUserNamespace, so the
 		// new user namespace is used if there is one.
+		oldUTSNS := t.utsns
 		t.utsns = t.utsns.Clone(creds.UserNamespace)
+		t.utsns.SetInode(nsfs.NewInode(t, t.k.nsfsMount, t.utsns))
+		cu.Add(func() { oldUTSNS.DecRef(t) })
 	}
 	if flags&linux.CLONE_NEWIPC != 0 {
 		if !haveCapSysAdmin {

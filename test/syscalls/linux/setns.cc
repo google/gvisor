@@ -14,6 +14,9 @@
 
 #include <sched.h>
 
+#include <cstdint>
+
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/linux_capability_util.h"
@@ -44,6 +47,28 @@ TEST(SetnsTest, ChangeIPCNamespace) {
   ASSERT_THAT(stat("/proc/thread-self/ns/ipc", &st), SyscallSucceeds());
   ipcns3 = st.st_ino;
   EXPECT_EQ(ipcns1, ipcns3);
+}
+
+TEST(SetnsTest, ChangeUTSNamespace) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  struct stat st;
+  uint64_t utsns1, utsns2, utsns3;
+  const FileDescriptor nsfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/uts", O_RDONLY));
+  ASSERT_THAT(stat("/proc/thread-self/ns/uts", &st), SyscallSucceeds());
+  utsns1 = st.st_ino;
+
+  // Use unshare(CLONE_NEWUTS) to change into a new UTS namespace.
+  ASSERT_THAT(unshare(CLONE_NEWUTS), SyscallSucceedsWithValue(0));
+  ASSERT_THAT(stat("/proc/thread-self/ns/uts", &st), SyscallSucceeds());
+  utsns2 = st.st_ino;
+  ASSERT_NE(utsns1, utsns2);
+
+  ASSERT_THAT(setns(nsfd.get(), CLONE_NEWUTS), SyscallSucceedsWithValue(0));
+  ASSERT_THAT(stat("/proc/thread-self/ns/uts", &st), SyscallSucceeds());
+  utsns3 = st.st_ino;
+  EXPECT_EQ(utsns1, utsns3);
 }
 
 }  // namespace

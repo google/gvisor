@@ -452,6 +452,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	k.nsfsMount = k.vfs.NewDisconnectedMount(nsfsFilesystem, nil, &vfs.MountOptions{})
 	k.rootNetworkNamespace.SetInode(nsfs.NewInode(ctx, k.nsfsMount, k.rootNetworkNamespace))
 	k.rootIPCNamespace.SetInode(nsfs.NewInode(ctx, k.nsfsMount, k.rootIPCNamespace))
+	k.rootUTSNamespace.SetInode(nsfs.NewInode(ctx, k.nsfsMount, k.rootUTSNamespace))
 
 	tmpfsOpts := vfs.GetFilesystemOptions{
 		InternalData: tmpfs.FilesystemOpts{
@@ -769,7 +770,9 @@ func (ctx *createProcessContext) Value(key any) any {
 	case CtxPIDNamespace:
 		return ctx.args.PIDNamespace
 	case CtxUTSNamespace:
-		return ctx.args.UTSNamespace
+		utsns := ctx.args.UTSNamespace
+		utsns.IncRef()
+		return utsns
 	case ipc.CtxIPCNamespace:
 		ipcns := ctx.args.IPCNamespace
 		ipcns.IncRef()
@@ -1284,6 +1287,7 @@ func (k *Kernel) RootUserNamespace() *auth.UserNamespace {
 
 // RootUTSNamespace returns the root UTSNamespace.
 func (k *Kernel) RootUTSNamespace() *UTSNamespace {
+	k.rootUTSNamespace.IncRef()
 	return k.rootUTSNamespace
 }
 
@@ -1527,7 +1531,9 @@ func (ctx *supervisorContext) Value(key any) any {
 	case CtxPIDNamespace:
 		return ctx.Kernel.tasks.Root
 	case CtxUTSNamespace:
-		return ctx.Kernel.rootUTSNamespace
+		utsns := ctx.Kernel.rootUTSNamespace
+		utsns.IncRef()
+		return utsns
 	case ipc.CtxIPCNamespace:
 		ipcns := ctx.Kernel.rootIPCNamespace
 		ipcns.IncRef()

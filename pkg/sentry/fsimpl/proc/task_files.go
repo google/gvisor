@@ -1283,6 +1283,11 @@ func (s *namespaceSymlink) getInode(t *kernel.Task) *nsfs.Inode {
 			return ipcns.GetInode()
 		}
 		return nil
+	case linux.CLONE_NEWUTS:
+		if utsns := t.GetUTSNamespace(); utsns != nil {
+			return utsns.GetInode()
+		}
+		return nil
 	case linux.CLONE_NEWNS:
 		mntns := t.GetMountNamespace()
 		if mntns == nil {

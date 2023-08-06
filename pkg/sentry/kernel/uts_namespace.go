@@ -15,6 +15,8 @@
 package kernel
 
 import (
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/nsfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sync"
 )
@@ -35,6 +37,8 @@ type UTSNamespace struct {
 	//
 	// userns is immutable.
 	userns *auth.UserNamespace
+
+	inode *nsfs.Inode
 }
 
 // NewUTSNamespace creates a new UTS namespace.
@@ -50,6 +54,17 @@ func NewUTSNamespace(hostName, domainName string, userns *auth.UserNamespace) *U
 func (t *Task) UTSNamespace() *UTSNamespace {
 	t.mu.Lock()
 	defer t.mu.Unlock()
+	return t.utsns
+}
+
+// GetUTSNamespace takes a reference on the task UTS namespace and
+// returns it. It will return nil if the task isn't alive.
+func (t *Task) GetUTSNamespace() *UTSNamespace {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.utsns != nil {
+		t.utsns.IncRef()
+	}
 	return t.utsns
 }
 
@@ -86,6 +101,42 @@ func (u *UTSNamespace) UserNamespace() *auth.UserNamespace {
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	return u.userns
+}
+
+// Type implements nsfs.Namespace.Type.
+func (u *UTSNamespace) Type() string {
+	return "uts"
+}
+
+// Destroy implements nsfs.Namespace.Destroy.
+func (u *UTSNamespace) Destroy(ctx context.Context) {}
+
+// SetInode sets the nsfs `inode` to the UTS namespace.
+func (u *UTSNamespace) SetInode(inode *nsfs.Inode) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.inode = inode
+}
+
+// GetInode returns the nsfs inode associated with the UTS  namespace.
+func (u *UTSNamespace) GetInode() *nsfs.Inode {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	return u.inode
+}
+
+// IncRef increments the Namespace's refcount.
+func (u *UTSNamespace) IncRef() {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.inode.IncRef()
+}
+
+// DecRef decrements the namespace's refcount.
+func (u *UTSNamespace) DecRef(ctx context.Context) {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	u.inode.DecRef(ctx)
 }
 
 // Clone makes a copy of this UTS namespace, associating the given user
