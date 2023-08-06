@@ -169,6 +169,7 @@ var _ dynamicInode = (*hostnameData)(nil)
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (*hostnameData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	utsns := kernel.UTSNamespaceFromContext(ctx)
+	defer utsns.DecRef(ctx)
 	buf.WriteString(utsns.HostName())
 	buf.WriteString("\n")
 	return nil
