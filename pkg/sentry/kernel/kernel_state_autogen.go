@@ -2409,6 +2409,7 @@ func (u *UTSNamespace) StateFields() []string {
 		"hostName",
 		"domainName",
 		"userns",
+		"inode",
 	}
 }
 
@@ -2420,6 +2421,7 @@ func (u *UTSNamespace) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &u.hostName)
 	stateSinkObject.Save(1, &u.domainName)
 	stateSinkObject.Save(2, &u.userns)
+	stateSinkObject.Save(3, &u.inode)
 }
 
 func (u *UTSNamespace) afterLoad() {}
@@ -2429,6 +2431,7 @@ func (u *UTSNamespace) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &u.hostName)
 	stateSourceObject.Load(1, &u.domainName)
 	stateSourceObject.Load(2, &u.userns)
+	stateSourceObject.Load(3, &u.inode)
 }
 
 func (v *VDSOParamPage) StateTypeName() string {

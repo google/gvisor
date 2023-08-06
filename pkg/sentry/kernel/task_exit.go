@@ -287,12 +287,15 @@ func (*runExitMain) execute(t *Task) taskRunState {
 	t.mu.Lock()
 	mntns := t.mountNamespace
 	t.mountNamespace = nil
+	utsns := t.utsns
+	t.utsns = nil
 	ipcns := t.ipcns
 	t.ipcns = nil
 	netns := t.netns
 	t.netns = nil
 	t.mu.Unlock()
 	mntns.DecRef(t)
+	utsns.DecRef(t)
 	ipcns.DecRef(t)
 	netns.DecRef(t)
 

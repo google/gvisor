@@ -73,7 +73,9 @@ func (t *Task) contextValue(key any, isTaskGoroutine bool) any {
 			t.mu.Lock()
 			defer t.mu.Unlock()
 		}
-		return t.utsns
+		utsns := t.utsns
+		utsns.IncRef()
+		return utsns
 	case ipc.CtxIPCNamespace:
 		if !isTaskGoroutine {
 			t.mu.Lock()
