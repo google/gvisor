@@ -151,6 +151,8 @@ cc_library(
     hdrs = ["socket_netlink_route_util.h"],
     deps = [
         ":socket_netlink_util",
+        "//test/util:file_descriptor",
+        "//test/util:posix_error",
     ],
 )
 
@@ -3371,6 +3373,8 @@ cc_binary(
         "//test/util:capability_util",
         "//test/util:cleanup",
         "//test/util:file_descriptor",
+        "//test/util:posix_error",
+        "//test/util:save_util",
         "//test/util:socket_util",
         "@com_google_absl//absl/strings:str_format",
         gtest,

@@ -62,6 +62,14 @@ PosixError LinkChangeFlags(int index, unsigned int flags, unsigned int change);
 // LinkSetMacAddr sets IFLA_ADDRESS attribute of the interface.
 PosixError LinkSetMacAddr(int index, const void* addr, int addrlen);
 
+// AddRoute adds a route to the given dst subnet via the given interface.
+PosixError AddUnicastRoute(int interface, int family, int prefixlen,
+                           const void* dst, int dstlen);
+
+// DelRoute removes a route to the given dst subnet via the given interface.
+PosixError DelUnicastRoute(int interface, int family, int prefixlen,
+                           const void* dst, int dstlen);
+
 }  // namespace testing
 }  // namespace gvisor
 
