@@ -46,9 +46,16 @@ const (
 	// Only passable via clone3(2).
 	CLONE_CLEAR_SIGHAND = 0x100000000
 	CLONE_INTO_CGROUP   = 0x200000000
+
+	// Sizeof first published struct.
+	CLONE_ARGS_SIZE_VER0 = 64
+	// Sizeof third published struct.
+	CLONE_ARGS_SIZE_VER2 = 88
 )
 
 // CloneArgs is struct clone_args, from include/uapi/linux/sched.h.
+//
+// +marshal
 type CloneArgs struct {
 	Flags      uint64
 	Pidfd      uint64

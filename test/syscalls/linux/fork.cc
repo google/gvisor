@@ -18,12 +18,16 @@
 #include <stdlib.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <sys/types.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include <atomic>
+#include <cstdint>
 #include <cstdlib>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
@@ -457,6 +461,79 @@ TEST(CloneTest, NonCanonicalTLS) {
                       kNonCanonical, nullptr),
               SyscallFailsWithErrno(EPERM));
 #endif
+}
+
+#ifndef SYS_clone3
+#define SYS_clone3 435
+#endif  // SYS_clone3
+
+// struct clone_args is a Linux clone struct. Old versions of glibc do not
+// expose it. See include/uapi/linux/sched.h
+struct clone_args {
+  uint64_t flags;
+  uint64_t pidfd;
+  uint64_t child_tid;
+  uint64_t parent_tid;
+  uint64_t exit_signal;
+  uint64_t stack;
+  uint64_t stack_size;
+  uint64_t tls;
+  uint64_t set_tid;
+  uint64_t set_tid_size;
+  uint64_t cgroup;
+};
+
+int clone3(struct clone_args* ca, size_t size) {
+  return syscall(SYS_clone3, ca, size);
+}
+
+// Checks that clone fails for any unsupported flag.
+TEST(CloneTest, Clone3UnknownFlag) {
+  clone_args ca = {};
+  ca.flags = (1ULL << 63);
+  ca.exit_signal = SIGCHLD;
+  EXPECT_THAT(clone3(&ca, sizeof(ca)), SyscallFailsWithErrno(EINVAL));
+}
+
+// Clone3 works as Clone.
+TEST(CloneTest, Clone3AsClone) {
+  clone_args ca = {};
+  ca.exit_signal = SIGCHLD;
+
+  int child_pid;
+  EXPECT_THAT(child_pid = clone3(&ca, sizeof(ca)), SyscallSucceeds());
+
+  if (child_pid == 0) {
+    exit(0);
+  }
+
+  int status;
+  EXPECT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+}
+
+// Clone3 works with basic Clone3 values for args like exit_signal & parent_tid.
+TEST(CloneTest, Clone3Basic) {
+  clone_args ca = {};
+
+  ca.flags = CLONE_PARENT_SETTID;
+  ca.exit_signal = SIGCHLD;
+
+  pid_t store_child_tid = 0;
+  ca.parent_tid = reinterpret_cast<uint64_t>(&store_child_tid);
+  int child_pid;
+  EXPECT_THAT(child_pid = clone3(&ca, sizeof(ca)), SyscallSucceeds());
+  EXPECT_EQ(store_child_tid, child_pid);
+
+  if (child_pid == 0) {
+    exit(0);
+  }
+
+  int status;
+  EXPECT_THAT(waitpid(child_pid, &status, 0),
+              SyscallSucceedsWithValue(child_pid));
+  EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
 }
 
 }  // namespace
