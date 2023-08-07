@@ -44,8 +44,9 @@ func (r *fuseInitRes) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, 
     return r.CopyOutN(cc, addr, r.SizeBytes())
 }
 
-// CopyIn implements marshal.Marshallable.CopyIn.
-func (r *fuseInitRes) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+// CopyInN implements marshal.Marshallable.CopyInN.
+//go:nosplit
+func (r *fuseInitRes) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     // Type fuseInitRes doesn't have a packed layout in memory, fall back to UnmarshalBytes.
     buf := cc.CopyScratchBuffer(r.SizeBytes()) // escapes: okay.
     length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
@@ -53,6 +54,11 @@ func (r *fuseInitRes) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, e
     // partially unmarshalled struct.
     r.UnmarshalBytes(buf) // escapes: fallback.
     return length, err
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+func (r *fuseInitRes) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return r.CopyInN(cc, addr, r.SizeBytes())
 }
 
 // WriteTo implements io.WriterTo.WriteTo.

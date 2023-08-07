@@ -84,8 +84,8 @@ func (s *sigSetWithSize) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (in
     return s.CopyOutN(cc, addr, s.SizeBytes())
 }
 
-// CopyIn implements marshal.Marshallable.CopyIn.
-func (s *sigSetWithSize) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+// CopyInN implements marshal.Marshallable.CopyInN.
+func (s *sigSetWithSize) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -93,11 +93,16 @@ func (s *sigSetWithSize) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int
     hdr.Len = s.SizeBytes()
     hdr.Cap = s.SizeBytes()
 
-    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that s
     // must live until the use above.
     runtime.KeepAlive(s) // escapes: replaced by intrinsic.
     return length, err
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+func (s *sigSetWithSize) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return s.CopyInN(cc, addr, s.SizeBytes())
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
@@ -180,8 +185,8 @@ func (r *rlimit64) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, err
     return r.CopyOutN(cc, addr, r.SizeBytes())
 }
 
-// CopyIn implements marshal.Marshallable.CopyIn.
-func (r *rlimit64) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+// CopyInN implements marshal.Marshallable.CopyInN.
+func (r *rlimit64) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -189,11 +194,16 @@ func (r *rlimit64) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, erro
     hdr.Len = r.SizeBytes()
     hdr.Cap = r.SizeBytes()
 
-    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that r
     // must live until the use above.
     runtime.KeepAlive(r) // escapes: replaced by intrinsic.
     return length, err
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+func (r *rlimit64) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return r.CopyInN(cc, addr, r.SizeBytes())
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
@@ -272,8 +282,8 @@ func (s *SchedParam) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, e
     return s.CopyOutN(cc, addr, s.SizeBytes())
 }
 
-// CopyIn implements marshal.Marshallable.CopyIn.
-func (s *SchedParam) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+// CopyInN implements marshal.Marshallable.CopyInN.
+func (s *SchedParam) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -281,11 +291,16 @@ func (s *SchedParam) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, er
     hdr.Len = s.SizeBytes()
     hdr.Cap = s.SizeBytes()
 
-    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that s
     // must live until the use above.
     runtime.KeepAlive(s) // escapes: replaced by intrinsic.
     return length, err
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+func (s *SchedParam) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return s.CopyInN(cc, addr, s.SizeBytes())
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
@@ -373,8 +388,8 @@ func (u *userSockFprog) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int
     return u.CopyOutN(cc, addr, u.SizeBytes())
 }
 
-// CopyIn implements marshal.Marshallable.CopyIn.
-func (u *userSockFprog) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+// CopyInN implements marshal.Marshallable.CopyInN.
+func (u *userSockFprog) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -382,11 +397,16 @@ func (u *userSockFprog) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int,
     hdr.Len = u.SizeBytes()
     hdr.Cap = u.SizeBytes()
 
-    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that u
     // must live until the use above.
     runtime.KeepAlive(u) // escapes: replaced by intrinsic.
     return length, err
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+func (u *userSockFprog) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return u.CopyInN(cc, addr, u.SizeBytes())
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
@@ -497,8 +517,8 @@ func (m *MessageHeader64) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (i
     return m.CopyOutN(cc, addr, m.SizeBytes())
 }
 
-// CopyIn implements marshal.Marshallable.CopyIn.
-func (m *MessageHeader64) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+// CopyInN implements marshal.Marshallable.CopyInN.
+func (m *MessageHeader64) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -506,11 +526,16 @@ func (m *MessageHeader64) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (in
     hdr.Len = m.SizeBytes()
     hdr.Cap = m.SizeBytes()
 
-    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that m
     // must live until the use above.
     runtime.KeepAlive(m) // escapes: replaced by intrinsic.
     return length, err
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+func (m *MessageHeader64) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return m.CopyInN(cc, addr, m.SizeBytes())
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
@@ -611,12 +636,12 @@ func (m *multipleMessageHeader64) CopyOut(cc marshal.CopyContext, addr hostarch.
     return m.CopyOutN(cc, addr, m.SizeBytes())
 }
 
-// CopyIn implements marshal.Marshallable.CopyIn.
-func (m *multipleMessageHeader64) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+// CopyInN implements marshal.Marshallable.CopyInN.
+func (m *multipleMessageHeader64) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     if !m.msgHdr.Packed() {
         // Type multipleMessageHeader64 doesn't have a packed layout in memory, fall back to UnmarshalBytes.
         buf := cc.CopyScratchBuffer(m.SizeBytes()) // escapes: okay.
-        length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+        length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
         // Unmarshal unconditionally. If we had a short copy-in, this results in a
         // partially unmarshalled struct.
         m.UnmarshalBytes(buf) // escapes: fallback.
@@ -630,11 +655,16 @@ func (m *multipleMessageHeader64) CopyIn(cc marshal.CopyContext, addr hostarch.A
     hdr.Len = m.SizeBytes()
     hdr.Cap = m.SizeBytes()
 
-    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that m
     // must live until the use above.
     runtime.KeepAlive(m) // escapes: replaced by intrinsic.
     return length, err
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+func (m *multipleMessageHeader64) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return m.CopyInN(cc, addr, m.SizeBytes())
 }
 
 // WriteTo implements io.WriterTo.WriteTo.

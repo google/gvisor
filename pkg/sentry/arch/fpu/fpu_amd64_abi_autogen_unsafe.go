@@ -105,8 +105,8 @@ func (f *FPSoftwareFrame) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (i
     return f.CopyOutN(cc, addr, f.SizeBytes())
 }
 
-// CopyIn implements marshal.Marshallable.CopyIn.
-func (f *FPSoftwareFrame) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+// CopyInN implements marshal.Marshallable.CopyInN.
+func (f *FPSoftwareFrame) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
@@ -114,11 +114,16 @@ func (f *FPSoftwareFrame) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (in
     hdr.Len = f.SizeBytes()
     hdr.Cap = f.SizeBytes()
 
-    length, err := cc.CopyInBytes(addr, buf) // escapes: okay.
+    length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
     // Since we bypassed the compiler's escape analysis, indicate that f
     // must live until the use above.
     runtime.KeepAlive(f) // escapes: replaced by intrinsic.
     return length, err
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+func (f *FPSoftwareFrame) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return f.CopyInN(cc, addr, f.SizeBytes())
 }
 
 // WriteTo implements io.WriterTo.WriteTo.
