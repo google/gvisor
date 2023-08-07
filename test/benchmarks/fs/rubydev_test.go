@@ -19,8 +19,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"regexp"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -55,14 +53,6 @@ func BenchmarkRubyNoOpTest(b *testing.B) {
 	}, nil)
 }
 
-func extractLoadTime(output string) (float64, error) {
-	submatches := regexp.MustCompile(`files took (\d[\d,]*[\.]?[\d]*) seconds to load`).FindStringSubmatch(output)
-	if len(submatches) != 2 {
-		return 0, fmt.Errorf("count not find load time in output = %q", output)
-	}
-	return strconv.ParseFloat(submatches[1], 64)
-}
-
 // BenchmarkRubySpecTest runs a complex test suite from the Fastlane project:
 // https://github.com/fastlane/fastlane
 func BenchmarkRubySpecTest(b *testing.B) {
@@ -72,12 +62,12 @@ func BenchmarkRubySpecTest(b *testing.B) {
 		RunCmd:     []string{"bash", "/files/run_fastlane_tests.sh"},
 		WantOutput: "3613 examples, 0 failures",
 		Callback: func(b *testing.B, output string) {
-			loadTime, err := extractLoadTime(output)
+			loadTime, err := tools.ExtractRubyLoadTime(output)
 			if err != nil {
-				b.Errorf("failed to extract load time from fastlane test suite output: %v", err)
+				b.Errorf("ExtractRubyLoadTime failed: %v", err)
 				return
 			}
-			tools.ReportCustomMetric(b, loadTime, "load", "sec")
+			tools.ReportCustomMetric(b, float64(loadTime.Nanoseconds()), "load", "ns")
 		},
 	}, []string{
 		// Fastlane tests pollute the filesystem a lot.
