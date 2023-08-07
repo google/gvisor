@@ -18,40 +18,72 @@
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
 
+#include <cerrno>
+#include <cstdint>
+#include <cstring>
+
 #include "test/syscalls/linux/socket_netlink_util.h"
+#include "test/util/file_descriptor.h"
+#include "test/util/posix_error.h"
 
 namespace gvisor {
 namespace testing {
 namespace {
 
 constexpr uint32_t kSeq = 12345;
+constexpr uint32_t kMetric = 999;
 
-// Types of address modifications that may be performed on an interface.
-enum class LinkAddrModification {
+// Types of modifications that may be performed to a Netlink resource.
+enum class NetlinkModification {
   kAdd,
   kAddExclusive,
   kReplace,
   kDelete,
 };
 
-// Populates |hdr| with appripriate values for the modification type.
-PosixError PopulateNlmsghdr(LinkAddrModification modification,
-                            struct nlmsghdr* hdr) {
+// Populates |hdr| with appropriate values for the modification type.
+PosixError PopulateLinkAddrNlmsghdr(NetlinkModification modification,
+                                    struct nlmsghdr* hdr) {
   switch (modification) {
-    case LinkAddrModification::kAdd:
+    case NetlinkModification::kAdd:
       hdr->nlmsg_type = RTM_NEWADDR;
       hdr->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
       return NoError();
-    case LinkAddrModification::kAddExclusive:
+    case NetlinkModification::kAddExclusive:
       hdr->nlmsg_type = RTM_NEWADDR;
       hdr->nlmsg_flags = NLM_F_REQUEST | NLM_F_EXCL | NLM_F_ACK;
       return NoError();
-    case LinkAddrModification::kReplace:
+    case NetlinkModification::kReplace:
       hdr->nlmsg_type = RTM_NEWADDR;
       hdr->nlmsg_flags = NLM_F_REQUEST | NLM_F_REPLACE | NLM_F_ACK;
       return NoError();
-    case LinkAddrModification::kDelete:
+    case NetlinkModification::kDelete:
       hdr->nlmsg_type = RTM_DELADDR;
+      hdr->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+      return NoError();
+  }
+
+  return PosixError(EINVAL);
+}
+
+// Populates |hdr| with appropriate values for the modification type.
+PosixError PopulateRouteNlmsghdr(NetlinkModification modification,
+                                 struct nlmsghdr* hdr) {
+  switch (modification) {
+    case NetlinkModification::kAdd:
+      hdr->nlmsg_type = RTM_NEWROUTE;
+      hdr->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK | NLM_F_CREATE;
+      return NoError();
+    case NetlinkModification::kAddExclusive:
+      hdr->nlmsg_type = RTM_NEWROUTE;
+      hdr->nlmsg_flags = NLM_F_REQUEST | NLM_F_EXCL | NLM_F_ACK;
+      return NoError();
+    case NetlinkModification::kReplace:
+      hdr->nlmsg_type = RTM_NEWROUTE;
+      hdr->nlmsg_flags = NLM_F_REQUEST | NLM_F_REPLACE | NLM_F_ACK;
+      return NoError();
+    case NetlinkModification::kDelete:
+      hdr->nlmsg_type = RTM_DELROUTE;
       hdr->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
       return NoError();
   }
@@ -62,7 +94,7 @@ PosixError PopulateNlmsghdr(LinkAddrModification modification,
 // Adds or removes the specified address from the specified interface.
 PosixError LinkModifyLocalAddr(int index, int family, int prefixlen,
                                const void* addr, int addrlen,
-                               LinkAddrModification modification) {
+                               NetlinkModification modification) {
   ASSIGN_OR_RETURN_ERRNO(FileDescriptor fd, NetlinkBoundSocket(NETLINK_ROUTE));
 
   struct request {
@@ -72,7 +104,7 @@ PosixError LinkModifyLocalAddr(int index, int family, int prefixlen,
   };
 
   struct request req = {};
-  PosixError err = PopulateNlmsghdr(modification, &req.hdr);
+  PosixError err = PopulateLinkAddrNlmsghdr(modification, &req.hdr);
   if (!err.ok()) {
     return err;
   }
@@ -88,6 +120,55 @@ PosixError LinkModifyLocalAddr(int index, int family, int prefixlen,
   rta->rta_len = RTA_LENGTH(addrlen);
   req.hdr.nlmsg_len = NLMSG_ALIGN(req.hdr.nlmsg_len) + RTA_LENGTH(addrlen);
   memcpy(RTA_DATA(rta), addr, addrlen);
+
+  return NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len);
+}
+
+// Adds or removes the specified route.
+PosixError ModifyUnicastRoute(int interface, int family, int prefixlen,
+                              const void* dst, int dstlen,
+                              NetlinkModification modification) {
+  ASSIGN_OR_RETURN_ERRNO(FileDescriptor fd, NetlinkBoundSocket(NETLINK_ROUTE));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct rtmsg route;
+    char attrbuf[512];
+  };
+
+  struct request req = {};
+  PosixError err = PopulateRouteNlmsghdr(modification, &req.hdr);
+  if (!err.ok()) {
+    return err;
+  }
+  req.hdr.nlmsg_len = NLMSG_LENGTH(sizeof(req.route));
+  req.hdr.nlmsg_seq = kSeq;
+  req.route.rtm_dst_len = prefixlen;
+  req.route.rtm_family = family;
+  req.route.rtm_type = RTN_UNICAST;
+
+  struct rtattr* rta_oif = reinterpret_cast<struct rtattr*>(
+      reinterpret_cast<int8_t*>(&req) + NLMSG_ALIGN(req.hdr.nlmsg_len));
+  rta_oif->rta_type = RTA_OIF;
+  rta_oif->rta_len = RTA_LENGTH(sizeof(interface));
+  req.hdr.nlmsg_len =
+      NLMSG_ALIGN(req.hdr.nlmsg_len) + RTA_LENGTH(sizeof(interface));
+  memcpy(RTA_DATA(rta_oif), &interface, sizeof(interface));
+
+  struct rtattr* rta_priority = reinterpret_cast<struct rtattr*>(
+      reinterpret_cast<int8_t*>(&req) + NLMSG_ALIGN(req.hdr.nlmsg_len));
+  rta_priority->rta_type = RTA_PRIORITY;
+  rta_priority->rta_len = RTA_LENGTH(sizeof(kMetric));
+  req.hdr.nlmsg_len =
+      NLMSG_ALIGN(req.hdr.nlmsg_len) + RTA_LENGTH(sizeof(kMetric));
+  memcpy(RTA_DATA(rta_priority), &kMetric, sizeof(kMetric));
+
+  struct rtattr* rta_dst = reinterpret_cast<struct rtattr*>(
+      reinterpret_cast<int8_t*>(&req) + NLMSG_ALIGN(req.hdr.nlmsg_len));
+  rta_dst->rta_type = RTA_DST;
+  rta_dst->rta_len = RTA_LENGTH(dstlen);
+  req.hdr.nlmsg_len = NLMSG_ALIGN(req.hdr.nlmsg_len) + RTA_LENGTH(dstlen);
+  memcpy(RTA_DATA(rta_dst), dst, dstlen);
 
   return NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len);
 }
@@ -151,25 +232,25 @@ PosixErrorOr<Link> LoopbackLink() {
 PosixError LinkAddLocalAddr(int index, int family, int prefixlen,
                             const void* addr, int addrlen) {
   return LinkModifyLocalAddr(index, family, prefixlen, addr, addrlen,
-                             LinkAddrModification::kAdd);
+                             NetlinkModification::kAdd);
 }
 
 PosixError LinkAddExclusiveLocalAddr(int index, int family, int prefixlen,
                                      const void* addr, int addrlen) {
   return LinkModifyLocalAddr(index, family, prefixlen, addr, addrlen,
-                             LinkAddrModification::kAddExclusive);
+                             NetlinkModification::kAddExclusive);
 }
 
 PosixError LinkReplaceLocalAddr(int index, int family, int prefixlen,
                                 const void* addr, int addrlen) {
   return LinkModifyLocalAddr(index, family, prefixlen, addr, addrlen,
-                             LinkAddrModification::kReplace);
+                             NetlinkModification::kReplace);
 }
 
 PosixError LinkDelLocalAddr(int index, int family, int prefixlen,
                             const void* addr, int addrlen) {
   return LinkModifyLocalAddr(index, family, prefixlen, addr, addrlen,
-                             LinkAddrModification::kDelete);
+                             NetlinkModification::kDelete);
 }
 
 PosixError LinkChangeFlags(int index, unsigned int flags, unsigned int change) {
@@ -217,6 +298,18 @@ PosixError LinkSetMacAddr(int index, const void* addr, int addrlen) {
   memcpy(RTA_DATA(rta), addr, addrlen);
 
   return NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len);
+}
+
+PosixError AddUnicastRoute(int interface, int family, int prefixlen,
+                           const void* dst, int dstlen) {
+  return ModifyUnicastRoute(interface, family, prefixlen, dst, dstlen,
+                            NetlinkModification::kAdd);
+}
+
+PosixError DelUnicastRoute(int interface, int family, int prefixlen,
+                           const void* dst, int dstlen) {
+  return ModifyUnicastRoute(interface, family, prefixlen, dst, dstlen,
+                            NetlinkModification::kDelete);
 }
 
 }  // namespace testing

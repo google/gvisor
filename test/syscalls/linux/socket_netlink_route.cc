@@ -22,16 +22,21 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <cerrno>
 #include <iostream>
+#include <utility>
 #include <vector>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/strings/str_format.h"
 #include "test/syscalls/linux/socket_netlink_route_util.h"
 #include "test/syscalls/linux/socket_netlink_util.h"
-#include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/linux_capability_util.h"
+#include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
@@ -822,6 +827,63 @@ TEST(NetlinkRouteTest, GetRouteRequest) {
   // Found RTA_DST for RTM_F_LOOKUP_TABLE.
   EXPECT_TRUE(rtDstFound);
 }
+
+// NetlinkRouteTest with a single parameter that must be AF_INET or AF_INET6.
+using NetlinkRouteIpInvariantTest = ::testing::TestWithParam<int>;
+
+TEST_P(NetlinkRouteIpInvariantTest, AddAndRemoveRoute) {
+  // Gvisor does not support `RTM_NEWROUTE` or `RTM_DELROUTE`.
+  SKIP_IF(IsRunningOnGvisor());
+  // CAP_NET_ADMIN is required to modify the routing table.
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+
+  // Based on the test parameter, build an IPv4 or IPv6 destination subnet.
+  int family = GetParam();
+  struct in_addr dst_v4;
+  struct in6_addr dst_v6;
+  void* dst = nullptr;
+  int dst_len;
+  int prefixlen;
+  switch (family) {
+    case AF_INET:
+      ASSERT_EQ(inet_pton(family, "192.0.2.0", &dst_v4), 1);
+      prefixlen = 24;
+      dst = &dst_v4;
+      dst_len = sizeof(dst_v4);
+      break;
+    case AF_INET6:
+      ASSERT_EQ(inet_pton(family, "2001:db8::", &dst_v6), 1);
+      prefixlen = 64;
+      dst = &dst_v6;
+      dst_len = sizeof(dst_v6);
+      break;
+    default:
+      FAIL() << "address family must be AF_INET or AF_INET6";
+  }
+
+  Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+
+  // Create should succeed, as no such route in kernel.
+  ASSERT_NO_ERRNO(
+      AddUnicastRoute(loopback_link.index, family, prefixlen, dst, dst_len));
+
+  // Second create should fail, as we already created the route above.
+  EXPECT_THAT(
+      AddUnicastRoute(loopback_link.index, family, prefixlen, dst, dst_len),
+      PosixErrorIs(EEXIST, _));
+
+  // First delete should succeed, as route exists.
+  EXPECT_NO_ERRNO(
+      DelUnicastRoute(loopback_link.index, family, prefixlen, dst, dst_len));
+
+  // Second delete should fail, as route no longer exists.
+  EXPECT_THAT(
+      DelUnicastRoute(loopback_link.index, family, prefixlen, dst, dst_len),
+      PosixErrorIs(ESRCH, _));
+}
+
+INSTANTIATE_TEST_SUITE_P(AddAndRemoveRoute, NetlinkRouteIpInvariantTest,
+                         ::testing::Values(AF_INET, AF_INET6));
 
 // RecvmsgTrunc tests the recvmsg MSG_TRUNC flag with zero length output
 // buffer. MSG_TRUNC with a zero length buffer should consume subsequent
