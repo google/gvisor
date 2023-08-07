@@ -17,6 +17,7 @@ go_library(
         "meminfo.go",
         "parser_util.go",
         "redis.go",
+        "rubydev.go",
         "sysbench.go",
         "tools.go",
     ],
