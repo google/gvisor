@@ -105,6 +105,11 @@ func (b *ByteSlice) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, err
 	return cc.CopyInBytes(addr, *b)
 }
 
+// CopyInN implements marshal.Marshallable.CopyInN.
+func (b *ByteSlice) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+	return cc.CopyInBytes(addr, (*b)[:limit])
+}
+
 // CopyOut implements marshal.Marshallable.CopyOut.
 func (b *ByteSlice) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
 	return cc.CopyOutBytes(addr, *b)
