@@ -62,6 +62,9 @@ type sharedContext struct {
 	kicked         bool
 	// The task associated with the context fell asleep.
 	sleeping bool
+	// expectedPath indicates what behaviour the dispatcher should expect
+	// from this context.
+	expectedPath expectedQueueOutcome
 }
 
 // String returns the ID of this shared context.
@@ -238,6 +241,11 @@ type fastPathDispatcher struct {
 	// any lock.
 	list contextList
 
+	// handshakeFailures records the number of handshake failures the
+	// dispatcher has seen in a row.
+	// It is only updated from the loop method, thus it is unprotected.
+	handshakeFailures uint8
+
 	mu sync.Mutex
 
 	// nr is the number of contexts in the queue.
@@ -265,7 +273,12 @@ var fastPathContextLimit = uint32(runtime.GOMAXPROCS(0) * 2)
 
 // fastPathDisabledTimeout is the timeout after which the fast path in stub
 // processes will be re-enabled.
-const fastPathDisabledTimeout = uint64(200 * 1000 * 1000) // 100ms for 2GHz.
+const fastPathDisabledTimeout = uint64(20 * 1000 * 1000) // 10ms for 2GHz.
+
+// handshakeFailureTolerance is the number of times the dispatcher needs to see
+// a handshake failure between the sentry and the stub thread for a single ctx,
+// before disabling the fast path for the fastPathDisabledTimeout amount.
+const handshakeFailureTolerance = uint8(4)
 
 // nrMaxAwakeStubThreads is the maximum number of awake stub threads over all
 // subprocesses at the this moment.
@@ -295,11 +308,32 @@ func (q *fastPathDispatcher) disableStubFastPath() {
 	q.fastPathDisabledTS.Store(uint64(cputicks()))
 }
 
+// recordHandshakeFailure can potentially disable the fast path if the context
+// queue predicted that thix ctx should have taken the fast path.
+// This is necessary because we likely have too much contention on the host, and
+// using the fast path will be a net negative on performance due to lost CPU time
+// spinning.
+//
+// This function should only be called from the loop method.
+func (q *fastPathDispatcher) recordHandshakeFailure(ctx *sharedContext) {
+	if ctx.expectedPath == FastPath {
+		q.handshakeFailures++
+		if q.handshakeFailures >= handshakeFailureTolerance {
+			q.disableStubFastPath()
+			q.handshakeFailures = 0
+		}
+	}
+}
+
+func (q *fastPathDispatcher) recordHandshakeSuccess() {
+	q.handshakeFailures = 0
+}
+
 // deep_sleep_timeout is the timeout after which we stops polling and fall asleep.
 //
-// The value is 40µs for 2GHz CPU. This timeout matches the sentry<->stub round
+// The value is 10µs for 2GHz CPU. This timeout matches the sentry<->stub round
 // trip in the pure deep sleep case.
-const deepSleepTimeout = uint64(80000)
+const deepSleepTimeout = uint64(20000)
 const handshakeTimeout = uint64(1000)
 
 // loop is processing contexts in the queue. Only one instance of it can be
@@ -345,12 +379,17 @@ func (q *fastPathDispatcher) loop(target *sharedContext) {
 				} else if !ctx.kicked && uint64(now-ctx.startWaitingTS) > handshakeTimeout {
 					if ctx.isAcked() {
 						ctx.kicked = true
+						q.recordHandshakeSuccess()
 						continue
+					} else {
+						q.recordHandshakeFailure(ctx)
 					}
 					event = sharedContextKicked
 				} else {
 					continue
 				}
+			} else if !ctx.kicked {
+				q.recordHandshakeSuccess()
 			}
 			processed++
 			q.list.Remove(ctx)
@@ -372,7 +411,7 @@ func (q *fastPathDispatcher) loop(target *sharedContext) {
 }
 
 func (q *fastPathDispatcher) waitFor(ctx *sharedContext) syncevent.Set {
-	events := syncevent.Set(0)
+	events := syncevent.NoEvents
 
 	q.mu.Lock()
 	q.entrants.PushBack(ctx)

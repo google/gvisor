@@ -45,11 +45,10 @@ struct context_queue {
   uint32_t start;
   uint32_t end;
   uint32_t num_active_threads;
+  uint32_t num_spinning_threads;
   uint32_t num_threads_to_wakeup;
   uint32_t num_active_contexts;
   uint32_t num_awake_contexts;
-  uint64_t fast_path_disalbed_ts;
-  uint32_t fast_path_failed_in_row;
   uint32_t fast_path_disabled;
   uint64_t ringbuffer[MAX_CONTEXT_QUEUE_ENTRIES];
 };
@@ -217,9 +216,6 @@ struct thread_context *queue_get_context(struct sysmsg *sysmsg) {
   return NULL;
 }
 
-#define FAILED_FAST_PATH_LIMIT 5
-#define FAILED_FAST_PATH_TIMEOUT 20000000  // 10ms
-
 // get_context_fast sets nr_active_threads_p only if it deactivates the thread.
 static struct thread_context *get_context_fast(struct sysmsg *sysmsg,
                                                struct context_queue *queue,
@@ -233,7 +229,6 @@ static struct thread_context *get_context_fast(struct sysmsg *sysmsg,
 
     ctx = queue_get_context(sysmsg);
     if (ctx) {
-      atomic_store(&queue->fast_path_failed_in_row, 0);
       spinning_queue_pop();
       return ctx;
     }
@@ -257,10 +252,6 @@ static struct thread_context *get_context_fast(struct sysmsg *sysmsg,
     }
 
     if (spinning_queue_remove_first(__export_deep_sleep_timeout)) {
-      uint32_t nr = atomic_add(&queue->fast_path_failed_in_row, 1);
-      if (nr >= FAILED_FAST_PATH_LIMIT) {
-        atomic_store(&queue->fast_path_disalbed_ts, rdtsc());
-      }
       break;
     }
     spinloop();
@@ -295,41 +286,29 @@ struct thread_context *get_context(struct sysmsg *sysmsg) {
   struct context_queue *queue = __export_context_queue_addr;
   uint32_t nr_active_threads;
 
+  struct thread_context *ctx;
   for (;;) {
-    struct thread_context *ctx;
+    atomic_add(&queue->num_spinning_threads, 1);
 
     // Change sysmsg thread state just to indicate thread is not asleep.
     atomic_store(&sysmsg->state, THREAD_STATE_PREP);
     ctx = queue_get_context(sysmsg);
     if (ctx) {
-      atomic_store(&queue->fast_path_failed_in_row, 0);
-      return ctx;
+      goto exit;
     }
 
-    uint64_t slow_path_ts = atomic_load(&queue->fast_path_disalbed_ts);
-    bool fast_path_enabled = true;
-
-    if (!slow_path_ts) {
-      if (rdtsc() - slow_path_ts > FAILED_FAST_PATH_TIMEOUT) {
-        atomic_store(&queue->fast_path_failed_in_row, 0);
-        atomic_store(&queue->fast_path_disalbed_ts, 0);
-      } else {
-        fast_path_enabled = false;
-      }
-    }
-    if (atomic_load(&queue->fast_path_disabled) != 0) {
-      fast_path_enabled = false;
-    }
+    bool fast_path_enabled = atomic_load(&queue->fast_path_disabled) == 0;
 
     nr_active_threads = NR_IF_THREAD_IS_ACTIVE;
     if (fast_path_enabled) {
       ctx = get_context_fast(sysmsg, queue, &nr_active_threads);
-      if (ctx) return ctx;
+      if (ctx) goto exit;
     }
     if (nr_active_threads == NR_IF_THREAD_IS_ACTIVE) {
       nr_active_threads = atomic_sub(&queue->num_active_threads, 1);
     }
 
+    atomic_sub(&queue->num_spinning_threads, 1);
     atomic_store(&sysmsg->state, THREAD_STATE_ASLEEP);
     uint32_t nr_active_contexts = atomic_load(&queue->num_active_contexts);
     // We have to make another attempt to get a context here to prevent TOCTTOU
@@ -360,6 +339,9 @@ struct thread_context *get_context(struct sysmsg *sysmsg) {
       }
     }
   }
+exit:
+  atomic_sub(&queue->num_spinning_threads, 1);
+  return ctx;
 }
 
 // switch_context signals the sentry that the old context is ready to be worked

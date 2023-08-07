@@ -44,6 +44,9 @@ type contextQueue struct {
 	// numActiveThreads indicates to the sentry how many stubs are running.
 	// It is changed only by stub threads.
 	numActiveThreads uint32
+	// numSpinningThreads indicates to the sentry how many stubs are waiting
+	// to receive a context from the queue, and are not doing useful work.
+	numSpinningThreads uint32
 	// numThreadsToWakeup is the number of threads requested by Sentry to wake up.
 	// The Sentry increments it and stub threads decrements.
 	numThreadsToWakeup uint32
@@ -53,10 +56,8 @@ type contextQueue struct {
 	// active contexts and contexts that are running in the Sentry.
 	numAwakeContexts uint32
 
-	fastPathDisabledTS  uint64
-	fastPathFailedInRow uint32
-	fastPathDisabled    uint32
-	ringbuffer          [maxContextQueueEntries]uint64
+	fastPathDisabled uint32
+	ringbuffer       [maxContextQueueEntries]uint64
 }
 
 const (
@@ -75,9 +76,8 @@ func (q *contextQueue) init() {
 	idx := ^uint32(0) - maxContextQueueEntries*4
 	atomic.StoreUint32(&q.start, idx)
 	atomic.StoreUint32(&q.end, idx)
-	atomic.StoreUint64(&q.fastPathDisabledTS, 0)
-	atomic.StoreUint32(&q.fastPathFailedInRow, 0)
 	atomic.StoreUint32(&q.numActiveThreads, 0)
+	atomic.StoreUint32(&q.numSpinningThreads, 0)
 	atomic.StoreUint32(&q.numThreadsToWakeup, 0)
 	atomic.StoreUint32(&q.numActiveContexts, 0)
 	atomic.StoreUint32(&q.numAwakeContexts, 0)
@@ -92,25 +92,55 @@ func (q *contextQueue) queuedContexts() uint32 {
 	return (atomic.LoadUint32(&q.end) + maxContextQueueEntries - atomic.LoadUint32(&q.start)) % maxContextQueueEntries
 }
 
-func (q *contextQueue) add(ctx *sharedContext, stubFastPathEnabled bool) uint32 {
+type expectedQueueOutcome uint8
+
+const (
+	// UnknownPath indicates that the context can take either the slow or the
+	// fast path.
+	UnknownPath expectedQueueOutcome = iota
+	// FastPath indicates that the context is VERY likely to take the fast
+	// path; if it doesn't take the fast path the system should disable the
+	// fast path mode entirely.
+	FastPath
+	// SlowPath indicates the that the platform has currently disabled the
+	// fast path.
+	SlowPath
+)
+
+// add puts the the given ctx onto the context queue, and populates a prediction
+// for whether this ctx can switch to a stub thread within the fast path or not.
+func (q *contextQueue) add(ctx *sharedContext, stubFastPathEnabled bool) {
+	expected := UnknownPath
 	if stubFastPathEnabled {
 		q.enableFastPath()
 	} else {
 		q.disableFastPath()
+		expected = SlowPath
 	}
+
 	contextID := ctx.contextID
 	atomic.AddUint32(&q.numActiveContexts, 1)
 	next := atomic.AddUint32(&q.end, 1)
 	if (next % maxContextQueueEntries) ==
 		(atomic.LoadUint32(&q.start) % maxContextQueueEntries) {
-		// should be unreacheable
+		// should be unreachable
 		panic("contextQueue is full")
 	}
 	idx := next - 1
 	next = idx % maxContextQueueEntries
 	v := (uint64(idx) << contextQueueIndexShift) + uint64(contextID)
 	atomic.StoreUint64(&q.ringbuffer[next], v)
-	return next // remove me
+
+	if expected == UnknownPath {
+		numSpinningThreads := atomic.LoadUint32(&q.numSpinningThreads)
+		numQueued := (idx + 1 + maxContextQueueEntries - atomic.LoadUint32(&q.start)) % maxContextQueueEntries
+		// There are at least as many stub threads active and not doing
+		// anything right now as there are contexts on the queue.
+		if numQueued <= numSpinningThreads {
+			expected = FastPath
+		}
+	}
+	ctx.expectedPath = expected
 }
 
 func (q *contextQueue) disableFastPath() {
