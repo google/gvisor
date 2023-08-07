@@ -16,7 +16,6 @@ package linux
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -86,12 +85,7 @@ func Mount(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 	}
 	const propagationFlags = linux.MS_SHARED | linux.MS_PRIVATE | linux.MS_SLAVE | linux.MS_UNBINDABLE
 	if propFlag := flags & propagationFlags; propFlag != 0 {
-		// Check if flags is a power of 2. If not then more than one flag is set.
-		if !bits.IsPowerOfTwo64(propFlag) {
-			return 0, nil, linuxerr.EINVAL
-		}
-		propType := vfs.PropagationTypeFromLinux(propFlag)
-		return 0, nil, t.Kernel().VFS().SetMountPropagationAt(t, creds, &target.pop, propType)
+		return 0, nil, t.Kernel().VFS().SetMountPropagationAt(t, creds, &target.pop, uint32(propFlag))
 	}
 
 	// Only copy in source, fstype, and data if we are doing a normal mount.

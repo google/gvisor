@@ -179,7 +179,7 @@ func (vfs *VirtualFilesystem) CloneMountNamespace(
 	ns.root.root.IncRef()
 	ns.root.fs.IncRef()
 	newns.root = newMount(vfs, ns.root.fs, ns.root.root, newns, &MountOptions{Flags: ns.root.Flags, ReadOnly: ns.root.ReadOnly()})
-	if ns.root.propType == Shared {
+	if ns.root.shared() {
 		vfs.addPeer(ns.root, newns.root)
 	}
 	vfs.updateRootAndCWD(ctx, root, cwd, ns.root, newns.root)
@@ -202,9 +202,6 @@ func (vfs *VirtualFilesystem) CloneMountNamespace(
 			if err != nil {
 				newns.DecRef(ctx)
 				return nil, err
-			}
-			if c.propType == Shared {
-				vfs.addPeer(c, m)
 			}
 			vfs.updateRootAndCWD(ctx, root, cwd, c, m)
 			if len(c.children) != 0 {
