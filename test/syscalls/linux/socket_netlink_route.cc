@@ -15,6 +15,7 @@
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <ifaddrs.h>
+#include <linux/fib_rules.h>
 #include <linux/if.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
@@ -23,6 +24,7 @@
 #include <unistd.h>
 
 #include <cerrno>
+#include <cstdint>
 #include <iostream>
 #include <utility>
 #include <vector>
@@ -831,6 +833,10 @@ TEST(NetlinkRouteTest, GetRouteRequest) {
 // NetlinkRouteTest with a single parameter that must be AF_INET or AF_INET6.
 using NetlinkRouteIpInvariantTest = ::testing::TestWithParam<int>;
 
+INSTANTIATE_TEST_SUITE_P(NetlinkRouteIpv4AndIpv6Tests,
+                         NetlinkRouteIpInvariantTest,
+                         ::testing::Values(AF_INET, AF_INET6));
+
 TEST_P(NetlinkRouteIpInvariantTest, AddAndRemoveRoute) {
   // Gvisor does not support `RTM_NEWROUTE` or `RTM_DELROUTE`.
   SKIP_IF(IsRunningOnGvisor());
@@ -882,8 +888,117 @@ TEST_P(NetlinkRouteIpInvariantTest, AddAndRemoveRoute) {
       PosixErrorIs(ESRCH, _));
 }
 
-INSTANTIATE_TEST_SUITE_P(AddAndRemoveRoute, NetlinkRouteIpInvariantTest,
-                         ::testing::Values(AF_INET, AF_INET6));
+// GetRuleDump tests a RTM_GETRULE + NLM_F_DUMP request.
+TEST(NetlinkRouteTest, GetRuleDump) {
+  // Gvisor does not support `RTM_GETRULE`
+  SKIP_IF(IsRunningOnGvisor());
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+  uint32_t port = ASSERT_NO_ERRNO_AND_VALUE(NetlinkPortID(fd.get()));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct rtmsg rtm;
+  };
+
+  struct request req = {};
+  req.hdr.nlmsg_len = sizeof(req);
+  req.hdr.nlmsg_type = RTM_GETRULE;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_DUMP;
+  req.hdr.nlmsg_seq = kSeq;
+  req.rtm.rtm_family = AF_UNSPEC;
+
+  bool ruleFound = false;
+  ASSERT_NO_ERRNO(NetlinkRequestResponse(
+      fd, &req, sizeof(req),
+      [&](const struct nlmsghdr* hdr) {
+        // Validate the response to RTM_GETRULE + NLM_F_DUMP.
+        EXPECT_THAT(hdr->nlmsg_type, AnyOf(Eq(RTM_NEWRULE), Eq(NLMSG_DONE)));
+
+        EXPECT_TRUE((hdr->nlmsg_flags & NLM_F_MULTI) == NLM_F_MULTI)
+            << std::hex << hdr->nlmsg_flags;
+
+        EXPECT_EQ(hdr->nlmsg_seq, kSeq);
+        EXPECT_EQ(hdr->nlmsg_pid, port);
+
+        // The test should not proceed if the multipart message is done.
+        if (hdr->nlmsg_type == NLMSG_DONE) {
+          return;
+        }
+
+        // RTM_NEWRULE contains at least the header and rule.
+        ASSERT_GE(hdr->nlmsg_len, NLMSG_SPACE(sizeof(struct fib_rule_hdr)));
+        const struct fib_rule_hdr* rule =
+            reinterpret_cast<const struct fib_rule_hdr*>(NLMSG_DATA(hdr));
+        std::cout << std::dec << "Found rule"
+                  << ": family=" << static_cast<int>(rule->family)
+                  << ", table=" << static_cast<int>(rule->table)
+                  << ", action=" << static_cast<int>(rule->action) << std::endl;
+        // All rules should have a non-zero action.
+        EXPECT_NE(rule->action, 0);
+        ruleFound = true;
+      },
+      false));
+  // At least one rule found.
+  EXPECT_TRUE(ruleFound);
+}
+
+TEST_P(NetlinkRouteIpInvariantTest, AddAndRemoveRule) {
+  // Gvisor does not support `RTM_NEWRULE` or `RTM_DELRULE`.
+  SKIP_IF(IsRunningOnGvisor());
+  // CAP_NET_ADMIN is required to modify the rule table.
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+
+  // Based on the test parameter, build an IPv4 or IPv6 destination subnet.
+  int family = GetParam();
+  struct in_addr dst_v4;
+  struct in6_addr dst_v6;
+  void* dst = nullptr;
+  int dst_len;
+  int prefixlen;
+  switch (family) {
+    case AF_INET:
+      ASSERT_EQ(inet_pton(family, "192.0.2.0", &dst_v4), 1);
+      prefixlen = 24;
+      dst = &dst_v4;
+      dst_len = sizeof(dst_v4);
+      break;
+    case AF_INET6:
+      ASSERT_EQ(inet_pton(family, "2001:db8::", &dst_v6), 1);
+      prefixlen = 64;
+      dst = &dst_v6;
+      dst_len = sizeof(dst_v6);
+      break;
+    default:
+      FAIL() << "address family must be AF_INET or AF_INET6";
+  }
+
+  // Unique values for table and priority fields to ensure the new rule does not
+  // collide with any of the default rules installed by Linux.
+  const int kTable = 99;
+  const int kPriority = 12345;
+
+  Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+
+  // Create should succeed, as no such rule in the kernel.
+  ASSERT_NO_ERRNO(AddExclusiveLookupInTableRule(family, kTable, kPriority,
+                                                prefixlen, dst, dst_len));
+
+  // Second create should fail, as we already created the rule above.
+  EXPECT_THAT(AddExclusiveLookupInTableRule(family, kTable, kPriority,
+                                            prefixlen, dst, dst_len),
+              PosixErrorIs(EEXIST, _));
+
+  // First delete should succeed, as rule exists.
+  EXPECT_NO_ERRNO(
+      DelLookupInTableRule(family, kTable, kPriority, prefixlen, dst, dst_len));
+
+  // Second delete should fail, as rule no longer exists.
+  EXPECT_THAT(
+      DelLookupInTableRule(family, kTable, kPriority, prefixlen, dst, dst_len),
+      PosixErrorIs(ENOENT, _));
+}
 
 // RecvmsgTrunc tests the recvmsg MSG_TRUNC flag with zero length output
 // buffer. MSG_TRUNC with a zero length buffer should consume subsequent

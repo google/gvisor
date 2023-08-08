@@ -14,6 +14,7 @@
 
 #include "test/syscalls/linux/socket_netlink_route_util.h"
 
+#include <linux/fib_rules.h>
 #include <linux/if.h>
 #include <linux/netlink.h>
 #include <linux/rtnetlink.h>
@@ -84,6 +85,31 @@ PosixError PopulateRouteNlmsghdr(NetlinkModification modification,
       return NoError();
     case NetlinkModification::kDelete:
       hdr->nlmsg_type = RTM_DELROUTE;
+      hdr->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+      return NoError();
+  }
+
+  return PosixError(EINVAL);
+}
+
+// Populates |hdr| with appropriate values for the modification type.
+PosixError PopulateRuleNlmsghdr(NetlinkModification modification,
+                                struct nlmsghdr* hdr) {
+  switch (modification) {
+    case NetlinkModification::kAdd:
+      hdr->nlmsg_type = RTM_NEWRULE;
+      hdr->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+      return NoError();
+    case NetlinkModification::kAddExclusive:
+      hdr->nlmsg_type = RTM_NEWRULE;
+      hdr->nlmsg_flags = NLM_F_REQUEST | NLM_F_EXCL | NLM_F_ACK;
+      return NoError();
+    case NetlinkModification::kReplace:
+      hdr->nlmsg_type = RTM_NEWRULE;
+      hdr->nlmsg_flags = NLM_F_REQUEST | NLM_F_REPLACE | NLM_F_ACK;
+      return NoError();
+    case NetlinkModification::kDelete:
+      hdr->nlmsg_type = RTM_DELRULE;
       hdr->nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
       return NoError();
   }
@@ -169,6 +195,48 @@ PosixError ModifyUnicastRoute(int interface, int family, int prefixlen,
   rta_dst->rta_len = RTA_LENGTH(dstlen);
   req.hdr.nlmsg_len = NLMSG_ALIGN(req.hdr.nlmsg_len) + RTA_LENGTH(dstlen);
   memcpy(RTA_DATA(rta_dst), dst, dstlen);
+
+  return NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len);
+}
+
+// Adds or removes the specified route.
+PosixError ModifyLookupInTableRule(int family, int table, int priority,
+                                   int prefixlen, const void* dst, int dstlen,
+                                   NetlinkModification modification) {
+  ASSIGN_OR_RETURN_ERRNO(FileDescriptor fd, NetlinkBoundSocket(NETLINK_ROUTE));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct fib_rule_hdr rule;
+    char attrbuf[512];
+  };
+
+  struct request req = {};
+  PosixError err = PopulateRuleNlmsghdr(modification, &req.hdr);
+  if (!err.ok()) {
+    return err;
+  }
+  req.hdr.nlmsg_len = NLMSG_LENGTH(sizeof(req.rule));
+  req.hdr.nlmsg_seq = kSeq;
+  req.rule.family = family;
+  req.rule.table = table;
+  req.rule.action = FR_ACT_TO_TBL;
+  req.rule.dst_len = prefixlen;
+
+  struct rtattr* fra_priority = reinterpret_cast<struct rtattr*>(
+      reinterpret_cast<int8_t*>(&req) + NLMSG_ALIGN(req.hdr.nlmsg_len));
+  fra_priority->rta_type = FRA_PRIORITY;
+  fra_priority->rta_len = RTA_LENGTH(sizeof(priority));
+  req.hdr.nlmsg_len =
+      NLMSG_ALIGN(req.hdr.nlmsg_len) + RTA_LENGTH(sizeof(priority));
+  memcpy(RTA_DATA(fra_priority), &priority, sizeof(priority));
+
+  struct rtattr* fra_dst = reinterpret_cast<struct rtattr*>(
+      reinterpret_cast<int8_t*>(&req) + NLMSG_ALIGN(req.hdr.nlmsg_len));
+  fra_dst->rta_type = FRA_DST;
+  fra_dst->rta_len = RTA_LENGTH(dstlen);
+  req.hdr.nlmsg_len = NLMSG_ALIGN(req.hdr.nlmsg_len) + RTA_LENGTH(dstlen);
+  memcpy(RTA_DATA(fra_dst), dst, dstlen);
 
   return NetlinkRequestAckOrError(fd, kSeq, &req, req.hdr.nlmsg_len);
 }
@@ -310,6 +378,19 @@ PosixError DelUnicastRoute(int interface, int family, int prefixlen,
                            const void* dst, int dstlen) {
   return ModifyUnicastRoute(interface, family, prefixlen, dst, dstlen,
                             NetlinkModification::kDelete);
+}
+
+PosixError AddExclusiveLookupInTableRule(int family, int table, int priority,
+                                         int prefixlen, const void* dst,
+                                         int dstlen) {
+  return ModifyLookupInTableRule(family, table, priority, prefixlen, dst,
+                                 dstlen, NetlinkModification::kAddExclusive);
+}
+
+PosixError DelLookupInTableRule(int family, int table, int priority,
+                                int prefixlen, const void* dst, int dstlen) {
+  return ModifyLookupInTableRule(family, table, priority, prefixlen, dst,
+                                 dstlen, NetlinkModification::kDelete);
 }
 
 }  // namespace testing
