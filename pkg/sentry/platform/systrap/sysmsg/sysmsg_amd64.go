@@ -38,11 +38,13 @@ type ArchState struct {
 	fsgsbase  uint32
 }
 
+// The linux kernel does not allow using xsavec from userspace, so we are limited
+// to xsaveopt.
+// See arch/x86/kernel/fpu/xstate.c:validate_user_xstate_header for details.
 const (
 	fxsave = iota
 	xsave
 	xsaveopt
-	xsavec
 )
 
 // Init initializes the arch specific state.
@@ -51,8 +53,9 @@ func (s *ArchState) Init() {
 
 	fpLenUint, _ := fs.ExtendedStateSize()
 	s.fpLen = uint32(fpLenUint)
-	// TODO(b/268366549): Fix use of xsavec/xsaveopt.
-	if fs.UseXsave() {
+	if fs.UseXsaveopt() {
+		s.xsaveMode = xsaveopt
+	} else if fs.UseXsave() {
 		s.xsaveMode = xsave
 	} else {
 		s.xsaveMode = fxsave
