@@ -217,9 +217,17 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 	pidns := t.tg.pidns
 	if t.childPIDNamespace != nil {
 		pidns = t.childPIDNamespace
+		pidns.IncRef()
 	} else if args.Flags&linux.CLONE_NEWPID != 0 {
 		pidns = pidns.NewChild(userns)
+		pidns.SetInode(nsfs.NewInode(t, t.k.nsfsMount, pidns))
 	}
+	cu.Add(func() {
+		// Decreses reference to children PID namespace only.
+		if pidns != t.tg.pidns {
+			pidns.DecRef(t)
+		}
+	})
 
 	tg := t.tg
 	rseqAddr := hostarch.Addr(0)
@@ -532,6 +540,23 @@ func (t *Task) Setns(fd *vfs.FileDescription, flags int32) error {
 		t.mu.Unlock()
 		oldNS.DecRef(t)
 		return nil
+	case *PIDNamespace:
+		if flags != 0 && flags != linux.CLONE_NEWPID {
+			return linuxerr.EINVAL
+		}
+		if !t.HasCapabilityIn(linux.CAP_SYS_ADMIN, ns.UserNamespace()) ||
+			!t.Credentials().HasCapability(linux.CAP_SYS_ADMIN) {
+			return linuxerr.EPERM
+		}
+		oldNS := t.ChildPIDNamespace()
+		ns.IncRef()
+		t.mu.Lock()
+		t.childPIDNamespace = ns
+		t.mu.Unlock()
+		if oldNS != nil {
+			oldNS.DecRef(t)
+		}
+		return nil
 	default:
 		return linuxerr.EINVAL
 	}
@@ -591,12 +616,20 @@ func (t *Task) Unshare(flags int32) error {
 		// Need to reload creds, because t.SetUserNamespace() changed task credentials.
 		creds = t.Credentials()
 	}
+	cu := cleanup.Cleanup{}
 	haveCapSysAdmin := t.HasCapability(linux.CAP_SYS_ADMIN)
 	if flags&linux.CLONE_NEWPID != 0 {
 		if !haveCapSysAdmin {
 			return linuxerr.EPERM
 		}
+		oldChildPIDNS := t.ChildPIDNamespace()
 		t.childPIDNamespace = t.tg.pidns.NewChild(t.UserNamespace())
+		t.childPIDNamespace.SetInode(nsfs.NewInode(t, t.k.nsfsMount, t.childPIDNamespace))
+		cu.Add(func() {
+			if oldChildPIDNS != nil {
+				oldChildPIDNS.DecRef(t)
+			}
+		})
 	}
 	if flags&linux.CLONE_NEWNET != 0 {
 		if !haveCapSysAdmin {
@@ -613,7 +646,6 @@ func (t *Task) Unshare(flags int32) error {
 		oldNetns.DecRef(t)
 	}
 
-	cu := cleanup.Cleanup{}
 	// All cu actions has to be executed after releasing t.mu.
 	defer cu.Clean()
 	t.mu.Lock()

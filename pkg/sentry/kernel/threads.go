@@ -18,6 +18,8 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/nsfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -194,6 +196,8 @@ type PIDNamespace struct {
 
 	// pidNamespaceData contains additional per-PID-namespace data.
 	extra pidNamespaceData
+
+	inode *nsfs.Inode
 }
 
 func newPIDNamespace(ts *TaskSet, parent *PIDNamespace, userns *auth.UserNamespace) *PIDNamespace {
@@ -339,6 +343,34 @@ func (ns *PIDNamespace) UserNamespace() *auth.UserNamespace {
 // Root returns the root PID namespace of ns.
 func (ns *PIDNamespace) Root() *PIDNamespace {
 	return ns.owner.Root
+}
+
+// Type implements nsfs.Namespace.Type.
+func (ns *PIDNamespace) Type() string {
+	return "pid"
+}
+
+// Destroy implements nsfs.Namespace.Destroy.
+func (ns *PIDNamespace) Destroy(ctx context.Context) {}
+
+// GetInode returns the nsfs inode associated with the PID namespace.
+func (ns *PIDNamespace) GetInode() *nsfs.Inode {
+	return ns.inode
+}
+
+// SetInode sets the nsfs inode to the PID namespace.
+func (ns *PIDNamespace) SetInode(inode *nsfs.Inode) {
+	ns.inode = inode
+}
+
+// IncRef increments the namespace's refcount.
+func (ns *PIDNamespace) IncRef() {
+	ns.inode.IncRef()
+}
+
+// DecRef decrements the namespace's refcount.
+func (ns *PIDNamespace) DecRef(ctx context.Context) {
+	ns.inode.DecRef(ctx)
 }
 
 // A threadGroupNode defines the relationship between a thread group and the
@@ -508,6 +540,23 @@ func (t *Task) ThreadGroup() *ThreadGroup {
 // PIDNamespace returns the PID namespace containing t.
 func (t *Task) PIDNamespace() *PIDNamespace {
 	return t.tg.pidns
+}
+
+// ChildPIDNamespace return a task's PID namespace for its children.
+func (t *Task) ChildPIDNamespace() *PIDNamespace {
+	return t.childPIDNamespace
+}
+
+// GetChildPIDNamespace takes a reference on the task children's PID
+// namespace and returns it.
+// It will return nil if the task isn't alive or it has no PID namespace
+// for its children yet.
+func (t *Task) GetChildPIDNamespace() *PIDNamespace {
+	if pidns := t.childPIDNamespace; pidns != nil {
+		pidns.IncRef()
+		return pidns
+	}
+	return nil
 }
 
 // TaskSet returns the TaskSet containing t.

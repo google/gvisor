@@ -1295,6 +1295,11 @@ func (s *namespaceSymlink) getInode(t *kernel.Task) *nsfs.Inode {
 		}
 		inode, _ := mntns.Refs.(*nsfs.Inode)
 		return inode
+	case linux.CLONE_NEWPID:
+		if pidns := t.GetChildPIDNamespace(); pidns != nil {
+			return pidns.GetInode()
+		}
+		return nil
 	default:
 		panic("unknown namespace")
 	}
@@ -1308,6 +1313,9 @@ func (s *namespaceSymlink) Readlink(ctx context.Context, mnt *vfs.Mount) (string
 	if s.nsType != 0 {
 		inode := s.getInode(s.task)
 		if inode == nil {
+			if s.nsType == linux.CLONE_NEWPID {
+				return "", nil
+			}
 			return "", linuxerr.ENOENT
 		}
 		target := inode.Name()
