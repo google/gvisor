@@ -125,17 +125,11 @@ restored_gs:
   movl $0xffffffff, %eax
   movl $0xffffffff, %edx
   movl __export_arch_state+offsetof_arch_state_xsave_mode(%rip), %esi
-  // TODO(b/268366549): Fix use of xsavec/xsaveopt.
-  // cmpl $XSAVE_MODE_XSAVEC, %esi
-  //   jl use_xsaveopt
-  //   xsavec (%rdi)
-  //   jmp fpu_saved
-  // use_xsaveopt:
-  //   cmpl $XSAVE_MODE_XSAVEOPT, %esi
-  //   jl use_xsave
-  //   xsaveopt (%rdi)
-  //   jmp fpu_saved
-  // use_xsave:
+  cmpl $XSAVE_MODE_XSAVEOPT, %esi
+  jl use_xsave
+  xsaveopt (%rdi)
+  jmp fpu_saved
+use_xsave:
   cmpl $XSAVE_MODE_XSAVE, %esi
   jl use_fxsave
   xsave (%rdi)

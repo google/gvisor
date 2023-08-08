@@ -24,7 +24,6 @@
 #define XSAVE_MODE_FXSAVE (0x0)
 #define XSAVE_MODE_XSAVE (0x1)
 #define XSAVE_MODE_XSAVEOPT (0x2)
-#define XSAVE_MODE_XSAVEC (0x3)
 
 // LINT.ThenChange(sysmsg.h, sysmsg_amd64.go)
 // LINT.IfChange

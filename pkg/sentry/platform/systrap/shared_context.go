@@ -172,16 +172,12 @@ func (sc *sharedContext) threadID() uint32 {
 
 // EnableSentryFastPath indicates that the polling mode is enabled for the
 // Sentry. It has to be called before putting the context into the context queue.
-// This function is used if contextDecouplingExp=true because the fastpath
-// is negotiated in ThreadContext.
 func (sc *sharedContext) enableSentryFastPath() {
 	atomic.StoreUint32(&sc.shared.SentryFastPath, 1)
 }
 
 // DisableSentryFastPath indicates that the polling mode for the sentry is
 // disabled for the Sentry.
-// This function is used if contextDecouplingExp=true because the fastpath
-// is negotiated in ThreadContext.
 func (sc *sharedContext) disableSentryFastPath() {
 	atomic.StoreUint32(&sc.shared.SentryFastPath, 0)
 }
