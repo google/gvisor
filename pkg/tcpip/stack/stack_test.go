@@ -5461,3 +5461,7 @@ func TestStaticGetLinkAddress(t *testing.T) {
 		})
 	}
 }
+
+func TestChooseRoute(t *testing.T) {
+
+}

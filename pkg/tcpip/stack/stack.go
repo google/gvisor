@@ -1342,52 +1342,9 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 		return nil, &tcpip.ErrNetworkUnreachable{}
 	}
 
-	onlyGlobalAddresses := !header.IsV6LinkLocalUnicastAddress(localAddr) && !isLinkLocal
-
 	// Find a route to the remote with the route table.
-	var chosenRoute tcpip.Route
-	if r := func() *Route {
-		s.routeMu.RLock()
-		defer s.routeMu.RUnlock()
-
-		for _, route := range s.routeTable {
-			if remoteAddr.BitLen() != 0 && !route.Destination.Contains(remoteAddr) {
-				continue
-			}
-
-			nic, ok := s.nics[route.NIC]
-			if !ok || !nic.Enabled() {
-				continue
-			}
-
-			if id == 0 || id == route.NIC {
-				if addressEndpoint := s.getAddressEP(nic, localAddr, remoteAddr, netProto); addressEndpoint != nil {
-					var gateway tcpip.Address
-					if needRoute {
-						gateway = route.Gateway
-					}
-					r := constructAndValidateRoute(netProto, addressEndpoint, nic /* outgoingNIC */, nic /* outgoingNIC */, gateway, localAddr, remoteAddr, s.handleLocal, multicastLoop)
-					if r == nil {
-						panic(fmt.Sprintf("non-forwarding route validation failed with route table entry = %#v, id = %d, localAddr = %s, remoteAddr = %s", route, id, localAddr, remoteAddr))
-					}
-					return r
-				}
-			}
-
-			// If the stack has forwarding enabled and we haven't found a valid route
-			// to the remote address yet, keep track of the first valid route. We
-			// keep iterating because we prefer routes that let us use a local
-			// address that is assigned to the outgoing interface. There is no
-			// requirement to do this from any RFC but simply a choice made to better
-			// follow a strong host model which the netstack follows at the time of
-			// writing.
-			if onlyGlobalAddresses && chosenRoute.Equal(tcpip.Route{}) && isNICForwarding(nic, netProto) {
-				chosenRoute = route
-			}
-		}
-
-		return nil
-	}(); r != nil {
+	r, chosenRoute := s.chooseRoute(id, localAddr, remoteAddr, netProto, multicastLoop, isLinkLocal, needRoute)
+	if r != nil {
 		return r, nil
 	}
 
@@ -1444,6 +1401,52 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 	}
 	// TODO(https://gvisor.dev/issues/8105): This should be ErrNetworkUnreachable.
 	return nil, &tcpip.ErrNetworkUnreachable{}
+}
+
+func (s *Stack) chooseRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber, multicastLoop, isLinkLocal, needRoute bool) (*Route, *tcpip.Route) {
+	var chosenRoute tcpip.Route
+	onlyGlobalAddresses := !header.IsV6LinkLocalUnicastAddress(localAddr) && !isLinkLocal
+
+	s.routeMu.RLock()
+	defer s.routeMu.RUnlock()
+
+	for _, route := range s.routeTable {
+		if remoteAddr.BitLen() != 0 && !route.Destination.Contains(remoteAddr) {
+			continue
+		}
+
+		nic, ok := s.nics[route.NIC]
+		if !ok || !nic.Enabled() {
+			continue
+		}
+
+		if id == 0 || id == route.NIC {
+			if addressEndpoint := s.getAddressEP(nic, localAddr, remoteAddr, netProto); addressEndpoint != nil {
+				var gateway tcpip.Address
+				if needRoute {
+					gateway = route.Gateway
+				}
+				r := constructAndValidateRoute(netProto, addressEndpoint, nic /* outgoingNIC */, nic /* outgoingNIC */, gateway, localAddr, remoteAddr, s.handleLocal, multicastLoop)
+				if r == nil {
+					panic(fmt.Sprintf("non-forwarding route validation failed with route table entry = %#v, id = %d, localAddr = %s, remoteAddr = %s", route, id, localAddr, remoteAddr))
+				}
+				return r, nil
+			}
+		}
+
+		// If the stack has forwarding enabled and we haven't found a valid route
+		// to the remote address yet, keep track of the first valid route. We
+		// keep iterating because we prefer routes that let us use a local
+		// address that is assigned to the outgoing interface. There is no
+		// requirement to do this from any RFC but simply a choice made to better
+		// follow a strong host model which the netstack follows at the time of
+		// writing.
+		if onlyGlobalAddresses && chosenRoute.Equal(tcpip.Route{}) && isNICForwarding(nic, netProto) {
+			chosenRoute = route
+		}
+	}
+
+	return nil, &chosenRoute
 }
 
 // CheckNetworkProtocol checks if a given network protocol is enabled in the
