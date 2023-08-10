@@ -1213,11 +1213,33 @@ func (k *Kernel) SendExternalSignal(info *linux.SignalInfo, context string) {
 }
 
 // SendExternalSignalThreadGroup injects a signal into an specific ThreadGroup.
+//
 // This function doesn't skip signals like SendExternalSignal does.
 func (k *Kernel) SendExternalSignalThreadGroup(tg *ThreadGroup, info *linux.SignalInfo) error {
 	k.extMu.Lock()
 	defer k.extMu.Unlock()
 	return tg.SendSignal(info)
+}
+
+// SendExternalSignalProcessGroup sends a signal to all ThreadGroups in the
+// given process group.
+//
+// This function doesn't skip signals like SendExternalSignal does.
+func (k *Kernel) SendExternalSignalProcessGroup(pg *ProcessGroup, info *linux.SignalInfo) error {
+	k.extMu.Lock()
+	defer k.extMu.Unlock()
+	// If anything goes wrong, we'll return the error, but still try our
+	// best to deliver to other processes in the group.
+	var firstErr error
+	for _, tg := range k.TaskSet().Root.ThreadGroups() {
+		if tg.ProcessGroup() != pg {
+			continue
+		}
+		if err := tg.SendSignal(info); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return firstErr
 }
 
 // SendContainerSignal sends the given signal to all processes inside the

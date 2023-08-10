@@ -1414,23 +1414,15 @@ func (l *Loader) signalForegrondProcessGroup(cid string, tgid kernel.ThreadID, s
 		return fmt.Errorf("no TTY attached")
 	}
 	pg := tty.ForegroundProcessGroup()
+	si := &linux.SignalInfo{Signo: signo}
 	if pg == nil {
 		// No foreground process group has been set. Signal the
 		// original thread group.
 		log.Warningf("No foreground process group for container %q and PID %d. Sending signal directly to PID %d.", cid, tgid, tgid)
-		return l.k.SendExternalSignalThreadGroup(tg, &linux.SignalInfo{Signo: signo})
+		return l.k.SendExternalSignalThreadGroup(tg, si)
 	}
 	// Send the signal to all processes in the process group.
-	var lastErr error
-	for _, tg := range l.k.TaskSet().Root.ThreadGroups() {
-		if tg.ProcessGroup() != pg {
-			continue
-		}
-		if err := l.k.SendExternalSignalThreadGroup(tg, &linux.SignalInfo{Signo: signo}); err != nil {
-			lastErr = err
-		}
-	}
-	return lastErr
+	return l.k.SendExternalSignalProcessGroup(pg, si)
 }
 
 // signalAllProcesses that belong to specified container. It's a noop if the
