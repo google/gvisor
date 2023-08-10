@@ -50,7 +50,7 @@ using ::testing::Key;
 using ::testing::Not;
 
 std::vector<std::string> known_controllers = {
-    "cpu", "cpuset", "cpuacct", "job", "memory", "pids",
+    "cpu", "cpuset", "cpuacct", "devices", "job", "memory", "pids",
 };
 
 bool CgroupsAvailable() {
