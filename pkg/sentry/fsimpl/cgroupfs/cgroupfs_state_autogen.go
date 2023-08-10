@@ -903,12 +903,12 @@ func (c *memoryController) StateTypeName() string {
 func (c *memoryController) StateFields() []string {
 	return []string{
 		"controllerCommon",
-		"controllerStateless",
 		"controllerNoResource",
 		"limitBytes",
 		"softLimitBytes",
 		"moveChargeAtImmigrate",
 		"pressureLevel",
+		"memCg",
 	}
 }
 
@@ -918,12 +918,12 @@ func (c *memoryController) beforeSave() {}
 func (c *memoryController) StateSave(stateSinkObject state.Sink) {
 	c.beforeSave()
 	stateSinkObject.Save(0, &c.controllerCommon)
-	stateSinkObject.Save(1, &c.controllerStateless)
-	stateSinkObject.Save(2, &c.controllerNoResource)
-	stateSinkObject.Save(3, &c.limitBytes)
-	stateSinkObject.Save(4, &c.softLimitBytes)
-	stateSinkObject.Save(5, &c.moveChargeAtImmigrate)
-	stateSinkObject.Save(6, &c.pressureLevel)
+	stateSinkObject.Save(1, &c.controllerNoResource)
+	stateSinkObject.Save(2, &c.limitBytes)
+	stateSinkObject.Save(3, &c.softLimitBytes)
+	stateSinkObject.Save(4, &c.moveChargeAtImmigrate)
+	stateSinkObject.Save(5, &c.pressureLevel)
+	stateSinkObject.Save(6, &c.memCg)
 }
 
 func (c *memoryController) afterLoad() {}
@@ -931,12 +931,37 @@ func (c *memoryController) afterLoad() {}
 // +checklocksignore
 func (c *memoryController) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.controllerCommon)
-	stateSourceObject.Load(1, &c.controllerStateless)
-	stateSourceObject.Load(2, &c.controllerNoResource)
-	stateSourceObject.Load(3, &c.limitBytes)
-	stateSourceObject.Load(4, &c.softLimitBytes)
-	stateSourceObject.Load(5, &c.moveChargeAtImmigrate)
-	stateSourceObject.Load(6, &c.pressureLevel)
+	stateSourceObject.Load(1, &c.controllerNoResource)
+	stateSourceObject.Load(2, &c.limitBytes)
+	stateSourceObject.Load(3, &c.softLimitBytes)
+	stateSourceObject.Load(4, &c.moveChargeAtImmigrate)
+	stateSourceObject.Load(5, &c.pressureLevel)
+	stateSourceObject.Load(6, &c.memCg)
+}
+
+func (memCg *memoryCgroup) StateTypeName() string {
+	return "pkg/sentry/fsimpl/cgroupfs.memoryCgroup"
+}
+
+func (memCg *memoryCgroup) StateFields() []string {
+	return []string{
+		"cgroupInode",
+	}
+}
+
+func (memCg *memoryCgroup) beforeSave() {}
+
+// +checklocksignore
+func (memCg *memoryCgroup) StateSave(stateSinkObject state.Sink) {
+	memCg.beforeSave()
+	stateSinkObject.Save(0, &memCg.cgroupInode)
+}
+
+func (memCg *memoryCgroup) afterLoad() {}
+
+// +checklocksignore
+func (memCg *memoryCgroup) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &memCg.cgroupInode)
 }
 
 func (d *memoryUsageInBytesData) StateTypeName() string {
@@ -944,7 +969,9 @@ func (d *memoryUsageInBytesData) StateTypeName() string {
 }
 
 func (d *memoryUsageInBytesData) StateFields() []string {
-	return []string{}
+	return []string{
+		"memCg",
+	}
 }
 
 func (d *memoryUsageInBytesData) beforeSave() {}
@@ -952,12 +979,14 @@ func (d *memoryUsageInBytesData) beforeSave() {}
 // +checklocksignore
 func (d *memoryUsageInBytesData) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
+	stateSinkObject.Save(0, &d.memCg)
 }
 
 func (d *memoryUsageInBytesData) afterLoad() {}
 
 // +checklocksignore
 func (d *memoryUsageInBytesData) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.memCg)
 }
 
 func (c *pidsController) StateTypeName() string {
@@ -1081,6 +1110,7 @@ func init() {
 	state.Register((*dirRefs)(nil))
 	state.Register((*jobController)(nil))
 	state.Register((*memoryController)(nil))
+	state.Register((*memoryCgroup)(nil))
 	state.Register((*memoryUsageInBytesData)(nil))
 	state.Register((*pidsController)(nil))
 	state.Register((*pidsCurrentData)(nil))
