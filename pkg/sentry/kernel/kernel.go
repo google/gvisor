@@ -1703,7 +1703,7 @@ func (k *Kernel) ReleaseCgroupHierarchy(hid uint32) {
 		for cg := range t.cgroups {
 			if cg.HierarchyID() == hid {
 				cg.Leave(t)
-				t.resetMemCgID(cg)
+				t.ResetMemCgIDFromCgroup(cg)
 				delete(t.cgroups, cg)
 				releasedCGs = append(releasedCGs, cg)
 				// A task can't be part of multiple cgroups from the same

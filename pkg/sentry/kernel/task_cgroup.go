@@ -51,24 +51,32 @@ func (t *Task) EnterInitialCgroups(parent *Task, initCgroups map[Cgroup]struct{}
 		// Since t isn't in any cgroup yet, we can skip the check against
 		// existing cgroups.
 		c.Enter(t)
-		t.setMemCgID(c)
+		t.SetMemCgIDFromCgroup(c)
 	}
 }
 
-// TODO(b/277772401): setMemCgIDLocked should be called after adding support for
-// task migration for cgroup memory controllers.
-func (t *Task) setMemCgID(cg Cgroup) {
+// SetMemCgID sets the given memory cgroup id to the task.
+func (t *Task) SetMemCgID(memCgID uint32) {
+	t.memCgID.Store(memCgID)
+}
+
+// SetMemCgIDFromCgroup sets the id of the given memory cgroup to the task.
+func (t *Task) SetMemCgIDFromCgroup(cg Cgroup) {
 	for _, ctl := range cg.Controllers() {
 		if ctl.Type() == CgroupControllerMemory {
-			t.memCgID.Store(cg.ID())
+			t.SetMemCgID(cg.ID())
+			return
 		}
 	}
 }
 
-func (t *Task) resetMemCgID(cg Cgroup) {
+// ResetMemCgIDFromCgroup sets the memory cgroup id to zero, if the task has
+// a memory cgroup.
+func (t *Task) ResetMemCgIDFromCgroup(cg Cgroup) {
 	for _, ctl := range cg.Controllers() {
 		if ctl.Type() == CgroupControllerMemory {
-			t.memCgID.Store(0)
+			t.SetMemCgID(0)
+			return
 		}
 	}
 }
@@ -101,7 +109,7 @@ func (t *Task) enterCgroupLocked(c Cgroup) {
 	c.IncRef()
 	t.cgroups[c] = struct{}{}
 	c.Enter(t)
-	t.setMemCgID(c)
+	t.SetMemCgIDFromCgroup(c)
 }
 
 // +checklocks:t.mu
@@ -121,7 +129,7 @@ func (t *Task) LeaveCgroups() {
 	for c := range cgs {
 		c.Leave(t)
 	}
-	t.memCgID.Store(0)
+	t.SetMemCgID(0)
 	t.mu.Unlock()
 	t.tg.pidns.owner.mu.Unlock()
 
