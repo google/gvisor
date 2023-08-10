@@ -34,9 +34,9 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/client"
-	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/docker/go-connections/nat"
+	"github.com/moby/moby/client"
+	"github.com/moby/moby/pkg/stdcopy"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 )
 
@@ -236,7 +236,7 @@ func (c *Container) create(ctx context.Context, profileImage string, conf *conta
 		// unmodified "basic/alpine" image name. This should be easy to grok.
 		c.profileInit(profileImage)
 	}
-	cont, err := c.client.ContainerCreate(ctx, conf, hostconf, nil, c.Name)
+	cont, err := c.client.ContainerCreate(ctx, conf, hostconf, nil, nil, c.Name)
 	if err != nil {
 		return err
 	}
@@ -299,7 +299,7 @@ func (c *Container) Start(ctx context.Context) error {
 
 // Stop is analogous to 'docker stop'.
 func (c *Container) Stop(ctx context.Context) error {
-	return c.client.ContainerStop(ctx, c.id, nil)
+	return c.client.ContainerStop(ctx, c.id, container.StopOptions{})
 }
 
 // Pause is analogous to'docker pause'.
