@@ -1,5 +1,13 @@
 set -euo pipefail
 
+if POSIXLY_CORRECT=true df --local --output=pcent,ipcent,target | grep -vE '/snap/' | grep -qE '9[4-9]%|100%'; then
+  echo "Disk usage has reached critical level, node is bad." >&2
+  sudo df -h --local | sed -r 's/^/[df] /' >&2
+  sleep 3
+  sudo poweroff
+  exit 1
+fi
+
 if [[ "${BUILDKITE_PIPELINE_NAME:-}" == "Pipeline" ]]; then
   # Check that the target branch exists.
   git fetch origin "${BUILDKITE_BRANCH}" || {
