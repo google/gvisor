@@ -2490,10 +2490,17 @@ go_repository(
 )
 
 go_repository(
+    name = "com_github_moby_moby",
+    importpath = "github.com/moby/moby",
+    sum = "h1:uUbydai/Y9J7Ybt+lFI3zBdnsMYXnXE9vEcfZDoEE8Q=",
+    version = "v24.0.5+incompatible",
+)
+
+go_repository(
     name = "com_github_docker_docker",
     importpath = "github.com/docker/docker",
-    sum = "h1:5AkIsnQpeL7eaqsM+Vl4Xbj5eIZFpPZZzXtNyfzzK/w=",
-    version = "v1.4.2-0.20191028175130-9e7d5ac5ea55",
+    sum = "h1:WmgcE4fxyI6EEXxBRxsHnZXrO1pQ3smi0k/jho4HLeY=",
+    version = "v24.0.5+incompatible",
 )
 
 go_repository(

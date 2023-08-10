@@ -21,7 +21,7 @@ import (
 	"time"
 
 	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/pkg/stdcopy"
+	"github.com/moby/moby/pkg/stdcopy"
 )
 
 // ExecOpts holds arguments for Exec calls.
