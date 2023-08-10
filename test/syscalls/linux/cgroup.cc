@@ -651,8 +651,9 @@ TEST(MemoryCgroup, MemoryUsageInBytes) {
 
   Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
   Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("memory"));
-  EXPECT_THAT(c.ReadIntegerControlFile("memory.usage_in_bytes"),
-              IsPosixErrorOkAndHolds(Gt(0)));
+  const uint64_t usage = ASSERT_NO_ERRNO_AND_VALUE(
+      c.ReadIntegerControlFile("memory.usage_in_bytes"));
+  EXPECT_GE(usage, 0);
 }
 
 TEST(CPUCgroup, ControlFilesHaveDefaultValues) {

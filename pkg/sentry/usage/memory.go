@@ -323,9 +323,15 @@ func (m *MemoryLocked) Total() uint64 {
 func (m *MemoryLocked) TotalPerCg(memCgID uint32) uint64 {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	// Total memory usage including the sentry memory.
+	if memCgID == 0 {
+		return m.totalLocked()
+	}
+	// Memory usage for all cgroups except sentry memory.
 	ms, ok := m.MemCgIDToMemStats[memCgID]
 	if !ok {
-		panic(fmt.Sprintf("invalid memory cgroup id: %v", memCgID))
+		return 0
 	}
 	return ms.totalLocked()
 }
@@ -345,9 +351,15 @@ func (m *MemoryLocked) Copy() (MemoryStats, uint64) {
 func (m *MemoryLocked) CopyPerCg(memCgID uint32) (MemoryStats, uint64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+
+	// Total memory usage including the sentry memory.
+	if memCgID == 0 {
+		return m.copyLocked(), m.totalLocked()
+	}
+	// Memory usage for all cgroups except sentry memory.
 	ms, ok := m.MemCgIDToMemStats[memCgID]
 	if !ok {
-		panic(fmt.Sprintf("invalid memory cgroup id: %v", memCgID))
+		return MemoryStats{}, 0
 	}
 	return ms.copyLocked(), ms.totalLocked()
 }
