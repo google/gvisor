@@ -46,6 +46,11 @@ type testCase struct {
 func TestStatefile(t *testing.T) {
 	rand.Seed(time.Now().Unix())
 
+	compression := map[string]CompressionLevel{
+		"none":       CompressionLevelNone,
+		"compressed": CompressionLevelFlateBestSpeed,
+	}
+
 	cases := []testCase{
 		// Various data sizes.
 		{"nil", nil, nil},
@@ -72,90 +77,102 @@ func TestStatefile(t *testing.T) {
 		{"two metadata", []byte("data"), map[string]string{"foo": "bar", "one": "two"}},
 	}
 
-	for _, c := range cases {
-		// Generate a key.
-		integrityKey, err := randomKey()
-		if err != nil {
-			t.Errorf("can't generate key: got %v, excepted nil", err)
-			continue
-		}
+	for cKey, compress := range compression {
+		t.Run(cKey, func(t *testing.T) {
+			for _, c := range cases {
+				// Generate a key.
+				integrityKey, err := randomKey()
+				if err != nil {
+					t.Errorf("can't generate key: got %v, excepted nil", err)
+					continue
+				}
 
-		t.Run(c.name, func(t *testing.T) {
-			for _, key := range [][]byte{nil, integrityKey} {
-				t.Run("key="+string(key), func(t *testing.T) {
-					// Encoding happens via a buffer.
-					var bufEncoded bytes.Buffer
-					var bufDecoded bytes.Buffer
+				// Save compression state
+				if c.metadata == nil {
+					c.metadata = map[string]string{}
+				}
 
-					// Do all the writing.
-					w, err := NewWriter(&bufEncoded, key, c.metadata)
-					if err != nil {
-						t.Fatalf("error creating writer: got %v, expected nil", err)
-					}
-					if _, err := io.Copy(w, bytes.NewBuffer(c.data)); err != nil {
-						t.Fatalf("error during write: got %v, expected nil", err)
-					}
+				c.metadata[compressionKey] = string(compress)
 
-					// Finish the sum.
-					if err := w.Close(); err != nil {
-						t.Fatalf("error during close: got %v, expected nil", err)
-					}
+				t.Run(c.name, func(t *testing.T) {
+					for _, key := range [][]byte{nil, integrityKey} {
+						t.Run("key="+string(key), func(t *testing.T) {
+							// Encoding happens via a buffer.
+							var bufEncoded bytes.Buffer
+							var bufDecoded bytes.Buffer
 
-					t.Logf("original data: %d bytes, encoded: %d bytes.",
-						len(c.data), len(bufEncoded.Bytes()))
+							// Do all the writing.
+							w, err := NewWriter(&bufEncoded, key, c.metadata)
+							if err != nil {
+								t.Fatalf("error creating writer: got %v, expected nil", err)
+							}
+							if _, err := io.Copy(w, bytes.NewBuffer(c.data)); err != nil {
+								t.Fatalf("error during write: got %v, expected nil", err)
+							}
 
-					// Do all the reading.
-					r, metadata, err := NewReader(bytes.NewReader(bufEncoded.Bytes()), key)
-					if err != nil {
-						t.Fatalf("error creating reader: got %v, expected nil", err)
-					}
-					if _, err := io.Copy(&bufDecoded, r); err != nil {
-						t.Fatalf("error during read: got %v, expected nil", err)
-					}
+							// Finish the sum.
+							if err := w.Close(); err != nil {
+								t.Fatalf("error during close: got %v, expected nil", err)
+							}
 
-					// Check that the data matches.
-					if !bytes.Equal(c.data, bufDecoded.Bytes()) {
-						t.Fatalf("data didn't match (%d vs %d bytes)", len(bufDecoded.Bytes()), len(c.data))
-					}
+							t.Logf("original data: %d bytes, encoded: %d bytes.",
+								len(c.data), len(bufEncoded.Bytes()))
 
-					// Check that the metadata matches.
-					for k, v := range c.metadata {
-						nv, ok := metadata[k]
-						if !ok {
-							t.Fatalf("missing metadata: %s", k)
-						}
-						if v != nv {
-							t.Fatalf("mismatched metdata for %s: got %s, expected %s", k, nv, v)
-						}
-					}
+							// Do all the reading.
+							r, metadata, err := NewReader(bytes.NewReader(bufEncoded.Bytes()), key)
+							if err != nil {
+								t.Fatalf("error creating reader: got %v, expected nil", err)
+							}
+							if _, err := io.Copy(&bufDecoded, r); err != nil {
+								t.Fatalf("error during read: got %v, expected nil", err)
+							}
 
-					// Change the data and verify that it fails.
-					if key != nil {
-						b := append([]byte(nil), bufEncoded.Bytes()...)
-						b[rand.Intn(len(b))]++
-						bufDecoded.Reset()
-						r, _, err = NewReader(bytes.NewReader(b), key)
-						if err == nil {
-							_, err = io.Copy(&bufDecoded, r)
-						}
-						if err == nil {
-							t.Error("got no error: expected error on data corruption")
-						}
-					}
+							// Check that the data matches.
+							if !bytes.Equal(c.data, bufDecoded.Bytes()) {
+								t.Fatalf("data didn't match (%d vs %d bytes)", len(bufDecoded.Bytes()), len(c.data))
+							}
 
-					// Change the key and verify that it fails.
-					newKey := integrityKey
-					if len(key) > 0 {
-						newKey = append([]byte{}, key...)
-						newKey[rand.Intn(len(newKey))]++
-					}
-					bufDecoded.Reset()
-					r, _, err = NewReader(bytes.NewReader(bufEncoded.Bytes()), newKey)
-					if err == nil {
-						_, err = io.Copy(&bufDecoded, r)
-					}
-					if err != compressio.ErrHashMismatch {
-						t.Errorf("got error: %v, expected ErrHashMismatch on key mismatch", err)
+							// Check that the metadata matches.
+							for k, v := range c.metadata {
+								nv, ok := metadata[k]
+								if !ok {
+									t.Fatalf("missing metadata: %s", k)
+								}
+								if v != nv {
+									t.Fatalf("mismatched metdata for %s: got %s, expected %s", k, nv, v)
+								}
+							}
+
+							// Change the data and verify that it fails.
+							if key != nil {
+								b := append([]byte(nil), bufEncoded.Bytes()...)
+								i := rand.Intn(len(b))
+								b[i]++
+								bufDecoded.Reset()
+								r, _, err = NewReader(bytes.NewReader(b), key)
+								if err == nil {
+									_, err = io.Copy(&bufDecoded, r)
+								}
+								if err == nil {
+									t.Errorf("got no error: expected error on data corruption in byte [%d] = %x", i, b[i])
+								}
+							}
+
+							// Change the key and verify that it fails.
+							newKey := integrityKey
+							if len(key) > 0 {
+								newKey = append([]byte{}, key...)
+								newKey[rand.Intn(len(newKey))]++
+							}
+							bufDecoded.Reset()
+							r, _, err = NewReader(bytes.NewReader(bufEncoded.Bytes()), newKey)
+							if err == nil {
+								_, err = io.Copy(&bufDecoded, r)
+							}
+							if err != compressio.ErrHashMismatch {
+								t.Errorf("got error: %v, expected ErrHashMismatch on key mismatch", err)
+							}
+						})
 					}
 				})
 			}
@@ -198,7 +215,7 @@ func benchmark(b *testing.B, size int, write bool, compressible bool) {
 	var stateBuf bytes.Buffer
 	writeState := func() {
 		stateBuf.Reset()
-		w, err := NewWriter(&stateBuf, key, nil)
+		w, err := NewWriter(&stateBuf, key, Options{Compression: CompressionLevelFlateBestSpeed}.WriteToMetadata(map[string]string{}))
 		if err != nil {
 			b.Fatalf("error creating writer: %v", err)
 		}

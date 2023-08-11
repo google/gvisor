@@ -16,12 +16,14 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/google/subcommands"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/state/statefile"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
@@ -36,6 +38,7 @@ const checkpointFileName = "checkpoint.img"
 type Checkpoint struct {
 	imagePath    string
 	leaveRunning bool
+	compression  CheckpointCompression
 }
 
 // Name implements subcommands.Command.Name.
@@ -58,6 +61,7 @@ func (*Checkpoint) Usage() string {
 func (c *Checkpoint) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&c.imagePath, "image-path", "", "directory path to saved container image")
 	f.BoolVar(&c.leaveRunning, "leave-running", false, "restart the container after checkpointing")
+	f.Var(newCheckpointCompressionValue(statefile.CompressionLevelFlateBestSpeed, &c.compression), "compression", "compress checkpoint image on disk. Values: none|flate-best-speed.")
 
 	// Unimplemented flags necessary for compatibility with docker.
 	var wp string
@@ -97,7 +101,7 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...any) su
 	}
 	defer file.Close()
 
-	if err := cont.Checkpoint(file); err != nil {
+	if err := cont.Checkpoint(file, statefile.Options{Compression: c.compression.Level()}); err != nil {
 		util.Fatalf("checkpoint failed: %v", err)
 	}
 
@@ -155,4 +159,41 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...any) su
 	*waitStatus = ws
 
 	return subcommands.ExitSuccess
+}
+
+// CheckpointCompression represents checkpoint image writer behavior. The
+// default behavior is to compress because the default behavior used to be to
+// always compress.
+type CheckpointCompression statefile.CompressionLevel
+
+func newCheckpointCompressionValue(val statefile.CompressionLevel, p *CheckpointCompression) *CheckpointCompression {
+	*p = CheckpointCompression(val)
+	return (*CheckpointCompression)(p)
+}
+
+// Set implements flag.Value.
+func (g *CheckpointCompression) Set(v string) error {
+	t, err := statefile.CompressionLevelFromString(v)
+	if err != nil {
+		return fmt.Errorf("invalid checkpoint compression type %q", v)
+	}
+
+	*g = CheckpointCompression(t)
+
+	return nil
+}
+
+// Get implements flag.Getter.
+func (g *CheckpointCompression) Get() any {
+	return *g
+}
+
+// String implements flag.Value.
+func (g CheckpointCompression) String() string {
+	return string(g)
+}
+
+// Level returns corresponding statefile.CompressionLevel value.
+func (g CheckpointCompression) Level() statefile.CompressionLevel {
+	return statefile.CompressionLevel(g)
 }
