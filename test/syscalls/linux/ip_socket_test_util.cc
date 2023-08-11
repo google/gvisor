@@ -258,7 +258,7 @@ void RecvCmsg(int sock, int cmsg_level, int cmsg_type, char buf[],
       iov.iov_len = *buf_size,
   };
   // Add an extra byte to confirm we only read what we expected.
-  char control[CMSG_SPACE(sizeof(*out_cmsg_value)) + 1];
+  alignas(struct cmsghdr) char control[CMSG_SPACE(sizeof(*out_cmsg_value)) + 1];
   msghdr msg = {
       .msg_iov = &iov,
       .msg_iovlen = 1,
