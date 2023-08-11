@@ -45,6 +45,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
+	"gvisor.dev/gvisor/pkg/state/statefile"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/boot"
@@ -1217,9 +1218,10 @@ func (s *Sandbox) SignalProcess(cid string, pid int32, sig unix.Signal, fgProces
 
 // Checkpoint sends the checkpoint call for a container in the sandbox.
 // The statefile will be written to f.
-func (s *Sandbox) Checkpoint(cid string, f *os.File) error {
-	log.Debugf("Checkpoint sandbox %q", s.ID)
+func (s *Sandbox) Checkpoint(cid string, f *os.File, options statefile.Options) error {
+	log.Debugf("Checkpoint sandbox %q, options %+v", s.ID, options)
 	opt := control.SaveOpts{
+		Metadata: options.WriteToMetadata(map[string]string{}),
 		FilePayload: urpc.FilePayload{
 			Files: []*os.File{f},
 		},
