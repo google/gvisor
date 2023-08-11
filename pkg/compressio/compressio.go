@@ -13,7 +13,8 @@
 // limitations under the License.
 
 // Package compressio provides parallel compression and decompression, as well
-// as optional SHA-256 hashing.
+// as optional SHA-256 hashing. It also provides another storage variant
+// (nocompressio) that does not compress data but tracks its integrity.
 //
 // The stream format is defined as follows.
 //
