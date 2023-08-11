@@ -126,7 +126,7 @@ func newDevicesController(fs *filesystem) *devicesController {
 		allow:       true,
 		deviceRules: []deviceRule{},
 	}
-	c.controllerCommon.init(kernel.CgroupControllerJob, fs)
+	c.controllerCommon.init(kernel.CgroupControllerDevices, fs)
 	return c
 }
 
