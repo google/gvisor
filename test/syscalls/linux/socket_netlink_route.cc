@@ -839,7 +839,7 @@ INSTANTIATE_TEST_SUITE_P(NetlinkRouteIpv4AndIpv6Tests,
 
 TEST_P(NetlinkRouteIpInvariantTest, AddAndRemoveRoute) {
   // Gvisor does not support `RTM_NEWROUTE` or `RTM_DELROUTE`.
-  SKIP_IF(IsRunningOnGvisor());
+  SKIP_IF(IsRunningOnGvisor() && GvisorPlatform() != Platform::kStarnix);
   // CAP_NET_ADMIN is required to modify the routing table.
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
 
@@ -891,7 +891,7 @@ TEST_P(NetlinkRouteIpInvariantTest, AddAndRemoveRoute) {
 // GetRuleDump tests a RTM_GETRULE + NLM_F_DUMP request.
 TEST(NetlinkRouteTest, GetRuleDump) {
   // Gvisor does not support `RTM_GETRULE`
-  SKIP_IF(IsRunningOnGvisor());
+  SKIP_IF(IsRunningOnGvisor() && GvisorPlatform() != Platform::kStarnix);
 
   FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
@@ -946,7 +946,7 @@ TEST(NetlinkRouteTest, GetRuleDump) {
 
 TEST_P(NetlinkRouteIpInvariantTest, AddAndRemoveRule) {
   // Gvisor does not support `RTM_NEWRULE` or `RTM_DELRULE`.
-  SKIP_IF(IsRunningOnGvisor());
+  SKIP_IF(IsRunningOnGvisor() && GvisorPlatform() != Platform::kStarnix);
   // CAP_NET_ADMIN is required to modify the rule table.
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
 
