@@ -237,3 +237,48 @@ func (e *rawPacketEntry) SetNext(elem *rawPacket) {
 func (e *rawPacketEntry) SetPrev(elem *rawPacket) {
 	e.prev = elem
 }
+
+// RingInit instantiates an Element to be an item in a ring (circularly-linked
+// list).
+//
+//go:nosplit
+func rawPacketRingInit(e *rawPacket) {
+	linker := rawPacketElementMapper{}.linkerFor(e)
+	linker.SetNext(e)
+	linker.SetPrev(e)
+}
+
+// RingAdd adds new to old's ring.
+//
+//go:nosplit
+func rawPacketRingAdd(old *rawPacket, new *rawPacket) {
+	oldLinker := rawPacketElementMapper{}.linkerFor(old)
+	newLinker := rawPacketElementMapper{}.linkerFor(new)
+	next := oldLinker.Next()
+	prev := old
+
+	next.SetPrev(new)
+	newLinker.SetNext(next)
+	newLinker.SetPrev(prev)
+	oldLinker.SetNext(new)
+}
+
+// RingRemove removes e from its ring.
+//
+//go:nosplit
+func rawPacketRingRemove(e *rawPacket) {
+	eLinker := rawPacketElementMapper{}.linkerFor(e)
+	next := eLinker.Next()
+	prev := eLinker.Prev()
+	next.SetPrev(prev)
+	prev.SetNext(next)
+	rawPacketRingInit(e)
+}
+
+// RingEmpty returns true if there are no other elements in the list.
+//
+//go:nosplit
+func rawPacketRingEmpty(e *rawPacket) bool {
+	linker := rawPacketElementMapper{}.linkerFor(e)
+	return linker.Next() == e
+}

@@ -237,3 +237,48 @@ func (e *controlFDEntry) SetNext(elem *ControlFD) {
 func (e *controlFDEntry) SetPrev(elem *ControlFD) {
 	e.prev = elem
 }
+
+// RingInit instantiates an Element to be an item in a ring (circularly-linked
+// list).
+//
+//go:nosplit
+func controlFDRingInit(e *ControlFD) {
+	linker := controlFDElementMapper{}.linkerFor(e)
+	linker.SetNext(e)
+	linker.SetPrev(e)
+}
+
+// RingAdd adds new to old's ring.
+//
+//go:nosplit
+func controlFDRingAdd(old *ControlFD, new *ControlFD) {
+	oldLinker := controlFDElementMapper{}.linkerFor(old)
+	newLinker := controlFDElementMapper{}.linkerFor(new)
+	next := oldLinker.Next()
+	prev := old
+
+	next.SetPrev(new)
+	newLinker.SetNext(next)
+	newLinker.SetPrev(prev)
+	oldLinker.SetNext(new)
+}
+
+// RingRemove removes e from its ring.
+//
+//go:nosplit
+func controlFDRingRemove(e *ControlFD) {
+	eLinker := controlFDElementMapper{}.linkerFor(e)
+	next := eLinker.Next()
+	prev := eLinker.Prev()
+	next.SetPrev(prev)
+	prev.SetNext(next)
+	controlFDRingInit(e)
+}
+
+// RingEmpty returns true if there are no other elements in the list.
+//
+//go:nosplit
+func controlFDRingEmpty(e *ControlFD) bool {
+	linker := controlFDElementMapper{}.linkerFor(e)
+	return linker.Next() == e
+}

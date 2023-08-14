@@ -237,3 +237,48 @@ func (e *contextEntry) SetNext(elem *sharedContext) {
 func (e *contextEntry) SetPrev(elem *sharedContext) {
 	e.prev = elem
 }
+
+// RingInit instantiates an Element to be an item in a ring (circularly-linked
+// list).
+//
+//go:nosplit
+func contextRingInit(e *sharedContext) {
+	linker := contextElementMapper{}.linkerFor(e)
+	linker.SetNext(e)
+	linker.SetPrev(e)
+}
+
+// RingAdd adds new to old's ring.
+//
+//go:nosplit
+func contextRingAdd(old *sharedContext, new *sharedContext) {
+	oldLinker := contextElementMapper{}.linkerFor(old)
+	newLinker := contextElementMapper{}.linkerFor(new)
+	next := oldLinker.Next()
+	prev := old
+
+	next.SetPrev(new)
+	newLinker.SetNext(next)
+	newLinker.SetPrev(prev)
+	oldLinker.SetNext(new)
+}
+
+// RingRemove removes e from its ring.
+//
+//go:nosplit
+func contextRingRemove(e *sharedContext) {
+	eLinker := contextElementMapper{}.linkerFor(e)
+	next := eLinker.Next()
+	prev := eLinker.Prev()
+	next.SetPrev(prev)
+	prev.SetNext(next)
+	contextRingInit(e)
+}
+
+// RingEmpty returns true if there are no other elements in the list.
+//
+//go:nosplit
+func contextRingEmpty(e *sharedContext) bool {
+	linker := contextElementMapper{}.linkerFor(e)
+	return linker.Next() == e
+}

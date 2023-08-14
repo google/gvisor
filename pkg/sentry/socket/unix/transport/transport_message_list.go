@@ -237,3 +237,48 @@ func (e *messageEntry) SetNext(elem *message) {
 func (e *messageEntry) SetPrev(elem *message) {
 	e.prev = elem
 }
+
+// RingInit instantiates an Element to be an item in a ring (circularly-linked
+// list).
+//
+//go:nosplit
+func messageRingInit(e *message) {
+	linker := messageElementMapper{}.linkerFor(e)
+	linker.SetNext(e)
+	linker.SetPrev(e)
+}
+
+// RingAdd adds new to old's ring.
+//
+//go:nosplit
+func messageRingAdd(old *message, new *message) {
+	oldLinker := messageElementMapper{}.linkerFor(old)
+	newLinker := messageElementMapper{}.linkerFor(new)
+	next := oldLinker.Next()
+	prev := old
+
+	next.SetPrev(new)
+	newLinker.SetNext(next)
+	newLinker.SetPrev(prev)
+	oldLinker.SetNext(new)
+}
+
+// RingRemove removes e from its ring.
+//
+//go:nosplit
+func messageRingRemove(e *message) {
+	eLinker := messageElementMapper{}.linkerFor(e)
+	next := eLinker.Next()
+	prev := eLinker.Prev()
+	next.SetPrev(prev)
+	prev.SetNext(next)
+	messageRingInit(e)
+}
+
+// RingEmpty returns true if there are no other elements in the list.
+//
+//go:nosplit
+func messageRingEmpty(e *message) bool {
+	linker := messageElementMapper{}.linkerFor(e)
+	return linker.Next() == e
+}

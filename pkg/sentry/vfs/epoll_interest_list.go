@@ -237,3 +237,48 @@ func (e *epollInterestEntry) SetNext(elem *epollInterest) {
 func (e *epollInterestEntry) SetPrev(elem *epollInterest) {
 	e.prev = elem
 }
+
+// RingInit instantiates an Element to be an item in a ring (circularly-linked
+// list).
+//
+//go:nosplit
+func epollInterestRingInit(e *epollInterest) {
+	linker := epollInterestElementMapper{}.linkerFor(e)
+	linker.SetNext(e)
+	linker.SetPrev(e)
+}
+
+// RingAdd adds new to old's ring.
+//
+//go:nosplit
+func epollInterestRingAdd(old *epollInterest, new *epollInterest) {
+	oldLinker := epollInterestElementMapper{}.linkerFor(old)
+	newLinker := epollInterestElementMapper{}.linkerFor(new)
+	next := oldLinker.Next()
+	prev := old
+
+	next.SetPrev(new)
+	newLinker.SetNext(next)
+	newLinker.SetPrev(prev)
+	oldLinker.SetNext(new)
+}
+
+// RingRemove removes e from its ring.
+//
+//go:nosplit
+func epollInterestRingRemove(e *epollInterest) {
+	eLinker := epollInterestElementMapper{}.linkerFor(e)
+	next := eLinker.Next()
+	prev := eLinker.Prev()
+	next.SetPrev(prev)
+	prev.SetNext(next)
+	epollInterestRingInit(e)
+}
+
+// RingEmpty returns true if there are no other elements in the list.
+//
+//go:nosplit
+func epollInterestRingEmpty(e *epollInterest) bool {
+	linker := epollInterestElementMapper{}.linkerFor(e)
+	return linker.Next() == e
+}

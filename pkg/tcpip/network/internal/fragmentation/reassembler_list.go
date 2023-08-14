@@ -237,3 +237,48 @@ func (e *reassemblerEntry) SetNext(elem *reassembler) {
 func (e *reassemblerEntry) SetPrev(elem *reassembler) {
 	e.prev = elem
 }
+
+// RingInit instantiates an Element to be an item in a ring (circularly-linked
+// list).
+//
+//go:nosplit
+func reassemblerRingInit(e *reassembler) {
+	linker := reassemblerElementMapper{}.linkerFor(e)
+	linker.SetNext(e)
+	linker.SetPrev(e)
+}
+
+// RingAdd adds new to old's ring.
+//
+//go:nosplit
+func reassemblerRingAdd(old *reassembler, new *reassembler) {
+	oldLinker := reassemblerElementMapper{}.linkerFor(old)
+	newLinker := reassemblerElementMapper{}.linkerFor(new)
+	next := oldLinker.Next()
+	prev := old
+
+	next.SetPrev(new)
+	newLinker.SetNext(next)
+	newLinker.SetPrev(prev)
+	oldLinker.SetNext(new)
+}
+
+// RingRemove removes e from its ring.
+//
+//go:nosplit
+func reassemblerRingRemove(e *reassembler) {
+	eLinker := reassemblerElementMapper{}.linkerFor(e)
+	next := eLinker.Next()
+	prev := eLinker.Prev()
+	next.SetPrev(prev)
+	prev.SetNext(next)
+	reassemblerRingInit(e)
+}
+
+// RingEmpty returns true if there are no other elements in the list.
+//
+//go:nosplit
+func reassemblerRingEmpty(e *reassembler) bool {
+	linker := reassemblerElementMapper{}.linkerFor(e)
+	return linker.Next() == e
+}

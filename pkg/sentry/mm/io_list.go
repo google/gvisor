@@ -237,3 +237,48 @@ func (e *ioEntry) SetNext(elem *ioResult) {
 func (e *ioEntry) SetPrev(elem *ioResult) {
 	e.prev = elem
 }
+
+// RingInit instantiates an Element to be an item in a ring (circularly-linked
+// list).
+//
+//go:nosplit
+func ioRingInit(e *ioResult) {
+	linker := ioElementMapper{}.linkerFor(e)
+	linker.SetNext(e)
+	linker.SetPrev(e)
+}
+
+// RingAdd adds new to old's ring.
+//
+//go:nosplit
+func ioRingAdd(old *ioResult, new *ioResult) {
+	oldLinker := ioElementMapper{}.linkerFor(old)
+	newLinker := ioElementMapper{}.linkerFor(new)
+	next := oldLinker.Next()
+	prev := old
+
+	next.SetPrev(new)
+	newLinker.SetNext(next)
+	newLinker.SetPrev(prev)
+	oldLinker.SetNext(new)
+}
+
+// RingRemove removes e from its ring.
+//
+//go:nosplit
+func ioRingRemove(e *ioResult) {
+	eLinker := ioElementMapper{}.linkerFor(e)
+	next := eLinker.Next()
+	prev := eLinker.Prev()
+	next.SetPrev(prev)
+	prev.SetNext(next)
+	ioRingInit(e)
+}
+
+// RingEmpty returns true if there are no other elements in the list.
+//
+//go:nosplit
+func ioRingEmpty(e *ioResult) bool {
+	linker := ioElementMapper{}.linkerFor(e)
+	return linker.Next() == e
+}

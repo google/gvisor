@@ -237,3 +237,48 @@ func (e *dentryEntry) SetNext(elem *dentryListElem) {
 func (e *dentryEntry) SetPrev(elem *dentryListElem) {
 	e.prev = elem
 }
+
+// RingInit instantiates an Element to be an item in a ring (circularly-linked
+// list).
+//
+//go:nosplit
+func dentryRingInit(e *dentryListElem) {
+	linker := dentryElementMapper{}.linkerFor(e)
+	linker.SetNext(e)
+	linker.SetPrev(e)
+}
+
+// RingAdd adds new to old's ring.
+//
+//go:nosplit
+func dentryRingAdd(old *dentryListElem, new *dentryListElem) {
+	oldLinker := dentryElementMapper{}.linkerFor(old)
+	newLinker := dentryElementMapper{}.linkerFor(new)
+	next := oldLinker.Next()
+	prev := old
+
+	next.SetPrev(new)
+	newLinker.SetNext(next)
+	newLinker.SetPrev(prev)
+	oldLinker.SetNext(new)
+}
+
+// RingRemove removes e from its ring.
+//
+//go:nosplit
+func dentryRingRemove(e *dentryListElem) {
+	eLinker := dentryElementMapper{}.linkerFor(e)
+	next := eLinker.Next()
+	prev := eLinker.Prev()
+	next.SetPrev(prev)
+	prev.SetNext(next)
+	dentryRingInit(e)
+}
+
+// RingEmpty returns true if there are no other elements in the list.
+//
+//go:nosplit
+func dentryRingEmpty(e *dentryListElem) bool {
+	linker := dentryElementMapper{}.linkerFor(e)
+	return linker.Next() == e
+}

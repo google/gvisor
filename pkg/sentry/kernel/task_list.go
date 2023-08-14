@@ -237,3 +237,48 @@ func (e *taskEntry) SetNext(elem *Task) {
 func (e *taskEntry) SetPrev(elem *Task) {
 	e.prev = elem
 }
+
+// RingInit instantiates an Element to be an item in a ring (circularly-linked
+// list).
+//
+//go:nosplit
+func taskRingInit(e *Task) {
+	linker := taskElementMapper{}.linkerFor(e)
+	linker.SetNext(e)
+	linker.SetPrev(e)
+}
+
+// RingAdd adds new to old's ring.
+//
+//go:nosplit
+func taskRingAdd(old *Task, new *Task) {
+	oldLinker := taskElementMapper{}.linkerFor(old)
+	newLinker := taskElementMapper{}.linkerFor(new)
+	next := oldLinker.Next()
+	prev := old
+
+	next.SetPrev(new)
+	newLinker.SetNext(next)
+	newLinker.SetPrev(prev)
+	oldLinker.SetNext(new)
+}
+
+// RingRemove removes e from its ring.
+//
+//go:nosplit
+func taskRingRemove(e *Task) {
+	eLinker := taskElementMapper{}.linkerFor(e)
+	next := eLinker.Next()
+	prev := eLinker.Prev()
+	next.SetPrev(prev)
+	prev.SetNext(next)
+	taskRingInit(e)
+}
+
+// RingEmpty returns true if there are no other elements in the list.
+//
+//go:nosplit
+func taskRingEmpty(e *Task) bool {
+	linker := taskElementMapper{}.linkerFor(e)
+	return linker.Next() == e
+}

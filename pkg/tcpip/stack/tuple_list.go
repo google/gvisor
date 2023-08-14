@@ -237,3 +237,48 @@ func (e *tupleEntry) SetNext(elem *tuple) {
 func (e *tupleEntry) SetPrev(elem *tuple) {
 	e.prev = elem
 }
+
+// RingInit instantiates an Element to be an item in a ring (circularly-linked
+// list).
+//
+//go:nosplit
+func tupleRingInit(e *tuple) {
+	linker := tupleElementMapper{}.linkerFor(e)
+	linker.SetNext(e)
+	linker.SetPrev(e)
+}
+
+// RingAdd adds new to old's ring.
+//
+//go:nosplit
+func tupleRingAdd(old *tuple, new *tuple) {
+	oldLinker := tupleElementMapper{}.linkerFor(old)
+	newLinker := tupleElementMapper{}.linkerFor(new)
+	next := oldLinker.Next()
+	prev := old
+
+	next.SetPrev(new)
+	newLinker.SetNext(next)
+	newLinker.SetPrev(prev)
+	oldLinker.SetNext(new)
+}
+
+// RingRemove removes e from its ring.
+//
+//go:nosplit
+func tupleRingRemove(e *tuple) {
+	eLinker := tupleElementMapper{}.linkerFor(e)
+	next := eLinker.Next()
+	prev := eLinker.Prev()
+	next.SetPrev(prev)
+	prev.SetNext(next)
+	tupleRingInit(e)
+}
+
+// RingEmpty returns true if there are no other elements in the list.
+//
+//go:nosplit
+func tupleRingEmpty(e *tuple) bool {
+	linker := tupleElementMapper{}.linkerFor(e)
+	return linker.Next() == e
+}

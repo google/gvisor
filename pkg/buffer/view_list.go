@@ -237,3 +237,48 @@ func (e *viewEntry) SetNext(elem *View) {
 func (e *viewEntry) SetPrev(elem *View) {
 	e.prev = elem
 }
+
+// RingInit instantiates an Element to be an item in a ring (circularly-linked
+// list).
+//
+//go:nosplit
+func viewRingInit(e *View) {
+	linker := viewElementMapper{}.linkerFor(e)
+	linker.SetNext(e)
+	linker.SetPrev(e)
+}
+
+// RingAdd adds new to old's ring.
+//
+//go:nosplit
+func viewRingAdd(old *View, new *View) {
+	oldLinker := viewElementMapper{}.linkerFor(old)
+	newLinker := viewElementMapper{}.linkerFor(new)
+	next := oldLinker.Next()
+	prev := old
+
+	next.SetPrev(new)
+	newLinker.SetNext(next)
+	newLinker.SetPrev(prev)
+	oldLinker.SetNext(new)
+}
+
+// RingRemove removes e from its ring.
+//
+//go:nosplit
+func viewRingRemove(e *View) {
+	eLinker := viewElementMapper{}.linkerFor(e)
+	next := eLinker.Next()
+	prev := eLinker.Prev()
+	next.SetPrev(prev)
+	prev.SetNext(next)
+	viewRingInit(e)
+}
+
+// RingEmpty returns true if there are no other elements in the list.
+//
+//go:nosplit
+func viewRingEmpty(e *View) bool {
+	linker := viewElementMapper{}.linkerFor(e)
+	return linker.Next() == e
+}

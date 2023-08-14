@@ -1172,8 +1172,7 @@ func (mnt *Mount) StateFields() []string {
 		"ns",
 		"refs",
 		"children",
-		"propType",
-		"sharedList",
+		"propFlags",
 		"sharedEntry",
 		"groupID",
 		"umounted",
@@ -1197,12 +1196,11 @@ func (mnt *Mount) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(6, &mnt.ns)
 	stateSinkObject.Save(7, &mnt.refs)
 	stateSinkObject.Save(8, &mnt.children)
-	stateSinkObject.Save(9, &mnt.propType)
-	stateSinkObject.Save(10, &mnt.sharedList)
-	stateSinkObject.Save(11, &mnt.sharedEntry)
-	stateSinkObject.Save(12, &mnt.groupID)
-	stateSinkObject.Save(13, &mnt.umounted)
-	stateSinkObject.Save(14, &mnt.writers)
+	stateSinkObject.Save(9, &mnt.propFlags)
+	stateSinkObject.Save(10, &mnt.sharedEntry)
+	stateSinkObject.Save(11, &mnt.groupID)
+	stateSinkObject.Save(12, &mnt.umounted)
+	stateSinkObject.Save(13, &mnt.writers)
 }
 
 // +checklocksignore
@@ -1215,12 +1213,11 @@ func (mnt *Mount) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(6, &mnt.ns)
 	stateSourceObject.Load(7, &mnt.refs)
 	stateSourceObject.Load(8, &mnt.children)
-	stateSourceObject.Load(9, &mnt.propType)
-	stateSourceObject.Load(10, &mnt.sharedList)
-	stateSourceObject.Load(11, &mnt.sharedEntry)
-	stateSourceObject.Load(12, &mnt.groupID)
-	stateSourceObject.Load(13, &mnt.umounted)
-	stateSourceObject.Load(14, &mnt.writers)
+	stateSourceObject.Load(9, &mnt.propFlags)
+	stateSourceObject.Load(10, &mnt.sharedEntry)
+	stateSourceObject.Load(11, &mnt.groupID)
+	stateSourceObject.Load(12, &mnt.umounted)
+	stateSourceObject.Load(13, &mnt.writers)
 	stateSourceObject.LoadValue(5, new(VirtualDentry), func(y any) { mnt.loadKey(y.(VirtualDentry)) })
 	stateSourceObject.AfterLoad(mnt.afterLoad)
 }

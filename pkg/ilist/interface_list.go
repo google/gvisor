@@ -256,3 +256,48 @@ func (e *Entry) SetNext(elem Element) {
 func (e *Entry) SetPrev(elem Element) {
 	e.prev = elem
 }
+
+// RingInit instantiates an Element to be an item in a ring (circularly-linked
+// list).
+//
+//go:nosplit
+func RingInit(e Element) {
+	linker := ElementMapper{}.linkerFor(e)
+	linker.SetNext(e)
+	linker.SetPrev(e)
+}
+
+// RingAdd adds new to old's ring.
+//
+//go:nosplit
+func RingAdd(old Element, new Element) {
+	oldLinker := ElementMapper{}.linkerFor(old)
+	newLinker := ElementMapper{}.linkerFor(new)
+	next := oldLinker.Next()
+	prev := old
+
+	next.SetPrev(new)
+	newLinker.SetNext(next)
+	newLinker.SetPrev(prev)
+	oldLinker.SetNext(new)
+}
+
+// RingRemove removes e from its ring.
+//
+//go:nosplit
+func RingRemove(e Element) {
+	eLinker := ElementMapper{}.linkerFor(e)
+	next := eLinker.Next()
+	prev := eLinker.Prev()
+	next.SetPrev(prev)
+	prev.SetNext(next)
+	RingInit(e)
+}
+
+// RingEmpty returns true if there are no other elements in the list.
+//
+//go:nosplit
+func RingEmpty(e Element) bool {
+	linker := ElementMapper{}.linkerFor(e)
+	return linker.Next() == e
+}
