@@ -87,18 +87,12 @@ type Mount struct {
 	// Mount. children is protected by VirtualFilesystem.mountMu.
 	children map[*Mount]struct{}
 
-	// propagationType is propagation type of this mount. It can be shared or
-	// private.
-	propType PropagationType
+	// propFlags are the propagation flags set on this mount.
+	propFlags uint32
 
-	// sharedList is a list of mounts in the shared peer group. It is nil if
-	// propType is not Shared. All mounts in a shared peer group hold the same
-	// sharedList. The mounts in sharedList do not need an extra reference taken
-	// because it would be redundant with the taken for being attached to a
-	// parent mount. If a mount is in a shared list if and only if it is attached
-	// and has the shared propagation type.
-	sharedList  *sharedList
-	sharedEntry sharedEntry
+	// sharedEntry represents an entry in a circular list (ring) of mounts in a
+	// shared peer group.
+	sharedEntry
 
 	// groupID is the ID for this mount's shared peer group. If the mount is not
 	// in a peer group, this is 0.
@@ -122,18 +116,19 @@ func (sharedMapper) linkerFor(mnt *Mount) *sharedEntry { return &mnt.sharedEntry
 
 func newMount(vfs *VirtualFilesystem, fs *Filesystem, root *Dentry, mntns *MountNamespace, opts *MountOptions) *Mount {
 	mnt := &Mount{
-		ID:       vfs.lastMountID.Add(1),
-		Flags:    opts.Flags,
-		vfs:      vfs,
-		fs:       fs,
-		root:     root,
-		ns:       mntns,
-		propType: Private,
-		refs:     atomicbitops.FromInt64(1),
+		ID:        vfs.lastMountID.Add(1),
+		Flags:     opts.Flags,
+		vfs:       vfs,
+		fs:        fs,
+		root:      root,
+		ns:        mntns,
+		propFlags: linux.MS_PRIVATE,
+		refs:      atomicbitops.FromInt64(1),
 	}
 	if opts.ReadOnly {
 		mnt.setReadOnlyLocked(true)
 	}
+	sharedRingInit(mnt)
 	refs.Register(mnt)
 	return mnt
 }
@@ -153,10 +148,18 @@ func (mnt *Mount) generateOptionalTags() string {
 	defer mnt.vfs.mountMu.Unlock()
 	// TODO(b/249777195): Support MS_SLAVE and MS_UNBINDABLE propagation types.
 	var optional string
-	if mnt.propType == Shared {
+	if mnt.shared() {
 		optional = fmt.Sprintf("shared:%d", mnt.groupID)
 	}
 	return optional
+}
+
+func (mnt *Mount) shared() bool {
+	return mnt.propFlags&linux.MS_SHARED != 0
+}
+
+func (mnt *Mount) private() bool {
+	return mnt.propFlags&linux.MS_PRIVATE != 0
 }
 
 // NewFilesystem creates a new filesystem object not yet associated with any
@@ -299,7 +302,6 @@ func (vfs *VirtualFilesystem) CloneMountAt(mnt *Mount, root *Dentry, mopts *Moun
 	vfs.mountMu.Lock()
 	defer vfs.mountMu.Unlock()
 	clone := vfs.cloneMount(mnt, root, mopts)
-	vfs.addPeer(mnt, clone)
 	return clone
 }
 
@@ -316,7 +318,11 @@ func (vfs *VirtualFilesystem) cloneMount(mnt *Mount, root *Dentry, mopts *MountO
 			ReadOnly: mnt.ReadOnly(),
 		}
 	}
-	return vfs.NewDisconnectedMount(mnt.fs, root, opts)
+	clone := vfs.NewDisconnectedMount(mnt.fs, root, opts)
+	if mnt.shared() {
+		vfs.addPeer(mnt, clone)
+	}
+	return clone
 }
 
 // BindAt creates a clone of the source path's parent mount and mounts it at
@@ -339,15 +345,8 @@ func (vfs *VirtualFilesystem) BindAt(ctx context.Context, creds *auth.Credential
 	clone := vfs.cloneMount(sourceVd.mount, sourceVd.dentry, nil)
 	defer clone.DecRef(ctx)
 	tree := vfs.preparePropagationTree(clone, targetVd)
-	if sourceVd.mount.propType == Shared {
-		if clone.propType == Private {
-			vfs.addPeer(sourceVd.mount, clone)
-		} else {
-			vfs.mergePeerGroup(sourceVd.mount, clone)
-		}
-	}
 	if uint32(1+len(tree))+targetVd.mount.ns.mounts > MountMax {
-		vfs.setPropagation(clone, Private)
+		vfs.setPropagation(clone, linux.MS_PRIVATE)
 		vfs.abortPropagationTree(ctx, tree)
 		vfs.mountMu.Unlock()
 		targetVd.DecRef(ctx)
@@ -361,7 +360,7 @@ func (vfs *VirtualFilesystem) BindAt(ctx context.Context, creds *auth.Credential
 		}
 	}()
 	if err != nil {
-		vfs.setPropagation(clone, Private)
+		vfs.setPropagation(clone, linux.MS_PRIVATE)
 		vfs.abortPropagationTree(ctx, tree)
 		vfs.mountMu.Unlock()
 		return nil, err
@@ -417,7 +416,7 @@ func (vfs *VirtualFilesystem) UmountAt(ctx context.Context, creds *auth.Credenti
 	}()
 	// Linux passes the LOOKUP_MOUNPOINT flag to user_path_at in ksys_umount to
 	// resolve to the toppmost mount in the stack located at the specified path.
-	// vfs.GetMountAt() imitiates this behavior. See fs/namei.c:user_path_at(...)
+	// vfs.GetMountAt() imitates this behavior. See fs/namei.c:user_path_at(...)
 	// and fs/namespace.c:ksys_umount(...).
 	if vd.dentry.isMounted() {
 		if realmnt := vfs.getMountAt(ctx, vd.mount, vd.dentry); realmnt != nil {
@@ -444,11 +443,8 @@ func (vfs *VirtualFilesystem) UmountAt(ctx context.Context, creds *auth.Credenti
 
 	umountTree := []*Mount{vd.mount}
 	parent, mountpoint := vd.mount.parent(), vd.mount.point()
-	if parent != nil && parent.propType == Shared {
-		for peer := parent.sharedList.Front(); peer != nil; peer = peer.sharedEntry.Next() {
-			if peer == parent {
-				continue
-			}
+	if parent != nil && parent.shared() {
+		for peer := parent.sharedEntry.Next(); peer != parent; peer = peer.sharedEntry.Next() {
 			umountMnt := vfs.mounts.Lookup(peer, mountpoint)
 			// From https://www.kernel.org/doc/Documentation/filesystems/sharedsubtree.txt:
 			// If any peer has some child mounts, then that mount is not unmounted,
@@ -541,8 +537,8 @@ func (vfs *VirtualFilesystem) umountRecursiveLocked(mnt *Mount, opts *umountRecu
 		if parent := mnt.parent(); parent != nil && (opts.disconnectHierarchy || !parent.umounted) {
 			vdsToDecRef = append(vdsToDecRef, vfs.disconnectLocked(mnt))
 		}
-		if mnt.propType == Shared {
-			vfs.setPropagation(mnt, Private)
+		if mnt.shared() {
+			vfs.setPropagation(mnt, linux.MS_PRIVATE)
 		}
 	}
 	if opts.eager {
@@ -889,12 +885,12 @@ retry:
 
 	// Either the mount point at new_root, or the parent mount of that mount
 	// point, has propagation type MS_SHARED.
-	if newRootParent := newRootVd.mount.parent(); newRootVd.mount.propType == Shared || newRootParent.propType == Shared {
+	if newRootParent := newRootVd.mount.parent(); newRootVd.mount.shared() || newRootParent.shared() {
 		vfs.mountMu.Unlock()
 		return linuxerr.EINVAL
 	}
 	// put_old is a mount point and has the propagation type MS_SHARED.
-	if putOldVd.mount.root == putOldVd.dentry && putOldVd.mount.propType == Shared {
+	if putOldVd.mount.root == putOldVd.dentry && putOldVd.mount.shared() {
 		vfs.mountMu.Unlock()
 		return linuxerr.EINVAL
 	}
