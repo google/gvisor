@@ -16,75 +16,66 @@ package vfs
 
 import (
 	"fmt"
+	"strings"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 )
 
-// PropagationType is a propagation flavor as described in
-// https://www.kernel.org/doc/Documentation/filesystems/sharedsubtree.txt. Child
-// and Unbindable are currently unimplemented.
-// TODO(b/249777195): Support MS_SLAVE and MS_UNBINDABLE propagation types.
-type PropagationType int
-
-const (
-	// Unknown represents an invalid/unknown propagation type.
-	Unknown PropagationType = iota
-	// Shared represents the shared propagation type.
-	Shared
-	// Private represents the private propagation type.
-	Private
-	// Child represents the child propagation type (MS_SLAVE).
-	Child
-	// Unbindable represents the unbindable propagation type.
-	Unbindable
-)
-
-// PropagationTypeFromLinux returns the PropagationType corresponding to a
-// linux mount flag, aka MS_SHARED.
-func PropagationTypeFromLinux(propFlag uint64) PropagationType {
-	switch propFlag {
-	case linux.MS_SHARED:
-		return Shared
-	case linux.MS_PRIVATE:
-		return Private
-	case linux.MS_SLAVE:
-		return Child
-	case linux.MS_UNBINDABLE:
-		return Unbindable
-	default:
-		return Unknown
+func propTypeToString(pflag uint32) string {
+	if pflag == 0 {
+		return "0"
 	}
+	var (
+		b   strings.Builder
+		sep string
+	)
+	handleFlag := func(flag uint32, str string) {
+		if pflag&flag != 0 {
+			fmt.Fprintf(&b, "%s%s", sep, str)
+			sep = "|"
+			pflag &^= flag
+		}
+	}
+	handleFlag(linux.MS_SHARED, "shared")
+	handleFlag(linux.MS_PRIVATE, "private")
+	handleFlag(linux.MS_SLAVE, "slave")
+	handleFlag(linux.MS_UNBINDABLE, "unbindable")
+	if pflag != 0 {
+		fmt.Fprintf(&b, "%s%#x", sep, pflag)
+	}
+	return b.String()
 }
 
 // setPropagation sets the propagation on mnt for a propagation type.
 //
 // +checklocks:vfs.mountMu
-func (vfs *VirtualFilesystem) setPropagation(mnt *Mount, ptype PropagationType) error {
-	switch ptype {
-	case Shared:
-		id, err := vfs.allocateGroupID()
-		if err != nil {
-			return err
+func (vfs *VirtualFilesystem) setPropagation(mnt *Mount, pflag uint32) error {
+	switch pflag {
+	case linux.MS_SHARED:
+		if mnt.private() {
+			id, err := vfs.allocateGroupID()
+			if err != nil {
+				return err
+			}
+			mnt.groupID = id
+			sharedRingInit(mnt)
 		}
-		mnt.groupID = id
-		mnt.sharedList = &sharedList{}
-		mnt.sharedList.PushBack(mnt)
-	case Private:
-		if mnt.propType == Shared {
-			mnt.sharedList.Remove(mnt)
-			if mnt.sharedList.Empty() {
+	case linux.MS_PRIVATE:
+		if mnt.shared() {
+			if sharedRingEmpty(mnt) {
 				vfs.freeGroupID(mnt.groupID)
 			}
-			mnt.sharedList = nil
+			sharedRingRemove(mnt)
 			mnt.groupID = 0
 		}
 	default:
-		panic(fmt.Sprintf("unsupported propagation type: %v", ptype))
+		panic(fmt.Sprintf("unsupported propagation type: %s", propTypeToString(pflag)))
 	}
-	mnt.propType = ptype
+	mnt.propFlags = pflag
 	return nil
 }
 
@@ -92,25 +83,11 @@ func (vfs *VirtualFilesystem) setPropagation(mnt *Mount, ptype PropagationType) 
 // and sharedList. vfs.mountMu must be locked.
 //
 // +checklocks:vfs.mountMu
-func (vfs *VirtualFilesystem) addPeer(mnt *Mount, oth *Mount) {
-	mnt.sharedList.PushBack(oth)
-	oth.sharedList = mnt.sharedList
-	oth.propType = mnt.propType
-	oth.groupID = mnt.groupID
-}
-
-// mergePeerGroup merges oth and all its peers into mnt's peer group. Oth
-// must have propagation type shared and vfs.mountMu must be locked.
-//
-// +checklocks:vfs.mountMu
-func (vfs *VirtualFilesystem) mergePeerGroup(mnt *Mount, oth *Mount) {
-	peer := oth.sharedList.Front()
-	for peer != nil {
-		next := peer.sharedEntry.Next()
-		vfs.setPropagation(peer, Private)
-		vfs.addPeer(mnt, peer)
-		peer = next
-	}
+func (vfs *VirtualFilesystem) addPeer(mnt *Mount, new *Mount) {
+	mnt.propFlags |= linux.MS_SHARED
+	sharedRingAdd(mnt, new)
+	new.propFlags |= linux.MS_SHARED
+	new.groupID = mnt.groupID
 }
 
 // preparePropagationTree returns a mapping of propagated mounts to their future
@@ -122,15 +99,15 @@ func (vfs *VirtualFilesystem) mergePeerGroup(mnt *Mount, oth *Mount) {
 // +checklocksalias:mnt.vfs.mountMu=vfs.mountMu
 func (vfs *VirtualFilesystem) preparePropagationTree(mnt *Mount, vd VirtualDentry) map[*Mount]VirtualDentry {
 	tree := map[*Mount]VirtualDentry{}
-	if vd.mount.propType == Private {
+	if !vd.mount.shared() {
 		return tree
 	}
-	if mnt.propType == Private {
-		vfs.setPropagation(mnt, Shared)
+	if !mnt.shared() {
+		vfs.setPropagation(mnt, linux.MS_SHARED)
 	}
-	var newPeerGroup []*Mount
-	for peer := vd.mount.sharedList.Front(); peer != nil; peer = peer.sharedEntry.Next() {
-		if peer == vd.mount {
+	for peer := vd.mount.sharedEntry.Next(); peer != vd.mount; peer = peer.sharedEntry.Next() {
+		// Skip newly added (disconnected) mounts.
+		if peer.ns == nil {
 			continue
 		}
 		peerVd := VirtualDentry{
@@ -140,10 +117,6 @@ func (vfs *VirtualFilesystem) preparePropagationTree(mnt *Mount, vd VirtualDentr
 		peerVd.IncRef()
 		clone := vfs.cloneMount(mnt, mnt.root, nil)
 		tree[clone] = peerVd
-		newPeerGroup = append(newPeerGroup, clone)
-	}
-	for _, newPeer := range newPeerGroup {
-		vfs.addPeer(mnt, newPeer)
 	}
 	return tree
 }
@@ -175,14 +148,18 @@ func (vfs *VirtualFilesystem) commitPropagationTree(ctx context.Context, tree ma
 func (vfs *VirtualFilesystem) abortPropagationTree(ctx context.Context, tree map[*Mount]VirtualDentry) {
 	for mnt, vd := range tree {
 		vd.DecRef(ctx)
-		vfs.setPropagation(mnt, Private)
+		vfs.setPropagation(mnt, linux.MS_PRIVATE)
 		mnt.DecRef(ctx)
 	}
 }
 
 // SetMountPropagationAt changes the propagation type of the mount pointed to by
 // pop.
-func (vfs *VirtualFilesystem) SetMountPropagationAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, propType PropagationType) error {
+func (vfs *VirtualFilesystem) SetMountPropagationAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, propFlags uint32) error {
+	// Check if flags is a power of 2. If not then more than one flag is set.
+	if !bits.IsPowerOfTwo32(propFlags) {
+		return linuxerr.EINVAL
+	}
 	vd, err := vfs.GetDentryAt(ctx, creds, pop, &GetDentryOptions{})
 	if err != nil {
 		return err
@@ -199,21 +176,19 @@ func (vfs *VirtualFilesystem) SetMountPropagationAt(ctx context.Context, creds *
 	} else if vd.dentry != vd.mount.root {
 		return linuxerr.EINVAL
 	}
-	vfs.SetMountPropagation(vd.mount, propType)
+	vfs.SetMountPropagation(vd.mount, propFlags)
 	return nil
 }
 
 // SetMountPropagation changes the propagation type of the mount.
-func (vfs *VirtualFilesystem) SetMountPropagation(mnt *Mount, propType PropagationType) {
+func (vfs *VirtualFilesystem) SetMountPropagation(mnt *Mount, propFlags uint32) {
 	vfs.mountMu.Lock()
 	defer vfs.mountMu.Unlock()
-	if propType != mnt.propType {
-		switch propType {
-		case Shared, Private:
-			vfs.setPropagation(mnt, propType)
-		default:
-			panic(fmt.Sprintf("unsupported propagation type: %v", propType))
+	if propFlags != mnt.propFlags {
+		if propFlags&(linux.MS_SHARED|linux.MS_PRIVATE) != 0 {
+			vfs.setPropagation(mnt, propFlags)
+		} else {
+			panic(fmt.Sprintf("unsupported propagation type: %s", propTypeToString(propFlags)))
 		}
 	}
-	mnt.propType = propType
 }
