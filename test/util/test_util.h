@@ -219,6 +219,7 @@ constexpr char kNative[] = "native";
 constexpr char kPtrace[] = "ptrace";
 constexpr char kKVM[] = "kvm";
 constexpr char kFuchsia[] = "fuchsia";
+constexpr char kStarnix[] = "starnix";
 constexpr char kSystrap[] = "systrap";
 }  // namespace Platform
 
