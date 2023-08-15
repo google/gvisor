@@ -742,6 +742,10 @@ func SplitPackages(srcs []string, srcRootPrefix string) map[string][]string {
 			continue
 		}
 
+		// In Go's sources, vendored packages under cmd/vendor are imported via
+		// paths not containing cmd/vendor.
+		pkg = strings.TrimPrefix(pkg, "cmd/vendor/")
+
 		// Place the special runtime package (functions emitted by the
 		// compiler itself) into the runtime packages.
 		if strings.Contains(filename, "cmd/compile/internal/typecheck/_builtin/runtime.go") {
