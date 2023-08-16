@@ -215,7 +215,8 @@ func getFDs(ctx context.Context, t *kernel.Task, pid kernel.ThreadID) []FDInfo {
 }
 
 func getRoot(t *kernel.Task, pid kernel.ThreadID) string {
-	realRoot := t.MountNamespace().Root()
+	realRoot := t.MountNamespace().Root(t)
+	defer realRoot.DecRef(t)
 	root := t.FSContext().RootDirectory()
 	defer root.DecRef(t)
 	path, err := t.Kernel().VFS().PathnameWithDeleted(t, realRoot, root)

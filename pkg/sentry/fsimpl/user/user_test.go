@@ -125,8 +125,7 @@ func TestGetExecUserHome(t *testing.T) {
 				t.Fatalf("failed to create tmpfs root mount: %v", err)
 			}
 			defer mns.DecRef(ctx)
-			root := mns.Root()
-			root.IncRef()
+			root := mns.Root(ctx)
 			defer root.DecRef(ctx)
 
 			if err := createEtcPasswd(ctx, &vfsObj, creds, root, tc.passwdContents, tc.passwdMode); err != nil {

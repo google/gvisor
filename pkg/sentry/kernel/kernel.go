@@ -783,8 +783,7 @@ func (ctx *createProcessContext) Value(key any) any {
 		if ctx.args.MountNamespace == nil {
 			return nil
 		}
-		root := ctx.args.MountNamespace.Root()
-		root.IncRef()
+		root := ctx.args.MountNamespace.Root(ctx)
 		return root
 	case vfs.CtxMountNamespace:
 		if ctx.kernel.globalInit == nil {
@@ -858,8 +857,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		mntns.IncRef()
 	}
 	// Get the root directory from the MountNamespace.
-	root := mntns.Root()
-	root.IncRef()
+	root := mntns.Root(ctx)
 	defer root.DecRef(ctx)
 
 	// Grab the working directory.
@@ -1567,8 +1565,7 @@ func (ctx *supervisorContext) Value(key any) any {
 		if ctx.Kernel.globalInit == nil {
 			return vfs.VirtualDentry{}
 		}
-		root := ctx.Kernel.GlobalInit().Leader().MountNamespace().Root()
-		root.IncRef()
+		root := ctx.Kernel.GlobalInit().Leader().MountNamespace().Root(ctx)
 		return root
 	case vfs.CtxMountNamespace:
 		if ctx.Kernel.globalInit == nil {
