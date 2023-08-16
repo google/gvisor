@@ -78,6 +78,7 @@ go_library(
         "//runsc/fsgofer",
         "//runsc/fsgofer/filter",
         "//runsc/metricserver",
+        "//runsc/metricserver/containermetrics",
         "//runsc/mitigate",
         "//runsc/profile",
         "//runsc/specutils",
