@@ -916,8 +916,13 @@ func TestExecProcList(t *testing.T) {
 
 			// Verify that "sleep 100" and "sleep 5" are running after exec. First,
 			// start running exec (which blocks).
+			//
+			// Container is copied because otherwise the race
+			// detector will flag a race on cont.Sandbox caused by
+			// cont.Destroy. But by the time Destroy is running,
+			// the test is over and we don't care.
 			ch := make(chan error)
-			go func() {
+			go func(cont Container) {
 				exitStatus, err := cont.executeSync(conf, execArgs)
 				if err != nil {
 					ch <- err
@@ -926,7 +931,7 @@ func TestExecProcList(t *testing.T) {
 				} else {
 					ch <- nil
 				}
-			}()
+			}(*cont)
 
 			// expectedPL lists the expected process state of the container.
 			expectedPL := []*control.Process{
