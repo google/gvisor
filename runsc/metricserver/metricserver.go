@@ -43,6 +43,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/container"
+	"gvisor.dev/gvisor/runsc/metricserver/containermetrics"
 	"gvisor.dev/gvisor/runsc/sandbox"
 )
 
@@ -141,7 +142,7 @@ func (s *servedSandbox) load() (*sandbox.Sandbox, *prometheus.Verifier, error) {
 		}
 		// Update label data as read from the state file.
 		// Do not store empty labels.
-		authoritativeLabels, err := SandboxPrometheusLabels(rootContainer)
+		authoritativeLabels, err := containermetrics.SandboxPrometheusLabels(rootContainer)
 		if err != nil {
 			return nil, nil, fmt.Errorf("cannot compute Prometheus labels of sandbox: %v", err)
 		}
@@ -178,7 +179,7 @@ func (s *servedSandbox) load() (*sandbox.Sandbox, *prometheus.Verifier, error) {
 		}
 
 		// Compute spec metadata.
-		s.specMetadataLabels = ComputeSpecMetadata(allContainers)
+		s.specMetadataLabels = containermetrics.ComputeSpecMetadata(allContainers)
 
 		s.sandbox = rootContainer.Sandbox
 		s.createdAt = rootContainer.CreatedAt
