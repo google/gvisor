@@ -62,7 +62,7 @@ func Mount(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 	if err != nil {
 		return 0, nil, err
 	}
-	target, err := getTaskPathOperation(t, linux.AT_FDCWD, targetPath, disallowEmptyPath, nofollowFinalSymlink)
+	target, err := getTaskPathOperation(t, linux.AT_FDCWD, targetPath, disallowEmptyPath, followFinalSymlink)
 	if err != nil {
 		return 0, nil, err
 	}
