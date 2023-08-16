@@ -2,9 +2,12 @@ set -euo pipefail
 
 if POSIXLY_CORRECT=true df --local --output=pcent,ipcent,target | grep -vE '/snap/' | grep -qE '9[4-9]%|100%'; then
   echo "Disk usage has reached critical level, node is bad." >&2
+  echo "Automated monitoring should recycle this node soon." >&2
+  echo "If this made your build pipeline fail, sorry!" >&2
+  echo "Try your luck again." >&2
   sudo df -h --local | sed -r 's/^/[df] /' >&2
-  sleep 3
-  sudo poweroff
+  sleep 10
+  killall buildkite-agent
   exit 1
 fi
 
