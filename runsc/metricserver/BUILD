@@ -25,6 +25,7 @@ go_library(
         "//pkg/sync",
         "//runsc/config",
         "//runsc/container",
+        "//runsc/metricserver/containermetrics",
         "//runsc/sandbox",
         "@org_golang_google_api//option:go_default_library",
         "@org_golang_google_grpc//:go_default_library",
