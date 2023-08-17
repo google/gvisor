@@ -1088,8 +1088,10 @@ func (f *MemoryFile) ShouldCacheEvictable() bool {
 }
 
 // UpdateUsage ensures that the memory usage statistics in
-// usage.MemoryAccounting are up to date.
-func (f *MemoryFile) UpdateUsage() error {
+// usage.MemoryAccounting are up to date. If forceScan is true, the
+// UsageScanDuration is ignored and the memory file is scanned to get the
+// memory usage.
+func (f *MemoryFile) UpdateUsage(memCgID uint32) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -1111,14 +1113,17 @@ func (f *MemoryFile) UpdateUsage() error {
 		log.Debugf("UpdateUsage: skipped with usageSwapped!=0.")
 		return nil
 	}
+
 	// Linux updates usage values at CONFIG_HZ.
 	if scanningAfter := time.Now().Sub(f.usageLast).Milliseconds(); scanningAfter < time.Second.Milliseconds()/linux.CLOCKS_PER_SEC {
 		log.Debugf("UpdateUsage: skipped because previous scan happened %d ms back", scanningAfter)
 		return nil
 	}
 
-	f.usageLast = time.Now()
-	err = f.updateUsageLocked(currentUsage, mincore)
+	if memCgID == 0 {
+		f.usageLast = time.Now()
+	}
+	err = f.updateUsageLocked(currentUsage, memCgID, mincore)
 	log.Debugf("UpdateUsage: currentUsage=%d, usageExpected=%d, usageSwapped=%d.",
 		currentUsage, f.usageExpected, f.usageSwapped)
 	log.Debugf("UpdateUsage: took %v.", time.Since(f.usageLast))
@@ -1131,7 +1136,7 @@ func (f *MemoryFile) UpdateUsage() error {
 //
 // Precondition: f.mu must be held; it may be unlocked and reacquired.
 // +checklocks:f.mu
-func (f *MemoryFile) updateUsageLocked(currentUsage uint64, checkCommitted func(bs []byte, committed []byte) error) error {
+func (f *MemoryFile) updateUsageLocked(currentUsage uint64, memCgID uint32, checkCommitted func(bs []byte, committed []byte) error) error {
 	// Track if anything changed to elide the merge. In the common case, we
 	// expect all segments to be committed and no merge to occur.
 	changedAny := false
@@ -1171,6 +1176,15 @@ func (f *MemoryFile) updateUsageLocked(currentUsage uint64, checkCommitted func(
 	// present when there is an associated reference.
 	for seg := f.usage.FirstSegment(); seg.Ok(); {
 		if !seg.ValuePtr().canCommit() {
+			seg = seg.NextSegment()
+			continue
+		}
+
+		// Scan the pages of the given memCgID only. This will avoid scanning the
+		// whole memory file when the memory usage is required only for a specific
+		// cgroup. The total memory usage of all cgroups can be obtained when the
+		// memCgID is passed as zero.
+		if memCgID != 0 && seg.ValuePtr().memCgID != memCgID {
 			seg = seg.NextSegment()
 			continue
 		}
