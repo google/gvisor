@@ -30,16 +30,6 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
-// SupportedFlags is the bitwise OR of all the supported flags for clone.
-// TODO(b/290826530): Implement CLONE_INTO_CGROUP when cgroups v2 is
-// implemented.
-const SupportedFlags = linux.CLONE_VM | linux.CLONE_FS | linux.CLONE_FILES | linux.CLONE_SYSVSEM |
-	linux.CLONE_THREAD | linux.CLONE_SIGHAND | linux.CLONE_CHILD_SETTID | linux.CLONE_NEWPID |
-	linux.CLONE_CHILD_CLEARTID | linux.CLONE_CHILD_SETTID | linux.CLONE_PARENT |
-	linux.CLONE_PARENT_SETTID | linux.CLONE_SETTLS | linux.CLONE_NEWUSER | linux.CLONE_NEWUTS |
-	linux.CLONE_NEWIPC | linux.CLONE_NEWNET | linux.CLONE_PTRACE | linux.CLONE_UNTRACED |
-	linux.CLONE_IO | linux.CLONE_VFORK
-
 // Clone implements the clone(2) syscall and returns the thread ID of the new
 // task in t's PID namespace. Clone may return both a non-zero thread ID and a
 // non-nil error.
@@ -47,17 +37,11 @@ const SupportedFlags = linux.CLONE_VM | linux.CLONE_FS | linux.CLONE_FILES | lin
 // Preconditions: The caller must be running Task.doSyscallInvoke on the task
 // goroutine.
 func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
-	if args.Flags&^SupportedFlags != 0 {
-		return 0, nil, linuxerr.EINVAL
-	}
 	// Since signal actions may refer to application signal handlers by virtual
 	// address, any set of signal handlers must refer to the same address
 	// space.
 	if args.Flags&(linux.CLONE_SIGHAND|linux.CLONE_VM) == linux.CLONE_SIGHAND {
 		return 0, nil, linuxerr.EINVAL
-	}
-	if args.SetTID != 0 {
-		return 0, nil, linuxerr.ENOTSUP
 	}
 	// In order for the behavior of thread-group-directed signals to be sane,
 	// all tasks in a thread group must share signal handlers.
@@ -176,7 +160,7 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 	// clone() returns 0 in the child.
 	image.Arch.SetReturn(0)
 	if args.Stack != 0 {
-		image.Arch.SetStack(uintptr(args.Stack + args.StackSize))
+		image.Arch.SetStack(uintptr(args.Stack))
 	}
 	if args.Flags&linux.CLONE_SETTLS != 0 {
 		if !image.Arch.SetTLS(uintptr(args.TLS)) {
