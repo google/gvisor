@@ -14,6 +14,7 @@ go_library(
     visibility = [
         "//runsc/cli:__subpackages__",
         "//runsc/cmd:__subpackages__",
+        "//tools:__subpackages__",
     ],
     deps = [
         "//pkg/log",
