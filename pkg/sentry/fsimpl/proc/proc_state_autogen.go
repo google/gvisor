@@ -1502,6 +1502,37 @@ func (d *taskCgroupData) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &d.task)
 }
 
+func (d *childrenData) StateTypeName() string {
+	return "pkg/sentry/fsimpl/proc.childrenData"
+}
+
+func (d *childrenData) StateFields() []string {
+	return []string{
+		"DynamicBytesFile",
+		"task",
+		"pidns",
+	}
+}
+
+func (d *childrenData) beforeSave() {}
+
+// +checklocksignore
+func (d *childrenData) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.DynamicBytesFile)
+	stateSinkObject.Save(1, &d.task)
+	stateSinkObject.Save(2, &d.pidns)
+}
+
+func (d *childrenData) afterLoad() {}
+
+// +checklocksignore
+func (d *childrenData) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.DynamicBytesFile)
+	stateSourceObject.Load(1, &d.task)
+	stateSourceObject.Load(2, &d.pidns)
+}
+
 func (r *taskInodeRefs) StateTypeName() string {
 	return "pkg/sentry/fsimpl/proc.taskInodeRefs"
 }
@@ -2598,6 +2629,7 @@ func init() {
 	state.Register((*namespaceInode)(nil))
 	state.Register((*namespaceFD)(nil))
 	state.Register((*taskCgroupData)(nil))
+	state.Register((*childrenData)(nil))
 	state.Register((*taskInodeRefs)(nil))
 	state.Register((*ifinet6)(nil))
 	state.Register((*netDevData)(nil))
