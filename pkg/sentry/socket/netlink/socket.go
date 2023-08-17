@@ -18,6 +18,7 @@ package netlink
 import (
 	"io"
 	"math"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/abi/linux/errno"
@@ -387,6 +388,20 @@ func (s *Socket) GetSockOpt(t *kernel.Task, level int, name int, outPtr hostarch
 				passcred = 1
 			}
 			return &passcred, nil
+
+		case linux.SO_SNDTIMEO:
+			if outLen < linux.SizeOfTimeval {
+				return nil, syserr.ErrInvalidArgument
+			}
+			sendTimeout := linux.NsecToTimeval(s.SendTimeout())
+			return &sendTimeout, nil
+
+		case linux.SO_RCVTIMEO:
+			if outLen < linux.SizeOfTimeval {
+				return nil, syserr.ErrInvalidArgument
+			}
+			recvTimeout := linux.NsecToTimeval(s.RecvTimeout())
+			return &recvTimeout, nil
 		}
 	case linux.SOL_NETLINK:
 		switch name {
@@ -471,6 +486,32 @@ func (s *Socket) SetSockOpt(t *kernel.Task, level int, name int, opt []byte) *sy
 				return errNoFilter
 			}
 
+			return nil
+
+		case linux.SO_SNDTIMEO:
+			if len(opt) < linux.SizeOfTimeval {
+				return syserr.ErrInvalidArgument
+			}
+
+			var v linux.Timeval
+			v.UnmarshalBytes(opt)
+			if v.Usec < 0 || v.Usec >= int64(time.Second/time.Microsecond) {
+				return syserr.ErrDomain
+			}
+			s.SetSendTimeout(v.ToNsecCapped())
+			return nil
+
+		case linux.SO_RCVTIMEO:
+			if len(opt) < linux.SizeOfTimeval {
+				return syserr.ErrInvalidArgument
+			}
+
+			var v linux.Timeval
+			v.UnmarshalBytes(opt)
+			if v.Usec < 0 || v.Usec >= int64(time.Second/time.Microsecond) {
+				return syserr.ErrDomain
+			}
+			s.SetRecvTimeout(v.ToNsecCapped())
 			return nil
 		}
 	case linux.SOL_NETLINK:
