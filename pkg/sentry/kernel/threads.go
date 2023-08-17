@@ -545,3 +545,16 @@ func (t *Task) ThreadID() ThreadID {
 func (t *Task) TGIDInRoot() ThreadID {
 	return t.tg.pidns.owner.Root.IDOfThreadGroup(t.tg)
 }
+
+// Children returns children of this task.
+func (t *Task) Children() map[*Task]struct{} {
+	t.tg.pidns.owner.mu.RLock()
+	defer t.tg.pidns.owner.mu.RUnlock()
+
+	children := make(map[*Task]struct{}, len(t.children))
+	for child, val := range t.children {
+		children[child] = val
+	}
+
+	return children
+}

@@ -2390,6 +2390,38 @@ TEST(ProcTask, VerifyTaskDir) {
       DirContains(absl::StrCat("/proc/self/task/", getpid()), {}, {"task"}));
 }
 
+TEST(ProcTask, VerifyTaskChildren) {
+  auto path = JoinPath("/proc", absl::StrCat(getpid()), "task",
+                       absl::StrCat(gettid()), "children");
+  EXPECT_THAT(access(path.c_str(), F_OK), SyscallSucceeds());
+
+  int pid1 = -1, status1 = -1;
+  auto cleanup1 =
+      ForkAndExec("/bin/sleep", {"sleep", "100"}, {}, nullptr, &pid1, &status1);
+  ASSERT_GT(pid1, 0);
+  ASSERT_EQ(status1, 0);
+
+  auto proc_children_file = ASSERT_NO_ERRNO_AND_VALUE(GetContents(path));
+  EXPECT_EQ(absl::StrCat(pid1, " "), proc_children_file);
+
+  int pid2 = -1, status2 = -1;
+  auto cleanup2 =
+      ForkAndExec("/bin/sleep", {"sleep", "100"}, {}, nullptr, &pid2, &status2);
+  ASSERT_GT(pid2, 0);
+  ASSERT_EQ(status2, 0);
+
+  proc_children_file = ASSERT_NO_ERRNO_AND_VALUE(GetContents(path));
+
+  // /children contains space-separated sorted list of thread Ids of children.
+  std::string expectedContent;
+  if (pid1 < pid2) {
+    expectedContent = absl::StrCat(pid1, " ", pid2, " ");
+  } else {
+    expectedContent = absl::StrCat(pid2, " ", pid1, " ");
+  }
+  EXPECT_EQ(expectedContent, proc_children_file);
+}
+
 TEST(ProcTask, TaskDirCannotBeDeleted) {
   // Drop capabilities that allow us to override file and directory permissions.
   AutoCapability cap(CAP_DAC_OVERRIDE, false);
