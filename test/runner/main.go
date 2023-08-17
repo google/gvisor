@@ -17,6 +17,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io/ioutil"
@@ -402,9 +404,21 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 		waitArgs := append(args, "wait", id)
 		waitCmd := exec.Command(specutils.ExePath, waitArgs...)
 		waitCmd.SysProcAttr = sysProcAttr
-		waitCmd.Stdout = os.Stdout
 		waitCmd.Stderr = os.Stderr
+
+		buf := bytes.NewBuffer(nil)
+		waitCmd.Stdout = buf
 		err = waitCmd.Run()
+		wres := struct {
+			ID         string `json:"id"`
+			ExitStatus int    `json:"exitStatus"`
+		}{}
+		if err := json.NewDecoder(buf).Decode(&wres); err != nil {
+			return fmt.Errorf("could not decode wait result: %v", err)
+		}
+		if wres.ExitStatus != 0 {
+			return fmt.Errorf("test failed with status: %d", wres.ExitStatus)
+		}
 	}
 	if err == nil && len(testLogDir) > 0 {
 		// If the test passed, then we erase the log directory. This speeds up
