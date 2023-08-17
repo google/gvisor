@@ -140,7 +140,7 @@ type memoryUsageInBytesData struct {
 func (d *memoryUsageInBytesData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	k := kernel.KernelFromContext(ctx)
 	mf := k.MemoryFile()
-	mf.UpdateUsage()
+	mf.UpdateUsage(d.memCg.ID())
 
 	totalBytes := d.memCg.collectMemoryUsage()
 	fmt.Fprintf(buf, "%d\n", totalBytes)
