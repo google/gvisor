@@ -90,6 +90,8 @@ func (fs *filesystem) newTaskInode(ctx context.Context, task *kernel.Task, pidns
 	}
 	if isThreadGroup {
 		contents["task"] = fs.newSubtasks(ctx, task, pidns, fakeCgroupControllers)
+	} else {
+		contents["children"] = fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0644, &childrenData{task: task, pidns: pidns})
 	}
 	if len(fakeCgroupControllers) > 0 {
 		contents["cgroup"] = fs.newTaskOwnedInode(ctx, task, fs.NextIno(), 0444, newFakeCgroupData(fakeCgroupControllers))

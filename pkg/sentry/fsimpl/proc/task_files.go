@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -1438,5 +1439,38 @@ func (d *taskCgroupData) Generate(ctx context.Context, buf *bytes.Buffer) error 
 	}
 
 	d.task.GenerateProcTaskCgroup(buf)
+	return nil
+}
+
+// childrenData implements vfs.DynamicBytesSource for /proc/[pid]/task/[tid]/children.
+//
+// +stateify savable
+type childrenData struct {
+	kernfs.DynamicBytesFile
+
+	task *kernel.Task
+
+	// pidns is the PID namespace associated with the proc filesystem that
+	// includes the file using this childrenData.
+	pidns *kernel.PIDNamespace
+}
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (d *childrenData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	children := d.task.Children()
+	var childrenTIDs []int
+	for childTask := range children {
+		childrenTIDs = append(childrenTIDs, int(d.pidns.IDOfTask(childTask)))
+	}
+
+	// The TIDs need to be in sorted order in accordance with the Linux implementation.
+	sort.Ints(childrenTIDs)
+
+	for _, childrenTID := range childrenTIDs {
+		// It contains a space-separated list of child tasks of the `task`.
+		// Each task is represented by its TID.
+		fmt.Fprintf(buf, "%d ", childrenTID)
+	}
+
 	return nil
 }
