@@ -56,26 +56,27 @@ func propTypeToString(pflag uint32) string {
 func (vfs *VirtualFilesystem) setPropagation(mnt *Mount, pflag uint32) error {
 	switch pflag {
 	case linux.MS_SHARED:
-		if mnt.private() {
+		if !mnt.isShared {
 			id, err := vfs.allocateGroupID()
 			if err != nil {
 				return err
 			}
 			mnt.groupID = id
 			sharedRingInit(mnt)
+			mnt.isShared = true
 		}
 	case linux.MS_PRIVATE:
-		if mnt.shared() {
+		if mnt.isShared {
 			if sharedRingEmpty(mnt) {
 				vfs.freeGroupID(mnt.groupID)
 			}
 			sharedRingRemove(mnt)
 			mnt.groupID = 0
+			mnt.isShared = false
 		}
 	default:
 		panic(fmt.Sprintf("unsupported propagation type: %s", propTypeToString(pflag)))
 	}
-	mnt.propFlags = pflag
 	return nil
 }
 
@@ -84,9 +85,8 @@ func (vfs *VirtualFilesystem) setPropagation(mnt *Mount, pflag uint32) error {
 //
 // +checklocks:vfs.mountMu
 func (vfs *VirtualFilesystem) addPeer(mnt *Mount, new *Mount) {
-	mnt.propFlags |= linux.MS_SHARED
 	sharedRingAdd(mnt, new)
-	new.propFlags |= linux.MS_SHARED
+	new.isShared = true
 	new.groupID = mnt.groupID
 }
 
@@ -99,10 +99,10 @@ func (vfs *VirtualFilesystem) addPeer(mnt *Mount, new *Mount) {
 // +checklocksalias:mnt.vfs.mountMu=vfs.mountMu
 func (vfs *VirtualFilesystem) preparePropagationTree(mnt *Mount, vd VirtualDentry) map[*Mount]VirtualDentry {
 	tree := map[*Mount]VirtualDentry{}
-	if !vd.mount.shared() {
+	if !vd.mount.isShared {
 		return tree
 	}
-	if !mnt.shared() {
+	if !mnt.isShared {
 		vfs.setPropagation(mnt, linux.MS_SHARED)
 	}
 	for peer := vd.mount.sharedEntry.Next(); peer != vd.mount; peer = peer.sharedEntry.Next() {
@@ -184,11 +184,9 @@ func (vfs *VirtualFilesystem) SetMountPropagationAt(ctx context.Context, creds *
 func (vfs *VirtualFilesystem) SetMountPropagation(mnt *Mount, propFlags uint32) {
 	vfs.mountMu.Lock()
 	defer vfs.mountMu.Unlock()
-	if propFlags != mnt.propFlags {
-		if propFlags&(linux.MS_SHARED|linux.MS_PRIVATE) != 0 {
-			vfs.setPropagation(mnt, propFlags)
-		} else {
-			panic(fmt.Sprintf("unsupported propagation type: %s", propTypeToString(propFlags)))
-		}
+	if propFlags&(linux.MS_SHARED|linux.MS_PRIVATE) != 0 {
+		vfs.setPropagation(mnt, propFlags)
+	} else {
+		panic(fmt.Sprintf("unsupported propagation type: %s", propTypeToString(propFlags)))
 	}
 }

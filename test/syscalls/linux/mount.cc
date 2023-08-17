@@ -49,6 +49,7 @@
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
+#include "test/util/linux_capability_util.h"
 #include "test/util/mount_util.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
@@ -1441,6 +1442,22 @@ TEST(MountTest, DeadMountsAreDecRefd) {
     };
     EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
   }
+}
+
+TEST(MountTest, UmountSharedBind) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  std::string home = NewTempAbsPath();
+  ASSERT_NO_ERRNO(Mkdir(home));
+  ASSERT_THAT(chdir(home.c_str()), SyscallSucceeds());
+  constexpr char dirpath[] = "./file";
+
+  ASSERT_THAT(mkdir(dirpath, 0), SyscallSucceeds());
+  ASSERT_THAT(mount(dirpath, dirpath, 0, MS_BIND, 0), SyscallSucceeds());
+  ASSERT_THAT(mount(0, dirpath, 0, MS_SHARED, 0), SyscallSucceeds());
+  ASSERT_THAT(mount(dirpath, dirpath, 0, MS_BIND, 0), SyscallSucceeds());
+  ASSERT_THAT(mount(0, dirpath, 0, MS_SHARED, 0), SyscallSucceeds());
+  ASSERT_THAT(umount2(dirpath, MNT_DETACH), SyscallSucceeds());
+  ASSERT_THAT(umount2(dirpath, MNT_DETACH), SyscallSucceeds());
 }
 
 TEST(MountTest, MountNamespace) {
