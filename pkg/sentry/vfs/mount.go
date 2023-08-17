@@ -87,8 +87,8 @@ type Mount struct {
 	// Mount. children is protected by VirtualFilesystem.mountMu.
 	children map[*Mount]struct{}
 
-	// propFlags are the propagation flags set on this mount.
-	propFlags uint32
+	// isShared indicates this mount has the MS_SHARED propagation type.
+	isShared bool
 
 	// sharedEntry represents an entry in a circular list (ring) of mounts in a
 	// shared peer group.
@@ -116,14 +116,14 @@ func (sharedMapper) linkerFor(mnt *Mount) *sharedEntry { return &mnt.sharedEntry
 
 func newMount(vfs *VirtualFilesystem, fs *Filesystem, root *Dentry, mntns *MountNamespace, opts *MountOptions) *Mount {
 	mnt := &Mount{
-		ID:        vfs.lastMountID.Add(1),
-		Flags:     opts.Flags,
-		vfs:       vfs,
-		fs:        fs,
-		root:      root,
-		ns:        mntns,
-		propFlags: linux.MS_PRIVATE,
-		refs:      atomicbitops.FromInt64(1),
+		ID:       vfs.lastMountID.Add(1),
+		Flags:    opts.Flags,
+		vfs:      vfs,
+		fs:       fs,
+		root:     root,
+		ns:       mntns,
+		isShared: false,
+		refs:     atomicbitops.FromInt64(1),
 	}
 	if opts.ReadOnly {
 		mnt.setReadOnlyLocked(true)
@@ -148,18 +148,10 @@ func (mnt *Mount) generateOptionalTags() string {
 	defer mnt.vfs.mountMu.Unlock()
 	// TODO(b/249777195): Support MS_SLAVE and MS_UNBINDABLE propagation types.
 	var optional string
-	if mnt.shared() {
+	if mnt.isShared {
 		optional = fmt.Sprintf("shared:%d", mnt.groupID)
 	}
 	return optional
-}
-
-func (mnt *Mount) shared() bool {
-	return mnt.propFlags&linux.MS_SHARED != 0
-}
-
-func (mnt *Mount) private() bool {
-	return mnt.propFlags&linux.MS_PRIVATE != 0
 }
 
 // NewFilesystem creates a new filesystem object not yet associated with any
@@ -319,7 +311,7 @@ func (vfs *VirtualFilesystem) cloneMount(mnt *Mount, root *Dentry, mopts *MountO
 		}
 	}
 	clone := vfs.NewDisconnectedMount(mnt.fs, root, opts)
-	if mnt.shared() {
+	if mnt.isShared {
 		vfs.addPeer(mnt, clone)
 	}
 	return clone
@@ -443,7 +435,7 @@ func (vfs *VirtualFilesystem) UmountAt(ctx context.Context, creds *auth.Credenti
 
 	umountTree := []*Mount{vd.mount}
 	parent, mountpoint := vd.mount.parent(), vd.mount.point()
-	if parent != nil && parent.shared() {
+	if parent != nil && parent.isShared {
 		for peer := parent.sharedEntry.Next(); peer != parent; peer = peer.sharedEntry.Next() {
 			umountMnt := vfs.mounts.Lookup(peer, mountpoint)
 			// From https://www.kernel.org/doc/Documentation/filesystems/sharedsubtree.txt:
@@ -537,7 +529,7 @@ func (vfs *VirtualFilesystem) umountRecursiveLocked(mnt *Mount, opts *umountRecu
 		if parent := mnt.parent(); parent != nil && (opts.disconnectHierarchy || !parent.umounted) {
 			vdsToDecRef = append(vdsToDecRef, vfs.disconnectLocked(mnt))
 		}
-		if mnt.shared() {
+		if mnt.isShared {
 			vfs.setPropagation(mnt, linux.MS_PRIVATE)
 		}
 	}
@@ -885,12 +877,12 @@ retry:
 
 	// Either the mount point at new_root, or the parent mount of that mount
 	// point, has propagation type MS_SHARED.
-	if newRootParent := newRootVd.mount.parent(); newRootVd.mount.shared() || newRootParent.shared() {
+	if newRootParent := newRootVd.mount.parent(); newRootVd.mount.isShared || newRootParent.isShared {
 		vfs.mountMu.Unlock()
 		return linuxerr.EINVAL
 	}
 	// put_old is a mount point and has the propagation type MS_SHARED.
-	if putOldVd.mount.root == putOldVd.dentry && putOldVd.mount.shared() {
+	if putOldVd.mount.root == putOldVd.dentry && putOldVd.mount.isShared {
 		vfs.mountMu.Unlock()
 		return linuxerr.EINVAL
 	}

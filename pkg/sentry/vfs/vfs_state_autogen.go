@@ -1172,7 +1172,7 @@ func (mnt *Mount) StateFields() []string {
 		"ns",
 		"refs",
 		"children",
-		"propFlags",
+		"isShared",
 		"sharedEntry",
 		"groupID",
 		"umounted",
@@ -1196,7 +1196,7 @@ func (mnt *Mount) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(6, &mnt.ns)
 	stateSinkObject.Save(7, &mnt.refs)
 	stateSinkObject.Save(8, &mnt.children)
-	stateSinkObject.Save(9, &mnt.propFlags)
+	stateSinkObject.Save(9, &mnt.isShared)
 	stateSinkObject.Save(10, &mnt.sharedEntry)
 	stateSinkObject.Save(11, &mnt.groupID)
 	stateSinkObject.Save(12, &mnt.umounted)
@@ -1213,7 +1213,7 @@ func (mnt *Mount) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(6, &mnt.ns)
 	stateSourceObject.Load(7, &mnt.refs)
 	stateSourceObject.Load(8, &mnt.children)
-	stateSourceObject.Load(9, &mnt.propFlags)
+	stateSourceObject.Load(9, &mnt.isShared)
 	stateSourceObject.Load(10, &mnt.sharedEntry)
 	stateSourceObject.Load(11, &mnt.groupID)
 	stateSourceObject.Load(12, &mnt.umounted)
