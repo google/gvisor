@@ -17,8 +17,10 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/posix_error.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
@@ -141,6 +143,52 @@ TEST_P(NetlinkTest, GetPeerName) {
   EXPECT_EQ(addr.nl_family, AF_NETLINK);
   // Peer is the kernel if we didn't connect elsewhere.
   EXPECT_EQ(addr.nl_pid, 0);
+}
+
+TEST_P(NetlinkTest, GetSendTimeout) {
+  const int protocol = GetParam();
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_NETLINK, SOCK_RAW, protocol));
+
+  // tv_usec should be a multiple of 4000 to work on most systems.
+  struct timeval tv_to_set {
+    .tv_sec = 1, .tv_usec = 40000
+  };
+  EXPECT_THAT(setsockopt(fd.get(), SOL_SOCKET, SO_SNDTIMEO, &tv_to_set,
+                         sizeof(tv_to_set)),
+              SyscallSucceeds());
+  struct timeval tv {
+    .tv_sec = -1, .tv_usec = -1
+  };
+  socklen_t len = sizeof(tv);
+  EXPECT_THAT(getsockopt(fd.get(), SOL_SOCKET, SO_SNDTIMEO, &tv, &len),
+              SyscallSucceeds());
+  EXPECT_EQ(tv.tv_sec, tv_to_set.tv_sec);
+  EXPECT_EQ(tv.tv_usec, tv_to_set.tv_usec);
+}
+
+TEST_P(NetlinkTest, GetReceiveTimeout) {
+  const int protocol = GetParam();
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_NETLINK, SOCK_RAW, protocol));
+
+  // tv_usec should be a multiple of 4000 to work on most systems.
+  struct timeval tv_to_set {
+    .tv_sec = 1, .tv_usec = 8000
+  };
+  EXPECT_THAT(setsockopt(fd.get(), SOL_SOCKET, SO_RCVTIMEO, &tv_to_set,
+                         sizeof(tv_to_set)),
+              SyscallSucceeds());
+  struct timeval tv {
+    .tv_sec = -1, .tv_usec = -1
+  };
+  socklen_t len = sizeof(tv);
+  EXPECT_THAT(getsockopt(fd.get(), SOL_SOCKET, SO_RCVTIMEO, &tv, &len),
+              SyscallSucceeds());
+  EXPECT_EQ(tv.tv_sec, tv_to_set.tv_sec);
+  EXPECT_EQ(tv.tv_usec, tv_to_set.tv_usec);
 }
 
 INSTANTIATE_TEST_SUITE_P(ProtocolTest, NetlinkTest,
