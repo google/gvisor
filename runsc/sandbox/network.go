@@ -359,8 +359,8 @@ type socketEntry struct {
 // fd.
 func createSocket(iface net.Interface, ifaceLink netlink.Link, enableGSO bool) (*socketEntry, error) {
 	// Create the socket.
-	const protocol = 0x0300 // htons(ETH_P_ALL)
-	fd, err := unix.Socket(unix.AF_PACKET, unix.SOCK_RAW, protocol)
+	const protocol = 0x0300                                  // htons(ETH_P_ALL)
+	fd, err := unix.Socket(unix.AF_PACKET, unix.SOCK_RAW, 0) // pass protocol 0 to avoid slow bind()
 	if err != nil {
 		return nil, fmt.Errorf("unable to create raw socket: %v", err)
 	}
