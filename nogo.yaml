@@ -180,6 +180,7 @@ analyzers:
   unreachable:
     external: # Enabled.
       exclude:
+        - ".*jsonschema/reader.go"
         - ".*protobuf/.*.go"
   unsafeptr:
     internal:
