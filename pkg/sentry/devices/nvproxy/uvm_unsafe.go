@@ -24,10 +24,15 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 )
 
-func uvmIoctlInvoke[Params any](ui *uvmIoctlState, ioctlParams *Params) (uintptr, error) {
+func uvmIoctlInvoke[Params any, PtrParams hasStatusPtr[Params]](ui *uvmIoctlState, ioctlParams PtrParams) (uintptr, error) {
 	n, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(ui.fd.hostFD), uintptr(ui.cmd), uintptr(unsafe.Pointer(ioctlParams)))
 	if errno != 0 {
 		return n, errno
+	}
+	if log.IsLogging(log.Debug) {
+		if status := ioctlParams.GetStatus(); status != nvgpu.NV_OK {
+			ui.ctx.Debugf("nvproxy: uvm ioctl failed: status=%#x", status)
+		}
 	}
 	return n, nil
 }

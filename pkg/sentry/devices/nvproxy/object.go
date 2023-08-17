@@ -78,7 +78,7 @@ func (nvp *nvproxy) objsUnlock() {
 // freeing of any of those objects also results in the freeing of the recorded
 // object.
 func (nvp *nvproxy) objAdd(ctx context.Context, clientH, h nvgpu.Handle, c nvgpu.ClassID, oi objectImpl, parentH nvgpu.Handle, deps ...nvgpu.Handle) {
-	if h == nvgpu.NV01_NULL_OBJECT {
+	if h.Val == nvgpu.NV01_NULL_OBJECT {
 		log.Traceback("nvproxy: new object (class %v) has invalid handle %v", c, h)
 		return
 	}
@@ -114,7 +114,7 @@ func (nvp *nvproxy) objAdd(ctx context.Context, clientH, h nvgpu.Handle, c nvgpu
 	}
 	client.resources[h] = o
 
-	if parentH != nvgpu.NV01_NULL_OBJECT {
+	if parentH.Val != nvgpu.NV01_NULL_OBJECT {
 		parent, ok := client.resources[parentH]
 		if !ok {
 			log.Traceback("nvproxy: new object %v:%v (class %v) has invalid parent handle %v", clientH, h, c, parentH)
@@ -123,7 +123,7 @@ func (nvp *nvproxy) objAdd(ctx context.Context, clientH, h nvgpu.Handle, c nvgpu
 		}
 	}
 	for _, depH := range deps {
-		if depH == nvgpu.NV01_NULL_OBJECT {
+		if depH.Val == nvgpu.NV01_NULL_OBJECT {
 			continue
 		}
 		dep, ok := client.resources[depH]
@@ -180,14 +180,8 @@ func (nvp *nvproxy) objDep(o1, o2 *object) {
 // client with handle clientSrcH, to handle dstH in the client with handle
 // clientDstH, with new parent parentDstH.
 func (nvp *nvproxy) objDup(ctx context.Context, clientDstH, dstH, parentDstH, clientSrcH, srcH nvgpu.Handle) {
-	clientSrc, ok := nvp.clients[clientSrcH]
-	if !ok {
-		ctx.Warningf("nvproxy: duplicating object handle %v with unknown client handle %v", srcH, clientSrcH)
-		return
-	}
-	oSrc, ok := clientSrc.resources[srcH]
-	if !ok {
-		ctx.Warningf("nvproxy: duplicating object with unknown handle %v:%v", clientSrcH, srcH)
+	clientSrc, oSrc := nvp.getObject(ctx, clientSrcH, srcH)
+	if oSrc == nil {
 		return
 	}
 	oDst := &miscObject{}
@@ -199,6 +193,20 @@ func (nvp *nvproxy) objDup(ctx context.Context, clientDstH, dstH, parentDstH, cl
 			nvp.objDep(oDst.Object(), dep)
 		}
 	}
+}
+
+func (nvp *nvproxy) getObject(ctx context.Context, clientH, h nvgpu.Handle) (*rootClient, *object) {
+	client, ok := nvp.clients[clientH]
+	if !ok {
+		ctx.Warningf("nvproxy: failed to get handle %v with unknown client handle %v", h, clientH)
+		return nil, nil
+	}
+	o, ok := client.resources[h]
+	if !ok {
+		ctx.Warningf("nvproxy: failed to get object with unknown handle %v:%v", clientH, h)
+		return client, nil
+	}
+	return client, o
 }
 
 // objFree marks an object and its transitive dependents as freed.
