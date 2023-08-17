@@ -46,10 +46,20 @@ const (
 	NV_ESC_RM_ALLOC                      = 0x2b
 	NV_ESC_RM_DUP_OBJECT                 = 0x34
 	NV_ESC_RM_SHARE                      = 0x35
+	NV_ESC_RM_IDLE_CHANNELS              = 0x41
 	NV_ESC_RM_VID_HEAP_CONTROL           = 0x4a
 	NV_ESC_RM_MAP_MEMORY                 = 0x4e
 	NV_ESC_RM_UNMAP_MEMORY               = 0x4f
+	NV_ESC_RM_ALLOC_CONTEXT_DMA2         = 0x54
+	NV_ESC_RM_MAP_MEMORY_DMA             = 0x57
+	NV_ESC_RM_UNMAP_MEMORY_DMA           = 0x58
 	NV_ESC_RM_UPDATE_DEVICE_MAPPING_INFO = 0x5e
+)
+
+const (
+	// From src/common/sdk/nvidia/inc/nvos.h:
+	NVOS02_FLAGS_ALLOC_NONE     = 0x00000001
+	NVOS02_FLAGS_MAPPING_NO_MAP = 0x00000001
 )
 
 // Frontend ioctl parameter structs, from src/common/sdk/nvidia/inc/nvos.h or
@@ -265,6 +275,26 @@ type NVOS57Parameters struct {
 	Status      uint32
 }
 
+// NVOS30Parameters is NVOS30_PARAMETERS, the parameter type for
+// NV_ESC_RM_IDLE_CHANNELS.
+//
+// +marshal
+type NVOS30Parameters struct {
+	Client      Handle `nvproxy:"NVOS30_PARAMETERS"`
+	Device      Handle
+	Channel     Handle
+	NumChannels uint32
+
+	Clients  P64
+	Devices  P64
+	Channels P64
+
+	Flags   uint32
+	Timeout uint32
+	Status  uint32
+	Pad0    [4]byte
+}
+
 // NVOS32Parameters is the parameter type for NV_ESC_RM_VID_HEAP_CONTROL.
 //
 // +marshal
@@ -346,6 +376,76 @@ type NVOS34Parameters struct {
 	PLinearAddress P64 // address of application mapping, without indirection
 	Status         uint32
 	Flags          uint32
+}
+
+// NVOS39Parameters is NVOS39_PARAMETERS, the parameter type for
+// NV_ESC_RM_ALLOC_CONTEXT_DMA2.
+//
+// +marshal
+type NVOS39Parameters struct {
+	ObjectParent Handle `nvproxy:"NVOS39_PARAMETERS"`
+	SubDevice    Handle
+	ObjectNew    Handle
+	Class        uint32
+	Flags        uint32
+	Selector     uint32
+	Memory       Handle
+	Pad0         [4]byte
+	Offset       uint64
+	Limit        uint64
+	Status       uint32
+	Pad1         [4]byte
+}
+
+// NVOS46Parameters is NVOS46_PARAMETERS, the parameter type for
+// NV_ESC_RM_MAP_MEMORY_DMA.
+//
+// +marshal
+type NVOS46Parameters struct {
+	Client    Handle `nvproxy:"NVOS46_PARAMETERS"`
+	Device    Handle
+	Dma       Handle
+	Memory    Handle
+	Offset    uint64
+	Length    uint64
+	Flags     uint32
+	Pad0      [4]byte
+	DmaOffset uint64
+	Status    uint32
+	Pad1      [4]byte
+}
+
+// NVOS47Parameters is NVOS47_PARAMETERS, the parameter type for
+// NV_ESC_RM_UNMAP_MEMORY_DMA.
+//
+// +marshal
+type NVOS47Parameters struct {
+	Client    Handle `nvproxy:"NVOS47_PARAMETERS"`
+	Device    Handle
+	Dma       Handle
+	Memory    Handle
+	Flags     uint32
+	Pad0      [4]byte
+	DmaOffset uint64
+	Status    uint32
+	Pad1      [4]byte
+}
+
+// NVOS47ParametersV550 is the updated version of NVOS47Parameters since
+// 550.54.04.
+//
+// +marshal
+type NVOS47ParametersV550 struct {
+	Client    Handle `nvproxy:"NVOS47_PARAMETERS"`
+	Device    Handle
+	Dma       Handle
+	Memory    Handle
+	Flags     uint32
+	Pad0      [4]byte
+	DmaOffset uint64
+	Size      uint64
+	Status    uint32
+	Pad1      [4]byte
 }
 
 // NVOS54Parameters is the parameter type for NV_ESC_RM_CONTROL.
@@ -439,11 +539,14 @@ var (
 	SizeofNVOS00Parameters            = uint32((*NVOS00Parameters)(nil).SizeBytes())
 	SizeofNVOS21Parameters            = uint32((*NVOS21Parameters)(nil).SizeBytes())
 	SizeofIoctlNVOS33ParametersWithFD = uint32((*IoctlNVOS33ParametersWithFD)(nil).SizeBytes())
-	SizeofNVOS55Parameters            = uint32((*NVOS55Parameters)(nil).SizeBytes())
-	SizeofNVOS57Parameters            = uint32((*NVOS57Parameters)(nil).SizeBytes())
+	SizeofNVOS30Parameters            = uint32((*NVOS30Parameters)(nil).SizeBytes())
 	SizeofNVOS32Parameters            = uint32((*NVOS32Parameters)(nil).SizeBytes())
 	SizeofNVOS34Parameters            = uint32((*NVOS34Parameters)(nil).SizeBytes())
+	SizeofNVOS39Parameters            = uint32((*NVOS39Parameters)(nil).SizeBytes())
+	SizeofNVOS46Parameters            = uint32((*NVOS46Parameters)(nil).SizeBytes())
 	SizeofNVOS54Parameters            = uint32((*NVOS54Parameters)(nil).SizeBytes())
+	SizeofNVOS55Parameters            = uint32((*NVOS55Parameters)(nil).SizeBytes())
 	SizeofNVOS56Parameters            = uint32((*NVOS56Parameters)(nil).SizeBytes())
+	SizeofNVOS57Parameters            = uint32((*NVOS57Parameters)(nil).SizeBytes())
 	SizeofNVOS64Parameters            = uint32((*NVOS64Parameters)(nil).SizeBytes())
 )

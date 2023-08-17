@@ -388,12 +388,80 @@ func rmAllocMemory(fi *frontendIoctlState) (uintptr, error) {
 	// src/nvidia/interface/deprecated/rmapi_deprecated_allocmemory.c:rmAllocMemoryTable
 	// for implementation.
 	switch ioctlParams.Params.HClass {
+	case nvgpu.NV01_MEMORY_SYSTEM:
+		return rmAllocMemorySystem(fi, &ioctlParams)
+	case nvgpu.NV01_MEMORY_LOCAL_PRIVILEGED:
+		return rmAllocMemoryLocalPrivileged(fi, &ioctlParams)
 	case nvgpu.NV01_MEMORY_SYSTEM_OS_DESCRIPTOR:
 		return rmAllocOSDescriptor(fi, &ioctlParams)
 	default:
 		fi.ctx.Warningf("nvproxy: unknown NV_ESC_RM_ALLOC_MEMORY class %v", ioctlParams.Params.HClass)
 		return 0, linuxerr.EINVAL
 	}
+}
+
+func rmAllocMemorySystem(fi *frontendIoctlState, ioctlParams *nvgpu.IoctlNVOS02ParametersWithFD) (uintptr, error) {
+	// In src/nvidia/arch/nvalloc/unix/src/escape.c:RmIoctl(), see case
+	// cmd == NV_ESC_RM_ALLOC_MEMORY with pParms->hClass == NV01_MEMORY_SYSTEM.
+	mapFileGeneric, _ := fi.t.FDTable().Get(ioctlParams.FD)
+	if mapFileGeneric == nil {
+		return 0, linuxerr.EINVAL
+	}
+	defer mapFileGeneric.DecRef(fi.ctx)
+	mapFile, ok := mapFileGeneric.Impl().(*frontendFD)
+	if !ok {
+		return 0, linuxerr.EINVAL
+	}
+
+	// "If the system memory is going to be mapped immediately, create the mmap
+	// context for it now."
+	createMmapCtx :=
+		// !FLD_TEST_DRF(OS02, _FLAGS, _ALLOC, _NONE, flags))
+		((ioctlParams.Params.Flags>>16)&0x3) != nvgpu.NVOS02_FLAGS_ALLOC_NONE &&
+			// !FLD_TEST_DRF(OS02, _FLAGS, _MAPPING, _NO_MAP, flags))
+			((ioctlParams.Params.Flags>>30)&0x3) != nvgpu.NVOS02_FLAGS_MAPPING_NO_MAP
+
+	if createMmapCtx {
+		mapFile.mmapMu.Lock()
+		defer mapFile.mmapMu.Unlock()
+		if mapFile.mmapLength != 0 {
+			fi.ctx.Warningf("nvproxy: attempted to reuse FD %d for NV_ESC_RM_MAP_MEMORY", ioctlParams.FD)
+			return 0, linuxerr.EINVAL
+		}
+	}
+
+	origFD := ioctlParams.FD
+	ioctlParams.FD = mapFile.hostFD
+	n, err := frontendIoctlInvoke(fi, ioctlParams)
+	if err != nil {
+		return n, err
+	}
+	if createMmapCtx && ioctlParams.Params.Status == nvgpu.NV_OK {
+		mapFile.mmapLength = ioctlParams.Params.Limit + 1
+	}
+
+	ioctlParams.FD = origFD
+	if _, err := ioctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
+		return n, err
+	}
+
+	return n, nil
+}
+
+func rmAllocMemoryLocalPrivileged(fi *frontendIoctlState, ioctlParams *nvgpu.IoctlNVOS02ParametersWithFD) (uintptr, error) {
+	// NV01_MEMORY_LOCAL_PRIVILEGED shouldn't use ioctlParams.FD; clobber
+	// it to be sure.
+	origFD := ioctlParams.FD
+	ioctlParams.FD = -1
+	n, err := frontendIoctlInvoke(fi, ioctlParams)
+	ioctlParams.FD = origFD
+	if err != nil {
+		return n, err
+	}
+	if _, err := ioctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
+		return n, err
+	}
+	return n, nil
 }
 
 func rmAllocOSDescriptor(fi *frontendIoctlState, ioctlParams *nvgpu.IoctlNVOS02ParametersWithFD) (uintptr, error) {
@@ -662,6 +730,26 @@ func ctrlMemoryMulticastFabricAttachGPU(fi *frontendIoctlState, ioctlParams *nvg
 	return n, err
 }
 
+// Check parameter size against the limit of how much can be copied in. It
+// returns true if the param size is within limit. If not, caller should return
+// NV_ERR_INVALID_ARGUMENT status to the application. Compare
+// src/nvidia/src/kernel/rmapi/param_copy.c:rmapiParamsAcquire().
+// To find `numElems` and `sizeOfElem` values for a given control command, see
+// src/nvidia/src/kernel/rmapi/embedded_param_copy.c:embeddedParamCopyIn() =>
+// case <CONTROL CMD> => RMAPI_PARAM_COPY_INIT(..., numElems, sizeOfElem).
+func rmapiParamsSizeCheck(numElems uint32, sizeOfElem uint32) bool {
+	if numElems == 0 {
+		// The individual implementations of rmapi commands return
+		// NV_ERR_INVALID_ARGUMENT when numElems is 0. Some examples are:
+		// - subdeviceCtrlCmdFbGetInfo_IMPL()
+		// - deviceCtrlCmdKGrGetInfo_IMPL() => _kgraphicsCtrlCmdGrGetInfoV2()
+		return false
+	}
+	// Cast to uint64 to handle overflows. In the driver, this is handled by
+	// portSafeMulU32().
+	return uint64(numElems)*uint64(sizeOfElem) <= nvgpu.RMAPI_PARAM_COPY_MAX_PARAMS_SIZE
+}
+
 func ctrlClientSystemGetBuildVersion(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters) (uintptr, error) {
 	var ctrlParams nvgpu.NV0000_CTRL_SYSTEM_GET_BUILD_VERSION_PARAMS
 	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
@@ -700,35 +788,70 @@ func ctrlClientSystemGetBuildVersion(fi *frontendIoctlState, ioctlParams *nvgpu.
 	return n, nil
 }
 
-func ctrlDevGpuGetClasslist(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters) (uintptr, error) {
-	var ctrlParams nvgpu.NV0080_CTRL_GPU_GET_CLASSLIST_PARAMS
+func ctrlGetNvU32List(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters) (uintptr, error) {
+	var ctrlParams nvgpu.RmapiParamNvU32List
 	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
 		return 0, linuxerr.EINVAL
 	}
 	if _, err := ctrlParams.CopyIn(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
 		return 0, err
 	}
-
-	// This command has two modes. If the classList pointer is NULL, only simple command handling
-	// is required; see src/common/sdk/nvidia/inc/ctrl/ctrl0080gpu.h.
-	if ctrlParams.ClassList == 0 {
+	if ctrlParams.List == 0 {
+		// For NV0080_CTRL_CMD_GPU_GET_CLASSLIST, this command has two modes. If
+		// the classList pointer is NULL, only simple command handling is required;
+		// see src/common/sdk/nvidia/inc/ctrl/ctrl0080gpu.h.
 		return rmControlSimple(fi, ioctlParams)
 	}
-
-	// classList pointer is not NULL. Check classList size against limit. See
-	// src/nvidia/src/kernel/rmapi/embedded_param_copy.c:embeddedParamCopyIn() =>
-	// case NV0080_CTRL_CMD_GPU_GET_CLASSLIST => RMAPI_PARAM_COPY_INIT().
-	// paramCopy.paramsSize is initialized as numClasses * sizeof(NvU32).
-	if ctrlParams.NumClasses*4 > nvgpu.RMAPI_PARAM_COPY_MAX_PARAMS_SIZE {
+	if !rmapiParamsSizeCheck(ctrlParams.NumElems, 4 /* sizeof(NvU32) */) {
 		return 0, ctrlCmdFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_ARGUMENT)
 	}
+	list := make([]uint32, ctrlParams.NumElems)
+	return ctrlGetNvU32ListInvoke(fi, ioctlParams, &ctrlParams, list)
+}
 
-	classList := make([]uint32, ctrlParams.NumClasses)
-	n, err := ctrlDevGpuGetClasslistInvoke(fi, ioctlParams, &ctrlParams, classList)
-	if err != nil {
-		return n, err
+func ctrlDevGetCaps(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters) (uintptr, error) {
+	var ctrlParams nvgpu.NV0080_CTRL_GET_CAPS_PARAMS
+	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
+		return 0, linuxerr.EINVAL
 	}
-	return n, nil
+	if _, err := ctrlParams.CopyIn(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+		return 0, err
+	}
+	if !rmapiParamsSizeCheck(ctrlParams.CapsTblSize, 1) {
+		return 0, ctrlCmdFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_ARGUMENT)
+	}
+	capsTbl := make([]byte, ctrlParams.CapsTblSize)
+	return ctrlDevGRGetCapsInvoke(fi, ioctlParams, &ctrlParams, capsTbl)
+}
+
+func ctrlSubdevGRGetInfo(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters) (uintptr, error) {
+	var ctrlParams nvgpu.NV2080_CTRL_GR_GET_INFO_PARAMS
+	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
+		return 0, linuxerr.EINVAL
+	}
+	if _, err := ctrlParams.CopyIn(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+		return 0, err
+	}
+	if !rmapiParamsSizeCheck(ctrlParams.GRInfoListSize, nvgpu.CtrlXxxInfoSize) {
+		return 0, ctrlCmdFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_ARGUMENT)
+	}
+	infoList := make([]nvgpu.NVXXXX_CTRL_XXX_INFO, ctrlParams.GRInfoListSize)
+	return ctrlSubdevGRGetInfoInvoke(fi, ioctlParams, &ctrlParams, infoList)
+}
+
+func ctrlXxxGetInfo(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters) (uintptr, error) {
+	var ctrlParams nvgpu.NvxxxCtrlXxxGetInfoParams
+	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
+		return 0, linuxerr.EINVAL
+	}
+	if _, err := ctrlParams.CopyIn(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+		return 0, err
+	}
+	if !rmapiParamsSizeCheck(ctrlParams.GRInfoListSize, nvgpu.CtrlXxxInfoSize) {
+		return 0, ctrlCmdFailWithStatus(fi, ioctlParams, nvgpu.NV_ERR_INVALID_ARGUMENT)
+	}
+	infoList := make([]nvgpu.NVXXXX_CTRL_XXX_INFO, ctrlParams.GRInfoListSize)
+	return ctrlXxxGetInfoInvoke(fi, ioctlParams, &ctrlParams, infoList)
 }
 
 func ctrlRegisterVASpace(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters) (uintptr, error) {
@@ -820,6 +943,9 @@ func rmAlloc(fi *frontendIoctlState) (uintptr, error) {
 	ioctlParams := buf.ToOS64()
 
 	// hClass determines the type of pAllocParms.
+	if err := fixupHClass(fi, &ioctlParams); err != nil {
+		return 0, err
+	}
 	if log.IsLogging(log.Debug) {
 		fi.ctx.Debugf("nvproxy: allocation class %v", ioctlParams.HClass)
 	}
@@ -852,6 +978,25 @@ func rmAlloc(fi *frontendIoctlState) (uintptr, error) {
 		}
 	}
 	return result, err
+}
+
+// See src/nvidia/src/kernel/rmapi/alloc_free.c:_fixupAllocParams().
+func fixupHClass(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters) error {
+	// "NV01_EVENT isn't a valid class to allocate so overwrite it with the
+	// subclass from the event params."
+	if ioctlParams.HClass == nvgpu.NV01_EVENT {
+		var allocParams nvgpu.NV0005_ALLOC_PARAMETERS
+		if _, err := allocParams.CopyIn(fi.t, addrFromP64(ioctlParams.PAllocParms)); err != nil {
+			return err
+		}
+		if ioctlParams.HClass != allocParams.HClass {
+			if log.IsLogging(log.Debug) {
+				fi.ctx.Debugf("nvproxy: overwriting allocation class %#08x with %#08x", ioctlParams.HClass, allocParams.HClass)
+			}
+			ioctlParams.HClass = allocParams.HClass
+		}
+	}
+	return nil
 }
 
 // rmAllocSimple implements NV_ESC_RM_ALLOC for classes whose parameters don't
@@ -996,6 +1141,44 @@ func rmAllocContextShare(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parame
 	})
 }
 
+// See src/nvidia/interface/deprecated/rmapi_deprecated_misc.c:RmDeprecatedIdleChannels().
+func rmIdleChannels(fi *frontendIoctlState) (uintptr, error) {
+	var ioctlParams nvgpu.NVOS30Parameters
+	if fi.ioctlParamsSize != nvgpu.SizeofNVOS32Parameters {
+		return 0, linuxerr.EINVAL
+	}
+	if _, err := ioctlParams.CopyIn(fi.t, fi.ioctlParamsAddr); err != nil {
+		return 0, err
+	}
+	bufferSize := ioctlParams.NumChannels * 4
+	clientsBuf := make([]byte, bufferSize)
+	if _, err := fi.t.CopyInBytes(addrFromP64(ioctlParams.Clients), clientsBuf); err != nil {
+		return 0, err
+	}
+	devicesBuf := make([]byte, bufferSize)
+	if _, err := fi.t.CopyInBytes(addrFromP64(ioctlParams.Devices), devicesBuf); err != nil {
+		return 0, err
+	}
+	channelsBuf := make([]byte, bufferSize)
+	if _, err := fi.t.CopyInBytes(addrFromP64(ioctlParams.Channels), channelsBuf); err != nil {
+		return 0, err
+	}
+	n, err := rmIdleChannelsInvoke(fi, &ioctlParams, &clientsBuf[0], &devicesBuf[0], &channelsBuf[0])
+	if err != nil {
+		return n, err
+	}
+	if _, err := fi.t.CopyOutBytes(addrFromP64(ioctlParams.Clients), clientsBuf); err != nil {
+		return n, err
+	}
+	if _, err := fi.t.CopyOutBytes(addrFromP64(ioctlParams.Devices), devicesBuf); err != nil {
+		return n, err
+	}
+	if _, err := fi.t.CopyOutBytes(addrFromP64(ioctlParams.Channels), channelsBuf); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
 func rmVidHeapControl(fi *frontendIoctlState) (uintptr, error) {
 	var ioctlParams nvgpu.NVOS32Parameters
 	if fi.ioctlParamsSize != nvgpu.SizeofNVOS32Parameters {
@@ -1052,7 +1235,9 @@ func rmMapMemory(fi *frontendIoctlState) (uintptr, error) {
 	if err != nil {
 		return n, err
 	}
-	mapFile.mmapLength = ioctlParams.Params.Length
+	if ioctlParams.Params.Status == nvgpu.NV_OK {
+		mapFile.mmapLength = ioctlParams.Params.Length
+	}
 
 	ioctlParams.FD = origFD
 	if _, err := ioctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
