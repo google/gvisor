@@ -27,10 +27,12 @@ import (
 	"gvisor.dev/gvisor/test/benchmarks/tools"
 )
 
-// BenchmarkFio runs fio on the runtime under test. There are 4 basic test
+// Fio benchmarks run fio on the runtime under test. There are 4 basic test
 // cases each run on a tmpfs mount and a bind mount. Fio requires root so that
 // caches can be dropped.
-func BenchmarkFio(b *testing.B) {
+
+// BenchmarkFioWrite runs write operation benchmark cases.
+func BenchmarkFioWrite(b *testing.B) {
 	testCases := []tools.Fio{
 		{
 			Test:        "write",
@@ -51,6 +53,37 @@ func BenchmarkFio(b *testing.B) {
 			IODepth:     4,
 		},
 		{
+			Test:        "write",
+			IOEngine:    tools.EngineLibAIO,
+			Jobs:        8,
+			BlockSizeKB: 4,
+			IODepth:     4,
+			Direct:      true,
+		},
+		{
+			Test:        "write",
+			IOEngine:    tools.EngineLibAIO,
+			Jobs:        8,
+			BlockSizeKB: 64,
+			IODepth:     4,
+			Direct:      true,
+		},
+		{
+			Test:        "write",
+			IOEngine:    tools.EngineLibAIO,
+			Jobs:        8,
+			BlockSizeKB: 1024,
+			IODepth:     4,
+			Direct:      true,
+		},
+	}
+	doFioBenchmark(b, testCases)
+}
+
+// BenchmarkFioRead runs read operation test cases.
+func BenchmarkFioRead(b *testing.B) {
+	testCases := []tools.Fio{
+		{
 			Test:        "read",
 			IOEngine:    tools.EngineLibAIO,
 			BlockSizeKB: 4,
@@ -69,72 +102,62 @@ func BenchmarkFio(b *testing.B) {
 			IODepth:     4,
 		},
 		{
+			Test:        "read",
+			IOEngine:    tools.EngineLibAIO,
+			Jobs:        8,
+			BlockSizeKB: 4,
+			IODepth:     4,
+			Direct:      true,
+		},
+		{
+			Test:        "read",
+			IOEngine:    tools.EngineLibAIO,
+			Jobs:        8,
+			BlockSizeKB: 64,
+			IODepth:     4,
+			Direct:      true,
+		},
+		{
+			Test:        "read",
+			IOEngine:    tools.EngineLibAIO,
+			Jobs:        8,
+			BlockSizeKB: 1024,
+			IODepth:     4,
+			Direct:      true,
+		},
+	}
+	doFioBenchmark(b, testCases)
+}
+
+// BenchmarkFioRandWrite runs randwrite test cases.
+func BenchmarkFioRandWrite(b *testing.B) {
+	testCases := []tools.Fio{
+		{
 			Test:        "randwrite",
 			IOEngine:    tools.EngineLibAIO,
 			BlockSizeKB: 4,
 			IODepth:     4,
 		},
+		{
+			Test:        "randwrite",
+			IOEngine:    tools.EngineLibAIO,
+			Jobs:        8,
+			BlockSizeKB: 4,
+			IODepth:     4,
+			Direct:      true,
+		},
+	}
+	doFioBenchmark(b, testCases)
+}
+
+// BenchmarkFioRandRead runs randread test cases.
+func BenchmarkFioRandRead(b *testing.B) {
+	testCases := []tools.Fio{
 		{
 			Test:        "randread",
 			IOEngine:    tools.EngineLibAIO,
 			BlockSizeKB: 4,
 			IODepth:     4,
-		},
-		{
-			Test:        "write",
-			IOEngine:    tools.EngineLibAIO,
-			Jobs:        8,
-			BlockSizeKB: 4,
-			IODepth:     4,
-			Direct:      true,
-		},
-		{
-			Test:        "write",
-			IOEngine:    tools.EngineLibAIO,
-			Jobs:        8,
-			BlockSizeKB: 64,
-			IODepth:     4,
-			Direct:      true,
-		},
-		{
-			Test:        "write",
-			IOEngine:    tools.EngineLibAIO,
-			Jobs:        8,
-			BlockSizeKB: 1024,
-			IODepth:     4,
-			Direct:      true,
-		},
-		{
-			Test:        "read",
-			IOEngine:    tools.EngineLibAIO,
-			Jobs:        8,
-			BlockSizeKB: 4,
-			IODepth:     4,
-			Direct:      true,
-		},
-		{
-			Test:        "read",
-			IOEngine:    tools.EngineLibAIO,
-			Jobs:        8,
-			BlockSizeKB: 64,
-			IODepth:     4,
-			Direct:      true,
-		},
-		{
-			Test:        "read",
-			IOEngine:    tools.EngineLibAIO,
-			Jobs:        8,
-			BlockSizeKB: 1024,
-			IODepth:     4,
-			Direct:      true,
-		},
-		{
-			Test:        "randwrite",
-			IOEngine:    tools.EngineLibAIO,
-			Jobs:        8,
-			BlockSizeKB: 4,
-			IODepth:     4,
-			Direct:      true,
 		},
 		{
 			Test:        "randread",
@@ -145,7 +168,10 @@ func BenchmarkFio(b *testing.B) {
 			Direct:      true,
 		},
 	}
+	doFioBenchmark(b, testCases)
+}
 
+func doFioBenchmark(b *testing.B, testCases []tools.Fio) {
 	machine, err := harness.GetMachine()
 	if err != nil {
 		b.Fatalf("failed to get machine with: %v", err)
