@@ -52,8 +52,7 @@ func setupDevtmpfs(t *testing.T) (context.Context, *auth.Credentials, *vfs.Virtu
 	if err != nil {
 		t.Fatalf("failed to create tmpfs root mount: %v", err)
 	}
-	root := mntns.Root()
-	root.IncRef()
+	root := mntns.Root(ctx)
 	devpop := vfs.PathOperation{
 		Root:  root,
 		Start: root,

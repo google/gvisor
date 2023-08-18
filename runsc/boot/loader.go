@@ -1097,7 +1097,10 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 	}
 
 	// Add the HOME environment variable if it is not already set.
-	ctx := vfs.WithRoot(l.k.SupervisorContext(), args.MountNamespace.Root())
+	sctx := l.k.SupervisorContext()
+	root := args.MountNamespace.Root(sctx)
+	defer root.DecRef(sctx)
+	ctx := vfs.WithRoot(sctx, root)
 	defer args.MountNamespace.DecRef(ctx)
 	args.Envv, err = user.MaybeAddExecUserHome(ctx, args.MountNamespace, args.KUID, args.Envv)
 	if err != nil {

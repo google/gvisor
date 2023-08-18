@@ -114,8 +114,7 @@ func setup(t *testing.T) *testutil.System {
 	if err != nil {
 		t.Fatalf("NewMountNamespace(): %v", err)
 	}
-	root := mntns.Root()
-	root.IncRef()
+	root := mntns.Root(ctx)
 	defer root.DecRef(ctx)
 	pop := &vfs.PathOperation{
 		Root:  root,

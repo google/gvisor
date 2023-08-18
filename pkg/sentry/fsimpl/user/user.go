@@ -44,8 +44,7 @@ func (r *fileReader) Read(buf []byte) (int, error) {
 func getExecUserHome(ctx context.Context, mns *vfs.MountNamespace, uid auth.KUID) (string, error) {
 	const defaultHome = "/"
 
-	root := mns.Root()
-	root.IncRef()
+	root := mns.Root(ctx)
 	defer root.DecRef(ctx)
 
 	creds := auth.CredentialsFromContext(ctx)

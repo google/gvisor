@@ -73,8 +73,7 @@ func ResolveExecutablePath(ctx context.Context, args *kernel.CreateProcessArgs) 
 }
 
 func resolve(ctx context.Context, creds *auth.Credentials, mns *vfs.MountNamespace, paths []string, name string) (string, error) {
-	root := mns.Root()
-	root.IncRef()
+	root := mns.Root(ctx)
 	defer root.DecRef(ctx)
 	for _, p := range paths {
 		if !path.IsAbs(p) {

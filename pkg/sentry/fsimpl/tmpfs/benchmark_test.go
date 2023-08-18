@@ -72,8 +72,7 @@ func BenchmarkTmpfsStat(b *testing.B) {
 			filePathBuilder.WriteByte('/')
 
 			// Create nested directories with given depth.
-			root := mntns.Root()
-			root.IncRef()
+			root := mntns.Root(ctx)
 			defer root.DecRef(ctx)
 			vd := root
 			vd.IncRef()
@@ -164,8 +163,7 @@ func BenchmarkTmpfsMountStat(b *testing.B) {
 			filePathBuilder.WriteByte('/')
 
 			// Create the mount point.
-			root := mntns.Root()
-			root.IncRef()
+			root := mntns.Root(ctx)
 			defer root.DecRef(ctx)
 			pop := vfs.PathOperation{
 				Root:  root,

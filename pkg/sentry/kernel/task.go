@@ -709,7 +709,8 @@ func (t *Task) SyscallRestartBlock() SyscallRestartBlock {
 // Preconditions: The caller must be running on the task goroutine, or t.mu
 // must be locked.
 func (t *Task) IsChrooted() bool {
-	realRoot := t.mountNamespace.Root()
+	realRoot := t.mountNamespace.Root(t)
+	defer realRoot.DecRef(t)
 	root := t.fsContext.RootDirectory()
 	defer root.DecRef(t)
 	return root != realRoot

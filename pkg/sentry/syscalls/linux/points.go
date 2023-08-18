@@ -51,7 +51,8 @@ func getFilePath(t *kernel.Task, fd int32) string {
 	}
 	defer file.DecRef(t)
 
-	root := t.MountNamespace().Root()
+	root := t.MountNamespace().Root(t)
+	defer root.DecRef(t)
 	path, err := t.Kernel().VFS().PathnameWithDeleted(t, root, file.VirtualDentry())
 	if err != nil {
 		return fmt.Sprintf("[err: %v]", err)

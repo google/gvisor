@@ -487,8 +487,7 @@ func TestCreateMountNamespace(t *testing.T) {
 				t.Fatalf("mountAll: %v", err)
 			}
 
-			root := mns.Root()
-			root.IncRef()
+			root := mns.Root(ctx)
 			defer root.DecRef(ctx)
 			for _, p := range tc.expectedPaths {
 				target := &vfs.PathOperation{
