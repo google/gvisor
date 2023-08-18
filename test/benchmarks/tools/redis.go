@@ -16,8 +16,8 @@ package tools
 
 import (
 	"fmt"
-	"regexp"
 	"strconv"
+	"strings"
 	"testing"
 )
 
@@ -30,17 +30,6 @@ type Redis struct {
 func (r *Redis) MakeCmd(host string, port, requests int) []string {
 	// There is no -t PING_BULK for redis-benchmark, so adjust the command in that case.
 	// Note that "ping" will run both PING_INLINE and PING_BULK.
-	if r.Operation == "PING_BULK" {
-		return []string{
-			"redis-benchmark",
-			"--csv",
-			"-t", "ping",
-			"-h", host,
-			"-p", fmt.Sprintf("%d", port),
-			"-n", fmt.Sprintf("%d", requests),
-		}
-	}
-
 	// runs redis-benchmark -t operation for 100K requests against server.
 	return []string{
 		"redis-benchmark",
@@ -55,19 +44,37 @@ func (r *Redis) MakeCmd(host string, port, requests int) []string {
 // Report parses output from redis-benchmark client and reports metrics.
 func (r *Redis) Report(b *testing.B, output string) {
 	b.Helper()
-	result, err := r.parseOperation(output)
-	if err != nil {
-		b.Fatalf("parsing result %s failed with err: %v", output, err)
+	lines := strings.Split(output, "\n")
+	if len(lines) < 2 {
+		b.Fatalf("redis-benchmark failed to parse redis output: %s", output)
 	}
-	ReportCustomMetric(b, result, r.Operation /*metric_name*/, "QPS" /*unit*/)
-}
+	titleLine := lines[0]
+	resultLine := ""
+	for _, line := range lines[1:] {
+		if strings.Contains(line, r.Operation) {
+			resultLine = line
+			break
+		}
+	}
+	if len(resultLine) < 1 {
+		b.Fatalf("redis-benchmark failed to find LRANGE_100 in redis output: %s", output)
+	}
 
-// parseOperation grabs the metric operations per second from redis-benchmark output.
-func (r *Redis) parseOperation(data string) (float64, error) {
-	re := regexp.MustCompile(fmt.Sprintf(`"%s( .*)?","(\d*\.\d*)"`, r.Operation))
-	match := re.FindStringSubmatch(data)
-	if len(match) < 3 {
-		return 0.0, fmt.Errorf("could not find %s in %s", r.Operation, data)
+	titles := strings.Split(titleLine, ",")
+	results := strings.Split(resultLine, ",")
+	if len(titles) != len(results) {
+		b.Fatalf("redis-benchmark failed to parse redis output: %s", output)
 	}
-	return strconv.ParseFloat(match[2], 64)
+
+	for i := range titles {
+		title := strings.Trim(titles[i], "\"")
+		if strings.Contains(title, "test") {
+			continue
+		}
+		result, err := strconv.ParseFloat(strings.Trim(results[i], "\""), 64)
+		if err != nil {
+			b.Fatalf("redis-benchmark failed to parse redis output %v: %s", err, output)
+		}
+		ReportCustomMetric(b, result, r.Operation /*metric_name*/, title /*unit*/)
+	}
 }
