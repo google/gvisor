@@ -30,7 +30,7 @@ import (
 // run both PING_INLINE and PING_BUILD.
 var operations []string = []string{
 	"PING_INLINE",
-	"PING_BULK",
+	"PING_MBULK",
 	"SET",
 	"GET",
 	"INCR",
@@ -90,9 +90,24 @@ func doBenchmarkRedis(b *testing.B, ops []string) {
 		b.Fatalf("failed to start redis server: %v %s", err, out)
 	}
 
-	if err = harness.WaitUntilContainerServing(ctx, clientMachine, server, port); err != nil {
-		b.Fatalf("failed to start redis with: %v", err)
+	pinger := clientMachine.GetNativeContainer(ctx, b)
+	defer pinger.CleanUp(ctx)
+
+	out, err := pinger.Run(ctx, dockerutil.RunOpts{
+		Image: "benchmarks/redis",
+		Links: []string{
+			server.MakeLink("redis"),
+		},
+	}, strings.Split("redis-cli -h redis -r 5 -i 1 ping", " ")...)
+
+	if err != nil {
+		b.Fatalf("redis-benchmark failed with: %v", err)
 	}
+
+	if !strings.Contains(strings.ToLower(out), "pong") {
+		b.Fatalf("redis-benchmark failed to start redis server: %s", out)
+	}
+
 	for _, operation := range ops {
 		param := tools.Parameter{
 			Name:  "operation",

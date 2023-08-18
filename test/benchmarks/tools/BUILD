@@ -33,7 +33,6 @@ go_test(
         "hey_test.go",
         "iperf_test.go",
         "meminfo_test.go",
-        "redis_test.go",
         "sysbench_test.go",
     ],
     library = ":tools",
