@@ -486,8 +486,7 @@ func (t *Task) Setns(fd *vfs.FileDescription, flags int32) error {
 		fsContext := oldFSContext.Fork()
 		fsContext.root.DecRef(t)
 		fsContext.cwd.DecRef(t)
-		vd := ns.Root()
-		vd.IncRef()
+		vd := ns.Root(t)
 		fsContext.root = vd
 		vd.IncRef()
 		fsContext.cwd = vd

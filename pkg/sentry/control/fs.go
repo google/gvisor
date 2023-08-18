@@ -76,7 +76,7 @@ func cat(k *kernel.Kernel, path string, output *os.File) error {
 	ctx := k.SupervisorContext()
 	creds := auth.NewRootCredentials(k.RootUserNamespace())
 	mns := k.GlobalInit().Leader().MountNamespace()
-	root := mns.Root()
+	root := mns.Root(ctx)
 	defer root.DecRef(ctx)
 
 	fd, err := k.VFS().OpenAt(ctx, creds, &vfs.PathOperation{
