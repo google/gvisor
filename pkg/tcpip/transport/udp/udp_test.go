@@ -725,20 +725,31 @@ func TestDualWriteConnectedToV4Mapped(t *testing.T) {
 }
 
 func TestPreflightBindsEndpoint(t *testing.T) {
-	protocols := map[string]tcpip.NetworkProtocolNumber{
-		"ipv4": ipv4.ProtocolNumber,
-		"ipv6": ipv6.ProtocolNumber,
+	tcs := []struct {
+		name  string
+		proto tcpip.NetworkProtocolNumber
+		flow  context.TestFlow
+	}{
+		{
+			name:  "ipv4",
+			proto: ipv4.ProtocolNumber,
+			flow:  context.UnicastV4,
+		},
+		{
+			name:  "ipv6",
+			proto: ipv6.ProtocolNumber,
+			flow:  context.UnicastV6,
+		},
 	}
-	for name, ipProtocolNumber := range protocols {
-		t.Run(name, func(t *testing.T) {
+	for _, tc := range tcs {
+		t.Run(tc.name, func(t *testing.T) {
 			c := context.New(t, []stack.TransportProtocolFactory{udp.NewProtocol})
 			defer c.Cleanup()
 
-			c.CreateEndpoint(ipProtocolNumber, udp.ProtocolNumber)
+			c.CreateEndpoint(tc.proto, udp.ProtocolNumber)
 
-			flow := context.UnicastV6
-			h := flow.MakeHeader4Tuple(context.Outgoing)
-			writeDstAddr := flow.MapAddrIfApplicable(h.Dst.Addr)
+			h := tc.flow.MakeHeader4Tuple(context.Outgoing)
+			writeDstAddr := tc.flow.MapAddrIfApplicable(h.Dst.Addr)
 			writeOpts := tcpip.WriteOptions{
 				To: &tcpip.FullAddress{Addr: writeDstAddr, Port: h.Dst.Port},
 			}
