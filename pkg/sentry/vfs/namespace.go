@@ -250,12 +250,25 @@ func (mntns *MountNamespace) TryIncRef() bool {
 	return mntns.Refs.TryIncRef()
 }
 
-// Root returns mntns' root. It does not take a reference on the returned
-// Dentry.
-func (mntns *MountNamespace) Root() VirtualDentry {
+// Root returns mntns' root. If the root is over-mounted, it returns the top
+// mount.
+func (mntns *MountNamespace) Root(ctx context.Context) VirtualDentry {
+	vfs := mntns.root.fs.VirtualFilesystem()
 	vd := VirtualDentry{
 		mount:  mntns.root,
 		dentry: mntns.root.root,
 	}
+	vd.IncRef()
+	if !vd.dentry.isMounted() {
+		return vd
+	}
+	m := vfs.getMountAt(ctx, vd.mount, vd.dentry)
+	if m == nil {
+		return vd
+	}
+	vd.DecRef(ctx)
+	vd.mount = m
+	vd.dentry = m.root
+	vd.dentry.IncRef()
 	return vd
 }

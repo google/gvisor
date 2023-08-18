@@ -51,8 +51,7 @@ type System struct {
 // Precondition: Caller must hold a reference on mns, whose ownership
 // is transferred to the new System.
 func NewSystem(ctx context.Context, t *testing.T, v *vfs.VirtualFilesystem, mns *vfs.MountNamespace) *System {
-	root := mns.Root()
-	root.IncRef()
+	root := mns.Root(ctx)
 	s := &System{
 		t:     t,
 		Ctx:   ctx,
