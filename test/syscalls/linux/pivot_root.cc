@@ -38,6 +38,7 @@
 #include "test/util/logging.h"
 #include "test/util/mount_util.h"
 #include "test/util/multiprocess_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 
@@ -396,6 +397,18 @@ TEST(PivotRootTest, CurrentRootNotAMountPoint) {
 TEST(PivotRootTest, OnRootFS) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_CHROOT)));
+
+  std::vector<ProcMountInfoEntry> mounts =
+      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntries());
+  bool rootFSFound = false;
+  for (const auto& e : mounts) {
+    if (e.mount_point == "/" && e.id == e.parent_id) {
+      rootFSFound = true;
+      break;
+    }
+  }
+
+  SKIP_IF(!rootFSFound);
 
   auto new_root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   const std::string new_root_path = new_root.path();
