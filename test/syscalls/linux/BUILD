@@ -491,6 +491,7 @@ cc_binary(
         "//test/util:logging",
         "//test/util:mount_util",
         "//test/util:multiprocess_util",
+        "//test/util:posix_error",
         "//test/util:temp_path",
         "//test/util:test_main",
         "//test/util:test_util",
