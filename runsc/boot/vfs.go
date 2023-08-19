@@ -502,10 +502,32 @@ func (c *containerMounter) createMountNamespace(ctx context.Context, conf *confi
 		fsName = overlay.Name
 	}
 
-	mns, err := c.k.VFS().NewMountNamespace(ctx, creds, "", fsName, opts, c.k)
+	// The namespace root mount can't be changed, so let's mount a dummy
+	// read-only tmpfs here. It simplifies creation of containers without
+	// leaking the root file system.
+	mns, err := c.k.VFS().NewMountNamespace(ctx, creds, "rootfs", "tmpfs",
+		&vfs.MountOptions{ReadOnly: true}, c.k)
 	if err != nil {
 		return nil, fmt.Errorf("setting up mount namespace: %w", err)
 	}
+	defer mns.DecRef(ctx)
+
+	mnt, err := c.k.VFS().MountDisconnected(ctx, creds, "root", fsName, opts)
+	if err != nil {
+		return nil, fmt.Errorf("creating root file system: %w", err)
+	}
+	defer mnt.DecRef(ctx)
+	root := mns.Root(ctx)
+	defer root.DecRef(ctx)
+	target := &vfs.PathOperation{
+		Root:  root,
+		Start: root,
+	}
+	if err := c.k.VFS().ConnectMountAt(ctx, creds, mnt, target); err != nil {
+		return nil, fmt.Errorf("mounting root file system: %w", err)
+	}
+
+	mns.IncRef()
 	return mns, nil
 }
 
