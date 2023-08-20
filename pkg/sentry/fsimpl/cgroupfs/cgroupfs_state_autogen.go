@@ -838,6 +838,31 @@ func (d *deniedDevicesData) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.c)
 }
 
+func (d *controlledDevicesData) StateTypeName() string {
+	return "pkg/sentry/fsimpl/cgroupfs.controlledDevicesData"
+}
+
+func (d *controlledDevicesData) StateFields() []string {
+	return []string{
+		"c",
+	}
+}
+
+func (d *controlledDevicesData) beforeSave() {}
+
+// +checklocksignore
+func (d *controlledDevicesData) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.c)
+}
+
+func (d *controlledDevicesData) afterLoad() {}
+
+// +checklocksignore
+func (d *controlledDevicesData) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.c)
+}
+
 func (r *dirRefs) StateTypeName() string {
 	return "pkg/sentry/fsimpl/cgroupfs.dirRefs"
 }
@@ -1107,6 +1132,7 @@ func init() {
 	state.Register((*devicesController)(nil))
 	state.Register((*allowedDevicesData)(nil))
 	state.Register((*deniedDevicesData)(nil))
+	state.Register((*controlledDevicesData)(nil))
 	state.Register((*dirRefs)(nil))
 	state.Register((*jobController)(nil))
 	state.Register((*memoryController)(nil))

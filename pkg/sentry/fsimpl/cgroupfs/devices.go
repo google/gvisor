@@ -28,9 +28,10 @@ import (
 )
 
 const (
-	allowedDevices = "devices.allow"
-	deniedDevices  = "devices.deny"
-	wildcardDevice = 'a'
+	allowedDevices    = "devices.allow"
+	deniedDevices     = "devices.deny"
+	controlledDevices = "devices.list"
+	wildcardDevice    = 'a'
 )
 
 // permission represents a device access, read, write, and mknod.
@@ -67,9 +68,9 @@ type allowedDevicesData struct {
 	c *devicesController
 }
 
-// Generate implements vfs.DynamicBytesSource.Generate.
+// Generate implements vfs.DynamicBytesSource.Generate. The devices.allow shows nothing.
 func (d *allowedDevicesData) Generate(ctx context.Context, buf *bytes.Buffer) error {
-	return generate(ctx, buf, d.c, true)
+	return nil
 }
 
 // Write implements vfs.WritableDynamicBytesSource.Write.
@@ -82,9 +83,9 @@ type deniedDevicesData struct {
 	c *devicesController
 }
 
-// Generate implements vfs.DynamicBytesSource.Generate.
+// Generate implements vfs.DynamicBytesSource.Generate. The devices.deny shows nothing.
 func (d *deniedDevicesData) Generate(ctx context.Context, buf *bytes.Buffer) error {
-	return generate(ctx, buf, d.c, false)
+	return nil
 }
 
 // Write implements vfs.WritableDynamicBytesSource.Write.
@@ -92,23 +93,35 @@ func (d *deniedDevicesData) Write(ctx context.Context, _ *vfs.FileDescription, s
 	return write(ctx, src, offset, d.c, true)
 }
 
-func generate(ctx context.Context, buf *bytes.Buffer, c *devicesController, allow bool) error {
+// +stateify savable
+type controlledDevicesData struct {
+	c *devicesController
+}
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+//
+// The corresponding devices.list shows devices for which access control is set.
+func (d *controlledDevicesData) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	return generate(ctx, buf, d.c)
+}
+
+func generate(ctx context.Context, buf *bytes.Buffer, c *devicesController) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if allow == c.allow && len(c.deviceRules) > 0 {
-		for i, rule := range c.deviceRules {
+	if c.allow && len(c.deviceRules) > 0 {
+		for _, rule := range c.deviceRules {
 			if rule.controllerType == wildcardDevice {
-				buf.Reset()
-				buf.WriteRune(wildcardDevice)
+				buf.WriteString(deviceRuleString(deviceRule{controllerType: wildcardDevice, access: "rwm"}))
 				return nil
 			}
 			buf.WriteString(deviceRuleString(rule))
-			if i < len(c.deviceRules)-1 {
-				buf.WriteRune(',')
-			}
+			// It lists one rule per line.
+			buf.WriteRune('\n')
 		}
 	} else {
-		buf.WriteString("")
+		// When all-all rule presents at devices.list, it actually indicates that
+		// the cgroup is in black-list mode.
+		buf.WriteString(deviceRuleString(deviceRule{controllerType: wildcardDevice, access: "rwm"}))
 	}
 	return nil
 }
@@ -148,6 +161,7 @@ func (c *devicesController) Clone() controller {
 func (c *devicesController) AddControlFiles(ctx context.Context, creds *auth.Credentials, _ *cgroupInode, contents map[string]kernfs.Inode) {
 	contents[allowedDevices] = c.fs.newControllerWritableFile(ctx, creds, &allowedDevicesData{c: c}, true)
 	contents[deniedDevices] = c.fs.newControllerWritableFile(ctx, creds, &deniedDevicesData{c: c}, true)
+	contents[controlledDevices] = c.fs.newControllerFile(ctx, creds, &controlledDevicesData{c: c}, true)
 }
 
 func deviceRuleString(rule deviceRule) string {
