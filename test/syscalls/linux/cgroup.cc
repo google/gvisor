@@ -1438,6 +1438,8 @@ TEST(DevicesCgroup, ControlFilesExist) {
   // The root group starts with allowing rwm to all.
   EXPECT_THAT(c.ReadControlFile("devices.allow"), IsPosixErrorOkAndHolds(""));
   EXPECT_THAT(c.ReadControlFile("devices.deny"), IsPosixErrorOkAndHolds(""));
+  EXPECT_THAT(c.ReadControlFile("devices.list"),
+              IsPosixErrorOkAndHolds("a *:* rwm"));
 }
 
 }  // namespace
