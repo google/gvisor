@@ -86,7 +86,7 @@ func (i *Inode) StateTypeName() string {
 func (i *Inode) StateFields() []string {
 	return []string{
 		"InodeAttrs",
-		"InodeNotAnonymous",
+		"InodeAnonymous",
 		"InodeNotDirectory",
 		"InodeNotSymlink",
 		"InodeWatches",
@@ -103,7 +103,7 @@ func (i *Inode) beforeSave() {}
 func (i *Inode) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 	stateSinkObject.Save(0, &i.InodeAttrs)
-	stateSinkObject.Save(1, &i.InodeNotAnonymous)
+	stateSinkObject.Save(1, &i.InodeAnonymous)
 	stateSinkObject.Save(2, &i.InodeNotDirectory)
 	stateSinkObject.Save(3, &i.InodeNotSymlink)
 	stateSinkObject.Save(4, &i.InodeWatches)
@@ -118,7 +118,7 @@ func (i *Inode) afterLoad() {}
 // +checklocksignore
 func (i *Inode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.InodeAttrs)
-	stateSourceObject.Load(1, &i.InodeNotAnonymous)
+	stateSourceObject.Load(1, &i.InodeAnonymous)
 	stateSourceObject.Load(2, &i.InodeNotDirectory)
 	stateSourceObject.Load(3, &i.InodeNotSymlink)
 	stateSourceObject.Load(4, &i.InodeWatches)
