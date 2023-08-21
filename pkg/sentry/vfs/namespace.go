@@ -130,14 +130,15 @@ type cloneEntry struct {
 	parentMount *Mount
 }
 
+// +checklocks:vfs.mountMu
 func (vfs *VirtualFilesystem) updateRootAndCWD(ctx context.Context, root *VirtualDentry, cwd *VirtualDentry, src *Mount, dst *Mount) {
 	if root.mount == src {
-		root.mount.DecRef(ctx)
+		vfs.delayDecRef(root.mount)
 		root.mount = dst
 		root.mount.IncRef()
 	}
 	if cwd.mount == src {
-		cwd.mount.DecRef(ctx)
+		vfs.delayDecRef(cwd.mount)
 		cwd.mount = dst
 		cwd.mount.IncRef()
 	}
@@ -166,15 +167,8 @@ func (vfs *VirtualFilesystem) CloneMountNamespace(
 	}
 
 	newns.Refs = nsfs.GetNamespaceInode(ctx, newns)
-	vdsToDecRef := []VirtualDentry{}
-	defer func() {
-		for _, vd := range vdsToDecRef {
-			vd.DecRef(ctx)
-		}
-	}()
-
-	vfs.mountMu.Lock()
-	defer vfs.mountMu.Unlock()
+	vfs.lockMounts()
+	defer vfs.unlockMounts(ctx)
 
 	ns.root.root.IncRef()
 	ns.root.fs.IncRef()
@@ -196,9 +190,8 @@ func (vfs *VirtualFilesystem) CloneMountNamespace(
 			}
 			vd.IncRef()
 
-			vds, err := vfs.connectMountAtLocked(ctx, m, vd)
-			m.DecRef(ctx)
-			vdsToDecRef = append(vdsToDecRef, vds...)
+			err := vfs.connectMountAtLocked(ctx, m, vd)
+			vfs.delayDecRef(m)
 			if err != nil {
 				newns.DecRef(ctx)
 				return nil, err
@@ -215,19 +208,13 @@ func (vfs *VirtualFilesystem) CloneMountNamespace(
 // Destroy implements nsfs.Namespace.Destroy.
 func (mntns *MountNamespace) Destroy(ctx context.Context) {
 	vfs := mntns.root.fs.VirtualFilesystem()
-	vfs.mountMu.Lock()
+	vfs.lockMounts()
 	vfs.mounts.seq.BeginWrite()
-	vdsToDecRef, mountsToDecRef := vfs.umountRecursiveLocked(mntns.root, &umountRecursiveOptions{
+	vfs.umountRecursiveLocked(mntns.root, &umountRecursiveOptions{
 		disconnectHierarchy: true,
-	}, nil, nil)
+	})
 	vfs.mounts.seq.EndWrite()
-	vfs.mountMu.Unlock()
-	for _, vd := range vdsToDecRef {
-		vd.DecRef(ctx)
-	}
-	for _, mnt := range mountsToDecRef {
-		mnt.DecRef(ctx)
-	}
+	vfs.unlockMounts(ctx)
 }
 
 // Type implements nsfs.Namespace.Type.

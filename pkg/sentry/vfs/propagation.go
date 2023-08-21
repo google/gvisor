@@ -136,7 +136,7 @@ func (vfs *VirtualFilesystem) commitPropagationTree(ctx context.Context, tree ma
 			vfs.connectLocked(mnt, vd, mntns)
 		}
 		vd.dentry.mu.Unlock()
-		mnt.DecRef(ctx)
+		vfs.delayDecRef(mnt)
 	}
 	vfs.mounts.seq.EndWrite()
 }
@@ -147,9 +147,9 @@ func (vfs *VirtualFilesystem) commitPropagationTree(ctx context.Context, tree ma
 // +checklocks:vfs.mountMu
 func (vfs *VirtualFilesystem) abortPropagationTree(ctx context.Context, tree map[*Mount]VirtualDentry) {
 	for mnt, vd := range tree {
-		vd.DecRef(ctx)
+		vfs.delayDecRef(vd)
+		vfs.delayDecRef(mnt)
 		vfs.setPropagation(mnt, linux.MS_PRIVATE)
-		mnt.DecRef(ctx)
 	}
 }
 
@@ -182,8 +182,8 @@ func (vfs *VirtualFilesystem) SetMountPropagationAt(ctx context.Context, creds *
 
 // SetMountPropagation changes the propagation type of the mount.
 func (vfs *VirtualFilesystem) SetMountPropagation(mnt *Mount, propFlags uint32) {
-	vfs.mountMu.Lock()
-	defer vfs.mountMu.Unlock()
+	vfs.lockMounts()
+	defer vfs.unlockMounts(context.Background())
 	if propFlags&(linux.MS_SHARED|linux.MS_PRIVATE) != 0 {
 		vfs.setPropagation(mnt, propFlags)
 	} else {
