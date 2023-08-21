@@ -135,8 +135,8 @@ func newMount(vfs *VirtualFilesystem, fs *Filesystem, root *Dentry, mntns *Mount
 
 // Options returns a copy of the MountOptions currently applicable to mnt.
 func (mnt *Mount) Options() MountOptions {
-	mnt.vfs.mountMu.Lock()
-	defer mnt.vfs.mountMu.Unlock()
+	mnt.vfs.lockMounts()
+	defer mnt.vfs.unlockMounts(context.Background())
 	return MountOptions{
 		Flags:    mnt.Flags,
 		ReadOnly: mnt.ReadOnly(),
@@ -144,8 +144,8 @@ func (mnt *Mount) Options() MountOptions {
 }
 
 func (mnt *Mount) generateOptionalTags() string {
-	mnt.vfs.mountMu.Lock()
-	defer mnt.vfs.mountMu.Unlock()
+	mnt.vfs.lockMounts()
+	defer mnt.vfs.unlockMounts(context.Background())
 	// TODO(b/249777195): Support MS_SLAVE and MS_UNBINDABLE propagation types.
 	var optional string
 	if mnt.isShared {
@@ -203,7 +203,8 @@ func (vfs *VirtualFilesystem) ConnectMountAt(ctx context.Context, creds *auth.Cr
 	if err != nil {
 		return err
 	}
-	vfs.mountMu.Lock()
+	vfs.lockMounts()
+	defer vfs.unlockMounts(ctx)
 	tree := vfs.preparePropagationTree(mnt, vd)
 	// Check if the new mount + all the propagation mounts puts us over the max.
 	if uint32(len(tree)+1)+vd.mount.ns.mounts > MountMax {
@@ -211,23 +212,14 @@ func (vfs *VirtualFilesystem) ConnectMountAt(ctx context.Context, creds *auth.Cr
 		// filesystem mutex in some implementations, which can lead to circular
 		// locking.
 		vfs.abortPropagationTree(ctx, tree)
-		vfs.mountMu.Unlock()
-		vd.DecRef(ctx)
+		vfs.delayDecRef(vd)
 		return linuxerr.ENOSPC
 	}
-	vdsToDecRef, err := vfs.connectMountAtLocked(ctx, mnt, vd)
-	defer func() {
-		for _, vd := range vdsToDecRef {
-			vd.DecRef(ctx)
-		}
-	}()
-	if err != nil {
+	if err := vfs.connectMountAtLocked(ctx, mnt, vd); err != nil {
 		vfs.abortPropagationTree(ctx, tree)
-		vfs.mountMu.Unlock()
 		return err
 	}
 	vfs.commitPropagationTree(ctx, tree)
-	vfs.mountMu.Unlock()
 	return nil
 }
 
@@ -240,14 +232,13 @@ func (vfs *VirtualFilesystem) ConnectMountAt(ctx context.Context, creds *auth.Cr
 //   - vfs.mountMu must be locked.
 //
 // +checklocks:vfs.mountMu
-func (vfs *VirtualFilesystem) connectMountAtLocked(ctx context.Context, mnt *Mount, vd VirtualDentry) ([]VirtualDentry, error) {
-	var vdsToDecRef []VirtualDentry
+func (vfs *VirtualFilesystem) connectMountAtLocked(ctx context.Context, mnt *Mount, vd VirtualDentry) error {
 	vd.dentry.mu.Lock()
 	for {
 		if vd.mount.umounted || vd.dentry.dead {
 			vd.dentry.mu.Unlock()
-			vdsToDecRef = append(vdsToDecRef, vd)
-			return vdsToDecRef, linuxerr.ENOENT
+			vfs.delayDecRef(vd)
+			return linuxerr.ENOENT
 		}
 		// vd might have been mounted over between vfs.GetDentryAt() and
 		// vfs.mountMu.Lock().
@@ -268,7 +259,7 @@ func (vfs *VirtualFilesystem) connectMountAtLocked(ctx context.Context, mnt *Mou
 		// This can't fail since we're holding vfs.mountMu.
 		nextmnt.root.IncRef()
 		vd.dentry.mu.Unlock()
-		vdsToDecRef = append(vdsToDecRef, vd)
+		vfs.delayDecRef(vd)
 		vd = VirtualDentry{
 			mount:  nextmnt,
 			dentry: nextmnt.root,
@@ -283,7 +274,7 @@ func (vfs *VirtualFilesystem) connectMountAtLocked(ctx context.Context, mnt *Mou
 	vfs.connectLocked(mnt, vd, mntns)
 	vfs.mounts.seq.EndWrite()
 	vd.dentry.mu.Unlock()
-	return vdsToDecRef, nil
+	return nil
 }
 
 // CloneMountAt returns a new mount with the same fs, specified root and
@@ -291,8 +282,8 @@ func (vfs *VirtualFilesystem) connectMountAtLocked(ctx context.Context, mnt *Mou
 // automatically made a peer of mnt. If mount options are nil, mnt's
 // options are copied.
 func (vfs *VirtualFilesystem) CloneMountAt(mnt *Mount, root *Dentry, mopts *MountOptions) *Mount {
-	vfs.mountMu.Lock()
-	defer vfs.mountMu.Unlock()
+	vfs.lockMounts()
+	defer vfs.unlockMounts(context.Background())
 	clone := vfs.cloneMount(mnt, root, mopts)
 	return clone
 }
@@ -333,32 +324,24 @@ func (vfs *VirtualFilesystem) BindAt(ctx context.Context, creds *auth.Credential
 		return nil, err
 	}
 
-	vfs.mountMu.Lock()
+	vfs.lockMounts()
+	defer vfs.unlockMounts(ctx)
 	clone := vfs.cloneMount(sourceVd.mount, sourceVd.dentry, nil)
-	defer clone.DecRef(ctx)
+	vfs.delayDecRef(clone)
 	tree := vfs.preparePropagationTree(clone, targetVd)
 	if uint32(1+len(tree))+targetVd.mount.ns.mounts > MountMax {
 		vfs.setPropagation(clone, linux.MS_PRIVATE)
 		vfs.abortPropagationTree(ctx, tree)
-		vfs.mountMu.Unlock()
-		targetVd.DecRef(ctx)
+		vfs.delayDecRef(targetVd)
 		return nil, linuxerr.ENOSPC
 	}
 
-	vdsToDecRef, err := vfs.connectMountAtLocked(ctx, clone, targetVd)
-	defer func() {
-		for _, vd := range vdsToDecRef {
-			vd.DecRef(ctx)
-		}
-	}()
-	if err != nil {
+	if err := vfs.connectMountAtLocked(ctx, clone, targetVd); err != nil {
 		vfs.setPropagation(clone, linux.MS_PRIVATE)
 		vfs.abortPropagationTree(ctx, tree)
-		vfs.mountMu.Unlock()
 		return nil, err
 	}
 	vfs.commitPropagationTree(ctx, tree)
-	vfs.mountMu.Unlock()
 	return clone, nil
 }
 
@@ -419,16 +402,15 @@ func (vfs *VirtualFilesystem) UmountAt(ctx context.Context, creds *auth.Credenti
 		return linuxerr.EINVAL
 	}
 
-	vfs.mountMu.Lock()
+	vfs.lockMounts()
+	defer vfs.unlockMounts(ctx)
 	if mntns := MountNamespaceFromContext(ctx); mntns != nil {
-		defer mntns.DecRef(ctx)
+		vfs.delayDecRef(mntns)
 		if mntns != vd.mount.ns {
-			vfs.mountMu.Unlock()
 			return linuxerr.EINVAL
 		}
 
 		if vd.mount == vd.mount.ns.root {
-			vfs.mountMu.Unlock()
 			return linuxerr.EINVAL
 		}
 	}
@@ -455,7 +437,6 @@ func (vfs *VirtualFilesystem) UmountAt(ctx context.Context, creds *auth.Credenti
 	if opts.Flags&linux.MNT_DETACH == 0 {
 		if len(vd.mount.children) != 0 {
 			vfs.mounts.seq.EndWrite()
-			vfs.mountMu.Unlock()
 			return linuxerr.EBUSY
 		}
 		// We are holding a reference on vd.mount.
@@ -465,28 +446,16 @@ func (vfs *VirtualFilesystem) UmountAt(ctx context.Context, creds *auth.Credenti
 		}
 		if vd.mount.refs.Load()&^math.MinInt64 != expectedRefs { // mask out MSB
 			vfs.mounts.seq.EndWrite()
-			vfs.mountMu.Unlock()
 			return linuxerr.EBUSY
 		}
 	}
-	var (
-		vdsToDecRef    []VirtualDentry
-		mountsToDecRef []*Mount
-	)
 	for _, mnt := range umountTree {
-		vdsToDecRef, mountsToDecRef = vfs.umountRecursiveLocked(mnt, &umountRecursiveOptions{
+		vfs.umountRecursiveLocked(mnt, &umountRecursiveOptions{
 			eager:               opts.Flags&linux.MNT_DETACH == 0,
 			disconnectHierarchy: true,
-		}, vdsToDecRef, mountsToDecRef)
+		})
 	}
 	vfs.mounts.seq.EndWrite()
-	vfs.mountMu.Unlock()
-	for _, vd := range vdsToDecRef {
-		vd.DecRef(ctx)
-	}
-	for _, m := range mountsToDecRef {
-		m.DecRef(ctx)
-	}
 	return nil
 }
 
@@ -508,12 +477,7 @@ type umountRecursiveOptions struct {
 	disconnectHierarchy bool
 }
 
-// umountRecursiveLocked marks mnt and its descendants as umounted. It does not
-// release mount or dentry references; instead, it appends VirtualDentries and
-// Mounts on which references must be dropped to vdsToDecRef and mountsToDecRef
-// respectively, and returns updated slices. (This is necessary because
-// filesystem locks possibly taken by DentryImpl.DecRef() may precede
-// vfs.mountMu in the lock order, and Mount.DecRef() may lock vfs.mountMu.)
+// umountRecursiveLocked marks mnt and its descendants as umounted.
 //
 // umountRecursiveLocked is analogous to Linux's fs/namespace.c:umount_tree().
 //
@@ -522,12 +486,12 @@ type umountRecursiveOptions struct {
 //   - vfs.mounts.seq must be in a writer critical section.
 //
 // +checklocks:vfs.mountMu
-func (vfs *VirtualFilesystem) umountRecursiveLocked(mnt *Mount, opts *umountRecursiveOptions, vdsToDecRef []VirtualDentry, mountsToDecRef []*Mount) ([]VirtualDentry, []*Mount) {
+func (vfs *VirtualFilesystem) umountRecursiveLocked(mnt *Mount, opts *umountRecursiveOptions) {
 	if !mnt.umounted {
 		mnt.umounted = true
-		mountsToDecRef = append(mountsToDecRef, mnt)
+		vfs.delayDecRef(mnt)
 		if parent := mnt.parent(); parent != nil && (opts.disconnectHierarchy || !parent.umounted) {
-			vdsToDecRef = append(vdsToDecRef, vfs.disconnectLocked(mnt))
+			vfs.delayDecRef(vfs.disconnectLocked(mnt))
 		}
 		if mnt.isShared {
 			vfs.setPropagation(mnt, linux.MS_PRIVATE)
@@ -545,9 +509,8 @@ func (vfs *VirtualFilesystem) umountRecursiveLocked(mnt *Mount, opts *umountRecu
 		}
 	}
 	for child := range mnt.children {
-		vdsToDecRef, mountsToDecRef = vfs.umountRecursiveLocked(child, opts, vdsToDecRef, mountsToDecRef)
+		vfs.umountRecursiveLocked(child, opts)
 	}
-	return vdsToDecRef, mountsToDecRef
 }
 
 // connectLocked makes vd the mount parent/point for mnt. It consumes
@@ -664,21 +627,20 @@ func (mnt *Mount) DecRef(ctx context.Context) {
 }
 
 func (mnt *Mount) destroy(ctx context.Context) {
-	var vd VirtualDentry
 	if mnt.parent() != nil {
-		mnt.vfs.mountMu.Lock()
+		mnt.vfs.lockMounts()
 		mnt.vfs.mounts.seq.BeginWrite()
-		vd = mnt.vfs.disconnectLocked(mnt)
+		vd := mnt.vfs.disconnectLocked(mnt)
+		if vd.Ok() {
+			mnt.vfs.delayDecRef(vd)
+		}
 		mnt.vfs.mounts.seq.EndWrite()
-		mnt.vfs.mountMu.Unlock()
+		mnt.vfs.unlockMounts(ctx)
 	}
 	if mnt.root != nil {
 		mnt.root.DecRef(ctx)
 	}
 	mnt.fs.DecRef(ctx)
-	if vd.Ok() {
-		vd.DecRef(ctx)
-	}
 }
 
 // RefType implements refs.CheckedObject.Type.
@@ -869,32 +831,32 @@ retry:
 	// The current root and the new root must be in the context's mount namespace.
 	ns := MountNamespaceFromContext(ctx)
 	defer ns.DecRef(ctx)
-	vfs.mountMu.Lock()
+	vfs.lockMounts()
 	if rootVd.mount.ns != ns || newRootVd.mount.ns != ns {
-		vfs.mountMu.Unlock()
+		vfs.unlockMounts(ctx)
 		return linuxerr.EINVAL
 	}
 
 	// Either the mount point at new_root, or the parent mount of that mount
 	// point, has propagation type MS_SHARED.
 	if newRootParent := newRootVd.mount.parent(); newRootVd.mount.isShared || newRootParent.isShared {
-		vfs.mountMu.Unlock()
+		vfs.unlockMounts(ctx)
 		return linuxerr.EINVAL
 	}
 	// put_old is a mount point and has the propagation type MS_SHARED.
 	if putOldVd.mount.root == putOldVd.dentry && putOldVd.mount.isShared {
-		vfs.mountMu.Unlock()
+		vfs.unlockMounts(ctx)
 		return linuxerr.EINVAL
 	}
 
 	if !vfs.mounts.seq.BeginWriteOk(epoch) {
 		// Checks above raced with a mount change.
-		vfs.mountMu.Unlock()
+		vfs.unlockMounts(ctx)
 		goto retry
 	}
-	defer vfs.mountMu.Unlock()
+	defer vfs.unlockMounts(ctx)
 	mp := vfs.disconnectLocked(newRootVd.mount)
-	mp.DecRef(ctx)
+	vfs.delayDecRef(mp)
 	rootMp := vfs.disconnectLocked(rootVd.mount)
 
 	putOldVd.IncRef()
@@ -907,15 +869,15 @@ retry:
 	rootMp.dentry.mu.Unlock()
 	vfs.mounts.seq.EndWrite()
 
-	newRootVd.mount.DecRef(ctx)
-	rootVd.mount.DecRef(ctx)
+	vfs.delayDecRef(newRootVd.mount)
+	vfs.delayDecRef(rootVd.mount)
 	return nil
 }
 
 // SetMountReadOnly sets the mount as ReadOnly.
 func (vfs *VirtualFilesystem) SetMountReadOnly(mnt *Mount, ro bool) error {
-	vfs.mountMu.Lock()
-	defer vfs.mountMu.Unlock()
+	vfs.lockMounts()
+	defer vfs.unlockMounts(context.Background())
 	return mnt.setReadOnlyLocked(ro)
 }
 
@@ -991,14 +953,14 @@ func (mnt *Mount) Root() *Dentry {
 func (vfs *VirtualFilesystem) GenerateProcMounts(ctx context.Context, taskRootDir VirtualDentry, buf *bytes.Buffer) {
 	rootMnt := taskRootDir.mount
 
-	vfs.mountMu.Lock()
+	vfs.lockMounts()
 	mounts := rootMnt.submountsLocked()
 	// Take a reference on mounts since we need to drop vfs.mountMu before
 	// calling vfs.PathnameReachable() (=> FilesystemImpl.PrependPath()).
 	for _, mnt := range mounts {
 		mnt.IncRef()
 	}
-	vfs.mountMu.Unlock()
+	vfs.unlockMounts(ctx)
 	defer func() {
 		for _, mnt := range mounts {
 			mnt.DecRef(ctx)
@@ -1055,7 +1017,7 @@ func (vfs *VirtualFilesystem) GenerateProcMounts(ctx context.Context, taskRootDi
 func (vfs *VirtualFilesystem) GenerateProcMountInfo(ctx context.Context, taskRootDir VirtualDentry, buf *bytes.Buffer) {
 	rootMnt := taskRootDir.mount
 
-	vfs.mountMu.Lock()
+	vfs.lockMounts()
 	mounts := rootMnt.submountsLocked()
 	// Take a reference on mounts since we need to drop vfs.mountMu before
 	// calling vfs.PathnameReachable() (=> FilesystemImpl.PrependPath()) or
@@ -1063,7 +1025,7 @@ func (vfs *VirtualFilesystem) GenerateProcMountInfo(ctx context.Context, taskRoo
 	for _, mnt := range mounts {
 		mnt.IncRef()
 	}
-	vfs.mountMu.Unlock()
+	vfs.unlockMounts(ctx)
 	defer func() {
 		for _, mnt := range mounts {
 			mnt.DecRef(ctx)
