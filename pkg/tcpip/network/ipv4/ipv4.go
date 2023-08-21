@@ -1424,7 +1424,23 @@ func (e *endpoint) AcquireOutgoingPrimaryAddress(remoteAddr tcpip.Address, allow
 //
 // +checklocksread:e.mu
 func (e *endpoint) acquireOutgoingPrimaryAddressRLocked(remoteAddr tcpip.Address, allowExpired bool) stack.AddressEndpoint {
-	return e.addressableEndpointState.AcquireOutgoingPrimaryAddress(remoteAddr, allowExpired)
+	if remoteAddr.BitLen() == 0 {
+		return e.addressableEndpointState.AcquireOutgoingPrimaryAddress(remoteAddr, allowExpired)
+	}
+
+	var best stack.AddressEndpoint
+	var bestLen uint8
+	e.addressableEndpointState.ForEachPrimaryEndpoint(func(ep stack.AddressEndpoint) bool {
+		if matchLen := ep.AddressWithPrefix().Address.MatchingPrefix(remoteAddr); best == nil || bestLen < matchLen {
+			best = ep
+			bestLen = matchLen
+		}
+		return true
+	})
+	if best != nil {
+		best.IncRef()
+	}
+	return best
 }
 
 // PrimaryAddresses implements stack.AddressableEndpoint.

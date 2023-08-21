@@ -1310,7 +1310,7 @@ func TestRoutes(t *testing.T) {
 	testRoute(t, s, 1, tcpip.AddrFromSlice([]byte("\x03\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x05\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x03\x00\x00\x00")))
 
 	// Test routes to even address.
-	testRoute(t, s, 0, tcpip.Address{}, tcpip.AddrFromSlice([]byte("\x06\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x04\x00\x00\x00")))
+	testRoute(t, s, 0, tcpip.Address{}, tcpip.AddrFromSlice([]byte("\x06\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x02\x00\x00\x00")))
 	testRoute(t, s, 0, tcpip.AddrFromSlice([]byte("\x02\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x06\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x02\x00\x00\x00")))
 	testRoute(t, s, 2, tcpip.AddrFromSlice([]byte("\x02\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x06\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x02\x00\x00\x00")))
 	testRoute(t, s, 0, tcpip.AddrFromSlice([]byte("\x04\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x06\x00\x00\x00")), tcpip.AddrFromSlice([]byte("\x04\x00\x00\x00")))
