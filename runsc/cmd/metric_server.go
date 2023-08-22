@@ -16,17 +16,22 @@ package cmd
 
 import (
 	"context"
+	"fmt"
+	"os"
 
 	"github.com/google/subcommands"
+	"gvisor.dev/gvisor/runsc/cmd/metricserver"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
-	"gvisor.dev/gvisor/runsc/metricserver"
 )
 
 // MetricServer implements subcommands.Command for the "metric-server" command.
 type MetricServer struct {
-	Server metricserver.Server
+	ExporterPrefix         string
+	PIDFile                string
+	ExposeProfileEndpoints bool
+	AllowUnknownRoot       bool
 }
 
 // Name implements subcommands.Command.Name.
@@ -47,10 +52,10 @@ func (*MetricServer) Usage() string {
 
 // SetFlags implements subcommands.Command.SetFlags.
 func (m *MetricServer) SetFlags(f *flag.FlagSet) {
-	f.StringVar(&m.Server.ExporterPrefix, "exporter-prefix", "runsc_", "Prefix for all metric names, following Prometheus exporter convention")
-	f.StringVar(&m.Server.PIDFile, "pid-file", "", "If set, write the metric server's own PID to this file after binding to the --metric-server address. The parent directory of this file must already exist.")
-	f.BoolVar(&m.Server.ExposeProfileEndpoints, "allow-profiling", false, "If true, expose /runsc-metrics/profile-cpu and /runsc-metrics/profile-heap to get profiling data about the metric server")
-	f.BoolVar(&m.Server.AllowUnknownRoot, "allow-unknown-root", false, "if set, the metric server will keep running regardless of the existence of --root or the metric server's ability to access it.")
+	f.StringVar(&m.ExporterPrefix, "exporter-prefix", "runsc_", "Prefix for all metric names, following Prometheus exporter convention")
+	f.StringVar(&m.PIDFile, "pid-file", "", "If set, write the metric server's own PID to this file after binding to the --metric-server address. The parent directory of this file must already exist.")
+	f.BoolVar(&m.ExposeProfileEndpoints, "allow-profiling", false, "If true, expose /runsc-metrics/profile-cpu and /runsc-metrics/profile-heap to get profiling data about the metric server")
+	f.BoolVar(&m.AllowUnknownRoot, "allow-unknown-root", false, "if set, the metric server will keep running regardless of the existence of --root or the metric server's ability to access it.")
 }
 
 // Execute implements subcommands.Command.Execute.
@@ -59,13 +64,22 @@ func (m *MetricServer) Execute(ctx context.Context, f *flag.FlagSet, args ...any
 		f.Usage()
 		return subcommands.ExitUsageError
 	}
-	m.Server.Config = args[0].(*config.Config)
-	if m.Server.Config.MetricServer == "" || m.Server.Config.RootDir == "" {
-		f.Usage()
-		return subcommands.ExitUsageError
+	var newArgs []string
+	newArgs = append(newArgs, metricserver.BinaryName)
+	newArgs = append(newArgs, args[0].(*config.Config).ToFlags()...)
+	newArgs = append(newArgs,
+		fmt.Sprintf("--metricserver-exporter-prefix=%s", m.ExporterPrefix),
+		fmt.Sprintf("--metricserver-pid-file=%s", m.PIDFile),
+		fmt.Sprintf("--metricserver-allow-profiling=%t", m.ExposeProfileEndpoints),
+		fmt.Sprintf("--metricserver-allow-unknown-root=%t", m.AllowUnknownRoot),
+	)
+	err := metricserver.Exec(metricserver.Options{
+		Argv: newArgs,
+		Envv: os.Environ(),
+	})
+	if err != nil {
+		util.Fatalf("metric server: %v", err)
 	}
-	if err := m.Server.Run(ctx); err != nil {
-		return util.Errorf("%v", err)
-	}
-	return subcommands.ExitSuccess
+	util.Fatalf("unreachable")
+	return subcommands.ExitFailure
 }
