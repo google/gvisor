@@ -184,7 +184,7 @@ func (c *MetricClient) SpawnServer(ctx context.Context, baseConf *config.Config,
 	if c.server != nil {
 		return errors.New("this metric client already has a server associated with it")
 	}
-	bindCtx, bindCancel := context.WithTimeout(ctx, 5*time.Second)
+	bindCtx, bindCancel := context.WithTimeout(ctx, 20*time.Second)
 	defer bindCancel()
 	launchBackoff := backoff.WithContext(&backoff.ExponentialBackOff{
 		InitialInterval:     time.Millisecond,
