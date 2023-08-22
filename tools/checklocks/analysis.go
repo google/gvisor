@@ -140,6 +140,10 @@ func (pc *passContext) checkAtomicCall(inst ssa.Instruction, obj types.Object, a
 			}
 			return
 		}
+		if fn.Signature.Recv() != nil {
+			// always allow calls to methods of atomic wrappers such as atomic.Int32 introduced in Go 1.19
+			return
+		}
 		if ar == nonAtomic {
 			// We are *not* expecting an atomic dispatch.
 			if _, ok := pc.forced[pc.positionKey(inst.Pos())]; !ok {
