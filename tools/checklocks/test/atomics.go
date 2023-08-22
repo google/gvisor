@@ -27,6 +27,8 @@ type atomicStruct struct {
 
 	// +checklocksignore
 	ignored int32
+
+	wrapper atomic.Int32 // safe without any annotations
 }
 
 func testNormalAccess(tc *atomicStruct, v chan int32, p chan *int32) {
@@ -88,4 +90,10 @@ func testAtomicMixedInvalidAtomicWrite(tc *atomicMixedStruct, v chan int32, p ch
 
 func testAtomicMixedInvalidWrite(tc *atomicMixedStruct, v chan int32, p chan *int32) {
 	tc.accessedMixed = 1 // +checklocksfail:2
+}
+
+func testAtomicWrapper(tc *atomicStruct, v chan int32) {
+	v <- tc.wrapper.Load()
+	v <- tc.wrapper.Add(33)
+	tc.wrapper.Store(44)
 }
