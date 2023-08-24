@@ -393,7 +393,6 @@ func (*constructor) Requirements() platform.Requirements {
 	// access to other host processes.
 	return platform.Requirements{
 		RequiresCapSysPtrace: true,
-		RequiresCurrentPIDNS: true,
 	}
 }
 

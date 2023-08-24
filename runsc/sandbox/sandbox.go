@@ -788,15 +788,9 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		{Type: specs.UTSNamespace},
 	}
 
-	if gPlatform.Requirements().RequiresCurrentPIDNS {
-		// TODO(b/75837838): Also set a new PID namespace so that we limit
-		// access to other host processes.
-		log.Infof("Sandbox will be started in the current PID namespace")
-	} else {
-		log.Infof("Sandbox will be started in a new PID namespace")
-		nss = append(nss, specs.LinuxNamespace{Type: specs.PIDNamespace})
-		cmd.Args = append(cmd.Args, "--pidns=true")
-	}
+	log.Infof("Sandbox will be started in a new PID namespace")
+	nss = append(nss, specs.LinuxNamespace{Type: specs.PIDNamespace})
+	cmd.Args = append(cmd.Args, "--pidns=true")
 
 	// Joins the network namespace if network is enabled. the sandbox talks
 	// directly to the host network, which may have been configured in the
