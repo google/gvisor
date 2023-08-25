@@ -54,6 +54,15 @@ type filesystem struct {
 	devMinor uint32
 }
 
+func (fs *filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linux.Statfs, error) {
+	d, err := fs.GetDentryAt(ctx, rp, vfs.GetDentryOptions{})
+	if err != nil {
+		return linux.Statfs{}, err
+	}
+	d.DecRef(ctx)
+	return vfs.GenericStatFS(linux.PROC_SUPER_MAGIC), nil
+}
+
 // GetFilesystem implements vfs.FilesystemType.GetFilesystem.
 func (ft FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
 	k := kernel.KernelFromContext(ctx)
