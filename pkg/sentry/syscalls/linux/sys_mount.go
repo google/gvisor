@@ -46,8 +46,7 @@ func Mount(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 
 	// Silently allow MS_NOSUID, since we don't implement set-id bits anyway.
 	const unsupported = linux.MS_REMOUNT | linux.MS_SLAVE |
-		linux.MS_UNBINDABLE | linux.MS_MOVE | linux.MS_REC | linux.MS_NODIRATIME |
-		linux.MS_STRICTATIME
+		linux.MS_UNBINDABLE | linux.MS_MOVE | linux.MS_REC | linux.MS_NODIRATIME
 
 	// Linux just allows passing any flags to mount(2) - it won't fail when
 	// unknown or unsupported flags are passed. Since we don't implement
@@ -109,7 +108,7 @@ func Mount(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 		}
 	}
 	var opts vfs.MountOptions
-	if flags&linux.MS_NOATIME == linux.MS_NOATIME {
+	if flags&(linux.MS_NOATIME|linux.MS_STRICTATIME) == linux.MS_NOATIME {
 		opts.Flags.NoATime = true
 	}
 	if flags&linux.MS_NOEXEC == linux.MS_NOEXEC {

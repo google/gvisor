@@ -45,6 +45,7 @@
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
+#include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/util/capability_util.h"
 #include "test/util/file_descriptor.h"
@@ -387,6 +388,34 @@ TEST(MountTest, MountNoAtime) {
 
   // Expect that atime hasn't changed.
   EXPECT_EQ(before, after);
+}
+
+TEST(MountTest, MountWithStrictAtime) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mount = ASSERT_NO_ERRNO_AND_VALUE(Mount(
+      "", dir.path(), "tmpfs", MS_NOATIME | MS_STRICTATIME, "mode=0777", 0));
+
+  std::string const contents = "No no no, don't follow the instructions!";
+  auto const file = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(dir.path(), contents, 0777));
+
+  absl::Time const before = ASSERT_NO_ERRNO_AND_VALUE(ATime(file.path()));
+
+  absl::SleepFor(absl::Milliseconds(100));
+
+  // MS_STRICTATIME should override MS_NOATIME and update the file's atime.
+  auto const fd = ASSERT_NO_ERRNO_AND_VALUE(Open(file.path(), O_RDWR));
+  char buf[100];
+  int read_n;
+  ASSERT_THAT(read_n = read(fd.get(), buf, sizeof(buf)), SyscallSucceeds());
+  EXPECT_EQ(std::string(buf, read_n), contents);
+
+  absl::Time const after = ASSERT_NO_ERRNO_AND_VALUE(ATime(file.path()));
+
+  // The after atime is expected to be larger than the before atime.
+  EXPECT_LT(before, after);
 }
 
 TEST(MountTest, MountNoExec) {
