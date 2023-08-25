@@ -972,8 +972,9 @@ func (vfs *VirtualFilesystem) maybeResolveMountPromise(vd VirtualDentry) {
 	delete(vfs.mountPromises, vd)
 }
 
-// PopDelayedDecRefs returns a list of reference counted objects that collected
-// while mountMu was held that must be DecRef'd outside of mountMu.
+// PopDelayedDecRefs transfers the ownership of vfs.toDecRef to the caller via
+// the returned list. It is the caller's responsibility to DecRef these object
+// later. They must be DecRef'd outside of mountMu.
 //
 // +checklocks:vfs.mountMu
 func (vfs *VirtualFilesystem) PopDelayedDecRefs() []refs.RefCounter {
@@ -983,6 +984,7 @@ func (vfs *VirtualFilesystem) PopDelayedDecRefs() []refs.RefCounter {
 			rcs = append(rcs, rc)
 		}
 	}
+	vfs.toDecRef = map[refs.RefCounter]int{}
 	return rcs
 }
 
