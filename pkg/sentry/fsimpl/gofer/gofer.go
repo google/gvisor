@@ -1735,7 +1735,10 @@ func (d *dentry) evictLocked(ctx context.Context) {
 		if !d.vfsd.IsDead() {
 			// Note that d can't be a mount point (in any mount namespace), since VFS
 			// holds references on mount points.
-			d.fs.vfsfs.VirtualFilesystem().InvalidateDentry(ctx, &d.vfsd)
+			rcs := d.fs.vfsfs.VirtualFilesystem().InvalidateDentry(ctx, &d.vfsd)
+			for _, rc := range rcs {
+				rc.DecRef(ctx)
+			}
 
 			d.parent.childrenMu.Lock()
 			delete(d.parent.children, d.name)
