@@ -293,6 +293,11 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 				// because the ReadSpecFromFile function seeks to the beginning
 				// of the file before reading.
 				util.Fatalf("callSelfAsNobody(%v): %v", args, callSelfAsNobody(args))
+
+				// This prevents the specFile finalizer from running and closed
+				// the specFD, which we have passed to ourselves when
+				// re-execing.
+				runtime.KeepAlive(specFile)
 				panic("unreachable")
 			}
 		}
