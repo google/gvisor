@@ -2893,6 +2893,15 @@ TEST(Proc, RegressionTestB236035339) {
               SyscallFailsWithErrno(ENOTDIR));
 }
 
+TEST(ProcFilesystems, ReadCapLastCap) {
+  std::string lastCapStr =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/kernel/cap_last_cap"));
+
+  uint64_t lastCap;
+  ASSERT_TRUE(absl::SimpleAtoi(lastCapStr, &lastCap));
+  EXPECT_TRUE(lastCap > 32 && lastCap < 64);
+}
+
 }  // namespace
 }  // namespace testing
 }  // namespace gvisor
