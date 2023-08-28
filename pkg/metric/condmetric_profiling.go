@@ -17,6 +17,12 @@
 
 package metric
 
+import (
+	"fmt"
+
+	pb "gvisor.dev/gvisor/pkg/metric/metric_go_proto"
+)
+
 // This file defines conditional metrics that are meant to be used when profiling
 // runsc during benchmark tests.
 
@@ -40,11 +46,11 @@ type ProfilingTimerMetric = TimerMetric
 
 // NewProfilingUint64Metric is equivalent to NewUint64Metric except it creates a
 // ProfilingUint64Metric
-var NewProfilingUint64Metric = NewUint64Metric
+var NewProfilingUint64Metric = newProfilingUint64Metric
 
 // MustCreateNewProfilingUint64Metric is equivalent to MustCreateNewUint64Metric
 // except it creates a ProfilingUint64Metric.
-var MustCreateNewProfilingUint64Metric = MustCreateNewUint64Metric
+var MustCreateNewProfilingUint64Metric = mustCreateNewProfilingUint64Metric
 
 // NewProfilingDistributionMetric is equivalent to NewDistributionMetric except
 // it creates a ProfilingDistributionMetric.
@@ -62,3 +68,20 @@ var NewProfilingTimerMetric = NewTimerMetric
 // MustCreateNewProfilingTimerMetric is equivalent to MustCreateNewTimerMetric
 // except it creates a ProfilingTimerMetric.
 var MustCreateNewProfilingTimerMetric = MustCreateNewTimerMetric
+
+func newProfilingUint64Metric(name string, sync bool, units pb.MetricMetadata_Units, description string, fields ...Field) (*Uint64Metric, error) {
+	m, err := NewUint64Metric(name, sync, units, description, fields...)
+	if err != nil {
+		return m, err
+	}
+	definedProfilingMetrics = append(definedProfilingMetrics, m.name)
+	return m, err
+}
+
+func mustCreateNewProfilingUint64Metric(name string, sync bool, description string, fields ...Field) *Uint64Metric {
+	m, err := newProfilingUint64Metric(name, sync, pb.MetricMetadata_UNITS_NONE, description, fields...)
+	if err != nil {
+		panic(fmt.Sprintf("Unable to create metric %q: %s", name, err))
+	}
+	return m
+}

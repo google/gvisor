@@ -155,6 +155,21 @@ type Config struct {
 	// The value of this flag must also match across the two command lines.
 	MetricServer string `flag:"metric-server"`
 
+	// ProfilingMetrics is a comma separated list of metric names which are
+	// going to be written to the ProfilingMetricsLog file from within the
+	// sentry in CSV format. ProfilingMetrics will be snapshotted at a rate
+	// specified by ProfilingMetricsRate. Requires ProfilingMetricsLog to be
+	// set.
+	ProfilingMetrics string `flag:"profiling-metrics"`
+
+	// ProfilingMetricsLog is the file name to use for ProfilingMetrics
+	// output.
+	ProfilingMetricsLog string `flag:"profiling-metrics-log"`
+
+	// ProfilingMetricsRate is the target rate (in microseconds) at which
+	// profiling metrics will be snapshotted.
+	ProfilingMetricsRate int `flag:"profiling-metrics-rate-us"`
+
 	// Strace indicates that strace should be enabled.
 	Strace bool `flag:"strace"`
 
@@ -346,6 +361,9 @@ func (c *Config) validate() error {
 	if c.FSGoferHostUDS && c.HostUDS != HostUDSNone {
 		// Deprecated flag was used together with flag that replaced it.
 		return fmt.Errorf("fsgofer-host-uds has been replaced with host-uds flag")
+	}
+	if len(c.ProfilingMetrics) > 0 && len(c.ProfilingMetricsLog) == 0 {
+		return fmt.Errorf("profiling-metrics flag requires defining a profiling-metrics-log for output")
 	}
 	return nil
 }
