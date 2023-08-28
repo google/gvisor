@@ -239,8 +239,10 @@ func (n *Number) GreaterThan(other *Number) bool {
 	return n.Float > other.Float
 }
 
-// writeInteger writes the given integer to a writer without allocating strings.
-func writeInteger(w io.Writer, val int64) (int, error) {
+// WriteInteger writes the given integer to a writer without allocating strings.
+//
+//go:nosplit
+func WriteInteger(w io.Writer, val int64) (int, error) {
 	const decimalDigits = "0123456789"
 	if val == 0 {
 		return io.WriteString(w, decimalDigits[0:1])
@@ -279,7 +281,7 @@ func (n *Number) writeTo(w io.Writer) error {
 
 	// Integer case:
 	case n.Int != 0:
-		_, err := writeInteger(w, n.Int)
+		_, err := WriteInteger(w, n.Int)
 		return err
 
 	// Special float cases:
@@ -753,7 +755,7 @@ func (d *Data) writeMetricLine(w io.Writer, metricSuffix string, val *Number, wh
 	if _, err := io.WriteString(w, " "); err != nil {
 		return err
 	}
-	if _, err := writeInteger(w, when.UnixMilli()); err != nil {
+	if _, err := WriteInteger(w, when.UnixMilli()); err != nil {
 		return err
 	}
 	if _, err := io.WriteString(w, "\n"); err != nil {

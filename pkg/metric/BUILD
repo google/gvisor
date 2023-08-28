@@ -13,6 +13,7 @@ go_library(
         "fake_metric.go",
         "metric.go",
         "metric_unsafe.go",
+        "profiling_metric.go",
     ],
     visibility = ["//:sandbox"],
     deps = [

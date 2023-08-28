@@ -15,10 +15,14 @@
 package metric
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"math"
+	"os"
 	"reflect"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -1026,5 +1030,157 @@ func TestFieldMapperMustUseSameValuePointer(t *testing.T) {
 	}()
 	if !panicked {
 		t.Error("did not panic")
+	}
+}
+
+func TestMetricProfiling(t *testing.T) {
+	for _, test := range []struct {
+		name                 string
+		profilingMetricsFlag string
+		metricNames          []string
+		incrementMetricBy    []uint64
+		numIterations        uint64
+		errOnStartProfiling  bool
+	}{
+		{
+			name:                 "simple single metric",
+			profilingMetricsFlag: "/foo",
+			metricNames:          []string{"/foo"},
+			incrementMetricBy:    []uint64{50},
+			numIterations:        100,
+			errOnStartProfiling:  false,
+		},
+		{
+			name:                 "single metric exceeds snapshot buffer",
+			profilingMetricsFlag: "/foo",
+			metricNames:          []string{"/foo"},
+			incrementMetricBy:    []uint64{1},
+			numIterations:        3500,
+			errOnStartProfiling:  false,
+		},
+		{
+			name:                 "multiple metrics",
+			profilingMetricsFlag: "/foo,/bar,/big/test/baz,/metric",
+			metricNames:          []string{"/foo", "/bar", "/big/test/baz", "/metric"},
+			incrementMetricBy:    []uint64{1, 29, 73, 991},
+			numIterations:        100,
+			errOnStartProfiling:  false,
+		},
+		{
+			name:                 "mismatched names",
+			profilingMetricsFlag: "/foo,/fighter,/big/test/baz,/metric",
+			metricNames:          []string{"/foo", "/bar", "/big/test/baz", "/metric"},
+			incrementMetricBy:    []uint64{},
+			numIterations:        0,
+			errOnStartProfiling:  true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			defer resetTest()
+			const profilingRate = 1000 * time.Microsecond
+			numMetrics := len(test.metricNames)
+
+			metrics := make([]*Uint64Metric, numMetrics)
+			for i, m := range test.metricNames {
+				newMetric, err := NewUint64Metric(m, true, pb.MetricMetadata_UNITS_NANOSECONDS, fooDescription)
+				metrics[i] = newMetric
+				if err != nil {
+					t.Fatalf("NewUint64Metric got err '%v' want nil", err)
+				}
+			}
+
+			f, err := os.CreateTemp(t.TempDir(), "profiling-metrics")
+			if err != nil {
+				t.Fatalf("failed to create file: '%v'", err)
+			}
+			fName := f.Name()
+			ProfilingMetricWriter = f
+
+			if err := Initialize(); err != nil {
+				t.Fatalf("Initialize error: got '%v' want nil", err)
+			}
+			if err := StartProfilingMetrics(test.profilingMetricsFlag, profilingRate); err != nil {
+				if test.errOnStartProfiling {
+					return
+				}
+				t.Fatalf("StartProfilingMetrics error: got '%v' want '%v'", err, test.errOnStartProfiling)
+			}
+			if test.errOnStartProfiling {
+				t.Fatal("did not error out on StartProflingMetrics as expected")
+			}
+
+			// Generate some test data
+			for i := 0; i < int(test.numIterations); i++ {
+				for metricIdx, m := range metrics {
+					m.IncrementBy(test.incrementMetricBy[metricIdx])
+				}
+				// Give time to the collector to record it.
+				time.Sleep(profilingRate)
+			}
+
+			StopProfilingMetrics()
+
+			f, err = os.Open(fName)
+			if err != nil {
+				t.Fatalf("failed to open file a second time: %v", err)
+			}
+
+			// Check the header
+			lines := bufio.NewScanner(f)
+			expectedHeader := "Time (ns)\t" + strings.Join(test.metricNames, "\t")
+			lines.Scan()
+			header := lines.Text()
+			if header != expectedHeader {
+				t.Fatalf("header mismatch: got '%s' want '%s'", header, expectedHeader)
+			}
+
+			// Check that data looks sane:
+			// - Each timestamp should always be bigger.
+			// - Each metric value should be at least as big as the previous.
+			prevTS := uint64(0)
+			prevValues := make([]uint64, numMetrics)
+			numDatapoints := 0
+			for lines.Scan() {
+				line := lines.Text()
+				numDatapoints++
+				items := strings.Split(line, "\t")
+				if len(items) != (numMetrics + 1) {
+					t.Fatalf("incorrect number of items on line '%s': got %d, want %d", line, len(items), numMetrics+1)
+				}
+				// Check timestamp
+				ts, err := strconv.ParseUint(items[0], 10, 64)
+				if err != nil {
+					t.Errorf("ts ParseUint error on line '%s': got '%v' want nil", line, err)
+				}
+				if ts <= prevTS && numDatapoints > 1 {
+					t.Errorf("expecting timestamp to always increase on line '%s': got %d, previous was %d", line, ts, prevTS)
+				}
+				prevTS = ts
+
+				// Check metric values
+				for i := 1; i <= numMetrics; i++ {
+					m, err := strconv.ParseUint(items[i], 10, 64)
+					if err != nil {
+						t.Errorf("m ParseUint error on line '%s': got '%v' want nil", line, err)
+					}
+					if m < prevValues[i-1] {
+						t.Errorf("expecting metric value to always increase on line '%s': got %d, previous was %d", line, m, prevValues[i-1])
+					}
+					prevValues[i-1] = m
+				}
+			}
+			expectedMinNumDatapoints := int(0.7 * float32(test.numIterations))
+			if numDatapoints < expectedMinNumDatapoints {
+				t.Errorf("numDatapoints: got %d, want at least %d", numDatapoints, expectedMinNumDatapoints)
+			}
+			// Check that the final total for each metric is correct
+			for i := 0; i < numMetrics; i++ {
+				expected := test.numIterations * test.incrementMetricBy[i]
+				if prevValues[i] != expected {
+					t.Errorf("incorrect final metric value: got %d, want %d", prevValues[i], expected)
+				}
+			}
+			f.Close()
+		})
 	}
 }

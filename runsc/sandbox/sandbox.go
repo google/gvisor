@@ -684,6 +684,9 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 			return err
 		}
 	}
+	if err := donations.DonateDebugLogFile("profiling-metrics-fd", conf.ProfilingMetricsLog, "metrics", test); err != nil {
+		return err
+	}
 
 	// Relay all the config flags to the sandbox process.
 	cmd := exec.Command(specutils.ExePath, conf.ToFlags()...)
