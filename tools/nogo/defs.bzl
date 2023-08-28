@@ -91,6 +91,7 @@ def _nogo_stdlib_impl(ctx):
             "-facts=%s" % facts_file.path,
             "-root=.*?/src/",
         ] + [f.path for f in go_ctx.stdlib_srcs],
+        toolchain = None,
     )
 
     # Return the stdlib facts as output.
@@ -291,6 +292,7 @@ def _nogo_aspect_impl(target, ctx):
             "-facts=%s" % facts_file.path,
             "-package=%s" % importpath,
         ] + [src.path for src in srcs],
+        toolchain = None,
     )
 
     # Return the package facts as output.
@@ -363,6 +365,7 @@ def _nogo_test_impl(ctx):
                         ["-config=%s" % f.path for f in config_srcs] +
                         ["-output=%s" % findings.path] +
                         [f.path for f in raw_findings],
+            toolchain = None,
         )
 
         # Note that this calls the filter binary without any configuration, so
