@@ -25,6 +25,7 @@ import (
 	"runtime/debug"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/google/subcommands"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -450,6 +451,13 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	// but before the start-sync file is notified, as the parent process needs to query for
 	// registered metrics prior to sending the start signal.
 	metric.Initialize()
+	if metric.ProfilingMetricWriter != nil {
+		if err := metric.StartProfilingMetrics(conf.ProfilingMetrics, time.Duration(conf.ProfilingMetricsRate)*time.Microsecond); err != nil {
+			l.Destroy()
+			util.Fatalf("unable to start profiling metrics: %v", err)
+		}
+		defer metric.StopProfilingMetrics()
+	}
 
 	// Notify the parent process the sandbox has booted (and that the controller
 	// is up).
