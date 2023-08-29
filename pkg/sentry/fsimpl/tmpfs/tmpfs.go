@@ -103,6 +103,10 @@ type filesystem struct {
 
 	// pagesUsed is the number of pages used by this filesystem.
 	pagesUsed atomicbitops.Uint64
+
+	// allowXattrPrefix is a set of xattr namespace prefixes that this
+	// tmpfs mount will allow. It is immutable.
+	allowXattrPrefix map[string]struct{}
 }
 
 // Name implements vfs.FilesystemType.Name.
@@ -144,6 +148,10 @@ type FilesystemOpts struct {
 	// DisableDefaultSizeLimit disables setting a default size limit. In Linux,
 	// SB_KERNMOUNT has this effect on tmpfs mounts; see mm/shmem.c:shmem_fill_super().
 	DisableDefaultSizeLimit bool
+
+	// AllowXattrPrefix is a set of xattr namespace prefixes that this
+	// tmpfs mount will allow.
+	AllowXattrPrefix []string
 }
 
 // Default size limit mount option. It is immutable after initialization.
@@ -180,6 +188,15 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	rootFileType := uint16(linux.S_IFDIR)
 	disableDefaultSizeLimit := false
 	newFSType := vfs.FilesystemType(&fstype)
+
+	// By default we support only "trusted" and "user" namespaces. Linux
+	// also supports "security" and (if configured) POSIX ACL namespaces
+	// "system.posix_acl_access" and "system.posix_acl_default".
+	allowXattrPrefix := map[string]struct{}{
+		linux.XATTR_TRUSTED_PREFIX: struct{}{},
+		linux.XATTR_USER_PREFIX:    struct{}{},
+	}
+
 	tmpfsOpts, tmpfsOptsOk := opts.InternalData.(FilesystemOpts)
 	if tmpfsOptsOk {
 		if tmpfsOpts.RootFileType != 0 {
@@ -209,6 +226,10 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 				return nil, nil, err
 			}
 			privateMF = true
+		}
+
+		for _, xattr := range tmpfsOpts.AllowXattrPrefix {
+			allowXattrPrefix[xattr] = struct{}{}
 		}
 	}
 
@@ -292,15 +313,16 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		memUsage = *tmpfsOpts.Usage
 	}
 	fs := filesystem{
-		mf:             mf,
-		privateMF:      privateMF,
-		mfp:            mfp,
-		clock:          clock,
-		devMinor:       devMinor,
-		mopts:          opts.Data,
-		usage:          memUsage,
-		maxFilenameLen: linux.NAME_MAX,
-		maxSizeInPages: maxSizeInPages,
+		mf:               mf,
+		privateMF:        privateMF,
+		mfp:              mfp,
+		clock:            clock,
+		devMinor:         devMinor,
+		mopts:            opts.Data,
+		usage:            memUsage,
+		maxFilenameLen:   linux.NAME_MAX,
+		maxSizeInPages:   maxSizeInPages,
+		allowXattrPrefix: allowXattrPrefix,
 	}
 	fs.vfsfs.Init(vfsObj, newFSType, &fs)
 	if tmpfsOptsOk && tmpfsOpts.MaxFilenameLen > 0 {
@@ -836,18 +858,11 @@ func (i *inode) touchCMtimeLocked() {
 	i.ctime.Store(now)
 }
 
-func checkXattrName(name string) error {
-	// Linux's tmpfs supports "security" and "trusted" xattr namespaces, and
-	// (depending on build configuration) POSIX ACL xattr namespaces
-	// ("system.posix_acl_access" and "system.posix_acl_default"). We don't
-	// support POSIX ACLs or the "security" namespace (b/148380782).
-	if strings.HasPrefix(name, linux.XATTR_TRUSTED_PREFIX) {
-		return nil
-	}
-	// We support the "user" namespace because we have tests that depend on
-	// this feature.
-	if strings.HasPrefix(name, linux.XATTR_USER_PREFIX) {
-		return nil
+func (i *inode) checkXattrPrefix(name string) error {
+	for prefix := range i.fs.allowXattrPrefix {
+		if strings.HasPrefix(name, prefix) {
+			return nil
+		}
 	}
 	return linuxerr.EOPNOTSUPP
 }
@@ -857,7 +872,7 @@ func (i *inode) listXattr(creds *auth.Credentials, size uint64) ([]string, error
 }
 
 func (i *inode) getXattr(creds *auth.Credentials, opts *vfs.GetXattrOptions) (string, error) {
-	if err := checkXattrName(opts.Name); err != nil {
+	if err := i.checkXattrPrefix(opts.Name); err != nil {
 		return "", err
 	}
 	mode := linux.FileMode(i.mode.Load())
@@ -870,7 +885,7 @@ func (i *inode) getXattr(creds *auth.Credentials, opts *vfs.GetXattrOptions) (st
 }
 
 func (i *inode) setXattr(creds *auth.Credentials, opts *vfs.SetXattrOptions) error {
-	if err := checkXattrName(opts.Name); err != nil {
+	if err := i.checkXattrPrefix(opts.Name); err != nil {
 		return err
 	}
 	mode := linux.FileMode(i.mode.Load())
@@ -883,7 +898,7 @@ func (i *inode) setXattr(creds *auth.Credentials, opts *vfs.SetXattrOptions) err
 }
 
 func (i *inode) removeXattr(creds *auth.Credentials, name string) error {
-	if err := checkXattrName(name); err != nil {
+	if err := i.checkXattrPrefix(name); err != nil {
 		return err
 	}
 	mode := linux.FileMode(i.mode.Load())
