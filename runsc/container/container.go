@@ -148,7 +148,7 @@ type Container struct {
 	//
 	// This field isn't saved to json, because only a creator of a gofer
 	// process will have it as a child process.
-	goferIsChild bool
+	goferIsChild bool `nojson:"true"`
 }
 
 // Args is used to configure a new container.

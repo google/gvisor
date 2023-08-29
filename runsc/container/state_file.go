@@ -293,8 +293,8 @@ type StateFile struct {
 	// be preserved across commands.
 	//
 
-	once  sync.Once
-	flock *flock.Flock
+	once  sync.Once    `nojson:"true"`
+	flock *flock.Flock `nojson:"true"`
 }
 
 // lock globally locks all locking operations for the container.
