@@ -167,8 +167,10 @@ cc_library(
     deps = [
         ":cleanup",
         ":posix_error",
+        ":temp_path",
         ":test_util",
         "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         gtest,
         "@com_google_absl//absl/types:span",

@@ -17,10 +17,17 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 
+#include <cerrno>
+#include <string>
+#include <string_view>
+#include <vector>
+
+#include "absl/container/flat_hash_map.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_join.h"
 #include "absl/strings/str_split.h"
 #include "absl/types/span.h"
+#include "test/util/posix_error.h"
 
 namespace gvisor {
 namespace testing {
@@ -174,6 +181,50 @@ absl::flat_hash_map<std::string, std::string> ParseMountOptions(
     }
   }
   return entries;
+}
+
+PosixErrorOr<absl::flat_hash_map<std::string, std::vector<MountOptional>>>
+MountOptionals() {
+  absl::flat_hash_map<std::string, std::vector<MountOptional>> optionals;
+  ASSIGN_OR_RETURN_ERRNO(std::vector<ProcMountInfoEntry> mounts,
+                         ProcSelfMountInfoEntries());
+  for (const auto& e : mounts) {
+    MountOptional opt;
+    opt.shared = 0;
+    opt.master = 0;
+    opt.propagate_from = 0;
+    std::vector<std::string_view> tags = absl::StrSplit(e.optional, ' ');
+
+    for (std::string_view tag : tags) {
+      PosixError err = ParseOptionalTag(tag, &opt);
+      if (!err.ok()) return err;
+    }
+    if (optionals.contains(e.mount_point)) {
+      optionals[e.mount_point].push_back(opt);
+    } else {
+      optionals[e.mount_point] = {opt};
+    }
+  }
+  return optionals;
+}
+
+PosixError ParseOptionalTag(std::string_view tag, MountOptional* opt) {
+  std::vector<std::string_view> key_value = absl::StrSplit(tag, ':');
+  if (key_value.size() != 2) return PosixError(0);
+  if (key_value[0] == "shared") {
+    if (!absl::SimpleAtoi(key_value[1], &opt->shared))
+      return PosixError(EINVAL,
+                        "could not parse shared value in optional string");
+  } else if (key_value[0] == "master") {
+    if (!absl::SimpleAtoi(key_value[1], &opt->master))
+      return PosixError(EINVAL,
+                        "could not parse master value in optional string");
+  } else if (key_value[0] == "propagate_from") {
+    if (!absl::SimpleAtoi(key_value[1], &opt->propagate_from))
+      return PosixError(EINVAL,
+                        "could not parse propagate_from in optional string");
+  }
+  return PosixError(0);
 }
 
 }  // namespace testing

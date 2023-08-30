@@ -829,9 +829,9 @@ TEST(MountTest, SimpleBind) {
 
   std::string output;
   ASSERT_NO_ERRNO(GetContents(dir1_filepath, &output));
-  ASSERT_EQ(output, contents);
+  EXPECT_EQ(output, contents);
   ASSERT_NO_ERRNO(GetContents(dir2_filepath, &output));
-  ASSERT_EQ(output, contents);
+  EXPECT_EQ(output, contents);
 }
 
 TEST(MountTest, BindToSelf) {
@@ -909,14 +909,9 @@ TEST(MountTest, MakeShared) {
   ASSERT_THAT(mount("", dir.path().c_str(), "", MS_SHARED, 0),
               SyscallSucceeds());
 
-  const std::vector<ProcMountInfoEntry> mounts =
-      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntries());
-  for (const auto& e : mounts) {
-    if (e.mount_point == dir.path()) {
-      EXPECT_TRUE(absl::StrContains(e.optional, "shared:"));
-      break;
-    }
-  }
+  auto optionals = ASSERT_NO_ERRNO_AND_VALUE(MountOptionals());
+  ASSERT_FALSE(optionals[dir.path()].empty());
+  EXPECT_NE(optionals[dir.path()][0].shared, 0);
 }
 
 // Tests that shared mounts have different group IDs.
@@ -935,19 +930,10 @@ TEST(MountTest, MakeMultipleShared) {
   ASSERT_THAT(mount("", dir2.path().c_str(), "", MS_SHARED, 0),
               SyscallSucceeds());
 
-  std::string optional1, optional2;
-  const std::vector<ProcMountInfoEntry> mounts =
-      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntries());
-  for (const auto& e : mounts) {
-    if (e.mount_point == dir1.path()) {
-      EXPECT_TRUE(absl::StrContains(e.optional, "shared:"));
-      optional1 = e.optional;
-    } else if (e.mount_point == dir2.path()) {
-      EXPECT_TRUE(absl::StrContains(e.optional, "shared:"));
-      optional2 = e.optional;
-    }
-  }
-  EXPECT_NE(optional1, optional2);
+  auto optionals = ASSERT_NO_ERRNO_AND_VALUE(MountOptionals());
+  ASSERT_FALSE(optionals[dir1.path()].empty());
+  ASSERT_FALSE(optionals[dir2.path()].empty());
+  EXPECT_NE(optionals[dir1.path()][0].shared, optionals[dir2.path()][0].shared);
 }
 
 // Tests that shared mounts reused group IDs from deleted groups.
@@ -961,21 +947,15 @@ TEST(MountTest, ReuseGroupIDs) {
               SyscallSucceeds());
 
   auto const dir2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
-  std::string reused_optional;
+  int reused_group_id;
   {
     auto const mount2 =
         ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir2.path(), "tmpfs", 0, "", 0));
     ASSERT_THAT(mount("", dir2.path().c_str(), "", MS_SHARED, 0),
                 SyscallSucceeds());
-
-    const std::vector<ProcMountInfoEntry> mounts =
-        ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntries());
-    for (const auto& e : mounts) {
-      if (e.mount_point == dir2.path()) {
-        EXPECT_TRUE(absl::StrContains(e.optional, "shared:"));
-        reused_optional = e.optional;
-      }
-    }
+    auto optionals = ASSERT_NO_ERRNO_AND_VALUE(MountOptionals());
+    ASSERT_FALSE(optionals[dir2.path()].empty());
+    reused_group_id = optionals[dir2.path()][0].shared;
   }
 
   // Check that created a new shared mount reuses the ID 2.
@@ -983,14 +963,9 @@ TEST(MountTest, ReuseGroupIDs) {
       ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir2.path(), "tmpfs", 0, "", 0));
   ASSERT_THAT(mount("", dir2.path().c_str(), "", MS_SHARED, 0),
               SyscallSucceeds());
-  const std::vector<ProcMountInfoEntry> mounts =
-      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntries());
-  for (const auto& e : mounts) {
-    if (e.mount_point == dir2.path()) {
-      EXPECT_EQ(e.optional, reused_optional);
-      break;
-    }
-  }
+  auto optionals = ASSERT_NO_ERRNO_AND_VALUE(MountOptionals());
+  ASSERT_FALSE(optionals[dir2.path()].empty());
+  EXPECT_EQ(reused_group_id, optionals[dir2.path()][0].shared);
 }
 
 // Tests that a child mount inherits the propagation type of its parent.
@@ -1008,14 +983,9 @@ TEST(MountTest, InerheritPropagation) {
   auto const mount2 =
       ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir2.path(), "tmpfs", 0, "", 0));
 
-  const std::vector<ProcMountInfoEntry> mounts =
-      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntries());
-  for (const auto& e : mounts) {
-    if (e.mount_point == dir2.path()) {
-      EXPECT_TRUE(absl::StrContains(e.optional, "shared:"));
-      break;
-    }
-  }
+  auto optionals = ASSERT_NO_ERRNO_AND_VALUE(MountOptionals());
+  ASSERT_FALSE(optionals[dir2.path()].empty());
+  EXPECT_NE(optionals[dir2.path()][0].shared, 0);
 }
 
 // Tests that it is possible to make a mount private again after it is shared.
@@ -1030,14 +1000,9 @@ TEST(MountTest, MakePrivate) {
   ASSERT_THAT(mount("", dir.path().c_str(), "", MS_PRIVATE, 0),
               SyscallSucceeds());
 
-  const std::vector<ProcMountInfoEntry> mounts =
-      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntries());
-  for (const auto& e : mounts) {
-    if (e.mount_point == dir.path()) {
-      EXPECT_EQ(e.optional, "");
-      break;
-    }
-  }
+  auto optionals = ASSERT_NO_ERRNO_AND_VALUE(MountOptionals());
+  ASSERT_FALSE(optionals[dir.path()].empty());
+  EXPECT_EQ(optionals[dir.path()][0].shared, 0);
 }
 
 TEST(MountTest, ArgumentsAreIgnored) {
@@ -1045,19 +1010,13 @@ TEST(MountTest, ArgumentsAreIgnored) {
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   // These mounts should not fail even though string arguments are passed as
   // NULL.
-  ASSERT_THAT(
-      mount(dir.path().c_str(), dir.path().c_str(), NULL, MS_BIND, NULL),
-      SyscallSucceeds());
+  auto const mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(dir.path(), dir.path(), "", MS_BIND, "", MNT_DETACH));
   ASSERT_THAT(mount(NULL, dir.path().c_str(), NULL, MS_SHARED, NULL),
               SyscallSucceeds());
-  const std::vector<ProcMountInfoEntry> mounts =
-      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntries());
-  for (const auto& e : mounts) {
-    if (e.mount_point == dir.path()) {
-      EXPECT_TRUE(absl::StrContains(e.optional, "shared:"));
-      break;
-    }
-  }
+  auto optionals = ASSERT_NO_ERRNO_AND_VALUE(MountOptionals());
+  ASSERT_FALSE(optionals[dir.path()].empty());
+  EXPECT_NE(optionals[dir.path()][0].shared, 0);
 }
 
 TEST(MountTest, MultiplePropagationFlagsFails) {
@@ -1075,29 +1034,16 @@ TEST(MountTest, SetMountPropagationOfStackedMounts) {
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const mnt1 = ASSERT_NO_ERRNO_AND_VALUE(
       Mount("", dir.path().c_str(), "tmpfs", 0, "", 0));
-
-  std::vector<ProcMountInfoEntry> mounts =
-      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntries());
-  uint64_t parent_mount_id;
-  for (const auto& e : mounts) {
-    if (e.mount_point == dir.path()) {
-      parent_mount_id = e.id;
-    }
-  }
   // Only the topmost mount on the stack should be shared.
   auto const mnt2 = ASSERT_NO_ERRNO_AND_VALUE(
       Mount("", dir.path().c_str(), "tmpfs", 0, "", 0));
   ASSERT_THAT(mount("", dir.path().c_str(), "", MS_SHARED, 0),
               SyscallSucceeds());
-  mounts = ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntries());
-  for (const auto& e : mounts) {
-    if (e.mount_point == dir.path() && e.id != parent_mount_id) {
-      EXPECT_TRUE(absl::StrContains(e.optional, "shared:"));
-    }
-    if (e.mount_point == dir.path() && e.id == parent_mount_id) {
-      EXPECT_EQ(e.optional, "");
-    }
-  }
+
+  auto optionals = ASSERT_NO_ERRNO_AND_VALUE(MountOptionals());
+  ASSERT_FALSE(optionals[dir.path()].empty());
+  EXPECT_EQ(optionals[dir.path()][0].shared, 0);
+  EXPECT_NE(optionals[dir.path()][1].shared, 0);
 }
 
 TEST(MountTest, MakePeer) {
@@ -1109,22 +1055,14 @@ TEST(MountTest, MakePeer) {
               SyscallSucceeds());
 
   auto const dir2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
-  ASSERT_THAT(mount(dir1.path().c_str(), dir2.path().c_str(), "", MS_BIND, 0),
-              SyscallSucceeds());
-  std::vector<ProcMountInfoEntry> mounts =
-      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntries());
-  std::string optional1, optional2;
-  for (const auto& e : mounts) {
-    if (e.mount_point == dir1.path()) {
-      EXPECT_TRUE(absl::StrContains(e.optional, "shared:"));
-      optional1 = e.optional;
-    }
-    if (e.mount_point == dir2.path()) {
-      EXPECT_TRUE(absl::StrContains(e.optional, "shared:"));
-      optional2 = e.optional;
-    }
-  }
-  ASSERT_EQ(optional1, optional2);
+  auto const mnt2 = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(dir1.path(), dir2.path(), "", MS_BIND, "", MNT_DETACH));
+
+  auto optionals = ASSERT_NO_ERRNO_AND_VALUE(MountOptionals());
+  ASSERT_FALSE(optionals[dir1.path()].empty());
+  ASSERT_FALSE(optionals[dir2.path()].empty());
+  EXPECT_EQ(optionals[dir1.path()][0].shared, optionals[dir2.path()][0].shared);
+  EXPECT_NE(optionals[dir1.path()][0].shared, 0);
 }
 
 TEST(MountTest, PropagateMountEvent) {
@@ -1137,8 +1075,8 @@ TEST(MountTest, PropagateMountEvent) {
   ASSERT_THAT(mount("", dir1.path().c_str(), "", MS_SHARED, 0),
               SyscallSucceeds());
   auto const dir2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
-  ASSERT_THAT(mount(dir1.path().c_str(), dir2.path().c_str(), "", MS_BIND, 0),
-              SyscallSucceeds());
+  auto const mnt2 = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(dir1.path(), dir2.path(), "", MS_BIND, "", MNT_DETACH));
   // This mount should propagate to dir2.
   auto const child_mnt = ASSERT_NO_ERRNO_AND_VALUE(
       Mount("", child_dir.path().c_str(), "tmpfs", 0, "", 0));
@@ -1148,26 +1086,15 @@ TEST(MountTest, PropagateMountEvent) {
   const std::string child_path2 =
       JoinPath(dir2.path(), Basename(child_dir.path()));
 
-  std::string child_opt1, child_opt2, parent_optional;
-  std::vector<ProcMountInfoEntry> mounts =
-      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntries());
-  for (const auto& e : mounts) {
-    if (e.mount_point == child_path1) {
-      EXPECT_TRUE(absl::StrContains(e.optional, "shared:"));
-      child_opt1 = e.optional;
-    }
-    if (e.mount_point == child_path2) {
-      EXPECT_TRUE(absl::StrContains(e.optional, "shared:"));
-      child_opt2 = e.optional;
-    }
-    if (e.mount_point == dir1.path() || e.mount_point == dir2.path()) {
-      EXPECT_TRUE(absl::StrContains(e.optional, "shared:"));
-      parent_optional = e.optional;
-    }
-  }
-  // Should be in the same peer group.
-  ASSERT_EQ(child_opt1, child_opt2);
-  ASSERT_NE(child_opt1, parent_optional);
+  auto optionals = ASSERT_NO_ERRNO_AND_VALUE(MountOptionals());
+  ASSERT_FALSE(optionals[dir1.path()].empty());
+  ASSERT_FALSE(optionals[dir2.path()].empty());
+  ASSERT_FALSE(optionals[child_path1].empty());
+  ASSERT_FALSE(optionals[child_path2].empty());
+  EXPECT_EQ(optionals[dir1.path()][0].shared, optionals[dir2.path()][0].shared);
+  EXPECT_NE(optionals[dir1.path()][0].shared, 0);
+  EXPECT_EQ(optionals[child_path1][0].shared, optionals[child_path2][0].shared);
+  EXPECT_NE(optionals[child_path1][0].shared, 0);
 }
 
 TEST(MountTest, PropagateUmountEvent) {
@@ -1180,8 +1107,8 @@ TEST(MountTest, PropagateUmountEvent) {
   ASSERT_THAT(mount("", dir1.path().c_str(), "", MS_SHARED, 0),
               SyscallSucceeds());
   auto const dir2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
-  ASSERT_THAT(mount(dir1.path().c_str(), dir2.path().c_str(), "", MS_BIND, 0),
-              SyscallSucceeds());
+  auto const mnt2 = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(dir1.path(), dir2.path(), "", MS_BIND, "", MNT_DETACH));
   // This mount will propagate to dir2. Once the block ends it will be
   // unmounted, which should also propagate to dir2.
   {
@@ -1197,8 +1124,8 @@ TEST(MountTest, PropagateUmountEvent) {
   std::vector<ProcMountInfoEntry> mounts =
       ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntries());
   for (const auto& e : mounts) {
-    ASSERT_NE(e.mount_point, child_path1);
-    ASSERT_NE(e.mount_point, child_path2);
+    EXPECT_NE(e.mount_point, child_path1);
+    EXPECT_NE(e.mount_point, child_path2);
   }
 }
 
@@ -1235,17 +1162,12 @@ TEST(MountTest, UmountIgnoresPeersWithChildren) {
   // This umount event should not propagate to the peer at dir1 because its
   // child mount still has its own child mount.
   ASSERT_THAT(umount2(child_path2.c_str(), MNT_DETACH), SyscallSucceeds());
-  std::vector<ProcMountInfoEntry> mounts =
-      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntries());
-  bool found = false;
-  for (const auto& e : mounts) {
-    ASSERT_NE(e.mount_point, child_path2);
-    if (e.mount_point == child_path1) {
-      found = true;
-      break;
-    }
-  }
-  ASSERT_TRUE(found);
+  auto optionals = ASSERT_NO_ERRNO_AND_VALUE(MountOptionals());
+  EXPECT_EQ(optionals[child_path2].size(), 0);
+  EXPECT_EQ(optionals[child_path1].size(), 1);
+
+  ASSERT_THAT(umount2(dir1.path().c_str(), MNT_DETACH), SyscallSucceeds());
+  ASSERT_THAT(umount2(dir2.path().c_str(), MNT_DETACH), SyscallSucceeds());
 }
 
 TEST(MountTest, BindSharedOnShared) {
@@ -1256,181 +1178,134 @@ TEST(MountTest, BindSharedOnShared) {
   auto const dir4 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   // Dir 1 and 2 are part of peer group 'A', dir 3 and 4 are part of peer group
   // 'B'.
-  ASSERT_THAT(mount("", dir1.path().c_str(), "tmpfs", 0, ""),
-              SyscallSucceeds());
+  auto const mnt1 = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir1.path().c_str(), "tmpfs", 0, "", MNT_DETACH));
   auto const dir5 =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(dir1.path()));
   ASSERT_THAT(mount("", dir1.path().c_str(), "", MS_SHARED, 0),
               SyscallSucceeds());
-  ASSERT_THAT(mount(dir1.path().c_str(), dir2.path().c_str(), "", MS_BIND, 0),
-              SyscallSucceeds());
-  ASSERT_THAT(mount("", dir3.path().c_str(), "tmpfs", 0, ""),
-              SyscallSucceeds());
+  auto const mnt2 = ASSERT_NO_ERRNO_AND_VALUE(Mount(
+      dir1.path().c_str(), dir2.path().c_str(), "", MS_BIND, "", MNT_DETACH));
+  auto const mnt3 = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir3.path().c_str(), "tmpfs", 0, "", MNT_DETACH));
   ASSERT_THAT(mount("", dir3.path().c_str(), "", MS_SHARED, 0),
               SyscallSucceeds());
-  ASSERT_THAT(mount(dir3.path().c_str(), dir4.path().c_str(), "", MS_BIND, 0),
-              SyscallSucceeds());
+  auto const mnt4 = ASSERT_NO_ERRNO_AND_VALUE(Mount(
+      dir3.path().c_str(), dir4.path().c_str(), "", MS_BIND, "", MNT_DETACH));
 
   const std::string dir5_path2 = JoinPath(dir2.path(), Basename(dir5.path()));
 
   // Bind peer group 'A' to peer group 'B'.
-  ASSERT_THAT(mount(dir4.path().c_str(), dir5.path().c_str(), "", MS_BIND, 0),
-              SyscallSucceeds());
+  auto const mnt5 = ASSERT_NO_ERRNO_AND_VALUE(Mount(
+      dir4.path().c_str(), dir5.path().c_str(), "", MS_BIND, "", MNT_DETACH));
 
-  std::vector<ProcMountInfoEntry> mounts =
-      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntries());
-  // The new mounts should all be peers with the old ones.
-  // Optional string should be in the format shared:x.
-
-  std::string opt1, opt2, opt3, opt4;
-  for (const auto& e : mounts) {
-    if (e.mount_point == dir3.path()) {
-      opt1 = e.optional;
-    }
-    if (e.mount_point == dir4.path()) {
-      opt2 = e.optional;
-    }
-    if (e.mount_point == dir5.path()) {
-      opt3 = e.optional;
-    }
-    if (e.mount_point == dir5_path2) {
-      opt4 = e.optional;
-    }
-  }
-  ASSERT_EQ(opt1, opt2);
-  ASSERT_EQ(opt2, opt3);
-  ASSERT_EQ(opt3, opt4);
-  ASSERT_TRUE(absl::StrContains(opt1, "shared:"));
+  auto optionals = ASSERT_NO_ERRNO_AND_VALUE(MountOptionals());
+  ASSERT_FALSE(optionals[dir1.path()].empty());
+  ASSERT_FALSE(optionals[dir2.path()].empty());
+  ASSERT_FALSE(optionals[dir3.path()].empty());
+  ASSERT_FALSE(optionals[dir4.path()].empty());
+  ASSERT_FALSE(optionals[dir5.path()].empty());
+  ASSERT_FALSE(optionals[dir5_path2].empty());
+  EXPECT_EQ(optionals[dir3.path()][0].shared, optionals[dir4.path()][0].shared);
+  EXPECT_EQ(optionals[dir4.path()][0].shared, optionals[dir5.path()][0].shared);
+  EXPECT_EQ(optionals[dir5.path()][0].shared, optionals[dir5_path2][0].shared);
+  EXPECT_NE(optionals[dir3.path()][0].shared, 0);
 }
 
 TEST(MountTest, BindSharedOnPrivate) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   auto const dir1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
-  ASSERT_THAT(mount("", dir1.path().c_str(), "tmpfs", 0, ""),
-              SyscallSucceeds());
+  auto const mnt1 = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir1.path().c_str(), "tmpfs", 0, "", MNT_DETACH));
   auto const dir2 =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(dir1.path()));
   auto const dir3 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const dir4 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
-  ASSERT_THAT(mount("", dir3.path().c_str(), "tmpfs", 0, ""),
-              SyscallSucceeds());
+  auto const mnt3 = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir3.path().c_str(), "tmpfs", 0, "", MNT_DETACH));
   ASSERT_THAT(mount("", dir3.path().c_str(), "", MS_SHARED, 0),
               SyscallSucceeds());
-  ASSERT_THAT(mount(dir3.path().c_str(), dir4.path().c_str(), "", MS_BIND, 0),
-              SyscallSucceeds());
+  auto const mnt4 = ASSERT_NO_ERRNO_AND_VALUE(Mount(
+      dir3.path().c_str(), dir4.path().c_str(), "", MS_BIND, "", MNT_DETACH));
 
   // bind to private mount.
-  ASSERT_THAT(mount(dir3.path().c_str(), dir2.path().c_str(), "", MS_BIND, 0),
-              SyscallSucceeds());
+  auto const mnt2 = ASSERT_NO_ERRNO_AND_VALUE(Mount(
+      dir3.path().c_str(), dir2.path().c_str(), "", MS_BIND, "", MNT_DETACH));
 
-  std::vector<ProcMountInfoEntry> mounts =
-      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntries());
-  std::string opt1, opt2, opt3;
-  for (const auto& e : mounts) {
-    if (e.mount_point == dir1.path()) {
-      ASSERT_EQ(e.optional, "");
-    }
-    if (e.mount_point == dir2.path()) {
-      opt1 = e.optional;
-      ASSERT_TRUE(absl::StrContains(e.optional, "shared:"));
-    }
-    if (e.mount_point == dir3.path()) {
-      opt2 = e.optional;
-      ASSERT_TRUE(absl::StrContains(e.optional, "shared:"));
-    }
-    if (e.mount_point == dir4.path()) {
-      opt3 = e.optional;
-      ASSERT_TRUE(absl::StrContains(e.optional, "shared:"));
-    }
-  }
-  ASSERT_EQ(opt1, opt2);
-  ASSERT_EQ(opt2, opt3);
+  auto optionals = ASSERT_NO_ERRNO_AND_VALUE(MountOptionals());
+  ASSERT_FALSE(optionals[dir1.path()].empty());
+  ASSERT_FALSE(optionals[dir2.path()].empty());
+  ASSERT_FALSE(optionals[dir3.path()].empty());
+  ASSERT_FALSE(optionals[dir4.path()].empty());
+  EXPECT_EQ(optionals[dir1.path()][0].shared, 0);
+  EXPECT_EQ(optionals[dir2.path()][0].shared, optionals[dir3.path()][0].shared);
+  EXPECT_EQ(optionals[dir3.path()][0].shared, optionals[dir4.path()][0].shared);
 }
 
 TEST(MountTest, BindPeerGroupsWithChildren) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   auto const dir1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
-  ASSERT_THAT(mount("", dir1.path().c_str(), "tmpfs", 0, ""),
-              SyscallSucceeds());
+  auto const mnt1 = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir1.path().c_str(), "tmpfs", 0, "", MNT_DETACH));
   ASSERT_THAT(mount("", dir1.path().c_str(), "", MS_SHARED, 0),
               SyscallSucceeds());
   auto const dir2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
-  ASSERT_THAT(mount("", dir2.path().c_str(), "tmpfs", 0, ""),
-              SyscallSucceeds());
+  auto const mnt2 = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir2.path().c_str(), "tmpfs", 0, "", MNT_DETACH));
   ASSERT_THAT(mount("", dir2.path().c_str(), "", MS_SHARED, 0),
               SyscallSucceeds());
   // dir3 and dir4 are child mounts of dir1.
   auto const dir3 =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(dir1.path()));
-  ASSERT_THAT(mount("", dir3.path().c_str(), "tmpfs", 0, ""),
-              SyscallSucceeds());
+  auto const mnt3 = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir3.path().c_str(), "tmpfs", 0, "", MNT_DETACH));
   auto const dir4 =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(dir1.path()));
-  ASSERT_THAT(mount("", dir4.path().c_str(), "tmpfs", 0, ""),
-              SyscallSucceeds());
-  ASSERT_THAT(mount(dir1.path().c_str(), dir2.path().c_str(), "", MS_BIND, 0),
-              SyscallSucceeds());
+  auto const mnt4 = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir4.path().c_str(), "tmpfs", 0, "", MNT_DETACH));
+  auto const mnt5 = ASSERT_NO_ERRNO_AND_VALUE(Mount(
+      dir1.path().c_str(), dir2.path().c_str(), "", MS_BIND, "", MNT_DETACH));
 
   const std::string dir3_path2 = JoinPath(dir2.path(), Basename(dir3.path()));
   const std::string dir4_path2 = JoinPath(dir2.path(), Basename(dir4.path()));
 
-  std::vector<ProcMountInfoEntry> mounts =
-      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntries());
-  std::string opt1, opt2, opt3;
-  for (const auto& e : mounts) {
-    if (e.mount_point == dir1.path()) {
-      ASSERT_TRUE(absl::StrContains(e.optional, "shared:"));
-      opt1 = e.optional;
-    }
-    if (e.mount_point == dir3.path()) {
-      ASSERT_TRUE(absl::StrContains(e.optional, "shared:"));
-      opt2 = e.optional;
-    }
-    if (e.mount_point == dir4.path()) {
-      ASSERT_TRUE(absl::StrContains(e.optional, "shared:"));
-      opt3 = e.optional;
-    }
-    ASSERT_NE(e.mount_point, dir3_path2);
-    ASSERT_NE(e.mount_point, dir4_path2);
-  }
-  ASSERT_NE(opt1, opt2);
-  ASSERT_NE(opt2, opt3);
-  ASSERT_NE(opt3, opt1);
+  auto optionals = ASSERT_NO_ERRNO_AND_VALUE(MountOptionals());
+  ASSERT_FALSE(optionals[dir1.path()].empty());
+  ASSERT_FALSE(optionals[dir2.path()].empty());
+  ASSERT_FALSE(optionals[dir3.path()].empty());
+
+  EXPECT_NE(optionals[dir1.path()][0].shared, optionals[dir3.path()][0].shared);
+  EXPECT_NE(optionals[dir3.path()][0].shared, optionals[dir4.path()][0].shared);
+  EXPECT_NE(optionals[dir4.path()][0].shared, optionals[dir1.path()][0].shared);
+  EXPECT_EQ(optionals[dir3_path2].size(), 0);
+  EXPECT_EQ(optionals[dir4_path2].size(), 0);
 }
 
 TEST(MountTest, BindParentToChild) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   auto const dir1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
-  ASSERT_THAT(mount(dir1.path().c_str(), dir1.path().c_str(), "", MS_BIND, ""),
-              SyscallSucceeds());
+  auto const mnt1 = ASSERT_NO_ERRNO_AND_VALUE(Mount(
+      dir1.path().c_str(), dir1.path().c_str(), "", MS_BIND, "", MNT_DETACH));
   ASSERT_THAT(mount("", dir1.path().c_str(), "", MS_SHARED, 0),
               SyscallSucceeds());
   auto const dir2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
-  ASSERT_THAT(mount(dir1.path().c_str(), dir2.path().c_str(), "", MS_BIND, ""),
-              SyscallSucceeds());
+  auto const mnt2 = ASSERT_NO_ERRNO_AND_VALUE(Mount(
+      dir1.path().c_str(), dir2.path().c_str(), "", MS_BIND, "", MNT_DETACH));
   auto const child_dir =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(dir1.path()));
-  ASSERT_THAT(
-      mount(dir1.path().c_str(), child_dir.path().c_str(), "", MS_BIND, ""),
-      SyscallSucceeds());
+  auto const mnt3 = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(dir1.path().c_str(), child_dir.path().c_str(), "", MS_BIND, "",
+            MNT_DETACH));
 
-  std::vector<ProcMountInfoEntry> mounts =
-      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntries());
-  std::string opt1, opt2, opt3;
-  for (const auto& e : mounts) {
-    if (e.mount_point == dir1.path()) {
-      opt1 = e.optional;
-    }
-    if (e.mount_point == dir2.path()) {
-      opt2 = e.optional;
-    }
-    if (e.mount_point == child_dir.path()) {
-      opt3 = e.optional;
-    }
-  }
-  ASSERT_TRUE(absl::StrContains(opt1, "shared:"));
-  ASSERT_EQ(opt1, opt2);
-  ASSERT_EQ(opt2, opt3);
+  auto optionals = ASSERT_NO_ERRNO_AND_VALUE(MountOptionals());
+  ASSERT_FALSE(optionals[dir1.path()].empty());
+  ASSERT_FALSE(optionals[dir2.path()].empty());
+  ASSERT_FALSE(optionals[child_dir.path()].empty());
+
+  EXPECT_EQ(optionals[dir1.path()][0].shared, optionals[dir2.path()][0].shared);
+  EXPECT_EQ(optionals[dir2.path()][0].shared,
+            optionals[child_dir.path()][0].shared);
+  EXPECT_NE(optionals[dir1.path()][0].shared, 0);
 }
 
 TEST(MountTest, MountInfoHasRoot) {
@@ -1445,10 +1320,11 @@ TEST(MountTest, MountInfoHasRoot) {
       ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntries());
   for (const auto& e : mounts) {
     if (e.mount_point == child.path()) {
-      ASSERT_EQ(e.root, JoinPath("/", Basename(child.path())));
+      EXPECT_EQ(e.root, JoinPath("/", Basename(child.path())))
+          << "Offending mount ID is: " << e.id;
     }
     if (e.mount_point == parent.path()) {
-      ASSERT_EQ(e.root, "/");
+      EXPECT_EQ(e.root, "/") << "Offending mount ID is: " << e.id;
     }
   }
 }
