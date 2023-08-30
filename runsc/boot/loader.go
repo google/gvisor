@@ -158,6 +158,10 @@ type Loader struct {
 	// apply to the entire pod.
 	mountHints *PodMountHints
 
+	// sharedMountKey holds VFS mounts that may be shared between containers
+	// within the same pod. It is mapped by mount source.
+	sharedMounts map[string]*vfs.Mount
+
 	// productName is the value to show in
 	// /sys/devices/virtual/dmi/id/product_name.
 	productName string
@@ -932,12 +936,12 @@ func (l *Loader) createContainerProcess(root bool, cid string, info *containerIn
 	}
 	l.startGoferMonitor(cid, int32(info.goferFDs[0].FD()))
 
-	mntr := newContainerMounter(info, l.k, l.mountHints, l.productName, l.sandboxID)
 	if root {
-		if err := mntr.processHints(info.conf, info.procArgs.Credentials); err != nil {
+		if err := l.processHints(info.conf, info.procArgs.Credentials); err != nil {
 			return nil, nil, err
 		}
 	}
+	mntr := newContainerMounter(info, l.k, l.mountHints, l.sharedMounts, l.productName, l.sandboxID)
 	if err := setupContainerVFS(ctx, info, mntr, &info.procArgs); err != nil {
 		return nil, nil, err
 	}
