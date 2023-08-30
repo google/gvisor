@@ -926,7 +926,7 @@ func (c *Container) createOverlayFilestore(conf config.Overlay2, mountSrc string
 func (c *Container) createOverlayFilestoreInSelf(mountSrc string) (*os.File, boot.OverlayMedium, error) {
 	mountSrcInfo, err := os.Stat(mountSrc)
 	if err != nil {
-		return nil, boot.NoOverlay, fmt.Errorf("failed to stat mount %q to see if it were a dirctory: %v", mountSrc, err)
+		return nil, boot.NoOverlay, fmt.Errorf("failed to stat mount %q to see if it were a directory: %v", mountSrc, err)
 	}
 	if !mountSrcInfo.IsDir() {
 		log.Warningf("overlay2 self medium is only supported for directory mounts, but mount %q is not a directory, falling back to memory", mountSrc)
