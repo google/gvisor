@@ -100,3 +100,13 @@ go_test(
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
+
+go_test(
+    name = "serialization_test",
+    srcs = ["serialization_test.go"],
+    deps = [
+        ":container",
+        "//runsc/sandbox",
+        "@org_golang_google_protobuf//proto:go_default_library",
+    ],
+)
