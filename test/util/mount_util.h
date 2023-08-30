@@ -20,6 +20,8 @@
 
 #include <functional>
 #include <string>
+#include <string_view>
+#include <vector>
 
 #include "gmock/gmock.h"
 #include "absl/container/flat_hash_map.h"
@@ -92,6 +94,23 @@ PosixErrorOr<std::vector<ProcMountInfoEntry>> ProcSelfMountInfoEntriesFrom(
 // "", "relatime": "", "fd": "7" }.
 absl::flat_hash_map<std::string, std::string> ParseMountOptions(
     std::string mopts);
+
+struct MountOptional {
+  int shared;
+  int master;
+  int propagate_from;
+};
+
+// MountOptionals returns a map of mount points to their optional fields as
+// found in mountinfo. Duplicate mount points with different mount points will
+// map to a vector of optionals. The order of the optionals is determined by
+// their order in mountinfo (the order they were mounted in).
+PosixErrorOr<absl::flat_hash_map<std::string, std::vector<MountOptional>>>
+MountOptionals();
+
+// ParseOptionalTag is a helper that parses a single entry in a mount's
+// set of optional tags.
+PosixError ParseOptionalTag(std::string_view tag, MountOptional* opt);
 
 }  // namespace testing
 }  // namespace gvisor
