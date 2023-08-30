@@ -187,16 +187,16 @@ type Sandbox struct {
 	//
 	// This field isn't saved to json, because only a creator of sandbox
 	// will have it as a child process.
-	child bool
+	child bool `nojson:"true"`
 
 	// statusMu protects status.
-	statusMu sync.Mutex
+	statusMu sync.Mutex `nojson:"true"`
 
 	// status is the exit status of a sandbox process. It's only set if the
 	// child==true and the sandbox was waited on. This field allows for multiple
 	// threads to wait on sandbox and get the exit code, since Linux will return
 	// WaitStatus to one of the waiters only.
-	status unix.WaitStatus
+	status unix.WaitStatus `nojson:"true"`
 }
 
 // Getpid returns the process ID of the sandbox process.
