@@ -51,6 +51,7 @@ disable_linux_gro=
 gro=0
 num_client_threads=1
 sniff=false
+xdp=false
 
 # Check for netem support.
 lsmod_output=$(lsmod | grep sch_netem)
@@ -203,6 +204,9 @@ while [[ $# -gt 0 ]]; do
     --sniff)
       netstack_opts="${netstack_opts} -sniff"
       ;;
+    --xdp)
+      xdp=true
+      ;;
     *)
       echo "unknown option: $1"
       echo ""
@@ -246,8 +250,8 @@ half_latency=$(echo "${latency}"/2 | bc -l | awk '{printf "%1.2f", $0}')
 half_loss=$(echo "${loss}"/2 | bc -l | awk '{printf "%1.6f", $0}')
 half_duplicate=$(echo "${duplicate}"/2 | bc -l | awk '{printf "%1.6f", $0}')
 helper_dir="${helper_dir#$(pwd)/}" # Use relative paths.
-proxy_binary="${helper_dir}/tcp_proxy"
-nsjoin_binary="${helper_dir}/nsjoin"
+proxy_binary="./tcp_proxy"
+nsjoin_binary="./nsjoin"
 
 if [[ ! -e ${proxy_binary} ]]; then
   echo "Could not locate ${proxy_binary}, please make sure you've built the binary"
@@ -277,7 +281,8 @@ if ${client}; then
   # and forward traffic using netstack.
   client_args="${proxy_binary} ${netstack_opts} -port ${proxy_port} -client \\
       -mtu ${mtu} -iface client.0 -addr ${client_proxy_addr} -mask ${mask} \\
-      -forward ${full_server_proxy_addr} -gso=${gso} -swgso=${swgso} --gro=${gro}"
+      -forward ${full_server_proxy_addr} -gso=${gso} -swgso=${swgso} --gro=${gro} \\
+      --xdp=${xdp}"
 fi
 
 # Server proxy that will listen on the proxy port and forward to the server's
@@ -288,7 +293,8 @@ if ${server}; then
   # iperf server using netstack.
   server_args="${proxy_binary} ${netstack_opts} -port ${proxy_port} -server \\
       -mtu ${mtu} -iface server.0 -addr ${server_proxy_addr} -mask ${mask} \\
-      -forward ${full_server_addr} -gso=${gso} -swgso=${swgso} --gro=${gro}"
+      -forward ${full_server_addr} -gso=${gso} -swgso=${swgso} --gro=${gro} \\
+      --xdp=${xdp}"
 fi
 
 # Specify loss and duplicate parameters only if they are non-zero

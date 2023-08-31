@@ -63,6 +63,8 @@ type ControlBlock struct {
 	Completion CompletionQueue
 }
 
+// TODO: None of this is actual read only anymore lol.
+
 // ReadOnlySocketOpts configure a read-only AF_XDP socket.
 type ReadOnlySocketOpts struct {
 	NFrames      uint32

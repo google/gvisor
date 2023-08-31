@@ -7,7 +7,13 @@ package(
 
 go_binary(
     name = "tcp_proxy",
-    srcs = ["tcp_proxy.go"],
+    srcs = [
+        "tcp_proxy.go",
+        "xdp.go",
+    ],
+    embedsrcs = [
+        "//test/benchmarks/tcp/bpf:af_xdp_ebpf.o",  # keep
+    ],
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/tcpip",
@@ -15,6 +21,7 @@ go_binary(
         "//pkg/tcpip/link/fdbased",
         "//pkg/tcpip/link/qdisc/fifo",
         "//pkg/tcpip/link/sniffer",
+        "//pkg/tcpip/link/xdp",
         "//pkg/tcpip/network/arp",
         "//pkg/tcpip/network/ipv4",
         "//pkg/tcpip/network/ipv6",
@@ -22,6 +29,8 @@ go_binary(
         "//pkg/tcpip/transport/icmp",
         "//pkg/tcpip/transport/tcp",
         "//pkg/tcpip/transport/udp",
+        "@com_github_cilium_ebpf//:go_default_library",
+        "@com_github_cilium_ebpf//link:go_default_library",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )

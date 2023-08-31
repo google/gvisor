@@ -74,6 +74,7 @@ var (
 	traceprofile       = flag.String("traceprofile", "", "write a 5s trace of the benchmark to the specified file.")
 	useIpv6            = flag.Bool("ipv6", false, "use ipv6 instead of ipv4.")
 	sniff              = flag.Bool("sniff", false, "log sniffed packets")
+	useXDP             = flag.Bool("xdp", false, "use AF_XDP as a link enpoint instead of fdbased")
 )
 
 type impl interface {
@@ -159,11 +160,6 @@ func setupNetwork(ifaceName string, numChannels int) (fds []int, err error) {
 }
 
 func newNetstackImpl(mode string) (impl, error) {
-	fds, err := setupNetwork(*iface, runtime.GOMAXPROCS(-1))
-	if err != nil {
-		return nil, err
-	}
-
 	// Parse details.
 	var parsedAddr tcpip.Address
 	if *useIpv6 {
@@ -210,25 +206,36 @@ func newNetstackImpl(mode string) (impl, error) {
 	rand.Read(mac) // Fill with random data.
 	mac[0] &^= 0x1 // Clear multicast bit.
 	mac[0] |= 0x2  // Set local assignment bit (IEEE802).
-	ep, err := fdbased.New(&fdbased.Options{
-		FDs:            fds,
-		MTU:            uint32(*mtu),
-		EthernetHeader: true,
-		Address:        tcpip.LinkAddress(mac),
-		// Enable checksum generation as we need to generate valid
-		// checksums for the veth device to deliver our packets to the
-		// peer. But we do want to disable checksum verification as veth
-		// devices do perform GRO and the linux host kernel may not
-		// regenerate valid checksums after GRO.
-		TXChecksumOffload: false,
-		RXChecksumOffload: true,
-		//PacketDispatchMode: fdbased.RecvMMsg,
-		PacketDispatchMode: fdbased.PacketMMap,
-		GSOMaxSize:         uint32(*gso),
-		GvisorGSOEnabled:   *swgso,
-	})
+	var ep stack.LinkEndpoint
+	var err error
+	if *useXDP {
+		ep, err = newXDPEndpoint(*iface, mac)
+	} else {
+		var fds []int
+		fds, err = setupNetwork(*iface, runtime.GOMAXPROCS(0))
+		if err != nil {
+			return nil, err
+		}
+		ep, err = fdbased.New(&fdbased.Options{
+			FDs:            fds,
+			MTU:            uint32(*mtu),
+			EthernetHeader: true,
+			Address:        tcpip.LinkAddress(mac),
+			// Enable checksum generation as we need to generate valid
+			// checksums for the veth device to deliver our packets to the
+			// peer. But we do want to disable checksum verification as veth
+			// devices do perform GRO and the linux host kernel may not
+			// regenerate valid checksums after GRO.
+			TXChecksumOffload: false,
+			RXChecksumOffload: true,
+			//PacketDispatchMode: fdbased.RecvMMsg,
+			PacketDispatchMode: fdbased.PacketMMap,
+			GSOMaxSize:         uint32(*gso),
+			GvisorGSOEnabled:   *swgso,
+		})
+	}
 	if err != nil {
-		return nil, fmt.Errorf("failed to create FD endpoint: %v", err)
+		return nil, fmt.Errorf("failed to create endpoint: %v", err)
 	}
 
 	if *sniff {
@@ -383,6 +390,7 @@ func (n netstackImpl) installProbe(probeFileName string) (close func()) {
 
 func main() {
 	flag.Parse()
+	log.Printf("xdp: %t", *useXDP)
 	if *port == 0 {
 		log.Fatalf("no port provided")
 	}
