@@ -16,7 +16,6 @@ package sandbox
 
 import (
 	"bytes"
-	_ "embed"
 	"fmt"
 	"net"
 	"os"
@@ -35,6 +34,7 @@ import (
 	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/config"
+	"gvisor.dev/gvisor/runsc/sandbox/bpf"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
@@ -417,11 +417,6 @@ func createSocket(iface net.Interface, ifaceLink netlink.Link, enableGSO bool) (
 	return &socketEntry{deviceFile, gsoMaxSize}, nil
 }
 
-// program is the BPF program to attach to the socket.
-//
-//go:embed bpf/af_xdp_ebpf.o
-var program []byte
-
 func createSocketXDP(iface net.Interface) ([]*os.File, error) {
 	// Create an XDP socket. The sentry will mmap memory for the various
 	// rings and bind to the device.
@@ -434,7 +429,7 @@ func createSocketXDP(iface net.Interface) ([]*os.File, error) {
 	// device and insert our socket into its map.
 
 	// Load into the kernel.
-	spec, err := ebpf.LoadCollectionSpecFromReader(bytes.NewReader(program))
+	spec, err := ebpf.LoadCollectionSpecFromReader(bytes.NewReader(bpf.AFXDPProgram))
 	if err != nil {
 		return nil, fmt.Errorf("failed to load spec: %v", err)
 	}

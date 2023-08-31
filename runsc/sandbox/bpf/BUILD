@@ -1,8 +1,17 @@
-load("//tools:defs.bzl", "bpf_program")
+load("//tools:defs.bzl", "bpf_program", "go_library")
 
 package(
     default_applicable_licenses = ["//:license"],
     licenses = ["notice"],
+)
+
+go_library(
+    name = "bpf",
+    srcs = ["bpf.go"],
+    embedsrcs = [
+        "af_xdp_ebpf.o",  # keep
+    ],
+    visibility = ["//visibility:public"],
 )
 
 bpf_program(
