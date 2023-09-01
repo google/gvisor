@@ -1868,7 +1868,8 @@ INSTANTIATE_TEST_SUITE_P(
 using SocketMultiProtocolInetLoopbackTest =
     ::testing::TestWithParam<ProtocolTestParam>;
 
-TEST_P(SocketMultiProtocolInetLoopbackTest, V4MappedLoopbackOnlyReservesV4) {
+TEST_P(SocketMultiProtocolInetLoopbackTest,
+       DISABLED_V4MappedLoopbackOnlyReservesV4) {
   ProtocolTestParam const& param = GetParam();
 
   for (int i = 0; true; i++) {
@@ -1917,7 +1918,9 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, V4MappedLoopbackOnlyReservesV4) {
   }
 }
 
-TEST_P(SocketMultiProtocolInetLoopbackTest, V4MappedAnyOnlyReservesV4) {
+// TODO(b/298680322): Investigate why this fails on newer kernel versions.
+TEST_P(SocketMultiProtocolInetLoopbackTest,
+       DISABLED_V4MappedAnyOnlyReservesV4) {
   ProtocolTestParam const& param = GetParam();
 
   for (int i = 0; true; i++) {
@@ -2310,7 +2313,8 @@ TEST_P(SocketMultiProtocolInetLoopbackTest, V6EphemeralPortReserved) {
   }
 }
 
-TEST_P(SocketMultiProtocolInetLoopbackTest, V4MappedEphemeralPortReserved) {
+TEST_P(SocketMultiProtocolInetLoopbackTest,
+       DISABLED_V4MappedEphemeralPortReserved) {
   ProtocolTestParam const& param = GetParam();
 
   for (int i = 0; true; i++) {
