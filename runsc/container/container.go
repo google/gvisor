@@ -37,6 +37,7 @@ import (
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sighandling"
 	"gvisor.dev/gvisor/pkg/state/statefile"
@@ -1712,6 +1713,22 @@ func nvProxyPreGoferHostSetup(spec *specs.Spec, conf *config.Config) error {
 		return fmt.Errorf("nvidia-container-cli info failed, err: %v\nstdout: %s\nstderr: %s", err, infoOut.String(), infoErr.String())
 	}
 	log.Debugf("nvidia-container-cli info: %v", infoOut.String())
+
+	// Check that the Nvidia driver version is OK.
+	// We do this after nvidia-container-cli because we need the
+	// `/dev/nvidiactl` device file to exist.
+	version, err := nvproxy.VersionCheck()
+	if err != nil {
+		if version == "" {
+			return fmt.Errorf("failed to get Nvidia driver version: %w", err)
+		}
+		if !conf.NVProxyBypassDriverCheck {
+			return fmt.Errorf("nvproxy: %w", err)
+		}
+		log.Warningf("!! Unsupported Nvidia driver version (%s) !!", version)
+	} else {
+		log.Debugf("Nvidia driver version: %s", version)
+	}
 
 	return nil
 }

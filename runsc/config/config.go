@@ -305,6 +305,10 @@ type Config struct {
 	// containers or set by `docker --gpus`.
 	NVProxyDocker bool `flag:"nvproxy-docker"`
 
+	// NVProxyBypassDriverCheck doesn't check for the NVIDIA driver version.
+	// Useful mostly for debugging.
+	NVProxyBypassDriverCheck bool `flag:"nvproxy-bypass-driver-check"`
+
 	// TPUProxy enables support for TPUs.
 	TPUProxy bool `flag:"tpuproxy"`
 

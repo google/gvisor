@@ -24,30 +24,34 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/nvgpu"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/devtmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
-// Register registers all devices implemented by this package in vfsObj.
-func Register(vfsObj *vfs.VirtualFilesystem, uvmDevMajor uint32) error {
-	// The kernel driver's interface is unstable, so only allow versions of the
-	// driver that are known to be supported.
+// VersionCheck checks whether the Nvidia driver version present on the
+// machine is supported.
+// It returns the driver version number, and whether it is supported.
+// The driver version string being empty indicates that there was an error
+// looking up the driver version.
+func VersionCheck() (string, error) {
 	version, err := hostDriverVersion()
 	if err != nil {
-		return fmt.Errorf("failed to get Nvidia driver version: %w", err)
+		return "", fmt.Errorf("failed to get Nvidia driver version: %w", err)
 	}
 	switch version {
 	case
 		"525.60.13",
 		"525.105.17":
-		log.Infof("Nvidia driver version: %s", version)
+		return version, nil
 	default:
-		return fmt.Errorf("unsupported Nvidia driver version: %s", version)
+		return version, fmt.Errorf("unsupported Nvidia driver version: %s", version)
 	}
+}
 
+// Register registers all devices implemented by this package in vfsObj.
+func Register(vfsObj *vfs.VirtualFilesystem, uvmDevMajor uint32) error {
 	nvp := &nvproxy{
 		objsLive: make(map[nvgpu.Handle]*object),
 	}

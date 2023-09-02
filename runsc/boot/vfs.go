@@ -1187,6 +1187,18 @@ func nvproxyRegisterDevicesAndCreateFiles(ctx context.Context, info *containerIn
 	if err != nil {
 		return fmt.Errorf("reserving device major number for nvidia-uvm: %w", err)
 	}
+	version, err := nvproxy.VersionCheck()
+	if err != nil {
+		if version == "" {
+			return fmt.Errorf("failed to get Nvidia driver version: %w", err)
+		}
+		if !info.conf.NVProxyBypassDriverCheck {
+			return fmt.Errorf("nvproxy: %w", err)
+		}
+		log.Warningf("!! Unsupported Nvidia driver version (%s) !!", version)
+	} else {
+		log.Infof("Supported Nvidia driver version: %s", version)
+	}
 	if err := nvproxy.Register(vfsObj, uvmDevMajor); err != nil {
 		return fmt.Errorf("registering nvproxy driver: %w", err)
 	}
