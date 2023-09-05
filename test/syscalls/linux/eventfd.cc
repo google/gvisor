@@ -101,6 +101,9 @@ TEST(EventfdTest, SmallRead) {
 }
 
 TEST(EventfdTest, IllegalSeek) {
+  // TODO: b/298787679 - this test fails on 6.0+ kernels.
+  SKIP_IF(!IsRunningOnGvisor());
+
   FileDescriptor efd = ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(0, 0));
   EXPECT_THAT(lseek(efd.get(), 0, SEEK_SET), SyscallFailsWithErrno(ESPIPE));
 }
