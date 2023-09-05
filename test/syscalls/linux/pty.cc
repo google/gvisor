@@ -777,6 +777,40 @@ TEST_F(PtyTest, TermiosONLCR) {
   ExpectFinished(replica_);
 }
 
+// ICRNL rewrites input \r to \n.
+TEST_F(PtyTest, TCSETSFTermiosICRNL) {
+  struct kernel_termios t = DefaultTermios();
+  t.c_iflag |= ICRNL;
+  t.c_lflag &= ~ICANON;  // for byte-by-byte reading.
+  ASSERT_THAT(ioctl(replica_.get(), TCSETSF, &t), SyscallSucceeds());
+
+  char c = '\r';
+  ASSERT_THAT(WriteFd(master_.get(), &c, 1), SyscallSucceedsWithValue(1));
+
+  ExpectReadable(replica_, 1, &c);
+  EXPECT_EQ(c, '\n');
+
+  ExpectFinished(replica_);
+}
+
+// ONLCR rewrites output \n to \r\n.
+TEST_F(PtyTest, TCSETSFTermiosONLCR) {
+  struct kernel_termios t = DefaultTermios();
+  t.c_oflag |= ONLCR;
+  t.c_lflag &= ~ICANON;  // for byte-by-byte reading.
+  ASSERT_THAT(ioctl(replica_.get(), TCSETSF, &t), SyscallSucceeds());
+
+  char c = '\n';
+  ASSERT_THAT(WriteFd(replica_.get(), &c, 1), SyscallSucceedsWithValue(1));
+
+  // Extra byte for NUL for EXPECT_STREQ.
+  char buf[3] = {};
+  ExpectReadable(master_, 2, buf);
+  EXPECT_STREQ(buf, "\r\n");
+
+  ExpectFinished(replica_);
+}
+
 TEST_F(PtyTest, TermiosIGNCR) {
   struct kernel_termios t = DefaultTermios();
   t.c_iflag |= IGNCR;
