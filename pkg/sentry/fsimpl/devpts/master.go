@@ -158,6 +158,10 @@ func (mfd *masterFileDescription) Ioctl(ctx context.Context, io usermem.IO, sysn
 	case linux.TCSETSW:
 		// TODO(b/29356795): This should drain the output queue first.
 		return mfd.t.ld.setTermios(t, args)
+	case linux.TCSETSF:
+		// TODO(b/29356795): This should drain the output queue and
+		// clear the input queue first.
+		return mfd.t.ld.setTermios(t, args)
 	case linux.TIOCGPTN:
 		nP := primitive.Uint32(mfd.t.n)
 		_, err := nP.CopyOut(t, args[2].Pointer())
