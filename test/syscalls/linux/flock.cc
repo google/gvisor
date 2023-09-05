@@ -652,7 +652,7 @@ TEST_F(FlockTest, BlockingLockFirstExclusiveSecondExclusive) {
 
 TEST(FlockTestNoFixture, BadFD) {
   // EBADF: fd is not an open file descriptor.
-  ASSERT_THAT(flock(-1, 0), SyscallFailsWithErrno(EBADF));
+  ASSERT_THAT(flock(-1, LOCK_UN), SyscallFailsWithErrno(EBADF));
 }
 
 TEST(FlockTestNoFixture, FlockDir) {

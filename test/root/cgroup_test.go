@@ -204,13 +204,6 @@ func TestCgroupV1(t *testing.T) {
 			want:  "3000",
 		},
 		{
-			field: "kernel-memory",
-			value: 100 << 20,
-			ctrl:  "memory",
-			file:  "memory.kmem.limit_in_bytes",
-			want:  "104857600",
-		},
-		{
 			field: "memory",
 			value: 1 << 30,
 			ctrl:  "memory",
@@ -270,8 +263,6 @@ func TestCgroupV1(t *testing.T) {
 			hostconf.Resources.CPUPeriod = attr.value
 		case "cpu-quota":
 			hostconf.Resources.CPUQuota = attr.value
-		case "kernel-memory":
-			hostconf.Resources.KernelMemory = attr.value
 		case "memory":
 			hostconf.Resources.Memory = attr.value
 		case "memory-reservation":
@@ -440,8 +431,6 @@ func TestCgroupV2(t *testing.T) {
 			hostconf.Resources.CPUQuota = defaultTestCPUQuota
 		case "cpu-quota":
 			hostconf.Resources.CPUQuota = attr.value
-		case "kernel-memory":
-			hostconf.Resources.KernelMemory = attr.value
 		case "memory":
 			hostconf.Resources.Memory = attr.value
 		case "memory-reservation":

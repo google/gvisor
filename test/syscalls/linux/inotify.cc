@@ -333,6 +333,9 @@ PosixErrorOr<int> InotifyAddWatch(int fd, const std::string& path,
 }
 
 TEST(Inotify, IllegalSeek) {
+  // TODO: b/298787679 - this test fails on 6.0+ kernels.
+  SKIP_IF(!IsRunningOnGvisor());
+
   const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(0));
   EXPECT_THAT(lseek(fd.get(), 0, SEEK_SET), SyscallFailsWithErrno(ESPIPE));
 }

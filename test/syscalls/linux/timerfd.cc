@@ -218,6 +218,9 @@ TEST_P(TimerfdTest, SetToPastExpiresEventually) {
 }
 
 TEST_P(TimerfdTest, IllegalSeek) {
+  // TODO: b/298787679 - this test fails on 6.0+ kernels.
+  SKIP_IF(!IsRunningOnGvisor());
+
   auto const tfd = ASSERT_NO_ERRNO_AND_VALUE(TimerfdCreate(GetParam(), 0));
   EXPECT_THAT(lseek(tfd.get(), 0, SEEK_SET), SyscallFailsWithErrno(ESPIPE));
 }
