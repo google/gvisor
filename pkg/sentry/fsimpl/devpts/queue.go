@@ -36,7 +36,7 @@ const waitBufMaxBytes = 131072
 // full, at which point they are written to the wait buffer. Bytes are
 // processed (i.e. undergo termios transformations) as they are added to the
 // read buffer. The read buffer is readable when its length is nonzero and
-// readable is true.
+// readable is true, or when its length is zero and readable is true (EOF).
 //
 // +stateify savable
 type queue struct {

@@ -198,6 +198,7 @@ func (l *lineDiscipline) inputQueueReadSize(t *kernel.Task, io usermem.IO, args 
 func (l *lineDiscipline) inputQueueRead(ctx context.Context, dst usermem.IOSequence) (int64, error) {
 	l.termiosMu.RLock()
 	n, pushed, notifyEcho, err := l.inQueue.read(ctx, dst, l)
+	isCanon := l.termios.LEnabled(linux.ICANON)
 	l.termiosMu.RUnlock()
 	if err != nil {
 		return 0, err
@@ -212,9 +213,14 @@ func (l *lineDiscipline) inputQueueRead(ctx context.Context, dst usermem.IOSeque
 			l.replicaWaiter.Notify(waiter.ReadableEvents)
 		}
 		return n, nil
-	} else if notifyEcho {
+	}
+	if notifyEcho {
 		l.masterWaiter.Notify(waiter.ReadableEvents)
 	}
+	if !pushed && isCanon {
+		return 0, nil // EOF
+	}
+
 	return 0, linuxerr.ErrWouldBlock
 }
 
