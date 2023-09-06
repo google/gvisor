@@ -105,6 +105,21 @@ TEST_F(XattrTest, XattrInvalidPrefix) {
               SyscallFailsWithErrno(EOPNOTSUPP));
 }
 
+TEST_F(XattrTest, SecurityCapacityXattr) {
+  SKIP_IF(!IsRunningOnGvisor());
+  const char* path = test_file_name_.c_str();
+  const char name[] = "security.capacity";
+  const std::string val = "";
+  EXPECT_THAT(lsetxattr(path, name, &val, val.size(), 0),
+              SyscallFailsWithErrno(EOPNOTSUPP));
+
+  int buf = 0;
+  EXPECT_THAT(lgetxattr(path, name, &buf, /*size=*/128),
+              SyscallFailsWithErrno(ENODATA));
+
+  EXPECT_THAT(lremovexattr(path, name), SyscallFailsWithErrno(EOPNOTSUPP));
+}
+
 // Do not allow save/restore cycles after making the test file read-only, as
 // the restore will fail to open it with r/w permissions.
 TEST_F(XattrTest, XattrReadOnly) {

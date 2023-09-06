@@ -195,6 +195,8 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	allowXattrPrefix := map[string]struct{}{
 		linux.XATTR_TRUSTED_PREFIX: struct{}{},
 		linux.XATTR_USER_PREFIX:    struct{}{},
+		// The "security" namespace is allowed, but it always returns an error.
+		linux.XATTR_SECURITY_PREFIX: struct{}{},
 	}
 
 	tmpfsOpts, tmpfsOptsOk := opts.InternalData.(FilesystemOpts)

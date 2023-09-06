@@ -323,6 +323,11 @@ func CheckXattrPermissions(creds *auth.Credentials, ats AccessTypes, mode linux.
 		if filetype == linux.ModeDirectory && mode&linux.ModeSticky != 0 && ats.MayWrite() && !CanActAsOwner(creds, kuid) {
 			return linuxerr.EPERM
 		}
+	case strings.HasPrefix(name, linux.XATTR_SECURITY_PREFIX):
+		if ats.MayRead() {
+			return linuxerr.ENODATA
+		}
+		return linuxerr.EOPNOTSUPP
 	}
 	return nil
 }
