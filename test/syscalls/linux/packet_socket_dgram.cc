@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <arpa/inet.h>
+#include <errno.h>
 #include <ifaddrs.h>
 #include <net/ethernet.h>
 #include <net/if.h>
@@ -34,6 +35,7 @@
 #include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/posix_error.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
@@ -137,7 +139,13 @@ void CookedPacketTest::SetUp() {
   ASSERT_THAT(socket_ = socket(AF_PACKET, SOCK_DGRAM, htons(GetParam())),
               SyscallSucceeds());
 
-  restore_config_ = ASSERT_NO_ERRNO_AND_VALUE(AllowMartianPacketsOnLoopback());
+  auto restore_config = AllowMartianPacketsOnLoopback();
+  if (restore_config.ok()) {
+    restore_config_ = restore_config.ValueOrDie();
+  } else {
+    ASSERT_THAT(restore_config.error(), PosixErrorIs(EACCES));
+    GTEST_SKIP();
+  }
 }
 
 void CookedPacketTest::TearDown() {
