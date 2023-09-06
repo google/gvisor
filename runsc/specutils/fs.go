@@ -79,7 +79,9 @@ var propOptionsMap = map[string]mapping{
 
 // invalidOptions list options not allowed.
 //   - shared: sandbox must be isolated from the host. Propagating mount changes
-//     from the sandbox to the host breaks the isolation.
+//     from the sandbox to the host breaks the isolation. The sandbox's mount
+//     table is maintained in sentry memory. Mount operations from the application
+//     are not propagated to the host.
 var invalidOptions = []string{"shared", "rshared"}
 
 // OptionsToFlags converts mount options to syscall flags.
