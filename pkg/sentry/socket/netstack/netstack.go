@@ -35,10 +35,12 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+	"google.golang.org/protobuf/proto"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/abi/linux/errno"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/eventchannel"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal"
@@ -52,6 +54,7 @@ import (
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netfilter"
+	epb "gvisor.dev/gvisor/pkg/sentry/socket/netstack/events_go_proto"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserr"
@@ -794,7 +797,22 @@ func (s *sock) Bind(_ *kernel.Task, sockaddr []byte) *syserr.Error {
 // Listen implements the linux syscall listen(2) for sockets backed by
 // tcpip.Endpoint.
 func (s *sock) Listen(_ *kernel.Task, backlog int) *syserr.Error {
-	return syserr.TranslateNetstackError(s.Endpoint.Listen(backlog))
+	if err := s.Endpoint.Listen(backlog); err != nil {
+		return syserr.TranslateNetstackError(err)
+	}
+	if !socket.IsTCP(s) {
+		return nil
+	}
+
+	// Emit SentryTCPListenEvent with the bound port for tcp sockets.
+	addr, err := s.Endpoint.GetLocalAddress()
+	if err != nil {
+		panic(fmt.Sprintf("GetLocalAddress failed for tcp socket: %s", err))
+	}
+	eventchannel.Emit(&epb.SentryTcpListenEvent{
+		Port: proto.Int32(int32(addr.Port)),
+	})
+	return nil
 }
 
 // blockingAccept implements a blocking version of accept(2), that is, if no
