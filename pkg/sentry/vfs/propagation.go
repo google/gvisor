@@ -62,15 +62,15 @@ func (vfs *VirtualFilesystem) setPropagation(mnt *Mount, pflag uint32) error {
 				return err
 			}
 			mnt.groupID = id
-			sharedRingInit(mnt)
+			mnt.sharedEntry.Init(mnt)
 			mnt.isShared = true
 		}
 	case linux.MS_PRIVATE:
 		if mnt.isShared {
-			if sharedRingEmpty(mnt) {
+			if mnt.sharedEntry.Empty() {
 				vfs.freeGroupID(mnt.groupID)
 			}
-			sharedRingRemove(mnt)
+			mnt.sharedEntry.Remove()
 			mnt.groupID = 0
 			mnt.isShared = false
 		}
@@ -85,7 +85,7 @@ func (vfs *VirtualFilesystem) setPropagation(mnt *Mount, pflag uint32) error {
 //
 // +checklocks:vfs.mountMu
 func (vfs *VirtualFilesystem) addPeer(mnt *Mount, new *Mount) {
-	sharedRingAdd(mnt, new)
+	mnt.sharedEntry.Add(&new.sharedEntry)
 	new.isShared = true
 	new.groupID = mnt.groupID
 }

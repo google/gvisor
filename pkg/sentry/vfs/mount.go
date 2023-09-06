@@ -92,7 +92,7 @@ type Mount struct {
 
 	// sharedEntry represents an entry in a circular list (ring) of mounts in a
 	// shared peer group.
-	sharedEntry
+	sharedEntry mountEntry
 
 	// groupID is the ID for this mount's shared peer group. If the mount is not
 	// in a peer group, this is 0.
@@ -110,10 +110,6 @@ type Mount struct {
 	writers atomicbitops.Int64
 }
 
-type sharedMapper struct{}
-
-func (sharedMapper) linkerFor(mnt *Mount) *sharedEntry { return &mnt.sharedEntry }
-
 func newMount(vfs *VirtualFilesystem, fs *Filesystem, root *Dentry, mntns *MountNamespace, opts *MountOptions) *Mount {
 	mnt := &Mount{
 		ID:       vfs.lastMountID.Add(1),
@@ -128,7 +124,7 @@ func newMount(vfs *VirtualFilesystem, fs *Filesystem, root *Dentry, mntns *Mount
 	if opts.ReadOnly {
 		mnt.setReadOnlyLocked(true)
 	}
-	sharedRingInit(mnt)
+	mnt.sharedEntry.Init(mnt)
 	refs.Register(mnt)
 	return mnt
 }
