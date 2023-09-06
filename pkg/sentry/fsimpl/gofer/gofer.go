@@ -1399,7 +1399,7 @@ func (d *dentry) checkPermissions(creds *auth.Credentials, ats vfs.AccessTypes) 
 }
 
 func (d *dentry) checkXattrPermissions(creds *auth.Credentials, name string, ats vfs.AccessTypes) error {
-	// Deny access to the "security" and "system" namespaces since applications
+	// Deny access to the "system" namespaces since applications
 	// may expect these to affect kernel behavior in unimplemented ways
 	// (b/148380782). Allow all other extended attributes to be passed through
 	// to the remote filesystem. This is inconsistent with Linux's 9p client,
@@ -1407,7 +1407,7 @@ func (d *dentry) checkXattrPermissions(creds *auth.Credentials, name string, ats
 	//
 	// NOTE(b/202533394): Also disallow "trusted" namespace for now. This is
 	// consistent with the VFS1 gofer client.
-	if strings.HasPrefix(name, linux.XATTR_SECURITY_PREFIX) || strings.HasPrefix(name, linux.XATTR_SYSTEM_PREFIX) || strings.HasPrefix(name, linux.XATTR_TRUSTED_PREFIX) {
+	if strings.HasPrefix(name, linux.XATTR_SYSTEM_PREFIX) || strings.HasPrefix(name, linux.XATTR_TRUSTED_PREFIX) {
 		return linuxerr.EOPNOTSUPP
 	}
 	mode := linux.FileMode(d.mode.Load())
