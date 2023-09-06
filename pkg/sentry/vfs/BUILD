@@ -54,15 +54,13 @@ go_template_instance(
 )
 
 go_template_instance(
-    name = "shared_list",
-    out = "shared_list.go",
+    name = "mount_ring",
+    out = "mount_ring.go",
     package = "vfs",
-    prefix = "shared",
-    template = "//pkg/ilist:generic_list",
+    prefix = "mount",
+    template = "//pkg/ilist:generic_ring",
     types = {
-        "Element": "*Mount",
-        "Linker": "*sharedEntry",
-        "ElementMapper": "sharedMapper",
+        "Container": "*Mount",
     },
 )
 
@@ -144,6 +142,7 @@ go_library(
         "lock.go",
         "mount.go",
         "mount_namespace_refs.go",
+        "mount_ring.go",
         "mount_unsafe.go",
         "namespace.go",
         "opath.go",
@@ -153,7 +152,6 @@ go_library(
         "propagation.go",
         "resolving_path.go",
         "save_restore.go",
-        "shared_list.go",
         "vfs.go",
         "virtual_filesystem_mutex.go",
     ],

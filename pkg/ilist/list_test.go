@@ -183,63 +183,6 @@ func TestReset(t *testing.T) {
 	}
 }
 
-func TestRingAdd(t *testing.T) {
-	e1 := &testEntry{value: 1}
-	e2 := &testEntry{value: 2}
-	e3 := &testEntry{value: 3}
-
-	RingInit(e1)
-	RingAdd(e1, e2)
-	RingAdd(e1, e3)
-
-	sum := 0
-	for e := e1.Next(); e != e1; e = e.Next() {
-		sum += e.(*testEntry).value
-	}
-	if sum != 5 {
-		t.Errorf("wrong sum: want 5, got %d", sum)
-	}
-}
-
-func TestRingRemove(t *testing.T) {
-	e1 := &testEntry{value: 1}
-	e2 := &testEntry{value: 2}
-	e3 := &testEntry{value: 3}
-
-	RingInit(e1)
-	RingAdd(e1, e2)
-	RingAdd(e2, e3)
-	RingRemove(e2)
-
-	sum := 0
-	for e := e1.Next(); e != e1; e = e.Next() {
-		sum += e.(*testEntry).value
-	}
-	if sum != 3 {
-		t.Errorf("wrong sum: want 3, got %d", sum)
-	}
-}
-
-func TestRingEmpty(t *testing.T) {
-	e1 := &testEntry{value: 1}
-	e2 := &testEntry{value: 2}
-	e3 := &testEntry{value: 3}
-
-	RingInit(e1)
-	RingAdd(e1, e2)
-	RingAdd(e2, e3)
-	RingRemove(e3)
-	RingRemove(e2)
-
-	sum := 0
-	for e := e1.Next(); e != e1; e = e.Next() {
-		sum += e.(*testEntry).value
-	}
-	if sum != 0 {
-		t.Errorf("wrong sum: want 0, got %d", sum)
-	}
-}
-
 func BenchmarkIterateForward(b *testing.B) {
 	var l List
 	for i := 0; i < 1000000; i++ {
