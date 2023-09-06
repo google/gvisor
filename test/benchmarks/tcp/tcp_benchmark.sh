@@ -20,7 +20,6 @@
 iperf_port=45201 # Not likely to be privileged.
 proxy_port=44000 # Ditto.
 mask=8
-
 client_addr=10.0.0.1
 client_proxy_addr=10.0.0.2
 server_proxy_addr=10.0.0.3
@@ -51,6 +50,8 @@ disable_linux_gro=
 gro=0
 num_client_threads=1
 sniff=false
+xdp=false
+declare -a unshare_opts=( -U -r )
 
 # Check for netem support.
 lsmod_output=$(lsmod | grep sch_netem)
@@ -203,6 +204,12 @@ while [[ $# -gt 0 ]]; do
     --sniff)
       netstack_opts="${netstack_opts} -sniff"
       ;;
+    --xdp)
+      xdp=true
+      ;;
+    --no-user-ns)
+      unshare_opts=()
+      ;;
     *)
       echo "unknown option: $1"
       echo ""
@@ -229,6 +236,10 @@ while [[ $# -gt 0 ]]; do
       echo " --disable-linux-gro   disable GRO in the Linux network stack"
       echo " --gro                 set gVisor GRO timeout"
       echo " --ipv6                use ipv6 for benchmarks"
+      echo " --iperf-binary        name of the iperf binary to call"
+      echo " --sniff               sniff and output packet logs"
+      echo " --xdp                 use AF_XDP socket instead of AF_PACKET"
+      echo " --no-user-ns          don't run in a new user namespace. Useful for testing as root"
       echo ""
       echo "The output will of the script will be:"
       echo "  <throughput> <client-cpu-usage> <server-cpu-usage>"
@@ -277,7 +288,8 @@ if ${client}; then
   # and forward traffic using netstack.
   client_args="${proxy_binary} ${netstack_opts} -port ${proxy_port} -client \\
       -mtu ${mtu} -iface client.0 -addr ${client_proxy_addr} -mask ${mask} \\
-      -forward ${full_server_proxy_addr} -gso=${gso} -swgso=${swgso} --gro=${gro}"
+      -forward ${full_server_proxy_addr} -gso=${gso} -swgso=${swgso} --gro=${gro} \\
+      --xdp=${xdp}"
 fi
 
 # Server proxy that will listen on the proxy port and forward to the server's
@@ -288,7 +300,8 @@ if ${server}; then
   # iperf server using netstack.
   server_args="${proxy_binary} ${netstack_opts} -port ${proxy_port} -server \\
       -mtu ${mtu} -iface server.0 -addr ${server_proxy_addr} -mask ${mask} \\
-      -forward ${full_server_addr} -gso=${gso} -swgso=${swgso} --gro=${gro}"
+      -forward ${full_server_addr} -gso=${gso} -swgso=${swgso} --gro=${gro} \\
+      --xdp=${xdp}"
 fi
 
 # Specify loss and duplicate parameters only if they are non-zero
@@ -301,7 +314,7 @@ if [[ "$(echo "$half_duplicate" | bc -q)" != "0" ]]; then
   duplicate_opt="duplicate ${half_duplicate}%"
 fi
 
-exec unshare -U -m -n -r -f -p --mount-proc /bin/bash << EOF
+exec unshare "${unshare_opts[@]}" -m -n -f -p --mount-proc /bin/bash << EOF
 set -e -m
 
 if [[ ${verbose} == "true" ]]; then
