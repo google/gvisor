@@ -15,6 +15,8 @@
 package vfs
 
 import (
+	"fmt"
+
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/refs"
@@ -125,22 +127,28 @@ func (vfs *VirtualFilesystem) NewMountNamespaceFrom(
 	return mntns
 }
 
-type cloneEntry struct {
-	prevMount   *Mount
-	parentMount *Mount
-}
-
 // +checklocks:vfs.mountMu
-func (vfs *VirtualFilesystem) updateRootAndCWD(ctx context.Context, root *VirtualDentry, cwd *VirtualDentry, src *Mount, dst *Mount) {
-	if root.mount == src {
-		vfs.delayDecRef(root.mount)
-		root.mount = dst
-		root.mount.IncRef()
+func (vfs *VirtualFilesystem) updateRootAndCWD(ctx context.Context, root *VirtualDentry, cwd *VirtualDentry, srcRoot *Mount, dstRoot *Mount) {
+	// The mount trees are exact copies of each other so submountsLocked will
+	// return corresponding mounts in the same order.
+	srcMounts := srcRoot.submountsLocked()
+	dstMounts := dstRoot.submountsLocked()
+	if len(srcMounts) != len(dstMounts) {
+		panic(fmt.Sprintf("mount trees are not the same size: len(srcTree) = %d, len(dstTree) = %d", len(srcMounts), len(dstMounts)))
 	}
-	if cwd.mount == src {
-		vfs.delayDecRef(cwd.mount)
-		cwd.mount = dst
-		cwd.mount.IncRef()
+	for i := 0; i < len(srcMounts); i++ {
+		old := srcMounts[i]
+		new := dstMounts[i]
+		if root.mount == old {
+			vfs.delayDecRef(root.mount)
+			root.mount = new
+			root.mount.IncRef()
+		}
+		if cwd.mount == old {
+			vfs.delayDecRef(cwd.mount)
+			cwd.mount = new
+			cwd.mount.IncRef()
+		}
 	}
 }
 
@@ -170,38 +178,16 @@ func (vfs *VirtualFilesystem) CloneMountNamespace(
 	vfs.lockMounts()
 	defer vfs.unlockMounts(ctx)
 
-	ns.root.root.IncRef()
-	ns.root.fs.IncRef()
-	newns.root = newMount(vfs, ns.root.fs, ns.root.root, newns, &MountOptions{Flags: ns.root.Flags, ReadOnly: ns.root.ReadOnly()})
-	if ns.root.isShared {
-		vfs.addPeer(ns.root, newns.root)
+	newRoot, err := vfs.cloneMountTree(ctx, ns.root, ns.root.root)
+	if err != nil {
+		newns.DecRef(ctx)
+		vfs.abortTree(ctx, newRoot)
+		return nil, err
 	}
+	newns.root = newRoot
+	newns.root.ns = newns
+	vfs.commitTree(ctx, newRoot)
 	vfs.updateRootAndCWD(ctx, root, cwd, ns.root, newns.root)
-
-	queue := []cloneEntry{cloneEntry{ns.root, newns.root}}
-	for len(queue) != 0 {
-		p := queue[0]
-		queue = queue[1:]
-		for c := range p.prevMount.children {
-			m := vfs.cloneMount(c, c.root, nil)
-			vd := VirtualDentry{
-				mount:  p.parentMount,
-				dentry: c.point(),
-			}
-			vd.IncRef()
-
-			err := vfs.connectMountAtLocked(ctx, m, vd)
-			vfs.delayDecRef(m)
-			if err != nil {
-				newns.DecRef(ctx)
-				return nil, err
-			}
-			vfs.updateRootAndCWD(ctx, root, cwd, c, m)
-			if len(c.children) != 0 {
-				queue = append(queue, cloneEntry{c, m})
-			}
-		}
-	}
 	return newns, nil
 }
 
