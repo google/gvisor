@@ -15,8 +15,6 @@
 package vfs
 
 import (
-	"fmt"
-
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/refs"
@@ -128,27 +126,20 @@ func (vfs *VirtualFilesystem) NewMountNamespaceFrom(
 }
 
 // +checklocks:vfs.mountMu
-func (vfs *VirtualFilesystem) updateRootAndCWD(ctx context.Context, root *VirtualDentry, cwd *VirtualDentry, srcRoot *Mount, dstRoot *Mount) {
-	// The mount trees are exact copies of each other so submountsLocked will
-	// return corresponding mounts in the same order.
-	srcMounts := srcRoot.submountsLocked()
-	dstMounts := dstRoot.submountsLocked()
-	if len(srcMounts) != len(dstMounts) {
-		panic(fmt.Sprintf("mount trees are not the same size: len(srcTree) = %d, len(dstTree) = %d", len(srcMounts), len(dstMounts)))
+func (vfs *VirtualFilesystem) updateRootAndCWD(ctx context.Context, root *VirtualDentry, cwd *VirtualDentry, src *Mount, dst *Mount) {
+	if root.mount == src {
+		vfs.delayDecRef(root.mount)
+		root.mount = dst
+		root.mount.IncRef()
 	}
-	for i := 0; i < len(srcMounts); i++ {
-		old := srcMounts[i]
-		new := dstMounts[i]
-		if root.mount == old {
-			vfs.delayDecRef(root.mount)
-			root.mount = new
-			root.mount.IncRef()
-		}
-		if cwd.mount == old {
-			vfs.delayDecRef(cwd.mount)
-			cwd.mount = new
-			cwd.mount.IncRef()
-		}
+	if cwd.mount == src {
+		vfs.delayDecRef(cwd.mount)
+		cwd.mount = dst
+		cwd.mount.IncRef()
+	}
+	for srcChild := range src.children {
+		dstChild := vfs.mounts.Lookup(dst, srcChild.point())
+		vfs.updateRootAndCWD(ctx, root, cwd, srcChild, dstChild)
 	}
 }
 
