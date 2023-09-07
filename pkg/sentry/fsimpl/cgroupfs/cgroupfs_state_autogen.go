@@ -717,38 +717,35 @@ func (d *memsData) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.c)
 }
 
-func (d *deviceRule) StateTypeName() string {
-	return "pkg/sentry/fsimpl/cgroupfs.deviceRule"
+func (d *deviceID) StateTypeName() string {
+	return "pkg/sentry/fsimpl/cgroupfs.deviceID"
 }
 
-func (d *deviceRule) StateFields() []string {
+func (d *deviceID) StateFields() []string {
 	return []string{
 		"controllerType",
 		"major",
 		"minor",
-		"access",
 	}
 }
 
-func (d *deviceRule) beforeSave() {}
+func (d *deviceID) beforeSave() {}
 
 // +checklocksignore
-func (d *deviceRule) StateSave(stateSinkObject state.Sink) {
+func (d *deviceID) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
 	stateSinkObject.Save(0, &d.controllerType)
 	stateSinkObject.Save(1, &d.major)
 	stateSinkObject.Save(2, &d.minor)
-	stateSinkObject.Save(3, &d.access)
 }
 
-func (d *deviceRule) afterLoad() {}
+func (d *deviceID) afterLoad() {}
 
 // +checklocksignore
-func (d *deviceRule) StateLoad(stateSourceObject state.Source) {
+func (d *deviceID) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.controllerType)
 	stateSourceObject.Load(1, &d.major)
 	stateSourceObject.Load(2, &d.minor)
-	stateSourceObject.Load(3, &d.access)
 }
 
 func (c *devicesController) StateTypeName() string {
@@ -760,7 +757,7 @@ func (c *devicesController) StateFields() []string {
 		"controllerCommon",
 		"controllerStateless",
 		"controllerNoResource",
-		"allow",
+		"defaultAllow",
 		"deviceRules",
 	}
 }
@@ -773,7 +770,7 @@ func (c *devicesController) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &c.controllerCommon)
 	stateSinkObject.Save(1, &c.controllerStateless)
 	stateSinkObject.Save(2, &c.controllerNoResource)
-	stateSinkObject.Save(3, &c.allow)
+	stateSinkObject.Save(3, &c.defaultAllow)
 	stateSinkObject.Save(4, &c.deviceRules)
 }
 
@@ -784,7 +781,7 @@ func (c *devicesController) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.controllerCommon)
 	stateSourceObject.Load(1, &c.controllerStateless)
 	stateSourceObject.Load(2, &c.controllerNoResource)
-	stateSourceObject.Load(3, &c.allow)
+	stateSourceObject.Load(3, &c.defaultAllow)
 	stateSourceObject.Load(4, &c.deviceRules)
 }
 
@@ -1128,7 +1125,7 @@ func init() {
 	state.Register((*cpusetController)(nil))
 	state.Register((*cpusData)(nil))
 	state.Register((*memsData)(nil))
-	state.Register((*deviceRule)(nil))
+	state.Register((*deviceID)(nil))
 	state.Register((*devicesController)(nil))
 	state.Register((*allowedDevicesData)(nil))
 	state.Register((*deniedDevicesData)(nil))
