@@ -16,7 +16,9 @@ package boot
 
 import (
 	"errors"
+	"time"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 )
@@ -43,6 +45,7 @@ type Stats struct {
 	CPU    CPU    `json:"cpu"`
 	Memory Memory `json:"memory"`
 	Pids   Pids   `json:"pids"`
+	RootFs Rootfs `jsoon:"rootfs"`
 }
 
 // Pids contains stats on processes.
@@ -80,6 +83,33 @@ type CPUUsage struct {
 	User   uint64   `json:"user,omitempty"`
 	Total  uint64   `json:"total,omitempty"`
 	PerCPU []uint64 `json:"percpu,omitempty"`
+}
+
+// Rootfs contains data about filesystem usage.
+type Rootfs struct {
+	// The time at which these stats were updated.
+	Time uint64 `json:"time"`
+	// AvailableBytes represents the storage space available (bytes) for the filesystem.
+	// +optional
+	AvailableBytes uint64 `json:"availableBytes,omitempty"`
+	// CapacityBytes represents the total capacity (bytes) of the filesystems underlying storage.
+	// +optional
+	CapacityBytes uint64 `json:"capacityBytes,omitempty"`
+	// UsedBytes represents the bytes used for a specific task on the filesystem.
+	// This may differ from the total bytes used on the filesystem and may not equal CapacityBytes - AvailableBytes.
+	// e.g. For ContainerStats.Rootfs this is the bytes used by the container rootfs on the filesystem.
+	// +optional
+	UsedBytes uint64 `json:"usedBytes,omitempty"`
+	// InodesFree represents the free inodes in the filesystem.
+	// +optional
+	InodesFree uint64 `json:"inodesFree,omitempty"`
+	// Inodes represents the total inodes in the filesystem.
+	// +optional
+	Inodes uint64 `json:"inodes,omitempty"`
+	// InodesUsed represents the inodes used by the filesystem
+	// This may not equal Inodes - InodesFree because this filesystem may share inodes with other "filesystems"
+	// e.g. For ContainerStats.Rootfs, this is the inodes used only by that container, and does not count inodes used by other containers.
+	InodesUsed uint64 `json:"inodesUsed,omitempty"`
 }
 
 // Event gets the events from the container.
@@ -127,6 +157,23 @@ func (cm *containerManager) Event(cid *string, out *EventOut) error {
 
 	// CPU usage by container.
 	out.ContainerUsage = control.ContainerUsage(cm.l.k)
+
+	var fsstat linux.Statfs
+	fsstat, err = cm.l.rootfsStat()
+	if err != nil {
+		return err
+	}
+
+	// Filesystem usage of the container.
+	out.Event.Data.RootFs = Rootfs{
+		Time:           uint64(time.Now().Unix()),
+		Inodes:         fsstat.Files,
+		InodesFree:     fsstat.FilesFree,
+		InodesUsed:     fsstat.Files - fsstat.FilesFree,
+		AvailableBytes: (fsstat.BlocksAvailable * uint64(fsstat.BlockSize)),
+		CapacityBytes:  (fsstat.Blocks * uint64(fsstat.BlockSize)),
+		UsedBytes:      ((fsstat.Blocks - fsstat.BlocksAvailable) * uint64(fsstat.BlockSize)),
+	}
 
 	return nil
 }

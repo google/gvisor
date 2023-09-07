@@ -33,6 +33,7 @@ import (
 	"gvisor.dev/gvisor/pkg/coverage"
 	"gvisor.dev/gvisor/pkg/cpuid"
 	"gvisor.dev/gvisor/pkg/fd"
+	"gvisor.dev/gvisor/pkg/fspath"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/memutil"
 	"gvisor.dev/gvisor/pkg/rand"
@@ -1632,4 +1633,19 @@ func (l *Loader) pidsCount(cid string) (int, error) {
 		return 0, err
 	}
 	return l.k.TaskSet().Root.NumTasksPerContainer(cid), nil
+}
+
+func (l *Loader) rootfsStat() (linux.Statfs, error) {
+	ctx := l.k.SupervisorContext()
+	mntns := vfs.MountNamespaceFromContext(ctx)
+	vd := mntns.Root(ctx)
+	statfs, err := l.k.VFS().StatFSAt(ctx, auth.CredentialsFromContext(ctx), &vfs.PathOperation{
+		Root:  vd,
+		Start: vd,
+		Path:  fspath.Parse("/"),
+	})
+	if err != nil {
+		return linux.Statfs{}, err
+	}
+	return statfs, nil
 }
