@@ -57,7 +57,11 @@ def go_binary(name, static = False, pure = False, x_defs = None, **kwargs):
         kwargs["pure"] = "on"
     gc_goopts = select({
         "//conditions:default": kwargs.pop("gc_goopts", []),
-        "//tools:debug": kwargs.pop("gc_goopts", []) + ["-all=-N -l"],
+        "//tools:debug": kwargs.pop("gc_goopts", []) + ["-N", "-l"],
+    })
+    kwargs["gotags"] = select({
+        "//conditions:default": kwargs.pop("gotags", []),
+        "//tools:debug": kwargs.pop("gotags", []) + ["debug"],
     })
     _go_binary(
         name = name,

@@ -332,10 +332,17 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 		if err != nil {
 			return fmt.Errorf("could not read pid file: %v", err)
 		}
-		log.Infof("Sandbox process ID is %s. You can attach to it from a debugger of your choice.", sandboxPidBytes)
-		log.Infof("For example, with Delve you can call: $ dlv attach %s", sandboxPidBytes)
-		log.Infof("The test will automatically start after %s.", *waitForPid)
-		log.Infof("You may also signal the test process to start the test immediately: $ kill -SIGUSR1 %d", os.Getpid())
+		msg := `
+
+		Sandbox is running. You can now attach to it from a debugger of your choice.
+		For example, with Delve you can call: $ dlv attach %s.
+		The test will automatically start after %s.
+		You may also signal the test process to start the test immediately: $ kill -SIGUSR1 %d.
+
+		If you're running a test using Make/docker, you'll have to obtain the runsc and test PIDs manually.
+		To attach run: $ dlv attach $(ps aux | grep -m 1 -e 'runsc-sandbox' | awk '{print $2}')
+		To signal the test process run: $ kill -SIGUSR1 $(ps aux | grep -m 1 -e 'bash.*test/syscalls' | awk '{print $2}')`
+		log.Infof(msg, sandboxPidBytes, *waitForPid, os.Getpid())
 
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, unix.SIGUSR1)
