@@ -3,15 +3,13 @@ name: Mark stale issues and pull requests
 # Please refer to https://github.com/actions/stale/blob/master/action.yml
 # to see all config knobs of the stale action.
 
-on:
+"on":
   schedule:
   - cron: "0 0 * * *"
 
 jobs:
   stale:
-
     runs-on: ubuntu-latest
-
     steps:
     - uses: actions/stale@v5
       with:
