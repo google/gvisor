@@ -13,6 +13,7 @@ exempt_go_library(
     srcs = [
         "platforms.go",
         "platforms_darwin.go",
+        "platforms_debug.go",
     ],
     # Nothing needs to be stateified, and stateify has trouble when select is
     # used to choose deps.
