@@ -28,6 +28,7 @@
 #include <limits>
 #include <vector>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/status/statusor.h"
 #include "absl/time/clock.h"
@@ -37,6 +38,8 @@
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
+
+using ::testing::AnyOf;
 
 namespace gvisor {
 namespace testing {
@@ -1857,17 +1860,19 @@ TEST_P(SimpleTcpSocketTest, SetMaxSeg) {
                          sizeof(kTCPMaxSeg)),
               SyscallSucceedsWithValue(0));
 
-  // Linux actually never returns the user_mss value. It will always return the
-  // default MSS value defined above for an unconnected socket and always return
-  // the actual current MSS for a connected one.
   int optval;
   socklen_t optlen = sizeof(optval);
   ASSERT_THAT(getsockopt(s.get(), IPPROTO_TCP, TCP_MAXSEG, &optval, &optlen),
               SyscallSucceedsWithValue(0));
   ASSERT_EQ(optlen, sizeof(optval));
 
-  EXPECT_EQ(kDefaultMSS, optval);
-  EXPECT_EQ(sizeof(optval), optlen);
+  // In older Linux versions, user_mss value was never actually returned. Linux
+  // would always return the default MSS value for an unconnected socket and
+  // always return the actual current MSS for a connected one. However, the
+  // behavior changed since 34dfde4ad87b ("tcp: Return user_mss for TCP_MAXSEG
+  // in CLOSE/LISTEN state if user_mss set"). With this change, user_mss is
+  // returned if set for unconnected sockets. So allow both.
+  EXPECT_THAT(optval, AnyOf(kDefaultMSS, kTCPMaxSeg));
 }
 
 TEST_P(SimpleTcpSocketTest, SetMaxSegFailsForInvalidMSSValues) {
