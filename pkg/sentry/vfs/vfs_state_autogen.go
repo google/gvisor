@@ -1177,7 +1177,6 @@ func (mnt *Mount) StateFields() []string {
 		"groupID",
 		"umounted",
 		"writers",
-		"pendingChildren",
 	}
 }
 
@@ -1202,7 +1201,6 @@ func (mnt *Mount) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(11, &mnt.groupID)
 	stateSinkObject.Save(12, &mnt.umounted)
 	stateSinkObject.Save(13, &mnt.writers)
-	stateSinkObject.Save(14, &mnt.pendingChildren)
 }
 
 // +checklocksignore
@@ -1220,7 +1218,6 @@ func (mnt *Mount) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(11, &mnt.groupID)
 	stateSourceObject.Load(12, &mnt.umounted)
 	stateSourceObject.Load(13, &mnt.writers)
-	stateSourceObject.Load(14, &mnt.pendingChildren)
 	stateSourceObject.LoadValue(5, new(VirtualDentry), func(y any) { mnt.loadKey(y.(VirtualDentry)) })
 	stateSourceObject.AfterLoad(mnt.afterLoad)
 }
