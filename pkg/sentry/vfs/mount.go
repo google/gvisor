@@ -108,10 +108,6 @@ type Mount struct {
 	// Mount.EndWrite(). The MSB of writers is set if MS_RDONLY is in effect.
 	// writers is accessed using atomic memory operations.
 	writers atomicbitops.Int64
-
-	// pendingChildren is a list of new child mounts that have not yet been
-	// connected to this mount as the parent.
-	pendingChildren []*Mount
 }
 
 func newMount(vfs *VirtualFilesystem, fs *Filesystem, root *Dentry, mntns *MountNamespace, opts *MountOptions) *Mount {
@@ -306,39 +302,6 @@ func (vfs *VirtualFilesystem) cloneMount(mnt *Mount, root *Dentry, mopts *MountO
 		vfs.addPeer(mnt, clone)
 	}
 	return clone
-}
-
-type cloneTreeNode struct {
-	prevMount   *Mount
-	parentMount *Mount
-}
-
-// cloneMountTree creates a copy of mnt's tree with the specified root
-// dentry at root. The new descendents are added to mnt's pending mount list.
-//
-// +checklocks:vfs.mountMu
-func (vfs *VirtualFilesystem) cloneMountTree(ctx context.Context, mnt *Mount, root *Dentry) (*Mount, error) {
-	clone := vfs.cloneMount(mnt, root, nil)
-	queue := []cloneTreeNode{{mnt, clone}}
-	for len(queue) != 0 {
-		p := queue[len(queue)-1]
-		queue = queue[:len(queue)-1]
-		for c := range p.prevMount.children {
-			m := vfs.cloneMount(c, c.root, nil)
-			vfs.delayDecRef(m)
-			mp := VirtualDentry{
-				mount:  p.parentMount,
-				dentry: c.point(),
-			}
-			mp.IncRef()
-			m.setKey(mp)
-			p.parentMount.pendingChildren = append(p.parentMount.pendingChildren, m)
-			if len(c.children) != 0 {
-				queue = append(queue, cloneTreeNode{c, m})
-			}
-		}
-	}
-	return clone, nil
 }
 
 // BindAt creates a clone of the source path's parent mount and mounts it at
