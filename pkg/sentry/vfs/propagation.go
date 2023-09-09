@@ -153,43 +153,6 @@ func (vfs *VirtualFilesystem) abortPropagationTree(ctx context.Context, tree map
 	}
 }
 
-// +checklocks:vfs.mountMu
-func (vfs *VirtualFilesystem) commitTree(ctx context.Context, mnt *Mount) {
-	vfs.mounts.seq.BeginWrite()
-	for _, c := range mnt.pendingChildren {
-		vfs.commitTreeSeqed(ctx, c)
-	}
-	mnt.pendingChildren = nil
-	vfs.mounts.seq.EndWrite()
-}
-
-// +checklocks:vfs.mountMu
-func (vfs *VirtualFilesystem) commitTreeSeqed(ctx context.Context, mnt *Mount) {
-	mp := mnt.getKey()
-	mp.dentry.mu.Lock()
-	vfs.connectLocked(mnt, mp, mp.mount.ns)
-	mp.dentry.mu.Unlock()
-	for _, c := range mnt.pendingChildren {
-		vfs.commitTreeSeqed(ctx, c)
-	}
-	mnt.pendingChildren = nil
-}
-
-// abortTree releases references on a pending mount and all its pending
-// descendants.
-//
-// +checklocks:vfs.mountMu
-func (vfs *VirtualFilesystem) abortTree(ctx context.Context, mnt *Mount) {
-	mp := mnt.getKey()
-	vfs.delayDecRef(mnt)
-	vfs.delayDecRef(mp.dentry)
-	vfs.setPropagation(mnt, linux.MS_PRIVATE)
-	for _, c := range mnt.pendingChildren {
-		vfs.abortTree(ctx, c)
-	}
-	mnt.pendingChildren = nil
-}
-
 // SetMountPropagationAt changes the propagation type of the mount pointed to by
 // pop.
 func (vfs *VirtualFilesystem) SetMountPropagationAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, propFlags uint32) error {
