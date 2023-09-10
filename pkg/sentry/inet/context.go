@@ -28,8 +28,8 @@ const (
 
 // StackFromContext returns the network stack associated with ctx.
 func StackFromContext(ctx context.Context) Stack {
-	if v := ctx.Value(CtxStack); v != nil {
-		return v.(Stack)
+	if val := ctx.Value(CtxStack); val != nil {
+		return val.(Stack)
 	}
 	return nil
 }
