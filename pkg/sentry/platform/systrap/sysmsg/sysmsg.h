@@ -93,7 +93,7 @@ struct thread_context {
   uint32_t thread_id;
   uint32_t last_thread_id;
   uint32_t sentry_fast_path;
-  uint32_t acked;
+  uint64_t acked;
   uint64_t tls;
   uint64_t debug;
 };

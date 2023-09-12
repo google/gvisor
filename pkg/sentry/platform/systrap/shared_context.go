@@ -16,7 +16,6 @@ package systrap
 
 import (
 	"fmt"
-	"runtime"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -30,7 +29,7 @@ import (
 )
 
 const (
-	ackReset uint32 = 0
+	ackReset uint64 = 0
 )
 
 // sharedContext is an abstraction for interactions that the sentry has to
@@ -59,9 +58,17 @@ type sharedContext struct {
 	// dispatcher.
 	sync           syncevent.Waiter
 	startWaitingTS int64
-	kicked         bool
 	// The task associated with the context fell asleep.
 	sleeping bool
+
+	// recordSentryToStubLatency is used to make stub fastpath enablement
+	// decisions for the context subprocess. Should only be called from the
+	// context goroutine.
+	// Precondition: ctx.isAcked() must be true.
+	recordSentryToStubLatency func(*sharedContext)
+	// recordedLatency is used to make sure that recordSentryToStubLatency
+	// is only called once.
+	recordedLatency bool
 }
 
 // String returns the ID of this shared context.
@@ -72,8 +79,9 @@ func (sc *sharedContext) String() string {
 const (
 	// sharedContextReady indicates that a context has new events.
 	sharedContextReady = syncevent.Set(1 << iota)
-	// sharedContextKicked indicates that a new stub thread should be woken up.
-	sharedContextKicked
+	// sharedContextRecordLatency indicates the context goroutine should
+	// record the sentry->stub latency.
+	sharedContextRecordLatency
 	// sharedContextSlowPath indicates that a context has to be waited for in the
 	// slow path.
 	sharedContextSlowPath
@@ -183,11 +191,21 @@ func (sc *sharedContext) disableSentryFastPath() {
 }
 
 func (sc *sharedContext) isAcked() bool {
-	return atomic.LoadUint32(&sc.shared.Acked) != ackReset
+	return atomic.LoadUint64(&sc.shared.Acked) != ackReset
+}
+
+// getAckedDiff must be called after isAcked() == true
+func (sc *sharedContext) getAckedDiff() uint64 {
+	ackedAt := atomic.LoadUint64(&sc.shared.Acked)
+	if ackedAt < uint64(sc.startWaitingTS) {
+		return 0
+	}
+	return ackedAt - uint64(sc.startWaitingTS)
 }
 
 func (sc *sharedContext) resetAcked() {
-	atomic.StoreUint32(&sc.shared.Acked, ackReset)
+	atomic.StoreUint64(&sc.shared.Acked, ackReset)
+	sc.recordedLatency = false
 }
 
 const (
@@ -234,6 +252,10 @@ type fastPathDispatcher struct {
 	// any lock.
 	list contextList
 
+	// fastpathEnabled is used to tell whether the dispatcher
+	// fastpath is enabled.
+	fastpathEnabled atomic.Bool
+
 	mu sync.Mutex
 
 	// nr is the number of contexts in the queue.
@@ -244,59 +266,60 @@ type fastPathDispatcher struct {
 	// +checklocks:mu
 	entrants contextList
 
-	// fastPathDisabledTS is the time stamp when the stub fast path was
-	// disabled. It is zero if the fast path is enabled.
-	fastPathDisabledTS atomic.Uint64
+	// fastpathMu protects fastpathTugOfWar and lastEventTS.
+	fastpathMu sync.Mutex
+
+	// fastpathTugOfWar is a value
+	fastpathTugOfWar int
+
+	// lastEventTS is the time stamp of when the last event happened that
+	// needed the dispatcher to do something.
+	lastEventTS int64
 }
 
 var dispatcher fastPathDispatcher
 
-// fastPathContextLimit is the maximum number of contexts after which the fast
-// path in stub threads is disabled. Its value can be higher than the number of
-// CPU-s, because the Sentry is running with higher priority than stub threads,
-// deepSleepTimeout is much shorter than the Linux scheduler timeslice, so the
-// only thing that matters here is whether the Sentry handles syscall faster
-// than the overhead of scheduling another stub thread.
-var fastPathContextLimit = uint32(runtime.GOMAXPROCS(0) * 2)
+const (
+	// deep_sleep_timeout is the timeout after which we stops polling and
+	// fall asleep.
+	//
+	// The value is 40µs for 2GHz CPU. This timeout matches the sentry<->stub
+	// round trip in the pure deep sleep case.
+	deepSleepTimeout = uint64(80000)
+	handshakeTimeout = uint64(1000)
 
-// fastPathDisabledTimeout is the timeout after which the fast path in stub
-// processes will be re-enabled.
-const fastPathDisabledTimeout = uint64(200 * 1000 * 1000) // 100ms for 2GHz.
+	dispatcherFpEnableThreshold  = 3
+	dispatcherFpDisableThreshold = -3
+)
 
-// nrMaxAwakeStubThreads is the maximum number of awake stub threads over all
-// subprocesses at the this moment.
-var nrMaxAwakeStubThreads atomic.Uint32
+// recordDispatcherEvent records that an event destined for the dispatcher
+// occurred at timestamp ts.
+func (q *fastPathDispatcher) recordDispatcherEvent(ts int64) {
+	q.fastpathMu.Lock()
+	defer q.fastpathMu.Unlock()
 
-// stubFastPathEnabled returns true if the fast path in stub processes is
-// enabled. If the fast path is disabled, it revises whether it has to be
-// re-enabled or not.
-func (q *fastPathDispatcher) stubFastPathEnabled() bool {
-	ts := q.fastPathDisabledTS.Load()
-	if ts != 0 {
-		if uint64(cputicks())-ts < fastPathDisabledTimeout {
-			return false
+	if q.lastEventTS > ts {
+		// This event came a little too late to be useful.
+		return
+	} else if uint64(ts-q.lastEventTS) < deepSleepTimeout {
+		q.fastpathTugOfWar++
+		if q.fastpathTugOfWar > dispatcherFpEnableThreshold {
+			q.fastpathTugOfWar = dispatcherFpEnableThreshold
+		} else if q.fastpathTugOfWar == dispatcherFpEnableThreshold && !q.fastpathEnabled.Load() {
+			q.fastpathEnabled.Store(true)
+			numTimesSentryFastPathEnabled.Increment()
 		}
-		if nrMaxAwakeStubThreads.Load() > fastPathContextLimit {
-			q.fastPathDisabledTS.Store(uint64(cputicks()))
-			return false
+	} else {
+		q.fastpathTugOfWar--
+		if q.fastpathTugOfWar < dispatcherFpDisableThreshold {
+			q.fastpathTugOfWar = dispatcherFpDisableThreshold
+		} else if q.fastpathTugOfWar == dispatcherFpDisableThreshold && q.fastpathEnabled.Load() {
+			q.fastpathEnabled.Store(false)
+			numTimesSentryFastPathDisabled.Increment()
 		}
-		q.fastPathDisabledTS.Store(0)
 	}
-	return true
+	q.lastEventTS = ts
 }
-
-// disableStubFastPath disables the fast path over all subprocesses with active
-// contexts.
-func (q *fastPathDispatcher) disableStubFastPath() {
-	q.fastPathDisabledTS.Store(uint64(cputicks()))
-}
-
-// deep_sleep_timeout is the timeout after which we stops polling and fall asleep.
-//
-// The value is 40µs for 2GHz CPU. This timeout matches the sentry<->stub round
-// trip in the pure deep sleep case.
-const deepSleepTimeout = uint64(80000)
-const handshakeTimeout = uint64(1000)
 
 // loop is processing contexts in the queue. Only one instance of it can be
 // running, because it has exclusive access to the list.
@@ -305,16 +328,13 @@ const handshakeTimeout = uint64(1000)
 func (q *fastPathDispatcher) loop(target *sharedContext) {
 	done := false
 	processed := 0
+	receivedEvent := false
 	slowPath := false
-	start := cputicks()
+	startedSpinning := cputicks()
 	for {
 		var ctx, next *sharedContext
 
 		q.mu.Lock()
-		if processed != 0 || !q.entrants.Empty() {
-			start = cputicks()
-			slowPath = false
-		}
 		q.nr -= processed
 		// Add new contexts to the list.
 		q.list.PushBackList(&q.entrants)
@@ -329,6 +349,8 @@ func (q *fastPathDispatcher) loop(target *sharedContext) {
 			break
 		}
 
+		slowPath = !q.fastpathEnabled.Load()
+		receivedEvent = false
 		processed = 0
 		now := cputicks()
 		for ctx = q.list.Front(); ctx != nil; ctx = next {
@@ -338,15 +360,13 @@ func (q *fastPathDispatcher) loop(target *sharedContext) {
 			if ctx.state() == sysmsg.ContextStateNone {
 				if slowPath {
 					event = sharedContextSlowPath
-				} else if !ctx.kicked && uint64(now-ctx.startWaitingTS) > handshakeTimeout {
-					if ctx.isAcked() {
-						ctx.kicked = true
-						continue
-					}
-					event = sharedContextKicked
+				} else if !ctx.recordedLatency && ctx.isAcked() {
+					event = sharedContextRecordLatency
 				} else {
 					continue
 				}
+			} else {
+				receivedEvent = true
 			}
 			processed++
 			q.list.Remove(ctx)
@@ -355,20 +375,21 @@ func (q *fastPathDispatcher) loop(target *sharedContext) {
 			}
 			ctx.sync.Receiver().Notify(event)
 		}
-		if processed == 0 {
-			if uint64(cputicks()-start) > deepSleepTimeout {
-				slowPath = true
-				// Do one more run to notify all contexts.
-				// q.list has to be empty at the end.
-				continue
-			}
-			yield()
+
+		// If dispatcher has been spinning for too long, record event
+		// that will vote to disable fastpath.
+		// Necessary if the dispatcher is the sole awake context.
+		if receivedEvent || uint64(now-startedSpinning) > deepSleepTimeout {
+			startedSpinning = now
+			q.recordDispatcherEvent(now)
 		}
+
+		yield()
 	}
 }
 
 func (q *fastPathDispatcher) waitFor(ctx *sharedContext) syncevent.Set {
-	events := syncevent.Set(0)
+	events := syncevent.NoEvents
 
 	q.mu.Lock()
 	q.entrants.PushBack(ctx)

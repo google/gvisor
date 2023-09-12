@@ -14,6 +14,7 @@ go_library(
         "metric.go",
         "metric_unsafe.go",
         "profiling_metric.go",
+        "systrap_profiling.go",
     ],
     visibility = ["//:sandbox"],
     deps = [

@@ -95,7 +95,7 @@ go_download_sdk(
     # time on our continuous integration.
     patch = "//tools:go_types_memoize.patch",
     patch_strip = 2,
-    version = "1.20.4",
+    version = "1.21.1",
 )
 
 gazelle_dependencies()
