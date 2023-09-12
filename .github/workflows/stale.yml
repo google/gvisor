@@ -23,3 +23,4 @@ jobs:
         remove-stale-when-updated: true
         exempt-pr-labels: 'no-auto-close'
         exempt-issue-labels: 'no-auto-close,new feature,enhancement'
+        operations-per-run: 1000
