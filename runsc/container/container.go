@@ -1696,22 +1696,28 @@ func nvProxyPreGoferHostSetup(spec *specs.Spec, conf *config.Config) error {
 	// nvidia-container-cli --load-kmods seems to be a noop; load kernel modules ourselves.
 	nvproxyLoadKernelModules()
 
-	// Run `nvidia-container-cli info`.
-	// This has the side-effect of automatically creating GPU device files.
-	argv := []string{cliPath, "--load-kmods", "info"}
-	log.Debugf("Executing %q", argv)
-	var infoOut, infoErr strings.Builder
-	cmd := exec.Cmd{
-		Path:   argv[0],
-		Args:   argv,
-		Env:    os.Environ(),
-		Stdout: &infoOut,
-		Stderr: &infoErr,
+	if _, err := os.Stat("/dev/nvidiactl"); err != nil {
+		if !os.IsNotExist(err) {
+			return fmt.Errorf("stat(2) for /dev/nvidiactl failed: %w", err)
+		}
+
+		// Run `nvidia-container-cli info`.
+		// This has the side-effect of automatically creating GPU device files.
+		argv := []string{cliPath, "--load-kmods", "info"}
+		log.Debugf("Executing %q", argv)
+		var infoOut, infoErr strings.Builder
+		cmd := exec.Cmd{
+			Path:   argv[0],
+			Args:   argv,
+			Env:    os.Environ(),
+			Stdout: &infoOut,
+			Stderr: &infoErr,
+		}
+		if err := cmd.Run(); err != nil {
+			return fmt.Errorf("nvidia-container-cli info failed, err: %v\nstdout: %s\nstderr: %s", err, infoOut.String(), infoErr.String())
+		}
+		log.Debugf("nvidia-container-cli info: %v", infoOut.String())
 	}
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("nvidia-container-cli info failed, err: %v\nstdout: %s\nstderr: %s", err, infoOut.String(), infoErr.String())
-	}
-	log.Debugf("nvidia-container-cli info: %v", infoOut.String())
 
 	return nil
 }
