@@ -22,5 +22,5 @@ jobs:
         days-before-close: 540
         remove-stale-when-updated: true
         exempt-pr-labels: 'no-auto-close'
-        exempt-issue-labels: 'no-auto-close,new feature,enhancement'
+        exempt-issue-labels: 'no-auto-close,new feature,enhancement,type: enhancement'
         operations-per-run: 1000
