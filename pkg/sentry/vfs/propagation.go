@@ -128,17 +128,27 @@ func (vfs *VirtualFilesystem) preparePropagationTree(mnt *Mount, vd VirtualDentr
 func (vfs *VirtualFilesystem) commitPropagationTree(ctx context.Context, tree map[*Mount]VirtualDentry) {
 	// The peer mounts should have no way of being dead if we've reached this
 	// point so its safe to connect without checks.
-	vfs.mounts.seq.BeginWrite()
 	for mnt, vd := range tree {
+		// If there is already a mount at this (parent, point), disconnect it and
+		// reconnect it to the new mount once it is connected.
 		vd.dentry.mu.Lock()
-		// If mnt isn't connected yet, skip connecting during propagation.
-		if mntns := vd.mount.ns; mntns != nil {
-			vfs.connectLocked(mnt, vd, mntns)
+		child := vfs.mounts.Lookup(vd.mount, vd.dentry)
+		vfs.mounts.seq.BeginWrite()
+		if child != nil {
+			vfs.delayDecRef(vfs.disconnectLocked(child))
 		}
-		vd.dentry.mu.Unlock()
+		vfs.connectLocked(mnt, vd, vd.mount.ns)
 		vfs.delayDecRef(mnt)
+
+		if child != nil {
+			newmp := VirtualDentry{mnt, mnt.root}
+			newmp.IncRef()
+			vfs.connectLocked(child, newmp, newmp.mount.ns)
+			vfs.delayDecRef(child)
+		}
+		vfs.mounts.seq.EndWrite()
+		vd.dentry.mu.Unlock()
 	}
-	vfs.mounts.seq.EndWrite()
 }
 
 // abortPropagationTree releases any references held by the mounts and
@@ -151,6 +161,57 @@ func (vfs *VirtualFilesystem) abortPropagationTree(ctx context.Context, tree map
 		vfs.delayDecRef(mnt)
 		vfs.setPropagation(mnt, linux.MS_PRIVATE)
 	}
+}
+
+// +checklocks:vfs.mountMu
+func (vfs *VirtualFilesystem) commitPendingTree(ctx context.Context, mnt *Mount) {
+	for _, c := range mnt.pendingChildren {
+		vfs.commitTree(ctx, c)
+	}
+	mnt.pendingChildren = nil
+}
+
+// +checklocks:vfs.mountMu
+func (vfs *VirtualFilesystem) commitTree(ctx context.Context, mnt *Mount) {
+	mp := mnt.getKey()
+
+	// If there is already a mount at this (parent, point), disconnect it and
+	// reconnect it to the new mount once it is connected.
+	child := vfs.mounts.Lookup(mp.mount, mp.dentry)
+	vfs.mounts.seq.BeginWrite()
+	if child != nil {
+		vfs.delayDecRef(vfs.disconnectLocked(child))
+	}
+	vfs.connectLocked(mnt, mp, mp.mount.ns)
+	vfs.delayDecRef(mnt)
+
+	if child != nil {
+		newmp := VirtualDentry{mnt, mnt.root}
+		newmp.IncRef()
+		vfs.connectLocked(child, newmp, newmp.mount.ns)
+		vfs.delayDecRef(child)
+	}
+	vfs.mounts.seq.EndWrite()
+
+	for _, c := range mnt.pendingChildren {
+		vfs.commitTree(ctx, c)
+	}
+	mnt.pendingChildren = nil
+}
+
+// abortTree releases references on a pending mount and all its pending
+// descendants.
+//
+// +checklocks:vfs.mountMu
+func (vfs *VirtualFilesystem) abortTree(ctx context.Context, mnt *Mount) {
+	vfs.delayDecRef(mnt)
+	vfs.delayDecRef(mnt.getKey())
+	mnt.setKey(VirtualDentry{})
+	vfs.setPropagation(mnt, linux.MS_PRIVATE)
+	for _, c := range mnt.pendingChildren {
+		vfs.abortTree(ctx, c)
+	}
+	mnt.pendingChildren = nil
 }
 
 // SetMountPropagationAt changes the propagation type of the mount pointed to by

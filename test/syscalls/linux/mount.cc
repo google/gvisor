@@ -899,6 +899,41 @@ TEST(MountTest, MaxMounts) {
   umount2(parent.path().c_str(), MNT_DETACH);
 }
 
+TEST(MountTest, PropagateToSameMountpointStacksMounts) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const dir2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mnt = ASSERT_NO_ERRNO_AND_VALUE(Mount(
+      dir.path().c_str(), dir.path().c_str(), "", MS_BIND, "", MNT_DETACH));
+  auto const child =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(dir.path()));
+  ASSERT_THAT(mount(child.path().c_str(), child.path().c_str(), "", MS_BIND, 0),
+              SyscallSucceeds());
+  ASSERT_THAT(mount("", dir.path().c_str(), "", MS_SHARED, 0),
+              SyscallSucceeds());
+  auto const mnt2 = ASSERT_NO_ERRNO_AND_VALUE(Mount(
+      dir.path().c_str(), dir2.path().c_str(), "", MS_BIND, "", MNT_DETACH));
+
+  std::string dir2_child_path = JoinPath(dir2.path(), Basename(child.path()));
+  ASSERT_THAT(
+      mount(dir2_child_path.c_str(), dir2_child_path.c_str(), "", MS_BIND, 0),
+      SyscallSucceeds());
+
+  // Check that mounts at the child mount point have distinct parents.
+  std::vector<ProcMountInfoEntry> mounts =
+      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntries());
+  uint64_t parent_id = 0;
+  for (auto& minfo : mounts) {
+    if (minfo.mount_point == child.path()) {
+      if (parent_id == 0) {
+        parent_id = minfo.parent_id;
+      } else {
+        EXPECT_NE(parent_id, minfo.parent_id);
+      }
+    }
+  }
+}
+
 // Tests that it is possible to make a shared mount.
 TEST(MountTest, MakeShared) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
