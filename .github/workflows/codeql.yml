@@ -8,7 +8,7 @@
 #
 name: "CodeQL"
 
-on:
+"on":
   schedule:
     # Daily at 1:00.
     - cron: '0 1 * * *'
