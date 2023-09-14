@@ -180,8 +180,8 @@ func (vfs *VirtualFilesystem) CloneMountNamespace(
 
 	queue := []cloneEntry{cloneEntry{ns.root, newns.root}}
 	for len(queue) != 0 {
-		p := queue[0]
-		queue = queue[1:]
+		p := queue[len(queue)-1]
+		queue = queue[:len(queue)-1]
 		for c := range p.prevMount.children {
 			m := vfs.cloneMount(c, c.root, nil)
 			vd := VirtualDentry{
