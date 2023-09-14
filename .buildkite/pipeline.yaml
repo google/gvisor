@@ -191,7 +191,7 @@ steps:
     label: ":docker: Images (aarch64)"
     command: make ARCH=aarch64 load-all-images
     agents:
-      arch: "amd64"
+      arch: "arm64"
 
   # Basic unit tests.
   - <<: *common

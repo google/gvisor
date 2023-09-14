@@ -1,4 +1,4 @@
-FROM gcr.io/syzkaller/env
+FROM gcr.io/syzkaller/syzbot
 
 # This image is mostly for investigating syzkaller crashes, so let's install
 # developer tools.
