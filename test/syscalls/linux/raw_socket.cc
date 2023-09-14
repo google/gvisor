@@ -23,8 +23,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include <algorithm>
-
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
@@ -41,6 +40,7 @@ namespace testing {
 
 namespace {
 
+using ::testing::AnyOf;
 using ::testing::IsNull;
 using ::testing::NotNull;
 
@@ -1224,12 +1224,10 @@ TEST(RawSocketTest, ReceiveTOS) {
 
   if (const char* val = getenv("TOS_TCLASS_EXPECT_DEFAULT");
       val != nullptr && strcmp(val, "1") == 0) {
-    // TODO(https://issuetracker.google.com/issues/217448626): As of writing, it
-    // seems like at least one Linux environment does not allow setting a custom
-    // TOS. In this case, we expect the default instead of the TOS that was set
-    // above.
-    EXPECT_EQ(recv_buf.ip.tos, 0u);
-    EXPECT_EQ(recv_tos, 0u);
+    // TODO(b/217448626): At least one Linux environment does not allow setting
+    // a custom TOS. In this case, we additionally accept the default.
+    EXPECT_THAT(recv_buf.ip.tos, AnyOf(kArbitraryTOS, 0u));
+    EXPECT_THAT(recv_tos, AnyOf(kArbitraryTOS, 0u));
   } else {
     EXPECT_EQ(recv_buf.ip.tos, static_cast<uint8_t>(kArbitraryTOS));
     EXPECT_EQ(recv_tos, kArbitraryTOS);
@@ -1277,11 +1275,9 @@ TEST(RawSocketTest, ReceiveTClass) {
 
   if (const char* val = getenv("TOS_TCLASS_EXPECT_DEFAULT");
       val != nullptr && strcmp(val, "1") == 0) {
-    // TODO(https://issuetracker.google.com/issues/217448626): As of writing, it
-    // seems like at least one Linux environment does not allow setting a custom
-    // TCLASS. In this case, we expect the default instead of the TCLASS that
-    // was set above.
-    EXPECT_EQ(recv_tclass, 0);
+    // TODO(b/217448626): At least one Linux environment does not allow setting
+    // a custom TCLASS. In this case, we additionally accept the default.
+    EXPECT_THAT(recv_tclass, AnyOf(kArbitraryTClass, 0));
   } else {
     EXPECT_EQ(recv_tclass, kArbitraryTClass);
   }
