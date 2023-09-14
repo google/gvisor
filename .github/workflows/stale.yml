@@ -19,8 +19,12 @@ jobs:
         stale-issue-label: 'stale-issue'
         stale-pr-label: 'stale-pr'
         days-before-stale: 120
-        days-before-close: 540
+        days-before-close: 90
         remove-stale-when-updated: true
         exempt-pr-labels: 'no-auto-close'
-        exempt-issue-labels: 'no-auto-close,new feature,enhancement,type: enhancement'
+        exempt-issue-labels: 'no-auto-close,new feature,enhancement,type: enhancement,good first issue,status: help wanted'
         operations-per-run: 1000
+        close-issue-label: 'auto-closed'
+        close-pr-label: 'auto-closed'
+        close-issue-message: 'This issue has been closed due to lack of activity.'
+        close-pr-message: 'This PR has been closed due to lack of activity.'
