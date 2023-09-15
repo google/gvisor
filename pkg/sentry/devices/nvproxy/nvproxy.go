@@ -92,7 +92,7 @@ func CreateIndexDevtmpfsFile(ctx context.Context, dev *devtmpfs.Accessor, index 
 
 // +stateify savable
 type nvproxy struct {
-	objsMu   objsMutex
+	objsMu   objsMutex `state:"nosave"`
 	objsLive map[nvgpu.Handle]*object
 }
 
