@@ -22,7 +22,7 @@ jobs:
         days-before-close: 90
         remove-stale-when-updated: true
         exempt-pr-labels: 'no-auto-close'
-        exempt-issue-labels: 'no-auto-close,new feature,enhancement,type: enhancement,good first issue,status: help wanted'
+        exempt-issue-labels: 'no-auto-close,type: enhancement,good first issue,status: help wanted,type: proposal'
         operations-per-run: 1000
         close-issue-label: 'auto-closed'
         close-pr-label: 'auto-closed'
