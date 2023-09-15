@@ -18,6 +18,7 @@ go_library(
         "//test:__subpackages__",
     ],
     deps = [
+        "//pkg/abi/linux",
         "//pkg/atomicbitops",
         "//pkg/cleanup",
         "//pkg/control/client",

@@ -34,6 +34,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/syndtr/gocapability/capability"
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/control/client"
@@ -87,6 +88,7 @@ func createControlSocket(rootDir, id string) (string, int, error) {
 			log.Debugf("Using socket file %q", path)
 			return path, fd, nil
 		}
+		log.Debugf("Failed to create socket file %q: %v", path, err)
 	}
 	return "", -1, fmt.Errorf("unable to find location to write socket file")
 }
@@ -602,7 +604,19 @@ func (s *Sandbox) PortForward(opts *boot.PortForwardOpts) error {
 
 func (s *Sandbox) sandboxConnect() (*urpc.Client, error) {
 	log.Debugf("Connecting to sandbox %q", s.ID)
-	conn, err := client.ConnectTo(s.ControlAddress)
+	addr := s.ControlAddress
+	if addr[0] != 0 && len(addr) >= linux.UnixPathMax {
+		// This is not an abstract socket path. It is a filesystem path.
+		// UDS connect fails when the len(socket path) >= UNIX_PATH_MAX. Instead
+		// open the socket using open(2) and use /proc to refer to the open FD.
+		sockFD, err := unix.Open(addr, unix.O_PATH, 0)
+		if err != nil {
+			return nil, fmt.Errorf("failed to open socket at %q", addr)
+		}
+		defer unix.Close(sockFD)
+		addr = filepath.Join("/proc/self/fd", fmt.Sprintf("%d", sockFD))
+	}
+	conn, err := client.ConnectTo(addr)
 	if err != nil {
 		return nil, s.connError(err)
 	}
