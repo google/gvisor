@@ -69,19 +69,16 @@ const (
 )
 
 // createControlSocket finds a location and creates the socket used to
-// communicate with the sandbox.
+// communicate with the sandbox. The socket is a UDS on the host filesystem.
+//
+// Note that abstract sockets are *not* used, because any user can connect to
+// them. There is no file mode protecting abstract sockets.
 func createControlSocket(rootDir, id string) (string, int, error) {
 	name := fmt.Sprintf("runsc-%s.sock", id)
 
 	// Only use absolute paths to guarantee resolution from anywhere.
-	var paths []string
 	for _, dir := range []string{rootDir, "/var/run", "/run", "/tmp"} {
-		paths = append(paths, filepath.Join(dir, name))
-	}
-	// If nothing else worked, use the abstract namespace.
-	paths = append(paths, fmt.Sprintf("\x00runsc-sandbox.%s", id))
-
-	for _, path := range paths {
+		path := filepath.Join(dir, name)
 		log.Debugf("Attempting to create socket file %q", path)
 		fd, err := server.CreateSocket(path)
 		if err == nil {
@@ -178,8 +175,9 @@ type Sandbox struct {
 	// created.
 	MetricServerAddress string `json:"metricServerAddress"`
 
-	// ControlAddress is the uRPC address used to connect to the sandbox.
-	ControlAddress string `json:"control_address"`
+	// ControlSocketPath is the path to the sandbox's uRPC server socket.
+	// Connections to the sandbox are made through this.
+	ControlSocketPath string `json:"controlSocketPath"`
 
 	// MountHints provides extra information about container mounts that apply
 	// to the entire pod.
@@ -604,19 +602,19 @@ func (s *Sandbox) PortForward(opts *boot.PortForwardOpts) error {
 
 func (s *Sandbox) sandboxConnect() (*urpc.Client, error) {
 	log.Debugf("Connecting to sandbox %q", s.ID)
-	addr := s.ControlAddress
-	if addr[0] != 0 && len(addr) >= linux.UnixPathMax {
+	path := s.ControlSocketPath
+	if len(path) >= linux.UnixPathMax {
 		// This is not an abstract socket path. It is a filesystem path.
 		// UDS connect fails when the len(socket path) >= UNIX_PATH_MAX. Instead
 		// open the socket using open(2) and use /proc to refer to the open FD.
-		sockFD, err := unix.Open(addr, unix.O_PATH, 0)
+		sockFD, err := unix.Open(path, unix.O_PATH, 0)
 		if err != nil {
-			return nil, fmt.Errorf("failed to open socket at %q", addr)
+			return nil, fmt.Errorf("failed to open socket at %q", path)
 		}
 		defer unix.Close(sockFD)
-		addr = filepath.Join("/proc/self/fd", fmt.Sprintf("%d", sockFD))
+		path = filepath.Join("/proc/self/fd", fmt.Sprintf("%d", sockFD))
 	}
-	conn, err := client.ConnectTo(addr)
+	conn, err := client.ConnectTo(path)
 	if err != nil {
 		return nil, s.connError(err)
 	}
@@ -758,12 +756,12 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	cmd.Args = append(cmd.Args, "--overlay-mediums="+args.OverlayMediums.String())
 
 	// Create a socket for the control server and donate it to the sandbox.
-	controlAddress, sockFD, err := createControlSocket(conf.RootDir, s.ID)
+	controlSocketPath, sockFD, err := createControlSocket(conf.RootDir, s.ID)
 	if err != nil {
-		return fmt.Errorf("creating control socket %q: %v", s.ControlAddress, err)
+		return fmt.Errorf("failed to create control socket: %v", err)
 	}
-	log.Infof("Control socket: %q", s.ControlAddress)
-	s.ControlAddress = controlAddress
+	s.ControlSocketPath = controlSocketPath
+	log.Infof("Control socket path: %q", s.ControlSocketPath)
 	donations.DonateAndClose("controller-fd", os.NewFile(uintptr(sockFD), "control_server_socket"))
 
 	specFile, err := specutils.OpenSpec(args.BundleDir)
@@ -1168,10 +1166,10 @@ func (s *Sandbox) IsRootContainer(cid string) bool {
 // is idempotent.
 func (s *Sandbox) destroy() error {
 	log.Debugf("Destroying sandbox %q", s.ID)
-	// Only delete the control file if it exists and is not an abstract UDS.
-	if len(s.ControlAddress) > 0 && s.ControlAddress[0] != 0 {
-		if err := os.Remove(s.ControlAddress); err != nil {
-			log.Warningf("failed to delete control socket file %q: %v", s.ControlAddress, err)
+	// Only delete the control file if it exists.
+	if len(s.ControlSocketPath) > 0 {
+		if err := os.Remove(s.ControlSocketPath); err != nil {
+			log.Warningf("failed to delete control socket file %q: %v", s.ControlSocketPath, err)
 		}
 	}
 	pid := s.Pid.load()
