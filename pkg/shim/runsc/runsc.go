@@ -163,7 +163,7 @@ func (r *Runsc) Create(context context.Context, id, bundle string, opts *CreateO
 	}
 	status, err := Monitor.Wait(cmd, ec)
 	if err == nil && status != 0 {
-		err = fmt.Errorf("%s did not terminate sucessfully", cmd.Args[0])
+		err = fmt.Errorf("%s did not terminate successfully", cmd.Args[0])
 	}
 
 	return err
@@ -211,7 +211,7 @@ func (r *Runsc) Start(context context.Context, id string, cio runc.IO) error {
 	}
 	status, err := Monitor.Wait(cmd, ec)
 	if err == nil && status != 0 {
-		err = fmt.Errorf("%s did not terminate sucessfully", cmd.Args[0])
+		err = fmt.Errorf("%s did not terminate successfully", cmd.Args[0])
 	}
 
 	return err
@@ -313,7 +313,7 @@ func (r *Runsc) Exec(context context.Context, id string, spec specs.Process, opt
 	}
 	status, err := Monitor.Wait(cmd, ec)
 	if err == nil && status != 0 {
-		err = fmt.Errorf("%s did not terminate sucessfully", cmd.Args[0])
+		err = fmt.Errorf("%s did not terminate successfully", cmd.Args[0])
 	}
 	return err
 }
@@ -508,7 +508,7 @@ func (r *Runsc) runOrError(cmd *exec.Cmd) error {
 		}
 		status, err := Monitor.Wait(cmd, ec)
 		if err == nil && status != 0 {
-			err = fmt.Errorf("%s did not terminate sucessfully", cmd.Args[0])
+			err = fmt.Errorf("%s did not terminate successfully", cmd.Args[0])
 		}
 		return err
 	}
@@ -554,7 +554,7 @@ func cmdOutput(cmd *exec.Cmd, combined bool) ([]byte, []byte, error) {
 
 	status, err := Monitor.Wait(cmd, ec)
 	if err == nil && status != 0 {
-		err = fmt.Errorf("%q did not terminate sucessfully", cmd.Args[0])
+		err = fmt.Errorf("%q did not terminate successfully", cmd.Args[0])
 	}
 	if stderr == nil {
 		return stdout.Bytes(), nil, err
