@@ -28,7 +28,6 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/pkg/urpc"
@@ -105,21 +104,6 @@ func (s *Server) serve() {
 		conn, err := s.socket.Accept()
 		if err != nil {
 			return
-		}
-
-		ucred, err := conn.GetPeerCred()
-		if err != nil {
-			log.Warningf("Control couldn't get credentials: %s", err.Error())
-			conn.Close()
-			continue
-		}
-
-		// Only allow this user and root.
-		if int(ucred.Uid) != curUID && ucred.Uid != 0 {
-			// Authentication failed.
-			log.Warningf("Control auth failure: other UID = %d, current UID = %d", ucred.Uid, curUID)
-			conn.Close()
-			continue
 		}
 
 		// Handle the connection non-blockingly.
