@@ -331,13 +331,25 @@ fsstress-test: load-basic $(RUNTIME_BIN)
 	@$(call test_runtime,$(RUNTIME),//test/fsstress:fsstress_test)
 .PHONY: fsstress-test
 
+# Helper to install containerd.
+# $(1) is the containerd version.
+install_containerd = \
+	($(call header,INSTALL CONTAINERD); \
+	export T=$$(mktemp -d --tmpdir containerd.XXXXXX); \
+	cp tools/install_containerd.sh $$T && \
+	cd /tmp && \
+	sudo -H "PATH=$$PATH" $$T/install_containerd.sh $(1); \
+	rm -rf $$T)
 
 # Specific containerd version tests.
 containerd-test-%: load-basic_alpine load-basic_python load-basic_busybox load-basic_symlink-resolv load-basic_httpd load-basic_ubuntu $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),) # Clear flags.
-	@sudo -H tools/install_containerd.sh $*
+	@$(call install_containerd,$*)
 ifeq (,$(STAGED_BINARIES))
-	@$(call sudocopy,//shim:containerd-shim-runsc-v1,"$$(dirname $$(which containerd))")
+	@(export T=$$(mktemp -d --tmpdir containerd.XXXXXX); \
+	$(call copy,//shim:containerd-shim-runsc-v1,$$T) && \
+	sudo mv $$T/containerd-shim-runsc-v1 "$$(dirname $$(which containerd))"; \
+	rm -rf $$T)
 else
 	gsutil cat "$(STAGED_BINARIES)" | \
 		sudo tar -C "$$(dirname $$(which containerd))" -zxvf - containerd-shim-runsc-v1
