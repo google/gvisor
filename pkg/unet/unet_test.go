@@ -556,22 +556,6 @@ func TestFDsReceiveSizeZero(t *testing.T) {
 	recvFDs(t, client, 0, []int{})
 }
 
-func TestGetPeerCred(t *testing.T) {
-	server, client := socketPair(t, false)
-	defer server.Close()
-	defer client.Close()
-
-	want := &unix.Ucred{
-		Pid: int32(os.Getpid()),
-		Uid: uint32(os.Getuid()),
-		Gid: uint32(os.Getgid()),
-	}
-
-	if got, err := client.GetPeerCred(); err != nil || !reflect.DeepEqual(got, want) {
-		t.Errorf("GetPeerCred() = %v, %v, want = %+v, %+v", got, err, want, nil)
-	}
-}
-
 func newClosedSocket() (*Socket, error) {
 	fd, err := unix.Socket(unix.AF_UNIX, unix.SOCK_STREAM, 0)
 	if err != nil {
@@ -585,18 +569,6 @@ func newClosedSocket() (*Socket, error) {
 	}
 
 	return s, s.Close()
-}
-
-func TestGetPeerCredFailure(t *testing.T) {
-	s, err := newClosedSocket()
-	if err != nil {
-		t.Fatalf("newClosedSocket got error %v want nil", err)
-	}
-
-	want := "bad file descriptor"
-	if _, err := s.GetPeerCred(); err == nil || err.Error() != want {
-		t.Errorf("s.GetPeerCred() = %v, want = %s", err, want)
-	}
 }
 
 func TestAcceptClosed(t *testing.T) {

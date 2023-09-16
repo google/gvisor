@@ -395,17 +395,6 @@ func (s *Socket) GetPeerName() ([]byte, error) {
 	}
 }
 
-// GetPeerCred returns the peer's unix credentials.
-func (s *Socket) GetPeerCred() (*unix.Ucred, error) {
-	fd, ok := s.enterFD()
-	if !ok {
-		return nil, unix.EBADF
-	}
-	defer s.gate.Leave()
-
-	return unix.GetsockoptUcred(fd, unix.SOL_SOCKET, unix.SO_PEERCRED)
-}
-
 // SocketReader wraps an individual receive operation.
 //
 // This may be used for doing vectorized reads and/or sending additional
