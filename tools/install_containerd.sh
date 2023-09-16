@@ -65,9 +65,12 @@ install_helper() {
 #
 # Ubuntu 16.04 has only btrfs-tools, while 18.04 has a transitional package,
 # and later versions no longer have the transitional package.
+#
+# If we can't detect the VERSION_ID, we assume it's a newer version and use
+# libbtrfs-dev.
 source /etc/os-release
 declare BTRFS_DEV
-if [[ "${VERSION_ID%.*}" -le "18" ]]; then
+if [[ ! -z "${VERSION_ID}" && "${VERSION_ID%.*}" -le "18" ]]; then
   BTRFS_DEV="btrfs-tools"
 else
   BTRFS_DEV="libbtrfs-dev"
