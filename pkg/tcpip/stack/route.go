@@ -101,11 +101,6 @@ func (r *Route) Loop() PacketLooping {
 	return r.routeInfo.Loop
 }
 
-// OutgoingNIC returns the route's outgoing NIC.
-func (r *Route) OutgoingNIC() tcpip.NICID {
-	return r.outgoingNIC.id
-}
-
 // RouteInfo contains all of Route's exported fields.
 //
 // +stateify savable
