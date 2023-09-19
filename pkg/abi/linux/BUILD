@@ -41,6 +41,7 @@ go_library(
         "iouring.go",
         "ip.go",
         "ipc.go",
+        "keyctl.go",
         "limits.go",
         "linux.go",
         "membarrier.go",
