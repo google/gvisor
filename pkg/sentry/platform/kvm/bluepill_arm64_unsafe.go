@@ -91,7 +91,7 @@ func bluepillStopGuest(c *vCPU) {
 	if _, _, errno := unix.RawSyscall( // escapes: no.
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
-		_KVM_SET_VCPU_EVENTS,
+		KVM_SET_VCPU_EVENTS,
 		uintptr(unsafe.Pointer(vcpuSErrBounce))); errno != 0 {
 		throw("bounce sErr injection failed")
 	}
@@ -114,7 +114,7 @@ func bluepillSigBus(c *vCPU) {
 	if _, _, errno := unix.RawSyscall( // escapes: no.
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
-		_KVM_SET_VCPU_EVENTS,
+		KVM_SET_VCPU_EVENTS,
 		uintptr(unsafe.Pointer(vcpuSErrNMI))); errno != 0 {
 		if errno == unix.EINVAL {
 			throw("No ARM64_HAS_RAS_EXTN feature in host.")
@@ -137,7 +137,7 @@ func bluepillExtDabt(c *vCPU) {
 	if _, _, errno := unix.RawSyscall( // escapes: no.
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
-		_KVM_SET_VCPU_EVENTS,
+		KVM_SET_VCPU_EVENTS,
 		uintptr(unsafe.Pointer(vcpuExtDabt))); errno != 0 {
 		throw("ext_dabt injection failed")
 	}

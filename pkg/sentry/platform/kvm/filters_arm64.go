@@ -30,7 +30,7 @@ func (*KVM) archSyscallFilters() seccomp.SyscallRules {
 		unix.SYS_IOCTL: {
 			{
 				seccomp.MatchAny{},
-				seccomp.EqualTo(_KVM_SET_VCPU_EVENTS),
+				seccomp.EqualTo(KVM_SET_VCPU_EVENTS),
 			},
 		},
 	}

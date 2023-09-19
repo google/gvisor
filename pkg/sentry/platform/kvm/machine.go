@@ -206,7 +206,7 @@ type dieState struct {
 // Precondition: mu must be held.
 func (m *machine) createVCPU(id int) *vCPU {
 	// Create the vCPU.
-	fd, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(m.fd), _KVM_CREATE_VCPU, uintptr(id))
+	fd, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(m.fd), KVM_CREATE_VCPU, uintptr(id))
 	if errno != 0 {
 		panic(fmt.Sprintf("error creating new vCPU: %v", errno))
 	}
@@ -253,7 +253,7 @@ func newMachine(vm int) (*machine, error) {
 	m.kernel.Init(m.maxVCPUs)
 
 	// Pull the maximum slots.
-	maxSlots, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(m.fd), _KVM_CHECK_EXTENSION, _KVM_CAP_MAX_MEMSLOTS)
+	maxSlots, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(m.fd), KVM_CHECK_EXTENSION, _KVM_CAP_MAX_MEMSLOTS)
 	if errno != 0 {
 		m.maxSlots = _KVM_NR_MEMSLOTS
 	} else {
@@ -263,7 +263,7 @@ func newMachine(vm int) (*machine, error) {
 	m.usedSlots = make([]uintptr, m.maxSlots)
 
 	// Check TSC Scaling
-	hasTSCControl, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(m.fd), _KVM_CHECK_EXTENSION, _KVM_CAP_TSC_CONTROL)
+	hasTSCControl, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(m.fd), KVM_CHECK_EXTENSION, _KVM_CAP_TSC_CONTROL)
 	m.tscControl = errno == 0 && hasTSCControl == 1
 	log.Debugf("TSC scaling support: %t.", m.tscControl)
 

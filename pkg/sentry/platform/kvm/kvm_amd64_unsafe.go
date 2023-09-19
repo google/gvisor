@@ -32,7 +32,7 @@ var (
 
 func updateSystemValues(fd int) error {
 	// Extract the mmap size.
-	sz, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(fd), _KVM_GET_VCPU_MMAP_SIZE, 0)
+	sz, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(fd), KVM_GET_VCPU_MMAP_SIZE, 0)
 	if errno != 0 {
 		return fmt.Errorf("getting VCPU mmap size: %v", errno)
 	}
@@ -44,7 +44,7 @@ func updateSystemValues(fd int) error {
 	_, _, errno = unix.RawSyscall(
 		unix.SYS_IOCTL,
 		uintptr(fd),
-		_KVM_GET_SUPPORTED_CPUID,
+		KVM_GET_SUPPORTED_CPUID,
 		uintptr(unsafe.Pointer(&cpuidSupported)))
 	if errno != 0 && errno != unix.ENOMEM {
 		// Some other error occurred.
@@ -55,7 +55,7 @@ func updateSystemValues(fd int) error {
 	_, _, errno = unix.RawSyscall(
 		unix.SYS_IOCTL,
 		uintptr(fd),
-		_KVM_GET_SUPPORTED_CPUID,
+		KVM_GET_SUPPORTED_CPUID,
 		uintptr(unsafe.Pointer(&cpuidSupported)))
 	if errno != 0 {
 		// Didn't work with the right number.

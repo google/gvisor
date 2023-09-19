@@ -28,19 +28,19 @@ func (k *KVM) SyscallFilters() seccomp.SyscallRules {
 		unix.SYS_IOCTL: []seccomp.Rule{
 			{
 				seccomp.MatchAny{},
-				seccomp.EqualTo(_KVM_RUN),
+				seccomp.EqualTo(KVM_RUN),
 			},
 			{
 				seccomp.MatchAny{},
-				seccomp.EqualTo(_KVM_SET_USER_MEMORY_REGION),
+				seccomp.EqualTo(KVM_SET_USER_MEMORY_REGION),
 			},
 			{
 				seccomp.MatchAny{},
-				seccomp.EqualTo(_KVM_GET_REGS),
+				seccomp.EqualTo(KVM_GET_REGS),
 			},
 			{
 				seccomp.MatchAny{},
-				seccomp.EqualTo(_KVM_SET_REGS),
+				seccomp.EqualTo(KVM_SET_REGS),
 			},
 		},
 		unix.SYS_MEMBARRIER: []seccomp.Rule{
