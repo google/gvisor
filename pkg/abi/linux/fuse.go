@@ -985,7 +985,7 @@ func (r *FUSEDirent) shiftNextDirent(buf []byte) []byte {
 func (r *FUSEDirent) UnmarshalBytes(src []byte) []byte {
 	srcP := r.Meta.UnmarshalBytes(src)
 
-	if r.Meta.NameLen > FUSE_NAME_MAX {
+	if r.Meta.NameLen > FUSE_NAME_MAX || r.Meta.NameLen > uint32(len(srcP)) {
 		// The name is too long and therefore invalid. We don't
 		// need to unmarshal the name since it'll be thrown away.
 		return r.shiftNextDirent(src)
