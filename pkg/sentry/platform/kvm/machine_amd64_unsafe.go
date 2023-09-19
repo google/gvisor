@@ -53,7 +53,7 @@ func (c *vCPU) setCPUID() error {
 	if _, _, errno := unix.RawSyscall(
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
-		_KVM_SET_CPUID2,
+		KVM_SET_CPUID2,
 		uintptr(unsafe.Pointer(&cpuidSupported))); errno != 0 {
 		return fmt.Errorf("error setting CPUID: %v", errno)
 	}
@@ -67,7 +67,7 @@ func (c *vCPU) getTSCFreq() (uintptr, error) {
 	rawFreq, _, errno := unix.RawSyscall(
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
-		_KVM_GET_TSC_KHZ,
+		KVM_GET_TSC_KHZ,
 		0 /* ignored */)
 	if errno != 0 {
 		return 0, errno
@@ -80,7 +80,7 @@ func (c *vCPU) setTSCFreq(freq uintptr) error {
 	if _, _, errno := unix.RawSyscall(
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
-		_KVM_SET_TSC_KHZ,
+		KVM_SET_TSC_KHZ,
 		freq /* khz */); errno != 0 {
 		return fmt.Errorf("error setting TSC frequency: %v", errno)
 	}
@@ -103,7 +103,7 @@ func (c *vCPU) setTSCOffset() error {
 	if _, _, errno := unix.RawSyscall(
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
-		_KVM_SET_DEVICE_ATTR,
+		KVM_SET_DEVICE_ATTR,
 		uintptr(unsafe.Pointer(&da))); errno != 0 {
 		return fmt.Errorf("error setting tsc offset: %v", errno)
 	}
@@ -121,7 +121,7 @@ func (c *vCPU) setTSC(value uint64) error {
 	if _, _, errno := unix.RawSyscall(
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
-		_KVM_SET_MSRS,
+		KVM_SET_MSRS,
 		uintptr(unsafe.Pointer(&registers))); errno != 0 {
 		return fmt.Errorf("error setting tsc: %v", errno)
 	}
@@ -135,7 +135,7 @@ func (c *vCPU) setUserRegisters(uregs *userRegs) unix.Errno {
 	if _, _, errno := unix.RawSyscall(
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
-		_KVM_SET_REGS,
+		KVM_SET_REGS,
 		uintptr(unsafe.Pointer(uregs))); errno != 0 {
 		return errno
 	}
@@ -151,7 +151,7 @@ func (c *vCPU) getUserRegisters(uregs *userRegs) unix.Errno {
 	if _, _, errno := unix.RawSyscall( // escapes: no.
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
-		_KVM_GET_REGS,
+		KVM_GET_REGS,
 		uintptr(unsafe.Pointer(uregs))); errno != 0 {
 		return errno
 	}
@@ -163,7 +163,7 @@ func (c *vCPU) setSystemRegisters(sregs *systemRegs) error {
 	if _, _, errno := unix.RawSyscall(
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
-		_KVM_SET_SREGS,
+		KVM_SET_SREGS,
 		uintptr(unsafe.Pointer(sregs))); errno != 0 {
 		return fmt.Errorf("error setting system registers: %v", errno)
 	}
@@ -177,7 +177,7 @@ func (c *vCPU) getSystemRegisters(sregs *systemRegs) unix.Errno {
 	if _, _, errno := unix.RawSyscall(
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
-		_KVM_GET_SREGS,
+		KVM_GET_SREGS,
 		uintptr(unsafe.Pointer(sregs))); errno != 0 {
 		return errno
 	}

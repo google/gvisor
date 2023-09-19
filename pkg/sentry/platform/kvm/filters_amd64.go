@@ -36,15 +36,15 @@ func (k *KVM) archSyscallFilters() seccomp.SyscallRules {
 		unix.SYS_IOCTL: []seccomp.Rule{
 			{
 				seccomp.MatchAny{},
-				seccomp.EqualTo(_KVM_INTERRUPT),
+				seccomp.EqualTo(KVM_INTERRUPT),
 			},
 			{
 				seccomp.MatchAny{},
-				seccomp.EqualTo(_KVM_NMI),
+				seccomp.EqualTo(KVM_NMI),
 			},
 			{
 				seccomp.MatchAny{},
-				seccomp.EqualTo(_KVM_GET_REGS),
+				seccomp.EqualTo(KVM_GET_REGS),
 			},
 		},
 	}

@@ -41,7 +41,7 @@ func (m *machine) initArchState() error {
 	if _, _, errno := unix.RawSyscall(
 		unix.SYS_IOCTL,
 		uintptr(m.fd),
-		_KVM_SET_TSS_ADDR,
+		KVM_SET_TSS_ADDR,
 		uintptr(reservedMemory-(3*hostarch.PageSize))); errno != 0 {
 		return errno
 	}
@@ -486,7 +486,7 @@ func (m *machine) mapUpperHalf(pageTable *pagetables.PageTables) {
 
 // getMaxVCPU get max vCPU number
 func (m *machine) getMaxVCPU() {
-	maxVCPUs, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(m.fd), _KVM_CHECK_EXTENSION, _KVM_CAP_MAX_VCPUS)
+	maxVCPUs, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(m.fd), KVM_CHECK_EXTENSION, _KVM_CAP_MAX_VCPUS)
 	if errno != 0 {
 		m.maxVCPUs = _KVM_NR_VCPUS
 	} else {
