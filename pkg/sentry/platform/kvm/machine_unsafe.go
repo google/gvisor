@@ -60,7 +60,7 @@ func (m *machine) setMemoryRegion(slot int, physical, length, virtual uintptr, f
 	_, _, errno := syscall.RawSyscall(
 		unix.SYS_IOCTL,
 		uintptr(m.fd),
-		_KVM_SET_USER_MEMORY_REGION,
+		KVM_SET_USER_MEMORY_REGION,
 		uintptr(unsafe.Pointer(&userRegion)))
 	return errno
 }
@@ -168,7 +168,7 @@ func (c *vCPU) setSignalMask() error {
 	if _, _, errno := unix.RawSyscall(
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
-		_KVM_SET_SIGNAL_MASK,
+		KVM_SET_SIGNAL_MASK,
 		uintptr(unsafe.Pointer(&data))); errno != 0 {
 		return fmt.Errorf("error setting signal mask: %v", errno)
 	}

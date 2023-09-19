@@ -19,29 +19,29 @@ package kvm
 // Only the ioctls we need in Go appear here; some additional ioctls are used
 // within the assembly stubs (KVM_INTERRUPT, etc.).
 const (
-	_KVM_CREATE_VM              = 0xae01
-	_KVM_GET_VCPU_MMAP_SIZE     = 0xae04
-	_KVM_CREATE_VCPU            = 0xae41
-	_KVM_SET_TSS_ADDR           = 0xae47
-	_KVM_RUN                    = 0xae80
-	_KVM_NMI                    = 0xae9a
-	_KVM_CHECK_EXTENSION        = 0xae03
-	_KVM_GET_TSC_KHZ            = 0xaea3
-	_KVM_SET_TSC_KHZ            = 0xaea2
-	_KVM_INTERRUPT              = 0x4004ae86
-	_KVM_SET_MSRS               = 0x4008ae89
-	_KVM_SET_USER_MEMORY_REGION = 0x4020ae46
-	_KVM_SET_REGS               = 0x4090ae82
-	_KVM_SET_SREGS              = 0x4138ae84
-	_KVM_GET_MSRS               = 0xc008ae88
-	_KVM_GET_REGS               = 0x8090ae81
-	_KVM_GET_SREGS              = 0x8138ae83
-	_KVM_GET_SUPPORTED_CPUID    = 0xc008ae05
-	_KVM_SET_CPUID2             = 0x4008ae90
-	_KVM_SET_SIGNAL_MASK        = 0x4004ae8b
-	_KVM_GET_VCPU_EVENTS        = 0x8040ae9f
-	_KVM_SET_VCPU_EVENTS        = 0x4040aea0
-	_KVM_SET_DEVICE_ATTR        = 0x4018aee1
+	KVM_CREATE_VM              = 0xae01
+	KVM_GET_VCPU_MMAP_SIZE     = 0xae04
+	KVM_CREATE_VCPU            = 0xae41
+	KVM_SET_TSS_ADDR           = 0xae47
+	KVM_RUN                    = 0xae80
+	KVM_NMI                    = 0xae9a
+	KVM_CHECK_EXTENSION        = 0xae03
+	KVM_GET_TSC_KHZ            = 0xaea3
+	KVM_SET_TSC_KHZ            = 0xaea2
+	KVM_INTERRUPT              = 0x4004ae86
+	KVM_SET_MSRS               = 0x4008ae89
+	KVM_SET_USER_MEMORY_REGION = 0x4020ae46
+	KVM_SET_REGS               = 0x4090ae82
+	KVM_SET_SREGS              = 0x4138ae84
+	KVM_GET_MSRS               = 0xc008ae88
+	KVM_GET_REGS               = 0x8090ae81
+	KVM_GET_SREGS              = 0x8138ae83
+	KVM_GET_SUPPORTED_CPUID    = 0xc008ae05
+	KVM_SET_CPUID2             = 0x4008ae90
+	KVM_SET_SIGNAL_MASK        = 0x4004ae8b
+	KVM_GET_VCPU_EVENTS        = 0x8040ae9f
+	KVM_SET_VCPU_EVENTS        = 0x4040aea0
+	KVM_SET_DEVICE_ATTR        = 0x4018aee1
 )
 
 // KVM exit reasons.

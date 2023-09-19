@@ -126,7 +126,7 @@ func bluepillHandler(context unsafe.Pointer) {
 
 	for {
 		hostExitCounter.Increment()
-		_, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(c.fd), _KVM_RUN, 0) // escapes: no.
+		_, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(c.fd), KVM_RUN, 0) // escapes: no.
 		switch errno {
 		case 0: // Expected case.
 		case unix.EINTR:

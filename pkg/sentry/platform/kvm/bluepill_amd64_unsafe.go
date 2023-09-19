@@ -72,7 +72,7 @@ func bluepillStopGuest(c *vCPU) {
 	if _, _, errno := unix.RawSyscall(
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
-		_KVM_INTERRUPT,
+		KVM_INTERRUPT,
 		uintptr(unsafe.Pointer(&bounce))); errno != 0 {
 		throw("interrupt injection failed")
 	}
@@ -87,7 +87,7 @@ func bluepillSigBus(c *vCPU) {
 	if _, _, errno := unix.RawSyscall( // escapes: no.
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
-		_KVM_NMI, 0); errno != 0 {
+		KVM_NMI, 0); errno != 0 {
 		throw("NMI injection failed")
 	}
 }
