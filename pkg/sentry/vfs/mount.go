@@ -150,6 +150,24 @@ func (mnt *Mount) generateOptionalTags() string {
 	return optional
 }
 
+// coveringMount returns a mount that completely covers mnt if it exists and nil
+// otherwise. A mount that covers another is one that is the only child of its
+// parent and whose mountpoint is its parent's root.
+func (mnt *Mount) coveringMount() *Mount {
+	if len(mnt.children) != 1 {
+		return nil
+	}
+	// Get the child from the children map.
+	var child *Mount
+	for child = range mnt.children {
+		break
+	}
+	if child.point() != mnt.root {
+		return nil
+	}
+	return child
+}
+
 // NewFilesystem creates a new filesystem object not yet associated with any
 // mounts. It can be installed into the filesystem tree with ConnectMountAt.
 // Note that only the filesystem-specific mount options from opts are used by
@@ -419,7 +437,10 @@ func (vfs *VirtualFilesystem) UmountAt(ctx context.Context, creds *auth.Credenti
 			// From https://www.kernel.org/doc/Documentation/filesystems/sharedsubtree.txt:
 			// If any peer has some child mounts, then that mount is not unmounted,
 			// but all other mounts are unmounted.
-			if umountMnt != nil && len(umountMnt.children) == 0 {
+			if umountMnt == nil {
+				continue
+			}
+			if len(umountMnt.children) == 0 || umountMnt.coveringMount() != nil {
 				umountTree = append(umountTree, umountMnt)
 			}
 		}
@@ -483,6 +504,15 @@ type umountRecursiveOptions struct {
 //
 // +checklocks:vfs.mountMu
 func (vfs *VirtualFilesystem) umountRecursiveLocked(mnt *Mount, opts *umountRecursiveOptions) {
+	// covered mounts are a special case where the grandchild mount is
+	// reconnected to the parent after the child is disconnected.
+	var cover *Mount
+	if parent := mnt.parent(); parent != nil && !parent.umounted {
+		if cover = mnt.coveringMount(); cover != nil {
+			vfs.delayDecRef(vfs.disconnectLocked(cover))
+			cover.setKey(mnt.getKey())
+		}
+	}
 	if !mnt.umounted {
 		mnt.umounted = true
 		vfs.delayDecRef(mnt)
@@ -506,6 +536,14 @@ func (vfs *VirtualFilesystem) umountRecursiveLocked(mnt *Mount, opts *umountRecu
 	}
 	for child := range mnt.children {
 		vfs.umountRecursiveLocked(child, opts)
+	}
+	if cover != nil {
+		mp := cover.getKey()
+		mp.IncRef()
+		mp.dentry.mu.Lock()
+		vfs.connectLocked(cover, mp, mp.mount.ns)
+		mp.dentry.mu.Unlock()
+		vfs.delayDecRef(cover)
 	}
 }
 
