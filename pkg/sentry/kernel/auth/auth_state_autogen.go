@@ -230,6 +230,68 @@ func (i *idMapSegmentDataSlices) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &i.Values)
 }
 
+func (k *Key) StateTypeName() string {
+	return "pkg/sentry/kernel/auth.Key"
+}
+
+func (k *Key) StateFields() []string {
+	return []string{
+		"ID",
+		"Description",
+		"kuid",
+		"kgid",
+		"perms",
+	}
+}
+
+func (k *Key) beforeSave() {}
+
+// +checklocksignore
+func (k *Key) StateSave(stateSinkObject state.Sink) {
+	k.beforeSave()
+	stateSinkObject.Save(0, &k.ID)
+	stateSinkObject.Save(1, &k.Description)
+	stateSinkObject.Save(2, &k.kuid)
+	stateSinkObject.Save(3, &k.kgid)
+	stateSinkObject.Save(4, &k.perms)
+}
+
+func (k *Key) afterLoad() {}
+
+// +checklocksignore
+func (k *Key) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &k.ID)
+	stateSourceObject.Load(1, &k.Description)
+	stateSourceObject.Load(2, &k.kuid)
+	stateSourceObject.Load(3, &k.kgid)
+	stateSourceObject.Load(4, &k.perms)
+}
+
+func (s *KeySet) StateTypeName() string {
+	return "pkg/sentry/kernel/auth.KeySet"
+}
+
+func (s *KeySet) StateFields() []string {
+	return []string{
+		"keys",
+	}
+}
+
+func (s *KeySet) beforeSave() {}
+
+// +checklocksignore
+func (s *KeySet) StateSave(stateSinkObject state.Sink) {
+	s.beforeSave()
+	stateSinkObject.Save(0, &s.keys)
+}
+
+func (s *KeySet) afterLoad() {}
+
+// +checklocksignore
+func (s *KeySet) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &s.keys)
+}
+
 func (ns *UserNamespace) StateTypeName() string {
 	return "pkg/sentry/kernel/auth.UserNamespace"
 }
@@ -238,6 +300,7 @@ func (ns *UserNamespace) StateFields() []string {
 	return []string{
 		"parent",
 		"owner",
+		"Keys",
 		"uidMapFromParent",
 		"uidMapToParent",
 		"gidMapFromParent",
@@ -252,10 +315,11 @@ func (ns *UserNamespace) StateSave(stateSinkObject state.Sink) {
 	ns.beforeSave()
 	stateSinkObject.Save(0, &ns.parent)
 	stateSinkObject.Save(1, &ns.owner)
-	stateSinkObject.Save(2, &ns.uidMapFromParent)
-	stateSinkObject.Save(3, &ns.uidMapToParent)
-	stateSinkObject.Save(4, &ns.gidMapFromParent)
-	stateSinkObject.Save(5, &ns.gidMapToParent)
+	stateSinkObject.Save(2, &ns.Keys)
+	stateSinkObject.Save(3, &ns.uidMapFromParent)
+	stateSinkObject.Save(4, &ns.uidMapToParent)
+	stateSinkObject.Save(5, &ns.gidMapFromParent)
+	stateSinkObject.Save(6, &ns.gidMapToParent)
 }
 
 func (ns *UserNamespace) afterLoad() {}
@@ -264,10 +328,11 @@ func (ns *UserNamespace) afterLoad() {}
 func (ns *UserNamespace) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &ns.parent)
 	stateSourceObject.Load(1, &ns.owner)
-	stateSourceObject.Load(2, &ns.uidMapFromParent)
-	stateSourceObject.Load(3, &ns.uidMapToParent)
-	stateSourceObject.Load(4, &ns.gidMapFromParent)
-	stateSourceObject.Load(5, &ns.gidMapToParent)
+	stateSourceObject.Load(2, &ns.Keys)
+	stateSourceObject.Load(3, &ns.uidMapFromParent)
+	stateSourceObject.Load(4, &ns.uidMapToParent)
+	stateSourceObject.Load(5, &ns.gidMapFromParent)
+	stateSourceObject.Load(6, &ns.gidMapToParent)
 }
 
 func init() {
@@ -277,5 +342,7 @@ func init() {
 	state.Register((*idMapSet)(nil))
 	state.Register((*idMapnode)(nil))
 	state.Register((*idMapSegmentDataSlices)(nil))
+	state.Register((*Key)(nil))
+	state.Register((*KeySet)(nil))
 	state.Register((*UserNamespace)(nil))
 }

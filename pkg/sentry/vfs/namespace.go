@@ -142,6 +142,10 @@ func (vfs *VirtualFilesystem) updateRootAndCWD(ctx context.Context, root *Virtua
 		cwd.mount = dst
 		cwd.mount.IncRef()
 	}
+	for srcChild := range src.children {
+		dstChild := vfs.mounts.Lookup(dst, srcChild.point())
+		vfs.updateRootAndCWD(ctx, root, cwd, srcChild, dstChild)
+	}
 }
 
 // NamespaceInodeGetter is an interface that provides the GetNamespaceInode method.
@@ -170,38 +174,16 @@ func (vfs *VirtualFilesystem) CloneMountNamespace(
 	vfs.lockMounts()
 	defer vfs.unlockMounts(ctx)
 
-	ns.root.root.IncRef()
-	ns.root.fs.IncRef()
-	newns.root = newMount(vfs, ns.root.fs, ns.root.root, newns, &MountOptions{Flags: ns.root.Flags, ReadOnly: ns.root.ReadOnly()})
-	if ns.root.isShared {
-		vfs.addPeer(ns.root, newns.root)
+	newRoot, err := vfs.cloneMountTree(ctx, ns.root, ns.root.root)
+	if err != nil {
+		newns.DecRef(ctx)
+		vfs.abortTree(ctx, newRoot)
+		return nil, err
 	}
+	newns.root = newRoot
+	newns.root.ns = newns
+	vfs.commitPendingTree(ctx, newRoot)
 	vfs.updateRootAndCWD(ctx, root, cwd, ns.root, newns.root)
-
-	queue := []cloneEntry{cloneEntry{ns.root, newns.root}}
-	for len(queue) != 0 {
-		p := queue[len(queue)-1]
-		queue = queue[:len(queue)-1]
-		for c := range p.prevMount.children {
-			m := vfs.cloneMount(c, c.root, nil)
-			vd := VirtualDentry{
-				mount:  p.parentMount,
-				dentry: c.point(),
-			}
-			vd.IncRef()
-
-			err := vfs.connectMountAtLocked(ctx, m, vd)
-			vfs.delayDecRef(m)
-			if err != nil {
-				newns.DecRef(ctx)
-				return nil, err
-			}
-			vfs.updateRootAndCWD(ctx, root, cwd, c, m)
-			if len(c.children) != 0 {
-				queue = append(queue, cloneEntry{c, m})
-			}
-		}
-	}
 	return newns, nil
 }
 

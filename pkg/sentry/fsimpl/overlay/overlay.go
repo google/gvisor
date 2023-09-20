@@ -164,7 +164,29 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		delete(mopts, "upperdir")
 		// Linux overlayfs also requires a workdir when upperdir is
 		// specified; we don't, so silently ignore this option.
-		delete(mopts, "workdir")
+		if workdir, ok := mopts["workdir"]; ok {
+			// Linux creates the "work" directory in `workdir`.
+			// Docker calls chown on it and fails if it doesn't
+			// exist.
+			workdirPath := fspath.Parse(workdir + "/work")
+			if !workdirPath.Absolute {
+				ctx.Infof("overlay.FilesystemType.GetFilesystem: workdir %q must be absolute", workdir)
+				return nil, nil, linuxerr.EINVAL
+			}
+			pop := vfs.PathOperation{
+				Root:               vfsroot,
+				Start:              vfsroot,
+				Path:               workdirPath,
+				FollowFinalSymlink: false,
+			}
+			mode := vfs.MkdirOptions{
+				Mode: linux.ModeUserAll,
+			}
+			if err := vfsObj.MkdirAt(ctx, creds, &pop, &mode); err != nil && err != linuxerr.EEXIST {
+				ctx.Infof("overlay.FilesystemType.GetFilesystem: failed to create %s/work: %v", workdir, err)
+			}
+			delete(mopts, "workdir")
+		}
 		upperPath := fspath.Parse(upperPathname)
 		if !upperPath.Absolute {
 			ctx.Infof("overlay.FilesystemType.GetFilesystem: upperdir %q must be absolute", upperPathname)

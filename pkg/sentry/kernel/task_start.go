@@ -102,6 +102,10 @@ type TaskConfig struct {
 
 	// UserCounters is user resource counters.
 	UserCounters *userCounters
+
+	// SessionKeyring is the session keyring associated with the parent task.
+	// It may be nil.
+	SessionKeyring *auth.Key
 }
 
 // NewTask creates a new task defined by cfg.
@@ -171,6 +175,7 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 		containerID:     cfg.ContainerID,
 		cgroups:         make(map[Cgroup]struct{}),
 		userCounters:    cfg.UserCounters,
+		sessionKeyring:  cfg.SessionKeyring,
 	}
 	t.netns = cfg.NetworkNamespace
 	t.creds.Store(cfg.Credentials)
