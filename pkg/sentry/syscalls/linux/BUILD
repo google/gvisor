@@ -26,6 +26,7 @@ go_library(
         "sys_identity.go",
         "sys_inotify.go",
         "sys_iouring.go",
+        "sys_key.go",
         "sys_membarrier.go",
         "sys_mempolicy.go",
         "sys_mmap.go",
