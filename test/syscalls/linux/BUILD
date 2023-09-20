@@ -1177,6 +1177,23 @@ cc_binary(
 )
 
 cc_binary(
+    name = "keys_test",
+    testonly = 1,
+    srcs = ["keys.cc"],
+    linkstatic = 1,
+    deps = [
+        gtest,
+        "//test/util:posix_error",
+        "//test/util:test_main",
+        "//test/util:thread_util",
+        "@com_google_absl//absl/random",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/synchronization",
+    ],
+)
+
+cc_binary(
     name = "kill_test",
     testonly = 1,
     srcs = ["kill.cc"],

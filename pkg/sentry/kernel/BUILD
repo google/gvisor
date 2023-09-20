@@ -280,6 +280,7 @@ go_library(
         "task_futex.go",
         "task_identity.go",
         "task_image.go",
+        "task_key.go",
         "task_list.go",
         "task_log.go",
         "task_mutex.go",

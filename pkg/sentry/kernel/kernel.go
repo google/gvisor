@@ -952,6 +952,8 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		ContainerID:             args.ContainerID,
 		InitialCgroups:          args.InitialCgroups,
 		UserCounters:            k.GetUserCounters(args.Credentials.RealKUID),
+		// A task with no parent starts out with no session keyring.
+		SessionKeyring: nil,
 	}
 	config.NetworkNamespace.IncRef()
 	t, err := k.tasks.NewTask(ctx, config)
