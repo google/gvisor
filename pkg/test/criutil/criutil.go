@@ -191,6 +191,29 @@ func (cc *Crictl) StopPod(podID string) error {
 	return err
 }
 
+// Stats returns stats for the container. It corresponds to `crictl stats -o json`.
+func (cc *Crictl) Stats(runtime, contID string, args ...string) (*ContainerStats, error) {
+	output, err := cc.run("stats", "-o", "json", contID)
+	if err != nil {
+		return &ContainerStats{}, err
+	}
+	stats := &ContainerStats{}
+	if err := json.Unmarshal([]byte(output), stats); err != nil {
+		return &ContainerStats{}, fmt.Errorf("failed to unmarshal JSON: %v, %s", err, output)
+	}
+	if stats.Attributes.ID == " " {
+		return &ContainerStats{}, fmt.Errorf("no containerId associated with container: %s", output)
+	}
+	if stats.CPU.Timestamp < 0 {
+		return &ContainerStats{}, fmt.Errorf("cpu usage timestamp can't be less than 0: %s", output)
+	}
+	if stats.Memory.Timestamp < 0 {
+		return &ContainerStats{}, fmt.Errorf("memory usage timestamp can't be less than 0: %s", output)
+	}
+
+	return stats, nil
+}
+
 // containsConfig is a minimal copy of
 // https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/apis/cri/runtime/v1alpha2/api.proto
 // It only contains fields needed for testing.
@@ -200,6 +223,28 @@ type containerConfig struct {
 
 type containerStatus struct {
 	Network containerNetwork
+}
+
+// ContainerStats is a minimal copy of Stats returned by crictl.
+// It only contains fields needed for testing.
+type ContainerStats struct {
+	Attributes attributes
+	CPU        cpu
+	Memory     memory
+}
+
+type cpu struct {
+	Timestamp            int64
+	UsageCoreNanoSeconds uint64
+}
+
+type memory struct {
+	Timestamp       int64
+	WorkingSetBytes uint64
+}
+
+type attributes struct {
+	ID string
 }
 
 type containerNetwork struct {

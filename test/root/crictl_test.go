@@ -268,6 +268,32 @@ func TestHomeDir(t *testing.T) {
 	})
 }
 
+// TestRunscEvents checks container stats.
+func TestRunscEvents(t *testing.T) {
+	// Setup containerd and crictl.
+	crictl, cleanup, err := setup(t)
+	if err != nil {
+		t.Fatalf("failed to setup crictl: %v", err)
+	}
+	defer cleanup()
+
+	spec := SimpleSpec("busybox", "basic/busybox", []string{"sleep", "100000"}, nil)
+	podID, contID, err := crictl.StartPodAndContainer(containerdRuntime, "basic/busybox", Sandbox("default"), spec)
+	if err != nil {
+		t.Fatalf("start failed: %v", err)
+	}
+
+	out, err := crictl.Stats(containerdRuntime, contID)
+	if err != nil {
+		t.Fatalf("stats failed: %v, out: %#v", err, out)
+	}
+
+	// Stop everything.
+	if err := crictl.StopPodAndContainer(podID, contID); err != nil {
+		t.Fatalf("stop failed: %v", err)
+	}
+}
+
 const containerdRuntime = "runsc"
 
 // containerdConfigv14 is the containerd (1.4-) configuration file that

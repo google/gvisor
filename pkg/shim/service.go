@@ -914,6 +914,20 @@ func (s *service) stats(ctx context.Context, r *taskAPI.StatsRequest) (*taskAPI.
 			Limit:   stats.Pids.Limit,
 		},
 	}
+
+	for _, networkStat := range stats.NetworkInterfaces {
+		metrics.Network = append(metrics.Network, &cgroupsstats.NetworkStat{
+			Name:      networkStat.Name,
+			RxBytes:   networkStat.RxBytes,
+			RxPackets: networkStat.RxPackets,
+			RxErrors:  networkStat.RxErrors,
+			RxDropped: networkStat.RxDropped,
+			TxBytes:   networkStat.TxBytes,
+			TxPackets: networkStat.TxPackets,
+			TxErrors:  networkStat.TxErrors,
+			TxDropped: networkStat.TxDropped,
+		})
+	}
 	data, err := typeurl.MarshalAny(metrics)
 	if err != nil {
 		log.L.Debugf("Stats error, id: %s: %v", r.ID, err)

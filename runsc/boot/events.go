@@ -40,9 +40,10 @@ type Event struct {
 // Stats is the runc specific stats structure for stability when encoding and
 // decoding stats.
 type Stats struct {
-	CPU    CPU    `json:"cpu"`
-	Memory Memory `json:"memory"`
-	Pids   Pids   `json:"pids"`
+	CPU               CPU                 `json:"cpu"`
+	Memory            Memory              `json:"memory"`
+	Pids              Pids                `json:"pids"`
+	NetworkInterfaces []*NetworkInterface `json:"network_interfaces"`
 }
 
 // Pids contains stats on processes.
@@ -80,6 +81,21 @@ type CPUUsage struct {
 	User   uint64   `json:"user,omitempty"`
 	Total  uint64   `json:"total,omitempty"`
 	PerCPU []uint64 `json:"percpu,omitempty"`
+}
+
+// NetworkInterface contains stats of network interface.
+type NetworkInterface struct {
+	// Name is the name of the network interface.
+	Name string
+
+	RxBytes   uint64
+	RxPackets uint64
+	RxErrors  uint64
+	RxDropped uint64
+	TxBytes   uint64
+	TxPackets uint64
+	TxErrors  uint64
+	TxDropped uint64
 }
 
 // Event gets the events from the container.
@@ -127,6 +143,14 @@ func (cm *containerManager) Event(cid *string, out *EventOut) error {
 
 	// CPU usage by container.
 	out.ContainerUsage = control.ContainerUsage(cm.l.k)
+
+	var networkInterfacesStats []*NetworkInterface
+	networkInterfacesStats, err = cm.l.networkInterfaceStat()
+	if err != nil {
+		return err
+	}
+
+	out.Event.Data.NetworkInterfaces = networkInterfacesStats
 
 	return nil
 }

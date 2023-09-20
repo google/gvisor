@@ -367,6 +367,7 @@ containerd-tests:
 containerd-tests: containerd-test-1.4.12
 containerd-tests: containerd-test-1.5.11
 containerd-tests: containerd-test-1.6.2
+containerd-tests: containerd-test-1.200.200
 
 ##
 ## Benchmarks.
