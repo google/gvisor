@@ -41,6 +41,7 @@ func Register(vfsObj *vfs.VirtualFilesystem, uvmDevMajor uint32) error {
 	}
 	switch version {
 	case
+		"525.125.06",
 		"525.60.13",
 		"525.105.17":
 		log.Infof("Nvidia driver version: %s", version)
