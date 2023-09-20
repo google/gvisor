@@ -1802,16 +1802,9 @@ func nvproxySetupAfterGoferUserns(spec *specs.Spec, conf *config.Config, goferCm
 		ldconfigPath = "/sbin/ldconfig"
 	}
 
-	var nvidiaDevices strings.Builder
-	deviceIDs, err := specutils.NvidiaDeviceNumbers(spec, conf)
+	devices, err := specutils.NvidiaDeviceList(spec, conf)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get nvidia device numbers: %w", err)
-	}
-	for i, deviceID := range deviceIDs {
-		if i > 0 {
-			nvidiaDevices.WriteRune(',')
-		}
-		nvidiaDevices.WriteString(fmt.Sprintf("%d", uint32(deviceID)))
 	}
 
 	// Create synchronization FD for nvproxy.
@@ -1834,10 +1827,10 @@ func nvproxySetupAfterGoferUserns(spec *specs.Spec, conf *config.Config, goferCm
 			"--utility",
 			"--compute",
 			fmt.Sprintf("--pid=%d", goferCmd.Process.Pid),
-			fmt.Sprintf("--device=%s", nvidiaDevices.String()),
+			fmt.Sprintf("--device=%s", devices),
 			spec.Root.Path,
 		}
-		log.Debugf("Executing %q", argv)
+		log.Infof("modal: Executing %q", argv)
 		var stdout, stderr strings.Builder
 		cmd := exec.Cmd{
 			Path:   argv[0],
@@ -1849,6 +1842,11 @@ func nvproxySetupAfterGoferUserns(spec *specs.Spec, conf *config.Config, goferCm
 		if err := cmd.Run(); err != nil {
 			return fmt.Errorf("nvidia-container-cli configure failed, err: %v\nstdout: %s\nstderr: %s", err, stdout.String(), stderr.String())
 		}
+		minors, err := specutils.FindAllGPUDevices(spec.Root.Path)
+		if err != nil {
+			return fmt.Errorf("getting nvidia devices: %w", err)
+		}
+		log.Infof("modal: after configure: user %d got %v device minors after scanning /", os.Getuid(), minors)
 		return nil
 	}, nil
 }

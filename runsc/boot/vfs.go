@@ -16,6 +16,7 @@ package boot
 
 import (
 	"fmt"
+	"os"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -1195,16 +1196,17 @@ func nvproxyRegisterDevicesAndCreateFiles(ctx context.Context, info *containerIn
 		// In Docker mode, create all the device files now.
 		// In non-Docker mode, these are instead created as part of
 		// `createDeviceFiles`, using the spec's Device list.
-		nvd, err := specutils.NvidiaDeviceNumbers(info.spec, info.conf)
+		minors, err := specutils.FindAllGPUDevices("/")
 		if err != nil {
 			return fmt.Errorf("getting nvidia devices: %w", err)
 		}
+		log.Infof("modal: after pivot_root: user %d got %v device minors after scanning /", os.Getuid(), minors)
 		if err := nvproxy.CreateDriverDevtmpfsFiles(ctx, a, uvmDevMajor); err != nil {
 			return fmt.Errorf("creating nvproxy devtmpfs files: %w", err)
 		}
-		for _, d := range nvd {
-			if err := nvproxy.CreateIndexDevtmpfsFile(ctx, a, d); err != nil {
-				return fmt.Errorf("creating nvproxy devtmpfs file for device %d: %w", d, err)
+		for _, minor := range minors {
+			if err := nvproxy.CreateIndexDevtmpfsFile(ctx, a, minor); err != nil {
+				return fmt.Errorf("creating nvproxy devtmpfs file for device minor %d: %w", minor, err)
 			}
 		}
 	}

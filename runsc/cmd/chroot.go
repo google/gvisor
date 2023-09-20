@@ -196,12 +196,13 @@ func nvproxyUpdateChroot(chroot string, spec *specs.Spec, conf *config.Config) e
 	if err := mountInChroot(chroot, "/dev/nvidia-uvm", "/dev/nvidia-uvm", "bind", unix.MS_BIND); err != nil {
 		return fmt.Errorf("error mounting /dev/nvidia-uvm in chroot: %w", err)
 	}
-	deviceIDs, err := specutils.NvidiaDeviceNumbers(spec, conf)
+	devMinors, err := specutils.FindAllGPUDevices(spec.Root.Path)
 	if err != nil {
-		return fmt.Errorf("enumerating nvidia device IDs: %w", err)
+		return fmt.Errorf("error enumerating GPU devices: %w", err)
 	}
-	for _, deviceID := range deviceIDs {
-		path := fmt.Sprintf("/dev/nvidia%d", deviceID)
+	log.Infof("modal: before pivot_root: user %d got %v device minors after scanning %q", os.Getuid(), devMinors, spec.Root.Path)
+	for _, devMinor := range devMinors {
+		path := fmt.Sprintf("/dev/nvidia%d", devMinor)
 		if err := mountInChroot(chroot, path, path, "bind", unix.MS_BIND); err != nil {
 			return fmt.Errorf("error mounting %q in chroot: %v", path, err)
 		}

@@ -16,13 +16,13 @@ package specutils
 
 import (
 	"fmt"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
-	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/runsc/config"
 )
 
@@ -52,26 +52,12 @@ func GPUFunctionalityRequested(spec *specs.Spec, conf *config.Config) bool {
 	return nvd != "" && nvd != "void"
 }
 
-// CanAccessAtLeastOneGPU returns true if the sandbox and container should
-// be able to access at least one Nvidia GPU. This is a function of the
-// sandbox configuration and the container spec's NVIDIA_VISIBLE_DEVICES
-// environment variable.
-func CanAccessAtLeastOneGPU(spec *specs.Spec, conf *config.Config) bool {
-	gpus, err := NvidiaDeviceNumbers(spec, conf)
-	if err != nil {
-		log.Warningf("Cannot determine if the container should have access to GPUs: %v", err)
-		return false
-	}
-	return len(gpus) > 0
-}
-
-// nvidiaDeviceRegex matches Nvidia GPU device paths.
-var nvidiaDeviceRegex = regexp.MustCompile(`^/dev/nvidia(\d+)$`)
-
-// findAllGPUDevices returns the Nvidia GPU device minor numbers of all GPUs
-// on the machine.
-func findAllGPUDevices() ([]uint32, error) {
-	paths, err := filepath.Glob("/dev/nvidia*")
+// FindAllGPUDevices returns the Nvidia GPU device minor numbers of all GPUs
+// mounted in the provided rootfs.
+func FindAllGPUDevices(rootfs string) ([]uint32, error) {
+	devPathPrefix := path.Join(rootfs, "dev/nvidia")
+	nvidiaDeviceRegex := regexp.MustCompile(fmt.Sprintf(`^%s(\d+)$`, devPathPrefix))
+	paths, err := filepath.Glob(devPathPrefix + "*")
 	if err != nil {
 		return nil, fmt.Errorf("enumerating Nvidia device files: %w", err)
 	}
@@ -88,38 +74,42 @@ func findAllGPUDevices() ([]uint32, error) {
 	return devMinors, nil
 }
 
-// NvidiaDeviceNumbers returns the Nvidia GPU device minor numbers that
-// should be visible to the specified container.
-// In Docker mode, this is the set of devices specified in
-// NVIDIA_VISIBLE_DEVICES.
-// In non-Docker mode, this is all Nvidia devices, as we cannot know the set
-// of usable GPUs until subcontainer creation.
-func NvidiaDeviceNumbers(spec *specs.Spec, conf *config.Config) ([]uint32, error) {
+// NvidiaDeviceList returns the list of devices that should be visible to the
+// sandbox. In Docker mode, this is the set of devices specified in
+// NVIDIA_VISIBLE_DEVICES. In non-Docker mode, this is all Nvidia devices, as
+// we cannot know the set of usable GPUs until subcontainer creation.
+func NvidiaDeviceList(spec *specs.Spec, conf *config.Config) (string, error) {
 	if !GPUFunctionalityRequested(spec, conf) {
-		return nil, nil
+		return "", nil
 	}
 	if !conf.NVProxyDocker {
 		// nvproxy enabled in non-Docker mode.
 		// Return all GPUs on the machine.
-		return findAllGPUDevices()
+		return "all", nil
 	}
 	// nvproxy is enabled in Docker mode.
 	nvd, _ := EnvVar(spec.Process.Env, nvdEnvVar)
 	if nvd == "none" {
-		return nil, nil
+		return "", nil
 	}
 	if nvd == "all" {
-		return findAllGPUDevices()
+		return "all", nil
 	}
-	var devMinors []uint32
 	// Expect nvd to be a list of indices; UUIDs aren't supported
 	// yet.
-	for _, indexStr := range strings.Split(nvd, ",") {
-		index, err := strconv.ParseUint(indexStr, 10, 32)
-		if err != nil {
-			return nil, fmt.Errorf("invalid %q in NVIDIA_VISIBLE_DEVICES %q: %w", indexStr, nvd, err)
+	for _, gpuDev := range strings.Split(nvd, ",") {
+		// Validate gpuDev. We only support the following formats for now:
+		// * GPU indices (e.g. 0,1,2)
+		// * GPU UUIDs (e.g. GPU-fef8089b)
+		//
+		// We do not support MIG devices yet.
+		if strings.HasPrefix(gpuDev, "GPU-") {
+			continue
 		}
-		devMinors = append(devMinors, uint32(index))
+		_, err := strconv.ParseUint(gpuDev, 10, 32)
+		if err != nil {
+			return "", fmt.Errorf("invalid %q in NVIDIA_VISIBLE_DEVICES %q: %w", gpuDev, nvd, err)
+		}
 	}
-	return devMinors, nil
+	return nvd, nil
 }
