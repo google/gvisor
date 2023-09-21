@@ -319,6 +319,23 @@ func New(conf *config.Config, args Args) (*Container, error) {
 				PassFiles:             args.PassFiles,
 				ExecFile:              args.ExecFile,
 			}
+			if specutils.GPUFunctionalityRequested(args.Spec, conf) {
+				// Expose all Nvidia devices in /dev/, because we don't know what
+				// devices future subcontainers will want.
+				searchDir := "/"
+				if conf.NVProxyDocker {
+					// For single-container use cases like Docker, the container rootfs
+					// is populated with the devices that need to be exposed. Scan that.
+					// This scan needs to happen outside the sandbox process because
+					// /rootfs/dev/nvidia* mounts made in gofer may not be propagated to
+					// sandbox's mount namespace.
+					searchDir = args.Spec.Root.Path
+				}
+				sandArgs.NvidiaDevMinors, err = specutils.FindAllGPUDevices(searchDir)
+				if err != nil {
+					return fmt.Errorf("FindAllGPUDevices: %w", err)
+				}
+			}
 			sand, err := sandbox.New(conf, sandArgs)
 			if err != nil {
 				return fmt.Errorf("cannot create sandbox: %w", err)
@@ -1802,16 +1819,9 @@ func nvproxySetupAfterGoferUserns(spec *specs.Spec, conf *config.Config, goferCm
 		ldconfigPath = "/sbin/ldconfig"
 	}
 
-	var nvidiaDevices strings.Builder
-	deviceIDs, err := specutils.NvidiaDeviceNumbers(spec, conf)
+	devices, err := specutils.NvidiaDeviceList(spec, conf)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get nvidia device numbers: %w", err)
-	}
-	for i, deviceID := range deviceIDs {
-		if i > 0 {
-			nvidiaDevices.WriteRune(',')
-		}
-		nvidiaDevices.WriteString(fmt.Sprintf("%d", uint32(deviceID)))
 	}
 
 	// Create synchronization FD for nvproxy.
@@ -1834,7 +1844,7 @@ func nvproxySetupAfterGoferUserns(spec *specs.Spec, conf *config.Config, goferCm
 			"--utility",
 			"--compute",
 			fmt.Sprintf("--pid=%d", goferCmd.Process.Pid),
-			fmt.Sprintf("--device=%s", nvidiaDevices.String()),
+			fmt.Sprintf("--device=%s", devices),
 			spec.Root.Path,
 		}
 		log.Debugf("Executing %q", argv)
