@@ -132,6 +132,10 @@ TEST(AlarmTest, SaSiginfo) {
   ASSERT_THAT(pause(), SyscallFailsWithErrno(EINTR));
 }
 
+#ifndef SA_INTERRUPT
+#define SA_INTERRUPT 0x20000000
+#endif  // SA_INTERRUPT
+
 // No random save as the test relies on alarm timing. Cooperative save tests
 // already cover the save between alarm and pause.
 TEST(AlarmTest, SaInterrupt) {

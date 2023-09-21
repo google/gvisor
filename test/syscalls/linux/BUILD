@@ -1446,6 +1446,7 @@ cc_binary(
     srcs = ["msync.cc"],
     linkstatic = 1,
     deps = [
+        gtest,
         "//test/util:file_descriptor",
         "//test/util:memory_util",
         "//test/util:posix_error",

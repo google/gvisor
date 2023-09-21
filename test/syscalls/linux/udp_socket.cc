@@ -2475,7 +2475,7 @@ TEST(UdpInet6SocketTest, ConnectInet4Sockaddr) {
   ASSERT_NE(addr = inet_ntop(sockname.ss_family, &sockname, addr_buf,
                              sizeof(addr_buf)),
             nullptr);
-  ASSERT_TRUE(IN6_IS_ADDR_V4MAPPED(sin6->sin6_addr.s6_addr)) << addr;
+  ASSERT_TRUE(IN6_IS_ADDR_V4MAPPED(&sin6->sin6_addr)) << addr;
 }
 
 }  // namespace
