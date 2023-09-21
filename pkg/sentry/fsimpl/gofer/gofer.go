@@ -950,7 +950,7 @@ type dentry struct {
 	// tracks dirty segments in cache. dirty is protected by dataMu.
 	dirty fsutil.DirtySet
 
-	// pf implements platform.File for mappings of hostFD.
+	// pf implements memmap.File for mappings of hostFD.
 	pf dentryPlatformFile
 
 	// If this dentry represents a symbolic link, InteropModeShared is not in
