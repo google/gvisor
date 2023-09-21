@@ -155,6 +155,10 @@ type Boot struct {
 	// boot process should invoke setuid/setgid for root user. This is mainly
 	// used to synchronize rootless user namespace initialization.
 	syncUsernsFD int
+
+	// nvidiaDevMinors is a list of device minors for Nvidia GPU devices exposed
+	// to the sandbox.
+	nvidiaDevMinors boot.NvidiaDevMinors
 }
 
 // Name implements subcommands.Command.Name.
@@ -201,6 +205,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&b.mountsFD, "mounts-fd", -1, "mountsFD is the file descriptor to read list of mounts after they have been resolved (direct paths, no symlinks).")
 	f.IntVar(&b.podInitConfigFD, "pod-init-config-fd", -1, "file descriptor to the pod init configuration file.")
 	f.Var(&b.sinkFDs, "sink-fds", "ordered list of file descriptors to be used by the sinks defined in --pod-init-config.")
+	f.Var(&b.nvidiaDevMinors, "nvidia-dev-minors", "list of device minors for Nvidia GPU devices exposed to the sandbox.")
 
 	// Profiling flags.
 	b.profileFDs.SetFromFlags(f)
@@ -261,7 +266,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	}
 
 	if b.setUpRoot {
-		if err := setUpChroot(b.pidns, spec, conf); err != nil {
+		if err := setUpChroot(b.pidns, spec, conf, b.nvidiaDevMinors); err != nil {
 			util.Fatalf("error setting up chroot: %v", err)
 		}
 		argOverride["setup-root"] = "false"

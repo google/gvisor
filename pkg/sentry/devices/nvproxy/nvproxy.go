@@ -87,8 +87,8 @@ func CreateDriverDevtmpfsFiles(ctx context.Context, dev *devtmpfs.Accessor, uvmD
 
 // CreateIndexDevtmpfsFile creates the device special file in dev for the
 // device with the given index.
-func CreateIndexDevtmpfsFile(ctx context.Context, dev *devtmpfs.Accessor, index uint32) error {
-	return dev.CreateDeviceFile(ctx, fmt.Sprintf("nvidia%d", index), vfs.CharDevice, nvgpu.NV_MAJOR_DEVICE_NUMBER, index, 0666)
+func CreateIndexDevtmpfsFile(ctx context.Context, dev *devtmpfs.Accessor, minor uint32) error {
+	return dev.CreateDeviceFile(ctx, fmt.Sprintf("nvidia%d", minor), vfs.CharDevice, nvgpu.NV_MAJOR_DEVICE_NUMBER, minor, 0666)
 }
 
 // +stateify savable
