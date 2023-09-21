@@ -84,7 +84,7 @@ func copyFile(dst, src string) error {
 
 // setUpChroot creates an empty directory with runsc mounted at /runsc and proc
 // mounted at /proc.
-func setUpChroot(pidns bool, spec *specs.Spec, conf *config.Config) error {
+func setUpChroot(pidns bool, spec *specs.Spec, conf *config.Config, nvidiaDevMinors []uint32) error {
 	// We are a new mount namespace, so we can use /tmp as a directory to
 	// construct a new root.
 	chroot := os.TempDir()
@@ -120,7 +120,7 @@ func setUpChroot(pidns bool, spec *specs.Spec, conf *config.Config) error {
 		}
 	}
 
-	if err := nvproxyUpdateChroot(chroot, spec, conf); err != nil {
+	if err := nvproxyUpdateChroot(chroot, spec, conf, nvidiaDevMinors); err != nil {
 		return fmt.Errorf("error configuring chroot for Nvidia GPUs: %w", err)
 	}
 	if err := tpuProxyUpdateChroot(chroot, conf); err != nil {
@@ -183,7 +183,7 @@ func tpuProxyUpdateChroot(chroot string, conf *config.Config) error {
 	return nil
 }
 
-func nvproxyUpdateChroot(chroot string, spec *specs.Spec, conf *config.Config) error {
+func nvproxyUpdateChroot(chroot string, spec *specs.Spec, conf *config.Config, devMinors []uint32) error {
 	if !specutils.GPUFunctionalityRequested(spec, conf) {
 		return nil
 	}
@@ -196,12 +196,8 @@ func nvproxyUpdateChroot(chroot string, spec *specs.Spec, conf *config.Config) e
 	if err := mountInChroot(chroot, "/dev/nvidia-uvm", "/dev/nvidia-uvm", "bind", unix.MS_BIND); err != nil {
 		return fmt.Errorf("error mounting /dev/nvidia-uvm in chroot: %w", err)
 	}
-	deviceIDs, err := specutils.NvidiaDeviceNumbers(spec, conf)
-	if err != nil {
-		return fmt.Errorf("enumerating nvidia device IDs: %w", err)
-	}
-	for _, deviceID := range deviceIDs {
-		path := fmt.Sprintf("/dev/nvidia%d", deviceID)
+	for _, devMinor := range devMinors {
+		path := fmt.Sprintf("/dev/nvidia%d", devMinor)
 		if err := mountInChroot(chroot, path, path, "bind", unix.MS_BIND); err != nil {
 			return fmt.Errorf("error mounting %q in chroot: %v", path, err)
 		}

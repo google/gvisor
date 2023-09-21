@@ -262,6 +262,10 @@ type Args struct {
 
 	// ExecFile is the file from the host used for program execution.
 	ExecFile *os.File
+
+	// NvidiaDevMinors is the list of device minors for Nvidia GPU devices
+	// exposed to the sandbox.
+	NvidiaDevMinors boot.NvidiaDevMinors
 }
 
 // New creates the sandbox process. The caller must call Destroy() on the
@@ -750,6 +754,11 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 	}
 	if err := donations.OpenAndDonate("trace-fd", conf.TraceFile, profFlags); err != nil {
 		return err
+	}
+
+	// Pass nvidia device minors.
+	if len(args.NvidiaDevMinors) > 0 {
+		cmd.Args = append(cmd.Args, "--nvidia-dev-minors="+args.NvidiaDevMinors.String())
 	}
 
 	// Pass overlay mediums.

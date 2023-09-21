@@ -18,6 +18,7 @@ go_library(
         "loader.go",
         "mount_hints.go",
         "network.go",
+        "nvidia.go",
         "overlay.go",
         "seccheck.go",
         "strace.go",
