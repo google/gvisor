@@ -48,6 +48,7 @@
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/util/capability_util.h"
+#include "test/util/eventfd_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
 #include "test/util/linux_capability_util.h"
@@ -1511,6 +1512,14 @@ TEST(MountTest, MountNamespacePropagation) {
   // Check that the test mount is still here.
   EXPECT_NO_ERRNO(Open(JoinPath(child_dir, "boo"), O_RDWR));
   EXPECT_THAT(umount2(child_dir.c_str(), MNT_DETACH), SyscallSucceeds());
+}
+
+TEST(MountTest, MountFailsOnPseudoFilesystemMountpoint) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  auto const fd = ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(0, 0));
+  std::string path = absl::StrCat("/proc/self/fd/", fd.get());
+  EXPECT_THAT(mount("test", path.c_str(), "tmpfs", 0, 0),
+              SyscallFailsWithErrno(EINVAL));
 }
 
 }  // namespace
