@@ -28,10 +28,11 @@
 #include "absl/container/flat_hash_set.h"
 #include "absl/strings/str_split.h"
 #include "absl/synchronization/notification.h"
-#include "test/util/capability_util.h"
 #include "test/util/cgroup_util.h"
 #include "test/util/cleanup.h"
+#include "test/util/linux_capability_util.h"
 #include "test/util/mount_util.h"
+#include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
@@ -857,7 +858,7 @@ TEST(CPUAcctCgroup, NoDoubleAccounting) {
 
 // WriteAndVerifyControlValue attempts to write val to a cgroup file at path,
 // and verify the value by reading it afterwards.
-PosixError WriteAndVerifyControlValue(const Cgroup& c, std::string_view path,
+PosixError WriteAndVerifyControlValue(const Cgroup& c, absl::string_view path,
                                       int64_t val) {
   RETURN_IF_ERRNO(c.WriteIntegerControlFile(path, val));
   ASSIGN_OR_RETURN_ERRNO(int64_t newval, c.ReadIntegerControlFile(path));
@@ -874,7 +875,7 @@ PosixError WriteAndVerifyControlValue(const Cgroup& c, std::string_view path,
 PosixErrorOr<std::vector<bool>> ParseBitmap(std::string s) {
   std::vector<bool> bitmap;
   bitmap.reserve(64);
-  for (const std::string_view& t : absl::StrSplit(s, ',')) {
+  for (const absl::string_view& t : absl::StrSplit(s, ',')) {
     std::vector<std::string> parts = absl::StrSplit(t, absl::MaxSplits('-', 2));
     if (parts.size() == 2) {
       ASSIGN_OR_RETURN_ERRNO(uint64_t start, Atoi<uint64_t>(parts[0]));

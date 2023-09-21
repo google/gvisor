@@ -143,9 +143,10 @@ TEST_P(TCPSocketPairTest, RSTCausesPollHUP) {
 
   // Confirm we at least have one unread byte.
   int bytes_available = 0;
-  ASSERT_THAT(
-      RetryEINTR(ioctl)(sockets->second_fd(), FIONREAD, &bytes_available),
-      SyscallSucceeds());
+  ASSERT_THAT(RetryEINTR([&]() {
+                return ioctl(sockets->second_fd(), FIONREAD, &bytes_available);
+              })(),
+              SyscallSucceeds());
   EXPECT_GT(bytes_available, 0);
 
   // Now close the connected socket without reading the data from the second,

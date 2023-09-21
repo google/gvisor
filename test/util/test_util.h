@@ -193,6 +193,13 @@
 #include "test/util/posix_error.h"
 #include "test/util/save_util.h"
 
+// Android's libc, Bionic, specifies that many syscall arguments are _Nonnull,
+// causing tests that specifically test for syscall behavior on null arguments
+// to fail to build.
+#if defined(__BIONIC__) && defined(__clang__)
+#pragma clang diagnostic ignored "-Wnonnull"
+#endif
+
 namespace gvisor {
 namespace testing {
 

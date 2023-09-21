@@ -209,7 +209,8 @@ MountOptionals() {
 }
 
 PosixError ParseOptionalTag(std::string_view tag, MountOptional* opt) {
-  std::vector<std::string_view> key_value = absl::StrSplit(tag, ':');
+  std::vector<absl::string_view> key_value =
+      absl::StrSplit(absl::string_view(tag.data(), tag.size()), ':');
   if (key_value.size() != 2) return PosixError(0);
   if (key_value[0] == "shared") {
     if (!absl::SimpleAtoi(key_value[1], &opt->shared))

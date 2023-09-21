@@ -53,7 +53,7 @@ class Cgroup {
   }
 
   // Creates a child cgroup under this cgroup with the given name.
-  PosixErrorOr<Cgroup> CreateChild(std::string_view name) const;
+  PosixErrorOr<Cgroup> CreateChild(absl::string_view name) const;
 
   std::string Relpath(absl::string_view leaf) const {
     return JoinPath(cgroup_path_, leaf);
@@ -104,7 +104,7 @@ class Cgroup {
   PosixError EnterThread(pid_t pid) const;
 
  private:
-  Cgroup(std::string_view path, std::string_view mountpoint);
+  Cgroup(absl::string_view path, absl::string_view mountpoint);
 
   PosixErrorOr<absl::flat_hash_set<pid_t>> ParsePIDList(
       absl::string_view data) const;

@@ -161,15 +161,15 @@ TEST_P(DualStackSocketTest, AddressOperations) {
 
       if (operation == Operation::SendTo) {
         EXPECT_EQ(sock_addr_in6->sin6_family, AF_INET6);
-        EXPECT_TRUE(IN6_IS_ADDR_UNSPECIFIED(sock_addr_in6->sin6_addr.s6_addr32))
+        EXPECT_TRUE(IN6_IS_ADDR_UNSPECIFIED(&sock_addr_in6->sin6_addr))
             << OperationToString(operation)
             << " getsocknam=" << GetAddrStr(AsSockAddr(&sock_addr));
 
         EXPECT_NE(sock_addr_in6->sin6_port, 0);
       } else if (IN6_IS_ADDR_V4MAPPED(
-                     reinterpret_cast<const sockaddr_in6*>(addr_in)
-                         ->sin6_addr.s6_addr32)) {
-        EXPECT_TRUE(IN6_IS_ADDR_V4MAPPED(sock_addr_in6->sin6_addr.s6_addr32))
+                     &(reinterpret_cast<const sockaddr_in6*>(addr_in)
+                           ->sin6_addr))) {
+        EXPECT_TRUE(IN6_IS_ADDR_V4MAPPED(&sock_addr_in6->sin6_addr))
             << OperationToString(operation)
             << " getsocknam=" << GetAddrStr(AsSockAddr(&sock_addr));
       }
@@ -183,11 +183,10 @@ TEST_P(DualStackSocketTest, AddressOperations) {
       ASSERT_EQ(addrlen, sizeof(struct sockaddr_in6));
 
       if (addr.family() == AF_INET ||
-          IN6_IS_ADDR_V4MAPPED(reinterpret_cast<const sockaddr_in6*>(addr_in)
-                                   ->sin6_addr.s6_addr32)) {
+          IN6_IS_ADDR_V4MAPPED(
+              &(reinterpret_cast<const sockaddr_in6*>(addr_in)->sin6_addr))) {
         EXPECT_TRUE(IN6_IS_ADDR_V4MAPPED(
-            reinterpret_cast<const sockaddr_in6*>(&peer_addr)
-                ->sin6_addr.s6_addr32))
+            &(reinterpret_cast<const sockaddr_in6*>(&peer_addr)->sin6_addr)))
             << OperationToString(operation)
             << " getpeername=" << GetAddrStr(AsSockAddr(&peer_addr));
       }

@@ -300,6 +300,11 @@ TEST(ShmTest, ShmCtlSet) {
   ASSERT_NO_ERRNO(Shmdt(addr));
 }
 
+#ifndef SHM_DEST
+// Not defined in bionic
+#define SHM_DEST 0x200
+#endif
+
 TEST(ShmTest, RemovedSegmentsAreMarkedDeleted) {
   ShmSegment shm = ASSERT_NO_ERRNO_AND_VALUE(
       Shmget(IPC_PRIVATE, kAllocSize, IPC_CREAT | 0777));
