@@ -1409,6 +1409,7 @@ cc_binary(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/time",
         gtest,
+        "//test/util:eventfd_util",
         "//test/util:mount_util",
         "//test/util:multiprocess_util",
         "//test/util:posix_error",
