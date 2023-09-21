@@ -228,6 +228,20 @@ func (s *subprocess) handlePtraceSyscallRequest(req any) {
 			panic(fmt.Sprintf("error waiting for new clone: expected SIGSTOP, got %v", sig))
 		}
 
+		t.initRegs = ptraceThread.initRegs
+		// Set the parent death signal to SIGKILL.
+		_, err = t.syscallIgnoreInterrupt(&t.initRegs, unix.SYS_PRCTL,
+			arch.SyscallArgument{Value: linux.PR_SET_PDEATHSIG},
+			arch.SyscallArgument{Value: uintptr(unix.SIGKILL)},
+			arch.SyscallArgument{Value: 0},
+			arch.SyscallArgument{Value: 0},
+			arch.SyscallArgument{Value: 0},
+			arch.SyscallArgument{Value: 0},
+		)
+		if err != nil {
+			panic(fmt.Sprintf("prctl: %v", err))
+		}
+
 		id, ok := s.sysmsgStackPool.Get()
 		if !ok {
 			panic("unable to allocate a sysmsg stub thread")
@@ -240,7 +254,6 @@ func (s *subprocess) handlePtraceSyscallRequest(req any) {
 
 		// Detach the thread.
 		t.detach()
-		t.initRegs = ptraceThread.initRegs
 
 		// Return the thread.
 		r.thread <- t
