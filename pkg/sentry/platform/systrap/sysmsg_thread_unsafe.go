@@ -39,20 +39,6 @@ func (p *sysmsgThread) setMsg(addr uintptr) {
 
 func (p *sysmsgThread) init(sentryAddr, guestAddr uintptr) {
 	t := p.thread
-
-	// Set the parent death signal to SIGKILL.
-	_, err := t.syscallIgnoreInterrupt(&t.initRegs, unix.SYS_PRCTL,
-		arch.SyscallArgument{Value: linux.PR_SET_PDEATHSIG},
-		arch.SyscallArgument{Value: uintptr(unix.SIGKILL)},
-		arch.SyscallArgument{Value: 0},
-		arch.SyscallArgument{Value: 0},
-		arch.SyscallArgument{Value: 0},
-		arch.SyscallArgument{Value: 0},
-	)
-	if err != nil {
-		panic(fmt.Sprintf("prctl: %v", err))
-	}
-
 	// Set the sysmsg signal stack.
 	//
 	// sentryAddr is from the stub mapping which is mapped once and never
@@ -61,7 +47,7 @@ func (p *sysmsgThread) init(sentryAddr, guestAddr uintptr) {
 	*alt = linux.SignalStack{}
 	alt.Addr = uint64(guestAddr)
 	alt.Size = uint64(sysmsg.MsgOffsetFromSharedStack)
-	_, err = t.syscallIgnoreInterrupt(&t.initRegs, unix.SYS_SIGALTSTACK,
+	_, err := t.syscallIgnoreInterrupt(&t.initRegs, unix.SYS_SIGALTSTACK,
 		arch.SyscallArgument{Value: guestAddr},
 		arch.SyscallArgument{Value: 0},
 		arch.SyscallArgument{Value: 0},
