@@ -221,6 +221,12 @@ func (vfs *VirtualFilesystem) ConnectMountAt(ctx context.Context, creds *auth.Cr
 	if err != nil {
 		return err
 	}
+	// This is equivalent to checking for SB_NOUSER in Linux, which is set on all
+	// anon mounts and sentry-internal filesystems like pipefs.
+	if vd.mount.ns == nil {
+		vd.DecRef(ctx)
+		return linuxerr.EINVAL
+	}
 	vfs.lockMounts()
 	defer vfs.unlockMounts(ctx)
 	tree := vfs.preparePropagationTree(mnt, vd)
@@ -372,6 +378,12 @@ func (vfs *VirtualFilesystem) BindAt(ctx context.Context, creds *auth.Credential
 	targetVd, err := vfs.GetDentryAt(ctx, creds, target, &GetDentryOptions{})
 	if err != nil {
 		return nil, err
+	}
+	// This is equivalent to checking for SB_NOUSER in Linux, which is set on all
+	// anon mounts.
+	if targetVd.mount == vfs.anonMount {
+		targetVd.DecRef(ctx)
+		return nil, linuxerr.EINVAL
 	}
 
 	vfs.lockMounts()
