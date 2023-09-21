@@ -265,7 +265,7 @@ In the sentry:
     [`memmap.Mappable.AddMapping` and `memmap.Mappable.RemoveMapping`][memmap].
 
 -   Host files that may be mapped into host VMAs are represented by type
-    [`platform.File`][platform].
+    [`memmap.File`][memmap].
 
 -   Host VMAs are represented in the sentry by type [`mm.pma`][mm] ("platform
     mapping area"), stored in `mm.MemoryManager.pmas`.

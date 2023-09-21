@@ -704,7 +704,7 @@ func (c *containerMounter) mountSubmounts(ctx context.Context, conf *config.Conf
 	}
 
 	if err := c.mountTmp(ctx, conf, creds, mns); err != nil {
-		return fmt.Errorf(`mount submount "\tmp": %w`, err)
+		return fmt.Errorf(`mount submount "/tmp": %w`, err)
 	}
 	return nil
 }
