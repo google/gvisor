@@ -26,7 +26,7 @@ import (
 // There are two supported ways to copy data to/from application virtual
 // memory:
 //
-// 1. Internally-mapped copying: Determine the platform.File that backs the
+// 1. Internally-mapped copying: Determine the memmap.File that backs the
 // copied-to/from virtual address, obtain a mapping of its pages, and read or
 // write to the mapping.
 //
