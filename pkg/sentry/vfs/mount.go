@@ -221,14 +221,14 @@ func (vfs *VirtualFilesystem) ConnectMountAt(ctx context.Context, creds *auth.Cr
 	if err != nil {
 		return err
 	}
+	vfs.lockMounts()
+	defer vfs.unlockMounts(ctx)
 	// This is equivalent to checking for SB_NOUSER in Linux, which is set on all
 	// anon mounts and sentry-internal filesystems like pipefs.
 	if vd.mount.ns == nil {
-		vd.DecRef(ctx)
+		vfs.delayDecRef(vd)
 		return linuxerr.EINVAL
 	}
-	vfs.lockMounts()
-	defer vfs.unlockMounts(ctx)
 	tree := vfs.preparePropagationTree(mnt, vd)
 	// Check if the new mount + all the propagation mounts puts us over the max.
 	if uint32(len(tree)+1)+vd.mount.ns.mounts > MountMax {
@@ -379,15 +379,15 @@ func (vfs *VirtualFilesystem) BindAt(ctx context.Context, creds *auth.Credential
 	if err != nil {
 		return nil, err
 	}
+	vfs.lockMounts()
+	defer vfs.unlockMounts(ctx)
 	// This is equivalent to checking for SB_NOUSER in Linux, which is set on all
 	// anon mounts.
-	if targetVd.mount == vfs.anonMount {
-		targetVd.DecRef(ctx)
+	if targetVd.mount.ns == nil {
+		vfs.delayDecRef(targetVd)
 		return nil, linuxerr.EINVAL
 	}
 
-	vfs.lockMounts()
-	defer vfs.unlockMounts(ctx)
 	clone := vfs.cloneMount(sourceVd.mount, sourceVd.dentry, nil)
 	vfs.delayDecRef(clone)
 	tree := vfs.preparePropagationTree(clone, targetVd)
