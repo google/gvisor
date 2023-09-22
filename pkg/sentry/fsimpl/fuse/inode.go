@@ -292,6 +292,19 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentr
 	// FOPEN_KEEP_CACHE is the default flag for noOpen.
 	fd.OpenFlag = linux.FOPEN_KEEP_CACHE
 
+	truncateRegFile := opts.Flags&linux.O_TRUNC != 0 && i.filemode().FileType() == linux.S_IFREG
+	if truncateRegFile && (i.fh.new || !i.fs.conn.atomicOTrunc) {
+		// If the regular file needs to be truncated, but the connection doesn't
+		// support O_TRUNC or if we are optimizing away the Open RPC, then manually
+		// truncate the file *before* Open. As per libfuse, "If [atomic O_TRUNC is]
+		// disabled, and an application specifies O_TRUNC, fuse first calls
+		// truncate() and then open() with O_TRUNC filtered out.".
+		opts := vfs.SetStatOptions{Stat: linux.Statx{Size: 0, Mask: linux.STATX_SIZE}}
+		if err := i.setAttr(ctx, i.fs.VFSFilesystem(), auth.CredentialsFromContext(ctx), opts, fhOptions{useFh: false}); err != nil {
+			return nil, err
+		}
+	}
+
 	if i.fh.new {
 		fd.OpenFlag = i.fh.flags
 		fd.Fh = i.fh.handle
@@ -300,7 +313,7 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentr
 		// opening a directory.
 	} else if !i.fs.conn.noOpen || i.filemode().IsDir() {
 		in := linux.FUSEOpenIn{Flags: opts.Flags & ^uint32(linux.O_CREAT|linux.O_EXCL|linux.O_NOCTTY)}
-		// Truncating with SETATTR instead of O_TRUNC, so clear the flag.
+		// Clear O_TRUNC if the server doesn't support it.
 		if !i.fs.conn.atomicOTrunc {
 			in.Flags &= ^uint32(linux.O_TRUNC)
 		}
@@ -323,6 +336,14 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentr
 			}
 			fd.OpenFlag = out.OpenFlag
 			fd.Fh = out.Fh
+			// Open was successful. Update inode's size if atomicOTrunc && O_TRUNC.
+			if truncateRegFile && i.fs.conn.atomicOTrunc {
+				i.fs.conn.mu.Lock()
+				i.attrVersion.Store(i.fs.conn.attributeVersion.Add(1))
+				i.fs.conn.mu.Unlock()
+				i.size.Store(0)
+				i.touchCMtime()
+			}
 		}
 	}
 	if i.filemode().IsDir() {
@@ -336,22 +357,6 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentr
 		fdOptions.DenyPRead = true
 		fdOptions.DenyPWrite = true
 		fd.Nonseekable = true
-	}
-
-	// If atomicOTrunc and O_TRUNC are set, just update the inode's version number
-	// and set its size to 0 since the truncation is handled by the FUSE daemon.
-	// Otherwise send a separate SETATTR to truncate the file size.
-	if opts.Flags&linux.O_TRUNC != 0 && i.filemode().FileType() == linux.S_IFREG {
-		if i.fs.conn.atomicOTrunc {
-			i.fs.conn.mu.Lock()
-			i.attrVersion.Store(i.fs.conn.attributeVersion.Add(1))
-			i.fs.conn.mu.Unlock()
-			i.size.Store(0)
-			i.touchCMtime()
-		} else {
-			opts := vfs.SetStatOptions{Stat: linux.Statx{Size: 0, Mask: linux.STATX_SIZE}}
-			i.setAttr(ctx, i.fs.VFSFilesystem(), auth.CredentialsFromContext(ctx), opts, fhOptions{useFh: true, fh: i.fh.handle})
-		}
 	}
 
 	if err := fd.vfsfd.Init(fdImpl, opts.Flags, rp.Mount(), d.VFSDentry(), fdOptions); err != nil {
