@@ -24,7 +24,9 @@ steps:
     label: ":ship: Push all images (aarch64)"
     if: build.branch == "master" && build.tag == null
     commands:
-      - make ARCH=aarch64 push-all-images
+      - make push-all-images
+    agents:
+      arch: "arm64"
   - <<: *common
     label: ":ship: Release"
     if: build.branch == "master" || build.tag != null
