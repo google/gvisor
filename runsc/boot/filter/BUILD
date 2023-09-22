@@ -1,3 +1,4 @@
+load("//test/secbench:defs.bzl", "secbench_test")
 load("//tools:defs.bzl", "go_library")
 
 package(
@@ -33,6 +34,20 @@ go_library(
         "//pkg/sentry/platform",
         "//pkg/sentry/socket/hostinet",
         "//pkg/tcpip/link/fdbased",
+        "@org_golang_x_sys//unix:go_default_library",
+    ],
+)
+
+secbench_test(
+    name = "filter_bench_test",
+    srcs = ["filter_bench_test.go"],
+    deps = [
+        ":filter",
+        "//pkg/abi/linux",
+        "//pkg/sentry/platform/kvm",
+        "//pkg/sentry/platform/systrap",
+        "//test/secbench",
+        "//test/secbench/secbenchdef",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
