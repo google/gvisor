@@ -26,11 +26,11 @@ require (
 	github.com/sirupsen/logrus v1.8.1
 	github.com/syndtr/gocapability v0.0.0-20200815063812-42c35b437635
 	github.com/vishvananda/netlink v1.1.1-0.20211118161826-650dca95af54
-	golang.org/x/mod v0.11.0
-	golang.org/x/sync v0.1.0
-	golang.org/x/sys v0.4.0
+	golang.org/x/mod v0.12.0
+	golang.org/x/sync v0.3.0
+	golang.org/x/sys v0.12.0
 	golang.org/x/time v0.0.0-20220210224613-90d013bbcef8
-	golang.org/x/tools v0.5.0
+	golang.org/x/tools v0.13.0
 	google.golang.org/protobuf v1.28.2-0.20230118093459-a9481185b34d
 	k8s.io/api v0.23.16
 	k8s.io/apimachinery v0.23.16
@@ -61,10 +61,10 @@ require (
 	github.com/vishvananda/netns v0.0.0-20200728191858-db3c7e526aae // indirect
 	go.opencensus.io v0.24.0 // indirect
 	golang.org/x/exp v0.0.0-20230725093048-515e97ebf090 // indirect
-	golang.org/x/net v0.5.0 // indirect
+	golang.org/x/net v0.15.0 // indirect
 	golang.org/x/oauth2 v0.4.0 // indirect
-	golang.org/x/term v0.4.0 // indirect
-	golang.org/x/text v0.6.0 // indirect
+	golang.org/x/term v0.12.0 // indirect
+	golang.org/x/text v0.13.0 // indirect
 	golang.org/x/xerrors v0.0.0-20220907171357-04be3eba64a2 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto v0.0.0-20230110181048-76db0878b65f // indirect
