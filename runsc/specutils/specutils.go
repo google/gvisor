@@ -657,9 +657,15 @@ func GetOOMScoreAdj(pid int) (int, error) {
 	return strconv.Atoi(strings.TrimSpace(string(data)))
 }
 
-// EnvVar looks for a varible value in the env slice assuming the following
-// format: "NAME=VALUE".
+// EnvVar looks for a variable value in the env slice assuming the following
+// format: "NAME=VALUE". If a variable is defined multiple times, the last
+// value is used.
 func EnvVar(env []string, name string) (string, bool) {
+	var err error
+	env, err = ResolveEnvs(env)
+	if err != nil {
+		return "", false
+	}
 	prefix := name + "="
 	for _, e := range env {
 		if strings.HasPrefix(e, prefix) {
