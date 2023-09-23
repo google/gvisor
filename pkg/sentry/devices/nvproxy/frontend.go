@@ -782,6 +782,8 @@ func rmAlloc(fi *frontendIoctlState) (uintptr, error) {
 		return rmAllocSimple[nvgpu.NV_HOPPER_USERMODE_A_PARAMS](fi, &ioctlParams, isNVOS64)
 	case nvgpu.GF100_SUBDEVICE_MASTER, nvgpu.VOLTA_USERMODE_A, nvgpu.TURING_USERMODE_A:
 		return rmAllocNoParams(fi, &ioctlParams, isNVOS64)
+	case nvgpu.NV_MEMORY_FABRIC:
+		return rmAllocSimple[nvgpu.NV00F8_ALLOCATION_PARAMETERS](fi, &ioctlParams, isNVOS64)
 	default:
 		fi.ctx.Warningf("nvproxy: unknown allocation class %#08x", ioctlParams.HClass)
 		return 0, linuxerr.EINVAL
