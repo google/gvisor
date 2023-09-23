@@ -23,6 +23,7 @@ const (
 	NV01_MEMORY_SYSTEM_OS_DESCRIPTOR = 0x00000071
 	NV01_EVENT_OS_EVENT              = 0x00000079
 	NV01_DEVICE_0                    = 0x00000080
+	NV_MEMORY_FABRIC                 = 0x000000f8
 	NV20_SUBDEVICE_0                 = 0x00002080
 	NV50_THIRD_PARTY_P2P             = 0x0000503c
 	GT200_DEBUGGER                   = 0x000083de
@@ -219,4 +220,23 @@ type NV_GR_ALLOCATION_PARAMETERS struct {
 type NV_HOPPER_USERMODE_A_PARAMS struct {
 	Bar1Mapping uint8
 	Priv        uint8
+}
+
+// +marshal
+type nv00f8Map struct {
+	offset  uint64
+	hVidMem Handle
+	flags   uint32
+}
+
+// NV00F8_ALLOCATION_PARAMETERS is the alloc param type for NV_MEMORY_FABRIC,
+// from src/common/sdk/nvidia/inc/class/cl00f8.h
+//
+// +marshal
+type NV00F8_ALLOCATION_PARAMETERS struct {
+	Alignment  uint64
+	AllocSize  uint64
+	PageSize   uint32
+	AllocFlags uint32
+	Map        nv00f8Map
 }
