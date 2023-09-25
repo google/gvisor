@@ -26,9 +26,9 @@ func hostInetFilters(allowRawSockets bool) seccomp.SyscallRules {
 	rules := seccomp.SyscallRules{
 		unix.SYS_ACCEPT4: []seccomp.Rule{
 			{
-				seccomp.MatchAny{},
-				seccomp.MatchAny{},
-				seccomp.MatchAny{},
+				seccomp.AnyValue{},
+				seccomp.AnyValue{},
+				seccomp.AnyValue{},
 				seccomp.EqualTo(unix.SOCK_NONBLOCK | unix.SOCK_CLOEXEC),
 			},
 		},
@@ -38,43 +38,43 @@ func hostInetFilters(allowRawSockets bool) seccomp.SyscallRules {
 		unix.SYS_GETSOCKNAME: {},
 		unix.SYS_IOCTL: []seccomp.Rule{
 			{
-				seccomp.MatchAny{},
+				seccomp.AnyValue{},
 				seccomp.EqualTo(unix.SIOCGIFCONF),
 			},
 			{
-				seccomp.MatchAny{},
+				seccomp.AnyValue{},
 				seccomp.EqualTo(unix.SIOCETHTOOL),
 			},
 			{
-				seccomp.MatchAny{},
+				seccomp.AnyValue{},
 				seccomp.EqualTo(unix.SIOCGIFFLAGS),
 			},
 			{
-				seccomp.MatchAny{},
+				seccomp.AnyValue{},
 				seccomp.EqualTo(unix.SIOCGIFHWADDR),
 			},
 			{
-				seccomp.MatchAny{},
+				seccomp.AnyValue{},
 				seccomp.EqualTo(unix.SIOCGIFINDEX),
 			},
 			{
-				seccomp.MatchAny{},
+				seccomp.AnyValue{},
 				seccomp.EqualTo(unix.SIOCGIFMTU),
 			},
 			{
-				seccomp.MatchAny{},
+				seccomp.AnyValue{},
 				seccomp.EqualTo(unix.SIOCGIFNAME),
 			},
 			{
-				seccomp.MatchAny{},
+				seccomp.AnyValue{},
 				seccomp.EqualTo(unix.SIOCGIFNETMASK),
 			},
 			{
-				seccomp.MatchAny{},
+				seccomp.AnyValue{},
 				seccomp.EqualTo(unix.TIOCOUTQ),
 			},
 			{
-				seccomp.MatchAny{},
+				seccomp.AnyValue{},
 				seccomp.EqualTo(unix.TIOCINQ),
 			},
 		},
@@ -86,15 +86,15 @@ func hostInetFilters(allowRawSockets bool) seccomp.SyscallRules {
 		unix.SYS_SENDTO:   {},
 		unix.SYS_SHUTDOWN: []seccomp.Rule{
 			{
-				seccomp.MatchAny{},
+				seccomp.AnyValue{},
 				seccomp.EqualTo(unix.SHUT_RD),
 			},
 			{
-				seccomp.MatchAny{},
+				seccomp.AnyValue{},
 				seccomp.EqualTo(unix.SHUT_WR),
 			},
 			{
-				seccomp.MatchAny{},
+				seccomp.AnyValue{},
 				seccomp.EqualTo(unix.SHUT_RDWR),
 			},
 		},
@@ -137,7 +137,7 @@ func hostInetFilters(allowRawSockets bool) seccomp.SyscallRules {
 		}
 		if sock.Protocol == hostinet.AllowAllProtocols {
 			// Change protocol filter to MatchAny.
-			rule[2] = seccomp.MatchAny{}
+			rule[2] = seccomp.AnyValue{}
 		}
 		socketRules = append(socketRules, rule)
 	}
@@ -151,7 +151,7 @@ func hostInetFilters(allowRawSockets bool) seccomp.SyscallRules {
 	for _, opt := range hostinet.SockOpts {
 		if opt.AllowGet {
 			getSockOptRules = append(getSockOptRules, seccomp.Rule{
-				seccomp.MatchAny{},
+				seccomp.AnyValue{},
 				seccomp.EqualTo(opt.Level),
 				seccomp.EqualTo(opt.Name),
 			})
@@ -159,15 +159,15 @@ func hostInetFilters(allowRawSockets bool) seccomp.SyscallRules {
 		if opt.AllowSet {
 			if opt.Size > 0 {
 				setSockOptRules = append(setSockOptRules, seccomp.Rule{
-					seccomp.MatchAny{},
+					seccomp.AnyValue{},
 					seccomp.EqualTo(opt.Level),
 					seccomp.EqualTo(opt.Name),
-					seccomp.MatchAny{},
+					seccomp.AnyValue{},
 					seccomp.EqualTo(opt.Size),
 				})
 			} else {
 				setSockOptRules = append(setSockOptRules, seccomp.Rule{
-					seccomp.MatchAny{},
+					seccomp.AnyValue{},
 					seccomp.EqualTo(opt.Level),
 					seccomp.EqualTo(opt.Name),
 				})

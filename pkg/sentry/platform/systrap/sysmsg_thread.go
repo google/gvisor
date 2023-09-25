@@ -117,7 +117,7 @@ func sysmsgThreadRules(stubStart uintptr) []bpf.Instruction {
 					{
 						seccomp.GreaterThan(stubStart),
 						seccomp.EqualTo(linux.FUTEX_WAIT),
-						seccomp.MatchAny{},
+						seccomp.AnyValue{},
 						seccomp.EqualTo(0),
 						seccomp.EqualTo(0),
 						seccomp.EqualTo(0),
@@ -126,23 +126,23 @@ func sysmsgThreadRules(stubStart uintptr) []bpf.Instruction {
 				},
 				unix.SYS_RT_SIGRETURN: {
 					{
-						seccomp.MatchAny{},
-						seccomp.MatchAny{},
-						seccomp.MatchAny{},
-						seccomp.MatchAny{},
-						seccomp.MatchAny{},
-						seccomp.MatchAny{},
+						seccomp.AnyValue{},
+						seccomp.AnyValue{},
+						seccomp.AnyValue{},
+						seccomp.AnyValue{},
+						seccomp.AnyValue{},
+						seccomp.AnyValue{},
 						seccomp.GreaterThan(stubStart), // rip
 					},
 				},
 				unix.SYS_SCHED_YIELD: {
 					{
-						seccomp.MatchAny{},
-						seccomp.MatchAny{},
-						seccomp.MatchAny{},
-						seccomp.MatchAny{},
-						seccomp.MatchAny{},
-						seccomp.MatchAny{},
+						seccomp.AnyValue{},
+						seccomp.AnyValue{},
+						seccomp.AnyValue{},
+						seccomp.AnyValue{},
+						seccomp.AnyValue{},
+						seccomp.AnyValue{},
 						seccomp.GreaterThan(stubStart), // rip
 					},
 				},

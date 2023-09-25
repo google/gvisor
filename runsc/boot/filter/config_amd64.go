@@ -35,10 +35,10 @@ func init() {
 					unix.CLONE_SIGHAND |
 					unix.CLONE_SYSVSEM |
 					unix.CLONE_THREAD),
-			seccomp.MatchAny{}, // newsp
+			seccomp.AnyValue{}, // newsp
 			seccomp.EqualTo(0), // parent_tidptr
 			seccomp.EqualTo(0), // child_tidptr
-			seccomp.MatchAny{}, // tls
+			seccomp.AnyValue{}, // tls
 		},
 	}
 }
