@@ -12,8 +12,10 @@ go_library(
         "decoder.go",
         "input_bytes.go",
         "interpreter.go",
+        "optimizer.go",
         "program_builder.go",
     ],
+    imports = ["gvisor.dev/gvisor/pkg/abi/linux"],
     visibility = ["//visibility:public"],
     deps = ["//pkg/abi/linux"],
 )
@@ -24,6 +26,7 @@ go_test(
     srcs = [
         "decoder_test.go",
         "interpreter_test.go",
+        "optimizer_test.go",
         "program_builder_test.go",
     ],
     library = ":bpf",

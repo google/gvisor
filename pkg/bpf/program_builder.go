@@ -17,14 +17,23 @@ package bpf
 import (
 	"fmt"
 	"math"
-
-	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
 const (
 	labelTarget       = math.MaxUint8
 	labelDirectTarget = math.MaxUint32
 )
+
+// invalidInstruction is an invalid BPF instruction.
+// It is used by ProgramBuilder as a stand-in for an instruction
+// that is expected to be unreachable.
+var invalidInstruction = Instruction{
+	// An instruction cannot be all of these simultaneously.
+	OpCode:      Jmp | Ret | Add,
+	K:           0xdeadbeef,
+	JumpIfTrue:  0xff,
+	JumpIfFalse: 0xff,
+}
 
 // ProgramBuilder assists with building a BPF program with jump
 // labels that are resolved to their proper offsets.
@@ -38,7 +47,9 @@ type ProgramBuilder struct {
 	unusableLabels map[string]bool
 
 	// Array of BPF instructions that makes up the program.
-	instructions []linux.BPFInstruction
+	// `invalidInstruction`s may be added here to indicate places in the
+	// program that we expect to be unreachable.
+	instructions []Instruction
 }
 
 // NewProgramBuilder creates a new ProgramBuilder instance.
@@ -111,6 +122,14 @@ func (b *ProgramBuilder) AddJumpLabels(code uint16, k uint32, jtLabel, jfLabel s
 	b.AddJump(code, k, labelTarget, labelTarget)
 }
 
+// AssertUnreachable adds a purposefully-invalid instruction to the program.
+// This is useful to assert that the program may not reach this instruction,
+// and is instead expected to jump over it in all branches of its control
+// flow.
+func (b *ProgramBuilder) AssertUnreachable() {
+	b.instructions = append(b.instructions, invalidInstruction)
+}
+
 // AddLabel sets the given label name at the current location. The next instruction is executed
 // when the any code jumps to this label. More than one label can be added to the same location.
 func (b *ProgramBuilder) AddLabel(name string) error {
@@ -134,8 +153,11 @@ func (b *ProgramBuilder) AddLabel(name string) error {
 // resolved. Return error in case label resolution failed due to an invalid program.
 //
 // N.B. Partial results will be returned in the error case, which is useful for debugging.
-func (b *ProgramBuilder) Instructions() ([]linux.BPFInstruction, error) {
+func (b *ProgramBuilder) Instructions() ([]Instruction, error) {
 	if err := b.resolveLabels(); err != nil {
+		return b.instructions, err
+	}
+	if err := b.checkUnreachable(); err != nil {
 		return b.instructions, err
 	}
 	return b.instructions, nil
@@ -202,5 +224,47 @@ func (b *ProgramBuilder) resolveLabels() error {
 		}
 	}
 	b.labels = map[string]*label{}
+	return nil
+}
+
+// checkUnreachable verifies that the program cannot reach any of the
+// instructions that it expects to be unreachable.
+func (b *ProgramBuilder) checkUnreachable() error {
+	reachable, err := findReachable(b.instructions)
+	if err != nil {
+		return fmt.Errorf("could not determine set of reachable instructions: %v", err)
+	}
+
+	// Assert that all `invalidInstruction`s are unreachable.
+	for i, inst := range b.instructions {
+		if inst == invalidInstruction && reachable[i] {
+			return fmt.Errorf("instruction at pc %d was expected to be unreachable, but it was reachable", i)
+		}
+	}
+
+	// Trim the `invalidInstruction`s at the end of the program.
+	// We've already established that they are not reachable.
+	// We cannot just replace them with no-op jumps and have the optimizer
+	// optimize them away, because their presence at the end of the program
+	// would make the program become invalid by virtue of not ending with a
+	// return statement.
+	lastValidInstructionIndex := len(b.instructions)
+	for i := len(b.instructions) - 1; i >= 0; i-- {
+		if b.instructions[i] == invalidInstruction {
+			lastValidInstructionIndex = i
+		} else {
+			break
+		}
+	}
+	b.instructions = b.instructions[:lastValidInstructionIndex]
+
+	// Replace all the mid-program `invalidInstruction`s with no-op
+	// instructions.
+	// They will be optimized away by the BPF optimizer.
+	for i, inst := range b.instructions {
+		if inst == invalidInstruction {
+			b.instructions[i] = Jump(Jmp|Ja, 0, 0, 0)
+		}
+	}
 	return nil
 }

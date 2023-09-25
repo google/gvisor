@@ -16,8 +16,6 @@ package bpf
 
 import (
 	"fmt"
-
-	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
 // Possible values for ProgramError.Code.
@@ -91,7 +89,7 @@ func (e Error) Error() string {
 //
 // +stateify savable
 type Program struct {
-	instructions []linux.BPFInstruction
+	instructions []Instruction
 }
 
 // Length returns the number of instructions in the program.
@@ -99,9 +97,9 @@ func (p Program) Length() int {
 	return len(p.instructions)
 }
 
-// Compile performs validation on a sequence of BPF instructions before
-// wrapping them in a Program.
-func Compile(insns []linux.BPFInstruction) (Program, error) {
+// Compile performs validation and optimization on a sequence of BPF
+// instructions before wrapping them in a Program.
+func Compile(insns []Instruction) (Program, error) {
 	if len(insns) == 0 || len(insns) > MaxInstructions {
 		return Program{}, Error{InvalidInstructionCount, len(insns)}
 	}
@@ -216,7 +214,7 @@ func Compile(insns []linux.BPFInstruction) (Program, error) {
 		}
 	}
 
-	return Program{insns}, nil
+	return Program{Optimize(insns)}, nil
 }
 
 // Input represents a source of input data for a BPF program. (BPF
@@ -255,7 +253,7 @@ type machine struct {
 	M [ScratchMemRegisters]uint32
 }
 
-func conditionalJumpOffset(insn linux.BPFInstruction, cond bool) int {
+func conditionalJumpOffset(insn Instruction, cond bool) int {
 	if cond {
 		return int(insn.JumpIfTrue)
 	}
@@ -409,4 +407,46 @@ func Exec(p Program, in Input) (uint32, error) {
 		}
 	}
 	return 0, Error{InvalidEndOfProgram, pc}
+}
+
+// findReachable returns whether each instruction is reachable in the given
+// list of instructions, mapped by index.
+func findReachable(insns []Instruction) ([]bool, error) {
+	if len(insns) == 0 {
+		return nil, nil
+	}
+
+	// Keep track of which lines are reachable from all instructions in the program.
+	reachable := make([]bool, len(insns))
+	cursors := make([]int, 1, len(insns))
+	cursors[0] = 0
+	for len(cursors) > 0 {
+		cursor := cursors[0]
+		if cursor >= len(insns) {
+			return nil, fmt.Errorf("program jumps beyond end of instructions (offset %d)", cursor)
+		}
+		cursors = cursors[1:]
+		if reachable[cursor] {
+			continue
+		}
+		reachable[cursor] = true
+		ins := insns[cursor]
+		switch ins.OpCode & instructionClassMask {
+		case Ret:
+			// Return instructions are terminal, add no new cursor.
+		case Jmp:
+			// Add a new cursor wherever the jump can go.
+			if ins.IsUnconditionalJump() {
+				// Unconditional jump:
+				cursors = append(cursors, cursor+int(ins.K)+1)
+			} else {
+				// Conditional jump:
+				cursors = append(cursors, cursor+int(ins.JumpIfTrue)+1, cursor+int(ins.JumpIfFalse)+1)
+			}
+		default:
+			// Other instructions simply flow forward.
+			cursors = append(cursors, cursor+1)
+		}
+	}
+	return reachable, nil
 }

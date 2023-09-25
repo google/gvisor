@@ -17,7 +17,11 @@
 // https://www.freebsd.org/cgi/man.cgi?bpf(4)
 package bpf
 
-import "gvisor.dev/gvisor/pkg/abi/linux"
+import (
+	"fmt"
+
+	"gvisor.dev/gvisor/pkg/abi/linux"
+)
 
 const (
 	// MaxInstructions is the maximum number of instructions in a BPF program,
@@ -110,20 +114,52 @@ const (
 	retUnusedBitsMask   = 0xe0   // returns only use instruction class and source operand
 )
 
-// Stmt returns a linux.BPFInstruction representing a BPF non-jump instruction.
-func Stmt(code uint16, k uint32) linux.BPFInstruction {
-	return linux.BPFInstruction{
+// Instruction is a type alias for linux.BPFInstruction.
+// It adds a human-readable stringification and other helper functions.
+//
+// +marshal slice:InstructionSlice
+// +stateify savable
+// +stateify alias:linux.BPFInstruction
+type Instruction linux.BPFInstruction
+
+// String returns a human-readable version of the instruction.
+func (ins *Instruction) String() string {
+	s, err := Decode(*ins)
+	if err != nil {
+		return fmt.Sprintf("[invalid %v: %v]", (*linux.BPFInstruction)(ins), err)
+	}
+	return s
+}
+
+// Stmt returns an Instruction representing a BPF non-jump instruction.
+func Stmt(code uint16, k uint32) Instruction {
+	return Instruction{
 		OpCode: code,
 		K:      k,
 	}
 }
 
-// Jump returns a linux.BPFInstruction representing a BPF jump instruction.
-func Jump(code uint16, k uint32, jt, jf uint8) linux.BPFInstruction {
-	return linux.BPFInstruction{
+// Jump returns an Instruction representing a BPF jump instruction.
+func Jump(code uint16, k uint32, jt, jf uint8) Instruction {
+	return Instruction{
 		OpCode:      code,
 		JumpIfTrue:  jt,
 		JumpIfFalse: jf,
 		K:           k,
 	}
+}
+
+// IsJump returns true if `ins` is a jump instruction.
+func (ins Instruction) IsJump() bool {
+	return ins.OpCode&instructionClassMask == Jmp
+}
+
+// IsConditionalJump returns true if `ins` is a conditional jump instruction.
+func (ins Instruction) IsConditionalJump() bool {
+	return ins.IsJump() && ins.OpCode&jmpMask != Ja
+}
+
+// IsUnconditionalJump returns true if `ins` is a conditional jump instruction.
+func (ins Instruction) IsUnconditionalJump() bool {
+	return ins.IsJump() && ins.OpCode&jmpMask == Ja
 }

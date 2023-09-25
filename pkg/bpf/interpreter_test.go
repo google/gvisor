@@ -29,7 +29,7 @@ func TestCompilationErrors(t *testing.T) {
 		desc string
 
 		// insns is the BPF instructions to be compiled.
-		insns []linux.BPFInstruction
+		insns []Instruction
 
 		// expectedErr is the expected compilation error.
 		expectedErr error
@@ -40,22 +40,22 @@ func TestCompilationErrors(t *testing.T) {
 		},
 		{
 			desc:        "Instructions must not be empty",
-			insns:       []linux.BPFInstruction{},
+			insns:       []Instruction{},
 			expectedErr: Error{InvalidInstructionCount, 0},
 		},
 		{
 			desc:        "A program must end with a return",
-			insns:       make([]linux.BPFInstruction, MaxInstructions),
+			insns:       make([]Instruction, MaxInstructions),
 			expectedErr: Error{InvalidEndOfProgram, MaxInstructions - 1},
 		},
 		{
 			desc:        "A program must have MaxInstructions or fewer instructions",
-			insns:       append(make([]linux.BPFInstruction, MaxInstructions), Stmt(Ret|K, 0)),
+			insns:       append(make([]Instruction, MaxInstructions), Stmt(Ret|K, 0)),
 			expectedErr: Error{InvalidInstructionCount, MaxInstructions + 1},
 		},
 		{
 			desc: "A load from an invalid M register is a compilation error",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Mem|W, ScratchMemRegisters), // A = M[16]
 				Stmt(Ret|K, 0),                      // return 0
 			},
@@ -63,7 +63,7 @@ func TestCompilationErrors(t *testing.T) {
 		},
 		{
 			desc: "A store to an invalid M register is a compilation error",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(St, ScratchMemRegisters), // M[16] = A
 				Stmt(Ret|K, 0),                // return 0
 			},
@@ -71,7 +71,7 @@ func TestCompilationErrors(t *testing.T) {
 		},
 		{
 			desc: "Division by literal zero is a compilation error",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Alu|Div|K, 0), // A /= 0
 				Stmt(Ret|K, 0),     // return 0
 			},
@@ -79,7 +79,7 @@ func TestCompilationErrors(t *testing.T) {
 		},
 		{
 			desc: "An unconditional jump outside of the program is a compilation error",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Jump(Jmp|Ja, 1, 0, 0), // jmp nextpc+1
 				Stmt(Ret|K, 0),        // return 0
 			},
@@ -87,7 +87,7 @@ func TestCompilationErrors(t *testing.T) {
 		},
 		{
 			desc: "A conditional jump outside of the program in the true case is a compilation error",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Jump(Jmp|Jeq|K, 0, 1, 0), // if (A == K) jmp nextpc+1
 				Stmt(Ret|K, 0),           // return 0
 			},
@@ -95,7 +95,7 @@ func TestCompilationErrors(t *testing.T) {
 		},
 		{
 			desc: "A conditional jump outside of the program in the false case is a compilation error",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Jump(Jmp|Jeq|K, 0, 0, 1), // if (A != K) jmp nextpc+1
 				Stmt(Ret|K, 0),           // return 0
 			},
@@ -115,14 +115,14 @@ func TestExecErrors(t *testing.T) {
 		desc string
 
 		// insns is the BPF instructions to be executed.
-		insns []linux.BPFInstruction
+		insns []Instruction
 
 		// expectedErr is the expected execution error.
 		expectedErr error
 	}{
 		{
 			desc: "An out-of-bounds load of input data is an execution error",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Abs|B, 0), // A = input[0]
 				Stmt(Ret|K, 0),    // return 0
 			},
@@ -130,7 +130,7 @@ func TestExecErrors(t *testing.T) {
 		},
 		{
 			desc: "Division by zero at runtime is an execution error",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Alu|Div|X, 0), // A /= X
 				Stmt(Ret|K, 0),     // return 0
 			},
@@ -138,7 +138,7 @@ func TestExecErrors(t *testing.T) {
 		},
 		{
 			desc: "Modulo zero at runtime is an execution error",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Alu|Mod|X, 0), // A %= X
 				Stmt(Ret|K, 0),     // return 0
 			},
@@ -163,7 +163,7 @@ func TestValidInstructions(t *testing.T) {
 		desc string
 
 		// insns is the BPF instructions to be compiled.
-		insns []linux.BPFInstruction
+		insns []Instruction
 
 		// input is the input data. Note that input will be read as big-endian.
 		input []byte
@@ -173,14 +173,14 @@ func TestValidInstructions(t *testing.T) {
 	}{
 		{
 			desc: "Return of immediate",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ret|K, 42), // return 42
 			},
 			expectedRet: 42,
 		},
 		{
 			desc: "Load of immediate into A",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Imm|W, 42), // A = 42
 				Stmt(Ret|A, 0),     // return A
 			},
@@ -188,7 +188,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Load of immediate into X and copying of X into A",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ldx|Imm|W, 42), // X = 42
 				Stmt(Misc|Tax, 0),   // A = X
 				Stmt(Ret|A, 0),      // return A
@@ -197,7 +197,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Copying of A into X and back",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Imm|W, 42), // A = 42
 				Stmt(Misc|Txa, 0),  // X = A
 				Stmt(Ld|Imm|W, 0),  // A = 0
@@ -208,7 +208,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Load of 32-bit input by absolute offset into A",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Abs|W, 1), // A = input[1..4]
 				Stmt(Ret|A, 0),    // return A
 			},
@@ -217,7 +217,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Load of 16-bit input by absolute offset into A",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Abs|H, 1), // A = input[1..2]
 				Stmt(Ret|A, 0),    // return A
 			},
@@ -226,7 +226,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Load of 8-bit input by absolute offset into A",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Abs|B, 1), // A = input[1]
 				Stmt(Ret|A, 0),    // return A
 			},
@@ -235,7 +235,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Load of 32-bit input by relative offset into A",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ldx|Imm|W, 1), // X = 1
 				Stmt(Ld|Ind|W, 1),  // A = input[X+1..X+4]
 				Stmt(Ret|A, 0),     // return A
@@ -245,7 +245,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Load of 16-bit input by relative offset into A",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ldx|Imm|W, 1), // X = 1
 				Stmt(Ld|Ind|H, 1),  // A = input[X+1..X+2]
 				Stmt(Ret|A, 0),     // return A
@@ -255,7 +255,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Load of 8-bit input by relative offset into A",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ldx|Imm|W, 1), // X = 1
 				Stmt(Ld|Ind|B, 1),  // A = input[X+1]
 				Stmt(Ret|A, 0),     // return A
@@ -265,7 +265,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Load/store between A and scratch memory",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Imm|W, 42), // A = 42
 				Stmt(St, 2),        // M[2] = A
 				Stmt(Ld|Imm|W, 0),  // A = 0
@@ -276,7 +276,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Load/store between X and scratch memory",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ldx|Imm|W, 42), // X = 42
 				Stmt(Stx, 3),        // M[3] = X
 				Stmt(Ldx|Imm|W, 0),  // X = 0
@@ -288,7 +288,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Load of input length into A",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Len|W, 0), // A = len(input)
 				Stmt(Ret|A, 0),    // return A
 			},
@@ -297,7 +297,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Load of input length into X",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ldx|Len|W, 0), // X = len(input)
 				Stmt(Misc|Tax, 0),  // A = X
 				Stmt(Ret|A, 0),     // return A
@@ -307,7 +307,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Load of MSH (?) into X",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ldx|Msh|B, 0), // X = 4*(input[0]&0xf)
 				Stmt(Misc|Tax, 0),  // A = X
 				Stmt(Ret|A, 0),     // return A
@@ -317,7 +317,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Addition of immediate",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Imm|W, 10),  // A = 10
 				Stmt(Alu|Add|K, 20), // A += 20
 				Stmt(Ret|A, 0),      // return A
@@ -326,7 +326,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Addition of X",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Imm|W, 10),  // A = 10
 				Stmt(Ldx|Imm|W, 20), // X = 20
 				Stmt(Alu|Add|X, 0),  // A += X
@@ -336,7 +336,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Subtraction of immediate",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Imm|W, 30),  // A = 30
 				Stmt(Alu|Sub|K, 20), // A -= 20
 				Stmt(Ret|A, 0),      // return A
@@ -345,7 +345,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Subtraction of X",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Imm|W, 30),  // A = 30
 				Stmt(Ldx|Imm|W, 20), // X = 20
 				Stmt(Alu|Sub|X, 0),  // A -= X
@@ -355,7 +355,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Multiplication of immediate",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Imm|W, 2),  // A = 2
 				Stmt(Alu|Mul|K, 3), // A *= 3
 				Stmt(Ret|A, 0),     // return A
@@ -364,7 +364,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Multiplication of X",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Imm|W, 2),  // A = 2
 				Stmt(Ldx|Imm|W, 3), // X = 3
 				Stmt(Alu|Mul|X, 0), // A *= X
@@ -374,7 +374,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Division by immediate",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Imm|W, 6),  // A = 6
 				Stmt(Alu|Div|K, 3), // A /= 3
 				Stmt(Ret|A, 0),     // return A
@@ -383,7 +383,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Division by X",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Imm|W, 6),  // A = 6
 				Stmt(Ldx|Imm|W, 3), // X = 3
 				Stmt(Alu|Div|X, 0), // A /= X
@@ -393,7 +393,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Modulo immediate",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Imm|W, 17), // A = 17
 				Stmt(Alu|Mod|K, 7), // A %= 7
 				Stmt(Ret|A, 0),     // return A
@@ -402,7 +402,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Modulo X",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Imm|W, 17), // A = 17
 				Stmt(Ldx|Imm|W, 7), // X = 7
 				Stmt(Alu|Mod|X, 0), // A %= X
@@ -412,7 +412,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Arithmetic negation",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Imm|W, 1), // A = 1
 				Stmt(Alu|Neg, 0),  // A = -A
 				Stmt(Ret|A, 0),    // return A
@@ -421,7 +421,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Bitwise OR with immediate",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Imm|W, 0xff00aa55), // A = 0xff00aa55
 				Stmt(Alu|Or|K, 0xff0055aa), // A |= 0xff0055aa
 				Stmt(Ret|A, 0),             // return A
@@ -430,7 +430,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Bitwise OR with X",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Imm|W, 0xff00aa55),  // A = 0xff00aa55
 				Stmt(Ldx|Imm|W, 0xff0055aa), // X = 0xff0055aa
 				Stmt(Alu|Or|X, 0),           // A |= X
@@ -440,7 +440,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Bitwise AND with immediate",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Imm|W, 0xff00aa55),  // A = 0xff00aa55
 				Stmt(Alu|And|K, 0xff0055aa), // A &= 0xff0055aa
 				Stmt(Ret|A, 0),              // return A
@@ -449,7 +449,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Bitwise AND with X",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Imm|W, 0xff00aa55),  // A = 0xff00aa55
 				Stmt(Ldx|Imm|W, 0xff0055aa), // X = 0xff0055aa
 				Stmt(Alu|And|X, 0),          // A &= X
@@ -459,7 +459,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Bitwise XOR with immediate",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Imm|W, 0xff00aa55),  // A = 0xff00aa55
 				Stmt(Alu|Xor|K, 0xff0055aa), // A ^= 0xff0055aa
 				Stmt(Ret|A, 0),              // return A
@@ -468,7 +468,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Bitwise XOR with X",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Imm|W, 0xff00aa55),  // A = 0xff00aa55
 				Stmt(Ldx|Imm|W, 0xff0055aa), // X = 0xff0055aa
 				Stmt(Alu|Xor|X, 0),          // A ^= X
@@ -478,7 +478,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Left shift by immediate",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Imm|W, 1),  // A = 1
 				Stmt(Alu|Lsh|K, 5), // A <<= 5
 				Stmt(Ret|A, 0),     // return A
@@ -487,7 +487,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Left shift by X",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Imm|W, 1),  // A = 1
 				Stmt(Ldx|Imm|W, 5), // X = 5
 				Stmt(Alu|Lsh|X, 0), // A <<= X
@@ -497,7 +497,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Right shift by immediate",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Imm|W, 0xffffffff), // A = 0xffffffff
 				Stmt(Alu|Rsh|K, 31),        // A >>= 31
 				Stmt(Ret|A, 0),             // return A
@@ -506,7 +506,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Right shift by X",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Imm|W, 0xffffffff), // A = 0xffffffff
 				Stmt(Ldx|Imm|W, 31),        // X = 31
 				Stmt(Alu|Rsh|X, 0),         // A >>= X
@@ -516,7 +516,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Unconditional jump",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Jump(Jmp|Ja, 1, 0, 0), // jmp nextpc+1
 				Stmt(Ret|K, 0),        // return 0
 				Stmt(Ret|K, 1),        // return 1
@@ -525,7 +525,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Jump when A == immediate",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Imm|W, 42),        // A = 42
 				Jump(Jmp|Jeq|K, 42, 1, 2), // if (A == 42) jmp nextpc+1 else jmp nextpc+2
 				Stmt(Ret|K, 0),            // return 0
@@ -536,7 +536,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Jump when A != immediate",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Jump(Jmp|Jeq|K, 42, 1, 2), // if (A == 42) jmp nextpc+1 else jmp nextpc+2
 				Stmt(Ret|K, 0),            // return 0
 				Stmt(Ret|K, 1),            // return 1
@@ -546,7 +546,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Jump when A == X",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Imm|W, 42),       // A = 42
 				Stmt(Ldx|Imm|W, 42),      // X = 42
 				Jump(Jmp|Jeq|X, 0, 1, 2), // if (A == X) jmp nextpc+1 else jmp nextpc+2
@@ -558,7 +558,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Jump when A != X",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Imm|W, 42),       // A = 42
 				Jump(Jmp|Jeq|X, 0, 1, 2), // if (A == X) jmp nextpc+1 else jmp nextpc+2
 				Stmt(Ret|K, 0),           // return 0
@@ -569,7 +569,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Jump when A > immediate",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Imm|W, 10),       // A = 10
 				Jump(Jmp|Jgt|K, 9, 1, 2), // if (A > 9) jmp nextpc+1 else jmp nextpc+2
 				Stmt(Ret|K, 0),           // return 0
@@ -580,7 +580,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Jump when A <= immediate",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Imm|W, 10),        // A = 10
 				Jump(Jmp|Jgt|K, 10, 1, 2), // if (A > 10) jmp nextpc+1 else jmp nextpc+2
 				Stmt(Ret|K, 0),            // return 0
@@ -591,7 +591,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Jump when A > X",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Imm|W, 10),       // A = 10
 				Stmt(Ldx|Imm|W, 9),       // X = 9
 				Jump(Jmp|Jgt|X, 0, 1, 2), // if (A > X) jmp nextpc+1 else jmp nextpc+2
@@ -603,7 +603,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Jump when A <= X",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Imm|W, 10),       // A = 10
 				Stmt(Ldx|Imm|W, 10),      // X = 10
 				Jump(Jmp|Jgt|X, 0, 1, 2), // if (A > X) jmp nextpc+1 else jmp nextpc+2
@@ -615,7 +615,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Jump when A >= immediate",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Imm|W, 10),        // A = 10
 				Jump(Jmp|Jge|K, 10, 1, 2), // if (A >= 10) jmp nextpc+1 else jmp nextpc+2
 				Stmt(Ret|K, 0),            // return 0
@@ -626,7 +626,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Jump when A < immediate",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Imm|W, 10),        // A = 10
 				Jump(Jmp|Jge|K, 11, 1, 2), // if (A >= 11) jmp nextpc+1 else jmp nextpc+2
 				Stmt(Ret|K, 0),            // return 0
@@ -637,7 +637,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Jump when A >= X",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Imm|W, 10),       // A = 10
 				Stmt(Ldx|Imm|W, 10),      // X = 10
 				Jump(Jmp|Jge|X, 0, 1, 2), // if (A >= X) jmp nextpc+1 else jmp nextpc+2
@@ -649,7 +649,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Jump when A < X",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Imm|W, 10),       // A = 10
 				Stmt(Ldx|Imm|W, 11),      // X = 11
 				Jump(Jmp|Jge|X, 0, 1, 2), // if (A >= X) jmp nextpc+1 else jmp nextpc+2
@@ -661,7 +661,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Jump when A & immediate != 0",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Imm|W, 0xff),          // A = 0xff
 				Jump(Jmp|Jset|K, 0x101, 1, 2), // if (A & 0x101) jmp nextpc+1 else jmp nextpc+2
 				Stmt(Ret|K, 0),                // return 0
@@ -672,7 +672,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Jump when A & immediate == 0",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Imm|W, 0xfe),          // A = 0xfe
 				Jump(Jmp|Jset|K, 0x101, 1, 2), // if (A & 0x101) jmp nextpc+1 else jmp nextpc+2
 				Stmt(Ret|K, 0),                // return 0
@@ -683,7 +683,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Jump when A & X != 0",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Imm|W, 0xff),      // A = 0xff
 				Stmt(Ldx|Imm|W, 0x101),    // X = 0x101
 				Jump(Jmp|Jset|X, 0, 1, 2), // if (A & X) jmp nextpc+1 else jmp nextpc+2
@@ -695,7 +695,7 @@ func TestValidInstructions(t *testing.T) {
 		},
 		{
 			desc: "Jump when A & X == 0",
-			insns: []linux.BPFInstruction{
+			insns: []Instruction{
 				Stmt(Ld|Imm|W, 0xfe),      // A = 0xfe
 				Stmt(Ldx|Imm|W, 0x101),    // X = 0x101
 				Jump(Jmp|Jset|X, 0, 1, 2), // if (A & X) jmp nextpc+1 else jmp nextpc+2
@@ -704,6 +704,19 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Ret|K, 2),            // return 2
 			},
 			expectedRet: 2,
+		},
+		{
+			desc: "Optimizable program",
+			insns: []Instruction{
+				Stmt(Ld|Imm|W, 42),        // A = 42
+				Jump(Jmp|Jeq|K, 42, 0, 1), // if (A == 42) jmp 0 else 1
+				Jump(Jmp|Ja, 1, 0, 0),     // jmp 1
+				Jump(Jmp|Ja, 2, 0, 0),     // jmp 2
+				Stmt(Ld|Imm|W, 37),        // A = 37
+				Stmt(Ret|K, 0),            // return 0
+				Stmt(Ret|K, 1),            // return 1
+			},
+			expectedRet: 0,
 		},
 	} {
 		p, err := Compile(test.insns)
@@ -726,7 +739,7 @@ func TestSimpleFilter(t *testing.T) {
 	// Seccomp filter example given in Linux's
 	// Documentation/networking/filter.txt, translated to bytecode using the
 	// Linux kernel tree's tools/net/bpf_asm.
-	filter := []linux.BPFInstruction{
+	filter := []Instruction{
 		{0x20, 0, 0, 0x00000004},  // ld [4]                  /* offsetof(struct seccomp_data, arch) */
 		{0x15, 0, 11, 0xc000003e}, // jne #0xc000003e, bad    /* AUDIT_ARCH_X86_64 */
 		{0x20, 0, 0, 0000000000},  // ld [0]                  /* offsetof(struct seccomp_data, nr) */

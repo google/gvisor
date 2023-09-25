@@ -17,12 +17,14 @@ package bpf
 import (
 	"fmt"
 	"testing"
-
-	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
-func validate(p *ProgramBuilder, expected []linux.BPFInstruction) error {
+func validate(t *testing.T, p *ProgramBuilder, expected []Instruction) error {
+	t.Helper()
 	instructions, err := p.Instructions()
+	for i, instruction := range instructions {
+		t.Logf("[%d] %v", i, instruction.String())
+	}
 	if err != nil {
 		return fmt.Errorf("Instructions() failed: %v", err)
 	}
@@ -43,23 +45,27 @@ func validate(p *ProgramBuilder, expected []linux.BPFInstruction) error {
 func TestProgramBuilderSimple(t *testing.T) {
 	p := NewProgramBuilder()
 	p.AddStmt(Ld+Abs+W, 10)
-	p.AddJump(Jmp+Ja, 10, 0, 0)
+	p.AddJump(Jmp+Ja, 1, 0, 0)
+	p.AddStmt(Ld+Abs+W, 3)
+	p.AddStmt(Ret+K, 1337)
 
-	expected := []linux.BPFInstruction{
+	expected := []Instruction{
 		Stmt(Ld+Abs+W, 10),
-		Jump(Jmp+Ja, 10, 0, 0),
+		Jump(Jmp+Ja, 1, 0, 0),
+		Stmt(Ld+Abs+W, 3),
+		Stmt(Ret+K, 1337),
 	}
 
-	if err := validate(p, expected); err != nil {
+	if err := validate(t, p, expected); err != nil {
 		t.Errorf("Validate() failed: %v", err)
 	}
 }
 
 func TestProgramBuilderLabels(t *testing.T) {
 	p := NewProgramBuilder()
-	p.AddJumpTrueLabel(Jmp+Jeq+K, 11, "label_1", 0)
-	p.AddJumpFalseLabel(Jmp+Jeq+K, 12, 0, "label_2")
-	p.AddJumpLabels(Jmp+Jeq+K, 13, "label_3", "label_4")
+	p.AddJumpTrueLabel(Jmp+Jeq+K, 5, "label_1", 0)
+	p.AddJumpFalseLabel(Jmp+Jeq+K, 4, 0, "label_2")
+	p.AddJumpLabels(Jmp+Jeq+K, 3, "label_3", "label_4")
 	if err := p.AddLabel("label_1"); err != nil {
 		t.Errorf("AddLabel(label_1) failed: %v", err)
 	}
@@ -67,11 +73,11 @@ func TestProgramBuilderLabels(t *testing.T) {
 	if err := p.AddLabel("label_3"); err != nil {
 		t.Errorf("AddLabel(label_3) failed: %v", err)
 	}
-	p.AddJumpLabels(Jmp+Jeq+K, 14, "label_4", "label_5")
+	p.AddJumpLabels(Jmp+Jeq+K, 2, "label_4", "label_5")
 	if err := p.AddLabel("label_2"); err != nil {
 		t.Errorf("AddLabel(label_2) failed: %v", err)
 	}
-	p.AddJumpLabels(Jmp+Jeq+K, 15, "label_4", "label_6")
+	p.AddJumpLabels(Jmp+Jeq+K, 1, "label_4", "label_6")
 	if err := p.AddLabel("label_4"); err != nil {
 		t.Errorf("AddLabel(label_4) failed: %v", err)
 	}
@@ -83,24 +89,26 @@ func TestProgramBuilderLabels(t *testing.T) {
 		t.Errorf("AddLabel(label_6) failed: %v", err)
 	}
 	p.AddStmt(Ld+Abs+W, 5)
+	p.AddStmt(Ret+K, 42)
 
-	expected := []linux.BPFInstruction{
-		Jump(Jmp+Jeq+K, 11, 2, 0),
-		Jump(Jmp+Jeq+K, 12, 0, 3),
-		Jump(Jmp+Jeq+K, 13, 1, 3),
+	expected := []Instruction{
+		Jump(Jmp+Jeq+K, 5, 2, 0),
+		Jump(Jmp+Jeq+K, 4, 0, 3),
+		Jump(Jmp+Jeq+K, 3, 1, 3),
 		Stmt(Ld+Abs+W, 1),
-		Jump(Jmp+Jeq+K, 14, 1, 2),
-		Jump(Jmp+Jeq+K, 15, 0, 1),
+		Jump(Jmp+Jeq+K, 2, 1, 2),
+		Jump(Jmp+Jeq+K, 1, 0, 1),
 		Stmt(Ld+Abs+W, 4),
 		Stmt(Ld+Abs+W, 5),
+		Stmt(Ret+K, 42),
 	}
-	if err := validate(p, expected); err != nil {
+	if err := validate(t, p, expected); err != nil {
 		t.Errorf("Validate() failed: %v", err)
 	}
 	// Calling validate()=>p.Instructions() again to make sure
 	// Instructions can be called multiple times without ruining
 	// the program.
-	if err := validate(p, expected); err != nil {
+	if err := validate(t, p, expected); err != nil {
 		t.Errorf("Validate() failed: %v", err)
 	}
 }
@@ -129,18 +137,22 @@ func TestProgramBuilderLabelWithNoInstruction(t *testing.T) {
 func TestProgramBuilderUnusedLabel(t *testing.T) {
 	p := NewProgramBuilder()
 	p.AddStmt(Ld+Abs+W, 10)
-	p.AddJump(Jmp+Ja, 10, 0, 0)
+	p.AddJump(Jmp+Ja, 1, 0, 0)
+	p.AddStmt(Ld+Abs+W, 3)
+	p.AddStmt(Ret+K, 1337)
 
-	expected := []linux.BPFInstruction{
+	expected := []Instruction{
 		Stmt(Ld+Abs+W, 10),
-		Jump(Jmp+Ja, 10, 0, 0),
+		Jump(Jmp+Ja, 1, 0, 0),
+		Stmt(Ld+Abs+W, 3),
+		Stmt(Ret+K, 1337),
 	}
 
 	if err := p.AddLabel("unused"); err != nil {
 		t.Errorf("AddLabel(unused) should have succeeded")
 	}
 
-	if err := validate(p, expected); err != nil {
+	if err := validate(t, p, expected); err != nil {
 		t.Errorf("Validate() failed: %v", err)
 	}
 }
@@ -179,6 +191,52 @@ func TestProgramBuilderJumpBackwards(t *testing.T) {
 	}
 	p.AddStmt(Ld+Abs+W, 0)
 	p.AddJumpTrueLabel(Jmp+Jeq+K, 10, "label_1", 0)
+	if _, err := p.Instructions(); err == nil {
+		t.Errorf("Instructions() should have failed")
+	}
+}
+
+func TestProgramBuilderCannotDetermineReachability(t *testing.T) {
+	p := NewProgramBuilder()
+	p.AddJump(Jmp|Ja, 1, 0, 0)
+	p.AssertUnreachable()
+	if _, err := p.Instructions(); err == nil {
+		t.Errorf("Instructions() should have failed")
+	}
+	p.AddStmt(Ret|K, 0)
+	want := []Instruction{
+		Jump(Jmp|Ja, 1, 0, 0),
+		Jump(Jmp|Ja, 0, 0, 0),
+		Stmt(Ret|K, 0),
+	}
+	if err := validate(t, p, want); err != nil {
+		t.Errorf("validation failed: %v", err)
+	}
+}
+
+func TestProgramBuilderTrimUnreachableInstructions(t *testing.T) {
+	p := NewProgramBuilder()
+	p.AddJump(Jmp|Ja, 1, 0, 0)
+	p.AssertUnreachable()
+	p.AddStmt(Ret|K, 0)
+	p.AssertUnreachable()
+	p.AssertUnreachable()
+	p.AssertUnreachable()
+	p.AssertUnreachable()
+	want := []Instruction{
+		Jump(Jmp|Ja, 1, 0, 0),
+		Jump(Jmp|Ja, 0, 0, 0),
+		Stmt(Ret|K, 0),
+	}
+	if err := validate(t, p, want); err != nil {
+		t.Errorf("validation failed: %v", err)
+	}
+}
+
+func TestProgramBuilderReachesSupposedlyUnreachableAssertion(t *testing.T) {
+	p := NewProgramBuilder()
+	p.AddJump(Jmp|Ja, 0, 0, 0)
+	p.AssertUnreachable()
 	if _, err := p.Instructions(); err == nil {
 		t.Errorf("Instructions() should have failed")
 	}

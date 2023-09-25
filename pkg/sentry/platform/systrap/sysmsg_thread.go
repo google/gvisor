@@ -19,6 +19,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
@@ -96,7 +97,7 @@ func (p *sysmsgThread) Debugf(format string, v ...any) {
 	p.thread.Debugf(format+postfix, v...)
 }
 
-func sysmsgThreadRules(stubStart uintptr) []linux.BPFInstruction {
+func sysmsgThreadRules(stubStart uintptr) []bpf.Instruction {
 	rules := []seccomp.RuleSet{}
 	rules = appendSysThreadArchSeccompRules(rules)
 	rules = append(rules, []seccomp.RuleSet{

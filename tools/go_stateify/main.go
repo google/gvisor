@@ -314,21 +314,27 @@ func main() {
 			// savable" in one of the proceeding comment lines. If
 			// the line is marked "// +stateify type" then only
 			// generate type information and register the type.
+			// If the type also has a "// +stateify alias:<some type>"
+			// comment, the functions are instead generated to refer to
+			// this aliased type, rather than about the type itself.
 			if d.Doc == nil {
 				continue
 			}
 			var (
 				generateTypeInfo    = false
 				generateSaverLoader = false
+				aliasOf             = ""
 			)
 			for _, l := range d.Doc.List {
 				if l.Text == "// +stateify savable" {
 					generateTypeInfo = true
 					generateSaverLoader = true
-					break
 				}
 				if l.Text == "// +stateify type" {
 					generateTypeInfo = true
+				}
+				if strings.HasPrefix(l.Text, "// +stateify alias:") {
+					aliasOf = strings.TrimPrefix(l.Text, "// +stateify alias:")
 				}
 			}
 			if !generateTypeInfo && !generateSaverLoader {
@@ -345,6 +351,10 @@ func main() {
 				switch x := ts.Type.(type) {
 				case *ast.StructType:
 					maybeEmitImports()
+					if aliasOf != "" {
+						fmt.Fprintf(os.Stderr, "Cannot use `+stateify alias` on a struct type (in %v); must be a type alias.", f)
+						os.Exit(1)
+					}
 
 					// Record the slot for each field.
 					fieldCount := 0
@@ -463,9 +473,26 @@ func main() {
 					fmt.Fprintf(outputFile, "func (%s *%s) StateTypeName() string {\n", recv, ts.Name.Name)
 					fmt.Fprintf(outputFile, "	return \"%s.%s\"\n", *fullPkg, ts.Name.Name)
 					fmt.Fprintf(outputFile, "}\n\n")
-					fmt.Fprintf(outputFile, "func (%s *%s) StateFields() []string {\n", recv, ts.Name.Name)
-					fmt.Fprintf(outputFile, "	return nil\n")
-					fmt.Fprintf(outputFile, "}\n\n")
+
+					if aliasOf == "" {
+						fmt.Fprintf(outputFile, "func (%s *%s) StateFields() []string {\n", recv, ts.Name.Name)
+						fmt.Fprintf(outputFile, "	return nil\n")
+						fmt.Fprintf(outputFile, "}\n\n")
+					} else {
+						fmt.Fprintf(outputFile, "func (%s *%s) StateFields() []string {\n", recv, ts.Name.Name)
+						fmt.Fprintf(outputFile, "	return (*%s)(%s).StateFields()\n", aliasOf, recv)
+						fmt.Fprintf(outputFile, "}\n\n")
+						if generateSaverLoader {
+							fmt.Fprintf(outputFile, "// +checklocksignore\n")
+							fmt.Fprintf(outputFile, "func (%s *%s) StateSave(stateSinkObject %sSink) {\n", recv, ts.Name.Name, statePrefix)
+							fmt.Fprintf(outputFile, "	(*%s)(%s).StateSave(stateSinkObject)\n", aliasOf, recv)
+							fmt.Fprintf(outputFile, "}\n\n")
+							fmt.Fprintf(outputFile, "// +checklocksignore\n")
+							fmt.Fprintf(outputFile, "func (%s *%s) StateLoad(stateSourceObject %sSource) {\n", recv, ts.Name.Name, statePrefix)
+							fmt.Fprintf(outputFile, "	(*%s)(%s).StateLoad(stateSourceObject)\n", aliasOf, recv)
+							fmt.Fprintf(outputFile, "}\n\n")
+						}
+					}
 
 					// See above.
 					emitRegister(ts.Name.Name)

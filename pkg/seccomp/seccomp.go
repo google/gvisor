@@ -130,7 +130,7 @@ var SyscallName = func(sysno uintptr) string {
 
 // BuildProgram builds a BPF program from the given map of actions to matching
 // SyscallRules. The single generated program covers all provided RuleSets.
-func BuildProgram(rules []RuleSet, defaultAction, badArchAction linux.BPFAction) ([]linux.BPFInstruction, error) {
+func BuildProgram(rules []RuleSet, defaultAction, badArchAction linux.BPFAction) ([]bpf.Instruction, error) {
 	program := bpf.NewProgramBuilder()
 
 	// Be paranoid and check that syscall is done in the expected architecture.
@@ -152,7 +152,15 @@ func BuildProgram(rules []RuleSet, defaultAction, badArchAction linux.BPFAction)
 	}
 	program.AddStmt(bpf.Ret|bpf.K, uint32(defaultAction))
 
-	return program.Instructions()
+	insns, err := program.Instructions()
+	if err != nil {
+		return insns, err
+	}
+	beforeOpt := len(insns)
+	insns = bpf.Optimize(insns)
+	afterOpt := len(insns)
+	log.Debugf("Seccomp program optimized from %d to %d instructions", beforeOpt, afterOpt)
+	return insns, nil
 }
 
 // buildIndex builds a BST to quickly search through all syscalls.

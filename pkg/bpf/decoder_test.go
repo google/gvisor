@@ -16,13 +16,11 @@ package bpf
 
 import (
 	"testing"
-
-	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
 func TestDecode(t *testing.T) {
 	for _, test := range []struct {
-		filter   linux.BPFInstruction
+		filter   Instruction
 		expected string
 		fail     bool
 	}{
@@ -96,12 +94,12 @@ func TestDecode(t *testing.T) {
 func TestDecodeInstructions(t *testing.T) {
 	for _, test := range []struct {
 		name     string
-		program  []linux.BPFInstruction
+		program  []Instruction
 		expected string
 		fail     bool
 	}{
 		{name: "basic with jump indexes",
-			program: []linux.BPFInstruction{
+			program: []Instruction{
 				Stmt(Ld+Abs+W, 10),
 				Stmt(Ldx+Mem, 10),
 				Stmt(St, 10),
@@ -123,7 +121,7 @@ func TestDecodeInstructions(t *testing.T) {
 				"8: X <- A\n",
 		},
 		{name: "invalid instruction",
-			program: []linux.BPFInstruction{Stmt(Ld+Abs+W, 10), Stmt(Ld+Len+Mem, 0)},
+			program: []Instruction{Stmt(Ld+Abs+W, 10), Stmt(Ld+Len+Mem, 0)},
 			fail:    true},
 	} {
 		got, err := DecodeInstructions(test.program)
