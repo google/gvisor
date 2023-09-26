@@ -159,6 +159,7 @@ func runTestCaseNative(testBin string, tc *gtest.TestCase, args []string, t *tes
 		args = tc.Args()
 	}
 
+	args = append(args, gtest.TestFlags...)
 	cmd := exec.Command(testBin, args...)
 	cmd.Env = env
 	cmd.Stdout = os.Stdout
@@ -532,6 +533,7 @@ func runTestCaseRunsc(testBin string, tc *gtest.TestCase, args []string, t *test
 	if args == nil {
 		args = tc.Args()
 	}
+	args = append(args, gtest.TestFlags...)
 	var spec *specs.Spec
 	if *fusefs {
 		fuseServer, err := testutil.FindFile("test/runner/fuse/fuse")
