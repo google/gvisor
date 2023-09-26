@@ -33,6 +33,9 @@ var (
 
 	// filterBenchmarkFlag is the flag that will run specified benchmarks.
 	filterBenchmarkFlag = "--benchmark_filter"
+
+	// TestFlags is the flags that are set for all tests.
+	TestFlags = []string{}
 )
 
 // TestCase is a single gtest test case.
