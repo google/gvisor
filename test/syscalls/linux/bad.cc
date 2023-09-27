@@ -22,13 +22,17 @@ namespace gvisor {
 namespace testing {
 
 namespace {
-#ifdef __x86_64__
+#if defined(__x86_64__)
 // get_kernel_syms is not supported in Linux > 2.6, and not implemented in
 // gVisor.
 constexpr uint32_t kNotImplementedSyscall = SYS_get_kernel_syms;
-#elif __aarch64__
+#elif defined(__aarch64__)
 // Use the last of arch_specific_syscalls which are not implemented on arm64.
 constexpr uint32_t kNotImplementedSyscall = __NR_arch_specific_syscall + 15;
+#elif defined(__riscv)
+// `__NR_arch_specific_syscall + 15` is used on RISC-V for
+// `sys_riscv_flush_icache(). Use `__NR_arch_specific_syscall + 14` instead.
+constexpr uint32_t kNotImplementedSyscall = __NR_arch_specific_syscall + 14;
 #endif
 
 TEST(BadSyscallTest, NotImplemented) {

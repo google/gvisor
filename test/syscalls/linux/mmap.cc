@@ -581,6 +581,11 @@ const uint8_t machine_code[] = {
     0x40, 0x05, 0x80, 0x52,  // mov w0, #42
     0xc0, 0x03, 0x5f, 0xd6,  // ret
 };
+#elif defined(__riscv)
+const uint8_t machine_code[] = {
+    0x13, 0x05, 0xa0, 0x02,  // li a0,42
+    0x82, 0x80               // ret
+};
 #endif
 
 // PROT_EXEC allows code execution

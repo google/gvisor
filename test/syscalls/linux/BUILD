@@ -930,7 +930,7 @@ cc_binary(
     testonly = 1,
     srcs = select_arch(
         amd64 = ["fpsig_mut_amd64.cc"],
-        arm64 = [],
+        default = [],
     ),
     linkstatic = 1,
     deps = [
@@ -1723,7 +1723,7 @@ cc_binary(
     testonly = 1,
     srcs = select_arch(
         amd64 = ["arch_prctl.cc"],
-        arm64 = [],
+        default = [],
     ),
     linkstatic = 1,
     deps = [
@@ -2422,6 +2422,7 @@ cc_binary(
     srcs = select_arch(
         amd64 = ["sigreturn_amd64.cc"],
         arm64 = ["sigreturn_arm64.cc"],
+        riscv64 = [],
     ),
     linkstatic = 1,
     deps = [
@@ -2431,8 +2432,8 @@ cc_binary(
         "//test/util:test_util",
         "//test/util:timer_util",
     ] + select_arch(
-        amd64 = [],
         arm64 = ["//test/util:test_main"],
+        default = [],
     ),
 )
 

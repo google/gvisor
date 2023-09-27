@@ -21,7 +21,7 @@ def proto_library(name, has_services = None, **kwargs):
         **kwargs
     )
 
-def select_arch(amd64 = None, arm64 = None, default = None, **kwargs):
+def select_arch(amd64 = None, arm64 = None, riscv64 = None, default = None, **kwargs):
     """Select an option against standard architectures.
 
     Args:
@@ -37,6 +37,8 @@ def select_arch(amd64 = None, arm64 = None, default = None, **kwargs):
         values["//tools/bazeldefs:amd64"] = amd64
     if arm64 != None:
         values["//tools/bazeldefs:arm64"] = arm64
+    if riscv64 != None:
+        values["//tools/bazeldefs:riscv64"] = riscv64
     if default != None:
         values["//conditions:default"] = default
     return select(values, **kwargs)

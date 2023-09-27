@@ -71,7 +71,7 @@ class SysretTest : public ::testing::Test {
   void SetRip(uint64_t newrip) {
 #if defined(__x86_64__)
     regs_.rip = newrip;
-#elif defined(__aarch64__)
+#elif defined(__aarch64__) || defined(__riscv)
     regs_.pc = newrip;
 #else
 #error "Unknown architecture"
@@ -83,7 +83,7 @@ class SysretTest : public ::testing::Test {
   void SetRsp(uint64_t newrsp) {
 #if defined(__x86_64__)
     regs_.rsp = newrsp;
-#elif defined(__aarch64__)
+#elif defined(__aarch64__) || defined(__riscv)
     regs_.sp = newrsp;
 #else
 #error "Unknown architecture"
@@ -129,7 +129,7 @@ TEST_F(SysretTest, BadRsp) {
 #if defined(__x86_64__)
   EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGBUS)
       << "status = " << status;
-#elif defined(__aarch64__)
+#elif defined(__aarch64__) || defined(__riscv)
   EXPECT_TRUE(WIFSIGNALED(status) && WTERMSIG(status) == SIGSEGV)
       << "status = " << status;
 #else

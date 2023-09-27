@@ -137,13 +137,21 @@ static const char* required_fields[] = {
     "address sizes",
     "power management",
 };
-#elif __aarch64__
+#elif defined(__aarch64__)
 // This list of "required" fields is taken from reading the file
 // arch/arm64/kernel/cpuinfo.c and seeing which fields will be unconditionally
 // printed by the kernel.
 static const char* required_fields[] = {
     "processor",        "BogoMIPS",    "Features", "CPU implementer",
     "CPU architecture", "CPU variant", "CPU part", "CPU revision",
+};
+#elif defined(__riscv)
+// This list of "required" fields is taken from reading the file
+// arch/riscv/kernel/cpu.c and seeing which fields will be unconditionally
+// printed by the kernel.
+static const char* required_fields[] = {
+    "processor",
+    "hart",
 };
 #else
 #error "Unknown architecture"

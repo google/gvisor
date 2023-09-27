@@ -456,7 +456,7 @@ TEST(CloneTest, NonCanonicalTLS) {
   EXPECT_THAT(syscall(__NR_clone, SIGCHLD | CLONE_SETTLS, &stack, nullptr,
                       nullptr, kNonCanonical),
               SyscallFailsWithErrno(EPERM));
-#elif defined(__aarch64__)
+#elif defined(__aarch64__) || defined(__riscv)
   EXPECT_THAT(syscall(__NR_clone, SIGCHLD | CLONE_SETTLS, &stack, nullptr,
                       kNonCanonical, nullptr),
               SyscallFailsWithErrno(EPERM));
