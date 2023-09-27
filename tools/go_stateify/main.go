@@ -314,21 +314,28 @@ func main() {
 			// savable" in one of the proceeding comment lines. If
 			// the line is marked "// +stateify type" then only
 			// generate type information and register the type.
+			// If the type also has a "// +stateify identtype"
+			// comment, the functions are instead generated to refer to
+			// the type that this newly-defined type is identical to, rather
+			// than about the newly-defined type itself.
 			if d.Doc == nil {
 				continue
 			}
 			var (
 				generateTypeInfo    = false
 				generateSaverLoader = false
+				isIdentType         = false
 			)
 			for _, l := range d.Doc.List {
 				if l.Text == "// +stateify savable" {
 					generateTypeInfo = true
 					generateSaverLoader = true
-					break
 				}
 				if l.Text == "// +stateify type" {
 					generateTypeInfo = true
+				}
+				if l.Text == "// +stateify identtype" {
+					isIdentType = true
 				}
 			}
 			if !generateTypeInfo && !generateSaverLoader {
@@ -345,6 +352,10 @@ func main() {
 				switch x := ts.Type.(type) {
 				case *ast.StructType:
 					maybeEmitImports()
+					if isIdentType {
+						fmt.Fprintf(os.Stderr, "Cannot use `+stateify identtype` on a struct type (%v); must be a type definition of an identical type.", ts.Name.Name)
+						os.Exit(1)
+					}
 
 					// Record the slot for each field.
 					fieldCount := 0
@@ -463,9 +474,41 @@ func main() {
 					fmt.Fprintf(outputFile, "func (%s *%s) StateTypeName() string {\n", recv, ts.Name.Name)
 					fmt.Fprintf(outputFile, "	return \"%s.%s\"\n", *fullPkg, ts.Name.Name)
 					fmt.Fprintf(outputFile, "}\n\n")
-					fmt.Fprintf(outputFile, "func (%s *%s) StateFields() []string {\n", recv, ts.Name.Name)
-					fmt.Fprintf(outputFile, "	return nil\n")
-					fmt.Fprintf(outputFile, "}\n\n")
+
+					if !isIdentType {
+						fmt.Fprintf(outputFile, "func (%s *%s) StateFields() []string {\n", recv, ts.Name.Name)
+						fmt.Fprintf(outputFile, "	return nil\n")
+						fmt.Fprintf(outputFile, "}\n\n")
+					} else {
+						var typeName string
+						switch y := x.(type) {
+						case *ast.Ident:
+							typeName = y.Name
+						case *ast.SelectorExpr:
+							expIdent, ok := y.X.(*ast.Ident)
+							if !ok {
+								fmt.Fprintf(os.Stderr, "Cannot use non-ident %v (type %T) in type selector expression %v", y.X, y.X, y)
+								os.Exit(1)
+							}
+							typeName = fmt.Sprintf("%s.%s", expIdent.Name, y.Sel.Name)
+						default:
+							fmt.Fprintf(os.Stderr, "Cannot use `+stateify identtype` on a non-identifier/non-selector type definition (%v => %v of type %T); must be a type definition of an identical type.", ts.Name.Name, x, x)
+							os.Exit(1)
+						}
+						fmt.Fprintf(outputFile, "func (%s *%s) StateFields() []string {\n", recv, ts.Name.Name)
+						fmt.Fprintf(outputFile, "	return (*%s)(%s).StateFields()\n", typeName, recv)
+						fmt.Fprintf(outputFile, "}\n\n")
+						if generateSaverLoader {
+							fmt.Fprintf(outputFile, "// +checklocksignore\n")
+							fmt.Fprintf(outputFile, "func (%s *%s) StateSave(stateSinkObject %sSink) {\n", recv, ts.Name.Name, statePrefix)
+							fmt.Fprintf(outputFile, "	(*%s)(%s).StateSave(stateSinkObject)\n", typeName, recv)
+							fmt.Fprintf(outputFile, "}\n\n")
+							fmt.Fprintf(outputFile, "// +checklocksignore\n")
+							fmt.Fprintf(outputFile, "func (%s *%s) StateLoad(stateSourceObject %sSource) {\n", recv, ts.Name.Name, statePrefix)
+							fmt.Fprintf(outputFile, "	(*%s)(%s).StateLoad(stateSourceObject)\n", typeName, recv)
+							fmt.Fprintf(outputFile, "}\n\n")
+						}
+					}
 
 					// See above.
 					emitRegister(ts.Name.Name)
