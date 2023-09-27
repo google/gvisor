@@ -34,6 +34,11 @@ config_setting(
     values = {"cpu": "aarch64"},
 )
 
+config_setting(
+    name = "riscv64",
+    values = {"cpu": "riscv64"},
+)
+
 genrule(
     name = "version",
     outs = ["version.txt"],

@@ -248,8 +248,8 @@ int GetdentsTest<struct linux_dirent64>::SyscallNum() {
 // Test both legacy getdents and getdents64 on x86_64.
 typedef ::testing::Types<struct linux_dirent, struct linux_dirent64>
     GetdentsTypes;
-#elif __aarch64__
-// Test only getdents64 on arm64.
+#elif defined(__aarch64__) || defined(__riscv)
+// Test only getdents64 on arm64 and RISC-V.
 typedef ::testing::Types<struct linux_dirent64> GetdentsTypes;
 #endif
 TYPED_TEST_SUITE(GetdentsTest, GetdentsTypes);
