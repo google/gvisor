@@ -168,6 +168,14 @@ steps:
       - git checkout go && git clean -xf .
       - GOOS=linux GOARCH=mips go build $$PACKAGES
 
+  # GPU workflow.
+  - <<: *common
+    <<: *source_test
+    label: "GPU tests"
+    commands:
+      - make gpu-tests DRIVER_VERSION=525.125.06
+    agents:
+      queue: gpu
   # Release workflow.
   - <<: *common
     <<: *source_test

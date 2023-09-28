@@ -262,6 +262,12 @@ arm-qemu-smoke-test: $(RUNTIME_BIN) load-arm-qemu
 simple-tests: unit-tests # Compatibility target.
 .PHONY: simple-tests
 
+DRIVER_VERSION ?= 525.105.17
+
+gpu-tests:
+	tools/install_gpu.sh $(DRIVER_VERSION)
+.PHONE: gpu-tests
+
 portforward-tests: load-basic_redis load-basic_nginx $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),--network=sandbox)
 	@$(call sudo,test/root:portforward_test,--runtime=$(RUNTIME) -test.v $(ARGS))
