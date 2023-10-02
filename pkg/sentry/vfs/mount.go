@@ -149,6 +149,21 @@ func (mnt *Mount) Options() MountOptions {
 	}
 }
 
+// setMountOptions sets mnt's opions to the given opts.
+//
+// Preconditions:
+//   - vfs.mountMu must be locked.
+func (mnt *Mount) setMountOptions(opts *MountOptions) error {
+	if opts == nil {
+		return linuxerr.EINVAL
+	}
+	if err := mnt.setReadOnlyLocked(opts.ReadOnly); err != nil {
+		return err
+	}
+	mnt.Flags = opts.Flags
+	return nil
+}
+
 // MountFlags returns a bit mask that indicates mount options.
 func (mnt *Mount) MountFlags() uint64 {
 	mnt.vfs.lockMounts()
@@ -502,6 +517,35 @@ func (vfs *VirtualFilesystem) BindAt(ctx context.Context, creds *auth.Credential
 	return nil
 }
 
+// RemountAt changes the mountflags and data of an existing mount without having to unmount and remount the filesystem.
+func (vfs *VirtualFilesystem) RemountAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *MountOptions) error {
+	vd, err := vfs.GetDentryAt(ctx, creds, pop, &GetDentryOptions{})
+	if err != nil {
+		return err
+	}
+	defer func() {
+		vd.DecRef(ctx)
+	}()
+	if vd.dentry.isMounted() {
+		if realmnt := vfs.getMountAt(ctx, vd.mount, vd.dentry); realmnt != nil {
+			vd.mount.DecRef(ctx)
+			vd.mount = realmnt
+		}
+	} else if vd.dentry != vd.mount.root {
+		return linuxerr.EINVAL
+	}
+	vfs.lockMounts()
+	defer vfs.unlockMounts(ctx)
+	mnt := vd.Mount()
+	if mntns := MountNamespaceFromContext(ctx); mntns != nil {
+		vfs.delayDecRef(mntns)
+		if mntns != mnt.ns {
+			return linuxerr.EINVAL
+		}
+	}
+	return mnt.setMountOptions(opts)
+}
+
 // MountAt creates and mounts a Filesystem configured by the given arguments.
 // The VirtualFilesystem will hold a reference to the Mount until it is
 // unmounted.
@@ -533,7 +577,6 @@ func (vfs *VirtualFilesystem) UmountAt(ctx context.Context, creds *auth.Credenti
 	if opts.Flags&linux.MNT_FORCE != 0 && creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, creds.UserNamespace.Root()) {
 		return linuxerr.EPERM
 	}
-
 	vd, err := vfs.GetDentryAt(ctx, creds, pop, &GetDentryOptions{})
 	if err != nil {
 		return err

@@ -77,6 +77,8 @@ using ::testing::AnyOf;
 using ::testing::Contains;
 using ::testing::Pair;
 
+constexpr char kTmpfs[] = "tmpfs";
+
 TEST(MountTest, MountBadFilesystem) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 
@@ -90,7 +92,7 @@ TEST(MountTest, MountInvalidTarget) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 
   auto const dir = NewTempAbsPath();
-  EXPECT_THAT(mount("", dir.c_str(), "tmpfs", 0, ""),
+  EXPECT_THAT(mount("", dir.c_str(), kTmpfs, 0, ""),
               SyscallFailsWithErrno(ENOENT));
 }
 
@@ -109,7 +111,7 @@ TEST(MountTest, UmountPermDenied) {
 
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const mount =
-      ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir.path(), "tmpfs", 0, "", 0));
+      ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir.path(), kTmpfs, 0, "", 0));
 
   // Drop privileges in another thread, so we can still unmount the mounted
   // directory.
@@ -127,7 +129,7 @@ TEST(MountTest, MountOverBusy) {
       Open(JoinPath(dir.path(), "foo"), O_CREAT | O_RDWR, 0777));
 
   // Should be able to mount over a busy directory.
-  ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir.path(), "tmpfs", 0, "", 0));
+  ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir.path(), kTmpfs, 0, "", 0));
 }
 
 TEST(MountTest, OpenFileBusy) {
@@ -135,7 +137,7 @@ TEST(MountTest, OpenFileBusy) {
 
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir.path(), "tmpfs", 0, "mode=0700", 0));
+      Mount("", dir.path(), kTmpfs, 0, "mode=0700", 0));
   auto const fd = ASSERT_NO_ERRNO_AND_VALUE(
       Open(JoinPath(dir.path(), "foo"), O_CREAT | O_RDWR, 0777));
 
@@ -164,7 +166,7 @@ TEST(MountTest, UmountNoFollow) {
   // Should fail with ELOOP when UMOUNT_NOFOLLOW is specified and the last
   // component is a symlink.
   auto mount = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", mountPoint, "tmpfs", 0, "mode=0700", 0));
+      Mount("", mountPoint, kTmpfs, 0, "mode=0700", 0));
   EXPECT_THAT(umount2(symlinkInDir.c_str(), UMOUNT_NOFOLLOW),
               SyscallFailsWithErrno(EINVAL));
   EXPECT_THAT(unlink(symlinkInDir.c_str()), SyscallSucceeds());
@@ -194,7 +196,7 @@ TEST(MountTest, UmountDetach) {
 
   const struct stat before = ASSERT_NO_ERRNO_AND_VALUE(Stat(dir.path()));
   auto mount =
-      ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir.path(), "tmpfs", 0, "mode=0700",
+      ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir.path(), kTmpfs, 0, "mode=0700",
                                       /* umountflags= */ MNT_DETACH));
   const struct stat after = ASSERT_NO_ERRNO_AND_VALUE(Stat(dir.path()));
   EXPECT_FALSE(before.st_dev == after.st_dev && before.st_ino == after.st_ino)
@@ -256,8 +258,8 @@ TEST(MountTest, UmountMountsStackedOnDot) {
   TEST_CHECK_SUCCESS(chdir(dir.path().c_str()));
   const struct stat before = ASSERT_NO_ERRNO_AND_VALUE(Stat("."));
 
-  TEST_CHECK_SUCCESS(mount("", dir.path().c_str(), "tmpfs", 0, "mode=0700"));
-  TEST_CHECK_SUCCESS(mount("", dir.path().c_str(), "tmpfs", 0, "mode=0700"));
+  TEST_CHECK_SUCCESS(mount("", dir.path().c_str(), kTmpfs, 0, "mode=0700"));
+  TEST_CHECK_SUCCESS(mount("", dir.path().c_str(), kTmpfs, 0, "mode=0700"));
 
   // Unmount the second mount at "."
   TEST_CHECK_SUCCESS(umount2(".", MNT_DETACH));
@@ -274,12 +276,12 @@ TEST(MountTest, ActiveSubmountBusy) {
 
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const mount1 = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir.path(), "tmpfs", 0, "mode=0700", 0));
+      Mount("", dir.path(), kTmpfs, 0, "mode=0700", 0));
 
   auto const dir2 =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(dir.path()));
   auto const mount2 =
-      ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir2.path(), "tmpfs", 0, "", 0));
+      ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir2.path(), kTmpfs, 0, "", 0));
 
   // Since dir now has an active submount, should not be able to unmount.
   EXPECT_THAT(umount(dir.path().c_str()), SyscallFailsWithErrno(EBUSY));
@@ -301,7 +303,7 @@ TEST(MountTest, MountTmpfs) {
 
   {
     auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
-        Mount("", dir.path(), "tmpfs", 0, "mode=0700", 0));
+        Mount("", dir.path(), kTmpfs, 0, "mode=0700", 0));
 
     const struct stat s = ASSERT_NO_ERRNO_AND_VALUE(Stat(dir.path()));
     EXPECT_EQ(s.st_mode, S_IFDIR | 0700);
@@ -333,7 +335,7 @@ TEST(MountTest, MountTmpfsMagicValIgnored) {
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
 
   auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir.path(), "tmpfs", MS_MGC_VAL, "mode=0700", 0));
+      Mount("", dir.path(), kTmpfs, MS_MGC_VAL, "mode=0700", 0));
 }
 
 // Passing nullptr to data is equivalent to "".
@@ -342,7 +344,7 @@ TEST(MountTest, NullData) {
 
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
 
-  EXPECT_THAT(mount("", dir.path().c_str(), "tmpfs", 0, nullptr),
+  EXPECT_THAT(mount("", dir.path().c_str(), kTmpfs, 0, nullptr),
               SyscallSucceeds());
   EXPECT_THAT(umount2(dir.path().c_str(), 0), SyscallSucceeds());
 }
@@ -352,7 +354,7 @@ TEST(MountTest, MountReadonly) {
 
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir.path(), "tmpfs", MS_RDONLY, "mode=0777", 0));
+      Mount("", dir.path(), kTmpfs, MS_RDONLY, "mode=0777", 0));
 
   const struct stat s = ASSERT_NO_ERRNO_AND_VALUE(Stat(dir.path()));
   EXPECT_EQ(s.st_mode, S_IFDIR | 0777);
@@ -377,7 +379,7 @@ TEST(MountTest, MountNoAtime) {
 
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir.path(), "tmpfs", MS_NOATIME, "mode=0777", 0));
+      Mount("", dir.path(), kTmpfs, MS_NOATIME, "mode=0777", 0));
 
   std::string const contents = "No no no, don't follow the instructions!";
   auto const file = ASSERT_NO_ERRNO_AND_VALUE(
@@ -404,7 +406,7 @@ TEST(MountTest, MountWithStrictAtime) {
 
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const mount = ASSERT_NO_ERRNO_AND_VALUE(Mount(
-      "", dir.path(), "tmpfs", MS_NOATIME | MS_STRICTATIME, "mode=0777", 0));
+      "", dir.path(), kTmpfs, MS_NOATIME | MS_STRICTATIME, "mode=0777", 0));
 
   std::string const contents = "No no no, don't follow the instructions!";
   auto const file = ASSERT_NO_ERRNO_AND_VALUE(
@@ -432,7 +434,7 @@ TEST(MountTest, MountNoExec) {
 
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir.path(), "tmpfs", MS_NOEXEC, "mode=0777", 0));
+      Mount("", dir.path(), kTmpfs, MS_NOEXEC, "mode=0777", 0));
 
   std::string const contents = "No no no, don't follow the instructions!";
   auto const file = ASSERT_NO_ERRNO_AND_VALUE(
@@ -453,7 +455,7 @@ TEST(MountTest, RenameRemoveMountPoint) {
   auto const new_dir = NewTempAbsPath();
 
   auto const mount =
-      ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir.path(), "tmpfs", 0, "", 0));
+      ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir.path(), kTmpfs, 0, "", 0));
 
   ASSERT_THAT(rename(dir.path().c_str(), new_dir.c_str()),
               SyscallFailsWithErrno(EBUSY));
@@ -466,12 +468,12 @@ TEST(MountTest, MountInfo) {
 
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir.path(), "tmpfs", MS_NOEXEC, "mode=0123", 0));
+      Mount("", dir.path(), kTmpfs, MS_NOEXEC, "mode=0123", 0));
   const std::vector<ProcMountsEntry> mounts =
       ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountsEntries());
   for (const auto& e : mounts) {
     if (e.mount_point == dir.path()) {
-      EXPECT_EQ(e.fstype, "tmpfs");
+      EXPECT_EQ(e.fstype, kTmpfs);
       auto mopts = ParseMountOptions(e.mount_opts);
       EXPECT_THAT(mopts, AnyOf(Contains(Pair("mode", "0123")),
                                Contains(Pair("mode", "123"))));
@@ -483,7 +485,7 @@ TEST(MountTest, MountInfo) {
 
   for (auto const& e : mountinfo) {
     if (e.mount_point == dir.path()) {
-      EXPECT_EQ(e.fstype, "tmpfs");
+      EXPECT_EQ(e.fstype, kTmpfs);
       auto mopts = ParseMountOptions(e.super_opts);
       EXPECT_THAT(mopts, AnyOf(Contains(Pair("mode", "0123")),
                                Contains(Pair("mode", "123"))));
@@ -496,7 +498,7 @@ TEST(MountTest, TmpfsSizeRoundUpSinglePageSize) {
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto tmpfs_size_opt = absl::StrCat("size=", kPageSize / 2);
   auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir.path(), "tmpfs", 0, tmpfs_size_opt, 0));
+      Mount("", dir.path(), kTmpfs, 0, tmpfs_size_opt, 0));
   auto fd = ASSERT_NO_ERRNO_AND_VALUE(
       Open(JoinPath(dir.path(), "foo"), O_CREAT | O_RDWR, 0777));
 
@@ -524,7 +526,7 @@ TEST(MountTest, TmpfsSizeAllocationMultiplePages) {
   auto size = kPageSize * page_multiple;
   auto tmpfs_size_opt = absl::StrCat("size=", size);
   auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir.path(), "tmpfs", 0, tmpfs_size_opt, 0));
+      Mount("", dir.path(), kTmpfs, 0, tmpfs_size_opt, 0));
   auto fd = ASSERT_NO_ERRNO_AND_VALUE(
       Open(JoinPath(dir.path(), "foo"), O_CREAT | O_RDWR, 0777));
 
@@ -558,7 +560,7 @@ TEST(MountTest, TmpfsSizeMoreThanSinglePgSZMultipleFiles) {
   auto const size = kPageSize * page_multiple;
   auto tmpfs_size_opt = absl::StrCat("size=", size);
   auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir.path(), "tmpfs", 0, tmpfs_size_opt, 0));
+      Mount("", dir.path(), kTmpfs, 0, tmpfs_size_opt, 0));
   for (int i = 0; i < page_multiple; i++) {
     auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(
         JoinPath(dir.path(), absl::StrCat("foo_", i)), O_CREAT | O_RDWR, 0777));
@@ -582,7 +584,7 @@ TEST(MountTest, TmpfsSizeFtruncate) {
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto tmpfs_size_opt = absl::StrCat("size=", kPageSize);
   auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir.path(), "tmpfs", 0, tmpfs_size_opt, 0));
+      Mount("", dir.path(), kTmpfs, 0, tmpfs_size_opt, 0));
   auto fd = ASSERT_NO_ERRNO_AND_VALUE(
       Open(JoinPath(dir.path(), "foo"), O_CREAT | O_RDWR, 0777));
   ASSERT_THAT(fallocate(fd.get(), 0, 0, kPageSize), SyscallSucceeds());
@@ -610,7 +612,7 @@ TEST(MountTest, TmpfsDirectoryAllocCheck) {
 
   auto tmpfs_size_opt = absl::StrCat("size=", kPageSize);
   auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir_parent.path(), "tmpfs", 0, tmpfs_size_opt, 0));
+      Mount("", dir_parent.path(), kTmpfs, 0, tmpfs_size_opt, 0));
 
   auto const dir_tmp =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(dir_parent.path()));
@@ -641,7 +643,7 @@ TEST(MountTest, TmpfsSymlinkAllocCheck) {
 
   auto tmpfs_size_opt = absl::StrCat("size=", kPageSize);
   auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir_parent.path(), "tmpfs", 0, tmpfs_size_opt, 0));
+      Mount("", dir_parent.path(), kTmpfs, 0, tmpfs_size_opt, 0));
 
   const int target_size = 128;
   auto target = std::string(target_size - 1, 'a');
@@ -670,7 +672,7 @@ TEST(MountTest, TmpfsSymlinkUnallocCheck) {
 
   auto tmpfs_size_opt = absl::StrCat("size=", kPageSize);
   auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir_parent.path(), "tmpfs", 0, tmpfs_size_opt, 0));
+      Mount("", dir_parent.path(), kTmpfs, 0, tmpfs_size_opt, 0));
 
   const int target_size = 128;
   auto pathname = JoinPath(dir_parent.path(), "foo1");
@@ -690,7 +692,7 @@ TEST(MountTest, TmpfsHardLinkAllocCheck) {
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto tmpfs_size_opt = absl::StrCat("size=", kPageSize);
   auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir.path(), "tmpfs", 0, tmpfs_size_opt, 0));
+      Mount("", dir.path(), kTmpfs, 0, tmpfs_size_opt, 0));
   const std::string fileOne = JoinPath(dir.path(), "foo1");
   const std::string fileTwo = JoinPath(dir.path(), "foo2");
   auto const fd =
@@ -720,7 +722,7 @@ TEST(MountTest, TmpfsHardLinkAllocCheck) {
 TEST(MountTest, TmpfsEmptySizeAllocCheck) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
-  ASSERT_THAT(mount("", dir.path().c_str(), "tmpfs", 0, "size"),
+  ASSERT_THAT(mount("", dir.path().c_str(), kTmpfs, 0, "size"),
               SyscallFailsWithErrno(EINVAL));
 }
 
@@ -730,7 +732,7 @@ TEST(MountTest, TmpfsUnlinkRegularFileAllocCheck) {
   auto tmpfs_size_opt = absl::StrCat("size=", kPageSize);
   const int kTruncateSize = 2 * kPageSize;
   auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir.path(), "tmpfs", 0, tmpfs_size_opt, 0));
+      Mount("", dir.path(), kTmpfs, 0, tmpfs_size_opt, 0));
   const std::string fileOne = JoinPath(dir.path(), "foo1");
   auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(fileOne, O_CREAT | O_RDWR, 0777));
   EXPECT_THAT(unlink(fileOne.c_str()), SyscallSucceeds());
@@ -742,7 +744,7 @@ TEST(MountTest, TmpfsSizePartialWriteSinglePage) {
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto tmpfs_size_opt = absl::StrCat("size=", kPageSize);
   auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir.path(), "tmpfs", 0, tmpfs_size_opt, 0));
+      Mount("", dir.path(), kTmpfs, 0, tmpfs_size_opt, 0));
 
   const std::string fileOne = JoinPath(dir.path(), "foo1");
   auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(fileOne, O_CREAT | O_RDWR, 0777));
@@ -757,7 +759,7 @@ TEST(MountTest, TmpfsSizePartialWriteMultiplePages) {
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto tmpfs_size_opt = absl::StrCat("size=", 3 * kPageSize);
   auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir.path(), "tmpfs", 0, tmpfs_size_opt, 0));
+      Mount("", dir.path(), kTmpfs, 0, tmpfs_size_opt, 0));
 
   const std::string fileOne = JoinPath(dir.path(), "foo1");
   auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(fileOne, O_CREAT | O_RDWR, 0777));
@@ -789,7 +791,7 @@ TEST(MountTest, TmpfsSizeMmap) {
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto tmpfs_size_opt = absl::StrCat("size=", kPageSize);
   auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir.path(), "tmpfs", 0, tmpfs_size_opt, 0));
+      Mount("", dir.path(), kTmpfs, 0, tmpfs_size_opt, 0));
   const std::string fileOne = JoinPath(dir.path(), "foo");
   auto fd = ASSERT_NO_ERRNO_AND_VALUE(Open(fileOne, O_CREAT | O_RDWR, 0777));
   EXPECT_THAT(ftruncate(fd.get(), 2 * kPageSize), SyscallSucceeds());
@@ -813,7 +815,7 @@ TEST(MountTest, SimpleBind) {
   auto const dir1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const dir2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir1.path(), "tmpfs", 0, "mode=0123", 0));
+      Mount("", dir1.path(), kTmpfs, 0, "mode=0123", 0));
   auto const child1 =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(dir1.path()));
   auto const child2 =
@@ -872,7 +874,7 @@ TEST(MountTest, MaxMounts) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 
   auto const parent = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
-  ASSERT_THAT(mount("", parent.path().c_str(), "tmpfs", 0, ""),
+  ASSERT_THAT(mount("", parent.path().c_str(), kTmpfs, 0, ""),
               SyscallSucceeds());
   auto const dir =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(parent.path()));
@@ -948,18 +950,17 @@ TEST(MountTest, UmountReparentsCoveredMounts) {
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const dir2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const mnt = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir.path().c_str(), "tmpfs", 0, "", MNT_DETACH));
+      Mount("", dir.path().c_str(), kTmpfs, 0, "", MNT_DETACH));
   ASSERT_THAT(mount("", dir.path().c_str(), "", MS_SHARED, 0),
               SyscallSucceeds());
   auto const child =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(dir.path()));
-  ASSERT_THAT(mount("", child.path().c_str(), "tmpfs", 0, 0),
-              SyscallSucceeds());
+  ASSERT_THAT(mount("", child.path().c_str(), kTmpfs, 0, 0), SyscallSucceeds());
   auto const mnt2 = ASSERT_NO_ERRNO_AND_VALUE(Mount(
       dir.path().c_str(), dir2.path().c_str(), "", MS_BIND, "", MNT_DETACH));
 
   std::string dir2_child_path = JoinPath(dir2.path(), Basename(child.path()));
-  ASSERT_THAT(mount("", dir2_child_path.c_str(), "tmpfs", 0, 0),
+  ASSERT_THAT(mount("", dir2_child_path.c_str(), kTmpfs, 0, 0),
               SyscallSucceeds());
 
   umount2(dir2_child_path.c_str(), MNT_DETACH);
@@ -976,7 +977,7 @@ TEST(MountTest, MakeShared) {
 
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const mnt = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir.path().c_str(), "tmpfs", 0, "", 0));
+      Mount("", dir.path().c_str(), kTmpfs, 0, "", 0));
   ASSERT_THAT(mount("", dir.path().c_str(), "", MS_SHARED, 0),
               SyscallSucceeds());
 
@@ -991,13 +992,13 @@ TEST(MountTest, MakeMultipleShared) {
 
   auto const dir1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const mount1 =
-      ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir1.path(), "tmpfs", 0, "", 0));
+      ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir1.path(), kTmpfs, 0, "", 0));
   ASSERT_THAT(mount("", dir1.path().c_str(), "", MS_SHARED, 0),
               SyscallSucceeds());
 
   auto const dir2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const mount2 =
-      ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir2.path(), "tmpfs", 0, "", 0));
+      ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir2.path(), kTmpfs, 0, "", 0));
   ASSERT_THAT(mount("", dir2.path().c_str(), "", MS_SHARED, 0),
               SyscallSucceeds());
 
@@ -1013,7 +1014,7 @@ TEST(MountTest, ReuseGroupIDs) {
 
   auto const dir1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const mount1 =
-      ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir1.path(), "tmpfs", 0, "", 0));
+      ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir1.path(), kTmpfs, 0, "", 0));
   ASSERT_THAT(mount("", dir1.path().c_str(), "", MS_SHARED, 0),
               SyscallSucceeds());
 
@@ -1021,7 +1022,7 @@ TEST(MountTest, ReuseGroupIDs) {
   int reused_group_id;
   {
     auto const mount2 =
-        ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir2.path(), "tmpfs", 0, "", 0));
+        ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir2.path(), kTmpfs, 0, "", 0));
     ASSERT_THAT(mount("", dir2.path().c_str(), "", MS_SHARED, 0),
                 SyscallSucceeds());
     auto optionals = ASSERT_NO_ERRNO_AND_VALUE(MountOptionals());
@@ -1031,7 +1032,7 @@ TEST(MountTest, ReuseGroupIDs) {
 
   // Check that created a new shared mount reuses the ID 2.
   auto const mount2 =
-      ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir2.path(), "tmpfs", 0, "", 0));
+      ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir2.path(), kTmpfs, 0, "", 0));
   ASSERT_THAT(mount("", dir2.path().c_str(), "", MS_SHARED, 0),
               SyscallSucceeds());
   auto optionals = ASSERT_NO_ERRNO_AND_VALUE(MountOptionals());
@@ -1045,14 +1046,14 @@ TEST(MountTest, InerheritPropagation) {
 
   auto const dir1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const mount1 =
-      ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir1.path(), "tmpfs", 0, "", 0));
+      ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir1.path(), kTmpfs, 0, "", 0));
   ASSERT_THAT(mount("", dir1.path().c_str(), "", MS_SHARED, 0),
               SyscallSucceeds());
 
   auto const dir2 =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(dir1.path()));
   auto const mount2 =
-      ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir2.path(), "tmpfs", 0, "", 0));
+      ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir2.path(), kTmpfs, 0, "", 0));
 
   auto optionals = ASSERT_NO_ERRNO_AND_VALUE(MountOptionals());
   ASSERT_FALSE(optionals[dir2.path()].empty());
@@ -1065,7 +1066,7 @@ TEST(MountTest, MakePrivate) {
 
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const mnt =
-      ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir.path(), "tmpfs", 0, "", 0));
+      ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir.path(), kTmpfs, 0, "", 0));
   ASSERT_THAT(mount("", dir.path().c_str(), "", MS_SHARED, 0),
               SyscallSucceeds());
   ASSERT_THAT(mount("", dir.path().c_str(), "", MS_PRIVATE, 0),
@@ -1095,7 +1096,7 @@ TEST(MountTest, MultiplePropagationFlagsFails) {
 
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const mnt =
-      ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir.path(), "tmpfs", 0, "", 0));
+      ASSERT_NO_ERRNO_AND_VALUE(Mount("", dir.path(), kTmpfs, 0, "", 0));
   EXPECT_THAT(mount("", dir.path().c_str(), "", MS_SHARED | MS_PRIVATE, 0),
               SyscallFailsWithErrno(EINVAL));
 }
@@ -1104,10 +1105,10 @@ TEST(MountTest, SetMountPropagationOfStackedMounts) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const mnt1 = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir.path().c_str(), "tmpfs", 0, "", 0));
+      Mount("", dir.path().c_str(), kTmpfs, 0, "", 0));
   // Only the topmost mount on the stack should be shared.
   auto const mnt2 = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir.path().c_str(), "tmpfs", 0, "", 0));
+      Mount("", dir.path().c_str(), kTmpfs, 0, "", 0));
   ASSERT_THAT(mount("", dir.path().c_str(), "", MS_SHARED, 0),
               SyscallSucceeds());
 
@@ -1121,7 +1122,7 @@ TEST(MountTest, MakePeer) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   auto const dir1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const mnt = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir1.path().c_str(), "tmpfs", 0, "", 0));
+      Mount("", dir1.path().c_str(), kTmpfs, 0, "", 0));
   ASSERT_THAT(mount("", dir1.path().c_str(), "", MS_SHARED, 0),
               SyscallSucceeds());
 
@@ -1140,7 +1141,7 @@ TEST(MountTest, PropagateMountEvent) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   auto const dir1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const mnt = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir1.path().c_str(), "tmpfs", 0, "", MNT_DETACH));
+      Mount("", dir1.path().c_str(), kTmpfs, 0, "", MNT_DETACH));
   auto const child_dir =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(dir1.path()));
   ASSERT_THAT(mount("", dir1.path().c_str(), "", MS_SHARED, 0),
@@ -1150,7 +1151,7 @@ TEST(MountTest, PropagateMountEvent) {
       Mount(dir1.path(), dir2.path(), "", MS_BIND, "", MNT_DETACH));
   // This mount should propagate to dir2.
   auto const child_mnt = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", child_dir.path().c_str(), "tmpfs", 0, "", MNT_DETACH));
+      Mount("", child_dir.path().c_str(), kTmpfs, 0, "", MNT_DETACH));
 
   const std::string child_path1 =
       JoinPath(dir1.path(), Basename(child_dir.path()));
@@ -1172,7 +1173,7 @@ TEST(MountTest, PropagateUmountEvent) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   auto const dir1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const mnt = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir1.path().c_str(), "tmpfs", 0, "", MNT_DETACH));
+      Mount("", dir1.path().c_str(), kTmpfs, 0, "", MNT_DETACH));
   auto const child_dir =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(dir1.path()));
   ASSERT_THAT(mount("", dir1.path().c_str(), "", MS_SHARED, 0),
@@ -1184,7 +1185,7 @@ TEST(MountTest, PropagateUmountEvent) {
   // unmounted, which should also propagate to dir2.
   {
     auto const child_mnt = ASSERT_NO_ERRNO_AND_VALUE(
-        Mount("", child_dir.path().c_str(), "tmpfs", 0, "", MNT_DETACH));
+        Mount("", child_dir.path().c_str(), kTmpfs, 0, "", MNT_DETACH));
   }
 
   const std::string child_path1 =
@@ -1203,8 +1204,7 @@ TEST(MountTest, PropagateUmountEvent) {
 TEST(MountTest, UmountIgnoresPeersWithChildren) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   auto const dir1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
-  ASSERT_THAT(mount("", dir1.path().c_str(), "tmpfs", 0, ""),
-              SyscallSucceeds());
+  ASSERT_THAT(mount("", dir1.path().c_str(), kTmpfs, 0, ""), SyscallSucceeds());
   ASSERT_THAT(mount("", dir1.path().c_str(), "", MS_SHARED, 0),
               SyscallSucceeds());
   auto const dir2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
@@ -1213,11 +1213,11 @@ TEST(MountTest, UmountIgnoresPeersWithChildren) {
 
   auto const child_dir =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(dir1.path()));
-  ASSERT_THAT(mount("", child_dir.path().c_str(), "tmpfs", 0, ""),
+  ASSERT_THAT(mount("", child_dir.path().c_str(), kTmpfs, 0, ""),
               SyscallSucceeds());
   auto const grandchild_dir =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(child_dir.path()));
-  ASSERT_THAT(mount("", grandchild_dir.path().c_str(), "tmpfs", 0, ""),
+  ASSERT_THAT(mount("", grandchild_dir.path().c_str(), kTmpfs, 0, ""),
               SyscallSucceeds());
 
   const std::string child_path1 =
@@ -1250,7 +1250,7 @@ TEST(MountTest, BindSharedOnShared) {
   // Dir 1 and 2 are part of peer group 'A', dir 3 and 4 are part of peer group
   // 'B'.
   auto const mnt1 = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir1.path().c_str(), "tmpfs", 0, "", MNT_DETACH));
+      Mount("", dir1.path().c_str(), kTmpfs, 0, "", MNT_DETACH));
   auto const dir5 =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(dir1.path()));
   ASSERT_THAT(mount("", dir1.path().c_str(), "", MS_SHARED, 0),
@@ -1258,7 +1258,7 @@ TEST(MountTest, BindSharedOnShared) {
   auto const mnt2 = ASSERT_NO_ERRNO_AND_VALUE(Mount(
       dir1.path().c_str(), dir2.path().c_str(), "", MS_BIND, "", MNT_DETACH));
   auto const mnt3 = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir3.path().c_str(), "tmpfs", 0, "", MNT_DETACH));
+      Mount("", dir3.path().c_str(), kTmpfs, 0, "", MNT_DETACH));
   ASSERT_THAT(mount("", dir3.path().c_str(), "", MS_SHARED, 0),
               SyscallSucceeds());
   auto const mnt4 = ASSERT_NO_ERRNO_AND_VALUE(Mount(
@@ -1287,13 +1287,13 @@ TEST(MountTest, BindSharedOnPrivate) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   auto const dir1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const mnt1 = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir1.path().c_str(), "tmpfs", 0, "", MNT_DETACH));
+      Mount("", dir1.path().c_str(), kTmpfs, 0, "", MNT_DETACH));
   auto const dir2 =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(dir1.path()));
   auto const dir3 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const dir4 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const mnt3 = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir3.path().c_str(), "tmpfs", 0, "", MNT_DETACH));
+      Mount("", dir3.path().c_str(), kTmpfs, 0, "", MNT_DETACH));
   ASSERT_THAT(mount("", dir3.path().c_str(), "", MS_SHARED, 0),
               SyscallSucceeds());
   auto const mnt4 = ASSERT_NO_ERRNO_AND_VALUE(Mount(
@@ -1317,23 +1317,23 @@ TEST(MountTest, BindPeerGroupsWithChildren) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   auto const dir1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const mnt1 = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir1.path().c_str(), "tmpfs", 0, "", MNT_DETACH));
+      Mount("", dir1.path().c_str(), kTmpfs, 0, "", MNT_DETACH));
   ASSERT_THAT(mount("", dir1.path().c_str(), "", MS_SHARED, 0),
               SyscallSucceeds());
   auto const dir2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const mnt2 = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir2.path().c_str(), "tmpfs", 0, "", MNT_DETACH));
+      Mount("", dir2.path().c_str(), kTmpfs, 0, "", MNT_DETACH));
   ASSERT_THAT(mount("", dir2.path().c_str(), "", MS_SHARED, 0),
               SyscallSucceeds());
   // dir3 and dir4 are child mounts of dir1.
   auto const dir3 =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(dir1.path()));
   auto const mnt3 = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir3.path().c_str(), "tmpfs", 0, "", MNT_DETACH));
+      Mount("", dir3.path().c_str(), kTmpfs, 0, "", MNT_DETACH));
   auto const dir4 =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(dir1.path()));
   auto const mnt4 = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir4.path().c_str(), "tmpfs", 0, "", MNT_DETACH));
+      Mount("", dir4.path().c_str(), kTmpfs, 0, "", MNT_DETACH));
   auto const mnt5 = ASSERT_NO_ERRNO_AND_VALUE(Mount(
       dir1.path().c_str(), dir2.path().c_str(), "", MS_BIND, "", MNT_DETACH));
 
@@ -1383,7 +1383,7 @@ TEST(MountTest, MountInfoHasRoot) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   auto const parent = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", parent.path(), "tmpfs", 0, "mode=0123", 0));
+      Mount("", parent.path(), kTmpfs, 0, "mode=0123", 0));
   auto const child =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(parent.path()));
   auto const bind_mount = Mount(child.path(), child.path(), "", MS_BIND, "", 0);
@@ -1479,7 +1479,7 @@ TEST(MountTest, PrivateMasterUnslaves) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   auto const base = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const base_mnt = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", base.path().c_str(), "tmpfs", 0, "", MNT_DETACH));
+      Mount("", base.path().c_str(), kTmpfs, 0, "", MNT_DETACH));
   ASSERT_THAT(mount("", base.path().c_str(), "", MS_PRIVATE, 0),
               SyscallSucceeds());
 
@@ -1660,7 +1660,7 @@ TEST(MountTest, SlavePropagationEvent) {
   const std::string slave_child_path =
       JoinPath(dst.path(), Basename(child.path()));
   auto const slave_child_mnt = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", slave_child_path.c_str(), "tmpfs", 0, "", MNT_DETACH));
+      Mount("", slave_child_path.c_str(), kTmpfs, 0, "", MNT_DETACH));
 
   auto optionals = ASSERT_NO_ERRNO_AND_VALUE(MountOptionals());
   ASSERT_EQ(optionals[child.path()].size(), 0);
@@ -1758,7 +1758,7 @@ TEST(MountTest, LargeTreePropagationEvent) {
   std::vector<ProcMountInfoEntry> mounts =
       ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntries());
 
-  ASSERT_THAT(mount("", a.path().c_str(), "tmpfs", 0, ""), SyscallSucceeds());
+  ASSERT_THAT(mount("", a.path().c_str(), kTmpfs, 0, ""), SyscallSucceeds());
 
   std::vector<ProcMountInfoEntry> mounts_after_mount =
       ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntries());
@@ -1800,7 +1800,7 @@ TEST(MountTest, MaxMountsWithSlave) {
 
   auto const parent = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const parent_mnt = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("test", parent.path(), "tmpfs", 0, "mode=0123", MNT_DETACH));
+      Mount("test", parent.path(), kTmpfs, 0, "mode=0123", MNT_DETACH));
   auto const a =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(parent.path()));
   auto const b =
@@ -1809,7 +1809,7 @@ TEST(MountTest, MaxMountsWithSlave) {
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(parent.path()));
 
   auto const a_mnt = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("test", a.path(), "tmpfs", 0, "mode=0123", MNT_DETACH));
+      Mount("test", a.path(), kTmpfs, 0, "mode=0123", MNT_DETACH));
   ASSERT_THAT(mount("", a.path().c_str(), "", MS_SHARED, 0), SyscallSucceeds());
 
   auto const b_mnt = ASSERT_NO_ERRNO_AND_VALUE(
@@ -1859,16 +1859,16 @@ TEST(MountTest, SetPropagationRecursive) {
 
   const TempPath a = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const a_mnt = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("test", a.path(), "tmpfs", 0, "mode=0123", MNT_DETACH));
+      Mount("test", a.path(), kTmpfs, 0, "mode=0123", MNT_DETACH));
   const auto b = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(a.path()));
   auto const b_mnt = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("test", b.path(), "tmpfs", 0, "mode=0123", MNT_DETACH));
+      Mount("test", b.path(), kTmpfs, 0, "mode=0123", MNT_DETACH));
   const auto c = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(b.path()));
   auto const c_mnt = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("test", c.path(), "tmpfs", 0, "mode=0123", MNT_DETACH));
+      Mount("test", c.path(), kTmpfs, 0, "mode=0123", MNT_DETACH));
   const auto d = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(c.path()));
   auto const d_mnt = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("test", d.path(), "tmpfs", 0, "mode=0123", MNT_DETACH));
+      Mount("test", d.path(), kTmpfs, 0, "mode=0123", MNT_DETACH));
 
   ASSERT_THAT(mount("", a.path().c_str(), "", MS_SHARED | MS_REC, 0),
               SyscallSucceeds());
@@ -1982,7 +1982,7 @@ TEST(MountTest, RecursiveBindPropagation) {
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(parent.path()));
 
   auto const a_mnt = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("test", a.path(), "tmpfs", 0, "", MNT_DETACH));
+      Mount("test", a.path(), kTmpfs, 0, "", MNT_DETACH));
   ASSERT_THAT(mount("", a.path().c_str(), "", MS_SHARED, 0), SyscallSucceeds());
 
   auto const b_mnt = ASSERT_NO_ERRNO_AND_VALUE(
@@ -2016,7 +2016,7 @@ TEST(MountTest, MountNamespace) {
 
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir.path(), "tmpfs", 0, "mode=0700", 0));
+      Mount("", dir.path(), kTmpfs, 0, "mode=0700", 0));
   EXPECT_NO_ERRNO(Open(JoinPath(dir.path(), "foo"), O_CREAT | O_RDWR, 0777));
 
   pid_t child = fork();
@@ -2041,7 +2041,7 @@ TEST(MountTest, MountNamespaceSetns) {
 
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const mnt = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir.path(), "tmpfs", 0, "mode=0700", MNT_DETACH));
+      Mount("", dir.path(), kTmpfs, 0, "mode=0700", MNT_DETACH));
   EXPECT_NO_ERRNO(Open(JoinPath(dir.path(), "foo"), O_CREAT | O_RDWR, 0777));
   const FileDescriptor nsfd =
       ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/mnt", O_RDONLY));
@@ -2065,13 +2065,13 @@ TEST(MountTest, MountNamespacePropagation) {
 
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const mnt = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir.path(), "tmpfs", 0, "mode=0700", MNT_DETACH));
+      Mount("", dir.path(), kTmpfs, 0, "mode=0700", MNT_DETACH));
   auto child_dir = JoinPath(dir.path(), "test");
 
   ASSERT_THAT(mount(NULL, dir.path().c_str(), NULL, MS_SHARED, NULL),
               SyscallSucceeds());
   ASSERT_THAT(mkdir(child_dir.c_str(), 0700), SyscallSucceeds());
-  ASSERT_THAT(mount("child", child_dir.c_str(), "tmpfs", 0, NULL),
+  ASSERT_THAT(mount("child", child_dir.c_str(), kTmpfs, 0, NULL),
               SyscallSucceeds());
   EXPECT_NO_ERRNO(Open(JoinPath(child_dir, "foo"), O_CREAT | O_RDWR, 0777));
 
@@ -2082,7 +2082,7 @@ TEST(MountTest, MountNamespacePropagation) {
     // The test mount has to be umounted from the second mount namespace too.
     TEST_CHECK(umount2(child_dir.c_str(), MNT_DETACH) == 0);
     // The new mount has to be propagated to the second mount namespace.
-    TEST_CHECK(mount("test2", child_dir.c_str(), "tmpfs", 0, NULL) == 0);
+    TEST_CHECK(mount("test2", child_dir.c_str(), kTmpfs, 0, NULL) == 0);
     TEST_CHECK(mknod(JoinPath(child_dir, "boo").c_str(), 0777 | S_IFREG, 0) ==
                0);
     exit(0);
@@ -2106,7 +2106,7 @@ TEST(MountTest, MountNamespaceSlavesNewUserNamespace) {
 
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const mnt = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir.path(), "tmpfs", 0, "mode=0700", MNT_DETACH));
+      Mount("", dir.path(), kTmpfs, 0, "mode=0700", MNT_DETACH));
   auto child_dir = JoinPath(dir.path(), "test");
 
   ASSERT_THAT(mount(NULL, dir.path().c_str(), NULL, MS_SHARED, NULL),
@@ -2158,7 +2158,7 @@ TEST(MountTest, MountNamespaceSlavesNewUserNamespace) {
     // These mount operations will not propagate to the other namespace because
     // it is a slave mount.
     TEST_CHECK(umount2("test", MNT_DETACH) == 0);
-    TEST_CHECK(mount("test2", "test", "tmpfs", 0, NULL) == 0);
+    TEST_CHECK(mount("test2", "test", kTmpfs, 0, NULL) == 0);
     TEST_CHECK(mknod(JoinPath("test", "boo").c_str(), 0777 | S_IFREG, 0) == 0);
 
     // Check that there is a master entry in mountinfo.
@@ -2206,7 +2206,39 @@ TEST(MountTest, MountFailsOnPseudoFilesystemMountpoint) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   auto const fd = ASSERT_NO_ERRNO_AND_VALUE(NewEventFD(0, 0));
   std::string path = absl::StrCat("/proc/self/fd/", fd.get());
-  EXPECT_THAT(mount("test", path.c_str(), "tmpfs", 0, 0),
+  EXPECT_THAT(mount("test", path.c_str(), kTmpfs, 0, 0),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(MountTest, ChangeMountFlags) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  const auto flag = MS_NODEV;
+  const auto dir1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const auto dir2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const auto mount_cleanup = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(dir1.path(), dir2.path(), kTmpfs, MS_BIND, "", 0));
+
+  struct statfs st;
+  EXPECT_THAT(mount(dir1.path().c_str(), dir2.path().c_str(), kTmpfs,
+                    MS_REMOUNT | MS_BIND | flag, ""),
+              SyscallSucceeds());
+  EXPECT_THAT(statfs(dir2.path().c_str(), &st), SyscallSucceeds());
+  EXPECT_EQ(st.f_flags & flag, flag);
+  // Resets mount flags.
+  EXPECT_THAT(mount(dir1.path().c_str(), dir2.path().c_str(), kTmpfs,
+                    MS_REMOUNT | MS_BIND, ""),
+              SyscallSucceeds());
+  ASSERT_THAT(statfs(dir2.path().c_str(), &st), SyscallSucceeds());
+  ASSERT_EQ(st.f_flags & flag, 0);
+}
+
+TEST(MountTest, RemountUnmounted) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  EXPECT_THAT(mount("", dir.path().c_str(), kTmpfs, MS_REMOUNT, ""),
               SyscallFailsWithErrno(EINVAL));
 }
 
