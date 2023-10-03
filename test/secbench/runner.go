@@ -34,11 +34,11 @@ import (
 )
 
 // install installs the given program on the runner.
-func install(program []linux.BPFInstruction) error {
+func install(program []bpf.Instruction) error {
 	// Rewrite the program so that all return actions are either ALLOW or
 	// RET_ERRNO. This allows us to benchmark the program without worrying
 	// that we'll crash if we call a bad system call.
-	rewritten := make([]linux.BPFInstruction, len(program))
+	rewritten := make([]bpf.Instruction, len(program))
 	copy(rewritten, program)
 	for pc, ins := range rewritten {
 		switch ins.OpCode {

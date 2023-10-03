@@ -27,7 +27,7 @@ func DecodeProgram(p Program) (string, error) {
 }
 
 // DecodeInstructions translates an array of BPF instructions into text format.
-func DecodeInstructions(instns []linux.BPFInstruction) (string, error) {
+func DecodeInstructions(instns []Instruction) (string, error) {
 	var ret bytes.Buffer
 	for line, s := range instns {
 		ret.WriteString(fmt.Sprintf("%v: ", line))
@@ -40,13 +40,13 @@ func DecodeInstructions(instns []linux.BPFInstruction) (string, error) {
 }
 
 // Decode translates a single BPF instruction into text format.
-func Decode(inst linux.BPFInstruction) (string, error) {
+func Decode(ins Instruction) (string, error) {
 	var ret bytes.Buffer
-	err := decode(inst, -1, &ret)
+	err := decode(ins, -1, &ret)
 	return ret.String(), err
 }
 
-func decode(inst linux.BPFInstruction, line int, w *bytes.Buffer) error {
+func decode(inst Instruction, line int, w *bytes.Buffer) error {
 	var err error
 	switch inst.OpCode & instructionClassMask {
 	case Ld:
@@ -66,13 +66,13 @@ func decode(inst linux.BPFInstruction, line int, w *bytes.Buffer) error {
 	case Misc:
 		err = decodeMisc(inst, w)
 	default:
-		return fmt.Errorf("invalid BPF instruction: %v", inst)
+		return fmt.Errorf("invalid BPF instruction: %v", linux.BPFInstruction(inst))
 	}
 	return err
 }
 
 // A <- P[k:4]
-func decodeLd(inst linux.BPFInstruction, w *bytes.Buffer) error {
+func decodeLd(inst Instruction, w *bytes.Buffer) error {
 	w.WriteString("A <- ")
 
 	switch inst.OpCode & loadModeMask {
@@ -95,12 +95,12 @@ func decodeLd(inst linux.BPFInstruction, w *bytes.Buffer) error {
 	case Len:
 		w.WriteString("len")
 	default:
-		return fmt.Errorf("invalid BPF LD instruction: %v", inst)
+		return fmt.Errorf("invalid BPF LD instruction: %v", linux.BPFInstruction(inst))
 	}
 	return nil
 }
 
-func decodeLdSize(inst linux.BPFInstruction, w *bytes.Buffer) error {
+func decodeLdSize(inst Instruction, w *bytes.Buffer) error {
 	switch inst.OpCode & loadSizeMask {
 	case W:
 		w.WriteString("4")
@@ -109,13 +109,13 @@ func decodeLdSize(inst linux.BPFInstruction, w *bytes.Buffer) error {
 	case B:
 		w.WriteString("1")
 	default:
-		return fmt.Errorf("invalid BPF LD size: %v", inst)
+		return fmt.Errorf("invalid BPF LD size: %v", linux.BPFInstruction(inst))
 	}
 	return nil
 }
 
 // X <- P[k:4]
-func decodeLdx(inst linux.BPFInstruction, w *bytes.Buffer) error {
+func decodeLdx(inst Instruction, w *bytes.Buffer) error {
 	w.WriteString("X <- ")
 
 	switch inst.OpCode & loadModeMask {
@@ -128,13 +128,13 @@ func decodeLdx(inst linux.BPFInstruction, w *bytes.Buffer) error {
 	case Msh:
 		w.WriteString(fmt.Sprintf("4*(P[%v:1]&0xf)", inst.K))
 	default:
-		return fmt.Errorf("invalid BPF LDX instruction: %v", inst)
+		return fmt.Errorf("invalid BPF LDX instruction: %v", linux.BPFInstruction(inst))
 	}
 	return nil
 }
 
 // A <- A + k
-func decodeAlu(inst linux.BPFInstruction, w *bytes.Buffer) error {
+func decodeAlu(inst Instruction, w *bytes.Buffer) error {
 	code := inst.OpCode & aluMask
 	if code == Neg {
 		w.WriteString("A <- -A")
@@ -164,25 +164,25 @@ func decodeAlu(inst linux.BPFInstruction, w *bytes.Buffer) error {
 	case Xor:
 		w.WriteString("^ ")
 	default:
-		return fmt.Errorf("invalid BPF ALU instruction: %v", inst)
+		return fmt.Errorf("invalid BPF ALU instruction: %v", linux.BPFInstruction(inst))
 	}
 	return decodeSource(inst, w)
 }
 
-func decodeSource(inst linux.BPFInstruction, w *bytes.Buffer) error {
+func decodeSource(inst Instruction, w *bytes.Buffer) error {
 	switch inst.OpCode & srcAluJmpMask {
 	case K:
 		w.WriteString(fmt.Sprintf("%v", inst.K))
 	case X:
 		w.WriteString("X")
 	default:
-		return fmt.Errorf("invalid BPF ALU/JMP source instruction: %v", inst)
+		return fmt.Errorf("invalid BPF ALU/JMP source instruction: %v", linux.BPFInstruction(inst))
 	}
 	return nil
 }
 
 // pc += (A > k) ? jt : jf
-func decodeJmp(inst linux.BPFInstruction, line int, w *bytes.Buffer) error {
+func decodeJmp(inst Instruction, line int, w *bytes.Buffer) error {
 	code := inst.OpCode & jmpMask
 
 	w.WriteString("pc += ")
@@ -200,7 +200,7 @@ func decodeJmp(inst linux.BPFInstruction, line int, w *bytes.Buffer) error {
 		case Jset:
 			w.WriteString("& ")
 		default:
-			return fmt.Errorf("invalid BPF ALU instruction: %v", inst)
+			return fmt.Errorf("invalid BPF ALU instruction: %v", linux.BPFInstruction(inst))
 		}
 		if err := decodeSource(inst, w); err != nil {
 			return err
@@ -221,7 +221,7 @@ func printJmpTarget(target uint32, line int) string {
 }
 
 // ret k
-func decodeRet(inst linux.BPFInstruction, w *bytes.Buffer) error {
+func decodeRet(inst Instruction, w *bytes.Buffer) error {
 	w.WriteString("ret ")
 
 	code := inst.OpCode & srcRetMask
@@ -231,12 +231,12 @@ func decodeRet(inst linux.BPFInstruction, w *bytes.Buffer) error {
 	case A:
 		w.WriteString("A")
 	default:
-		return fmt.Errorf("invalid BPF RET source instruction: %v", inst)
+		return fmt.Errorf("invalid BPF RET source instruction: %v", linux.BPFInstruction(inst))
 	}
 	return nil
 }
 
-func decodeMisc(inst linux.BPFInstruction, w *bytes.Buffer) error {
+func decodeMisc(inst Instruction, w *bytes.Buffer) error {
 	code := inst.OpCode & miscMask
 	switch code {
 	case Tax:
@@ -244,7 +244,7 @@ func decodeMisc(inst linux.BPFInstruction, w *bytes.Buffer) error {
 	case Txa:
 		w.WriteString("A <- X")
 	default:
-		return fmt.Errorf("invalid BPF ALU/JMP source instruction: %v", inst)
+		return fmt.Errorf("invalid BPF ALU/JMP source instruction: %v", linux.BPFInstruction(inst))
 	}
 	return nil
 }
