@@ -227,14 +227,16 @@ func (vfs *VirtualFilesystem) AbortDeleteDentry(d *Dentry) {
 }
 
 // CommitDeleteDentry must be called after PrepareDeleteDentry if the deletion
-// succeeds.
+// succeeds. If d is mounted, the method returns a list of Virtual Dentries
+// mounted on d that the caller is responsible for DecRefing.
 // +checklocksrelease:d.mu
-func (vfs *VirtualFilesystem) CommitDeleteDentry(ctx context.Context, d *Dentry) {
+func (vfs *VirtualFilesystem) CommitDeleteDentry(ctx context.Context, d *Dentry) []refs.RefCounter {
 	d.dead = true
 	d.mu.Unlock()
 	if d.isMounted() {
-		vfs.forgetDeadMountpoint(ctx, d, false /*skipDecRef*/)
+		return vfs.forgetDeadMountpoint(ctx, d)
 	}
+	return nil
 }
 
 // InvalidateDentry is called when d ceases to represent the file it formerly
@@ -247,7 +249,7 @@ func (vfs *VirtualFilesystem) InvalidateDentry(ctx context.Context, d *Dentry) [
 	d.dead = true
 	d.mu.Unlock()
 	if d.isMounted() {
-		return vfs.forgetDeadMountpoint(ctx, d, true /*skipDecRef*/)
+		return vfs.forgetDeadMountpoint(ctx, d)
 	}
 	return nil
 }
@@ -296,20 +298,22 @@ func (vfs *VirtualFilesystem) AbortRenameDentry(from, to *Dentry) {
 
 // CommitRenameReplaceDentry must be called after the file represented by from
 // is renamed without RENAME_EXCHANGE. If to is not nil, it represents the file
-// that was replaced by from.
+// that was replaced by from. If to is mounted, the method returns a list of
+// Virtual Dentries mounted on to that the caller is responsible for DecRefing.
 //
 // Preconditions: PrepareRenameDentry was previously called on from and to.
 // +checklocksrelease:from.mu
 // +checklocksrelease:to.mu
-func (vfs *VirtualFilesystem) CommitRenameReplaceDentry(ctx context.Context, from, to *Dentry) {
+func (vfs *VirtualFilesystem) CommitRenameReplaceDentry(ctx context.Context, from, to *Dentry) []refs.RefCounter {
 	from.mu.Unlock()
 	if to != nil {
 		to.dead = true
 		to.mu.Unlock()
 		if to.isMounted() {
-			vfs.forgetDeadMountpoint(ctx, to, false /*skipDecRef*/)
+			return vfs.forgetDeadMountpoint(ctx, to)
 		}
 	}
+	return nil
 }
 
 // CommitRenameExchangeDentry must be called after the files represented by
@@ -330,7 +334,7 @@ func (vfs *VirtualFilesystem) CommitRenameExchangeDentry(from, to *Dentry) {
 //
 // forgetDeadMountpoint is analogous to Linux's
 // fs/namespace.c:__detach_mounts().
-func (vfs *VirtualFilesystem) forgetDeadMountpoint(ctx context.Context, d *Dentry, skipDecRef bool) []refs.RefCounter {
+func (vfs *VirtualFilesystem) forgetDeadMountpoint(ctx context.Context, d *Dentry) []refs.RefCounter {
 	vfs.lockMounts()
 	defer vfs.unlockMounts(ctx)
 	vfs.mounts.seq.BeginWrite()
@@ -338,9 +342,5 @@ func (vfs *VirtualFilesystem) forgetDeadMountpoint(ctx context.Context, d *Dentr
 		vfs.umountRecursiveLocked(mnt, &umountRecursiveOptions{})
 	}
 	vfs.mounts.seq.EndWrite()
-	var rcs []refs.RefCounter
-	if skipDecRef {
-		rcs = vfs.PopDelayedDecRefs()
-	}
-	return rcs
+	return vfs.PopDelayedDecRefs()
 }

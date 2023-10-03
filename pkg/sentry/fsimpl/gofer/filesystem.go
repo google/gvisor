@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fspath"
+	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
 	"gvisor.dev/gvisor/pkg/sentry/fsmetric"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -540,6 +541,15 @@ func (fs *filesystem) doCreateAt(ctx context.Context, rp *vfs.ResolvingPath, dir
 func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir bool) error {
 	var ds *[]*dentry
 	fs.renameMu.RLock()
+	// We need to DecRef outside of fs.renameMu because forgetting a dead
+	// mountpoint could result in this filesystem being released which acquires
+	// fs.renameMu.
+	var toDecRef []refs.RefCounter
+	defer func() {
+		for _, ref := range toDecRef {
+			ref.DecRef(ctx)
+		}
+	}()
 	defer fs.renameMuRUnlockAndCheckCaching(ctx, &ds)
 	start := rp.Start().Impl().(*dentry)
 	parent, err := fs.walkParentDirLocked(ctx, rp, start, &ds)
@@ -701,7 +711,7 @@ func (fs *filesystem) unlinkAt(ctx context.Context, rp *vfs.ResolvingPath, dir b
 	defer parent.childrenMu.Unlock()
 
 	if child != nil {
-		vfsObj.CommitDeleteDentry(ctx, &child.vfsd) // +checklocksforce: see above.
+		toDecRef = vfsObj.CommitDeleteDentry(ctx, &child.vfsd) // +checklocksforce: see above.
 		child.setDeleted()
 		if child.isSynthetic() {
 			parent.syntheticChildren--
@@ -1322,6 +1332,14 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 	// Resolve newParent first to verify that it's on this Mount.
 	var ds *[]*dentry
 	fs.renameMu.Lock()
+	// We need to DecRef outside of fs.mu because forgetting a dead mountpoint
+	// could result in this filesystem being released which acquires fs.mu.
+	var toDecRef []refs.RefCounter
+	defer func() {
+		for _, ref := range toDecRef {
+			ref.DecRef(ctx)
+		}
+	}()
 	defer fs.renameMuUnlockAndCheckCaching(ctx, &ds)
 	newParent, err := fs.walkParentDirLocked(ctx, rp, rp.Start().Impl().(*dentry), &ds)
 	if err != nil {
@@ -1471,7 +1489,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		defer oldParent.childrenMu.Unlock()
 	}
 
-	vfsObj.CommitRenameReplaceDentry(ctx, &renamed.vfsd, replacedVFSD)
+	toDecRef = vfsObj.CommitRenameReplaceDentry(ctx, &renamed.vfsd, replacedVFSD)
 	if replaced != nil {
 		replaced.setDeleted()
 		if replaced.isSynthetic() {

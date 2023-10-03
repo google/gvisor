@@ -787,7 +787,9 @@ func (fs *Filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		replaced.setDeleted()
 	}
 	vfs.InotifyRename(ctx, src.inode.Watches(), srcDir.inode.Watches(), dstDir.inode.Watches(), oldName, newName, src.isDir())
-	virtfs.CommitRenameReplaceDentry(ctx, srcVFSD, replaceVFSD) // +checklocksforce: to may be nil, that's okay.
+	for _, rc := range virtfs.CommitRenameReplaceDentry(ctx, srcVFSD, replaceVFSD) { // +checklocksforce: to may be nil, that's okay.
+		fs.deferDecRef(rc)
+	}
 	return nil
 }
 
@@ -855,7 +857,10 @@ func (fs *Filesystem) RmdirAt(ctx context.Context, rp *vfs.ResolvingPath) error 
 	parent.inode.Watches().Notify(ctx, child.name, linux.IN_DELETE|linux.IN_ISDIR, 0, vfs.InodeEvent, true /* unlinked */)
 	// Defer decref so that fs.mu and parentDentry.dirMu are unlocked by then.
 	fs.deferDecRef(child)
-	virtfs.CommitDeleteDentry(ctx, vfsd)
+	rcs := virtfs.CommitDeleteDentry(ctx, vfsd)
+	for _, rc := range rcs {
+		fs.deferDecRef(rc)
+	}
 	child.setDeleted()
 	return nil
 }
@@ -983,7 +988,10 @@ func (fs *Filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 	vfs.InotifyRemoveChild(ctx, d.inode.Watches(), parentDentry.inode.Watches(), d.name)
 	// Defer decref so that fs.mu and parentDentry.dirMu are unlocked by then.
 	fs.deferDecRef(d)
-	virtfs.CommitDeleteDentry(ctx, vfsd)
+	rcs := virtfs.CommitDeleteDentry(ctx, vfsd)
+	for _, rc := range rcs {
+		fs.deferDecRef(rc)
+	}
 	d.setDeleted()
 	return nil
 }
