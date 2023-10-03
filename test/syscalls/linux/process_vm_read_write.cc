@@ -22,6 +22,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <climits>
 #include <csignal>
 #include <cstddef>
@@ -34,11 +35,10 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/cleanup/cleanup.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_join.h"
-#include "test/util/linux_capability_util.h"
 #include "test/util/logging.h"
-#include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/test_util.h"
 
@@ -49,58 +49,61 @@ namespace {
 
 class TestIovecs {
  public:
-  TestIovecs(std::vector<std::string>& data) {
-    data_ = std::vector<std::string>(data.size());
-    initial_ = std::vector<std::string>(data.size());
+  TestIovecs(std::vector<std::string> data) {
+    data_.resize(data.size());
+    iovecs_.resize(data.size());
     for (size_t i = 0; i < data.size(); ++i) {
       data_[i] = data[i];
-      initial_[i] = data[i];
-      struct iovec iov;
-      iov.iov_len = data_[i].size();
-      iov.iov_base = data_[i].data();
-      iovecs_.push_back(iov);
       bytes_ += data[i].size();
+      iovecs_[i].iov_len = data_[i].size();
+      iovecs_[i].iov_base = data_[i].data();
     }
   }
 
-  bool compare(std::vector<std::string> other) {
-    auto want = absl::StrJoin(other, "");
-    auto got = absl::StrJoin(data_, "");
-    // If the other buffer is smaller than this, make sure the remaining bytes
-    // haven't been overwritten.
-    if (want.size() < got.size()) {
-      auto initial = absl::StrJoin(initial_, "");
-      want = absl::StrCat(want, initial.substr(want.size()));
+  void erase() {
+    for (size_t i = 0; i < data_.size(); i++) {
+      data_[i].clear();
     }
-    // If the other buffer is smaller, truncate it so we can compare the two.
-    if (want.size() > got.size()) {
-      want = want.substr(0, got.size());
-    }
-    if (want != got) {
-      std::cerr << "Mismatch buffers:\n want: " << want << "\n got: " << got
-                << std::endl;
-      return false;
-    }
-
-    return true;
   }
 
-  std::vector<struct iovec*> marshal() {
-    std::vector<struct iovec*> ret(iovecs_.size());
-    for (size_t i = 0; i < iovecs_.size(); ++i) {
-      ret[i] = &iovecs_[i];
-    }
-    return ret;
-  }
-
-  ssize_t total_bytes() { return bytes_; }
-
- private:
-  ssize_t bytes_ = 0;
+  // Backing data that will be read/written.
   std::vector<std::string> data_;
-  std::vector<std::string> initial_;
-  std::vector<struct iovec> iovecs_;
+
+  // Total size of data_.
+  ssize_t bytes_ = 0;
+
+  // Iovec structs that point into data_
+  std::vector<iovec> iovecs_;
 };
+
+// bytes_match checks that the two TestIovecs are at least min_bytes in length,
+// and that they agree in the first min_bytes.
+bool bytes_match(TestIovecs first_iov, TestIovecs second_iov,
+                 size_t min_bytes) {
+  auto first = absl::StrJoin(first_iov.data_, "");
+  if (first.size() < min_bytes) {
+    std::cout << "First buffer smaller than min_bytes: " << min_bytes
+              << " buffer: " << first << std::endl;
+    return false;
+  }
+  first = first.substr(0, min_bytes);
+
+  auto second = absl::StrJoin(second_iov.data_, "");
+  if (second.size() < min_bytes) {
+    std::cout << "First buffer smaller than min_bytes: " << min_bytes
+              << " buffer: " << second << std::endl;
+    return false;
+  }
+  second = second.substr(0, min_bytes);
+
+  if (first != second) {
+    std::cout << "Mismatch buffers:\n first: " << first
+              << "\n second: " << second << std::endl;
+    return false;
+  }
+
+  return true;
+}
 
 struct ProcessVMTestCase {
   std::string test_name;
@@ -109,115 +112,6 @@ struct ProcessVMTestCase {
 };
 
 using ProcessVMTest = ::testing::TestWithParam<ProcessVMTestCase>;
-
-bool ProcessVMCallsNotSupported() {
-  struct iovec iov = {};
-  // Flags should be 0.
-  ssize_t ret = process_vm_readv(0, &iov, 1, &iov, 1, 10);
-  if (ret != 0 && errno == ENOSYS) return true;
-
-  ret = process_vm_writev(0, &iov, 1, &iov, 1, 10);
-  return ret != 0 && errno == ENOSYS;
-}
-
-// TestReadvSameProcess calls process_vm_readv in the same process with
-// various local/remote buffers.
-TEST_P(ProcessVMTest, TestReadvSameProcess) {
-  SKIP_IF(ProcessVMCallsNotSupported());
-  auto local_data = GetParam().local_data;
-  auto remote_data = GetParam().remote_data;
-  TestIovecs local_iovecs(local_data);
-  TestIovecs remote_iovecs(remote_data);
-
-  auto local = local_iovecs.marshal();
-  auto remote = remote_iovecs.marshal();
-  auto expected_bytes =
-      std::min(remote_iovecs.total_bytes(), local_iovecs.total_bytes());
-  EXPECT_THAT(process_vm_readv(getpid(), *(local.data()), local.size(),
-                               *(remote.data()), remote.size(), 0),
-              SyscallSucceedsWithValue(expected_bytes));
-  EXPECT_TRUE(local_iovecs.compare(remote_data));
-}
-
-// TestReadvSubProcess repeats the previous test in a forked process.
-TEST_P(ProcessVMTest, TestReadvSubProcess) {
-  SKIP_IF(ProcessVMCallsNotSupported());
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE((HaveCapability(CAP_SYS_PTRACE))));
-  auto local_data = GetParam().local_data;
-  auto remote_data = GetParam().remote_data;
-
-  TestIovecs remote_iovecs(remote_data);
-  auto remote = remote_iovecs.marshal();
-  auto remote_ptr = remote[0];
-  auto remote_size = remote.size();
-  auto remote_total_bytes = remote_iovecs.total_bytes();
-
-  const std::function<void()> fn = [local_data, remote_data, remote_ptr,
-                                    remote_size, remote_total_bytes] {
-    std::vector<std::string> local_fn_data = local_data;
-    TestIovecs local_iovecs(local_fn_data);
-    auto local = local_iovecs.marshal();
-    int ret = process_vm_readv(getppid(), local[0], local.size(), remote_ptr,
-                               remote_size, 0);
-    auto expected_bytes =
-        std::min(remote_total_bytes, local_iovecs.total_bytes());
-    TEST_CHECK_MSG(
-        ret == expected_bytes,
-        absl::StrCat("want: ", expected_bytes, " got: ", ret).c_str());
-    TEST_CHECK(local_iovecs.compare(remote_data));
-  };
-  EXPECT_THAT(InForkedProcess(fn), IsPosixErrorOkAndHolds(0));
-}
-
-// TestWritevSameProcess calls process_vm_writev in the same process with
-// various local/remote buffers.
-TEST_P(ProcessVMTest, TestWritevSameProcess) {
-  SKIP_IF(ProcessVMCallsNotSupported());
-  auto local_data = GetParam().local_data;
-  auto remote_data = GetParam().remote_data;
-
-  TestIovecs local_iovecs(local_data);
-  TestIovecs remote_iovecs(remote_data);
-
-  auto local = local_iovecs.marshal();
-  auto remote = remote_iovecs.marshal();
-  auto expected_bytes =
-      std::min(remote_iovecs.total_bytes(), local_iovecs.total_bytes());
-  EXPECT_THAT(process_vm_writev(getpid(), remote[0], remote.size(), local[0],
-                                local.size(), 0),
-              SyscallSucceedsWithValue(expected_bytes));
-  EXPECT_TRUE(local_iovecs.compare(remote_data));
-}
-
-// TestWritevSubProcess repeats the previous test in a forked process.
-TEST_P(ProcessVMTest, TestWritevSubProcess) {
-  SKIP_IF(ProcessVMCallsNotSupported());
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE((HaveCapability(CAP_SYS_PTRACE))));
-  auto local_data = GetParam().local_data;
-  auto remote_data = GetParam().remote_data;
-  TestIovecs remote_iovecs(remote_data);
-  auto remote = remote_iovecs.marshal();
-  auto remote_ptr = remote[0];
-  auto remote_size = remote.size();
-  auto remote_total_bytes = remote_iovecs.total_bytes();
-
-  const std::function<void()> fn = [local_data, remote_ptr, remote_size,
-                                    remote_total_bytes] {
-    std::vector<std::string> local_fn_data = local_data;
-    TestIovecs local_iovecs(local_fn_data);
-    auto local = local_iovecs.marshal();
-    int ret = process_vm_writev(getppid(), local[0], local.size(), remote_ptr,
-                                remote_size, 0);
-    auto expected_bytes =
-        std::min(remote_total_bytes, local_iovecs.total_bytes());
-    TEST_CHECK_MSG(
-        ret == expected_bytes,
-        absl::StrCat("want: ", expected_bytes, " got: ", ret).c_str());
-  };
-
-  EXPECT_THAT(InForkedProcess(fn), IsPosixErrorOkAndHolds(0));
-  EXPECT_TRUE(remote_iovecs.compare(local_data));
-}
 
 INSTANTIATE_TEST_SUITE_P(
     ProcessVMTests, ProcessVMTest,
@@ -243,8 +137,110 @@ INSTANTIATE_TEST_SUITE_P(
       return info.param.test_name;
     });
 
+// TestReadvSameProcess calls process_vm_readv in the same process with various
+// local/remote buffers.
+TEST_P(ProcessVMTest, TestReadvSameProcess) {
+  TestIovecs local(GetParam().local_data);
+  TestIovecs remote(GetParam().remote_data);
+
+  auto want_size = std::min(remote.bytes_, local.bytes_);
+  EXPECT_THAT(
+      process_vm_readv(getpid(), local.iovecs_.data(), local.iovecs_.size(),
+                       remote.iovecs_.data(), remote.iovecs_.size(), 0),
+      SyscallSucceedsWithValue(want_size));
+  EXPECT_TRUE(bytes_match(local, remote, want_size));
+}
+
+// TestReadvSubProcess reads data from a forked child process.
+TEST_P(ProcessVMTest, TestReadvSubProcess) {
+  TestIovecs local = TestIovecs(GetParam().local_data);
+  TestIovecs remote = TestIovecs(GetParam().remote_data);
+
+  pid_t pid = fork();
+  TEST_CHECK_SUCCESS(pid);
+  if (pid == 0) {
+    // Child. This is the "remote" process.
+    // Wait for parent to read data.
+    sleep(10);  // NOLINT - SleepFor is not async-signal-safe.
+    _exit(0);
+  }
+
+  auto cleanup = absl::MakeCleanup([&] { kill(pid, SIGKILL); });
+
+  // Erase the string data in parent's copy of remote, to make sure we are
+  // reading data from the child.
+  remote.erase();
+
+  // Compare against actual remote (not what we sent to the child, since we
+  // emptied it).
+  TestIovecs want_remote = TestIovecs(GetParam().remote_data);
+  auto want_size = std::min(local.bytes_, want_remote.bytes_);
+  ASSERT_THAT(process_vm_readv(pid, local.iovecs_.data(), local.iovecs_.size(),
+                               remote.iovecs_.data(), remote.iovecs_.size(), 0),
+              SyscallSucceedsWithValue(want_size));
+  EXPECT_TRUE(bytes_match(local, want_remote, want_size));
+}
+
+// TestWritevSameProcess calls process_vm_readv in the same process with various
+// local/remote buffers.
+TEST_P(ProcessVMTest, TestWritevSameProcess) {
+  TestIovecs local(GetParam().local_data);
+  TestIovecs remote(GetParam().remote_data);
+
+  auto want_size = std::min(remote.bytes_, local.bytes_);
+  EXPECT_THAT(
+      process_vm_writev(getpid(), local.iovecs_.data(), local.iovecs_.size(),
+                        remote.iovecs_.data(), remote.iovecs_.size(), 0),
+      SyscallSucceedsWithValue(want_size));
+  EXPECT_TRUE(bytes_match(local, remote, want_size));
+}
+
+// TestWritevSubProcess writes data to a forked child process.
+TEST_P(ProcessVMTest, TestWritevSubProcess) {
+  TestIovecs local(GetParam().local_data);
+  TestIovecs remote(GetParam().remote_data);
+
+  // A pipe is used to wait on the write call from the parent, so we can block
+  // asserting until the write is complete.
+  int pipefd[2];
+  ASSERT_THAT(pipe(pipefd), SyscallSucceeds());
+
+  pid_t pid = fork();
+  TEST_CHECK_SUCCESS(pid);
+  if (pid == 0) {
+    // Child. This is the "remote" process.
+    close(pipefd[1]);
+
+    // Wait on pipefd. It will be closed after the parent has written.
+    char buf;
+    TEST_CHECK_SUCCESS(read(pipefd[0], &buf, sizeof(buf)));
+    close(pipefd[0]);
+
+    // Check the data. This will exit non-0 in the case of a mismatch.
+    auto want_size = std::min(local.bytes_, remote.bytes_);
+    TEST_CHECK(bytes_match(local, remote, want_size));
+
+    _exit(0);
+  }
+
+  auto cleanup = absl::MakeCleanup([&] {
+    int status = 0;
+    EXPECT_THAT(waitpid(pid, &status, 0), SyscallSucceeds());
+    EXPECT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+  });
+
+  // Write to the remote.
+  auto want_size = std::min(local.bytes_, remote.bytes_);
+  ASSERT_THAT(
+      process_vm_writev(pid, local.iovecs_.data(), local.iovecs_.size(),
+                        remote.iovecs_.data(), remote.iovecs_.size(), 0),
+      SyscallSucceedsWithValue(want_size));
+
+  // Now that we've written, close pipefd to signal the child can continue.
+  close(pipefd[1]);
+}
+
 TEST(ProcessVMInvalidTest, NonZeroFlags) {
-  SKIP_IF(ProcessVMCallsNotSupported());
   struct iovec iov = {};
   // Flags should be 0.
   EXPECT_THAT(process_vm_readv(0, &iov, 1, &iov, 1, 10),
@@ -254,13 +250,11 @@ TEST(ProcessVMInvalidTest, NonZeroFlags) {
 }
 
 TEST(ProcessVMInvalidTest, NullLocalIovec) {
-  SKIP_IF(ProcessVMCallsNotSupported());
   struct iovec iov = {};
   pid_t child = fork();
   if (child == 0) {
-    while (true) {
-      sleep(1);
-    }
+    sleep(10);  // NOLINT - SleepFor is not async-signal-safe.
+    _exit(0);
   }
 
   EXPECT_THAT(process_vm_readv(child, nullptr, 1, &iov, 1, 0),
@@ -273,29 +267,26 @@ TEST(ProcessVMInvalidTest, NullLocalIovec) {
 }
 
 TEST(ProcessVMInvalidTest, NULLRemoteIovec) {
-  SKIP_IF(ProcessVMCallsNotSupported());
-  const std::function<void()> fn = [] {
-    std::string contents = "3263827";
-    struct iovec child_iov;
-    child_iov.iov_base = contents.data();
-    child_iov.iov_len = contents.size();
+  std::string contents = "3263827";
+  struct iovec iov;
+  iov.iov_base = contents.data();
+  iov.iov_len = contents.size();
 
-    pid_t parent = getppid();
-    int ret =
-        process_vm_readv(parent, &child_iov, contents.length(), nullptr, 1, 0);
-    TEST_CHECK(ret == -1);
-    TEST_CHECK(errno == EFAULT || errno == EINVAL);
+  pid_t pid = fork();
+  TEST_CHECK_SUCCESS(pid);
+  if (pid == 0) {
+    sleep(10);  // NOLINT - SleepFor is not async-signal-safe.
+    _exit(0);
+  }
+  auto cleanup = absl::MakeCleanup([&] { kill(pid, SIGKILL); });
 
-    ret =
-        process_vm_writev(parent, &child_iov, contents.length(), nullptr, 1, 0);
-    TEST_CHECK(ret == -1);
-    TEST_CHECK(errno == EFAULT || errno == EINVAL);
-  };
-  ASSERT_THAT(InForkedProcess(fn), IsPosixErrorOkAndHolds(0));
+  EXPECT_THAT(process_vm_readv(pid, &iov, contents.length(), nullptr, 1, 0),
+              SyscallFailsWithErrno(::testing::AnyOf(EFAULT, EINVAL)));
+  EXPECT_THAT(process_vm_writev(pid, &iov, contents.length(), nullptr, 1, 0),
+              SyscallFailsWithErrno(::testing::AnyOf(EFAULT, EINVAL)));
 }
 
 TEST(ProcessVMInvalidTest, ProcessNoExist) {
-  SKIP_IF(ProcessVMCallsNotSupported());
   struct iovec iov;
   EXPECT_THAT(process_vm_readv(-1, &iov, 1, &iov, 1, 0),
               SyscallFailsWithErrno(::testing::AnyOf(ESRCH, EFAULT)));
@@ -304,43 +295,26 @@ TEST(ProcessVMInvalidTest, ProcessNoExist) {
 }
 
 TEST(ProcessVMInvalidTest, GreaterThanIOV_MAX) {
-  SKIP_IF(ProcessVMCallsNotSupported());
   std::string contents = "3263827";
   struct iovec iov;
   iov.iov_base = contents.data();
-  auto iov_addr = &iov;
-  const std::function<void()> fn = [=] {
-    struct iovec child_iov;
-    std::string contents = "3263827";
-    child_iov.iov_base = contents.data();
-    child_iov.iov_len = contents.size();
+  iov.iov_len = contents.size();
 
-    pid_t parent = getppid();
-    TEST_CHECK_MSG(-1 == process_vm_readv(parent, &child_iov, 1, iov_addr,
-                                          IOV_MAX + 1, 0) &&
-                       errno == EINVAL,
-                   "read remote_process_over_IOV_MAX");
+  pid_t pid = fork();
+  TEST_CHECK_SUCCESS(pid);
+  if (pid == 0) {
+    sleep(10);  // NOLINT - SleepFor is not async-signal-safe.
+    _exit(0);
+  }
+  auto cleanup = absl::MakeCleanup([&] { kill(pid, SIGKILL); });
 
-    TEST_CHECK_MSG(-1 == process_vm_writev(parent, &child_iov, 1, iov_addr,
-                                           IOV_MAX + 3, 0) &&
-                       errno == EINVAL,
-                   "write remote process over IOV_MAX");
-
-    TEST_CHECK_MSG(-1 == process_vm_readv(parent, &child_iov, IOV_MAX + 2,
-                                          iov_addr, 1, 0) &&
-                       errno == EINVAL,
-                   "read local process over IOV_MAX");
-
-    TEST_CHECK_MSG(-1 == process_vm_writev(parent, &child_iov, IOV_MAX + 8,
-                                           iov_addr, 1, 0) &&
-                       errno == EINVAL,
-                   "write local process over IOV_MAX");
-  };
-  EXPECT_THAT(InForkedProcess(fn), IsPosixErrorOkAndHolds(0));
+  EXPECT_THAT(process_vm_readv(pid, &iov, 1, &iov, IOV_MAX + 1, 0),
+              SyscallFailsWithErrno(EINVAL));
+  EXPECT_THAT(process_vm_writev(pid, &iov, 1, &iov, IOV_MAX + 1, 0),
+              SyscallFailsWithErrno(EINVAL));
 }
 
 TEST(ProcessVMInvalidTest, PartialReadWrite) {
-  SKIP_IF(ProcessVMCallsNotSupported());
   std::string iov_content_1 = "1138";
   std::string iov_content_2 = "3720";
   struct iovec iov[2];
@@ -371,8 +345,6 @@ TEST(ProcessVMInvalidTest, PartialReadWrite) {
 }
 
 TEST(ProcessVMTest, WriteToZombie) {
-  SKIP_IF(ProcessVMCallsNotSupported());
-  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE((HaveCapability(CAP_SYS_PTRACE))));
   char* data = {0};
   pid_t child;
   ASSERT_THAT(child = fork(), SyscallSucceeds());
@@ -388,6 +360,41 @@ TEST(ProcessVMTest, WriteToZombie) {
   ASSERT_THAT(process_vm_writev(child, &iov, 1, &iov, 1, 0),
               SyscallFailsWithErrno(ESRCH));
 }
+
+// TestReadvNull calls process_vm_readv with null iovecs and checks that they
+// succeed but return 0;
+TEST(ProcessVMTest, TestReadvNull) {
+  TestIovecs local(std::vector<std::string>{"foo"});
+  TestIovecs remote(std::vector<std::string>{"bar"});
+
+  // Pass 0 for local.
+  EXPECT_THAT(process_vm_readv(getpid(), 0, 0, remote.iovecs_.data(),
+                               remote.iovecs_.size(), 0),
+              SyscallSucceedsWithValue(0));
+
+  // Pass 0 for remote.
+  EXPECT_THAT(process_vm_readv(getpid(), local.iovecs_.data(),
+                               local.iovecs_.size(), 0, 0, 0),
+              SyscallSucceedsWithValue(0));
+}
+
+// TestWritevNull calls process_vm_writev with null iovecs and checks that they
+// succeed but return 0;
+TEST(ProcessVMTest, TestWritevNull) {
+  TestIovecs local(std::vector<std::string>{"foo"});
+  TestIovecs remote(std::vector<std::string>{"bar"});
+
+  // Pass 0 for local.
+  EXPECT_THAT(process_vm_writev(getpid(), 0, 0, remote.iovecs_.data(),
+                                remote.iovecs_.size(), 0),
+              SyscallSucceedsWithValue(0));
+
+  // Pass 0 for remote.
+  EXPECT_THAT(process_vm_writev(getpid(), local.iovecs_.data(),
+                                local.iovecs_.size(), 0, 0, 0),
+              SyscallSucceedsWithValue(0));
+}
+
 }  // namespace
 }  // namespace testing
 }  // namespace gvisor

@@ -1,5 +1,5 @@
-load("//tools:defs.bzl", "more_shards", "most_shards")
 load("//test/runner:defs.bzl", "syscall_test")
+load("//tools:defs.bzl", "more_shards", "most_shards")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -1187,6 +1187,10 @@ syscall_test(
 
 syscall_test(
     test = "//test/syscalls/linux:processes_test",
+)
+
+syscall_test(
+    test = "//test/syscalls/linux:process_vm_read_write_test",
 )
 
 syscall_test(

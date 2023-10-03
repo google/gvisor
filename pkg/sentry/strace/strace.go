@@ -392,7 +392,7 @@ func (i *SyscallInfo) pre(t *kernel.Task, args arch.SyscallArguments, maximumBlo
 			output = append(output, dump(t, args[arg].Pointer(), args[arg+1].SizeT(), maximumBlobSize, LogAppDataAllowed /* content */))
 		case WriteIOVec:
 			output = append(output, iovecs(t, args[arg].Pointer(), int(args[arg+1].Int()), LogAppDataAllowed /* content */, uint64(maximumBlobSize)))
-		case IOVec:
+		case ReadIOVec, IOVec:
 			output = append(output, iovecs(t, args[arg].Pointer(), int(args[arg+1].Int()), false /* content */, uint64(maximumBlobSize)))
 		case SendMsgHdr:
 			output = append(output, msghdr(t, args[arg].Pointer(), LogAppDataAllowed /* content */, uint64(maximumBlobSize)))
