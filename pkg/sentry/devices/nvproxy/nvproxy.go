@@ -15,7 +15,7 @@
 // Package nvproxy implements proxying for the Nvidia GPU Linux kernel driver:
 // https://github.com/NVIDIA/open-gpu-kernel-modules.
 //
-// Supported Nvidia GPUs: T4, L4, A100, A10G, V100 and H100.
+// Supported Nvidia GPUs: T4, L4, A100, A10G and H100.
 package nvproxy
 
 import (

@@ -257,12 +257,35 @@ func (vfs *VirtualFilesystem) ConnectMountAt(ctx context.Context, creds *auth.Cr
 //
 // +checklocks:vfs.mountMu
 func (vfs *VirtualFilesystem) connectMountAtLocked(ctx context.Context, mnt *Mount, vd VirtualDentry) error {
+	mp, err := vfs.lockMountpoint(vd)
+	if err != nil {
+		return err
+	}
+	// TODO(gvisor.dev/issue/1035): Linux requires that either both the mount
+	// point and the mount root are directories, or neither are, and returns
+	// ENOTDIR if this is not the case.
+	mntns := vd.mount.ns
+	vfs.mounts.seq.BeginWrite()
+	vfs.connectLocked(mnt, mp, mntns)
+	vfs.mounts.seq.EndWrite()
+	mp.dentry.mu.Unlock()
+	return nil
+}
+
+// lockMountpoint returns VirtualDentry with a locked Dentry. If vd is a
+// mountpoint, the method returns a VirtualDentry with a locked Dentry that is
+// the top most mount stacked on that Dentry. This method consumes a reference
+// on vd and returns a VirtualDentry with an extra reference. It is analogous to
+// fs/namespace.c:do_lock_mount() in Linux.
+//
+// +checklocks:vfs.mountMu
+func (vfs *VirtualFilesystem) lockMountpoint(vd VirtualDentry) (VirtualDentry, error) {
 	vd.dentry.mu.Lock()
 	for {
 		if vd.mount.umounted || vd.dentry.dead {
 			vd.dentry.mu.Unlock()
 			vfs.delayDecRef(vd)
-			return linuxerr.ENOENT
+			return VirtualDentry{}, linuxerr.ENOENT
 		}
 		// vd might have been mounted over between vfs.GetDentryAt() and
 		// vfs.mountMu.Lock().
@@ -290,15 +313,7 @@ func (vfs *VirtualFilesystem) connectMountAtLocked(ctx context.Context, mnt *Mou
 		}
 		vd.dentry.mu.Lock()
 	}
-	// TODO(gvisor.dev/issue/1035): Linux requires that either both the mount
-	// point and the mount root are directories, or neither are, and returns
-	// ENOTDIR if this is not the case.
-	mntns := vd.mount.ns
-	vfs.mounts.seq.BeginWrite()
-	vfs.connectLocked(mnt, vd, mntns)
-	vfs.mounts.seq.EndWrite()
-	vd.dentry.mu.Unlock()
-	return nil
+	return vd, nil
 }
 
 // CloneMountAt returns a new mount with the same fs, specified root and
@@ -888,7 +903,7 @@ func (vfs *VirtualFilesystem) PivotRoot(ctx context.Context, creds *auth.Credent
 retry:
 	epoch := vfs.mounts.seq.BeginRead()
 	// Neither new_root nor put_old can be on the same mount as the current
-	//root mount.
+	// root mount.
 	if newRootVd.mount == rootVd.mount || putOldVd.mount == rootVd.mount {
 		return linuxerr.EBUSY
 	}
@@ -931,6 +946,14 @@ retry:
 		return linuxerr.EINVAL
 	}
 
+	putOldVd.IncRef()
+	putOldMp, err := vfs.lockMountpoint(putOldVd)
+	if err != nil {
+		vfs.delayDecRef(putOldMp)
+		vfs.unlockMounts(ctx)
+		return err
+	}
+
 	if !vfs.mounts.seq.BeginWriteOk(epoch) {
 		// Checks above raced with a mount change.
 		vfs.unlockMounts(ctx)
@@ -941,10 +964,8 @@ retry:
 	vfs.delayDecRef(mp)
 	rootMp := vfs.disconnectLocked(rootVd.mount)
 
-	putOldVd.IncRef()
-	putOldVd.dentry.mu.Lock()
-	vfs.connectLocked(rootVd.mount, putOldVd, ns)
-	putOldVd.dentry.mu.Unlock()
+	vfs.connectLocked(rootVd.mount, putOldMp, ns)
+	putOldMp.dentry.mu.Unlock()
 
 	rootMp.dentry.mu.Lock()
 	vfs.connectLocked(newRootVd.mount, rootMp, ns)
