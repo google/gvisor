@@ -193,6 +193,40 @@ var DirentType = abi.ValueSet{
 	DT_WHT:     "DT_WHT",
 }
 
+// Values for fs on-disk file types.
+const (
+	FT_UNKNOWN  = 0
+	FT_REG_FILE = 1
+	FT_DIR      = 2
+	FT_CHRDEV   = 3
+	FT_BLKDEV   = 4
+	FT_FIFO     = 5
+	FT_SOCK     = 6
+	FT_SYMLINK  = 7
+	FT_MAX      = 8
+)
+
+// Conversion from fs on-disk file type to dirent type.
+var direntTypeByFileType = [FT_MAX]uint8{
+	FT_UNKNOWN:  DT_UNKNOWN,
+	FT_REG_FILE: DT_REG,
+	FT_DIR:      DT_DIR,
+	FT_CHRDEV:   DT_CHR,
+	FT_BLKDEV:   DT_BLK,
+	FT_FIFO:     DT_FIFO,
+	FT_SOCK:     DT_SOCK,
+	FT_SYMLINK:  DT_LNK,
+}
+
+// FileTypeToDirentType converts the on-disk file type (FT_*) to the directory
+// entry type (DT_*).
+func FileTypeToDirentType(filetype uint8) uint8 {
+	if filetype >= FT_MAX {
+		return DT_UNKNOWN
+	}
+	return direntTypeByFileType[filetype]
+}
+
 // Values for preadv2/pwritev2.
 const (
 	// NOTE(b/120162627): gVisor does not implement the RWF_HIPRI feature, but
