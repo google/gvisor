@@ -22,6 +22,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/hosttid"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/seccomp"
@@ -130,7 +131,7 @@ func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, erro
 // not race instrument it.
 //
 //go:norace
-func forkStub(flags uintptr, instrs []linux.BPFInstruction) (*thread, error) {
+func forkStub(flags uintptr, instrs []bpf.Instruction) (*thread, error) {
 	// Declare all variables up front in order to ensure that there's no
 	// need for allocations between beforeFork & afterFork.
 	var (

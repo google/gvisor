@@ -17,11 +17,9 @@ package bpf
 import (
 	"fmt"
 	"testing"
-
-	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
-func validate(p *ProgramBuilder, expected []linux.BPFInstruction) error {
+func validate(p *ProgramBuilder, expected []Instruction) error {
 	instructions, err := p.Instructions()
 	if err != nil {
 		return fmt.Errorf("Instructions() failed: %v", err)
@@ -45,7 +43,7 @@ func TestProgramBuilderSimple(t *testing.T) {
 	p.AddStmt(Ld+Abs+W, 10)
 	p.AddJump(Jmp+Ja, 10, 0, 0)
 
-	expected := []linux.BPFInstruction{
+	expected := []Instruction{
 		Stmt(Ld+Abs+W, 10),
 		Jump(Jmp+Ja, 10, 0, 0),
 	}
@@ -84,7 +82,7 @@ func TestProgramBuilderLabels(t *testing.T) {
 	}
 	p.AddStmt(Ld+Abs+W, 5)
 
-	expected := []linux.BPFInstruction{
+	expected := []Instruction{
 		Jump(Jmp+Jeq+K, 11, 2, 0),
 		Jump(Jmp+Jeq+K, 12, 0, 3),
 		Jump(Jmp+Jeq+K, 13, 1, 3),
@@ -131,7 +129,7 @@ func TestProgramBuilderUnusedLabel(t *testing.T) {
 	p.AddStmt(Ld+Abs+W, 10)
 	p.AddJump(Jmp+Ja, 10, 0, 0)
 
-	expected := []linux.BPFInstruction{
+	expected := []Instruction{
 		Stmt(Ld+Abs+W, 10),
 		Jump(Jmp+Ja, 10, 0, 0),
 	}
