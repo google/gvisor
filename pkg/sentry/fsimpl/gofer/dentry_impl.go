@@ -505,14 +505,14 @@ func (fs *filesystem) restoreRoot(ctx context.Context, opts *vfs.CompleteRestore
 func (d *dentry) restoreFile(ctx context.Context, opts *vfs.CompleteRestoreOptions) error {
 	switch dt := d.impl.(type) {
 	case *lisafsDentry:
-		inode, err := d.parent.impl.(*lisafsDentry).controlFD.Walk(ctx, d.name)
+		inode, err := d.parent.Load().impl.(*lisafsDentry).controlFD.Walk(ctx, d.name)
 		if err != nil {
 			return err
 		}
 		return dt.restoreFile(ctx, &inode, opts)
 	case *directfsDentry:
 		childFD, err := tryOpen(func(flags int) (int, error) {
-			return unix.Openat(d.parent.impl.(*directfsDentry).controlFD, d.name, flags, 0)
+			return unix.Openat(d.parent.Load().impl.(*directfsDentry).controlFD, d.name, flags, 0)
 		})
 		if err != nil {
 			return err

@@ -32,3 +32,13 @@ func (i *inodePlatformFile) afterLoad() {
 		i.fileMapperInitOnce.Do(func() {})
 	}
 }
+
+// saveParent is called by stateify.
+func (d *Dentry) saveParent() *Dentry {
+	return d.parent.Load()
+}
+
+// loadParent is called by stateify.
+func (d *Dentry) loadParent(parent *Dentry) {
+	d.parent.Store(parent)
+}

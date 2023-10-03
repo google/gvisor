@@ -65,11 +65,12 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 	}
 
 	// Ensure that our parent directory is copied-up.
-	if d.parent == nil {
+	parent := d.parent.Load()
+	if parent == nil {
 		// d is a filesystem root with no upper layer.
 		return linuxerr.EROFS
 	}
-	if err := d.parent.copyUpMaybeSyntheticMountpointLocked(ctx, forSyntheticMountpoint); err != nil {
+	if err := parent.copyUpMaybeSyntheticMountpointLocked(ctx, forSyntheticMountpoint); err != nil {
 		return err
 	}
 
@@ -101,8 +102,8 @@ func (d *dentry) copyUpMaybeSyntheticMountpointLocked(ctx context.Context, forSy
 	// Perform copy-up.
 	ftype := d.mode.Load() & linux.S_IFMT
 	newpop := vfs.PathOperation{
-		Root:  d.parent.upperVD,
-		Start: d.parent.upperVD,
+		Root:  parent.upperVD,
+		Start: parent.upperVD,
 		Path:  fspath.Parse(d.name),
 	}
 	// Used during copy-up of memory-mapped regular files.

@@ -153,7 +153,7 @@ func (fs *filesystem) revalidateStep(ctx context.Context, rp resolvingPath, d *d
 		// can only be acquired from parent to child to avoid deadlocks.
 		if isRoot, err := rp.CheckRoot(ctx, &d.vfsd); err != nil {
 			return nil, errRevalidationStepDone{}
-		} else if isRoot || d.parent == nil {
+		} else if isRoot || d.parent.Load() == nil {
 			rp.Advance()
 			return d, errPartialRevalidation{}
 		}
@@ -164,11 +164,11 @@ func (fs *filesystem) revalidateStep(ctx context.Context, rp resolvingPath, d *d
 		//
 		// Call rp.CheckMount() before updating d.parent's metadata, since if
 		// we traverse to another mount then d.parent's metadata is irrelevant.
-		if err := rp.CheckMount(ctx, &d.parent.vfsd); err != nil {
+		if err := rp.CheckMount(ctx, &d.parent.Load().vfsd); err != nil {
 			return nil, errRevalidationStepDone{}
 		}
 		rp.Advance()
-		return d.parent, errPartialRevalidation{}
+		return d.parent.Load(), errPartialRevalidation{}
 
 	default:
 		d.childrenMu.Lock()
@@ -212,10 +212,11 @@ func (d *dentry) invalidate(ctx context.Context, vfsObj *vfs.VirtualFilesystem, 
 	// The dentry will be reloaded next time it's accessed.
 	*ds = appendDentry(*ds, d)
 
-	d.parent.opMu.RLock()
-	defer d.parent.opMu.RUnlock()
-	d.parent.childrenMu.Lock()
-	defer d.parent.childrenMu.Unlock()
+	parent := d.parent.Load()
+	parent.opMu.RLock()
+	defer parent.opMu.RUnlock()
+	parent.childrenMu.Lock()
+	defer parent.childrenMu.Unlock()
 
 	if d.isSynthetic() {
 		// Normally we don't mark invalidated dentries as deleted since
@@ -227,16 +228,16 @@ func (d *dentry) invalidate(ctx context.Context, vfsObj *vfs.VirtualFilesystem, 
 		d.decRefNoCaching()
 		*ds = appendDentry(*ds, d)
 
-		d.parent.syntheticChildren--
-		d.parent.clearDirentsLocked()
+		parent.syntheticChildren--
+		parent.clearDirentsLocked()
 	}
 
 	// Since the opMu was just reacquired above, re-check that the
 	// parent's child with this name is still the same. Do not touch it if
 	// it has been replaced with a different one.
-	if child := d.parent.children[d.name]; child == d {
+	if child := parent.children[d.name]; child == d {
 		// Invalidate dentry so it gets reloaded next time it's accessed.
-		delete(d.parent.children, d.name)
+		delete(parent.children, d.name)
 	}
 }
 

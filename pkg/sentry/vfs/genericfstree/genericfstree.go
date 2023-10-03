@@ -26,6 +26,13 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
+// We need to define an interface instead of using atomic.Pointer because
+// the Dentry type gets removed during code generation and the compiler
+// complains about the unused sync/atomic type.
+type atomicptr interface {
+	Load() *Dentry
+}
+
 // Dentry is a required type parameter that is a struct with the given fields.
 //
 // +stateify savable
@@ -35,7 +42,7 @@ type Dentry struct {
 
 	// parent is the parent of this Dentry in the filesystem's tree. If this
 	// Dentry is a filesystem root, parent is nil.
-	parent *Dentry
+	parent atomicptr
 
 	// name is the name of this Dentry in its parent. If this Dentry is a
 	// filesystem root, name is unspecified.
@@ -46,21 +53,31 @@ type Dentry struct {
 // either d2's parent or an ancestor of d2's parent.
 func IsAncestorDentry(d, d2 *Dentry) bool {
 	for d2 != nil { // Stop at root, where d2.parent == nil.
-		if d2.parent == d {
+		parent := d2.parent.Load()
+		if parent == d {
 			return true
 		}
-		if d2.parent == d2 {
+		if parent == d2 {
 			return false
 		}
-		d2 = d2.parent
+		d2 = parent
 	}
 	return false
 }
 
+// IsDescendant returns true if vd is a descendant of vfsroot or if vd and
+// vfsroot are the same dentry.
+func IsDescendant(vfsroot *vfs.Dentry, d *Dentry) bool {
+	for d != nil && &d.vfsd != vfsroot {
+		d = d.parent.Load()
+	}
+	return d != nil
+}
+
 // ParentOrSelf returns d.parent. If d.parent is nil, ParentOrSelf returns d.
 func ParentOrSelf(d *Dentry) *Dentry {
-	if d.parent != nil {
-		return d.parent
+	if parent := d.parent.Load(); parent != nil {
+		return parent
 	}
 	return d
 }
@@ -74,11 +91,12 @@ func PrependPath(vfsroot vfs.VirtualDentry, mnt *vfs.Mount, d *Dentry, b *fspath
 		if mnt != nil && &d.vfsd == mnt.Root() {
 			return nil
 		}
-		if d.parent == nil {
+		parent := d.parent.Load()
+		if parent == nil {
 			return vfs.PrependPathAtNonMountRootError{}
 		}
 		b.PrependComponent(d.name)
-		d = d.parent
+		d = parent
 	}
 }
 

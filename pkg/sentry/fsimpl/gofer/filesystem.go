@@ -193,15 +193,15 @@ func (fs *filesystem) stepLocked(ctx context.Context, rp resolvingPath, d *dentr
 	if name == ".." {
 		if isRoot, err := rp.CheckRoot(ctx, &d.vfsd); err != nil {
 			return nil, false, err
-		} else if isRoot || d.parent == nil {
+		} else if isRoot || d.parent.Load() == nil {
 			rp.Advance()
 			return d, false, nil
 		}
-		if err := rp.CheckMount(ctx, &d.parent.vfsd); err != nil {
+		if err := rp.CheckMount(ctx, &d.parent.Load().vfsd); err != nil {
 			return nil, false, err
 		}
 		rp.Advance()
-		return d.parent, false, nil
+		return d.parent.Load(), false, nil
 	}
 	child, err := fs.getChildAndWalkPathLocked(ctx, d, rp, ds)
 	if err != nil {
@@ -1591,7 +1591,7 @@ func (fs *filesystem) StatFSAt(ctx context.Context, rp *vfs.ResolvingPath) (linu
 	}
 	// If d is synthetic, invoke statfs on the first ancestor of d that isn't.
 	for d.isSynthetic() {
-		d = d.parent
+		d = d.parent.Load()
 	}
 	statfs, err := d.statfs(ctx)
 	if err != nil {
@@ -1785,4 +1785,9 @@ func (fs *filesystem) MountOptions() string {
 		opts = append(opts, opt.String())
 	}
 	return strings.Join(opts, ",")
+}
+
+// IsDescendant implements vfs.FilesystemImpl.IsDescendant.
+func (fs *filesystem) IsDescendant(vfsroot, vd vfs.VirtualDentry) bool {
+	return genericIsDescendant(vfsroot.Dentry(), vd.Dentry().Impl().(*dentry))
 }
