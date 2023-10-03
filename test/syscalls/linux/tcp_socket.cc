@@ -48,61 +48,6 @@ namespace {
 
 constexpr int kTimeoutMillis = 10000;
 
-PosixErrorOr<sockaddr_storage> InetLoopbackAddrZeroPort(int family) {
-  struct sockaddr_storage addr;
-  memset(&addr, 0, sizeof(addr));
-  addr.ss_family = family;
-  switch (family) {
-    case AF_INET: {
-      auto& addr_in = reinterpret_cast<struct sockaddr_in&>(addr);
-      addr_in.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-      break;
-    }
-    case AF_INET6: {
-      auto& addr_in6 = reinterpret_cast<struct sockaddr_in6&>(addr);
-      addr_in6.sin6_addr = in6addr_loopback;
-      break;
-    }
-    default:
-      return PosixError(EINVAL,
-                        absl::StrCat("unknown socket family: ", family));
-  }
-  return addr;
-}
-
-// Gets the port number from the address, assuming it is an IPv4 or IPv6 socket
-// address.
-absl::StatusOr<uint16_t> GetPort(const sockaddr_storage& addr) {
-  switch (addr.ss_family) {
-    case AF_INET:
-      return reinterpret_cast<const struct sockaddr_in&>(addr).sin_port;
-    case AF_INET6:
-      return reinterpret_cast<const struct sockaddr_in6&>(addr).sin6_port;
-    default:
-      return absl::InvalidArgumentError("not an IPv4 or IPv6 address");
-  }
-}
-
-// Allocates a file descriptor that is bound to a local port but not listening.
-// Sets `addr` and `addrlen` to the bound address.
-PosixErrorOr<FileDescriptor> ReserveLocalPort(int family,
-                                              sockaddr_storage& addr,
-                                              socklen_t& addrlen) {
-  // Reserve a port by binding to it but not listening.
-  ASSIGN_OR_RETURN_ERRNO(FileDescriptor reserving,
-                         Socket(family, SOCK_STREAM, IPPROTO_TCP));
-  if (int err = bind(reserving.get(), AsSockAddr(&addr), addrlen); err != 0) {
-    return PosixError(err, "bind failed");
-  }
-  // Get the address with the reserved port because the port is chosen by the
-  // stack.
-  if (int err = getsockname(reserving.get(), AsSockAddr(&addr), &addrlen);
-      err != 0) {
-    return PosixError(err, "getsockname failed");
-  }
-  return reserving;
-}
-
 static void FillSocketBuffers(int sender, int receiver) {
   // Set the FD to O_NONBLOCK.
   int opts;

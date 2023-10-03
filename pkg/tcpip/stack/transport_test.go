@@ -64,6 +64,11 @@ func (*fakeTransportEndpoint) Stats() tcpip.EndpointStats {
 
 func (*fakeTransportEndpoint) SetOwner(owner tcpip.PacketOwner) {}
 
+func (*fakeTransportEndpoint) Owner() tcpip.PacketOwner {
+	var owner tcpip.PacketOwner
+	return owner
+}
+
 func (f *fakeTransportEndpoint) SocketOptions() *tcpip.SocketOptions {
 	return &f.ops
 }

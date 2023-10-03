@@ -833,6 +833,9 @@ type Endpoint interface {
 	// SetOwner sets the task owner to the endpoint owner.
 	SetOwner(owner PacketOwner)
 
+	// Owner returns the endpoint owner.
+	Owner() PacketOwner
+
 	// LastError clears and returns the last error reported by the endpoint.
 	LastError() Error
 

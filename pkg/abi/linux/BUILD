@@ -55,6 +55,7 @@ go_library(
         "netfilter_ipv6.go",
         "netlink.go",
         "netlink_route.go",
+        "netlink_sock_diag.go",
         "poll.go",
         "prctl.go",
         "ptrace.go",

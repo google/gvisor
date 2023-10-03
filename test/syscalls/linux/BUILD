@@ -3411,6 +3411,27 @@ cc_binary(
 )
 
 cc_binary(
+    name = "socket_netlink_sockdiag_test",
+    testonly = 1,
+    srcs = ["socket_netlink_sockdiag.cc"],
+    linkstatic = 1,
+    deps = [
+        ":socket_netlink_route_util",
+        ":socket_netlink_util",
+        "//test/util:capability_util",
+        "//test/util:cleanup",
+        "//test/util:file_descriptor",
+        "//test/util:posix_error",
+        "//test/util:save_util",
+        "//test/util:socket_util",
+        "@com_google_absl//absl/strings:str_format",
+        gtest,
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
+
+cc_binary(
     name = "socket_netlink_uevent_test",
     testonly = 1,
     srcs = ["socket_netlink_uevent.cc"],
@@ -3961,6 +3982,7 @@ cc_binary(
     defines = select_system(),
     linkstatic = 1,
     deps = [
+        ":socket_netlink_util",
         "//test/util:file_descriptor",
         "//test/util:socket_util",
         "@com_google_absl//absl/status:statusor",

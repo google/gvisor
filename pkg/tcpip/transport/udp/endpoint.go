@@ -1088,6 +1088,11 @@ func (e *endpoint) SetOwner(owner tcpip.PacketOwner) {
 	e.net.SetOwner(owner)
 }
 
+// Owner implements tcpip.Endpoint.Owner.
+func (e *endpoint) Owner() tcpip.PacketOwner {
+	return e.net.Owner()
+}
+
 // SocketOptions implements tcpip.Endpoint.
 func (e *endpoint) SocketOptions() *tcpip.SocketOptions {
 	return &e.ops

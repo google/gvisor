@@ -1355,6 +1355,11 @@ func (e *endpoint) SetOwner(owner tcpip.PacketOwner) {
 	e.owner = owner
 }
 
+// Owner implements tcpip.Endpoint.Owner.
+func (e *endpoint) Owner() tcpip.PacketOwner {
+	return e.owner
+}
+
 // +checklocks:e.mu
 func (e *endpoint) hardErrorLocked() tcpip.Error {
 	err := e.hardError
