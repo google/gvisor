@@ -31,8 +31,6 @@ const (
 	FERMI_CONTEXT_SHARE_A            = 0x00009067
 	FERMI_VASPACE_A                  = 0x000090f1
 	KEPLER_CHANNEL_GROUP_A           = 0x0000a06c
-	VOLTA_USERMODE_A                 = 0x0000c361
-	VOLTA_CHANNEL_GPFIFO_A           = 0x0000c36f
 	TURING_USERMODE_A                = 0x0000c461
 	TURING_CHANNEL_GPFIFO_A          = 0x0000c46f
 	AMPERE_CHANNEL_GPFIFO_A          = 0x0000c56f
@@ -46,14 +44,6 @@ const (
 	HOPPER_DMA_COPY_A                = 0x0000c8b5
 	ADA_COMPUTE_A                    = 0x0000c9c0
 	HOPPER_COMPUTE_A                 = 0x0000cbc0
-)
-
-// Class handles for older generations that are not supported by the open source
-// driver. Volta was the last such generation. These are defined in files under
-// src/common/sdk/nvidia/inc/class/.
-const (
-	VOLTA_COMPUTE_A  = 0x0000c3c0
-	VOLTA_DMA_COPY_A = 0x0000c3b5
 )
 
 // NV0005_ALLOC_PARAMETERS is the alloc params type for NV01_EVENT_OS_EVENT,
