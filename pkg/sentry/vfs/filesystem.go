@@ -511,6 +511,15 @@ type FilesystemImpl interface {
 	// If the implementation has no filesystem-specific options, it should
 	// return the empty string.
 	MountOptions() string
+
+	// IsDescendant returns true if vd is a descendant of vfsroot or if vd and
+	// vfsroot are the same dentry. The method does not take filesystem locks when
+	// accessing the parents of each dentry, so it's possible for parents to be
+	// mutated concurrently during a call to IsDescendant. Callers should take
+	// appropriate caution when using this method.
+	//
+	// Preconditions: vd.Mount().Filesystem().Impl() == this FilesystemImpl.
+	IsDescendant(vfsroot, vd VirtualDentry) bool
 }
 
 // PrependPathAtVFSRootError is returned by implementations of

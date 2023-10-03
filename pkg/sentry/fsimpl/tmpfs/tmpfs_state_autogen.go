@@ -492,8 +492,10 @@ func (d *dentry) beforeSave() {}
 // +checklocksignore
 func (d *dentry) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
+	var parentValue *dentry
+	parentValue = d.saveParent()
+	stateSinkObject.SaveValue(1, parentValue)
 	stateSinkObject.Save(0, &d.vfsd)
-	stateSinkObject.Save(1, &d.parent)
 	stateSinkObject.Save(2, &d.name)
 	stateSinkObject.Save(3, &d.dentryEntry)
 	stateSinkObject.Save(4, &d.inode)
@@ -504,10 +506,10 @@ func (d *dentry) afterLoad() {}
 // +checklocksignore
 func (d *dentry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.vfsd)
-	stateSourceObject.Load(1, &d.parent)
 	stateSourceObject.Load(2, &d.name)
 	stateSourceObject.Load(3, &d.dentryEntry)
 	stateSourceObject.Load(4, &d.inode)
+	stateSourceObject.LoadValue(1, new(*dentry), func(y any) { d.loadParent(y.(*dentry)) })
 }
 
 func (i *inode) StateTypeName() string {

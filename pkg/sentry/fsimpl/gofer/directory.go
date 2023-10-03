@@ -51,7 +51,7 @@ func (d *dentry) isDir() bool {
 // +checklocks:d.childrenMu
 func (d *dentry) cacheNewChildLocked(child *dentry, name string) {
 	d.IncRef() // reference held by child on its parent
-	child.parent = d
+	child.parent.Store(d)
 	child.name = name
 	if d.children == nil {
 		d.children = make(map[string]*dentry)

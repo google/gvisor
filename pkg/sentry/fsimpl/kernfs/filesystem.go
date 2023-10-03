@@ -58,15 +58,15 @@ func (fs *Filesystem) stepExistingLocked(ctx context.Context, rp *vfs.ResolvingP
 	if name == ".." {
 		if isRoot, err := rp.CheckRoot(ctx, d.VFSDentry()); err != nil {
 			return nil, false, err
-		} else if isRoot || d.parent == nil {
+		} else if isRoot || d.parent.Load() == nil {
 			rp.Advance()
 			return d, false, nil
 		}
-		if err := rp.CheckMount(ctx, d.parent.VFSDentry()); err != nil {
+		if err := rp.CheckMount(ctx, d.Parent().VFSDentry()); err != nil {
 			return nil, false, err
 		}
 		rp.Advance()
-		return d.parent, false, nil
+		return d.parent.Load(), false, nil
 	}
 	if len(name) > linux.NAME_MAX {
 		return nil, false, linuxerr.ENAMETOOLONG
@@ -231,7 +231,7 @@ func checkCreateLocked(ctx context.Context, creds *auth.Credentials, name string
 //
 // Preconditions: Filesystem.mu must be locked for at least reading.
 func checkDeleteLocked(ctx context.Context, rp *vfs.ResolvingPath, d *Dentry) error {
-	parent := d.parent
+	parent := d.parent.Load()
 	if parent == nil {
 		return linuxerr.EBUSY
 	}
@@ -772,7 +772,7 @@ func (fs *Filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		fs.deferDecRef(srcDir) // child (src) drops ref on old parent.
 		dstDir.IncRef()        // child (src) takes a ref on the new parent.
 	}
-	src.parent = dstDir
+	src.parent.Store(dstDir)
 	src.name = newName
 	if dstDir.children == nil {
 		dstDir.children = make(map[string]*Dentry)
@@ -971,7 +971,7 @@ func (fs *Filesystem) UnlinkAt(ctx context.Context, rp *vfs.ResolvingPath) error
 		return linuxerr.EISDIR
 	}
 	virtfs := rp.VirtualFilesystem()
-	parentDentry := d.parent
+	parentDentry := d.parent.Load()
 	parentDentry.dirMu.Lock()
 	defer parentDentry.dirMu.Unlock()
 	mntns := vfs.MountNamespaceFromContext(ctx)
@@ -1081,4 +1081,9 @@ func (fs *Filesystem) deferDecRefVD(ctx context.Context, vd vfs.VirtualDentry) {
 	} else {
 		vd.DecRef(ctx)
 	}
+}
+
+// IsDescendant implements vfs.FilesystemImpl.IsDescendant.
+func (fs *Filesystem) IsDescendant(vfsroot, vd vfs.VirtualDentry) bool {
+	return genericIsDescendant(vfsroot.Dentry(), vd.Dentry().Impl().(*Dentry))
 }

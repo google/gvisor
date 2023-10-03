@@ -742,11 +742,13 @@ func (d *Dentry) beforeSave() {}
 // +checklocksignore
 func (d *Dentry) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
+	var parentValue *Dentry
+	parentValue = d.saveParent()
+	stateSinkObject.SaveValue(4, parentValue)
 	stateSinkObject.Save(0, &d.vfsd)
 	stateSinkObject.Save(1, &d.refs)
 	stateSinkObject.Save(2, &d.fs)
 	stateSinkObject.Save(3, &d.flags)
-	stateSinkObject.Save(4, &d.parent)
 	stateSinkObject.Save(5, &d.name)
 	stateSinkObject.Save(6, &d.cached)
 	stateSinkObject.Save(7, &d.dentryEntry)
@@ -761,13 +763,13 @@ func (d *Dentry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &d.refs)
 	stateSourceObject.Load(2, &d.fs)
 	stateSourceObject.Load(3, &d.flags)
-	stateSourceObject.Load(4, &d.parent)
 	stateSourceObject.Load(5, &d.name)
 	stateSourceObject.Load(6, &d.cached)
 	stateSourceObject.Load(7, &d.dentryEntry)
 	stateSourceObject.Load(8, &d.children)
 	stateSourceObject.Load(9, &d.inode)
 	stateSourceObject.Load(10, &d.deleted)
+	stateSourceObject.LoadValue(4, new(*Dentry), func(y any) { d.loadParent(y.(*Dentry)) })
 	stateSourceObject.AfterLoad(d.afterLoad)
 }
 

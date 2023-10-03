@@ -230,6 +230,9 @@ func (d *dentry) beforeSave() {}
 // +checklocksignore
 func (d *dentry) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
+	var parentValue *dentry
+	parentValue = d.saveParent()
+	stateSinkObject.SaveValue(7, parentValue)
 	stateSinkObject.Save(0, &d.vfsd)
 	stateSinkObject.Save(1, &d.refs)
 	stateSinkObject.Save(2, &d.fs)
@@ -237,7 +240,6 @@ func (d *dentry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(4, &d.uid)
 	stateSinkObject.Save(5, &d.gid)
 	stateSinkObject.Save(6, &d.copiedUp)
-	stateSinkObject.Save(7, &d.parent)
 	stateSinkObject.Save(8, &d.name)
 	stateSinkObject.Save(9, &d.children)
 	stateSinkObject.Save(10, &d.dirents)
@@ -263,7 +265,6 @@ func (d *dentry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(4, &d.uid)
 	stateSourceObject.Load(5, &d.gid)
 	stateSourceObject.Load(6, &d.copiedUp)
-	stateSourceObject.Load(7, &d.parent)
 	stateSourceObject.Load(8, &d.name)
 	stateSourceObject.Load(9, &d.children)
 	stateSourceObject.Load(10, &d.dirents)
@@ -278,6 +279,7 @@ func (d *dentry) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(19, &d.isMappable)
 	stateSourceObject.Load(20, &d.locks)
 	stateSourceObject.Load(21, &d.watches)
+	stateSourceObject.LoadValue(7, new(*dentry), func(y any) { d.loadParent(y.(*dentry)) })
 	stateSourceObject.AfterLoad(d.afterLoad)
 }
 

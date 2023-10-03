@@ -68,15 +68,15 @@ func stepLocked(ctx context.Context, rp *vfs.ResolvingPath, d *dentry) (*dentry,
 	if name == ".." {
 		if isRoot, err := rp.CheckRoot(ctx, &d.vfsd); err != nil {
 			return nil, false, err
-		} else if isRoot || d.parent == nil {
+		} else if isRoot || d.parent.Load() == nil {
 			rp.Advance()
 			return d, false, nil
 		}
-		if err := rp.CheckMount(ctx, &d.parent.vfsd); err != nil {
+		if err := rp.CheckMount(ctx, &d.parent.Load().vfsd); err != nil {
 			return nil, false, err
 		}
 		rp.Advance()
-		return d.parent, false, nil
+		return d.parent.Load(), false, nil
 	}
 	if len(name) > d.inode.fs.maxFilenameLen {
 		return nil, false, linuxerr.ENAMETOOLONG
@@ -947,7 +947,8 @@ func (fs *filesystem) PrependPath(ctx context.Context, vfsroot, vd vfs.VirtualDe
 		if mnt != nil && &d.vfsd == mnt.Root() {
 			return nil
 		}
-		if d.parent == nil {
+		parent := d.parent.Load()
+		if parent == nil {
 			if d.name != "" {
 				// This file must have been created by
 				// newUnlinkedRegularFileDescription(). In Linux,
@@ -964,13 +965,18 @@ func (fs *filesystem) PrependPath(ctx context.Context, vfsroot, vd vfs.VirtualDe
 			return vfs.PrependPathAtNonMountRootError{}
 		}
 		b.PrependComponent(d.name)
-		d = d.parent
+		d = parent
 	}
 }
 
 // MountOptions implements vfs.FilesystemImpl.MountOptions.
 func (fs *filesystem) MountOptions() string {
 	return fs.mopts
+}
+
+// IsDescendant implements vfs.FilesystemImpl.IsDescendant.
+func (fs *filesystem) IsDescendant(vfsroot, vd vfs.VirtualDentry) bool {
+	return genericIsDescendant(vfsroot.Dentry(), vd.Dentry().Impl().(*dentry))
 }
 
 // adjustPageAcct adjusts the accounting done against filesystem size limit in

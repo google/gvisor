@@ -151,15 +151,16 @@ func (fs *filesystem) stepLocked(ctx context.Context, rp *vfs.ResolvingPath, d *
 	if name == ".." {
 		if isRoot, err := rp.CheckRoot(ctx, &d.vfsd); err != nil {
 			return nil, lookupLayerNone, false, err
-		} else if isRoot || d.parent == nil {
+		} else if isRoot || d.parent.Load() == nil {
 			rp.Advance()
 			return d, d.topLookupLayer(), false, nil
 		}
-		if err := rp.CheckMount(ctx, &d.parent.vfsd); err != nil {
+		if err := rp.CheckMount(ctx, &d.parent.Load().vfsd); err != nil {
 			return nil, lookupLayerNone, false, err
 		}
 		rp.Advance()
-		return d.parent, d.parent.topLookupLayer(), false, nil
+		parent := d.parent.Load()
+		return parent, parent.topLookupLayer(), false, nil
 	}
 	if uint64(len(name)) > fs.maxFilenameLen {
 		return nil, lookupLayerNone, false, linuxerr.ENAMETOOLONG
@@ -344,7 +345,7 @@ func (fs *filesystem) lookupLocked(ctx context.Context, parent *dentry, name str
 	}
 
 	parent.IncRef()
-	child.parent = parent
+	child.parent.Store(parent)
 	child.name = name
 	return child, topLookupLayer, nil
 }
@@ -1335,7 +1336,7 @@ func (fs *filesystem) RenameAt(ctx context.Context, rp *vfs.ResolvingPath, oldPa
 		oldParent.DecRef(ctx)
 		ds = appendDentry(ds, oldParent)
 		newParent.IncRef()
-		renamed.parent = newParent
+		renamed.parent.Store(newParent)
 	}
 	renamed.name = newName
 	if newParent.children == nil {
