@@ -244,7 +244,6 @@ const (
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl90e6.h:
 const (
-	NV90E6_CTRL_CMD_MASTER_GET_ERROR_INTR_OFFSET_MASK                = 0x90e60101
 	NV90E6_CTRL_CMD_MASTER_GET_VIRTUAL_FUNCTION_ERROR_CONT_INTR_MASK = 0x90e60102
 )
 

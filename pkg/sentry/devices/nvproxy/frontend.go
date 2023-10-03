@@ -597,7 +597,6 @@ func rmControl(fi *frontendIoctlState) (uintptr, error) {
 		nvgpu.NV83DE_CTRL_CMD_DEBUG_READ_ALL_SM_ERROR_STATES,
 		nvgpu.NV83DE_CTRL_CMD_DEBUG_CLEAR_ALL_SM_ERROR_STATES,
 		nvgpu.NV906F_CTRL_CMD_RESET_CHANNEL,
-		nvgpu.NV90E6_CTRL_CMD_MASTER_GET_ERROR_INTR_OFFSET_MASK,
 		nvgpu.NV90E6_CTRL_CMD_MASTER_GET_VIRTUAL_FUNCTION_ERROR_CONT_INTR_MASK,
 		nvgpu.NVC36F_CTRL_GET_CLASS_ENGINEID,
 		nvgpu.NVC36F_CTRL_CMD_GPFIFO_GET_WORK_SUBMIT_TOKEN,
@@ -772,15 +771,15 @@ func rmAlloc(fi *frontendIoctlState) (uintptr, error) {
 		return rmAllocSimple[nvgpu.NV_VASPACE_ALLOCATION_PARAMETERS](fi, &ioctlParams, isNVOS64)
 	case nvgpu.KEPLER_CHANNEL_GROUP_A:
 		return rmAllocSimple[nvgpu.NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS](fi, &ioctlParams, isNVOS64)
-	case nvgpu.VOLTA_CHANNEL_GPFIFO_A, nvgpu.TURING_CHANNEL_GPFIFO_A, nvgpu.AMPERE_CHANNEL_GPFIFO_A:
+	case nvgpu.TURING_CHANNEL_GPFIFO_A, nvgpu.AMPERE_CHANNEL_GPFIFO_A:
 		return rmAllocSimple[nvgpu.NV_CHANNEL_ALLOC_PARAMS](fi, &ioctlParams, isNVOS64)
-	case nvgpu.VOLTA_DMA_COPY_A, nvgpu.TURING_DMA_COPY_A, nvgpu.AMPERE_DMA_COPY_A, nvgpu.AMPERE_DMA_COPY_B, nvgpu.HOPPER_DMA_COPY_A:
+	case nvgpu.TURING_DMA_COPY_A, nvgpu.AMPERE_DMA_COPY_A, nvgpu.AMPERE_DMA_COPY_B, nvgpu.HOPPER_DMA_COPY_A:
 		return rmAllocSimple[nvgpu.NVB0B5_ALLOCATION_PARAMETERS](fi, &ioctlParams, isNVOS64)
-	case nvgpu.VOLTA_COMPUTE_A, nvgpu.TURING_COMPUTE_A, nvgpu.AMPERE_COMPUTE_A, nvgpu.AMPERE_COMPUTE_B, nvgpu.ADA_COMPUTE_A, nvgpu.HOPPER_COMPUTE_A:
+	case nvgpu.TURING_COMPUTE_A, nvgpu.AMPERE_COMPUTE_A, nvgpu.AMPERE_COMPUTE_B, nvgpu.ADA_COMPUTE_A, nvgpu.HOPPER_COMPUTE_A:
 		return rmAllocSimple[nvgpu.NV_GR_ALLOCATION_PARAMETERS](fi, &ioctlParams, isNVOS64)
 	case nvgpu.HOPPER_USERMODE_A:
 		return rmAllocSimple[nvgpu.NV_HOPPER_USERMODE_A_PARAMS](fi, &ioctlParams, isNVOS64)
-	case nvgpu.GF100_SUBDEVICE_MASTER, nvgpu.VOLTA_USERMODE_A, nvgpu.TURING_USERMODE_A:
+	case nvgpu.GF100_SUBDEVICE_MASTER, nvgpu.TURING_USERMODE_A:
 		return rmAllocNoParams(fi, &ioctlParams, isNVOS64)
 	case nvgpu.NV_MEMORY_FABRIC:
 		return rmAllocSimple[nvgpu.NV00F8_ALLOCATION_PARAMETERS](fi, &ioctlParams, isNVOS64)
