@@ -17,8 +17,6 @@ package bpf
 import (
 	"fmt"
 	"math"
-
-	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
 const (
@@ -38,7 +36,7 @@ type ProgramBuilder struct {
 	unusableLabels map[string]bool
 
 	// Array of BPF instructions that makes up the program.
-	instructions []linux.BPFInstruction
+	instructions []Instruction
 }
 
 // NewProgramBuilder creates a new ProgramBuilder instance.
@@ -134,7 +132,7 @@ func (b *ProgramBuilder) AddLabel(name string) error {
 // resolved. Return error in case label resolution failed due to an invalid program.
 //
 // N.B. Partial results will be returned in the error case, which is useful for debugging.
-func (b *ProgramBuilder) Instructions() ([]linux.BPFInstruction, error) {
+func (b *ProgramBuilder) Instructions() ([]Instruction, error) {
 	if err := b.resolveLabels(); err != nil {
 		return b.instructions, err
 	}

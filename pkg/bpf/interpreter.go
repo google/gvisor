@@ -16,8 +16,6 @@ package bpf
 
 import (
 	"fmt"
-
-	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
 // Possible values for ProgramError.Code.
@@ -91,7 +89,7 @@ func (e Error) Error() string {
 //
 // +stateify savable
 type Program struct {
-	instructions []linux.BPFInstruction
+	instructions []Instruction
 }
 
 // Length returns the number of instructions in the program.
@@ -101,7 +99,7 @@ func (p Program) Length() int {
 
 // Compile performs validation on a sequence of BPF instructions before
 // wrapping them in a Program.
-func Compile(insns []linux.BPFInstruction) (Program, error) {
+func Compile(insns []Instruction) (Program, error) {
 	if len(insns) == 0 || len(insns) > MaxInstructions {
 		return Program{}, Error{InvalidInstructionCount, len(insns)}
 	}
@@ -255,7 +253,7 @@ type machine struct {
 	M [ScratchMemRegisters]uint32
 }
 
-func conditionalJumpOffset(insn linux.BPFInstruction, cond bool) int {
+func conditionalJumpOffset(insn Instruction, cond bool) int {
 	if cond {
 		return int(insn.JumpIfTrue)
 	}
