@@ -3121,6 +3121,14 @@ func TestOverlayByMountAnnotation(t *testing.T) {
 		t.Errorf("%q file created on the host in spite of overlay", testFilePath)
 	}
 
+	got, err := executeCombinedOutput(conf, cont, nil, "/bin/sh", "-c", "mount | grep /submount")
+	if err != nil {
+		t.Fatalf("failed to grep mount(1) from container: %v", err)
+	}
+	if !strings.Contains(string(got), "type overlay (rw)") {
+		t.Errorf("expected /submount to be an overlay mount, but it is not. mount(1) reports its type as:\n%s", string(got))
+	}
+
 	// Destroying the container should delete the filestore file.
 	destroy()
 	if err := unix.Stat(filestoreFile, &stat); err == nil {
