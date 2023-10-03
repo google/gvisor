@@ -168,6 +168,16 @@ func (fd *specialFileFD) afterLoad() {
 	}
 }
 
+// saveParent is called by stateify.
+func (d *dentry) saveParent() *dentry {
+	return d.parent.Load()
+}
+
+// loadParent is called by stateify.
+func (d *dentry) loadParent(parent *dentry) {
+	d.parent.Store(parent)
+}
+
 // CompleteRestore implements
 // vfs.FilesystemImplSaveRestoreExtension.CompleteRestore.
 func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRestoreOptions) error {

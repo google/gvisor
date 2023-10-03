@@ -33,6 +33,7 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -411,7 +412,7 @@ type dentry struct {
 	// parent is this dentry's parent directory. Each referenced dentry holds a
 	// reference on parent.dentry. If this dentry is a filesystem root, parent
 	// is nil. parent is protected by filesystem.mu.
-	parent *dentry
+	parent atomic.Pointer[dentry] `state:".(*dentry)"`
 
 	// name is the name of this dentry in its parent. If this dentry is a
 	// filesystem root, name is the empty string. name is protected by
@@ -468,8 +469,9 @@ func (d *dentry) InotifyWithParent(ctx context.Context, events, cookie uint32, e
 
 	d.inode.fs.mu.RLock()
 	// The ordering below is important, Linux always notifies the parent first.
-	if d.parent != nil {
-		d.parent.inode.watches.Notify(ctx, d.name, events, cookie, et, deleted)
+	parent := d.parent.Load()
+	if parent != nil {
+		parent.inode.watches.Notify(ctx, d.name, events, cookie, et, deleted)
 	}
 	d.inode.watches.Notify(ctx, "", events, cookie, et, deleted)
 	d.inode.fs.mu.RUnlock()

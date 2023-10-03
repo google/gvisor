@@ -148,7 +148,8 @@ func (fs *filesystem) newDirectfsDentry(controlFD int) (*dentry, error) {
 
 // Precondition: fs.renameMu is locked.
 func (d *directfsDentry) openHandle(ctx context.Context, flags uint32) (handle, error) {
-	if d.parent == nil {
+	parent := d.parent.Load()
+	if parent == nil {
 		// This is a mount point. We don't have parent. Fallback to using lisafs.
 		if !d.controlFDLisa.Ok() {
 			panic("directfsDentry.controlFDLisa is not set for mount point dentry")
@@ -168,7 +169,7 @@ func (d *directfsDentry) openHandle(ctx context.Context, flags uint32) (handle, 
 	// The only way to re-open an FD with different flags is via procfs or
 	// openat(2) from the parent. Procfs does not exist here. So use parent.
 	flags |= hostOpenFlags
-	openFD, err := unix.Openat(d.parent.impl.(*directfsDentry).controlFD, d.name, int(flags), 0)
+	openFD, err := unix.Openat(parent.impl.(*directfsDentry).controlFD, d.name, int(flags), 0)
 	if err != nil {
 		return noHandle, err
 	}
@@ -185,9 +186,9 @@ func (d *directfsDentry) ensureLisafsControlFD(ctx context.Context) error {
 
 	var names []string
 	root := d
-	for root.parent != nil {
+	for root.parent.Load() != nil {
 		names = append(names, root.name)
-		root = root.parent.impl.(*directfsDentry)
+		root = root.parent.Load().impl.(*directfsDentry)
 	}
 	if !root.controlFDLisa.Ok() {
 		panic("controlFDLisa is not set for mount point dentry")
@@ -270,10 +271,10 @@ func (d *directfsDentry) chmod(ctx context.Context, mode uint16) error {
 
 	// fchmod(2) on socket files created via bind(2) fails. We need to
 	// fchmodat(2) it from its parent.
-	if d.parent != nil {
+	if parent := d.parent.Load(); parent != nil {
 		// We have parent FD, just use that. Note that AT_SYMLINK_NOFOLLOW flag is
 		// currently not supported. So we don't use it.
-		return unix.Fchmodat(d.parent.impl.(*directfsDentry).controlFD, d.name, uint32(mode), 0 /* flags */)
+		return unix.Fchmodat(parent.impl.(*directfsDentry).controlFD, d.name, uint32(mode), 0 /* flags */)
 	}
 
 	// This is a mount point socket. We don't have a parent FD. Fallback to using
@@ -320,8 +321,8 @@ func (d *directfsDentry) utimensat(ctx context.Context, stat *linux.Statx) error
 	// utimensat operates different that other syscalls. To operate on a
 	// symlink it *requires* AT_SYMLINK_NOFOLLOW with dirFD and a non-empty
 	// name.
-	if d.parent != nil {
-		return fsutil.Utimensat(d.parent.impl.(*directfsDentry).controlFD, d.name, utimes, unix.AT_SYMLINK_NOFOLLOW)
+	if parent := d.parent.Load(); parent != nil {
+		return fsutil.Utimensat(parent.impl.(*directfsDentry).controlFD, d.name, utimes, unix.AT_SYMLINK_NOFOLLOW)
 	}
 
 	// This is a mount point symlink. We don't have a parent FD. Fallback to
@@ -521,7 +522,7 @@ func (d *directfsDentry) link(target *directfsDentry, name string) (*dentry, err
 	// using olddirfd to call linkat(2).
 	// Also note that d and target are from the same mount. Given target is a
 	// non-directory and d is a directory, target.parent must exist.
-	if err := unix.Linkat(target.parent.impl.(*directfsDentry).controlFD, target.name, d.controlFD, name, 0); err != nil {
+	if err := unix.Linkat(target.parent.Load().impl.(*directfsDentry).controlFD, target.name, d.controlFD, name, 0); err != nil {
 		return nil, err
 	}
 	// Note that we don't need to set uid/gid for the new child. This is a hard

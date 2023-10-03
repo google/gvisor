@@ -301,6 +301,9 @@ func (fs *anonFilesystem) MountOptions() string {
 	return ""
 }
 
+// IsDescendant implements FilesystemImpl.IsDescendant.
+func (fs *anonFilesystem) IsDescendant(vfsroot, vd VirtualDentry) bool { return vfsroot == vd }
+
 // IncRef implements DentryImpl.IncRef.
 func (d *anonDentry) IncRef() {
 	// no-op

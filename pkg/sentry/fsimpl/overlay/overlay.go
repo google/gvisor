@@ -36,6 +36,7 @@ package overlay
 import (
 	"fmt"
 	"strings"
+	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -473,6 +474,11 @@ func (fs *filesystem) getLowerDevMinor(layerMajor, layerMinor uint32) (uint32, e
 	return minor, nil
 }
 
+// IsDescendant implements vfs.FilesystemImpl.IsDescendant.
+func (fs *filesystem) IsDescendant(vfsroot, vd vfs.VirtualDentry) bool {
+	return genericIsDescendant(vfsroot.Dentry(), vd.Dentry().Impl().(*dentry))
+}
+
 // dentry implements vfs.DentryImpl.
 //
 // +stateify savable
@@ -500,7 +506,7 @@ type dentry struct {
 	// name is this dentry's name in parent. If this dentry is a filesystem
 	// root, parent is nil and name is the empty string. parent and name are
 	// protected by fs.renameMu.
-	parent *dentry
+	parent atomic.Pointer[dentry] `state:".(*dentry)"`
 	name   string
 
 	// If this dentry represents a directory, children maps the names of
@@ -693,15 +699,15 @@ func (d *dentry) destroyLocked(ctx context.Context) {
 
 	d.watches.HandleDeletion(ctx)
 
-	if d.parent != nil {
-		d.parent.dirMu.Lock()
+	if parent := d.parent.Load(); parent != nil {
+		parent.dirMu.Lock()
 		if !d.vfsd.IsDead() {
-			delete(d.parent.children, d.name)
+			delete(parent.children, d.name)
 		}
-		d.parent.dirMu.Unlock()
+		parent.dirMu.Unlock()
 		// Drop the reference held by d on its parent without recursively
 		// locking d.fs.renameMu.
-		d.parent.decRefLocked(ctx)
+		parent.decRefLocked(ctx)
 	}
 	refs.Unregister(d)
 }
@@ -736,8 +742,8 @@ func (d *dentry) InotifyWithParent(ctx context.Context, events uint32, cookie ui
 
 	d.fs.renameMu.RLock()
 	// The ordering below is important, Linux always notifies the parent first.
-	if d.parent != nil {
-		d.parent.watches.Notify(ctx, d.name, events, cookie, et, deleted)
+	if parent := d.parent.Load(); parent != nil {
+		parent.watches.Notify(ctx, d.name, events, cookie, et, deleted)
 	}
 	d.watches.Notify(ctx, "", events, cookie, et, deleted)
 	d.fs.renameMu.RUnlock()
