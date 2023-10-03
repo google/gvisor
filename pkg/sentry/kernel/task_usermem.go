@@ -131,24 +131,18 @@ func (t *Task) CopyInVector(addr hostarch.Addr, maxElemSize, maxTotalSize int) (
 //   - The caller must be running on the task goroutine.
 //   - t's AddressSpace must be active.
 func (t *Task) CopyOutIovecs(addr hostarch.Addr, src hostarch.AddrRangeSeq) error {
-	return copyOutIovecs(t, t, addr, src)
-}
-
-// copyOutIovecs converts src to an array of struct iovecs and copies it to the
-// memory mapped at addr.
-func copyOutIovecs(ctx marshal.CopyContext, t *Task, addr hostarch.Addr, src hostarch.AddrRangeSeq) error {
 	switch t.Arch().Width() {
 	case 8:
 		if _, ok := addr.AddLength(uint64(src.NumRanges()) * iovecLength); !ok {
 			return linuxerr.EFAULT
 		}
 
-		b := ctx.CopyScratchBuffer(iovecLength)
+		b := t.CopyScratchBuffer(iovecLength)
 		for ; !src.IsEmpty(); src = src.Tail() {
 			ar := src.Head()
 			hostarch.ByteOrder.PutUint64(b[0:8], uint64(ar.Start))
 			hostarch.ByteOrder.PutUint64(b[8:16], uint64(ar.Length()))
-			if _, err := ctx.CopyOutBytes(addr, b); err != nil {
+			if _, err := t.CopyOutBytes(addr, b); err != nil {
 				return err
 			}
 			addr += iovecLength
@@ -176,6 +170,15 @@ func (t *Task) CopyInIovecs(addr hostarch.Addr, numIovecs int) (hostarch.AddrRan
 		return hostarch.AddrRangeSeq{}, err
 	}
 	return hostarch.AddrRangeSeqFromSlice(iovecs), nil
+}
+
+// CopyInIovecsAsSlice copies in IoVecs and returns them in a slice.
+//
+// Preconditions: Same as usermem.IO.CopyIn, plus:
+//   - The caller must be running on the task goroutine or hold t.mu.
+//   - t's AddressSpace must be active.
+func (t *Task) CopyInIovecsAsSlice(addr hostarch.Addr, numIovecs int) ([]hostarch.AddrRange, error) {
+	return copyInIovecs(t, t, addr, numIovecs)
 }
 
 func copyInIovec(ctx marshal.CopyContext, t *Task, addr hostarch.Addr) (hostarch.AddrRangeSeq, error) {
@@ -322,10 +325,9 @@ func (t *Task) IovecsIOSequence(addr hostarch.Addr, iovcnt int, opts usermem.IOO
 }
 
 type taskCopyContext struct {
-	ctx                context.Context
-	t                  *Task
-	opts               usermem.IOOpts
-	allocateNewBuffers bool
+	ctx  context.Context
+	t    *Task
+	opts usermem.IOOpts
 }
 
 // CopyContext returns a marshal.CopyContext that copies to/from t's address
@@ -340,7 +342,7 @@ func (t *Task) CopyContext(ctx context.Context, opts usermem.IOOpts) *taskCopyCo
 
 // CopyScratchBuffer implements marshal.CopyContext.CopyScratchBuffer.
 func (cc *taskCopyContext) CopyScratchBuffer(size int) []byte {
-	if ctxTask, ok := cc.ctx.(*Task); ok && !cc.allocateNewBuffers {
+	if ctxTask, ok := cc.ctx.(*Task); ok {
 		return ctxTask.CopyScratchBuffer(size)
 	}
 	return make([]byte, size)
@@ -355,13 +357,6 @@ func (cc *taskCopyContext) getMemoryManager() (*mm.MemoryManager, error) {
 		return nil, linuxerr.EFAULT
 	}
 	return tmm, nil
-}
-
-// WithTaskMutexLocked runs the given function with the task's mutex locked.
-func (cc *taskCopyContext) WithTaskMutexLocked(fn func() error) error {
-	cc.t.mu.Lock()
-	defer cc.t.mu.Unlock()
-	return fn()
 }
 
 // CopyInBytes implements marshal.CopyContext.CopyInBytes.
@@ -390,25 +385,6 @@ func (cc *taskCopyContext) CopyOutBytes(addr hostarch.Addr, src []byte) (int, er
 	}
 	defer tmm.DecUsers(cc.ctx)
 	return tmm.CopyOut(cc.ctx, addr, src, cc.opts)
-}
-
-// CopyOutIovecs converts src to an array of struct iovecs and copies it to the
-// memory mapped at addr for Task.
-//
-// Preconditions: Same as usermem.IO.CopyOut, plus:
-//   - The caller must be running on the task goroutine or hold the cc.t.mu
-//   - t's AddressSpace must be active.
-func (cc *taskCopyContext) CopyOutIovecs(addr hostarch.Addr, src hostarch.AddrRangeSeq) error {
-	return copyOutIovecs(cc, cc.t, addr, src)
-}
-
-// CopyInIovecs copies in IoVecs for taskCopyContext.
-//
-// Preconditions: Same as usermem.IO.CopyIn, plus:
-//   - The caller must be running on the task goroutine or hold the cc.t.mu
-//   - t's AddressSpace must be active.
-func (cc *taskCopyContext) CopyInIovecs(addr hostarch.Addr, numIovecs int) ([]hostarch.AddrRange, error) {
-	return copyInIovecs(cc, cc.t, addr, numIovecs)
 }
 
 type ownTaskCopyContext struct {
