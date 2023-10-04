@@ -143,6 +143,29 @@ func (mnt *Mount) Options() MountOptions {
 	}
 }
 
+// MountFlags returns a bit mask that indicates mount options.
+func (mnt *Mount) MountFlags() uint64 {
+	mnt.vfs.lockMounts()
+	defer mnt.vfs.unlockMounts(context.Background())
+	var flags uint64
+	if mnt.Flags.NoExec {
+		flags |= linux.ST_NOEXEC
+	}
+	if mnt.Flags.NoATime {
+		flags |= linux.ST_NOATIME
+	}
+	if mnt.Flags.NoDev {
+		flags |= linux.ST_NODEV
+	}
+	if mnt.Flags.NoSUID {
+		flags |= linux.ST_NOSUID
+	}
+	if mnt.ReadOnly() {
+		flags |= linux.ST_RDONLY
+	}
+	return flags
+}
+
 func (mnt *Mount) generateOptionalTags() string {
 	mnt.vfs.lockMounts()
 	defer mnt.vfs.unlockMounts(context.Background())
