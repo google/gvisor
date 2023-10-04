@@ -223,6 +223,25 @@ func OpenImage(src *os.File) (*Image, error) {
 	return i, nil
 }
 
+// UpdateImage updates the underlying image file. This is typically used in checkpoint/restore.
+//
+// On success, the ownership of src is transferred to Image.
+//
+// Preconditions:
+//   - i.src == nil.
+//   - i.bytes == nil.
+func (i *Image) UpdateImage(src *os.File) error {
+	newImage, err := OpenImage(src)
+	if err != nil {
+		return err
+	}
+	if newImage.sb != i.sb {
+		return fmt.Errorf("superblock mismatch detected, got %+v, expected %+v", newImage.sb, i.sb)
+	}
+	*i = *newImage
+	return nil
+}
+
 // Close closes the image.
 func (i *Image) Close() {
 	unix.Munmap(i.bytes)
