@@ -421,8 +421,12 @@ func (g *Gofer) setupRootFS(spec *specs.Spec, conf *config.Config) error {
 	if spec.Root.Readonly || g.overlayMediums[0].IsEnabled() {
 		// If root is a mount point but not read-only, we can change mount options
 		// to make it read-only for extra safety.
+		// unix.MS_NOSUID and unix.MS_NODEV are included here not only
+		// for safety reasons but also because they can be locked and
+		// any attempts to unset them will fail.  See
+		// mount_namespaces(7) for more details.
 		log.Infof("Remounting root as readonly: %q", root)
-		flags := uintptr(unix.MS_BIND | unix.MS_REMOUNT | unix.MS_RDONLY | unix.MS_REC)
+		flags := uintptr(unix.MS_BIND | unix.MS_REMOUNT | unix.MS_RDONLY | unix.MS_REC | unix.MS_NOSUID | unix.MS_NODEV)
 		if err := specutils.SafeMount(root, root, "bind", flags, "", procPath); err != nil {
 			return fmt.Errorf("remounting root as read-only with source: %q, target: %q, flags: %#x, err: %v", root, root, flags, err)
 		}
