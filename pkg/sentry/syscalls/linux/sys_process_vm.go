@@ -65,15 +65,10 @@ func processVMOp(t *kernel.Task, args arch.SyscallArguments, op processVMOpType)
 		return 0, nil, linuxerr.EFAULT
 	}
 
-	// Determine local and remote processes.
-	// Local process is always the caller.
-	localTask := t.ThreadGroup().Leader()
-	if localTask == nil {
-		return 0, nil, linuxerr.ESRCH
-	}
-	// Remote process is the pid specified in the syscall arguments. It is
-	// allowed to be the same as the caller process.
-	remoteThreadGroup := localTask.PIDNamespace().ThreadGroupWithID(pid)
+	// Local process is always the current task (t). Remote process is the
+	// pid specified in the syscall arguments. It is allowed to be the same
+	// as the caller process.
+	remoteThreadGroup := t.PIDNamespace().ThreadGroupWithID(pid)
 	if remoteThreadGroup == nil {
 		return 0, nil, linuxerr.ESRCH
 	}
@@ -85,7 +80,7 @@ func processVMOp(t *kernel.Task, args arch.SyscallArguments, op processVMOpType)
 	// man 2 process_vm_read: "Permission to read from or write to another
 	// process is governed by a ptrace access mode
 	// PTRACE_MODE_ATTACH_REALCREDS check; see ptrace(2)."
-	if !localTask.CanTrace(remoteTask, true /* attach */) {
+	if !t.CanTrace(remoteTask, true /* attach */) {
 		return 0, nil, linuxerr.EPERM
 	}
 
@@ -99,14 +94,14 @@ func processVMOp(t *kernel.Task, args arch.SyscallArguments, op processVMOpType)
 			readCtx:         remoteTask.CopyContext(t, usermem.IOOpts{}),
 			readAddr:        rvec,
 			readIovecCount:  riovcnt,
-			writeCtx:        localTask.CopyContext(t, usermem.IOOpts{AddressSpaceActive: true}),
+			writeCtx:        t.CopyContext(t, usermem.IOOpts{AddressSpaceActive: true}),
 			writeAddr:       lvec,
 			writeIovecCount: liovcnt,
 		}
 	case processVMOpWrite:
 		// Read from local process and write into remote.
 		opArgs = processVMOpArgs{
-			readCtx:         localTask.CopyContext(t, usermem.IOOpts{AddressSpaceActive: true}),
+			readCtx:         t.CopyContext(t, usermem.IOOpts{AddressSpaceActive: true}),
 			readAddr:        lvec,
 			readIovecCount:  liovcnt,
 			writeCtx:        remoteTask.CopyContext(t, usermem.IOOpts{}),
@@ -121,7 +116,7 @@ func processVMOp(t *kernel.Task, args arch.SyscallArguments, op processVMOpType)
 		n   int
 		err error
 	)
-	if localTask == remoteTask {
+	if t == remoteTask {
 		// No need to lock remote process's task mutex since it is the
 		// same as this process.
 		n, err = doProcessVMOpMaybeLocked(t, opArgs)
