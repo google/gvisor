@@ -54,10 +54,17 @@ type bufferedReader struct {
 
 // Read implements io.Reader.Read.
 func (b *bufferedReader) Read(p []byte) (int, error) {
+	// In Linux, reads of up to page size bytes will always complete fully.
+	// See drivers/char/random.c:get_random_bytes_user().
+	// NOTE(gvisor.dev/issue/9445): Some applications rely on this behavior.
+	const pageSize = 4096
+	min := len(p)
+	if min > pageSize {
+		min = pageSize
+	}
 	b.mu.Lock()
-	n, err := b.r.Read(p)
-	b.mu.Unlock()
-	return n, err
+	defer b.mu.Unlock()
+	return io.ReadAtLeast(b.r, p, min)
 }
 
 // Reader is the default reader.
