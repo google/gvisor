@@ -14,7 +14,36 @@
 
 package erofs
 
-// TODO: support checkpoint/restore.
+import (
+	"fmt"
+	"os"
+
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
+)
+
+// Compile-time assertion that filesystem implements vfs.FilesystemImplSaveRestoreExtension.
+var _ = vfs.FilesystemImplSaveRestoreExtension((*filesystem)(nil))
+
+// PreprareSave implements vfs.FilesystemImplSaveRestoreExtension.PrepareSave.
+func (fs *filesystem) PrepareSave(ctx context.Context) error {
+	return nil
+}
+
+// CompleteRestore implements
+// vfs.FilesystemImplSaveRestoreExtension.CompleteRestore.
+func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRestoreOptions) error {
+	fdmapv := ctx.Value(vfs.CtxRestoreFilesystemFDMap)
+	if fdmapv == nil {
+		return fmt.Errorf("no image FD map available")
+	}
+	fdmap := fdmapv.(map[string]int)
+	fd, ok := fdmap[fs.iopts.UniqueID]
+	if !ok {
+		return fmt.Errorf("no image FD available for filesystem with unique ID %q", fs.iopts.UniqueID)
+	}
+	return fs.image.UpdateImage(os.NewFile(uintptr(fd), "EROFS image file"))
+}
 
 // saveParent is called by stateify.
 func (d *dentry) saveParent() *dentry {

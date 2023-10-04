@@ -28,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/erofs"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
@@ -51,6 +52,7 @@ type filesystem struct {
 
 	// Immutable options.
 	mopts string
+	iopts InternalFilesystemOptions
 
 	// devMinor is the filesystem's minor device number. devMinor is immutable.
 	devMinor uint32
@@ -68,6 +70,16 @@ type filesystem struct {
 	// reduce the lock contention. Bucket is chosen based on the hash calculation
 	// on nid in filesystem.inodeBucket.
 	inodeBuckets []inodeBucket
+}
+
+// InternalFilesystemOptions may be passed as
+// vfs.GetFilesystemOptions.InternalData to FilesystemType.GetFilesystem.
+//
+// +stateify savable
+type InternalFilesystemOptions struct {
+	// If UniqueID is non-empty, it is an opaque string used to reassociate the
+	// filesystem with a new image FD during restoration from checkpoint.
+	UniqueID string
 }
 
 // Name implements vfs.FilesystemType.Name.
@@ -98,6 +110,12 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	}
 	cu.Add(func() { image.Close() })
 
+	iopts, ok := opts.InternalData.(InternalFilesystemOptions)
+	if opts.InternalData != nil && !ok {
+		ctx.Warningf("erofs.FilesystemType.GetFilesystem: GetFilesystemOptions.InternalData has type %T, wanted erofs.InternalFilesystemOptions", opts.InternalData)
+		return nil, nil, linuxerr.EINVAL
+	}
+
 	devMinor, err := vfsObj.GetAnonBlockDevMinor()
 	if err != nil {
 		return nil, nil, err
@@ -105,6 +123,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 
 	fs := &filesystem{
 		mopts:    opts.Data,
+		iopts:    iopts,
 		image:    image,
 		devMinor: devMinor,
 		mf:       imageMemmapFile{image: image},
@@ -242,6 +261,14 @@ type inode struct {
 	dirMu sync.RWMutex `state:"nosave"`
 	// +checklocks:dirMu
 	dirents []vfs.Dirent `state:"nosave"`
+
+	// mapsMu protects mappings.
+	mapsMu sync.Mutex `state:"nosave"`
+
+	// mappings tracks the mappings of the file into memmap.MappingSpaces
+	// if this inode represents a regular file.
+	// +checklocks:mapsMu
+	mappings memmap.MappingSet
 
 	// locks supports POSIX and BSD style locks.
 	locks vfs.FileLocks
