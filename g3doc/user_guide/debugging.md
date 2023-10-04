@@ -84,7 +84,7 @@ sudo dlv attach $(docker inspect test | grep Pid | head -n 1 | grep -oe "[0-9]*"
 Set a breakpoint for accept:
 
 ```bash
-break gvisor.dev/gvisor/pkg/sentry/socket/netstack.(*SocketOperations).Accept
+break gvisor.dev/gvisor/pkg/sentry/socket/netstack.(*sock).Accept
 continue
 ```
 
