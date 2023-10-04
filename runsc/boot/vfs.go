@@ -478,6 +478,19 @@ func (c *containerMounter) createMountNamespace(ctx context.Context, conf *confi
 			},
 		}
 
+	case rootfsConf.ShouldUseErofs():
+		fsName = erofs.Name
+		opts = &vfs.MountOptions{
+			ReadOnly: c.root.Readonly,
+			GetFilesystemOptions: vfs.GetFilesystemOptions{
+				InternalMount: true,
+				Data:          fmt.Sprintf("ifd=%d", ioFD),
+				InternalData: erofs.InternalFilesystemOptions{
+					UniqueID: "/",
+				},
+			},
+		}
+
 	default:
 		return nil, fmt.Errorf("unsupported rootfs config: %+v", rootfsConf)
 	}

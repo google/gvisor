@@ -25,6 +25,7 @@ func TestGoferConf(t *testing.T) {
 		wantHostFile bool
 		wantLisafs   bool
 		wantTmpfs    bool
+		wantErofs    bool
 		wantValid    bool
 	}{{
 		cfg: GoferMountConf{Lower: NoneLower, Upper: NoOverlay},
@@ -36,6 +37,7 @@ func TestGoferConf(t *testing.T) {
 		wantHostFile: false,
 		wantLisafs:   false,
 		wantTmpfs:    true,
+		wantErofs:    false,
 		wantValid:    true,
 	}, {
 		cfg:          GoferMountConf{Lower: NoneLower, Upper: SelfOverlay},
@@ -43,6 +45,7 @@ func TestGoferConf(t *testing.T) {
 		wantHostFile: true,
 		wantLisafs:   false,
 		wantTmpfs:    true,
+		wantErofs:    false,
 		wantValid:    true,
 	}, {
 		cfg:          GoferMountConf{Lower: NoneLower, Upper: AnonOverlay},
@@ -50,6 +53,7 @@ func TestGoferConf(t *testing.T) {
 		wantHostFile: true,
 		wantLisafs:   false,
 		wantTmpfs:    true,
+		wantErofs:    false,
 		wantValid:    true,
 	}, {
 		cfg:          GoferMountConf{Lower: Lisafs, Upper: NoOverlay},
@@ -57,6 +61,7 @@ func TestGoferConf(t *testing.T) {
 		wantHostFile: false,
 		wantLisafs:   true,
 		wantTmpfs:    false,
+		wantErofs:    false,
 		wantValid:    true,
 	}, {
 		cfg:          GoferMountConf{Lower: Lisafs, Upper: MemoryOverlay},
@@ -64,6 +69,7 @@ func TestGoferConf(t *testing.T) {
 		wantHostFile: false,
 		wantLisafs:   true,
 		wantTmpfs:    false,
+		wantErofs:    false,
 		wantValid:    true,
 	}, {
 		cfg:          GoferMountConf{Lower: Lisafs, Upper: SelfOverlay},
@@ -71,6 +77,7 @@ func TestGoferConf(t *testing.T) {
 		wantHostFile: true,
 		wantLisafs:   true,
 		wantTmpfs:    false,
+		wantErofs:    false,
 		wantValid:    true,
 	}, {
 		cfg:          GoferMountConf{Lower: Lisafs, Upper: AnonOverlay},
@@ -78,6 +85,39 @@ func TestGoferConf(t *testing.T) {
 		wantHostFile: true,
 		wantLisafs:   true,
 		wantTmpfs:    false,
+		wantErofs:    false,
+		wantValid:    true,
+	}, {
+		cfg:          GoferMountConf{Lower: Erofs, Upper: NoOverlay},
+		wantOverlay:  false,
+		wantHostFile: false,
+		wantLisafs:   false,
+		wantTmpfs:    false,
+		wantErofs:    true,
+		wantValid:    true,
+	}, {
+		cfg:          GoferMountConf{Lower: Erofs, Upper: MemoryOverlay},
+		wantOverlay:  true,
+		wantHostFile: false,
+		wantLisafs:   false,
+		wantTmpfs:    false,
+		wantErofs:    true,
+		wantValid:    true,
+	}, {
+		cfg:          GoferMountConf{Lower: Erofs, Upper: SelfOverlay},
+		wantOverlay:  true,
+		wantHostFile: true,
+		wantLisafs:   false,
+		wantTmpfs:    false,
+		wantErofs:    true,
+		wantValid:    true,
+	}, {
+		cfg:          GoferMountConf{Lower: Erofs, Upper: AnonOverlay},
+		wantOverlay:  true,
+		wantHostFile: true,
+		wantLisafs:   false,
+		wantTmpfs:    false,
+		wantErofs:    true,
 		wantValid:    true,
 	}, {
 		cfg: GoferMountConf{Lower: LowerMax, Upper: UpperMax},
@@ -104,6 +144,9 @@ func TestGoferConf(t *testing.T) {
 		if got := tc.cfg.ShouldUseTmpfs(); got != tc.wantTmpfs {
 			t.Errorf("gofer conf = %+v, ShouldUseTmpfs() = %t, want = %t", tc.cfg, got, tc.wantTmpfs)
 		}
+		if got := tc.cfg.ShouldUseErofs(); got != tc.wantErofs {
+			t.Errorf("gofer conf = %+v, ShouldUseErofs() = %t, want = %t", tc.cfg, got, tc.wantErofs)
+		}
 	}
 }
 
@@ -116,6 +159,10 @@ func TestGoferConfFlags(t *testing.T) {
 		{Lower: Lisafs, Upper: MemoryOverlay},
 		{Lower: Lisafs, Upper: SelfOverlay},
 		{Lower: Lisafs, Upper: AnonOverlay},
+		{Lower: Erofs, Upper: NoOverlay},
+		{Lower: Erofs, Upper: MemoryOverlay},
+		{Lower: Erofs, Upper: SelfOverlay},
+		{Lower: Erofs, Upper: AnonOverlay},
 	}
 	var got GoferMountConfFlags
 	got.Set(want.String())

@@ -115,8 +115,8 @@ func (g *Gofer) SetFlags(f *flag.FlagSet) {
 	f.BoolVar(&g.setUpRoot, "setup-root", true, "if true, set up an empty root for the process")
 
 	// Open FDs that are donated to the gofer.
-	f.Var(&g.ioFDs, "io-fds", "list of FDs to connect gofer servers. They must follow this order: root first, then mounts as defined in the spec")
-	f.Var(&g.mountConfs, "gofer-mount-confs", "information about how the gofer mounts have been configured")
+	f.Var(&g.ioFDs, "io-fds", "list of FDs to connect gofer servers. Follows the same order as --gofer-mount-confs. FDs are only donated if the mount is backed by lisafs.")
+	f.Var(&g.mountConfs, "gofer-mount-confs", "information about how the gofer mounts have been configured. They must follow this order: root first, then mounts as defined in the spec.")
 	f.IntVar(&g.specFD, "spec-fd", -1, "required fd with the container spec")
 	f.IntVar(&g.mountsFD, "mounts-fd", -1, "mountsFD is the file descriptor to write list of mounts after they have been resolved (direct paths, no symlinks).")
 
@@ -267,16 +267,20 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string) subcom
 		DonateMountPointFD: conf.DirectFS,
 	})
 
-	// Start with root mount, then add any other additional mount as needed.
-	cfgs = append(cfgs, connectionConfig{
-		sock:      newSocket(g.ioFDs[0]),
-		mountPath: "/", // fsgofer process is always chroot()ed. So serve root.
-		readonly:  spec.Root.Readonly || g.mountConfs[0].ShouldUseOverlayfs(),
-	})
-	log.Infof("Serving %q mapped to %q on FD %d (ro: %t)", "/", root, g.ioFDs[0], cfgs[0].readonly)
+	ioFDs := g.ioFDs
+	rootfsConf := g.mountConfs[0]
+	if rootfsConf.ShouldUseLisafs() {
+		// Start with root mount, then add any other additional mount as needed.
+		cfgs = append(cfgs, connectionConfig{
+			sock:      newSocket(ioFDs[0]),
+			mountPath: "/", // fsgofer process is always chroot()ed. So serve root.
+			readonly:  spec.Root.Readonly || rootfsConf.ShouldUseOverlayfs(),
+		})
+		log.Infof("Serving %q mapped to %q on FD %d (ro: %t)", "/", root, ioFDs[0], cfgs[0].readonly)
+		ioFDs = ioFDs[1:]
+	}
 
 	mountIdx := 1 // first one is the root
-	submountIoFDs := g.ioFDs[1:]
 	for _, m := range spec.Mounts {
 		if !specutils.IsGoferMount(m) {
 			continue
@@ -290,11 +294,11 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string) subcom
 			util.Fatalf("mount destination must be absolute: %q", m.Destination)
 		}
 
-		if len(submountIoFDs) == 0 {
+		if len(ioFDs) == 0 {
 			util.Fatalf("no FD found for mount. Did you forget --io-fd? FDs: %d, Mount: %+v", len(g.ioFDs), m)
 		}
-		ioFD := submountIoFDs[0]
-		submountIoFDs = submountIoFDs[1:]
+		ioFD := ioFDs[0]
+		ioFDs = ioFDs[1:]
 		readonly := specutils.IsReadonlyMount(m.Options) || mountConf.ShouldUseOverlayfs()
 		cfgs = append(cfgs, connectionConfig{
 			sock:      newSocket(ioFD),
@@ -304,7 +308,7 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string) subcom
 		log.Infof("Serving %q mapped on FD %d (ro: %t)", m.Destination, ioFD, readonly)
 	}
 
-	if len(submountIoFDs) > 0 {
+	if len(ioFDs) > 0 {
 		util.Fatalf("too many FDs passed for mounts. mounts: %d, FDs: %d", len(cfgs), len(g.ioFDs))
 	}
 
@@ -392,17 +396,20 @@ func (g *Gofer) setupRootFS(spec *specs.Spec, conf *config.Config) error {
 		procPath = "/proc/proc"
 	}
 
-	// Mount root path followed by submounts.
-	if err := specutils.SafeMount(spec.Root.Path, root, "bind", unix.MS_BIND|unix.MS_REC, "", procPath); err != nil {
-		return fmt.Errorf("mounting root on root (%q) err: %v", root, err)
-	}
+	rootfsConf := g.mountConfs[0]
+	if rootfsConf.ShouldUseLisafs() {
+		// Mount root path followed by submounts.
+		if err := specutils.SafeMount(spec.Root.Path, root, "bind", unix.MS_BIND|unix.MS_REC, "", procPath); err != nil {
+			return fmt.Errorf("mounting root on root (%q) err: %v", root, err)
+		}
 
-	flags := uint32(unix.MS_SLAVE | unix.MS_REC)
-	if spec.Linux != nil && spec.Linux.RootfsPropagation != "" {
-		flags = specutils.PropOptionsToFlags([]string{spec.Linux.RootfsPropagation})
-	}
-	if err := specutils.SafeMount("", root, "", uintptr(flags), "", procPath); err != nil {
-		return fmt.Errorf("mounting root (%q) with flags: %#x, err: %v", root, flags, err)
+		flags := uint32(unix.MS_SLAVE | unix.MS_REC)
+		if spec.Linux != nil && spec.Linux.RootfsPropagation != "" {
+			flags = specutils.PropOptionsToFlags([]string{spec.Linux.RootfsPropagation})
+		}
+		if err := specutils.SafeMount("", root, "", uintptr(flags), "", procPath); err != nil {
+			return fmt.Errorf("mounting root (%q) with flags: %#x, err: %v", root, flags, err)
+		}
 	}
 
 	// Replace the current spec, with the clean spec with symlinks resolved.
@@ -423,7 +430,7 @@ func (g *Gofer) setupRootFS(spec *specs.Spec, conf *config.Config) error {
 	}
 
 	// Check if root needs to be remounted as readonly.
-	if spec.Root.Readonly || g.mountConfs[0].ShouldUseOverlayfs() {
+	if rootfsConf.ShouldUseLisafs() && (spec.Root.Readonly || rootfsConf.ShouldUseOverlayfs()) {
 		// If root is a mount point but not read-only, we can change mount options
 		// to make it read-only for extra safety.
 		// unix.MS_NOSUID and unix.MS_NODEV are included here not only

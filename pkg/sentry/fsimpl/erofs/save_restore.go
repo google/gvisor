@@ -50,7 +50,9 @@ func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRest
 	if got, want := newImage.SuperBlock(), fs.image.SuperBlock(); got != want {
 		return fmt.Errorf("superblock mismatch detected on restore, got %+v, expected %+v", got, want)
 	}
-	fs.image = newImage
+	// We need to update the image in place, as there are other pointers
+	// pointing to this image as well.
+	*fs.image = *newImage
 	return nil
 }
 
