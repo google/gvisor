@@ -41,6 +41,21 @@ const (
 	PATH_MAX = 4096
 )
 
+// The bit mask f_flags in struct statfs, from include/linux/statfs.h
+const (
+	ST_RDONLY      = 0x0001
+	ST_NOSUID      = 0x0002
+	ST_NODEV       = 0x0004
+	ST_NOEXEC      = 0x0008
+	ST_SYNCHRONOUS = 0x0010
+	ST_VALID       = 0x0020
+	ST_MANDLOCK    = 0x0040
+	ST_NOATIME     = 0x0400
+	ST_NODIRATIME  = 0x0800
+	ST_RELATIME    = 0x1000
+	ST_NOSYMFOLLOW = 0x2000
+)
+
 // Statfs is struct statfs, from uapi/asm-generic/statfs.h.
 //
 // +marshal

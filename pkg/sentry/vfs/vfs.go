@@ -663,6 +663,7 @@ func (vfs *VirtualFilesystem) StatFSAt(ctx context.Context, creds *auth.Credenti
 		vfs.maybeBlockOnMountPromise(ctx, rp)
 		statfs, err := rp.mount.fs.impl.StatFSAt(ctx, rp)
 		if err == nil {
+			statfs.Flags |= rp.mount.MountFlags()
 			rp.Release(ctx)
 			return statfs, nil
 		}
