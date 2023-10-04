@@ -32,6 +32,10 @@ const (
 
 	// defaultLabel is the label for the default action.
 	defaultLabel = label("default_action")
+
+	// vsyscallPageIPMask is the bit we expect to see in the instruction
+	// pointer of a vsyscall call.
+	vsyscallPageIPMask = 1 << 31
 )
 
 // NonNegativeFDCheck ensures an FD argument is a non-negative int.
@@ -270,6 +274,26 @@ func (l *labelSet) Push(labelSuffix string, newRuleMatch, newRuleMismatch label)
 	}
 }
 
+// matchedValue keeps track of BPF instructions needed to load a 64-bit value
+// being matched against. Since BPF can only do operations on 32-bit
+// instructions, value-matching code needs to selectively load one or the
+// other half of the 64-bit value.
+type matchedValue struct {
+	program        *syscallProgram
+	dataOffsetHigh uint32
+	dataOffsetLow  uint32
+}
+
+// LoadHigh32Bits loads the high 32-bit of the 64-bit value into register A.
+func (m matchedValue) LoadHigh32Bits() {
+	m.program.Stmt(bpf.Ld|bpf.Abs|bpf.W, m.dataOffsetHigh)
+}
+
+// LoadLow32Bits loads the low 32-bit of the 64-bit value into register A.
+func (m matchedValue) LoadLow32Bits() {
+	m.program.Stmt(bpf.Ld|bpf.Abs|bpf.W, m.dataOffsetLow)
+}
+
 // BuildStats contains information about seccomp program generation.
 type BuildStats struct {
 	// SizeBeforeOptimizations and SizeAfterOptimizations correspond to the
@@ -441,7 +465,7 @@ func buildBSTProgram(n *node, rules []RuleSet, program *syscallProgram) error {
 		// the vsyscall page will be mapped.
 		if rs.Vsyscall {
 			program.Stmt(bpf.Ld|bpf.Abs|bpf.W, seccompDataOffsetIPHigh)
-			program.IfNot(bpf.Jmp|bpf.Jset|bpf.K, 0x80000000, ruleSetLabelSet.Mismatched())
+			program.IfNot(bpf.Jmp|bpf.Jset|bpf.K, vsyscallPageIPMask, ruleSetLabelSet.Mismatched())
 		}
 
 		// Add an argument check for these particular
