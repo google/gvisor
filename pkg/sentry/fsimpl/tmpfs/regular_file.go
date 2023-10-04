@@ -360,11 +360,50 @@ func (fd *regularFileFD) Release(context.Context) {
 // Allocate implements vfs.FileDescriptionImpl.Allocate.
 func (fd *regularFileFD) Allocate(ctx context.Context, mode, offset, length uint64) error {
 	f := fd.inode().impl.(*regularFile)
-
+	// To be consistent with Linux, inode.mu must be locked throughout.
 	f.inode.mu.Lock()
 	defer f.inode.mu.Unlock()
-	f.dataMu.Lock()
-	defer f.dataMu.Unlock()
+	end := offset + length
+	pgEnd, ok := hostarch.PageRoundUp(end)
+	if !ok {
+		return linuxerr.EFBIG
+	}
+	// Allocate in chunks for the following reasons:
+	// 1. Size limit may permit really large fallocate, which can take a long
+	//    time to execute on the host. This can cause watchdog to timeout and
+	//    crash the system. Watchdog needs petting.
+	// 2. Linux allocates folios iteratively while checking for interrupts. In
+	//    gVisor, we need to manually check for interrupts between chunks.
+	const chunkSize = 4 << 30 // 4 GiB
+	for curPgStart := hostarch.PageRoundDown(offset); curPgStart < pgEnd; {
+		curPgEnd := pgEnd
+		newSize := end
+		if curPgEnd-curPgStart > chunkSize {
+			curPgEnd = curPgStart + chunkSize
+			newSize = curPgEnd
+		}
+		required := memmap.MappableRange{Start: curPgStart, End: curPgEnd}
+		if err := f.allocateLocked(ctx, mode, newSize, required); err != nil {
+			return err
+		}
+		// This loop can take a long time to process, so periodically check for
+		// interrupts. This also pets the watchdog.
+		if ctx.Interrupted() {
+			return linuxerr.EINTR
+		}
+		// Advance curPgStart.
+		curPgStart = curPgEnd
+	}
+	return nil
+}
+
+// Preconditions:
+// - rf.inode.mu is locked.
+// - required must be page-aligned.
+// - required.Start < newSize <= required.End.
+func (rf *regularFile) allocateLocked(ctx context.Context, mode, newSize uint64, required memmap.MappableRange) error {
+	rf.dataMu.Lock()
+	defer rf.dataMu.Unlock()
 
 	// We must allocate pages in the range specified by offset and length.
 	// Even if newSize <= oldSize, there might not be actual memory backing this
@@ -372,21 +411,14 @@ func (fd *regularFileFD) Allocate(ctx context.Context, mode, offset, length uint
 	// "After a successful call, subsequent writes into the range
 	// specified by offset and len are guaranteed not to fail because of
 	// lack of disk space."  - fallocate(2)
-	newSize := offset + length
-	pgstartaddr := hostarch.Addr(offset).RoundDown()
-	pgendaddr, ok := hostarch.Addr(newSize).RoundUp()
-	if !ok {
-		return linuxerr.EFBIG
-	}
-	required := memmap.MappableRange{Start: uint64(pgstartaddr), End: uint64(pgendaddr)}
-	pagesToFill := f.data.PagesToFill(required, required)
-	if !f.inode.fs.accountPages(pagesToFill) {
+	pagesToFill := rf.data.PagesToFill(required, required)
+	if !rf.inode.fs.accountPages(pagesToFill) {
 		return linuxerr.ENOSPC
 	}
 	// Given our definitions in pgalloc, fallocate(2) semantics imply that pages
 	// in the MemoryFile must be committed, in addition to being allocated.
 	allocMode := pgalloc.AllocateAndCommit
-	if !f.inode.fs.mf.IsDiskBacked() {
+	if !rf.inode.fs.mf.IsDiskBacked() {
 		// Upgrade to AllocateAndWritePopulate for memory(shmem)-backed files. We
 		// take a more aggressive approach in populating pages for memory-backed
 		// MemoryFiles. shmem pages are subject to swap rather than disk writeback.
@@ -395,19 +427,19 @@ func (fd *regularFileFD) Allocate(ctx context.Context, mode, offset, length uint
 		// faulting page-by-page when these pages are written to in the future.
 		allocMode = pgalloc.AllocateAndWritePopulate
 	}
-	pagesAlloced, err := f.data.Fill(ctx, required, required, newSize, f.inode.fs.mf, f.memoryUsageKind, allocMode, nil /* r */)
+	pagesAlloced, err := rf.data.Fill(ctx, required, required, newSize, rf.inode.fs.mf, rf.memoryUsageKind, allocMode, nil /* r */)
 	// f.data.Fill() may fail mid-way. We still want to account any pages that
 	// were allocated, irrespective of an error.
-	f.inode.fs.adjustPageAcct(pagesToFill, pagesAlloced)
+	rf.inode.fs.adjustPageAcct(pagesToFill, pagesAlloced)
 	if err != nil && err != io.EOF {
 		return err
 	}
 
-	oldSize := f.size.Load()
+	oldSize := rf.size.Load()
 	if oldSize >= newSize {
 		return nil
 	}
-	return f.growLocked(newSize)
+	return rf.growLocked(newSize)
 }
 
 // PRead implements vfs.FileDescriptionImpl.PRead.
