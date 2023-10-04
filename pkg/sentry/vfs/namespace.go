@@ -142,10 +142,6 @@ func (vfs *VirtualFilesystem) updateRootAndCWD(ctx context.Context, root *Virtua
 		cwd.mount = dst
 		cwd.mount.IncRef()
 	}
-	for srcChild := range src.children {
-		dstChild := vfs.mounts.Lookup(dst, srcChild.point())
-		vfs.updateRootAndCWD(ctx, root, cwd, srcChild, dstChild)
-	}
 }
 
 // NamespaceInodeGetter is an interface that provides the GetNamespaceInode method.
@@ -174,7 +170,10 @@ func (vfs *VirtualFilesystem) CloneMountNamespace(
 	vfs.lockMounts()
 	defer vfs.unlockMounts(ctx)
 
-	newRoot, err := vfs.cloneMountTree(ctx, ns.root, ns.root.root)
+	newRoot, err := vfs.cloneMountTree(ctx, ns.root, ns.root.root,
+		func(ctx context.Context, src, dst *Mount) {
+			vfs.updateRootAndCWD(ctx, root, cwd, src, dst) // +checklocksforce: vfs.mountMu is locked.
+		})
 	if err != nil {
 		newns.DecRef(ctx)
 		vfs.abortTree(ctx, newRoot)
@@ -183,7 +182,6 @@ func (vfs *VirtualFilesystem) CloneMountNamespace(
 	newns.root = newRoot
 	newns.root.ns = newns
 	vfs.commitPendingTree(ctx, newRoot)
-	vfs.updateRootAndCWD(ctx, root, cwd, ns.root, newns.root)
 	return newns, nil
 }
 

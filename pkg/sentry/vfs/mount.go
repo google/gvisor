@@ -377,10 +377,19 @@ type cloneTreeNode struct {
 
 // cloneMountTree creates a copy of mnt's tree with the specified root
 // dentry at root. The new descendents are added to mnt's pending mount list.
+// `cloneFunc` is a callback that is executed for each cloned mount.
 //
 // +checklocks:vfs.mountMu
-func (vfs *VirtualFilesystem) cloneMountTree(ctx context.Context, mnt *Mount, root *Dentry) (*Mount, error) {
+func (vfs *VirtualFilesystem) cloneMountTree(
+	ctx context.Context,
+	mnt *Mount,
+	root *Dentry,
+	cloneFunc func(ctx context.Context, oldmnt, newMnt *Mount),
+) (*Mount, error) {
 	clone := vfs.cloneMount(mnt, root, nil)
+	if cloneFunc != nil {
+		cloneFunc(ctx, mnt, clone)
+	}
 	queue := []cloneTreeNode{{mnt, clone}}
 	for len(queue) != 0 {
 		p := queue[len(queue)-1]
@@ -396,6 +405,9 @@ func (vfs *VirtualFilesystem) cloneMountTree(ctx context.Context, mnt *Mount, ro
 			p.parentMount.pendingChildren = append(p.parentMount.pendingChildren, m)
 			if len(c.children) != 0 {
 				queue = append(queue, cloneTreeNode{c, m})
+			}
+			if cloneFunc != nil {
+				cloneFunc(ctx, c, m)
 			}
 		}
 	}
