@@ -21,4 +21,4 @@ package linux
 // paging.
 //
 // The array has to be sorted in decreasing order.
-var feasibleTaskSizes = []uintptr{0xffffffffff000, 0x7ffffffff000}
+var feasibleTaskSizes = []uintptr{0xfffffffffff000, 0x7ffffffff000}
