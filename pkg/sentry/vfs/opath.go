@@ -30,6 +30,7 @@ import (
 type opathFD struct {
 	vfsfd FileDescription
 	FileDescriptionDefaultImpl
+	DentryMetadataFileDescriptionImpl
 	BadLockFD
 }
 
@@ -83,59 +84,9 @@ func (fd *opathFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) err
 	return linuxerr.EBADF
 }
 
-// ListXattr implements FileDescriptionImpl.ListXattr.
-func (fd *opathFD) ListXattr(ctx context.Context, size uint64) ([]string, error) {
-	return nil, linuxerr.EBADF
-}
-
-// GetXattr implements FileDescriptionImpl.GetXattr.
-func (fd *opathFD) GetXattr(ctx context.Context, opts GetXattrOptions) (string, error) {
-	return "", linuxerr.EBADF
-}
-
-// SetXattr implements FileDescriptionImpl.SetXattr.
-func (fd *opathFD) SetXattr(ctx context.Context, opts SetXattrOptions) error {
-	return linuxerr.EBADF
-}
-
-// RemoveXattr implements FileDescriptionImpl.RemoveXattr.
-func (fd *opathFD) RemoveXattr(ctx context.Context, name string) error {
-	return linuxerr.EBADF
-}
-
 // Sync implements FileDescriptionImpl.Sync.
 func (fd *opathFD) Sync(ctx context.Context) error {
 	return linuxerr.EBADF
-}
-
-// SetStat implements FileDescriptionImpl.SetStat.
-func (fd *opathFD) SetStat(ctx context.Context, opts SetStatOptions) error {
-	return linuxerr.EBADF
-}
-
-// Stat implements FileDescriptionImpl.Stat.
-func (fd *opathFD) Stat(ctx context.Context, opts StatOptions) (linux.Statx, error) {
-	vfsObj := fd.vfsfd.vd.mount.vfs
-	rp := vfsObj.getResolvingPath(auth.CredentialsFromContext(ctx), &PathOperation{
-		Root:  fd.vfsfd.vd,
-		Start: fd.vfsfd.vd,
-	})
-	stat, err := fd.vfsfd.vd.mount.fs.impl.StatAt(ctx, rp, opts)
-	rp.Release(ctx)
-	return stat, err
-}
-
-// StatFS returns metadata for the filesystem containing the file represented
-// by fd.
-func (fd *opathFD) StatFS(ctx context.Context) (linux.Statfs, error) {
-	vfsObj := fd.vfsfd.vd.mount.vfs
-	rp := vfsObj.getResolvingPath(auth.CredentialsFromContext(ctx), &PathOperation{
-		Root:  fd.vfsfd.vd,
-		Start: fd.vfsfd.vd,
-	})
-	statfs, err := fd.vfsfd.vd.mount.fs.impl.StatFSAt(ctx, rp)
-	rp.Release(ctx)
-	return statfs, err
 }
 
 func (vfs *VirtualFilesystem) openOPathFD(ctx context.Context, creds *auth.Credentials, pop *PathOperation, flags uint32) (*FileDescription, error) {
@@ -161,7 +112,10 @@ func (vfs *VirtualFilesystem) openOPathFD(ctx context.Context, creds *auth.Crede
 	}
 
 	fd := &opathFD{}
-	if err := fd.vfsfd.Init(fd, flags, vd.Mount(), vd.Dentry(), &FileDescriptionOptions{}); err != nil {
+	if err := fd.vfsfd.Init(fd, flags, vd.Mount(), vd.Dentry(), &FileDescriptionOptions{
+		// Pass along Stat, SetStat, StatFS and Xattr calls to fsimpl.
+		UseDentryMetadata: true,
+	}); err != nil {
 		return nil, err
 	}
 	return &fd.vfsfd, err
