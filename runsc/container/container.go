@@ -957,18 +957,18 @@ func (c *Container) createGoferFilestore(ovlConf config.Overlay2, mountSrc strin
 		switch hint.Mount.Type {
 		case "tmpfs":
 			// Create self-backed tmpfs.
-			return c.createGoferFilestoreInSelf(mountSrc, hint, boot.SelfTmpfs)
+			return c.createGoferFilestoreInSelf(mountSrc, hint, boot.GoferMountConf{Lower: boot.NoneLower, Upper: boot.SelfOverlay})
 		default:
-			return nil, boot.VanillaGofer, fmt.Errorf("unsupported mount type %q in mount hint", hint.Mount.Type)
+			return nil, boot.GoferMountConf{}, fmt.Errorf("unsupported mount type %q in mount hint", hint.Mount.Type)
 		}
 	}
 	switch {
 	case !shouldOverlay:
-		return nil, boot.VanillaGofer, nil
+		return nil, boot.GoferMountConf{Lower: boot.Lisafs, Upper: boot.NoOverlay}, nil
 	case ovlConf.IsBackedByMemory():
-		return nil, boot.MemoryOverlay, nil
+		return nil, boot.GoferMountConf{Lower: boot.Lisafs, Upper: boot.MemoryOverlay}, nil
 	case ovlConf.IsBackedBySelf():
-		return c.createGoferFilestoreInSelf(mountSrc, hint, boot.SelfOverlay)
+		return c.createGoferFilestoreInSelf(mountSrc, hint, boot.GoferMountConf{Lower: boot.Lisafs, Upper: boot.SelfOverlay})
 	default:
 		return c.createGoferFilestoreInDir(ovlConf)
 	}
@@ -977,11 +977,11 @@ func (c *Container) createGoferFilestore(ovlConf config.Overlay2, mountSrc strin
 func (c *Container) createGoferFilestoreInSelf(mountSrc string, hint *boot.MountHint, successConf boot.GoferMountConf) (*os.File, boot.GoferMountConf, error) {
 	mountSrcInfo, err := os.Stat(mountSrc)
 	if err != nil {
-		return nil, boot.VanillaGofer, fmt.Errorf("failed to stat mount %q to see if it were a directory: %v", mountSrc, err)
+		return nil, boot.GoferMountConf{}, fmt.Errorf("failed to stat mount %q to see if it were a directory: %v", mountSrc, err)
 	}
 	if !mountSrcInfo.IsDir() {
 		log.Warningf("self filestore is only supported for directory mounts, but mount %q is not a directory, falling back to memory", mountSrc)
-		return nil, boot.MemoryOverlay, nil
+		return nil, boot.GoferMountConf{Lower: boot.Lisafs, Upper: boot.MemoryOverlay}, nil
 	}
 	// Create the self filestore file.
 	createFlags := unix.O_RDWR | unix.O_CREAT | unix.O_CLOEXEC
@@ -998,9 +998,9 @@ func (c *Container) createGoferFilestoreInSelf(mountSrc string, hint *boot.Mount
 			// same sandbox, and is not shared, then the overlay option doesn't work
 			// correctly. Because each overlay mount is independent and changes to
 			// one are not visible to the other.
-			return nil, boot.VanillaGofer, fmt.Errorf("%q mount source already has a filestore file at %q; repeated submounts are not supported with overlay optimizations", mountSrc, filestorePath)
+			return nil, boot.GoferMountConf{}, fmt.Errorf("%q mount source already has a filestore file at %q; repeated submounts are not supported with overlay optimizations", mountSrc, filestorePath)
 		}
-		return nil, boot.VanillaGofer, fmt.Errorf("failed to create filestore file inside %q: %v", mountSrc, err)
+		return nil, boot.GoferMountConf{}, fmt.Errorf("failed to create filestore file inside %q: %v", mountSrc, err)
 	}
 	log.Debugf("Created filestore file at %q for mount source %q", filestorePath, mountSrc)
 	// Filestore in self should be a named path because it needs to be
@@ -1015,10 +1015,10 @@ func (c *Container) createGoferFilestoreInDir(ovlConf config.Overlay2) (*os.File
 	filestoreDir := ovlConf.HostFileDir()
 	fileInfo, err := os.Stat(filestoreDir)
 	if err != nil {
-		return nil, boot.VanillaGofer, fmt.Errorf("failed to stat filestore directory %q: %v", filestoreDir, err)
+		return nil, boot.GoferMountConf{}, fmt.Errorf("failed to stat filestore directory %q: %v", filestoreDir, err)
 	}
 	if !fileInfo.IsDir() {
-		return nil, boot.VanillaGofer, fmt.Errorf("overlay2 flag should specify an existing directory")
+		return nil, boot.GoferMountConf{}, fmt.Errorf("overlay2 flag should specify an existing directory")
 	}
 	// Create an unnamed temporary file in filestore directory which will be
 	// deleted when the last FD on it is closed. We don't use O_TMPFILE because
@@ -1027,13 +1027,13 @@ func (c *Container) createGoferFilestoreInDir(ovlConf config.Overlay2) (*os.File
 	// This file will be deleted when the container exits.
 	filestoreFile, err := os.CreateTemp(filestoreDir, "runsc-filestore-")
 	if err != nil {
-		return nil, boot.VanillaGofer, fmt.Errorf("failed to create a temporary file inside %q: %v", filestoreDir, err)
+		return nil, boot.GoferMountConf{}, fmt.Errorf("failed to create a temporary file inside %q: %v", filestoreDir, err)
 	}
 	if err := unix.Unlink(filestoreFile.Name()); err != nil {
-		return nil, boot.VanillaGofer, fmt.Errorf("failed to unlink temporary file %q: %v", filestoreFile.Name(), err)
+		return nil, boot.GoferMountConf{}, fmt.Errorf("failed to unlink temporary file %q: %v", filestoreFile.Name(), err)
 	}
 	log.Debugf("Created an unnamed filestore file at %q", filestoreDir)
-	return filestoreFile, boot.AnonOverlay, nil
+	return filestoreFile, boot.GoferMountConf{Lower: boot.Lisafs, Upper: boot.AnonOverlay}, nil
 }
 
 // saveLocked saves the container metadata to a file.
