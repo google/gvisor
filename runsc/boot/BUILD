@@ -148,6 +148,7 @@ go_test(
         "//pkg/cpuid",
         "//pkg/fspath",
         "//pkg/log",
+        "//pkg/sentry/fsimpl/erofs",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/seccheck",
         "//pkg/sentry/vfs",

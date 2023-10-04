@@ -17,6 +17,8 @@ package boot
 import (
 	"fmt"
 	"strings"
+
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
 )
 
 // GoferMountConfUpperType describes how upper layer is configured for the gofer mount.
@@ -85,6 +87,9 @@ const (
 	// Lisafs indicates that this gofer mount has a LISAFS lower layer.
 	Lisafs
 
+	// Erofs indicates that this gofer mount has an EROFS lower layer.
+	Erofs
+
 	// LowerMax indicates the number of the valid lower layer types.
 	LowerMax
 )
@@ -96,6 +101,8 @@ func (l GoferMountConfLowerType) String() string {
 		return "none"
 	case Lisafs:
 		return "lisafs"
+	case Erofs:
+		return erofs.Name
 	}
 	panic(fmt.Sprintf("Invalid gofer mount config lower layer type: %d", l))
 }
@@ -107,6 +114,8 @@ func (l *GoferMountConfLowerType) Set(v string) error {
 		*l = NoneLower
 	case "lisafs":
 		*l = Lisafs
+	case erofs.Name:
+		*l = Erofs
 	default:
 		return fmt.Errorf("invalid gofer mount config lower layer type: %s", v)
 	}
@@ -166,6 +175,11 @@ func (g GoferMountConf) ShouldUseTmpfs() bool {
 // ShouldUseLisafs returns true if a lisafs client/server should be set up.
 func (g GoferMountConf) ShouldUseLisafs() bool {
 	return g.Lower == Lisafs
+}
+
+// ShouldUseErofs returns true if an EROFS should be applied.
+func (g GoferMountConf) ShouldUseErofs() bool {
+	return g.Lower == Erofs
 }
 
 // valid returns true if this is a valid gofer mount config.

@@ -16,17 +16,24 @@ package boot
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
-// MountPrefix is the annotation prefix for mount hints.
-const MountPrefix = "dev.gvisor.spec.mount."
+const (
+	// MountPrefix is the annotation prefix for mount hints applied at the pod level.
+	MountPrefix = "dev.gvisor.spec.mount."
+
+	// RootfsPrefix is the annotation prefix for rootfs hint applied at the container level.
+	RootfsPrefix = "dev.gvisor.spec.rootfs."
+)
 
 // ShareType indicates who can access/mutate the volume contents.
 type ShareType int
@@ -218,4 +225,69 @@ func (p *PodMountHints) FindMount(mountSrc string) *MountHint {
 		}
 	}
 	return nil
+}
+
+// RootfsHint represents extra information about rootfs that are provided via
+// annotations. They can provide mount source, mount type and overlay config.
+type RootfsHint struct {
+	Mount   specs.Mount
+	Overlay config.OverlayMedium
+}
+
+func (r *RootfsHint) setSource(val string) error {
+	if !filepath.IsAbs(val) {
+		return fmt.Errorf("source should be an absolute path, got %q", val)
+	}
+	r.Mount.Source = val
+	return nil
+}
+
+func (r *RootfsHint) setType(val string) error {
+	switch val {
+	case erofs.Name, Bind:
+		r.Mount.Type = val
+	default:
+		return fmt.Errorf("invalid type %q", val)
+	}
+	return nil
+}
+
+func (r *RootfsHint) setField(key, val string) error {
+	switch key {
+	case "source":
+		return r.setSource(val)
+	case "type":
+		return r.setType(val)
+	case "overlay":
+		return r.Overlay.Set(val)
+	default:
+		return fmt.Errorf("invalid rootfs annotation: %s=%s", key, val)
+	}
+}
+
+// NewRootfsHint instantiates RootfsHint using spec.
+func NewRootfsHint(spec *specs.Spec) (*RootfsHint, error) {
+	var hint *RootfsHint
+	for k, v := range spec.Annotations {
+		// Look for 'dev.gvisor.spec.rootfs' annotations and parse them.
+		if !strings.HasPrefix(k, RootfsPrefix) {
+			continue
+		}
+		// Remove the prefix.
+		k = k[len(RootfsPrefix):]
+		if hint == nil {
+			hint = &RootfsHint{}
+		}
+		if err := hint.setField(k, v); err != nil {
+			return nil, fmt.Errorf("invalid rootfs annotation (key = %q, value = %q): %v", k, v, err)
+		}
+	}
+	// Validate the parsed hint.
+	if hint != nil {
+		log.Infof("Rootfs annotations found, source: %q, type: %q, overlay: %q", hint.Mount.Source, hint.Mount.Type, hint.Overlay)
+		if len(hint.Mount.Source) == 0 || len(hint.Mount.Type) == 0 {
+			return nil, fmt.Errorf("rootfs annotations missing required field(s): %+v", hint)
+		}
+	}
+	return hint, nil
 }

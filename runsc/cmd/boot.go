@@ -125,7 +125,9 @@ type Boot struct {
 
 	// mountsFD is the file descriptor to read list of mounts after they have
 	// been resolved (direct paths, no symlinks). They are resolved outside the
-	// sandbox (e.g. gofer) and sent through this FD.
+	// sandbox (e.g. gofer) and sent through this FD. When mountsFD is not
+	// provided, there is no cleaning required for mounts and the mounts in
+	// the spec can be used as is.
 	mountsFD int
 
 	podInitConfigFD int
@@ -194,7 +196,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&b.specFD, "spec-fd", -1, "required fd with the container spec")
 	f.IntVar(&b.controllerFD, "controller-fd", -1, "required FD of a stream socket for the control server that must be donated to this process")
 	f.IntVar(&b.deviceFD, "device-fd", -1, "FD for the platform device file")
-	f.Var(&b.ioFDs, "io-fds", "list of FDs to connect gofer clients. They must follow this order: root first, then mounts as defined in the spec")
+	f.Var(&b.ioFDs, "io-fds", "list of image FDs and/or socket FDs to connect gofer clients. They must follow this order: root first, then mounts as defined in the spec")
 	f.Var(&b.stdioFDs, "stdio-fds", "list of FDs containing sandbox stdin, stdout, and stderr in that order")
 	f.Var(&b.passFDs, "pass-fd", "mapping of host to guest FDs. They must be in M:N format. M is the host and N the guest descriptor.")
 	f.IntVar(&b.execFD, "exec-fd", -1, "host file descriptor used for program execution.")
@@ -202,7 +204,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.Var(&b.goferMountConfs, "gofer-mount-confs", "information about how the gofer mounts have been configured.")
 	f.IntVar(&b.userLogFD, "user-log-fd", 0, "file descriptor to write user logs to. 0 means no logging.")
 	f.IntVar(&b.startSyncFD, "start-sync-fd", -1, "required FD to used to synchronize sandbox startup")
-	f.IntVar(&b.mountsFD, "mounts-fd", -1, "mountsFD is the file descriptor to read list of mounts after they have been resolved (direct paths, no symlinks).")
+	f.IntVar(&b.mountsFD, "mounts-fd", -1, "mountsFD is an optional file descriptor to read list of mounts after they have been resolved (direct paths, no symlinks).")
 	f.IntVar(&b.podInitConfigFD, "pod-init-config-fd", -1, "file descriptor to the pod init configuration file.")
 	f.Var(&b.sinkFDs, "sink-fds", "ordered list of file descriptors to be used by the sinks defined in --pod-init-config.")
 	f.Var(&b.nvidiaDevMinors, "nvidia-dev-minors", "list of device minors for Nvidia GPU devices exposed to the sandbox.")
@@ -378,15 +380,18 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		}
 	}
 
-	// Read resolved mount list and replace the original one from the spec.
-	mountsFile := os.NewFile(uintptr(b.mountsFD), "mounts file")
-	cleanMounts, err := specutils.ReadMounts(mountsFile)
-	if err != nil {
+	// When mountsFD is not provided, there is no cleaning required.
+	if b.mountsFD >= 0 {
+		// Read resolved mount list and replace the original one from the spec.
+		mountsFile := os.NewFile(uintptr(b.mountsFD), "mounts file")
+		cleanMounts, err := specutils.ReadMounts(mountsFile)
+		if err != nil {
+			mountsFile.Close()
+			util.Fatalf("Error reading mounts file: %v", err)
+		}
 		mountsFile.Close()
-		util.Fatalf("Error reading mounts file: %v", err)
+		spec.Mounts = cleanMounts
 	}
-	mountsFile.Close()
-	spec.Mounts = cleanMounts
 
 	if conf.DirectFS {
 		// sandbox should run with a umask of 0, because we want to preserve file
