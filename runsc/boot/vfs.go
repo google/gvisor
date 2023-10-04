@@ -1087,7 +1087,7 @@ func (c *containerMounter) configureRestore(ctx context.Context) (context.Contex
 			fdmap[submount.mount.Destination] = submount.goferFD.Release()
 		}
 	}
-	return context.WithValue(ctx, gofer.CtxRestoreServerFDMap, fdmap), nil
+	return context.WithValue(ctx, vfs.CtxRestoreFilesystemFDMap, fdmap), nil
 }
 
 func createDeviceFiles(ctx context.Context, creds *auth.Credentials, info *containerInfo, vfsObj *vfs.VirtualFilesystem, root vfs.VirtualDentry) error {
