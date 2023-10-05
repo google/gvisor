@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 load("//pkg/sync/locking:locking.bzl", "declare_mutex")
 
 package(default_applicable_licenses = ["//:license"])
@@ -25,6 +25,7 @@ go_library(
         "uvm.go",
         "uvm_mmap.go",
         "uvm_unsafe.go",
+        "version.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
@@ -52,4 +53,10 @@ go_library(
         "//pkg/waiter",
         "@org_golang_x_sys//unix:go_default_library",
     ],
+)
+
+go_test(
+    name = "nvproxy_test",
+    srcs = ["nvproxy_test.go"],
+    library = ":nvproxy",
 )

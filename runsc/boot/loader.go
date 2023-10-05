@@ -38,6 +38,7 @@ import (
 	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/control"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/fdimport"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
@@ -302,6 +303,10 @@ func New(args Args) (*Loader, error) {
 
 	if err := usage.Init(); err != nil {
 		return nil, fmt.Errorf("setting up memory usage: %w", err)
+	}
+
+	if args.Conf.NVProxy {
+		nvproxy.Init()
 	}
 
 	kernel.IOUringEnabled = args.Conf.IOUring

@@ -167,44 +167,12 @@ func (fd *frontendFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, 
 	// - Add symbol and parameter type definitions to //pkg/abi/nvgpu.
 	// - Add filter to seccomp_filters.go.
 	// - Add handling below.
-	switch nr {
-	case
-		nvgpu.NV_ESC_CARD_INFO,                     // nv_ioctl_card_info_t
-		nvgpu.NV_ESC_CHECK_VERSION_STR,             // nv_rm_api_version_t
-		nvgpu.NV_ESC_SYS_PARAMS,                    // nv_ioctl_sys_params_t
-		nvgpu.NV_ESC_RM_DUP_OBJECT,                 // NVOS55_PARAMETERS
-		nvgpu.NV_ESC_RM_SHARE,                      // NVOS57_PARAMETERS
-		nvgpu.NV_ESC_RM_UNMAP_MEMORY,               // NVOS34_PARAMETERS
-		nvgpu.NV_ESC_RM_UPDATE_DEVICE_MAPPING_INFO: // NVOS56_PARAMETERS
-		return frontendIoctlSimple(&fi)
-	case nvgpu.NV_ESC_REGISTER_FD:
-		return frontendRegisterFD(&fi)
-	case nvgpu.NV_ESC_ALLOC_OS_EVENT:
-		return rmAllocOSEvent(&fi)
-	case nvgpu.NV_ESC_FREE_OS_EVENT:
-		return rmFreeOSEvent(&fi)
-	case nvgpu.NV_ESC_NUMA_INFO:
-		// The CPU topology seen by the host driver differs from the CPU
-		// topology presented by the sentry to the application, so reject this
-		// ioctl; doing so is non-fatal.
-		ctx.Debugf("nvproxy: ignoring NV_ESC_NUMA_INFO")
-		return 0, linuxerr.EINVAL
-	case nvgpu.NV_ESC_RM_ALLOC_MEMORY:
-		return rmAllocMemory(&fi)
-	case nvgpu.NV_ESC_RM_FREE:
-		return rmFree(&fi)
-	case nvgpu.NV_ESC_RM_CONTROL:
-		return rmControl(&fi)
-	case nvgpu.NV_ESC_RM_ALLOC:
-		return rmAlloc(&fi)
-	case nvgpu.NV_ESC_RM_VID_HEAP_CONTROL:
-		return rmVidHeapControl(&fi)
-	case nvgpu.NV_ESC_RM_MAP_MEMORY:
-		return rmMapMemory(&fi)
-	default:
+	handler := fd.nvp.abi.frontendIoctl[nr]
+	if handler == nil {
 		ctx.Warningf("nvproxy: unknown frontend ioctl %d == %#x (argSize=%d, cmd=%#x)", nr, nr, argSize, cmd)
 		return 0, linuxerr.EINVAL
 	}
+	return handler(&fi)
 }
 
 func frontendIoctlCmd(nr, argSize uint32) uintptr {
@@ -241,6 +209,14 @@ func frontendIoctlSimple(fi *frontendIoctlState) (uintptr, error) {
 		return n, err
 	}
 	return n, nil
+}
+
+func rmNumaInfo(fi *frontendIoctlState) (uintptr, error) {
+	// The CPU topology seen by the host driver differs from the CPU
+	// topology presented by the sentry to the application, so reject this
+	// ioctl; doing so is non-fatal.
+	log.Debugf("nvproxy: ignoring NV_ESC_NUMA_INFO")
+	return 0, linuxerr.EINVAL
 }
 
 func frontendRegisterFD(fi *frontendIoctlState) (uintptr, error) {
@@ -532,95 +508,12 @@ func rmControl(fi *frontendIoctlState) (uintptr, error) {
 	// - Add symbol definition to //pkg/abi/nvgpu. Parameter type definition is
 	// only required for non-simple commands.
 	// - Add handling below.
-	switch ioctlParams.Cmd {
-	case
-		nvgpu.NV0000_CTRL_CMD_CLIENT_GET_ADDR_SPACE_TYPE,
-		nvgpu.NV0000_CTRL_CMD_CLIENT_SET_INHERITED_SHARE_POLICY,
-		nvgpu.NV0000_CTRL_CMD_GPU_GET_ATTACHED_IDS,
-		nvgpu.NV0000_CTRL_CMD_GPU_GET_ID_INFO,
-		nvgpu.NV0000_CTRL_CMD_GPU_GET_ID_INFO_V2,
-		nvgpu.NV0000_CTRL_CMD_GPU_GET_PROBED_IDS,
-		nvgpu.NV0000_CTRL_CMD_GPU_ATTACH_IDS,
-		nvgpu.NV0000_CTRL_CMD_GPU_DETACH_IDS,
-		nvgpu.NV0000_CTRL_CMD_GPU_GET_PCI_INFO,
-		nvgpu.NV0000_CTRL_CMD_GPU_QUERY_DRAIN_STATE,
-		nvgpu.NV0000_CTRL_CMD_GPU_GET_MEMOP_ENABLE,
-		nvgpu.NV0000_CTRL_CMD_SYNC_GPU_BOOST_GROUP_INFO,
-		nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_P2P_CAPS,
-		nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_FABRIC_STATUS,
-		nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_P2P_CAPS_MATRIX,
-		nvgpu.NV0080_CTRL_CMD_FB_GET_CAPS_V2,
-		nvgpu.NV0080_CTRL_CMD_GPU_GET_NUM_SUBDEVICES,
-		nvgpu.NV0080_CTRL_CMD_GPU_QUERY_SW_STATE_PERSISTENCE,
-		nvgpu.NV0080_CTRL_CMD_GPU_GET_VIRTUALIZATION_MODE,
-		0x80028b, // unknown, paramsSize == 1
-		nvgpu.NV0080_CTRL_CMD_GPU_GET_CLASSLIST_V2,
-		nvgpu.NV0080_CTRL_CMD_HOST_GET_CAPS_V2,
-		nvgpu.NV2080_CTRL_CMD_BUS_GET_PCI_INFO,
-		nvgpu.NV2080_CTRL_CMD_BUS_GET_PCI_BAR_INFO,
-		nvgpu.NV2080_CTRL_CMD_BUS_GET_INFO_V2,
-		nvgpu.NV2080_CTRL_CMD_BUS_GET_PCIE_SUPPORTED_GPU_ATOMICS,
-		nvgpu.NV2080_CTRL_CMD_CE_GET_ALL_CAPS,
-		nvgpu.NV2080_CTRL_CMD_FB_GET_INFO_V2,
-		nvgpu.NV2080_CTRL_CMD_GPU_GET_INFO_V2,
-		nvgpu.NV2080_CTRL_CMD_GPU_GET_NAME_STRING,
-		nvgpu.NV2080_CTRL_CMD_GPU_GET_SHORT_NAME_STRING,
-		nvgpu.NV2080_CTRL_CMD_GPU_GET_SIMULATION_INFO,
-		nvgpu.NV2080_CTRL_CMD_GPU_QUERY_ECC_STATUS,
-		nvgpu.NV2080_CTRL_CMD_GPU_QUERY_COMPUTE_MODE_RULES,
-		nvgpu.NV2080_CTRL_CMD_GPU_ACQUIRE_COMPUTE_MODE_RESERVATION,
-		nvgpu.NV2080_CTRL_CMD_GPU_RELEASE_COMPUTE_MODE_RESERVATION,
-		nvgpu.NV2080_CTRL_CMD_GPU_GET_GID_INFO,
-		nvgpu.NV2080_CTRL_CMD_GPU_GET_ENGINES_V2,
-		nvgpu.NV2080_CTRL_CMD_GPU_GET_ACTIVE_PARTITION_IDS,
-		nvgpu.NV2080_CTRL_CMD_GPU_GET_COMPUTE_POLICY_CONFIG,
-		nvgpu.NV2080_CTRL_CMD_GET_GPU_FABRIC_PROBE_INFO,
-		nvgpu.NV2080_CTRL_CMD_GR_SET_CTXSW_PREEMPTION_MODE,
-		nvgpu.NV2080_CTRL_CMD_GR_GET_CTX_BUFFER_SIZE,
-		nvgpu.NV2080_CTRL_CMD_GR_GET_GLOBAL_SM_ORDER,
-		nvgpu.NV2080_CTRL_CMD_GR_GET_CAPS_V2,
-		nvgpu.NV2080_CTRL_CMD_GR_GET_GPC_MASK,
-		nvgpu.NV2080_CTRL_CMD_GR_GET_TPC_MASK,
-		nvgpu.NV2080_CTRL_CMD_GSP_GET_FEATURES,
-		nvgpu.NV2080_CTRL_CMD_MC_GET_ARCH_INFO,
-		nvgpu.NV2080_CTRL_CMD_MC_SERVICE_INTERRUPTS,
-		nvgpu.NV2080_CTRL_CMD_NVLINK_GET_NVLINK_STATUS,
-		nvgpu.NV2080_CTRL_CMD_PERF_BOOST,
-		nvgpu.NV2080_CTRL_CMD_RC_GET_WATCHDOG_INFO,
-		nvgpu.NV2080_CTRL_CMD_RC_RELEASE_WATCHDOG_REQUESTS,
-		nvgpu.NV2080_CTRL_CMD_RC_SOFT_DISABLE_WATCHDOG,
-		nvgpu.NV2080_CTRL_CMD_TIMER_GET_GPU_CPU_TIME_CORRELATION_INFO,
-		nvgpu.NV503C_CTRL_CMD_REGISTER_VA_SPACE,
-		nvgpu.NV503C_CTRL_CMD_REGISTER_VIDMEM,
-		nvgpu.NV503C_CTRL_CMD_UNREGISTER_VIDMEM,
-		nvgpu.NV83DE_CTRL_CMD_DEBUG_SET_EXCEPTION_MASK,
-		nvgpu.NV83DE_CTRL_CMD_DEBUG_READ_ALL_SM_ERROR_STATES,
-		nvgpu.NV83DE_CTRL_CMD_DEBUG_CLEAR_ALL_SM_ERROR_STATES,
-		nvgpu.NV906F_CTRL_CMD_RESET_CHANNEL,
-		nvgpu.NV90E6_CTRL_CMD_MASTER_GET_VIRTUAL_FUNCTION_ERROR_CONT_INTR_MASK,
-		nvgpu.NVC36F_CTRL_GET_CLASS_ENGINEID,
-		nvgpu.NVC36F_CTRL_CMD_GPFIFO_GET_WORK_SUBMIT_TOKEN,
-		nvgpu.NVA06C_CTRL_CMD_GPFIFO_SCHEDULE,
-		nvgpu.NVA06C_CTRL_CMD_SET_TIMESLICE,
-		nvgpu.NVA06C_CTRL_CMD_PREEMPT:
-		return rmControlSimple(fi, &ioctlParams)
-
-	case nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_BUILD_VERSION:
-		return ctrlClientSystemGetBuildVersion(fi, &ioctlParams)
-
-	case nvgpu.NV0080_CTRL_CMD_FIFO_GET_CHANNELLIST:
-		return ctrlDevFIFOGetChannelList(fi, &ioctlParams)
-
-	case nvgpu.NV2080_CTRL_CMD_FIFO_DISABLE_CHANNELS:
-		return ctrlSubdevFIFODisableChannels(fi, &ioctlParams)
-
-	case nvgpu.NV2080_CTRL_CMD_GR_GET_INFO:
-		return ctrlSubdevGRGetInfo(fi, &ioctlParams)
-
-	default:
+	handler := fi.fd.nvp.abi.controlCmd[ioctlParams.Cmd]
+	if handler == nil {
 		fi.ctx.Warningf("nvproxy: unknown control command %#x (paramsSize=%d)", ioctlParams.Cmd, ioctlParams.ParamsSize)
 		return 0, linuxerr.EINVAL
 	}
+	return handler(fi, &ioctlParams)
 }
 
 func rmControlSimple(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters) (uintptr, error) {
@@ -752,41 +645,12 @@ func rmAlloc(fi *frontendIoctlState) (uintptr, error) {
 	// the class whose constructor interprets it ("Internal Class").
 	// - Add symbol and parameter type definitions to //pkg/abi/nvgpu.
 	// - Add handling below.
-	switch ioctlParams.HClass {
-	case nvgpu.NV01_ROOT, nvgpu.NV01_ROOT_NON_PRIV, nvgpu.NV01_ROOT_CLIENT:
-		return rmAllocSimple[nvgpu.Handle](fi, &ioctlParams, isNVOS64)
-	case nvgpu.NV01_EVENT_OS_EVENT:
-		return rmAllocEventOSEvent(fi, &ioctlParams, isNVOS64)
-	case nvgpu.NV01_DEVICE_0:
-		return rmAllocSimple[nvgpu.NV0080_ALLOC_PARAMETERS](fi, &ioctlParams, isNVOS64)
-	case nvgpu.NV20_SUBDEVICE_0:
-		return rmAllocSimple[nvgpu.NV2080_ALLOC_PARAMETERS](fi, &ioctlParams, isNVOS64)
-	case nvgpu.NV50_THIRD_PARTY_P2P:
-		return rmAllocSimple[nvgpu.NV503C_ALLOC_PARAMETERS](fi, &ioctlParams, isNVOS64)
-	case nvgpu.GT200_DEBUGGER:
-		return rmAllocSimple[nvgpu.NV83DE_ALLOC_PARAMETERS](fi, &ioctlParams, isNVOS64)
-	case nvgpu.FERMI_CONTEXT_SHARE_A:
-		return rmAllocSimple[nvgpu.NV_CTXSHARE_ALLOCATION_PARAMETERS](fi, &ioctlParams, isNVOS64)
-	case nvgpu.FERMI_VASPACE_A:
-		return rmAllocSimple[nvgpu.NV_VASPACE_ALLOCATION_PARAMETERS](fi, &ioctlParams, isNVOS64)
-	case nvgpu.KEPLER_CHANNEL_GROUP_A:
-		return rmAllocSimple[nvgpu.NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS](fi, &ioctlParams, isNVOS64)
-	case nvgpu.TURING_CHANNEL_GPFIFO_A, nvgpu.AMPERE_CHANNEL_GPFIFO_A:
-		return rmAllocSimple[nvgpu.NV_CHANNEL_ALLOC_PARAMS](fi, &ioctlParams, isNVOS64)
-	case nvgpu.TURING_DMA_COPY_A, nvgpu.AMPERE_DMA_COPY_A, nvgpu.AMPERE_DMA_COPY_B, nvgpu.HOPPER_DMA_COPY_A:
-		return rmAllocSimple[nvgpu.NVB0B5_ALLOCATION_PARAMETERS](fi, &ioctlParams, isNVOS64)
-	case nvgpu.TURING_COMPUTE_A, nvgpu.AMPERE_COMPUTE_A, nvgpu.AMPERE_COMPUTE_B, nvgpu.ADA_COMPUTE_A, nvgpu.HOPPER_COMPUTE_A:
-		return rmAllocSimple[nvgpu.NV_GR_ALLOCATION_PARAMETERS](fi, &ioctlParams, isNVOS64)
-	case nvgpu.HOPPER_USERMODE_A:
-		return rmAllocSimple[nvgpu.NV_HOPPER_USERMODE_A_PARAMS](fi, &ioctlParams, isNVOS64)
-	case nvgpu.GF100_SUBDEVICE_MASTER, nvgpu.TURING_USERMODE_A:
-		return rmAllocNoParams(fi, &ioctlParams, isNVOS64)
-	case nvgpu.NV_MEMORY_FABRIC:
-		return rmAllocSimple[nvgpu.NV00F8_ALLOCATION_PARAMETERS](fi, &ioctlParams, isNVOS64)
-	default:
+	handler := fi.fd.nvp.abi.allocationClass[ioctlParams.HClass]
+	if handler == nil {
 		fi.ctx.Warningf("nvproxy: unknown allocation class %#08x", ioctlParams.HClass)
 		return 0, linuxerr.EINVAL
 	}
+	return handler(fi, &ioctlParams, isNVOS64)
 }
 
 // Unlike frontendIoctlSimple and rmControlSimple, rmAllocSimple requires the
