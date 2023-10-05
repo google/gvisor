@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build condmetric_profiling
-// +build condmetric_profiling
+//go:build sentry_profiling
+// +build sentry_profiling
 
 package metric
 
@@ -26,20 +26,20 @@ import (
 func TestProfilingMetricsEnabled(t *testing.T) {
 	defer resetTest()
 
-	_, err := NewProfilingUint64Metric("counterM", false, pb.MetricMetadata_UNITS_NONE, "One uint64 metric")
+	_, err := SentryProfiling.NewUint64Metric("/counterM", false, pb.MetricMetadata_UNITS_NONE, "One uint64 metric")
 	if err != nil {
-		t.Fatalf("NewProfilingUint64Metric got err %v want nil", err)
+		t.Fatalf("NewUint64Metric got err %v want nil", err)
 	}
 
 	bucketer := NewExponentialBucketer(3, 2, 0, 1)
-	_, err = NewProfilingDistributionMetric("distribM", false, bucketer, pb.MetricMetadata_UNITS_NANOSECONDS, "One distribution metric")
+	_, err = SentryProfiling.NewDistributionMetric("/distribM", false, bucketer, pb.MetricMetadata_UNITS_NANOSECONDS, "One distribution metric")
 	if err != nil {
-		t.Fatalf("NewProfilingDistributionMetric got err %v want nil", err)
+		t.Fatalf("NewDistributionMetric got err %v want nil", err)
 	}
 
-	_, err = NewProfilingTimerMetric("timerM", bucketer, "One timer metric")
+	_, err = SentryProfiling.NewTimerMetric("/timerM", bucketer, "One timer metric")
 	if err != nil {
-		t.Fatalf("NewProfilingTimerMetric got err %v want nil", err)
+		t.Fatalf("NewTimerMetric got err %v want nil", err)
 	}
 
 	if err := Initialize(); err != nil {

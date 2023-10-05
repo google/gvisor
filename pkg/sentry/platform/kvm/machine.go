@@ -114,32 +114,32 @@ var (
 var (
 	// hostExitCounter is a metric that tracks how many times the sentry
 	// performed a host to guest world switch.
-	hostExitCounter = metric.MustCreateNewProfilingUint64Metric(
+	hostExitCounter = KVMProfiling.MustCreateNewUint64Metric(
 		"/kvm/host_exits", false, "The number of times the sentry performed a host to guest world switch.")
 
 	// userExitCounter is a metric that tracks how many times the sentry has
 	// had an exit from userspace. Analogous to vCPU.userExits.
-	userExitCounter = metric.MustCreateNewProfilingUint64Metric(
+	userExitCounter = KVMProfiling.MustCreateNewUint64Metric(
 		"/kvm/user_exits", false, "The number of times the sentry has had an exit from userspace.")
 
 	// interruptCounter is a metric that tracks how many times execution returned
 	// to the KVM host to handle a pending signal.
-	interruptCounter = metric.MustCreateNewProfilingUint64Metric(
+	interruptCounter = KVMProfiling.MustCreateNewUint64Metric(
 		"/kvm/interrupts", false, "The number of times the signal handler was invoked.")
 
 	// mmapCallCounter is a metric that tracks how many times the function
 	// seccompMmapSyscall has been called.
-	mmapCallCounter = metric.MustCreateNewProfilingUint64Metric(
+	mmapCallCounter = KVMProfiling.MustCreateNewUint64Metric(
 		"/kvm/mmap_calls", false, "The number of times seccompMmapSyscall has been called.")
 
 	// getVCPUCounter is a metric that tracks how many times different paths of
 	// machine.Get() are triggered.
-	getVCPUCounter = metric.MustCreateNewProfilingUint64Metric(
+	getVCPUCounter = KVMProfiling.MustCreateNewUint64Metric(
 		"/kvm/get_vcpu", false, "The number of times that machine.Get() was called, split by path the function took.",
 		metric.NewField("acquisition_type", &getVCPUAcquisitionFastReused, &getVCPUAcquisitionReused, &getVCPUAcquisitionUnused, &getVCPUAcquisitionStolen))
 
 	// asInvalidateDuration are durations of calling addressSpace.invalidate().
-	asInvalidateDuration = metric.MustCreateNewProfilingTimerMetric("/kvm/address_space_invalidate",
+	asInvalidateDuration = KVMProfiling.MustCreateNewTimerMetric("/kvm/address_space_invalidate",
 		metric.NewExponentialBucketer(15, uint64(time.Nanosecond*100), 1, 2),
 		"Duration of calling addressSpace.invalidate().")
 )

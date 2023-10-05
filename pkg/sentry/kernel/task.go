@@ -610,12 +610,12 @@ type Task struct {
 var (
 	// syscallCounter is a metric that tracks how many syscalls the sentry has
 	// executed.
-	syscallCounter = metric.MustCreateNewProfilingUint64Metric(
+	syscallCounter = metric.SentryProfiling.MustCreateNewUint64Metric(
 		"/task/syscalls", false, "The number of syscalls the sentry has executed for the user.")
 
 	// faultCounter is a metric that tracks how many faults the sentry has had to
 	// handle.
-	faultCounter = metric.MustCreateNewProfilingUint64Metric(
+	faultCounter = metric.SentryProfiling.MustCreateNewUint64Metric(
 		"/task/faults", false, "The number of faults the sentry has handled.")
 )
 
