@@ -8,12 +8,12 @@ package(
 go_library(
     name = "metric",
     srcs = [
-        "condmetric_profiling.go",
-        "condmetric_profiling_fake.go",
-        "fake_metric.go",
+        "condmetric.go",
         "metric.go",
         "metric_unsafe.go",
         "profiling_metric.go",
+        "sentry_profiling.go",
+        "sentry_profiling_fake.go",
     ],
     visibility = ["//:sandbox"],
     deps = [
