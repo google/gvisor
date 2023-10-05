@@ -115,7 +115,7 @@ const (
 )
 
 // Instruction is a type alias for linux.BPFInstruction.
-// It adds a human-readable stringification function.
+// It adds a human-readable stringification and other helper functions.
 //
 // +marshal slice:InstructionSlice
 // +stateify savable
@@ -147,4 +147,19 @@ func Jump(code uint16, k uint32, jt, jf uint8) Instruction {
 		JumpIfFalse: jf,
 		K:           k,
 	}
+}
+
+// IsJump returns true if `ins` is a jump instruction.
+func (ins Instruction) IsJump() bool {
+	return ins.OpCode&instructionClassMask == Jmp
+}
+
+// IsConditionalJump returns true if `ins` is a conditional jump instruction.
+func (ins Instruction) IsConditionalJump() bool {
+	return ins.IsJump() && ins.OpCode&jmpMask != Ja
+}
+
+// IsUnconditionalJump returns true if `ins` is a conditional jump instruction.
+func (ins Instruction) IsUnconditionalJump() bool {
+	return ins.IsJump() && ins.OpCode&jmpMask == Ja
 }
