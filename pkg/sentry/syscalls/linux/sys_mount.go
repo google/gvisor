@@ -46,7 +46,7 @@ func Mount(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 
 	// Silently allow MS_NOSUID, since we don't implement set-id bits anyway.
 	const unsupported = linux.MS_REMOUNT | linux.MS_UNBINDABLE | linux.MS_MOVE |
-		linux.MS_REC | linux.MS_NODIRATIME
+		linux.MS_NODIRATIME
 
 	// Linux just allows passing any flags to mount(2) - it won't fail when
 	// unknown or unsupported flags are passed. Since we don't implement
@@ -67,7 +67,7 @@ func Mount(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 	}
 	defer target.Release(t)
 
-	if flags&linux.MS_BIND == linux.MS_BIND {
+	if flags&linux.MS_BIND != 0 {
 		var sourcePath fspath.Path
 		sourcePath, err = copyInPath(t, sourceAddr)
 		if err != nil {
@@ -79,11 +79,10 @@ func Mount(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 			return 0, nil, err
 		}
 		defer sourceTpop.Release(t)
-		return 0, nil, t.Kernel().VFS().BindAt(t, creds, &sourceTpop.pop, &target.pop)
+		return 0, nil, t.Kernel().VFS().BindAt(t, creds, &sourceTpop.pop, &target.pop, flags&linux.MS_REC != 0)
 	}
-	const propagationFlags = linux.MS_SHARED | linux.MS_PRIVATE | linux.MS_SLAVE | linux.MS_UNBINDABLE
-	if propFlag := flags & propagationFlags; propFlag != 0 {
-		return 0, nil, t.Kernel().VFS().SetMountPropagationAt(t, creds, &target.pop, uint32(propFlag))
+	if flags&(linux.MS_SHARED|linux.MS_PRIVATE|linux.MS_SLAVE|linux.MS_UNBINDABLE) != 0 {
+		return 0, nil, t.Kernel().VFS().SetMountPropagationAt(t, creds, &target.pop, uint32(flags))
 	}
 
 	// Only copy in source, fstype, and data if we are doing a normal mount.

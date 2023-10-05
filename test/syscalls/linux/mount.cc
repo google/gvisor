@@ -43,6 +43,7 @@
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
+#include "absl/container/flat_hash_map.h"
 #include "absl/strings/match.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
@@ -820,8 +821,8 @@ TEST(MountTest, SimpleBind) {
   // Write to child1 in dir1.
   const std::string filename = "foo.txt";
   const std::string contents = "barbaz";
-  ASSERT_NO_ERRNO(CreateWithContents(JoinPath(child1.path(), filename),
-                                     contents, O_WRONLY));
+  ASSERT_NO_ERRNO(
+      CreateWithContents(JoinPath(child1.path(), filename), contents, 0666));
   // Verify both directories have the same nodes.
   std::vector<std::string> child_names = {std::string(Basename(child1.path())),
                                           std::string(Basename(child2.path()))};
@@ -1849,6 +1850,163 @@ TEST(MountTest, MaxMountsWithSlave) {
         mount(d.path().c_str(), d.path().c_str(), nullptr, MS_BIND, nullptr),
         SyscallFailsWithErrno(ENOSPC));
   }
+}
+
+TEST(MountTest, SetPropagationRecursive) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  const TempPath a = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const a_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("test", a.path(), "tmpfs", 0, "mode=0123", MNT_DETACH));
+  const auto b = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(a.path()));
+  auto const b_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("test", b.path(), "tmpfs", 0, "mode=0123", MNT_DETACH));
+  const auto c = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(b.path()));
+  auto const c_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("test", c.path(), "tmpfs", 0, "mode=0123", MNT_DETACH));
+  const auto d = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(c.path()));
+  auto const d_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("test", d.path(), "tmpfs", 0, "mode=0123", MNT_DETACH));
+
+  ASSERT_THAT(mount("", a.path().c_str(), "", MS_SHARED | MS_REC, 0),
+              SyscallSucceeds());
+  absl::flat_hash_map<std::string, std::vector<MountOptional>> optionals =
+      ASSERT_NO_ERRNO_AND_VALUE(MountOptionals());
+  EXPECT_NE(optionals[a.path()][0].shared, 0);
+  EXPECT_NE(optionals[b.path()][0].shared, 0);
+  EXPECT_NE(optionals[c.path()][0].shared, 0);
+  EXPECT_NE(optionals[d.path()][0].shared, 0);
+}
+
+TEST(MountTest, SetSlaveRecursive) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  const auto a = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const a_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(a.path(), a.path(), "", MS_BIND, "", MNT_DETACH));
+  ASSERT_THAT(mount("", a.path().c_str(), "", MS_SHARED, 0), SyscallSucceeds());
+  const auto a_master = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const a_master_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(a.path(), a_master.path(), "", MS_BIND, "", MNT_DETACH));
+
+  const auto b = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(a.path()));
+  auto const b_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(a.path(), b.path(), "", MS_BIND, "", MNT_DETACH));
+  const auto b_master = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const b_master_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(b.path(), b_master.path(), "", MS_BIND, "", MNT_DETACH));
+
+  ASSERT_THAT(mount("", a.path().c_str(), "", MS_SLAVE | MS_REC, 0),
+              SyscallSucceeds());
+
+  absl::flat_hash_map<std::string, std::vector<MountOptional>> optionals =
+      ASSERT_NO_ERRNO_AND_VALUE(MountOptionals());
+  EXPECT_EQ(optionals[a.path()][0].master,
+            optionals[a_master.path()][0].shared);
+  EXPECT_EQ(optionals[b.path()][0].master,
+            optionals[b_master.path()][0].shared);
+}
+
+TEST(MountTest, RecursiveBind) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  const auto a = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const a_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(a.path(), a.path(), "", MS_BIND, "", MNT_DETACH));
+  const auto b = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(a.path()));
+  auto const b_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(b.path(), b.path(), "", MS_BIND, "", MNT_DETACH));
+  const auto c = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(b.path()));
+  const auto d = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const d_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(a.path(), d.path(), "", MS_BIND | MS_REC, "", MNT_DETACH));
+
+  // Write to child1 in dir1.
+  const std::string filename = "foo.txt";
+  const std::string contents = "barbaz";
+  ASSERT_NO_ERRNO(
+      CreateWithContents(JoinPath(c.path(), filename), contents, 0666));
+  // Verify both directories have the same nodes.
+  const std::string path =
+      JoinPath(d.path(), Basename(b.path()), Basename(c.path()), filename);
+
+  std::string output;
+  ASSERT_NO_ERRNO(GetContents(path, &output));
+  EXPECT_EQ(output, contents);
+}
+
+TEST(MountTest, MaxRecursiveBind) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  const auto a = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const a_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(a.path(), a.path(), "", MS_BIND, "", MNT_DETACH));
+  const auto b = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(a.path()));
+
+  int mount_max = 10000;
+  bool mount_max_exists =
+      ASSERT_NO_ERRNO_AND_VALUE(Exists("/proc/sys/fs/mount-max"));
+  if (mount_max_exists) {
+    std::string mount_max_string;
+    ASSERT_NO_ERRNO(GetContents("/proc/sys/fs/mount-max", &mount_max_string));
+    ASSERT_TRUE(absl::SimpleAtoi(mount_max_string, &mount_max));
+  }
+
+  const std::vector<ProcMountInfoEntry> mounts =
+      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntries());
+  int num_binds = static_cast<int>(std::log2(mount_max - mounts.size()));
+
+  for (int i = 0; i < num_binds; i++) {
+    ASSERT_THAT(mount(a.path().c_str(), b.path().c_str(), nullptr,
+                      MS_BIND | MS_REC, nullptr),
+                SyscallSucceeds());
+  }
+  ASSERT_THAT(mount(a.path().c_str(), b.path().c_str(), nullptr,
+                    MS_BIND | MS_REC, nullptr),
+              SyscallFailsWithErrno(ENOSPC));
+}
+
+TEST(MountTest, RecursiveBindPropagation) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  const auto parent = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const parent_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(parent.path(), parent.path(), "", MS_BIND, "", MNT_DETACH));
+  const auto a =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(parent.path()));
+  const auto b =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(parent.path()));
+  const auto c =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(parent.path()));
+
+  auto const a_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("test", a.path(), "tmpfs", 0, "", MNT_DETACH));
+  ASSERT_THAT(mount("", a.path().c_str(), "", MS_SHARED, 0), SyscallSucceeds());
+
+  auto const b_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(a.path(), b.path(), "", MS_BIND, "", MNT_DETACH));
+  auto const c_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(a.path(), c.path(), "", MS_BIND, "", MNT_DETACH));
+
+  const auto d =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(parent.path()));
+  const auto f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(a.path()));
+  auto const d_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(d.path(), d.path(), "", MS_BIND, "", MNT_DETACH));
+
+  const auto e = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(d.path()));
+  auto const e_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(e.path(), e.path(), "", MS_BIND, "", MNT_DETACH));
+
+  auto const f_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(d.path(), f.path(), "", MS_BIND | MS_REC, "", MNT_DETACH));
+
+  absl::flat_hash_map<std::string, std::vector<MountOptional>> optionals =
+      ASSERT_NO_ERRNO_AND_VALUE(MountOptionals());
+  auto b_e_path = JoinPath(b.path(), Basename(f.path()), Basename(e.path()));
+  ASSERT_FALSE(optionals[b_e_path].empty());
+  auto c_e_path = JoinPath(c.path(), Basename(f.path()), Basename(e.path()));
+  ASSERT_FALSE(optionals[c_e_path].empty());
 }
 
 TEST(MountTest, MountNamespace) {

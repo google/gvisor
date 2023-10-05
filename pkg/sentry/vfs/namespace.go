@@ -54,6 +54,9 @@ type MountNamespace struct {
 
 	// mounts is the total number of mounts in this mount namespace.
 	mounts uint32
+
+	// pending is the total number of pending mounts in this mount namespace.
+	pending uint32
 }
 
 // Namespace is the namespace interface.
@@ -184,7 +187,7 @@ func (vfs *VirtualFilesystem) CloneMountNamespace(
 	}
 	newns.root = newRoot
 	newns.root.ns = newns
-	vfs.commitPendingTree(ctx, newRoot)
+	vfs.commitChildren(ctx, newRoot)
 	return newns, nil
 }
 
@@ -241,4 +244,19 @@ func (mntns *MountNamespace) Root(ctx context.Context) VirtualDentry {
 	vd.dentry = m.root
 	vd.dentry.IncRef()
 	return vd
+}
+
+func (mntns *MountNamespace) checkMountCount(ctx context.Context, mnt *Mount) error {
+	if mntns.mounts > MountMax {
+		return linuxerr.ENOSPC
+	}
+	if mntns.mounts+mntns.pending > MountMax {
+		return linuxerr.ENOSPC
+	}
+	mnts := mnt.countSubmountsLocked()
+	if mntns.mounts+mntns.pending+mnts > MountMax {
+		return linuxerr.ENOSPC
+	}
+	mntns.pending += mnts
+	return nil
 }
