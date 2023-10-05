@@ -35,18 +35,24 @@ const (
 	makePrivateClone
 	// Analogous to CL_SHARED_TO_SLAVE in Linux.
 	sharedToFollowerClone
+
+	propagationFlags = linux.MS_SHARED | linux.MS_PRIVATE | linux.MS_SLAVE | linux.MS_UNBINDABLE
 )
 
 // +checklocks:vfs.mountMu
-func (vfs *VirtualFilesystem) commitPendingTree(ctx context.Context, mnt *Mount) {
-	for _, c := range mnt.pendingChildren {
-		vfs.commitTree(ctx, c)
+func (vfs *VirtualFilesystem) commitChildren(ctx context.Context, mnt *Mount) {
+	for c := range mnt.children {
+		if c.neverConnected() {
+			vfs.commitMount(ctx, c)
+		}
 	}
-	mnt.pendingChildren = nil
 }
 
+// commitMount attaches mnt to the parent and mountpoint specified by its
+// mountKey and recursively does the same for all of mnt's descendants.
+//
 // +checklocks:vfs.mountMu
-func (vfs *VirtualFilesystem) commitTree(ctx context.Context, mnt *Mount) {
+func (vfs *VirtualFilesystem) commitMount(ctx context.Context, mnt *Mount) {
 	mp := mnt.getKey()
 
 	// If there is already a mount at this (parent, point), disconnect it from its
@@ -66,29 +72,38 @@ func (vfs *VirtualFilesystem) commitTree(ctx context.Context, mnt *Mount) {
 		vfs.delayDecRef(child)
 	}
 	vfs.mounts.seq.EndWrite()
-	vfs.commitPendingTree(ctx, mnt)
+	vfs.commitChildren(ctx, mnt)
 }
 
-// abortTree releases references on a pending mount and all its pending
-// descendants.
-//
 // +checklocks:vfs.mountMu
-func (vfs *VirtualFilesystem) abortTree(ctx context.Context, mnt *Mount) {
+func (vfs *VirtualFilesystem) abortUncomittedChildren(ctx context.Context, mnt *Mount) {
+	for c := range mnt.children {
+		if c.neverConnected() {
+			vfs.abortUncommitedMount(ctx, c)
+			delete(mnt.children, c)
+		}
+	}
+}
+
+// abortUncommitedMount releases references on mnt and all its descendants.
+//
+// Prerequisite: mnt is not connected, i.e. mnt.ns == nil.
+// +checklocks:vfs.mountMu
+func (vfs *VirtualFilesystem) abortUncommitedMount(ctx context.Context, mnt *Mount) {
 	vfs.delayDecRef(mnt)
 	vfs.delayDecRef(mnt.getKey())
 	mnt.setKey(VirtualDentry{})
 	vfs.setPropagation(mnt, linux.MS_PRIVATE)
-	for _, c := range mnt.pendingChildren {
-		vfs.abortTree(ctx, c)
-	}
-	mnt.pendingChildren = nil
+	vfs.abortUncomittedChildren(ctx, mnt)
 }
 
 // SetMountPropagationAt changes the propagation type of the mount pointed to by
 // pop.
-func (vfs *VirtualFilesystem) SetMountPropagationAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, propFlags uint32) error {
+func (vfs *VirtualFilesystem) SetMountPropagationAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, propFlag uint32) error {
+	recursive := propFlag&linux.MS_REC != 0
+	propFlag &= propagationFlags
 	// Check if flags is a power of 2. If not then more than one flag is set.
-	if !bits.IsPowerOfTwo32(propFlags) {
+	if !bits.IsPowerOfTwo32(propFlag) {
 		return linuxerr.EINVAL
 	}
 	vd, err := vfs.GetDentryAt(ctx, creds, pop, &GetDentryOptions{})
@@ -107,20 +122,27 @@ func (vfs *VirtualFilesystem) SetMountPropagationAt(ctx context.Context, creds *
 	} else if vd.dentry != vd.mount.root {
 		return linuxerr.EINVAL
 	}
-	vfs.SetMountPropagation(vd.mount, propFlags)
+	vfs.SetMountPropagation(vd.mount, propFlag, recursive)
 	return nil
 }
 
 // SetMountPropagation changes the propagation type of the mount.
-func (vfs *VirtualFilesystem) SetMountPropagation(mnt *Mount, propFlags uint32) error {
+func (vfs *VirtualFilesystem) SetMountPropagation(mnt *Mount, propFlags uint32, recursive bool) error {
 	vfs.lockMounts()
 	defer vfs.unlockMounts(context.Background())
 	if propFlags == linux.MS_SHARED {
-		if err := vfs.allocMountGroupIDs(mnt, false); err != nil {
+		if err := vfs.allocMountGroupIDs(mnt, recursive); err != nil {
 			return fmt.Errorf("allocMountGroupIDs: %v", err)
 		}
 	}
-	vfs.setPropagation(mnt, propFlags)
+
+	if !recursive {
+		vfs.setPropagation(mnt, propFlags)
+		return nil
+	}
+	for _, m := range mnt.submountsLocked() {
+		vfs.setPropagation(m, propFlags)
+	}
 	return nil
 }
 
@@ -303,7 +325,7 @@ func (vfs *VirtualFilesystem) propagateMount(ctx context.Context, dstMnt *Mount,
 			cloneType |= makeSharedClone
 		}
 	}
-	clone, err := vfs.cloneMount(state.prevSrc, state.prevSrc.root, nil, cloneType)
+	clone, err := vfs.cloneMountTree(ctx, state.prevSrc, state.prevSrc.root, cloneType, nil)
 	if err != nil {
 		return err
 	}
@@ -315,10 +337,7 @@ func (vfs *VirtualFilesystem) propagateMount(ctx context.Context, dstMnt *Mount,
 	}
 	state.prevDst = dstMnt
 	state.prevSrc = clone
-	if uint32(len(state.propList))+dstMnt.ns.mounts > MountMax {
-		return linuxerr.ENOSPC
-	}
-	return nil
+	return dstMnt.ns.checkMountCount(ctx, clone)
 }
 
 // nextFollowerPeerGroup iterates through the propagation tree and returns the
