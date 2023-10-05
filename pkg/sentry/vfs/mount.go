@@ -118,10 +118,6 @@ type Mount struct {
 	// Mount.EndWrite(). The MSB of writers is set if MS_RDONLY is in effect.
 	// writers is accessed using atomic memory operations.
 	writers atomicbitops.Int64
-
-	// pendingChildren is a list of new child mounts that have not yet been
-	// connected to this mount as the parent.
-	pendingChildren []*Mount
 }
 
 func newMount(vfs *VirtualFilesystem, fs *Filesystem, root *Dentry, mntns *MountNamespace, opts *MountOptions) *Mount {
@@ -241,12 +237,12 @@ func (vfs *VirtualFilesystem) MountDisconnected(ctx context.Context, creds *auth
 	return newMount(vfs, fs, root, nil /* mntns */, opts), nil
 }
 
-// attachMountLocked attaches mnt to vd and propagates the mount to vd.mount's
-// peers and followers. This method is analogous to
+// attachTreeLocked attaches the mount tree at mnt to vd and propagates the
+// mount to vd.mount's peers and followers. This method is analogous to
 // fs/namespace.c:attach_recursive_mnt() in Linux.
 //
 // +checklocks:vfs.mountMu
-func (vfs *VirtualFilesystem) attachMountLocked(ctx context.Context, mnt *Mount, vd VirtualDentry) error {
+func (vfs *VirtualFilesystem) attachTreeLocked(ctx context.Context, mnt *Mount, vd VirtualDentry) error {
 	vdCleanup := cleanup.Make(func() {
 		vd.DecRef(ctx)
 	})
@@ -256,8 +252,11 @@ func (vfs *VirtualFilesystem) attachMountLocked(ctx context.Context, mnt *Mount,
 	if vd.mount.neverConnected() {
 		return linuxerr.EINVAL
 	}
-	if vd.mount.ns.mounts+1 > MountMax {
-		return linuxerr.ENOSPC
+	defer func() {
+		vd.mount.ns.pending = 0
+	}()
+	if err := vd.mount.ns.checkMountCount(ctx, mnt); err != nil {
+		return err
 	}
 	if vd.mount.isShared {
 		if err := vfs.allocMountGroupIDs(mnt, true); err != nil {
@@ -270,7 +269,10 @@ func (vfs *VirtualFilesystem) attachMountLocked(ctx context.Context, mnt *Mount,
 		// force.
 		vfs.freeMountGroupIDs(mnt.submountsLocked()) // +checklocksforce
 		for pmnt := range propMnts {
-			vfs.abortTree(ctx, pmnt) // +checklocksforce
+			if !pmnt.parent().neverConnected() {
+				pmnt.parent().ns.pending -= pmnt.countSubmountsLocked() // +checklocksforce
+			}
+			vfs.abortUncommitedMount(ctx, pmnt) // +checklocksforce
 		}
 	})
 	defer cleanup.Clean()
@@ -287,8 +289,9 @@ func (vfs *VirtualFilesystem) attachMountLocked(ctx context.Context, mnt *Mount,
 		return err
 	}
 	cleanup.Release()
+	vfs.commitChildren(ctx, mnt)
 	for pmnt := range propMnts {
-		vfs.commitTree(ctx, pmnt)
+		vfs.commitMount(ctx, pmnt)
 	}
 	return nil
 }
@@ -305,7 +308,7 @@ func (vfs *VirtualFilesystem) ConnectMountAt(ctx context.Context, creds *auth.Cr
 	}
 	vfs.lockMounts()
 	defer vfs.unlockMounts(ctx)
-	return vfs.attachMountLocked(ctx, mnt, vd)
+	return vfs.attachTreeLocked(ctx, mnt, vd)
 }
 
 // connectMountAtLocked attaches mnt at vd. This method consumes a reference on
@@ -443,7 +446,8 @@ type cloneTreeNode struct {
 }
 
 // cloneMountTree creates a copy of mnt's tree with the specified root
-// dentry at root. The new descendants are added to mnt's pending mount list.
+// dentry at root. The new descendants are added to mnt's children list but are
+// not connected with call to connectLocked.
 // `cloneFunc` is a callback that is executed for each cloned mount.
 // This method is analogous to fs/namespace.c:copy_tree() in Linux.
 //
@@ -466,7 +470,7 @@ func (vfs *VirtualFilesystem) cloneMountTree(ctx context.Context, mnt *Mount, ro
 			}
 			m, err := vfs.cloneMount(c, c.root, nil, cloneType)
 			if err != nil {
-				vfs.abortTree(ctx, clone)
+				vfs.abortUncommitedMount(ctx, clone)
 				return nil, err
 			}
 			mp := VirtualDentry{
@@ -475,7 +479,10 @@ func (vfs *VirtualFilesystem) cloneMountTree(ctx context.Context, mnt *Mount, ro
 			}
 			mp.IncRef()
 			m.setKey(mp)
-			p.parentMount.pendingChildren = append(p.parentMount.pendingChildren, m)
+			if p.parentMount.children == nil {
+				p.parentMount.children = make(map[*Mount]struct{})
+			}
+			p.parentMount.children[m] = struct{}{}
 			if len(c.children) != 0 {
 				queue = append(queue, cloneTreeNode{c, m})
 			}
@@ -490,9 +497,7 @@ func (vfs *VirtualFilesystem) cloneMountTree(ctx context.Context, mnt *Mount, ro
 // BindAt creates a clone of the source path's parent mount and mounts it at
 // the target path. The new mount's root dentry is one pointed to by the source
 // path.
-//
-// TODO(b/249121230): Support recursive bind mounting.
-func (vfs *VirtualFilesystem) BindAt(ctx context.Context, creds *auth.Credentials, source, target *PathOperation) error {
+func (vfs *VirtualFilesystem) BindAt(ctx context.Context, creds *auth.Credentials, source, target *PathOperation, recursive bool) error {
 	sourceVd, err := vfs.GetDentryAt(ctx, creds, source, &GetDentryOptions{})
 	if err != nil {
 		return err
@@ -505,13 +510,22 @@ func (vfs *VirtualFilesystem) BindAt(ctx context.Context, creds *auth.Credential
 
 	vfs.lockMounts()
 	defer vfs.unlockMounts(ctx)
-	clone, err := vfs.cloneMount(sourceVd.mount, sourceVd.dentry, nil, 0)
+	var clone *Mount
+	if recursive {
+		clone, err = vfs.cloneMountTree(ctx, sourceVd.mount, sourceVd.dentry, 0, nil)
+	} else {
+		clone, err = vfs.cloneMount(sourceVd.mount, sourceVd.dentry, nil, 0)
+	}
 	if err != nil {
 		vfs.delayDecRef(targetVd)
 		return err
 	}
 	vfs.delayDecRef(clone)
-	return vfs.attachMountLocked(ctx, clone, targetVd)
+	if err := vfs.attachTreeLocked(ctx, clone, targetVd); err != nil {
+		vfs.abortUncomittedChildren(ctx, clone)
+		return err
+	}
+	return nil
 }
 
 // MountAt creates and mounts a Filesystem configured by the given arguments.
@@ -1130,6 +1144,18 @@ func (mnt *Mount) submountsLocked() []*Mount {
 	mounts := []*Mount{mnt}
 	for m := range mnt.children {
 		mounts = append(mounts, m.submountsLocked()...)
+	}
+	return mounts
+}
+
+// countSubmountsLocked returns mnt's total number of descendants including
+// uncommitted descendants.
+//
+// Precondition: mnt.vfs.mountMu must be held.
+func (mnt *Mount) countSubmountsLocked() uint32 {
+	mounts := uint32(1)
+	for m := range mnt.children {
+		mounts += m.countSubmountsLocked()
 	}
 	return mounts
 }

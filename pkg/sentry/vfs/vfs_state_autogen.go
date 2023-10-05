@@ -1180,7 +1180,6 @@ func (mnt *Mount) StateFields() []string {
 		"groupID",
 		"umounted",
 		"writers",
-		"pendingChildren",
 	}
 }
 
@@ -1208,7 +1207,6 @@ func (mnt *Mount) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(14, &mnt.groupID)
 	stateSinkObject.Save(15, &mnt.umounted)
 	stateSinkObject.Save(16, &mnt.writers)
-	stateSinkObject.Save(17, &mnt.pendingChildren)
 }
 
 // +checklocksignore
@@ -1229,7 +1227,6 @@ func (mnt *Mount) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(14, &mnt.groupID)
 	stateSourceObject.Load(15, &mnt.umounted)
 	stateSourceObject.Load(16, &mnt.writers)
-	stateSourceObject.Load(17, &mnt.pendingChildren)
 	stateSourceObject.LoadValue(5, new(VirtualDentry), func(y any) { mnt.loadKey(y.(VirtualDentry)) })
 	stateSourceObject.AfterLoad(mnt.afterLoad)
 }
@@ -1384,6 +1381,7 @@ func (mntns *MountNamespace) StateFields() []string {
 		"root",
 		"mountpoints",
 		"mounts",
+		"pending",
 	}
 }
 
@@ -1397,6 +1395,7 @@ func (mntns *MountNamespace) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &mntns.root)
 	stateSinkObject.Save(3, &mntns.mountpoints)
 	stateSinkObject.Save(4, &mntns.mounts)
+	stateSinkObject.Save(5, &mntns.pending)
 }
 
 func (mntns *MountNamespace) afterLoad() {}
@@ -1408,6 +1407,7 @@ func (mntns *MountNamespace) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &mntns.root)
 	stateSourceObject.Load(3, &mntns.mountpoints)
 	stateSourceObject.Load(4, &mntns.mounts)
+	stateSourceObject.Load(5, &mntns.pending)
 }
 
 func (fd *opathFD) StateTypeName() string {
