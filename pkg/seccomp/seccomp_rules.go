@@ -44,10 +44,10 @@ func seccompDataOffsetArgHigh(i int) uint32 {
 	return seccompDataOffsetArgLow(i) + 4
 }
 
-// MatchAny is marker to indicate any value will be accepted.
-type MatchAny struct{}
+// AnyValue is marker to indicate any value will be accepted.
+type AnyValue struct{}
 
-func (a MatchAny) String() (s string) {
+func (a AnyValue) String() (s string) {
 	return "*"
 }
 
@@ -147,11 +147,11 @@ func (r Rule) String() (s string) {
 //	rules := SyscallRules{
 //	       syscall.SYS_FUTEX: []Rule{
 //	               {
-//	                       MatchAny{},
+//	                       AnyValue{},
 //	                       EqualTo(linux.FUTEX_WAIT | linux.FUTEX_PRIVATE_FLAG),
 //	               }, // OR
 //	               {
-//	                       MatchAny{},
+//	                       AnyValue{},
 //	                       EqualTo(linux.FUTEX_WAKE | linux.FUTEX_PRIVATE_FLAG),
 //	               },
 //	       },
@@ -202,15 +202,15 @@ func (sr SyscallRules) Merge(rules SyscallRules) {
 var DenyNewExecMappings = SyscallRules{
 	unix.SYS_MMAP: []Rule{
 		{
-			MatchAny{},
-			MatchAny{},
+			AnyValue{},
+			AnyValue{},
 			MaskedEqual(unix.PROT_EXEC, unix.PROT_EXEC),
 		},
 	},
 	unix.SYS_MPROTECT: []Rule{
 		{
-			MatchAny{},
-			MatchAny{},
+			AnyValue{},
+			AnyValue{},
 			MaskedEqual(unix.PROT_EXEC, unix.PROT_EXEC),
 		},
 	},

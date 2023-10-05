@@ -37,20 +37,20 @@ func appendSysThreadArchSeccompRules(rules []seccomp.RuleSet) []seccomp.RuleSet 
 				unix.SYS_ARCH_PRCTL: {
 					{
 						seccomp.EqualTo(linux.ARCH_SET_FS),
-						seccomp.MatchAny{},
-						seccomp.MatchAny{},
-						seccomp.MatchAny{},
-						seccomp.MatchAny{},
-						seccomp.MatchAny{},
+						seccomp.AnyValue{},
+						seccomp.AnyValue{},
+						seccomp.AnyValue{},
+						seccomp.AnyValue{},
+						seccomp.AnyValue{},
 						seccomp.GreaterThan(stubStart), // rip
 					},
 					{
 						seccomp.EqualTo(linux.ARCH_GET_FS),
-						seccomp.MatchAny{},
-						seccomp.MatchAny{},
-						seccomp.MatchAny{},
-						seccomp.MatchAny{},
-						seccomp.MatchAny{},
+						seccomp.AnyValue{},
+						seccomp.AnyValue{},
+						seccomp.AnyValue{},
+						seccomp.AnyValue{},
+						seccomp.AnyValue{},
 						seccomp.GreaterThan(stubStart), // rip
 					},
 				},
