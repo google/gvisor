@@ -163,3 +163,27 @@ func (ins Instruction) IsConditionalJump() bool {
 func (ins Instruction) IsUnconditionalJump() bool {
 	return ins.IsJump() && ins.OpCode&jmpMask == Ja
 }
+
+// JumpOffset is a possible jump offset that an instruction may jump to.
+type JumpOffset struct {
+	// Type is the type of jump that an instruction may execute.
+	Type JumpType
+
+	// Offset is the number of instructions that the jump skips over.
+	Offset uint32
+}
+
+// JumpOffsets returns the set of instruction offsets that this instruction
+// may jump to. Returns a nil slice if this is not a jump instruction.
+func (ins Instruction) JumpOffsets() []JumpOffset {
+	if !ins.IsJump() {
+		return nil
+	}
+	if ins.IsConditionalJump() {
+		return []JumpOffset{
+			{JumpTrue, uint32(ins.JumpIfTrue)},
+			{JumpFalse, uint32(ins.JumpIfFalse)},
+		}
+	}
+	return []JumpOffset{{JumpDirect, ins.K}}
+}

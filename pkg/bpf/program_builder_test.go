@@ -16,6 +16,7 @@ package bpf
 
 import (
 	"fmt"
+	"reflect"
 	"testing"
 )
 
@@ -179,5 +180,262 @@ func TestProgramBuilderJumpBackwards(t *testing.T) {
 	p.AddJumpTrueLabel(Jmp+Jeq+K, 10, "label_1", 0)
 	if _, err := p.Instructions(); err == nil {
 		t.Errorf("Instructions() should have failed")
+	}
+}
+
+func TestProgramBuilderOutcomes(t *testing.T) {
+	p := NewProgramBuilder()
+	getOverallFragment := p.Record()
+	fixup := func(f FragmentOutcomes) FragmentOutcomes {
+		if f.MayJumpToUnresolvedLabels == nil {
+			f.MayJumpToUnresolvedLabels = map[string]struct{}{}
+		}
+		return f
+	}
+	for _, test := range []struct {
+		// Name of the sub-test.
+		name string
+
+		// Function that adds statements to `p`.
+		build func()
+
+		// Expected outcomes from recording the instructions added
+		// by `build` alone.
+		wantLocal FragmentOutcomes
+
+		// Expected outcomes from recording the instructions added
+		// to the program since the test began.
+		wantOverall FragmentOutcomes
+	}{
+		{
+			name:        "empty program",
+			build:       func() {},
+			wantLocal:   FragmentOutcomes{MayFallThrough: true},
+			wantOverall: FragmentOutcomes{MayFallThrough: true},
+		},
+		{
+			name: "simple instruction",
+			build: func() {
+				p.AddStmt(Ld|Abs|W, 10)
+			},
+			wantLocal:   FragmentOutcomes{MayFallThrough: true},
+			wantOverall: FragmentOutcomes{MayFallThrough: true},
+		},
+		{
+			name: "jump to unresolved label",
+			build: func() {
+				p.AddDirectJumpLabel("label1")
+			},
+			wantLocal: FragmentOutcomes{
+				MayJumpToUnresolvedLabels: map[string]struct{}{
+					"label1": struct{}{},
+				},
+			},
+			wantOverall: FragmentOutcomes{
+				MayJumpToUnresolvedLabels: map[string]struct{}{
+					"label1": struct{}{},
+				},
+			},
+		},
+		{
+			name: "another simple load so may fall through again",
+			build: func() {
+				p.AddStmt(Ld|Abs|W, 10)
+			},
+			wantLocal: FragmentOutcomes{
+				MayFallThrough: true,
+			},
+			wantOverall: FragmentOutcomes{
+				MayJumpToUnresolvedLabels: map[string]struct{}{
+					"label1": struct{}{},
+				},
+				MayFallThrough: true,
+			},
+		},
+		{
+			name: "resolve label1",
+			build: func() {
+				p.AddLabel("label1")
+			},
+			wantLocal: FragmentOutcomes{
+				MayFallThrough: true,
+			},
+			wantOverall: FragmentOutcomes{
+				MayFallThrough: true,
+			},
+		},
+		{
+			name: "populate instruction at label1",
+			build: func() {
+				p.AddStmt(Ld|Abs|W, 10)
+			},
+			wantLocal: FragmentOutcomes{
+				MayFallThrough: true,
+			},
+			wantOverall: FragmentOutcomes{
+				MayFallThrough: true,
+			},
+		},
+		{
+			name: "conditional jump to two unresolved labels",
+			build: func() {
+				p.AddJumpLabels(Jmp|Jeq|K, 1337, "truelabel", "falselabel")
+			},
+			wantLocal: FragmentOutcomes{
+				MayJumpToUnresolvedLabels: map[string]struct{}{
+					"truelabel":  struct{}{},
+					"falselabel": struct{}{},
+				},
+			},
+			wantOverall: FragmentOutcomes{
+				MayJumpToUnresolvedLabels: map[string]struct{}{
+					"truelabel":  struct{}{},
+					"falselabel": struct{}{},
+				},
+			},
+		},
+		{
+			name: "resolve truelabel only",
+			build: func() {
+				p.AddLabel("truelabel")
+			},
+			wantLocal: FragmentOutcomes{
+				MayFallThrough: true,
+			},
+			wantOverall: FragmentOutcomes{
+				MayJumpToUnresolvedLabels: map[string]struct{}{
+					"falselabel": struct{}{},
+				},
+				MayFallThrough: true,
+			},
+		},
+		{
+			name: "jump one beyond end of program",
+			build: func() {
+				p.AddJump(Jmp|Ja, 1, 0, 0)
+			},
+			wantLocal: FragmentOutcomes{
+				MayJumpToKnownOffsetBeyondFragment: true,
+			},
+			wantOverall: FragmentOutcomes{
+				MayJumpToUnresolvedLabels: map[string]struct{}{
+					"falselabel": struct{}{},
+				},
+				MayJumpToKnownOffsetBeyondFragment: true,
+			},
+		},
+		{
+			name: "add return",
+			build: func() {
+				p.AddStmt(Ret|K, 1337)
+			},
+			wantLocal: FragmentOutcomes{
+				MayReturn: true,
+			},
+			wantOverall: FragmentOutcomes{
+				MayJumpToUnresolvedLabels: map[string]struct{}{
+					"falselabel": struct{}{},
+				},
+				MayFallThrough: true, // From jump in previous test.
+				MayReturn:      true,
+			},
+		},
+		{
+			name: "add another instruction after return",
+			build: func() {
+				p.AddStmt(Ld|Abs|W, 10)
+			},
+			wantLocal: FragmentOutcomes{
+				MayFallThrough: true,
+			},
+			wantOverall: FragmentOutcomes{
+				MayJumpToUnresolvedLabels: map[string]struct{}{
+					"falselabel": struct{}{},
+				},
+				MayReturn:      true,
+				MayFallThrough: true,
+			},
+		},
+		{
+			name: "zero-instruction jump counts as fallthrough",
+			build: func() {
+				p.AddJump(Jmp|Ja, 0, 0, 0)
+			},
+			wantLocal: FragmentOutcomes{
+				MayFallThrough: true,
+			},
+			wantOverall: FragmentOutcomes{
+				MayJumpToUnresolvedLabels: map[string]struct{}{
+					"falselabel": struct{}{},
+				},
+				MayReturn:      true,
+				MayFallThrough: true,
+			},
+		},
+		{
+			name: "non-zero-instruction jumps that points to end of fragment also counts as fallthrough",
+			build: func() {
+				p.AddJump(Jmp|Jeq|K, 42, 3, 1)
+				p.AddJump(Jmp|Ja, 2, 0, 0)
+				p.AddStmt(Ld|Abs|W, 11)
+				p.AddStmt(Ld|Abs|W, 12)
+			},
+			wantLocal: FragmentOutcomes{
+				MayFallThrough: true,
+			},
+			wantOverall: FragmentOutcomes{
+				MayJumpToUnresolvedLabels: map[string]struct{}{
+					"falselabel": struct{}{},
+				},
+				MayReturn:      true,
+				MayFallThrough: true,
+			},
+		},
+		{
+			name: "jump forward beyond fragment",
+			build: func() {
+				p.AddJumpFalseLabel(Jmp|Jeq|K, 1337, 123, "falselabel")
+			},
+			wantLocal: FragmentOutcomes{
+				MayJumpToUnresolvedLabels: map[string]struct{}{
+					"falselabel": struct{}{},
+				},
+				MayJumpToKnownOffsetBeyondFragment: true,
+			},
+			wantOverall: FragmentOutcomes{
+				MayJumpToKnownOffsetBeyondFragment: true,
+				MayJumpToUnresolvedLabels: map[string]struct{}{
+					"falselabel": struct{}{},
+				},
+				MayReturn: true,
+			},
+		},
+		{
+			name: "resolve falselabel",
+			build: func() {
+				p.AddLabel("falselabel")
+			},
+			wantLocal: FragmentOutcomes{
+				MayFallThrough: true,
+			},
+			wantOverall: FragmentOutcomes{
+				MayJumpToKnownOffsetBeyondFragment: true,
+				MayReturn:                          true,
+				MayFallThrough:                     true,
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			getLocalFragment := p.Record()
+			test.build()
+			localFragment := getLocalFragment()
+			if localOutcomes := localFragment.Outcomes(); !reflect.DeepEqual(fixup(localOutcomes), fixup(test.wantLocal)) {
+				t.Errorf("local fragment %v: got outcomes %v want %v", localFragment, localOutcomes, test.wantLocal)
+			}
+			overallFragment := getOverallFragment()
+			if overallOutcomes := overallFragment.Outcomes(); !reflect.DeepEqual(fixup(overallOutcomes), fixup(test.wantOverall)) {
+				t.Errorf("overall fragment %v: got outcomes %v want %v", overallFragment, overallOutcomes, test.wantOverall)
+			}
+		})
 	}
 }
