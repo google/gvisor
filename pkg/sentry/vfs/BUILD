@@ -65,6 +65,18 @@ go_template_instance(
 )
 
 go_template_instance(
+    name = "mount_list",
+    out = "mount_list.go",
+    package = "vfs",
+    prefix = "follower",
+    template = "//pkg/ilist:generic_list",
+    types = {
+        "Element": "*Mount",
+        "Linker": "*Mount",
+    },
+)
+
+go_template_instance(
     name = "event_list",
     out = "event_list.go",
     package = "vfs",
@@ -141,6 +153,7 @@ go_library(
         "inotify_mutex.go",
         "lock.go",
         "mount.go",
+        "mount_list.go",
         "mount_namespace_refs.go",
         "mount_ring.go",
         "mount_unsafe.go",

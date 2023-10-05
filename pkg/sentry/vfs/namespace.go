@@ -170,13 +170,16 @@ func (vfs *VirtualFilesystem) CloneMountNamespace(
 	vfs.lockMounts()
 	defer vfs.unlockMounts(ctx)
 
-	newRoot, err := vfs.cloneMountTree(ctx, ns.root, ns.root.root,
+	cloneType := 0
+	if ns.Owner != newns.Owner {
+		cloneType = sharedToFollowerClone
+	}
+	newRoot, err := vfs.cloneMountTree(ctx, ns.root, ns.root.root, cloneType,
 		func(ctx context.Context, src, dst *Mount) {
 			vfs.updateRootAndCWD(ctx, root, cwd, src, dst) // +checklocksforce: vfs.mountMu is locked.
 		})
 	if err != nil {
 		newns.DecRef(ctx)
-		vfs.abortTree(ctx, newRoot)
 		return nil, err
 	}
 	newns.root = newRoot

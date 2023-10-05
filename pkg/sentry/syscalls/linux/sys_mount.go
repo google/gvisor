@@ -45,8 +45,8 @@ func Mount(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 	}
 
 	// Silently allow MS_NOSUID, since we don't implement set-id bits anyway.
-	const unsupported = linux.MS_REMOUNT | linux.MS_SLAVE |
-		linux.MS_UNBINDABLE | linux.MS_MOVE | linux.MS_REC | linux.MS_NODIRATIME
+	const unsupported = linux.MS_REMOUNT | linux.MS_UNBINDABLE | linux.MS_MOVE |
+		linux.MS_REC | linux.MS_NODIRATIME
 
 	// Linux just allows passing any flags to mount(2) - it won't fail when
 	// unknown or unsupported flags are passed. Since we don't implement
@@ -79,8 +79,7 @@ func Mount(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 			return 0, nil, err
 		}
 		defer sourceTpop.Release(t)
-		_, err = t.Kernel().VFS().BindAt(t, creds, &sourceTpop.pop, &target.pop)
-		return 0, nil, err
+		return 0, nil, t.Kernel().VFS().BindAt(t, creds, &sourceTpop.pop, &target.pop)
 	}
 	const propagationFlags = linux.MS_SHARED | linux.MS_PRIVATE | linux.MS_SLAVE | linux.MS_UNBINDABLE
 	if propFlag := flags & propagationFlags; propFlag != 0 {

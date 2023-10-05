@@ -14,6 +14,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <linux/capability.h>
 #include <linux/magic.h>
 #include <sched.h>
 #include <stdio.h>
@@ -27,6 +28,8 @@
 #include <sys/vfs.h>
 #include <unistd.h>
 
+#include <cerrno>
+#include <cmath>
 #include <cstdint>
 #include <cstdlib>
 #include <functional>
@@ -43,6 +46,7 @@
 #include "absl/strings/match.h"
 #include "absl/strings/numbers.h"
 #include "absl/strings/str_cat.h"
+#include "absl/strings/str_format.h"
 #include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
 #include "absl/time/clock.h"
@@ -52,6 +56,7 @@
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
 #include "test/util/linux_capability_util.h"
+#include "test/util/logging.h"
 #include "test/util/mount_util.h"
 #include "test/util/multiprocess_util.h"
 #include "test/util/posix_error.h"
@@ -1132,7 +1137,7 @@ TEST(MountTest, PropagateMountEvent) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   auto const dir1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const mnt = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir1.path().c_str(), "tmpfs", 0, "", 0));
+      Mount("", dir1.path().c_str(), "tmpfs", 0, "", MNT_DETACH));
   auto const child_dir =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(dir1.path()));
   ASSERT_THAT(mount("", dir1.path().c_str(), "", MS_SHARED, 0),
@@ -1142,7 +1147,7 @@ TEST(MountTest, PropagateMountEvent) {
       Mount(dir1.path(), dir2.path(), "", MS_BIND, "", MNT_DETACH));
   // This mount should propagate to dir2.
   auto const child_mnt = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", child_dir.path().c_str(), "tmpfs", 0, "", 0));
+      Mount("", child_dir.path().c_str(), "tmpfs", 0, "", MNT_DETACH));
 
   const std::string child_path1 =
       JoinPath(dir1.path(), Basename(child_dir.path()));
@@ -1164,7 +1169,7 @@ TEST(MountTest, PropagateUmountEvent) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   auto const dir1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const mnt = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir1.path().c_str(), "tmpfs", 0, "", 0));
+      Mount("", dir1.path().c_str(), "tmpfs", 0, "", MNT_DETACH));
   auto const child_dir =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(dir1.path()));
   ASSERT_THAT(mount("", dir1.path().c_str(), "", MS_SHARED, 0),
@@ -1176,7 +1181,7 @@ TEST(MountTest, PropagateUmountEvent) {
   // unmounted, which should also propagate to dir2.
   {
     auto const child_mnt = ASSERT_NO_ERRNO_AND_VALUE(
-        Mount("", child_dir.path().c_str(), "tmpfs", 0, "", 0));
+        Mount("", child_dir.path().c_str(), "tmpfs", 0, "", MNT_DETACH));
   }
 
   const std::string child_path1 =
@@ -1428,6 +1433,424 @@ TEST(MountTest, UmountSharedBind) {
   ASSERT_THAT(umount2(dirpath, MNT_DETACH), SyscallSucceeds());
 }
 
+TEST(MountTest, MakeSlave) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  auto const dir1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mnt1 = ASSERT_NO_ERRNO_AND_VALUE(Mount(
+      dir1.path().c_str(), dir1.path().c_str(), "", MS_BIND, "", MNT_DETACH));
+  ASSERT_THAT(mount("", dir1.path().c_str(), "", MS_SHARED, 0),
+              SyscallSucceeds());
+  auto const dir2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mnt2 = ASSERT_NO_ERRNO_AND_VALUE(Mount(
+      dir1.path().c_str(), dir2.path().c_str(), "", MS_BIND, "", MNT_DETACH));
+
+  ASSERT_THAT(mount(0, dir2.path().c_str(), 0, MS_SLAVE, 0), SyscallSucceeds());
+  auto optionals = ASSERT_NO_ERRNO_AND_VALUE(MountOptionals());
+  ASSERT_NE(optionals[dir1.path()][0].shared, 0);
+  ASSERT_NE(optionals[dir2.path()][0].master, 0);
+}
+
+TEST(MountTest, MakeSharedSlave) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mnt1 = ASSERT_NO_ERRNO_AND_VALUE(Mount(
+      dir1.path().c_str(), dir1.path().c_str(), "", MS_BIND, "", MNT_DETACH));
+  ASSERT_THAT(mount("", dir1.path().c_str(), "", MS_SHARED, 0),
+              SyscallSucceeds());
+  auto const dir2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mnt2 = ASSERT_NO_ERRNO_AND_VALUE(Mount(
+      dir1.path().c_str(), dir2.path().c_str(), "", MS_BIND, "", MNT_DETACH));
+
+  ASSERT_THAT(mount(0, dir2.path().c_str(), 0, MS_SLAVE, 0), SyscallSucceeds());
+  ASSERT_THAT(mount(0, dir2.path().c_str(), 0, MS_SHARED, 0),
+              SyscallSucceeds());
+
+  auto optionals = ASSERT_NO_ERRNO_AND_VALUE(MountOptionals());
+  ASSERT_NE(optionals[dir1.path()][0].shared, 0);
+  ASSERT_NE(optionals[dir2.path()][0].shared, 0);
+  ASSERT_NE(optionals[dir2.path()][0].master, 0);
+}
+
+TEST(MountTest, PrivateMasterUnslaves) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  auto const base = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const base_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", base.path().c_str(), "tmpfs", 0, "", MNT_DETACH));
+  ASSERT_THAT(mount("", base.path().c_str(), "", MS_PRIVATE, 0),
+              SyscallSucceeds());
+
+  auto const dir1 =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base.path()));
+  auto const mnt1 = ASSERT_NO_ERRNO_AND_VALUE(Mount(
+      dir1.path().c_str(), dir1.path().c_str(), "", MS_BIND, "", MNT_DETACH));
+  ASSERT_THAT(mount("", dir1.path().c_str(), "", MS_SHARED, 0),
+              SyscallSucceeds());
+  auto const dir2 =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(base.path()));
+  auto const mnt2 = ASSERT_NO_ERRNO_AND_VALUE(Mount(
+      dir1.path().c_str(), dir2.path().c_str(), "", MS_BIND, "", MNT_DETACH));
+  ASSERT_THAT(mount(0, dir2.path().c_str(), 0, MS_SLAVE, 0), SyscallSucceeds());
+  ASSERT_THAT(mount(0, dir2.path().c_str(), 0, MS_SHARED, 0),
+              SyscallSucceeds());
+
+  ASSERT_THAT(mount(0, dir1.path().c_str(), 0, MS_PRIVATE, 0),
+              SyscallSucceeds());
+
+  auto optionals = ASSERT_NO_ERRNO_AND_VALUE(MountOptionals());
+  ASSERT_EQ(optionals[dir1.path()][0].shared, 0);
+  ASSERT_EQ(optionals[dir2.path()][0].master, 0);
+  ASSERT_NE(optionals[dir2.path()][0].shared, 0);
+}
+
+TEST(MountTest, SlaveMaster) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mnt1 = ASSERT_NO_ERRNO_AND_VALUE(Mount(
+      dir1.path().c_str(), dir1.path().c_str(), "", MS_BIND, "", MNT_DETACH));
+  ASSERT_THAT(mount("", dir1.path().c_str(), "", MS_SHARED, 0),
+              SyscallSucceeds());
+  auto const dir2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mnt2 = ASSERT_NO_ERRNO_AND_VALUE(Mount(
+      dir1.path().c_str(), dir2.path().c_str(), "", MS_BIND, "", MNT_DETACH));
+  ASSERT_THAT(mount(0, dir2.path().c_str(), 0, MS_SLAVE, 0), SyscallSucceeds());
+  ASSERT_THAT(mount(0, dir2.path().c_str(), 0, MS_SHARED, 0),
+              SyscallSucceeds());
+  auto const dir3 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mnt3 = ASSERT_NO_ERRNO_AND_VALUE(Mount(
+      dir2.path().c_str(), dir3.path().c_str(), "", MS_BIND, "", MNT_DETACH));
+  ASSERT_THAT(mount(0, dir3.path().c_str(), 0, MS_SLAVE, 0), SyscallSucceeds());
+
+  ASSERT_THAT(mount(0, dir2.path().c_str(), 0, MS_PRIVATE, 0),
+              SyscallSucceeds());
+
+  auto optionals = ASSERT_NO_ERRNO_AND_VALUE(MountOptionals());
+  ASSERT_NE(optionals[dir1.path()][0].shared, 0);
+  ASSERT_EQ(optionals[dir2.path()][0].shared, 0);
+  ASSERT_EQ(optionals[dir2.path()][0].master, 0);
+  ASSERT_EQ(optionals[dir3.path()][0].master, optionals[dir1.path()][0].shared);
+}
+
+TEST(MountTest, BindSharedToSlave) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const src = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const src_mnt = ASSERT_NO_ERRNO_AND_VALUE(Mount(
+      src.path().c_str(), src.path().c_str(), "", MS_BIND, "", MNT_DETACH));
+  ASSERT_THAT(mount("", src.path().c_str(), "", MS_SHARED, 0),
+              SyscallSucceeds());
+  auto const dst_master = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const dst_master_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(dst_master.path().c_str(), dst_master.path().c_str(), "", MS_BIND,
+            "", MNT_DETACH));
+  ASSERT_THAT(mount("", dst_master.path().c_str(), "", MS_SHARED, 0),
+              SyscallSucceeds());
+  auto const dst = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const dst_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(dst_master.path().c_str(), dst.path().c_str(), "", MS_BIND, "",
+            MNT_DETACH));
+  ASSERT_THAT(mount("", dst.path().c_str(), "", MS_SLAVE, 0),
+              SyscallSucceeds());
+
+  auto const dst_mnt2 = ASSERT_NO_ERRNO_AND_VALUE(Mount(
+      src.path().c_str(), dst.path().c_str(), "", MS_BIND, "", MNT_DETACH));
+  auto optionals = ASSERT_NO_ERRNO_AND_VALUE(MountOptionals());
+
+  ASSERT_EQ(optionals[src.path()][0].shared, optionals[dst.path()][1].shared);
+  ASSERT_EQ(optionals[dst.path()][0].master,
+            optionals[dst_master.path()][0].shared);
+}
+
+TEST(MountTest, BindSlaveToShared) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const src = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const src_mnt = ASSERT_NO_ERRNO_AND_VALUE(Mount(
+      src.path().c_str(), src.path().c_str(), "", MS_BIND, "", MNT_DETACH));
+  ASSERT_THAT(mount("", src.path().c_str(), "", MS_SHARED, 0),
+              SyscallSucceeds());
+  auto const src_master = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const src_master_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(src.path().c_str(), src_master.path().c_str(), "", MS_BIND, "",
+            MNT_DETACH));
+  ASSERT_THAT(mount("", src.path().c_str(), "", MS_SLAVE, 0),
+              SyscallSucceeds());
+
+  auto const dst = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const dst_mnt = ASSERT_NO_ERRNO_AND_VALUE(Mount(
+      dst.path().c_str(), dst.path().c_str(), "", MS_BIND, "", MNT_DETACH));
+  ASSERT_THAT(mount("", dst.path().c_str(), "", MS_SHARED, 0),
+              SyscallSucceeds());
+  auto const dst_peer = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const dst_peer_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(dst.path().c_str(), dst_peer.path().c_str(), "", MS_BIND, "",
+            MNT_DETACH));
+
+  auto const dst_mnt2 = ASSERT_NO_ERRNO_AND_VALUE(Mount(
+      src.path().c_str(), dst.path().c_str(), "", MS_BIND, "", MNT_DETACH));
+
+  auto optionals = ASSERT_NO_ERRNO_AND_VALUE(MountOptionals());
+  ASSERT_EQ(optionals[dst.path()][1].shared,
+            optionals[dst_peer.path()][1].shared);
+  ASSERT_EQ(optionals[dst.path()][1].master,
+            optionals[dst_peer.path()][1].master);
+  ASSERT_EQ(optionals[dst.path()][1].master,
+            optionals[src_master.path()][0].shared);
+}
+
+TEST(MountTest, BindSlaveToSlave) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const src = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const src_mnt = ASSERT_NO_ERRNO_AND_VALUE(Mount(
+      src.path().c_str(), src.path().c_str(), "", MS_BIND, "", MNT_DETACH));
+  ASSERT_THAT(mount("", src.path().c_str(), "", MS_SHARED, 0),
+              SyscallSucceeds());
+  auto const src_master = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const src_master_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(src.path().c_str(), src_master.path().c_str(), "", MS_BIND, "",
+            MNT_DETACH));
+  ASSERT_THAT(mount("", src.path().c_str(), "", MS_SLAVE, 0),
+              SyscallSucceeds());
+
+  auto const dst = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const dst_mnt = ASSERT_NO_ERRNO_AND_VALUE(Mount(
+      dst.path().c_str(), dst.path().c_str(), "", MS_BIND, "", MNT_DETACH));
+  ASSERT_THAT(mount("", dst.path().c_str(), "", MS_SHARED, 0),
+              SyscallSucceeds());
+  auto const dst_master = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const dst_master_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(dst.path().c_str(), dst_master.path().c_str(), "", MS_BIND, "",
+            MNT_DETACH));
+  ASSERT_THAT(mount("", dst.path().c_str(), "", MS_SLAVE, 0),
+              SyscallSucceeds());
+
+  auto const dst_mnt2 = ASSERT_NO_ERRNO_AND_VALUE(Mount(
+      src.path().c_str(), dst.path().c_str(), "", MS_BIND, "", MNT_DETACH));
+
+  auto optionals = ASSERT_NO_ERRNO_AND_VALUE(MountOptionals());
+  ASSERT_EQ(optionals[dst.path()][1].master, optionals[src.path()][0].master);
+}
+
+// Test that mounting on a slave mount does not propagate to the master.
+TEST(MountTest, SlavePropagationEvent) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dst_master = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const dst_master_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(dst_master.path().c_str(), dst_master.path().c_str(), "", MS_BIND,
+            "", MNT_DETACH));
+  ASSERT_THAT(mount("", dst_master.path().c_str(), "", MS_SHARED, 0),
+              SyscallSucceeds());
+  auto const dst = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const dst_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(dst_master.path().c_str(), dst.path().c_str(), "", MS_BIND, "",
+            MNT_DETACH));
+  ASSERT_THAT(mount("", dst.path().c_str(), "", MS_SLAVE, 0),
+              SyscallSucceeds());
+  auto const child =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(dst_master.path()));
+
+  const std::string master_child_path =
+      JoinPath(dst_master.path(), Basename(child.path()));
+  const std::string slave_child_path =
+      JoinPath(dst.path(), Basename(child.path()));
+  auto const slave_child_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", slave_child_path.c_str(), "tmpfs", 0, "", MNT_DETACH));
+
+  auto optionals = ASSERT_NO_ERRNO_AND_VALUE(MountOptionals());
+  ASSERT_EQ(optionals[child.path()].size(), 0);
+}
+
+// We are building a propagation tree that looks like this:
+/*
+    A <--> B <--> C <---> D
+   /|\           /|       |\
+  / F G         J K       H I
+ /
+E<-->O
+    /|\
+   M L N
+*/
+// Propagating mount events across this tree should cover most propagation
+// cases.
+TEST(MountTest, LargeTreePropagationEvent) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  // 15 total mounts that should all get propagated to if we mount on A.
+  auto const a = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const b = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const c = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const d = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const e = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const g = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const h = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const i = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const j = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const k = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const l = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const m = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const n = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const o = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  auto const a_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(a.path().c_str(), a.path().c_str(), "", MS_BIND, "", MNT_DETACH));
+  ASSERT_THAT(mount("", a.path().c_str(), "", MS_SHARED, 0), SyscallSucceeds());
+
+  // Place E, F, and G in A's peer group, then make them slaves.
+  auto const e_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(a.path().c_str(), e.path().c_str(), "", MS_BIND, "", MNT_DETACH));
+  auto const f_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(a.path().c_str(), f.path().c_str(), "", MS_BIND, "", MNT_DETACH));
+  auto const g_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(a.path().c_str(), g.path().c_str(), "", MS_BIND, "", MNT_DETACH));
+  ASSERT_THAT(mount("", e.path().c_str(), "", MS_SLAVE, 0), SyscallSucceeds());
+  ASSERT_THAT(mount("", f.path().c_str(), "", MS_SLAVE, 0), SyscallSucceeds());
+  ASSERT_THAT(mount("", g.path().c_str(), "", MS_SLAVE, 0), SyscallSucceeds());
+
+  // Add B to A's shared group.
+  auto const b_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(a.path().c_str(), b.path().c_str(), "", MS_BIND, "", MNT_DETACH));
+
+  // Add C to A's shared group and place J and K in C's peer group, then make
+  // them slaves.
+  auto const c_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(a.path().c_str(), c.path().c_str(), "", MS_BIND, "", MNT_DETACH));
+  auto const j_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(c.path().c_str(), j.path().c_str(), "", MS_BIND, "", MNT_DETACH));
+  auto const k_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(c.path().c_str(), k.path().c_str(), "", MS_BIND, "", MNT_DETACH));
+  ASSERT_THAT(mount("", j.path().c_str(), "", MS_SLAVE, 0), SyscallSucceeds());
+  ASSERT_THAT(mount("", k.path().c_str(), "", MS_SLAVE, 0), SyscallSucceeds());
+
+  // Add D to A's shared group and place H and I in Ds peer group, then make
+  // them slaves.
+  auto const d_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(a.path().c_str(), d.path().c_str(), "", MS_BIND, "", MNT_DETACH));
+  auto const h_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(d.path().c_str(), h.path().c_str(), "", MS_BIND, "", MNT_DETACH));
+  auto const i_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(d.path().c_str(), i.path().c_str(), "", MS_BIND, "", MNT_DETACH));
+  ASSERT_THAT(mount("", h.path().c_str(), "", MS_SLAVE, 0), SyscallSucceeds());
+  ASSERT_THAT(mount("", i.path().c_str(), "", MS_SLAVE, 0), SyscallSucceeds());
+
+  // Make E shared and create a group with O.
+  ASSERT_THAT(mount("", e.path().c_str(), "", MS_SHARED, 0), SyscallSucceeds());
+  auto const o_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(e.path().c_str(), o.path().c_str(), "", MS_BIND, "", MNT_DETACH));
+
+  // Add M, L and N to K's shared group and make them slaves of O.
+  auto const m_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(o.path().c_str(), m.path().c_str(), "", MS_BIND, "", MNT_DETACH));
+  auto const l_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(o.path().c_str(), l.path().c_str(), "", MS_BIND, "", MNT_DETACH));
+  auto const n_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(o.path().c_str(), n.path().c_str(), "", MS_BIND, "", MNT_DETACH));
+  ASSERT_THAT(mount("", m.path().c_str(), "", MS_SLAVE, 0), SyscallSucceeds());
+  ASSERT_THAT(mount("", l.path().c_str(), "", MS_SLAVE, 0), SyscallSucceeds());
+  ASSERT_THAT(mount("", n.path().c_str(), "", MS_SLAVE, 0), SyscallSucceeds());
+
+  std::vector<ProcMountInfoEntry> mounts =
+      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntries());
+
+  ASSERT_THAT(mount("", a.path().c_str(), "tmpfs", 0, ""), SyscallSucceeds());
+
+  std::vector<ProcMountInfoEntry> mounts_after_mount =
+      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntries());
+  ASSERT_EQ(mounts_after_mount.size(), mounts.size() + 15);
+
+  auto optionals = ASSERT_NO_ERRNO_AND_VALUE(MountOptionals());
+
+  // A, B, C, and D are all mounted over and in a peer group.
+  ASSERT_NE(optionals[a.path()][1].shared, 0);
+  ASSERT_EQ(optionals[a.path()][1].shared, optionals[b.path()][1].shared);
+  ASSERT_EQ(optionals[a.path()][1].shared, optionals[c.path()][1].shared);
+  ASSERT_EQ(optionals[a.path()][1].shared, optionals[d.path()][1].shared);
+
+  // E, F, G, H, I, J, K are all mounted over and slave to A's peer group.
+  ASSERT_EQ(optionals[a.path()][1].shared, optionals[e.path()][1].master);
+  ASSERT_EQ(optionals[a.path()][1].shared, optionals[f.path()][1].master);
+  ASSERT_EQ(optionals[a.path()][1].shared, optionals[g.path()][1].master);
+  ASSERT_EQ(optionals[a.path()][1].shared, optionals[h.path()][1].master);
+  ASSERT_EQ(optionals[a.path()][1].shared, optionals[i.path()][1].master);
+  ASSERT_EQ(optionals[a.path()][1].shared, optionals[j.path()][1].master);
+  ASSERT_EQ(optionals[a.path()][1].shared, optionals[k.path()][1].master);
+
+  // E and O are all mounted over and in a peer group.
+  ASSERT_EQ(optionals[e.path()][1].shared, optionals[o.path()][1].shared);
+
+  // L, M, and N are all mounted over and slaves to E's peer group.
+  ASSERT_EQ(optionals[e.path()][1].shared, optionals[l.path()][1].master);
+  ASSERT_EQ(optionals[e.path()][1].shared, optionals[m.path()][1].master);
+  ASSERT_EQ(optionals[e.path()][1].shared, optionals[n.path()][1].master);
+
+  ASSERT_THAT(umount2(a.path().c_str(), MNT_DETACH), SyscallSucceeds());
+  std::vector<ProcMountInfoEntry> mounts_after_umount =
+      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntries());
+  ASSERT_EQ(mounts_after_umount.size(), mounts.size());
+}
+
+TEST(MountTest, MaxMountsWithSlave) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const parent = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const parent_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("test", parent.path(), "tmpfs", 0, "mode=0123", MNT_DETACH));
+  auto const a =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(parent.path()));
+  auto const b =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(parent.path()));
+  auto const c =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(parent.path()));
+
+  auto const a_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("test", a.path(), "tmpfs", 0, "mode=0123", MNT_DETACH));
+  ASSERT_THAT(mount("", a.path().c_str(), "", MS_SHARED, 0), SyscallSucceeds());
+
+  auto const b_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(a.path(), b.path(), "", MS_BIND, "", MNT_DETACH));
+  ASSERT_THAT(mount("", b.path().c_str(), "", MS_SLAVE, 0), SyscallSucceeds());
+  ASSERT_THAT(mount("", b.path().c_str(), "", MS_SHARED, 0), SyscallSucceeds());
+
+  auto const c_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(b.path(), c.path(), "", MS_BIND, "", MNT_DETACH));
+  ASSERT_THAT(mount("", c.path().c_str(), "", MS_SLAVE, 0), SyscallSucceeds());
+
+  auto const d = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(a.path()));
+  auto const e = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(a.path()));
+
+  int mount_max = 10000;
+  bool mount_max_exists =
+      ASSERT_NO_ERRNO_AND_VALUE(Exists("/proc/sys/fs/mount-max"));
+  if (mount_max_exists) {
+    std::string mount_max_string;
+    ASSERT_NO_ERRNO(GetContents("/proc/sys/fs/mount-max", &mount_max_string));
+    ASSERT_TRUE(absl::SimpleAtoi(mount_max_string, &mount_max));
+  }
+
+  // Each bind mount doubles the number of mounts in the propagation tree
+  // starting with 3. The number of binds we can do before failing is
+  // log2((max_mounts-num_current_mounts)/3).
+  std::vector<ProcMountInfoEntry> mounts =
+      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntries());
+  int num_binds = static_cast<int>(std::log2((mount_max - mounts.size()) / 3));
+
+  for (int i = 0; i < num_binds; i++) {
+    ASSERT_THAT(
+        mount(d.path().c_str(), d.path().c_str(), nullptr, MS_BIND, nullptr),
+        SyscallSucceeds());
+    ASSERT_THAT(mount("", d.path().c_str(), "", MS_SHARED, 0),
+                SyscallSucceeds());
+  }
+  for (int i = 0; i < 2; i++) {
+    EXPECT_THAT(
+        mount(d.path().c_str(), d.path().c_str(), nullptr, MS_BIND, nullptr),
+        SyscallFailsWithErrno(ENOSPC));
+  }
+}
+
 TEST(MountTest, MountNamespace) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 
@@ -1511,6 +1934,80 @@ TEST(MountTest, MountNamespacePropagation) {
 
   // Check that the test mount is still here.
   EXPECT_NO_ERRNO(Open(JoinPath(child_dir, "boo"), O_RDWR));
+  EXPECT_THAT(umount2(child_dir.c_str(), MNT_DETACH), SyscallSucceeds());
+}
+
+TEST(MountTest, MountNamespaceSlavesNewUserNamespace) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir.path(), "tmpfs", 0, "mode=0700", MNT_DETACH));
+  auto child_dir = JoinPath(dir.path(), "test");
+
+  ASSERT_THAT(mount(NULL, dir.path().c_str(), NULL, MS_SHARED, NULL),
+              SyscallSucceeds());
+  ASSERT_THAT(mkdir(child_dir.c_str(), 0700), SyscallSucceeds());
+  ASSERT_THAT(mount("child", child_dir.c_str(), "tmpfs", 0, NULL),
+              SyscallSucceeds());
+  EXPECT_NO_ERRNO(Open(JoinPath(child_dir, "foo"), O_CREAT | O_RDWR, 0777));
+
+  int uid = geteuid();
+  int gid = getegid();
+  std::string umap_str = absl::StrFormat("0 %lu 1", uid);
+  std::string gmap_str = absl::StrFormat("0 %lu 1", gid);
+
+  pid_t child = fork();
+  if (child == 0) {
+    chdir(dir.path().c_str());
+    TEST_CHECK(unshare(CLONE_NEWNS | CLONE_NEWUSER) == 0);
+
+    // Setup uid and gid maps for child.
+    int fd = open("/proc/self/uid_map", O_WRONLY);
+    TEST_CHECK(fd > 0);
+    TEST_CHECK(write(fd, umap_str.c_str(), umap_str.size()) > 0);
+    TEST_CHECK(close(fd) == 0);
+
+    // setgroups isn't implemented in gVisor but is necessary for native tests.
+    fd = open("/proc/self/setgroups", O_WRONLY);
+    if (fd > 0) {
+      TEST_CHECK(write(fd, "deny", 4) > 0);
+      TEST_CHECK(close(fd) == 0);
+    }
+
+    fd = open("/proc/self/gid_map", O_WRONLY);
+    TEST_CHECK(fd > 0);
+    TEST_CHECK(write(fd, gmap_str.c_str(), gmap_str.size()) > 0);
+    TEST_CHECK(close(fd) == 0);
+
+    // Wait until uid and gid maps are setup.
+    TEST_CHECK(setuid(0) == 0);
+    TEST_CHECK(setgid(0) == 0);
+    TEST_CHECK(access("test/foo", F_OK) == 0);
+
+    // These mount operations will not propagate to the other namespace because
+    // it is a slave mount.
+    TEST_CHECK(mount("test2", "test", "tmpfs", 0, NULL) == 0);
+    TEST_CHECK(mknod(JoinPath("test", "boo").c_str(), 0777 | S_IFREG, 0) == 0);
+
+    // Check that there is a master entry in mountinfo.
+    fd = open("/proc/self/mountinfo", O_RDONLY);
+    TEST_CHECK(fd > 0);
+    std::string mountinfo;
+    char child_mountinfo[0x8000];
+    TEST_CHECK(read(fd, child_mountinfo, sizeof(child_mountinfo)) > 0);
+    EXPECT_TRUE(absl::StrContains(child_mountinfo, "master:"));
+    exit(0);
+  }
+  ASSERT_THAT(child, SyscallSucceeds());
+
+  int status;
+  ASSERT_THAT(waitpid(child, &status, 0), SyscallSucceedsWithValue(child));
+  ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+
+  // Check that the test mount is still here.
+  EXPECT_EQ(Open(JoinPath(child_dir, "boo"), O_RDWR).error().errno_value(),
+            ENOENT);
   EXPECT_THAT(umount2(child_dir.c_str(), MNT_DETACH), SyscallSucceeds());
 }
 
