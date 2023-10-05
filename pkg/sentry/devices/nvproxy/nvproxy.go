@@ -35,22 +35,22 @@ import (
 func Register(vfsObj *vfs.VirtualFilesystem, uvmDevMajor uint32) error {
 	// The kernel driver's interface is unstable, so only allow versions of the
 	// driver that are known to be supported.
-	version, err := hostDriverVersion()
+	versionStr, err := hostDriverVersion()
 	if err != nil {
 		return fmt.Errorf("failed to get Nvidia driver version: %w", err)
 	}
-	switch version {
-	case
-		"525.60.13",
-		"525.105.17",
-		"525.125.06":
-		log.Infof("Nvidia driver version: %s", version)
-	default:
-		return fmt.Errorf("unsupported Nvidia driver version: %s", version)
+	version, err := driverVersionFrom(versionStr)
+	if err != nil {
+		return fmt.Errorf("failed to parse Nvidia driver version %s: %w", versionStr, err)
 	}
-
+	abiCons, ok := abis[version]
+	if !ok {
+		return fmt.Errorf("unsupported Nvidia driver version: %s", versionStr)
+	}
+	log.Infof("Nvidia driver version: %s", versionStr)
 	nvp := &nvproxy{
 		objsLive: make(map[nvgpu.Handle]*object),
+		abi:      abiCons(),
 	}
 	for minor := uint32(0); minor <= nvgpu.NV_CONTROL_DEVICE_MINOR; minor++ {
 		if err := vfsObj.RegisterDevice(vfs.CharDevice, nvgpu.NV_MAJOR_DEVICE_NUMBER, minor, &frontendDevice{
@@ -95,6 +95,7 @@ func CreateIndexDevtmpfsFile(ctx context.Context, dev *devtmpfs.Accessor, minor 
 type nvproxy struct {
 	objsMu   objsMutex `state:"nosave"`
 	objsLive map[nvgpu.Handle]*object
+	abi      *driverABI
 }
 
 // object tracks an object allocated through the driver.

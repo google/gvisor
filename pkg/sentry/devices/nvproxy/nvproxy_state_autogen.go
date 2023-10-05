@@ -41,6 +41,7 @@ func (n *nvproxy) StateTypeName() string {
 func (n *nvproxy) StateFields() []string {
 	return []string{
 		"objsLive",
+		"abi",
 	}
 }
 
@@ -50,6 +51,7 @@ func (n *nvproxy) beforeSave() {}
 func (n *nvproxy) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
 	stateSinkObject.Save(0, &n.objsLive)
+	stateSinkObject.Save(1, &n.abi)
 }
 
 func (n *nvproxy) afterLoad() {}
@@ -57,6 +59,7 @@ func (n *nvproxy) afterLoad() {}
 // +checklocksignore
 func (n *nvproxy) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &n.objsLive)
+	stateSourceObject.Load(1, &n.abi)
 }
 
 func (o *object) StateTypeName() string {
