@@ -152,7 +152,15 @@ func BuildProgram(rules []RuleSet, defaultAction, badArchAction linux.BPFAction)
 	}
 	program.AddStmt(bpf.Ret|bpf.K, uint32(defaultAction))
 
-	return program.Instructions()
+	insns, err := program.Instructions()
+	if err != nil {
+		return insns, err
+	}
+	beforeOpt := len(insns)
+	insns = bpf.Optimize(insns)
+	afterOpt := len(insns)
+	log.Debugf("Seccomp program optimized from %d to %d instructions", beforeOpt, afterOpt)
+	return insns, nil
 }
 
 // buildIndex builds a BST to quickly search through all syscalls.
