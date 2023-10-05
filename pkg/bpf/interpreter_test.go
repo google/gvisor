@@ -705,6 +705,19 @@ func TestValidInstructions(t *testing.T) {
 			},
 			expectedRet: 2,
 		},
+		{
+			desc: "Optimizable program",
+			insns: []Instruction{
+				Stmt(Ld|Imm|W, 42),        // A = 42
+				Jump(Jmp|Jeq|K, 42, 0, 1), // if (A == 42) jmp 0 else 1
+				Jump(Jmp|Ja, 1, 0, 0),     // jmp 1
+				Jump(Jmp|Ja, 2, 0, 0),     // jmp 2
+				Stmt(Ld|Imm|W, 37),        // A = 37
+				Stmt(Ret|K, 0),            // return 0
+				Stmt(Ret|K, 1),            // return 1
+			},
+			expectedRet: 0,
+		},
 	} {
 		p, err := Compile(test.insns)
 		if err != nil {

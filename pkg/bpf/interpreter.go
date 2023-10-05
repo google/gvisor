@@ -97,8 +97,8 @@ func (p Program) Length() int {
 	return len(p.instructions)
 }
 
-// Compile performs validation on a sequence of BPF instructions before
-// wrapping them in a Program.
+// Compile performs validation and optimization on a sequence of BPF
+// instructions before wrapping them in a Program.
 func Compile(insns []Instruction) (Program, error) {
 	if len(insns) == 0 || len(insns) > MaxInstructions {
 		return Program{}, Error{InvalidInstructionCount, len(insns)}
@@ -214,7 +214,7 @@ func Compile(insns []Instruction) (Program, error) {
 		}
 	}
 
-	return Program{insns}, nil
+	return Program{Optimize(insns)}, nil
 }
 
 // Input represents a source of input data for a BPF program. (BPF
