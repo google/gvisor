@@ -242,9 +242,9 @@ func addSyscallArgsCheck(p *bpf.ProgramBuilder, rules []Rule, action linux.BPFAc
 		labelled := false
 		for i, arg := range rule {
 			if arg != nil {
-				// Break out early if using MatchAny since no further
+				// Break out early if using AnyValue since no further
 				// instructions are required.
-				if _, ok := arg.(MatchAny); ok {
+				if _, ok := arg.(AnyValue); ok {
 					continue
 				}
 

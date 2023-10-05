@@ -29,12 +29,12 @@ func (*Systrap) archSyscallFilters() seccomp.SyscallRules {
 		unix.SYS_PTRACE: {
 			{
 				seccomp.EqualTo(unix.PTRACE_GETREGSET),
-				seccomp.MatchAny{},
+				seccomp.AnyValue{},
 				seccomp.EqualTo(linux.NT_ARM_TLS),
 			},
 			{
 				seccomp.EqualTo(unix.PTRACE_SETREGSET),
-				seccomp.MatchAny{},
+				seccomp.AnyValue{},
 				seccomp.EqualTo(linux.NT_ARM_TLS),
 			},
 		},

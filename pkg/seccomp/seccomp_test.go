@@ -257,7 +257,7 @@ func TestBasic(t *testing.T) {
 					Rules: SyscallRules{
 						1: []Rule{
 							{
-								MatchAny{},
+								AnyValue{},
 								EqualTo(0xf),
 							},
 						},

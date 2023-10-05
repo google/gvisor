@@ -88,7 +88,7 @@ func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, erro
 				// For the stub to stop itself (all).
 				unix.SYS_GETPID: {},
 				unix.SYS_KILL: []seccomp.Rule{
-					{seccomp.MatchAny{}, seccomp.EqualTo(unix.SIGSTOP)},
+					{seccomp.AnyValue{}, seccomp.EqualTo(unix.SIGSTOP)},
 				},
 
 				// Injected to support the address space operations.
@@ -100,25 +100,25 @@ func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, erro
 				unix.SYS_SCHED_YIELD:  {},
 				unix.SYS_FUTEX: {
 					seccomp.Rule{
-						seccomp.MatchAny{},
+						seccomp.AnyValue{},
 						seccomp.EqualTo(linux.FUTEX_WAIT),
-						seccomp.MatchAny{},
-						seccomp.MatchAny{},
+						seccomp.AnyValue{},
+						seccomp.AnyValue{},
 					},
 					seccomp.Rule{
-						seccomp.MatchAny{},
+						seccomp.AnyValue{},
 						seccomp.EqualTo(linux.FUTEX_WAKE),
-						seccomp.MatchAny{},
-						seccomp.MatchAny{},
+						seccomp.AnyValue{},
+						seccomp.AnyValue{},
 					},
 				},
 				unix.SYS_SIGALTSTACK: {},
 				unix.SYS_TKILL: {
-					{seccomp.MatchAny{}, seccomp.EqualTo(unix.SIGSTOP)},
+					{seccomp.AnyValue{}, seccomp.EqualTo(unix.SIGSTOP)},
 				},
 				unix.SYS_GETTID: {},
 				seccomp.SYS_SECCOMP: {
-					{seccomp.EqualTo(linux.SECCOMP_SET_MODE_FILTER), seccomp.EqualTo(0), seccomp.MatchAny{}},
+					{seccomp.EqualTo(linux.SECCOMP_SET_MODE_FILTER), seccomp.EqualTo(0), seccomp.AnyValue{}},
 				},
 			},
 			Action: linux.SECCOMP_RET_ALLOW,

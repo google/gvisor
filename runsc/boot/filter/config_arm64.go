@@ -32,13 +32,13 @@ func init() {
 					unix.CLONE_SIGHAND |
 					unix.CLONE_SYSVSEM |
 					unix.CLONE_THREAD),
-			seccomp.MatchAny{}, // newsp
+			seccomp.AnyValue{}, // newsp
 			// These arguments are left uninitialized by the Go
 			// runtime, so they may be anything (and are unused by
 			// the host).
-			seccomp.MatchAny{}, // parent_tidptr
-			seccomp.MatchAny{}, // tls
-			seccomp.MatchAny{}, // child_tidptr
+			seccomp.AnyValue{}, // parent_tidptr
+			seccomp.AnyValue{}, // tls
+			seccomp.AnyValue{}, // child_tidptr
 		},
 	}
 }

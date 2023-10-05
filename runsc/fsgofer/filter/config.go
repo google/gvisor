@@ -31,10 +31,10 @@ var allowedSyscalls = seccomp.SyscallRules{
 	unix.SYS_EPOLL_CTL:     {},
 	unix.SYS_EPOLL_PWAIT: []seccomp.Rule{
 		{
-			seccomp.MatchAny{},
-			seccomp.MatchAny{},
-			seccomp.MatchAny{},
-			seccomp.MatchAny{},
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
 			seccomp.EqualTo(0),
 		},
 	},
@@ -48,7 +48,7 @@ var allowedSyscalls = seccomp.SyscallRules{
 	unix.SYS_EXIT_GROUP: {},
 	unix.SYS_FALLOCATE: []seccomp.Rule{
 		{
-			seccomp.MatchAny{},
+			seccomp.AnyValue{},
 			seccomp.EqualTo(0),
 		},
 	},
@@ -57,20 +57,20 @@ var allowedSyscalls = seccomp.SyscallRules{
 	unix.SYS_FCHOWNAT: {},
 	unix.SYS_FCNTL: []seccomp.Rule{
 		{
-			seccomp.MatchAny{},
+			seccomp.AnyValue{},
 			seccomp.EqualTo(unix.F_GETFL),
 		},
 		{
-			seccomp.MatchAny{},
+			seccomp.AnyValue{},
 			seccomp.EqualTo(unix.F_SETFL),
 		},
 		{
-			seccomp.MatchAny{},
+			seccomp.AnyValue{},
 			seccomp.EqualTo(unix.F_GETFD),
 		},
 		// Used by flipcall.PacketWindowAllocator.Init().
 		{
-			seccomp.MatchAny{},
+			seccomp.AnyValue{},
 			seccomp.EqualTo(unix.F_ADD_SEALS),
 		},
 	},
@@ -80,38 +80,38 @@ var allowedSyscalls = seccomp.SyscallRules{
 	unix.SYS_FTRUNCATE: {},
 	unix.SYS_FUTEX: {
 		seccomp.Rule{
-			seccomp.MatchAny{},
+			seccomp.AnyValue{},
 			seccomp.EqualTo(linux.FUTEX_WAIT | linux.FUTEX_PRIVATE_FLAG),
-			seccomp.MatchAny{},
-			seccomp.MatchAny{},
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
 			seccomp.EqualTo(0),
 		},
 		seccomp.Rule{
-			seccomp.MatchAny{},
+			seccomp.AnyValue{},
 			seccomp.EqualTo(linux.FUTEX_WAKE | linux.FUTEX_PRIVATE_FLAG),
-			seccomp.MatchAny{},
-			seccomp.MatchAny{},
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
 			seccomp.EqualTo(0),
 		},
 		// Non-private futex used for flipcall.
 		seccomp.Rule{
-			seccomp.MatchAny{},
+			seccomp.AnyValue{},
 			seccomp.EqualTo(linux.FUTEX_WAIT),
-			seccomp.MatchAny{},
-			seccomp.MatchAny{},
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
 		},
 		seccomp.Rule{
-			seccomp.MatchAny{},
+			seccomp.AnyValue{},
 			seccomp.EqualTo(linux.FUTEX_WAKE),
-			seccomp.MatchAny{},
-			seccomp.MatchAny{},
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
 		},
 	},
 	// getcpu is used by some versions of the Go runtime and by the hostcpu
 	// package on arm64.
 	unix.SYS_GETCPU: []seccomp.Rule{
 		{
-			seccomp.MatchAny{},
+			seccomp.AnyValue{},
 			seccomp.EqualTo(0),
 			seccomp.EqualTo(0),
 		},
@@ -129,21 +129,21 @@ var allowedSyscalls = seccomp.SyscallRules{
 	unix.SYS_MKNODAT:      {},
 	unix.SYS_MMAP: []seccomp.Rule{
 		{
-			seccomp.MatchAny{},
-			seccomp.MatchAny{},
-			seccomp.MatchAny{},
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
 			seccomp.EqualTo(unix.MAP_SHARED),
 		},
 		{
-			seccomp.MatchAny{},
-			seccomp.MatchAny{},
-			seccomp.MatchAny{},
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
 			seccomp.EqualTo(unix.MAP_PRIVATE | unix.MAP_ANONYMOUS),
 		},
 		{
-			seccomp.MatchAny{},
-			seccomp.MatchAny{},
-			seccomp.MatchAny{},
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
 			seccomp.EqualTo(unix.MAP_PRIVATE | unix.MAP_ANONYMOUS | unix.MAP_FIXED),
 		},
 	},
@@ -158,13 +158,13 @@ var allowedSyscalls = seccomp.SyscallRules{
 	unix.SYS_READLINKAT: {},
 	unix.SYS_RECVMSG: []seccomp.Rule{
 		{
-			seccomp.MatchAny{},
-			seccomp.MatchAny{},
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
 			seccomp.EqualTo(unix.MSG_DONTWAIT | unix.MSG_TRUNC),
 		},
 		{
-			seccomp.MatchAny{},
-			seccomp.MatchAny{},
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
 			seccomp.EqualTo(unix.MSG_DONTWAIT | unix.MSG_TRUNC | unix.MSG_PEEK),
 		},
 	},
@@ -178,19 +178,19 @@ var allowedSyscalls = seccomp.SyscallRules{
 	unix.SYS_SENDMSG: []seccomp.Rule{
 		// Used by fdchannel.Endpoint.SendFD().
 		{
-			seccomp.MatchAny{},
-			seccomp.MatchAny{},
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
 			seccomp.EqualTo(0),
 		},
 		// Used by unet.SocketWriter.WriteVec().
 		{
-			seccomp.MatchAny{},
-			seccomp.MatchAny{},
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
 			seccomp.EqualTo(unix.MSG_DONTWAIT | unix.MSG_NOSIGNAL),
 		},
 	},
 	unix.SYS_SHUTDOWN: []seccomp.Rule{
-		{seccomp.MatchAny{}, seccomp.EqualTo(unix.SHUT_RDWR)},
+		{seccomp.AnyValue{}, seccomp.EqualTo(unix.SHUT_RDWR)},
 	},
 	unix.SYS_SIGALTSTACK: {},
 	// Used by fdchannel.NewConnectedSockets().
