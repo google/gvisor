@@ -33,9 +33,9 @@ func Filters() seccomp.SyscallRules {
 				// absolute paths) to hedge against bugs involving AT_FDCWD or
 				// real dirfds.
 				seccomp.EqualTo(^uintptr(0)),
-				seccomp.MatchAny{},
+				seccomp.AnyValue{},
 				seccomp.MaskedEqual(unix.O_NOFOLLOW|unix.O_CREAT, unix.O_NOFOLLOW),
-				seccomp.MatchAny{},
+				seccomp.AnyValue{},
 			},
 		},
 		unix.SYS_IOCTL: []seccomp.Rule{
@@ -178,11 +178,11 @@ func Filters() seccomp.SyscallRules {
 		},
 		unix.SYS_MREMAP: []seccomp.Rule{
 			{
-				seccomp.MatchAny{},
+				seccomp.AnyValue{},
 				seccomp.EqualTo(0), /* old_size */
-				seccomp.MatchAny{},
+				seccomp.AnyValue{},
 				seccomp.EqualTo(linux.MREMAP_MAYMOVE | linux.MREMAP_FIXED),
-				seccomp.MatchAny{},
+				seccomp.AnyValue{},
 				seccomp.EqualTo(0),
 			},
 		},

@@ -29,7 +29,7 @@ func (p *Systrap) SyscallFilters() seccomp.SyscallRules {
 			},
 			{
 				seccomp.EqualTo(unix.PTRACE_CONT),
-				seccomp.MatchAny{},
+				seccomp.AnyValue{},
 				seccomp.EqualTo(0),
 				seccomp.EqualTo(0),
 			},
@@ -38,7 +38,7 @@ func (p *Systrap) SyscallFilters() seccomp.SyscallRules {
 			},
 			{
 				seccomp.EqualTo(unix.PTRACE_GETREGSET),
-				seccomp.MatchAny{},
+				seccomp.AnyValue{},
 				seccomp.EqualTo(linux.NT_PRSTATUS),
 			},
 			{
@@ -46,23 +46,23 @@ func (p *Systrap) SyscallFilters() seccomp.SyscallRules {
 			},
 			{
 				seccomp.EqualTo(unix.PTRACE_SETOPTIONS),
-				seccomp.MatchAny{},
+				seccomp.AnyValue{},
 				seccomp.EqualTo(0),
 				seccomp.EqualTo(unix.PTRACE_O_TRACESYSGOOD | unix.PTRACE_O_TRACEEXIT | unix.PTRACE_O_EXITKILL),
 			},
 			{
 				seccomp.EqualTo(unix.PTRACE_SETREGSET),
-				seccomp.MatchAny{},
+				seccomp.AnyValue{},
 				seccomp.EqualTo(linux.NT_PRSTATUS),
 			},
 			{
 				seccomp.EqualTo(linux.PTRACE_SETSIGMASK),
-				seccomp.MatchAny{},
+				seccomp.AnyValue{},
 				seccomp.EqualTo(8),
 			},
 			{
 				seccomp.EqualTo(unix.PTRACE_SYSEMU),
-				seccomp.MatchAny{},
+				seccomp.AnyValue{},
 				seccomp.EqualTo(0),
 				seccomp.EqualTo(0),
 			},
@@ -75,7 +75,7 @@ func (p *Systrap) SyscallFilters() seccomp.SyscallRules {
 		unix.SYS_SETPRIORITY: {
 			{
 				seccomp.EqualTo(unix.PRIO_PROCESS),
-				seccomp.MatchAny{},
+				seccomp.AnyValue{},
 				seccomp.EqualTo(sysmsgThreadPriority),
 			},
 		},

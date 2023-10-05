@@ -106,7 +106,7 @@ func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, erro
 				// For the stub to stop itself (all).
 				unix.SYS_GETPID: {},
 				unix.SYS_KILL: []seccomp.Rule{
-					{seccomp.MatchAny{}, seccomp.EqualTo(unix.SIGSTOP)},
+					{seccomp.AnyValue{}, seccomp.EqualTo(unix.SIGSTOP)},
 				},
 
 				// Injected to support the address space operations.

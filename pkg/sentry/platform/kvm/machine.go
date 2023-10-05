@@ -783,8 +783,8 @@ func seccompMmapRules(m *machine) {
 				Rules: seccomp.SyscallRules{
 					unix.SYS_MMAP: {
 						{
-							seccomp.MatchAny{},
-							seccomp.MatchAny{},
+							seccomp.AnyValue{},
+							seccomp.AnyValue{},
 							seccomp.MaskedEqual(unix.PROT_EXEC, 0),
 							/* MAP_DENYWRITE is ignored and used only for filtering. */
 							seccomp.MaskedEqual(unix.MAP_DENYWRITE, 0),
