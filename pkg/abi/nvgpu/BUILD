@@ -10,10 +10,12 @@ go_library(
         "classes.go",
         "ctrl.go",
         "frontend.go",
+        "frontend_unsafe.go",
         "nvgpu.go",
         "status.go",
         "uvm.go",
     ],
     marshal = True,
     visibility = ["//pkg/sentry:internal"],
+    deps = ["//pkg/marshal"],
 )
