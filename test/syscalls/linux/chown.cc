@@ -112,6 +112,14 @@ TEST(ChownTest, FchownatWithOpath) {
       SyscallSucceeds());
 }
 
+TEST(ChownTest, FchownatWithOpathEmtpyPath) {
+  const auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const auto dirfd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path(), O_DIRECTORY | O_PATH));
+  ASSERT_THAT(fchownat(dirfd.get(), "", geteuid(), getegid(), AT_EMPTY_PATH),
+              SyscallSucceeds());
+}
+
 TEST(ChownTest, FchownatEmptyPath) {
   const auto dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   const auto fd =

@@ -21,6 +21,7 @@
 #include <unistd.h>
 #include <utime.h>
 
+#include <cerrno>
 #include <string>
 
 #include "absl/time/time.h"
@@ -112,20 +113,29 @@ TEST(UtimesTest, MissingPath) {
 
 void TestFutimesat(int dirFd, std::string const& path) {
   struct stat statbuf;
+  const char* path_or_null = nullptr;
+  if (!path.empty()) path_or_null = path.c_str();
 
   struct timeval times[2] = {{10, 0}, {20, 0}};
-  EXPECT_THAT(futimesat(dirFd, path.c_str(), times), SyscallSucceeds());
-  EXPECT_THAT(fstatat(dirFd, path.c_str(), &statbuf, 0), SyscallSucceeds());
+  EXPECT_THAT(futimesat(dirFd, path_or_null, times), SyscallSucceeds());
+  if (path_or_null) {
+    EXPECT_THAT(fstatat(dirFd, path_or_null, &statbuf, 0), SyscallSucceeds());
+  } else {
+    EXPECT_THAT(fstat(dirFd, &statbuf), SyscallSucceeds());
+  }
   EXPECT_EQ(10, statbuf.st_atime);
   EXPECT_EQ(20, statbuf.st_mtime);
 
   absl::Time before;
   absl::Time after;
   TimeBoxed(&before, &after, [&] {
-    EXPECT_THAT(futimesat(dirFd, path.c_str(), nullptr), SyscallSucceeds());
+    EXPECT_THAT(futimesat(dirFd, path_or_null, nullptr), SyscallSucceeds());
   });
-
-  EXPECT_THAT(fstatat(dirFd, path.c_str(), &statbuf, 0), SyscallSucceeds());
+  if (path_or_null) {
+    EXPECT_THAT(fstatat(dirFd, path_or_null, &statbuf, 0), SyscallSucceeds());
+  } else {
+    EXPECT_THAT(fstat(dirFd, &statbuf), SyscallSucceeds());
+  }
 
   absl::Time atime = absl::TimeFromTimespec(statbuf.st_atim);
   EXPECT_GE(atime, before);
@@ -148,6 +158,26 @@ TEST(FutimesatTest, OnRelPath) {
   const FileDescriptor dirFd =
       ASSERT_NO_ERRNO_AND_VALUE(Open(d.path(), O_RDONLY | O_DIRECTORY));
   TestFutimesat(dirFd.get(), basename);
+}
+
+TEST(FutimesatTest, OnNullPath) {
+  auto f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(f.path(), O_RDONLY));
+  TestFutimesat(fd.get(), "");
+}
+
+TEST(FutimesatTest, OnNullPathWithOPath) {
+  auto f = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFile());
+  const FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(f.path(), O_PATH));
+  struct timeval times[2] = {{10, 0}, {20, 0}};
+  EXPECT_THAT(futimesat(fd.get(), nullptr, times),
+              SyscallFailsWithErrno(EBADF));
+}
+
+TEST(FutimesatTest, OnNullPathWithCWD) {
+  struct timeval times[2] = {{10, 0}, {20, 0}};
+  EXPECT_THAT(futimesat(AT_FDCWD, nullptr, times),
+              SyscallFailsWithErrno(EFAULT));
 }
 
 TEST(FutimesatTest, InvalidNsec) {
