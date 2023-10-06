@@ -1124,3 +1124,14 @@ type FUSEFallocateIn struct {
 	// padding
 	_ uint32
 }
+
+// FUSEFlushIn is the request sent by the kernel to the daemon after a file is
+// closed.
+//
+// +marshal
+type FUSEFlushIn struct {
+	Fh        uint64
+	_         uint32 // unused
+	_         uint32 // padding
+	LockOwner uint64
+}
