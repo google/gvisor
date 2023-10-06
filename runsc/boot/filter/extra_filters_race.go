@@ -26,17 +26,17 @@ import (
 func instrumentationFilters() seccomp.SyscallRules {
 	Report("TSAN is enabled: syscall filters less restrictive!")
 	return archInstrumentationFilters(seccomp.SyscallRules{
-		unix.SYS_BRK:               {},
-		unix.SYS_CLOCK_NANOSLEEP:   {},
-		unix.SYS_CLONE:             {},
-		unix.SYS_CLONE3:            {},
-		unix.SYS_FUTEX:             {},
-		unix.SYS_MMAP:              {},
-		unix.SYS_MUNLOCK:           {},
-		unix.SYS_NANOSLEEP:         {},
-		unix.SYS_OPENAT:            {},
-		unix.SYS_RSEQ:              {},
-		unix.SYS_SET_ROBUST_LIST:   {},
-		unix.SYS_SCHED_GETAFFINITY: {},
+		unix.SYS_BRK:               seccomp.MatchAll{},
+		unix.SYS_CLOCK_NANOSLEEP:   seccomp.MatchAll{},
+		unix.SYS_CLONE:             seccomp.MatchAll{},
+		unix.SYS_CLONE3:            seccomp.MatchAll{},
+		unix.SYS_FUTEX:             seccomp.MatchAll{},
+		unix.SYS_MMAP:              seccomp.MatchAll{},
+		unix.SYS_MUNLOCK:           seccomp.MatchAll{},
+		unix.SYS_NANOSLEEP:         seccomp.MatchAll{},
+		unix.SYS_OPENAT:            seccomp.MatchAll{},
+		unix.SYS_RSEQ:              seccomp.MatchAll{},
+		unix.SYS_SET_ROBUST_LIST:   seccomp.MatchAll{},
+		unix.SYS_SCHED_GETAFFINITY: seccomp.MatchAll{},
 	})
 }

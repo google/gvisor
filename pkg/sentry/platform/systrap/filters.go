@@ -23,61 +23,59 @@ import (
 // SyscallFilters returns syscalls made exclusively by the systrap platform.
 func (p *Systrap) SyscallFilters() seccomp.SyscallRules {
 	r := seccomp.SyscallRules{
-		unix.SYS_PTRACE: {
-			{
+		unix.SYS_PTRACE: seccomp.Or{
+			seccomp.PerArg{
 				seccomp.EqualTo(unix.PTRACE_ATTACH),
 			},
-			{
+			seccomp.PerArg{
 				seccomp.EqualTo(unix.PTRACE_CONT),
 				seccomp.AnyValue{},
 				seccomp.EqualTo(0),
 				seccomp.EqualTo(0),
 			},
-			{
+			seccomp.PerArg{
 				seccomp.EqualTo(unix.PTRACE_GETEVENTMSG),
 			},
-			{
+			seccomp.PerArg{
 				seccomp.EqualTo(unix.PTRACE_GETREGSET),
 				seccomp.AnyValue{},
 				seccomp.EqualTo(linux.NT_PRSTATUS),
 			},
-			{
+			seccomp.PerArg{
 				seccomp.EqualTo(unix.PTRACE_GETSIGINFO),
 			},
-			{
+			seccomp.PerArg{
 				seccomp.EqualTo(unix.PTRACE_SETOPTIONS),
 				seccomp.AnyValue{},
 				seccomp.EqualTo(0),
 				seccomp.EqualTo(unix.PTRACE_O_TRACESYSGOOD | unix.PTRACE_O_TRACEEXIT | unix.PTRACE_O_EXITKILL),
 			},
-			{
+			seccomp.PerArg{
 				seccomp.EqualTo(unix.PTRACE_SETREGSET),
 				seccomp.AnyValue{},
 				seccomp.EqualTo(linux.NT_PRSTATUS),
 			},
-			{
+			seccomp.PerArg{
 				seccomp.EqualTo(linux.PTRACE_SETSIGMASK),
 				seccomp.AnyValue{},
 				seccomp.EqualTo(8),
 			},
-			{
+			seccomp.PerArg{
 				seccomp.EqualTo(unix.PTRACE_SYSEMU),
 				seccomp.AnyValue{},
 				seccomp.EqualTo(0),
 				seccomp.EqualTo(0),
 			},
-			{
+			seccomp.PerArg{
 				seccomp.EqualTo(unix.PTRACE_DETACH),
 			},
 		},
-		unix.SYS_TGKILL: {},
-		unix.SYS_WAIT4:  {},
-		unix.SYS_SETPRIORITY: {
-			{
-				seccomp.EqualTo(unix.PRIO_PROCESS),
-				seccomp.AnyValue{},
-				seccomp.EqualTo(sysmsgThreadPriority),
-			},
+		unix.SYS_TGKILL: seccomp.MatchAll{},
+		unix.SYS_WAIT4:  seccomp.MatchAll{},
+		unix.SYS_SETPRIORITY: seccomp.PerArg{
+			seccomp.EqualTo(unix.PRIO_PROCESS),
+			seccomp.AnyValue{},
+			seccomp.EqualTo(sysmsgThreadPriority),
 		},
 	}
 	r.Merge(p.archSyscallFilters())

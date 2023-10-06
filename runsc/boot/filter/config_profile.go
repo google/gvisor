@@ -25,12 +25,10 @@ import (
 // profileFilters returns extra syscalls made by runtime/pprof package.
 func profileFilters() seccomp.SyscallRules {
 	return seccomp.SyscallRules{
-		unix.SYS_OPENAT: []seccomp.Rule{
-			{
-				seccomp.AnyValue{},
-				seccomp.AnyValue{},
-				seccomp.EqualTo(unix.O_RDONLY | unix.O_LARGEFILE | unix.O_CLOEXEC),
-			},
+		unix.SYS_OPENAT: seccomp.PerArg{
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
+			seccomp.EqualTo(unix.O_RDONLY | unix.O_LARGEFILE | unix.O_CLOEXEC),
 		},
 	}
 }

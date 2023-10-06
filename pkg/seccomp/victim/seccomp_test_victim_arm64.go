@@ -26,5 +26,5 @@ import (
 )
 
 func arch_syscalls(syscalls seccomp.SyscallRules) {
-	syscalls[unix.SYS_FSTATAT] = []seccomp.Rule{}
+	syscalls[unix.SYS_FSTATAT] = seccomp.MatchAll{}
 }

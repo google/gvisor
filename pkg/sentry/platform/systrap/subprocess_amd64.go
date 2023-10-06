@@ -185,19 +185,19 @@ func appendArchSeccompRules(rules []seccomp.RuleSet) []seccomp.RuleSet {
 		// Rules for trapping vsyscall access.
 		{
 			Rules: seccomp.SyscallRules{
-				unix.SYS_GETTIMEOFDAY: {},
-				unix.SYS_TIME:         {},
-				unix.SYS_GETCPU:       {}, // SYS_GETCPU was not defined in package syscall on amd64.
+				unix.SYS_GETTIMEOFDAY: seccomp.MatchAll{},
+				unix.SYS_TIME:         seccomp.MatchAll{},
+				unix.SYS_GETCPU:       seccomp.MatchAll{}, // SYS_GETCPU was not defined in package syscall on amd64.
 			},
 			Action:   linux.SECCOMP_RET_TRAP,
 			Vsyscall: true,
 		},
 		{
 			Rules: seccomp.SyscallRules{
-				unix.SYS_ARCH_PRCTL: []seccomp.Rule{
-					{seccomp.EqualTo(linux.ARCH_SET_CPUID), seccomp.EqualTo(0)},
-					{seccomp.EqualTo(linux.ARCH_SET_FS)},
-					{seccomp.EqualTo(linux.ARCH_GET_FS)},
+				unix.SYS_ARCH_PRCTL: seccomp.Or{
+					seccomp.PerArg{seccomp.EqualTo(linux.ARCH_SET_CPUID), seccomp.EqualTo(0)},
+					seccomp.PerArg{seccomp.EqualTo(linux.ARCH_SET_FS)},
+					seccomp.PerArg{seccomp.EqualTo(linux.ARCH_GET_FS)},
 				},
 			},
 			Action: linux.SECCOMP_RET_ALLOW,
