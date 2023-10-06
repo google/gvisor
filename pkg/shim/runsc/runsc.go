@@ -54,6 +54,12 @@ func (l *LogMonitor) Start(cmd *exec.Cmd) (chan runc.Exit, error) {
 	return l.Next.Start(cmd)
 }
 
+// StartLocked implements runc.ProcessMonitor.
+func (l *LogMonitor) StartLocked(c *exec.Cmd) (chan runc.Exit, error) {
+	log.L.Debugf("Executing: %s", c.Args)
+	return l.Next.StartLocked(c)
+}
+
 // Wait implements runc.ProcessMonitor.
 func (l *LogMonitor) Wait(cmd *exec.Cmd, ch chan runc.Exit) (int, error) {
 	status, err := l.Next.Wait(cmd, ch)
