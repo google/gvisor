@@ -1,5 +1,5 @@
-load("//tools:defs.bzl", "more_shards")
 load("//test/runner:defs.bzl", "syscall_test")
+load("//tools:defs.bzl", "more_shards")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -24,6 +24,11 @@ syscall_test(
 syscall_test(
     debug = False,
     test = "//test/perf/linux:epoll_benchmark",
+)
+
+syscall_test(
+    debug = False,
+    test = "//test/perf/linux:poll_benchmark",
 )
 
 syscall_test(
