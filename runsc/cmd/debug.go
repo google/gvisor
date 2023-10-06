@@ -49,6 +49,7 @@ type Debug struct {
 	delay        time.Duration
 	duration     time.Duration
 	ps           bool
+	mount        string
 }
 
 // Name implements subcommands.Command.
@@ -82,6 +83,7 @@ func (d *Debug) SetFlags(f *flag.FlagSet) {
 	f.StringVar(&d.logLevel, "log-level", "", "The log level to set: warning (0), info (1), or debug (2).")
 	f.StringVar(&d.logPackets, "log-packets", "", "A boolean value to enable or disable packet logging: true or false.")
 	f.BoolVar(&d.ps, "ps", false, "lists processes")
+	f.StringVar(&d.mount, "mount", "", "Mount a filesystem (-mount fstype:source:destination).")
 }
 
 // Execute implements subcommands.Command.Execute.
@@ -223,6 +225,18 @@ func (d *Debug) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 			util.Fatalf("generating JSON: %v", err)
 		}
 		util.Infof("%s", o)
+	}
+	if d.mount != "" {
+		opts := strings.Split(d.mount, ":")
+		if len(opts) != 3 {
+			util.Fatalf("Mount failed: invalid option: %v", d.mount)
+		}
+		fstype := opts[0]
+		src := opts[1]
+		dest := opts[2]
+		if err := c.Sandbox.Mount(c.ID, fstype, src, dest); err != nil {
+			util.Fatalf(err.Error())
+		}
 	}
 
 	// Open profiling files.

@@ -21,6 +21,7 @@ import (
 	"io/ioutil"
 	"math"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"reflect"
@@ -3133,5 +3134,137 @@ func TestOverlayByMountAnnotation(t *testing.T) {
 	destroy()
 	if err := unix.Stat(filestoreFile, &stat); err == nil {
 		t.Fatalf("overlay filestore at %q was not deleted after container.Destroy()", filestoreFile)
+	}
+}
+
+// TestMountEROFS checks that the checksums from the target directory in container
+// are identical with the ones from the source directory on host.
+func TestMountEROFS(t *testing.T) {
+	// Skip this test if mkfs.erofs is not available.
+	mkfs, err := exec.LookPath("mkfs.erofs")
+	if err != nil {
+		t.Skipf("mkfs.erofs is not available: %v", err)
+	}
+
+	// Create a temporary directory to save the test files.
+	assetsDir, err := ioutil.TempDir(testutil.TmpDir(), "erofs-assets")
+	if err != nil {
+		t.Fatalf("ioutil.TempDir() failed: %v", err)
+	}
+
+	// Create a temporary directory with some random files in it, which will
+	// be used as the source directory to create the EROFS images.
+	sourceDir := filepath.Join(assetsDir, "source")
+	if err := os.Mkdir(sourceDir, 0755); err != nil {
+		t.Fatalf("os.Mkdir() failed: %v", err)
+	}
+	testApp, err := testutil.FindFile("test/cmd/test_app/test_app")
+	if err != nil {
+		t.Fatalf("error finding test_app: %v", err)
+	}
+	// Source directory is a small directory. Let's create a big directory in it.
+	// So we can cover both cases.
+	cmd := fmt.Sprintf("%s fsTreeCreate --target-dir=%s --create-symlink --depth=1 --file-per-level=500 --file-size=5000", testApp, filepath.Join(sourceDir, "big-directory"))
+	if out, err := exec.Command("/bin/sh", "-c", cmd).CombinedOutput(); err != nil {
+		t.Fatalf("exec: sh -c %q, err: %v, out: %s", cmd, err, out)
+	}
+
+	// Create a test script which can be used to get the checksums
+	// from a specified directory.
+	scriptFile := filepath.Join(assetsDir, "test-script")
+	if err := os.WriteFile(scriptFile, []byte(`#!/bin/bash
+set -u -e -o pipefail
+dir=$1
+find $dir -printf "%P\n" | sort | md5sum
+find $dir -type l | sort | xargs -L 1 readlink | md5sum
+find $dir -type l -o -type f | sort | xargs cat | md5sum`), 0755); err != nil {
+		t.Fatalf("os.WriteFile() failed: %v", err)
+	}
+
+	// Get the checksums from the source directory on host.
+	var checksums string
+	if out, err := exec.Command(scriptFile, sourceDir).CombinedOutput(); err != nil {
+		t.Fatalf("exec: %s %s, err: %v, out: %s", scriptFile, sourceDir, err, out)
+	} else {
+		checksums = string(out)
+	}
+
+	images := []struct {
+		name    string
+		options string
+	}{
+		{
+			// Generate extended inodes. Inline regular files if possible.
+			name:    "image1",
+			options: "-E force-inode-extended",
+		},
+		{
+			// Generate extended inodes. Do not inline regular files.
+			name:    "image2",
+			options: "-E force-inode-extended -E noinline_data",
+		},
+		{
+			// Generate compact inodes. Inline regular files if possible.
+			name:    "image3",
+			options: "-E force-inode-compact",
+		},
+		{
+			// Generate compact inodes. Do not inline regular files.
+			name:    "image4",
+			options: "-E force-inode-compact -E noinline_data",
+		},
+	}
+
+	// Create the EROFS images.
+	for _, i := range images {
+		cmd := fmt.Sprintf("%s %s %s %s", mkfs, i.options, filepath.Join(assetsDir, i.name), sourceDir)
+		if out, err := exec.Command("/bin/sh", "-c", cmd).CombinedOutput(); err != nil {
+			t.Fatalf("exec: sh -c %q, err: %v, out: %s", cmd, err, out)
+		}
+	}
+
+	spec, _ := sleepSpecConf(t)
+	conf := testutil.TestConfig(t)
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	// Create and start the container.
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	c, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer c.Destroy()
+	if err := c.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	targetDir := "/mnt"
+	for _, i := range images {
+		// Mount the EROFS image in container.
+		imageFile := filepath.Join(assetsDir, i.name)
+		if err := c.Sandbox.Mount(c.ID, "erofs", imageFile, targetDir); err != nil {
+			t.Fatalf("error mounting EROFS image %q to %q, err: %v", imageFile, targetDir, err)
+		}
+
+		// Get the checksums from the target directory in container, and check if they are
+		// identical with the ones got from the source directory on host.
+		if out, err := executeCombinedOutput(conf, c, nil, scriptFile, targetDir); err != nil {
+			t.Fatalf("exec: %s %s, err: %v, out: %s", scriptFile, targetDir, err, out)
+		} else if checksums != string(out) {
+			t.Errorf("checksums do not match, got: %s from %s, expected: %s", out, imageFile, checksums)
+		}
+
+		// Unmount the EROFS image in container.
+		if out, err := executeCombinedOutput(conf, c, nil, "/bin/umount", targetDir); err != nil {
+			t.Fatalf("exec: umount %q, err: %v, out: %s", targetDir, err, out)
+		}
 	}
 }
