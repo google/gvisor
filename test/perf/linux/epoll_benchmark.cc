@@ -13,37 +13,23 @@
 // limitations under the License.
 
 #include <sys/epoll.h>
-#include <sys/eventfd.h>
 
-#include <atomic>
-#include <cerrno>
 #include <cstdint>
-#include <cstdlib>
-#include <ctime>
-#include <memory>
+#include <vector>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
-#include "absl/time/time.h"
 #include "benchmark/benchmark.h"
 #include "test/util/epoll_util.h"
+#include "test/util/eventfd_util.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/posix_error.h"
 #include "test/util/test_util.h"
-#include "test/util/thread_util.h"
 
 namespace gvisor {
 namespace testing {
 
 namespace {
-
-// Returns a new eventfd.
-PosixErrorOr<FileDescriptor> NewEventFD() {
-  int fd = eventfd(0, /* flags = */ 0);
-  MaybeSave();
-  if (fd < 0) {
-    return PosixError(errno, "eventfd");
-  }
-  return FileDescriptor(fd);
-}
 
 // Also stolen from epoll.cc unit tests.
 void BM_EpollTimeout(benchmark::State& state) {

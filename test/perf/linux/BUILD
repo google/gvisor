@@ -260,10 +260,29 @@ cc_binary(
         gbenchmark,
         gtest,
         "//test/util:epoll_util",
+        "//test/util:eventfd_util",
         "//test/util:file_descriptor",
+        "//test/util:posix_error",
         "//test/util:test_main",
         "//test/util:test_util",
-        "//test/util:thread_util",
+        "@com_google_absl//absl/time",
+    ],
+)
+
+cc_binary(
+    name = "poll_benchmark",
+    testonly = 1,
+    srcs = [
+        "poll_benchmark.cc",
+    ],
+    deps = [
+        gbenchmark,
+        gtest,
+        "//test/util:eventfd_util",
+        "//test/util:file_descriptor",
+        "//test/util:posix_error",
+        "//test/util:test_main",
+        "//test/util:test_util",
         "@com_google_absl//absl/time",
     ],
 )
