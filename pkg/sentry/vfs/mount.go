@@ -1060,6 +1060,7 @@ retry:
 
 	if !vfs.mounts.seq.BeginWriteOk(epoch) {
 		// Checks above raced with a mount change.
+		putOldMp.dentry.mu.Unlock()
 		vfs.unlockMounts(ctx)
 		goto retry
 	}
