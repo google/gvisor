@@ -39,8 +39,8 @@ import (
 func BenchFromSyscallRules(b *testing.B, name string, profile secbenchdef.Profile, rules seccomp.SyscallRules, denyRules seccomp.SyscallRules) secbenchdef.Bench {
 	// If there is a rule allowing rt_sigreturn to be called,
 	// also add a rule for the stand-in syscall number instead.
-	if sigreturnRule, found := rules[unix.SYS_RT_SIGRETURN]; found {
-		rules[uintptr(secbenchdef.RTSigreturn.Data(profile.Arch).Nr)] = sigreturnRule
+	if rules.Has(unix.SYS_RT_SIGRETURN) {
+		rules.Set(uintptr(secbenchdef.RTSigreturn.Data(profile.Arch).Nr), rules.Get(unix.SYS_RT_SIGRETURN))
 	}
 	instrs, err := seccomp.BuildProgram([]seccomp.RuleSet{
 		{

@@ -68,6 +68,18 @@ const (
 	JumpFalse
 )
 
+// Max returns the maximum legal offset that a jump of this type supports.
+func (jt JumpType) Max() uint32 {
+	switch jt {
+	case JumpDirect:
+		return 0xffffffff
+	case JumpTrue, JumpFalse:
+		return 0xff
+	default:
+		panic("invalid jump type")
+	}
+}
+
 // source contains information about a single reference to a label.
 type source struct {
 	// Program line where the label reference is present.
@@ -351,4 +363,17 @@ func (f ProgramFragment) Outcomes() FragmentOutcomes {
 		}
 	}
 	return outcomes
+}
+
+// MayModifyRegisterA returns whether this fragment may modify register A.
+// A value of "true" does not necessarily mean that A *will* be modified,
+// as the control flow of this fragment may skip over instructions that
+// modify the A register.
+func (f ProgramFragment) MayModifyRegisterA() bool {
+	for pc := f.fromPC; pc < f.toPC; pc++ {
+		if f.b.instructions[pc].ModifiesRegisterA() {
+			return true
+		}
+	}
+	return false
 }

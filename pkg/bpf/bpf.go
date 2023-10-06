@@ -149,6 +149,11 @@ func Jump(code uint16, k uint32, jt, jf uint8) Instruction {
 	}
 }
 
+// IsReturn returns true if `ins` is a return instruction.
+func (ins Instruction) IsReturn() bool {
+	return ins.OpCode&instructionClassMask == Ret
+}
+
 // IsJump returns true if `ins` is a jump instruction.
 func (ins Instruction) IsJump() bool {
 	return ins.OpCode&instructionClassMask == Jmp
@@ -162,6 +167,42 @@ func (ins Instruction) IsConditionalJump() bool {
 // IsUnconditionalJump returns true if `ins` is a conditional jump instruction.
 func (ins Instruction) IsUnconditionalJump() bool {
 	return ins.IsJump() && ins.OpCode&jmpMask == Ja
+}
+
+// IsDeterministicLoad returns true if `ins` loads data into register "A",
+// such that the data that is loaded into "A" is always the same regardless
+// of the BPF virtual machine state.
+// This means either immediate loads (where the value loaded is stored in
+// the instruction directly), or absolute loads from the input.
+// (The "input" in BPF is an immutable set of input bytes, and the load being
+// "absolute" means the offset within those input bytes is immediate.)
+// Two instructions for which this function returns true may be directly
+// compared and, if equal, represent redundant load instructions.
+func (ins Instruction) IsDeterministicLoad() bool {
+	if ins.OpCode&(Ld|Abs) == Ld|Abs {
+		return true
+	}
+	if ins.OpCode&(Ld|Imm) == Ld|Imm {
+		return true
+	}
+	return false
+}
+
+// MayFallThrough returns true if the execution of `ins` may result in the
+// execution of the instruction just after it in a program.
+func (ins Instruction) MayFallThrough() bool {
+	if ins.IsReturn() {
+		return false
+	}
+	if !ins.IsJump() {
+		return true
+	}
+	for _, offset := range ins.JumpOffsets() {
+		if offset.Offset == 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // JumpOffset is a possible jump offset that an instruction may jump to.
@@ -186,4 +227,19 @@ func (ins Instruction) JumpOffsets() []JumpOffset {
 		}
 	}
 	return []JumpOffset{{JumpDirect, ins.K}}
+}
+
+// ModifiesRegisterA returns true iff this instruction modifies the value
+// of the "A" register.
+func (ins Instruction) ModifiesRegisterA() bool {
+	switch ins.OpCode & instructionClassMask {
+	case Ld:
+		return true
+	case Alu:
+		return true
+	case Misc:
+		return ins.OpCode == Misc|Tax
+	default:
+		return false
+	}
 }

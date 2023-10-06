@@ -26,12 +26,10 @@ import (
 // archSyscallFilters returns arch-specific syscalls made exclusively by the
 // KVM platform.
 func (*KVM) archSyscallFilters() seccomp.SyscallRules {
-	return seccomp.SyscallRules{
-		unix.SYS_IOCTL: {
-			{
-				seccomp.AnyValue{},
-				seccomp.EqualTo(KVM_SET_VCPU_EVENTS),
-			},
+	return seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
+		unix.SYS_IOCTL: seccomp.PerArg{
+			seccomp.AnyValue{},
+			seccomp.EqualTo(KVM_SET_VCPU_EVENTS),
 		},
-	}
+	})
 }

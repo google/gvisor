@@ -25,18 +25,18 @@ import (
 
 // SyscallFilters returns syscalls made exclusively by the systrap platform.
 func (*Systrap) archSyscallFilters() seccomp.SyscallRules {
-	return seccomp.SyscallRules{
-		unix.SYS_PTRACE: {
-			{
+	return seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
+		unix.SYS_PTRACE: seccomp.Or{
+			seccomp.PerArg{
 				seccomp.EqualTo(unix.PTRACE_GETREGSET),
 				seccomp.AnyValue{},
 				seccomp.EqualTo(linux.NT_ARM_TLS),
 			},
-			{
+			seccomp.PerArg{
 				seccomp.EqualTo(unix.PTRACE_SETREGSET),
 				seccomp.AnyValue{},
 				seccomp.EqualTo(linux.NT_ARM_TLS),
 			},
 		},
-	}
+	})
 }

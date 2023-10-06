@@ -166,20 +166,172 @@ func TestOptimize(t *testing.T) {
 			},
 		},
 		{
-			name: "all optimizations",
+			name: "jumps to smallest set of return",
+			optimizers: []optimizerFunc{
+				removeDeadCode,
+				optimizeJumpsToSmallestSetOfReturns,
+			},
 			insns: []Instruction{
 				Stmt(Ld|Imm|W, 42),
 				Jump(Jmp|Jeq|K, 42, 0, 1),
+				Stmt(Ret|K, 7),
+				Jump(Jmp|Jeq|K, 43, 0, 1),
+				Stmt(Ret|K, 7),
+				Jump(Jmp|Jeq|K, 44, 0, 1),
+				Stmt(Ret|K, 7),
+				Jump(Jmp|Jeq|K, 45, 0, 1),
+				Stmt(Ret|K, 7),
+				Jump(Jmp|Jeq|K, 46, 0, 1),
+				Stmt(Ret|K, 7),
+				Jump(Jmp|Jeq|K, 47, 0, 1),
+				Stmt(Ret|K, 7),
+				Stmt(Ret|K, 3),
+			},
+			want: []Instruction{
+				Stmt(Ld|Imm|W, 42),
+				Jump(Jmp|Jeq|K, 42, 5, 0),
+				Jump(Jmp|Jeq|K, 43, 4, 0),
+				Jump(Jmp|Jeq|K, 44, 3, 0),
+				Jump(Jmp|Jeq|K, 45, 2, 0),
+				Jump(Jmp|Jeq|K, 46, 1, 0),
+				Jump(Jmp|Jeq|K, 47, 0, 1),
+				Stmt(Ret|K, 7),
+				Stmt(Ret|K, 3),
+			},
+		},
+		{
+			name: "jumps to smallest set of return but keep fallthrough return statements",
+			optimizers: []optimizerFunc{
+				removeDeadCode,
+				optimizeJumpsToSmallestSetOfReturns,
+			},
+			insns: []Instruction{
+				Stmt(Ld|Imm|W, 42),
+				Jump(Jmp|Jeq|K, 42, 0, 1),
+				Jump(Jmp|Jeq|K, 42, 1, 2),
+				Stmt(Ld|Imm|W, 43),
+				Stmt(Ret|K, 7),
+				Jump(Jmp|Jeq|K, 43, 0, 1),
+				Stmt(Ret|K, 7),
+				Jump(Jmp|Jeq|K, 44, 0, 1),
+				Stmt(Ret|K, 7),
+				Stmt(Ret|K, 3),
+			},
+			want: []Instruction{
+				Stmt(Ld|Imm|W, 42),
+				Jump(Jmp|Jeq|K, 42, 0, 1),
+				Jump(Jmp|Jeq|K, 42, 1, 2),
+				Stmt(Ld|Imm|W, 43),
+				Stmt(Ret|K, 7),
+				Jump(Jmp|Jeq|K, 43, 1, 0),
+				Jump(Jmp|Jeq|K, 44, 0, 1),
+				Stmt(Ret|K, 7),
+				Stmt(Ret|K, 3),
+			},
+		},
+		{
+			name: "skip redundant load instructions",
+			optimizers: []optimizerFunc{
+				skipRedundantLoads,
+			},
+			insns: []Instruction{
+				Stmt(Ld|Abs|B, 0x01),
+				Jump(Jmp|Ja, 0, 0, 0), // will skip over the next load
+				Stmt(Ld|Abs|B, 0x01),
+				Jump(Jmp|Ja, 0, 0, 0), // will not skip over the next load (different value loaded)
+				Stmt(Ld|Abs|B, 0x02),
+				Stmt(Ret|K, 0x00),
+			},
+			want: []Instruction{
+				Stmt(Ld|Abs|B, 0x01),
+				Jump(Jmp|Ja, 1, 0, 0),
+				Stmt(Ld|Abs|B, 0x01),
+				Jump(Jmp|Ja, 0, 0, 0),
+				Stmt(Ld|Abs|B, 0x02),
+				Stmt(Ret|K, 0x00),
+			},
+		},
+		{
+			name: "check if input is one of two 64-bit values",
+			optimizers: []optimizerFunc{
+				skipRedundantLoads,
+			},
+			insns: []Instruction{
+				Stmt(Ld|Abs|B, 0x01),
+				Jump(Jmp|Jeq|K, 0xA1, 0, 2), // input[0x01] == 0xA1 ? fallthrough : pc += 2
+				Stmt(Ld|Abs|B, 0x02),
+				Jump(Jmp|Jeq|K, 0xA2, 4, 0), // input[0x02] == 0xA2 ? return 0xFF : fallthrough
+				Stmt(Ld|Abs|B, 0x01),
+				Jump(Jmp|Jeq|K, 0xB1, 0, 3), // input[0x01] == 0xB1 ? fallthrough : return 0x00
+				Stmt(Ld|Abs|B, 0x02),
+				Jump(Jmp|Jeq|K, 0xB2, 0, 1), // input[0x02] == 0xB2 ? return 0xFF : return 0x00
+				Stmt(Ret|K, 0xFF),
+				Stmt(Ret|K, 0x00),
+			},
+			want: []Instruction{
+				Stmt(Ld|Abs|B, 0x01),
+				Jump(Jmp|Jeq|K, 0xA1, 0, 3), // input[0x01] == 0xA1 ? fallthrough : pc += 3 (skip load)
+				Stmt(Ld|Abs|B, 0x02),
+				Jump(Jmp|Jeq|K, 0xA2, 4, 0), // input[0x02] == 0xA2 ? return 0xFF : fallthrough
+				Stmt(Ld|Abs|B, 0x01),
+				Jump(Jmp|Jeq|K, 0xB1, 0, 3), // input[0x01] == 0xB1 ? fallthrough : return 0x00
+				Stmt(Ld|Abs|B, 0x02),
+				Jump(Jmp|Jeq|K, 0xB2, 0, 1), // input[0x02] == 0xB2 ? return 0xFF : return 0x00
+				Stmt(Ret|K, 0xFF),
+				Stmt(Ret|K, 0x00),
+			},
+		},
+		{
+			name: "do not optimize redundant load jump if something jumps in between",
+			optimizers: []optimizerFunc{
+				removeDeadCode,
+				skipRedundantLoads,
+			},
+			insns: []Instruction{
+				Jump(Jmp|Jeq|K, 0xCC, 0, 1), // prevents the optimization from taking place
+				Stmt(Ld|Abs|B, 0x01),
+				Jump(Jmp|Jeq|K, 0xA1, 0, 2), // input[0x01] == 0xA1 ? fallthrough : pc += 2
+				Stmt(Ld|Abs|B, 0x02),
+				Jump(Jmp|Jeq|K, 0xA2, 4, 0), // input[0x02] == 0xA2 ? return 0xFF : fallthrough
+				Stmt(Ld|Abs|B, 0x01),
+				Jump(Jmp|Jeq|K, 0xB1, 0, 3), // input[0x01] == 0xB1 ? fallthrough : return 0x00
+				Stmt(Ld|Abs|B, 0x02),
+				Jump(Jmp|Jeq|K, 0xB2, 0, 1), // input[0x02] == 0xB2 ? return 0xFF : return 0x00
+				Stmt(Ret|K, 0xFF),
+				Stmt(Ret|K, 0x00),
+			},
+			want: []Instruction{
+				Jump(Jmp|Jeq|K, 0xCC, 0, 1),
+				Stmt(Ld|Abs|B, 0x01),
+				Jump(Jmp|Jeq|K, 0xA1, 0, 2), // input[0x01] == 0xA1 ? fallthrough : pc += 2 (no opt)
+				Stmt(Ld|Abs|B, 0x02),
+				Jump(Jmp|Jeq|K, 0xA2, 4, 0), // input[0x02] == 0xA2 ? return 0xFF : fallthrough
+				Stmt(Ld|Abs|B, 0x01),
+				Jump(Jmp|Jeq|K, 0xB1, 0, 3), // input[0x01] == 0xB1 ? fallthrough : return 0x00
+				Stmt(Ld|Abs|B, 0x02),
+				Jump(Jmp|Jeq|K, 0xB2, 0, 1), // input[0x02] == 0xB2 ? return 0xFF : return 0x00
+				Stmt(Ret|K, 0xFF),
+				Stmt(Ret|K, 0x00),
+			},
+		},
+		{
+			name: "all optimizations",
+			insns: []Instruction{
+				Stmt(Ld|Imm|W, 42),
+				// Jumps will be simplified together:
+				Jump(Jmp|Jeq|K, 37, 0, 3),
+				Jump(Jmp|Jeq|K, 42, 0, 1),
 				Jump(Jmp|Ja, 1, 0, 0),
 				Jump(Jmp|Ja, 2, 0, 0),
-				Stmt(Ld|Imm|W, 37),
+				// Redundant load will be skipped over, then removed:
+				Stmt(Ld|Imm|W, 42),
 				Stmt(Ret|K, 0),
 				Stmt(Ret|K, 1),
 			},
 			want: []Instruction{
 				Stmt(Ld|Imm|W, 42),
-				Jump(Jmp|Jeq|K, 42, 0, 2),
-				Stmt(Ld|Imm|W, 37),
+				Jump(Jmp|Jeq|K, 37, 0, 1),
+				Jump(Jmp|Jeq|K, 42, 0, 1),
 				Stmt(Ret|K, 0),
 				Stmt(Ret|K, 1),
 			},

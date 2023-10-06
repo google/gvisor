@@ -26,8 +26,8 @@ import (
 )
 
 func arch_syscalls(syscalls seccomp.SyscallRules) {
-	syscalls[unix.SYS_ARCH_PRCTL] = []seccomp.Rule{}
-	syscalls[unix.SYS_EPOLL_WAIT] = []seccomp.Rule{}
-	syscalls[unix.SYS_NEWFSTATAT] = []seccomp.Rule{}
-	syscalls[unix.SYS_OPEN] = []seccomp.Rule{}
+	syscalls.Set(unix.SYS_ARCH_PRCTL, seccomp.MatchAll{})
+	syscalls.Set(unix.SYS_EPOLL_WAIT, seccomp.MatchAll{})
+	syscalls.Set(unix.SYS_NEWFSTATAT, seccomp.MatchAll{})
+	syscalls.Set(unix.SYS_OPEN, seccomp.MatchAll{})
 }
