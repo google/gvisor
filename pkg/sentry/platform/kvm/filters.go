@@ -25,34 +25,32 @@ import (
 func (k *KVM) SyscallFilters() seccomp.SyscallRules {
 	r := k.archSyscallFilters()
 	r.Merge(seccomp.SyscallRules{
-		unix.SYS_IOCTL: []seccomp.Rule{
-			{
+		unix.SYS_IOCTL: seccomp.Or{
+			seccomp.PerArg{
 				seccomp.AnyValue{},
 				seccomp.EqualTo(KVM_RUN),
 			},
-			{
+			seccomp.PerArg{
 				seccomp.AnyValue{},
 				seccomp.EqualTo(KVM_SET_USER_MEMORY_REGION),
 			},
-			{
+			seccomp.PerArg{
 				seccomp.AnyValue{},
 				seccomp.EqualTo(KVM_GET_REGS),
 			},
-			{
+			seccomp.PerArg{
 				seccomp.AnyValue{},
 				seccomp.EqualTo(KVM_SET_REGS),
 			},
 		},
-		unix.SYS_MEMBARRIER: []seccomp.Rule{
-			{
-				seccomp.EqualTo(linux.MEMBARRIER_CMD_PRIVATE_EXPEDITED),
-				seccomp.EqualTo(0),
-			},
+		unix.SYS_MEMBARRIER: seccomp.PerArg{
+			seccomp.EqualTo(linux.MEMBARRIER_CMD_PRIVATE_EXPEDITED),
+			seccomp.EqualTo(0),
 		},
-		unix.SYS_MMAP:            {},
-		unix.SYS_RT_SIGSUSPEND:   {},
-		unix.SYS_RT_SIGTIMEDWAIT: {},
-		_SYS_KVM_RETURN_TO_HOST:  {},
+		unix.SYS_MMAP:            seccomp.MatchAll{},
+		unix.SYS_RT_SIGSUSPEND:   seccomp.MatchAll{},
+		unix.SYS_RT_SIGTIMEDWAIT: seccomp.MatchAll{},
+		_SYS_KVM_RETURN_TO_HOST:  seccomp.MatchAll{},
 	})
 	return r
 }

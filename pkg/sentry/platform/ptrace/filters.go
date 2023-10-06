@@ -22,8 +22,8 @@ import (
 // SyscallFilters returns syscalls made exclusively by the ptrace platform.
 func (*PTrace) SyscallFilters() seccomp.SyscallRules {
 	return seccomp.SyscallRules{
-		unix.SYS_PTRACE: {},
-		unix.SYS_TGKILL: {},
-		unix.SYS_WAIT4:  {},
+		unix.SYS_PTRACE: seccomp.MatchAll{},
+		unix.SYS_TGKILL: seccomp.MatchAll{},
+		unix.SYS_WAIT4:  seccomp.MatchAll{},
 	}
 }

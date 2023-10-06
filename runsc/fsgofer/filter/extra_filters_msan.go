@@ -27,7 +27,7 @@ import (
 func instrumentationFilters() seccomp.SyscallRules {
 	log.Warningf("*** SECCOMP WARNING: MSAN is enabled: syscall filters less restrictive!")
 	return seccomp.SyscallRules{
-		unix.SYS_SCHED_GETAFFINITY: {},
-		unix.SYS_SET_ROBUST_LIST:   {},
+		unix.SYS_SCHED_GETAFFINITY: seccomp.MatchAll{},
+		unix.SYS_SET_ROBUST_LIST:   seccomp.MatchAll{},
 	}
 }

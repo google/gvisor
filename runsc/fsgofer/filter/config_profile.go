@@ -20,28 +20,22 @@ import (
 )
 
 var profileFilters = seccomp.SyscallRules{
-	unix.SYS_OPENAT: []seccomp.Rule{
-		{
-			seccomp.AnyValue{},
-			seccomp.AnyValue{},
-			seccomp.EqualTo(unix.O_RDONLY | unix.O_LARGEFILE | unix.O_CLOEXEC),
-		},
+	unix.SYS_OPENAT: seccomp.PerArg{
+		seccomp.AnyValue{},
+		seccomp.AnyValue{},
+		seccomp.EqualTo(unix.O_RDONLY | unix.O_LARGEFILE | unix.O_CLOEXEC),
 	},
-	unix.SYS_SETITIMER: {},
-	unix.SYS_TIMER_CREATE: []seccomp.Rule{
-		{
-			seccomp.EqualTo(unix.CLOCK_THREAD_CPUTIME_ID), /* which */
-			seccomp.AnyValue{},                            /* sevp */
-			seccomp.AnyValue{},                            /* timerid */
-		},
+	unix.SYS_SETITIMER: seccomp.MatchAll{},
+	unix.SYS_TIMER_CREATE: seccomp.PerArg{
+		seccomp.EqualTo(unix.CLOCK_THREAD_CPUTIME_ID), /* which */
+		seccomp.AnyValue{},                            /* sevp */
+		seccomp.AnyValue{},                            /* timerid */
 	},
-	unix.SYS_TIMER_DELETE: []seccomp.Rule{},
-	unix.SYS_TIMER_SETTIME: []seccomp.Rule{
-		{
-			seccomp.AnyValue{}, /* timerid */
-			seccomp.EqualTo(0), /* flags */
-			seccomp.AnyValue{}, /* new_value */
-			seccomp.EqualTo(0), /* old_value */
-		},
+	unix.SYS_TIMER_DELETE: seccomp.MatchAll{},
+	unix.SYS_TIMER_SETTIME: seccomp.PerArg{
+		seccomp.AnyValue{}, /* timerid */
+		seccomp.EqualTo(0), /* flags */
+		seccomp.AnyValue{}, /* new_value */
+		seccomp.EqualTo(0), /* old_value */
 	},
 }
