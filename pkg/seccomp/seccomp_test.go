@@ -24,6 +24,7 @@ import (
 	"math/rand"
 	"os"
 	"os/exec"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -88,7 +89,7 @@ func TestBasic(t *testing.T) {
 			name: "Single syscall",
 			ruleSets: []RuleSet{
 				{
-					Rules:  SyscallRules{1: {}},
+					Rules:  SyscallRules{1: MatchAll{}},
 					Action: linux.SECCOMP_RET_ALLOW,
 				},
 			},
@@ -112,18 +113,16 @@ func TestBasic(t *testing.T) {
 			ruleSets: []RuleSet{
 				{
 					Rules: SyscallRules{
-						1: []Rule{
-							{
-								EqualTo(0x1),
-							},
+						1: PerArg{
+							EqualTo(0x1),
 						},
 					},
 					Action: linux.SECCOMP_RET_ALLOW,
 				},
 				{
 					Rules: SyscallRules{
-						1: {},
-						2: {},
+						1: MatchAll{},
+						2: MatchAll{},
 					},
 					Action: linux.SECCOMP_RET_TRAP,
 				},
@@ -158,9 +157,9 @@ func TestBasic(t *testing.T) {
 			ruleSets: []RuleSet{
 				{
 					Rules: SyscallRules{
-						1: {},
-						3: {},
-						5: {},
+						1: MatchAll{},
+						3: MatchAll{},
+						5: MatchAll{},
 					},
 					Action: linux.SECCOMP_RET_ALLOW,
 				},
@@ -215,7 +214,7 @@ func TestBasic(t *testing.T) {
 			ruleSets: []RuleSet{
 				{
 					Rules: SyscallRules{
-						1: {},
+						1: MatchAll{},
 					},
 					Action: linux.SECCOMP_RET_ALLOW,
 				},
@@ -235,7 +234,7 @@ func TestBasic(t *testing.T) {
 			ruleSets: []RuleSet{
 				{
 					Rules: SyscallRules{
-						1: {},
+						1: MatchAll{},
 					},
 					Action: linux.SECCOMP_RET_ALLOW,
 				},
@@ -255,11 +254,9 @@ func TestBasic(t *testing.T) {
 			ruleSets: []RuleSet{
 				{
 					Rules: SyscallRules{
-						1: []Rule{
-							{
-								AnyValue{},
-								EqualTo(0xf),
-							},
+						1: PerArg{
+							AnyValue{},
+							EqualTo(0xf),
 						},
 					},
 					Action: linux.SECCOMP_RET_ALLOW,
@@ -285,11 +282,11 @@ func TestBasic(t *testing.T) {
 			ruleSets: []RuleSet{
 				{
 					Rules: SyscallRules{
-						1: []Rule{
-							{
+						1: Or{
+							PerArg{
 								EqualTo(0xf),
 							},
-							{
+							PerArg{
 								EqualTo(0xe),
 							},
 						},
@@ -310,6 +307,11 @@ func TestBasic(t *testing.T) {
 					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0xe}},
 					want: linux.SECCOMP_RET_ALLOW,
 				},
+				{
+					desc: "match neither rule",
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0xd}},
+					want: linux.SECCOMP_RET_TRAP,
+				},
 			},
 		},
 		{
@@ -317,12 +319,10 @@ func TestBasic(t *testing.T) {
 			ruleSets: []RuleSet{
 				{
 					Rules: SyscallRules{
-						1: []Rule{
-							{
-								EqualTo(0),
-								EqualTo(math.MaxUint64 - 1),
-								EqualTo(math.MaxUint32),
-							},
+						1: PerArg{
+							EqualTo(0),
+							EqualTo(math.MaxUint64 - 1),
+							EqualTo(math.MaxUint32),
 						},
 					},
 					Action: linux.SECCOMP_RET_ALLOW,
@@ -365,12 +365,10 @@ func TestBasic(t *testing.T) {
 			ruleSets: []RuleSet{
 				{
 					Rules: SyscallRules{
-						1: []Rule{
-							{
-								NotEqual(0x7aabbccdd),
-								NotEqual(math.MaxUint64 - 1),
-								NotEqual(math.MaxUint32),
-							},
+						1: PerArg{
+							NotEqual(0x7aabbccdd),
+							NotEqual(math.MaxUint64 - 1),
+							NotEqual(math.MaxUint32),
 						},
 					},
 					Action: linux.SECCOMP_RET_ALLOW,
@@ -413,14 +411,12 @@ func TestBasic(t *testing.T) {
 			ruleSets: []RuleSet{
 				{
 					Rules: SyscallRules{
-						1: []Rule{
-							{
-								// 4294967298
-								// Both upper 32 bits and lower 32 bits are non-zero.
-								// 00000000000000000000000000000010
-								// 00000000000000000000000000000010
-								GreaterThan(0x00000002_00000002),
-							},
+						1: PerArg{
+							// 4294967298
+							// Both upper 32 bits and lower 32 bits are non-zero.
+							// 00000000000000000000000000000010
+							// 00000000000000000000000000000010
+							GreaterThan(0x00000002_00000002),
 						},
 					},
 					Action: linux.SECCOMP_RET_ALLOW,
@@ -461,11 +457,9 @@ func TestBasic(t *testing.T) {
 			ruleSets: []RuleSet{
 				{
 					Rules: SyscallRules{
-						1: []Rule{
-							{
-								GreaterThan(0xf),
-								GreaterThan(0xabcd000d),
-							},
+						1: PerArg{
+							GreaterThan(0xf),
+							GreaterThan(0xabcd000d),
 						},
 					},
 					Action: linux.SECCOMP_RET_ALLOW,
@@ -506,14 +500,12 @@ func TestBasic(t *testing.T) {
 			ruleSets: []RuleSet{
 				{
 					Rules: SyscallRules{
-						1: []Rule{
-							{
-								// 4294967298
-								// Both upper 32 bits and lower 32 bits are non-zero.
-								// 00000000000000000000000000000010
-								// 00000000000000000000000000000010
-								GreaterThanOrEqual(0x00000002_00000002),
-							},
+						1: PerArg{
+							// 4294967298
+							// Both upper 32 bits and lower 32 bits are non-zero.
+							// 00000000000000000000000000000010
+							// 00000000000000000000000000000010
+							GreaterThanOrEqual(0x00000002_00000002),
 						},
 					},
 					Action: linux.SECCOMP_RET_ALLOW,
@@ -554,11 +546,9 @@ func TestBasic(t *testing.T) {
 			ruleSets: []RuleSet{
 				{
 					Rules: SyscallRules{
-						1: []Rule{
-							{
-								GreaterThanOrEqual(0xf),
-								GreaterThanOrEqual(0xabcd000d),
-							},
+						1: PerArg{
+							GreaterThanOrEqual(0xf),
+							GreaterThanOrEqual(0xabcd000d),
 						},
 					},
 					Action: linux.SECCOMP_RET_ALLOW,
@@ -604,14 +594,12 @@ func TestBasic(t *testing.T) {
 			ruleSets: []RuleSet{
 				{
 					Rules: SyscallRules{
-						1: []Rule{
-							{
-								// 4294967298
-								// Both upper 32 bits and lower 32 bits are non-zero.
-								// 00000000000000000000000000000010
-								// 00000000000000000000000000000010
-								LessThan(0x00000002_00000002),
-							},
+						1: PerArg{
+							// 4294967298
+							// Both upper 32 bits and lower 32 bits are non-zero.
+							// 00000000000000000000000000000010
+							// 00000000000000000000000000000010
+							LessThan(0x00000002_00000002),
 						},
 					},
 					Action: linux.SECCOMP_RET_ALLOW,
@@ -652,11 +640,9 @@ func TestBasic(t *testing.T) {
 			ruleSets: []RuleSet{
 				{
 					Rules: SyscallRules{
-						1: []Rule{
-							{
-								LessThan(0x1),
-								LessThan(0xabcd000d),
-							},
+						1: PerArg{
+							LessThan(0x1),
+							LessThan(0xabcd000d),
 						},
 					},
 					Action: linux.SECCOMP_RET_ALLOW,
@@ -702,14 +688,12 @@ func TestBasic(t *testing.T) {
 			ruleSets: []RuleSet{
 				{
 					Rules: SyscallRules{
-						1: []Rule{
-							{
-								// 4294967298
-								// Both upper 32 bits and lower 32 bits are non-zero.
-								// 00000000000000000000000000000010
-								// 00000000000000000000000000000010
-								LessThanOrEqual(0x00000002_00000002),
-							},
+						1: PerArg{
+							// 4294967298
+							// Both upper 32 bits and lower 32 bits are non-zero.
+							// 00000000000000000000000000000010
+							// 00000000000000000000000000000010
+							LessThanOrEqual(0x00000002_00000002),
 						},
 					},
 					Action: linux.SECCOMP_RET_ALLOW,
@@ -751,11 +735,9 @@ func TestBasic(t *testing.T) {
 			ruleSets: []RuleSet{
 				{
 					Rules: SyscallRules{
-						1: []Rule{
-							{
-								LessThanOrEqual(0x1),
-								LessThanOrEqual(0xabcd000d),
-							},
+						1: PerArg{
+							LessThanOrEqual(0x1),
+							LessThanOrEqual(0xabcd000d),
 						},
 					},
 					Action: linux.SECCOMP_RET_ALLOW,
@@ -801,13 +783,11 @@ func TestBasic(t *testing.T) {
 			ruleSets: []RuleSet{
 				{
 					Rules: SyscallRules{
-						1: []Rule{
-							{
-								// x & 00000001 00000011 (0x103) == 00000000 00000001 (0x1)
-								// Input x must have lowest order bit set and
-								// must *not* have 8th or second lowest order bit set.
-								MaskedEqual(0x103, 0x1),
-							},
+						1: PerArg{
+							// x & 00000001 00000011 (0x103) == 00000000 00000001 (0x1)
+							// Input x must have lowest order bit set and
+							// must *not* have 8th or second lowest order bit set.
+							MaskedEqual(0x103, 0x1),
 						},
 					},
 					Action: linux.SECCOMP_RET_ALLOW,
@@ -873,10 +853,8 @@ func TestBasic(t *testing.T) {
 			ruleSets: []RuleSet{
 				{
 					Rules: SyscallRules{
-						1: []Rule{
-							{
-								RuleIP: EqualTo(0x7aabbccdd),
-							},
+						1: PerArg{
+							RuleIP: EqualTo(0x7aabbccdd),
 						},
 					},
 					Action: linux.SECCOMP_RET_ALLOW,
@@ -926,11 +904,11 @@ func TestBasic(t *testing.T) {
 func TestRandom(t *testing.T) {
 	rand.Seed(time.Now().UnixNano())
 	size := rand.Intn(50) + 1
-	syscallRules := make(map[uintptr][]Rule)
+	syscallRules := make(map[uintptr]SyscallRule)
 	for len(syscallRules) < size {
 		n := uintptr(rand.Intn(200))
 		if _, ok := syscallRules[n]; !ok {
-			syscallRules[n] = []Rule{}
+			syscallRules[n] = MatchAll{}
 		}
 	}
 
@@ -1019,50 +997,43 @@ func TestRealDeal(t *testing.T) {
 func TestMerge(t *testing.T) {
 	for _, tst := range []struct {
 		name  string
-		main  []Rule
-		merge []Rule
-		want  []Rule
+		main  SyscallRule
+		merge SyscallRule
+		want  SyscallRule
 	}{
 		{
-			name:  "empty both",
-			main:  nil,
-			merge: nil,
-			want:  []Rule{{}, {}},
+			name:  "AllowAll both",
+			main:  MatchAll{},
+			merge: MatchAll{},
+			want:  MatchAll{},
 		},
 		{
-			name:  "empty main",
-			main:  nil,
-			merge: []Rule{{}},
-			want:  []Rule{{}, {}},
+			name:  "AllowAll and Or",
+			main:  MatchAll{},
+			merge: Or{},
+			want:  MatchAll{},
 		},
 		{
-			name:  "empty merge",
-			main:  []Rule{{}},
-			merge: nil,
-			want:  []Rule{{}, {}},
+			name:  "Or and AllowAll",
+			main:  Or{},
+			merge: MatchAll{},
+			want:  MatchAll{},
+		},
+		{
+			name:  "2 Ors",
+			main:  Or{PerArg{EqualTo(0)}},
+			merge: Or{PerArg{EqualTo(1)}},
+			want:  Or{PerArg{EqualTo(0)}, PerArg{EqualTo(1)}},
 		},
 	} {
 		t.Run(tst.name, func(t *testing.T) {
 			mainRules := SyscallRules{1: tst.main}
 			mergeRules := SyscallRules{1: tst.merge}
 			mainRules.Merge(mergeRules)
-			if got, want := len(mainRules[1]), len(tst.want); got != want {
-				t.Errorf("wrong length, got: %d, want: %d", got, want)
-			}
-			for i, r := range mainRules[1] {
-				if r != tst.want[i] {
-					t.Errorf("result, got: %v, want: %v", r, tst.want[i])
-				}
+			wantRules := SyscallRules{1: tst.want}
+			if !reflect.DeepEqual(mainRules, wantRules) {
+				t.Errorf("got rules:\n%v\nwant rules:\n%v\n", mainRules, wantRules)
 			}
 		})
-	}
-}
-
-// TestAddRule ensures that empty rules are not erased when rules are added.
-func TestAddRule(t *testing.T) {
-	rules := SyscallRules{1: {}}
-	rules.AddRule(1, Rule{})
-	if got, want := len(rules[1]), 2; got != want {
-		t.Errorf("len(rules[1]), got: %d, want: %d", got, want)
 	}
 }

@@ -27,11 +27,9 @@ import (
 // KVM platform.
 func (*KVM) archSyscallFilters() seccomp.SyscallRules {
 	return seccomp.SyscallRules{
-		unix.SYS_IOCTL: {
-			{
-				seccomp.AnyValue{},
-				seccomp.EqualTo(KVM_SET_VCPU_EVENTS),
-			},
+		unix.SYS_IOCTL: seccomp.PerArg{
+			seccomp.AnyValue{},
+			seccomp.EqualTo(KVM_SET_VCPU_EVENTS),
 		},
 	}
 }

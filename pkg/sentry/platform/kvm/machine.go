@@ -776,24 +776,21 @@ func seccompMmapRules(m *machine) {
 		if err := sighandling.ReplaceSignalHandler(unix.SIGSYS, addrOfSigsysHandler(), &savedSigsysHandler); err != nil {
 			panic(fmt.Sprintf("Unable to set handler for signal %d: %v", bluepillSignal, err))
 		}
-		rules := []seccomp.RuleSet{}
-		rules = append(rules, []seccomp.RuleSet{
+		rules := []seccomp.RuleSet{
 			// Trap mmap system calls and handle them in sigsysGoHandler
 			{
 				Rules: seccomp.SyscallRules{
-					unix.SYS_MMAP: {
-						{
-							seccomp.AnyValue{},
-							seccomp.AnyValue{},
-							seccomp.MaskedEqual(unix.PROT_EXEC, 0),
-							/* MAP_DENYWRITE is ignored and used only for filtering. */
-							seccomp.MaskedEqual(unix.MAP_DENYWRITE, 0),
-						},
+					unix.SYS_MMAP: seccomp.PerArg{
+						seccomp.AnyValue{},
+						seccomp.AnyValue{},
+						seccomp.MaskedEqual(unix.PROT_EXEC, 0),
+						/* MAP_DENYWRITE is ignored and used only for filtering. */
+						seccomp.MaskedEqual(unix.MAP_DENYWRITE, 0),
 					},
 				},
 				Action: linux.SECCOMP_RET_TRAP,
 			},
-		}...)
+		}
 		instrs, err := seccomp.BuildProgram(rules, linux.SECCOMP_RET_ALLOW, linux.SECCOMP_RET_ALLOW)
 		if err != nil {
 			panic(fmt.Sprintf("failed to build rules: %v", err))

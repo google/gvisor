@@ -55,17 +55,17 @@ func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, erro
 	if defaultAction != linux.SECCOMP_RET_ALLOW {
 		ruleSet := seccomp.RuleSet{
 			Rules: seccomp.SyscallRules{
-				unix.SYS_CLONE: []seccomp.Rule{
+				unix.SYS_CLONE: seccomp.Or{
 					// Allow creation of new subprocesses (used by the master).
-					{seccomp.EqualTo(unix.CLONE_FILES | unix.SIGKILL)},
+					seccomp.PerArg{seccomp.EqualTo(unix.CLONE_FILES | unix.SIGKILL)},
 					// Allow creation of new sysmsg thread.
-					{seccomp.EqualTo(
+					seccomp.PerArg{seccomp.EqualTo(
 						unix.CLONE_FILES |
 							unix.CLONE_FS |
 							unix.CLONE_VM |
 							unix.CLONE_PTRACE)},
 					// Allow creation of new threads within a single address space (used by addresss spaces).
-					{seccomp.EqualTo(
+					seccomp.PerArg{seccomp.EqualTo(
 						unix.CLONE_FILES |
 							unix.CLONE_FS |
 							unix.CLONE_SIGHAND |
@@ -75,50 +75,54 @@ func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, erro
 				},
 
 				// For the initial process creation.
-				unix.SYS_WAIT4: {},
-				unix.SYS_EXIT:  {},
+				unix.SYS_WAIT4: seccomp.MatchAll{},
+				unix.SYS_EXIT:  seccomp.MatchAll{},
 
 				// For the stub prctl dance (all).
-				unix.SYS_PRCTL: []seccomp.Rule{
-					{seccomp.EqualTo(unix.PR_SET_PDEATHSIG), seccomp.EqualTo(unix.SIGKILL)},
-					{seccomp.EqualTo(linux.PR_SET_NO_NEW_PRIVS), seccomp.EqualTo(1)},
+				unix.SYS_PRCTL: seccomp.Or{
+					seccomp.PerArg{seccomp.EqualTo(unix.PR_SET_PDEATHSIG), seccomp.EqualTo(unix.SIGKILL)},
+					seccomp.PerArg{seccomp.EqualTo(linux.PR_SET_NO_NEW_PRIVS), seccomp.EqualTo(1)},
 				},
-				unix.SYS_GETPPID: {},
+				unix.SYS_GETPPID: seccomp.MatchAll{},
 
 				// For the stub to stop itself (all).
-				unix.SYS_GETPID: {},
-				unix.SYS_KILL: []seccomp.Rule{
-					{seccomp.AnyValue{}, seccomp.EqualTo(unix.SIGSTOP)},
+				unix.SYS_GETPID: seccomp.MatchAll{},
+				unix.SYS_KILL: seccomp.PerArg{
+					seccomp.AnyValue{},
+					seccomp.EqualTo(unix.SIGSTOP),
 				},
 
 				// Injected to support the address space operations.
-				unix.SYS_MMAP:   {},
-				unix.SYS_MUNMAP: {},
+				unix.SYS_MMAP:   seccomp.MatchAll{},
+				unix.SYS_MUNMAP: seccomp.MatchAll{},
 
 				// For sysmsg threads. Look at sysmsg/sighandler.c for more details.
-				unix.SYS_RT_SIGRETURN: {},
-				unix.SYS_SCHED_YIELD:  {},
-				unix.SYS_FUTEX: {
-					seccomp.Rule{
+				unix.SYS_RT_SIGRETURN: seccomp.MatchAll{},
+				unix.SYS_SCHED_YIELD:  seccomp.MatchAll{},
+				unix.SYS_FUTEX: seccomp.Or{
+					seccomp.PerArg{
 						seccomp.AnyValue{},
 						seccomp.EqualTo(linux.FUTEX_WAIT),
 						seccomp.AnyValue{},
 						seccomp.AnyValue{},
 					},
-					seccomp.Rule{
+					seccomp.PerArg{
 						seccomp.AnyValue{},
 						seccomp.EqualTo(linux.FUTEX_WAKE),
 						seccomp.AnyValue{},
 						seccomp.AnyValue{},
 					},
 				},
-				unix.SYS_SIGALTSTACK: {},
-				unix.SYS_TKILL: {
-					{seccomp.AnyValue{}, seccomp.EqualTo(unix.SIGSTOP)},
+				unix.SYS_SIGALTSTACK: seccomp.MatchAll{},
+				unix.SYS_TKILL: seccomp.PerArg{
+					seccomp.AnyValue{},
+					seccomp.EqualTo(unix.SIGSTOP),
 				},
-				unix.SYS_GETTID: {},
-				seccomp.SYS_SECCOMP: {
-					{seccomp.EqualTo(linux.SECCOMP_SET_MODE_FILTER), seccomp.EqualTo(0), seccomp.AnyValue{}},
+				unix.SYS_GETTID: seccomp.MatchAll{},
+				seccomp.SYS_SECCOMP: seccomp.PerArg{
+					seccomp.EqualTo(linux.SECCOMP_SET_MODE_FILTER),
+					seccomp.EqualTo(0),
+					seccomp.AnyValue{},
 				},
 			},
 			Action: linux.SECCOMP_RET_ALLOW,

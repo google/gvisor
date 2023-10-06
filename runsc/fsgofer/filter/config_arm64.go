@@ -23,26 +23,24 @@ import (
 )
 
 func init() {
-	allowedSyscalls[unix.SYS_CLONE] = []seccomp.Rule{
+	allowedSyscalls[unix.SYS_CLONE] = seccomp.PerArg{
 		// parent_tidptr and child_tidptr are always 0 because neither
 		// CLONE_PARENT_SETTID nor CLONE_CHILD_SETTID are used.
-		{
-			seccomp.EqualTo(
-				unix.CLONE_VM |
-					unix.CLONE_FS |
-					unix.CLONE_FILES |
-					unix.CLONE_SIGHAND |
-					unix.CLONE_SYSVSEM |
-					unix.CLONE_THREAD),
-			seccomp.AnyValue{}, // newsp
-			// These arguments are left uninitialized by the Go
-			// runtime, so they may be anything (and are unused by
-			// the host).
-			seccomp.AnyValue{}, // parent_tidptr
-			seccomp.AnyValue{}, // tls
-			seccomp.AnyValue{}, // child_tidptr
-		},
+		seccomp.EqualTo(
+			unix.CLONE_VM |
+				unix.CLONE_FS |
+				unix.CLONE_FILES |
+				unix.CLONE_SIGHAND |
+				unix.CLONE_SYSVSEM |
+				unix.CLONE_THREAD),
+		seccomp.AnyValue{}, // newsp
+		// These arguments are left uninitialized by the Go
+		// runtime, so they may be anything (and are unused by
+		// the host).
+		seccomp.AnyValue{}, // parent_tidptr
+		seccomp.AnyValue{}, // tls
+		seccomp.AnyValue{}, // child_tidptr
 	}
 
-	allowedSyscalls[unix.SYS_FSTATAT] = []seccomp.Rule{}
+	allowedSyscalls[unix.SYS_FSTATAT] = seccomp.MatchAll{}
 }
