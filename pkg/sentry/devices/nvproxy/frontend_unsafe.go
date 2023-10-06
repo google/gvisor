@@ -32,6 +32,14 @@ func frontendIoctlInvoke[Params any](fi *frontendIoctlState, sentryParams *Param
 	return n, nil
 }
 
+func frontendIoctlInvokePtr(fi *frontendIoctlState, sentryParams uintptr) (uintptr, error) {
+	n, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(fi.fd.hostFD), frontendIoctlCmd(fi.nr, fi.ioctlParamsSize), sentryParams)
+	if errno != 0 {
+		return n, errno
+	}
+	return n, nil
+}
+
 func rmControlInvoke[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters, ctrlParams *Params) (uintptr, error) {
 	defer runtime.KeepAlive(ctrlParams) // since we convert to non-pointer-typed P64
 	sentryIoctlParams := *ioctlParams
@@ -153,55 +161,31 @@ func ctrlSubdevGRGetInfo(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parame
 func rmAllocInvoke[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, allocParams *Params, isNVOS64 bool) (uintptr, error) {
 	defer runtime.KeepAlive(allocParams) // since we convert to non-pointer-typed P64
 
-	if isNVOS64 {
-		sentryIoctlParams := *ioctlParams
-		sentryIoctlParams.PAllocParms = p64FromPtr(unsafe.Pointer(allocParams))
-		var rightsRequested nvgpu.RS_ACCESS_MASK
-		if ioctlParams.PRightsRequested != 0 {
-			if _, err := rightsRequested.CopyIn(fi.t, addrFromP64(ioctlParams.PRightsRequested)); err != nil {
-				return 0, err
-			}
-			sentryIoctlParams.PRightsRequested = p64FromPtr(unsafe.Pointer(&rightsRequested))
+	sentryIoctlParams := nvgpu.GetRmAllocParamObj(isNVOS64)
+	sentryIoctlParams.FromOS64(*ioctlParams)
+	sentryIoctlParams.SetPAllocParms(p64FromPtr(unsafe.Pointer(allocParams)))
+	var rightsRequested nvgpu.RS_ACCESS_MASK
+	if ioctlParams.PRightsRequested != 0 {
+		if _, err := rightsRequested.CopyIn(fi.t, addrFromP64(ioctlParams.PRightsRequested)); err != nil {
+			return 0, err
 		}
-		n, err := frontendIoctlInvoke(fi, &sentryIoctlParams)
-		if err != nil {
-			return n, err
-		}
-		if ioctlParams.PRightsRequested != 0 {
-			if _, err := rightsRequested.CopyOut(fi.t, addrFromP64(ioctlParams.PRightsRequested)); err != nil {
-				return n, err
-			}
-		}
-		outIoctlParams := sentryIoctlParams
-		outIoctlParams.PAllocParms = ioctlParams.PAllocParms
-		outIoctlParams.PRightsRequested = ioctlParams.PRightsRequested
-		if _, err := outIoctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
-			return n, err
-		}
-		return n, nil
+		sentryIoctlParams.SetPRightsRequested(p64FromPtr(unsafe.Pointer(&rightsRequested)))
 	}
-
-	sentryIoctlParams := nvgpu.NVOS21Parameters{
-		HRoot:         ioctlParams.HRoot,
-		HObjectParent: ioctlParams.HObjectParent,
-		HObjectNew:    ioctlParams.HObjectNew,
-		HClass:        ioctlParams.HClass,
-		PAllocParms:   p64FromPtr(unsafe.Pointer(allocParams)),
-		Status:        ioctlParams.Status,
-	}
-	n, err := frontendIoctlInvoke(fi, &sentryIoctlParams)
+	n, err := frontendIoctlInvokePtr(fi, sentryIoctlParams.GetPointer())
 	if err != nil {
 		return n, err
 	}
-	outIoctlParams := nvgpu.NVOS21Parameters{
-		HRoot:         sentryIoctlParams.HRoot,
-		HObjectParent: sentryIoctlParams.HObjectParent,
-		HObjectNew:    sentryIoctlParams.HObjectNew,
-		HClass:        sentryIoctlParams.HClass,
-		PAllocParms:   ioctlParams.PAllocParms,
-		Status:        sentryIoctlParams.Status,
+	if ioctlParams.PRightsRequested != 0 {
+		if _, err := rightsRequested.CopyOut(fi.t, addrFromP64(ioctlParams.PRightsRequested)); err != nil {
+			return n, err
+		}
 	}
-	if _, err := outIoctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
+	// Reuse sentryIoctlParams to write out params.
+	sentryIoctlParams.SetPAllocParms(ioctlParams.PAllocParms)
+	if ioctlParams.PRightsRequested != 0 {
+		sentryIoctlParams.SetPRightsRequested(ioctlParams.PRightsRequested)
+	}
+	if _, err := sentryIoctlParams.CopyOut(fi.t, fi.ioctlParamsAddr); err != nil {
 		return n, err
 	}
 	return n, nil
