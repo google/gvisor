@@ -605,33 +605,21 @@ func ctrlSubdevFIFODisableChannels(fi *frontendIoctlState, ioctlParams *nvgpu.NV
 }
 
 func rmAlloc(fi *frontendIoctlState) (uintptr, error) {
-	// Copy in parameters and convert to NVOS64Parameters.
-	var (
-		ioctlParams nvgpu.NVOS64Parameters
-		isNVOS64    bool
-	)
+	var isNVOS64 bool
 	switch fi.ioctlParamsSize {
 	case nvgpu.SizeofNVOS21Parameters:
-		var buf nvgpu.NVOS21Parameters
-		if _, err := buf.CopyIn(fi.t, fi.ioctlParamsAddr); err != nil {
-			return 0, err
-		}
-		ioctlParams = nvgpu.NVOS64Parameters{
-			HRoot:         buf.HRoot,
-			HObjectParent: buf.HObjectParent,
-			HObjectNew:    buf.HObjectNew,
-			HClass:        buf.HClass,
-			PAllocParms:   buf.PAllocParms,
-			Status:        buf.Status,
-		}
 	case nvgpu.SizeofNVOS64Parameters:
-		if _, err := ioctlParams.CopyIn(fi.t, fi.ioctlParamsAddr); err != nil {
-			return 0, err
-		}
 		isNVOS64 = true
 	default:
 		return 0, linuxerr.EINVAL
 	}
+	// Copy in parameters and convert to NVOS64ParametersR535, which is a super
+	// set of all parameter types we support.
+	buf := nvgpu.GetRmAllocParamObj(isNVOS64)
+	if _, err := buf.CopyIn(fi.t, fi.ioctlParamsAddr); err != nil {
+		return 0, err
+	}
+	ioctlParams := buf.ToOS64()
 
 	// hClass determines the type of pAllocParms.
 	if log.IsLogging(log.Debug) {

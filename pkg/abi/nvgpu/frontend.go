@@ -14,6 +14,10 @@
 
 package nvgpu
 
+import (
+	"gvisor.dev/gvisor/pkg/marshal"
+)
+
 // NV_IOCTL_MAGIC is the "canonical" IOC_TYPE for frontend ioctls.
 // The driver ignores IOC_TYPE, allowing any value to be passed.
 const NV_IOCTL_MAGIC = uint32('F')
@@ -132,6 +136,28 @@ type NVOS00Parameters struct {
 	Status        uint32
 }
 
+// RmAllocParamType should be implemented by all possible parameter types for
+// NV_ESC_RM_ALLOC.
+type RmAllocParamType interface {
+	GetPAllocParms() P64
+	GetPRightsRequested() P64
+	SetPAllocParms(p P64)
+	SetPRightsRequested(p P64)
+	FromOS64(other NVOS64Parameters)
+	ToOS64() NVOS64Parameters
+	GetPointer() uintptr
+	marshal.Marshallable
+}
+
+// GetRmAllocParamObj returns the appropriate implementation of
+// RmAllocParamType based on passed parameters.
+func GetRmAllocParamObj(isNVOS64 bool) RmAllocParamType {
+	if isNVOS64 {
+		return &NVOS64Parameters{}
+	}
+	return &NVOS21Parameters{}
+}
+
 // NVOS21Parameters is NVOS21_PARAMETERS, one possible parameter type for
 // NV_ESC_RM_ALLOC.
 //
@@ -144,6 +170,46 @@ type NVOS21Parameters struct {
 	PAllocParms   P64
 	Status        uint32
 	Pad0          [4]byte
+}
+
+// GetPAllocParms implements RmAllocParamType.GetPAllocParms.
+func (n *NVOS21Parameters) GetPAllocParms() P64 {
+	return n.PAllocParms
+}
+
+// GetPRightsRequested implements RmAllocParamType.GetPRightsRequested.
+func (n *NVOS21Parameters) GetPRightsRequested() P64 {
+	return 0
+}
+
+// SetPAllocParms implements RmAllocParamType.SetPAllocParms.
+func (n *NVOS21Parameters) SetPAllocParms(p P64) { n.PAllocParms = p }
+
+// SetPRightsRequested implements RmAllocParamType.SetPRightsRequested.
+func (n *NVOS21Parameters) SetPRightsRequested(p P64) {
+	panic("impossible")
+}
+
+// FromOS64 implements RmAllocParamType.FromOS64.
+func (n *NVOS21Parameters) FromOS64(other NVOS64Parameters) {
+	n.HRoot = other.HRoot
+	n.HObjectParent = other.HObjectParent
+	n.HObjectNew = other.HObjectNew
+	n.HClass = other.HClass
+	n.PAllocParms = other.PAllocParms
+	n.Status = other.Status
+}
+
+// ToOS64 implements RmAllocParamType.ToOS64.
+func (n *NVOS21Parameters) ToOS64() NVOS64Parameters {
+	return NVOS64Parameters{
+		HRoot:         n.HRoot,
+		HObjectParent: n.HObjectParent,
+		HObjectNew:    n.HObjectNew,
+		HClass:        n.HClass,
+		PAllocParms:   n.PAllocParms,
+		Status:        n.Status,
+	}
 }
 
 // NVOS55Parameters is NVOS55_PARAMETERS, the parameter type for
@@ -299,6 +365,32 @@ type NVOS64Parameters struct {
 	PRightsRequested P64
 	Flags            uint32
 	Status           uint32
+}
+
+// GetPAllocParms implements RmAllocParamType.GetPAllocParms.
+func (n *NVOS64Parameters) GetPAllocParms() P64 {
+	return n.PAllocParms
+}
+
+// GetPRightsRequested implements RmAllocParamType.GetPRightsRequested.
+func (n *NVOS64Parameters) GetPRightsRequested() P64 {
+	return n.PRightsRequested
+}
+
+// SetPAllocParms implements RmAllocParamType.SetPAllocParms.
+func (n *NVOS64Parameters) SetPAllocParms(p P64) { n.PAllocParms = p }
+
+// SetPRightsRequested implements RmAllocParamType.SetPRightsRequested.
+func (n *NVOS64Parameters) SetPRightsRequested(p P64) { n.PRightsRequested = p }
+
+// FromOS64 implements RmAllocParamType.FromOS64.
+func (n *NVOS64Parameters) FromOS64(other NVOS64Parameters) {
+	*n = other
+}
+
+// ToOS64 implements RmAllocParamType.ToOS64.
+func (n *NVOS64Parameters) ToOS64() NVOS64Parameters {
+	return *n
 }
 
 // Frontend ioctl parameter struct sizes.
