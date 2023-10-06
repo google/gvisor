@@ -44,6 +44,7 @@ import (
 	metricpb "gvisor.dev/gvisor/pkg/metric/metric_go_proto"
 	"gvisor.dev/gvisor/pkg/prometheus"
 	"gvisor.dev/gvisor/pkg/sentry/control"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/state/statefile"
@@ -1668,4 +1669,29 @@ func SetUserMappings(spec *specs.Spec, pid int) error {
 		return fmt.Errorf("newgidmap failed: %w", err)
 	}
 	return nil
+}
+
+// Mount mounts a filesystem in a container.
+func (s *Sandbox) Mount(cid, fstype, src, dest string) error {
+	var files []*os.File
+	switch fstype {
+	case erofs.Name:
+		if imageFile, err := os.Open(src); err != nil {
+			return fmt.Errorf("opening %s: %v", src, err)
+		} else {
+			files = append(files, imageFile)
+		}
+
+	default:
+		return fmt.Errorf("unsupported filesystem type: %v", fstype)
+	}
+
+	args := boot.MountArgs{
+		ContainerID: cid,
+		Source:      src,
+		Destination: dest,
+		FsType:      fstype,
+		FilePayload: urpc.FilePayload{Files: files},
+	}
+	return s.call(boot.ContMgrMount, &args, nil)
 }
