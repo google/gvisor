@@ -69,9 +69,6 @@ func (i *inode) lookup(name string) (uint64, error) {
 		return 0, err
 	}
 
-	// Skip "." and ".."
-	dirents = dirents[2:]
-
 	// The dirents are sorted in alphabetical order. We do binary search
 	// to find the target.
 	idx := sort.Search(len(dirents), func(i int) bool {
