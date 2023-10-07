@@ -18,6 +18,8 @@ import (
 	"fmt"
 	"reflect"
 	"testing"
+
+	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
 func validate(p *ProgramBuilder, expected []Instruction) error {
@@ -190,6 +192,9 @@ func TestProgramBuilderOutcomes(t *testing.T) {
 		if f.MayJumpToUnresolvedLabels == nil {
 			f.MayJumpToUnresolvedLabels = map[string]struct{}{}
 		}
+		if f.MayReturnImmediate == nil {
+			f.MayReturnImmediate = map[linux.BPFAction]struct{}{}
+		}
 		return f
 	}
 	for _, test := range []struct {
@@ -202,6 +207,9 @@ func TestProgramBuilderOutcomes(t *testing.T) {
 		// Expected outcomes from recording the instructions added
 		// by `build` alone.
 		wantLocal FragmentOutcomes
+
+		// Expected value of calling `MayReturn` on the local fragment.
+		wantLocalMayReturn bool
 
 		// Expected outcomes from recording the instructions added
 		// to the program since the test began.
@@ -325,19 +333,44 @@ func TestProgramBuilderOutcomes(t *testing.T) {
 			},
 		},
 		{
-			name: "add return",
+			name: "add immediate return",
 			build: func() {
 				p.AddStmt(Ret|K, 1337)
 			},
 			wantLocal: FragmentOutcomes{
-				MayReturn: true,
+				MayReturnImmediate: map[linux.BPFAction]struct{}{
+					1337: struct{}{},
+				},
 			},
+			wantLocalMayReturn: true,
 			wantOverall: FragmentOutcomes{
 				MayJumpToUnresolvedLabels: map[string]struct{}{
 					"falselabel": struct{}{},
 				},
 				MayFallThrough: true, // From jump in previous test.
-				MayReturn:      true,
+				MayReturnImmediate: map[linux.BPFAction]struct{}{
+					1337: struct{}{},
+				},
+			},
+		},
+		{
+			name: "add register A return",
+			build: func() {
+				p.AddStmt(Ret|A, 0)
+			},
+			wantLocal: FragmentOutcomes{
+				MayReturnRegisterA: true,
+			},
+			wantLocalMayReturn: true,
+			wantOverall: FragmentOutcomes{
+				MayJumpToUnresolvedLabels: map[string]struct{}{
+					"falselabel": struct{}{},
+				},
+				MayFallThrough: false, // Jump no longer pointing at end of fragment.
+				MayReturnImmediate: map[linux.BPFAction]struct{}{
+					1337: struct{}{},
+				},
+				MayReturnRegisterA: true,
 			},
 		},
 		{
@@ -352,8 +385,11 @@ func TestProgramBuilderOutcomes(t *testing.T) {
 				MayJumpToUnresolvedLabels: map[string]struct{}{
 					"falselabel": struct{}{},
 				},
-				MayReturn:      true,
-				MayFallThrough: true,
+				MayReturnImmediate: map[linux.BPFAction]struct{}{
+					1337: struct{}{},
+				},
+				MayReturnRegisterA: true,
+				MayFallThrough:     true,
 			},
 		},
 		{
@@ -368,8 +404,11 @@ func TestProgramBuilderOutcomes(t *testing.T) {
 				MayJumpToUnresolvedLabels: map[string]struct{}{
 					"falselabel": struct{}{},
 				},
-				MayReturn:      true,
-				MayFallThrough: true,
+				MayReturnImmediate: map[linux.BPFAction]struct{}{
+					1337: struct{}{},
+				},
+				MayReturnRegisterA: true,
+				MayFallThrough:     true,
 			},
 		},
 		{
@@ -387,8 +426,11 @@ func TestProgramBuilderOutcomes(t *testing.T) {
 				MayJumpToUnresolvedLabels: map[string]struct{}{
 					"falselabel": struct{}{},
 				},
-				MayReturn:      true,
-				MayFallThrough: true,
+				MayReturnImmediate: map[linux.BPFAction]struct{}{
+					1337: struct{}{},
+				},
+				MayReturnRegisterA: true,
+				MayFallThrough:     true,
 			},
 		},
 		{
@@ -407,7 +449,10 @@ func TestProgramBuilderOutcomes(t *testing.T) {
 				MayJumpToUnresolvedLabels: map[string]struct{}{
 					"falselabel": struct{}{},
 				},
-				MayReturn: true,
+				MayReturnImmediate: map[linux.BPFAction]struct{}{
+					1337: struct{}{},
+				},
+				MayReturnRegisterA: true,
 			},
 		},
 		{
@@ -420,8 +465,11 @@ func TestProgramBuilderOutcomes(t *testing.T) {
 			},
 			wantOverall: FragmentOutcomes{
 				MayJumpToKnownOffsetBeyondFragment: true,
-				MayReturn:                          true,
-				MayFallThrough:                     true,
+				MayReturnImmediate: map[linux.BPFAction]struct{}{
+					1337: struct{}{},
+				},
+				MayReturnRegisterA: true,
+				MayFallThrough:     true,
 			},
 		},
 	} {
@@ -429,8 +477,12 @@ func TestProgramBuilderOutcomes(t *testing.T) {
 			getLocalFragment := p.Record()
 			test.build()
 			localFragment := getLocalFragment()
-			if localOutcomes := localFragment.Outcomes(); !reflect.DeepEqual(fixup(localOutcomes), fixup(test.wantLocal)) {
+			localOutcomes := localFragment.Outcomes()
+			if !reflect.DeepEqual(fixup(localOutcomes), fixup(test.wantLocal)) {
 				t.Errorf("local fragment %v: got outcomes %v want %v", localFragment, localOutcomes, test.wantLocal)
+			}
+			if gotMayReturn := localOutcomes.MayReturn(); gotMayReturn != test.wantLocalMayReturn {
+				t.Errorf("local fragment MayReturn(): got %v want %v", gotMayReturn, test.wantLocalMayReturn)
 			}
 			overallFragment := getOverallFragment()
 			if overallOutcomes := overallFragment.Outcomes(); !reflect.DeepEqual(fixup(overallOutcomes), fixup(test.wantOverall)) {
