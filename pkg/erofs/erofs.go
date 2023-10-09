@@ -35,7 +35,6 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal"
-	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/safemem"
 )
 
@@ -90,6 +89,14 @@ const (
 // This is not exhaustive, unused features are not listed.
 const (
 	FeatureIncompatSupported = 0x0
+)
+
+// Sizes of on-disk structures in bytes.
+const (
+	SuperBlockSize    = 128
+	InodeCompactSize  = 32
+	InodeExtendedSize = 64
+	DirentSize        = 12
 )
 
 // SuperBlock represents on-disk super block.
@@ -176,16 +183,20 @@ type InodeExtended struct {
 
 // Dirent represents on-disk directory entry.
 //
-// This struct is misaligned according to go_marshal, as it is only 12 bytes in size. The
-// last field needs to be marked unaligned so the struct is marked unpacked and the
-// generated methods behave correctly.
-//
 // +marshal
 type Dirent struct {
-	Nid      uint64
+	NidLow   uint32
+	NidHigh  uint32
 	NameOff  uint16
 	FileType uint8
-	Reserved uint8 `marshal:"unaligned"`
+	Reserved uint8
+}
+
+// Nid returns the inode number of the inode referenced by this dirent.
+func (d *Dirent) Nid() uint64 {
+	// EROFS on-disk structures are always in little endian.
+	// TODO: This implementation does not support big endian yet.
+	return (uint64(d.NidHigh) << 32) | uint64(d.NidLow)
 }
 
 // Image represents an open EROFS image.
@@ -251,7 +262,8 @@ func (i *Image) RootNid() uint64 {
 
 // initSuperBlock initializes the super block of this image.
 func (i *Image) initSuperBlock() error {
-	if err := i.UnmarshalAt(&i.sb, SuperBlockOffset); err != nil {
+	// i.sb is used in the hot path. Let's save a copy of it.
+	if err := i.unmarshalAt(&i.sb, SuperBlockOffset); err != nil {
 		return fmt.Errorf("image size is too small")
 	}
 
@@ -303,19 +315,79 @@ func (i *Image) FD() int {
 	return int(i.src.Fd())
 }
 
-// BytesAt returns the bytes at [off, off+n) of the image.
-func (i *Image) BytesAt(off, n uint64) ([]byte, error) {
+// checkRange checks whether the range [off, off+n) is valid.
+func (i *Image) checkRange(off, n uint64) bool {
 	size := uint64(len(i.bytes))
 	end := off + n
-	if off >= size || off > end || end > size {
-		log.Warningf("Invalid range (off: 0x%x, n: 0x%x) for image (size: 0x%x)", off, n, size)
-		return nil, linuxerr.EFAULT
-	}
-	return i.bytes[off:end], nil
+	return off < size && off <= end && end <= size
 }
 
-// UnmarshalAt deserializes data from the bytes at [off, off+n) of the image.
-func (i *Image) UnmarshalAt(data marshal.Marshallable, off uint64) error {
+// BytesAt returns the bytes at [off, off+n) of the image.
+func (i *Image) BytesAt(off, n uint64) ([]byte, error) {
+	if ok := i.checkRange(off, n); !ok {
+		log.Warningf("Invalid byte range (off: 0x%x, n: 0x%x) for image (size: 0x%x)", off, n, len(i.bytes))
+		return nil, linuxerr.EFAULT
+	}
+	return i.bytes[off : off+n], nil
+}
+
+// checkInodeAlignment checks whether off matches inode's alignment requirement.
+func checkInodeAlignment(off uint64) bool {
+	// Each valid inode should be aligned with an inode slot, which is
+	// a fixed value (32 bytes).
+	return off&((1<<InodeSlotBits)-1) == 0
+}
+
+// inodeFormatAt returns the format of the inode at off in the memory backed by image.
+func (i *Image) inodeFormatAt(off uint64) (uint16, error) {
+	if ok := checkInodeAlignment(off); !ok {
+		return 0, linuxerr.EFAULT
+	}
+	if ok := i.checkRange(off, 2); !ok {
+		return 0, linuxerr.EFAULT
+	}
+	return *(*uint16)(i.pointerAt(off)), nil
+}
+
+// inodeCompactAt returns the pointer to the compact inode at off in the memory
+// backed by image.
+func (i *Image) inodeCompactAt(off uint64) (*InodeCompact, error) {
+	if ok := checkInodeAlignment(off); !ok {
+		return nil, linuxerr.EFAULT
+	}
+	if ok := i.checkRange(off, InodeCompactSize); !ok {
+		return nil, linuxerr.EFAULT
+	}
+	return (*InodeCompact)(i.pointerAt(off)), nil
+}
+
+// inodeExtendedAt returns the pointer to the extended inode at off in the
+// memory backed by image.
+func (i *Image) inodeExtendedAt(off uint64) (*InodeExtended, error) {
+	if ok := checkInodeAlignment(off); !ok {
+		return nil, linuxerr.EFAULT
+	}
+	if ok := i.checkRange(off, InodeExtendedSize); !ok {
+		return nil, linuxerr.EFAULT
+	}
+	return (*InodeExtended)(i.pointerAt(off)), nil
+}
+
+// direntAt returns the pointer to the dirent at off in the memory backed
+// by image.
+func (i *Image) direntAt(off uint64) (*Dirent, error) {
+	// Each valid dirent should be aligned to 4 bytes.
+	if off&3 != 0 {
+		return nil, linuxerr.EFAULT
+	}
+	if ok := i.checkRange(off, DirentSize); !ok {
+		return nil, linuxerr.EFAULT
+	}
+	return (*Dirent)(i.pointerAt(off)), nil
+}
+
+// unmarshalAt deserializes data from the bytes at [off, off+n) of the image.
+func (i *Image) unmarshalAt(data marshal.Marshallable, off uint64) error {
 	bytes, err := i.BytesAt(off, uint64(data.SizeBytes()))
 	if err != nil {
 		log.Warningf("Failed to deserialize %T from 0x%x.", data, off)
@@ -326,9 +398,6 @@ func (i *Image) UnmarshalAt(data marshal.Marshallable, off uint64) error {
 }
 
 // Inode returns the inode identified by nid.
-//
-// TODO: Ideally, we should avoid escaping objects to heap when constructing
-// objects from the image.
 func (i *Image) Inode(nid uint64) (Inode, error) {
 	inode := Inode{
 		image: i,
@@ -336,8 +405,10 @@ func (i *Image) Inode(nid uint64) (Inode, error) {
 	}
 
 	off := i.sb.NidToOffset(nid)
-	if err := i.UnmarshalAt(&inode.format, off); err != nil {
+	if format, err := i.inodeFormatAt(off); err != nil {
 		return Inode{}, err
+	} else {
+		inode.format = format
 	}
 
 	var (
@@ -347,8 +418,8 @@ func (i *Image) Inode(nid uint64) (Inode, error) {
 
 	switch layout := inode.Layout(); layout {
 	case InodeLayoutCompact:
-		var ino InodeCompact
-		if err := i.UnmarshalAt(&ino, off); err != nil {
+		ino, err := i.inodeCompactAt(off)
+		if err != nil {
 			return Inode{}, err
 		}
 
@@ -369,8 +440,8 @@ func (i *Image) Inode(nid uint64) (Inode, error) {
 		inode.mtimeNsec = i.sb.BuildTimeNsec
 
 	case InodeLayoutExtended:
-		var ino InodeExtended
-		if err := i.UnmarshalAt(&ino, off); err != nil {
+		ino, err := i.inodeExtendedAt(off)
+		if err != nil {
 			return Inode{}, err
 		}
 
@@ -435,7 +506,7 @@ type Inode struct {
 	idataOff uint64
 
 	// format is the format of this inode.
-	format primitive.Uint16
+	format uint16
 
 	// Metadata.
 	mode      uint16
@@ -635,10 +706,10 @@ func (i *Inode) IterDirents(cb func(name string, typ uint8, nid uint64) error) e
 
 	// Iterate all the blocks which contain dirents.
 	for blocks > 0 {
-		// Unmarshal the first dirent in the current block.
+		// Get the first dirent in the current block.
 		direntOff := start
-		d := &Dirent{}
-		if err := i.image.UnmarshalAt(d, direntOff); err != nil {
+		d, err := i.image.direntAt(direntOff)
+		if err != nil {
 			return err
 		}
 		// Apart from the offset of the first filename, nameOff0 also indicates
@@ -663,9 +734,8 @@ func (i *Inode) IterDirents(cb func(name string, typ uint8, nid uint64) error) e
 				next = nil
 				nameLen = maxSize - uint32(d.NameOff)
 			} else {
-				// Unmarshal the next adjacent dirent.
-				next = &Dirent{}
-				if err := i.image.UnmarshalAt(next, direntOff); err != nil {
+				// Get the next adjacent dirent.
+				if next, err = i.image.direntAt(direntOff); err != nil {
 					return err
 				}
 				nameLen = uint32(next.NameOff - d.NameOff)
@@ -685,10 +755,11 @@ func (i *Inode) IterDirents(cb func(name string, typ uint8, nid uint64) error) e
 				return linuxerr.EUCLEAN
 			}
 			name := string(buf[:nameLen])
-			if err := cb(name, d.FileType, d.Nid); err != nil {
+			if err := cb(name, d.FileType, d.Nid()); err != nil {
 				return err
 			}
 
+			// Go on to process the next adjacent dirent.
 			d = next
 		}
 

@@ -7,7 +7,10 @@ package(
 
 go_library(
     name = "erofs",
-    srcs = ["erofs.go"],
+    srcs = [
+        "erofs.go",
+        "erofs_unsafe.go",
+    ],
     marshal = True,
     visibility = ["//visibility:public"],
     deps = [
@@ -17,7 +20,6 @@ go_library(
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/marshal",
-        "//pkg/marshal/primitive",
         "//pkg/safemem",
         "@org_golang_x_sys//unix:go_default_library",
     ],
