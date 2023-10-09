@@ -480,10 +480,9 @@ func (a *AddressableEndpointState) acquirePrimaryAddressRLocked(remoteAddr tcpip
 				bestLen = stateLen
 			}
 		}
-		if best != nil {
-			best.IncRef()
+		if best != nil && best.IncRef() {
+			return best
 		}
-		return best
 	}
 
 	var deprecatedEndpoint *addressState
