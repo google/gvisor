@@ -32,6 +32,11 @@ syscall_test(
 )
 
 syscall_test(
+    debug = False,
+    test = "//test/perf/linux:select_benchmark",
+)
+
+syscall_test(
     size = "large",
     debug = False,
     test = "//test/perf/linux:fork_benchmark",

@@ -288,6 +288,24 @@ cc_binary(
 )
 
 cc_binary(
+    name = "select_benchmark",
+    testonly = 1,
+    srcs = [
+        "select_benchmark.cc",
+    ],
+    deps = [
+        gbenchmark,
+        gtest,
+        "//test/util:eventfd_util",
+        "//test/util:file_descriptor",
+        "//test/util:posix_error",
+        "//test/util:test_main",
+        "//test/util:test_util",
+        "@com_google_absl//absl/time",
+    ],
+)
+
+cc_binary(
     name = "death_benchmark",
     testonly = 1,
     srcs = [
