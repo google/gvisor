@@ -20,6 +20,7 @@ import (
 	"io"
 	"io/ioutil"
 	"math"
+	"math/rand"
 	"os"
 	"os/exec"
 	"path"
@@ -3157,6 +3158,15 @@ func TestMountEROFS(t *testing.T) {
 	sourceDir := filepath.Join(assetsDir, "source")
 	if err := os.Mkdir(sourceDir, 0755); err != nil {
 		t.Fatalf("os.Mkdir() failed: %v", err)
+	}
+	// Create some files with leading non-alphanumeric characters in name. It's helpful
+	// to verify the on-disk directory entries order.
+	for _, c := range []byte("!#$%&()*+,-:;<=>?@[]^_`{|}~") {
+		name := fmt.Sprintf("%s/%c_file", sourceDir, c)
+		// Create the file with random data.
+		if err := ioutil.WriteFile(name, []byte(fmt.Sprintf("%v", rand.Uint64())), 0644); err != nil {
+			t.Fatalf("error creating %q: %v", name, err)
+		}
 	}
 	testApp, err := testutil.FindFile("test/cmd/test_app/test_app")
 	if err != nil {
