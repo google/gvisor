@@ -586,8 +586,7 @@ func (i *Inode) blocks() uint64 {
 }
 
 // IterDirents invokes cb on each entry in the directory represented by this inode.
-// The first two directory entries are "." and "..". The remaining directory entries
-// will be iterated in alphabetical order.
+// The directory entries will be iterated in alphabetical order.
 //
 // https://docs.kernel.org/filesystems/erofs.html#directories
 //
@@ -615,7 +614,7 @@ func (i *Inode) blocks() uint64 {
 //
 // [ (metadata block) inode | optional fields | dirent M+2 | dirent M+3 | name M+2 | name M+3 | optional padding ]
 //
-// All directory entries (except the first two: "." and "..") are _strictly_ recorded in alphabetical order.
+// All directory entries are _strictly_ recorded in alphabetical order.
 func (i *Inode) IterDirents(cb func(name string, typ uint8, nid uint64) error) error {
 	if !i.IsDir() {
 		return linuxerr.ENOTDIR
