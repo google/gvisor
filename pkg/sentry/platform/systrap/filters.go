@@ -22,7 +22,7 @@ import (
 
 // SyscallFilters returns syscalls made exclusively by the systrap platform.
 func (p *Systrap) SyscallFilters() seccomp.SyscallRules {
-	r := seccomp.SyscallRules{
+	return seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		unix.SYS_PTRACE: seccomp.Or{
 			seccomp.PerArg{
 				seccomp.EqualTo(unix.PTRACE_ATTACH),
@@ -77,7 +77,5 @@ func (p *Systrap) SyscallFilters() seccomp.SyscallRules {
 			seccomp.AnyValue{},
 			seccomp.EqualTo(sysmsgThreadPriority),
 		},
-	}
-	r.Merge(p.archSyscallFilters())
-	return r
+	}).Merge(p.archSyscallFilters())
 }

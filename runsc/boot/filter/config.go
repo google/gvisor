@@ -24,7 +24,7 @@ import (
 )
 
 // allowedSyscalls is the set of syscalls executed by the Sentry to the host OS.
-var allowedSyscalls = seccomp.SyscallRules{
+var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 	unix.SYS_CLOCK_GETTIME: seccomp.MatchAll{},
 	unix.SYS_CLOSE:         seccomp.MatchAll{},
 	unix.SYS_DUP:           seccomp.MatchAll{},
@@ -315,10 +315,10 @@ var allowedSyscalls = seccomp.SyscallRules{
 		seccomp.AnyValue{},
 		seccomp.GreaterThan(0),
 	},
-}
+})
 
 func controlServerFilters(fd int) seccomp.SyscallRules {
-	return seccomp.SyscallRules{
+	return seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		unix.SYS_ACCEPT4: seccomp.PerArg{
 			seccomp.EqualTo(fd),
 		},
@@ -331,7 +331,7 @@ func controlServerFilters(fd int) seccomp.SyscallRules {
 			seccomp.EqualTo(unix.SOL_SOCKET),
 			seccomp.EqualTo(unix.SO_PEERCRED),
 		},
-	}
+	})
 }
 
 // hostFilesystemFilters contains syscalls that are needed by directfs.
@@ -341,7 +341,7 @@ func hostFilesystemFilters() seccomp.SyscallRules {
 	// restrictive as possible because any restriction here improves security. We
 	// don't know what set of arguments will trigger a future vulnerability.
 	validFDCheck := seccomp.NonNegativeFDCheck()
-	return seccomp.SyscallRules{
+	return seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		unix.SYS_FCHOWNAT: seccomp.PerArg{
 			validFDCheck,
 			seccomp.AnyValue{},
@@ -421,5 +421,5 @@ func hostFilesystemFilters() seccomp.SyscallRules {
 			seccomp.AnyValue{},
 			seccomp.AnyValue{},
 		},
-	}
+	})
 }

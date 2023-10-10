@@ -19,7 +19,7 @@ import (
 	"gvisor.dev/gvisor/pkg/seccomp"
 )
 
-var profileFilters = seccomp.SyscallRules{
+var profileFilters = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 	unix.SYS_OPENAT: seccomp.PerArg{
 		seccomp.AnyValue{},
 		seccomp.AnyValue{},
@@ -38,4 +38,4 @@ var profileFilters = seccomp.SyscallRules{
 		seccomp.AnyValue{}, /* new_value */
 		seccomp.EqualTo(0), /* old_value */
 	},
-}
+})
