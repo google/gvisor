@@ -21,6 +21,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/bpf"
+	"gvisor.dev/gvisor/pkg/seccomp"
 )
 
 // Bench represents a benchmark to run.
@@ -29,8 +30,10 @@ type Bench struct {
 	Name string `json:"name"`
 	// Profile represents the syscall pattern profile being benchmarked.
 	Profile Profile `json:"profile"`
-	// Program is the seccomp-bpf program to run the benchmark with.
-	Program []bpf.Instruction `json:"program"`
+	// Instructions is the seccomp-bpf program to run the benchmark with.
+	Instructions []bpf.Instruction `json:"instructions"`
+	// BuildStats contains information on timing and size of the program.
+	BuildStats seccomp.BuildStats `json:"buildStats"`
 	// AllowRejected can be set to true if some sequences in the application
 	// profile are expected to not be allowed.
 	// If this is the case, the program's overall performance will not be

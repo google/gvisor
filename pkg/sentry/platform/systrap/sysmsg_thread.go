@@ -146,7 +146,7 @@ func sysmsgThreadRules(stubStart uintptr) []bpf.Instruction {
 			Action: linux.SECCOMP_RET_ALLOW,
 		},
 	}...)
-	instrs, err := seccomp.BuildProgram(rules, linux.SECCOMP_RET_TRAP, linux.SECCOMP_RET_TRAP)
+	instrs, _, err := seccomp.BuildProgram(rules, linux.SECCOMP_RET_TRAP, linux.SECCOMP_RET_TRAP)
 	if err != nil {
 		panic(fmt.Sprintf("failed to build rules for sysmsg threads: %v", err))
 	}
