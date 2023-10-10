@@ -23,7 +23,7 @@ import (
 )
 
 func init() {
-	allowedSyscalls[unix.SYS_CLONE] = seccomp.PerArg{
+	allowedSyscalls.Set(unix.SYS_CLONE, seccomp.PerArg{
 		// parent_tidptr and child_tidptr are always 0 because neither
 		// CLONE_PARENT_SETTID nor CLONE_CHILD_SETTID are used.
 		seccomp.EqualTo(
@@ -38,7 +38,6 @@ func init() {
 		seccomp.EqualTo(0), // parent_tidptr
 		seccomp.EqualTo(0), // child_tidptr
 		seccomp.AnyValue{}, // tls
-	}
-
-	allowedSyscalls[unix.SYS_NEWFSTATAT] = seccomp.MatchAll{}
+	})
+	allowedSyscalls.Set(unix.SYS_NEWFSTATAT, seccomp.MatchAll{})
 }

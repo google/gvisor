@@ -24,5 +24,5 @@ import (
 // Go instrumentation tools, e.g. -race, -msan.
 // Returns empty when disabled.
 func instrumentationFilters() seccomp.SyscallRules {
-	return nil
+	return seccomp.NewSyscallRules()
 }

@@ -66,7 +66,7 @@ func Install(rules SyscallRules, denyRules SyscallRules) error {
 	// below to get a panic stack trace when there is a violation.
 	// defaultAction = linux.BPFAction(linux.SECCOMP_RET_TRAP)
 
-	log.Infof("Installing seccomp filters for %d syscalls (action=%v)", len(rules), defaultAction)
+	log.Infof("Installing seccomp filters for %d syscalls (action=%v)", rules.Size(), defaultAction)
 
 	instrs, _, err := BuildProgram([]RuleSet{
 		{
@@ -342,7 +342,7 @@ func buildIndex(rules []RuleSet, program *syscallProgram) error {
 	// with different actions. The matchers are evaluated linearly.
 	requiredSyscalls := make(map[uintptr]struct{})
 	for _, rs := range rules {
-		for sysno := range rs.Rules {
+		for sysno := range rs.Rules.rules {
 			requiredSyscalls[sysno] = struct{}{}
 		}
 	}
@@ -354,8 +354,8 @@ func buildIndex(rules []RuleSet, program *syscallProgram) error {
 	for _, sysno := range syscalls {
 		for _, rs := range rules {
 			// Print only if there is a corresponding set of rules.
-			if _, ok := rs.Rules[sysno]; ok {
-				log.Debugf("syscall filter %v: %s => 0x%x", SyscallName(sysno), rs.Rules[sysno], rs.Action)
+			if r, ok := rs.Rules.rules[sysno]; ok {
+				log.Debugf("syscall filter %v: %s => 0x%x", SyscallName(sysno), r, rs.Action)
 			}
 		}
 	}
@@ -428,7 +428,7 @@ func buildBSTProgram(n *node, rules []RuleSet, program *syscallProgram) error {
 	program.Label(checkArgsLabel)
 
 	for ruleSetIdx, rs := range rules {
-		rule, ok := rs.Rules[sysno]
+		rule, ok := rs.Rules.rules[sysno]
 		if !ok {
 			continue
 		}

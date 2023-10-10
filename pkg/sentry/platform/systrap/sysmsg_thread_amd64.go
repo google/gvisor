@@ -24,16 +24,16 @@ func appendSysThreadArchSeccompRules(rules []seccomp.RuleSet) []seccomp.RuleSet 
 	return append(rules, []seccomp.RuleSet{
 		{
 			// Rules for trapping vsyscall access.
-			Rules: seccomp.SyscallRules{
+			Rules: seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 				unix.SYS_GETTIMEOFDAY: seccomp.MatchAll{},
 				unix.SYS_TIME:         seccomp.MatchAll{},
 				unix.SYS_GETCPU:       seccomp.MatchAll{}, // SYS_GETCPU was not defined in package syscall on amd64.
-			},
+			}),
 			Action:   linux.SECCOMP_RET_TRAP,
 			Vsyscall: true,
 		},
 		{
-			Rules: seccomp.SyscallRules{
+			Rules: seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 				unix.SYS_ARCH_PRCTL: seccomp.Or{
 					seccomp.PerArg{
 						seccomp.EqualTo(linux.ARCH_SET_FS),
@@ -54,7 +54,7 @@ func appendSysThreadArchSeccompRules(rules []seccomp.RuleSet) []seccomp.RuleSet 
 						seccomp.GreaterThan(stubStart), // rip
 					},
 				},
-			},
+			}),
 			Action: linux.SECCOMP_RET_ALLOW,
 		},
 	}...)

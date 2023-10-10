@@ -23,7 +23,7 @@ import (
 )
 
 // allowedSyscalls is the set of syscalls executed by the gofer.
-var allowedSyscalls = seccomp.SyscallRules{
+var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 	unix.SYS_ACCEPT:        seccomp.MatchAll{},
 	unix.SYS_CLOCK_GETTIME: seccomp.MatchAll{},
 	unix.SYS_CLOSE:         seccomp.MatchAll{},
@@ -199,9 +199,9 @@ var allowedSyscalls = seccomp.SyscallRules{
 	unix.SYS_UNLINKAT:  seccomp.MatchAll{},
 	unix.SYS_UTIMENSAT: seccomp.MatchAll{},
 	unix.SYS_WRITE:     seccomp.MatchAll{},
-}
+})
 
-var udsCommonSyscalls = seccomp.SyscallRules{
+var udsCommonSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 	unix.SYS_SOCKET: seccomp.Or{
 		seccomp.PerArg{
 			seccomp.EqualTo(unix.AF_UNIX),
@@ -219,19 +219,19 @@ var udsCommonSyscalls = seccomp.SyscallRules{
 			seccomp.EqualTo(0),
 		},
 	},
-}
+})
 
-var udsOpenSyscalls = seccomp.SyscallRules{
+var udsOpenSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 	unix.SYS_CONNECT: seccomp.MatchAll{},
-}
+})
 
-var udsCreateSyscalls = seccomp.SyscallRules{
+var udsCreateSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 	unix.SYS_ACCEPT4: seccomp.MatchAll{},
 	unix.SYS_BIND:    seccomp.MatchAll{},
 	unix.SYS_LISTEN:  seccomp.MatchAll{},
-}
+})
 
-var xattrSyscalls = seccomp.SyscallRules{
+var xattrSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 	unix.SYS_FGETXATTR: seccomp.MatchAll{},
 	unix.SYS_FSETXATTR: seccomp.MatchAll{},
-}
+})

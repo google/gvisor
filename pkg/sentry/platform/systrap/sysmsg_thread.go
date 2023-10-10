@@ -103,7 +103,7 @@ func sysmsgThreadRules(stubStart uintptr) []bpf.Instruction {
 	rules = append(rules, []seccomp.RuleSet{
 		// Allow instructions from the sysmsg code stub, which is limited by one page.
 		{
-			Rules: seccomp.SyscallRules{
+			Rules: seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 				unix.SYS_FUTEX: seccomp.Or{
 					seccomp.PerArg{
 						seccomp.GreaterThan(stubStart),
@@ -142,7 +142,7 @@ func sysmsgThreadRules(stubStart uintptr) []bpf.Instruction {
 					seccomp.AnyValue{},
 					seccomp.GreaterThan(stubStart), // rip
 				},
-			},
+			}),
 			Action: linux.SECCOMP_RET_ALLOW,
 		},
 	}...)

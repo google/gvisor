@@ -23,8 +23,8 @@ import (
 )
 
 func archInstrumentationFilters(f seccomp.SyscallRules) seccomp.SyscallRules {
-	f[unix.SYS_OPEN] = seccomp.MatchAll{}
+	f.Set(unix.SYS_OPEN, seccomp.MatchAll{})
 	// Used within glibc's malloc.
-	f[unix.SYS_TIME] = seccomp.MatchAll{}
+	f.Set(unix.SYS_TIME, seccomp.MatchAll{})
 	return f
 }

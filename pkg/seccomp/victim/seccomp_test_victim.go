@@ -29,7 +29,7 @@ func main() {
 	dieFlag := flag.Bool("die", false, "trips over the filter if true")
 	flag.Parse()
 
-	syscalls := seccomp.SyscallRules{
+	syscalls := seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		unix.SYS_ACCEPT:          seccomp.MatchAll{},
 		unix.SYS_BIND:            seccomp.MatchAll{},
 		unix.SYS_BRK:             seccomp.MatchAll{},
@@ -93,7 +93,7 @@ func main() {
 		unix.SYS_UTIMENSAT:       seccomp.MatchAll{},
 		unix.SYS_WRITE:           seccomp.MatchAll{},
 		unix.SYS_WRITEV:          seccomp.MatchAll{},
-	}
+	})
 
 	arch_syscalls(syscalls)
 	// We choose a syscall that is unlikely to be called by Go runtime,
@@ -102,12 +102,12 @@ func main() {
 
 	die := *dieFlag
 	if !die {
-		syscalls[syscall] = seccomp.PerArg{
+		syscalls.Set(syscall, seccomp.PerArg{
 			seccomp.EqualTo(0),
-		}
+		})
 	}
 
-	if err := seccomp.Install(syscalls, nil); err != nil {
+	if err := seccomp.Install(syscalls, seccomp.NewSyscallRules()); err != nil {
 		fmt.Printf("Failed to install seccomp: %v\n", err)
 		os.Exit(1)
 	}

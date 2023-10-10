@@ -79,7 +79,7 @@ func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, erro
 	rules := []seccomp.RuleSet{}
 	if defaultAction != linux.SECCOMP_RET_ALLOW {
 		rules = append(rules, seccomp.RuleSet{
-			Rules: seccomp.SyscallRules{
+			Rules: seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 				unix.SYS_CLONE: seccomp.Or{
 					// Allow creation of new subprocesses (used by the master).
 					seccomp.PerArg{seccomp.EqualTo(unix.CLONE_FILES | unix.SIGKILL)},
@@ -109,7 +109,7 @@ func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, erro
 				// Injected to support the address space operations.
 				unix.SYS_MMAP:   seccomp.MatchAll{},
 				unix.SYS_MUNMAP: seccomp.MatchAll{},
-			},
+			}),
 			Action: linux.SECCOMP_RET_ALLOW,
 		})
 	}
