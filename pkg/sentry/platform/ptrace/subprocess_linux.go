@@ -114,7 +114,7 @@ func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, erro
 		})
 	}
 	rules = appendArchSeccompRules(rules, defaultAction)
-	instrs, err := seccomp.BuildProgram(rules, defaultAction, defaultAction)
+	instrs, _, err := seccomp.BuildProgram(rules, defaultAction, defaultAction)
 	if err != nil {
 		return nil, err
 	}

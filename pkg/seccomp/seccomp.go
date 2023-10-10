@@ -19,6 +19,7 @@ package seccomp
 import (
 	"fmt"
 	"sort"
+	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bpf"
@@ -67,7 +68,7 @@ func Install(rules SyscallRules, denyRules SyscallRules) error {
 
 	log.Infof("Installing seccomp filters for %d syscalls (action=%v)", len(rules), defaultAction)
 
-	instrs, err := BuildProgram([]RuleSet{
+	instrs, _, err := BuildProgram([]RuleSet{
 		{
 			Rules:  denyRules,
 			Action: defaultAction,
@@ -269,9 +270,25 @@ func (l *labelSet) Push(labelSuffix string, newRuleMatch, newRuleMismatch label)
 	}
 }
 
+// BuildStats contains information about seccomp program generation.
+type BuildStats struct {
+	// SizeBeforeOptimizations and SizeAfterOptimizations correspond to the
+	// number of instructions in the program before vs after optimization.
+	SizeBeforeOptimizations, SizeAfterOptimizations int
+
+	// BuildDuration is the amount of time it took to build the program (before
+	// BPF bytecode optimizations).
+	BuildDuration time.Duration
+
+	// OptimizeDuration is the amount of time it took to run BPF bytecode
+	// optimizations.
+	OptimizeDuration time.Duration
+}
+
 // BuildProgram builds a BPF program from the given map of actions to matching
 // SyscallRules. The single generated program covers all provided RuleSets.
-func BuildProgram(rules []RuleSet, defaultAction, badArchAction linux.BPFAction) ([]bpf.Instruction, error) {
+func BuildProgram(rules []RuleSet, defaultAction, badArchAction linux.BPFAction) ([]bpf.Instruction, BuildStats, error) {
+	start := time.Now()
 	program := &syscallProgram{
 		program: bpf.NewProgramBuilder(),
 	}
@@ -284,7 +301,7 @@ func BuildProgram(rules []RuleSet, defaultAction, badArchAction linux.BPFAction)
 	program.Stmt(bpf.Ld|bpf.Abs|bpf.W, seccompDataOffsetArch)
 	program.IfNot(bpf.Jmp|bpf.Jeq|bpf.K, LINUX_AUDIT_ARCH, badArchLabel)
 	if err := buildIndex(rules, program); err != nil {
-		return nil, err
+		return nil, BuildStats{}, err
 	}
 
 	// Default label if none of the rules matched:
@@ -297,13 +314,20 @@ func BuildProgram(rules []RuleSet, defaultAction, badArchAction linux.BPFAction)
 
 	insns, err := program.program.Instructions()
 	if err != nil {
-		return insns, err
+		return nil, BuildStats{}, err
 	}
 	beforeOpt := len(insns)
+	buildDuration := time.Since(start)
 	insns = bpf.Optimize(insns)
+	optimizeDuration := time.Since(start) - buildDuration
 	afterOpt := len(insns)
-	log.Debugf("Seccomp program optimized from %d to %d instructions", beforeOpt, afterOpt)
-	return insns, nil
+	log.Debugf("Seccomp program optimized from %d to %d instructions; took %v to build and %v to optimize", beforeOpt, afterOpt, buildDuration, optimizeDuration)
+	return insns, BuildStats{
+		SizeBeforeOptimizations: beforeOpt,
+		SizeAfterOptimizations:  afterOpt,
+		BuildDuration:           buildDuration,
+		OptimizeDuration:        optimizeDuration,
+	}, nil
 }
 
 // buildIndex builds a BST to quickly search through all syscalls.
