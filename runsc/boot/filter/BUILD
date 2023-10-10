@@ -44,6 +44,7 @@ secbench_test(
     deps = [
         ":filter",
         "//pkg/abi/linux",
+        "//pkg/seccomp",
         "//pkg/sentry/platform/kvm",
         "//pkg/sentry/platform/systrap",
         "//test/secbench",
