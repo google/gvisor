@@ -23,7 +23,7 @@ import (
 )
 
 func init() {
-	allowedSyscalls[unix.SYS_CLONE] = seccomp.PerArg{
+	allowedSyscalls.Set(unix.SYS_CLONE, seccomp.PerArg{
 		seccomp.EqualTo(
 			unix.CLONE_VM |
 				unix.CLONE_FS |
@@ -38,7 +38,7 @@ func init() {
 		seccomp.AnyValue{}, // parent_tidptr
 		seccomp.AnyValue{}, // tls
 		seccomp.AnyValue{}, // child_tidptr
-	}
+	})
 }
 
 func archFstatAtSysNo() uintptr {

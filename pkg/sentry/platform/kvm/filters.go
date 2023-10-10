@@ -23,8 +23,7 @@ import (
 
 // SyscallFilters returns syscalls made exclusively by the KVM platform.
 func (k *KVM) SyscallFilters() seccomp.SyscallRules {
-	r := k.archSyscallFilters()
-	r.Merge(seccomp.SyscallRules{
+	return k.archSyscallFilters().Merge(seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		unix.SYS_IOCTL: seccomp.Or{
 			seccomp.PerArg{
 				seccomp.AnyValue{},
@@ -51,6 +50,5 @@ func (k *KVM) SyscallFilters() seccomp.SyscallRules {
 		unix.SYS_RT_SIGSUSPEND:   seccomp.MatchAll{},
 		unix.SYS_RT_SIGTIMEDWAIT: seccomp.MatchAll{},
 		_SYS_KVM_RETURN_TO_HOST:  seccomp.MatchAll{},
-	})
-	return r
+	}))
 }

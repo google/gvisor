@@ -399,35 +399,44 @@ func (pa PerArg) String() (s string) {
 //
 // For example:
 //
-//	rules := SyscallRules{
-//	       syscall.SYS_FUTEX: Or{
-//	               PerArg{
-//	                       AnyValue{},
-//	                       EqualTo(linux.FUTEX_WAIT | linux.FUTEX_PRIVATE_FLAG),
-//	               },
-//	               PerArg{
-//	                       AnyValue{},
-//	                       EqualTo(linux.FUTEX_WAKE | linux.FUTEX_PRIVATE_FLAG),
-//	               },
-//	       },
-//	       syscall.SYS_GETPID: MatchAll{},
-//
-// }
-type SyscallRules map[uintptr]SyscallRule
+//	rules := MakeSyscallRules(map[uintptr]SyscallRule{
+//		syscall.SYS_FUTEX: Or{
+//			PerArg{
+//				AnyValue{},
+//				EqualTo(linux.FUTEX_WAIT | linux.FUTEX_PRIVATE_FLAG),
+//			},
+//			PerArg{
+//				AnyValue{},
+//				EqualTo(linux.FUTEX_WAKE | linux.FUTEX_PRIVATE_FLAG),
+//			},
+//		},
+//		syscall.SYS_GETPID: MatchAll{},
+//	})
+type SyscallRules struct {
+	rules map[uintptr]SyscallRule
+}
 
 // NewSyscallRules returns a new SyscallRules.
 func NewSyscallRules() SyscallRules {
-	return make(map[uintptr]SyscallRule)
+	return MakeSyscallRules(nil)
+}
+
+// MakeSyscallRules returns a new SyscallRules with the given set of rules.
+func MakeSyscallRules(rules map[uintptr]SyscallRule) SyscallRules {
+	if rules == nil {
+		rules = make(map[uintptr]SyscallRule)
+	}
+	return SyscallRules{rules: rules}
 }
 
 // String returns a string representation of the syscall rules, one syscall
 // per line.
 func (sr SyscallRules) String() string {
-	if len(sr) == 0 {
+	if len(sr.rules) == 0 {
 		return "(no rules)"
 	}
-	sysnums := make([]uintptr, 0, len(sr))
-	for sysno := range sr {
+	sysnums := make([]uintptr, 0, len(sr.rules))
+	for sysno := range sr.rules {
 		sysnums = append(sysnums, sysno)
 	}
 	sort.Slice(sysnums, func(i, j int) bool {
@@ -435,35 +444,82 @@ func (sr SyscallRules) String() string {
 	})
 	var sb strings.Builder
 	for _, sysno := range sysnums {
-		sb.WriteString(fmt.Sprintf("syscall %d: %v\n", sysno, sr[sysno]))
+		sb.WriteString(fmt.Sprintf("syscall %d: %v\n", sysno, sr.rules[sysno]))
 	}
 	return strings.TrimSpace(sb.String())
 }
 
-// AddRule adds the given rule. It will create a new entry for a new syscall, otherwise
+// Size returns the number of syscall numbers for which a rule is defined.
+func (sr SyscallRules) Size() int {
+	return len(sr.rules)
+}
+
+// Get returns the rule defined for the given syscall number.
+func (sr SyscallRules) Get(sysno uintptr) SyscallRule {
+	return sr.rules[sysno]
+}
+
+// Has returns whether there is a rule defined for the given syscall number.
+func (sr SyscallRules) Has(sysno uintptr) bool {
+	_, has := sr.rules[sysno]
+	return has
+}
+
+// Add adds the given rule. It will create a new entry for a new syscall, otherwise
 // it will append to the existing rules.
-func (sr SyscallRules) AddRule(sysno uintptr, r SyscallRule) {
-	if cur, ok := sr[sysno]; ok {
-		sr[sysno] = merge(cur, r)
+// Returns itself for chainability.
+func (sr SyscallRules) Add(sysno uintptr, r SyscallRule) SyscallRules {
+	if cur, ok := sr.rules[sysno]; ok {
+		sr.rules[sysno] = merge(cur, r)
 	} else {
-		sr[sysno] = r
+		sr.rules[sysno] = r
 	}
+	return sr
+}
+
+// Set sets the rule for the given syscall number.
+// Panics if there is already a rule for this syscall number.
+// This is useful for deterministic rules where the set of syscall rules is
+// added in multiple chunks but is known to never overlap by syscall number.
+// Returns itself for chainability.
+func (sr SyscallRules) Set(sysno uintptr, r SyscallRule) SyscallRules {
+	if cur, ok := sr.rules[sysno]; ok {
+		panic(fmt.Sprintf("tried to set syscall rule for sysno=%d to %v but it is already set to %v", sysno, r, cur))
+	}
+	sr.rules[sysno] = r
+	return sr
+}
+
+// Remove clears the syscall rule for the given syscall number.
+// It will panic if there is no syscall rule for this syscall number.
+func (sr SyscallRules) Remove(sysno uintptr) {
+	if !sr.Has(sysno) {
+		panic(fmt.Sprintf("tried to remove syscall rule for sysno=%d but it is not set", sysno))
+	}
+	delete(sr.rules, sysno)
 }
 
 // Merge merges the given SyscallRules.
-func (sr SyscallRules) Merge(other SyscallRules) {
-	for sysno, r := range other {
-		if cur, ok := sr[sysno]; ok {
-			sr[sysno] = merge(cur, r)
-		} else {
-			sr[sysno] = r
-		}
+// Returns itself for chainability.
+func (sr SyscallRules) Merge(other SyscallRules) SyscallRules {
+	for sysno, r := range other.rules {
+		sr.Add(sysno, r)
 	}
+	return sr
+}
+
+// Copy returns a copy of these SyscallRules.
+func (sr SyscallRules) Copy() SyscallRules {
+	rulesCopy := make(map[uintptr]SyscallRule, len(sr.rules))
+	for sysno, r := range sr.rules {
+		rulesCopy[sysno] = r
+	}
+	return MakeSyscallRules(rulesCopy)
 }
 
 // DenyNewExecMappings is a set of rules that denies creating new executable
 // mappings and converting existing ones.
-var DenyNewExecMappings = SyscallRules{
+var DenyNewExecMappings = MakeSyscallRules(map[uintptr]SyscallRule{
 	unix.SYS_MMAP: PerArg{
 		AnyValue{},
 		AnyValue{},
@@ -474,4 +530,4 @@ var DenyNewExecMappings = SyscallRules{
 		AnyValue{},
 		MaskedEqual(unix.PROT_EXEC, unix.PROT_EXEC),
 	},
-}
+})

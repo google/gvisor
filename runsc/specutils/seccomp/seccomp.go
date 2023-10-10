@@ -136,7 +136,7 @@ func convertRules(s *specs.LinuxSeccomp) ([]seccomp.RuleSet, error) {
 				continue
 			}
 
-			sysRules.AddRule(uintptr(syscallNo), rule)
+			sysRules.Add(uintptr(syscallNo), rule)
 		}
 
 		ruleset = append(ruleset, seccomp.RuleSet{

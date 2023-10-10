@@ -24,7 +24,7 @@ import (
 // Filters returns seccomp-bpf filters for this package.
 func Filters() seccomp.SyscallRules {
 	nonNegativeFD := seccomp.NonNegativeFDCheck()
-	return seccomp.SyscallRules{
+	return seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		unix.SYS_OPENAT: seccomp.PerArg{
 			// All paths that we openat() are absolute, so we pass a dirfd
 			// of -1 (which is invalid for relative paths, but ignored for
@@ -108,5 +108,5 @@ func Filters() seccomp.SyscallRules {
 			seccomp.AnyValue{},
 			seccomp.EqualTo(0),
 		},
-	}
+	})
 }

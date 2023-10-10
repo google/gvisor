@@ -779,7 +779,7 @@ func seccompMmapRules(m *machine) {
 		rules := []seccomp.RuleSet{
 			// Trap mmap system calls and handle them in sigsysGoHandler
 			{
-				Rules: seccomp.SyscallRules{
+				Rules: seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 					unix.SYS_MMAP: seccomp.PerArg{
 						seccomp.AnyValue{},
 						seccomp.AnyValue{},
@@ -787,7 +787,7 @@ func seccompMmapRules(m *machine) {
 						/* MAP_DENYWRITE is ignored and used only for filtering. */
 						seccomp.MaskedEqual(unix.MAP_DENYWRITE, 0),
 					},
-				},
+				}),
 				Action: linux.SECCOMP_RET_TRAP,
 			},
 		}

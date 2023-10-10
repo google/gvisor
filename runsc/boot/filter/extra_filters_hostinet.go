@@ -23,7 +23,7 @@ import (
 
 // hostInetFilters contains syscalls that are needed by sentry/socket/hostinet.
 func hostInetFilters(allowRawSockets bool) seccomp.SyscallRules {
-	rules := seccomp.SyscallRules{
+	rules := seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		unix.SYS_ACCEPT4: seccomp.PerArg{
 			seccomp.AnyValue{},
 			seccomp.AnyValue{},
@@ -97,7 +97,7 @@ func hostInetFilters(allowRawSockets bool) seccomp.SyscallRules {
 			},
 		},
 		unix.SYS_WRITEV: seccomp.MatchAll{},
-	}
+	})
 
 	// Need NETLINK_ROUTE and stream sockets to query host interfaces and
 	// routes.
@@ -139,13 +139,13 @@ func hostInetFilters(allowRawSockets bool) seccomp.SyscallRules {
 		}
 		socketRules = append(socketRules, rule)
 	}
-	rules[unix.SYS_SOCKET] = socketRules
+	rules.Set(unix.SYS_SOCKET, socketRules)
 
 	// Generate rules for socket options based on hostinet's supported
 	// socket options.
 	for _, opt := range hostinet.SockOpts {
 		if opt.AllowGet {
-			rules.AddRule(unix.SYS_GETSOCKOPT, seccomp.PerArg{
+			rules.Add(unix.SYS_GETSOCKOPT, seccomp.PerArg{
 				seccomp.AnyValue{},
 				seccomp.EqualTo(opt.Level),
 				seccomp.EqualTo(opt.Name),
@@ -153,7 +153,7 @@ func hostInetFilters(allowRawSockets bool) seccomp.SyscallRules {
 		}
 		if opt.AllowSet {
 			if opt.Size > 0 {
-				rules.AddRule(unix.SYS_SETSOCKOPT, seccomp.PerArg{
+				rules.Add(unix.SYS_SETSOCKOPT, seccomp.PerArg{
 					seccomp.AnyValue{},
 					seccomp.EqualTo(opt.Level),
 					seccomp.EqualTo(opt.Name),
@@ -161,7 +161,7 @@ func hostInetFilters(allowRawSockets bool) seccomp.SyscallRules {
 					seccomp.EqualTo(opt.Size),
 				})
 			} else {
-				rules.AddRule(unix.SYS_SETSOCKOPT, seccomp.PerArg{
+				rules.Add(unix.SYS_SETSOCKOPT, seccomp.PerArg{
 					seccomp.AnyValue{},
 					seccomp.EqualTo(opt.Level),
 					seccomp.EqualTo(opt.Name),

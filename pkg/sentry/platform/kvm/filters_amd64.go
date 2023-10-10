@@ -24,7 +24,7 @@ import (
 // archSyscallFilters returns arch-specific syscalls made exclusively by the
 // KVM platform.
 func (k *KVM) archSyscallFilters() seccomp.SyscallRules {
-	return seccomp.SyscallRules{
+	return seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		unix.SYS_ARCH_PRCTL: seccomp.Or{
 			seccomp.PerArg{
 				seccomp.EqualTo(linux.ARCH_GET_FS),
@@ -47,5 +47,5 @@ func (k *KVM) archSyscallFilters() seccomp.SyscallRules {
 				seccomp.EqualTo(KVM_GET_REGS),
 			},
 		},
-	}
+	})
 }
