@@ -80,7 +80,7 @@ func TestAddressDispatcherExpiredToAssigned(t *testing.T) {
 		t.Fatalf("s.AddAndAcquirePermanentAddress(%s, {}): %s", addr, err)
 	}
 	defer ep.DecRef()
-	if !ep.IncRef() {
+	if !ep.TryIncRef() {
 		t.Fatalf("failed to increase ref count of address endpoint")
 	}
 
