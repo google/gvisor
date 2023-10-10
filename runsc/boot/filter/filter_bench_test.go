@@ -16,10 +16,12 @@
 package filter_bench_test
 
 import (
+	"fmt"
 	"testing"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/platform/kvm"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap"
 	"gvisor.dev/gvisor/runsc/boot/filter"
@@ -88,6 +90,58 @@ func BenchmarkSentryKVM(b *testing.B) {
 				{"pwrite64", 107603, secbenchdef.Single(unix.SYS_PWRITE64, secbenchdef.NonExistentFD)},
 				{"epoll_pwait", 29909, secbenchdef.Single(unix.SYS_EPOLL_PWAIT, secbenchdef.NonExistentFD)},
 			},
+		},
+		rules,
+		denyRules,
+	))
+}
+
+func BenchmarkNVProxyIoctl(b *testing.B) {
+	rules, denyRules := filter.Rules(filter.Options{
+		Platform: &systrap.Systrap{},
+		NVProxy:  true,
+	})
+	ioctlsRule := rules.Get(unix.SYS_IOCTL)
+	if ioctlsRule == nil {
+		b.Fatalf("ioctl rule is not defined")
+	}
+	ioctlOr, isOr := ioctlsRule.(seccomp.Or)
+	if !isOr {
+		b.Fatalf("ioctl rule is not an Or rule")
+	}
+	sequences := make([]secbenchdef.Sequence, 0, len(ioctlOr))
+	var processOrRule func(seccomp.Or)
+	processOrRule = func(orRule seccomp.Or) {
+		for _, ioctlRule := range orRule {
+			if orSubRule, isOr := ioctlRule.(seccomp.Or); isOr {
+				processOrRule(orSubRule)
+				continue
+			}
+			perArg, isPerArg := ioctlRule.(seccomp.PerArg)
+			if !isPerArg {
+				b.Fatalf("ioctl sub-rule %v (type: %T) is not a PerArg rule", ioctlRule, ioctlRule)
+			}
+			if perArg[1] == nil {
+				b.Fatalf("ioctl sub-rule %v does not have any rule for arg[1]", perArg)
+			}
+			arg1Equal, isEqual := perArg[1].(seccomp.EqualTo)
+			if !isEqual {
+				continue
+			}
+			sequences = append(sequences, secbenchdef.Sequence{
+				Name:     fmt.Sprintf("ioctl_%d", arg1Equal),
+				Weight:   1,
+				Syscalls: secbenchdef.Single(unix.SYS_IOCTL, 0, uintptr(arg1Equal)),
+			})
+		}
+	}
+	processOrRule(ioctlOr)
+	secbench.Run(b, secbench.BenchFromSyscallRules(
+		b,
+		"nvproxy",
+		secbenchdef.Profile{
+			Arch:      linux.AUDIT_ARCH_X86_64,
+			Sequences: sequences,
 		},
 		rules,
 		denyRules,
