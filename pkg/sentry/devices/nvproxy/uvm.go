@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -124,6 +125,10 @@ func (fd *uvmFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args 
 		panic("Ioctl should be called from a task context")
 	}
 
+	if log.IsLogging(log.Debug) {
+		ctx.Debugf("nvproxy: frontend ioctl %#08x", cmd)
+	}
+
 	ui := uvmIoctlState{
 		fd:              fd,
 		ctx:             ctx,
@@ -184,6 +189,44 @@ func uvmInitialize(ui *uvmIoctlState) (uintptr, error) {
 	// Only expose the MULTI_PROCESS_SHARING_MODE flag if it was present in
 	// ioctlParams.
 	outIoctlParams.Flags &^= ^ioctlParams.Flags & nvgpu.UVM_INIT_FLAGS_MULTI_PROCESS_SHARING_MODE
+	if _, err := outIoctlParams.CopyOut(ui.t, ui.ioctlParamsAddr); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
+func uvmMMInitialize(ui *uvmIoctlState) (uintptr, error) {
+	var ioctlParams nvgpu.UVM_MM_INITIALIZE_PARAMS
+	if _, err := ioctlParams.CopyIn(ui.t, ui.ioctlParamsAddr); err != nil {
+		return 0, err
+	}
+
+	failWithStatus := func(status uint32) error {
+		outIoctlParams := ioctlParams
+		outIoctlParams.Status = status
+		_, err := outIoctlParams.CopyOut(ui.t, ui.ioctlParamsAddr)
+		return err
+	}
+
+	uvmFileGeneric, _ := ui.t.FDTable().Get(ioctlParams.UvmFD)
+	if uvmFileGeneric == nil {
+		return 0, failWithStatus(nvgpu.NV_ERR_INVALID_ARGUMENT)
+	}
+	defer uvmFileGeneric.DecRef(ui.ctx)
+	uvmFile, ok := uvmFileGeneric.Impl().(*uvmFD)
+	if !ok {
+		return 0, failWithStatus(nvgpu.NV_ERR_INVALID_ARGUMENT)
+	}
+
+	sentryIoctlParams := ioctlParams
+	sentryIoctlParams.UvmFD = uvmFile.hostFD
+	n, err := uvmIoctlInvoke(ui, &sentryIoctlParams)
+	if err != nil {
+		return n, err
+	}
+
+	outIoctlParams := sentryIoctlParams
+	outIoctlParams.UvmFD = ioctlParams.UvmFD
 	if _, err := outIoctlParams.CopyOut(ui.t, ui.ioctlParamsAddr); err != nil {
 		return n, err
 	}

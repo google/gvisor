@@ -16,6 +16,8 @@ package nvproxy
 
 import (
 	"testing"
+
+	"gvisor.dev/gvisor/pkg/abi/nvgpu"
 )
 
 func TestInit(t *testing.T) {
@@ -23,5 +25,14 @@ func TestInit(t *testing.T) {
 	Init()
 	for _, cons := range abis {
 		cons()
+	}
+}
+
+func TestNVOS21ParamsSize(t *testing.T) {
+	if nvgpu.SizeofNVOS21ParametersV535 != nvgpu.SizeofNVOS21Parameters {
+		// We assume the size of NVOS21_PARAMETERS struct did not change between
+		// V525 and V535. If this turns out to be false, a separate seccomp entry
+		// needs to be added for the new size value.
+		t.Errorf("SizeofNVOS21ParametersV535(%#08x) != SizeofNVOS21Parameters(%#08x)", nvgpu.SizeofNVOS21ParametersV535, nvgpu.SizeofNVOS21Parameters)
 	}
 }

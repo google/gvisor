@@ -143,17 +143,23 @@ type RmAllocParamType interface {
 	GetPRightsRequested() P64
 	SetPAllocParms(p P64)
 	SetPRightsRequested(p P64)
-	FromOS64(other NVOS64Parameters)
-	ToOS64() NVOS64Parameters
+	FromOS64V535(other NVOS64ParametersV535)
+	ToOS64V535() NVOS64ParametersV535
 	GetPointer() uintptr
 	marshal.Marshallable
 }
 
 // GetRmAllocParamObj returns the appropriate implementation of
 // RmAllocParamType based on passed parameters.
-func GetRmAllocParamObj(isNVOS64 bool) RmAllocParamType {
+func GetRmAllocParamObj(isNVOS64 bool, isV535 bool) RmAllocParamType {
 	if isNVOS64 {
+		if isV535 {
+			return &NVOS64ParametersV535{}
+		}
 		return &NVOS64Parameters{}
+	}
+	if isV535 {
+		return &NVOS21ParametersV535{}
 	}
 	return &NVOS21Parameters{}
 }
@@ -190,8 +196,8 @@ func (n *NVOS21Parameters) SetPRightsRequested(p P64) {
 	panic("impossible")
 }
 
-// FromOS64 implements RmAllocParamType.FromOS64.
-func (n *NVOS21Parameters) FromOS64(other NVOS64Parameters) {
+// FromOS64V535 implements RmAllocParamType.FromOS64V535.
+func (n *NVOS21Parameters) FromOS64V535(other NVOS64ParametersV535) {
 	n.HRoot = other.HRoot
 	n.HObjectParent = other.HObjectParent
 	n.HObjectNew = other.HObjectNew
@@ -200,14 +206,70 @@ func (n *NVOS21Parameters) FromOS64(other NVOS64Parameters) {
 	n.Status = other.Status
 }
 
-// ToOS64 implements RmAllocParamType.ToOS64.
-func (n *NVOS21Parameters) ToOS64() NVOS64Parameters {
-	return NVOS64Parameters{
+// ToOS64V535 implements RmAllocParamType.ToOS64V535.
+func (n *NVOS21Parameters) ToOS64V535() NVOS64ParametersV535 {
+	return NVOS64ParametersV535{
 		HRoot:         n.HRoot,
 		HObjectParent: n.HObjectParent,
 		HObjectNew:    n.HObjectNew,
 		HClass:        n.HClass,
 		PAllocParms:   n.PAllocParms,
+		Status:        n.Status,
+	}
+}
+
+// NVOS21ParametersV535 is the updated version of NVOS21Parameters starting
+// from 535.43.02.
+//
+// +marshal
+type NVOS21ParametersV535 struct {
+	HRoot         Handle
+	HObjectParent Handle
+	HObjectNew    Handle
+	HClass        uint32
+	PAllocParms   P64
+	ParamsSize    uint32
+	Status        uint32
+}
+
+// GetPAllocParms implements RmAllocParamType.GetPAllocParms.
+func (n *NVOS21ParametersV535) GetPAllocParms() P64 {
+	return n.PAllocParms
+}
+
+// GetPRightsRequested implements RmAllocParamType.GetPRightsRequested.
+func (n *NVOS21ParametersV535) GetPRightsRequested() P64 {
+	return 0
+}
+
+// SetPAllocParms implements RmAllocParamType.SetPAllocParms.
+func (n *NVOS21ParametersV535) SetPAllocParms(p P64) { n.PAllocParms = p }
+
+// SetPRightsRequested implements RmAllocParamType.SetPRightsRequested.
+func (n *NVOS21ParametersV535) SetPRightsRequested(p P64) {
+	panic("impossible")
+}
+
+// FromOS64V535 implements RmAllocParamType.FromOS64V535.
+func (n *NVOS21ParametersV535) FromOS64V535(other NVOS64ParametersV535) {
+	n.HRoot = other.HRoot
+	n.HObjectParent = other.HObjectParent
+	n.HObjectNew = other.HObjectNew
+	n.HClass = other.HClass
+	n.PAllocParms = other.PAllocParms
+	n.ParamsSize = other.ParamsSize
+	n.Status = other.Status
+}
+
+// ToOS64V535 implements RmAllocParamType.ToOS64V535.
+func (n *NVOS21ParametersV535) ToOS64V535() NVOS64ParametersV535 {
+	return NVOS64ParametersV535{
+		HRoot:         n.HRoot,
+		HObjectParent: n.HObjectParent,
+		HObjectNew:    n.HObjectNew,
+		HClass:        n.HClass,
+		PAllocParms:   n.PAllocParms,
+		ParamsSize:    n.ParamsSize,
 		Status:        n.Status,
 	}
 }
@@ -383,15 +445,70 @@ func (n *NVOS64Parameters) SetPAllocParms(p P64) { n.PAllocParms = p }
 // SetPRightsRequested implements RmAllocParamType.SetPRightsRequested.
 func (n *NVOS64Parameters) SetPRightsRequested(p P64) { n.PRightsRequested = p }
 
-// FromOS64 implements RmAllocParamType.FromOS64.
-func (n *NVOS64Parameters) FromOS64(other NVOS64Parameters) {
-	*n = other
+// FromOS64V535 implements RmAllocParamType.FromOS64V535.
+func (n *NVOS64Parameters) FromOS64V535(other NVOS64ParametersV535) {
+	n.HRoot = other.HRoot
+	n.HObjectParent = other.HObjectParent
+	n.HObjectNew = other.HObjectNew
+	n.HClass = other.HClass
+	n.PAllocParms = other.PAllocParms
+	n.PRightsRequested = other.PRightsRequested
+	n.Flags = other.Flags
+	n.Status = other.Status
 }
 
-// ToOS64 implements RmAllocParamType.ToOS64.
-func (n *NVOS64Parameters) ToOS64() NVOS64Parameters {
-	return *n
+// ToOS64V535 implements RmAllocParamType.ToOS64V535.
+func (n *NVOS64Parameters) ToOS64V535() NVOS64ParametersV535 {
+	return NVOS64ParametersV535{
+		HRoot:            n.HRoot,
+		HObjectParent:    n.HObjectParent,
+		HObjectNew:       n.HObjectNew,
+		HClass:           n.HClass,
+		PAllocParms:      n.PAllocParms,
+		PRightsRequested: n.PRightsRequested,
+		Flags:            n.Flags,
+		Status:           n.Status,
+	}
 }
+
+// NVOS64ParametersV535 is the updated version of NVOS64Parameters starting
+// from 535.43.02.
+//
+// +marshal
+type NVOS64ParametersV535 struct {
+	HRoot            Handle
+	HObjectParent    Handle
+	HObjectNew       Handle
+	HClass           uint32
+	PAllocParms      P64
+	PRightsRequested P64
+	ParamsSize       uint32
+	Flags            uint32
+	Status           uint32
+	_                uint32
+}
+
+// GetPAllocParms implements RmAllocParamType.GetPAllocParms.
+func (n *NVOS64ParametersV535) GetPAllocParms() P64 {
+	return n.PAllocParms
+}
+
+// GetPRightsRequested implements RmAllocParamType.GetPRightsRequested.
+func (n *NVOS64ParametersV535) GetPRightsRequested() P64 {
+	return n.PRightsRequested
+}
+
+// SetPAllocParms implements RmAllocParamType.SetPAllocParms.
+func (n *NVOS64ParametersV535) SetPAllocParms(p P64) { n.PAllocParms = p }
+
+// SetPRightsRequested implements RmAllocParamType.SetPRightsRequested.
+func (n *NVOS64ParametersV535) SetPRightsRequested(p P64) { n.PRightsRequested = p }
+
+// FromOS64V535 implements RmAllocParamType.FromOS64V535.
+func (n *NVOS64ParametersV535) FromOS64V535(other NVOS64ParametersV535) { *n = other }
+
+// ToOS64V535 implements RmAllocParamType.ToOS64V535.
+func (n *NVOS64ParametersV535) ToOS64V535() NVOS64ParametersV535 { return *n }
 
 // Frontend ioctl parameter struct sizes.
 var (
@@ -403,6 +520,7 @@ var (
 	SizeofIoctlNVOS02ParametersWithFD = uint32((*IoctlNVOS02ParametersWithFD)(nil).SizeBytes())
 	SizeofNVOS00Parameters            = uint32((*NVOS00Parameters)(nil).SizeBytes())
 	SizeofNVOS21Parameters            = uint32((*NVOS21Parameters)(nil).SizeBytes())
+	SizeofNVOS21ParametersV535        = uint32((*NVOS21ParametersV535)(nil).SizeBytes())
 	SizeofIoctlNVOS33ParametersWithFD = uint32((*IoctlNVOS33ParametersWithFD)(nil).SizeBytes())
 	SizeofNVOS55Parameters            = uint32((*NVOS55Parameters)(nil).SizeBytes())
 	SizeofNVOS57Parameters            = uint32((*NVOS57Parameters)(nil).SizeBytes())
@@ -411,4 +529,5 @@ var (
 	SizeofNVOS54Parameters            = uint32((*NVOS54Parameters)(nil).SizeBytes())
 	SizeofNVOS56Parameters            = uint32((*NVOS56Parameters)(nil).SizeBytes())
 	SizeofNVOS64Parameters            = uint32((*NVOS64Parameters)(nil).SizeBytes())
+	SizeofNVOS64ParametersV535        = uint32((*NVOS64ParametersV535)(nil).SizeBytes())
 )
