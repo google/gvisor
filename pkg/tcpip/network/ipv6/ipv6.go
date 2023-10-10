@@ -2196,7 +2196,7 @@ func (e *endpoint) acquireOutgoingPrimaryAddressRLocked(remoteAddr tcpip.Address
 	// Return the most preferred address that can have its reference count
 	// incremented.
 	for _, c := range cs {
-		if c.addressEndpoint.IncRef() {
+		if c.addressEndpoint.TryIncRef() {
 			return c.addressEndpoint
 		}
 	}

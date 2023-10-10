@@ -537,7 +537,7 @@ func (r *Route) Acquire() {
 // +checklocksread:r.mu
 func (r *Route) acquireLocked() {
 	if ep := r.localAddressEndpoint; ep != nil {
-		if !ep.IncRef() {
+		if !ep.TryIncRef() {
 			panic(fmt.Sprintf("failed to increment reference count for local address endpoint = %s", r.LocalAddress()))
 		}
 	}
