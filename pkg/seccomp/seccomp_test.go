@@ -877,7 +877,7 @@ func TestBasic(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			instrs, err := BuildProgram(test.ruleSets, test.defaultAction, test.badArchAction)
+			instrs, _, err := BuildProgram(test.ruleSets, test.defaultAction, test.badArchAction)
 			if err != nil {
 				t.Fatalf("BuildProgram() got error: %v", err)
 			}
@@ -913,7 +913,7 @@ func TestRandom(t *testing.T) {
 	}
 
 	t.Logf("Testing filters: %v", syscallRules)
-	instrs, err := BuildProgram([]RuleSet{
+	instrs, _, err := BuildProgram([]RuleSet{
 		{
 			Rules:  syscallRules,
 			Action: linux.SECCOMP_RET_ALLOW,

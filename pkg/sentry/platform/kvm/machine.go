@@ -791,7 +791,7 @@ func seccompMmapRules(m *machine) {
 				Action: linux.SECCOMP_RET_TRAP,
 			},
 		}
-		instrs, err := seccomp.BuildProgram(rules, linux.SECCOMP_RET_ALLOW, linux.SECCOMP_RET_ALLOW)
+		instrs, _, err := seccomp.BuildProgram(rules, linux.SECCOMP_RET_ALLOW, linux.SECCOMP_RET_ALLOW)
 		if err != nil {
 			panic(fmt.Sprintf("failed to build rules: %v", err))
 		}

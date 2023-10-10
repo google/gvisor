@@ -77,7 +77,7 @@ func run(req secbenchdef.BenchRunRequest) (secbenchdef.BenchRunResponse, error) 
 
 	// We're ready. Install the BPF program.
 	if req.InstallFilter {
-		if err := install(bn.Program); err != nil {
+		if err := install(bn.Instructions); err != nil {
 			panic(fmt.Sprintf("cannot install BPF program: %v", err))
 		}
 	}
