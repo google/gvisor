@@ -27,7 +27,7 @@
 // The best way to understand this function is to understand
 // checksum_noasm_unsafe.go first, which implements largely the same logic.
 // Using assembly speeds things up via ADC (add with carry).
-TEXT ·calculateChecksum(SB),NOSPLIT|NOFRAME,$0-35
+TEXT ·calculateChecksumAMD64(SB),NOSPLIT|NOFRAME,$0-35
   // Store arguments in registers.
   MOVW initial+26(FP), AX
   MOVQ buf_len+8(FP), BX
@@ -74,6 +74,30 @@ swaporder:
   // Load initial in network byte order.
   BSWAPQ AX
   SHRQ $48, AX
+
+  // Handle any bytes that aren't 64-bit aligned. If the buffer starts at an
+  // odd address, we just live with the alignment because doing otherwise
+  // messes up the endianness expected by the below.
+  //
+  // while buf_len > 0 && buf_base%8 != 0 {
+  //   acc, carry = acc + *(uint16 *)(buf)
+  //   buf_len -= 2
+  //   buf = buf[2:]
+  // }
+  JMP unalignedaddcond
+unalignedaddloop:
+  XORQ DX, DX
+  MOVW (CX), DX
+  ADDQ DX, AX
+  ADCQ $0, AX
+  SUBQ $2, BX
+  ADDQ $2, CX
+unalignedaddcond:
+  CMPQ BX, $2
+  JLE addcond
+  TESTQ $7, CX
+  JZ addcond
+  JMP unalignedaddloop
 
   // Accumulate 8 bytes at a time.
   //
