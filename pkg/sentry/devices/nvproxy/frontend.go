@@ -144,6 +144,10 @@ func (fd *frontendFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, 
 		panic("Ioctl should be called from a task context")
 	}
 
+	if log.IsLogging(log.Debug) {
+		ctx.Debugf("nvproxy: frontend ioctl: nr = %#08x, argSize = %#08x", nr, argSize)
+	}
+
 	fi := frontendIoctlState{
 		fd:              fd,
 		ctx:             ctx,
@@ -154,8 +158,6 @@ func (fd *frontendFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, 
 	}
 
 	// nr determines the argument type.
-	// Don't log nr since it's already visible as the last byte of cmd in
-	// strace logging.
 	// Implementors:
 	// - To map nr to a symbol, look in
 	// src/nvidia/arch/nvalloc/unix/include/nv_escape.h,
@@ -606,20 +608,30 @@ func ctrlSubdevFIFODisableChannels(fi *frontendIoctlState, ioctlParams *nvgpu.NV
 
 func rmAlloc(fi *frontendIoctlState) (uintptr, error) {
 	var isNVOS64 bool
-	switch fi.ioctlParamsSize {
-	case nvgpu.SizeofNVOS21Parameters:
-	case nvgpu.SizeofNVOS64Parameters:
-		isNVOS64 = true
-	default:
-		return 0, linuxerr.EINVAL
+	if fi.fd.nvp.abi.useRmAllocParamsV535 {
+		switch fi.ioctlParamsSize {
+		case nvgpu.SizeofNVOS21ParametersV535:
+		case nvgpu.SizeofNVOS64ParametersV535:
+			isNVOS64 = true
+		default:
+			return 0, linuxerr.EINVAL
+		}
+	} else {
+		switch fi.ioctlParamsSize {
+		case nvgpu.SizeofNVOS21Parameters:
+		case nvgpu.SizeofNVOS64Parameters:
+			isNVOS64 = true
+		default:
+			return 0, linuxerr.EINVAL
+		}
 	}
-	// Copy in parameters and convert to NVOS64ParametersR535, which is a super
+	// Copy in parameters and convert to NVOS64ParametersV535, which is a super
 	// set of all parameter types we support.
-	buf := nvgpu.GetRmAllocParamObj(isNVOS64)
+	buf := nvgpu.GetRmAllocParamObj(isNVOS64, fi.fd.nvp.abi.useRmAllocParamsV535)
 	if _, err := buf.CopyIn(fi.t, fi.ioctlParamsAddr); err != nil {
 		return 0, err
 	}
-	ioctlParams := buf.ToOS64()
+	ioctlParams := buf.ToOS64V535()
 
 	// hClass determines the type of pAllocParms.
 	if log.IsLogging(log.Debug) {
@@ -643,7 +655,7 @@ func rmAlloc(fi *frontendIoctlState) (uintptr, error) {
 
 // Unlike frontendIoctlSimple and rmControlSimple, rmAllocSimple requires the
 // parameter type since the parameter's size is otherwise unknown.
-func rmAllocSimple[Params any, PParams marshalPtr[Params]](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, isNVOS64 bool) (uintptr, error) {
+func rmAllocSimple[Params any, PParams marshalPtr[Params]](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64ParametersV535, isNVOS64 bool) (uintptr, error) {
 	if ioctlParams.PAllocParms == 0 {
 		return rmAllocInvoke[byte](fi, ioctlParams, nil, isNVOS64)
 	}
@@ -662,11 +674,11 @@ func rmAllocSimple[Params any, PParams marshalPtr[Params]](fi *frontendIoctlStat
 	return n, nil
 }
 
-func rmAllocNoParams(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, isNVOS64 bool) (uintptr, error) {
+func rmAllocNoParams(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64ParametersV535, isNVOS64 bool) (uintptr, error) {
 	return rmAllocInvoke[byte](fi, ioctlParams, nil, isNVOS64)
 }
 
-func rmAllocEventOSEvent(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, isNVOS64 bool) (uintptr, error) {
+func rmAllocEventOSEvent(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64ParametersV535, isNVOS64 bool) (uintptr, error) {
 	var allocParams nvgpu.NV0005_ALLOC_PARAMETERS
 	if _, err := allocParams.CopyIn(fi.t, addrFromP64(ioctlParams.PAllocParms)); err != nil {
 		return 0, err

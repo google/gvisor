@@ -22,6 +22,16 @@ func (n *NVOS21Parameters) GetPointer() uintptr {
 }
 
 // GetPointer implements RmAllocParamType.GetPointer.
+func (n *NVOS21ParametersV535) GetPointer() uintptr {
+	return uintptr(unsafe.Pointer(n))
+}
+
+// GetPointer implements RmAllocParamType.GetPointer.
 func (n *NVOS64Parameters) GetPointer() uintptr {
+	return uintptr(unsafe.Pointer(n))
+}
+
+// GetPointer implements RmAllocParamType.GetPointer.
+func (n *NVOS64ParametersV535) GetPointer() uintptr {
 	return uintptr(unsafe.Pointer(n))
 }

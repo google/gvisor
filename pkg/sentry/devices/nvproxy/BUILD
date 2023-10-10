@@ -59,4 +59,5 @@ go_test(
     name = "nvproxy_test",
     srcs = ["nvproxy_test.go"],
     library = ":nvproxy",
+    deps = ["//pkg/abi/nvgpu"],
 )
