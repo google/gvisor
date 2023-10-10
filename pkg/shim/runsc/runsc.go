@@ -38,14 +38,23 @@ import (
 // DefaultCommand is the default command for Runsc.
 const DefaultCommand = "runsc"
 
+// ProcessMonitor is a subset of runc.ProcessMonitor. It does not include
+// StartLocked(), which was added in containerd/runc v1.1.1. This is so that
+// we can continue using containerd/containerd v1.4.13 with newer
+// containerd/runc versions without breaking build.
+type ProcessMonitor interface {
+	Start(cmd *exec.Cmd) (chan runc.Exit, error)
+	Wait(cmd *exec.Cmd, ch chan runc.Exit) (int, error)
+}
+
 // Monitor is the default process monitor to be used by runsc.
-var Monitor runc.ProcessMonitor = &LogMonitor{Next: runc.Monitor}
+var Monitor ProcessMonitor = &LogMonitor{Next: runc.Monitor}
 
 // LogMonitor implements the runc.ProcessMonitor interface, logging the command
 // that is getting executed, and then forwarding the call to another
 // implementation.
 type LogMonitor struct {
-	Next runc.ProcessMonitor
+	Next ProcessMonitor
 }
 
 // Start implements runc.ProcessMonitor.
