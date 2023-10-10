@@ -1455,6 +1455,13 @@ func (c *Container) populateStats(event *boot.EventOut) {
 	// proportionally according to the sentry-internal usage measurements,
 	// only counting Running containers.
 	log.Debugf("event.ContainerUsage: %v", event.ContainerUsage)
+	numContainers := uint64(len(event.ContainerUsage))
+	if numContainers == 0 {
+		log.Warningf("events: no containers listed in usage, returning zero CPU usage")
+		event.Event.Data.CPU.Usage.Total = 0
+		return
+	}
+
 	var containerUsage uint64
 	var allContainersUsage uint64
 	for ID, usage := range event.ContainerUsage {
@@ -1474,9 +1481,9 @@ func (c *Container) populateStats(event *boot.EventOut) {
 
 	// Get the host cgroup CPU usage.
 	cgroupsUsage, err := cgroup.CPUUsage()
-	if err != nil {
+	if err != nil || cgroupsUsage == 0 {
 		// No cgroup usage, so rely purely on the sentry's accounting.
-		log.Warningf("events: failed when getting cgroup CPU usage for container: %v", err)
+		log.Warningf("events: failed when getting cgroup CPU usage for container: usage=%d, err: %v", cgroupsUsage, err)
 		event.Event.Data.CPU.Usage.Total = containerUsage
 		return
 	}
@@ -1486,7 +1493,7 @@ func (c *Container) populateStats(event *boot.EventOut) {
 	if allContainersUsage == 0 {
 		log.Warningf("events: no sentry CPU usage reported")
 		allContainersUsage = cgroupsUsage
-		containerUsage = cgroupsUsage / uint64(len(event.ContainerUsage))
+		containerUsage = cgroupsUsage / numContainers
 	}
 
 	// Scaling can easily overflow a uint64 (e.g. a containerUsage and
