@@ -59,7 +59,7 @@ func (v driverVersion) String() string {
 
 type frontendIoctlHandler func(fi *frontendIoctlState) (uintptr, error)
 type controlCmdHandler func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters) (uintptr, error)
-type allocationClassHandler func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, isNVOS64 bool) (uintptr, error)
+type allocationClassHandler func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64ParametersV535, isNVOS64 bool) (uintptr, error)
 type uvmIoctlHandler func(ui *uvmIoctlState) (uintptr, error)
 
 // A driverABIFunc constructs and returns a driverABI.
@@ -83,6 +83,8 @@ type driverABI struct {
 	uvmIoctl        map[uint32]uvmIoctlHandler
 	controlCmd      map[uint32]controlCmdHandler
 	allocationClass map[uint32]allocationClassHandler
+
+	useRmAllocParamsV535 bool
 }
 
 // abis is a global map containing all supported Nvidia driver ABIs. This is
@@ -250,8 +252,25 @@ func Init() {
 			}
 		})
 
-		v525_105_17 := addDriverABI(525, 105, 17, v525_60_13)
+		// 525.89.02 is an intermediate unqualified version from the main branch.
+		v525_89_02 := v525_60_13
 
+		// The following versions do not exist on the main branch. They branched off
+		// the main branch at 525.89.02.
+		v525_105_17 := addDriverABI(525, 105, 17, v525_89_02)
 		_ = addDriverABI(525, 125, 06, v525_105_17)
+
+		// v535.43.02 is an intermediate unqualified version from the main branch.
+		v535_43_02 := func() *driverABI {
+			abi := v525_89_02()
+			abi.useRmAllocParamsV535 = true
+			abi.controlCmd[nvgpu.NV_CONF_COMPUTE_CTRL_CMD_SYSTEM_GET_CAPABILITIES] = rmControlSimple
+			abi.allocationClass[nvgpu.NV_CONFIDENTIAL_COMPUTE] = rmAllocSimple[nvgpu.NV_CONFIDENTIAL_COMPUTE_ALLOC_PARAMS]
+			abi.uvmIoctl[nvgpu.UVM_MM_INITIALIZE] = uvmMMInitialize
+			return abi
+		}
+
+		v535_54_03 := addDriverABI(535, 54, 03, v535_43_02)
+		_ = addDriverABI(535, 104, 05, v535_54_03)
 	})
 }

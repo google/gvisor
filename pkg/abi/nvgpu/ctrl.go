@@ -253,3 +253,8 @@ const (
 	NVA06C_CTRL_CMD_SET_TIMESLICE   = 0xa06c0103
 	NVA06C_CTRL_CMD_PREEMPT         = 0xa06c0105
 )
+
+// From src/common/sdk/nvidia/inc/ctrl/ctrlcb33.h:
+const (
+	NV_CONF_COMPUTE_CTRL_CMD_SYSTEM_GET_CAPABILITIES = 0xcb330101
+)

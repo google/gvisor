@@ -158,11 +158,11 @@ func ctrlSubdevGRGetInfo(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parame
 	return n, nil
 }
 
-func rmAllocInvoke[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, allocParams *Params, isNVOS64 bool) (uintptr, error) {
+func rmAllocInvoke[Params any](fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64ParametersV535, allocParams *Params, isNVOS64 bool) (uintptr, error) {
 	defer runtime.KeepAlive(allocParams) // since we convert to non-pointer-typed P64
 
-	sentryIoctlParams := nvgpu.GetRmAllocParamObj(isNVOS64)
-	sentryIoctlParams.FromOS64(*ioctlParams)
+	sentryIoctlParams := nvgpu.GetRmAllocParamObj(isNVOS64, fi.fd.nvp.abi.useRmAllocParamsV535)
+	sentryIoctlParams.FromOS64V535(*ioctlParams)
 	sentryIoctlParams.SetPAllocParms(p64FromPtr(unsafe.Pointer(allocParams)))
 	var rightsRequested nvgpu.RS_ACCESS_MASK
 	if ioctlParams.PRightsRequested != 0 {
