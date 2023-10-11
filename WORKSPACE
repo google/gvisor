@@ -52,6 +52,7 @@ http_archive(
         # Allow for patching of the go_sdk.
         "//tools:rules_go_sdk.patch",
         "//tools:rules_go_facts.patch",
+        "//tools:rules_cgo.patch",
     ],
     sha256 = "80a98277ad1311dacd837f9b16db62887702e9f1d1c4c9f796d0121a46c8e184",
     urls = [
@@ -3291,4 +3292,10 @@ go_repository(
     importpath = "github.com/hanwen/go-fuse/v2",
     sum = "h1:t5ivNIH2PK+zw4OBul/iJjsoG9K6kXo4nMDoBpciC8A=",
     version = "v2.3.0",
+)
+
+new_local_repository(
+    name = "libpluginstack",
+    path = "tools/plugin-stack",
+    build_file = "tools/plugin-stack/plugin-stack.BUILD",
 )

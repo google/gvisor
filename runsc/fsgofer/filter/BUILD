@@ -11,6 +11,7 @@ go_library(
         "config.go",
         "config_amd64.go",
         "config_arm64.go",
+        "config_cgo.go",
         "config_profile.go",
         "extra_filters.go",
         "extra_filters_msan.go",
@@ -27,6 +28,7 @@ go_library(
         "//pkg/flipcall",
         "//pkg/log",
         "//pkg/seccomp",
+        "//pkg/sentry/socket/plugin",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
