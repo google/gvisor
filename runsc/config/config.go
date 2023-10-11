@@ -529,6 +529,9 @@ const (
 
 	// NetworkNone sets up just loopback using netstack.
 	NetworkNone
+
+	// NetworkPlugin uses third-party network stack.
+	NetworkPlugin
 )
 
 func networkTypePtr(v NetworkType) *NetworkType {
@@ -544,6 +547,8 @@ func (n *NetworkType) Set(v string) error {
 		*n = NetworkHost
 	case "none":
 		*n = NetworkNone
+	case "plugin":
+		*n = NetworkPlugin
 	default:
 		return fmt.Errorf("invalid network type %q", v)
 	}
@@ -564,6 +569,8 @@ func (n NetworkType) String() string {
 		return "host"
 	case NetworkNone:
 		return "none"
+	case NetworkPlugin:
+		return "plugin"
 	}
 	panic(fmt.Sprintf("Invalid network type %d", n))
 }

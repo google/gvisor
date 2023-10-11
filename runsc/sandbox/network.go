@@ -30,6 +30,7 @@ import (
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/socket/plugin"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/urpc"
@@ -73,6 +74,10 @@ func setupNetwork(conn *urpc.Client, pid int, conf *config.Config) error {
 		}
 	case config.NetworkHost:
 		// Nothing to do here.
+	case config.NetworkPlugin:
+		if err := initPluginStack(conn, pid, conf); err != nil {
+			return fmt.Errorf("failed to initialize external stack, error: %v", err)
+		}
 	default:
 		return fmt.Errorf("invalid network type: %v", conf.Network)
 	}
@@ -341,6 +346,30 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 	if err := conn.Call(boot.NetworkCreateLinksAndRoutes, &args, nil); err != nil {
 		return fmt.Errorf("creating links and routes: %w", err)
 	}
+	return nil
+}
+
+func initPluginStack(conn *urpc.Client, pid int, conf *config.Config) error {
+	pluginStack := plugin.GetPluginStack()
+	if pluginStack == nil {
+		return fmt.Errorf("plugin stack is not registered")
+	}
+
+	initStr, fds, err := pluginStack.PreInit(&plugin.PreInitStackArgs{Pid: pid})
+	if err != nil {
+		return fmt.Errorf("plugin stack PreInit failed: %v", err)
+	}
+	var args boot.InitPluginStackArgs
+	args.InitStr = initStr
+	for _, fd := range fds {
+		args.FilePayload.Files = append(args.FilePayload.Files, os.NewFile(uintptr(fd), ""))
+	}
+
+	log.Debugf("Initializing plugin network stack, config: %+v", args)
+	if err := conn.Call(boot.NetworkInitPluginStack, &args, nil); err != nil {
+		return fmt.Errorf("error initializing plugin netstack: %v", err)
+	}
+
 	return nil
 }
 

@@ -1,0 +1,14 @@
+diff --git a/go/private/rules/cgo.bzl b/go/private/rules/cgo.bzl
+index b8fc93a6..e953d234 100644
+--- a/go/private/rules/cgo.bzl
++++ b/go/private/rules/cgo.bzl
+@@ -144,7 +144,9 @@ def cgo_configure(go, srcs, cdeps, cppopts, copts, cxxopts, clinkopts):
+                         # libclntsh.dylib.12.1, users have to create a unversioned symbolic link,
+                         # so it can be treated as a simple shared library too.
+                         continue
++                lib_opts.append("-Wl,--whole-archive")
+                 lib_opts.append(lib.path)
++                lib_opts.append("-Wl,--no-whole-archive")
+             clinkopts.extend(cc_link_flags)
+ 
+         elif hasattr(d, "objc"):

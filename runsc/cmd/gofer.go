@@ -239,6 +239,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 		UDSOpenEnabled:   conf.GetHostUDS().AllowOpen(),
 		UDSCreateEnabled: conf.GetHostUDS().AllowCreate(),
 		ProfileEnabled:   len(profileOpts) > 0,
+		CgoEnabled:       config.CgoImported,
 	}
 	if err := filter.Install(opts); err != nil {
 		util.Fatalf("installing seccomp filters: %v", err)

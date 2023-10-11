@@ -20,6 +20,23 @@ go_binary(
     ],
 )
 
+go_binary(
+    name = "runsc-plugin-stack",
+    srcs = ["main-plugin-stack.go"],
+    pure = False,
+    static = True,
+    tags = ["staging"],
+    visibility = [
+        "//visibility:public",
+    ],
+    x_defs = {"gvisor.dev/gvisor/runsc/version.version": "{STABLE_VERSION}"},
+    deps = [
+        "//runsc/cli",
+        "//runsc/version",
+        "//pkg/sentry/socket/plugin/stack",
+    ],
+)
+
 # The runsc-race target is a race-compatible BUILD target. This must be built
 # via: bazel build --features=race :runsc-race
 #
