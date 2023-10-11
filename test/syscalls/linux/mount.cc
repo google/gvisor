@@ -23,8 +23,10 @@
 #include <sys/mount.h>
 #include <sys/resource.h>
 #include <sys/signalfd.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/statfs.h>
+#include <sys/un.h>
 #include <sys/vfs.h>
 #include <unistd.h>
 
@@ -2098,6 +2100,10 @@ TEST(MountTest, MountNamespacePropagation) {
 TEST(MountTest, MountNamespaceSlavesNewUserNamespace) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 
+  int sync_sks[2] = {};
+  ASSERT_THAT(socketpair(AF_UNIX, SOCK_SEQPACKET, 0, sync_sks),
+              SyscallSucceeds());
+
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const mnt = ASSERT_NO_ERRNO_AND_VALUE(
       Mount("", dir.path(), "tmpfs", 0, "mode=0700", MNT_DETACH));
@@ -2106,9 +2112,6 @@ TEST(MountTest, MountNamespaceSlavesNewUserNamespace) {
   ASSERT_THAT(mount(NULL, dir.path().c_str(), NULL, MS_SHARED, NULL),
               SyscallSucceeds());
   ASSERT_THAT(mkdir(child_dir.c_str(), 0700), SyscallSucceeds());
-  ASSERT_THAT(mount("child", child_dir.c_str(), "tmpfs", 0, NULL),
-              SyscallSucceeds());
-  EXPECT_NO_ERRNO(Open(JoinPath(child_dir, "foo"), O_CREAT | O_RDWR, 0777));
 
   int uid = geteuid();
   int gid = getegid();
@@ -2117,6 +2120,7 @@ TEST(MountTest, MountNamespaceSlavesNewUserNamespace) {
 
   pid_t child = fork();
   if (child == 0) {
+    close(sync_sks[0]);
     chdir(dir.path().c_str());
     TEST_CHECK(unshare(CLONE_NEWNS | CLONE_NEWUSER) == 0);
 
@@ -2141,23 +2145,52 @@ TEST(MountTest, MountNamespaceSlavesNewUserNamespace) {
     // Wait until uid and gid maps are setup.
     TEST_CHECK(setuid(0) == 0);
     TEST_CHECK(setgid(0) == 0);
+
+    // The child has been initialized. Kick the parent.
+    shutdown(sync_sks[1], SHUT_WR);
+    char s;
+    // Wait when the parent creates a test mount.
+    TEST_CHECK(read(sync_sks[1], &s, 1) == 0);
+    close(sync_sks[1]);
+
     TEST_CHECK(access("test/foo", F_OK) == 0);
 
     // These mount operations will not propagate to the other namespace because
     // it is a slave mount.
+    TEST_CHECK(umount2("test", MNT_DETACH) == 0);
     TEST_CHECK(mount("test2", "test", "tmpfs", 0, NULL) == 0);
     TEST_CHECK(mknod(JoinPath("test", "boo").c_str(), 0777 | S_IFREG, 0) == 0);
 
     // Check that there is a master entry in mountinfo.
     fd = open("/proc/self/mountinfo", O_RDONLY);
-    TEST_CHECK(fd > 0);
+    TEST_CHECK(fd >= 0);
     std::string mountinfo;
     char child_mountinfo[0x8000];
-    TEST_CHECK(read(fd, child_mountinfo, sizeof(child_mountinfo)) > 0);
-    EXPECT_TRUE(absl::StrContains(child_mountinfo, "master:"));
+    int size = 0;
+    while (true) {
+      int ret =
+          read(fd, child_mountinfo + size, sizeof(child_mountinfo) - size);
+      TEST_CHECK(ret != -1);
+      size += ret;
+      if (ret == 0) {
+        break;
+      }
+    }
+    TEST_CHECK(absl::StrContains(child_mountinfo, "master:"));
+
     exit(0);
   }
   ASSERT_THAT(child, SyscallSucceeds());
+
+  close(sync_sks[1]);
+  char s;
+  // Wait when the child creates a user namespace.
+  ASSERT_THAT(read(sync_sks[0], &s, 1), SyscallSucceeds());
+  ASSERT_THAT(mount("child", child_dir.c_str(), "tmpfs", 0, NULL),
+              SyscallSucceeds());
+  EXPECT_NO_ERRNO(Open(JoinPath(child_dir, "foo"), O_CREAT | O_RDWR, 0777));
+  // The test mount has been created. Kick the child.
+  close(sync_sks[0]);
 
   int status;
   ASSERT_THAT(waitpid(child, &status, 0), SyscallSucceedsWithValue(child));
