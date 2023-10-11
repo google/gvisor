@@ -12,16 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build amd64
-// +build amd64
+//go:build !amd64 && !mips64
+// +build !amd64,!mips64
 
 package checksum
-
-// calculateChecksumAMD64 is defined in assembly.
-func calculateChecksumAMD64(buf []byte, odd bool, initial uint16) (uint16, bool)
 
 // Note: odd indicates whether initial is a partial checksum over an odd number
 // of bytes.
 func calculateChecksum(buf []byte, odd bool, initial uint16) (uint16, bool) {
-	return calculateChecksumAMD64(buf, odd, initial)
+	return calculateChecksumNoASM(buf, odd, initial)
 }

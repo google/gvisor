@@ -17,6 +17,8 @@ go_library(
         "checksum.go",
         "checksum_amd64.go",
         "checksum_amd64.s",
+        "checksum_mips64.go",
+        "checksum_noasm.go",
         "checksum_noasm_unsafe.go",
     ],
     visibility = ["//visibility:public"],
