@@ -52,6 +52,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netfilter"
+	externalstack "gvisor.dev/gvisor/pkg/sentry/stack"
 	"gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -1249,6 +1250,8 @@ func newRootNetworkNamespace(conf *config.Config, clock tcpip.Clock, uniqueID st
 			allowPacketEndpointWrite: conf.AllowPacketEndpointWrite,
 		}
 		return inet.NewRootNamespace(s, creator, userns), nil
+	case config.NetworkExternalStack:
+		return inet.NewRootNamespace(externalstack.GetExternalStack(), nil, userns), nil
 
 	default:
 		panic(fmt.Sprintf("invalid network configuration: %v", conf.Network))

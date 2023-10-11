@@ -25,6 +25,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/hostos"
 	"gvisor.dev/gvisor/pkg/log"
+	externalstack "gvisor.dev/gvisor/pkg/sentry/stack"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/link/ethernet"
 	"gvisor.dev/gvisor/pkg/tcpip/link/fdbased"
@@ -69,6 +70,8 @@ var (
 // Network exposes methods that can be used to configure a network stack.
 type Network struct {
 	Stack *stack.Stack
+
+	ExternalStack externalstack.ExternalStack
 }
 
 // Route represents a route in the network stack.
@@ -154,6 +157,16 @@ type CreateLinksAndRoutesArgs struct {
 	PCAP bool
 }
 
+type InitExternalStackArgs struct {
+	urpc.FilePayload
+
+	LoopbackLinks []LoopbackLink
+	FDBasedLinks  []FDBasedLink
+
+	Defaultv4Gateway DefaultRoute
+	Defaultv6Gateway DefaultRoute
+}
+
 // IPWithPrefix is an address with its subnet prefix length.
 type IPWithPrefix struct {
 	// Address is a network address.
@@ -182,6 +195,23 @@ func (r *Route) toTcpipRoute(id tcpip.NICID) (tcpip.Route, error) {
 		Gateway:     ipToAddress(r.Gateway),
 		NIC:         id,
 	}, nil
+}
+
+func (n *Network) InitExternalStack(args *InitExternalStackArgs, _ *struct{}) error {
+	if stack := n.ExternalStack; stack != nil {
+		if err := stack.PreInitExternalStack(&externalstack.PreInitExternalStackArgs{}); err != nil {
+			return err
+		}
+		if err := stack.InitExternalStack(&externalstack.InitExternalStackArgs{}); err != nil {
+			return err
+		}
+		if err := stack.PostInitExternalStack(&externalstack.PostInitExternalStackArgs{}); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	return fmt.Errorf("External stack is not registered")
 }
 
 // CreateLinksAndRoutes creates links and routes in a network stack.  It should

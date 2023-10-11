@@ -29,6 +29,7 @@ import (
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
+	externalstack "gvisor.dev/gvisor/pkg/sentry/stack"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/urpc"
@@ -72,6 +73,11 @@ func setupNetwork(conn *urpc.Client, pid int, conf *config.Config) error {
 		}
 	case config.NetworkHost:
 		// Nothing to do here.
+	case config.NetworkExternalStack:
+		nsPath := filepath.Join("/proc", strconv.Itoa(pid), "ns/net")
+		if err := initExternalStack(conn, nsPath, conf); err != nil {
+			return fmt.Errorf("failed to initialize external stack, error: %v", err)
+		}
 	default:
 		return fmt.Errorf("invalid network type: %v", conf.Network)
 	}
@@ -323,6 +329,112 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 	if err := conn.Call(boot.NetworkCreateLinksAndRoutes, &args, nil); err != nil {
 		return fmt.Errorf("creating links and routes: %w", err)
 	}
+	return nil
+}
+
+func prepareInitStackArgs(args *boot.InitExternalStackArgs, nsPath string) error {
+	// Join the network namespace that we will be copying.
+	restore, err := joinNetNS(nsPath)
+	if err != nil {
+		return err
+	}
+	defer restore()
+	// Get all interfaces in the namespace.
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return fmt.Errorf("error querying interfaces: %v", err)
+	}
+	if isRoot, _ := isRootNS(); isRoot {
+		return fmt.Errorf("cannot run in with network enabled in root network namespace")
+	}
+	// Collect addresses and routes from the interfaces.
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 {
+			log.Infof("Skipping down interface: %+v", iface)
+			continue
+		}
+		// Skip loopback devices.
+		if iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		allAddrs, err := iface.Addrs()
+		if err != nil {
+			return fmt.Errorf("error fetching interface addresses for %q: %v", iface.Name, err)
+		}
+		// Keep only IPv4 addresses.
+		var ip4addrs []*net.IPNet
+		for _, ifaddr := range allAddrs {
+			ipNet, ok := ifaddr.(*net.IPNet)
+			if !ok {
+				return fmt.Errorf("address is not IPNet: %+v", ifaddr)
+			}
+			if ipNet.IP.To4() == nil {
+				log.Warningf("IPv6 is not supported, skipping: %v", ipNet)
+				continue
+			}
+			ip4addrs = append(ip4addrs, ipNet)
+		}
+		if len(ip4addrs) == 0 {
+			log.Warningf("No IPv4 address found for interface %q, skipping", iface.Name)
+			continue
+		}
+		// routes and gateway?
+		routes, defv4, defv6, err := routesForIface(iface)
+		if err != nil {
+			return fmt.Errorf("getting routes for interface %q: %v", iface.Name, err)
+		}
+		if defv4 != nil {
+			if !args.Defaultv4Gateway.Route.Empty() {
+				return fmt.Errorf("more than one default route found, interface: %v, route: %v, default route: %+v", iface.Name, defv4, args.Defaultv4Gateway)
+			}
+			args.Defaultv4Gateway.Route = *defv4
+			args.Defaultv4Gateway.Name = iface.Name
+		}
+
+		if defv6 != nil {
+			if !args.Defaultv6Gateway.Route.Empty() {
+				return fmt.Errorf("more than one default route found, interface: %v, route: %v, default route: %+v", iface.Name, defv6, args.Defaultv6Gateway)
+			}
+			args.Defaultv6Gateway.Route = *defv6
+			args.Defaultv6Gateway.Name = iface.Name
+		}
+
+		link := boot.FDBasedLink{
+			Name:   iface.Name,
+			MTU:    iface.MTU,
+			Routes: routes,
+		}
+
+		var addresses []boot.IPWithPrefix
+		for _, addr := range ip4addrs {
+			prefix, _ := addr.Mask.Size()
+			addresses = append(addresses, boot.IPWithPrefix{Address: addr.IP, PrefixLen: prefix})
+			// Don't erase the address, as we will down the
+			// interface later
+		}
+
+		link.Addresses = addresses
+		args.FDBasedLinks = append(args.FDBasedLinks, link)
+	}
+	return nil
+}
+
+func initExternalStack(conn *urpc.Client, nsPath string, conf *config.Config) error {
+	externalStack := externalstack.GetExternalStack()
+	if externalStack == nil {
+		return fmt.Errorf("External stack is not registered")
+	}
+
+	var args boot.InitExternalStackArgs
+	if err := prepareInitStackArgs(&args, nsPath); err != nil {
+		return err
+	}
+
+	log.Debugf("Initializing external network stack, config: %+v", args)
+	if err := conn.Call(boot.NetworkInitExternalStack, &args, nil); err != nil {
+		return fmt.Errorf("error creating links and routes: %v", err)
+	}
+
 	return nil
 }
 
