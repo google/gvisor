@@ -15,8 +15,6 @@
 package vfs
 
 import (
-	"fmt"
-
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/context"
@@ -62,13 +60,17 @@ func (vfs *VirtualFilesystem) commitMount(ctx context.Context, mnt *Mount) {
 	if child != nil {
 		vfs.delayDecRef(vfs.disconnectLocked(child))
 	}
+	mp.dentry.mu.Lock()
 	vfs.connectLocked(mnt, mp, mp.mount.ns)
+	mp.dentry.mu.Unlock()
 	vfs.delayDecRef(mnt)
 
 	if child != nil {
 		newmp := VirtualDentry{mnt, mnt.root}
 		newmp.IncRef()
+		newmp.dentry.mu.Lock()
 		vfs.connectLocked(child, newmp, newmp.mount.ns)
+		newmp.dentry.mu.Unlock()
 		vfs.delayDecRef(child)
 	}
 	vfs.mounts.seq.EndWrite()
@@ -127,21 +129,21 @@ func (vfs *VirtualFilesystem) SetMountPropagationAt(ctx context.Context, creds *
 }
 
 // SetMountPropagation changes the propagation type of the mount.
-func (vfs *VirtualFilesystem) SetMountPropagation(mnt *Mount, propFlags uint32, recursive bool) error {
+func (vfs *VirtualFilesystem) SetMountPropagation(mnt *Mount, propFlag uint32, recursive bool) error {
 	vfs.lockMounts()
 	defer vfs.unlockMounts(context.Background())
-	if propFlags == linux.MS_SHARED {
+	if propFlag == linux.MS_SHARED {
 		if err := vfs.allocMountGroupIDs(mnt, recursive); err != nil {
-			return fmt.Errorf("allocMountGroupIDs: %v", err)
+			return err
 		}
 	}
 
 	if !recursive {
-		vfs.setPropagation(mnt, propFlags)
+		vfs.setPropagation(mnt, propFlag)
 		return nil
 	}
 	for _, m := range mnt.submountsLocked() {
-		vfs.setPropagation(m, propFlags)
+		vfs.setPropagation(m, propFlag)
 	}
 	return nil
 }
@@ -445,21 +447,22 @@ func (vfs *VirtualFilesystem) arePropMountsBusy(mnt *Mount) bool {
 	return false
 }
 
-// allocateGroupID returns a new mount group id if one is available, and
-// error otherwise. If the group ID bitmap is full, double the size of the
-// bitmap before allocating the new group id. It is analogous to
-// fs/namespace.c:mnt_alloc_group_id() in Linux.
+// allocateGroupID populates mnt.groupID with a new group id if one is
+// available, and returns an error otherwise. If the group ID bitmap is full,
+// double the size of the bitmap before allocating the new group id. It is
+// analogous to fs/namespace.c:mnt_alloc_group_id() in Linux.
 //
 // +checklocks:vfs.mountMu
-func (vfs *VirtualFilesystem) allocateGroupID() (uint32, error) {
+func (vfs *VirtualFilesystem) allocateGroupID(mnt *Mount) error {
 	groupID, err := vfs.groupIDBitmap.FirstZero(1)
 	if err != nil {
 		if err := vfs.groupIDBitmap.Grow(uint32(vfs.groupIDBitmap.Size())); err != nil {
-			return 0, err
+			return linuxerr.ENOSPC
 		}
 	}
 	vfs.groupIDBitmap.Add(groupID)
-	return groupID, nil
+	mnt.groupID = groupID
+	return nil
 }
 
 // freeGroupID marks a groupID as available for reuse. It is analogous to
@@ -471,14 +474,14 @@ func (vfs *VirtualFilesystem) freeGroupID(mnt *Mount) {
 	mnt.groupID = 0
 }
 
-// freeMountGroupIDs zeroes out all of the mounts' groupIDs and returns them
+// cleanupGroupIDs zeroes out all of the mounts' groupIDs and returns them
 // to the pool of available ids. It is analogous to
 // fs/namespace.c:cleanup_group_ids() in Linux.
 //
 // +checklocks:vfs.mountMu
-func (vfs *VirtualFilesystem) freeMountGroupIDs(mnts []*Mount) {
+func (vfs *VirtualFilesystem) cleanupGroupIDs(mnts []*Mount) {
 	for _, m := range mnts {
-		if m.groupID != 0 && m.isShared {
+		if m.groupID != 0 && !m.isShared {
 			vfs.freeGroupID(m)
 		}
 	}
@@ -498,10 +501,8 @@ func (vfs *VirtualFilesystem) allocMountGroupIDs(mnt *Mount, recursive bool) err
 	}
 	for _, m := range mnts {
 		if m.groupID == 0 && !m.isShared {
-			gid, err := vfs.allocateGroupID()
-			m.groupID = gid
-			if err != nil {
-				vfs.freeMountGroupIDs(mnts)
+			if err := vfs.allocateGroupID(m); err != nil {
+				vfs.cleanupGroupIDs(mnts)
 				return err
 			}
 		}
