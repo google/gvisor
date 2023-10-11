@@ -52,6 +52,7 @@ http_archive(
         # Allow for patching of the go_sdk.
         "//tools:rules_go_sdk.patch",
         "//tools:rules_go_facts.patch",
+        "//tools:rules_cgo.patch",
     ],
     sha256 = "80a98277ad1311dacd837f9b16db62887702e9f1d1c4c9f796d0121a46c8e184",
     urls = [
@@ -3300,4 +3301,10 @@ go_repository(
     importpath = "github.com/go-echarts/go-echarts/v2",
     sum = "h1:uImZAk6qLkC6F9ju6mZ5SPBqTyK8xjZKwSmwnCg4bxg=",
     version = "v2.3.3",
+)
+
+new_local_repository(
+    name = "libpluginstack",
+    path = "tools/plugin-stack",
+    build_file = "tools/plugin-stack/plugin-stack.BUILD",
 )

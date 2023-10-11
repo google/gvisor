@@ -891,6 +891,10 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		cmd.Env = append(cmd.Env, "GODEBUG=asyncpreemptoff=1")
 	}
 
+	if conf.Network == config.NetworkPlugin {
+		cmd.Env = append(cmd.Env, "GODEBUG=cgocheck=0")
+	}
+
 	// nss is the set of namespaces to join or create before starting the sandbox
 	// process. Mount, IPC and UTS namespaces from the host are not used as they
 	// are virtualized inside the sandbox. Be paranoid and run inside an empty
