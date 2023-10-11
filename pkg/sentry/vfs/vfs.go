@@ -947,7 +947,9 @@ func (vfs *VirtualFilesystem) maybeBlockOnMountPromise(ctx context.Context, rp *
 		return
 	}
 
-	path, err := vfs.PathnameReachable(ctx, rp.root, vd)
+	root := RootFromContext(ctx)
+	defer root.DecRef(ctx)
+	path, err := vfs.PathnameReachable(ctx, root, vd)
 	if err != nil {
 		panic(fmt.Sprintf("could not reach %v from root", rp.Component()))
 	}
