@@ -305,7 +305,7 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("setting up memory usage: %w", err)
 	}
 
-	if args.Conf.NVProxy {
+	if specutils.NVProxyEnabled(args.Spec, args.Conf) {
 		nvproxy.Init()
 	}
 
@@ -362,7 +362,7 @@ func New(args Args) (*Loader, error) {
 	if err != nil {
 		return nil, fmt.Errorf("creating platform: %w", err)
 	}
-	if args.Conf.NVProxy && p.OwnsPageTables() {
+	if specutils.NVProxyEnabled(args.Spec, args.Conf) && p.OwnsPageTables() {
 		return nil, fmt.Errorf("--nvproxy is incompatible with platform %s: owns page tables", args.Conf.Platform)
 	}
 	k := &kernel.Kernel{
@@ -657,7 +657,7 @@ func (l *Loader) installSeccompFilters() error {
 			HostNetworkRawSockets: hostnet && l.root.conf.EnableRaw,
 			HostFilesystem:        l.root.conf.DirectFS,
 			ProfileEnable:         l.root.conf.ProfileEnable,
-			NVProxy:               l.root.conf.NVProxy,
+			NVProxy:               specutils.NVProxyEnabled(l.root.spec, l.root.conf),
 			TPUProxy:              l.root.conf.TPUProxy,
 			ControllerFD:          l.ctrl.srv.FD(),
 		}
