@@ -116,10 +116,12 @@ func Load(rootDir string, id FullID, opts LoadOpts) (*Container, error) {
 		case Created:
 			if !c.IsSandboxRunning() {
 				// Sandbox no longer exists, so this container definitely does not exist.
+				log.Warningf("Process for sandbox %v is no longer running; assuming container is in stopped state", c.Sandbox.ID)
 				c.changeStatus(Stopped)
 			}
 		case Running:
 			if err := c.SignalContainer(unix.Signal(0), false); err != nil {
+				log.Warningf("Cannot signal container %v for sandbox %v (err: %v); assuming container is in stopped state", c.ID, c.Sandbox.ID, err)
 				c.changeStatus(Stopped)
 			}
 		}
