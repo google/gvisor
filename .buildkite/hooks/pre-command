@@ -1,5 +1,7 @@
 set -euo pipefail
 
+export BAZEL_REMOTE_CACHE="--remote_cache=https://storage.googleapis.com/gvisor-buildkite-bazel-cache --google_default_credentials"
+
 if POSIXLY_CORRECT=true df --local --output=pcent,ipcent,target | grep -vE '/snap/' | grep -qE '9[4-9]%|100%'; then
   echo "Disk usage has reached critical level, node is bad." >&2
   echo "Automated monitoring should recycle this node soon." >&2
