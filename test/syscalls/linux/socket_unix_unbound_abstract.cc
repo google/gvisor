@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <errno.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <sys/un.h>
 
@@ -70,6 +72,50 @@ TEST_P(UnboundAbstractUnixSocketPairTest, BindNothing) {
   ASSERT_THAT(bind(sockets->first_fd(),
                    reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)),
               SyscallSucceeds());
+}
+
+TEST_P(UnboundAbstractUnixSocketPairTest, AutoBindSuccess) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  struct sockaddr_un addr = {.sun_family = AF_UNIX};
+  ASSERT_THAT(
+      bind(sockets->first_fd(), reinterpret_cast<struct sockaddr*>(&addr),
+           sizeof(sa_family_t)),
+      SyscallSucceeds());
+  socklen_t addr_len = sizeof(addr);
+  ASSERT_THAT(getsockname(sockets->first_fd(),
+                          reinterpret_cast<struct sockaddr*>(&addr), &addr_len),
+              SyscallSucceeds());
+  // The address consists of a null byte followed by 5 bytes in the character
+  // set [0-9a-f].
+  EXPECT_EQ(offsetof(struct sockaddr_un, sun_path) + 6, addr_len);
+  EXPECT_EQ(addr.sun_path[0], 0);
+  for (int i = 1; i < 6; i++) {
+    char c = addr.sun_path[i];
+    EXPECT_TRUE((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'));
+  }
+  if ((GetParam().type & SOCK_DGRAM) == 0) {
+    ASSERT_THAT(listen(sockets->first_fd(), 0 /* backlog */),
+                SyscallSucceeds());
+  }
+  ASSERT_THAT(connect(sockets->second_fd(),
+                      reinterpret_cast<struct sockaddr*>(&addr), addr_len),
+              SyscallSucceeds());
+}
+
+TEST_P(UnboundAbstractUnixSocketPairTest, AutoBindAddrInUse) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  struct sockaddr_un addr = {.sun_family = AF_UNIX};
+  ASSERT_THAT(
+      bind(sockets->first_fd(), reinterpret_cast<struct sockaddr*>(&addr),
+           sizeof(sa_family_t)),
+      SyscallSucceeds());
+  socklen_t addr_len = sizeof(addr);
+  ASSERT_THAT(getsockname(sockets->first_fd(),
+                          reinterpret_cast<struct sockaddr*>(&addr), &addr_len),
+              SyscallSucceeds());
+  ASSERT_THAT(bind(sockets->second_fd(),
+                   reinterpret_cast<struct sockaddr*>(&addr), addr_len),
+              SyscallFailsWithErrno(EADDRINUSE));
 }
 
 TEST_P(UnboundAbstractUnixSocketPairTest, ListenZeroBacklog) {
