@@ -211,17 +211,18 @@ func (s *Socket) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 		return syserr.ErrInvalidArgument
 	}
 
-	if p[0] == 0 {
+	// If path is empty, the socket is autobound to an abstract address.
+	if len(p) == 0 || p[0] == 0 {
 		// Abstract socket. See net/unix/af_unix.c:unix_bind_abstract().
 		if t.IsNetworkNamespaced() {
 			return syserr.ErrInvalidEndpointState
 		}
 		asn := t.AbstractSockets()
-		name := p[1:]
-		if err := asn.Bind(t, name, bep, s); err != nil {
-			// syserr.ErrPortInUse corresponds to EADDRINUSE.
-			return syserr.ErrPortInUse
+		p, err := asn.Bind(t, p, bep, s)
+		if err != nil {
+			return err
 		}
+		name := p[1:]
 		if err := s.ep.Bind(transport.Address{Addr: p}); err != nil {
 			asn.Remove(name, s)
 			return err
@@ -449,11 +450,7 @@ func extractPath(sockaddr []byte) (string, *syserr.Error) {
 
 	// The address is trimmed by GetAddress.
 	p := addr.Addr
-	if p == "" {
-		// Not allowed.
-		return "", syserr.ErrInvalidArgument
-	}
-	if p[len(p)-1] == '/' {
+	if len(p) > 0 && p[len(p)-1] == '/' {
 		// Weird, they tried to bind '/a/b/c/'?
 		return "", syserr.ErrIsDir
 	}
@@ -525,6 +522,10 @@ func extractEndpoint(t *kernel.Task, sockaddr []byte) (transport.BoundEndpoint, 
 	path, err := extractPath(sockaddr)
 	if err != nil {
 		return nil, err
+	}
+	if path == "" {
+		// Not allowed.
+		return nil, syserr.ErrInvalidArgument
 	}
 
 	// Is it abstract?
