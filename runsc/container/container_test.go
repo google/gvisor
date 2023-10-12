@@ -419,6 +419,11 @@ func configs(t *testing.T, noOverlay bool) map[string]*config.Config {
 	// Non-overlay versions.
 	cs := make(map[string]*config.Config)
 	for _, p := range ps {
+		if p == "kvm" {
+			if _, err := os.Stat("/dev/kvm"); os.IsNotExist(err) {
+				continue
+			}
+		}
 		c := testutil.TestConfig(t)
 		c.Overlay2.Set("none")
 		c.Platform = p
