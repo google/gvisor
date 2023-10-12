@@ -29,10 +29,11 @@ func TestPodMountHintsHappy(t *testing.T) {
 			MountPrefix + "mount1.type":   "tmpfs",
 			MountPrefix + "mount1.share":  "pod",
 
-			MountPrefix + "mount2.source":  "bar",
-			MountPrefix + "mount2.type":    "bind",
-			MountPrefix + "mount2.share":   "container",
-			MountPrefix + "mount2.options": "rw,private",
+			MountPrefix + "mount2.source":    "bar",
+			MountPrefix + "mount2.type":      "bind",
+			MountPrefix + "mount2.share":     "container",
+			MountPrefix + "mount2.options":   "rw,private",
+			MountPrefix + "mount2.lifecycle": "pod",
 		},
 	}
 	podHints, err := NewPodMountHints(spec)
@@ -57,6 +58,9 @@ func TestPodMountHintsHappy(t *testing.T) {
 	if want := []string(nil); !reflect.DeepEqual(want, mount1.Mount.Options) {
 		t.Errorf("mount1 type, want: %q, got: %q", want, mount1.Mount.Options)
 	}
+	if want := sharedLife; want != mount1.Lifecycle {
+		t.Errorf("mount1 lifecycle, want: %q, got: %q", want, mount1.Lifecycle)
+	}
 
 	mount2 := podHints.Mounts["mount2"]
 	if want := "mount2"; want != mount2.Name {
@@ -73,6 +77,9 @@ func TestPodMountHintsHappy(t *testing.T) {
 	}
 	if want := []string{"rw", "private"}; !reflect.DeepEqual(want, mount2.Mount.Options) {
 		t.Errorf("mount2 type, want: %q, got: %q", want, mount2.Mount.Options)
+	}
+	if want := podLife; want != mount2.Lifecycle {
+		t.Errorf("mount2 lifecycle, want: %q, got: %q", want, mount2.Lifecycle)
 	}
 }
 
