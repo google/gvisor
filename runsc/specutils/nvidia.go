@@ -23,16 +23,32 @@ import (
 	"strings"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/runsc/config"
 )
 
 const nvdEnvVar = "NVIDIA_VISIBLE_DEVICES"
 
+// annotationNVProxy enables nvproxy.
+const annotationNVProxy = "dev.gvisor.spec.nvproxy"
+
+// NVProxyEnabled checks both the nvproxy annotation and conf.NVProxy to see if nvproxy is enabled.
+func NVProxyEnabled(spec *specs.Spec, conf *config.Config) bool {
+	if conf.NVProxy {
+		return true
+	}
+	val, ok := spec.Annotations[annotationNVProxy]
+	if ok && val != "true" {
+		log.Warningf("nvproxy annotation is set to invalid value %q. Ignoring.", val)
+	}
+	return ok && val == "true"
+}
+
 // GPUFunctionalityRequested returns true if the user intends for the sandbox
 // to have access to GPU functionality (e.g. access to /dev/nvidiactl),
 // irrespective of whether or not they want access to any specific GPU.
 func GPUFunctionalityRequested(spec *specs.Spec, conf *config.Config) bool {
-	if !conf.NVProxy {
+	if !NVProxyEnabled(spec, conf) {
 		// nvproxy disabled.
 		return false
 	}
