@@ -47,6 +47,16 @@ func TestGetMountAccessType(t *testing.T) {
 			want: config.FileAccessShared,
 		},
 		{
+			name: "pod+podLife=shared",
+			annotations: map[string]string{
+				MountPrefix + "mount1.source":    source,
+				MountPrefix + "mount1.type":      "bind",
+				MountPrefix + "mount1.share":     "pod",
+				MountPrefix + "mount1.lifecycle": "pod",
+			},
+			want: config.FileAccessShared,
+		},
+		{
 			name: "shared=shared",
 			annotations: map[string]string{
 				MountPrefix + "mount1.source": source,
@@ -63,6 +73,15 @@ func TestGetMountAccessType(t *testing.T) {
 				MountPrefix + "mount1.share":  "container",
 			},
 			want: config.FileAccessShared,
+		},
+		{
+			name: "tmpfs+pod=exclusive",
+			annotations: map[string]string{
+				MountPrefix + "mount1.source": source,
+				MountPrefix + "mount1.type":   "tmpfs",
+				MountPrefix + "mount1.share":  "pod",
+			},
+			want: config.FileAccessExclusive,
 		},
 	} {
 		t.Run(tst.name, func(t *testing.T) {
