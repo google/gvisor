@@ -73,11 +73,12 @@ PRE_BAZEL_INIT ?=
 ##
 ##     STARTUP_OPTIONS - Startup options passed to Bazel.
 ##
-STARTUP_OPTIONS :=
-BAZEL_OPTIONS   ?=
-BAZEL           := bazel $(STARTUP_OPTIONS)
-BASE_OPTIONS    := --color=no --curses=no
-TEST_OPTIONS += $(BASE_OPTIONS) \
+STARTUP_OPTIONS    :=
+BAZEL_OPTIONS      ?=
+BAZEL_REMOTE_CACHE ?=
+BAZEL              := bazel $(STARTUP_OPTIONS)
+BASE_OPTIONS       := --color=no --curses=no $(BAZEL_REMOTE_CACHE)
+TEST_OPTIONS       += $(BASE_OPTIONS) \
   --test_output=errors \
   --keep_going \
   --verbose_failures=true \
