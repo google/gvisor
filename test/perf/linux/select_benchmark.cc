@@ -36,6 +36,8 @@ namespace {
 void Setup(int count, std::vector<FileDescriptor>& event_fds, fd_set& read_fds,
            int& max_fd) {
   max_fd = -1;
+  FD_ZERO(&read_fds);
+
   for (int i = 0; i < count; ++i) {
     FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(NewEventFD());
     if (fd.get() > max_fd) {
