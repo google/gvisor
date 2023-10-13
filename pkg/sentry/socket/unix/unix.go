@@ -30,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/sockfs"
+	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
@@ -54,14 +55,15 @@ type Socket struct {
 	socket.SendReceiveTimeout
 	socketRefs
 
-	ep    transport.Endpoint
-	stype linux.SockType
+	namespace *inet.Namespace
+	ep        transport.Endpoint
+	stype     linux.SockType
 
 	// abstractName and abstractNamespace indicate the name and namespace of the
 	// socket if it is bound to an abstract socket namespace. Once the socket is
 	// bound, they cannot be modified.
-	abstractName      string
-	abstractNamespace *kernel.AbstractSocketNamespace
+	abstractName  string
+	abstractBound bool
 }
 
 var _ = socket.Socket(&Socket{})
@@ -73,8 +75,10 @@ func NewSockfsFile(t *kernel.Task, ep transport.Endpoint, stype linux.SockType) 
 	d := sockfs.NewDentry(t, mnt)
 	defer d.DecRef(t)
 
-	fd, err := NewFileDescription(ep, stype, linux.O_RDWR, mnt, d, &vfs.FileLocks{})
+	ns := t.GetNetworkNamespace()
+	fd, err := NewFileDescription(ep, stype, linux.O_RDWR, ns, mnt, d, &vfs.FileLocks{})
 	if err != nil {
+		ns.DecRef(t)
 		return nil, syserr.FromError(err)
 	}
 	return fd, nil
@@ -82,7 +86,7 @@ func NewSockfsFile(t *kernel.Task, ep transport.Endpoint, stype linux.SockType) 
 
 // NewFileDescription creates and returns a socket file description
 // corresponding to the given mount and dentry.
-func NewFileDescription(ep transport.Endpoint, stype linux.SockType, flags uint32, mnt *vfs.Mount, d *vfs.Dentry, locks *vfs.FileLocks) (*vfs.FileDescription, error) {
+func NewFileDescription(ep transport.Endpoint, stype linux.SockType, flags uint32, ns *inet.Namespace, mnt *vfs.Mount, d *vfs.Dentry, locks *vfs.FileLocks) (*vfs.FileDescription, error) {
 	// You can create AF_UNIX, SOCK_RAW sockets. They're the same as
 	// SOCK_DGRAM and don't require CAP_NET_RAW.
 	if stype == linux.SOCK_RAW {
@@ -90,8 +94,9 @@ func NewFileDescription(ep transport.Endpoint, stype linux.SockType, flags uint3
 	}
 
 	sock := &Socket{
-		ep:    ep,
-		stype: stype,
+		ep:        ep,
+		stype:     stype,
+		namespace: ns,
 	}
 	sock.InitRefs()
 	sock.LockFD.Init(locks)
@@ -111,8 +116,11 @@ func (s *Socket) DecRef(ctx context.Context) {
 	s.socketRefs.DecRef(func() {
 		kernel.KernelFromContext(ctx).DeleteSocket(&s.vfsfd)
 		s.ep.Close(ctx)
-		if s.abstractNamespace != nil {
-			s.abstractNamespace.Remove(s.abstractName, s)
+		if s.abstractBound {
+			s.namespace.AbstractSockets().Remove(s.abstractName, s)
+		}
+		if s.namespace != nil {
+			s.namespace.DecRef(ctx)
 		}
 	})
 }
@@ -214,10 +222,7 @@ func (s *Socket) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 	// If path is empty, the socket is autobound to an abstract address.
 	if len(p) == 0 || p[0] == 0 {
 		// Abstract socket. See net/unix/af_unix.c:unix_bind_abstract().
-		if t.IsNetworkNamespaced() {
-			return syserr.ErrInvalidEndpointState
-		}
-		asn := t.AbstractSockets()
+		asn := s.namespace.AbstractSockets()
 		p, err := asn.Bind(t, p, bep, s)
 		if err != nil {
 			return err
@@ -229,7 +234,7 @@ func (s *Socket) Bind(t *kernel.Task, sockaddr []byte) *syserr.Error {
 		}
 		// The socket has been successfully bound. We can update the following.
 		s.abstractName = name
-		s.abstractNamespace = asn
+		s.abstractBound = true
 		return nil
 	}
 
@@ -518,7 +523,7 @@ func (s *Socket) Listen(t *kernel.Task, backlog int) *syserr.Error {
 // extractEndpoint retrieves the transport.BoundEndpoint associated with a Unix
 // socket path. The Release must be called on the transport.BoundEndpoint when
 // the caller is done with it.
-func extractEndpoint(t *kernel.Task, sockaddr []byte) (transport.BoundEndpoint, *syserr.Error) {
+func (s *Socket) extractEndpoint(t *kernel.Task, sockaddr []byte) (transport.BoundEndpoint, *syserr.Error) {
 	path, err := extractPath(sockaddr)
 	if err != nil {
 		return nil, err
@@ -530,11 +535,7 @@ func extractEndpoint(t *kernel.Task, sockaddr []byte) (transport.BoundEndpoint, 
 
 	// Is it abstract?
 	if path[0] == 0 {
-		if t.IsNetworkNamespaced() {
-			return nil, syserr.ErrInvalidArgument
-		}
-
-		ep := t.AbstractSockets().BoundEndpoint(path[1:])
+		ep := s.namespace.AbstractSockets().BoundEndpoint(path[1:])
 		if ep == nil {
 			// No socket found.
 			return nil, syserr.ErrConnectionRefused
@@ -569,7 +570,7 @@ func extractEndpoint(t *kernel.Task, sockaddr []byte) (transport.BoundEndpoint, 
 
 // Connect implements the linux syscall connect(2) for unix sockets.
 func (s *Socket) Connect(t *kernel.Task, sockaddr []byte, blocking bool) *syserr.Error {
-	ep, err := extractEndpoint(t, sockaddr)
+	ep, err := s.extractEndpoint(t, sockaddr)
 	if err != nil {
 		return err
 	}
@@ -609,7 +610,7 @@ func (s *Socket) SendMsg(t *kernel.Task, src usermem.IOSequence, to []byte, flag
 			}
 			return 0, syserr.ErrNotSupported
 		default:
-			ep, err := extractEndpoint(t, to)
+			ep, err := s.extractEndpoint(t, to)
 			if err != nil {
 				return 0, err
 			}

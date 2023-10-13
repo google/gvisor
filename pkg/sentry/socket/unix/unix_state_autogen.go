@@ -42,10 +42,11 @@ func (s *Socket) StateFields() []string {
 		"LockFD",
 		"SendReceiveTimeout",
 		"socketRefs",
+		"namespace",
 		"ep",
 		"stype",
 		"abstractName",
-		"abstractNamespace",
+		"abstractBound",
 	}
 }
 
@@ -60,10 +61,11 @@ func (s *Socket) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &s.LockFD)
 	stateSinkObject.Save(4, &s.SendReceiveTimeout)
 	stateSinkObject.Save(5, &s.socketRefs)
-	stateSinkObject.Save(6, &s.ep)
-	stateSinkObject.Save(7, &s.stype)
-	stateSinkObject.Save(8, &s.abstractName)
-	stateSinkObject.Save(9, &s.abstractNamespace)
+	stateSinkObject.Save(6, &s.namespace)
+	stateSinkObject.Save(7, &s.ep)
+	stateSinkObject.Save(8, &s.stype)
+	stateSinkObject.Save(9, &s.abstractName)
+	stateSinkObject.Save(10, &s.abstractBound)
 }
 
 func (s *Socket) afterLoad() {}
@@ -76,10 +78,11 @@ func (s *Socket) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(3, &s.LockFD)
 	stateSourceObject.Load(4, &s.SendReceiveTimeout)
 	stateSourceObject.Load(5, &s.socketRefs)
-	stateSourceObject.Load(6, &s.ep)
-	stateSourceObject.Load(7, &s.stype)
-	stateSourceObject.Load(8, &s.abstractName)
-	stateSourceObject.Load(9, &s.abstractNamespace)
+	stateSourceObject.Load(6, &s.namespace)
+	stateSourceObject.Load(7, &s.ep)
+	stateSourceObject.Load(8, &s.stype)
+	stateSourceObject.Load(9, &s.abstractName)
+	stateSourceObject.Load(10, &s.abstractBound)
 }
 
 func init() {
