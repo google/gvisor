@@ -519,21 +519,11 @@ func (vfs *VirtualFilesystem) BindAt(ctx context.Context, creds *auth.Credential
 
 // RemountAt changes the mountflags and data of an existing mount without having to unmount and remount the filesystem.
 func (vfs *VirtualFilesystem) RemountAt(ctx context.Context, creds *auth.Credentials, pop *PathOperation, opts *MountOptions) error {
-	vd, err := vfs.GetDentryAt(ctx, creds, pop, &GetDentryOptions{})
+	vd, err := vfs.getMountpoint(ctx, creds, pop)
 	if err != nil {
 		return err
 	}
-	defer func() {
-		vd.DecRef(ctx)
-	}()
-	if vd.dentry.isMounted() {
-		if realmnt := vfs.getMountAt(ctx, vd.mount, vd.dentry); realmnt != nil {
-			vd.mount.DecRef(ctx)
-			vd.mount = realmnt
-		}
-	} else if vd.dentry != vd.mount.root {
-		return linuxerr.EINVAL
-	}
+	defer vd.DecRef(ctx)
 	vfs.lockMounts()
 	defer vfs.unlockMounts(ctx)
 	mnt := vd.Mount()
@@ -577,30 +567,11 @@ func (vfs *VirtualFilesystem) UmountAt(ctx context.Context, creds *auth.Credenti
 	if opts.Flags&linux.MNT_FORCE != 0 && creds.HasCapabilityIn(linux.CAP_SYS_ADMIN, creds.UserNamespace.Root()) {
 		return linuxerr.EPERM
 	}
-	vd, err := vfs.GetDentryAt(ctx, creds, pop, &GetDentryOptions{})
+	vd, err := vfs.getMountpoint(ctx, creds, pop)
 	if err != nil {
 		return err
 	}
-	// This defer statement is encapsulated in a function because vd.mount can be
-	// modified in the block below. The arguments to defer are evaluated during
-	// the construction of a defer statement, so if vd.DecRef() was not
-	// encapsulated, the vd structure and its underlying pointers _at this point_
-	// would be copied and DecRefd at the end of this function.
-	defer func() {
-		vd.DecRef(ctx)
-	}()
-	// Linux passes the LOOKUP_MOUNPOINT flag to user_path_at in ksys_umount to
-	// resolve to the toppmost mount in the stack located at the specified path.
-	// vfs.GetMountAt() imitates this behavior. See fs/namei.c:user_path_at(...)
-	// and fs/namespace.c:ksys_umount(...).
-	if vd.dentry.isMounted() {
-		if realmnt := vfs.getMountAt(ctx, vd.mount, vd.dentry); realmnt != nil {
-			vd.mount.DecRef(ctx)
-			vd.mount = realmnt
-		}
-	} else if vd.dentry != vd.mount.root {
-		return linuxerr.EINVAL
-	}
+	defer vd.DecRef(ctx)
 
 	vfs.lockMounts()
 	defer vfs.unlockMounts(ctx)
@@ -922,6 +893,31 @@ retryFirst:
 		d = next.root
 	}
 	return mnt
+}
+
+// getMountpoint returns the top mount for the given path.
+// If the path is not a mountpoint, it returns an error.
+//
+// The returned VirtualDentry has an extra reference.
+func (vfs *VirtualFilesystem) getMountpoint(ctx context.Context, creds *auth.Credentials, pop *PathOperation) (VirtualDentry, error) {
+	vd, err := vfs.GetDentryAt(ctx, creds, pop, &GetDentryOptions{})
+	if err != nil {
+		return VirtualDentry{}, err
+	}
+	// Linux passes the LOOKUP_MOUNPOINT flag to user_path_at in ksys_umount to
+	// resolve to the toppmost mount in the stack located at the specified path.
+	// vfs.GetMountAt() imitates this behavior. See fs/namei.c:user_path_at(...)
+	// and fs/namespace.c:ksys_umount(...).
+	if vd.dentry.isMounted() {
+		if mnt := vfs.getMountAt(ctx, vd.mount, vd.dentry); mnt != nil {
+			vd.mount.DecRef(ctx)
+			vd.mount = mnt
+		}
+	} else if vd.dentry != vd.mount.root {
+		vd.DecRef(ctx)
+		return VirtualDentry{}, linuxerr.EINVAL
+	}
+	return vd, nil
 }
 
 // getMountpointAt returns the mount point for the stack of Mounts including

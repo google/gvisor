@@ -108,22 +108,11 @@ func (vfs *VirtualFilesystem) SetMountPropagationAt(ctx context.Context, creds *
 	if !bits.IsPowerOfTwo32(propFlag) {
 		return linuxerr.EINVAL
 	}
-	vd, err := vfs.GetDentryAt(ctx, creds, pop, &GetDentryOptions{})
+	vd, err := vfs.getMountpoint(ctx, creds, pop)
 	if err != nil {
 		return err
 	}
-	// See the similar defer in UmountAt for why this is in a closure.
-	defer func() {
-		vd.DecRef(ctx)
-	}()
-	if vd.dentry.isMounted() {
-		if realmnt := vfs.getMountAt(ctx, vd.mount, vd.dentry); realmnt != nil {
-			vd.mount.DecRef(ctx)
-			vd.mount = realmnt
-		}
-	} else if vd.dentry != vd.mount.root {
-		return linuxerr.EINVAL
-	}
+	defer vd.DecRef(ctx)
 	vfs.SetMountPropagation(vd.mount, propFlag, recursive)
 	return nil
 }
