@@ -91,8 +91,7 @@ func TestGetMountAccessType(t *testing.T) {
 				t.Fatalf("newPodMountHints failed: %v", err)
 			}
 			conf := &config.Config{FileAccessMounts: config.FileAccessShared}
-			mnt := &specs.Mount{Source: source}
-			if got := getMountAccessType(conf, mnt, podHints.FindMount(mnt)); got != tst.want {
+			if got := getMountAccessType(conf, podHints.FindMount(source)); got != tst.want {
 				t.Errorf("getMountAccessType(), got: %v, want: %v", got, tst.want)
 			}
 		})
