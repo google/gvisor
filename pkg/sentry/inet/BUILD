@@ -21,6 +21,7 @@ go_template_instance(
 go_library(
     name = "inet",
     srcs = [
+        "abstract_socket_namespace.go",
         "context.go",
         "inet.go",
         "namespace.go",
@@ -34,6 +35,9 @@ go_library(
         "//pkg/refs",
         "//pkg/sentry/fsimpl/nsfs",
         "//pkg/sentry/kernel/auth",
+        "//pkg/sentry/socket/unix/transport",
+        "//pkg/sync",
+        "//pkg/syserr",
         "//pkg/tcpip",
         "//pkg/tcpip/stack",
     ],

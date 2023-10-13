@@ -40,6 +40,9 @@ type Namespace struct {
 	isRoot bool
 
 	userNS *auth.UserNamespace
+
+	// abstractSockets tracks abstract sockets that are in use.
+	abstractSockets AbstractSocketNamespace
 }
 
 // NewRootNamespace creates the root network namespace, with creator
@@ -52,6 +55,7 @@ func NewRootNamespace(stack Stack, creator NetworkStackCreator, userNS *auth.Use
 		isRoot:  true,
 		userNS:  userNS,
 	}
+	n.abstractSockets.init()
 	return n
 }
 
@@ -137,11 +141,17 @@ func (n *Namespace) init() {
 			panic(err)
 		}
 	}
+	n.abstractSockets.init()
 }
 
 // afterLoad is invoked by stateify.
 func (n *Namespace) afterLoad() {
 	n.init()
+}
+
+// AbstractSockets returns AbstractSocketNamespace.
+func (n *Namespace) AbstractSockets() *AbstractSocketNamespace {
+	return &n.abstractSockets
 }
 
 // NetworkStackCreator allows new instances of a network stack to be created. It

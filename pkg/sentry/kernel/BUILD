@@ -1,6 +1,6 @@
+load("//pkg/sync/locking:locking.bzl", "declare_mutex", "declare_rwmutex")
 load("//tools:defs.bzl", "go_library", "go_test", "proto_library")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
-load("//pkg/sync/locking:locking.bzl", "declare_mutex", "declare_rwmutex")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -225,7 +225,6 @@ proto_library(
 go_library(
     name = "kernel",
     srcs = [
-        "abstract_socket_namespace.go",
         "aio.go",
         "atomicptr_bucket_slice_unsafe.go",
         "atomicptr_bucket_unsafe.go",

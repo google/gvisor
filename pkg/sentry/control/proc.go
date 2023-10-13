@@ -198,21 +198,20 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 		limitSet = limits.NewLimitSet()
 	}
 	initArgs := kernel.CreateProcessArgs{
-		Filename:                args.Filename,
-		Argv:                    args.Argv,
-		Envv:                    args.Envv,
-		WorkingDirectory:        args.WorkingDirectory,
-		MountNamespace:          args.MountNamespace,
-		Credentials:             creds,
-		FDTable:                 fdTable,
-		Umask:                   0022,
-		Limits:                  limitSet,
-		MaxSymlinkTraversals:    linux.MaxSymlinkTraversals,
-		UTSNamespace:            proc.Kernel.RootUTSNamespace(),
-		IPCNamespace:            proc.Kernel.RootIPCNamespace(),
-		AbstractSocketNamespace: proc.Kernel.RootAbstractSocketNamespace(),
-		ContainerID:             args.ContainerID,
-		PIDNamespace:            pidns,
+		Filename:             args.Filename,
+		Argv:                 args.Argv,
+		Envv:                 args.Envv,
+		WorkingDirectory:     args.WorkingDirectory,
+		MountNamespace:       args.MountNamespace,
+		Credentials:          creds,
+		FDTable:              fdTable,
+		Umask:                0022,
+		Limits:               limitSet,
+		MaxSymlinkTraversals: linux.MaxSymlinkTraversals,
+		UTSNamespace:         proc.Kernel.RootUTSNamespace(),
+		IPCNamespace:         proc.Kernel.RootIPCNamespace(),
+		ContainerID:          args.ContainerID,
+		PIDNamespace:         pidns,
 	}
 	if initArgs.MountNamespace != nil {
 		// initArgs must hold a reference on MountNamespace, which will
