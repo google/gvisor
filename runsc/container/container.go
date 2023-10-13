@@ -816,6 +816,14 @@ func (c *Container) Destroy() error {
 
 	// Clean up overlay filestore files created in their respective mounts.
 	c.forEachSelfOverlay(func(mountSrc string) {
+		if sb != nil {
+			if hint := sb.MountHints.FindMount(mountSrc); hint != nil && hint.ShouldShareMount() {
+				// Don't delete filestore file for shared mounts. The sandbox owns a
+				// shared master mount which uses this filestore and is shared with
+				// multiple containers.
+				return
+			}
+		}
 		filestorePath := boot.SelfOverlayFilestorePath(mountSrc, c.sandboxID())
 		if err := os.Remove(filestorePath); err != nil {
 			err = fmt.Errorf("failed to delete filestore file %q: %v", filestorePath, err)
@@ -823,6 +831,23 @@ func (c *Container) Destroy() error {
 			errs = append(errs, err.Error())
 		}
 	})
+	if sb != nil && sb.IsRootContainer(c.ID) {
+		// When the root container is being destroyed, we can clean up filestores
+		// used by shared mounts.
+		for _, hint := range sb.MountHints.Mounts {
+			if !hint.ShouldShareMount() {
+				continue
+			}
+			// Assume this is a self-backed shared mount and try to delete the
+			// filestore. Subsequently ignore the ENOENT if the assumption is wrong.
+			filestorePath := boot.SelfOverlayFilestorePath(hint.Mount.Source, c.sandboxID())
+			if err := os.Remove(filestorePath); err != nil && !os.IsNotExist(err) {
+				err = fmt.Errorf("failed to delete shared filestore file %q: %v", filestorePath, err)
+				log.Warningf("%v", err)
+				errs = append(errs, err.Error())
+			}
+		}
+	}
 
 	c.changeStatus(Stopped)
 
@@ -863,7 +888,7 @@ func (c *Container) sandboxID() string {
 
 func (c *Container) forEachSelfOverlay(fn func(mountSrc string)) {
 	if c.OverlayMediums == nil {
-		// Sub container not started? Skip.
+		// Container not started? Skip.
 		return
 	}
 	if c.OverlayMediums[0] == boot.SelfMedium {
@@ -904,7 +929,7 @@ func (c *Container) createOverlayFilestores(conf config.Overlay2, mountHints *bo
 		if !specutils.IsGoferMount(c.Spec.Mounts[i]) {
 			continue
 		}
-		hint := mountHints.FindMount(&c.Spec.Mounts[i])
+		hint := mountHints.FindMount(c.Spec.Mounts[i].Source)
 		shouldOverlay := conf.SubMountEnabled() && !specutils.IsReadonlyMount(c.Spec.Mounts[i].Options)
 		filestore, medium, err := c.createOverlayFilestore(conf, c.Spec.Mounts[i].Source, shouldOverlay, hint)
 		if err != nil {

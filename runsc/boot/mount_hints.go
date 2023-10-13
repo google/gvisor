@@ -214,9 +214,9 @@ func (m *MountHint) setLifecycle(val string) error {
 	return nil
 }
 
-// shouldShareMount returns true if this mount should be configured as a shared
+// ShouldShareMount returns true if this mount should be configured as a shared
 // mount that is shared among multiple containers in a pod.
-func (m *MountHint) shouldShareMount() bool {
+func (m *MountHint) ShouldShareMount() bool {
 	// TODO(b/142076984): Only support tmpfs for now. Bind mounts require a
 	// common gofer to mount all shared volumes.
 	return m.Mount.Type == tmpfs.Name && m.Share == pod
@@ -253,7 +253,7 @@ func (m *MountHint) fileAccessType() config.FileAccessType {
 	if m.Share == shared {
 		return config.FileAccessShared
 	}
-	if m.shouldShareMount() {
+	if m.ShouldShareMount() {
 		return config.FileAccessExclusive
 	}
 	if m.Share == container {
@@ -263,9 +263,9 @@ func (m *MountHint) fileAccessType() config.FileAccessType {
 }
 
 // FindMount finds the MountHint that applies to this mount.
-func (p *PodMountHints) FindMount(mount *specs.Mount) *MountHint {
+func (p *PodMountHints) FindMount(mountSrc string) *MountHint {
 	for _, m := range p.Mounts {
-		if m.Mount.Source == mount.Source {
+		if m.Mount.Source == mountSrc {
 			return m
 		}
 	}
