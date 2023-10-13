@@ -429,7 +429,7 @@ func (c *containerMounter) checkDispenser() error {
 	return nil
 }
 
-func getMountAccessType(conf *config.Config, mount *specs.Mount, hint *MountHint) config.FileAccessType {
+func getMountAccessType(conf *config.Config, hint *MountHint) config.FileAccessType {
 	if hint != nil {
 		return hint.fileAccessType()
 	}
@@ -677,7 +677,7 @@ func (c *containerMounter) mountSubmounts(ctx context.Context, conf *config.Conf
 			err error
 		)
 
-		if submount.hint != nil && submount.hint.shouldShareMount() {
+		if submount.hint != nil && submount.hint.ShouldShareMount() {
 			sharedMount, ok := c.sharedMounts[submount.hint.Mount.Source]
 			if !ok {
 				return fmt.Errorf("shared mount %q not found", submount.hint.Name)
@@ -740,7 +740,7 @@ func (c *containerMounter) prepareMounts() ([]mountInfo, error) {
 		info := mountInfo{
 			mount:         m,
 			fd:            -1,
-			hint:          c.hints.FindMount(m),
+			hint:          c.hints.FindMount(m.Source),
 			overlayMedium: NoOverlay,
 		}
 		if specutils.IsGoferMount(*m) {
@@ -842,7 +842,7 @@ func getMountNameAndOptions(conf *config.Config, m *mountInfo, productName strin
 			// Check that an FD was provided to fails fast.
 			return "", nil, fmt.Errorf("gofer mount requires a connection FD")
 		}
-		data = goferMountData(m.fd, getMountAccessType(conf, m.mount, m.hint), conf)
+		data = goferMountData(m.fd, getMountAccessType(conf, m.hint), conf)
 		internalData = gofer.InternalFilesystemOptions{
 			UniqueID: m.mount.Destination,
 		}
@@ -983,7 +983,7 @@ func (l *Loader) processHints(conf *config.Config, creds *auth.Credentials) erro
 	ctx := l.k.SupervisorContext()
 	var sharedMounts map[string]*vfs.Mount
 	for _, hint := range l.mountHints.Mounts {
-		if !hint.shouldShareMount() {
+		if !hint.ShouldShareMount() {
 			continue
 		}
 
