@@ -29,11 +29,10 @@
 // Using assembly speeds things up via ADC (add with carry).
 TEXT ·calculateChecksumAMD64(SB),NOSPLIT|NOFRAME,$0-35
   // Store arguments in registers.
-  MOVW initial+26(FP), AX
+  MOVWQZX initial+26(FP), AX
   MOVQ buf_len+8(FP), BX
   MOVQ buf_base+0(FP), CX
-  XORQ R8, R8
-  MOVB odd+24(FP), R8
+  MOVBQZX odd+24(FP), R8
 
   // Account for a previous odd number of bytes.
   //
@@ -43,8 +42,7 @@ TEXT ·calculateChecksumAMD64(SB),NOSPLIT|NOFRAME,$0-35
   // }
   CMPB R8, $0
   JE newlyodd
-  XORQ R9, R9
-  MOVB (CX), R9
+  MOVBQZX (CX), R9
   ADDW R9, AX
   ADCW $0, AX
   INCQ CX
@@ -64,39 +62,34 @@ newlyodd:
   JZ swaporder
   MOVB $1, R8
   DECQ BX
-  XORQ R10, R10
-  MOVB (CX)(BX*1), R10
+  MOVBQZX (CX)(BX*1), R10
   SHLQ $8, R10
   ADDW R10, AX
   ADCW $0, AX
 
 swaporder:
   // Load initial in network byte order.
-  BSWAPQ AX
-  SHRQ $48, AX
+  XCHGB AH, AL
 
   // Handle any bytes that aren't 64-bit aligned. If the buffer starts at an
   // odd address, we just live with the alignment because doing otherwise
   // messes up the endianness expected by the below.
   //
-  // while buf_len > 0 && buf_base%8 != 0 {
+  // while buf_len >= 2 && buf_base%8 != 0 {
   //   acc, carry = acc + *(uint16 *)(buf)
   //   buf_len -= 2
   //   buf = buf[2:]
   // }
-  JMP unalignedaddcond
 unalignedaddloop:
-  XORQ DX, DX
-  MOVW (CX), DX
+  CMPQ BX, $2
+  JB addloop
+  TESTQ $7, CX
+  JZ addloop
+  MOVWQZX (CX), DX
   ADDQ DX, AX
   ADCQ $0, AX
   SUBQ $2, BX
   ADDQ $2, CX
-unalignedaddcond:
-  CMPQ BX, $2
-  JLE addcond
-  TESTQ $7, CX
-  JZ addcond
   JMP unalignedaddloop
 
   // Accumulate 8 bytes at a time.
@@ -107,56 +100,52 @@ unalignedaddcond:
   //   buf = buf[8:]
   // }
   // acc += carry
-  JMP addcond
 addloop:
+  CMPQ BX, $8
+  JB slowaddloop
   ADDQ (CX), AX
   ADCQ $0, AX
   SUBQ $8, BX
   ADDQ $8, CX
-addcond:
-  CMPQ BX, $8
-  JAE addloop
+  JMP addloop
 
   // TODO(krakauer): We can do 4 byte accumulation too.
 
   // Accumulate the rest 2 bytes at a time.
   //
-  // while buf_len > 0 {
+  // while buf_len >= 2 {
   //   acc, carry = acc + *(uint16 *)(buf)
   //   buf_len -= 2
   //   buf = buf[2:]
   // }
-  JMP slowaddcond
 slowaddloop:
-  XORQ DX, DX
-  MOVW (CX), DX
+  CMPQ BX, $2
+  JB foldloop
+  MOVWQZX (CX), DX
   ADDQ DX, AX
   ADCQ $0, AX
   SUBQ $2, BX
   ADDQ $2, CX
-slowaddcond:
-  CMPQ BX, $2
-  JAE slowaddloop
+  JMP slowaddloop
 
   // Fold into 16 bits.
   //
   // for acc > math.MaxUint16 {
   //   acc = (acc & 0xffff) + acc>>16
   // }
-  JMP foldcond
 foldloop:
+  CMPQ AX, $0xffff
+  JBE finalswap
   MOVQ AX, DX
   ANDQ $0xffff, DX
   SHRQ $16, AX
   ADDQ DX, AX
+  JMP foldloop
   // We don't need ADC because folding will take care of it
-foldcond:
-  CMPQ AX, $0xffff
-  JA foldloop
 
+finalswap:
   // Return the checksum in host byte order.
-  BSWAPQ AX
-  SHRQ $48, AX
+  XCHGB AH, AL
   MOVW AX, ret+32(FP)
   MOVB R8, ret1+34(FP)
   RET
