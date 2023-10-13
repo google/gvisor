@@ -441,11 +441,6 @@ type Task struct {
 	// ipcns is protected by mu. ipcns is owned by the task goroutine.
 	ipcns *IPCNamespace
 
-	// abstractSockets tracks abstract sockets that are in use.
-	//
-	// abstractSockets is protected by mu.
-	abstractSockets *AbstractSocketNamespace
-
 	// mountNamespace is the task's mount namespace.
 	//
 	// It is protected by mu. It is owned by the task goroutine.
@@ -807,11 +802,6 @@ func (t *Task) GetMountNamespace() *vfs.MountNamespace {
 		mntns.IncRef()
 	}
 	return mntns
-}
-
-// AbstractSockets returns t's AbstractSocketNamespace.
-func (t *Task) AbstractSockets() *AbstractSocketNamespace {
-	return t.abstractSockets
 }
 
 // ContainerID returns t's container ID.

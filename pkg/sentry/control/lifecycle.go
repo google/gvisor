@@ -225,17 +225,16 @@ func (l *Lifecycle) StartContainer(args *StartContainerArgs, _ *uint32) error {
 		Filename: args.Filename,
 		Argv:     args.Argv,
 		// Order Envv before SecretEnvv.
-		Envv:                    append(args.Envv, args.SecretEnvv...),
-		WorkingDirectory:        args.WorkingDirectory,
-		Credentials:             creds,
-		Umask:                   0022,
-		Limits:                  ls,
-		MaxSymlinkTraversals:    linux.MaxSymlinkTraversals,
-		UTSNamespace:            l.Kernel.RootUTSNamespace(),
-		IPCNamespace:            l.Kernel.RootIPCNamespace(),
-		AbstractSocketNamespace: l.Kernel.RootAbstractSocketNamespace(),
-		ContainerID:             args.ContainerID,
-		PIDNamespace:            pidNs,
+		Envv:                 append(args.Envv, args.SecretEnvv...),
+		WorkingDirectory:     args.WorkingDirectory,
+		Credentials:          creds,
+		Umask:                0022,
+		Limits:               ls,
+		MaxSymlinkTraversals: linux.MaxSymlinkTraversals,
+		UTSNamespace:         l.Kernel.RootUTSNamespace(),
+		IPCNamespace:         l.Kernel.RootIPCNamespace(),
+		ContainerID:          args.ContainerID,
+		PIDNamespace:         pidNs,
 	}
 
 	ctx := initArgs.NewContext(l.Kernel)

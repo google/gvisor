@@ -656,7 +656,7 @@ func (i *inode) open(ctx context.Context, d *kernfs.Dentry, mnt *vfs.Mount, file
 			return nil, err
 		}
 		// Currently, we only allow Unix sockets to be imported.
-		return unixsocket.NewFileDescription(ep, ep.Type(), flags, mnt, d.VFSDentry(), &i.locks)
+		return unixsocket.NewFileDescription(ep, ep.Type(), flags, nil, mnt, d.VFSDentry(), &i.locks)
 
 	case unix.S_IFREG, unix.S_IFIFO, unix.S_IFCHR:
 		if i.isTTY {

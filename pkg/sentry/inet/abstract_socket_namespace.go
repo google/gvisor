@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package kernel
+package inet
 
 import (
 	"fmt"
@@ -47,13 +47,6 @@ type AbstractSocketNamespace struct {
 	endpoints map[string]abstractEndpoint
 }
 
-// NewAbstractSocketNamespace returns a new AbstractSocketNamespace.
-func NewAbstractSocketNamespace() *AbstractSocketNamespace {
-	return &AbstractSocketNamespace{
-		endpoints: make(map[string]abstractEndpoint),
-	}
-}
-
 // A boundEndpoint wraps a transport.BoundEndpoint to maintain a reference on
 // its backing socket.
 type boundEndpoint struct {
@@ -65,6 +58,10 @@ type boundEndpoint struct {
 func (e *boundEndpoint) Release(ctx context.Context) {
 	e.socket.DecRef(ctx)
 	e.BoundEndpoint.Release(ctx)
+}
+
+func (a *AbstractSocketNamespace) init() {
+	a.endpoints = make(map[string]abstractEndpoint)
 }
 
 // BoundEndpoint retrieves the endpoint bound to the given name. The return

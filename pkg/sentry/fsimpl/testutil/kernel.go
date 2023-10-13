@@ -91,15 +91,14 @@ func Boot() (*kernel.Kernel, error) {
 	// Initiate the Kernel object, which is required by the Context passed
 	// to createVFS in order to mount (among other things) procfs.
 	if err = k.Init(kernel.InitKernelArgs{
-		ApplicationCores:            uint(runtime.GOMAXPROCS(-1)),
-		FeatureSet:                  cpuid.HostFeatureSet(),
-		Timekeeper:                  tk,
-		RootUserNamespace:           creds.UserNamespace,
-		Vdso:                        vdso,
-		RootUTSNamespace:            kernel.NewUTSNamespace("hostname", "domain", creds.UserNamespace),
-		RootIPCNamespace:            kernel.NewIPCNamespace(creds.UserNamespace),
-		RootAbstractSocketNamespace: kernel.NewAbstractSocketNamespace(),
-		PIDNamespace:                kernel.NewRootPIDNamespace(creds.UserNamespace),
+		ApplicationCores:  uint(runtime.GOMAXPROCS(-1)),
+		FeatureSet:        cpuid.HostFeatureSet(),
+		Timekeeper:        tk,
+		RootUserNamespace: creds.UserNamespace,
+		Vdso:              vdso,
+		RootUTSNamespace:  kernel.NewUTSNamespace("hostname", "domain", creds.UserNamespace),
+		RootIPCNamespace:  kernel.NewIPCNamespace(creds.UserNamespace),
+		PIDNamespace:      kernel.NewRootPIDNamespace(creds.UserNamespace),
 	}); err != nil {
 		return nil, fmt.Errorf("initializing kernel: %v", err)
 	}
@@ -135,19 +134,18 @@ func CreateTask(ctx context.Context, name string, tc *kernel.ThreadGroup, mntns 
 
 	creds := auth.CredentialsFromContext(ctx)
 	config := &kernel.TaskConfig{
-		Kernel:                  k,
-		ThreadGroup:             tc,
-		TaskImage:               &kernel.TaskImage{Name: name, MemoryManager: m},
-		Credentials:             auth.CredentialsFromContext(ctx),
-		NetworkNamespace:        k.RootNetworkNamespace(),
-		AllowedCPUMask:          sched.NewFullCPUSet(k.ApplicationCores()),
-		UTSNamespace:            kernel.UTSNamespaceFromContext(ctx),
-		IPCNamespace:            kernel.IPCNamespaceFromContext(ctx),
-		AbstractSocketNamespace: kernel.NewAbstractSocketNamespace(),
-		MountNamespace:          mntns,
-		FSContext:               kernel.NewFSContext(root, cwd, 0022),
-		FDTable:                 k.NewFDTable(),
-		UserCounters:            k.GetUserCounters(creds.RealKUID),
+		Kernel:           k,
+		ThreadGroup:      tc,
+		TaskImage:        &kernel.TaskImage{Name: name, MemoryManager: m},
+		Credentials:      auth.CredentialsFromContext(ctx),
+		NetworkNamespace: k.RootNetworkNamespace(),
+		AllowedCPUMask:   sched.NewFullCPUSet(k.ApplicationCores()),
+		UTSNamespace:     kernel.UTSNamespaceFromContext(ctx),
+		IPCNamespace:     kernel.IPCNamespaceFromContext(ctx),
+		MountNamespace:   mntns,
+		FSContext:        kernel.NewFSContext(root, cwd, 0022),
+		FDTable:          k.NewFDTable(),
+		UserCounters:     k.GetUserCounters(creds.RealKUID),
 	}
 	config.NetworkNamespace.IncRef()
 	t, err := k.TaskSet().NewTask(ctx, config)
