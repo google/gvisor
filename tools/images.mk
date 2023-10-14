@@ -153,7 +153,8 @@ load-%: register-cross ## Pull or build an image locally.
 # already exists) or building manually. Note that this generic rule will match
 # the fully-expanded remote image tag.
 push-%: load-% ## Push a given image.
-	@docker image push $(call remote_image,$*):$(call tag,$*) >&2
+	@docker image push $(call remote_image,$*):$(call tag,$*) >&2 && \
+  gcloud container images add-tag -q "$(call remote_image,$*):$(call tag,$*)" "$(call remote_image,$*)":latest >&2
 
 # register-cross registers the necessary qemu binaries for cross-compilation.
 # This may be used by any target that may execute containers that are not the
