@@ -62,22 +62,21 @@ const (
 	Nonefs = "none"
 )
 
-// SelfOverlayFilestorePrefix is the prefix in the file name of the
-// self overlay filestore file.
-const SelfOverlayFilestorePrefix = ".gvisor.overlay.img."
+// SelfFilestorePrefix is the prefix of the self filestore file name.
+const SelfFilestorePrefix = ".gvisor.filestore."
 
-// SelfOverlayFilestorePath returns the path at which the self overlay
-// filestore file is stored for a given mount.
-func SelfOverlayFilestorePath(mountSrc, sandboxID string) string {
+// SelfFilestorePath returns the path at which the self filestore file is
+// stored for a given mount.
+func SelfFilestorePath(mountSrc, sandboxID string) string {
 	// We will place the filestore file in a gVisor specific hidden file inside
-	// the mount being overlay-ed itself. The same volume can be overlay-ed by
+	// the mount being overlaid itself. The same volume can be overlaid by
 	// multiple sandboxes. So make the filestore file unique to a sandbox by
 	// suffixing the sandbox ID.
-	return path.Join(mountSrc, selfOverlayFilestoreName(sandboxID))
+	return path.Join(mountSrc, selfFilestoreName(sandboxID))
 }
 
-func selfOverlayFilestoreName(sandboxID string) string {
-	return SelfOverlayFilestorePrefix + sandboxID
+func selfFilestoreName(sandboxID string) string {
+	return SelfFilestorePrefix + sandboxID
 }
 
 // tmpfs has some extra supported options that we must pass through.
@@ -378,17 +377,17 @@ type containerMounter struct {
 	// that may be freely modified without affecting the original spec.
 	mounts []specs.Mount
 
-	// fds is the list of FDs to be dispensed for mounts that require it.
-	fds fdDispenser
+	// goferFDs is the list of FDs to be dispensed for gofer mounts.
+	goferFDs fdDispenser
 
-	// overlayFilestoreFDs are the FDs to the regular files that will back the
-	// tmpfs upper mount in the overlay mounts.
-	overlayFilestoreFDs fdDispenser
+	// goferFilestoreFDs are FDs to the regular files that will back the tmpfs or
+	// overlayfs mount for certain gofer mounts.
+	goferFilestoreFDs fdDispenser
 
-	// overlayMediums contains information about how the gofer mounts have been
-	// overlaid. The first entry is for rootfs and the following entries are for
-	// bind mounts in `mounts` slice above (in the same order).
-	overlayMediums []OverlayMedium
+	// goferMountConfs contains information about how the gofer mounts have been
+	// configured. The first entry is for rootfs and the following entries are
+	// for bind mounts in Spec.Mounts (in the same order).
+	goferMountConfs []GoferMountConf
 
 	k *kernel.Kernel
 
@@ -409,22 +408,22 @@ type containerMounter struct {
 
 func newContainerMounter(info *containerInfo, k *kernel.Kernel, hints *PodMountHints, sharedMounts map[string]*vfs.Mount, productName string, sandboxID string) *containerMounter {
 	return &containerMounter{
-		root:                info.spec.Root,
-		mounts:              compileMounts(info.spec, info.conf),
-		fds:                 fdDispenser{fds: info.goferFDs},
-		overlayFilestoreFDs: fdDispenser{fds: info.overlayFilestoreFDs},
-		overlayMediums:      info.overlayMediums,
-		k:                   k,
-		hints:               hints,
-		sharedMounts:        sharedMounts,
-		productName:         productName,
-		sandboxID:           sandboxID,
+		root:              info.spec.Root,
+		mounts:            compileMounts(info.spec, info.conf),
+		goferFDs:          fdDispenser{fds: info.goferFDs},
+		goferFilestoreFDs: fdDispenser{fds: info.goferFilestoreFDs},
+		goferMountConfs:   info.goferMountConfs,
+		k:                 k,
+		hints:             hints,
+		sharedMounts:      sharedMounts,
+		productName:       productName,
+		sandboxID:         sandboxID,
 	}
 }
 
 func (c *containerMounter) checkDispenser() error {
-	if !c.fds.empty() {
-		return fmt.Errorf("not all gofer FDs were consumed, remaining: %v", c.fds)
+	if !c.goferFDs.empty() {
+		return fmt.Errorf("not all gofer FDs were consumed, remaining: %v", c.goferFDs)
 	}
 	return nil
 }
@@ -470,7 +469,7 @@ func (c *containerMounter) mountAll(rootCtx context.Context, rootCreds *auth.Cre
 
 // createMountNamespace creates the container's root mount and namespace.
 func (c *containerMounter) createMountNamespace(ctx context.Context, conf *config.Config, creds *auth.Credentials) (*vfs.MountNamespace, error) {
-	ioFD := c.fds.remove()
+	ioFD := c.goferFDs.remove()
 	data := goferMountData(ioFD, conf.FileAccess, conf)
 
 	// We can't check for overlayfs here because sandbox is chroot'ed and gofer
@@ -494,17 +493,18 @@ func (c *containerMounter) createMountNamespace(ctx context.Context, conf *confi
 	}
 
 	fsName := gofer.Name
-	if c.overlayMediums[0].IsEnabled() {
+	rootfsConf := c.goferMountConfs[0]
+	if rootfsConf.ShouldUseOverlayfs() {
 		log.Infof("Adding overlay on top of root")
 		var (
-			err              error
-			cleanup          func()
-			overlayFilestore *fd.FD
+			err         error
+			cleanup     func()
+			filestoreFD *fd.FD
 		)
-		if c.overlayMediums[0].IsBackedByHostFile() {
-			overlayFilestore = c.overlayFilestoreFDs.removeAsFD()
+		if rootfsConf.IsFilestorePresent() {
+			filestoreFD = c.goferFilestoreFDs.removeAsFD()
 		}
-		opts, cleanup, err = c.configureOverlay(ctx, conf, creds, opts, fsName, overlayFilestore, c.overlayMediums[0])
+		opts, cleanup, err = c.configureOverlay(ctx, conf, creds, opts, fsName, filestoreFD, rootfsConf)
 		if err != nil {
 			return nil, fmt.Errorf("mounting root with overlay: %w", err)
 		}
@@ -545,7 +545,7 @@ func (c *containerMounter) createMountNamespace(ctx context.Context, conf *confi
 // layer using tmpfs, and return overlay mount options. "cleanup" must be called
 // after the options have been used to mount the overlay, to release refs on
 // lower and upper mounts.
-func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Config, creds *auth.Credentials, lowerOpts *vfs.MountOptions, lowerFSName string, filestoreFD *fd.FD, medium OverlayMedium) (*vfs.MountOptions, func(), error) {
+func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Config, creds *auth.Credentials, lowerOpts *vfs.MountOptions, lowerFSName string, filestoreFD *fd.FD, mountConf GoferMountConf) (*vfs.MountOptions, func(), error) {
 	// First copy options from lower layer to upper layer and overlay. Clear
 	// filesystem specific options.
 	upperOpts := *lowerOpts
@@ -628,11 +628,11 @@ func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Co
 	}
 
 	// We need to hide the filestore from the containerized application.
-	if medium == SelfMedium {
+	if mountConf == SelfOverlay {
 		if err := overlay.CreateWhiteout(ctx, c.k.VFS(), creds, &vfs.PathOperation{
 			Root:  upperRootVD,
 			Start: upperRootVD,
-			Path:  fspath.Parse(selfOverlayFilestoreName(c.sandboxID)),
+			Path:  fspath.Parse(selfFilestoreName(c.sandboxID)),
 		}); err != nil {
 			return nil, nil, fmt.Errorf("failed to create whiteout to hide self overlay filestore: %w", err)
 		}
@@ -714,15 +714,15 @@ func (c *containerMounter) mountSubmounts(ctx context.Context, conf *config.Conf
 }
 
 type mountInfo struct {
-	mount              *specs.Mount
-	fd                 int
-	hint               *MountHint
-	overlayMedium      OverlayMedium
-	overlayFilestoreFD *fd.FD
+	mount          *specs.Mount
+	goferFD        int
+	hint           *MountHint
+	goferMountConf GoferMountConf
+	filestoreFD    *fd.FD
 }
 
 func newNonGoferMountInfo(mount *specs.Mount) *mountInfo {
-	return &mountInfo{mount: mount, fd: -1}
+	return &mountInfo{mount: mount, goferFD: -1}
 }
 
 func (c *containerMounter) prepareMounts() ([]mountInfo, error) {
@@ -738,16 +738,15 @@ func (c *containerMounter) prepareMounts() ([]mountInfo, error) {
 		// Only bind mounts use host FDs; see
 		// containerMounter.getMountNameAndOptions.
 		info := mountInfo{
-			mount:         m,
-			fd:            -1,
-			hint:          c.hints.FindMount(m.Source),
-			overlayMedium: NoOverlay,
+			mount:   m,
+			goferFD: -1,
+			hint:    c.hints.FindMount(m.Source),
 		}
 		if specutils.IsGoferMount(*m) {
-			info.fd = c.fds.remove()
-			info.overlayMedium = c.overlayMediums[goferMntIdx]
-			if info.overlayMedium.IsBackedByHostFile() {
-				info.overlayFilestoreFD = c.overlayFilestoreFDs.removeAsFD()
+			info.goferFD = c.goferFDs.remove()
+			info.goferMountConf = c.goferMountConfs[goferMntIdx]
+			if info.goferMountConf.IsFilestorePresent() {
+				info.filestoreFD = c.goferFilestoreFDs.removeAsFD()
 			}
 			goferMntIdx++
 		}
@@ -779,10 +778,10 @@ func (c *containerMounter) mountSubmount(ctx context.Context, conf *config.Confi
 		return nil, fmt.Errorf("creating mount point %q: %w", submount.mount.Destination, err)
 	}
 
-	if submount.overlayMedium.IsEnabled() {
+	if submount.goferMountConf.ShouldUseOverlayfs() {
 		log.Infof("Adding overlay on top of mount %q", submount.mount.Destination)
 		var cleanup func()
-		opts, cleanup, err = c.configureOverlay(ctx, conf, creds, opts, fsName, submount.overlayFilestoreFD, submount.overlayMedium)
+		opts, cleanup, err = c.configureOverlay(ctx, conf, creds, opts, fsName, submount.filestoreFD, submount.goferMountConf)
 		if err != nil {
 			return nil, fmt.Errorf("mounting volume with overlay at %q: %w", submount.mount.Destination, err)
 		}
@@ -838,11 +837,11 @@ func getMountNameAndOptions(conf *config.Config, m *mountInfo, productName strin
 
 	case Bind:
 		fsName = gofer.Name
-		if m.fd < 0 {
+		if m.goferFD < 0 {
 			// Check that an FD was provided to fails fast.
 			return "", nil, fmt.Errorf("gofer mount requires a connection FD")
 		}
-		data = goferMountData(m.fd, getMountAccessType(conf, m.hint), conf)
+		data = goferMountData(m.goferFD, getMountAccessType(conf, m.hint), conf)
 		internalData = gofer.InternalFilesystemOptions{
 			UniqueID: m.mount.Destination,
 		}
@@ -1076,15 +1075,15 @@ func (c *containerMounter) makeMountPoint(ctx context.Context, creds *auth.Crede
 // state used by restore defined by conf.
 func (c *containerMounter) configureRestore(ctx context.Context) (context.Context, error) {
 	fdmap := make(map[string]int)
-	fdmap["/"] = c.fds.remove()
+	fdmap["/"] = c.goferFDs.remove()
 	mounts, err := c.prepareMounts()
 	if err != nil {
 		return ctx, err
 	}
 	for i := range c.mounts {
 		submount := &mounts[i]
-		if submount.fd >= 0 {
-			fdmap[submount.mount.Destination] = submount.fd
+		if submount.goferFD >= 0 {
+			fdmap[submount.mount.Destination] = submount.goferFD
 		}
 	}
 	return context.WithValue(ctx, gofer.CtxRestoreServerFDMap, fdmap), nil

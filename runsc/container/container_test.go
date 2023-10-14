@@ -3109,7 +3109,7 @@ func TestOverlayByMountAnnotation(t *testing.T) {
 	}
 
 	// Check that the filestore file is created and is not empty.
-	filestoreFile := boot.SelfOverlayFilestorePath(subMount, cont.Sandbox.ID)
+	filestoreFile := boot.SelfFilestorePath(subMount, cont.Sandbox.ID)
 	var stat unix.Stat_t
 	if err := unix.Stat(filestoreFile, &stat); err != nil {
 		t.Fatalf("unix.Stat(%q) failed for submount filestore: %v", filestoreFile, err)

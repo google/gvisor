@@ -208,10 +208,10 @@ func TestOverlayRootfsWhiteout(t *testing.T) {
 	opts := dockerutil.RunOpts{
 		Image: "basic/ubuntu",
 	}
-	if got, err := d.Run(ctx, opts, "bash", "-c", fmt.Sprintf("ls -al / | grep %q || true", boot.SelfOverlayFilestorePrefix)); err != nil {
+	if got, err := d.Run(ctx, opts, "bash", "-c", fmt.Sprintf("ls -al / | grep %q || true", boot.SelfFilestorePrefix)); err != nil {
 		t.Fatalf("docker run failed: %s, %v", got, err)
 	} else if got != "" {
-		t.Errorf("root directory contains a file/directory whose name contains %q: output = %q", boot.SelfOverlayFilestorePrefix, got)
+		t.Errorf("root directory contains a file/directory whose name contains %q: output = %q", boot.SelfFilestorePrefix, got)
 	}
 }
 
