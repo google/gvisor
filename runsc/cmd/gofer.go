@@ -80,11 +80,11 @@ type goferSyncFDs struct {
 // Gofer implements subcommands.Command for the "gofer" command, which starts a
 // filesystem gofer.  This command should not be called directly.
 type Gofer struct {
-	bundleDir      string
-	ioFDs          intFlags
-	applyCaps      bool
-	setUpRoot      bool
-	overlayMediums boot.OverlayMediumFlags
+	bundleDir  string
+	ioFDs      intFlags
+	applyCaps  bool
+	setUpRoot  bool
+	mountConfs boot.GoferMountConfFlags
 
 	specFD        int
 	mountsFD      int
@@ -116,7 +116,7 @@ func (g *Gofer) SetFlags(f *flag.FlagSet) {
 
 	// Open FDs that are donated to the gofer.
 	f.Var(&g.ioFDs, "io-fds", "list of FDs to connect gofer servers. They must follow this order: root first, then mounts as defined in the spec")
-	f.Var(&g.overlayMediums, "overlay-mediums", "information about how the gofer mounts have been overlaid.")
+	f.Var(&g.mountConfs, "gofer-mount-confs", "information about how the gofer mounts have been configured")
 	f.IntVar(&g.specFD, "spec-fd", -1, "required fd with the container spec")
 	f.IntVar(&g.mountsFD, "mounts-fd", -1, "mountsFD is the file descriptor to write list of mounts after they have been resolved (direct paths, no symlinks).")
 
@@ -271,7 +271,7 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string) subcom
 	cfgs = append(cfgs, connectionConfig{
 		sock:      newSocket(g.ioFDs[0]),
 		mountPath: "/", // fsgofer process is always chroot()ed. So serve root.
-		readonly:  spec.Root.Readonly || g.overlayMediums[0].IsEnabled(),
+		readonly:  spec.Root.Readonly || g.mountConfs[0].ShouldUseOverlayfs(),
 	})
 	log.Infof("Serving %q mapped to %q on FD %d (ro: %t)", "/", root, g.ioFDs[0], cfgs[0].readonly)
 
@@ -291,7 +291,7 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string) subcom
 		cfgs = append(cfgs, connectionConfig{
 			sock:      newSocket(g.ioFDs[mountIdx]),
 			mountPath: m.Destination,
-			readonly:  specutils.IsReadonlyMount(m.Options) || g.overlayMediums[mountIdx].IsEnabled(),
+			readonly:  specutils.IsReadonlyMount(m.Options) || g.mountConfs[mountIdx].ShouldUseOverlayfs(),
 		})
 
 		log.Infof("Serving %q mapped on FD %d (ro: %t)", m.Destination, g.ioFDs[mountIdx], cfgs[mountIdx].readonly)
@@ -418,7 +418,7 @@ func (g *Gofer) setupRootFS(spec *specs.Spec, conf *config.Config) error {
 	}
 
 	// Check if root needs to be remounted as readonly.
-	if spec.Root.Readonly || g.overlayMediums[0].IsEnabled() {
+	if spec.Root.Readonly || g.mountConfs[0].ShouldUseOverlayfs() {
 		// If root is a mount point but not read-only, we can change mount options
 		// to make it read-only for extra safety.
 		// unix.MS_NOSUID and unix.MS_NODEV are included here not only
@@ -459,7 +459,7 @@ func (g *Gofer) setupMounts(conf *config.Config, mounts []specs.Mount, root, pro
 		}
 
 		flags := specutils.OptionsToFlags(m.Options) | unix.MS_BIND
-		if g.overlayMediums[goferMntIdx].IsEnabled() {
+		if g.mountConfs[goferMntIdx].ShouldUseOverlayfs() {
 			// Force mount read-only if writes are not going to be sent to it.
 			flags |= unix.MS_RDONLY
 		}

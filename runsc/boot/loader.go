@@ -112,14 +112,14 @@ type containerInfo struct {
 	// goferFDs are the FDs that attach the sandbox to the gofers.
 	goferFDs []*fd.FD
 
-	// overlayFilestoreFDs are the FDs to the regular files that will back the
-	// tmpfs upper mount in the overlay mounts.
-	overlayFilestoreFDs []*fd.FD
+	// goferFilestoreFDs are FDs to the regular files that will back the tmpfs or
+	// overlayfs mount for certain gofer mounts.
+	goferFilestoreFDs []*fd.FD
 
-	// overlayMediums contains information about how the gofer mounts have been
-	// overlaid. The first entry is for rootfs and the following entries are for
-	// bind mounts in spec.Mounts (in the same order).
-	overlayMediums []OverlayMedium
+	// goferMountConfs contains information about how the gofer mounts have been
+	// configured. The first entry is for rootfs and the following entries are
+	// for bind mounts in Spec.Mounts (in the same order).
+	goferMountConfs []GoferMountConf
 
 	// nvidiaUVMDevMajor is the device major number used for nvidia-uvm.
 	nvidiaUVMDevMajor uint32
@@ -254,13 +254,13 @@ type Args struct {
 	PassFDs []FDMapping
 	// ExecFD is the host file descriptor used for program execution.
 	ExecFD int
-	// OverlayFilestoreFDs are the FDs to the regular files that will back the
-	// tmpfs upper mount in the overlay mounts.
-	OverlayFilestoreFDs []int
-	// OverlayMediums contains information about how the gofer mounts have been
-	// overlaid. The first entry is for rootfs and the following entries are for
-	// bind mounts in Spec.Mounts (in the same order).
-	OverlayMediums []OverlayMedium
+	// GoferFilestoreFDs are FDs to the regular files that will back the tmpfs or
+	// overlayfs mount for certain gofer mounts.
+	GoferFilestoreFDs []int
+	// GoferMountConfs contains information about how the gofer mounts have been
+	// configured. The first entry is for rootfs and the following entries are
+	// for bind mounts in Spec.Mounts (in the same order).
+	GoferMountConfs []GoferMountConf
 	// NumCPU is the number of CPUs to create inside the sandbox.
 	NumCPU int
 	// TotalMem is the initial amount of total memory to report back to the
@@ -312,9 +312,9 @@ func New(args Args) (*Loader, error) {
 	kernel.IOUringEnabled = args.Conf.IOUring
 
 	info := containerInfo{
-		conf:           args.Conf,
-		spec:           args.Spec,
-		overlayMediums: args.OverlayMediums,
+		conf:            args.Conf,
+		spec:            args.Spec,
+		goferMountConfs: args.GoferMountConfs,
 	}
 
 	// Make host FDs stable between invocations. Host FDs must map to the exact
@@ -342,8 +342,8 @@ func New(args Args) (*Loader, error) {
 	for _, goferFD := range args.GoferFDs {
 		info.goferFDs = append(info.goferFDs, fd.New(goferFD))
 	}
-	for _, overlayFD := range args.OverlayFilestoreFDs {
-		info.overlayFilestoreFDs = append(info.overlayFilestoreFDs, fd.New(overlayFD))
+	for _, filestoreFD := range args.GoferFilestoreFDs {
+		info.goferFilestoreFDs = append(info.goferFilestoreFDs, fd.New(filestoreFD))
 	}
 
 	if args.ExecFD >= 0 {
@@ -794,7 +794,7 @@ func (l *Loader) createSubcontainer(cid string, tty *fd.FD) error {
 // startSubcontainer starts a child container. It returns the thread group ID of
 // the newly created process. Used FDs are either closed or released. It's safe
 // for the caller to close any remaining files upon return.
-func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid string, stdioFDs, goferFDs, overlayFilestoreFDs []*fd.FD, overlayMediums []OverlayMedium) error {
+func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid string, stdioFDs, goferFDs, goferFilestoreFDs []*fd.FD, goferMountConfs []GoferMountConf) error {
 	// Create capabilities.
 	caps, err := specutils.Capabilities(conf.EnableRaw, spec.Process.Capabilities)
 	if err != nil {
@@ -847,12 +847,12 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 	}
 
 	info := &containerInfo{
-		conf:                conf,
-		spec:                spec,
-		goferFDs:            goferFDs,
-		overlayFilestoreFDs: overlayFilestoreFDs,
-		overlayMediums:      overlayMediums,
-		nvidiaUVMDevMajor:   l.nvidiaUVMDevMajor,
+		conf:              conf,
+		spec:              spec,
+		goferFDs:          goferFDs,
+		goferFilestoreFDs: goferFilestoreFDs,
+		goferMountConfs:   goferMountConfs,
+		nvidiaUVMDevMajor: l.nvidiaUVMDevMajor,
 	}
 	info.procArgs, err = createProcessArgs(cid, spec, creds, l.k, pidns)
 	if err != nil {

@@ -2391,7 +2391,7 @@ func TestMultiContainerOverlayLeaks(t *testing.T) {
 		}
 
 		// Stat filestoreFile to see its usage. It should have been cleaned up.
-		filestoreFile := boot.SelfOverlayFilestorePath(s.Root.Path, sandboxID)
+		filestoreFile := boot.SelfFilestorePath(s.Root.Path, sandboxID)
 		var stat unix.Stat_t
 		if err := unix.Stat(filestoreFile, &stat); err != nil {
 			t.Errorf("unix.Stat(%q) failed for rootfs filestore: %v", filestoreFile, err)
