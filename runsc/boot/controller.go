@@ -273,18 +273,17 @@ type StartArgs struct {
 	// CID is the ID of the container to start.
 	CID string
 
-	// NumOverlayFilestoreFDs is the number of overlay filestore FDs donated.
-	// Optionally configured with the overlay2 flag.
-	NumOverlayFilestoreFDs int
+	// NumGoferFilestoreFDs is the number of gofer filestore FDs donated.
+	NumGoferFilestoreFDs int
 
-	// OverlayMediums contains information about how the gofer mounts have been
-	// overlaid. The first entry is for rootfs and the following entries are for
-	// bind mounts in Spec.Mounts (in the same order).
-	OverlayMediums []OverlayMedium
+	// GoferMountConfs contains information about how the gofer mounts have been
+	// configured. The first entry is for rootfs and the following entries are
+	// for bind mounts in Spec.Mounts (in the same order).
+	GoferMountConfs []GoferMountConf
 
 	// FilePayload contains, in order:
 	//   * stdin, stdout, and stderr (optional: if terminal is disabled).
-	//   * file descriptors to overlay-backing host files (optional: for overlay2).
+	//   * file descriptors to gofer-backing host files (optional).
 	//   * file descriptors to connect to gofer to serve the root filesystem.
 	urpc.FilePayload
 }
@@ -306,7 +305,7 @@ func (cm *containerManager) StartSubcontainer(args *StartArgs, _ *struct{}) erro
 		return errors.New("start argument missing container ID")
 	}
 	expectedFDs := 1 // At least one FD for the root filesystem.
-	expectedFDs += args.NumOverlayFilestoreFDs
+	expectedFDs += args.NumGoferFilestoreFDs
 	if !args.Spec.Process.Terminal {
 		expectedFDs += 3
 	}
@@ -335,15 +334,15 @@ func (cm *containerManager) StartSubcontainer(args *StartArgs, _ *struct{}) erro
 		}
 	}()
 
-	var overlayFilestoreFDs []*fd.FD
-	for i := 0; i < args.NumOverlayFilestoreFDs; i++ {
-		overlayFilestoreFD, err := fd.NewFromFile(goferFiles[i])
+	var goferFilestoreFDs []*fd.FD
+	for i := 0; i < args.NumGoferFilestoreFDs; i++ {
+		goferFilestoreFD, err := fd.NewFromFile(goferFiles[i])
 		if err != nil {
-			return fmt.Errorf("error dup'ing overlay filestore file: %w", err)
+			return fmt.Errorf("error dup'ing gofer filestore file: %w", err)
 		}
-		overlayFilestoreFDs = append(overlayFilestoreFDs, overlayFilestoreFD)
+		goferFilestoreFDs = append(goferFilestoreFDs, goferFilestoreFD)
 	}
-	goferFiles = goferFiles[args.NumOverlayFilestoreFDs:]
+	goferFiles = goferFiles[args.NumGoferFilestoreFDs:]
 
 	goferFDs, err := fd.NewFromFiles(goferFiles)
 	if err != nil {
@@ -355,7 +354,7 @@ func (cm *containerManager) StartSubcontainer(args *StartArgs, _ *struct{}) erro
 		}
 	}()
 
-	if err := cm.l.startSubcontainer(args.Spec, args.Conf, args.CID, stdios, goferFDs, overlayFilestoreFDs, args.OverlayMediums); err != nil {
+	if err := cm.l.startSubcontainer(args.Spec, args.Conf, args.CID, stdios, goferFDs, goferFilestoreFDs, args.GoferMountConfs); err != nil {
 		log.Debugf("containerManager.StartSubcontainer failed, cid: %s, args: %+v, err: %v", args.CID, args, err)
 		return err
 	}
