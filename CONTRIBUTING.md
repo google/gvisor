@@ -120,6 +120,25 @@ docker run --rm --runtime=my-branch --rm hello-world
 make refresh
 ```
 
+### Update golang dependencies
+
+First, we need to update dependencies in the go.mod and go.sum files. To do
+that, we should checkout the go branch and update dependencies using the go get
+tool.
+
+```bash
+git checkout origin/go
+go get golang.org/x/net
+```
+
+Next, we should checkout the master branch and update dependencies in the
+WORKSPACE file using the Gazelle tool.
+
+```bash
+git checkout origin/master
+bazel run //:gazelle -- update-repos -from_file=go.mod
+```
+
 ### The small print
 
 Contributions made by corporations are covered by a different agreement than the
