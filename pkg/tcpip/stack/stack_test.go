@@ -4836,6 +4836,91 @@ func TestFindRouteWithForwarding(t *testing.T) {
 	}
 }
 
+func TestFindRoutePrefersLocalAddrOnlyForLocallyGeneratedTraffic(t *testing.T) {
+	const (
+		nicID1 = 1
+		nicID2 = 2
+	)
+	var (
+		nic1Addr    = tcpip.AddrFromSlice([]byte("\x01\x00\x00\x00"))
+		nic2Addr    = tcpip.AddrFromSlice([]byte("\x02\x00\x00\x00"))
+		gatewayAddr = tcpip.AddrFromSlice([]byte("\x03\x00\x00\x00"))
+	)
+
+	tests := []struct {
+		name            string
+		localAddr       tcpip.Address
+		remoteAddr      tcpip.Address
+		wantOutgoingNIC tcpip.NICID
+	}{
+		{
+			name:            "locally generated traffic routed through default gateway because we prefer local address on outgoing interface",
+			localAddr:       nic1Addr,
+			remoteAddr:      nic2Addr,
+			wantOutgoingNIC: nicID1,
+		},
+		{
+			name:            "forwarded traffic routed through NIC 2 because local address preference only applies to locally generated traffic",
+			localAddr:       tcpip.Address{},
+			remoteAddr:      nic2Addr,
+			wantOutgoingNIC: nicID2,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			s := stack.New(stack.Options{
+				NetworkProtocols: []stack.NetworkProtocolFactory{fakeNetFactory},
+			})
+
+			ep1 := channel.New(1, defaultMTU, "")
+			if err := s.CreateNIC(nicID1, ep1); err != nil {
+				t.Fatalf("CreateNIC(%d, _): %s:", nicID1, err)
+			}
+
+			ep2 := channel.New(1, defaultMTU, "")
+			if err := s.CreateNIC(nicID2, ep2); err != nil {
+				t.Fatalf("CreateNIC(%d, _): %s:", nicID2, err)
+			}
+
+			// NB: we do *not* assign nic2Addr on NIC 2. We are exercising the scenario when we are forwarding
+			// traffic to an address that we do not own.
+			protocolAddr1 := tcpip.ProtocolAddress{
+				Protocol:          fakeNetNumber,
+				AddressWithPrefix: tcpip.AddressWithPrefix{Address: nic1Addr, PrefixLen: fakeDefaultPrefixLen},
+			}
+			if err := s.AddProtocolAddress(nicID1, protocolAddr1, stack.AddressProperties{}); err != nil {
+				t.Fatalf("AddProtocolAddress(%d, %+v, {}): %s", nicID1, protocolAddr1, err)
+			}
+
+			if err := s.SetForwardingDefaultAndAllNICs(fakeNetNumber, true); err != nil {
+				t.Fatalf("SetForwardingDefaultAndAllNICs(%d, %t): %s", fakeNetNumber, true, err)
+			}
+
+			unspecifiedSubnet := func() tcpip.Subnet {
+				unspecifiedSubnet, err := tcpip.NewSubnet(tcpip.AddrFrom4Slice([]byte("\x00\x00\x00\x00")), tcpip.MaskFrom("\x00\x00\x00\x00"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				return unspecifiedSubnet
+			}()
+			s.SetRouteTable([]tcpip.Route{{Destination: nic2Addr.WithPrefix().Subnet(), NIC: nicID2}, {Destination: unspecifiedSubnet, Gateway: gatewayAddr, NIC: nicID1}})
+
+			r, err := s.FindRoute(0, test.localAddr, test.remoteAddr, fakeNetNumber, false /* multicastLoop */)
+			if err != nil {
+				t.Fatalf("FindRoute(0, %s, %s, %d, false): got %s, want nil", test.localAddr, test.remoteAddr, fakeNetNumber, err)
+			}
+			if r.NICID() != test.wantOutgoingNIC {
+				t.Errorf("got r.NICID() = %d, want = %d", r.NICID(), test.wantOutgoingNIC)
+			}
+
+			if t.Failed() {
+				t.FailNow()
+			}
+		})
+	}
+}
+
 func TestAddMulticastRoute(t *testing.T) {
 	const (
 		incomingNICID = 1
