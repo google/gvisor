@@ -46,6 +46,8 @@ void Setup(int count, std::vector<FileDescriptor>& event_fds, fd_set& read_fds,
     FD_SET(fd.get(), &read_fds);
     event_fds.push_back(std::move(fd));
   }
+
+  ASSERT_LT(max_fd, FD_SETSIZE);
 }
 
 // Benchmarks a call to select(2) when no FD is "ready" with varying timeout
@@ -94,7 +96,7 @@ void BM_SelectAllEvents(benchmark::State& state) {
   }
 }
 
-BENCHMARK(BM_SelectAllEvents)->Range(/*start=*/2, /*limit=*/1024);
+BENCHMARK(BM_SelectAllEvents)->Range(/*start=*/2, /*limit=*/512);
 
 }  // namespace
 
