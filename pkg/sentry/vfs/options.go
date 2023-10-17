@@ -98,6 +98,9 @@ type MountFlags struct {
 	// filesystem should not honor set-user-ID and set-group-ID bits or
 	// file capabilities when executing programs.
 	NoSUID bool
+
+	// NoSymFollow is equivalent to MS_NOSYMFOLLOW.
+	NoSymFollow bool
 }
 
 // MountOptions contains options to VirtualFilesystem.MountAt(), and VirtualFilesystem.RemountAt()

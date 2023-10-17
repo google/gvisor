@@ -181,6 +181,9 @@ func (mnt *Mount) MountFlags() uint64 {
 	if mnt.Flags.NoSUID {
 		flags |= linux.ST_NOSUID
 	}
+	if mnt.Flags.NoSymFollow {
+		flags |= linux.ST_NOSYMFOLLOW
+	}
 	if mnt.ReadOnly() {
 		flags |= linux.ST_RDONLY
 	}
@@ -1230,6 +1233,9 @@ func (vfs *VirtualFilesystem) GenerateProcMounts(ctx context.Context, taskRootDi
 		if mnt.Flags.NoExec {
 			opts += ",noexec"
 		}
+		if mnt.Flags.NoSymFollow {
+			opts += ",nosymfollow"
+		}
 		if mopts := mnt.fs.Impl().MountOptions(); mopts != "" {
 			opts += "," + mopts
 		}
@@ -1346,6 +1352,9 @@ func (vfs *VirtualFilesystem) GenerateProcMountInfo(ctx context.Context, taskRoo
 		}
 		if mnt.Flags.NoExec {
 			opts += ",noexec"
+		}
+		if mnt.Flags.NoSymFollow {
+			opts += ",nosymfollow"
 		}
 		fmt.Fprintf(buf, "%s ", opts)
 

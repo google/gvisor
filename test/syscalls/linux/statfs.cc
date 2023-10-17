@@ -19,6 +19,7 @@
 #include <unistd.h>
 
 #include <cstdint>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -32,8 +33,20 @@
 
 namespace gvisor {
 namespace testing {
-
 namespace {
+
+#ifndef MS_NOSYMFOLLOW
+#define MS_NOSYMFOLLOW 256
+#endif
+#ifndef _LINUX_STATFS_H
+#define _LINUX_STATFS_H
+#define ST_RDONLY 0x0001
+#define ST_NOSUID 0x0002
+#define ST_NODEV 0x0004
+#define ST_NOEXEC 0x0008
+#define ST_NOATIME 0x0400
+#define ST_NOSYMFOLLOW 0x2000
+#endif
 
 TEST(StatfsTest, CannotStatBadPath) {
   auto temp_file = NewTempAbsPath();
@@ -63,16 +76,19 @@ TEST(StatfsTest, InternalDevShm) {
 TEST(StatFsTest, MountFlags) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
 
-  const std::vector<int64_t> flags = {MS_NOEXEC, MS_NOATIME, MS_NODEV,
-                                      MS_NOSUID, MS_RDONLY};
+  // From mount flags to statfs flags.
+  const std::map<int64_t, int64_t> flags = {
+      {MS_NOEXEC, ST_NOEXEC}, {MS_NOATIME, ST_NOATIME},
+      {MS_NODEV, ST_NODEV},   {MS_NOSUID, ST_NOSUID},
+      {MS_RDONLY, ST_RDONLY}, {MS_NOSYMFOLLOW, ST_NOSYMFOLLOW}};
 
-  for (const auto& flag : flags) {
+  for (const auto& [mount_flag, statfs_flag] : flags) {
     auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
     auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
-        Mount("", dir.path(), "tmpfs", flag, "mode=0777", 0));
+        Mount("", dir.path(), "tmpfs", mount_flag, "mode=0777", 0));
     struct statfs st;
     EXPECT_THAT(statfs(dir.path().c_str(), &st), SyscallSucceeds());
-    EXPECT_TRUE((st.f_flags & flag) == flag);
+    EXPECT_TRUE((st.f_flags & statfs_flag) == statfs_flag);
   }
 }
 
