@@ -735,32 +735,32 @@ func TestValidInstructions(t *testing.T) {
 	}
 }
 
+// Seccomp filter example given in Linux's
+// Documentation/networking/filter.txt, translated to bytecode using the
+// Linux kernel tree's tools/net/bpf_asm.
+var sampleFilter = []Instruction{
+	{0x20, 0, 0, 0x00000004},  // ld [4]                  /* offsetof(struct seccomp_data, arch) */
+	{0x15, 0, 11, 0xc000003e}, // jne #0xc000003e, bad    /* AUDIT_ARCH_X86_64 */
+	{0x20, 0, 0, 0000000000},  // ld [0]                  /* offsetof(struct seccomp_data, nr) */
+	{0x15, 10, 0, 0x0000000f}, // jeq #15, good           /* __NR_rt_sigreturn */
+	{0x15, 9, 0, 0x000000e7},  // jeq #231, good          /* __NR_exit_group */
+	{0x15, 8, 0, 0x0000003c},  // jeq #60, good           /* __NR_exit */
+	{0x15, 7, 0, 0000000000},  // jeq #0, good            /* __NR_read */
+	{0x15, 6, 0, 0x00000001},  // jeq #1, good            /* __NR_write */
+	{0x15, 5, 0, 0x00000005},  // jeq #5, good            /* __NR_fstat */
+	{0x15, 4, 0, 0x00000009},  // jeq #9, good            /* __NR_mmap */
+	{0x15, 3, 0, 0x0000000e},  // jeq #14, good           /* __NR_rt_sigprocmask */
+	{0x15, 2, 0, 0x0000000d},  // jeq #13, good           /* __NR_rt_sigaction */
+	{0x15, 1, 0, 0x00000023},  // jeq #35, good           /* __NR_nanosleep */
+	{0x06, 0, 0, 0000000000},  // bad: ret #0             /* SECCOMP_RET_KILL */
+	{0x06, 0, 0, 0x7fff0000},  // good: ret #0x7fff0000   /* SECCOMP_RET_ALLOW */
+}
+
 func TestSimpleFilter(t *testing.T) {
-	// Seccomp filter example given in Linux's
-	// Documentation/networking/filter.txt, translated to bytecode using the
-	// Linux kernel tree's tools/net/bpf_asm.
-	filter := []Instruction{
-		{0x20, 0, 0, 0x00000004},  // ld [4]                  /* offsetof(struct seccomp_data, arch) */
-		{0x15, 0, 11, 0xc000003e}, // jne #0xc000003e, bad    /* AUDIT_ARCH_X86_64 */
-		{0x20, 0, 0, 0000000000},  // ld [0]                  /* offsetof(struct seccomp_data, nr) */
-		{0x15, 10, 0, 0x0000000f}, // jeq #15, good           /* __NR_rt_sigreturn */
-		{0x15, 9, 0, 0x000000e7},  // jeq #231, good          /* __NR_exit_group */
-		{0x15, 8, 0, 0x0000003c},  // jeq #60, good           /* __NR_exit */
-		{0x15, 7, 0, 0000000000},  // jeq #0, good            /* __NR_read */
-		{0x15, 6, 0, 0x00000001},  // jeq #1, good            /* __NR_write */
-		{0x15, 5, 0, 0x00000005},  // jeq #5, good            /* __NR_fstat */
-		{0x15, 4, 0, 0x00000009},  // jeq #9, good            /* __NR_mmap */
-		{0x15, 3, 0, 0x0000000e},  // jeq #14, good           /* __NR_rt_sigprocmask */
-		{0x15, 2, 0, 0x0000000d},  // jeq #13, good           /* __NR_rt_sigaction */
-		{0x15, 1, 0, 0x00000023},  // jeq #35, good           /* __NR_nanosleep */
-		{0x06, 0, 0, 0000000000},  // bad: ret #0             /* SECCOMP_RET_KILL */
-		{0x06, 0, 0, 0x7fff0000},  // good: ret #0x7fff0000   /* SECCOMP_RET_ALLOW */
-	}
-	p, err := Compile(filter)
+	p, err := Compile(sampleFilter)
 	if err != nil {
 		t.Fatalf("Unexpected compilation error: %v", err)
 	}
-
 	for _, test := range []struct {
 		// desc is the test's description.
 		desc string
@@ -809,4 +809,20 @@ type seccompData struct {
 // asInput converts a seccompData to a bpf.Input.
 func dataAsInput(data *linux.SeccompData) Input {
 	return InputBytes{marshal.Marshal(data), hostarch.ByteOrder}
+}
+
+// BenchmarkInterpreter benchmarks the execution of the sample filter
+// for a sample syscall.
+func BenchmarkInterpreter(b *testing.B) {
+	p, err := Compile(sampleFilter)
+	if err != nil {
+		b.Fatalf("Unexpected compilation error: %v", err)
+	}
+	data := dataAsInput(&linux.SeccompData{Nr: 231 /* __NR_exit_group */, Arch: 0xc000003e})
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := Exec(p, data); err != nil {
+			b.Fatalf("Unexpected execution error: %v", err)
+		}
+	}
 }
