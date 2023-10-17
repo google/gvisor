@@ -100,7 +100,7 @@ func (cm *containerManager) Event(cid *string, out *EventOut) error {
 
 	// Memory usage.
 	mem := cm.l.k.MemoryFile()
-	_ = mem.UpdateUsage(0) // best effort to update.
+	_ = mem.UpdateUsage(nil) // best effort to update.
 	_, totalUsage := usage.MemoryAccounting.Copy()
 	switch containers := cm.l.containerCount(); containers {
 	case 0:
