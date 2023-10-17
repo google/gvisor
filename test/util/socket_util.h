@@ -401,9 +401,6 @@ SocketPairKind NoOp(SocketPairKind const& base);
 // ASSERT_NO_FATAL_FAILURE().
 void TransferTest(int fd1, int fd2);
 
-// Fills [buf, buf+len) with random bytes.
-void RandomizeBuffer(char* buf, size_t len);
-
 // Base test fixture for tests that operate on pairs of connected sockets.
 class SocketPairTest : public ::testing::TestWithParam<SocketPairKind> {
  protected:

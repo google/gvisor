@@ -24,7 +24,6 @@
 #include <stack>
 
 #include "gtest/gtest.h"
-#include "absl/memory/memory.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_split.h"
 #include "absl/time/clock.h"
@@ -32,6 +31,7 @@
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
+#include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
 namespace gvisor {
@@ -596,14 +596,6 @@ void TransferTest(int fd1, int fd2) {
               SyscallSucceedsWithValue(sizeof(buf2)));
 
   EXPECT_EQ(0, memcmp(buf1, buf2, sizeof(buf1)));
-}
-
-// Initializes the given buffer with random data.
-void RandomizeBuffer(char* ptr, size_t len) {
-  uint32_t seed = time(nullptr);
-  for (size_t i = 0; i < len; ++i) {
-    ptr[i] = static_cast<char>(rand_r(&seed));
-  }
 }
 
 size_t CalculateUnixSockAddrLen(const char* sun_path) {

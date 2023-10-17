@@ -738,7 +738,7 @@ std::vector<T> VecCat(Args&&... args) {
   } while (false)
 
 // Fill the given buffer with random bytes.
-void RandomizeBuffer(void* buffer, size_t len);
+void RandomizeBuffer(char* buffer, size_t len);
 
 template <typename T>
 inline PosixErrorOr<T> Atoi(absl::string_view str) {
