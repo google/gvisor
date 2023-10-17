@@ -185,13 +185,12 @@ PosixErrorOr<uint64_t> Links(const std::string& path) {
   return static_cast<uint64_t>(st.st_nlink);
 }
 
-void RandomizeBuffer(void* buffer, size_t len) {
+void RandomizeBuffer(char* buffer, size_t len) {
   struct timespec ts = {};
   clock_gettime(CLOCK_MONOTONIC, &ts);
   uint32_t seed = static_cast<uint32_t>(ts.tv_nsec);
-  char* const buf = static_cast<char*>(buffer);
   for (size_t i = 0; i < len; i++) {
-    buf[i] = rand_r(&seed) % 255;
+    buffer[i] = rand_r(&seed) % 255;
   }
 }
 
