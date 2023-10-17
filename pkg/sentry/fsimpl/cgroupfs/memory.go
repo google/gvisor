@@ -121,13 +121,25 @@ type memoryCgroup struct {
 	*cgroupInode
 }
 
-func (memCg *memoryCgroup) collectMemoryUsage() uint64 {
-	_, totalBytes := usage.MemoryAccounting.CopyPerCg(memCg.ID())
-
+// Collects all the memory cgroup ids for the cgroup.
+func (memCg *memoryCgroup) collectMemCgIDs(memCgIDs map[uint32]struct{}) {
+	// Add ourselves.
+	memCgIDs[memCg.ID()] = struct{}{}
+	// Add our children.
 	memCg.forEachChildDir(func(d *dir) {
 		cg := memoryCgroup{d.cgi}
-		totalBytes += cg.collectMemoryUsage()
+		cg.collectMemCgIDs(memCgIDs)
 	})
+}
+
+// Returns the memory usage for all cgroup ids in memCgIDs.
+func getUsage(k *kernel.Kernel, memCgIDs map[uint32]struct{}) uint64 {
+	k.MemoryFile().UpdateUsage(memCgIDs)
+	var totalBytes uint64
+	for id := range memCgIDs {
+		_, bytes := usage.MemoryAccounting.CopyPerCg(id)
+		totalBytes += bytes
+	}
 	return totalBytes
 }
 
@@ -139,10 +151,10 @@ type memoryUsageInBytesData struct {
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (d *memoryUsageInBytesData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	k := kernel.KernelFromContext(ctx)
-	mf := k.MemoryFile()
-	mf.UpdateUsage(d.memCg.ID())
 
-	totalBytes := d.memCg.collectMemoryUsage()
+	memCgIDs := make(map[uint32]struct{})
+	d.memCg.collectMemCgIDs(memCgIDs)
+	totalBytes := getUsage(k, memCgIDs)
 	fmt.Fprintf(buf, "%d\n", totalBytes)
 	return nil
 }

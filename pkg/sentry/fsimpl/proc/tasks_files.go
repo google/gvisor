@@ -268,7 +268,7 @@ var _ dynamicInode = (*meminfoData)(nil)
 // Generate implements vfs.DynamicBytesSource.Generate.
 func (*meminfoData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	mf := kernel.KernelFromContext(ctx).MemoryFile()
-	_ = mf.UpdateUsage(0) // Best effort
+	_ = mf.UpdateUsage(nil) // Best effort
 	snapshot, totalUsage := usage.MemoryAccounting.Copy()
 	totalSize := usage.TotalMemory(mf.TotalSize(), totalUsage)
 	anon := snapshot.Anonymous + snapshot.Tmpfs

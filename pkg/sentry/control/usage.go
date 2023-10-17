@@ -88,7 +88,7 @@ func (u *Usage) UsageFD(opts *MemoryUsageFileOpts, out *MemoryUsageFile) error {
 func (u *Usage) Collect(opts *MemoryUsageOpts, out *MemoryUsage) error {
 	if opts.Full {
 		// Ensure everything is up to date.
-		if err := u.Kernel.MemoryFile().UpdateUsage(0); err != nil {
+		if err := u.Kernel.MemoryFile().UpdateUsage(nil); err != nil {
 			return err
 		}
 
