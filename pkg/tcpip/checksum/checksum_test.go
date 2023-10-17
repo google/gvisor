@@ -135,8 +135,6 @@ func TestChecksum(t *testing.T) {
 		name string
 	}{
 		{old, "checksum_old"},
-		{unrolled, "unrolled"},
-		{bitsLib, "bitslib"},
 		{Checksum, "checksum"},
 	}
 
@@ -209,8 +207,6 @@ func BenchmarkChecksum(b *testing.B) {
 		name string
 	}{
 		{old, "checksum_old"},
-		{unrolled, "unrolled"},
-		{bitsLib, "bitslib"},
 		{Checksum, "checksum"},
 	}
 
@@ -268,14 +264,4 @@ func oldCalculateChecksum(buf []byte, odd bool, initial uint32) (uint16, bool) {
 	}
 
 	return Combine(uint16(v), uint16(v>>16)), odd
-}
-
-func unrolled(buf []byte, initial uint16) uint16 {
-	s, _ := unrolledCalculateChecksum(buf, false, initial)
-	return s
-}
-
-func bitsLib(buf []byte, initial uint16) uint16 {
-	s, _ := calculateChecksumNoASM(buf, false, initial)
-	return s
 }
