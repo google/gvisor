@@ -21,7 +21,6 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
-	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/syserr"
 )
 
@@ -37,7 +36,7 @@ type abstractEndpoint struct {
 //
 // +stateify savable
 type AbstractSocketNamespace struct {
-	mu sync.Mutex `state:"nosave"`
+	mu abstractSocketNamespaceMutex `state:"nosave"`
 
 	// Keeps a mapping from name to endpoint. AbstractSocketNamespace does not hold
 	// any references on any sockets that it contains; when retrieving a socket,
@@ -113,11 +112,8 @@ func (a *AbstractSocketNamespace) Bind(ctx context.Context, path string, ep tran
 	} else {
 		name = path[1:]
 		// Check if there is already a socket (which has not yet been destroyed) bound at name.
-		if ep, ok := a.endpoints[name]; ok {
-			if ep.socket.TryIncRef() {
-				ep.socket.DecRef(ctx)
-				return name, syserr.ErrPortInUse
-			}
+		if _, ok := a.endpoints[name]; ok {
+			return "", syserr.ErrPortInUse
 		}
 	}
 
