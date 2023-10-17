@@ -1088,10 +1088,10 @@ func (f *MemoryFile) ShouldCacheEvictable() bool {
 }
 
 // UpdateUsage ensures that the memory usage statistics in
-// usage.MemoryAccounting are up to date. If forceScan is true, the
-// UsageScanDuration is ignored and the memory file is scanned to get the
-// memory usage.
-func (f *MemoryFile) UpdateUsage(memCgID uint32) error {
+// usage.MemoryAccounting are up to date. If memCgIDs is nil, all the pages
+// will be scanned. Else only the pages which belong to the memory cgroup ids
+// in memCgIDs will be scanned and the memory usage will be updated.
+func (f *MemoryFile) UpdateUsage(memCgIDs map[uint32]struct{}) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
@@ -1120,10 +1120,10 @@ func (f *MemoryFile) UpdateUsage(memCgID uint32) error {
 		return nil
 	}
 
-	if memCgID == 0 {
+	if memCgIDs == nil {
 		f.usageLast = time.Now()
 	}
-	err = f.updateUsageLocked(currentUsage, memCgID, mincore)
+	err = f.updateUsageLocked(currentUsage, memCgIDs, mincore)
 	log.Debugf("UpdateUsage: currentUsage=%d, usageExpected=%d, usageSwapped=%d.",
 		currentUsage, f.usageExpected, f.usageSwapped)
 	log.Debugf("UpdateUsage: took %v.", time.Since(f.usageLast))
@@ -1136,7 +1136,7 @@ func (f *MemoryFile) UpdateUsage(memCgID uint32) error {
 //
 // Precondition: f.mu must be held; it may be unlocked and reacquired.
 // +checklocks:f.mu
-func (f *MemoryFile) updateUsageLocked(currentUsage uint64, memCgID uint32, checkCommitted func(bs []byte, committed []byte) error) error {
+func (f *MemoryFile) updateUsageLocked(currentUsage uint64, memCgIDs map[uint32]struct{}, checkCommitted func(bs []byte, committed []byte) error) error {
 	// Track if anything changed to elide the merge. In the common case, we
 	// expect all segments to be committed and no merge to occur.
 	changedAny := false
@@ -1183,10 +1183,12 @@ func (f *MemoryFile) updateUsageLocked(currentUsage uint64, memCgID uint32, chec
 		// Scan the pages of the given memCgID only. This will avoid scanning the
 		// whole memory file when the memory usage is required only for a specific
 		// cgroup. The total memory usage of all cgroups can be obtained when the
-		// memCgID is passed as zero.
-		if memCgID != 0 && seg.ValuePtr().memCgID != memCgID {
-			seg = seg.NextSegment()
-			continue
+		// memCgIDs is nil.
+		if memCgIDs != nil {
+			if _, ok := memCgIDs[seg.ValuePtr().memCgID]; !ok {
+				seg = seg.NextSegment()
+				continue
+			}
 		}
 
 		// Get the range for this segment. As we touch slices, the
