@@ -57,7 +57,16 @@ func main() {
 		log.Warningf("could not create loopback root: %v", err)
 		os.Exit(1)
 	}
-	opts := &fuse.MountOptions{DirectMountStrict: true, Debug: *debug, AllowOther: true, Options: []string{"default_permissions"}}
+	opts := &fuse.MountOptions{
+		DirectMountStrict: true,
+		Debug:             *debug,
+		AllowOther:        true,
+		// SingleThreaded adds locking the the fuse server handler. We need to
+		// enable this so that the go race detector doesn't detect a data race, even
+		// if there isn't a logical race.
+		SingleThreaded: true,
+		Options:        []string{"default_permissions"},
+	}
 	rawFS := fs.NewNodeFS(loopbackRoot, &fs.Options{NullPermissions: true, Logger: golog.Default()})
 	server, err := fuse.NewServer(rawFS, *dir, opts)
 	if err != nil {
