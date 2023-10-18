@@ -678,11 +678,11 @@ func (c *containerMounter) mountSubmounts(ctx context.Context, conf *config.Conf
 		)
 
 		if submount.hint != nil && submount.hint.ShouldShareMount() {
-			sharedMount, ok := c.sharedMounts[submount.hint.Mount.Source]
-			if !ok {
-				return fmt.Errorf("shared mount %q not found", submount.hint.Name)
+			sharedMount, err := c.getSharedMount(ctx, conf, submount, creds)
+			if err != nil {
+				return fmt.Errorf("getting shared mount %q: %w", submount.hint.Name, err)
 			}
-			mnt, err = c.mountSharedSubmount(ctx, conf, mns, creds, submount.mount, submount.hint, sharedMount)
+			mnt, err = c.mountSharedSubmount(ctx, conf, mns, creds, submount, sharedMount)
 			if err != nil {
 				return fmt.Errorf("mount shared mount %q to %q: %v", submount.hint.Name, submount.mount.Destination, err)
 			}
@@ -715,14 +715,10 @@ func (c *containerMounter) mountSubmounts(ctx context.Context, conf *config.Conf
 
 type mountInfo struct {
 	mount          *specs.Mount
-	goferFD        int
+	goferFD        *fd.FD
 	hint           *MountHint
 	goferMountConf GoferMountConf
 	filestoreFD    *fd.FD
-}
-
-func newNonGoferMountInfo(mount *specs.Mount) *mountInfo {
-	return &mountInfo{mount: mount, goferFD: -1}
 }
 
 func (c *containerMounter) prepareMounts() ([]mountInfo, error) {
@@ -738,12 +734,11 @@ func (c *containerMounter) prepareMounts() ([]mountInfo, error) {
 		// Only bind mounts use host FDs; see
 		// containerMounter.getMountNameAndOptions.
 		info := mountInfo{
-			mount:   m,
-			goferFD: -1,
-			hint:    c.hints.FindMount(m.Source),
+			mount: m,
+			hint:  c.hints.FindMount(m.Source),
 		}
 		if specutils.IsGoferMount(*m) {
-			info.goferFD = c.goferFDs.remove()
+			info.goferFD = c.goferFDs.removeAsFD()
 			info.goferMountConf = c.goferMountConfs[goferMntIdx]
 			if info.goferMountConf.IsFilestorePresent() {
 				info.filestoreFD = c.goferFilestoreFDs.removeAsFD()
@@ -837,11 +832,11 @@ func getMountNameAndOptions(conf *config.Config, m *mountInfo, productName strin
 
 	case Bind:
 		fsName = gofer.Name
-		if m.goferFD < 0 {
+		if m.goferFD == nil {
 			// Check that an FD was provided to fails fast.
 			return "", nil, fmt.Errorf("gofer mount requires a connection FD")
 		}
-		data = goferMountData(m.goferFD, getMountAccessType(conf, m.hint), conf)
+		data = goferMountData(m.goferFD.Release(), getMountAccessType(conf, m.hint), conf)
 		internalData = gofer.InternalFilesystemOptions{
 			UniqueID: m.mount.Destination,
 		}
@@ -959,7 +954,7 @@ func (c *containerMounter) mountTmp(ctx context.Context, conf *config.Config, cr
 			// another user. This is normally done for /tmp.
 			Options: []string{"mode=01777"},
 		}
-		if _, err := c.mountSubmount(ctx, conf, mns, creds, newNonGoferMountInfo(&tmpMount)); err != nil {
+		if _, err := c.mountSubmount(ctx, conf, mns, creds, &mountInfo{mount: &tmpMount}); err != nil {
 			return fmt.Errorf("mountSubmount failed: %v", err)
 		}
 		return nil
@@ -973,63 +968,48 @@ func (c *containerMounter) mountTmp(ctx context.Context, conf *config.Config, cr
 	}
 }
 
-// processHints processes annotations that container hints about how volumes
-// should be mounted (e.g. a volume shared between containers).
-// Precondition: Must be only called once during the loader sequence
-// for the root container.
-// Postcondition: Initialized l.sharedMounts on success.
-func (l *Loader) processHints(conf *config.Config, creds *auth.Credentials) error {
-	ctx := l.k.SupervisorContext()
-	var sharedMounts map[string]*vfs.Mount
-	for _, hint := range l.mountHints.Mounts {
-		if !hint.ShouldShareMount() {
-			continue
-		}
-
-		log.Infof("Mounting master of shared mount %q from %q type %q", hint.Name, hint.Mount.Source, hint.Mount.Type)
-		mnt, err := l.mountSharedMaster(ctx, conf, hint, creds)
-		if err != nil {
-			return fmt.Errorf("mounting shared master %q: %v", hint.Name, err)
-		}
-		if sharedMounts == nil {
-			sharedMounts = make(map[string]*vfs.Mount)
-		}
-		sharedMounts[hint.Mount.Source] = mnt
+func (c *containerMounter) getSharedMount(ctx context.Context, conf *config.Config, mount *mountInfo, creds *auth.Credentials) (*vfs.Mount, error) {
+	sharedMount, ok := c.sharedMounts[mount.hint.Mount.Source]
+	if ok {
+		log.Infof("Using existing shared mount %q from %q type %q", mount.hint.Name, mount.hint.Mount.Source, mount.hint.Mount.Type)
+		return sharedMount, nil
 	}
-	l.sharedMounts = sharedMounts
-	return nil
+	log.Infof("Mounting master of shared mount %q from %q type %q", mount.hint.Name, mount.hint.Mount.Source, mount.hint.Mount.Type)
+	sharedMount, err := c.mountSharedMaster(ctx, conf, mount, creds)
+	if err != nil {
+		return nil, fmt.Errorf("mounting shared master %q: %v", mount.hint.Name, err)
+	}
+	c.sharedMounts[mount.hint.Mount.Source] = sharedMount
+	return sharedMount, nil
 }
 
 // mountSharedMaster mounts the master of a volume that is shared among
 // containers in a pod.
-func (l *Loader) mountSharedMaster(ctx context.Context, conf *config.Config, hint *MountHint, creds *auth.Credentials) (*vfs.Mount, error) {
-	// Map mount type to filesystem name, and parse out the options that we are
-	// capable of dealing with.
-	mntInfo := newNonGoferMountInfo(&hint.Mount)
-	fsName, opts, err := getMountNameAndOptions(conf, mntInfo, l.productName)
+func (c *containerMounter) mountSharedMaster(ctx context.Context, conf *config.Config, mntInfo *mountInfo, creds *auth.Credentials) (*vfs.Mount, error) {
+	// Mount the master using the options from the hint (mount annotations).
+	origOpts := mntInfo.mount.Options
+	mntInfo.mount.Options = mntInfo.hint.Mount.Options
+	fsName, opts, err := getMountNameAndOptions(conf, mntInfo, c.productName)
+	mntInfo.mount.Options = origOpts
 	if err != nil {
 		return nil, err
 	}
 	if len(fsName) == 0 {
-		return nil, fmt.Errorf("mount type not supported %q", hint.Mount.Type)
+		return nil, fmt.Errorf("mount type not supported %q", mntInfo.hint.Mount.Type)
 	}
-	return l.k.VFS().MountDisconnected(ctx, creds, "", fsName, opts)
+	return c.k.VFS().MountDisconnected(ctx, creds, "", fsName, opts)
 }
 
 // mountSharedSubmount binds mount to a previously mounted volume that is shared
 // among containers in the same pod.
-func (c *containerMounter) mountSharedSubmount(ctx context.Context, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials, mount *specs.Mount, srcHint *MountHint, srcMount *vfs.Mount) (*vfs.Mount, error) {
-	if err := srcHint.checkCompatible(mount); err != nil {
+func (c *containerMounter) mountSharedSubmount(ctx context.Context, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials, mntInfo *mountInfo, sharedMount *vfs.Mount) (*vfs.Mount, error) {
+	if err := mntInfo.hint.checkCompatible(mntInfo.mount); err != nil {
 		return nil, err
 	}
 
-	// Ignore data and useOverlay because these were already applied to
-	// the master mount.
-	_, opts, err := getMountNameAndOptions(conf, newNonGoferMountInfo(mount), c.productName)
-	if err != nil {
-		return nil, err
-	}
-	newMnt := c.k.VFS().NewDisconnectedMount(srcMount.Filesystem(), srcMount.Root(), opts)
+	// Generate mount point specific opts using mntInfo.mount.
+	opts := ParseMountOptions(mntInfo.mount.Options)
+	newMnt := c.k.VFS().NewDisconnectedMount(sharedMount.Filesystem(), sharedMount.Root(), opts)
 	defer newMnt.DecRef(ctx)
 
 	root := mns.Root(ctx)
@@ -1037,17 +1017,17 @@ func (c *containerMounter) mountSharedSubmount(ctx context.Context, conf *config
 	target := &vfs.PathOperation{
 		Root:  root,
 		Start: root,
-		Path:  fspath.Parse(mount.Destination),
+		Path:  fspath.Parse(mntInfo.mount.Destination),
 	}
 
-	if err := c.makeMountPoint(ctx, creds, mns, mount.Destination); err != nil {
-		return nil, fmt.Errorf("creating mount point %q: %w", mount.Destination, err)
+	if err := c.makeMountPoint(ctx, creds, mns, mntInfo.mount.Destination); err != nil {
+		return nil, fmt.Errorf("creating mount point %q: %w", mntInfo.mount.Destination, err)
 	}
 
 	if err := c.k.VFS().ConnectMountAt(ctx, creds, newMnt, target); err != nil {
 		return nil, err
 	}
-	log.Infof("Mounted %q type shared bind to %q", mount.Destination, srcHint.Name)
+	log.Infof("Mounted %q type shared bind to %q", mntInfo.mount.Destination, mntInfo.hint.Name)
 	return newMnt, nil
 }
 
@@ -1080,10 +1060,10 @@ func (c *containerMounter) configureRestore(ctx context.Context) (context.Contex
 	if err != nil {
 		return ctx, err
 	}
-	for i := range c.mounts {
+	for i := range mounts {
 		submount := &mounts[i]
-		if submount.goferFD >= 0 {
-			fdmap[submount.mount.Destination] = submount.goferFD
+		if submount.goferFD != nil {
+			fdmap[submount.mount.Destination] = submount.goferFD.Release()
 		}
 	}
 	return context.WithValue(ctx, gofer.CtxRestoreServerFDMap, fdmap), nil
