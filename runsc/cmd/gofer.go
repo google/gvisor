@@ -199,7 +199,7 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 	//
 	// Note that all mount points have been mounted in the proper location in
 	// setupRootFS().
-	cleanMounts, err := resolveMounts(conf, spec.Mounts, root)
+	cleanMounts, err := g.resolveMounts(conf, spec.Mounts, root)
 	if err != nil {
 		util.Fatalf("Failure to resolve mounts: %v", err)
 	}
@@ -276,32 +276,37 @@ func (g *Gofer) serve(spec *specs.Spec, conf *config.Config, root string) subcom
 	log.Infof("Serving %q mapped to %q on FD %d (ro: %t)", "/", root, g.ioFDs[0], cfgs[0].readonly)
 
 	mountIdx := 1 // first one is the root
+	submountIoFDs := g.ioFDs[1:]
 	for _, m := range spec.Mounts {
 		if !specutils.IsGoferMount(m) {
 			continue
 		}
-
+		mountConf := g.mountConfs[mountIdx]
+		mountIdx++
+		if !mountConf.ShouldUseLisafs() {
+			continue
+		}
 		if !filepath.IsAbs(m.Destination) {
 			util.Fatalf("mount destination must be absolute: %q", m.Destination)
 		}
-		if mountIdx >= len(g.ioFDs) {
+
+		if len(submountIoFDs) == 0 {
 			util.Fatalf("no FD found for mount. Did you forget --io-fd? FDs: %d, Mount: %+v", len(g.ioFDs), m)
 		}
-
+		ioFD := submountIoFDs[0]
+		submountIoFDs = submountIoFDs[1:]
+		readonly := specutils.IsReadonlyMount(m.Options) || mountConf.ShouldUseOverlayfs()
 		cfgs = append(cfgs, connectionConfig{
-			sock:      newSocket(g.ioFDs[mountIdx]),
+			sock:      newSocket(ioFD),
 			mountPath: m.Destination,
-			readonly:  specutils.IsReadonlyMount(m.Options) || g.mountConfs[mountIdx].ShouldUseOverlayfs(),
+			readonly:  readonly,
 		})
-
-		log.Infof("Serving %q mapped on FD %d (ro: %t)", m.Destination, g.ioFDs[mountIdx], cfgs[mountIdx].readonly)
-		mountIdx++
+		log.Infof("Serving %q mapped on FD %d (ro: %t)", m.Destination, ioFD, readonly)
 	}
 
-	if mountIdx != len(g.ioFDs) {
-		util.Fatalf("too many FDs passed for mounts. mounts: %d, FDs: %d", mountIdx, len(g.ioFDs))
+	if len(submountIoFDs) > 0 {
+		util.Fatalf("too many FDs passed for mounts. mounts: %d, FDs: %d", len(cfgs), len(g.ioFDs))
 	}
-	cfgs = cfgs[:mountIdx]
 
 	for _, cfg := range cfgs {
 		conn, err := server.CreateConnection(cfg.sock, cfg.mountPath, cfg.readonly)
@@ -447,9 +452,14 @@ func (g *Gofer) setupRootFS(spec *specs.Spec, conf *config.Config) error {
 // location inside root. It will resolve relative paths and symlinks. It also
 // creates directories as needed.
 func (g *Gofer) setupMounts(conf *config.Config, mounts []specs.Mount, root, procPath string) error {
-	goferMntIdx := 1 // First index is for rootfs.
+	mountIdx := 1 // First index is for rootfs.
 	for _, m := range mounts {
 		if !specutils.IsGoferMount(m) {
+			continue
+		}
+		mountConf := g.mountConfs[mountIdx]
+		mountIdx++
+		if !mountConf.ShouldUseLisafs() {
 			continue
 		}
 
@@ -459,7 +469,7 @@ func (g *Gofer) setupMounts(conf *config.Config, mounts []specs.Mount, root, pro
 		}
 
 		flags := specutils.OptionsToFlags(m.Options) | unix.MS_BIND
-		if g.mountConfs[goferMntIdx].ShouldUseOverlayfs() {
+		if mountConf.ShouldUseOverlayfs() {
 			// Force mount read-only if writes are not going to be sent to it.
 			flags |= unix.MS_RDONLY
 		}
@@ -476,7 +486,6 @@ func (g *Gofer) setupMounts(conf *config.Config, mounts []specs.Mount, root, pro
 				return fmt.Errorf("mount dst: %q, flags: %#x, err: %v", dst, flags, err)
 			}
 		}
-		goferMntIdx++
 	}
 	return nil
 }
@@ -487,10 +496,17 @@ func (g *Gofer) setupMounts(conf *config.Config, mounts []specs.Mount, root, pro
 // Otherwise, it may follow symlinks to locations that would be overwritten
 // with another mount point and return the wrong location. In short, make sure
 // setupMounts() has been called before.
-func resolveMounts(conf *config.Config, mounts []specs.Mount, root string) ([]specs.Mount, error) {
+func (g *Gofer) resolveMounts(conf *config.Config, mounts []specs.Mount, root string) ([]specs.Mount, error) {
+	mountIdx := 1 // First index is for rootfs.
 	cleanMounts := make([]specs.Mount, 0, len(mounts))
 	for _, m := range mounts {
 		if !specutils.IsGoferMount(m) {
+			cleanMounts = append(cleanMounts, m)
+			continue
+		}
+		mountConf := g.mountConfs[mountIdx]
+		mountIdx++
+		if !mountConf.ShouldUseLisafs() {
 			cleanMounts = append(cleanMounts, m)
 			continue
 		}

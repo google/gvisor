@@ -425,6 +425,9 @@ func (c *containerMounter) checkDispenser() error {
 	if !c.goferFDs.empty() {
 		return fmt.Errorf("not all gofer FDs were consumed, remaining: %v", c.goferFDs)
 	}
+	if !c.goferFilestoreFDs.empty() {
+		return fmt.Errorf("not all gofer Filestore FDs were consumed, remaining: %v", c.goferFilestoreFDs)
+	}
 	return nil
 }
 
@@ -494,6 +497,9 @@ func (c *containerMounter) createMountNamespace(ctx context.Context, conf *confi
 
 	fsName := gofer.Name
 	rootfsConf := c.goferMountConfs[0]
+	if rootfsConf == SelfTmpfs {
+		panic("SelfTmpfs is not possible for rootfs")
+	}
 	if rootfsConf.ShouldUseOverlayfs() {
 		log.Infof("Adding overlay on top of root")
 		var (
@@ -728,20 +734,21 @@ func (c *containerMounter) prepareMounts() ([]mountInfo, error) {
 	var mounts []mountInfo
 	goferMntIdx := 1 // First index is for rootfs.
 	for i := range c.mounts {
-		m := &c.mounts[i]
-		specutils.MaybeConvertToBindMount(m)
-
-		// Only bind mounts use host FDs; see
-		// containerMounter.getMountNameAndOptions.
 		info := mountInfo{
-			mount: m,
-			hint:  c.hints.FindMount(m.Source),
+			mount: &c.mounts[i],
+			hint:  c.hints.FindMount(c.mounts[i].Source),
 		}
-		if specutils.IsGoferMount(*m) {
-			info.goferFD = c.goferFDs.removeAsFD()
+		specutils.MaybeConvertToBindMount(info.mount)
+		if specutils.IsGoferMount(*info.mount) {
 			info.goferMountConf = c.goferMountConfs[goferMntIdx]
+			if info.goferMountConf.ShouldUseLisafs() {
+				info.goferFD = c.goferFDs.removeAsFD()
+			}
 			if info.goferMountConf.IsFilestorePresent() {
 				info.filestoreFD = c.goferFilestoreFDs.removeAsFD()
+			}
+			if info.goferMountConf == SelfTmpfs {
+				specutils.ChangeMountType(info.mount, tmpfs.Name)
 			}
 			goferMntIdx++
 		}
@@ -828,6 +835,14 @@ func getMountNameAndOptions(conf *config.Config, m *mountInfo, productName strin
 		data, err = parseAndFilterOptions(m.mount.Options, tmpfsAllowedData...)
 		if err != nil {
 			return "", nil, err
+		}
+		if m.filestoreFD != nil {
+			internalData = tmpfs.FilesystemOpts{
+				FilestoreFD: m.filestoreFD,
+				// If a mount is being overlaid with tmpfs, it should not be limited by
+				// the default tmpfs size limit.
+				DisableDefaultSizeLimit: true,
+			}
 		}
 
 	case Bind:
@@ -972,6 +987,12 @@ func (c *containerMounter) getSharedMount(ctx context.Context, conf *config.Conf
 	sharedMount, ok := c.sharedMounts[mount.hint.Mount.Source]
 	if ok {
 		log.Infof("Using existing shared mount %q from %q type %q", mount.hint.Name, mount.hint.Mount.Source, mount.hint.Mount.Type)
+		if mount.goferFD != nil {
+			panic(fmt.Errorf("extra goferFD provided for shared mount %q", mount.hint.Name))
+		}
+		if mount.filestoreFD != nil {
+			mount.filestoreFD.Close()
+		}
 		return sharedMount, nil
 	}
 	log.Infof("Mounting master of shared mount %q from %q type %q", mount.hint.Name, mount.hint.Mount.Source, mount.hint.Mount.Type)

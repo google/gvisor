@@ -54,7 +54,7 @@ func TestGetMountAccessType(t *testing.T) {
 				MountPrefix + "mount1.share":     "pod",
 				MountPrefix + "mount1.lifecycle": "pod",
 			},
-			want: config.FileAccessShared,
+			want: config.FileAccessExclusive,
 		},
 		{
 			name: "shared=shared",

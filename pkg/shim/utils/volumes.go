@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
+	"gvisor.dev/gvisor/runsc/specutils"
 )
 
 const (
@@ -160,7 +161,7 @@ func UpdateVolumeAnnotations(s *specs.Spec) (bool, error) {
 				// matching.
 				if yes, _ := isVolumePath(volume, s.Mounts[i].Source); yes {
 					// Container mount type must match the sandbox's mount type.
-					changeMountType(&s.Mounts[i], v)
+					specutils.ChangeMountType(&s.Mounts[i], v)
 					updated = true
 				}
 			}
@@ -218,7 +219,7 @@ func configureShm(s *specs.Spec) (bool, error) {
 				s.Annotations[volumeKeyPrefix+devshmName+".options"] = "rw"
 			}
 
-			changeMountType(m, devshmType)
+			specutils.ChangeMountType(m, devshmType)
 			updated = true
 
 			// Remove the duplicate entry now that we found the shared /dev/shm mount.
@@ -229,23 +230,4 @@ func configureShm(s *specs.Spec) (bool, error) {
 		}
 	}
 	return updated, nil
-}
-
-func changeMountType(m *specs.Mount, newType string) {
-	m.Type = newType
-
-	// OCI spec allows bind mounts to be specified in options only. So if new type
-	// is not bind, remove bind/rbind from options.
-	//
-	// "For bind mounts (when options include either bind or rbind), the type is
-	// a dummy, often "none" (not listed in /proc/filesystems)."
-	if newType != "bind" {
-		newOpts := make([]string, 0, len(m.Options))
-		for _, opt := range m.Options {
-			if opt != "rbind" && opt != "bind" {
-				newOpts = append(newOpts, opt)
-			}
-		}
-		m.Options = newOpts
-	}
 }
