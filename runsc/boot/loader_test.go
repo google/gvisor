@@ -475,11 +475,7 @@ func TestCreateMountNamespace(t *testing.T) {
 			defer l.Destroy()
 			defer loaderCleanup()
 
-			if err := l.processHints(l.root.conf, l.root.procArgs.Credentials); err != nil {
-				t.Fatalf("failed process hints: %v", err)
-			}
 			mntr := newContainerMounter(&l.root, l.k, l.mountHints, l.sharedMounts, "", l.sandboxID)
-
 			ctx := l.k.SupervisorContext()
 			creds := auth.NewRootCredentials(l.root.procArgs.Credentials.UserNamespace)
 			mns, err := mntr.mountAll(ctx, creds, l.root.conf, &l.root.procArgs)

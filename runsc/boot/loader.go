@@ -159,10 +159,6 @@ type Loader struct {
 	// apply to the entire pod.
 	mountHints *PodMountHints
 
-	// sharedMountKey holds VFS mounts that may be shared between containers
-	// within the same pod. It is mapped by mount source.
-	sharedMounts map[string]*vfs.Mount
-
 	// productName is the value to show in
 	// /sys/devices/virtual/dmi/id/product_name.
 	productName string
@@ -170,8 +166,12 @@ type Loader struct {
 	// nvidiaUVMDevMajor is the device major number used for nvidia-uvm.
 	nvidiaUVMDevMajor uint32
 
-	// mu guards processes and porForwardProxies.
+	// mu guards the fields below.
 	mu sync.Mutex
+
+	// sharedMounts holds VFS mounts that may be shared between containers within
+	// the same pod. It is mapped by mount source.
+	sharedMounts map[string]*vfs.Mount
 
 	// processes maps containers init process and invocation of exec. Root
 	// processes are keyed with container ID and pid=0, while exec invocations
@@ -508,6 +508,7 @@ func New(args Args) (*Loader, error) {
 		sandboxID:         args.ID,
 		processes:         map[execID]*execProcess{eid: {}},
 		mountHints:        mountHints,
+		sharedMounts:      make(map[string]*vfs.Mount),
 		root:              info,
 		stopProfiling:     stopProfiling,
 		productName:       args.ProductName,
@@ -720,7 +721,7 @@ func (l *Loader) run() error {
 			tg  *kernel.ThreadGroup
 			err error
 		)
-		tg, ep.tty, err = l.createContainerProcess(true, l.sandboxID, &l.root)
+		tg, ep.tty, err = l.createContainerProcess(l.sandboxID, &l.root)
 		if err != nil {
 			return err
 		}
@@ -873,7 +874,7 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 		info.stdioFDs = stdioFDs
 	}
 
-	ep.tg, ep.tty, err = l.createContainerProcess(false, cid, info)
+	ep.tg, ep.tty, err = l.createContainerProcess(cid, info)
 	if err != nil {
 		return err
 	}
@@ -902,7 +903,8 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 	return nil
 }
 
-func (l *Loader) createContainerProcess(root bool, cid string, info *containerInfo) (*kernel.ThreadGroup, *host.TTYFileDescription, error) {
+// +checklocks:l.mu
+func (l *Loader) createContainerProcess(cid string, info *containerInfo) (*kernel.ThreadGroup, *host.TTYFileDescription, error) {
 	// Create the FD map, which will set stdin, stdout, and stderr.
 	ctx := info.procArgs.NewContext(l.k)
 	fdTable, ttyFile, err := createFDTable(ctx, info.spec.Process.Terminal, info.stdioFDs, info.passFDs, info.spec.Process.User)
@@ -939,11 +941,8 @@ func (l *Loader) createContainerProcess(root bool, cid string, info *containerIn
 	}
 	l.startGoferMonitor(cid, int32(info.goferFDs[0].FD()))
 
-	if root {
-		if err := l.processHints(info.conf, info.procArgs.Credentials); err != nil {
-			return nil, nil, err
-		}
-	}
+	// We can share l.sharedMounts with containerMounter since l.mu is locked.
+	// Hence, mntr must only be used within this function (while l.mu is locked).
 	mntr := newContainerMounter(info, l.k, l.mountHints, l.sharedMounts, l.productName, l.sandboxID)
 	if err := setupContainerVFS(ctx, info, mntr, &info.procArgs); err != nil {
 		return nil, nil, err
