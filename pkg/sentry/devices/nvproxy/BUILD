@@ -27,7 +27,10 @@ go_library(
         "uvm_unsafe.go",
         "version.go",
     ],
-    visibility = ["//pkg/sentry:internal"],
+    visibility = [
+        "//pkg/sentry:internal",
+        "//tools/gpu:__subpackages__",
+    ],
     deps = [
         "//pkg/abi/linux",
         "//pkg/abi/nvgpu",

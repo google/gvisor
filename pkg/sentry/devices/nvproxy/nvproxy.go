@@ -39,7 +39,8 @@ func Register(vfsObj *vfs.VirtualFilesystem, uvmDevMajor uint32) error {
 	if err != nil {
 		return fmt.Errorf("failed to get Nvidia driver version: %w", err)
 	}
-	version, err := driverVersionFrom(versionStr)
+	log.Debugf("NVIDIA driver version: %s", versionStr)
+	version, err := DriverVersionFrom(versionStr)
 	if err != nil {
 		return fmt.Errorf("failed to parse Nvidia driver version %s: %w", versionStr, err)
 	}
@@ -47,10 +48,9 @@ func Register(vfsObj *vfs.VirtualFilesystem, uvmDevMajor uint32) error {
 	if !ok {
 		return fmt.Errorf("unsupported Nvidia driver version: %s", versionStr)
 	}
-	log.Infof("Nvidia driver version: %s", versionStr)
 	nvp := &nvproxy{
 		objsLive: make(map[nvgpu.Handle]*object),
-		abi:      abiCons(),
+		abi:      abiCons.cons(),
 	}
 	for minor := uint32(0); minor <= nvgpu.NV_CONTROL_DEVICE_MINOR; minor++ {
 		if err := vfsObj.RegisterDevice(vfs.CharDevice, nvgpu.NV_MAJOR_DEVICE_NUMBER, minor, &frontendDevice{

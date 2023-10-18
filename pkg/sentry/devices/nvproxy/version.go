@@ -23,38 +23,72 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
-type driverVersion struct {
+// DriverVersion represents a NVIDIA driver version patch release.
+type DriverVersion struct {
 	major int
 	minor int
 	patch int
 }
 
-func driverVersionFrom(version string) (driverVersion, error) {
+// NewDriverVersion returns a new driver version.
+func NewDriverVersion(major, minor, patch int) DriverVersion {
+	return DriverVersion{major, minor, patch}
+}
+
+// DriverVersionFrom returns a DriverVersion from a string.
+func DriverVersionFrom(version string) (DriverVersion, error) {
 	parts := strings.Split(version, ".")
 	if len(parts) != 3 {
-		return driverVersion{}, fmt.Errorf("invalid format of version string %q", version)
+		return DriverVersion{}, fmt.Errorf("invalid format of version string %q", version)
 	}
 	var (
-		res driverVersion
+		res DriverVersion
 		err error
 	)
 	res.major, err = strconv.Atoi(parts[0])
 	if err != nil {
-		return driverVersion{}, fmt.Errorf("invalid format for major version %q: %v", version, err)
+		return DriverVersion{}, fmt.Errorf("invalid format for major version %q: %v", version, err)
 	}
 	res.minor, err = strconv.Atoi(parts[1])
 	if err != nil {
-		return driverVersion{}, fmt.Errorf("invalid format for minor version %q: %v", version, err)
+		return DriverVersion{}, fmt.Errorf("invalid format for minor version %q: %v", version, err)
 	}
 	res.patch, err = strconv.Atoi(parts[2])
 	if err != nil {
-		return driverVersion{}, fmt.Errorf("invalid format for patch version %q: %v", version, err)
+		return DriverVersion{}, fmt.Errorf("invalid format for patch version %q: %v", version, err)
 	}
 	return res, nil
 }
 
-func (v driverVersion) String() string {
+func (v DriverVersion) String() string {
 	return fmt.Sprintf("%02d.%02d.%02d", v.major, v.minor, v.patch)
+}
+
+// Equals returns true if the two driver versions are equal.
+func (v DriverVersion) Equals(other DriverVersion) bool {
+	return v.major == other.major && v.minor == other.minor && v.patch == other.patch
+}
+
+// IsGreaterThan returns the "greater" driver version.
+// IsGreaterThan returns true if v is more recent than other, assuming v and other are on the same
+// dev branch.
+func (v DriverVersion) IsGreaterThan(other DriverVersion) DriverVersion {
+	switch {
+	case v.major > other.major:
+		return v
+	case other.major > v.major:
+		return other
+	case v.minor > other.minor:
+		return v
+	case other.minor > v.minor:
+		return other
+	case v.patch > other.patch:
+		return v
+	case other.patch > v.patch:
+		return other
+	default:
+		return v
+	}
 }
 
 type frontendIoctlHandler func(fi *frontendIoctlState) (uintptr, error)
@@ -65,6 +99,13 @@ type uvmIoctlHandler func(ui *uvmIoctlState) (uintptr, error)
 // A driverABIFunc constructs and returns a driverABI.
 // This indirection exists to avoid memory usage from unused driver ABIs.
 type driverABIFunc func() *driverABI
+
+// abiConAndChecksum couples the driver's abiConstructor to the SHA256 checksum of its linux .run
+// driver installer file from NVIDIA.
+type abiConAndChecksum struct {
+	cons     driverABIFunc
+	checksum string
+}
 
 // driverABI defines the Nvidia kernel driver ABI proxied at a given version.
 //
@@ -89,21 +130,27 @@ type driverABI struct {
 
 // abis is a global map containing all supported Nvidia driver ABIs. This is
 // initialized on Init() and is immutable henceforth.
-var abis map[driverVersion]driverABIFunc
+var abis map[DriverVersion]abiConAndChecksum
 var abisOnce sync.Once
 
-func addDriverABI(major, minor, patch int, cons driverABIFunc) driverABIFunc {
+// Note: runfileChecksum is the checksum of the .run file of the driver installer for linux from
+// nvidia.
+// To add a new version, add in support as normal and add the "addDriverABI" call for your version.
+// Run `make sudo TARGETS=//tools/gpu:main ARGS="checksum"` and fill in mismatches.
+func addDriverABI(major, minor, patch int, runfileChecksum string, cons driverABIFunc) driverABIFunc {
 	if abis == nil {
-		abis = make(map[driverVersion]driverABIFunc)
+		abis = make(map[DriverVersion]abiConAndChecksum)
 	}
-	abis[driverVersion{major, minor, patch}] = cons
+	version := NewDriverVersion(major, minor, patch)
+	abis[version] = abiConAndChecksum{cons: cons, checksum: runfileChecksum}
 	return cons
 }
 
 // Init initializes abis global map.
 func Init() {
 	abisOnce.Do(func() {
-		v525_60_13 := addDriverABI(525, 60, 13, func() *driverABI {
+		v525_60_13Checksum := "dce1c184f9f038be72237ccd29c66bb151077f6037f1c158c83d582bd2dba8ca"
+		v525_60_13 := addDriverABI(525, 60, 13, v525_60_13Checksum, func() *driverABI {
 			// 525.60.13 is the earliest driver version supported by nvproxy. Since
 			// there is no parent to inherit from, the driverABI needs to be constructed
 			// with the entirety of the nvproxy functionality at this version.
@@ -257,8 +304,11 @@ func Init() {
 
 		// The following versions do not exist on the main branch. They branched off
 		// the main branch at 525.89.02.
-		v525_105_17 := addDriverABI(525, 105, 17, v525_89_02)
-		_ = addDriverABI(525, 125, 06, v525_105_17)
+		v525_105_17Checksum := "c635a21a282c9b53485f19ebb64a0f4b536a968b94d4d97629e0bc547a58142a"
+		v525_105_17 := addDriverABI(525, 105, 17, v525_105_17Checksum, v525_89_02)
+
+		v525_125_06Checksum := "b5275689f4a833c37a507717ac8f0ee2f1f5cd2b7e236ffa70aad8dfb7455b9d"
+		_ = addDriverABI(525, 125, 06, v525_125_06Checksum, v525_105_17)
 
 		// v535.43.02 is an intermediate unqualified version from the main branch.
 		v535_43_02 := func() *driverABI {
@@ -270,7 +320,18 @@ func Init() {
 			return abi
 		}
 
-		v535_54_03 := addDriverABI(535, 54, 03, v535_43_02)
-		_ = addDriverABI(535, 104, 05, v535_54_03)
+		v535_54_03Checksum := "454764f57ea1b9e19166a370f78be10e71f0626438fb197f726dc3caf05b4082"
+		v535_54_03 := addDriverABI(535, 54, 03, v535_54_03Checksum, v535_43_02)
+		v535_104_05Checksum := "2f9d609d1da770beee757636635c46e7ed8253ade887b87c7a5482e33fcbedc9"
+		_ = addDriverABI(535, 104, 05, v535_104_05Checksum, v535_54_03)
 	})
+}
+
+// GetSupportedDriversAndChecksums returns supported driver ABIs.
+func GetSupportedDriversAndChecksums() map[DriverVersion]string {
+	versions := make(map[DriverVersion]string, len(abis))
+	for version, abi := range abis {
+		versions[version] = abi.checksum
+	}
+	return versions
 }

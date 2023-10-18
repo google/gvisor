@@ -23,8 +23,8 @@ import (
 func TestInit(t *testing.T) {
 	// Test that initializing all driverABI works (does not panic or anything).
 	Init()
-	for _, cons := range abis {
-		cons()
+	for _, abi := range abis {
+		abi.cons()
 	}
 }
 
@@ -34,5 +34,17 @@ func TestNVOS21ParamsSize(t *testing.T) {
 		// V525 and V535. If this turns out to be false, a separate seccomp entry
 		// needs to be added for the new size value.
 		t.Errorf("SizeofNVOS21ParametersV535(%#08x) != SizeofNVOS21Parameters(%#08x)", nvgpu.SizeofNVOS21ParametersV535, nvgpu.SizeofNVOS21Parameters)
+	}
+}
+
+// TestAllSupportedHashesPresent tests that all the supported versions in nvproxy have hash entries
+// in this tool's map. If you're here because of failures run:
+// `make sudo TARGETS=//tools/gpu:main ARGS="checksum"`and fix mismatches in supported drivers.
+func TestAllSupportedHashesPresent(t *testing.T) {
+	Init()
+	for version, checksum := range GetSupportedDriversAndChecksums() {
+		if checksum == "" {
+			t.Errorf("unexpected empty value for driver %q", version.String())
+		}
 	}
 }
