@@ -131,9 +131,8 @@ func createSharedMount(mount specs.Mount, name string, pod ...*specs.Spec) {
 	}
 	for _, spec := range pod {
 		spec.Annotations[boot.MountPrefix+name+".source"] = mount.Source
-		spec.Annotations[boot.MountPrefix+name+".type"] = mount.Type
+		spec.Annotations[boot.MountPrefix+name+".type"] = "tmpfs"
 		spec.Annotations[boot.MountPrefix+name+".share"] = share
-		spec.Annotations[boot.MountPrefix+name+".lifecycle"] = "pod"
 		if len(mount.Options) > 0 {
 			spec.Annotations[boot.MountPrefix+name+".options"] = strings.Join(mount.Options, ",")
 		}
