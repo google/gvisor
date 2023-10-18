@@ -422,20 +422,13 @@ func PivotRoot(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintp
 	}
 	defer putOldTpop.Release(t)
 
-	oldRootVd := t.FSContext().RootDirectory()
-	defer oldRootVd.DecRef(t)
-	newRootVd, err := t.Kernel().VFS().GetDentryAt(t, t.Credentials(), &newRootTpop.pop, &vfs.GetDentryOptions{
-		CheckSearchable: true,
-	})
+	newRoot, oldRoot, err := t.Kernel().VFS().PivotRoot(t, t.Credentials(), &newRootTpop.pop, &putOldTpop.pop)
 	if err != nil {
 		return 0, nil, err
 	}
-	defer newRootVd.DecRef(t)
-
-	if err := t.Kernel().VFS().PivotRoot(t, t.Credentials(), &newRootTpop.pop, &putOldTpop.pop); err != nil {
-		return 0, nil, err
-	}
-	t.Kernel().ReplaceFSContextRoots(t, oldRootVd, newRootVd)
+	defer newRoot.DecRef(t)
+	defer oldRoot.DecRef(t)
+	t.Kernel().ReplaceFSContextRoots(t, oldRoot, newRoot)
 	return 0, nil, nil
 }
 
