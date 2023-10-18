@@ -1339,9 +1339,6 @@ func TestMultiContainerContainerDestroyStress(t *testing.T) {
 // changes from one container is reflected in the other.
 func TestMultiContainerSharedMount(t *testing.T) {
 	testSharedMount(t, func(t *testing.T, conf *config.Config, sourceDir string, mntType string) {
-		if mntType != "tmpfs" {
-			t.Skipf("Only tmpfs shared mounts support for now, got %q", mntType)
-		}
 		// Setup the containers.
 		sleep := []string{"sleep", "100"}
 		podSpec, ids := createSpecs(sleep, sleep)
@@ -1446,9 +1443,6 @@ func TestMultiContainerSharedMount(t *testing.T) {
 // Test that pod mounts are mounted as readonly when requested.
 func TestMultiContainerSharedMountReadonly(t *testing.T) {
 	testSharedMount(t, func(t *testing.T, conf *config.Config, sourceDir string, mntType string) {
-		if mntType != "tmpfs" {
-			t.Skipf("Only tmpfs shared mounts support for now, got %q", mntType)
-		}
 		// Setup the containers.
 		sleep := []string{"sleep", "100"}
 		podSpec, ids := createSpecs(sleep, sleep)
@@ -1506,9 +1500,6 @@ func TestMultiContainerSharedMountReadonly(t *testing.T) {
 // container mounts.
 func TestMultiContainerSharedMountCompatible(t *testing.T) {
 	testSharedMount(t, func(t *testing.T, conf *config.Config, sourceDir string, mntType string) {
-		if mntType != "tmpfs" {
-			t.Skipf("Only tmpfs shared mounts support for now, got %q", mntType)
-		}
 		sleep := []string{"sleep", "100"}
 		podSpec, ids := createSpecs(sleep, sleep)
 
@@ -1571,9 +1562,6 @@ func TestMultiContainerSharedMountCompatible(t *testing.T) {
 // Test that shared pod mounts continue to work after container is restarted.
 func TestMultiContainerSharedMountRestart(t *testing.T) {
 	testSharedMount(t, func(t *testing.T, conf *config.Config, sourceDir string, mntType string) {
-		if mntType != "tmpfs" {
-			t.Skipf("Only tmpfs shared mounts support for now, got %q", mntType)
-		}
 		// Setup the containers.
 		sleep := []string{"sleep", "100"}
 		podSpec, ids := createSpecs(sleep, sleep)
@@ -1674,9 +1662,6 @@ func TestMultiContainerSharedMountRestart(t *testing.T) {
 // replica mounts.
 func TestMultiContainerSharedMountUnsupportedOptions(t *testing.T) {
 	testSharedMount(t, func(t *testing.T, conf *config.Config, sourceDir string, mntType string) {
-		if mntType != "tmpfs" {
-			t.Skipf("Only tmpfs shared mounts support for now, got %q", mntType)
-		}
 		// Setup the containers.
 		sleep := []string{"/bin/sleep", "100"}
 		podSpec, ids := createSpecs(sleep, sleep)
@@ -1717,6 +1702,100 @@ func TestMultiContainerSharedMountUnsupportedOptions(t *testing.T) {
 	})
 }
 
+// This test checks that a bind mount that is "shared" is overlaid correctly
+// with a self-backed tmpfs.
+func TestMultiContainerSharedBindMount(t *testing.T) {
+	for numContainers := 1; numContainers <= 2; numContainers++ {
+		testSharedMount(t, func(t *testing.T, conf *config.Config, sourceDir string, mntType string) {
+			if mntType != "bind" {
+				t.Skipf("This test is only for shared bind mounts, skipping %q mount type", mntType)
+			}
+			t.Run(fmt.Sprintf("containers-%d", numContainers), func(t *testing.T) {
+				// Setup the containers.
+				sleep := []string{"sleep", "100"}
+				var cmds [][]string
+				for i := 0; i < numContainers; i++ {
+					cmds = append(cmds, sleep)
+				}
+				podSpec, ids := createSpecs(cmds...)
+
+				sharedMount := specs.Mount{
+					Destination: "/mydir/test",
+					Source:      sourceDir,
+					Type:        mntType,
+				}
+				for _, spec := range podSpec {
+					spec.Mounts = append(spec.Mounts, sharedMount)
+				}
+
+				createSharedMount(sharedMount, "test-mount", podSpec...)
+
+				containers, cleanup, err := startContainers(conf, podSpec, ids)
+				if err != nil {
+					t.Fatalf("error starting containers: %v", err)
+				}
+				destroyed := false
+				destroy := func() {
+					if destroyed {
+						return
+					}
+					destroyed = true
+					cleanup()
+				}
+				defer destroy()
+
+				// Create a file in shared mount with a few bytes in each container.
+				var execs []execDesc
+				for i, c := range containers {
+					testFileName := fmt.Sprintf("testfile-%d", i)
+					testFilePath := path.Join(sharedMount.Destination, testFileName)
+					execs = append(execs, execDesc{
+						c:    c,
+						cmd:  []string{"/bin/sh", "-c", "echo hello > " + testFilePath},
+						name: fmt.Sprintf("file created in container %d", i),
+					})
+				}
+				execMany(t, conf, execs)
+
+				// Check that the file is not created on the host.
+				for i := 0; i < numContainers; i++ {
+					testFileName := fmt.Sprintf("testfile-%d", i)
+					if _, err := os.Stat(path.Join(sourceDir, testFileName)); err == nil {
+						t.Errorf("%q file created on the host in spite of tmpfs", testFileName)
+					}
+				}
+
+				// Check that the filestore file is created and is not empty.
+				filestoreFile := boot.SelfFilestorePath(sourceDir, containers[0].sandboxID())
+				var stat unix.Stat_t
+				if err := unix.Stat(filestoreFile, &stat); err != nil {
+					t.Fatalf("unix.Stat(%q) failed for submount filestore: %v", filestoreFile, err)
+				}
+				if stat.Blocks == 0 {
+					t.Errorf("submount filestore file %q is empty", filestoreFile)
+				}
+
+				// Ensure the shared mount is tmpfs.
+				for i, c := range containers {
+					got, err := executeCombinedOutput(conf, c, nil, "/bin/sh", "-c", "mount | grep "+sharedMount.Destination)
+					if err != nil {
+						t.Fatalf("failed to grep mount(1) from container %d: %v", i, err)
+					}
+					if !strings.Contains(string(got), "type tmpfs (rw)") {
+						t.Errorf("expected %s to be a tmpfs mount in container %d. mount(1) reports its type as:\n%s", sharedMount.Destination, i, string(got))
+					}
+				}
+
+				// Destroying the containers should delete the filestore file.
+				destroy()
+				if err := unix.Stat(filestoreFile, &stat); err == nil {
+					t.Fatalf("overlay filestore at %q was not deleted after container.Destroy()", filestoreFile)
+				}
+			})
+		})
+	}
+}
+
 // Test that one container can send an FD to another container, even though
 // they have distinct MountNamespaces.
 func TestMultiContainerMultiRootCanHandleFDs(t *testing.T) {
@@ -1726,9 +1805,6 @@ func TestMultiContainerMultiRootCanHandleFDs(t *testing.T) {
 	}
 
 	testSharedMount(t, func(t *testing.T, conf *config.Config, sourceDir string, mntType string) {
-		if mntType != "tmpfs" {
-			t.Skipf("Only tmpfs shared mounts support for now, got %q", mntType)
-		}
 		// We set up two containers with one shared mount that is used for a
 		// shared socket. The first container will send an FD over the socket
 		// to the second container. The FD corresponds to a file in the first

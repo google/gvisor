@@ -69,7 +69,7 @@ func TestPodMountHintsHappy(t *testing.T) {
 	if want := "bar"; want != mount2.Mount.Source {
 		t.Errorf("mount2 source, want: %q, got: %q", want, mount2.Mount.Source)
 	}
-	if want := "bind"; want != mount2.Mount.Type {
+	if want := "tmpfs"; want != mount2.Mount.Type {
 		t.Errorf("mount2 type, want: %q, got: %q", want, mount2.Mount.Type)
 	}
 	if want := container; want != mount2.Share {

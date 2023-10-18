@@ -38,21 +38,30 @@ const (
 	// AnonOverlay indicates that this gofer mount should be overlaid with an
 	// overlayfs backed by a host file in an anonymous directory.
 	AnonOverlay
+
+	// SelfTmpfs indicates that this gofer mount should be overlaid with a tmpfs
+	// mount backed by a host file in the mount's source directory.
+	SelfTmpfs
 )
 
 // IsFilestorePresent returns true if a filestore file was associated with this.
 func (g GoferMountConf) IsFilestorePresent() bool {
-	return g == SelfOverlay || g == AnonOverlay
+	return g == SelfOverlay || g == AnonOverlay || g == SelfTmpfs
 }
 
 // IsSelfBacked returns true if this mount is backed by a filestore in itself.
 func (g GoferMountConf) IsSelfBacked() bool {
-	return g == SelfOverlay
+	return g == SelfOverlay || g == SelfTmpfs
 }
 
 // ShouldUseOverlayfs returns true if an overlayfs should be applied.
 func (g GoferMountConf) ShouldUseOverlayfs() bool {
 	return g == MemoryOverlay || g == SelfOverlay || g == AnonOverlay
+}
+
+// ShouldUseLisafs returns true if a lisafs client/server should be set up.
+func (g GoferMountConf) ShouldUseLisafs() bool {
+	return g == VanillaGofer || g.ShouldUseOverlayfs()
 }
 
 // GoferMountConfFlags can be used with GoferMountConf flags that appear
@@ -87,7 +96,7 @@ func (g *GoferMountConfFlags) Set(s string) error {
 		if err != nil {
 			return fmt.Errorf("invalid GoferMountConf value (%d): %v", confVal, err)
 		}
-		if confVal > int(AnonOverlay) {
+		if confVal > int(SelfTmpfs) {
 			return fmt.Errorf("invalid GoferMountConf value (%d)", confVal)
 		}
 		*g = append(*g, GoferMountConf(confVal))

@@ -23,22 +23,32 @@ func TestGoferConf(t *testing.T) {
 		ovl          GoferMountConf
 		wantOverlay  bool
 		wantHostFile bool
+		wantLisafs   bool
 	}{{
 		ovl:          VanillaGofer,
 		wantOverlay:  false,
 		wantHostFile: false,
+		wantLisafs:   true,
 	}, {
 		ovl:          MemoryOverlay,
 		wantOverlay:  true,
 		wantHostFile: false,
+		wantLisafs:   true,
 	}, {
 		ovl:          SelfOverlay,
 		wantOverlay:  true,
 		wantHostFile: true,
+		wantLisafs:   true,
 	}, {
 		ovl:          AnonOverlay,
 		wantOverlay:  true,
 		wantHostFile: true,
+		wantLisafs:   true,
+	}, {
+		ovl:          SelfTmpfs,
+		wantOverlay:  false,
+		wantHostFile: true,
+		wantLisafs:   false,
 	}}
 	for _, tc := range tcs {
 		if got := tc.ovl.ShouldUseOverlayfs(); got != tc.wantOverlay {
@@ -47,11 +57,14 @@ func TestGoferConf(t *testing.T) {
 		if got := tc.ovl.IsFilestorePresent(); got != tc.wantHostFile {
 			t.Errorf("gofer conf = %d, IsFilestorePresent() = %t, want = %t", tc.ovl, got, tc.wantHostFile)
 		}
+		if got := tc.ovl.ShouldUseLisafs(); got != tc.wantLisafs {
+			t.Errorf("gofer conf = %d, ShouldUseLisafs() = %t, want = %t", tc.ovl, got, tc.wantLisafs)
+		}
 	}
 }
 
 func TestGoferConfFlags(t *testing.T) {
-	want := GoferMountConfFlags{VanillaGofer, MemoryOverlay, SelfOverlay, AnonOverlay}
+	want := GoferMountConfFlags{VanillaGofer, MemoryOverlay, SelfOverlay, AnonOverlay, SelfTmpfs}
 	var got GoferMountConfFlags
 	got.Set(want.String())
 	if len(got) != len(want) {
