@@ -141,6 +141,20 @@ func NewPodMountHints(spec *specs.Spec) (*PodMountHints, error) {
 		}
 	}
 
+	// Convert mount types.
+	for _, m := range mnts {
+		if m.Mount.Type == Bind &&
+			// This mount is only accessed within the sandbox.
+			(m.Share == container || m.Share == pod) &&
+			// The mount is created and deleted within the pod's lifecycle.
+			(m.Lifecycle == containerLife || m.Lifecycle == podLife) {
+			// Use a file-backed tmpfs mount for such a mount, because it is isolated
+			// to the sandbox and is empty on startup.
+			log.Infof("Converting %s hint to tmpfs", m.Name)
+			m.Mount.Type = tmpfs.Name
+		}
+	}
+
 	return &PodMountHints{Mounts: mnts}, nil
 }
 
@@ -217,16 +231,9 @@ func (m *MountHint) setLifecycle(val string) error {
 // ShouldShareMount returns true if this mount should be configured as a shared
 // mount that is shared among multiple containers in a pod.
 func (m *MountHint) ShouldShareMount() bool {
-	// TODO(b/142076984): Only support tmpfs for now. Bind mounts require a
-	// common gofer to mount all shared volumes.
+	// Only support tmpfs for now. Bind mounts require a common gofer to mount
+	// all shared volumes.
 	return m.Mount.Type == tmpfs.Name && m.Share == pod
-}
-
-// ShouldOverlay returns true if this mount should be overlaid.
-func (m *MountHint) ShouldOverlay() bool {
-	// TODO(b/142076984): Only support share=container for now. Once shared gofer
-	// support is added, we can overlay shared bind mounts too.
-	return m.Mount.Type == Bind && m.Share == container && m.Lifecycle != sharedLife
 }
 
 // checkCompatible verifies that shared mount is compatible with master.
@@ -248,7 +255,6 @@ func (m *MountHint) checkCompatible(replica *specs.Mount) error {
 	return nil
 }
 
-// Precondition: m.mount.Type == Bind.
 func (m *MountHint) fileAccessType() config.FileAccessType {
 	if m.Share == shared {
 		return config.FileAccessShared
