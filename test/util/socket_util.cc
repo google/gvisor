@@ -1113,6 +1113,12 @@ void SetupTimeWaitClose(const TestAddress* listener,
     ASSERT_THAT(poll(&pfd, 1, kTimeout), SyscallSucceedsWithValue(1));
     ASSERT_EQ(pfd.revents, POLLIN);
   }
+  // Send/recv some data to be sure that the fin packet has been acked.
+  char c = 0;
+  ASSERT_THAT(send(passive_closefd.get(), &c, 1, 0),
+              SyscallSucceedsWithValue(sizeof(c)));
+  ASSERT_THAT(recv(active_closefd.get(), &c, 1, 0),
+              SyscallSucceedsWithValue(sizeof(c)));
   ASSERT_THAT(shutdown(passive_closefd.get(), SHUT_WR), SyscallSucceeds());
   {
     constexpr int kTimeout = 10000;
