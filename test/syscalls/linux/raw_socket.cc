@@ -40,9 +40,10 @@ namespace testing {
 
 namespace {
 
+#define TCPHDR_RST 0x4
+#define TCPHDR_FLAGS_OFF 13
+
 using ::testing::AnyOf;
-using ::testing::IsNull;
-using ::testing::NotNull;
 
 // Fixture for tests parameterized by protocol.
 class RawSocketTest : public ::testing::TestWithParam<std::tuple<int, int>> {
@@ -686,6 +687,14 @@ TEST_P(RawSocketTest, SetSocketSendBuf) {
   ASSERT_EQ(quarter_sz, val);
 }
 
+void randomizePacket(char* buf, size_t len, int proto) {
+  RandomizeBuffer(buf, len);
+  // When testing with TCP sockets, ensure the RST flag is set. This is to
+  // prevent the TCP stack from generating RSTs packets for unknown endpoints.
+  if (proto == IPPROTO_TCP && len > TCPHDR_FLAGS_OFF)
+    buf[TCPHDR_FLAGS_OFF] |= TCPHDR_RST;
+}
+
 // Test that receive buffer limits are not enforced when the recv buffer is
 // empty.
 TEST_P(RawSocketTest, RecvBufLimitsEmptyRecvBuffer) {
@@ -713,7 +722,7 @@ TEST_P(RawSocketTest, RecvBufLimitsEmptyRecvBuffer) {
   {
     // Send data of size min and verify that it's received.
     std::vector<char> buf(min);
-    RandomizeBuffer(buf.data(), buf.size());
+    randomizePacket(buf.data(), buf.size(), Protocol());
     ASSERT_NO_FATAL_FAILURE(SendBuf(buf.data(), buf.size()));
 
     // Receive the packet and make sure it's identical.
@@ -727,7 +736,7 @@ TEST_P(RawSocketTest, RecvBufLimitsEmptyRecvBuffer) {
     // Netstack accept a dgram that exceeds rcvBuf limits if the receive buffer
     // is currently empty.
     std::vector<char> buf(min + 1);
-    RandomizeBuffer(buf.data(), buf.size());
+    randomizePacket(buf.data(), buf.size(), Protocol());
     ASSERT_NO_FATAL_FAILURE(SendBuf(buf.data(), buf.size()));
     // Receive the packet and make sure it's identical.
     std::vector<char> recv_buf(buf.size() + HdrLen());
@@ -737,15 +746,6 @@ TEST_P(RawSocketTest, RecvBufLimitsEmptyRecvBuffer) {
 }
 
 TEST_P(RawSocketTest, RecvBufLimits) {
-  // TCP stack generates RSTs for unknown endpoints and it complicates the test
-  // as we have to deal with the RST packets as well. For testing the raw socket
-  // endpoints buffer limit enforcement we can just test for UDP.
-  //
-  // We don't use SKIP_IF here because root_test_runner explicitly fails if a
-  // test is skipped.
-  if (Protocol() == IPPROTO_TCP) {
-    return;
-  }
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveRawIPSocketCapability()));
 
   ASSERT_THAT(bind(s_, reinterpret_cast<struct sockaddr*>(&addr_), AddrLen()),
@@ -790,7 +790,7 @@ TEST_P(RawSocketTest, RecvBufLimits) {
 
   {
     std::vector<char> buf(min);
-    RandomizeBuffer(buf.data(), buf.size());
+    randomizePacket(buf.data(), buf.size(), Protocol());
 
     ASSERT_NO_FATAL_FAILURE(SendBuf(buf.data(), buf.size()));
     ASSERT_NO_FATAL_FAILURE(SendBuf(buf.data(), buf.size()));
