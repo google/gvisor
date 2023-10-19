@@ -38,10 +38,14 @@ func NVProxyEnabled(spec *specs.Spec, conf *config.Config) bool {
 		return true
 	}
 	val, ok := spec.Annotations[annotationNVProxy]
-	if ok && val != "true" {
-		log.Warningf("nvproxy annotation is set to invalid value %q. Ignoring.", val)
+	if ok {
+		ret, err := strconv.ParseBool(val)
+		if val != "" && err != nil {
+			log.Warningf("tpuproxy annotation set to invalid value %q. Skipping.", val)
+		}
+		return ret
 	}
-	return ok && val == "true"
+	return false
 }
 
 // GPUFunctionalityRequested returns true if the user intends for the sandbox
