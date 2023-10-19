@@ -42,7 +42,7 @@ import (
 
 // Container represents a Docker Container allowing
 // user to configure and control as one would with the 'docker'
-// client. Container is backed by the offical golang docker API.
+// client. Container is backed by the official golang docker API.
 // See: https://pkg.go.dev/github.com/docker/docker.
 type Container struct {
 	Name     string
@@ -105,6 +105,9 @@ type RunOpts struct {
 
 	// Links is the list of containers to be connected to the container.
 	Links []string
+
+	// Devices are device requests on the container itself.
+	Devices []container.DeviceRequest
 }
 
 func makeContainer(ctx context.Context, logger testutil.Logger, runtime string) *Container {
@@ -276,8 +279,9 @@ func (c *Container) hostConfig(r RunOpts) *container.HostConfig {
 		ReadonlyRootfs:  r.ReadOnly,
 		NetworkMode:     container.NetworkMode(r.NetworkMode),
 		Resources: container.Resources{
-			Memory:     int64(r.Memory), // In bytes.
-			CpusetCpus: r.CpusetCpus,
+			Memory:         int64(r.Memory), // In bytes.
+			CpusetCpus:     r.CpusetCpus,
+			DeviceRequests: r.Devices,
 		},
 	}
 }
@@ -302,7 +306,7 @@ func (c *Container) Stop(ctx context.Context) error {
 	return c.client.ContainerStop(ctx, c.id, container.StopOptions{})
 }
 
-// Pause is analogous to'docker pause'.
+// Pause is analogous to 'docker pause'.
 func (c *Container) Pause(ctx context.Context) error {
 	return c.client.ContainerPause(ctx, c.id)
 }

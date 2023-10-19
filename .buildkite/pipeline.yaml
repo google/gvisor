@@ -173,9 +173,8 @@ steps:
     <<: *source_test
     label: "GPU tests"
     commands:
-      - uname -r
-      - gcc --version
       - make sudo TARGETS=//tools/gpu:main ARGS="install --latest" || cat /var/log/nvidia-installer.log
+      - make gpu-tests
     agents:
       queue: gpu
   # Release workflow.
