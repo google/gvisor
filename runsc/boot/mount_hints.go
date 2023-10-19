@@ -62,37 +62,6 @@ func (s ShareType) String() string {
 	}
 }
 
-// LifecycleType indicates whether creation/deletion of the volume is tied to
-// the pod or container's lifecycle.
-type LifecycleType int
-
-const (
-	// sharedLife indicates that the volume's lifecycle is not tied to the pod.
-	// The volume persists beyond the pod's life. This is the safe default.
-	sharedLife LifecycleType = iota
-
-	// podLife indicates that the volume's lifecycle is tied to the pod's
-	// lifecycle. The volume is destroyed with the pod.
-	podLife
-
-	// containerLife indicates that the volume's lifecycle is tied to the
-	// container's lifecycle. The volume is destroyed with the container.
-	containerLife
-)
-
-func (o LifecycleType) String() string {
-	switch o {
-	case sharedLife:
-		return "shared"
-	case podLife:
-		return "pod"
-	case containerLife:
-		return "container"
-	default:
-		return fmt.Sprintf("invalid lifecycle value %d", o)
-	}
-}
-
 // PodMountHints contains a collection of mountHints for the pod.
 type PodMountHints struct {
 	Mounts map[string]*MountHint `json:"mounts"`
@@ -141,20 +110,6 @@ func NewPodMountHints(spec *specs.Spec) (*PodMountHints, error) {
 		}
 	}
 
-	// Convert mount types.
-	for _, m := range mnts {
-		if m.Mount.Type == Bind &&
-			// This mount is only accessed within the sandbox.
-			(m.Share == container || m.Share == pod) &&
-			// The mount is created and deleted within the pod's lifecycle.
-			(m.Lifecycle == containerLife || m.Lifecycle == podLife) {
-			// Use a file-backed tmpfs mount for such a mount, because it is isolated
-			// to the sandbox and is empty on startup.
-			log.Infof("Converting %s hint to tmpfs", m.Name)
-			m.Mount.Type = tmpfs.Name
-		}
-	}
-
 	return &PodMountHints{Mounts: mnts}, nil
 }
 
@@ -163,10 +118,9 @@ func NewPodMountHints(spec *specs.Spec) (*PodMountHints, error) {
 // so that mounts can be correctly shared inside the pod.
 // It is part of the sandbox.Sandbox struct, so it must be serializable.
 type MountHint struct {
-	Name      string        `json:"name"`
-	Share     ShareType     `json:"share"`
-	Mount     specs.Mount   `json:"mount"`
-	Lifecycle LifecycleType `json:"lifecycle"`
+	Name  string      `json:"name"`
+	Share ShareType   `json:"share"`
+	Mount specs.Mount `json:"mount"`
 }
 
 func (m *MountHint) setField(key, val string) error {
@@ -182,8 +136,6 @@ func (m *MountHint) setField(key, val string) error {
 		return m.setShare(val)
 	case "options":
 		m.Mount.Options = specutils.FilterMountOptions(strings.Split(val, ","))
-	case "lifecycle":
-		return m.setLifecycle(val)
 	default:
 		return fmt.Errorf("invalid mount annotation: %s=%s", key, val)
 	}
@@ -214,26 +166,16 @@ func (m *MountHint) setShare(val string) error {
 	return nil
 }
 
-func (m *MountHint) setLifecycle(val string) error {
-	switch val {
-	case containerLife.String():
-		m.Lifecycle = containerLife
-	case podLife.String():
-		m.Lifecycle = podLife
-	case sharedLife.String():
-		m.Lifecycle = sharedLife
-	default:
-		return fmt.Errorf("invalid lifecycle %q", val)
-	}
-	return nil
-}
-
 // ShouldShareMount returns true if this mount should be configured as a shared
 // mount that is shared among multiple containers in a pod.
 func (m *MountHint) ShouldShareMount() bool {
 	// Only support tmpfs for now. Bind mounts require a common gofer to mount
 	// all shared volumes.
-	return m.Mount.Type == tmpfs.Name && m.Share == pod
+	return m.Mount.Type == tmpfs.Name &&
+		// A shared mount should be configured for share=container too so:
+		// 1. Restarting the container does not lose the tmpfs data.
+		// 2. Repeated mounts in the container reuse the same tmpfs instance.
+		(m.Share == container || m.Share == pod)
 }
 
 // checkCompatible verifies that shared mount is compatible with master.

@@ -820,7 +820,7 @@ func (c *Container) Destroy() error {
 			if hint := sb.MountHints.FindMount(mountSrc); hint != nil && hint.ShouldShareMount() {
 				// Don't delete filestore file for shared mounts. The sandbox owns a
 				// shared master mount which uses this filestore and is shared with
-				// multiple containers.
+				// multiple mount points.
 				return
 			}
 		}
