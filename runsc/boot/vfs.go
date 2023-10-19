@@ -196,7 +196,7 @@ func setupContainerVFS(ctx context.Context, info *containerInfo, mntr *container
 	rootProcArgs.MaxSymlinkTraversals = linux.MaxSymlinkTraversals
 	rootCtx := rootProcArgs.NewContext(mntr.k)
 
-	mns, err := mntr.mountAll(rootCtx, rootCreds, info.conf, &rootProcArgs)
+	mns, err := mntr.mountAll(rootCtx, rootCreds, info.spec, info.conf, &rootProcArgs)
 	if err != nil {
 		return fmt.Errorf("failed to setupFS: %w", err)
 	}
@@ -438,7 +438,7 @@ func getMountAccessType(conf *config.Config, hint *MountHint) config.FileAccessT
 	return conf.FileAccessMounts
 }
 
-func (c *containerMounter) mountAll(rootCtx context.Context, rootCreds *auth.Credentials, conf *config.Config, rootProcArgs *kernel.CreateProcessArgs) (*vfs.MountNamespace, error) {
+func (c *containerMounter) mountAll(rootCtx context.Context, rootCreds *auth.Credentials, spec *specs.Spec, conf *config.Config, rootProcArgs *kernel.CreateProcessArgs) (*vfs.MountNamespace, error) {
 	log.Infof("Configuring container's file system")
 
 	mns, err := c.createMountNamespace(rootCtx, conf, rootCreds)
@@ -463,7 +463,7 @@ func (c *containerMounter) mountAll(rootCtx context.Context, rootCreds *auth.Cre
 	}
 
 	// Mount submounts.
-	if err := c.mountSubmounts(rootCtx, conf, mns, rootCreds); err != nil {
+	if err := c.mountSubmounts(rootCtx, spec, conf, mns, rootCreds); err != nil {
 		return nil, fmt.Errorf("mounting submounts: %w", err)
 	}
 
@@ -669,7 +669,7 @@ func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Co
 	return &overlayOpts, cu.Release(), nil
 }
 
-func (c *containerMounter) mountSubmounts(ctx context.Context, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials) error {
+func (c *containerMounter) mountSubmounts(ctx context.Context, spec *specs.Spec, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials) error {
 	mounts, err := c.prepareMounts()
 	if err != nil {
 		return err
@@ -684,7 +684,7 @@ func (c *containerMounter) mountSubmounts(ctx context.Context, conf *config.Conf
 		)
 
 		if submount.hint != nil && submount.hint.ShouldShareMount() {
-			sharedMount, err := c.getSharedMount(ctx, conf, submount, creds)
+			sharedMount, err := c.getSharedMount(ctx, spec, conf, submount, creds)
 			if err != nil {
 				return fmt.Errorf("getting shared mount %q: %w", submount.hint.Name, err)
 			}
@@ -693,7 +693,7 @@ func (c *containerMounter) mountSubmounts(ctx context.Context, conf *config.Conf
 				return fmt.Errorf("mount shared mount %q to %q: %v", submount.hint.Name, submount.mount.Destination, err)
 			}
 		} else {
-			mnt, err = c.mountSubmount(ctx, conf, mns, creds, submount)
+			mnt, err = c.mountSubmount(ctx, spec, conf, mns, creds, submount)
 			if err != nil {
 				return fmt.Errorf("mount submount %q: %w", submount.mount.Destination, err)
 			}
@@ -713,7 +713,7 @@ func (c *containerMounter) mountSubmounts(ctx context.Context, conf *config.Conf
 		}
 	}
 
-	if err := c.mountTmp(ctx, conf, creds, mns); err != nil {
+	if err := c.mountTmp(ctx, spec, conf, creds, mns); err != nil {
 		return fmt.Errorf(`mount submount "/tmp": %w`, err)
 	}
 	return nil
@@ -766,8 +766,8 @@ func (c *containerMounter) prepareMounts() ([]mountInfo, error) {
 	return mounts, nil
 }
 
-func (c *containerMounter) mountSubmount(ctx context.Context, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials, submount *mountInfo) (*vfs.Mount, error) {
-	fsName, opts, err := getMountNameAndOptions(conf, submount, c.productName)
+func (c *containerMounter) mountSubmount(ctx context.Context, spec *specs.Spec, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials, submount *mountInfo) (*vfs.Mount, error) {
+	fsName, opts, err := getMountNameAndOptions(spec, conf, submount, c.productName)
 	if err != nil {
 		return nil, fmt.Errorf("mountOptions failed: %w", err)
 	}
@@ -808,7 +808,7 @@ func (c *containerMounter) mountSubmount(ctx context.Context, conf *config.Confi
 
 // getMountNameAndOptions retrieves the fsName, opts, and useOverlay values
 // used for mounts.
-func getMountNameAndOptions(conf *config.Config, m *mountInfo, productName string) (string, *vfs.MountOptions, error) {
+func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo, productName string) (string, *vfs.MountOptions, error) {
 	fsName := m.mount.Type
 	var (
 		data         []string
@@ -824,7 +824,7 @@ func getMountNameAndOptions(conf *config.Config, m *mountInfo, productName strin
 		fsName = sys.Name
 
 	case sys.Name:
-		sysData := &sys.InternalData{EnableAccelSysfs: conf.TPUProxy}
+		sysData := &sys.InternalData{EnableAccelSysfs: specutils.TPUProxyIsEnabled(spec, conf)}
 		if len(productName) > 0 {
 			sysData.ProductName = productName
 		}
@@ -919,7 +919,7 @@ func parseKeyValue(s string) (string, string, bool) {
 //
 // Note that when there are submounts inside of '/tmp', directories for the
 // mount points must be present, making '/tmp' not empty anymore.
-func (c *containerMounter) mountTmp(ctx context.Context, conf *config.Config, creds *auth.Credentials, mns *vfs.MountNamespace) error {
+func (c *containerMounter) mountTmp(ctx context.Context, spec *specs.Spec, conf *config.Config, creds *auth.Credentials, mns *vfs.MountNamespace) error {
 	for _, m := range c.mounts {
 		// m.Destination has been cleaned, so it's to use equality here.
 		if m.Destination == "/tmp" {
@@ -969,7 +969,7 @@ func (c *containerMounter) mountTmp(ctx context.Context, conf *config.Config, cr
 			// another user. This is normally done for /tmp.
 			Options: []string{"mode=01777"},
 		}
-		if _, err := c.mountSubmount(ctx, conf, mns, creds, &mountInfo{mount: &tmpMount}); err != nil {
+		if _, err := c.mountSubmount(ctx, spec, conf, mns, creds, &mountInfo{mount: &tmpMount}); err != nil {
 			return fmt.Errorf("mountSubmount failed: %v", err)
 		}
 		return nil
@@ -983,7 +983,7 @@ func (c *containerMounter) mountTmp(ctx context.Context, conf *config.Config, cr
 	}
 }
 
-func (c *containerMounter) getSharedMount(ctx context.Context, conf *config.Config, mount *mountInfo, creds *auth.Credentials) (*vfs.Mount, error) {
+func (c *containerMounter) getSharedMount(ctx context.Context, spec *specs.Spec, conf *config.Config, mount *mountInfo, creds *auth.Credentials) (*vfs.Mount, error) {
 	sharedMount, ok := c.sharedMounts[mount.hint.Mount.Source]
 	if ok {
 		log.Infof("Using existing shared mount %q from %q type %q", mount.hint.Name, mount.hint.Mount.Source, mount.hint.Mount.Type)
@@ -996,7 +996,7 @@ func (c *containerMounter) getSharedMount(ctx context.Context, conf *config.Conf
 		return sharedMount, nil
 	}
 	log.Infof("Mounting master of shared mount %q from %q type %q", mount.hint.Name, mount.hint.Mount.Source, mount.hint.Mount.Type)
-	sharedMount, err := c.mountSharedMaster(ctx, conf, mount, creds)
+	sharedMount, err := c.mountSharedMaster(ctx, spec, conf, mount, creds)
 	if err != nil {
 		return nil, fmt.Errorf("mounting shared master %q: %v", mount.hint.Name, err)
 	}
@@ -1006,11 +1006,11 @@ func (c *containerMounter) getSharedMount(ctx context.Context, conf *config.Conf
 
 // mountSharedMaster mounts the master of a volume that is shared among
 // containers in a pod.
-func (c *containerMounter) mountSharedMaster(ctx context.Context, conf *config.Config, mntInfo *mountInfo, creds *auth.Credentials) (*vfs.Mount, error) {
+func (c *containerMounter) mountSharedMaster(ctx context.Context, spec *specs.Spec, conf *config.Config, mntInfo *mountInfo, creds *auth.Credentials) (*vfs.Mount, error) {
 	// Mount the master using the options from the hint (mount annotations).
 	origOpts := mntInfo.mount.Options
 	mntInfo.mount.Options = mntInfo.hint.Mount.Options
-	fsName, opts, err := getMountNameAndOptions(conf, mntInfo, c.productName)
+	fsName, opts, err := getMountNameAndOptions(spec, conf, mntInfo, c.productName)
 	mntInfo.mount.Options = origOpts
 	if err != nil {
 		return nil, err
@@ -1159,7 +1159,7 @@ func createDeviceFiles(ctx context.Context, creds *auth.Credentials, info *conta
 }
 
 func tpuProxyRegisterDevicesAndCreateFiles(ctx context.Context, info *containerInfo, k *kernel.Kernel, vfsObj *vfs.VirtualFilesystem, a *devtmpfs.Accessor) error {
-	if !info.conf.TPUProxy {
+	if !specutils.TPUProxyIsEnabled(info.spec, info.conf) {
 		return nil
 	}
 	// At this point /dev/accel just contains the TPU devices have been mounted

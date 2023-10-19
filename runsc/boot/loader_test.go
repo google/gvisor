@@ -478,7 +478,7 @@ func TestCreateMountNamespace(t *testing.T) {
 			mntr := newContainerMounter(&l.root, l.k, l.mountHints, l.sharedMounts, "", l.sandboxID)
 			ctx := l.k.SupervisorContext()
 			creds := auth.NewRootCredentials(l.root.procArgs.Credentials.UserNamespace)
-			mns, err := mntr.mountAll(ctx, creds, l.root.conf, &l.root.procArgs)
+			mns, err := mntr.mountAll(ctx, creds, l.root.spec, l.root.conf, &l.root.procArgs)
 			if err != nil {
 				t.Fatalf("mountAll: %v", err)
 			}
