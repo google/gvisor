@@ -125,9 +125,18 @@ func execMany(t *testing.T, conf *config.Config, execs []execDesc) {
 }
 
 func createSharedMount(mount specs.Mount, name string, pod ...*specs.Spec) {
-	share := "pod"
-	if len(pod) == 1 {
-		share = "container"
+	numContainers := 0
+	for _, spec := range pod {
+		for i := range spec.Mounts {
+			if spec.Mounts[i].Source == mount.Source {
+				numContainers++
+				break
+			}
+		}
+	}
+	share := "container"
+	if numContainers > 1 {
+		share = "pod"
 	}
 	for _, spec := range pod {
 		spec.Annotations[boot.MountPrefix+name+".source"] = mount.Source
@@ -1560,101 +1569,90 @@ func TestMultiContainerSharedMountCompatible(t *testing.T) {
 
 // Test that shared pod mounts continue to work after container is restarted.
 func TestMultiContainerSharedMountRestart(t *testing.T) {
-	testSharedMount(t, func(t *testing.T, conf *config.Config, sourceDir string, mntType string) {
-		// Setup the containers.
-		sleep := []string{"sleep", "100"}
-		podSpec, ids := createSpecs(sleep, sleep)
-		mnt0 := specs.Mount{
-			Destination: "/mydir/test",
-			Source:      sourceDir,
-			Type:        mntType,
-			Options:     nil,
-		}
-		podSpec[0].Mounts = append(podSpec[0].Mounts, mnt0)
+	for numSubConts := 1; numSubConts <= 2; numSubConts++ {
+		testSharedMount(t, func(t *testing.T, conf *config.Config, sourceDir string, mntType string) {
+			// Setup the containers.
+			sleep := []string{"sleep", "100"}
+			cmds := [][]string{sleep}
+			for i := 1; i <= numSubConts; i++ {
+				cmds = append(cmds, sleep)
+			}
+			podSpec, ids := createSpecs(cmds...)
 
-		mnt1 := mnt0
-		mnt1.Destination = "/mydir2/test2"
-		podSpec[1].Mounts = append(podSpec[1].Mounts, mnt1)
+			// Add a shared mount to all subcontainers.
+			mnt := specs.Mount{
+				Source:  sourceDir,
+				Type:    mntType,
+				Options: nil,
+			}
+			for i := 1; i <= numSubConts; i++ {
+				mnt.Destination = fmt.Sprintf("/mydir/test%d", i)
+				podSpec[i].Mounts = append(podSpec[i].Mounts, mnt)
+			}
 
-		createSharedMount(mnt0, "test-mount", podSpec...)
+			createSharedMount(mnt, "test-mount", podSpec...)
 
-		containers, cleanup, err := startContainers(conf, podSpec, ids)
-		if err != nil {
-			t.Fatalf("error starting containers: %v", err)
-		}
-		defer cleanup()
+			containers, cleanup, err := startContainers(conf, podSpec, ids)
+			if err != nil {
+				t.Fatalf("error starting containers: %v", err)
+			}
+			defer cleanup()
 
-		file0 := path.Join(mnt0.Destination, "abc")
-		file1 := path.Join(mnt1.Destination, "abc")
-		execs := []execDesc{
-			{
-				c:    containers[0],
-				cmd:  []string{"/bin/touch", file0},
-				name: "create file in container0",
-			},
-			{
-				c:    containers[0],
-				cmd:  []string{"/usr/bin/test", "-f", file0},
-				name: "file appears in container0",
-			},
-			{
-				c:    containers[1],
-				cmd:  []string{"/usr/bin/test", "-f", file1},
-				name: "file appears in container1",
-			},
-		}
-		execMany(t, conf, execs)
+			// Create file in first subcontainer.
+			file1 := "/mydir/test1/abc"
+			execs := []execDesc{
+				{
+					c:    containers[1],
+					cmd:  []string{"/bin/touch", file1},
+					name: "create file in container1",
+				},
+			}
+			// Check it appears in all subcontainers.
+			for i := 1; i <= numSubConts; i++ {
+				fileName := fmt.Sprintf("/mydir/test%d/abc", i)
+				execs = append(execs, execDesc{
+					c:    containers[i],
+					cmd:  []string{"/usr/bin/test", "-f", fileName},
+					name: fmt.Sprintf("file appears in container%d", i),
+				})
+			}
+			execMany(t, conf, execs)
 
-		containers[1].Destroy()
+			// Restart first subcontainer.
+			containers[1].Destroy()
 
-		bundleDir, cleanup, err := testutil.SetupBundleDir(podSpec[1])
-		if err != nil {
-			t.Fatalf("error restarting container: %v", err)
-		}
-		defer cleanup()
+			bundleDir, cleanup, err := testutil.SetupBundleDir(podSpec[1])
+			if err != nil {
+				t.Fatalf("error restarting container: %v", err)
+			}
+			defer cleanup()
 
-		args := Args{
-			ID:        ids[1],
-			Spec:      podSpec[1],
-			BundleDir: bundleDir,
-		}
-		containers[1], err = New(conf, args)
-		if err != nil {
-			t.Fatalf("error creating container: %v", err)
-		}
-		if err := containers[1].Start(conf); err != nil {
-			t.Fatalf("error starting container: %v", err)
-		}
+			args := Args{
+				ID:        ids[1],
+				Spec:      podSpec[1],
+				BundleDir: bundleDir,
+			}
+			containers[1], err = New(conf, args)
+			if err != nil {
+				t.Fatalf("error creating container: %v", err)
+			}
+			if err := containers[1].Start(conf); err != nil {
+				t.Fatalf("error starting container: %v", err)
+			}
 
-		execs = []execDesc{
-			{
-				c:    containers[0],
-				cmd:  []string{"/usr/bin/test", "-f", file0},
-				name: "file is still in container0",
-			},
-			{
-				c:    containers[1],
-				cmd:  []string{"/usr/bin/test", "-f", file1},
-				name: "file is still in container1",
-			},
-			{
-				c:    containers[1],
-				cmd:  []string{"/bin/rm", file1},
-				name: "remove file from container1",
-			},
-			{
-				c:    containers[0],
-				cmd:  []string{"/usr/bin/test", "!", "-f", file0},
-				name: "file removed from container0",
-			},
-			{
-				c:    containers[1],
-				cmd:  []string{"/usr/bin/test", "!", "-f", file1},
-				name: "file removed from container1",
-			},
-		}
-		execMany(t, conf, execs)
-	})
+			// Ensure that the file exists in all subcontainers.
+			execs = nil
+			for i := 1; i <= numSubConts; i++ {
+				fileName := fmt.Sprintf("/mydir/test%d/abc", i)
+				execs = append(execs, execDesc{
+					c:    containers[i],
+					cmd:  []string{"/usr/bin/test", "-f", fileName},
+					name: fmt.Sprintf("file appears in container%d", i),
+				})
+			}
+			execMany(t, conf, execs)
+		})
+	}
 }
 
 // Test that unsupported pod mounts options are ignored when matching master and
@@ -1695,6 +1693,62 @@ func TestMultiContainerSharedMountUnsupportedOptions(t *testing.T) {
 				c:    containers[1],
 				cmd:  []string{"/usr/bin/test", "-d", mnt1.Destination},
 				name: "directory is mounted in container1",
+			},
+		}
+		execMany(t, conf, execs)
+	})
+}
+
+// Test that shared mounts can be repeated within a container.
+func TestMultiContainerSharedMountsRepeated(t *testing.T) {
+	testSharedMount(t, func(t *testing.T, conf *config.Config, sourceDir string, mntType string) {
+		// Setup the containers.
+		sleep := []string{"/bin/sleep", "100"}
+		podSpec, ids := createSpecs(sleep)
+		mnt0 := specs.Mount{
+			Destination: "/mydir/test1",
+			Source:      sourceDir,
+			Type:        mntType,
+			Options:     []string{"rw", "relatime"},
+		}
+		mnt1 := specs.Mount{
+			Destination: "/mydir/test2",
+			Source:      sourceDir,
+			Type:        mntType,
+			Options:     []string{"ro"},
+		}
+		podSpec[0].Mounts = append(podSpec[0].Mounts, mnt0, mnt1)
+
+		// Set annotations using less-restrictive mnt0.
+		createSharedMount(mnt0, "test-mount", podSpec...)
+
+		containers, cleanup, err := startContainers(conf, podSpec, ids)
+		if err != nil {
+			t.Fatalf("error starting containers: %v", err)
+		}
+		defer cleanup()
+
+		execs := []execDesc{
+			{
+				c:    containers[0],
+				cmd:  []string{"/bin/touch", path.Join(mnt1.Destination, "fail")},
+				want: 1,
+				name: "fails write to read-only mount",
+			},
+			{
+				c:    containers[0],
+				cmd:  []string{"/bin/cp", "/usr/bin/test", mnt0.Destination},
+				name: "writes to writable mount",
+			},
+			{
+				c:    containers[0],
+				cmd:  []string{"/usr/bin/test", "-f", path.Join(mnt1.Destination, "test")},
+				name: "file appears in read-only mount",
+			},
+			{
+				c:    containers[0],
+				cmd:  []string{"/usr/bin/test", "-f", path.Join(mnt0.Destination, "test")},
+				name: "file appears in writable mount",
 			},
 		}
 		execMany(t, conf, execs)
@@ -1832,9 +1886,9 @@ func TestMultiContainerMultiRootCanHandleFDs(t *testing.T) {
 			[]string{app, "fd_sender", "--socket", socketPath},
 			[]string{app, "fd_receiver", "--socket", socketPath},
 		)
-		createSharedMount(sharedMnt, "shared-mount", specs...)
 		specs[1].Mounts = append(specs[1].Mounts, sharedMnt, writeableMnt)
 		specs[2].Mounts = append(specs[2].Mounts, sharedMnt)
+		createSharedMount(sharedMnt, "shared-mount", specs...)
 
 		containers, cleanup, err := startContainers(conf, specs, ids)
 		if err != nil {
