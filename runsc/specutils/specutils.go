@@ -43,6 +43,7 @@ import (
 const (
 	annotationFlagPrefix            = "dev.gvisor.flag."
 	annotationSeccomp               = "dev.gvisor.internal.seccomp."
+	annotationTPU                   = "dev.gvisor.spec.tpuproxy"
 	annotationSeccompRuntimeDefault = "RuntimeDefault"
 
 	annotationContainerName = "io.kubernetes.cri.container-name"
@@ -566,6 +567,22 @@ func IsDebugCommand(conf *config.Config, command string) bool {
 		}
 	}
 	return !rv
+}
+
+// TPUProxyIsEnabled checks if tpuproxy is enabled in the config or annotations.
+func TPUProxyIsEnabled(spec *specs.Spec, conf *config.Config) bool {
+	if conf.TPUProxy {
+		return true
+	}
+	val, ok := spec.Annotations[annotationTPU]
+	if ok {
+		ret, err := strconv.ParseBool(val)
+		if val != "" && err != nil {
+			log.Warningf("tpuproxy annotation set to invalid value %q. Skipping.", val)
+		}
+		return ret
+	}
+	return false
 }
 
 // SafeSetupAndMount creates the mount point and calls Mount with the given

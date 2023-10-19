@@ -657,7 +657,7 @@ func (l *Loader) installSeccompFilters() error {
 			HostFilesystem:        l.root.conf.DirectFS,
 			ProfileEnable:         l.root.conf.ProfileEnable,
 			NVProxy:               specutils.NVProxyEnabled(l.root.spec, l.root.conf),
-			TPUProxy:              l.root.conf.TPUProxy,
+			TPUProxy:              specutils.TPUProxyIsEnabled(l.root.spec, l.root.conf),
 			ControllerFD:          l.ctrl.srv.FD(),
 		}
 		if err := filter.Install(opts); err != nil {

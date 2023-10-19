@@ -123,7 +123,7 @@ func setUpChroot(pidns bool, spec *specs.Spec, conf *config.Config, nvidiaDevMin
 	if err := nvproxyUpdateChroot(chroot, spec, conf, nvidiaDevMinors); err != nil {
 		return fmt.Errorf("error configuring chroot for Nvidia GPUs: %w", err)
 	}
-	if err := tpuProxyUpdateChroot(chroot, conf); err != nil {
+	if err := tpuProxyUpdateChroot(chroot, spec, conf); err != nil {
 		return fmt.Errorf("error configuring chroot for TPU devices: %w", err)
 	}
 
@@ -134,8 +134,8 @@ func setUpChroot(pidns bool, spec *specs.Spec, conf *config.Config, nvidiaDevMin
 	return pivotRoot(chroot)
 }
 
-func tpuProxyUpdateChroot(chroot string, conf *config.Config) error {
-	if !conf.TPUProxy {
+func tpuProxyUpdateChroot(chroot string, spec *specs.Spec, conf *config.Config) error {
+	if !specutils.TPUProxyIsEnabled(spec, conf) {
 		return nil
 	}
 	devices, err := util.EnumerateHostTPUDevices()
