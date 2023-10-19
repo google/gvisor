@@ -171,7 +171,11 @@ func (m *MountHint) setShare(val string) error {
 func (m *MountHint) ShouldShareMount() bool {
 	// Only support tmpfs for now. Bind mounts require a common gofer to mount
 	// all shared volumes.
-	return m.Mount.Type == tmpfs.Name && m.Share == pod
+	return m.Mount.Type == tmpfs.Name &&
+		// A shared mount should be configured for share=container too so:
+		// 1. Restarting the container does not lose the tmpfs data.
+		// 2. Repeated mounts in the container reuse the same tmpfs instance.
+		(m.Share == container || m.Share == pod)
 }
 
 // checkCompatible verifies that shared mount is compatible with master.
