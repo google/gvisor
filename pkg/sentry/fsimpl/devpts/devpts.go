@@ -47,6 +47,13 @@ type FilesystemType struct {
 	root *vfs.Dentry
 }
 
+type fileSystemOpts struct {
+	mode     linux.FileMode
+	ptmxMode linux.FileMode
+	uid      auth.KUID
+	gid      auth.KGID
+}
+
 // Name implements vfs.FilesystemType.Name.
 func (*FilesystemType) Name() string {
 	return Name
@@ -54,13 +61,79 @@ func (*FilesystemType) Name() string {
 
 // GetFilesystem implements vfs.FilesystemType.GetFilesystem.
 func (fstype *FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, source string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
-	// No data allowed.
-	if opts.Data != "" {
+	mopts := vfs.GenericParseMountOptions(opts.Data)
+	fsOpts := fileSystemOpts{
+		mode:     0555,
+		ptmxMode: 0666,
+		uid:      creds.EffectiveKUID,
+		gid:      creds.EffectiveKGID,
+	}
+	if modeStr, ok := mopts["mode"]; ok {
+		delete(mopts, "mode")
+		mode, err := strconv.ParseUint(modeStr, 8, 32)
+		if err != nil {
+			ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: invalid mode: %q", modeStr)
+			return nil, nil, linuxerr.EINVAL
+		}
+		fsOpts.mode = linux.FileMode(mode & 0777)
+	}
+	if modeStr, ok := mopts["ptmxmode"]; ok {
+		delete(mopts, "ptmxmode")
+		mode, err := strconv.ParseUint(modeStr, 8, 32)
+		if err != nil {
+			ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: invalid ptmxmode: %q", modeStr)
+			return nil, nil, linuxerr.EINVAL
+		}
+		fsOpts.ptmxMode = linux.FileMode(mode & 0777)
+	}
+	if uidStr, ok := mopts["uid"]; ok {
+		delete(mopts, "uid")
+		uid, err := strconv.ParseUint(uidStr, 10, 32)
+		if err != nil {
+			ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: invalid uid: %q", uidStr)
+			return nil, nil, linuxerr.EINVAL
+		}
+		kuid := creds.UserNamespace.MapToKUID(auth.UID(uid))
+		if !kuid.Ok() {
+			ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: unmapped uid: %d", uid)
+			return nil, nil, linuxerr.EINVAL
+		}
+		fsOpts.uid = kuid
+	}
+	if gidStr, ok := mopts["gid"]; ok {
+		delete(mopts, "gid")
+		gid, err := strconv.ParseUint(gidStr, 10, 32)
+		if err != nil {
+			ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: invalid gid: %q", gidStr)
+			return nil, nil, linuxerr.EINVAL
+		}
+		kgid := creds.UserNamespace.MapToKGID(auth.GID(gid))
+		if !kgid.Ok() {
+			ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: unmapped gid: %d", gid)
+			return nil, nil, linuxerr.EINVAL
+		}
+		fsOpts.gid = kgid
+	}
+	newinstance := false
+	if _, ok := mopts["newinstance"]; ok {
+		newinstance = true
+		delete(mopts, "newinstance")
+	}
+	if len(mopts) != 0 {
+		ctx.Warningf("devpts.FilesystemType.GetFilesystem: unknown options: %v", mopts)
 		return nil, nil, linuxerr.EINVAL
 	}
 
+	if newinstance {
+		fs, root, err := fstype.newFilesystem(ctx, vfsObj, creds, fsOpts)
+		if err != nil {
+			return nil, nil, err
+		}
+		return fs.VFSFilesystem(), root.VFSDentry(), nil
+	}
+
 	fstype.initOnce.Do(func() {
-		fs, root, err := fstype.newFilesystem(ctx, vfsObj, creds)
+		fs, root, err := fstype.newFilesystem(ctx, vfsObj, creds, fsOpts)
 		if err != nil {
 			fstype.initErr = err
 			return
@@ -93,7 +166,7 @@ type filesystem struct {
 
 // newFilesystem creates a new devpts filesystem with root directory and ptmx
 // master inode. It returns the filesystem and root Dentry.
-func (fstype *FilesystemType) newFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials) (*filesystem, *kernfs.Dentry, error) {
+func (fstype *FilesystemType) newFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, opts fileSystemOpts) (*filesystem, *kernfs.Dentry, error) {
 	devMinor, err := vfsObj.GetAnonBlockDevMinor()
 	if err != nil {
 		return nil, nil, err
@@ -108,7 +181,7 @@ func (fstype *FilesystemType) newFilesystem(ctx context.Context, vfsObj *vfs.Vir
 	root := &rootInode{
 		replicas: make(map[uint32]*replicaInode),
 	}
-	root.InodeAttrs.Init(ctx, creds, linux.UNNAMED_MAJOR, devMinor, 1, linux.ModeDirectory|0555)
+	root.InodeAttrs.InitWithIDs(ctx, opts.uid, opts.gid, linux.UNNAMED_MAJOR, devMinor, 1, linux.ModeDirectory|opts.mode)
 	root.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	root.InitRefs()
 
@@ -120,7 +193,7 @@ func (fstype *FilesystemType) newFilesystem(ctx context.Context, vfsObj *vfs.Vir
 	master := &masterInode{
 		root: root,
 	}
-	master.InodeAttrs.Init(ctx, creds, linux.UNNAMED_MAJOR, devMinor, 2, linux.ModeCharacterDevice|0666)
+	master.InodeAttrs.InitWithIDs(ctx, opts.uid, opts.gid, linux.UNNAMED_MAJOR, devMinor, 2, linux.ModeCharacterDevice|opts.ptmxMode)
 
 	// Add the master as a child of the root.
 	links := root.OrderedChildren.Populate(map[string]kernfs.Inode{

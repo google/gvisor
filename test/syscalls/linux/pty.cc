@@ -38,9 +38,13 @@
 #include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
+#include "test/util/fs_util.h"
+#include "test/util/linux_capability_util.h"
+#include "test/util/mount_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/pty_util.h"
 #include "test/util/signal_util.h"
+#include "test/util/temp_path.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
@@ -583,6 +587,46 @@ TEST(BasicPtyTest, Getdents) {
   //
   // We don't check for the presence or absence of "ptmx", as distros vary in
   // their usage of the two modes.
+}
+
+TEST(BasicPtyTest, NewInstance) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("devpts_test", dir.path(), "devpts", 0, "newinstance", 0));
+  auto const dir2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto const mount2 = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("devpts_test2", dir.path(), "devpts", 0, "newinstance", 0));
+
+  // Opening PTYs with O_TRUNC shouldn't cause an error, but calls to
+  // (f)truncate should.
+  FileDescriptor master = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(JoinPath(dir.path(), "ptmx"), O_RDWR | O_TRUNC));
+  int n = ASSERT_NO_ERRNO_AND_VALUE(ReplicaID(master));
+  std::string spath2 = absl::StrCat(dir2.path(), "/", n);
+  ASSERT_THAT(open(spath2.c_str(), O_RDWR), SyscallFailsWithErrno(ENOENT));
+  std::string spath = absl::StrCat(dir.path(), "/", n);
+  FileDescriptor replica =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(spath.c_str(), O_RDWR | O_NOCTTY));
+}
+
+TEST(BasicPtyTest, SetMode) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("devpts_test", dir.path(), "devpts", 0,
+            "newinstance,mode=0600,ptmxmode=0620", 0));
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(
+      Open(JoinPath(dir.path()), O_RDONLY | O_DIRECTORY));
+  mount.Release();
+
+  struct stat st;
+  ASSERT_THAT(fstat(fd.get(), &st), SyscallSucceeds());
+  EXPECT_EQ(st.st_mode, 0600 | S_IFDIR);
+  ASSERT_THAT(fstatat(fd.get(), "ptmx", &st, 0), SyscallSucceeds());
+  EXPECT_EQ(st.st_mode, 0620 | S_IFCHR);
 }
 
 class PtyTest : public ::testing::Test {
