@@ -533,17 +533,13 @@ func (d *Dentry) InotifyWithParent(ctx context.Context, events, cookie uint32, e
 	}
 
 	// Linux always notifies the parent first.
-
-	// Don't bother looking for a parent if the inode is anonymous. It
-	// won't have one.
-	if !d.inode.Anonymous() {
-		d.fs.mu.RLock()
-		if parent := d.parent.Load(); parent != nil {
-			parent.inode.Watches().Notify(ctx, d.name, events, cookie, et, d.isDeleted())
-		}
-		d.fs.mu.RUnlock()
+	//
+	// We can access the parent atomically, since linux does not prevent
+	// the parent from changing out from under the inode in between the
+	// notification events. This avoids some lock ordering violations.
+	if parent := d.parent.Load(); parent != nil {
+		parent.inode.Watches().Notify(ctx, d.name, events, cookie, et, d.isDeleted())
 	}
-
 	d.inode.Watches().Notify(ctx, "", events, cookie, et, d.isDeleted())
 }
 

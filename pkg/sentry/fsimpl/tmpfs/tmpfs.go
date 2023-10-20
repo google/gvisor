@@ -467,14 +467,15 @@ func (d *dentry) InotifyWithParent(ctx context.Context, events, cookie uint32, e
 	// that d was deleted.
 	deleted := d.vfsd.IsDead()
 
-	d.inode.fs.mu.RLock()
-	// The ordering below is important, Linux always notifies the parent first.
-	parent := d.parent.Load()
-	if parent != nil {
+	// Linux always notifies the parent first.
+	//
+	// We can access the parent atomically, since linux does not prevent
+	// the parent from changing out from under the inode in between the
+	// notification events. This avoids some lock ordering violations.
+	if parent := d.parent.Load(); parent != nil {
 		parent.inode.watches.Notify(ctx, d.name, events, cookie, et, deleted)
 	}
 	d.inode.watches.Notify(ctx, "", events, cookie, et, deleted)
-	d.inode.fs.mu.RUnlock()
 }
 
 // Watches implements vfs.DentryImpl.Watches.

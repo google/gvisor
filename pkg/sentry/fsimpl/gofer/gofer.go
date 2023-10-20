@@ -1515,13 +1515,15 @@ func (d *dentry) InotifyWithParent(ctx context.Context, events, cookie uint32, e
 		events |= linux.IN_ISDIR
 	}
 
-	d.fs.renameMu.RLock()
-	// The ordering below is important, Linux always notifies the parent first.
+	// Linux always notifies the parent first.
+	//
+	// We can access the parent atomically, since linux does not prevent
+	// the parent from changing out from under the inode in between the
+	// notification events. This avoids some lock ordering violations.
 	if parent := d.parent.Load(); parent != nil {
 		parent.watches.Notify(ctx, d.name, events, cookie, et, d.isDeleted())
 	}
 	d.watches.Notify(ctx, "", events, cookie, et, d.isDeleted())
-	d.fs.renameMu.RUnlock()
 }
 
 // Watches implements vfs.DentryImpl.Watches.
