@@ -509,9 +509,14 @@ func main() {
 			}
 			log.Printf("incoming connection established.")
 
-			// Copy both ways.
-			go io.Copy(inConn, next)
-			go io.Copy(next, inConn)
+			// Copy both ways. We wrap everything in another
+			// Reader/Writer to prevent optimizations that
+			// otherwise call splice() to move data between
+			// sockets. That penalizes netstack, but isn't relevant
+			// to real use cases where only one end of netstack is
+			// attached to a socket.
+			go io.Copy(io.MultiWriter(inConn), io.MultiReader(next))
+			go io.Copy(io.MultiWriter(next), io.MultiReader(inConn))
 
 			// Print stats every second.
 			go func() {
