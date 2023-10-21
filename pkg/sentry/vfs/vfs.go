@@ -472,6 +472,7 @@ func (vfs *VirtualFilesystem) OpenAt(ctx context.Context, creds *auth.Credential
 	}
 	for {
 		vfs.maybeBlockOnMountPromise(ctx, rp)
+		// TODO(b/305893463): apply mount option MS_NOSYMFOLLOW when opening a file.
 		fd, err := rp.mount.fs.impl.OpenAt(ctx, rp, *opts)
 		if err == nil {
 			rp.Release(ctx)

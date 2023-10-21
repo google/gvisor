@@ -77,6 +77,9 @@ func Mount(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, 
 	if flags&linux.MS_NOSUID == linux.MS_NOSUID {
 		opts.Flags.NoSUID = true
 	}
+	if flags&linux.MS_NOSYMFOLLOW == linux.MS_NOSYMFOLLOW {
+		opts.Flags.NoSymFollow = true
+	}
 	if flags&linux.MS_RDONLY == linux.MS_RDONLY {
 		opts.ReadOnly = true
 	}
