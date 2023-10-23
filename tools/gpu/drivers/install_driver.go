@@ -194,13 +194,26 @@ func (i *Installer) getRequestedDriver() (nvproxy.DriverVersion, bool) {
 
 // ListSupportedDrivers prints the driver to stderr in a format that can be
 // consumed by the Makefile to iterate tests across drivers.
-func ListSupportedDrivers() {
+func ListSupportedDrivers(outfile string) error {
+	out := os.Stdout
+	if outfile != "" {
+		f, err := os.OpenFile(outfile, os.O_WRONLY, 0644)
+		if err != nil {
+			return fmt.Errorf("failed to open outfile: %w", err)
+		}
+		defer f.Close()
+		out = f
+	}
+
 	supportedDrivers := nvproxy.GetSupportedDriversAndChecksums()
 	list := make([]string, 0, len(supportedDrivers))
-	for version := range nvproxy.GetSupportedDriversAndChecksums() {
+	for version := range supportedDrivers {
 		list = append(list, version.String())
 	}
-	fmt.Println(strings.Join(list, " "))
+	if _, err := out.WriteString(strings.Join(list, " ") + "\n"); err != nil {
+		return fmt.Errorf("failed to write to outfile: %w", err)
+	}
+	return nil
 }
 
 // ChecksumDriver downloads and returns the SHA265 checksum of the driver.
@@ -251,14 +264,8 @@ func installDriver(driverPath string) error {
 	cmd := exec.Command(driverPath, driverArgs...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	/*
-		cmd.Env = append(os.Environ(),
-			"IGNORE_CC_MISMATCH=1",
-			"LLVM=1",
-			"LLVM_IS=1",
-		)
-	*/
 	if err := cmd.Run(); err != nil {
+		tryToPrintFailureLogs()
 		return fmt.Errorf("failed to run nvidia-install: %w out: %s", err, string(out))
 	}
 
@@ -266,7 +273,28 @@ func installDriver(driverPath string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("failed to run nvidia-install: %w out: %s", err, string(out))
+		return fmt.Errorf("failed to run nvidia-smi post install: %w out: %s", err, string(out))
 	}
 	return nil
+}
+
+func tryToPrintFailureLogs() {
+	// nvidia driver installers print failure logs to this path.
+	const logPath = "/var/log/nvidia-installer.log"
+	f, err := os.OpenFile(logPath, os.O_RDONLY, 0644)
+	if err != nil {
+		log.Warningf("failed to stat nvidia-installer.log: %v", err)
+		return
+	}
+	defer f.Close()
+
+	out, err := io.ReadAll(f)
+	if err != nil {
+		log.Warningf("failed to read nvidia-installer.log: %v", err)
+		return
+	}
+
+	for _, line := range strings.Split(string(out), "\n") {
+		fmt.Printf("[nvidia-installer]: %s\n", line)
+	}
 }

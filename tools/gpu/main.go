@@ -46,6 +46,7 @@ var (
 
 	// The list command returns the list of supported drivers from this tool.
 	listCmd = flag.NewFlagSet(listCmdStr, flag.ContinueOnError)
+	outfile = listCmd.String("outfile", "", "if set, write the list output to this file")
 
 	commandSet = map[*flag.FlagSet]string{
 		installCmd:  installDescription,
@@ -110,7 +111,10 @@ func main() {
 			log.Warningf("%s failed with: %v", listCmdStr, err)
 			os.Exit(1)
 		}
-		drivers.ListSupportedDrivers()
+		if err := drivers.ListSupportedDrivers(*outfile); err != nil {
+			log.Warningf("Failed to list drivers: %v", err)
+			os.Exit(1)
+		}
 	default:
 		printUsage()
 		os.Exit(1)
