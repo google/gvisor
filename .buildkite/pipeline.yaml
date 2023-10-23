@@ -171,10 +171,9 @@ steps:
   # GPU workflow.
   - <<: *common
     <<: *source_test
-    label: "GPU tests"
+    label: ":screwdriver: All GPU Drivers Test"
     commands:
-      - make sudo TARGETS=//tools/gpu:main ARGS="install --latest" || cat /var/log/nvidia-installer.log
-      - make gpu-tests
+      - tools/gpu/all_drivers_test.sh
     agents:
       queue: gpu
   # Release workflow.
