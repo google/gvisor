@@ -198,6 +198,32 @@ TEST(NetlinkRouteTest, GetLinkByIndex) {
   EXPECT_TRUE(found) << "Netlink response does not contain any links.";
 }
 
+TEST(NetlinkRouteTest, LinkUp) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_NET_ADMIN)));
+  SKIP_IF(IsRunningWithHostinet());
+
+  Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
+
+  FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(NetlinkBoundSocket(NETLINK_ROUTE));
+
+  struct request {
+    struct nlmsghdr hdr;
+    struct ifinfomsg ifm;
+  };
+
+  struct request req = {};
+  req.hdr.nlmsg_len = sizeof(req);
+  req.hdr.nlmsg_type = RTM_NEWLINK;
+  req.hdr.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+  req.hdr.nlmsg_seq = kSeq;
+  req.ifm.ifi_family = AF_UNSPEC;
+  req.ifm.ifi_index = loopback_link.index;
+  req.ifm.ifi_change = IFF_UP;
+  req.ifm.ifi_flags = IFF_UP;
+  EXPECT_NO_ERRNO(NetlinkRequestAckOrError(fd, kSeq, &req, sizeof(req)));
+}
+
 TEST(NetlinkRouteTest, GetLinkByName) {
   Link loopback_link = ASSERT_NO_ERRNO_AND_VALUE(LoopbackLink());
 
