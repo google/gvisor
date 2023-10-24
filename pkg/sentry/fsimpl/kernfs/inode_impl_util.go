@@ -191,6 +191,11 @@ type InodeAttrs struct {
 
 // Init initializes this InodeAttrs.
 func (a *InodeAttrs) Init(ctx context.Context, creds *auth.Credentials, devMajor, devMinor uint32, ino uint64, mode linux.FileMode) {
+	a.InitWithIDs(ctx, creds.EffectiveKUID, creds.EffectiveKGID, devMajor, devMinor, ino, mode)
+}
+
+// InitWithIDs initializes this InodeAttrs.
+func (a *InodeAttrs) InitWithIDs(ctx context.Context, uid auth.KUID, gid auth.KGID, devMajor, devMinor uint32, ino uint64, mode linux.FileMode) {
 	if mode.FileType() == 0 {
 		panic(fmt.Sprintf("No file type specified in 'mode' for InodeAttrs.Init(): mode=0%o", mode))
 	}
@@ -203,8 +208,8 @@ func (a *InodeAttrs) Init(ctx context.Context, creds *auth.Credentials, devMajor
 	a.devMinor = devMinor
 	a.ino.Store(ino)
 	a.mode.Store(uint32(mode))
-	a.uid.Store(uint32(creds.EffectiveKUID))
-	a.gid.Store(uint32(creds.EffectiveKGID))
+	a.uid.Store(uint32(uid))
+	a.gid.Store(uint32(gid))
 	a.nlink.Store(nlink)
 	a.blockSize.Store(hostarch.PageSize)
 	now := ktime.NowFromContext(ctx).Nanoseconds()
