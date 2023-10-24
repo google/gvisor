@@ -13,7 +13,9 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/context",
+        "//pkg/fsutil",
         "//pkg/lisafs",
+        "//pkg/log",
         "//pkg/unet",
         "@org_golang_x_sys//unix:go_default_library",
     ],

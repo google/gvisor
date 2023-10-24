@@ -37,6 +37,7 @@ go_library(
         "//pkg/abi/nvgpu",
         "//pkg/cleanup",
         "//pkg/context",
+        "//pkg/devutil",
         "//pkg/errors/linuxerr",
         "//pkg/fdnotifier",
         "//pkg/hostarch",

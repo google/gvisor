@@ -20,6 +20,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/nvgpu"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/devutil"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -41,7 +42,12 @@ type uvmDevice struct {
 
 // Open implements vfs.Device.Open.
 func (dev *uvmDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
-	hostFD, err := unix.Openat(-1, "/dev/nvidia-uvm", int((opts.Flags&unix.O_ACCMODE)|unix.O_NOFOLLOW), 0)
+	devClient := devutil.GoferClientFromContext(ctx)
+	if devClient == nil {
+		log.Warningf("devutil.CtxDevGoferClient is not set")
+		return nil, linuxerr.ENOENT
+	}
+	hostFD, err := devClient.OpenAt(ctx, "nvidia-uvm", opts.Flags)
 	if err != nil {
 		ctx.Warningf("nvproxy: failed to open host /dev/nvidia-uvm: %v", err)
 		return nil, err
