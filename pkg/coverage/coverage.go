@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build go1.1
-// +build go1.1
+//go:build !false
+// +build !false
 
 // Package coverage provides an interface through which Go coverage data can
 // be collected, converted to kcov format, and exposed to userspace.

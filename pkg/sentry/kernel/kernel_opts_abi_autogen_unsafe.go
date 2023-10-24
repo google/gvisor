@@ -6,8 +6,8 @@
 // is filtered based on pre-defined file suffixes related to build constraints,
 // see tools/defs.bzl:calculate_sets().
 
-//go:build go1.1
-// +build go1.1
+//go:build !false
+// +build !false
 
 package kernel
 
