@@ -64,8 +64,9 @@ type Mount struct {
 	ID uint64
 
 	// Flags contains settings as specified for mount(2), e.g. MS_NOEXEC, except
-	// for MS_RDONLY which is tracked in "writers". Immutable.
-	Flags MountFlags
+	// for MS_RDONLY which is tracked in "writers". flags is protected by
+	// VirtualFilesystem.mountMu.
+	flags MountFlags
 
 	// key is protected by VirtualFilesystem.mountMu and
 	// VirtualFilesystem.mounts.seq, and may be nil. References are held on
@@ -123,7 +124,7 @@ type Mount struct {
 func newMount(vfs *VirtualFilesystem, fs *Filesystem, root *Dentry, mntns *MountNamespace, opts *MountOptions) *Mount {
 	mnt := &Mount{
 		ID:       vfs.lastMountID.Add(1),
-		Flags:    opts.Flags,
+		flags:    opts.Flags,
 		vfs:      vfs,
 		fs:       fs,
 		root:     root,
@@ -144,8 +145,8 @@ func (mnt *Mount) Options() MountOptions {
 	mnt.vfs.lockMounts()
 	defer mnt.vfs.unlockMounts(context.Background())
 	return MountOptions{
-		Flags:    mnt.Flags,
-		ReadOnly: mnt.ReadOnly(),
+		Flags:    mnt.flags,
+		ReadOnly: mnt.ReadOnlyLocked(),
 	}
 }
 
@@ -160,7 +161,7 @@ func (mnt *Mount) setMountOptions(opts *MountOptions) error {
 	if err := mnt.setReadOnlyLocked(opts.ReadOnly); err != nil {
 		return err
 	}
-	mnt.Flags = opts.Flags
+	mnt.flags = opts.Flags
 	return nil
 }
 
@@ -169,19 +170,19 @@ func (mnt *Mount) MountFlags() uint64 {
 	mnt.vfs.lockMounts()
 	defer mnt.vfs.unlockMounts(context.Background())
 	var flags uint64
-	if mnt.Flags.NoExec {
+	if mnt.flags.NoExec {
 		flags |= linux.ST_NOEXEC
 	}
-	if mnt.Flags.NoATime {
+	if mnt.flags.NoATime {
 		flags |= linux.ST_NOATIME
 	}
-	if mnt.Flags.NoDev {
+	if mnt.flags.NoDev {
 		flags |= linux.ST_NODEV
 	}
-	if mnt.Flags.NoSUID {
+	if mnt.flags.NoSUID {
 		flags |= linux.ST_NOSUID
 	}
-	if mnt.ReadOnly() {
+	if mnt.ReadOnlyLocked() {
 		flags |= linux.ST_RDONLY
 	}
 	return flags
@@ -391,8 +392,8 @@ func (vfs *VirtualFilesystem) cloneMount(mnt *Mount, root *Dentry, mopts *MountO
 	opts := mopts
 	if opts == nil {
 		opts = &MountOptions{
-			Flags:    mnt.Flags,
-			ReadOnly: mnt.ReadOnly(),
+			Flags:    mnt.flags,
+			ReadOnly: mnt.ReadOnlyLocked(),
 		}
 	}
 	clone := vfs.NewDisconnectedMount(mnt.fs, root, opts)
@@ -1145,6 +1146,15 @@ func (mnt *Mount) setReadOnlyLocked(ro bool) error {
 
 // ReadOnly returns true if mount is readonly.
 func (mnt *Mount) ReadOnly() bool {
+	mnt.vfs.lockMounts()
+	defer mnt.vfs.unlockMounts(context.Background())
+	return mnt.writers.Load() < 0
+}
+
+// ReadOnlyLocked returns true if mount is readonly.
+//
+// Preconditions: VirtualFilesystem.mountMu must be locked.
+func (mnt *Mount) ReadOnlyLocked() bool {
 	return mnt.writers.Load() < 0
 }
 
@@ -1224,14 +1234,15 @@ func (vfs *VirtualFilesystem) GenerateProcMounts(ctx context.Context, taskRootDi
 			break
 		}
 
+		mntOpts := mnt.Options()
 		opts := "rw"
-		if mnt.ReadOnly() {
+		if mntOpts.ReadOnly {
 			opts = "ro"
 		}
-		if mnt.Flags.NoATime {
+		if mntOpts.Flags.NoATime {
 			opts = ",noatime"
 		}
-		if mnt.Flags.NoExec {
+		if mntOpts.Flags.NoExec {
 			opts += ",noexec"
 		}
 		if mopts := mnt.fs.Impl().MountOptions(); mopts != "" {
@@ -1345,10 +1356,10 @@ func (vfs *VirtualFilesystem) GenerateProcMountInfo(ctx context.Context, taskRoo
 		if mnt.ReadOnly() {
 			opts = "ro"
 		}
-		if mnt.Flags.NoATime {
+		if mnt.flags.NoATime {
 			opts = ",noatime"
 		}
-		if mnt.Flags.NoExec {
+		if mnt.flags.NoExec {
 			opts += ",noexec"
 		}
 		fmt.Fprintf(buf, "%s ", opts)

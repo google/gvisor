@@ -822,7 +822,7 @@ func (i *inode) isDir() bool {
 }
 
 func (i *inode) touchAtime(mnt *vfs.Mount) {
-	if mnt.Flags.NoATime {
+	if mnt.Options().Flags.NoATime {
 		return
 	}
 	if err := mnt.CheckBeginWrite(); err != nil {

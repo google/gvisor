@@ -1167,7 +1167,7 @@ func (mnt *Mount) StateFields() []string {
 		"fs",
 		"root",
 		"ID",
-		"Flags",
+		"flags",
 		"key",
 		"ns",
 		"refs",
@@ -1195,7 +1195,7 @@ func (mnt *Mount) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &mnt.fs)
 	stateSinkObject.Save(2, &mnt.root)
 	stateSinkObject.Save(3, &mnt.ID)
-	stateSinkObject.Save(4, &mnt.Flags)
+	stateSinkObject.Save(4, &mnt.flags)
 	stateSinkObject.Save(6, &mnt.ns)
 	stateSinkObject.Save(7, &mnt.refs)
 	stateSinkObject.Save(8, &mnt.children)
@@ -1215,7 +1215,7 @@ func (mnt *Mount) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &mnt.fs)
 	stateSourceObject.Load(2, &mnt.root)
 	stateSourceObject.Load(3, &mnt.ID)
-	stateSourceObject.Load(4, &mnt.Flags)
+	stateSourceObject.Load(4, &mnt.flags)
 	stateSourceObject.Load(6, &mnt.ns)
 	stateSourceObject.Load(7, &mnt.refs)
 	stateSourceObject.Load(8, &mnt.children)
