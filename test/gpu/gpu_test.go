@@ -21,7 +21,16 @@ import (
 	"testing"
 
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/mount"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
+)
+
+const (
+	nvidiaLibMount  = "/var/lib/nvidia/lib64"
+	nvidiaBinMount  = "/var/lib/nvidia/bin"
+	nvidia0Device   = "/dev/nvidia0"
+	nvidiaUvmDevice = "/dev/nvidia-uvm"
+	nvidiactlDevice = "/dev/nvidiactl"
 )
 
 func TestGPUHello(t *testing.T) {
@@ -29,20 +38,29 @@ func TestGPUHello(t *testing.T) {
 	c := dockerutil.MakeContainer(ctx, t)
 	defer c.CleanUp(ctx)
 
-	out, err := c.Run(ctx, dockerutil.RunOpts{
-		Image: "basic/cuda-vector-add",
-		Devices: []container.DeviceRequest{
-			{
-				Count:        -1,
-				Capabilities: [][]string{[]string{"gpu"}},
-				Options:      map[string]string{},
-			},
-		},
-	})
-
+	opts := setGPUMountsForCOS(dockerutil.RunOpts{Image: "basic/cuda-vector-add"})
+	out, err := c.Run(ctx, opts)
 	if err != nil {
 		t.Fatalf("could not run nvidia: %v", err)
 	}
 
 	t.Logf("nvidia output: %s", string(out))
+}
+
+func setGPUMountsForCOS(opts dockerutil.RunOpts) dockerutil.RunOpts {
+	for _, v := range []string{nvidiaLibMount, nvidiaBinMount} {
+		opts.Mounts = append(opts.Mounts, mount.Mount{
+			Type:   mount.TypeVolume,
+			Source: v,
+			Target: v,
+		})
+	}
+
+	for _, v := range []string{nvidia0Device, nvidiaUvmDevice, nvidiactlDevice} {
+		opts.DeviceMapping = append(opts.DeviceMapping, container.DeviceMapping{
+			PathOnHost:      v,
+			PathInContainer: v,
+		})
+	}
+	return opts
 }
