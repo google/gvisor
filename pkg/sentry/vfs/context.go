@@ -27,6 +27,11 @@ const (
 
 	// CtxRoot is a Context.Value key for a VFS root.
 	CtxRoot
+
+	// CtxRestoreFilesystemFDMap is a Context.Value key for a map[string]int
+	// mapping filesystem unique IDs (cf. gofer.InternalFilesystemOptions.UniqueID)
+	// to host FDs.
+	CtxRestoreFilesystemFDMap
 )
 
 // MountNamespaceFromContext returns the MountNamespace used by ctx. If ctx is
