@@ -12,9 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build (amd64 || 386) && go1.1
+//go:build (amd64 || 386) && !false
 // +build amd64 386
-// +build go1.1
+// +build !false
 
 package arch
 
