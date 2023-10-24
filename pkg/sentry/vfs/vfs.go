@@ -477,7 +477,7 @@ func (vfs *VirtualFilesystem) OpenAt(ctx context.Context, creds *auth.Credential
 			rp.Release(ctx)
 
 			if opts.FileExec {
-				if fd.Mount().Flags.NoExec {
+				if fd.Mount().Options().Flags.NoExec {
 					fd.DecRef(ctx)
 					return nil, linuxerr.EACCES
 				}

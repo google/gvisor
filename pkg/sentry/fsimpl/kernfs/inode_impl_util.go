@@ -255,7 +255,7 @@ func (a *InodeAttrs) Links() uint32 {
 
 // TouchAtime updates a.atime to the current time.
 func (a *InodeAttrs) TouchAtime(ctx context.Context, mnt *vfs.Mount) {
-	if mnt.Flags.NoATime || mnt.ReadOnly() {
+	if opts := mnt.Options(); opts.Flags.NoATime || opts.ReadOnly {
 		return
 	}
 	if err := mnt.CheckBeginWrite(); err != nil {

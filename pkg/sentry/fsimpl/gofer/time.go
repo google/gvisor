@@ -30,7 +30,7 @@ func dentryTimestampFromUnix(t unix.Timespec) int64 {
 
 // Preconditions: d.cachedMetadataAuthoritative() == true.
 func (d *dentry) touchAtime(mnt *vfs.Mount) {
-	if mnt.Flags.NoATime || mnt.ReadOnly() {
+	if opts := mnt.Options(); opts.Flags.NoATime || opts.ReadOnly {
 		return
 	}
 	if err := mnt.CheckBeginWrite(); err != nil {
@@ -46,7 +46,7 @@ func (d *dentry) touchAtime(mnt *vfs.Mount) {
 
 // Preconditions: d.metadataMu is locked. d.cachedMetadataAuthoritative() == true.
 func (d *dentry) touchAtimeLocked(mnt *vfs.Mount) {
-	if mnt.Flags.NoATime || mnt.ReadOnly() {
+	if opts := mnt.Options(); opts.Flags.NoATime || opts.ReadOnly {
 		return
 	}
 	if err := mnt.CheckBeginWrite(); err != nil {
