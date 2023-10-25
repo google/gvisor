@@ -16,6 +16,8 @@ package bpf
 
 import (
 	"fmt"
+	"strconv"
+	"strings"
 )
 
 // Possible values for ProgramError.Code.
@@ -99,7 +101,7 @@ func (p Program) Length() int {
 
 // Compile performs validation and optimization on a sequence of BPF
 // instructions before wrapping them in a Program.
-func Compile(insns []Instruction) (Program, error) {
+func Compile(insns []Instruction, optimize bool) (Program, error) {
 	if len(insns) == 0 || len(insns) > MaxInstructions {
 		return Program{}, Error{InvalidInstructionCount, len(insns)}
 	}
@@ -214,36 +216,10 @@ func Compile(insns []Instruction) (Program, error) {
 		}
 	}
 
-	return Program{Optimize(insns)}, nil
-}
-
-// Input represents a source of input data for a BPF program. (BPF
-// documentation sometimes refers to the input data as the "packet" due to its
-// origins as a packet processing DSL.)
-//
-// For all of Input's Load methods:
-//
-//   - The second (bool) return value is true if the load succeeded and false
-//     otherwise.
-//
-//   - Inputs should not assume that the loaded range falls within the input
-//     data's length. Inputs should return false if the load falls outside of the
-//     input data.
-//
-//   - Inputs should not assume that the offset is correctly aligned. Inputs may
-//     choose to service or reject loads to unaligned addresses.
-type Input interface {
-	// Load32 reads 32 bits from the input starting at the given byte offset.
-	Load32(off uint32) (uint32, bool)
-
-	// Load16 reads 16 bits from the input starting at the given byte offset.
-	Load16(off uint32) (uint16, bool)
-
-	// Load8 reads 8 bits from the input starting at the given byte offset.
-	Load8(off uint32) (uint8, bool)
-
-	// Length returns the length of the input in bytes.
-	Length() uint32
+	if optimize {
+		insns = Optimize(insns)
+	}
+	return Program{insns}, nil
 }
 
 // machine represents the state of a BPF virtual machine.
@@ -407,4 +383,277 @@ func Exec(p Program, in Input) (uint32, error) {
 		}
 	}
 	return 0, Error{InvalidEndOfProgram, pc}
+}
+
+// ExecutionMetrics represents the result of executing a BPF program.
+type ExecutionMetrics struct {
+	// ReturnValue is the result of the program execution.
+	ReturnValue uint32
+
+	// Coverage maps instruction indexes to whether or not they were executed.
+	// This slice has the same size as the number of instructions as the BPF
+	// program that was run, so it can be used as a way to get the program size.
+	// Since an instruction can never run twice in BPF, this can also be used
+	// to determine how many instructions were executed.
+	Coverage []bool
+
+	// InputAccessed maps input byte offsets to whether or not they were
+	// read by the program during execution.
+	InputAccessed []bool
+}
+
+// String returns a human-readable view of an `Execution`.
+func (e *ExecutionMetrics) String() string {
+	type intRange struct {
+		from, to int
+	}
+
+	// addRangeString formats an `intRange` and writes it to `sb`.
+	addRangeString := func(sb *strings.Builder, rng intRange) {
+		if rng.from == rng.to {
+			sb.WriteString(strconv.Itoa(rng.from))
+		} else {
+			sb.WriteString(strconv.Itoa(rng.from))
+			sb.WriteRune('-')
+			sb.WriteString(strconv.Itoa(rng.to))
+		}
+	}
+
+	// `getRanges` takes a slice of booleans and returns ranges of all-true
+	// indexes.
+	getRanges := func(s []bool) []intRange {
+		var ranges []intRange
+		firstTrueIndex := -1
+		for i, covered := range s {
+			if covered {
+				if firstTrueIndex == -1 {
+					firstTrueIndex = i
+				}
+				continue
+			}
+			if firstTrueIndex != -1 {
+				ranges = append(ranges, intRange{firstTrueIndex, i - 1})
+				firstTrueIndex = -1
+			}
+		}
+		if firstTrueIndex != -1 {
+			ranges = append(ranges, intRange{firstTrueIndex, len(s) - 1})
+		}
+		return ranges
+	}
+
+	// ranges returns a human-friendly representation of the
+	// ranges of items in `s` that are contiguously `true`.
+	ranges := func(s []bool) string {
+		if len(s) == 0 {
+			return "empty"
+		}
+		allFalse := true
+		allTrue := true
+		for _, v := range s {
+			if v {
+				allFalse = false
+			} else {
+				allTrue = false
+			}
+		}
+		if allFalse {
+			return "none"
+		}
+		if allTrue {
+			return "all"
+		}
+		ranges := getRanges(s)
+		var sb strings.Builder
+		for i, rng := range ranges {
+			if i != 0 {
+				sb.WriteRune(',')
+			}
+			addRangeString(&sb, rng)
+		}
+		return sb.String()
+	}
+	executedInstructions := 0
+	for _, covered := range e.Coverage {
+		if covered {
+			executedInstructions++
+		}
+	}
+	return fmt.Sprintf("returned %d, covered %d/%d instructions (%s), read input bytes %s (%d total input bytes)", e.ReturnValue, executedInstructions, len(e.Coverage), ranges(e.Coverage), ranges(e.InputAccessed), len(e.InputAccessed))
+}
+
+// markInputRead marks the `bytesRead` bytes starting at `offset` as having
+// been read from the input. This function assumes that the offset and number
+// of bytes have already been verified as valid.
+func (e *ExecutionMetrics) markInputRead(offset uint32, bytesRead int) {
+	if int(offset)+bytesRead > len(e.InputAccessed) {
+		panic(fmt.Sprintf("invalid offset or number of bytes read: offset=%d bytesRead=%d len=%d", offset, bytesRead, len(e.InputAccessed)))
+	}
+	for i := 0; i < bytesRead; i++ {
+		e.InputAccessed[int(offset)+i] = true
+	}
+}
+
+// InstrumentedExec executes a BPF program over the given input while
+// instrumenting it: recording memory accesses and lines executed.
+// This is slower than Exec, but should return equivalent results.
+func InstrumentedExec(p Program, in Input) (ExecutionMetrics, error) {
+	ret := ExecutionMetrics{
+		Coverage:      make([]bool, len(p.instructions)),
+		InputAccessed: make([]bool, in.Length()),
+	}
+	var m machine
+	var pc int
+	for ; pc < len(p.instructions); pc++ {
+		ret.Coverage[pc] = true
+		i := p.instructions[pc]
+		switch i.OpCode {
+		case Ld | Imm | W:
+			m.A = i.K
+		case Ld | Abs | W:
+			val, ok := in.Load32(i.K)
+			if !ok {
+				return ret, Error{InvalidLoad, pc}
+			}
+			ret.markInputRead(i.K, 4)
+			m.A = val
+		case Ld | Abs | H:
+			val, ok := in.Load16(i.K)
+			if !ok {
+				return ret, Error{InvalidLoad, pc}
+			}
+			ret.markInputRead(i.K, 2)
+			m.A = uint32(val)
+		case Ld | Abs | B:
+			val, ok := in.Load8(i.K)
+			if !ok {
+				return ret, Error{InvalidLoad, pc}
+			}
+			ret.markInputRead(i.K, 1)
+			m.A = uint32(val)
+		case Ld | Ind | W:
+			val, ok := in.Load32(m.X + i.K)
+			if !ok {
+				return ret, Error{InvalidLoad, pc}
+			}
+			ret.markInputRead(m.X+i.K, 4)
+			m.A = val
+		case Ld | Ind | H:
+			val, ok := in.Load16(m.X + i.K)
+			if !ok {
+				return ret, Error{InvalidLoad, pc}
+			}
+			ret.markInputRead(m.X+i.K, 2)
+			m.A = uint32(val)
+		case Ld | Ind | B:
+			val, ok := in.Load8(m.X + i.K)
+			if !ok {
+				return ret, Error{InvalidLoad, pc}
+			}
+			ret.markInputRead(m.X+i.K, 1)
+			m.A = uint32(val)
+		case Ld | Mem | W:
+			m.A = m.M[int(i.K)]
+		case Ld | Len | W:
+			m.A = in.Length()
+		case Ldx | Imm | W:
+			m.X = i.K
+		case Ldx | Mem | W:
+			m.X = m.M[int(i.K)]
+		case Ldx | Len | W:
+			m.X = in.Length()
+		case Ldx | Msh | B:
+			val, ok := in.Load8(i.K)
+			if !ok {
+				return ret, Error{InvalidLoad, pc}
+			}
+			ret.markInputRead(i.K, 1)
+			m.X = 4 * uint32(val&0xf)
+		case St:
+			m.M[int(i.K)] = m.A
+		case Stx:
+			m.M[int(i.K)] = m.X
+		case Alu | Add | K:
+			m.A += i.K
+		case Alu | Add | X:
+			m.A += m.X
+		case Alu | Sub | K:
+			m.A -= i.K
+		case Alu | Sub | X:
+			m.A -= m.X
+		case Alu | Mul | K:
+			m.A *= i.K
+		case Alu | Mul | X:
+			m.A *= m.X
+		case Alu | Div | K:
+			// K != 0 already checked by Compile.
+			m.A /= i.K
+		case Alu | Div | X:
+			if m.X == 0 {
+				return ret, Error{DivisionByZero, pc}
+			}
+			m.A /= m.X
+		case Alu | Or | K:
+			m.A |= i.K
+		case Alu | Or | X:
+			m.A |= m.X
+		case Alu | And | K:
+			m.A &= i.K
+		case Alu | And | X:
+			m.A &= m.X
+		case Alu | Lsh | K:
+			m.A <<= i.K
+		case Alu | Lsh | X:
+			m.A <<= m.X
+		case Alu | Rsh | K:
+			m.A >>= i.K
+		case Alu | Rsh | X:
+			m.A >>= m.X
+		case Alu | Neg:
+			m.A = uint32(-int32(m.A))
+		case Alu | Mod | K:
+			// K != 0 already checked by Compile.
+			m.A %= i.K
+		case Alu | Mod | X:
+			if m.X == 0 {
+				return ret, Error{DivisionByZero, pc}
+			}
+			m.A %= m.X
+		case Alu | Xor | K:
+			m.A ^= i.K
+		case Alu | Xor | X:
+			m.A ^= m.X
+		case Jmp | Ja:
+			pc += int(i.K)
+		case Jmp | Jeq | K:
+			pc += conditionalJumpOffset(i, m.A == i.K)
+		case Jmp | Jeq | X:
+			pc += conditionalJumpOffset(i, m.A == m.X)
+		case Jmp | Jgt | K:
+			pc += conditionalJumpOffset(i, m.A > i.K)
+		case Jmp | Jgt | X:
+			pc += conditionalJumpOffset(i, m.A > m.X)
+		case Jmp | Jge | K:
+			pc += conditionalJumpOffset(i, m.A >= i.K)
+		case Jmp | Jge | X:
+			pc += conditionalJumpOffset(i, m.A >= m.X)
+		case Jmp | Jset | K:
+			pc += conditionalJumpOffset(i, (m.A&i.K) != 0)
+		case Jmp | Jset | X:
+			pc += conditionalJumpOffset(i, (m.A&m.X) != 0)
+		case Ret | K:
+			ret.ReturnValue = i.K
+			return ret, nil
+		case Ret | A:
+			ret.ReturnValue = m.A
+			return ret, nil
+		case Misc | Tax:
+			m.A = m.X
+		case Misc | Txa:
+			m.X = m.A
+		default:
+			return ret, Error{InvalidOpcode, pc}
+		}
+	}
+	return ret, Error{InvalidEndOfProgram, pc}
 }

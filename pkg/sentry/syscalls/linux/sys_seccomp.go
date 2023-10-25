@@ -67,7 +67,7 @@ func seccomp(t *kernel.Task, mode, flags uint64, addr hostarch.Addr) error {
 	for i, ins := range filter {
 		bpfFilter[i] = bpf.Instruction(ins)
 	}
-	compiledFilter, err := bpf.Compile(bpfFilter)
+	compiledFilter, err := bpf.Compile(bpfFilter, true /* optimize */)
 	if err != nil {
 		t.Debugf("Invalid seccomp-bpf filter: %v", err)
 		return linuxerr.EINVAL
