@@ -217,35 +217,6 @@ func Compile(insns []Instruction) (Program, error) {
 	return Program{Optimize(insns)}, nil
 }
 
-// Input represents a source of input data for a BPF program. (BPF
-// documentation sometimes refers to the input data as the "packet" due to its
-// origins as a packet processing DSL.)
-//
-// For all of Input's Load methods:
-//
-//   - The second (bool) return value is true if the load succeeded and false
-//     otherwise.
-//
-//   - Inputs should not assume that the loaded range falls within the input
-//     data's length. Inputs should return false if the load falls outside of the
-//     input data.
-//
-//   - Inputs should not assume that the offset is correctly aligned. Inputs may
-//     choose to service or reject loads to unaligned addresses.
-type Input interface {
-	// Load32 reads 32 bits from the input starting at the given byte offset.
-	Load32(off uint32) (uint32, bool)
-
-	// Load16 reads 16 bits from the input starting at the given byte offset.
-	Load16(off uint32) (uint16, bool)
-
-	// Load8 reads 8 bits from the input starting at the given byte offset.
-	Load8(off uint32) (uint8, bool)
-
-	// Length returns the length of the input in bytes.
-	Length() uint32
-}
-
 // machine represents the state of a BPF virtual machine.
 type machine struct {
 	A uint32

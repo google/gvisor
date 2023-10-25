@@ -18,8 +18,6 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/bpf",
-        "//pkg/hostarch",
-        "//pkg/marshal",
         "//pkg/seccomp",
         "//pkg/test/testutil",
         "//test/secbench/secbenchdef",

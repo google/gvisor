@@ -18,9 +18,11 @@ import (
 	"encoding/binary"
 )
 
-// InputBytes implements the Input interface by providing access to a byte
-// slice. Unaligned loads are supported.
-type InputBytes struct {
+// Input represents a source of input data for a BPF program. (BPF
+// documentation sometimes refers to the input data as the "packet" due to its
+// origins as a packet processing DSL.)
+// Unaligned loads are supported.
+type Input struct {
 	// Data is the data accessed through the Input interface.
 	Data []byte
 
@@ -29,7 +31,9 @@ type InputBytes struct {
 }
 
 // Load32 implements Input.Load32.
-func (i InputBytes) Load32(off uint32) (uint32, bool) {
+//
+//go:nosplit
+func (i *Input) Load32(off uint32) (uint32, bool) {
 	if uint64(off)+4 > uint64(len(i.Data)) {
 		return 0, false
 	}
@@ -37,7 +41,9 @@ func (i InputBytes) Load32(off uint32) (uint32, bool) {
 }
 
 // Load16 implements Input.Load16.
-func (i InputBytes) Load16(off uint32) (uint16, bool) {
+//
+//go:nosplit
+func (i *Input) Load16(off uint32) (uint16, bool) {
 	if uint64(off)+2 > uint64(len(i.Data)) {
 		return 0, false
 	}
@@ -45,7 +51,9 @@ func (i InputBytes) Load16(off uint32) (uint16, bool) {
 }
 
 // Load8 implements Input.Load8.
-func (i InputBytes) Load8(off uint32) (uint8, bool) {
+//
+//go:nosplit
+func (i *Input) Load8(off uint32) (uint8, bool) {
 	if uint64(off)+1 > uint64(len(i.Data)) {
 		return 0, false
 	}
@@ -53,6 +61,8 @@ func (i InputBytes) Load8(off uint32) (uint8, bool) {
 }
 
 // Length implements Input.Length.
-func (i InputBytes) Length() uint32 {
+//
+//go:nosplit
+func (i *Input) Length() uint32 {
 	return uint32(len(i.Data))
 }
