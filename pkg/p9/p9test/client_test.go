@@ -408,7 +408,7 @@ type deleter func(parent p9.File, name string) error
 // unlinkAt is a deleter.
 func unlinkAt(parent p9.File, name string) error {
 	// Call unlink. Note that a filesystem may normally impose additional
-	// constaints on unlinkat success, such as ensuring that a directory is
+	// constraints on unlinkat success, such as ensuring that a directory is
 	// empty, requiring AT_REMOVEDIR in flags to remove a directory, etc.
 	// None of that is required internally (entire trees can be marked
 	// deleted when this operation succeeds), so the mock will succeed.

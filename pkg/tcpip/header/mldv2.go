@@ -422,7 +422,7 @@ func (r MLDv2ReportMulticastAddressRecord) RecordType() MLDv2ReportRecordType {
 	return MLDv2ReportRecordType(r[mldv2ReportMulticastAddressRecordTypeOffset])
 }
 
-// AuxDataLen returns the length of the auxillary data in this record.
+// AuxDataLen returns the length of the auxiliary data in this record.
 func (r MLDv2ReportMulticastAddressRecord) AuxDataLen() int {
 	return int(r[mldv2ReportMulticastAddressRecordAuxDataLenOffset]) * mldv2ReportMulticastAddressRecordAuxDataLenUnits
 }

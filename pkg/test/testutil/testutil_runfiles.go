@@ -23,7 +23,7 @@ import (
 	"path/filepath"
 )
 
-// FindFile searchs for a file inside the test run environment. It returns the
+// FindFile searches for a file inside the test run environment. It returns the
 // full path to the file. It fails if none or more than one file is found.
 func FindFile(path string) (string, error) {
 	wd, err := os.Getwd()

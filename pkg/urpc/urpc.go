@@ -597,7 +597,7 @@ func unmarshal(s *unet.Socket, v any) ([]*os.File, error) {
 	// instead of the default float type for those intermediate values, such
 	// that when they get re-encoded, their values are not printed out in
 	// floating-point formats such as 1e9, which could not be decoded to
-	// explicitly typed intergers later.
+	// explicitly typed integers later.
 	d.UseNumber()
 	if err := d.Decode(v); err != nil {
 		log.Warningf("urpc: error decoding: %s", err.Error())

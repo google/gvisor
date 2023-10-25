@@ -78,7 +78,7 @@ func TestDelete(t *testing.T) {
 			for i := 0; i < numChildren; i++ {
 				name := fmt.Sprintf("%d", i)
 				if got, want := root.removeChildLocked(name), truth[name]; got != want {
-					t.Errorf("root deleted incorrect ndoe: want %p, got %p", want, got)
+					t.Errorf("root deleted incorrect node: want %p, got %p", want, got)
 				}
 			}
 		})

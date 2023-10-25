@@ -68,7 +68,7 @@ const (
 	CAP_CHECKPOINT_RESTORE = Capability(40)
 
 	// CAP_LAST_CAP is the highest-numbered capability.
-	// Seach for "CAP_LAST_CAP" to find other places that need to change.
+	// Search for "CAP_LAST_CAP" to find other places that need to change.
 	CAP_LAST_CAP = CAP_CHECKPOINT_RESTORE
 )
 

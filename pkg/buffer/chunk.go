@@ -27,7 +27,7 @@ const (
 	// number and passing the result to MostSignificantOne64.
 	baseChunkSizeLog2 = 6
 
-	// This is the size of the buffers in the first pool. Each subsquent pool
+	// This is the size of the buffers in the first pool. Each subsequent pool
 	// creates payloads 2^(pool index) times larger than the first pool's
 	// payloads.
 	baseChunkSize = 1 << baseChunkSizeLog2 // 64

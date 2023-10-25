@@ -30,7 +30,7 @@ const logBufLen = 1 << 17
 
 // Syslog implements part of Linux syscall syslog.
 //
-// Only the unpriviledged commands are implemented, allowing applications to
+// Only the unprivileged commands are implemented, allowing applications to
 // read a fun dmesg.
 func Syslog(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
 	command := args[0].Int()

@@ -4366,7 +4366,7 @@ func TestGetMainNICAddressWhenNICDisabled(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Should still get the address when the NIC is diabled.
+	// Should still get the address when the NIC is disabled.
 	if err := s.DisableNIC(nicID); err != nil {
 		t.Fatalf("DisableNIC(%d): %s", nicID, err)
 	}

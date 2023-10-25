@@ -138,7 +138,7 @@ func (r *ReadWriter) String() string {
 //
 // It is similar to os.File, with a few important distinctions:
 //
-// FD provies a Release() method which relinquishes ownership. Like os.File,
+// FD provides a Release() method which relinquishes ownership. Like os.File,
 // FD adds a finalizer to close the backing FD. However, the finalizer cannot
 // be removed from os.File, forever pinning the lifetime of an FD to its
 // os.File.

@@ -263,7 +263,7 @@ func (*endpoint) Disconnect() tcpip.Error {
 }
 
 // Connect implements tcpip.Endpoint.Connect. Packet sockets cannot be
-// connected, and this function always returnes *tcpip.ErrNotSupported.
+// connected, and this function always returns *tcpip.ErrNotSupported.
 func (*endpoint) Connect(tcpip.FullAddress) tcpip.Error {
 	return &tcpip.ErrNotSupported{}
 }

@@ -349,7 +349,7 @@ const SizeOfLinger = 8
 // TCPInfo is a collection of TCP statistics.
 //
 // From uapi/linux/tcp.h. Newer versions of Linux continue to add new fields to
-// the end of this struct or within existing unusued space, so its size grows
+// the end of this struct or within existing unused space, so its size grows
 // over time. The current iteration is based on linux v4.17. New versions are
 // always backwards compatible.
 //

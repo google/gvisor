@@ -236,7 +236,7 @@ const (
 	IP6T_F_PROTO = 0x01
 	// Whether to match the TOS field.
 	IP6T_F_TOS = 0x02
-	// Indicates that the jump target is an aboslute GOTO, not an offset.
+	// Indicates that the jump target is an absolute GOTO, not an offset.
 	IP6T_F_GOTO = 0x04
 	// Enables all flags.
 	IP6T_F_MASK = 0x07

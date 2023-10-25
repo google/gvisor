@@ -1087,7 +1087,7 @@ func (e *endpoint) tryDeliverSegmentFromClosedEndpoint(s *segment) {
 	}
 
 	if e == ep {
-		panic(fmt.Sprintf("current endpoint not removed from demuxer, enqueing segments to itself, endpoint in state %v", e.EndpointState()))
+		panic(fmt.Sprintf("current endpoint not removed from demuxer, enqueuing segments to itself, endpoint in state %v", e.EndpointState()))
 	}
 
 	if ep := ep.(*endpoint); ep.enqueueSegment(s) {

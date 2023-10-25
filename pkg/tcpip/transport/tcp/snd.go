@@ -646,12 +646,12 @@ func (s *sender) NextSeg(nextSegHint *segment) (nextSeg, hint *segment, rescueRt
 		//     1. If there exists a smallest unSACKED sequence number
 		//     'S2' that meets the following 3 criteria for determinig
 		//     loss, the sequence range of one segment of up to SMSS
-		//     octects starting with S2 MUST be returned.
+		//     octets starting with S2 MUST be returned.
 		if !s.ep.scoreboard.IsSACKED(header.SACKBlock{Start: segSeq, End: segSeq.Add(1)}) {
 			// NextSeg():
 			//
 			//    (1.a) S2 is greater than HighRxt
-			//    (1.b) S2 is less than highest octect covered by
+			//    (1.b) S2 is less than highest octet covered by
 			//    any received SACK.
 			if s.FastRecovery.HighRxt.LessThan(segSeq) && segSeq.LessThan(s.ep.scoreboard.maxSACKED) {
 				// NextSeg():
@@ -682,7 +682,7 @@ func (s *sender) NextSeg(nextSegHint *segment) (nextSeg, hint *segment, rescueRt
 			//     retransmission per entry into loss recovery. If
 			//     HighACK is greater than RescueRxt (or RescueRxt
 			//     is undefined), then one segment of upto SMSS
-			//     octects that MUST include the highest outstanding
+			//     octets that MUST include the highest outstanding
 			//     unSACKed sequence number SHOULD be returned, and
 			//     RescueRxt set to RecoveryPoint. HighRxt MUST NOT
 			//     be updated.
@@ -822,7 +822,7 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 		}
 
 		// If the whole segment or at least 1MSS sized segment cannot
-		// be accomodated in the receiver advertized window, skip
+		// be accommodated in the receiver advertised window, skip
 		// splitting and sending of the segment. ref:
 		// net/ipv4/tcp_output.c::tcp_snd_wnd_test()
 		//
@@ -921,7 +921,7 @@ func (s *sender) postXmit(dataSent bool, shouldScheduleProbe bool) {
 		s.ep.disableKeepaliveTimer()
 	}
 
-	// If the sender has advertized zero receive window and we have
+	// If the sender has advertised zero receive window and we have
 	// data to be sent out, start zero window probing to query the
 	// the remote for it's receive window size.
 	if s.writeNext != nil && s.SndWnd == 0 {
@@ -1091,7 +1091,7 @@ func (s *sender) SetPipe() {
 			//
 			// NOTE: here we mark the whole segment as lost. We do not try
 			// and test every byte in our write buffer as we maintain our
-			// pipe in terms of oustanding packets and not bytes.
+			// pipe in terms of outstanding packets and not bytes.
 			if !s.ep.scoreboard.IsRangeLost(sb) {
 				pipe++
 			}
@@ -1453,7 +1453,7 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 	// Stash away the current window size.
 	s.SndWnd = rcvdSeg.window
 
-	// Disable zero window probing if remote advertizes a non-zero receive
+	// Disable zero window probing if remote advertises a non-zero receive
 	// window. This can be with an ACK to the zero window probe (where the
 	// acknumber refers to the already acknowledged byte) OR to any previously
 	// unacknowledged segment.

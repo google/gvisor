@@ -272,7 +272,7 @@ func (fs *filesystem) getRemoteChildLocked(ctx context.Context, parent *dentry, 
 	defer parent.childrenMu.Unlock()
 
 	if checkForRace {
-		// See if we raced with anoter getRemoteChild call that added
+		// See if we raced with another getRemoteChild call that added
 		// to the cache.
 		if cachedChild, ok := parent.children[name]; ok && cachedChild != nil {
 			// We raced. Destroy our child and return the cached
@@ -1139,7 +1139,7 @@ func (d *dentry) open(ctx context.Context, rp *vfs.ResolvingPath, opts *vfs.Open
 	}
 
 	if trunc {
-		// If no errors occured so far then update file size in memory. This
+		// If no errors occurred so far then update file size in memory. This
 		// step is required even if !d.cachedMetadataAuthoritative() because
 		// d.mappings has to be updated.
 		// d.metadataMu has already been acquired if trunc == true.

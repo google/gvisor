@@ -574,7 +574,7 @@ type OpenFDImpl interface {
 	// On the server, Stat has a read concurrency guarantee.
 	Stat() (linux.Statx, error)
 
-	// Sync is simialr to fsync(2).
+	// Sync is similar to fsync(2).
 	//
 	// On the server, Sync has a read concurrency guarantee.
 	Sync() error

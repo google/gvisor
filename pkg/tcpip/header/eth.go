@@ -82,7 +82,7 @@ const (
 	// capture all traffic.
 	EthernetProtocolAll tcpip.NetworkProtocolNumber = 0x0003
 
-	// EthernetProtocolPUP is the PARC Universial Packet protocol ethertype.
+	// EthernetProtocolPUP is the PARC Universal Packet protocol ethertype.
 	EthernetProtocolPUP tcpip.NetworkProtocolNumber = 0x0200
 )
 

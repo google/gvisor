@@ -113,7 +113,7 @@ type ProcessGroup struct {
 	processGroupEntry
 }
 
-// Originator retuns the originator of the process group.
+// Originator returns the originator of the process group.
 func (pg *ProcessGroup) Originator() *ThreadGroup {
 	return pg.originator
 }

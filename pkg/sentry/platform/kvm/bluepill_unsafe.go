@@ -59,7 +59,7 @@ func bluepillArchContext(context unsafe.Pointer) *arch.SignalContext64 {
 	return &((*arch.UContext64)(context).MContext)
 }
 
-// bluepillHandleHlt is reponsible for handling VM-Exit.
+// bluepillHandleHlt is responsible for handling VM-Exit.
 //
 //go:nosplit
 func bluepillGuestExit(c *vCPU, context unsafe.Pointer) {

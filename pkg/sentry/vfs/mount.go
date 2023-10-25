@@ -150,7 +150,7 @@ func (mnt *Mount) Options() MountOptions {
 	}
 }
 
-// setMountOptions sets mnt's opions to the given opts.
+// setMountOptions sets mnt's options to the given opts.
 //
 // Preconditions:
 //   - vfs.mountMu must be locked.

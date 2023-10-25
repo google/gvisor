@@ -47,7 +47,7 @@ var _ controller = (*memoryController)(nil)
 func newMemoryController(fs *filesystem, defaults map[string]int64) *memoryController {
 	c := &memoryController{
 		// Linux sets these limits to (PAGE_COUNTER_MAX * PAGE_SIZE) by default,
-		// which is ~ 2**63 on a 64-bit system. So essentially, inifinity. The
+		// which is ~ 2**63 on a 64-bit system. So essentially, infinity. The
 		// exact value isn't very important.
 
 		limitBytes:     atomicbitops.FromInt64(math.MaxInt64),

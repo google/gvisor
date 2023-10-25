@@ -86,7 +86,7 @@ type Queue struct {
 	// messages is a list of sent messages.
 	messages msgList
 
-	// sendTime is the last time a msgsnd was perfomed.
+	// sendTime is the last time a msgsnd was performed.
 	sendTime ktime.Time
 
 	// receiveTime is the last time a msgrcv was performed.
@@ -424,7 +424,7 @@ func (q *Queue) pop(ctx context.Context, creds *auth.Credentials, mType int64, m
 		msg = q.msgOfTypeLessThan(-1 * mType)
 	}
 
-	// If no message exists, return a blocking singal.
+	// If no message exists, return a blocking signal.
 	if msg == nil {
 		return nil, linuxerr.EWOULDBLOCK
 	}
