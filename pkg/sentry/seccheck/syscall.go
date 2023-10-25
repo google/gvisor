@@ -14,6 +14,10 @@
 
 package seccheck
 
+import (
+	"gvisor.dev/gvisor/pkg/abi/sentry"
+)
+
 // SyscallType is an enum that denotes different types of syscall points. There
 // are 2 types of syscall point: fully-schematized and raw. Schematizes are
 // points that have syscall specific format, e.g. open => {path, flags, mode}.
@@ -47,9 +51,7 @@ type SyscallFlagListener interface {
 }
 
 const (
-	// Copied from kernel.maxSyscallNum to avoid reverse dependency.
-	syscallsMax   = 2000
-	syscallPoints = syscallsMax * int(syscallTypesCount)
+	syscallPoints = (sentry.MaxSyscallNum + 1) * int(syscallTypesCount)
 )
 
 // Fields that are common for many syscalls.
@@ -75,7 +77,7 @@ func GetPointForSyscall(typ SyscallType, sysno uintptr) Point {
 // SyscallEnabled checks if the corresponding point for the syscall is enabled.
 func (s *State) SyscallEnabled(typ SyscallType, sysno uintptr) bool {
 	// Prevent overflow.
-	if sysno >= syscallsMax {
+	if sysno >= sentry.MaxSyscallNum {
 		return false
 	}
 	return s.Enabled(GetPointForSyscall(typ, sysno))
