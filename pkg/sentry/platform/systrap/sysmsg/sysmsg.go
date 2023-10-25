@@ -250,9 +250,15 @@ type ThreadContext struct {
 	// goroutine used for this thread context is busy-polling for a response
 	// instead of using FUTEX_WAIT.
 	SentryFastPath uint32
-	// Acked is used by sysmsg threads to signal to the sentry that this context
+	// AckedTime is used by sysmsg threads to signal to the sentry that this context
 	// has been picked up from the context queue and is actively being worked on.
-	Acked uint32
+	// The stub thread puts down the timestamp at which it has started processing
+	// this context.
+	AckedTime uint64
+	// StateChangedTime is the time when the ThreadContext.State changed, as
+	// recorded by the stub thread when it gave it back to the sentry
+	// (the sentry does not populate this field except to reset it).
+	StateChangedTime uint64
 	// TLS is a pointer to a thread local storage.
 	// It is is only populated on ARM64.
 	TLS uint64
@@ -300,7 +306,7 @@ func (c *ThreadContext) String() string {
 	fmt.Fprintf(&b, " FPStateChanged %d Regs %+v", c.FPStateChanged, c.Regs)
 	fmt.Fprintf(&b, " Interrupt %d", c.Interrupt)
 	fmt.Fprintf(&b, " ThreadID %d LastThreadID %d", c.ThreadID, c.LastThreadID)
-	fmt.Fprintf(&b, " SentryFastPath %d Acked %d", c.SentryFastPath, c.Acked)
+	fmt.Fprintf(&b, " SentryFastPath %d Acked %d", c.SentryFastPath, c.AckedTime)
 	fmt.Fprintf(&b, " signo: %d, siginfo: %+v", c.Signo, c.SignalInfo)
 	fmt.Fprintf(&b, " debug %d", atomic.LoadUint64(&c.Debug))
 	b.WriteString("}")

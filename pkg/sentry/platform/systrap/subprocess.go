@@ -701,10 +701,7 @@ func (s *subprocess) incAwakeContexts() {
 	if nr > uint32(maxSysmsgThreads) {
 		return
 	}
-	nr = nrMaxAwakeStubThreads.Add(1)
-	if nr > fastPathContextLimit {
-		dispatcher.disableStubFastPath()
-	}
+	fpState.nrMaxAwakeStubThreads.Add(1)
 }
 
 func (s *subprocess) decAwakeContexts() {
@@ -712,7 +709,7 @@ func (s *subprocess) decAwakeContexts() {
 	if nr >= uint32(maxSysmsgThreads) {
 		return
 	}
-	nrMaxAwakeStubThreads.Add(^uint32(0))
+	fpState.nrMaxAwakeStubThreads.Add(^uint32(0))
 }
 
 // switchToApp is called from the main SwitchToApp entrypoint.
@@ -747,10 +744,9 @@ func (s *subprocess) switchToApp(c *context, ac *arch.Context64) (isSyscall bool
 		ctx.sleeping = false
 		s.incAwakeContexts()
 	}
-	stubFastPathEnabled := dispatcher.stubFastPathEnabled()
 	ctx.setState(sysmsg.ContextStateNone)
-	s.contextQueue.add(ctx, stubFastPathEnabled)
-	s.waitOnState(ctx, stubFastPathEnabled)
+	s.contextQueue.add(ctx)
+	s.waitOnState(ctx)
 
 	// Check if there's been an error.
 	threadID := ctx.threadID()
@@ -789,12 +785,10 @@ func (s *subprocess) switchToApp(c *context, ac *arch.Context64) (isSyscall bool
 	return false, false, nil
 }
 
-func (s *subprocess) waitOnState(ctx *sharedContext, stubFastPathEnabled bool) {
+func (s *subprocess) waitOnState(ctx *sharedContext) {
 	ctx.kicked = false
 	slowPath := false
-	start := cputicks()
-	ctx.startWaitingTS = start
-	if !stubFastPathEnabled || atomic.LoadUint32(&s.contextQueue.numActiveThreads) == 0 {
+	if !s.contextQueue.fastPathEnabled() || atomic.LoadUint32(&s.contextQueue.numActiveThreads) == 0 {
 		ctx.kicked = s.kickSysmsgThread()
 	}
 	for curState := ctx.state(); curState == sysmsg.ContextStateNone; curState = ctx.state() {
@@ -828,7 +822,8 @@ func (s *subprocess) waitOnState(ctx *sharedContext, stubFastPathEnabled bool) {
 		}
 	}
 
-	ctx.resetAcked()
+	ctx.recordLatency()
+	ctx.resetLatencyMeasures()
 	ctx.enableSentryFastPath()
 }
 
@@ -857,6 +852,8 @@ func (s *subprocess) canKickSysmsgThread() (bool, uint32) {
 	return true, nrActiveThreads
 }
 
+// kickSysmsgThread returns true if it was able to wake up or create a new sysmsg
+// stub thread.
 func (s *subprocess) kickSysmsgThread() bool {
 	kick, _ := s.canKickSysmsgThread()
 	if !kick {
@@ -869,6 +866,7 @@ func (s *subprocess) kickSysmsgThread() bool {
 		s.sysmsgThreadsMu.Unlock()
 		return false
 	}
+	numTimesStubKicked.Increment()
 	atomic.AddUint32(&s.contextQueue.numThreadsToWakeup, 1)
 	if s.numSysmsgThreads < maxSysmsgThreads && s.numSysmsgThreads < int(nrThreads) {
 		s.numSysmsgThreads++
@@ -884,7 +882,7 @@ func (s *subprocess) kickSysmsgThread() bool {
 	}
 	s.contextQueue.wakeupSysmsgThread()
 
-	return false
+	return true
 }
 
 // syscall executes the given system call without handling interruptions.
