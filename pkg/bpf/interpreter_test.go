@@ -15,7 +15,6 @@
 package bpf
 
 import (
-	"encoding/binary"
 	"reflect"
 	"testing"
 
@@ -153,12 +152,12 @@ func TestExecErrors(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected compilation error: %v", err)
 			}
-			inp := Input{nil, binary.BigEndian}
-			execution, err := InstrumentedExec(p, inp)
+			inp := Input{}
+			execution, err := InstrumentedExec[NativeEndian](p, inp)
 			if err != test.expectedErr {
 				t.Fatalf("expected execution error %q, got (%v, %v)", test.expectedErr, execution, err)
 			}
-			ret, err := Exec(p, inp)
+			ret, err := Exec[NativeEndian](p, inp)
 			if err != test.expectedErr {
 				t.Fatalf("expected execution error %q, got (%d, %v)", test.expectedErr, ret, err)
 			}
@@ -166,7 +165,7 @@ func TestExecErrors(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected compilation error: %v", err)
 			}
-			if _, err := InstrumentedExec(optimizedProgram, inp); err != test.expectedErr {
+			if _, err := InstrumentedExec[NativeEndian](optimizedProgram, inp); err != test.expectedErr {
 				t.Fatalf("expected execution error from optimized program %q, got (%v, %v)", test.expectedErr, execution, err)
 			}
 		})
@@ -200,7 +199,7 @@ func TestValidInstructions(t *testing.T) {
 		insns []Instruction
 
 		// input is the input data. Note that input will be read as big-endian.
-		input []byte
+		input Input
 
 		// expected is the expected result of executing the BPF program.
 		// It takes in the instructions and input that the test will run.
@@ -251,7 +250,7 @@ func TestValidInstructions(t *testing.T) {
 			expected: want(ExecutionMetrics{
 				Coverage:      []bool{true, true},
 				InputAccessed: []bool{false, true, true, true, true, false},
-				ReturnValue:   0x11223344,
+				ReturnValue:   hostarch.ByteOrder.Uint32([]byte{0x11, 0x22, 0x33, 0x44}),
 			}),
 		},
 		{
@@ -264,7 +263,7 @@ func TestValidInstructions(t *testing.T) {
 			expected: want(ExecutionMetrics{
 				Coverage:      []bool{true, true},
 				InputAccessed: []bool{false, true, true, false},
-				ReturnValue:   0x1122,
+				ReturnValue:   uint32(hostarch.ByteOrder.Uint16([]byte{0x11, 0x22})),
 			}),
 		},
 		{
@@ -291,7 +290,7 @@ func TestValidInstructions(t *testing.T) {
 			expected: want(ExecutionMetrics{
 				Coverage:      []bool{true, true, true},
 				InputAccessed: []bool{false, false, true, true, true, true, false},
-				ReturnValue:   0x22334455,
+				ReturnValue:   hostarch.ByteOrder.Uint32([]byte{0x22, 0x33, 0x44, 0x55}),
 			}),
 		},
 		{
@@ -305,7 +304,7 @@ func TestValidInstructions(t *testing.T) {
 			expected: want(ExecutionMetrics{
 				Coverage:      []bool{true, true, true},
 				InputAccessed: []bool{false, false, true, true, false},
-				ReturnValue:   0x2233,
+				ReturnValue:   uint32(hostarch.ByteOrder.Uint16([]byte{0x22, 0x33})),
 			}),
 		},
 		{
@@ -862,15 +861,14 @@ func TestValidInstructions(t *testing.T) {
 				t.Fatalf("unexpected compilation error: %v", err)
 			}
 			want := test.expected(test.insns, test.input)
-			inp := Input{test.input, binary.BigEndian}
-			execution, err := InstrumentedExec(p, inp)
+			execution, err := InstrumentedExec[NativeEndian](p, test.input)
 			if err != nil {
 				t.Fatalf("unexpected execution error: %v", err)
 			}
 			if !reflect.DeepEqual(execution, want) {
 				t.Fatalf("expected %s, got %s", want.String(), execution.String())
 			}
-			retFast, err := Exec(p, inp)
+			retFast, err := Exec[NativeEndian](p, test.input)
 			if err != nil {
 				t.Fatalf("unexpected execution error during fast execution: %v", err)
 			}
@@ -881,7 +879,7 @@ func TestValidInstructions(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected compilation error: %v", err)
 			}
-			retOptimized, err := InstrumentedExec(optimizedProgram, inp)
+			retOptimized, err := InstrumentedExec[NativeEndian](optimizedProgram, test.input)
 			if err != nil {
 				t.Fatalf("unexpected execution error: %v", err)
 			}
@@ -1031,7 +1029,7 @@ func TestSimpleFilter(t *testing.T) {
 		},
 	} {
 		t.Run(test.desc, func(t *testing.T) {
-			execution, err := InstrumentedExec(p, dataAsInput(&test.data))
+			execution, err := InstrumentedExec[NativeEndian](p, dataAsInput(&test.data))
 			if err != nil {
 				t.Fatalf("expected return value of %d, got execution error: %v", test.expected.ReturnValue, err)
 			}
@@ -1044,7 +1042,7 @@ func TestSimpleFilter(t *testing.T) {
 
 // asInput converts a seccompData to a bpf.Input.
 func dataAsInput(data *linux.SeccompData) Input {
-	return Input{marshal.Marshal(data), hostarch.ByteOrder}
+	return marshal.Marshal(data)
 }
 
 // BenchmarkInterpreter benchmarks the execution of the sample filter
@@ -1057,7 +1055,7 @@ func BenchmarkInterpreter(b *testing.B) {
 	data := dataAsInput(&linux.SeccompData{Nr: 231 /* __NR_exit_group */, Arch: 0xc000003e})
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := Exec(p, data); err != nil {
+		if _, err := Exec[NativeEndian](p, data); err != nil {
 			b.Fatalf("Unexpected execution error: %v", err)
 		}
 	}
@@ -1071,7 +1069,7 @@ func BenchmarkInstrumentedInterpreter(b *testing.B) {
 	data := dataAsInput(&linux.SeccompData{Nr: 231 /* __NR_exit_group */, Arch: 0xc000003e})
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		if _, err := InstrumentedExec(p, data); err != nil {
+		if _, err := InstrumentedExec[NativeEndian](p, data); err != nil {
 			b.Fatalf("Unexpected execution error: %v", err)
 		}
 	}

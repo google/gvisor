@@ -390,7 +390,7 @@ func TestRunscSeccomp(t *testing.T) {
 // checkProgram runs the given program over the given input and checks the
 // result against the expected output.
 func checkProgram(p bpf.Program, in bpf.Input, expected uint32) error {
-	result, err := bpf.Exec(p, in)
+	result, err := bpf.Exec[bpf.NativeEndian](p, in)
 	if err != nil {
 		return err
 	}

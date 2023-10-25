@@ -238,7 +238,7 @@ func conditionalJumpOffset(insn Instruction, cond bool) int {
 
 // Exec executes a BPF program over the given input and returns its return
 // value.
-func Exec(p Program, in Input) (uint32, error) {
+func Exec[endian Endianness](p Program, in Input) (uint32, error) {
 	var m machine
 	var pc int
 	for ; pc < len(p.instructions); pc++ {
@@ -247,37 +247,37 @@ func Exec(p Program, in Input) (uint32, error) {
 		case Ld | Imm | W:
 			m.A = i.K
 		case Ld | Abs | W:
-			val, ok := in.Load32(i.K)
+			val, ok := load32[endian](in, i.K)
 			if !ok {
 				return 0, Error{InvalidLoad, pc}
 			}
 			m.A = val
 		case Ld | Abs | H:
-			val, ok := in.Load16(i.K)
+			val, ok := load16[endian](in, i.K)
 			if !ok {
 				return 0, Error{InvalidLoad, pc}
 			}
 			m.A = uint32(val)
 		case Ld | Abs | B:
-			val, ok := in.Load8(i.K)
+			val, ok := load8(in, i.K)
 			if !ok {
 				return 0, Error{InvalidLoad, pc}
 			}
 			m.A = uint32(val)
 		case Ld | Ind | W:
-			val, ok := in.Load32(m.X + i.K)
+			val, ok := load32[endian](in, m.X+i.K)
 			if !ok {
 				return 0, Error{InvalidLoad, pc}
 			}
 			m.A = val
 		case Ld | Ind | H:
-			val, ok := in.Load16(m.X + i.K)
+			val, ok := load16[endian](in, m.X+i.K)
 			if !ok {
 				return 0, Error{InvalidLoad, pc}
 			}
 			m.A = uint32(val)
 		case Ld | Ind | B:
-			val, ok := in.Load8(m.X + i.K)
+			val, ok := load8(in, m.X+i.K)
 			if !ok {
 				return 0, Error{InvalidLoad, pc}
 			}
@@ -285,15 +285,15 @@ func Exec(p Program, in Input) (uint32, error) {
 		case Ld | Mem | W:
 			m.A = m.M[int(i.K)]
 		case Ld | Len | W:
-			m.A = in.Length()
+			m.A = uint32(len(in))
 		case Ldx | Imm | W:
 			m.X = i.K
 		case Ldx | Mem | W:
 			m.X = m.M[int(i.K)]
 		case Ldx | Len | W:
-			m.X = in.Length()
+			m.X = uint32(len(in))
 		case Ldx | Msh | B:
-			val, ok := in.Load8(i.K)
+			val, ok := load8(in, i.K)
 			if !ok {
 				return 0, Error{InvalidLoad, pc}
 			}
@@ -497,10 +497,10 @@ func (e *ExecutionMetrics) markInputRead(offset uint32, bytesRead int) {
 // InstrumentedExec executes a BPF program over the given input while
 // instrumenting it: recording memory accesses and lines executed.
 // This is slower than Exec, but should return equivalent results.
-func InstrumentedExec(p Program, in Input) (ExecutionMetrics, error) {
+func InstrumentedExec[endian Endianness](p Program, in Input) (ExecutionMetrics, error) {
 	ret := ExecutionMetrics{
 		Coverage:      make([]bool, len(p.instructions)),
-		InputAccessed: make([]bool, in.Length()),
+		InputAccessed: make([]bool, len(in)),
 	}
 	var m machine
 	var pc int
@@ -511,42 +511,42 @@ func InstrumentedExec(p Program, in Input) (ExecutionMetrics, error) {
 		case Ld | Imm | W:
 			m.A = i.K
 		case Ld | Abs | W:
-			val, ok := in.Load32(i.K)
+			val, ok := load32[endian](in, i.K)
 			if !ok {
 				return ret, Error{InvalidLoad, pc}
 			}
 			ret.markInputRead(i.K, 4)
 			m.A = val
 		case Ld | Abs | H:
-			val, ok := in.Load16(i.K)
+			val, ok := load16[endian](in, i.K)
 			if !ok {
 				return ret, Error{InvalidLoad, pc}
 			}
 			ret.markInputRead(i.K, 2)
 			m.A = uint32(val)
 		case Ld | Abs | B:
-			val, ok := in.Load8(i.K)
+			val, ok := load8(in, i.K)
 			if !ok {
 				return ret, Error{InvalidLoad, pc}
 			}
 			ret.markInputRead(i.K, 1)
 			m.A = uint32(val)
 		case Ld | Ind | W:
-			val, ok := in.Load32(m.X + i.K)
+			val, ok := load32[endian](in, m.X+i.K)
 			if !ok {
 				return ret, Error{InvalidLoad, pc}
 			}
 			ret.markInputRead(m.X+i.K, 4)
 			m.A = val
 		case Ld | Ind | H:
-			val, ok := in.Load16(m.X + i.K)
+			val, ok := load16[endian](in, m.X+i.K)
 			if !ok {
 				return ret, Error{InvalidLoad, pc}
 			}
 			ret.markInputRead(m.X+i.K, 2)
 			m.A = uint32(val)
 		case Ld | Ind | B:
-			val, ok := in.Load8(m.X + i.K)
+			val, ok := load8(in, m.X+i.K)
 			if !ok {
 				return ret, Error{InvalidLoad, pc}
 			}
@@ -555,15 +555,15 @@ func InstrumentedExec(p Program, in Input) (ExecutionMetrics, error) {
 		case Ld | Mem | W:
 			m.A = m.M[int(i.K)]
 		case Ld | Len | W:
-			m.A = in.Length()
+			m.A = uint32(len(in))
 		case Ldx | Imm | W:
 			m.X = i.K
 		case Ldx | Mem | W:
 			m.X = m.M[int(i.K)]
 		case Ldx | Len | W:
-			m.X = in.Length()
+			m.X = uint32(len(in))
 		case Ldx | Msh | B:
-			val, ok := in.Load8(i.K)
+			val, ok := load8(in, i.K)
 			if !ok {
 				return ret, Error{InvalidLoad, pc}
 			}

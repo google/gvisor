@@ -23,7 +23,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bpf"
-	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 )
 
@@ -501,8 +500,5 @@ func DataAsBPFInput(d *linux.SeccompData, buf []byte) bpf.Input {
 		panic(fmt.Sprintf("buffer must be at least %d bytes long", d.SizeBytes()))
 	}
 	d.MarshalUnsafe(buf)
-	return bpf.Input{
-		Data:  buf,
-		Order: hostarch.ByteOrder,
-	}
+	return buf[:d.SizeBytes()]
 }

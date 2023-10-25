@@ -877,9 +877,9 @@ func TestBasic(t *testing.T) {
 				t.Fatalf("bpf.Compile got error: %v", err)
 			}
 			for _, spec := range test.specs {
-				got, err := bpf.Exec(p, DataAsBPFInput(&spec.data, buf))
+				got, err := bpf.Exec[bpf.NativeEndian](p, DataAsBPFInput(&spec.data, buf))
 				if err != nil {
-					t.Fatalf("%s: bpf.Exec() got error: %v", spec.desc, err)
+					t.Fatalf("%s: bpf.Exec got error: %v", spec.desc, err)
 				}
 				if got != uint32(spec.want) {
 					// Include a decoded version of the program in output for debugging purposes.
@@ -920,9 +920,9 @@ func TestRandom(t *testing.T) {
 	buf := make([]byte, (&linux.SeccompData{}).SizeBytes())
 	for i := uint32(0); i < 200; i++ {
 		data := linux.SeccompData{Nr: int32(i), Arch: LINUX_AUDIT_ARCH}
-		got, err := bpf.Exec(p, DataAsBPFInput(&data, buf))
+		got, err := bpf.Exec[bpf.NativeEndian](p, DataAsBPFInput(&data, buf))
 		if err != nil {
-			t.Errorf("bpf.Exec() got error: %v, for syscall %d", err, i)
+			t.Errorf("bpf.Exec got error: %v, for syscall %d", err, i)
 			continue
 		}
 		want := linux.SECCOMP_RET_TRAP
@@ -930,7 +930,7 @@ func TestRandom(t *testing.T) {
 			want = linux.SECCOMP_RET_ALLOW
 		}
 		if got != uint32(want) {
-			t.Errorf("bpf.Exec() = %d, want: %d, for syscall %d", got, want, i)
+			t.Errorf("bpf.Exec = %d, want: %d, for syscall %d", got, want, i)
 		}
 	}
 }

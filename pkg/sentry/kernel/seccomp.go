@@ -32,11 +32,7 @@ const maxSyscallFilterInstructions = 1 << 15
 func dataAsBPFInput(t *Task, d *linux.SeccompData) bpf.Input {
 	buf := t.CopyScratchBuffer(d.SizeBytes())
 	d.MarshalUnsafe(buf)
-	return bpf.Input{
-		Data: buf,
-		// Go-marshal always uses the native byte order.
-		Order: hostarch.ByteOrder,
-	}
+	return buf[:d.SizeBytes()]
 }
 
 func seccompSiginfo(t *Task, errno, sysno int32, ip hostarch.Addr) *linux.SignalInfo {
@@ -127,7 +123,7 @@ func (t *Task) evaluateSyscallFilters(sysno int32, args arch.SyscallArguments, i
 	// "Every filter successfully installed will be evaluated (in reverse
 	// order) for each system call the task makes." - kernel/seccomp.c
 	for i := len(f.([]bpf.Program)) - 1; i >= 0; i-- {
-		thisRet, err := bpf.Exec(f.([]bpf.Program)[i], input)
+		thisRet, err := bpf.Exec[bpf.NativeEndian](f.([]bpf.Program)[i], input)
 		if err != nil {
 			t.Debugf("seccomp-bpf filter %d returned error: %v", i, err)
 			thisRet = uint32(linux.SECCOMP_RET_KILL_THREAD)
