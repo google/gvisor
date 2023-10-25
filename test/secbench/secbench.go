@@ -106,7 +106,7 @@ func runRequest(runReq secbenchdef.BenchRunRequest) (secbenchdef.BenchRunRespons
 }
 
 func evalSyscall(program bpf.Program, arch uint32, sc secbenchdef.Syscall, buf []byte) (uint32, error) {
-	return bpf.Exec(program, seccomp.DataAsBPFInput(&linux.SeccompData{
+	return bpf.Exec[bpf.NativeEndian](program, seccomp.DataAsBPFInput(&linux.SeccompData{
 		Nr:   int32(sc.Sysno),
 		Arch: arch,
 		Args: [6]uint64{
