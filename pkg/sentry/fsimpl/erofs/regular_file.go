@@ -131,15 +131,22 @@ func (fd *regularFileFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpt
 
 // AddMapping implements memmap.Mappable.AddMapping.
 func (i *inode) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
+	i.mapsMu.Lock()
+	i.mappings.AddMapping(ms, ar, offset, writable)
+	i.mapsMu.Unlock()
 	return nil
 }
 
 // RemoveMapping implements memmap.Mappable.RemoveMapping.
 func (i *inode) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
+	i.mapsMu.Lock()
+	i.mappings.RemoveMapping(ms, ar, offset, writable)
+	i.mapsMu.Unlock()
 }
 
 // CopyMapping implements memmap.Mappable.CopyMapping.
 func (i *inode) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR hostarch.AddrRange, offset uint64, writable bool) error {
+	i.AddMapping(ctx, ms, dstAR, offset, writable)
 	return nil
 }
 
@@ -175,6 +182,9 @@ func (i *inode) Translate(ctx context.Context, required, optional memmap.Mappabl
 
 // InvalidateUnsavable implements memmap.Mappable.InvalidateUnsavable.
 func (i *inode) InvalidateUnsavable(ctx context.Context) error {
+	i.mapsMu.Lock()
+	i.mappings.InvalidateAll(memmap.InvalidateOpts{})
+	i.mapsMu.Unlock()
 	return nil
 }
 

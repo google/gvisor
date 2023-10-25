@@ -229,6 +229,11 @@ func (i *Image) Close() {
 	i.src.Close()
 }
 
+// SuperBlock returns a copy of the image's superblock.
+func (i *Image) SuperBlock() SuperBlock {
+	return i.sb
+}
+
 // BlockSize returns the block size of this image.
 func (i *Image) BlockSize() uint32 {
 	return i.sb.BlockSize()

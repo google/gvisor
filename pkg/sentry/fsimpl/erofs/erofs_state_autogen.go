@@ -90,6 +90,7 @@ func (fs *filesystem) StateFields() []string {
 	return []string{
 		"vfsfs",
 		"mopts",
+		"iopts",
 		"devMinor",
 		"root",
 		"image",
@@ -105,11 +106,12 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	fs.beforeSave()
 	stateSinkObject.Save(0, &fs.vfsfs)
 	stateSinkObject.Save(1, &fs.mopts)
-	stateSinkObject.Save(2, &fs.devMinor)
-	stateSinkObject.Save(3, &fs.root)
-	stateSinkObject.Save(4, &fs.image)
-	stateSinkObject.Save(5, &fs.mf)
-	stateSinkObject.Save(6, &fs.inodeBuckets)
+	stateSinkObject.Save(2, &fs.iopts)
+	stateSinkObject.Save(3, &fs.devMinor)
+	stateSinkObject.Save(4, &fs.root)
+	stateSinkObject.Save(5, &fs.image)
+	stateSinkObject.Save(6, &fs.mf)
+	stateSinkObject.Save(7, &fs.inodeBuckets)
 }
 
 func (fs *filesystem) afterLoad() {}
@@ -118,11 +120,37 @@ func (fs *filesystem) afterLoad() {}
 func (fs *filesystem) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fs.vfsfs)
 	stateSourceObject.Load(1, &fs.mopts)
-	stateSourceObject.Load(2, &fs.devMinor)
-	stateSourceObject.Load(3, &fs.root)
-	stateSourceObject.Load(4, &fs.image)
-	stateSourceObject.Load(5, &fs.mf)
-	stateSourceObject.Load(6, &fs.inodeBuckets)
+	stateSourceObject.Load(2, &fs.iopts)
+	stateSourceObject.Load(3, &fs.devMinor)
+	stateSourceObject.Load(4, &fs.root)
+	stateSourceObject.Load(5, &fs.image)
+	stateSourceObject.Load(6, &fs.mf)
+	stateSourceObject.Load(7, &fs.inodeBuckets)
+}
+
+func (i *InternalFilesystemOptions) StateTypeName() string {
+	return "pkg/sentry/fsimpl/erofs.InternalFilesystemOptions"
+}
+
+func (i *InternalFilesystemOptions) StateFields() []string {
+	return []string{
+		"UniqueID",
+	}
+}
+
+func (i *InternalFilesystemOptions) beforeSave() {}
+
+// +checklocksignore
+func (i *InternalFilesystemOptions) StateSave(stateSinkObject state.Sink) {
+	i.beforeSave()
+	stateSinkObject.Save(0, &i.UniqueID)
+}
+
+func (i *InternalFilesystemOptions) afterLoad() {}
+
+// +checklocksignore
+func (i *InternalFilesystemOptions) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &i.UniqueID)
 }
 
 func (ib *inodeBucket) StateTypeName() string {
@@ -159,6 +187,7 @@ func (i *inode) StateFields() []string {
 		"Inode",
 		"inodeRefs",
 		"fs",
+		"mappings",
 		"locks",
 		"watches",
 	}
@@ -172,8 +201,9 @@ func (i *inode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &i.Inode)
 	stateSinkObject.Save(1, &i.inodeRefs)
 	stateSinkObject.Save(2, &i.fs)
-	stateSinkObject.Save(3, &i.locks)
-	stateSinkObject.Save(4, &i.watches)
+	stateSinkObject.Save(3, &i.mappings)
+	stateSinkObject.Save(4, &i.locks)
+	stateSinkObject.Save(5, &i.watches)
 }
 
 func (i *inode) afterLoad() {}
@@ -183,8 +213,9 @@ func (i *inode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.Inode)
 	stateSourceObject.Load(1, &i.inodeRefs)
 	stateSourceObject.Load(2, &i.fs)
-	stateSourceObject.Load(3, &i.locks)
-	stateSourceObject.Load(4, &i.watches)
+	stateSourceObject.Load(3, &i.mappings)
+	stateSourceObject.Load(4, &i.locks)
+	stateSourceObject.Load(5, &i.watches)
 }
 
 func (d *dentry) StateTypeName() string {
@@ -342,6 +373,7 @@ func init() {
 	state.Register((*directoryFD)(nil))
 	state.Register((*FilesystemType)(nil))
 	state.Register((*filesystem)(nil))
+	state.Register((*InternalFilesystemOptions)(nil))
 	state.Register((*inodeBucket)(nil))
 	state.Register((*inode)(nil))
 	state.Register((*dentry)(nil))
