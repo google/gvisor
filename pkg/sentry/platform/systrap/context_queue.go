@@ -44,6 +44,9 @@ type contextQueue struct {
 	// numActiveThreads indicates to the sentry how many stubs are running.
 	// It is changed only by stub threads.
 	numActiveThreads uint32
+	// numSpinningThreads indicates to the sentry how many stubs are waiting
+	// to receive a context from the queue, and are not doing useful work.
+	numSpinningThreads uint32
 	// numThreadsToWakeup is the number of threads requested by Sentry to wake up.
 	// The Sentry increments it and stub threads decrements.
 	numThreadsToWakeup uint32
@@ -53,10 +56,9 @@ type contextQueue struct {
 	// active contexts and contexts that are running in the Sentry.
 	numAwakeContexts uint32
 
-	fastPathDisabledTS  uint64
-	fastPathFailedInRow uint32
-	fastPathDisabled    uint32
-	ringbuffer          [maxContextQueueEntries]uint64
+	fastPathDisabled uint32
+	usedFastPath     uint32
+	ringbuffer       [maxContextQueueEntries]uint64
 }
 
 const (
@@ -75,13 +77,13 @@ func (q *contextQueue) init() {
 	idx := ^uint32(0) - maxContextQueueEntries*4
 	atomic.StoreUint32(&q.start, idx)
 	atomic.StoreUint32(&q.end, idx)
-	atomic.StoreUint64(&q.fastPathDisabledTS, 0)
-	atomic.StoreUint32(&q.fastPathFailedInRow, 0)
 	atomic.StoreUint32(&q.numActiveThreads, 0)
+	atomic.StoreUint32(&q.numSpinningThreads, 0)
 	atomic.StoreUint32(&q.numThreadsToWakeup, 0)
 	atomic.StoreUint32(&q.numActiveContexts, 0)
 	atomic.StoreUint32(&q.numAwakeContexts, 0)
-	atomic.StoreUint32(&q.fastPathDisabled, 0)
+	atomic.StoreUint32(&q.fastPathDisabled, 1)
+	atomic.StoreUint32(&q.usedFastPath, 0)
 }
 
 func (q *contextQueue) isEmpty() bool {
@@ -92,8 +94,13 @@ func (q *contextQueue) queuedContexts() uint32 {
 	return (atomic.LoadUint32(&q.end) + maxContextQueueEntries - atomic.LoadUint32(&q.start)) % maxContextQueueEntries
 }
 
-func (q *contextQueue) add(ctx *sharedContext, stubFastPathEnabled bool) uint32 {
-	if stubFastPathEnabled {
+// add puts the the given ctx onto the context queue, and records a state of
+// the subprocess after insertion to see if there are more active stub threads
+// or more waiting contexts.
+func (q *contextQueue) add(ctx *sharedContext) {
+	ctx.startWaitingTS = cputicks()
+
+	if fpState.stubFastPath() {
 		q.enableFastPath()
 	} else {
 		q.disableFastPath()
@@ -103,14 +110,17 @@ func (q *contextQueue) add(ctx *sharedContext, stubFastPathEnabled bool) uint32 
 	next := atomic.AddUint32(&q.end, 1)
 	if (next % maxContextQueueEntries) ==
 		(atomic.LoadUint32(&q.start) % maxContextQueueEntries) {
-		// should be unreacheable
+		// should be unreachable
 		panic("contextQueue is full")
 	}
 	idx := next - 1
 	next = idx % maxContextQueueEntries
 	v := (uint64(idx) << contextQueueIndexShift) + uint64(contextID)
 	atomic.StoreUint64(&q.ringbuffer[next], v)
-	return next // remove me
+
+	if atomic.SwapUint32(&q.usedFastPath, 0) != 0 {
+		fpState.usedStubFastPath.Store(true)
+	}
 }
 
 func (q *contextQueue) disableFastPath() {
@@ -119,4 +129,8 @@ func (q *contextQueue) disableFastPath() {
 
 func (q *contextQueue) enableFastPath() {
 	atomic.StoreUint32(&q.fastPathDisabled, 0)
+}
+
+func (q *contextQueue) fastPathEnabled() bool {
+	return atomic.LoadUint32(&q.fastPathDisabled) == 0
 }
