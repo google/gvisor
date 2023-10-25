@@ -533,7 +533,7 @@ TEXT ·kernelExitToEl0(SB),NOSPLIT,$0
 	MOVD PTRACE_PSTATE(RSV_REG_APP), R1
 	WORD $0xd5184001  //MSR R1, SPSR_EL1
 
-	// need use kernel space address to excute below code, since
+	// need use kernel space address to execute below code, since
 	// after SWITCH_TO_APP_PAGETABLE the ASID is changed to app's
 	// ASID.
 	WORD $0x10000061		// ADR R1, do_exit_to_el0

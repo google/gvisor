@@ -192,7 +192,7 @@ func (c *cubicState) fastConvergence() {
 	c.K = math.Cbrt(c.WMax * (1 - c.Beta) / c.C)
 }
 
-// PostRecovery implemements congestionControl.PostRecovery.
+// PostRecovery implements congestionControl.PostRecovery.
 func (c *cubicState) PostRecovery() {
 	c.T = c.s.ep.stack.Clock().NowMonotonic()
 }

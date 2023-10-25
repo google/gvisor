@@ -44,7 +44,7 @@ type IPCNamespace struct {
 
 	// posixQueues is a POSIX message queue registry.
 	//
-	// posixQueues is somewhat equivelant to Linux's ipc_namespace.mq_mnt.
+	// posixQueues is somewhat equivalent to Linux's ipc_namespace.mq_mnt.
 	// Unlike SysV utilities, mq.Registry is not map-based, but is backed by
 	// a virtual filesystem.
 	posixQueues *mq.Registry

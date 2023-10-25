@@ -198,7 +198,7 @@ var singleFieldOrder = []int{0}
 // Lookup looks up or registers the given object.
 //
 // First, the typeID is searched to see if this has already been appropriately
-// reconciled. If no, then a reconcilation will take place that may result in a
+// reconciled. If no, then a reconciliation will take place that may result in a
 // field ordering. If a nil reconciledTypeEntry is returned from this method,
 // then the object does not support the Type interface.
 //

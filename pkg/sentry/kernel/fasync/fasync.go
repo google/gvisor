@@ -60,7 +60,7 @@ type FileAsync struct {
 	// The fd value is passed to the signal recipient in siginfo.si_fd.
 	fd int
 
-	// regMu protects registeration and unregistration actions on e.
+	// regMu protects registration and unregistration actions on e.
 	//
 	// regMu must be held while registration decisions are being made
 	// through the registration action itself.

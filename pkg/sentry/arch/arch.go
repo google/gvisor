@@ -91,7 +91,7 @@ type contextInterface interface {
 	// SyscallNo returns the syscall number.
 	SyscallNo() uintptr
 
-	// SyscallSaveOrig save orignal register value.
+	// SyscallSaveOrig save original register value.
 	SyscallSaveOrig()
 
 	// SyscallArgs returns the syscall arguments in an array.

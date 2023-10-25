@@ -102,7 +102,7 @@ func setupStackWithSeparateOpts(t *testing.T, stack1Opts stack.Options, stack2Op
 	return host1Stack, host2Stack
 }
 
-// TestPing tests that two hosts can ping eachother when link resolution is
+// TestPing tests that two hosts can ping each other when link resolution is
 // enabled.
 func TestPing(t *testing.T) {
 	const (

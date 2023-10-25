@@ -15,7 +15,7 @@
 //go:build linux
 // +build linux
 
-// Package sharedmem provides the implemention of data-link layer endpoints
+// Package sharedmem provides the implementation of data-link layer endpoints
 // backed by shared memory.
 //
 // Shared memory endpoints can be used in the networking stack by calling New()

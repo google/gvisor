@@ -540,7 +540,7 @@ func testWalk(ctx context.Context, t *testing.T, tester Tester, root lisafs.Clie
 		closeFD(ctx, t, root.Client().NewFD(inode.ControlFD))
 	}
 
-	// Test WalkStat which additonally returns Statx for root because the first
+	// Test WalkStat which additionally returns Statx for root because the first
 	// path component is "".
 	dirNames = append([]string{""}, dirNames...)
 	gotStats := walkStat(ctx, t, root, dirNames)

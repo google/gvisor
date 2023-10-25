@@ -43,7 +43,7 @@ const (
 	NOTIFY_COOKIE_LEN = 32
 )
 
-// MqAttr is equivelant to struct mq_attr. Source: include/uapi/linux/mqueue.h
+// MqAttr is equivalent to struct mq_attr. Source: include/uapi/linux/mqueue.h
 //
 // +marshal
 type MqAttr struct {

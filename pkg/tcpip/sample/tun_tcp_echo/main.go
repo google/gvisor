@@ -44,7 +44,7 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-var tap = flag.Bool("tap", false, "use tap istead of tun")
+var tap = flag.Bool("tap", false, "use tap instead of tun")
 var mac = flag.String("mac", "aa:00:01:01:01:01", "mac address to use in tap device")
 
 type endpointWriter struct {

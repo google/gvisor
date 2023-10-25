@@ -110,7 +110,7 @@ const (
 
 	// IPv6FragmentExtHdrFragmentOffsetBytesPerUnit is the unit size of a Fragment
 	// extension header's Fragment Offset field. That is, given a Fragment Offset
-	// of 2, the extension header is indiciating that the fragment's payload
+	// of 2, the extension header is indicating that the fragment's payload
 	// starts at the 16th byte in the reassembled packet.
 	IPv6FragmentExtHdrFragmentOffsetBytesPerUnit = 8
 )
@@ -317,7 +317,7 @@ func (*IPv6UnknownExtHdrOption) isIPv6ExtHdrOption() {}
 //
 // The return is of the format (option, done, error). done will be true when
 // Next is unable to return anything because the iterator has reached the end of
-// the options data, or an error occured.
+// the options data, or an error occurred.
 func (i *IPv6OptionsExtHdrOptionsIterator) Next() (IPv6ExtHdrOption, bool, error) {
 	for {
 		i.optionOffset = i.nextOptionOffset
@@ -462,7 +462,7 @@ func (b IPv6FragmentExtHdr) More() bool {
 // ID returns the Identification field.
 //
 // This value is used to uniquely identify the packet, between a
-// souce and destination.
+// source and destination.
 func (b IPv6FragmentExtHdr) ID() uint32 {
 	return binary.BigEndian.Uint32(b[ipv6FragmentExtHdrIdentificationOffset:])
 }
@@ -568,7 +568,7 @@ func (i *IPv6PayloadIterator) AsRawHeader(consume bool) IPv6RawPayloadHeader {
 //
 // The return is of the format (header, done, error). done will be true when
 // Next is unable to return anything because the iterator has reached the end of
-// the payload, or an error occured.
+// the payload, or an error occurred.
 func (i *IPv6PayloadIterator) Next() (IPv6PayloadHeader, bool, error) {
 	i.headerOffset = i.nextOffset
 	i.parseOffset = 0

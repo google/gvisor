@@ -233,7 +233,7 @@ func (p *Pipe) consumeLocked(n int64) {
 // writeLocked passes a safemem.BlockSeq representing the first count bytes of
 // unused space in the pipe to f and returns the result. If fewer than count
 // bytes are free, the safemem.BlockSeq passed to f will be less than count
-// bytes in length. If the pipe is full or otherwise cannot accomodate a write
+// bytes in length. If the pipe is full or otherwise cannot accommodate a write
 // of any number of bytes up to count, writeLocked returns ErrWouldBlock
 // without calling f.
 //

@@ -103,7 +103,7 @@ func (q *contextQueue) add(ctx *sharedContext, stubFastPathEnabled bool) uint32 
 	next := atomic.AddUint32(&q.end, 1)
 	if (next % maxContextQueueEntries) ==
 		(atomic.LoadUint32(&q.start) % maxContextQueueEntries) {
-		// should be unreacheable
+		// should be unreachable
 		panic("contextQueue is full")
 	}
 	idx := next - 1

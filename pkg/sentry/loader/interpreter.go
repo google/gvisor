@@ -63,7 +63,7 @@ func parseInterpreterScript(ctx context.Context, filename string, fd *vfs.FileDe
 		line = line[:i]
 	}
 
-	// Skip any whitespace before the interpeter.
+	// Skip any whitespace before the interpreter.
 	line = bytes.TrimLeft(line, " \t")
 
 	// Linux only looks for spaces or tabs delimiting the interpreter and

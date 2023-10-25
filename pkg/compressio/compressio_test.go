@@ -125,7 +125,7 @@ func doTest(t harness, opts testOpts) {
 			return
 		}
 		if _, err := io.Copy(&decompressed, r); (err != nil) != opts.CorruptData {
-			t.Errorf("%s: decompress got err %v unexpectly", opts.Name, err)
+			t.Errorf("%s: decompress got err %v unexpectedly", opts.Name, err)
 			return
 		}
 	}

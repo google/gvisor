@@ -62,7 +62,7 @@ type CPUArchState struct {
 	// ttbr0Kvm is the value of ttbr0_el1 for sentry.
 	ttbr0Kvm uintptr
 
-	// ttbr0App is the value of ttbr0_el1 for applicaton.
+	// ttbr0App is the value of ttbr0_el1 for application.
 	ttbr0App uintptr
 
 	// exception vector.

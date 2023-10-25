@@ -111,7 +111,7 @@ func (fq *FillQueue) FillAll(umem *UMEM) {
 		available = umem.nFreeFrames
 	}
 
-	// Fill the queue as much as possible and notify ther kernel.
+	// Fill the queue as much as possible and notify the kernel.
 	index := fq.cachedProducer
 	fq.cachedProducer += available
 	for i := uint32(0); i < available; i++ {

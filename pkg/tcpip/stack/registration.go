@@ -929,7 +929,7 @@ type MulticastRouteOutgoingInterface struct {
 	// ID corresponds to the outgoing NIC.
 	ID tcpip.NICID
 
-	// MinTTL represents the minumum TTL/HopLimit a multicast packet must have to
+	// MinTTL represents the minimum TTL/HopLimit a multicast packet must have to
 	// be sent through the outgoing interface.
 	//
 	// Note: a value of 0 allows all packets to be forwarded.

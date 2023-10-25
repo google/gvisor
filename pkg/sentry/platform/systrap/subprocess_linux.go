@@ -64,7 +64,7 @@ func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, erro
 							unix.CLONE_FS |
 							unix.CLONE_VM |
 							unix.CLONE_PTRACE)},
-					// Allow creation of new threads within a single address space (used by addresss spaces).
+					// Allow creation of new threads within a single address space (used by address spaces).
 					seccomp.PerArg{seccomp.EqualTo(
 						unix.CLONE_FILES |
 							unix.CLONE_FS |

@@ -503,7 +503,7 @@ type inode struct {
 	xattrs memxattr.SimpleExtendedAttributes
 
 	// Inode metadata. Writing multiple fields atomically requires holding
-	// mu, othewise atomic operations can be used.
+	// mu, otherwise atomic operations can be used.
 	mu    inodeMutex          `state:"nosave"`
 	mode  atomicbitops.Uint32 // file type and mode
 	nlink atomicbitops.Uint32 // protected by filesystem.mu instead of inode.mu

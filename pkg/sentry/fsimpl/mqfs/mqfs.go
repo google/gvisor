@@ -51,7 +51,7 @@ func (ft FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualF
 	// a POSIX message registry with a root dentry, filesystem, and a
 	// disconnected mount. We want the fs to be consistent for all processes in
 	// the same ipc namespace, so instead of creating a new fs and root dentry,
-	// we retreive them using IPCNamespace.PosixQueues and use them.
+	// we retrieve them using IPCNamespace.PosixQueues and use them.
 
 	i := ipcNamespaceFromContext(ctx)
 	if i == nil {

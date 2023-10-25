@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // Package gofer provides a filesystem implementation that is backed by a 9p
-// server, interchangably referred to as "gofers" throughout this package.
+// server, interchangeably referred to as "gofers" throughout this package.
 //
 // Lock order:
 //
@@ -147,7 +147,7 @@ type dentryCache struct {
 	dentries dentryList
 	// dentriesLen is the number of dentries in dentries.
 	dentriesLen uint64
-	// maxCachedDentries is the maximum number of cachable dentries.
+	// maxCachedDentries is the maximum number of cacheable dentries.
 	maxCachedDentries uint64
 }
 

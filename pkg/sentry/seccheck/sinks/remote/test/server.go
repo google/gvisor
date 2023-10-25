@@ -136,7 +136,7 @@ func (m *msgHandler) Message(_ []byte, hdr wire.Header, payload []byte) error {
 	return nil
 }
 
-// Version returns the wire version supported or overriden by SetVersion.
+// Version returns the wire version supported or overridden by SetVersion.
 func (m *msgHandler) Version() uint32 {
 	m.owner.mu.Lock()
 	defer m.owner.mu.Unlock()

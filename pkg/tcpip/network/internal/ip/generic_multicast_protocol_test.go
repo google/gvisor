@@ -875,7 +875,7 @@ func TestHandleQueryV2Response(t *testing.T) {
 					// Receiving a query should make us reschedule our delayed report
 					// timer to some time within the new max response delay.
 					//
-					// Note that if we are in V1 compatbility mode, the V2 query will be
+					// Note that if we are in V1 compatibility mode, the V2 query will be
 					// handled as a V1 query.
 					mgp.handleQueryV2(test.queryAddr, test.maxDelay, header.MakeAddressIterator(addr1.Len(), bytes.NewBuffer(nil)), 0, 0)
 					if subTest.v1Compatibility {
@@ -1217,7 +1217,7 @@ func TestMakeAllNonMemberAndInitialize(t *testing.T) {
 			}, test.v1)
 
 			if test.v1Compatibility {
-				// V1 query targetting an unjoined group should drop us into V1
+				// V1 query targeting an unjoined group should drop us into V1
 				// compatibility mode without sending any packets, affecting tests.
 				mgp.handleQuery(addr3, 0)
 			}

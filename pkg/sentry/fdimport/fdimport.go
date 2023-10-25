@@ -72,7 +72,7 @@ func Import(ctx context.Context, fdTable *kernel.FDTable, console bool, uid auth
 					return nil, err
 				}
 				defer appFile.DecRef(ctx)
-				hostFD.Release() // FD is transfered to host FD.
+				hostFD.Release() // FD is transferred to host FD.
 
 				// Remember this in the TTY file, as we will use it for the other stdio
 				// FDs.
@@ -90,7 +90,7 @@ func Import(ctx context.Context, fdTable *kernel.FDTable, console bool, uid auth
 				return nil, err
 			}
 			defer appFile.DecRef(ctx)
-			hostFD.Release() // FD is transfered to host FD.
+			hostFD.Release() // FD is transferred to host FD.
 		}
 
 		if err := fdTable.NewFDAt(ctx, int32(appFD), appFile, fdFlags[hostFD]); err != nil {

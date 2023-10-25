@@ -68,7 +68,7 @@ const (
 	// exact amount of memory used by mapping on the host, because we don't have
 	// any visibility into the host kernel memory management. In particular,
 	// once we map some part of a host file, the host kernel is free to
-	// abitrarily populate/decommit the pages, which it may do for various
+	// arbitrarily populate/decommit the pages, which it may do for various
 	// reasons (ex. host memory reclaim, NUMA balancing).
 	//
 	// This memory kind is backed by the host pagecache, via host mmaps.

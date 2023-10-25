@@ -30,7 +30,7 @@ const HeaderStructSize = 8
 // +marshal
 type Header struct {
 	// HeaderSize is the size of the header in bytes. The payload comes
-	// immediatelly after the header. The length is needed to allow the header to
+	// immediately after the header. The length is needed to allow the header to
 	// expand in the future without breaking remotes that do not yet understand
 	// the new fields.
 	HeaderSize uint16

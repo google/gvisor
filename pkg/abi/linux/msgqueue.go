@@ -50,7 +50,7 @@ const (
 	MSGSEG = 0xffff
 )
 
-// MsqidDS is equivelant to struct msqid64_ds. Source:
+// MsqidDS is equivalent to struct msqid64_ds. Source:
 // include/uapi/asm-generic/shmbuf.h
 //
 // +marshal
@@ -68,7 +68,7 @@ type MsqidDS struct {
 	unused5   uint64
 }
 
-// MsgBuf is equivelant to struct msgbuf. Source: include/uapi/linux/msg.h
+// MsgBuf is equivalent to struct msgbuf. Source: include/uapi/linux/msg.h
 //
 // +marshal dynamic
 type MsgBuf struct {
@@ -93,7 +93,7 @@ func (b *MsgBuf) UnmarshalBytes(src []byte) []byte {
 	return b.Text.UnmarshalBytes(src)
 }
 
-// MsgInfo is equivelant to struct msginfo. Source: include/uapi/linux/msg.h
+// MsgInfo is equivalent to struct msginfo. Source: include/uapi/linux/msg.h
 //
 // +marshal
 type MsgInfo struct {

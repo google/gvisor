@@ -145,7 +145,7 @@ func (t *Task) block(C <-chan struct{}, timerChan <-chan struct{}) error {
 	default:
 	}
 
-	// Deactive our address space, we don't need it.
+	// Deactivate our address space, we don't need it.
 	t.prepareSleep()
 	defer t.completeSleep()
 

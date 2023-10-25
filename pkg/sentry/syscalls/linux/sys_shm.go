@@ -44,7 +44,7 @@ func Shmget(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr,
 	return uintptr(segment.ID()), nil, nil
 }
 
-// findSegment retrives a shm segment by the given id.
+// findSegment retrieves a shm segment by the given id.
 //
 // findSegment returns a reference on Shm.
 func findSegment(t *kernel.Task, id ipc.ID) (*shm.Shm, error) {

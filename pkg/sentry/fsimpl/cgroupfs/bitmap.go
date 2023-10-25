@@ -22,8 +22,8 @@ import (
 	"gvisor.dev/gvisor/pkg/bitmap"
 )
 
-// formatBitmap produces a string representation of b, which lists the indicies
-// of set bits in the bitmap. Indicies are separated by commas and ranges of
+// formatBitmap produces a string representation of b, which lists the indices
+// of set bits in the bitmap. Indices are separated by commas and ranges of
 // set bits are abbreviated. Example outputs: "0,2,4", "0,3-7,10", "0-10".
 //
 // Inverse of parseBitmap.

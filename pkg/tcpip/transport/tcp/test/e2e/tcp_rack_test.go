@@ -652,7 +652,7 @@ func TestRACKDetectDSACKSingleDup(t *testing.T) {
 	bytesRead += maxPayload
 	c.SendAckWithSACK(seq, bytesRead, []header.SACKBlock{{start, end}})
 
-	// Simulate receving delayed subsegment of #2 packet and delayed #3 packet by
+	// Simulate receiving delayed subsegment of #2 packet and delayed #3 packet by
 	// sending DSACK block for the subsegment.
 	dsackStart := c.IRS.Add(1 + seqnum.Size(bytesRead))
 	dsackEnd := dsackStart.Add(seqnum.Size(maxPayload / 2))
