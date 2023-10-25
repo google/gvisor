@@ -16,6 +16,7 @@ package bpf
 
 import (
 	"encoding/binary"
+	"reflect"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -102,10 +103,12 @@ func TestCompilationErrors(t *testing.T) {
 			expectedErr: Error{InvalidJumpTarget, 0},
 		},
 	} {
-		_, err := Compile(test.insns)
-		if err != test.expectedErr {
-			t.Errorf("%s: expected error %q, got error %q", test.desc, test.expectedErr, err)
-		}
+		t.Run(test.desc, func(t *testing.T) {
+			_, err := Compile(test.insns, false)
+			if err != test.expectedErr {
+				t.Errorf("expected error %q, got error %q", test.expectedErr, err)
+			}
+		})
 	}
 }
 
@@ -145,19 +148,50 @@ func TestExecErrors(t *testing.T) {
 			expectedErr: Error{DivisionByZero, 0},
 		},
 	} {
-		p, err := Compile(test.insns)
-		if err != nil {
-			t.Errorf("%s: unexpected compilation error: %v", test.desc, err)
-			continue
-		}
-		ret, err := Exec(p, Input{nil, binary.BigEndian})
-		if err != test.expectedErr {
-			t.Errorf("%s: expected execution error %q, got (%d, %v)", test.desc, test.expectedErr, ret, err)
-		}
+		t.Run(test.desc, func(t *testing.T) {
+			p, err := Compile(test.insns, false)
+			if err != nil {
+				t.Fatalf("unexpected compilation error: %v", err)
+			}
+			inp := Input{nil, binary.BigEndian}
+			execution, err := InstrumentedExec(p, inp)
+			if err != test.expectedErr {
+				t.Fatalf("expected execution error %q, got (%v, %v)", test.expectedErr, execution, err)
+			}
+			ret, err := Exec(p, inp)
+			if err != test.expectedErr {
+				t.Fatalf("expected execution error %q, got (%d, %v)", test.expectedErr, ret, err)
+			}
+			optimizedProgram, err := Compile(test.insns, true)
+			if err != nil {
+				t.Fatalf("unexpected compilation error: %v", err)
+			}
+			if _, err := InstrumentedExec(optimizedProgram, inp); err != test.expectedErr {
+				t.Fatalf("expected execution error from optimized program %q, got (%v, %v)", test.expectedErr, execution, err)
+			}
+		})
 	}
 }
 
 func TestValidInstructions(t *testing.T) {
+	want := func(ex ExecutionMetrics) func(insns []Instruction, input []byte) ExecutionMetrics {
+		return func(insns []Instruction, input []byte) ExecutionMetrics {
+			return ex
+		}
+	}
+	allCoveredNoneReadAndReturns := func(ret uint32) func(insns []Instruction, input []byte) ExecutionMetrics {
+		return func(insns []Instruction, input []byte) ExecutionMetrics {
+			coverage := make([]bool, len(insns))
+			for i := range insns {
+				coverage[i] = true
+			}
+			return ExecutionMetrics{
+				Coverage:      coverage,
+				InputAccessed: make([]bool, len(input)),
+				ReturnValue:   ret,
+			}
+		}
+	}
 	for _, test := range []struct {
 		// desc is the test's description.
 		desc string
@@ -168,15 +202,16 @@ func TestValidInstructions(t *testing.T) {
 		// input is the input data. Note that input will be read as big-endian.
 		input []byte
 
-		// expectedRet is the expected return value of the BPF program.
-		expectedRet uint32
+		// expected is the expected result of executing the BPF program.
+		// It takes in the instructions and input that the test will run.
+		expected func(insns []Instruction, input []byte) ExecutionMetrics
 	}{
 		{
 			desc: "Return of immediate",
 			insns: []Instruction{
 				Stmt(Ret|K, 42), // return 42
 			},
-			expectedRet: 42,
+			expected: allCoveredNoneReadAndReturns(42),
 		},
 		{
 			desc: "Load of immediate into A",
@@ -184,7 +219,7 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Ld|Imm|W, 42), // A = 42
 				Stmt(Ret|A, 0),     // return A
 			},
-			expectedRet: 42,
+			expected: allCoveredNoneReadAndReturns(42),
 		},
 		{
 			desc: "Load of immediate into X and copying of X into A",
@@ -193,7 +228,7 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Misc|Tax, 0),   // A = X
 				Stmt(Ret|A, 0),      // return A
 			},
-			expectedRet: 42,
+			expected: allCoveredNoneReadAndReturns(42),
 		},
 		{
 			desc: "Copying of A into X and back",
@@ -204,7 +239,7 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Misc|Tax, 0),  // A = X
 				Stmt(Ret|A, 0),     // return A
 			},
-			expectedRet: 42,
+			expected: allCoveredNoneReadAndReturns(42),
 		},
 		{
 			desc: "Load of 32-bit input by absolute offset into A",
@@ -212,8 +247,12 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Ld|Abs|W, 1), // A = input[1..4]
 				Stmt(Ret|A, 0),    // return A
 			},
-			input:       []byte{0x00, 0x11, 0x22, 0x33, 0x44},
-			expectedRet: 0x11223344,
+			input: []byte{0x00, 0x11, 0x22, 0x33, 0x44, 0x55},
+			expected: want(ExecutionMetrics{
+				Coverage:      []bool{true, true},
+				InputAccessed: []bool{false, true, true, true, true, false},
+				ReturnValue:   0x11223344,
+			}),
 		},
 		{
 			desc: "Load of 16-bit input by absolute offset into A",
@@ -221,8 +260,12 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Ld|Abs|H, 1), // A = input[1..2]
 				Stmt(Ret|A, 0),    // return A
 			},
-			input:       []byte{0x00, 0x11, 0x22},
-			expectedRet: 0x1122,
+			input: []byte{0x00, 0x11, 0x22, 0x33},
+			expected: want(ExecutionMetrics{
+				Coverage:      []bool{true, true},
+				InputAccessed: []bool{false, true, true, false},
+				ReturnValue:   0x1122,
+			}),
 		},
 		{
 			desc: "Load of 8-bit input by absolute offset into A",
@@ -230,8 +273,12 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Ld|Abs|B, 1), // A = input[1]
 				Stmt(Ret|A, 0),    // return A
 			},
-			input:       []byte{0x00, 0x11},
-			expectedRet: 0x11,
+			input: []byte{0x00, 0x11, 0x22},
+			expected: want(ExecutionMetrics{
+				Coverage:      []bool{true, true},
+				InputAccessed: []bool{false, true, false},
+				ReturnValue:   0x11,
+			}),
 		},
 		{
 			desc: "Load of 32-bit input by relative offset into A",
@@ -240,8 +287,12 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Ld|Ind|W, 1),  // A = input[X+1..X+4]
 				Stmt(Ret|A, 0),     // return A
 			},
-			input:       []byte{0x00, 0x11, 0x22, 0x33, 0x44, 0x55},
-			expectedRet: 0x22334455,
+			input: []byte{0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66},
+			expected: want(ExecutionMetrics{
+				Coverage:      []bool{true, true, true},
+				InputAccessed: []bool{false, false, true, true, true, true, false},
+				ReturnValue:   0x22334455,
+			}),
 		},
 		{
 			desc: "Load of 16-bit input by relative offset into A",
@@ -250,8 +301,12 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Ld|Ind|H, 1),  // A = input[X+1..X+2]
 				Stmt(Ret|A, 0),     // return A
 			},
-			input:       []byte{0x00, 0x11, 0x22, 0x33},
-			expectedRet: 0x2233,
+			input: []byte{0x00, 0x11, 0x22, 0x33, 0x44},
+			expected: want(ExecutionMetrics{
+				Coverage:      []bool{true, true, true},
+				InputAccessed: []bool{false, false, true, true, false},
+				ReturnValue:   0x2233,
+			}),
 		},
 		{
 			desc: "Load of 8-bit input by relative offset into A",
@@ -260,8 +315,12 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Ld|Ind|B, 1),  // A = input[X+1]
 				Stmt(Ret|A, 0),     // return A
 			},
-			input:       []byte{0x00, 0x11, 0x22},
-			expectedRet: 0x22,
+			input: []byte{0x00, 0x11, 0x22, 0x33},
+			expected: want(ExecutionMetrics{
+				Coverage:      []bool{true, true, true},
+				InputAccessed: []bool{false, false, true, false},
+				ReturnValue:   0x22,
+			}),
 		},
 		{
 			desc: "Load/store between A and scratch memory",
@@ -272,7 +331,7 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Ld|Mem|W, 2),  // A = M[2]
 				Stmt(Ret|A, 0),     // return A
 			},
-			expectedRet: 42,
+			expected: allCoveredNoneReadAndReturns(42),
 		},
 		{
 			desc: "Load/store between X and scratch memory",
@@ -284,7 +343,7 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Misc|Tax, 0),   // A = X
 				Stmt(Ret|A, 0),      // return A
 			},
-			expectedRet: 42,
+			expected: allCoveredNoneReadAndReturns(42),
 		},
 		{
 			desc: "Load of input length into A",
@@ -292,8 +351,8 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Ld|Len|W, 0), // A = len(input)
 				Stmt(Ret|A, 0),    // return A
 			},
-			input:       []byte{1, 2, 3},
-			expectedRet: 3,
+			input:    []byte{1, 2, 3},
+			expected: allCoveredNoneReadAndReturns(3),
 		},
 		{
 			desc: "Load of input length into X",
@@ -302,8 +361,8 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Misc|Tax, 0),  // A = X
 				Stmt(Ret|A, 0),     // return A
 			},
-			input:       []byte{1, 2, 3},
-			expectedRet: 3,
+			input:    []byte{1, 2, 3},
+			expected: allCoveredNoneReadAndReturns(3),
 		},
 		{
 			desc: "Load of MSH (?) into X",
@@ -312,8 +371,12 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Misc|Tax, 0),  // A = X
 				Stmt(Ret|A, 0),     // return A
 			},
-			input:       []byte{0xf1},
-			expectedRet: 4,
+			input: []byte{0xf1},
+			expected: want(ExecutionMetrics{
+				Coverage:      []bool{true, true, true},
+				InputAccessed: []bool{true},
+				ReturnValue:   4,
+			}),
 		},
 		{
 			desc: "Addition of immediate",
@@ -322,7 +385,7 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Alu|Add|K, 20), // A += 20
 				Stmt(Ret|A, 0),      // return A
 			},
-			expectedRet: 30,
+			expected: allCoveredNoneReadAndReturns(30),
 		},
 		{
 			desc: "Addition of X",
@@ -332,7 +395,7 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Alu|Add|X, 0),  // A += X
 				Stmt(Ret|A, 0),      // return A
 			},
-			expectedRet: 30,
+			expected: allCoveredNoneReadAndReturns(30),
 		},
 		{
 			desc: "Subtraction of immediate",
@@ -341,7 +404,7 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Alu|Sub|K, 20), // A -= 20
 				Stmt(Ret|A, 0),      // return A
 			},
-			expectedRet: 10,
+			expected: allCoveredNoneReadAndReturns(10),
 		},
 		{
 			desc: "Subtraction of X",
@@ -351,7 +414,7 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Alu|Sub|X, 0),  // A -= X
 				Stmt(Ret|A, 0),      // return A
 			},
-			expectedRet: 10,
+			expected: allCoveredNoneReadAndReturns(10),
 		},
 		{
 			desc: "Multiplication of immediate",
@@ -360,7 +423,7 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Alu|Mul|K, 3), // A *= 3
 				Stmt(Ret|A, 0),     // return A
 			},
-			expectedRet: 6,
+			expected: allCoveredNoneReadAndReturns(6),
 		},
 		{
 			desc: "Multiplication of X",
@@ -370,7 +433,7 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Alu|Mul|X, 0), // A *= X
 				Stmt(Ret|A, 0),     // return A
 			},
-			expectedRet: 6,
+			expected: allCoveredNoneReadAndReturns(6),
 		},
 		{
 			desc: "Division by immediate",
@@ -379,7 +442,7 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Alu|Div|K, 3), // A /= 3
 				Stmt(Ret|A, 0),     // return A
 			},
-			expectedRet: 2,
+			expected: allCoveredNoneReadAndReturns(2),
 		},
 		{
 			desc: "Division by X",
@@ -389,7 +452,7 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Alu|Div|X, 0), // A /= X
 				Stmt(Ret|A, 0),     // return A
 			},
-			expectedRet: 2,
+			expected: allCoveredNoneReadAndReturns(2),
 		},
 		{
 			desc: "Modulo immediate",
@@ -398,7 +461,7 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Alu|Mod|K, 7), // A %= 7
 				Stmt(Ret|A, 0),     // return A
 			},
-			expectedRet: 3,
+			expected: allCoveredNoneReadAndReturns(3),
 		},
 		{
 			desc: "Modulo X",
@@ -408,7 +471,7 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Alu|Mod|X, 0), // A %= X
 				Stmt(Ret|A, 0),     // return A
 			},
-			expectedRet: 3,
+			expected: allCoveredNoneReadAndReturns(3),
 		},
 		{
 			desc: "Arithmetic negation",
@@ -417,7 +480,7 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Alu|Neg, 0),  // A = -A
 				Stmt(Ret|A, 0),    // return A
 			},
-			expectedRet: 0xffffffff,
+			expected: allCoveredNoneReadAndReturns(0xffffffff),
 		},
 		{
 			desc: "Bitwise OR with immediate",
@@ -426,7 +489,7 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Alu|Or|K, 0xff0055aa), // A |= 0xff0055aa
 				Stmt(Ret|A, 0),             // return A
 			},
-			expectedRet: 0xff00ffff,
+			expected: allCoveredNoneReadAndReturns(0xff00ffff),
 		},
 		{
 			desc: "Bitwise OR with X",
@@ -436,7 +499,7 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Alu|Or|X, 0),           // A |= X
 				Stmt(Ret|A, 0),              // return A
 			},
-			expectedRet: 0xff00ffff,
+			expected: allCoveredNoneReadAndReturns(0xff00ffff),
 		},
 		{
 			desc: "Bitwise AND with immediate",
@@ -445,7 +508,7 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Alu|And|K, 0xff0055aa), // A &= 0xff0055aa
 				Stmt(Ret|A, 0),              // return A
 			},
-			expectedRet: 0xff000000,
+			expected: allCoveredNoneReadAndReturns(0xff000000),
 		},
 		{
 			desc: "Bitwise AND with X",
@@ -455,7 +518,7 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Alu|And|X, 0),          // A &= X
 				Stmt(Ret|A, 0),              // return A
 			},
-			expectedRet: 0xff000000,
+			expected: allCoveredNoneReadAndReturns(0xff000000),
 		},
 		{
 			desc: "Bitwise XOR with immediate",
@@ -464,7 +527,7 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Alu|Xor|K, 0xff0055aa), // A ^= 0xff0055aa
 				Stmt(Ret|A, 0),              // return A
 			},
-			expectedRet: 0x0000ffff,
+			expected: allCoveredNoneReadAndReturns(0x0000ffff),
 		},
 		{
 			desc: "Bitwise XOR with X",
@@ -474,7 +537,7 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Alu|Xor|X, 0),          // A ^= X
 				Stmt(Ret|A, 0),              // return A
 			},
-			expectedRet: 0x0000ffff,
+			expected: allCoveredNoneReadAndReturns(0x0000ffff),
 		},
 		{
 			desc: "Left shift by immediate",
@@ -483,7 +546,7 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Alu|Lsh|K, 5), // A <<= 5
 				Stmt(Ret|A, 0),     // return A
 			},
-			expectedRet: 32,
+			expected: allCoveredNoneReadAndReturns(32),
 		},
 		{
 			desc: "Left shift by X",
@@ -493,7 +556,7 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Alu|Lsh|X, 0), // A <<= X
 				Stmt(Ret|A, 0),     // return A
 			},
-			expectedRet: 32,
+			expected: allCoveredNoneReadAndReturns(32),
 		},
 		{
 			desc: "Right shift by immediate",
@@ -502,7 +565,7 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Alu|Rsh|K, 31),        // A >>= 31
 				Stmt(Ret|A, 0),             // return A
 			},
-			expectedRet: 1,
+			expected: allCoveredNoneReadAndReturns(1),
 		},
 		{
 			desc: "Right shift by X",
@@ -512,7 +575,7 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Alu|Rsh|X, 0),         // A >>= X
 				Stmt(Ret|A, 0),             // return A
 			},
-			expectedRet: 1,
+			expected: allCoveredNoneReadAndReturns(1),
 		},
 		{
 			desc: "Unconditional jump",
@@ -521,7 +584,11 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Ret|K, 0),        // return 0
 				Stmt(Ret|K, 1),        // return 1
 			},
-			expectedRet: 1,
+			expected: want(ExecutionMetrics{
+				Coverage:      []bool{true, false, true},
+				InputAccessed: []bool{},
+				ReturnValue:   1,
+			}),
 		},
 		{
 			desc: "Jump when A == immediate",
@@ -532,17 +599,26 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Ret|K, 1),            // return 1
 				Stmt(Ret|K, 2),            // return 2
 			},
-			expectedRet: 1,
+			expected: want(ExecutionMetrics{
+				Coverage:      []bool{true, true, false, true, false},
+				InputAccessed: []bool{},
+				ReturnValue:   1,
+			}),
 		},
 		{
 			desc: "Jump when A != immediate",
 			insns: []Instruction{
+				Stmt(Ld|Imm|W, 41),        // A = 41
 				Jump(Jmp|Jeq|K, 42, 1, 2), // if (A == 42) jmp nextpc+1 else jmp nextpc+2
 				Stmt(Ret|K, 0),            // return 0
 				Stmt(Ret|K, 1),            // return 1
 				Stmt(Ret|K, 2),            // return 2
 			},
-			expectedRet: 2,
+			expected: want(ExecutionMetrics{
+				Coverage:      []bool{true, true, false, false, true},
+				InputAccessed: []bool{},
+				ReturnValue:   2,
+			}),
 		},
 		{
 			desc: "Jump when A == X",
@@ -554,18 +630,27 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Ret|K, 1),           // return 1
 				Stmt(Ret|K, 2),           // return 2
 			},
-			expectedRet: 1,
+			expected: want(ExecutionMetrics{
+				Coverage:      []bool{true, true, true, false, true, false},
+				InputAccessed: []bool{},
+				ReturnValue:   1,
+			}),
 		},
 		{
 			desc: "Jump when A != X",
 			insns: []Instruction{
 				Stmt(Ld|Imm|W, 42),       // A = 42
+				Stmt(Ldx|Imm|W, 41),      // X = 41
 				Jump(Jmp|Jeq|X, 0, 1, 2), // if (A == X) jmp nextpc+1 else jmp nextpc+2
 				Stmt(Ret|K, 0),           // return 0
 				Stmt(Ret|K, 1),           // return 1
 				Stmt(Ret|K, 2),           // return 2
 			},
-			expectedRet: 2,
+			expected: want(ExecutionMetrics{
+				Coverage:      []bool{true, true, true, false, false, true},
+				InputAccessed: []bool{},
+				ReturnValue:   2,
+			}),
 		},
 		{
 			desc: "Jump when A > immediate",
@@ -576,7 +661,11 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Ret|K, 1),           // return 1
 				Stmt(Ret|K, 2),           // return 2
 			},
-			expectedRet: 1,
+			expected: want(ExecutionMetrics{
+				Coverage:      []bool{true, true, false, true, false},
+				InputAccessed: []bool{},
+				ReturnValue:   1,
+			}),
 		},
 		{
 			desc: "Jump when A <= immediate",
@@ -587,7 +676,11 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Ret|K, 1),            // return 1
 				Stmt(Ret|K, 2),            // return 2
 			},
-			expectedRet: 2,
+			expected: want(ExecutionMetrics{
+				Coverage:      []bool{true, true, false, false, true},
+				InputAccessed: []bool{},
+				ReturnValue:   2,
+			}),
 		},
 		{
 			desc: "Jump when A > X",
@@ -599,7 +692,11 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Ret|K, 1),           // return 1
 				Stmt(Ret|K, 2),           // return 2
 			},
-			expectedRet: 1,
+			expected: want(ExecutionMetrics{
+				Coverage:      []bool{true, true, true, false, true, false},
+				InputAccessed: []bool{},
+				ReturnValue:   1,
+			}),
 		},
 		{
 			desc: "Jump when A <= X",
@@ -611,7 +708,11 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Ret|K, 1),           // return 1
 				Stmt(Ret|K, 2),           // return 2
 			},
-			expectedRet: 2,
+			expected: want(ExecutionMetrics{
+				Coverage:      []bool{true, true, true, false, false, true},
+				InputAccessed: []bool{},
+				ReturnValue:   2,
+			}),
 		},
 		{
 			desc: "Jump when A >= immediate",
@@ -622,7 +723,11 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Ret|K, 1),            // return 1
 				Stmt(Ret|K, 2),            // return 2
 			},
-			expectedRet: 1,
+			expected: want(ExecutionMetrics{
+				Coverage:      []bool{true, true, false, true, false},
+				InputAccessed: []bool{},
+				ReturnValue:   1,
+			}),
 		},
 		{
 			desc: "Jump when A < immediate",
@@ -633,7 +738,11 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Ret|K, 1),            // return 1
 				Stmt(Ret|K, 2),            // return 2
 			},
-			expectedRet: 2,
+			expected: want(ExecutionMetrics{
+				Coverage:      []bool{true, true, false, false, true},
+				InputAccessed: []bool{},
+				ReturnValue:   2,
+			}),
 		},
 		{
 			desc: "Jump when A >= X",
@@ -645,7 +754,11 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Ret|K, 1),           // return 1
 				Stmt(Ret|K, 2),           // return 2
 			},
-			expectedRet: 1,
+			expected: want(ExecutionMetrics{
+				Coverage:      []bool{true, true, true, false, true, false},
+				InputAccessed: []bool{},
+				ReturnValue:   1,
+			}),
 		},
 		{
 			desc: "Jump when A < X",
@@ -657,7 +770,11 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Ret|K, 1),           // return 1
 				Stmt(Ret|K, 2),           // return 2
 			},
-			expectedRet: 2,
+			expected: want(ExecutionMetrics{
+				Coverage:      []bool{true, true, true, false, false, true},
+				InputAccessed: []bool{},
+				ReturnValue:   2,
+			}),
 		},
 		{
 			desc: "Jump when A & immediate != 0",
@@ -668,7 +785,11 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Ret|K, 1),                // return 1
 				Stmt(Ret|K, 2),                // return 2
 			},
-			expectedRet: 1,
+			expected: want(ExecutionMetrics{
+				Coverage:      []bool{true, true, false, true, false},
+				InputAccessed: []bool{},
+				ReturnValue:   1,
+			}),
 		},
 		{
 			desc: "Jump when A & immediate == 0",
@@ -679,7 +800,11 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Ret|K, 1),                // return 1
 				Stmt(Ret|K, 2),                // return 2
 			},
-			expectedRet: 2,
+			expected: want(ExecutionMetrics{
+				Coverage:      []bool{true, true, false, false, true},
+				InputAccessed: []bool{},
+				ReturnValue:   2,
+			}),
 		},
 		{
 			desc: "Jump when A & X != 0",
@@ -691,7 +816,11 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Ret|K, 1),            // return 1
 				Stmt(Ret|K, 2),            // return 2
 			},
-			expectedRet: 1,
+			expected: want(ExecutionMetrics{
+				Coverage:      []bool{true, true, true, false, true, false},
+				InputAccessed: []bool{},
+				ReturnValue:   1,
+			}),
 		},
 		{
 			desc: "Jump when A & X == 0",
@@ -703,7 +832,11 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Ret|K, 1),            // return 1
 				Stmt(Ret|K, 2),            // return 2
 			},
-			expectedRet: 2,
+			expected: want(ExecutionMetrics{
+				Coverage:      []bool{true, true, true, false, false, true},
+				InputAccessed: []bool{},
+				ReturnValue:   2,
+			}),
 		},
 		{
 			desc: "Optimizable program",
@@ -716,22 +849,49 @@ func TestValidInstructions(t *testing.T) {
 				Stmt(Ret|K, 0),            // return 0
 				Stmt(Ret|K, 1),            // return 1
 			},
-			expectedRet: 0,
+			expected: want(ExecutionMetrics{
+				Coverage:      []bool{true, true, true, false, true, true, false},
+				InputAccessed: []bool{},
+				ReturnValue:   0,
+			}),
 		},
 	} {
-		p, err := Compile(test.insns)
-		if err != nil {
-			t.Errorf("%s: unexpected compilation error: %v", test.desc, err)
-			continue
-		}
-		ret, err := Exec(p, Input{test.input, binary.BigEndian})
-		if err != nil {
-			t.Errorf("%s: expected return value of %d, got execution error: %v", test.desc, test.expectedRet, err)
-			continue
-		}
-		if ret != test.expectedRet {
-			t.Errorf("%s: expected return value of %d, got value %d", test.desc, test.expectedRet, ret)
-		}
+		t.Run(test.desc, func(t *testing.T) {
+			p, err := Compile(test.insns, false)
+			if err != nil {
+				t.Fatalf("unexpected compilation error: %v", err)
+			}
+			want := test.expected(test.insns, test.input)
+			inp := Input{test.input, binary.BigEndian}
+			execution, err := InstrumentedExec(p, inp)
+			if err != nil {
+				t.Fatalf("unexpected execution error: %v", err)
+			}
+			if !reflect.DeepEqual(execution, want) {
+				t.Fatalf("expected %s, got %s", want.String(), execution.String())
+			}
+			retFast, err := Exec(p, inp)
+			if err != nil {
+				t.Fatalf("unexpected execution error during fast execution: %v", err)
+			}
+			if retFast != execution.ReturnValue {
+				t.Fatalf("instrumented execution returned %d, fast execution returned %d", execution.ReturnValue, retFast)
+			}
+			optimizedProgram, err := Compile(test.insns, true)
+			if err != nil {
+				t.Fatalf("unexpected compilation error: %v", err)
+			}
+			retOptimized, err := InstrumentedExec(optimizedProgram, inp)
+			if err != nil {
+				t.Fatalf("unexpected execution error: %v", err)
+			}
+			if retOptimized.ReturnValue != retFast {
+				t.Fatalf("expected return value from optimized version: got %d, non-optimized execution returned %d", retOptimized.ReturnValue, retFast)
+			}
+			if !reflect.DeepEqual(retOptimized.InputAccessed, execution.InputAccessed) {
+				t.Fatalf("expected input read coverage from optimized version: got %s, non-optimized execution was %s", retOptimized.String(), execution.String())
+			}
+		})
 	}
 }
 
@@ -757,10 +917,18 @@ var sampleFilter = []Instruction{
 }
 
 func TestSimpleFilter(t *testing.T) {
-	p, err := Compile(sampleFilter)
+	p, err := Compile(sampleFilter, false)
 	if err != nil {
 		t.Fatalf("Unexpected compilation error: %v", err)
 	}
+
+	// linux.SeccompData is 64 bytes long.
+	// The first 4 bytes is the syscall number.
+	// The next 4 bytes is the architecture.
+	// The last 56 bytes are the instruction pointer and the syscall arguments,
+	// which this sample program never accesses.
+	noRIPOrSyscallArgsAccess := make([]bool, 56)
+
 	for _, test := range []struct {
 		// desc is the test's description.
 		desc string
@@ -768,33 +936,109 @@ func TestSimpleFilter(t *testing.T) {
 		// SeccompData is the input data.
 		data linux.SeccompData
 
-		// expectedRet is the expected return value of the BPF program.
-		expectedRet uint32
+		// expected is the expected execution result of the BPF program.
+		expected ExecutionMetrics
 	}{
 		{
-			desc:        "Invalid arch is rejected",
-			data:        linux.SeccompData{Nr: 1 /* x86 exit */, Arch: 0x40000003 /* AUDIT_ARCH_I386 */},
-			expectedRet: 0,
+			desc: "Invalid arch is rejected",
+			data: linux.SeccompData{Nr: 1 /* x86 exit */, Arch: 0x40000003 /* AUDIT_ARCH_I386 */},
+			expected: ExecutionMetrics{
+				ReturnValue: 0,
+				Coverage: []bool{
+					true,  // ld [4]                  /* offsetof(struct seccomp_data, arch) */
+					true,  // jne #0xc000003e, bad    /* AUDIT_ARCH_X86_64 */
+					false, // ld [0]                  /* offsetof(struct seccomp_data, nr) */
+					false, // jeq #15, good           /* __NR_rt_sigreturn */
+					false, // jeq #231, good          /* __NR_exit_group */
+					false, // jeq #60, good           /* __NR_exit */
+					false, // jeq #0, good            /* __NR_read */
+					false, // jeq #1, good            /* __NR_write */
+					false, // jeq #5, good            /* __NR_fstat */
+					false, // jeq #9, good            /* __NR_mmap */
+					false, // jeq #14, good           /* __NR_rt_sigprocmask */
+					false, // jeq #13, good           /* __NR_rt_sigaction */
+					false, // jeq #35, good           /* __NR_nanosleep */
+					true,  // bad: ret #0             /* SECCOMP_RET_KILL */
+					false, // good: ret #0x7fff0000   /* SECCOMP_RET_ALLOW */
+				},
+				InputAccessed: append(
+					[]bool{
+						false, false, false, false, // Syscall number
+						true, true, true, true, // Architecture
+					},
+					noRIPOrSyscallArgsAccess...),
+			},
 		},
 		{
-			desc:        "Disallowed syscall is rejected",
-			data:        linux.SeccompData{Nr: 105 /* __NR_setuid */, Arch: 0xc000003e},
-			expectedRet: 0,
+			desc: "Disallowed syscall is rejected",
+			data: linux.SeccompData{Nr: 105 /* __NR_setuid */, Arch: 0xc000003e},
+			expected: ExecutionMetrics{
+				ReturnValue: 0,
+				Coverage: []bool{
+					true,  // ld [4]                  /* offsetof(struct seccomp_data, arch) */
+					true,  // jne #0xc000003e, bad    /* AUDIT_ARCH_X86_64 */
+					true,  // ld [0]                  /* offsetof(struct seccomp_data, nr) */
+					true,  // jeq #15, good           /* __NR_rt_sigreturn */
+					true,  // jeq #231, good          /* __NR_exit_group */
+					true,  // jeq #60, good           /* __NR_exit */
+					true,  // jeq #0, good            /* __NR_read */
+					true,  // jeq #1, good            /* __NR_write */
+					true,  // jeq #5, good            /* __NR_fstat */
+					true,  // jeq #9, good            /* __NR_mmap */
+					true,  // jeq #14, good           /* __NR_rt_sigprocmask */
+					true,  // jeq #13, good           /* __NR_rt_sigaction */
+					true,  // jeq #35, good           /* __NR_nanosleep */
+					true,  // bad: ret #0             /* SECCOMP_RET_KILL */
+					false, // good: ret #0x7fff0000   /* SECCOMP_RET_ALLOW */
+				},
+				InputAccessed: append(
+					[]bool{
+						true, true, true, true, // Syscall number
+						true, true, true, true, // Architecture
+					},
+					noRIPOrSyscallArgsAccess...),
+			},
 		},
 		{
-			desc:        "Allowed syscall is indeed allowed",
-			data:        linux.SeccompData{Nr: 231 /* __NR_exit_group */, Arch: 0xc000003e},
-			expectedRet: 0x7fff0000,
+			desc: "Allowed syscall is indeed allowed",
+			data: linux.SeccompData{Nr: 231 /* __NR_exit_group */, Arch: 0xc000003e},
+			expected: ExecutionMetrics{
+				ReturnValue: 0x7fff0000, /* SECCOMP_RET_ALLOW */
+				Coverage: []bool{
+					true,  // ld [4]                  /* offsetof(struct seccomp_data, arch) */
+					true,  // jne #0xc000003e, bad    /* AUDIT_ARCH_X86_64 */
+					true,  // ld [0]                  /* offsetof(struct seccomp_data, nr) */
+					true,  // jeq #15, good           /* __NR_rt_sigreturn */
+					true,  // jeq #231, good          /* __NR_exit_group */
+					false, // jeq #60, good           /* __NR_exit */
+					false, // jeq #0, good            /* __NR_read */
+					false, // jeq #1, good            /* __NR_write */
+					false, // jeq #5, good            /* __NR_fstat */
+					false, // jeq #9, good            /* __NR_mmap */
+					false, // jeq #14, good           /* __NR_rt_sigprocmask */
+					false, // jeq #13, good           /* __NR_rt_sigaction */
+					false, // jeq #35, good           /* __NR_nanosleep */
+					false, // bad: ret #0             /* SECCOMP_RET_KILL */
+					true,  // good: ret #0x7fff0000   /* SECCOMP_RET_ALLOW */
+				},
+				InputAccessed: append(
+					[]bool{
+						true, true, true, true, // Syscall number
+						true, true, true, true, // Architecture
+					},
+					noRIPOrSyscallArgsAccess...),
+			},
 		},
 	} {
-		ret, err := Exec(p, dataAsInput(&test.data))
-		if err != nil {
-			t.Errorf("%s: expected return value of %d, got execution error: %v", test.desc, test.expectedRet, err)
-			continue
-		}
-		if ret != test.expectedRet {
-			t.Errorf("%s: expected return value of %d, got value %d", test.desc, test.expectedRet, ret)
-		}
+		t.Run(test.desc, func(t *testing.T) {
+			execution, err := InstrumentedExec(p, dataAsInput(&test.data))
+			if err != nil {
+				t.Fatalf("expected return value of %d, got execution error: %v", test.expected.ReturnValue, err)
+			}
+			if !reflect.DeepEqual(execution, test.expected) {
+				t.Errorf("expected %s, got %s", test.expected.String(), execution.String())
+			}
+		})
 	}
 }
 
@@ -806,7 +1050,7 @@ func dataAsInput(data *linux.SeccompData) Input {
 // BenchmarkInterpreter benchmarks the execution of the sample filter
 // for a sample syscall.
 func BenchmarkInterpreter(b *testing.B) {
-	p, err := Compile(sampleFilter)
+	p, err := Compile(sampleFilter, true)
 	if err != nil {
 		b.Fatalf("Unexpected compilation error: %v", err)
 	}
@@ -814,6 +1058,20 @@ func BenchmarkInterpreter(b *testing.B) {
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		if _, err := Exec(p, data); err != nil {
+			b.Fatalf("Unexpected execution error: %v", err)
+		}
+	}
+}
+
+func BenchmarkInstrumentedInterpreter(b *testing.B) {
+	p, err := Compile(sampleFilter, true)
+	if err != nil {
+		b.Fatalf("Unexpected compilation error: %v", err)
+	}
+	data := dataAsInput(&linux.SeccompData{Nr: 231 /* __NR_exit_group */, Arch: 0xc000003e})
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		if _, err := InstrumentedExec(p, data); err != nil {
 			b.Fatalf("Unexpected execution error: %v", err)
 		}
 	}

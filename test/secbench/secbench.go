@@ -141,7 +141,7 @@ func RunBench(b *testing.B, bn secbenchdef.Bench) {
 		// two runs.
 		// If there are no syscall sequences that will be approved, then we can
 		// skip running the runner the second time altogether.
-		program, err := bpf.Compile(bn.Instructions)
+		program, err := bpf.Compile(bn.Instructions, true /* optimize */)
 		if err != nil {
 			b.Fatalf("program does not compile: %v", err)
 		}
