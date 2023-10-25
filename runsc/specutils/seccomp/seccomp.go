@@ -56,7 +56,7 @@ func BuildProgram(s *specs.LinuxSeccomp) (bpf.Program, error) {
 		return bpf.Program{}, fmt.Errorf("building seccomp program: %w", err)
 	}
 
-	program, err := bpf.Compile(instrs)
+	program, err := bpf.Compile(instrs, true /* optimize */)
 	if err != nil {
 		return bpf.Program{}, fmt.Errorf("compiling seccomp program: %w", err)
 	}

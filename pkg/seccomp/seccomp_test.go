@@ -872,9 +872,9 @@ func TestBasic(t *testing.T) {
 			if err != nil {
 				t.Fatalf("BuildProgram() got error: %v", err)
 			}
-			p, err := bpf.Compile(instrs)
+			p, err := bpf.Compile(instrs, true /* optimize */)
 			if err != nil {
-				t.Fatalf("bpf.Compile() got error: %v", err)
+				t.Fatalf("bpf.Compile got error: %v", err)
 			}
 			for _, spec := range test.specs {
 				got, err := bpf.Exec(p, DataAsBPFInput(&spec.data, buf))
@@ -913,9 +913,9 @@ func TestRandom(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildProgram() got error: %v", err)
 	}
-	p, err := bpf.Compile(instrs)
+	p, err := bpf.Compile(instrs, true /* optimize */)
 	if err != nil {
-		t.Fatalf("bpf.Compile() got error: %v", err)
+		t.Fatalf("bpf.Compile got error: %v", err)
 	}
 	buf := make([]byte, (&linux.SeccompData{}).SizeBytes())
 	for i := uint32(0); i < 200; i++ {
