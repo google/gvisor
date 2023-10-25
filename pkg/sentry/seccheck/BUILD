@@ -29,7 +29,9 @@ go_library(
     ],
     visibility = ["//:sandbox"],
     deps = [
+        "//pkg/abi",
         "//pkg/abi/linux",
+        "//pkg/abi/sentry",
         "//pkg/atomicbitops",
         "//pkg/context",
         "//pkg/fd",

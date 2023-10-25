@@ -317,6 +317,7 @@ go_library(
         "//pkg/abi",
         "//pkg/abi/linux",
         "//pkg/abi/linux/errno",
+        "//pkg/abi/sentry",
         "//pkg/atomicbitops",
         "//pkg/bitmap",
         "//pkg/bits",
