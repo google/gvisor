@@ -27,8 +27,6 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bpf"
-	"gvisor.dev/gvisor/pkg/hostarch"
-	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/test/secbench/secbenchdef"
@@ -107,8 +105,8 @@ func runRequest(runReq secbenchdef.BenchRunRequest) (secbenchdef.BenchRunRespons
 	return runResp, nil
 }
 
-func evalSyscall(program bpf.Program, arch uint32, sc secbenchdef.Syscall) (uint32, error) {
-	scData := &linux.SeccompData{
+func evalSyscall(program bpf.Program, arch uint32, sc secbenchdef.Syscall, buf []byte) (uint32, error) {
+	return bpf.Exec(program, seccomp.DataAsBPFInput(&linux.SeccompData{
 		Nr:   int32(sc.Sysno),
 		Arch: arch,
 		Args: [6]uint64{
@@ -119,11 +117,7 @@ func evalSyscall(program bpf.Program, arch uint32, sc secbenchdef.Syscall) (uint
 			uint64(sc.Args[4]),
 			uint64(sc.Args[5]),
 		},
-	}
-	return bpf.Exec(program, bpf.InputBytes{
-		Data:  marshal.Marshal(scData),
-		Order: hostarch.ByteOrder,
-	})
+	}, buf))
 }
 
 // Number of times we scale b.N by.
@@ -139,6 +133,7 @@ func RunBench(b *testing.B, bn secbenchdef.Bench) {
 		randSeed := time.Now().UnixNano()
 		b.Logf("Running with %d iterations (scaled by %dx), random seed %d...", b.N, iterationScaleFactor, randSeed)
 		iterations := uint64(b.N * iterationScaleFactor)
+		buf := make([]byte, (&linux.SeccompData{}).SizeBytes())
 
 		// Check if there are any sequences where the syscall will be approved.
 		// If there is any, we will need to run the runner twice: Once with the
@@ -160,7 +155,7 @@ func RunBench(b *testing.B, bn secbenchdef.Bench) {
 		for i, seq := range bn.Profile.Sequences {
 			result := int64(-1)
 			for _, sc := range seq.Syscalls {
-				scResult, err := evalSyscall(program, bn.Profile.Arch, sc)
+				scResult, err := evalSyscall(program, bn.Profile.Arch, sc, buf)
 				if err != nil {
 					b.Fatalf("cannot eval program with syscall %v: %v", sc, err)
 				}

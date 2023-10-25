@@ -31,7 +31,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bpf"
-	"gvisor.dev/gvisor/pkg/hostarch"
 )
 
 //go:embed victim
@@ -56,17 +55,9 @@ func newVictim() (string, error) {
 	return path, nil
 }
 
-// dataAsInput converts a linux.SeccompData to a bpf.Input.
-func dataAsInput(d *linux.SeccompData) bpf.Input {
-	buf := make([]byte, d.SizeBytes())
-	d.MarshalUnsafe(buf)
-	return bpf.InputBytes{
-		Data:  buf,
-		Order: hostarch.ByteOrder,
-	}
-}
-
 func TestBasic(t *testing.T) {
+	buf := make([]byte, (&linux.SeccompData{}).SizeBytes())
+
 	type spec struct {
 		// desc is the test's description.
 		desc string
@@ -886,7 +877,7 @@ func TestBasic(t *testing.T) {
 				t.Fatalf("bpf.Compile() got error: %v", err)
 			}
 			for _, spec := range test.specs {
-				got, err := bpf.Exec(p, dataAsInput(&spec.data))
+				got, err := bpf.Exec(p, DataAsBPFInput(&spec.data, buf))
 				if err != nil {
 					t.Fatalf("%s: bpf.Exec() got error: %v", spec.desc, err)
 				}
@@ -926,9 +917,10 @@ func TestRandom(t *testing.T) {
 	if err != nil {
 		t.Fatalf("bpf.Compile() got error: %v", err)
 	}
+	buf := make([]byte, (&linux.SeccompData{}).SizeBytes())
 	for i := uint32(0); i < 200; i++ {
 		data := linux.SeccompData{Nr: int32(i), Arch: LINUX_AUDIT_ARCH}
-		got, err := bpf.Exec(p, dataAsInput(&data))
+		got, err := bpf.Exec(p, DataAsBPFInput(&data, buf))
 		if err != nil {
 			t.Errorf("bpf.Exec() got error: %v, for syscall %d", err, i)
 			continue

@@ -150,7 +150,7 @@ func TestExecErrors(t *testing.T) {
 			t.Errorf("%s: unexpected compilation error: %v", test.desc, err)
 			continue
 		}
-		ret, err := Exec(p, InputBytes{nil, binary.BigEndian})
+		ret, err := Exec(p, Input{nil, binary.BigEndian})
 		if err != test.expectedErr {
 			t.Errorf("%s: expected execution error %q, got (%d, %v)", test.desc, test.expectedErr, ret, err)
 		}
@@ -724,7 +724,7 @@ func TestValidInstructions(t *testing.T) {
 			t.Errorf("%s: unexpected compilation error: %v", test.desc, err)
 			continue
 		}
-		ret, err := Exec(p, InputBytes{test.input, binary.BigEndian})
+		ret, err := Exec(p, Input{test.input, binary.BigEndian})
 		if err != nil {
 			t.Errorf("%s: expected return value of %d, got execution error: %v", test.desc, test.expectedRet, err)
 			continue
@@ -798,17 +798,9 @@ func TestSimpleFilter(t *testing.T) {
 	}
 }
 
-// seccompData is equivalent to struct seccomp_data.
-type seccompData struct {
-	nr                 uint32
-	arch               uint32
-	instructionPointer uint64
-	args               [6]uint64
-}
-
 // asInput converts a seccompData to a bpf.Input.
 func dataAsInput(data *linux.SeccompData) Input {
-	return InputBytes{marshal.Marshal(data), hostarch.ByteOrder}
+	return Input{marshal.Marshal(data), hostarch.ByteOrder}
 }
 
 // BenchmarkInterpreter benchmarks the execution of the sample filter

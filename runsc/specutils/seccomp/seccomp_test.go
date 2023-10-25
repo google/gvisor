@@ -22,14 +22,8 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bpf"
-	"gvisor.dev/gvisor/pkg/hostarch"
-	"gvisor.dev/gvisor/pkg/marshal"
+	"gvisor.dev/gvisor/pkg/seccomp"
 )
-
-// asInput converts a linux.SeccompData to a bpf.Input.
-func asInput(d *linux.SeccompData) bpf.Input {
-	return bpf.InputBytes{marshal.Marshal(d), hostarch.ByteOrder}
-}
 
 // testInput creates an Input struct with given seccomp input values.
 func testInput(arch uint32, syscallName string, args *[6]uint64) bpf.Input {
@@ -49,8 +43,7 @@ func testInput(arch uint32, syscallName string, args *[6]uint64) bpf.Input {
 		Arch: arch,
 		Args: *args,
 	}
-
-	return asInput(&data)
+	return seccomp.DataAsBPFInput(&data, make([]byte, data.SizeBytes()))
 }
 
 // testCase holds a seccomp test case.
@@ -95,7 +88,10 @@ var (
 			},
 			// Syscall matches but the arch is AUDIT_ARCH_X86 so the return
 			// value is the bad arch action.
-			input:    asInput(&linux.SeccompData{Nr: 183, Arch: 0x40000003}), //
+			input: seccomp.DataAsBPFInput(
+				&linux.SeccompData{Nr: 183, Arch: 0x40000003},
+				make([]byte, (&linux.SeccompData{}).SizeBytes()),
+			),
 			expected: uint32(killThreadAction),
 		},
 		{

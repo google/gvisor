@@ -23,6 +23,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bpf"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 )
 
@@ -490,4 +491,18 @@ func (n *node) traverse(fn traverseFunc, rules []RuleSet, program *syscallProgra
 		return err
 	}
 	return n.right.traverse(fn, rules, program)
+}
+
+// DataAsBPFInput converts a linux.SeccompData to a bpf.Input.
+// It uses `buf` as scratch buffer; this buffer must be wide enough
+// to accommodate a mashaled version of `d`.
+func DataAsBPFInput(d *linux.SeccompData, buf []byte) bpf.Input {
+	if len(buf) < d.SizeBytes() {
+		panic(fmt.Sprintf("buffer must be at least %d bytes long", d.SizeBytes()))
+	}
+	d.MarshalUnsafe(buf)
+	return bpf.Input{
+		Data:  buf,
+		Order: hostarch.ByteOrder,
+	}
 }
