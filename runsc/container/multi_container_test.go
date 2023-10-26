@@ -2565,8 +2565,12 @@ func TestMultiContainerMemoryLeakStress(t *testing.T) {
 
 	// Subcontainers will do a lot of filesystem work. Create a lot of them.
 	createFsTree := []string{app, "fsTreeCreate", "--depth=10", "--file-per-level=10", "--file-size=1048576"}
-	const warmupContainers = 5
-	const stressContainers = 45
+	const (
+		warmupContainers                   = 5
+		stressContainers                   = 25
+		nominalReclaimDurationPerContainer = time.Second
+		maxReclaimDurationPerContainer     = 5 * time.Second
+	)
 	cmds := make([][]string, 0, warmupContainers+stressContainers+1)
 	cmds = append(cmds, sleep)
 	for i := 0; i < warmupContainers+stressContainers; i++ {
@@ -2603,9 +2607,11 @@ func TestMultiContainerMemoryLeakStress(t *testing.T) {
 	}
 
 	// Give the reclaimer goroutine some time to reclaim.
-	time.Sleep(3 * time.Second)
+	time.Sleep(warmupContainers * nominalReclaimDurationPerContainer)
 
 	// Measure the memory usage after the warm up.
+	// It's possible, though unlikely, that reclaiming is unfinished; this is
+	// harmless because we tolerate newUsage being lower than oldUsage below.
 	oldUsage, err := rootCont[0].Sandbox.Usage(true /* Full */)
 	if err != nil {
 		t.Fatalf("sandbox.Usage failed: %v", err)
@@ -2626,28 +2632,37 @@ func TestMultiContainerMemoryLeakStress(t *testing.T) {
 		}
 	}
 
-	// Give the reclaimer goroutine some time to reclaim.
-	time.Sleep(3 * time.Second)
-
-	// Compare memory usage.
-	newUsage, err := rootCont[0].Sandbox.Usage(true /* Full */)
-	if err != nil {
-		t.Fatalf("sandbox.Usage failed: %v", err)
-	}
-	// Note that all fields of control.MemoryUsage are exported and uint64.
+	// Sample memory usage until all fields are no more than 5% greater than
+	// after warmup.
+	deadline := time.Now().Add(stressContainers * maxReclaimDurationPerContainer)
 	oldUsageV := reflect.ValueOf(oldUsage)
-	newUsageV := reflect.ValueOf(newUsage)
-	numFields := oldUsageV.NumField()
-	for i := 0; i < numFields; i++ {
-		name := oldUsageV.Type().Field(i).Name
-		oldVal := oldUsageV.Field(i).Interface().(uint64)
-		newVal := newUsageV.Field(i).Interface().(uint64)
-		if newVal <= oldVal {
-			continue
+	for {
+		newUsage, err := rootCont[0].Sandbox.Usage(true /* Full */)
+		if err != nil {
+			t.Fatalf("sandbox.Usage failed: %v", err)
 		}
-
-		if ((newVal-oldVal)*100)/oldVal > 5 {
-			t.Errorf("%s usage increased by more than 5%%: old=%d, new=%d", name, oldVal, newVal)
+		allFieldsOk := true
+		// Note that all fields of control.MemoryUsage are exported and uint64.
+		newUsageV := reflect.ValueOf(newUsage)
+		numFields := oldUsageV.NumField()
+		for i := 0; i < numFields; i++ {
+			name := oldUsageV.Type().Field(i).Name
+			oldVal := oldUsageV.Field(i).Interface().(uint64)
+			newVal := newUsageV.Field(i).Interface().(uint64)
+			if newVal <= oldVal {
+				continue
+			}
+			if ((newVal-oldVal)*100)/oldVal > 5 {
+				t.Logf("%s usage increased by more than 5%%: old=%d, new=%d", name, oldVal, newVal)
+				allFieldsOk = false
+			}
 		}
+		if allFieldsOk {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("Memory usage after stress containers exited did not converge to memory usage after warmup")
+		}
+		time.Sleep(time.Second)
 	}
 }
