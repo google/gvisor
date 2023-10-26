@@ -171,9 +171,18 @@ steps:
   # GPU workflow.
   - <<: *common
     <<: *source_test
+    label: ":firefighter: GPU Smoke Test"
+    commands:
+      - make sudo TARGETS=//tools/gpu:main ARGS="install --latest" || cat /var/log/nvidia-installer.log
+      - make gpu-tests
+    agents:
+      queue: gpu
+  - <<: *common
+    <<: *source_test
     label: ":screwdriver: All GPU Drivers Test"
     commands:
       - tools/gpu/all_drivers_test.sh
+    if: build.branch == "master"
     agents:
       queue: gpu
   # Release workflow.
