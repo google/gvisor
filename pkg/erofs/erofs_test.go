@@ -19,19 +19,19 @@ import (
 )
 
 func TestOnDiskStructureSizes(t *testing.T) {
-	if sb := new(SuperBlock); sb.SizeBytes() != 128 {
-		t.Errorf("wrong super block size: want 128, got %d", sb.SizeBytes())
+	if sb := new(SuperBlock); sb.SizeBytes() != SuperBlockSize {
+		t.Errorf("wrong super block size: want %d, got %d", SuperBlockSize, sb.SizeBytes())
 	}
 
-	if i := new(InodeCompact); i.SizeBytes() != 32 {
-		t.Errorf("wrong compact inode size: want 32, got %d", i.SizeBytes())
+	if i := new(InodeCompact); i.SizeBytes() != InodeCompactSize {
+		t.Errorf("wrong compact inode size: want %d, got %d", InodeCompactSize, i.SizeBytes())
 	}
 
-	if i := new(InodeExtended); i.SizeBytes() != 64 {
-		t.Errorf("wrong extended inode size: want 64, got %d", i.SizeBytes())
+	if i := new(InodeExtended); i.SizeBytes() != InodeExtendedSize {
+		t.Errorf("wrong extended inode size: want %d, got %d", InodeExtendedSize, i.SizeBytes())
 	}
 
-	if d := new(Dirent); d.SizeBytes() != 12 {
-		t.Errorf("wrong dirent size: want 12, got %d", d.SizeBytes())
+	if d := new(Dirent); d.SizeBytes() != DirentSize {
+		t.Errorf("wrong dirent size: want %d, got %d", DirentSize, d.SizeBytes())
 	}
 }
