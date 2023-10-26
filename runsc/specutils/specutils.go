@@ -43,7 +43,7 @@ import (
 const (
 	annotationFlagPrefix            = "dev.gvisor.flag."
 	annotationSeccomp               = "dev.gvisor.internal.seccomp."
-	annotationTPU                   = "dev.gvisor.spec.tpuproxy"
+	annotationTPU                   = "dev.gvisor.internal.tpuproxy"
 	annotationSeccompRuntimeDefault = "RuntimeDefault"
 
 	annotationContainerName = "io.kubernetes.cri.container-name"
