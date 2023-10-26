@@ -104,3 +104,19 @@ type SeccompData struct {
 	// Args contains the first 6 system call arguments.
 	Args [6]uint64
 }
+
+// String returns a human-friendly representation of this `SeccompData`.
+func (sd SeccompData) String() string {
+	return fmt.Sprintf(
+		"sysno=%d arch=%#x rip=%#x args=[%#x %#x %#x %#x %#x %#x]",
+		sd.Nr,
+		sd.Arch,
+		sd.InstructionPointer,
+		sd.Args[0],
+		sd.Args[1],
+		sd.Args[2],
+		sd.Args[3],
+		sd.Args[4],
+		sd.Args[5],
+	)
+}
