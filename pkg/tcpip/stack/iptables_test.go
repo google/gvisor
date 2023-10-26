@@ -30,7 +30,7 @@ const (
 	dstPort    = 3
 
 	// The network protocol used for these tests doesn't matter as the tests are
-	// not targetting anything protocol specific.
+	// not targeting anything protocol specific.
 	ipv6     = true
 	netProto = header.IPv6ProtocolNumber
 )

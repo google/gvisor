@@ -135,7 +135,7 @@ func TestGiveUpConnect(t *testing.T) {
 	// Wait for ep to become writable.
 	<-notifyCh
 
-	// Call Connect again to retreive the handshake failure status
+	// Call Connect again to retrieve the handshake failure status
 	// and stats updates.
 	{
 		err := ep.Connect(tcpip.FullAddress{Addr: context.TestAddr, Port: context.TestPort})
@@ -1380,7 +1380,7 @@ func TestNoSynCookieOnFailedHandshakes(t *testing.T) {
 }
 
 // TestTCPAckBeforeAcceptV4 tests that once the 3-way handshake is complete,
-// peers can send data and expect a response within a reasonable ammount of time
+// peers can send data and expect a response within a reasonable amount of time
 // without calling Accept on the listening endpoint first.
 //
 // This test uses IPv4.
@@ -1428,7 +1428,7 @@ func TestTCPAckBeforeAcceptV4(t *testing.T) {
 }
 
 // TestTCPAckBeforeAcceptV6 tests that once the 3-way handshake is complete,
-// peers can send data and expect a response within a reasonable ammount of time
+// peers can send data and expect a response within a reasonable amount of time
 // without calling Accept on the listening endpoint first.
 //
 // This test uses IPv6.
@@ -6073,7 +6073,7 @@ func TestKeepalive(t *testing.T) {
 		)
 	}
 
-	// Sleep for a litte over the KeepAlive interval to make sure
+	// Sleep for a little over the KeepAlive interval to make sure
 	// the timer has time to fire after the last ACK and close the
 	// close the socket.
 	time.Sleep(keepAliveInterval + keepAliveInterval/2)
@@ -7241,7 +7241,7 @@ func TestReceiveBufferAutoTuningApplicationLimited(t *testing.T) {
 				return
 			}
 			// We use 10% here as the error margin upwards as the initial window we
-			// got was afer 1 segment was already in the receive buffer queue.
+			// got was after 1 segment was already in the receive buffer queue.
 			tolerance := 1.1
 			if w := tcp.WindowSize(); w == 0 || w > uint16(float64(rcvWnd)*tolerance) {
 				t.Errorf("expected a non-zero window: got %d, want <= %d", w, uint16(float64(rcvWnd)*tolerance))
@@ -8388,7 +8388,7 @@ func TestKeepaliveWithUserTimeout(t *testing.T) {
 		),
 	)
 
-	// Sleep for a litte over the KeepAlive interval to make sure
+	// Sleep for a little over the KeepAlive interval to make sure
 	// the timer has time to fire after the last ACK and close the
 	// close the socket.
 	time.Sleep(keepAliveInterval + keepAliveInterval/2)
@@ -8723,7 +8723,7 @@ func TestResetDuringClose(t *testing.T) {
 
 	// Close in a separate goroutine so that we can trigger
 	// a race with the RST we send below. This should not
-	// panic due to the route being released depeding on
+	// panic due to the route being released depending on
 	// whether Close() sends an active RST or the RST sent
 	// below is processed by the worker first.
 	var wg sync.WaitGroup

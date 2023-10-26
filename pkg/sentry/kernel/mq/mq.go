@@ -81,7 +81,7 @@ type Registry struct {
 // Registry to avoid dealing directly with the filesystem. RegistryImpl should
 // be implemented by mqfs and provided to Registry at initialization.
 type RegistryImpl interface {
-	// Get searchs for a queue with the given name, if it exists, the queue is
+	// Get searches for a queue with the given name, if it exists, the queue is
 	// used to create a new FD, return it and return true. If the queue  doesn't
 	// exist, return false and no error. An error is returned if creation fails.
 	Get(ctx context.Context, name string, access AccessType, block bool, flags uint32) (*vfs.FileDescription, bool, error)
@@ -292,7 +292,7 @@ type Queue struct {
 }
 
 // View is a view into a message queue. Views should only be used in file
-// descriptions, but not inodes, because we use inodes to retreive the actual
+// descriptions, but not inodes, because we use inodes to retrieve the actual
 // queue, and only FDs are responsible for providing user functionality.
 type View interface {
 	// TODO: Add Send and Receive when mq_timedsend(2) and mq_timedreceive(2)

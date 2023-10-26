@@ -2137,12 +2137,12 @@ func TestMaxSlaacPrefixes(t *testing.T) {
 			PrefixLen: 64,
 		}
 		prefixes[i] = prefix.Subnet()
-		// Serialize a perfix information option.
+		// Serialize a prefix information option.
 		buf := [30]byte{}
 		buf[0] = uint8(prefix.PrefixLen)
 		// Set the autonomous configuration flag.
 		buf[1] = 64
-		// Set the preferred and valid lifetimes to the maxiumum possible value.
+		// Set the preferred and valid lifetimes to the maximum possible value.
 		binary.BigEndian.PutUint32(buf[2:], math.MaxUint32)
 		binary.BigEndian.PutUint32(buf[6:], math.MaxUint32)
 		if n := copy(buf[14:], prefix.Address.AsSlice()); n != prefix.Address.Len() {
@@ -2674,7 +2674,7 @@ func TestNoAutoGenTempAddrForLinkLocal(t *testing.T) {
 			// No new addresses should be generated.
 			select {
 			case e := <-ndpDisp.autoGenAddrC:
-				t.Errorf("got unxpected auto gen addr event = %+v", e)
+				t.Errorf("got unexpected auto gen addr event = %+v", e)
 			default:
 			}
 		})
@@ -3197,7 +3197,7 @@ func TestMixedSLAACAddrConflictRegen(t *testing.T) {
 		lifetimeSeconds = 9999
 		// From stack.maxSLAACAddrLocalRegenAttempts
 		maxSLAACAddrLocalRegenAttempts = 10
-		// We use 2 more addreses than the maximum local regeneration attempts
+		// We use 2 more addresses than the maximum local regeneration attempts
 		// because we want to also trigger regeneration in response to a DAD
 		// conflicts for this test.
 		maxAddrs         = maxSLAACAddrLocalRegenAttempts + 2

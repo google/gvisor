@@ -139,7 +139,7 @@ type FUSEHeaderOut struct {
 var SizeOfFUSEHeaderOut = uint32((*FUSEHeaderOut)(nil).SizeBytes())
 
 // FUSE_INIT flags, consistent with the ones in include/uapi/linux/fuse.h.
-// Our taget version is 7.23 but we have few implemented in advance.
+// Our target version is 7.23 but we have few implemented in advance.
 const (
 	FUSE_ASYNC_READ       = 1 << 0
 	FUSE_POSIX_LOCKS      = 1 << 1
@@ -299,7 +299,7 @@ type FUSEGetAttrIn struct {
 	Fh uint64
 }
 
-// FUSEAttr is the struct used in the reponse FUSEGetAttrOut.
+// FUSEAttr is the struct used in the response FUSEGetAttrOut.
 //
 // +marshal
 type FUSEAttr struct {

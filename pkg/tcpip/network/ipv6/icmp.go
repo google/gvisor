@@ -596,7 +596,7 @@ func (e *endpoint) handleICMP(pkt stack.PacketBufferPtr, hasFragmentHeader bool,
 
 			// We just got an NA from a node that owns an address we are performing
 			// DAD on, implying the address is not unique. In this case we let the
-			// stack know so it can handle such a scenario and do nothing furthur with
+			// stack know so it can handle such a scenario and do nothing further with
 			// the NDP NA.
 			//
 			// We would get an error if the address no longer exists or the address
@@ -961,7 +961,7 @@ type icmpReason interface {
 type icmpReasonParameterProblem struct {
 	code header.ICMPv6Code
 
-	// pointer is defined in the RFC 4443 setion 3.4 which reads:
+	// pointer is defined in the RFC 4443 section 3.4 which reads:
 	//
 	//  Pointer         Identifies the octet offset within the invoking packet
 	//                  where the error was detected.

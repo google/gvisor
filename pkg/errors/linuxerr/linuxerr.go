@@ -252,7 +252,7 @@ var errorSlice = []*errors.Error{
 	errno.ENODATA:         ENODATA,
 	errno.ETIME:           ETIME,
 	errno.ENOSR:           ENOSR,
-	errno.ENOSR + 1:       errNotValidError, // No valid errno betweeen ENOSR and ENOPKG.
+	errno.ENOSR + 1:       errNotValidError, // No valid errno between ENOSR and ENOPKG.
 	errno.ENOPKG:          ENOPKG,
 	errno.EREMOTE:         EREMOTE,
 	errno.ENOLINK:         ENOLINK,

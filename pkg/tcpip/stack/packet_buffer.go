@@ -94,7 +94,7 @@ type PacketBufferPtr = *PacketBuffer
 //
 // Outgoing Packet: When a header is pushed, `pushed` gets incremented by the
 // pushed length, and the current value is stored for each header. PacketBuffer
-// substracts this value from `reserved` to compute the starting offset of each
+// subtracts this value from `reserved` to compute the starting offset of each
 // header in `buf`.
 //
 // Incoming Packet: When a header is consumed (a.k.a. parsed), the current

@@ -162,7 +162,7 @@ func (i *inode) touchCMtime() {
 	i.ctime.Store(now)
 }
 
-// touchAtime updates the atime attribut to be the current time.
+// touchAtime updates the atime attribute to be the current time.
 //
 // +checklocks:i.attrMu
 func (i *inode) touchAtime() {
@@ -197,7 +197,7 @@ func (i *inode) CheckPermissions(ctx context.Context, creds *auth.Credentials, a
 	// default FUSE only allows the mount owner to interact with the
 	// filesystem. This explicitly excludes setuid/setgid processes.
 	//
-	// This behaviour can be overriden with the 'allow_other' mount option.
+	// This behaviour can be overridden with the 'allow_other' mount option.
 	//
 	// See fs/fuse/dir.c:fuse_allow_current_process() in Linux.
 	if !i.fs.opts.allowOther {

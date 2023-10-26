@@ -707,7 +707,7 @@ func (rw *regularFileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64,
 		// containing EOF fails, resulting in a partial write up to the start of
 		// that page.
 		//
-		// To emulate this behaviour, artifically truncate the write to the
+		// To emulate this behaviour, artificially truncate the write to the
 		// start of the page containing the current EOF.
 		//
 		// See Linux, mm/filemap.c:generic_perform_write() and

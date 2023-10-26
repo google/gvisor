@@ -38,7 +38,7 @@ var outOfRangeSyscallNumber = []*metric.FieldValue{&metric.FieldValue{"-1"}}
 // SyscallSupportLevel is a syscall support levels.
 type SyscallSupportLevel int
 
-// String returns a human readable represetation of the support level.
+// String returns a human readable representation of the support level.
 func (l SyscallSupportLevel) String() string {
 	switch l {
 	case SupportUnimplemented:

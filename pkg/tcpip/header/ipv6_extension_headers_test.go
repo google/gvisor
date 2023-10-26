@@ -722,7 +722,7 @@ func TestIPv6ExtHdrIter(t *testing.T) {
 				// Routing extension header.
 				//
 				// Even though we have a routing ext header here, it should be
-				// be interpretted as raw bytes as only the first fragment is expected
+				// be interpreted as raw bytes as only the first fragment is expected
 				// to hold headers.
 				255, 0, 1, 2, 3, 4, 5, 6,
 
@@ -968,7 +968,7 @@ func TestIPv6ExtHdrIter(t *testing.T) {
 			}},
 		},
 		{
-			name:         "Unknwon next header raw payload",
+			name:         "Unknown next header raw payload",
 			firstNextHdr: 255,
 			payload:      buffer.MakeWithData(upperLayerData),
 			expected: []IPv6PayloadHeader{IPv6RawPayloadHeader{
@@ -977,7 +977,7 @@ func TestIPv6ExtHdrIter(t *testing.T) {
 			}},
 		},
 		{
-			name:         "Unknwon next header raw payload (across views)",
+			name:         "Unknown next header raw payload (across views)",
 			firstNextHdr: 255,
 			payload:      makeBufferFromByteBuffers(upperLayerData[:2], upperLayerData[2:]),
 			expected: []IPv6PayloadHeader{IPv6RawPayloadHeader{

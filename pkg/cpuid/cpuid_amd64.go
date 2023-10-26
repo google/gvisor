@@ -309,7 +309,7 @@ func (fs FeatureSet) HasFeature(feature Feature) bool {
 // a minimal /proc/cpuinfo, it is missing some fields like "microcode" that are
 // not always printed in Linux. The bogomips field is simply made up.
 func (fs FeatureSet) WriteCPUInfoTo(cpu uint, w io.Writer) {
-	// Avoid many redunant calls here, since this can occasionally appear
+	// Avoid many redundant calls here, since this can occasionally appear
 	// in the hot path. Read all basic information up front, see above.
 	ax, _, _, _ := fs.query(featureInfo)
 	ef, em, _, f, m, _ := signatureSplit(ax)

@@ -167,7 +167,7 @@ func TestNUDFunctions(t *testing.T) {
 			{
 				neighbors, err := s.Neighbors(test.nicID, ipv6.ProtocolNumber)
 				if diff := cmp.Diff(test.expectedErr, err); diff != "" {
-					t.Errorf("s.Neigbors(%d, %d) error mismatch (-want +got):\n%s", test.nicID, ipv6.ProtocolNumber, diff)
+					t.Errorf("s.Neighbors(%d, %d) error mismatch (-want +got):\n%s", test.nicID, ipv6.ProtocolNumber, diff)
 				} else if test.expectedErr == nil {
 					if diff := cmp.Diff(
 						[]stack.NeighborEntry{{Addr: llAddr2, LinkAddr: linkAddr1, State: stack.Static, UpdatedAt: clock.NowMonotonic()}},

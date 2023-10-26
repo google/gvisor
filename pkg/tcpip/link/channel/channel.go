@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package channel provides the implemention of channel-based data-link layer
+// Package channel provides the implementation of channel-based data-link layer
 // endpoints. Such endpoints allow injection of inbound packets and store
 // outbound packets in a channel.
 package channel

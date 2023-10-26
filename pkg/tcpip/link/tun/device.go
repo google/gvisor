@@ -166,7 +166,7 @@ func attachOrCreateNIC(s *stack.Stack, name, prefix string, linkCaps stack.LinkE
 	}
 }
 
-// MTU returns the tun enpoint MTU (maximum transmission unit).
+// MTU returns the tun endpoint MTU (maximum transmission unit).
 func (d *Device) MTU() (uint32, error) {
 	d.mu.RLock()
 	endpoint := d.endpoint

@@ -573,7 +573,7 @@ type dentry struct {
 
 	locks vfs.FileLocks
 
-	// watches is the set of inotify watches on the file repesented by this dentry.
+	// watches is the set of inotify watches on the file represented by this dentry.
 	//
 	// Note that hard links to the same file will not share the same set of
 	// watches, due to the fact that we do not have inode structures in this

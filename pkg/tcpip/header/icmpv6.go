@@ -53,7 +53,7 @@ const (
 	ICMPv6EchoMinimumSize = 8
 
 	// ICMPv6ErrorHeaderSize is the size of an ICMP error packet header,
-	// as per RFC 4443, Apendix A, item 4 and the errata.
+	// as per RFC 4443, Appendix A, item 4 and the errata.
 	//   ... all ICMP error messages shall have exactly
 	//   32 bits of type-specific data, so that receivers can reliably find
 	//   the embedded invoking packet even when they don't recognize the

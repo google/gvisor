@@ -58,7 +58,7 @@ package gvisor.common;
 // Note that addition of new message types do not require version changes.
 // Server implementations should gracefully handle messages that it doesn't
 // understand. Similarly, payload for message can change following protobuf
-// rules for compatibilty. For example, adding new fields to a protobuf type
+// rules for compatibility. For example, adding new fields to a protobuf type
 // doesn't require version bump.
 message Handshake {
   uint32 version = 1;

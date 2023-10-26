@@ -48,7 +48,7 @@ func getBuffer(fd int) ([]byte, error) {
 		return nil, fmt.Errorf("failed to map memory for buffer fd: %d, error: %s", fd, err)
 	}
 
-	// Use unsafe to conver addr into a []byte.
+	// Use unsafe to convert addr into a []byte.
 	var b []byte
 	hdr := (*reflect.SliceHeader)(unsafe.Pointer(&b))
 	hdr.Data = addr

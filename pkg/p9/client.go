@@ -406,7 +406,7 @@ func (c *Client) handleOne() {
 	}
 }
 
-// waitAndRecv co-ordinates with other receivers to handle responses.
+// waitAndRecv coordinates with other receivers to handle responses.
 func (c *Client) waitAndRecv(done chan error) error {
 	for {
 		select {
@@ -474,7 +474,7 @@ func (c *Client) sendRecvLegacy(t message, r message) (bool, error) {
 		return false, err
 	}
 
-	// Co-ordinate with other receivers.
+	// Coordinate with other receivers.
 	if err := c.waitAndRecv(resp.done); err != nil {
 		return false, err
 	}

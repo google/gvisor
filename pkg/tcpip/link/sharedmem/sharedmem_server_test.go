@@ -340,7 +340,7 @@ func TestServerBulkTransfer(t *testing.T) {
 			}
 			response.Body.Close()
 			if got, want := int(n), payloadSize; got != want {
-				t.Fatalf("unexpected resposne size got: %d, want: %d", got, want)
+				t.Fatalf("unexpected response size got: %d, want: %d", got, want)
 			}
 			log.Infof("read %d bytes", n)
 		})
@@ -396,7 +396,7 @@ func TestClientBulkTransfer(t *testing.T) {
 			}
 			response.Body.Close()
 			if got, want := int(n), payloadSize; got != want {
-				t.Fatalf("unexpected resposne size got: %d, want: %d", got, want)
+				t.Fatalf("unexpected response size got: %d, want: %d", got, want)
 			}
 			log.Infof("read %d bytes", n)
 		})

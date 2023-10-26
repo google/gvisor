@@ -15,7 +15,7 @@
 //go:build linux
 // +build linux
 
-// Package fdbased provides the implemention of data-link layer endpoints
+// Package fdbased provides the implementation of data-link layer endpoints
 // backed by boundary-preserving file descriptors (e.g., TUN devices,
 // seqpacket/datagram sockets).
 //

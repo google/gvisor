@@ -436,7 +436,7 @@ func TestBufConfigMaxLength(t *testing.T) {
 }
 
 func TestBufConfigFirst(t *testing.T) {
-	// The stack assumes that the TCP/IP header is enterily contained in the first view.
+	// The stack assumes that the TCP/IP header is entirely contained in the first view.
 	// Therefore, the first view needs to be large enough to contain the maximum TCP/IP
 	// header, which is 120 bytes (60 bytes for IP + 60 bytes for TCP).
 	want := 120
@@ -551,7 +551,7 @@ func TestIovecBufferSkipVnetHdr(t *testing.T) {
 		t.Run(test.desc, func(t *testing.T) {
 			b := newIovecBuffer([]int{128, 256, 512, 1024}, true)
 			defer b.release()
-			// Pretend a read happend.
+			// Pretend a read happened.
 			b.nextIovecs()
 			buf := b.pullBuffer(test.readN)
 			defer buf.Release()

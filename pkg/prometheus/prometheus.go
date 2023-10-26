@@ -125,7 +125,7 @@ func (m *Metric) writeHeaderTo(w io.Writer, options SnapshotExportOptions) error
 // In Prometheus, all numbers are float64s.
 // However, for the purpose of usage of this library, we support expressing numbers as integers,
 // which makes things like counters much easier and more precise.
-// At data export time (i.e. when written out in Prometheus data format), it is coallesced into
+// At data export time (i.e. when written out in Prometheus data format), it is coalesced into
 // a float.
 type Number struct {
 	// Float is the float value of this number.

@@ -428,7 +428,7 @@ func (s *subprocess) unmap() {
 
 // Release kills the subprocess.
 //
-// Just kidding! We can't safely co-ordinate the detaching of all the
+// Just kidding! We can't safely coordinate the detaching of all the
 // tracees (since the tracers are random runtime threads, and the process
 // won't exit until tracers have been notifier).
 //

@@ -980,7 +980,7 @@ func (fs *filesystem) IsDescendant(vfsroot, vd vfs.VirtualDentry) bool {
 }
 
 // adjustPageAcct adjusts the accounting done against filesystem size limit in
-// case there is any discrepency between the number of pages reserved vs the
+// case there is any discrepancy between the number of pages reserved vs the
 // number of pages actually allocated.
 func (fs *filesystem) adjustPageAcct(reserved, alloced uint64) {
 	if reserved < alloced {

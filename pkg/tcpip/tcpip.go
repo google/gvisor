@@ -890,7 +890,7 @@ type WriteOptions struct {
 
 	// Atomic means that all data fetched from Payloader must be written to the
 	// endpoint. If Atomic is false, then data fetched from the Payloader may be
-	// discarded if available endpoint buffer space is unsufficient.
+	// discarded if available endpoint buffer space is insufficient.
 	Atomic bool
 
 	// ControlMessages contains optional overrides used when writing a packet.
@@ -1128,7 +1128,7 @@ type SettableSocketOption interface {
 	isSettableSocketOption()
 }
 
-// ICMPv6Filter specifes a filter for ICMPv6 types.
+// ICMPv6Filter specifies a filter for ICMPv6 types.
 //
 // +stateify savable
 type ICMPv6Filter struct {
@@ -1386,16 +1386,16 @@ func (*TCPTimeWaitReuseOption) isGettableTransportProtocolOption() {}
 func (*TCPTimeWaitReuseOption) isSettableTransportProtocolOption() {}
 
 const (
-	// TCPTimeWaitReuseDisabled indicates reuse of port bound by endponts in TIME-WAIT cannot
+	// TCPTimeWaitReuseDisabled indicates reuse of port bound by endpoints in TIME-WAIT cannot
 	// be reused for new connections.
 	TCPTimeWaitReuseDisabled TCPTimeWaitReuseOption = iota
 
-	// TCPTimeWaitReuseGlobal indicates reuse of port bound by endponts in TIME-WAIT can
+	// TCPTimeWaitReuseGlobal indicates reuse of port bound by endpoints in TIME-WAIT can
 	// be reused for new connections irrespective of the src/dest addresses.
 	TCPTimeWaitReuseGlobal
 
 	// TCPTimeWaitReuseLoopbackOnly indicates reuse of port bound by endpoint in TIME-WAIT can
-	// only be reused if the connection was a connection over loopback. i.e src/dest adddresses
+	// only be reused if the connection was a connection over loopback. i.e src/dest addresses
 	// are loopback addresses.
 	TCPTimeWaitReuseLoopbackOnly
 )
@@ -1891,7 +1891,7 @@ type IPForwardingStats struct {
 	UnknownOutputEndpoint *StatCounter
 
 	// NoMulticastPendingQueueBufferSpace is the number of multicast packets that
-	// were dropped due to insufficent buffer space in the pending packet queue.
+	// were dropped due to insufficient buffer space in the pending packet queue.
 	NoMulticastPendingQueueBufferSpace *StatCounter
 
 	// OutgoingDeviceNoBufferSpace is the number of packets that were dropped due
@@ -2302,11 +2302,11 @@ func (m *MultiIntegralStatCounterMap) Increment(key uint64) {
 type NICStats struct {
 	// LINT.IfChange(NICStats)
 
-	// UnknownL3ProtocolRcvdPacketCounts records the number of packets recieved
-	// for each unknown or unsupported netowrk protocol number.
+	// UnknownL3ProtocolRcvdPacketCounts records the number of packets received
+	// for each unknown or unsupported network protocol number.
 	UnknownL3ProtocolRcvdPacketCounts *IntegralStatCounterMap
 
-	// UnknownL4ProtocolRcvdPacketCounts records the number of packets recieved
+	// UnknownL4ProtocolRcvdPacketCounts records the number of packets received
 	// for each unknown or unsupported transport protocol number.
 	UnknownL4ProtocolRcvdPacketCounts *IntegralStatCounterMap
 
