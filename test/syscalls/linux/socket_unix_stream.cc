@@ -229,6 +229,27 @@ TEST_P(StreamUnixSocketPairTest, IncreasedSocketSendBufUnblocksWrites) {
               SyscallSucceeds());
 }
 
+TEST_P(StreamUnixSocketPairTest, GetAcceptConn) {
+  auto bound = ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, SOCK_STREAM, 0));
+  struct sockaddr_un bind_addr =
+      ASSERT_NO_ERRNO_AND_VALUE(UniqueUnixAddr(true, AF_UNIX));
+  ASSERT_THAT(bind(bound.get(), AsSockAddr(&bind_addr), sizeof(bind_addr)),
+              SyscallSucceeds());
+  int opt = 0;
+  socklen_t opt_len = sizeof(opt);
+  ASSERT_THAT(
+      getsockopt(bound.get(), SOL_SOCKET, SO_ACCEPTCONN, &opt, &opt_len),
+      SyscallSucceeds());
+  ASSERT_EQ(opt, 0);
+  ASSERT_THAT(listen(bound.get(),
+                     /* backlog = */ 5),  // NOLINT(bugprone-argument-comment)
+              SyscallSucceeds());
+  ASSERT_THAT(
+      getsockopt(bound.get(), SOL_SOCKET, SO_ACCEPTCONN, &opt, &opt_len),
+      SyscallSucceeds());
+  ASSERT_EQ(opt, 1);
+}
+
 INSTANTIATE_TEST_SUITE_P(
     AllUnixDomainSockets, StreamUnixSocketPairTest,
     ::testing::ValuesIn(IncludeReversals(VecCat<SocketPairKind>(
