@@ -63,6 +63,10 @@ type SocketOptionsHandler interface {
 	// changed. The handler notifies the writers if the send buffer size is
 	// increased with setsockopt(2) for TCP endpoints.
 	WakeupWriters()
+
+	// GetAcceptConn returns true if the socket is a TCP socket and is in
+	// listening state.
+	GetAcceptConn() bool
 }
 
 // DefaultSocketOptionsHandler is an embeddable type that implements no-op
@@ -110,6 +114,11 @@ func (*DefaultSocketOptionsHandler) WakeupWriters() {}
 // OnSetReceiveBufferSize implements SocketOptionsHandler.OnSetReceiveBufferSize.
 func (*DefaultSocketOptionsHandler) OnSetReceiveBufferSize(v, oldSz int64) (newSz int64, postSet func()) {
 	return v, nil
+}
+
+// GetAcceptConn implements SocketOptionsHandler.GetAcceptConn.
+func (*DefaultSocketOptionsHandler) GetAcceptConn() bool {
+	return false
 }
 
 // StackHandler holds methods to access the stack options. These must be
@@ -741,4 +750,9 @@ func (so *SocketOptions) GetRcvlowat() int32 {
 func (so *SocketOptions) SetRcvlowat(rcvlowat int32) Error {
 	so.rcvlowat.Store(rcvlowat)
 	return nil
+}
+
+// GetAcceptConn gets value for SO_ACCEPTCONN option.
+func (so *SocketOptions) GetAcceptConn() bool {
+	return so.handler.GetAcceptConn()
 }

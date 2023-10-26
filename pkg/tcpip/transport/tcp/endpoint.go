@@ -3325,3 +3325,7 @@ func (e *endpoint) computeTCPSendBufferSize() int64 {
 
 	return newSndBufSz
 }
+
+func (e *endpoint) GetAcceptConn() bool {
+	return EndpointState(e.State()) == StateListen
+}
