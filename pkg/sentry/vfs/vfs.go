@@ -63,7 +63,7 @@ import (
 
 // How long to wait for a mount promise before proceeding with the VFS
 // operation. This should be configurable by the user eventually.
-const mountPromiseTimeout = 10 * time.Second
+const mountPromiseTimeout = 30 * time.Second
 
 // A VirtualFilesystem (VFS for short) combines Filesystems in trees of Mounts.
 //
