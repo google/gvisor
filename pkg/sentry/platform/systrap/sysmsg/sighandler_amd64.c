@@ -286,7 +286,7 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
         uint8_t syscall_opcode = *(syscall_code + 6);
 
         // A binary patch is built so that the first byte of the syscall
-        // instruction is changed on the invalid instuction. If we meet this
+        // instruction is changed on the invalid instruction. If we meet this
         // case, this means that another thread has been patched this syscall
         // and we need to restart it.
         if (syscall_opcode == FAULT_OPCODE) {

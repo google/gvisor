@@ -182,7 +182,7 @@ func TestPRead(t *testing.T) {
 	defer cleanup()
 
 	// Write 100 sequences of 'gVisor is awesome'.
-	data := bytes.Repeat([]byte("gVisor is awsome"), 100)
+	data := bytes.Repeat([]byte("gVisor is awesome"), 100)
 	n, err := fd.Write(ctx, usermem.BytesIOSequence(data), vfs.WriteOptions{})
 	if err != nil {
 		t.Fatalf("fd.Write failed: %v", err)
@@ -236,7 +236,7 @@ func TestTruncate(t *testing.T) {
 	defer cleanup()
 
 	// Fill the file with some data.
-	data := bytes.Repeat([]byte("gVisor is awsome"), 100)
+	data := bytes.Repeat([]byte("gVisor is awesome"), 100)
 	written, err := fd.Write(ctx, usermem.BytesIOSequence(data), vfs.WriteOptions{})
 	if err != nil {
 		t.Fatalf("fd.Write failed: %v", err)

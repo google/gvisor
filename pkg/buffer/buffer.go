@@ -572,7 +572,7 @@ func (b *Buffer) readByte() (byte, error) {
 	return bt, nil
 }
 
-// AsBufferReader returns the Buffer as a BufferReader capabable of io methods.
+// AsBufferReader returns the Buffer as a BufferReader capable of io methods.
 // The new BufferReader takes ownership of b.
 func (b *Buffer) AsBufferReader() BufferReader {
 	return BufferReader{b}

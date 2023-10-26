@@ -435,7 +435,7 @@ func commonGenerateTCP(ctx context.Context, buf *bytes.Buffer, k *kernel.Kernel,
 			fmt.Fprintf(buf, "%8d ", stat.Ino)
 		}
 
-		// Field: refcount. Don't count the ref we obtain while deferencing
+		// Field: refcount. Don't count the ref we obtain while dereferencing
 		// the weakref to this socket.
 		fmt.Fprintf(buf, "%d ", s.ReadRefs()-1)
 
@@ -595,7 +595,7 @@ func (d *netUDPData) Generate(ctx context.Context, buf *bytes.Buffer) error {
 		}
 
 		// Field: ref; reference count on the socket inode. Don't count the ref
-		// we obtain while deferencing the weakref to this socket.
+		// we obtain while dereferencing the weakref to this socket.
 		fmt.Fprintf(buf, "%d ", s.ReadRefs()-1)
 
 		// Field: Socket struct address. Redacted due to the same reason as

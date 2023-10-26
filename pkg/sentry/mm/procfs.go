@@ -96,7 +96,7 @@ func (mm *MemoryManager) ReadMapsDataInto(ctx context.Context, fn MapsCallbackFu
 	// get the sorting on the maps file wrong at worst; but that's not possible
 	// on any current platform).
 	//
-	// Artifically adjust the seqfile handle so we only output vsyscall entry once.
+	// Artificially adjust the seqfile handle so we only output vsyscall entry once.
 	if start != vsyscallEnd {
 		fn(hostarch.Addr(0xffffffffff600000), hostarch.Addr(0xffffffffff601000), hostarch.ReadExecute, "p", 0, 0, 0, 0, "[vsyscall]")
 	}

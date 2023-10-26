@@ -139,7 +139,7 @@ func TestStatefile(t *testing.T) {
 									t.Fatalf("missing metadata: %s", k)
 								}
 								if v != nv {
-									t.Fatalf("mismatched metdata for %s: got %s, expected %s", k, nv, v)
+									t.Fatalf("mismatched metadata for %s: got %s, expected %s", k, nv, v)
 								}
 							}
 

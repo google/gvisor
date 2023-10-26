@@ -1321,7 +1321,7 @@ func (s *Stack) findRouteWithLocalAddrFromAnyInterfaceRLocked(outgoingNIC *nic, 
 // leave through any interface unless the route is link-local.
 //
 // If no local address is provided, the stack will select a local address. If no
-// remote address is provided, the stack wil use a remote address equal to the
+// remote address is provided, the stack will use a remote address equal to the
 // local address.
 func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber, multicastLoop bool) (*Route, tcpip.Error) {
 	s.mu.RLock()
@@ -1625,7 +1625,7 @@ func (s *Stack) AddStaticNeighbor(nicID tcpip.NICID, protocol tcpip.NetworkProto
 }
 
 // RemoveNeighbor removes an IP to MAC address association previously created
-// either automically or by AddStaticNeighbor. Returns ErrBadAddress if there
+// either automatically or by AddStaticNeighbor. Returns ErrBadAddress if there
 // is no association with the provided address.
 func (s *Stack) RemoveNeighbor(nicID tcpip.NICID, protocol tcpip.NetworkProtocolNumber, addr tcpip.Address) tcpip.Error {
 	s.mu.RLock()

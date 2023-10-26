@@ -38,7 +38,7 @@ const (
 // +stateify savable
 type RegistryImpl struct {
 	// root is the root dentry of the mq filesystem. Its main usage is to
-	// retreive the root inode, which we use to add, remove, and lookup message
+	// retrieve the root inode, which we use to add, remove, and lookup message
 	// queues.
 	//
 	// We hold a reference on root and release when the registry is destroyed.

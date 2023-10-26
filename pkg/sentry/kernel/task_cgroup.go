@@ -236,7 +236,7 @@ func (t *Task) GetCgroupEntries() []TaskCgroupEntry {
 		// We're guaranteed to have a valid name, a non-empty controller list,
 		// or both.
 
-		// Explicit hierachy name, if any.
+		// Explicit hierarchy name, if any.
 		if name := c.Name(); name != "" {
 			ctlNames = append(ctlNames, fmt.Sprintf("name=%s", name))
 		}

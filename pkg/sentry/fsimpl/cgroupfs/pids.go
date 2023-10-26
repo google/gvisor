@@ -55,7 +55,7 @@ const pidLimitUnlimited = pidMaxLimit + 1
 type pidsController struct {
 	controllerCommon
 
-	// isRoot indiciates if this is the root cgroup in its hierarchy. Immutable
+	// isRoot indicates if this is the root cgroup in its hierarchy. Immutable
 	// since cgroupfs doesn't allow cross directory renames.
 	isRoot bool
 
@@ -123,7 +123,7 @@ func (c *pidsController) AddControlFiles(ctx context.Context, creds *auth.Creden
 // Enter implements controller.Enter.
 //
 // Enter attempts to commit a charge from the pending pool. If at least one
-// charge is pending for t, one pending charge is converted to a commited
+// charge is pending for t, one pending charge is converted to a committed
 // charge, and the net change in total charges is zero. If no charge is pending,
 // a new charge is added directly to the committed pool.
 func (c *pidsController) Enter(t *kernel.Task) {

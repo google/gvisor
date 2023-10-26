@@ -15,4 +15,4 @@
 //go:build !amd64
 
 // This file is intentionally left blank. Other arches don't use
-// addrOfSpinning, but we still need an input to the nogo temlate rule.
+// addrOfSpinning, but we still need an input to the nogo template rule.

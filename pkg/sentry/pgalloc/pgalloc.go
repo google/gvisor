@@ -121,7 +121,7 @@ type MemoryFile struct {
 	// file blocks expected. This is used to elide the scan when this
 	// matches the underlying file blocks.
 	//
-	// To track swapped pages, usageSwapped tracks the discrepency between
+	// To track swapped pages, usageSwapped tracks the discrepancy between
 	// what is observed in core and what is reported by the file. When
 	// usageSwapped is non-zero, a sweep will be performed at least every
 	// second. The start of the last sweep is recorded in usageLast.

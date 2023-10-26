@@ -20,7 +20,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
 
-// ForwardingError represents an error that occured while trying to forward
+// ForwardingError represents an error that occurred while trying to forward
 // a packet.
 type ForwardingError interface {
 	isForwardingError()
@@ -75,7 +75,7 @@ func (*ErrLinkLocalDestinationAddress) isForwardingError() {}
 
 func (*ErrLinkLocalDestinationAddress) String() string { return "link local destination address" }
 
-// ErrHostUnreachable indicates that the destinatino host could not be reached.
+// ErrHostUnreachable indicates that the destination host could not be reached.
 type ErrHostUnreachable struct{}
 
 func (*ErrHostUnreachable) isForwardingError() {}

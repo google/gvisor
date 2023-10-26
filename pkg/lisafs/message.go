@@ -48,7 +48,7 @@ import (
 // because a malicious encoder could have manipulated payload bytes to make the
 // unchecked unmarshal variants panic due to the lack of bound checking.
 // Marshalling code does not need additional bound checking because the caller
-// itself intializes the struct being marshalled, so it is trusted.
+// itself initializes the struct being marshalled, so it is trusted.
 //
 // String() implementations must ensure that the message struct doesn't escape.
 // For instance, directly passing the struct to fmt.Sprintf() escapes it

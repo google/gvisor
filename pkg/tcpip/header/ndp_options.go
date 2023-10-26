@@ -63,7 +63,7 @@ const (
 	// ndpPrefixInformationLength is the expected length, in bytes, of the
 	// body of an NDP Prefix Information option, as per RFC 4861 section
 	// 4.6.2 which specifies that the Length field is 4. Given this, the
-	// expected length, in bytes, is 30 becuase 4 * lengthByteUnits (8) - 2
+	// expected length, in bytes, is 30 because 4 * lengthByteUnits (8) - 2
 	// (Type & Length) = 30.
 	ndpPrefixInformationLength = 30
 
@@ -173,7 +173,7 @@ var (
 )
 
 // Next returns the next element in the backing NDPOptions, or true if we are
-// done, or false if an error occured.
+// done, or false if an error occurred.
 //
 // The return can be read as option, done, error. Note, option should only be
 // used if done is false and error is nil.

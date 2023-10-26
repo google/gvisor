@@ -589,7 +589,7 @@ func (*ErrMissingRequiredFields) isError() {}
 func (*ErrMissingRequiredFields) IgnoreStats() bool {
 	return true
 }
-func (*ErrMissingRequiredFields) String() string { return "mising required fields" }
+func (*ErrMissingRequiredFields) String() string { return "missing required fields" }
 
 // ErrMulticastInputCannotBeOutput indicates that an input interface matches an
 // output interface in the same multicast route.

@@ -152,10 +152,10 @@ func TestDowngradableRWMutex(t *testing.T) {
 func TestRWDoubleTryLock(t *testing.T) {
 	var rwm RWMutex
 	if !rwm.TryLock() {
-		t.Fatal("failed to aquire lock")
+		t.Fatal("failed to acquire lock")
 	}
 	if rwm.TryLock() {
-		t.Fatal("unexpectedly succeeded in aquiring locked mutex")
+		t.Fatal("unexpectedly succeeded in acquiring locked mutex")
 	}
 }
 
@@ -163,18 +163,18 @@ func TestRWTryLockAfterLock(t *testing.T) {
 	var rwm RWMutex
 	rwm.Lock()
 	if rwm.TryLock() {
-		t.Fatal("unexpectedly succeeded in aquiring locked mutex")
+		t.Fatal("unexpectedly succeeded in acquiring locked mutex")
 	}
 }
 
 func TestRWTryLockUnlock(t *testing.T) {
 	var rwm RWMutex
 	if !rwm.TryLock() {
-		t.Fatal("failed to aquire lock")
+		t.Fatal("failed to acquire lock")
 	}
 	rwm.Unlock() // +checklocksforce
 	if !rwm.TryLock() {
-		t.Fatal("failed to aquire lock after unlock")
+		t.Fatal("failed to acquire lock after unlock")
 	}
 }
 
@@ -182,7 +182,7 @@ func TestTryRLockAfterLock(t *testing.T) {
 	var rwm RWMutex
 	rwm.Lock()
 	if rwm.TryRLock() {
-		t.Fatal("unexpectedly succeeded in aquiring locked mutex")
+		t.Fatal("unexpectedly succeeded in acquiring locked mutex")
 	}
 }
 
@@ -190,16 +190,16 @@ func TestTryLockAfterRLock(t *testing.T) {
 	var rwm RWMutex
 	rwm.RLock()
 	if rwm.TryLock() {
-		t.Fatal("unexpectedly succeeded in aquiring locked mutex")
+		t.Fatal("unexpectedly succeeded in acquiring locked mutex")
 	}
 }
 
 func TestDoubleTryRLock(t *testing.T) {
 	var rwm RWMutex
 	if !rwm.TryRLock() {
-		t.Fatal("failed to aquire lock")
+		t.Fatal("failed to acquire lock")
 	}
 	if !rwm.TryRLock() {
-		t.Fatal("failed to read aquire read locked lock")
+		t.Fatal("failed to read acquire read locked lock")
 	}
 }

@@ -13,7 +13,7 @@
 // limitations under the License.
 
 // Package watchdog is responsible for monitoring the sentry for tasks that may
-// potentially be stuck or looping inderterminally causing hard to debug hungs in
+// potentially be stuck or looping inderterminally causing hard to debug hangs in
 // the untrusted app.
 //
 // It works by periodically querying all tasks to check whether they are in user
@@ -180,7 +180,7 @@ func New(k *kernel.Kernel, opts Opts) *Watchdog {
 	// Handle StartupTimeout if it exists.
 	if w.StartupTimeout > 0 {
 		log.Infof("Watchdog waiting %v for startup", w.StartupTimeout)
-		go w.waitForStart() // S/R-SAFE: watchdog is stopped buring save and restarted after restore.
+		go w.waitForStart() // S/R-SAFE: watchdog is stopped during save and restarted after restore.
 	}
 
 	return w

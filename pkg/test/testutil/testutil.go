@@ -61,7 +61,7 @@ var (
 	isRunningWithHostNet = flag.Bool("test-hostnet", BoolFromEnv("TEST_HOSTNET", false), "whether test is running with hostnet")
 
 	// TestEnvSupportsNetAdmin indicates whether a test sandbox can perform
-	// all net admin tasks. Note that some test environments cannot peform
+	// all net admin tasks. Note that some test environments cannot perform
 	// some tasks despite the presence of CAP_NET_ADMIN.
 	TestEnvSupportsNetAdmin = true
 )
@@ -357,7 +357,7 @@ func writeSpec(dir string, spec *specs.Spec) error {
 var idRandomSrc = rand.New(rand.NewSource(time.Now().UnixNano()))
 
 // idRandomSrcMtx is the mutex protecting idRandomSrc.Read from being used
-// concurrently in differnt goroutines.
+// concurrently in different goroutines.
 var idRandomSrcMtx sync.Mutex
 
 // RandomID returns 20 random bytes following the given prefix.

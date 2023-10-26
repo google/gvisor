@@ -136,7 +136,7 @@ type fidRef struct {
 	// file is the associated File.
 	file File
 
-	// refs is an active refence count.
+	// refs is an active reference count.
 	//
 	// The node above will be closed only when refs reaches zero.
 	refs atomicbitops.Int64
