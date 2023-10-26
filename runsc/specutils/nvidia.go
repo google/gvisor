@@ -30,7 +30,7 @@ import (
 const nvdEnvVar = "NVIDIA_VISIBLE_DEVICES"
 
 // annotationNVProxy enables nvproxy.
-const annotationNVProxy = "dev.gvisor.spec.nvproxy"
+const annotationNVProxy = "dev.gvisor.internal.nvproxy"
 
 // NVProxyEnabled checks both the nvproxy annotation and conf.NVProxy to see if nvproxy is enabled.
 func NVProxyEnabled(spec *specs.Spec, conf *config.Config) bool {
