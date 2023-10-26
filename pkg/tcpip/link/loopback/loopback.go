@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package loopback provides the implemention of loopback data-link layer
+// Package loopback provides the implementation of loopback data-link layer
 // endpoints. Such endpoints just turn outbound packets into inbound ones.
 //
 // Loopback endpoints can be used in the networking stack by calling New() to

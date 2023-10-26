@@ -19,7 +19,7 @@ var memoryFileprefixIndex *locking.MutexClass
 var memoryFilelockNames []string
 
 // lockNameIndex is used as an index passed to NestedLock and NestedUnlock,
-// refering to an index within lockNames.
+// referring to an index within lockNames.
 // Values are specified using the "consts" field of go_template_instance.
 type memoryFilelockNameIndex int
 

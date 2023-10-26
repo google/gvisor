@@ -33,7 +33,7 @@ import (
 // Two different pathNodes may only be locked if Server.renameMu is held for
 // write, in which case they can be acquired in any order.
 type pathNode struct {
-	// opMu synchronizes high-level, sematic operations, such as the
+	// opMu synchronizes high-level, semantic operations, such as the
 	// simultaneous creation and deletion of a file.
 	opMu sync.RWMutex
 

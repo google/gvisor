@@ -92,7 +92,7 @@ type Node struct {
 	// upto numStaticChildren children using hardcoded pointers. If more children
 	// are inserted then move to a map. Use dynamicChildren iff it is non-nil.
 
-	// The folowing fields are protected by childrenMu.
+	// The following fields are protected by childrenMu.
 	childrenMu     sync.Mutex
 	staticChildren [numStaticChildren]struct {
 		name string

@@ -77,7 +77,7 @@ func getHypercallID(addr uintptr) int {
 	}
 }
 
-// bluepillStopGuest is reponsible for injecting sError.
+// bluepillStopGuest is responsible for injecting sError.
 //
 //go:nosplit
 func bluepillStopGuest(c *vCPU) {
@@ -97,7 +97,7 @@ func bluepillStopGuest(c *vCPU) {
 	}
 }
 
-// bluepillSigBus is reponsible for injecting sError to trigger sigbus.
+// bluepillSigBus is responsible for injecting sError to trigger sigbus.
 //
 //go:nosplit
 func bluepillSigBus(c *vCPU) {
@@ -123,7 +123,7 @@ func bluepillSigBus(c *vCPU) {
 	}
 }
 
-// bluepillExtDabt is reponsible for injecting external data abort.
+// bluepillExtDabt is responsible for injecting external data abort.
 //
 //go:nosplit
 func bluepillExtDabt(c *vCPU) {
@@ -143,7 +143,7 @@ func bluepillExtDabt(c *vCPU) {
 	}
 }
 
-// bluepillHandleEnosys is reponsible for handling enosys error.
+// bluepillHandleEnosys is responsible for handling enosys error.
 //
 //go:nosplit
 func bluepillHandleEnosys(c *vCPU) {

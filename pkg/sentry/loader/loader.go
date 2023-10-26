@@ -260,7 +260,7 @@ func Load(ctx context.Context, args LoadArgs, extraAuxv []arch.AuxEntry, vdso *V
 	}
 
 	// Setup the heap. brk starts at the next page after the end of the
-	// executable. Userspace can assume that the remainer of the page after
+	// executable. Userspace can assume that the remainder of the page after
 	// loaded.end is available for its use.
 	e, ok := loaded.end.RoundUp()
 	if !ok {

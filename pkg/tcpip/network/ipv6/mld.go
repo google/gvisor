@@ -308,7 +308,7 @@ func (mld *mldState) softLeaveAll() {
 	mld.genericMulticastProtocol.MakeAllNonMemberLocked()
 }
 
-// initializeAll attemps to initialize the MLD state for each group that has
+// initializeAll attempts to initialize the MLD state for each group that has
 // been joined locally.
 //
 // Precondition: mld.ep.mu must be locked.

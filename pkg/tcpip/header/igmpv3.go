@@ -378,7 +378,7 @@ func (r IGMPv3ReportGroupAddressRecord) RecordType() IGMPv3ReportRecordType {
 	return IGMPv3ReportRecordType(r[igmpv3ReportGroupAddressRecordTypeOffset])
 }
 
-// AuxDataLen returns the length of the auxillary data in this record.
+// AuxDataLen returns the length of the auxiliary data in this record.
 func (r IGMPv3ReportGroupAddressRecord) AuxDataLen() int {
 	return int(r[igmpv3ReportGroupAddressRecordAuxDataLenOffset]) * igmpv3ReportGroupAddressRecordAuxDataLenUnits
 }

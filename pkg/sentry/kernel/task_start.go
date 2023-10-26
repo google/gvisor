@@ -185,7 +185,7 @@ func (ts *TaskSet) newTask(ctx context.Context, cfg *TaskConfig) (*Task, error) 
 		charged, committed bool
 	)
 
-	// Reserve cgroup PIDs controller charge. This is either commited when the
+	// Reserve cgroup PIDs controller charge. This is either committed when the
 	// new task enters the cgroup below, or rolled back on failure.
 	//
 	// We may also get here from a non-task context (for example, when

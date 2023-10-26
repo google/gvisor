@@ -516,7 +516,7 @@ func (o *OrderedChildren) Lookup(ctx context.Context, name string) (Inode, error
 	return s.inode, nil
 }
 
-// ForEachChild calls fn on all childrens tracked by this ordered children.
+// ForEachChild calls fn on all children tracked by this ordered children.
 func (o *OrderedChildren) ForEachChild(fn func(string, Inode)) {
 	o.mu.RLock()
 	defer o.mu.RUnlock()

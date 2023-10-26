@@ -743,7 +743,7 @@ func InotifyEventFromStatMask(mask uint32) uint32 {
 	return ev
 }
 
-// InotifyRemoveChild sends the appriopriate notifications to the watch sets of
+// InotifyRemoveChild sends the appropriate notifications to the watch sets of
 // the child being removed and its parent. Note that unlike most pairs of
 // parent/child notifications, the child is notified first in this case.
 func InotifyRemoveChild(ctx context.Context, self, parent *Watches, name string) {
@@ -755,7 +755,7 @@ func InotifyRemoveChild(ctx context.Context, self, parent *Watches, name string)
 	}
 }
 
-// InotifyRename sends the appriopriate notifications to the watch sets of the
+// InotifyRename sends the appropriate notifications to the watch sets of the
 // file being renamed and its old/new parents.
 func InotifyRename(ctx context.Context, renamed, oldParent, newParent *Watches, oldName, newName string, isDir bool) {
 	var dirEv uint32

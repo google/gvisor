@@ -65,7 +65,7 @@ type Registry struct {
 
 	// reg defines basic fields and operations needed for all SysV registries.
 	//
-	// Withing reg, there are two maps, Objects and KeysToIDs.
+	// Within reg, there are two maps, Objects and KeysToIDs.
 	//
 	// reg.objects holds all referenced segments, which are removed on the last
 	// DecRef. Thus, it cannot itself hold a reference on the Shm.

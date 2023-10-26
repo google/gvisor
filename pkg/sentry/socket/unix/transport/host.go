@@ -388,7 +388,7 @@ func (e *SCMConnectedEndpoint) Release(ctx context.Context) {
 // NewSCMEndpoint creates a new SCMConnectedEndpoint backed by a host fd that
 // was passed through a Unix socket.
 //
-// The caller is responsible for calling Init(). Additionaly, Release needs to
+// The caller is responsible for calling Init(). Additionally, Release needs to
 // be called twice because ConnectedEndpoint is both a Receiver and
 // ConnectedEndpoint.
 func NewSCMEndpoint(hostFD int, queue *waiter.Queue, addr string) (*SCMConnectedEndpoint, *syserr.Error) {

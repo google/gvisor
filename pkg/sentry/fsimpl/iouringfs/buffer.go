@@ -124,7 +124,7 @@ func (b *sharedBuffer) view(n int) ([]byte, error) {
 // call. On return, writeback indicates if the previous view may be reused, or
 // needs to be refetched with a new call to view.
 //
-// Precondition: Must follow a call to view. n must match the value pased to
+// Precondition: Must follow a call to view. n must match the value passed to
 // view.
 //
 // Postcondition: Previous view is invalidated whether writeback is successful

@@ -32,7 +32,7 @@ const (
 	SEM_STAT_ANY = 20
 )
 
-// Information about system-wide sempahore limits and parameters.
+// Information about system-wide semaphore limits and parameters.
 //
 // Source: include/uapi/linux/sem.h
 const (

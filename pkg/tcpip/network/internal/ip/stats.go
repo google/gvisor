@@ -66,7 +66,7 @@ type MultiCounterIPForwardingStats struct {
 	UnknownOutputEndpoint tcpip.MultiCounterStat
 
 	// NoMulticastPendingQueueBufferSpace is the number of multicast packets that
-	// were dropped due to insufficent buffer space in the pending packet queue.
+	// were dropped due to insufficient buffer space in the pending packet queue.
 	NoMulticastPendingQueueBufferSpace tcpip.MultiCounterStat
 
 	// OutgoingDeviceNoBufferSpace is the number of packets that were dropped due

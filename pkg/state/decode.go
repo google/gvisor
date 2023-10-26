@@ -244,7 +244,7 @@ func (ds *decodeState) waitObject(ods *objectDecodeState, encoded wire.Object, c
 		// See decodeObject; we need to wait for the array (if non-nil).
 		ds.wait(ods, objectID(sv.Ref.Root), callback)
 	} else if iv, ok := encoded.(*wire.Interface); ok {
-		// It's an interface (wait recurisvely).
+		// It's an interface (wait recursively).
 		ds.waitObject(ods, iv.Value, callback)
 	} else if callback != nil {
 		// Nothing to wait for: execute the callback immediately.
@@ -567,7 +567,7 @@ func (ds *decodeState) decodeObject(ods *objectDecodeState, obj reflect.Value, e
 	case *wire.Interface:
 		ds.decodeInterface(ods, obj, x)
 	default:
-		// Shoud not happen, not propagated as an error.
+		// Should not happen, not propagated as an error.
 		Failf("unknown object %#v for %q", encoded, obj.Type().Name())
 	}
 }
