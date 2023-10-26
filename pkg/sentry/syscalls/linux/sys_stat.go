@@ -50,6 +50,9 @@ func Newfstatat(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uint
 }
 
 func fstatat(t *kernel.Task, dirfd int32, pathAddr, statAddr hostarch.Addr, flags int32) error {
+	// TODO(b/270247637): gVisor does not yet support automount, so
+	// AT_NO_AUTOMOUNT flag is a no-op.
+	flags &= ^linux.AT_NO_AUTOMOUNT
 	if flags&^(linux.AT_EMPTY_PATH|linux.AT_SYMLINK_NOFOLLOW) != 0 {
 		return linuxerr.EINVAL
 	}
