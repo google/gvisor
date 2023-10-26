@@ -25,8 +25,10 @@ func (d *Dirent) SizeBytes() int {
 
 // MarshalBytes implements marshal.Marshallable.MarshalBytes.
 func (d *Dirent) MarshalBytes(dst []byte) []byte {
-    hostarch.ByteOrder.PutUint64(dst[:8], uint64(d.Nid))
-    dst = dst[8:]
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(d.NidLow))
+    dst = dst[4:]
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(d.NidHigh))
+    dst = dst[4:]
     hostarch.ByteOrder.PutUint16(dst[:2], uint16(d.NameOff))
     dst = dst[2:]
     dst[0] = byte(d.FileType)
@@ -38,8 +40,10 @@ func (d *Dirent) MarshalBytes(dst []byte) []byte {
 
 // UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
 func (d *Dirent) UnmarshalBytes(src []byte) []byte {
-    d.Nid = uint64(hostarch.ByteOrder.Uint64(src[:8]))
-    src = src[8:]
+    d.NidLow = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    d.NidHigh = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
     d.NameOff = uint16(hostarch.ByteOrder.Uint16(src[:2]))
     src = src[2:]
     d.FileType = uint8(src[0])
@@ -52,27 +56,37 @@ func (d *Dirent) UnmarshalBytes(src []byte) []byte {
 // Packed implements marshal.Marshallable.Packed.
 //go:nosplit
 func (d *Dirent) Packed() bool {
-    return false
+    return true
 }
 
 // MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
 func (d *Dirent) MarshalUnsafe(dst []byte) []byte {
-    // Type Dirent doesn't have a packed layout in memory, fallback to MarshalBytes.
-    return d.MarshalBytes(dst)
+    size := d.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(d), uintptr(size))
+    return dst[size:]
 }
 
 // UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
 func (d *Dirent) UnmarshalUnsafe(src []byte) []byte {
-    // Type Dirent doesn't have a packed layout in memory, fallback to UnmarshalBytes.
-    return d.UnmarshalBytes(src)
+    size := d.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(d), unsafe.Pointer(&src[0]), uintptr(size))
+    return src[size:]
 }
 
 // CopyOutN implements marshal.Marshallable.CopyOutN.
 func (d *Dirent) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
-    // Type Dirent doesn't have a packed layout in memory, fall back to MarshalBytes.
-    buf := cc.CopyScratchBuffer(d.SizeBytes()) // escapes: okay.
-    d.MarshalBytes(buf) // escapes: fallback.
-    return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(d)))
+    hdr.Len = d.SizeBytes()
+    hdr.Cap = d.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that d
+    // must live until the use above.
+    runtime.KeepAlive(d) // escapes: replaced by intrinsic.
+    return length, err
 }
 
 // CopyOut implements marshal.Marshallable.CopyOut.
@@ -82,12 +96,17 @@ func (d *Dirent) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error
 
 // CopyInN implements marshal.Marshallable.CopyInN.
 func (d *Dirent) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
-    // Type Dirent doesn't have a packed layout in memory, fall back to UnmarshalBytes.
-    buf := cc.CopyScratchBuffer(d.SizeBytes()) // escapes: okay.
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(d)))
+    hdr.Len = d.SizeBytes()
+    hdr.Cap = d.SizeBytes()
+
     length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
-    // Unmarshal unconditionally. If we had a short copy-in, this results in a
-    // partially unmarshalled struct.
-    d.UnmarshalBytes(buf) // escapes: fallback.
+    // Since we bypassed the compiler's escape analysis, indicate that d
+    // must live until the use above.
+    runtime.KeepAlive(d) // escapes: replaced by intrinsic.
     return length, err
 }
 
@@ -98,10 +117,17 @@ func (d *Dirent) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error)
 
 // WriteTo implements io.WriterTo.WriteTo.
 func (d *Dirent) WriteTo(writer io.Writer) (int64, error) {
-    // Type Dirent doesn't have a packed layout in memory, fall back to MarshalBytes.
-    buf := make([]byte, d.SizeBytes())
-    d.MarshalBytes(buf)
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(d)))
+    hdr.Len = d.SizeBytes()
+    hdr.Cap = d.SizeBytes()
+
     length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that d
+    // must live until the use above.
+    runtime.KeepAlive(d) // escapes: replaced by intrinsic.
     return int64(length), err
 }
 
