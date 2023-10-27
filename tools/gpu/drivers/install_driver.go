@@ -216,6 +216,38 @@ func ListSupportedDrivers(outfile string) error {
 	return nil
 }
 
+// CheckCurrentDriverCOS checks to see if the installed drive is a supported version on COS.
+func CheckCurrentDriverCOS(cos bool) error {
+	const nvidiaSMIPathCOS = "/var/lib/nvidia/bin/nvidia-smi"
+	smiBinPath := nvidiaSMIPath
+	if cos {
+		smiBinPath = nvidiaSMIPathCOS
+	}
+	if _, err := os.Stat(nvidiaSMIPath); err != nil {
+		return fmt.Errorf("nvidia-smi does not exist at path: %q err: %v", nvidiaSMIPath, err)
+	}
+
+	out, err := exec.Command(smiBinPath, []string{"--query-gpu", "driver_version", "--format=csv,noheader"}...).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to run nvidia-smi: %w out: %s", err, string(out))
+	}
+
+	d, err := nvproxy.DriverVersionFrom(strings.TrimSpace(string(out)))
+	if err != nil {
+		return fmt.Errorf("failed to parse driver version: %w", err)
+	}
+
+	supportedDrivers := nvproxy.GetSupportedDriversAndChecksums()
+	if _, ok := supportedDrivers[d]; !ok {
+		driverList := make([]string, 0, len(supportedDrivers))
+		for version := range supportedDrivers {
+			driverList = append(driverList, version.String())
+		}
+		return fmt.Errorf("current driver %q is not in current supported list %s", d.String(), strings.Join(driverList, ", "))
+	}
+	return nil
+}
+
 // ChecksumDriver downloads and returns the SHA265 checksum of the driver.
 func ChecksumDriver(ctx context.Context, driverVersion string) (string, error) {
 	f, err := DownloadDriver(ctx, driverVersion)

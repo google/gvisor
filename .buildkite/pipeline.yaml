@@ -178,6 +178,13 @@ steps:
     agents:
       queue: gpu
   - <<: *common
+    <<: *source_test
+    label: ":female_supervillain: COS GPU Drivers Smoke Test"
+    commands:
+      - make sudo TARGETS=//tools/gpu:main ARGS="check --cos=true"
+    agents:
+      queue: cos-canary-gpu
+  - <<: *common
     <<: *source_test_continuous
     label: ":screwdriver: All GPU Drivers Test"
     commands:
