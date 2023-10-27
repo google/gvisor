@@ -304,13 +304,27 @@ func (s *Socket) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.Read
 		Peek:      false,
 		From:      nil,
 	}
-	n, err := dst.CopyOutFrom(ctx, r)
+
+	// We copy into a scratch buffer first to avoid calling
+	// r.ReadFromBlocks inside usermem.IOSequence.CopyOut, which can lead
+	// to lock order violations due to handling of SCM_RIGHTS files in
+	// ReadFromBlocks.
+	b := make([]byte, dst.NumBytes())
+	bio := usermem.BytesIOSequence(b)
+	bn, berr := bio.CopyOutFrom(ctx, r)
+	b = b[:bn]
+
+	// Now copy buffer to actual destination.
+	n, err := dst.CopyOut(ctx, b)
+	if err == nil && berr != nil {
+		err = berr
+	}
 	if r.Notify != nil {
 		r.Notify()
 	}
 	// Drop control messages.
 	r.Control.Release(ctx)
-	return n, err
+	return int64(n), err
 }
 
 // PWrite implements vfs.FileDescriptionImpl.
@@ -730,7 +744,7 @@ func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, have
 		numRights = 0
 	}
 
-	r := EndpointReader{
+	r := &EndpointReader{
 		Ctx:       t,
 		Endpoint:  s.ep,
 		Creds:     wantCreds,
@@ -742,11 +756,21 @@ func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, have
 	}
 
 	doRead := func() (int64, error) {
-		n, err := dst.CopyOutFrom(t, &r)
+		// Copy into a buffer first. See comment in Socket.Read().
+		b := make([]byte, dst.NumBytes())
+		bio := usermem.BytesIOSequence(b)
+		bn, berr := bio.CopyOutFrom(t, r)
+		b = b[:bn]
+
+		// Now copy buffer to actual destination.
+		n, err := dst.CopyOut(t, b)
+		if err == nil && berr != nil {
+			err = berr
+		}
 		if r.Notify != nil {
 			r.Notify()
 		}
-		return n, err
+		return int64(n), err
 	}
 
 	// If MSG_TRUNC is set with a zero byte destination then we still need
