@@ -1476,6 +1476,8 @@ TEST_F(JobControlTest, SetTTY) {
   auto res = RunInChild([=]() {
     TEST_PCHECK(setsid() >= 0);
     TEST_PCHECK(ioctl(!replica_.get(), TIOCSCTTY, 0));
+    // The second attempt setting the same terminal has to be no-op.
+    TEST_PCHECK(ioctl(!replica_.get(), TIOCSCTTY, 0));
   });
   ASSERT_NO_ERRNO(res);
 }
