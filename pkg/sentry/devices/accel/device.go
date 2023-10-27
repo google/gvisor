@@ -20,26 +20,31 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/devtmpfs"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
-// accelDevice implements vfs.Device for /dev/accel[0-9]+.
+// tpuV4Device implements vfs.Device for /dev/accel[0-9]+.
 //
 // +stateify savable
-type accelDevice struct {
+type tpuV4Device struct {
 	mu sync.Mutex
 
 	minor uint32
+	lite  bool
 	// +checklocks:mu
 	openWriteFDs uint32
 	// +checklocks:mu
 	devAddrSet DevAddrSet
+	// +checklocks:mu
+	owner *kernel.ThreadGroup
 }
 
-func (dev *accelDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
+func (dev *tpuV4Device) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	dev.mu.Lock()
 	defer dev.mu.Unlock()
 	hostPath := fmt.Sprintf("/dev/accel%d", dev.minor)
@@ -48,7 +53,7 @@ func (dev *accelDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dent
 		ctx.Warningf("accelDevice: failed to open host %s: %v", hostPath, err)
 		return nil, err
 	}
-	fd := &accelFD{
+	fd := &tpuV4FD{
 		hostFD: int32(hostFD),
 		device: dev,
 	}
@@ -66,6 +71,13 @@ func (dev *accelDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dent
 	if vfs.MayWriteFileWithOpenFlags(opts.Flags) {
 		dev.openWriteFDs++
 	}
+	if dev.owner == nil {
+		t := kernel.TaskFromContext(ctx)
+		if t == nil {
+			return nil, linuxerr.ESRCH
+		}
+		dev.owner = t.ThreadGroup()
+	}
 	return &fd.vfsfd, nil
 }
 
@@ -74,9 +86,10 @@ func CreateDevtmpfsFile(ctx context.Context, dev *devtmpfs.Accessor, num uint32)
 	return dev.CreateDeviceFile(ctx, fmt.Sprintf("accel%d", num), vfs.CharDevice, linux.ACCEL_MAJOR, num, 0666)
 }
 
-// Register registers all devices implemented by this package in vfsObj.
-func Register(vfsObj *vfs.VirtualFilesystem, minor uint32) error {
-	return vfsObj.RegisterDevice(vfs.CharDevice, linux.ACCEL_MAJOR, minor, &accelDevice{
+// RegisterTPUV4Device registers all devices implemented by this package in vfsObj.
+func RegisterTPUV4Device(vfsObj *vfs.VirtualFilesystem, minor uint32, lite bool) error {
+	return vfsObj.RegisterDevice(vfs.CharDevice, linux.ACCEL_MAJOR, minor, &tpuV4Device{
+		lite:  lite,
 		minor: minor,
 	}, &vfs.RegisterDeviceOptions{
 		GroupName: "accel",

@@ -21,11 +21,13 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"gvisor.dev/gvisor/pkg/abi/tpu"
 )
 
 const googleVendorID = 0x1AE0
 
-var tpuV4DeviceIDs = map[uint64]any{0x005E: nil, 0x0056: nil}
+var tpuV4DeviceIDs = map[uint64]any{tpu.TPUV4DeviceID: nil, tpu.TPUV4liteDeviceID: nil}
 
 // TODO(b/288456802): Add support for /dev/vfio controlled accelerators.
 // This is required for v5+ TPUs.
