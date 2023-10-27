@@ -439,3 +439,39 @@ func TestProgramBuilderOutcomes(t *testing.T) {
 		})
 	}
 }
+
+func TestProgramBuilderMayModifyRegisterA(t *testing.T) {
+	t.Run("empty program", func(t *testing.T) {
+		if got := NewProgramBuilder().Record()().MayModifyRegisterA(); got != false {
+			t.Errorf("MayModifyRegisterA: got %v want %v", got, false)
+		}
+	})
+	t.Run("does not modify register A", func(t *testing.T) {
+		b := NewProgramBuilder()
+		stop := b.Record()
+		b.AddJump(Jmp|Ja, 0, 0, 0)
+		b.AddJump(Jmp|Jeq|K, 0, 0, 0)
+		b.AddStmt(Misc|Txa, 0)
+		b.AddStmt(Ret|K, 1337)
+		if got := stop().MayModifyRegisterA(); got != false {
+			t.Errorf("MayModifyRegisterA: got %v want %v", got, false)
+		}
+	})
+	for _, ins := range []Instruction{
+		Stmt(Ld|Abs|W, 0),
+		Stmt(Alu|Neg, 0),
+		Stmt(Misc|Tax, 0),
+	} {
+		t.Run(fmt.Sprintf("modifies register A via %v", ins), func(t *testing.T) {
+			b := NewProgramBuilder()
+			stop := b.Record()
+			b.AddJump(Jmp|Ja, 0, 0, 0)
+			b.AddJump(Jmp|Jeq|K, 0, 0, 0)
+			b.AddStmt(ins.OpCode, ins.K)
+			b.AddStmt(Ret|K, 1337)
+			if got := stop().MayModifyRegisterA(); got != true {
+				t.Errorf("MayModifyRegisterA: got %v want %v", got, true)
+			}
+		})
+	}
+}
