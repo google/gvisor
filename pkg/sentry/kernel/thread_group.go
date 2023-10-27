@@ -376,7 +376,12 @@ func (tg *ThreadGroup) SetControllingTTY(tty *TTY, steal bool, isReadable bool) 
 
 	// "The calling process must be a session leader and not have a
 	// controlling terminal already." - tty_ioctl(4)
-	if tg.processGroup.session.leader != tg || tg.tty != nil {
+	if tg.processGroup.session.leader != tg {
+		return linuxerr.EINVAL
+	}
+	if tg.tty == tty {
+		return nil
+	} else if tg.tty != nil {
 		return linuxerr.EINVAL
 	}
 
