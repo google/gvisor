@@ -16,6 +16,7 @@ package boot
 
 import (
 	"fmt"
+	"os"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -25,6 +26,7 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/abi/tpu"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -1168,11 +1170,32 @@ func tpuProxyRegisterDevicesAndCreateFiles(ctx context.Context, info *containerI
 	if err != nil {
 		return fmt.Errorf("enumerating accel device files: %w", err)
 	}
-	for _, path := range paths {
+	pciAddrs, err := filepath.Glob("/sys/devices/pci0000:00/*")
+	if err != nil {
+		return fmt.Errorf("enumerating PCI device files: %w", err)
+	}
+	for _, accelPath := range paths {
 		accelDeviceRegex := regexp.MustCompile(`^/dev/accel(\d+)$`)
-		if ms := accelDeviceRegex.FindStringSubmatch(path); ms != nil {
+		if ms := accelDeviceRegex.FindStringSubmatch(accelPath); ms != nil {
 			deviceNum, _ := strconv.ParseUint(ms[1], 10, 32)
-			if err := accel.Register(vfsObj, uint32(deviceNum)); err != nil {
+
+			var pciDevicePath string
+			for _, pciPath := range pciAddrs {
+				if _, err := os.Stat(path.Join(pciPath, fmt.Sprintf("accel/accel%d", deviceNum))); err == nil {
+					pciDevicePath = pciPath
+				}
+			}
+			var deviceIDBytes []byte
+			if deviceIDBytes, err = os.ReadFile(path.Join(pciDevicePath, "device")); err != nil {
+				return fmt.Errorf("reading PCI device ID: %w", err)
+			}
+			deviceIDStr := strings.Replace(string(deviceIDBytes), "0x", "", -1)
+			deviceID, err := strconv.ParseInt(strings.TrimSpace(deviceIDStr), 16, 64)
+			if err != nil {
+				return fmt.Errorf("parsing PCI device ID: %w", err)
+			}
+
+			if err := accel.RegisterTPUV4Device(vfsObj, uint32(deviceNum), deviceID == tpu.TPUV4liteDeviceID); err != nil {
 				return fmt.Errorf("registering accel driver: %w", err)
 			}
 			if err := accel.CreateDevtmpfsFile(ctx, a, uint32(deviceNum)); err != nil {

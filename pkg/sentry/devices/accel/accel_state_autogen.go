@@ -138,38 +138,44 @@ func (d *DevAddrSegmentDataSlices) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &d.Values)
 }
 
-func (dev *accelDevice) StateTypeName() string {
-	return "pkg/sentry/devices/accel.accelDevice"
+func (dev *tpuV4Device) StateTypeName() string {
+	return "pkg/sentry/devices/accel.tpuV4Device"
 }
 
-func (dev *accelDevice) StateFields() []string {
+func (dev *tpuV4Device) StateFields() []string {
 	return []string{
 		"mu",
 		"minor",
+		"lite",
 		"openWriteFDs",
 		"devAddrSet",
+		"owner",
 	}
 }
 
-func (dev *accelDevice) beforeSave() {}
+func (dev *tpuV4Device) beforeSave() {}
 
 // +checklocksignore
-func (dev *accelDevice) StateSave(stateSinkObject state.Sink) {
+func (dev *tpuV4Device) StateSave(stateSinkObject state.Sink) {
 	dev.beforeSave()
 	stateSinkObject.Save(0, &dev.mu)
 	stateSinkObject.Save(1, &dev.minor)
-	stateSinkObject.Save(2, &dev.openWriteFDs)
-	stateSinkObject.Save(3, &dev.devAddrSet)
+	stateSinkObject.Save(2, &dev.lite)
+	stateSinkObject.Save(3, &dev.openWriteFDs)
+	stateSinkObject.Save(4, &dev.devAddrSet)
+	stateSinkObject.Save(5, &dev.owner)
 }
 
-func (dev *accelDevice) afterLoad() {}
+func (dev *tpuV4Device) afterLoad() {}
 
 // +checklocksignore
-func (dev *accelDevice) StateLoad(stateSourceObject state.Source) {
+func (dev *tpuV4Device) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &dev.mu)
 	stateSourceObject.Load(1, &dev.minor)
-	stateSourceObject.Load(2, &dev.openWriteFDs)
-	stateSourceObject.Load(3, &dev.devAddrSet)
+	stateSourceObject.Load(2, &dev.lite)
+	stateSourceObject.Load(3, &dev.openWriteFDs)
+	stateSourceObject.Load(4, &dev.devAddrSet)
+	stateSourceObject.Load(5, &dev.owner)
 }
 
 func init() {
@@ -177,5 +183,5 @@ func init() {
 	state.Register((*DevAddrSet)(nil))
 	state.Register((*DevAddrnode)(nil))
 	state.Register((*DevAddrSegmentDataSlices)(nil))
-	state.Register((*accelDevice)(nil))
+	state.Register((*tpuV4Device)(nil))
 }
