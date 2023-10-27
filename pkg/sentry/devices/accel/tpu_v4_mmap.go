@@ -25,26 +25,26 @@ import (
 )
 
 // ConfigureMMap implements vfs.FileDescriptionImpl.ConfigureMMap.
-func (fd *accelFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
+func (fd *tpuV4FD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
 	return vfs.GenericConfigureMMap(&fd.vfsfd, fd, opts)
 }
 
 // AddMapping implements memmap.Mappable.AddMapping.
-func (fd *accelFD) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
+func (fd *tpuV4FD) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
 	return nil
 }
 
 // RemoveMapping implements memmap.Mappable.RemoveMapping.
-func (fd *accelFD) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
+func (fd *tpuV4FD) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
 }
 
 // CopyMapping implements memmap.Mappable.CopyMapping.
-func (fd *accelFD) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR hostarch.AddrRange, offset uint64, writable bool) error {
+func (fd *tpuV4FD) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR hostarch.AddrRange, offset uint64, writable bool) error {
 	return nil
 }
 
 // Translate implements memmap.Mappable.Translate.
-func (fd *accelFD) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
+func (fd *tpuV4FD) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
 	return []memmap.Translation{
 		{
 			Source: optional,
@@ -56,12 +56,12 @@ func (fd *accelFD) Translate(ctx context.Context, required, optional memmap.Mapp
 }
 
 // InvalidateUnsavable implements memmap.Mappable.InvalidateUnsavable.
-func (fd *accelFD) InvalidateUnsavable(ctx context.Context) error {
+func (fd *tpuV4FD) InvalidateUnsavable(ctx context.Context) error {
 	return nil
 }
 
 type accelFDMemmapFile struct {
-	fd *accelFD
+	fd *tpuV4FD
 }
 
 // IncRef implements memmap.File.IncRef.

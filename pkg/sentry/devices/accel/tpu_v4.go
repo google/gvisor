@@ -34,24 +34,24 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
-// accelFD implements vfs.FileDescriptionImpl for /dev/accel[0-9]+.
+// tpuV4FD implements vfs.FileDescriptionImpl for /dev/accel[0-9]+.
 //
 // accelFD is not savable; we do not implement save/restore of accelerator
 // state.
-type accelFD struct {
+type tpuV4FD struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.NoLockFD
 
 	hostFD     int32
-	device     *accelDevice
+	device     *tpuV4Device
 	queue      waiter.Queue
 	memmapFile accelFDMemmapFile
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
-func (fd *accelFD) Release(context.Context) {
+func (fd *tpuV4FD) Release(context.Context) {
 	fd.device.mu.Lock()
 	defer fd.device.mu.Unlock()
 	fd.device.openWriteFDs--
@@ -75,13 +75,14 @@ func (fd *accelFD) Release(context.Context) {
 			gap := s.Remove(seg)
 			seg = gap.NextSegment()
 		}
+		fd.device.owner = nil
 	}
 	fdnotifier.RemoveFD(fd.hostFD)
 	unix.Close(int(fd.hostFD))
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (fd *accelFD) EventRegister(e *waiter.Entry) error {
+func (fd *tpuV4FD) EventRegister(e *waiter.Entry) error {
 	fd.queue.EventRegister(e)
 	if err := fdnotifier.UpdateFD(fd.hostFD); err != nil {
 		fd.queue.EventUnregister(e)
@@ -91,7 +92,7 @@ func (fd *accelFD) EventRegister(e *waiter.Entry) error {
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
-func (fd *accelFD) EventUnregister(e *waiter.Entry) {
+func (fd *tpuV4FD) EventUnregister(e *waiter.Entry) {
 	fd.queue.EventUnregister(e)
 	if err := fdnotifier.UpdateFD(fd.hostFD); err != nil {
 		panic(fmt.Sprint("UpdateFD:", err))
@@ -99,17 +100,17 @@ func (fd *accelFD) EventUnregister(e *waiter.Entry) {
 }
 
 // Readiness implements waiter.Waitable.Readiness.
-func (fd *accelFD) Readiness(mask waiter.EventMask) waiter.EventMask {
+func (fd *tpuV4FD) Readiness(mask waiter.EventMask) waiter.EventMask {
 	return fdnotifier.NonBlockingPoll(fd.hostFD, mask)
 }
 
 // Epollable implements vfs.FileDescriptionImpl.Epollable.
-func (fd *accelFD) Epollable() bool {
+func (fd *tpuV4FD) Epollable() bool {
 	return true
 }
 
 // Ioctl implements vfs.FileDescriptionImpl.Ioctl.
-func (fd *accelFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
+func (fd *tpuV4FD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
 	cmd := args[1].Uint()
 	argPtr := args[2].Pointer()
 	argSize := linux.IOC_SIZE(cmd)
@@ -117,6 +118,9 @@ func (fd *accelFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, arg
 	t := kernel.TaskFromContext(ctx)
 	if t == nil {
 		panic("Ioctl should be called from a task context")
+	}
+	if err := fd.checkPermission(t); err != nil {
+		return 0, err
 	}
 
 	log.Infof("Accel ioctl %s called on fd %d with arg %v of size %d.", gasket.Ioctl(cmd), fd.hostFD, argPtr, argSize)
@@ -136,12 +140,25 @@ func (fd *accelFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, arg
 	case gasket.GASKET_IOCTL_CLEAR_INTERRUPT_COUNTS:
 		return ioctlInvoke(fd.hostFD, gasket.GASKET_IOCTL_CLEAR_INTERRUPT_COUNTS, 0)
 	case gasket.GASKET_IOCTL_REGISTER_INTERRUPT:
-		return gasketInterruptMappingIoctl(ctx, t, fd.hostFD, argPtr)
+		return gasketInterruptMappingIoctl(ctx, t, fd.hostFD, argPtr, fd.device.lite)
 	case gasket.GASKET_IOCTL_UNREGISTER_INTERRUPT:
 		return ioctlInvoke[uint64](fd.hostFD, gasket.GASKET_IOCTL_UNREGISTER_INTERRUPT, args[2].Uint64())
 	default:
 		return 0, linuxerr.EINVAL
 	}
+}
+
+// checkPermission checks that the thread that owns this device is the only
+// one that can issue commands to the TPU. Other threads with access to
+// /dev/accel will not be able to issue commands to the device.
+func (fd *tpuV4FD) checkPermission(t *kernel.Task) error {
+	fd.device.mu.Lock()
+	defer fd.device.mu.Unlock()
+	owner := fd.device.owner
+	if t.ThreadGroup() != owner {
+		return linuxerr.EPERM
+	}
+	return nil
 }
 
 type pinnedAccelMem struct {

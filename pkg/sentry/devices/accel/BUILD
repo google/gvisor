@@ -6,19 +6,20 @@ licenses(["notice"])
 go_library(
     name = "accel",
     srcs = [
-        "accel.go",
-        "accel_mmap.go",
-        "accel_unsafe.go",
         "devaddr_range.go",
         "devaddr_set.go",
         "device.go",
         "gasket.go",
+        "gasket_unsafe.go",
         "seccomp_filters.go",
+        "tpu_v4.go",
+        "tpu_v4_mmap.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/gasket",
         "//pkg/abi/linux",
+        "//pkg/abi/tpu",
         "//pkg/cleanup",
         "//pkg/context",
         "//pkg/errors/linuxerr",

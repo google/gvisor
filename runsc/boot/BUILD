@@ -32,6 +32,7 @@ go_library(
     deps = [
         "//pkg/abi",
         "//pkg/abi/linux",
+        "//pkg/abi/tpu",
         "//pkg/bpf",
         "//pkg/cleanup",
         "//pkg/context",

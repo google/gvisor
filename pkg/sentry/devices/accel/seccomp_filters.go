@@ -43,30 +43,6 @@ func Filters() seccomp.SyscallRules {
 			},
 			seccomp.PerArg{
 				nonNegativeFD,
-				seccomp.EqualTo(gasket.GASKET_IOCTL_SET_EVENTFD),
-			},
-			seccomp.PerArg{
-				nonNegativeFD,
-				seccomp.EqualTo(gasket.GASKET_IOCTL_CLEAR_EVENTFD),
-			},
-			seccomp.PerArg{
-				nonNegativeFD,
-				seccomp.EqualTo(gasket.GASKET_IOCTL_NUMBER_PAGE_TABLES),
-			},
-			seccomp.PerArg{
-				nonNegativeFD,
-				seccomp.EqualTo(gasket.GASKET_IOCTL_PAGE_TABLE_SIZE),
-			},
-			seccomp.PerArg{
-				nonNegativeFD,
-				seccomp.EqualTo(gasket.GASKET_IOCTL_SIMPLE_PAGE_TABLE_SIZE),
-			},
-			seccomp.PerArg{
-				nonNegativeFD,
-				seccomp.EqualTo(gasket.GASKET_IOCTL_PARTITION_PAGE_TABLE),
-			},
-			seccomp.PerArg{
-				nonNegativeFD,
 				seccomp.EqualTo(gasket.GASKET_IOCTL_MAP_BUFFER),
 			},
 			seccomp.PerArg{
@@ -84,10 +60,6 @@ func Filters() seccomp.SyscallRules {
 			seccomp.PerArg{
 				nonNegativeFD,
 				seccomp.EqualTo(gasket.GASKET_IOCTL_UNREGISTER_INTERRUPT),
-			},
-			seccomp.PerArg{
-				nonNegativeFD,
-				seccomp.EqualTo(gasket.GASKET_IOCTL_MAP_DMA_BUF),
 			},
 		},
 		unix.SYS_EVENTFD2: seccomp.Or{

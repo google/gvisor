@@ -17,6 +17,7 @@ go_library(
         "//tools:__subpackages__",
     ],
     deps = [
+        "//pkg/abi/tpu",
         "//pkg/log",
         "@com_github_google_subcommands//:go_default_library",
     ],
