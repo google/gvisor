@@ -461,7 +461,6 @@ steps:
     parallelism: 10
     agents:
       <<: *platform_specific_agents
-      <<: *ubuntu_agents
       arch: "amd64"
   - <<: *common
     <<: *docker
@@ -470,7 +469,6 @@ steps:
     parallelism: 40
     agents:
       <<: *platform_specific_agents
-      <<: *ubuntu_agents
       arch: "amd64"
   - <<: *common
     <<: *docker
@@ -479,7 +477,6 @@ steps:
     parallelism: 10
     agents:
       <<: *platform_specific_agents
-      <<: *ubuntu_agents
       arch: "amd64"
   - <<: *common
     <<: *docker
@@ -488,7 +485,6 @@ steps:
     parallelism: 10
     agents:
       <<: *platform_specific_agents
-      <<: *ubuntu_agents
       arch: "amd64"
   - <<: *common
     <<: *docker
@@ -497,7 +493,6 @@ steps:
     parallelism: 10
     agents:
       <<: *platform_specific_agents
-      <<: *ubuntu_agents
       arch: "amd64"
 
   # Runtime tests (goferfs). Continuous only.
@@ -509,7 +504,6 @@ steps:
     if: build.branch == "master"
     agents:
       <<: *platform_specific_agents
-      <<: *ubuntu_agents
       arch: "amd64"
   - <<: *common
     <<: *docker
@@ -519,7 +513,6 @@ steps:
     if: build.branch == "master"
     agents:
       <<: *platform_specific_agents
-      <<: *ubuntu_agents
       arch: "amd64"
   - <<: *common
     <<: *docker
@@ -529,7 +522,6 @@ steps:
     if: build.branch == "master"
     agents:
       <<: *platform_specific_agents
-      <<: *ubuntu_agents
       arch: "amd64"
   - <<: *common
     <<: *docker
@@ -539,7 +531,6 @@ steps:
     if: build.branch == "master"
     agents:
       <<: *platform_specific_agents
-      <<: *ubuntu_agents
       arch: "amd64"
   - <<: *common
     <<: *docker
@@ -549,7 +540,6 @@ steps:
     if: build.branch == "master"
     agents:
       <<: *platform_specific_agents
-      <<: *ubuntu_agents
       arch: "amd64"
 
   # Run basic benchmarks smoke tests (no upload).
