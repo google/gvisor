@@ -359,6 +359,9 @@ func (t *Task) SetExtraGIDs(gids []auth.GID) error {
 	return nil
 }
 
+// weakCaps is a set of capabilities that can be disabled externally.
+var weakCaps = auth.CapabilitySetOf(linux.CAP_NET_RAW)
+
 // SetCapabilitySets attempts to change t's permitted, inheritable, and
 // effective capability sets.
 func (t *Task) SetCapabilitySets(permitted, inheritable, effective auth.CapabilitySet) error {
@@ -370,6 +373,13 @@ func (t *Task) SetCapabilitySets(permitted, inheritable, effective auth.Capabili
 		return linuxerr.EPERM
 	}
 	creds := t.Credentials()
+
+	// Don't fail if one or more weak capabilities can't be set, just drop them.
+	mask := (weakCaps & creds.BoundingCaps) | (auth.AllCapabilities &^ weakCaps)
+	permitted &= mask
+	inheritable &= mask
+	effective &= mask
+
 	// "It is also a limiting superset for the capabilities that may be added
 	// to the inheritable set by a thread that does not have the CAP_SETPCAP
 	// capability in its effective set."
