@@ -119,7 +119,7 @@ func newListenContext(stk *stack.Stack, protocol *protocol, listenEP *endpoint, 
 	}
 
 	for i := range l.nonce {
-		if _, err := io.ReadFull(stk.SecureRNG(), l.nonce[i][:]); err != nil {
+		if _, err := io.ReadFull(stk.SecureRNG().Reader, l.nonce[i][:]); err != nil {
 			panic(err)
 		}
 	}

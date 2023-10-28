@@ -209,10 +209,10 @@ func entryTestSetup(c NUDConfigurations) (*neighborEntry, *testNUDDispatcher, *e
 
 		id: entryTestNICID,
 		stack: &Stack{
-			clock:           clock,
-			nudDisp:         &disp,
-			nudConfigs:      c,
-			randomGenerator: rand.New(rand.NewSource(time.Now().UnixNano())),
+			clock:       clock,
+			nudDisp:     &disp,
+			nudConfigs:  c,
+			insecureRNG: rand.New(rand.NewSource(time.Now().UnixNano())),
 		},
 		stats: makeNICStats(tcpip.NICStats{}.FillIn()),
 	}

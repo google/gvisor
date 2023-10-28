@@ -15,7 +15,6 @@
 package ipv6
 
 import (
-	"bytes"
 	"math/rand"
 	"strings"
 	"testing"
@@ -1286,21 +1285,9 @@ func TestCheckDuplicateAddress(t *testing.T) {
 		RetransmitTimer:        time.Second,
 	}
 
-	nonces := [...][]byte{
-		{1, 2, 3, 4, 5, 6},
-		{7, 8, 9, 10, 11, 12},
-	}
-
-	var secureRNGBytes []byte
-	for _, n := range nonces {
-		secureRNGBytes = append(secureRNGBytes, n...)
-	}
-	var secureRNG bytes.Reader
-	secureRNG.Reset(secureRNGBytes[:])
 	s := stack.New(stack.Options{
 		Clock:      clock,
 		RandSource: rand.NewSource(time.Now().UnixNano()),
-		SecureRNG:  &secureRNG,
 		NetworkProtocols: []stack.NetworkProtocolFactory{NewProtocolWithOptions(Options{
 			DADConfigs: dadConfigs,
 		})},
@@ -1346,7 +1333,6 @@ func TestCheckDuplicateAddress(t *testing.T) {
 			checker.TTL(header.NDPHopLimit),
 			checker.NDPNS(
 				checker.NDPNSTargetAddress(lladdr0),
-				checker.NDPNSOptions([]header.NDPOption{header.NDPNonceOption(nonces[dadPacketsSent])}),
 			))
 	}
 	protocolAddr := tcpip.ProtocolAddress{

@@ -15,8 +15,6 @@
 //go:build !linux
 // +build !linux
 
-// Package rand implements a cryptographically secure pseudorandom number
-// generator.
 package rand
 
 import "crypto/rand"

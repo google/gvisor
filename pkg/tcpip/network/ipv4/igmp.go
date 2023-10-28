@@ -283,7 +283,7 @@ func (*igmpState) V2QueryMaxRespCodeToV1Delay(code uint16) time.Duration {
 func (igmp *igmpState) init(ep *endpoint) {
 	igmp.ep = ep
 	igmp.genericMulticastProtocol.Init(&ep.mu, ip.GenericMulticastProtocolOptions{
-		Rand:                      ep.protocol.stack.Rand(),
+		Rand:                      ep.protocol.stack.InsecureRNG(),
 		Clock:                     ep.protocol.stack.Clock(),
 		Protocol:                  igmp,
 		MaxUnsolicitedReportDelay: UnsolicitedReportIntervalMax,

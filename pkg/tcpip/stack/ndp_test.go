@@ -15,7 +15,6 @@
 package stack_test
 
 import (
-	"bytes"
 	"encoding/binary"
 	"fmt"
 	"math"
@@ -547,16 +546,6 @@ func TestDADResolve(t *testing.T) {
 		},
 	}
 
-	nonces := [][]byte{
-		{1, 2, 3, 4, 5, 6},
-		{7, 8, 9, 10, 11, 12},
-	}
-
-	var secureRNGBytes []byte
-	for _, n := range nonces {
-		secureRNGBytes = append(secureRNGBytes, n...)
-	}
-
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			ndpDisp := ndpDispatcher{
@@ -568,14 +557,10 @@ func TestDADResolve(t *testing.T) {
 			}
 			e.Endpoint.LinkEPCapabilities |= stack.CapabilityResolutionRequired
 
-			var secureRNG bytes.Reader
-			secureRNG.Reset(secureRNGBytes)
-
 			clock := faketime.NewManualClock()
 			s := stack.New(stack.Options{
 				Clock:      clock,
 				RandSource: rand.NewSource(time.Now().UnixNano()),
-				SecureRNG:  &secureRNG,
 				NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
 					NDPDisp: &ndpDisp,
 					DADConfigs: stack.DADConfigurations{
@@ -726,7 +711,6 @@ func TestDADResolve(t *testing.T) {
 					checker.TTL(header.NDPHopLimit),
 					checker.NDPNS(
 						checker.NDPNSTargetAddress(addr1),
-						checker.NDPNSOptions([]header.NDPOption{header.NDPNonceOption(nonces[i])}),
 					))
 
 				if l, want := p.AvailableHeaderBytes(), int(test.linkHeaderLen); l != want {

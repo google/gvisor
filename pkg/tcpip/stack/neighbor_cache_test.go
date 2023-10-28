@@ -87,11 +87,11 @@ func newTestNeighborResolver(nudDisp NUDDispatcher, config NUDConfigurations, cl
 		delay:   typicalLatency,
 	}
 	stack := &Stack{
-		clock:           clock,
-		nudDisp:         nudDisp,
-		nudConfigs:      config,
-		randomGenerator: rng,
-		stats:           tcpip.Stats{}.FillIn(),
+		clock:       clock,
+		nudDisp:     nudDisp,
+		nudConfigs:  config,
+		insecureRNG: rng,
+		stats:       tcpip.Stats{}.FillIn(),
 	}
 
 	linkRes.neigh.init(&nic{
