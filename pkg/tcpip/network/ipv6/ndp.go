@@ -1820,7 +1820,7 @@ func (ndp *ndpState) startSolicitingRouters() {
 	// 4861 section 6.3.7.
 	var delay time.Duration
 	if ndp.configs.MaxRtrSolicitationDelay > 0 {
-		delay = time.Duration(ndp.ep.protocol.stack.Rand().Int63n(int64(ndp.configs.MaxRtrSolicitationDelay)))
+		delay = time.Duration(ndp.ep.protocol.stack.InsecureRNG().Int63n(int64(ndp.configs.MaxRtrSolicitationDelay)))
 	}
 
 	// Protected by ndp.ep.mu.
@@ -1965,7 +1965,7 @@ func (ndp *ndpState) init(ep *endpoint, dadOptions ip.DADOptions) {
 	ndp.slaacPrefixes = make(map[tcpip.Subnet]slaacPrefixState)
 
 	header.InitialTempIID(ndp.temporaryIIDHistory[:], ndp.ep.protocol.options.TempIIDSeed, ndp.ep.nic.ID())
-	ndp.temporaryAddressDesyncFactor = time.Duration(ep.protocol.stack.Rand().Int63n(int64(MaxDesyncFactor)))
+	ndp.temporaryAddressDesyncFactor = time.Duration(ep.protocol.stack.InsecureRNG().Int63n(int64(MaxDesyncFactor)))
 }
 
 func (ndp *ndpState) SendDADMessage(addr tcpip.Address, nonce []byte) tcpip.Error {

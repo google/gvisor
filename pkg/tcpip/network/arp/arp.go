@@ -278,7 +278,7 @@ func (p *protocol) NewEndpoint(nic stack.NetworkInterface, _ stack.TransportDisp
 	e.mu.Lock()
 	e.dad.Init(&e.mu, p.options.DADConfigs, ip.DADOptions{
 		Clock:     p.stack.Clock(),
-		SecureRNG: p.stack.SecureRNG(),
+		SecureRNG: p.stack.SecureRNG().Reader,
 		// ARP does not support sending nonce values.
 		NonceSize: 0,
 		Protocol:  e,
