@@ -773,7 +773,7 @@ func (e *endpoint) registerWithStack(netProtos []tcpip.NetworkProtocolNumber, id
 			BindToDevice: bindToDevice,
 			Dest:         tcpip.FullAddress{},
 		}
-		port, err := e.stack.ReservePort(e.stack.Rand(), portRes, nil /* testPort */)
+		port, err := e.stack.ReservePort(e.stack.SecureRNG(), portRes, nil /* testPort */)
 		if err != nil {
 			return id, bindToDevice, err
 		}

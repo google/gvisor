@@ -507,6 +507,7 @@ func (*protocol) Parse(pkt stack.PacketBufferPtr) bool {
 
 // NewProtocol returns a TCP transport protocol.
 func NewProtocol(s *stack.Stack) stack.TransportProtocol {
+	rng := s.SecureRNG()
 	p := protocol{
 		stack: s,
 		sendBufferSize: tcpip.TCPSendBufferSizeRangeOption{
@@ -530,11 +531,11 @@ func NewProtocol(s *stack.Stack) stack.TransportProtocol {
 		maxRTO:                     MaxRTO,
 		maxRetries:                 MaxRetries,
 		recovery:                   tcpip.TCPRACKLossDetection,
-		seqnumSecret:               s.Rand().Uint32(),
-		portOffsetSecret:           s.Rand().Uint32(),
-		tsOffsetSecret:             s.Rand().Uint32(),
+		seqnumSecret:               rng.Uint32(),
+		portOffsetSecret:           rng.Uint32(),
+		tsOffsetSecret:             rng.Uint32(),
 	}
-	p.dispatcher.init(s.Rand(), runtime.GOMAXPROCS(0))
+	p.dispatcher.init(s.InsecureRNG(), runtime.GOMAXPROCS(0))
 	return &p
 }
 

@@ -14,6 +14,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//pkg/atomicbitops",
+        "//pkg/rand",
         "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/header",
@@ -25,6 +26,7 @@ go_test(
     srcs = ["ports_test.go"],
     library = ":ports",
     deps = [
+        "//pkg/rand",
         "//pkg/tcpip",
         "//pkg/tcpip/testutil",
         "@com_github_google_go_cmp//cmp:go_default_library",

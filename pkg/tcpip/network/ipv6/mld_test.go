@@ -15,7 +15,6 @@
 package ipv6_test
 
 import (
-	"bytes"
 	"math/rand"
 	"os"
 	"testing"
@@ -246,28 +245,13 @@ func TestSendQueuedMLDReports(t *testing.T) {
 		},
 	}
 
-	nonce := [...]byte{
-		1, 2, 3, 4, 5, 6,
-	}
-
-	const maxNSMessages = 2
-	secureRNGBytes := make([]byte, len(nonce)*maxNSMessages)
-	for b := secureRNGBytes[:]; len(b) > 0; b = b[len(nonce):] {
-		if n := copy(b, nonce[:]); n != len(nonce) {
-			t.Fatalf("got copy(...) = %d, want = %d", n, len(nonce))
-		}
-	}
-
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			for _, subTest := range subTests {
 				t.Run(subTest.name, func(t *testing.T) {
 					dadResolutionTime := test.retransmitTimer * time.Duration(test.dadTransmits)
 					clock := faketime.NewManualClock()
-					var secureRNG bytes.Reader
-					secureRNG.Reset(secureRNGBytes[:])
 					s := stack.New(stack.Options{
-						SecureRNG:  &secureRNG,
 						RandSource: rand.NewSource(time.Now().UnixNano()),
 						NetworkProtocols: []stack.NetworkProtocolFactory{ipv6.NewProtocolWithOptions(ipv6.Options{
 							DADConfigs: stack.DADConfigurations{
@@ -308,7 +292,6 @@ func TestSendQueuedMLDReports(t *testing.T) {
 								checker.TTL(header.NDPHopLimit),
 								checker.NDPNS(
 									checker.NDPNSTargetAddress(addr),
-									checker.NDPNSOptions([]header.NDPOption{header.NDPNonceOption(nonce[:])}),
 								))
 							p.DecRef()
 						}

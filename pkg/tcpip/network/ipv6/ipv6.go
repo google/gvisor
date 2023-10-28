@@ -2341,7 +2341,7 @@ func (p *protocol) NewEndpoint(nic stack.NetworkInterface, dispatcher stack.Tran
 	const maxMulticastSolicit = 3
 	dadOptions := ip.DADOptions{
 		Clock:              p.stack.Clock(),
-		SecureRNG:          p.stack.SecureRNG(),
+		SecureRNG:          p.stack.SecureRNG().Reader,
 		NonceSize:          nonceSize,
 		ExtendDADTransmits: maxMulticastSolicit,
 		Protocol:           &e.mu.ndp,

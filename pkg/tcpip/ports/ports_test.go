@@ -18,9 +18,9 @@ import (
 	"math"
 	"math/rand"
 	"testing"
-	"time"
 
 	"github.com/google/go-cmp/cmp"
+	cryptorand "gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/testutil"
 )
@@ -332,7 +332,7 @@ func TestPortReservation(t *testing.T) {
 		t.Run(test.tname, func(t *testing.T) {
 			pm := NewPortManager()
 			net := []tcpip.NetworkProtocolNumber{fakeNetworkNumber}
-			rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+			rng := cryptorand.RNGFrom(cryptorand.Reader)
 
 			for _, test := range test.actions {
 				first, _ := pm.PortRange()
@@ -419,7 +419,7 @@ func TestPickEphemeralPort(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			pm := NewPortManager()
-			rng := rand.New(rand.NewSource(time.Now().UnixNano()))
+			rng := cryptorand.RNGFrom(cryptorand.Reader)
 			if err := pm.SetPortRange(firstEphemeral, firstEphemeral+numEphemeralPorts); err != nil {
 				t.Fatalf("failed to set ephemeral port range: %s", err)
 			}

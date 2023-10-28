@@ -584,7 +584,7 @@ func (e *endpoint) registerWithStack(netProto tcpip.NetworkProtocolNumber, id st
 	}
 
 	// We need to find a port for the endpoint.
-	_, err := e.stack.PickEphemeralPort(e.stack.Rand(), func(p uint16) (bool, tcpip.Error) {
+	_, err := e.stack.PickEphemeralPort(e.stack.SecureRNG(), func(p uint16) (bool, tcpip.Error) {
 		id.LocalPort = p
 		err := e.stack.RegisterTransportEndpoint([]tcpip.NetworkProtocolNumber{netProto}, e.transProto, id, e, ports.Flags{}, bindToDevice)
 		switch err.(type) {

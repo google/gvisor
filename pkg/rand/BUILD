@@ -10,6 +10,7 @@ go_library(
     srcs = [
         "rand.go",
         "rand_linux.go",
+        "rng.go",
     ],
     visibility = ["//:sandbox"],
     deps = [
