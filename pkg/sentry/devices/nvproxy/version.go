@@ -316,6 +316,7 @@ func Init() {
 			abi.useRmAllocParamsV535 = true
 			abi.controlCmd[nvgpu.NV_CONF_COMPUTE_CTRL_CMD_SYSTEM_GET_CAPABILITIES] = rmControlSimple
 			abi.allocationClass[nvgpu.NV_CONFIDENTIAL_COMPUTE] = rmAllocSimple[nvgpu.NV_CONFIDENTIAL_COMPUTE_ALLOC_PARAMS]
+			abi.allocationClass[nvgpu.NV_MEMORY_FABRIC] = rmAllocSimple[nvgpu.NV00F8_ALLOCATION_PARAMETERS_V535]
 			abi.uvmIoctl[nvgpu.UVM_MM_INITIALIZE] = uvmMMInitialize
 			return abi
 		}
