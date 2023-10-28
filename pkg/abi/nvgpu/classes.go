@@ -232,6 +232,19 @@ type NV00F8_ALLOCATION_PARAMETERS struct {
 	Map        nv00f8Map
 }
 
+// NV00F8_ALLOCATION_PARAMETERS_V535 is the updated version of
+// NV00F8_ALLOCATION_PARAMETERS since 535.43.02.
+//
+// +marshal
+type NV00F8_ALLOCATION_PARAMETERS_V535 struct {
+	Alignment  uint64
+	AllocSize  uint64
+	PageSize   uint64
+	AllocFlags uint32
+	_          uint32
+	Map        nv00f8Map
+}
+
 // NV_CONFIDENTIAL_COMPUTE_ALLOC_PARAMS is the alloc param type for
 // NV_CONFIDENTIAL_COMPUTE, from src/common/sdk/nvidia/inc/class/clcb33.h.
 //
