@@ -67,7 +67,9 @@ func Mmap(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *
 		},
 		MaxPerms:  hostarch.AnyAccess,
 		GrowsDown: linux.MAP_GROWSDOWN&flags != 0,
-		Precommit: linux.MAP_POPULATE&flags != 0,
+	}
+	if linux.MAP_POPULATE&flags != 0 {
+		opts.PlatformEffect = memmap.PlatformEffectCommit
 	}
 	if linux.MAP_LOCKED&flags != 0 {
 		opts.MLockMode = memmap.MLockEager
