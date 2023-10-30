@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/platform/systrap/sysmsg"
 )
 
 const syscallEvent unix.Signal = 0x80
@@ -187,6 +188,16 @@ func forkStub(flags uintptr, instrs []bpf.Instruction) (*thread, error) {
 		if err != nil {
 			return nil, err
 		}
+
+		// Make read only data writeable for the sentry.
+		if _, _, errno := unix.RawSyscall(
+			unix.SYS_MPROTECT,
+			stubGlobalReadOnlyData,
+			stubGlobalReadOnlyDataLen,
+			unix.PROT_READ|unix.PROT_WRITE); errno != 0 {
+			return nil, fmt.Errorf("got errno %d when making stub read only data writeable for sentry", errno)
+		}
+		dispatcher.state.Set(sysmsg.DispatcherStateFast)
 
 		return t, nil
 	}

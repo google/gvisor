@@ -99,6 +99,7 @@ func (q *contextQueue) queuedContexts() uint32 {
 // or more waiting contexts.
 func (q *contextQueue) add(ctx *sharedContext) {
 	ctx.startWaitingTS = cputicks()
+	ctx.nextInterruptTS = ctx.startWaitingTS + contextInitialPreemptTimeoutTicks
 
 	if fpState.stubFastPath() {
 		q.enableFastPath()
