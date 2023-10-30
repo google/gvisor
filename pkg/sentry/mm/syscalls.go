@@ -131,9 +131,9 @@ func (mm *MemoryManager) MMap(ctx context.Context, opts memmap.MMapOpts) (hostar
 	// mm/util.c:vm_mmap_pgoff() => mm/gup.c:__mm_populate() =>
 	// populate_vma_page_range(). Confirm this behavior.
 	switch {
-	case opts.Precommit || opts.MLockMode == memmap.MLockEager:
-		// Get pmas and map with precommit as requested.
-		mm.populateVMAAndUnlock(ctx, vseg, ar, true)
+	case opts.PlatformEffect >= memmap.PlatformEffectPopulate || opts.MLockMode == memmap.MLockEager:
+		// Get pmas and map as requested.
+		mm.populateVMAAndUnlock(ctx, vseg, ar, opts.PlatformEffect == memmap.PlatformEffectCommit)
 
 	case opts.Mappable == nil && length <= privateAllocUnit:
 		// NOTE(b/63077076, b/63360184): Get pmas and map eagerly in the hope
