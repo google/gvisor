@@ -20,6 +20,7 @@ go_library(
         "//pkg/sentry/platform",
         "//pkg/sentry/syscalls/linux",
         "//runsc/cmd",
+        "//runsc/cmd/nvproxy",
         "//runsc/cmd/trace",
         "//runsc/cmd/util",
         "//runsc/config",
