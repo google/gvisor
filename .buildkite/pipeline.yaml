@@ -178,11 +178,10 @@ steps:
     agents:
       queue: gpu
   - <<: *common
-    <<: *source_test
+    <<: *source_test_continuous
     label: ":screwdriver: All GPU Drivers Test"
     commands:
       - tools/gpu/all_drivers_test.sh
-    if: build.branch == "master"
     agents:
       queue: gpu
   # Release workflow.
