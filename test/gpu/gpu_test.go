@@ -41,8 +41,31 @@ func TestGPUHello(t *testing.T) {
 	})
 
 	if err != nil {
-		t.Fatalf("could not run nvidia: %v", err)
+		t.Fatalf("could not run cuda-vector-add: %v", err)
 	}
 
-	t.Logf("nvidia output: %s", string(out))
+	t.Logf("cuda-vector-add output: %s", string(out))
+}
+
+func TestCUDATests(t *testing.T) {
+	ctx := context.Background()
+	c := dockerutil.MakeContainer(ctx, t)
+	defer c.CleanUp(ctx)
+
+	out, err := c.Run(ctx, dockerutil.RunOpts{
+		Image: "gpu/cuda-tests",
+		Devices: []container.DeviceRequest{
+			{
+				Count:        -1,
+				Capabilities: [][]string{[]string{"gpu"}},
+				Options:      map[string]string{},
+			},
+		},
+	})
+
+	if err != nil {
+		t.Fatalf("could not run cuda-tests: %v", err)
+	}
+
+	t.Logf("cuda-tests output: %s", string(out))
 }

@@ -262,7 +262,7 @@ arm-qemu-smoke-test: $(RUNTIME_BIN) load-arm-qemu
 simple-tests: unit-tests # Compatibility target.
 .PHONY: simple-tests
 
-gpu-tests: load-basic $(RUNTIME_BIN)
+gpu-tests: load-basic_cuda-vector-add load-gpu_cuda-tests $(RUNTIME_BIN)
 	@$(call test,--test_env=RUNTIME=runc //test/gpu:gpu_test)
 	@$(call install_runtime,$(RUNTIME),--platform=systrap --nvproxy=true --nvproxy-docker=true)
 	@$(call test_runtime,$(RUNTIME),//test/gpu:gpu_test)
