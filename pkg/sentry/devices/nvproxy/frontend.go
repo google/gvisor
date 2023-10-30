@@ -648,7 +648,17 @@ func rmAlloc(fi *frontendIoctlState) (uintptr, error) {
 	handler := fi.fd.nvp.abi.allocationClass[ioctlParams.HClass]
 	if handler == nil {
 		fi.ctx.Warningf("nvproxy: unknown allocation class %#08x", ioctlParams.HClass)
-		return 0, linuxerr.EINVAL
+		// Compare
+		// src/nvidia/src/kernel/rmapi/alloc_free.c:serverAllocResourceUnderLock(),
+		// when RsResInfoByExternalClassId() is null.
+		ioctlParams.Status = nvgpu.NV_ERR_INVALID_CLASS
+		outIoctlParams := nvgpu.GetRmAllocParamObj(isNVOS64, fi.fd.nvp.abi.useRmAllocParamsV535)
+		outIoctlParams.FromOS64V535(ioctlParams)
+		// Any copy-out error from
+		// src/nvidia/src/kernel/rmapi/alloc_free.c:serverAllocApiCopyOut() is
+		// discarded.
+		outIoctlParams.CopyOut(fi.t, fi.ioctlParamsAddr)
+		return 0, nil
 	}
 	return handler(fi, &ioctlParams, isNVOS64)
 }
