@@ -179,6 +179,13 @@ steps:
       queue: gpu
   - <<: *common
     <<: *source_test
+    label: "COS GPU Smoke Test"
+    commands:
+      - make cos-gpu-tests
+    agents:
+      queue: cos-canary-gpu
+  - <<: *common
+    <<: *source_test
     label: ":screwdriver: All GPU Drivers Test"
     commands:
       - tools/gpu/all_drivers_test.sh

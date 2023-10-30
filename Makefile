@@ -263,8 +263,12 @@ simple-tests: unit-tests # Compatibility target.
 .PHONY: simple-tests
 
 gpu-tests: load-basic $(RUNTIME_BIN)
-	@$(call test,--test_env=RUNTIME=runc //test/gpu:gpu_test)
 	@$(call install_runtime,$(RUNTIME),--platform=systrap --nvproxy=true --nvproxy-docker=true)
+	@$(call test_runtime,$(RUNTIME),//test/gpu:gpu_test)
+.PHONE: gpu-tests
+
+cos-gpu-tests: load-basic $(RUNTIME_BIN)
+	@$(call install_runtime,$(RUNTIME),--platform=systrap --nvproxy=true)
 	@$(call test_runtime,$(RUNTIME),//test/gpu:gpu_test)
 .PHONE: gpu-tests
 
