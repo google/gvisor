@@ -169,6 +169,10 @@ func Filters() seccomp.SyscallRules {
 			},
 			seccomp.PerArg{
 				nonNegativeFD,
+				seccomp.EqualTo(nvgpu.UVM_DISABLE_READ_DUPLICATION),
+			},
+			seccomp.PerArg{
+				nonNegativeFD,
 				seccomp.EqualTo(nvgpu.UVM_MAP_DYNAMIC_PARALLELISM_REGION),
 			},
 			seccomp.PerArg{

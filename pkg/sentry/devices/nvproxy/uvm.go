@@ -126,7 +126,7 @@ func (fd *uvmFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args 
 	}
 
 	if log.IsLogging(log.Debug) {
-		ctx.Debugf("nvproxy: frontend ioctl %#08x", cmd)
+		ctx.Debugf("nvproxy: uvm ioctl %#08x", cmd)
 	}
 
 	ui := uvmIoctlState{
