@@ -72,6 +72,7 @@ func TestBasic(t *testing.T) {
 	for _, test := range []struct {
 		name          string
 		ruleSets      []RuleSet
+		wantPanic     bool
 		defaultAction linux.BPFAction
 		badArchAction linux.BPFAction
 		specs         []spec
@@ -306,6 +307,18 @@ func TestBasic(t *testing.T) {
 			},
 		},
 		{
+			name: "empty Or is invalid",
+			ruleSets: []RuleSet{
+				{
+					Rules: MakeSyscallRules(map[uintptr]SyscallRule{
+						1: Or{},
+					}),
+					Action: linux.SECCOMP_RET_ALLOW,
+				},
+			},
+			wantPanic: true,
+		},
+		{
 			name: "And of multiple rules",
 			ruleSets: []RuleSet{
 				{
@@ -341,6 +354,18 @@ func TestBasic(t *testing.T) {
 					want: linux.SECCOMP_RET_ALLOW,
 				},
 			},
+		},
+		{
+			name: "empty And is invalid",
+			ruleSets: []RuleSet{
+				{
+					Rules: MakeSyscallRules(map[uintptr]SyscallRule{
+						1: And{},
+					}),
+					Action: linux.SECCOMP_RET_ALLOW,
+				},
+			},
+			wantPanic: true,
 		},
 		{
 			name: "EqualTo",
@@ -905,9 +930,28 @@ func TestBasic(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			instrs, _, err := BuildProgram(test.ruleSets, test.defaultAction, test.badArchAction)
-			if err != nil {
-				t.Fatalf("BuildProgram() got error: %v", err)
+			var instrs []bpf.Instruction
+			var panicErr any
+			func() {
+				t.Helper()
+				defer func() {
+					panicErr = recover()
+					t.Helper()
+				}()
+				var err error
+				instrs, _, err = BuildProgram(test.ruleSets, test.defaultAction, test.badArchAction)
+				if err != nil {
+					t.Fatalf("BuildProgram() got error: %v", err)
+				}
+			}()
+			if test.wantPanic {
+				if panicErr == nil {
+					t.Fatal("BuildProgram did not panick")
+				}
+				return
+			}
+			if panicErr != nil {
+				t.Fatalf("BuildProgram unexpectedly panicked: %v", panicErr)
 			}
 			p, err := bpf.Compile(instrs, true /* optimize */)
 			if err != nil {
