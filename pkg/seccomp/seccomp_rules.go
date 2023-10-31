@@ -375,6 +375,45 @@ func (or Or) String() string {
 	}
 }
 
+// And expresses an "AND" (a conjunction) over a set of `SyscallRule`s.
+// If an And is empty, it will match anything.
+type And []SyscallRule
+
+// Render implements `SyscallRule.Render`.
+func (and And) Render(program *syscallProgram, labelSet *labelSet) {
+	// If `len(and) == 1`, this will be optimized away to be the same as
+	// rendering the single rule in the conjunction.
+	for i, rule := range and {
+		frag := program.Record()
+		nextRuleLabel := labelSet.NewLabel()
+		rule.Render(program, labelSet.Push(fmt.Sprintf("and[%d]", i), nextRuleLabel, labelSet.Mismatched()))
+		frag.MustHaveJumpedTo(nextRuleLabel, labelSet.Mismatched())
+		program.Label(nextRuleLabel)
+	}
+	program.JumpTo(labelSet.Matched())
+}
+
+// String implements `SyscallRule.String`.
+func (and And) String() string {
+	switch len(and) {
+	case 0:
+		return "true"
+	case 1:
+		return and[0].String()
+	default:
+		var sb strings.Builder
+		sb.WriteRune('(')
+		for i, rule := range and {
+			if i != 0 {
+				sb.WriteString(" && ")
+			}
+			sb.WriteString(rule.String())
+		}
+		sb.WriteRune(')')
+		return sb.String()
+	}
+}
+
 // merge merges `rule1` and `rule2`, simplifying `MatchAll` and `Or` rules.
 func merge(rule1, rule2 SyscallRule) SyscallRule {
 	_, rule1IsMatchAll := rule1.(MatchAll)

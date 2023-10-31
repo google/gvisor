@@ -34,6 +34,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/syscalls/linux"
 	"gvisor.dev/gvisor/runsc/cmd"
+	"gvisor.dev/gvisor/runsc/cmd/nvproxy"
 	"gvisor.dev/gvisor/runsc/cmd/trace"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
@@ -267,6 +268,7 @@ func forEachCmd(cb func(cmd subcommands.Command, group string)) {
 	cb(new(cmd.Install), helperGroup)
 	cb(new(cmd.Mitigate), helperGroup)
 	cb(new(cmd.Uninstall), helperGroup)
+	cb(new(nvproxy.Nvproxy), helperGroup)
 	cb(new(trace.Trace), helperGroup)
 
 	const debugGroup = "debug"
