@@ -337,11 +337,14 @@ func (MatchAll) Render(program *syscallProgram, labelSet *labelSet) {
 func (MatchAll) String() string { return "true" }
 
 // Or expresses an "OR" (a disjunction) over a set of `SyscallRule`s.
-// If an Or is empty, it will not match anything.
+// An `Or` may not be empty.
 type Or []SyscallRule
 
 // Render implements `SyscallRule.Render`.
 func (or Or) Render(program *syscallProgram, labelSet *labelSet) {
+	if len(or) == 0 {
+		panic("Or expression cannot be empty")
+	}
 	// If `len(or) == 1`, this will be optimized away to be the same as
 	// rendering the single rule in the disjunction.
 	for i, rule := range or {
@@ -358,7 +361,7 @@ func (or Or) Render(program *syscallProgram, labelSet *labelSet) {
 func (or Or) String() string {
 	switch len(or) {
 	case 0:
-		return "false"
+		return "invalid"
 	case 1:
 		return or[0].String()
 	default:
@@ -376,11 +379,14 @@ func (or Or) String() string {
 }
 
 // And expresses an "AND" (a conjunction) over a set of `SyscallRule`s.
-// If an And is empty, it will match anything.
+// An `And` may not be empty.
 type And []SyscallRule
 
 // Render implements `SyscallRule.Render`.
 func (and And) Render(program *syscallProgram, labelSet *labelSet) {
+	if len(and) == 0 {
+		panic("And expression cannot be empty")
+	}
 	// If `len(and) == 1`, this will be optimized away to be the same as
 	// rendering the single rule in the conjunction.
 	for i, rule := range and {
@@ -397,7 +403,7 @@ func (and And) Render(program *syscallProgram, labelSet *labelSet) {
 func (and And) String() string {
 	switch len(and) {
 	case 0:
-		return "true"
+		return "invalid"
 	case 1:
 		return and[0].String()
 	default:
