@@ -665,16 +665,14 @@ func (vfs *VirtualFilesystem) umountRecursiveLocked(mnt *Mount, opts *umountRecu
 	// covered mounts are a special case where the grandchild mount is
 	// reconnected to the parent after the child is disconnected.
 	var cover *Mount
-	if parent := mnt.parent(); parent != nil && !parent.umounted {
-		if cover = mnt.coveringMount(); cover != nil {
-			vfs.delayDecRef(vfs.disconnectLocked(cover))
-			cover.setKey(mnt.getKey())
-		}
-	}
 	if !mnt.umounted {
 		mnt.umounted = true
 		vfs.delayDecRef(mnt)
 		if parent := mnt.parent(); parent != nil && (opts.disconnectHierarchy || !parent.umounted) {
+			if cover = mnt.coveringMount(); cover != nil {
+				vfs.delayDecRef(vfs.disconnectLocked(cover))
+				cover.setKey(mnt.getKey())
+			}
 			vfs.delayDecRef(vfs.disconnectLocked(mnt))
 		}
 		vfs.setPropagation(mnt, linux.MS_PRIVATE)
@@ -693,7 +691,7 @@ func (vfs *VirtualFilesystem) umountRecursiveLocked(mnt *Mount, opts *umountRecu
 	for child := range mnt.children {
 		vfs.umountRecursiveLocked(child, opts)
 	}
-	if cover != nil {
+	if cover != nil && !cover.parent().umounted {
 		mp := cover.getKey()
 		mp.IncRef()
 		mp.dentry.mu.Lock()
