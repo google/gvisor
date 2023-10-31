@@ -306,6 +306,43 @@ func TestBasic(t *testing.T) {
 			},
 		},
 		{
+			name: "And of multiple rules",
+			ruleSets: []RuleSet{
+				{
+					Rules: MakeSyscallRules(map[uintptr]SyscallRule{
+						1: And{
+							PerArg{
+								NotEqual(0xf),
+							},
+							PerArg{
+								NotEqual(0xe),
+							},
+						},
+					}),
+					Action: linux.SECCOMP_RET_ALLOW,
+				},
+			},
+			defaultAction: linux.SECCOMP_RET_TRAP,
+			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			specs: []spec{
+				{
+					desc: "hit first rule",
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0xf}},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+				{
+					desc: "hit 2nd rule",
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0xe}},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+				{
+					desc: "hit neither rule",
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0xd}},
+					want: linux.SECCOMP_RET_ALLOW,
+				},
+			},
+		},
+		{
 			name: "EqualTo",
 			ruleSets: []RuleSet{
 				{
