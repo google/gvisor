@@ -18,7 +18,6 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -126,7 +125,7 @@ func getEntries4(table stack.Table, tablename linux.TableName) (linux.KernelIPTG
 	return entries, info
 }
 
-func modifyEntries4(task *kernel.Task, stk *stack.Stack, optVal []byte, replace *linux.IPTReplace, table *stack.Table) (map[uint32]int, *syserr.Error) {
+func modifyEntries4(mapper IDMapper, stk *stack.Stack, optVal []byte, replace *linux.IPTReplace, table *stack.Table) (map[uint32]int, *syserr.Error) {
 	nflog("set entries: setting entries in table %q", replace.Name.String())
 
 	// Convert input into a list of rules and their offsets.
@@ -162,7 +161,7 @@ func modifyEntries4(task *kernel.Task, stk *stack.Stack, optVal []byte, replace 
 			nflog("entry doesn't have enough room for its matchers (only %d bytes remain)", len(optVal))
 			return nil, syserr.ErrInvalidArgument
 		}
-		matchers, err := parseMatchers(task, filter, optVal[:matchersSize])
+		matchers, err := parseMatchers(mapper, filter, optVal[:matchersSize])
 		if err != nil {
 			nflog("failed to parse matchers: %v", err)
 			return nil, syserr.ErrInvalidArgument

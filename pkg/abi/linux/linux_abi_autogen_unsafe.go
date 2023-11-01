@@ -169,6 +169,7 @@ var _ marshal.Marshallable = (*XTEntryMatch)(nil)
 var _ marshal.Marshallable = (*XTEntryTarget)(nil)
 var _ marshal.Marshallable = (*XTErrorTarget)(nil)
 var _ marshal.Marshallable = (*XTGetRevision)(nil)
+var _ marshal.Marshallable = (*XTOwnerMatchInfo)(nil)
 var _ marshal.Marshallable = (*XTRedirectTarget)(nil)
 var _ marshal.Marshallable = (*XTSNATTarget)(nil)
 var _ marshal.Marshallable = (*XTStandardTarget)(nil)
@@ -11408,6 +11409,128 @@ func (x *XTGetRevision) WriteTo(writer io.Writer) (int64, error) {
         return int64(length), err
     }
 
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(x)))
+    hdr.Len = x.SizeBytes()
+    hdr.Cap = x.SizeBytes()
+
+    length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that x
+    // must live until the use above.
+    runtime.KeepAlive(x) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (x *XTOwnerMatchInfo) SizeBytes() int {
+    return 18 +
+        1*2
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (x *XTOwnerMatchInfo) MarshalBytes(dst []byte) []byte {
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(x.UIDMin))
+    dst = dst[4:]
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(x.UIDMax))
+    dst = dst[4:]
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(x.GIDMin))
+    dst = dst[4:]
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(x.GIDMax))
+    dst = dst[4:]
+    dst[0] = byte(x.Match)
+    dst = dst[1:]
+    dst[0] = byte(x.Invert)
+    dst = dst[1:]
+    // Padding: dst[:sizeof(byte)*2] ~= [2]byte{0}
+    dst = dst[1*(2):]
+    return dst
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (x *XTOwnerMatchInfo) UnmarshalBytes(src []byte) []byte {
+    x.UIDMin = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    x.UIDMax = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    x.GIDMin = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    x.GIDMax = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    x.Match = uint8(src[0])
+    src = src[1:]
+    x.Invert = uint8(src[0])
+    src = src[1:]
+    // Padding: ~ copy([2]byte(x._), src[:sizeof(byte)*2])
+    src = src[1*(2):]
+    return src
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (x *XTOwnerMatchInfo) Packed() bool {
+    return true
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (x *XTOwnerMatchInfo) MarshalUnsafe(dst []byte) []byte {
+    size := x.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(x), uintptr(size))
+    return dst[size:]
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (x *XTOwnerMatchInfo) UnmarshalUnsafe(src []byte) []byte {
+    size := x.SizeBytes()
+    gohacks.Memmove(unsafe.Pointer(x), unsafe.Pointer(&src[0]), uintptr(size))
+    return src[size:]
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+func (x *XTOwnerMatchInfo) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(x)))
+    hdr.Len = x.SizeBytes()
+    hdr.Cap = x.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that x
+    // must live until the use above.
+    runtime.KeepAlive(x) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+func (x *XTOwnerMatchInfo) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return x.CopyOutN(cc, addr, x.SizeBytes())
+}
+
+// CopyInN implements marshal.Marshallable.CopyInN.
+func (x *XTOwnerMatchInfo) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(x)))
+    hdr.Len = x.SizeBytes()
+    hdr.Cap = x.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that x
+    // must live until the use above.
+    runtime.KeepAlive(x) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+func (x *XTOwnerMatchInfo) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return x.CopyInN(cc, addr, x.SizeBytes())
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (x *XTOwnerMatchInfo) WriteTo(writer io.Writer) (int64, error) {
     // Construct a slice backed by dst's underlying memory.
     var buf []byte
     hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))

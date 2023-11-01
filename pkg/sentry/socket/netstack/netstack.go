@@ -2311,7 +2311,7 @@ func setSockOptIPv6(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int
 			return syserr.ErrNoDevice
 		}
 		// Stack must be a netstack stack.
-		return netfilter.SetEntries(t, stk.(*Stack).Stack, optVal, true)
+		return netfilter.SetEntries(t.Credentials().UserNamespace, stk.(*Stack).Stack, optVal, true)
 
 	case linux.IP6T_SO_SET_ADD_COUNTERS:
 		log.Infof("IP6T_SO_SET_ADD_COUNTERS is not supported")
@@ -2558,7 +2558,7 @@ func setSockOptIP(t *kernel.Task, s socket.Socket, ep commonEndpoint, name int, 
 			return syserr.ErrNoDevice
 		}
 		// Stack must be a netstack stack.
-		return netfilter.SetEntries(t, stk.(*Stack).Stack, optVal, false)
+		return netfilter.SetEntries(t.Credentials().UserNamespace, stk.(*Stack).Stack, optVal, false)
 
 	case linux.IPT_SO_SET_ADD_COUNTERS:
 		log.Infof("IPT_SO_SET_ADD_COUNTERS is not supported")
