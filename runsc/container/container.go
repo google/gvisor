@@ -467,6 +467,9 @@ func (c *Container) Start(conf *config.Config) error {
 				for _, f := range goferFiles {
 					_ = f.Close()
 				}
+				for _, f := range goferFilestores {
+					_ = f.Close()
+				}
 			}()
 
 			cleanMounts, err := specutils.ReadMounts(mountsFile)
