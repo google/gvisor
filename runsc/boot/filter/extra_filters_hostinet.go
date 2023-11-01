@@ -36,43 +36,43 @@ func hostInetFilters(allowRawSockets bool) seccomp.SyscallRules {
 		unix.SYS_GETSOCKNAME: seccomp.MatchAll{},
 		unix.SYS_IOCTL: seccomp.Or{
 			seccomp.PerArg{
-				seccomp.AnyValue{},
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(unix.SIOCGIFCONF),
 			},
 			seccomp.PerArg{
-				seccomp.AnyValue{},
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(unix.SIOCETHTOOL),
 			},
 			seccomp.PerArg{
-				seccomp.AnyValue{},
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(unix.SIOCGIFFLAGS),
 			},
 			seccomp.PerArg{
-				seccomp.AnyValue{},
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(unix.SIOCGIFHWADDR),
 			},
 			seccomp.PerArg{
-				seccomp.AnyValue{},
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(unix.SIOCGIFINDEX),
 			},
 			seccomp.PerArg{
-				seccomp.AnyValue{},
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(unix.SIOCGIFMTU),
 			},
 			seccomp.PerArg{
-				seccomp.AnyValue{},
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(unix.SIOCGIFNAME),
 			},
 			seccomp.PerArg{
-				seccomp.AnyValue{},
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(unix.SIOCGIFNETMASK),
 			},
 			seccomp.PerArg{
-				seccomp.AnyValue{},
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(unix.TIOCOUTQ),
 			},
 			seccomp.PerArg{
-				seccomp.AnyValue{},
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(unix.TIOCINQ),
 			},
 		},

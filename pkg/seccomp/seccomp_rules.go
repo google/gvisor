@@ -652,6 +652,45 @@ func (sr SyscallRules) Copy() SyscallRules {
 	return MakeSyscallRules(rulesCopy)
 }
 
+// ForSingleArgument runs the given function on the `ValueMatcher` rules
+// for a single specific syscall argument of the given syscall number.
+// If the function returns an error, it will be propagated along with some
+// details as to which rule caused the error to be returned.
+// ForSingleArgument also returns an error if there are no rules defined for
+// the given syscall number, or if at least one rule for this syscall number
+// is not either a `PerArg` rule or a rule with children rules (as this would
+// indicate that the `PerArg` rules alone may not be a good representation of
+// the entire set of rules for this system call).
+func (sr SyscallRules) ForSingleArgument(sysno uintptr, argNum int, fn func(ValueMatcher) error) error {
+	if argNum < 0 || argNum >= len(PerArg{}) {
+		return fmt.Errorf("invalid argument number %d", argNum)
+	}
+	if !sr.Has(sysno) {
+		return fmt.Errorf("syscall %d has no rules defined", sysno)
+	}
+	var err error
+	var process func(SyscallRule) SyscallRule
+	var callCount int
+	process = func(r SyscallRule) SyscallRule {
+		callCount++
+		pa, isPerArg := r.(PerArg)
+		if isPerArg {
+			if gotErr := fn(pa[argNum]); gotErr != nil && err == nil {
+				err = fmt.Errorf("PerArg rule %v: arg[%d] = %v (type %T): %v", pa, argNum, pa[argNum], pa[argNum], gotErr)
+			}
+		} else {
+			beforeRecurse := callCount
+			r.Recurse(process)
+			if callCount == beforeRecurse {
+				err = fmt.Errorf("rule %v (type: %T) is not a PerArg or a recursive rule", r, r)
+			}
+		}
+		return r
+	}
+	process(sr.rules[sysno])
+	return err
+}
+
 // DenyNewExecMappings is a set of rules that denies creating new executable
 // mappings and converting existing ones.
 var DenyNewExecMappings = MakeSyscallRules(map[uintptr]SyscallRule{

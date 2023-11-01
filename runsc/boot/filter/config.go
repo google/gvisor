@@ -129,44 +129,44 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 	unix.SYS_IOCTL: seccomp.Or{
 		// These commands are needed for host FD.
 		seccomp.PerArg{
-			seccomp.AnyValue{}, /* fd */
+			seccomp.NonNegativeFD{}, /* fd */
 			seccomp.EqualTo(linux.FIONREAD),
 			seccomp.AnyValue{}, /* int* */
 		},
 		// These commands are needed for terminal support, but we only allow
 		// setting/getting termios and winsize.
 		seccomp.PerArg{
-			seccomp.AnyValue{}, /* fd */
+			seccomp.NonNegativeFD{}, /* fd */
 			seccomp.EqualTo(linux.TCGETS),
 			seccomp.AnyValue{}, /* termios struct */
 		},
 		seccomp.PerArg{
-			seccomp.AnyValue{}, /* fd */
+			seccomp.NonNegativeFD{}, /* fd */
 			seccomp.EqualTo(linux.TCSETS),
 			seccomp.AnyValue{}, /* termios struct */
 		},
 		seccomp.PerArg{
-			seccomp.AnyValue{}, /* fd */
+			seccomp.NonNegativeFD{}, /* fd */
 			seccomp.EqualTo(linux.TCSETSF),
 			seccomp.AnyValue{}, /* termios struct */
 		},
 		seccomp.PerArg{
-			seccomp.AnyValue{}, /* fd */
+			seccomp.NonNegativeFD{}, /* fd */
 			seccomp.EqualTo(linux.TCSETSW),
 			seccomp.AnyValue{}, /* termios struct */
 		},
 		seccomp.PerArg{
-			seccomp.AnyValue{}, /* fd */
+			seccomp.NonNegativeFD{}, /* fd */
 			seccomp.EqualTo(linux.TIOCSWINSZ),
 			seccomp.AnyValue{}, /* winsize struct */
 		},
 		seccomp.PerArg{
-			seccomp.AnyValue{}, /* fd */
+			seccomp.NonNegativeFD{}, /* fd */
 			seccomp.EqualTo(linux.TIOCGWINSZ),
 			seccomp.AnyValue{}, /* winsize struct */
 		},
 		seccomp.PerArg{
-			seccomp.AnyValue{}, /* fd */
+			seccomp.NonNegativeFD{}, /* fd */
 			seccomp.EqualTo(linux.SIOCGIFTXQLEN),
 			seccomp.AnyValue{}, /* ifreq struct */
 		},
