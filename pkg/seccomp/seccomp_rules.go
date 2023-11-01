@@ -267,6 +267,31 @@ func (le LessThanOrEqual) Render(program *syscallProgram, labelSet *labelSet, va
 	program.JumpTo(labelSet.Matched())
 }
 
+// NonNegativeFD ensures that an FD argument is a non-negative int32.
+type NonNegativeFD struct{}
+
+// String implements `ValueMatcher.String`.
+func (NonNegativeFD) String() string {
+	return fmt.Sprintf("NonNegativeFD")
+}
+
+// Repr implements `ValueMatcher.Repr`.
+func (NonNegativeFD) Repr() string {
+	return NonNegativeFD{}.String()
+}
+
+// Render implements `ValueMatcher.Render`.
+func (NonNegativeFD) Render(program *syscallProgram, labelSet *labelSet, value matchedValue) {
+	// FDs are 32 bits, so the high 32 bits must all be zero.
+	value.LoadHigh32Bits()
+	program.IfNot(bpf.Jmp|bpf.Jeq|bpf.K, 0, labelSet.Mismatched())
+	// Negative int32 has the MSB (31st bit) set.
+	// So the raw uint FD value must not have the 31st bit set.
+	value.LoadLow32Bits()
+	program.If(bpf.Jmp|bpf.Jset|bpf.K, 1<<31, labelSet.Mismatched())
+	program.JumpTo(labelSet.Matched())
+}
+
 // MaskedEqual specifies a value that matches the input after the input is
 // masked (bitwise &) against the given mask. It implements `ValueMatcher`.
 type maskedEqual struct {

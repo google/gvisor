@@ -38,13 +38,6 @@ const (
 	vsyscallPageIPMask = 1 << 31
 )
 
-// NonNegativeFDCheck ensures an FD argument is a non-negative int.
-func NonNegativeFDCheck() LessThanOrEqual {
-	// Negative int32 has the MSB (31st bit) set. So the raw uint FD value must
-	// be less than or equal to 0x7fffffff.
-	return LessThanOrEqual(0x7fffffff)
-}
-
 // Install generates BPF code based on the set of syscalls provided. It only
 // allows syscalls that conform to the specification. Syscalls that violate the
 // specification will trigger RET_KILL_PROCESS. If RET_KILL_PROCESS is not
