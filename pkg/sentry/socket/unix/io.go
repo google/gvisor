@@ -77,8 +77,8 @@ type EndpointReader struct {
 	// sockets, it is the amount read.
 	MsgSize int64
 
-	// From, if not nil, will be set with the address read from.
-	From *transport.Address
+	// From will be set with the address read from.
+	From transport.Address
 
 	// Control contains the received control messages.
 	Control transport.ControlMessages
@@ -99,12 +99,17 @@ type EndpointReader struct {
 
 // Truncate calls RecvMsg on the endpoint without writing to a destination.
 func (r *EndpointReader) Truncate() error {
-	// Ignore bytes read since it will always be zero.
-	_, ms, c, unusedRights, ct, notify, err := r.Endpoint.RecvMsg(r.Ctx, [][]byte{}, r.Creds, r.NumRights, r.Peek, r.From)
-	r.Control = c
-	r.UnusedRights = unusedRights
-	r.ControlTrunc = ct
-	r.MsgSize = ms
+	args := transport.RecvArgs{
+		Creds:     r.Creds,
+		NumRights: r.NumRights,
+		Peek:      r.Peek,
+	}
+	out, notify, err := r.Endpoint.RecvMsg(r.Ctx, [][]byte{}, args)
+	r.MsgSize = out.MsgLen
+	r.Control = out.Control
+	r.ControlTrunc = out.ControlTrunc
+	r.UnusedRights = out.UnusedRights
+	r.From = out.Source
 	if notify != nil {
 		notify()
 	}
@@ -117,15 +122,21 @@ func (r *EndpointReader) Truncate() error {
 // ReadToBlocks implements safemem.Reader.ReadToBlocks.
 func (r *EndpointReader) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
 	return safemem.FromVecReaderFunc{func(bufs [][]byte) (int64, error) {
-		n, ms, c, unusedRights, ct, notify, err := r.Endpoint.RecvMsg(r.Ctx, bufs, r.Creds, r.NumRights, r.Peek, r.From)
-		r.Control = c
-		r.UnusedRights = unusedRights
-		r.ControlTrunc = ct
-		r.MsgSize = ms
+		args := transport.RecvArgs{
+			Creds:     r.Creds,
+			NumRights: r.NumRights,
+			Peek:      r.Peek,
+		}
+		out, notify, err := r.Endpoint.RecvMsg(r.Ctx, bufs, args)
+		r.MsgSize = out.MsgLen
+		r.Control = out.Control
+		r.ControlTrunc = out.ControlTrunc
+		r.UnusedRights = out.UnusedRights
+		r.From = out.Source
 		r.Notify = notify
 		if err != nil {
-			return int64(n), err.ToError()
+			return int64(out.RecvLen), err.ToError()
 		}
-		return int64(n), nil
+		return int64(out.RecvLen), nil
 	}}.ReadToBlocks(dsts)
 }
