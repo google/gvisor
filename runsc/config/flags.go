@@ -141,11 +141,12 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 var overrideAllowlist = map[string]struct {
 	check func(name string, value string) error
 }{
-	"debug":           {},
-	"strace":          {},
-	"strace-syscalls": {},
-	"strace-log-size": {},
-	"host-uds":        {},
+	"debug":                      {},
+	"strace":                     {},
+	"strace-syscalls":            {},
+	"strace-log-size":            {},
+	"host-uds":                   {},
+	"EXPERIMENTAL-reproduce-nat": {},
 
 	"oci-seccomp": {check: checkOciSeccomp},
 }
