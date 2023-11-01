@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -13,6 +13,7 @@ go_library(
         "ipv6.go",
         "netfilter.go",
         "owner_matcher.go",
+        "owner_matcher_v1.go",
         "targets.go",
         "tcp_matcher.go",
         "udp_matcher.go",
@@ -32,6 +33,17 @@ go_library(
         "//pkg/syserr",
         "//pkg/tcpip",
         "//pkg/tcpip/header",
+        "//pkg/tcpip/stack",
+    ],
+)
+
+go_test(
+    name = "netfilter_test",
+    srcs = ["netfilter_test.go"],
+    embedsrcs = ["istio_blob"],
+    library = ":netfilter",
+    deps = [
+        "//pkg/sentry/kernel/auth",
         "//pkg/tcpip/stack",
     ],
 )

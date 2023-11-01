@@ -19,7 +19,6 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/marshal"
-	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
@@ -38,6 +37,10 @@ func (tcpMarshaler) name() string {
 	return matcherNameTCP
 }
 
+func (tcpMarshaler) revision() uint8 {
+	return 0
+}
+
 // marshal implements matchMaker.marshal.
 func (tcpMarshaler) marshal(mr matcher) []byte {
 	matcher := mr.(*TCPMatcher)
@@ -51,7 +54,7 @@ func (tcpMarshaler) marshal(mr matcher) []byte {
 }
 
 // unmarshal implements matchMaker.unmarshal.
-func (tcpMarshaler) unmarshal(_ *kernel.Task, buf []byte, filter stack.IPHeaderFilter) (stack.Matcher, error) {
+func (tcpMarshaler) unmarshal(_ IDMapper, buf []byte, filter stack.IPHeaderFilter) (stack.Matcher, error) {
 	if len(buf) < linux.SizeOfXTTCP {
 		return nil, fmt.Errorf("buf has insufficient size for TCP match: %d", len(buf))
 	}
@@ -92,6 +95,10 @@ type TCPMatcher struct {
 // name implements matcher.name.
 func (*TCPMatcher) name() string {
 	return matcherNameTCP
+}
+
+func (*TCPMatcher) revision() uint8 {
+	return 0
 }
 
 // Match implements Matcher.Match.

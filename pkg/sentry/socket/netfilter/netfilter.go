@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -34,7 +35,7 @@ import (
 // enableLogging controls whether to log the (de)serialization of netfilter
 // structs between userspace and netstack. These logs are useful when
 // developing iptables, but can pollute sentry logs otherwise.
-const enableLogging = false
+const enableLogging = true
 
 // nflog logs messages related to the writing and reading of iptables.
 func nflog(format string, args ...any) {
@@ -173,9 +174,15 @@ func setHooksAndUnderflow(info *linux.IPTGetinfo, table stack.Table, offset uint
 	}
 }
 
+// An IDMapper maps UIDs and GIDs to KUIDs and KGIDs.
+type IDMapper interface {
+	MapToKUID(uid auth.UID) auth.KUID
+	MapToKGID(uid auth.GID) auth.KGID
+}
+
 // SetEntries sets iptables rules for a single table. See
 // net/ipv4/netfilter/ip_tables.c:translate_table for reference.
-func SetEntries(task *kernel.Task, stk *stack.Stack, optVal []byte, ipv6 bool) *syserr.Error {
+func SetEntries(mapper IDMapper, stk *stack.Stack, optVal []byte, ipv6 bool) *syserr.Error {
 	var replace linux.IPTReplace
 	optVal = replace.UnmarshalBytes(optVal)
 
@@ -193,9 +200,9 @@ func SetEntries(task *kernel.Task, stk *stack.Stack, optVal []byte, ipv6 bool) *
 	var err *syserr.Error
 	var offsets map[uint32]int
 	if ipv6 {
-		offsets, err = modifyEntries6(task, stk, optVal, &replace, &table)
+		offsets, err = modifyEntries6(mapper, stk, optVal, &replace, &table)
 	} else {
-		offsets, err = modifyEntries4(task, stk, optVal, &replace, &table)
+		offsets, err = modifyEntries4(mapper, stk, optVal, &replace, &table)
 	}
 	if err != nil {
 		return err
@@ -295,7 +302,7 @@ func SetEntries(task *kernel.Task, stk *stack.Stack, optVal []byte, ipv6 bool) *
 
 // parseMatchers parses 0 or more matchers from optVal. optVal should contain
 // only the matchers.
-func parseMatchers(task *kernel.Task, filter stack.IPHeaderFilter, optVal []byte) ([]stack.Matcher, error) {
+func parseMatchers(mapper IDMapper, filter stack.IPHeaderFilter, optVal []byte) ([]stack.Matcher, error) {
 	nflog("set entries: parsing matchers of size %d", len(optVal))
 	var matchers []stack.Matcher
 	for len(optVal) > 0 {
@@ -318,7 +325,7 @@ func parseMatchers(task *kernel.Task, filter stack.IPHeaderFilter, optVal []byte
 		}
 
 		// Parse the specific matcher.
-		matcher, err := unmarshalMatcher(task, match, filter, optVal[linux.SizeOfXTEntryMatch:match.MatchSize])
+		matcher, err := unmarshalMatcher(mapper, match, filter, optVal[linux.SizeOfXTEntryMatch:match.MatchSize])
 		if err != nil {
 			return nil, fmt.Errorf("failed to create matcher: %v", err)
 		}

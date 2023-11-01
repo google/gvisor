@@ -633,8 +633,8 @@ const (
 	XT_UDP_INV_MASK = 0x03
 )
 
-// IPTOwnerInfo holds data for matching packets with owner. It corresponds
-// to struct ipt_owner_info in libxt_owner.c of iptables binary.
+// IPTOwnerInfo holds data for matching packets with the owner v0 matcher. It
+// corresponds to struct ipt_owner_info in libxt_owner.c of iptables binary.
 //
 // +marshal
 type IPTOwnerInfo struct {
@@ -661,11 +661,29 @@ type IPTOwnerInfo struct {
 	Invert uint8 `marshal:"unaligned"`
 }
 
-// SizeOfIPTOwnerInfo is the size of an XTOwnerMatchInfo.
+// SizeOfIPTOwnerInfo is the size of an IPTOwnerInfo.
 const SizeOfIPTOwnerInfo = 34
 
-// Flags in IPTOwnerInfo.Match. Corresponding constants are in
-// include/uapi/linux/netfilter/xt_owner.h.
+// XTOwnerMatchInfo holds data for matching packets with the owner v1 matcher.
+// It corresponds to struct xt_owner_match_info in
+// include/uapi/linux/netfilter/xt_owner.h
+//
+// +marshal
+type XTOwnerMatchInfo struct {
+	UIDMin uint32
+	UIDMax uint32
+	GIDMin uint32
+	GIDMax uint32
+	Match  uint8
+	Invert uint8
+	_      [2]byte
+}
+
+// SizeOfXTOwnerMatchInfo is the size of an XTOwnerMatchInfo.
+const SizeOfXTOwnerMatchInfo = 20
+
+// Flags in IPTOwnerInfo.Match and XTOwnerMatchInfo.Match. Corresponding
+// constants are in include/uapi/linux/netfilter/xt_owner.h.
 const (
 	// Match the UID of the packet.
 	XT_OWNER_UID = 1 << 0
