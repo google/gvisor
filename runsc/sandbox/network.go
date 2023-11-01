@@ -319,6 +319,17 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 		args.FilePayload.Files = append(args.FilePayload.Files, pcap)
 	}
 
+	// Pass the host's NAT table if requested.
+	if conf.ReproduceNAT {
+		args.NATBlob = true
+		f, cleanup, err := writeNATBlob()
+		if err != nil {
+			return fmt.Errorf("failed to write NAT blob: %v", err)
+		}
+		defer cleanup()
+		args.FilePayload.Files = append(args.FilePayload.Files, f)
+	}
+
 	log.Debugf("Setting up network, config: %+v", args)
 	if err := conn.Call(boot.NetworkCreateLinksAndRoutes, &args, nil); err != nil {
 		return fmt.Errorf("creating links and routes: %w", err)

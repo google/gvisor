@@ -120,6 +120,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Int("num-network-channels", 1, "number of underlying channels(FDs) to use for network link endpoints.")
 	flagSet.Bool("buffer-pooling", true, "enable allocation of buffers from a shared pool instead of the heap.")
 	flagSet.Bool("EXPERIMENTAL-afxdp", false, "EXPERIMENTAL. Use an AF_XDP socket to receive packets.")
+	flagSet.Bool("EXPERIMENTAL-reproduce-nat", false, "EXPERIMENTAL. Scrape the host netns NAT table and reproduce it in the sandbox.")
 
 	// Flags that control sandbox runtime behavior: accelerator related.
 	flagSet.Bool("nvproxy", false, "EXPERIMENTAL: enable support for Nvidia GPUs")
