@@ -598,9 +598,9 @@ func (l *Loader) Destroy() {
 	// Release any dangling tcp connections.
 	tcpip.ReleaseDanglingEndpoints()
 
-	// In the success case, stdioFDs and goferFDs will only contain
-	// released/closed FDs that ownership has been passed over to host FDs and
-	// gofer sessions. Close them here in case of failure.
+	// In the success case, all FDs in l.root will only contain released/closed
+	// FDs whose ownership has been passed over to host FDs and gofer sessions.
+	// Close them here in case of failure.
 	for _, f := range l.root.stdioFDs {
 		_ = f.Close()
 	}
@@ -608,6 +608,9 @@ func (l *Loader) Destroy() {
 		_ = f.host.Close()
 	}
 	for _, f := range l.root.goferFDs {
+		_ = f.Close()
+	}
+	for _, f := range l.root.goferFilestoreFDs {
 		_ = f.Close()
 	}
 
