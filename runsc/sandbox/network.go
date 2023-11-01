@@ -322,11 +322,10 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 	// Pass the host's NAT table if requested.
 	if conf.ReproduceNAT {
 		args.NATBlob = true
-		f, cleanup, err := writeNATBlob()
+		f, err := writeNATBlob()
 		if err != nil {
 			return fmt.Errorf("failed to write NAT blob: %v", err)
 		}
-		defer cleanup()
 		args.FilePayload.Files = append(args.FilePayload.Files, f)
 	}
 

@@ -308,6 +308,10 @@ func (s *Socket) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.Read
 	if r.Notify != nil {
 		r.Notify()
 	}
+	// Drop any unused rights messages.
+	for _, rm := range r.UnusedRights {
+		rm.Release(ctx)
+	}
 	// Drop control messages.
 	r.Control.Release(ctx)
 	return n, err
@@ -748,6 +752,13 @@ func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, have
 		}
 		return n, err
 	}
+
+	// Drop any unused rights messages after reading.
+	defer func() {
+		for _, rm := range r.UnusedRights {
+			rm.Release(t)
+		}
+	}()
 
 	// If MSG_TRUNC is set with a zero byte destination then we still need
 	// to read the message and discard it, or in the case where MSG_PEEK is

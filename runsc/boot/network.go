@@ -451,9 +451,6 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 	// Set NAT table rules if necessary.
 	if args.NATBlob {
 		log.Infof("Replacing NAT table")
-		if _, err := unix.Seek(int(args.FilePayload.Files[fdOffset].Fd()), 0, unix.SEEK_SET); err != nil {
-			return fmt.Errorf("failed to seek: %v", err)
-		}
 		iptReplaceBlob, err := io.ReadAll(args.FilePayload.Files[fdOffset])
 		if err != nil {
 			return fmt.Errorf("failed to read iptables blob: %v", err)

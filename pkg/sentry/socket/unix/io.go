@@ -83,6 +83,10 @@ type EndpointReader struct {
 	// Control contains the received control messages.
 	Control transport.ControlMessages
 
+	// UnusedRights is a slice of unused RightsControlMessage that must be
+	// Release()d before this EndpointReader is discarded.
+	UnusedRights []transport.RightsControlMessage
+
 	// ControlTrunc indicates that SCM_RIGHTS FDs were discarded based on
 	// the value of NumRights.
 	ControlTrunc bool
@@ -96,8 +100,9 @@ type EndpointReader struct {
 // Truncate calls RecvMsg on the endpoint without writing to a destination.
 func (r *EndpointReader) Truncate() error {
 	// Ignore bytes read since it will always be zero.
-	_, ms, c, ct, notify, err := r.Endpoint.RecvMsg(r.Ctx, [][]byte{}, r.Creds, r.NumRights, r.Peek, r.From)
+	_, ms, c, unusedRights, ct, notify, err := r.Endpoint.RecvMsg(r.Ctx, [][]byte{}, r.Creds, r.NumRights, r.Peek, r.From)
 	r.Control = c
+	r.UnusedRights = unusedRights
 	r.ControlTrunc = ct
 	r.MsgSize = ms
 	if notify != nil {
@@ -112,8 +117,9 @@ func (r *EndpointReader) Truncate() error {
 // ReadToBlocks implements safemem.Reader.ReadToBlocks.
 func (r *EndpointReader) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) {
 	return safemem.FromVecReaderFunc{func(bufs [][]byte) (int64, error) {
-		n, ms, c, ct, notify, err := r.Endpoint.RecvMsg(r.Ctx, bufs, r.Creds, r.NumRights, r.Peek, r.From)
+		n, ms, c, unusedRights, ct, notify, err := r.Endpoint.RecvMsg(r.Ctx, bufs, r.Creds, r.NumRights, r.Peek, r.From)
 		r.Control = c
+		r.UnusedRights = unusedRights
 		r.ControlTrunc = ct
 		r.MsgSize = ms
 		r.Notify = notify
