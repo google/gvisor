@@ -302,7 +302,6 @@ func (s *Socket) Read(ctx context.Context, dst usermem.IOSequence, opts vfs.Read
 		Endpoint:  s.ep,
 		NumRights: 0,
 		Peek:      false,
-		From:      nil,
 	}
 	n, err := dst.CopyOutFrom(ctx, r)
 	if r.Notify != nil {
@@ -741,9 +740,6 @@ func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, have
 		NumRights: numRights,
 		Peek:      peek,
 	}
-	if senderRequested {
-		r.From = &transport.Address{}
-	}
 
 	doRead := func() (int64, error) {
 		n, err := dst.CopyOutFrom(t, &r)
@@ -778,8 +774,8 @@ func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, have
 	if n, err := doRead(); err != linuxerr.ErrWouldBlock || dontWait {
 		var from linux.SockAddr
 		var fromLen uint32
-		if r.From != nil && len([]byte(r.From.Addr)) != 0 {
-			from, fromLen = convertAddress(*r.From)
+		if senderRequested && len([]byte(r.From.Addr)) != 0 {
+			from, fromLen = convertAddress(r.From)
 		}
 
 		if r.ControlTrunc {
@@ -813,8 +809,8 @@ func (s *Socket) RecvMsg(t *kernel.Task, dst usermem.IOSequence, flags int, have
 		if n, err := doRead(); err != linuxerr.ErrWouldBlock {
 			var from linux.SockAddr
 			var fromLen uint32
-			if r.From != nil {
-				from, fromLen = convertAddress(*r.From)
+			if senderRequested {
+				from, fromLen = convertAddress(r.From)
 			}
 
 			if r.ControlTrunc {
