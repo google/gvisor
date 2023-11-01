@@ -321,6 +321,13 @@ type SyscallRule interface {
 	// next into the program.
 	Render(program *syscallProgram, labelSet *labelSet)
 
+	// Recurse should call the given function on all `SyscallRule`s that are
+	// part of this `SyscallRule`, and should replace them with the returned
+	// `SyscallRule`. For example, conjunctive rules should call the given
+	// function on each of the `SyscallRule`s that they are ANDing, replacing
+	// them with the rule returned by the function.
+	Recurse(func(SyscallRule) SyscallRule)
+
 	// String returns a human-readable string representing what the rule does.
 	String() string
 }
@@ -332,6 +339,9 @@ type MatchAll struct{}
 func (MatchAll) Render(program *syscallProgram, labelSet *labelSet) {
 	program.JumpTo(labelSet.Matched())
 }
+
+// Recurse implements `SyscallRule.Recurse`.
+func (MatchAll) Recurse(func(SyscallRule) SyscallRule) {}
 
 // String implements `SyscallRule.String`.
 func (MatchAll) String() string { return "true" }
@@ -355,6 +365,13 @@ func (or Or) Render(program *syscallProgram, labelSet *labelSet) {
 		program.Label(nextRuleLabel)
 	}
 	program.JumpTo(labelSet.Mismatched())
+}
+
+// Recurse implements `SyscallRule.Recurse`.
+func (or Or) Recurse(fn func(SyscallRule) SyscallRule) {
+	for i, rule := range or {
+		or[i] = fn(rule)
+	}
 }
 
 // String implements `SyscallRule.String`.
@@ -399,6 +416,13 @@ func (and And) Render(program *syscallProgram, labelSet *labelSet) {
 	program.JumpTo(labelSet.Matched())
 }
 
+// Recurse implements `SyscallRule.Recurse`.
+func (and And) Recurse(fn func(SyscallRule) SyscallRule) {
+	for i, rule := range and {
+		and[i] = fn(rule)
+	}
+}
+
 // String implements `SyscallRule.String`.
 func (and And) String() string {
 	switch len(and) {
@@ -418,27 +442,6 @@ func (and And) String() string {
 		sb.WriteRune(')')
 		return sb.String()
 	}
-}
-
-// merge merges `rule1` and `rule2`, simplifying `MatchAll` and `Or` rules.
-func merge(rule1, rule2 SyscallRule) SyscallRule {
-	_, rule1IsMatchAll := rule1.(MatchAll)
-	_, rule2IsMatchAll := rule2.(MatchAll)
-	if rule1IsMatchAll || rule2IsMatchAll {
-		return MatchAll{}
-	}
-	rule1Or, rule1IsOr := rule1.(Or)
-	rule2Or, rule2IsOr := rule2.(Or)
-	if rule1IsOr && rule2IsOr {
-		return append(rule1Or, rule2Or...)
-	}
-	if rule1IsOr {
-		return append(rule1Or, rule2)
-	}
-	if rule2IsOr {
-		return append(rule2Or, rule1)
-	}
-	return Or{rule1, rule2}
 }
 
 // PerArg implements SyscallRule and verifies the syscall arguments and RIP.
@@ -483,6 +486,9 @@ func (pa PerArg) Render(program *syscallProgram, labelSet *labelSet) {
 	// Matched all argument-wise rules, jump to the final rule matched label.
 	program.JumpTo(labelSet.Matched())
 }
+
+// Recurse implements `SyscallRule.Recurse`.
+func (PerArg) Recurse(fn func(SyscallRule) SyscallRule) {}
 
 // String implements `SyscallRule.String`.
 func (pa PerArg) String() (s string) {
@@ -574,7 +580,7 @@ func (sr SyscallRules) Has(sysno uintptr) bool {
 // Returns itself for chainability.
 func (sr SyscallRules) Add(sysno uintptr, r SyscallRule) SyscallRules {
 	if cur, ok := sr.rules[sysno]; ok {
-		sr.rules[sysno] = merge(cur, r)
+		sr.rules[sysno] = Or{cur, r}
 	} else {
 		sr.rules[sysno] = r
 	}

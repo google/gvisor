@@ -473,7 +473,7 @@ func buildBSTProgram(n *node, rules []RuleSet, program *syscallProgram) error {
 		// check the next rule set. We need to ensure
 		// that at the very end, we insert a direct
 		// jump label for the unmatched case.
-		rule.Render(program, ruleSetLabelSet)
+		optimizeSyscallRule(rule).Render(program, ruleSetLabelSet)
 		frag.MustHaveJumpedTo(ruleSetLabelSet.Matched(), ruleSetLabelSet.Mismatched())
 		program.Label(ruleSetLabelSet.Matched())
 		program.Ret(rs.Action)
