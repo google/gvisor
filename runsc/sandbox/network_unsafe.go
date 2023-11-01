@@ -66,7 +66,8 @@ func writeNATBlob() (*os.File, func(), error) {
 	defer unix.Close(iptSock)
 
 	// Get the iptables info.
-	var NATName = [linux.XT_TABLE_MAXNAMELEN]byte([]byte("nat\x00"))
+	var NATName [linux.XT_TABLE_MAXNAMELEN]byte
+	copy(NATName[:], []byte("nat\x00"))
 	natInfo := linux.IPTGetinfo{Name: NATName}
 	natInfoLen := int32(unsafe.Sizeof(linux.IPTGetinfo{}))
 	_, _, errno := unix.Syscall6(unix.SYS_GETSOCKOPT,
