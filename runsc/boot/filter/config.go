@@ -340,83 +340,82 @@ func hostFilesystemFilters() seccomp.SyscallRules {
 	// negative FD values (like AT_FDCWD or invalid FD numbers). We try to be as
 	// restrictive as possible because any restriction here improves security. We
 	// don't know what set of arguments will trigger a future vulnerability.
-	validFDCheck := seccomp.NonNegativeFDCheck()
 	return seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		unix.SYS_FCHOWNAT: seccomp.PerArg{
-			validFDCheck,
+			seccomp.NonNegativeFD{},
 			seccomp.AnyValue{},
 			seccomp.AnyValue{},
 			seccomp.AnyValue{},
 			seccomp.EqualTo(unix.AT_EMPTY_PATH | unix.AT_SYMLINK_NOFOLLOW),
 		},
 		unix.SYS_FCHMODAT: seccomp.PerArg{
-			validFDCheck,
+			seccomp.NonNegativeFD{},
 			seccomp.AnyValue{},
 			seccomp.AnyValue{},
 		},
 		unix.SYS_UNLINKAT: seccomp.PerArg{
-			validFDCheck,
+			seccomp.NonNegativeFD{},
 			seccomp.AnyValue{},
 			seccomp.AnyValue{},
 		},
 		unix.SYS_GETDENTS64: seccomp.PerArg{
-			validFDCheck,
+			seccomp.NonNegativeFD{},
 			seccomp.AnyValue{},
 			seccomp.AnyValue{},
 		},
 		unix.SYS_OPENAT: seccomp.PerArg{
-			validFDCheck,
+			seccomp.NonNegativeFD{},
 			seccomp.AnyValue{},
 			seccomp.MaskedEqual(unix.O_NOFOLLOW, unix.O_NOFOLLOW),
 			seccomp.AnyValue{},
 		},
 		unix.SYS_LINKAT: seccomp.PerArg{
-			validFDCheck,
+			seccomp.NonNegativeFD{},
 			seccomp.AnyValue{},
-			validFDCheck,
+			seccomp.NonNegativeFD{},
 			seccomp.AnyValue{},
 			seccomp.EqualTo(0),
 		},
 		unix.SYS_MKDIRAT: seccomp.PerArg{
-			validFDCheck,
+			seccomp.NonNegativeFD{},
 			seccomp.AnyValue{},
 			seccomp.AnyValue{},
 		},
 		unix.SYS_MKNODAT: seccomp.PerArg{
-			validFDCheck,
+			seccomp.NonNegativeFD{},
 			seccomp.AnyValue{},
 			seccomp.AnyValue{},
 			seccomp.AnyValue{},
 		},
 		unix.SYS_SYMLINKAT: seccomp.PerArg{
 			seccomp.AnyValue{},
-			validFDCheck,
+			seccomp.NonNegativeFD{},
 			seccomp.AnyValue{},
 		},
 		unix.SYS_FSTATFS: seccomp.PerArg{
-			validFDCheck,
+			seccomp.NonNegativeFD{},
 			seccomp.AnyValue{},
 		},
 		unix.SYS_READLINKAT: seccomp.PerArg{
-			validFDCheck,
+			seccomp.NonNegativeFD{},
 			seccomp.AnyValue{},
 			seccomp.AnyValue{},
 			seccomp.AnyValue{},
 		},
 		unix.SYS_UTIMENSAT: seccomp.PerArg{
-			validFDCheck,
+			seccomp.NonNegativeFD{},
 			seccomp.AnyValue{},
 			seccomp.AnyValue{},
 			seccomp.AnyValue{},
 		},
 		unix.SYS_RENAMEAT: seccomp.PerArg{
-			validFDCheck,
+			seccomp.NonNegativeFD{},
 			seccomp.AnyValue{},
-			validFDCheck,
+			seccomp.NonNegativeFD{},
 			seccomp.AnyValue{},
 		},
 		archFstatAtSysNo(): seccomp.PerArg{
-			validFDCheck,
+			seccomp.NonNegativeFD{},
 			seccomp.AnyValue{},
 			seccomp.AnyValue{},
 			seccomp.AnyValue{},

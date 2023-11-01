@@ -902,6 +902,68 @@ func TestBasic(t *testing.T) {
 			},
 		},
 		{
+			name: "NonNegativeFD",
+			ruleSets: []RuleSet{
+				{
+					Rules: MakeSyscallRules(map[uintptr]SyscallRule{
+						1: PerArg{
+							NonNegativeFD{},
+						},
+					}),
+					Action: linux.SECCOMP_RET_ALLOW,
+				},
+			},
+			defaultAction: linux.SECCOMP_RET_TRAP,
+			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			specs: []spec{
+				{
+					desc: "zero allowed",
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x0}},
+					want: linux.SECCOMP_RET_ALLOW,
+				},
+				{
+					desc: "one allowed",
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x0}},
+					want: linux.SECCOMP_RET_ALLOW,
+				},
+				{
+					desc: "seven allowed",
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x7}},
+					want: linux.SECCOMP_RET_ALLOW,
+				},
+				{
+					desc: "largest int32 allowed",
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x7fffffff}},
+					want: linux.SECCOMP_RET_ALLOW,
+				},
+				{
+					desc: "negative 1 not allowed",
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x80000000}},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+				{
+					desc: "largest uint32 not allowed",
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0xffffffff}},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+				{
+					desc: "a positive int64 larger than max uint32 is not allowed",
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x100000000}},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+				{
+					desc: "largest int64 not allowed",
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0x7fffffffffffffff}},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+				{
+					desc: "largest uint64 not allowed",
+					data: linux.SeccompData{Nr: 1, Arch: LINUX_AUDIT_ARCH, Args: [6]uint64{0xffffffffffffffff}},
+					want: linux.SECCOMP_RET_TRAP,
+				},
+			},
+		},
+		{
 			name: "Instruction Pointer",
 			ruleSets: []RuleSet{
 				{
