@@ -1,4 +1,4 @@
-// Copyright 2020 The gVisor Authors.
+// Copyright 2023 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -23,85 +23,80 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
-const matcherNameOwner = "owner"
-
 func init() {
-	registerMatchMaker(ownerMarshaler{})
+	registerMatchMaker(ownerMarshalerV1{})
 }
 
-// ownerMarshaler implements matchMaker for owner matching.
-type ownerMarshaler struct{}
+// ownerMarshalerV1 implements matchMaker for owner matching.
+type ownerMarshalerV1 struct{}
 
 // name implements matchMaker.name.
-func (ownerMarshaler) name() string {
+func (ownerMarshalerV1) name() string {
 	return matcherNameOwner
 }
 
-func (ownerMarshaler) revision() uint8 {
-	return 0
+func (ownerMarshalerV1) revision() uint8 {
+	return 1
 }
 
 // marshal implements matchMaker.marshal.
-func (ownerMarshaler) marshal(mr matcher) []byte {
-	matcher := mr.(*OwnerMatcher)
-	iptOwnerInfo := linux.IPTOwnerInfo{
-		UID: uint32(matcher.uid),
-		GID: uint32(matcher.gid),
+func (ownerMarshalerV1) marshal(mr matcher) []byte {
+	matcher := mr.(*OwnerMatcherV1)
+	ownerInfo := linux.XTOwnerMatchInfo{
+		UIDMin: uint32(matcher.uid),
+		UIDMax: uint32(matcher.uid),
+		GIDMin: uint32(matcher.gid),
+		GIDMax: uint32(matcher.gid),
 	}
 
 	// Support for UID and GID match.
 	if matcher.matchUID {
-		iptOwnerInfo.Match = linux.XT_OWNER_UID
-		if matcher.invertUID {
-			iptOwnerInfo.Invert = linux.XT_OWNER_UID
-		}
+		ownerInfo.Match |= linux.XT_OWNER_UID
 	}
 	if matcher.matchGID {
-		iptOwnerInfo.Match |= linux.XT_OWNER_GID
-		if matcher.invertGID {
-			iptOwnerInfo.Invert |= linux.XT_OWNER_GID
-		}
+		ownerInfo.Match |= linux.XT_OWNER_GID
 	}
-
-	buf := marshal.Marshal(&iptOwnerInfo)
+	if matcher.invertUID {
+		ownerInfo.Invert |= linux.XT_OWNER_UID
+	}
+	if matcher.invertGID {
+		ownerInfo.Invert |= linux.XT_OWNER_GID
+	}
+	buf := marshal.Marshal(&ownerInfo)
 	return marshalEntryMatch(matcherNameOwner, buf)
 }
 
 // unmarshal implements matchMaker.unmarshal.
-func (ownerMarshaler) unmarshal(mapper IDMapper, buf []byte, filter stack.IPHeaderFilter) (stack.Matcher, error) {
-	if len(buf) < linux.SizeOfIPTOwnerInfo {
+func (ownerMarshalerV1) unmarshal(mapper IDMapper, buf []byte, filter stack.IPHeaderFilter) (stack.Matcher, error) {
+	if len(buf) < linux.SizeOfXTOwnerMatchInfo {
 		return nil, fmt.Errorf("buf has insufficient size for owner match: %d", len(buf))
 	}
 
 	// For alignment reasons, the match's total size may
 	// exceed what's strictly necessary to hold matchData.
-	var matchData linux.IPTOwnerInfo
+	var matchData linux.XTOwnerMatchInfo
 	matchData.UnmarshalUnsafe(buf)
-	nflog("parsed IPTOwnerInfo: %+v", matchData)
+	nflog("parsed XTOwnerMatchInfo: %+v", matchData)
 
-	var owner OwnerMatcher
-	owner.uid = mapper.MapToKUID(auth.UID(matchData.UID))
-	owner.gid = mapper.MapToKGID(auth.GID(matchData.GID))
-
-	// Check flags.
-	if matchData.Match&linux.XT_OWNER_UID != 0 {
-		owner.matchUID = true
-		if matchData.Invert&linux.XT_OWNER_UID != 0 {
-			owner.invertUID = true
-		}
+	if matchData.UIDMin != matchData.UIDMax {
+		nflog("owner v1 doesn't support differing UID min/max")
 	}
-	if matchData.Match&linux.XT_OWNER_GID != 0 {
-		owner.matchGID = true
-		if matchData.Invert&linux.XT_OWNER_GID != 0 {
-			owner.invertGID = true
-		}
+	if matchData.GIDMin != matchData.GIDMax {
+		nflog("owner v1 doesn't support differing GID min/max")
 	}
-
+	owner := OwnerMatcherV1{
+		uid:       mapper.MapToKUID(auth.UID(matchData.UIDMin)),
+		gid:       mapper.MapToKGID(auth.GID(matchData.GIDMin)),
+		matchUID:  matchData.Match&linux.XT_OWNER_UID != 0,
+		matchGID:  matchData.Match&linux.XT_OWNER_GID != 0,
+		invertUID: matchData.Invert&linux.XT_OWNER_UID != 0,
+		invertGID: matchData.Invert&linux.XT_OWNER_GID != 0,
+	}
 	return &owner, nil
 }
 
-// OwnerMatcher matches against a UID and/or GID.
-type OwnerMatcher struct {
+// OwnerMatcherV1 matches against a UID and/or GID.
+type OwnerMatcherV1 struct {
 	uid       auth.KUID
 	gid       auth.KGID
 	matchUID  bool
@@ -111,16 +106,16 @@ type OwnerMatcher struct {
 }
 
 // name implements matcher.name.
-func (*OwnerMatcher) name() string {
+func (*OwnerMatcherV1) name() string {
 	return matcherNameOwner
 }
 
-func (*OwnerMatcher) revision() uint8 {
-	return 0
+func (*OwnerMatcherV1) revision() uint8 {
+	return 1
 }
 
 // Match implements Matcher.Match.
-func (om *OwnerMatcher) Match(hook stack.Hook, pkt stack.PacketBufferPtr, _, _ string) (bool, bool) {
+func (om *OwnerMatcherV1) Match(hook stack.Hook, pkt stack.PacketBufferPtr, _, _ string) (bool, bool) {
 	// Support only for OUTPUT chain.
 	if hook != stack.Output {
 		return false, true

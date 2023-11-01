@@ -19,45 +19,65 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bits"
-	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/syserr"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
-// matchMaker knows how to (un)marshal the matcher named name().
+// matchMaker knows how to (un)marshal the matcher named name(). UPDATE THIS
 type matchMaker interface {
 	// name is the matcher name as stored in the xt_entry_match struct.
 	name() string
+
+	// revision is the match revision as stored in the xt_entry_match
+	// struct.
+	revision() uint8
 
 	// marshal converts from a stack.Matcher to an ABI struct.
 	marshal(matcher matcher) []byte
 
 	// unmarshal converts from the ABI matcher struct to an
 	// stack.Matcher.
-	unmarshal(task *kernel.Task, buf []byte, filter stack.IPHeaderFilter) (stack.Matcher, error)
+	unmarshal(mapper IDMapper, buf []byte, filter stack.IPHeaderFilter) (stack.Matcher, error)
+}
+
+type matchKey struct {
+	name     string
+	revision uint8
+}
+
+func key(mm matchMaker) matchKey {
+	return matchKey{
+		name:     mm.name(),
+		revision: mm.revision(),
+	}
 }
 
 type matcher interface {
 	name() string
+	revision() uint8
 }
 
 // matchMakers maps the name of supported matchers to the matchMaker that
 // marshals and unmarshals it. It is immutable after package initialization.
-var matchMakers = map[string]matchMaker{}
+var matchMakers = map[matchKey]matchMaker{}
 
 // registermatchMaker should be called by match extensions to register them
 // with the netfilter package.
 func registerMatchMaker(mm matchMaker) {
-	if _, ok := matchMakers[mm.name()]; ok {
-		panic(fmt.Sprintf("Multiple matches registered with name %q.", mm.name()))
+	if _, ok := matchMakers[key(mm)]; ok {
+		panic(fmt.Sprintf("Multiple matches registered with key %+v.", key(mm)))
 	}
-	matchMakers[mm.name()] = mm
+	matchMakers[key(mm)] = mm
 }
 
 func marshalMatcher(mr stack.Matcher) []byte {
 	matcher := mr.(matcher)
-	matchMaker, ok := matchMakers[matcher.name()]
+	key := matchKey{
+		name:     matcher.name(),
+		revision: matcher.revision(),
+	}
+	matchMaker, ok := matchMakers[key]
 	if !ok {
 		panic(fmt.Sprintf("Unknown matcher of type %T.", matcher))
 	}
@@ -85,12 +105,16 @@ func marshalEntryMatch(name string, data []byte) []byte {
 	return buf
 }
 
-func unmarshalMatcher(task *kernel.Task, match linux.XTEntryMatch, filter stack.IPHeaderFilter, buf []byte) (stack.Matcher, error) {
-	matchMaker, ok := matchMakers[match.Name.String()]
-	if !ok {
-		return nil, fmt.Errorf("unsupported matcher with name %q", match.Name.String())
+func unmarshalMatcher(mapper IDMapper, match linux.XTEntryMatch, filter stack.IPHeaderFilter, buf []byte) (stack.Matcher, error) {
+	key := matchKey{
+		name:     match.Name.String(),
+		revision: match.Revision,
 	}
-	return matchMaker.unmarshal(task, buf, filter)
+	matchMaker, ok := matchMakers[key]
+	if !ok {
+		return nil, fmt.Errorf("unsupported matcher with name %q and revision %d", match.Name.String(), match.Revision)
+	}
+	return matchMaker.unmarshal(mapper, buf, filter)
 }
 
 // targetMaker knows how to (un)marshal a target. Once registered,
