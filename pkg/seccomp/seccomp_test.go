@@ -1075,28 +1075,28 @@ func TestMerge(t *testing.T) {
 		want  SyscallRule
 	}{
 		{
-			name:  "AllowAll both",
+			name:  "MatchAll both",
 			main:  MatchAll{},
 			merge: MatchAll{},
-			want:  MatchAll{},
+			want:  Or{MatchAll{}, MatchAll{}},
 		},
 		{
-			name:  "AllowAll and Or",
+			name:  "MatchAll and Or",
 			main:  MatchAll{},
-			merge: Or{},
-			want:  MatchAll{},
+			merge: Or{PerArg{EqualTo(0)}},
+			want:  Or{MatchAll{}, Or{PerArg{EqualTo(0)}}},
 		},
 		{
-			name:  "Or and AllowAll",
-			main:  Or{},
+			name:  "Or and MatchAll",
+			main:  Or{PerArg{EqualTo(0)}},
 			merge: MatchAll{},
-			want:  MatchAll{},
+			want:  Or{Or{PerArg{EqualTo(0)}}, MatchAll{}},
 		},
 		{
 			name:  "2 Ors",
 			main:  Or{PerArg{EqualTo(0)}},
 			merge: Or{PerArg{EqualTo(1)}},
-			want:  Or{PerArg{EqualTo(0)}, PerArg{EqualTo(1)}},
+			want:  Or{Or{PerArg{EqualTo(0)}}, Or{PerArg{EqualTo(1)}}},
 		},
 	} {
 		t.Run(tst.name, func(t *testing.T) {
@@ -1108,6 +1108,145 @@ func TestMerge(t *testing.T) {
 			wantRules := MakeSyscallRules(map[uintptr]SyscallRule{1: tst.want})
 			if !reflect.DeepEqual(mainRules, wantRules) {
 				t.Errorf("got rules:\n%v\nwant rules:\n%v\n", mainRules, wantRules)
+			}
+		})
+	}
+}
+
+// TestOptimizeSyscallRule tests the behavior of syscall rule optimizers.
+func TestOptimizeSyscallRule(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		rule       SyscallRule
+		optimizers []ruleOptimizerFunc
+		want       SyscallRule
+	}{
+		{
+			name: "do nothing to a simple rule",
+			rule: PerArg{NotEqual(0xff)},
+			want: PerArg{NotEqual(0xff)},
+		},
+		{
+			name: "flatten Or rule",
+			rule: Or{
+				Or{
+					PerArg{EqualTo(0x11)},
+					Or{
+						PerArg{EqualTo(0x22)},
+						PerArg{EqualTo(0x33)},
+					},
+					PerArg{EqualTo(0x44)},
+				},
+				Or{
+					PerArg{EqualTo(0x55)},
+					PerArg{EqualTo(0x66)},
+				},
+			},
+			want: Or{
+				PerArg{EqualTo(0x11)},
+				PerArg{EqualTo(0x22)},
+				PerArg{EqualTo(0x33)},
+				PerArg{EqualTo(0x44)},
+				PerArg{EqualTo(0x55)},
+				PerArg{EqualTo(0x66)},
+			},
+		},
+		{
+			name: "flatten And rule",
+			rule: And{
+				And{
+					PerArg{NotEqual(0x11)},
+					And{
+						PerArg{NotEqual(0x22)},
+						PerArg{NotEqual(0x33)},
+					},
+					PerArg{NotEqual(0x44)},
+				},
+				And{
+					PerArg{NotEqual(0x55)},
+					PerArg{NotEqual(0x66)},
+				},
+			},
+			want: And{
+				PerArg{NotEqual(0x11)},
+				PerArg{NotEqual(0x22)},
+				PerArg{NotEqual(0x33)},
+				PerArg{NotEqual(0x44)},
+				PerArg{NotEqual(0x55)},
+				PerArg{NotEqual(0x66)},
+			},
+		},
+		{
+			name: "simplify Or with single rule",
+			rule: Or{
+				PerArg{EqualTo(0x11)},
+			},
+			want: PerArg{EqualTo(0x11)},
+		},
+		{
+			name: "simplify And with single rule",
+			rule: And{
+				PerArg{EqualTo(0x11)},
+			},
+			want: PerArg{EqualTo(0x11)},
+		},
+		{
+			name: "simplify Or with MatchAll",
+			rule: Or{
+				PerArg{EqualTo(0x11)},
+				Or{
+					MatchAll{},
+				},
+				PerArg{EqualTo(0x22)},
+			},
+			want: MatchAll{},
+		},
+		{
+			name: "single MatchAll in Or is not an empty rule",
+			rule: Or{
+				MatchAll{},
+				MatchAll{},
+			},
+			optimizers: []ruleOptimizerFunc{
+				convertMatchAllOrXToMatchAll,
+			},
+			want: MatchAll{},
+		},
+		{
+			name: "simplify And with MatchAll",
+			rule: And{
+				PerArg{NotEqual(0x11)},
+				And{
+					MatchAll{},
+				},
+				PerArg{NotEqual(0x22)},
+			},
+			want: And{
+				PerArg{NotEqual(0x11)},
+				PerArg{NotEqual(0x22)},
+			},
+		},
+		{
+			name: "single MatchAll in And is not optimized to an empty rule",
+			rule: And{
+				MatchAll{},
+				MatchAll{},
+			},
+			optimizers: []ruleOptimizerFunc{
+				convertMatchAllAndXToX,
+			},
+			want: MatchAll{},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var got SyscallRule
+			if len(test.optimizers) == 0 {
+				got = optimizeSyscallRule(test.rule)
+			} else {
+				got = optimizeSyscallRuleFuncs(test.rule, test.optimizers)
+			}
+			if !reflect.DeepEqual(got, test.want) {
+				t.Errorf("got rule:\n%v\nwant rule:\n%v\n", got, test.want)
 			}
 		})
 	}
