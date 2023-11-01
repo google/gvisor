@@ -1040,15 +1040,18 @@ retry:
 	if oldRoot.mount.root != oldRoot.dentry {
 		return newRoot, oldRoot, linuxerr.EINVAL
 	}
-	// The current root and the new root cannot be on the rootfs mount.
-	if oldRoot.mount.parent() == nil || newRoot.mount.parent() == nil {
-		return newRoot, oldRoot, linuxerr.EINVAL
-	}
+
 	// The current root and the new root must be in the context's mount namespace.
 	ns := MountNamespaceFromContext(ctx)
 	defer ns.DecRef(ctx)
 	vfs.lockMounts()
 	if oldRoot.mount.ns != ns || newRoot.mount.ns != ns {
+		vfs.unlockMounts(ctx)
+		return newRoot, oldRoot, linuxerr.EINVAL
+	}
+
+	// The current root and the new root cannot be on the rootfs mount.
+	if oldRoot.mount.parent() == nil || newRoot.mount.parent() == nil {
 		vfs.unlockMounts(ctx)
 		return newRoot, oldRoot, linuxerr.EINVAL
 	}
