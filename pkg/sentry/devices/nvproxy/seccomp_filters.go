@@ -23,7 +23,6 @@ import (
 
 // Filters returns seccomp-bpf filters for this package.
 func Filters() seccomp.SyscallRules {
-	nonNegativeFD := seccomp.NonNegativeFDCheck()
 	notIocSizeMask := ^(((uintptr(1) << linux.IOC_SIZEBITS) - 1) << linux.IOC_SIZESHIFT) // for ioctls taking arbitrary size
 	return seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		unix.SYS_OPENAT: seccomp.PerArg{
@@ -38,153 +37,153 @@ func Filters() seccomp.SyscallRules {
 		},
 		unix.SYS_IOCTL: seccomp.Or{
 			seccomp.PerArg{
-				nonNegativeFD,
+				seccomp.NonNegativeFD{},
 				seccomp.MaskedEqual(notIocSizeMask, frontendIoctlCmd(nvgpu.NV_ESC_CARD_INFO, 0)),
 			},
 			seccomp.PerArg{
-				nonNegativeFD,
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(frontendIoctlCmd(nvgpu.NV_ESC_CHECK_VERSION_STR, nvgpu.SizeofRMAPIVersion)),
 			},
 			seccomp.PerArg{
-				nonNegativeFD,
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(frontendIoctlCmd(nvgpu.NV_ESC_REGISTER_FD, nvgpu.SizeofIoctlRegisterFD)),
 			},
 			seccomp.PerArg{
-				nonNegativeFD,
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(frontendIoctlCmd(nvgpu.NV_ESC_ALLOC_OS_EVENT, nvgpu.SizeofIoctlAllocOSEvent)),
 			},
 			seccomp.PerArg{
-				nonNegativeFD,
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(frontendIoctlCmd(nvgpu.NV_ESC_FREE_OS_EVENT, nvgpu.SizeofIoctlFreeOSEvent)),
 			},
 			seccomp.PerArg{
-				nonNegativeFD,
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(frontendIoctlCmd(nvgpu.NV_ESC_SYS_PARAMS, nvgpu.SizeofIoctlSysParams)),
 			},
 			seccomp.PerArg{
-				nonNegativeFD,
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(frontendIoctlCmd(nvgpu.NV_ESC_RM_ALLOC_MEMORY, nvgpu.SizeofIoctlNVOS02ParametersWithFD)),
 			},
 			seccomp.PerArg{
-				nonNegativeFD,
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(frontendIoctlCmd(nvgpu.NV_ESC_RM_FREE, nvgpu.SizeofNVOS00Parameters)),
 			},
 			seccomp.PerArg{
-				nonNegativeFD,
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(frontendIoctlCmd(nvgpu.NV_ESC_RM_CONTROL, nvgpu.SizeofNVOS54Parameters)),
 			},
 			seccomp.PerArg{
-				nonNegativeFD,
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(frontendIoctlCmd(nvgpu.NV_ESC_RM_ALLOC, nvgpu.SizeofNVOS21Parameters)),
 			},
 			// Note that we don't need to add one for NVOS21ParametersV535, because
 			// SizeofNVOS21ParametersV535 == SizeofNVOS21Parameters. We test this.
 			seccomp.PerArg{
-				nonNegativeFD,
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(frontendIoctlCmd(nvgpu.NV_ESC_RM_ALLOC, nvgpu.SizeofNVOS64Parameters)),
 			},
 			seccomp.PerArg{
-				nonNegativeFD,
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(frontendIoctlCmd(nvgpu.NV_ESC_RM_ALLOC, nvgpu.SizeofNVOS64ParametersV535)),
 			},
 			seccomp.PerArg{
-				nonNegativeFD,
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(frontendIoctlCmd(nvgpu.NV_ESC_RM_DUP_OBJECT, nvgpu.SizeofNVOS55Parameters)),
 			},
 			seccomp.PerArg{
-				nonNegativeFD,
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(frontendIoctlCmd(nvgpu.NV_ESC_RM_SHARE, nvgpu.SizeofNVOS57Parameters)),
 			},
 			seccomp.PerArg{
-				nonNegativeFD,
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(frontendIoctlCmd(nvgpu.NV_ESC_RM_VID_HEAP_CONTROL, nvgpu.SizeofNVOS32Parameters)),
 			},
 			seccomp.PerArg{
-				nonNegativeFD,
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(frontendIoctlCmd(nvgpu.NV_ESC_RM_MAP_MEMORY, nvgpu.SizeofIoctlNVOS33ParametersWithFD)),
 			},
 			seccomp.PerArg{
-				nonNegativeFD,
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(frontendIoctlCmd(nvgpu.NV_ESC_RM_UNMAP_MEMORY, nvgpu.SizeofNVOS34Parameters)),
 			},
 			seccomp.PerArg{
-				nonNegativeFD,
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(frontendIoctlCmd(nvgpu.NV_ESC_RM_UPDATE_DEVICE_MAPPING_INFO, nvgpu.SizeofNVOS56Parameters)),
 			},
 			seccomp.PerArg{
-				nonNegativeFD,
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(nvgpu.UVM_INITIALIZE),
 			},
 			seccomp.PerArg{
-				nonNegativeFD,
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(nvgpu.UVM_MM_INITIALIZE),
 			},
 			seccomp.PerArg{
-				nonNegativeFD,
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(nvgpu.UVM_DEINITIALIZE),
 			},
 			seccomp.PerArg{
-				nonNegativeFD,
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(nvgpu.UVM_CREATE_RANGE_GROUP),
 			},
 			seccomp.PerArg{
-				nonNegativeFD,
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(nvgpu.UVM_DESTROY_RANGE_GROUP),
 			},
 			seccomp.PerArg{
-				nonNegativeFD,
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(nvgpu.UVM_REGISTER_GPU_VASPACE),
 			},
 			seccomp.PerArg{
-				nonNegativeFD,
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(nvgpu.UVM_UNREGISTER_GPU_VASPACE),
 			},
 			seccomp.PerArg{
-				nonNegativeFD,
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(nvgpu.UVM_REGISTER_CHANNEL),
 			},
 			seccomp.PerArg{
-				nonNegativeFD,
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(nvgpu.UVM_UNREGISTER_CHANNEL),
 			},
 			seccomp.PerArg{
-				nonNegativeFD,
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(nvgpu.UVM_MAP_EXTERNAL_ALLOCATION),
 			},
 			seccomp.PerArg{
-				nonNegativeFD,
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(nvgpu.UVM_FREE),
 			},
 			seccomp.PerArg{
-				nonNegativeFD,
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(nvgpu.UVM_REGISTER_GPU),
 			},
 			seccomp.PerArg{
-				nonNegativeFD,
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(nvgpu.UVM_UNREGISTER_GPU),
 			},
 			seccomp.PerArg{
-				nonNegativeFD,
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(nvgpu.UVM_PAGEABLE_MEM_ACCESS),
 			},
 			seccomp.PerArg{
-				nonNegativeFD,
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(nvgpu.UVM_DISABLE_READ_DUPLICATION),
 			},
 			seccomp.PerArg{
-				nonNegativeFD,
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(nvgpu.UVM_MAP_DYNAMIC_PARALLELISM_REGION),
 			},
 			seccomp.PerArg{
-				nonNegativeFD,
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(nvgpu.UVM_ALLOC_SEMAPHORE_POOL),
 			},
 			seccomp.PerArg{
-				nonNegativeFD,
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(nvgpu.UVM_VALIDATE_VA_RANGE),
 			},
 			seccomp.PerArg{
-				nonNegativeFD,
+				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(nvgpu.UVM_CREATE_EXTERNAL_RANGE),
 			},
 		},
