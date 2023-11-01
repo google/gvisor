@@ -57,11 +57,11 @@ func isGSOEnabled(fd int, intf string) (bool, error) {
 	return val.val != 0, nil
 }
 
-func writeNATBlob() (*os.File, func(), error) {
+func writeNATBlob() (*os.File, error) {
 	// Open a socket to use with iptables.
 	iptSock, err := unix.Socket(unix.AF_INET, unix.SOCK_RAW, unix.IPPROTO_ICMP)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to open socket for iptables: %v", err)
+		return nil, fmt.Errorf("failed to open socket for iptables: %v", err)
 	}
 	defer unix.Close(iptSock)
 
@@ -78,7 +78,7 @@ func writeNATBlob() (*os.File, func(), error) {
 		uintptr(unsafe.Pointer(&natInfoLen)),
 		0)
 	if errno != 0 {
-		return nil, nil, fmt.Errorf("failed to call IPT_SO_GET_INFO: %v", err)
+		return nil, fmt.Errorf("failed to call IPT_SO_GET_INFO: %v", err)
 	}
 
 	// Get the iptables entries.
@@ -94,7 +94,7 @@ func writeNATBlob() (*os.File, func(), error) {
 		uintptr(unsafe.Pointer(&entriesBufLen)),
 		0)
 	if errno != 0 {
-		return nil, nil, fmt.Errorf("failed to call IPT_SO_GET_ENTRIES: %v", errno)
+		return nil, fmt.Errorf("failed to call IPT_SO_GET_ENTRIES: %v", errno)
 	}
 	var gotEntries linux.IPTGetEntries
 	gotEntries.UnmarshalUnsafe(entriesBuf[:unsafe.Sizeof(entries)])
@@ -119,17 +119,14 @@ func writeNATBlob() (*os.File, func(), error) {
 		panic(fmt.Sprintf("failed to populate entry table: copied %d bytes, but wanted to copy %d", n, natInfo.Size))
 	}
 
-	// Write blob to file.
-	blobFile, err := os.CreateTemp("", "iptables-blob-")
+	// Write blob to a pipe.
+	reader, writer, err := os.Pipe()
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to create iptables blob file: %v", err)
+		return nil, fmt.Errorf("failed to create iptables blob pipe: %v", err)
 	}
-	if n, err := blobFile.Write(replaceBuf); n != len(replaceBuf) || err != nil {
-		os.Remove(blobFile.Name())
-		return nil, nil, fmt.Errorf("failed to write iptables blob: wrote %d bytes (%d expected) and got error: %v", n, len(replaceBuf), err)
+	defer writer.Close()
+	if n, err := writer.Write(replaceBuf); n != len(replaceBuf) || err != nil {
+		return nil, fmt.Errorf("failed to write iptables blob: wrote %d bytes (%d expected) and got error: %v", n, len(replaceBuf), err)
 	}
-	cleanup := func() {
-		os.Remove(blobFile.Name())
-	}
-	return blobFile, cleanup, nil
+	return reader, nil
 }
