@@ -101,41 +101,19 @@ func BenchmarkNVProxyIoctl(b *testing.B) {
 		Platform: &systrap.Systrap{},
 		NVProxy:  true,
 	})
-	ioctlsRule := rules.Get(unix.SYS_IOCTL)
-	if ioctlsRule == nil {
-		b.Fatalf("ioctl rule is not defined")
-	}
-	ioctlOr, isOr := ioctlsRule.(seccomp.Or)
-	if !isOr {
-		b.Fatalf("ioctl rule is not an Or rule")
-	}
-	sequences := make([]secbenchdef.Sequence, 0, len(ioctlOr))
-	var processOrRule func(seccomp.Or)
-	processOrRule = func(orRule seccomp.Or) {
-		for _, ioctlRule := range orRule {
-			if orSubRule, isOr := ioctlRule.(seccomp.Or); isOr {
-				processOrRule(orSubRule)
-				continue
-			}
-			perArg, isPerArg := ioctlRule.(seccomp.PerArg)
-			if !isPerArg {
-				b.Fatalf("ioctl sub-rule %v (type: %T) is not a PerArg rule", ioctlRule, ioctlRule)
-			}
-			if perArg[1] == nil {
-				b.Fatalf("ioctl sub-rule %v does not have any rule for arg[1]", perArg)
-			}
-			arg1Equal, isEqual := perArg[1].(seccomp.EqualTo)
-			if !isEqual {
-				continue
-			}
+	var sequences []secbenchdef.Sequence
+	if err := rules.ForSingleArgument(unix.SYS_IOCTL, 1, func(v seccomp.ValueMatcher) error {
+		if arg1Equal, isArg1Equal := v.(seccomp.EqualTo); isArg1Equal {
 			sequences = append(sequences, secbenchdef.Sequence{
 				Name:     fmt.Sprintf("ioctl_%d", arg1Equal),
 				Weight:   1,
 				Syscalls: secbenchdef.Single(unix.SYS_IOCTL, 0, uintptr(arg1Equal)),
 			})
 		}
+		return nil
+	}); err != nil {
+		b.Fatalf("ioctl rules are not well-formed: %v", err)
 	}
-	processOrRule(ioctlOr)
 	secbench.Run(b, secbench.BenchFromSyscallRules(
 		b,
 		"nvproxy",
