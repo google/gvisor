@@ -15,9 +15,12 @@
 package sandbox
 
 import (
+	"fmt"
+	"os"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
 type ethtoolValue struct {
@@ -52,4 +55,80 @@ func isGSOEnabled(fd int, intf string) (bool, error) {
 	}
 
 	return val.val != 0, nil
+}
+
+func writeNATBlob() (*os.File, func(), error) {
+	// Open a socket to use with iptables.
+	iptSock, err := unix.Socket(unix.AF_INET, unix.SOCK_RAW, unix.IPPROTO_ICMP)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to open socket for iptables: %v", err)
+	}
+	defer unix.Close(iptSock)
+
+	// Get the iptables info.
+	var NATName = [linux.XT_TABLE_MAXNAMELEN]byte([]byte("nat\x00"))
+	natInfo := linux.IPTGetinfo{Name: NATName}
+	natInfoLen := int32(unsafe.Sizeof(linux.IPTGetinfo{}))
+	_, _, errno := unix.Syscall6(unix.SYS_GETSOCKOPT,
+		uintptr(iptSock),
+		unix.SOL_IP,
+		linux.IPT_SO_GET_INFO,
+		uintptr(unsafe.Pointer(&natInfo)),
+		uintptr(unsafe.Pointer(&natInfoLen)),
+		0)
+	if errno != 0 {
+		return nil, nil, fmt.Errorf("failed to call IPT_SO_GET_INFO: %v", err)
+	}
+
+	// Get the iptables entries.
+	entries := linux.IPTGetEntries{Name: NATName, Size: natInfo.Size}
+	entriesBufLen := uint32(unsafe.Sizeof(entries)) + natInfo.Size
+	entriesBuf := make([]byte, entriesBufLen)
+	entries.MarshalUnsafe(entriesBuf[:unsafe.Sizeof(entries)])
+	_, _, errno = unix.Syscall6(unix.SYS_GETSOCKOPT,
+		uintptr(iptSock),
+		unix.SOL_IP,
+		linux.IPT_SO_GET_ENTRIES,
+		uintptr(unsafe.Pointer(&entriesBuf[0])),
+		uintptr(unsafe.Pointer(&entriesBufLen)),
+		0)
+	if errno != 0 {
+		return nil, nil, fmt.Errorf("failed to call IPT_SO_GET_ENTRIES: %v", errno)
+	}
+	var gotEntries linux.IPTGetEntries
+	gotEntries.UnmarshalUnsafe(entriesBuf[:unsafe.Sizeof(entries)])
+
+	// Construct an IPTReplace that can be used to set rules.
+	replace := linux.IPTReplace{
+		Name:       NATName,
+		ValidHooks: natInfo.ValidHooks,
+		NumEntries: natInfo.NumEntries,
+		Size:       natInfo.Size,
+		HookEntry:  natInfo.HookEntry,
+		Underflow:  natInfo.Underflow,
+		// We don't implement counters yet.
+		NumCounters: 0,
+		Counters:    0,
+	}
+
+	// Marshal into a blob.
+	replaceBuf := make([]byte, unsafe.Sizeof(replace)+uintptr(natInfo.Size))
+	replace.MarshalUnsafe(replaceBuf[:unsafe.Sizeof(replace)])
+	if n := copy(replaceBuf[unsafe.Sizeof(replace):], entriesBuf[unsafe.Sizeof(entries):]); uint32(n) != natInfo.Size {
+		panic(fmt.Sprintf("failed to populate entry table: copied %d bytes, but wanted to copy %d", n, natInfo.Size))
+	}
+
+	// Write blob to file.
+	blobFile, err := os.CreateTemp("", "iptables-blob-")
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create iptables blob file: %v", err)
+	}
+	if n, err := blobFile.Write(replaceBuf); n != len(replaceBuf) || err != nil {
+		os.Remove(blobFile.Name())
+		return nil, nil, fmt.Errorf("failed to write iptables blob: wrote %d bytes (%d expected) and got error: %v", n, len(replaceBuf), err)
+	}
+	cleanup := func() {
+		os.Remove(blobFile.Name())
+	}
+	return blobFile, cleanup, nil
 }

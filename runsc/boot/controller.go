@@ -188,7 +188,10 @@ func newController(fd int, l *Loader) (*controller, error) {
 	ctrl.srv.Register(&debug{})
 
 	if eps, ok := l.k.RootNetworkNamespace().Stack().(*netstack.Stack); ok {
-		ctrl.srv.Register(&Network{Stack: eps.Stack})
+		ctrl.srv.Register(&Network{
+			Stack:  eps.Stack,
+			Kernel: l.k,
+		})
 	}
 	if l.root.conf.ProfileEnable {
 		ctrl.srv.Register(control.NewProfile(l.k))
