@@ -229,50 +229,56 @@ func (c *HostConnectedEndpoint) EventUpdate() error {
 }
 
 // Recv implements Receiver.Recv.
-func (c *HostConnectedEndpoint) Recv(ctx context.Context, data [][]byte, creds bool, numRights int, peek bool) (int64, int64, ControlMessages, []RightsControlMessage, bool, Address, bool, *syserr.Error) {
+func (c *HostConnectedEndpoint) Recv(ctx context.Context, data [][]byte, args RecvArgs) (RecvOutput, bool, *syserr.Error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
 	var cm unet.ControlMessage
-	if numRights > 0 {
-		cm.EnableFDs(int(numRights))
+	if args.NumRights > 0 {
+		cm.EnableFDs(int(args.NumRights))
 	}
 
 	// N.B. Unix sockets don't have a receive buffer, the send buffer
 	// serves both purposes.
-	rl, ml, cl, cTrunc, err := fdReadVec(c.fd, data, []byte(cm), peek, c.RecvMaxQueueSize())
-	if rl > 0 && err != nil {
+	out := RecvOutput{Source: Address{Addr: c.addr}}
+	var err error
+	var controlLen uint64
+	out.RecvLen, out.MsgLen, controlLen, out.ControlTrunc, err = fdReadVec(c.fd, data, []byte(cm), args.Peek, c.RecvMaxQueueSize())
+	if out.RecvLen > 0 && err != nil {
 		// We got some data, so all we need to do on error is return
 		// the data that we got. Short reads are fine, no need to
 		// block.
 		err = nil
 	}
 	if err != nil {
-		return 0, 0, ControlMessages{}, nil, false, Address{}, false, syserr.FromError(err)
+		return RecvOutput{}, false, syserr.FromError(err)
 	}
 
 	// There is no need for the callee to call RecvNotify because fdReadVec uses
 	// the host's recvmsg(2) and the host kernel's queue.
 
 	// Trim the control data if we received less than the full amount.
-	if cl < uint64(len(cm)) {
-		cm = cm[:cl]
+	if controlLen < uint64(len(cm)) {
+		cm = cm[:controlLen]
 	}
 
 	// Avoid extra allocations in the case where there isn't any control data.
 	if len(cm) == 0 {
-		return rl, ml, ControlMessages{}, nil, cTrunc, Address{Addr: c.addr}, false, nil
+		return out, false, nil
 	}
 
 	fds, err := cm.ExtractFDs()
 	if err != nil {
-		return 0, 0, ControlMessages{}, nil, false, Address{}, false, syserr.FromError(err)
+		return RecvOutput{}, false, syserr.FromError(err)
 	}
 
 	if len(fds) == 0 {
-		return rl, ml, ControlMessages{}, nil, cTrunc, Address{Addr: c.addr}, false, nil
+		return out, false, nil
 	}
-	return rl, ml, ControlMessages{Rights: &SCMRights{fds}}, nil, cTrunc, Address{Addr: c.addr}, false, nil
+	out.Control = ControlMessages{
+		Rights: &SCMRights{fds},
+	}
+	return out, false, nil
 }
 
 // RecvNotify implements Receiver.RecvNotify.
