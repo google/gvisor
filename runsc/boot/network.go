@@ -16,6 +16,7 @@ package boot
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"runtime"
@@ -25,6 +26,8 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/hostos"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/socket/netfilter"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/link/ethernet"
 	"gvisor.dev/gvisor/pkg/tcpip/link/fdbased"
@@ -68,7 +71,8 @@ var (
 
 // Network exposes methods that can be used to configure a network stack.
 type Network struct {
-	Stack *stack.Stack
+	Stack  *stack.Stack
+	Kernel *kernel.Kernel
 }
 
 // Route represents a route in the network stack.
@@ -152,6 +156,10 @@ type CreateLinksAndRoutesArgs struct {
 
 	// PCAP indicates that FilePayload also contains a PCAP log file.
 	PCAP bool
+
+	// NATBlob indicates whether FilePayload also contains an iptables NAT
+	// ruleset.
+	NATBlob bool
 }
 
 // IPWithPrefix is an address with its subnet prefix length.
@@ -200,6 +208,9 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 	if args.PCAP {
 		wantFDs++
 	}
+	if args.NATBlob {
+		wantFDs++
+	}
 	if got := len(args.FilePayload.Files); got != wantFDs {
 		return fmt.Errorf("args.FilePayload.Files has %d FDs but we need %d entries based on FDBasedLinks, XDPLinks, and PCAP", got, wantFDs)
 	}
@@ -237,6 +248,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 	}
 
 	// Setup fdbased or XDP links.
+	fdOffset := 0
 	if len(args.FDBasedLinks) > 0 {
 		// Choose a dispatch mode.
 		dispatchMode := fdbased.RecvMMsg
@@ -250,7 +262,6 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 			log.Infof("Host kernel version < 5.6, falling back to RecvMMsg dispatch")
 		}
 
-		fdOffset := 0
 		for _, link := range args.FDBasedLinks {
 			nicID++
 			nicids[link.Name] = nicID
@@ -329,7 +340,6 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 		nicids[link.Name] = nicID
 
 		// Get the AF_XDP socket.
-		fdOffset := 0
 		oldFD := args.FilePayload.Files[fdOffset].Fd()
 		fd, err := unix.Dup(int(oldFD))
 		if err != nil {
@@ -437,6 +447,23 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 
 	log.Infof("Setting routes %+v", routes)
 	n.Stack.SetRouteTable(routes)
+
+	// Set NAT table rules if necessary.
+	if args.NATBlob {
+		log.Infof("Replacing NAT table")
+		if _, err := unix.Seek(int(args.FilePayload.Files[fdOffset].Fd()), 0, unix.SEEK_SET); err != nil {
+			return fmt.Errorf("failed to seek: %v", err)
+		}
+		iptReplaceBlob, err := io.ReadAll(args.FilePayload.Files[fdOffset])
+		if err != nil {
+			return fmt.Errorf("failed to read iptables blob: %v", err)
+		}
+		fdOffset++
+		if err := netfilter.SetEntries(n.Kernel.RootUserNamespace(), n.Stack, iptReplaceBlob, false); err != nil {
+			return fmt.Errorf("failed to SetEntries: %v", err)
+		}
+	}
+
 	return nil
 }
 
