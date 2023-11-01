@@ -24,7 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
 
-// matchMaker knows how to (un)marshal the matcher named name(). UPDATE THIS
+// matchMaker knows how to (un)marshal the matcher named name().
 type matchMaker interface {
 	// name is the matcher name as stored in the xt_entry_match struct.
 	name() string
