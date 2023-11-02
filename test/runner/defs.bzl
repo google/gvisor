@@ -98,7 +98,7 @@ def _syscall_test(
         tags = []
 
     # Add the full_platform and file access in a tag to make it easier to run
-    # all the tests on a specific flavor. Use --test_tag_filters=runsc_ptrace,file_shared.
+    # all the tests on a specific flavor. Use --test_tag_filters=runsc_systrap,file_shared.
     tags = list(tags)
     tags += [full_platform, "file_" + file_access]
 

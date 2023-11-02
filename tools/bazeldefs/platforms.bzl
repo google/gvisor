@@ -41,4 +41,4 @@ platform_capabilities = {
     },
 }
 
-default_platform = "ptrace"
+default_platform = "systrap"
