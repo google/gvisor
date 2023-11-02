@@ -37,6 +37,7 @@ import (
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sighandling"
 	"gvisor.dev/gvisor/pkg/state/statefile"
@@ -917,8 +918,12 @@ func (c *Container) createGoferFilestores(ovlConf config.Overlay2, mountHints *b
 	var goferConfs []boot.GoferMountConf
 
 	// Handle root mount first.
-	shouldOverlay := ovlConf.RootEnabled() && !c.Spec.Root.Readonly
-	filestore, goferConf, err := c.createGoferFilestore(ovlConf, c.Spec.Root.Path, shouldOverlay, nil /* hint */)
+	overlayMedium := ovlConf.RootOverlayMedium()
+	mountType := boot.Bind
+	if c.Spec.Root.Readonly {
+		overlayMedium = config.NoOverlay
+	}
+	filestore, goferConf, err := c.createGoferFilestore(overlayMedium, c.Spec.Root.Path, mountType, false /* isShared */)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -932,9 +937,22 @@ func (c *Container) createGoferFilestores(ovlConf config.Overlay2, mountHints *b
 		if !specutils.IsGoferMount(c.Spec.Mounts[i]) {
 			continue
 		}
-		hint := mountHints.FindMount(c.Spec.Mounts[i].Source)
-		shouldOverlay := ovlConf.SubMountEnabled() && !specutils.IsReadonlyMount(c.Spec.Mounts[i].Options)
-		filestore, goferConf, err := c.createGoferFilestore(ovlConf, c.Spec.Mounts[i].Source, shouldOverlay, hint)
+		overlayMedium = ovlConf.SubMountOverlayMedium()
+		mountType = boot.Bind
+		isShared := false
+		if specutils.IsReadonlyMount(c.Spec.Mounts[i].Options) {
+			overlayMedium = config.NoOverlay
+		}
+		if hint := mountHints.FindMount(c.Spec.Mounts[i].Source); hint != nil {
+			// Note that we want overlayMedium=self even if this is a read-only mount so that
+			// the shared mount is created correctly. Future containers may mount this writably.
+			overlayMedium = config.SelfOverlay
+			if !specutils.IsGoferMount(hint.Mount) {
+				mountType = hint.Mount.Type
+			}
+			isShared = hint.ShouldShareMount()
+		}
+		filestore, goferConf, err := c.createGoferFilestore(overlayMedium, c.Spec.Mounts[i].Source, mountType, isShared)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -951,41 +969,43 @@ func (c *Container) createGoferFilestores(ovlConf config.Overlay2, mountHints *b
 	return goferFilestores, goferConfs, nil
 }
 
-func (c *Container) createGoferFilestore(ovlConf config.Overlay2, mountSrc string, shouldOverlay bool, hint *boot.MountHint) (*os.File, boot.GoferMountConf, error) {
-	// MountHint information takes precedence over shouldOverlay.
-	if hint != nil && !specutils.IsGoferMount(hint.Mount) {
-		switch hint.Mount.Type {
-		case "tmpfs":
-			// Create self-backed tmpfs.
-			return c.createGoferFilestoreInSelf(mountSrc, hint, boot.GoferMountConf{Lower: boot.NoneLower, Upper: boot.SelfOverlay})
-		default:
-			return nil, boot.GoferMountConf{}, fmt.Errorf("unsupported mount type %q in mount hint", hint.Mount.Type)
-		}
-	}
-	switch {
-	case !shouldOverlay:
-		return nil, boot.GoferMountConf{Lower: boot.Lisafs, Upper: boot.NoOverlay}, nil
-	case ovlConf.IsBackedByMemory():
-		return nil, boot.GoferMountConf{Lower: boot.Lisafs, Upper: boot.MemoryOverlay}, nil
-	case ovlConf.IsBackedBySelf():
-		return c.createGoferFilestoreInSelf(mountSrc, hint, boot.GoferMountConf{Lower: boot.Lisafs, Upper: boot.SelfOverlay})
+func (c *Container) createGoferFilestore(overlayMedium config.OverlayMedium, mountSrc string, mountType string, isShared bool) (*os.File, boot.GoferMountConf, error) {
+	var lower boot.GoferMountConfLowerType
+	switch mountType {
+	case boot.Bind:
+		lower = boot.Lisafs
+	case tmpfs.Name:
+		lower = boot.NoneLower
 	default:
-		return c.createGoferFilestoreInDir(ovlConf)
+		return nil, boot.GoferMountConf{}, fmt.Errorf("unsupported mount type %q in mount hint", mountType)
+	}
+	switch overlayMedium {
+	case config.NoOverlay:
+		return nil, boot.GoferMountConf{Lower: lower, Upper: boot.NoOverlay}, nil
+	case config.MemoryOverlay:
+		return nil, boot.GoferMountConf{Lower: lower, Upper: boot.MemoryOverlay}, nil
+	case config.SelfOverlay:
+		return c.createGoferFilestoreInSelf(mountSrc, isShared, boot.GoferMountConf{Lower: lower, Upper: boot.SelfOverlay})
+	default:
+		if overlayMedium.IsBackedByAnon() {
+			return c.createGoferFilestoreInDir(overlayMedium.HostFileDir(), boot.GoferMountConf{Lower: lower, Upper: boot.AnonOverlay})
+		}
+		return nil, boot.GoferMountConf{}, fmt.Errorf("unexpected overlay medium %q", overlayMedium)
 	}
 }
 
-func (c *Container) createGoferFilestoreInSelf(mountSrc string, hint *boot.MountHint, successConf boot.GoferMountConf) (*os.File, boot.GoferMountConf, error) {
+func (c *Container) createGoferFilestoreInSelf(mountSrc string, isShared bool, successConf boot.GoferMountConf) (*os.File, boot.GoferMountConf, error) {
 	mountSrcInfo, err := os.Stat(mountSrc)
 	if err != nil {
 		return nil, boot.GoferMountConf{}, fmt.Errorf("failed to stat mount %q to see if it were a directory: %v", mountSrc, err)
 	}
 	if !mountSrcInfo.IsDir() {
 		log.Warningf("self filestore is only supported for directory mounts, but mount %q is not a directory, falling back to memory", mountSrc)
-		return nil, boot.GoferMountConf{Lower: boot.Lisafs, Upper: boot.MemoryOverlay}, nil
+		return nil, boot.GoferMountConf{Lower: successConf.Lower, Upper: boot.MemoryOverlay}, nil
 	}
 	// Create the self filestore file.
 	createFlags := unix.O_RDWR | unix.O_CREAT | unix.O_CLOEXEC
-	if !(hint != nil && hint.ShouldShareMount()) {
+	if !isShared {
 		// Allow shared mounts to reuse existing filestore. A previous shared user
 		// may have already set up the filestore.
 		createFlags |= unix.O_EXCL
@@ -1011,8 +1031,7 @@ func (c *Container) createGoferFilestoreInSelf(mountSrc string, hint *boot.Mount
 	return os.NewFile(uintptr(filestoreFD), filestorePath), successConf, nil
 }
 
-func (c *Container) createGoferFilestoreInDir(ovlConf config.Overlay2) (*os.File, boot.GoferMountConf, error) {
-	filestoreDir := ovlConf.HostFileDir()
+func (c *Container) createGoferFilestoreInDir(filestoreDir string, successConf boot.GoferMountConf) (*os.File, boot.GoferMountConf, error) {
 	fileInfo, err := os.Stat(filestoreDir)
 	if err != nil {
 		return nil, boot.GoferMountConf{}, fmt.Errorf("failed to stat filestore directory %q: %v", filestoreDir, err)
@@ -1033,7 +1052,7 @@ func (c *Container) createGoferFilestoreInDir(ovlConf config.Overlay2) (*os.File
 		return nil, boot.GoferMountConf{}, fmt.Errorf("failed to unlink temporary file %q: %v", filestoreFile.Name(), err)
 	}
 	log.Debugf("Created an unnamed filestore file at %q", filestoreDir)
-	return filestoreFile, boot.GoferMountConf{Lower: boot.Lisafs, Upper: boot.AnonOverlay}, nil
+	return filestoreFile, successConf, nil
 }
 
 // saveLocked saves the container metadata to a file.
