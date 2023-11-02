@@ -1915,6 +1915,16 @@ TEST_F(JobControlTest, SetForegroundProcessGroupDifferentSession) {
   ASSERT_NO_ERRNO(ret);
 }
 
+TEST_F(JobControlTest, SetGetSession) {
+  auto res = RunInChild([=]() {
+    pid_t sid = setsid();
+    TEST_PCHECK(sid >= 0);
+    TEST_PCHECK(getsid(0) == sid);
+    TEST_PCHECK(getpid() == sid);
+  });
+  ASSERT_NO_ERRNO(res);
+}
+
 // Verify that we don't hang when creating a new session from an orphaned
 // process group (b/139968068). Calling setsid() creates an orphaned process
 // group, as process groups that contain the session's leading process are

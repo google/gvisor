@@ -256,7 +256,7 @@ func (pg *ProcessGroup) SendSignal(info *linux.SignalInfo) error {
 //
 // EPERM may be returned if either the given ThreadGroup is already a Session
 // leader, or a ProcessGroup already exists for the ThreadGroup's ID.
-func (tg *ThreadGroup) CreateSession() error {
+func (tg *ThreadGroup) CreateSession() (SessionID, error) {
 	tg.pidns.owner.mu.Lock()
 	defer tg.pidns.owner.mu.Unlock()
 	tg.signalHandlers.mu.Lock()
@@ -267,7 +267,7 @@ func (tg *ThreadGroup) CreateSession() error {
 // createSession creates a new session for a threadgroup.
 //
 // Precondition: callers must hold TaskSet.mu and the signal mutex for writing.
-func (tg *ThreadGroup) createSession() error {
+func (tg *ThreadGroup) createSession() (SessionID, error) {
 	// Get the ID for this thread in the current namespace.
 	id := tg.pidns.tgids[tg]
 
@@ -278,21 +278,22 @@ func (tg *ThreadGroup) createSession() error {
 			continue
 		}
 		if s.leader == tg {
-			return linuxerr.EPERM
+			return -1, linuxerr.EPERM
 		}
 		if s.id == SessionID(id) {
-			return linuxerr.EPERM
+			return -1, linuxerr.EPERM
 		}
 		for pg := s.processGroups.Front(); pg != nil; pg = pg.Next() {
 			if pg.id == ProcessGroupID(id) {
-				return linuxerr.EPERM
+				return -1, linuxerr.EPERM
 			}
 		}
 	}
 
 	// Create a new Session, with a single reference.
+	sid := SessionID(id)
 	s := &Session{
-		id:     SessionID(id),
+		id:     sid,
 		leader: tg,
 	}
 	s.InitRefs()
@@ -356,7 +357,7 @@ func (tg *ThreadGroup) createSession() error {
 	// Disconnect from the controlling terminal.
 	tg.tty = nil
 
-	return nil
+	return sid, nil
 }
 
 // CreateProcessGroup creates a new process group.

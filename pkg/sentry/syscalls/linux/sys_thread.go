@@ -670,7 +670,11 @@ func Getpgid(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr
 
 // Setsid implements the linux syscall setsid(2).
 func Setsid(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr, *kernel.SyscallControl, error) {
-	return 0, nil, t.ThreadGroup().CreateSession()
+	sid, err := t.ThreadGroup().CreateSession()
+	if err != nil {
+		return 0, nil, err
+	}
+	return uintptr(sid), nil, nil
 }
 
 // Getsid implements the linux syscall getsid(2).
