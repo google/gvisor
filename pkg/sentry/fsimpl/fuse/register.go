@@ -16,27 +16,14 @@ package fuse
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/sentry/fsimpl/devtmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
 // Register registers the FUSE device with vfsObj.
 func Register(vfsObj *vfs.VirtualFilesystem) error {
-	if err := vfsObj.RegisterDevice(vfs.CharDevice, linux.MISC_MAJOR, fuseDevMinor, fuseDevice{}, &vfs.RegisterDeviceOptions{
+	return vfsObj.RegisterDevice(vfs.CharDevice, linux.MISC_MAJOR, fuseDevMinor, fuseDevice{}, &vfs.RegisterDeviceOptions{
 		GroupName: "misc",
-	}); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-// CreateDevtmpfsFile creates a device special file in devtmpfs.
-func CreateDevtmpfsFile(ctx context.Context, dev *devtmpfs.Accessor) error {
-	if err := dev.CreateDeviceFile(ctx, "fuse", vfs.CharDevice, linux.MISC_MAJOR, fuseDevMinor, 0666 /* mode */); err != nil {
-		return err
-	}
-
-	return nil
+		Pathname:  "fuse",
+		FilePerms: 0666,
+	})
 }

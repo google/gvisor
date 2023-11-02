@@ -123,6 +123,10 @@ type containerInfo struct {
 
 	// nvidiaUVMDevMajor is the device major number used for nvidia-uvm.
 	nvidiaUVMDevMajor uint32
+
+	// nvidiaDevMinors is a list of device minors for Nvidia GPU devices exposed
+	// to the sandbox.
+	nvidiaDevMinors NvidiaDevMinors
 }
 
 // Loader keeps state needed to start the kernel and run the container.
@@ -282,6 +286,9 @@ type Args struct {
 	// ProfileOpts contains the set of profiles to enable and the
 	// corresponding FDs where profile data will be written.
 	ProfileOpts profile.Opts
+	// NvidiaDevMinors is a list of device minors for Nvidia GPU devices exposed
+	// to the sandbox.
+	NvidiaDevMinors NvidiaDevMinors
 }
 
 // make sure stdioFDs are always the same on initial start and on restore
@@ -315,6 +322,7 @@ func New(args Args) (*Loader, error) {
 		conf:            args.Conf,
 		spec:            args.Spec,
 		goferMountConfs: args.GoferMountConfs,
+		nvidiaDevMinors: args.NvidiaDevMinors,
 	}
 
 	// Make host FDs stable between invocations. Host FDs must map to the exact
@@ -857,6 +865,7 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 		goferFilestoreFDs: goferFilestoreFDs,
 		goferMountConfs:   goferMountConfs,
 		nvidiaUVMDevMajor: l.nvidiaUVMDevMajor,
+		nvidiaDevMinors:   l.root.nvidiaDevMinors,
 	}
 	info.procArgs, err = createProcessArgs(cid, spec, creds, l.k, pidns)
 	if err != nil {

@@ -59,7 +59,6 @@ go_library(
         "//pkg/marshal/primitive",
         "//pkg/refs",
         "//pkg/safemem",
-        "//pkg/sentry/fsimpl/devtmpfs",
         "//pkg/sentry/fsimpl/kernfs",
         "//pkg/sentry/fsutil",
         "//pkg/sentry/kernel",
