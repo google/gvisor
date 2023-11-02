@@ -26,7 +26,6 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal"
-	"gvisor.dev/gvisor/pkg/sentry/fsimpl/devtmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
@@ -70,25 +69,6 @@ func Register(vfsObj *vfs.VirtualFilesystem, uvmDevMajor uint32) error {
 		return err
 	}
 	return nil
-}
-
-// CreateDriverDevtmpfsFiles creates device special files in dev that should
-// always exist when this package is enabled. It does not create per-device
-// files in dev; see CreateIndexDevtmpfsFile.
-func CreateDriverDevtmpfsFiles(ctx context.Context, dev *devtmpfs.Accessor, uvmDevMajor uint32) error {
-	if err := dev.CreateDeviceFile(ctx, "nvidiactl", vfs.CharDevice, nvgpu.NV_MAJOR_DEVICE_NUMBER, nvgpu.NV_CONTROL_DEVICE_MINOR, 0666); err != nil {
-		return err
-	}
-	if err := dev.CreateDeviceFile(ctx, "nvidia-uvm", vfs.CharDevice, uvmDevMajor, nvgpu.NVIDIA_UVM_PRIMARY_MINOR_NUMBER, 0666); err != nil {
-		return err
-	}
-	return nil
-}
-
-// CreateIndexDevtmpfsFile creates the device special file in dev for the
-// device with the given index.
-func CreateIndexDevtmpfsFile(ctx context.Context, dev *devtmpfs.Accessor, minor uint32) error {
-	return dev.CreateDeviceFile(ctx, fmt.Sprintf("nvidia%d", minor), vfs.CharDevice, nvgpu.NV_MAJOR_DEVICE_NUMBER, minor, 0666)
 }
 
 // +stateify savable

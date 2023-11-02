@@ -5,28 +5,27 @@ package(default_applicable_licenses = ["//:license"])
 licenses(["notice"])
 
 go_library(
-    name = "devtmpfs",
+    name = "dev",
     srcs = [
-        "devtmpfs.go",
-        "save_restore.go",
+        "dev.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",
+        "//pkg/errors/linuxerr",
         "//pkg/fspath",
         "//pkg/sentry/fsimpl/tmpfs",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/vfs",
-        "//pkg/sync",
     ],
 )
 
 go_test(
-    name = "devtmpfs_test",
+    name = "dev_test",
     size = "small",
-    srcs = ["devtmpfs_test.go"],
-    library = ":devtmpfs",
+    srcs = ["dev_test.go"],
+    library = ":dev",
     deps = [
         "//pkg/abi/linux",
         "//pkg/context",

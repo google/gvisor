@@ -32,6 +32,7 @@ go_library(
     deps = [
         "//pkg/abi",
         "//pkg/abi/linux",
+        "//pkg/abi/nvgpu",
         "//pkg/abi/tpu",
         "//pkg/bpf",
         "//pkg/cleanup",
@@ -59,8 +60,8 @@ go_library(
         "//pkg/sentry/devices/tundev",
         "//pkg/sentry/fdimport",
         "//pkg/sentry/fsimpl/cgroupfs",
+        "//pkg/sentry/fsimpl/dev",
         "//pkg/sentry/fsimpl/devpts",
-        "//pkg/sentry/fsimpl/devtmpfs",
         "//pkg/sentry/fsimpl/erofs",
         "//pkg/sentry/fsimpl/fuse",
         "//pkg/sentry/fsimpl/gofer",

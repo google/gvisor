@@ -25,7 +25,6 @@ import (
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
-	"gvisor.dev/gvisor/pkg/sentry/fsimpl/devtmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
@@ -193,11 +192,8 @@ func IsNetTunSupported(s inet.Stack) bool {
 
 // Register registers all devices implemented by this package in vfsObj.
 func Register(vfsObj *vfs.VirtualFilesystem) error {
-	return vfsObj.RegisterDevice(vfs.CharDevice, netTunDevMajor, netTunDevMinor, tunDevice{}, &vfs.RegisterDeviceOptions{})
-}
-
-// CreateDevtmpfsFiles creates device special files in dev representing all
-// devices implemented by this package.
-func CreateDevtmpfsFiles(ctx context.Context, dev *devtmpfs.Accessor) error {
-	return dev.CreateDeviceFile(ctx, "net/tun", vfs.CharDevice, netTunDevMajor, netTunDevMinor, 0666 /* mode */)
+	return vfsObj.RegisterDevice(vfs.CharDevice, netTunDevMajor, netTunDevMinor, tunDevice{}, &vfs.RegisterDeviceOptions{
+		Pathname:  "net/tun",
+		FilePerms: 0666,
+	})
 }

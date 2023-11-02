@@ -74,6 +74,12 @@ type RegisterDeviceOptions struct {
 	// /proc/devices. If GroupName is empty, this registration will not be
 	// shown in /proc/devices.
 	GroupName string
+	// Pathname is the name for the device file of this device in /dev directory.
+	// If Pathname is empty, then no device file is created.
+	Pathname string
+	// FilePerms are the permission bits to create the device file with. Only
+	// used if Pathname is provided.
+	FilePerms uint16
 }
 
 // RegisterDevice registers the given Device in vfs with the given major and
@@ -88,6 +94,18 @@ func (vfs *VirtualFilesystem) RegisterDevice(kind DeviceKind, major, minor uint3
 	vfs.devices[tup] = &registeredDevice{
 		dev:  dev,
 		opts: *opts,
+	}
+	return nil
+}
+
+// ForEachDevice calls the given callback for each registered device.
+func (vfs *VirtualFilesystem) ForEachDevice(cb func(pathname string, kind DeviceKind, major, minor uint32, perms uint16) error) error {
+	vfs.devicesMu.Lock()
+	defer vfs.devicesMu.Unlock()
+	for tup, dev := range vfs.devices {
+		if err := cb(dev.opts.Pathname, tup.kind, tup.major, tup.minor, dev.opts.FilePerms); err != nil {
+			return err
+		}
 	}
 	return nil
 }

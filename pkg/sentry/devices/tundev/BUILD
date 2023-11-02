@@ -15,7 +15,6 @@ go_library(
         "//pkg/errors/linuxerr",
         "//pkg/hostarch",
         "//pkg/sentry/arch",
-        "//pkg/sentry/fsimpl/devtmpfs",
         "//pkg/sentry/inet",
         "//pkg/sentry/kernel",
         "//pkg/sentry/socket/netstack",

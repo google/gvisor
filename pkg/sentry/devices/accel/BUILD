@@ -29,7 +29,6 @@ go_library(
         "//pkg/safemem",
         "//pkg/seccomp",
         "//pkg/sentry/arch",
-        "//pkg/sentry/fsimpl/devtmpfs",
         "//pkg/sentry/fsimpl/eventfd",
         "//pkg/sentry/kernel",
         "//pkg/sentry/memmap",
