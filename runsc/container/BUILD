@@ -22,6 +22,7 @@ go_library(
         "//pkg/cleanup",
         "//pkg/log",
         "//pkg/sentry/control",
+        "//pkg/sentry/fsimpl/tmpfs",
         "//pkg/sentry/pgalloc",
         "//pkg/sighandling",
         "//pkg/state/statefile",
