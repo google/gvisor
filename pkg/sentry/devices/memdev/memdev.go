@@ -18,40 +18,26 @@ package memdev
 
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
-	"gvisor.dev/gvisor/pkg/context"
-	"gvisor.dev/gvisor/pkg/sentry/fsimpl/devtmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
 // Register registers all devices implemented by this package in vfsObj.
 func Register(vfsObj *vfs.VirtualFilesystem) error {
-	for minor, dev := range map[uint32]vfs.Device{
-		nullDevMinor:    nullDevice{},
-		zeroDevMinor:    zeroDevice{},
-		fullDevMinor:    fullDevice{},
-		randomDevMinor:  randomDevice{},
-		urandomDevMinor: randomDevice{},
+	for minor, spec := range map[uint32]struct {
+		dev      vfs.Device
+		pathname string
+	}{
+		nullDevMinor:    {nullDevice{}, "null"},
+		zeroDevMinor:    {zeroDevice{}, "zero"},
+		fullDevMinor:    {fullDevice{}, "full"},
+		randomDevMinor:  {randomDevice{}, "random"},
+		urandomDevMinor: {randomDevice{}, "urandom"},
 	} {
-		if err := vfsObj.RegisterDevice(vfs.CharDevice, linux.MEM_MAJOR, minor, dev, &vfs.RegisterDeviceOptions{
+		if err := vfsObj.RegisterDevice(vfs.CharDevice, linux.MEM_MAJOR, minor, spec.dev, &vfs.RegisterDeviceOptions{
 			GroupName: "mem",
+			Pathname:  spec.pathname,
+			FilePerms: 0666,
 		}); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// CreateDevtmpfsFiles creates device special files in dev representing all
-// devices implemented by this package.
-func CreateDevtmpfsFiles(ctx context.Context, dev *devtmpfs.Accessor) error {
-	for minor, name := range map[uint32]string{
-		nullDevMinor:    "null",
-		zeroDevMinor:    "zero",
-		fullDevMinor:    "full",
-		randomDevMinor:  "random",
-		urandomDevMinor: "urandom",
-	} {
-		if err := dev.CreateDeviceFile(ctx, name, vfs.CharDevice, linux.MEM_MAJOR, minor, 0666 /* mode */); err != nil {
 			return err
 		}
 	}

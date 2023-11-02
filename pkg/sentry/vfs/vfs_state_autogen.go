@@ -197,6 +197,8 @@ func (r *RegisterDeviceOptions) StateTypeName() string {
 func (r *RegisterDeviceOptions) StateFields() []string {
 	return []string{
 		"GroupName",
+		"Pathname",
+		"FilePerms",
 	}
 }
 
@@ -206,6 +208,8 @@ func (r *RegisterDeviceOptions) beforeSave() {}
 func (r *RegisterDeviceOptions) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
 	stateSinkObject.Save(0, &r.GroupName)
+	stateSinkObject.Save(1, &r.Pathname)
+	stateSinkObject.Save(2, &r.FilePerms)
 }
 
 func (r *RegisterDeviceOptions) afterLoad() {}
@@ -213,6 +217,8 @@ func (r *RegisterDeviceOptions) afterLoad() {}
 // +checklocksignore
 func (r *RegisterDeviceOptions) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.GroupName)
+	stateSourceObject.Load(1, &r.Pathname)
+	stateSourceObject.Load(2, &r.FilePerms)
 }
 
 func (ep *EpollInstance) StateTypeName() string {

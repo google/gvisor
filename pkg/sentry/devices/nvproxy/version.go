@@ -325,7 +325,12 @@ func Init() {
 		v535_54_03Checksum := "454764f57ea1b9e19166a370f78be10e71f0626438fb197f726dc3caf05b4082"
 		v535_54_03 := addDriverABI(535, 54, 03, v535_54_03Checksum, v535_43_02)
 		v535_104_05Checksum := "2f9d609d1da770beee757636635c46e7ed8253ade887b87c7a5482e33fcbedc9"
-		_ = addDriverABI(535, 104, 05, v535_104_05Checksum, v535_54_03)
+		v535_104_05 := addDriverABI(535, 104, 05, v535_104_05Checksum, v535_54_03)
+
+		// The following version does not exist on the main branch. It branched off
+		// the main branch at 535.104.05.
+		v535_104_12Checksum := "ffc2d89e233d2427edb1ff5f436028a94b3ef86e78f97e088e11d905c82e8001"
+		_ = addDriverABI(535, 104, 12, v535_104_12Checksum, v535_104_05)
 	})
 }
 

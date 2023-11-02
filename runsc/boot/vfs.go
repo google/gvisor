@@ -26,6 +26,7 @@ import (
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/abi/nvgpu"
 	"gvisor.dev/gvisor/pkg/abi/tpu"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
@@ -39,8 +40,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/devices/ttydev"
 	"gvisor.dev/gvisor/pkg/sentry/devices/tundev"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/cgroupfs"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/dev"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/devpts"
-	"gvisor.dev/gvisor/pkg/sentry/fsimpl/devtmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/fuse"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/gofer"
@@ -86,7 +87,6 @@ var tmpfsAllowedData = []string{"mode", "size", "uid", "gid"}
 
 func registerFilesystems(k *kernel.Kernel, info *containerInfo) error {
 	ctx := k.SupervisorContext()
-	creds := auth.NewRootCredentials(k.RootUserNamespace())
 	vfsObj := k.VFS()
 
 	vfsObj.MustRegisterFilesystemType(cgroupfs.Name, &cgroupfs.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
@@ -99,10 +99,7 @@ func registerFilesystems(k *kernel.Kernel, info *containerInfo) error {
 		//  usable state.
 		AllowUserMount: true,
 	})
-	vfsObj.MustRegisterFilesystemType(devtmpfs.Name, &devtmpfs.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
-		AllowUserMount: true,
-		AllowUserList:  true,
-	})
+	vfsObj.MustRegisterFilesystemType(dev.Name, &dev.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{})
 	vfsObj.MustRegisterFilesystemType(erofs.Name, &erofs.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
 		AllowUserList: true,
 	})
@@ -151,36 +148,11 @@ func registerFilesystems(k *kernel.Kernel, info *containerInfo) error {
 		return fmt.Errorf("registering fusedev: %w", err)
 	}
 
-	// Setup files in devtmpfs.
-	a, err := devtmpfs.NewAccessor(ctx, vfsObj, creds, devtmpfs.Name)
-	if err != nil {
-		return fmt.Errorf("creating devtmpfs accessor: %w", err)
-	}
-	defer a.Release(ctx)
-
-	if err := a.UserspaceInit(ctx); err != nil {
-		return fmt.Errorf("initializing userspace: %w", err)
-	}
-	if err := memdev.CreateDevtmpfsFiles(ctx, a); err != nil {
-		return fmt.Errorf("creating memdev devtmpfs files: %w", err)
-	}
-	if err := ttydev.CreateDevtmpfsFiles(ctx, a); err != nil {
-		return fmt.Errorf("creating ttydev devtmpfs files: %w", err)
-	}
-	if tunSupported {
-		if err := tundev.CreateDevtmpfsFiles(ctx, a); err != nil {
-			return fmt.Errorf("creating tundev devtmpfs files: %v", err)
-		}
-	}
-	if err := fuse.CreateDevtmpfsFile(ctx, a); err != nil {
-		return fmt.Errorf("creating fusedev devtmpfs files: %w", err)
-	}
-
-	if err := nvproxyRegisterDevicesAndCreateFiles(ctx, info, k, vfsObj, a); err != nil {
+	if err := nvproxyRegisterDevices(info, vfsObj); err != nil {
 		return err
 	}
 
-	if err := tpuProxyRegisterDevicesAndCreateFiles(ctx, info, k, vfsObj, a); err != nil {
+	if err := tpuProxyRegisterDevices(info, vfsObj); err != nil {
 		return err
 	}
 
@@ -246,7 +218,7 @@ func compileMounts(spec *specs.Spec, conf *config.Config) []specs.Mount {
 		case "/sys":
 			sysMounted = true
 		case "/dev":
-			m.Type = devtmpfs.Name
+			m.Type = dev.Name
 			devMounted = true
 		case "/dev/pts":
 			m.Type = devpts.Name
@@ -290,7 +262,7 @@ func compileMounts(spec *specs.Spec, conf *config.Config) []specs.Mount {
 	}
 	if !devMounted {
 		mandatoryMounts = append(mandatoryMounts, specs.Mount{
-			Type:        devtmpfs.Name,
+			Type:        dev.Name,
 			Destination: "/dev",
 		})
 	}
@@ -819,7 +791,7 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 
 	// Find filesystem name and FS specific data field.
 	switch m.mount.Type {
-	case devpts.Name, devtmpfs.Name, proc.Name:
+	case devpts.Name, dev.Name, proc.Name:
 		// Nothing to do.
 
 	case Nonefs:
@@ -1093,74 +1065,63 @@ func (c *containerMounter) configureRestore(ctx context.Context) (context.Contex
 }
 
 func createDeviceFiles(ctx context.Context, creds *auth.Credentials, info *containerInfo, vfsObj *vfs.VirtualFilesystem, root vfs.VirtualDentry) error {
-	if info.spec.Linux == nil {
-		return nil
+	if info.spec.Linux != nil {
+		// Create any device files specified in the spec.
+		for _, dev := range info.spec.Linux.Devices {
+			if err := createDeviceFile(ctx, creds, info, vfsObj, root, dev); err != nil {
+				return err
+			}
+		}
 	}
-	for _, dev := range info.spec.Linux.Devices {
-		pop := vfs.PathOperation{
-			Root:  root,
-			Start: root,
-			Path:  fspath.Parse(dev.Path),
+	if specutils.GPUFunctionalityRequested(info.spec, info.conf) && info.conf.NVProxyDocker {
+		// In Docker mode, devices are not injected into spec.Linux.Devices. So
+		// manually create appropriate device files.
+		mode := os.FileMode(0666)
+		nvidiaDevs := []specs.LinuxDevice{
+			specs.LinuxDevice{Path: "/dev/nvidiactl", Type: "c", Major: nvgpu.NV_MAJOR_DEVICE_NUMBER, Minor: nvgpu.NV_CONTROL_DEVICE_MINOR, FileMode: &mode},
+			specs.LinuxDevice{Path: "/dev/nvidia-uvm", Type: "c", Major: int64(info.nvidiaUVMDevMajor), Minor: nvgpu.NVIDIA_UVM_PRIMARY_MINOR_NUMBER, FileMode: &mode},
 		}
-		opts := vfs.MknodOptions{
-			Mode: linux.FileMode(dev.FileMode.Perm()),
+		for _, minor := range info.nvidiaDevMinors {
+			nvidiaDevs = append(nvidiaDevs, specs.LinuxDevice{Path: fmt.Sprintf("/dev/nvidia%d", minor), Type: "c", Major: nvgpu.NV_MAJOR_DEVICE_NUMBER, Minor: int64(minor), FileMode: &mode})
 		}
-		// See https://github.com/opencontainers/runtime-spec/blob/main/config-linux.md#devices.
-		switch dev.Type {
-		case "b":
-			opts.Mode |= linux.S_IFBLK
-			opts.DevMajor = uint32(dev.Major)
-			opts.DevMinor = uint32(dev.Minor)
-		case "c", "u":
-			opts.Mode |= linux.S_IFCHR
-			opts.DevMajor = uint32(dev.Major)
-			opts.DevMinor = uint32(dev.Minor)
-		case "p":
-			opts.Mode |= linux.S_IFIFO
-		default:
-			return fmt.Errorf("specified device at %q has invalid type %q", dev.Path, dev.Type)
-		}
-		if dev.Path == "/dev/nvidia-uvm" && info.nvidiaUVMDevMajor != 0 && opts.DevMajor != info.nvidiaUVMDevMajor {
-			// nvidia-uvm's major device number is dynamically assigned, so the
-			// number that it has on the host may differ from the number that
-			// it has in sentry VFS; switch from the former to the latter.
-			log.Infof("Switching /dev/nvidia-uvm device major number from %d to %d", dev.Major, info.nvidiaUVMDevMajor)
-			opts.DevMajor = info.nvidiaUVMDevMajor
-		}
-		if err := vfsObj.MkdirAllAt(ctx, path.Dir(dev.Path), root, creds, &vfs.MkdirOptions{
-			Mode: 0o755,
-		}, true /* mustBeDir */); err != nil {
-			return fmt.Errorf("failed to create ancestor directories of %q: %w", dev.Path, err)
-		}
-		// EEXIST is silently ignored; compare
-		// opencontainers/runc:libcontainer/rootfs_linux.go:createDeviceNode().
-		created := true
-		if err := vfsObj.MknodAt(ctx, creds, &pop, &opts); err != nil && !linuxerr.Equals(linuxerr.EEXIST, err) {
-			if linuxerr.Equals(linuxerr.EEXIST, err) {
-				created = false
-			} else {
-				return fmt.Errorf("failed to create device file at %q: %w", dev.Path, err)
-			}
-		}
-		if created && (dev.UID != nil || dev.GID != nil) {
-			var opts vfs.SetStatOptions
-			if dev.UID != nil {
-				opts.Stat.Mask |= linux.STATX_UID
-				opts.Stat.UID = *dev.UID
-			}
-			if dev.GID != nil {
-				opts.Stat.Mask |= linux.STATX_GID
-				opts.Stat.GID = *dev.GID
-			}
-			if err := vfsObj.SetStatAt(ctx, creds, &pop, &opts); err != nil {
-				return fmt.Errorf("failed to set UID/GID for device file %q: %w", dev.Path, err)
+		for _, nvidiaDev := range nvidiaDevs {
+			if err := createDeviceFile(ctx, creds, info, vfsObj, root, nvidiaDev); err != nil {
+				return err
 			}
 		}
 	}
 	return nil
 }
 
-func tpuProxyRegisterDevicesAndCreateFiles(ctx context.Context, info *containerInfo, k *kernel.Kernel, vfsObj *vfs.VirtualFilesystem, a *devtmpfs.Accessor) error {
+func createDeviceFile(ctx context.Context, creds *auth.Credentials, info *containerInfo, vfsObj *vfs.VirtualFilesystem, root vfs.VirtualDentry, devSpec specs.LinuxDevice) error {
+	mode := linux.FileMode(devSpec.FileMode.Perm())
+	var major, minor uint32
+	// See https://github.com/opencontainers/runtime-spec/blob/main/config-linux.md#devices.
+	switch devSpec.Type {
+	case "b":
+		mode |= linux.S_IFBLK
+		major = uint32(devSpec.Major)
+		minor = uint32(devSpec.Minor)
+	case "c", "u":
+		mode |= linux.S_IFCHR
+		major = uint32(devSpec.Major)
+		minor = uint32(devSpec.Minor)
+	case "p":
+		mode |= linux.S_IFIFO
+	default:
+		return fmt.Errorf("specified device at %q has invalid type %q", devSpec.Path, devSpec.Type)
+	}
+	if devSpec.Path == "/dev/nvidia-uvm" && info.nvidiaUVMDevMajor != 0 && major != info.nvidiaUVMDevMajor {
+		// nvidia-uvm's major device number is dynamically assigned, so the
+		// number that it has on the host may differ from the number that
+		// it has in sentry VFS; switch from the former to the latter.
+		log.Infof("Switching /dev/nvidia-uvm device major number from %d to %d", devSpec.Major, info.nvidiaUVMDevMajor)
+		major = info.nvidiaUVMDevMajor
+	}
+	return dev.CreateDeviceFile(ctx, vfsObj, creds, root, devSpec.Path, major, minor, mode, devSpec.UID, devSpec.GID)
+}
+
+func tpuProxyRegisterDevices(info *containerInfo, vfsObj *vfs.VirtualFilesystem) error {
 	if !specutils.TPUProxyIsEnabled(info.spec, info.conf) {
 		return nil
 	}
@@ -1198,19 +1159,16 @@ func tpuProxyRegisterDevicesAndCreateFiles(ctx context.Context, info *containerI
 			if err := accel.RegisterTPUV4Device(vfsObj, uint32(deviceNum), deviceID == tpu.TPUV4liteDeviceID); err != nil {
 				return fmt.Errorf("registering accel driver: %w", err)
 			}
-			if err := accel.CreateDevtmpfsFile(ctx, a, uint32(deviceNum)); err != nil {
-				return fmt.Errorf("creating accel device file %q: %w", deviceNum, err)
-			}
 		}
 	}
 	return nil
 }
 
-func nvproxyRegisterDevicesAndCreateFiles(ctx context.Context, info *containerInfo, k *kernel.Kernel, vfsObj *vfs.VirtualFilesystem, a *devtmpfs.Accessor) error {
+func nvproxyRegisterDevices(info *containerInfo, vfsObj *vfs.VirtualFilesystem) error {
 	if !specutils.GPUFunctionalityRequested(info.spec, info.conf) {
 		return nil
 	}
-	uvmDevMajor, err := k.VFS().GetDynamicCharDevMajor()
+	uvmDevMajor, err := vfsObj.GetDynamicCharDevMajor()
 	if err != nil {
 		return fmt.Errorf("reserving device major number for nvidia-uvm: %w", err)
 	}
@@ -1218,22 +1176,5 @@ func nvproxyRegisterDevicesAndCreateFiles(ctx context.Context, info *containerIn
 		return fmt.Errorf("registering nvproxy driver: %w", err)
 	}
 	info.nvidiaUVMDevMajor = uvmDevMajor
-	if info.conf.NVProxyDocker {
-		// In Docker mode, create all the device files now.
-		// In non-Docker mode, these are instead created as part of
-		// `createDeviceFiles`, using the spec's Device list.
-		minors, err := specutils.FindAllGPUDevices("/")
-		if err != nil {
-			return fmt.Errorf("getting nvidia devices: %w", err)
-		}
-		if err := nvproxy.CreateDriverDevtmpfsFiles(ctx, a, uvmDevMajor); err != nil {
-			return fmt.Errorf("creating nvproxy devtmpfs files: %w", err)
-		}
-		for _, minor := range minors {
-			if err := nvproxy.CreateIndexDevtmpfsFile(ctx, a, minor); err != nil {
-				return fmt.Errorf("creating nvproxy devtmpfs file for device minor %d: %w", minor, err)
-			}
-		}
-	}
 	return nil
 }

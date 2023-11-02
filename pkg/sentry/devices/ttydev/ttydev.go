@@ -19,7 +19,6 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
-	"gvisor.dev/gvisor/pkg/sentry/fsimpl/devtmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
@@ -43,11 +42,7 @@ func (ttyDevice) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, opt
 func Register(vfsObj *vfs.VirtualFilesystem) error {
 	return vfsObj.RegisterDevice(vfs.CharDevice, linux.TTYAUX_MAJOR, ttyDevMinor, ttyDevice{}, &vfs.RegisterDeviceOptions{
 		GroupName: "tty",
+		Pathname:  "tty",
+		FilePerms: 0666,
 	})
-}
-
-// CreateDevtmpfsFiles creates device special files in dev representing all
-// devices implemented by this package.
-func CreateDevtmpfsFiles(ctx context.Context, dev *devtmpfs.Accessor) error {
-	return dev.CreateDeviceFile(ctx, "tty", vfs.CharDevice, linux.TTYAUX_MAJOR, ttyDevMinor, 0666 /* mode */)
 }

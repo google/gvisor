@@ -22,7 +22,6 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
-	"gvisor.dev/gvisor/pkg/sentry/fsimpl/devtmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -79,11 +78,6 @@ func (dev *tpuV4Device) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dent
 		dev.owner = t.ThreadGroup()
 	}
 	return &fd.vfsfd, nil
-}
-
-// CreateDevtmpfsFile creates a /dev/accel[0-9]+ device file.
-func CreateDevtmpfsFile(ctx context.Context, dev *devtmpfs.Accessor, num uint32) error {
-	return dev.CreateDeviceFile(ctx, fmt.Sprintf("accel%d", num), vfs.CharDevice, linux.ACCEL_MAJOR, num, 0666)
 }
 
 // RegisterTPUV4Device registers all devices implemented by this package in vfsObj.
