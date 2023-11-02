@@ -346,6 +346,11 @@ func (cm *containerManager) StartSubcontainer(args *StartArgs, _ *struct{}) erro
 		goferFilestoreFDs = append(goferFilestoreFDs, goferFilestoreFD)
 	}
 	goferFiles = goferFiles[args.NumGoferFilestoreFDs:]
+	defer func() {
+		for _, fd := range goferFilestoreFDs {
+			_ = fd.Close()
+		}
+	}()
 
 	goferFDs, err := fd.NewFromFiles(goferFiles)
 	if err != nil {
