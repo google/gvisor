@@ -144,6 +144,7 @@ func (c *CPU) init(cpuID int) {
 
 	c.hasXSAVE = hasXSAVE
 	c.hasXSAVEOPT = hasXSAVEOPT
+	c.hasFSGSBASE = hasFSGSBASE
 }
 
 // StackTop returns the kernel's stack address.
