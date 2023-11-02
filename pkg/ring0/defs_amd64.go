@@ -137,10 +137,13 @@ type CPUArchState struct {
 
 	*kernelEntry
 
+	appGsBase uint64
+
 	// Copies of global variables, stored in CPU so that they can be used by
 	// syscall and exception handlers (in the upper address space).
 	hasXSAVE    bool
 	hasXSAVEOPT bool
+	hasFSGSBASE bool
 }
 
 // ErrorCode returns the last error code.
