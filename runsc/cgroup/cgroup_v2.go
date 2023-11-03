@@ -236,7 +236,25 @@ func (c *cgroupV2) CPUQuota() (float64, error) {
 	if err != nil {
 		return -1, err
 	}
-
+	cpuQuota, err := parseCPUQuota(cpuMax)
+	if err != nil {
+		return -1, err
+	}
+	if cpuQuota == -1 {
+		// Under Kubernetes runc puts each container in a subgroup under the
+		// pod's cgroup. With gVisor all containers in a pod must share a
+		// common cgroup, and in cgroups v2 that must be a leaf node. To that
+		// end, with cgroupv2+systemd the Kubernetes pause container is the
+		// first pod container lauched and its subgroup hosts all proceesses
+		// for the pod. The pause container won't have cgroup limits set
+		// directly, but Kubernetes will set aggregate limits on its parent.
+		// This code examines that parent group so we can properly detect and
+		// represent cpu and memory limits within the container.
+		cpuMax, err = getValue(c.MakePath(""), "../cpu.max")
+		if err != nil {
+			return -1, err
+		}
+	}
 	return parseCPUQuota(cpuMax)
 }
 
@@ -306,7 +324,24 @@ func (c *cgroupV2) MemoryLimit() (uint64, error) {
 	}
 	limStr = strings.TrimSpace(limStr)
 	if limStr == "max" {
-		return math.MaxUint64, nil
+		// Under Kubernetes runc puts each container in a subgroup under the
+		// pod's cgroup. With gVisor all containers in a pod must share a
+		// common cgroup, and in cgroups v2 that must be a leaf node. To that
+		// end, with cgroupv2+systemd the Kubernetes pause container is the
+		// first pod container lauched and its subgroup hosts all proceesses
+		// for the pod. The pause container won't have cgroup limits set
+		// directly, but Kubernetes will set aggregate limits on its parent.
+		// This code examines that parent group so we can properly detect and
+		// represent cpu and memory limits within the container.
+		limStr, err := getValue(c.MakePath(""), "../memory.max")
+		if err != nil {
+			return 0, err
+		}
+		limStr = strings.TrimSpace(limStr)
+		if limStr == "max" {
+			return math.MaxUint64, nil
+		}
+		return strconv.ParseUint(limStr, 10, 64)
 	}
 	return strconv.ParseUint(limStr, 10, 64)
 }
