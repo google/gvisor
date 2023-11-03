@@ -241,7 +241,16 @@ func (c *cgroupV2) CPUQuota() (float64, error) {
 		return -1, err
 	}
 	if cpuQuota == -1 {
-		cpuMax, err = getValue(c.MakePath("../"), "cpu.max")
+		// Under Kubernetes runc puts each container in a subgroup under the
+		// pod's cgroup. With gVisor all containers in a pod must share a
+		// common cgroup, and in cgroups v2 that must be a leaf node. To that
+		// end, with cgroupv2+systemd the Kubernetes pause container is the
+		// first pod container lauched and its subgroup hosts all proceesses
+		// for the pod. The pause container won't have cgroup limits set
+		// directly, but Kubernetes will set aggregate limits on its parent.
+		// This code examines that parent group so we can properly detect and
+		// represent cpu and memory limits within the container.
+		cpuMax, err = getValue(c.MakePath(""), "../cpu.max")
 		if err != nil {
 			return -1, err
 		}
@@ -315,7 +324,16 @@ func (c *cgroupV2) MemoryLimit() (uint64, error) {
 	}
 	limStr = strings.TrimSpace(limStr)
 	if limStr == "max" {
-		limStr, err := getValue(c.MakePath("../"), "memory.max")
+		// Under Kubernetes runc puts each container in a subgroup under the
+		// pod's cgroup. With gVisor all containers in a pod must share a
+		// common cgroup, and in cgroups v2 that must be a leaf node. To that
+		// end, with cgroupv2+systemd the Kubernetes pause container is the
+		// first pod container lauched and its subgroup hosts all proceesses
+		// for the pod. The pause container won't have cgroup limits set
+		// directly, but Kubernetes will set aggregate limits on its parent.
+		// This code examines that parent group so we can properly detect and
+		// represent cpu and memory limits within the container.
+		limStr, err := getValue(c.MakePath(""), "../memory.max")
 		if err != nil {
 			return 0, err
 		}
@@ -329,8 +347,8 @@ func (c *cgroupV2) MemoryLimit() (uint64, error) {
 }
 
 // MakePath builds a path to the given controller.
-func (c *cgroupV2) MakePath(additionalPath string) string {
-	return filepath.Join(c.Mountpoint, c.Path, additionalPath)
+func (c *cgroupV2) MakePath(controllerName string) string {
+	return filepath.Join(c.Mountpoint, c.Path)
 }
 
 type controllerv2 interface {
