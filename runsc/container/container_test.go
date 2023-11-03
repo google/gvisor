@@ -98,11 +98,13 @@ func executeCombinedOutput(conf *config.Config, cont *Container, execFile *os.Fi
 	if err != nil {
 		return nil, err
 	}
-	if ws != 0 {
-		return nil, fmt.Errorf("exec failed, status: %v", ws)
-	}
-
 	out, err := ioutil.ReadAll(r)
+	switch {
+	case ws != 0 && err != nil:
+		err = fmt.Errorf("exec failed, status: %v, ioutil.ReadAll failed: %v", ws, err)
+	case ws != 0:
+		err = fmt.Errorf("exec failed, status: %v", ws)
+	}
 	return out, err
 }
 
