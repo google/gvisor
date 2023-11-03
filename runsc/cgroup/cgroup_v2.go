@@ -236,7 +236,16 @@ func (c *cgroupV2) CPUQuota() (float64, error) {
 	if err != nil {
 		return -1, err
 	}
-
+	cpuQuota, err := parseCPUQuota(cpuMax)
+	if err != nil {
+		return -1, err
+	}
+	if cpuQuota == -1 {
+		cpuMax, err = getValue(c.MakePath("../"), "cpu.max")
+		if err != nil {
+			return -1, err
+		}
+	}
 	return parseCPUQuota(cpuMax)
 }
 
@@ -306,14 +315,22 @@ func (c *cgroupV2) MemoryLimit() (uint64, error) {
 	}
 	limStr = strings.TrimSpace(limStr)
 	if limStr == "max" {
-		return math.MaxUint64, nil
+		limStr, err := getValue(c.MakePath("../"), "memory.max")
+		if err != nil {
+			return 0, err
+		}
+		limStr = strings.TrimSpace(limStr)
+		if limStr == "max" {
+			return math.MaxUint64, nil
+		}
+		return strconv.ParseUint(limStr, 10, 64)
 	}
 	return strconv.ParseUint(limStr, 10, 64)
 }
 
 // MakePath builds a path to the given controller.
-func (c *cgroupV2) MakePath(controllerName string) string {
-	return filepath.Join(c.Mountpoint, c.Path)
+func (c *cgroupV2) MakePath(additionalPath string) string {
+	return filepath.Join(c.Mountpoint, c.Path, additionalPath)
 }
 
 type controllerv2 interface {
