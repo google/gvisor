@@ -191,6 +191,83 @@ func TestLoadPathsCgroupv2(t *testing.T) {
 	}
 }
 
+func TestGetLimits(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		mem       string
+		cpu       string
+		expMem    uint64
+		expCPU    int
+		limitPath string
+		path      string
+	}{
+		{
+			name:      "get limit from parent cgroup",
+			mem:       "150",
+			cpu:       "100 50",
+			limitPath: "user.slice",
+			path:      "user.slice/container.scope",
+			expMem:    150,
+			expCPU:    2,
+		},
+		{
+			name:      "get limit from leaf cgroup",
+			mem:       "150",
+			cpu:       "100 50",
+			limitPath: "user.slice/container.scope",
+			path:      "user.slice/container.scope",
+			expMem:    150,
+			expCPU:    2,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			testutil.TmpDir()
+			dir, err := ioutil.TempDir(testutil.TmpDir(), "cgroup")
+			if err != nil {
+				t.Fatalf("error creating temporary directory: %v", err)
+			}
+			defer os.RemoveAll(dir)
+
+			fullPath := filepath.Join(dir, tc.path)
+			if err := os.MkdirAll(fullPath, 0o777); err != nil {
+				t.Fatalf("os.MkdirAll(): %v", err)
+			}
+			cg := cgroupV2{
+				Mountpoint: dir,
+				Path:       tc.path,
+			}
+
+			if err := os.WriteFile(filepath.Join(dir, tc.path, "memory.max"), []byte("max"), 0o777); err != nil {
+				t.Fatalf("os.WriteFile(): %v", err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, tc.path, "cpu.max"), []byte("max max"), 0o777); err != nil {
+				t.Fatalf("os.WriteFile(): %v", err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, tc.limitPath, "memory.max"), []byte(tc.mem), 0o655); err != nil {
+				t.Fatalf("os.WriteFile(): %v", err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, tc.limitPath, "cpu.max"), []byte(tc.cpu), 0o655); err != nil {
+				t.Fatalf("os.WriteFile(): %v", err)
+			}
+
+			quota, err := cg.CPUQuota()
+			if err != nil {
+				t.Fatalf("cg.CPUQuota(): %v", err)
+			}
+			if int(quota) != tc.expCPU {
+				t.Errorf("cg.CPUQuota() = %v, want %v", quota, tc.expCPU)
+			}
+			mem, err := cg.MemoryLimit()
+			if err != nil {
+				t.Fatalf("cg.MemoryLimit(): %v", err)
+			}
+			if mem != tc.expMem {
+				t.Errorf("cg.MemoryLimit() = %v, want %v", mem, tc.expMem)
+			}
+		})
+	}
+}
+
 func TestNumToStr(t *testing.T) {
 	cases := map[int64]string{
 		0:  "",
