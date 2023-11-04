@@ -224,7 +224,7 @@ func (vfs *VirtualFilesystem) NewFilesystem(ctx context.Context, creds *auth.Cre
 	if rft == nil {
 		return nil, nil, linuxerr.ENODEV
 	}
-	if !opts.InternalMount && !rft.opts.AllowUserMount {
+	if !opts.GetFilesystemOptions.InternalMount && !rft.opts.AllowUserMount {
 		return nil, nil, linuxerr.ENODEV
 	}
 	return rft.fsType.GetFilesystem(ctx, vfs, creds, source, opts.GetFilesystemOptions)

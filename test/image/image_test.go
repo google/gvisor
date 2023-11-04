@@ -320,7 +320,17 @@ func TestStdio(t *testing.T) {
 	}
 }
 
+func TestDockerOverlay(t *testing.T) {
+	testDocker(t, true)
+}
+
 func TestDocker(t *testing.T) {
+	// Overlayfs can't be built on top of another overlayfs, so docket has
+	// to fall back to the vfs driver.
+	testDocker(t, false)
+}
+
+func testDocker(t *testing.T, overlay bool) {
 	if testutil.IsRunningWithHostNet() {
 		t.Skip("docker doesn't work with hostinet")
 	}
@@ -332,24 +342,28 @@ func TestDocker(t *testing.T) {
 	opts := dockerutil.RunOpts{
 		Image:      "basic/docker",
 		Privileged: true,
-		Mounts: []mount.Mount{
+	}
+	if overlay {
+		opts.Mounts = []mount.Mount{
 			{
 				Target: "/var/lib/docker",
 				Type:   mount.TypeTmpfs,
 			},
-		},
+		}
 	}
 	if err := d.Spawn(ctx, opts); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
 
-	// Docker creates tmpfs mounts with the noexec flag.
-	output, err := d.Exec(ctx,
-		dockerutil.ExecOpts{Privileged: true},
-		"mount", "-o", "remount,exec", "/var/lib/docker",
-	)
-	if err != nil {
-		t.Fatalf("docker exec failed: %v\n%s", err, output)
+	if overlay {
+		// Docker creates tmpfs mounts with the noexec flag.
+		output, err := d.Exec(ctx,
+			dockerutil.ExecOpts{Privileged: true},
+			"mount", "-o", "remount,exec", "/var/lib/docker",
+		)
+		if err != nil {
+			t.Fatalf("docker exec failed: %v\n%s", err, output)
+		}
 	}
 	// Wait for the docker daemon.
 	for i := 0; i < 10; i++ {
@@ -365,7 +379,7 @@ func TestDocker(t *testing.T) {
 	p, err := d.ExecProcess(ctx, dockerutil.ExecOpts{},
 		"docker", "run", "--network", "host", "--rm", "alpine", "echo", "Hello World")
 	if err != nil {
-		t.Fatalf("docker exec failed: %v\n%s", err, output)
+		t.Fatalf("docker exec failed: %v", err)
 	}
 	stdout, stderr, err := p.Read()
 	t.Logf("Container output: == stdout ==\n%s\n== stderr ==\n%s", stdout, stderr)

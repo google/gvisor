@@ -754,9 +754,9 @@ func (cm *containerManager) Mount(args *MountArgs, _ *struct{}) error {
 		opts = vfs.MountOptions{
 			ReadOnly: true,
 			GetFilesystemOptions: vfs.GetFilesystemOptions{
-				Data: fmt.Sprintf("ifd=%d", imageFD),
+				InternalMount: true,
+				Data:          fmt.Sprintf("ifd=%d", imageFD),
 			},
-			InternalMount: true,
 		}
 
 	default:
