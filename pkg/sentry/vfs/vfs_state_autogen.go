@@ -1577,7 +1577,6 @@ func (m *MountOptions) StateFields() []string {
 		"Flags",
 		"ReadOnly",
 		"GetFilesystemOptions",
-		"InternalMount",
 	}
 }
 
@@ -1589,7 +1588,6 @@ func (m *MountOptions) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &m.Flags)
 	stateSinkObject.Save(1, &m.ReadOnly)
 	stateSinkObject.Save(2, &m.GetFilesystemOptions)
-	stateSinkObject.Save(3, &m.InternalMount)
 }
 
 func (m *MountOptions) afterLoad() {}
@@ -1599,7 +1597,6 @@ func (m *MountOptions) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &m.Flags)
 	stateSourceObject.Load(1, &m.ReadOnly)
 	stateSourceObject.Load(2, &m.GetFilesystemOptions)
-	stateSourceObject.Load(3, &m.InternalMount)
 }
 
 func (o *OpenOptions) StateTypeName() string {

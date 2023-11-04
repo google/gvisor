@@ -112,12 +112,6 @@ type MountOptions struct {
 
 	// GetFilesystemOptions contains options to FilesystemType.GetFilesystem().
 	GetFilesystemOptions GetFilesystemOptions
-
-	// InternalMount indicates whether the mount operation is coming from the
-	// application, i.e. through mount(2). If InternalMount is true, allow the use
-	// of filesystem types for which RegisterFilesystemTypeOptions.AllowUserMount
-	// == false.
-	InternalMount bool
 }
 
 // OpenOptions contains options to VirtualFilesystem.OpenAt() and

@@ -205,6 +205,14 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			ctx.Infof("overlay.FilesystemType.GetFilesystem: failed to resolve upperdir %q: %v", upperPathname, err)
 			return nil, nil, err
 		}
+		// TODO(b/286942303): Only tmpfs supports whiteouts and
+		// trusted.overlay attributes. Don't allow to use non-tmpfs
+		// mounts on upper levels for mounts created through the mount
+		// syscall. In gVisor configs, users can specify any
+		// configurations on their own risk.
+		if !opts.InternalMount && upperRoot.Mount().Filesystem().FilesystemType().Name() != "tmpfs" {
+			return nil, nil, linuxerr.EINVAL
+		}
 		privateUpperRoot, err := clonePrivateMount(vfsObj, upperRoot, false /* forceReadOnly */)
 		upperRoot.DecRef(ctx)
 		if err != nil {
