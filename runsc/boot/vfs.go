@@ -461,12 +461,12 @@ func (c *containerMounter) createMountNamespace(ctx context.Context, conf *confi
 	opts := &vfs.MountOptions{
 		ReadOnly: c.root.Readonly,
 		GetFilesystemOptions: vfs.GetFilesystemOptions{
-			Data: strings.Join(data, ","),
+			InternalMount: true,
+			Data:          strings.Join(data, ","),
 			InternalData: gofer.InternalFilesystemOptions{
 				UniqueID: "/",
 			},
 		},
-		InternalMount: true,
 	}
 
 	fsName := gofer.Name
@@ -529,10 +529,10 @@ func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Co
 	// First copy options from lower layer to upper layer and overlay. Clear
 	// filesystem specific options.
 	upperOpts := *lowerOpts
-	upperOpts.GetFilesystemOptions = vfs.GetFilesystemOptions{}
+	upperOpts.GetFilesystemOptions = vfs.GetFilesystemOptions{InternalMount: true}
 
 	overlayOpts := *lowerOpts
-	overlayOpts.GetFilesystemOptions = vfs.GetFilesystemOptions{}
+	overlayOpts.GetFilesystemOptions = vfs.GetFilesystemOptions{InternalMount: true}
 
 	// All writes go to the upper layer, be paranoid and make lower readonly.
 	lowerOpts.ReadOnly = true
@@ -844,8 +844,9 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 
 	opts := ParseMountOptions(m.mount.Options)
 	opts.GetFilesystemOptions = vfs.GetFilesystemOptions{
-		Data:         strings.Join(data, ","),
-		InternalData: internalData,
+		Data:          strings.Join(data, ","),
+		InternalData:  internalData,
+		InternalMount: true,
 	}
 
 	return fsName, opts, nil
@@ -854,7 +855,9 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 // ParseMountOptions converts specs.Mount.Options to vfs.MountOptions.
 func ParseMountOptions(opts []string) *vfs.MountOptions {
 	mountOpts := &vfs.MountOptions{
-		InternalMount: true,
+		GetFilesystemOptions: vfs.GetFilesystemOptions{
+			InternalMount: true,
+		},
 	}
 	// Note: update mountHint.CheckCompatible when more options are added.
 	for _, o := range opts {

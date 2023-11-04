@@ -456,6 +456,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 			// value for sbinfo->max_blocks when SB_KERNMOUNT is set.
 			DisableDefaultSizeLimit: true,
 		},
+		InternalMount: true,
 	}
 	tmpfsFilesystem, tmpfsRoot, err := tmpfs.FilesystemType{}.GetFilesystem(ctx, &k.vfs, auth.NewRootCredentials(k.rootUserNamespace), "", tmpfsOpts)
 	if err != nil {

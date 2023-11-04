@@ -41,6 +41,12 @@ type FilesystemType interface {
 
 // GetFilesystemOptions contains options to FilesystemType.GetFilesystem.
 type GetFilesystemOptions struct {
+	// InternalMount indicates whether the mount operation is coming from the
+	// application, i.e. through mount(2). If InternalMount is true, allow the use
+	// of filesystem types for which RegisterFilesystemTypeOptions.AllowUserMount
+	// == false.
+	InternalMount bool
+
 	// Data is the string passed as the 5th argument to mount(2), which is
 	// usually a comma-separated list of filesystem-specific mount options.
 	Data string
