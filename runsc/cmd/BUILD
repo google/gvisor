@@ -71,6 +71,7 @@ go_library(
         "//pkg/urpc",
         "//runsc/boot",
         "//runsc/cmd/metricserver",
+        "//runsc/cmd/metricserver/metricservercmd",
         "//runsc/cmd/util",
         "//runsc/config",
         "//runsc/console",

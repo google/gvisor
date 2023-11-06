@@ -11,7 +11,12 @@ go_binary(
     srcs = [
         "metricserver_main.go",
     ],
+    visibility = [
+        "//test/metricclient:__subpackages__",
+    ],
     deps = [
+        "//pkg/log",
+        "//runsc/cmd/metricserver/metricservercmd",
         "//runsc/cmd/util",
         "//runsc/config",
         "//runsc/flag",
