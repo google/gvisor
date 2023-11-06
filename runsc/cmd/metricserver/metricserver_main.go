@@ -21,26 +21,21 @@ import (
 	"os"
 
 	"github.com/google/subcommands"
+	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/runsc/cmd/metricserver/metricservercmd"
 	"gvisor.dev/gvisor/runsc/cmd/util"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/metricserver"
 )
 
-// Main returns the status code of the metric server.
-func Main() subcommands.ExitStatus {
-	ctx := context.Background()
-	config.RegisterFlags(flag.CommandLine)
-	server := metricserver.Server{}
-	flag.CommandLine.StringVar(&server.ExporterPrefix, "metricserver-exporter-prefix", "runsc_", "Prefix for all metric names, following Prometheus exporter convention")
-	flag.CommandLine.StringVar(&server.PIDFile, "metricserver-pid-file", "", "If set, write the metric server's own PID to this file after binding to the --metric-server address. The parent directory of this file must already exist.")
-	flag.CommandLine.BoolVar(&server.ExposeProfileEndpoints, "metricserver-allow-profiling", false, "If true, expose /runsc-metrics/profile-cpu and /runsc-metrics/profile-heap to get profiling data about the metric server")
-	flag.CommandLine.BoolVar(&server.AllowUnknownRoot, "metricserver-allow-unknown-root", false, "if set, the metric server will keep running regardless of the existence of --root or the metric server's ability to access it.")
-	flag.Parse()
-	if flag.CommandLine.NArg() != 0 {
-		flag.CommandLine.Usage()
-		return subcommands.ExitUsageError
-	}
+// cmd implements subcommands.Command for the "metric-server" command.
+type cmd struct {
+	metricservercmd.Cmd
+}
+
+// Execute implements subcommands.Command.Execute.
+func (c *cmd) Execute(ctx context.Context, f *flag.FlagSet, args ...any) subcommands.ExitStatus {
 	conf, err := config.NewFromFlags(flag.CommandLine)
 	if err != nil {
 		util.Fatalf(err.Error())
@@ -49,7 +44,13 @@ func Main() subcommands.ExitStatus {
 		flag.CommandLine.Usage()
 		return subcommands.ExitUsageError
 	}
-	server.Config = conf
+	server := metricserver.Server{
+		Config:                 conf,
+		PIDFile:                c.Cmd.PIDFile,
+		ExporterPrefix:         c.Cmd.ExporterPrefix,
+		ExposeProfileEndpoints: c.Cmd.ExposeProfileEndpoints,
+		AllowUnknownRoot:       c.Cmd.AllowUnknownRoot,
+	}
 	if err := server.Run(ctx); err != nil {
 		return util.Errorf("%v", err)
 	}
@@ -57,5 +58,13 @@ func Main() subcommands.ExitStatus {
 }
 
 func main() {
-	os.Exit(int(Main()))
+	subcommands.Register(&cmd{}, "metrics")
+	config.RegisterFlags(flag.CommandLine)
+	flag.Parse()
+	subcmdCode := subcommands.Execute(context.Background())
+	if subcmdCode == subcommands.ExitSuccess {
+		os.Exit(0)
+	}
+	log.Warningf("Failure to execute command, err: %v", subcmdCode)
+	os.Exit(128)
 }
