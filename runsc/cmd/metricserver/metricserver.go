@@ -18,7 +18,7 @@ import (
 // BinaryName is the name of the embedded binary.
 const BinaryName = "metricserver"
 
-//go:embed metricserver.flate
+//go:embed metricserver.bin
 var compressedBinary []byte
 
 // Options is the set of options to execute the embedded binary.
@@ -37,6 +37,10 @@ type Options struct {
 	Files []uintptr
 }
 
+// Bogus import to satisfy the compiler that we are using the flate import,
+// even when compression is disabled.
+const _ = flate.NoCompression
+
 // run decompresses and run the embedded binary with the given arguments.
 // If fork is true, the binary runs in a separate process, and its PID is
 // returned.
@@ -45,7 +49,8 @@ func run(options Options, fork bool) (int, error) {
 	if len(options.Argv) == 0 {
 		options.Argv = []string{BinaryName}
 	}
-	decompressed := flate.NewReader(bytes.NewReader(compressedBinary))
+
+	binaryReader := io.Reader(bytes.NewReader(compressedBinary))
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	oldMask := unix.Umask(0077)
@@ -68,7 +73,7 @@ func run(options Options, fork bool) (int, error) {
 		return 0, fmt.Errorf("cannot remove temp directory: %w", err)
 	}
 	unix.Umask(oldMask)
-	if _, err := io.Copy(tmpFile, decompressed); err != nil {
+	if _, err := io.Copy(tmpFile, binaryReader); err != nil {
 		tmpFile.Close()
 		return 0, fmt.Errorf("cannot decompress embedded binary or write it to temporary file: %w", err)
 	}
