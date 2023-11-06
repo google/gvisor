@@ -22,6 +22,13 @@ go_template(
     ],
 )
 
+config_setting(
+    name = "compilation_mode_opt",
+    values = {
+        "compilation_mode": "opt",
+    },
+)
+
 go_binary(
     name = "flatecompress",
     srcs = ["flatecompress.go"],

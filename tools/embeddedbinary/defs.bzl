@@ -34,6 +34,7 @@ def embedded_binary_go_library(
     if go_package_name == None:
         go_package_name = name
     compressed_binary = binary_name + ".flate"
+    uncompressed_binary = binary_name + ".bin"
     native.genrule(
         name = name + "_flate",
         outs = [compressed_binary],
@@ -41,20 +42,36 @@ def embedded_binary_go_library(
         srcs = [binary],
         tools = [_FLATECOMPRESS],
     )
+    native.genrule(
+        name = name + "_noflate",
+        outs = [uncompressed_binary],
+        cmd = "cat < $(SRCS) > $(OUTS)",
+        srcs = [binary],
+    )
     go_template_instance(
         name = name + "_lib",
         template = _EMBEDDED_BINARY_TEMPLATE,
         package = go_package_name,
         out = out,
-        substrs = {
-            "embedded.bin.name": binary_name,
-            "//go:embed embedded.bin.flate": "//go:embed %s" % (compressed_binary,),
-        },
+        substrs = select({
+            "//tools/embeddedbinary:compilation_mode_opt": {
+                "embedded.bin.name": binary_name,
+                "//go:embed embedded.bin.flate": "//go:embed %s" % (compressed_binary,),
+            },
+            "//conditions:default": {
+                "embedded.bin.name": binary_name,
+                "//go:embed embedded.bin.flate": "//go:embed %s" % (uncompressed_binary,),
+                "flate.NewReader": "io.Reader",
+            },
+        }),
     )
     go_library(
         name = name,
         srcs = [out],
-        embedsrcs = [compressed_binary],
+        embedsrcs = select({
+            "//tools/embeddedbinary:compilation_mode_opt": [compressed_binary],
+            "//conditions:default": [uncompressed_binary],
+        }),
         deps = ["@org_golang_x_sys//unix:go_default_library"],
         visibility = visibility,
     )
