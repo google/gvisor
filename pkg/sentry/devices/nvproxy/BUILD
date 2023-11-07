@@ -21,6 +21,7 @@ go_library(
         "nvproxy.go",
         "nvproxy_unsafe.go",
         "objs_mutex.go",
+        "save_restore.go",
         "seccomp_filters.go",
         "uvm.go",
         "uvm_mmap.go",

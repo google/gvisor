@@ -24,6 +24,8 @@ import (
 )
 
 // DriverVersion represents a NVIDIA driver version patch release.
+//
+// +stateify savable
 type DriverVersion struct {
 	major int
 	minor int
