@@ -36,6 +36,7 @@ go_library(
         "//pkg/log",
         "//pkg/marshal",
         "//pkg/marshal/primitive",
+        "//pkg/rand",
         "//pkg/sentry/arch/fpu",
         "//pkg/sentry/limits",
         "//pkg/usermem",
