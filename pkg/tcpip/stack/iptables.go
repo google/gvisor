@@ -17,6 +17,7 @@ package stack
 import (
 	"fmt"
 	"math/rand"
+	"reflect"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -48,11 +49,11 @@ func DefaultTables(clock tcpip.Clock, rand *rand.Rand) *IPTables {
 		v4Tables: [NumTables]Table{
 			NATID: {
 				Rules: []Rule{
-					{Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
-					{Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
-					{Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
-					{Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
-					{Target: &ErrorTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
+					{Filter: EmptyFilter4(), Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
+					{Filter: EmptyFilter4(), Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
+					{Filter: EmptyFilter4(), Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
+					{Filter: EmptyFilter4(), Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
+					{Filter: EmptyFilter4(), Target: &ErrorTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
 				},
 				BuiltinChains: [NumHooks]int{
 					Prerouting:  0,
@@ -71,9 +72,9 @@ func DefaultTables(clock tcpip.Clock, rand *rand.Rand) *IPTables {
 			},
 			MangleID: {
 				Rules: []Rule{
-					{Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
-					{Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
-					{Target: &ErrorTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
+					{Filter: EmptyFilter4(), Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
+					{Filter: EmptyFilter4(), Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
+					{Filter: EmptyFilter4(), Target: &ErrorTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
 				},
 				BuiltinChains: [NumHooks]int{
 					Prerouting: 0,
@@ -89,10 +90,10 @@ func DefaultTables(clock tcpip.Clock, rand *rand.Rand) *IPTables {
 			},
 			FilterID: {
 				Rules: []Rule{
-					{Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
-					{Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
-					{Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
-					{Target: &ErrorTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
+					{Filter: EmptyFilter4(), Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
+					{Filter: EmptyFilter4(), Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
+					{Filter: EmptyFilter4(), Target: &AcceptTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
+					{Filter: EmptyFilter4(), Target: &ErrorTarget{NetworkProtocol: header.IPv4ProtocolNumber}},
 				},
 				BuiltinChains: [NumHooks]int{
 					Prerouting:  HookUnset,
@@ -113,11 +114,11 @@ func DefaultTables(clock tcpip.Clock, rand *rand.Rand) *IPTables {
 		v6Tables: [NumTables]Table{
 			NATID: {
 				Rules: []Rule{
-					{Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
-					{Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
-					{Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
-					{Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
-					{Target: &ErrorTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
+					{Filter: EmptyFilter6(), Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
+					{Filter: EmptyFilter6(), Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
+					{Filter: EmptyFilter6(), Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
+					{Filter: EmptyFilter6(), Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
+					{Filter: EmptyFilter6(), Target: &ErrorTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
 				},
 				BuiltinChains: [NumHooks]int{
 					Prerouting:  0,
@@ -136,9 +137,9 @@ func DefaultTables(clock tcpip.Clock, rand *rand.Rand) *IPTables {
 			},
 			MangleID: {
 				Rules: []Rule{
-					{Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
-					{Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
-					{Target: &ErrorTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
+					{Filter: EmptyFilter6(), Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
+					{Filter: EmptyFilter6(), Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
+					{Filter: EmptyFilter6(), Target: &ErrorTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
 				},
 				BuiltinChains: [NumHooks]int{
 					Prerouting: 0,
@@ -154,10 +155,10 @@ func DefaultTables(clock tcpip.Clock, rand *rand.Rand) *IPTables {
 			},
 			FilterID: {
 				Rules: []Rule{
-					{Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
-					{Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
-					{Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
-					{Target: &ErrorTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
+					{Filter: EmptyFilter6(), Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
+					{Filter: EmptyFilter6(), Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
+					{Filter: EmptyFilter6(), Target: &AcceptTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
+					{Filter: EmptyFilter6(), Target: &ErrorTarget{NetworkProtocol: header.IPv6ProtocolNumber}},
 				},
 				BuiltinChains: [NumHooks]int{
 					Prerouting:  HookUnset,
@@ -232,11 +233,29 @@ func (it *IPTables) getTableRLocked(id TableID, ipv6 bool) Table {
 // ReplaceTable replaces or inserts table by name. It panics when an invalid id
 // is provided.
 func (it *IPTables) ReplaceTable(id TableID, table Table, ipv6 bool) {
+	it.replaceTable(id, table, ipv6, false /* force */)
+}
+
+// ForceReplaceTable replaces or inserts table by name. It panics when an invalid id
+// is provided. It enables iptables even when the inserted table is all
+// conditionless ACCEPT, skipping our optimization that disables iptables until
+// they're modified.
+func (it *IPTables) ForceReplaceTable(id TableID, table Table, ipv6 bool) {
+	it.replaceTable(id, table, ipv6, true /* force */)
+}
+
+func (it *IPTables) replaceTable(id TableID, table Table, ipv6, force bool) {
 	it.mu.Lock()
 	defer it.mu.Unlock()
+
 	// If iptables is being enabled, initialize the conntrack table and
 	// reaper.
 	if !it.modified {
+		// Don't do anything if the table is identical.
+		if ((ipv6 && reflect.DeepEqual(table, it.v6Tables[id])) || (!ipv6 && reflect.DeepEqual(table, it.v4Tables[id]))) && !force {
+			return
+		}
+
 		it.connections.init()
 		it.startReaper(reaperDelay)
 	}
