@@ -210,6 +210,7 @@ func (t *Task) Interrupted() bool {
 // UninterruptibleSleepStart implements context.Context.UninterruptibleSleepStart.
 func (t *Task) UninterruptibleSleepStart(deactivate bool) {
 	t.assertTaskGoroutine()
+	t.p.PrepareSleep()
 	if deactivate {
 		t.Deactivate()
 	}
