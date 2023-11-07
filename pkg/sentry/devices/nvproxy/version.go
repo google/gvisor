@@ -119,11 +119,13 @@ type abiConAndChecksum struct {
 //     set are not versioned.
 //  4. allocation classes within NV_ESC_RM_ALLOC in frontend device (based on
 //     NVOS64_PARAMETERS.HClass).
+//
+// +stateify savable
 type driverABI struct {
-	frontendIoctl   map[uint32]frontendIoctlHandler
-	uvmIoctl        map[uint32]uvmIoctlHandler
-	controlCmd      map[uint32]controlCmdHandler
-	allocationClass map[uint32]allocationClassHandler
+	frontendIoctl   map[uint32]frontendIoctlHandler   `state:"nosave"`
+	uvmIoctl        map[uint32]uvmIoctlHandler        `state:"nosave"`
+	controlCmd      map[uint32]controlCmdHandler      `state:"nosave"`
+	allocationClass map[uint32]allocationClassHandler `state:"nosave"`
 
 	useRmAllocParamsV535 bool
 }
