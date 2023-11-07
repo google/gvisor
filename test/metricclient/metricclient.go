@@ -37,8 +37,8 @@ import (
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/prometheus"
 	"gvisor.dev/gvisor/pkg/sync"
+	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/config"
-	"gvisor.dev/gvisor/runsc/specutils"
 )
 
 // MetricClient implements an HTTP client that can spawn and connect to a running runsc metrics
@@ -179,6 +179,10 @@ func (c *MetricClient) HealthCheck(ctx context.Context) error {
 // A running server must be stopped before a new one can be successfully started.
 // baseConf is used for passing other flags to the server, e.g. debug log directory.
 func (c *MetricClient) SpawnServer(ctx context.Context, baseConf *config.Config, extraArgs ...string) error {
+	metricServerBinPath, err := testutil.FindFile("runsc/cmd/metricserver/metricserver_bin")
+	if err != nil {
+		return fmt.Errorf("cannot find metricserver_bin: %w", err)
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.server != nil {
@@ -198,7 +202,7 @@ func (c *MetricClient) SpawnServer(ctx context.Context, baseConf *config.Config,
 	overriddenConf := *baseConf
 	overriddenConf.MetricServer = c.addr
 	overriddenConf.RootDir = c.rootDir
-	c.server = exec.Command(specutils.ExePath, overriddenConf.ToFlags()...)
+	c.server = exec.Command(metricServerBinPath, overriddenConf.ToFlags()...)
 	cu := cleanup.Make(func() {
 		c.server = nil
 	})

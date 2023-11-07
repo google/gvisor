@@ -138,7 +138,7 @@ def go_imports(name, src, out):
         cmd = ("$(location @org_golang_x_tools//cmd/goimports:goimports) $(SRCS) > $@"),
     )
 
-def go_library(name, srcs, deps = [], imports = [], stateify = True, marshal = False, marshal_debug = False, nogo = True, **kwargs):
+def go_library(name, srcs, deps = [], imports = [], stateify = True, force_add_state_pkg = False, marshal = False, marshal_debug = False, nogo = True, **kwargs):
     """Wraps the standard go_library and does stateification and marshalling.
 
     The recommended way is to use this rule with mostly identical configuration as the native
@@ -160,6 +160,10 @@ def go_library(name, srcs, deps = [], imports = [], stateify = True, marshal = F
       deps: the library dependencies.
       imports: imports required for stateify.
       stateify: whether statify is enabled (default: true).
+      force_add_state_pkg: whether to skip checking whether the state package
+        is included in `deps`, and to just instead include it outright.
+        This allows `go_library` to be used in conjunction with `select`
+        statements in `deps`.
       marshal: whether marshal is enabled (default: false).
       marshal_debug: whether the gomarshal tools emits debugging output (default: false).
       nogo: enable nogo analysis.
@@ -192,7 +196,7 @@ def go_library(name, srcs, deps = [], imports = [], stateify = True, marshal = F
             for suffix in state_sets.keys()
         ]
 
-        if "//pkg/state" not in all_deps:
+        if force_add_state_pkg or "//pkg/state" not in all_deps:
             all_deps = all_deps + ["//pkg/state"]
 
     if marshal:
