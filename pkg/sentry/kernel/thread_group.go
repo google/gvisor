@@ -322,6 +322,13 @@ func (tg *ThreadGroup) Release(ctx context.Context) {
 		its = append(its, it)
 	}
 	tg.timers = make(map[linux.TimerID]*IntervalTimer) // nil maps can't be saved
+	// Disassociate from the tty if we have one.
+	if tg.tty != nil {
+		tg.tty.mu.Lock()
+		tg.tty.tg = nil
+		tg.tty.mu.Unlock()
+		tg.tty = nil
+	}
 	tg.signalHandlers.mu.Unlock()
 	tg.pidns.owner.mu.Unlock()
 	for _, it := range its {

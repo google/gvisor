@@ -1475,9 +1475,9 @@ TEST_F(JobControlTest, SetTTYMaster) {
 TEST_F(JobControlTest, SetTTY) {
   auto res = RunInChild([=]() {
     TEST_PCHECK(setsid() >= 0);
-    TEST_PCHECK(ioctl(!replica_.get(), TIOCSCTTY, 0));
+    TEST_PCHECK(ioctl(replica_.get(), TIOCSCTTY, 0) >= 0);
     // The second attempt setting the same terminal has to be no-op.
-    TEST_PCHECK(ioctl(!replica_.get(), TIOCSCTTY, 0));
+    TEST_PCHECK(ioctl(replica_.get(), TIOCSCTTY, 0) >= 0);
   });
   ASSERT_NO_ERRNO(res);
 }
@@ -1957,6 +1957,24 @@ TEST_F(JobControlTest, OrphanRegression) {
   ASSERT_THAT(waitpid(session_2_leader, &wstatus, 0),
               SyscallSucceedsWithValue(session_2_leader));
   ASSERT_EQ(wstatus, 0);
+}
+
+// Test setting a controlling tty, then exiting, then re-using the same tty in a
+// different process.
+//
+// Regression test for https://github.com/google/gvisor/issues/9642.
+TEST_F(JobControlTest, ReuseControllingTTYAfterExit) {
+  auto res = RunInChild([=]() {
+    TEST_PCHECK(setsid() >= 0);
+    TEST_PCHECK(ioctl(replica_.get(), TIOCSCTTY, 0) >= 0);
+  });
+  ASSERT_NO_ERRNO(res);
+
+  auto res2 = RunInChild([=]() {
+    TEST_PCHECK(setsid() >= 0);
+    TEST_PCHECK(ioctl(replica_.get(), TIOCSCTTY, 0) >= 0);
+  });
+  ASSERT_NO_ERRNO(res2);
 }
 
 }  // namespace
