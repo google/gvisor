@@ -173,7 +173,7 @@ func (t *Task) deliverSignal(info *linux.SignalInfo, act linux.SigAction) taskRu
 				case sre == linuxerr.ERESTART_RESTARTBLOCK:
 					fallthrough
 				case (sre == linuxerr.ERESTARTSYS && act.Flags&linux.SA_RESTART == 0):
-					t.Debugf("Not restarting syscall %d after errno %d: interrupted by signal %d", t.Arch().SyscallNo(), sre, info.Signo)
+					t.Debugf("Not restarting syscall %d after error %v: interrupted by signal %d", t.Arch().SyscallNo(), sre, info.Signo)
 					t.Arch().SetReturn(uintptr(-ExtractErrno(linuxerr.EINTR, -1)))
 				default:
 					t.Debugf("Restarting syscall %d: interrupted by signal %d", t.Arch().SyscallNo(), info.Signo)
