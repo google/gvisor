@@ -11,6 +11,9 @@ go_library(
     srcs = [
         "metricclient.go",
     ],
+    data = [
+        "//runsc/cmd/metricserver:metricserver_bin",
+    ],
     visibility = [
         "//runsc:__subpackages__",
     ],
@@ -18,8 +21,8 @@ go_library(
         "//pkg/cleanup",
         "//pkg/prometheus",
         "//pkg/sync",
+        "//pkg/test/testutil",
         "//runsc/config",
-        "//runsc/specutils",
         "@com_github_cenkalti_backoff//:go_default_library",
         "@com_github_prometheus_common//expfmt",
         "@org_golang_x_sys//unix:go_default_library",
