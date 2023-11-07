@@ -50,6 +50,7 @@ func Register(vfsObj *vfs.VirtualFilesystem, uvmDevMajor uint32) error {
 	nvp := &nvproxy{
 		objsLive: make(map[nvgpu.Handle]*object),
 		abi:      abiCons.cons(),
+		version:  version,
 	}
 	for minor := uint32(0); minor <= nvgpu.NV_CONTROL_DEVICE_MINOR; minor++ {
 		if err := vfsObj.RegisterDevice(vfs.CharDevice, nvgpu.NV_MAJOR_DEVICE_NUMBER, minor, &frontendDevice{
@@ -75,7 +76,8 @@ func Register(vfsObj *vfs.VirtualFilesystem, uvmDevMajor uint32) error {
 type nvproxy struct {
 	objsMu   objsMutex `state:"nosave"`
 	objsLive map[nvgpu.Handle]*object
-	abi      *driverABI
+	abi      *driverABI `state:"nosave"`
+	version  DriverVersion
 }
 
 // object tracks an object allocated through the driver.
