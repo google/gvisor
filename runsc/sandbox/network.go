@@ -319,14 +319,13 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 		args.FilePayload.Files = append(args.FilePayload.Files, pcap)
 	}
 
-	// Pass the host's NAT table.
-	f, err := writeNATBlob()
-	if err != nil {
-		// We warn rather than error because not every kernel has
-		// iptables enabled.
-		log.Warningf("failed to write NAT blob: %v", err)
-	} else {
+	// Pass the host's NAT table if requested.
+	if conf.ReproduceNAT {
 		args.NATBlob = true
+		f, err := writeNATBlob()
+		if err != nil {
+			return fmt.Errorf("failed to write NAT blob: %v", err)
+		}
 		args.FilePayload.Files = append(args.FilePayload.Files, f)
 	}
 

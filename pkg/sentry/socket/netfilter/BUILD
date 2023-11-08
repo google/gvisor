@@ -38,14 +38,11 @@ go_library(
 )
 
 go_test(
-    name = "netfilter_x_test",
-    srcs = ["netfilter_x_test.go"],
-    embedsrcs = [
-        "accept_blob",
-        "istio_blob",
-    ],
+    name = "netfilter_test",
+    srcs = ["netfilter_test.go"],
+    embedsrcs = ["istio_blob"],
+    library = ":netfilter",
     deps = [
-        ":netfilter",
         "//pkg/sentry/kernel/auth",
         "//pkg/tcpip/stack",
     ],
