@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -319,19 +320,25 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 		args.FilePayload.Files = append(args.FilePayload.Files, pcap)
 	}
 
-	// Pass the host's NAT table if requested.
-	if conf.ReproduceNAT {
+	// Pass the host's NAT table.
+	f, err := writeNATBlob()
+	if err != nil {
+		// We warn rather than error because not every kernel has
+		// iptables enabled.
+		log.Warningf("failed to write NAT blob: %v", err)
+	} else {
 		args.NATBlob = true
-		f, err := writeNATBlob()
-		if err != nil {
-			return fmt.Errorf("failed to write NAT blob: %v", err)
-		}
 		args.FilePayload.Files = append(args.FilePayload.Files, f)
 	}
 
 	log.Debugf("Setting up network, config: %+v", args)
 	if err := conn.Call(boot.NetworkCreateLinksAndRoutes, &args, nil); err != nil {
-		return fmt.Errorf("creating links and routes: %w", err)
+		// For testing: dump rules as text to see what's breaking us.
+		out, ipterr := exec.Command("iptables-legacy", "-t", "nat", "-S").CombinedOutput()
+		if ipterr != nil {
+			log.Infof("failed to run iptables-legacy: error (%v) with output: %s", ipterr, out)
+		}
+		return fmt.Errorf("creating links and routes: %w: iptables-legacy err is (%v) nat is: %s", err, ipterr, out)
 	}
 	return nil
 }
