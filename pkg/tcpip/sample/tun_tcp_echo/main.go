@@ -87,13 +87,17 @@ func echo(wq *waiter.Queue, ep tcpip.Endpoint) {
 	}
 
 	for {
-		_, err := ep.Read(&w, tcpip.ReadOptions{})
-		if err != nil {
+		var buf bytes.Buffer
+		if _, err := ep.Read(&buf, tcpip.ReadOptions{}); err != nil {
 			if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 				<-notifyCh
 				continue
 			}
 
+			return
+		}
+		
+		if _, err := w.Write(buf.Bytes()); err != nil {
 			return
 		}
 	}
