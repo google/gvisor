@@ -174,9 +174,16 @@ steps:
     label: ":firefighter: GPU Smoke Test"
     commands:
       - make sudo TARGETS=//tools/gpu:main ARGS="install --latest" || cat /var/log/nvidia-installer.log
-      - make gpu-tests
+      - make gpu-tests RUNTIME_ARGS="--strace --debug"
     agents:
       queue: gpu
+  - <<: *common
+    <<: *source_test
+    label: ":female_supervillain: COS GPU Smoke Test"
+    commands:
+      - make cos-gpu-tests RUNTIME_ARGS="--strace --debug"
+    agents:
+      queue: cos-canary-gpu
   - <<: *common
     <<: *source_test_continuous
     label: ":screwdriver: All GPU Drivers Test"
