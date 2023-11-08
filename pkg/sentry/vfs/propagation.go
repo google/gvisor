@@ -448,6 +448,10 @@ func (vfs *VirtualFilesystem) allocateGroupID(mnt *Mount) error {
 		if err := vfs.groupIDBitmap.Grow(uint32(vfs.groupIDBitmap.Size())); err != nil {
 			return linuxerr.ENOSPC
 		}
+		groupID, err = vfs.groupIDBitmap.FirstZero(1)
+		if err != nil {
+			return err
+		}
 	}
 	vfs.groupIDBitmap.Add(groupID)
 	mnt.groupID = groupID
