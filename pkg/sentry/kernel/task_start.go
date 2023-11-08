@@ -98,7 +98,7 @@ type TaskConfig struct {
 	InitialCgroups map[Cgroup]struct{}
 
 	// UserCounters is user resource counters.
-	UserCounters *userCounters
+	UserCounters *UserCounters
 
 	// SessionKeyring is the session keyring associated with the parent task.
 	// It may be nil.

@@ -592,7 +592,7 @@ type Task struct {
 	//
 	// The userCounters pointer is exclusive to the task goroutine, but the
 	// userCounters instance must be atomically accessed.
-	userCounters *userCounters
+	userCounters *UserCounters
 
 	// sessionKeyring is a pointer to the task's session keyring, if set.
 	// It is guaranteed to be of type "keyring".
