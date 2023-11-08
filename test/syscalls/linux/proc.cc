@@ -2554,6 +2554,17 @@ TEST(ProcTask, CommCannotSetAnotherProcessThreadName) {
   EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
 }
 
+TEST(ProcTask, CommLenLimited) {
+  auto path = JoinPath("/proc", absl::StrCat(getpid()), "task",
+                       absl::StrCat(syscall(SYS_gettid)), "comm");
+  // comm is limited by 15 symbols (TASK_COMM_LEN).
+  constexpr char kThreadName[] = "0123456789abcde";
+  ASSERT_NO_ERRNO(SetContents(path, absl::StrCat(kThreadName, "XYZ")));
+
+  auto got_thread_name = ASSERT_NO_ERRNO_AND_VALUE(GetContents(path));
+  EXPECT_EQ(absl::StrCat(kThreadName, "\n"), got_thread_name);
+}
+
 TEST(ProcTaskNs, NsDirExistsAndHasCorrectMetadata) {
   EXPECT_NO_ERRNO(DirContains("/proc/self/ns", {"net", "pid", "user"}, {}));
 
