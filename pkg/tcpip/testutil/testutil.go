@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net"
 	"reflect"
+	"strconv"
 	"strings"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -42,6 +43,25 @@ func MustParse6(addr string) tcpip.Address {
 		panic(fmt.Sprintf("Parse6 was passed malformed address %q", addr))
 	}
 	return tcpip.AddrFrom16Slice(ip)
+}
+
+// MustParseSubnet4 parses an IPv4 subnet string (e.g. "192.168.1.0/24") into a
+// tcpip.Subnet.
+func MustParseSubnet4(subnet string) tcpip.Subnet {
+	parts := strings.Split(subnet, "/")
+	if len(parts) != 2 {
+		panic(fmt.Sprintf("MustParseSubnet4 expected CIDR notation (<addr>/<prefixLen>), but got %q", subnet))
+	}
+	addr := MustParse4(parts[0])
+	prefixLen, err := strconv.Atoi(parts[1])
+	if err != nil {
+		panic(fmt.Sprintf("Failed to parse prefix length %q: %v", parts[1], err))
+	}
+	if prefixLen < 0 || prefixLen > 32 {
+		panic(fmt.Sprintf("Prefix length %d is invalid. It must be between 0 and 32", prefixLen))
+	}
+	prefixed := tcpip.AddressWithPrefix{Address: addr, PrefixLen: prefixLen}
+	return prefixed.Subnet()
 }
 
 func checkFieldCounts(ref, multi reflect.Value) error {
