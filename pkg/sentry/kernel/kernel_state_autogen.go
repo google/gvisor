@@ -318,30 +318,30 @@ func (i *IPCNamespace) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(5, &i.posixQueues)
 }
 
-func (uc *userCounters) StateTypeName() string {
-	return "pkg/sentry/kernel.userCounters"
+func (uc *UserCounters) StateTypeName() string {
+	return "pkg/sentry/kernel.UserCounters"
 }
 
-func (uc *userCounters) StateFields() []string {
+func (uc *UserCounters) StateFields() []string {
 	return []string{
 		"uid",
 		"rlimitNProc",
 	}
 }
 
-func (uc *userCounters) beforeSave() {}
+func (uc *UserCounters) beforeSave() {}
 
 // +checklocksignore
-func (uc *userCounters) StateSave(stateSinkObject state.Sink) {
+func (uc *UserCounters) StateSave(stateSinkObject state.Sink) {
 	uc.beforeSave()
 	stateSinkObject.Save(0, &uc.uid)
 	stateSinkObject.Save(1, &uc.rlimitNProc)
 }
 
-func (uc *userCounters) afterLoad() {}
+func (uc *UserCounters) afterLoad() {}
 
 // +checklocksignore
-func (uc *userCounters) StateLoad(stateSourceObject state.Source) {
+func (uc *UserCounters) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &uc.uid)
 	stateSourceObject.Load(1, &uc.rlimitNProc)
 }
@@ -2417,7 +2417,7 @@ func init() {
 	state.Register((*FSContext)(nil))
 	state.Register((*FSContextRefs)(nil))
 	state.Register((*IPCNamespace)(nil))
-	state.Register((*userCounters)(nil))
+	state.Register((*UserCounters)(nil))
 	state.Register((*Kernel)(nil))
 	state.Register((*SocketRecord)(nil))
 	state.Register((*pendingSignals)(nil))

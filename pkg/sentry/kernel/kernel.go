@@ -81,17 +81,17 @@ import (
 // allow easy access everywhere.
 var IOUringEnabled = false
 
-// userCounters is a set of user counters.
+// UserCounters is a set of user counters.
 //
 // +stateify savable
-type userCounters struct {
+type UserCounters struct {
 	uid auth.KUID
 
 	rlimitNProc atomicbitops.Uint64
 }
 
 // incRLimitNProc increments the rlimitNProc counter.
-func (uc *userCounters) incRLimitNProc(ctx context.Context) error {
+func (uc *UserCounters) incRLimitNProc(ctx context.Context) error {
 	lim := limits.FromContext(ctx).Get(limits.ProcessCount)
 	creds := auth.CredentialsFromContext(ctx)
 	nproc := uc.rlimitNProc.Add(1)
@@ -105,7 +105,7 @@ func (uc *userCounters) incRLimitNProc(ctx context.Context) error {
 }
 
 // decRLimitNProc decrements the rlimitNProc counter.
-func (uc *userCounters) decRLimitNProc() {
+func (uc *UserCounters) decRLimitNProc() {
 	uc.rlimitNProc.Add(^uint64(0))
 }
 
@@ -321,7 +321,7 @@ type Kernel struct {
 	cgroupRegistry *CgroupRegistry
 
 	// userCountersMap maps auth.KUID into a set of user counters.
-	userCountersMap   map[auth.KUID]*userCounters
+	userCountersMap   map[auth.KUID]*UserCounters
 	userCountersMapMu userCountersMutex `state:"nosave"`
 }
 
@@ -419,7 +419,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	k.netlinkPorts = port.New()
 	k.ptraceExceptions = make(map[*Task]*Task)
 	k.YAMAPtraceScope = atomicbitops.FromInt32(linux.YAMA_SCOPE_RELATIONAL)
-	k.userCountersMap = make(map[auth.KUID]*userCounters)
+	k.userCountersMap = make(map[auth.KUID]*UserCounters)
 
 	ctx := k.SupervisorContext()
 	if err := k.vfs.Init(ctx); err != nil {
@@ -1729,6 +1729,8 @@ func (k *Kernel) ReleaseCgroupHierarchy(hid uint32) {
 	}
 }
 
+// ReplaceFSContextRoots updates root and cwd to `newRoot` in the FSContext
+// across all tasks whose old root or cwd were `oldRoot`.
 func (k *Kernel) ReplaceFSContextRoots(ctx context.Context, oldRoot vfs.VirtualDentry, newRoot vfs.VirtualDentry) {
 	k.tasks.mu.RLock()
 	oldRootDecRefs := 0
@@ -1756,7 +1758,8 @@ func (k *Kernel) ReplaceFSContextRoots(ctx context.Context, oldRoot vfs.VirtualD
 	}
 }
 
-func (k *Kernel) GetUserCounters(uid auth.KUID) *userCounters {
+// GetUserCounters returns the user counters for the given KUID.
+func (k *Kernel) GetUserCounters(uid auth.KUID) *UserCounters {
 	k.userCountersMapMu.Lock()
 	defer k.userCountersMapMu.Unlock()
 
@@ -1764,7 +1767,7 @@ func (k *Kernel) GetUserCounters(uid auth.KUID) *userCounters {
 		return uc
 	}
 
-	uc := &userCounters{}
+	uc := &UserCounters{}
 	k.userCountersMap[uid] = uc
 	return uc
 }
