@@ -18,6 +18,7 @@ package sys
 import (
 	"bytes"
 	"fmt"
+	"os"
 	"strconv"
 
 	"golang.org/x/sys/unix"
@@ -331,14 +332,10 @@ func (hf *hostFile) Generate(ctx context.Context, buf *bytes.Buffer) error {
 	if err != nil {
 		return err
 	}
-	var data [hostFileBufSize]byte
-	n, err := unix.Read(fd, data[:])
-	if err != nil {
-		return err
-	}
-	unix.Close(fd)
-	buf.Write(data[:n])
-	return nil
+	file := os.NewFile(uintptr(fd), hf.hostPath)
+	defer file.Close()
+	_, err = buf.ReadFrom(file)
+	return err
 }
 
 func (fs *filesystem) newHostFile(ctx context.Context, creds *auth.Credentials, mode linux.FileMode, hostPath string) kernfs.Inode {

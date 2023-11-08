@@ -90,7 +90,7 @@ func RenameAt(oldDirFD int, oldName string, newDirFD int, newName string) error 
 
 // ParseDirents parses dirents from buf. buf must have been populated by
 // getdents64(2) syscall. It calls the handleDirent callback for each dirent.
-func ParseDirents(buf []byte, handleDirent func(ino uint64, off int64, ftype uint8, name string, reclen uint16) bool) {
+func ParseDirents(buf []byte, handleDirent DirentHandler) {
 	for len(buf) > 0 {
 		// Interpret the buf populated by unix.Getdents as unix.Dirent.
 		dirent := *(*unix.Dirent)(unsafe.Pointer(&buf[0]))
@@ -118,8 +118,6 @@ func ParseDirents(buf []byte, handleDirent func(ino uint64, off int64, ftype uin
 		}
 
 		// Deliver results to caller.
-		if !handleDirent(dirent.Ino, dirent.Off, dirent.Type, name, dirent.Reclen) {
-			return
-		}
+		handleDirent(dirent.Ino, dirent.Off, dirent.Type, name, dirent.Reclen)
 	}
 }
