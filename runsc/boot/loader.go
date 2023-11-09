@@ -966,7 +966,11 @@ func (l *Loader) createContainerProcess(cid string, info *containerInfo) (*kerne
 	if len(info.goferFDs) < 1 {
 		return nil, nil, fmt.Errorf("rootfs gofer FD not found")
 	}
-	l.startGoferMonitor(cid, int32(info.goferFDs[0].FD()))
+	// TODO(ayushranjan): The gofer monitor should be started as long as the gofer
+	// process exists, even if the root mount is not backed by lisafs.
+	if info.goferMountConfs[0].ShouldUseLisafs() {
+		l.startGoferMonitor(cid, int32(info.goferFDs[0].FD()))
+	}
 
 	// We can share l.sharedMounts with containerMounter since l.mu is locked.
 	// Hence, mntr must only be used within this function (while l.mu is locked).

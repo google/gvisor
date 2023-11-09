@@ -224,7 +224,7 @@ func TestInvalidFlags(t *testing.T) {
 		{
 			name:  "overlay2",
 			value: "root:/tmp",
-			error: "unexpected medium specifier for --overlay2: \"/tmp\"",
+			error: "unexpected medium: \"/tmp\"",
 		},
 		{
 			name:  "overlay2",

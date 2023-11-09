@@ -31,6 +31,7 @@ var fakeFlagValues = [...]string{
 	"2h45m",
 	"1:1,2:2",
 	"0 0 1,100000 100000 65536",
+	"lisafs:self,lisafs:none",
 }
 
 func dupFlag(t *testing.T, cmd subcommands.Command, flagName string) *flag.Flag {

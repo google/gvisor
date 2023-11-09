@@ -140,7 +140,7 @@ func createLoader(conf *config.Config, spec *specs.Spec) (*Loader, func(), error
 		ControllerFD:    fd,
 		GoferFDs:        []int{sandEnd},
 		StdioFDs:        stdio,
-		GoferMountConfs: []GoferMountConf{VanillaGofer},
+		GoferMountConfs: []GoferMountConf{{Lower: Lisafs, Upper: NoOverlay}},
 		PodInitConfigFD: -1,
 		ExecFD:          -1,
 	}

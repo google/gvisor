@@ -447,33 +447,56 @@ func (c *containerMounter) mountAll(rootCtx context.Context, rootCreds *auth.Cre
 // createMountNamespace creates the container's root mount and namespace.
 func (c *containerMounter) createMountNamespace(ctx context.Context, conf *config.Config, creds *auth.Credentials) (*vfs.MountNamespace, error) {
 	ioFD := c.goferFDs.remove()
-	data := goferMountData(ioFD, conf.FileAccess, conf)
-
-	// We can't check for overlayfs here because sandbox is chroot'ed and gofer
-	// can only send mount options for specs.Mounts (specs.Root is missing
-	// Options field). So assume root is always on top of overlayfs.
-	data = append(data, "overlayfs_stale_read")
-
-	// Configure the gofer dentry cache size.
-	gofer.SetDentryCacheSize(conf.DCache)
-
-	log.Infof("Mounting root with gofer, ioFD: %d", ioFD)
-	opts := &vfs.MountOptions{
-		ReadOnly: c.root.Readonly,
-		GetFilesystemOptions: vfs.GetFilesystemOptions{
-			InternalMount: true,
-			Data:          strings.Join(data, ","),
-			InternalData: gofer.InternalFilesystemOptions{
-				UniqueID: "/",
-			},
-		},
-	}
-
-	fsName := gofer.Name
 	rootfsConf := c.goferMountConfs[0]
-	if rootfsConf == SelfTmpfs {
-		panic("SelfTmpfs is not possible for rootfs")
+
+	var (
+		fsName string
+		opts   *vfs.MountOptions
+	)
+	switch {
+	case rootfsConf.ShouldUseLisafs():
+		fsName = gofer.Name
+
+		data := goferMountData(ioFD, conf.FileAccess, conf)
+
+		// We can't check for overlayfs here because sandbox is chroot'ed and gofer
+		// can only send mount options for specs.Mounts (specs.Root is missing
+		// Options field). So assume root is always on top of overlayfs.
+		data = append(data, "overlayfs_stale_read")
+
+		// Configure the gofer dentry cache size.
+		gofer.SetDentryCacheSize(conf.DCache)
+
+		opts = &vfs.MountOptions{
+			ReadOnly: c.root.Readonly,
+			GetFilesystemOptions: vfs.GetFilesystemOptions{
+				InternalMount: true,
+				Data:          strings.Join(data, ","),
+				InternalData: gofer.InternalFilesystemOptions{
+					UniqueID: "/",
+				},
+			},
+		}
+
+	case rootfsConf.ShouldUseErofs():
+		fsName = erofs.Name
+		opts = &vfs.MountOptions{
+			ReadOnly: c.root.Readonly,
+			GetFilesystemOptions: vfs.GetFilesystemOptions{
+				InternalMount: true,
+				Data:          fmt.Sprintf("ifd=%d", ioFD),
+				InternalData: erofs.InternalFilesystemOptions{
+					UniqueID: "/",
+				},
+			},
+		}
+
+	default:
+		return nil, fmt.Errorf("unsupported rootfs config: %+v", rootfsConf)
 	}
+
+	log.Infof("Mounting root with %s, ioFD: %d", fsName, ioFD)
+
 	if rootfsConf.ShouldUseOverlayfs() {
 		log.Infof("Adding overlay on top of root")
 		var (
@@ -608,7 +631,7 @@ func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Co
 	}
 
 	// We need to hide the filestore from the containerized application.
-	if mountConf == SelfOverlay {
+	if mountConf.IsSelfBacked() {
 		if err := overlay.CreateWhiteout(ctx, c.k.VFS(), creds, &vfs.PathOperation{
 			Root:  upperRootVD,
 			Start: upperRootVD,
@@ -721,7 +744,7 @@ func (c *containerMounter) prepareMounts() ([]mountInfo, error) {
 			if info.goferMountConf.IsFilestorePresent() {
 				info.filestoreFD = c.goferFilestoreFDs.removeAsFD()
 			}
-			if info.goferMountConf == SelfTmpfs {
+			if info.goferMountConf.ShouldUseTmpfs() {
 				specutils.ChangeMountType(info.mount, tmpfs.Name)
 			}
 			goferMntIdx++
