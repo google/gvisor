@@ -2921,6 +2921,20 @@ TEST(ProcFilesystems, ReadCapLastCap) {
   EXPECT_TRUE(lastCap > 32 && lastCap < 64);
 }
 
+TEST(ProcFilesystems, OverflowID) {
+  std::string overflowGidStr =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/kernel/overflowgid"));
+  std::string overflowUidStr =
+      ASSERT_NO_ERRNO_AND_VALUE(GetContents("/proc/sys/kernel/overflowuid"));
+  uint64_t overflowGid, overflowUid;
+  ASSERT_TRUE(absl::SimpleAtoi(overflowGidStr, &overflowGid));
+  ASSERT_TRUE(absl::SimpleAtoi(overflowUidStr, &overflowUid));
+
+  const uint64_t defaultOverflowID = 65534;
+  EXPECT_EQ(overflowGid, defaultOverflowID);
+  EXPECT_EQ(overflowUid, defaultOverflowID);
+}
+
 }  // namespace
 }  // namespace testing
 }  // namespace gvisor

@@ -53,8 +53,8 @@ const (
 
 	// OverflowUID is the default value of /proc/sys/kernel/overflowuid. The
 	// "overflow UID" is usually [1] used when translating a user ID between
-	// namespaces fails because the ID is not mapped. (We don't implement this
-	// file, so the overflow UID is constant.)
+	// namespaces fails because the ID is not mapped. (We implement this
+	// file as read-only, so the overflow UID is constant.)
 	//
 	// [1] "There is one notable case where unmapped user and group IDs are not
 	// converted to the corresponding overflow ID value. When viewing a uid_map
