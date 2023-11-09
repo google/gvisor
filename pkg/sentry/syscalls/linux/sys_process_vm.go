@@ -141,6 +141,10 @@ type processVMOpArgs struct {
 	writeIovecCount int
 }
 
+// maxScratchBufferSize is the maximum size of a scratch buffer. It should be
+// sufficiently large to minimizing the number of trips through MM.
+const maxScratchBufferSize = 1 << 20
+
 func doProcessVMOpMaybeLocked(t *kernel.Task, args processVMOpArgs) (int, error) {
 	// Copy IOVecs in to kernel.
 	readIovecs, err := t.CopyInIovecsAsSlice(args.readAddr, args.readIovecCount)
@@ -160,6 +164,9 @@ func doProcessVMOpMaybeLocked(t *kernel.Task, args processVMOpArgs) (int, error)
 			bufSize = int(readIovec.Length())
 		}
 	}
+	if bufSize > maxScratchBufferSize {
+		bufSize = maxScratchBufferSize
+	}
 	buf := t.CopyScratchBuffer(bufSize)
 
 	// Number of bytes written.
@@ -169,42 +176,52 @@ func doProcessVMOpMaybeLocked(t *kernel.Task, args processVMOpArgs) (int, error)
 			break
 		}
 
-		buf = buf[0:int(readIovec.Length())]
-		bytes, err := args.readCtx.CopyInBytes(readIovec.Start, buf)
-		if linuxerr.Equals(linuxerr.EFAULT, err) {
-			return n, nil
-		}
-		if err != nil {
-			return n, err
-		}
-		if bytes != int(readIovec.Length()) {
-			return n, nil
-		}
-
-		start := 0
-		for bytes > start && 0 < len(writeIovecs) {
-			writeLength := int(writeIovecs[0].Length())
-			if writeLength > (bytes - start) {
-				writeLength = bytes - start
+		for readIovec.Length() != 0 {
+			length := readIovec.Length()
+			if length > maxScratchBufferSize {
+				length = maxScratchBufferSize
 			}
-			out, err := args.writeCtx.CopyOutBytes(writeIovecs[0].Start, buf[start:writeLength+start])
-			n += out
-			start += out
+			buf = buf[0:int(length)]
+			bytes, err := args.readCtx.CopyInBytes(readIovec.Start, buf)
 			if linuxerr.Equals(linuxerr.EFAULT, err) {
 				return n, nil
 			}
-			if err != nil {
+			if bytes == 0 && err != nil {
 				return n, err
 			}
-			if out != writeLength {
-				return n, nil
-			}
-			writeIovecs[0].Start += hostarch.Addr(out)
-			if !writeIovecs[0].WellFormed() {
-				return n, err
-			}
-			if writeIovecs[0].Length() == 0 {
-				writeIovecs = writeIovecs[1:]
+			readIovec.Start += hostarch.Addr(bytes)
+
+			start := 0
+			for bytes > start && 0 < len(writeIovecs) {
+				if t.Interrupted() {
+					if n == 0 {
+						return 0, linuxerr.EINTR
+					}
+					return n, nil
+				}
+				writeLength := int(writeIovecs[0].Length())
+				if writeLength > (bytes - start) {
+					writeLength = bytes - start
+				}
+				out, err := args.writeCtx.CopyOutBytes(writeIovecs[0].Start, buf[start:writeLength+start])
+				n += out
+				start += out
+				if linuxerr.Equals(linuxerr.EFAULT, err) {
+					return n, nil
+				}
+				if err != nil {
+					return n, err
+				}
+				if out != writeLength {
+					return n, nil
+				}
+				writeIovecs[0].Start += hostarch.Addr(out)
+				if !writeIovecs[0].WellFormed() {
+					return n, err
+				}
+				if writeIovecs[0].Length() == 0 {
+					writeIovecs = writeIovecs[1:]
+				}
 			}
 		}
 	}
