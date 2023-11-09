@@ -41,7 +41,7 @@ func afterFork()
 //go:linkname afterForkInChild syscall.runtime_AfterForkInChild
 func afterForkInChild()
 
-//go:linkname cputicks runtime.cputicks
+// cputicks is implemented in assembly.
 func cputicks() int64
 
 // spinloop is implemented in assembly.
