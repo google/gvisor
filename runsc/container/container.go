@@ -37,6 +37,8 @@ import (
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/tmpfs"
 	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sighandling"
 	"gvisor.dev/gvisor/pkg/state/statefile"
@@ -287,16 +289,23 @@ func New(conf *config.Config, args Args) (*Container, error) {
 		if err != nil {
 			return nil, fmt.Errorf("error creating pod mount hints: %w", err)
 		}
-		goferFilestores, goferConfs, err := c.createGoferFilestores(conf.GetOverlay2(), mountHints)
+		rootfsHint, err := boot.NewRootfsHint(args.Spec)
+		if err != nil {
+			return nil, fmt.Errorf("error creating rootfs hint: %w", err)
+		}
+		goferFilestores, goferConfs, err := c.createGoferFilestores(conf.GetOverlay2(), mountHints, rootfsHint)
 		if err != nil {
 			return nil, err
+		}
+		if !goferConfs[0].ShouldUseLisafs() && conf.NVProxyDocker {
+			return nil, fmt.Errorf("--nvproxy-docker cannot be used together with non-lisafs backed root mount")
 		}
 		c.GoferMountConfs = goferConfs
 		if err := nvProxyPreGoferHostSetup(args.Spec, conf); err != nil {
 			return nil, err
 		}
 		if err := runInCgroup(containerCgroup, func() error {
-			ioFiles, specFile, err := c.createGoferProcess(args.Spec, conf, args.BundleDir, args.Attached)
+			ioFiles, specFile, err := c.createGoferProcess(args.Spec, conf, args.BundleDir, args.Attached, rootfsHint)
 			if err != nil {
 				return fmt.Errorf("cannot create gofer process: %w", err)
 			}
@@ -449,7 +458,11 @@ func (c *Container) Start(conf *config.Config) error {
 			return err
 		}
 	} else {
-		goferFilestores, goferConfs, err := c.createGoferFilestores(conf.GetOverlay2(), c.Sandbox.MountHints)
+		rootfsHint, err := boot.NewRootfsHint(c.Spec)
+		if err != nil {
+			return fmt.Errorf("error creating rootfs hint: %w", err)
+		}
+		goferFilestores, goferConfs, err := c.createGoferFilestores(conf.GetOverlay2(), c.Sandbox.MountHints, rootfsHint)
 		if err != nil {
 			return err
 		}
@@ -458,12 +471,14 @@ func (c *Container) Start(conf *config.Config) error {
 		// the start (and all their children processes).
 		if err := runInCgroup(c.Sandbox.CgroupJSON.Cgroup, func() error {
 			// Create the gofer process.
-			goferFiles, mountsFile, err := c.createGoferProcess(c.Spec, conf, c.BundleDir, false)
+			goferFiles, mountsFile, err := c.createGoferProcess(c.Spec, conf, c.BundleDir, false, rootfsHint)
 			if err != nil {
 				return err
 			}
 			defer func() {
-				_ = mountsFile.Close()
+				if mountsFile != nil {
+					_ = mountsFile.Close()
+				}
 				for _, f := range goferFiles {
 					_ = f.Close()
 				}
@@ -472,11 +487,13 @@ func (c *Container) Start(conf *config.Config) error {
 				}
 			}()
 
-			cleanMounts, err := specutils.ReadMounts(mountsFile)
-			if err != nil {
-				return fmt.Errorf("reading mounts file: %v", err)
+			if mountsFile != nil {
+				cleanMounts, err := specutils.ReadMounts(mountsFile)
+				if err != nil {
+					return fmt.Errorf("reading mounts file: %v", err)
+				}
+				c.Spec.Mounts = cleanMounts
 			}
-			c.Spec.Mounts = cleanMounts
 
 			// Setup stdios if the container is not using terminal. Otherwise TTY was
 			// already setup in create.
@@ -912,13 +929,23 @@ func (c *Container) forEachSelfMount(fn func(mountSrc string)) {
 // createGoferFilestores creates the regular files that will back the
 // tmpfs/overlayfs mounts that will overlay some gofer mounts. It also returns
 // information about how each gofer mount is configured.
-func (c *Container) createGoferFilestores(ovlConf config.Overlay2, mountHints *boot.PodMountHints) ([]*os.File, []boot.GoferMountConf, error) {
+func (c *Container) createGoferFilestores(ovlConf config.Overlay2, mountHints *boot.PodMountHints, rootfsHint *boot.RootfsHint) ([]*os.File, []boot.GoferMountConf, error) {
 	var goferFilestores []*os.File
 	var goferConfs []boot.GoferMountConf
 
 	// Handle root mount first.
-	shouldOverlay := ovlConf.RootEnabled() && !c.Spec.Root.Readonly
-	filestore, goferConf, err := c.createGoferFilestore(ovlConf, c.Spec.Root.Path, shouldOverlay, nil /* hint */)
+	overlayMedium := ovlConf.RootOverlayMedium()
+	mountType := boot.Bind
+	if rootfsHint != nil {
+		overlayMedium = rootfsHint.Overlay
+		if !specutils.IsGoferMount(rootfsHint.Mount) {
+			mountType = rootfsHint.Mount.Type
+		}
+	}
+	if c.Spec.Root.Readonly {
+		overlayMedium = config.NoOverlay
+	}
+	filestore, goferConf, err := c.createGoferFilestore(overlayMedium, c.Spec.Root.Path, mountType, false /* isShared */)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -932,9 +959,22 @@ func (c *Container) createGoferFilestores(ovlConf config.Overlay2, mountHints *b
 		if !specutils.IsGoferMount(c.Spec.Mounts[i]) {
 			continue
 		}
-		hint := mountHints.FindMount(c.Spec.Mounts[i].Source)
-		shouldOverlay := ovlConf.SubMountEnabled() && !specutils.IsReadonlyMount(c.Spec.Mounts[i].Options)
-		filestore, goferConf, err := c.createGoferFilestore(ovlConf, c.Spec.Mounts[i].Source, shouldOverlay, hint)
+		overlayMedium = ovlConf.SubMountOverlayMedium()
+		mountType = boot.Bind
+		isShared := false
+		if specutils.IsReadonlyMount(c.Spec.Mounts[i].Options) {
+			overlayMedium = config.NoOverlay
+		}
+		if hint := mountHints.FindMount(c.Spec.Mounts[i].Source); hint != nil {
+			// Note that we want overlayMedium=self even if this is a read-only mount so that
+			// the shared mount is created correctly. Future containers may mount this writably.
+			overlayMedium = config.SelfOverlay
+			if !specutils.IsGoferMount(hint.Mount) {
+				mountType = hint.Mount.Type
+			}
+			isShared = hint.ShouldShareMount()
+		}
+		filestore, goferConf, err := c.createGoferFilestore(overlayMedium, c.Spec.Mounts[i].Source, mountType, isShared)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -951,41 +991,45 @@ func (c *Container) createGoferFilestores(ovlConf config.Overlay2, mountHints *b
 	return goferFilestores, goferConfs, nil
 }
 
-func (c *Container) createGoferFilestore(ovlConf config.Overlay2, mountSrc string, shouldOverlay bool, hint *boot.MountHint) (*os.File, boot.GoferMountConf, error) {
-	// MountHint information takes precedence over shouldOverlay.
-	if hint != nil && !specutils.IsGoferMount(hint.Mount) {
-		switch hint.Mount.Type {
-		case "tmpfs":
-			// Create self-backed tmpfs.
-			return c.createGoferFilestoreInSelf(mountSrc, hint, boot.SelfTmpfs)
-		default:
-			return nil, boot.VanillaGofer, fmt.Errorf("unsupported mount type %q in mount hint", hint.Mount.Type)
-		}
-	}
-	switch {
-	case !shouldOverlay:
-		return nil, boot.VanillaGofer, nil
-	case ovlConf.IsBackedByMemory():
-		return nil, boot.MemoryOverlay, nil
-	case ovlConf.IsBackedBySelf():
-		return c.createGoferFilestoreInSelf(mountSrc, hint, boot.SelfOverlay)
+func (c *Container) createGoferFilestore(overlayMedium config.OverlayMedium, mountSrc string, mountType string, isShared bool) (*os.File, boot.GoferMountConf, error) {
+	var lower boot.GoferMountConfLowerType
+	switch mountType {
+	case boot.Bind:
+		lower = boot.Lisafs
+	case tmpfs.Name:
+		lower = boot.NoneLower
+	case erofs.Name:
+		lower = boot.Erofs
 	default:
-		return c.createGoferFilestoreInDir(ovlConf)
+		return nil, boot.GoferMountConf{}, fmt.Errorf("unsupported mount type %q in mount hint", mountType)
+	}
+	switch overlayMedium {
+	case config.NoOverlay:
+		return nil, boot.GoferMountConf{Lower: lower, Upper: boot.NoOverlay}, nil
+	case config.MemoryOverlay:
+		return nil, boot.GoferMountConf{Lower: lower, Upper: boot.MemoryOverlay}, nil
+	case config.SelfOverlay:
+		return c.createGoferFilestoreInSelf(mountSrc, isShared, boot.GoferMountConf{Lower: lower, Upper: boot.SelfOverlay})
+	default:
+		if overlayMedium.IsBackedByAnon() {
+			return c.createGoferFilestoreInDir(overlayMedium.HostFileDir(), boot.GoferMountConf{Lower: lower, Upper: boot.AnonOverlay})
+		}
+		return nil, boot.GoferMountConf{}, fmt.Errorf("unexpected overlay medium %q", overlayMedium)
 	}
 }
 
-func (c *Container) createGoferFilestoreInSelf(mountSrc string, hint *boot.MountHint, successConf boot.GoferMountConf) (*os.File, boot.GoferMountConf, error) {
+func (c *Container) createGoferFilestoreInSelf(mountSrc string, isShared bool, successConf boot.GoferMountConf) (*os.File, boot.GoferMountConf, error) {
 	mountSrcInfo, err := os.Stat(mountSrc)
 	if err != nil {
-		return nil, boot.VanillaGofer, fmt.Errorf("failed to stat mount %q to see if it were a directory: %v", mountSrc, err)
+		return nil, boot.GoferMountConf{}, fmt.Errorf("failed to stat mount %q to see if it were a directory: %v", mountSrc, err)
 	}
 	if !mountSrcInfo.IsDir() {
 		log.Warningf("self filestore is only supported for directory mounts, but mount %q is not a directory, falling back to memory", mountSrc)
-		return nil, boot.MemoryOverlay, nil
+		return nil, boot.GoferMountConf{Lower: successConf.Lower, Upper: boot.MemoryOverlay}, nil
 	}
 	// Create the self filestore file.
 	createFlags := unix.O_RDWR | unix.O_CREAT | unix.O_CLOEXEC
-	if !(hint != nil && hint.ShouldShareMount()) {
+	if !isShared {
 		// Allow shared mounts to reuse existing filestore. A previous shared user
 		// may have already set up the filestore.
 		createFlags |= unix.O_EXCL
@@ -998,9 +1042,9 @@ func (c *Container) createGoferFilestoreInSelf(mountSrc string, hint *boot.Mount
 			// same sandbox, and is not shared, then the overlay option doesn't work
 			// correctly. Because each overlay mount is independent and changes to
 			// one are not visible to the other.
-			return nil, boot.VanillaGofer, fmt.Errorf("%q mount source already has a filestore file at %q; repeated submounts are not supported with overlay optimizations", mountSrc, filestorePath)
+			return nil, boot.GoferMountConf{}, fmt.Errorf("%q mount source already has a filestore file at %q; repeated submounts are not supported with overlay optimizations", mountSrc, filestorePath)
 		}
-		return nil, boot.VanillaGofer, fmt.Errorf("failed to create filestore file inside %q: %v", mountSrc, err)
+		return nil, boot.GoferMountConf{}, fmt.Errorf("failed to create filestore file inside %q: %v", mountSrc, err)
 	}
 	log.Debugf("Created filestore file at %q for mount source %q", filestorePath, mountSrc)
 	// Filestore in self should be a named path because it needs to be
@@ -1011,14 +1055,13 @@ func (c *Container) createGoferFilestoreInSelf(mountSrc string, hint *boot.Mount
 	return os.NewFile(uintptr(filestoreFD), filestorePath), successConf, nil
 }
 
-func (c *Container) createGoferFilestoreInDir(ovlConf config.Overlay2) (*os.File, boot.GoferMountConf, error) {
-	filestoreDir := ovlConf.HostFileDir()
+func (c *Container) createGoferFilestoreInDir(filestoreDir string, successConf boot.GoferMountConf) (*os.File, boot.GoferMountConf, error) {
 	fileInfo, err := os.Stat(filestoreDir)
 	if err != nil {
-		return nil, boot.VanillaGofer, fmt.Errorf("failed to stat filestore directory %q: %v", filestoreDir, err)
+		return nil, boot.GoferMountConf{}, fmt.Errorf("failed to stat filestore directory %q: %v", filestoreDir, err)
 	}
 	if !fileInfo.IsDir() {
-		return nil, boot.VanillaGofer, fmt.Errorf("overlay2 flag should specify an existing directory")
+		return nil, boot.GoferMountConf{}, fmt.Errorf("overlay2 flag should specify an existing directory")
 	}
 	// Create an unnamed temporary file in filestore directory which will be
 	// deleted when the last FD on it is closed. We don't use O_TMPFILE because
@@ -1027,13 +1070,13 @@ func (c *Container) createGoferFilestoreInDir(ovlConf config.Overlay2) (*os.File
 	// This file will be deleted when the container exits.
 	filestoreFile, err := os.CreateTemp(filestoreDir, "runsc-filestore-")
 	if err != nil {
-		return nil, boot.VanillaGofer, fmt.Errorf("failed to create a temporary file inside %q: %v", filestoreDir, err)
+		return nil, boot.GoferMountConf{}, fmt.Errorf("failed to create a temporary file inside %q: %v", filestoreDir, err)
 	}
 	if err := unix.Unlink(filestoreFile.Name()); err != nil {
-		return nil, boot.VanillaGofer, fmt.Errorf("failed to unlink temporary file %q: %v", filestoreFile.Name(), err)
+		return nil, boot.GoferMountConf{}, fmt.Errorf("failed to unlink temporary file %q: %v", filestoreFile.Name(), err)
 	}
 	log.Debugf("Created an unnamed filestore file at %q", filestoreDir)
-	return filestoreFile, boot.AnonOverlay, nil
+	return filestoreFile, successConf, nil
 }
 
 // saveLocked saves the container metadata to a file.
@@ -1129,7 +1172,33 @@ func (c *Container) waitForStopped() error {
 	return backoff.Retry(op, b)
 }
 
-func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bundleDir string, attached bool) ([]*os.File, *os.File, error) {
+// shouldSpawnGofer indicates whether the gofer process should be spawned.
+func shouldSpawnGofer(goferConfs []boot.GoferMountConf) bool {
+	for _, cfg := range goferConfs {
+		if cfg.ShouldUseLisafs() {
+			return true
+		}
+	}
+	return false
+}
+
+// createGoferProcess returns an IO file list and a mounts file on success.
+// The IO file list consists of image files and/or socket files to connect to
+// a gofer endpoint for the mount points using Gofers. The mounts file is the
+// file to read list of mounts after they have been resolved (direct paths,
+// no symlinks), and will be nil if there is no cleaning required for mounts.
+func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bundleDir string, attached bool, rootfsHint *boot.RootfsHint) ([]*os.File, *os.File, error) {
+	if !shouldSpawnGofer(c.GoferMountConfs) {
+		if !c.GoferMountConfs[0].ShouldUseErofs() {
+			panic("goferless mode is only possible with EROFS rootfs")
+		}
+		ioFile, err := os.Open(rootfsHint.Mount.Source)
+		if err != nil {
+			return nil, nil, fmt.Errorf("opening rootfs image %q: %v", rootfsHint.Mount.Source, err)
+		}
+		return []*os.File{ioFile}, nil, nil
+	}
+
 	donations := donation.Agency{}
 	defer donations.Close()
 
@@ -1190,24 +1259,37 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 	}
 	donations.DonateAndClose("mounts-fd", mountsGofer)
 
-	// Count the number of mounts using lisafs.
-	lisafsCount := 0
+	// Count the number of mounts that needs an IO file.
+	ioFileCount := 0
 	for _, cfg := range c.GoferMountConfs {
-		if cfg.ShouldUseLisafs() {
-			lisafsCount++
+		if cfg.ShouldUseLisafs() || cfg.ShouldUseErofs() {
+			ioFileCount++
 		}
 	}
 
-	sandEnds := make([]*os.File, 0, lisafsCount)
-	for i := 0; i < lisafsCount; i++ {
-		fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0)
-		if err != nil {
-			return nil, nil, err
-		}
-		sandEnds = append(sandEnds, os.NewFile(uintptr(fds[0]), "sandbox IO FD"))
+	sandEnds := make([]*os.File, 0, ioFileCount)
+	for i, cfg := range c.GoferMountConfs {
+		switch {
+		case cfg.ShouldUseLisafs():
+			fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0)
+			if err != nil {
+				return nil, nil, err
+			}
+			sandEnds = append(sandEnds, os.NewFile(uintptr(fds[0]), "sandbox IO FD"))
 
-		goferEnd := os.NewFile(uintptr(fds[1]), "gofer IO FD")
-		donations.DonateAndClose("io-fds", goferEnd)
+			goferEnd := os.NewFile(uintptr(fds[1]), "gofer IO FD")
+			donations.DonateAndClose("io-fds", goferEnd)
+
+		case cfg.ShouldUseErofs():
+			if i > 0 {
+				return nil, nil, fmt.Errorf("EROFS lower layer is only supported for root mount")
+			}
+			if f, err := os.Open(rootfsHint.Mount.Source); err != nil {
+				return nil, nil, fmt.Errorf("opening rootfs image %q: %v", rootfsHint.Mount.Source, err)
+			} else {
+				sandEnds = append(sandEnds, f)
+			}
+		}
 	}
 
 	if attached {

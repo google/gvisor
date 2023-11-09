@@ -223,9 +223,9 @@ type Args struct {
 	// UserLog is the filename to send user-visible logs to. It may be empty.
 	UserLog string
 
-	// IOFiles is the list of files that connect to a gofer endpoint for the
-	// mounts points using Gofers. They must be in the same order as mounts
-	// appear in the spec.
+	// IOFiles is the list of image files and/or socket files that connect to
+	// a gofer endpoint for the mount points using Gofers. They must be in the
+	// same order as mounts appear in the spec.
 	IOFiles []*os.File
 
 	// GoferFilestoreFiles are the regular files that will back the overlayfs or
