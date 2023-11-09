@@ -314,49 +314,69 @@ type outputQueueTransformer struct{}
 func (*outputQueueTransformer) transform(l *lineDiscipline, q *queue, buf []byte) (int, bool) {
 	// transformOutput is effectively always in noncanonical mode, as the
 	// master termios never has ICANON set.
+	sizeBudget := nonCanonMaxBytes - len(q.readBuf)
+	if sizeBudget <= 0 {
+		return 0, false
+	}
 
 	if !l.termios.OEnabled(linux.OPOST) {
-		q.readBuf = append(q.readBuf, buf...)
+		copySize := min(len(buf), sizeBudget)
+		q.readBuf = append(q.readBuf, buf[:copySize]...)
 		if len(q.readBuf) > 0 {
 			q.readable = true
 		}
-		return len(buf), false
+		return copySize, false
 	}
 
 	var ret int
-	for len(buf) > 0 {
+
+Outer:
+	for ; len(buf) > 0 && sizeBudget > 0; sizeBudget = nonCanonMaxBytes - len(q.readBuf) {
 		size := l.peek(buf)
+		if size > sizeBudget {
+			break Outer
+		}
 		cBytes := append([]byte{}, buf[:size]...)
-		ret += size
 		buf = buf[size:]
 		// We're guaranteed that cBytes has at least one element.
+	cByteSwitch:
 		switch cBytes[0] {
 		case '\n':
 			if l.termios.OEnabled(linux.ONLRET) {
 				l.column = 0
 			}
 			if l.termios.OEnabled(linux.ONLCR) {
+				if sizeBudget < 2 {
+					break Outer
+				}
+				ret += size
 				q.readBuf = append(q.readBuf, '\r', '\n')
-				continue
+				continue Outer
 			}
 		case '\r':
 			if l.termios.OEnabled(linux.ONOCR) && l.column == 0 {
-				continue
+				// Treat the carriage return as processed, since it's a no-op.
+				ret += size
+				continue Outer
 			}
 			if l.termios.OEnabled(linux.OCRNL) {
 				cBytes[0] = '\n'
 				if l.termios.OEnabled(linux.ONLRET) {
 					l.column = 0
 				}
-				break
+				break cByteSwitch
 			}
 			l.column = 0
 		case '\t':
 			spaces := spacesPerTab - l.column%spacesPerTab
 			if l.termios.OutputFlags&linux.TABDLY == linux.XTABS {
+				if sizeBudget < spacesPerTab {
+					break Outer
+				}
+				ret += size
 				l.column += spaces
 				q.readBuf = append(q.readBuf, bytes.Repeat([]byte{' '}, spacesPerTab)...)
-				continue
+				continue Outer
 			}
 			l.column += spaces
 		case '\b':
@@ -366,6 +386,7 @@ func (*outputQueueTransformer) transform(l *lineDiscipline, q *queue, buf []byte
 		default:
 			l.column++
 		}
+		ret += size
 		q.readBuf = append(q.readBuf, cBytes...)
 	}
 	if len(q.readBuf) > 0 {
