@@ -388,6 +388,7 @@ func (k *Kernel) StateFields() []string {
 		"YAMAPtraceScope",
 		"cgroupRegistry",
 		"userCountersMap",
+		"MaxFDLimit",
 	}
 }
 
@@ -434,6 +435,7 @@ func (k *Kernel) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(33, &k.YAMAPtraceScope)
 	stateSinkObject.Save(34, &k.cgroupRegistry)
 	stateSinkObject.Save(35, &k.userCountersMap)
+	stateSinkObject.Save(36, &k.MaxFDLimit)
 }
 
 func (k *Kernel) afterLoad() {}
@@ -475,6 +477,7 @@ func (k *Kernel) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(33, &k.YAMAPtraceScope)
 	stateSourceObject.Load(34, &k.cgroupRegistry)
 	stateSourceObject.Load(35, &k.userCountersMap)
+	stateSourceObject.Load(36, &k.MaxFDLimit)
 	stateSourceObject.LoadValue(20, new([]tcpip.Endpoint), func(y any) { k.loadDanglingEndpoints(y.([]tcpip.Endpoint)) })
 }
 

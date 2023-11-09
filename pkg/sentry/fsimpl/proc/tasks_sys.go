@@ -20,6 +20,7 @@ import (
 	"math"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -57,6 +58,9 @@ func (fs *filesystem) newSysDir(ctx context.Context, root *auth.Credentials, k *
 			"yama": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
 				"ptrace_scope": fs.newYAMAPtraceScopeFile(ctx, k, root),
 			}),
+		}),
+		"fs": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
+			"nr_open": fs.newInode(ctx, root, 0644, &atomicInt32File{val: &k.MaxFDLimit, min: 8, max: kernel.MaxFdLimit}),
 		}),
 		"vm": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
 			"max_map_count":     fs.newInode(ctx, root, 0444, newStaticFile("2147483647\n")),
@@ -484,5 +488,51 @@ func (pr *portRange) Write(ctx context.Context, _ *vfs.FileDescription, src user
 	}
 	*pr.start = uint16(ports[0])
 	*pr.end = uint16(ports[1])
+	return n, nil
+}
+
+// atomicInt32File implements vfs.WritableDynamicBytesSource sysctls
+// represented by int32 atomic objects.
+//
+// +stateify savable
+type atomicInt32File struct {
+	kernfs.DynamicBytesFile
+
+	val      *atomicbitops.Int32
+	min, max int32
+}
+
+var _ vfs.WritableDynamicBytesSource = (*atomicInt32File)(nil)
+
+// Generate implements vfs.DynamicBytesSource.Generate.
+func (f *atomicInt32File) Generate(ctx context.Context, buf *bytes.Buffer) error {
+	_, err := fmt.Fprintf(buf, "%d\n", f.val.Load())
+	return err
+}
+
+// Write implements vfs.WritableDynamicBytesSource.Write.
+func (f *atomicInt32File) Write(ctx context.Context, _ *vfs.FileDescription, src usermem.IOSequence, offset int64) (int64, error) {
+	if offset != 0 {
+		// Ignore partial writes.
+		return 0, linuxerr.EINVAL
+	}
+	if src.NumBytes() == 0 {
+		return 0, nil
+	}
+
+	// Limit the amount of memory allocated.
+	src = src.TakeFirst(hostarch.PageSize - 1)
+
+	var v int32
+	n, err := usermem.CopyInt32StringInVec(ctx, src.IO, src.Addrs, &v, src.Opts)
+	if err != nil {
+		return 0, err
+	}
+
+	if v < f.min || v > f.max {
+		return 0, linuxerr.EINVAL
+	}
+
+	f.val.Store(v)
 	return n, nil
 }

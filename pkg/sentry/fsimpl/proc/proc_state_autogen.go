@@ -2557,6 +2557,40 @@ func (pr *portRange) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(3, &pr.end)
 }
 
+func (f *atomicInt32File) StateTypeName() string {
+	return "pkg/sentry/fsimpl/proc.atomicInt32File"
+}
+
+func (f *atomicInt32File) StateFields() []string {
+	return []string{
+		"DynamicBytesFile",
+		"val",
+		"min",
+		"max",
+	}
+}
+
+func (f *atomicInt32File) beforeSave() {}
+
+// +checklocksignore
+func (f *atomicInt32File) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.DynamicBytesFile)
+	stateSinkObject.Save(1, &f.val)
+	stateSinkObject.Save(2, &f.min)
+	stateSinkObject.Save(3, &f.max)
+}
+
+func (f *atomicInt32File) afterLoad() {}
+
+// +checklocksignore
+func (f *atomicInt32File) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &f.DynamicBytesFile)
+	stateSourceObject.Load(1, &f.val)
+	stateSourceObject.Load(2, &f.min)
+	stateSourceObject.Load(3, &f.max)
+}
+
 func (s *yamaPtraceScope) StateTypeName() string {
 	return "pkg/sentry/fsimpl/proc.yamaPtraceScope"
 }
@@ -2665,5 +2699,6 @@ func init() {
 	state.Register((*tcpMemData)(nil))
 	state.Register((*ipForwarding)(nil))
 	state.Register((*portRange)(nil))
+	state.Register((*atomicInt32File)(nil))
 	state.Register((*yamaPtraceScope)(nil))
 }

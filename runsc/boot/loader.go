@@ -21,6 +21,7 @@ import (
 	mrand "math/rand"
 	"os"
 	"runtime"
+	"strconv"
 	gtime "time"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -446,6 +447,19 @@ func New(args Args) (*Loader, error) {
 		log.Infof("Setting total memory to %.2f GB", float64(args.TotalMem)/(1<<30))
 	}
 
+	maxFDLimit := kernel.MaxFdLimit
+	if args.Spec.Linux != nil && args.Spec.Linux.Sysctl != nil {
+		if val, ok := args.Spec.Linux.Sysctl["fs.nr_open"]; ok {
+			nrOpen, err := strconv.Atoi(val)
+			if err != nil {
+				return nil, fmt.Errorf("setting fs.nr_open=%s: %w", val, err)
+			}
+			if nrOpen <= 0 || nrOpen > int(kernel.MaxFdLimit) {
+				return nil, fmt.Errorf("setting fs.nr_open=%s", val)
+			}
+			maxFDLimit = int32(nrOpen)
+		}
+	}
 	// Initiate the Kernel object, which is required by the Context passed
 	// to createVFS in order to mount (among other things) procfs.
 	if err = k.Init(kernel.InitKernelArgs{
@@ -458,6 +472,7 @@ func New(args Args) (*Loader, error) {
 		RootUTSNamespace:     kernel.NewUTSNamespace(args.Spec.Hostname, args.Spec.Hostname, creds.UserNamespace),
 		RootIPCNamespace:     kernel.NewIPCNamespace(creds.UserNamespace),
 		PIDNamespace:         kernel.NewRootPIDNamespace(creds.UserNamespace),
+		MaxFDLimit:           maxFDLimit,
 	}); err != nil {
 		return nil, fmt.Errorf("initializing kernel: %w", err)
 	}
