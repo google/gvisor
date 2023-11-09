@@ -108,6 +108,13 @@ func prlimit64(t *kernel.Task, resource limits.LimitType, newLim *limits.Limit) 
 		return limits.Limit{}, linuxerr.EPERM
 	}
 
+	switch resource {
+	case limits.NumberOfFiles:
+		if newLim.Max > uint64(t.Kernel().MaxFDLimit.Load()) {
+			return limits.Limit{}, linuxerr.EPERM
+		}
+	}
+
 	// "A privileged process (under Linux: one with the CAP_SYS_RESOURCE
 	// capability in the initial user namespace) may make arbitrary changes
 	// to either limit value."

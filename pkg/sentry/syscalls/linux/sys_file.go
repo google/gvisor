@@ -565,6 +565,9 @@ func dup3(t *kernel.Task, oldfd, newfd int32, flags uint32) (uintptr, *kernel.Sy
 	err := t.NewFDAt(newfd, file, kernel.FDFlags{
 		CloseOnExec: flags&linux.O_CLOEXEC != 0,
 	})
+	if linuxerr.Equals(linuxerr.EMFILE, err) {
+		err = linuxerr.EBADF
+	}
 	if err != nil {
 		return 0, nil, err
 	}

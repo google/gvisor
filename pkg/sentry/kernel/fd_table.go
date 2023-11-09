@@ -231,18 +231,18 @@ func (f *FDTable) NewFDs(ctx context.Context, minFD int32, files []*vfs.FileDesc
 	}
 
 	// Default limit.
-	end := MaxFdLimit
+	end := f.k.MaxFDLimit.Load()
 
 	// Ensure we don't get past the provided limit.
 	if limitSet := limits.FromContext(ctx); limitSet != nil {
 		lim := limitSet.Get(limits.NumberOfFiles)
 		// Only set if the limit is smaller than the max to avoid overflow.
-		if lim.Cur != limits.Infinity && lim.Cur < uint64(MaxFdLimit) {
+		if lim.Cur != limits.Infinity && lim.Cur < uint64(end) {
 			end = int32(lim.Cur)
 		}
-		if minFD+int32(len(files)) > end {
-			return nil, unix.EMFILE
-		}
+	}
+	if minFD+int32(len(files)) > end {
+		return nil, unix.EMFILE
 	}
 
 	f.mu.Lock()
@@ -329,6 +329,9 @@ func (f *FDTable) newFDAt(ctx context.Context, fd int32, file *vfs.FileDescripti
 		return nil, unix.EBADF
 	}
 
+	if fd >= f.k.MaxFDLimit.Load() {
+		return nil, unix.EMFILE
+	}
 	// Check the limit for the provided file.
 	if limitSet := limits.FromContext(ctx); limitSet != nil {
 		if lim := limitSet.Get(limits.NumberOfFiles); lim.Cur != limits.Infinity && uint64(fd) >= lim.Cur {
