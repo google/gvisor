@@ -39,12 +39,14 @@ import (
 	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/state/statefile"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/test/testutil"
+	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/cgroup"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -1015,167 +1017,174 @@ func TestKillPid(t *testing.T) {
 	}
 }
 
-// TestCheckpointRestore creates a container that continuously writes successive
+// testCheckpointRestore creates a container that continuously writes successive
 // integers to a file. To test checkpoint and restore functionality, the
 // container is checkpointed and the last number printed to the file is
 // recorded. Then, it is restored in two new containers and the first number
 // printed from these containers is checked. Both should be the next consecutive
 // number after the last number from the checkpointed container.
+func testCheckpointRestore(t *testing.T, conf *config.Config, newSpecWithScript func(string) *specs.Spec) {
+	dir, err := ioutil.TempDir(testutil.TmpDir(), "checkpoint-test")
+	if err != nil {
+		t.Fatalf("ioutil.TempDir failed: %v", err)
+	}
+	defer os.RemoveAll(dir)
+	if err := os.Chmod(dir, 0777); err != nil {
+		t.Fatalf("error chmoding file: %q, %v", dir, err)
+	}
+
+	outputPath := filepath.Join(dir, "output")
+	outputFile, err := createWriteableOutputFile(outputPath)
+	if err != nil {
+		t.Fatalf("error creating output file: %v", err)
+	}
+	defer outputFile.Close()
+
+	script := fmt.Sprintf("i=0; while true; do echo $i >> %q; sleep 1; i=$((i+1)); done", outputPath)
+	spec := newSpecWithScript(script)
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	// Create and start the container.
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont.Destroy()
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	// Set the image path, which is where the checkpoint image will be saved.
+	imagePath := filepath.Join(dir, "test-image-file")
+
+	// Create the image file and open for writing.
+	file, err := os.OpenFile(imagePath, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0644)
+	if err != nil {
+		t.Fatalf("error opening new file at imagePath: %v", err)
+	}
+	defer file.Close()
+
+	// Wait until application has ran.
+	if err := waitForFileNotEmpty(outputFile); err != nil {
+		t.Fatalf("Failed to wait for output file: %v", err)
+	}
+
+	// Checkpoint running container; save state into new file.
+	if err := cont.Checkpoint(file, statefile.Options{Compression: statefile.CompressionLevelFlateBestSpeed}); err != nil {
+		t.Fatalf("error checkpointing container to empty file: %v", err)
+	}
+	defer os.RemoveAll(imagePath)
+
+	lastNum, err := readOutputNum(outputPath, -1)
+	if err != nil {
+		t.Fatalf("error with outputFile: %v", err)
+	}
+
+	// Delete and recreate file before restoring.
+	if err := os.Remove(outputPath); err != nil {
+		t.Fatalf("error removing file")
+	}
+	outputFile2, err := createWriteableOutputFile(outputPath)
+	if err != nil {
+		t.Fatalf("error creating output file: %v", err)
+	}
+	defer outputFile2.Close()
+
+	// Restore into a new container with different ID (e.g. clone). Keep the
+	// initial container running to ensure no conflict with it.
+	args2 := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont2, err := New(conf, args2)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont2.Destroy()
+
+	if err := cont2.Restore(conf, imagePath); err != nil {
+		t.Fatalf("error restoring container: %v", err)
+	}
+
+	// Wait until application has ran.
+	if err := waitForFileNotEmpty(outputFile2); err != nil {
+		t.Fatalf("Failed to wait for output file: %v", err)
+	}
+
+	firstNum, err := readOutputNum(outputPath, 0)
+	if err != nil {
+		t.Fatalf("error with outputFile: %v", err)
+	}
+
+	// Check that lastNum is one less than firstNum and that the container
+	// picks up from where it left off.
+	if lastNum+1 != firstNum {
+		t.Errorf("error numbers not in order, previous: %d, next: %d", lastNum, firstNum)
+	}
+	cont2.Destroy()
+	cont2 = nil
+
+	// Restore into a container using the same ID (e.g. save/resume). It requires
+	// the original container to cease to exist because they share the same identity.
+	cont.Destroy()
+	cont = nil
+
+	// Delete and recreate file before restoring.
+	if err := os.Remove(outputPath); err != nil {
+		t.Fatalf("error removing file")
+	}
+	outputFile3, err := createWriteableOutputFile(outputPath)
+	if err != nil {
+		t.Fatalf("error creating output file: %v", err)
+	}
+	defer outputFile3.Close()
+
+	cont3, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont3.Destroy()
+
+	if err := cont3.Restore(conf, imagePath); err != nil {
+		t.Fatalf("error restoring container: %v", err)
+	}
+
+	// Wait until application has ran.
+	if err := waitForFileNotEmpty(outputFile3); err != nil {
+		t.Fatalf("Failed to wait for output file: %v", err)
+	}
+
+	firstNum2, err := readOutputNum(outputPath, 0)
+	if err != nil {
+		t.Fatalf("error with outputFile: %v", err)
+	}
+
+	// Check that lastNum is one less than firstNum and that the container
+	// picks up from where it left off.
+	if lastNum+1 != firstNum2 {
+		t.Errorf("error numbers not in order, previous: %d, next: %d", lastNum, firstNum2)
+	}
+	cont3.Destroy()
+}
+
+// TestCheckpointRestore does the checkpoint/restore test on each platform.
 func TestCheckpointRestore(t *testing.T) {
 	// Skip overlay because test requires writing to host file.
 	for name, conf := range configs(t, true /* noOverlay */) {
 		t.Run(name, func(t *testing.T) {
-			dir, err := ioutil.TempDir(testutil.TmpDir(), "checkpoint-test")
-			if err != nil {
-				t.Fatalf("ioutil.TempDir failed: %v", err)
-			}
-			defer os.RemoveAll(dir)
-			if err := os.Chmod(dir, 0777); err != nil {
-				t.Fatalf("error chmoding file: %q, %v", dir, err)
-			}
-
-			outputPath := filepath.Join(dir, "output")
-			outputFile, err := createWriteableOutputFile(outputPath)
-			if err != nil {
-				t.Fatalf("error creating output file: %v", err)
-			}
-			defer outputFile.Close()
-
-			script := fmt.Sprintf("for ((i=0; ;i++)); do echo $i >> %q; sleep 1; done", outputPath)
-			spec := testutil.NewSpecWithArgs("bash", "-c", script)
-			_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
-			if err != nil {
-				t.Fatalf("error setting up container: %v", err)
-			}
-			defer cleanup()
-
-			// Create and start the container.
-			args := Args{
-				ID:        testutil.RandomContainerID(),
-				Spec:      spec,
-				BundleDir: bundleDir,
-			}
-			cont, err := New(conf, args)
-			if err != nil {
-				t.Fatalf("error creating container: %v", err)
-			}
-			defer cont.Destroy()
-			if err := cont.Start(conf); err != nil {
-				t.Fatalf("error starting container: %v", err)
-			}
-
-			// Set the image path, which is where the checkpoint image will be saved.
-			imagePath := filepath.Join(dir, "test-image-file")
-
-			// Create the image file and open for writing.
-			file, err := os.OpenFile(imagePath, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0644)
-			if err != nil {
-				t.Fatalf("error opening new file at imagePath: %v", err)
-			}
-			defer file.Close()
-
-			// Wait until application has ran.
-			if err := waitForFileNotEmpty(outputFile); err != nil {
-				t.Fatalf("Failed to wait for output file: %v", err)
-			}
-
-			// Checkpoint running container; save state into new file.
-			if err := cont.Checkpoint(file, statefile.Options{Compression: statefile.CompressionLevelFlateBestSpeed}); err != nil {
-				t.Fatalf("error checkpointing container to empty file: %v", err)
-			}
-			defer os.RemoveAll(imagePath)
-
-			lastNum, err := readOutputNum(outputPath, -1)
-			if err != nil {
-				t.Fatalf("error with outputFile: %v", err)
-			}
-
-			// Delete and recreate file before restoring.
-			if err := os.Remove(outputPath); err != nil {
-				t.Fatalf("error removing file")
-			}
-			outputFile2, err := createWriteableOutputFile(outputPath)
-			if err != nil {
-				t.Fatalf("error creating output file: %v", err)
-			}
-			defer outputFile2.Close()
-
-			// Restore into a new container with different ID (e.g. clone). Keep the
-			// initial container running to ensure no conflict with it.
-			args2 := Args{
-				ID:        testutil.RandomContainerID(),
-				Spec:      spec,
-				BundleDir: bundleDir,
-			}
-			cont2, err := New(conf, args2)
-			if err != nil {
-				t.Fatalf("error creating container: %v", err)
-			}
-			defer cont2.Destroy()
-
-			if err := cont2.Restore(conf, imagePath); err != nil {
-				t.Fatalf("error restoring container: %v", err)
-			}
-
-			// Wait until application has ran.
-			if err := waitForFileNotEmpty(outputFile2); err != nil {
-				t.Fatalf("Failed to wait for output file: %v", err)
-			}
-
-			firstNum, err := readOutputNum(outputPath, 0)
-			if err != nil {
-				t.Fatalf("error with outputFile: %v", err)
-			}
-
-			// Check that lastNum is one less than firstNum and that the container
-			// picks up from where it left off.
-			if lastNum+1 != firstNum {
-				t.Errorf("error numbers not in order, previous: %d, next: %d", lastNum, firstNum)
-			}
-			cont2.Destroy()
-			cont2 = nil
-
-			// Restore into a container using the same ID (e.g. save/resume). It requires
-			// the original container to cease to exist because they share the same identity.
-			cont.Destroy()
-			cont = nil
-
-			// Delete and recreate file before restoring.
-			if err := os.Remove(outputPath); err != nil {
-				t.Fatalf("error removing file")
-			}
-			outputFile3, err := createWriteableOutputFile(outputPath)
-			if err != nil {
-				t.Fatalf("error creating output file: %v", err)
-			}
-			defer outputFile3.Close()
-
-			cont3, err := New(conf, args)
-			if err != nil {
-				t.Fatalf("error creating container: %v", err)
-			}
-			defer cont3.Destroy()
-
-			if err := cont3.Restore(conf, imagePath); err != nil {
-				t.Fatalf("error restoring container: %v", err)
-			}
-
-			// Wait until application has ran.
-			if err := waitForFileNotEmpty(outputFile3); err != nil {
-				t.Fatalf("Failed to wait for output file: %v", err)
-			}
-
-			firstNum2, err := readOutputNum(outputPath, 0)
-			if err != nil {
-				t.Fatalf("error with outputFile: %v", err)
-			}
-
-			// Check that lastNum is one less than firstNum and that the container
-			// picks up from where it left off.
-			if lastNum+1 != firstNum2 {
-				t.Errorf("error numbers not in order, previous: %d, next: %d", lastNum, firstNum2)
-			}
-			cont3.Destroy()
+			testCheckpointRestore(t, conf, func(script string) *specs.Spec {
+				return testutil.NewSpecWithArgs("bash", "-c", script)
+			})
 		})
 	}
 }
@@ -3178,5 +3187,165 @@ find $dir -type l -o -type f | sort | xargs cat | md5sum`), 0755); err != nil {
 		if out, err := executeCombinedOutput(conf, c, nil, "/bin/umount", targetDir); err != nil {
 			t.Fatalf("exec: umount %q, err: %v, out: %s", targetDir, err, out)
 		}
+	}
+}
+
+// createRootfsEROFS creates a rootfs directory and an EROFS rootfs image in
+// the directory dir.
+func createRootfsEROFS(dir string) (string, string, error) {
+	mkfs, err := exec.LookPath("mkfs.erofs")
+	if err != nil {
+		return "", "", fmt.Errorf("mkfs.erofs is not available: %v", err)
+	}
+
+	busybox, err := exec.LookPath("busybox")
+	if err != nil {
+		return "", "", fmt.Errorf("busybox is not available: %v", err)
+	}
+
+	// Create a rootfs directory with busybox in root.
+	rootfsDir := filepath.Join(dir, "rootfs")
+	if err := os.Mkdir(rootfsDir, 0755); err != nil {
+		return "", "", fmt.Errorf("os.Mkdir() failed: %v", err)
+	}
+	if err := testutil.Copy(busybox, filepath.Join(rootfsDir, "busybox")); err != nil {
+		return "", "", fmt.Errorf("failed to copy busybox: %v", err)
+	}
+
+	// Handcraft the following mount points that the sentry mounts need, because EROFS
+	// does not support creating synthetic directories yet and we may not want to use
+	// overlay in some tests.
+	for _, dir := range []string{"dev", "proc", "sys", "tmp"} {
+		if err := os.Mkdir(filepath.Join(rootfsDir, dir), 0755); err != nil {
+			return "", "", fmt.Errorf("os.Mkdir() failed: %v", err)
+		}
+	}
+
+	// Build the EROFS rootfs image.
+	rootfsImage := filepath.Join(dir, "rootfs.img")
+	cmd := fmt.Sprintf("%s -E noinline_data %s %s", mkfs, rootfsImage, rootfsDir)
+	if out, err := exec.Command("/bin/sh", "-c", cmd).CombinedOutput(); err != nil {
+		return "", "", fmt.Errorf("exec: sh -c %q, err: %v, out: %s", cmd, err, out)
+	}
+
+	return rootfsDir, rootfsImage, nil
+}
+
+// TestRootfsEROFS starts a container using an EROFS image as the rootfs and checks that
+// the rootfs in container is an EROFS.
+func TestRootfsEROFS(t *testing.T) {
+	// Skip this test if mkfs.erofs or busybox are not available.
+	if _, err := exec.LookPath("mkfs.erofs"); err != nil {
+		t.Skipf("mkfs.erofs is not available: %v", err)
+	}
+	if _, err := exec.LookPath("busybox"); err != nil {
+		t.Skipf("busybox is not available: %v", err)
+	}
+
+	testDir, err := ioutil.TempDir(testutil.TmpDir(), "erofs_rootfs_test_")
+	if err != nil {
+		t.Fatalf("ioutil.TempDir() failed: %v", err)
+	}
+
+	rootfsDir, rootfsImage, err := createRootfsEROFS(testDir)
+	if err != nil {
+		t.Fatalf("failed to create EROFS rootfs image: %v", err)
+	}
+
+	// Create the spec and set the EROFS rootfs annotations.
+	spec := testutil.NewSpecWithArgs("/busybox", "grep", "/ / ro - erofs", "/proc/self/mountinfo")
+	spec.Root.Path = rootfsDir
+	if spec.Annotations == nil {
+		spec.Annotations = make(map[string]string)
+	}
+	spec.Annotations[boot.RootfsPrefix+"type"] = erofs.Name
+	spec.Annotations[boot.RootfsPrefix+"source"] = rootfsImage
+	// Disable the overlay, as we want to be sure that rootfs will always be
+	// shown as EROFS in mountinfo.
+	spec.Annotations[boot.RootfsPrefix+"overlay"] = config.NoOverlay.String()
+
+	conf := testutil.TestConfig(t)
+
+	for _, mounts := range [][]specs.Mount{
+		// Case 1: EROFS rootfs without any other gofer mount.
+		nil,
+
+		// Case 2: EROFS rootfs with a LISAFS backed gofer mount.
+		[]specs.Mount{
+			{
+				Type:        "bind",
+				Destination: "/tmp",
+				Source:      "/tmp",
+			},
+		},
+	} {
+		spec.Mounts = mounts
+
+		_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+		if err != nil {
+			t.Fatalf("error setting up container: %v", err)
+		}
+		defer cleanup()
+
+		// Create and start the container.
+		args := Args{
+			ID:        testutil.RandomContainerID(),
+			Spec:      spec,
+			BundleDir: bundleDir,
+			Attached:  true,
+		}
+		ws, err := Run(conf, args)
+		if err != nil {
+			t.Fatalf("error running container: %v", err)
+		}
+		if ws.ExitStatus() != 0 {
+			t.Errorf("got exit status %v want %v", ws.ExitStatus(), 0)
+		}
+	}
+}
+
+// TestCheckpointRestoreEROFS does the checkpoint/restore test on each platform using
+// an EROFS image as the rootfs.
+func TestCheckpointRestoreEROFS(t *testing.T) {
+	// Skip this test if mkfs.erofs or busybox are not available.
+	if _, err := exec.LookPath("mkfs.erofs"); err != nil {
+		t.Skipf("mkfs.erofs is not available: %v", err)
+	}
+	if _, err := exec.LookPath("busybox"); err != nil {
+		t.Skipf("busybox is not available: %v", err)
+	}
+
+	testDir, err := ioutil.TempDir(testutil.TmpDir(), "erofs_checkpoint_restore_test_")
+	if err != nil {
+		t.Fatalf("ioutil.TempDir() failed: %v", err)
+	}
+
+	rootfsDir, rootfsImage, err := createRootfsEROFS(testDir)
+	if err != nil {
+		t.Fatalf("failed to create EROFS rootfs image: %v", err)
+	}
+
+	// Skip overlay because test requires writing to host file.
+	for name, conf := range configs(t, true /* noOverlay */) {
+		t.Run(name, func(t *testing.T) {
+			testCheckpointRestore(t, conf, func(script string) *specs.Spec {
+				spec := testutil.NewSpecWithArgs("/busybox", "sh", "-c", script)
+				spec.Root = &specs.Root{
+					Path:     rootfsDir,
+					Readonly: false,
+				}
+				if spec.Annotations == nil {
+					spec.Annotations = make(map[string]string)
+				}
+				spec.Annotations[boot.RootfsPrefix+"type"] = erofs.Name
+				spec.Annotations[boot.RootfsPrefix+"source"] = rootfsImage
+				// EROFS does not support creating synthetic directories yet, so let's add
+				// a writeable and savable overlay for rootfs, which allows the sentry to
+				// create the mount point for the bind mount of the temporary directory shared
+				// between host and test container.
+				spec.Annotations[boot.RootfsPrefix+"overlay"] = config.MemoryOverlay.String()
+				return spec
+			})
+		})
 	}
 }
