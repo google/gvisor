@@ -389,18 +389,29 @@ type XTRedirectTarget struct {
 // SizeOfXTRedirectTarget is the size of an XTRedirectTarget.
 const SizeOfXTRedirectTarget = 56
 
-// XTSNATTarget triggers Source NAT when reached.
+// XTNATTargetV0 triggers NAT when reached.
 // Adding 4 bytes of padding to make the struct 8 byte aligned.
 //
 // +marshal
-type XTSNATTarget struct {
+type XTNATTargetV0 struct {
 	Target  XTEntryTarget
 	NfRange NfNATIPV4MultiRangeCompat
 	_       [4]byte
 }
 
-// SizeOfXTSNATTarget is the size of an XTSNATTarget.
-const SizeOfXTSNATTarget = 56
+// SizeOfXTNATTargetV0 is the size of an XTNATTargetV0.
+const SizeOfXTNATTargetV0 = 56
+
+// XTNATTargetV1 triggers NAT when reached.
+//
+// +marshal
+type XTNATTargetV1 struct {
+	Target XTEntryTarget
+	Range  NFNATRange
+}
+
+// SizeOfXTNATTargetV1 is the size of an XTNATTargetV1.
+const SizeOfXTNATTargetV1 = SizeOfXTEntryTarget + SizeOfNFNATRange
 
 // IPTGetinfo is the argument for the IPT_SO_GET_INFO sockopt. It corresponds
 // to struct ipt_getinfo in include/uapi/linux/netfilter_ipv4/ip_tables.h.
