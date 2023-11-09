@@ -27,12 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 )
 
-const (
-	pciMainBusDevicePath = "/sys/devices/pci0000:00"
-	// Size of the buffer that host file content will be read into. All relevant
-	// host files are smaller than this.
-	hostFileBufSize = 0x1000
-)
+const pciMainBusDevicePath = "/sys/devices/pci0000:00"
 
 var (
 	// Matches PCI device addresses in the main domain.
@@ -150,15 +145,6 @@ func hostDirEntries(path string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	var buf [hostFileBufSize]byte
-	n, err := unix.Getdents(fd, buf[:])
-	if err != nil {
-		return nil, err
-	}
-	var dents []string
-	fsutil.ParseDirents(buf[:n], func(_ uint64, _ int64, _ uint8, name string, _ uint16) bool {
-		dents = append(dents, name)
-		return true
-	})
-	return dents, nil
+	defer unix.Close(fd)
+	return fsutil.DirentNames(fd)
 }

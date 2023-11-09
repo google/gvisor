@@ -565,29 +565,17 @@ func (d *directfsDentry) getDirentsLocked(recordDirent func(name string, key ino
 		return err
 	}
 
-	var direntsBuf [8192]byte
-	for {
-		n, err := unix.Getdents(readFD, direntsBuf[:])
+	return fsutil.ForEachDirent(readFD, func(ino uint64, off int64, ftype uint8, name string, reclen uint16) {
+		// We also want the device ID, which annoyingly incurs an additional
+		// syscall per dirent.
+		// TODO(gvisor.dev/issue/6665): Get rid of per-dirent stat.
+		stat, err := fsutil.StatAt(d.controlFD, name)
 		if err != nil {
-			return err
+			log.Warningf("Getdent64: skipping file %q with failed stat, err: %v", path.Join(genericDebugPathname(&d.dentry), name), err)
+			return
 		}
-		if n <= 0 {
-			return nil
-		}
-
-		fsutil.ParseDirents(direntsBuf[:n], func(ino uint64, off int64, ftype uint8, name string, reclen uint16) bool {
-			// We also want the device ID, which annoyingly incurs an additional
-			// syscall per dirent.
-			// TODO(gvisor.dev/issue/6665): Get rid of per-dirent stat.
-			stat, err := fsutil.StatAt(d.controlFD, name)
-			if err != nil {
-				log.Warningf("Getdent64: skipping file %q with failed stat, err: %v", path.Join(genericDebugPathname(&d.dentry), name), err)
-				return true
-			}
-			recordDirent(name, inoKeyFromStat(&stat), ftype)
-			return true
-		})
-	}
+		recordDirent(name, inoKeyFromStat(&stat), ftype)
+	})
 }
 
 // Precondition: fs.renameMu is locked.
