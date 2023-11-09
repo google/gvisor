@@ -352,14 +352,6 @@ func (*redirectTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (
 	return &target, nil
 }
 
-// +marshal
-type nfNATTarget struct {
-	Target linux.XTEntryTarget
-	Range  linux.NFNATRange
-}
-
-const nfNATMarshalledSize = linux.SizeOfXTEntryTarget + linux.SizeOfNFNATRange
-
 type nfNATTargetMaker struct {
 	NetworkProtocol tcpip.NetworkProtocolNumber
 }
@@ -373,9 +365,9 @@ func (rm *nfNATTargetMaker) id() targetID {
 
 func (*nfNATTargetMaker) marshal(target target) []byte {
 	rt := target.(*redirectTarget)
-	nt := nfNATTarget{
+	nt := linux.XTNATTargetV1{
 		Target: linux.XTEntryTarget{
-			TargetSize: nfNATMarshalledSize,
+			TargetSize: linux.SizeOfXTNATTargetV1,
 		},
 		Range: linux.NFNATRange{
 			Flags: linux.NF_NAT_RANGE_PROTO_SPECIFIED,
@@ -392,7 +384,7 @@ func (*nfNATTargetMaker) marshal(target target) []byte {
 }
 
 func (*nfNATTargetMaker) unmarshal(buf []byte, filter stack.IPHeaderFilter) (target, *syserr.Error) {
-	if size := nfNATMarshalledSize; len(buf) < size {
+	if size := linux.SizeOfXTNATTargetV1; len(buf) < size {
 		nflog("nfNATTargetMaker: buf has insufficient size (%d) for nfNAT target (%d)", len(buf), size)
 		return nil, syserr.ErrInvalidArgument
 	}
@@ -446,9 +438,9 @@ func (st *snatTargetMakerV4) id() targetID {
 func (*snatTargetMakerV4) marshal(target target) []byte {
 	st := target.(*snatTarget)
 	// This is a snat target named snat.
-	xt := linux.XTSNATTarget{
+	xt := linux.XTNATTargetV0{
 		Target: linux.XTEntryTarget{
-			TargetSize: linux.SizeOfXTSNATTarget,
+			TargetSize: linux.SizeOfXTNATTargetV0,
 		},
 	}
 	copy(xt.Target.Name[:], SNATTargetName)
@@ -463,7 +455,7 @@ func (*snatTargetMakerV4) marshal(target target) []byte {
 }
 
 func (*snatTargetMakerV4) unmarshal(buf []byte, filter stack.IPHeaderFilter) (target, *syserr.Error) {
-	if len(buf) < linux.SizeOfXTSNATTarget {
+	if len(buf) < linux.SizeOfXTNATTargetV0 {
 		nflog("snatTargetMakerV4: buf has insufficient size for snat target %d", len(buf))
 		return nil, syserr.ErrInvalidArgument
 	}
@@ -473,10 +465,10 @@ func (*snatTargetMakerV4) unmarshal(buf []byte, filter stack.IPHeaderFilter) (ta
 		return nil, syserr.ErrInvalidArgument
 	}
 
-	var st linux.XTSNATTarget
+	var st linux.XTNATTargetV0
 	st.UnmarshalUnsafe(buf)
 
-	// Copy linux.XTSNATTarget to stack.SNATTarget.
+	// Copy linux.XTNATTargetV0 to stack.SNATTarget.
 	target := snatTarget{SNATTarget: stack.SNATTarget{
 		NetworkProtocol: filter.NetworkProtocol(),
 	}}
@@ -524,9 +516,9 @@ func (st *snatTargetMakerV6) id() targetID {
 
 func (*snatTargetMakerV6) marshal(target target) []byte {
 	st := target.(*snatTarget)
-	nt := nfNATTarget{
+	nt := linux.XTNATTargetV1{
 		Target: linux.XTEntryTarget{
-			TargetSize: nfNATMarshalledSize,
+			TargetSize: linux.SizeOfXTNATTargetV1,
 		},
 		Range: linux.NFNATRange{
 			Flags: linux.NF_NAT_RANGE_MAP_IPS | linux.NF_NAT_RANGE_PROTO_SPECIFIED,
@@ -542,7 +534,7 @@ func (*snatTargetMakerV6) marshal(target target) []byte {
 }
 
 func (*snatTargetMakerV6) unmarshal(buf []byte, filter stack.IPHeaderFilter) (target, *syserr.Error) {
-	if size := nfNATMarshalledSize; len(buf) < size {
+	if size := linux.SizeOfXTNATTargetV1; len(buf) < size {
 		nflog("snatTargetMakerV6: buf has insufficient size (%d) for SNAT V6 target (%d)", len(buf), size)
 		return nil, syserr.ErrInvalidArgument
 	}
