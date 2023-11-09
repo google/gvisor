@@ -69,6 +69,8 @@ func runTest(t testing.TB, fn func(ctx context.Context, fdTable *FDTable, fd *vf
 
 	// Create the table.
 	fdTable := new(FDTable)
+	fdTable.k = &Kernel{}
+	fdTable.k.MaxFDLimit.Store(MaxFdLimit)
 	fdTable.init()
 
 	// Run the test.
