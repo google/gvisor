@@ -113,6 +113,18 @@ struct ProcessVMTestCase {
 
 using ProcessVMTest = ::testing::TestWithParam<ProcessVMTestCase>;
 
+std::string getTestBuffer(std::string pattern, size_t size) {
+  std::string s;
+
+  auto pattern_length = pattern.length();
+  s.reserve(size);
+  while (s.length() + pattern_length < size) {
+    s += pattern;
+  }
+  s += pattern.substr(0, size - s.length());
+  return s;
+}
+
 INSTANTIATE_TEST_SUITE_P(
     ProcessVMTests, ProcessVMTest,
     ::testing::ValuesIn<ProcessVMTestCase>(
@@ -132,7 +144,20 @@ INSTANTIATE_TEST_SUITE_P(
           {"Obi-wan never told you what happened to your father.",
            "He told me enough...he told me you killed him."},
           {"No...I am your father.", "No. No.", "That's not true.",
-           "That's impossible!"}}}),
+           "That's impossible!"}},
+         {
+             "LargeBuffer",
+             {
+                 getTestBuffer(
+                     "Train yourself to let go of everything you fear to lose.",
+                     32 << 20),
+                 "Hello there!",
+             },
+             {
+                 "Do. Or do not. There is no try.",
+                 getTestBuffer("The greatest teacher, failure is.", 32 << 20),
+             },
+         }}),
     [](const ::testing::TestParamInfo<ProcessVMTest::ParamType>& info) {
       return info.param.test_name;
     });
