@@ -39,9 +39,9 @@ func natTable(ipv6 bool, args ...string) error {
 
 func tableCmd(ipv6 bool, table string, args []string) error {
 	args = append([]string{"-t", table}, args...)
-	binary := "iptables"
+	binary := "iptables-legacy"
 	if ipv6 {
-		binary = "ip6tables"
+		binary = "ip6tables-legacy"
 	}
 	cmd := exec.Command(binary, args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
