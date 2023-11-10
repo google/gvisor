@@ -54,6 +54,7 @@ func init() {
 		NetworkProtocol: header.IPv6ProtocolNumber,
 	})
 
+	// REDIRECT targets.
 	registerTargetMaker(&redirectTargetMaker{
 		NetworkProtocol: header.IPv4ProtocolNumber,
 	})
@@ -61,10 +62,37 @@ func init() {
 		NetworkProtocol: header.IPv6ProtocolNumber,
 	})
 
+	// SNAT targets.
 	registerTargetMaker(&snatTargetMakerV4{
 		NetworkProtocol: header.IPv4ProtocolNumber,
 	})
-	registerTargetMaker(&snatTargetMakerV6{
+	registerTargetMaker(&snatTargetMakerR1{
+		NetworkProtocol: header.IPv4ProtocolNumber,
+	})
+	registerTargetMaker(&snatTargetMakerR1{
+		NetworkProtocol: header.IPv6ProtocolNumber,
+	})
+	registerTargetMaker(&snatTargetMakerR2{
+		NetworkProtocol: header.IPv4ProtocolNumber,
+	})
+	registerTargetMaker(&snatTargetMakerR2{
+		NetworkProtocol: header.IPv6ProtocolNumber,
+	})
+
+	// DNAT targets.
+	registerTargetMaker(&dnatTargetMakerV4{
+		NetworkProtocol: header.IPv4ProtocolNumber,
+	})
+	registerTargetMaker(&dnatTargetMakerR1{
+		NetworkProtocol: header.IPv4ProtocolNumber,
+	})
+	registerTargetMaker(&dnatTargetMakerR1{
+		NetworkProtocol: header.IPv6ProtocolNumber,
+	})
+	registerTargetMaker(&dnatTargetMakerR2{
+		NetworkProtocol: header.IPv4ProtocolNumber,
+	})
+	registerTargetMaker(&dnatTargetMakerR2{
 		NetworkProtocol: header.IPv6ProtocolNumber,
 	})
 }

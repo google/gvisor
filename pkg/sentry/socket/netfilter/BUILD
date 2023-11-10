@@ -8,6 +8,7 @@ package(
 go_library(
     name = "netfilter",
     srcs = [
+        "dnat.go",
         "extensions.go",
         "ipv4.go",
         "ipv6.go",
@@ -39,11 +40,11 @@ go_library(
 )
 
 go_test(
-    name = "netfilter_test",
-    srcs = ["netfilter_test.go"],
+    name = "netfilter_x_test",
+    srcs = ["netfilter_x_test.go"],
     embedsrcs = ["istio_blob"],
-    library = ":netfilter",
     deps = [
+        ":netfilter",
         "//pkg/sentry/kernel/auth",
         "//pkg/tcpip/stack",
     ],
