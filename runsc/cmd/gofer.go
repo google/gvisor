@@ -21,6 +21,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"runtime/debug"
 	"strings"
@@ -429,7 +430,7 @@ func (g *Gofer) setupRootFS(spec *specs.Spec, conf *config.Config) error {
 
 	// Set up /dev directory is needed.
 	if g.devIoFD >= 0 {
-		g.setupDev(root)
+		g.setupDev(spec, conf, root, procPath)
 	}
 
 	// Create working directory if needed.
@@ -512,9 +513,40 @@ func (g *Gofer) setupMounts(conf *config.Config, mounts []specs.Mount, root, pro
 	return nil
 }
 
-func (g *Gofer) setupDev(root string) error {
+// shouldExposeNvidiaDevice returns true if path refers to an Nvidia device
+// which should be exposed to the container.
+//
+// Precondition: nvproxy is enabled.
+func shouldExposeNvidiaDevice(path string) bool {
+	if !strings.HasPrefix(path, "/dev/nvidia") {
+		return false
+	}
+	if path == "/dev/nvidiactl" || path == "/dev/nvidia-uvm" {
+		return true
+	}
+	nvidiaDevPathReg := regexp.MustCompile(`^/dev/nvidia(\d+)$`)
+	return nvidiaDevPathReg.MatchString(path)
+}
+
+func (g *Gofer) setupDev(spec *specs.Spec, conf *config.Config, root, procPath string) error {
 	if err := os.MkdirAll(filepath.Join(root, "dev"), 0777); err != nil {
 		return fmt.Errorf("creating dev directory: %v", err)
+	}
+	// Mount any devices specified in the spec.
+	if spec.Linux == nil {
+		return nil
+	}
+	nvproxyEnabled := specutils.NVProxyEnabled(spec, conf)
+	for _, dev := range spec.Linux.Devices {
+		shouldMount := nvproxyEnabled && shouldExposeNvidiaDevice(dev.Path)
+		if !shouldMount {
+			continue
+		}
+		dst := filepath.Join(root, dev.Path)
+		log.Infof("Mounting device %q as bind mount at %q", dev.Path, dst)
+		if err := specutils.SafeSetupAndMount(dev.Path, dst, "bind", unix.MS_BIND, procPath); err != nil {
+			return fmt.Errorf("mounting %q: %v", dev.Path, err)
+		}
 	}
 	return nil
 }

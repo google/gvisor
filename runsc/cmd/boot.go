@@ -161,9 +161,8 @@ type Boot struct {
 	// used to synchronize rootless user namespace initialization.
 	syncUsernsFD int
 
-	// nvidiaDevMinors is a list of device minors for Nvidia GPU devices exposed
-	// to the sandbox.
-	nvidiaDevMinors boot.NvidiaDevMinors
+	// nvidiaDriverVersion is the Nvidia driver version on the host.
+	nvidiaDriverVersion string
 }
 
 // Name implements subcommands.Command.Name.
@@ -194,6 +193,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.Uint64Var(&b.totalHostMem, "total-host-memory", 0, "total memory reported by host /proc/meminfo")
 	f.BoolVar(&b.attached, "attached", false, "if attached is true, kills the sandbox process when the parent process terminates")
 	f.StringVar(&b.productName, "product-name", "", "value to show in /sys/devices/virtual/dmi/id/product_name")
+	f.StringVar(&b.nvidiaDriverVersion, "nvidia-driver-version", "", "Nvidia driver version on the host")
 
 	// Open FDs that are donated to the sandbox.
 	f.IntVar(&b.specFD, "spec-fd", -1, "required fd with the container spec")
@@ -211,7 +211,6 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&b.mountsFD, "mounts-fd", -1, "mountsFD is an optional file descriptor to read list of mounts after they have been resolved (direct paths, no symlinks).")
 	f.IntVar(&b.podInitConfigFD, "pod-init-config-fd", -1, "file descriptor to the pod init configuration file.")
 	f.Var(&b.sinkFDs, "sink-fds", "ordered list of file descriptors to be used by the sinks defined in --pod-init-config.")
-	f.Var(&b.nvidiaDevMinors, "nvidia-dev-minors", "list of device minors for Nvidia GPU devices exposed to the sandbox.")
 
 	// Profiling flags.
 	b.profileFDs.SetFromFlags(f)
@@ -272,7 +271,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	}
 
 	if b.setUpRoot {
-		if err := setUpChroot(b.pidns, spec, conf, b.nvidiaDevMinors); err != nil {
+		if err := setUpChroot(b.pidns, spec, conf); err != nil {
 			util.Fatalf("error setting up chroot: %v", err)
 		}
 		argOverride["setup-root"] = "false"
@@ -423,27 +422,27 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 
 	// Create the loader.
 	bootArgs := boot.Args{
-		ID:                f.Arg(0),
-		Spec:              spec,
-		Conf:              conf,
-		ControllerFD:      b.controllerFD,
-		Device:            os.NewFile(uintptr(b.deviceFD), "platform device"),
-		GoferFDs:          b.ioFDs.GetArray(),
-		DevGoferFD:        b.devIoFD,
-		StdioFDs:          b.stdioFDs.GetArray(),
-		PassFDs:           b.passFDs.GetArray(),
-		ExecFD:            b.execFD,
-		GoferFilestoreFDs: b.goferFilestoreFDs.GetArray(),
-		GoferMountConfs:   b.goferMountConfs.GetArray(),
-		NumCPU:            b.cpuNum,
-		TotalMem:          b.totalMem,
-		TotalHostMem:      b.totalHostMem,
-		UserLogFD:         b.userLogFD,
-		ProductName:       b.productName,
-		PodInitConfigFD:   b.podInitConfigFD,
-		SinkFDs:           b.sinkFDs.GetArray(),
-		ProfileOpts:       b.profileFDs.ToOpts(),
-		NvidiaDevMinors:   b.nvidiaDevMinors,
+		ID:                  f.Arg(0),
+		Spec:                spec,
+		Conf:                conf,
+		ControllerFD:        b.controllerFD,
+		Device:              os.NewFile(uintptr(b.deviceFD), "platform device"),
+		GoferFDs:            b.ioFDs.GetArray(),
+		DevGoferFD:          b.devIoFD,
+		StdioFDs:            b.stdioFDs.GetArray(),
+		PassFDs:             b.passFDs.GetArray(),
+		ExecFD:              b.execFD,
+		GoferFilestoreFDs:   b.goferFilestoreFDs.GetArray(),
+		GoferMountConfs:     b.goferMountConfs.GetArray(),
+		NumCPU:              b.cpuNum,
+		TotalMem:            b.totalMem,
+		TotalHostMem:        b.totalHostMem,
+		UserLogFD:           b.userLogFD,
+		ProductName:         b.productName,
+		PodInitConfigFD:     b.podInitConfigFD,
+		SinkFDs:             b.sinkFDs.GetArray(),
+		ProfileOpts:         b.profileFDs.ToOpts(),
+		NvidiaDriverVersion: b.nvidiaDriverVersion,
 	}
 	l, err := boot.New(bootArgs)
 	if err != nil {

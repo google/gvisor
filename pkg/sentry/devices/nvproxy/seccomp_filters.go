@@ -25,16 +25,6 @@ import (
 func Filters() seccomp.SyscallRules {
 	notIocSizeMask := ^(((uintptr(1) << linux.IOC_SIZEBITS) - 1) << linux.IOC_SIZESHIFT) // for ioctls taking arbitrary size
 	return seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
-		unix.SYS_OPENAT: seccomp.PerArg{
-			// All paths that we openat() are absolute, so we pass a dirfd
-			// of -1 (which is invalid for relative paths, but ignored for
-			// absolute paths) to hedge against bugs involving AT_FDCWD or
-			// real dirfds.
-			seccomp.EqualTo(^uintptr(0)),
-			seccomp.AnyValue{},
-			seccomp.MaskedEqual(unix.O_NOFOLLOW|unix.O_CREAT, unix.O_NOFOLLOW),
-			seccomp.AnyValue{},
-		},
 		unix.SYS_IOCTL: seccomp.Or{
 			seccomp.PerArg{
 				seccomp.NonNegativeFD{},
