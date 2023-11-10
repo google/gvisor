@@ -65,6 +65,139 @@ type ValueMatcher interface {
 	Render(program *syscallProgram, labelSet *labelSet, value matchedValue)
 }
 
+// halfValueMatcher verifies a 32-bit value.
+type halfValueMatcher interface {
+	// Repr returns a string that will be used for asserting equality between
+	// two `halfValueMatcher` instances. It must therefore be unique to the
+	// `halfValueMatcher` implementation and to its parameters.
+	// It must not contain the character ";".
+	Repr() string
+
+	// HalfRender should add rules to the given program that verify the value
+	// loaded into the "A" register matches this 32-bit value or not.
+	// The rules should indicate this by either jumping to `labelSet.Matched()`
+	// or `labelSet.Mismatched()`. They may not fall through.
+	HalfRender(program *syscallProgram, labelSet *labelSet)
+}
+
+// halfAnyValue implements `halfValueMatcher` and matches any value.
+type halfAnyValue struct{}
+
+// Repr implements `halfValueMatcher.Repr`.
+func (halfAnyValue) Repr() string {
+	return "halfAnyValue"
+}
+
+// HalfRender implements `halfValueMatcher.HalfRender`.
+func (halfAnyValue) HalfRender(program *syscallProgram, labelSet *labelSet) {
+	program.JumpTo(labelSet.Matched())
+}
+
+// halfEqualTo implements `halfValueMatcher` and matches a specific 32-bit value.
+type halfEqualTo uint32
+
+// Repr implements `halfValueMatcher.Repr`.
+func (heq halfEqualTo) Repr() string {
+	return fmt.Sprintf("halfEq(%d)", uint32(heq))
+}
+
+// HalfRender implements `halfValueMatcher.HalfRender`.
+func (heq halfEqualTo) HalfRender(program *syscallProgram, labelSet *labelSet) {
+	program.If(bpf.Jmp|bpf.Jeq|bpf.K, uint32(heq), labelSet.Matched())
+	program.JumpTo(labelSet.Mismatched())
+}
+
+// halfNotSet implements `halfValueMatcher` and matches using the "set"
+// bitwise operation.
+type halfNotSet uint32
+
+// Repr implements `halfValueMatcher.Repr`.
+func (hns halfNotSet) Repr() string {
+	return fmt.Sprintf("halfNotSet(%x)", uint32(hns))
+}
+
+// HalfRender implements `halfValueMatcher.HalfRender`.
+func (hns halfNotSet) HalfRender(program *syscallProgram, labelSet *labelSet) {
+	program.If(bpf.Jmp|bpf.Jset|bpf.K, uint32(hns), labelSet.Mismatched())
+	program.JumpTo(labelSet.Matched())
+}
+
+// halfMaskedEqual implements `halfValueMatcher` and verifies that the value
+// is equal after applying a bit mask.
+type halfMaskedEqual struct {
+	mask  uint32
+	value uint32
+}
+
+// Repr implements `halfValueMatcher.Repr`.
+func (hmeq halfMaskedEqual) Repr() string {
+	return fmt.Sprintf("halfMaskedEqual(%x, %x)", hmeq.mask, hmeq.value)
+}
+
+// HalfRender implements `halfValueMatcher.HalfRender`.
+func (hmeq halfMaskedEqual) HalfRender(program *syscallProgram, labelSet *labelSet) {
+	program.Stmt(bpf.Alu|bpf.And|bpf.K, hmeq.mask)
+	program.IfNot(bpf.Jmp|bpf.Jeq|bpf.K, hmeq.value, labelSet.Mismatched())
+	program.JumpTo(labelSet.Matched())
+}
+
+// splitMatcher implements `ValueMatcher` and verifies each half of the 64-bit
+// value independently (with AND semantics).
+// It implements `ValueMatcher`, but is never used directly in seccomp filter
+// rules. Rather, it acts as an intermediate representation for the rules that
+// can be expressed as an AND of two 32-bit values.
+type splitMatcher struct {
+	// repr is the `Repr()` of the original `ValueMatcher` (pre-split).
+	repr string
+	// highMatcher is the half-value matcher to verify the high 32 bits.
+	highMatcher halfValueMatcher
+	// lowMatcher is the half-value matcher to verify the low 32 bits.
+	lowMatcher halfValueMatcher
+}
+
+// String implements `ValueMatcher.String`.
+func (sm splitMatcher) String() string {
+	return sm.Repr()
+}
+
+// Repr implements `ValueMatcher.Repr`.
+func (sm splitMatcher) Repr() string {
+	return sm.repr
+}
+
+// Render implements `ValueMatcher.Render`.
+func (sm splitMatcher) Render(program *syscallProgram, labelSet *labelSet, value matchedValue) {
+	// We render the "low" bits first on the assumption that most syscall
+	// arguments fit within 32-bits, and those rules actually only care
+	// about the value of the low 32 bits. This way, we only check the
+	// high 32 bits if the low 32 bits have already matched.
+
+	lowLabels := labelSet.Push("low", labelSet.NewLabel(), labelSet.Mismatched())
+	lowFrag := program.Record()
+	value.LoadLow32Bits()
+	sm.lowMatcher.HalfRender(program, lowLabels)
+	lowFrag.MustHaveJumpedTo(lowLabels.Matched(), labelSet.Mismatched())
+
+	program.Label(lowLabels.Matched())
+	highFrag := program.Record()
+	value.LoadHigh32Bits()
+	sm.highMatcher.HalfRender(program, labelSet.Push("high", labelSet.Matched(), labelSet.Mismatched()))
+	highFrag.MustHaveJumpedTo(labelSet.Matched(), labelSet.Mismatched())
+}
+
+// splittableValueMatcher should be implemented by `ValueMatcher` that can
+// be expressed as a `splitMatcher`.
+type splittableValueMatcher interface {
+	// split converts this `ValueMatcher` into a `splitMatcher`.
+	split() splitMatcher
+}
+
+// renderSplittable is a helper function for the `ValueMatcher.Render`
+// implementation of `splittableValueMatcher`s.
+func renderSplittable(sm splittableValueMatcher, program *syscallProgram, labelSet *labelSet, value matchedValue) {
+	sm.split().Render(program, labelSet, value)
+}
+
 // high32Bits returns the higher 32-bits of the given value.
 func high32Bits(val uintptr) uint32 {
 	return uint32(val >> 32)
@@ -90,7 +223,7 @@ func (av AnyValue) Repr() string {
 }
 
 // Render implements `ValueMatcher.Render`.
-func (AnyValue) Render(program *syscallProgram, labelSet *labelSet, value matchedValue) {
+func (av AnyValue) Render(program *syscallProgram, labelSet *labelSet, value matchedValue) {
 	program.JumpTo(labelSet.Matched())
 }
 
@@ -110,15 +243,16 @@ func (eq EqualTo) Repr() string {
 
 // Render implements `ValueMatcher.Render`.
 func (eq EqualTo) Render(program *syscallProgram, labelSet *labelSet, value matchedValue) {
-	// Assert that the higher 32bits are equal.
-	// arg_low == low ? continue : violation
-	value.LoadHigh32Bits()
-	program.IfNot(bpf.Jmp|bpf.Jeq|bpf.K, high32Bits(uintptr(eq)), labelSet.Mismatched())
-	// Assert that the lower 32bits are also equal.
-	// arg_high == high ? continue/success : violation
-	value.LoadLow32Bits()
-	program.IfNot(bpf.Jmp|bpf.Jeq|bpf.K, low32Bits(uintptr(eq)), labelSet.Mismatched())
-	program.JumpTo(labelSet.Matched())
+	renderSplittable(eq, program, labelSet, value)
+}
+
+// split implements `splittableValueMatcher.split`.
+func (eq EqualTo) split() splitMatcher {
+	return splitMatcher{
+		repr:        eq.Repr(),
+		highMatcher: halfEqualTo(high32Bits(uintptr(eq))),
+		lowMatcher:  halfEqualTo(low32Bits(uintptr(eq))),
+	}
 }
 
 // NotEqual specifies a value that is strictly not equal.
@@ -136,16 +270,12 @@ func (ne NotEqual) Repr() string {
 
 // Render implements `ValueMatcher.Render`.
 func (ne NotEqual) Render(program *syscallProgram, labelSet *labelSet, value matchedValue) {
-	// Check if the higher 32bits are (not) equal.
-	// arg_low != low ? success : continue
-	value.LoadHigh32Bits()
-	program.IfNot(bpf.Jmp|bpf.Jeq|bpf.K, high32Bits(uintptr(ne)), labelSet.Matched())
-	// Assert that the lower 32bits are not equal (assuming
-	// higher bits are equal).
-	// arg_high != high ? success : violation
-	value.LoadLow32Bits()
-	program.IfNot(bpf.Jmp|bpf.Jeq|bpf.K, low32Bits(uintptr(ne)), labelSet.Matched())
-	program.JumpTo(labelSet.Mismatched())
+	// Note that `NotEqual` is *not* a splittable rule by itself, because it is not the
+	// conjunction of two `halfValueMatchers` (it is the *disjunction* of them).
+	// However, it is also the exact inverse of `EqualTo`.
+	// Therefore, we can use `EqualTo` here, and simply invert the
+	// matched/mismatched labels.
+	EqualTo(ne).Render(program, labelSet.Push("inverted", labelSet.Mismatched(), labelSet.Matched()), value)
 }
 
 // GreaterThan specifies a value that needs to be strictly smaller.
@@ -281,15 +411,20 @@ func (NonNegativeFD) Repr() string {
 }
 
 // Render implements `ValueMatcher.Render`.
-func (NonNegativeFD) Render(program *syscallProgram, labelSet *labelSet, value matchedValue) {
-	// FDs are 32 bits, so the high 32 bits must all be zero.
-	value.LoadHigh32Bits()
-	program.IfNot(bpf.Jmp|bpf.Jeq|bpf.K, 0, labelSet.Mismatched())
-	// Negative int32 has the MSB (31st bit) set.
-	// So the raw uint FD value must not have the 31st bit set.
-	value.LoadLow32Bits()
-	program.If(bpf.Jmp|bpf.Jset|bpf.K, 1<<31, labelSet.Mismatched())
-	program.JumpTo(labelSet.Matched())
+func (nnfd NonNegativeFD) Render(program *syscallProgram, labelSet *labelSet, value matchedValue) {
+	renderSplittable(nnfd, program, labelSet, value)
+}
+
+// split implements `splittableValueMatcher.split`.
+func (nnfd NonNegativeFD) split() splitMatcher {
+	return splitMatcher{
+		repr: nnfd.Repr(),
+		// FDs are 32 bits, so the high 32 bits must all be zero.
+		// Negative int32 has the MSB (31st bit) set.
+		// So the low 32bits of the FD value must not have the 31st bit set.
+		highMatcher: halfEqualTo(0),
+		lowMatcher:  halfNotSet(1 << 31),
+	}
 }
 
 // MaskedEqual specifies a value that matches the input after the input is
@@ -311,19 +446,16 @@ func (me maskedEqual) Repr() string {
 
 // Render implements `ValueMatcher.Render`.
 func (me maskedEqual) Render(program *syscallProgram, labelSet *labelSet, value matchedValue) {
-	// Assert that the higher 32bits are equal when masked.
-	// A <- arg_high & maskHigh
-	value.LoadHigh32Bits()
-	program.Stmt(bpf.Alu|bpf.And|bpf.K, high32Bits(me.mask))
-	// Assert that arg_high & maskHigh == high.
-	program.IfNot(bpf.Jmp|bpf.Jeq|bpf.K, high32Bits(me.value), labelSet.Mismatched())
-	// Assert that the lower 32bits are equal when masked.
-	// A <- arg_low & maskLow
-	value.LoadLow32Bits()
-	program.Stmt(bpf.Alu|bpf.And|bpf.K, low32Bits(me.mask))
-	// Assert that arg_low & maskLow == low.
-	program.IfNot(bpf.Jmp|bpf.Jeq|bpf.K, low32Bits(me.value), labelSet.Mismatched())
-	program.JumpTo(labelSet.Matched())
+	renderSplittable(me, program, labelSet, value)
+}
+
+// split implements `splittableValueMatcher.Split`.
+func (me maskedEqual) split() splitMatcher {
+	return splitMatcher{
+		repr:        me.Repr(),
+		highMatcher: halfMaskedEqual{high32Bits(me.mask), high32Bits(me.value)},
+		lowMatcher:  halfMaskedEqual{low32Bits(me.mask), low32Bits(me.value)},
+	}
 }
 
 // MaskedEqual specifies a value that matches the input after the input is
