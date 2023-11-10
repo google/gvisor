@@ -42,6 +42,7 @@ import (
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/cpuid"
+	"gvisor.dev/gvisor/pkg/devutil"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/eventchannel"
 	"gvisor.dev/gvisor/pkg/fspath"
@@ -327,6 +328,10 @@ type Kernel struct {
 	// MaxFDLimit specifies the maximum file descriptor number that can be
 	// used by processes.
 	MaxFDLimit atomicbitops.Int32
+
+	// devGofers maps container ID to its device gofer client.
+	devGofers   map[string]*devutil.GoferClient `state:"nosave"`
+	devGofersMu sync.Mutex                      `state:"nosave"`
 }
 
 // InitKernelArgs holds arguments to Init.
@@ -798,6 +803,8 @@ func (ctx *createProcessContext) Value(key any) any {
 		mntns := ctx.kernel.GlobalInit().Leader().MountNamespace()
 		mntns.IncRef()
 		return mntns
+	case devutil.CtxDevGoferClient:
+		return ctx.kernel.getDevGoferClient(ctx.args.ContainerID)
 	case inet.CtxStack:
 		return ctx.kernel.RootNetworkNamespace().Stack()
 	case ktime.CtxRealtimeClock:
@@ -1683,6 +1690,7 @@ func (k *Kernel) Release() {
 	k.timekeeper.Destroy()
 	k.vdso.Release(ctx)
 	k.RootNetworkNamespace().DecRef(ctx)
+	k.cleaupDevGofers()
 }
 
 // PopulateNewCgroupHierarchy moves all tasks into a newly created cgroup
@@ -1783,4 +1791,49 @@ func (k *Kernel) GetUserCounters(uid auth.KUID) *UserCounters {
 	uc := &UserCounters{}
 	k.userCountersMap[uid] = uc
 	return uc
+}
+
+// AddDevGofer initializes the dev gofer connection and starts tracking it.
+// It takes ownership of goferFD.
+func (k *Kernel) AddDevGofer(cid string, goferFD int) error {
+	client, err := devutil.NewGoferClient(k.SupervisorContext(), goferFD)
+	if err != nil {
+		return err
+	}
+
+	k.devGofersMu.Lock()
+	defer k.devGofersMu.Unlock()
+	if k.devGofers == nil {
+		k.devGofers = make(map[string]*devutil.GoferClient)
+	}
+	k.devGofers[cid] = client
+	return nil
+}
+
+// RemoveDevGofer closes the dev gofer connection, if one exists, and stops
+// tracking it.
+func (k *Kernel) RemoveDevGofer(cid string) {
+	k.devGofersMu.Lock()
+	defer k.devGofersMu.Unlock()
+	client, ok := k.devGofers[cid]
+	if !ok {
+		return
+	}
+	client.Close()
+	delete(k.devGofers, cid)
+}
+
+func (k *Kernel) getDevGoferClient(cid string) *devutil.GoferClient {
+	k.devGofersMu.Lock()
+	defer k.devGofersMu.Unlock()
+	return k.devGofers[cid]
+}
+
+func (k *Kernel) cleaupDevGofers() {
+	k.devGofersMu.Lock()
+	defer k.devGofersMu.Unlock()
+	for _, client := range k.devGofers {
+		client.Close()
+	}
+	k.devGofers = nil
 }

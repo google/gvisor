@@ -279,6 +279,9 @@ type StartArgs struct {
 	// NumGoferFilestoreFDs is the number of gofer filestore FDs donated.
 	NumGoferFilestoreFDs int
 
+	// IsDevIoFilePresent indicates whether the dev gofer FD is present.
+	IsDevIoFilePresent bool
+
 	// GoferMountConfs contains information about how the gofer mounts have been
 	// configured. The first entry is for rootfs and the following entries are
 	// for bind mounts in Spec.Mounts (in the same order).
@@ -287,6 +290,7 @@ type StartArgs struct {
 	// FilePayload contains, in order:
 	//   * stdin, stdout, and stderr (optional: if terminal is disabled).
 	//   * file descriptors to gofer-backing host files (optional).
+	//   * file descriptor for /dev gofer connection (optional)
 	//   * file descriptors to connect to gofer to serve the root filesystem.
 	urpc.FilePayload
 }
@@ -309,6 +313,9 @@ func (cm *containerManager) StartSubcontainer(args *StartArgs, _ *struct{}) erro
 	}
 	expectedFDs := 1 // At least one FD for the root filesystem.
 	expectedFDs += args.NumGoferFilestoreFDs
+	if args.IsDevIoFilePresent {
+		expectedFDs++
+	}
 	if !args.Spec.Process.Terminal {
 		expectedFDs += 3
 	}
@@ -352,6 +359,17 @@ func (cm *containerManager) StartSubcontainer(args *StartArgs, _ *struct{}) erro
 		}
 	}()
 
+	var devGoferFD *fd.FD
+	if args.IsDevIoFilePresent {
+		var err error
+		devGoferFD, err = fd.NewFromFile(goferFiles[0])
+		if err != nil {
+			return fmt.Errorf("error dup'ing dev gofer file: %w", err)
+		}
+		goferFiles = goferFiles[1:]
+		defer devGoferFD.Close()
+	}
+
 	goferFDs, err := fd.NewFromFiles(goferFiles)
 	if err != nil {
 		return fmt.Errorf("error dup'ing gofer files: %w", err)
@@ -362,7 +380,7 @@ func (cm *containerManager) StartSubcontainer(args *StartArgs, _ *struct{}) erro
 		}
 	}()
 
-	if err := cm.l.startSubcontainer(args.Spec, args.Conf, args.CID, stdios, goferFDs, goferFilestoreFDs, args.GoferMountConfs); err != nil {
+	if err := cm.l.startSubcontainer(args.Spec, args.Conf, args.CID, stdios, goferFDs, goferFilestoreFDs, devGoferFD, args.GoferMountConfs); err != nil {
 		log.Debugf("containerManager.StartSubcontainer failed, cid: %s, args: %+v, err: %v", args.CID, args, err)
 		return err
 	}

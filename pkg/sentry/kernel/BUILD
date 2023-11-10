@@ -326,6 +326,7 @@ go_library(
         "//pkg/context",
         "//pkg/coverage",
         "//pkg/cpuid",
+        "//pkg/devutil",
         "//pkg/errors",
         "//pkg/errors/linuxerr",
         "//pkg/eventchannel",

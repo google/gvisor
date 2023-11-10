@@ -228,6 +228,9 @@ type Args struct {
 	// same order as mounts appear in the spec.
 	IOFiles []*os.File
 
+	// File that connects to a gofer endpoint for a device mount point at /dev.
+	DevIOFile *os.File
+
 	// GoferFilestoreFiles are the regular files that will back the overlayfs or
 	// tmpfs mount if a gofer mount is to be overlaid.
 	GoferFilestoreFiles []*os.File
@@ -403,7 +406,7 @@ func (s *Sandbox) StartRoot(conf *config.Config) error {
 }
 
 // StartSubcontainer starts running a sub-container inside the sandbox.
-func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid string, stdios, goferFiles, goferFilestores []*os.File, goferConfs []boot.GoferMountConf) error {
+func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid string, stdios, goferFiles, goferFilestores []*os.File, devIOFile *os.File, goferConfs []boot.GoferMountConf) error {
 	log.Debugf("Start sub-container %q in sandbox %q, PID: %d", cid, s.ID, s.Pid.load())
 
 	if err := s.configureStdios(conf, stdios); err != nil {
@@ -414,10 +417,14 @@ func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid s
 	// The payload contains (in this specific order):
 	// * stdin/stdout/stderr (optional: only present when not using TTY)
 	// * The subcontainer's gofer filestore files (optional)
+	// * The subcontainer's dev gofer file (optional)
 	// * Gofer files.
 	payload := urpc.FilePayload{}
 	payload.Files = append(payload.Files, stdios...)
 	payload.Files = append(payload.Files, goferFilestores...)
+	if devIOFile != nil {
+		payload.Files = append(payload.Files, devIOFile)
+	}
 	payload.Files = append(payload.Files, goferFiles...)
 
 	// Start running the container.
@@ -426,6 +433,7 @@ func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid s
 		Conf:                 conf,
 		CID:                  cid,
 		NumGoferFilestoreFDs: len(goferFilestores),
+		IsDevIoFilePresent:   devIOFile != nil,
 		GoferMountConfs:      goferConfs,
 		FilePayload:          payload,
 	}
@@ -733,6 +741,7 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 
 	// If there is a gofer, sends all socket ends to the sandbox.
 	donations.DonateAndClose("io-fds", args.IOFiles...)
+	donations.DonateAndClose("dev-io-fd", args.DevIOFile)
 	donations.DonateAndClose("gofer-filestore-fds", args.GoferFilestoreFiles...)
 	donations.DonateAndClose("mounts-fd", args.MountsFile)
 	donations.Donate("start-sync-fd", startSyncFile)

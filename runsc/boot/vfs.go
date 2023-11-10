@@ -358,6 +358,9 @@ type containerMounter struct {
 	// overlayfs mount for certain gofer mounts.
 	goferFilestoreFDs fdDispenser
 
+	// devGoferFD is the FD to attach the sandbox to the dev gofer.
+	devGoferFD *fd.FD
+
 	// goferMountConfs contains information about how the gofer mounts have been
 	// configured. The first entry is for rootfs and the following entries are
 	// for bind mounts in Spec.Mounts (in the same order).
@@ -376,6 +379,9 @@ type containerMounter struct {
 	// /sys/devices/virtual/dmi/id/product_name.
 	productName string
 
+	// containerID is the ID for the container.
+	containerID string
+
 	// sandboxID is the ID for the whole sandbox.
 	sandboxID string
 }
@@ -386,11 +392,13 @@ func newContainerMounter(info *containerInfo, k *kernel.Kernel, hints *PodMountH
 		mounts:            compileMounts(info.spec, info.conf),
 		goferFDs:          fdDispenser{fds: info.goferFDs},
 		goferFilestoreFDs: fdDispenser{fds: info.goferFilestoreFDs},
+		devGoferFD:        info.devGoferFD,
 		goferMountConfs:   info.goferMountConfs,
 		k:                 k,
 		hints:             hints,
 		sharedMounts:      sharedMounts,
 		productName:       productName,
+		containerID:       info.procArgs.ContainerID,
 		sandboxID:         sandboxID,
 	}
 }
@@ -401,6 +409,9 @@ func (c *containerMounter) checkDispenser() error {
 	}
 	if !c.goferFilestoreFDs.empty() {
 		return fmt.Errorf("not all gofer Filestore FDs were consumed, remaining: %v", c.goferFilestoreFDs)
+	}
+	if c.devGoferFD != nil && c.devGoferFD.FD() >= 0 {
+		return fmt.Errorf("dev gofer FD was not consumed: %d", c.devGoferFD.FD())
 	}
 	return nil
 }
@@ -725,6 +736,12 @@ type mountInfo struct {
 }
 
 func (c *containerMounter) prepareMounts() ([]mountInfo, error) {
+	// If device gofer exists, connect to it.
+	if c.devGoferFD != nil {
+		if err := c.k.AddDevGofer(c.containerID, c.devGoferFD.Release()); err != nil {
+			return nil, err
+		}
+	}
 	// Associate bind mounts with their FDs before sorting since there is an
 	// undocumented assumption that FDs are dispensed in the order in which
 	// they are required by mounts.

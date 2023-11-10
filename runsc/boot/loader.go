@@ -113,6 +113,9 @@ type containerInfo struct {
 	// goferFDs are the FDs that attach the sandbox to the gofers.
 	goferFDs []*fd.FD
 
+	// devGoferFD is the FD to attach the sandbox to the dev gofer.
+	devGoferFD *fd.FD
+
 	// goferFilestoreFDs are FDs to the regular files that will back the tmpfs or
 	// overlayfs mount for certain gofer mounts.
 	goferFilestoreFDs []*fd.FD
@@ -167,9 +170,6 @@ type Loader struct {
 	// productName is the value to show in
 	// /sys/devices/virtual/dmi/id/product_name.
 	productName string
-
-	// nvidiaUVMDevMajor is the device major number used for nvidia-uvm.
-	nvidiaUVMDevMajor uint32
 
 	// mu guards the fields below.
 	mu sync.Mutex
@@ -251,6 +251,9 @@ type Args struct {
 	// GoferFDs is an array of FDs used to connect with the Gofer. The Loader
 	// takes ownership of these FDs and may close them at any time.
 	GoferFDs []int
+	// DevGoferFD is the FD for the dev gofer connection. The Loader takes
+	// ownership of this FD and may close it at any time.
+	DevGoferFD int
 	// StdioFDs is the stdio for the application. The Loader takes ownership of
 	// these FDs and may close them at any time.
 	StdioFDs []int
@@ -354,7 +357,9 @@ func New(args Args) (*Loader, error) {
 	for _, filestoreFD := range args.GoferFilestoreFDs {
 		info.goferFilestoreFDs = append(info.goferFilestoreFDs, fd.New(filestoreFD))
 	}
-
+	if args.DevGoferFD >= 0 {
+		info.devGoferFD = fd.New(args.DevGoferFD)
+	}
 	if args.ExecFD >= 0 {
 		info.execFD = fd.New(args.ExecFD)
 	}
@@ -526,16 +531,15 @@ func New(args Args) (*Loader, error) {
 
 	eid := execID{cid: args.ID}
 	l := &Loader{
-		k:                 k,
-		watchdog:          dog,
-		sandboxID:         args.ID,
-		processes:         map[execID]*execProcess{eid: {}},
-		mountHints:        mountHints,
-		sharedMounts:      make(map[string]*vfs.Mount),
-		root:              info,
-		stopProfiling:     stopProfiling,
-		productName:       args.ProductName,
-		nvidiaUVMDevMajor: info.nvidiaUVMDevMajor,
+		k:             k,
+		watchdog:      dog,
+		sandboxID:     args.ID,
+		processes:     map[execID]*execProcess{eid: {}},
+		mountHints:    mountHints,
+		sharedMounts:  make(map[string]*vfs.Mount),
+		root:          info,
+		stopProfiling: stopProfiling,
+		productName:   args.ProductName,
 	}
 
 	// We don't care about child signals; some platforms can generate a
@@ -635,6 +639,9 @@ func (l *Loader) Destroy() {
 	}
 	for _, f := range l.root.goferFilestoreFDs {
 		_ = f.Close()
+	}
+	if l.root.devGoferFD != nil {
+		_ = l.root.devGoferFD.Close()
 	}
 
 	l.stopProfiling()
@@ -821,7 +828,7 @@ func (l *Loader) createSubcontainer(cid string, tty *fd.FD) error {
 // startSubcontainer starts a child container. It returns the thread group ID of
 // the newly created process. Used FDs are either closed or released. It's safe
 // for the caller to close any remaining files upon return.
-func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid string, stdioFDs, goferFDs, goferFilestoreFDs []*fd.FD, goferMountConfs []GoferMountConf) error {
+func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid string, stdioFDs, goferFDs, goferFilestoreFDs []*fd.FD, devGoferFD *fd.FD, goferMountConfs []GoferMountConf) error {
 	// Create capabilities.
 	caps, err := specutils.Capabilities(conf.EnableRaw, spec.Process.Capabilities)
 	if err != nil {
@@ -877,9 +884,10 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 		conf:              conf,
 		spec:              spec,
 		goferFDs:          goferFDs,
+		devGoferFD:        devGoferFD,
 		goferFilestoreFDs: goferFilestoreFDs,
 		goferMountConfs:   goferMountConfs,
-		nvidiaUVMDevMajor: l.nvidiaUVMDevMajor,
+		nvidiaUVMDevMajor: l.root.nvidiaUVMDevMajor,
 		nvidiaDevMinors:   l.root.nvidiaDevMinors,
 	}
 	info.procArgs, err = createProcessArgs(cid, spec, creds, l.k, pidns)
@@ -899,6 +907,17 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 		ep.hostTTY = nil
 	} else {
 		info.stdioFDs = stdioFDs
+	}
+
+	var cu cleanup.Cleanup
+	defer cu.Clean()
+	if devGoferFD != nil {
+		cu.Add(func() {
+			// createContainerProcess() will consume devGoferFD and initialize a gofer
+			// connection. This connection is owned by l.k. In case of failure, we want
+			// to clean up this gofer connection so that the gofer process can exit.
+			l.k.RemoveDevGofer(cid)
+		})
 	}
 
 	ep.tg, ep.tty, err = l.createContainerProcess(cid, info)
@@ -927,6 +946,8 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 	}
 
 	l.k.StartProcess(ep.tg)
+	// No more failures from this point on.
+	cu.Release()
 	return nil
 }
 
@@ -966,11 +987,7 @@ func (l *Loader) createContainerProcess(cid string, info *containerInfo) (*kerne
 	if len(info.goferFDs) < 1 {
 		return nil, nil, fmt.Errorf("rootfs gofer FD not found")
 	}
-	// TODO(ayushranjan): The gofer monitor should be started as long as the gofer
-	// process exists, even if the root mount is not backed by lisafs.
-	if info.goferMountConfs[0].ShouldUseLisafs() {
-		l.startGoferMonitor(cid, int32(info.goferFDs[0].FD()))
-	}
+	l.startGoferMonitor(cid, info)
 
 	// We can share l.sharedMounts with containerMounter since l.mu is locked.
 	// Hence, mntr must only be used within this function (while l.mu is locked).
@@ -1030,18 +1047,29 @@ func (l *Loader) createContainerProcess(cid string, info *containerInfo) (*kerne
 
 // startGoferMonitor runs a goroutine to monitor gofer's health. It polls on
 // the gofer FD looking for disconnects, and kills the container processes if
-// the rootfs FD disconnects.
-//
-// Note that other gofer mounts are allowed to be unmounted and disconnected.
-func (l *Loader) startGoferMonitor(cid string, rootfsGoferFD int32) {
-	if rootfsGoferFD < 0 {
-		panic(fmt.Sprintf("invalid FD: %d", rootfsGoferFD))
+// the gofer connection disconnects.
+func (l *Loader) startGoferMonitor(cid string, info *containerInfo) {
+	// We need to pick a suitable gofer connection that is expected to be alive
+	// for the entire container lifecycle. Only the following can be used:
+	// 1. Rootfs gofer connection
+	// 2. Device gofer connection
+	//
+	// Note that other gofer mounts are allowed to be unmounted and disconnected.
+	goferFD := -1
+	if info.goferMountConfs[0].ShouldUseLisafs() {
+		goferFD = info.goferFDs[0].FD()
+	} else if info.devGoferFD != nil {
+		goferFD = info.devGoferFD.FD()
+	}
+	if goferFD < 0 {
+		log.Warningf("could not find a suitable gofer FD to monitor")
+		return
 	}
 	go func() {
 		log.Debugf("Monitoring gofer health for container %q", cid)
 		events := []unix.PollFd{
 			{
-				Fd:     rootfsGoferFD,
+				Fd:     int32(goferFD),
 				Events: unix.POLLHUP | unix.POLLRDHUP,
 			},
 		}
@@ -1094,13 +1122,16 @@ func (l *Loader) destroySubcontainer(cid string) error {
 		}
 	}
 
-	// No more failure from this point on. Remove all container thread groups
-	// from the map.
+	// No more failure from this point on.
+
+	// Remove all container thread groups from the map.
 	for key := range l.processes {
 		if key.cid == cid {
 			delete(l.processes, key)
 		}
 	}
+	// Cleanup the device gofer.
+	l.k.RemoveDevGofer(cid)
 
 	log.Debugf("Container destroyed, cid: %s", cid)
 	return nil
