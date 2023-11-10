@@ -18,6 +18,9 @@
 package kvm
 
 import (
+	"fmt"
+
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/ring0"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
@@ -65,5 +68,9 @@ func updateGlobalOnce(fd int) error {
 	err := updateSystemValues(int(fd))
 	ring0.Init()
 	physicalInit()
+	// The linux.Task represents the possible largest task size, which the UserspaceSize shouldn't be larger than.
+	if linux.TaskSize < ring0.UserspaceSize {
+		return fmt.Errorf("gVisor doesn't support 3-level page tables on KVM platform. Try to recompile the kernel with CONFIG_ARM64_VA_BITS_48")
+	}
 	return err
 }
