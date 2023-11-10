@@ -1,6 +1,6 @@
+load("//pkg/sync/locking:locking.bzl", "declare_mutex", "declare_rwmutex")
 load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
-load("//pkg/sync/locking:locking.bzl", "declare_mutex", "declare_rwmutex")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -41,30 +41,6 @@ declare_mutex(
     out = "metadata_mutex.go",
     package = "mm",
     prefix = "metadata",
-)
-
-declare_mutex(
-    name = "private_refs_mutex",
-    out = "private_refs_mutex.go",
-    package = "mm",
-    prefix = "privateRefs",
-)
-
-go_template_instance(
-    name = "file_refcount_set",
-    out = "file_refcount_set.go",
-    imports = {
-        "memmap": "gvisor.dev/gvisor/pkg/sentry/memmap",
-    },
-    package = "mm",
-    prefix = "fileRefcount",
-    template = "//pkg/segment:generic_set",
-    types = {
-        "Key": "uint64",
-        "Range": "memmap.FileRange",
-        "Value": "int32",
-        "Functions": "fileRefcountSetFunctions",
-    },
 )
 
 go_template_instance(
@@ -153,7 +129,6 @@ go_library(
         "aio_manager_mutex.go",
         "aio_mappable_refs.go",
         "debug.go",
-        "file_refcount_set.go",
         "io.go",
         "io_list.go",
         "lifecycle.go",
@@ -163,7 +138,6 @@ go_library(
         "mm.go",
         "pma.go",
         "pma_set.go",
-        "private_refs_mutex.go",
         "procfs.go",
         "save_restore.go",
         "shm.go",
