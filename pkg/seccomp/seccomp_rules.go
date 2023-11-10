@@ -63,6 +63,10 @@ type ValueMatcher interface {
 	// The rules should indicate this by either jumping to `labelSet.Matched()`
 	// or `labelSet.Mismatched()`. They may not fall through.
 	Render(program *syscallProgram, labelSet *labelSet, value matchedValue)
+
+	// InterestingValues returns a list of values that may be interesting to
+	// test this `ValueMatcher` against.
+	InterestingValues() []uint64
 }
 
 // halfValueMatcher verifies a 32-bit value.
@@ -78,6 +82,10 @@ type halfValueMatcher interface {
 	// The rules should indicate this by either jumping to `labelSet.Matched()`
 	// or `labelSet.Mismatched()`. They may not fall through.
 	HalfRender(program *syscallProgram, labelSet *labelSet)
+
+	// InterestingValues returns a list of values that may be interesting to
+	// test this `halfValueMatcher` against.
+	InterestingValues() []uint32
 }
 
 // halfAnyValue implements `halfValueMatcher` and matches any value.
