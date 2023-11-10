@@ -147,110 +147,6 @@ func (r *aioMappableRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.AfterLoad(r.afterLoad)
 }
 
-func (s *fileRefcountSet) StateTypeName() string {
-	return "pkg/sentry/mm.fileRefcountSet"
-}
-
-func (s *fileRefcountSet) StateFields() []string {
-	return []string{
-		"root",
-	}
-}
-
-func (s *fileRefcountSet) beforeSave() {}
-
-// +checklocksignore
-func (s *fileRefcountSet) StateSave(stateSinkObject state.Sink) {
-	s.beforeSave()
-	var rootValue *fileRefcountSegmentDataSlices
-	rootValue = s.saveRoot()
-	stateSinkObject.SaveValue(0, rootValue)
-}
-
-func (s *fileRefcountSet) afterLoad() {}
-
-// +checklocksignore
-func (s *fileRefcountSet) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(*fileRefcountSegmentDataSlices), func(y any) { s.loadRoot(y.(*fileRefcountSegmentDataSlices)) })
-}
-
-func (n *fileRefcountnode) StateTypeName() string {
-	return "pkg/sentry/mm.fileRefcountnode"
-}
-
-func (n *fileRefcountnode) StateFields() []string {
-	return []string{
-		"nrSegments",
-		"parent",
-		"parentIndex",
-		"hasChildren",
-		"maxGap",
-		"keys",
-		"values",
-		"children",
-	}
-}
-
-func (n *fileRefcountnode) beforeSave() {}
-
-// +checklocksignore
-func (n *fileRefcountnode) StateSave(stateSinkObject state.Sink) {
-	n.beforeSave()
-	stateSinkObject.Save(0, &n.nrSegments)
-	stateSinkObject.Save(1, &n.parent)
-	stateSinkObject.Save(2, &n.parentIndex)
-	stateSinkObject.Save(3, &n.hasChildren)
-	stateSinkObject.Save(4, &n.maxGap)
-	stateSinkObject.Save(5, &n.keys)
-	stateSinkObject.Save(6, &n.values)
-	stateSinkObject.Save(7, &n.children)
-}
-
-func (n *fileRefcountnode) afterLoad() {}
-
-// +checklocksignore
-func (n *fileRefcountnode) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &n.nrSegments)
-	stateSourceObject.Load(1, &n.parent)
-	stateSourceObject.Load(2, &n.parentIndex)
-	stateSourceObject.Load(3, &n.hasChildren)
-	stateSourceObject.Load(4, &n.maxGap)
-	stateSourceObject.Load(5, &n.keys)
-	stateSourceObject.Load(6, &n.values)
-	stateSourceObject.Load(7, &n.children)
-}
-
-func (f *fileRefcountSegmentDataSlices) StateTypeName() string {
-	return "pkg/sentry/mm.fileRefcountSegmentDataSlices"
-}
-
-func (f *fileRefcountSegmentDataSlices) StateFields() []string {
-	return []string{
-		"Start",
-		"End",
-		"Values",
-	}
-}
-
-func (f *fileRefcountSegmentDataSlices) beforeSave() {}
-
-// +checklocksignore
-func (f *fileRefcountSegmentDataSlices) StateSave(stateSinkObject state.Sink) {
-	f.beforeSave()
-	stateSinkObject.Save(0, &f.Start)
-	stateSinkObject.Save(1, &f.End)
-	stateSinkObject.Save(2, &f.Values)
-}
-
-func (f *fileRefcountSegmentDataSlices) afterLoad() {}
-
-// +checklocksignore
-func (f *fileRefcountSegmentDataSlices) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &f.Start)
-	stateSourceObject.Load(1, &f.End)
-	stateSourceObject.Load(2, &f.Values)
-}
-
 func (l *ioList) StateTypeName() string {
 	return "pkg/sentry/mm.ioList"
 }
@@ -316,7 +212,6 @@ func (mm *MemoryManager) StateFields() []string {
 		"p",
 		"mfp",
 		"layout",
-		"privateRefs",
 		"users",
 		"vmas",
 		"brk",
@@ -352,27 +247,26 @@ func (mm *MemoryManager) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &mm.p)
 	stateSinkObject.Save(1, &mm.mfp)
 	stateSinkObject.Save(2, &mm.layout)
-	stateSinkObject.Save(3, &mm.privateRefs)
-	stateSinkObject.Save(4, &mm.users)
-	stateSinkObject.Save(5, &mm.vmas)
-	stateSinkObject.Save(6, &mm.brk)
-	stateSinkObject.Save(7, &mm.usageAS)
-	stateSinkObject.Save(8, &mm.lockedAS)
-	stateSinkObject.Save(9, &mm.dataAS)
-	stateSinkObject.Save(10, &mm.defMLockMode)
-	stateSinkObject.Save(11, &mm.pmas)
-	stateSinkObject.Save(12, &mm.curRSS)
-	stateSinkObject.Save(13, &mm.maxRSS)
-	stateSinkObject.Save(14, &mm.dumpability)
-	stateSinkObject.Save(15, &mm.argv)
-	stateSinkObject.Save(16, &mm.envv)
-	stateSinkObject.Save(17, &mm.auxv)
-	stateSinkObject.Save(18, &mm.executable)
-	stateSinkObject.Save(19, &mm.aioManager)
-	stateSinkObject.Save(20, &mm.sleepForActivation)
-	stateSinkObject.Save(21, &mm.vdsoSigReturnAddr)
-	stateSinkObject.Save(22, &mm.membarrierPrivateEnabled)
-	stateSinkObject.Save(23, &mm.membarrierRSeqEnabled)
+	stateSinkObject.Save(3, &mm.users)
+	stateSinkObject.Save(4, &mm.vmas)
+	stateSinkObject.Save(5, &mm.brk)
+	stateSinkObject.Save(6, &mm.usageAS)
+	stateSinkObject.Save(7, &mm.lockedAS)
+	stateSinkObject.Save(8, &mm.dataAS)
+	stateSinkObject.Save(9, &mm.defMLockMode)
+	stateSinkObject.Save(10, &mm.pmas)
+	stateSinkObject.Save(11, &mm.curRSS)
+	stateSinkObject.Save(12, &mm.maxRSS)
+	stateSinkObject.Save(13, &mm.dumpability)
+	stateSinkObject.Save(14, &mm.argv)
+	stateSinkObject.Save(15, &mm.envv)
+	stateSinkObject.Save(16, &mm.auxv)
+	stateSinkObject.Save(17, &mm.executable)
+	stateSinkObject.Save(18, &mm.aioManager)
+	stateSinkObject.Save(19, &mm.sleepForActivation)
+	stateSinkObject.Save(20, &mm.vdsoSigReturnAddr)
+	stateSinkObject.Save(21, &mm.membarrierPrivateEnabled)
+	stateSinkObject.Save(22, &mm.membarrierRSeqEnabled)
 }
 
 // +checklocksignore
@@ -380,27 +274,26 @@ func (mm *MemoryManager) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &mm.p)
 	stateSourceObject.Load(1, &mm.mfp)
 	stateSourceObject.Load(2, &mm.layout)
-	stateSourceObject.Load(3, &mm.privateRefs)
-	stateSourceObject.Load(4, &mm.users)
-	stateSourceObject.Load(5, &mm.vmas)
-	stateSourceObject.Load(6, &mm.brk)
-	stateSourceObject.Load(7, &mm.usageAS)
-	stateSourceObject.Load(8, &mm.lockedAS)
-	stateSourceObject.Load(9, &mm.dataAS)
-	stateSourceObject.Load(10, &mm.defMLockMode)
-	stateSourceObject.Load(11, &mm.pmas)
-	stateSourceObject.Load(12, &mm.curRSS)
-	stateSourceObject.Load(13, &mm.maxRSS)
-	stateSourceObject.Load(14, &mm.dumpability)
-	stateSourceObject.Load(15, &mm.argv)
-	stateSourceObject.Load(16, &mm.envv)
-	stateSourceObject.Load(17, &mm.auxv)
-	stateSourceObject.Load(18, &mm.executable)
-	stateSourceObject.Load(19, &mm.aioManager)
-	stateSourceObject.Load(20, &mm.sleepForActivation)
-	stateSourceObject.Load(21, &mm.vdsoSigReturnAddr)
-	stateSourceObject.Load(22, &mm.membarrierPrivateEnabled)
-	stateSourceObject.Load(23, &mm.membarrierRSeqEnabled)
+	stateSourceObject.Load(3, &mm.users)
+	stateSourceObject.Load(4, &mm.vmas)
+	stateSourceObject.Load(5, &mm.brk)
+	stateSourceObject.Load(6, &mm.usageAS)
+	stateSourceObject.Load(7, &mm.lockedAS)
+	stateSourceObject.Load(8, &mm.dataAS)
+	stateSourceObject.Load(9, &mm.defMLockMode)
+	stateSourceObject.Load(10, &mm.pmas)
+	stateSourceObject.Load(11, &mm.curRSS)
+	stateSourceObject.Load(12, &mm.maxRSS)
+	stateSourceObject.Load(13, &mm.dumpability)
+	stateSourceObject.Load(14, &mm.argv)
+	stateSourceObject.Load(15, &mm.envv)
+	stateSourceObject.Load(16, &mm.auxv)
+	stateSourceObject.Load(17, &mm.executable)
+	stateSourceObject.Load(18, &mm.aioManager)
+	stateSourceObject.Load(19, &mm.sleepForActivation)
+	stateSourceObject.Load(20, &mm.vdsoSigReturnAddr)
+	stateSourceObject.Load(21, &mm.membarrierPrivateEnabled)
+	stateSourceObject.Load(22, &mm.membarrierRSeqEnabled)
 	stateSourceObject.AfterLoad(mm.afterLoad)
 }
 
@@ -496,31 +389,6 @@ func (p *pma) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(3, &p.maxPerms)
 	stateSourceObject.Load(4, &p.needCOW)
 	stateSourceObject.Load(5, &p.private)
-}
-
-func (p *privateRefs) StateTypeName() string {
-	return "pkg/sentry/mm.privateRefs"
-}
-
-func (p *privateRefs) StateFields() []string {
-	return []string{
-		"refs",
-	}
-}
-
-func (p *privateRefs) beforeSave() {}
-
-// +checklocksignore
-func (p *privateRefs) StateSave(stateSinkObject state.Sink) {
-	p.beforeSave()
-	stateSinkObject.Save(0, &p.refs)
-}
-
-func (p *privateRefs) afterLoad() {}
-
-// +checklocksignore
-func (p *privateRefs) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &p.refs)
 }
 
 func (s *pmaSet) StateTypeName() string {
@@ -795,15 +663,11 @@ func init() {
 	state.Register((*AIOContext)(nil))
 	state.Register((*aioMappable)(nil))
 	state.Register((*aioMappableRefs)(nil))
-	state.Register((*fileRefcountSet)(nil))
-	state.Register((*fileRefcountnode)(nil))
-	state.Register((*fileRefcountSegmentDataSlices)(nil))
 	state.Register((*ioList)(nil))
 	state.Register((*ioEntry)(nil))
 	state.Register((*MemoryManager)(nil))
 	state.Register((*vma)(nil))
 	state.Register((*pma)(nil))
-	state.Register((*privateRefs)(nil))
 	state.Register((*pmaSet)(nil))
 	state.Register((*pmanode)(nil))
 	state.Register((*pmaSegmentDataSlices)(nil))
