@@ -142,7 +142,11 @@ func (df *DiffFuzzer) defaultSeedCorpus() {
 // DeriveCorpusFromRuleSets attempts to extract useful seed corpus rules
 // out of the given `RuleSet`s.
 func (df *DiffFuzzer) DeriveCorpusFromRuleSets(ruleSets []seccomp.RuleSet) {
-	// TODO(b/298726675): Not implemented yet.
+	for _, ruleSet := range ruleSets {
+		for _, tc := range ruleSet.Rules.UsefulTestCases() {
+			df.AddSeed(tc)
+		}
+	}
 }
 
 // NewDiffFuzzer creates a fuzzer that verifies that two seccomp-bpf programs
