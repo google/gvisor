@@ -81,6 +81,9 @@ type Boot struct {
 	// ioFDs is the list of FDs used to connect to FS gofers.
 	ioFDs intFlags
 
+	// devIoFD is the FD to connect to dev gofer.
+	devIoFD int
+
 	// goferFilestoreFDs are FDs to the regular files that will back the tmpfs or
 	// overlayfs mount for certain gofer mounts.
 	goferFilestoreFDs intFlags
@@ -197,6 +200,7 @@ func (b *Boot) SetFlags(f *flag.FlagSet) {
 	f.IntVar(&b.controllerFD, "controller-fd", -1, "required FD of a stream socket for the control server that must be donated to this process")
 	f.IntVar(&b.deviceFD, "device-fd", -1, "FD for the platform device file")
 	f.Var(&b.ioFDs, "io-fds", "list of image FDs and/or socket FDs to connect gofer clients. They must follow this order: root first, then mounts as defined in the spec")
+	f.IntVar(&b.devIoFD, "dev-io-fd", -1, "FD to connect dev gofer client")
 	f.Var(&b.stdioFDs, "stdio-fds", "list of FDs containing sandbox stdin, stdout, and stderr in that order")
 	f.Var(&b.passFDs, "pass-fd", "mapping of host to guest FDs. They must be in M:N format. M is the host and N the guest descriptor.")
 	f.IntVar(&b.execFD, "exec-fd", -1, "host file descriptor used for program execution.")
@@ -425,6 +429,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		ControllerFD:      b.controllerFD,
 		Device:            os.NewFile(uintptr(b.deviceFD), "platform device"),
 		GoferFDs:          b.ioFDs.GetArray(),
+		DevGoferFD:        b.devIoFD,
 		StdioFDs:          b.stdioFDs.GetArray(),
 		PassFDs:           b.passFDs.GetArray(),
 		ExecFD:            b.execFD,

@@ -305,7 +305,7 @@ func New(conf *config.Config, args Args) (*Container, error) {
 			return nil, err
 		}
 		if err := runInCgroup(containerCgroup, func() error {
-			ioFiles, specFile, err := c.createGoferProcess(args.Spec, conf, args.BundleDir, args.Attached, rootfsHint)
+			ioFiles, devIOFile, specFile, err := c.createGoferProcess(args.Spec, conf, args.BundleDir, args.Attached, rootfsHint)
 			if err != nil {
 				return fmt.Errorf("cannot create gofer process: %w", err)
 			}
@@ -319,6 +319,7 @@ func New(conf *config.Config, args Args) (*Container, error) {
 				ConsoleSocket:       args.ConsoleSocket,
 				UserLog:             args.UserLog,
 				IOFiles:             ioFiles,
+				DevIOFile:           devIOFile,
 				MountsFile:          specFile,
 				Cgroup:              containerCgroup,
 				Attached:            args.Attached,
@@ -471,13 +472,16 @@ func (c *Container) Start(conf *config.Config) error {
 		// the start (and all their children processes).
 		if err := runInCgroup(c.Sandbox.CgroupJSON.Cgroup, func() error {
 			// Create the gofer process.
-			goferFiles, mountsFile, err := c.createGoferProcess(c.Spec, conf, c.BundleDir, false, rootfsHint)
+			goferFiles, devIOFile, mountsFile, err := c.createGoferProcess(c.Spec, conf, c.BundleDir, false, rootfsHint)
 			if err != nil {
 				return err
 			}
 			defer func() {
 				if mountsFile != nil {
 					_ = mountsFile.Close()
+				}
+				if devIOFile != nil {
+					_ = devIOFile.Close()
 				}
 				for _, f := range goferFiles {
 					_ = f.Close()
@@ -502,7 +506,7 @@ func (c *Container) Start(conf *config.Config) error {
 				stdios = []*os.File{os.Stdin, os.Stdout, os.Stderr}
 			}
 
-			return c.Sandbox.StartSubcontainer(c.Spec, conf, c.ID, stdios, goferFiles, goferFilestores, goferConfs)
+			return c.Sandbox.StartSubcontainer(c.Spec, conf, c.ID, stdios, goferFiles, goferFilestores, devIOFile, goferConfs)
 		}); err != nil {
 			return err
 		}
@@ -1172,14 +1176,22 @@ func (c *Container) waitForStopped() error {
 	return backoff.Retry(op, b)
 }
 
+// shouldCreateDeviceGofer indicates whether a device gofer connection should
+// be created.
+func shouldCreateDeviceGofer(spec *specs.Spec, conf *config.Config) bool {
+	return specutils.GPUFunctionalityRequested(spec, conf)
+}
+
 // shouldSpawnGofer indicates whether the gofer process should be spawned.
-func shouldSpawnGofer(goferConfs []boot.GoferMountConf) bool {
+func shouldSpawnGofer(spec *specs.Spec, conf *config.Config, goferConfs []boot.GoferMountConf) bool {
+	// Lisafs mounts need the gofer.
 	for _, cfg := range goferConfs {
 		if cfg.ShouldUseLisafs() {
 			return true
 		}
 	}
-	return false
+	// Device gofer needs a gofer process.
+	return shouldCreateDeviceGofer(spec, conf)
 }
 
 // createGoferProcess returns an IO file list and a mounts file on success.
@@ -1187,23 +1199,23 @@ func shouldSpawnGofer(goferConfs []boot.GoferMountConf) bool {
 // a gofer endpoint for the mount points using Gofers. The mounts file is the
 // file to read list of mounts after they have been resolved (direct paths,
 // no symlinks), and will be nil if there is no cleaning required for mounts.
-func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bundleDir string, attached bool, rootfsHint *boot.RootfsHint) ([]*os.File, *os.File, error) {
-	if !shouldSpawnGofer(c.GoferMountConfs) {
+func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bundleDir string, attached bool, rootfsHint *boot.RootfsHint) ([]*os.File, *os.File, *os.File, error) {
+	if !shouldSpawnGofer(spec, conf, c.GoferMountConfs) {
 		if !c.GoferMountConfs[0].ShouldUseErofs() {
 			panic("goferless mode is only possible with EROFS rootfs")
 		}
 		ioFile, err := os.Open(rootfsHint.Mount.Source)
 		if err != nil {
-			return nil, nil, fmt.Errorf("opening rootfs image %q: %v", rootfsHint.Mount.Source, err)
+			return nil, nil, nil, fmt.Errorf("opening rootfs image %q: %v", rootfsHint.Mount.Source, err)
 		}
-		return []*os.File{ioFile}, nil, nil
+		return []*os.File{ioFile}, nil, nil, nil
 	}
 
 	donations := donation.Agency{}
 	defer donations.Close()
 
 	if err := donations.OpenAndDonate("log-fd", conf.LogFilename, os.O_CREATE|os.O_WRONLY|os.O_APPEND); err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if conf.DebugLog != "" {
 		test := ""
@@ -1215,7 +1227,7 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 		}
 		if specutils.IsDebugCommand(conf, "gofer") {
 			if err := donations.DonateDebugLogFile("debug-log-fd", conf.DebugLog, "gofer", test); err != nil {
-				return nil, nil, err
+				return nil, nil, nil, err
 			}
 		}
 	}
@@ -1242,20 +1254,20 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 	// Open the spec file to donate to the sandbox.
 	specFile, err := specutils.OpenSpec(bundleDir)
 	if err != nil {
-		return nil, nil, fmt.Errorf("opening spec file: %v", err)
+		return nil, nil, nil, fmt.Errorf("opening spec file: %v", err)
 	}
 	donations.DonateAndClose("spec-fd", specFile)
 
 	// Donate any profile FDs to the gofer.
 	if err := c.donateGoferProfileFDs(conf, &donations); err != nil {
-		return nil, nil, fmt.Errorf("donating gofer profile fds: %w", err)
+		return nil, nil, nil, fmt.Errorf("donating gofer profile fds: %w", err)
 	}
 
 	// Create pipe that allows gofer to send mount list to sandbox after all paths
 	// have been resolved.
 	mountsSand, mountsGofer, err := os.Pipe()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	donations.DonateAndClose("mounts-fd", mountsGofer)
 
@@ -1273,7 +1285,7 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 		case cfg.ShouldUseLisafs():
 			fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0)
 			if err != nil {
-				return nil, nil, err
+				return nil, nil, nil, err
 			}
 			sandEnds = append(sandEnds, os.NewFile(uintptr(fds[0]), "sandbox IO FD"))
 
@@ -1282,14 +1294,23 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 
 		case cfg.ShouldUseErofs():
 			if i > 0 {
-				return nil, nil, fmt.Errorf("EROFS lower layer is only supported for root mount")
+				return nil, nil, nil, fmt.Errorf("EROFS lower layer is only supported for root mount")
 			}
-			if f, err := os.Open(rootfsHint.Mount.Source); err != nil {
-				return nil, nil, fmt.Errorf("opening rootfs image %q: %v", rootfsHint.Mount.Source, err)
-			} else {
-				sandEnds = append(sandEnds, f)
+			f, err := os.Open(rootfsHint.Mount.Source)
+			if err != nil {
+				return nil, nil, nil, fmt.Errorf("opening rootfs image %q: %v", rootfsHint.Mount.Source, err)
 			}
+			sandEnds = append(sandEnds, f)
 		}
+	}
+	var devSandEnd *os.File
+	if shouldCreateDeviceGofer(spec, conf) {
+		fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM|unix.SOCK_CLOEXEC, 0)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		devSandEnd = os.NewFile(uintptr(fds[0]), "sandbox dev IO FD")
+		donations.DonateAndClose("dev-io-fd", os.NewFile(uintptr(fds[1]), "gofer dev IO FD"))
 	}
 
 	if attached {
@@ -1322,19 +1343,19 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 	} else {
 		userNS, ok := specutils.GetNS(specs.UserNamespace, spec)
 		if !ok {
-			return nil, nil, fmt.Errorf("unable to run a rootless container without userns")
+			return nil, nil, nil, fmt.Errorf("unable to run a rootless container without userns")
 		}
 		nss = append(nss, userNS)
 		syncFile, err := sandbox.ConfigureCmdForRootless(cmd, &donations)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		defer syncFile.Close()
 	}
 
 	nvProxySetup, err := nvproxySetupAfterGoferUserns(spec, conf, cmd, &donations)
 	if err != nil {
-		return nil, nil, fmt.Errorf("setting up nvproxy for gofer: %w", err)
+		return nil, nil, nil, fmt.Errorf("setting up nvproxy for gofer: %w", err)
 	}
 
 	donations.Transfer(cmd, nextFD)
@@ -1343,7 +1364,7 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 	donation.LogDonations(cmd)
 	log.Debugf("Starting gofer: %s %v", cmd.Path, cmd.Args)
 	if err := specutils.StartInNS(cmd, nss); err != nil {
-		return nil, nil, fmt.Errorf("gofer: %v", err)
+		return nil, nil, nil, fmt.Errorf("gofer: %v", err)
 	}
 	log.Infof("Gofer started, PID: %d", cmd.Process.Pid)
 	c.GoferPid = cmd.Process.Pid
@@ -1352,16 +1373,16 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 	// Set up and synchronize rootless mode userns mappings.
 	if rootlessEUID {
 		if err := sandbox.SetUserMappings(spec, cmd.Process.Pid); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
 
 	// Set up nvproxy within the Gofer namespace.
 	if err := nvProxySetup(); err != nil {
-		return nil, nil, fmt.Errorf("nvproxy setup: %w", err)
+		return nil, nil, nil, fmt.Errorf("nvproxy setup: %w", err)
 	}
 
-	return sandEnds, mountsSand, nil
+	return sandEnds, devSandEnd, mountsSand, nil
 }
 
 // changeStatus transitions from one status to another ensuring that the
