@@ -215,6 +215,7 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 	}
 	atomic.StoreUintptr(&vma.lastFault, uintptr(ar.Start))
 
+	mf := mm.mfp.MemoryFile()
 	// Limit the range we allocate to ar, aligned to privateAllocUnit.
 	maskAR := privateAligned(ar)
 	didUnmapAS := false
@@ -240,7 +241,7 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 				if vma.mappable == nil {
 					// Private anonymous mappings get pmas by allocating.
 					allocAR := optAR.Intersect(maskAR)
-					fr, err := mm.mf.Allocate(uint64(allocAR.Length()), opts)
+					fr, err := mf.Allocate(uint64(allocAR.Length()), opts)
 					if err != nil {
 						return pstart, pgap, err
 					}
@@ -251,9 +252,9 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 					}
 					mm.addRSSLocked(allocAR)
 					mm.incPrivateRef(fr)
-					mm.mf.IncRef(fr, memCgID)
+					mf.IncRef(fr, memCgID)
 					pseg, pgap = mm.pmas.Insert(pgap, allocAR, pma{
-						file:           mm.mf,
+						file:           mf,
 						off:            fr.Start,
 						translatePerms: hostarch.AnyAccess,
 						effectivePerms: vma.effectivePerms,
@@ -373,7 +374,7 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 						return pstart, pseg.PrevGap(), err
 					}
 					// Copy contents.
-					fr, err := mm.mf.Allocate(uint64(copyAR.Length()), pgalloc.AllocOpts{
+					fr, err := mf.Allocate(uint64(copyAR.Length()), pgalloc.AllocOpts{
 						Kind:    usage.Anonymous,
 						Mode:    pgalloc.AllocateAndWritePopulate,
 						MemCgID: memCgID,
@@ -409,8 +410,8 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 					}
 					oldpma.file.DecRef(pseg.fileRange())
 					mm.incPrivateRef(fr)
-					mm.mf.IncRef(fr, memCgID)
-					oldpma.file = mm.mf
+					mf.IncRef(fr, memCgID)
+					oldpma.file = mf
 					oldpma.off = fr.Start
 					oldpma.translatePerms = hostarch.AnyAccess
 					oldpma.effectivePerms = vma.effectivePerms
@@ -974,8 +975,9 @@ func (mm *MemoryManager) decPrivateRef(fr memmap.FileRange) {
 	refSet.MergeAdjacent(fr)
 	mm.privateRefs.mu.Unlock()
 
+	mf := mm.mfp.MemoryFile()
 	for _, fr := range freed {
-		mm.mf.DecRef(fr)
+		mf.DecRef(fr)
 	}
 }
 
