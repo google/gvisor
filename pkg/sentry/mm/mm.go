@@ -61,6 +61,11 @@ type MemoryManager struct {
 	p   platform.Platform
 	mfp pgalloc.MemoryFileProvider
 
+	// mf is the cached result of mfp.MemoryFile().
+	//
+	// mf is immutable.
+	mf *pgalloc.MemoryFile `state:"nosave"`
+
 	// haveASIO is the cached result of p.SupportsAddressSpaceIO(). Aside from
 	// eliminating an indirect call in the hot I/O path, this makes
 	// MemoryManager.asioEnabled() a leaf function, allowing it to be inlined.

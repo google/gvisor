@@ -32,6 +32,7 @@ func NewMemoryManager(p platform.Platform, mfp pgalloc.MemoryFileProvider, sleep
 	return &MemoryManager{
 		p:                  p,
 		mfp:                mfp,
+		mf:                 mfp.MemoryFile(),
 		haveASIO:           p.SupportsAddressSpaceIO(),
 		privateRefs:        &privateRefs{},
 		users:              atomicbitops.FromInt32(1),
@@ -75,6 +76,7 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 	mm2 := &MemoryManager{
 		p:           mm.p,
 		mfp:         mm.mfp,
+		mf:          mm.mf,
 		haveASIO:    mm.haveASIO,
 		layout:      mm.layout,
 		privateRefs: mm.privateRefs,
