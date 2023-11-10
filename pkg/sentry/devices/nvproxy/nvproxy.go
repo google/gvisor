@@ -31,14 +31,10 @@ import (
 )
 
 // Register registers all devices implemented by this package in vfsObj.
-func Register(vfsObj *vfs.VirtualFilesystem, uvmDevMajor uint32) error {
+func Register(vfsObj *vfs.VirtualFilesystem, versionStr string, uvmDevMajor uint32) error {
 	// The kernel driver's interface is unstable, so only allow versions of the
 	// driver that are known to be supported.
-	versionStr, err := hostDriverVersion()
-	if err != nil {
-		return fmt.Errorf("failed to get Nvidia driver version: %w", err)
-	}
-	log.Debugf("NVIDIA driver version: %s", versionStr)
+	log.Infof("NVIDIA driver version: %s", versionStr)
 	version, err := DriverVersionFrom(versionStr)
 	if err != nil {
 		return fmt.Errorf("failed to parse Nvidia driver version %s: %w", versionStr, err)

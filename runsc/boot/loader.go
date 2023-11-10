@@ -128,9 +128,8 @@ type containerInfo struct {
 	// nvidiaUVMDevMajor is the device major number used for nvidia-uvm.
 	nvidiaUVMDevMajor uint32
 
-	// nvidiaDevMinors is a list of device minors for Nvidia GPU devices exposed
-	// to the sandbox.
-	nvidiaDevMinors NvidiaDevMinors
+	// nvidiaDriverVersion is the Nvidia driver version on the host.
+	nvidiaDriverVersion string
 }
 
 // Loader keeps state needed to start the kernel and run the container.
@@ -290,9 +289,8 @@ type Args struct {
 	// ProfileOpts contains the set of profiles to enable and the
 	// corresponding FDs where profile data will be written.
 	ProfileOpts profile.Opts
-	// NvidiaDevMinors is a list of device minors for Nvidia GPU devices exposed
-	// to the sandbox.
-	NvidiaDevMinors NvidiaDevMinors
+	// NvidiaDriverVersion is the Nvidia driver version on the host.
+	NvidiaDriverVersion string
 }
 
 // make sure stdioFDs are always the same on initial start and on restore
@@ -323,10 +321,10 @@ func New(args Args) (*Loader, error) {
 	kernel.IOUringEnabled = args.Conf.IOUring
 
 	info := containerInfo{
-		conf:            args.Conf,
-		spec:            args.Spec,
-		goferMountConfs: args.GoferMountConfs,
-		nvidiaDevMinors: args.NvidiaDevMinors,
+		conf:                args.Conf,
+		spec:                args.Spec,
+		goferMountConfs:     args.GoferMountConfs,
+		nvidiaDriverVersion: args.NvidiaDriverVersion,
 	}
 
 	// Make host FDs stable between invocations. Host FDs must map to the exact
@@ -881,14 +879,14 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 	}
 
 	info := &containerInfo{
-		conf:              conf,
-		spec:              spec,
-		goferFDs:          goferFDs,
-		devGoferFD:        devGoferFD,
-		goferFilestoreFDs: goferFilestoreFDs,
-		goferMountConfs:   goferMountConfs,
-		nvidiaUVMDevMajor: l.root.nvidiaUVMDevMajor,
-		nvidiaDevMinors:   l.root.nvidiaDevMinors,
+		conf:                conf,
+		spec:                spec,
+		goferFDs:            goferFDs,
+		devGoferFD:          devGoferFD,
+		goferFilestoreFDs:   goferFilestoreFDs,
+		goferMountConfs:     goferMountConfs,
+		nvidiaUVMDevMajor:   l.root.nvidiaUVMDevMajor,
+		nvidiaDriverVersion: l.root.nvidiaDriverVersion,
 	}
 	info.procArgs, err = createProcessArgs(cid, spec, creds, l.k, pidns)
 	if err != nil {

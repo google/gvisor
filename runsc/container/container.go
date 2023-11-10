@@ -329,23 +329,6 @@ func New(conf *config.Config, args Args) (*Container, error) {
 				PassFiles:           args.PassFiles,
 				ExecFile:            args.ExecFile,
 			}
-			if specutils.GPUFunctionalityRequested(args.Spec, conf) {
-				// Expose all Nvidia devices in /dev/, because we don't know what
-				// devices future subcontainers will want.
-				searchDir := "/"
-				if conf.NVProxyDocker {
-					// For single-container use cases like Docker, the container rootfs
-					// is populated with the devices that need to be exposed. Scan that.
-					// This scan needs to happen outside the sandbox process because
-					// /rootfs/dev/nvidia* mounts made in gofer may not be propagated to
-					// sandbox's mount namespace.
-					searchDir = args.Spec.Root.Path
-				}
-				sandArgs.NvidiaDevMinors, err = specutils.FindAllGPUDevices(searchDir)
-				if err != nil {
-					return fmt.Errorf("FindAllGPUDevices: %w", err)
-				}
-			}
 			sand, err := sandbox.New(conf, sandArgs)
 			if err != nil {
 				return fmt.Errorf("cannot create sandbox: %w", err)
@@ -1844,7 +1827,7 @@ func logIDMappings(mappings []specs.LinuxIDMapping, idType string) {
 // This should only be necessary once on the host. It should be run during the
 // root container setup sequence to make sure it has run at least once.
 func nvProxyPreGoferHostSetup(spec *specs.Spec, conf *config.Config) error {
-	if !specutils.GPUFunctionalityRequested(spec, conf) || !conf.NVProxyDocker {
+	if !conf.NVProxyDocker || !specutils.GPUFunctionalityRequested(spec, conf) {
 		return nil
 	}
 
@@ -1941,7 +1924,7 @@ func nvproxyLoadKernelModules() {
 // construction. For this reason, we don't need to parse
 // NVIDIA_VISIBLE_DEVICES or pass --device to nvidia-container-cli.
 func nvproxySetupAfterGoferUserns(spec *specs.Spec, conf *config.Config, goferCmd *exec.Cmd, goferDonations *donation.Agency) (func() error, error) {
-	if !specutils.GPUFunctionalityRequested(spec, conf) || !conf.NVProxyDocker {
+	if !conf.NVProxyDocker || !specutils.GPUFunctionalityRequested(spec, conf) {
 		return func() error { return nil }, nil
 	}
 
@@ -1967,7 +1950,7 @@ func nvproxySetupAfterGoferUserns(spec *specs.Spec, conf *config.Config, goferCm
 		ldconfigPath = "/sbin/ldconfig"
 	}
 
-	devices, err := specutils.NvidiaDeviceList(spec, conf)
+	devices, err := specutils.ParseNvidiaVisibleDevices(spec)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get nvidia device numbers: %w", err)
 	}
