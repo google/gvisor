@@ -44,6 +44,7 @@ import (
 	metricpb "gvisor.dev/gvisor/pkg/metric/metric_go_proto"
 	"gvisor.dev/gvisor/pkg/prometheus"
 	"gvisor.dev/gvisor/pkg/sentry/control"
+	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/erofs"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
@@ -266,10 +267,6 @@ type Args struct {
 
 	// ExecFile is the file from the host used for program execution.
 	ExecFile *os.File
-
-	// NvidiaDevMinors is the list of device minors for Nvidia GPU devices
-	// exposed to the sandbox.
-	NvidiaDevMinors boot.NvidiaDevMinors
 }
 
 // New creates the sandbox process. The caller must call Destroy() on the
@@ -765,11 +762,6 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		return err
 	}
 
-	// Pass nvidia device minors.
-	if len(args.NvidiaDevMinors) > 0 {
-		cmd.Args = append(cmd.Args, "--nvidia-dev-minors="+args.NvidiaDevMinors.String())
-	}
-
 	// Pass gofer mount configs.
 	cmd.Args = append(cmd.Args, "--gofer-mount-confs="+args.GoferMountConfs.String())
 
@@ -829,6 +821,14 @@ func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyn
 		log.Infof("Sandbox will be started in a new PID namespace")
 		nss = append(nss, specs.LinuxNamespace{Type: specs.PIDNamespace})
 		cmd.Args = append(cmd.Args, "--pidns=true")
+	}
+
+	if specutils.NVProxyEnabled(args.Spec, conf) {
+		nvidiaDriverVersion, err := nvproxy.HostDriverVersion()
+		if err != nil {
+			return fmt.Errorf("failed to get Nvidia driver version: %w", err)
+		}
+		cmd.Args = append(cmd.Args, "--nvidia-driver-version="+nvidiaDriverVersion)
 	}
 
 	// Joins the network namespace if network is enabled. the sandbox talks

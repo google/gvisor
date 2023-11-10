@@ -30,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/tpu"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/devutil"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/fspath"
@@ -1116,7 +1117,7 @@ func createDeviceFiles(ctx context.Context, creds *auth.Credentials, info *conta
 			}
 		}
 	}
-	if specutils.GPUFunctionalityRequested(info.spec, info.conf) && info.conf.NVProxyDocker {
+	if info.conf.NVProxyDocker && specutils.GPUFunctionalityRequested(info.spec, info.conf) {
 		// In Docker mode, devices are not injected into spec.Linux.Devices. So
 		// manually create appropriate device files.
 		mode := os.FileMode(0666)
@@ -1124,7 +1125,24 @@ func createDeviceFiles(ctx context.Context, creds *auth.Credentials, info *conta
 			specs.LinuxDevice{Path: "/dev/nvidiactl", Type: "c", Major: nvgpu.NV_MAJOR_DEVICE_NUMBER, Minor: nvgpu.NV_CONTROL_DEVICE_MINOR, FileMode: &mode},
 			specs.LinuxDevice{Path: "/dev/nvidia-uvm", Type: "c", Major: int64(info.nvidiaUVMDevMajor), Minor: nvgpu.NVIDIA_UVM_PRIMARY_MINOR_NUMBER, FileMode: &mode},
 		}
-		for _, minor := range info.nvidiaDevMinors {
+		devClient := devutil.GoferClientFromContext(ctx)
+		if devClient == nil {
+			return fmt.Errorf("dev gofer client not found in context")
+		}
+		names, err := devClient.DirentNames(ctx)
+		if err != nil {
+			return fmt.Errorf("failed to get names of dirents from dev gofer: %w", err)
+		}
+		nvidiaDeviceRegex := regexp.MustCompile(`^nvidia(\d+)$`)
+		for _, name := range names {
+			ms := nvidiaDeviceRegex.FindStringSubmatch(name)
+			if ms == nil {
+				continue
+			}
+			minor, err := strconv.ParseUint(ms[1], 10, 32)
+			if err != nil {
+				return fmt.Errorf("invalid nvidia device name %q: %w", name, err)
+			}
 			nvidiaDevs = append(nvidiaDevs, specs.LinuxDevice{Path: fmt.Sprintf("/dev/nvidia%d", minor), Type: "c", Major: nvgpu.NV_MAJOR_DEVICE_NUMBER, Minor: int64(minor), FileMode: &mode})
 		}
 		for _, nvidiaDev := range nvidiaDevs {
@@ -1208,14 +1226,14 @@ func tpuProxyRegisterDevices(info *containerInfo, vfsObj *vfs.VirtualFilesystem)
 }
 
 func nvproxyRegisterDevices(info *containerInfo, vfsObj *vfs.VirtualFilesystem) error {
-	if !specutils.GPUFunctionalityRequested(info.spec, info.conf) {
+	if !specutils.NVProxyEnabled(info.spec, info.conf) {
 		return nil
 	}
 	uvmDevMajor, err := vfsObj.GetDynamicCharDevMajor()
 	if err != nil {
 		return fmt.Errorf("reserving device major number for nvidia-uvm: %w", err)
 	}
-	if err := nvproxy.Register(vfsObj, uvmDevMajor); err != nil {
+	if err := nvproxy.Register(vfsObj, info.nvidiaDriverVersion, uvmDevMajor); err != nil {
 		return fmt.Errorf("registering nvproxy driver: %w", err)
 	}
 	info.nvidiaUVMDevMajor = uvmDevMajor

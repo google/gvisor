@@ -28,6 +28,7 @@ go_library(
         "//pkg/metric:metric_go_proto",
         "//pkg/prometheus",
         "//pkg/sentry/control",
+        "//pkg/sentry/devices/nvproxy",
         "//pkg/sentry/fsimpl/erofs",
         "//pkg/sentry/platform",
         "//pkg/sentry/seccheck",

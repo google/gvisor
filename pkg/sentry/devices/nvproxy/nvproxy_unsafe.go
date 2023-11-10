@@ -23,7 +23,8 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/nvgpu"
 )
 
-func hostDriverVersion() (string, error) {
+// HostDriverVersion returns the version of the host Nvidia driver.
+func HostDriverVersion() (string, error) {
 	ctlFD, err := unix.Openat(-1, "/dev/nvidiactl", unix.O_RDONLY|unix.O_NOFOLLOW, 0)
 	if err != nil {
 		return "", fmt.Errorf("failed to open /dev/nvidiactl: %w", err)
