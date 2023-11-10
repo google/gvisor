@@ -26,12 +26,13 @@ cc_flags_supplier = rule(
 def cc_grpc_library(name, **kwargs):
     _cc_grpc_library(name = name, grpc_only = True, **kwargs)
 
-def cc_binary(name, static = False, **kwargs):
+def cc_binary(name, static = False, tcmalloc = False, **kwargs):
     """Run cc_binary.
 
     Args:
         name: name of the target.
         static: make a static binary if True
+        tcmalloc: use TCMalloc if True (not implemented)
         **kwargs: the rest of the args.
     """
     if static:
@@ -46,6 +47,10 @@ def cc_binary(name, static = False, **kwargs):
             "-lpthread",
             "-Wl,--no-whole-archive",
         ]
+    if tcmalloc:
+        # buildifier: disable=print
+        print("Warning: tcmalloc can't be enabled")
+
     _cc_binary(
         name = name,
         **kwargs
