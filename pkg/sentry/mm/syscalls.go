@@ -1119,12 +1119,9 @@ func (mm *MemoryManager) Decommit(addr hostarch.Addr, length uint64) error {
 			if !didUnmapAS {
 				// Unmap all of ar, not just pseg.Range(), to minimize host
 				// syscalls. AddressSpace mappings must be removed before
-				// mm.decPrivateRef().
+				// pma.file.DecRef().
 				mm.unmapASLocked(ar)
 				didUnmapAS = true
-			}
-			if pma.private {
-				mm.decPrivateRef(pseg.fileRange())
 			}
 			pma.file.DecRef(pseg.fileRange())
 			mm.removeRSSLocked(pseg.Range())

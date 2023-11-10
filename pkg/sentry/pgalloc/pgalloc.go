@@ -866,6 +866,27 @@ func (f *MemoryFile) markDecommitted(fr memmap.FileRange) {
 	f.usage.MergeRange(fr)
 }
 
+// HasUniqueRef returns true if all pages in the given range have exactly one
+// reference. A return value of false is inherently racy, but if the caller
+// holds a reference on the given range and is preventing other goroutines from
+// copying it, then a return value of true is not racy.
+//
+// Preconditions: At least one reference must be held on all pages in fr.
+func (f *MemoryFile) HasUniqueRef(fr memmap.FileRange) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	seg := f.usage.FindSegment(fr.Start)
+	for {
+		if seg.ValuePtr().refs != 1 {
+			return false
+		}
+		seg = seg.NextSegment()
+		if !seg.Ok() || fr.End <= seg.Start() {
+			return true
+		}
+	}
+}
+
 // IncRef implements memmap.File.IncRef.
 func (f *MemoryFile) IncRef(fr memmap.FileRange, memCgID uint32) {
 	if !fr.WellFormed() || fr.Length() == 0 || fr.Start%hostarch.PageSize != 0 || fr.End%hostarch.PageSize != 0 {

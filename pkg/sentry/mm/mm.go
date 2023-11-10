@@ -17,7 +17,7 @@
 //
 // Lock order:
 //
-//	 fs locks, except for memmap.Mappable locks
+//	fs locks, except for memmap.Mappable locks
 //		mm.MemoryManager.metadataMu
 //			mm.MemoryManager.mappingMu
 //				Locks taken by memmap.MappingIdentity and memmap.Mappable methods other
@@ -25,9 +25,8 @@
 //					kernel.TaskSet.mu
 //						mm.MemoryManager.activeMu
 //							Locks taken by memmap.Mappable.Translate
-//								mm.privateRefs.mu
-//									platform.AddressSpace locks
-//										memmap.File locks
+//								platform.AddressSpace locks
+//									memmap.File locks
 //					mm.aioManager.mu
 //						mm.AIOContext.mu
 //
@@ -77,13 +76,6 @@ type MemoryManager struct {
 	//
 	// layout is set by the binary loader before the MemoryManager can be used.
 	layout arch.MmapLayout
-
-	// privateRefs stores reference counts for private memory (memory whose
-	// ownership is shared by one or more pmas instead of being owned by a
-	// memmap.Mappable).
-	//
-	// privateRefs is immutable.
-	privateRefs *privateRefs
 
 	// users is the number of dependencies on the mappings in the MemoryManager.
 	// When the number of references in users reaches zero, all mappings are
@@ -359,11 +351,6 @@ type pma struct {
 	file memmap.File `state:"nosave"`
 
 	// off is the offset into file at which this pma begins.
-	//
-	// Note that pmas do *not* hold references on offsets in file! If private
-	// is true, MemoryManager.privateRefs holds the reference instead. If
-	// private is false, the corresponding memmap.Mappable holds the reference
-	// instead (per memmap.Mappable.Translate requirement).
 	off uint64
 
 	// translatePerms is the permissions returned by memmap.Mappable.Translate.
@@ -386,10 +373,9 @@ type pma struct {
 
 	// private is true if this pma represents private memory.
 	//
-	// If private is true, file must be MemoryManager.mfp.MemoryFile(), the pma
-	// holds a reference on the mapped memory that is tracked in privateRefs,
-	// and calls to Invalidate for which
-	// memmap.InvalidateOpts.InvalidatePrivate is false should ignore the pma.
+	// If private is true, file must be MemoryManager.mfp.MemoryFile(), and
+	// calls to Invalidate for which memmap.InvalidateOpts.InvalidatePrivate is
+	// false should ignore the pma.
 	//
 	// If private is false, this pma caches a translation from the
 	// corresponding vma's memmap.Mappable.Translate.
@@ -400,39 +386,7 @@ type pma struct {
 	internalMappings safemem.BlockSeq `state:"nosave"`
 }
 
-// +stateify savable
-type privateRefs struct {
-	mu privateRefsMutex `state:"nosave"`
-
-	// refs maps offsets into MemoryManager.mfp.MemoryFile() to the number of
-	// pmas (or, equivalently, MemoryManagers) that share ownership of the
-	// memory at that offset.
-	refs fileRefcountSet
-}
-
 type invalidateArgs struct {
 	ar   hostarch.AddrRange
 	opts memmap.InvalidateOpts
-}
-
-// fileRefcountSetFunctions implements segment.Functions for fileRefcountSet.
-type fileRefcountSetFunctions struct{}
-
-func (fileRefcountSetFunctions) MinKey() uint64 {
-	return 0
-}
-
-func (fileRefcountSetFunctions) MaxKey() uint64 {
-	return ^uint64(0)
-}
-
-func (fileRefcountSetFunctions) ClearValue(_ *int32) {
-}
-
-func (fileRefcountSetFunctions) Merge(_ memmap.FileRange, rc1 int32, _ memmap.FileRange, rc2 int32) (int32, bool) {
-	return rc1, rc1 == rc2
-}
-
-func (fileRefcountSetFunctions) Split(_ memmap.FileRange, rc int32, _ uint64) (int32, int32) {
-	return rc, rc
 }
