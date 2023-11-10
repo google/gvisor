@@ -16,7 +16,6 @@ package tcp
 
 import (
 	"container/heap"
-	"encoding/binary"
 	"fmt"
 	"io"
 	"math"
@@ -29,7 +28,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sleep"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/hash/jenkins"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/ports"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
@@ -2246,28 +2244,6 @@ func (e *endpoint) registerEndpoint(addr tcpip.FullAddress, netProto tcpip.Netwo
 		// endpoint would be trying to connect to itself).
 		sameAddr := e.TransportEndpointInfo.ID.LocalAddress == e.TransportEndpointInfo.ID.RemoteAddress
 
-		// Calculate a port offset based on the destination IP/port and
-		// src IP to ensure that for a given tuple (srcIP, destIP,
-		// destPort) the offset used as a starting point is the same to
-		// ensure that we can cycle through the port space effectively.
-		portBuf := make([]byte, 2)
-		binary.LittleEndian.PutUint16(portBuf, e.ID.RemotePort)
-
-		h := jenkins.Sum32(e.protocol.portOffsetSecret)
-		for _, s := range [][]byte{
-			e.ID.LocalAddress.AsSlice(),
-			e.ID.RemoteAddress.AsSlice(),
-			portBuf,
-		} {
-			// Per io.Writer.Write:
-			//
-			// Write must return a non-nil error if it returns n < len(p).
-			if _, err := h.Write(s); err != nil {
-				panic(err)
-			}
-		}
-		portOffset := h.Sum32()
-
 		var twReuse tcpip.TCPTimeWaitReuseOption
 		if err := e.stack.TransportProtocolOption(ProtocolNumber, &twReuse); err != nil {
 			panic(fmt.Sprintf("e.stack.TransportProtocolOption(%d, %#v) = %s", ProtocolNumber, &twReuse, err))
@@ -2284,7 +2260,7 @@ func (e *endpoint) registerEndpoint(addr tcpip.FullAddress, netProto tcpip.Netwo
 		}
 
 		bindToDevice := tcpip.NICID(e.ops.GetBindToDevice())
-		if _, err := e.stack.PickEphemeralPortStable(portOffset, func(p uint16) (bool, tcpip.Error) {
+		if _, err := e.stack.PickEphemeralPort(e.stack.SecureRNG(), func(p uint16) (bool, tcpip.Error) {
 			if sameAddr && p == e.TransportEndpointInfo.ID.RemotePort {
 				return false, nil
 			}
