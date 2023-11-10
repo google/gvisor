@@ -14,6 +14,7 @@ go_library(
         "netfilter.go",
         "owner_matcher.go",
         "owner_matcher_v1.go",
+        "snat.go",
         "targets.go",
         "tcp_matcher.go",
         "udp_matcher.go",
