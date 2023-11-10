@@ -4649,6 +4649,8 @@ cc_binary(
     testonly = 1,
     srcs = ["process_vm_read_write.cc"],
     linkstatic = 1,
+    # tcmalloc isn't fork-safe.
+    tcmalloc = False,
     deps = [
         gtest,
         "//test/util:logging",
