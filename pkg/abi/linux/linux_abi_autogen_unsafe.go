@@ -169,9 +169,10 @@ var _ marshal.Marshallable = (*XTEntryMatch)(nil)
 var _ marshal.Marshallable = (*XTEntryTarget)(nil)
 var _ marshal.Marshallable = (*XTErrorTarget)(nil)
 var _ marshal.Marshallable = (*XTGetRevision)(nil)
+var _ marshal.Marshallable = (*XTNATTargetV0)(nil)
+var _ marshal.Marshallable = (*XTNATTargetV1)(nil)
 var _ marshal.Marshallable = (*XTOwnerMatchInfo)(nil)
 var _ marshal.Marshallable = (*XTRedirectTarget)(nil)
-var _ marshal.Marshallable = (*XTSNATTarget)(nil)
 var _ marshal.Marshallable = (*XTStandardTarget)(nil)
 var _ marshal.Marshallable = (*XTTCP)(nil)
 var _ marshal.Marshallable = (*XTUDP)(nil)
@@ -11424,6 +11425,275 @@ func (x *XTGetRevision) WriteTo(writer io.Writer) (int64, error) {
 }
 
 // SizeBytes implements marshal.Marshallable.SizeBytes.
+func (x *XTNATTargetV0) SizeBytes() int {
+    return 0 +
+        (*XTEntryTarget)(nil).SizeBytes() +
+        (*NfNATIPV4MultiRangeCompat)(nil).SizeBytes() +
+        1*4
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (x *XTNATTargetV0) MarshalBytes(dst []byte) []byte {
+    dst = x.Target.MarshalUnsafe(dst)
+    dst = x.NfRange.MarshalUnsafe(dst)
+    // Padding: dst[:sizeof(byte)*4] ~= [4]byte{0}
+    dst = dst[1*(4):]
+    return dst
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (x *XTNATTargetV0) UnmarshalBytes(src []byte) []byte {
+    src = x.Target.UnmarshalUnsafe(src)
+    src = x.NfRange.UnmarshalUnsafe(src)
+    // Padding: ~ copy([4]byte(x._), src[:sizeof(byte)*4])
+    src = src[1*(4):]
+    return src
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (x *XTNATTargetV0) Packed() bool {
+    return x.NfRange.Packed() && x.Target.Packed()
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (x *XTNATTargetV0) MarshalUnsafe(dst []byte) []byte {
+    if x.NfRange.Packed() && x.Target.Packed() {
+        size := x.SizeBytes()
+        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(x), uintptr(size))
+        return dst[size:]
+    }
+    // Type XTNATTargetV0 doesn't have a packed layout in memory, fallback to MarshalBytes.
+    return x.MarshalBytes(dst)
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (x *XTNATTargetV0) UnmarshalUnsafe(src []byte) []byte {
+    if x.NfRange.Packed() && x.Target.Packed() {
+        size := x.SizeBytes()
+        gohacks.Memmove(unsafe.Pointer(x), unsafe.Pointer(&src[0]), uintptr(size))
+        return src[size:]
+    }
+    // Type XTNATTargetV0 doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+    return x.UnmarshalBytes(src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+func (x *XTNATTargetV0) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    if !x.NfRange.Packed() && x.Target.Packed() {
+        // Type XTNATTargetV0 doesn't have a packed layout in memory, fall back to MarshalBytes.
+        buf := cc.CopyScratchBuffer(x.SizeBytes()) // escapes: okay.
+        x.MarshalBytes(buf) // escapes: fallback.
+        return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    }
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(x)))
+    hdr.Len = x.SizeBytes()
+    hdr.Cap = x.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that x
+    // must live until the use above.
+    runtime.KeepAlive(x) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+func (x *XTNATTargetV0) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return x.CopyOutN(cc, addr, x.SizeBytes())
+}
+
+// CopyInN implements marshal.Marshallable.CopyInN.
+func (x *XTNATTargetV0) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    if !x.NfRange.Packed() && x.Target.Packed() {
+        // Type XTNATTargetV0 doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+        buf := cc.CopyScratchBuffer(x.SizeBytes()) // escapes: okay.
+        length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
+        // Unmarshal unconditionally. If we had a short copy-in, this results in a
+        // partially unmarshalled struct.
+        x.UnmarshalBytes(buf) // escapes: fallback.
+        return length, err
+    }
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(x)))
+    hdr.Len = x.SizeBytes()
+    hdr.Cap = x.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that x
+    // must live until the use above.
+    runtime.KeepAlive(x) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+func (x *XTNATTargetV0) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return x.CopyInN(cc, addr, x.SizeBytes())
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (x *XTNATTargetV0) WriteTo(writer io.Writer) (int64, error) {
+    if !x.NfRange.Packed() && x.Target.Packed() {
+        // Type XTNATTargetV0 doesn't have a packed layout in memory, fall back to MarshalBytes.
+        buf := make([]byte, x.SizeBytes())
+        x.MarshalBytes(buf)
+        length, err := writer.Write(buf)
+        return int64(length), err
+    }
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(x)))
+    hdr.Len = x.SizeBytes()
+    hdr.Cap = x.SizeBytes()
+
+    length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that x
+    // must live until the use above.
+    runtime.KeepAlive(x) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (x *XTNATTargetV1) SizeBytes() int {
+    return 0 +
+        (*XTEntryTarget)(nil).SizeBytes() +
+        (*NFNATRange)(nil).SizeBytes()
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (x *XTNATTargetV1) MarshalBytes(dst []byte) []byte {
+    dst = x.Target.MarshalUnsafe(dst)
+    dst = x.Range.MarshalUnsafe(dst)
+    return dst
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (x *XTNATTargetV1) UnmarshalBytes(src []byte) []byte {
+    src = x.Target.UnmarshalUnsafe(src)
+    src = x.Range.UnmarshalUnsafe(src)
+    return src
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (x *XTNATTargetV1) Packed() bool {
+    return x.Range.Packed() && x.Target.Packed()
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (x *XTNATTargetV1) MarshalUnsafe(dst []byte) []byte {
+    if x.Range.Packed() && x.Target.Packed() {
+        size := x.SizeBytes()
+        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(x), uintptr(size))
+        return dst[size:]
+    }
+    // Type XTNATTargetV1 doesn't have a packed layout in memory, fallback to MarshalBytes.
+    return x.MarshalBytes(dst)
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (x *XTNATTargetV1) UnmarshalUnsafe(src []byte) []byte {
+    if x.Range.Packed() && x.Target.Packed() {
+        size := x.SizeBytes()
+        gohacks.Memmove(unsafe.Pointer(x), unsafe.Pointer(&src[0]), uintptr(size))
+        return src[size:]
+    }
+    // Type XTNATTargetV1 doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+    return x.UnmarshalBytes(src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+func (x *XTNATTargetV1) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    if !x.Range.Packed() && x.Target.Packed() {
+        // Type XTNATTargetV1 doesn't have a packed layout in memory, fall back to MarshalBytes.
+        buf := cc.CopyScratchBuffer(x.SizeBytes()) // escapes: okay.
+        x.MarshalBytes(buf) // escapes: fallback.
+        return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    }
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(x)))
+    hdr.Len = x.SizeBytes()
+    hdr.Cap = x.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that x
+    // must live until the use above.
+    runtime.KeepAlive(x) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+func (x *XTNATTargetV1) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return x.CopyOutN(cc, addr, x.SizeBytes())
+}
+
+// CopyInN implements marshal.Marshallable.CopyInN.
+func (x *XTNATTargetV1) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    if !x.Range.Packed() && x.Target.Packed() {
+        // Type XTNATTargetV1 doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+        buf := cc.CopyScratchBuffer(x.SizeBytes()) // escapes: okay.
+        length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
+        // Unmarshal unconditionally. If we had a short copy-in, this results in a
+        // partially unmarshalled struct.
+        x.UnmarshalBytes(buf) // escapes: fallback.
+        return length, err
+    }
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(x)))
+    hdr.Len = x.SizeBytes()
+    hdr.Cap = x.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that x
+    // must live until the use above.
+    runtime.KeepAlive(x) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+func (x *XTNATTargetV1) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return x.CopyInN(cc, addr, x.SizeBytes())
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (x *XTNATTargetV1) WriteTo(writer io.Writer) (int64, error) {
+    if !x.Range.Packed() && x.Target.Packed() {
+        // Type XTNATTargetV1 doesn't have a packed layout in memory, fall back to MarshalBytes.
+        buf := make([]byte, x.SizeBytes())
+        x.MarshalBytes(buf)
+        length, err := writer.Write(buf)
+        return int64(length), err
+    }
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(x)))
+    hdr.Len = x.SizeBytes()
+    hdr.Cap = x.SizeBytes()
+
+    length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that x
+    // must live until the use above.
+    runtime.KeepAlive(x) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
 func (x *XTOwnerMatchInfo) SizeBytes() int {
     return 18 +
         1*2
@@ -11662,143 +11932,6 @@ func (x *XTRedirectTarget) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (i
 func (x *XTRedirectTarget) WriteTo(writer io.Writer) (int64, error) {
     if !x.NfRange.Packed() && x.Target.Packed() {
         // Type XTRedirectTarget doesn't have a packed layout in memory, fall back to MarshalBytes.
-        buf := make([]byte, x.SizeBytes())
-        x.MarshalBytes(buf)
-        length, err := writer.Write(buf)
-        return int64(length), err
-    }
-
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(x)))
-    hdr.Len = x.SizeBytes()
-    hdr.Cap = x.SizeBytes()
-
-    length, err := writer.Write(buf)
-    // Since we bypassed the compiler's escape analysis, indicate that x
-    // must live until the use above.
-    runtime.KeepAlive(x) // escapes: replaced by intrinsic.
-    return int64(length), err
-}
-
-// SizeBytes implements marshal.Marshallable.SizeBytes.
-func (x *XTSNATTarget) SizeBytes() int {
-    return 0 +
-        (*XTEntryTarget)(nil).SizeBytes() +
-        (*NfNATIPV4MultiRangeCompat)(nil).SizeBytes() +
-        1*4
-}
-
-// MarshalBytes implements marshal.Marshallable.MarshalBytes.
-func (x *XTSNATTarget) MarshalBytes(dst []byte) []byte {
-    dst = x.Target.MarshalUnsafe(dst)
-    dst = x.NfRange.MarshalUnsafe(dst)
-    // Padding: dst[:sizeof(byte)*4] ~= [4]byte{0}
-    dst = dst[1*(4):]
-    return dst
-}
-
-// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
-func (x *XTSNATTarget) UnmarshalBytes(src []byte) []byte {
-    src = x.Target.UnmarshalUnsafe(src)
-    src = x.NfRange.UnmarshalUnsafe(src)
-    // Padding: ~ copy([4]byte(x._), src[:sizeof(byte)*4])
-    src = src[1*(4):]
-    return src
-}
-
-// Packed implements marshal.Marshallable.Packed.
-//go:nosplit
-func (x *XTSNATTarget) Packed() bool {
-    return x.NfRange.Packed() && x.Target.Packed()
-}
-
-// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
-func (x *XTSNATTarget) MarshalUnsafe(dst []byte) []byte {
-    if x.NfRange.Packed() && x.Target.Packed() {
-        size := x.SizeBytes()
-        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(x), uintptr(size))
-        return dst[size:]
-    }
-    // Type XTSNATTarget doesn't have a packed layout in memory, fallback to MarshalBytes.
-    return x.MarshalBytes(dst)
-}
-
-// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
-func (x *XTSNATTarget) UnmarshalUnsafe(src []byte) []byte {
-    if x.NfRange.Packed() && x.Target.Packed() {
-        size := x.SizeBytes()
-        gohacks.Memmove(unsafe.Pointer(x), unsafe.Pointer(&src[0]), uintptr(size))
-        return src[size:]
-    }
-    // Type XTSNATTarget doesn't have a packed layout in memory, fallback to UnmarshalBytes.
-    return x.UnmarshalBytes(src)
-}
-
-// CopyOutN implements marshal.Marshallable.CopyOutN.
-func (x *XTSNATTarget) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
-    if !x.NfRange.Packed() && x.Target.Packed() {
-        // Type XTSNATTarget doesn't have a packed layout in memory, fall back to MarshalBytes.
-        buf := cc.CopyScratchBuffer(x.SizeBytes()) // escapes: okay.
-        x.MarshalBytes(buf) // escapes: fallback.
-        return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    }
-
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(x)))
-    hdr.Len = x.SizeBytes()
-    hdr.Cap = x.SizeBytes()
-
-    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that x
-    // must live until the use above.
-    runtime.KeepAlive(x) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// CopyOut implements marshal.Marshallable.CopyOut.
-func (x *XTSNATTarget) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
-    return x.CopyOutN(cc, addr, x.SizeBytes())
-}
-
-// CopyInN implements marshal.Marshallable.CopyInN.
-func (x *XTSNATTarget) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
-    if !x.NfRange.Packed() && x.Target.Packed() {
-        // Type XTSNATTarget doesn't have a packed layout in memory, fall back to UnmarshalBytes.
-        buf := cc.CopyScratchBuffer(x.SizeBytes()) // escapes: okay.
-        length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
-        // Unmarshal unconditionally. If we had a short copy-in, this results in a
-        // partially unmarshalled struct.
-        x.UnmarshalBytes(buf) // escapes: fallback.
-        return length, err
-    }
-
-    // Construct a slice backed by dst's underlying memory.
-    var buf []byte
-    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
-    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(x)))
-    hdr.Len = x.SizeBytes()
-    hdr.Cap = x.SizeBytes()
-
-    length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
-    // Since we bypassed the compiler's escape analysis, indicate that x
-    // must live until the use above.
-    runtime.KeepAlive(x) // escapes: replaced by intrinsic.
-    return length, err
-}
-
-// CopyIn implements marshal.Marshallable.CopyIn.
-func (x *XTSNATTarget) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
-    return x.CopyInN(cc, addr, x.SizeBytes())
-}
-
-// WriteTo implements io.WriterTo.WriteTo.
-func (x *XTSNATTarget) WriteTo(writer io.Writer) (int64, error) {
-    if !x.NfRange.Packed() && x.Target.Packed() {
-        // Type XTSNATTarget doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, x.SizeBytes())
         x.MarshalBytes(buf)
         length, err := writer.Write(buf)
