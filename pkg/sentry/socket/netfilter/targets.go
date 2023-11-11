@@ -64,7 +64,10 @@ func init() {
 	registerTargetMaker(&snatTargetMakerV4{
 		NetworkProtocol: header.IPv4ProtocolNumber,
 	})
-	registerTargetMaker(&snatTargetMakerV6{
+	registerTargetMaker(&snatTargetMakerR1{
+		NetworkProtocol: header.IPv4ProtocolNumber,
+	})
+	registerTargetMaker(&snatTargetMakerR1{
 		NetworkProtocol: header.IPv6ProtocolNumber,
 	})
 }
