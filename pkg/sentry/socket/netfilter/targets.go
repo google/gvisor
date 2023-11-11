@@ -70,6 +70,12 @@ func init() {
 	registerTargetMaker(&snatTargetMakerR1{
 		NetworkProtocol: header.IPv6ProtocolNumber,
 	})
+	registerTargetMaker(&snatTargetMakerR2{
+		NetworkProtocol: header.IPv4ProtocolNumber,
+	})
+	registerTargetMaker(&snatTargetMakerR2{
+		NetworkProtocol: header.IPv6ProtocolNumber,
+	})
 }
 
 // The stack package provides some basic, useful targets for us. The following

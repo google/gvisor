@@ -413,6 +413,17 @@ type XTNATTargetV1 struct {
 // SizeOfXTNATTargetV1 is the size of an XTNATTargetV1.
 const SizeOfXTNATTargetV1 = SizeOfXTEntryTarget + SizeOfNFNATRange
 
+// XTNATTargetV2 triggers NAT when reached.
+//
+// +marshal
+type XTNATTargetV2 struct {
+	Target XTEntryTarget
+	Range  NFNATRange2
+}
+
+// SizeOfXTNATTargetV2 is the size of an XTNATTargetV2.
+const SizeOfXTNATTargetV2 = SizeOfXTEntryTarget + SizeOfNFNATRange2
+
 // IPTGetinfo is the argument for the IPT_SO_GET_INFO sockopt. It corresponds
 // to struct ipt_getinfo in include/uapi/linux/netfilter_ipv4/ip_tables.h.
 //
