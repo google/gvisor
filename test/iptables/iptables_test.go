@@ -364,6 +364,10 @@ func TestNATOutRedirectInvert(t *testing.T) {
 	singleTest(t, &NATOutRedirectInvert{})
 }
 
+func TestNATOutDNAT(t *testing.T) {
+	singleTest(t, &NATOutDNAT{})
+}
+
 func TestNATPreRedirectIP(t *testing.T) {
 	singleTest(t, &NATPreRedirectIP{})
 }
