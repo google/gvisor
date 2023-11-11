@@ -17,6 +17,7 @@ package seccomp
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"golang.org/x/sys/unix"
@@ -656,18 +657,49 @@ func (pa PerArg) Render(program *syscallProgram, labelSet *labelSet) {
 func (PerArg) Recurse(fn func(SyscallRule) SyscallRule) {}
 
 // String implements `SyscallRule.String`.
-func (pa PerArg) String() (s string) {
-	if len(pa) == 0 {
-		return
-	}
-	s += "( "
-	for _, arg := range pa {
-		if arg != nil {
-			s += fmt.Sprintf("%v ", arg)
+func (pa PerArg) String() string {
+	var sb strings.Builder
+	writtenArgs := 0
+	for i, arg := range pa {
+		if arg == nil {
+			arg = AnyValue{}
 		}
+		if _, isAny := arg.(AnyValue); isAny {
+			// Check if all future arguments are also "any value"; if so, stop here.
+			allIsAny := true
+			for j := i + 1; j < len(pa); j++ {
+				if pa[j] == nil {
+					continue
+				}
+				if _, isAny := pa[j].(AnyValue); !isAny {
+					allIsAny = false
+					break
+				}
+			}
+			if allIsAny {
+				break
+			}
+		}
+		if i != 0 {
+			sb.WriteString(" && ")
+		}
+		if i == RuleIP {
+			sb.WriteString("rip")
+		} else {
+			sb.WriteString("arg")
+			sb.WriteString(strconv.Itoa(i))
+		}
+		sb.WriteRune(' ')
+		sb.WriteString(arg.String())
+		writtenArgs++
 	}
-	s += ")"
-	return
+	if writtenArgs == 0 {
+		return "*"
+	}
+	if writtenArgs == 1 {
+		return sb.String()
+	}
+	return "(" + sb.String() + ")"
 }
 
 // SyscallRules maps syscall numbers to their corresponding rules.
