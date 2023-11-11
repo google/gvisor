@@ -189,27 +189,43 @@ type syscallProgramFragment struct {
 // given labels.
 // The fragment may not jump to any other label, nor return, nor fall through.
 func (f syscallProgramFragment) MustHaveJumpedTo(labels ...label) {
+	f.MustHaveJumpedToOrReturned(labels, nil)
+}
+
+// MustHaveJumpedToOrReturned asserts that the fragment must jump to one of
+// the given labels, or have returned one of the given return values.
+// The fragment may not jump to any other label, nor fall through,
+// nor return a non-deterministic value.
+func (f syscallProgramFragment) MustHaveJumpedToOrReturned(possibleLabels []label, possibleReturnValues map[linux.BPFAction]struct{}) {
 	fragment := f.getFragment()
 	outcomes := fragment.Outcomes()
 	if outcomes.MayFallThrough {
 		panic(fmt.Sprintf("fragment %v may fall through", fragment))
 	}
-	if outcomes.MayReturn() {
+	if len(possibleReturnValues) == 0 && outcomes.MayReturn() {
 		panic(fmt.Sprintf("fragment %v may return", fragment))
+	}
+	if outcomes.MayReturnRegisterA {
+		panic(fmt.Sprintf("fragment %v may return register A", fragment))
 	}
 	if outcomes.MayJumpToKnownOffsetBeyondFragment {
 		panic(fmt.Sprintf("fragment %v may jump to an offset beyond the fragment", fragment))
 	}
 	for jumpLabel := range outcomes.MayJumpToUnresolvedLabels {
 		found := false
-		for _, wantLabel := range labels {
+		for _, wantLabel := range possibleLabels {
 			if jumpLabel == string(wantLabel) {
 				found = true
 				break
 			}
 		}
 		if !found {
-			panic(fmt.Sprintf("fragment %v may jump to a label %q which is not one of %v", fragment, jumpLabel, labels))
+			panic(fmt.Sprintf("fragment %v may jump to a label %q which is not one of %v", fragment, jumpLabel, possibleLabels))
+		}
+	}
+	for returnValue := range outcomes.MayReturnImmediate {
+		if _, found := possibleReturnValues[returnValue]; !found {
+			panic(fmt.Sprintf("fragment %v may return a value %q which is not one of %v", fragment, returnValue, possibleReturnValues))
 		}
 	}
 }
@@ -404,53 +420,56 @@ func createBST(syscalls []uintptr) *node {
 // buildBSTProgram converts a binary tree started in 'root' into BPF code. The outline of the code
 // is as follows:
 //
-// // SYS_PIPE(22), root
+//	index_22: // SYS_PIPE(22), root
+//	(A < 22) ? goto index_9 check : continue
+//	(A > 22) ? goto index_35 : continue
+//	(args OK for SYS_PIPE) ? return action : goto defaultLabel
 //
-//	(A == 22) ? goto argument check : continue
-//	(A > 22) ? goto index_35 : goto index_9
+//	index_9: // SYS_MMAP(9), leaf
+//	(A == 9) ? continue : goto defaultLabel
+//	(args OK for SYS_MMAP) ? return action : goto defaultLabel
 //
-// index_9:  // SYS_MMAP(9), leaf
+//	index_35: // SYS_NANOSLEEP(35), single child
+//	(A > 35) ? goto index_50 : continue
+//	(A == 35) ? continue : goto defaultLabel
+//	(args OK for SYS_NANOSLEEP) ? return action : goto defaultLabel
 //
-//	A == 9) ? goto argument check : defaultLabel
-//
-// index_35:  // SYS_NANOSLEEP(35), single child
-//
-//	(A == 35) ? goto argument check : continue
-//	(A > 35) ? goto index_50 : goto defaultLabel
-//
-// index_50:  // SYS_LISTEN(50), leaf
-//
-//	(A == 50) ? goto argument check : goto defaultLabel
+//	index_50: // SYS_LISTEN(50), leaf
+//	(A == 50) ? continue : goto defaultLabel
+//	(args OK for SYS_LISTEN) ? return action : goto defaultLabel
 func buildBSTProgram(n *node, rules []RuleSet, program *syscallProgram) error {
 	// Root node is never referenced by label, skip it.
 	if !n.root {
 		program.Label(n.label())
 	}
-
 	nodeLabelSet := &labelSet{prefix: string(n.label())}
-
 	sysno := n.value
-	frag := program.Record()
+	nodeFrag := program.Record()
 	checkArgsLabel := label(fmt.Sprintf("checkArgs_%d", sysno))
-	program.If(bpf.Jmp|bpf.Jeq|bpf.K, uint32(sysno), checkArgsLabel)
-	if n.left == nil && n.right == nil {
-		// Leaf nodes don't require extra check.
-		program.JumpTo(defaultLabel)
-	} else {
-		// Non-leaf node. Check which turn to take.
-		program.If(bpf.Jmp|bpf.Jgt|bpf.K, uint32(sysno), n.right.label())
-		program.JumpTo(n.left.label())
+	if n.left != nil {
+		program.IfNot(bpf.Jmp|bpf.Jge|bpf.K, uint32(sysno), n.left.label())
 	}
-	frag.MustHaveJumpedTo(n.left.label(), n.right.label(), checkArgsLabel)
-	program.Label(checkArgsLabel)
+	if n.right != nil {
+		program.If(bpf.Jmp|bpf.Jgt|bpf.K, uint32(sysno), n.right.label())
+	}
+	if n.left == nil || n.right == nil {
+		// If we haven't checked both the left and right node, we still need
+		// to check for equality.
+		program.IfNot(bpf.Jmp|bpf.Jeq|bpf.K, uint32(sysno), defaultLabel)
+	}
+	program.JumpTo(checkArgsLabel)
+	nodeFrag.MustHaveJumpedTo(n.left.label(), n.right.label(), checkArgsLabel, defaultLabel)
 
+	program.Label(checkArgsLabel)
+	ruleSetsFrag := program.Record()
+	possibleActions := make(map[linux.BPFAction]struct{})
 	for ruleSetIdx, rs := range rules {
 		rule, ok := rs.Rules.rules[sysno]
 		if !ok {
 			continue
 		}
 		ruleSetLabelSet := nodeLabelSet.Push(fmt.Sprintf("rs[%d]", ruleSetIdx), nodeLabelSet.NewLabel(), nodeLabelSet.NewLabel())
-		frag := program.Record()
+		ruleSetFrag := program.Record()
 
 		// Emit a vsyscall check if this rule requires a
 		// Vsyscall match. This rule ensures that the top bit
@@ -467,12 +486,23 @@ func buildBSTProgram(n *node, rules []RuleSet, program *syscallProgram) error {
 		// that at the very end, we insert a direct
 		// jump label for the unmatched case.
 		optimizeSyscallRule(rule).Render(program, ruleSetLabelSet)
-		frag.MustHaveJumpedTo(ruleSetLabelSet.Matched(), ruleSetLabelSet.Mismatched())
+		ruleSetFrag.MustHaveJumpedTo(ruleSetLabelSet.Matched(), ruleSetLabelSet.Mismatched())
 		program.Label(ruleSetLabelSet.Matched())
 		program.Ret(rs.Action)
+		possibleActions[rs.Action] = struct{}{}
+		ruleSetFrag.MustHaveJumpedToOrReturned(
+			[]label{ruleSetLabelSet.Mismatched()}, // Either the ruleset mismatched...
+			map[linux.BPFAction]struct{}{
+				rs.Action: struct{}{}, // ... or it returned its defined action.
+			},
+		)
 		program.Label(ruleSetLabelSet.Mismatched())
 	}
 	program.JumpTo(defaultLabel)
+	ruleSetsFrag.MustHaveJumpedToOrReturned(
+		[]label{defaultLabel}, // Either we jumped to the default label...
+		possibleActions,       // ... or we returned one of the actions of the rulesets.
+	)
 	return nil
 }
 
