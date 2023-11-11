@@ -39,7 +39,7 @@ import (
 )
 
 const (
-	// Definitions for super block.
+	// Definitions for superblock.
 	SuperBlockMagicV1 = 0xe0f5e1e2
 	SuperBlockOffset  = 1024
 
@@ -99,7 +99,7 @@ const (
 	DirentSize        = 12
 )
 
-// SuperBlock represents on-disk super block.
+// SuperBlock represents on-disk superblock.
 //
 // +marshal
 // +stateify savable
@@ -260,9 +260,9 @@ func (i *Image) RootNid() uint64 {
 	return uint64(i.sb.RootNid)
 }
 
-// initSuperBlock initializes the super block of this image.
+// initSuperBlock initializes the superblock of this image.
 func (i *Image) initSuperBlock() error {
-	// i.sb is used in the hot path. Let's save a copy of it.
+	// i.sb is used in the hot path. Let's save a copy of the superblock.
 	if err := i.unmarshalAt(&i.sb, SuperBlockOffset); err != nil {
 		return fmt.Errorf("image size is too small")
 	}
@@ -286,7 +286,7 @@ func (i *Image) initSuperBlock() error {
 	return nil
 }
 
-// verifyChecksum verifies the checksum of the super block.
+// verifyChecksum verifies the checksum of the superblock.
 func (i *Image) verifyChecksum() error {
 	if i.sb.FeatureCompat&FeatureCompatSuperBlockChecksum == 0 {
 		return nil
@@ -338,7 +338,8 @@ func checkInodeAlignment(off uint64) bool {
 	return off&((1<<InodeSlotBits)-1) == 0
 }
 
-// inodeFormatAt returns the format of the inode at off in the memory backed by image.
+// inodeFormatAt returns the format of the inode at offset off within the
+// memory backed by image.
 func (i *Image) inodeFormatAt(off uint64) (uint16, error) {
 	if ok := checkInodeAlignment(off); !ok {
 		return 0, linuxerr.EFAULT
@@ -349,8 +350,8 @@ func (i *Image) inodeFormatAt(off uint64) (uint16, error) {
 	return *(*uint16)(i.pointerAt(off)), nil
 }
 
-// inodeCompactAt returns the pointer to the compact inode at off in the memory
-// backed by image.
+// inodeCompactAt returns a pointer to the compact inode at offset off within
+// the memory backed by image.
 func (i *Image) inodeCompactAt(off uint64) (*InodeCompact, error) {
 	if ok := checkInodeAlignment(off); !ok {
 		return nil, linuxerr.EFAULT
@@ -361,8 +362,8 @@ func (i *Image) inodeCompactAt(off uint64) (*InodeCompact, error) {
 	return (*InodeCompact)(i.pointerAt(off)), nil
 }
 
-// inodeExtendedAt returns the pointer to the extended inode at off in the
-// memory backed by image.
+// inodeExtendedAt returns a pointer to the extended inode at offset off within
+// the memory backed by image.
 func (i *Image) inodeExtendedAt(off uint64) (*InodeExtended, error) {
 	if ok := checkInodeAlignment(off); !ok {
 		return nil, linuxerr.EFAULT
@@ -373,8 +374,8 @@ func (i *Image) inodeExtendedAt(off uint64) (*InodeExtended, error) {
 	return (*InodeExtended)(i.pointerAt(off)), nil
 }
 
-// direntAt returns the pointer to the dirent at off in the memory backed
-// by image.
+// direntAt returns a pointer to the dirent at offset off within the memory
+// backed by image.
 func (i *Image) direntAt(off uint64) (*Dirent, error) {
 	// Each valid dirent should be aligned to 4 bytes.
 	if off&3 != 0 {
@@ -519,18 +520,19 @@ type Inode struct {
 	nlink     uint32
 }
 
+// bitRange returns the bits within the range [bit, bit+bits) in value.
 func bitRange(value, bit, bits uint16) uint16 {
 	return (value >> bit) & ((1 << bits) - 1)
 }
 
 // Layout returns the inode layout.
 func (i *Inode) Layout() uint16 {
-	return bitRange(uint16(i.format), InodeLayoutBit, InodeLayoutBits)
+	return bitRange(i.format, InodeLayoutBit, InodeLayoutBits)
 }
 
 // DataLayout returns the inode data layout.
 func (i *Inode) DataLayout() uint16 {
-	return bitRange(uint16(i.format), InodeDataLayoutBit, InodeDataLayoutBits)
+	return bitRange(i.format, InodeDataLayoutBit, InodeDataLayoutBits)
 }
 
 // IsRegular indicates whether i represents a regular file.
@@ -706,6 +708,13 @@ func (i *Inode) IterDirents(cb func(name string, typ uint8, nid uint64) error) e
 
 	// Iterate all the blocks which contain dirents.
 	for blocks > 0 {
+		// Get the max data size of this block.
+		maxSize := blockSize
+		if blocks == 1 {
+			if tailSize := uint32(i.size) & (blockSize - 1); tailSize != 0 {
+				maxSize = tailSize
+			}
+		}
 		// Get the first dirent in the current block.
 		direntOff := start
 		d, err := i.image.direntAt(direntOff)
@@ -714,13 +723,11 @@ func (i *Inode) IterDirents(cb func(name string, typ uint8, nid uint64) error) e
 		}
 		// Apart from the offset of the first filename, nameOff0 also indicates
 		// the total number of dirents in this block.
-		nameOff0 := start + uint64(d.NameOff)
-		maxSize := blockSize
-		if blocks == 1 {
-			if tailSize := uint32(i.size) & (blockSize - 1); tailSize != 0 {
-				maxSize = tailSize
-			}
+		if d.NameOff < DirentSize || uint32(d.NameOff) >= maxSize {
+			log.Warningf("Invalid nameOff0 %v at inode (nid=%v)", d.NameOff, i.Nid())
+			return linuxerr.EUCLEAN
 		}
+		nameOff0 := start + uint64(d.NameOff)
 		// Iterate all the dirents in this block.
 		for d != nil {
 			var (
@@ -740,19 +747,21 @@ func (i *Inode) IterDirents(cb func(name string, typ uint8, nid uint64) error) e
 				}
 				nameLen = uint32(next.NameOff - d.NameOff)
 			}
-
+			if uint32(d.NameOff)+nameLen > maxSize || nameLen > MaxNameLen || nameLen == 0 {
+				log.Warningf("Corrupted dirent at inode (nid=%v)", i.Nid())
+				return linuxerr.EUCLEAN
+			}
 			buf, err := i.image.BytesAt(start+uint64(d.NameOff), uint64(nameLen))
 			if err != nil {
 				return err
 			}
 			if lastDirent {
-				if n := bytes.IndexByte(buf, 0); n != -1 {
+				if n := bytes.IndexByte(buf, 0); n == 0 {
+					log.Warningf("Corrupted dirent at inode (nid=%v)", i.Nid())
+					return linuxerr.EUCLEAN
+				} else if n != -1 {
 					nameLen = uint32(n)
 				}
-			}
-			if nameLen > MaxNameLen {
-				log.Warningf("Corrupted dirent at inode (nid=%v)", i.Nid())
-				return linuxerr.EUCLEAN
 			}
 			name := string(buf[:nameLen])
 			if err := cb(name, d.FileType, d.Nid()); err != nil {
