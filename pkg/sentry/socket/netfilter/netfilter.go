@@ -392,9 +392,13 @@ func TargetRevision(t *kernel.Task, revPtr hostarch.Addr, netProto tcpip.Network
 	}
 	maxSupported, ok := targetRevision(rev.Name.String(), netProto, rev.Revision)
 	if !ok {
+		// Return ENOENT if there's no target with that name.
+		return linux.XTGetRevision{}, syserr.ErrNoFileOrDir
+	}
+	if maxSupported < rev.Revision {
+		// Return EPROTONOSUPPORT if we have an insufficient revision.
 		return linux.XTGetRevision{}, syserr.ErrProtocolNotSupported
 	}
-	rev.Revision = maxSupported
 	return rev, nil
 }
 
