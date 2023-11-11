@@ -275,3 +275,20 @@ type NFNATRange struct {
 
 // SizeOfNFNATRange is the size of NFNATRange.
 const SizeOfNFNATRange = 40
+
+// NFNATRange2 corresponds to struct nf_nat_range2 in
+// include/uapi/linux/netfilter/nf_nat.h.
+//
+// +marshal
+type NFNATRange2 struct {
+	Flags     uint32
+	MinAddr   Inet6Addr
+	MaxAddr   Inet6Addr
+	MinProto  uint16 // Network byte order.
+	MaxProto  uint16 // Network byte order.
+	BaseProto uint16 // Network byte order.
+	_         [6]byte
+}
+
+// SizeOfNFNATRange2 is the size of NFNATRange2.
+const SizeOfNFNATRange2 = 48
