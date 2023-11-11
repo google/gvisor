@@ -49,7 +49,10 @@ func BenchFromSyscallRules(b *testing.B, name string, profile secbenchdef.Profil
 			Rules:  rules,
 			Action: linux.SECCOMP_RET_ALLOW,
 		},
-	}, linux.SECCOMP_RET_ERRNO, linux.SECCOMP_RET_ERRNO)
+	}, seccomp.ProgramOptions{
+		DefaultAction: linux.SECCOMP_RET_ERRNO,
+		BadArchAction: linux.SECCOMP_RET_ERRNO,
+	})
 	if err != nil {
 		b.Fatalf("BuildProgram() failed: %v", err)
 	}

@@ -79,7 +79,7 @@ func Rules(opt Options) (seccomp.SyscallRules, seccomp.SyscallRules) {
 // Install seccomp filters based on the given platform.
 func Install(opt Options) error {
 	rules, denyRules := Rules(opt)
-	return seccomp.Install(rules, denyRules)
+	return seccomp.Install(rules, denyRules, seccomp.DefaultProgramOptions())
 }
 
 // Report writes a warning message to the log.

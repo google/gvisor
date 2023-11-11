@@ -53,7 +53,7 @@ func Install(opt Options) error {
 	// when not enabled.
 	s.Merge(instrumentationFilters())
 
-	return seccomp.Install(s, seccomp.DenyNewExecMappings)
+	return seccomp.Install(s, seccomp.DenyNewExecMappings, seccomp.DefaultProgramOptions())
 }
 
 // report writes a warning message to the log.

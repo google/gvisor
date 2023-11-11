@@ -70,12 +70,11 @@ func TestBasic(t *testing.T) {
 	}
 
 	for _, test := range []struct {
-		name          string
-		ruleSets      []RuleSet
-		wantPanic     bool
-		defaultAction linux.BPFAction
-		badArchAction linux.BPFAction
-		specs         []spec
+		name      string
+		ruleSets  []RuleSet
+		wantPanic bool
+		options   ProgramOptions
+		specs     []spec
 	}{
 		{
 			name: "Single syscall",
@@ -85,8 +84,10 @@ func TestBasic(t *testing.T) {
 					Action: linux.SECCOMP_RET_ALLOW,
 				},
 			},
-			defaultAction: linux.SECCOMP_RET_TRAP,
-			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			options: ProgramOptions{
+				DefaultAction: linux.SECCOMP_RET_TRAP,
+				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			},
 			specs: []spec{
 				{
 					desc: "syscall allowed",
@@ -119,8 +120,10 @@ func TestBasic(t *testing.T) {
 					Action: linux.SECCOMP_RET_TRAP,
 				},
 			},
-			defaultAction: linux.SECCOMP_RET_KILL_THREAD,
-			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			options: ProgramOptions{
+				DefaultAction: linux.SECCOMP_RET_KILL_THREAD,
+				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			},
 			specs: []spec{
 				{
 					desc: "allowed (1a)",
@@ -156,8 +159,10 @@ func TestBasic(t *testing.T) {
 					Action: linux.SECCOMP_RET_ALLOW,
 				},
 			},
-			defaultAction: linux.SECCOMP_RET_TRAP,
-			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			options: ProgramOptions{
+				DefaultAction: linux.SECCOMP_RET_TRAP,
+				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			},
 			specs: []spec{
 				{
 					desc: "allowed (1)",
@@ -211,8 +216,10 @@ func TestBasic(t *testing.T) {
 					Action: linux.SECCOMP_RET_ALLOW,
 				},
 			},
-			defaultAction: linux.SECCOMP_RET_TRAP,
-			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			options: ProgramOptions{
+				DefaultAction: linux.SECCOMP_RET_TRAP,
+				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			},
 			specs: []spec{
 				{
 					desc: "arch (123)",
@@ -231,8 +238,10 @@ func TestBasic(t *testing.T) {
 					Action: linux.SECCOMP_RET_ALLOW,
 				},
 			},
-			defaultAction: linux.SECCOMP_RET_TRAP,
-			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			options: ProgramOptions{
+				DefaultAction: linux.SECCOMP_RET_TRAP,
+				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			},
 			specs: []spec{
 				{
 					desc: "action trap",
@@ -254,8 +263,10 @@ func TestBasic(t *testing.T) {
 					Action: linux.SECCOMP_RET_ALLOW,
 				},
 			},
-			defaultAction: linux.SECCOMP_RET_TRAP,
-			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			options: ProgramOptions{
+				DefaultAction: linux.SECCOMP_RET_TRAP,
+				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			},
 			specs: []spec{
 				{
 					desc: "allowed",
@@ -286,8 +297,10 @@ func TestBasic(t *testing.T) {
 					Action: linux.SECCOMP_RET_ALLOW,
 				},
 			},
-			defaultAction: linux.SECCOMP_RET_TRAP,
-			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			options: ProgramOptions{
+				DefaultAction: linux.SECCOMP_RET_TRAP,
+				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			},
 			specs: []spec{
 				{
 					desc: "match first rule",
@@ -335,8 +348,10 @@ func TestBasic(t *testing.T) {
 					Action: linux.SECCOMP_RET_ALLOW,
 				},
 			},
-			defaultAction: linux.SECCOMP_RET_TRAP,
-			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			options: ProgramOptions{
+				DefaultAction: linux.SECCOMP_RET_TRAP,
+				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			},
 			specs: []spec{
 				{
 					desc: "hit first rule",
@@ -381,8 +396,10 @@ func TestBasic(t *testing.T) {
 					Action: linux.SECCOMP_RET_ALLOW,
 				},
 			},
-			defaultAction: linux.SECCOMP_RET_TRAP,
-			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			options: ProgramOptions{
+				DefaultAction: linux.SECCOMP_RET_TRAP,
+				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			},
 			specs: []spec{
 				{
 					desc: "argument allowed (all match)",
@@ -427,8 +444,10 @@ func TestBasic(t *testing.T) {
 					Action: linux.SECCOMP_RET_ALLOW,
 				},
 			},
-			defaultAction: linux.SECCOMP_RET_TRAP,
-			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			options: ProgramOptions{
+				DefaultAction: linux.SECCOMP_RET_TRAP,
+				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			},
 			specs: []spec{
 				{
 					desc: "arg allowed",
@@ -475,8 +494,10 @@ func TestBasic(t *testing.T) {
 					Action: linux.SECCOMP_RET_ALLOW,
 				},
 			},
-			defaultAction: linux.SECCOMP_RET_TRAP,
-			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			options: ProgramOptions{
+				DefaultAction: linux.SECCOMP_RET_TRAP,
+				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			},
 			specs: []spec{
 				{
 					desc: "high 32bits greater",
@@ -518,8 +539,10 @@ func TestBasic(t *testing.T) {
 					Action: linux.SECCOMP_RET_ALLOW,
 				},
 			},
-			defaultAction: linux.SECCOMP_RET_TRAP,
-			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			options: ProgramOptions{
+				DefaultAction: linux.SECCOMP_RET_TRAP,
+				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			},
 			specs: []spec{
 				{
 					desc: "arg allowed",
@@ -564,8 +587,10 @@ func TestBasic(t *testing.T) {
 					Action: linux.SECCOMP_RET_ALLOW,
 				},
 			},
-			defaultAction: linux.SECCOMP_RET_TRAP,
-			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			options: ProgramOptions{
+				DefaultAction: linux.SECCOMP_RET_TRAP,
+				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			},
 			specs: []spec{
 				{
 					desc: "high 32bits greater",
@@ -607,8 +632,10 @@ func TestBasic(t *testing.T) {
 					Action: linux.SECCOMP_RET_ALLOW,
 				},
 			},
-			defaultAction: linux.SECCOMP_RET_TRAP,
-			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			options: ProgramOptions{
+				DefaultAction: linux.SECCOMP_RET_TRAP,
+				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			},
 			specs: []spec{
 				{
 					desc: "arg allowed (both greater)",
@@ -658,8 +685,10 @@ func TestBasic(t *testing.T) {
 					Action: linux.SECCOMP_RET_ALLOW,
 				},
 			},
-			defaultAction: linux.SECCOMP_RET_TRAP,
-			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			options: ProgramOptions{
+				DefaultAction: linux.SECCOMP_RET_TRAP,
+				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			},
 			specs: []spec{
 				{
 					desc: "high 32bits greater",
@@ -701,8 +730,10 @@ func TestBasic(t *testing.T) {
 					Action: linux.SECCOMP_RET_ALLOW,
 				},
 			},
-			defaultAction: linux.SECCOMP_RET_TRAP,
-			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			options: ProgramOptions{
+				DefaultAction: linux.SECCOMP_RET_TRAP,
+				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			},
 			specs: []spec{
 				{
 					desc: "arg allowed",
@@ -752,8 +783,10 @@ func TestBasic(t *testing.T) {
 					Action: linux.SECCOMP_RET_ALLOW,
 				},
 			},
-			defaultAction: linux.SECCOMP_RET_TRAP,
-			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			options: ProgramOptions{
+				DefaultAction: linux.SECCOMP_RET_TRAP,
+				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			},
 			specs: []spec{
 				{
 					desc: "high 32bits greater",
@@ -796,8 +829,10 @@ func TestBasic(t *testing.T) {
 					Action: linux.SECCOMP_RET_ALLOW,
 				},
 			},
-			defaultAction: linux.SECCOMP_RET_TRAP,
-			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			options: ProgramOptions{
+				DefaultAction: linux.SECCOMP_RET_TRAP,
+				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			},
 			specs: []spec{
 				{
 					desc: "arg allowed",
@@ -846,8 +881,10 @@ func TestBasic(t *testing.T) {
 					Action: linux.SECCOMP_RET_ALLOW,
 				},
 			},
-			defaultAction: linux.SECCOMP_RET_TRAP,
-			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			options: ProgramOptions{
+				DefaultAction: linux.SECCOMP_RET_TRAP,
+				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			},
 			specs: []spec{
 				{
 					desc: "arg allowed (low order mandatory bit)",
@@ -913,8 +950,10 @@ func TestBasic(t *testing.T) {
 					Action: linux.SECCOMP_RET_ALLOW,
 				},
 			},
-			defaultAction: linux.SECCOMP_RET_TRAP,
-			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			options: ProgramOptions{
+				DefaultAction: linux.SECCOMP_RET_TRAP,
+				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			},
 			specs: []spec{
 				{
 					desc: "zero allowed",
@@ -975,8 +1014,10 @@ func TestBasic(t *testing.T) {
 					Action: linux.SECCOMP_RET_ALLOW,
 				},
 			},
-			defaultAction: linux.SECCOMP_RET_TRAP,
-			badArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			options: ProgramOptions{
+				DefaultAction: linux.SECCOMP_RET_TRAP,
+				BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+			},
 			specs: []spec{
 				{
 					desc: "allowed",
@@ -1001,7 +1042,7 @@ func TestBasic(t *testing.T) {
 					t.Helper()
 				}()
 				var err error
-				instrs, _, err = BuildProgram(test.ruleSets, test.defaultAction, test.badArchAction)
+				instrs, _, err = BuildProgram(test.ruleSets, test.options)
 				if err != nil {
 					t.Fatalf("BuildProgram() got error: %v", err)
 				}
@@ -1052,7 +1093,10 @@ func TestRandom(t *testing.T) {
 			Rules:  syscallRules,
 			Action: linux.SECCOMP_RET_ALLOW,
 		},
-	}, linux.SECCOMP_RET_TRAP, linux.SECCOMP_RET_KILL_THREAD)
+	}, ProgramOptions{
+		DefaultAction: linux.SECCOMP_RET_TRAP,
+		BadArchAction: linux.SECCOMP_RET_KILL_THREAD,
+	})
 	if err != nil {
 		t.Fatalf("buildProgram() got error: %v", err)
 	}
