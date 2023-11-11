@@ -51,6 +51,7 @@ func init() {
 	RegisterTestCase(&NATOutRECVORIGDSTADDR{})
 	RegisterTestCase(&NATPostSNATUDP{})
 	RegisterTestCase(&NATPostSNATTCP{})
+	RegisterTestCase(&NATOutDNAT{})
 }
 
 // NATPreRedirectUDPPort tests that packets are redirected to different port.
@@ -1033,5 +1034,31 @@ func (*NATPostSNATTCP) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) er
 	if got, want := int(port), snatPort; got != want {
 		return fmt.Errorf("got remote port = %d, want = %d", got, want)
 	}
+	return nil
+}
+
+// NATOutDNAT tests that the source port/IP in the packets are modified as
+// expected.
+type NATOutDNAT struct{ containerCase }
+
+var _ TestCase = (*NATOutDNAT)(nil)
+
+// Name implements TestCase.Name.
+func (*NATOutDNAT) Name() string {
+	return "NATOutDNAT"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (*NATOutDNAT) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	dst := nowhereIP(ipv6)
+	return loopbackTest(ctx, ipv6, net.ParseIP(dst),
+		"-A", "OUTPUT",
+		"-d", dst,
+		"-p", "udp", "-m", "udp",
+		"-j", "DNAT", "--to-destination", fmt.Sprintf("127.0.0.1:%d", acceptPort))
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (*NATOutDNAT) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	return nil
 }
