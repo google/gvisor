@@ -207,7 +207,7 @@ func unmarshalTarget(target linux.XTEntryTarget, filter stack.IPHeaderFilter, bu
 	}
 	targetMaker, ok := targetMakers[tid]
 	if !ok {
-		nflog("unsupported target with name %q", target.Name.String())
+		nflog("unsupported target with name %q, proto %d, and revision %d", target.Name.String(), tid.networkProtocol, tid.revision)
 		return nil, syserr.ErrInvalidArgument
 	}
 	return targetMaker.unmarshal(buf, filter)
