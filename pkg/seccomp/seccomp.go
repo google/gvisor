@@ -400,7 +400,16 @@ func buildIndex(rules []RuleSet, program *syscallProgram) error {
 	//
 	// A = seccomp_data.nr
 	program.Stmt(bpf.Ld|bpf.Abs|bpf.W, seccompDataOffsetNR)
-	return root.traverse(buildBSTProgram, rules, program)
+	return root.traverse(
+		buildBSTProgram,
+		knownRange{
+			lowerBoundExclusive: -1,
+			// sysno fits in 32 bits, so this is definitely out of bounds:
+			upperBoundExclusive: 1 << 32,
+		},
+		rules,
+		program,
+	)
 }
 
 // createBST converts sorted syscall slice into a balanced BST.
@@ -418,26 +427,44 @@ func createBST(syscalls []uintptr) *node {
 }
 
 // buildBSTProgram converts a binary tree started in 'root' into BPF code. The outline of the code
-// is as follows:
+// is as follows, given a BST with:
 //
-//	index_22: // SYS_PIPE(22), root
-//	(A < 22) ? goto index_9 check : continue
-//	(A > 22) ? goto index_35 : continue
-//	(args OK for SYS_PIPE) ? return action : goto defaultLabel
+//		     22
+//		    /  \
+//		   9    24
+//		  /    /  \
+//	   8   23    50
 //
-//	index_9: // SYS_MMAP(9), leaf
-//	(A == 9) ? continue : goto defaultLabel
-//	(args OK for SYS_MMAP) ? return action : goto defaultLabel
+//		index_22: // SYS_PIPE(22), root
+//		(A < 22) ? goto index_9  : continue
+//		(A > 22) ? goto index_24 : continue
+//		(args OK for SYS_PIPE) ? return action : goto defaultLabel
 //
-//	index_35: // SYS_NANOSLEEP(35), single child
-//	(A > 35) ? goto index_50 : continue
-//	(A == 35) ? continue : goto defaultLabel
-//	(args OK for SYS_NANOSLEEP) ? return action : goto defaultLabel
+//		index_9: // SYS_MMAP(9), single child
+//		(A < 9)  ? goto index_8  : continue
+//		(A == 9) ? continue : goto defaultLabel
+//		(args OK for SYS_MMAP) ? return action : goto defaultLabel
 //
-//	index_50: // SYS_LISTEN(50), leaf
-//	(A == 50) ? continue : goto defaultLabel
-//	(args OK for SYS_LISTEN) ? return action : goto defaultLabel
-func buildBSTProgram(n *node, rules []RuleSet, program *syscallProgram) error {
+//		index_8: // SYS_LSEEK(8), leaf
+//		(A == 8) ? continue : goto defaultLabel
+//		(args OK for SYS_LSEEK) ? return action : goto defaultLabel
+//
+//		index_24: // SYS_SCHED_YIELD(24)
+//		(A < 24) ? goto index_23 : continue
+//		(A > 22) ? goto index_50 : continue
+//		(args OK for SYS_SCHED_YIELD) ? return action : goto defaultLabel
+//
+//		index_23: // SYS_SELECT(23), leaf with parent nodes adjacent in value
+//		# Notice that we do not check for equality at all here, since we've
+//		# already established that the syscall number is 23 from the
+//		# two parent nodes that we've already traversed.
+//		# This is tracked in the `rng knownRange` argument during traversal.
+//		(args OK for SYS_SELECT) ? return action : goto defaultLabel
+//
+//		index_50: // SYS_LISTEN(50), leaf
+//		(A == 50) ? continue : goto defaultLabel
+//		(args OK for SYS_LISTEN) ? return action : goto defaultLabel
+func buildBSTProgram(n *node, rng knownRange, rules []RuleSet, program *syscallProgram) error {
 	// Root node is never referenced by label, skip it.
 	if !n.root {
 		program.Label(n.label())
@@ -448,13 +475,16 @@ func buildBSTProgram(n *node, rules []RuleSet, program *syscallProgram) error {
 	checkArgsLabel := label(fmt.Sprintf("checkArgs_%d", sysno))
 	if n.left != nil {
 		program.IfNot(bpf.Jmp|bpf.Jge|bpf.K, uint32(sysno), n.left.label())
+		rng.lowerBoundExclusive = int(sysno - 1)
 	}
 	if n.right != nil {
 		program.If(bpf.Jmp|bpf.Jgt|bpf.K, uint32(sysno), n.right.label())
+		rng.upperBoundExclusive = int(sysno + 1)
 	}
-	if n.left == nil || n.right == nil {
-		// If we haven't checked both the left and right node, we still need
-		// to check for equality.
+	if rng.lowerBoundExclusive != int(sysno-1) || rng.upperBoundExclusive != int(sysno+1) {
+		// If the previous BST nodes we traversed haven't fully established
+		// that the current node's syscall value is exactly `sysno`, we still
+		// need to verify it.
 		program.IfNot(bpf.Jmp|bpf.Jeq|bpf.K, uint32(sysno), defaultLabel)
 	}
 	program.JumpTo(checkArgsLabel)
@@ -524,19 +554,42 @@ func (n *node) label() label {
 	return label(fmt.Sprintf("node_%d", n.value))
 }
 
-type traverseFunc func(*node, []RuleSet, *syscallProgram) error
+// knownRange represents the known set of node numbers that we've
+// already checked. This is used as part of BST traversal.
+type knownRange struct {
+	lowerBoundExclusive int
+	upperBoundExclusive int
+}
 
-func (n *node) traverse(fn traverseFunc, rules []RuleSet, program *syscallProgram) error {
+type traverseFunc func(*node, knownRange, []RuleSet, *syscallProgram) error
+
+func (n *node) traverse(fn traverseFunc, rng knownRange, rules []RuleSet, program *syscallProgram) error {
 	if n == nil {
 		return nil
 	}
-	if err := fn(n, rules, program); err != nil {
+	if err := fn(n, rng, rules, program); err != nil {
 		return err
 	}
-	if err := n.left.traverse(fn, rules, program); err != nil {
+	if err := n.left.traverse(
+		fn,
+		knownRange{
+			lowerBoundExclusive: rng.lowerBoundExclusive,
+			upperBoundExclusive: int(n.value),
+		},
+		rules,
+		program,
+	); err != nil {
 		return err
 	}
-	return n.right.traverse(fn, rules, program)
+	return n.right.traverse(
+		fn,
+		knownRange{
+			lowerBoundExclusive: int(n.value),
+			upperBoundExclusive: rng.upperBoundExclusive,
+		},
+		rules,
+		program,
+	)
 }
 
 // DataAsBPFInput converts a linux.SeccompData to a bpf.Input.
