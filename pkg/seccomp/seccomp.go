@@ -194,7 +194,7 @@ func (f syscallProgramFragment) MustHaveJumpedTo(labels ...label) {
 	if outcomes.MayFallThrough {
 		panic(fmt.Sprintf("fragment %v may fall through", fragment))
 	}
-	if outcomes.MayReturn {
+	if outcomes.MayReturn() {
 		panic(fmt.Sprintf("fragment %v may return", fragment))
 	}
 	if outcomes.MayJumpToKnownOffsetBeyondFragment {
