@@ -15,6 +15,8 @@
 package netfilter
 
 import (
+	"fmt"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/syserr"
@@ -117,11 +119,11 @@ func (*snatTargetMakerV4) unmarshal(buf []byte, filter stack.IPHeaderFilter) (ta
 	return &target, nil
 }
 
-type snatTargetMakerV6 struct {
+type snatTargetMakerR1 struct {
 	NetworkProtocol tcpip.NetworkProtocolNumber
 }
 
-func (st *snatTargetMakerV6) id() targetID {
+func (st *snatTargetMakerR1) id() targetID {
 	return targetID{
 		name:            SNATTargetName,
 		networkProtocol: st.NetworkProtocol,
@@ -129,7 +131,7 @@ func (st *snatTargetMakerV6) id() targetID {
 	}
 }
 
-func (*snatTargetMakerV6) marshal(target target) []byte {
+func (*snatTargetMakerR1) marshal(target target) []byte {
 	st := target.(*snatTarget)
 	nt := linux.XTNATTargetV1{
 		Target: linux.XTEntryTarget{
@@ -148,14 +150,14 @@ func (*snatTargetMakerV6) marshal(target target) []byte {
 	return marshal.Marshal(&nt)
 }
 
-func (*snatTargetMakerV6) unmarshal(buf []byte, filter stack.IPHeaderFilter) (target, *syserr.Error) {
+func (st *snatTargetMakerR1) unmarshal(buf []byte, filter stack.IPHeaderFilter) (target, *syserr.Error) {
 	if size := linux.SizeOfXTNATTargetV1; len(buf) < size {
-		nflog("snatTargetMakerV6: buf has insufficient size (%d) for SNAT V6 target (%d)", len(buf), size)
+		nflog("snatTargetMakerR1: buf has insufficient size (%d) for SNAT target (%d)", len(buf), size)
 		return nil, syserr.ErrInvalidArgument
 	}
 
 	if p := filter.Protocol; p != header.TCPProtocolNumber && p != header.UDPProtocolNumber {
-		nflog("snatTargetMakerV6: bad proto %d", p)
+		nflog("snatTargetMakerR1: bad proto %d", p)
 		return nil, syserr.ErrInvalidArgument
 	}
 
@@ -164,26 +166,33 @@ func (*snatTargetMakerV6) unmarshal(buf []byte, filter stack.IPHeaderFilter) (ta
 
 	// TODO(gvisor.dev/issue/5697): Support port or address ranges.
 	if natRange.MinAddr != natRange.MaxAddr {
-		nflog("snatTargetMakerV6: MinAddr and MaxAddr are different")
+		nflog("snatTargetMakerR1: MinAddr and MaxAddr are different")
 		return nil, syserr.ErrInvalidArgument
 	}
 	if natRange.MinProto != natRange.MaxProto {
-		nflog("snatTargetMakerV6: MinProto and MaxProto are different")
+		nflog("snatTargetMakerR1: MinProto and MaxProto are different")
 		return nil, syserr.ErrInvalidArgument
 	}
 
 	// TODO(gvisor.dev/issue/5698): Support other NF_NAT_RANGE flags.
 	if natRange.Flags != linux.NF_NAT_RANGE_MAP_IPS|linux.NF_NAT_RANGE_PROTO_SPECIFIED {
-		nflog("snatTargetMakerV6: invalid range flags %d", natRange.Flags)
+		nflog("snatTargetMakerR1: invalid range flags %d", natRange.Flags)
 		return nil, syserr.ErrInvalidArgument
 	}
 
 	target := snatTarget{
 		SNATTarget: stack.SNATTarget{
 			NetworkProtocol: filter.NetworkProtocol(),
-			Addr:            tcpip.AddrFrom16(natRange.MinAddr),
 			Port:            ntohs(natRange.MinProto),
 		},
+	}
+	switch st.NetworkProtocol {
+	case header.IPv4ProtocolNumber:
+		target.SNATTarget.Addr = tcpip.AddrFrom4Slice(natRange.MinAddr[:4])
+	case header.IPv6ProtocolNumber:
+		target.SNATTarget.Addr = tcpip.AddrFrom16(natRange.MinAddr)
+	default:
+		panic(fmt.Sprintf("invalid protocol number: %d", st.NetworkProtocol))
 	}
 
 	return &target, nil
