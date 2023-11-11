@@ -49,7 +49,10 @@ func main() {
 			Rules:  rules,
 			Action: linux.SECCOMP_RET_ALLOW,
 		},
-	}, linux.SECCOMP_RET_ERRNO, linux.SECCOMP_RET_ERRNO)
+	}, seccomp.ProgramOptions{
+		DefaultAction: linux.SECCOMP_RET_ERRNO,
+		BadArchAction: linux.SECCOMP_RET_ERRNO,
+	})
 	if err != nil {
 		log.Warningf("%v", err)
 		os.Exit(1)

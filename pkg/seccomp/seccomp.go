@@ -52,29 +52,24 @@ const (
 // making it possible for the process to continue running after a violation.
 // However, it will leave a SECCOMP audit event trail behind. In any case, the
 // syscall is still blocked from executing.
-func Install(rules SyscallRules, denyRules SyscallRules) error {
-	defaultAction, err := defaultAction()
-	if err != nil {
-		return err
-	}
-
+func Install(rules SyscallRules, denyRules SyscallRules, options ProgramOptions) error {
 	// ***   DEBUG TIP   ***
 	// If you suspect the process is getting killed due to a seccomp violation, uncomment the line
 	// below to get a panic stack trace when there is a violation.
-	// defaultAction = linux.BPFAction(linux.SECCOMP_RET_TRAP)
+	// options.DefaultAction = Return(linux.BPFAction(linux.SECCOMP_RET_TRAP))
 
-	log.Infof("Installing seccomp filters for %d syscalls (action=%v)", rules.Size(), defaultAction)
+	log.Infof("Installing seccomp filters for %d syscalls (action=%v)", rules.Size(), options.DefaultAction)
 
 	instrs, _, err := BuildProgram([]RuleSet{
 		{
 			Rules:  denyRules,
-			Action: defaultAction,
+			Action: options.DefaultAction,
 		},
 		{
 			Rules:  rules,
 			Action: linux.SECCOMP_RET_ALLOW,
 		},
-	}, defaultAction, defaultAction)
+	}, options)
 	if log.IsLogging(log.Debug) {
 		programStr, errDecode := bpf.DecodeInstructions(instrs)
 		if errDecode != nil {
@@ -303,6 +298,28 @@ func (m matchedValue) LoadLow32Bits() {
 	m.program.Stmt(bpf.Ld|bpf.Abs|bpf.W, m.dataOffsetLow)
 }
 
+// ProgramOptions configure a seccomp program.
+type ProgramOptions struct {
+	// DefaultAction is the action returned when none of the rules match.
+	DefaultAction linux.BPFAction
+
+	// BadArchAction is the action returned when the architecture of the
+	// syscall structure input doesn't match the one the program expects.
+	BadArchAction linux.BPFAction
+}
+
+// DefaultProgramOptions returns the default program options.
+func DefaultProgramOptions() ProgramOptions {
+	action, err := defaultAction()
+	if err != nil {
+		panic(fmt.Sprintf("cannot determine default seccomp action: %v", err))
+	}
+	return ProgramOptions{
+		DefaultAction: action,
+		BadArchAction: action,
+	}
+}
+
 // BuildStats contains information about seccomp program generation.
 type BuildStats struct {
 	// SizeBeforeOptimizations and SizeAfterOptimizations correspond to the
@@ -320,7 +337,7 @@ type BuildStats struct {
 
 // BuildProgram builds a BPF program from the given map of actions to matching
 // SyscallRules. The single generated program covers all provided RuleSets.
-func BuildProgram(rules []RuleSet, defaultAction, badArchAction linux.BPFAction) ([]bpf.Instruction, BuildStats, error) {
+func BuildProgram(rules []RuleSet, options ProgramOptions) ([]bpf.Instruction, BuildStats, error) {
 	start := time.Now()
 	program := &syscallProgram{
 		program: bpf.NewProgramBuilder(),
@@ -339,11 +356,11 @@ func BuildProgram(rules []RuleSet, defaultAction, badArchAction linux.BPFAction)
 
 	// Default label if none of the rules matched:
 	program.Label(defaultLabel)
-	program.Ret(defaultAction)
+	program.Ret(options.DefaultAction)
 
 	// Label if the architecture didn't match:
 	program.Label(badArchLabel)
-	program.Ret(badArchAction)
+	program.Ret(options.BadArchAction)
 
 	insns, err := program.program.Instructions()
 	if err != nil {
