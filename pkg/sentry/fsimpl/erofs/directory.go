@@ -61,12 +61,18 @@ func (i *inode) getDirents() ([]vfs.Dirent, error) {
 }
 
 func (i *inode) lookup(name string) (uint64, error) {
-	// TODO: For simplicity, currently a lookup will cause all dirents to be
-	// read and cached. But it hurts the performance of large directories.
-	// We should do binary search on disk data directly (like Linux does).
-	dirents, err := i.getDirents()
-	if err != nil {
-		return 0, err
+	var dirents []vfs.Dirent
+
+	// Lazily fetch dirents.
+	if i.dirMu.TryRLock() {
+		dirents = i.dirents // +checklocksforce: TryRLock.
+		i.dirMu.RUnlock()   // +checklocksforce: TryRLock.
+	}
+
+	if dirents == nil {
+		// The dirents cache is not available immediately, let's do
+		// binary search on disk data directly.
+		return i.Lookup(name)
 	}
 
 	// The dirents are sorted in alphabetical order. We do binary search
