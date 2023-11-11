@@ -153,24 +153,31 @@ type target interface {
 // marshals and unmarshals it. It is immutable after package initialization.
 var targetMakers = map[targetID]targetMaker{}
 
+// targetRevision returns the maximum supported version of the matcher with
+// name `name` up to rev, and whether any such matcher with that name exists.
 func targetRevision(name string, netProto tcpip.NetworkProtocolNumber, rev uint8) (uint8, bool) {
 	tid := targetID{
 		name:            name,
 		networkProtocol: netProto,
 		revision:        rev,
 	}
-	if _, ok := targetMakers[tid]; !ok {
-		return 0, false
+	if _, ok := targetMakers[tid]; ok {
+		return rev, true
 	}
 
-	// Return the highest supported revision unless rev is higher.
-	for _, other := range targetMakers {
-		otherID := other.id()
-		if name == otherID.name && netProto == otherID.networkProtocol && otherID.revision > rev {
-			rev = uint8(otherID.revision)
+	// Return the highest supported revision.
+	var found bool
+	var ret uint8
+	for _, cur := range targetMakers {
+		curID := cur.id()
+		if name == curID.name && netProto == curID.networkProtocol {
+			found = true
+			if curID.revision > ret {
+				ret = uint8(curID.revision)
+			}
 		}
 	}
-	return rev, true
+	return ret, found
 }
 
 // registerTargetMaker should be called by target extensions to register them
