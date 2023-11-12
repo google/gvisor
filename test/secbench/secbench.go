@@ -149,7 +149,9 @@ func RunBench(b *testing.B, bn secbenchdef.Bench) {
 			b.Fatalf("program does not compile: %v", err)
 		}
 		b.ReportMetric(float64(bn.BuildStats.BuildDuration.Nanoseconds()), "build-ns")
-		b.ReportMetric(float64(bn.BuildStats.OptimizeDuration.Nanoseconds()), "opt-ns")
+		b.ReportMetric(float64(bn.BuildStats.RuleOptimizeDuration.Nanoseconds()), "ruleopt-ns")
+		b.ReportMetric(float64(bn.BuildStats.BPFOptimizeDuration.Nanoseconds()), "bpfopt-ns")
+		b.ReportMetric(float64((bn.BuildStats.RuleOptimizeDuration + bn.BuildStats.BPFOptimizeDuration).Nanoseconds()), "opt-ns")
 		b.ReportMetric(float64(bn.BuildStats.SizeBeforeOptimizations), "gen-instr")
 		b.ReportMetric(float64(bn.BuildStats.SizeAfterOptimizations), "opt-instr")
 		b.ReportMetric(float64(bn.BuildStats.SizeBeforeOptimizations)/float64(bn.BuildStats.SizeAfterOptimizations), "compression-ratio")

@@ -330,15 +330,32 @@ type BuildStats struct {
 	// BPF bytecode optimizations).
 	BuildDuration time.Duration
 
-	// OptimizeDuration is the amount of time it took to run BPF bytecode
+	// RuleOptimizeDuration is the amount of time it took to run SyscallRule
 	// optimizations.
-	OptimizeDuration time.Duration
+	RuleOptimizeDuration time.Duration
+
+	// BPFOptimizeDuration is the amount of time it took to run BPF bytecode
+	// optimizations.
+	BPFOptimizeDuration time.Duration
 }
 
 // BuildProgram builds a BPF program from the given map of actions to matching
 // SyscallRules. The single generated program covers all provided RuleSets.
 func BuildProgram(rules []RuleSet, options ProgramOptions) ([]bpf.Instruction, BuildStats, error) {
 	start := time.Now()
+
+	// Make a copy of the syscall rules and optimize them.
+	rulesCopy := make([]RuleSet, len(rules))
+	for i, rs := range rules {
+		rulesMap := MakeSyscallRules(make(map[uintptr]SyscallRule, len(rs.Rules.rules)))
+		for sysno, rule := range rs.Rules.rules {
+			rulesMap.rules[sysno] = optimizeSyscallRule(rule)
+		}
+		rs.Rules = rulesMap
+		rulesCopy[i] = rs
+	}
+	ruleOptimizeDuration := time.Since(start)
+
 	program := &syscallProgram{
 		program: bpf.NewProgramBuilder(),
 	}
@@ -350,7 +367,7 @@ func BuildProgram(rules []RuleSet, options ProgramOptions) ([]bpf.Instruction, B
 	badArchLabel := label("badarch")
 	program.Stmt(bpf.Ld|bpf.Abs|bpf.W, seccompDataOffsetArch)
 	program.IfNot(bpf.Jmp|bpf.Jeq|bpf.K, LINUX_AUDIT_ARCH, badArchLabel)
-	if err := buildIndex(rules, program); err != nil {
+	if err := buildIndex(rulesCopy, program); err != nil {
 		return nil, BuildStats{}, err
 	}
 
@@ -367,16 +384,17 @@ func BuildProgram(rules []RuleSet, options ProgramOptions) ([]bpf.Instruction, B
 		return nil, BuildStats{}, err
 	}
 	beforeOpt := len(insns)
-	buildDuration := time.Since(start)
+	buildDuration := time.Since(start) - ruleOptimizeDuration
 	insns = bpf.Optimize(insns)
-	optimizeDuration := time.Since(start) - buildDuration
+	bpfOptimizeDuration := time.Since(start) - ruleOptimizeDuration - buildDuration
 	afterOpt := len(insns)
-	log.Debugf("Seccomp program optimized from %d to %d instructions; took %v to build and %v to optimize", beforeOpt, afterOpt, buildDuration, optimizeDuration)
+	log.Debugf("Seccomp program optimized from %d to %d instructions; took %v to build and %v to optimize", beforeOpt, afterOpt, buildDuration, bpfOptimizeDuration)
 	return insns, BuildStats{
 		SizeBeforeOptimizations: beforeOpt,
 		SizeAfterOptimizations:  afterOpt,
 		BuildDuration:           buildDuration,
-		OptimizeDuration:        optimizeDuration,
+		RuleOptimizeDuration:    ruleOptimizeDuration,
+		BPFOptimizeDuration:     bpfOptimizeDuration,
 	}, nil
 }
 
@@ -532,7 +550,7 @@ func buildBSTProgram(n *node, rng knownRange, rules []RuleSet, program *syscallP
 		// check the next rule set. We need to ensure
 		// that at the very end, we insert a direct
 		// jump label for the unmatched case.
-		optimizeSyscallRule(rule).Render(program, ruleSetLabelSet)
+		rule.Render(program, ruleSetLabelSet)
 		ruleSetFrag.MustHaveJumpedTo(ruleSetLabelSet.Matched(), ruleSetLabelSet.Mismatched())
 		program.Label(ruleSetLabelSet.Matched())
 		program.Ret(rs.Action)
