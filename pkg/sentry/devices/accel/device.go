@@ -20,8 +20,10 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/devutil"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
@@ -44,12 +46,17 @@ type tpuV4Device struct {
 }
 
 func (dev *tpuV4Device) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
+	devClient := devutil.GoferClientFromContext(ctx)
+	if devClient == nil {
+		log.Warningf("devutil.CtxDevGoferClient is not set")
+		return nil, linuxerr.ENOENT
+	}
 	dev.mu.Lock()
 	defer dev.mu.Unlock()
-	hostPath := fmt.Sprintf("/dev/accel%d", dev.minor)
-	hostFD, err := unix.Openat(-1, hostPath, int((opts.Flags&unix.O_ACCMODE)|unix.O_NOFOLLOW), 0)
+	name := fmt.Sprintf("accel%d", dev.minor)
+	hostFD, err := devClient.OpenAt(ctx, name, opts.Flags)
 	if err != nil {
-		ctx.Warningf("accelDevice: failed to open host %s: %v", hostPath, err)
+		ctx.Warningf("accelDevice: failed to open device %s: %v", name, err)
 		return nil, err
 	}
 	fd := &tpuV4FD{

@@ -134,23 +134,19 @@ func tpuProxyUpdateChroot(chroot string, spec *specs.Spec, conf *config.Config) 
 	if !specutils.TPUProxyIsEnabled(spec, conf) {
 		return nil
 	}
-	devices, err := util.EnumerateHostTPUDevices()
+	// Bind mount /sys/devices/pci0000:00/<pci_address>/accel/accel# for all
+	// TPU devices on the host.
+	paths, err := filepath.Glob("/dev/accel*")
 	if err != nil {
 		return fmt.Errorf("enumerating TPU device files: %w", err)
 	}
-	for _, deviceNum := range devices {
-		devPath := fmt.Sprintf("/dev/accel%d", deviceNum)
-		if err := mountInChroot(chroot, devPath, devPath, "bind", unix.MS_BIND); err != nil {
-			return fmt.Errorf("error mounting %q in chroot: %v", devPath, err)
-		}
-		finfo, err := os.Stat(path.Join(chroot, devPath))
+	for _, devPath := range paths {
+		deviceNum, valid, err := util.ExtractTpuDeviceMinor(devPath)
 		if err != nil {
-			return fmt.Errorf("error statting %q: %v", devPath, err)
+			return fmt.Errorf("extracting TPU device minor: %w", err)
 		}
-		// Ensure the file mounted in was a char device file.
-		if finfo.Mode()&os.ModeType != os.ModeCharDevice|os.ModeDevice {
-			return fmt.Errorf("unexpected file type for %q, want %s, got %s", path.Join(chroot, devPath), os.ModeCharDevice|os.ModeDevice, finfo.Mode()&os.ModeType)
-
+		if !valid {
+			continue
 		}
 		// Multiple paths link to the /sys/devices/pci0000:00/<pci_address>
 		// directory that contains all relevant sysfs accel device info that we need

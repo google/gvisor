@@ -22,6 +22,7 @@ go_library(
         "//pkg/abi/tpu",
         "//pkg/cleanup",
         "//pkg/context",
+        "//pkg/devutil",
         "//pkg/errors/linuxerr",
         "//pkg/fdnotifier",
         "//pkg/hostarch",
