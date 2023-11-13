@@ -17,6 +17,7 @@
 #include <netinet/icmp6.h>
 #include <netinet/ip_icmp.h>
 
+#include <cerrno>
 #include <ctime>
 #include <utility>
 #include <vector>
@@ -2445,6 +2446,40 @@ TEST_P(UdpSocketTest, ReadShutdownOnBoundSocket) {
     EXPECT_THAT(shutdown(sock_.get(), shut_opt),
                 SyscallFailsWithErrno(ENOTCONN));
   }
+}
+
+TEST_P(UdpSocketTest, ReconnectDoesNotClearReadShutdown) {
+  // TODO(gvisor.dev/issue/1202): Reconnecting the UDP socket after shutdown
+  // fails on hostinet.
+  SKIP_IF(IsRunningWithHostinet());
+  ASSERT_NO_ERRNO(BindLoopback());
+  ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
+  ASSERT_THAT(shutdown(sock_.get(), SHUT_RD), SyscallSucceeds());
+
+  char received[512];
+  EXPECT_THAT(recv(sock_.get(), received, sizeof(received), 0),
+              SyscallSucceedsWithValue(0));
+
+  EXPECT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
+  EXPECT_THAT(recv(sock_.get(), received, sizeof(received), 0),
+              SyscallSucceedsWithValue(0));
+}
+
+TEST_P(UdpSocketTest, ReconnectDoesNotClearWriteShutdown) {
+  // TODO(gvisor.dev/issue/1202): Reconnecting the UDP socket after shutdown
+  // fails on hostinet.
+  SKIP_IF(IsRunningWithHostinet());
+  ASSERT_NO_ERRNO(BindLoopback());
+  ASSERT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
+
+  const char buf = 'A';
+  ASSERT_THAT(send(sock_.get(), &buf, 1, 0), SyscallSucceeds());
+
+  ASSERT_THAT(shutdown(sock_.get(), SHUT_WR), SyscallSucceeds());
+  EXPECT_THAT(send(sock_.get(), &buf, 1, 0), SyscallFailsWithErrno(EPIPE));
+
+  EXPECT_THAT(connect(sock_.get(), bind_addr_, addrlen_), SyscallSucceeds());
+  EXPECT_THAT(send(sock_.get(), &buf, 1, 0), SyscallFailsWithErrno(EPIPE));
 }
 
 INSTANTIATE_TEST_SUITE_P(AllInetTests, UdpSocketControlMessagesTest,
