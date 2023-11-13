@@ -575,12 +575,28 @@ func TPUProxyIsEnabled(spec *specs.Spec, conf *config.Config) bool {
 		return true
 	}
 	val, ok := spec.Annotations[annotationTPU]
-	if ok {
-		ret, err := strconv.ParseBool(val)
-		if val != "" && err != nil {
-			log.Warningf("tpuproxy annotation set to invalid value %q. Skipping.", val)
+	if !ok {
+		return false
+	}
+	ret, err := strconv.ParseBool(val)
+	if err != nil {
+		log.Warningf("tpuproxy annotation set to invalid value %q: %w. Skipping.", val, err)
+	}
+	return ret
+}
+
+// TPUFunctionalityRequested returns true if the container should have access
+// to TPU functionality.
+func TPUFunctionalityRequested(spec *specs.Spec, conf *config.Config) bool {
+	if !TPUProxyIsEnabled(spec, conf) {
+		return false
+	}
+	if spec.Linux != nil {
+		for _, dev := range spec.Linux.Devices {
+			if strings.HasPrefix(dev.Path, "/dev/accel") {
+				return true
+			}
 		}
-		return ret
 	}
 	return false
 }

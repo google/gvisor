@@ -528,6 +528,15 @@ func shouldExposeNvidiaDevice(path string) bool {
 	return nvidiaDevPathReg.MatchString(path)
 }
 
+// shouldExposeTpuDevice returns true if path refers to a TPU device which
+// should be exposed to the container.
+//
+// Precondition: tpuproxy is enabled.
+func shouldExposeTpuDevice(path string) bool {
+	_, valid, _ := util.ExtractTpuDeviceMinor(path)
+	return valid
+}
+
 func (g *Gofer) setupDev(spec *specs.Spec, conf *config.Config, root, procPath string) error {
 	if err := os.MkdirAll(filepath.Join(root, "dev"), 0777); err != nil {
 		return fmt.Errorf("creating dev directory: %v", err)
@@ -537,8 +546,10 @@ func (g *Gofer) setupDev(spec *specs.Spec, conf *config.Config, root, procPath s
 		return nil
 	}
 	nvproxyEnabled := specutils.NVProxyEnabled(spec, conf)
+	tpuproxyEnabled := specutils.TPUProxyIsEnabled(spec, conf)
 	for _, dev := range spec.Linux.Devices {
-		shouldMount := nvproxyEnabled && shouldExposeNvidiaDevice(dev.Path)
+		shouldMount := (nvproxyEnabled && shouldExposeNvidiaDevice(dev.Path)) ||
+			(tpuproxyEnabled && shouldExposeTpuDevice(dev.Path))
 		if !shouldMount {
 			continue
 		}

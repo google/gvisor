@@ -17,7 +17,6 @@ package util
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -32,42 +31,37 @@ var tpuV4DeviceIDs = map[uint64]any{tpu.TPUV4DeviceID: nil, tpu.TPUV4liteDeviceI
 // TODO(b/288456802): Add support for /dev/vfio controlled accelerators.
 // This is required for v5+ TPUs.
 
-// EnumerateHostTPUDevices returns the accelerator device minor numbers of all
-// TPUs on the machine.
-func EnumerateHostTPUDevices() ([]uint32, error) {
-	paths, err := filepath.Glob("/dev/accel*")
-	if err != nil {
-		return nil, fmt.Errorf("enumerating TPU device files: %w", err)
-	}
-
+// ExtractTpuDeviceMinor returns the accelerator device minor number for that
+// the passed device path. If the passed device is not a valid TPU device, then
+// it returns false. TPU device is defined as:
+// * Path is /dev/accel#.
+// * Vendor is googleVendorID.
+// * Device ID is one of tpuV4DeviceIDs.
+func ExtractTpuDeviceMinor(path string) (uint32, bool, error) {
 	accelDeviceRegex := regexp.MustCompile(`^/dev/accel(\d+)$`)
-	var devMinors []uint32
-	for _, path := range paths {
-		if ms := accelDeviceRegex.FindStringSubmatch(path); ms != nil {
-			index, err := strconv.ParseUint(ms[1], 10, 32)
-			if err != nil {
-				return nil, fmt.Errorf("invalid host device file %q: %w", path, err)
-			}
-
-			vendor, err := readHexInt(fmt.Sprintf("/sys/class/accel/accel%d/device/vendor", index))
-			if err != nil {
-				return nil, err
-			}
-			if vendor != googleVendorID {
-				continue
-			}
-			deviceID, err := readHexInt(fmt.Sprintf("/sys/class/accel/accel%d/device/device", index))
-			if err != nil {
-				return nil, err
-			}
-			if _, ok := tpuV4DeviceIDs[deviceID]; !ok {
-				continue
-			}
-
-			devMinors = append(devMinors, uint32(index))
-		}
+	ms := accelDeviceRegex.FindStringSubmatch(path)
+	if ms == nil {
+		return 0, false, nil
 	}
-	return devMinors, nil
+	index, err := strconv.ParseUint(ms[1], 10, 32)
+	if err != nil {
+		return 0, false, fmt.Errorf("invalid host device file %q: %w", path, err)
+	}
+	vendor, err := readHexInt(fmt.Sprintf("/sys/class/accel/accel%d/device/vendor", index))
+	if err != nil {
+		return 0, false, err
+	}
+	if vendor != googleVendorID {
+		return 0, false, nil
+	}
+	deviceID, err := readHexInt(fmt.Sprintf("/sys/class/accel/accel%d/device/device", index))
+	if err != nil {
+		return 0, false, err
+	}
+	if _, ok := tpuV4DeviceIDs[deviceID]; !ok {
+		return 0, false, nil
+	}
+	return uint32(index), true, nil
 }
 
 func readHexInt(path string) (uint64, error) {

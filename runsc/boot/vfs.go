@@ -1186,40 +1186,33 @@ func tpuProxyRegisterDevices(info *containerInfo, vfsObj *vfs.VirtualFilesystem)
 	if !specutils.TPUProxyIsEnabled(info.spec, info.conf) {
 		return nil
 	}
-	// At this point /dev/accel just contains the TPU devices have been mounted
-	// into the sandbox chroot. Enumerate all of them and create sentry devices.
-	paths, err := filepath.Glob("/dev/accel*")
-	if err != nil {
-		return fmt.Errorf("enumerating accel device files: %w", err)
-	}
+	// At this point /sys/devices/pci0000:00/<pci_address>/accel/accel# contains
+	// all the TPU devices on the host. Enumerate them and register TPU devices.
 	pciAddrs, err := filepath.Glob("/sys/devices/pci0000:00/*")
 	if err != nil {
 		return fmt.Errorf("enumerating PCI device files: %w", err)
 	}
-	for _, accelPath := range paths {
-		accelDeviceRegex := regexp.MustCompile(`^/dev/accel(\d+)$`)
-		if ms := accelDeviceRegex.FindStringSubmatch(accelPath); ms != nil {
-			deviceNum, _ := strconv.ParseUint(ms[1], 10, 32)
-
-			var pciDevicePath string
-			for _, pciPath := range pciAddrs {
-				if _, err := os.Stat(path.Join(pciPath, fmt.Sprintf("accel/accel%d", deviceNum))); err == nil {
-					pciDevicePath = pciPath
-				}
-			}
-			var deviceIDBytes []byte
-			if deviceIDBytes, err = os.ReadFile(path.Join(pciDevicePath, "device")); err != nil {
-				return fmt.Errorf("reading PCI device ID: %w", err)
-			}
-			deviceIDStr := strings.Replace(string(deviceIDBytes), "0x", "", -1)
-			deviceID, err := strconv.ParseInt(strings.TrimSpace(deviceIDStr), 16, 64)
-			if err != nil {
-				return fmt.Errorf("parsing PCI device ID: %w", err)
-			}
-
-			if err := accel.RegisterTPUV4Device(vfsObj, uint32(deviceNum), deviceID == tpu.TPUV4liteDeviceID); err != nil {
-				return fmt.Errorf("registering accel driver: %w", err)
-			}
+	pciPathRegex := regexp.MustCompile(`^/sys/devices/pci0000:00/\d+:\d+:\d+\.\d+/accel/accel(\d+)$`)
+	for _, pciPath := range pciAddrs {
+		ms := pciPathRegex.FindStringSubmatch(pciPath)
+		if ms == nil {
+			continue
+		}
+		deviceNum, err := strconv.ParseUint(ms[1], 10, 32)
+		if err != nil {
+			return fmt.Errorf("parsing PCI device number: %w", err)
+		}
+		var deviceIDBytes []byte
+		if deviceIDBytes, err = os.ReadFile(path.Join(pciPath, "device")); err != nil {
+			return fmt.Errorf("reading PCI device ID: %w", err)
+		}
+		deviceIDStr := strings.Replace(string(deviceIDBytes), "0x", "", -1)
+		deviceID, err := strconv.ParseInt(strings.TrimSpace(deviceIDStr), 16, 64)
+		if err != nil {
+			return fmt.Errorf("parsing PCI device ID: %w", err)
+		}
+		if err := accel.RegisterTPUV4Device(vfsObj, uint32(deviceNum), deviceID == tpu.TPUV4liteDeviceID); err != nil {
+			return fmt.Errorf("registering accel driver: %w", err)
 		}
 	}
 	return nil
