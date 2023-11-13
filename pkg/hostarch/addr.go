@@ -33,9 +33,10 @@ type Addr uintptr
 // expected to ever come up in practice.
 func (v Addr) AddLength(length uint64) (end Addr, ok bool) {
 	end = v + Addr(length)
-	// The second half of the following check is needed in case uintptr is
-	// smaller than 64 bits.
-	ok = end >= v && length <= uint64(^Addr(0))
+	// As of this writing (Go 1.21), addrAtLeast64b is required to prevent the
+	// compiler from generating a tautological `length <= MaxUint64` check on
+	// 64-bit architectures.
+	ok = end >= v && (addrAtLeast64b || length <= uint64(^Addr(0)))
 	return
 }
 
@@ -64,6 +65,11 @@ func (v Addr) HugeRoundUp() (Addr, bool) {
 	return HugePageRoundUp(v)
 }
 
+// MustHugeRoundUp is equivalent to function MustHugePageRoundUp.
+func (v Addr) MustHugeRoundUp() Addr {
+	return MustHugePageRoundUp(v)
+}
+
 // PageOffset is equivalent to function PageOffset, except that it casts the
 // result to uint64.
 func (v Addr) PageOffset() uint64 {
@@ -73,6 +79,16 @@ func (v Addr) PageOffset() uint64 {
 // IsPageAligned is equivalent to function IsPageAligned.
 func (v Addr) IsPageAligned() bool {
 	return IsPageAligned(v)
+}
+
+// HugePageOffset is equivalent to function HugePageOffset.
+func (v Addr) HugePageOffset() uint64 {
+	return uint64(HugePageOffset(v))
+}
+
+// IsHugePageAligned is equivalent to function IsHugePageAligned.
+func (v Addr) IsHugePageAligned() bool {
+	return IsHugePageAligned(v)
 }
 
 // AddrRange is a range of Addrs.
@@ -89,6 +105,12 @@ func (v Addr) ToRange(length uint64) (AddrRange, bool) {
 // ar.End.IsPageAligned().
 func (ar AddrRange) IsPageAligned() bool {
 	return ar.Start.IsPageAligned() && ar.End.IsPageAligned()
+}
+
+// IsHugePageAligned returns true if ar.Start.IsHugePageAligned() and
+// ar.End.IsHugePageAligned().
+func (ar AddrRange) IsHugePageAligned() bool {
+	return ar.Start.IsHugePageAligned() && ar.End.IsHugePageAligned()
 }
 
 // String implements fmt.Stringer.String.

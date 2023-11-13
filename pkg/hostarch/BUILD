@@ -34,6 +34,7 @@ go_library(
         "addr.go",
         "addr_range.go",
         "addr_range_seq_unsafe.go",
+        "addr_unsafe.go",
         "hostarch.go",
         "hostarch_arm64.go",
         "hostarch_x86.go",
