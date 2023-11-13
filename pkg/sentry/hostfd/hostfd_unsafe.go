@@ -15,12 +15,9 @@
 package hostfd
 
 import (
-	"io"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/log"
-	"gvisor.dev/gvisor/pkg/safemem"
 )
 
 const (
@@ -28,71 +25,37 @@ const (
 	sizeofMsghdr = unsafe.Sizeof(unix.Msghdr{})
 )
 
-// Preadv2 reads up to dsts.NumBytes() bytes from host file descriptor fd into
-// dsts. offset and flags are interpreted as for preadv2(2).
-//
-// Preconditions: !dsts.IsEmpty().
-func Preadv2(fd int32, dsts safemem.BlockSeq, offset int64, flags uint32) (uint64, error) {
-	// No buffering is necessary regardless of safecopy; host syscalls will
-	// return EFAULT if appropriate, instead of raising SIGBUS.
-	var (
-		n uintptr
-		e unix.Errno
-	)
-	if flags == 0 && dsts.NumBlocks() == 1 {
-		// Use read() or pread() to avoid iovec allocation and copying.
-		dst := dsts.Head()
-		if offset == -1 {
-			n, _, e = unix.Syscall(unix.SYS_READ, uintptr(fd), dst.Addr(), uintptr(dst.Len()))
-		} else {
-			n, _, e = unix.Syscall6(unix.SYS_PREAD64, uintptr(fd), dst.Addr(), uintptr(dst.Len()), uintptr(offset), 0 /* pos_h */, 0 /* unused */)
+func iovecsReadWrite(sysno uintptr, fd int32, iovs []unix.Iovec, offset int64, flags uint32) (uintptr, unix.Errno) {
+	var total uintptr
+	for start := 0; start < len(iovs); start += MaxReadWriteIov {
+		last := true
+		size := len(iovs) - start
+		if size > MaxReadWriteIov {
+			last = false
+			size = MaxReadWriteIov
 		}
-	} else {
-		iovs := safemem.IovecsFromBlockSeq(dsts)
-		if len(iovs) > MaxReadWriteIov {
-			log.Debugf("hostfd.Preadv2: truncating from %d iovecs to %d", len(iovs), MaxReadWriteIov)
-			iovs = iovs[:MaxReadWriteIov]
+		curOff := offset
+		if offset >= 0 {
+			curOff = offset + int64(total)
 		}
-		n, _, e = unix.Syscall6(unix.SYS_PREADV2, uintptr(fd), uintptr((unsafe.Pointer)(&iovs[0])), uintptr(len(iovs)), uintptr(offset), 0 /* pos_h */, uintptr(flags))
-	}
-	if e != 0 {
-		return 0, e
-	}
-	if n == 0 {
-		return 0, io.EOF
-	}
-	return uint64(n), nil
-}
-
-// Pwritev2 writes up to srcs.NumBytes() from srcs into host file descriptor
-// fd. offset and flags are interpreted as for pwritev2(2).
-//
-// Preconditions: !srcs.IsEmpty().
-func Pwritev2(fd int32, srcs safemem.BlockSeq, offset int64, flags uint32) (uint64, error) {
-	// No buffering is necessary regardless of safecopy; host syscalls will
-	// return EFAULT if appropriate, instead of raising SIGBUS.
-	var (
-		n uintptr
-		e unix.Errno
-	)
-	if flags == 0 && srcs.NumBlocks() == 1 {
-		// Use write() or pwrite() to avoid iovec allocation and copying.
-		src := srcs.Head()
-		if offset == -1 {
-			n, _, e = unix.Syscall(unix.SYS_WRITE, uintptr(fd), src.Addr(), uintptr(src.Len()))
-		} else {
-			n, _, e = unix.Syscall6(unix.SYS_PWRITE64, uintptr(fd), src.Addr(), uintptr(src.Len()), uintptr(offset), 0 /* pos_h */, 0 /* unused */)
+		cur, _, e := unix.Syscall6(sysno, uintptr(fd), uintptr((unsafe.Pointer)(&iovs[start])), uintptr(size), uintptr(curOff), 0 /* pos_h */, uintptr(flags))
+		if cur > 0 {
+			total += cur
 		}
-	} else {
-		iovs := safemem.IovecsFromBlockSeq(srcs)
-		if len(iovs) > MaxReadWriteIov {
-			log.Debugf("hostfd.Preadv2: truncating from %d iovecs to %d", len(iovs), MaxReadWriteIov)
-			iovs = iovs[:MaxReadWriteIov]
+		if e != 0 {
+			return total, e
 		}
-		n, _, e = unix.Syscall6(unix.SYS_PWRITEV2, uintptr(fd), uintptr((unsafe.Pointer)(&iovs[0])), uintptr(len(iovs)), uintptr(offset), 0 /* pos_h */, uintptr(flags))
+		if last {
+			break
+		}
+		// If this was a short read/write, then break.
+		var curTotal uint64
+		for i := range iovs[start : start+size] {
+			curTotal += iovs[i].Len
+		}
+		if uint64(cur) < curTotal {
+			break
+		}
 	}
-	if e != 0 {
-		return 0, e
-	}
-	return uint64(n), nil
+	return total, 0
 }

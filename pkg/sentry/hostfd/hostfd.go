@@ -16,6 +16,9 @@
 package hostfd
 
 import (
+	"io"
+
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sync"
 )
@@ -81,4 +84,63 @@ func (rw *ReadWriterAt) WriteFromBlocks(srcs safemem.BlockSeq) (uint64, error) {
 		rw.offset += int64(n)
 	}
 	return n, err
+}
+
+// Preadv2 reads up to dsts.NumBytes() bytes from host file descriptor fd into
+// dsts. offset and flags are interpreted as for preadv2(2).
+//
+// Preconditions: !dsts.IsEmpty().
+func Preadv2(fd int32, dsts safemem.BlockSeq, offset int64, flags uint32) (uint64, error) {
+	// No buffering is necessary regardless of safecopy; host syscalls will
+	// return EFAULT if appropriate, instead of raising SIGBUS.
+	var (
+		n uintptr
+		e unix.Errno
+	)
+	if flags == 0 && dsts.NumBlocks() == 1 {
+		// Use read() or pread() to avoid iovec allocation and copying.
+		dst := dsts.Head()
+		if offset == -1 {
+			n, _, e = unix.Syscall(unix.SYS_READ, uintptr(fd), dst.Addr(), uintptr(dst.Len()))
+		} else {
+			n, _, e = unix.Syscall6(unix.SYS_PREAD64, uintptr(fd), dst.Addr(), uintptr(dst.Len()), uintptr(offset), 0 /* pos_h */, 0 /* unused */)
+		}
+	} else {
+		n, e = iovecsReadWrite(unix.SYS_PREADV2, fd, safemem.IovecsFromBlockSeq(dsts), offset, flags)
+	}
+	if e != 0 {
+		return 0, e
+	}
+	if n == 0 {
+		return 0, io.EOF
+	}
+	return uint64(n), nil
+}
+
+// Pwritev2 writes up to srcs.NumBytes() from srcs into host file descriptor
+// fd. offset and flags are interpreted as for pwritev2(2).
+//
+// Preconditions: !srcs.IsEmpty().
+func Pwritev2(fd int32, srcs safemem.BlockSeq, offset int64, flags uint32) (uint64, error) {
+	// No buffering is necessary regardless of safecopy; host syscalls will
+	// return EFAULT if appropriate, instead of raising SIGBUS.
+	var (
+		n uintptr
+		e unix.Errno
+	)
+	if flags == 0 && srcs.NumBlocks() == 1 {
+		// Use write() or pwrite() to avoid iovec allocation and copying.
+		src := srcs.Head()
+		if offset == -1 {
+			n, _, e = unix.Syscall(unix.SYS_WRITE, uintptr(fd), src.Addr(), uintptr(src.Len()))
+		} else {
+			n, _, e = unix.Syscall6(unix.SYS_PWRITE64, uintptr(fd), src.Addr(), uintptr(src.Len()), uintptr(offset), 0 /* pos_h */, 0 /* unused */)
+		}
+	} else {
+		n, e = iovecsReadWrite(unix.SYS_PWRITEV2, fd, safemem.IovecsFromBlockSeq(srcs), offset, flags)
+	}
+	if e != 0 {
+		return 0, e
+	}
+	return uint64(n), nil
 }
