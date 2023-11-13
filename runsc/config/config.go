@@ -331,9 +331,9 @@ type Config struct {
 	// Config was constructed. Nil when the Config was not initialized from a FlagSet.
 	explicitlySet map[string]struct{}
 
-	// ScrapeNAT, when true, tells runsc to scrape the host network
+	// ReproduceNAT, when true, tells runsc to scrape the host network
 	// namespace's NAT iptables and reproduce it inside the sandbox.
-	ReproduceNAT bool `flag:"EXPERIMENTAL-reproduce-nat"`
+	ReproduceNAT bool `flag:"reproduce-nat"`
 }
 
 func (c *Config) validate() error {
