@@ -300,7 +300,7 @@ func TestNATAlwaysPerformed(t *testing.T) {
 			iptables := DefaultTables(clock, rand.New(rand.NewSource(0 /* seed */)))
 
 			// Just to make sure the iptables is not short circuited.
-			iptables.ReplaceTable(NATID, iptables.GetTable(NATID, ipv6), ipv6)
+			iptables.ForceReplaceTable(NATID, iptables.GetTable(NATID, ipv6), ipv6)
 
 			pkt := v6PacketBuffer()
 

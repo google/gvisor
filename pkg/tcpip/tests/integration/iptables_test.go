@@ -189,7 +189,7 @@ func TestIPTablesStatsForInput(t *testing.T) {
 				filter.Rules[ruleIdx].Matchers = []stack.Matcher{&inputIfNameMatcher{nicName}}
 				// Make sure the packet is not dropped by the next rule.
 				filter.Rules[ruleIdx+1].Target = &stack.AcceptTarget{}
-				ipt.ReplaceTable(stack.FilterID, filter, true /* ipv6 */)
+				ipt.ForceReplaceTable(stack.FilterID, filter, true /* ipv6 */)
 			},
 			genPacket:          genPacketV6,
 			proto:              header.IPv6ProtocolNumber,
@@ -208,7 +208,7 @@ func TestIPTablesStatsForInput(t *testing.T) {
 				filter.Rules[ruleIdx].Target = &stack.DropTarget{}
 				filter.Rules[ruleIdx].Matchers = []stack.Matcher{&inputIfNameMatcher{nicName}}
 				filter.Rules[ruleIdx+1].Target = &stack.AcceptTarget{}
-				ipt.ReplaceTable(stack.FilterID, filter, false /* ipv6 */)
+				ipt.ForceReplaceTable(stack.FilterID, filter, false /* ipv6 */)
 			},
 			genPacket:          genPacketV4,
 			proto:              header.IPv4ProtocolNumber,
@@ -226,7 +226,7 @@ func TestIPTablesStatsForInput(t *testing.T) {
 				filter.Rules[ruleIdx].Filter = stack.IPHeaderFilter{InputInterface: anotherNicName}
 				filter.Rules[ruleIdx].Target = &stack.DropTarget{}
 				filter.Rules[ruleIdx+1].Target = &stack.AcceptTarget{}
-				ipt.ReplaceTable(stack.FilterID, filter, true /* ipv6 */)
+				ipt.ForceReplaceTable(stack.FilterID, filter, true /* ipv6 */)
 			},
 			genPacket:          genPacketV6,
 			proto:              header.IPv6ProtocolNumber,
@@ -244,7 +244,7 @@ func TestIPTablesStatsForInput(t *testing.T) {
 				filter.Rules[ruleIdx].Filter = stack.IPHeaderFilter{InputInterface: anotherNicName}
 				filter.Rules[ruleIdx].Target = &stack.DropTarget{}
 				filter.Rules[ruleIdx+1].Target = &stack.AcceptTarget{}
-				ipt.ReplaceTable(stack.FilterID, filter, false /* ipv6 */)
+				ipt.ForceReplaceTable(stack.FilterID, filter, false /* ipv6 */)
 			},
 			genPacket:          genPacketV4,
 			proto:              header.IPv4ProtocolNumber,
@@ -265,7 +265,7 @@ func TestIPTablesStatsForInput(t *testing.T) {
 				}
 				filter.Rules[ruleIdx].Target = &stack.DropTarget{}
 				filter.Rules[ruleIdx+1].Target = &stack.AcceptTarget{}
-				ipt.ReplaceTable(stack.FilterID, filter, true /* ipv6 */)
+				ipt.ForceReplaceTable(stack.FilterID, filter, true /* ipv6 */)
 			},
 			genPacket:          genPacketV6,
 			proto:              header.IPv6ProtocolNumber,
@@ -286,7 +286,7 @@ func TestIPTablesStatsForInput(t *testing.T) {
 				}
 				filter.Rules[ruleIdx].Target = &stack.DropTarget{}
 				filter.Rules[ruleIdx+1].Target = &stack.AcceptTarget{}
-				ipt.ReplaceTable(stack.FilterID, filter, false /* ipv6 */)
+				ipt.ForceReplaceTable(stack.FilterID, filter, false /* ipv6 */)
 			},
 			genPacket:          genPacketV4,
 			proto:              header.IPv4ProtocolNumber,
@@ -304,7 +304,7 @@ func TestIPTablesStatsForInput(t *testing.T) {
 				filter.Rules[ruleIdx].Target = &stack.DropTarget{}
 				filter.Rules[ruleIdx].Matchers = []stack.Matcher{&inputIfNameMatcher{anotherNicName}}
 				filter.Rules[ruleIdx+1].Target = &stack.AcceptTarget{}
-				ipt.ReplaceTable(stack.FilterID, filter, true /* ipv6 */)
+				ipt.ForceReplaceTable(stack.FilterID, filter, true /* ipv6 */)
 			},
 			genPacket:          genPacketV6,
 			proto:              header.IPv6ProtocolNumber,
@@ -322,7 +322,7 @@ func TestIPTablesStatsForInput(t *testing.T) {
 				filter.Rules[ruleIdx].Target = &stack.DropTarget{}
 				filter.Rules[ruleIdx].Matchers = []stack.Matcher{&inputIfNameMatcher{anotherNicName}}
 				filter.Rules[ruleIdx+1].Target = &stack.AcceptTarget{}
-				ipt.ReplaceTable(stack.FilterID, filter, false /* ipv6 */)
+				ipt.ForceReplaceTable(stack.FilterID, filter, false /* ipv6 */)
 			},
 			genPacket:          genPacketV4,
 			proto:              header.IPv4ProtocolNumber,
@@ -466,7 +466,7 @@ func TestIPTableWritePackets(t *testing.T) {
 					},
 				}
 
-				s.IPTables().ReplaceTable(stack.FilterID, table, false /* ipv4 */)
+				s.IPTables().ForceReplaceTable(stack.FilterID, table, false /* ipv4 */)
 			},
 			genPacket: func(r *stack.Route) stack.PacketBufferList {
 				var pkts stack.PacketBufferList
@@ -555,7 +555,7 @@ func TestIPTableWritePackets(t *testing.T) {
 					},
 				}
 
-				s.IPTables().ReplaceTable(stack.FilterID, table, true /* ipv6 */)
+				s.IPTables().ForceReplaceTable(stack.FilterID, table, true /* ipv6 */)
 			},
 			genPacket: func(r *stack.Route) stack.PacketBufferList {
 				var pkts stack.PacketBufferList
@@ -708,7 +708,7 @@ func setupDropFilter(hook stack.Hook, f stack.IPHeaderFilter) func(*testing.T, *
 		filter.Rules[ruleIdx].Target = &stack.DropTarget{NetworkProtocol: netProto}
 		// Make sure the packet is not dropped by the next rule.
 		filter.Rules[ruleIdx+1].Target = &stack.AcceptTarget{NetworkProtocol: netProto}
-		ipt.ReplaceTable(stack.FilterID, filter, ipv6)
+		ipt.ForceReplaceTable(stack.FilterID, filter, ipv6)
 	}
 }
 
@@ -1216,7 +1216,7 @@ func setupNAT(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber
 	table.Rules[ruleIdx].Target = target
 	// Make sure the packet is not dropped by the next rule.
 	table.Rules[ruleIdx+1].Target = &stack.AcceptTarget{}
-	ipt.ReplaceTable(stack.NATID, table, ipv6)
+	ipt.ForceReplaceTable(stack.NATID, table, ipv6)
 }
 
 func setupDNAT(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, target stack.Target) {
@@ -1309,7 +1309,7 @@ func setupTwiceNAT(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolN
 		},
 	}
 
-	ipt.ReplaceTable(stack.NATID, table, ipv6)
+	ipt.ForceReplaceTable(stack.NATID, table, ipv6)
 }
 
 type natType struct {
@@ -2527,7 +2527,7 @@ func TestNATICMPError(t *testing.T) {
 										},
 									}
 
-									ipt.ReplaceTable(stack.NATID, table, ipv6)
+									ipt.ForceReplaceTable(stack.NATID, table, ipv6)
 
 									buf := transportType.buf
 
@@ -2898,7 +2898,7 @@ func TestSNATHandlePortOrIdentConflicts(t *testing.T) {
 												},
 											}
 
-											ipt.ReplaceTable(stack.NATID, table, ipv6)
+											ipt.ForceReplaceTable(stack.NATID, table, ipv6)
 
 											for i, srcAddr := range test.srcAddrs {
 												t.Run(fmt.Sprintf("Packet#%d", i), func(t *testing.T) {
@@ -2979,7 +2979,7 @@ func TestLocallyRoutedPackets(t *testing.T) {
 				ipv6 := test.netProto == ipv6.ProtocolNumber
 				ipt := s.IPTables()
 				filter := ipt.GetTable(stack.FilterID, ipv6)
-				ipt.ReplaceTable(stack.FilterID, filter, ipv6)
+				ipt.ForceReplaceTable(stack.FilterID, filter, ipv6)
 			}
 
 			var wq waiter.Queue
@@ -3303,7 +3303,7 @@ func TestRejectWith(t *testing.T) {
 								filter.Rules[ruleIdx].Target = test.rejectTarget(t, s.NetworkProtocolInstance(test.netProto), rejectWith.val)
 								// Make sure the packet is not dropped by the next rule.
 								filter.Rules[ruleIdx+1].Target = &stack.AcceptTarget{}
-								ipt.ReplaceTable(stack.FilterID, filter, ipv6)
+								ipt.ForceReplaceTable(stack.FilterID, filter, ipv6)
 							}
 
 							func() {
@@ -3405,7 +3405,7 @@ func TestInvalidTransportHeader(t *testing.T) {
 			// Enable iptables and conntrack.
 			ipt := s.IPTables()
 			filter := ipt.GetTable(stack.FilterID, false /* ipv6 */)
-			ipt.ReplaceTable(stack.FilterID, filter, false /* ipv6 */)
+			ipt.ForceReplaceTable(stack.FilterID, filter, false /* ipv6 */)
 
 			// This can panic if conntrack isn't checking lengths.
 			e.InjectInbound(header.IPv4ProtocolNumber, test.genPacket(test.offset))
