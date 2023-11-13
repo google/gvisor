@@ -20,6 +20,7 @@
 #include <sys/socket.h>
 
 #include <atomic>
+#include <cerrno>
 #include <iostream>
 #include <memory>
 #include <string>
@@ -217,6 +218,42 @@ INSTANTIATE_TEST_SUITE_P(
       }
       return s;
     });
+
+using DualStackAfMismatchTest = ::testing::TestWithParam<ProtocolTestParam>;
+
+TEST_P(DualStackAfMismatchTest, V6ListenerV4Connect) {
+  ProtocolTestParam const& param = GetParam();
+  const FileDescriptor socket_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, param.type, 0));
+
+  const TestAddress& v6_addr = V6Loopback();
+  const TestAddress& v4_addr = V4MappedLoopback();
+  ASSERT_THAT(
+      bind(socket_fd.get(), AsSockAddr(&v6_addr.addr), v6_addr.addr_len),
+      SyscallSucceeds());
+  ASSERT_THAT(
+      connect(socket_fd.get(), AsSockAddr(&v4_addr.addr), v4_addr.addr_len),
+      SyscallFailsWithErrno(ENETUNREACH));
+}
+
+TEST_P(DualStackAfMismatchTest, V4ListenerV6Connect) {
+  // Gvisor does not return the correct Errno.
+  SKIP_IF(IsRunningOnGvisor());
+  const FileDescriptor socket_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP));
+
+  const TestAddress& v6_addr = V6Loopback();
+  const TestAddress& v4_addr = V4MappedLoopback();
+  ASSERT_THAT(
+      bind(socket_fd.get(), AsSockAddr(&v4_addr.addr), v4_addr.addr_len),
+      SyscallSucceeds());
+  ASSERT_THAT(
+      connect(socket_fd.get(), AsSockAddr(&v6_addr.addr), v6_addr.addr_len),
+      SyscallFailsWithErrno(EAFNOSUPPORT));
+}
+
+INSTANTIATE_TEST_SUITE_P(All, DualStackAfMismatchTest, ProtocolTestValues(),
+                         DescribeProtocolTestParam);
 
 void tcpSimpleConnectTest(TestAddress const& listener,
                           TestAddress const& connector, bool unbound) {
