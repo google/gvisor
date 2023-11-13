@@ -931,7 +931,8 @@ const (
 	snatPort   = 43
 )
 
-// NATPostSNATUDP tests that the source port/IP in the packets are modified as expected.
+// NATPostSNATUDP tests that the source port/IP in the packets are modified as
+// expected. It tests the latest-implemented revision of the SNAT target.
 type NATPostSNATUDP struct{ localCase }
 
 var _ TestCase = (*NATPostSNATUDP)(nil)
@@ -978,7 +979,7 @@ func (*NATPostSNATUDP) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) er
 }
 
 // NATPostSNATTCP tests that the source port/IP in the packets are modified as
-// expected.
+// expected. It tests the latest-implemented revision of the SNAT target.
 type NATPostSNATTCP struct{ localCase }
 
 var _ TestCase = (*NATPostSNATTCP)(nil)
@@ -1038,7 +1039,7 @@ func (*NATPostSNATTCP) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) er
 }
 
 // NATOutDNAT tests that the source port/IP in the packets are modified as
-// expected.
+// expected. It tests the latest-implemented revision of the DNAT target.
 type NATOutDNAT struct{ containerCase }
 
 var _ TestCase = (*NATOutDNAT)(nil)

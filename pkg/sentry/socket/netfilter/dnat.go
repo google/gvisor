@@ -197,3 +197,86 @@ func (st *dnatTargetMakerR1) unmarshal(buf []byte, filter stack.IPHeaderFilter) 
 
 	return &target, nil
 }
+
+type dnatTargetMakerR2 struct {
+	NetworkProtocol tcpip.NetworkProtocolNumber
+}
+
+func (st *dnatTargetMakerR2) id() targetID {
+	return targetID{
+		name:            DNATTargetName,
+		networkProtocol: st.NetworkProtocol,
+		revision:        2,
+	}
+}
+
+func (*dnatTargetMakerR2) marshal(target target) []byte {
+	st := target.(*dnatTarget)
+	nt := linux.XTNATTargetV2{
+		Target: linux.XTEntryTarget{
+			TargetSize: linux.SizeOfXTNATTargetV1,
+		},
+		Range: linux.NFNATRange2{
+			Flags: linux.NF_NAT_RANGE_MAP_IPS | linux.NF_NAT_RANGE_PROTO_SPECIFIED,
+		},
+	}
+	copy(nt.Target.Name[:], DNATTargetName)
+	copy(nt.Range.MinAddr[:], st.Addr.AsSlice())
+	copy(nt.Range.MaxAddr[:], st.Addr.AsSlice())
+	nt.Range.MinProto = htons(st.Port)
+	nt.Range.MaxProto = nt.Range.MinProto
+
+	return marshal.Marshal(&nt)
+}
+
+func (st *dnatTargetMakerR2) unmarshal(buf []byte, filter stack.IPHeaderFilter) (target, *syserr.Error) {
+	if size := linux.SizeOfXTNATTargetV2; len(buf) < size {
+		nflog("dnatTargetMakerR2: buf has insufficient size (%d) for DNAT target (%d)", len(buf), size)
+		return nil, syserr.ErrInvalidArgument
+	}
+
+	if p := filter.Protocol; p != header.TCPProtocolNumber && p != header.UDPProtocolNumber {
+		nflog("dnatTargetMakerR2: bad proto %d", p)
+		return nil, syserr.ErrInvalidArgument
+	}
+
+	var natRange linux.NFNATRange2
+	natRange.UnmarshalUnsafe(buf[linux.SizeOfXTEntryTarget:])
+
+	// TODO(gvisor.dev/issue/5697): Support port or address ranges.
+	if natRange.MinAddr != natRange.MaxAddr {
+		nflog("dnatTargetMakerR2: MinAddr and MaxAddr are different")
+		return nil, syserr.ErrInvalidArgument
+	}
+	if natRange.MinProto != natRange.MaxProto {
+		nflog("dnatTargetMakerR2: MinProto and MaxProto are different")
+		return nil, syserr.ErrInvalidArgument
+	}
+	if natRange.BaseProto != 0 {
+		nflog("dnatTargetMakerR2: BaseProto is nonzero")
+		return nil, syserr.ErrInvalidArgument
+	}
+
+	// TODO(gvisor.dev/issue/5698): Support other NF_NAT_RANGE flags.
+	if natRange.Flags != linux.NF_NAT_RANGE_MAP_IPS|linux.NF_NAT_RANGE_PROTO_SPECIFIED {
+		nflog("dnatTargetMakerR2: invalid range flags %d", natRange.Flags)
+		return nil, syserr.ErrInvalidArgument
+	}
+
+	target := dnatTarget{
+		DNATTarget: stack.DNATTarget{
+			NetworkProtocol: filter.NetworkProtocol(),
+			Port:            ntohs(natRange.MinProto),
+		},
+	}
+	switch st.NetworkProtocol {
+	case header.IPv4ProtocolNumber:
+		target.DNATTarget.Addr = tcpip.AddrFrom4Slice(natRange.MinAddr[:4])
+	case header.IPv6ProtocolNumber:
+		target.DNATTarget.Addr = tcpip.AddrFrom16(natRange.MinAddr)
+	default:
+		panic(fmt.Sprintf("invalid protocol number: %d", st.NetworkProtocol))
+	}
+
+	return &target, nil
+}
