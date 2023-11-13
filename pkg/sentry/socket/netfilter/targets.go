@@ -89,6 +89,12 @@ func init() {
 	registerTargetMaker(&dnatTargetMakerR1{
 		NetworkProtocol: header.IPv6ProtocolNumber,
 	})
+	registerTargetMaker(&dnatTargetMakerR2{
+		NetworkProtocol: header.IPv4ProtocolNumber,
+	})
+	registerTargetMaker(&dnatTargetMakerR2{
+		NetworkProtocol: header.IPv6ProtocolNumber,
+	})
 }
 
 // The stack package provides some basic, useful targets for us. The following
