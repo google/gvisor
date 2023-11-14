@@ -1201,6 +1201,32 @@ TEST(MountTest, PropagateUmountEvent) {
   }
 }
 
+TEST(MountTest, PropagateChildUmountEvent) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  TempPath const dir1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  ASSERT_THAT(mount("", dir1.path().c_str(), kTmpfs, 0, ""), SyscallSucceeds());
+
+  TempPath const child =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(dir1.path()));
+  ASSERT_THAT(mount("", child.path().c_str(), kTmpfs, 0, ""),
+              SyscallSucceeds());
+  ASSERT_THAT(mount("", child.path().c_str(), "", MS_SHARED, 0),
+              SyscallSucceeds());
+
+  TempPath const dir2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  ASSERT_THAT(mount(child.path().c_str(), dir2.path().c_str(), "", MS_BIND, 0),
+              SyscallSucceeds());
+  ASSERT_THAT(mount("", child.path().c_str(), kTmpfs, 0, ""),
+              SyscallSucceeds());
+  ASSERT_THAT(umount2(dir1.path().c_str(), MNT_DETACH), SyscallSucceeds());
+
+  auto optionals = ASSERT_NO_ERRNO_AND_VALUE(MountOptionals());
+  EXPECT_EQ(optionals[dir2.path()].size(), 1);
+
+  ASSERT_EQ(umount2(dir2.path().c_str(), MNT_DETACH), 0);
+}
+
 TEST(MountTest, UmountIgnoresPeersWithChildren) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
   auto const dir1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
