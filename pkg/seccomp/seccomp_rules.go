@@ -57,6 +57,7 @@ type ValueMatcher interface {
 	// Repr returns a string that will be used for asserting equality between
 	// two `ValueMatcher` instances. It must therefore be unique to the
 	// `ValueMatcher` implementation and to its parameters.
+	// It must not contain the character ";".
 	Repr() string
 
 	// Render should add rules to the given program that verify the value
@@ -622,6 +623,19 @@ type PerArg [7]ValueMatcher // 6 arguments + RIP
 // RuleIP indicates what rules in the Rule array have to be applied to
 // instruction pointer.
 const RuleIP = 6
+
+// clone returns a copy of this `PerArg`.
+func (pa PerArg) clone() PerArg {
+	return PerArg{
+		pa[0],
+		pa[1],
+		pa[2],
+		pa[3],
+		pa[4],
+		pa[5],
+		pa[6],
+	}
+}
 
 // Render implements `SyscallRule.Render`.
 func (pa PerArg) Render(program *syscallProgram, labelSet *labelSet) {

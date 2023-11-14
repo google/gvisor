@@ -1221,6 +1221,9 @@ func TestMerge(t *testing.T) {
 
 // TestOptimizeSyscallRule tests the behavior of syscall rule optimizers.
 func TestOptimizeSyscallRule(t *testing.T) {
+	// av is a shorthand for `AnyValue{}`, used below to keep `PerArg`
+	// structs short enough to comfortably fit on one line.
+	av := AnyValue{}
 	for _, test := range []struct {
 		name       string
 		rule       SyscallRule
@@ -1229,8 +1232,8 @@ func TestOptimizeSyscallRule(t *testing.T) {
 	}{
 		{
 			name: "do nothing to a simple rule",
-			rule: PerArg{NotEqual(0xff)},
-			want: PerArg{NotEqual(0xff)},
+			rule: PerArg{NotEqual(0xff), av, av, av, av, av, av},
+			want: PerArg{NotEqual(0xff), av, av, av, av, av, av},
 		},
 		{
 			name: "flatten Or rule",
@@ -1249,12 +1252,12 @@ func TestOptimizeSyscallRule(t *testing.T) {
 				},
 			},
 			want: Or{
-				PerArg{EqualTo(0x11)},
-				PerArg{EqualTo(0x22)},
-				PerArg{EqualTo(0x33)},
-				PerArg{EqualTo(0x44)},
-				PerArg{EqualTo(0x55)},
-				PerArg{EqualTo(0x66)},
+				PerArg{EqualTo(0x11), av, av, av, av, av, av},
+				PerArg{EqualTo(0x22), av, av, av, av, av, av},
+				PerArg{EqualTo(0x33), av, av, av, av, av, av},
+				PerArg{EqualTo(0x44), av, av, av, av, av, av},
+				PerArg{EqualTo(0x55), av, av, av, av, av, av},
+				PerArg{EqualTo(0x66), av, av, av, av, av, av},
 			},
 		},
 		{
@@ -1274,12 +1277,12 @@ func TestOptimizeSyscallRule(t *testing.T) {
 				},
 			},
 			want: And{
-				PerArg{NotEqual(0x11)},
-				PerArg{NotEqual(0x22)},
-				PerArg{NotEqual(0x33)},
-				PerArg{NotEqual(0x44)},
-				PerArg{NotEqual(0x55)},
-				PerArg{NotEqual(0x66)},
+				PerArg{NotEqual(0x11), av, av, av, av, av, av},
+				PerArg{NotEqual(0x22), av, av, av, av, av, av},
+				PerArg{NotEqual(0x33), av, av, av, av, av, av},
+				PerArg{NotEqual(0x44), av, av, av, av, av, av},
+				PerArg{NotEqual(0x55), av, av, av, av, av, av},
+				PerArg{NotEqual(0x66), av, av, av, av, av, av},
 			},
 		},
 		{
@@ -1287,14 +1290,14 @@ func TestOptimizeSyscallRule(t *testing.T) {
 			rule: Or{
 				PerArg{EqualTo(0x11)},
 			},
-			want: PerArg{EqualTo(0x11)},
+			want: PerArg{EqualTo(0x11), av, av, av, av, av, av},
 		},
 		{
 			name: "simplify And with single rule",
 			rule: And{
 				PerArg{EqualTo(0x11)},
 			},
-			want: PerArg{EqualTo(0x11)},
+			want: PerArg{EqualTo(0x11), av, av, av, av, av, av},
 		},
 		{
 			name: "simplify Or with MatchAll",
@@ -1328,8 +1331,8 @@ func TestOptimizeSyscallRule(t *testing.T) {
 				PerArg{NotEqual(0x22)},
 			},
 			want: And{
-				PerArg{NotEqual(0x11)},
-				PerArg{NotEqual(0x22)},
+				PerArg{NotEqual(0x11), av, av, av, av, av, av},
+				PerArg{NotEqual(0x22), av, av, av, av, av, av},
 			},
 		},
 		{
@@ -1340,6 +1343,23 @@ func TestOptimizeSyscallRule(t *testing.T) {
 			},
 			optimizers: []ruleOptimizerFunc{
 				convertMatchAllAndXToX,
+			},
+			want: MatchAll{},
+		},
+		{
+			name: "PerArg nil to AnyValue",
+			rule: PerArg{av, EqualTo(0)},
+			optimizers: []ruleOptimizerFunc{
+				nilInPerArgToAnyValue,
+			},
+			want: PerArg{av, EqualTo(0), av, av, av, av, av},
+		},
+		{
+			name: "Useless PerArg is MatchAll",
+			rule: PerArg{av, av},
+			optimizers: []ruleOptimizerFunc{
+				nilInPerArgToAnyValue,
+				convertUselessPerArgToMatchAll,
 			},
 			want: MatchAll{},
 		},
