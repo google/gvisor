@@ -1245,6 +1245,7 @@ func (u *umountRecursiveOptions) StateFields() []string {
 	return []string{
 		"eager",
 		"disconnectHierarchy",
+		"propagate",
 	}
 }
 
@@ -1255,6 +1256,7 @@ func (u *umountRecursiveOptions) StateSave(stateSinkObject state.Sink) {
 	u.beforeSave()
 	stateSinkObject.Save(0, &u.eager)
 	stateSinkObject.Save(1, &u.disconnectHierarchy)
+	stateSinkObject.Save(2, &u.propagate)
 }
 
 func (u *umountRecursiveOptions) afterLoad() {}
@@ -1263,6 +1265,7 @@ func (u *umountRecursiveOptions) afterLoad() {}
 func (u *umountRecursiveOptions) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &u.eager)
 	stateSourceObject.Load(1, &u.disconnectHierarchy)
+	stateSourceObject.Load(2, &u.propagate)
 }
 
 func (l *followerList) StateTypeName() string {
