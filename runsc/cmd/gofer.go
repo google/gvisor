@@ -454,7 +454,7 @@ func (g *Gofer) setupRootFS(spec *specs.Spec, conf *config.Config) error {
 		// any attempts to unset them will fail.  See
 		// mount_namespaces(7) for more details.
 		log.Infof("Remounting root as readonly: %q", root)
-		flags := uintptr(unix.MS_BIND | unix.MS_REMOUNT | unix.MS_RDONLY | unix.MS_REC | unix.MS_NOSUID | unix.MS_NODEV)
+		flags := uintptr(unix.MS_BIND | unix.MS_REMOUNT | unix.MS_RDONLY | unix.MS_NOSUID | unix.MS_NODEV)
 		if err := specutils.SafeMount(root, root, "bind", flags, "", procPath); err != nil {
 			return fmt.Errorf("remounting root as read-only with source: %q, target: %q, flags: %#x, err: %v", root, root, flags, err)
 		}
