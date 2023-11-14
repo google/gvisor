@@ -14,6 +14,11 @@
 
 package seccomp
 
+import (
+	"fmt"
+	"strings"
+)
+
 // ruleOptimizerFunc is a function type that can optimize a SyscallRule.
 // It returns the updated SyscallRule, along with whether any modification
 // was made.
@@ -99,6 +104,86 @@ func convertMatchAllAndXToX(rule SyscallRule) (SyscallRule, bool) {
 	return And(newRules), true
 }
 
+// nilInPerArgToAnyValue replaces `nil` values in `PerArg` rules with
+// `AnyValue`. This isn't really an optimization, but it simplifies the
+// logic of other `PerArg` optimizers to not have to handle the `nil` case
+// separately from the `AnyValue` case.
+func nilInPerArgToAnyValue(rule SyscallRule) (SyscallRule, bool) {
+	perArg, isPerArg := rule.(PerArg)
+	if !isPerArg {
+		return rule, false
+	}
+	changed := false
+	for argNum, valueMatcher := range perArg {
+		if valueMatcher == nil {
+			perArg[argNum] = AnyValue{}
+			changed = true
+		}
+	}
+	return perArg, changed
+}
+
+// convertUselessPerArgToMatchAll looks for `PerArg` rules that match
+// anything and replaces them with `MatchAll`.
+func convertUselessPerArgToMatchAll(rule SyscallRule) (SyscallRule, bool) {
+	perArg, isPerArg := rule.(PerArg)
+	if !isPerArg {
+		return rule, false
+	}
+	for _, valueMatcher := range perArg {
+		if _, isAnyValue := valueMatcher.(AnyValue); !isAnyValue {
+			return rule, false
+		}
+	}
+	return MatchAll{}, true
+}
+
+// signature returns a string signature of this `PerArg`.
+// This string can be used to identify the behavior of this `PerArg` rule.
+func (pa PerArg) signature() string {
+	var sb strings.Builder
+	for _, valueMatcher := range pa {
+		repr := valueMatcher.Repr()
+		if strings.ContainsRune(repr, ';') {
+			panic(fmt.Sprintf("ValueMatcher %v (type %T) returned representation %q containing illegal character ';'", valueMatcher, valueMatcher, repr))
+		}
+		sb.WriteString(repr)
+		sb.WriteRune(';')
+	}
+	return sb.String()
+}
+
+// deduplicatePerArgs deduplicates PerArg rules with identical matchers.
+// This can happen during filter construction, when rules are added across
+// multiple files.
+func deduplicatePerArgs[T Or | And](rule SyscallRule) (SyscallRule, bool) {
+	tRule, isT := rule.(T)
+	if !isT || len(tRule) < 2 {
+		return rule, false
+	}
+	knownPerArgs := make(map[string]struct{}, len(tRule))
+	newRules := make([]SyscallRule, 0, len(tRule))
+	changed := false
+	for _, subRule := range tRule {
+		subPerArg, subIsPerArg := subRule.(PerArg)
+		if !subIsPerArg {
+			newRules = append(newRules, subRule)
+			continue
+		}
+		sig := subPerArg.signature()
+		if _, isDupe := knownPerArgs[sig]; isDupe {
+			changed = true
+			continue
+		}
+		knownPerArgs[sig] = struct{}{}
+		newRules = append(newRules, subPerArg)
+	}
+	if !changed {
+		return rule, false
+	}
+	return SyscallRule(T(newRules)), true
+}
+
 // optimizeSyscallRuleFuncs losslessly optimizes a SyscallRule using the given
 // optimization functions.
 // Optimizers should be ranked in order of importance, with the most
@@ -135,5 +220,20 @@ func optimizeSyscallRule(rule SyscallRule) SyscallRule {
 		// linearly scanning through the first (and only) level of rules.
 		convertMatchAllOrXToMatchAll,
 		convertMatchAllAndXToX,
+
+		// Replace all `nil` values in `PerArg` to `AnyValue`, to simplify
+		// the `PerArg` matchers below.
+		nilInPerArgToAnyValue,
+
+		// Deduplicate redundant `PerArg`s in Or and And.
+		// This must come after `nilInPerArgToAnyValue` because it does not
+		// handle the nil case.
+		deduplicatePerArgs[Or],
+		deduplicatePerArgs[And],
+
+		// Remove useless `PerArg` matchers.
+		// This must come after `nilInPerArgToAnyValue` because it does not
+		// handle the nil case.
+		convertUselessPerArgToMatchAll,
 	})
 }
