@@ -503,6 +503,126 @@ func (vfs *VirtualFilesystem) allocMountGroupIDs(mnt *Mount, recursive bool) err
 	return nil
 }
 
+// propagateUmount returns a list of mounts that the umount of mnts propagates
+// to.
+//
+// Prerequisites: all the mounts in mnts have had vfs.umount() called on them.
+//
+// +checklocks:vfs.mountMu
+func (vfs *VirtualFilesystem) propagateUmount(mnts []*Mount) []*Mount {
+	const (
+		umountVisited = iota
+		umountRestore
+	)
+	var toUmount []*Mount
+	// Processed contains all the mounts that the algorithm has processed so far.
+	// If the mount maps to umountRestore, it should be restored after processing
+	// all the mounts. This happens in cases where a mount was speculatively
+	// unmounted that had children or is a cover mount.
+	processed := make(map[*Mount]int)
+
+	// Iterate through the mounts from the leafs back to the root.
+	for i := len(mnts) - 1; i >= 0; i-- {
+		mnt := mnts[i]
+
+		// If a mount has already been visited we know all its peers and followers
+		// have been visited so there's no need to visit them again.
+		if _, ok := processed[mnt]; ok {
+			continue
+		}
+		processed[mnt] = umountVisited
+
+		parent := mnt.parent()
+		if parent == nil {
+			continue
+		}
+		for m := nextPropMount(parent, parent); m != nil; m = nextPropMount(m, parent) {
+			child := vfs.mounts.Lookup(m, mnt.point())
+			if child == nil {
+				continue
+			}
+			if _, ok := processed[child]; ok {
+				// If the child has been visited we know its peer group and followers
+				// have all been visited so there's no need to visit them again. We can
+				// skip this propagation subtree by setting the iterator to be the last
+				// mount in the follower group.
+				if !child.followerList.Empty() {
+					m = child.followerList.Back()
+				}
+				continue
+			} else if child.umounted {
+				// If this child has already been marked for unmounting, just mark it
+				// as visited and move on. This means it was either part of the original
+				// mount list passed to this method or was umounted from another mount's
+				// propagation. In either case we can consider all its peers and
+				// followers as visited.
+				processed[child] = umountVisited
+				continue
+			}
+
+			// This loop starts at the child we are propagating the umount to and
+			// iterates through the child's parents. It continues as until it
+			// encounters a parent that's been visited.
+		loop:
+			for {
+				if child.umounted {
+					break
+				}
+				// If there are any children that have mountpoint != parent's root then
+				// the current mount cannot be unmounted.
+				for gchild := range child.children {
+					if gchild.point() == child.root {
+						continue
+					}
+					processed[child] = umountRestore
+					break loop
+				}
+				vfs.umount(child)
+				toUmount = append(toUmount, child)
+				child = child.parent()
+				// If this parent was a mount that had to be restored because it had
+				// children, it might be safe to umount now that its child is gone. If
+				// it has been visited then it's already being umounted.
+				if _, ok := processed[child]; !ok {
+					break
+				}
+			}
+		}
+	}
+
+	// Add all the children of mounts marked for umount to the umount list. This
+	// excludes "cover" mounts (mounts whose mount point is equal to their
+	// parent's root) which will be reparented in the next step.
+	for i := 0; i < len(toUmount); i++ {
+		umount := toUmount[i]
+		for child := range umount.children {
+			if child.point() == umount.root {
+				processed[child] = umountRestore
+			} else {
+				vfs.umount(child)
+				toUmount = append(toUmount, child)
+			}
+		}
+	}
+
+	vfs.mounts.seq.BeginWrite()
+	for m, status := range processed {
+		if status == umountVisited {
+			continue
+		}
+		mp := m.getKey()
+		for mp.mount.umounted {
+			mp = mp.mount.getKey()
+		}
+		if mp != m.getKey() {
+			vfs.changeMountpoint(m, mp)
+		}
+	}
+	vfs.mounts.seq.EndWrite()
+
+	return toUmount
+}
+
 // peerUnderRoot iterates through mnt's peers until it finds a mount that is in
 // ns and is reachable from root. This method is analogous to
 // fs/pnode.c:get_peer_under_root() in Linux.

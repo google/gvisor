@@ -594,28 +594,11 @@ func (vfs *VirtualFilesystem) UmountAt(ctx context.Context, creds *auth.Credenti
 	// TODO(gvisor.dev/issue/1035): Linux special-cases umount of the caller's
 	// root, which we don't implement yet (we'll just fail it since the caller
 	// holds a reference on it).
-
-	propMounts := []*Mount{vd.mount}
-	if vd.mount.parent() != nil {
-		for m := nextPropMount(vd.mount.parent(), vd.mount.parent()); m != nil; m = nextPropMount(m, vd.mount.parent()) {
-			child := vfs.mounts.Lookup(m, vd.mount.point())
-			if child == nil {
-				continue
-			}
-			if len(child.children) != 0 && child.coveringMount() == nil {
-				continue
-			}
-			propMounts = append(propMounts, child)
-		}
-	}
-	vfs.mounts.seq.BeginWrite()
-	for _, m := range propMounts {
-		vfs.umountRecursiveLocked(m, &umountRecursiveOptions{
-			eager:               opts.Flags&linux.MNT_DETACH == 0,
-			disconnectHierarchy: true,
-		})
-	}
-	vfs.mounts.seq.EndWrite()
+	vfs.umountTreeLocked(vd.mount, &umountRecursiveOptions{
+		eager:               opts.Flags&linux.MNT_DETACH == 0,
+		disconnectHierarchy: true,
+		propagate:           true,
+	})
 	return nil
 }
 
@@ -650,57 +633,79 @@ type umountRecursiveOptions struct {
 	//
 	// disconnectHierarchy is analogous to Linux's !UMOUNT_CONNECTED.
 	disconnectHierarchy bool
+
+	// If propagate is true, mounts located at the same point on the mount's
+	// parent's peers and follows will also be umounted if they do not have any
+	// children.
+	//
+	// propagate is analogous to Linux's UMOUNT_PROPAGATE.
+	propagate bool
 }
 
-// umountRecursiveLocked marks mnt and its descendants as umounted.
+// umountTreeLocked marks mnt and its descendants as umounted.
 //
-// umountRecursiveLocked is analogous to Linux's fs/namespace.c:umount_tree().
-//
-// Preconditions:
-//   - vfs.mountMu must be locked.
-//   - vfs.mounts.seq must be in a writer critical section.
-//
+// umountTreeLocked is analogous to Linux's fs/namespace.c:umount_tree().
 // +checklocks:vfs.mountMu
-func (vfs *VirtualFilesystem) umountRecursiveLocked(mnt *Mount, opts *umountRecursiveOptions) {
-	// covered mounts are a special case where the grandchild mount is
-	// reconnected to the parent after the child is disconnected.
-	var cover *Mount
-	if parent := mnt.parent(); parent != nil && !parent.umounted {
-		if cover = mnt.coveringMount(); cover != nil {
-			vfs.delayDecRef(vfs.disconnectLocked(cover))
-			cover.setKey(mnt.getKey())
-		}
+func (vfs *VirtualFilesystem) umountTreeLocked(mnt *Mount, opts *umountRecursiveOptions) {
+	submounts := mnt.submountsLocked()
+	var umountMnts []*Mount
+	if opts.disconnectHierarchy {
+		umountMnts = submounts
+	} else {
+		umountMnts = []*Mount{mnt}
 	}
-	if !mnt.umounted {
-		mnt.umounted = true
+
+	for _, mnt := range umountMnts {
+		vfs.umount(mnt)
+	}
+	if opts.propagate {
+		umountMnts = append(umountMnts, vfs.propagateUmount(umountMnts)...)
+	}
+
+	vfs.mounts.seq.BeginWrite()
+	for _, mnt := range umountMnts {
 		vfs.delayDecRef(mnt)
-		if parent := mnt.parent(); parent != nil && (opts.disconnectHierarchy || !parent.umounted) {
+		if parent := mnt.parent(); parent != nil {
 			vfs.delayDecRef(vfs.disconnectLocked(mnt))
 		}
 		vfs.setPropagation(mnt, linux.MS_PRIVATE)
 	}
+	vfs.mounts.seq.EndWrite()
+
 	if opts.eager {
-		for {
-			refs := mnt.refs.Load()
-			if refs < 0 {
-				break
-			}
-			if mnt.refs.CompareAndSwap(refs, refs|math.MinInt64) {
-				break
+		for _, mnt := range submounts {
+			for {
+				refs := mnt.refs.Load()
+				if refs < 0 {
+					break
+				}
+				if mnt.refs.CompareAndSwap(refs, refs|math.MinInt64) {
+					break
+				}
 			}
 		}
 	}
-	for child := range mnt.children {
-		vfs.umountRecursiveLocked(child, opts)
+}
+
+// +checklocks:vfs.mountMu
+func (vfs *VirtualFilesystem) umount(mnt *Mount) {
+	mnt.umounted = true
+	if parent := mnt.parent(); parent != nil {
+		delete(parent.children, mnt)
 	}
-	if cover != nil {
-		mp := cover.getKey()
-		mp.IncRef()
-		mp.dentry.mu.Lock()
-		vfs.connectLocked(cover, mp, mp.mount.ns)
-		mp.dentry.mu.Unlock()
-		vfs.delayDecRef(cover)
-	}
+}
+
+// changeMountpoint disconnects mnt from its current mount point and connects
+// it to mp. It must be called from a vfs.mounts.seq writer critical section.
+//
+// +checklocks:vfs.mountMu
+func (vfs *VirtualFilesystem) changeMountpoint(mnt *Mount, mp VirtualDentry) {
+	mp.dentry.mu.Lock()
+	vfs.delayDecRef(vfs.disconnectLocked(mnt))
+	vfs.delayDecRef(mnt)
+	mp.IncRef()
+	vfs.connectLocked(mnt, mp, mp.mount.ns)
+	mp.dentry.mu.Unlock()
 }
 
 // connectLocked makes vd the mount parent/point for mnt. It consumes
