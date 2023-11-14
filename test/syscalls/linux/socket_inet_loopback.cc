@@ -239,8 +239,9 @@ TEST_P(DualStackAfMismatchTest, V6ListenerV4Connect) {
 TEST_P(DualStackAfMismatchTest, V4ListenerV6Connect) {
   // Gvisor does not return the correct Errno.
   SKIP_IF(IsRunningOnGvisor());
+  ProtocolTestParam const& param = GetParam();
   const FileDescriptor socket_fd =
-      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP));
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, param.type, 0));
 
   const TestAddress& v6_addr = V6Loopback();
   const TestAddress& v4_addr = V4MappedLoopback();
