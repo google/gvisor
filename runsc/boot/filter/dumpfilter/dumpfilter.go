@@ -36,10 +36,11 @@ var (
 
 func main() {
 	flag.Parse()
-	rules, denyRules := filter.Rules(filter.Options{
+	opt := filter.Options{
 		Platform: &systrap.Systrap{},
 		NVProxy:  *nvproxy,
-	})
+	}
+	rules, denyRules := filter.Rules(opt)
 	insns, stats, err := seccomp.BuildProgram([]seccomp.RuleSet{
 		{
 			Rules:  denyRules,
@@ -49,10 +50,7 @@ func main() {
 			Rules:  rules,
 			Action: linux.SECCOMP_RET_ALLOW,
 		},
-	}, seccomp.ProgramOptions{
-		DefaultAction: linux.SECCOMP_RET_ERRNO,
-		BadArchAction: linux.SECCOMP_RET_ERRNO,
-	})
+	}, filter.SeccompOptions(opt))
 	if err != nil {
 		log.Warningf("%v", err)
 		os.Exit(1)

@@ -18,6 +18,7 @@
 package filter
 
 import (
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/devices/accel"
@@ -37,7 +38,7 @@ type Options struct {
 	ControllerFD          int
 }
 
-// Rules returns the seccomp (rules, denyRules) to use for the Sentry.
+// Rules returns the seccomp rules and denyRules to use for the Sentry.
 func Rules(opt Options) (seccomp.SyscallRules, seccomp.SyscallRules) {
 	s := allowedSyscalls
 	s.Merge(controlServerFilters(opt.ControllerFD))
@@ -72,14 +73,40 @@ func Rules(opt Options) (seccomp.SyscallRules, seccomp.SyscallRules) {
 	}
 
 	s.Merge(opt.Platform.SyscallFilters())
-
 	return s, seccomp.DenyNewExecMappings
+}
+
+// SeccompOptions returns the seccomp program options to use for the filter.
+func SeccompOptions(opt Options) seccomp.ProgramOptions {
+	// futex(2) is unequivocally the most-frequently-used syscall by the
+	// Sentry across all platforms.
+	hotSyscalls := []uintptr{unix.SYS_FUTEX}
+	// ... Then comes the platform-specific hot syscalls which are typically
+	// part of the syscall interception hot path.
+	hotSyscalls = append(hotSyscalls, opt.Platform.HottestSyscalls()...)
+	// ... Then come a few syscalls that are frequent just from workloads in
+	// general.
+	hotSyscalls = append(hotSyscalls, archSpecificHotSyscalls()...)
+
+	// Now deduplicate them.
+	sysnoMap := make(map[uintptr]struct{}, len(hotSyscalls))
+	uniqueHotSyscalls := make([]uintptr, 0, len(hotSyscalls))
+	for _, sysno := range hotSyscalls {
+		if _, alreadyAdded := sysnoMap[sysno]; !alreadyAdded {
+			sysnoMap[sysno] = struct{}{}
+			uniqueHotSyscalls = append(uniqueHotSyscalls, sysno)
+		}
+	}
+
+	opts := seccomp.DefaultProgramOptions()
+	opts.HotSyscalls = uniqueHotSyscalls
+	return opts
 }
 
 // Install seccomp filters based on the given platform.
 func Install(opt Options) error {
 	rules, denyRules := Rules(opt)
-	return seccomp.Install(rules, denyRules, seccomp.DefaultProgramOptions())
+	return seccomp.Install(rules, denyRules, SeccompOptions(opt))
 }
 
 // Report writes a warning message to the log.

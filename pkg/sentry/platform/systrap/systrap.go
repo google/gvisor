@@ -301,6 +301,7 @@ type Systrap struct {
 	platform.NoCPUPreemptionDetection
 	platform.UseHostGlobalMemoryBarrier
 	platform.DoesNotOwnPageTables
+	platform.HottestSyscallsNotSpecified
 
 	// memoryFile is used to create a stub sysmsg stack
 	// which is shared with the Sentry.

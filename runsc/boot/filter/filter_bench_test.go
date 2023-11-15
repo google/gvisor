@@ -37,9 +37,10 @@ type Options struct {
 // BenchmarkSentrySystrap benchmarks the seccomp filters used by the Sentry
 // using the Systrap platform.
 func BenchmarkSentrySystrap(b *testing.B) {
-	rules, denyRules := filter.Rules(filter.Options{
+	opts := filter.Options{
 		Platform: &systrap.Systrap{},
-	})
+	}
+	rules, denyRules := filter.Rules(opts)
 	secbench.Run(b, secbench.BenchFromSyscallRules(
 		b,
 		"Postgres",
@@ -63,15 +64,17 @@ func BenchmarkSentrySystrap(b *testing.B) {
 		},
 		rules,
 		denyRules,
+		filter.SeccompOptions(opts),
 	))
 }
 
 // BenchmarkSentryKVM benchmarks the seccomp filters used by the Sentry
 // using the KVM platform.
 func BenchmarkSentryKVM(b *testing.B) {
-	rules, denyRules := filter.Rules(filter.Options{
+	opts := filter.Options{
 		Platform: &kvm.KVM{},
-	})
+	}
+	rules, denyRules := filter.Rules(opts)
 	secbench.Run(b, secbench.BenchFromSyscallRules(
 		b,
 		"Postgres",
@@ -93,14 +96,16 @@ func BenchmarkSentryKVM(b *testing.B) {
 		},
 		rules,
 		denyRules,
+		filter.SeccompOptions(opts),
 	))
 }
 
 func BenchmarkNVProxyIoctl(b *testing.B) {
-	rules, denyRules := filter.Rules(filter.Options{
+	opts := filter.Options{
 		Platform: &systrap.Systrap{},
 		NVProxy:  true,
-	})
+	}
+	rules, denyRules := filter.Rules(opts)
 	var sequences []secbenchdef.Sequence
 	if err := rules.ForSingleArgument(unix.SYS_IOCTL, 1, func(v seccomp.ValueMatcher) error {
 		if arg1Equal, isArg1Equal := v.(seccomp.EqualTo); isArg1Equal {
@@ -123,5 +128,6 @@ func BenchmarkNVProxyIoctl(b *testing.B) {
 		},
 		rules,
 		denyRules,
+		filter.SeccompOptions(opts),
 	))
 }

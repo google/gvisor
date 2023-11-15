@@ -33,13 +33,22 @@ import (
 )
 
 // BenchFromSyscallRules returns a new Bench created from SyscallRules.
-func BenchFromSyscallRules(b *testing.B, name string, profile secbenchdef.Profile, rules seccomp.SyscallRules, denyRules seccomp.SyscallRules) secbenchdef.Bench {
+func BenchFromSyscallRules(b *testing.B, name string, profile secbenchdef.Profile, rules seccomp.SyscallRules, denyRules seccomp.SyscallRules, options seccomp.ProgramOptions) secbenchdef.Bench {
 	// If there is a rule allowing rt_sigreturn to be called,
 	// also add a rule for the stand-in syscall number instead.
 	if rules.Has(unix.SYS_RT_SIGRETURN) {
 		rules = rules.Copy()
 		rules.Set(uintptr(secbenchdef.RTSigreturn.Data(profile.Arch).Nr), rules.Get(unix.SYS_RT_SIGRETURN))
 	}
+	// Also replace it in the list of hottest syscalls.
+	for i, sysno := range options.HotSyscalls {
+		if sysno == unix.SYS_RT_SIGRETURN {
+			options.HotSyscalls[i] = uintptr(secbenchdef.RTSigreturn.Data(profile.Arch).Nr)
+		}
+	}
+
+	options.DefaultAction = linux.SECCOMP_RET_ERRNO
+	options.BadArchAction = linux.SECCOMP_RET_ERRNO
 	insns, buildStats, err := seccomp.BuildProgram([]seccomp.RuleSet{
 		{
 			Rules:  denyRules,
@@ -49,10 +58,7 @@ func BenchFromSyscallRules(b *testing.B, name string, profile secbenchdef.Profil
 			Rules:  rules,
 			Action: linux.SECCOMP_RET_ALLOW,
 		},
-	}, seccomp.ProgramOptions{
-		DefaultAction: linux.SECCOMP_RET_ERRNO,
-		BadArchAction: linux.SECCOMP_RET_ERRNO,
-	})
+	}, options)
 	if err != nil {
 		b.Fatalf("BuildProgram() failed: %v", err)
 	}
