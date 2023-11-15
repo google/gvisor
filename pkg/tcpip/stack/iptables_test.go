@@ -82,7 +82,7 @@ func TestNATedConnectionReap(t *testing.T) {
 		Rules: []Rule{
 			// Prerouting
 			{
-				Target: &DNATTarget{NetworkProtocol: netProto, Addr: nattedAddr, Port: nattedPort},
+				Target: &DNATTarget{NetworkProtocol: netProto, Addr: nattedAddr, Port: nattedPort, ChangePort: true, ChangeAddress: true},
 			},
 			{
 				Target: &AcceptTarget{},
@@ -381,7 +381,7 @@ func TestNATConflict(t *testing.T) {
 
 					// Input
 					{
-						Target: &SNATTarget{NetworkProtocol: header.IPv6ProtocolNumber, Addr: nattedAddr, Port: nattedPort},
+						Target: &SNATTarget{NetworkProtocol: header.IPv6ProtocolNumber, Addr: nattedAddr, Port: nattedPort, ChangeAddress: true, ChangePort: true},
 					},
 					{
 						Target: &AcceptTarget{},
@@ -399,7 +399,7 @@ func TestNATConflict(t *testing.T) {
 
 					// Postrouting
 					{
-						Target: &SNATTarget{NetworkProtocol: header.IPv6ProtocolNumber, Addr: nattedAddr, Port: nattedPort},
+						Target: &SNATTarget{NetworkProtocol: header.IPv6ProtocolNumber, Addr: nattedAddr, Port: nattedPort, ChangeAddress: true, ChangePort: true},
 					},
 					{
 						Target: &AcceptTarget{},
