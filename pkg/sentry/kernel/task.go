@@ -809,6 +809,12 @@ func (t *Task) ContainerID() string {
 	return t.containerID
 }
 
+// RestoreContainerID sets t's container ID in case the restored container ID
+// is different from when it was saved.
+func (t *Task) RestoreContainerID(cid string) {
+	t.containerID = cid
+}
+
 // OOMScoreAdj gets the task's thread group's OOM score adjustment.
 func (t *Task) OOMScoreAdj() int32 {
 	return t.tg.oomScoreAdj.Load()
