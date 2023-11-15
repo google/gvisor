@@ -182,6 +182,16 @@ type DNATTarget struct {
 	//
 	// Immutable.
 	NetworkProtocol tcpip.NetworkProtocolNumber
+
+	// ChangeAddress indicates whether we should check addresses.
+	//
+	// Immutable.
+	ChangeAddress bool
+
+	// ChangePort indicates whether we should check ports.
+	//
+	// Immutable.
+	ChangePort bool
 }
 
 // Action implements Target.Action.
@@ -201,7 +211,7 @@ func (rt *DNATTarget) Action(pkt PacketBufferPtr, hook Hook, r *Route, addressEP
 		panic(fmt.Sprintf("%s unrecognized", hook))
 	}
 
-	return dnatAction(pkt, hook, r, rt.Port, rt.Addr)
+	return dnatAction(pkt, hook, r, rt.Port, rt.Addr, rt.ChangePort, rt.ChangeAddress)
 
 }
 
@@ -244,7 +254,7 @@ func (rt *RedirectTarget) Action(pkt PacketBufferPtr, hook Hook, r *Route, addre
 		panic("redirect target is supported only on output and prerouting hooks")
 	}
 
-	return dnatAction(pkt, hook, r, rt.Port, address)
+	return dnatAction(pkt, hook, r, rt.Port, address, true /* changePort */, true /* changeAddress */)
 }
 
 // SNATTarget modifies the source port/IP in the outgoing packets.
@@ -255,10 +265,20 @@ type SNATTarget struct {
 	// NetworkProtocol is the network protocol the target is used with. It
 	// is immutable.
 	NetworkProtocol tcpip.NetworkProtocolNumber
+
+	// ChangeAddress indicates whether we should check addresses.
+	//
+	// Immutable.
+	ChangeAddress bool
+
+	// ChangePort indicates whether we should check ports.
+	//
+	// Immutable.
+	ChangePort bool
 }
 
-func dnatAction(pkt PacketBufferPtr, hook Hook, r *Route, port uint16, address tcpip.Address) (RuleVerdict, int) {
-	return natAction(pkt, hook, r, portOrIdentRange{start: port, size: 1}, address, true /* dnat */)
+func dnatAction(pkt PacketBufferPtr, hook Hook, r *Route, port uint16, address tcpip.Address, changePort, changeAddress bool) (RuleVerdict, int) {
+	return natAction(pkt, hook, r, portOrIdentRange{start: port, size: 1}, address, true /* dnat */, changePort, changeAddress)
 }
 
 func targetPortRangeForTCPAndUDP(originalSrcPort uint16) portOrIdentRange {
@@ -278,7 +298,7 @@ func targetPortRangeForTCPAndUDP(originalSrcPort uint16) portOrIdentRange {
 	}
 }
 
-func snatAction(pkt PacketBufferPtr, hook Hook, r *Route, port uint16, address tcpip.Address) (RuleVerdict, int) {
+func snatAction(pkt PacketBufferPtr, hook Hook, r *Route, port uint16, address tcpip.Address, changePort, changeAddress bool) (RuleVerdict, int) {
 	portsOrIdents := portOrIdentRange{start: port, size: 1}
 
 	switch pkt.TransportProtocolNumber {
@@ -298,17 +318,17 @@ func snatAction(pkt PacketBufferPtr, hook Hook, r *Route, port uint16, address t
 		portsOrIdents = portOrIdentRange{start: 0, size: math.MaxUint16 + 1}
 	}
 
-	return natAction(pkt, hook, r, portsOrIdents, address, false /* dnat */)
+	return natAction(pkt, hook, r, portsOrIdents, address, false /* dnat */, changePort, changeAddress)
 }
 
-func natAction(pkt PacketBufferPtr, hook Hook, r *Route, portsOrIdents portOrIdentRange, address tcpip.Address, dnat bool) (RuleVerdict, int) {
+func natAction(pkt PacketBufferPtr, hook Hook, r *Route, portsOrIdents portOrIdentRange, address tcpip.Address, dnat, changePort, changeAddress bool) (RuleVerdict, int) {
 	// Drop the packet if network and transport header are not set.
 	if len(pkt.NetworkHeader().Slice()) == 0 || len(pkt.TransportHeader().Slice()) == 0 {
 		return RuleDrop, 0
 	}
 
 	if t := pkt.tuple; t != nil {
-		t.conn.performNAT(pkt, hook, r, portsOrIdents, address, dnat)
+		t.conn.performNAT(pkt, hook, r, portsOrIdents, address, dnat, changePort, changeAddress)
 		return RuleAccept, 0
 	}
 
@@ -332,7 +352,7 @@ func (st *SNATTarget) Action(pkt PacketBufferPtr, hook Hook, r *Route, _ Address
 		panic(fmt.Sprintf("%s unrecognized", hook))
 	}
 
-	return snatAction(pkt, hook, r, st.Port, st.Addr)
+	return snatAction(pkt, hook, r, st.Port, st.Addr, st.ChangePort, st.ChangeAddress)
 }
 
 // MasqueradeTarget modifies the source port/IP in the outgoing packets.
@@ -368,7 +388,7 @@ func (mt *MasqueradeTarget) Action(pkt PacketBufferPtr, hook Hook, r *Route, add
 
 	address := ep.AddressWithPrefix().Address
 	ep.DecRef()
-	return snatAction(pkt, hook, r, 0 /* port */, address)
+	return snatAction(pkt, hook, r, 0 /* port */, address, true /* changePort */, true /* changeAddress */)
 }
 
 func rewritePacket(n header.Network, t header.Transport, updateSRCFields, fullChecksum, updatePseudoHeader bool, newPortOrIdent uint16, newAddr tcpip.Address) {

@@ -32,12 +32,14 @@ const DNATTargetName = "DNAT"
 
 type dnatTarget struct {
 	stack.DNATTarget
+	revision uint8
 }
 
-func (st *dnatTarget) id() targetID {
+func (dt *dnatTarget) id() targetID {
 	return targetID{
 		name:            DNATTargetName,
-		networkProtocol: st.NetworkProtocol,
+		networkProtocol: dt.NetworkProtocol,
+		revision:        dt.revision,
 	}
 }
 
@@ -45,15 +47,15 @@ type dnatTargetMakerV4 struct {
 	NetworkProtocol tcpip.NetworkProtocolNumber
 }
 
-func (st *dnatTargetMakerV4) id() targetID {
+func (dt *dnatTargetMakerV4) id() targetID {
 	return targetID{
 		name:            DNATTargetName,
-		networkProtocol: st.NetworkProtocol,
+		networkProtocol: dt.NetworkProtocol,
 	}
 }
 
 func (*dnatTargetMakerV4) marshal(target target) []byte {
-	st := target.(*dnatTarget)
+	dt := target.(*dnatTarget)
 	// This is a dnat target named dnat.
 	xt := linux.XTNATTargetV0{
 		Target: linux.XTEntryTarget{
@@ -62,12 +64,17 @@ func (*dnatTargetMakerV4) marshal(target target) []byte {
 	}
 	copy(xt.Target.Name[:], DNATTargetName)
 
+	if dt.ChangeAddress {
+		xt.NfRange.RangeIPV4.Flags |= linux.NF_NAT_RANGE_MAP_IPS
+	}
+	if dt.ChangePort {
+		xt.NfRange.RangeIPV4.Flags |= linux.NF_NAT_RANGE_PROTO_SPECIFIED
+	}
 	xt.NfRange.RangeSize = 1
-	xt.NfRange.RangeIPV4.Flags |= linux.NF_NAT_RANGE_MAP_IPS | linux.NF_NAT_RANGE_PROTO_SPECIFIED
-	xt.NfRange.RangeIPV4.MinPort = htons(st.Port)
+	xt.NfRange.RangeIPV4.MinPort = htons(dt.Port)
 	xt.NfRange.RangeIPV4.MaxPort = xt.NfRange.RangeIPV4.MinPort
-	copy(xt.NfRange.RangeIPV4.MinIP[:], st.Addr.AsSlice())
-	copy(xt.NfRange.RangeIPV4.MaxIP[:], st.Addr.AsSlice())
+	copy(xt.NfRange.RangeIPV4.MinIP[:], dt.Addr.AsSlice())
+	copy(xt.NfRange.RangeIPV4.MaxIP[:], dt.Addr.AsSlice())
 	return marshal.Marshal(&xt)
 }
 
@@ -82,8 +89,8 @@ func (*dnatTargetMakerV4) unmarshal(buf []byte, filter stack.IPHeaderFilter) (ta
 		return nil, syserr.ErrInvalidArgument
 	}
 
-	var st linux.XTNATTargetV0
-	st.UnmarshalUnsafe(buf)
+	var dt linux.XTNATTargetV0
+	dt.UnmarshalUnsafe(buf)
 
 	// Copy linux.XTNATTargetV0 to stack.DNATTarget.
 	target := dnatTarget{DNATTarget: stack.DNATTarget{
@@ -91,7 +98,7 @@ func (*dnatTargetMakerV4) unmarshal(buf []byte, filter stack.IPHeaderFilter) (ta
 	}}
 
 	// RangeSize should be 1.
-	nfRange := st.NfRange
+	nfRange := dt.NfRange
 	if nfRange.RangeSize != 1 {
 		nflog("dnatTargetMakerV4: bad rangesize %d", nfRange.RangeSize)
 		return nil, syserr.ErrInvalidArgument
@@ -112,7 +119,13 @@ func (*dnatTargetMakerV4) unmarshal(buf []byte, filter stack.IPHeaderFilter) (ta
 		nflog("dnatTargetMakerV4: MinIP != MaxIP (%d, %d)", nfRange.RangeIPV4.MinPort, nfRange.RangeIPV4.MaxPort)
 		return nil, syserr.ErrInvalidArgument
 	}
+	if nfRange.RangeIPV4.Flags&^(linux.NF_NAT_RANGE_MAP_IPS|linux.NF_NAT_RANGE_PROTO_SPECIFIED) != 0 {
+		nflog("dnatTargetMakerV4: unknown flags used (%x)", nfRange.RangeIPV4.Flags)
+		return nil, syserr.ErrInvalidArgument
+	}
 
+	target.ChangeAddress = nfRange.RangeIPV4.Flags&linux.NF_NAT_RANGE_MAP_IPS != 0
+	target.ChangePort = nfRange.RangeIPV4.Flags&linux.NF_NAT_RANGE_PROTO_SPECIFIED != 0
 	target.Addr = tcpip.AddrFrom4(nfRange.RangeIPV4.MinIP)
 	target.Port = ntohs(nfRange.RangeIPV4.MinPort)
 
@@ -123,34 +136,40 @@ type dnatTargetMakerR1 struct {
 	NetworkProtocol tcpip.NetworkProtocolNumber
 }
 
-func (st *dnatTargetMakerR1) id() targetID {
+func (dt *dnatTargetMakerR1) id() targetID {
 	return targetID{
 		name:            DNATTargetName,
-		networkProtocol: st.NetworkProtocol,
+		networkProtocol: dt.NetworkProtocol,
 		revision:        1,
 	}
 }
 
 func (*dnatTargetMakerR1) marshal(target target) []byte {
-	st := target.(*dnatTarget)
+	dt := target.(*dnatTarget)
 	nt := linux.XTNATTargetV1{
 		Target: linux.XTEntryTarget{
 			TargetSize: linux.SizeOfXTNATTargetV1,
-		},
-		Range: linux.NFNATRange{
-			Flags: linux.NF_NAT_RANGE_MAP_IPS | linux.NF_NAT_RANGE_PROTO_SPECIFIED,
+			Revision:   1,
 		},
 	}
 	copy(nt.Target.Name[:], DNATTargetName)
-	copy(nt.Range.MinAddr[:], st.Addr.AsSlice())
-	copy(nt.Range.MaxAddr[:], st.Addr.AsSlice())
-	nt.Range.MinProto = htons(st.Port)
+
+	if dt.ChangeAddress {
+		nt.Range.Flags |= linux.NF_NAT_RANGE_MAP_IPS
+	}
+	if dt.ChangePort {
+		nt.Range.Flags |= linux.NF_NAT_RANGE_PROTO_SPECIFIED
+	}
+
+	copy(nt.Range.MinAddr[:], dt.Addr.AsSlice())
+	copy(nt.Range.MaxAddr[:], dt.Addr.AsSlice())
+	nt.Range.MinProto = htons(dt.Port)
 	nt.Range.MaxProto = nt.Range.MinProto
 
 	return marshal.Marshal(&nt)
 }
 
-func (st *dnatTargetMakerR1) unmarshal(buf []byte, filter stack.IPHeaderFilter) (target, *syserr.Error) {
+func (dt *dnatTargetMakerR1) unmarshal(buf []byte, filter stack.IPHeaderFilter) (target, *syserr.Error) {
 	if size := linux.SizeOfXTNATTargetV1; len(buf) < size {
 		nflog("dnatTargetMakerR1: buf has insufficient size (%d) for DNAT target (%d)", len(buf), size)
 		return nil, syserr.ErrInvalidArgument
@@ -164,7 +183,6 @@ func (st *dnatTargetMakerR1) unmarshal(buf []byte, filter stack.IPHeaderFilter) 
 	var natRange linux.NFNATRange
 	natRange.UnmarshalUnsafe(buf[linux.SizeOfXTEntryTarget:])
 
-	// TODO(gvisor.dev/issue/5697): Support port or address ranges.
 	if natRange.MinAddr != natRange.MaxAddr {
 		nflog("dnatTargetMakerR1: MinAddr and MaxAddr are different")
 		return nil, syserr.ErrInvalidArgument
@@ -174,9 +192,8 @@ func (st *dnatTargetMakerR1) unmarshal(buf []byte, filter stack.IPHeaderFilter) 
 		return nil, syserr.ErrInvalidArgument
 	}
 
-	// TODO(gvisor.dev/issue/5698): Support other NF_NAT_RANGE flags.
-	if natRange.Flags != linux.NF_NAT_RANGE_MAP_IPS|linux.NF_NAT_RANGE_PROTO_SPECIFIED {
-		nflog("dnatTargetMakerR1: invalid range flags %d", natRange.Flags)
+	if natRange.Flags&^(linux.NF_NAT_RANGE_MAP_IPS|linux.NF_NAT_RANGE_PROTO_SPECIFIED) != 0 {
+		nflog("dnatTargetMakerR1: invalid flags used (%x)", natRange.Flags)
 		return nil, syserr.ErrInvalidArgument
 	}
 
@@ -184,15 +201,18 @@ func (st *dnatTargetMakerR1) unmarshal(buf []byte, filter stack.IPHeaderFilter) 
 		DNATTarget: stack.DNATTarget{
 			NetworkProtocol: filter.NetworkProtocol(),
 			Port:            ntohs(natRange.MinProto),
+			ChangeAddress:   natRange.Flags&linux.NF_NAT_RANGE_MAP_IPS != 0,
+			ChangePort:      natRange.Flags&linux.NF_NAT_RANGE_PROTO_SPECIFIED != 0,
 		},
+		revision: 1,
 	}
-	switch st.NetworkProtocol {
+	switch dt.NetworkProtocol {
 	case header.IPv4ProtocolNumber:
 		target.DNATTarget.Addr = tcpip.AddrFrom4Slice(natRange.MinAddr[:4])
 	case header.IPv6ProtocolNumber:
 		target.DNATTarget.Addr = tcpip.AddrFrom16(natRange.MinAddr)
 	default:
-		panic(fmt.Sprintf("invalid protocol number: %d", st.NetworkProtocol))
+		panic(fmt.Sprintf("invalid protocol number: %d", dt.NetworkProtocol))
 	}
 
 	return &target, nil
@@ -202,34 +222,40 @@ type dnatTargetMakerR2 struct {
 	NetworkProtocol tcpip.NetworkProtocolNumber
 }
 
-func (st *dnatTargetMakerR2) id() targetID {
+func (dt *dnatTargetMakerR2) id() targetID {
 	return targetID{
 		name:            DNATTargetName,
-		networkProtocol: st.NetworkProtocol,
+		networkProtocol: dt.NetworkProtocol,
 		revision:        2,
 	}
 }
 
 func (*dnatTargetMakerR2) marshal(target target) []byte {
-	st := target.(*dnatTarget)
+	dt := target.(*dnatTarget)
 	nt := linux.XTNATTargetV2{
 		Target: linux.XTEntryTarget{
 			TargetSize: linux.SizeOfXTNATTargetV1,
-		},
-		Range: linux.NFNATRange2{
-			Flags: linux.NF_NAT_RANGE_MAP_IPS | linux.NF_NAT_RANGE_PROTO_SPECIFIED,
+			Revision:   2,
 		},
 	}
 	copy(nt.Target.Name[:], DNATTargetName)
-	copy(nt.Range.MinAddr[:], st.Addr.AsSlice())
-	copy(nt.Range.MaxAddr[:], st.Addr.AsSlice())
-	nt.Range.MinProto = htons(st.Port)
+
+	if dt.ChangeAddress {
+		nt.Range.Flags |= linux.NF_NAT_RANGE_MAP_IPS
+	}
+	if dt.ChangePort {
+		nt.Range.Flags |= linux.NF_NAT_RANGE_PROTO_SPECIFIED
+	}
+	copy(nt.Range.MinAddr[:], dt.Addr.AsSlice())
+	copy(nt.Range.MaxAddr[:], dt.Addr.AsSlice())
+	nt.Range.MinProto = htons(dt.Port)
 	nt.Range.MaxProto = nt.Range.MinProto
 
 	return marshal.Marshal(&nt)
 }
 
-func (st *dnatTargetMakerR2) unmarshal(buf []byte, filter stack.IPHeaderFilter) (target, *syserr.Error) {
+func (dt *dnatTargetMakerR2) unmarshal(buf []byte, filter stack.IPHeaderFilter) (target, *syserr.Error) {
+	nflog("dnatTargetMakerR2 unmarshal")
 	if size := linux.SizeOfXTNATTargetV2; len(buf) < size {
 		nflog("dnatTargetMakerR2: buf has insufficient size (%d) for DNAT target (%d)", len(buf), size)
 		return nil, syserr.ErrInvalidArgument
@@ -243,7 +269,6 @@ func (st *dnatTargetMakerR2) unmarshal(buf []byte, filter stack.IPHeaderFilter) 
 	var natRange linux.NFNATRange2
 	natRange.UnmarshalUnsafe(buf[linux.SizeOfXTEntryTarget:])
 
-	// TODO(gvisor.dev/issue/5697): Support port or address ranges.
 	if natRange.MinAddr != natRange.MaxAddr {
 		nflog("dnatTargetMakerR2: MinAddr and MaxAddr are different")
 		return nil, syserr.ErrInvalidArgument
@@ -257,9 +282,8 @@ func (st *dnatTargetMakerR2) unmarshal(buf []byte, filter stack.IPHeaderFilter) 
 		return nil, syserr.ErrInvalidArgument
 	}
 
-	// TODO(gvisor.dev/issue/5698): Support other NF_NAT_RANGE flags.
-	if natRange.Flags != linux.NF_NAT_RANGE_MAP_IPS|linux.NF_NAT_RANGE_PROTO_SPECIFIED {
-		nflog("dnatTargetMakerR2: invalid range flags %d", natRange.Flags)
+	if natRange.Flags&^(linux.NF_NAT_RANGE_MAP_IPS|linux.NF_NAT_RANGE_PROTO_SPECIFIED) != 0 {
+		nflog("dnatTargetMakerR2: invalid flags used (%x)", natRange.Flags)
 		return nil, syserr.ErrInvalidArgument
 	}
 
@@ -267,15 +291,18 @@ func (st *dnatTargetMakerR2) unmarshal(buf []byte, filter stack.IPHeaderFilter) 
 		DNATTarget: stack.DNATTarget{
 			NetworkProtocol: filter.NetworkProtocol(),
 			Port:            ntohs(natRange.MinProto),
+			ChangeAddress:   natRange.Flags&linux.NF_NAT_RANGE_MAP_IPS != 0,
+			ChangePort:      natRange.Flags&linux.NF_NAT_RANGE_PROTO_SPECIFIED != 0,
 		},
+		revision: 2,
 	}
-	switch st.NetworkProtocol {
+	switch dt.NetworkProtocol {
 	case header.IPv4ProtocolNumber:
 		target.DNATTarget.Addr = tcpip.AddrFrom4Slice(natRange.MinAddr[:4])
 	case header.IPv6ProtocolNumber:
 		target.DNATTarget.Addr = tcpip.AddrFrom16(natRange.MinAddr)
 	default:
-		panic(fmt.Sprintf("invalid protocol number: %d", st.NetworkProtocol))
+		panic(fmt.Sprintf("invalid protocol number: %d", dt.NetworkProtocol))
 	}
 
 	return &target, nil
