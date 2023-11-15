@@ -553,6 +553,15 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	// restore the state of multiple containers, nor exec processes.
 	cm.l.sandboxID = o.SandboxID
 	cm.l.mu.Lock()
+
+	// Set new container ID if it has changed.
+	tasks := cm.l.k.TaskSet().Root.Tasks()
+	if tasks[0].ContainerID() != o.SandboxID { // There must be at least 1 task.
+		for _, task := range tasks {
+			task.RestoreContainerID(o.SandboxID)
+		}
+	}
+
 	eid := execID{cid: o.SandboxID}
 	cm.l.processes = map[execID]*execProcess{
 		eid: {
