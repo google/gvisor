@@ -34,6 +34,9 @@ type ProgramBuilder struct {
 	// Maps label names to label objects.
 	labels map[string]*label
 
+	// Maps label sources to the label name it references.
+	jumpSourceToLabel map[source]string
+
 	// unusableLabels are labels that are added before being referenced in a
 	// jump. Any labels added this way cannot be referenced later in order to
 	// avoid backwards references.
@@ -46,8 +49,9 @@ type ProgramBuilder struct {
 // NewProgramBuilder creates a new ProgramBuilder instance.
 func NewProgramBuilder() *ProgramBuilder {
 	return &ProgramBuilder{
-		labels:         map[string]*label{},
-		unusableLabels: map[string]bool{},
+		labels:            map[string]*label{},
+		jumpSourceToLabel: map[source]string{},
+		unusableLabels:    map[string]bool{},
 	}
 }
 
@@ -75,8 +79,7 @@ type source struct {
 	// Program line where the label reference is present.
 	line int
 
-	// True if label reference is in the 'jump if true' part of the jump.
-	// False if label reference is in the 'jump if false' part of the jump.
+	// Which type of jump is referencing this label.
 	jt JumpType
 }
 
@@ -151,7 +154,12 @@ func (b *ProgramBuilder) addLabelSource(labelName string, t JumpType) {
 		l = &label{sources: make([]source, 0), target: -1}
 		b.labels[labelName] = l
 	}
-	l.sources = append(l.sources, source{line: len(b.instructions), jt: t})
+	src := source{line: len(b.instructions), jt: t}
+	l.sources = append(l.sources, src)
+	if existingLabel, found := b.jumpSourceToLabel[src]; found {
+		panic(fmt.Sprintf("label %q already present at source %v; one source may only have one label", existingLabel, src))
+	}
+	b.jumpSourceToLabel[src] = labelName
 }
 
 func (b *ProgramBuilder) resolveLabels() error {
@@ -342,20 +350,14 @@ func (f ProgramFragment) Outcomes() FragmentOutcomes {
 			}
 		case Jmp:
 			for _, offset := range ins.JumpOffsets() {
-				var foundLabelName string
 				var foundLabel *label
-				for labelName, label := range f.b.labels {
-					for _, s := range label.sources {
-						if s.jt == offset.Type && s.line == pc {
-							foundLabelName = labelName
-							foundLabel = label
-							break
-						}
+				foundLabelName, found := f.b.jumpSourceToLabel[source{line: pc, jt: offset.Type}]
+				if found {
+					foundLabel = f.b.labels[foundLabelName]
+					if foundLabel.target == -1 {
+						outcomes.MayJumpToUnresolvedLabels[foundLabelName] = struct{}{}
+						continue
 					}
-				}
-				if foundLabel != nil && foundLabel.target == -1 {
-					outcomes.MayJumpToUnresolvedLabels[foundLabelName] = struct{}{}
-					continue
 				}
 				var target int
 				if foundLabel != nil {
