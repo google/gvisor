@@ -32,12 +32,14 @@ const SNATTargetName = "SNAT"
 
 type snatTarget struct {
 	stack.SNATTarget
+	revision uint8
 }
 
 func (st *snatTarget) id() targetID {
 	return targetID{
 		name:            SNATTargetName,
 		networkProtocol: st.NetworkProtocol,
+		revision:        st.revision,
 	}
 }
 
@@ -62,8 +64,13 @@ func (*snatTargetMakerV4) marshal(target target) []byte {
 	}
 	copy(xt.Target.Name[:], SNATTargetName)
 
+	if st.ChangeAddress {
+		xt.NfRange.RangeIPV4.Flags |= linux.NF_NAT_RANGE_MAP_IPS
+	}
+	if st.ChangePort {
+		xt.NfRange.RangeIPV4.Flags |= linux.NF_NAT_RANGE_PROTO_SPECIFIED
+	}
 	xt.NfRange.RangeSize = 1
-	xt.NfRange.RangeIPV4.Flags |= linux.NF_NAT_RANGE_MAP_IPS | linux.NF_NAT_RANGE_PROTO_SPECIFIED
 	xt.NfRange.RangeIPV4.MinPort = htons(st.Port)
 	xt.NfRange.RangeIPV4.MaxPort = xt.NfRange.RangeIPV4.MinPort
 	copy(xt.NfRange.RangeIPV4.MinIP[:], st.Addr.AsSlice())
@@ -112,7 +119,13 @@ func (*snatTargetMakerV4) unmarshal(buf []byte, filter stack.IPHeaderFilter) (ta
 		nflog("snatTargetMakerV4: MinIP != MaxIP (%d, %d)", nfRange.RangeIPV4.MinPort, nfRange.RangeIPV4.MaxPort)
 		return nil, syserr.ErrInvalidArgument
 	}
+	if nfRange.RangeIPV4.Flags&^(linux.NF_NAT_RANGE_MAP_IPS|linux.NF_NAT_RANGE_PROTO_SPECIFIED) != 0 {
+		nflog("snatTargetMakerV4: unknown flags used (%x)", nfRange.RangeIPV4.Flags)
+		return nil, syserr.ErrInvalidArgument
+	}
 
+	target.ChangeAddress = nfRange.RangeIPV4.Flags&linux.NF_NAT_RANGE_MAP_IPS != 0
+	target.ChangePort = nfRange.RangeIPV4.Flags&linux.NF_NAT_RANGE_PROTO_SPECIFIED != 0
 	target.Addr = tcpip.AddrFrom4(nfRange.RangeIPV4.MinIP)
 	target.Port = ntohs(nfRange.RangeIPV4.MinPort)
 
@@ -136,12 +149,17 @@ func (*snatTargetMakerR1) marshal(target target) []byte {
 	nt := linux.XTNATTargetV1{
 		Target: linux.XTEntryTarget{
 			TargetSize: linux.SizeOfXTNATTargetV1,
-		},
-		Range: linux.NFNATRange{
-			Flags: linux.NF_NAT_RANGE_MAP_IPS | linux.NF_NAT_RANGE_PROTO_SPECIFIED,
+			Revision:   1,
 		},
 	}
 	copy(nt.Target.Name[:], SNATTargetName)
+
+	if st.ChangeAddress {
+		nt.Range.Flags |= linux.NF_NAT_RANGE_MAP_IPS
+	}
+	if st.ChangePort {
+		nt.Range.Flags |= linux.NF_NAT_RANGE_PROTO_SPECIFIED
+	}
 	copy(nt.Range.MinAddr[:], st.Addr.AsSlice())
 	copy(nt.Range.MaxAddr[:], st.Addr.AsSlice())
 	nt.Range.MinProto = htons(st.Port)
@@ -164,7 +182,6 @@ func (st *snatTargetMakerR1) unmarshal(buf []byte, filter stack.IPHeaderFilter) 
 	var natRange linux.NFNATRange
 	natRange.UnmarshalUnsafe(buf[linux.SizeOfXTEntryTarget:])
 
-	// TODO(gvisor.dev/issue/5697): Support port or address ranges.
 	if natRange.MinAddr != natRange.MaxAddr {
 		nflog("snatTargetMakerR1: MinAddr and MaxAddr are different")
 		return nil, syserr.ErrInvalidArgument
@@ -174,9 +191,8 @@ func (st *snatTargetMakerR1) unmarshal(buf []byte, filter stack.IPHeaderFilter) 
 		return nil, syserr.ErrInvalidArgument
 	}
 
-	// TODO(gvisor.dev/issue/5698): Support other NF_NAT_RANGE flags.
-	if natRange.Flags != linux.NF_NAT_RANGE_MAP_IPS|linux.NF_NAT_RANGE_PROTO_SPECIFIED {
-		nflog("snatTargetMakerR1: invalid range flags %d", natRange.Flags)
+	if natRange.Flags&^(linux.NF_NAT_RANGE_MAP_IPS|linux.NF_NAT_RANGE_PROTO_SPECIFIED) != 0 {
+		nflog("snatTargetMakerR1: unknown flags used (%x)", natRange.Flags)
 		return nil, syserr.ErrInvalidArgument
 	}
 
@@ -184,7 +200,10 @@ func (st *snatTargetMakerR1) unmarshal(buf []byte, filter stack.IPHeaderFilter) 
 		SNATTarget: stack.SNATTarget{
 			NetworkProtocol: filter.NetworkProtocol(),
 			Port:            ntohs(natRange.MinProto),
+			ChangeAddress:   natRange.Flags&linux.NF_NAT_RANGE_MAP_IPS != 0,
+			ChangePort:      natRange.Flags&linux.NF_NAT_RANGE_PROTO_SPECIFIED != 0,
 		},
+		revision: 1,
 	}
 	switch st.NetworkProtocol {
 	case header.IPv4ProtocolNumber:
@@ -215,12 +234,17 @@ func (*snatTargetMakerR2) marshal(target target) []byte {
 	nt := linux.XTNATTargetV2{
 		Target: linux.XTEntryTarget{
 			TargetSize: linux.SizeOfXTNATTargetV1,
-		},
-		Range: linux.NFNATRange2{
-			Flags: linux.NF_NAT_RANGE_MAP_IPS | linux.NF_NAT_RANGE_PROTO_SPECIFIED,
+			Revision:   2,
 		},
 	}
 	copy(nt.Target.Name[:], SNATTargetName)
+
+	if st.ChangeAddress {
+		nt.Range.Flags |= linux.NF_NAT_RANGE_MAP_IPS
+	}
+	if st.ChangePort {
+		nt.Range.Flags |= linux.NF_NAT_RANGE_PROTO_SPECIFIED
+	}
 	copy(nt.Range.MinAddr[:], st.Addr.AsSlice())
 	copy(nt.Range.MaxAddr[:], st.Addr.AsSlice())
 	nt.Range.MinProto = htons(st.Port)
@@ -243,7 +267,6 @@ func (st *snatTargetMakerR2) unmarshal(buf []byte, filter stack.IPHeaderFilter) 
 	var natRange linux.NFNATRange2
 	natRange.UnmarshalUnsafe(buf[linux.SizeOfXTEntryTarget:])
 
-	// TODO(gvisor.dev/issue/5697): Support port or address ranges.
 	if natRange.MinAddr != natRange.MaxAddr {
 		nflog("snatTargetMakerR2: MinAddr and MaxAddr are different")
 		return nil, syserr.ErrInvalidArgument
@@ -257,9 +280,8 @@ func (st *snatTargetMakerR2) unmarshal(buf []byte, filter stack.IPHeaderFilter) 
 		return nil, syserr.ErrInvalidArgument
 	}
 
-	// TODO(gvisor.dev/issue/5698): Support other NF_NAT_RANGE flags.
-	if natRange.Flags != linux.NF_NAT_RANGE_MAP_IPS|linux.NF_NAT_RANGE_PROTO_SPECIFIED {
-		nflog("snatTargetMakerR2: invalid range flags %d", natRange.Flags)
+	if natRange.Flags&^(linux.NF_NAT_RANGE_MAP_IPS|linux.NF_NAT_RANGE_PROTO_SPECIFIED) != 0 {
+		nflog("snatTargetMakerR1: unknown flags used (%x)", natRange.Flags)
 		return nil, syserr.ErrInvalidArgument
 	}
 
@@ -267,7 +289,10 @@ func (st *snatTargetMakerR2) unmarshal(buf []byte, filter stack.IPHeaderFilter) 
 		SNATTarget: stack.SNATTarget{
 			NetworkProtocol: filter.NetworkProtocol(),
 			Port:            ntohs(natRange.MinProto),
+			ChangeAddress:   natRange.Flags&linux.NF_NAT_RANGE_MAP_IPS != 0,
+			ChangePort:      natRange.Flags&linux.NF_NAT_RANGE_PROTO_SPECIFIED != 0,
 		},
+		revision: 2,
 	}
 	switch st.NetworkProtocol {
 	case header.IPv4ProtocolNumber:

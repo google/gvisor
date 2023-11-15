@@ -368,6 +368,14 @@ func TestNATOutDNAT(t *testing.T) {
 	singleTest(t, &NATOutDNAT{})
 }
 
+func TestNATOutDNATAddrOnly(t *testing.T) {
+	singleTest(t, &NATOutDNATAddrOnly{})
+}
+
+func TestNATOutDNATPortOnly(t *testing.T) {
+	singleTest(t, &NATOutDNATPortOnly{})
+}
+
 func TestNATPreRedirectIP(t *testing.T) {
 	singleTest(t, &NATPreRedirectIP{})
 }

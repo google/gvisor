@@ -1324,7 +1324,7 @@ var (
 			setupNAT: func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, snatAddr, _ tcpip.Address, _ uint16) {
 				t.Helper()
 
-				setupSNAT(t, s, netProto, transProto, &stack.SNATTarget{NetworkProtocol: netProto, Addr: snatAddr})
+				setupSNAT(t, s, netProto, transProto, &stack.SNATTarget{NetworkProtocol: netProto, Addr: snatAddr, ChangeAddress: true, ChangePort: true})
 			},
 		},
 		{
@@ -1342,7 +1342,7 @@ var (
 		setupNAT: func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, _, dnatAddr tcpip.Address, dnatPort uint16) {
 			t.Helper()
 
-			setupDNAT(t, s, netProto, transProto, &stack.DNATTarget{NetworkProtocol: netProto, Addr: dnatAddr, Port: dnatPort})
+			setupDNAT(t, s, netProto, transProto, &stack.DNATTarget{NetworkProtocol: netProto, Addr: dnatAddr, Port: dnatPort, ChangeAddress: true, ChangePort: true})
 		},
 	}
 
@@ -1364,7 +1364,7 @@ var (
 			setupNAT: func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, snatAddr, dnatAddr tcpip.Address, dnatPort uint16) {
 				t.Helper()
 
-				setupTwiceNAT(t, s, netProto, transProto, dnatAddr, &stack.DNATTarget{NetworkProtocol: netProto, Addr: dnatAddr, Port: dnatPort}, &stack.MasqueradeTarget{NetworkProtocol: netProto})
+				setupTwiceNAT(t, s, netProto, transProto, dnatAddr, &stack.DNATTarget{NetworkProtocol: netProto, Addr: dnatAddr, Port: dnatPort, ChangeAddress: true, ChangePort: true}, &stack.MasqueradeTarget{NetworkProtocol: netProto})
 			},
 		},
 		{
@@ -1372,7 +1372,7 @@ var (
 			setupNAT: func(t *testing.T, s *stack.Stack, netProto tcpip.NetworkProtocolNumber, transProto tcpip.TransportProtocolNumber, snatAddr, dnatAddr tcpip.Address, dnatPort uint16) {
 				t.Helper()
 
-				setupTwiceNAT(t, s, netProto, transProto, dnatAddr, &stack.DNATTarget{NetworkProtocol: netProto, Addr: dnatAddr, Port: dnatPort}, &stack.SNATTarget{NetworkProtocol: netProto, Addr: snatAddr})
+				setupTwiceNAT(t, s, netProto, transProto, dnatAddr, &stack.DNATTarget{NetworkProtocol: netProto, Addr: dnatAddr, Port: dnatPort, ChangeAddress: true, ChangePort: true}, &stack.SNATTarget{NetworkProtocol: netProto, Addr: snatAddr, ChangeAddress: true, ChangePort: true})
 			},
 		},
 	}
@@ -2484,7 +2484,7 @@ func TestNATICMPError(t *testing.T) {
 													CheckProtocol:  true,
 													InputInterface: utils.RouterNIC2Name,
 												},
-												Target: &stack.DNATTarget{NetworkProtocol: test.netProto, Addr: test.host1Addr, Port: dstPort},
+												Target: &stack.DNATTarget{NetworkProtocol: test.netProto, Addr: test.host1Addr, Port: dstPort, ChangeAddress: true, ChangePort: true},
 											},
 											{
 												Target: &stack.AcceptTarget{},
@@ -2826,7 +2826,7 @@ func TestSNATHandlePortOrIdentConflicts(t *testing.T) {
 		{
 			name: "SNAT",
 			target: func(netProto tcpip.NetworkProtocolNumber, addr tcpip.Address) stack.Target {
-				return &stack.SNATTarget{NetworkProtocol: netProto, Addr: addr}
+				return &stack.SNATTarget{NetworkProtocol: netProto, Addr: addr, ChangeAddress: true, ChangePort: true}
 			},
 		},
 	}
