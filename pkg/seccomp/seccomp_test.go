@@ -1383,7 +1383,7 @@ func TestOrderRuleSets(t *testing.T) {
 	for _, test := range []struct {
 		name     string
 		ruleSets []RuleSet
-		options  ProgramOptions
+		options  ProgramOptions // Optimizations are always enabled regardless of this
 		want     orderedRuleSets
 		wantErr  bool
 	}{
@@ -1896,7 +1896,8 @@ func TestOrderRuleSets(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			got, gotErr := orderRuleSets(test.ruleSets, test.options)
+			test.options.Optimize = true
+			got, _, gotErr := orderRuleSets(test.ruleSets, test.options)
 			if (gotErr != nil) != test.wantErr {
 				t.Errorf("got error: %v, want error: %v", gotErr, test.wantErr)
 			}
