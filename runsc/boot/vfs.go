@@ -1196,7 +1196,7 @@ func tpuProxyRegisterDevices(info *containerInfo, vfsObj *vfs.VirtualFilesystem)
 	}
 	// At this point /sys/devices/pci0000:00/<pci_address>/accel/accel# contains
 	// all the TPU devices on the host. Enumerate them and register TPU devices.
-	pciAddrs, err := filepath.Glob("/sys/devices/pci0000:00/*")
+	pciAddrs, err := filepath.Glob("/sys/devices/pci0000:00/*/accel/accel*")
 	if err != nil {
 		return fmt.Errorf("enumerating PCI device files: %w", err)
 	}
@@ -1211,7 +1211,7 @@ func tpuProxyRegisterDevices(info *containerInfo, vfsObj *vfs.VirtualFilesystem)
 			return fmt.Errorf("parsing PCI device number: %w", err)
 		}
 		var deviceIDBytes []byte
-		if deviceIDBytes, err = os.ReadFile(path.Join(pciPath, "device")); err != nil {
+		if deviceIDBytes, err = os.ReadFile(path.Join(pciPath, "device/device")); err != nil {
 			return fmt.Errorf("reading PCI device ID: %w", err)
 		}
 		deviceIDStr := strings.Replace(string(deviceIDBytes), "0x", "", -1)
