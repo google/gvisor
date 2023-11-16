@@ -86,11 +86,11 @@ func (f *FDTable) CurrentMaxFDs() int {
 	return len(slice) * fdsPerBucket
 }
 
-// set sets the file description referred to by fd to file. If
-// file is non-nil, it takes a reference on them. If setAll replaces
-// an existing file description, it returns it with the FDTable's reference
-// transferred to the caller, which must call f.drop on the returned
-// file after unlocking f.mu.
+// set sets the file description referred to by fd to file. If file is non-nil,
+// f takes a reference on it. If file is nil, the file entry at fd is cleared.
+// If set replaces an existing file description that is different from `file`,
+// it returns it with the FDTable's reference transferred to the caller, which
+// must call f.drop on the returned file after unlocking f.mu.
 //
 // Precondition: mu must be held.
 func (f *FDTable) set(fd int32, file *vfs.FileDescription, flags FDFlags) *vfs.FileDescription {
