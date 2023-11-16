@@ -122,6 +122,16 @@ type Platform interface {
 
 	// SyscallFilters returns syscalls made exclusively by this platform.
 	SyscallFilters() seccomp.SyscallRules
+
+	// HottestSyscalls returns the list of syscall numbers that this platform
+	// calls most often, most-frequently-called first. No more than a dozen
+	// syscalls. Returning an empty or a nil slice is OK.
+	// This is used to produce a more efficient seccomp-bpf program that can
+	// check for the most frequently called syscalls first.
+	// What matters here is only the frequency at which a syscall is called,
+	// not the total amount of CPU time that is used to process it in the host
+	// kernel.
+	HottestSyscalls() []uintptr
 }
 
 // NoCPUPreemptionDetection implements Platform.DetectsCPUPreemption and
@@ -189,6 +199,15 @@ type DoesNotOwnPageTables struct{}
 // OwnsPageTables implements Platform.OwnsPageTables.
 func (DoesNotOwnPageTables) OwnsPageTables() bool {
 	return false
+}
+
+// HottestSyscallsNotSpecified implements Platform.HottestSyscalls and does
+// not return any syscall as being hot.
+type HottestSyscallsNotSpecified struct{}
+
+// HottestSyscalls implements Platform.HottestSyscalls.
+func (HottestSyscallsNotSpecified) HottestSyscalls() []uintptr {
+	return nil
 }
 
 // MemoryManager represents an abstraction above the platform address space

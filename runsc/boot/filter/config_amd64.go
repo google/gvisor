@@ -44,3 +44,7 @@ func init() {
 func archFstatAtSysNo() uintptr {
 	return unix.SYS_NEWFSTATAT
 }
+
+func archSpecificHotSyscalls() []uintptr {
+	return nil // TODO(b/298726675): Populate.
+}
