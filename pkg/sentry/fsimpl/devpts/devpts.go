@@ -334,6 +334,9 @@ func (i *rootInode) IterDirents(ctx context.Context, mnt *vfs.Mount, cb vfs.Iter
 	i.mu.Lock()
 	defer i.mu.Unlock()
 	i.InodeAttrs.TouchAtime(ctx, mnt)
+	if relOffset >= int64(len(i.replicas)) {
+		return offset, nil
+	}
 	ids := make([]int, 0, len(i.replicas))
 	for id := range i.replicas {
 		ids = append(ids, int(id))
