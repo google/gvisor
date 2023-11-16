@@ -587,6 +587,31 @@ func ctrlClientSystemGetBuildVersion(fi *frontendIoctlState, ioctlParams *nvgpu.
 	return n, nil
 }
 
+func ctrlDevGpuGetClasslist(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters) (uintptr, error) {
+	var ctrlParams nvgpu.NV0080_CTRL_CMD_GPU_GET_CLASSLIST_PARAMS
+	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
+		return 0, linuxerr.EINVAL
+	}
+
+	if _, err := ctrlParams.CopyIn(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+		return 0, err
+	}
+
+	// This command has two modes. If the classList pointer is NULL, only simple command handling
+	// is required; see src/common/sdk/nvidia/inc/ctrl/ctrl0080gpu.h.
+	if ctrlParams.ClassList == 0 {
+		return rmControlSimple(fi, ioctlParams)
+	}
+
+	// classList pointer is not NULL. Do classList buffer management.
+	classList := make([]uint32, ctrlParams.NumClasses)
+	n, err := ctrlDevGpuGetClasslistInvoke(fi, ioctlParams, &ctrlParams, classList)
+	if err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
 func ctrlSubdevFIFODisableChannels(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters) (uintptr, error) {
 	var ctrlParams nvgpu.NV2080_CTRL_FIFO_DISABLE_CHANNELS_PARAMS
 	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
