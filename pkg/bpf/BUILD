@@ -9,6 +9,7 @@ go_library(
     name = "bpf",
     srcs = [
         "bpf.go",
+        "bpf_unsafe.go",
         "decoder.go",
         "input_bytes.go",
         "interpreter.go",

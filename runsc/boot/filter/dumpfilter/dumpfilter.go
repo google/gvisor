@@ -30,9 +30,35 @@ import (
 
 // Flags.
 var (
-	output  = flag.String("output", "fancy", "Output type: 'fancy' (human-readable with line numbers resolved), 'plain' (diffable but still human-readable output), 'bytecode' (dump raw bytecode)")
-	nvproxy = flag.Bool("nvproxy", false, "Enable nvproxy in filter configuration")
+	output        = flag.String("output", "fancy", "Output type: 'fancy' (human-readable with line numbers resolved), 'plain' (diffable but still human-readable output), 'bytecode' (dump raw bytecode)")
+	nvproxy       = flag.Bool("nvproxy", false, "Enable nvproxy in filter configuration")
+	denyAction    = flag.String("deny-action", "default", "What to do if the syscall matches the 'deny' ruleset (one of: errno, kill_process, kill_thread)")
+	defaultAction = flag.String("default-action", "default", "What to do if all the syscall rules fail to match (one of: errno, kill_process, kill_thread)")
+	badArchAction = flag.String("bad-arch-action", "default", "What to do if all the architecture field mismatches (one of: errno, kill_process, kill_thread)")
+	out           = flag.String("out", "/dev/stdout", "Where to write the filter output (defaults to standard output)")
 )
+
+func action(s string) linux.BPFAction {
+	switch s {
+	case "default":
+		def, err := seccomp.DefaultAction()
+		if err != nil {
+			log.Warningf("cannot determine default seccomp action: %v", err)
+			os.Exit(1)
+		}
+		return def
+	case "errno":
+		return linux.SECCOMP_RET_ERRNO
+	case "kill_process":
+		return linux.SECCOMP_RET_KILL_PROCESS
+	case "kill_thread":
+		return linux.SECCOMP_RET_KILL_THREAD
+	default:
+		log.Warningf("invalid action %q (want one of: errno, kill_process, kill_thread)", s)
+		os.Exit(1)
+		panic("unreachable")
+	}
+}
 
 func main() {
 	flag.Parse()
@@ -41,16 +67,20 @@ func main() {
 		NVProxy:  *nvproxy,
 	}
 	rules, denyRules := filter.Rules(opt)
+
+	seccompOpts := filter.SeccompOptions(opt)
+	seccompOpts.DefaultAction = action(*defaultAction)
+	seccompOpts.BadArchAction = action(*badArchAction)
 	insns, stats, err := seccomp.BuildProgram([]seccomp.RuleSet{
 		{
 			Rules:  denyRules,
-			Action: linux.SECCOMP_RET_ERRNO,
+			Action: action(*denyAction),
 		},
 		{
 			Rules:  rules,
 			Action: linux.SECCOMP_RET_ALLOW,
 		},
-	}, filter.SeccompOptions(opt))
+	}, seccompOpts)
 	if err != nil {
 		log.Warningf("%v", err)
 		os.Exit(1)
@@ -61,6 +91,12 @@ func main() {
 	log.Infof("Rule optimization passes duration: %v", stats.RuleOptimizeDuration)
 	log.Infof("BPF optimization passes duration: %v", stats.BPFOptimizeDuration)
 	log.Infof("Total duration: %v", stats.BuildDuration+stats.RuleOptimizeDuration+stats.BPFOptimizeDuration)
+	outFile, err := os.Create(*out)
+	if err != nil {
+		log.Warningf("cannot open output file %q: %v", *out, err)
+		os.Exit(1)
+	}
+	defer outFile.Close()
 	switch *output {
 	case "fancy":
 		dump, err := bpf.DecodeInstructions(insns)
@@ -68,13 +104,13 @@ func main() {
 			log.Warningf("%v", err)
 			os.Exit(1)
 		}
-		fmt.Print(dump)
+		fmt.Fprint(outFile, dump)
 	case "plain":
 		for _, ins := range insns {
-			fmt.Println(ins.String())
+			fmt.Fprint(outFile, ins.String())
 		}
 	case "bytecode":
-		if _, err := os.Stdout.WriteString(InstructionsToBytecode(insns)); err != nil {
+		if _, err := outFile.WriteString(InstructionsToBytecode(insns)); err != nil {
 			log.Warningf("cannot write bytecode to stdout: %v", err)
 			os.Exit(1)
 		}

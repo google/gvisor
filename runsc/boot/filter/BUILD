@@ -67,12 +67,19 @@ secbench_test(
 
 go_test(
     name = "filter_fuzz_test",
-    srcs = ["filter_fuzz_test.go"],
+    srcs = [
+        "filter_fuzz_golden_test.go",
+        "filter_fuzz_test.go",
+    ],
+    data = ["filter_fuzz_golden.bpf"],
     deps = [
         ":filter",
         "//pkg/abi/linux",
+        "//pkg/bpf",
         "//pkg/seccomp",
         "//pkg/sentry/platform/systrap",
+        "//pkg/test/testutil",
         "//test/secfuzz",
+        "@org_golang_x_sys//unix:go_default_library",
     ],
 )

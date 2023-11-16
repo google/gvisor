@@ -92,7 +92,9 @@ func Install(rules SyscallRules, denyRules SyscallRules, options ProgramOptions)
 	return nil
 }
 
-func defaultAction() (linux.BPFAction, error) {
+// DefaultAction returns a sane default for a failure to match
+// a seccomp-bpf filter. Either kill the process, or trap.
+func DefaultAction() (linux.BPFAction, error) {
 	available, err := isKillProcessAvailable()
 	if err != nil {
 		return 0, err
@@ -325,7 +327,7 @@ type ProgramOptions struct {
 
 // DefaultProgramOptions returns the default program options.
 func DefaultProgramOptions() ProgramOptions {
-	action, err := defaultAction()
+	action, err := DefaultAction()
 	if err != nil {
 		panic(fmt.Sprintf("cannot determine default seccomp action: %v", err))
 	}

@@ -458,6 +458,11 @@ run-benchmark: load-benchmarks ## Runs single benchmark and optionally sends dat
 	@$(call run_benchmark,$(RUNTIME))
 .PHONY: run-benchmark
 
+## Seccomp targets.
+seccomp-sentry-filters:  # Dumps seccomp-bpf program for the Sentry binary.
+	@$(call run,//runsc/boot/filter/dumpfilter,$(ARGS))
+.PHONY: seccomp-sentry-filters
+
 ##
 ## Website & documentation helpers.
 ##
