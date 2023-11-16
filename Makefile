@@ -331,6 +331,8 @@ iptables-tests: load-iptables $(RUNTIME_BIN)
 	@#$(call test,--test_env=RUNTIME=runc //test/iptables:iptables_test)
 	@$(call install_runtime,$(RUNTIME),--net-raw)
 	@$(call test_runtime,$(RUNTIME),--test_env=TEST_NET_RAW=true //test/iptables:iptables_test)
+	@$(call install_runtime,$(RUNTIME)-nftables,--net-raw --reproduce-nftables)
+	@$(call test_runtime,$(RUNTIME)-nftables, --test_output=all //test/iptables:nftables_test --test_arg=$(RUNTIME)-nftables)
 .PHONY: iptables-tests
 
 packetdrill-tests: load-packetdrill $(RUNTIME_BIN)
