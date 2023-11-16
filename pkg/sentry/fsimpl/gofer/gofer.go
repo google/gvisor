@@ -98,6 +98,9 @@ const (
 	cacheRemoteRevalidating  = "remote_revalidating"
 )
 
+// SupportedMountOptions is the set of mount options that can be set externally.
+var SupportedMountOptions = []string{moptOverlayfsStaleRead, moptDisableFileHandleSharing}
+
 const (
 	defaultMaxCachedDentries  = 1000
 	maxCachedNegativeChildren = 1000
