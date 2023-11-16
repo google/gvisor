@@ -774,7 +774,7 @@ func (t *Task) NewFDFrom(minFD int32, file *vfs.FileDescription, flags FDFlags) 
 // This automatically passes the task as the context.
 //
 // Precondition: same as FDTable.
-func (t *Task) NewFDAt(fd int32, file *vfs.FileDescription, flags FDFlags) error {
+func (t *Task) NewFDAt(fd int32, file *vfs.FileDescription, flags FDFlags) (*vfs.FileDescription, error) {
 	return t.fdTable.NewFDAt(t, fd, file, flags)
 }
 

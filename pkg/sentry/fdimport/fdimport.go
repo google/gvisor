@@ -93,8 +93,13 @@ func Import(ctx context.Context, fdTable *kernel.FDTable, console bool, uid auth
 			hostFD.Release() // FD is transferred to host FD.
 		}
 
-		if err := fdTable.NewFDAt(ctx, int32(appFD), appFile, fdFlags[hostFD]); err != nil {
+		df, err := fdTable.NewFDAt(ctx, int32(appFD), appFile, fdFlags[hostFD])
+		if err != nil {
 			return nil, err
+		}
+		if df != nil {
+			df.DecRef(ctx)
+			return nil, fmt.Errorf("app FD %d displaced while importing FDs", appFD)
 		}
 	}
 	if ttyFile == nil {

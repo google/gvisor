@@ -562,7 +562,7 @@ func dup3(t *kernel.Task, oldfd, newfd int32, flags uint32) (uintptr, *kernel.Sy
 	}
 	defer file.DecRef(t)
 
-	err := t.NewFDAt(newfd, file, kernel.FDFlags{
+	df, err := t.NewFDAt(newfd, file, kernel.FDFlags{
 		CloseOnExec: flags&linux.O_CLOEXEC != 0,
 	})
 	if linuxerr.Equals(linuxerr.EMFILE, err) {
@@ -570,6 +570,13 @@ func dup3(t *kernel.Task, oldfd, newfd int32, flags uint32) (uintptr, *kernel.Sy
 	}
 	if err != nil {
 		return 0, nil, err
+	}
+	if df != nil {
+		// "If the file descriptor newfd was previously open, it is closed
+		// before being reused; the close is performed silently (i.e., any
+		// errors during the close are not reported by dup2())." - dup(2)
+		_ = df.OnClose(t)
+		df.DecRef(t)
 	}
 	return uintptr(newfd), nil, nil
 }
