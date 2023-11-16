@@ -642,19 +642,38 @@ type umountRecursiveOptions struct {
 	propagate bool
 }
 
+// shouldUmount returns if this mount should be disconnected from its parent.
+// It is analogous to fs/namespace.c:disconnect_mount() in Linux.
+//
+// +checklocks:vfs.mountMu
+func (vfs *VirtualFilesystem) shouldUmount(mnt *Mount, opts *umountRecursiveOptions) bool {
+	// Always disconnect when it's not a lazy unmount.
+	if opts.eager {
+		return true
+	}
+	// If a mount does not have a parent, it won't be disconnected but will be
+	// DecRef-ed.
+	if mnt.parent() == nil {
+		return true
+	}
+	// Always unmount if the parent is nor marked as unmounted.
+	if !mnt.parent().umounted {
+		return true
+	}
+	// If the parent is marked as unmounted, we can only unmount is
+	// UMOUNT_CONNECTED is false.
+	if !opts.disconnectHierarchy {
+		return false
+	}
+	return true
+}
+
 // umountTreeLocked marks mnt and its descendants as umounted.
 //
 // umountTreeLocked is analogous to Linux's fs/namespace.c:umount_tree().
 // +checklocks:vfs.mountMu
 func (vfs *VirtualFilesystem) umountTreeLocked(mnt *Mount, opts *umountRecursiveOptions) {
-	submounts := mnt.submountsLocked()
-	var umountMnts []*Mount
-	if opts.disconnectHierarchy {
-		umountMnts = submounts
-	} else {
-		umountMnts = []*Mount{mnt}
-	}
-
+	umountMnts := mnt.submountsLocked()
 	for _, mnt := range umountMnts {
 		vfs.umount(mnt)
 	}
@@ -664,16 +683,7 @@ func (vfs *VirtualFilesystem) umountTreeLocked(mnt *Mount, opts *umountRecursive
 
 	vfs.mounts.seq.BeginWrite()
 	for _, mnt := range umountMnts {
-		vfs.delayDecRef(mnt)
-		if parent := mnt.parent(); parent != nil {
-			vfs.delayDecRef(vfs.disconnectLocked(mnt))
-		}
-		vfs.setPropagation(mnt, linux.MS_PRIVATE)
-	}
-	vfs.mounts.seq.EndWrite()
-
-	if opts.eager {
-		for _, mnt := range submounts {
+		if opts.eager {
 			for {
 				refs := mnt.refs.Load()
 				if refs < 0 {
@@ -684,12 +694,27 @@ func (vfs *VirtualFilesystem) umountTreeLocked(mnt *Mount, opts *umountRecursive
 				}
 			}
 		}
+		if mnt.parent() != nil {
+			if vfs.shouldUmount(mnt, opts) {
+				vfs.delayDecRef(vfs.disconnectLocked(mnt))
+			} else {
+				// Restore mnt in it's parent children list, but leave it marked as
+				// unmounted. These partly unmounted mounts are cleaned up in
+				// vfs.forgetDeadMountpoints and Mount.destroy.
+				mnt.parent().children[mnt] = struct{}{}
+			}
+		}
+		vfs.setPropagation(mnt, linux.MS_PRIVATE)
 	}
+	vfs.mounts.seq.EndWrite()
 }
 
 // +checklocks:vfs.mountMu
 func (vfs *VirtualFilesystem) umount(mnt *Mount) {
-	mnt.umounted = true
+	if !mnt.umounted {
+		mnt.umounted = true
+		vfs.delayDecRef(mnt)
+	}
 	if parent := mnt.parent(); parent != nil {
 		delete(parent.children, mnt)
 	}
@@ -715,14 +740,17 @@ func (vfs *VirtualFilesystem) changeMountpoint(mnt *Mount, mp VirtualDentry) {
 //   - vfs.mountMu must be locked.
 //   - vfs.mounts.seq must be in a writer critical section.
 //   - d.mu must be locked.
-//   - mnt.parent() == nil, i.e. mnt must not already be connected.
+//   - mnt.parent() == nil or mnt.parent().children doesn't contain mnt.
+//     i.e. mnt must not already be connected.
 func (vfs *VirtualFilesystem) connectLocked(mnt *Mount, vd VirtualDentry, mntns *MountNamespace) {
 	if checkInvariants {
-		if mnt.parent() != nil {
-			panic("VFS.connectLocked called on connected mount")
+		if mnt.parent() != nil && mnt.parent().children != nil {
+			if _, ok := mnt.parent().children[mnt]; ok {
+				panic("VFS.connectLocked called on connected mount")
+			}
 		}
 	}
-	mnt.IncRef() // dropped by callers of umountRecursiveLocked
+	mnt.IncRef() // dropped by vfs.umount().
 	mnt.setKey(vd)
 	if vd.mount.children == nil {
 		vd.mount.children = make(map[*Mount]struct{})
@@ -832,6 +860,24 @@ func (mnt *Mount) destroy(ctx context.Context) {
 		}
 		mnt.vfs.mounts.seq.EndWrite()
 	}
+
+	// Cleanup any leftover children.
+	if len(mnt.children) != 0 {
+		mnt.vfs.mounts.seq.BeginWrite()
+		for child := range mnt.children {
+			if checkInvariants {
+				if !child.umounted {
+					panic("children of a mount that has no references should already be marked as unmounted.")
+				}
+			}
+			vd := mnt.vfs.disconnectLocked(child)
+			if vd.Ok() {
+				mnt.vfs.delayDecRef(vd)
+			}
+		}
+		mnt.vfs.mounts.seq.EndWrite()
+	}
+
 	if mnt.root != nil {
 		mnt.vfs.delayDecRef(mnt.root)
 	}
