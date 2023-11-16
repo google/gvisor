@@ -300,20 +300,22 @@ func goferMountData(fd int, fa config.FileAccessType, conf *config.Config) []str
 	return opts
 }
 
-// parseAndFilterOptions parses a MountOptions slice and filters by the allowed
-// keys.
-func parseAndFilterOptions(opts []string, allowedKeys ...string) ([]string, error) {
-	var out []string
+// consumeMountOptions consumes mount options from opts based on allowedKeys
+// and returns the remaining and consumed options.
+func consumeMountOptions(opts []string, allowedKeys ...string) ([]string, []string, error) {
+	var rem, out []string
 	for _, o := range opts {
 		ok, err := parseMountOption(o, allowedKeys...)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if ok {
 			out = append(out, o)
+		} else {
+			rem = append(rem, o)
 		}
 	}
-	return out, nil
+	return rem, out, nil
 }
 
 func parseMountOption(opt string, allowedKeys ...string) (bool, error) {
@@ -826,6 +828,7 @@ func (c *containerMounter) mountSubmount(ctx context.Context, spec *specs.Spec, 
 func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo, productName string) (string, *vfs.MountOptions, error) {
 	fsName := m.mount.Type
 	var (
+		mopts        = m.mount.Options
 		data         []string
 		internalData any
 	)
@@ -847,7 +850,7 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 
 	case tmpfs.Name:
 		var err error
-		data, err = parseAndFilterOptions(m.mount.Options, tmpfsAllowedData...)
+		mopts, data, err = consumeMountOptions(mopts, tmpfsAllowedData...)
 		if err != nil {
 			return "", nil, err
 		}
@@ -866,14 +869,19 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 			// Check that an FD was provided to fails fast.
 			return "", nil, fmt.Errorf("gofer mount requires a connection FD")
 		}
-		data = goferMountData(m.goferFD.Release(), getMountAccessType(conf, m.hint), conf)
+		var err error
+		mopts, data, err = consumeMountOptions(mopts, gofer.SupportedMountOptions...)
+		if err != nil {
+			return "", nil, err
+		}
+		data = append(data, goferMountData(m.goferFD.Release(), getMountAccessType(conf, m.hint), conf)...)
 		internalData = gofer.InternalFilesystemOptions{
 			UniqueID: m.mount.Destination,
 		}
 
 	case cgroupfs.Name:
 		var err error
-		data, err = parseAndFilterOptions(m.mount.Options, cgroupfs.SupportedMountOptions...)
+		mopts, data, err = consumeMountOptions(mopts, cgroupfs.SupportedMountOptions...)
 		if err != nil {
 			return "", nil, err
 		}
@@ -883,7 +891,7 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 		return "", nil, nil
 	}
 
-	opts := ParseMountOptions(m.mount.Options)
+	opts := ParseMountOptions(mopts)
 	opts.GetFilesystemOptions = vfs.GetFilesystemOptions{
 		Data:          strings.Join(data, ","),
 		InternalData:  internalData,
