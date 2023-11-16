@@ -656,7 +656,7 @@ func resolveSymlinksImpl(root, base, rel string, followCount uint) (string, erro
 	return base, nil
 }
 
-// adjustMountOptions adds 'overlayfs_stale_read' if mounting over overlayfs.
+// adjustMountOptions adds filesystem-specific gofer mount options.
 func adjustMountOptions(conf *config.Config, path string, opts []string) ([]string, error) {
 	rv := make([]string, len(opts))
 	copy(rv, opts)
@@ -665,8 +665,16 @@ func adjustMountOptions(conf *config.Config, path string, opts []string) ([]stri
 	if err := unix.Statfs(path, &statfs); err != nil {
 		return nil, err
 	}
-	if statfs.Type == unix.OVERLAYFS_SUPER_MAGIC {
+	switch statfs.Type {
+	case unix.OVERLAYFS_SUPER_MAGIC:
 		rv = append(rv, "overlayfs_stale_read")
+	case unix.NFS_SUPER_MAGIC:
+		// The gofer client implements remote file handle sharing for performance.
+		// However, remote filesystems like NFS rely on close(2) syscall for
+		// flushing file data to the server. Such handle sharing prevents the
+		// application's close(2) syscall from being propagated to the host. Hence
+		// disable file handle sharing, so NFS files are flushed correctly.
+		rv = append(rv, "disable_file_handle_sharing")
 	}
 	return rv, nil
 }
