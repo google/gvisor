@@ -49,3 +49,12 @@ func (k *KVM) archSyscallFilters() seccomp.SyscallRules {
 		},
 	})
 }
+
+// HottestSyscalls implements Platform.HottestSyscalls.
+func (*KVM) HottestSyscalls() []uintptr {
+	return []uintptr{
+		unix.SYS_FUTEX,
+		unix.SYS_IOCTL,
+		unix.SYS_RT_SIGRETURN,
+	}
+}

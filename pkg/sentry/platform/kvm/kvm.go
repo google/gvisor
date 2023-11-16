@@ -69,8 +69,6 @@ type KVM struct {
 
 	platform.DoesOwnPageTables
 
-	platform.HottestSyscallsNotSpecified
-
 	// machine is the backing VM.
 	machine *machine
 }
