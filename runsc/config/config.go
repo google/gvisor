@@ -334,6 +334,10 @@ type Config struct {
 	// ReproduceNAT, when true, tells runsc to scrape the host network
 	// namespace's NAT iptables and reproduce it inside the sandbox.
 	ReproduceNAT bool `flag:"reproduce-nat"`
+
+	// ReproduceNftables attempts to scrape nftables routing rules if
+	// present, and reproduce them in the sandbox.
+	ReproduceNftables bool `flag:"reproduce-nftables"`
 }
 
 func (c *Config) validate() error {
