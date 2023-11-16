@@ -309,6 +309,10 @@ type ProgramOptions struct {
 	// syscall structure input doesn't match the one the program expects.
 	BadArchAction linux.BPFAction
 
+	// Optimize specifies whether optimizations should be applied to the
+	// syscall rules and generated BPF bytecode.
+	Optimize bool
+
 	// HotSyscalls is the set of syscall numbers that are the hottest,
 	// where "hotness" refers to frequency (regardless of the amount of
 	// computation that the kernel will do handling them, and regardless of
@@ -328,6 +332,7 @@ func DefaultProgramOptions() ProgramOptions {
 	return ProgramOptions{
 		DefaultAction: action,
 		BadArchAction: action,
+		Optimize:      true,
 	}
 }
 
@@ -354,13 +359,11 @@ type BuildStats struct {
 // SyscallRules. The single generated program covers all provided RuleSets.
 func BuildProgram(rules []RuleSet, options ProgramOptions) ([]bpf.Instruction, BuildStats, error) {
 	start := time.Now()
-
-	// Make a copy of the syscall rules and optimize them.
-	ors, err := orderRuleSets(rules, options)
+	// Make a copy of the syscall rules and maybe optimize them.
+	ors, ruleOptimizeDuration, err := orderRuleSets(rules, options)
 	if err != nil {
 		return nil, BuildStats{}, err
 	}
-	ruleOptimizeDuration := time.Since(start)
 
 	possibleActions := make(map[linux.BPFAction]struct{})
 	for _, ruleSet := range rules {
@@ -398,10 +401,14 @@ func BuildProgram(rules []RuleSet, options ProgramOptions) ([]bpf.Instruction, B
 	}
 	beforeOpt := len(insns)
 	buildDuration := time.Since(start) - ruleOptimizeDuration
-	insns = bpf.Optimize(insns)
-	bpfOptimizeDuration := time.Since(start) - ruleOptimizeDuration - buildDuration
-	afterOpt := len(insns)
-	log.Debugf("Seccomp program optimized from %d to %d instructions; took %v to build and %v to optimize", beforeOpt, afterOpt, buildDuration, bpfOptimizeDuration)
+	var bpfOptimizeDuration time.Duration
+	afterOpt := beforeOpt
+	if options.Optimize {
+		insns = bpf.Optimize(insns)
+		bpfOptimizeDuration = time.Since(start) - buildDuration - ruleOptimizeDuration
+		afterOpt = len(insns)
+		log.Debugf("Seccomp program optimized from %d to %d instructions; took %v to build and %v to optimize", beforeOpt, afterOpt, buildDuration, bpfOptimizeDuration)
+	}
 	return insns, BuildStats{
 		SizeBeforeOptimizations: beforeOpt,
 		SizeAfterOptimizations:  afterOpt,
@@ -530,14 +537,16 @@ type orderedRuleSets struct {
 }
 
 // orderRuleSets converts a set of `RuleSet`s into an `orderedRuleSets`.
-func orderRuleSets(rules []RuleSet, options ProgramOptions) (orderedRuleSets, error) {
+// It orders the rulesets, along with the time to optimize the
+// rules (if any).
+func orderRuleSets(rules []RuleSet, options ProgramOptions) (orderedRuleSets, time.Duration, error) {
 	// Do a pass to determine if vsyscall is consistent across syscall numbers.
 	vsyscallBySysno := make(map[uintptr]bool)
 	for _, rs := range rules {
 		for sysno := range rs.Rules.rules {
 			if prevVsyscall, ok := vsyscallBySysno[sysno]; ok {
 				if prevVsyscall != rs.Vsyscall {
-					return orderedRuleSets{}, fmt.Errorf("syscall %d has conflicting vsyscall checking rules", sysno)
+					return orderedRuleSets{}, 0, fmt.Errorf("syscall %d has conflicting vsyscall checking rules", sysno)
 				}
 			} else {
 				vsyscallBySysno[sysno] = rs.Vsyscall
@@ -573,11 +582,16 @@ func orderRuleSets(rules []RuleSet, options ProgramOptions) (orderedRuleSets, er
 	}
 
 	// Optimize all rules.
-	for _, ruleActions := range allSyscallRuleActions {
-		for i, ra := range ruleActions {
-			ra.rule = optimizeSyscallRule(ra.rule)
-			ruleActions[i] = ra
+	var optimizeDuration time.Duration
+	if options.Optimize {
+		optimizeStart := time.Now()
+		for _, ruleActions := range allSyscallRuleActions {
+			for i, ra := range ruleActions {
+				ra.rule = optimizeSyscallRule(ra.rule)
+				ruleActions[i] = ra
+			}
 		}
+		optimizeDuration = time.Since(optimizeStart)
 	}
 
 	// Do a pass that checks which syscall numbers are trivial.
@@ -648,7 +662,7 @@ func orderRuleSets(rules []RuleSet, options ProgramOptions) (orderedRuleSets, er
 		ors.log(log.Debugf)
 	}
 
-	return ors, nil
+	return ors, optimizeDuration, nil
 }
 
 // log logs the set of seccomp rules to the given logger.

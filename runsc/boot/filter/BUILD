@@ -64,3 +64,15 @@ secbench_test(
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
+
+go_test(
+    name = "filter_fuzz_test",
+    srcs = ["filter_fuzz_test.go"],
+    deps = [
+        ":filter",
+        "//pkg/abi/linux",
+        "//pkg/seccomp",
+        "//pkg/sentry/platform/systrap",
+        "//test/secfuzz",
+    ],
+)
