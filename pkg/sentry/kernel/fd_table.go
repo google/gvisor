@@ -123,18 +123,14 @@ func (f *FDTable) loadDescriptorTable(m map[int32]descriptor) {
 	}
 }
 
-// drop drops the table reference.
-func (f *FDTable) drop(ctx context.Context, file *vfs.FileDescription) {
-	// Release any POSIX lock possibly held by the FDTable.
+// Release any POSIX lock possibly held by the FDTable.
+func (f *FDTable) fileUnlock(ctx context.Context, file *vfs.FileDescription) {
 	if file.SupportsLocks() {
 		err := file.UnlockPOSIX(ctx, f, lock.LockRange{0, lock.LockEOF})
 		if err != nil && !linuxerr.Equals(linuxerr.ENOLCK, err) {
 			panic(fmt.Sprintf("UnlockPOSIX failed: %v", err))
 		}
 	}
-
-	// Drop the table's reference.
-	file.DecRef(ctx)
 }
 
 // NewFDTable allocates a new FDTable that may be used by tasks in k.
@@ -312,23 +308,24 @@ func (f *FDTable) NewFD(ctx context.Context, minFD int32, file *vfs.FileDescript
 }
 
 // NewFDAt sets the file reference for the given FD. If there is an existing
-// file description for that FD, the table reference for that file description
-// is dropped.
+// file description for that FD, it is returned.
+//
+// N.B. Callers are required to use DecRef on the returned file when they are done.
 //
 // Precondition: file != nil.
-func (f *FDTable) NewFDAt(ctx context.Context, fd int32, file *vfs.FileDescription, flags FDFlags) error {
+func (f *FDTable) NewFDAt(ctx context.Context, fd int32, file *vfs.FileDescription, flags FDFlags) (*vfs.FileDescription, error) {
 	if fd < 0 {
 		// Don't accept negative FDs.
-		return unix.EBADF
+		return nil, unix.EBADF
 	}
 
 	if fd >= f.k.MaxFDLimit.Load() {
-		return unix.EMFILE
+		return nil, unix.EMFILE
 	}
 	// Check the limit for the provided file.
 	if limitSet := limits.FromContext(ctx); limitSet != nil {
 		if lim := limitSet.Get(limits.NumberOfFiles); lim.Cur != limits.Infinity && uint64(fd) >= lim.Cur {
-			return unix.EMFILE
+			return nil, unix.EMFILE
 		}
 	}
 
@@ -342,9 +339,10 @@ func (f *FDTable) NewFDAt(ctx context.Context, fd int32, file *vfs.FileDescripti
 	f.mu.Unlock()
 
 	if df != nil {
-		f.drop(ctx, df)
+		f.fileUnlock(ctx, df)
+		// Table's reference on df is transferred to caller, so don't DecRef.
 	}
-	return nil
+	return df, nil
 }
 
 // SetFlags sets the flags for the given file descriptor.
@@ -470,14 +468,13 @@ func (f *FDTable) Remove(ctx context.Context, fd int32) *vfs.FileDescription {
 	f.mu.Lock()
 	df := f.set(fd, nil, FDFlags{}) // Zap entry.
 	if df != nil {
-		// Add reference for caller.
-		df.IncRef()
 		f.fdBitmap.Remove(uint32(fd))
 	}
 	f.mu.Unlock()
 
 	if df != nil {
-		f.drop(ctx, df)
+		f.fileUnlock(ctx, df)
+		// Table's reference on df is transferred to caller, so don't DecRef.
 	}
 	return df
 }
@@ -499,7 +496,8 @@ func (f *FDTable) RemoveIf(ctx context.Context, cond func(*vfs.FileDescription, 
 	f.mu.Unlock()
 
 	for _, file := range files {
-		f.drop(ctx, file)
+		f.fileUnlock(ctx, file)
+		file.DecRef(ctx) // Drop the table's reference.
 	}
 }
 
@@ -513,7 +511,6 @@ func (f *FDTable) RemoveNextInRange(ctx context.Context, startFd int32, endFd in
 	}
 
 	f.mu.Lock()
-
 	fdUint, err := f.fdBitmap.FirstOne(uint32(startFd))
 	fd := int32(fdUint)
 	if err != nil || fd > endFd {
@@ -522,14 +519,13 @@ func (f *FDTable) RemoveNextInRange(ctx context.Context, startFd int32, endFd in
 	}
 	df := f.set(fd, nil, FDFlags{}) // Zap entry.
 	if df != nil {
-		// Add reference for caller.
-		df.IncRef()
 		f.fdBitmap.Remove(uint32(fd))
 	}
 	f.mu.Unlock()
 
 	if df != nil {
-		f.drop(ctx, df)
+		f.fileUnlock(ctx, df)
+		// Table's reference on df is transferred to caller, so don't DecRef.
 	}
 	return fd, df
 }
