@@ -98,7 +98,7 @@ if [[ "${BUILDKITE_PIPELINE_INSTALL_RUNTIME:-}" == "true" ]]; then
     # just a SIGHUP.
     echo 'Reloading Docker daemon with this new configuration:' >&2
     cat /etc/docker/daemon.json >&2
-    bash -c "$DOCKER_RELOAD_COMMAND"
+    bash -xc "$DOCKER_RELOAD_COMMAND"
   fi
 fi
 
