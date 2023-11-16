@@ -19,10 +19,17 @@ import (
 	"unsafe"
 )
 
+// sizeOfInstruction is the size of a BPF instruction struct.
+const sizeOfInstruction = int(unsafe.Sizeof(Instruction{}))
+
+// ToBytecode converts BPF instructions into raw BPF bytecode.
+func ToBytecode(insns []Instruction) []byte {
+	return ([]byte)(unsafe.Slice((*byte)(unsafe.Pointer(&insns[0])), len(insns)*sizeOfInstruction))
+}
+
 // ParseBytecode converts raw BPF bytecode into BPF instructions.
 // It verifies that the resulting set of instructions is a valid program.
 func ParseBytecode(bytecode []byte) ([]Instruction, error) {
-	sizeOfInstruction := int(unsafe.Sizeof(Instruction{}))
 	if len(bytecode)%sizeOfInstruction != 0 {
 		return nil, fmt.Errorf("bytecode size (%d bytes) is not a multiple of BPF instruction size of %d bytes", len(bytecode), sizeOfInstruction)
 	}
