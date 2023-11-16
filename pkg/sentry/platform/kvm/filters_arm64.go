@@ -33,3 +33,8 @@ func (*KVM) archSyscallFilters() seccomp.SyscallRules {
 		},
 	})
 }
+
+// HottestSyscalls implements Platform.HottestSyscalls.
+func (*KVM) HottestSyscalls() []uintptr {
+	return nil
+}
