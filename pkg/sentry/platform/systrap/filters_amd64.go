@@ -18,10 +18,19 @@
 package systrap
 
 import (
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/seccomp"
 )
 
 // SyscallFilters returns syscalls made exclusively by the systrap platform.
 func (*Systrap) archSyscallFilters() seccomp.SyscallRules {
 	return seccomp.SyscallRules{}
+}
+
+// HottestSyscalls implements Platform.HottestSyscalls.
+func (*Systrap) HottestSyscalls() []uintptr {
+	return []uintptr{
+		unix.SYS_FUTEX,
+		unix.SYS_NANOSLEEP,
+	}
 }

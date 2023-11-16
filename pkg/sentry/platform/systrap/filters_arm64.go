@@ -40,3 +40,8 @@ func (*Systrap) archSyscallFilters() seccomp.SyscallRules {
 		},
 	})
 }
+
+// HottestSyscalls implements Platform.HottestSyscalls.
+func (*Systrap) HottestSyscalls() []uintptr {
+	return nil
+}

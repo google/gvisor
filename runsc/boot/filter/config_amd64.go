@@ -46,5 +46,11 @@ func archFstatAtSysNo() uintptr {
 }
 
 func archSpecificHotSyscalls() []uintptr {
-	return nil // TODO(b/298726675): Populate.
+	return []uintptr{
+		unix.SYS_NANOSLEEP,  // Used a bunch
+		unix.SYS_SENDMMSG,   // Used by network workloads
+		unix.SYS_FSTAT,      // Used for file I/O
+		unix.SYS_PPOLL,      // Used in general for I/O
+		unix.SYS_EPOLL_WAIT, // Same
+	}
 }
