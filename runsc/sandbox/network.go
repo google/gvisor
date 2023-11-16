@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -320,12 +321,19 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 	}
 
 	// Pass the host's NAT table if requested.
-	if conf.ReproduceNAT {
-		args.NATBlob = true
-		f, err := writeNATBlob()
+	if conf.ReproduceNftables || conf.ReproduceNAT {
+		var f *os.File
+		if conf.ReproduceNftables {
+			log.Infof("reproing nftables")
+			f, err = checkNftables()
+		} else if conf.ReproduceNAT {
+			log.Infof("reproing legacy tables")
+			f, err = writeNATBlob()
+		}
 		if err != nil {
 			return fmt.Errorf("failed to write NAT blob: %v", err)
 		}
+		args.NATBlob = true
 		args.FilePayload.Files = append(args.FilePayload.Files, f)
 	}
 
@@ -596,4 +604,96 @@ func removeAddress(source netlink.Link, ipAndMask string) error {
 		return err
 	}
 	return netlink.AddrDel(source, addr)
+}
+
+// The below is a work around to generate iptables-legacy rules on machines
+// that use iptables-nftables. The logic goes something like this:
+//
+//             start
+//               |
+//               v               no
+//     are legacy tables empty? -----> scrape rules -----> done <----+
+//               |                                          ^        |
+//               | yes                                      |        |
+//               v                        yes               |        |
+//     are nft tables empty? -------------------------------+        |
+//               |                                                   |
+//               | no                                                |
+//               v                                                   |
+//     pipe iptables-nft-save -t nat to iptables-legacy-restore      |
+//     scrape rules                                                  |
+//     delete iptables-legacy rules                                  |
+//               |                                                   |
+//               +---------------------------------------------------+
+//
+// If we fail at some point (e.g. to find a binary), we just try to scrape the
+// legacy rules.
+
+const emptyNatRules = `-P PREROUTING ACCEPT
+-P INPUT ACCEPT
+-P OUTPUT ACCEPT
+-P POSTROUTING ACCEPT
+`
+
+func checkNftables() (*os.File, error) {
+	// Use iptables (not iptables-save) to test table emptiness because it
+	// gives predictable results: no counters and no comments.
+
+	// Is the legacy table empty?
+	if out, err := exec.Command("iptables-legacy", "-t", "nat", "-S").Output(); err != nil || string(out) != emptyNatRules {
+		return writeNATBlob()
+	}
+
+	// Is the nftables table empty?
+	if out, err := exec.Command("iptables-nft", "-t", "nat", "-S").Output(); err != nil || string(out) == emptyNatRules {
+		return nil, fmt.Errorf("no rules to scrape: %v", err)
+	}
+
+	// Get the current (empty) legacy rules.
+	currLegacy, err := exec.Command("iptables-legacy-save", "-t", "nat").Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to save existing rules with error (%v) and output: %s", err, currLegacy)
+	}
+
+	// Restore empty legacy rules.
+	defer func() {
+		cmd := exec.Command("iptables-legacy-restore")
+		stdin, err := cmd.StdinPipe()
+		if err != nil {
+			log.Warningf("failed to get stdin pipe: %v", err)
+			return
+		}
+
+		go func() {
+			defer stdin.Close()
+			stdin.Write(currLegacy)
+		}()
+
+		if out, err := cmd.CombinedOutput(); err != nil {
+			log.Warningf("failed to restore iptables error (%v) with output: %s", err, out)
+		}
+	}()
+
+	// Pipe the output of iptables-nft-save to iptables-legacy-restore.
+	nftOut, err := exec.Command("iptables-nft-save", "-t", "nat").Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to run iptables-nft-save: %v", err)
+	}
+
+	cmd := exec.Command("iptables-legacy-restore")
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get stdin pipe: %v", err)
+	}
+
+	go func() {
+		defer stdin.Close()
+		stdin.Write(nftOut)
+	}()
+
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return nil, fmt.Errorf("failed to restore iptables error (%v) with output: %s", err, out)
+	}
+
+	return writeNATBlob()
 }
