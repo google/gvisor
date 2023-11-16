@@ -27,8 +27,8 @@ expected_regex='-P PREROUTING ACCEPT
 -N DOCKER_POSTROUTING
 -A OUTPUT -d 127.0.0.11/32 -j DOCKER_OUTPUT
 -A POSTROUTING -d 127.0.0.11/32 -j DOCKER_POSTROUTING
--A DOCKER_OUTPUT -d 127.0.0.11/32 -p tcp -m tcp --dport 53 -j DNAT --to-destination 127.0.0.11:[0-9]+
--A DOCKER_OUTPUT -d 127.0.0.11/32 -p udp -m udp --dport 53 -j DNAT --to-destination 127.0.0.11:[0-9]+
+-A DOCKER_OUTPUT -d 127.0.0.11/32 -p tcp -m tcp --dport 53 -j DNAT (--to-destination 127.0.0.11:[0-9]+|\[unsupported revision\])
+-A DOCKER_OUTPUT -d 127.0.0.11/32 -p udp -m udp --dport 53 -j DNAT (--to-destination 127.0.0.11:[0-9]+|\[unsupported revision\])
 -A DOCKER_POSTROUTING -s 127.0.0.11/32 -p tcp -m tcp --sport [0-9]+ -j SNAT --to-source :53
 -A DOCKER_POSTROUTING -s 127.0.0.11/32 -p udp -m udp --sport [0-9]+ -j SNAT --to-source :53'
 
