@@ -1,4 +1,4 @@
-// Copyright 2020 The gVisor Authors.
+// Copyright 2018 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,23 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !false
-// +build !false
+//go:build msan
+// +build msan
 
-package filter
+package config
 
 import (
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/seccomp"
 )
 
-// profileFilters returns extra syscalls made by runtime/pprof package.
-func profileFilters() seccomp.SyscallRules {
+// instrumentationFilters returns additional filters for syscalls used by MSAN.
+func instrumentationFilters() seccomp.SyscallRules {
+	log.Warningf("MSAN is enabled: syscall filters less restrictive!")
 	return seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
-		unix.SYS_OPENAT: seccomp.PerArg{
-			seccomp.AnyValue{},
-			seccomp.AnyValue{},
-			seccomp.EqualTo(unix.O_RDONLY | unix.O_LARGEFILE | unix.O_CLOEXEC),
-		},
+		unix.SYS_CLONE:             seccomp.MatchAll{},
+		unix.SYS_MMAP:              seccomp.MatchAll{},
+		unix.SYS_SCHED_GETAFFINITY: seccomp.MatchAll{},
+		unix.SYS_SET_ROBUST_LIST:   seccomp.MatchAll{},
 	})
 }

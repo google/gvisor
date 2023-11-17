@@ -678,7 +678,7 @@ func (l *Loader) installSeccompFilters() error {
 		l.PreSeccompCallback()
 	}
 	if l.root.conf.DisableSeccomp {
-		filter.Report("syscall filter is DISABLED. Running in less secure mode.")
+		log.Warningf("*** SECCOMP WARNING: syscall filter is DISABLED. Running in less secure mode.")
 	} else {
 		hostnet := l.root.conf.Network == config.NetworkHost
 		opts := filter.Options{

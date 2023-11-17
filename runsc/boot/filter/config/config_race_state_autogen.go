@@ -3,4 +3,4 @@
 //go:build race
 // +build race
 
-package filter
+package config
