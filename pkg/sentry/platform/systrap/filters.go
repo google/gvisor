@@ -18,10 +18,32 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/seccomp"
+	"gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp"
+	"gvisor.dev/gvisor/pkg/sentry/platform"
 )
 
-// SyscallFilters returns syscalls made exclusively by the systrap platform.
-func (p *Systrap) SyscallFilters() seccomp.SyscallRules {
+// sysmsgThreadPriorityVarName is the seccomp filter variable name used to
+// encode the sysmsg thread priority.
+const sysmsgThreadPriorityVarName = "systrap_sysmsg_thread_priority"
+
+// systrapSeccomp implements platform.SeccompInfo.
+type systrapSeccomp struct{}
+
+// Variables implements `platform.SeccompInfo.Variables`.
+func (systrapSeccomp) Variables() precompiledseccomp.Values {
+	initSysmsgThreadPriority()
+	vars := precompiledseccomp.Values{}
+	vars.SetUint64(sysmsgThreadPriorityVarName, uint64(sysmsgThreadPriority))
+	return vars
+}
+
+// ConfigKey implements `platform.SeccompInfo.ConfigKey`.
+func (systrapSeccomp) ConfigKey() string {
+	return "systrap"
+}
+
+// SyscallFilters implements `platform.SeccompInfo.SyscallFilters`.
+func (systrapSeccomp) SyscallFilters(vars precompiledseccomp.Values) seccomp.SyscallRules {
 	return seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		unix.SYS_PTRACE: seccomp.Or{
 			seccomp.PerArg{
@@ -75,7 +97,23 @@ func (p *Systrap) SyscallFilters() seccomp.SyscallRules {
 		unix.SYS_SETPRIORITY: seccomp.PerArg{
 			seccomp.EqualTo(unix.PRIO_PROCESS),
 			seccomp.AnyValue{},
-			seccomp.EqualTo(sysmsgThreadPriority),
+			seccomp.EqualTo(vars.GetUint64(sysmsgThreadPriorityVarName)),
 		},
-	}).Merge(p.archSyscallFilters())
+	}).Merge(archSyscallFilters())
+}
+
+// HottestSyscalls implements `platform.SeccompInfo.HottestSyscalls`.
+func (systrapSeccomp) HottestSyscalls() []uintptr {
+	return hottestSyscalls()
+}
+
+// SeccompInfo returns seccomp filter info for the systrap platform.
+func (p *Systrap) SeccompInfo() platform.SeccompInfo {
+	return systrapSeccomp{}
+}
+
+// PrecompiledSeccompInfo implements
+// platform.Constructor.PrecompiledSeccompInfo.
+func (*constructor) PrecompiledSeccompInfo() []platform.SeccompInfo {
+	return []platform.SeccompInfo{(*Systrap)(nil).SeccompInfo()}
 }

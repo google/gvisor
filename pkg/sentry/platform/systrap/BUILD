@@ -88,6 +88,7 @@ go_library(
         "//pkg/refs",
         "//pkg/safecopy",
         "//pkg/seccomp",
+        "//pkg/seccomp/precompiledseccomp",
         "//pkg/sentry/arch",
         "//pkg/sentry/memmap",
         "//pkg/sentry/pgalloc",

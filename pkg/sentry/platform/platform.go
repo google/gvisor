@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/seccomp"
+	"gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/hostmm"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -120,18 +121,8 @@ type Platform interface {
 	// Preconditions: HaveGlobalMemoryBarrier() == true.
 	GlobalMemoryBarrier() error
 
-	// SyscallFilters returns syscalls made exclusively by this platform.
-	SyscallFilters() seccomp.SyscallRules
-
-	// HottestSyscalls returns the list of syscall numbers that this platform
-	// calls most often, most-frequently-called first. No more than a dozen
-	// syscalls. Returning an empty or a nil slice is OK.
-	// This is used to produce a more efficient seccomp-bpf program that can
-	// check for the most frequently called syscalls first.
-	// What matters here is only the frequency at which a syscall is called,
-	// not the total amount of CPU time that is used to process it in the host
-	// kernel.
-	HottestSyscalls() []uintptr
+	// SeccompInfo returns seccomp-related information about this platform.
+	SeccompInfo() SeccompInfo
 }
 
 // NoCPUPreemptionDetection implements Platform.DetectsCPUPreemption and
@@ -199,15 +190,6 @@ type DoesNotOwnPageTables struct{}
 // OwnsPageTables implements Platform.OwnsPageTables.
 func (DoesNotOwnPageTables) OwnsPageTables() bool {
 	return false
-}
-
-// HottestSyscallsNotSpecified implements Platform.HottestSyscalls and does
-// not return any syscall as being hot.
-type HottestSyscallsNotSpecified struct{}
-
-// HottestSyscalls implements Platform.HottestSyscalls.
-func (HottestSyscallsNotSpecified) HottestSyscalls() []uintptr {
-	return nil
 }
 
 // MemoryManager represents an abstraction above the platform address space
@@ -467,6 +449,83 @@ type Requirements struct {
 	RequiresCapSysPtrace bool
 }
 
+// SeccompInfo represents seccomp-bpf data for a given platform.
+type SeccompInfo interface {
+	// Variables returns a map from named variables to the value they should
+	// have with the platform as currently initialized.
+	// Variables are known only at runtime, but are not part of a platform's
+	// configuration. For example, the KVM platform having an FD representing
+	// the KVM VM is a variable: it is only known at runtime, but does not
+	// change the structure of the syscall rules.
+	// The set of variable names must be static regardless of platform
+	// configuration.
+	Variables() precompiledseccomp.Values
+
+	// ConfigKey returns a string that uniquely represents the set of
+	// configuration information from which syscall rules are derived,
+	// other than variables or CPU architecture.
+	// This should at least contain the platform name.
+	// If syscall rules are dependent on the platform's configuration,
+	// this should return a string that encapsulates the values of these
+	// configuration options.
+	// For example, if some option of the platform causes it to require a
+	// new syscall to be allowed, this option should be part of this string.
+	ConfigKey() string
+
+	// SyscallFilters returns syscalls made exclusively by this platform.
+	// `vars` maps variable names (as returned by `Variables()`) to values,
+	// and **the rules should depend on `vars`**. These will not necessarily
+	// map to the result of calling `Variables()` on the current `SeccompInfo`;
+	// during seccomp rule precompilation, these will be set to placeholder
+	// values.
+	SyscallFilters(vars precompiledseccomp.Values) seccomp.SyscallRules
+
+	// HottestSyscalls returns the list of syscall numbers that this platform
+	// calls most often, most-frequently-called first. No more than a dozen
+	// syscalls. Returning an empty or a nil slice is OK.
+	// This is used to produce a more efficient seccomp-bpf program that can
+	// check for the most frequently called syscalls first.
+	// What matters here is only the frequency at which a syscall is called,
+	// not the total amount of CPU time that is used to process it in the host
+	// kernel.
+	HottestSyscalls() []uintptr
+}
+
+// StaticSeccompInfo implements `SeccompInfo` for platforms which don't have
+// any configuration or variables.
+type StaticSeccompInfo struct {
+	// PlatformName is the platform name.
+	PlatformName string
+
+	// Filters is the platform's syscall filters.
+	Filters seccomp.SyscallRules
+
+	// HotSyscalls is the list of syscalls numbers that this platform
+	// calls most often, most-frequently-called first.
+	// See `SeccompInfo.HottestSyscalls` for more.
+	HotSyscalls []uintptr
+}
+
+// Variables implements `SeccompInfo.Variables`.
+func (StaticSeccompInfo) Variables() precompiledseccomp.Values {
+	return nil
+}
+
+// ConfigKey implements `SeccompInfo.ConfigKey`.
+func (s StaticSeccompInfo) ConfigKey() string {
+	return s.PlatformName
+}
+
+// SyscallFilters implements `SeccompInfo.SyscallFilters`.
+func (s StaticSeccompInfo) SyscallFilters(precompiledseccomp.Values) seccomp.SyscallRules {
+	return s.Filters
+}
+
+// HottestSyscalls implements `SeccompInfo.HottestSyscalls`.
+func (s StaticSeccompInfo) HottestSyscalls() []uintptr {
+	return s.HotSyscalls
+}
+
 // Constructor represents a platform type.
 type Constructor interface {
 	// New returns a new platform instance.
@@ -483,6 +542,10 @@ type Constructor interface {
 
 	// Requirements returns platform specific requirements.
 	Requirements() Requirements
+
+	// PrecompiledSeccompInfo returns a list of `SeccompInfo`s that is
+	// useful to precompile into the Sentry.
+	PrecompiledSeccompInfo() []SeccompInfo
 }
 
 // platforms contains all available platform types.

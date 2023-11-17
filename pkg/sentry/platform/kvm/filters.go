@@ -19,36 +19,47 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/seccomp"
+	"gvisor.dev/gvisor/pkg/sentry/platform"
 )
 
-// SyscallFilters returns syscalls made exclusively by the KVM platform.
-func (k *KVM) SyscallFilters() seccomp.SyscallRules {
-	return k.archSyscallFilters().Merge(seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
-		unix.SYS_IOCTL: seccomp.Or{
-			seccomp.PerArg{
-				seccomp.NonNegativeFD{},
-				seccomp.EqualTo(KVM_RUN),
+// SeccompInfo returns seccomp information for the KVM platform.
+func (k *KVM) SeccompInfo() platform.SeccompInfo {
+	return platform.StaticSeccompInfo{
+		PlatformName: "kvm",
+		Filters: k.archSyscallFilters().Merge(seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
+			unix.SYS_IOCTL: seccomp.Or{
+				seccomp.PerArg{
+					seccomp.NonNegativeFD{},
+					seccomp.EqualTo(KVM_RUN),
+				},
+				seccomp.PerArg{
+					seccomp.NonNegativeFD{},
+					seccomp.EqualTo(KVM_SET_USER_MEMORY_REGION),
+				},
+				seccomp.PerArg{
+					seccomp.NonNegativeFD{},
+					seccomp.EqualTo(KVM_GET_REGS),
+				},
+				seccomp.PerArg{
+					seccomp.NonNegativeFD{},
+					seccomp.EqualTo(KVM_SET_REGS),
+				},
 			},
-			seccomp.PerArg{
-				seccomp.NonNegativeFD{},
-				seccomp.EqualTo(KVM_SET_USER_MEMORY_REGION),
+			unix.SYS_MEMBARRIER: seccomp.PerArg{
+				seccomp.EqualTo(linux.MEMBARRIER_CMD_PRIVATE_EXPEDITED),
+				seccomp.EqualTo(0),
 			},
-			seccomp.PerArg{
-				seccomp.NonNegativeFD{},
-				seccomp.EqualTo(KVM_GET_REGS),
-			},
-			seccomp.PerArg{
-				seccomp.NonNegativeFD{},
-				seccomp.EqualTo(KVM_SET_REGS),
-			},
-		},
-		unix.SYS_MEMBARRIER: seccomp.PerArg{
-			seccomp.EqualTo(linux.MEMBARRIER_CMD_PRIVATE_EXPEDITED),
-			seccomp.EqualTo(0),
-		},
-		unix.SYS_MMAP:            seccomp.MatchAll{},
-		unix.SYS_RT_SIGSUSPEND:   seccomp.MatchAll{},
-		unix.SYS_RT_SIGTIMEDWAIT: seccomp.MatchAll{},
-		_SYS_KVM_RETURN_TO_HOST:  seccomp.MatchAll{},
-	}))
+			unix.SYS_MMAP:            seccomp.MatchAll{},
+			unix.SYS_RT_SIGSUSPEND:   seccomp.MatchAll{},
+			unix.SYS_RT_SIGTIMEDWAIT: seccomp.MatchAll{},
+			_SYS_KVM_RETURN_TO_HOST:  seccomp.MatchAll{},
+		})),
+		HotSyscalls: hottestSyscalls(),
+	}
+}
+
+// PrecompiledSeccompInfo implements
+// platform.Constructor.PrecompiledSeccompInfo.
+func (*constructor) PrecompiledSeccompInfo() []platform.SeccompInfo {
+	return []platform.SeccompInfo{(*KVM)(nil).SeccompInfo()}
 }

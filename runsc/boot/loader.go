@@ -682,7 +682,7 @@ func (l *Loader) installSeccompFilters() error {
 	} else {
 		hostnet := l.root.conf.Network == config.NetworkHost
 		opts := filter.Options{
-			Platform:              l.k.Platform,
+			Platform:              l.k.Platform.SeccompInfo(),
 			HostNetwork:           hostnet,
 			HostNetworkRawSockets: hostnet && l.root.conf.EnableRaw,
 			HostFilesystem:        l.root.conf.DirectFS,

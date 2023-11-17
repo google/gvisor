@@ -38,7 +38,7 @@ type Options struct {
 // using the Systrap platform.
 func BenchmarkSentrySystrap(b *testing.B) {
 	opts := config.Options{
-		Platform: &systrap.Systrap{},
+		Platform: (&systrap.Systrap{}).SeccompInfo(),
 	}
 	rules, denyRules := config.Rules(opts)
 	secbench.Run(b, secbench.BenchFromSyscallRules(
@@ -72,7 +72,7 @@ func BenchmarkSentrySystrap(b *testing.B) {
 // using the KVM platform.
 func BenchmarkSentryKVM(b *testing.B) {
 	opts := config.Options{
-		Platform: &kvm.KVM{},
+		Platform: (&kvm.KVM{}).SeccompInfo(),
 	}
 	rules, denyRules := config.Rules(opts)
 	secbench.Run(b, secbench.BenchFromSyscallRules(
@@ -102,7 +102,7 @@ func BenchmarkSentryKVM(b *testing.B) {
 
 func BenchmarkNVProxyIoctl(b *testing.B) {
 	opts := config.Options{
-		Platform: &systrap.Systrap{},
+		Platform: (&systrap.Systrap{}).SeccompInfo(),
 		NVProxy:  true,
 	}
 	rules, denyRules := config.Rules(opts)
