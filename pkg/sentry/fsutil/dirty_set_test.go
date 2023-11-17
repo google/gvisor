@@ -27,12 +27,10 @@ func TestDirtySet(t *testing.T) {
 	set.MarkDirty(memmap.MappableRange{0, 2 * hostarch.PageSize})
 	set.KeepDirty(memmap.MappableRange{hostarch.PageSize, 2 * hostarch.PageSize})
 	set.MarkClean(memmap.MappableRange{0, 2 * hostarch.PageSize})
-	want := &DirtySegmentDataSlices{
-		Start:  []uint64{hostarch.PageSize},
-		End:    []uint64{2 * hostarch.PageSize},
-		Values: []DirtyInfo{{Keep: true}},
+	want := []DirtyFlatSegment{
+		{hostarch.PageSize, 2 * hostarch.PageSize, DirtyInfo{Keep: true}},
 	}
-	if got := set.ExportSortedSlices(); !reflect.DeepEqual(got, want) {
+	if got := set.ExportSlice(); !reflect.DeepEqual(got, want) {
 		t.Errorf("set:\n\tgot %v,\n\twant %v", got, want)
 	}
 }

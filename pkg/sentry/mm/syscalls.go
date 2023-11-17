@@ -657,10 +657,10 @@ func (mm *MemoryManager) MProtect(addr hostarch.Addr, length uint64, realPerms h
 	mm.activeMu.Lock()
 	defer mm.activeMu.Unlock()
 	defer func() {
-		mm.vmas.MergeRange(ar)
-		mm.vmas.MergeAdjacent(ar)
-		mm.pmas.MergeRange(ar)
-		mm.pmas.MergeAdjacent(ar)
+		mm.vmas.MergeInsideRange(ar)
+		mm.vmas.MergeOutsideRange(ar)
+		mm.pmas.MergeInsideRange(ar)
+		mm.pmas.MergeOutsideRange(ar)
 	}()
 	pseg := mm.pmas.LowerBoundSegment(ar.Start)
 	var didUnmapAS bool
@@ -869,8 +869,8 @@ func (mm *MemoryManager) MLock(ctx context.Context, addr hostarch.Addr, length u
 		}
 		vseg, _ = vseg.NextNonEmpty()
 	}
-	mm.vmas.MergeRange(ar)
-	mm.vmas.MergeAdjacent(ar)
+	mm.vmas.MergeInsideRange(ar)
+	mm.vmas.MergeOutsideRange(ar)
 	if unmapped {
 		mm.mappingMu.Unlock()
 		return linuxerr.ENOMEM
@@ -1034,8 +1034,8 @@ func (mm *MemoryManager) SetNumaPolicy(addr hostarch.Addr, length uint64, policy
 	mm.mappingMu.Lock()
 	defer mm.mappingMu.Unlock()
 	defer func() {
-		mm.vmas.MergeRange(ar)
-		mm.vmas.MergeAdjacent(ar)
+		mm.vmas.MergeInsideRange(ar)
+		mm.vmas.MergeOutsideRange(ar)
 	}()
 	vseg := mm.vmas.LowerBoundSegment(ar.Start)
 	lastEnd := ar.Start
@@ -1067,8 +1067,8 @@ func (mm *MemoryManager) SetDontFork(addr hostarch.Addr, length uint64, dontfork
 	mm.mappingMu.Lock()
 	defer mm.mappingMu.Unlock()
 	defer func() {
-		mm.vmas.MergeRange(ar)
-		mm.vmas.MergeAdjacent(ar)
+		mm.vmas.MergeInsideRange(ar)
+		mm.vmas.MergeOutsideRange(ar)
 	}()
 
 	for vseg := mm.vmas.LowerBoundSegment(ar.Start); vseg.Ok() && vseg.Start() < ar.End; vseg = vseg.NextSegment() {

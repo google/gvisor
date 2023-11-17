@@ -144,7 +144,7 @@ func (mm *MemoryManager) Fork(ctx context.Context) (*MemoryManager, error) {
 	mm2.activeMu.NestedLock(activeLockForked)
 	defer mm2.activeMu.NestedUnlock(activeLockForked)
 	if dontforks {
-		defer mm.pmas.MergeRange(mm.applicationAddrRange())
+		defer mm.pmas.MergeInsideRange(mm.applicationAddrRange())
 	}
 	srcvseg := mm.vmas.FirstSegment()
 	dstpgap := mm2.pmas.FirstGap()
