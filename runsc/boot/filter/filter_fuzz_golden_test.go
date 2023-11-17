@@ -26,7 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap"
 	"gvisor.dev/gvisor/pkg/test/testutil"
-	"gvisor.dev/gvisor/runsc/boot/filter"
+	"gvisor.dev/gvisor/runsc/boot/filter/config"
 	"gvisor.dev/gvisor/test/secfuzz"
 )
 
@@ -62,10 +62,10 @@ func FuzzFilterAgainstGolden(f *testing.F) {
 		EnforceFullCoverage: false,
 	}
 
-	filterOpts := filter.Options{
+	filterOpts := config.Options{
 		Platform: &systrap.Systrap{},
 	}
-	rules, denyRules := filter.Rules(filterOpts)
+	rules, denyRules := config.Rules(filterOpts)
 	ruleSets := []seccomp.RuleSet{
 		{
 			Rules:  denyRules,
@@ -76,7 +76,7 @@ func FuzzFilterAgainstGolden(f *testing.F) {
 			Action: linux.SECCOMP_RET_ALLOW,
 		},
 	}
-	opts := filter.SeccompOptions(filterOpts)
+	opts := config.SeccompOptions(filterOpts)
 	// We use unique actions here to be able to tell them apart.
 	opts.DefaultAction = linux.SECCOMP_RET_KILL_THREAD
 	opts.BadArchAction = linux.SECCOMP_RET_KILL_PROCESS

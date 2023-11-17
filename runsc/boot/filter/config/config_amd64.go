@@ -12,10 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build arm64
-// +build arm64
+//go:build amd64
+// +build amd64
 
-package filter
+package config
 
 import (
 	"golang.org/x/sys/unix"
@@ -24,27 +24,33 @@ import (
 
 func init() {
 	allowedSyscalls.Set(unix.SYS_CLONE, seccomp.PerArg{
+		// parent_tidptr and child_tidptr are always 0 because neither
+		// CLONE_PARENT_SETTID nor CLONE_CHILD_SETTID are used.
 		seccomp.EqualTo(
 			unix.CLONE_VM |
 				unix.CLONE_FS |
 				unix.CLONE_FILES |
+				unix.CLONE_SETTLS |
 				unix.CLONE_SIGHAND |
 				unix.CLONE_SYSVSEM |
 				unix.CLONE_THREAD),
 		seccomp.AnyValue{}, // newsp
-		// These arguments are left uninitialized by the Go
-		// runtime, so they may be anything (and are unused by
-		// the host).
-		seccomp.AnyValue{}, // parent_tidptr
+		seccomp.EqualTo(0), // parent_tidptr
+		seccomp.EqualTo(0), // child_tidptr
 		seccomp.AnyValue{}, // tls
-		seccomp.AnyValue{}, // child_tidptr
 	})
 }
 
 func archFstatAtSysNo() uintptr {
-	return unix.SYS_FSTATAT
+	return unix.SYS_NEWFSTATAT
 }
 
 func archSpecificHotSyscalls() []uintptr {
-	return nil
+	return []uintptr{
+		unix.SYS_NANOSLEEP,  // Used a bunch
+		unix.SYS_SENDMMSG,   // Used by network workloads
+		unix.SYS_FSTAT,      // Used for file I/O
+		unix.SYS_PPOLL,      // Used in general for I/O
+		unix.SYS_EPOLL_WAIT, // Same
+	}
 }

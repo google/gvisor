@@ -24,23 +24,23 @@ import (
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/platform/kvm"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap"
-	"gvisor.dev/gvisor/runsc/boot/filter"
+	"gvisor.dev/gvisor/runsc/boot/filter/config"
 	"gvisor.dev/gvisor/test/secbench"
 	"gvisor.dev/gvisor/test/secbench/secbenchdef"
 )
 
 type Options struct {
 	Name    string
-	Options filter.Options
+	Options config.Options
 }
 
 // BenchmarkSentrySystrap benchmarks the seccomp filters used by the Sentry
 // using the Systrap platform.
 func BenchmarkSentrySystrap(b *testing.B) {
-	opts := filter.Options{
+	opts := config.Options{
 		Platform: &systrap.Systrap{},
 	}
-	rules, denyRules := filter.Rules(opts)
+	rules, denyRules := config.Rules(opts)
 	secbench.Run(b, secbench.BenchFromSyscallRules(
 		b,
 		"Postgres",
@@ -64,17 +64,17 @@ func BenchmarkSentrySystrap(b *testing.B) {
 		},
 		rules,
 		denyRules,
-		filter.SeccompOptions(opts),
+		config.SeccompOptions(opts),
 	))
 }
 
 // BenchmarkSentryKVM benchmarks the seccomp filters used by the Sentry
 // using the KVM platform.
 func BenchmarkSentryKVM(b *testing.B) {
-	opts := filter.Options{
+	opts := config.Options{
 		Platform: &kvm.KVM{},
 	}
-	rules, denyRules := filter.Rules(opts)
+	rules, denyRules := config.Rules(opts)
 	secbench.Run(b, secbench.BenchFromSyscallRules(
 		b,
 		"Postgres",
@@ -96,16 +96,16 @@ func BenchmarkSentryKVM(b *testing.B) {
 		},
 		rules,
 		denyRules,
-		filter.SeccompOptions(opts),
+		config.SeccompOptions(opts),
 	))
 }
 
 func BenchmarkNVProxyIoctl(b *testing.B) {
-	opts := filter.Options{
+	opts := config.Options{
 		Platform: &systrap.Systrap{},
 		NVProxy:  true,
 	}
-	rules, denyRules := filter.Rules(opts)
+	rules, denyRules := config.Rules(opts)
 	var sequences []secbenchdef.Sequence
 	if err := rules.ForSingleArgument(unix.SYS_IOCTL, 1, func(v seccomp.ValueMatcher) error {
 		if arg1Equal, isArg1Equal := v.(seccomp.EqualTo); isArg1Equal {
@@ -128,6 +128,6 @@ func BenchmarkNVProxyIoctl(b *testing.B) {
 		},
 		rules,
 		denyRules,
-		filter.SeccompOptions(opts),
+		config.SeccompOptions(opts),
 	))
 }

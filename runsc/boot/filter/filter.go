@@ -12,104 +12,26 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package filter defines all syscalls the sandbox is allowed to make
-// to the host, and installs seccomp filters to prevent prohibited
-// syscalls in case it's compromised.
+// Package filter installs seccomp filters to prevent prohibited syscalls
+// in case it's compromised.
 package filter
 
 import (
-	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/seccomp"
-	"gvisor.dev/gvisor/pkg/sentry/devices/accel"
-	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
-	"gvisor.dev/gvisor/pkg/sentry/platform"
+	"gvisor.dev/gvisor/runsc/boot/filter/config"
 )
 
-// Options are seccomp filter related options.
-type Options struct {
-	Platform              platform.Platform
-	HostNetwork           bool
-	HostNetworkRawSockets bool
-	HostFilesystem        bool
-	ProfileEnable         bool
-	NVProxy               bool
-	TPUProxy              bool
-	ControllerFD          int
-}
-
-// Rules returns the seccomp rules and denyRules to use for the Sentry.
-func Rules(opt Options) (seccomp.SyscallRules, seccomp.SyscallRules) {
-	s := allowedSyscalls
-	s.Merge(controlServerFilters(opt.ControllerFD))
-
-	// Set of additional filters used by -race and -msan. Returns empty
-	// when not enabled.
-	s.Merge(instrumentationFilters())
-
-	if opt.HostNetwork {
-		if opt.HostNetworkRawSockets {
-			Report("host networking (with raw sockets) enabled: syscall filters less restrictive!")
-		} else {
-			Report("host networking enabled: syscall filters less restrictive!")
-		}
-		s.Merge(hostInetFilters(opt.HostNetworkRawSockets))
-	}
-	if opt.ProfileEnable {
-		Report("profile enabled: syscall filters less restrictive!")
-		s.Merge(profileFilters())
-	}
-	if opt.HostFilesystem {
-		Report("host filesystem enabled: syscall filters less restrictive!")
-		s.Merge(hostFilesystemFilters())
-	}
-	if opt.NVProxy {
-		Report("Nvidia GPU driver proxy enabled: syscall filters less restrictive!")
-		s.Merge(nvproxy.Filters())
-	}
-	if opt.TPUProxy {
-		Report("TPU device proxy enabled: syscall filters less restrictive!")
-		s.Merge(accel.Filters())
-	}
-
-	s.Merge(opt.Platform.SyscallFilters())
-	return s, seccomp.DenyNewExecMappings
-}
-
-// SeccompOptions returns the seccomp program options to use for the filter.
-func SeccompOptions(opt Options) seccomp.ProgramOptions {
-	// futex(2) is unequivocally the most-frequently-used syscall by the
-	// Sentry across all platforms.
-	hotSyscalls := []uintptr{unix.SYS_FUTEX}
-	// ... Then comes the platform-specific hot syscalls which are typically
-	// part of the syscall interception hot path.
-	hotSyscalls = append(hotSyscalls, opt.Platform.HottestSyscalls()...)
-	// ... Then come a few syscalls that are frequent just from workloads in
-	// general.
-	hotSyscalls = append(hotSyscalls, archSpecificHotSyscalls()...)
-
-	// Now deduplicate them.
-	sysnoMap := make(map[uintptr]struct{}, len(hotSyscalls))
-	uniqueHotSyscalls := make([]uintptr, 0, len(hotSyscalls))
-	for _, sysno := range hotSyscalls {
-		if _, alreadyAdded := sysnoMap[sysno]; !alreadyAdded {
-			sysnoMap[sysno] = struct{}{}
-			uniqueHotSyscalls = append(uniqueHotSyscalls, sysno)
-		}
-	}
-
-	opts := seccomp.DefaultProgramOptions()
-	opts.HotSyscalls = uniqueHotSyscalls
-	return opts
-}
+// Options is a re-export of the config Options type under this package.
+type Options = config.Options
 
 // Install seccomp filters based on the given platform.
 func Install(opt Options) error {
-	rules, denyRules := Rules(opt)
-	return seccomp.Install(rules, denyRules, SeccompOptions(opt))
-}
-
-// Report writes a warning message to the log.
-func Report(msg string) {
-	log.Warningf("*** SECCOMP WARNING: %s", msg)
+	// TODO(b/298726675): Look up precompiled rules and use them here if
+	// possible.
+	rules, denyRules := config.Rules(opt)
+	for _, warning := range config.Warnings(opt) {
+		log.Warningf("*** SECCOMP WARNING: %s", warning)
+	}
+	return seccomp.Install(rules, denyRules, config.SeccompOptions(opt))
 }

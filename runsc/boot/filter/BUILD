@@ -8,45 +8,14 @@ package(
 
 go_library(
     name = "filter",
-    srcs = [
-        "config.go",
-        "config_amd64.go",
-        "config_arm64.go",
-        "config_profile.go",
-        "extra_filters.go",
-        "extra_filters_asan.go",
-        "extra_filters_hostinet.go",
-        "extra_filters_msan.go",
-        "extra_filters_race.go",
-        "extra_filters_race_amd64.go",
-        "extra_filters_race_arm64.go",
-        "filter.go",
-    ],
+    srcs = ["filter.go"],
     visibility = [
         "//runsc/boot:__subpackages__",
     ],
     deps = [
-        "//pkg/abi/linux",
         "//pkg/log",
         "//pkg/seccomp",
-        "//pkg/sentry/devices/accel",
-        "//pkg/sentry/devices/nvproxy",
-        "//pkg/sentry/platform",
-        "//pkg/sentry/socket/hostinet",
-        "//pkg/tcpip/link/fdbased",
-        "@org_golang_x_sys//unix:go_default_library",
-    ],
-)
-
-go_test(
-    name = "filter_test",
-    srcs = ["filter_test.go"],
-    library = ":filter",
-    deps = [
-        "//pkg/seccomp",
-        "//pkg/sentry/platform/kvm",
-        "//pkg/sentry/platform/systrap",
-        "@org_golang_x_sys//unix:go_default_library",
+        "//runsc/boot/filter/config",
     ],
 )
 
@@ -59,6 +28,7 @@ secbench_test(
         "//pkg/seccomp",
         "//pkg/sentry/platform/kvm",
         "//pkg/sentry/platform/systrap",
+        "//runsc/boot/filter/config",
         "//test/secbench",
         "//test/secbench/secbenchdef",
         "@org_golang_x_sys//unix:go_default_library",
@@ -73,12 +43,12 @@ go_test(
     ],
     data = ["filter_fuzz_golden.bpf"],
     deps = [
-        ":filter",
         "//pkg/abi/linux",
         "//pkg/bpf",
         "//pkg/seccomp",
         "//pkg/sentry/platform/systrap",
         "//pkg/test/testutil",
+        "//runsc/boot/filter/config",
         "//test/secfuzz",
         "@org_golang_x_sys//unix:go_default_library",
     ],

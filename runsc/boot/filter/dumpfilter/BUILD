@@ -17,7 +17,7 @@ go_binary(
         "//pkg/log",
         "//pkg/seccomp",
         "//pkg/sentry/platform/systrap",
-        "//runsc/boot/filter",
+        "//runsc/boot/filter/config",
         "//runsc/flag",
     ],
 )
