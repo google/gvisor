@@ -17,6 +17,9 @@
 package config
 
 import (
+	"fmt"
+	"strings"
+
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/devices/accel"
@@ -34,6 +37,24 @@ type Options struct {
 	NVProxy               bool
 	TPUProxy              bool
 	ControllerFD          int
+}
+
+// ConfigKey returns a unique string representing this set of options.
+// This is used for matching a set of `Options` at seccomp precompile
+// time with the same set of `Options` at runtime.
+// As such, it should encompass all fields that change the structure of
+// the seccomp rules, but should not encompass fields that are only known
+// at runtime (e.g. `ControllerFD`).
+func (opt Options) ConfigKey() string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Platform=%q ", opt.Platform.ConfigKey()))
+	sb.WriteString(fmt.Sprintf("HostNetwork=%t ", opt.HostNetwork))
+	sb.WriteString(fmt.Sprintf("HostNetworkRawSockets=%t ", opt.HostNetworkRawSockets))
+	sb.WriteString(fmt.Sprintf("HostFilesystem=%t ", opt.HostFilesystem))
+	sb.WriteString(fmt.Sprintf("ProfileEnable=%t ", opt.ProfileEnable))
+	sb.WriteString(fmt.Sprintf("NVProxy=%t ", opt.NVProxy))
+	sb.WriteString(fmt.Sprintf("TPUProxy=%t ", opt.TPUProxy))
+	return strings.TrimSpace(sb.String())
 }
 
 // Warnings returns a set of warnings that may be useful to display to the
