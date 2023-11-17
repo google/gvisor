@@ -54,8 +54,26 @@ type Program struct {
 // It is used when rendering seccomp-bpf program instructions.
 type Values map[string]uint32
 
+const (
+	uint64VarSuffixHigh = "_high32bits"
+	uint64VarSuffixLow  = "_low32bits"
+)
+
+// SetUint64 sets the value of a 64-bit variable in `v`.
+// Under the hood, this is stored as two 32-bit variables.
+// Use `Values.GetUint64` to retrieve the 64-bit variable.
+func (v Values) SetUint64(varName string, value uint64) {
+	v[varName+uint64VarSuffixHigh] = uint32(value >> 32)
+	v[varName+uint64VarSuffixLow] = uint32(value)
+}
+
+// GetUint64 retrieves the value of a 64-bit variable set using
+// `Values.SetUint64(varName)`.
+func (v Values) GetUint64(varName string) uint64 {
+	return uint64(v[varName+"_high32bits"])<<32 | uint64(v[varName+"_low32bits"])
+}
+
 // Precompile compiles a `ProgramDesc` with the given values.
-//
 // It supports the notion of "variables", which are named in `vars`.
 // Variables are uint32s which are only known at runtime, and whose value
 // shows up in the BPF bytecode.
@@ -168,6 +186,60 @@ func precompile(name string, values Values, fn func(Values) ProgramDesc) (Progra
 		}
 	}
 	bytecode32 := instructionsToUint32Slice(insns)
+	varOffsets := getVarOffsets(bytecode32, values)
+
+	// nonOptimizedOffsets stores the offsets at which each variable shows up
+	// in the non-optimized version of the program. It is only computed when
+	// a variable doesn't show up in the optimized version of the program.
+	var nonOptimizedOffsets map[string][]int
+	computeNonOptimizedOffsets := func() error {
+		if nonOptimizedOffsets != nil {
+			return nil
+		}
+		if !precompileOpts.SeccompOptions.Optimize {
+			nonOptimizedOffsets = varOffsets
+			return nil
+		}
+		nonOptimizedOpts := precompileOpts.SeccompOptions
+		nonOptimizedOpts.Optimize = false
+		nonOptInsns, _, err := seccomp.BuildProgram(precompileOpts.Rules, nonOptimizedOpts)
+		if err != nil {
+			return fmt.Errorf("cannot build seccomp program with optimizations disabled: %w", err)
+		}
+		nonOptimizedOffsets = getVarOffsets(instructionsToUint32Slice(nonOptInsns), values)
+		return nil
+	}
+
+	for varName := range values {
+		if len(varOffsets[varName]) == 0 {
+			// If the variable doesn't show up in the optimized program but does
+			// show up in the non-optimized program, then it is not unused.
+			// It is being optimized away, e.g. as a result of being OR'd with a
+			// `MatchAll` rule.
+			// Only report an error if the variable shows up in neither optimized
+			// nor non-optimized bytecode.
+			if err := computeNonOptimizedOffsets(); err != nil {
+				return Program{}, fmt.Errorf("cannot compute variable offsets for the non-optimized version of the program: %v", err)
+			}
+			if len(nonOptimizedOffsets[varName]) == 0 {
+				return Program{}, fmt.Errorf("var %q does not show up in the BPF bytecode", varName)
+			}
+			// We set the offset slice for this variable to a nil slice, so that
+			// it gets properly serialized (as opposed to omitted entirely) in the
+			// generated Go code.
+			varOffsets[varName] = nil
+		}
+	}
+	return Program{
+		Name:       name,
+		Bytecode32: bytecode32,
+		VarOffsets: varOffsets,
+	}, nil
+}
+
+// getVarOffsets returns the uint32-based offsets at which the values of each
+// variable in `values` shows up.
+func getVarOffsets(bytecode32 []uint32, values Values) map[string][]int {
 	varOffsets := make(map[string][]int, len(values))
 	for varName, value := range values {
 		for i, v := range bytecode32 {
@@ -176,16 +248,7 @@ func precompile(name string, values Values, fn func(Values) ProgramDesc) (Progra
 			}
 		}
 	}
-	for varName := range values {
-		if len(varOffsets[varName]) == 0 {
-			return Program{}, fmt.Errorf("var %q does not show up in the BPF bytecode", varName)
-		}
-	}
-	return Program{
-		Name:       name,
-		Bytecode32: bytecode32,
-		VarOffsets: varOffsets,
-	}, nil
+	return varOffsets
 }
 
 // Expr renders a Go expression encoding this `Program`.
@@ -208,6 +271,10 @@ func (program Program) Expr(indentPrefix, pkgName string) string {
 	}
 	sort.Strings(varNames)
 	for _, varName := range varNames {
+		if len(program.VarOffsets[varName]) == 0 {
+			sb.WriteString(fmt.Sprintf("%s\t\t%q: nil,\n", indentPrefix, varName))
+			continue
+		}
 		sb.WriteString(fmt.Sprintf("%s\t\t%q: []int{\n", indentPrefix, varName))
 		for _, v := range program.VarOffsets[varName] {
 			sb.WriteString(fmt.Sprintf("%s\t\t\t%d,\n", indentPrefix, v))
