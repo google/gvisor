@@ -15,6 +15,8 @@
 package precompiledseccomp
 
 import (
+	"fmt"
+	"math"
 	"testing"
 
 	"golang.org/x/sys/unix"
@@ -116,6 +118,45 @@ func TestPrecompile(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name: "variable that can be optimized away",
+			vars: []string{"var1"},
+			fn: func(values Values) ProgramDesc {
+				return ProgramDesc{
+					Rules: []seccomp.RuleSet{{
+						Rules: seccomp.NewSyscallRules().Add(
+							unix.SYS_READ,
+							seccomp.Or{
+								seccomp.PerArg{
+									seccomp.EqualTo(values["var1"]),
+								},
+								seccomp.MatchAll{},
+							},
+						),
+						Action: linux.SECCOMP_RET_ALLOW,
+					}},
+					SeccompOptions: seccomp.DefaultProgramOptions(),
+				}
+			},
+		},
+		{
+			name: "64-bit variable",
+			vars: []string{"var1" + uint64VarSuffixHigh, "var1" + uint64VarSuffixLow},
+			fn: func(values Values) ProgramDesc {
+				return ProgramDesc{
+					Rules: []seccomp.RuleSet{{
+						Rules: seccomp.NewSyscallRules().Add(
+							unix.SYS_READ,
+							seccomp.PerArg{
+								seccomp.EqualTo(values.GetUint64("var1")),
+							},
+						),
+						Action: linux.SECCOMP_RET_ALLOW,
+					}},
+					SeccompOptions: seccomp.DefaultProgramOptions(),
+				}
+			},
+		},
+		{
 			name: "inconsistent offsets",
 			vars: []string{"var1"},
 			fn: func(values Values) ProgramDesc {
@@ -199,5 +240,22 @@ func TestPrecompile(t *testing.T) {
 				t.Fatal("Precompile succeeded but want error")
 			}
 		})
+	}
+}
+
+func TestUint64Var(t *testing.T) {
+	vars := Values{}
+	for _, v := range []uint64{
+		0, 1,
+		math.MaxInt,
+		math.MaxInt16,
+		math.MaxInt32,
+		math.MaxInt64,
+		math.MaxUint64,
+	} {
+		vars.SetUint64(fmt.Sprintf("var%d", v), v)
+		if vars.GetUint64(fmt.Sprintf("var%d", v)) != v {
+			t.Errorf("GetUint64(%q) = %d, want %d", fmt.Sprintf("var%d", v), v, v)
+		}
 	}
 }
