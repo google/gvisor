@@ -658,6 +658,42 @@ TEST_P(UnixSocketPairCmsgTest, FDPassPeek) {
   EXPECT_THAT(close(received_fd), SyscallSucceeds());
 }
 
+// A zero-length SCM_RIGHTS array should be equivalent to sending no FDs at all.
+TEST_P(UnixSocketPairCmsgTest, ZeroFDPass) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  char sent_data[20];
+  RandomizeBuffer(sent_data, sizeof(sent_data));
+  ASSERT_NO_FATAL_FAILURE(
+      SendFDs(sockets->first_fd(), nullptr, 0, sent_data, sizeof(sent_data)));
+
+  char received_data[sizeof(sent_data)];
+  ASSERT_NO_FATAL_FAILURE(
+      RecvNoCmsg(sockets->second_fd(), received_data, sizeof(received_data)));
+
+  EXPECT_EQ(0, memcmp(received_data, sent_data, sizeof(sent_data)));
+}
+
+TEST_P(UnixSocketPairCmsgTest, ZeroFDPassCoalesceData) {
+  SKIP_IF(GetParam().type != SOCK_STREAM);
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+
+  char sent_data[20];
+  RandomizeBuffer(sent_data, sizeof(sent_data));
+  ASSERT_NO_FATAL_FAILURE(
+      SendFDs(sockets->first_fd(), nullptr, 0, sent_data, sizeof(sent_data)));
+  ASSERT_NO_FATAL_FAILURE(
+      WriteFd(sockets->first_fd(), sent_data, sizeof(sent_data)));
+
+  char received_data[sizeof(sent_data) * 2];
+  ASSERT_NO_FATAL_FAILURE(
+      RecvNoCmsg(sockets->second_fd(), received_data, sizeof(received_data)));
+
+  EXPECT_EQ(0, memcmp(received_data, sent_data, sizeof(sent_data)));
+  EXPECT_EQ(0, memcmp(received_data + sizeof(sent_data), sent_data,
+                      sizeof(sent_data)));
+}
+
 TEST_P(UnixSocketPairCmsgTest, BasicCredPass) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
 
