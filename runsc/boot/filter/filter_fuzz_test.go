@@ -20,17 +20,17 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap"
-	"gvisor.dev/gvisor/runsc/boot/filter"
+	"gvisor.dev/gvisor/runsc/boot/filter/config"
 	"gvisor.dev/gvisor/test/secfuzz"
 )
 
 // FuzzFilterOptimizationsResultInConsistentProgram tests that optimizations
 // do not affect the behavior of the generated seccomp-bpf program.
 func FuzzFilterOptimizationsResultInConsistentProgram(f *testing.F) {
-	filterOpts := filter.Options{
+	filterOpts := config.Options{
 		Platform: &systrap.Systrap{},
 	}
-	rules, denyRules := filter.Rules(filterOpts)
+	rules, denyRules := config.Rules(filterOpts)
 	ruleSets := []seccomp.RuleSet{
 		{
 			Rules:  denyRules,
@@ -41,7 +41,7 @@ func FuzzFilterOptimizationsResultInConsistentProgram(f *testing.F) {
 			Action: linux.SECCOMP_RET_ALLOW,
 		},
 	}
-	unoptimizedOpts := filter.SeccompOptions(filterOpts)
+	unoptimizedOpts := config.SeccompOptions(filterOpts)
 	unoptimizedOpts.Optimize = false
 	unoptimized, _, err := seccomp.BuildProgram(ruleSets, unoptimizedOpts)
 	if err != nil {
@@ -59,7 +59,7 @@ func FuzzFilterOptimizationsResultInConsistentProgram(f *testing.F) {
 		// never be covered.
 		EnforceFullCoverage: false,
 	}
-	optimizedOpts := filter.SeccompOptions(filterOpts)
+	optimizedOpts := config.SeccompOptions(filterOpts)
 	optimizedOpts.Optimize = true
 	optimized, _, err := seccomp.BuildProgram(ruleSets, optimizedOpts)
 	if err != nil {

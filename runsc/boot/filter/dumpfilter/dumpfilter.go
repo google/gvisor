@@ -24,7 +24,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/pkg/sentry/platform/systrap"
-	"gvisor.dev/gvisor/runsc/boot/filter"
+	"gvisor.dev/gvisor/runsc/boot/filter/config"
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
@@ -62,13 +62,13 @@ func action(s string) linux.BPFAction {
 
 func main() {
 	flag.Parse()
-	opt := filter.Options{
+	opt := config.Options{
 		Platform: &systrap.Systrap{},
 		NVProxy:  *nvproxy,
 	}
-	rules, denyRules := filter.Rules(opt)
+	rules, denyRules := config.Rules(opt)
 
-	seccompOpts := filter.SeccompOptions(opt)
+	seccompOpts := config.SeccompOptions(opt)
 	seccompOpts.DefaultAction = action(*defaultAction)
 	seccompOpts.BadArchAction = action(*badArchAction)
 	insns, stats, err := seccomp.BuildProgram([]seccomp.RuleSet{

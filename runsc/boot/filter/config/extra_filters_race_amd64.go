@@ -1,4 +1,4 @@
-// Copyright 2023 The gVisor Authors.
+// Copyright 2022 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,23 +12,19 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build asan
-// +build asan
+//go:build race
+// +build race
 
-package filter
+package config
 
 import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/seccomp"
 )
 
-// instrumentationFilters returns additional filters for syscalls used by ASAN.
-func instrumentationFilters() seccomp.SyscallRules {
-	Report("ASAN is enabled: syscall filters less restrictive!")
-	return seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
-		unix.SYS_CLONE:             seccomp.MatchAll{},
-		unix.SYS_MMAP:              seccomp.MatchAll{},
-		unix.SYS_SCHED_GETAFFINITY: seccomp.MatchAll{},
-		unix.SYS_SET_ROBUST_LIST:   seccomp.MatchAll{},
-	})
+func archInstrumentationFilters(f seccomp.SyscallRules) seccomp.SyscallRules {
+	f.Set(unix.SYS_OPEN, seccomp.MatchAll{})
+	// Used within glibc's malloc.
+	f.Set(unix.SYS_TIME, seccomp.MatchAll{})
+	return f
 }
