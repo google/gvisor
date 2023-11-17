@@ -15,8 +15,6 @@
 package accel
 
 import (
-	"fmt"
-
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/gasket"
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -117,12 +115,10 @@ func gasketMapBufferIoctl(ctx context.Context, t *kernel.Task, hostFd int32, fd 
 	defer fd.device.mu.Unlock()
 	for _, pr := range prs {
 		rlen := uint64(pr.Source.Length())
-		if !fd.device.devAddrSet.Add(DevAddrRange{
+		fd.device.devAddrSet.InsertRange(DevAddrRange{
 			devAddr,
 			devAddr + rlen,
-		}, pinnedAccelMem{pinnedRange: pr, pageTableIndex: userIoctlParams.PageTableIndex}) {
-			panic(fmt.Sprintf("unexpected overlap of devaddr range [%#x-%#x)", devAddr, devAddr+rlen))
-		}
+		}, pinnedAccelMem{pinnedRange: pr, pageTableIndex: userIoctlParams.PageTableIndex})
 		devAddr += rlen
 	}
 	return n, nil

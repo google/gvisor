@@ -576,13 +576,11 @@ func (f *MemoryFile) allocate(length uint64, opts *AllocOpts) (memmap.FileRange,
 		}
 	}
 	// Mark selected pages as in use.
-	if !f.usage.Add(fr, usageInfo{
+	f.usage.InsertRange(fr, usageInfo{
 		kind:    opts.Kind,
 		refs:    1,
 		memCgID: opts.MemCgID,
-	}) {
-		panic(fmt.Sprintf("allocating %v: failed to insert into usage set:\n%v", fr, &f.usage))
-	}
+	})
 
 	return fr, nil
 }
@@ -849,7 +847,7 @@ func (f *MemoryFile) markDecommitted(fr memmap.FileRange) {
 	defer f.mu.Unlock()
 	// Since we're changing the knownCommitted attribute, we need to merge
 	// across the entire range to ensure that the usage tree is minimal.
-	gap := f.usage.ApplyContiguous(fr, func(seg usageIterator) {
+	f.usage.MutateFullRange(fr, func(seg usageIterator) bool {
 		val := seg.ValuePtr()
 		if val.knownCommitted {
 			// Drop the usageExpected appropriately.
@@ -859,11 +857,8 @@ func (f *MemoryFile) markDecommitted(fr memmap.FileRange) {
 			val.knownCommitted = false
 		}
 		val.memCgID = 0
+		return true
 	})
-	if gap.Ok() {
-		panic(fmt.Sprintf("Decommit(%v): attempted to decommit unallocated pages %v:\n%v", fr, gap.Range(), &f.usage))
-	}
-	f.usage.MergeRange(fr)
 }
 
 // HasUniqueRef returns true if all pages in the given range have exactly one
@@ -875,16 +870,15 @@ func (f *MemoryFile) markDecommitted(fr memmap.FileRange) {
 func (f *MemoryFile) HasUniqueRef(fr memmap.FileRange) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	seg := f.usage.FindSegment(fr.Start)
-	for {
+	hasUniqueRef := true
+	f.usage.VisitFullRange(fr, func(seg usageIterator) bool {
 		if seg.ValuePtr().refs != 1 {
+			hasUniqueRef = false
 			return false
 		}
-		seg = seg.NextSegment()
-		if !seg.Ok() || fr.End <= seg.Start() {
-			return true
-		}
-	}
+		return true
+	})
+	return hasUniqueRef
 }
 
 // IncRef implements memmap.File.IncRef.
@@ -896,14 +890,10 @@ func (f *MemoryFile) IncRef(fr memmap.FileRange, memCgID uint32) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	gap := f.usage.ApplyContiguous(fr, func(seg usageIterator) {
+	f.usage.MutateFullRange(fr, func(seg usageIterator) bool {
 		seg.ValuePtr().refs++
+		return true
 	})
-	if gap.Ok() {
-		panic(fmt.Sprintf("IncRef(%v): attempted to IncRef on unallocated pages %v:\n%v", fr, gap.Range(), &f.usage))
-	}
-
-	f.usage.MergeAdjacent(fr)
 }
 
 // DecRef implements memmap.File.DecRef.
@@ -917,15 +907,14 @@ func (f *MemoryFile) DecRef(fr memmap.FileRange) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
-	for seg := f.usage.FindSegment(fr.Start); seg.Ok() && seg.Start() < fr.End; seg = seg.NextSegment() {
-		seg = f.usage.Isolate(seg, fr)
+	f.usage.MutateFullRange(fr, func(seg usageIterator) bool {
 		val := seg.ValuePtr()
 		if val.refs == 0 {
 			panic(fmt.Sprintf("DecRef(%v): 0 existing references on %v:\n%v", fr, seg.Range(), &f.usage))
 		}
 		val.refs--
 		if val.refs == 0 {
-			f.reclaim.Add(seg.Range(), reclaimSetValue{})
+			f.reclaim.InsertRange(seg.Range(), reclaimSetValue{})
 			freed = true
 			// Reclassify memory as System, until it's freed by the reclaim
 			// goroutine.
@@ -934,8 +923,8 @@ func (f *MemoryFile) DecRef(fr memmap.FileRange) {
 			}
 			val.kind = usage.System
 		}
-	}
-	f.usage.MergeAdjacent(fr)
+		return true
+	})
 
 	if freed {
 		f.reclaimable = true

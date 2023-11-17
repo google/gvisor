@@ -73,57 +73,57 @@ func (dirtySetFunctions) Split(_ memmap.MappableRange, val DirtyInfo, _ uint64) 
 
 // MarkClean marks all offsets in mr as not dirty, except for those to which
 // KeepDirty has been applied.
-func (ds *DirtySet) MarkClean(mr memmap.MappableRange) {
-	seg := ds.LowerBoundSegment(mr.Start)
+func (s *DirtySet) MarkClean(mr memmap.MappableRange) {
+	seg := s.LowerBoundSegment(mr.Start)
 	for seg.Ok() && seg.Start() < mr.End {
 		if seg.Value().Keep {
 			seg = seg.NextSegment()
 			continue
 		}
-		seg = ds.Isolate(seg, mr)
-		seg = ds.Remove(seg).NextSegment()
+		seg = s.Isolate(seg, mr)
+		seg = s.Remove(seg).NextSegment()
 	}
 }
 
 // KeepClean marks all offsets in mr as not dirty, even those that were
 // previously kept dirty by KeepDirty.
-func (ds *DirtySet) KeepClean(mr memmap.MappableRange) {
-	ds.RemoveRange(mr)
+func (s *DirtySet) KeepClean(mr memmap.MappableRange) {
+	s.RemoveRange(mr)
 }
 
 // MarkDirty marks all offsets in mr as dirty.
-func (ds *DirtySet) MarkDirty(mr memmap.MappableRange) {
-	ds.setDirty(mr, false)
+func (s *DirtySet) MarkDirty(mr memmap.MappableRange) {
+	s.setDirty(mr, false)
 }
 
 // KeepDirty marks all offsets in mr as dirty and prevents them from being
 // marked as clean by MarkClean.
-func (ds *DirtySet) KeepDirty(mr memmap.MappableRange) {
-	ds.setDirty(mr, true)
+func (s *DirtySet) KeepDirty(mr memmap.MappableRange) {
+	s.setDirty(mr, true)
 }
 
-func (ds *DirtySet) setDirty(mr memmap.MappableRange, keep bool) {
+func (s *DirtySet) setDirty(mr memmap.MappableRange, keep bool) {
 	var changedAny bool
 	defer func() {
 		if changedAny {
 			// Merge segments split by Isolate to reduce cost of iteration.
-			ds.MergeRange(mr)
+			s.MergeInsideRange(mr)
 		}
 	}()
-	seg, gap := ds.Find(mr.Start)
+	seg, gap := s.Find(mr.Start)
 	for {
 		switch {
 		case seg.Ok() && seg.Start() < mr.End:
 			if keep && !seg.Value().Keep {
 				changedAny = true
-				seg = ds.Isolate(seg, mr)
+				seg = s.Isolate(seg, mr)
 				seg.ValuePtr().Keep = true
 			}
 			seg, gap = seg.NextNonEmpty()
 
 		case gap.Ok() && gap.Start() < mr.End:
 			changedAny = true
-			seg = ds.Insert(gap, gap.Range().Intersect(mr), DirtyInfo{keep})
+			seg = s.Insert(gap, gap.Range().Intersect(mr), DirtyInfo{keep})
 			seg, gap = seg.NextNonEmpty()
 
 		default:
@@ -135,18 +135,18 @@ func (ds *DirtySet) setDirty(mr memmap.MappableRange, keep bool) {
 // AllowClean allows MarkClean to mark offsets in mr as not dirty, ending the
 // effect of a previous call to KeepDirty. (It does not itself mark those
 // offsets as not dirty.)
-func (ds *DirtySet) AllowClean(mr memmap.MappableRange) {
+func (s *DirtySet) AllowClean(mr memmap.MappableRange) {
 	var changedAny bool
 	defer func() {
 		if changedAny {
 			// Merge segments split by Isolate to reduce cost of iteration.
-			ds.MergeRange(mr)
+			s.MergeInsideRange(mr)
 		}
 	}()
-	for seg := ds.LowerBoundSegment(mr.Start); seg.Ok() && seg.Start() < mr.End; seg = seg.NextSegment() {
+	for seg := s.LowerBoundSegment(mr.Start); seg.Ok() && seg.Start() < mr.End; seg = seg.NextSegment() {
 		if seg.Value().Keep {
 			changedAny = true
-			seg = ds.Isolate(seg, mr)
+			seg = s.Isolate(seg, mr)
 			seg.ValuePtr().Keep = false
 		}
 	}
@@ -163,7 +163,7 @@ func SyncDirty(ctx context.Context, mr memmap.MappableRange, cache *FileRangeSet
 	defer func() {
 		if changedDirty {
 			// Merge segments split by Isolate to reduce cost of iteration.
-			dirty.MergeRange(mr)
+			dirty.MergeInsideRange(mr)
 		}
 	}()
 	dseg := dirty.LowerBoundSegment(mr.Start)

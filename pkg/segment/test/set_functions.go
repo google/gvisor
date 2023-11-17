@@ -29,8 +29,8 @@ func (setFunctions) MaxKey() int {
 
 func (setFunctions) ClearValue(*int) {}
 
-func (setFunctions) Merge(_ Range, val1 int, _ Range, _ int) (int, bool) {
-	return val1, true
+func (setFunctions) Merge(_ Range, val1 int, _ Range, val2 int) (int, bool) {
+	return val1, val1 == val2
 }
 
 func (setFunctions) Split(_ Range, val int, _ int) (int, int) {

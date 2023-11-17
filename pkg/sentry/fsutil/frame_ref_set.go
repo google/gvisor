@@ -64,21 +64,21 @@ func (FrameRefSetFunctions) Split(_ memmap.FileRange, val FrameRefSegInfo, _ uin
 // are accounted as host page cache memory mappings. The new segments will be
 // associated with the memCgID, if the segment already exists then the memCgID
 // will not be changed.
-func (frSet *FrameRefSet) IncRefAndAccount(fr memmap.FileRange, memCgID uint32) {
-	seg, gap := frSet.Find(fr.Start)
+func (s *FrameRefSet) IncRefAndAccount(fr memmap.FileRange, memCgID uint32) {
+	seg, gap := s.Find(fr.Start)
 	for {
 		switch {
 		case seg.Ok() && seg.Start() < fr.End:
-			seg = frSet.Isolate(seg, fr)
+			seg = s.Isolate(seg, fr)
 			seg.ValuePtr().refs++
 			seg, gap = seg.NextNonEmpty()
 		case gap.Ok() && gap.Start() < fr.End:
 			newRange := gap.Range().Intersect(fr)
 			usage.MemoryAccounting.Inc(newRange.Length(), usage.Mapped, memCgID)
 			frInfo := FrameRefSegInfo{refs: 1, memCgID: memCgID}
-			seg, gap = frSet.InsertWithoutMerging(gap, newRange, frInfo).NextNonEmpty()
+			seg, gap = s.InsertWithoutMerging(gap, newRange, frInfo).NextNonEmpty()
 		default:
-			frSet.MergeAdjacent(fr)
+			s.MergeOutsideRange(fr)
 			return
 		}
 	}
@@ -86,18 +86,18 @@ func (frSet *FrameRefSet) IncRefAndAccount(fr memmap.FileRange, memCgID uint32) 
 
 // DecRefAndAccount removes a reference on the range fr and untracks segments
 // that are removed from memory accounting.
-func (frSet *FrameRefSet) DecRefAndAccount(fr memmap.FileRange) {
-	seg := frSet.FindSegment(fr.Start)
+func (s *FrameRefSet) DecRefAndAccount(fr memmap.FileRange) {
+	seg := s.FindSegment(fr.Start)
 
 	for seg.Ok() && seg.Start() < fr.End {
-		seg = frSet.Isolate(seg, fr)
+		seg = s.Isolate(seg, fr)
 		if old := seg.ValuePtr().refs; old == 1 {
 			usage.MemoryAccounting.Dec(seg.Range().Length(), usage.Mapped, seg.ValuePtr().memCgID)
-			seg = frSet.Remove(seg).NextSegment()
+			seg = s.Remove(seg).NextSegment()
 		} else {
 			seg.ValuePtr().refs--
 			seg = seg.NextSegment()
 		}
 	}
-	frSet.MergeAdjacent(fr)
+	s.MergeOutsideRange(fr)
 }
