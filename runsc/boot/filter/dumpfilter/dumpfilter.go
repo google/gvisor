@@ -63,7 +63,7 @@ func action(s string) linux.BPFAction {
 func main() {
 	flag.Parse()
 	opt := config.Options{
-		Platform: &systrap.Systrap{},
+		Platform: (&systrap.Systrap{}).SeccompInfo(),
 		NVProxy:  *nvproxy,
 	}
 	rules, denyRules := config.Rules(opt)

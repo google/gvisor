@@ -26,7 +26,7 @@ import (
 
 // Options are seccomp filter related options.
 type Options struct {
-	Platform              platform.Platform
+	Platform              platform.SeccompInfo
 	HostNetwork           bool
 	HostNetworkRawSockets bool
 	HostFilesystem        bool
@@ -87,7 +87,7 @@ func Rules(opt Options) (seccomp.SyscallRules, seccomp.SyscallRules) {
 		s.Merge(accel.Filters())
 	}
 
-	s.Merge(opt.Platform.SyscallFilters())
+	s.Merge(opt.Platform.SyscallFilters(opt.Platform.Variables()))
 	return s, seccomp.DenyNewExecMappings
 }
 

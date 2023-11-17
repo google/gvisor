@@ -21,6 +21,7 @@ go_library(
         "//pkg/cpuid",
         "//pkg/hostarch",
         "//pkg/seccomp",
+        "//pkg/seccomp/precompiledseccomp",
         "//pkg/sentry/arch",
         "//pkg/sentry/hostmm",
         "//pkg/sentry/memmap",

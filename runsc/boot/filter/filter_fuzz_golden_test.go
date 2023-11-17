@@ -63,7 +63,7 @@ func FuzzFilterAgainstGolden(f *testing.F) {
 	}
 
 	filterOpts := config.Options{
-		Platform: &systrap.Systrap{},
+		Platform: (&systrap.Systrap{}).SeccompInfo(),
 	}
 	rules, denyRules := config.Rules(filterOpts)
 	ruleSets := []seccomp.RuleSet{
