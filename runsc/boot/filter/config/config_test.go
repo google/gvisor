@@ -16,6 +16,7 @@ package config
 
 import (
 	"fmt"
+	"reflect"
 	"testing"
 
 	"golang.org/x/sys/unix"
@@ -73,4 +74,88 @@ func TestIoctlFirstArgumentIsNonNegativeFD(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestOptionsConfigKey verifies the behavior of `Options.ConfigKey`.
+func TestOptionsConfigKey(t *testing.T) {
+	// mutateFn mutates the value of a specific Options field.
+	type mutateFn func(opt *Options)
+
+	defaultOpt := Options{
+		Platform: (&systrap.Systrap{}).SeccompInfo(),
+	}
+
+	// Map of `Options` struct field names mapped to a function to mutate them.
+	// This should only contain fields which influence the configuration;
+	// calling the mutation function of these should change the value of
+	// `Options.Key`.
+	var configFields = map[string]mutateFn{
+		"Platform": func(opt *Options) {
+			if defaultOpt.Platform.ConfigKey() == opt.Platform.ConfigKey() {
+				opt.Platform = (&kvm.KVM{}).SeccompInfo()
+			} else {
+				opt.Platform = (&systrap.Systrap{}).SeccompInfo()
+			}
+		},
+		"HostNetwork":           func(opt *Options) { opt.HostNetwork = !opt.HostNetwork },
+		"HostNetworkRawSockets": func(opt *Options) { opt.HostNetworkRawSockets = !opt.HostNetworkRawSockets },
+		"HostFilesystem":        func(opt *Options) { opt.HostFilesystem = !opt.HostFilesystem },
+		"ProfileEnable":         func(opt *Options) { opt.ProfileEnable = !opt.ProfileEnable },
+		"NVProxy":               func(opt *Options) { opt.NVProxy = !opt.NVProxy },
+		"TPUProxy":              func(opt *Options) { opt.TPUProxy = !opt.TPUProxy },
+	}
+
+	// Map of `Options` struct field names mapped to a function to mutate them.
+	// This should only contain fields which are used as variables during
+	// filter generation; calling the mutation function of these should *not*
+	// change the value of `Options.Key`.
+	var varsFields = map[string]mutateFn{
+		"ControllerFD": func(opt *Options) { opt.ControllerFD++ },
+	}
+
+	t.Run("fields are exhaustive", func(t *testing.T) {
+		for i := 0; i < reflect.ValueOf(defaultOpt).NumField(); i++ {
+			f := reflect.TypeOf(defaultOpt).Field(i)
+			found := false
+			for name := range configFields {
+				if f.Name == name {
+					found = true
+					break
+				}
+			}
+			for name := range varsFields {
+				if f.Name == name {
+					found = true
+					break
+				}
+			}
+			if !found {
+				t.Fatalf("field `Options.%s` is not known to TestOptionsKey; please add it", f.Name)
+			}
+		}
+	})
+
+	t.Run("mutating config fields causes ConfigKey to change", func(t *testing.T) {
+		opt := defaultOpt // Make a copy, as we're about to mutate it.
+		key := opt.ConfigKey()
+		for name, mutateFn := range configFields {
+			mutateFn(&opt)
+			newKey := opt.ConfigKey()
+			if key == newKey {
+				t.Fatalf("mutating config field %q did not cause the ConfigKey to change: %q", name, key)
+			}
+			key = newKey
+		}
+	})
+
+	t.Run("mutating vars fields does not cause ConfigKey to change", func(t *testing.T) {
+		opt := defaultOpt // Make a copy, as we're about to mutate it.
+		key := opt.ConfigKey()
+		for name, mutateFn := range varsFields {
+			mutateFn(&opt)
+			if newKey := opt.ConfigKey(); key != newKey {
+				t.Fatalf("mutating var field %q caused the ConfigKey to change: %q -> %q", name, key, newKey)
+			}
+		}
+	})
 }
