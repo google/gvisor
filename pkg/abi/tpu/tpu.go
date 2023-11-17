@@ -38,6 +38,9 @@ const (
 
 	// TPUV4liteDeviceID is the PCI device ID of TPU V4lite hardware.
 	TPUV4liteDeviceID = 0x0056
+
+	// TPUV5eDeviceID is the PCI device ID of TPU V5e hardware.
+	TPUV5eDeviceID = 0x0063
 )
 
 // TPUV4InterruptsMap maps BAR indices to valid register offsets.
