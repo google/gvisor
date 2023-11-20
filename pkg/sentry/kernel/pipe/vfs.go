@@ -277,6 +277,13 @@ func (fd *VFSPipeFD) SpliceToNonPipe(ctx context.Context, out *vfs.FileDescripti
 		fd.pipe.consumeLocked(n)
 	}
 
+	// Implementations of out.[P]Write() that ignore written data (e.g.
+	// /dev/null) may skip calling src.CopyIn[To]() and therefore miss getting
+	// ErrWouldBlock from Pipe.peekLocked().
+	if n == 0 && err == nil && fd.pipe.size == 0 && fd.pipe.HasWriters() {
+		err = linuxerr.ErrWouldBlock
+	}
+
 	fd.pipe.mu.Unlock()
 
 	if n > 0 {

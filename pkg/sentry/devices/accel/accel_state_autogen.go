@@ -49,7 +49,7 @@ func (s *DevAddrSet) beforeSave() {}
 // +checklocksignore
 func (s *DevAddrSet) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	var rootValue *DevAddrSegmentDataSlices
+	var rootValue []DevAddrFlatSegment
 	rootValue = s.saveRoot()
 	stateSinkObject.SaveValue(0, rootValue)
 }
@@ -58,7 +58,7 @@ func (s *DevAddrSet) afterLoad() {}
 
 // +checklocksignore
 func (s *DevAddrSet) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(*DevAddrSegmentDataSlices), func(y any) { s.loadRoot(y.(*DevAddrSegmentDataSlices)) })
+	stateSourceObject.LoadValue(0, new([]DevAddrFlatSegment), func(y any) { s.loadRoot(y.([]DevAddrFlatSegment)) })
 }
 
 func (n *DevAddrnode) StateTypeName() string {
@@ -107,35 +107,35 @@ func (n *DevAddrnode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(7, &n.children)
 }
 
-func (d *DevAddrSegmentDataSlices) StateTypeName() string {
-	return "pkg/sentry/devices/accel.DevAddrSegmentDataSlices"
+func (d *DevAddrFlatSegment) StateTypeName() string {
+	return "pkg/sentry/devices/accel.DevAddrFlatSegment"
 }
 
-func (d *DevAddrSegmentDataSlices) StateFields() []string {
+func (d *DevAddrFlatSegment) StateFields() []string {
 	return []string{
 		"Start",
 		"End",
-		"Values",
+		"Value",
 	}
 }
 
-func (d *DevAddrSegmentDataSlices) beforeSave() {}
+func (d *DevAddrFlatSegment) beforeSave() {}
 
 // +checklocksignore
-func (d *DevAddrSegmentDataSlices) StateSave(stateSinkObject state.Sink) {
+func (d *DevAddrFlatSegment) StateSave(stateSinkObject state.Sink) {
 	d.beforeSave()
 	stateSinkObject.Save(0, &d.Start)
 	stateSinkObject.Save(1, &d.End)
-	stateSinkObject.Save(2, &d.Values)
+	stateSinkObject.Save(2, &d.Value)
 }
 
-func (d *DevAddrSegmentDataSlices) afterLoad() {}
+func (d *DevAddrFlatSegment) afterLoad() {}
 
 // +checklocksignore
-func (d *DevAddrSegmentDataSlices) StateLoad(stateSourceObject state.Source) {
+func (d *DevAddrFlatSegment) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.Start)
 	stateSourceObject.Load(1, &d.End)
-	stateSourceObject.Load(2, &d.Values)
+	stateSourceObject.Load(2, &d.Value)
 }
 
 func (dev *tpuV4Device) StateTypeName() string {
@@ -182,6 +182,6 @@ func init() {
 	state.Register((*DevAddrRange)(nil))
 	state.Register((*DevAddrSet)(nil))
 	state.Register((*DevAddrnode)(nil))
-	state.Register((*DevAddrSegmentDataSlices)(nil))
+	state.Register((*DevAddrFlatSegment)(nil))
 	state.Register((*tpuV4Device)(nil))
 }

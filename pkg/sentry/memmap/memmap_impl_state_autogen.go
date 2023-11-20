@@ -21,7 +21,7 @@ func (s *MappingSet) beforeSave() {}
 // +checklocksignore
 func (s *MappingSet) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	var rootValue *MappingSegmentDataSlices
+	var rootValue []MappingFlatSegment
 	rootValue = s.saveRoot()
 	stateSinkObject.SaveValue(0, rootValue)
 }
@@ -30,7 +30,7 @@ func (s *MappingSet) afterLoad() {}
 
 // +checklocksignore
 func (s *MappingSet) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(*MappingSegmentDataSlices), func(y any) { s.loadRoot(y.(*MappingSegmentDataSlices)) })
+	stateSourceObject.LoadValue(0, new([]MappingFlatSegment), func(y any) { s.loadRoot(y.([]MappingFlatSegment)) })
 }
 
 func (n *Mappingnode) StateTypeName() string {
@@ -79,39 +79,39 @@ func (n *Mappingnode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(7, &n.children)
 }
 
-func (m *MappingSegmentDataSlices) StateTypeName() string {
-	return "pkg/sentry/memmap.MappingSegmentDataSlices"
+func (m *MappingFlatSegment) StateTypeName() string {
+	return "pkg/sentry/memmap.MappingFlatSegment"
 }
 
-func (m *MappingSegmentDataSlices) StateFields() []string {
+func (m *MappingFlatSegment) StateFields() []string {
 	return []string{
 		"Start",
 		"End",
-		"Values",
+		"Value",
 	}
 }
 
-func (m *MappingSegmentDataSlices) beforeSave() {}
+func (m *MappingFlatSegment) beforeSave() {}
 
 // +checklocksignore
-func (m *MappingSegmentDataSlices) StateSave(stateSinkObject state.Sink) {
+func (m *MappingFlatSegment) StateSave(stateSinkObject state.Sink) {
 	m.beforeSave()
 	stateSinkObject.Save(0, &m.Start)
 	stateSinkObject.Save(1, &m.End)
-	stateSinkObject.Save(2, &m.Values)
+	stateSinkObject.Save(2, &m.Value)
 }
 
-func (m *MappingSegmentDataSlices) afterLoad() {}
+func (m *MappingFlatSegment) afterLoad() {}
 
 // +checklocksignore
-func (m *MappingSegmentDataSlices) StateLoad(stateSourceObject state.Source) {
+func (m *MappingFlatSegment) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &m.Start)
 	stateSourceObject.Load(1, &m.End)
-	stateSourceObject.Load(2, &m.Values)
+	stateSourceObject.Load(2, &m.Value)
 }
 
 func init() {
 	state.Register((*MappingSet)(nil))
 	state.Register((*Mappingnode)(nil))
-	state.Register((*MappingSegmentDataSlices)(nil))
+	state.Register((*MappingFlatSegment)(nil))
 }

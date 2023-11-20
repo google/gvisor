@@ -80,9 +80,9 @@ func (seg FileRangeIterator) FileRangeOf(mr memmap.MappableRange) memmap.FileRan
 
 // PagesToFill returns the number of pages that that Fill() will allocate
 // for the given required and optional parameters.
-func (frs *FileRangeSet) PagesToFill(required, optional memmap.MappableRange) uint64 {
+func (s *FileRangeSet) PagesToFill(required, optional memmap.MappableRange) uint64 {
 	var numPages uint64
-	gap := frs.LowerBoundGap(required.Start)
+	gap := s.LowerBoundGap(required.Start)
 	for gap.Ok() && gap.Start() < required.End {
 		gr := gap.Range().Intersect(optional)
 		numPages += gr.Length() / hostarch.PageSize
@@ -111,8 +111,8 @@ func (frs *FileRangeSet) PagesToFill(required, optional memmap.MappableRange) ui
 //   - required.Length() > 0.
 //   - optional.IsSupersetOf(required).
 //   - required and optional must be page-aligned.
-func (frs *FileRangeSet) Fill(ctx context.Context, required, optional memmap.MappableRange, fileSize uint64, mf *pgalloc.MemoryFile, kind usage.MemoryKind, allocMode pgalloc.AllocationMode, readAt func(ctx context.Context, dsts safemem.BlockSeq, offset uint64) (uint64, error)) (uint64, error) {
-	gap := frs.LowerBoundGap(required.Start)
+func (s *FileRangeSet) Fill(ctx context.Context, required, optional memmap.MappableRange, fileSize uint64, mf *pgalloc.MemoryFile, kind usage.MemoryKind, allocMode pgalloc.AllocationMode, readAt func(ctx context.Context, dsts safemem.BlockSeq, offset uint64) (uint64, error)) (uint64, error) {
+	gap := s.LowerBoundGap(required.Start)
 	var pagesAlloced uint64
 	memCgID := pgalloc.MemoryCgroupIDFromContext(ctx)
 	for gap.Ok() && gap.Start() < required.End {
@@ -175,7 +175,7 @@ func (frs *FileRangeSet) Fill(ctx context.Context, required, optional memmap.Map
 		if done := fr.Length(); done != 0 {
 			gr.End = gr.Start + done
 			pagesAlloced += gr.Length() / hostarch.PageSize
-			gap = frs.Insert(gap, gr, fr.Start).NextGap()
+			gap = s.Insert(gap, gr, fr.Start).NextGap()
 		}
 
 		if err != nil {
@@ -189,43 +189,42 @@ func (frs *FileRangeSet) Fill(ctx context.Context, required, optional memmap.Map
 // corresponding memmap.FileRanges.
 //
 // Preconditions: mr must be page-aligned.
-func (frs *FileRangeSet) Drop(mr memmap.MappableRange, mf *pgalloc.MemoryFile) {
-	seg := frs.LowerBoundSegment(mr.Start)
+func (s *FileRangeSet) Drop(mr memmap.MappableRange, mf *pgalloc.MemoryFile) {
+	seg := s.LowerBoundSegment(mr.Start)
 	for seg.Ok() && seg.Start() < mr.End {
-		seg = frs.Isolate(seg, mr)
+		seg = s.Isolate(seg, mr)
 		mf.DecRef(seg.FileRange())
-		seg = frs.Remove(seg).NextSegment()
+		seg = s.Remove(seg).NextSegment()
 	}
 }
 
 // DropAll removes all segments in mr, freeing the corresponding
 // memmap.FileRanges. It returns the number of pages freed.
-func (frs *FileRangeSet) DropAll(mf *pgalloc.MemoryFile) uint64 {
+func (s *FileRangeSet) DropAll(mf *pgalloc.MemoryFile) uint64 {
 	var pagesFreed uint64
-	for seg := frs.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
+	for seg := s.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
 		mf.DecRef(seg.FileRange())
 		pagesFreed += seg.Range().Length() / hostarch.PageSize
 	}
-	frs.RemoveAll()
+	s.RemoveAll()
 	return pagesFreed
 }
 
-// Truncate updates frs to reflect Mappable truncation to the given length:
+// Truncate updates s to reflect Mappable truncation to the given length:
 // bytes after the new EOF on the same page are zeroed, and pages after the new
 // EOF are freed. It returns the number of pages freed.
-func (frs *FileRangeSet) Truncate(end uint64, mf *pgalloc.MemoryFile) uint64 {
+func (s *FileRangeSet) Truncate(end uint64, mf *pgalloc.MemoryFile) uint64 {
 	var pagesFreed uint64
 	pgendaddr, ok := hostarch.Addr(end).RoundUp()
 	if ok {
 		pgend := uint64(pgendaddr)
 
 		// Free truncated pages.
-		frs.SplitAt(pgend)
-		seg := frs.LowerBoundSegment(pgend)
+		seg := s.LowerBoundSegmentSplitBefore(pgend)
 		for seg.Ok() {
 			mf.DecRef(seg.FileRange())
 			pagesFreed += seg.Range().Length() / hostarch.PageSize
-			seg = frs.Remove(seg).NextSegment()
+			seg = s.Remove(seg).NextSegment()
 		}
 
 		if end == pgend {
@@ -236,7 +235,7 @@ func (frs *FileRangeSet) Truncate(end uint64, mf *pgalloc.MemoryFile) uint64 {
 	// Here we know end < end.RoundUp(). If the new EOF lands in the
 	// middle of a page that we have, zero out its contents beyond the new
 	// length.
-	seg := frs.FindSegment(end)
+	seg := s.FindSegment(end)
 	if seg.Ok() {
 		fr := seg.FileRange()
 		fr.Start += end - seg.Start()

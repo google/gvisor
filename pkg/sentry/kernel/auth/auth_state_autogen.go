@@ -141,7 +141,7 @@ func (s *idMapSet) beforeSave() {}
 // +checklocksignore
 func (s *idMapSet) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	var rootValue *idMapSegmentDataSlices
+	var rootValue []idMapFlatSegment
 	rootValue = s.saveRoot()
 	stateSinkObject.SaveValue(0, rootValue)
 }
@@ -150,7 +150,7 @@ func (s *idMapSet) afterLoad() {}
 
 // +checklocksignore
 func (s *idMapSet) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(*idMapSegmentDataSlices), func(y any) { s.loadRoot(y.(*idMapSegmentDataSlices)) })
+	stateSourceObject.LoadValue(0, new([]idMapFlatSegment), func(y any) { s.loadRoot(y.([]idMapFlatSegment)) })
 }
 
 func (n *idMapnode) StateTypeName() string {
@@ -199,35 +199,35 @@ func (n *idMapnode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(7, &n.children)
 }
 
-func (i *idMapSegmentDataSlices) StateTypeName() string {
-	return "pkg/sentry/kernel/auth.idMapSegmentDataSlices"
+func (i *idMapFlatSegment) StateTypeName() string {
+	return "pkg/sentry/kernel/auth.idMapFlatSegment"
 }
 
-func (i *idMapSegmentDataSlices) StateFields() []string {
+func (i *idMapFlatSegment) StateFields() []string {
 	return []string{
 		"Start",
 		"End",
-		"Values",
+		"Value",
 	}
 }
 
-func (i *idMapSegmentDataSlices) beforeSave() {}
+func (i *idMapFlatSegment) beforeSave() {}
 
 // +checklocksignore
-func (i *idMapSegmentDataSlices) StateSave(stateSinkObject state.Sink) {
+func (i *idMapFlatSegment) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 	stateSinkObject.Save(0, &i.Start)
 	stateSinkObject.Save(1, &i.End)
-	stateSinkObject.Save(2, &i.Values)
+	stateSinkObject.Save(2, &i.Value)
 }
 
-func (i *idMapSegmentDataSlices) afterLoad() {}
+func (i *idMapFlatSegment) afterLoad() {}
 
 // +checklocksignore
-func (i *idMapSegmentDataSlices) StateLoad(stateSourceObject state.Source) {
+func (i *idMapFlatSegment) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.Start)
 	stateSourceObject.Load(1, &i.End)
-	stateSourceObject.Load(2, &i.Values)
+	stateSourceObject.Load(2, &i.Value)
 }
 
 func (k *Key) StateTypeName() string {
@@ -341,7 +341,7 @@ func init() {
 	state.Register((*idMapRange)(nil))
 	state.Register((*idMapSet)(nil))
 	state.Register((*idMapnode)(nil))
-	state.Register((*idMapSegmentDataSlices)(nil))
+	state.Register((*idMapFlatSegment)(nil))
 	state.Register((*Key)(nil))
 	state.Register((*KeySet)(nil))
 	state.Register((*UserNamespace)(nil))

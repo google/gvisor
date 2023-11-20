@@ -60,7 +60,7 @@ const (
 //
 // +stateify savable
 type vmaSet struct {
-	root vmanode `state:".(*vmaSegmentDataSlices)"`
+	root vmanode `state:".([]vmaFlatSegment)"`
 }
 
 // IsEmpty returns true if the set contains no segments.
@@ -232,42 +232,68 @@ func (s *vmaSet) UpperBoundGap(max __generics_imported0.Addr) vmaGapIterator {
 	return seg.PrevGap()
 }
 
-// Add inserts the given segment into the set and returns true. If the new
-// segment can be merged with adjacent segments, Add will do so. If the new
-// segment would overlap an existing segment, Add returns false. If Add
-// succeeds, all existing iterators are invalidated.
-func (s *vmaSet) Add(r __generics_imported0.AddrRange, val vma) bool {
-	if r.Length() <= 0 {
-		panic(fmt.Sprintf("invalid segment range %v", r))
+// FirstLargeEnoughGap returns the first gap in the set with at least the given
+// length. If no such gap exists, FirstLargeEnoughGap returns a terminal
+// iterator.
+//
+// Precondition: trackGaps must be 1.
+func (s *vmaSet) FirstLargeEnoughGap(minSize __generics_imported0.Addr) vmaGapIterator {
+	if vmatrackGaps != 1 {
+		panic("set is not tracking gaps")
 	}
-	gap := s.FindGap(r.Start)
-	if !gap.Ok() {
-		return false
+	gap := s.FirstGap()
+	if gap.Range().Length() >= minSize {
+		return gap
 	}
-	if r.End > gap.End() {
-		return false
-	}
-	s.Insert(gap, r, val)
-	return true
+	return gap.NextLargeEnoughGap(minSize)
 }
 
-// AddWithoutMerging inserts the given segment into the set and returns true.
-// If it would overlap an existing segment, AddWithoutMerging does nothing and
-// returns false. If AddWithoutMerging succeeds, all existing iterators are
-// invalidated.
-func (s *vmaSet) AddWithoutMerging(r __generics_imported0.AddrRange, val vma) bool {
-	if r.Length() <= 0 {
-		panic(fmt.Sprintf("invalid segment range %v", r))
+// LastLargeEnoughGap returns the last gap in the set with at least the given
+// length. If no such gap exists, LastLargeEnoughGap returns a terminal
+// iterator.
+//
+// Precondition: trackGaps must be 1.
+func (s *vmaSet) LastLargeEnoughGap(minSize __generics_imported0.Addr) vmaGapIterator {
+	if vmatrackGaps != 1 {
+		panic("set is not tracking gaps")
 	}
-	gap := s.FindGap(r.Start)
-	if !gap.Ok() {
-		return false
+	gap := s.LastGap()
+	if gap.Range().Length() >= minSize {
+		return gap
 	}
-	if r.End > gap.End() {
-		return false
+	return gap.PrevLargeEnoughGap(minSize)
+}
+
+// LowerBoundLargeEnoughGap returns the first gap in the set with at least the
+// given length and whose range contains a key greater than or equal to min. If
+// no such gap exists, LowerBoundLargeEnoughGap returns a terminal iterator.
+//
+// Precondition: trackGaps must be 1.
+func (s *vmaSet) LowerBoundLargeEnoughGap(min, minSize __generics_imported0.Addr) vmaGapIterator {
+	if vmatrackGaps != 1 {
+		panic("set is not tracking gaps")
 	}
-	s.InsertWithoutMergingUnchecked(gap, r, val)
-	return true
+	gap := s.LowerBoundGap(min)
+	if gap.Range().Length() >= minSize {
+		return gap
+	}
+	return gap.NextLargeEnoughGap(minSize)
+}
+
+// UpperBoundLargeEnoughGap returns the last gap in the set with at least the
+// given length and whose range contains a key less than or equal to max. If no
+// such gap exists, UpperBoundLargeEnoughGap returns a terminal iterator.
+//
+// Precondition: trackGaps must be 1.
+func (s *vmaSet) UpperBoundLargeEnoughGap(max, minSize __generics_imported0.Addr) vmaGapIterator {
+	if vmatrackGaps != 1 {
+		panic("set is not tracking gaps")
+	}
+	gap := s.UpperBoundGap(max)
+	if gap.Range().Length() >= minSize {
+		return gap
+	}
+	return gap.PrevLargeEnoughGap(minSize)
 }
 
 // Insert inserts the given segment into the given gap. If the new segment can
@@ -364,6 +390,107 @@ func (s *vmaSet) InsertWithoutMergingUnchecked(gap vmaGapIterator, r __generics_
 	return vmaIterator{gap.node, gap.index}
 }
 
+// InsertRange inserts the given segment into the set. If the new segment can
+// be merged with adjacent segments, InsertRange will do so. InsertRange
+// returns an iterator to the segment containing the inserted value (which may
+// have been merged with other values). All existing iterators (excluding the
+// returned iterator) are invalidated.
+//
+// If the new segment would overlap an existing segment, or if r is invalid,
+// InsertRange panics.
+//
+// InsertRange searches the set to find the gap to insert into. If the caller
+// already has the appropriate GapIterator, or if the caller needs to do
+// additional work between finding the gap and insertion, use Insert instead.
+func (s *vmaSet) InsertRange(r __generics_imported0.AddrRange, val vma) vmaIterator {
+	if r.Length() <= 0 {
+		panic(fmt.Sprintf("invalid segment range %v", r))
+	}
+	seg, gap := s.Find(r.Start)
+	if seg.Ok() {
+		panic(fmt.Sprintf("new segment %v overlaps existing segment %v", r, seg.Range()))
+	}
+	if gap.End() < r.End {
+		panic(fmt.Sprintf("new segment %v overlaps existing segment %v", r, gap.NextSegment().Range()))
+	}
+	return s.Insert(gap, r, val)
+}
+
+// InsertWithoutMergingRange inserts the given segment into the set and returns
+// an iterator to the inserted segment. All existing iterators (excluding the
+// returned iterator) are invalidated.
+//
+// If the new segment would overlap an existing segment, or if r is invalid,
+// InsertWithoutMergingRange panics.
+//
+// InsertWithoutMergingRange searches the set to find the gap to insert into.
+// If the caller already has the appropriate GapIterator, or if the caller
+// needs to do additional work between finding the gap and insertion, use
+// InsertWithoutMerging instead.
+func (s *vmaSet) InsertWithoutMergingRange(r __generics_imported0.AddrRange, val vma) vmaIterator {
+	if r.Length() <= 0 {
+		panic(fmt.Sprintf("invalid segment range %v", r))
+	}
+	seg, gap := s.Find(r.Start)
+	if seg.Ok() {
+		panic(fmt.Sprintf("new segment %v overlaps existing segment %v", r, seg.Range()))
+	}
+	if gap.End() < r.End {
+		panic(fmt.Sprintf("new segment %v overlaps existing segment %v", r, gap.NextSegment().Range()))
+	}
+	return s.InsertWithoutMerging(gap, r, val)
+}
+
+// TryInsertRange attempts to insert the given segment into the set. If the new
+// segment can be merged with adjacent segments, TryInsertRange will do so.
+// TryInsertRange returns an iterator to the segment containing the inserted
+// value (which may have been merged with other values). All existing iterators
+// (excluding the returned iterator) are invalidated.
+//
+// If the new segment would overlap an existing segment, TryInsertRange does
+// nothing and returns a terminal iterator.
+//
+// TryInsertRange searches the set to find the gap to insert into. If the
+// caller already has the appropriate GapIterator, or if the caller needs to do
+// additional work between finding the gap and insertion, use Insert instead.
+func (s *vmaSet) TryInsertRange(r __generics_imported0.AddrRange, val vma) vmaIterator {
+	if r.Length() <= 0 {
+		panic(fmt.Sprintf("invalid segment range %v", r))
+	}
+	seg, gap := s.Find(r.Start)
+	if seg.Ok() {
+		return vmaIterator{}
+	}
+	if gap.End() < r.End {
+		return vmaIterator{}
+	}
+	return s.Insert(gap, r, val)
+}
+
+// TryInsertWithoutMergingRange attempts to insert the given segment into the
+// set. If successful, it returns an iterator to the inserted segment; all
+// existing iterators (excluding the returned iterator) are invalidated. If the
+// new segment would overlap an existing segment, TryInsertWithoutMergingRange
+// does nothing and returns a terminal iterator.
+//
+// TryInsertWithoutMergingRange searches the set to find the gap to insert
+// into. If the caller already has the appropriate GapIterator, or if the
+// caller needs to do additional work between finding the gap and insertion,
+// use InsertWithoutMerging instead.
+func (s *vmaSet) TryInsertWithoutMergingRange(r __generics_imported0.AddrRange, val vma) vmaIterator {
+	if r.Length() <= 0 {
+		panic(fmt.Sprintf("invalid segment range %v", r))
+	}
+	seg, gap := s.Find(r.Start)
+	if seg.Ok() {
+		return vmaIterator{}
+	}
+	if gap.End() < r.End {
+		return vmaIterator{}
+	}
+	return s.InsertWithoutMerging(gap, r, val)
+}
+
 // Remove removes the given segment and returns an iterator to the vacated gap.
 // All existing iterators (including seg, but not including the returned
 // iterator) are invalidated.
@@ -400,6 +527,11 @@ func (s *vmaSet) RemoveAll() {
 
 // RemoveRange removes all segments in the given range. An iterator to the
 // newly formed gap is returned, and all existing iterators are invalidated.
+//
+// RemoveRange searches the set to find segments to remove. If the caller
+// already has an iterator to either end of the range of segments to remove, or
+// if the caller needs to do additional work before removing each segment,
+// iterate segments and call Remove in a loop instead.
 func (s *vmaSet) RemoveRange(r __generics_imported0.AddrRange) vmaGapIterator {
 	seg, gap := s.Find(r.Start)
 	if seg.Ok() {
@@ -407,10 +539,32 @@ func (s *vmaSet) RemoveRange(r __generics_imported0.AddrRange) vmaGapIterator {
 		gap = s.Remove(seg)
 	}
 	for seg = gap.NextSegment(); seg.Ok() && seg.Start() < r.End; seg = gap.NextSegment() {
-		seg = s.Isolate(seg, r)
+		seg = s.SplitAfter(seg, r.End)
 		gap = s.Remove(seg)
 	}
 	return gap
+}
+
+// RemoveFullRange is equivalent to RemoveRange, except that if any key in the
+// given range does not correspond to a segment, RemoveFullRange panics.
+func (s *vmaSet) RemoveFullRange(r __generics_imported0.AddrRange) vmaGapIterator {
+	seg := s.FindSegment(r.Start)
+	if !seg.Ok() {
+		panic(fmt.Sprintf("missing segment at %v", r.Start))
+	}
+	seg = s.SplitBefore(seg, r.Start)
+	for {
+		seg = s.SplitAfter(seg, r.End)
+		end := seg.End()
+		gap := s.Remove(seg)
+		if r.End <= end {
+			return gap
+		}
+		seg = gap.NextSegment()
+		if !seg.Ok() || seg.Start() != end {
+			panic(fmt.Sprintf("missing segment at %v", end))
+		}
+	}
 }
 
 // Merge attempts to merge two neighboring segments. If successful, Merge
@@ -445,7 +599,68 @@ func (s *vmaSet) MergeUnchecked(first, second vmaIterator) vmaIterator {
 	return vmaIterator{}
 }
 
-// MergeAll attempts to merge all adjacent segments in the set. All existing
+// MergePrev attempts to merge the given segment with its predecessor if
+// possible, and returns an updated iterator to the extended segment. All
+// existing iterators (including seg, but not including the returned iterator)
+// are invalidated.
+//
+// MergePrev is usually used when mutating segments while iterating them in
+// order of increasing keys, to attempt merging of each mutated segment with
+// its previously-mutated predecessor. In such cases, merging a mutated segment
+// with its unmutated successor would incorrectly cause the latter to be
+// skipped.
+func (s *vmaSet) MergePrev(seg vmaIterator) vmaIterator {
+	if prev := seg.PrevSegment(); prev.Ok() {
+		if mseg := s.MergeUnchecked(prev, seg); mseg.Ok() {
+			seg = mseg
+		}
+	}
+	return seg
+}
+
+// MergeNext attempts to merge the given segment with its successor if
+// possible, and returns an updated iterator to the extended segment. All
+// existing iterators (including seg, but not including the returned iterator)
+// are invalidated.
+//
+// MergeNext is usually used when mutating segments while iterating them in
+// order of decreasing keys, to attempt merging of each mutated segment with
+// its previously-mutated successor. In such cases, merging a mutated segment
+// with its unmutated predecessor would incorrectly cause the latter to be
+// skipped.
+func (s *vmaSet) MergeNext(seg vmaIterator) vmaIterator {
+	if next := seg.NextSegment(); next.Ok() {
+		if mseg := s.MergeUnchecked(seg, next); mseg.Ok() {
+			seg = mseg
+		}
+	}
+	return seg
+}
+
+// Unisolate attempts to merge the given segment with its predecessor and
+// successor if possible, and returns an updated iterator to the extended
+// segment. All existing iterators (including seg, but not including the
+// returned iterator) are invalidated.
+//
+// Unisolate is usually used in conjunction with Isolate when mutating part of
+// a single segment in a way that may affect its mergeability. For the reasons
+// described by MergePrev and MergeNext, it is usually incorrect to use the
+// return value of Unisolate in a loop variable.
+func (s *vmaSet) Unisolate(seg vmaIterator) vmaIterator {
+	if prev := seg.PrevSegment(); prev.Ok() {
+		if mseg := s.MergeUnchecked(prev, seg); mseg.Ok() {
+			seg = mseg
+		}
+	}
+	if next := seg.NextSegment(); next.Ok() {
+		if mseg := s.MergeUnchecked(seg, next); mseg.Ok() {
+			seg = mseg
+		}
+	}
+	return seg
+}
+
+// MergeAll merges all mergeable adjacent segments in the set. All existing
 // iterators are invalidated.
 func (s *vmaSet) MergeAll() {
 	seg := s.FirstSegment()
@@ -462,15 +677,20 @@ func (s *vmaSet) MergeAll() {
 	}
 }
 
-// MergeRange attempts to merge all adjacent segments that contain a key in the
-// specific range. All existing iterators are invalidated.
-func (s *vmaSet) MergeRange(r __generics_imported0.AddrRange) {
+// MergeInsideRange attempts to merge all adjacent segments that contain a key
+// in the specific range. All existing iterators are invalidated.
+//
+// MergeInsideRange only makes sense after mutating the set in a way that may
+// change the mergeability of modified segments; callers should prefer to use
+// MergePrev or MergeNext during the mutating loop instead (depending on the
+// direction of iteration), in order to avoid a redundant search.
+func (s *vmaSet) MergeInsideRange(r __generics_imported0.AddrRange) {
 	seg := s.LowerBoundSegment(r.Start)
 	if !seg.Ok() {
 		return
 	}
 	next := seg.NextSegment()
-	for next.Ok() && next.Range().Start < r.End {
+	for next.Ok() && next.Start() < r.End {
 		if mseg := s.MergeUnchecked(seg, next); mseg.Ok() {
 			seg, next = mseg, mseg.NextSegment()
 		} else {
@@ -479,9 +699,14 @@ func (s *vmaSet) MergeRange(r __generics_imported0.AddrRange) {
 	}
 }
 
-// MergeAdjacent attempts to merge the segment containing r.Start with its
+// MergeOutsideRange attempts to merge the segment containing r.Start with its
 // predecessor, and the segment containing r.End-1 with its successor.
-func (s *vmaSet) MergeAdjacent(r __generics_imported0.AddrRange) {
+//
+// MergeOutsideRange only makes sense after mutating the set in a way that may
+// change the mergeability of modified segments; callers should prefer to use
+// MergePrev or MergeNext during the mutating loop instead (depending on the
+// direction of iteration), in order to avoid two redundant searches.
+func (s *vmaSet) MergeOutsideRange(r __generics_imported0.AddrRange) {
 	first := s.FindSegment(r.Start)
 	if first.Ok() {
 		if prev := first.PrevSegment(); prev.Ok() {
@@ -526,21 +751,58 @@ func (s *vmaSet) SplitUnchecked(seg vmaIterator, split __generics_imported0.Addr
 	return seg2.PrevSegment(), seg2
 }
 
-// SplitAt splits the segment straddling split, if one exists. SplitAt returns
-// true if a segment was split and false otherwise. If SplitAt splits a
-// segment, all existing iterators are invalidated.
-func (s *vmaSet) SplitAt(split __generics_imported0.Addr) bool {
-	if seg := s.FindSegment(split); seg.Ok() && seg.Range().CanSplitAt(split) {
-		s.SplitUnchecked(seg, split)
-		return true
+// SplitBefore ensures that the given segment's start is at least start by
+// splitting at start if necessary, and returns an updated iterator to the
+// bounded segment. All existing iterators (including seg, but not including
+// the returned iterator) are invalidated.
+//
+// SplitBefore is usually when mutating segments in a range. In such cases,
+// when iterating segments in order of increasing keys, the first segment may
+// extend beyond the start of the range to be mutated, and needs to be
+// SplitBefore to ensure that only the part of the segment within the range is
+// mutated. When iterating segments in order of decreasing keys, SplitBefore
+// and SplitAfter; i.e. SplitBefore needs to be invoked on each segment, while
+// SplitAfter only needs to be invoked on the first.
+//
+// Preconditions: start < seg.End().
+func (s *vmaSet) SplitBefore(seg vmaIterator, start __generics_imported0.Addr) vmaIterator {
+	if seg.Range().CanSplitAt(start) {
+		_, seg = s.SplitUnchecked(seg, start)
 	}
-	return false
+	return seg
 }
 
-// Isolate ensures that the given segment's range does not escape r by
-// splitting at r.Start and r.End if necessary, and returns an updated iterator
-// to the bounded segment. All existing iterators (including seg, but not
-// including the returned iterators) are invalidated.
+// SplitAfter ensures that the given segment's end is at most end by splitting
+// at end if necessary, and returns an updated iterator to the bounded segment.
+// All existing iterators (including seg, but not including the returned
+// iterator) are invalidated.
+//
+// SplitAfter is usually used when mutating segments in a range. In such cases,
+// when iterating segments in order of increasing keys, each iterated segment
+// may extend beyond the end of the range to be mutated, and needs to be
+// SplitAfter to ensure that only the part of the segment within the range is
+// mutated. When iterating segments in order of decreasing keys, SplitBefore
+// and SplitAfter exchange roles; i.e. SplitBefore needs to be invoked on each
+// segment, while SplitAfter only needs to be invoked on the first.
+//
+// Preconditions: seg.Start() < end.
+func (s *vmaSet) SplitAfter(seg vmaIterator, end __generics_imported0.Addr) vmaIterator {
+	if seg.Range().CanSplitAt(end) {
+		seg, _ = s.SplitUnchecked(seg, end)
+	}
+	return seg
+}
+
+// Isolate ensures that the given segment's range is a subset of r by splitting
+// at r.Start and r.End if necessary, and returns an updated iterator to the
+// bounded segment. All existing iterators (including seg, but not including
+// the returned iterators) are invalidated.
+//
+// Isolate is usually used when mutating part of a single segment, or when
+// mutating segments in a range where the first segment is not necessarily
+// split, making use of SplitBefore/SplitAfter complex.
+//
+// Preconditions: seg.Range().Overlaps(r).
 func (s *vmaSet) Isolate(seg vmaIterator, r __generics_imported0.AddrRange) vmaIterator {
 	if seg.Range().CanSplitAt(r.Start) {
 		_, seg = s.SplitUnchecked(seg, r.Start)
@@ -551,32 +813,118 @@ func (s *vmaSet) Isolate(seg vmaIterator, r __generics_imported0.AddrRange) vmaI
 	return seg
 }
 
-// ApplyContiguous applies a function to a contiguous range of segments,
-// splitting if necessary. The function is applied until the first gap is
-// encountered, at which point the gap is returned. If the function is applied
-// across the entire range, a terminal gap is returned. All existing iterators
-// are invalidated.
+// LowerBoundSegmentSplitBefore combines LowerBoundSegment and SplitBefore.
 //
-// N.B. The Iterator must not be invalidated by the function.
-func (s *vmaSet) ApplyContiguous(r __generics_imported0.AddrRange, fn func(seg vmaIterator)) vmaGapIterator {
-	seg, gap := s.Find(r.Start)
-	if !seg.Ok() {
-		return gap
+// LowerBoundSegmentSplitBefore is usually used when mutating segments in a
+// range while iterating them in order of increasing keys. In such cases,
+// LowerBoundSegmentSplitBefore provides an iterator to the first segment to be
+// mutated, suitable as the initial value for a loop variable.
+func (s *vmaSet) LowerBoundSegmentSplitBefore(min __generics_imported0.Addr) vmaIterator {
+	seg := s.LowerBoundSegment(min)
+	if seg.Ok() {
+		seg = s.SplitBefore(seg, min)
 	}
-	for {
-		seg = s.Isolate(seg, r)
-		fn(seg)
-		if seg.End() >= r.End {
-			return vmaGapIterator{}
-		}
-		gap = seg.NextGap()
-		if !gap.IsEmpty() {
-			return gap
-		}
-		seg = gap.NextSegment()
-		if !seg.Ok() {
+	return seg
+}
 
-			return vmaGapIterator{}
+// UpperBoundSegmentSplitAfter combines UpperBoundSegment and SplitAfter.
+//
+// UpperBoundSegmentSplitAfter is usually used when mutating segments in a
+// range while iterating them in order of decreasing keys. In such cases,
+// UpperBoundSegmentSplitAfter provides an iterator to the first segment to be
+// mutated, suitable as the initial value for a loop variable.
+func (s *vmaSet) UpperBoundSegmentSplitAfter(max __generics_imported0.Addr) vmaIterator {
+	seg := s.UpperBoundSegment(max)
+	if seg.Ok() {
+		seg = s.SplitAfter(seg, max)
+	}
+	return seg
+}
+
+// VisitRange applies the function f to all segments intersecting the range r,
+// in order of ascending keys. Segments will not be split, so f may be called
+// on segments lying partially outside r. Non-empty gaps between segments are
+// skipped. If a call to f returns false, VisitRange stops iteration
+// immediately.
+//
+// N.B. f must not invalidate iterators into s.
+func (s *vmaSet) VisitRange(r __generics_imported0.AddrRange, f func(seg vmaIterator) bool) {
+	for seg := s.LowerBoundSegment(r.Start); seg.Ok() && seg.Start() < r.End; seg = seg.NextSegment() {
+		if !f(seg) {
+			return
+		}
+	}
+}
+
+// VisitFullRange is equivalent to VisitRange, except that if any key in r that
+// is visited before f returns false does not correspond to a segment,
+// VisitFullRange panics.
+func (s *vmaSet) VisitFullRange(r __generics_imported0.AddrRange, f func(seg vmaIterator) bool) {
+	pos := r.Start
+	seg := s.FindSegment(r.Start)
+	for {
+		if !seg.Ok() {
+			panic(fmt.Sprintf("missing segment at %v", pos))
+		}
+		if !f(seg) {
+			return
+		}
+		pos = seg.End()
+		if r.End <= pos {
+			return
+		}
+		seg, _ = seg.NextNonEmpty()
+	}
+}
+
+// MutateRange applies the function f to all segments intersecting the range r,
+// in order of ascending keys. Segments that lie partially outside r are split
+// before f is called, such that f only observes segments entirely within r.
+// Iterated segments are merged again after f is called. Non-empty gaps between
+// segments are skipped. If a call to f returns false, MutateRange stops
+// iteration immediately.
+//
+// MutateRange invalidates all existing iterators.
+//
+// N.B. f must not invalidate iterators into s.
+func (s *vmaSet) MutateRange(r __generics_imported0.AddrRange, f func(seg vmaIterator) bool) {
+	seg := s.LowerBoundSegmentSplitBefore(r.Start)
+	for seg.Ok() && seg.Start() < r.End {
+		seg = s.SplitAfter(seg, r.End)
+		cont := f(seg)
+		seg = s.MergePrev(seg)
+		if !cont {
+			s.MergeNext(seg)
+			return
+		}
+		seg = seg.NextSegment()
+	}
+	if seg.Ok() {
+		s.MergePrev(seg)
+	}
+}
+
+// MutateFullRange is equivalent to MutateRange, except that if any key in r
+// that is visited before f returns false does not correspond to a segment,
+// MutateFullRange panics.
+func (s *vmaSet) MutateFullRange(r __generics_imported0.AddrRange, f func(seg vmaIterator) bool) {
+	seg := s.FindSegment(r.Start)
+	if !seg.Ok() {
+		panic(fmt.Sprintf("missing segment at %v", r.Start))
+	}
+	seg = s.SplitBefore(seg, r.Start)
+	for {
+		seg = s.SplitAfter(seg, r.End)
+		cont := f(seg)
+		end := seg.End()
+		seg = s.MergePrev(seg)
+		if !cont || r.End <= end {
+			s.MergeNext(seg)
+			return
+		}
+		seg = seg.NextSegment()
+		if !seg.Ok() || seg.Start() != end {
+			panic(fmt.Sprintf("missing segment at %v", end))
 		}
 	}
 }
@@ -1247,11 +1595,10 @@ func (seg vmaIterator) NextGap() vmaGapIterator {
 // Otherwise, exactly one of the iterators returned by PrevNonEmpty will be
 // non-terminal.
 func (seg vmaIterator) PrevNonEmpty() (vmaIterator, vmaGapIterator) {
-	gap := seg.PrevGap()
-	if gap.Range().Length() != 0 {
-		return vmaIterator{}, gap
+	if prev := seg.PrevSegment(); prev.Ok() && prev.End() == seg.Start() {
+		return prev, vmaGapIterator{}
 	}
-	return gap.PrevSegment(), vmaGapIterator{}
+	return vmaIterator{}, seg.PrevGap()
 }
 
 // NextNonEmpty returns the iterated segment's successor if it is adjacent, or
@@ -1260,11 +1607,10 @@ func (seg vmaIterator) PrevNonEmpty() (vmaIterator, vmaGapIterator) {
 // Otherwise, exactly one of the iterators returned by NextNonEmpty will be
 // non-terminal.
 func (seg vmaIterator) NextNonEmpty() (vmaIterator, vmaGapIterator) {
-	gap := seg.NextGap()
-	if gap.Range().Length() != 0 {
-		return vmaIterator{}, gap
+	if next := seg.NextSegment(); next.Ok() && next.Start() == seg.End() {
+		return next, vmaGapIterator{}
 	}
-	return gap.NextSegment(), vmaGapIterator{}
+	return vmaIterator{}, seg.NextGap()
 }
 
 // A GapIterator is conceptually one of:
@@ -1383,35 +1729,36 @@ func (gap vmaGapIterator) NextLargeEnoughGap(minSize __generics_imported0.Addr) 
 //
 // Preconditions: gap is NOT the trailing gap of a non-leaf node.
 func (gap vmaGapIterator) nextLargeEnoughGapHelper(minSize __generics_imported0.Addr) vmaGapIterator {
+	for {
 
-	for gap.node != nil &&
-		(gap.node.maxGap.Get() < minSize || (!gap.node.hasChildren && gap.index == gap.node.nrSegments)) {
-		gap.node, gap.index = gap.node.parent, gap.node.parentIndex
-	}
-
-	if gap.node == nil {
-		return vmaGapIterator{}
-	}
-
-	gap.index++
-	for gap.index <= gap.node.nrSegments {
-		if gap.node.hasChildren {
-			if largeEnoughGap := gap.node.children[gap.index].searchFirstLargeEnoughGap(minSize); largeEnoughGap.Ok() {
-				return largeEnoughGap
-			}
-		} else {
-			if gap.Range().Length() >= minSize {
-				return gap
-			}
+		for gap.node != nil &&
+			(gap.node.maxGap.Get() < minSize || (!gap.node.hasChildren && gap.index == gap.node.nrSegments)) {
+			gap.node, gap.index = gap.node.parent, gap.node.parentIndex
 		}
-		gap.index++
-	}
-	gap.node, gap.index = gap.node.parent, gap.node.parentIndex
-	if gap.node != nil && gap.index == gap.node.nrSegments {
 
+		if gap.node == nil {
+			return vmaGapIterator{}
+		}
+
+		gap.index++
+		for gap.index <= gap.node.nrSegments {
+			if gap.node.hasChildren {
+				if largeEnoughGap := gap.node.children[gap.index].searchFirstLargeEnoughGap(minSize); largeEnoughGap.Ok() {
+					return largeEnoughGap
+				}
+			} else {
+				if gap.Range().Length() >= minSize {
+					return gap
+				}
+			}
+			gap.index++
+		}
 		gap.node, gap.index = gap.node.parent, gap.node.parentIndex
+		if gap.node != nil && gap.index == gap.node.nrSegments {
+
+			gap.node, gap.index = gap.node.parent, gap.node.parentIndex
+		}
 	}
-	return gap.nextLargeEnoughGapHelper(minSize)
 }
 
 // PrevLargeEnoughGap returns the iterated gap's first prev gap with larger or
@@ -1437,35 +1784,36 @@ func (gap vmaGapIterator) PrevLargeEnoughGap(minSize __generics_imported0.Addr) 
 //
 // Preconditions: gap is NOT the first gap of a non-leaf node.
 func (gap vmaGapIterator) prevLargeEnoughGapHelper(minSize __generics_imported0.Addr) vmaGapIterator {
+	for {
 
-	for gap.node != nil &&
-		(gap.node.maxGap.Get() < minSize || (!gap.node.hasChildren && gap.index == 0)) {
-		gap.node, gap.index = gap.node.parent, gap.node.parentIndex
-	}
-
-	if gap.node == nil {
-		return vmaGapIterator{}
-	}
-
-	gap.index--
-	for gap.index >= 0 {
-		if gap.node.hasChildren {
-			if largeEnoughGap := gap.node.children[gap.index].searchLastLargeEnoughGap(minSize); largeEnoughGap.Ok() {
-				return largeEnoughGap
-			}
-		} else {
-			if gap.Range().Length() >= minSize {
-				return gap
-			}
+		for gap.node != nil &&
+			(gap.node.maxGap.Get() < minSize || (!gap.node.hasChildren && gap.index == 0)) {
+			gap.node, gap.index = gap.node.parent, gap.node.parentIndex
 		}
-		gap.index--
-	}
-	gap.node, gap.index = gap.node.parent, gap.node.parentIndex
-	if gap.node != nil && gap.index == 0 {
 
+		if gap.node == nil {
+			return vmaGapIterator{}
+		}
+
+		gap.index--
+		for gap.index >= 0 {
+			if gap.node.hasChildren {
+				if largeEnoughGap := gap.node.children[gap.index].searchLastLargeEnoughGap(minSize); largeEnoughGap.Ok() {
+					return largeEnoughGap
+				}
+			} else {
+				if gap.Range().Length() >= minSize {
+					return gap
+				}
+			}
+			gap.index--
+		}
 		gap.node, gap.index = gap.node.parent, gap.node.parentIndex
+		if gap.node != nil && gap.index == 0 {
+
+			gap.node, gap.index = gap.node.parent, gap.node.parentIndex
+		}
 	}
-	return gap.prevLargeEnoughGapHelper(minSize)
 }
 
 // segmentBeforePosition returns the predecessor segment of the position given
@@ -1549,50 +1897,49 @@ func (n *vmanode) writeDebugString(buf *bytes.Buffer, prefix string) {
 	}
 }
 
-// SegmentDataSlices represents segments from a set as slices of start, end, and
-// values. SegmentDataSlices is primarily used as an intermediate representation
-// for save/restore and the layout here is optimized for that.
+// FlatSegment represents a segment as a single object. FlatSegment is used as
+// an intermediate representation for save/restore and tests.
 //
 // +stateify savable
-type vmaSegmentDataSlices struct {
-	Start  []__generics_imported0.Addr
-	End    []__generics_imported0.Addr
-	Values []vma
+type vmaFlatSegment struct {
+	Start __generics_imported0.Addr
+	End   __generics_imported0.Addr
+	Value vma
 }
 
-// ExportSortedSlices returns a copy of all segments in the given set, in
-// ascending key order.
-func (s *vmaSet) ExportSortedSlices() *vmaSegmentDataSlices {
-	var sds vmaSegmentDataSlices
+// ExportSlice returns a copy of all segments in the given set, in ascending
+// key order.
+func (s *vmaSet) ExportSlice() []vmaFlatSegment {
+	var fs []vmaFlatSegment
 	for seg := s.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
-		sds.Start = append(sds.Start, seg.Start())
-		sds.End = append(sds.End, seg.End())
-		sds.Values = append(sds.Values, seg.Value())
+		fs = append(fs, vmaFlatSegment{
+			Start: seg.Start(),
+			End:   seg.End(),
+			Value: seg.Value(),
+		})
 	}
-	sds.Start = sds.Start[:len(sds.Start):len(sds.Start)]
-	sds.End = sds.End[:len(sds.End):len(sds.End)]
-	sds.Values = sds.Values[:len(sds.Values):len(sds.Values)]
-	return &sds
+	return fs
 }
 
-// ImportSortedSlices initializes the given set from the given slice.
+// ImportSlice initializes the given set from the given slice.
 //
 // Preconditions:
 //   - s must be empty.
-//   - sds must represent a valid set (the segments in sds must have valid
+//   - fs must represent a valid set (the segments in fs must have valid
 //     lengths that do not overlap).
-//   - The segments in sds must be sorted in ascending key order.
-func (s *vmaSet) ImportSortedSlices(sds *vmaSegmentDataSlices) error {
+//   - The segments in fs must be sorted in ascending key order.
+func (s *vmaSet) ImportSlice(fs []vmaFlatSegment) error {
 	if !s.IsEmpty() {
 		return fmt.Errorf("cannot import into non-empty set %v", s)
 	}
 	gap := s.FirstGap()
-	for i := range sds.Start {
-		r := __generics_imported0.AddrRange{sds.Start[i], sds.End[i]}
+	for i := range fs {
+		f := &fs[i]
+		r := __generics_imported0.AddrRange{f.Start, f.End}
 		if !gap.Range().IsSupersetOf(r) {
-			return fmt.Errorf("segment overlaps a preceding segment or is incorrectly sorted: [%d, %d) => %v", sds.Start[i], sds.End[i], sds.Values[i])
+			return fmt.Errorf("segment overlaps a preceding segment or is incorrectly sorted: %v => %v", r, f.Value)
 		}
-		gap = s.InsertWithoutMerging(gap, r, sds.Values[i]).NextGap()
+		gap = s.InsertWithoutMerging(gap, r, f.Value).NextGap()
 	}
 	return nil
 }
@@ -1636,12 +1983,15 @@ func (s *vmaSet) countSegments() (segments int) {
 	}
 	return segments
 }
-func (s *vmaSet) saveRoot() *vmaSegmentDataSlices {
-	return s.ExportSortedSlices()
+func (s *vmaSet) saveRoot() []vmaFlatSegment {
+	fs := s.ExportSlice()
+
+	fs = fs[:len(fs):len(fs)]
+	return fs
 }
 
-func (s *vmaSet) loadRoot(sds *vmaSegmentDataSlices) {
-	if err := s.ImportSortedSlices(sds); err != nil {
+func (s *vmaSet) loadRoot(fs []vmaFlatSegment) {
+	if err := s.ImportSlice(fs); err != nil {
 		panic(err)
 	}
 }

@@ -136,7 +136,7 @@ func (s *LockSet) beforeSave() {}
 // +checklocksignore
 func (s *LockSet) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	var rootValue *LockSegmentDataSlices
+	var rootValue []LockFlatSegment
 	rootValue = s.saveRoot()
 	stateSinkObject.SaveValue(0, rootValue)
 }
@@ -145,7 +145,7 @@ func (s *LockSet) afterLoad() {}
 
 // +checklocksignore
 func (s *LockSet) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(*LockSegmentDataSlices), func(y any) { s.loadRoot(y.(*LockSegmentDataSlices)) })
+	stateSourceObject.LoadValue(0, new([]LockFlatSegment), func(y any) { s.loadRoot(y.([]LockFlatSegment)) })
 }
 
 func (n *Locknode) StateTypeName() string {
@@ -194,35 +194,35 @@ func (n *Locknode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(7, &n.children)
 }
 
-func (l *LockSegmentDataSlices) StateTypeName() string {
-	return "pkg/sentry/fsimpl/lock.LockSegmentDataSlices"
+func (l *LockFlatSegment) StateTypeName() string {
+	return "pkg/sentry/fsimpl/lock.LockFlatSegment"
 }
 
-func (l *LockSegmentDataSlices) StateFields() []string {
+func (l *LockFlatSegment) StateFields() []string {
 	return []string{
 		"Start",
 		"End",
-		"Values",
+		"Value",
 	}
 }
 
-func (l *LockSegmentDataSlices) beforeSave() {}
+func (l *LockFlatSegment) beforeSave() {}
 
 // +checklocksignore
-func (l *LockSegmentDataSlices) StateSave(stateSinkObject state.Sink) {
+func (l *LockFlatSegment) StateSave(stateSinkObject state.Sink) {
 	l.beforeSave()
 	stateSinkObject.Save(0, &l.Start)
 	stateSinkObject.Save(1, &l.End)
-	stateSinkObject.Save(2, &l.Values)
+	stateSinkObject.Save(2, &l.Value)
 }
 
-func (l *LockSegmentDataSlices) afterLoad() {}
+func (l *LockFlatSegment) afterLoad() {}
 
 // +checklocksignore
-func (l *LockSegmentDataSlices) StateLoad(stateSourceObject state.Source) {
+func (l *LockFlatSegment) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.Start)
 	stateSourceObject.Load(1, &l.End)
-	stateSourceObject.Load(2, &l.Values)
+	stateSourceObject.Load(2, &l.Value)
 }
 
 func init() {
@@ -232,5 +232,5 @@ func init() {
 	state.Register((*LockRange)(nil))
 	state.Register((*LockSet)(nil))
 	state.Register((*Locknode)(nil))
-	state.Register((*LockSegmentDataSlices)(nil))
+	state.Register((*LockFlatSegment)(nil))
 }

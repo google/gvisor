@@ -406,7 +406,7 @@ func (s *pmaSet) beforeSave() {}
 // +checklocksignore
 func (s *pmaSet) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	var rootValue *pmaSegmentDataSlices
+	var rootValue []pmaFlatSegment
 	rootValue = s.saveRoot()
 	stateSinkObject.SaveValue(0, rootValue)
 }
@@ -415,7 +415,7 @@ func (s *pmaSet) afterLoad() {}
 
 // +checklocksignore
 func (s *pmaSet) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(*pmaSegmentDataSlices), func(y any) { s.loadRoot(y.(*pmaSegmentDataSlices)) })
+	stateSourceObject.LoadValue(0, new([]pmaFlatSegment), func(y any) { s.loadRoot(y.([]pmaFlatSegment)) })
 }
 
 func (n *pmanode) StateTypeName() string {
@@ -464,35 +464,35 @@ func (n *pmanode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(7, &n.children)
 }
 
-func (p *pmaSegmentDataSlices) StateTypeName() string {
-	return "pkg/sentry/mm.pmaSegmentDataSlices"
+func (p *pmaFlatSegment) StateTypeName() string {
+	return "pkg/sentry/mm.pmaFlatSegment"
 }
 
-func (p *pmaSegmentDataSlices) StateFields() []string {
+func (p *pmaFlatSegment) StateFields() []string {
 	return []string{
 		"Start",
 		"End",
-		"Values",
+		"Value",
 	}
 }
 
-func (p *pmaSegmentDataSlices) beforeSave() {}
+func (p *pmaFlatSegment) beforeSave() {}
 
 // +checklocksignore
-func (p *pmaSegmentDataSlices) StateSave(stateSinkObject state.Sink) {
+func (p *pmaFlatSegment) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
 	stateSinkObject.Save(0, &p.Start)
 	stateSinkObject.Save(1, &p.End)
-	stateSinkObject.Save(2, &p.Values)
+	stateSinkObject.Save(2, &p.Value)
 }
 
-func (p *pmaSegmentDataSlices) afterLoad() {}
+func (p *pmaFlatSegment) afterLoad() {}
 
 // +checklocksignore
-func (p *pmaSegmentDataSlices) StateLoad(stateSourceObject state.Source) {
+func (p *pmaFlatSegment) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &p.Start)
 	stateSourceObject.Load(1, &p.End)
-	stateSourceObject.Load(2, &p.Values)
+	stateSourceObject.Load(2, &p.Value)
 }
 
 func (m *SpecialMappable) StateTypeName() string {
@@ -568,7 +568,7 @@ func (s *vmaSet) beforeSave() {}
 // +checklocksignore
 func (s *vmaSet) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
-	var rootValue *vmaSegmentDataSlices
+	var rootValue []vmaFlatSegment
 	rootValue = s.saveRoot()
 	stateSinkObject.SaveValue(0, rootValue)
 }
@@ -577,7 +577,7 @@ func (s *vmaSet) afterLoad() {}
 
 // +checklocksignore
 func (s *vmaSet) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(*vmaSegmentDataSlices), func(y any) { s.loadRoot(y.(*vmaSegmentDataSlices)) })
+	stateSourceObject.LoadValue(0, new([]vmaFlatSegment), func(y any) { s.loadRoot(y.([]vmaFlatSegment)) })
 }
 
 func (n *vmanode) StateTypeName() string {
@@ -626,35 +626,35 @@ func (n *vmanode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(7, &n.children)
 }
 
-func (v *vmaSegmentDataSlices) StateTypeName() string {
-	return "pkg/sentry/mm.vmaSegmentDataSlices"
+func (v *vmaFlatSegment) StateTypeName() string {
+	return "pkg/sentry/mm.vmaFlatSegment"
 }
 
-func (v *vmaSegmentDataSlices) StateFields() []string {
+func (v *vmaFlatSegment) StateFields() []string {
 	return []string{
 		"Start",
 		"End",
-		"Values",
+		"Value",
 	}
 }
 
-func (v *vmaSegmentDataSlices) beforeSave() {}
+func (v *vmaFlatSegment) beforeSave() {}
 
 // +checklocksignore
-func (v *vmaSegmentDataSlices) StateSave(stateSinkObject state.Sink) {
+func (v *vmaFlatSegment) StateSave(stateSinkObject state.Sink) {
 	v.beforeSave()
 	stateSinkObject.Save(0, &v.Start)
 	stateSinkObject.Save(1, &v.End)
-	stateSinkObject.Save(2, &v.Values)
+	stateSinkObject.Save(2, &v.Value)
 }
 
-func (v *vmaSegmentDataSlices) afterLoad() {}
+func (v *vmaFlatSegment) afterLoad() {}
 
 // +checklocksignore
-func (v *vmaSegmentDataSlices) StateLoad(stateSourceObject state.Source) {
+func (v *vmaFlatSegment) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &v.Start)
 	stateSourceObject.Load(1, &v.End)
-	stateSourceObject.Load(2, &v.Values)
+	stateSourceObject.Load(2, &v.Value)
 }
 
 func init() {
@@ -670,10 +670,10 @@ func init() {
 	state.Register((*pma)(nil))
 	state.Register((*pmaSet)(nil))
 	state.Register((*pmanode)(nil))
-	state.Register((*pmaSegmentDataSlices)(nil))
+	state.Register((*pmaFlatSegment)(nil))
 	state.Register((*SpecialMappable)(nil))
 	state.Register((*SpecialMappableRefs)(nil))
 	state.Register((*vmaSet)(nil))
 	state.Register((*vmanode)(nil))
-	state.Register((*vmaSegmentDataSlices)(nil))
+	state.Register((*vmaFlatSegment)(nil))
 }

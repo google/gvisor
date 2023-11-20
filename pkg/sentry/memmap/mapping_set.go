@@ -228,7 +228,7 @@ func (s *MappingSet) RemoveMapping(ms MappingSpace, ar hostarch.AddrRange, offse
 			seg = seg.NextSegment()
 		}
 	}
-	s.MergeAdjacent(mr)
+	s.MergeOutsideRange(mr)
 	return unmapped
 }
 
