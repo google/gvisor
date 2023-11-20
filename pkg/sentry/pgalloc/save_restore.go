@@ -22,9 +22,9 @@ import (
 	"runtime"
 
 	"golang.org/x/sys/unix"
-	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/memutil"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/state/wire"
@@ -32,11 +32,10 @@ import (
 
 // SaveTo writes f's state to the given stream.
 func (f *MemoryFile) SaveTo(ctx context.Context, w wire.Writer) error {
-	// Wait for reclaim.
+	// Wait for memory release.
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	for f.reclaimable {
-		f.reclaimCond.Signal()
+	for f.haveWaste {
 		f.mu.Unlock()
 		runtime.Gosched()
 		f.mu.Lock()
@@ -47,10 +46,10 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w wire.Writer) error {
 		panic(fmt.Sprintf("evictions still pending for %d users; call StartEvictions and WaitForEvictions before SaveTo", len(f.evictable)))
 	}
 
-	// Ensure that all pages that contain data have knownCommitted set, since
-	// we only store knownCommitted pages below.
+	// Ensure that all pages that contain data are marked known-committed,
+	// since we only store known-committed pages below.
 	zeroPage := make([]byte, hostarch.PageSize)
-	err := f.updateUsageLocked(0, nil, func(bs []byte, committed []byte) error {
+	err := f.updateUsageLocked(nil, func(bs []byte, committed []byte) error {
 		for pgoff := 0; pgoff < len(bs); pgoff += hostarch.PageSize {
 			i := pgoff / hostarch.PageSize
 			pg := bs[pgoff : pgoff+hostarch.PageSize]
@@ -80,25 +79,46 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w wire.Writer) error {
 	}
 
 	// Save metadata.
-	if _, err := state.Save(ctx, w, &f.fileSize); err != nil {
+	if _, err := state.Save(ctx, w, &f.unwasteSmall); err != nil {
 		return err
 	}
-	if _, err := state.Save(ctx, w, &f.usage); err != nil {
+	if _, err := state.Save(ctx, w, &f.unwasteHuge); err != nil {
+		return err
+	}
+	if _, err := state.Save(ctx, w, &f.unfreeSmall); err != nil {
+		return err
+	}
+	if _, err := state.Save(ctx, w, &f.unfreeHuge); err != nil {
+		return err
+	}
+	if _, err := state.Save(ctx, w, &f.subreleased); err != nil {
+		return err
+	}
+	if _, err := state.Save(ctx, w, &f.memAcct); err != nil {
+		return err
+	}
+	if _, err := state.Save(ctx, w, &f.knownCommittedBytes); err != nil {
+		return err
+	}
+	if _, err := state.Save(ctx, w, &f.commitSeq); err != nil {
+		return err
+	}
+	if _, err := state.Save(ctx, w, f.chunks.Load()); err != nil {
 		return err
 	}
 
 	// Dump out committed pages.
-	for seg := f.usage.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
-		if !seg.Value().knownCommitted {
+	for maseg := f.memAcct.FirstSegment(); maseg.Ok(); maseg = maseg.NextSegment() {
+		if maseg.ValuePtr().committed != committedTrue {
 			continue
 		}
 		// Write a header to distinguish from objects.
-		if err := state.WriteHeader(w, uint64(seg.Range().Length()), false); err != nil {
+		if err := state.WriteHeader(w, uint64(maseg.Range().Length()), false); err != nil {
 			return err
 		}
 		// Write out data.
 		var ioErr error
-		err := f.forEachMappingSlice(seg.Range(), func(s []byte) {
+		f.forEachMappingSlice(maseg.Range(), func(s []byte) {
 			if ioErr != nil {
 				return
 			}
@@ -107,9 +127,6 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w wire.Writer) error {
 		if ioErr != nil {
 			return ioErr
 		}
-		if err != nil {
-			return err
-		}
 	}
 
 	return nil
@@ -117,45 +134,88 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w wire.Writer) error {
 
 // LoadFrom loads MemoryFile state from the given stream.
 func (f *MemoryFile) LoadFrom(ctx context.Context, r wire.Reader) error {
-	// Load metadata.
-	if _, err := state.Load(ctx, r, &f.fileSize); err != nil {
-		return err
-	}
-	if err := f.file.Truncate(f.fileSize); err != nil {
-		return err
-	}
-	newMappings := make([]uintptr, f.fileSize>>chunkShift)
-	f.mappings.Store(newMappings)
-	if _, err := state.Load(ctx, r, &f.usage); err != nil {
-		return err
-	}
+	// Clear sets since non-empty sets will panic if loaded into.
+	f.unwasteSmall.RemoveAll()
+	f.unwasteHuge.RemoveAll()
+	f.unfreeSmall.RemoveAll()
+	f.unfreeHuge.RemoveAll()
+	f.memAcct.RemoveAll()
 
-	// Try to map committed chunks concurrently: For any given chunk, either
-	// this loop or the following one will mmap the chunk first and cache it in
-	// f.mappings for the other, but this loop is likely to run ahead of the
-	// other since it doesn't do any work between mmaps. The rest of this
-	// function doesn't mutate f.usage, so it's safe to iterate concurrently.
-	mapperDone := make(chan struct{})
-	mapperCanceled := atomicbitops.FromInt32(0)
-	go func() { // S/R-SAFE: see comment
-		defer func() { close(mapperDone) }()
-		for seg := f.usage.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
-			if mapperCanceled.Load() != 0 {
-				return
+	// Load metadata.
+	if _, err := state.Load(ctx, r, &f.unwasteSmall); err != nil {
+		return err
+	}
+	if _, err := state.Load(ctx, r, &f.unwasteHuge); err != nil {
+		return err
+	}
+	if _, err := state.Load(ctx, r, &f.unfreeSmall); err != nil {
+		return err
+	}
+	if _, err := state.Load(ctx, r, &f.unfreeHuge); err != nil {
+		return err
+	}
+	if _, err := state.Load(ctx, r, &f.subreleased); err != nil {
+		return err
+	}
+	if _, err := state.Load(ctx, r, &f.memAcct); err != nil {
+		return err
+	}
+	if _, err := state.Load(ctx, r, &f.knownCommittedBytes); err != nil {
+		return err
+	}
+	if _, err := state.Load(ctx, r, &f.commitSeq); err != nil {
+		return err
+	}
+	var chunks []chunkInfo
+	if _, err := state.Load(ctx, r, &chunks); err != nil {
+		return err
+	}
+	f.chunks.Store(&chunks)
+	if err := f.file.Truncate(int64(len(chunks)) * chunkSize); err != nil {
+		return err
+	}
+	for i := range chunks {
+		chunk := &chunks[i]
+		var mapStart uintptr
+		if chunk.huge {
+			m, err := memutil.MapAlignedPrivateAnon(chunkSize, hostarch.HugePageSize, unix.PROT_NONE, 0)
+			if err != nil {
+				return err
 			}
-			if seg.Value().knownCommitted {
-				f.forEachMappingSlice(seg.Range(), func(s []byte) {})
+			_, _, errno := unix.Syscall6(
+				unix.SYS_MMAP,
+				m,
+				chunkSize,
+				unix.PROT_READ|unix.PROT_WRITE,
+				unix.MAP_SHARED|unix.MAP_FIXED,
+				f.file.Fd(),
+				uintptr(i)*chunkSize)
+			if errno != 0 {
+				unix.RawSyscall(unix.SYS_MUNMAP, m, chunkSize, 0)
+				return errno
 			}
+			mapStart = m
+		} else {
+			m, _, errno := unix.Syscall6(
+				unix.SYS_MMAP,
+				0,
+				chunkSize,
+				unix.PROT_READ|unix.PROT_WRITE,
+				unix.MAP_SHARED,
+				f.file.Fd(),
+				uintptr(i)*chunkSize)
+			if errno != 0 {
+				return errno
+			}
+			mapStart = m
 		}
-	}()
-	defer func() {
-		mapperCanceled.Store(1)
-		<-mapperDone
-	}()
+		f.adviseChunkMapping(mapStart, chunkSize, chunk.huge)
+		chunk.mapping = mapStart
+	}
 
 	// Load committed pages.
-	for seg := f.usage.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
-		if !seg.Value().knownCommitted {
+	for maseg := f.memAcct.FirstSegment(); maseg.Ok(); maseg = maseg.NextSegment() {
+		if maseg.ValuePtr().committed != committedTrue {
 			continue
 		}
 		// Verify header.
@@ -167,13 +227,13 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r wire.Reader) error {
 			// Not expected.
 			return fmt.Errorf("unexpected object")
 		}
-		if expected := uint64(seg.Range().Length()); length != expected {
+		if expected := uint64(maseg.Range().Length()); length != expected {
 			// Size mismatch.
 			return fmt.Errorf("mismatched segment: expected %d, got %d", expected, length)
 		}
 		// Read data.
 		var ioErr error
-		err = f.forEachMappingSlice(seg.Range(), func(s []byte) {
+		f.forEachMappingSlice(maseg.Range(), func(s []byte) {
 			if ioErr != nil {
 				return
 			}
@@ -182,14 +242,11 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r wire.Reader) error {
 		if ioErr != nil {
 			return ioErr
 		}
-		if err != nil {
-			return err
-		}
 
 		// Update accounting for restored pages. We need to do this here since
 		// these segments are marked as "known committed", and will be skipped
 		// over on accounting scans.
-		usage.MemoryAccounting.Inc(seg.End()-seg.Start(), seg.Value().kind, seg.Value().memCgID)
+		usage.MemoryAccounting.Inc(maseg.Range().Length(), maseg.ValuePtr().kind, maseg.ValuePtr().memCgID)
 	}
 
 	return nil

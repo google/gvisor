@@ -374,6 +374,7 @@ func (rw *dentryReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) 
 	}
 
 	// Otherwise read from/through the cache.
+	memCgID := pgalloc.MemoryCgroupIDFromContext(rw.ctx)
 	mf := rw.d.fs.mfp.MemoryFile()
 	fillCache := mf.ShouldCacheEvictable()
 	var dataMuUnlock func()
@@ -435,7 +436,11 @@ func (rw *dentryReadWriter) ReadToBlocks(dsts safemem.BlockSeq) (uint64, error) 
 					End:   gapEnd,
 				}
 				optMR := gap.Range()
-				_, err := rw.d.cache.Fill(rw.ctx, reqMR, maxFillRange(reqMR, optMR), rw.d.size.Load(), mf, usage.PageCache, pgalloc.AllocateAndWritePopulate, h.readToBlocksAt)
+				_, err := rw.d.cache.Fill(rw.ctx, reqMR, maxFillRange(reqMR, optMR), rw.d.size.Load(), mf, pgalloc.AllocOpts{
+					Kind:    usage.PageCache,
+					MemCgID: memCgID,
+					Mode:    pgalloc.AllocateAndWritePopulate,
+				}, h.readToBlocksAt)
 				mf.MarkEvictable(rw.d, pgalloc.EvictableRange{optMR.Start, optMR.End})
 				seg, gap = rw.d.cache.Find(rw.off)
 				if !seg.Ok() {
@@ -773,6 +778,7 @@ func (d *dentry) Translate(ctx context.Context, required, optional memmap.Mappab
 		}, nil
 	}
 
+	memCgID := pgalloc.MemoryCgroupIDFromContext(ctx)
 	d.dataMu.Lock()
 
 	// Constrain translations to d.size (rounded up) to prevent translation to
@@ -794,7 +800,11 @@ func (d *dentry) Translate(ctx context.Context, required, optional memmap.Mappab
 
 	mf := d.fs.mfp.MemoryFile()
 	h := d.readHandle()
-	_, cerr := d.cache.Fill(ctx, required, maxFillRange(required, optional), d.size.Load(), mf, usage.PageCache, pgalloc.AllocateAndWritePopulate, h.readToBlocksAt)
+	_, cerr := d.cache.Fill(ctx, required, maxFillRange(required, optional), d.size.Load(), mf, pgalloc.AllocOpts{
+		Kind:    usage.PageCache,
+		MemCgID: memCgID,
+		Mode:    pgalloc.AllocateAndWritePopulate,
+	}, h.readToBlocksAt)
 
 	var ts []memmap.Translation
 	var translatedEnd uint64

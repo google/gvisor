@@ -15,18 +15,16 @@
 package pgalloc
 
 import (
-	"reflect"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/gohacks"
+	"gvisor.dev/gvisor/pkg/sentry/memmap"
 )
 
-func unsafeSlice(addr uintptr, length int) (slice []byte) {
-	sh := (*reflect.SliceHeader)(unsafe.Pointer(&slice))
-	sh.Data = addr
-	sh.Len = length
-	sh.Cap = length
-	return
+// Preconditions: The FileRange represented by c is a superset of fr.
+func (c *chunkInfo) sliceAt(fr memmap.FileRange) []byte {
+	return gohacks.Slice((*byte)(unsafe.Pointer(c.mapping+uintptr(fr.Start&chunkMask))), int(fr.Length()))
 }
 
 func mincore(s []byte, buf []byte) error {

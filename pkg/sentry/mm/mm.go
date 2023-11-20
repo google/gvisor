@@ -381,6 +381,13 @@ type pma struct {
 	// corresponding vma's memmap.Mappable.Translate.
 	private bool
 
+	// If huge is true, this pma was returned by a call to MemoryFile.Allocate()
+	// with AllocOpts.Hugepage = true. Note that due to pma splitting, pma may
+	// no longer be hugepage-aligned.
+	//
+	// Invariant: If huge == true, then private == true.
+	huge bool
+
 	// If internalMappings is not empty, it is the cached return value of
 	// file.MapInternal for the memmap.FileRange mapped by this pma.
 	internalMappings safemem.BlockSeq `state:"nosave"`

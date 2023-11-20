@@ -32,6 +32,7 @@ go_library(
         "//pkg/sentry/platform/ptrace",
         "//pkg/sentry/seccheck",
         "//pkg/sentry/time",
+        "//pkg/sentry/usage",
         "//pkg/sentry/vfs",
         "//pkg/sync",
         "//pkg/usermem",

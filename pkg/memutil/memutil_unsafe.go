@@ -42,3 +42,31 @@ func UnmapSlice(slice []byte) error {
 	_, _, err := unix.RawSyscall6(unix.SYS_MUNMAP, uintptr(unsafe.Pointer(hdr.Data)), uintptr(hdr.Cap), 0, 0, 0, 0)
 	return err
 }
+
+// MapAlignedPrivateAnon returns a memory mapping configured by the given
+// options. MAP_PRIVATE and MAP_ANONYMOUS are implicitly added to flags. If
+// MapAlignedPrivateAnon succeeds, the returned address is an integer multiple
+// of align.
+//
+// Preconditions: align must be a power of two multiple of the page size.
+func MapAlignedPrivateAnon(size, align, prot, flags uintptr) (uintptr, error) {
+	sizePadded := size + align
+	if sizePadded < size {
+		return 0, unix.ENOMEM
+	}
+	m, _, errno := unix.RawSyscall6(unix.SYS_MMAP, 0, sizePadded, prot, uintptr(unix.MAP_PRIVATE|unix.MAP_ANONYMOUS)|flags, ^uintptr(0), 0)
+	if errno != 0 {
+		return 0, errno
+	}
+	mask := align - 1
+	mAligned := (m + mask) &^ mask
+	padHead := mAligned - m
+	if padHead != 0 {
+		unix.RawSyscall(unix.SYS_MUNMAP, m, padHead, 0)
+	}
+	padTail := align - padHead
+	if padTail != 0 {
+		unix.RawSyscall(unix.SYS_MUNMAP, mAligned+size, padTail, 0)
+	}
+	return mAligned, nil
+}

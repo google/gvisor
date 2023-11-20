@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/memutil"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // MemoryKind represents a type of memory used by the application.
@@ -199,32 +200,42 @@ type MemoryLocked struct {
 	MemCgIDToMemStats map[uint32]*memoryStats
 }
 
+var (
+	initOnce sync.Once
+	initErr  error
+)
+
 // Init initializes global 'MemoryAccounting'.
 func Init() error {
-	const name = "memory-usage"
-	fd, err := memutil.CreateMemFD(name, 0)
-	if err != nil {
-		return fmt.Errorf("error creating usage file: %v", err)
-	}
-	file := os.NewFile(uintptr(fd), name)
-	if err := file.Truncate(int64(RTMemoryStatsSize)); err != nil {
-		return fmt.Errorf("error truncating usage file: %v", err)
-	}
-	// Note: We rely on the returned page being initially zeroed. This will
-	// always be the case for a newly mapped page from /dev/shm. If we obtain
-	// the shared memory through some other means in the future, we may have to
-	// explicitly zero the page.
-	mmap, err := memutil.MapFile(0, RTMemoryStatsSize, unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED, file.Fd(), 0)
-	if err != nil {
-		return fmt.Errorf("error mapping usage file: %v", err)
-	}
+	initOnce.Do(func() {
+		initErr = func() error {
+			const name = "memory-usage"
+			fd, err := memutil.CreateMemFD(name, 0)
+			if err != nil {
+				return fmt.Errorf("error creating usage file: %v", err)
+			}
+			file := os.NewFile(uintptr(fd), name)
+			if err := file.Truncate(int64(RTMemoryStatsSize)); err != nil {
+				return fmt.Errorf("error truncating usage file: %v", err)
+			}
+			// Note: We rely on the returned page being initially zeroed. This will
+			// always be the case for a newly mapped page from /dev/shm. If we obtain
+			// the shared memory through some other means in the future, we may have to
+			// explicitly zero the page.
+			mmap, err := memutil.MapFile(0, RTMemoryStatsSize, unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED, file.Fd(), 0)
+			if err != nil {
+				return fmt.Errorf("error mapping usage file: %v", err)
+			}
 
-	MemoryAccounting = &MemoryLocked{
-		File:              file,
-		RTMemoryStats:     RTMemoryStatsPointer(mmap),
-		MemCgIDToMemStats: make(map[uint32]*memoryStats),
-	}
-	return nil
+			MemoryAccounting = &MemoryLocked{
+				File:              file,
+				RTMemoryStats:     RTMemoryStatsPointer(mmap),
+				MemCgIDToMemStats: make(map[uint32]*memoryStats),
+			}
+			return nil
+		}()
+	})
+	return initErr
 }
 
 // MemoryAccounting is the global memory stats.

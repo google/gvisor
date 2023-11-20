@@ -44,7 +44,9 @@ func Context(tb testing.TB) context.Context {
 		tb.Fatalf("error creating application memory file: %v", err)
 	}
 	memfile := os.NewFile(uintptr(memfd), memfileName)
-	mf, err := pgalloc.NewMemoryFile(memfile, pgalloc.MemoryFileOpts{})
+	mf, err := pgalloc.NewMemoryFile(memfile, pgalloc.MemoryFileOpts{
+		DisableMemoryAccounting: true,
+	})
 	if err != nil {
 		memfile.Close()
 		tb.Fatalf("error creating pgalloc.MemoryFile: %v", err)

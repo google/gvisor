@@ -1,6 +1,6 @@
+load("//pkg/sync/locking:locking.bzl", "declare_mutex")
 load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
-load("//pkg/sync/locking:locking.bzl", "declare_mutex")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -8,17 +8,17 @@ package(
 )
 
 declare_mutex(
-    name = "memory_file_mutex",
-    out = "memory_file_mutex.go",
-    package = "pgalloc",
-    prefix = "memoryFile",
-)
-
-declare_mutex(
     name = "mappings_mutex",
     out = "mappings_mutex.go",
     package = "pgalloc",
     prefix = "mappings",
+)
+
+declare_mutex(
+    name = "memory_file_mutex",
+    out = "memory_file_mutex.go",
+    package = "pgalloc",
+    prefix = "memoryFile",
 )
 
 go_template_instance(
@@ -47,8 +47,8 @@ go_template_instance(
 )
 
 go_template_instance(
-    name = "usage_set",
-    out = "usage_set.go",
+    name = "memacct_set",
+    out = "memacct_set.go",
     consts = {
         "minDegree": "10",
         "trackGaps": "1",
@@ -57,33 +57,55 @@ go_template_instance(
         "memmap": "gvisor.dev/gvisor/pkg/sentry/memmap",
     },
     package = "pgalloc",
-    prefix = "usage",
+    prefix = "memAcct",
     template = "//pkg/segment:generic_set",
     types = {
         "Key": "uint64",
         "Range": "memmap.FileRange",
-        "Value": "usageInfo",
-        "Functions": "usageSetFunctions",
+        "Value": "memAcctInfo",
+        "Functions": "memAcctSetFunctions",
     },
 )
 
 go_template_instance(
-    name = "reclaim_set",
-    out = "reclaim_set.go",
+    name = "unfree_set",
+    out = "unfree_set.go",
     consts = {
         "minDegree": "10",
+        "trackGaps": "1",
     },
     imports = {
         "memmap": "gvisor.dev/gvisor/pkg/sentry/memmap",
     },
     package = "pgalloc",
-    prefix = "reclaim",
+    prefix = "unfree",
     template = "//pkg/segment:generic_set",
     types = {
         "Key": "uint64",
         "Range": "memmap.FileRange",
-        "Value": "reclaimSetValue",
-        "Functions": "reclaimSetFunctions",
+        "Value": "unfreeInfo",
+        "Functions": "unfreeSetFunctions",
+    },
+)
+
+go_template_instance(
+    name = "unwaste_set",
+    out = "unwaste_set.go",
+    consts = {
+        "minDegree": "10",
+        "trackGaps": "1",
+    },
+    imports = {
+        "memmap": "gvisor.dev/gvisor/pkg/sentry/memmap",
+    },
+    package = "pgalloc",
+    prefix = "unwaste",
+    template = "//pkg/segment:generic_set",
+    types = {
+        "Key": "uint64",
+        "Range": "memmap.FileRange",
+        "Value": "unwasteInfo",
+        "Functions": "unwasteSetFunctions",
     },
 )
 
@@ -94,12 +116,13 @@ go_library(
         "evictable_range.go",
         "evictable_range_set.go",
         "mappings_mutex.go",
+        "memacct_set.go",
         "memory_file_mutex.go",
         "pgalloc.go",
         "pgalloc_unsafe.go",
-        "reclaim_set.go",
         "save_restore.go",
-        "usage_set.go",
+        "unfree_set.go",
+        "unwaste_set.go",
     ],
     visibility = ["//pkg/sentry:internal"],
     deps = [
@@ -107,6 +130,7 @@ go_library(
         "//pkg/atomicbitops",
         "//pkg/context",
         "//pkg/errors/linuxerr",
+        "//pkg/gohacks",
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/memutil",
@@ -129,5 +153,8 @@ go_test(
     size = "small",
     srcs = ["pgalloc_test.go"],
     library = ":pgalloc",
-    deps = ["//pkg/hostarch"],
+    deps = [
+        "//pkg/hostarch",
+        "//pkg/sentry/memmap",
+    ],
 )

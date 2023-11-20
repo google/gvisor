@@ -280,6 +280,8 @@ func (rf *regularFile) CopyMapping(ctx context.Context, ms memmap.MappingSpace, 
 
 // Translate implements memmap.Mappable.Translate.
 func (rf *regularFile) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
+	memCgID := pgalloc.MemoryCgroupIDFromContext(ctx)
+
 	rf.dataMu.Lock()
 	defer rf.dataMu.Unlock()
 
@@ -308,7 +310,10 @@ func (rf *regularFile) Translate(ctx context.Context, required, optional memmap.
 		}
 		optional = required
 	}
-	pagesAlloced, cerr := rf.data.Fill(ctx, required, optional, rf.size.RacyLoad(), rf.inode.fs.mf, rf.memoryUsageKind, pgalloc.AllocateOnly, nil /* r */)
+	pagesAlloced, cerr := rf.data.Fill(ctx, required, optional, rf.size.RacyLoad(), rf.inode.fs.mf, pgalloc.AllocOpts{
+		Kind:    rf.memoryUsageKind,
+		MemCgID: memCgID,
+	}, nil)
 	// rf.data.Fill() may fail mid-way. We still want to account any pages that
 	// were allocated, irrespective of an error.
 	rf.inode.fs.adjustPageAcct(pagesToFill, pagesAlloced)
@@ -360,6 +365,8 @@ func (fd *regularFileFD) Release(context.Context) {
 // Allocate implements vfs.FileDescriptionImpl.Allocate.
 func (fd *regularFileFD) Allocate(ctx context.Context, mode, offset, length uint64) error {
 	f := fd.inode().impl.(*regularFile)
+	memCgID := pgalloc.MemoryCgroupIDFromContext(ctx)
+
 	// To be consistent with Linux, inode.mu must be locked throughout.
 	f.inode.mu.Lock()
 	defer f.inode.mu.Unlock()
@@ -383,7 +390,7 @@ func (fd *regularFileFD) Allocate(ctx context.Context, mode, offset, length uint
 			newSize = curPgEnd
 		}
 		required := memmap.MappableRange{Start: curPgStart, End: curPgEnd}
-		if err := f.allocateLocked(ctx, mode, newSize, required); err != nil {
+		if err := f.allocateLocked(ctx, mode, newSize, required, memCgID); err != nil {
 			return err
 		}
 		// This loop can take a long time to process, so periodically check for
@@ -401,7 +408,7 @@ func (fd *regularFileFD) Allocate(ctx context.Context, mode, offset, length uint
 // - rf.inode.mu is locked.
 // - required must be page-aligned.
 // - required.Start < newSize <= required.End.
-func (rf *regularFile) allocateLocked(ctx context.Context, mode, newSize uint64, required memmap.MappableRange) error {
+func (rf *regularFile) allocateLocked(ctx context.Context, mode, newSize uint64, required memmap.MappableRange, memCgID uint32) error {
 	rf.dataMu.Lock()
 	defer rf.dataMu.Unlock()
 
@@ -427,7 +434,11 @@ func (rf *regularFile) allocateLocked(ctx context.Context, mode, newSize uint64,
 		// faulting page-by-page when these pages are written to in the future.
 		allocMode = pgalloc.AllocateAndWritePopulate
 	}
-	pagesAlloced, err := rf.data.Fill(ctx, required, required, newSize, rf.inode.fs.mf, rf.memoryUsageKind, allocMode, nil /* r */)
+	pagesAlloced, err := rf.data.Fill(ctx, required, required, newSize, rf.inode.fs.mf, pgalloc.AllocOpts{
+		Kind:    rf.memoryUsageKind,
+		MemCgID: memCgID,
+		Mode:    allocMode,
+	}, nil /* r */)
 	// f.data.Fill() may fail mid-way. We still want to account any pages that
 	// were allocated, irrespective of an error.
 	rf.inode.fs.adjustPageAcct(pagesToFill, pagesAlloced)
@@ -770,12 +781,12 @@ func (rw *regularFileReadWriter) WriteFromBlocks(srcs safemem.BlockSeq) (uint64,
 				// prepopulating disk-backed pages deteriorates performance as it fails
 				// to eliminate future page faults and we also additionally incur
 				// useless disk writebacks.
-				allocMode = pgalloc.AllocateOnly
+				allocMode = pgalloc.AllocateCallerCommit
 			}
 			fr, err := rw.file.inode.fs.mf.Allocate(gapMR.Length(), pgalloc.AllocOpts{
 				Kind:    rw.file.memoryUsageKind,
-				Mode:    allocMode,
 				MemCgID: rw.memCgID,
+				Mode:    allocMode,
 			})
 			if err != nil {
 				retErr = err

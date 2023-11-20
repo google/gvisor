@@ -205,13 +205,13 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 		}
 	}
 
-	memCgID := pgalloc.MemoryCgroupIDFromContext(ctx)
-	opts := pgalloc.AllocOpts{Kind: usage.Anonymous, Dir: pgalloc.BottomUp, MemCgID: memCgID}
 	vma := vseg.ValuePtr()
+	memCgID := pgalloc.MemoryCgroupIDFromContext(ctx)
+	allocDir := pgalloc.BottomUp
 	if uintptr(ar.Start) < atomic.LoadUintptr(&vma.lastFault) {
 		// Detect cases where memory is accessed downwards and change memory file
 		// allocation order to increase the chances that pages are coalesced.
-		opts.Dir = pgalloc.TopDown
+		allocDir = pgalloc.TopDown
 	}
 	atomic.StoreUintptr(&vma.lastFault, uintptr(ar.Start))
 
@@ -240,7 +240,20 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 				if vma.mappable == nil {
 					// Private anonymous mappings get pmas by allocating.
 					allocAR := optAR.Intersect(maskAR)
-					fr, err := mm.mf.Allocate(uint64(allocAR.Length()), opts)
+					// Don't back stacks with huge pages due to low utilization and
+					// because they're often fragmented by copy-on-write.
+					huge := mm.mf.HugepagesEnabled() && allocAR.IsHugePageAligned() && !vma.growsDown
+					allocMode := pgalloc.AllocateUncommitted
+					if allocAR.Length() == hostarch.PageSize || (huge && allocAR.Length() == hostarch.HugePageSize) {
+						allocMode = pgalloc.AllocateCallerCommit
+					}
+					fr, err := mm.mf.Allocate(uint64(allocAR.Length()), pgalloc.AllocOpts{
+						Kind:    usage.Anonymous,
+						MemCgID: memCgID,
+						Mode:    allocMode,
+						Huge:    huge,
+						Dir:     allocDir,
+					})
 					if err != nil {
 						return pstart, pgap, err
 					}
@@ -260,6 +273,7 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 						// only reference, the new pma does not need
 						// copy-on-write.
 						private: true,
+						huge:    huge,
 					}).NextNonEmpty()
 					pstart = pmaIterator{} // iterators invalidated
 				} else {
@@ -371,10 +385,13 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 						return pstart, pseg.PrevGap(), err
 					}
 					// Copy contents.
+					huge := mm.mf.HugepagesEnabled() && copyAR.IsHugePageAligned()
 					fr, err := mm.mf.Allocate(uint64(copyAR.Length()), pgalloc.AllocOpts{
 						Kind:    usage.Anonymous,
-						Mode:    pgalloc.AllocateAndWritePopulate,
 						MemCgID: memCgID,
+						Mode:    pgalloc.AllocateAndWritePopulate,
+						Huge:    huge,
+						Dir:     allocDir,
 						Reader:  &safemem.BlockSeqReader{mm.internalMappingsLocked(pseg, copyAR)},
 					})
 					if _, ok := err.(safecopy.BusError); ok {
@@ -410,6 +427,7 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 					oldpma.maxPerms = vma.maxPerms
 					oldpma.needCOW = false
 					oldpma.private = true
+					oldpma.huge = huge
 					oldpma.internalMappings = safemem.BlockSeq{}
 					// Try to merge the pma with its neighbors.
 					if prev := pseg.PrevSegment(); prev.Ok() {

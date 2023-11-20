@@ -170,6 +170,10 @@ type Loader struct {
 	// /sys/devices/virtual/dmi/id/product_name.
 	productName string
 
+	// hostShmemHuge is the host's value of
+	// /sys/kernel/mm/transparent_hugepage/shmem_enabled.
+	hostShmemHuge string
+
 	// mu guards the fields below.
 	mu sync.Mutex
 
@@ -291,6 +295,10 @@ type Args struct {
 	ProfileOpts profile.Opts
 	// NvidiaDriverVersion is the Nvidia driver version on the host.
 	NvidiaDriverVersion string
+	// HostShmemHuge is the host's value of
+	// /sys/kernel/mm/transparent_hugepage/shmem_enabled, or empty if this is
+	// unknown.
+	HostShmemHuge string
 }
 
 // make sure stdioFDs are always the same on initial start and on restore
@@ -382,7 +390,7 @@ func New(args Args) (*Loader, error) {
 	}
 
 	// Create memory file.
-	mf, err := createMemoryFile()
+	mf, err := createMemoryFile(args.Conf.AppHugePages, args.HostShmemHuge)
 	if err != nil {
 		return nil, fmt.Errorf("creating memory file: %w", err)
 	}
@@ -538,6 +546,7 @@ func New(args Args) (*Loader, error) {
 		root:          info,
 		stopProfiling: stopProfiling,
 		productName:   args.ProductName,
+		hostShmemHuge: args.HostShmemHuge,
 	}
 
 	// We don't care about child signals; some platforms can generate a
@@ -654,17 +663,45 @@ func createPlatform(conf *config.Config, deviceFile *os.File) (platform.Platform
 	return p.New(deviceFile)
 }
 
-func createMemoryFile() (*pgalloc.MemoryFile, error) {
+func createMemoryFile(appHugePages bool, hostShmemHuge string) (*pgalloc.MemoryFile, error) {
 	const memfileName = "runsc-memory"
 	memfd, err := memutil.CreateMemFD(memfileName, 0)
 	if err != nil {
 		return nil, fmt.Errorf("error creating memfd: %w", err)
 	}
 	memfile := os.NewFile(uintptr(memfd), memfileName)
-	// We can't enable pgalloc.MemoryFileOpts.UseHostMemcgPressure even if
-	// there are memory cgroups specified, because at this point we're already
-	// in a mount namespace in which the relevant cgroupfs is not visible.
-	mf, err := pgalloc.NewMemoryFile(memfile, pgalloc.MemoryFileOpts{})
+
+	mfopts := pgalloc.MemoryFileOpts{
+		// We can't enable pgalloc.MemoryFileOpts.UseHostMemcgPressure even if
+		// there are memory cgroups specified, because at this point we're already
+		// in a mount namespace in which the relevant cgroupfs is not visible.
+	}
+	if appHugePages {
+		switch hostShmemHuge {
+		case "":
+			log.Infof("Disabling application huge pages: host shmem_huge is unknown")
+		case "never", "deny":
+			log.Infof("Disabling application huge pages: host shmem_huge is %q", hostShmemHuge)
+		case "advise":
+			log.Infof("Enabling application huge pages: host shmem_huge is %q", hostShmemHuge)
+			mfopts.ExpectHugepages = true
+			mfopts.AdviseHugepage = true
+		case "always", "within_size":
+			log.Infof("Enabling application huge pages: host shmem_huge is %q", hostShmemHuge)
+			// In these cases, memfds will default to using huge pages, and we have to
+			// explicitly ask for small pages.
+			mfopts.ExpectHugepages = true
+			mfopts.AdviseNoHugepage = true
+		case "force":
+			log.Infof("Enabling application huge pages: host shmem_huge is %q", hostShmemHuge)
+			// The kernel will ignore MADV_NOHUGEPAGE, so don't bother.
+			mfopts.ExpectHugepages = true
+		default:
+			log.Infof("Disabling application huge pages: host shmem_huge is unknown value %q", hostShmemHuge)
+		}
+	}
+
+	mf, err := pgalloc.NewMemoryFile(memfile, mfopts)
 	if err != nil {
 		_ = memfile.Close()
 		return nil, fmt.Errorf("error creating pgalloc.MemoryFile: %w", err)

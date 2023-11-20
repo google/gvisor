@@ -44,10 +44,12 @@ func (mm *MemoryManager) createVMALocked(ctx context.Context, opts memmap.MMapOp
 
 	// Find a usable range.
 	addr, err := mm.findAvailableLocked(opts.Length, findAvailableOpts{
-		Addr:     opts.Addr,
-		Fixed:    opts.Fixed,
-		Unmap:    opts.Unmap,
-		Map32Bit: opts.Map32Bit,
+		Addr:      opts.Addr,
+		Fixed:     opts.Fixed,
+		GrowsDown: opts.GrowsDown,
+		Private:   opts.Private,
+		Unmap:     opts.Unmap,
+		Map32Bit:  opts.Map32Bit,
 	})
 	if err != nil {
 		// Can't force without opts.Unmap and opts.Fixed.
@@ -144,10 +146,12 @@ type findAvailableOpts struct {
 	//
 	//	- Unmap allows existing guard pages in the returned range.
 
-	Addr     hostarch.Addr
-	Fixed    bool
-	Unmap    bool
-	Map32Bit bool
+	Addr      hostarch.Addr
+	Fixed     bool
+	GrowsDown bool
+	Private   bool
+	Unmap     bool
+	Map32Bit  bool
 }
 
 // map32Start/End are the bounds to which MAP_32BIT mappings are constrained,
@@ -187,9 +191,10 @@ func (mm *MemoryManager) findAvailableLocked(length uint64, opts findAvailableOp
 		return 0, linuxerr.ENOMEM
 	}
 
-	// Prefer hugepage alignment if a hugepage or more is requested.
+	// Prefer hugepage alignment if a hugepage or more is requested and the vma
+	// will actually be eligible for hugepages.
 	alignment := uint64(hostarch.PageSize)
-	if length >= hostarch.HugePageSize {
+	if length >= hostarch.HugePageSize && opts.Private && !opts.GrowsDown {
 		alignment = hostarch.HugePageSize
 	}
 
