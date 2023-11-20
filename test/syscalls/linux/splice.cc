@@ -921,6 +921,19 @@ TEST(SpliceTest, FromPipeWithConcurrentIo) {
   }
 }
 
+// Regression test for #9736.
+TEST(SpliceTest, FromEmptyPipeWithWriterToDevNull) {
+  int fds[2];
+  ASSERT_THAT(pipe(fds), SyscallSucceeds());
+  const FileDescriptor rfd(fds[0]);
+  const FileDescriptor wfd(fds[1]);
+  const FileDescriptor out_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/null", O_WRONLY));
+  ASSERT_THAT(
+      splice(rfd.get(), nullptr, out_fd.get(), nullptr, 1, SPLICE_F_NONBLOCK),
+      SyscallFailsWithErrno(EAGAIN));
+}
+
 }  // namespace
 
 }  // namespace testing

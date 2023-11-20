@@ -67,7 +67,7 @@ Most common utilities work. Note that:
 | gcore      | Working.                                                                                            |
 | gdb        | Working.                                                                                            |
 | gosu       | Working.                                                                                            |
-| grep       | Working (unless stdin is a pipe and stdout is /dev/null).                                           |
+| grep       | Working.                                                                                            |
 | ifconfig   | Works partially, like ip. Full support [in progress](https://gvisor.dev/issue/578).                 |
 | ip         | Some subcommands work (e.g. addr, route). Full support [in progress](https://gvisor.dev/issue/578). |
 | less       | Working.                                                                                            |
