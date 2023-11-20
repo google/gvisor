@@ -948,15 +948,22 @@ func (s *subprocess) PullFullState(c *context, ac *arch.Context64) error {
 	return nil
 }
 
-var sysmsgThreadPriority int
+var (
+	sysmsgThreadPriorityOnce sync.Once
+	sysmsgThreadPriority     int
+)
 
+// initSysmsgThreadPriority looks at the current priority of the process
+// and updates `sysmsgThreadPriority` accordingly.
 func initSysmsgThreadPriority() {
-	prio, err := unix.Getpriority(unix.PRIO_PROCESS, 0)
-	if err != nil {
-		panic("unable to get current scheduling priority")
-	}
-	// Sysmsg threads are executed with a priority one lower than the Sentry.
-	sysmsgThreadPriority = 20 - prio + 1
+	sysmsgThreadPriorityOnce.Do(func() {
+		prio, err := unix.Getpriority(unix.PRIO_PROCESS, 0)
+		if err != nil {
+			panic("unable to get current scheduling priority")
+		}
+		// Sysmsg threads are executed with a priority one lower than the Sentry.
+		sysmsgThreadPriority = 20 - prio + 1
+	})
 }
 
 // createSysmsgThread creates a new sysmsg thread.
