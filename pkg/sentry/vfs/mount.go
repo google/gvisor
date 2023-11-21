@@ -1062,16 +1062,24 @@ func (vfs *VirtualFilesystem) PivotRoot(ctx context.Context, creds *auth.Credent
 		return
 	}
 	defer newRoot.DecRef(ctx)
-	putOld, err := vfs.GetDentryAt(ctx, creds, putOldPop, &GetDentryOptions{CheckSearchable: true})
-	if err != nil {
-		return
-	}
-	defer putOld.DecRef(ctx)
+
 	oldRoot = RootFromContext(ctx)
 	defer oldRoot.DecRef(ctx)
 
-retry:
-	epoch := vfs.mounts.seq.BeginRead()
+	putOldVd, err := vfs.GetDentryAt(ctx, creds, putOldPop, &GetDentryOptions{CheckSearchable: true})
+	if err != nil {
+		return
+	}
+	vfs.lockMounts()
+	defer vfs.unlockMounts(ctx)
+	putOld, err := vfs.lockMountpoint(putOldVd)
+	if err != nil {
+		return
+	}
+	vfs.delayDecRef(putOld)
+
+	cleanup := cleanup.Make(func() { putOld.dentry.mu.Unlock() })
+	defer cleanup.Clean()
 	// Neither new_root nor put_old can be on the same mount as the current
 	// root mount.
 	if newRoot.mount == oldRoot.mount || putOld.mount == oldRoot.mount {
@@ -1082,8 +1090,7 @@ retry:
 		return newRoot, oldRoot, linuxerr.EINVAL
 	}
 	// put_old must be at or underneath new_root.
-	path, err := vfs.PathnameReachable(ctx, newRoot, putOld)
-	if err != nil || len(path) == 0 {
+	if !vfs.isPathReachable(ctx, newRoot, putOld) {
 		return newRoot, oldRoot, linuxerr.EINVAL
 	}
 	// The current root directory must be a mountpoint
@@ -1091,55 +1098,35 @@ retry:
 	if oldRoot.mount.root != oldRoot.dentry {
 		return newRoot, oldRoot, linuxerr.EINVAL
 	}
-
 	// The current root and the new root must be in the context's mount namespace.
 	ns := MountNamespaceFromContext(ctx)
-	defer ns.DecRef(ctx)
-	vfs.lockMounts()
+	vfs.delayDecRef(ns)
 	if oldRoot.mount.ns != ns || newRoot.mount.ns != ns {
-		vfs.unlockMounts(ctx)
 		return newRoot, oldRoot, linuxerr.EINVAL
 	}
-
 	// The current root and the new root cannot be on the rootfs mount.
 	if oldRoot.mount.parent() == nil || newRoot.mount.parent() == nil {
-		vfs.unlockMounts(ctx)
 		return newRoot, oldRoot, linuxerr.EINVAL
 	}
-
 	// Either the mount point at new_root, or the parent mount of that mount
 	// point, has propagation type MS_SHARED.
 	if newRootParent := newRoot.mount.parent(); newRoot.mount.isShared || newRootParent.isShared {
-		vfs.unlockMounts(ctx)
 		return newRoot, oldRoot, linuxerr.EINVAL
 	}
 	// put_old is a mount point and has the propagation type MS_SHARED.
 	if putOld.mount.root == putOld.dentry && putOld.mount.isShared {
-		vfs.unlockMounts(ctx)
 		return newRoot, oldRoot, linuxerr.EINVAL
 	}
+	cleanup.Release()
 
-	putOld.IncRef()
-	putOldMp, err := vfs.lockMountpoint(putOld)
-	if err != nil {
-		vfs.delayDecRef(putOldMp)
-		vfs.unlockMounts(ctx)
-		return newRoot, oldRoot, err
-	}
-
-	if !vfs.mounts.seq.BeginWriteOk(epoch) {
-		// Checks above raced with a mount change.
-		putOldMp.dentry.mu.Unlock()
-		vfs.unlockMounts(ctx)
-		goto retry
-	}
-	defer vfs.unlockMounts(ctx)
+	vfs.mounts.seq.BeginWrite()
 	mp := vfs.disconnectLocked(newRoot.mount)
 	vfs.delayDecRef(mp)
 	rootMp := vfs.disconnectLocked(oldRoot.mount)
 
-	vfs.connectLocked(oldRoot.mount, putOldMp, ns)
-	putOldMp.dentry.mu.Unlock()
+	putOld.IncRef()
+	vfs.connectLocked(oldRoot.mount, putOld, ns)
+	putOld.dentry.mu.Unlock()
 
 	rootMp.dentry.mu.Lock()
 	vfs.connectLocked(newRoot.mount, rootMp, ns)
