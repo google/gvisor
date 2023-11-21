@@ -488,6 +488,9 @@ type SyscallRule interface {
 	// next into the program.
 	Render(program *syscallProgram, labelSet *labelSet)
 
+	// Copy returns a copy of this `SyscallRule`.
+	Copy() SyscallRule
+
 	// Recurse should call the given function on all `SyscallRule`s that are
 	// part of this `SyscallRule`, and should replace them with the returned
 	// `SyscallRule`. For example, conjunctive rules should call the given
@@ -505,6 +508,11 @@ type MatchAll struct{}
 // Render implements `SyscallRule.Render`.
 func (MatchAll) Render(program *syscallProgram, labelSet *labelSet) {
 	program.JumpTo(labelSet.Matched())
+}
+
+// Copy implements `SyscallRule.Copy`.
+func (MatchAll) Copy() SyscallRule {
+	return MatchAll{}
 }
 
 // Recurse implements `SyscallRule.Recurse`.
@@ -532,6 +540,15 @@ func (or Or) Render(program *syscallProgram, labelSet *labelSet) {
 		program.Label(nextRuleLabel)
 	}
 	program.JumpTo(labelSet.Mismatched())
+}
+
+// Copy implements `SyscallRule.Copy`.
+func (or Or) Copy() SyscallRule {
+	orCopy := make([]SyscallRule, len(or))
+	for i, rule := range or {
+		orCopy[i] = rule.Copy()
+	}
+	return Or(orCopy)
 }
 
 // Recurse implements `SyscallRule.Recurse`.
@@ -583,6 +600,15 @@ func (and And) Render(program *syscallProgram, labelSet *labelSet) {
 	program.JumpTo(labelSet.Matched())
 }
 
+// Copy implements `SyscallRule.Copy`.
+func (and And) Copy() SyscallRule {
+	andCopy := make([]SyscallRule, len(and))
+	for i, rule := range and {
+		andCopy[i] = rule.Copy()
+	}
+	return And(andCopy)
+}
+
 // Recurse implements `SyscallRule.Recurse`.
 func (and And) Recurse(fn func(SyscallRule) SyscallRule) {
 	for i, rule := range and {
@@ -624,8 +650,8 @@ type PerArg [7]ValueMatcher // 6 arguments + RIP
 // instruction pointer.
 const RuleIP = 6
 
-// clone returns a copy of this `PerArg`.
-func (pa PerArg) clone() PerArg {
+// Copy implements `SyscallRule.Copy`.
+func (pa PerArg) Copy() SyscallRule {
 	return PerArg{
 		pa[0],
 		pa[1],
@@ -829,11 +855,11 @@ func (sr SyscallRules) Merge(other SyscallRules) SyscallRules {
 	return sr
 }
 
-// Copy returns a copy of these SyscallRules.
+// Copy returns a deep copy of these SyscallRules.
 func (sr SyscallRules) Copy() SyscallRules {
 	rulesCopy := make(map[uintptr]SyscallRule, len(sr.rules))
 	for sysno, r := range sr.rules {
-		rulesCopy[sysno] = r
+		rulesCopy[sysno] = r.Copy()
 	}
 	return MakeSyscallRules(rulesCopy)
 }

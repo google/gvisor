@@ -15,6 +15,7 @@
 package tcp
 
 import (
+	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
 	"math"
@@ -23,7 +24,6 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/checksum"
-	"gvisor.dev/gvisor/pkg/tcpip/hash/jenkins"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
@@ -236,10 +236,14 @@ func (h *handshake) resetState() {
 // generateSecureISN generates a secure Initial Sequence number based on the
 // recommendation here https://tools.ietf.org/html/rfc6528#page-3.
 func generateSecureISN(id stack.TransportEndpointID, clock tcpip.Clock, seed uint32) seqnum.Value {
-	isnHasher := jenkins.Sum32(seed)
+	isnHasher := sha256.New()
+
+	seedBuf := make([]byte, 4)
+	binary.LittleEndian.PutUint32(seedBuf, seed)
 	// Per hash.Hash.Writer:
 	//
 	// It never returns an error.
+	_, _ = isnHasher.Write(seedBuf)
 	_, _ = isnHasher.Write(id.LocalAddress.AsSlice())
 	_, _ = isnHasher.Write(id.RemoteAddress.AsSlice())
 	portBuf := make([]byte, 2)
@@ -257,7 +261,8 @@ func generateSecureISN(id stack.TransportEndpointID, clock tcpip.Clock, seed uin
 	//
 	// Which sort of guarantees that we won't reuse the ISN for a new
 	// connection for the same tuple for at least 274s.
-	isn := isnHasher.Sum32() + uint32(clock.NowMonotonic().Sub(tcpip.MonotonicTime{}).Nanoseconds()>>6)
+	hash := binary.LittleEndian.Uint32(isnHasher.Sum(nil)[:4])
+	isn := hash + uint32(clock.NowMonotonic().Sub(tcpip.MonotonicTime{}).Nanoseconds()>>6)
 	return seqnum.Value(isn)
 }
 
