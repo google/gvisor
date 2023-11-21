@@ -16,13 +16,14 @@
 package tcp
 
 import (
+	"crypto/sha256"
+	"encoding/binary"
 	"runtime"
 	"strings"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
-	"gvisor.dev/gvisor/pkg/tcpip/hash/jenkins"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/header/parse"
 	"gvisor.dev/gvisor/pkg/tcpip/internal/tcp"
@@ -178,16 +179,17 @@ func (p *protocol) tsOffset(src, dst tcpip.Address) tcp.TSOffset {
 	//
 	// See https://tools.ietf.org/html/rfc7323#section-5.4 for details on
 	// why this is required.
-	//
-	// TODO(https://gvisor.dev/issues/6473): This is not really secure as
-	// it does not use the recommended algorithm linked above.
-	h := jenkins.Sum32(p.tsOffsetSecret)
+	h := sha256.New()
+
+	secretBuf := make([]byte, 4)
+	binary.LittleEndian.PutUint32(secretBuf, p.tsOffsetSecret)
 	// Per hash.Hash.Writer:
 	//
 	// It never returns an error.
+	_, _ = h.Write(secretBuf)
 	_, _ = h.Write(src.AsSlice())
 	_, _ = h.Write(dst.AsSlice())
-	return tcp.NewTSOffset(h.Sum32())
+	return tcp.NewTSOffset(binary.LittleEndian.Uint32(h.Sum(nil)[:4]))
 }
 
 // replyWithReset replies to the given segment with a reset segment.
