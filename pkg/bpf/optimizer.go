@@ -14,14 +14,41 @@
 
 package bpf
 
+import (
+	"fmt"
+	"sort"
+)
+
+const (
+	// maxConditionalJumpOffset is the maximum offset of a conditional
+	// jump instruction. Conditional jump offsets are specified as an
+	// unsigned 8-bit integer.
+	maxConditionalJumpOffset = (1 << 8) - 1
+	// maxUnconditionalJumpOffset is the maximum offset of an unconditional
+	// jump instruction.
+	// Unconditional jumps are stored in an uint32, but here we limit it to
+	// what would fit in a uint16.
+	// BPF programs (once uploaded into the kernel) are limited to
+	// `BPF_MAXINSNS`, which is 4096 in Linux as of this writing.
+	// We need a value larger than `BPF_MAXINSNS` here in order to support
+	// optimizing programs that are initially larger than `BPF_MAXINSNS` but
+	// that can be optimized to fit within that limit. However, programs that
+	// jump 2^32-1 instructions are probably not optimizable enough to fit
+	// regardless.
+	// This number is a middle ground that should be plenty given the type of
+	// program we expect to optimize, while also not trying too hard to
+	// optimize unoptimizable programs.
+	maxUnconditionalJumpOffset = (1 << 16) - 1
+)
+
 // optimizerFunc is a function type that can optimize a BPF program.
 // It returns the updated set of instructions, along with whether any
 // modification was made.
 type optimizerFunc func(insns []Instruction) ([]Instruction, bool)
 
 // optimizeConditionalJumps looks for conditional jumps which go to an
-// unconditional jump that goes to a final target fewer than 256 instructions
-// away.
+// unconditional jump that goes to a final target fewer than
+// `maxConditionalJumpOffset` instructions away.
 // These can safely be rewritten to not require the extra unconditional jump.
 // It returns the optimized set of instructions, along with whether any change
 // was made.
@@ -36,7 +63,7 @@ func optimizeConditionalJumps(insns []Instruction) ([]Instruction, bool) {
 			jumpTrueOffset := pc + int(ins.JumpIfTrue) + 1
 			jumpTrueIns := insns[jumpTrueOffset]
 			if jumpTrueIns.OpCode&instructionClassMask == Jmp && jumpTrueIns.OpCode&jmpMask == Ja {
-				if finalJumpTrueOffset := int(ins.JumpIfTrue) + 1 + int(jumpTrueIns.K); finalJumpTrueOffset < 256 {
+				if finalJumpTrueOffset := int(ins.JumpIfTrue) + 1 + int(jumpTrueIns.K); finalJumpTrueOffset <= maxConditionalJumpOffset {
 					// We can optimize the "true" target.
 					ins.JumpIfTrue = uint8(finalJumpTrueOffset)
 					changed = true
@@ -48,7 +75,7 @@ func optimizeConditionalJumps(insns []Instruction) ([]Instruction, bool) {
 			jumpFalseOffset := pc + int(ins.JumpIfFalse) + 1
 			jumpFalseIns := insns[jumpFalseOffset]
 			if jumpFalseIns.OpCode&instructionClassMask == Jmp && jumpFalseIns.OpCode&jmpMask == Ja {
-				if finalJumpFalseOffset := int(ins.JumpIfFalse) + 1 + int(jumpFalseIns.K); finalJumpFalseOffset < 256 {
+				if finalJumpFalseOffset := int(ins.JumpIfFalse) + 1 + int(jumpFalseIns.K); finalJumpFalseOffset <= maxConditionalJumpOffset {
 					// We can optimize the "false" target.
 					ins.JumpIfFalse = uint8(finalJumpFalseOffset)
 					changed = true
@@ -97,7 +124,7 @@ func optimizeUnconditionalJumps(insns []Instruction) ([]Instruction, bool) {
 			continue
 		}
 		finalJumpOffset := int(ins.K) + 1 + int(jumpIns.K)
-		if finalJumpOffset >= 65536 {
+		if finalJumpOffset > maxUnconditionalJumpOffset {
 			// Final jump offset too large to fit in a single unconditional jump.
 			continue
 		}
@@ -246,6 +273,274 @@ func optimizeJumpsToReturn(insns []Instruction) ([]Instruction, bool) {
 	return insns, changed
 }
 
+// rewriteAllJumpsToReturn rewrites *all* jump instructions that go to
+// `fromPC` to go to `toPC` instead, if possible without converting jumps
+// from conditional to unconditional. `fromPC` and `toPC` must point to
+// identical return instructions.
+// It is all-or-nothing: either all jump instructions must be rewritable
+// (in which case they will all be rewritten, and this function will
+// return true), or no jump instructions will be rewritten, and this
+// function will return false.
+// This function also returns false in the vacuous case (i.e. there are
+// no jump instructions that go to `fromPC` in the first place).
+// This function is used in `optimizeJumpsToSmallestSetOfReturns`.
+// As a sanity check, it verifies that `fromPC` and `toPC` are functionally
+// identical return instruction, and panics otherwise.
+func rewriteAllJumpsToReturn(insns []Instruction, fromPC, toPC int) bool {
+	fromIns, toIns := insns[fromPC], insns[toPC]
+	if !fromIns.IsReturn() {
+		panic(fmt.Sprintf("attempted to rewrite jumps from {pc=%d: %v} which is not a return instruction", fromPC, fromIns))
+	}
+	if !toIns.IsReturn() {
+		panic(fmt.Sprintf("attempted to rewrite jumps to {pc=%d: %v} which is not a return instruction", toPC, toIns))
+	}
+	if fromIns != toIns {
+		panic(fmt.Sprintf("attempted to rewrite jump target to a different return instruction: from={pc=%d: %v}, to={pc=%d: %v}", fromPC, fromIns, toPC, toIns))
+	}
+	// Scan once, and populate `rewriteOps` as a list of functions that should
+	// be run if the rewrite is feasible.
+	var rewriteOps []func()
+	for pc := 0; pc < fromPC; pc++ {
+		// pcCopy is `pc` but can be used in the closures below.
+		pcCopy := pc
+		ins := insns[pc]
+		// Note: `neededOffset` may be negative, in case where we are rewriting
+		// the jump target to go to an earlier instruction, and we are dealing
+		// with the instructions that come after that.
+		// This isn't necessarily a dealbreaker, we just need to make sure that
+		// `ins` is either not a jump statement, or it is a jump statement that
+		// doesn't go to `fromPC` (otherwise, only then would it need to jump
+		// backwards).
+		neededOffset := toPC - pc - 1
+		if ins.IsConditionalJump() {
+			if jumpTrueTarget := pc + int(ins.JumpIfTrue) + 1; jumpTrueTarget == fromPC {
+				if neededOffset < 0 || neededOffset > maxConditionalJumpOffset {
+					return false
+				}
+				rewriteOps = append(rewriteOps, func() {
+					ins := insns[pcCopy]
+					ins.JumpIfTrue = uint8(neededOffset)
+					insns[pcCopy] = ins
+				})
+			}
+			if jumpFalseTarget := pc + int(ins.JumpIfFalse) + 1; jumpFalseTarget == fromPC {
+				if neededOffset < 0 || neededOffset > maxConditionalJumpOffset {
+					return false
+				}
+				rewriteOps = append(rewriteOps, func() {
+					ins := insns[pcCopy]
+					ins.JumpIfFalse = uint8(neededOffset)
+					insns[pcCopy] = ins
+				})
+			}
+		} else if ins.IsUnconditionalJump() {
+			if jumpTarget := pc + int(ins.K) + 1; jumpTarget == fromPC {
+				if neededOffset < 0 || neededOffset > maxUnconditionalJumpOffset {
+					return false
+				}
+				rewriteOps = append(rewriteOps, func() {
+					ins := insns[pcCopy]
+					ins.K = uint32(neededOffset)
+					insns[pcCopy] = ins
+				})
+			}
+		}
+	}
+	if len(rewriteOps) == 0 {
+		return false // No jump statements to rewrite.
+	}
+	// Rewrite is feasible, so do it.
+	for _, fn := range rewriteOps {
+		fn()
+	}
+	return true
+}
+
+// optimizeJumpsToSmallestSetOfReturns modifies jump targets that go to
+// return statements to go to an identical return statement (which still
+// fits within the maximum jump offsets), with the goal of minimizing the
+// total number of such return statements needed within the program overall.
+// The return statements that are skipped this way can then be removed by
+// the `removeDeadCode` optimizer, which should come earlier in the
+// optimizer list to ensure this optimizer only runs on instructions with
+// no dead code in them.
+// Within binary search trees, this allows deduplicating return statements
+// across multiple conditions and makes them much shorter. In turn, this
+// allows pruning these redundant return instructions as
+// they become dead, and therefore makes the code shorter.
+// (Essentially, we create a common "jump to return" doormat that everyone in
+// Office Space^W^W^W^W any instruction in range can jump to.)
+//
+// Conceptually:
+//
+//	.. if (foo) goto A else goto B
+//	A: return rejected
+//	B: if (bar) goto C else goto D
+//	C: return rejected
+//	D: if (baz) goto E else goto F
+//	E: return rejected
+//	F: return accepted
+//	...
+//	(Another set of rules in the program):
+//	.. if (foo2) goto G else goto H
+//	G: return accepted
+//	H: if (bar2) goto I else goto J
+//	I: return accepted
+//	J: return rejected
+//
+// becomes (after the dead code removal optimizer runs as well):
+//
+//	.. if (foo) goto J else goto B
+//	B: if (bar) goto J else goto D
+//	D: if (baz) goto J else goto I
+//	...
+//	.. if (foo2) goto I else goto H
+//	H: if (bar2) goto I else goto J
+//	I: return accepted
+//	J: return rejected
+func optimizeJumpsToSmallestSetOfReturns(insns []Instruction) ([]Instruction, bool) {
+	// This is probably an NP-complete problem, so this approach does not
+	// attempt to be optimal. Not being optimal is OK, we just end up with
+	// a program that's slightly longer than necessary.
+	// Rough sketch of the algorithm:
+	//   For each return instruction in the program:
+	//     Count the number of jump instructions that flow to it ("popularity").
+	//     Also add `len(insns)` to the count if the instruction just before
+	//     the return instruction is neither a jump or a return instruction,
+	//     as the program can also flow through to it. This makes the return
+	//     instruction non-removable, but that in turn means that it is a very
+	//     good target for other jumps to jump to.
+	//   Build a map of lists of return instructions sorted by how many other
+	//   instructions flow to it, in ascending order.
+	//   The map key is the return value of the return instruction.
+	//   Iterate over this map (for each possible return value):
+	//     Iterate over the list of return instructions that return this value:
+	//       If the return instruction is unreachable, skip it.
+	//       If the return instruction is reachable by fallthrough (i.e. the
+	//       instruction just before it is not a jump nor a return), skip it.
+	//       Otherwise, see if it's possible to move all jump targets of this
+	//       instruction to any other return instruction in the list (starting
+	//       from the end of the sorted list, i.e. the "most popular" return
+	//       instruction that returns the same value), without needing to
+	//       convert conditional jumps into unconditional ones.
+	//       If it's possible, move all jump targets to it, and do not analyze
+	//       any of the other return instructions that return this value, as
+	//       our list of return instructions is now outdated.
+	// This only updates jump instructions for at most one return statement per
+	// return value at a time, but the optimizer will be run multiple times,
+	// so we stop there and will be called upon again by the optimizer to
+	// find the next set of return instructions.
+	// This is desirable because it allows the other optimizers to run and trim
+	// the program before we move onto the next pass.
+	changed := false
+
+	// retPopularity maps offsets (pc) of return instructions to the number of
+	// jump targets that point to them, +numInstructions if the program can also
+	// fall through to it.
+	numInstructions := len(insns)
+	retPopularity := make([]int, numInstructions)
+
+	// retCanBeFallenThrough maps offsets (pc) of return instructions to whether
+	// or not they can be fallen through (i.e. not jumped to).
+	retCanBeFallenThrough := make([]bool, numInstructions)
+
+	// retValueToPC maps return values to a set of instructions that return
+	// that value.
+	// In BPF, the value of the K register is part of the return instruction
+	// itself ("immediate" in assembly parlance), whereas the A register is
+	// more of a regular register (previous operations may store/load/modify
+	// it). So any return statement that returns the value of the A register
+	// is functionally identical to any other, but any return statement that
+	// returns the value of the K register must have the same value of K in
+	// the return instruction for it to be functionally equivalent.
+	// So, for return instructions that return K, we use the immediate value
+	// of the K register (which is a uint32), and for return instructions
+	// that return the A register, we use the stand-in value
+	// "0xaaaaaaaaaaaaaaaa" (which doesn't fit in uint32, so it can't conflict
+	// with an immediate value of K).
+	const retRegisterA = 0xaaaaaaaaaaaaaaaa
+	retValueToPC := make(map[uint64][]int)
+
+	for pc, ins := range insns {
+		if !ins.IsReturn() {
+			continue // Not a conditional jump instruction.
+		}
+		var retValue uint64
+		switch ins.OpCode - Ret {
+		case A:
+			retValue = retRegisterA
+		case K:
+			retValue = uint64(ins.K)
+		default:
+			panic(fmt.Sprintf("unknown return value in instruction at pc=%d: %v", pc, ins))
+		}
+		popularity := 0
+		canBeFallenThrough := false
+		for pc2 := 0; pc2 < pc; pc2++ {
+			ins2 := insns[pc2]
+			switch ins2.OpCode & instructionClassMask {
+			case Ret:
+				// Do nothing.
+			case Jmp:
+				if ins2.IsConditionalJump() {
+					// Note that the optimizeSameTargetConditionalJumps should make it
+					// such that it's not possible for there to be a conditional jump
+					// with identical "true" and "false" targets, so this should not
+					// result in adding 2 to `popularity`.
+					if jumpTrueTarget := pc2 + int(ins2.JumpIfTrue) + 1; jumpTrueTarget == pc {
+						popularity++
+					}
+					if jumpFalseTarget := pc2 + int(ins2.JumpIfFalse) + 1; jumpFalseTarget == pc {
+						popularity++
+					}
+				} else {
+					if jumpTarget := pc2 + int(ins2.K) + 1; jumpTarget == pc {
+						popularity++
+					}
+				}
+			default:
+				if pc2 == pc-1 {
+					// This return instruction can be fallen through to.
+					popularity += numInstructions
+					canBeFallenThrough = true
+				}
+			}
+		}
+		retValueToPC[retValue] = append(retValueToPC[retValue], pc)
+		retPopularity[pc] = popularity
+		retCanBeFallenThrough[pc] = canBeFallenThrough
+	}
+
+nextRetValue:
+	for _, pcs := range retValueToPC {
+		sort.Slice(pcs, func(i, j int) bool {
+			// Sort `pcs` in order of ascending popularity.
+			// If the popularity is the same, sort by PC.
+			if retPopularity[pcs[i]] != retPopularity[pcs[j]] {
+				return retPopularity[pcs[i]] < retPopularity[pcs[j]]
+			}
+			return pcs[i] < pcs[j]
+		})
+		for i, unpopularPC := range pcs {
+			if retCanBeFallenThrough[unpopularPC] {
+				// Can't remove this return instruction, so no need to try
+				// to check if we can rewrite other instructions that jump to it.
+				continue
+			}
+			for j := len(pcs) - 1; j > i; j-- {
+				popularPC := pcs[j]
+				// Check if we can rewrite all instructions that jump to `unpopularPC`
+				// to instead jump to `popularPC`.
+				if rewriteAllJumpsToReturn(insns, unpopularPC, popularPC) {
+					changed = true
+					goto nextRetValue
+				}
+			}
+		}
+	}
+	return insns, changed
+}
+
 // Optimize losslessly optimizes a BPF program using the given optimization
 // functions.
 // Optimizers should be ranked in order of importance, with the most
@@ -278,5 +573,6 @@ func Optimize(insns []Instruction) []Instruction {
 		optimizeJumpsToReturn,
 		removeZeroInstructionJumps,
 		removeDeadCode,
+		optimizeJumpsToSmallestSetOfReturns,
 	})
 }
