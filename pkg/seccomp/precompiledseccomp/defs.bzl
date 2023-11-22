@@ -85,5 +85,13 @@ def precompiled_seccomp_rules(
         cmd = (
             "$(location :" + name + "_gen_bin) --package='" + out_package_name + "' --out=$@"
         ),
-        tools = [":" + name + "_gen_bin"],
+        # We list the generator binary in `srcs` rather than `tools` here
+        # because we do *not* want to use the "exec" condiguration that would
+        # otherwise be applied to `tools`. Having the binary in `srcs` ensures
+        # that the compilation options for the generation binary are the same
+        # as those that the binary it's compiled for.
+        # This is important because seccomp rule autogeneration binaries are
+        # often conditionally compiled, e.g. for architecture-specific seccomp
+        # filters or to support Go race instrumentation.
+        srcs = [":" + name + "_gen_bin"],
     )
