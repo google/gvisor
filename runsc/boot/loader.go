@@ -93,6 +93,8 @@ import (
 )
 
 type containerInfo struct {
+	cid string
+
 	conf *config.Config
 
 	// spec is the base configuration for the root container.
@@ -321,6 +323,7 @@ func New(args Args) (*Loader, error) {
 	kernel.IOUringEnabled = args.Conf.IOUring
 
 	info := containerInfo{
+		cid:                 args.ID,
 		conf:                args.Conf,
 		spec:                args.Spec,
 		goferMountConfs:     args.GoferMountConfs,
@@ -752,7 +755,7 @@ func (l *Loader) run() error {
 			tg  *kernel.ThreadGroup
 			err error
 		)
-		tg, ep.tty, err = l.createContainerProcess(l.sandboxID, &l.root)
+		tg, ep.tty, err = l.createContainerProcess(&l.root)
 		if err != nil {
 			return err
 		}
@@ -879,6 +882,7 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 	}
 
 	info := &containerInfo{
+		cid:                 cid,
 		conf:                conf,
 		spec:                spec,
 		goferFDs:            goferFDs,
@@ -918,7 +922,7 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 		})
 	}
 
-	ep.tg, ep.tty, err = l.createContainerProcess(cid, info)
+	ep.tg, ep.tty, err = l.createContainerProcess(info)
 	if err != nil {
 		return err
 	}
@@ -950,7 +954,7 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 }
 
 // +checklocks:l.mu
-func (l *Loader) createContainerProcess(cid string, info *containerInfo) (*kernel.ThreadGroup, *host.TTYFileDescription, error) {
+func (l *Loader) createContainerProcess(info *containerInfo) (*kernel.ThreadGroup, *host.TTYFileDescription, error) {
 	// Create the FD map, which will set stdin, stdout, and stderr.
 	ctx := info.procArgs.NewContext(l.k)
 	fdTable, ttyFile, err := createFDTable(ctx, info.spec.Process.Terminal, info.stdioFDs, info.passFDs, info.spec.Process.User)
@@ -985,7 +989,7 @@ func (l *Loader) createContainerProcess(cid string, info *containerInfo) (*kerne
 	if len(info.goferFDs) < 1 {
 		return nil, nil, fmt.Errorf("rootfs gofer FD not found")
 	}
-	l.startGoferMonitor(cid, info)
+	l.startGoferMonitor(info)
 
 	// We can share l.sharedMounts with containerMounter since l.mu is locked.
 	// Hence, mntr must only be used within this function (while l.mu is locked).
@@ -1046,7 +1050,7 @@ func (l *Loader) createContainerProcess(cid string, info *containerInfo) (*kerne
 // startGoferMonitor runs a goroutine to monitor gofer's health. It polls on
 // the gofer FD looking for disconnects, and kills the container processes if
 // the gofer connection disconnects.
-func (l *Loader) startGoferMonitor(cid string, info *containerInfo) {
+func (l *Loader) startGoferMonitor(info *containerInfo) {
 	// We need to pick a suitable gofer connection that is expected to be alive
 	// for the entire container lifecycle. Only the following can be used:
 	// 1. Rootfs gofer connection
@@ -1064,7 +1068,7 @@ func (l *Loader) startGoferMonitor(cid string, info *containerInfo) {
 		return
 	}
 	go func() {
-		log.Debugf("Monitoring gofer health for container %q", cid)
+		log.Debugf("Monitoring gofer health for container %q", info.cid)
 		events := []unix.PollFd{
 			{
 				Fd:     int32(goferFD),
@@ -1085,10 +1089,10 @@ func (l *Loader) startGoferMonitor(cid string, info *containerInfo) {
 
 		// The gofer could have been stopped due to a normal container shutdown.
 		// Check if the container has not stopped yet.
-		if tg, _ := l.tryThreadGroupFromIDLocked(execID{cid: cid}); tg != nil {
-			log.Infof("Gofer socket disconnected, killing container %q", cid)
-			if err := l.signalAllProcesses(cid, int32(linux.SIGKILL)); err != nil {
-				log.Warningf("Error killing container %q after gofer stopped: %s", cid, err)
+		if tg, _ := l.tryThreadGroupFromIDLocked(execID{cid: info.cid}); tg != nil {
+			log.Infof("Gofer socket disconnected, killing container %q", info.cid)
+			if err := l.signalAllProcesses(info.cid, int32(linux.SIGKILL)); err != nil {
+				log.Warningf("Error killing container %q after gofer stopped: %s", info.cid, err)
 			}
 		}
 	}()
