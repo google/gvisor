@@ -149,6 +149,11 @@ func Jump(code uint16, k uint32, jt, jf uint8) Instruction {
 	}
 }
 
+// IsReturn returns true if `ins` is a return instruction.
+func (ins Instruction) IsReturn() bool {
+	return ins.OpCode&instructionClassMask == Ret
+}
+
 // IsJump returns true if `ins` is a jump instruction.
 func (ins Instruction) IsJump() bool {
 	return ins.OpCode&instructionClassMask == Jmp
