@@ -34,13 +34,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
-	"gvisor.dev/gvisor/pkg/sentry/state"
-	"gvisor.dev/gvisor/pkg/sentry/time"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
-	"gvisor.dev/gvisor/pkg/sentry/watchdog"
-	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/pkg/urpc"
-	"gvisor.dev/gvisor/runsc/boot/pprof"
 	"gvisor.dev/gvisor/runsc/boot/procfs"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
@@ -463,7 +458,7 @@ type RestoreOpts struct {
 func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	log.Debugf("containerManager.Restore")
 
-	var specFile, deviceFile *os.File
+	r := restorer{container: &cm.l.root}
 	switch numFiles := len(o.Files); numFiles {
 	case 2:
 		// The device file is donated to the platform.
@@ -472,10 +467,16 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 		if err != nil {
 			return fmt.Errorf("failed to dup file: %v", err)
 		}
-		deviceFile = os.NewFile(uintptr(fd), "platform device")
+		r.deviceFile = os.NewFile(uintptr(fd), "platform device")
 		fallthrough
 	case 1:
-		specFile = o.Files[0]
+		r.stateFile = o.Files[0]
+		if info, err := r.stateFile.Stat(); err != nil {
+			return err
+		} else if info.Size() == 0 {
+			return fmt.Errorf("file cannot be empty")
+		}
+
 	case 0:
 		return fmt.Errorf("at least one file must be passed to Restore")
 	default:
@@ -485,90 +486,9 @@ func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	// Pause the kernel while we build a new one.
 	cm.l.k.Pause()
 
-	p, err := createPlatform(cm.l.root.conf, deviceFile)
-	if err != nil {
-		return fmt.Errorf("creating platform: %v", err)
-	}
-	k := &kernel.Kernel{
-		Platform: p,
-	}
-	mf, err := createMemoryFile()
-	if err != nil {
-		return fmt.Errorf("creating memory file: %v", err)
-	}
-	k.SetMemoryFile(mf)
-	networkStack := cm.l.k.RootNetworkNamespace().Stack()
-	cm.l.k = k
-
-	// Set up the restore environment.
-	ctx := k.SupervisorContext()
-	// TODO(b/298078576): Need to process hints here probably
-	mntr := newContainerMounter(&cm.l.root, cm.l.k, cm.l.mountHints, cm.l.sharedMounts, cm.l.productName, o.SandboxID)
-	ctx, err = mntr.configureRestore(ctx)
-	if err != nil {
-		return fmt.Errorf("configuring filesystem restore: %v", err)
-	}
-
-	// Prepare to load from the state file.
-	if eps, ok := networkStack.(*netstack.Stack); ok {
-		stack.StackFromEnv = eps.Stack // FIXME(b/36201077)
-	}
-	info, err := specFile.Stat()
-	if err != nil {
+	if err := r.restore(cm.l); err != nil {
 		return err
 	}
-	if info.Size() == 0 {
-		return fmt.Errorf("file cannot be empty")
-	}
-
-	if cm.l.root.conf.ProfileEnable {
-		// pprof.Initialize opens /proc/self/maps, so has to be called before
-		// installing seccomp filters.
-		pprof.Initialize()
-	}
-
-	// Seccomp filters have to be applied before parsing the state file.
-	if err := cm.l.installSeccompFilters(); err != nil {
-		return err
-	}
-
-	// Load the state.
-	loadOpts := state.LoadOpts{Source: specFile}
-	if err := loadOpts.Load(ctx, k, nil, networkStack, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}); err != nil {
-		return err
-	}
-
-	// Since we have a new kernel we also must make a new watchdog.
-	dogOpts := watchdog.DefaultOpts
-	dogOpts.TaskTimeoutAction = cm.l.root.conf.WatchdogAction
-	dog := watchdog.New(k, dogOpts)
-
-	// Change the loader fields to reflect the changes made when restoring.
-	cm.l.k = k
-	cm.l.watchdog = dog
-	cm.l.root.procArgs = kernel.CreateProcessArgs{}
-	cm.l.restore = true
-
-	// Reinitialize the sandbox ID and processes map. Note that it doesn't
-	// restore the state of multiple containers, nor exec processes.
-	cm.l.sandboxID = o.SandboxID
-	cm.l.mu.Lock()
-
-	// Set new container ID if it has changed.
-	tasks := cm.l.k.TaskSet().Root.Tasks()
-	if tasks[0].ContainerID() != o.SandboxID { // There must be at least 1 task.
-		for _, task := range tasks {
-			task.RestoreContainerID(o.SandboxID)
-		}
-	}
-
-	eid := execID{cid: o.SandboxID}
-	cm.l.processes = map[execID]*execProcess{
-		eid: {
-			tg: cm.l.k.GlobalInit(),
-		},
-	}
-	cm.l.mu.Unlock()
 
 	// Tell the root container to start and wait for the result.
 	cm.startChan <- struct{}{}
