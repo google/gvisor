@@ -692,7 +692,7 @@ func (l *Loader) installSeccompFilters() error {
 			ProfileEnable:         l.root.conf.ProfileEnable,
 			NVProxy:               specutils.NVProxyEnabled(l.root.spec, l.root.conf),
 			TPUProxy:              specutils.TPUProxyIsEnabled(l.root.spec, l.root.conf),
-			ControllerFD:          l.ctrl.srv.FD(),
+			ControllerFD:          uint32(l.ctrl.srv.FD()),
 		}
 		if err := filter.Install(opts); err != nil {
 			return fmt.Errorf("installing seccomp filters: %w", err)

@@ -18,10 +18,12 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/seccomp"
+	"gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp"
 	"gvisor.dev/gvisor/pkg/sentry/devices/accel"
 	"gvisor.dev/gvisor/pkg/sentry/devices/nvproxy"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
@@ -36,7 +38,13 @@ type Options struct {
 	ProfileEnable         bool
 	NVProxy               bool
 	TPUProxy              bool
-	ControllerFD          int
+	ControllerFD          uint32
+}
+
+// isInstrumentationEnabled returns whether there are any
+// instrumentation-specific filters enabled.
+func isInstrumentationEnabled() bool {
+	return instrumentationFilters().Size() > 0
 }
 
 // ConfigKey returns a unique string representing this set of options.
@@ -52,6 +60,7 @@ func (opt Options) ConfigKey() string {
 	sb.WriteString(fmt.Sprintf("HostNetworkRawSockets=%t ", opt.HostNetworkRawSockets))
 	sb.WriteString(fmt.Sprintf("HostFilesystem=%t ", opt.HostFilesystem))
 	sb.WriteString(fmt.Sprintf("ProfileEnable=%t ", opt.ProfileEnable))
+	sb.WriteString(fmt.Sprintf("Instrumentation=%t ", isInstrumentationEnabled()))
 	sb.WriteString(fmt.Sprintf("NVProxy=%t ", opt.NVProxy))
 	sb.WriteString(fmt.Sprintf("TPUProxy=%t ", opt.TPUProxy))
 	return strings.TrimSpace(sb.String())
@@ -74,6 +83,9 @@ func Warnings(opt Options) []string {
 	if opt.HostFilesystem {
 		warnings = append(warnings, "host filesystem enabled: syscall filters less restrictive!")
 	}
+	if isInstrumentationEnabled() {
+		warnings = append(warnings, "instrumentation enabled: syscall filters less restrictive!")
+	}
 	if opt.NVProxy {
 		warnings = append(warnings, "Nvidia GPU driver proxy enabled: syscall filters less restrictive!")
 	}
@@ -83,10 +95,30 @@ func Warnings(opt Options) []string {
 	return warnings
 }
 
+// Vars returns the values to use for rendering the precompiled seccomp
+// program.
+func (opt Options) Vars() precompiledseccomp.Values {
+	vars := precompiledseccomp.Values{
+		controllerFDVarName: opt.ControllerFD,
+	}
+	vars.SetUint64(selfPIDVarName, uint64(os.Getpid()))
+	for varName, value := range opt.Platform.Variables() {
+		vars[varName] = value
+	}
+	return vars
+}
+
 // Rules returns the seccomp rules and denyRules to use for the Sentry.
 func Rules(opt Options) (seccomp.SyscallRules, seccomp.SyscallRules) {
-	s := allowedSyscalls
-	s.Merge(controlServerFilters(opt.ControllerFD))
+	return rules(opt, opt.Vars())
+}
+
+// rules returns the seccomp rules and denyRules to use for the Sentry,
+// using `vars` as override for variables defined during precompilation.
+func rules(opt Options, vars precompiledseccomp.Values) (seccomp.SyscallRules, seccomp.SyscallRules) {
+	s := allowedSyscalls.Copy()
+	s.Merge(selfPIDFilters(vars.GetUint64(selfPIDVarName)))
+	s.Merge(controlServerFilters(vars[controllerFDVarName]))
 
 	// Set of additional filters used by -race and -msan. Returns empty
 	// when not enabled.
@@ -108,7 +140,7 @@ func Rules(opt Options) (seccomp.SyscallRules, seccomp.SyscallRules) {
 		s.Merge(accel.Filters())
 	}
 
-	s.Merge(opt.Platform.SyscallFilters(opt.Platform.Variables()))
+	s.Merge(opt.Platform.SyscallFilters(vars))
 	return s, seccomp.DenyNewExecMappings
 }
 
