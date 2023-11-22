@@ -15,8 +15,6 @@
 package config
 
 import (
-	"os"
-
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/seccomp"
@@ -299,9 +297,6 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		seccomp.AnyValue{}, /* new_value */
 		seccomp.EqualTo(0), /* old_value */
 	},
-	unix.SYS_TGKILL: seccomp.PerArg{
-		seccomp.EqualTo(uint64(os.Getpid())),
-	},
 	unix.SYS_UTIMENSAT: seccomp.PerArg{
 		seccomp.AnyValue{},
 		seccomp.EqualTo(0), /* null pathname */
@@ -317,7 +312,7 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 	},
 })
 
-func controlServerFilters(fd int) seccomp.SyscallRules {
+func controlServerFilters(fd uint32) seccomp.SyscallRules {
 	return seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		unix.SYS_ACCEPT4: seccomp.PerArg{
 			seccomp.EqualTo(fd),
@@ -330,6 +325,15 @@ func controlServerFilters(fd int) seccomp.SyscallRules {
 			seccomp.AnyValue{},
 			seccomp.EqualTo(unix.SOL_SOCKET),
 			seccomp.EqualTo(unix.SO_PEERCRED),
+		},
+	})
+}
+
+// selfPIDFilters contains syscall filters that depend on the process's PID.
+func selfPIDFilters(pid uint64) seccomp.SyscallRules {
+	return seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
+		unix.SYS_TGKILL: seccomp.PerArg{
+			seccomp.EqualTo(pid),
 		},
 	})
 }
