@@ -235,15 +235,13 @@ func (h *handshake) resetState() {
 
 // generateSecureISN generates a secure Initial Sequence number based on the
 // recommendation here https://tools.ietf.org/html/rfc6528#page-3.
-func generateSecureISN(id stack.TransportEndpointID, clock tcpip.Clock, seed uint32) seqnum.Value {
+func generateSecureISN(id stack.TransportEndpointID, clock tcpip.Clock, seed [16]byte) seqnum.Value {
 	isnHasher := sha256.New()
 
-	seedBuf := make([]byte, 4)
-	binary.LittleEndian.PutUint32(seedBuf, seed)
 	// Per hash.Hash.Writer:
 	//
 	// It never returns an error.
-	_, _ = isnHasher.Write(seedBuf)
+	_, _ = isnHasher.Write(seed[:])
 	_, _ = isnHasher.Write(id.LocalAddress.AsSlice())
 	_, _ = isnHasher.Write(id.RemoteAddress.AsSlice())
 	portBuf := make([]byte, 2)

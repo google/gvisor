@@ -18,6 +18,7 @@ package tcp
 import (
 	"crypto/sha256"
 	"encoding/binary"
+	"fmt"
 	"runtime"
 	"strings"
 	"time"
@@ -108,9 +109,8 @@ type protocol struct {
 	dispatcher                 dispatcher
 
 	// The following secrets are initialized once and stay unchanged after.
-	seqnumSecret     uint32
-	portOffsetSecret uint32
-	tsOffsetSecret   uint32
+	seqnumSecret   [16]byte
+	tsOffsetSecret [16]byte
 }
 
 // Number returns the tcp protocol number.
@@ -181,12 +181,10 @@ func (p *protocol) tsOffset(src, dst tcpip.Address) tcp.TSOffset {
 	// why this is required.
 	h := sha256.New()
 
-	secretBuf := make([]byte, 4)
-	binary.LittleEndian.PutUint32(secretBuf, p.tsOffsetSecret)
 	// Per hash.Hash.Writer:
 	//
 	// It never returns an error.
-	_, _ = h.Write(secretBuf)
+	_, _ = h.Write(p.tsOffsetSecret[:])
 	_, _ = h.Write(src.AsSlice())
 	_, _ = h.Write(dst.AsSlice())
 	return tcp.NewTSOffset(binary.LittleEndian.Uint32(h.Sum(nil)[:4]))
@@ -510,6 +508,14 @@ func (*protocol) Parse(pkt stack.PacketBufferPtr) bool {
 // NewProtocol returns a TCP transport protocol.
 func NewProtocol(s *stack.Stack) stack.TransportProtocol {
 	rng := s.SecureRNG()
+	var seqnumSecret [16]byte
+	var tsOffsetSecret [16]byte
+	if n, err := rng.Reader.Read(seqnumSecret[:]); err != nil || n != len(seqnumSecret) {
+		panic(fmt.Sprintf("Read() failed: %v", err))
+	}
+	if n, err := rng.Reader.Read(tsOffsetSecret[:]); err != nil || n != len(tsOffsetSecret) {
+		panic(fmt.Sprintf("Read() failed: %v", err))
+	}
 	p := protocol{
 		stack: s,
 		sendBufferSize: tcpip.TCPSendBufferSizeRangeOption{
@@ -533,9 +539,8 @@ func NewProtocol(s *stack.Stack) stack.TransportProtocol {
 		maxRTO:                     MaxRTO,
 		maxRetries:                 MaxRetries,
 		recovery:                   tcpip.TCPRACKLossDetection,
-		seqnumSecret:               rng.Uint32(),
-		portOffsetSecret:           rng.Uint32(),
-		tsOffsetSecret:             rng.Uint32(),
+		seqnumSecret:               seqnumSecret,
+		tsOffsetSecret:             tsOffsetSecret,
 	}
 	p.dispatcher.init(s.InsecureRNG(), runtime.GOMAXPROCS(0))
 	return &p
