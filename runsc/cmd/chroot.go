@@ -130,46 +130,65 @@ func setUpChroot(pidns bool, spec *specs.Spec, conf *config.Config) error {
 	return pivotRoot(chroot)
 }
 
+func mountTPUDeviceInfoInChroot(chroot, devicePath, sysfsFormat, pciDeviceFormat string) error {
+	deviceNum, valid, err := util.ExtractTpuDeviceMinor(devicePath)
+	if err != nil {
+		return fmt.Errorf("extracting TPU device minor: %w", err)
+	}
+	if !valid {
+		return nil
+	}
+	// Multiple paths link to the /sys/devices/pci0000:00/<pci_address>
+	// directory that contains all relevant sysfs accel/vfio device info that we need
+	// bind mounted into the sandbox chroot. We can construct this path by
+	// reading the link below, which points to
+	//   * /sys/devices/pci0000:00/<pci_address>/accel/accel#
+	//   * or /sys/devices/pci0000:00/<pci_address>/vfio-dev/vfio# for VFIO-based TPU
+	// and traversing up 2 directories.
+	// The sysDevicePath itself is a soft link to the deivce directory.
+	sysDevicePath := fmt.Sprintf(sysfsFormat, deviceNum)
+	sysDeviceLink, err := os.Readlink(sysDevicePath)
+	if err != nil {
+		return fmt.Errorf("error reading %q: %v", sysDeviceLink, err)
+	}
+	// Ensure the link is in the form we expect.
+	sysDeviceLinkMatcher := regexp.MustCompile(fmt.Sprintf(pciDeviceFormat, deviceNum))
+	if !sysDeviceLinkMatcher.MatchString(sysDeviceLink) {
+		return fmt.Errorf("unexpected link %q -> %q, link should have %q format", sysDevicePath, sysDeviceLink, sysDeviceLinkMatcher.String())
+	}
+	sysPCIDeviceDir, err := filepath.Abs(path.Join(filepath.Dir(sysDevicePath), sysDeviceLink, "../.."))
+	if err != nil {
+		return fmt.Errorf("error parsing path %q: %v", sysDeviceLink, err)
+	}
+	if err := mountInChroot(chroot, sysPCIDeviceDir, sysPCIDeviceDir, "bind", unix.MS_BIND|unix.MS_RDONLY); err != nil {
+		return fmt.Errorf("error mounting %q in chroot: %v", sysDeviceLink, err)
+	}
+	return nil
+}
+
 func tpuProxyUpdateChroot(chroot string, spec *specs.Spec, conf *config.Config) error {
 	if !specutils.TPUProxyIsEnabled(spec, conf) {
 		return nil
 	}
-	// Bind mount /sys/devices/pci0000:00/<pci_address>/accel/accel# for all
-	// TPU devices on the host.
-	paths, err := filepath.Glob("/dev/accel*")
-	if err != nil {
-		return fmt.Errorf("enumerating TPU device files: %w", err)
-	}
-	for _, devPath := range paths {
-		deviceNum, valid, err := util.ExtractTpuDeviceMinor(devPath)
+	// When a path glob is added to pathGlobToSysfsFormat, the corresponding pciDeviceFormat has to be added to pathGlobToPciDeviceFormat.
+	pathGlobToSysfsFormat := map[string]string{
+		"/dev/accel*": "/sys/class/accel/accel%d",
+		"/dev/vfio/*": "/sys/class/vfio-dev/vfio%d"}
+	pathGlobToPciDeviceFormat := map[string]string{
+		"/dev/accel*": `../../devices/pci0000:00/(\d+:\d+:\d+\.\d+)/accel/accel%d`,
+		"/dev/vfio/*": `../../devices/pci0000:00/(\d+:\d+:\d+\.\d+)/vfio-dev/vfio%d`}
+	// Bind mount device info directories for all TPU devices on the host.
+	// For v4 TPU, the directory /sys/devices/pci0000:00/<pci_address>/accel/accel# is mounted;
+	// For v5e TPU, the directory /sys/devices/pci0000:00/<pci_address>/vfio-dev/vfio# is mounted.
+	for pathGlob, sysfsFormat := range pathGlobToSysfsFormat {
+		paths, err := filepath.Glob(pathGlob)
 		if err != nil {
-			return fmt.Errorf("extracting TPU device minor: %w", err)
+			return fmt.Errorf("enumerating TPU device files: %w", err)
 		}
-		if !valid {
-			continue
-		}
-		// Multiple paths link to the /sys/devices/pci0000:00/<pci_address>
-		// directory that contains all relevant sysfs accel device info that we need
-		// bind mounted into the sandbox chroot. We can construct this path by
-		// reading the link below, which points to
-		// /sys/devices/pci0000:00/<pci_address>/accel/accel# and traversing up 2
-		// directories.
-		sysAccelPath := fmt.Sprintf("/sys/class/accel/accel%d", deviceNum)
-		sysAccelLink, err := os.Readlink(sysAccelPath)
-		if err != nil {
-			return fmt.Errorf("error reading %q: %v", sysAccelPath, err)
-		}
-		// Ensure the link is in the form we expect.
-		sysAccelLinkMatcher := regexp.MustCompile(fmt.Sprintf(`../../devices/pci0000:00/(\d+:\d+:\d+\.\d+)/accel/accel%d`, deviceNum))
-		if !sysAccelLinkMatcher.MatchString(sysAccelLink) {
-			return fmt.Errorf("unexpected link %q -> %q, link should have %q format", sysAccelPath, sysAccelLink, sysAccelLinkMatcher.String())
-		}
-		sysPCIDeviceDir, err := filepath.Abs(path.Join(filepath.Dir(sysAccelPath), sysAccelLink, "../.."))
-		if err != nil {
-			return fmt.Errorf("error parsing path %q: %v", sysAccelPath, err)
-		}
-		if err := mountInChroot(chroot, sysPCIDeviceDir, sysPCIDeviceDir, "bind", unix.MS_BIND|unix.MS_RDONLY); err != nil {
-			return fmt.Errorf("error mounting %q in chroot: %v", sysAccelPath, err)
+		for _, devPath := range paths {
+			if err := mountTPUDeviceInfoInChroot(chroot, devPath, sysfsFormat, pathGlobToPciDeviceFormat[pathGlob]); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
