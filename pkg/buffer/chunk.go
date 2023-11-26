@@ -87,9 +87,7 @@ func newChunk(size int) *chunk {
 	} else {
 		pool := getChunkPool(size)
 		c = pool.Get().(*chunk)
-		for i := range c.data {
-			c.data[i] = 0
-		}
+		clear(c.data)
 	}
 	c.InitRefs()
 	return c
