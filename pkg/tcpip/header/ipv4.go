@@ -1137,9 +1137,7 @@ func (s IPv4OptionsSerializer) Serialize(b []byte) uint8 {
 	//  header ends on a 32 bit boundary. The padding is zero.
 	padded := padIPv4OptionsLength(total)
 	b = b[:padded-total]
-	for i := range b {
-		b[i] = 0
-	}
+	clear(b)
 	return padded
 }
 
