@@ -206,7 +206,7 @@ func (s *Sleeper) nextWaker(block, wakepOrSleep bool) *Waker {
 			// See:runtime2.go in the go runtime package for
 			// the values to pass as the waitReason here.
 			const waitReasonSelect = 9
-			sync.Gopark(commitSleep, unsafe.Pointer(&s.waitingG), sync.WaitReasonSelect, sync.TraceEvGoBlockSelect, 0)
+			sync.Gopark(commitSleep, unsafe.Pointer(&s.waitingG), sync.WaitReasonSelect, sync.TraceBlockSelect, 0)
 		}
 
 		// Pull the shared list out and reverse it in the local

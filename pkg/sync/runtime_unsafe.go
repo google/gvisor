@@ -29,12 +29,15 @@ func Goyield() {
 // splitting and race context are not available where it is called.
 //
 //go:nosplit
-func Gopark(unlockf func(uintptr, unsafe.Pointer) bool, lock unsafe.Pointer, reason uint8, traceEv byte, traceskip int) {
-	gopark(unlockf, lock, reason, traceEv, traceskip)
+func Gopark(unlockf func(uintptr, unsafe.Pointer) bool, lock unsafe.Pointer, reason uint8, traceReason TraceBlockReason, traceskip int) {
+	gopark(unlockf, lock, reason, traceReason, traceskip)
 }
 
 //go:linkname gopark runtime.gopark
-func gopark(unlockf func(uintptr, unsafe.Pointer) bool, lock unsafe.Pointer, reason uint8, traceEv byte, traceskip int)
+func gopark(unlockf func(uintptr, unsafe.Pointer) bool, lock unsafe.Pointer, reason uint8, traceReason TraceBlockReason, traceskip int)
+
+// TraceBlockReason is equivalent to runtime.traceBlockReason.
+type TraceBlockReason uint8
 
 //go:linkname wakep runtime.wakep
 func wakep()
