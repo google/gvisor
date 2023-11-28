@@ -78,6 +78,7 @@ const (
 	K             = 0x00 // still mode 4
 	X             = 0x08 // mode 0
 	A             = 0x10 // mode 9
+	operandMask   = K | X | A
 	srcAluJmpMask = 0x08
 	srcRetMask    = 0x18
 
@@ -147,6 +148,65 @@ func Jump(code uint16, k uint32, jt, jf uint8) Instruction {
 		JumpIfFalse: jf,
 		K:           k,
 	}
+}
+
+// Equal returns whether this instruction is equivalent to `other`.
+func (ins Instruction) Equal(other Instruction) bool {
+	if ins.OpCode != other.OpCode {
+		// If instructions don't have the same opcode, they are not equal.
+		return false
+	}
+	switch ins.OpCode & instructionClassMask {
+	case Ld, Ldx:
+		if ins.OpCode&loadModeMask == Len {
+			// Length instructions are independent of the K register.
+			return true
+		}
+		// Two load instructions are the same if they load from the same offset.
+		return ins.K == other.K
+	case St, Stx:
+		// Two store instructions are the same if they store at the same offset.
+		return ins.K == other.K
+	case Alu:
+		if ins.OpCode == Alu|Neg {
+			return true // The negation instruction has no operands.
+		}
+		if ins.OpCode&operandMask == X {
+			// If we use X, no need to check anything.
+			return true
+		}
+		if ins.OpCode&operandMask == K {
+			// If use K, check that it's the same.
+			return ins.K == other.K
+		}
+		// Otherwise, we use the whole instruction.
+	case Ret:
+		switch ins.OpCode {
+		case Ret | A:
+			// All instructions that return the A register are equivalent.
+			return true
+		case Ret | K:
+			// All instructions that return the same value are equivalent.
+			return ins.K == other.K
+		}
+	case Jmp:
+		if ins.IsUnconditionalJump() {
+			// Unconditional jumps to the same offset are equivalent.
+			return ins.K == other.K
+		}
+		if ins.OpCode&operandMask == X {
+			// If we use X as the operand, check the conditional jump targets only.
+			return ins.JumpIfTrue == other.JumpIfTrue && ins.JumpIfFalse == other.JumpIfFalse
+		}
+		// Otherwise, we use the whole instruction.
+	case Misc:
+		if ins.OpCode == Misc|Tax || ins.OpCode == Misc|Txa {
+			// Swapping X and A, we don't care about the other fields.
+			return true
+		}
+	}
+	// All other instructions need full bit-for-bit comparison.
+	return ins == other
 }
 
 // IsReturn returns true if `ins` is a return instruction.

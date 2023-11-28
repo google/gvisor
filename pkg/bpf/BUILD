@@ -25,6 +25,7 @@ go_test(
     name = "bpf_test",
     size = "small",
     srcs = [
+        "bpf_test.go",
         "decoder_test.go",
         "interpreter_test.go",
         "optimizer_test.go",
