@@ -40,8 +40,8 @@ func GetPrecompiled(programName string) (precompiledseccomp.Program, bool) {
 // registerPrograms registers available programs inside `precompiledPrograms`.
 func registerPrograms() {
 	programs := make(map[string]precompiledseccomp.Program)
-	programs["Platform=\"kvm\" HostNetwork=false HostNetworkRawSockets=false HostFilesystem=true ProfileEnable=false Instrumentation=false NVProxy=false TPUProxy=false"] = precompiledseccomp.Program{
-		Name: "Platform=\"kvm\" HostNetwork=false HostNetworkRawSockets=false HostFilesystem=true ProfileEnable=false Instrumentation=false NVProxy=false TPUProxy=false",
+	programs["GOARCH=\"amd64\" Platform=\"kvm\" HostNetwork=false HostNetworkRawSockets=false HostFilesystem=true ProfileEnable=false Instrumentation=false NVProxy=false TPUProxy=false"] = precompiledseccomp.Program{
+		Name: "GOARCH=\"amd64\" Platform=\"kvm\" HostNetwork=false HostNetworkRawSockets=false HostFilesystem=true ProfileEnable=false Instrumentation=false NVProxy=false TPUProxy=false",
 		Bytecode32: []uint32{
 			0x00000020,
 			0x00000004,
@@ -534,7 +534,7 @@ func registerPrograms() {
 			0x00000020,
 			0x00000010,
 			0x71000015,
-			0x13371339,
+			0x13371337,
 			0x00000020,
 			0x00000014,
 			0x6f000015,
@@ -700,11 +700,11 @@ func registerPrograms() {
 			0x00000020,
 			0x00000010,
 			0x89000015,
-			0x13371337,
+			0x1337133b,
 			0x00000020,
 			0x00000014,
 			0x87990015,
-			0x1337133b,
+			0x13371339,
 			0x00000020,
 			0x00000010,
 			0x00850045,
@@ -868,7 +868,7 @@ func registerPrograms() {
 			0x00000020,
 			0x00000010,
 			0x8d000015,
-			0x13371339,
+			0x13371337,
 			0x00000020,
 			0x00000014,
 			0x8b450015,
@@ -1167,8 +1167,8 @@ func registerPrograms() {
 			},
 		},
 	}
-	programs["Platform=\"kvm\" HostNetwork=false HostNetworkRawSockets=false HostFilesystem=true ProfileEnable=false Instrumentation=false NVProxy=false TPUProxy=true"] = precompiledseccomp.Program{
-		Name: "Platform=\"kvm\" HostNetwork=false HostNetworkRawSockets=false HostFilesystem=true ProfileEnable=false Instrumentation=false NVProxy=false TPUProxy=true",
+	programs["GOARCH=\"amd64\" Platform=\"kvm\" HostNetwork=false HostNetworkRawSockets=false HostFilesystem=true ProfileEnable=false Instrumentation=false NVProxy=false TPUProxy=true"] = precompiledseccomp.Program{
+		Name: "GOARCH=\"amd64\" Platform=\"kvm\" HostNetwork=false HostNetworkRawSockets=false HostFilesystem=true ProfileEnable=false Instrumentation=false NVProxy=false TPUProxy=true",
 		Bytecode32: []uint32{
 			0x00000020,
 			0x00000004,
@@ -1681,7 +1681,7 @@ func registerPrograms() {
 			0x00000020,
 			0x00000010,
 			0xab000015,
-			0x1337133b,
+			0x13371339,
 			0x00000020,
 			0x00000014,
 			0xa9000015,
@@ -1963,11 +1963,11 @@ func registerPrograms() {
 			0x00000020,
 			0x00000010,
 			0x92000015,
-			0x13371339,
+			0x13371337,
 			0x00000020,
 			0x00000014,
 			0x90780015,
-			0x13371337,
+			0x1337133b,
 			0x00000020,
 			0x00000010,
 			0x008e0045,
@@ -2131,7 +2131,7 @@ func registerPrograms() {
 			0x00000020,
 			0x00000010,
 			0x98000015,
-			0x1337133b,
+			0x13371339,
 			0x00000020,
 			0x00000014,
 			0x96240015,
@@ -2452,8 +2452,8 @@ func registerPrograms() {
 			},
 		},
 	}
-	programs["Platform=\"kvm\" HostNetwork=false HostNetworkRawSockets=false HostFilesystem=true ProfileEnable=false Instrumentation=false NVProxy=true TPUProxy=false"] = precompiledseccomp.Program{
-		Name: "Platform=\"kvm\" HostNetwork=false HostNetworkRawSockets=false HostFilesystem=true ProfileEnable=false Instrumentation=false NVProxy=true TPUProxy=false",
+	programs["GOARCH=\"amd64\" Platform=\"kvm\" HostNetwork=false HostNetworkRawSockets=false HostFilesystem=true ProfileEnable=false Instrumentation=false NVProxy=true TPUProxy=false"] = precompiledseccomp.Program{
+		Name: "GOARCH=\"amd64\" Platform=\"kvm\" HostNetwork=false HostNetworkRawSockets=false HostFilesystem=true ProfileEnable=false Instrumentation=false NVProxy=true TPUProxy=false",
 		Bytecode32: []uint32{
 			0x00000020,
 			0x00000004,
@@ -3482,7 +3482,7 @@ func registerPrograms() {
 			0x00000020,
 			0x00000010,
 			0xcd000015,
-			0x13371337,
+			0x13371339,
 			0x00000020,
 			0x00000014,
 			0xcb000015,
@@ -3714,11 +3714,11 @@ func registerPrograms() {
 			0x00000020,
 			0x00000010,
 			0x9e000015,
-			0x1337133b,
+			0x13371337,
 			0x00000020,
 			0x00000014,
 			0x9cae0015,
-			0x13371339,
+			0x1337133b,
 			0xae000015,
 			0x000000df,
 			0x00000020,
@@ -3924,7 +3924,7 @@ func registerPrograms() {
 			0x00000020,
 			0x00000010,
 			0x8d000015,
-			0x13371337,
+			0x13371339,
 			0x00000020,
 			0x00000014,
 			0x8b450015,
@@ -4223,8 +4223,8 @@ func registerPrograms() {
 			},
 		},
 	}
-	programs["Platform=\"kvm\" HostNetwork=false HostNetworkRawSockets=false HostFilesystem=true ProfileEnable=false Instrumentation=false NVProxy=true TPUProxy=true"] = precompiledseccomp.Program{
-		Name: "Platform=\"kvm\" HostNetwork=false HostNetworkRawSockets=false HostFilesystem=true ProfileEnable=false Instrumentation=false NVProxy=true TPUProxy=true",
+	programs["GOARCH=\"amd64\" Platform=\"kvm\" HostNetwork=false HostNetworkRawSockets=false HostFilesystem=true ProfileEnable=false Instrumentation=false NVProxy=true TPUProxy=true"] = precompiledseccomp.Program{
+		Name: "GOARCH=\"amd64\" Platform=\"kvm\" HostNetwork=false HostNetworkRawSockets=false HostFilesystem=true ProfileEnable=false Instrumentation=false NVProxy=true TPUProxy=true",
 		Bytecode32: []uint32{
 			0x00000020,
 			0x00000004,
@@ -6120,8 +6120,8 @@ func registerPrograms() {
 			},
 		},
 	}
-	programs["Platform=\"systrap\" HostNetwork=false HostNetworkRawSockets=false HostFilesystem=true ProfileEnable=false Instrumentation=false NVProxy=false TPUProxy=false"] = precompiledseccomp.Program{
-		Name: "Platform=\"systrap\" HostNetwork=false HostNetworkRawSockets=false HostFilesystem=true ProfileEnable=false Instrumentation=false NVProxy=false TPUProxy=false",
+	programs["GOARCH=\"amd64\" Platform=\"systrap\" HostNetwork=false HostNetworkRawSockets=false HostFilesystem=true ProfileEnable=false Instrumentation=false NVProxy=false TPUProxy=false"] = precompiledseccomp.Program{
+		Name: "GOARCH=\"amd64\" Platform=\"systrap\" HostNetwork=false HostNetworkRawSockets=false HostFilesystem=true ProfileEnable=false Instrumentation=false NVProxy=false TPUProxy=false",
 		Bytecode32: []uint32{
 			0x00000020,
 			0x00000004,
@@ -6482,7 +6482,7 @@ func registerPrograms() {
 			0x00000020,
 			0x00000010,
 			0xdf000015,
-			0x13371339,
+			0x1337133f,
 			0x00000020,
 			0x00000014,
 			0xdd000015,
@@ -6850,11 +6850,11 @@ func registerPrograms() {
 			0x00000020,
 			0x00000020,
 			0x02000015,
-			0x13371337,
+			0x1337133d,
 			0x00000020,
 			0x00000024,
 			0x00850015,
-			0x1337133f,
+			0x1337133b,
 			0x00000006,
 			0x80000000,
 			0x09000035,
@@ -7078,7 +7078,7 @@ func registerPrograms() {
 			0x00000020,
 			0x00000010,
 			0x82000015,
-			0x13371339,
+			0x1337133f,
 			0x00000020,
 			0x00000014,
 			0x80130015,
@@ -7357,8 +7357,8 @@ func registerPrograms() {
 			},
 		},
 	}
-	programs["Platform=\"systrap\" HostNetwork=false HostNetworkRawSockets=false HostFilesystem=true ProfileEnable=false Instrumentation=false NVProxy=false TPUProxy=true"] = precompiledseccomp.Program{
-		Name: "Platform=\"systrap\" HostNetwork=false HostNetworkRawSockets=false HostFilesystem=true ProfileEnable=false Instrumentation=false NVProxy=false TPUProxy=true",
+	programs["GOARCH=\"amd64\" Platform=\"systrap\" HostNetwork=false HostNetworkRawSockets=false HostFilesystem=true ProfileEnable=false Instrumentation=false NVProxy=false TPUProxy=true"] = precompiledseccomp.Program{
+		Name: "GOARCH=\"amd64\" Platform=\"systrap\" HostNetwork=false HostNetworkRawSockets=false HostFilesystem=true ProfileEnable=false Instrumentation=false NVProxy=false TPUProxy=true",
 		Bytecode32: []uint32{
 			0x00000020,
 			0x00000004,
@@ -7947,7 +7947,7 @@ func registerPrograms() {
 			0x00000020,
 			0x00000010,
 			0x7a000015,
-			0x13371337,
+			0x1337133d,
 			0x00000020,
 			0x00000014,
 			0x78000015,
@@ -7975,11 +7975,11 @@ func registerPrograms() {
 			0x00000020,
 			0x00000020,
 			0xd9000015,
-			0x1337133f,
+			0x1337133b,
 			0x00000020,
 			0x00000024,
 			0xd74e0015,
-			0x1337133d,
+			0x13371339,
 			0x4e000035,
 			0x00000065,
 			0x00690025,
@@ -8441,7 +8441,7 @@ func registerPrograms() {
 			0x00000020,
 			0x00000010,
 			0x8b000015,
-			0x13371337,
+			0x1337133d,
 			0x00000020,
 			0x00000014,
 			0x89240015,
@@ -8738,8 +8738,8 @@ func registerPrograms() {
 			},
 		},
 	}
-	programs["Platform=\"systrap\" HostNetwork=false HostNetworkRawSockets=false HostFilesystem=true ProfileEnable=false Instrumentation=false NVProxy=true TPUProxy=false"] = precompiledseccomp.Program{
-		Name: "Platform=\"systrap\" HostNetwork=false HostNetworkRawSockets=false HostFilesystem=true ProfileEnable=false Instrumentation=false NVProxy=true TPUProxy=false",
+	programs["GOARCH=\"amd64\" Platform=\"systrap\" HostNetwork=false HostNetworkRawSockets=false HostFilesystem=true ProfileEnable=false Instrumentation=false NVProxy=true TPUProxy=false"] = precompiledseccomp.Program{
+		Name: "GOARCH=\"amd64\" Platform=\"systrap\" HostNetwork=false HostNetworkRawSockets=false HostFilesystem=true ProfileEnable=false Instrumentation=false NVProxy=true TPUProxy=false",
 		Bytecode32: []uint32{
 			0x00000020,
 			0x00000004,
@@ -9842,7 +9842,7 @@ func registerPrograms() {
 			0x00000020,
 			0x00000010,
 			0x7a000015,
-			0x13371337,
+			0x1337133d,
 			0x00000020,
 			0x00000014,
 			0x78000015,
@@ -9870,11 +9870,11 @@ func registerPrograms() {
 			0x00000020,
 			0x00000020,
 			0xd4000015,
-			0x1337133f,
+			0x1337133b,
 			0x00000020,
 			0x00000024,
 			0xd24e0015,
-			0x1337133d,
+			0x13371339,
 			0x4e000035,
 			0x00000065,
 			0x00690025,
@@ -10326,7 +10326,7 @@ func registerPrograms() {
 			0x00000020,
 			0x00000010,
 			0x82000015,
-			0x13371337,
+			0x1337133d,
 			0x00000020,
 			0x00000014,
 			0x80130015,
@@ -10605,8 +10605,8 @@ func registerPrograms() {
 			},
 		},
 	}
-	programs["Platform=\"systrap\" HostNetwork=false HostNetworkRawSockets=false HostFilesystem=true ProfileEnable=false Instrumentation=false NVProxy=true TPUProxy=true"] = precompiledseccomp.Program{
-		Name: "Platform=\"systrap\" HostNetwork=false HostNetworkRawSockets=false HostFilesystem=true ProfileEnable=false Instrumentation=false NVProxy=true TPUProxy=true",
+	programs["GOARCH=\"amd64\" Platform=\"systrap\" HostNetwork=false HostNetworkRawSockets=false HostFilesystem=true ProfileEnable=false Instrumentation=false NVProxy=true TPUProxy=true"] = precompiledseccomp.Program{
+		Name: "GOARCH=\"amd64\" Platform=\"systrap\" HostNetwork=false HostNetworkRawSockets=false HostFilesystem=true ProfileEnable=false Instrumentation=false NVProxy=true TPUProxy=true",
 		Bytecode32: []uint32{
 			0x00000020,
 			0x00000004,
@@ -11809,7 +11809,7 @@ func registerPrograms() {
 			0x00000020,
 			0x00000010,
 			0x7a000015,
-			0x1337133b,
+			0x1337133f,
 			0x00000020,
 			0x00000014,
 			0x78000015,
@@ -11837,11 +11837,11 @@ func registerPrograms() {
 			0x00000020,
 			0x00000020,
 			0xd9000015,
-			0x13371337,
+			0x1337133d,
 			0x00000020,
 			0x00000024,
 			0xd74e0015,
-			0x13371339,
+			0x1337133b,
 			0x4e000035,
 			0x00000065,
 			0x00690025,
@@ -12303,7 +12303,7 @@ func registerPrograms() {
 			0x00000020,
 			0x00000010,
 			0x8b000015,
-			0x1337133b,
+			0x1337133f,
 			0x00000020,
 			0x00000014,
 			0x89240015,
