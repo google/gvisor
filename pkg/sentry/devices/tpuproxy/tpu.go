@@ -32,6 +32,9 @@ type vfioFD struct {
 	vfs.FileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.NoLockFD
+
+	hostFD int32
+	device *vfioDevice
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
