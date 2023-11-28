@@ -273,6 +273,13 @@ func optimizeJumpsToReturn(insns []Instruction) ([]Instruction, bool) {
 	return insns, changed
 }
 
+// jumpRewriteOperation rewrites a jump target.
+type jumpRewriteOperation struct {
+	pc        int      // Rewrite instruction at this offset.
+	jumpType  JumpType // Rewrite this type of jump.
+	rewriteTo int      // Rewrite the jump offset to this value.
+}
+
 // rewriteAllJumpsToReturn rewrites *all* jump instructions that go to
 // `fromPC` to go to `toPC` instead, if possible without converting jumps
 // from conditional to unconditional. `fromPC` and `toPC` must point to
@@ -286,7 +293,9 @@ func optimizeJumpsToReturn(insns []Instruction) ([]Instruction, bool) {
 // This function is used in `optimizeJumpsToSmallestSetOfReturns`.
 // As a sanity check, it verifies that `fromPC` and `toPC` are functionally
 // identical return instruction, and panics otherwise.
-func rewriteAllJumpsToReturn(insns []Instruction, fromPC, toPC int) bool {
+// `rewriteOps` is a buffer of jump rewrite operations meant to be
+// efficiently reusable across calls to this function.
+func rewriteAllJumpsToReturn(insns []Instruction, fromPC, toPC int, rewriteOps []jumpRewriteOperation) bool {
 	fromIns, toIns := insns[fromPC], insns[toPC]
 	if !fromIns.IsReturn() {
 		panic(fmt.Sprintf("attempted to rewrite jumps from {pc=%d: %v} which is not a return instruction", fromPC, fromIns))
@@ -297,12 +306,10 @@ func rewriteAllJumpsToReturn(insns []Instruction, fromPC, toPC int) bool {
 	if !fromIns.Equal(toIns) {
 		panic(fmt.Sprintf("attempted to rewrite jump target to a different return instruction: from={pc=%d: %v}, to={pc=%d: %v}", fromPC, fromIns, toPC, toIns))
 	}
-	// Scan once, and populate `rewriteOps` as a list of functions that should
-	// be run if the rewrite is feasible.
-	var rewriteOps []func()
+	// Scan once, and populate `rewriteOps` as a list of rewrite operations
+	// that should be run if the rewrite is feasible.
+	rewriteOps = rewriteOps[:0]
 	for pc := 0; pc < fromPC; pc++ {
-		// pcCopy is `pc` but can be used in the closures below.
-		pcCopy := pc
 		ins := insns[pc]
 		// Note: `neededOffset` may be negative, in case where we are rewriting
 		// the jump target to go to an earlier instruction, and we are dealing
@@ -317,20 +324,20 @@ func rewriteAllJumpsToReturn(insns []Instruction, fromPC, toPC int) bool {
 				if neededOffset < 0 || neededOffset > maxConditionalJumpOffset {
 					return false
 				}
-				rewriteOps = append(rewriteOps, func() {
-					ins := insns[pcCopy]
-					ins.JumpIfTrue = uint8(neededOffset)
-					insns[pcCopy] = ins
+				rewriteOps = append(rewriteOps, jumpRewriteOperation{
+					pc:        pc,
+					jumpType:  JumpTrue,
+					rewriteTo: neededOffset,
 				})
 			}
 			if jumpFalseTarget := pc + int(ins.JumpIfFalse) + 1; jumpFalseTarget == fromPC {
 				if neededOffset < 0 || neededOffset > maxConditionalJumpOffset {
 					return false
 				}
-				rewriteOps = append(rewriteOps, func() {
-					ins := insns[pcCopy]
-					ins.JumpIfFalse = uint8(neededOffset)
-					insns[pcCopy] = ins
+				rewriteOps = append(rewriteOps, jumpRewriteOperation{
+					pc:        pc,
+					jumpType:  JumpFalse,
+					rewriteTo: neededOffset,
 				})
 			}
 		} else if ins.IsUnconditionalJump() {
@@ -338,10 +345,10 @@ func rewriteAllJumpsToReturn(insns []Instruction, fromPC, toPC int) bool {
 				if neededOffset < 0 || neededOffset > maxUnconditionalJumpOffset {
 					return false
 				}
-				rewriteOps = append(rewriteOps, func() {
-					ins := insns[pcCopy]
-					ins.K = uint32(neededOffset)
-					insns[pcCopy] = ins
+				rewriteOps = append(rewriteOps, jumpRewriteOperation{
+					pc:        pc,
+					jumpType:  JumpDirect,
+					rewriteTo: neededOffset,
 				})
 			}
 		}
@@ -350,8 +357,17 @@ func rewriteAllJumpsToReturn(insns []Instruction, fromPC, toPC int) bool {
 		return false // No jump statements to rewrite.
 	}
 	// Rewrite is feasible, so do it.
-	for _, fn := range rewriteOps {
-		fn()
+	for _, op := range rewriteOps {
+		ins := insns[op.pc]
+		switch op.jumpType {
+		case JumpTrue:
+			ins.JumpIfTrue = uint8(op.rewriteTo)
+		case JumpFalse:
+			ins.JumpIfFalse = uint8(op.rewriteTo)
+		case JumpDirect:
+			ins.K = uint32(op.rewriteTo)
+		}
+		insns[op.pc] = ins
 	}
 	return true
 }
@@ -423,15 +439,14 @@ func optimizeJumpsToSmallestSetOfReturns(insns []Instruction) ([]Instruction, bo
 	//       from the end of the sorted list, i.e. the "most popular" return
 	//       instruction that returns the same value), without needing to
 	//       convert conditional jumps into unconditional ones.
-	//       If it's possible, move all jump targets to it, and do not analyze
-	//       any of the other return instructions that return this value, as
-	//       our list of return instructions is now outdated.
-	// This only updates jump instructions for at most one return statement per
-	// return value at a time, but the optimizer will be run multiple times,
-	// so we stop there and will be called upon again by the optimizer to
-	// find the next set of return instructions.
-	// This is desirable because it allows the other optimizers to run and trim
-	// the program before we move onto the next pass.
+	//       If it's possible, move all jump targets to it.
+	// We may redundantly update multiple jump targets in one go which may be
+	// optimized further in later passes (e.g. if unconditional jumps can be
+	// removed and trim the program further, expanding the set of possible
+	// rewrites beyond what we considered in this pass), but that's OK.
+	// This pass will run again afterwards and eventually pick them up, and this
+	// is still more efficient over running this (expensive) pass after each
+	// single rewrite happens.
 	changed := false
 
 	// retPopularity maps offsets (pc) of return instructions to the number of
@@ -511,7 +526,7 @@ func optimizeJumpsToSmallestSetOfReturns(insns []Instruction) ([]Instruction, bo
 		retCanBeFallenThrough[pc] = canBeFallenThrough
 	}
 
-nextRetValue:
+	rewriteOps := make([]jumpRewriteOperation, 0, len(insns))
 	for _, pcs := range retValueToPC {
 		sort.Slice(pcs, func(i, j int) bool {
 			// Sort `pcs` in order of ascending popularity.
@@ -531,9 +546,8 @@ nextRetValue:
 				popularPC := pcs[j]
 				// Check if we can rewrite all instructions that jump to `unpopularPC`
 				// to instead jump to `popularPC`.
-				if rewriteAllJumpsToReturn(insns, unpopularPC, popularPC) {
+				if rewriteAllJumpsToReturn(insns, unpopularPC, popularPC, rewriteOps) {
 					changed = true
-					goto nextRetValue
 				}
 			}
 		}
