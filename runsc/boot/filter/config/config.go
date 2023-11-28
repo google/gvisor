@@ -19,6 +19,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"runtime"
 	"strings"
 
 	"golang.org/x/sys/unix"
@@ -55,6 +56,7 @@ func isInstrumentationEnabled() bool {
 // at runtime (e.g. `ControllerFD`).
 func (opt Options) ConfigKey() string {
 	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("GOARCH=%q ", runtime.GOARCH))
 	sb.WriteString(fmt.Sprintf("Platform=%q ", opt.Platform.ConfigKey()))
 	sb.WriteString(fmt.Sprintf("HostNetwork=%t ", opt.HostNetwork))
 	sb.WriteString(fmt.Sprintf("HostNetworkRawSockets=%t ", opt.HostNetworkRawSockets))
