@@ -191,11 +191,19 @@ func deduplicatePerArgs[T Or | And](rule SyscallRule) (SyscallRule, bool) {
 // An optimizer will be exhausted before the next one is ever run.
 // Earlier optimizers are re-exhausted if later optimizers cause change.
 func optimizeSyscallRuleFuncs(rule SyscallRule, funcs []ruleOptimizerFunc) SyscallRule {
+	// Instantiate this closure only once, since passing it to (interface
+	// method) rule.Recurse() causes it to escape.
+	var recurse func(subRule SyscallRule) SyscallRule
+	recurse = func(subRule SyscallRule) SyscallRule {
+		return optimizeSyscallRuleFuncsRecursive(subRule, funcs, recurse)
+	}
+	return optimizeSyscallRuleFuncsRecursive(rule, funcs, recurse)
+}
+
+func optimizeSyscallRuleFuncsRecursive(rule SyscallRule, funcs []ruleOptimizerFunc, recurse func(subRule SyscallRule) SyscallRule) SyscallRule {
 	for changed := true; changed; {
 		for _, fn := range funcs {
-			rule.Recurse(func(subRule SyscallRule) SyscallRule {
-				return optimizeSyscallRuleFuncs(subRule, funcs)
-			})
+			rule.Recurse(recurse)
 			if rule, changed = fn(rule); changed {
 				break
 			}
