@@ -294,7 +294,7 @@ func rewriteAllJumpsToReturn(insns []Instruction, fromPC, toPC int) bool {
 	if !toIns.IsReturn() {
 		panic(fmt.Sprintf("attempted to rewrite jumps to {pc=%d: %v} which is not a return instruction", toPC, toIns))
 	}
-	if fromIns != toIns {
+	if !fromIns.Equal(toIns) {
 		panic(fmt.Sprintf("attempted to rewrite jump target to a different return instruction: from={pc=%d: %v}, to={pc=%d: %v}", fromPC, fromIns, toPC, toIns))
 	}
 	// Scan once, and populate `rewriteOps` as a list of functions that should
