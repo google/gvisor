@@ -253,6 +253,40 @@ TEST_P(DualStackAfMismatchTest, V4ListenerV6Connect) {
       SyscallFailsWithErrno(EAFNOSUPPORT));
 }
 
+TEST(DualStackAfMismatchTest, UdpV6ListenerV4SendTo) {
+  const FileDescriptor socket_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP));
+  const TestAddress& v6_addr = V6Loopback();
+  const TestAddress& v4_addr = V4MappedLoopback();
+  ASSERT_THAT(
+      bind(socket_fd.get(), AsSockAddr(&v6_addr.addr), v6_addr.addr_len),
+      SyscallSucceeds());
+  const char payload[] = "hello";
+  ASSERT_NO_ERRNO(SetAddrPort(
+      v4_addr.family(), const_cast<sockaddr_storage*>(&v4_addr.addr), 1337));
+  ASSERT_THAT(sendto(socket_fd.get(), &payload, sizeof(payload), 0,
+                     AsSockAddr(&v4_addr.addr), v4_addr.addr_len),
+              SyscallFailsWithErrno(ENETUNREACH));
+}
+
+TEST(DualStackAfMismatchTest, UdpV4ListenerV6SendTo) {
+  // Gvisor does not return the correct Errno.
+  SKIP_IF(IsRunningOnGvisor());
+  const FileDescriptor socket_fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP));
+  const TestAddress& v6_addr = V6Loopback();
+  const TestAddress& v4_addr = V4MappedLoopback();
+  ASSERT_THAT(
+      bind(socket_fd.get(), AsSockAddr(&v4_addr.addr), v4_addr.addr_len),
+      SyscallSucceeds());
+  const char payload[] = "hello";
+  ASSERT_NO_ERRNO(SetAddrPort(
+      v6_addr.family(), const_cast<sockaddr_storage*>(&v6_addr.addr), 1337));
+  ASSERT_THAT(sendto(socket_fd.get(), &payload, sizeof(payload), 0,
+                     AsSockAddr(&v6_addr.addr), v6_addr.addr_len),
+              SyscallFailsWithErrno(EAFNOSUPPORT));
+}
+
 INSTANTIATE_TEST_SUITE_P(All, DualStackAfMismatchTest, ProtocolTestValues(),
                          DescribeProtocolTestParam);
 
