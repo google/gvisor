@@ -34,6 +34,26 @@ TEST(GetcpuTest, IsValidCpuStress) {
   }
 }
 
+TEST(GetcpuTest, IsValidCpu) {
+  const int num_cpus = NumCPUs();
+  cpu_set_t orig_set;
+  ASSERT_THAT(sched_getaffinity(getpid(), sizeof(orig_set), &orig_set),
+              SyscallSucceeds());
+  for (int i = 0; i < num_cpus; i++) {
+    if (CPU_ISSET(i, &orig_set) == 0) continue;
+    cpu_set_t set = {};
+    int cpu;
+    CPU_SET(i, &set);
+    ASSERT_THAT(sched_setaffinity(getpid(), sizeof(set), &set),
+                SyscallSucceeds());
+    ASSERT_THAT(cpu = sched_getcpu(), SyscallSucceeds());
+    // sched_setaffinity doesn't work if Kernel.useHostCores is true.
+    ASSERT_THAT(sched_getaffinity(getpid(), sizeof(set), &set),
+                SyscallSucceeds());
+    ASSERT_NE(CPU_ISSET(cpu, &set), 0);
+  }
+}
+
 }  // namespace
 
 }  // namespace testing
