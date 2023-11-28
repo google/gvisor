@@ -140,8 +140,8 @@ func (g *Gate) Close() {
 		// The last call to Leave arrived while we were setting up closingG.
 		return
 	}
-	// WaitReasonSemacquire/TraceEvGoBlockSync are consistent with WaitGroup.
-	gopark(gateCommit, gohacks.Noescape(unsafe.Pointer(&g.closingG)), WaitReasonSemacquire, TraceEvGoBlockSync, 0)
+	// WaitReasonSemacquire/TraceBlockSync are consistent with WaitGroup.
+	gopark(gateCommit, gohacks.Noescape(unsafe.Pointer(&g.closingG)), WaitReasonSemacquire, TraceBlockSync, 0)
 }
 
 //go:norace
