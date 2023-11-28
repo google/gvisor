@@ -1019,6 +1019,39 @@ TEST_P(SimpleTcpSocketTest, GetPeerNameUnconnected) {
               SyscallFailsWithErrno(ENOTCONN));
 }
 
+TEST_P(SimpleTcpSocketTest, GetSockNameUnbound) {
+  int fd;
+  ASSERT_THAT(fd = socket(GetParam(), SOCK_STREAM, IPPROTO_TCP),
+              SyscallSucceeds());
+  FileDescriptor sock_fd(fd);
+
+  sockaddr_storage addr;
+  // Ensure that any 0s we read later have been explicitly set by getsockname.
+  memset(&addr, -1, sizeof(addr));
+  socklen_t addrlen = sizeof(addr);
+  EXPECT_THAT(getsockname(fd, AsSockAddr(&addr), &addrlen), SyscallSucceeds());
+  switch (GetParam()) {
+    case AF_INET: {
+      ASSERT_EQ(addrlen, sizeof(sockaddr_in));
+      auto sock_addr_in = reinterpret_cast<const sockaddr_in*>(&addr);
+      ASSERT_EQ(sock_addr_in->sin_addr.s_addr, 0);
+      ASSERT_EQ(sock_addr_in->sin_port, 0);
+      break;
+    }
+    case AF_INET6: {
+      ASSERT_EQ(addrlen, sizeof(sockaddr_in6));
+      auto sock_addr_in6 = reinterpret_cast<const sockaddr_in6*>(&addr);
+      ASSERT_TRUE(IN6_IS_ADDR_UNSPECIFIED(&sock_addr_in6->sin6_addr));
+      ASSERT_EQ(sock_addr_in6->sin6_port, 0);
+      break;
+    }
+    default: {
+      ADD_FAILURE() << "unreachable";
+      break;
+    }
+  }
+}
+
 TEST_P(TcpSocketTest, FullBuffer) {
   // Set both FDs to be blocking.
   int flags = 0;
