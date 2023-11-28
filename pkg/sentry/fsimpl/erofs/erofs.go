@@ -32,6 +32,8 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
+// Name is the filesystem name. It is part of the interface used by users,
+// e.g. via annotations, and shouldn't change.
 const Name = "erofs"
 
 // Mount option names for EROFS.
