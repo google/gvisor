@@ -113,14 +113,16 @@ func (vfs *VirtualFilesystem) SetMountPropagationAt(ctx context.Context, creds *
 		return err
 	}
 	defer vd.DecRef(ctx)
-	vfs.SetMountPropagation(vd.mount, propFlag, recursive)
-	return nil
+	return vfs.SetMountPropagation(ctx, vd.mount, propFlag, recursive)
 }
 
 // SetMountPropagation changes the propagation type of the mount.
-func (vfs *VirtualFilesystem) SetMountPropagation(mnt *Mount, propFlag uint32, recursive bool) error {
+func (vfs *VirtualFilesystem) SetMountPropagation(ctx context.Context, mnt *Mount, propFlag uint32, recursive bool) error {
 	vfs.lockMounts()
-	defer vfs.unlockMounts(context.Background())
+	defer vfs.unlockMounts(ctx)
+	if mnt.neverConnected() || mnt.umounted {
+		return linuxerr.EINVAL
+	}
 	if propFlag == linux.MS_SHARED {
 		if err := vfs.allocMountGroupIDs(mnt, recursive); err != nil {
 			return err

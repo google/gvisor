@@ -971,6 +971,22 @@ TEST(MountTest, UmountReparentsCoveredMounts) {
   EXPECT_TRUE(optionals[dir2_child_path].empty());
 }
 
+TEST(MountTest, MakeDetachedMountSharedFailedWithEINVAL) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  auto mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir.path().c_str(), kTmpfs, 0, "", MNT_DETACH));
+
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(dir.path().c_str(), O_RDONLY));
+  ASSERT_THAT(umount2(dir.path().c_str(), MNT_DETACH), SyscallSucceeds());
+  mnt.Release();
+  auto path = absl::StrCat("/proc/self/fd/", fd.get());
+  ASSERT_THAT(mount("", path.c_str(), "", MS_SHARED, 0),
+              SyscallFailsWithErrno(EINVAL));
+}
+
 // Tests that it is possible to make a shared mount.
 TEST(MountTest, MakeShared) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
