@@ -38,8 +38,10 @@ go_test(
         "manual",
     ],
     deps = [
+        "//pkg/log",
         "//pkg/test/dockerutil",
         "//pkg/test/testutil",
+        "@com_github_cenkalti_backoff//:go_default_library",
     ],
 )
 
