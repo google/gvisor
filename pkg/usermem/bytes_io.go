@@ -58,9 +58,7 @@ func (b *BytesIO) ZeroOut(ctx context.Context, addr hostarch.Addr, toZero int64,
 		return 0, rngErr
 	}
 	zeroSlice := b.Bytes[int(addr) : int(addr)+rngN]
-	for i := range zeroSlice {
-		zeroSlice[i] = 0
-	}
+	clear(zeroSlice)
 	return int64(rngN), rngErr
 }
 
