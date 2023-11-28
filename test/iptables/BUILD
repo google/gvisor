@@ -38,6 +38,7 @@ go_test(
         "manual",
     ],
     deps = [
+        "//pkg/log",
         "//pkg/test/dockerutil",
         "//pkg/test/testutil",
     ],
