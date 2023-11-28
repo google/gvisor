@@ -3049,24 +3049,44 @@ func TestExecFDExec(t *testing.T) {
 	}
 }
 
-// TestMountEROFS checks that the checksums from the target directory in container
-// are identical with the ones from the source directory on host.
-func TestMountEROFS(t *testing.T) {
-	// Skip this test if mkfs.erofs is not available.
+// skipIfNotAvailable skips the test if the requested executable files are not available.
+func skipIfNotAvailable(t *testing.T, files ...string) {
+	for _, f := range files {
+		if _, err := exec.LookPath(f); err != nil {
+			t.Skipf("%v is not available: %v", f, err)
+		}
+	}
+}
+
+// createImageEROFS creates the EROFS image from the source directory using the requested options.
+func createImageEROFS(image, source string, options ...string) error {
 	mkfs, err := exec.LookPath("mkfs.erofs")
 	if err != nil {
-		t.Skipf("mkfs.erofs is not available: %v", err)
+		return fmt.Errorf("mkfs.erofs is not available: %v", err)
 	}
+	cmd := fmt.Sprintf("%s %s %s %s", mkfs, strings.Join(options, " "), image, source)
+	if out, err := exec.Command("/bin/sh", "-c", cmd).CombinedOutput(); err != nil {
+		return fmt.Errorf("exec: sh -c %q, err: %v, out: %s", cmd, err, out)
+	}
+	return nil
+}
+
+// TestMountEROFS checks that the checksums from the target directory in the container
+// are identical with the ones from the source directory on the host.
+func TestMountEROFS(t *testing.T) {
+	// Skip this test if mkfs.erofs is not available.
+	skipIfNotAvailable(t, "mkfs.erofs")
 
 	// Create a temporary directory to save the test files.
-	assetsDir, err := ioutil.TempDir(testutil.TmpDir(), "erofs-assets")
+	testDir, err := ioutil.TempDir(testutil.TmpDir(), "erofs_mount_test_")
 	if err != nil {
 		t.Fatalf("ioutil.TempDir() failed: %v", err)
 	}
+	defer os.RemoveAll(testDir)
 
 	// Create a temporary directory with some random files in it, which will
 	// be used as the source directory to create the EROFS images.
-	sourceDir := filepath.Join(assetsDir, "source")
+	sourceDir := filepath.Join(testDir, "source")
 	if err := os.Mkdir(sourceDir, 0755); err != nil {
 		t.Fatalf("os.Mkdir() failed: %v", err)
 	}
@@ -3092,7 +3112,7 @@ func TestMountEROFS(t *testing.T) {
 
 	// Create a test script which can be used to get the checksums
 	// from a specified directory.
-	scriptFile := filepath.Join(assetsDir, "test-script")
+	scriptFile := filepath.Join(testDir, "test-script")
 	if err := os.WriteFile(scriptFile, []byte(`#!/bin/bash
 set -u -e -o pipefail
 dir=$1
@@ -3102,7 +3122,7 @@ find $dir -type l -o -type f | sort | xargs cat | md5sum`), 0755); err != nil {
 		t.Fatalf("os.WriteFile() failed: %v", err)
 	}
 
-	// Get the checksums from the source directory on host.
+	// Get the checksums from the source directory on the host.
 	var checksums string
 	if out, err := exec.Command(scriptFile, sourceDir).CombinedOutput(); err != nil {
 		t.Fatalf("exec: %s %s, err: %v, out: %s", scriptFile, sourceDir, err, out)
@@ -3138,9 +3158,8 @@ find $dir -type l -o -type f | sort | xargs cat | md5sum`), 0755); err != nil {
 
 	// Create the EROFS images.
 	for _, i := range images {
-		cmd := fmt.Sprintf("%s %s %s %s", mkfs, i.options, filepath.Join(assetsDir, i.name), sourceDir)
-		if out, err := exec.Command("/bin/sh", "-c", cmd).CombinedOutput(); err != nil {
-			t.Fatalf("exec: sh -c %q, err: %v, out: %s", cmd, err, out)
+		if err := createImageEROFS(filepath.Join(testDir, i.name), sourceDir, i.options); err != nil {
+			t.Fatalf("error creating EROFS image: %v", err)
 		}
 	}
 
@@ -3169,21 +3188,21 @@ find $dir -type l -o -type f | sort | xargs cat | md5sum`), 0755); err != nil {
 
 	targetDir := "/mnt"
 	for _, i := range images {
-		// Mount the EROFS image in container.
-		imageFile := filepath.Join(assetsDir, i.name)
-		if err := c.Sandbox.Mount(c.ID, "erofs", imageFile, targetDir); err != nil {
-			t.Fatalf("error mounting EROFS image %q to %q, err: %v", imageFile, targetDir, err)
+		// Mount the EROFS image in the container.
+		imageFile := filepath.Join(testDir, i.name)
+		if err := c.Sandbox.Mount(c.ID, erofs.Name, imageFile, targetDir); err != nil {
+			t.Fatalf("error mounting EROFS image %q at %q, err: %v", imageFile, targetDir, err)
 		}
 
-		// Get the checksums from the target directory in container, and check if they are
-		// identical with the ones got from the source directory on host.
+		// Get the checksums from the target directory in the container, and check if they are
+		// identical with the ones got from the source directory on the host.
 		if out, err := executeCombinedOutput(conf, c, nil, scriptFile, targetDir); err != nil {
 			t.Fatalf("exec: %s %s, err: %v, out: %s", scriptFile, targetDir, err, out)
 		} else if checksums != string(out) {
 			t.Errorf("checksums do not match, got: %s from %s, expected: %s", out, imageFile, checksums)
 		}
 
-		// Unmount the EROFS image in container.
+		// Unmount the EROFS image in the container.
 		if out, err := executeCombinedOutput(conf, c, nil, "/bin/umount", targetDir); err != nil {
 			t.Fatalf("exec: umount %q, err: %v, out: %s", targetDir, err, out)
 		}
@@ -3193,20 +3212,14 @@ find $dir -type l -o -type f | sort | xargs cat | md5sum`), 0755); err != nil {
 // createRootfsEROFS creates a rootfs directory and an EROFS rootfs image in
 // the directory dir.
 func createRootfsEROFS(dir string) (string, string, error) {
-	mkfs, err := exec.LookPath("mkfs.erofs")
-	if err != nil {
-		return "", "", fmt.Errorf("mkfs.erofs is not available: %v", err)
-	}
-
-	busybox, err := exec.LookPath("busybox")
-	if err != nil {
-		return "", "", fmt.Errorf("busybox is not available: %v", err)
-	}
-
 	// Create a rootfs directory with busybox in root.
 	rootfsDir := filepath.Join(dir, "rootfs")
 	if err := os.Mkdir(rootfsDir, 0755); err != nil {
 		return "", "", fmt.Errorf("os.Mkdir() failed: %v", err)
+	}
+	busybox, err := exec.LookPath("busybox")
+	if err != nil {
+		return "", "", fmt.Errorf("busybox is not available: %v", err)
 	}
 	if err := testutil.Copy(busybox, filepath.Join(rootfsDir, "busybox")); err != nil {
 		return "", "", fmt.Errorf("failed to copy busybox: %v", err)
@@ -3223,29 +3236,24 @@ func createRootfsEROFS(dir string) (string, string, error) {
 
 	// Build the EROFS rootfs image.
 	rootfsImage := filepath.Join(dir, "rootfs.img")
-	cmd := fmt.Sprintf("%s -E noinline_data %s %s", mkfs, rootfsImage, rootfsDir)
-	if out, err := exec.Command("/bin/sh", "-c", cmd).CombinedOutput(); err != nil {
-		return "", "", fmt.Errorf("exec: sh -c %q, err: %v, out: %s", cmd, err, out)
+	if err := createImageEROFS(rootfsImage, rootfsDir, "-E noinline_data"); err != nil {
+		return "", "", fmt.Errorf("error creating EROFS image: %v", err)
 	}
 
 	return rootfsDir, rootfsImage, nil
 }
 
 // TestRootfsEROFS starts a container using an EROFS image as the rootfs and checks that
-// the rootfs in container is an EROFS.
+// the rootfs in the container is an EROFS.
 func TestRootfsEROFS(t *testing.T) {
 	// Skip this test if mkfs.erofs or busybox are not available.
-	if _, err := exec.LookPath("mkfs.erofs"); err != nil {
-		t.Skipf("mkfs.erofs is not available: %v", err)
-	}
-	if _, err := exec.LookPath("busybox"); err != nil {
-		t.Skipf("busybox is not available: %v", err)
-	}
+	skipIfNotAvailable(t, "mkfs.erofs", "busybox")
 
 	testDir, err := ioutil.TempDir(testutil.TmpDir(), "erofs_rootfs_test_")
 	if err != nil {
 		t.Fatalf("ioutil.TempDir() failed: %v", err)
 	}
+	defer os.RemoveAll(testDir)
 
 	rootfsDir, rootfsImage, err := createRootfsEROFS(testDir)
 	if err != nil {
@@ -3308,17 +3316,13 @@ func TestRootfsEROFS(t *testing.T) {
 // an EROFS image as the rootfs.
 func TestCheckpointRestoreEROFS(t *testing.T) {
 	// Skip this test if mkfs.erofs or busybox are not available.
-	if _, err := exec.LookPath("mkfs.erofs"); err != nil {
-		t.Skipf("mkfs.erofs is not available: %v", err)
-	}
-	if _, err := exec.LookPath("busybox"); err != nil {
-		t.Skipf("busybox is not available: %v", err)
-	}
+	skipIfNotAvailable(t, "mkfs.erofs", "busybox")
 
 	testDir, err := ioutil.TempDir(testutil.TmpDir(), "erofs_checkpoint_restore_test_")
 	if err != nil {
 		t.Fatalf("ioutil.TempDir() failed: %v", err)
 	}
+	defer os.RemoveAll(testDir)
 
 	rootfsDir, rootfsImage, err := createRootfsEROFS(testDir)
 	if err != nil {
@@ -3347,5 +3351,123 @@ func TestCheckpointRestoreEROFS(t *testing.T) {
 				return spec
 			})
 		})
+	}
+}
+
+// TestLookupEROFS reads the files in EROFS images, which contain some random files,
+// and checks if the data is as expected.
+func TestLookupEROFS(t *testing.T) {
+	// Skip this test if mkfs.erofs is not available.
+	skipIfNotAvailable(t, "mkfs.erofs")
+
+	// Create a temporary directory to save the test files.
+	testDir, err := ioutil.TempDir(testutil.TmpDir(), "erofs_lookup_test_")
+	if err != nil {
+		t.Fatalf("ioutil.TempDir() failed: %v", err)
+	}
+	defer os.RemoveAll(testDir)
+
+	spec, _ := sleepSpecConf(t)
+	conf := testutil.TestConfig(t)
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	// Create and start the container.
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	c, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer c.Destroy()
+	if err := c.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	tcs := []struct {
+		name string
+		size int
+	}{
+		{
+			name: "tiny",
+			size: 1,
+		},
+		{
+			name: "small",
+			size: 10,
+		},
+		{
+			name: "medium",
+			size: 100,
+		},
+		{
+			name: "large",
+			size: 1000,
+		},
+	}
+
+	targetDir := "/mnt"
+	for _, tc := range tcs {
+		// Add some randomness to the number of files.
+		size := tc.size + rand.Intn(tc.size)
+
+		// Create a temporary directory with some random files in it, which will
+		// be used as the source directory to create the EROFS image.
+		sourceDir := filepath.Join(testDir, tc.name)
+		if err := os.Mkdir(sourceDir, 0755); err != nil {
+			t.Fatalf("os.Mkdir() failed: %v", err)
+		}
+		randomFiles := make([]string, 0, size)
+		for i := 0; i < size; i++ {
+			file, err := ioutil.TempFile(sourceDir, "")
+			if err != nil {
+				t.Fatalf("ioutil.TempFile() failed: %v", err)
+			}
+			name := filepath.Base(file.Name())
+			if _, err := file.Write([]byte(name)); err != nil {
+				t.Fatalf("file.Write() failed: %v", err)
+			}
+			file.Close()
+			randomFiles = append(randomFiles, name)
+		}
+
+		// Create the EROFS image.
+		imageFile := filepath.Join(testDir, fmt.Sprintf("%s.img", tc.name))
+		if err := createImageEROFS(imageFile, sourceDir); err != nil {
+			t.Fatalf("error creating EROFS image: %v", err)
+		}
+
+		// Mount the EROFS image in the container.
+		if err := c.Sandbox.Mount(c.ID, erofs.Name, imageFile, targetDir); err != nil {
+			t.Fatalf("error mounting EROFS image %q at %q, err: %v", imageFile, targetDir, err)
+		}
+
+		// Read the files in the EROFS image and check if the data is as expected.
+		for i, inc := 0, max(size/100, 1); i < size; i += inc {
+			targetFile := randomFiles[i]
+			cmd := fmt.Sprintf("cat %s", filepath.Join(targetDir, targetFile))
+			if out, err := executeCombinedOutput(conf, c, nil, "/bin/sh", "-c", cmd); err != nil {
+				t.Fatalf("exec: sh -c %q, err: %v, out: %s", cmd, err, out)
+			} else if targetFile != string(out) {
+				t.Errorf("file does not match, got: %s, expected: %s", out, targetFile)
+			}
+		}
+
+		// Test for the read failure with a non-existent file.
+		cmd := fmt.Sprintf("cat %s", filepath.Join(targetDir, "nonexist"))
+		if out, err := executeCombinedOutput(conf, c, nil, "/bin/sh", "-c", cmd); err == nil {
+			t.Errorf("exec: sh -c %q, succeeded to read the non-existent file: %s", cmd, out)
+		}
+
+		// Unmount the EROFS image in the container.
+		if out, err := executeCombinedOutput(conf, c, nil, "/bin/umount", targetDir); err != nil {
+			t.Fatalf("exec: umount %q, err: %v, out: %s", targetDir, err, out)
+		}
 	}
 }

@@ -17,6 +17,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/cleanup",
         "//pkg/errors/linuxerr",
+        "//pkg/gohacks",
         "//pkg/hostarch",
         "//pkg/log",
         "//pkg/marshal",

@@ -32,6 +32,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/gohacks"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/marshal"
@@ -39,7 +40,7 @@ import (
 )
 
 const (
-	// Definitions for super block.
+	// Definitions for superblock.
 	SuperBlockMagicV1 = 0xe0f5e1e2
 	SuperBlockOffset  = 1024
 
@@ -99,7 +100,7 @@ const (
 	DirentSize        = 12
 )
 
-// SuperBlock represents on-disk super block.
+// SuperBlock represents on-disk superblock.
 //
 // +marshal
 // +stateify savable
@@ -260,9 +261,9 @@ func (i *Image) RootNid() uint64 {
 	return uint64(i.sb.RootNid)
 }
 
-// initSuperBlock initializes the super block of this image.
+// initSuperBlock initializes the superblock of this image.
 func (i *Image) initSuperBlock() error {
-	// i.sb is used in the hot path. Let's save a copy of it.
+	// i.sb is used in the hot path. Let's save a copy of the superblock.
 	if err := i.unmarshalAt(&i.sb, SuperBlockOffset); err != nil {
 		return fmt.Errorf("image size is too small")
 	}
@@ -286,7 +287,7 @@ func (i *Image) initSuperBlock() error {
 	return nil
 }
 
-// verifyChecksum verifies the checksum of the super block.
+// verifyChecksum verifies the checksum of the superblock.
 func (i *Image) verifyChecksum() error {
 	if i.sb.FeatureCompat&FeatureCompatSuperBlockChecksum == 0 {
 		return nil
@@ -338,7 +339,8 @@ func checkInodeAlignment(off uint64) bool {
 	return off&((1<<InodeSlotBits)-1) == 0
 }
 
-// inodeFormatAt returns the format of the inode at off in the memory backed by image.
+// inodeFormatAt returns the format of the inode at offset off within the
+// memory backed by image.
 func (i *Image) inodeFormatAt(off uint64) (uint16, error) {
 	if ok := checkInodeAlignment(off); !ok {
 		return 0, linuxerr.EFAULT
@@ -349,8 +351,8 @@ func (i *Image) inodeFormatAt(off uint64) (uint16, error) {
 	return *(*uint16)(i.pointerAt(off)), nil
 }
 
-// inodeCompactAt returns the pointer to the compact inode at off in the memory
-// backed by image.
+// inodeCompactAt returns a pointer to the compact inode at offset off within
+// the memory backed by image.
 func (i *Image) inodeCompactAt(off uint64) (*InodeCompact, error) {
 	if ok := checkInodeAlignment(off); !ok {
 		return nil, linuxerr.EFAULT
@@ -361,8 +363,8 @@ func (i *Image) inodeCompactAt(off uint64) (*InodeCompact, error) {
 	return (*InodeCompact)(i.pointerAt(off)), nil
 }
 
-// inodeExtendedAt returns the pointer to the extended inode at off in the
-// memory backed by image.
+// inodeExtendedAt returns a pointer to the extended inode at offset off within
+// the memory backed by image.
 func (i *Image) inodeExtendedAt(off uint64) (*InodeExtended, error) {
 	if ok := checkInodeAlignment(off); !ok {
 		return nil, linuxerr.EFAULT
@@ -373,8 +375,8 @@ func (i *Image) inodeExtendedAt(off uint64) (*InodeExtended, error) {
 	return (*InodeExtended)(i.pointerAt(off)), nil
 }
 
-// direntAt returns the pointer to the dirent at off in the memory backed
-// by image.
+// direntAt returns a pointer to the dirent at offset off within the memory
+// backed by image.
 func (i *Image) direntAt(off uint64) (*Dirent, error) {
 	// Each valid dirent should be aligned to 4 bytes.
 	if off&3 != 0 {
@@ -466,13 +468,15 @@ func (i *Image) Inode(nid uint64) (Inode, error) {
 		return Inode{}, linuxerr.ENOTSUP
 	}
 
+	blockSize := uint64(i.BlockSize())
+	inode.blocks = (inode.size + (blockSize - 1)) / blockSize
+
 	switch dataLayout := inode.DataLayout(); dataLayout {
 	case InodeDataLayoutFlatInline:
 		// Check that whether the file data in the last block fits into
 		// the remaining room of the metadata block.
-		blockSize := i.BlockSize()
-		tailSize := uint32(inode.size) & (blockSize - 1)
-		if tailSize == 0 || tailSize > blockSize-uint32(inodeSize) {
+		tailSize := inode.size & (blockSize - 1)
+		if tailSize == 0 || tailSize > blockSize-uint64(inodeSize) {
 			log.Warningf("Inline data not found or cross block boundary at inode (nid=%v)", nid)
 			return Inode{}, linuxerr.EUCLEAN
 		}
@@ -505,6 +509,11 @@ type Inode struct {
 	// if it's not zero in the metadata block.
 	idataOff uint64
 
+	// blocks indicates the count of blocks that store the data associated
+	// with this inode. It will count in the metadata block that includes
+	// the inline data as well.
+	blocks uint64
+
 	// format is the format of this inode.
 	format uint16
 
@@ -519,18 +528,19 @@ type Inode struct {
 	nlink     uint32
 }
 
+// bitRange returns the bits within the range [bit, bit+bits) in value.
 func bitRange(value, bit, bits uint16) uint16 {
 	return (value >> bit) & ((1 << bits) - 1)
 }
 
 // Layout returns the inode layout.
 func (i *Inode) Layout() uint16 {
-	return bitRange(uint16(i.format), InodeLayoutBit, InodeLayoutBits)
+	return bitRange(i.format, InodeLayoutBit, InodeLayoutBits)
 }
 
 // DataLayout returns the inode data layout.
 func (i *Inode) DataLayout() uint16 {
-	return bitRange(uint16(i.format), InodeDataLayoutBit, InodeDataLayoutBits)
+	return bitRange(i.format, InodeDataLayoutBit, InodeDataLayoutBits)
 }
 
 // IsRegular indicates whether i represents a regular file.
@@ -654,17 +664,41 @@ func (i *Inode) Data() (safemem.BlockSeq, error) {
 	}
 }
 
-// blocks returns the number of blocks that contain data. It will count in the
-// metadata block which contains the inline data.
-func (i *Inode) blocks() uint64 {
-	blockSize := uint64(i.image.BlockSize())
-	return (i.size + (blockSize - 1)) / blockSize
+// blockData represents the information of the data in a block.
+type blockData struct {
+	// base indicates the data offset within the image.
+	base uint64
+	// size indicates the data size.
+	size uint32
 }
 
-// IterDirents invokes cb on each entry in the directory represented by this inode.
-// The directory entries will be iterated in alphabetical order.
+// valid indicates whether this is valid information about the data in a block.
+func (b *blockData) valid() bool {
+	// The data offset within the image will never be zero.
+	return b.base > 0
+}
+
+// getBlockDataInfo returns the information of the data in the block identified by
+// blockIdx of this inode.
 //
-// https://docs.kernel.org/filesystems/erofs.html#directories
+// Precondition: blockIdx < i.blocks.
+func (i *Inode) getBlockDataInfo(blockIdx uint64) blockData {
+	blockSize := i.image.BlockSize()
+	lastBlock := blockIdx == i.blocks-1
+	base := i.idataOff
+	if !lastBlock || base == 0 {
+		base = i.dataOff + blockIdx*uint64(blockSize)
+	}
+	size := blockSize
+	if lastBlock {
+		if tailSize := uint32(i.size) & (blockSize - 1); tailSize != 0 {
+			size = tailSize
+		}
+	}
+	return blockData{base, size}
+}
+
+// getDirentName returns the name of dirent d in the given block of this inode.
 //
 // The on-disk format of one block looks like this:
 //
@@ -690,87 +724,163 @@ func (i *Inode) blocks() uint64 {
 //
 // [ (metadata block) inode | optional fields | dirent M+2 | dirent M+3 | name M+2 | name M+3 | optional padding ]
 //
-// All directory entries are _strictly_ recorded in alphabetical order.
+// Refer: https://docs.kernel.org/filesystems/erofs.html#directories
+func (i *Inode) getDirentName(d *Dirent, block blockData, lastDirent bool) ([]byte, error) {
+	var nameLen uint32
+	if lastDirent {
+		nameLen = block.size - uint32(d.NameOff)
+	} else {
+		nameLen = uint32(direntAfter(d).NameOff - d.NameOff)
+	}
+	if uint32(d.NameOff)+nameLen > block.size || nameLen > MaxNameLen || nameLen == 0 {
+		log.Warningf("Corrupted dirent at inode (nid=%v)", i.Nid())
+		return nil, linuxerr.EUCLEAN
+	}
+	name, err := i.image.BytesAt(block.base+uint64(d.NameOff), uint64(nameLen))
+	if err != nil {
+		return nil, err
+	}
+	if lastDirent {
+		// Optional padding may exist at the end of a block.
+		n := bytes.IndexByte(name, 0)
+		if n == 0 {
+			log.Warningf("Corrupted dirent at inode (nid=%v)", i.Nid())
+			return nil, linuxerr.EUCLEAN
+		}
+		if n != -1 {
+			name = name[:n]
+		}
+	}
+	return name, nil
+}
+
+// getDirent0 returns a pointer to the first dirent in the given block of this inode.
+func (i *Inode) getDirent0(block blockData) (*Dirent, error) {
+	d0, err := i.image.direntAt(block.base)
+	if err != nil {
+		return nil, err
+	}
+	if d0.NameOff < DirentSize || uint32(d0.NameOff) >= block.size {
+		log.Warningf("Invalid nameOff0 %v at inode (nid=%v)", d0.NameOff, i.Nid())
+		return nil, linuxerr.EUCLEAN
+	}
+	return d0, nil
+}
+
+// Lookup looks up a child by the name. The child inode number will be returned on success.
+func (i *Inode) Lookup(name string) (uint64, error) {
+	if !i.IsDir() {
+		return 0, linuxerr.ENOTDIR
+	}
+
+	// Currently (Go 1.21), there is no safe and efficient way to do three-way
+	// string comparisons, so let's convert the string to a byte slice first.
+	nameBytes := gohacks.ImmutableBytesFromString(name)
+
+	// In EROFS, all directory entries are _strictly_ recorded in alphabetical
+	// order. The lookup is done by directly performing binary search on the
+	// disk data similar to what Linux does in fs/erofs/namei.c:erofs_namei().
+	var (
+		targetBlock      blockData
+		targetNumDirents uint16
+	)
+
+	// Find the block that may contain the target dirent first.
+	bLeft, bRight := int64(0), int64(i.blocks)-1
+	for bLeft <= bRight {
+		// Cast to uint64 to avoid overflow.
+		mid := uint64(bLeft+bRight) >> 1
+		block := i.getBlockDataInfo(mid)
+		d0, err := i.getDirent0(block)
+		if err != nil {
+			return 0, err
+		}
+		numDirents := d0.NameOff / DirentSize
+		d0Name, err := i.getDirentName(d0, block, numDirents == 1)
+		if err != nil {
+			return 0, err
+		}
+		switch bytes.Compare(nameBytes, d0Name) {
+		case 0:
+			// Found the target dirent.
+			return d0.Nid(), nil
+		case 1:
+			// name > d0Name, this block may contain the target dirent.
+			targetBlock = block
+			targetNumDirents = numDirents
+			bLeft = int64(mid) + 1
+		case -1:
+			// name < d0Name, this is not the block we're looking for.
+			bRight = int64(mid) - 1
+		}
+	}
+
+	if !targetBlock.valid() {
+		// The target block was not found.
+		return 0, linuxerr.ENOENT
+	}
+
+	// Find the target dirent in the target block. Note that, as the 0th dirent
+	// has already been checked during the block binary search, we don't need to
+	// check it again and can define dLeft/dRight as unsigned types.
+	dLeft, dRight := uint16(1), targetNumDirents-1
+	for dLeft <= dRight {
+		// The sum will never lead to a uint16 overflow, as the maximum value of
+		// the operands is MaxUint16/DirentSize.
+		mid := (dLeft + dRight) >> 1
+		direntOff := targetBlock.base + uint64(mid)*DirentSize
+		d, err := i.image.direntAt(direntOff)
+		if err != nil {
+			return 0, err
+		}
+		dName, err := i.getDirentName(d, targetBlock, mid == targetNumDirents-1)
+		if err != nil {
+			return 0, err
+		}
+		switch bytes.Compare(nameBytes, dName) {
+		case 0:
+			// Found the target dirent.
+			return d.Nid(), nil
+		case 1:
+			// name > dName.
+			dLeft = mid + 1
+		case -1:
+			// name < dName.
+			dRight = mid - 1
+		}
+	}
+
+	return 0, linuxerr.ENOENT
+}
+
+// IterDirents invokes cb on each entry in the directory represented by this inode.
+// The directory entries will be iterated in alphabetical order.
 func (i *Inode) IterDirents(cb func(name string, typ uint8, nid uint64) error) error {
 	if !i.IsDir() {
 		return linuxerr.ENOTDIR
 	}
 
-	blocks := i.blocks()
-	blockSize := i.image.BlockSize()
-
-	start := i.dataOff
-	if blocks == 1 && i.idataOff != 0 {
-		start = i.idataOff
-	}
-
 	// Iterate all the blocks which contain dirents.
-	for blocks > 0 {
-		// Get the first dirent in the current block.
-		direntOff := start
-		d, err := i.image.direntAt(direntOff)
+	for blockIdx := uint64(0); blockIdx < i.blocks; blockIdx++ {
+		block := i.getBlockDataInfo(blockIdx)
+		d, err := i.getDirent0(block)
 		if err != nil {
 			return err
 		}
-		// Apart from the offset of the first filename, nameOff0 also indicates
-		// the total number of dirents in this block.
-		nameOff0 := start + uint64(d.NameOff)
-		maxSize := blockSize
-		if blocks == 1 {
-			if tailSize := uint32(i.size) & (blockSize - 1); tailSize != 0 {
-				maxSize = tailSize
-			}
-		}
 		// Iterate all the dirents in this block.
-		for d != nil {
-			var (
-				next    *Dirent
-				nameLen uint32
-			)
-			direntOff += uint64(d.SizeBytes())
-			lastDirent := direntOff >= nameOff0
-			if lastDirent {
-				// There is no more dirent in this block, d is the last one.
-				next = nil
-				nameLen = maxSize - uint32(d.NameOff)
-			} else {
-				// Get the next adjacent dirent.
-				if next, err = i.image.direntAt(direntOff); err != nil {
-					return err
-				}
-				nameLen = uint32(next.NameOff - d.NameOff)
-			}
-
-			buf, err := i.image.BytesAt(start+uint64(d.NameOff), uint64(nameLen))
+		numDirents := d.NameOff / DirentSize
+		for {
+			name, err := i.getDirentName(d, block, numDirents == 1)
 			if err != nil {
 				return err
 			}
-			if lastDirent {
-				if n := bytes.IndexByte(buf, 0); n != -1 {
-					nameLen = uint32(n)
-				}
-			}
-			if nameLen > MaxNameLen {
-				log.Warningf("Corrupted dirent at inode (nid=%v)", i.Nid())
-				return linuxerr.EUCLEAN
-			}
-			name := string(buf[:nameLen])
-			if err := cb(name, d.FileType, d.Nid()); err != nil {
+			if err := cb(string(name), d.FileType, d.Nid()); err != nil {
 				return err
 			}
-
-			// Go on to process the next adjacent dirent.
-			d = next
-		}
-
-		blocks--
-
-		if blocks == 1 && i.idataOff != 0 {
-			// If we have any inline data and this is the last block, we need to process it now.
-			start = i.idataOff
-		} else {
-			// Just go on to process the next adjacent block.
-			start += uint64(blockSize)
+			if numDirents--; numDirents == 0 {
+				break
+			}
+			d = direntAfter(d)
 		}
 	}
 	return nil
@@ -785,7 +895,7 @@ func (i *Inode) Readlink() (string, error) {
 	size := i.size
 	if i.idataOff != 0 {
 		// Inline symlink data shouldn't cross block boundary.
-		if i.blocks() > 1 {
+		if i.blocks > 1 {
 			log.Warningf("Inline data cross block boundary at inode (nid=%v)", i.Nid())
 			return "", linuxerr.EUCLEAN
 		}

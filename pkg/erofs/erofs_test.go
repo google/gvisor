@@ -20,7 +20,7 @@ import (
 
 func TestOnDiskStructureSizes(t *testing.T) {
 	if sb := new(SuperBlock); sb.SizeBytes() != SuperBlockSize {
-		t.Errorf("wrong super block size: want %d, got %d", SuperBlockSize, sb.SizeBytes())
+		t.Errorf("wrong superblock size: want %d, got %d", SuperBlockSize, sb.SizeBytes())
 	}
 
 	if i := new(InodeCompact); i.SizeBytes() != InodeCompactSize {
