@@ -35,7 +35,7 @@ type savedDentryRW struct {
 	write bool
 }
 
-// PreprareSave implements vfs.FilesystemImplSaveRestoreExtension.PrepareSave.
+// PrepareSave implements vfs.FilesystemImplSaveRestoreExtension.PrepareSave.
 func (fs *filesystem) PrepareSave(ctx context.Context) error {
 	if len(fs.iopts.UniqueID) == 0 {
 		return fmt.Errorf("gofer.filesystem with no UniqueID cannot be saved")

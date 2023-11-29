@@ -14,13 +14,19 @@
 
 package tmpfs
 
+import (
+	"fmt"
+
+	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
+	"gvisor.dev/gvisor/pkg/sentry/vfs"
+)
+
 // afterLoad is called by stateify.
 func (fs *filesystem) afterLoad() {
-	if fs.privateMF {
-		// TODO(b/271612187): Add S/R support.
-		panic("S/R not supported for private memory files")
+	if !fs.privateMF {
+		fs.mf = fs.mfp.MemoryFile()
 	}
-	fs.mf = fs.mfp.MemoryFile()
 }
 
 // saveParent is called by stateify.
@@ -28,7 +34,40 @@ func (d *dentry) saveParent() *dentry {
 	return d.parent.Load()
 }
 
-// saveParent is called by stateify.
+// loadParent is called by stateify.
 func (d *dentry) loadParent(parent *dentry) {
 	d.parent.Store(parent)
+}
+
+// PrepareSave implements vfs.FilesystemImplSaveRestoreExtension.PrepareSave.
+func (fs *filesystem) PrepareSave(ctx context.Context) error {
+	if !fs.privateMF {
+		return nil
+	}
+	mfmapv := ctx.Value(vfs.CtxFilesystemMemoryFileMap)
+	if mfmapv == nil {
+		return fmt.Errorf("CtxFilesystemMemoryFileMap was not provided")
+	}
+	mfmap := mfmapv.(map[string]*pgalloc.MemoryFile)
+	mfmap[fs.uniqueID] = fs.mf
+	return nil
+}
+
+// CompleteRestore implements
+// vfs.FilesystemImplSaveRestoreExtension.CompleteRestore.
+func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRestoreOptions) error {
+	if !fs.privateMF {
+		return nil
+	}
+	mfmapv := ctx.Value(vfs.CtxFilesystemMemoryFileMap)
+	if mfmapv == nil {
+		return fmt.Errorf("CtxFilesystemMemoryFileMap was not provided")
+	}
+	mfmap := mfmapv.(map[string]*pgalloc.MemoryFile)
+	mf, ok := mfmap[fs.uniqueID]
+	if !ok {
+		return fmt.Errorf("memory file for %q not found in CtxFilesystemMemoryFileMap", fs.uniqueID)
+	}
+	fs.mf = mf
+	return nil
 }

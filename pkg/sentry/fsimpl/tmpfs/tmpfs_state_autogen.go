@@ -375,6 +375,7 @@ func (fs *filesystem) StateFields() []string {
 	return []string{
 		"vfsfs",
 		"privateMF",
+		"uniqueID",
 		"mfp",
 		"clock",
 		"devMinor",
@@ -396,34 +397,36 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	fs.beforeSave()
 	stateSinkObject.Save(0, &fs.vfsfs)
 	stateSinkObject.Save(1, &fs.privateMF)
-	stateSinkObject.Save(2, &fs.mfp)
-	stateSinkObject.Save(3, &fs.clock)
-	stateSinkObject.Save(4, &fs.devMinor)
-	stateSinkObject.Save(5, &fs.mopts)
-	stateSinkObject.Save(6, &fs.usage)
-	stateSinkObject.Save(7, &fs.nextInoMinusOne)
-	stateSinkObject.Save(8, &fs.root)
-	stateSinkObject.Save(9, &fs.maxFilenameLen)
-	stateSinkObject.Save(10, &fs.maxSizeInPages)
-	stateSinkObject.Save(11, &fs.pagesUsed)
-	stateSinkObject.Save(12, &fs.allowXattrPrefix)
+	stateSinkObject.Save(2, &fs.uniqueID)
+	stateSinkObject.Save(3, &fs.mfp)
+	stateSinkObject.Save(4, &fs.clock)
+	stateSinkObject.Save(5, &fs.devMinor)
+	stateSinkObject.Save(6, &fs.mopts)
+	stateSinkObject.Save(7, &fs.usage)
+	stateSinkObject.Save(8, &fs.nextInoMinusOne)
+	stateSinkObject.Save(9, &fs.root)
+	stateSinkObject.Save(10, &fs.maxFilenameLen)
+	stateSinkObject.Save(11, &fs.maxSizeInPages)
+	stateSinkObject.Save(12, &fs.pagesUsed)
+	stateSinkObject.Save(13, &fs.allowXattrPrefix)
 }
 
 // +checklocksignore
 func (fs *filesystem) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fs.vfsfs)
 	stateSourceObject.Load(1, &fs.privateMF)
-	stateSourceObject.Load(2, &fs.mfp)
-	stateSourceObject.Load(3, &fs.clock)
-	stateSourceObject.Load(4, &fs.devMinor)
-	stateSourceObject.Load(5, &fs.mopts)
-	stateSourceObject.Load(6, &fs.usage)
-	stateSourceObject.Load(7, &fs.nextInoMinusOne)
-	stateSourceObject.Load(8, &fs.root)
-	stateSourceObject.Load(9, &fs.maxFilenameLen)
-	stateSourceObject.Load(10, &fs.maxSizeInPages)
-	stateSourceObject.Load(11, &fs.pagesUsed)
-	stateSourceObject.Load(12, &fs.allowXattrPrefix)
+	stateSourceObject.Load(2, &fs.uniqueID)
+	stateSourceObject.Load(3, &fs.mfp)
+	stateSourceObject.Load(4, &fs.clock)
+	stateSourceObject.Load(5, &fs.devMinor)
+	stateSourceObject.Load(6, &fs.mopts)
+	stateSourceObject.Load(7, &fs.usage)
+	stateSourceObject.Load(8, &fs.nextInoMinusOne)
+	stateSourceObject.Load(9, &fs.root)
+	stateSourceObject.Load(10, &fs.maxFilenameLen)
+	stateSourceObject.Load(11, &fs.maxSizeInPages)
+	stateSourceObject.Load(12, &fs.pagesUsed)
+	stateSourceObject.Load(13, &fs.allowXattrPrefix)
 	stateSourceObject.AfterLoad(fs.afterLoad)
 }
 
@@ -438,9 +441,10 @@ func (f *FilesystemOpts) StateFields() []string {
 		"FilesystemType",
 		"Usage",
 		"MaxFilenameLen",
-		"FilestoreFD",
+		"MemoryFile",
 		"DisableDefaultSizeLimit",
 		"AllowXattrPrefix",
+		"UniqueID",
 	}
 }
 
@@ -454,9 +458,10 @@ func (f *FilesystemOpts) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &f.FilesystemType)
 	stateSinkObject.Save(3, &f.Usage)
 	stateSinkObject.Save(4, &f.MaxFilenameLen)
-	stateSinkObject.Save(5, &f.FilestoreFD)
+	stateSinkObject.Save(5, &f.MemoryFile)
 	stateSinkObject.Save(6, &f.DisableDefaultSizeLimit)
 	stateSinkObject.Save(7, &f.AllowXattrPrefix)
+	stateSinkObject.Save(8, &f.UniqueID)
 }
 
 func (f *FilesystemOpts) afterLoad() {}
@@ -468,9 +473,10 @@ func (f *FilesystemOpts) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &f.FilesystemType)
 	stateSourceObject.Load(3, &f.Usage)
 	stateSourceObject.Load(4, &f.MaxFilenameLen)
-	stateSourceObject.Load(5, &f.FilestoreFD)
+	stateSourceObject.Load(5, &f.MemoryFile)
 	stateSourceObject.Load(6, &f.DisableDefaultSizeLimit)
 	stateSourceObject.Load(7, &f.AllowXattrPrefix)
+	stateSourceObject.Load(8, &f.UniqueID)
 }
 
 func (d *dentry) StateTypeName() string {

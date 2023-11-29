@@ -39,7 +39,6 @@ import (
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
-	"gvisor.dev/gvisor/pkg/fd"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/time"
@@ -70,6 +69,10 @@ type filesystem struct {
 	// privateMF indicates whether mf is private to this tmpfs mount. If so,
 	// tmpfs takes ownership of mf. privateMF is immutable.
 	privateMF bool
+
+	// uniqueID is an opaque string used to reassociate the filesystem with its
+	// private MemoryFile during checkpoint and restore.
+	uniqueID string
 
 	// mfp is used to provide mf, when privateMF == false. This is required to
 	// re-provide mf on restore. mfp is immutable.
@@ -142,9 +145,9 @@ type FilesystemOpts struct {
 	// MaxFilenameLen is the maximum filename length allowed by the tmpfs.
 	MaxFilenameLen int
 
-	// FilestoreFD is the FD for the memory file that will be used to store file
-	// data. If this is nil, then MemoryFileProviderFromContext() is used.
-	FilestoreFD *fd.FD
+	// MemoryFile is the memory file that will be used to store file data. If
+	// this is nil, then MemoryFileProviderFromContext() is used.
+	MemoryFile *pgalloc.MemoryFile
 
 	// DisableDefaultSizeLimit disables setting a default size limit. In Linux,
 	// SB_KERNMOUNT has this effect on tmpfs mounts; see mm/shmem.c:shmem_fill_super().
@@ -153,6 +156,10 @@ type FilesystemOpts struct {
 	// AllowXattrPrefix is a set of xattr namespace prefixes that this
 	// tmpfs mount will allow.
 	AllowXattrPrefix []string
+
+	// If UniqueID is non-empty, it is an opaque string used to reassociate the
+	// filesystem with its private MemoryFile during checkpoint and restore.
+	UniqueID string
 }
 
 // Default size limit mount option. It is immutable after initialization.
@@ -185,7 +192,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	}
 	mf := mfp.MemoryFile()
 	privateMF := false
-
+	uniqueID := ""
 	rootFileType := uint16(linux.S_IFDIR)
 	disableDefaultSizeLimit := false
 	newFSType := vfs.FilesystemType(&fstype)
@@ -209,31 +216,18 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			newFSType = tmpfsOpts.FilesystemType
 		}
 		disableDefaultSizeLimit = tmpfsOpts.DisableDefaultSizeLimit
-		if tmpfsOpts.FilestoreFD != nil {
-			mfOpts := pgalloc.MemoryFileOpts{
-				// tmpfsOpts.FilestoreFD may be backed by a file on disk (not memfd),
-				// which needs to be decommited on destroy to release disk space.
-				DecommitOnDestroy: true,
-				// sentry's seccomp filters don't allow the mmap(2) syscalls that
-				// pgalloc.IMAWorkAroundForMemFile() uses. Users of tmpfsOpts.FilestoreFD
-				// are expected to have performed the work around outside the sandbox.
-				DisableIMAWorkAround: true,
-				// Custom filestore FDs are usually backed by files on disk. Ideally we
-				// would confirm with fstatfs(2) but that is prohibited by seccomp.
-				DiskBackedFile: true,
-			}
-			var err error
-			mf, err = pgalloc.NewMemoryFile(tmpfsOpts.FilestoreFD.ReleaseToFile("overlay-filestore"), mfOpts)
-			if err != nil {
-				ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: pgalloc.NewMemoryFile failed: %v", err)
-				return nil, nil, err
-			}
+		if tmpfsOpts.MemoryFile != nil {
+			mf = tmpfsOpts.MemoryFile
 			privateMF = true
 		}
-
+		uniqueID = tmpfsOpts.UniqueID
 		for _, xattr := range tmpfsOpts.AllowXattrPrefix {
 			allowXattrPrefix[xattr] = struct{}{}
 		}
+	}
+	if privateMF && uniqueID == "" {
+		ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: privateMF requires uniqueID to be set")
+		return nil, nil, linuxerr.EINVAL
 	}
 
 	mopts := vfs.GenericParseMountOptions(opts.Data)
@@ -318,6 +312,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	fs := filesystem{
 		mf:               mf,
 		privateMF:        privateMF,
+		uniqueID:         uniqueID,
 		mfp:              mfp,
 		clock:            clock,
 		devMinor:         devMinor,
