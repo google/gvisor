@@ -9295,6 +9295,130 @@ func TestReleaseDanglingEndpoints(t *testing.T) {
 	))
 }
 
+// TestLateSynCookieAck ensures that we properly handle the following case
+// rather than sending a RST on a valid connection:
+//
+//   - We receive a SYN while under load and issue a SYN/ACK with cookie S.
+//   - We receive a retransmitted SYN while space exists in the SYN queue, and
+//     issue a SYN/ACK with seqnum S'.
+//   - We receive an ACK based on S.
+//   - We respond with an RST because we expected an ACK based on S'.
+func TestLateSynCookieAck(t *testing.T) {
+	c := context.New(t, e2e.DefaultMTU)
+	defer c.Cleanup()
+	stats := c.Stack().Stats()
+	wq := &waiter.Queue{}
+	ep, err := c.Stack().NewEndpoint(tcp.ProtocolNumber, ipv4.ProtocolNumber, wq)
+	if err != nil {
+		t.Fatalf("NewEndpoint failed: %s", err)
+	}
+
+	initial := stats.TCP.CurrentEstablished.Value()
+
+	if err := ep.Bind(tcpip.FullAddress{Port: context.StackPort}); err != nil {
+		t.Fatalf("Bind failed: %s", err)
+	}
+
+	// With a backlog of 2, we get one slot in the SYN queue before we
+	// start using SYN cookies. See
+	// //pkg/tcpip/transport/tcp/accept.go:handleListenSegment:useSynCookies
+	// for an explanation.
+	if err := ep.Listen(2); err != nil {
+		t.Fatalf("Listen failed: %s", err)
+	}
+
+	// To reach our desired state, we're gonna do the following:
+	//
+	//   - Send SYN S1 to force subsequent SYNs to return cookies.
+	//   - Send SYN S2, which returns a cookie SYN/ACK.
+	//   - Finish S1's handshake, opening space in the SYN queue.
+	//   - Retransmit S2, which will give use a different seqnum.
+	//   - Finish S2's handshake with the cookie SYN/ACK.
+
+	// Send S1.
+	const otherTestPort = context.TestPort + 1
+	iss := seqnum.Value(context.TestInitialSequenceNumber)
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: otherTestPort,
+		DstPort: context.StackPort,
+		Flags:   header.TCPFlagSyn,
+		SeqNum:  iss,
+	})
+	// Receive the SYN-ACK reply.
+	s1Reply := c.GetPacket()
+	defer s1Reply.Release()
+	s1ReplyHdr := header.TCP(header.IPv4(s1Reply.AsSlice()).Payload())
+
+	// Send S2.
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: context.StackPort,
+		Flags:   header.TCPFlagSyn,
+		SeqNum:  iss,
+	})
+	// Receive the SYN-ACK reply.
+	s2CookieReply := c.GetPacket()
+	defer s2CookieReply.Release()
+	s2CookieReplyHdr := header.TCP(header.IPv4(s2CookieReply.AsSlice()).Payload())
+
+	// Finish the S1 handshake.
+	ackHeaders := &context.Headers{
+		SrcPort: otherTestPort,
+		DstPort: context.StackPort,
+		Flags:   header.TCPFlagAck,
+		SeqNum:  iss + 1,
+		AckNum:  seqnum.Value(s1ReplyHdr.SequenceNumber()) + 1,
+	}
+	c.SendPacket(nil, ackHeaders)
+
+	// Wait for S1's connection to move from the SYN to the accept queue.
+	metricPollFn := func() error {
+		if got, want := stats.TCP.CurrentEstablished.Value(), initial+1; got != want {
+			return fmt.Errorf("connection never established: got stats.TCP.CurrentEstablished.Value() = %d, want = %d", got, want)
+		}
+		return nil
+	}
+	if err := testutil.Poll(metricPollFn, 1*time.Second); err != nil {
+		t.Fatal(err)
+	}
+
+	// Retransmit S2.
+	c.SendPacket(nil, &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: context.StackPort,
+		Flags:   header.TCPFlagSyn,
+		SeqNum:  iss,
+	})
+	// Receive the SYN-ACK reply.
+	s2QueueReply := c.GetPacket()
+	defer s2QueueReply.Release()
+	s2QueueReplyHdr := header.TCP(header.IPv4(s2QueueReply.AsSlice()).Payload())
+	if s2CookieReplyHdr.SequenceNumber() == s2QueueReplyHdr.SequenceNumber() {
+		t.Fatalf("the SYN cookie and regular seqnum are equal; is the backlog too large?")
+	}
+
+	// Finish S2's handshake using the cookie.
+	ackHeaders = &context.Headers{
+		SrcPort: context.TestPort,
+		DstPort: context.StackPort,
+		Flags:   header.TCPFlagAck,
+		SeqNum:  iss + 1,
+		AckNum:  seqnum.Value(s2CookieReplyHdr.SequenceNumber()) + 1,
+	}
+	c.SendPacket(nil, ackHeaders)
+
+	// Verify that we've completed two connections.
+	metricPollFn = func() error {
+		if got, want := stats.TCP.CurrentEstablished.Value(), initial+2; got != want {
+			return fmt.Errorf("got stats.TCP.CurrentEstablished.Value() = %d, want = %d", got, want)
+		}
+		return nil
+	}
+	if err := testutil.Poll(metricPollFn, 1*time.Second); err != nil {
+		t.Error(err)
+	}
+}
+
 func TestMain(m *testing.M) {
 	refs.SetLeakMode(refs.LeaksPanic)
 	code := m.Run()

@@ -290,19 +290,9 @@ func (h *handshake) resetToSynRcvd(iss seqnum.Value, irs seqnum.Value, opts head
 }
 
 // checkAck checks if the ACK number, if present, of a segment received during
-// a TCP 3-way handshake is valid. If it's not, a RST segment is sent back in
-// response.
+// a TCP 3-way handshake is valid.
 func (h *handshake) checkAck(s *segment) bool {
-	if s.flags.Contains(header.TCPFlagAck) && s.ackNumber != h.iss+1 {
-		// RFC 793, page 72 (https://datatracker.ietf.org/doc/html/rfc793#page-72):
-		//   If the segment acknowledgment is not acceptable, form a reset segment,
-		//        <SEQ=SEG.ACK><CTL=RST>
-		//   and send it.
-		h.ep.sendEmptyRaw(header.TCPFlagRst, s.ackNumber, 0, 0)
-		return false
-	}
-
-	return true
+	return !(s.flags.Contains(header.TCPFlagAck) && s.ackNumber != h.iss+1)
 }
 
 // synSentState handles a segment received when the TCP 3-way handshake is in
@@ -324,6 +314,11 @@ func (h *handshake) synSentState(s *segment) tcpip.Error {
 	}
 
 	if !h.checkAck(s) {
+		// RFC 793, page 72 (https://datatracker.ietf.org/doc/html/rfc793#page-72):
+		//   If the segment acknowledgment is not acceptable, form a reset segment,
+		//        <SEQ=SEG.ACK><CTL=RST>
+		//   and send it.
+		h.ep.sendEmptyRaw(header.TCPFlagRst, s.ackNumber, 0, 0)
 		return nil
 	}
 
@@ -405,8 +400,30 @@ func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 		return nil
 	}
 
+	// It's possible that s is an ACK of a SYN cookie. This can happen if:
+	//
+	//   - We receive a SYN while under load and issue a SYN/ACK with
+	//     cookie S.
+	//   - We receive a retransmitted SYN while space exists in the SYN
+	//     queue, and issue a SYN/ACK with seqnum S'.
+	//   - We receive the ACK based on S.
+	//
+	// If we receive a SYN cookie ACK, just use the cookie seqnum.
 	if !h.checkAck(s) {
-		return nil
+		iss := s.ackNumber - 1
+		data, ok := h.listenEP.listenCtx.isCookieValid(s.id, iss, s.sequenceNumber-1)
+		if !ok || int(data) >= len(mssTable) {
+			// This isn't a valid cookie.
+			// RFC 793, page 72 (https://datatracker.ietf.org/doc/html/rfc793#page-72):
+			//   If the segment acknowledgment is not acceptable, form a reset segment,
+			//        <SEQ=SEG.ACK><CTL=RST>
+			//   and send it.
+			h.ep.sendEmptyRaw(header.TCPFlagRst, s.ackNumber, 0, 0)
+			return nil
+		}
+		// This is a cookie that snuck its way in after we stopped using them.
+		h.mss = mssTable[data]
+		h.iss = iss
 	}
 
 	// RFC 793, Section 3.9, page 69, states that in the SYN-RCVD state, a
