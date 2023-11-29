@@ -650,8 +650,10 @@ type PerArg [7]ValueMatcher // 6 arguments + RIP
 // instruction pointer.
 const RuleIP = 6
 
-// Copy implements `SyscallRule.Copy`.
-func (pa PerArg) Copy() SyscallRule {
+// clone returns a copy of this `PerArg`.
+// It is more efficient than `Copy` because it returns a `PerArg`
+// directly, rather than a `SyscallRule` interface.
+func (pa PerArg) clone() PerArg {
 	return PerArg{
 		pa[0],
 		pa[1],
@@ -661,6 +663,11 @@ func (pa PerArg) Copy() SyscallRule {
 		pa[5],
 		pa[6],
 	}
+}
+
+// Copy implements `SyscallRule.Copy`.
+func (pa PerArg) Copy() SyscallRule {
+	return pa.clone()
 }
 
 // Render implements `SyscallRule.Render`.
