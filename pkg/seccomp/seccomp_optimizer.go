@@ -298,11 +298,12 @@ func extractRepeatedMatchers(rule SyscallRule) (SyscallRule, bool) {
 		}
 	}
 
+	allOtherMatchersSigs := make(map[string]struct{}, len(orRule))
+	argExprToOtherMatchersSigs := make(map[string]map[string]struct{}, len(orRule))
 	for argNum := 0; argNum < len(orRule[0].(PerArg)); argNum++ {
-		// Check if `argNum` takes on a set of matchers common for all
-		// combinations of all other matchers.
-		allOtherMatchersSigs := make(map[string]struct{}, len(orRule))
-		argExprToOtherMatchersSigs := make(map[string]map[string]struct{}, len(orRule))
+		// Check if this argNum is always AnyValue,
+		// or if all other arguments are always AnyValue.
+		// If either of that is true, there is nothing for this filter to do.
 		allArgNumMatchersAreAnyValue := true
 		allOtherMatchersAreAnyValue := true
 		for _, subRule := range orRule {
@@ -315,8 +316,19 @@ func extractRepeatedMatchers(rule SyscallRule) (SyscallRule, bool) {
 					allOtherMatchersAreAnyValue = allOtherMatchersAreAnyValue && isAnyValue
 				}
 			}
+		}
+		if allArgNumMatchersAreAnyValue || allOtherMatchersAreAnyValue {
+			// Cannot optimize.
+			continue
+		}
+		// Check if `argNum` takes on a set of matchers common for all
+		// combinations of all other matchers.
+		clear(allOtherMatchersSigs)
+		clear(argExprToOtherMatchersSigs)
+		for _, subRule := range orRule {
+			perArg := subRule.(PerArg)
 			repr := perArg[argNum].Repr()
-			otherMatchers := perArg.Copy().(PerArg)
+			otherMatchers := perArg.clone()
 			otherMatchers[argNum] = invalidValueMatcher{}
 			otherMatchersSig := otherMatchers.signature()
 			allOtherMatchersSigs[otherMatchersSig] = struct{}{}
@@ -324,10 +336,6 @@ func extractRepeatedMatchers(rule SyscallRule) (SyscallRule, bool) {
 				argExprToOtherMatchersSigs[repr] = make(map[string]struct{}, len(orRule))
 			}
 			argExprToOtherMatchersSigs[repr][otherMatchersSig] = struct{}{}
-		}
-		if allArgNumMatchersAreAnyValue || allOtherMatchersAreAnyValue {
-			// Cannot optimize.
-			continue
 		}
 		// Now check if each possible repr of `argNum` got the same set of
 		// signatures for other matchers as `allOtherMatchersSigs`.
@@ -352,19 +360,14 @@ func extractRepeatedMatchers(rule SyscallRule) (SyscallRule, bool) {
 			perArg := subRule.(PerArg)
 			onlyArg := PerArg{AnyValue{}, AnyValue{}, AnyValue{}, AnyValue{}, AnyValue{}, AnyValue{}, AnyValue{}}
 			onlyArg[argNum] = perArg[argNum]
-			allExceptArg := perArg.Copy().(PerArg)
+			allExceptArg := perArg.clone()
 			allExceptArg[argNum] = AnyValue{}
 			argNumMatch[i] = onlyArg
 			otherArgsMatch[i] = allExceptArg
 		}
-		// Do not attempt to see if other arguments are also eligible for the
-		// same optimization, as this would complicate the logic of this
-		// already-complicated function further, and will be caught in future
-		// iterations of the optimizer anyway.
-		// Additionally, `argNumMatch` and `otherArgsMatch` may well be
-		// single-item, so the other (simpler) optimizers should run on them
-		// first.
-		return And{argNumMatch, otherArgsMatch}, true
+		// Attempt to optimize the "other" arguments:
+		otherArgsMatchOpt, _ := extractRepeatedMatchers(otherArgsMatch)
+		return And{argNumMatch, otherArgsMatchOpt}, true
 	}
 	return rule, false
 }
