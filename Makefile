@@ -147,7 +147,18 @@ reload_docker = \
     sudo chmod 0755 /etc/docker && \
     sudo chmod 0644 /etc/docker/daemon.json; \
   fi
-configure = $(call configure_noreload,$(1),$(2)) && $(reload_docker)
+
+wait_for_runtime = ( \
+  set -x; \
+  docker info --format '{{range $$k,$$v:=.Runtimes}}{{println $$k}}{{end}}' | grep $(1) || \
+  for i in 1 2 3 4 5; do \
+    sleep 1; \
+    docker info --format '{{range $$k,$$v:=.Runtimes}}{{println $$k}}{{end}}' | grep $(1) && break; \
+  done \
+)
+
+
+configure = $(call configure_noreload,$(1),$(2)) && $(reload_docker) && $(call wait_for_runtime,$(1))
 
 # Helpers for above. Requires $(RUNTIME_BIN) dependency.
 install_runtime = $(call configure,$(1),$(2) --TESTONLY-test-name-env=RUNSC_TEST_NAME)
