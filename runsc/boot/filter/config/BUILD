@@ -32,6 +32,7 @@ go_library(
         "//pkg/seccomp/precompiledseccomp",
         "//pkg/sentry/devices/accel",
         "//pkg/sentry/devices/nvproxy",
+        "//pkg/sentry/devices/tpuproxy",
         "//pkg/sentry/platform",
         "//pkg/sentry/platform/kvm",
         "//pkg/sentry/platform/systrap",
