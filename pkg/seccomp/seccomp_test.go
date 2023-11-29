@@ -1364,6 +1364,29 @@ func TestOptimizeSyscallRule(t *testing.T) {
 			},
 			want: MatchAll{},
 		},
+		{
+			name: "Common value matchers in PerArg are extracted",
+			rule: Or{
+				PerArg{EqualTo(0xA1), EqualTo(0xB1), EqualTo(0xC1), EqualTo(0xD0)},
+				PerArg{EqualTo(0xA2), EqualTo(0xB1), EqualTo(0xC1), EqualTo(0xD0)},
+				PerArg{EqualTo(0xA1), EqualTo(0xB2), EqualTo(0xC2), EqualTo(0xD0)},
+				PerArg{EqualTo(0xA2), EqualTo(0xB2), EqualTo(0xC2), EqualTo(0xD0)},
+				PerArg{EqualTo(0xA1), EqualTo(0xB3), EqualTo(0xC3), EqualTo(0xD0)},
+				PerArg{EqualTo(0xA2), EqualTo(0xB3), EqualTo(0xC3), EqualTo(0xD0)},
+			},
+			want: And{
+				Or{
+					PerArg{EqualTo(0xA1), av, av, av, av, av, av},
+					PerArg{EqualTo(0xA2), av, av, av, av, av, av},
+				},
+				PerArg{av, av, av, EqualTo(0xD0), av, av, av},
+				Or{
+					PerArg{av, EqualTo(0xB1), EqualTo(0xC1), av, av, av, av},
+					PerArg{av, EqualTo(0xB2), EqualTo(0xC2), av, av, av, av},
+					PerArg{av, EqualTo(0xB3), EqualTo(0xC3), av, av, av, av},
+				},
+			},
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			var got SyscallRule
