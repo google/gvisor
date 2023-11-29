@@ -332,6 +332,10 @@ type Kernel struct {
 	// devGofers maps container ID to its device gofer client.
 	devGofers   map[string]*devutil.GoferClient `state:"nosave"`
 	devGofersMu sync.Mutex                      `state:"nosave"`
+
+	// savedMFOwners is the list of filesystem unique IDs (in order) for
+	// filesystems that have saved their MemoryFile in the state file.
+	savedMFOwners []string
 }
 
 // InitKernelArgs holds arguments to Init.
@@ -526,11 +530,20 @@ func (k *Kernel) SaveTo(ctx context.Context, w wire.Writer) error {
 		return fmt.Errorf("failed to invalidate unsavable mappings: %v", err)
 	}
 
+	// Capture all private memory files.
+	mfsToSave := make(map[string]*pgalloc.MemoryFile)
+	vfsCtx := context.WithValue(ctx, vfs.CtxFilesystemMemoryFileMap, mfsToSave)
 	// Prepare filesystems for saving. This must be done after
 	// invalidateUnsavableMappings(), since dropping memory mappings may
 	// affect filesystem state (e.g. page cache reference counts).
-	if err := k.vfs.PrepareSave(ctx); err != nil {
+	if err := k.vfs.PrepareSave(vfsCtx); err != nil {
 		return err
+	}
+	// Generate the order in which memory files are saved in the state file.
+	// Note that this must happen before saving the kernel state.
+	k.savedMFOwners = make([]string, 0, len(mfsToSave))
+	for fsID := range mfsToSave {
+		k.savedMFOwners = append(k.savedMFOwners, fsID)
 	}
 
 	// Save the CPUID FeatureSet before the rest of the kernel so we can
@@ -564,12 +577,17 @@ func (k *Kernel) SaveTo(ctx context.Context, w wire.Writer) error {
 	log.Infof("Kernel save stats: %s", stats.String())
 	log.Infof("Kernel save took [%s].", time.Since(kernelStart))
 
-	// Save the memory file's state.
+	// Save the memory files' state.
 	memoryStart := time.Now()
 	if err := k.mf.SaveTo(ctx, w); err != nil {
 		return err
 	}
-	log.Infof("Memory save took [%s].", time.Since(memoryStart))
+	for _, fsID := range k.savedMFOwners {
+		if err := mfsToSave[fsID].SaveTo(ctx, w); err != nil {
+			return err
+		}
+	}
+	log.Infof("Memory files save took [%s].", time.Since(memoryStart))
 
 	log.Infof("Overall save took [%s].", time.Since(saveStart))
 
@@ -642,12 +660,28 @@ func (k *Kernel) LoadFrom(ctx context.Context, r wire.Reader, timeReady chan str
 	// Restore the root network stack.
 	k.rootNetworkNamespace.RestoreRootStack(net)
 
-	// Load the memory file's state.
+	// Load the memory files' state.
 	memoryStart := time.Now()
 	if err := k.mf.LoadFrom(ctx, r); err != nil {
 		return err
 	}
-	log.Infof("Memory load took [%s].", time.Since(memoryStart))
+	var mfmap map[string]*pgalloc.MemoryFile
+	if mfmapv := ctx.Value(vfs.CtxFilesystemMemoryFileMap); mfmapv != nil {
+		mfmap = mfmapv.(map[string]*pgalloc.MemoryFile)
+	}
+	if len(mfmap) != len(k.savedMFOwners) {
+		return fmt.Errorf("inconsistent private memory files on restore: savedMFOwners = %v, CtxFilesystemMemoryFileMap = %v", k.savedMFOwners, mfmap)
+	}
+	for _, fsID := range k.savedMFOwners {
+		mf, ok := mfmap[fsID]
+		if !ok {
+			return fmt.Errorf("saved memory file for %q was not configured on restore", fsID)
+		}
+		if err := mf.LoadFrom(ctx, r); err != nil {
+			return err
+		}
+	}
+	log.Infof("Memory files load took [%s].", time.Since(memoryStart))
 
 	log.Infof("Overall load took [%s]", time.Since(loadStart))
 
