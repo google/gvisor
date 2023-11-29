@@ -55,6 +55,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/specutils"
@@ -521,7 +522,7 @@ func (c *containerMounter) createMountNamespace(ctx context.Context, conf *confi
 		if rootfsConf.IsFilestorePresent() {
 			filestoreFD = c.goferFilestoreFDs.removeAsFD()
 		}
-		opts, cleanup, err = c.configureOverlay(ctx, conf, creds, opts, fsName, filestoreFD, rootfsConf)
+		opts, cleanup, err = c.configureOverlay(ctx, conf, creds, opts, fsName, filestoreFD, rootfsConf, "/")
 		if err != nil {
 			return nil, fmt.Errorf("mounting root with overlay: %w", err)
 		}
@@ -562,7 +563,7 @@ func (c *containerMounter) createMountNamespace(ctx context.Context, conf *confi
 // layer using tmpfs, and return overlay mount options. "cleanup" must be called
 // after the options have been used to mount the overlay, to release refs on
 // lower and upper mounts.
-func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Config, creds *auth.Credentials, lowerOpts *vfs.MountOptions, lowerFSName string, filestoreFD *fd.FD, mountConf GoferMountConf) (*vfs.MountOptions, func(), error) {
+func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Config, creds *auth.Credentials, lowerOpts *vfs.MountOptions, lowerFSName string, filestoreFD *fd.FD, mountConf GoferMountConf, dst string) (*vfs.MountOptions, func(), error) {
 	// First copy options from lower layer to upper layer and overlay. Clear
 	// filesystem specific options.
 	upperOpts := *lowerOpts
@@ -602,10 +603,18 @@ func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Co
 	// Upper is a tmpfs mount to keep all modifications inside the sandbox.
 	tmpfsOpts := tmpfs.FilesystemOpts{
 		RootFileType: uint16(rootType),
-		FilestoreFD:  filestoreFD,
 		// If a mount is being overlaid, it should not be limited by the default
 		// tmpfs size limit.
 		DisableDefaultSizeLimit: true,
+	}
+	if filestoreFD != nil {
+		// Create memory file for disk-backed overlays.
+		mf, err := createPrivateMemoryFile(filestoreFD.ReleaseToFile("overlay-filestore"))
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to create memory file for overlay: %v", err)
+		}
+		tmpfsOpts.MemoryFile = mf
+		tmpfsOpts.UniqueID = dst
 	}
 	upperOpts.GetFilesystemOptions.InternalData = tmpfsOpts
 	upper, err := c.k.VFS().MountDisconnected(ctx, creds, "" /* source */, tmpfs.Name, &upperOpts)
@@ -800,7 +809,7 @@ func (c *containerMounter) mountSubmount(ctx context.Context, spec *specs.Spec, 
 	if submount.goferMountConf.ShouldUseOverlayfs() {
 		log.Infof("Adding overlay on top of mount %q", submount.mount.Destination)
 		var cleanup func()
-		opts, cleanup, err = c.configureOverlay(ctx, conf, creds, opts, fsName, submount.filestoreFD, submount.goferMountConf)
+		opts, cleanup, err = c.configureOverlay(ctx, conf, creds, opts, fsName, submount.filestoreFD, submount.goferMountConf, submount.mount.Destination)
 		if err != nil {
 			return nil, fmt.Errorf("mounting volume with overlay at %q: %w", submount.mount.Destination, err)
 		}
@@ -855,8 +864,13 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 			return "", nil, err
 		}
 		if m.filestoreFD != nil {
+			mf, err := createPrivateMemoryFile(m.filestoreFD.ReleaseToFile("tmpfs-filestore"))
+			if err != nil {
+				return "", nil, fmt.Errorf("failed to create memory file for tmpfs: %v", err)
+			}
 			internalData = tmpfs.FilesystemOpts{
-				FilestoreFD: m.filestoreFD,
+				MemoryFile: mf,
+				UniqueID:   m.mount.Destination,
 				// If a mount is being overlaid with tmpfs, it should not be limited by
 				// the default tmpfs size limit.
 				DisableDefaultSizeLimit: true,
@@ -934,6 +948,21 @@ func parseKeyValue(s string) (string, string, bool) {
 		return "", "", false
 	}
 	return strings.TrimSpace(tokens[0]), strings.TrimSpace(tokens[1]), true
+}
+
+func createPrivateMemoryFile(file *os.File) (*pgalloc.MemoryFile, error) {
+	mfOpts := pgalloc.MemoryFileOpts{
+		// Private memory files are usually backed by files on disk. Ideally we
+		// would confirm with fstatfs(2) but that is prohibited by seccomp.
+		DiskBackedFile: true,
+		// Disk backed files need to be decommited on destroy to release disk space.
+		DecommitOnDestroy: true,
+		// sentry's seccomp filters don't allow the mmap(2) syscalls that
+		// pgalloc.IMAWorkAroundForMemFile() uses. Users of private memory files
+		// are expected to have performed the work around outside the sandbox.
+		DisableIMAWorkAround: true,
+	}
+	return pgalloc.NewMemoryFile(file, mfOpts)
 }
 
 // mountTmp mounts an internal tmpfs at '/tmp' if it's safe to do so.
@@ -1101,8 +1130,19 @@ func (c *containerMounter) makeMountPoint(ctx context.Context, creds *auth.Crede
 // configureRestore returns an updated context.Context including filesystem
 // state used by restore defined by conf.
 func (c *containerMounter) configureRestore(ctx context.Context) (context.Context, error) {
+	// Compare createMountNamespace(); rootfs always consumes a gofer FD and a
+	// filestore FD is consumed if the rootfs GoferMountConf indicates so.
 	fdmap := make(map[string]int)
 	fdmap["/"] = c.goferFDs.remove()
+	mfmap := make(map[string]*pgalloc.MemoryFile)
+	if rootfsConf := c.goferMountConfs[0]; rootfsConf.IsFilestorePresent() {
+		mf, err := createPrivateMemoryFile(c.goferFilestoreFDs.removeAsFD().ReleaseToFile("overlay-filestore"))
+		if err != nil {
+			return ctx, fmt.Errorf("failed to create private memory file for mount rootfs: %w", err)
+		}
+		mfmap["/"] = mf
+	}
+	// prepareMounts() consumes the remaining FDs for submounts.
 	mounts, err := c.prepareMounts()
 	if err != nil {
 		return ctx, err
@@ -1112,8 +1152,15 @@ func (c *containerMounter) configureRestore(ctx context.Context) (context.Contex
 		if submount.goferFD != nil {
 			fdmap[submount.mount.Destination] = submount.goferFD.Release()
 		}
+		if submount.filestoreFD != nil {
+			mf, err := createPrivateMemoryFile(submount.filestoreFD.ReleaseToFile("overlay-filestore"))
+			if err != nil {
+				return ctx, fmt.Errorf("failed to create private memory file for mount %q: %w", submount.mount.Destination, err)
+			}
+			mfmap[submount.mount.Destination] = mf
+		}
 	}
-	return context.WithValue(ctx, vfs.CtxRestoreFilesystemFDMap, fdmap), nil
+	return context.WithValue(context.WithValue(ctx, vfs.CtxRestoreFilesystemFDMap, fdmap), vfs.CtxFilesystemMemoryFileMap, mfmap), nil
 }
 
 func createDeviceFiles(ctx context.Context, creds *auth.Credentials, info *containerInfo, vfsObj *vfs.VirtualFilesystem, root vfs.VirtualDentry) error {

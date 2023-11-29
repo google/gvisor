@@ -26,7 +26,7 @@ import (
 // Compile-time assertion that filesystem implements vfs.FilesystemImplSaveRestoreExtension.
 var _ = vfs.FilesystemImplSaveRestoreExtension((*filesystem)(nil))
 
-// PreprareSave implements vfs.FilesystemImplSaveRestoreExtension.PrepareSave.
+// PrepareSave implements vfs.FilesystemImplSaveRestoreExtension.PrepareSave.
 func (fs *filesystem) PrepareSave(ctx context.Context) error {
 	return nil
 }
