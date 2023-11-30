@@ -409,7 +409,7 @@ func (h *handshake) synRcvdState(s *segment) tcpip.Error {
 	//   - We receive the ACK based on S.
 	//
 	// If we receive a SYN cookie ACK, just use the cookie seqnum.
-	if !h.checkAck(s) {
+	if !h.checkAck(s) && h.listenEP != nil {
 		iss := s.ackNumber - 1
 		data, ok := h.listenEP.listenCtx.isCookieValid(s.id, iss, s.sequenceNumber-1)
 		if !ok || int(data) >= len(mssTable) {
