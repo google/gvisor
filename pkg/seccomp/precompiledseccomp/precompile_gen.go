@@ -23,9 +23,11 @@ import (
 	"sort"
 	"strings"
 
+	"gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp"
 	"gvisor.dev/gvisor/runsc/flag"
 
-	// This import will be replaced by the one specified in the genrule.
+	// This import will be replaced by the one specified in the genrule,
+	// or removed if stubbed out in fastbuild mode.
 	"gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp/example" // REPLACED_IMPORT_THIS_IS_A_LOAD_BEARING_COMMENT
 )
 
@@ -47,16 +49,21 @@ var (
 )
 
 // loadProgramsFn loads seccomp programs to be precompiled.
+// It may be nil when it is stubbed out in fastbuild mode.
 var loadProgramsFn = example.PrecompiledPrograms // PROGRAMS_FUNC_THIS_IS_A_LOAD_BEARING_COMMENT
 
 func main() {
 	flag.Parse()
 
 	// Get a sorted list of programs.
-	programs, err := loadProgramsFn()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Cannot get list of programs to precompile: %v\n", err)
-		os.Exit(1)
+	var programs []precompiledseccomp.Program
+	if loadProgramsFn != nil {
+		var err error
+		programs, err = loadProgramsFn()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Cannot get list of programs to precompile: %v\n", err)
+			os.Exit(1)
+		}
 	}
 	programNames := make(map[string]struct{}, len(programs))
 	for _, program := range programs {
