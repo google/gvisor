@@ -17,7 +17,6 @@ package kernel
 import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/atomicbitops"
-	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -324,9 +323,12 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 	// "If fork/clone and execve are allowed by @prog, any child processes will
 	// be constrained to the same filters and system call ABI as the parent." -
 	// Documentation/prctl/seccomp_filter.txt
-	if f := t.syscallFilters.Load(); f != nil {
-		copiedFilters := append([]bpf.Program(nil), f.([]bpf.Program)...)
-		nt.syscallFilters.Store(copiedFilters)
+	if ts := t.seccomp.Load().(*taskSeccomp); ts != nil {
+		seccompCopy := ts.copy()
+		seccompCopy.populateCache(nt)
+		nt.seccomp.Store(seccompCopy)
+	} else {
+		nt.seccomp.Store((*taskSeccomp)(nil))
 	}
 	if args.Flags&linux.CLONE_VFORK != 0 {
 		nt.vforkParent = t

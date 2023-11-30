@@ -339,8 +339,8 @@ func (b NDPOptions) Serialize(s NDPOptionsSerializer) int {
 		used := o.serializeInto(b[2:])
 
 		// Zero out remaining (padding) bytes, if any exists.
-		for i := used + 2; i < l; i++ {
-			b[i] = 0
+		if used+2 < l {
+			clear(b[used+2 : l])
 		}
 
 		b = b[l:]
@@ -566,9 +566,7 @@ func (o NDPPrefixInformation) serializeInto(b []byte) int {
 
 	// Zero out the Reserved2 field.
 	reserved2 := b[ndpPrefixInformationReserved2Offset:][:ndpPrefixInformationReserved2Length]
-	for i := range reserved2 {
-		reserved2[i] = 0
-	}
+	clear(reserved2)
 
 	return used
 }
@@ -687,9 +685,7 @@ func (o NDPRecursiveDNSServer) serializeInto(b []byte) int {
 	used := copy(b, o)
 
 	// Zero out the reserved bytes that are before the Lifetime field.
-	for i := 0; i < ndpRecursiveDNSServerLifetimeOffset; i++ {
-		b[i] = 0
-	}
+	clear(b[0:ndpRecursiveDNSServerLifetimeOffset])
 
 	return used
 }
@@ -782,9 +778,7 @@ func (o NDPDNSSearchList) serializeInto(b []byte) int {
 	used := copy(b, o)
 
 	// Zero out the reserved bytes that are before the Lifetime field.
-	for i := 0; i < ndpDNSSearchListLifetimeOffset; i++ {
-		b[i] = 0
-	}
+	clear(b[0:ndpDNSSearchListLifetimeOffset])
 
 	return used
 }

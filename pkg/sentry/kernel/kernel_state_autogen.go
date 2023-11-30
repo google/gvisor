@@ -3,7 +3,6 @@
 package kernel
 
 import (
-	"gvisor.dev/gvisor/pkg/bpf"
 	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/tcpip"
 )
@@ -922,6 +921,37 @@ func (o *OldRSeqCriticalRegion) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &o.Restart)
 }
 
+func (ts *taskSeccomp) StateTypeName() string {
+	return "pkg/sentry/kernel.taskSeccomp"
+}
+
+func (ts *taskSeccomp) StateFields() []string {
+	return []string{
+		"filters",
+		"cache",
+		"cacheAuditNumber",
+	}
+}
+
+func (ts *taskSeccomp) beforeSave() {}
+
+// +checklocksignore
+func (ts *taskSeccomp) StateSave(stateSinkObject state.Sink) {
+	ts.beforeSave()
+	stateSinkObject.Save(0, &ts.filters)
+	stateSinkObject.Save(1, &ts.cache)
+	stateSinkObject.Save(2, &ts.cacheAuditNumber)
+}
+
+func (ts *taskSeccomp) afterLoad() {}
+
+// +checklocksignore
+func (ts *taskSeccomp) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &ts.filters)
+	stateSourceObject.Load(1, &ts.cache)
+	stateSourceObject.Load(2, &ts.cacheAuditNumber)
+}
+
 func (l *sessionList) StateTypeName() string {
 	return "pkg/sentry/kernel.sessionList"
 }
@@ -1214,7 +1244,7 @@ func (t *Task) StateFields() []string {
 		"ipcns",
 		"mountNamespace",
 		"parentDeathSignal",
-		"syscallFilters",
+		"seccomp",
 		"cleartid",
 		"allowedCPUMask",
 		"cpu",
@@ -1244,9 +1274,9 @@ func (t *Task) StateSave(stateSinkObject state.Sink) {
 	var ptraceTracerValue *Task
 	ptraceTracerValue = t.savePtraceTracer()
 	stateSinkObject.SaveValue(32, ptraceTracerValue)
-	var syscallFiltersValue []bpf.Program
-	syscallFiltersValue = t.saveSyscallFilters()
-	stateSinkObject.SaveValue(48, syscallFiltersValue)
+	var seccompValue *taskSeccomp
+	seccompValue = t.saveSeccomp()
+	stateSinkObject.SaveValue(48, seccompValue)
 	stateSinkObject.Save(0, &t.taskNode)
 	stateSinkObject.Save(1, &t.runState)
 	stateSinkObject.Save(2, &t.taskWorkCount)
@@ -1382,7 +1412,7 @@ func (t *Task) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(65, &t.userCounters)
 	stateSourceObject.Load(66, &t.sessionKeyring)
 	stateSourceObject.LoadValue(32, new(*Task), func(y any) { t.loadPtraceTracer(y.(*Task)) })
-	stateSourceObject.LoadValue(48, new([]bpf.Program), func(y any) { t.loadSyscallFilters(y.([]bpf.Program)) })
+	stateSourceObject.LoadValue(48, new(*taskSeccomp), func(y any) { t.loadSeccomp(y.(*taskSeccomp)) })
 	stateSourceObject.AfterLoad(t.afterLoad)
 }
 
@@ -2439,6 +2469,7 @@ func init() {
 	state.Register((*ptraceOptions)(nil))
 	state.Register((*ptraceStop)(nil))
 	state.Register((*OldRSeqCriticalRegion)(nil))
+	state.Register((*taskSeccomp)(nil))
 	state.Register((*sessionList)(nil))
 	state.Register((*sessionEntry)(nil))
 	state.Register((*SessionRefs)(nil))
