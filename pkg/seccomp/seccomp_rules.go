@@ -525,6 +525,12 @@ func MaskedEqual(mask, value uintptr) ValueMatcher {
 	}
 }
 
+// BitsAllowlist specifies that a value can only have non-zero bits within
+// the mask specified in `allowlist`. It implements `ValueMatcher`.
+func BitsAllowlist(allowlist uintptr) ValueMatcher {
+	return MaskedEqual(^allowlist, 0)
+}
+
 // SyscallRule expresses a set of rules to verify the arguments of a specific
 // syscall.
 type SyscallRule interface {
