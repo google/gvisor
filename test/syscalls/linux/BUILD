@@ -1406,6 +1406,7 @@ cc_binary(
     linkstatic = 1,
     deps = [
         "//test/util:capability_util",
+        "//test/util:cleanup",
         "//test/util:file_descriptor",
         "//test/util:fs_util",
         "@com_google_absl//absl/strings",
