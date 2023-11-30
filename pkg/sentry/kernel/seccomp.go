@@ -297,7 +297,9 @@ func (t *Task) AppendSyscallFilter(p bpf.Program, syncAll bool) error {
 		// Note: No new privs is always assumed to be set.
 		for ot := t.tg.tasks.Front(); ot != nil; ot = ot.Next() {
 			if ot != t {
-				ot.seccomp.Store(newSeccomp.copy())
+				seccompCopy := newSeccomp.copy()
+				seccompCopy.populateCache(ot)
+				ot.seccomp.Store(seccompCopy)
 			}
 		}
 	}
