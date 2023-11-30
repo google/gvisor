@@ -309,11 +309,10 @@ func Init() {
 		// the main branch at 525.89.02.
 		v525_105_17Checksum := "c635a21a282c9b53485f19ebb64a0f4b536a968b94d4d97629e0bc547a58142a"
 		v525_105_17 := addDriverABI(525, 105, 17, v525_105_17Checksum, v525_89_02)
-
 		v525_125_06Checksum := "b5275689f4a833c37a507717ac8f0ee2f1f5cd2b7e236ffa70aad8dfb7455b9d"
 		_ = addDriverABI(525, 125, 06, v525_125_06Checksum, v525_105_17)
 
-		// v535.43.02 is an intermediate unqualified version from the main branch.
+		// 535.43.02 is an intermediate unqualified version from the main branch.
 		v535_43_02 := func() *driverABI {
 			abi := v525_89_02()
 			abi.useRmAllocParamsV535 = true
@@ -329,10 +328,17 @@ func Init() {
 		v535_104_05Checksum := "2f9d609d1da770beee757636635c46e7ed8253ade887b87c7a5482e33fcbedc9"
 		v535_104_05 := addDriverABI(535, 104, 05, v535_104_05Checksum, v535_54_03)
 
-		// The following version does not exist on the main branch. It branched off
-		// the main branch at 535.104.05.
+		// 535.104.12 does not exist on the main branch. It branched off the main
+		// branch at 535.104.05.
 		v535_104_12Checksum := "ffc2d89e233d2427edb1ff5f436028a94b3ef86e78f97e088e11d905c82e8001"
 		_ = addDriverABI(535, 104, 12, v535_104_12Checksum, v535_104_05)
+
+		// 535.113.01 is an intermediate unqualified version from the main branch.
+		v535_113_01 := v535_104_05
+
+		// 535.129.03 does not exist on the main branch. It branched off the main
+		// branch at 535.113.01.
+		_ = addDriverABI(535, 129, 03, "e6dca5626a2608c6bb2a046cfcb7c1af338b9e961a7dd90ac09bb8a126ff002e", v535_113_01)
 	})
 }
 
