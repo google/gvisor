@@ -235,7 +235,7 @@ func (l *Lock) lock(uid UniqueID, ownerPID int32, t LockType, ofd bool) {
 				panic(fmt.Sprintf("lock: cannot downgrade write lock to read lock for uid %d, writer is %d", uid, l.Writer))
 			}
 			// Ensure that there is only one reader if upgrading.
-			l.Readers = make(map[UniqueID]OwnerInfo)
+			clear(l.Readers)
 			// Ensure that there is no longer a writer.
 			l.Writer = nil
 		}
@@ -258,7 +258,7 @@ func (l *Lock) lock(uid UniqueID, ownerPID int32, t LockType, ofd bool) {
 			}
 		}
 		// Ensure that there is only a writer.
-		l.Readers = make(map[UniqueID]OwnerInfo)
+		clear(l.Readers)
 		l.Writer = uid
 		l.WriterInfo = OwnerInfo{PID: ownerPID, OFD: ofd}
 	default:

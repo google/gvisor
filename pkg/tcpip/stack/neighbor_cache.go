@@ -247,7 +247,7 @@ func (n *neighborCache) clear() {
 	}
 
 	n.mu.dynamic.lru = neighborEntryList{}
-	n.mu.cache = make(map[tcpip.Address]*neighborEntry)
+	clear(n.mu.cache)
 	n.mu.dynamic.count = 0
 }
 
