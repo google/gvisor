@@ -101,7 +101,7 @@ func main() {
 				continue
 			}
 			if checksum != storedChecksum {
-				log.Warningf("Checksum Mismatch on driver %q got: %q want: %q", version.String(), checksum, storedChecksum)
+				log.Warningf("Checksum Mismatch on driver %q got: %q want: %q", version.String(), storedChecksum, checksum)
 				continue
 			}
 			log.Infof("Checksum matched on driver %q.", version.String())
