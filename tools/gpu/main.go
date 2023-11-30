@@ -33,6 +33,8 @@ const (
 	checksumDescription = "computes the sha256 checksum for a given driver version"
 	listCmdStr          = "list"
 	listDescription     = "lists the supported drivers"
+	checkCmdStr         = "check"
+	checkDescription    = "checks that the installed driver is a supported version"
 )
 
 var (
@@ -48,10 +50,16 @@ var (
 	listCmd = flag.NewFlagSet(listCmdStr, flag.ContinueOnError)
 	outfile = listCmd.String("outfile", "", "if set, write the list output to this file")
 
+	// The check command checks that the installed driver is a supported version.
+	checkCmd = flag.NewFlagSet(checkCmdStr, flag.ContinueOnError)
+	// We have this argument because COS has different settings than a default Ubuntu VM.
+	cos = checkCmd.Bool("cos", false, "run the test on COS")
+
 	commandSet = map[*flag.FlagSet]string{
 		installCmd:  installDescription,
 		checksumCmd: checksumDescription,
 		listCmd:     listDescription,
+		checkCmd:    checkDescription,
 	}
 )
 
@@ -67,6 +75,11 @@ Available commands:`
 	}
 }
 
+func logAndExit(f func(string, ...any), s string, v ...any) {
+	f(s, v...)
+	os.Exit(1)
+}
+
 func main() {
 	ctx := context.Background()
 	if len(os.Args) < 2 {
@@ -78,42 +91,43 @@ func main() {
 		if err := installCmd.Parse(os.Args[2:]); err != nil {
 			log.Warningf("%s failed with: %v", installCmdStr, err)
 			os.Exit(1)
+			logAndExit(log.Warningf, "%s failed with: %v", installCmdStr, err)
 		}
 		installer, err := drivers.NewInstaller(*version, *latest)
 		if err != nil {
-			log.Warningf("Failed to create installer: %v", err.Error())
-			os.Exit(1)
+			logAndExit(log.Warningf, "Failed to create installer: %v", err.Error())
 		}
 		if err := installer.MaybeInstall(ctx); err != nil {
-			log.Warningf("Failed to install driver: %v", err.Error())
-			os.Exit(1)
+			logAndExit(log.Warningf, "Failed to install driver: %v", err.Error())
 		}
 	case checksumCmdStr:
 		if err := checksumCmd.Parse(os.Args[2:]); err != nil {
-			log.Warningf("%s failed with: %v", checksumCmdStr, err)
-			os.Exit(1)
+			logAndExit(log.Warningf, "%s failed with: %v", checksumCmdStr, err)
 		}
 
 		for version, storedChecksum := range nvproxy.GetSupportedDriversAndChecksums() {
 			checksum, err := drivers.ChecksumDriver(ctx, version.String())
 			if err != nil {
-				log.Warningf("error on version %q: %v", version.String(), err)
-				continue
+				logAndExit(log.Warningf, "error on version %q: %v", version.String(), err)
 			}
 			if checksum != storedChecksum {
-				log.Warningf("Checksum Mismatch on driver %q got: %q want: %q", version.String(), checksum, storedChecksum)
-				continue
+				logAndExit(log.Warningf, "Checksum Mismatch on driver %q got: %q want: %q", version.String(), checksum, storedChecksum)
 			}
 			log.Infof("Checksum matched on driver %q.", version.String())
 		}
 	case listCmdStr:
 		if err := listCmd.Parse(os.Args[2:]); err != nil {
-			log.Warningf("%s failed with: %v", listCmdStr, err)
-			os.Exit(1)
+			logAndExit(log.Warningf, "%s failed with: %v", listCmdStr, err)
 		}
 		if err := drivers.ListSupportedDrivers(*outfile); err != nil {
-			log.Warningf("Failed to list drivers: %v", err)
-			os.Exit(1)
+			logAndExit(log.Warningf, "Failed to list drivers: %v", err)
+		}
+	case checkCmdStr:
+		if err := checkCmd.Parse(os.Args[2:]); err != nil {
+			logAndExit(log.Warningf, "%s failed with: %v", checkCmdStr, err)
+		}
+		if err := drivers.CheckCurrentDriverCOS(*cos); err != nil {
+			logAndExit(log.Warningf, "Failed to check driver: %v", err)
 		}
 	default:
 		printUsage()
