@@ -279,14 +279,28 @@ func anySplitMatchersToAnyValue(rule SyscallRule) (SyscallRule, bool) {
 
 // invalidValueMatcher is a stand-in `ValueMatcher` with a unique
 // representation that doesn't look like any legitimate `ValueMatcher`.
-// Calling any method other than `Repr` will fail.
+// Calling any method other than `Repr` will panic.
+// It is used as an intermediate step for some optimizers.
 type invalidValueMatcher struct {
 	ValueMatcher
 }
 
 // Repr implements `ValueMatcher.Repr`.
-func (m invalidValueMatcher) Repr() string {
+func (invalidValueMatcher) Repr() string {
 	return "invalidValueMatcher"
+}
+
+// invalidHalfValueMatcher is a stand-in `HalfValueMatcher` with a unique
+// representation that doesn't look like any legitimate `HalfValueMatcher`.
+// Calling any method other than `Repr` will panic.
+// It is used as an intermediate step for some optimizers.
+type invalidHalfValueMatcher struct {
+	halfValueMatcher
+}
+
+// Repr implements `HalfValueMatcher.Repr`.
+func (invalidHalfValueMatcher) Repr() string {
+	return "invalidHalfValueMatcher"
 }
 
 // sameStringSet returns whether the given string sets are equal.
@@ -391,76 +405,230 @@ func extractRepeatedMatchers(rule SyscallRule) (SyscallRule, bool) {
 		}
 	}
 
+	// extractData is the result of extracting a matcher at `argNum`.
+	type extractData struct {
+		// extractedMatcher is the extracted matcher that should be AND'd
+		// with the rest.
+		extractedMatcher ValueMatcher
+
+		// otherMatchers represents the rest of the matchers after
+		// `extractedMatcher` is extracted from a `PerArg`.
+		// The matcher that was extracted should be replaced with something
+		// that matches any value (i.e. either `AnyValue` or `halfAnyValue`).
+		otherMatchers PerArg
+
+		// otherMatchersSig represents the signature of other matchers, with
+		// the extracted matcher being replaced with an "invalid" matcher.
+		// The "invalid" matcher acts as a token that is equal across all
+		// instances of `otherMatchersSig` for the other `PerArg` rules of the
+		// `Or` expression.
+		// `otherMatchersSig` isn't the same as `otherMatchers.Signature()`,
+		// as `otherMatchers` does not contain this "invalid" matcher (it
+		// contains a matcher that matches any value instead).
+		otherMatchersSig string
+
+		// extractedMatcherIsAnyValue is true iff `extractedMatcher` would
+		// match any value thrown at it.
+		// If this is the case across all branches of the `Or` expression,
+		// the optimization is skipped.
+		extractedMatcherIsAnyValue bool
+
+		// otherMatchersAreAllAnyValue is true iff all matchers in
+		// `otherMatchers` would match any value thrown at them.
+		// If this is the case across all branches of the `Or` expression,
+		// the optimization is skipped.
+		otherMatchersAreAllAnyValue bool
+	}
+
 	allOtherMatchersSigs := make(map[string]struct{}, len(orRule))
 	argExprToOtherMatchersSigs := make(map[string]map[string]struct{}, len(orRule))
 	for argNum := 0; argNum < len(orRule[0].(PerArg)); argNum++ {
-		// Check if this argNum is always AnyValue,
-		// or if all other arguments are always AnyValue.
-		// If either of that is true, there is nothing for this filter to do.
-		allArgNumMatchersAreAnyValue := true
-		allOtherMatchersAreAnyValue := true
-		for _, subRule := range orRule {
-			perArg := subRule.(PerArg)
-			for i, valueMatcher := range perArg {
-				_, isAnyValue := valueMatcher.(AnyValue)
-				if i == argNum {
-					allArgNumMatchersAreAnyValue = allArgNumMatchersAreAnyValue && isAnyValue
-				} else {
-					allOtherMatchersAreAnyValue = allOtherMatchersAreAnyValue && isAnyValue
-				}
-			}
-		}
-		if allArgNumMatchersAreAnyValue || allOtherMatchersAreAnyValue {
-			// Cannot optimize.
-			continue
-		}
 		// Check if `argNum` takes on a set of matchers common for all
 		// combinations of all other matchers.
-		clear(allOtherMatchersSigs)
-		clear(argExprToOtherMatchersSigs)
-		for _, subRule := range orRule {
-			perArg := subRule.(PerArg)
-			repr := perArg[argNum].Repr()
-			otherMatchers := perArg.clone()
-			otherMatchers[argNum] = invalidValueMatcher{}
-			otherMatchersSig := otherMatchers.signature()
-			allOtherMatchersSigs[otherMatchersSig] = struct{}{}
-			if _, reprSeen := argExprToOtherMatchersSigs[repr]; !reprSeen {
-				argExprToOtherMatchersSigs[repr] = make(map[string]struct{}, len(orRule))
+		// We try to extract a common matcher by three ways, which we
+		// iterate over here.
+		// Each of them returns the result of their extraction attempt,
+		// along with a boolean representing whether extraction was
+		// possible at all.
+		// To "extract" a matcher means to replace it with an "invalid"
+		// matcher in the PerArg expression, and checking if their set of
+		// signatures is identical for each unique `Repr()` of the extracted
+		// matcher. For splittable matcher, we try each half as well.
+		// Conceptually (simplify PerArg to 3 arguments for simplicity),
+		// if we have:
+		//
+		//   Or{
+		//     PerArg{A, B, C},
+		//     PerArg{D, E, F},
+		//   }
+		//
+		// ... then first, we will try:
+		//
+		//   Or{
+		//     PerArg{invalid, B, C}
+		//     PerArg{invalid, E, F}
+		//   }
+		//
+		// ... then, assuming both A and D are `splitMatcher`s:
+		// we will try:
+		//
+		//   Or{
+		//     PerArg{splitMatcher{invalid, A.lowMatcher}, B, C}
+		//     PerArg{splitMatcher{invalid, D.lowMatcher}, E, F}
+		//   }
+		//
+		// ... and finally we will try:
+		//
+		//   Or{
+		//     PerArg{splitMatcher{A.highMatcher, invalid}, B, C}
+		//     PerArg{splitMatcher{D.highMatcher, invalid}, E, F}
+		//   }
+		for _, extractFn := range []func(PerArg) (extractData, bool){
+			// Return whole ValueMatcher at a time:
+			func(pa PerArg) (extractData, bool) {
+				extractedMatcher := pa[argNum]
+				_, extractedMatcherIsAnyValue := extractedMatcher.(AnyValue)
+				otherMatchers := pa.clone()
+				otherMatchers[argNum] = invalidValueMatcher{}
+				otherMatchersSig := otherMatchers.signature()
+				otherMatchers[argNum] = AnyValue{}
+				otherMatchersAreAllAnyValue := true
+				for _, valueMatcher := range otherMatchers {
+					if _, isAnyValue := valueMatcher.(AnyValue); !isAnyValue {
+						otherMatchersAreAllAnyValue = false
+						break
+					}
+				}
+				return extractData{
+					extractedMatcher:            extractedMatcher,
+					otherMatchers:               otherMatchers,
+					otherMatchersSig:            otherMatchersSig,
+					extractedMatcherIsAnyValue:  extractedMatcherIsAnyValue,
+					otherMatchersAreAllAnyValue: otherMatchersAreAllAnyValue,
+				}, true
+			},
+			// Extract a matcher for the high bits only:
+			func(pa PerArg) (extractData, bool) {
+				split, isSplit := pa[argNum].(splitMatcher)
+				if !isSplit {
+					return extractData{}, false
+				}
+				_, extractedMatcherIsAnyValue := split.highMatcher.(halfAnyValue)
+				_, lowMatcherIsAnyValue := split.lowMatcher.(halfAnyValue)
+				extractedMatcher := high32BitsMatch(split.highMatcher)
+				otherMatchers := pa.clone()
+				otherMatchers[argNum] = splitMatcher{
+					highMatcher: invalidHalfValueMatcher{},
+					lowMatcher:  split.lowMatcher,
+				}
+				otherMatchersSig := otherMatchers.signature()
+				otherMatchers[argNum] = low32BitsMatch(split.lowMatcher)
+				otherMatchersAreAllAnyValue := lowMatcherIsAnyValue
+				for i, valueMatcher := range otherMatchers {
+					if i == argNum {
+						continue
+					}
+					if _, isAnyValue := valueMatcher.(AnyValue); !isAnyValue {
+						otherMatchersAreAllAnyValue = false
+						break
+					}
+				}
+				return extractData{
+					extractedMatcher:            extractedMatcher,
+					otherMatchers:               otherMatchers,
+					otherMatchersSig:            otherMatchersSig,
+					extractedMatcherIsAnyValue:  extractedMatcherIsAnyValue,
+					otherMatchersAreAllAnyValue: otherMatchersAreAllAnyValue,
+				}, true
+			},
+			// Extract a matcher for the low bits only:
+			func(pa PerArg) (extractData, bool) {
+				split, isSplit := pa[argNum].(splitMatcher)
+				if !isSplit {
+					return extractData{}, false
+				}
+				_, extractedMatcherIsAnyValue := split.lowMatcher.(halfAnyValue)
+				_, highMatcherIsAnyValue := split.highMatcher.(halfAnyValue)
+				extractedMatcher := low32BitsMatch(split.lowMatcher)
+				otherMatchers := pa.clone()
+				otherMatchers[argNum] = splitMatcher{
+					highMatcher: split.highMatcher,
+					lowMatcher:  invalidHalfValueMatcher{},
+				}
+				otherMatchersSig := otherMatchers.signature()
+				otherMatchers[argNum] = high32BitsMatch(split.highMatcher)
+				otherMatchersAreAllAnyValue := highMatcherIsAnyValue
+				for i, valueMatcher := range otherMatchers {
+					if i == argNum {
+						continue
+					}
+					if _, isAnyValue := valueMatcher.(AnyValue); !isAnyValue {
+						otherMatchersAreAllAnyValue = false
+						break
+					}
+				}
+				return extractData{
+					extractedMatcher:            extractedMatcher,
+					otherMatchers:               otherMatchers,
+					otherMatchersSig:            otherMatchersSig,
+					extractedMatcherIsAnyValue:  extractedMatcherIsAnyValue,
+					otherMatchersAreAllAnyValue: otherMatchersAreAllAnyValue,
+				}, true
+			},
+		} {
+			clear(allOtherMatchersSigs)
+			clear(argExprToOtherMatchersSigs)
+			allExtractable := true
+			allArgNumMatchersAreAnyValue := true
+			allOtherMatchersAreAnyValue := true
+			for _, subRule := range orRule {
+				ed, extractable := extractFn(subRule.(PerArg))
+				if allExtractable = allExtractable && extractable; !allExtractable {
+					break
+				}
+				allArgNumMatchersAreAnyValue = allArgNumMatchersAreAnyValue && ed.extractedMatcherIsAnyValue
+				allOtherMatchersAreAnyValue = allOtherMatchersAreAnyValue && ed.otherMatchersAreAllAnyValue
+				repr := ed.extractedMatcher.Repr()
+				allOtherMatchersSigs[ed.otherMatchersSig] = struct{}{}
+				if _, reprSeen := argExprToOtherMatchersSigs[repr]; !reprSeen {
+					argExprToOtherMatchersSigs[repr] = make(map[string]struct{}, len(orRule))
+				}
+				argExprToOtherMatchersSigs[repr][ed.otherMatchersSig] = struct{}{}
 			}
-			argExprToOtherMatchersSigs[repr][otherMatchersSig] = struct{}{}
-		}
-		// Now check if each possible repr of `argNum` got the same set of
-		// signatures for other matchers as `allOtherMatchersSigs`.
-		sameOtherMatchers := true
-		for _, omsigs := range argExprToOtherMatchersSigs {
-			if !sameStringSet(omsigs, allOtherMatchersSigs) {
-				sameOtherMatchers = false
-				break
+			if !allExtractable || allArgNumMatchersAreAnyValue || allOtherMatchersAreAnyValue {
+				// Cannot optimize.
+				continue
 			}
+			// Now check if each possible repr of `argNum` got the same set of
+			// signatures for other matchers as `allOtherMatchersSigs`.
+			sameOtherMatchers := true
+			for _, omsigs := range argExprToOtherMatchersSigs {
+				if !sameStringSet(omsigs, allOtherMatchersSigs) {
+					sameOtherMatchers = false
+					break
+				}
+			}
+			if !sameOtherMatchers {
+				continue
+			}
+			// We can simplify the rule by extracting `argNum` out.
+			// Create two copies of `orRule`: One with only `argNum`,
+			// and the other one with all arguments except `argNum`.
+			// This will likely contain many duplicates but that's OK,
+			// they'll be optimized out by `deduplicatePerArgs`.
+			argNumMatch := Or(make([]SyscallRule, len(orRule)))
+			otherArgsMatch := Or(make([]SyscallRule, len(orRule)))
+			for i, subRule := range orRule {
+				ed, _ := extractFn(subRule.(PerArg))
+				onlyArg := PerArg{AnyValue{}, AnyValue{}, AnyValue{}, AnyValue{}, AnyValue{}, AnyValue{}, AnyValue{}}
+				onlyArg[argNum] = ed.extractedMatcher
+				argNumMatch[i] = onlyArg
+				otherArgsMatch[i] = ed.otherMatchers
+			}
+			// Attempt to optimize the "other" arguments:
+			otherArgsMatchOpt, _ := extractRepeatedMatchers(otherArgsMatch)
+			return And{argNumMatch, otherArgsMatchOpt}, true
 		}
-		if !sameOtherMatchers {
-			continue
-		}
-		// We can simplify the rule by extracting `argNum` out.
-		// Create two copies of `orRule`: One with only `argNum`,
-		// and the other one with all arguments except `argNum`.
-		// This will likely contain many duplicates but that's OK,
-		// they'll be optimized out by `deduplicatePerArgs`.
-		argNumMatch := Or(make([]SyscallRule, len(orRule)))
-		otherArgsMatch := Or(make([]SyscallRule, len(orRule)))
-		for i, subRule := range orRule {
-			perArg := subRule.(PerArg)
-			onlyArg := PerArg{AnyValue{}, AnyValue{}, AnyValue{}, AnyValue{}, AnyValue{}, AnyValue{}, AnyValue{}}
-			onlyArg[argNum] = perArg[argNum]
-			allExceptArg := perArg.clone()
-			allExceptArg[argNum] = AnyValue{}
-			argNumMatch[i] = onlyArg
-			otherArgsMatch[i] = allExceptArg
-		}
-		// Attempt to optimize the "other" arguments:
-		otherArgsMatchOpt, _ := extractRepeatedMatchers(otherArgsMatch)
-		return And{argNumMatch, otherArgsMatchOpt}, true
 	}
 	return rule, false
 }
@@ -554,6 +722,9 @@ func optimizeSyscallRule(rule SyscallRule) SyscallRule {
 			convertUselessPerArgToMatchAll,
 
 			// Replace `ValueMatcher`s that are splittable into their split version.
+			// Like `nilInPerArgToAnyValue`, this isn't so much an optimization,
+			// but allows the matchers below (which are `splitMatcher`-aware) to not
+			// have to carry logic to split the matchers they encounter.
 			splitMatchers,
 
 			// Replace `halfValueMatcher`s with their simplified version.

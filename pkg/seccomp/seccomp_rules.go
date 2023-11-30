@@ -108,7 +108,7 @@ type halfEqualTo uint32
 
 // Repr implements `halfValueMatcher.Repr`.
 func (heq halfEqualTo) Repr() string {
-	return fmt.Sprintf("halfEq(%d)", uint32(heq))
+	return fmt.Sprintf("halfEq(%#x)", uint32(heq))
 }
 
 // HalfRender implements `halfValueMatcher.HalfRender`.
@@ -123,7 +123,7 @@ type halfNotSet uint32
 
 // Repr implements `halfValueMatcher.Repr`.
 func (hns halfNotSet) Repr() string {
-	return fmt.Sprintf("halfNotSet(%x)", uint32(hns))
+	return fmt.Sprintf("halfNotSet(%#x)", uint32(hns))
 }
 
 // HalfRender implements `halfValueMatcher.HalfRender`.
@@ -141,7 +141,7 @@ type halfMaskedEqual struct {
 
 // Repr implements `halfValueMatcher.Repr`.
 func (hmeq halfMaskedEqual) Repr() string {
-	return fmt.Sprintf("halfMaskedEqual(%x, %x)", hmeq.mask, hmeq.value)
+	return fmt.Sprintf("halfMaskedEqual(%#x, %#x)", hmeq.mask, hmeq.value)
 }
 
 // HalfRender implements `halfValueMatcher.HalfRender`.
@@ -172,16 +172,45 @@ func (sm splitMatcher) String() string {
 
 // Repr implements `ValueMatcher.Repr`.
 func (sm splitMatcher) Repr() string {
+	if sm.repr == "" {
+		_, highIsAnyValue := sm.highMatcher.(halfAnyValue)
+		_, lowIsAnyValue := sm.lowMatcher.(halfAnyValue)
+		if highIsAnyValue && lowIsAnyValue {
+			return "split(*)"
+		}
+		if highIsAnyValue {
+			return fmt.Sprintf("low=%s", sm.lowMatcher.Repr())
+		}
+		if lowIsAnyValue {
+			return fmt.Sprintf("high=%s", sm.highMatcher.Repr())
+		}
+		return fmt.Sprintf("(high=%s && low=%s)", sm.highMatcher.Repr(), sm.lowMatcher.Repr())
+	}
 	return sm.repr
 }
 
 // Render implements `ValueMatcher.Render`.
 func (sm splitMatcher) Render(program *syscallProgram, labelSet *labelSet, value matchedValue) {
+	_, highIsAny := sm.highMatcher.(halfAnyValue)
+	_, lowIsAny := sm.lowMatcher.(halfAnyValue)
+	if highIsAny && lowIsAny {
+		program.JumpTo(labelSet.Matched())
+		return
+	}
+	if highIsAny {
+		value.LoadLow32Bits()
+		sm.lowMatcher.HalfRender(program, labelSet)
+		return
+	}
+	if lowIsAny {
+		value.LoadHigh32Bits()
+		sm.highMatcher.HalfRender(program, labelSet)
+		return
+	}
 	// We render the "low" bits first on the assumption that most syscall
 	// arguments fit within 32-bits, and those rules actually only care
 	// about the value of the low 32 bits. This way, we only check the
 	// high 32 bits if the low 32 bits have already matched.
-
 	lowLabels := labelSet.Push("low", labelSet.NewLabel(), labelSet.Mismatched())
 	lowFrag := program.Record()
 	value.LoadLow32Bits()
@@ -193,6 +222,24 @@ func (sm splitMatcher) Render(program *syscallProgram, labelSet *labelSet, value
 	value.LoadHigh32Bits()
 	sm.highMatcher.HalfRender(program, labelSet.Push("high", labelSet.Matched(), labelSet.Mismatched()))
 	highFrag.MustHaveJumpedTo(labelSet.Matched(), labelSet.Mismatched())
+}
+
+// high32BitsMatch returns a `splitMatcher` that only matches the high 32 bits
+// of a 64-bit value.
+func high32BitsMatch(hvm halfValueMatcher) splitMatcher {
+	return splitMatcher{
+		highMatcher: hvm,
+		lowMatcher:  halfAnyValue{},
+	}
+}
+
+// low32BitsMatch returns a `splitMatcher` that only matches the low 32 bits
+// of a 64-bit value.
+func low32BitsMatch(hvm halfValueMatcher) splitMatcher {
+	return splitMatcher{
+		highMatcher: halfAnyValue{},
+		lowMatcher:  hvm,
+	}
 }
 
 // splittableValueMatcher should be implemented by `ValueMatcher` that can
