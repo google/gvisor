@@ -1431,6 +1431,7 @@ func TestOptimizeSyscallRule(t *testing.T) {
 						value: 0x89abcdef,
 					},
 				},
+				BitsAllowlist(0xabcdef),
 			},
 			want: PerArg{
 				s(EqualTo(0)),
@@ -1457,7 +1458,14 @@ func TestOptimizeSyscallRule(t *testing.T) {
 						value: 0x89abcdef,
 					},
 				},
-				av,
+				splitMatcher{
+					// High half gets simplified to equaling zero.
+					highMatcher: halfEqualTo(0),
+					// Low half gets simplified to a bit-not-set check.
+					lowMatcher: halfNotSet(^uint32(0xabcdef)),
+					// Keep user-friendly representation.
+					repr: fmt.Sprintf("& %#x == %#x", ^uint64(0xabcdef), 0),
+				},
 			},
 		},
 		{
