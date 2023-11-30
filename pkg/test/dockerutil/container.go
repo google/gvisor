@@ -324,7 +324,7 @@ func (c *Container) Checkpoint(ctx context.Context, name string) error {
 	return c.client.CheckpointCreate(ctx, c.Name, types.CheckpointCreateOptions{CheckpointID: name, Exit: true})
 }
 
-// Restore is analogous to 'docker start --checkname [name]'.
+// Restore is analogous to 'docker start --checkpoint [name]'.
 func (c *Container) Restore(ctx context.Context, name string) error {
 	return c.client.ContainerStart(ctx, c.id, types.ContainerStartOptions{CheckpointID: name})
 }
