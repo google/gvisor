@@ -52,9 +52,11 @@
 #include "absl/strings/str_format.h"
 #include "absl/strings/str_split.h"
 #include "absl/strings/string_view.h"
+#include "absl/strings/substitute.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
 #include "test/util/capability_util.h"
+#include "test/util/cleanup.h"
 #include "test/util/eventfd_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
@@ -2265,6 +2267,23 @@ TEST(MountTest, RemountUnmounted) {
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
 
   EXPECT_THAT(mount("", dir.path().c_str(), kTmpfs, MS_REMOUNT, ""),
+              SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(MountTest, DetachedMountBindFails) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+
+  const TempPath path1 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  Cleanup mount_cleanup = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", path1.path().c_str(), kTmpfs, 0, "", MNT_DETACH));
+  mount_cleanup.Release();
+  const FileDescriptor fd =
+      ASSERT_NO_ERRNO_AND_VALUE(Open(path1.path().c_str(), O_RDONLY));
+  std::string fd_path = absl::Substitute("/proc/self/fd/$0", fd.get());
+  ASSERT_THAT(umount2(path1.path().c_str(), MNT_DETACH), SyscallSucceeds());
+  const TempPath path2 = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+
+  EXPECT_THAT(mount(fd_path.c_str(), path2.path().c_str(), "", MS_BIND, 0),
               SyscallFailsWithErrno(EINVAL));
 }
 
