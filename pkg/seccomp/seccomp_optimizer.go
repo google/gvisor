@@ -184,6 +184,99 @@ func deduplicatePerArgs[T Or | And](rule SyscallRule) (SyscallRule, bool) {
 	return SyscallRule(T(newRules)), true
 }
 
+// splitMatchers replaces every `splittableValueMatcher` with a
+// `splitMatcher` value matcher instead.
+// This enables optimizations that are split-aware to run without
+// the need to have logic handling this conversion.
+func splitMatchers(rule SyscallRule) (SyscallRule, bool) {
+	perArg, isPerArg := rule.(PerArg)
+	if !isPerArg {
+		return rule, false
+	}
+	changed := false
+	for argNum, valueMatcher := range perArg {
+		if _, isAlreadySplit := valueMatcher.(splitMatcher); isAlreadySplit {
+			continue
+		}
+		splittableMatcher, isSplittableMatcher := valueMatcher.(splittableValueMatcher)
+		if !isSplittableMatcher {
+			continue
+		}
+		perArg[argNum] = splittableMatcher.split()
+		changed = true
+	}
+	return perArg, changed
+}
+
+// simplifyHalfValueMatcher may convert a `halfValueMatcher` to a simpler
+// (and potentially faster) representation.
+func simplifyHalfValueMatcher(hvm halfValueMatcher) halfValueMatcher {
+	switch v := hvm.(type) {
+	case halfNotSet:
+		if v == 0 {
+			return halfAnyValue{}
+		}
+	case halfMaskedEqual:
+		if v.mask == 0 && v.value == 0 {
+			return halfAnyValue{}
+		}
+		if v.mask == 0xffffffff {
+			return halfEqualTo(v.value)
+		}
+	}
+	return hvm
+}
+
+// simplifyHalfValueMatchers replace `halfValueMatcher`s with their simplified
+// version.
+func simplifyHalfValueMatchers(rule SyscallRule) (SyscallRule, bool) {
+	perArg, isPerArg := rule.(PerArg)
+	if !isPerArg {
+		return rule, false
+	}
+	changed := false
+	for i, valueMatcher := range perArg {
+		sm, isSplitMatcher := valueMatcher.(splitMatcher)
+		if !isSplitMatcher {
+			continue
+		}
+		if newHigh := simplifyHalfValueMatcher(sm.highMatcher); newHigh.Repr() != sm.highMatcher.Repr() {
+			sm.highMatcher = newHigh
+			perArg[i] = sm
+			changed = true
+		}
+		if newLow := simplifyHalfValueMatcher(sm.lowMatcher); newLow.Repr() != sm.lowMatcher.Repr() {
+			sm.lowMatcher = newLow
+			perArg[i] = sm
+			changed = true
+		}
+	}
+	return perArg, changed
+}
+
+// anySplitMatchersToAnyValue converts `splitMatcher`s where both halves
+// match any value to a single AnyValue{} rule.
+func anySplitMatchersToAnyValue(rule SyscallRule) (SyscallRule, bool) {
+	perArg, isPerArg := rule.(PerArg)
+	if !isPerArg {
+		return rule, false
+	}
+	changed := false
+	for argNum, valueMatcher := range perArg {
+		sm, isSplitMatcher := valueMatcher.(splitMatcher)
+		if !isSplitMatcher {
+			continue
+		}
+		_, highIsAny := sm.highMatcher.(halfAnyValue)
+		_, lowIsAny := sm.lowMatcher.(halfAnyValue)
+		if highIsAny && lowIsAny {
+			perArg[argNum] = AnyValue{}
+			changed = true
+		}
+	}
+	return perArg, changed
+}
+
 // invalidValueMatcher is a stand-in `ValueMatcher` with a unique
 // representation that doesn't look like any legitimate `ValueMatcher`.
 // Calling any method other than `Repr` will fail.
@@ -372,27 +465,54 @@ func extractRepeatedMatchers(rule SyscallRule) (SyscallRule, bool) {
 	return rule, false
 }
 
-// optimizeSyscallRuleFuncs losslessly optimizes a SyscallRule using the given
-// optimization functions.
-// Optimizers should be ranked in order of importance, with the most
-// important first.
-// An optimizer will be exhausted before the next one is ever run.
-// Earlier optimizers are re-exhausted if later optimizers cause change.
-func optimizeSyscallRuleFuncs(rule SyscallRule, funcs []ruleOptimizerFunc) SyscallRule {
-	// Instantiate this closure only once, since passing it to (interface
-	// method) rule.Recurse() causes it to escape.
-	var recurse func(subRule SyscallRule) SyscallRule
-	recurse = func(subRule SyscallRule) SyscallRule {
-		return optimizeSyscallRuleFuncsRecursive(subRule, funcs, recurse)
-	}
-	return optimizeSyscallRuleFuncsRecursive(rule, funcs, recurse)
+// optimizationRun is a stateful struct tracking the state of an optimization
+// over a rule. It may not be used concurrently.
+type optimizationRun struct {
+	// funcs is the list of optimizer functions to run on the rules.
+	// Optimizers should be ranked in order of importance, with the most
+	// important first.
+	// An optimizer will be exhausted before the next one is ever run.
+	// Earlier optimizers are re-exhausted if later optimizers cause change.
+	funcs []ruleOptimizerFunc
+
+	// recurseFuncs is a list of closures that correspond one-to-one to `funcs`
+	// and are suitable for passing to `SyscallRule.Recurse`. They are stored
+	// here in order to be allocated once, as opposed to escaping if they were
+	// specified directly as argument to `SyscallRule.Recurse`.
+	recurseFuncs []func(subRule SyscallRule) SyscallRule
+
+	// changed tracks whether any change has been made in the current pass.
+	// It is updated as the optimizer runs.
+	changed bool
 }
 
-func optimizeSyscallRuleFuncsRecursive(rule SyscallRule, funcs []ruleOptimizerFunc, recurse func(subRule SyscallRule) SyscallRule) SyscallRule {
-	for changed := true; changed; {
-		for _, fn := range funcs {
-			rule.Recurse(recurse)
-			if rule, changed = fn(rule); changed {
+// apply recursively applies `opt.funcs[funcIndex]` to the given `rule`.
+// It sets `opt.changed` to true if there has been any change.
+func (opt *optimizationRun) apply(rule SyscallRule, funcIndex int) SyscallRule {
+	rule.Recurse(opt.recurseFuncs[funcIndex])
+	if opt.changed {
+		return rule
+	}
+	rule, opt.changed = opt.funcs[funcIndex](rule)
+	return rule
+}
+
+// optimize losslessly optimizes a SyscallRule using the `optimizationRun`'s
+// optimizer functions.
+// It may not be called concurrently.
+func (opt *optimizationRun) optimize(rule SyscallRule) SyscallRule {
+	opt.recurseFuncs = make([]func(SyscallRule) SyscallRule, len(opt.funcs))
+	for i := range opt.funcs {
+		funcIndex := i
+		opt.recurseFuncs[funcIndex] = func(subRule SyscallRule) SyscallRule {
+			return opt.apply(subRule, funcIndex)
+		}
+	}
+	for opt.changed = true; opt.changed; {
+		for i := range opt.funcs {
+			opt.changed = false
+			rule = opt.apply(rule, i)
+			if opt.changed {
 				break
 			}
 		}
@@ -402,42 +522,53 @@ func optimizeSyscallRuleFuncsRecursive(rule SyscallRule, funcs []ruleOptimizerFu
 
 // optimizeSyscallRule losslessly optimizes a `SyscallRule`.
 func optimizeSyscallRule(rule SyscallRule) SyscallRule {
-	return optimizeSyscallRuleFuncs(rule, []ruleOptimizerFunc{
-		// Convert Or / And rules with a single rule into that single rule.
-		convertSingleCompoundRuleToThatRule[Or],
-		convertSingleCompoundRuleToThatRule[And],
+	return (&optimizationRun{
+		funcs: []ruleOptimizerFunc{
+			// Convert Or / And rules with a single rule into that single rule.
+			convertSingleCompoundRuleToThatRule[Or],
+			convertSingleCompoundRuleToThatRule[And],
 
-		// Flatten Or/And rules.
-		flattenCompoundRules[Or],
-		flattenCompoundRules[And],
+			// Flatten Or/And rules.
+			flattenCompoundRules[Or],
+			flattenCompoundRules[And],
 
-		// Handle MatchAll. This is best done after flattening so that we
-		// effectively traverse the whole tree to find a MatchAll by just
-		// linearly scanning through the first (and only) level of rules.
-		convertMatchAllOrXToMatchAll,
-		convertMatchAllAndXToX,
+			// Handle MatchAll. This is best done after flattening so that we
+			// effectively traverse the whole tree to find a MatchAll by just
+			// linearly scanning through the first (and only) level of rules.
+			convertMatchAllOrXToMatchAll,
+			convertMatchAllAndXToX,
 
-		// Replace all `nil` values in `PerArg` to `AnyValue`, to simplify
-		// the `PerArg` matchers below.
-		nilInPerArgToAnyValue,
+			// Replace all `nil` values in `PerArg` to `AnyValue`, to simplify
+			// the `PerArg` matchers below.
+			nilInPerArgToAnyValue,
 
-		// Deduplicate redundant `PerArg`s in Or and And.
-		// This must come after `nilInPerArgToAnyValue` because it does not
-		// handle the nil case.
-		deduplicatePerArgs[Or],
-		deduplicatePerArgs[And],
+			// Deduplicate redundant `PerArg`s in Or and And.
+			// This must come after `nilInPerArgToAnyValue` because it does not
+			// handle the nil case.
+			deduplicatePerArgs[Or],
+			deduplicatePerArgs[And],
 
-		// Remove useless `PerArg` matchers.
-		// This must come after `nilInPerArgToAnyValue` because it does not
-		// handle the nil case.
-		convertUselessPerArgToMatchAll,
+			// Remove useless `PerArg` matchers.
+			// This must come after `nilInPerArgToAnyValue` because it does not
+			// handle the nil case.
+			convertUselessPerArgToMatchAll,
 
-		// Extract repeated argument matchers out of `Or` expressions.
-		// This must come after `nilInPerArgToAnyValue` because it does not
-		// handle the nil case.
-		// This should ideally run late in the list because it does a bunch
-		// of memory allocations (even in the non-optimizable case), which
-		// should be avoided unless there is nothing else left to optimize.
-		extractRepeatedMatchers,
-	})
+			// Replace `ValueMatcher`s that are splittable into their split version.
+			splitMatchers,
+
+			// Replace `halfValueMatcher`s with their simplified version.
+			simplifyHalfValueMatchers,
+
+			// Replace `splitMatchers` that match any value with `AnyValue`.
+			anySplitMatchersToAnyValue,
+
+			// Extract repeated argument matchers out of `Or` expressions.
+			// This must come after `nilInPerArgToAnyValue` because it does not
+			// handle the nil case.
+			// This should ideally run late in the list because it does a bunch
+			// of memory allocations (even in the non-optimizable case), which
+			// should be avoided unless there is nothing else left to optimize.
+			extractRepeatedMatchers,
+		},
+	}).optimize(rule)
 }
