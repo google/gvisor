@@ -56,9 +56,8 @@ const (
 // syscall is still blocked from executing.
 func Install(rules SyscallRules, denyRules SyscallRules, options ProgramOptions) error {
 	// ***   DEBUG TIP   ***
-	// If you suspect the process is getting killed due to a seccomp violation, uncomment the line
-	// below to get a panic stack trace when there is a violation.
-	// options.DefaultAction = Return(linux.BPFAction(linux.SECCOMP_RET_TRAP))
+	// If you suspect the Sentry is getting killed due to a seccomp violation,
+	// look for the `debugFilter` boolean in `//runsc/boot/filter/filter.go`.
 
 	log.Infof("Installing seccomp filters for %d syscalls (action=%v)", rules.Size(), options.DefaultAction)
 
