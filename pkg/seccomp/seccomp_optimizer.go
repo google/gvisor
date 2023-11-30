@@ -217,11 +217,13 @@ func simplifyHalfValueMatcher(hvm halfValueMatcher) halfValueMatcher {
 			return halfAnyValue{}
 		}
 	case halfMaskedEqual:
-		if v.mask == 0 && v.value == 0 {
+		switch {
+		case v.mask == 0 && v.value == 0:
 			return halfAnyValue{}
-		}
-		if v.mask == 0xffffffff {
+		case v.mask == 0xffffffff:
 			return halfEqualTo(v.value)
+		case v.value == 0:
+			return halfNotSet(v.mask)
 		}
 	}
 	return hvm

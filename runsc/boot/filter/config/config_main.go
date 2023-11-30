@@ -65,31 +65,15 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 	unix.SYS_FSTAT:     seccomp.MatchAll{},
 	unix.SYS_FSYNC:     seccomp.MatchAll{},
 	unix.SYS_FTRUNCATE: seccomp.MatchAll{},
-	unix.SYS_FUTEX: seccomp.Or{
-		seccomp.PerArg{
-			seccomp.AnyValue{},
-			seccomp.EqualTo(linux.FUTEX_WAIT | linux.FUTEX_PRIVATE_FLAG),
-			seccomp.AnyValue{},
-			seccomp.AnyValue{},
-		},
-		seccomp.PerArg{
-			seccomp.AnyValue{},
-			seccomp.EqualTo(linux.FUTEX_WAKE | linux.FUTEX_PRIVATE_FLAG),
-			seccomp.AnyValue{},
-		},
-		// Non-private variants are included for flipcall support. They are otherwise
-		// unnecessary, as the sentry will use only private futexes internally.
-		seccomp.PerArg{
-			seccomp.AnyValue{},
-			seccomp.EqualTo(linux.FUTEX_WAIT),
-			seccomp.AnyValue{},
-			seccomp.AnyValue{},
-		},
-		seccomp.PerArg{
-			seccomp.AnyValue{},
-			seccomp.EqualTo(linux.FUTEX_WAKE),
-			seccomp.AnyValue{},
-		},
+	unix.SYS_FUTEX: seccomp.PerArg{
+		seccomp.AnyValue{},
+		// Allow any combination of FUTEX_{WAIT,WAKE,PRIVATE_FLAG}, but no other.
+		// Non-private variants are included for flipcall support. They are
+		// otherwise unnecessary, as the sentry will use only private futexes
+		// internally.
+		seccomp.BitsAllowlist(
+			linux.FUTEX_WAIT | linux.FUTEX_WAKE | linux.FUTEX_PRIVATE_FLAG,
+		),
 	},
 	// getcpu is used by some versions of the Go runtime and by the hostcpu
 	// package on arm64.
