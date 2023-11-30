@@ -58,9 +58,7 @@ func (ifr *IFReq) Name() string {
 // SetName sets the name.
 func (ifr *IFReq) SetName(name string) {
 	n := copy(ifr.IFName[:], []byte(name))
-	for i := n; i < len(ifr.IFName); i++ {
-		ifr.IFName[i] = 0
-	}
+	clear(ifr.IFName[n:])
 }
 
 // SizeOfIFReq is the binary size of an IFReq struct (40 bytes).
