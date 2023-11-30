@@ -101,7 +101,7 @@ func (l *lockState) modify() {
 		l.stored = s
 
 		// Reset the used values.
-		l.used = make(map[ssa.Value]struct{})
+		clear(l.used)
 
 		// Copy the defers.
 		ds := make([]*ssa.Defer, len(l.defers))

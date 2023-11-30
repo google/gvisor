@@ -584,8 +584,7 @@ func (t *Task) exitPtrace() {
 		// this is consistent with Linux.
 		target.forgetTracerLocked()
 	}
-	// "nil maps cannot be saved"
-	t.ptraceTracees = make(map[*Task]struct{})
+	clear(t.ptraceTracees) // nil maps cannot be saved
 
 	if t.ptraceYAMAExceptionAdded {
 		delete(t.k.ptraceExceptions, t)

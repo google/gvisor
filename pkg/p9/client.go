@@ -390,7 +390,7 @@ func (c *Client) handleOne() {
 		for _, resp := range c.pending {
 			resp.done <- err
 		}
-		c.pending = make(map[Tag]*response)
+		clear(c.pending)
 		c.pendingMu.Unlock()
 	} else {
 		// Process the tag.

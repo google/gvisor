@@ -221,7 +221,7 @@ func (c *devicesController) applyRule(id deviceID, p permission, allow bool) err
 	// If the device type is all, it will reset the rules for all.
 	if id.controllerType == wildcardDevice {
 		c.defaultAllow = allow
-		c.deviceRules = make(map[deviceID]permission)
+		clear(c.deviceRules)
 		return nil
 	}
 	if !p.valid() {
@@ -229,7 +229,7 @@ func (c *devicesController) applyRule(id deviceID, p permission, allow bool) err
 	}
 	if len(c.deviceRules) == 0 {
 		c.defaultAllow = allow
-		c.deviceRules = make(map[deviceID]permission)
+		clear(c.deviceRules)
 	}
 	if allow == c.defaultAllow {
 		return c.addRule(id, p)

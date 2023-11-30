@@ -56,6 +56,9 @@ func equals(e0, e1 []entry) bool {
 func fill(entries []entry) LockSet {
 	l := LockSet{}
 	for _, e := range entries {
+		if e.Readers == nil {
+			e.Readers = make(map[UniqueID]OwnerInfo)
+		}
 		gap := l.FindGap(e.LockRange.Start)
 		if !gap.Ok() {
 			panic("cannot insert into existing segment")
