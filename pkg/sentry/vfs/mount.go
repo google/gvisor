@@ -33,7 +33,11 @@ import (
 // MountMax is the maximum number of mounts allowed. In Linux this can be
 // configured by the user at /proc/sys/fs/mount-max, but the default is
 // 100,000. We set the gVisor limit to 10,000.
-const MountMax = 10000
+const (
+	MountMax     = 10000
+	nsfsName     = "nsfs"
+	cgroupFsName = "cgroup"
+)
 
 // A Mount is a replacement of a Dentry (Mount.key.point) from one Filesystem
 // (Mount.key.parent.fs) with a Dentry (Mount.root) from another Filesystem
@@ -214,6 +218,19 @@ func (mnt *Mount) coveringMount() *Mount {
 	return child
 }
 
+// validInMountNS checks if the mount is valid in the current mount namespace. This includes
+// checking if has previously been unmounted. It is analogous to fs/namespace.c:check_mnt() in
+// Linux.
+//
+// +checklocks:vfs.mountMu
+func (vfs *VirtualFilesystem) validInMountNS(ctx context.Context, mnt *Mount) bool {
+	if mntns := MountNamespaceFromContext(ctx); mntns != nil {
+		vfs.delayDecRef(mntns)
+		return mnt.ns == mntns && !mnt.umounted
+	}
+	return false
+}
+
 // NewFilesystem creates a new filesystem object not yet associated with any
 // mounts. It can be installed into the filesystem tree with ConnectMountAt.
 // Note that only the filesystem-specific mount options from opts are used by
@@ -253,20 +270,17 @@ func (vfs *VirtualFilesystem) MountDisconnected(ctx context.Context, creds *auth
 	return newMount(vfs, fs, root, nil /* mntns */, opts), nil
 }
 
-// attachTreeLocked attaches the mount tree at mnt to vd and propagates the
-// mount to vd.mount's peers and followers. This method consumes the reference
-// on vd. It is analogous to fs/namespace.c:attach_recursive_mnt() in Linux.
+// attachTreeLocked attaches the mount tree at mnt to mp and propagates the mount to mp.mount's
+// peers and followers. This method consumes the reference on mp. It is analogous to
+// fs/namespace.c:attach_recursive_mnt() in Linux. The mount point mp must have its dentry locked
+// before calling attachTreeLocked.
 //
 // +checklocks:vfs.mountMu
-func (vfs *VirtualFilesystem) attachTreeLocked(ctx context.Context, mnt *Mount, vd VirtualDentry) error {
-	mp, err := vfs.lockMountpoint(vd)
-	if err != nil {
-		return err
-	}
+func (vfs *VirtualFilesystem) attachTreeLocked(ctx context.Context, mnt *Mount, mp VirtualDentry) error {
 	cleanup := cleanup.Make(func() {
 		vfs.cleanupGroupIDs(mnt.submountsLocked()) // +checklocksforce
 		mp.dentry.mu.Unlock()
-		mp.DecRef(ctx)
+		vfs.delayDecRef(mp)
 	})
 	defer cleanup.Clean()
 	// This is equivalent to checking for SB_NOUSER in Linux, which is set on all
@@ -279,7 +293,10 @@ func (vfs *VirtualFilesystem) attachTreeLocked(ctx context.Context, mnt *Mount, 
 		return err
 	}
 
-	var propMnts map[*Mount]struct{}
+	var (
+		propMnts map[*Mount]struct{}
+		err      error
+	)
 	if mp.mount.isShared {
 		if err := vfs.allocMountGroupIDs(mnt, true); err != nil {
 			return err
@@ -325,7 +342,16 @@ func (vfs *VirtualFilesystem) ConnectMountAt(ctx context.Context, creds *auth.Cr
 	}
 	vfs.lockMounts()
 	defer vfs.unlockMounts(ctx)
-	return vfs.attachTreeLocked(ctx, mnt, vd)
+	mp, err := vfs.lockMountpoint(vd)
+	if err != nil {
+		return err
+	}
+	if mp.mount.neverConnected() || mp.mount.umounted {
+		mp.dentry.mu.Unlock()
+		vfs.delayDecRef(mp)
+		return linuxerr.EINVAL
+	}
+	return vfs.attachTreeLocked(ctx, mnt, mp)
 }
 
 // lockMountpoint returns VirtualDentry with a locked Dentry. If vd is a
@@ -500,6 +526,24 @@ func (vfs *VirtualFilesystem) BindAt(ctx context.Context, creds *auth.Credential
 
 	vfs.lockMounts()
 	defer vfs.unlockMounts(ctx)
+	mp, err := vfs.lockMountpoint(targetVd)
+	if err != nil {
+		return err
+	}
+	cleanup := cleanup.Make(func() {
+		mp.dentry.mu.Unlock()
+		vfs.delayDecRef(mp) // +checklocksforce
+	})
+	defer cleanup.Clean()
+	// Namespace mounts can be binded to other mount points.
+	fsName := sourceVd.mount.Filesystem().FilesystemType().Name()
+	if !vfs.validInMountNS(ctx, sourceVd.mount) && fsName != nsfsName && fsName != cgroupFsName {
+		return linuxerr.EINVAL
+	}
+	if !vfs.validInMountNS(ctx, mp.mount) {
+		return linuxerr.EINVAL
+	}
+
 	var clone *Mount
 	if recursive {
 		clone, err = vfs.cloneMountTree(ctx, sourceVd.mount, sourceVd.dentry, 0, nil)
@@ -507,11 +551,12 @@ func (vfs *VirtualFilesystem) BindAt(ctx context.Context, creds *auth.Credential
 		clone, err = vfs.cloneMount(sourceVd.mount, sourceVd.dentry, nil, 0)
 	}
 	if err != nil {
-		vfs.delayDecRef(targetVd)
 		return err
 	}
+	cleanup.Release()
+
 	vfs.delayDecRef(clone)
-	if err := vfs.attachTreeLocked(ctx, clone, targetVd); err != nil {
+	if err := vfs.attachTreeLocked(ctx, clone, mp); err != nil {
 		vfs.abortUncomittedChildren(ctx, clone)
 		return err
 	}
@@ -528,11 +573,8 @@ func (vfs *VirtualFilesystem) RemountAt(ctx context.Context, creds *auth.Credent
 	vfs.lockMounts()
 	defer vfs.unlockMounts(ctx)
 	mnt := vd.Mount()
-	if mntns := MountNamespaceFromContext(ctx); mntns != nil {
-		vfs.delayDecRef(mntns)
-		if mntns != mnt.ns {
-			return linuxerr.EINVAL
-		}
+	if !vfs.validInMountNS(ctx, mnt) {
+		return linuxerr.EINVAL
 	}
 	return mnt.setMountOptions(opts)
 }
@@ -576,15 +618,11 @@ func (vfs *VirtualFilesystem) UmountAt(ctx context.Context, creds *auth.Credenti
 
 	vfs.lockMounts()
 	defer vfs.unlockMounts(ctx)
-	if mntns := MountNamespaceFromContext(ctx); mntns != nil {
-		vfs.delayDecRef(mntns)
-		if mntns != vd.mount.ns {
-			return linuxerr.EINVAL
-		}
-
-		if vd.mount == vd.mount.ns.root {
-			return linuxerr.EINVAL
-		}
+	if !vfs.validInMountNS(ctx, vd.mount) {
+		return linuxerr.EINVAL
+	}
+	if vd.mount == vd.mount.ns.root {
+		return linuxerr.EINVAL
 	}
 
 	if opts.Flags&linux.MNT_DETACH == 0 && vfs.arePropMountsBusy(vd.mount) {
@@ -899,7 +937,7 @@ func (mnt *Mount) LeakMessage() string {
 // This should only be set to true for debugging purposes, as it can generate an
 // extremely large amount of output and drastically degrade performance.
 func (mnt *Mount) LogRefs() bool {
-	return false
+	return true
 }
 
 // getMountAt returns the last Mount in the stack mounted at (mnt, d). It takes
@@ -1099,9 +1137,7 @@ func (vfs *VirtualFilesystem) PivotRoot(ctx context.Context, creds *auth.Credent
 		return newRoot, oldRoot, linuxerr.EINVAL
 	}
 	// The current root and the new root must be in the context's mount namespace.
-	ns := MountNamespaceFromContext(ctx)
-	vfs.delayDecRef(ns)
-	if oldRoot.mount.ns != ns || newRoot.mount.ns != ns {
+	if !vfs.validInMountNS(ctx, oldRoot.mount) || !vfs.validInMountNS(ctx, newRoot.mount) {
 		return newRoot, oldRoot, linuxerr.EINVAL
 	}
 	// The current root and the new root cannot be on the rootfs mount.
@@ -1125,11 +1161,11 @@ func (vfs *VirtualFilesystem) PivotRoot(ctx context.Context, creds *auth.Credent
 	rootMp := vfs.disconnectLocked(oldRoot.mount)
 
 	putOld.IncRef()
-	vfs.connectLocked(oldRoot.mount, putOld, ns)
+	vfs.connectLocked(oldRoot.mount, putOld, putOld.mount.ns)
 	putOld.dentry.mu.Unlock()
 
 	rootMp.dentry.mu.Lock()
-	vfs.connectLocked(newRoot.mount, rootMp, ns)
+	vfs.connectLocked(newRoot.mount, rootMp, rootMp.mount.ns)
 	rootMp.dentry.mu.Unlock()
 	vfs.mounts.seq.EndWrite()
 

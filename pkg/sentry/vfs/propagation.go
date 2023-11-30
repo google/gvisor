@@ -266,7 +266,7 @@ func (vfs *VirtualFilesystem) peers(m1, m2 *Mount) bool {
 // +checklocks:vfs.mountMu
 func (vfs *VirtualFilesystem) propagateMount(ctx context.Context, dstMnt *Mount, dstPoint *Dentry, state *propState) error {
 	// Skip newly added mounts.
-	if dstMnt.neverConnected() {
+	if dstMnt.neverConnected() || dstMnt.umounted {
 		return nil
 	}
 	mp := VirtualDentry{mount: dstMnt, dentry: dstPoint}
