@@ -56,6 +56,18 @@ func (r *restorer) restore(l *Loader) error {
 	}
 	l.k.SetMemoryFile(mf)
 
+	if l.root.conf.ProfileEnable {
+		// pprof.Initialize opens /proc/self/maps, so has to be called before
+		// installing seccomp filters.
+		pprof.Initialize()
+	}
+
+	// Seccomp filters have to be applied before vfs restore and before parsing
+	// the state file.
+	if err := l.installSeccompFilters(); err != nil {
+		return err
+	}
+
 	// Set up the restore environment.
 	ctx := l.k.SupervisorContext()
 	// TODO(b/298078576): Need to process hints here probably
@@ -63,17 +75,6 @@ func (r *restorer) restore(l *Loader) error {
 	ctx, err = mntr.configureRestore(ctx)
 	if err != nil {
 		return fmt.Errorf("configuring filesystem restore: %v", err)
-	}
-
-	if l.root.conf.ProfileEnable {
-		// pprof.Initialize opens /proc/self/maps, so has to be called before
-		// installing seccomp filters.
-		pprof.Initialize()
-	}
-
-	// Seccomp filters have to be applied before parsing the state file.
-	if err := l.installSeccompFilters(); err != nil {
-		return err
 	}
 
 	// Load the state.
