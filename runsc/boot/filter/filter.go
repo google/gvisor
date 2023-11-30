@@ -19,10 +19,17 @@ package filter
 import (
 	"fmt"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/seccomp"
 	"gvisor.dev/gvisor/runsc/boot/filter/config"
 )
+
+// ***   DEBUG TIP   ***
+// If you suspect the Sentry is getting killed due to a seccomp violation,
+// change this to `true` to get a panic stack trace when there is a
+// violation.
+const debugFilter = false
 
 // Options is a re-export of the config Options type under this package.
 type Options = config.Options
@@ -33,8 +40,8 @@ func Install(opt Options) error {
 		log.Warningf("*** SECCOMP WARNING: %s", warning)
 	}
 	key := opt.ConfigKey()
-	precompiled, found := GetPrecompiled(key)
-	if found {
+	precompiled, usePrecompiled := GetPrecompiled(key)
+	if usePrecompiled && !debugFilter {
 		vars := opt.Vars()
 		log.Debugf("Loaded precompiled seccomp instructions for options %v, using variables: %v", key, vars)
 		insns, err := precompiled.RenderInstructions(vars)
@@ -43,7 +50,13 @@ func Install(opt Options) error {
 		}
 		return seccomp.SetFilter(insns)
 	}
-	log.Infof("No precompiled program found for config options %v, building seccomp program from scratch. This may slow down container startup.", key)
+	seccompOpts := config.SeccompOptions(opt)
+	if debugFilter {
+		log.Infof("Seccomp filter debugging is enabled; seccomp failures will result in a panic stack trace.")
+		seccompOpts.DefaultAction = linux.SECCOMP_RET_TRAP
+	} else {
+		log.Infof("No precompiled program found for config options %v, building seccomp program from scratch. This may slow down container startup.", key)
+	}
 	rules, denyRules := config.Rules(opt)
-	return seccomp.Install(rules, denyRules, config.SeccompOptions(opt))
+	return seccomp.Install(rules, denyRules, seccompOpts)
 }
