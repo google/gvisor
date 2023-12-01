@@ -937,7 +937,7 @@ func (mnt *Mount) LeakMessage() string {
 // This should only be set to true for debugging purposes, as it can generate an
 // extremely large amount of output and drastically degrade performance.
 func (mnt *Mount) LogRefs() bool {
-	return true
+	return false
 }
 
 // getMountAt returns the last Mount in the stack mounted at (mnt, d). It takes
