@@ -57,6 +57,7 @@ go_library(
         "//pkg/sentry/devices/accel",
         "//pkg/sentry/devices/memdev",
         "//pkg/sentry/devices/nvproxy",
+        "//pkg/sentry/devices/tpuproxy",
         "//pkg/sentry/devices/ttydev",
         "//pkg/sentry/devices/tundev",
         "//pkg/sentry/fdimport",
