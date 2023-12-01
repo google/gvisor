@@ -87,8 +87,8 @@ func (dev *tpuV4Device) Open(ctx context.Context, mnt *vfs.Mount, vfsd *vfs.Dent
 	return &fd.vfsfd, nil
 }
 
-// RegisterTPUV4Device registers all devices implemented by this package in vfsObj.
-func RegisterTPUV4Device(vfsObj *vfs.VirtualFilesystem, minor uint32, lite bool) error {
+// RegisterTPUDevice registers all devices implemented by this package in vfsObj.
+func RegisterTPUDevice(vfsObj *vfs.VirtualFilesystem, minor uint32, lite bool) error {
 	return vfsObj.RegisterDevice(vfs.CharDevice, linux.ACCEL_MAJOR, minor, &tpuV4Device{
 		lite:  lite,
 		minor: minor,

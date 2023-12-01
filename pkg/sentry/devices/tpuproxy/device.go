@@ -18,12 +18,17 @@ import (
 	"fmt"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/devutil"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
+)
+
+const (
+	tpuDeviceGroupName = "vfio"
 )
 
 // vfioDevice implements vfs.Device for /dev/vfio/[0-9]+
@@ -61,4 +66,13 @@ func (dev *vfioDevice) Open(ctx context.Context, mnt *vfs.Mount, d *vfs.Dentry, 
 		return nil, err
 	}
 	return &fd.vfsfd, nil
+}
+
+// RegisterTPUDevice registers devices implemented by this package in vfsObj.
+func RegisterTPUDevice(vfsObj *vfs.VirtualFilesystem, minor uint32) error {
+	return vfsObj.RegisterDevice(vfs.CharDevice, linux.VFIO_MAJOR, minor, &vfioDevice{
+		minor: minor,
+	}, &vfs.RegisterDeviceOptions{
+		GroupName: tpuDeviceGroupName,
+	})
 }
