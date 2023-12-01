@@ -50,11 +50,19 @@ func (a BPFAction) String() string {
 	case SECCOMP_RET_KILL_THREAD:
 		return "kill thread"
 	case SECCOMP_RET_TRAP:
-		return fmt.Sprintf("trap (%d)", a.Data())
+		data := a.Data()
+		if data == 0 {
+			return "trap"
+		}
+		return fmt.Sprintf("trap (data=%#x)", data)
 	case SECCOMP_RET_ERRNO:
-		return fmt.Sprintf("errno (%d)", a.Data())
+		return fmt.Sprintf("return errno=%#x", a.Data())
 	case SECCOMP_RET_TRACE:
-		return fmt.Sprintf("trace (%d)", a.Data())
+		data := a.Data()
+		if data == 0 {
+			return "trace"
+		}
+		return fmt.Sprintf("trace (data=%#x)", data)
 	case SECCOMP_RET_ALLOW:
 		return "allow"
 	}
