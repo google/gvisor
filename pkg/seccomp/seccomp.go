@@ -19,7 +19,6 @@ package seccomp
 import (
 	"fmt"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -465,19 +464,22 @@ func (ssrs singleSyscallRuleSet) Render(program *syscallProgram, ls *labelSet, n
 // `singleSyscallRuleSet`.
 func (ssrs singleSyscallRuleSet) String() string {
 	var sb strings.Builder
-	sb.WriteString("sysno=")
-	sb.WriteString(strconv.Itoa(int(ssrs.sysno)))
 	if ssrs.vsyscall {
-		sb.WriteString("[vsyscall]")
-	}
-	sb.WriteString(": ")
-	if len(ssrs.rules) == 0 {
-		sb.WriteString("(no rules)")
+		sb.WriteString("Vsyscall ")
 	} else {
+		sb.WriteString("Syscall  ")
+	}
+	sb.WriteString(fmt.Sprintf("%3d: ", ssrs.sysno))
+	switch len(ssrs.rules) {
+	case 0:
+		sb.WriteString("(no rules)")
+	case 1:
+		sb.WriteString(ssrs.rules[0].String())
+	default:
 		sb.WriteRune('{')
 		for i, r := range ssrs.rules {
 			if i != 0 {
-				sb.WriteString(", ")
+				sb.WriteString("; ")
 			}
 			sb.WriteString(r.String())
 		}
@@ -495,6 +497,9 @@ type syscallRuleAction struct {
 
 // String returns a human-friendly representation of the `syscallRuleAction`.
 func (sra syscallRuleAction) String() string {
+	if _, isMatchAll := sra.rule.(MatchAll); isMatchAll {
+		return sra.action.String()
+	}
 	return fmt.Sprintf("(%v) => %v", sra.rule.String(), sra.action)
 }
 

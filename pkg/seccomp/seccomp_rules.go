@@ -17,7 +17,6 @@ package seccomp
 import (
 	"fmt"
 	"sort"
-	"strconv"
 	"strings"
 
 	"golang.org/x/sys/unix"
@@ -52,6 +51,8 @@ func seccompDataOffsetArgHigh(i int) uint32 {
 // or RIP value.
 type ValueMatcher interface {
 	// String returns a human-readable representation of the match rule.
+	// If the returned string contains "VAL", it will be replaced with
+	// the symbolic name of the value being matched against.
 	String() string
 
 	// Repr returns a string that will be used for asserting equality between
@@ -73,6 +74,12 @@ type ValueMatcher interface {
 
 // halfValueMatcher verifies a 32-bit value.
 type halfValueMatcher interface {
+	// String returns a human-friendly representation of the check being done
+	// against the 32-bit value.
+	// The string "x.(high|low) {{halfValueMatcher.String()}}" should read well,
+	// e.g. "x.low == 0xffff".
+	String() string
+
 	// Repr returns a string that will be used for asserting equality between
 	// two `halfValueMatcher` instances. It must therefore be unique to the
 	// `halfValueMatcher` implementation and to its parameters.
@@ -93,6 +100,11 @@ type halfValueMatcher interface {
 // halfAnyValue implements `halfValueMatcher` and matches any value.
 type halfAnyValue struct{}
 
+// String implements `halfValueMatcher.String`.
+func (halfAnyValue) String() string {
+	return "== *"
+}
+
 // Repr implements `halfValueMatcher.Repr`.
 func (halfAnyValue) Repr() string {
 	return "halfAnyValue"
@@ -105,6 +117,14 @@ func (halfAnyValue) HalfRender(program *syscallProgram, labelSet *labelSet) {
 
 // halfEqualTo implements `halfValueMatcher` and matches a specific 32-bit value.
 type halfEqualTo uint32
+
+// String implements `halfValueMatcher.String`.
+func (heq halfEqualTo) String() string {
+	if heq == 0 {
+		return "== 0"
+	}
+	return fmt.Sprintf("== %#x", uint32(heq))
+}
 
 // Repr implements `halfValueMatcher.Repr`.
 func (heq halfEqualTo) Repr() string {
@@ -120,6 +140,11 @@ func (heq halfEqualTo) HalfRender(program *syscallProgram, labelSet *labelSet) {
 // halfNotSet implements `halfValueMatcher` and matches using the "set"
 // bitwise operation.
 type halfNotSet uint32
+
+// String implements `halfValueMatcher.String`.
+func (hns halfNotSet) String() string {
+	return fmt.Sprintf("& %#x == 0", uint32(hns))
+}
 
 // Repr implements `halfValueMatcher.Repr`.
 func (hns halfNotSet) Repr() string {
@@ -137,6 +162,14 @@ func (hns halfNotSet) HalfRender(program *syscallProgram, labelSet *labelSet) {
 type halfMaskedEqual struct {
 	mask  uint32
 	value uint32
+}
+
+// String implements `halfValueMatcher.String`.
+func (hmeq halfMaskedEqual) String() string {
+	if hmeq.value == 0 {
+		return fmt.Sprintf("& %#x == 0", hmeq.mask)
+	}
+	return fmt.Sprintf("& %#x == %#x", hmeq.mask, hmeq.value)
 }
 
 // Repr implements `halfValueMatcher.Repr`.
@@ -167,7 +200,21 @@ type splitMatcher struct {
 
 // String implements `ValueMatcher.String`.
 func (sm splitMatcher) String() string {
-	return sm.Repr()
+	if sm.repr == "" {
+		_, highIsAnyValue := sm.highMatcher.(halfAnyValue)
+		_, lowIsAnyValue := sm.lowMatcher.(halfAnyValue)
+		if highIsAnyValue && lowIsAnyValue {
+			return "== *"
+		}
+		if highIsAnyValue {
+			return fmt.Sprintf("VAL.low %s", sm.lowMatcher.String())
+		}
+		if lowIsAnyValue {
+			return fmt.Sprintf("VAL.high %s", sm.highMatcher.String())
+		}
+		return fmt.Sprintf("(VAL.high %s && VAL.low %s)", sm.highMatcher.String(), sm.lowMatcher.String())
+	}
+	return sm.repr
 }
 
 // Repr implements `ValueMatcher.Repr`.
@@ -290,6 +337,9 @@ type EqualTo uintptr
 
 // String implements `ValueMatcher.String`.
 func (eq EqualTo) String() string {
+	if eq == 0 {
+		return "== 0"
+	}
 	return fmt.Sprintf("== %#x", uintptr(eq))
 }
 
@@ -459,12 +509,12 @@ type NonNegativeFD struct{}
 
 // String implements `ValueMatcher.String`.
 func (NonNegativeFD) String() string {
-	return fmt.Sprintf("NonNegativeFD")
+	return "is non-negative FD"
 }
 
 // Repr implements `ValueMatcher.Repr`.
 func (NonNegativeFD) Repr() string {
-	return NonNegativeFD{}.String()
+	return "NonNegativeFD"
 }
 
 // Render implements `ValueMatcher.Render`.
@@ -762,39 +812,32 @@ func (pa PerArg) String() string {
 	writtenArgs := 0
 	for i, arg := range pa {
 		if arg == nil {
-			arg = AnyValue{}
+			continue
 		}
 		if _, isAny := arg.(AnyValue); isAny {
-			// Check if all future arguments are also "any value"; if so, stop here.
-			allIsAny := true
-			for j := i + 1; j < len(pa); j++ {
-				if pa[j] == nil {
-					continue
-				}
-				if _, isAny := pa[j].(AnyValue); !isAny {
-					allIsAny = false
-					break
-				}
-			}
-			if allIsAny {
-				break
-			}
+			continue
 		}
-		if i != 0 {
+		if writtenArgs != 0 {
 			sb.WriteString(" && ")
 		}
+		str := arg.String()
+		var varName string
 		if i == RuleIP {
-			sb.WriteString("rip")
+			varName = "rip"
 		} else {
-			sb.WriteString("arg")
-			sb.WriteString(strconv.Itoa(i))
+			varName = fmt.Sprintf("arg[%d]", i)
 		}
-		sb.WriteRune(' ')
-		sb.WriteString(arg.String())
+		if strings.Contains(str, "VAL") {
+			sb.WriteString(strings.ReplaceAll(str, "VAL", varName))
+		} else {
+			sb.WriteString(varName)
+			sb.WriteRune(' ')
+			sb.WriteString(str)
+		}
 		writtenArgs++
 	}
 	if writtenArgs == 0 {
-		return "*"
+		return "true"
 	}
 	if writtenArgs == 1 {
 		return sb.String()
