@@ -150,10 +150,10 @@ reload_docker = \
 
 wait_for_runtime = ( \
   set -x; \
-  docker info --format '{{range $$k,$$v:=.Runtimes}}{{println $$k}}{{end}}' | grep $(1) || \
+  docker info --format '{{range $$k,$$v:=.Runtimes}}{{println $$k}}{{end}}' | grep -qF $(1) || \
   for i in 1 2 3 4 5; do \
     sleep 1; \
-    docker info --format '{{range $$k,$$v:=.Runtimes}}{{println $$k}}{{end}}' | grep $(1) && break; \
+    docker info --format '{{range $$k,$$v:=.Runtimes}}{{println $$k}}{{end}}' | grep -qF $(1) && break; \
   done \
 )
 
