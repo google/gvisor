@@ -33,6 +33,15 @@ func RNGFrom(r io.Reader) RNG {
 	return RNG{Reader: r}
 }
 
+// Uint16 is analogous to the standard library's math/rand.Uint16.
+func (rg *RNG) Uint16() uint16 {
+	var data [2]byte
+	if _, err := rg.Reader.Read(data[:]); err != nil {
+		panic(fmt.Sprintf("Read() failed: %v", err))
+	}
+	return binary.NativeEndian.Uint16(data[:])
+}
+
 // Uint32 is analogous to the standard library's math/rand.Uint32.
 func (rg *RNG) Uint32() uint32 {
 	var data [4]byte
