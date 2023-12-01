@@ -437,26 +437,15 @@ func (e *endpoint) NetworkProtocolNumber() tcpip.NetworkProtocolNumber {
 	return e.protocol.Number()
 }
 
-func (e *endpoint) generateID(srcAddr, dstAddr tcpip.Address, params stack.NetworkHeaderParams) uint32 {
-	// Get the time difference between the last time 'ids' was accessed and
-	// now. Update 'idTS' to the current time.
-	now := e.protocol.stack.Clock().NowMonotonic().Milliseconds()
-	oldTS := e.protocol.idTS.Load()
-	diff := now - oldTS
+// getID returns a random uint16 number (other than zero) to be used as ID in
+// the IPv4 header.
+func (e *endpoint) getID() uint16 {
 	rng := e.protocol.stack.SecureRNG()
-	e.protocol.idTS.Store(now)
-
-	var counter uint32
-	if diff < 1 {
-		counter = rng.Uint32()
-	} else {
-		// Increment ID with a random number in the range [0, diff).
-		counter = uint32(rng.Int63n(diff))
+	id := rng.Uint16()
+	for id == 0 {
+		id = rng.Uint16()
 	}
-
-	// Calculate the hash value.
-	hash := hashRoute(srcAddr, dstAddr, params.Protocol, e.protocol.hashIV) % buckets
-	return e.protocol.ids[hash].Add(counter)
+	return id
 }
 
 func (e *endpoint) addIPHeader(srcAddr, dstAddr tcpip.Address, pkt stack.PacketBufferPtr, params stack.NetworkHeaderParams, options header.IPv4OptionsSerializer) tcpip.Error {
@@ -477,10 +466,9 @@ func (e *endpoint) addIPHeader(srcAddr, dstAddr tcpip.Address, pkt stack.PacketB
 	// RFC 6864 section 4.3 mandates uniqueness of ID values for non-atomic
 	// datagrams. Since the DF bit is never being set here, all datagrams
 	// are non-atomic and need an ID.
-	id := e.generateID(srcAddr, dstAddr, params)
 	ipH.Encode(&header.IPv4Fields{
 		TotalLength: uint16(length),
-		ID:          uint16(id),
+		ID:          e.getID(),
 		TTL:         params.TTL,
 		TOS:         params.TOS,
 		Protocol:    uint8(params.Protocol),
@@ -650,7 +638,7 @@ func (e *endpoint) WriteHeaderIncludedPacket(r *stack.Route, pkt stack.PacketBuf
 		// non-atomic datagrams, so assign an ID to all such datagrams
 		// according to the definition given in RFC 6864 section 4.
 		if ipH.Flags()&header.IPv4FlagDontFragment == 0 || ipH.Flags()&header.IPv4FlagMoreFragments != 0 || ipH.FragmentOffset() > 0 {
-			ipH.SetID(uint16(e.generateID(r.LocalAddress(), r.RemoteAddress(), stack.NetworkHeaderParams{})))
+			ipH.SetID(e.getID())
 		}
 	}
 
