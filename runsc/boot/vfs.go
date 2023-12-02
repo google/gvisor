@@ -71,6 +71,11 @@ const (
 // SelfFilestorePrefix is the prefix of the self filestore file name.
 const SelfFilestorePrefix = ".gvisor.filestore."
 
+const (
+	pciPathGlobTPUv4 = "/sys/devices/pci0000:00/*/accel/accel*"
+	pciPathGlobTPUv5 = "/sys/devices/pci0000:00/*/vfio-dev/vfio*"
+)
+
 // SelfFilestorePath returns the path at which the self filestore file is
 // stored for a given mount.
 func SelfFilestorePath(mountSrc, sandboxID string) string {
@@ -1250,37 +1255,46 @@ func registerTPUDevice(vfsObj *vfs.VirtualFilesystem, minor uint32, deviceID int
 	}
 }
 
+// pathGlobToPathRegex is a map that points a TPU PCI path glob to its path regex.
+// TPU v4 devices are accessible via /sys/devices/pci0000:00/<pci_address>/accel/accel# on the host.
+// TPU v5 devices are accessible via at /sys/devices/pci0000:00/<pci_address>/vfio-dev/vfio# on the host.
+var pathGlobToPathRegex = map[string]string{
+	pciPathGlobTPUv4: `^/sys/devices/pci0000:00/\d+:\d+:\d+\.\d+/accel/accel(\d+)$`,
+	pciPathGlobTPUv5: `^/sys/devices/pci0000:00/\d+:\d+:\d+\.\d+/vfio-dev/vfio(\d+)$`,
+}
+
 func tpuProxyRegisterDevices(info *containerInfo, vfsObj *vfs.VirtualFilesystem) error {
 	if !specutils.TPUProxyIsEnabled(info.spec, info.conf) {
 		return nil
 	}
-	// At this point /sys/devices/pci0000:00/<pci_address>/accel/accel# contains
-	// all the TPU devices on the host. Enumerate them and register TPU devices.
-	pciAddrs, err := filepath.Glob("/sys/devices/pci0000:00/*/accel/accel*")
-	if err != nil {
-		return fmt.Errorf("enumerating PCI device files: %w", err)
-	}
-	pciPathRegex := regexp.MustCompile(`^/sys/devices/pci0000:00/\d+:\d+:\d+\.\d+/accel/accel(\d+)$`)
-	for _, pciPath := range pciAddrs {
-		ms := pciPathRegex.FindStringSubmatch(pciPath)
-		if ms == nil {
-			continue
-		}
-		deviceNum, err := strconv.ParseUint(ms[1], 10, 32)
+	// Enumerate all potential PCI paths where TPU devices are available and register the found TPU devices.
+	for pciPathGlobal, pathRegex := range pathGlobToPathRegex {
+		pciAddrs, err := filepath.Glob(pciPathGlobal)
 		if err != nil {
-			return fmt.Errorf("parsing PCI device number: %w", err)
+			return fmt.Errorf("enumerating PCI device files: %w", err)
 		}
-		var deviceIDBytes []byte
-		if deviceIDBytes, err = os.ReadFile(path.Join(pciPath, "device/device")); err != nil {
-			return fmt.Errorf("reading PCI device ID: %w", err)
-		}
-		deviceIDStr := strings.Replace(string(deviceIDBytes), "0x", "", -1)
-		deviceID, err := strconv.ParseInt(strings.TrimSpace(deviceIDStr), 16, 64)
-		if err != nil {
-			return fmt.Errorf("parsing PCI device ID: %w", err)
-		}
-		if err := registerTPUDevice(vfsObj, uint32(deviceNum), deviceID); err != nil {
-			return fmt.Errorf("registering accel driver: %w", err)
+		pciPathRegex := regexp.MustCompile(pathRegex)
+		for _, pciPath := range pciAddrs {
+			ms := pciPathRegex.FindStringSubmatch(pciPath)
+			if ms == nil {
+				continue
+			}
+			deviceNum, err := strconv.ParseUint(ms[1], 10, 32)
+			if err != nil {
+				return fmt.Errorf("parsing PCI device number: %w", err)
+			}
+			var deviceIDBytes []byte
+			if deviceIDBytes, err = os.ReadFile(path.Join(pciPath, "device/device")); err != nil {
+				return fmt.Errorf("reading PCI device ID: %w", err)
+			}
+			deviceIDStr := strings.Replace(string(deviceIDBytes), "0x", "", -1)
+			deviceID, err := strconv.ParseInt(strings.TrimSpace(deviceIDStr), 16, 64)
+			if err != nil {
+				return fmt.Errorf("parsing PCI device ID: %w", err)
+			}
+			if err := registerTPUDevice(vfsObj, uint32(deviceNum), deviceID); err != nil {
+				return fmt.Errorf("registering TPU driver: %w", err)
+			}
 		}
 	}
 	return nil
