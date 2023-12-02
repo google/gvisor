@@ -15,6 +15,9 @@
 package boot
 
 import (
+	"path/filepath"
+	"regexp"
+	"slices"
 	"testing"
 
 	specs "github.com/opencontainers/runtime-spec/specs-go"
@@ -92,6 +95,50 @@ func TestGetMountAccessType(t *testing.T) {
 			conf := &config.Config{FileAccessMounts: config.FileAccessShared}
 			if got := getMountAccessType(conf, podHints.FindMount(source)); got != tst.want {
 				t.Errorf("getMountAccessType(), got: %v, want: %v", got, tst.want)
+			}
+		})
+	}
+}
+
+func TestTPUPath(t *testing.T) {
+	for _, tst := range []struct {
+		name     string
+		pathGlob string
+		path     string
+		submatch []string
+	}{
+		{
+			name:     "TPUv4PCIPathMatch",
+			pathGlob: pciPathGlobTPUv4,
+			path:     "/sys/devices/pci0000:00/0000:00:01.0/accel/accel16",
+			submatch: []string{"/sys/devices/pci0000:00/0000:00:01.0/accel/accel16", "16"},
+		},
+		{
+			name:     "TPUv4PCIPathNoMatch",
+			pathGlob: pciPathGlobTPUv4,
+			path:     "/sys/devices/pci0000:00/0000:00:01.0/accel/123",
+			submatch: nil,
+		},
+		{
+			name:     "TPUv5PCIPathMatch",
+			pathGlob: pciPathGlobTPUv5,
+			path:     "/sys/devices/pci0000:00/0000:00:05.0/vfio-dev/vfio20",
+			submatch: []string{"/sys/devices/pci0000:00/0000:00:05.0/vfio-dev/vfio20", "20"},
+		},
+		{
+			name:     "TPUv5PCIPathNoMatch",
+			pathGlob: pciPathGlobTPUv5,
+			path:     "/sys/devices/pci0000:00/0000:00:05.0/vfio/vfio20",
+			submatch: nil,
+		},
+	} {
+		t.Run(tst.name, func(t *testing.T) {
+			if _, err := filepath.Glob(tst.pathGlob); err != nil {
+				t.Errorf("Malformed path glob: %v", err)
+			}
+			pathRegex := regexp.MustCompile(pathGlobToPathRegex[tst.pathGlob])
+			if submatch := pathRegex.FindStringSubmatch(tst.path); !slices.Equal(submatch, tst.submatch) {
+				t.Errorf("Match TPU PCI path, got: %v, want: %v", submatch, tst.submatch)
 			}
 		})
 	}
