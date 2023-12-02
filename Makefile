@@ -273,17 +273,17 @@ arm-qemu-smoke-test: $(RUNTIME_BIN) load-arm-qemu
 simple-tests: unit-tests # Compatibility target.
 .PHONY: simple-tests
 
-gpu-tests: load-basic_cuda-vector-add load-gpu_cuda-tests $(RUNTIME_BIN)
-	@$(call test,--test_env=RUNTIME=runc //test/gpu:gpu_test)
-	@$(call install_runtime,$(RUNTIME),--platform=systrap --nvproxy=true --nvproxy-docker=true)
-	@$(call sudo,test/gpu:gpu_test,--runtime=$(RUNTIME) -test.v $(ARGS))
-.PHONY: gpu-tests
+gpu-smoke-tests: load-basic_cuda-vector-add load-gpu_cuda-tests $(RUNTIME_BIN)
+	@$(call test,--test_env=RUNTIME=runc //test/gpu:gpu_smoke_test)
+	@$(call install_runtime,$(RUNTIME),--nvproxy=true --nvproxy-docker=true)
+	@$(call sudo,test/gpu:gpu_smoke_test,--runtime=$(RUNTIME) -test.v $(ARGS))
+.PHONY: gpu-smoke-tests
 
-cos-gpu-tests: load-basic_cuda-vector-add load-gpu_cuda-tests $(RUNTIME_BIN)
-	@$(call sudo,test/gpu:gpu_test,--runtime=runc -test.v --cos-gpu $(ARGS))
-	@$(call install_runtime,$(RUNTIME),--platform=systrap --nvproxy=true)
-	@$(call sudo,test/gpu:gpu_test,--runtime=$(RUNTIME) -test.v --cos-gpu $(ARGS))
-.PHONY: cos-gpu-tests
+cos-gpu-smoke-tests: load-basic_cuda-vector-add load-gpu_cuda-tests $(RUNTIME_BIN)
+	@$(call sudo,test/gpu:gpu_smoke_test,--runtime=runc -test.v --cos-gpu $(ARGS))
+	@$(call install_runtime,$(RUNTIME),--nvproxy=true)
+	@$(call sudo,test/gpu:gpu_smoke_test,--runtime=$(RUNTIME) -test.v --cos-gpu $(ARGS))
+.PHONY: cos-gpu-smoke-tests
 
 portforward-tests: load-basic_redis load-basic_nginx $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),--network=sandbox)
