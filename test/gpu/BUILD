@@ -6,8 +6,8 @@ package(
 )
 
 go_test(
-    name = "gpu_test",
-    srcs = ["gpu_test.go"],
+    name = "gpu_smoke_test",
+    srcs = ["gpu_smoke_test.go"],
     tags = [
         "local",
         "noguitar",
