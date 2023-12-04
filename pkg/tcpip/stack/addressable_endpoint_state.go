@@ -434,7 +434,7 @@ func (a *AddressableEndpointState) MainAddress() tcpip.AddressWithPrefix {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
-	ep := a.acquirePrimaryAddressRLocked(tcpip.Address{}, func(ep *addressState) bool {
+	ep := a.acquirePrimaryAddressRLocked(tcpip.Address{}, tcpip.Address{} /* srcHint */, func(ep *addressState) bool {
 		switch kind := ep.GetKind(); kind {
 		case Permanent:
 			return a.networkEndpoint.Enabled() || !a.options.HiddenWhileDisabled
@@ -462,7 +462,7 @@ func (a *AddressableEndpointState) MainAddress() tcpip.AddressWithPrefix {
 // valid according to isValid.
 //
 // +checklocksread:a.mu
-func (a *AddressableEndpointState) acquirePrimaryAddressRLocked(remoteAddr tcpip.Address, isValid func(*addressState) bool) *addressState {
+func (a *AddressableEndpointState) acquirePrimaryAddressRLocked(remoteAddr, srcHint tcpip.Address, isValid func(*addressState) bool) *addressState {
 	// TODO: Move this out into IPv4-specific code.
 	// IPv6 handles source IP selection elsewhere. We have to do source
 	// selection only for IPv4, in which case ep is never deprecated. Thus
@@ -473,6 +473,11 @@ func (a *AddressableEndpointState) acquirePrimaryAddressRLocked(remoteAddr tcpip
 		for _, state := range a.primary {
 			if !isValid(state) {
 				continue
+			}
+			// Source hint takes precedent over prefix matching.
+			if state.addr.Address == srcHint && srcHint != (tcpip.Address{}) {
+				best = state
+				break
 			}
 			stateLen := state.addr.Address.MatchingPrefix(remoteAddr)
 			if best == nil || bestLen < stateLen {
@@ -618,11 +623,11 @@ func (a *AddressableEndpointState) AcquireAssignedAddress(localAddr tcpip.Addres
 }
 
 // AcquireOutgoingPrimaryAddress implements AddressableEndpoint.
-func (a *AddressableEndpointState) AcquireOutgoingPrimaryAddress(remoteAddr tcpip.Address, allowExpired bool) AddressEndpoint {
+func (a *AddressableEndpointState) AcquireOutgoingPrimaryAddress(remoteAddr tcpip.Address, srcHint tcpip.Address, allowExpired bool) AddressEndpoint {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	ep := a.acquirePrimaryAddressRLocked(remoteAddr, func(ep *addressState) bool {
+	ep := a.acquirePrimaryAddressRLocked(remoteAddr, srcHint, func(ep *addressState) bool {
 		return ep.IsAssigned(allowExpired)
 	})
 

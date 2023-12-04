@@ -521,7 +521,7 @@ func (igmp *igmpState) writePacketInner(buf *buffer.View, reportStat tcpip.Multi
 	})
 	defer pkt.DecRef()
 
-	addressEndpoint := igmp.ep.acquireOutgoingPrimaryAddressRLocked(destAddress, false /* allowExpired */)
+	addressEndpoint := igmp.ep.acquireOutgoingPrimaryAddressRLocked(destAddress, tcpip.Address{} /* srcHint */, false /* allowExpired */)
 	if addressEndpoint == nil {
 		return false, nil
 	}

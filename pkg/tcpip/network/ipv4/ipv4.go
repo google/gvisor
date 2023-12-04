@@ -1423,18 +1423,18 @@ func (e *endpoint) AcquireAssignedAddress(localAddr tcpip.Address, allowTemp boo
 }
 
 // AcquireOutgoingPrimaryAddress implements stack.AddressableEndpoint.
-func (e *endpoint) AcquireOutgoingPrimaryAddress(remoteAddr tcpip.Address, allowExpired bool) stack.AddressEndpoint {
+func (e *endpoint) AcquireOutgoingPrimaryAddress(remoteAddr, srcHint tcpip.Address, allowExpired bool) stack.AddressEndpoint {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	return e.acquireOutgoingPrimaryAddressRLocked(remoteAddr, allowExpired)
+	return e.acquireOutgoingPrimaryAddressRLocked(remoteAddr, srcHint, allowExpired)
 }
 
 // acquireOutgoingPrimaryAddressRLocked is like AcquireOutgoingPrimaryAddress
 // but with locking requirements
 //
 // +checklocksread:e.mu
-func (e *endpoint) acquireOutgoingPrimaryAddressRLocked(remoteAddr tcpip.Address, allowExpired bool) stack.AddressEndpoint {
-	return e.addressableEndpointState.AcquireOutgoingPrimaryAddress(remoteAddr, allowExpired)
+func (e *endpoint) acquireOutgoingPrimaryAddressRLocked(remoteAddr, srcHint tcpip.Address, allowExpired bool) stack.AddressEndpoint {
+	return e.addressableEndpointState.AcquireOutgoingPrimaryAddress(remoteAddr, srcHint, allowExpired)
 }
 
 // PrimaryAddresses implements stack.AddressableEndpoint.

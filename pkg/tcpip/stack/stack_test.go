@@ -3582,7 +3582,7 @@ func TestIPv6SourceAddressSelectionScopeAndSameAddress(t *testing.T) {
 				t.Fatal("network endpoint is not addressable")
 			}
 
-			addressEP := addressableEndpoint.AcquireOutgoingPrimaryAddress(test.remoteAddr, false /* allowExpired */)
+			addressEP := addressableEndpoint.AcquireOutgoingPrimaryAddress(test.remoteAddr, tcpip.Address{} /* srcHint */, false /* allowExpired */)
 			if addressEP == nil {
 				t.Fatal("expected a non-nil address endpoint")
 			}
@@ -5565,6 +5565,7 @@ func TestFindRoute(t *testing.T) {
 		gateway string
 		subnet  string
 		nic     tcpip.NICID
+		srcHint string
 	}
 	type query struct {
 		name        string
@@ -5681,6 +5682,38 @@ func TestFindRoute(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "one NIC, multiple addresses, no gateways",
+			nics: []nic{{id: 1, addresses: []string{"169.254.169.1", "169.254.9.1"}}},
+			routes: []route{
+				{subnet: "10.0.0.0/8", nic: 1},
+			},
+			queries: []query{
+				{
+					name:        "match first",
+					remote:      "10.132.0.4",
+					wantID:      1,
+					wantLocal:   "169.254.169.1",
+					wantNextHop: "", // No gateway, so no next hop.
+				},
+			},
+		},
+		{
+			name: "one NIC, multiple addresses, source hints, no gateways",
+			nics: []nic{{id: 1, addresses: []string{"169.254.169.1", "169.254.9.1", "10.132.1.1"}}},
+			routes: []route{
+				{subnet: "10.0.0.0/8", nic: 1, srcHint: "169.254.9.1"},
+			},
+			queries: []query{
+				{
+					name:        "match hint",
+					remote:      "10.132.0.4",
+					wantID:      1,
+					wantLocal:   "169.254.9.1",
+					wantNextHop: "", // No gateway, so no next hop.
+				},
+			},
+		},
 	}
 
 	for _, stackConfig := range stacks {
@@ -5713,11 +5746,17 @@ func TestFindRoute(t *testing.T) {
 			// Setup the route table.
 			var routeTable []tcpip.Route
 			for _, route := range stackConfig.routes {
-				routeTable = append(routeTable, tcpip.Route{
+				rt := tcpip.Route{
 					Destination: testutil.MustParseSubnet4(route.subnet),
-					Gateway:     testutil.MustParse4(route.gateway),
 					NIC:         route.nic,
-				})
+				}
+				if len(route.gateway) > 0 {
+					rt.Gateway = testutil.MustParse4(route.gateway)
+				}
+				if len(route.srcHint) > 0 {
+					rt.SourceHint = testutil.MustParse4(route.srcHint)
+				}
+				routeTable = append(routeTable, rt)
 			}
 			stk.SetRouteTable(routeTable)
 
@@ -5742,7 +5781,11 @@ func TestFindRoute(t *testing.T) {
 					if got, want := route.LocalAddress(), testutil.MustParse4(query.wantLocal); got != want {
 						t.Errorf("got local address %s, but wanted %s", got, want)
 					}
-					if got, want := route.NextHop(), testutil.MustParse4(query.wantNextHop); got != want {
+					var nextHop tcpip.Address
+					if len(query.wantNextHop) > 0 {
+						nextHop = testutil.MustParse4(query.wantNextHop)
+					}
+					if got, want := route.NextHop(), nextHop; got != want {
 						t.Errorf("got next hop %s, but wanted %s", got, want)
 					}
 				})

@@ -1168,9 +1168,9 @@ func (s *Stack) GetMainNICAddress(id tcpip.NICID, protocol tcpip.NetworkProtocol
 	return nic.PrimaryAddress(protocol)
 }
 
-func (s *Stack) getAddressEP(nic *nic, localAddr, remoteAddr tcpip.Address, netProto tcpip.NetworkProtocolNumber) AssignableAddressEndpoint {
+func (s *Stack) getAddressEP(nic *nic, localAddr, remoteAddr, srcHint tcpip.Address, netProto tcpip.NetworkProtocolNumber) AssignableAddressEndpoint {
 	if localAddr.BitLen() == 0 {
-		return nic.primaryEndpoint(netProto, remoteAddr)
+		return nic.primaryEndpoint(netProto, remoteAddr, srcHint)
 	}
 	return nic.findEndpoint(netProto, localAddr, CanBePrimaryEndpoint)
 }
@@ -1188,7 +1188,7 @@ func (s *Stack) NewRouteForMulticast(nicID tcpip.NICID, remoteAddr tcpip.Address
 		return nil
 	}
 
-	if addressEndpoint := s.getAddressEP(nic, tcpip.Address{} /* localAddr */, remoteAddr, netProto); addressEndpoint != nil {
+	if addressEndpoint := s.getAddressEP(nic, tcpip.Address{} /* localAddr */, remoteAddr, tcpip.Address{} /* srcHint */, netProto); addressEndpoint != nil {
 		return constructAndValidateRoute(netProto, addressEndpoint, nic, nic, tcpip.Address{} /* gateway */, tcpip.Address{} /* localAddr */, remoteAddr, s.handleLocal, false /* multicastLoop */)
 	}
 	return nil
@@ -1300,9 +1300,9 @@ func isNICForwarding(nic *nic, proto tcpip.NetworkProtocolNumber) bool {
 // endpoint.
 //
 // +checklocksread:s.mu
-func (s *Stack) findRouteWithLocalAddrFromAnyInterfaceRLocked(outgoingNIC *nic, localAddr, remoteAddr, gateway tcpip.Address, netProto tcpip.NetworkProtocolNumber, multicastLoop bool) *Route {
+func (s *Stack) findRouteWithLocalAddrFromAnyInterfaceRLocked(outgoingNIC *nic, localAddr, remoteAddr, srcHint, gateway tcpip.Address, netProto tcpip.NetworkProtocolNumber, multicastLoop bool) *Route {
 	for _, aNIC := range s.nics {
-		addressEndpoint := s.getAddressEP(aNIC, localAddr, remoteAddr, netProto)
+		addressEndpoint := s.getAddressEP(aNIC, localAddr, remoteAddr, srcHint, netProto)
 		if addressEndpoint == nil {
 			continue
 		}
@@ -1350,7 +1350,7 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 	// through the interface if the interface is valid and enabled.
 	if id != 0 && !needRoute {
 		if nic, ok := s.nics[id]; ok && nic.Enabled() {
-			if addressEndpoint := s.getAddressEP(nic, localAddr, remoteAddr, netProto); addressEndpoint != nil {
+			if addressEndpoint := s.getAddressEP(nic, localAddr, remoteAddr, tcpip.Address{} /* srcHint */, netProto); addressEndpoint != nil {
 				return makeRoute(
 					netProto,
 					tcpip.Address{}, /* gateway */
@@ -1390,7 +1390,7 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 			}
 
 			if id == 0 || id == route.NIC {
-				if addressEndpoint := s.getAddressEP(nic, localAddr, remoteAddr, netProto); addressEndpoint != nil {
+				if addressEndpoint := s.getAddressEP(nic, localAddr, remoteAddr, route.SourceHint, netProto); addressEndpoint != nil {
 					var gateway tcpip.Address
 					if needRoute {
 						gateway = route.Gateway
@@ -1421,7 +1421,7 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 					chosenRoute = route
 					continue
 				}
-				if r := s.findRouteWithLocalAddrFromAnyInterfaceRLocked(nic, localAddr, remoteAddr, route.Gateway, netProto, multicastLoop); r != nil {
+				if r := s.findRouteWithLocalAddrFromAnyInterfaceRLocked(nic, localAddr, remoteAddr, route.SourceHint, route.Gateway, netProto, multicastLoop); r != nil {
 					return r
 				}
 			}
@@ -1449,7 +1449,7 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 		// Use the specified NIC to get the local address endpoint.
 		if id != 0 {
 			if aNIC, ok := s.nics[id]; ok {
-				if addressEndpoint := s.getAddressEP(aNIC, localAddr, remoteAddr, netProto); addressEndpoint != nil {
+				if addressEndpoint := s.getAddressEP(aNIC, localAddr, remoteAddr, chosenRoute.SourceHint, netProto); addressEndpoint != nil {
 					if r := constructAndValidateRoute(netProto, addressEndpoint, aNIC /* localAddressNIC */, nic /* outgoingNIC */, gateway, localAddr, remoteAddr, s.handleLocal, multicastLoop); r != nil {
 						return r, nil
 					}
@@ -1463,7 +1463,7 @@ func (s *Stack) FindRoute(id tcpip.NICID, localAddr, remoteAddr tcpip.Address, n
 		if id == 0 {
 			// If an interface is not specified, try to find a NIC that holds the local
 			// address endpoint to construct a route.
-			if r := s.findRouteWithLocalAddrFromAnyInterfaceRLocked(nic, localAddr, remoteAddr, gateway, netProto, multicastLoop); r != nil {
+			if r := s.findRouteWithLocalAddrFromAnyInterfaceRLocked(nic, localAddr, remoteAddr, chosenRoute.SourceHint, gateway, netProto, multicastLoop); r != nil {
 				return r, nil
 			}
 		}
