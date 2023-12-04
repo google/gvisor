@@ -12,18 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !goexperiment.exectracer2
+//go:build goexperiment.exectracer2
 
 package sync
 
-// TraceBlockReason constants, from Go's src/runtime/trace.go.
+// TraceBlockReason constants, from Go's src/runtime/trace2runtime.go.
 const (
-	TraceBlockSelect TraceBlockReason = traceEvGoBlockSelect // +checkconst runtime traceBlockSelect
-	TraceBlockSync                    = traceEvGoBlockSync   // +checkconst runtime traceBlockSync
-)
-
-// Tracer event types, from Go's src/runtime/trace.go.
-const (
-	traceEvGoBlockSelect = 24 // +checkconst runtime traceEvGoBlockSelect
-	traceEvGoBlockSync   = 25 // +checkconst runtime traceEvGoBlockSync
+	TraceBlockSelect TraceBlockReason = 3 // +checkconst runtime traceBlockSelect
+	TraceBlockSync                    = 5 // +checkconst runtime traceBlockSync
 )
