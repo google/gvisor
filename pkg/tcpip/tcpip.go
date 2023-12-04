@@ -1499,6 +1499,10 @@ type Route struct {
 
 	// NIC is the id of the nic to be used if this row is viable.
 	NIC NICID
+
+	// SourceHint indicates a preferred source address to use when NICs
+	// have multiple addresses.
+	SourceHint Address
 }
 
 // String implements the fmt.Stringer interface.

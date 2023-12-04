@@ -380,7 +380,7 @@ func (mt *MasqueradeTarget) Action(pkt PacketBufferPtr, hook Hook, r *Route, add
 	}
 
 	// addressEP is expected to be set for the postrouting hook.
-	ep := addressEP.AcquireOutgoingPrimaryAddress(pkt.Network().DestinationAddress(), false /* allowExpired */)
+	ep := addressEP.AcquireOutgoingPrimaryAddress(pkt.Network().DestinationAddress(), tcpip.Address{} /* srcHint */, false /* allowExpired */)
 	if ep == nil {
 		// No address exists that we can use as a source address.
 		return RuleDrop, 0
