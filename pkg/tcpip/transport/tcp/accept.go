@@ -544,39 +544,6 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 		iss := s.ackNumber - 1
 		irs := s.sequenceNumber - 1
 
-		// Since SYN cookies are in use this is potentially an ACK to a
-		// SYN-ACK we sent but don't have a half open connection state
-		// as cookies are being used to protect against a potential SYN
-		// flood. In such cases validate the cookie and if valid create
-		// a fully connected endpoint and deliver to the accept queue.
-		//
-		// If not, silently drop the ACK to avoid leaking information
-		// when under a potential syn flood attack.
-		//
-		// Validate the cookie.
-		data, ok := ctx.isCookieValid(s.id, iss, irs)
-		if !ok || int(data) >= len(mssTable) {
-			e.stack.Stats().TCP.ListenOverflowInvalidSynCookieRcvd.Increment()
-			e.stack.Stats().DroppedPackets.Increment()
-
-			// When not using SYN cookies, as per RFC 793, section 3.9, page 64:
-			// Any acknowledgment is bad if it arrives on a connection still in
-			// the LISTEN state.  An acceptable reset segment should be formed
-			// for any arriving ACK-bearing segment.  The RST should be
-			// formatted as follows:
-			//
-			//  <SEQ=SEG.ACK><CTL=RST>
-			//
-			// Send a reset as this is an ACK for which there is no
-			// half open connections and we are not using cookies
-			// yet.
-			//
-			// The only time we should reach here when a connection
-			// was opened and closed really quickly and a delayed
-			// ACK was received from the sender.
-			return replyWithReset(e.stack, s, e.sendTOS, e.ipv4TTL, e.ipv6HopLimit)
-		}
-
 		// As an edge case when SYN-COOKIES are in use and we receive a
 		// segment that has data and is valid we should check if it
 		// already matches a created endpoint and redirect the segment
@@ -608,6 +575,39 @@ func (e *endpoint) handleListenSegment(ctx *listenContext, s *segment) tcpip.Err
 				tcpEP.notifyProcessor()
 				return nil
 			}
+		}
+
+		// Since SYN cookies are in use this is potentially an ACK to a
+		// SYN-ACK we sent but don't have a half open connection state
+		// as cookies are being used to protect against a potential SYN
+		// flood. In such cases validate the cookie and if valid create
+		// a fully connected endpoint and deliver to the accept queue.
+		//
+		// If not, silently drop the ACK to avoid leaking information
+		// when under a potential syn flood attack.
+		//
+		// Validate the cookie.
+		data, ok := ctx.isCookieValid(s.id, iss, irs)
+		if !ok || int(data) >= len(mssTable) {
+			e.stack.Stats().TCP.ListenOverflowInvalidSynCookieRcvd.Increment()
+			e.stack.Stats().DroppedPackets.Increment()
+
+			// When not using SYN cookies, as per RFC 793, section 3.9, page 64:
+			// Any acknowledgment is bad if it arrives on a connection still in
+			// the LISTEN state.  An acceptable reset segment should be formed
+			// for any arriving ACK-bearing segment.  The RST should be
+			// formatted as follows:
+			//
+			//  <SEQ=SEG.ACK><CTL=RST>
+			//
+			// Send a reset as this is an ACK for which there is no
+			// half open connections and we are not using cookies
+			// yet.
+			//
+			// The only time we should reach here when a connection
+			// was opened and closed really quickly and a delayed
+			// ACK was received from the sender.
+			return replyWithReset(e.stack, s, e.sendTOS, e.ipv4TTL, e.ipv6HopLimit)
 		}
 
 		// Keep hold of acceptMu until the new endpoint is in the accept queue (or
