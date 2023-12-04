@@ -681,7 +681,7 @@ type AddressableEndpoint interface {
 	// The returned endpoint's reference count is incremented.
 	//
 	// Returns nil if a primary address is not available.
-	AcquireOutgoingPrimaryAddress(remoteAddr tcpip.Address, allowExpired bool) AddressEndpoint
+	AcquireOutgoingPrimaryAddress(remoteAddr, srcHint tcpip.Address, allowExpired bool) AddressEndpoint
 
 	// PrimaryAddresses returns the primary addresses.
 	PrimaryAddresses() []tcpip.AddressWithPrefix

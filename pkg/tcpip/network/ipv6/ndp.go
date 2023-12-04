@@ -1837,7 +1837,7 @@ func (ndp *ndpState) startSolicitingRouters() {
 			//       the unspecified address if no address is assigned
 			//       to the sending interface.
 			localAddr := header.IPv6Any
-			if addressEndpoint := ndp.ep.AcquireOutgoingPrimaryAddress(header.IPv6AllRoutersLinkLocalMulticastAddress, false); addressEndpoint != nil {
+			if addressEndpoint := ndp.ep.AcquireOutgoingPrimaryAddress(header.IPv6AllRoutersLinkLocalMulticastAddress, tcpip.Address{} /* srcHint */, false); addressEndpoint != nil {
 				localAddr = addressEndpoint.AddressWithPrefix().Address
 				addressEndpoint.DecRef()
 			}

@@ -914,7 +914,7 @@ func (e *endpoint) LinkAddressRequest(targetAddr, localAddr tcpip.Address, remot
 
 	if localAddr.BitLen() == 0 {
 		// Find an address that we can use as our source address.
-		addressEndpoint := e.AcquireOutgoingPrimaryAddress(remoteAddr, false /* allowExpired */)
+		addressEndpoint := e.AcquireOutgoingPrimaryAddress(remoteAddr, tcpip.Address{} /* srcHint */, false /* allowExpired */)
 		if addressEndpoint == nil {
 			return &tcpip.ErrNetworkUnreachable{}
 		}

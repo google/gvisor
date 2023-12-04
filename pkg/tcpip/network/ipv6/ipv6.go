@@ -2051,10 +2051,10 @@ func (e *endpoint) acquireAddressOrCreateTempLocked(localAddr tcpip.Address, all
 }
 
 // AcquireOutgoingPrimaryAddress implements stack.AddressableEndpoint.
-func (e *endpoint) AcquireOutgoingPrimaryAddress(remoteAddr tcpip.Address, allowExpired bool) stack.AddressEndpoint {
+func (e *endpoint) AcquireOutgoingPrimaryAddress(remoteAddr, srcHint tcpip.Address, allowExpired bool) stack.AddressEndpoint {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	return e.acquireOutgoingPrimaryAddressRLocked(remoteAddr, allowExpired)
+	return e.acquireOutgoingPrimaryAddressRLocked(remoteAddr, srcHint, allowExpired)
 }
 
 // getLinkLocalAddressRLocked returns a link-local address from the primary list
@@ -2081,7 +2081,9 @@ func (e *endpoint) getLinkLocalAddressRLocked() tcpip.Address {
 // but with locking requirements.
 //
 // Precondition: e.mu must be read locked.
-func (e *endpoint) acquireOutgoingPrimaryAddressRLocked(remoteAddr tcpip.Address, allowExpired bool) stack.AddressEndpoint {
+func (e *endpoint) acquireOutgoingPrimaryAddressRLocked(remoteAddr, srcHint tcpip.Address, allowExpired bool) stack.AddressEndpoint {
+	// TODO(b/309216156): Support IPv6 hints.
+
 	// addrCandidate is a candidate for Source Address Selection, as per
 	// RFC 6724 section 5.
 	type addrCandidate struct {
@@ -2094,7 +2096,7 @@ func (e *endpoint) acquireOutgoingPrimaryAddressRLocked(remoteAddr tcpip.Address
 	}
 
 	if remoteAddr.BitLen() == 0 {
-		return e.mu.addressableEndpointState.AcquireOutgoingPrimaryAddress(remoteAddr, allowExpired)
+		return e.mu.addressableEndpointState.AcquireOutgoingPrimaryAddress(remoteAddr, srcHint, allowExpired)
 	}
 
 	// Create a candidate set of available addresses we can potentially use as a
