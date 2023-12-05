@@ -390,7 +390,9 @@ func (g *GenericMulticastProtocolState) MakeAllNonMemberLocked() {
 	switch g.mode {
 	case protocolModeV2:
 		v2ReportBuilder = g.opts.Protocol.NewReportV2Builder()
-		handler = func(groupAddress tcpip.Address, _ *multicastGroupState) {
+		handler = func(groupAddress tcpip.Address, info *multicastGroupState) {
+			info.cancelDelayedReportJob()
+
 			// Send a report immediately to announce us leaving the group.
 			v2ReportBuilder.AddRecord(
 				MulticastGroupProtocolV2ReportRecordChangeToIncludeMode,
