@@ -12,6 +12,7 @@ go_library(
         "container.go",
         "dockerutil.go",
         "exec.go",
+        "gpu.go",
         "network.go",
         "profile.go",
     ],

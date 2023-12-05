@@ -14,9 +14,5 @@ go_test(
         "notap",
     ],
     visibility = ["//:sandbox"],
-    deps = [
-        "//pkg/test/dockerutil",
-        "@com_github_docker_docker//api/types/container:go_default_library",
-        "@com_github_docker_docker//api/types/mount:go_default_library",
-    ],
+    deps = ["//pkg/test/dockerutil"],
 )
