@@ -857,7 +857,7 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 		fsName = sys.Name
 
 	case sys.Name:
-		sysData := &sys.InternalData{EnableAccelSysfs: specutils.TPUProxyIsEnabled(spec, conf)}
+		sysData := &sys.InternalData{EnableTPUProxyPaths: specutils.TPUProxyIsEnabled(spec, conf)}
 		if len(productName) > 0 {
 			sysData.ProductName = productName
 		}

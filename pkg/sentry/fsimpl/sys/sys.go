@@ -53,9 +53,9 @@ type FilesystemType struct{}
 type InternalData struct {
 	// ProductName is the value to be set to devices/virtual/dmi/id/product_name.
 	ProductName string
-	// EnableAccelSysfs is whether to populate sysfs paths used by hardware
+	// EnableTPUProxyPaths is whether to populate sysfs paths used by hardware
 	// accelerators.
-	EnableAccelSysfs bool
+	EnableTPUProxyPaths bool
 }
 
 // filesystem implements vfs.FilesystemImpl.
@@ -126,19 +126,21 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	if opts.InternalData != nil {
 		idata := opts.InternalData.(*InternalData)
 		productName = idata.ProductName
-		if idata.EnableAccelSysfs {
+		if idata.EnableTPUProxyPaths {
 			pciMainBusSub, err := fs.mirrorPCIBusDeviceDir(ctx, creds, pciMainBusDevicePath)
 			if err != nil {
 				return nil, nil, err
 			}
 			devicesSub["pci0000:00"] = fs.newDir(ctx, creds, defaultSysDirMode, pciMainBusSub)
 
-			accelSub, err := fs.newAccelDir(ctx, creds)
+			deviceDirs, err := fs.newDeviceClassDir(ctx, creds, []string{accelDevice, vfioDevice})
 			if err != nil {
 				return nil, nil, err
 			}
-			classSub["accel"] = fs.newDir(ctx, creds, defaultSysDirMode, accelSub)
 
+			for tpuDeviceType, symlinkDir := range deviceDirs {
+				classSub[tpuDeviceType] = fs.newDir(ctx, creds, defaultSysDirMode, symlinkDir)
+			}
 			pciDevicesSub, err := fs.newPCIDevicesDir(ctx, creds)
 			if err != nil {
 				return nil, nil, err
