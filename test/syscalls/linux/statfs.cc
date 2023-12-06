@@ -116,6 +116,10 @@ TEST(FstatfsTest, InternalDevShm) {
 // Tests that the number of blocks free in the filesystem, as reported by
 // statfs(2) updates appropriately when pages are allocated.
 TEST(FstatfsTest, BlocksFree) {
+  // This test relies on the test being the only user of the filesystem, which
+  // is not feasible outside of a sandbox.
+  SKIP_IF(!IsRunningOnGvisor());
+
   const std::string file_path = NewTempAbsPath();
   const std::string dir = std::string(Dirname(file_path));
   struct statfs st_before;
