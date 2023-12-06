@@ -19,5 +19,5 @@ package sync
 // TraceBlockReason constants, from Go's src/runtime/trace2runtime.go.
 const (
 	TraceBlockSelect TraceBlockReason = 3 // +checkconst runtime traceBlockSelect
-	TraceBlockSync                    = 5 // +checkconst runtime traceBlockSync
+	TraceBlockSync   TraceBlockReason = 5 // +checkconst runtime traceBlockSync
 )
