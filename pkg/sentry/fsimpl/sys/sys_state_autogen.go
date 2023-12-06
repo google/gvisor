@@ -172,7 +172,7 @@ func (i *InternalData) StateTypeName() string {
 func (i *InternalData) StateFields() []string {
 	return []string{
 		"ProductName",
-		"EnableAccelSysfs",
+		"EnableTPUProxyPaths",
 	}
 }
 
@@ -182,7 +182,7 @@ func (i *InternalData) beforeSave() {}
 func (i *InternalData) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 	stateSinkObject.Save(0, &i.ProductName)
-	stateSinkObject.Save(1, &i.EnableAccelSysfs)
+	stateSinkObject.Save(1, &i.EnableTPUProxyPaths)
 }
 
 func (i *InternalData) afterLoad() {}
@@ -190,7 +190,7 @@ func (i *InternalData) afterLoad() {}
 // +checklocksignore
 func (i *InternalData) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.ProductName)
-	stateSourceObject.Load(1, &i.EnableAccelSysfs)
+	stateSourceObject.Load(1, &i.EnableTPUProxyPaths)
 }
 
 func (fs *filesystem) StateTypeName() string {

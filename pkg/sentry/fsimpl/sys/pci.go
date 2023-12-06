@@ -15,6 +15,7 @@
 package sys
 
 import (
+	"errors"
 	"fmt"
 	"path"
 	regex "regexp"
@@ -27,7 +28,11 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 )
 
-const pciMainBusDevicePath = "/sys/devices/pci0000:00"
+const (
+	pciMainBusDevicePath = "/sys/devices/pci0000:00"
+	accelDevice          = "accel"
+	vfioDevice           = "vfio-dev"
+)
 
 var (
 	// Matches PCI device addresses in the main domain.
@@ -48,25 +53,37 @@ var (
 	}
 )
 
-// Create /sys/class/accel/accel# symlinks.
-func (fs *filesystem) newAccelDir(ctx context.Context, creds *auth.Credentials) (map[string]kernfs.Inode, error) {
-	accelDirs := map[string]kernfs.Inode{}
+// Creates TPU devices' symlinks under /sys/class/. TPU deivce type that are not present on host willl be ignored.
+// TPU v4 symlinks are created at /sys/class/accel/accel#.
+// TPU v5 symlinks go to /sys/class/vfio-dev/vfio#.
+func (fs *filesystem) newDeviceClassDir(ctx context.Context, creds *auth.Credentials, tpuDeviceTypes []string) (map[string]map[string]kernfs.Inode, error) {
+	dirs := map[string]map[string]kernfs.Inode{}
 	pciDents, err := hostDirEntries(pciMainBusDevicePath)
 	if err != nil {
 		return nil, err
 	}
 	for _, pciDent := range pciDents {
-		accelDents, err := hostDirEntries(path.Join(pciMainBusDevicePath, pciDent, "accel"))
-		if err != nil {
-			return nil, err
+		for _, tpuDeviceType := range tpuDeviceTypes {
+			subPath := path.Join(pciMainBusDevicePath, pciDent, tpuDeviceType)
+			dirs[tpuDeviceType] = map[string]kernfs.Inode{}
+			deviceDents, err := hostDirEntries(subPath)
+			if err != nil {
+				// Skips the path that doesn't exist.
+				if err == unix.ENOENT {
+					continue
+				}
+				return nil, err
+			}
+			if numOfDeviceDents := len(deviceDents); numOfDeviceDents != 1 {
+				return nil, fmt.Errorf("exactly one entry is expected at %v while there are %d", subPath, numOfDeviceDents)
+			}
+			dirs[tpuDeviceType][deviceDents[0]] = kernfs.NewStaticSymlink(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), fmt.Sprintf("../../devices/pci0000:00/%s/%s/%s", pciDent, tpuDeviceType, deviceDents[0]))
 		}
-		if len(accelDents) != 1 {
-			return nil, fmt.Errorf("path %q should only have one entry", path.Join(pciMainBusDevicePath, pciDent, "accel"))
-		}
-		accelDirs[accelDents[0]] = kernfs.NewStaticSymlink(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), fmt.Sprintf("../../devices/pci0000:00/%s/accel/%s", pciDent, accelDents[0]))
 	}
-
-	return accelDirs, nil
+	if len(dirs) == 0 {
+		return nil, errors.New("no TPU device sysfile is found")
+	}
+	return dirs, nil
 }
 
 // Create /sys/bus/pci/devices symlinks.
