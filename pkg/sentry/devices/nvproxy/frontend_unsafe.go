@@ -75,6 +75,24 @@ func ctrlClientSystemGetBuildVersionInvoke(fi *frontendIoctlState, ioctlParams *
 	return n, nil
 }
 
+func ctrlDevGpuGetClasslistInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters, ctrlParams *nvgpu.NV0080_CTRL_CMD_GPU_GET_CLASSLIST_PARAMS, classList []uint32) (uintptr, error) {
+	sentryCtrlParams := *ctrlParams
+	sentryCtrlParams.ClassList = p64FromPtr(unsafe.Pointer(&classList[0]))
+	n, err := rmControlInvoke(fi, ioctlParams, &sentryCtrlParams)
+	if err != nil {
+		return n, err
+	}
+	if _, err := primitive.CopyUint32SliceOut(fi.t, addrFromP64(ctrlParams.ClassList), classList); err != nil {
+		return 0, err
+	}
+	outCtrlParams := sentryCtrlParams
+	outCtrlParams.ClassList = ctrlParams.ClassList
+	if _, err := outCtrlParams.CopyOut(fi.t, addrFromP64(ioctlParams.Params)); err != nil {
+		return n, err
+	}
+	return n, nil
+}
+
 func ctrlDevFIFOGetChannelList(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters) (uintptr, error) {
 	var ctrlParams nvgpu.NV0080_CTRL_FIFO_GET_CHANNELLIST_PARAMS
 	if ctrlParams.SizeBytes() != int(ioctlParams.ParamsSize) {
