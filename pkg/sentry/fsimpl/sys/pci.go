@@ -37,9 +37,9 @@ const (
 var (
 	// Matches PCI device addresses in the main domain.
 	pciDeviceRegex = regex.MustCompile(`0000:([a-fA-F0-9]{2}|[a-fA-F0-9]{4}):[a-fA-F0-9]{2}\.[a-fA-F0-9]{1,2}`)
-	// Matches the directories for the main bus (i.e. pci000:00), accel, and
-	// individual devices (e.g. 00:00:04.0)
-	sysDevicesDirRegex = regex.MustCompile(`pci0000:00|accel|(0000:([a-fA-F0-9]{2}|[a-fA-F0-9]{4}):[a-fA-F0-9]{2}\.[a-fA-F0-9]{1,2})`)
+	// Matches the directories for the main bus (i.e. pci000:00),
+	// individual devices (e.g. 00:00:04.0), accel (TPU v4), and vfio (TPU v5)
+	sysDevicesDirRegex = regex.MustCompile(`pci0000:00|accel|vfio|(0000:([a-fA-F0-9]{2}|[a-fA-F0-9]{4}):[a-fA-F0-9]{2}\.[a-fA-F0-9]{1,2})`)
 	// Files allowlisted for host passthrough. These files are read-only.
 	sysDevicesFiles = map[string]any{
 		"vendor": nil, "device": nil, "subsystem_vendor": nil, "subsystem_device": nil,
