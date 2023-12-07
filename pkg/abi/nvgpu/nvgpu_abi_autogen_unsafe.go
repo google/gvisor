@@ -23,6 +23,7 @@ var _ marshal.Marshallable = (*IoctlSysParams)(nil)
 var _ marshal.Marshallable = (*NV0000_CTRL_SYSTEM_GET_BUILD_VERSION_PARAMS)(nil)
 var _ marshal.Marshallable = (*NV0005_ALLOC_PARAMETERS)(nil)
 var _ marshal.Marshallable = (*NV0080_ALLOC_PARAMETERS)(nil)
+var _ marshal.Marshallable = (*NV0080_CTRL_CMD_GPU_GET_CLASSLIST_PARAMS)(nil)
 var _ marshal.Marshallable = (*NV0080_CTRL_FIFO_GET_CHANNELLIST_PARAMS)(nil)
 var _ marshal.Marshallable = (*NV0080_CTRL_GR_ROUTE_INFO)(nil)
 var _ marshal.Marshallable = (*NV00F8_ALLOCATION_PARAMETERS)(nil)
@@ -2482,6 +2483,148 @@ func (n *NV0000_CTRL_SYSTEM_GET_BUILD_VERSION_PARAMS) CopyIn(cc marshal.CopyCont
 func (n *NV0000_CTRL_SYSTEM_GET_BUILD_VERSION_PARAMS) WriteTo(writer io.Writer) (int64, error) {
     if !n.PDriverVersionBuffer.Packed() && n.PTitleBuffer.Packed() && n.PVersionBuffer.Packed() {
         // Type NV0000_CTRL_SYSTEM_GET_BUILD_VERSION_PARAMS doesn't have a packed layout in memory, fall back to MarshalBytes.
+        buf := make([]byte, n.SizeBytes())
+        n.MarshalBytes(buf)
+        length, err := writer.Write(buf)
+        return int64(length), err
+    }
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(n)))
+    hdr.Len = n.SizeBytes()
+    hdr.Cap = n.SizeBytes()
+
+    length, err := writer.Write(buf)
+    // Since we bypassed the compiler's escape analysis, indicate that n
+    // must live until the use above.
+    runtime.KeepAlive(n) // escapes: replaced by intrinsic.
+    return int64(length), err
+}
+
+// SizeBytes implements marshal.Marshallable.SizeBytes.
+func (n *NV0080_CTRL_CMD_GPU_GET_CLASSLIST_PARAMS) SizeBytes() int {
+    return 4 +
+        1*4 +
+        (*P64)(nil).SizeBytes()
+}
+
+// MarshalBytes implements marshal.Marshallable.MarshalBytes.
+func (n *NV0080_CTRL_CMD_GPU_GET_CLASSLIST_PARAMS) MarshalBytes(dst []byte) []byte {
+    hostarch.ByteOrder.PutUint32(dst[:4], uint32(n.NumClasses))
+    dst = dst[4:]
+    for idx := 0; idx < 4; idx++ {
+        dst[0] = byte(n.Pad[idx])
+        dst = dst[1:]
+    }
+    dst = n.ClassList.MarshalUnsafe(dst)
+    return dst
+}
+
+// UnmarshalBytes implements marshal.Marshallable.UnmarshalBytes.
+func (n *NV0080_CTRL_CMD_GPU_GET_CLASSLIST_PARAMS) UnmarshalBytes(src []byte) []byte {
+    n.NumClasses = uint32(hostarch.ByteOrder.Uint32(src[:4]))
+    src = src[4:]
+    for idx := 0; idx < 4; idx++ {
+        n.Pad[idx] = src[0]
+        src = src[1:]
+    }
+    src = n.ClassList.UnmarshalUnsafe(src)
+    return src
+}
+
+// Packed implements marshal.Marshallable.Packed.
+//go:nosplit
+func (n *NV0080_CTRL_CMD_GPU_GET_CLASSLIST_PARAMS) Packed() bool {
+    return n.ClassList.Packed()
+}
+
+// MarshalUnsafe implements marshal.Marshallable.MarshalUnsafe.
+func (n *NV0080_CTRL_CMD_GPU_GET_CLASSLIST_PARAMS) MarshalUnsafe(dst []byte) []byte {
+    if n.ClassList.Packed() {
+        size := n.SizeBytes()
+        gohacks.Memmove(unsafe.Pointer(&dst[0]), unsafe.Pointer(n), uintptr(size))
+        return dst[size:]
+    }
+    // Type NV0080_CTRL_CMD_GPU_GET_CLASSLIST_PARAMS doesn't have a packed layout in memory, fallback to MarshalBytes.
+    return n.MarshalBytes(dst)
+}
+
+// UnmarshalUnsafe implements marshal.Marshallable.UnmarshalUnsafe.
+func (n *NV0080_CTRL_CMD_GPU_GET_CLASSLIST_PARAMS) UnmarshalUnsafe(src []byte) []byte {
+    if n.ClassList.Packed() {
+        size := n.SizeBytes()
+        gohacks.Memmove(unsafe.Pointer(n), unsafe.Pointer(&src[0]), uintptr(size))
+        return src[size:]
+    }
+    // Type NV0080_CTRL_CMD_GPU_GET_CLASSLIST_PARAMS doesn't have a packed layout in memory, fallback to UnmarshalBytes.
+    return n.UnmarshalBytes(src)
+}
+
+// CopyOutN implements marshal.Marshallable.CopyOutN.
+func (n *NV0080_CTRL_CMD_GPU_GET_CLASSLIST_PARAMS) CopyOutN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    if !n.ClassList.Packed() {
+        // Type NV0080_CTRL_CMD_GPU_GET_CLASSLIST_PARAMS doesn't have a packed layout in memory, fall back to MarshalBytes.
+        buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
+        n.MarshalBytes(buf) // escapes: fallback.
+        return cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    }
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(n)))
+    hdr.Len = n.SizeBytes()
+    hdr.Cap = n.SizeBytes()
+
+    length, err := cc.CopyOutBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that n
+    // must live until the use above.
+    runtime.KeepAlive(n) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyOut implements marshal.Marshallable.CopyOut.
+func (n *NV0080_CTRL_CMD_GPU_GET_CLASSLIST_PARAMS) CopyOut(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return n.CopyOutN(cc, addr, n.SizeBytes())
+}
+
+// CopyInN implements marshal.Marshallable.CopyInN.
+func (n *NV0080_CTRL_CMD_GPU_GET_CLASSLIST_PARAMS) CopyInN(cc marshal.CopyContext, addr hostarch.Addr, limit int) (int, error) {
+    if !n.ClassList.Packed() {
+        // Type NV0080_CTRL_CMD_GPU_GET_CLASSLIST_PARAMS doesn't have a packed layout in memory, fall back to UnmarshalBytes.
+        buf := cc.CopyScratchBuffer(n.SizeBytes()) // escapes: okay.
+        length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
+        // Unmarshal unconditionally. If we had a short copy-in, this results in a
+        // partially unmarshalled struct.
+        n.UnmarshalBytes(buf) // escapes: fallback.
+        return length, err
+    }
+
+    // Construct a slice backed by dst's underlying memory.
+    var buf []byte
+    hdr := (*reflect.SliceHeader)(unsafe.Pointer(&buf))
+    hdr.Data = uintptr(gohacks.Noescape(unsafe.Pointer(n)))
+    hdr.Len = n.SizeBytes()
+    hdr.Cap = n.SizeBytes()
+
+    length, err := cc.CopyInBytes(addr, buf[:limit]) // escapes: okay.
+    // Since we bypassed the compiler's escape analysis, indicate that n
+    // must live until the use above.
+    runtime.KeepAlive(n) // escapes: replaced by intrinsic.
+    return length, err
+}
+
+// CopyIn implements marshal.Marshallable.CopyIn.
+func (n *NV0080_CTRL_CMD_GPU_GET_CLASSLIST_PARAMS) CopyIn(cc marshal.CopyContext, addr hostarch.Addr) (int, error) {
+    return n.CopyInN(cc, addr, n.SizeBytes())
+}
+
+// WriteTo implements io.WriterTo.WriteTo.
+func (n *NV0080_CTRL_CMD_GPU_GET_CLASSLIST_PARAMS) WriteTo(writer io.Writer) (int64, error) {
+    if !n.ClassList.Packed() {
+        // Type NV0080_CTRL_CMD_GPU_GET_CLASSLIST_PARAMS doesn't have a packed layout in memory, fall back to MarshalBytes.
         buf := make([]byte, n.SizeBytes())
         n.MarshalBytes(buf)
         length, err := writer.Write(buf)
