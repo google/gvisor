@@ -64,6 +64,7 @@ go_library(
         "//pkg/sentry/fsimpl/cgroupfs",
         "//pkg/sentry/fsimpl/dev",
         "//pkg/sentry/fsimpl/devpts",
+        "//pkg/sentry/fsimpl/devtmpfs",
         "//pkg/sentry/fsimpl/erofs",
         "//pkg/sentry/fsimpl/fuse",
         "//pkg/sentry/fsimpl/gofer",
