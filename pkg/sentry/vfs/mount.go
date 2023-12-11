@@ -1131,6 +1131,10 @@ func (vfs *VirtualFilesystem) PivotRoot(ctx context.Context, creds *auth.Credent
 	if !vfs.isPathReachable(ctx, newRoot, putOld) {
 		return newRoot, oldRoot, linuxerr.EINVAL
 	}
+	// the new root must be at or underneath the current root.
+	if !vfs.isPathReachable(ctx, oldRoot, newRoot) {
+		return newRoot, oldRoot, linuxerr.EINVAL
+	}
 	// The current root directory must be a mountpoint
 	// (in the case it has been chrooted).
 	if oldRoot.mount.root != oldRoot.dentry {
