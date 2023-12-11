@@ -179,7 +179,7 @@ func TestPauseResume(t *testing.T) {
 
 func TestCheckpointRestore(t *testing.T) {
 	if !testutil.IsCheckpointSupported() {
-		t.Skip("Pause/resume is not supported.")
+		t.Skip("Checkpoint is not supported.")
 	}
 	dockerutil.EnsureDockerExperimentalEnabled()
 

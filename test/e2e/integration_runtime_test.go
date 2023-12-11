@@ -213,3 +213,68 @@ func TestOverlayRootfsWhiteout(t *testing.T) {
 		t.Errorf("root directory contains a file/directory whose name contains %q: output = %q", boot.SelfFilestorePrefix, got)
 	}
 }
+
+func TestOverlayCheckpointRestore(t *testing.T) {
+	if !testutil.IsCheckpointSupported() {
+		t.Skip("Checkpoint is not supported.")
+	}
+	dockerutil.EnsureDockerExperimentalEnabled()
+
+	dir, err := os.MkdirTemp(testutil.TmpDir(), "submount")
+	if err != nil {
+		t.Fatalf("MkdirTemp(): %v", err)
+	}
+	defer os.RemoveAll(dir)
+
+	ctx := context.Background()
+	d := dockerutil.MakeContainerWithRuntime(ctx, t, "-overlay")
+	defer d.CleanUp(ctx)
+
+	opts := dockerutil.RunOpts{
+		Image: "basic/alpine",
+		Mounts: []mount.Mount{
+			{
+				Type:   mount.TypeBind,
+				Source: dir,
+				Target: "/submount",
+			},
+		},
+	}
+	if err := d.Spawn(ctx, opts, "sleep", "infinity"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+
+	// Create files in rootfs and submount.
+	if _, err := d.Exec(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", "echo rootfs > /file"); err != nil {
+		t.Fatalf("docker exec failed: %v", err)
+	}
+	if _, err := d.Exec(ctx, dockerutil.ExecOpts{}, "/bin/sh", "-c", "echo submount > /submount/file"); err != nil {
+		t.Fatalf("docker exec failed: %v", err)
+	}
+	// Check that the file was not created on host.
+	if _, err := os.Stat(filepath.Join(dir, "file")); err == nil || !os.IsNotExist(err) {
+		t.Fatalf("file was created on host, expected err = ENOENT, got %v", err)
+	}
+
+	// Create a snapshot.
+	if err := d.Checkpoint(ctx, "test"); err != nil {
+		t.Fatalf("docker checkpoint failed: %v", err)
+	}
+	if err := d.WaitTimeout(ctx, defaultWait); err != nil {
+		t.Fatalf("wait failed: %v", err)
+	}
+
+	// Restore the snapshot.
+	// TODO(b/143498576): Remove Poll after github.com/moby/moby/issues/38963 is fixed.
+	if err := testutil.Poll(func() error { return d.Restore(ctx, "test") }, defaultWait); err != nil {
+		t.Fatalf("docker restore failed: %v", err)
+	}
+
+	// Make sure the files are restored in the overlay.
+	if got, err := d.Exec(ctx, dockerutil.ExecOpts{}, "cat", "/file"); err != nil || got != "rootfs\n" {
+		t.Errorf("cat /file returned: output = %q, err = %v", got, err)
+	}
+	if got, err := d.Exec(ctx, dockerutil.ExecOpts{}, "cat", "/submount/file"); err != nil || got != "submount\n" {
+		t.Errorf("cat /submount/file returned: output = %q, err = %v", got, err)
+	}
+}
