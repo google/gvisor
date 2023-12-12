@@ -273,17 +273,38 @@ arm-qemu-smoke-test: $(RUNTIME_BIN) load-arm-qemu
 simple-tests: unit-tests # Compatibility target.
 .PHONY: simple-tests
 
-gpu-smoke-tests: load-basic_cuda-vector-add load-gpu_cuda-tests $(RUNTIME_BIN)
+# Images needed for GPU smoke tests.
+gpu-smoke-images: load-basic_cuda-vector-add load-gpu_cuda-tests
+.PHONY: gpu-smoke-images
+
+gpu-smoke-tests: gpu-smoke-images $(RUNTIME_BIN)
 	@$(call test,--test_env=RUNTIME=runc //test/gpu:gpu_smoke_test)
 	@$(call install_runtime,$(RUNTIME),--nvproxy=true --nvproxy-docker=true)
 	@$(call sudo,test/gpu:gpu_smoke_test,--runtime=$(RUNTIME) -test.v $(ARGS))
 .PHONY: gpu-smoke-tests
 
-cos-gpu-smoke-tests: load-basic_cuda-vector-add load-gpu_cuda-tests $(RUNTIME_BIN)
+cos-gpu-smoke-tests: gpu-smoke-images $(RUNTIME_BIN)
 	@$(call sudo,test/gpu:gpu_smoke_test,--runtime=runc -test.v --cos-gpu $(ARGS))
 	@$(call install_runtime,$(RUNTIME),--nvproxy=true)
 	@$(call sudo,test/gpu:gpu_smoke_test,--runtime=$(RUNTIME) -test.v --cos-gpu $(ARGS))
 .PHONY: cos-gpu-smoke-tests
+
+# Images needed for GPU tests.
+# This is a superset of those needed for smoke tests.
+# It includes non-GPU images that are used as part of GPU tests,
+# e.g. busybox and python.
+gpu-images: gpu-smoke-images load-gpu_ollama load-basic_busybox load-basic_python
+.PHONY: gpu-images
+
+gpu-all-tests: gpu-images gpu-smoke-tests $(RUNTIME_BIN)
+	@$(call install_runtime,$(RUNTIME),--nvproxy=true --nvproxy-docker=true)
+	@$(call sudo,test/gpu:textgen_test,--runtime=$(RUNTIME) -test.v $(ARGS))
+.PHONY: gpu-all-tests
+
+cos-gpu-all-tests: gpu-images cos-gpu-smoke-tests $(RUNTIME_BIN)
+	@$(call install_runtime,$(RUNTIME),--nvproxy=true)
+	@$(call sudo,test/gpu:textgen_test,--runtime=$(RUNTIME) -test.v --cos-gpu $(ARGS))
+.PHONY: cos-gpu-all-tests
 
 portforward-tests: load-basic_redis load-basic_nginx $(RUNTIME_BIN)
 	@$(call install_runtime,$(RUNTIME),--network=sandbox)
