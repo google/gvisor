@@ -86,6 +86,9 @@ type RunOpts struct {
 	// User is the user to use.
 	User string
 
+	// Optional argv to override the ENTRYPOINT specified in the image.
+	Entrypoint []string
+
 	// Privileged enables privileged mode.
 	Privileged bool
 
@@ -260,6 +263,7 @@ func (c *Container) config(r RunOpts, args []string) *container.Config {
 	return &container.Config{
 		Image:        testutil.ImageByName(r.Image),
 		Cmd:          args,
+		Entrypoint:   r.Entrypoint,
 		ExposedPorts: ports,
 		Env:          env,
 		WorkingDir:   r.WorkDir,

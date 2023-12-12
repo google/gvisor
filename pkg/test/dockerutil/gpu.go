@@ -17,6 +17,7 @@ package dockerutil
 
 import (
 	"flag"
+	"os"
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/mount"
@@ -55,17 +56,32 @@ func GPURunOpts() RunOpts {
 		})
 	}
 
-	mounts := []mount.Mount{
-		{
-			Source: "/var/lib/nvidia/lib64",
-			Target: "/usr/local/nvidia/lib64",
-			Type:   mount.TypeBind,
-		},
-		{
-			Source: "/var/lib/nvidia/bin",
-			Target: "/usr/local/nvidia/bin",
-			Type:   mount.TypeBind,
-		},
+	var mounts []mount.Mount
+	for _, nvidiaBin := range []string{
+		"/home/kubernetes/bin/nvidia/bin",
+		"/var/lib/nvidia/bin",
+	} {
+		if st, err := os.Stat(nvidiaBin); err == nil && st.IsDir() {
+			mounts = append(mounts, mount.Mount{
+				Source:   nvidiaBin,
+				Target:   "/usr/local/nvidia/bin",
+				Type:     mount.TypeBind,
+				ReadOnly: true,
+			})
+		}
+	}
+	for _, nvidiaLib64 := range []string{
+		"/home/kubernetes/bin/nvidia/lib64",
+		"/var/lib/nvidia/lib64",
+	} {
+		if st, err := os.Stat(nvidiaLib64); err == nil && st.IsDir() {
+			mounts = append(mounts, mount.Mount{
+				Source:   nvidiaLib64,
+				Target:   "/usr/local/nvidia/lib64",
+				Type:     mount.TypeBind,
+				ReadOnly: true,
+			})
+		}
 	}
 
 	return RunOpts{
