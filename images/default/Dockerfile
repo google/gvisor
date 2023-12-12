@@ -8,7 +8,8 @@ RUN apt-get update && apt-get install -y curl gnupg2 git \
         apt-transport-https ca-certificates gnupg-agent \
         software-properties-common \
         pkg-config libffi-dev patch diffutils libssl-dev iptables kmod \
-        clang crossbuild-essential-amd64 erofs-utils busybox-static
+        clang crossbuild-essential-amd64 erofs-utils busybox-static \
+        libbpf-dev libc6-dev-i386
 
 # Install Docker client for the website build.
 RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
