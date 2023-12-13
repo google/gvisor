@@ -23,11 +23,8 @@ import (
 	"gvisor.dev/gvisor/pkg/seccomp/precompiledseccomp"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 
-	// Compile filters for KVM.
-	_ "gvisor.dev/gvisor/pkg/sentry/platform/kvm"
-
-	// Compile filters for Systrap.
-	_ "gvisor.dev/gvisor/pkg/sentry/platform/systrap"
+	// Import platforms that we need to precompile filters for.
+	_ "gvisor.dev/gvisor/runsc/boot/platforms"
 )
 
 // Variable names used in precompiled filters.
