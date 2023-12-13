@@ -201,7 +201,7 @@ func (t *Task) deliverSignal(info *linux.SignalInfo, act linux.SigAction) taskRu
 			ucs.FaultAddr = info.Addr()
 		}
 
-		t.Debugf("Signal %d, PID: %d, TID: %d, fault addr: %#x: terminating thread group", ucs.Pid, ucs.Tid, ucs.FaultAddr, info.Signo)
+		t.Debugf("Signal %d, PID: %d, TID: %d, fault addr: %#x: terminating thread group", info.Signo, ucs.Pid, ucs.Tid, ucs.FaultAddr)
 		eventchannel.Emit(ucs)
 
 		t.PrepareGroupExit(linux.WaitStatusTerminationSignal(sig))
