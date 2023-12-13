@@ -6,8 +6,8 @@ package(
 )
 
 go_test(
-    name = "gpu_smoke_test",
-    srcs = ["gpu_smoke_test.go"],
+    name = "smoke_test",
+    srcs = ["smoke_test.go"],
     tags = [
         "local",
         "noguitar",
@@ -30,5 +30,21 @@ go_test(
         "//pkg/test/dockerutil",
         "//pkg/test/testutil",
         "//test/gpu/ollama",
+    ],
+)
+
+go_test(
+    name = "sr_test",
+    srcs = ["sr_test.go"],
+    tags = [
+        "local",
+        "noguitar",
+        "notap",
+    ],
+    visibility = ["//:sandbox"],
+    deps = [
+        "//pkg/context",
+        "//pkg/test/dockerutil",
+        "//pkg/test/testutil",
     ],
 )
