@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-// Package gpu_smoke_test tests basic GPU functionality.
-package gpu_smoke_test
+// Package smoke_test tests basic GPU functionality.
+package smoke_test
 
 import (
 	"context"
