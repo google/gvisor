@@ -332,10 +332,6 @@ type Kernel struct {
 	// devGofers maps container ID to its device gofer client.
 	devGofers   map[string]*devutil.GoferClient `state:"nosave"`
 	devGofersMu sync.Mutex                      `state:"nosave"`
-
-	// savedMFOwners is the list of filesystem unique IDs (in order) for
-	// filesystems that have saved their MemoryFile in the state file.
-	savedMFOwners []string
 }
 
 // InitKernelArgs holds arguments to Init.
@@ -507,6 +503,57 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	return nil
 }
 
+// +stateify savable
+type privateMemoryFileMetadata struct {
+	owners []string
+}
+
+func savePrivateMFs(ctx context.Context, w wire.Writer, mfsToSave map[string]*pgalloc.MemoryFile) error {
+	var meta privateMemoryFileMetadata
+	// Generate the order in which private memory files are saved.
+	for fsID := range mfsToSave {
+		meta.owners = append(meta.owners, fsID)
+	}
+	// Save the metadata.
+	if _, err := state.Save(ctx, w, &meta); err != nil {
+		return err
+	}
+	// Followed by the private memory files in order.
+	for _, fsID := range meta.owners {
+		if err := mfsToSave[fsID].SaveTo(ctx, w); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func loadPrivateMFs(ctx context.Context, r wire.Reader) error {
+	// Load the metadata.
+	var meta privateMemoryFileMetadata
+	if _, err := state.Load(ctx, r, &meta); err != nil {
+		return err
+	}
+	var mfmap map[string]*pgalloc.MemoryFile
+	if mfmapv := ctx.Value(vfs.CtxFilesystemMemoryFileMap); mfmapv != nil {
+		mfmap = mfmapv.(map[string]*pgalloc.MemoryFile)
+	}
+	// Ensure that it is consistent with CtxFilesystemMemoryFileMap.
+	if len(mfmap) != len(meta.owners) {
+		return fmt.Errorf("inconsistent private memory files on restore: savedMFOwners = %v, CtxFilesystemMemoryFileMap = %v", meta.owners, mfmap)
+	}
+	// Load all private memory files.
+	for _, fsID := range meta.owners {
+		mf, ok := mfmap[fsID]
+		if !ok {
+			return fmt.Errorf("saved memory file for %q was not configured on restore", fsID)
+		}
+		if err := mf.LoadFrom(ctx, r); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // SaveTo saves the state of k to w.
 //
 // Preconditions: The kernel must be paused throughout the call to SaveTo.
@@ -538,12 +585,6 @@ func (k *Kernel) SaveTo(ctx context.Context, w wire.Writer) error {
 	// affect filesystem state (e.g. page cache reference counts).
 	if err := k.vfs.PrepareSave(vfsCtx); err != nil {
 		return err
-	}
-	// Generate the order in which memory files are saved in the state file.
-	// Note that this must happen before saving the kernel state.
-	k.savedMFOwners = make([]string, 0, len(mfsToSave))
-	for fsID := range mfsToSave {
-		k.savedMFOwners = append(k.savedMFOwners, fsID)
 	}
 
 	// Save the CPUID FeatureSet before the rest of the kernel so we can
@@ -582,10 +623,8 @@ func (k *Kernel) SaveTo(ctx context.Context, w wire.Writer) error {
 	if err := k.mf.SaveTo(ctx, w); err != nil {
 		return err
 	}
-	for _, fsID := range k.savedMFOwners {
-		if err := mfsToSave[fsID].SaveTo(ctx, w); err != nil {
-			return err
-		}
+	if err := savePrivateMFs(ctx, w, mfsToSave); err != nil {
+		return err
 	}
 	log.Infof("Memory files save took [%s].", time.Since(memoryStart))
 
@@ -665,21 +704,8 @@ func (k *Kernel) LoadFrom(ctx context.Context, r wire.Reader, timeReady chan str
 	if err := k.mf.LoadFrom(ctx, r); err != nil {
 		return err
 	}
-	var mfmap map[string]*pgalloc.MemoryFile
-	if mfmapv := ctx.Value(vfs.CtxFilesystemMemoryFileMap); mfmapv != nil {
-		mfmap = mfmapv.(map[string]*pgalloc.MemoryFile)
-	}
-	if len(mfmap) != len(k.savedMFOwners) {
-		return fmt.Errorf("inconsistent private memory files on restore: savedMFOwners = %v, CtxFilesystemMemoryFileMap = %v", k.savedMFOwners, mfmap)
-	}
-	for _, fsID := range k.savedMFOwners {
-		mf, ok := mfmap[fsID]
-		if !ok {
-			return fmt.Errorf("saved memory file for %q was not configured on restore", fsID)
-		}
-		if err := mf.LoadFrom(ctx, r); err != nil {
-			return err
-		}
+	if err := loadPrivateMFs(ctx, r); err != nil {
+		return err
 	}
 	log.Infof("Memory files load took [%s].", time.Since(memoryStart))
 

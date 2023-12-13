@@ -70,9 +70,9 @@ func Register(vfsObj *vfs.VirtualFilesystem, versionStr string, uvmDevMajor uint
 
 // +stateify savable
 type nvproxy struct {
-	objsMu   objsMutex `state:"nosave"`
-	objsLive map[nvgpu.Handle]*object
-	abi      *driverABI `state:"nosave"`
+	objsMu   objsMutex                `state:"nosave"`
+	objsLive map[nvgpu.Handle]*object `state:"nosave"`
+	abi      *driverABI               `state:"nosave"`
 	version  DriverVersion
 }
 

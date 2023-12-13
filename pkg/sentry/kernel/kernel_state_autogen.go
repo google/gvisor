@@ -388,7 +388,6 @@ func (k *Kernel) StateFields() []string {
 		"cgroupRegistry",
 		"userCountersMap",
 		"MaxFDLimit",
-		"savedMFOwners",
 	}
 }
 
@@ -436,7 +435,6 @@ func (k *Kernel) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(34, &k.cgroupRegistry)
 	stateSinkObject.Save(35, &k.userCountersMap)
 	stateSinkObject.Save(36, &k.MaxFDLimit)
-	stateSinkObject.Save(37, &k.savedMFOwners)
 }
 
 func (k *Kernel) afterLoad() {}
@@ -479,8 +477,32 @@ func (k *Kernel) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(34, &k.cgroupRegistry)
 	stateSourceObject.Load(35, &k.userCountersMap)
 	stateSourceObject.Load(36, &k.MaxFDLimit)
-	stateSourceObject.Load(37, &k.savedMFOwners)
 	stateSourceObject.LoadValue(20, new([]tcpip.Endpoint), func(y any) { k.loadDanglingEndpoints(y.([]tcpip.Endpoint)) })
+}
+
+func (p *privateMemoryFileMetadata) StateTypeName() string {
+	return "pkg/sentry/kernel.privateMemoryFileMetadata"
+}
+
+func (p *privateMemoryFileMetadata) StateFields() []string {
+	return []string{
+		"owners",
+	}
+}
+
+func (p *privateMemoryFileMetadata) beforeSave() {}
+
+// +checklocksignore
+func (p *privateMemoryFileMetadata) StateSave(stateSinkObject state.Sink) {
+	p.beforeSave()
+	stateSinkObject.Save(0, &p.owners)
+}
+
+func (p *privateMemoryFileMetadata) afterLoad() {}
+
+// +checklocksignore
+func (p *privateMemoryFileMetadata) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &p.owners)
 }
 
 func (s *SocketRecord) StateTypeName() string {
@@ -2455,6 +2477,7 @@ func init() {
 	state.Register((*IPCNamespace)(nil))
 	state.Register((*UserCounters)(nil))
 	state.Register((*Kernel)(nil))
+	state.Register((*privateMemoryFileMetadata)(nil))
 	state.Register((*SocketRecord)(nil))
 	state.Register((*pendingSignals)(nil))
 	state.Register((*pendingSignalQueue)(nil))
