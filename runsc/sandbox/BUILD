@@ -12,6 +12,7 @@ go_library(
         "network.go",
         "network_unsafe.go",
         "sandbox.go",
+        "xdp.go",
     ],
     visibility = [
         "//runsc:__subpackages__",
