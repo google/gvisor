@@ -104,5 +104,21 @@ def bpf_program(name, src, bpf_object, visibility, hdrs):
         srcs = [src],
         visibility = visibility,
         outs = [bpf_object],
-        cmd = "clang -O2 -Wall -Werror -target bpf -c $< -o $@ -I/usr/include/$$(uname -m)-linux-gnu",
+        # Note: "-D __x86_64__" is a hack to deal with building across
+        # architectures. As we're targeting eBPF, setting this doesn't lead to
+        # any x86_64-specific code. But it does help with an annoying edge
+        # case:
+        #
+        # We have a single container -- images/default -- that runs on both
+        # arm64 and x86_64 machines. To build eBPF on x86_64, package
+        # gcc-multilib or libc6-dev-i386 is needed to install headers. But
+        # these don't exist on arm64, so adding it to the image breaks arm64
+        # builds.
+        #
+        # Defining __x86_64__ lets us avoid the need for these packages
+        # altogether. It turns out that the missing headers are irrelevant
+        # (unused) when building eBPF, and pretending we're targeting x86_64
+        # causes #includes to resolve without installing architecture-specific
+        # packages.
+        cmd = "clang -O2 -Wall -Werror -target bpf -c $< -o $@ -I/usr/include/$$(uname -m)-linux-gnu -D __x86_64__",
     )
