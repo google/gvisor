@@ -2666,3 +2666,170 @@ func TestMultiContainerMemoryLeakStress(t *testing.T) {
 		time.Sleep(time.Second)
 	}
 }
+
+// Tests cgroups are mounted in only containers which have a cgroup mount in
+// the spec.
+func TestMultiContainerCgroups(t *testing.T) {
+	_, err := testutil.FindFile("test/cmd/test_app/test_app")
+	if err != nil {
+		t.Fatal("error finding test_app:", err)
+	}
+
+	for name, conf := range configs(t, false /* noOverlay */) {
+		t.Run(name, func(t *testing.T) {
+			rootDir, cleanup, err := testutil.SetupRootDir()
+			if err != nil {
+				t.Fatalf("error creating root dir: %v", err)
+			}
+			defer cleanup()
+			conf.RootDir = rootDir
+
+			podSpecs, ids := createSpecs(
+				[]string{"sleep", "100"},
+				[]string{"sleep", "100"})
+
+			podSpecs[1].Linux = &specs.Linux{
+				Namespaces: []specs.LinuxNamespace{{Type: "pid"}},
+			}
+
+			mnt0 := specs.Mount{
+				Destination: "/sys/fs/cgroup",
+				Type:        "cgroup",
+				Options:     nil,
+			}
+			// Append cgroups mount for only one container.
+			podSpecs[0].Mounts = append(podSpecs[0].Mounts, mnt0)
+
+			createSharedMount(mnt0, "test-mount", podSpecs...)
+			containers, cleanup, err := startContainers(conf, podSpecs, ids)
+			if err != nil {
+				t.Fatalf("error starting containers: %v", err)
+			}
+			defer cleanup()
+
+			ctrlFileMap := map[string]string{
+				"cpu":     "cpu.shares",
+				"cpuacct": "cpuacct.usage",
+				"cpuset":  "cpuset.cpus",
+				"devices": "devices.allow",
+				"memory":  "memory.usage_in_bytes",
+				"pids":    "pids.current",
+			}
+			for ctrl, f := range ctrlFileMap {
+				ctrlRoot := control.CgroupControlFile{
+					Controller: ctrl,
+					Path:       "/",
+					Name:       f,
+				}
+				ctrl0 := control.CgroupControlFile{
+					Controller: ctrl,
+					Path:       "/" + containers[0].ID,
+					Name:       f,
+				}
+				ctrl1 := control.CgroupControlFile{
+					Controller: ctrl,
+					Path:       "/" + containers[1].ID,
+					Name:       f,
+				}
+
+				if _, err := containers[0].Sandbox.CgroupsReadControlFile(ctrlRoot); err != nil {
+					t.Fatalf("error root cgroup mount for %s not found %v", ctrl, err)
+				}
+				if _, err := containers[0].Sandbox.CgroupsReadControlFile(ctrl0); err != nil {
+					t.Fatalf("error %s cgroups not mounted in container0 %v", ctrl, err)
+				}
+				if _, err := containers[1].Sandbox.CgroupsReadControlFile(ctrl1); err == nil {
+					t.Fatalf("error %s cgroups mounted in container1 even when the spec does not have a cgroup mount %v", ctrl, err)
+				}
+			}
+		})
+	}
+}
+
+// Tests the cgroups are mounted in the containers when the spec has a cgroup
+// mount. Also, checks memory usage stats from cgroups work correctly when the
+// memory is increased for one container.
+func TestMultiContainerCgroupsMemoryUsage(t *testing.T) {
+	_, err := testutil.FindFile("test/cmd/test_app/test_app")
+	if err != nil {
+		t.Fatal("error finding test_app:", err)
+	}
+
+	for name, conf := range configs(t, false /* noOverlay */) {
+		t.Run(name, func(t *testing.T) {
+			rootDir, cleanup, err := testutil.SetupRootDir()
+			if err != nil {
+				t.Fatalf("error creating root dir: %v", err)
+			}
+			defer cleanup()
+			conf.RootDir = rootDir
+
+			podSpecs, ids := createSpecs(
+				[]string{"sleep", "100"},
+				[]string{"sleep", "10"})
+
+			podSpecs[1].Linux = &specs.Linux{
+				Namespaces: []specs.LinuxNamespace{{Type: "pid"}},
+			}
+
+			mnt0 := specs.Mount{
+				Destination: "/sys/fs/cgroup",
+				Type:        "cgroup",
+				Options:     nil,
+			}
+			// Append cgroups mount for both containers.
+			podSpecs[0].Mounts = append(podSpecs[0].Mounts, mnt0)
+			podSpecs[1].Mounts = append(podSpecs[1].Mounts, mnt0)
+
+			createSharedMount(mnt0, "test-mount", podSpecs...)
+			containers, cleanup, err := startContainers(conf, podSpecs, ids)
+			if err != nil {
+				t.Fatalf("error starting containers: %v", err)
+			}
+			defer cleanup()
+
+			ctrlRoot := control.CgroupControlFile{
+				Controller: "memory",
+				Path:       "/",
+				Name:       "memory.usage_in_bytes",
+			}
+			ctrl0 := control.CgroupControlFile{
+				Controller: "memory",
+				Path:       "/" + containers[0].ID,
+				Name:       "memory.usage_in_bytes",
+			}
+			ctrl1 := control.CgroupControlFile{
+				Controller: "memory",
+				Path:       "/" + containers[1].ID,
+				Name:       "memory.usage_in_bytes",
+			}
+
+			usageTotal, err := containers[0].Sandbox.CgroupsReadControlFile(ctrlRoot)
+			if err != nil {
+				t.Fatalf("error getting total usage %v", err)
+			}
+			usage0, err := containers[0].Sandbox.CgroupsReadControlFile(ctrl0)
+			if err != nil {
+				t.Fatalf("error getting container0 usage %v", err)
+			}
+			usage1, err := containers[1].Sandbox.CgroupsReadControlFile(ctrl1)
+			if err != nil {
+				t.Fatalf("error getting container1 usage %v", err)
+			}
+			if usageTotal < (usage0 + usage1) {
+				t.Fatalf("error total usage is less total %v container0_usage %v container1_usage %v", usageTotal, usage0, usage1)
+			}
+
+			// Wait for the second container to exit and check that the new usage must
+			// be less than the old usage.
+			time.Sleep(12 * time.Second)
+			newUsageTotal, err := containers[0].Sandbox.CgroupsReadControlFile(ctrlRoot)
+			if err != nil {
+				t.Fatalf("error getting total usage %v", err)
+			}
+			if newUsageTotal >= usageTotal {
+				t.Fatalf("error new total usage %v is not less than old total usage %v", newUsageTotal, usageTotal)
+			}
+		})
+	}
+}

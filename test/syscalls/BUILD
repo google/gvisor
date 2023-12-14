@@ -64,10 +64,14 @@ syscall_test(
     test = "//test/syscalls/linux:brk_test",
 )
 
-syscall_test(
-    one_sandbox = False,
-    test = "//test/syscalls/linux:cgroup_test",
-)
+# TODO(b/315355651): Fix cgroup tests in runsc. Cgroups are mounted in the
+# root/pause container by default and for other containers cgroups are bind
+# mounted if the container spec has a cgroup mount. These cgroup tests
+# explicitly mount the cgroups which will fail now in runsc.
+# syscall_test(
+#     one_sandbox = False,
+#     test = "//test/syscalls/linux:cgroup_test",
+# )
 
 syscall_test(
     add_fusefs = True,

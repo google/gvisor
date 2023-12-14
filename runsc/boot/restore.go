@@ -71,7 +71,7 @@ func (r *restorer) restore(l *Loader) error {
 	// Set up the restore environment.
 	ctx := l.k.SupervisorContext()
 	// TODO(b/298078576): Need to process hints here probably
-	mntr := newContainerMounter(&l.root, l.k, l.mountHints, l.sharedMounts, l.productName, r.container.cid)
+	mntr := newContainerMounter(&l.root, l.k, l.mountHints, l.sharedMounts, l.productName, l.sandboxID, l.cgroupMounts)
 	ctx, err = mntr.configureRestore(ctx)
 	if err != nil {
 		return fmt.Errorf("configuring filesystem restore: %v", err)

@@ -307,7 +307,6 @@ func TestProcfsDump(t *testing.T) {
 	spec.Process.Rlimits = []specs.POSIXRlimit{
 		{Type: "RLIMIT_NOFILE", Hard: fdLimit.Max, Soft: fdLimit.Cur},
 	}
-	conf.Cgroupfs = true
 	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
 	if err != nil {
 		t.Fatalf("error setting up container: %v", err)
@@ -414,11 +413,16 @@ func TestProcfsDump(t *testing.T) {
 	}
 
 	wantCgroup := []kernel.TaskCgroupEntry{
-		kernel.TaskCgroupEntry{HierarchyID: 2, Controllers: "memory", Path: "/"},
+		kernel.TaskCgroupEntry{HierarchyID: 7, Controllers: "pids", Path: "/"},
+		kernel.TaskCgroupEntry{HierarchyID: 6, Controllers: "memory", Path: "/"},
+		kernel.TaskCgroupEntry{HierarchyID: 5, Controllers: "job", Path: "/"},
+		kernel.TaskCgroupEntry{HierarchyID: 4, Controllers: "devices", Path: "/"},
+		kernel.TaskCgroupEntry{HierarchyID: 3, Controllers: "cpuset", Path: "/"},
+		kernel.TaskCgroupEntry{HierarchyID: 2, Controllers: "cpuacct", Path: "/"},
 		kernel.TaskCgroupEntry{HierarchyID: 1, Controllers: "cpu", Path: "/"},
 	}
 	if len(procfsDump[0].Cgroup) != len(wantCgroup) {
-		t.Errorf("expected 2 cgroup controllers, got %+v", procfsDump[0].Cgroup)
+		t.Errorf("expected 7 cgroup controllers, got %+v", procfsDump[0].Cgroup)
 	} else {
 		for i, cgroup := range procfsDump[0].Cgroup {
 			if cgroup != wantCgroup[i] {

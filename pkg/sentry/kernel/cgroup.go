@@ -48,6 +48,9 @@ const (
 	CgroupControllerPIDs    = CgroupControllerType("pids")
 )
 
+// CgroupCtrls is the list of cgroup controllers.
+var CgroupCtrls = []CgroupControllerType{"cpu", "cpuacct", "cpuset", "devices", "job", "memory", "pids"}
+
 // ParseCgroupController parses a string as a CgroupControllerType.
 func ParseCgroupController(val string) (CgroupControllerType, error) {
 	switch val {
