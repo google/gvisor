@@ -15,7 +15,6 @@
 package sandbox
 
 import (
-	"bytes"
 	"fmt"
 	"net"
 	"os"
@@ -24,8 +23,6 @@ import (
 	"runtime"
 	"strconv"
 
-	"github.com/cilium/ebpf"
-	"github.com/cilium/ebpf/link"
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/vishvananda/netlink"
 	"golang.org/x/sys/unix"
@@ -35,7 +32,6 @@ import (
 	"gvisor.dev/gvisor/pkg/urpc"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/config"
-	"gvisor.dev/gvisor/runsc/sandbox/bpf"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
@@ -433,77 +429,6 @@ func createSocket(iface net.Interface, ifaceLink netlink.Link, enableGSO bool) (
 	}
 
 	return &socketEntry{deviceFile, gsoMaxSize}, nil
-}
-
-func createSocketXDP(iface net.Interface) ([]*os.File, error) {
-	// Create an XDP socket. The sentry will mmap memory for the various
-	// rings and bind to the device.
-	fd, err := unix.Socket(unix.AF_XDP, unix.SOCK_RAW, 0)
-	if err != nil {
-		return nil, fmt.Errorf("unable to create AF_XDP socket: %v", err)
-	}
-
-	// We also need to, before dropping privileges, attach a program to the
-	// device and insert our socket into its map.
-
-	// Load into the kernel.
-	spec, err := ebpf.LoadCollectionSpecFromReader(bytes.NewReader(bpf.AFXDPProgram))
-	if err != nil {
-		return nil, fmt.Errorf("failed to load spec: %v", err)
-	}
-
-	var objects struct {
-		Program *ebpf.Program `ebpf:"xdp_prog"`
-		SockMap *ebpf.Map     `ebpf:"sock_map"`
-	}
-	if err := spec.LoadAndAssign(&objects, nil); err != nil {
-		return nil, fmt.Errorf("failed to load program: %v", err)
-	}
-
-	rawLink, err := link.AttachRawLink(link.RawLinkOptions{
-		Program: objects.Program,
-		Attach:  ebpf.AttachXDP,
-		Target:  iface.Index,
-		// By not setting the Flag field, the kernel will choose the
-		// fastest mode. In order those are:
-		// - Offloaded onto the NIC.
-		// - Running directly in the driver.
-		// - Generic mode, which works with any NIC/driver but lacks
-		//   much of the XDP performance boost.
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to attach BPF program: %v", err)
-	}
-
-	// Insert our AF_XDP socket into the BPF map that dictates where
-	// packets are redirected to.
-	key := uint32(0)
-	val := uint32(fd)
-	if err := objects.SockMap.Update(&key, &val, 0 /* flags */); err != nil {
-		return nil, fmt.Errorf("failed to insert socket into BPF map: %v", err)
-	}
-
-	// We need to keep the Program, SockMap, and link FDs open until they
-	// can be passed to the sandbox process.
-	progFD, err := unix.Dup(objects.Program.FD())
-	if err != nil {
-		return nil, fmt.Errorf("failed to dup BPF program: %v", err)
-	}
-	sockMapFD, err := unix.Dup(objects.SockMap.FD())
-	if err != nil {
-		return nil, fmt.Errorf("failed to dup BPF map: %v", err)
-	}
-	linkFD, err := unix.Dup(rawLink.FD())
-	if err != nil {
-		return nil, fmt.Errorf("failed to dup BPF link: %v", err)
-	}
-
-	return []*os.File{
-		os.NewFile(uintptr(fd), "xdp-fd"),            // The socket.
-		os.NewFile(uintptr(progFD), "program-fd"),    // The XDP program.
-		os.NewFile(uintptr(sockMapFD), "sockmap-fd"), // The XDP map.
-		os.NewFile(uintptr(linkFD), "link-fd"),       // The XDP link.
-	}, nil
 }
 
 // loopbackLink returns the link with addresses and routes for a loopback
