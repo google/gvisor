@@ -216,12 +216,6 @@ func (s *State) PtraceGetRegs(dst io.Writer) (int, error) {
 
 func (s *State) ptraceGetRegs() Registers {
 	regs := s.Regs
-	// These may not be initialized.
-	if regs.Cs == 0 || regs.Ss == 0 || regs.Eflags == 0 {
-		regs.Eflags = eflagsIF
-		regs.Cs = userCS
-		regs.Ss = userDS
-	}
 	// As an optimization, Linux <4.7 implements 32-bit fs_base/gs_base
 	// addresses using reserved descriptors in the GDT instead of the MSRs,
 	// with selector values FS_TLS_SEL and GS_TLS_SEL respectively. These
@@ -396,6 +390,15 @@ func New(arch Arch) *Context64 {
 		return &Context64{
 			State{
 				fpState: fpu.NewState(),
+				// Set initial registers for compatibility with Linux
+				// (as done in arch/x86/kernel/process_64.c:start_thread()).
+				Regs: Registers{
+					PtraceRegs: linux.PtraceRegs{
+						Eflags: eflagsIF,
+						Cs:     userCS,
+						Ss:     userDS,
+					},
+				},
 			},
 		}
 	}
