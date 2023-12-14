@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package main
+package cmd
 
 import (
 	"context"
@@ -23,39 +23,39 @@ import (
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
-//go:embed bpf/pass_ebpf.o
-var passProgram []byte
+//go:embed bpf/drop_ebpf.o
+var dropProgram []byte
 
-// PassCommand is a subcommand for passing packets to the kernel network stack.
-type PassCommand struct {
+// DropCommand is a subcommand for dropping packets.
+type DropCommand struct {
 	device      string
 	deviceIndex int
 }
 
 // Name implements subcommands.Command.Name.
-func (*PassCommand) Name() string {
-	return "pass"
+func (*DropCommand) Name() string {
+	return "drop"
 }
 
 // Synopsis implements subcommands.Command.Synopsis.
-func (*PassCommand) Synopsis() string {
-	return "Pass all packets to the kernel network stack."
+func (*DropCommand) Synopsis() string {
+	return "Drop all packets to the kernel network stack."
 }
 
 // Usage implements subcommands.Command.Usage.
-func (*PassCommand) Usage() string {
-	return "pass -device <device> or -devidx <device index>"
+func (*DropCommand) Usage() string {
+	return "drop -device <device> or -devidx <device index>"
 }
 
 // SetFlags implements subcommands.Command.SetFlags.
-func (pc *PassCommand) SetFlags(fs *flag.FlagSet) {
+func (pc *DropCommand) SetFlags(fs *flag.FlagSet) {
 	fs.StringVar(&pc.device, "device", "", "which device to attach to")
 	fs.IntVar(&pc.deviceIndex, "devidx", 0, "which device to attach to")
 }
 
 // Execute implements subcommands.Command.Execute.
-func (pc *PassCommand) Execute(context.Context, *flag.FlagSet, ...any) subcommands.ExitStatus {
-	if err := runBasicProgram(passProgram, pc.device, pc.deviceIndex); err != nil {
+func (pc *DropCommand) Execute(context.Context, *flag.FlagSet, ...any) subcommands.ExitStatus {
+	if err := runBasicProgram(dropProgram, pc.device, pc.deviceIndex); err != nil {
 		log.Printf("%v", err)
 		return subcommands.ExitFailure
 	}
