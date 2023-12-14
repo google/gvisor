@@ -28,3 +28,11 @@ bpf_program(
     bpf_object = "tcpdump_ebpf.o",
     visibility = ["//:sandbox"],
 )
+
+bpf_program(
+    name = "redirect_host_ebpf",
+    src = "redirect_host.ebpf.c",
+    hdrs = [],
+    bpf_object = "redirect_host_ebpf.o",
+    visibility = ["//:sandbox"],
+)

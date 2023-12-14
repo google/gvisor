@@ -100,7 +100,7 @@ func (pc *TcpdumpCommand) execute() error {
 		}
 	}()
 
-	cleanup, err := attach(objects.Program, iface)
+	_, cleanup, err := attach(objects.Program, iface)
 	if err != nil {
 		return fmt.Errorf("failed to attach: %v", err)
 	}

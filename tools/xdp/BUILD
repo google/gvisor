@@ -11,13 +11,16 @@ go_binary(
         "drop.go",
         "main.go",
         "pass.go",
+        "redirect_host.go",
         "tcpdump.go",
     ],
     embedsrcs = [
         "//tools/xdp/bpf:drop_ebpf.o",  # keep
         "//tools/xdp/bpf:pass_ebpf.o",  # keep
+        "//tools/xdp/bpf:redirect_host_ebpf.o",  # keep
         "//tools/xdp/bpf:tcpdump_ebpf.o",  # keep
     ],
+    pure = True,
     visibility = ["//:sandbox"],
     deps = [
         "//pkg/buffer",
