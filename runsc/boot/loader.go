@@ -168,6 +168,10 @@ type Loader struct {
 	// apply to the entire pod.
 	mountHints *PodMountHints
 
+	// cgroupMounts is a map of cgroup mounts that can be reused across
+	// containers. It is mapped by cgroup controller name.
+	cgroupMounts map[string]*cgroupMount
+
 	// productName is the value to show in
 	// /sys/devices/virtual/dmi/id/product_name.
 	productName string
@@ -991,9 +995,15 @@ func (l *Loader) createContainerProcess(info *containerInfo) (*kernel.ThreadGrou
 	}
 	l.startGoferMonitor(info)
 
+	if l.root.cid == l.sandboxID {
+		// Mounts cgroups for all the controllers.
+		if err := l.mountCgroupMounts(info.conf, info.procArgs.Credentials); err != nil {
+			return nil, nil, err
+		}
+	}
 	// We can share l.sharedMounts with containerMounter since l.mu is locked.
 	// Hence, mntr must only be used within this function (while l.mu is locked).
-	mntr := newContainerMounter(info, l.k, l.mountHints, l.sharedMounts, l.productName, l.sandboxID)
+	mntr := newContainerMounter(info, l.k, l.mountHints, l.sharedMounts, l.productName, l.sandboxID, l.cgroupMounts)
 	if err := setupContainerVFS(ctx, info, mntr, &info.procArgs); err != nil {
 		return nil, nil, err
 	}

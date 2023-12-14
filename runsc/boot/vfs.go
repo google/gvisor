@@ -189,6 +189,22 @@ func setupContainerVFS(ctx context.Context, info *containerInfo, mntr *container
 	}
 	procArgs.MountNamespace = mns
 
+	// If cgroups are mounted, then only check for the cgroup mounts per
+	// container. Otherwise the root cgroups will be enabled.
+	if mntr.cgroupsMounted {
+		cgroupRegistry := mntr.k.CgroupRegistry()
+		for _, ctrl := range kernel.CgroupCtrls {
+			cg, err := cgroupRegistry.FindCgroup(ctx, ctrl, "/"+mntr.containerID)
+			if err != nil {
+				return fmt.Errorf("cgroup mount for controller %v not found", ctrl)
+			}
+			if procArgs.InitialCgroups == nil {
+				procArgs.InitialCgroups = make(map[kernel.Cgroup]struct{}, len(kernel.CgroupCtrls))
+			}
+			procArgs.InitialCgroups[cg] = struct{}{}
+		}
+	}
+
 	mnsRoot := mns.Root(rootCtx)
 	defer mnsRoot.DecRef(rootCtx)
 
@@ -213,18 +229,20 @@ func setupContainerVFS(ctx context.Context, info *containerInfo, mntr *container
 // mandatory mounts that are required by the OCI specification.
 //
 // This function must NOT add/remove any gofer mounts or change their order.
-func compileMounts(spec *specs.Spec, conf *config.Config) []specs.Mount {
+func compileMounts(spec *specs.Spec, conf *config.Config, containerID string) []specs.Mount {
 	// Keep track of whether proc and sys were mounted.
-	var procMounted, sysMounted, devMounted, devptsMounted bool
+	var procMounted, sysMounted, devMounted, devptsMounted, cgroupsMounted bool
 	var mounts []specs.Mount
 
 	// Mount all submounts from the spec.
 	for _, m := range spec.Mounts {
-		// Unconditionally drop any cgroupfs mounts. If requested, we'll add our
-		// own below.
-		if m.Type == cgroupfs.Name {
+		// Mount all the cgroup controllers when "/sys/fs/cgroup" mount
+		// is present. If any other cgroup controller mounts are there,
+		// it will be a no-op, drop them.
+		if m.Type == cgroupfs.Name && cgroupsMounted {
 			continue
 		}
+
 		switch filepath.Clean(m.Destination) {
 		case "/proc":
 			procMounted = true
@@ -236,30 +254,16 @@ func compileMounts(spec *specs.Spec, conf *config.Config) []specs.Mount {
 		case "/dev/pts":
 			m.Type = devpts.Name
 			devptsMounted = true
+		case "/sys/fs/cgroup":
+			cgroupsMounted = true
 		}
+
 		mounts = append(mounts, m)
 	}
 
 	// Mount proc and sys even if the user did not ask for it, as the spec
 	// says we SHOULD.
 	var mandatoryMounts []specs.Mount
-
-	if conf.Cgroupfs {
-		mandatoryMounts = append(mandatoryMounts, specs.Mount{
-			Type:        tmpfs.Name,
-			Destination: "/sys/fs/cgroup",
-		})
-		mandatoryMounts = append(mandatoryMounts, specs.Mount{
-			Type:        cgroupfs.Name,
-			Destination: "/sys/fs/cgroup/memory",
-			Options:     []string{"memory"},
-		})
-		mandatoryMounts = append(mandatoryMounts, specs.Mount{
-			Type:        cgroupfs.Name,
-			Destination: "/sys/fs/cgroup/cpu",
-			Options:     []string{"cpu"},
-		})
-	}
 
 	if !procMounted {
 		mandatoryMounts = append(mandatoryMounts, specs.Mount{
@@ -399,12 +403,27 @@ type containerMounter struct {
 
 	// sandboxID is the ID for the whole sandbox.
 	sandboxID string
+
+	// cgroupMounts is a map of cgroup mounts that can be reused across
+	// containers. Key is the cgroup controller name string.
+	cgroupMounts map[string]*cgroupMount
+
+	// cgroupsMounted indicates if cgroups are mounted in the container.
+	// This is used to set the InitialCgroups before starting the container
+	// process.
+	cgroupsMounted bool
 }
 
-func newContainerMounter(info *containerInfo, k *kernel.Kernel, hints *PodMountHints, sharedMounts map[string]*vfs.Mount, productName string, sandboxID string) *containerMounter {
+type cgroupMount struct {
+	fs    *vfs.Filesystem
+	root  *vfs.Dentry
+	mount *vfs.Mount
+}
+
+func newContainerMounter(info *containerInfo, k *kernel.Kernel, hints *PodMountHints, sharedMounts map[string]*vfs.Mount, productName string, sandboxID string, cgroupMounts map[string]*cgroupMount) *containerMounter {
 	return &containerMounter{
 		root:              info.spec.Root,
-		mounts:            compileMounts(info.spec, info.conf),
+		mounts:            compileMounts(info.spec, info.conf, info.procArgs.ContainerID),
 		goferFDs:          fdDispenser{fds: info.goferFDs},
 		goferFilestoreFDs: fdDispenser{fds: info.goferFilestoreFDs},
 		devGoferFD:        info.devGoferFD,
@@ -415,6 +434,7 @@ func newContainerMounter(info *containerInfo, k *kernel.Kernel, hints *PodMountH
 		productName:       productName,
 		containerID:       info.procArgs.ContainerID,
 		sandboxID:         sandboxID,
+		cgroupMounts:      cgroupMounts,
 	}
 }
 
@@ -722,6 +742,11 @@ func (c *containerMounter) mountSubmounts(ctx context.Context, spec *specs.Spec,
 			mnt, err = c.mountSharedSubmount(ctx, conf, mns, creds, submount, sharedMount)
 			if err != nil {
 				return fmt.Errorf("mount shared mount %q to %q: %v", submount.hint.Name, submount.mount.Destination, err)
+			}
+		} else if submount.mount.Type == cgroupfs.Name {
+			// Mount all the cgroups controllers.
+			if err := c.mountCgroupSubmounts(ctx, spec, conf, mns, creds, submount); err != nil {
+				return fmt.Errorf("mount cgroup %q: %w", submount.mount.Destination, err)
 			}
 		} else {
 			mnt, err = c.mountSubmount(ctx, spec, conf, mns, creds, submount)
@@ -1068,6 +1093,109 @@ func (c *containerMounter) getSharedMount(ctx context.Context, spec *specs.Spec,
 	}
 	c.sharedMounts[mount.hint.Mount.Source] = sharedMount
 	return sharedMount, nil
+}
+
+// mountCgroupMounts mounts the cgroups which are shared across all containers.
+// Postcondition: Initialized l.cgroupMounts on success.
+func (l *Loader) mountCgroupMounts(conf *config.Config, creds *auth.Credentials) error {
+	ctx := l.k.SupervisorContext()
+	cgroupMounts := make(map[string]*cgroupMount)
+	for _, sopts := range kernel.CgroupCtrls {
+		mopts := &vfs.MountOptions{
+			GetFilesystemOptions: vfs.GetFilesystemOptions{
+				Data:          string(sopts),
+				InternalMount: true,
+			},
+		}
+		fs, root, err := l.k.VFS().NewFilesystem(ctx, creds, "cgroup", cgroupfs.Name, mopts)
+		if err != nil {
+			return err
+		}
+
+		mount := l.k.VFS().NewDisconnectedMount(fs, root, mopts)
+		// Private so that mounts created by containers do not appear
+		// in other container's cgroup paths.
+		l.k.VFS().SetMountPropagation(mount, linux.MS_PRIVATE, false)
+		cgroupMounts[string(sopts)] = &cgroupMount{
+			fs:    fs,
+			root:  root,
+			mount: mount,
+		}
+	}
+	l.cgroupMounts = cgroupMounts
+	log.Infof("created cgroup mounts for controllers %v", kernel.CgroupCtrls)
+	return nil
+}
+
+// mountCgroupSubmounts mounts all the cgroup controller submounts for the
+// container. The cgroup submounts are created under the root controller mount
+// with containerID as the directory name and then bind mounts this directory
+// inside the container's mount namespace.
+func (c *containerMounter) mountCgroupSubmounts(ctx context.Context, spec *specs.Spec, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials, submount *mountInfo) error {
+	root := mns.Root(ctx)
+	defer root.DecRef(ctx)
+
+	// Mount "/sys/fs/cgroup" in the container's mount namespace.
+	submount.mount.Type = tmpfs.Name
+	mnt, err := c.mountSubmount(ctx, spec, conf, mns, creds, submount)
+	if err != nil {
+		return err
+	}
+	if mnt != nil && mnt.ReadOnly() {
+		// Switch to ReadWrite while we setup submounts.
+		if err := c.k.VFS().SetMountReadOnly(mnt, false); err != nil {
+			return fmt.Errorf("failed to set mount at %q readwrite: %w", submount.mount.Destination, err)
+		}
+		// Restore back to ReadOnly at the end.
+		defer func() {
+			if err := c.k.VFS().SetMountReadOnly(mnt, true); err != nil {
+				panic(fmt.Sprintf("failed to restore mount at %q back to readonly: %v", submount.mount.Destination, err))
+			}
+		}()
+	}
+
+	// Mount all the cgroup controllers in the container's mount namespace.
+	mountCtx := vfs.WithRoot(vfs.WithMountNamespace(ctx, mns), root)
+	for _, ctrl := range kernel.CgroupCtrls {
+		ctrlName := string(ctrl)
+		cgroupMnt, ok := c.cgroupMounts[ctrlName]
+		if !ok {
+			return fmt.Errorf("cgroup mount for controller %s not found", ctrlName)
+		}
+
+		cgroupMntVD := vfs.MakeVirtualDentry(cgroupMnt.mount, cgroupMnt.root)
+		sourcePop := vfs.PathOperation{
+			Root:  cgroupMntVD,
+			Start: cgroupMntVD,
+			// Use the containerID as the cgroup path.
+			Path: fspath.Parse(c.containerID),
+		}
+		if err := c.k.VFS().MkdirAt(mountCtx, creds, &sourcePop, &vfs.MkdirOptions{
+			Mode: 0755,
+		}); err != nil {
+			log.Infof("error in creating directory %v", err)
+			return err
+		}
+
+		// Bind mount the new cgroup directory into the container's mount namespace.
+		destination := "/sys/fs/cgroup/" + ctrlName
+		if err := c.k.VFS().MakeSyntheticMountpoint(mountCtx, destination, root, creds); err != nil {
+			// Log a warning, but attempt the mount anyway.
+			log.Warningf("Failed to create mount point %q: %v", destination, err)
+		}
+
+		target := &vfs.PathOperation{
+			Root:  root,
+			Start: root,
+			Path:  fspath.Parse(destination),
+		}
+		if err := c.k.VFS().BindAt(mountCtx, creds, &sourcePop, target, false); err != nil {
+			log.Infof("error in bind mounting %v", err)
+			return err
+		}
+	}
+	c.cgroupsMounted = true
+	return nil
 }
 
 // mountSharedMaster mounts the master of a volume that is shared among
