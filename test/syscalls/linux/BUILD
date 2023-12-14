@@ -822,6 +822,7 @@ cc_binary(
     linkstatic = 1,
     deps = [
         gtest,
+        "//test/util:logging",
         "//test/util:test_main",
         "//test/util:test_util",
     ],
