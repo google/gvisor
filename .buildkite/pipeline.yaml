@@ -170,8 +170,8 @@ steps:
 
   # GPU workflow.
   - <<: *common
-    <<: *source_test
-    label: ":firefighter: GPU Smoke Test"
+    <<: *source_test_presubmit
+    label: ":firefighter: GPU Smoke Tests"
     commands:
       - make sudo TARGETS=//tools/gpu:main ARGS="install --latest" || cat /var/log/nvidia-installer.log
       - make gpu-smoke-tests RUNTIME_ARGS="--strace --debug"
@@ -179,9 +179,17 @@ steps:
       queue: gpu
   - <<: *common
     <<: *source_test_continuous
-    label: ":female_supervillain: COS GPU Smoke Test"
+    label: ":screwdriver: GPU Tests"
     commands:
-      - make cos-gpu-smoke-tests RUNTIME_ARGS="--strace --debug"
+      - make sudo TARGETS=//tools/gpu:main ARGS="install --latest" || cat /var/log/nvidia-installer.log
+      - make gpu-all-tests RUNTIME_ARGS="--strace --debug"
+    agents:
+      queue: gpu
+  - <<: *common
+    <<: *source_test_continuous
+    label: ":female_supervillain: COS GPU Tests"
+    commands:
+      - make cos-gpu-all-tests RUNTIME_ARGS="--strace --debug"
     agents:
       queue: cos-canary-gpu
   - <<: *common
@@ -191,6 +199,7 @@ steps:
       - tools/gpu/all_drivers_test.sh
     agents:
       queue: gpu
+
   # Release workflow.
   - <<: *common
     <<: *source_test
