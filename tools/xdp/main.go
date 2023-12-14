@@ -38,6 +38,7 @@ import (
 func main() {
 	subcommands.Register(new(DropCommand), "")
 	subcommands.Register(new(PassCommand), "")
+	subcommands.Register(new(RedirectHostCommand), "")
 	subcommands.Register(new(TcpdumpCommand), "")
 
 	flag.Parse()
@@ -69,7 +70,7 @@ func runBasicProgram(progData []byte, device string, deviceIndex int) error {
 		}
 	}()
 
-	cleanup, err := attach(objects.Program, iface)
+	_, cleanup, err := attach(objects.Program, iface)
 	if err != nil {
 		return fmt.Errorf("failed to attach: %v", err)
 	}
@@ -100,7 +101,7 @@ func getIface(device string, deviceIndex int) (*net.Interface, error) {
 	}
 }
 
-func attach(program *ebpf.Program, iface *net.Interface) (func(), error) {
+func attach(program *ebpf.Program, iface *net.Interface) (link.Link, func(), error) {
 	// Attach the program to the XDP hook on the device. Fallback from best
 	// to worst mode.
 	modes := []struct {
@@ -126,9 +127,9 @@ func attach(program *ebpf.Program, iface *net.Interface) (func(), error) {
 		log.Printf("failed to attach with mode %q: %v", mode.name, err)
 	}
 	if attached == nil {
-		return nil, fmt.Errorf("failed to attach program")
+		return nil, nil, fmt.Errorf("failed to attach program")
 	}
-	return func() { attached.Close() }, nil
+	return attached, func() { attached.Close() }, nil
 }
 
 func waitForever() {
