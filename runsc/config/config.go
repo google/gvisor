@@ -259,9 +259,6 @@ type Config struct {
 	// Enables seccomp inside the sandbox.
 	OCISeccomp bool `flag:"oci-seccomp"`
 
-	// Mounts the cgroup filesystem backed by the sentry's cgroupfs.
-	Cgroupfs bool `flag:"cgroupfs"`
-
 	// Don't configure cgroups.
 	IgnoreCgroups bool `flag:"ignore-cgroups"`
 

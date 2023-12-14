@@ -26,6 +26,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/fd"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fdimport"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/user"
@@ -268,6 +269,21 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 	ttyFile, err := fdimport.Import(ctx, fdTable, args.StdioIsPty, args.KUID, args.KGID, fdMap)
 	if err != nil {
 		return nil, 0, nil, err
+	}
+
+	// Set cgroups to the new exec task if cgroups are mounted.
+	cgroupRegistry := proc.Kernel.CgroupRegistry()
+	initialCgrps := map[kernel.Cgroup]struct{}{}
+	for _, ctrl := range kernel.CgroupCtrls {
+		cg, err := cgroupRegistry.FindCgroup(ctx, ctrl, "/"+args.ContainerID)
+		if err != nil {
+			log.Warningf("cgroup mount for controller %v not found", ctrl)
+			continue
+		}
+		initialCgrps[cg] = struct{}{}
+	}
+	if len(initialCgrps) > 0 {
+		initArgs.InitialCgroups = initialCgrps
 	}
 
 	tg, tid, err := proc.Kernel.CreateProcess(initArgs)
