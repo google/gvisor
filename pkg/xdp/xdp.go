@@ -67,10 +67,11 @@ type ControlBlock struct {
 
 // ReadOnlySocketOpts configure a read-only AF_XDP socket.
 type ReadOnlySocketOpts struct {
-	NFrames      uint32
-	FrameSize    uint32
-	NDescriptors uint32
-	Bind         bool
+	NFrames       uint32
+	FrameSize     uint32
+	NDescriptors  uint32
+	Bind          bool
+	UseNeedWakeup bool
 }
 
 // DefaultReadOnlyOpts provides recommended default options for initializing a
@@ -287,30 +288,38 @@ func ReadOnlyFromSocket(sockfd int, ifaceIdx, queueID uint32, opts ReadOnlySocke
 	// device. In those cases, another process with the same socket will
 	// bind for us.
 	if opts.Bind {
-		addr := unix.SockaddrXDP{
-			// XDP_USE_NEED_WAKEUP lets the driver sleep if there is no
-			// work to do. It will need to be woken by poll. It is expected
-			// that this improves performance by preventing the driver from
-			// burning cycles.
-			//
-			// By not setting either XDP_COPY or XDP_ZEROCOPY, we instruct
-			// the kernel to use zerocopy if available and then fallback to
-			// copy mode.
-			Flags:   unix.XDP_USE_NEED_WAKEUP,
-			Ifindex: ifaceIdx,
-			// AF_XDP sockets are per device RX queue, although multiple
-			// sockets on multiple queues (or devices) can share a single
-			// UMEM.
-			QueueID: queueID,
-			// We're not using shared mode, so the value here is irrelevant.
-			SharedUmemFD: 0,
-		}
-
-		if err := unix.Bind(sockfd, &addr); err != nil {
-			return nil, fmt.Errorf("failed to bind with addr %+v: %v", addr, err)
+		if err := Bind(sockfd, ifaceIdx, queueID, opts.UseNeedWakeup); err != nil {
+			return nil, fmt.Errorf("failed to bind to interface %d: %v", ifaceIdx, err)
 		}
 	}
 
 	cleanup.Release()
 	return &cb, nil
+}
+
+// Bind binds a socket to a particular network interface and queue.
+func Bind(sockfd int, ifindex, queueID uint32, useNeedWakeup bool) error {
+	var flags uint16
+	if useNeedWakeup {
+		flags |= unix.XDP_USE_NEED_WAKEUP
+	}
+	addr := unix.SockaddrXDP{
+		// XDP_USE_NEED_WAKEUP lets the driver sleep if there is no
+		// work to do. It will need to be woken by poll. It is expected
+		// that this improves performance by preventing the driver from
+		// burning cycles.
+		//
+		// By not setting either XDP_COPY or XDP_ZEROCOPY, we instruct
+		// the kernel to use zerocopy if available and then fallback to
+		// copy mode.
+		Flags:   flags,
+		Ifindex: ifindex,
+		// AF_XDP sockets are per device RX queue, although multiple
+		// sockets on multiple queues (or devices) can share a single
+		// UMEM.
+		QueueID: queueID,
+		// We're not using shared mode, so the value here is irrelevant.
+		SharedUmemFD: 0,
+	}
+	return unix.Bind(sockfd, &addr)
 }
