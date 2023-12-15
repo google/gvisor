@@ -120,6 +120,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Int("num-network-channels", 1, "number of underlying channels(FDs) to use for network link endpoints.")
 	flagSet.Bool("buffer-pooling", true, "enable allocation of buffers from a shared pool instead of the heap.")
 	flagSet.Bool("EXPERIMENTAL-afxdp", false, "EXPERIMENTAL. Use an AF_XDP socket to receive packets.")
+	flagSet.String("EXPERIMENTAL-xdp-redirect-host", "", "EXPERIMENTAL. Use an AF_XDP socket attached to <interface name>. Use the IP of that interface.")
 	flagSet.Bool("reproduce-nat", false, "Scrape the host netns NAT table and reproduce it in the sandbox.")
 	flagSet.Bool("reproduce-nftables", false, "Attempt to scrape and reproduce nftable rules inside the sandbox. Overrides reproduce-nat when true.")
 

@@ -98,6 +98,10 @@ type Options struct {
 
 	// InterfaceIndex is the interface index of the underlying device.
 	InterfaceIndex int
+
+	// Bind is true when we're responsible for binding the AF_XDP socket to
+	// a device. When false, another process is expected to bind for us.
+	Bind bool
 }
 
 // New creates a new endpoint from an AF_XDP socket.
@@ -151,6 +155,7 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 		NFrames:      nFrames,
 		FrameSize:    frameSize,
 		NDescriptors: nFrames / 2,
+		Bind:         opts.Bind,
 	}
 	ep.control, err = xdp.ReadOnlyFromSocket(opts.FD, uint32(opts.InterfaceIndex), 0 /* queueID */, xdpOpts)
 	if err != nil {

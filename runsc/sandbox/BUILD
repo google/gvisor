@@ -46,6 +46,7 @@ go_library(
         "//runsc/donation",
         "//runsc/sandbox/bpf",
         "//runsc/specutils",
+        "//tools/xdp/cmd",
         "@com_github_cenkalti_backoff//:go_default_library",
         "@com_github_cilium_ebpf//:go_default_library",
         "@com_github_cilium_ebpf//link:go_default_library",
