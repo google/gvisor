@@ -276,6 +276,14 @@ type Config struct {
 	// (rather than AF_PACKET). Enabling it disables RX checksum offload.
 	AFXDP bool `flag:"EXPERIMENTAL-afxdp"`
 
+	// AFXDPRedirectHost is the name of a network interface. runsc will
+	// scrape the address, routes, and neighbors of that interface, and
+	// send packets via an AF_XDP socket on that interface.
+	//
+	// Requires use of `xdp_loader redirect` to setup the XDP program and
+	// eBPF map that runsc hooks into.
+	AFXDPRedirectHost string `flag:"EXPERIMENTAL-xdp-redirect-host"`
+
 	// FDLimit specifies a limit on the number of host file descriptors that can
 	// be open simultaneously by the sentry and gofer. It applies separately to
 	// each.
