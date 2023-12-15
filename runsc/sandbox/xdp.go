@@ -26,6 +26,7 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/urpc"
+	"gvisor.dev/gvisor/pkg/xdp"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/sandbox/bpf"
@@ -114,29 +115,10 @@ func createRedirectInterfacesAndRoutes(conn *urpc.Client, conf *config.Config) e
 	}
 
 	// Bind to the device.
-	sockAddr := unix.SockaddrXDP{
-		// XDP_USE_NEED_WAKEUP lets the driver sleep if there is no
-		// work to do. It will need to be woken by poll. It is expected
-		// that this improves performance by preventing the driver from
-		// burning cycles.
-		//
-		// By not setting either XDP_COPY or XDP_ZEROCOPY, we instruct
-		// the kernel to use zerocopy if available and then fallback to
-		// copy mode.
-		Flags:   unix.XDP_USE_NEED_WAKEUP,
-		Ifindex: uint32(iface.Index),
-		// AF_XDP sockets are per device RX queue, although multiple
-		// sockets on multiple queues (or devices) can share a single
-		// UMEM.
-		//
-		// TODO(b/240191988): We can't assume there's only one queue,
-		// but this appears to be the case on gVNIC instances.
-		QueueID: 0,
-		// We're not using shared mode, so the value here is irrelevant.
-		SharedUmemFD: 0,
-	}
-	if err := unix.Bind(xdpSockFD, &sockAddr); err != nil {
-		return fmt.Errorf("failed to bind to interface %q with addr %+v: %v", iface.Name, sockAddr, err)
+	// TODO(b/240191988): We can't assume there's only one queue, but this
+	// appears to be the case on gVNIC instances.
+	if err := xdp.Bind(xdpSockFD, uint32(iface.Index), 0 /* queueID */, conf.AFXDPUseNeedWakeup); err != nil {
+		return fmt.Errorf("failed to bind to interface %q: %v", iface.Name, err)
 	}
 
 	return nil

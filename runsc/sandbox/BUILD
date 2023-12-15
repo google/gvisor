@@ -38,6 +38,7 @@ go_library(
         "//pkg/tcpip/header",
         "//pkg/tcpip/stack",
         "//pkg/urpc",
+        "//pkg/xdp",
         "//runsc/boot",
         "//runsc/boot/procfs",
         "//runsc/cgroup",
