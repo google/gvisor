@@ -15,8 +15,10 @@
 package boot
 
 import (
-	"errors"
+	"fmt"
+	"strconv"
 
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/control"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 )
@@ -82,6 +84,33 @@ type CPUUsage struct {
 	PerCPU []uint64 `json:"percpu,omitempty"`
 }
 
+func (cm *containerManager) getUsageFromCgroups(file control.CgroupControlFile) (uint64, error) {
+	var out control.CgroupsResults
+	args := control.CgroupsReadArgs{
+		Args: []control.CgroupsReadArg{
+			{
+				File: file,
+			},
+		},
+	}
+	cgroups := control.Cgroups{Kernel: cm.l.k}
+	if err := cgroups.ReadControlFiles(&args, &out); err != nil {
+		return 0, err
+	}
+	if len(out.Results) != 1 {
+		return 0, fmt.Errorf("expected 1 result, got %d, raw: %+v", len(out.Results), out)
+	}
+	val, err := out.Results[0].Unpack()
+	if err != nil {
+		return 0, err
+	}
+	usage, err := strconv.ParseUint(val, 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	return usage, nil
+}
+
 // Event gets the events from the container.
 func (cm *containerManager) Event(cid *string, out *EventOut) error {
 	*out = EventOut{
@@ -98,34 +127,42 @@ func (cm *containerManager) Event(cid *string, out *EventOut) error {
 	}
 	out.Event.Data.Pids.Current = uint64(pids)
 
-	// Memory usage.
-	mem := cm.l.k.MemoryFile()
-	_ = mem.UpdateUsage(nil) // best effort to update.
-	_, totalUsage := usage.MemoryAccounting.Copy()
-	switch containers := cm.l.containerCount(); containers {
-	case 0:
-		return errors.New("no container was found")
-
-	case 1:
-		// There is a single container, so total usage can only come from it.
-
-	default:
-		// In the multi-container case, reports 0 for the root (pause) container,
-		// since it's small and idle. Then equally split the usage to the other
-		// containers. At least the sum of all containers will correctly account
-		// for the memory used by the sandbox.
-		//
-		// TODO(gvisor.dev/issue/172): Proper per-container accounting.
-		if *cid == cm.l.sandboxID {
-			totalUsage = 0
-		} else {
-			totalUsage /= uint64(containers - 1)
-		}
+	numContainers := cm.l.containerCount()
+	if numContainers == 0 {
+		return fmt.Errorf("no container was found")
 	}
 
-	out.Event.Data.Memory.Usage.Usage = totalUsage
+	// Memory usage.
+	memFile := control.CgroupControlFile{"memory", "/" + *cid, "memory.usage_in_bytes"}
+	memUsage, err := cm.getUsageFromCgroups(memFile)
+	if err != nil {
+		// Cgroups is not installed or there was an error to get usage
+		// from the cgroups. Fall back to the old method of getting the
+		// usage from the sentry.
+		log.Warningf("could not get container memory usage from cgroups, error:  %v", err)
+
+		mem := cm.l.k.MemoryFile()
+		_ = mem.UpdateUsage(nil) // best effort to update.
+		_, totalUsage := usage.MemoryAccounting.Copy()
+		if numContainers == 1 {
+			memUsage = totalUsage
+		} else {
+			// In the multi-container case, reports 0 for the root (pause)
+			// container, since it's small and idle. Then equally split the
+			// usage to the other containers. At least the sum of all
+			// containers will correctly account for the memory used by the
+			// sandbox.
+			if *cid == cm.l.sandboxID {
+				memUsage = 0
+			} else {
+				memUsage = totalUsage / uint64(numContainers-1)
+			}
+		}
+	}
+	out.Event.Data.Memory.Usage.Usage = memUsage
 
 	// CPU usage by container.
+	// TODO(gvisor.dev/issue/172) : Get cpu usage from cgroups.
 	out.ContainerUsage = control.ContainerUsage(cm.l.k)
 
 	return nil
