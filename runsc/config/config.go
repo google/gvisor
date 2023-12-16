@@ -284,6 +284,10 @@ type Config struct {
 	// eBPF map that runsc hooks into.
 	AFXDPRedirectHost string `flag:"EXPERIMENTAL-xdp-redirect-host"`
 
+	// AFXDPUseNeedWakeup determines whether XDP_USE_NEED_WAKEUP is set
+	// when using AF_XDP sockets.
+	AFXDPUseNeedWakeup bool `flag:"EXPERIMENTAL-xdp-need-wakeup"`
+
 	// FDLimit specifies a limit on the number of host file descriptors that can
 	// be open simultaneously by the sentry and gofer. It applies separately to
 	// each.
