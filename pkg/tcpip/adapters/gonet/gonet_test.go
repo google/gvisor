@@ -489,7 +489,7 @@ func TestUDPForwarder(t *testing.T) {
 		}
 		defer ep.Close()
 
-		c := NewUDPConn(s, &wq, ep)
+		c := NewUDPConn(&wq, ep)
 
 		buf := make([]byte, 256)
 		n, e := c.Read(buf)
