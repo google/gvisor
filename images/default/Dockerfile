@@ -10,6 +10,10 @@ RUN apt-get update && apt-get install -y curl gnupg2 git \
         pkg-config libffi-dev patch diffutils libssl-dev iptables kmod \
         clang crossbuild-essential-amd64 erofs-utils busybox-static libbpf-dev
 
+# This package is needed to build eBPF on amd64, but not on arm64 where it
+# doesn't exist.
+RUN test "$(uname -m)" != x86_64 && exit 0 || apt-get install -y libc6-dev-i386
+
 # Install Docker client for the website build.
 RUN curl -fsSL https://download.docker.com/linux/ubuntu/gpg | apt-key add -
 RUN add-apt-repository \
