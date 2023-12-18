@@ -608,8 +608,10 @@ func (c *Container) Event() (*boot.EventOut, error) {
 		return nil, err
 	}
 
-	// Some stats can utilize host cgroups for accuracy.
-	c.populateStats(event)
+	if len(event.ContainerUsage) > 0 {
+		// Some stats can utilize host cgroups for accuracy.
+		c.populateStats(event)
+	}
 
 	return event, nil
 }
@@ -1571,8 +1573,6 @@ func setOOMScoreAdj(pid int, scoreAdj int) error {
 
 // populateStats populates event with stats estimates based on cgroups and the
 // sentry's accounting.
-// TODO(gvisor.dev/issue/172): This is an estimation; we should do more
-// detailed accounting.
 func (c *Container) populateStats(event *boot.EventOut) {
 	// The events command, when run for all running containers, should
 	// account for the full cgroup CPU usage. We split cgroup usage
