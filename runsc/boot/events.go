@@ -162,8 +162,16 @@ func (cm *containerManager) Event(cid *string, out *EventOut) error {
 	out.Event.Data.Memory.Usage.Usage = memUsage
 
 	// CPU usage by container.
-	// TODO(gvisor.dev/issue/172) : Get cpu usage from cgroups.
-	out.ContainerUsage = control.ContainerUsage(cm.l.k)
+	cpuacctFile := control.CgroupControlFile{"cpuacct", "/" + *cid, "cpuacct.usage"}
+	if cpuUsage, err := cm.getUsageFromCgroups(cpuacctFile); err != nil {
+		// Cgroups is not installed or there was an error to get usage
+		// from the cgroups. Fall back to the old method of getting the
+		// usage from the sentry and host cgroups.
+		log.Warningf("could not get container cpu usage from cgroups, error:  %v", err)
 
+		out.ContainerUsage = control.ContainerUsage(cm.l.k)
+	} else {
+		out.Event.Data.CPU.Usage.Total = cpuUsage
+	}
 	return nil
 }
