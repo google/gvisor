@@ -23,6 +23,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/cenkalti/backoff"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/test/dockerutil"
 	"gvisor.dev/gvisor/pkg/test/testutil"
@@ -84,7 +85,11 @@ func iptablesTest(t *testing.T, test TestCase, ipv6 bool) {
 	if ipv6 {
 		args = append(args, "-ipv6")
 	}
-	if err := d.Spawn(ctx, opts, args...); err != nil {
+
+	spawn := func() error {
+		return d.Spawn(ctx, opts, args...)
+	}
+	if err := backoff.Retry(spawn, backoff.NewExponentialBackOff()); err != nil {
 		log.Infof("docker run failed: %v", err)
 		t.FailNow()
 	}

@@ -41,6 +41,7 @@ go_test(
         "//pkg/log",
         "//pkg/test/dockerutil",
         "//pkg/test/testutil",
+        "@com_github_cenkalti_backoff//:go_default_library",
     ],
 )
 
