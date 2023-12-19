@@ -100,6 +100,7 @@ type FDBasedLink struct {
 	Addresses         []IPWithPrefix
 	Routes            []Route
 	GSOMaxSize        uint32
+	HostNetworkDriver stack.NetworkDriver
 	GvisorGSOEnabled  bool
 	GvisorGROTimeout  time.Duration
 	TXChecksumOffload bool
@@ -312,6 +313,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 				PacketDispatchMode: dispatchMode,
 				GSOMaxSize:         link.GSOMaxSize,
 				GvisorGSOEnabled:   link.GvisorGSOEnabled,
+				HostNetworkDriver:  link.HostNetworkDriver,
 				TXChecksumOffload:  link.TXChecksumOffload,
 				RXChecksumOffload:  link.RXChecksumOffload,
 			})

@@ -182,7 +182,7 @@ func TestAddress(t *testing.T) {
 }
 
 func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32, hash uint32) {
-	c := newContext(t, &Options{Address: laddr, MTU: mtu, EthernetHeader: eth, GSOMaxSize: gsoMaxSize})
+	c := newContext(t, &Options{Address: laddr, MTU: mtu, EthernetHeader: eth, GSOMaxSize: gsoMaxSize, HostNetworkDriver: stack.NetworkDriverVirtioNet})
 	defer c.cleanup()
 
 	// Build payload.
@@ -216,7 +216,7 @@ func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32, hash u
 	const l3HdrLen = header.IPv6MinimumSize
 	if gsoMaxSize != 0 {
 		pkt.GSOOptions = stack.GSO{
-			Type:       stack.GSOTCPv6,
+			Type:       stack.GSOVirtioTCPv6,
 			NeedsCsum:  true,
 			CsumOffset: csumOffset,
 			MSS:        gsoMSS,

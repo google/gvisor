@@ -204,6 +204,10 @@ type Options struct {
 	// GvisorGSOEnabled indicates whether Gvisor GSO is enabled or not.
 	GvisorGSOEnabled bool
 
+	// HostNetworkDriver is the type of driver used by the network interface
+	// backing this socket.
+	HostNetworkDriver stack.NetworkDriver
+
 	// PacketDispatchMode specifies the type of inbound dispatcher to be
 	// used for this endpoint.
 	PacketDispatchMode PacketDispatchMode
@@ -315,7 +319,11 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 				if opts.GvisorGSOEnabled {
 					e.gsoKind = stack.GvisorGSOSupported
 				} else {
-					e.gsoKind = stack.HostGSOSupported
+					if opts.HostNetworkDriver == stack.NetworkDriverGve {
+						e.gsoKind = stack.HostGveGSOSupported
+					} else {
+						e.gsoKind = stack.HostVirtioGSOSupported
+					}
 				}
 				e.gsoMaxSize = opts.GSOMaxSize
 			}
@@ -542,39 +550,48 @@ func (e *endpoint) ParseHeader(pkt stack.PacketBufferPtr) bool {
 	return true
 }
 
+func (e *endpoint) makeHostGSOHeader(pkt stack.PacketBufferPtr) []byte {
+	switch pkt.GSOOptions.Type {
+	case stack.GSOVirtioTCPv4, stack.GSOVirtioTCPv6:
+		vnetHdr := virtioNetHdr{}
+		vnetHdr.hdrLen = uint16(pkt.HeaderSize())
+		if pkt.GSOOptions.NeedsCsum {
+			vnetHdr.flags = _VIRTIO_NET_HDR_F_NEEDS_CSUM
+			vnetHdr.csumStart = header.EthernetMinimumSize + pkt.GSOOptions.L3HdrLen
+			vnetHdr.csumOffset = pkt.GSOOptions.CsumOffset
+		}
+		if uint16(pkt.Data().Size()) > pkt.GSOOptions.MSS {
+			switch pkt.GSOOptions.Type {
+			case stack.GSOVirtioTCPv4:
+				vnetHdr.gsoType = _VIRTIO_NET_HDR_GSO_TCPV4
+			case stack.GSOVirtioTCPv6:
+				vnetHdr.gsoType = _VIRTIO_NET_HDR_GSO_TCPV6
+			default:
+				panic(fmt.Sprintf("Unknown gso type: %v", pkt.GSOOptions.Type))
+			}
+			vnetHdr.gsoSize = pkt.GSOOptions.MSS
+		}
+		return vnetHdr.marshal()
+	case stack.GSOGve, stack.GSONone:
+		return nil
+	default:
+		panic(fmt.Sprintf("Unknown gso type: %v", pkt.GSOOptions.Type))
+	}
+}
+
 // writePacket writes outbound packets to the file descriptor. If it is not
 // currently writable, the packet is dropped.
 func (e *endpoint) writePacket(pkt stack.PacketBufferPtr) tcpip.Error {
 	fdInfo := e.fds[pkt.Hash%uint32(len(e.fds))]
 	fd := fdInfo.fd
-	var vnetHdrBuf []byte
-	if e.gsoKind == stack.HostGSOSupported {
-		vnetHdr := virtioNetHdr{}
-		if pkt.GSOOptions.Type != stack.GSONone {
-			vnetHdr.hdrLen = uint16(pkt.HeaderSize())
-			if pkt.GSOOptions.NeedsCsum {
-				vnetHdr.flags = _VIRTIO_NET_HDR_F_NEEDS_CSUM
-				vnetHdr.csumStart = header.EthernetMinimumSize + pkt.GSOOptions.L3HdrLen
-				vnetHdr.csumOffset = pkt.GSOOptions.CsumOffset
-			}
-			if uint16(pkt.Data().Size()) > pkt.GSOOptions.MSS {
-				switch pkt.GSOOptions.Type {
-				case stack.GSOTCPv4:
-					vnetHdr.gsoType = _VIRTIO_NET_HDR_GSO_TCPV4
-				case stack.GSOTCPv6:
-					vnetHdr.gsoType = _VIRTIO_NET_HDR_GSO_TCPV6
-				default:
-					panic(fmt.Sprintf("Unknown gso type: %v", pkt.GSOOptions.Type))
-				}
-				vnetHdr.gsoSize = pkt.GSOOptions.MSS
-			}
-		}
-		vnetHdrBuf = vnetHdr.marshal()
+	var gsoHdrBuf []byte
+	if (e.gsoKind & stack.HostGSOSupportedMask) != 0 {
+		gsoHdrBuf = e.makeHostGSOHeader(pkt)
 	}
 
 	views := pkt.AsSlices()
 	numIovecs := len(views)
-	if len(vnetHdrBuf) != 0 {
+	if len(gsoHdrBuf) != 0 {
 		numIovecs++
 	}
 	if numIovecs > e.writevMaxIovs {
@@ -587,7 +604,7 @@ func (e *endpoint) writePacket(pkt stack.PacketBufferPtr) tcpip.Error {
 	if numIovecs > len(iovecsArr) {
 		iovecs = make([]unix.Iovec, 0, numIovecs)
 	}
-	iovecs = rawfile.AppendIovecFromBytes(iovecs, vnetHdrBuf, numIovecs)
+	iovecs = rawfile.AppendIovecFromBytes(iovecs, gsoHdrBuf, numIovecs)
 	for _, v := range views {
 		iovecs = rawfile.AppendIovecFromBytes(iovecs, v, numIovecs)
 	}
@@ -617,34 +634,14 @@ func (e *endpoint) sendBatch(batchFDInfo fdInfo, pkts []stack.PacketBufferPtr) (
 		batch := pkts[packets:]
 		syscallHeaderBytes := uintptr(0)
 		for _, pkt := range batch {
-			var vnetHdrBuf []byte
-			if e.gsoKind == stack.HostGSOSupported {
-				vnetHdr := virtioNetHdr{}
-				if pkt.GSOOptions.Type != stack.GSONone {
-					vnetHdr.hdrLen = uint16(pkt.HeaderSize())
-					if pkt.GSOOptions.NeedsCsum {
-						vnetHdr.flags = _VIRTIO_NET_HDR_F_NEEDS_CSUM
-						vnetHdr.csumStart = header.EthernetMinimumSize + pkt.GSOOptions.L3HdrLen
-						vnetHdr.csumOffset = pkt.GSOOptions.CsumOffset
-					}
-					if pkt.GSOOptions.Type != stack.GSONone && uint16(pkt.Data().Size()) > pkt.GSOOptions.MSS {
-						switch pkt.GSOOptions.Type {
-						case stack.GSOTCPv4:
-							vnetHdr.gsoType = _VIRTIO_NET_HDR_GSO_TCPV4
-						case stack.GSOTCPv6:
-							vnetHdr.gsoType = _VIRTIO_NET_HDR_GSO_TCPV6
-						default:
-							panic(fmt.Sprintf("Unknown gso type: %v", pkt.GSOOptions.Type))
-						}
-						vnetHdr.gsoSize = pkt.GSOOptions.MSS
-					}
-				}
-				vnetHdrBuf = vnetHdr.marshal()
+			var gsoHdrBuf []byte
+			if e.gsoKind&stack.HostGSOSupportedMask != 0 {
+				gsoHdrBuf = e.makeHostGSOHeader(pkt)
 			}
 
 			views := pkt.AsSlices()
 			numIovecs := len(views)
-			if len(vnetHdrBuf) != 0 {
+			if len(gsoHdrBuf) != 0 {
 				numIovecs++
 			}
 			if numIovecs > rawfile.MaxIovs {
@@ -664,7 +661,7 @@ func (e *endpoint) sendBatch(batchFDInfo fdInfo, pkts []stack.PacketBufferPtr) (
 			// We can't easily allocate iovec arrays on the stack here since
 			// they will escape this loop iteration via mmsgHdrs.
 			iovecs := make([]unix.Iovec, 0, numIovecs)
-			iovecs = rawfile.AppendIovecFromBytes(iovecs, vnetHdrBuf, numIovecs)
+			iovecs = rawfile.AppendIovecFromBytes(iovecs, gsoHdrBuf, numIovecs)
 			for _, v := range views {
 				iovecs = rawfile.AppendIovecFromBytes(iovecs, v, numIovecs)
 			}
