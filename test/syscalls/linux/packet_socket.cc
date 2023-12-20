@@ -21,6 +21,7 @@
 
 #include <limits>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/ip_socket_test_util.h"
 #include "test/util/capability_util.h"
@@ -191,7 +192,9 @@ void ExpectReceiveOnPacketSocket(FileDescriptor& socket,
       .msg_iovlen = 1,
   };
 
-  ASSERT_THAT(RecvMsgTimeout(socket.get(), &received_msg, 1 /*timeout*/),
+  // NB: poll indefinitely on Fuchsia to avoid timing out in Infra.
+  int timeout = GvisorPlatform() == Platform::kFuchsia ? -1 : 1;
+  ASSERT_THAT(RecvMsgTimeout(socket.get(), &received_msg, timeout),
               IsPosixErrorOkAndHolds(expected_read_len));
 
   // sockaddr_ll ends with an 8 byte physical address field, but ethernet
@@ -280,7 +283,9 @@ TEST_P(PacketSocketTest, RebindProtocol) {
     // Make sure the payload has been delivered (in case of asynchronous
     // delivery).
     char buf[sizeof(v)];
-    EXPECT_THAT(RecvTimeout(udp_sock.get(), buf, sizeof(v), 1 /*timeout*/),
+    // NB: poll indefinitely on Fuchsia to avoid timing out in Infra.
+    int timeout = GvisorPlatform() == Platform::kFuchsia ? -1 : 1;
+    EXPECT_THAT(RecvTimeout(udp_sock.get(), buf, sizeof(v), timeout),
                 IsPosixErrorOkAndHolds(sizeof(v)));
     ASSERT_EQ(*reinterpret_cast<uint64_t*>(buf), v);
   };
