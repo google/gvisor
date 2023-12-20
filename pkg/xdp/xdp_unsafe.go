@@ -61,7 +61,7 @@ func sizeOfTXQueueDesc() uint64 {
 	return uint64(unsafe.Sizeof(unix.XDPDesc{}))
 }
 
-func (fq *FillQueue) init(off unix.XDPMmapOffsets, opts ReadOnlySocketOpts) {
+func (fq *FillQueue) init(off unix.XDPMmapOffsets, opts Opts) {
 	fillQueueRingHdr := (*reflect.SliceHeader)(unsafe.Pointer(&fq.ring))
 	fillQueueRingHdr.Data = uintptr(unsafe.Pointer(&fq.mem[off.Fr.Desc]))
 	fillQueueRingHdr.Len = int(opts.NDescriptors)
@@ -71,7 +71,7 @@ func (fq *FillQueue) init(off unix.XDPMmapOffsets, opts ReadOnlySocketOpts) {
 	fq.flags = (*atomicbitops.Uint32)(unsafe.Pointer(&fq.mem[off.Fr.Flags]))
 }
 
-func (rq *RXQueue) init(off unix.XDPMmapOffsets, opts ReadOnlySocketOpts) {
+func (rq *RXQueue) init(off unix.XDPMmapOffsets, opts Opts) {
 	rxQueueRingHdr := (*reflect.SliceHeader)(unsafe.Pointer(&rq.ring))
 	rxQueueRingHdr.Data = uintptr(unsafe.Pointer(&rq.mem[off.Rx.Desc]))
 	rxQueueRingHdr.Len = int(opts.NDescriptors)
@@ -85,7 +85,7 @@ func (rq *RXQueue) init(off unix.XDPMmapOffsets, opts ReadOnlySocketOpts) {
 	rq.cachedConsumer = rq.consumer.Load()
 }
 
-func (cq *CompletionQueue) init(off unix.XDPMmapOffsets, opts ReadOnlySocketOpts) {
+func (cq *CompletionQueue) init(off unix.XDPMmapOffsets, opts Opts) {
 	completionQueueRingHdr := (*reflect.SliceHeader)(unsafe.Pointer(&cq.ring))
 	completionQueueRingHdr.Data = uintptr(unsafe.Pointer(&cq.mem[off.Cr.Desc]))
 	completionQueueRingHdr.Len = int(opts.NDescriptors)
@@ -99,7 +99,7 @@ func (cq *CompletionQueue) init(off unix.XDPMmapOffsets, opts ReadOnlySocketOpts
 	cq.cachedConsumer = cq.consumer.Load()
 }
 
-func (tq *TXQueue) init(off unix.XDPMmapOffsets, opts ReadOnlySocketOpts) {
+func (tq *TXQueue) init(off unix.XDPMmapOffsets, opts Opts) {
 	txQueueRingHdr := (*reflect.SliceHeader)(unsafe.Pointer(&tq.ring))
 	txQueueRingHdr.Data = uintptr(unsafe.Pointer(&tq.mem[off.Tx.Desc]))
 	txQueueRingHdr.Len = int(opts.NDescriptors)

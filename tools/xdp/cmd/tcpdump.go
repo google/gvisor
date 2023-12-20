@@ -106,8 +106,8 @@ func (pc *TcpdumpCommand) execute() error {
 	}
 	defer cleanup()
 
-	controlBlock, err := xdp.ReadOnlySocket(
-		uint32(iface.Index), 0 /* queueID */, xdp.DefaultReadOnlyOpts())
+	controlBlock, err := xdp.New(
+		uint32(iface.Index), 0 /* queueID */, xdp.DefaultOpts())
 	if err != nil {
 		return fmt.Errorf("failed to create socket: %v", err)
 	}

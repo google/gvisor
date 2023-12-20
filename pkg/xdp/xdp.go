@@ -63,10 +63,8 @@ type ControlBlock struct {
 	Completion CompletionQueue
 }
 
-// TODO(b/240191988): None of this is read-only anymore.
-
-// ReadOnlySocketOpts configure a read-only AF_XDP socket.
-type ReadOnlySocketOpts struct {
+// Opts configure an AF_XDP socket.
+type Opts struct {
 	NFrames       uint32
 	FrameSize     uint32
 	NDescriptors  uint32
@@ -74,11 +72,11 @@ type ReadOnlySocketOpts struct {
 	UseNeedWakeup bool
 }
 
-// DefaultReadOnlyOpts provides recommended default options for initializing a
-// readonly AF_XDP socket. AF_XDP setup is extremely finnicky and can fail if
-// incorrect values are used.
-func DefaultReadOnlyOpts() ReadOnlySocketOpts {
-	return ReadOnlySocketOpts{
+// DefaultOpts provides recommended default options for initializing an AF_XDP
+// socket. AF_XDP setup is extremely finnicky and can fail if incorrect values
+// are used.
+func DefaultOpts() Opts {
+	return Opts{
 		NFrames: 4096,
 		// Frames must be 2048 or 4096 bytes, although not all drivers support
 		// both.
@@ -87,19 +85,19 @@ func DefaultReadOnlyOpts() ReadOnlySocketOpts {
 	}
 }
 
-// ReadOnlySocket returns an initialized read-only AF_XDP socket bound to a
-// particular interface and queue.
-func ReadOnlySocket(ifaceIdx, queueID uint32, opts ReadOnlySocketOpts) (*ControlBlock, error) {
+// New returns an initialized AF_XDP socket bound to a particular interface and
+// queue.
+func New(ifaceIdx, queueID uint32, opts Opts) (*ControlBlock, error) {
 	sockfd, err := unix.Socket(unix.AF_XDP, unix.SOCK_RAW, 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create AF_XDP socket: %v", err)
 	}
-	return ReadOnlyFromSocket(sockfd, ifaceIdx, queueID, opts)
+	return NewFromSocket(sockfd, ifaceIdx, queueID, opts)
 }
 
-// ReadOnlyFromSocket takes an AF_XDP socket, initializes it, and binds it to a
+// NewFromSocket takes an AF_XDP socket, initializes it, and binds it to a
 // particular interface and queue.
-func ReadOnlyFromSocket(sockfd int, ifaceIdx, queueID uint32, opts ReadOnlySocketOpts) (*ControlBlock, error) {
+func NewFromSocket(sockfd int, ifaceIdx, queueID uint32, opts Opts) (*ControlBlock, error) {
 	if opts.FrameSize != 2048 && opts.FrameSize != 4096 {
 		return nil, fmt.Errorf("invalid frame size %d: must be either 2048 or 4096", opts.FrameSize)
 	}
