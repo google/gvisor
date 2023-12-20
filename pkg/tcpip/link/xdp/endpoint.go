@@ -151,13 +151,13 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 		umemSize  = 1 << 21
 		nFrames   = umemSize / frameSize
 	)
-	xdpOpts := xdp.ReadOnlySocketOpts{
+	xdpOpts := xdp.Opts{
 		NFrames:      nFrames,
 		FrameSize:    frameSize,
 		NDescriptors: nFrames / 2,
 		Bind:         opts.Bind,
 	}
-	ep.control, err = xdp.ReadOnlyFromSocket(opts.FD, uint32(opts.InterfaceIndex), 0 /* queueID */, xdpOpts)
+	ep.control, err = xdp.NewFromSocket(opts.FD, uint32(opts.InterfaceIndex), 0 /* queueID */, xdpOpts)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create AF_XDP dispatcher: %v", err)
 	}
