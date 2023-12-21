@@ -17,6 +17,7 @@ package proc
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"math"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -24,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/rand"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -50,13 +52,16 @@ func (fs *filesystem) newSysDir(ctx context.Context, root *auth.Credentials, k *
 			"hostname":     fs.newInode(ctx, root, 0444, &hostnameData{}),
 			"overflowgid":  fs.newInode(ctx, root, 0444, newStaticFile(fmt.Sprintf("%d\n", auth.OverflowGID))),
 			"overflowuid":  fs.newInode(ctx, root, 0444, newStaticFile(fmt.Sprintf("%d\n", auth.OverflowUID))),
-			"sem":          fs.newInode(ctx, root, 0444, newStaticFile(fmt.Sprintf("%d\t%d\t%d\t%d\n", linux.SEMMSL, linux.SEMMNS, linux.SEMOPM, linux.SEMMNI))),
-			"shmall":       fs.newInode(ctx, root, 0444, ipcData(linux.SHMALL)),
-			"shmmax":       fs.newInode(ctx, root, 0444, ipcData(linux.SHMMAX)),
-			"shmmni":       fs.newInode(ctx, root, 0444, ipcData(linux.SHMMNI)),
-			"msgmni":       fs.newInode(ctx, root, 0444, ipcData(linux.MSGMNI)),
-			"msgmax":       fs.newInode(ctx, root, 0444, ipcData(linux.MSGMAX)),
-			"msgmnb":       fs.newInode(ctx, root, 0444, ipcData(linux.MSGMNB)),
+			"random": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
+				"boot_id": fs.newInode(ctx, root, 0444, newStaticFile(randUUID())),
+			}),
+			"sem":    fs.newInode(ctx, root, 0444, newStaticFile(fmt.Sprintf("%d\t%d\t%d\t%d\n", linux.SEMMSL, linux.SEMMNS, linux.SEMOPM, linux.SEMMNI))),
+			"shmall": fs.newInode(ctx, root, 0444, ipcData(linux.SHMALL)),
+			"shmmax": fs.newInode(ctx, root, 0444, ipcData(linux.SHMMAX)),
+			"shmmni": fs.newInode(ctx, root, 0444, ipcData(linux.SHMMNI)),
+			"msgmni": fs.newInode(ctx, root, 0444, ipcData(linux.MSGMNI)),
+			"msgmax": fs.newInode(ctx, root, 0444, ipcData(linux.MSGMAX)),
+			"msgmnb": fs.newInode(ctx, root, 0444, ipcData(linux.MSGMNB)),
 			"yama": fs.newStaticDir(ctx, root, map[string]kernfs.Inode{
 				"ptrace_scope": fs.newYAMAPtraceScopeFile(ctx, k, root),
 			}),
@@ -537,4 +542,16 @@ func (f *atomicInt32File) Write(ctx context.Context, _ *vfs.FileDescription, src
 
 	f.val.Store(v)
 	return n, nil
+}
+
+// randUUID returns a string containing a randomly-generated UUID followed by a
+// newline.
+func randUUID() string {
+	var uuid [16]byte
+	if _, err := io.ReadFull(rand.Reader, uuid[:]); err != nil {
+		panic(fmt.Sprintf("failed to read random bytes for UUID: %v", err))
+	}
+	uuid[8] = (uuid[8] & 0x3f) | 0x80 // RFC 4122 UUID
+	uuid[6] = (uuid[6] & 0x0f) | 0x40 // Version 4 (random)
+	return fmt.Sprintf("%x-%x-%x-%x-%x\n", uuid[:4], uuid[4:6], uuid[6:8], uuid[8:10], uuid[10:])
 }
