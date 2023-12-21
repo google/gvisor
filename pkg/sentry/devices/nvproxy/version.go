@@ -249,6 +249,7 @@ func Init() {
 					nvgpu.NV2080_CTRL_CMD_GSP_GET_FEATURES:                                 rmControlSimple,
 					nvgpu.NV2080_CTRL_CMD_MC_GET_ARCH_INFO:                                 rmControlSimple,
 					nvgpu.NV2080_CTRL_CMD_MC_SERVICE_INTERRUPTS:                            rmControlSimple,
+					nvgpu.NV2080_CTRL_CMD_NVLINK_GET_NVLINK_CAPS:                           rmControlSimple,
 					nvgpu.NV2080_CTRL_CMD_NVLINK_GET_NVLINK_STATUS:                         rmControlSimple,
 					nvgpu.NV2080_CTRL_CMD_PERF_BOOST:                                       rmControlSimple,
 					nvgpu.NV2080_CTRL_CMD_RC_GET_WATCHDOG_INFO:                             rmControlSimple,
