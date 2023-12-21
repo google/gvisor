@@ -87,6 +87,7 @@ go_library(
         "//pkg/errors/linuxerr",
         "//pkg/hostarch",
         "//pkg/log",
+        "//pkg/rand",
         "//pkg/refs",
         "//pkg/safemem",
         "//pkg/sentry/fsimpl/kernfs",
