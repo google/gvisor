@@ -209,6 +209,7 @@ const (
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080nvlink.h:
 const (
+	NV2080_CTRL_CMD_NVLINK_GET_NVLINK_CAPS   = 0x20803001
 	NV2080_CTRL_CMD_NVLINK_GET_NVLINK_STATUS = 0x20803002
 )
 
