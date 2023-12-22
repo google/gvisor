@@ -288,6 +288,9 @@ type Config struct {
 	// when using AF_XDP sockets.
 	AFXDPUseNeedWakeup bool `flag:"EXPERIMENTAL-xdp-need-wakeup"`
 
+	// Yep, still tired.
+	AFXDPTunnel string `flag:"EXPERIMENTAL-xdp-tunnel"`
+
 	// FDLimit specifies a limit on the number of host file descriptors that can
 	// be open simultaneously by the sentry and gofer. It applies separately to
 	// each.

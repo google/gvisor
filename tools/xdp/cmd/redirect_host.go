@@ -27,7 +27,6 @@ import (
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 	"github.com/google/subcommands"
-	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
@@ -43,19 +42,19 @@ func RedirectPinDir(iface string) string {
 // RedirectMapPath returns the path where the eBPF map will be pinned when
 // xdp_loader is run against iface.
 func RedirectMapPath(iface string) string {
-	return filepath.Join(RedirectPinDir(iface), "ip_map")
+	return filepath.Join(RedirectPinDir(iface), "redirect_ip_map")
 }
 
 // RedirectProgramPath returns the path where the eBPF program will be pinned
 // when xdp_loader is run against iface.
 func RedirectProgramPath(iface string) string {
-	return filepath.Join(RedirectPinDir(iface), "program")
+	return filepath.Join(RedirectPinDir(iface), "redirect_program")
 }
 
 // RedirectLinkPath returns the path where the eBPF link will be pinned when
 // xdp_loader is run against iface.
 func RedirectLinkPath(iface string) string {
-	return filepath.Join(RedirectPinDir(iface), "link")
+	return filepath.Join(RedirectPinDir(iface), "redirect_link")
 }
 
 //go:embed bpf/redirect_host_ebpf.o
@@ -170,10 +169,6 @@ func (rc *RedirectHostCommand) execute() error {
 		return fmt.Errorf("failed to pin link at %s", linkPath)
 	}
 	log.Printf("Pinned link at %s", linkPath)
-
-	for false {
-		unix.Pause()
-	}
 
 	return nil
 }

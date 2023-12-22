@@ -41,3 +41,32 @@ must also look at [libbpf itself][libbpf] to understand what's really going on.
 [libbpf]: https://github.com/torvalds/linux/tree/master/tools/testing/selftests/bpf/xsk.c
 [^libxdp]: XDP functionality has since moved to libxdp, but nobody seems to be
     using it yet.
+
+TODO for XDP\_REDIRECT:
+
+-   Install a map of index (always 0 at first) to device on the host nic
+-   Redirect everything but port 22 to that device (reuse other ebpf program)
+-   When runsc runs, have it install the host-facing veth as the value in the
+    map
+-   Also use an XDP socket inside gVisor
+-   Shouldn't require any new flags. Just do it in the xdp\_loader
+-   We actually need 3 programs:
+    -   One on the host nic to redirect to the host-facing end of the veth
+    -   Do this via xdp\_loader
+    -   One on the host-facing end of the veth to redirect out the host nic
+    -   Do this via xdp\_loader
+    -   One on the sentry-facing end of the veth to read packets from
+    -   This is done. It's just the regular xdp endpoint.
+
+STATUS: It builds, it runs... and there's not connectivity.
+
+-   Are the programs attached?
+-   What are we doing address-wise?
+    -   In GKE, we actually want to use the address of the pod.
+    -   Elsewhere (i.e. anywhere we'd use docker's `-p` flag), we want to use
+        the address of the host.
+    -   Right now, we're doing the GKE thing.
+    -   Wow, there are way to many XDP modes atm. We'll have to remove some when
+        stable.
+    -   I can just reuse prepareRedirectInterfaceArgs, but connect to the ns nic
+        instead of the host one

@@ -22,3 +22,6 @@ import _ "embed"
 //
 //go:embed af_xdp_ebpf.o
 var AFXDPProgram []byte
+
+//go:embed tunnel_veth_ebpf.o
+var TunnelVethProgram []byte

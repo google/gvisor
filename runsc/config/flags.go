@@ -122,6 +122,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool("EXPERIMENTAL-afxdp", false, "EXPERIMENTAL. Use an AF_XDP socket to receive packets.")
 	flagSet.String("EXPERIMENTAL-xdp-redirect-host", "", "EXPERIMENTAL. Use an AF_XDP socket attached to <interface name>. Use the IP of that interface.")
 	flagSet.Bool("EXPERIMENTAL-xdp-need-wakeup", true, "EXPERIMENTAL. Use XDP_USE_NEED_WAKEUP with XDP sockets.")
+	flagSet.String("EXPERIMENTAL-xdp-tunnel", "", "EXPERIMENTAL. I'm tired.")
 	flagSet.Bool("reproduce-nat", false, "Scrape the host netns NAT table and reproduce it in the sandbox.")
 	flagSet.Bool("reproduce-nftables", false, "Attempt to scrape and reproduce nftable rules inside the sandbox. Overrides reproduce-nat when true.")
 

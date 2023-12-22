@@ -34,6 +34,7 @@ func main() {
 	subcommands.Register(new(cmd.PassCommand), "")
 	subcommands.Register(new(cmd.RedirectHostCommand), "")
 	subcommands.Register(new(cmd.TcpdumpCommand), "")
+	subcommands.Register(new(cmd.TunnelCommand), "")
 
 	flag.Parse()
 	ctx := context.Background()

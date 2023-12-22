@@ -67,6 +67,11 @@ func setupNetwork(conn *urpc.Client, pid int, conf *config.Config) error {
 		if err := createInterfacesAndRoutesFromNS(conn, nsPath, conf); err != nil {
 			return fmt.Errorf("creating interfaces from net namespace %q: %v", nsPath, err)
 		}
+		// if conf.AFXDPTunnel != "" {
+		// 	if err := createXDPTunnel(conf); err != nil {
+		// 		return fmt.Errorf("failed to create XDP tunnel: %w", err)
+		// 	}
+		// }
 	case config.NetworkHost:
 		// Nothing to do here.
 	default:
@@ -123,6 +128,13 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 	if conf.AFXDPRedirectHost != "" {
 		if err := createRedirectInterfacesAndRoutes(conn, conf); err != nil {
 			return fmt.Errorf("failed to create XDP redirect interface: %w", err)
+		}
+		return nil
+	}
+
+	if conf.AFXDPTunnel != "" {
+		if err := createXDPTunnel(conn, nsPath, conf); err != nil {
+			return fmt.Errorf("failed to create XDP tunnel: %w", err)
 		}
 		return nil
 	}
