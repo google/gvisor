@@ -289,14 +289,13 @@ func (ep *endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error)
 	}
 
 	// Allocate UMEM space. In order to release the UMEM lock as soon as
-	// possible, we allocate up-front and copy data in after releasing.
+	// possible we allocate up-front.
 	for _, pkt := range pkts.AsSlice() {
 		batch = append(batch, unix.XDPDesc{
 			Addr: ep.control.UMEM.AllocFrame(),
 			Len:  uint32(pkt.Size()),
 		})
 	}
-	ep.control.UMEM.Unlock()
 
 	for i, pkt := range pkts.AsSlice() {
 		// Copy packets into UMEM frame.
@@ -310,6 +309,10 @@ func (ep *endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error)
 
 	// Notify the kernel that there're packets to write.
 	ep.control.TX.Notify()
+
+	// TODO(b/240191988): Explore more fine-grained locking. We shouldn't
+	// need to hold the UMEM lock for the whole duration of packet copying.
+	ep.control.UMEM.Unlock()
 
 	return pkts.Len(), nil
 }
