@@ -278,8 +278,10 @@ func (rf *regularFile) CopyMapping(ctx context.Context, ms memmap.MappingSpace, 
 	return rf.AddMapping(ctx, ms, dstAR, offset, writable)
 }
 
-// Translate implements memmap.Mappable.Translate.
-func (rf *regularFile) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
+// Translate implements memmap.Mappable.Translate. Note that we only allocate
+// required; optional range is ignored. Allocating optional (which may be
+// larger than required) may cause tmpfs to hit its size limit earlier.
+func (rf *regularFile) Translate(ctx context.Context, required, _ memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
 	rf.dataMu.Lock()
 	defer rf.dataMu.Unlock()
 
@@ -289,26 +291,17 @@ func (rf *regularFile) Translate(ctx context.Context, required, optional memmap.
 	var beyondEOF bool
 	if required.End > pgend {
 		if required.Start >= pgend {
-			return nil, &memmap.BusError{io.EOF}
+			return nil, &memmap.BusError{Err: io.EOF}
 		}
 		beyondEOF = true
 		required.End = pgend
 	}
-	if optional.End > pgend {
-		optional.End = pgend
-	}
-	pagesToFill := rf.data.PagesToFill(required, optional)
+	pagesToFill := rf.data.PagesToFill(required, required)
 	if !rf.inode.fs.accountPages(pagesToFill) {
-		// If we can not accommodate pagesToFill pages, then retry with just
-		// the required range. Because optional may be larger than required.
-		// Only error out if even the required range can not be allocated for.
-		pagesToFill = rf.data.PagesToFill(required, required)
-		if !rf.inode.fs.accountPages(pagesToFill) {
-			return nil, &memmap.BusError{linuxerr.ENOSPC}
-		}
-		optional = required
+		// The required range can not be allocated for.
+		return nil, &memmap.BusError{Err: linuxerr.ENOSPC}
 	}
-	pagesAlloced, cerr := rf.data.Fill(ctx, required, optional, rf.size.RacyLoad(), rf.inode.fs.mf, rf.memoryUsageKind, pgalloc.AllocateOnly, nil /* r */)
+	pagesAlloced, cerr := rf.data.Fill(ctx, required, required, rf.size.RacyLoad(), rf.inode.fs.mf, rf.memoryUsageKind, pgalloc.AllocateOnly, nil /* r */)
 	// rf.data.Fill() may fail mid-way. We still want to account any pages that
 	// were allocated, irrespective of an error.
 	rf.inode.fs.adjustPageAcct(pagesToFill, pagesAlloced)
@@ -316,7 +309,7 @@ func (rf *regularFile) Translate(ctx context.Context, required, optional memmap.
 	var ts []memmap.Translation
 	var translatedEnd uint64
 	for seg := rf.data.FindSegment(required.Start); seg.Ok() && seg.Start() < required.End; seg, _ = seg.NextNonEmpty() {
-		segMR := seg.Range().Intersect(optional)
+		segMR := seg.Range().Intersect(required)
 		ts = append(ts, memmap.Translation{
 			Source: segMR,
 			File:   rf.inode.fs.mf,
@@ -329,10 +322,10 @@ func (rf *regularFile) Translate(ctx context.Context, required, optional memmap.
 	// Don't return the error returned by f.data.Fill if it occurred outside of
 	// required.
 	if translatedEnd < required.End && cerr != nil {
-		return ts, &memmap.BusError{cerr}
+		return ts, &memmap.BusError{Err: cerr}
 	}
 	if beyondEOF {
-		return ts, &memmap.BusError{io.EOF}
+		return ts, &memmap.BusError{Err: io.EOF}
 	}
 	return ts, nil
 }
