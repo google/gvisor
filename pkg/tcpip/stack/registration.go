@@ -1329,8 +1329,9 @@ const (
 	GSONone GSOType = iota
 
 	// Hardware GSO types:
-	GSOTCPv4
-	GSOTCPv6
+	GSOVirtioTCPv4
+	GSOVirtioTCPv6
+	GSOGve
 
 	// GSOGvisor is used for gVisor GSO segments which have to be sent by
 	// endpoint.WritePackets.
@@ -1362,18 +1363,52 @@ type SupportedGSO int
 
 const (
 	// GSONotSupported indicates that segmentation offloading is not supported.
-	GSONotSupported SupportedGSO = iota
+	GSONotSupported SupportedGSO = 1 << iota
 
-	// HostGSOSupported indicates that segmentation offloading may be performed
-	// by the host. This is typically true when netstack is attached to a host
-	// AF_PACKET socket, and not true when attached to a unix socket or other
-	// non-networking data layer.
-	HostGSOSupported
+	// HostVirtioGSOSupported indicates that segmentation offloading may be
+	// performed by the host on a network interface utilizing a virtio_net driver.
+	//
+	// Host GSO Support types (Virtio or GVE) are typically used when netstack is
+	// attached to a host AF_PACKET socket, and not true when attached to a unix
+	// socket or other non-networking data layer.
+	HostVirtioGSOSupported
+
+	// HostGveGSOSupported indicates that segmentation offloading may be
+	// performed by the host on a network interface utilizing a GVE driver.
+	HostGveGSOSupported
 
 	// GvisorGSOSupported indicates that segmentation offloading may be performed
 	// in gVisor.
 	GvisorGSOSupported
 )
+
+// HostGSOSupportedMask is a mask of the different supported host GSO types.
+const HostGSOSupportedMask = HostVirtioGSOSupported | HostGveGSOSupported
+
+// NetworkDriver is a network interface driver.
+type NetworkDriver int
+
+const (
+	// NetworkDriverUnknown is an unknown driver type.
+	NetworkDriverUnknown = iota
+	// NetworkDriverVirtioNet is the virtio_net driver.
+	NetworkDriverVirtioNet
+	// NetworkDriverGve is the gve driver used in the gVNIC hardware.
+	NetworkDriverGve
+)
+
+// NetworkDriverFromString returns a NetworkDriver type from a driver string
+// returned by SIOCETHTOOOL.
+func NetworkDriverFromString(name string) NetworkDriver {
+	switch name {
+	case "virtio_net":
+		return NetworkDriverVirtioNet
+	case "gve":
+		return NetworkDriverGve
+	default:
+		return NetworkDriverUnknown
+	}
+}
 
 // GSOEndpoint provides access to GSO properties.
 type GSOEndpoint interface {

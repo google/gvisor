@@ -298,6 +298,7 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 				}
 				if i == 0 {
 					link.GSOMaxSize = socketEntry.gsoMaxSize
+					link.HostNetworkDriver = socketEntry.networkDriver
 				} else {
 					if link.GSOMaxSize != socketEntry.gsoMaxSize {
 						return fmt.Errorf("inconsistent gsoMaxSize %d and %d when creating multiple channels for same interface: %s",
@@ -376,8 +377,9 @@ func isAddressOnInterface(ifaceName string, addr *net.IPNet) (bool, error) {
 }
 
 type socketEntry struct {
-	deviceFile *os.File
-	gsoMaxSize uint32
+	deviceFile    *os.File
+	gsoMaxSize    uint32
+	networkDriver stack.NetworkDriver
 }
 
 // createSocket creates an underlying AF_PACKET socket and configures it for
@@ -399,18 +401,29 @@ func createSocket(iface net.Interface, ifaceLink netlink.Link, enableGSO bool) (
 	if err := unix.Bind(fd, &ll); err != nil {
 		return nil, fmt.Errorf("unable to bind to %q: %v", iface.Name, err)
 	}
-
-	gsoMaxSize := uint32(0)
+	sockEntry := &socketEntry{deviceFile: deviceFile, gsoMaxSize: 0, networkDriver: stack.NetworkDriverUnknown}
 	if enableGSO {
 		gso, err := isGSOEnabled(fd, iface.Name)
 		if err != nil {
 			return nil, fmt.Errorf("getting GSO for interface %q: %v", iface.Name, err)
 		}
 		if gso {
-			if err := unix.SetsockoptInt(fd, unix.SOL_PACKET, unix.PACKET_VNET_HDR, 1); err != nil {
-				return nil, fmt.Errorf("unable to enable the PACKET_VNET_HDR option: %v", err)
+			netDriverName, err := networkDriverName(fd, iface.Name)
+			if err != nil {
+				return nil, fmt.Errorf("getting nic driver name for interface %q: %v", iface.Name, err)
 			}
-			gsoMaxSize = ifaceLink.Attrs().GSOMaxSize
+			networkDriver := stack.NetworkDriverFromString(netDriverName)
+			switch networkDriver {
+			case stack.NetworkDriverVirtioNet:
+				if err := unix.SetsockoptInt(fd, unix.SOL_PACKET, unix.PACKET_VNET_HDR, 1); err != nil {
+					return nil, fmt.Errorf("unable to enable the PACKET_VNET_HDR option: %v", err)
+				}
+			case stack.NetworkDriverGve:
+			default:
+				log.Warningf("Network driver %s is not yet supported by netstack. Defaulting to --gso=false behavior.")
+			}
+			sockEntry.gsoMaxSize = ifaceLink.Attrs().GSOMaxSize
+			sockEntry.networkDriver = networkDriver
 		} else {
 			log.Infof("GSO not available in host.")
 		}
@@ -440,7 +453,7 @@ func createSocket(iface net.Interface, ifaceLink netlink.Link, enableGSO bool) (
 		}
 	}
 
-	return &socketEntry{deviceFile, gsoMaxSize}, nil
+	return sockEntry, nil
 }
 
 // loopbackLink returns the link with addresses and routes for a loopback

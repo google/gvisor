@@ -28,13 +28,29 @@ type ethtoolValue struct {
 	val uint32
 }
 
+type ethtoolDrvInfo struct {
+	cmd         uint32
+	driver      [32]byte
+	version     [32]byte
+	fwVersion   [unix.ETHTOOL_FWVERS_LEN]byte
+	busInfo     [unix.ETHTOOL_BUSINFO_LEN]byte
+	eromVersion [unix.ETHTOOL_EROMVERS_LEN]byte
+	_           [12]byte
+	nPrivFlags  uint32
+	nStats      uint32
+	testinfoLen uint32
+	eedumpLen   uint32
+	regdumpLen  uint32
+}
+
 type ifreq struct {
 	ifrName [unix.IFNAMSIZ]byte
-	ifrData *ethtoolValue
+	ifrData unsafe.Pointer
 }
 
 const (
-	_ETHTOOL_GGSO = 0x00000023
+	_ETHTOOL_GGSO     = 0x00000023
+	_ETHTOOL_GDRVINFO = 0x00000003
 )
 
 func isGSOEnabled(fd int, intf string) (bool, error) {
@@ -47,7 +63,7 @@ func isGSOEnabled(fd int, intf string) (bool, error) {
 
 	ifr := ifreq{
 		ifrName: name,
-		ifrData: &val,
+		ifrData: unsafe.Pointer(&val),
 	}
 
 	if _, _, err := unix.Syscall(unix.SYS_IOCTL, uintptr(fd), unix.SIOCETHTOOL, uintptr(unsafe.Pointer(&ifr))); err != 0 {
@@ -55,6 +71,26 @@ func isGSOEnabled(fd int, intf string) (bool, error) {
 	}
 
 	return val.val != 0, nil
+}
+
+func networkDriverName(fd int, intf string) (string, error) {
+	var name [unix.IFNAMSIZ]byte
+	copy(name[:], []byte(intf))
+
+	sif := ethtoolDrvInfo{
+		cmd: _ETHTOOL_GDRVINFO,
+	}
+
+	ifr := ifreq{
+		ifrName: name,
+		ifrData: unsafe.Pointer(&sif),
+	}
+
+	if _, _, err := unix.Syscall(unix.SYS_IOCTL, uintptr(fd), unix.SIOCETHTOOL, uintptr(unsafe.Pointer(&ifr))); err != 0 {
+		return "", err
+	}
+
+	return string(sif.driver[:]), nil
 }
 
 func writeNATBlob() (*os.File, error) {

@@ -182,7 +182,7 @@ func TestAddress(t *testing.T) {
 }
 
 func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32, hash uint32) {
-	c := newContext(t, &Options{Address: laddr, MTU: mtu, EthernetHeader: eth, GSOMaxSize: gsoMaxSize})
+	c := newContext(t, &Options{Address: laddr, MTU: mtu, EthernetHeader: eth, GSOMaxSize: gsoMaxSize, HostNetworkDriver: stack.NetworkDriverVirtioNet})
 	defer c.cleanup()
 
 	// Build payload.
@@ -216,7 +216,7 @@ func testWritePacket(t *testing.T, plen int, eth bool, gsoMaxSize uint32, hash u
 	const l3HdrLen = header.IPv6MinimumSize
 	if gsoMaxSize != 0 {
 		pkt.GSOOptions = stack.GSO{
-			Type:       stack.GSOTCPv6,
+			Type:       stack.GSOVirtioTCPv6,
 			NeedsCsum:  true,
 			CsumOffset: csumOffset,
 			MSS:        gsoMSS,
@@ -486,7 +486,7 @@ var capLengthTestCases = []struct {
 func TestIovecBuffer(t *testing.T) {
 	for _, c := range capLengthTestCases {
 		t.Run(c.comment, func(t *testing.T) {
-			b := newIovecBuffer(c.config, false /* skipsVnetHdr */)
+			b := newIovecBuffer(c.config, stack.GSONotSupported /* skipsVnetHdr */)
 			defer b.release()
 
 			// Test initial allocation.
@@ -549,7 +549,7 @@ func TestIovecBufferSkipVnetHdr(t *testing.T) {
 		},
 	} {
 		t.Run(test.desc, func(t *testing.T) {
-			b := newIovecBuffer([]int{128, 256, 512, 1024}, true)
+			b := newIovecBuffer([]int{128, 256, 512, 1024}, stack.HostVirtioGSOSupported)
 			defer b.release()
 			// Pretend a read happened.
 			b.nextIovecs()

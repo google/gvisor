@@ -47,8 +47,9 @@ type iovecBuffer struct {
 	// immutable.
 	sizes []int
 
-	// skipsVnetHdr is true if virtioNetHdr is to skipped.
-	skipsVnetHdr bool
+	// supportedGSO is the type of GSO used by the host system. We must set aside
+	// the right amount of space for the appropriate header.
+	supportedGSO stack.SupportedGSO
 
 	// pulledIndex is the index of the last []byte buffer pulled from the
 	// underlying buffer storage during a call to pullBuffers. It is -1
@@ -56,14 +57,14 @@ type iovecBuffer struct {
 	pulledIndex int
 }
 
-func newIovecBuffer(sizes []int, skipsVnetHdr bool) *iovecBuffer {
+func newIovecBuffer(sizes []int, supportedGSO stack.SupportedGSO) *iovecBuffer {
 	b := &iovecBuffer{
 		views:        make([]*buffer.View, len(sizes)),
 		sizes:        sizes,
-		skipsVnetHdr: skipsVnetHdr,
+		supportedGSO: supportedGSO,
 	}
 	niov := len(b.views)
-	if b.skipsVnetHdr {
+	if b.supportedGSO == stack.HostVirtioGSOSupported {
 		niov++
 	}
 	b.iovecs = make([]unix.Iovec, niov)
@@ -72,7 +73,7 @@ func newIovecBuffer(sizes []int, skipsVnetHdr bool) *iovecBuffer {
 
 func (b *iovecBuffer) nextIovecs() []unix.Iovec {
 	vnetHdrOff := 0
-	if b.skipsVnetHdr {
+	if b.supportedGSO == stack.HostVirtioGSOSupported {
 		var vnetHdr [virtioNetHdrSize]byte
 		// The kernel adds virtioNetHdr before each packet, but
 		// we don't use it, so we allocate a buffer for it,
@@ -102,12 +103,12 @@ func (b *iovecBuffer) nextIovecs() []unix.Iovec {
 func (b *iovecBuffer) pullBuffer(n int) buffer.Buffer {
 	var views []*buffer.View
 	c := 0
-	if b.skipsVnetHdr {
+	if b.supportedGSO == stack.HostVirtioGSOSupported {
 		c += virtioNetHdrSize
-		if c >= n {
-			// Nothing in the packet.
-			return buffer.Buffer{}
-		}
+	}
+	if c >= n {
+		// Nothing in the packet.
+		return buffer.Buffer{}
 	}
 	// Remove the used views from the buffer.
 	for i, v := range b.views {
@@ -121,8 +122,7 @@ func (b *iovecBuffer) pullBuffer(n int) buffer.Buffer {
 	for i := range views {
 		b.views[i] = nil
 	}
-	if b.skipsVnetHdr {
-		// Exclude the size of the vnet header.
+	if b.supportedGSO == stack.HostVirtioGSOSupported {
 		n -= virtioNetHdrSize
 	}
 	pulled := buffer.Buffer{}
@@ -166,8 +166,7 @@ func newReadVDispatcher(fd int, e *endpoint) (linkDispatcher, error) {
 		fd:     fd,
 		e:      e,
 	}
-	skipsVnetHdr := d.e.gsoKind == stack.HostGSOSupported
-	d.buf = newIovecBuffer(BufConfig, skipsVnetHdr)
+	d.buf = newIovecBuffer(BufConfig, e.SupportedGSO())
 	return d, nil
 }
 
@@ -257,9 +256,8 @@ func newRecvMMsgDispatcher(fd int, e *endpoint) (linkDispatcher, error) {
 		bufs:    make([]*iovecBuffer, MaxMsgsPerRecv),
 		msgHdrs: make([]rawfile.MMsgHdr, MaxMsgsPerRecv),
 	}
-	skipsVnetHdr := d.e.gsoKind == stack.HostGSOSupported
 	for i := range d.bufs {
-		d.bufs[i] = newIovecBuffer(BufConfig, skipsVnetHdr)
+		d.bufs[i] = newIovecBuffer(BufConfig, e.SupportedGSO())
 	}
 	return d, nil
 }

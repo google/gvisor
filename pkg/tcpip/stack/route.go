@@ -319,12 +319,12 @@ func (r *Route) HasGvisorGSOCapability() bool {
 	return false
 }
 
-// HasHostGSOCapability returns true if the route supports host GSO.
-func (r *Route) HasHostGSOCapability() bool {
+// HostGSOCapability returns the supported host GSO type.
+func (r *Route) HostGSOCapability() SupportedGSO {
 	if gso, ok := r.outgoingNIC.NetworkLinkEndpoint.(GSOEndpoint); ok {
-		return gso.SupportedGSO() == HostGSOSupported
+		return gso.SupportedGSO()
 	}
-	return false
+	return GSONotSupported
 }
 
 // HasSaveRestoreCapability returns true if the route supports save/restore.

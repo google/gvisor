@@ -1287,7 +1287,7 @@ func (c *Context) SACKEnabled() bool {
 // SetGSOEnabled enables or disables generic segmentation offload.
 func (c *Context) SetGSOEnabled(enable bool) {
 	if enable {
-		c.linkEP.SupportedGSOKind = stack.HostGSOSupported
+		c.linkEP.SupportedGSOKind = stack.HostVirtioGSOSupported
 	} else {
 		c.linkEP.SupportedGSOKind = stack.GSONotSupported
 	}
