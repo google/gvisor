@@ -7,7 +7,7 @@ Note that all these images must be pushed to the testing project hosted on
 continuous integration. This will speed up loading as images will not need to be
 built from scratch for each test run.
 
-Image tooling is accessible via `make`, specifically via `images/Makefile`.
+Image tooling is accessible via `make`, specifically via `tools/images.mk`.
 
 ## Why make?
 
