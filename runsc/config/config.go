@@ -58,7 +58,15 @@ type Config struct {
 	LogFormat string `flag:"log-format"`
 
 	// DebugLog is the path to log debug information to, if not empty.
+	// If specified together with `DebugToUserLog`, debug logs are emitted
+	// to both.
 	DebugLog string `flag:"debug-log"`
+
+	// DebugToUserLog indicates that Sentry debug logs should be emitted
+	// to user-visible logs.
+	// If specified together with `DebugLog`, debug logs are emitted
+	// to both.
+	DebugToUserLog bool `flag:"debug-to-user-log"`
 
 	// DebugCommand is a comma-separated list of commands to be debugged if
 	// --debug-log is also set. Empty means debug all. "!" negates the expression.
