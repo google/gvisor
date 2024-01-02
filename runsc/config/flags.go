@@ -52,6 +52,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.Bool("log-packets", false, "enable network packet logging.")
 	flagSet.String("pcap-log", "", "location of PCAP log file.")
 	flagSet.String("debug-log-format", "text", "log format: text (default), json, or json-k8s.")
+	flagSet.Bool("debug-to-user-log", false, "also emit Sentry logs to user-visible logs")
 	// Only register -alsologtostderr flag if it is not already defined on this flagSet.
 	if flagSet.Lookup("alsologtostderr") == nil {
 		flagSet.Bool("alsologtostderr", false, "send log messages to stderr.")
@@ -144,11 +145,12 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 var overrideAllowlist = map[string]struct {
 	check func(name string, value string) error
 }{
-	"debug":           {},
-	"strace":          {},
-	"strace-syscalls": {},
-	"strace-log-size": {},
-	"host-uds":        {},
+	"debug":             {},
+	"debug-to-user-log": {},
+	"strace":            {},
+	"strace-syscalls":   {},
+	"strace-log-size":   {},
+	"host-uds":          {},
 
 	"oci-seccomp": {check: checkOciSeccomp},
 }
