@@ -230,13 +230,15 @@ func checkFilterCacheability(program bpf.Program, input bpf.Input) (uint32, erro
 
 // populateCache recomputes `ts.cache` from `ts.filters`.
 func (ts *taskSeccomp) populateCache(t *Task) {
-	sd := linux.SeccompData{}
 	ts.cacheAuditNumber = t.image.st.AuditNumber
+	sd := linux.SeccompData{}
+	input := bpf.Input(make([]byte, sd.SizeBytes()))
 
 	for sysno := int32(0); sysno <= sentry.MaxSyscallNum; sysno++ {
 		sd.Nr = sysno
 		sd.Arch = ts.cacheAuditNumber
-		input := dataAsBPFInput(t, &sd)
+		clear(input)
+		sd.MarshalBytes(input)
 		sysnoIsCacheable := true
 		ret := linux.BPFAction(linux.SECCOMP_RET_ALLOW)
 		// See notes in `evaluateSyscallFilters` for how to properly interpret
