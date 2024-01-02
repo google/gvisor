@@ -76,6 +76,7 @@ def _syscall_test(
         one_sandbox = True,
         fusefs = False,
         directfs = False,
+        cgroupfs = False,
         **kwargs):
     # Prepend "runsc" to non-native platform names.
     full_platform = platform if platform == "native" else "runsc_" + platform
@@ -151,6 +152,7 @@ def _syscall_test(
         "--one-sandbox=" + str(one_sandbox),
         "--iouring=" + str(iouring),
         "--directfs=" + str(directfs),
+        "--cgroupfs=" + str(cgroupfs),
     ]
 
     # Trace points are platform agnostic, so enable them for ptrace only.
@@ -175,6 +177,7 @@ def all_platforms():
 def syscall_test(
         test,
         use_tmpfs = False,
+        add_cgroupfs = False,
         add_fusefs = False,
         add_overlay = False,
         add_host_uds = False,
@@ -194,6 +197,7 @@ def syscall_test(
     Args:
       test: the test target.
       use_tmpfs: use tmpfs in the defined tests.
+      add_cgroupfs: add a cgroupfs test.
       add_fusefs: add a fusefs test.
       add_overlay: add an overlay test.
       add_host_uds: setup bound UDS on the host.
@@ -244,6 +248,7 @@ def syscall_test(
             debug = debug,
             container = container,
             one_sandbox = one_sandbox,
+            cgroupfs = add_cgroupfs,
             **kwargs
         )
 

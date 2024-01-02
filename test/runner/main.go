@@ -67,6 +67,7 @@ var (
 	// set to true as the default for the test runner.
 	leakCheck  = flag.Bool("leak-check", false, "check for reference leaks")
 	waitForPid = flag.Duration("delay-for-debugger", 0, "Print out the sandbox PID and wait for the specified duration to start the test. This is useful for attaching a debugger to the runsc-sandbox process.")
+	cgroupfs   = flag.Bool("cgroupfs", false, "mounts a cgroupfs")
 )
 
 const (
@@ -581,6 +582,12 @@ func runTestCaseRunsc(testBin string, tc *gtest.TestCase, args []string, t *test
 		testTmpDir = tmpDir
 		// Note that tmpDir exists in container rootfs mount, whose cacheability is
 		// set by fileAccess flag appropriately.
+	}
+	if *cgroupfs {
+		spec.Mounts = append(spec.Mounts, specs.Mount{
+			Destination: "/sys/fs/cgroup",
+			Type:        "cgroup",
+		})
 	}
 	if *fusefs {
 		// In fuse tests, the fuse server forwards all filesystem ops from /tmp
