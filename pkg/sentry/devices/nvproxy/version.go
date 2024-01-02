@@ -190,6 +190,7 @@ func Init() {
 					nvgpu.UVM_REGISTER_GPU:                   uvmIoctlHasRMCtrlFD[nvgpu.UVM_REGISTER_GPU_PARAMS],
 					nvgpu.UVM_UNREGISTER_GPU:                 uvmIoctlSimple[nvgpu.UVM_UNREGISTER_GPU_PARAMS],
 					nvgpu.UVM_PAGEABLE_MEM_ACCESS:            uvmIoctlSimple[nvgpu.UVM_PAGEABLE_MEM_ACCESS_PARAMS],
+					nvgpu.UVM_SET_PREFERRED_LOCATION:         uvmIoctlSimple[nvgpu.UVM_SET_PREFERRED_LOCATION_PARAMS],
 					nvgpu.UVM_DISABLE_READ_DUPLICATION:       uvmIoctlSimple[nvgpu.UVM_DISABLE_READ_DUPLICATION_PARAMS],
 					nvgpu.UVM_MAP_DYNAMIC_PARALLELISM_REGION: uvmIoctlSimple[nvgpu.UVM_MAP_DYNAMIC_PARALLELISM_REGION_PARAMS],
 					nvgpu.UVM_ALLOC_SEMAPHORE_POOL:           uvmIoctlSimple[nvgpu.UVM_ALLOC_SEMAPHORE_POOL_PARAMS],
@@ -223,9 +224,11 @@ func Init() {
 					nvgpu.NV2080_CTRL_CMD_BUS_GET_PCI_BAR_INFO:                             rmControlSimple,
 					nvgpu.NV2080_CTRL_CMD_BUS_GET_INFO_V2:                                  rmControlSimple,
 					nvgpu.NV2080_CTRL_CMD_BUS_GET_PCIE_SUPPORTED_GPU_ATOMICS:               rmControlSimple,
+					nvgpu.NV2080_CTRL_CMD_BUS_GET_C2C_INFO:                                 rmControlSimple,
 					nvgpu.NV2080_CTRL_CMD_CE_GET_ALL_CAPS:                                  rmControlSimple,
 					nvgpu.NV2080_CTRL_CMD_FB_GET_INFO_V2:                                   rmControlSimple,
 					nvgpu.NV2080_CTRL_CMD_GPU_GET_INFO_V2:                                  rmControlSimple,
+					nvgpu.NV2080_CTRL_CMD_FLCN_GET_CTX_BUFFER_SIZE:                         rmControlSimple,
 					nvgpu.NV2080_CTRL_CMD_GPU_GET_NAME_STRING:                              rmControlSimple,
 					nvgpu.NV2080_CTRL_CMD_GPU_GET_SHORT_NAME_STRING:                        rmControlSimple,
 					nvgpu.NV2080_CTRL_CMD_GPU_GET_SIMULATION_INFO:                          rmControlSimple,
@@ -292,6 +295,7 @@ func Init() {
 					nvgpu.KEPLER_CHANNEL_GROUP_A:  rmAllocSimple[nvgpu.NV_CHANNEL_GROUP_ALLOCATION_PARAMETERS],
 					nvgpu.TURING_CHANNEL_GPFIFO_A: rmAllocSimple[nvgpu.NV_CHANNEL_ALLOC_PARAMS],
 					nvgpu.AMPERE_CHANNEL_GPFIFO_A: rmAllocSimple[nvgpu.NV_CHANNEL_ALLOC_PARAMS],
+					nvgpu.HOPPER_CHANNEL_GPFIFO_A: rmAllocSimple[nvgpu.NV_CHANNEL_ALLOC_PARAMS],
 					nvgpu.TURING_DMA_COPY_A:       rmAllocSimple[nvgpu.NVB0B5_ALLOCATION_PARAMETERS],
 					nvgpu.AMPERE_DMA_COPY_A:       rmAllocSimple[nvgpu.NVB0B5_ALLOCATION_PARAMETERS],
 					nvgpu.AMPERE_DMA_COPY_B:       rmAllocSimple[nvgpu.NVB0B5_ALLOCATION_PARAMETERS],
@@ -324,9 +328,13 @@ func Init() {
 			abi := v525_89_02()
 			abi.useRmAllocParamsV535 = true
 			abi.controlCmd[nvgpu.NV_CONF_COMPUTE_CTRL_CMD_SYSTEM_GET_CAPABILITIES] = rmControlSimple
+			abi.controlCmd[nvgpu.NV_CONF_COMPUTE_CTRL_CMD_SYSTEM_GET_GPUS_STATE] = rmControlSimple
+			abi.controlCmd[nvgpu.NV_CONF_COMPUTE_CTRL_CMD_GPU_GET_NUM_SECURE_CHANNELS] = rmControlSimple
+			abi.controlCmd[nvgpu.NVC56F_CTRL_CMD_GET_KMB] = rmControlSimple
 			abi.allocationClass[nvgpu.NV_CONFIDENTIAL_COMPUTE] = rmAllocSimple[nvgpu.NV_CONFIDENTIAL_COMPUTE_ALLOC_PARAMS]
 			abi.allocationClass[nvgpu.NV50_P2P] = rmAllocSimple[nvgpu.NV503B_ALLOC_PARAMETERS_V535]
 			abi.allocationClass[nvgpu.NV_MEMORY_FABRIC] = rmAllocSimple[nvgpu.NV00F8_ALLOCATION_PARAMETERS_V535]
+			abi.allocationClass[nvgpu.HOPPER_SEC2_WORK_LAUNCH_A] = rmAllocNoParams
 			abi.uvmIoctl[nvgpu.UVM_MM_INITIALIZE] = uvmMMInitialize
 			return abi
 		}
@@ -338,6 +346,7 @@ func Init() {
 			abi := v535_54_03()
 			abi.allocationClass[nvgpu.TURING_CHANNEL_GPFIFO_A] = rmAllocSimple[nvgpu.NV_CHANNEL_ALLOC_PARAMS_V535]
 			abi.allocationClass[nvgpu.AMPERE_CHANNEL_GPFIFO_A] = rmAllocSimple[nvgpu.NV_CHANNEL_ALLOC_PARAMS_V535]
+			abi.allocationClass[nvgpu.HOPPER_CHANNEL_GPFIFO_A] = rmAllocSimple[nvgpu.NV_CHANNEL_ALLOC_PARAMS_V535]
 			return abi
 		}
 		v535_104_05Checksum := "2f9d609d1da770beee757636635c46e7ed8253ade887b87c7a5482e33fcbedc9"

@@ -43,9 +43,11 @@ const (
 	AMPERE_DMA_COPY_B                = 0x0000c7b5
 	AMPERE_COMPUTE_B                 = 0x0000c7c0
 	HOPPER_DMA_COPY_A                = 0x0000c8b5
+	HOPPER_CHANNEL_GPFIFO_A          = 0x0000c86f
 	ADA_COMPUTE_A                    = 0x0000c9c0
 	NV_CONFIDENTIAL_COMPUTE          = 0x0000cb33
 	HOPPER_COMPUTE_A                 = 0x0000cbc0
+	HOPPER_SEC2_WORK_LAUNCH_A        = 0x0000cba2
 )
 
 // NV0005_ALLOC_PARAMETERS is the alloc params type for NV01_EVENT_OS_EVENT,

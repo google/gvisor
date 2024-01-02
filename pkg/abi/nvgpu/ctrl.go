@@ -132,6 +132,7 @@ const (
 	NV2080_CTRL_CMD_BUS_GET_PCI_BAR_INFO               = 0x20801803
 	NV2080_CTRL_CMD_BUS_GET_INFO_V2                    = 0x20801823
 	NV2080_CTRL_CMD_BUS_GET_PCIE_SUPPORTED_GPU_ATOMICS = 0x2080182a
+	NV2080_CTRL_CMD_BUS_GET_C2C_INFO                   = 0x2080182b
 )
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080ce.h:
@@ -149,6 +150,11 @@ const (
 	NV2080_CTRL_CMD_FIFO_DISABLE_CHANNELS = 0x2080110b
 
 	NV2080_CTRL_FIFO_DISABLE_CHANNELS_MAX_ENTRIES = 64
+)
+
+// From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080flcn.h:
+const (
+	NV2080_CTRL_CMD_FLCN_GET_CTX_BUFFER_SIZE = 0x20803125
 )
 
 // +marshal
@@ -257,6 +263,11 @@ const (
 	NVC36F_CTRL_CMD_GPFIFO_GET_WORK_SUBMIT_TOKEN = 0xc36f0108
 )
 
+// From src/common/sdk/nvidia/inc/ctrl/ctrlc56f.h:
+const (
+	NVC56F_CTRL_CMD_GET_KMB = 0xc56f010b
+)
+
 // From src/common/sdk/nvidia/inc/ctrl/ctrl906f.h:
 const (
 	NV906F_CTRL_CMD_RESET_CHANNEL = 0x906f0102
@@ -281,5 +292,7 @@ const (
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrlcb33.h:
 const (
-	NV_CONF_COMPUTE_CTRL_CMD_SYSTEM_GET_CAPABILITIES = 0xcb330101
+	NV_CONF_COMPUTE_CTRL_CMD_SYSTEM_GET_CAPABILITIES     = 0xcb330101
+	NV_CONF_COMPUTE_CTRL_CMD_SYSTEM_GET_GPUS_STATE       = 0xcb330104
+	NV_CONF_COMPUTE_CTRL_CMD_GPU_GET_NUM_SECURE_CHANNELS = 0xcb33010b
 )
