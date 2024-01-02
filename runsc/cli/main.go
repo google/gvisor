@@ -23,6 +23,8 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/subcommands"
@@ -133,23 +135,23 @@ func Main() {
 	// case that does not occur.
 	_ = time.Local.String()
 
-	var e log.Emitter
+	var emitters log.MultiEmitter
 	if *debugLogFD > -1 {
 		f := os.NewFile(uintptr(*debugLogFD), "debug log file")
 
-		e = newEmitter(conf.DebugLogFormat, f)
+		emitters = append(emitters, newEmitter(conf.DebugLogFormat, f))
 
 	} else if len(conf.DebugLog) > 0 && specutils.IsDebugCommand(conf, subcommand) {
 		f, err := specutils.DebugLogFile(conf.DebugLog, subcommand, "" /* name */)
 		if err != nil {
 			util.Fatalf("error opening debug log file in %q: %v", conf.DebugLog, err)
 		}
-		e = newEmitter(conf.DebugLogFormat, f)
+		emitters = append(emitters, newEmitter(conf.DebugLogFormat, f))
 
 	} else {
 		// Stderr is reserved for the application, just discard the logs if no debug
 		// log is specified.
-		e = newEmitter("text", ioutil.Discard)
+		emitters = append(emitters, newEmitter("text", ioutil.Discard))
 	}
 
 	if *panicLogFD > -1 || *debugLogFD > -1 {
@@ -171,7 +173,10 @@ func Main() {
 			util.Fatalf("error dup'ing fd %d to stderr: %v", fd, err)
 		}
 	} else if conf.AlsoLogToStderr {
-		e = &log.MultiEmitter{e, newEmitter(conf.DebugLogFormat, os.Stderr)}
+		emitters = append(emitters, newEmitter(conf.DebugLogFormat, os.Stderr))
+	}
+	if ulEmittter, add := userLogEmitter(conf, subcommand); add {
+		emitters = append(emitters, ulEmittter)
 	}
 	if *coverageFD >= 0 {
 		f := os.NewFile(uintptr(*coverageFD), "coverage file")
@@ -184,7 +189,16 @@ func Main() {
 		}
 	}
 
-	log.SetTarget(e)
+	switch len(emitters) {
+	case 0:
+		// Do nothing.
+	case 1:
+		// Use the singular emitter to avoid needless
+		// `for` loop overhead when logging to a single place.
+		log.SetTarget(emitters[0])
+	default:
+		log.SetTarget(&emitters)
+	}
 
 	log.Infof("***************************")
 	log.Infof("Args: %s", os.Args)
@@ -302,4 +316,33 @@ func newEmitter(format string, logFile io.Writer) log.Emitter {
 	}
 	util.Fatalf("invalid log format %q, must be 'text', 'json', or 'json-k8s'", format)
 	panic("unreachable")
+}
+
+// userLogEmitter returns an emitter to add logs to user logs if requested.
+func userLogEmitter(conf *config.Config, subcommand string) (log.Emitter, bool) {
+	if subcommand != "boot" || !conf.DebugToUserLog {
+		return nil, false
+	}
+	// We need to manually scan for `--user-log-fd` since it is a flag of the
+	// `boot` subcommand. We know it is in `--user-log-fd=FD` format because
+	// we control how arguments to `runsc boot` are formatted.
+	const userLogFDFlagPrefix = "--user-log-fd="
+	var userLog *os.File
+	for _, arg := range os.Args[1:] {
+		if !strings.HasPrefix(arg, userLogFDFlagPrefix) {
+			continue
+		}
+		if userLog != nil {
+			util.Fatalf("duplicate %q flag", userLogFDFlagPrefix)
+		}
+		userLogFD, err := strconv.Atoi(arg[len(userLogFDFlagPrefix):])
+		if err != nil {
+			util.Fatalf("invalid user log FD flag %q: %v", arg, err)
+		}
+		userLog = os.NewFile(uintptr(userLogFD), "user log file")
+	}
+	if userLog == nil {
+		return nil, false
+	}
+	return log.K8sJSONEmitter{&log.Writer{Next: userLog}}, true
 }
