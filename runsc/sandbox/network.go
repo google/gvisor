@@ -120,11 +120,16 @@ func isRootNS() (bool, error) {
 // net namespace with the given path, creates them in the sandbox, and removes
 // them from the host.
 func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *config.Config) error {
-	if conf.AFXDPRedirectHost != "" {
+	switch conf.XDP.Mode {
+	case config.XDPModeOff:
+	case config.XDPModeNS:
+	case config.XDPModeRedirect:
 		if err := createRedirectInterfacesAndRoutes(conn, conf); err != nil {
 			return fmt.Errorf("failed to create XDP redirect interface: %w", err)
 		}
 		return nil
+	default:
+		return fmt.Errorf("unknown XDP mode: %v", conf.XDP.Mode)
 	}
 
 	// Join the network namespace that we will be copying.
@@ -250,7 +255,7 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 			}
 		}
 
-		if conf.AFXDP {
+		if conf.XDP.Mode == config.XDPModeNS {
 			xdpSockFDs, err := createSocketXDP(iface)
 			if err != nil {
 				return fmt.Errorf("failed to create XDP socket: %v", err)
