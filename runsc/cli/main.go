@@ -178,16 +178,6 @@ func Main() {
 	if ulEmittter, add := userLogEmitter(conf, subcommand); add {
 		emitters = append(emitters, ulEmittter)
 	}
-	if *coverageFD >= 0 {
-		f := os.NewFile(uintptr(*coverageFD), "coverage file")
-		coverage.EnableReport(f)
-	}
-	if *profilingMetricsFD >= 0 {
-		metric.ProfilingMetricWriter = os.NewFile(uintptr(*profilingMetricsFD), "metrics file")
-		if metric.ProfilingMetricWriter == nil {
-			log.Warningf("Failed to use -profiling-metrics-fd")
-		}
-	}
 
 	switch len(emitters) {
 	case 0:
@@ -200,26 +190,24 @@ func Main() {
 		log.SetTarget(&emitters)
 	}
 
-	log.Infof("***************************")
-	log.Infof("Args: %s", os.Args)
-	log.Infof("Version %s", version.Version())
-	log.Infof("GOOS: %s", runtime.GOOS)
-	log.Infof("GOARCH: %s", runtime.GOARCH)
-	log.Infof("PID: %d", os.Getpid())
-	log.Infof("UID: %d, GID: %d", os.Getuid(), os.Getgid())
-	log.Infof("Configuration:")
-	log.Infof("\t\tRootDir: %s", conf.RootDir)
-	log.Infof("\t\tPlatform: %v", conf.Platform)
-	log.Infof("\t\tFileAccess: %v", conf.FileAccess)
-	log.Infof("\t\tDirectfs: %t", conf.DirectFS)
-	log.Infof("\t\tOverlay: %s", conf.GetOverlay2())
-	log.Infof("\t\tNetwork: %v, logging: %t", conf.Network, conf.LogPackets)
-	log.Infof("\t\tStrace: %t, max size: %d, syscalls: %s", conf.Strace, conf.StraceLogSize, conf.StraceSyscalls)
-	log.Infof("\t\tIOURING: %t", conf.IOUring)
-	log.Infof("\t\tDebug: %v", conf.Debug)
-	log.Infof("\t\tSystemd: %v", conf.SystemdCgroup)
-	log.Infof("***************************")
+	const delimString = `**************** gVisor ****************`
+	log.Infof(delimString)
+	log.Infof("Version %s, %s, %s, %d CPUs, %s, PID %d, PPID %d, UID %d, GID %d", version.Version(), runtime.Version(), runtime.GOARCH, runtime.NumCPU(), runtime.GOOS, os.Getpid(), os.Getppid(), os.Getuid(), os.Getgid())
+	log.Debugf("Page size: 0x%x (%d bytes)", os.Getpagesize(), os.Getpagesize())
+	log.Infof("Args: %v", os.Args)
+	conf.Log()
+	log.Infof(delimString)
 
+	if *coverageFD >= 0 {
+		f := os.NewFile(uintptr(*coverageFD), "coverage file")
+		coverage.EnableReport(f)
+	}
+	if *profilingMetricsFD >= 0 {
+		metric.ProfilingMetricWriter = os.NewFile(uintptr(*profilingMetricsFD), "metrics file")
+		if metric.ProfilingMetricWriter == nil {
+			log.Warningf("Failed to use -profiling-metrics-fd")
+		}
+	}
 	if conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
 		// SIGTERM is sent to all processes if a test exceeds its
 		// timeout and this case is handled by syscall_test_runner.
