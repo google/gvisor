@@ -18,6 +18,18 @@ go_test(
 )
 
 go_test(
+    name = "pytorch_test",
+    srcs = ["pytorch_test.go"],
+    tags = [
+        "local",
+        "noguitar",
+        "notap",
+    ],
+    visibility = ["//:sandbox"],
+    deps = ["//pkg/test/dockerutil"],
+)
+
+go_test(
     name = "textgen_test",
     srcs = ["textgen_test.go"],
     tags = [
