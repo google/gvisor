@@ -157,7 +157,7 @@ func prepareRedirectInterfaceArgs(conf *config.Config) (boot.CreateLinksAndRoute
 			continue
 		}
 
-		if iface.Name != conf.AFXDPRedirectHost {
+		if iface.Name != conf.XDP.IfaceName {
 			log.Infof("Skipping interface %q", iface.Name)
 			continue
 		}
