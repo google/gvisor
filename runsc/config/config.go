@@ -20,11 +20,13 @@ package config
 import (
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strconv"
 	"strings"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -391,6 +393,33 @@ func (c *Config) validate() error {
 		return fmt.Errorf("profiling-metrics flag requires defining a profiling-metrics-log for output")
 	}
 	return nil
+}
+
+// Log logs important aspects of the configuration to the given log function.
+func (c *Config) Log() {
+	log.Infof("Platform: %v", c.Platform)
+	log.Infof("RootDir: %s", c.RootDir)
+	log.Infof("FileAccess: %v / Directfs: %t / Overlay: %v", c.FileAccess, c.DirectFS, c.GetOverlay2())
+	log.Infof("Network: %v", c.Network)
+	if c.Debug || c.Strace {
+		log.Infof("Debug: %t. Strace: %t, max size: %d, syscalls: %s", c.Debug, c.Strace, c.StraceLogSize, c.StraceSyscalls)
+	}
+	if c.Debug {
+		obj := reflect.ValueOf(c).Elem()
+		st := obj.Type()
+		for i := 0; i < st.NumField(); i++ {
+			f := st.Field(i)
+			val := obj.Field(i).String()
+			if val == "" {
+				val = "(empty)"
+			}
+			if flagName, hasFlag := f.Tag.Lookup("flag"); hasFlag {
+				log.Debugf("Config.%s (--%s): %v", f.Name, flagName, val)
+			} else {
+				log.Debugf("Config.%s: %v", f.Name, val)
+			}
+		}
+	}
 }
 
 // GetHostUDS returns the FS gofer communication that is allowed, taking into
