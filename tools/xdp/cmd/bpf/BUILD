@@ -36,3 +36,11 @@ bpf_program(
     bpf_object = "redirect_host_ebpf.o",
     visibility = ["//:sandbox"],
 )
+
+bpf_program(
+    name = "tunnel_host_ebpf",
+    src = "tunnel_host.ebpf.c",
+    hdrs = [],
+    bpf_object = "tunnel_host_ebpf.o",
+    visibility = ["//:sandbox"],
+)

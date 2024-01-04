@@ -10,6 +10,7 @@ go_library(
     srcs = ["bpf.go"],
     embedsrcs = [
         "af_xdp_ebpf.o",  # keep
+        "tunnel_veth_ebpf.o",  # keep
     ],
     visibility = ["//visibility:public"],
 )
@@ -19,5 +20,13 @@ bpf_program(
     src = "af_xdp.ebpf.c",
     hdrs = [],
     bpf_object = "af_xdp_ebpf.o",
+    visibility = ["//:sandbox"],
+)
+
+bpf_program(
+    name = "tunnel_veth_ebpf",
+    src = "tunnel_veth.ebpf.c",
+    hdrs = [],
+    bpf_object = "tunnel_veth_ebpf.o",
     visibility = ["//:sandbox"],
 )
