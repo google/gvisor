@@ -823,18 +823,16 @@ func (ors orderedRuleSets) renderBST(program *syscallProgram, ls *labelSet, alre
 	frag := program.Record()
 	root := createBST(orderedSysnos)
 	root.root = true
-	if err := root.traverse(
-		buildBSTProgram,
-		knownRange{
-			lowerBoundExclusive: -1,
-			// sysno fits in 32 bits, so this is definitely out of bounds:
-			upperBoundExclusive: 1 << 32,
-			previouslyChecked:   alreadyChecked,
-		},
-		syscallMap,
-		program,
-		noSycallNumberMatch,
-	); err != nil {
+	knownRng := knownRange{
+		lowerBoundExclusive: -1,
+		// sysno fits in 32 bits, so this is definitely out of bounds:
+		upperBoundExclusive: 1 << 32,
+		previouslyChecked:   alreadyChecked,
+	}
+	if err := root.traverse(renderBSTTraversal, knownRng, syscallMap, program, noSycallNumberMatch); err != nil {
+		return nil, err
+	}
+	if err := root.traverse(renderBSTRules, knownRng, syscallMap, program, noSycallNumberMatch); err != nil {
 		return nil, err
 	}
 	frag.MustHaveJumpedToOrReturned([]label{noSycallNumberMatch, defaultLabel}, possibleActions)
@@ -858,8 +856,8 @@ func createBST(syscalls []uintptr) *node {
 	return &parent
 }
 
-// buildBSTProgram converts a binary tree started in 'root' into BPF code. The outline of the code
-// is as follows, given a BST with:
+// renderBSTTraversal renders the traversal bytecode for a binary search tree.
+// The outline of the code is as follows, given a BST with:
 //
 //		     22
 //		    /  \
@@ -870,38 +868,41 @@ func createBST(syscalls []uintptr) *node {
 //		index_22: // SYS_PIPE(22), root
 //		(A < 22) ? goto index_9  : continue
 //		(A > 22) ? goto index_24 : continue
-//		(args OK for SYS_PIPE) ? return action : goto defaultLabel
+//		goto checkArgs_22
 //
 //		index_9: // SYS_MMAP(9), single child
 //		(A < 9)  ? goto index_8  : continue
 //		(A == 9) ? continue : goto defaultLabel
-//		(args OK for SYS_MMAP) ? return action : goto defaultLabel
+//		goto checkArgs_9
 //
 //		index_8: // SYS_LSEEK(8), leaf
 //		(A == 8) ? continue : goto defaultLabel
-//		(args OK for SYS_LSEEK) ? return action : goto defaultLabel
+//		goto checkArgs_8
 //
 //		index_24: // SYS_SCHED_YIELD(24)
 //		(A < 24) ? goto index_23 : continue
 //		(A > 22) ? goto index_50 : continue
-//		(args OK for SYS_SCHED_YIELD) ? return action : goto defaultLabel
+//		goto checkArgs_24
 //
 //		index_23: // SYS_SELECT(23), leaf with parent nodes adjacent in value
 //		# Notice that we do not check for equality at all here, since we've
 //		# already established that the syscall number is 23 from the
 //		# two parent nodes that we've already traversed.
 //		# This is tracked in the `rng knownRange` argument during traversal.
-//		(args OK for SYS_SELECT) ? return action : goto defaultLabel
+//		goto rules_23
 //
 //		index_50: // SYS_LISTEN(50), leaf
 //		(A == 50) ? continue : goto defaultLabel
-//		(args OK for SYS_LISTEN) ? return action : goto defaultLabel
-func buildBSTProgram(n *node, rng knownRange, syscallMap map[uintptr]singleSyscallRuleSet, program *syscallProgram, searchFailed label) error {
+//		goto checkArgs_50
+//
+// All of the "checkArgs_XYZ" labels are not defined in this function; they
+// are created using the `renderBSTRules` function, which is expected to be
+// called after this one on the entire BST.
+func renderBSTTraversal(n *node, rng knownRange, syscallMap map[uintptr]singleSyscallRuleSet, program *syscallProgram, searchFailed label) error {
 	// Root node is never referenced by label, skip it.
 	if !n.root {
 		program.Label(n.label())
 	}
-	nodeLabelSet := &labelSet{prefix: string(n.label())}
 	sysno := n.value
 	nodeFrag := program.Record()
 	checkArgsLabel := label(fmt.Sprintf("checkArgs_%d", sysno))
@@ -921,13 +922,22 @@ func buildBSTProgram(n *node, rng knownRange, syscallMap map[uintptr]singleSysca
 	}
 	program.JumpTo(checkArgsLabel)
 	nodeFrag.MustHaveJumpedTo(n.left.label(), n.right.label(), checkArgsLabel, searchFailed)
+	return nil
+}
 
+// renderBSTRules renders the `checkArgs_XYZ` labels that `renderBSTTraversal`
+// jumps to as part of the BST traversal code. It contains all the
+// argument-specific syscall rules for each syscall number.
+func renderBSTRules(n *node, rng knownRange, syscallMap map[uintptr]singleSyscallRuleSet, program *syscallProgram, searchFailed label) error {
+	sysno := n.value
+	checkArgsLabel := label(fmt.Sprintf("checkArgs_%d", sysno))
 	program.Label(checkArgsLabel)
 	ruleSetsFrag := program.Record()
 	possibleActions := make(map[linux.BPFAction]struct{})
 	for _, ra := range syscallMap[sysno].rules {
 		possibleActions[ra.action] = struct{}{}
 	}
+	nodeLabelSet := &labelSet{prefix: string(n.label())}
 	syscallMap[sysno].Render(program, nodeLabelSet, defaultLabel)
 	ruleSetsFrag.MustHaveJumpedToOrReturned(
 		[]label{
