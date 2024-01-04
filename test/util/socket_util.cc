@@ -771,7 +771,8 @@ PosixErrorOr<int> RecvTimeout(int sock, char buf[], int buf_size, int timeout) {
   FD_ZERO(&rfd);
   FD_SET(sock, &rfd);
   int ret;
-  RETURN_ERROR_IF_SYSCALL_FAIL(ret = select(1, &rfd, NULL, NULL, to_ptr));
+  RETURN_ERROR_IF_SYSCALL_FAIL(ret =
+                                   select(sock + 1, &rfd, NULL, NULL, to_ptr));
   RETURN_ERROR_IF_SYSCALL_FAIL(
       ret = RetryEINTR(recv)(sock, buf, buf_size, MSG_DONTWAIT));
   return ret;
@@ -785,7 +786,8 @@ PosixErrorOr<int> RecvMsgTimeout(int sock, struct msghdr* msg, int timeout) {
   FD_SET(sock, &rfd);
 
   int ret;
-  RETURN_ERROR_IF_SYSCALL_FAIL(ret = select(1, &rfd, NULL, NULL, to_ptr));
+  RETURN_ERROR_IF_SYSCALL_FAIL(ret =
+                                   select(sock + 1, &rfd, NULL, NULL, to_ptr));
   RETURN_ERROR_IF_SYSCALL_FAIL(
       ret = RetryEINTR(recvmsg)(sock, msg, MSG_DONTWAIT));
   return ret;
