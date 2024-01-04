@@ -142,6 +142,50 @@ func TestOptimize(t *testing.T) {
 			},
 		},
 		{
+			name: "redundant loads removed",
+			optimizers: []optimizerFunc{
+				removeRedundantLoads,
+			},
+			insns: []Instruction{
+				Stmt(Ld|Imm|W, 42), // Not removed.
+				Jump(Jmp|Jeq|K, 42, 0, 0),
+				Jump(Jmp|Jgt|K, 42, 1, 0),
+				Stmt(Ld|Imm|W, 42), // Removed as it is equal in all cases.
+				Jump(Jmp|Jeq|K, 42, 1, 0),
+				Stmt(Ld|Imm|W, 43),
+				Stmt(Ld|Imm|W, 43),        // Not removed as the jump above may skip over previous instruction.
+				Stmt(Ld|Imm|W, 43),        // Removed.
+				Stmt(Ld|Imm|W, 44),        // Not removed.
+				Stmt(Ld|Imm|W, 44),        // Removed.
+				Stmt(Ld|Abs|W, 0),         // Not removed.
+				Stmt(Ld|Abs|W, 0),         // Removed.
+				Stmt(Ld|Abs|W, 0),         // Removed.
+				Stmt(Ld|Abs|W, 4),         // Not removed.
+				Stmt(Ld|Abs|W, 0),         // Not removed.
+				Stmt(Ld|Abs|W, 11),        // Not removed.
+				Jump(Jmp|Jeq|K, 42, 1, 0), // "True" branch will be culled.
+				Stmt(Ld|Abs|W, 11),        // Removed as there is only one way to get here and it already loads 11.
+				Stmt(Ld|Abs|W, 11),        // There are two branches to get here but the first gets culled, so it is still removed.
+				Stmt(Ld|Abs|W, 11),        // Removed.
+				Stmt(Ret|K, 0),
+			},
+			want: []Instruction{
+				Stmt(Ld|Imm|W, 42),
+				Jump(Jmp|Jeq|K, 42, 0, 0),
+				Jump(Jmp|Jgt|K, 42, 0, 0),
+				Jump(Jmp|Jeq|K, 42, 1, 0),
+				Stmt(Ld|Imm|W, 43),
+				Stmt(Ld|Imm|W, 43),
+				Stmt(Ld|Imm|W, 44),
+				Stmt(Ld|Abs|W, 0),
+				Stmt(Ld|Abs|W, 4),
+				Stmt(Ld|Abs|W, 0),
+				Stmt(Ld|Abs|W, 11),
+				Jump(Jmp|Jeq|K, 42, 0, 0),
+				Stmt(Ret|K, 0),
+			},
+		},
+		{
 			name: "jumps to return",
 			optimizers: []optimizerFunc{
 				optimizeJumpsToReturn,

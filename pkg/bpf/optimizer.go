@@ -273,6 +273,77 @@ func optimizeJumpsToReturn(insns []Instruction) ([]Instruction, bool) {
 	return insns, changed
 }
 
+// removeRedundantLoads removes some redundant load instructions
+// when the value in register A is already the same value as what is
+// being loaded.
+func removeRedundantLoads(insns []Instruction) ([]Instruction, bool) {
+	// reverseWalk maps instruction indexes I to the set of instruction indexes
+	// that, after their execution, may result in the control flow jumping to I.
+	reverseWalk := make([]map[int]struct{}, len(insns))
+	for pc := range insns {
+		reverseWalk[pc] = make(map[int]struct{})
+	}
+	for pc, ins := range insns {
+		if ins.IsReturn() {
+			continue // Return instructions are terminal.
+		}
+		if ins.IsJump() {
+			for _, offset := range ins.JumpOffsets() {
+				reverseWalk[pc+int(offset.Offset)+1][pc] = struct{}{}
+			}
+			continue
+		}
+		// All other instructions flow through.
+		reverseWalk[pc+1][pc] = struct{}{}
+	}
+
+	// Now look for redundant load instructions.
+	// We iterate backwards here so that we can remove instructions as we go
+	// without a past iteration interfering with the results of the current
+	// iteration. This is relying on the property that BPF programs may only
+	// flow forwards (no backwards jumps).
+	changed := false
+	for pc := len(insns) - 1; pc >= 0; pc-- {
+		ins := insns[pc]
+		if ins.OpCode&instructionClassMask != Ld {
+			continue
+		}
+		// Walk backwards until either we've reached the beginning of the program,
+		// or we've reached an operation which modifies register A.
+		lastModifiedA := -1
+		beforePCs := reverseWalk[pc]
+	walk:
+		for {
+			switch len(beforePCs) {
+			case 0:
+				// We've reached the beginning of the program without modifying A.
+				break walk
+			case 1:
+				var beforePC int
+				for bpc := range beforePCs { // Note: we know that this map only has one element.
+					beforePC = bpc
+				}
+				if !insns[beforePC].ModifiesRegisterA() {
+					beforePCs = reverseWalk[beforePC]
+					continue walk
+				}
+				lastModifiedA = beforePC
+				break walk
+			default:
+				// Multiple ways to get to `pc`.
+				// For simplicity, we only support the single-branch case right now.
+				break walk
+			}
+		}
+		if lastModifiedA != -1 && insns[pc].Equal(insns[lastModifiedA]) {
+			insns = append(insns[:pc], insns[pc+1:]...)
+			decrementJumps(insns, pc)
+			changed = true
+		}
+	}
+	return insns, changed
+}
+
 // jumpRewriteOperation rewrites a jump target.
 type jumpRewriteOperation struct {
 	pc        int      // Rewrite instruction at this offset.
@@ -587,6 +658,7 @@ func Optimize(insns []Instruction) []Instruction {
 		optimizeJumpsToReturn,
 		removeZeroInstructionJumps,
 		removeDeadCode,
+		removeRedundantLoads,
 		optimizeJumpsToSmallestSetOfReturns,
 	})
 }
