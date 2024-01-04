@@ -936,12 +936,19 @@ const (
 	// XDPModeRedirect uses an AF_XDP socket on the host NIC to bypass the
 	// Linux network stack.
 	XDPModeRedirect
+
+	// XDPModeTunnel uses XDP_REDIRECT to redirect packets directy from the
+	// host NIC to the VETH device inside the container's network
+	// namespace. Packets are read from the VETH via AF_XDP, as in
+	// XDPModeNS.
+	XDPModeTunnel
 )
 
 const (
 	xdpModeStrOff      = "off"
 	xdpModeStrNS       = "ns"
 	xdpModeStrRedirect = "redirect"
+	xdpModeStrTunnel   = "tunnel"
 )
 
 var xdpConfig XDP
@@ -960,6 +967,8 @@ func (xd *XDP) String() string {
 		return xdpModeStrNS
 	case XDPModeRedirect:
 		return fmt.Sprintf("%s:%s", xdpModeStrRedirect, xd.IfaceName)
+	case XDPModeTunnel:
+		return fmt.Sprintf("%s:%s", xdpModeStrTunnel, xd.IfaceName)
 	default:
 		panic(fmt.Sprintf("unknown mode %d", xd.Mode))
 	}
@@ -981,6 +990,9 @@ func (xd *XDP) Set(input string) error {
 		xd.IfaceName = ""
 	case len(parts) == 2 && parts[0] == xdpModeStrRedirect && parts[1] != "":
 		xd.Mode = XDPModeRedirect
+		xd.IfaceName = parts[1]
+	case len(parts) == 2 && parts[0] == xdpModeStrTunnel && parts[1] != "":
+		xd.Mode = XDPModeTunnel
 		xd.IfaceName = parts[1]
 	default:
 		return fmt.Errorf("invalid --xdp value: %q", input)

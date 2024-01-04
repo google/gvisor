@@ -13,12 +13,14 @@ go_library(
         "pass.go",
         "redirect_host.go",
         "tcpdump.go",
+        "tunnel.go",
     ],
     embedsrcs = [
         "//tools/xdp/cmd/bpf:drop_ebpf.o",  # keep
         "//tools/xdp/cmd/bpf:pass_ebpf.o",  # keep
         "//tools/xdp/cmd/bpf:redirect_host_ebpf.o",  # keep
         "//tools/xdp/cmd/bpf:tcpdump_ebpf.o",  # keep
+        "//tools/xdp/cmd/bpf:tunnel_host_ebpf.o",  # keep
     ],
     visibility = ["//:sandbox"],
     deps = [
