@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#ifdef __linux__
+#include <sys/epoll.h>
+#endif  // __linux__
 #include <errno.h>
 #include <stdlib.h>
 #include <sys/socket.h>
@@ -84,7 +87,63 @@ TEST_P(GoferStreamSeqpacketTest, BindListenAccept) {
   FileDescriptor accSock =
       ASSERT_NO_ERRNO_AND_VALUE(Accept(sock.get(), NULL, NULL));
 
-  // Other socket should be echo server.
+  // Other socket should be echo client.
+  constexpr int kBufferSize = 64;
+  char send_buffer[kBufferSize];
+  memset(send_buffer, 'a', sizeof(send_buffer));
+
+  ASSERT_THAT(WriteFd(accSock.get(), send_buffer, sizeof(send_buffer)),
+              SyscallSucceedsWithValue(sizeof(send_buffer)));
+
+  char recv_buffer[kBufferSize];
+  ASSERT_THAT(ReadFd(accSock.get(), recv_buffer, sizeof(recv_buffer)),
+              SyscallSucceedsWithValue(sizeof(recv_buffer)));
+  ASSERT_EQ(0, memcmp(send_buffer, recv_buffer, sizeof(send_buffer)));
+}
+
+// Create socket, register with epoll, bind to socket, Listen, wait for socket
+// to become ready using epoll and then Accept.
+TEST_P(GoferStreamSeqpacketTest, EpollBindListenWaitAccept) {
+  std::string env;
+  ProtocolSocket proto;
+  std::tie(env, proto) = GetParam();
+
+  char* val = getenv(env.c_str());
+  ASSERT_NE(val, nullptr);
+  std::string root(val);
+
+  FileDescriptor sock =
+      ASSERT_NO_ERRNO_AND_VALUE(Socket(AF_UNIX, proto.protocol, 0));
+
+  // Epoll on sockfd.
+  int efd;
+  ASSERT_THAT(efd = epoll_create(1), SyscallSucceeds());
+  FileDescriptor epollfd(efd);
+  struct epoll_event event = {};
+  event.events = EPOLLIN;
+  ASSERT_THAT(epoll_ctl(epollfd.get(), EPOLL_CTL_ADD, sock.get(), &event),
+              SyscallSucceeds());
+
+  std::string socket_path =
+      JoinPath(root, proto.name, "created-in-sandbox-epoll");
+
+  struct sockaddr_un addr = {};
+  addr.sun_family = AF_UNIX;
+  memcpy(addr.sun_path, socket_path.c_str(), socket_path.length());
+
+  ASSERT_THAT(
+      bind(sock.get(), reinterpret_cast<struct sockaddr*>(&addr), sizeof(addr)),
+      SyscallSucceeds());
+  ASSERT_THAT(listen(sock.get(), 1), SyscallSucceeds());
+
+  struct epoll_event results = {};
+  ASSERT_THAT(RetryEINTR(epoll_wait)(epollfd.get(), &results, 1, -1),
+              SyscallSucceeds());
+
+  FileDescriptor accSock =
+      ASSERT_NO_ERRNO_AND_VALUE(Accept(sock.get(), NULL, NULL));
+
+  // Other socket should be echo client.
   constexpr int kBufferSize = 64;
   char send_buffer[kBufferSize];
   memset(send_buffer, 'a', sizeof(send_buffer));
