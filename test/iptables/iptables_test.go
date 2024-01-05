@@ -287,6 +287,14 @@ func TestFilterOutputInterfaceInvertAccept(t *testing.T) {
 	singleTest(t, &FilterOutputInterfaceInvertAccept{})
 }
 
+func TestFilterOutputInvertSportAccept(t *testing.T) {
+	singleTest(t, &FilterOutputInvertSportAccept{})
+}
+
+func TestFilterOutputInvertSportDrop(t *testing.T) {
+	singleTest(t, &FilterOutputInvertSportDrop{})
+}
+
 func TestJumpSerialize(t *testing.T) {
 	singleTest(t, &FilterInputSerializeJump{})
 }
@@ -432,6 +440,14 @@ func TestInputInterfaceInvertDrop(t *testing.T) {
 
 func TestInputInterfaceInvertAccept(t *testing.T) {
 	singleTest(t, &FilterInputInterfaceInvertAccept{})
+}
+
+func TestFilterInputInvertDportAccept(t *testing.T) {
+	singleTest(t, &FilterInputInvertDportAccept{})
+}
+
+func TestFilterInputInvertDportDrop(t *testing.T) {
+	singleTest(t, &FilterInputInvertDportDrop{})
 }
 
 func TestFilterAddrs(t *testing.T) {

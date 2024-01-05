@@ -42,6 +42,8 @@ func init() {
 	RegisterTestCase(&FilterOutputInterfaceBeginsWith{})
 	RegisterTestCase(&FilterOutputInterfaceInvertDrop{})
 	RegisterTestCase(&FilterOutputInterfaceInvertAccept{})
+	RegisterTestCase(&FilterOutputInvertSportAccept{})
+	RegisterTestCase(&FilterOutputInvertSportDrop{})
 }
 
 // FilterOutputDropTCPDestPort tests that connections are not accepted on
@@ -711,4 +713,70 @@ func (*FilterOutputInterfaceInvertAccept) ContainerAction(ctx context.Context, i
 // LocalAction implements TestCase.LocalAction.
 func (*FilterOutputInterfaceInvertAccept) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	return connectTCP(ctx, ip, acceptPort, ipv6)
+}
+
+// FilterOutputInvertSportAccept tests that we can send packets on a negated
+// --sport match
+type FilterOutputInvertSportAccept struct{ baseCase }
+
+var _ TestCase = (*FilterOutputInvertSportAccept)(nil)
+
+// Name implements TestCase.Name.
+func (*FilterOutputInvertSportAccept) Name() string {
+	return "FilterOutputInvertSportAccept"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (*FilterOutputInvertSportAccept) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	if err := filterTable(ipv6, "-A", "OUTPUT", "-p", "tcp", "!", "--sport", fmt.Sprintf("%d", dropPort), "-j", "ACCEPT"); err != nil {
+		return err
+	}
+
+	// Listen for TCP packets on accept port.
+	return listenTCP(ctx, acceptPort, ipv6)
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (*FilterOutputInvertSportAccept) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	return connectTCP(ctx, ip, acceptPort, ipv6)
+}
+
+// FilterOutputInvertSportDrop tests that we can send packets on a negated
+// --dport match
+type FilterOutputInvertSportDrop struct{ baseCase }
+
+var _ TestCase = (*FilterOutputInvertSportDrop)(nil)
+
+// Name implements TestCase.Name.
+func (*FilterOutputInvertSportDrop) Name() string {
+	return "FilterOutputInvertSportDrop"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (*FilterOutputInvertSportDrop) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	if err := filterTable(ipv6, "-A", "OUTPUT", "-p", "tcp", "!", "--sport", fmt.Sprintf("%d", acceptPort), "-j", "DROP"); err != nil {
+		return err
+	}
+
+	// Listen for TCP packets on accept port.
+	timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
+	defer cancel()
+	if err := listenTCP(timedCtx, dropPort, ipv6); err == nil {
+		return fmt.Errorf("connection was established when it shouldnt have been")
+	} else if !errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("error reading: %v", err)
+	}
+
+	return nil
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (*FilterOutputInvertSportDrop) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
+	defer cancel()
+	if err := connectTCP(timedCtx, ip, dropPort, ipv6); err == nil {
+		return fmt.Errorf("connection on %d port was accepted when it should have been dropped", dropPort)
+	}
+
+	return nil
 }
