@@ -678,17 +678,8 @@ func (fs *filesystem) Release(ctx context.Context) {
 		d.cache.DropAll(mf)
 		d.dirty.RemoveAll()
 		d.dataMu.Unlock()
-		// Close host FDs if they exist. We can use RacyLoad() because d.handleMu
-		// is locked.
-		if d.readFD.RacyLoad() >= 0 {
-			_ = unix.Close(int(d.readFD.RacyLoad()))
-		}
-		if d.writeFD.RacyLoad() >= 0 && d.readFD.RacyLoad() != d.writeFD.RacyLoad() {
-			_ = unix.Close(int(d.writeFD.RacyLoad()))
-		}
-		d.readFD = atomicbitops.FromInt32(-1)
-		d.writeFD = atomicbitops.FromInt32(-1)
-		d.mmapFD = atomicbitops.FromInt32(-1)
+		// Close host FDs if they exist.
+		d.closeHostFDs()
 		d.handleMu.Unlock()
 	}
 	// There can't be any specialFileFDs still using fs, since each such
