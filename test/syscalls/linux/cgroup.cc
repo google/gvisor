@@ -21,13 +21,16 @@
 #include <sys/statfs.h>
 #include <unistd.h>
 
+#include <cerrno>
 #include <cstdint>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/container/flat_hash_map.h"
 #include "absl/container/flat_hash_set.h"
 #include "absl/strings/str_split.h"
 #include "absl/synchronization/notification.h"
+#include "absl/time/time.h"
 #include "test/util/cgroup_util.h"
 #include "test/util/cleanup.h"
 #include "test/util/linux_capability_util.h"
@@ -92,47 +95,18 @@ class NoopThreads {
   bool joined_ = false;
 };
 
-void* DummyThreadBody(void* unused) { return nullptr; }
-
-TEST(Cgroup, MountSucceeds) {
+TEST(Cgroup, MountsForAllControllers) {
   SKIP_IF(!CgroupsAvailable());
-
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs(""));
-  EXPECT_NO_ERRNO(c.ContainsCallingProcess());
-}
-
-TEST(Cgroup, SeparateMounts) {
-  SKIP_IF(!CgroupsAvailable());
-
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
 
   for (const auto& ctl : known_controllers) {
-    Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs(ctl));
+    Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/" + ctl);
     EXPECT_NO_ERRNO(c.ContainsCallingProcess());
   }
 }
 
+// All supported controllers are mounted by default.
 TEST(Cgroup, AllControllersImplicit) {
   SKIP_IF(!CgroupsAvailable());
-
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs(""));
-
-  absl::flat_hash_map<std::string, CgroupsEntry> cgroups_entries =
-      ASSERT_NO_ERRNO_AND_VALUE(ProcCgroupsEntries());
-  for (const auto& ctl : known_controllers) {
-    EXPECT_TRUE(cgroups_entries.contains(ctl))
-        << absl::StreamFormat("ctl=%s", ctl);
-  }
-  EXPECT_EQ(cgroups_entries.size(), known_controllers.size());
-}
-
-TEST(Cgroup, AllControllersExplicit) {
-  SKIP_IF(!CgroupsAvailable());
-
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("all"));
 
   absl::flat_hash_map<std::string, CgroupsEntry> cgroups_entries =
       ASSERT_NO_ERRNO_AND_VALUE(ProcCgroupsEntries());
@@ -146,72 +120,48 @@ TEST(Cgroup, AllControllersExplicit) {
 TEST(Cgroup, ProcsAndTasks) {
   SKIP_IF(!CgroupsAvailable());
 
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs(""));
-  absl::flat_hash_set<pid_t> pids = ASSERT_NO_ERRNO_AND_VALUE(c.Procs());
-  absl::flat_hash_set<pid_t> tids = ASSERT_NO_ERRNO_AND_VALUE(c.Tasks());
+  for (const auto& ctl : known_controllers) {
+    Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/" + ctl);
+    absl::flat_hash_set<pid_t> pids = ASSERT_NO_ERRNO_AND_VALUE(c.Procs());
+    absl::flat_hash_set<pid_t> tids = ASSERT_NO_ERRNO_AND_VALUE(c.Tasks());
 
-  EXPECT_GE(tids.size(), pids.size()) << "Found more processes than threads";
+    EXPECT_GE(tids.size(), pids.size()) << "Found more processes than threads";
 
-  // Pids should be a strict subset of tids.
-  for (auto it = pids.begin(); it != pids.end(); ++it) {
-    EXPECT_TRUE(tids.contains(*it))
-        << absl::StreamFormat("Have pid %d, but no such tid", *it);
+    // Pids should be a strict subset of tids.
+    for (auto it = pids.begin(); it != pids.end(); ++it) {
+      EXPECT_TRUE(tids.contains(*it))
+          << absl::StreamFormat("Have pid %d, but no such tid", *it);
+    }
   }
 }
 
 TEST(Cgroup, Statfs) {
   SKIP_IF(!CgroupsAvailable());
 
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs(""));
+  for (const auto& ctl : known_controllers) {
+    Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/" + ctl);
+    struct statfs st;
+    EXPECT_THAT(statfs(c.Relpath("cgroup.procs").c_str(), &st),
+                SyscallSucceeds());
+    EXPECT_EQ(st.f_type, CGROUP_SUPER_MAGIC);
 
-  struct statfs st;
-  EXPECT_THAT(statfs(c.Relpath("cgroup.procs").c_str(), &st),
-              SyscallSucceeds());
-  EXPECT_EQ(st.f_type, CGROUP_SUPER_MAGIC);
-
-  EXPECT_THAT(statfs(c.Relpath(".").c_str(), &st), SyscallSucceeds());
-  EXPECT_EQ(st.f_type, CGROUP_SUPER_MAGIC);
+    EXPECT_THAT(statfs(c.Relpath(".").c_str(), &st), SyscallSucceeds());
+    EXPECT_EQ(st.f_type, CGROUP_SUPER_MAGIC);
+  }
 }
 
-TEST(Cgroup, ControllersMustBeInUniqueHierarchy) {
+TEST(Cgroup, CgroupsCannotMountTwice) {
   SKIP_IF(!CgroupsAvailable());
 
   Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  // Hierarchy #1: all controllers.
-  Cgroup all = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs(""));
-  // Hierarchy #2: memory.
-  //
-  // This should conflict since memory is already in hierarchy #1, and the two
-  // hierarchies have different sets of controllers, so this mount can't be a
-  // view into hierarchy #1.
-  EXPECT_THAT(m.MountCgroupfs("memory"), PosixErrorIs(EBUSY, _))
-      << "Memory controller mounted on two hierarchies";
-  EXPECT_THAT(m.MountCgroupfs("cpu"), PosixErrorIs(EBUSY, _))
-      << "CPU controller mounted on two hierarchies";
-}
-
-TEST(Cgroup, UnmountFreesControllers) {
-  SKIP_IF(!CgroupsAvailable());
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup all = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs(""));
-  // All controllers are now attached to all's hierarchy. Attempting new mount
-  // with any individual controller should fail.
-  EXPECT_THAT(m.MountCgroupfs("memory"), PosixErrorIs(EBUSY, _))
-      << "Memory controller mounted on two hierarchies";
-
-  // Unmount the "all" hierarchy. This should enable any controller to be
-  // mounted on a new hierarchy again.
-  ASSERT_NO_ERRNO(m.Unmount(all));
-  EXPECT_NO_ERRNO(m.MountCgroupfs("memory"));
-  EXPECT_NO_ERRNO(m.MountCgroupfs("cpu"));
+  // Cgroups are already mounted.
+  EXPECT_THAT(m.MountCgroupfs(""), PosixErrorIs(EBUSY, _))
+      << "Cgroups are already mounted";
 }
 
 TEST(Cgroup, OnlyContainsControllerSpecificFiles) {
   SKIP_IF(!CgroupsAvailable());
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup mem = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("memory"));
+  Cgroup mem = Cgroup::RootCgroup("/sys/fs/cgroup/memory");
   EXPECT_THAT(Exists(mem.Relpath("memory.usage_in_bytes")),
               IsPosixErrorOkAndHolds(true));
   // CPU files shouldn't exist in memory cgroups.
@@ -221,7 +171,7 @@ TEST(Cgroup, OnlyContainsControllerSpecificFiles) {
               IsPosixErrorOkAndHolds(false));
   EXPECT_THAT(Exists(mem.Relpath("cpu.shares")), IsPosixErrorOkAndHolds(false));
 
-  Cgroup cpu = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("cpu"));
+  Cgroup cpu = Cgroup::RootCgroup("/sys/fs/cgroup/cpu");
   EXPECT_THAT(Exists(cpu.Relpath("cpu.cfs_period_us")),
               IsPosixErrorOkAndHolds(true));
   EXPECT_THAT(Exists(cpu.Relpath("cpu.cfs_quota_us")),
@@ -252,103 +202,29 @@ TEST(Cgroup, MoptAllMustBeExclusive) {
       SyscallFailsWithErrno(EINVAL));
 }
 
-TEST(Cgroup, MountRace) {
-  SKIP_IF(!CgroupsAvailable());
-
-  TempPath mountpoint = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
-
-  const DisableSave ds;  // Too many syscalls.
-
-  auto mount_thread = [&mountpoint]() {
-    for (int i = 0; i < 100; ++i) {
-      mount("none", mountpoint.path().c_str(), "cgroup", 0, 0);
-    }
-  };
-  std::list<ScopedThread> threads;
-  for (int i = 0; i < 10; ++i) {
-    threads.emplace_back(mount_thread);
-  }
-  for (auto& t : threads) {
-    t.Join();
-  }
-
-  auto cleanup = Cleanup([&mountpoint] {
-    // We need 1 umount call per successful mount. If some of the mount calls
-    // were unsuccessful, their corresponding umount will silently fail.
-    for (int i = 0; i < (10 * 100) + 1; ++i) {
-      umount(mountpoint.path().c_str());
-    }
-  });
-
-  Cgroup c = Cgroup::RootCgroup(mountpoint.path());
-  // c should be a valid cgroup.
-  EXPECT_NO_ERRNO(c.ContainsCallingProcess());
-}
-
-TEST(Cgroup, MountUnmountRace) {
-  SKIP_IF(!CgroupsAvailable());
-
-  TempPath mountpoint = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
-
-  const DisableSave ds;  // Too many syscalls.
-
-  auto mount_thread = [&mountpoint]() {
-    for (int i = 0; i < 100; ++i) {
-      mount("none", mountpoint.path().c_str(), "cgroup", 0, 0);
-    }
-  };
-  auto unmount_thread = [&mountpoint]() {
-    for (int i = 0; i < 100; ++i) {
-      umount(mountpoint.path().c_str());
-    }
-  };
-  std::list<ScopedThread> threads;
-  for (int i = 0; i < 10; ++i) {
-    threads.emplace_back(mount_thread);
-  }
-  for (int i = 0; i < 10; ++i) {
-    threads.emplace_back(unmount_thread);
-  }
-  for (auto& t : threads) {
-    t.Join();
-  }
-
-  // We don't know how many mount refs are remaining, since the count depends on
-  // the ordering of mount and umount calls. Keep calling unmount until it
-  // returns an error.
-  while (umount(mountpoint.path().c_str()) == 0) {
-  }
-}
-
 TEST(Cgroup, UnmountRepeated) {
   SKIP_IF(!CgroupsAvailable());
 
   const DisableSave ds;  // Too many syscalls.
 
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs(""));
+  Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/memory");
 
   // First unmount should succeed.
   EXPECT_THAT(umount(c.Path().c_str()), SyscallSucceeds());
-
-  // We just manually unmounted, so release managed resources.
-  m.release(c);
-
   EXPECT_THAT(umount(c.Path().c_str()), SyscallFailsWithErrno(EINVAL));
 }
 
 TEST(Cgroup, Create) {
   SKIP_IF(!CgroupsAvailable());
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs(""));
+
+  Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/memory");
   ASSERT_NO_ERRNO(c.CreateChild("child1"));
   EXPECT_TRUE(ASSERT_NO_ERRNO_AND_VALUE(Exists(c.Path())));
 }
 
 TEST(Cgroup, SubcontainerInitiallyEmpty) {
   SKIP_IF(!CgroupsAvailable());
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs(""));
+  Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/memory");
   Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("child1"));
   auto procs = ASSERT_NO_ERRNO_AND_VALUE(child.Procs());
   EXPECT_TRUE(procs.empty());
@@ -356,9 +232,8 @@ TEST(Cgroup, SubcontainerInitiallyEmpty) {
 
 TEST(Cgroup, SubcontainersHaveIndependentState) {
   SKIP_IF(!CgroupsAvailable());
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
   // Use the job cgroup as a simple cgroup with state we can modify.
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("job"));
+  Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/job");
 
   // Initially job.id should be the default value of 0.
   EXPECT_THAT(c.ReadIntegerControlFile("job.id"), IsPosixErrorOkAndHolds(0));
@@ -384,8 +259,7 @@ TEST(Cgroup, SubcontainersHaveIndependentState) {
 
 TEST(Cgroup, MigrateToSubcontainer) {
   SKIP_IF(!CgroupsAvailable());
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs(""));
+  Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/cpuacct");
   Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("child1"));
 
   // Initially, test process should be in the root cgroup c.
@@ -404,8 +278,7 @@ TEST(Cgroup, MigrateToSubcontainer) {
 
 TEST(Cgroup, MigrateToSubcontainerThread) {
   SKIP_IF(!CgroupsAvailable());
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs(""));
+  Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/cpuacct");
   Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("child1"));
 
   // Ensure there are some threads for this process.
@@ -427,8 +300,7 @@ TEST(Cgroup, MigrateToSubcontainerThread) {
 
 TEST(Cgroup, MigrateInvalidPID) {
   SKIP_IF(!CgroupsAvailable());
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs(""));
+  Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/cpuacct");
 
   EXPECT_THAT(c.WriteControlFile("cgroup.procs", "-1"), PosixErrorIs(EINVAL));
   EXPECT_THAT(c.WriteControlFile("cgroup.procs", "not-a-number"),
@@ -442,8 +314,7 @@ TEST(Cgroup, MigrateInvalidPID) {
 // Regression test for b/222278194.
 TEST(Cgroup, DuplicateUnlinkOnDirFD) {
   SKIP_IF(!CgroupsAvailable());
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs(""));
+  Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/cpuset");
   Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("child"));
 
   // Orphan child directory by opening FD to it then deleting it.
@@ -459,42 +330,9 @@ TEST(Cgroup, DuplicateUnlinkOnDirFD) {
   EXPECT_THAT(UnlinkAt(dirfd, ".", AT_REMOVEDIR), PosixErrorIs(EINVAL));
 }
 
-TEST(Cgroup, DirSetStat) {
-  SKIP_IF(!CgroupsAvailable());
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs(""));
-
-  const struct stat before = ASSERT_NO_ERRNO_AND_VALUE(Stat(c.Path()));
-  EXPECT_TRUE(S_ISDIR(before.st_mode));
-
-  // Cgroup directories default to 0555.
-  EXPECT_THAT(before.st_mode, PermissionIs(0555));
-
-  // Change permissions and verify they're accepted.
-  ASSERT_NO_ERRNO(Chmod(c.Path(), 0755));
-  const struct stat after = ASSERT_NO_ERRNO_AND_VALUE(Stat(c.Path()));
-  EXPECT_THAT(after.st_mode, PermissionIs(0755));
-
-  // Try the same with non-root directory.
-  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("child"));
-  const struct stat child_before =
-      ASSERT_NO_ERRNO_AND_VALUE(Stat(child.Path()));
-  // Mkdir passes 0755 by default.
-  EXPECT_THAT(child_before.st_mode, PermissionIs(0755));
-
-  ASSERT_NO_ERRNO(Chmod(child.Path(), 0757));
-  const struct stat child_after = ASSERT_NO_ERRNO_AND_VALUE(Stat(child.Path()));
-  EXPECT_THAT(child_after.st_mode, PermissionIs(0757));
-
-  // Child chmod didn't affect parent.
-  const struct stat parent_after = ASSERT_NO_ERRNO_AND_VALUE(Stat(c.Path()));
-  EXPECT_THAT(parent_after.st_mode, PermissionIs(0755));
-}
-
 TEST(Cgroup, MkdirWithPermissions) {
   SKIP_IF(!CgroupsAvailable());
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs(""));
+  Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/cpuset");
 
   std::string child1_path = JoinPath(c.Path(), "child1");
   std::string child2_path = JoinPath(c.Path(), "child2");
@@ -512,8 +350,7 @@ TEST(Cgroup, MkdirWithPermissions) {
 
 TEST(Cgroup, CantRenameControlFile) {
   SKIP_IF(!CgroupsAvailable());
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs(""));
+  Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/cpu");
 
   const std::string control_file_path = c.Relpath("cgroup.procs");
   EXPECT_THAT(
@@ -523,8 +360,7 @@ TEST(Cgroup, CantRenameControlFile) {
 
 TEST(Cgroup, CrossDirRenameNotAllowed) {
   SKIP_IF(!CgroupsAvailable());
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs(""));
+  Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/cpu");
 
   Cgroup dir1 = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("dir1"));
   Cgroup dir2 = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("dir2"));
@@ -543,8 +379,7 @@ TEST(Cgroup, CrossDirRenameNotAllowed) {
 
 TEST(Cgroup, RenameNameCollision) {
   SKIP_IF(!CgroupsAvailable());
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs(""));
+  Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/cpu");
 
   Cgroup dir1 = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("dir1"));
   Cgroup dir2 = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("dir2"));
@@ -559,8 +394,7 @@ TEST(Cgroup, RenameNameCollision) {
 
 TEST(Cgroup, Rename) {
   SKIP_IF(!CgroupsAvailable());
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs(""));
+  Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/cpu");
   Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("child"));
   Cgroup target = ASSERT_NO_ERRNO_AND_VALUE(child.CreateChild("oldname"));
   ASSERT_THAT(rename(target.Path().c_str(), child.Relpath("newname").c_str()),
@@ -571,8 +405,7 @@ TEST(Cgroup, Rename) {
 
 TEST(Cgroup, PIDZeroMovesSelf) {
   SKIP_IF(!CgroupsAvailable());
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs(""));
+  Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/memory");
   Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("child"));
 
   // Source contains this process.
@@ -589,8 +422,7 @@ TEST(Cgroup, PIDZeroMovesSelf) {
 
 TEST(Cgroup, TIDZeroMovesSelf) {
   SKIP_IF(!CgroupsAvailable());
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs(""));
+  Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/memory");
   Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("child"));
 
   // Source contains this thread.
@@ -610,13 +442,13 @@ TEST(Cgroup, NamedHierarchies) {
 
   Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
   Cgroup c1 = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("none,name=h1"));
-  Cgroup c2 = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("name=h2,cpu"));
+  Cgroup c2 = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("none,name=h2"));
 
   // Check that /proc/<pid>/cgroup contains an entry for this task.
   absl::flat_hash_map<std::string, PIDCgroupEntry> entries =
       ASSERT_NO_ERRNO_AND_VALUE(ProcPIDCgroupEntries(getpid()));
   EXPECT_TRUE(entries.contains("name=h1"));
-  EXPECT_TRUE(entries.contains("name=h2,cpu"));
+  EXPECT_TRUE(entries.contains("name=h2"));
   EXPECT_NO_ERRNO(c1.ContainsCallingProcess());
   EXPECT_NO_ERRNO(c2.ContainsCallingProcess());
 }
@@ -641,8 +473,7 @@ TEST(Cgroup, NameMatchButControllersDont) {
 
   Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
   Cgroup c1 = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("none,name=h1"));
-  Cgroup c2 = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("name=h2,memory"));
-
+  EXPECT_THAT(m.MountCgroupfs("name=h2,memory"), PosixErrorIs(EBUSY, _));
   EXPECT_THAT(m.MountCgroupfs("name=h1,memory"), PosixErrorIs(EBUSY, _));
   EXPECT_THAT(m.MountCgroupfs("name=h2,cpu"), PosixErrorIs(EBUSY, _));
 }
@@ -650,8 +481,7 @@ TEST(Cgroup, NameMatchButControllersDont) {
 TEST(MemoryCgroup, MemoryUsageInBytes) {
   SKIP_IF(!CgroupsAvailable());
 
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("memory"));
+  Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/memory");
   const uint64_t usage = ASSERT_NO_ERRNO_AND_VALUE(
       c.ReadIntegerControlFile("memory.usage_in_bytes"));
   EXPECT_GE(usage, 0);
@@ -660,8 +490,7 @@ TEST(MemoryCgroup, MemoryUsageInBytes) {
 TEST(CPUCgroup, ControlFilesHaveDefaultValues) {
   SKIP_IF(!CgroupsAvailable());
 
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("cpu"));
+  Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/cpu");
   EXPECT_THAT(c.ReadIntegerControlFile("cpu.cfs_quota_us"),
               IsPosixErrorOkAndHolds(-1));
   EXPECT_THAT(c.ReadIntegerControlFile("cpu.cfs_period_us"),
@@ -673,9 +502,7 @@ TEST(CPUCgroup, ControlFilesHaveDefaultValues) {
 TEST(CPUAcctCgroup, CPUAcctUsage) {
   SKIP_IF(!CgroupsAvailable());
 
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("cpuacct"));
-
+  Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/cpuacct");
   const int64_t usage =
       ASSERT_NO_ERRNO_AND_VALUE(c.ReadIntegerControlFile("cpuacct.usage"));
   const int64_t usage_user =
@@ -693,9 +520,7 @@ TEST(CPUAcctCgroup, CPUAcctUsage) {
 TEST(CPUAcctCgroup, CPUAcctStat) {
   SKIP_IF(!CgroupsAvailable());
 
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("cpuacct"));
-
+  Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/cpuacct");
   std::string stat =
       ASSERT_NO_ERRNO_AND_VALUE(c.ReadControlFile("cpuacct.stat"));
 
@@ -722,8 +547,7 @@ TEST(CPUAcctCgroup, CPUAcctStat) {
 TEST(CPUAcctCgroup, HierarchicalAccounting) {
   SKIP_IF(!CgroupsAvailable());
 
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup root = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("cpuacct"));
+  Cgroup root = Cgroup::RootCgroup("/sys/fs/cgroup/cpuacct");
   Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(root.CreateChild("child1"));
 
   // Root should have non-zero CPU usage since the test itself will be running
@@ -740,7 +564,7 @@ TEST(CPUAcctCgroup, HierarchicalAccounting) {
       ASSERT_NO_ERRNO_AND_VALUE(root.ReadIntegerControlFile("cpuacct.usage"));
   ASSERT_NO_ERRNO(child.Enter(getpid()));
   ASSERT_NO_ERRNO(
-      child.PollControlFileForChange("cpuacct.usage", absl::Seconds(30)));
+      child.PollControlFileForChange("cpuacct.usage", absl::Seconds(60)));
 
   EXPECT_THAT(child.ReadIntegerControlFile("cpuacct.usage"),
               IsPosixErrorOkAndHolds(Gt(0)));
@@ -753,7 +577,7 @@ TEST(CPUAcctCgroup, HierarchicalAccounting) {
   // Root should continue to gain usage after the move since child is a
   // subcgroup.
   ASSERT_NO_ERRNO(
-      child.PollControlFileForChange("cpuacct.usage", absl::Seconds(30)));
+      child.PollControlFileForChange("cpuacct.usage", absl::Seconds(60)));
   EXPECT_THAT(root.ReadIntegerControlFile("cpuacct.usage"),
               IsPosixErrorOkAndHolds(Ge(after_move)));
 }
@@ -761,15 +585,14 @@ TEST(CPUAcctCgroup, HierarchicalAccounting) {
 TEST(CPUAcctCgroup, IndirectCharge) {
   SKIP_IF(!CgroupsAvailable());
 
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup root = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("cpuacct"));
+  Cgroup root = Cgroup::RootCgroup("/sys/fs/cgroup/cpuacct");
   Cgroup child1 = ASSERT_NO_ERRNO_AND_VALUE(root.CreateChild("child1"));
   Cgroup child2 = ASSERT_NO_ERRNO_AND_VALUE(root.CreateChild("child2"));
   Cgroup child2a = ASSERT_NO_ERRNO_AND_VALUE(child2.CreateChild("child2a"));
 
   ASSERT_NO_ERRNO(child1.Enter(getpid()));
   ASSERT_NO_ERRNO(
-      child1.PollControlFileForChange("cpuacct.usage", absl::Seconds(30)));
+      child1.PollControlFileForChange("cpuacct.usage", absl::Seconds(60)));
 
   // Only root and child1 should have usage.
   for (auto const& cg : {root, child1}) {
@@ -783,7 +606,7 @@ TEST(CPUAcctCgroup, IndirectCharge) {
 
   ASSERT_NO_ERRNO(child2a.Enter(getpid()));
   ASSERT_NO_ERRNO(
-      child2a.PollControlFileForChange("cpuacct.usage", absl::Seconds(30)));
+      child2a.PollControlFileForChange("cpuacct.usage", absl::Seconds(60)));
 
   const int64_t snapshot_root =
       ASSERT_NO_ERRNO_AND_VALUE(root.ReadIntegerControlFile("cpuacct.usage"));
@@ -795,7 +618,7 @@ TEST(CPUAcctCgroup, IndirectCharge) {
       child2a.ReadIntegerControlFile("cpuacct.usage"));
 
   ASSERT_NO_ERRNO(
-      child2a.PollControlFileForChange("cpuacct.usage", absl::Seconds(30)));
+      child2a.PollControlFileForChange("cpuacct.usage", absl::Seconds(60)));
 
   // Root, child2 and child2a should've accumulated new usage. Child1 should
   // not.
@@ -817,23 +640,22 @@ TEST(CPUAcctCgroup, IndirectCharge) {
 TEST(CPUAcctCgroup, NoDoubleAccounting) {
   SKIP_IF(!CgroupsAvailable());
 
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup root = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("cpuacct"));
+  Cgroup root = Cgroup::RootCgroup("/sys/fs/cgroup/cpuacct");
   Cgroup parent = ASSERT_NO_ERRNO_AND_VALUE(root.CreateChild("parent"));
   Cgroup a = ASSERT_NO_ERRNO_AND_VALUE(parent.CreateChild("a"));
   Cgroup b = ASSERT_NO_ERRNO_AND_VALUE(parent.CreateChild("b"));
 
   ASSERT_NO_ERRNO(a.Enter(getpid()));
   ASSERT_NO_ERRNO(
-      a.PollControlFileForChange("cpuacct.usage", absl::Seconds(30)));
+      a.PollControlFileForChange("cpuacct.usage", absl::Seconds(60)));
 
   ASSERT_NO_ERRNO(b.Enter(getpid()));
   ASSERT_NO_ERRNO(
-      b.PollControlFileForChange("cpuacct.usage", absl::Seconds(30)));
+      b.PollControlFileForChange("cpuacct.usage", absl::Seconds(60)));
 
   ASSERT_NO_ERRNO(root.Enter(getpid()));
   ASSERT_NO_ERRNO(
-      root.PollControlFileForChange("cpuacct.usage", absl::Seconds(30)));
+      root.PollControlFileForChange("cpuacct.usage", absl::Seconds(60)));
 
   // The usage for parent, a & b should now be frozen, since they no longer have
   // any tasks. Root will continue to accumulate usage.
@@ -901,8 +723,7 @@ PosixErrorOr<std::vector<bool>> ParseBitmap(std::string s) {
 TEST(JobCgroup, ReadWriteRead) {
   SKIP_IF(!CgroupsAvailable());
 
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("job"));
+  Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/job");
 
   EXPECT_THAT(c.ReadIntegerControlFile("job.id"), IsPosixErrorOkAndHolds(0));
   EXPECT_NO_ERRNO(WriteAndVerifyControlValue(c, "job.id", 1234));
@@ -913,9 +734,8 @@ TEST(JobCgroup, ReadWriteRead) {
 
 TEST(CpusetCgroup, Defaults) {
   SKIP_IF(!CgroupsAvailable());
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("cpuset"));
 
+  Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/cpuset");
   std::string cpus =
       ASSERT_NO_ERRNO_AND_VALUE(c.ReadControlFile("cpuset.cpus"));
   std::vector<bool> cpus_bitmap = ASSERT_NO_ERRNO_AND_VALUE(ParseBitmap(cpus));
@@ -931,9 +751,8 @@ TEST(CpusetCgroup, Defaults) {
 
 TEST(CpusetCgroup, SetMask) {
   SKIP_IF(!CgroupsAvailable());
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("cpuset"));
 
+  Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/cpuset");
   std::string cpus =
       ASSERT_NO_ERRNO_AND_VALUE(c.ReadControlFile("cpuset.cpus"));
   std::vector<bool> cpus_bitmap = ASSERT_NO_ERRNO_AND_VALUE(ParseBitmap(cpus));
@@ -952,8 +771,7 @@ TEST(CpusetCgroup, SetMask) {
 
 TEST(CpusetCgroup, SetEmptyMask) {
   SKIP_IF(!CgroupsAvailable());
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("cpuset"));
+  Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/cpuset");
   ASSERT_NO_ERRNO(c.WriteControlFile("cpuset.cpus", ""));
   std::string_view cpus = absl::StripAsciiWhitespace(
       ASSERT_NO_ERRNO_AND_VALUE(c.ReadControlFile("cpuset.cpus")));
@@ -969,117 +787,78 @@ TEST(ProcCgroups, Empty) {
 
   absl::flat_hash_map<std::string, CgroupsEntry> entries =
       ASSERT_NO_ERRNO_AND_VALUE(ProcCgroupsEntries());
-  // No cgroups mounted yet, we should have no entries.
-  EXPECT_TRUE(entries.empty());
+  // Cgroups are mounted, we should have entries.
+  EXPECT_FALSE(entries.empty());
 }
 
 TEST(ProcCgroups, ProcCgroupsEntries) {
   SKIP_IF(!CgroupsAvailable());
 
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-
-  Cgroup mem = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("memory"));
+  Cgroup mem = Cgroup::RootCgroup("/sys/fs/cgroup/memory");
   absl::flat_hash_map<std::string, CgroupsEntry> entries =
       ASSERT_NO_ERRNO_AND_VALUE(ProcCgroupsEntries());
-  EXPECT_EQ(entries.size(), 1);
+  EXPECT_EQ(entries.size(), 7);
   ASSERT_TRUE(entries.contains("memory"));
   CgroupsEntry mem_e = entries["memory"];
   EXPECT_EQ(mem_e.subsys_name, "memory");
   EXPECT_GE(mem_e.hierarchy, 1);
   // Expect a single root cgroup.
-  EXPECT_EQ(mem_e.num_cgroups, 1);
+  EXPECT_EQ(mem_e.num_cgroups, 2);
   // Cgroups are currently always enabled when mounted.
   EXPECT_TRUE(mem_e.enabled);
 
   // Add a second cgroup, and check for new entry.
 
-  Cgroup cpu = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("cpu"));
+  Cgroup cpu = Cgroup::RootCgroup("/sys/fs/cgroup/cpu");
   entries = ASSERT_NO_ERRNO_AND_VALUE(ProcCgroupsEntries());
-  EXPECT_EQ(entries.size(), 2);
+  EXPECT_EQ(entries.size(), 7);
   EXPECT_TRUE(entries.contains("memory"));  // Still have memory entry.
   ASSERT_TRUE(entries.contains("cpu"));
   CgroupsEntry cpu_e = entries["cpu"];
   EXPECT_EQ(cpu_e.subsys_name, "cpu");
   EXPECT_GE(cpu_e.hierarchy, 1);
-  EXPECT_EQ(cpu_e.num_cgroups, 1);
+  EXPECT_EQ(cpu_e.num_cgroups, 2);
   EXPECT_TRUE(cpu_e.enabled);
 
   // Separate hierarchies, since controllers were mounted separately.
   EXPECT_NE(mem_e.hierarchy, cpu_e.hierarchy);
 }
 
-TEST(ProcCgroups, UnmountRemovesEntries) {
-  SKIP_IF(!CgroupsAvailable());
-
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup cg = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("cpu,memory"));
-  absl::flat_hash_map<std::string, CgroupsEntry> entries =
-      ASSERT_NO_ERRNO_AND_VALUE(ProcCgroupsEntries());
-  EXPECT_EQ(entries.size(), 2);
-
-  ASSERT_NO_ERRNO(m.Unmount(cg));
-
-  entries = ASSERT_NO_ERRNO_AND_VALUE(ProcCgroupsEntries());
-  EXPECT_TRUE(entries.empty());
-}
-
-TEST(ProcPIDCgroup, Empty) {
-  SKIP_IF(!CgroupsAvailable());
-
-  absl::flat_hash_map<std::string, PIDCgroupEntry> entries =
-      ASSERT_NO_ERRNO_AND_VALUE(ProcPIDCgroupEntries(getpid()));
-  EXPECT_TRUE(entries.empty());
-}
-
 TEST(ProcPIDCgroup, Entries) {
   SKIP_IF(!CgroupsAvailable());
 
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("memory"));
-
+  Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/memory");
   absl::flat_hash_map<std::string, PIDCgroupEntry> entries =
       ASSERT_NO_ERRNO_AND_VALUE(ProcPIDCgroupEntries(getpid()));
-  EXPECT_EQ(entries.size(), 1);
+  // All controllers are mounted.
+  EXPECT_EQ(entries.size(), 7);
   PIDCgroupEntry mem_e = entries["memory"];
   EXPECT_GE(mem_e.hierarchy, 1);
   EXPECT_EQ(mem_e.controllers, "memory");
-  EXPECT_EQ(mem_e.path, "/");
+  // The path is /<container-id>.
+  EXPECT_NE(mem_e.path, "/");
 
-  Cgroup c1 = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("cpu"));
+  Cgroup c1 = Cgroup::RootCgroup("/sys/fs/cgroup/cpu");
   entries = ASSERT_NO_ERRNO_AND_VALUE(ProcPIDCgroupEntries(getpid()));
-  EXPECT_EQ(entries.size(), 2);
+  // All controllers are mounted.
+  EXPECT_EQ(entries.size(), 7);
   EXPECT_TRUE(entries.contains("memory"));  // Still have memory entry.
   PIDCgroupEntry cpu_e = entries["cpu"];
   EXPECT_GE(cpu_e.hierarchy, 1);
   EXPECT_EQ(cpu_e.controllers, "cpu");
-  EXPECT_EQ(cpu_e.path, "/");
+  // The path is /<container-id>.
+  EXPECT_NE(cpu_e.path, "/");
 
   // Separate hierarchies, since controllers were mounted separately.
   EXPECT_NE(mem_e.hierarchy, cpu_e.hierarchy);
-}
-
-TEST(ProcPIDCgroup, UnmountRemovesEntries) {
-  SKIP_IF(!CgroupsAvailable());
-
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup all = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs(""));
-
-  absl::flat_hash_map<std::string, PIDCgroupEntry> entries =
-      ASSERT_NO_ERRNO_AND_VALUE(ProcPIDCgroupEntries(getpid()));
-  EXPECT_GT(entries.size(), 0);
-
-  ASSERT_NO_ERRNO(m.Unmount(all));
-
-  entries = ASSERT_NO_ERRNO_AND_VALUE(ProcPIDCgroupEntries(getpid()));
-  EXPECT_TRUE(entries.empty());
 }
 
 TEST(ProcCgroup, PIDCgroupMatchesCgroups) {
   SKIP_IF(!CgroupsAvailable());
 
   Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("memory"));
-  Cgroup c1 = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("cpu"));
+  Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/memory");
+  Cgroup c1 = Cgroup::RootCgroup("/sys/fs/cgroup/cpu");
 
   absl::flat_hash_map<std::string, CgroupsEntry> cgroups_entries =
       ASSERT_NO_ERRNO_AND_VALUE(ProcCgroupsEntries());
@@ -1099,147 +878,14 @@ TEST(ProcCgroup, PIDCgroupMatchesCgroups) {
   EXPECT_NE(pid_mem.hierarchy, pid_cpu.hierarchy);
 }
 
-TEST(ProcCgroup, MultiControllerHierarchy) {
-  SKIP_IF(!CgroupsAvailable());
-
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("memory,cpu"));
-
-  absl::flat_hash_map<std::string, CgroupsEntry> cgroups_entries =
-      ASSERT_NO_ERRNO_AND_VALUE(ProcCgroupsEntries());
-
-  CgroupsEntry mem_e = cgroups_entries["memory"];
-  CgroupsEntry cpu_e = cgroups_entries["cpu"];
-
-  // Both controllers should have the same hierarchy ID.
-  EXPECT_EQ(mem_e.hierarchy, cpu_e.hierarchy);
-
-  absl::flat_hash_map<std::string, PIDCgroupEntry> pid_entries =
-      ASSERT_NO_ERRNO_AND_VALUE(ProcPIDCgroupEntries(getpid()));
-
-  // Expecting an entry listing both controllers, that matches the previous
-  // hierarchy ID. Note that the controllers are listed in alphabetical order.
-  PIDCgroupEntry pid_e = pid_entries["cpu,memory"];
-  EXPECT_EQ(pid_e.hierarchy, mem_e.hierarchy);
-}
-
-TEST(ProcCgroup, ProcfsReportsCgroupfsMountOptions) {
-  SKIP_IF(!CgroupsAvailable());
-
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  // Hierarchy with multiple controllers.
-  Cgroup c1 = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("memory,cpu"));
-  // Hierarchy with a single controller.
-  Cgroup c2 = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("cpuacct"));
-
-  const std::vector<ProcMountsEntry> mounts =
-      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountsEntries());
-
-  for (auto const& e : mounts) {
-    if (e.mount_point == c1.Path()) {
-      auto mopts = ParseMountOptions(e.mount_opts);
-      EXPECT_THAT(mopts, Contains(Key("memory")));
-      EXPECT_THAT(mopts, Contains(Key("cpu")));
-      EXPECT_THAT(mopts, Not(Contains(Key("cpuacct"))));
-    }
-
-    if (e.mount_point == c2.Path()) {
-      auto mopts = ParseMountOptions(e.mount_opts);
-      EXPECT_THAT(mopts, Contains(Key("cpuacct")));
-      EXPECT_THAT(mopts, Not(Contains(Key("cpu"))));
-      EXPECT_THAT(mopts, Not(Contains(Key("memory"))));
-    }
-  }
-
-  const std::vector<ProcMountInfoEntry> mountinfo =
-      ASSERT_NO_ERRNO_AND_VALUE(ProcSelfMountInfoEntries());
-
-  for (auto const& e : mountinfo) {
-    if (e.mount_point == c1.Path()) {
-      auto mopts = ParseMountOptions(e.super_opts);
-      EXPECT_THAT(mopts, Contains(Key("memory")));
-      EXPECT_THAT(mopts, Contains(Key("cpu")));
-      EXPECT_THAT(mopts, Not(Contains(Key("cpuacct"))));
-    }
-
-    if (e.mount_point == c2.Path()) {
-      auto mopts = ParseMountOptions(e.super_opts);
-      EXPECT_THAT(mopts, Contains(Key("cpuacct")));
-      EXPECT_THAT(mopts, Not(Contains(Key("cpu"))));
-      EXPECT_THAT(mopts, Not(Contains(Key("memory"))));
-    }
-  }
-}
-
-TEST(ProcCgroups, ProcfsRreportsHierarchyID) {
-  SKIP_IF(!CgroupsAvailable());
-
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup h1 = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("memory,cpuacct"));
-  Cgroup h2 = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("cpu"));
-
-  absl::flat_hash_map<std::string, CgroupsEntry> entries =
-      ASSERT_NO_ERRNO_AND_VALUE(ProcCgroupsEntries());
-
-  EXPECT_EQ(entries["memory"].hierarchy, entries["cpuacct"].hierarchy);
-
-  // Hierarhcy IDs are allocated sequentially, starting at 1.
-  EXPECT_EQ(entries["memory"].hierarchy, 1);
-  EXPECT_EQ(entries["cpu"].hierarchy, 2);
-}
-
-TEST(ProcCgroups, ProcfsReportsTasksCgroup) {
-  SKIP_IF(!CgroupsAvailable());
-
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup h1 = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("memory"));
-  Cgroup h2 = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("cpu,cpuacct"));
-
-  Cgroup h1c1 = ASSERT_NO_ERRNO_AND_VALUE(h1.CreateChild("memory_child1"));
-  Cgroup h1c2 = ASSERT_NO_ERRNO_AND_VALUE(h1.CreateChild("memory_child2"));
-
-  Cgroup h2c1 = ASSERT_NO_ERRNO_AND_VALUE(h2.CreateChild("cpu_child1"));
-  Cgroup h2c2 = ASSERT_NO_ERRNO_AND_VALUE(h2.CreateChild("cpu_child2"));
-
-  // Test should initially be in the hierarchy roots.
-  auto entries = ASSERT_NO_ERRNO_AND_VALUE(ProcPIDCgroupEntries(getpid()));
-  EXPECT_EQ(h1.CanonicalPath(), entries["memory"].path);
-  EXPECT_EQ(h2.CanonicalPath(), entries["cpu,cpuacct"].path);
-
-  // Move to child for hierarchy #1 and check paths. Note that we haven't moved
-  // in hierarchy #2.
-  ASSERT_NO_ERRNO(h1c1.Enter(getpid()));
-  entries = ASSERT_NO_ERRNO_AND_VALUE(ProcPIDCgroupEntries(getpid()));
-  EXPECT_EQ(h1c1.CanonicalPath(), entries["memory"].path);
-  EXPECT_EQ(h2.CanonicalPath(), entries["cpu,cpuacct"].path);
-
-  // Move h2; h1 should remain unchanged.
-  ASSERT_NO_ERRNO(h2c1.Enter(getpid()));
-  entries = ASSERT_NO_ERRNO_AND_VALUE(ProcPIDCgroupEntries(getpid()));
-  EXPECT_EQ(h1c1.CanonicalPath(), entries["memory"].path);
-  EXPECT_EQ(h2c1.CanonicalPath(), entries["cpu,cpuacct"].path);
-
-  // Move the thread rather than process group.
-  const pid_t tid = syscall(SYS_gettid);
-  ASSERT_NO_ERRNO(h1c2.EnterThread(tid));
-  entries = ASSERT_NO_ERRNO_AND_VALUE(ProcPIDCgroupEntries(tid));
-  EXPECT_EQ(h1c2.CanonicalPath(), entries["memory"].path);
-  EXPECT_EQ(h2c1.CanonicalPath(), entries["cpu,cpuacct"].path);
-
-  ASSERT_NO_ERRNO(h2c2.EnterThread(tid));
-  entries = ASSERT_NO_ERRNO_AND_VALUE(ProcPIDCgroupEntries(tid));
-  EXPECT_EQ(h1c2.CanonicalPath(), entries["memory"].path);
-  EXPECT_EQ(h2c2.CanonicalPath(), entries["cpu,cpuacct"].path);
-}
-
 TEST(PIDsCgroup, ControlFilesExist) {
   SKIP_IF(!CgroupsAvailable());
 
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("pids"));
+  Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/pids");
 
-  // The pids.max file isn't available for the root cgroup.
-  EXPECT_THAT(c.ReadControlFile("pids.max"), PosixErrorIs(ENOENT, _));
+  const std::string root_limit =
+      ASSERT_NO_ERRNO_AND_VALUE(c.ReadControlFile("pids.max"));
+  EXPECT_EQ(root_limit, "max\n");
 
   // There should be at least one PID in use in the root controller, since the
   // test process is running in the root controller.
@@ -1264,9 +910,7 @@ TEST(PIDsCgroup, ControlFilesExist) {
 TEST(PIDsCgroup, ChargeMigration) {
   SKIP_IF(!CgroupsAvailable());
 
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("pids"));
-
+  Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/pids");
   const int64_t root_start =
       ASSERT_NO_ERRNO_AND_VALUE(c.ReadIntegerControlFile("pids.current"));
   // Root should have at least one task.
@@ -1294,8 +938,7 @@ TEST(PIDsCgroup, ChargeMigration) {
 TEST(PIDsCgroup, MigrationCanExceedLimit) {
   SKIP_IF(!CgroupsAvailable());
 
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("pids"));
+  Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/pids");
   Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("child"));
 
   // Set child limit to 0, and try move tasks into it. This should be allowed,
@@ -1309,8 +952,7 @@ TEST(PIDsCgroup, MigrationCanExceedLimit) {
 TEST(PIDsCgroup, SetInvalidLimit) {
   SKIP_IF(!CgroupsAvailable());
 
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("pids"));
+  Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/pids");
   Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("child"));
 
   // Set a valid limit, so we can verify it doesn't change after invalid writes.
@@ -1336,8 +978,7 @@ TEST(PIDsCgroup, SetInvalidLimit) {
 TEST(PIDsCgroup, CanLowerLimitBelowCurrentCharge) {
   SKIP_IF(!CgroupsAvailable());
 
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("pids"));
+  Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/pids");
   Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("child"));
   ASSERT_NO_ERRNO(child.Enter(getpid()));
   // Confirm current charge is non-zero.
@@ -1347,94 +988,10 @@ TEST(PIDsCgroup, CanLowerLimitBelowCurrentCharge) {
   EXPECT_NO_ERRNO(child.WriteIntegerControlFile("pids.max", 0));
 }
 
-TEST(PIDsCgroup, LimitEnforced) {
-  SKIP_IF(!CgroupsAvailable());
-
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("pids"));
-  Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(c.CreateChild("child"));
-  ASSERT_NO_ERRNO(child.Enter(getpid()));
-
-  // Set limit to so we have room for one more task.
-  const int64_t baseline =
-      ASSERT_NO_ERRNO_AND_VALUE(child.ReadIntegerControlFile("pids.current"));
-  ASSERT_NO_ERRNO(child.WriteIntegerControlFile("pids.max", baseline + 1));
-
-  // Spawning a thread should succeed.
-  NoopThreads t1(1);
-  ASSERT_THAT(child.ReadIntegerControlFile("pids.current"),
-              IsPosixErrorOkAndHolds(baseline + 1));
-
-  // Attempting to spawn another thread should fail.
-  pthread_t pt;
-  EXPECT_EQ(pthread_create(&pt, nullptr, &DummyThreadBody, nullptr), EAGAIN);
-  ASSERT_THAT(child.ReadIntegerControlFile("pids.current"),
-              IsPosixErrorOkAndHolds(baseline + 1));
-
-  // Exit the first thread and try create a thread again, which should succeed.
-  ASSERT_NO_ERRNO(child.PollControlFileForChangeAfter(
-      "pids.current", absl::Seconds(30), [&t1]() { t1.Join(); }));
-  ASSERT_THAT(child.ReadIntegerControlFile("pids.current"),
-              IsPosixErrorOkAndHolds(baseline));
-  NoopThreads t2(1);
-  EXPECT_THAT(child.ReadIntegerControlFile("pids.current"),
-              IsPosixErrorOkAndHolds(baseline + 1));
-
-  // Increase the limit and try again.
-  ASSERT_NO_ERRNO(child.WriteIntegerControlFile("pids.max", baseline + 2));
-  NoopThreads t3(1);
-  EXPECT_THAT(child.ReadIntegerControlFile("pids.current"),
-              IsPosixErrorOkAndHolds(baseline + 2));
-}
-
-// Regression test for b/231312320.
-TEST(PIDsCgroup, RaceFSDestructionChargeUncharge) {
-  SKIP_IF(!CgroupsAvailable());
-
-  const TempPath mountpoint = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
-
-  // The goal of this test is to recreate the hierarchy containing the pids
-  // controller between when a pending charge is added for a new thread, and
-  // when the pending charge is removed due to a clone failure.
-
-  // Attempt to change the hierachy mid charge/uncharge by repeatedly creating
-  // new cgroupfs filesystems.
-  ScopedThread mounter_unmounter([&mountpoint] {
-    const DisableSave ds;  // Too many syscalls.
-
-    for (int i = 0; i < 1000; ++i) {
-      mount("none", mountpoint.path().c_str(), "cgroup", 0, 0);
-      umount(mountpoint.path().c_str());
-    }
-  });
-
-  // Trigger thread creation failure by having the parent of a clone syscall
-  // segfault intentionally.
-  ScopedThread cloner_root([] {
-    const DisableSave ds;  // Too many syscalls.
-
-    for (int i = 0; i < 50; ++i) {
-      ScopedThread cloner([] {
-        // Asynchronously spawn threads.
-        ScopedThread noop_threads([] {
-          for (int i = 0; i < 100; ++i) {
-            ScopedThread([] { getpid(); });
-          }
-        });
-
-        // Intentionally bad syscall that will cause the calling thread to be
-        // aborted with a SIGSEGV.
-        rename(0, 0);
-      });
-    }
-  });
-}
-
 TEST(DevicesCgroup, ControlFilesExist) {
   SKIP_IF(!CgroupsAvailable());
 
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("devices"));
+  Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/devices");
 
   // The root group starts with allowing rwm to all.
   EXPECT_THAT(c.ReadControlFile("devices.allow"), IsPosixErrorOkAndHolds(""));
@@ -1446,8 +1003,7 @@ TEST(DevicesCgroup, ControlFilesExist) {
 TEST(DevicesCgroup, DenyAll) {
   SKIP_IF(!CgroupsAvailable());
 
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("devices"));
+  Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/devices");
 
   ASSERT_NO_ERRNO(c.WriteControlFile("devices.allow", "b *:* rw\n"));
   EXPECT_THAT(c.ReadControlFile("devices.list"),
@@ -1460,8 +1016,7 @@ TEST(DevicesCgroup, DenyAll) {
 TEST(DevicesCgroup, AddDeviceRule) {
   SKIP_IF(!CgroupsAvailable());
 
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("devices"));
+  Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/devices");
 
   ASSERT_THAT(c.ReadControlFile("devices.list"),
               IsPosixErrorOkAndHolds("a *:* rwm"));
@@ -1484,8 +1039,7 @@ TEST(DevicesCgroup, AddDeviceRule) {
 TEST(DevicesCgroup, RemoveDeviceRule) {
   SKIP_IF(!CgroupsAvailable());
 
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("devices"));
+  Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/devices");
   // The root group starts with allowing rwm to all.
   ASSERT_THAT(c.ReadControlFile("devices.list"),
               IsPosixErrorOkAndHolds("a *:* rwm"));
@@ -1505,8 +1059,7 @@ TEST(DevicesCgroup, RemoveDeviceRule) {
 TEST(DevicesCgroup, IgnorePartialMatchRule) {
   SKIP_IF(!CgroupsAvailable());
 
-  Mounter m(ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir()));
-  Cgroup c = ASSERT_NO_ERRNO_AND_VALUE(m.MountCgroupfs("devices"));
+  Cgroup c = Cgroup::RootCgroup("/sys/fs/cgroup/devices");
 
   // Gives character devices with the major device number 7 read and write
   // permission.

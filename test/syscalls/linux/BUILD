@@ -4576,6 +4576,7 @@ cc_binary(
         "//test/util:mount_util",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/synchronization",
+        "@com_google_absl//absl/time",
         gtest,
         "//test/util:cleanup",
         "//test/util:posix_error",
