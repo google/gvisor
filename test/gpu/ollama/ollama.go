@@ -52,11 +52,13 @@ type Ollama struct {
 // New starts a new Ollama server in the given container,
 // then waits for it to serve and returns the client.
 func New(ctx context.Context, cont *dockerutil.Container, logger testutil.Logger) (*Ollama, error) {
+	started := time.Now()
 	opts := dockerutil.GPURunOpts()
 	opts.Image = "gpu/ollama"
 	if err := cont.Spawn(ctx, opts); err != nil {
 		return nil, fmt.Errorf("could not start ollama: %v", err)
 	}
+	logger.Logf("Started ollama container in %v", time.Since(started))
 	llm := &Ollama{
 		container: cont,
 		logger:    logger,
@@ -66,6 +68,7 @@ func New(ctx context.Context, cont *dockerutil.Container, logger testutil.Logger
 	if err := llm.WaitUntilServing(ctx); err != nil {
 		return nil, fmt.Errorf("ollama did not come up for serving: %w", err)
 	}
+	logger.Logf("Ollama serving API requests after %v", time.Since(started))
 
 	// Get list of model names.
 	modelNames, err := llm.listModelNames(ctx)
@@ -76,6 +79,7 @@ func New(ctx context.Context, cont *dockerutil.Container, logger testutil.Logger
 		return nil, errors.New("no models available")
 	}
 	llm.ModelNames = modelNames
+	logger.Logf("Available ollama model names: %v (loaded %v since container start)", modelNames, time.Since(started))
 
 	// Load the first model.
 	// This is necessary to force ollama to load a model, without which
@@ -87,6 +91,7 @@ func New(ctx context.Context, cont *dockerutil.Container, logger testutil.Logger
 	if err != nil {
 		return nil, fmt.Errorf("could not load first model %q: %w", llm.ModelNames[0], err)
 	}
+	logger.Logf("Loaded first ollama model %q (%v since container start)", llm.ModelNames[0], time.Since(started))
 
 	// Now go over the logs and check if the GPU was used.
 	logs, err := llm.container.Logs(ctx)
@@ -101,6 +106,7 @@ func New(ctx context.Context, cont *dockerutil.Container, logger testutil.Logger
 	default:
 		return nil, fmt.Errorf("cannot determine whether ollama is using GPU from logs:\n%s", logs)
 	}
+	logger.Logf("Ollama successfully initialized in a total of %v", time.Since(started))
 	return llm, nil
 }
 

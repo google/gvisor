@@ -70,7 +70,7 @@ func TestLLM(t *testing.T) {
 	// Run the LLM.
 	llmContainer := dockerutil.MakeContainer(ctx, t)
 	defer llmContainer.CleanUp(ctx)
-	startCtx, startCancel := context.WithTimeout(ctx, 30*time.Second)
+	startCtx, startCancel := context.WithTimeout(ctx, 3*time.Minute)
 	llm, err := ollama.New(startCtx, llmContainer, t)
 	startCancel()
 	if err != nil {
