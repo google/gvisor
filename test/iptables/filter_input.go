@@ -57,6 +57,8 @@ func init() {
 	RegisterTestCase(&FilterInputInterfaceBeginsWith{})
 	RegisterTestCase(&FilterInputInterfaceInvertDrop{})
 	RegisterTestCase(&FilterInputInterfaceInvertAccept{})
+	RegisterTestCase(&FilterInputInvertDportAccept{})
+	RegisterTestCase(&FilterInputInvertDportDrop{})
 }
 
 // FilterInputDropUDP tests that we can drop UDP traffic.
@@ -987,4 +989,70 @@ func (*FilterInputInterfaceInvertAccept) ContainerAction(ctx context.Context, ip
 // LocalAction implements TestCase.LocalAction.
 func (*FilterInputInterfaceInvertAccept) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
 	return connectTCP(ctx, ip, acceptPort, ipv6)
+}
+
+// FilterInputInvertDportAccept tests that we can send packets on a negated
+// --dport match
+type FilterInputInvertDportAccept struct{ baseCase }
+
+var _ TestCase = (*FilterInputInvertDportAccept)(nil)
+
+// Name implements TestCase.Name.
+func (*FilterInputInvertDportAccept) Name() string {
+	return "FilterInputInvertDportAccept"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (*FilterInputInvertDportAccept) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	if err := filterTable(ipv6, "-A", "INPUT", "-p", "tcp", "!", "--dport", fmt.Sprintf("%d", dropPort), "-j", "ACCEPT"); err != nil {
+		return err
+	}
+
+	// Listen for TCP packets on accept port.
+	return listenTCP(ctx, acceptPort, ipv6)
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (*FilterInputInvertDportAccept) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	return connectTCP(ctx, ip, acceptPort, ipv6)
+}
+
+// FilterInputInvertDportDrop tests that we can send packets on a negated
+// --dport match
+type FilterInputInvertDportDrop struct{ baseCase }
+
+var _ TestCase = (*FilterInputInvertDportDrop)(nil)
+
+// Name implements TestCase.Name.
+func (*FilterInputInvertDportDrop) Name() string {
+	return "FilterInputInvertDportDrop"
+}
+
+// ContainerAction implements TestCase.ContainerAction.
+func (*FilterInputInvertDportDrop) ContainerAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	if err := filterTable(ipv6, "-A", "INPUT", "-p", "tcp", "!", "--dport", fmt.Sprintf("%d", acceptPort), "-j", "DROP"); err != nil {
+		return err
+	}
+
+	// Listen for TCP packets on accept port.
+	timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
+	defer cancel()
+	if err := listenTCP(timedCtx, dropPort, ipv6); err == nil {
+		return fmt.Errorf("connection was established when it shouldnt have been")
+	} else if !errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("error reading: %v", err)
+	}
+
+	return nil
+}
+
+// LocalAction implements TestCase.LocalAction.
+func (*FilterInputInvertDportDrop) LocalAction(ctx context.Context, ip net.IP, ipv6 bool) error {
+	timedCtx, cancel := context.WithTimeout(ctx, NegativeTimeout)
+	defer cancel()
+	if err := connectTCP(timedCtx, ip, dropPort, ipv6); err == nil {
+		return fmt.Errorf("connection on %d port was accepted when it should have been dropped", dropPort)
+	}
+
+	return nil
 }
