@@ -282,17 +282,8 @@ type Config struct {
 	// Use pools to manage buffer memory instead of heap.
 	BufferPooling bool `flag:"buffer-pooling"`
 
-	// AFXDP defines whether to use an AF_XDP socket to receive packets
-	// (rather than AF_PACKET). Enabling it disables RX checksum offload.
-	AFXDP bool `flag:"EXPERIMENTAL-afxdp"`
-
-	// AFXDPRedirectHost is the name of a network interface. runsc will
-	// scrape the address, routes, and neighbors of that interface, and
-	// send packets via an AF_XDP socket on that interface.
-	//
-	// Requires use of `xdp_loader redirect` to setup the XDP program and
-	// eBPF map that runsc hooks into.
-	AFXDPRedirectHost string `flag:"EXPERIMENTAL-xdp-redirect-host"`
+	// XDP controls Whether and how to use XDP.
+	XDP XDP `flag:"EXPERIMENTAL-xdp"`
 
 	// AFXDPUseNeedWakeup determines whether XDP_USE_NEED_WAKEUP is set
 	// when using AF_XDP sockets.
@@ -923,4 +914,88 @@ func (o *Overlay2) SubMountOverlayMedium() OverlayMedium {
 		return NoOverlay
 	}
 	return o.medium
+}
+
+// XDP holds configuration for whether and how to use XDP.
+type XDP struct {
+	Mode      XDPMode
+	IfaceName string
+}
+
+// XDPMode specifies a particular use of XDP.
+type XDPMode int
+
+const (
+	// XDPModeOff doesn't use XDP.
+	XDPModeOff XDPMode = iota
+
+	// XDPModeNS uses an AF_XDP socket to read from the VETH device inside
+	// the container's network namespace.
+	XDPModeNS
+
+	// XDPModeRedirect uses an AF_XDP socket on the host NIC to bypass the
+	// Linux network stack.
+	XDPModeRedirect
+
+	// XDPModeTunnel uses XDP_REDIRECT to redirect packets directy from the
+	// host NIC to the VETH device inside the container's network
+	// namespace. Packets are read from the VETH via AF_XDP, as in
+	// XDPModeNS.
+	XDPModeTunnel
+)
+
+const (
+	xdpModeStrOff      = "off"
+	xdpModeStrNS       = "ns"
+	xdpModeStrRedirect = "redirect"
+	xdpModeStrTunnel   = "tunnel"
+)
+
+var xdpConfig XDP
+
+// Get implements flag.Getter.
+func (xd *XDP) Get() any {
+	return *xd
+}
+
+// String implements flag.Getter.
+func (xd *XDP) String() string {
+	switch xd.Mode {
+	case XDPModeOff:
+		return xdpModeStrOff
+	case XDPModeNS:
+		return xdpModeStrNS
+	case XDPModeRedirect:
+		return fmt.Sprintf("%s:%s", xdpModeStrRedirect, xd.IfaceName)
+	case XDPModeTunnel:
+		return fmt.Sprintf("%s:%s", xdpModeStrTunnel, xd.IfaceName)
+	default:
+		panic(fmt.Sprintf("unknown mode %d", xd.Mode))
+	}
+}
+
+// Set implements flag.Getter.
+func (xd *XDP) Set(input string) error {
+	parts := strings.Split(input, ":")
+	if len(parts) > 2 {
+		return fmt.Errorf("invalid --xdp value: %q", input)
+	}
+
+	switch {
+	case input == xdpModeStrOff:
+		xd.Mode = XDPModeOff
+		xd.IfaceName = ""
+	case input == xdpModeStrNS:
+		xd.Mode = XDPModeNS
+		xd.IfaceName = ""
+	case len(parts) == 2 && parts[0] == xdpModeStrRedirect && parts[1] != "":
+		xd.Mode = XDPModeRedirect
+		xd.IfaceName = parts[1]
+	case len(parts) == 2 && parts[0] == xdpModeStrTunnel && parts[1] != "":
+		xd.Mode = XDPModeTunnel
+		xd.IfaceName = parts[1]
+	default:
+		return fmt.Errorf("invalid --xdp value: %q", input)
+	}
+	return nil
 }

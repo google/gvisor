@@ -120,11 +120,21 @@ func isRootNS() (bool, error) {
 // net namespace with the given path, creates them in the sandbox, and removes
 // them from the host.
 func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *config.Config) error {
-	if conf.AFXDPRedirectHost != "" {
+	switch conf.XDP.Mode {
+	case config.XDPModeOff:
+	case config.XDPModeNS:
+	case config.XDPModeRedirect:
 		if err := createRedirectInterfacesAndRoutes(conn, conf); err != nil {
 			return fmt.Errorf("failed to create XDP redirect interface: %w", err)
 		}
 		return nil
+	case config.XDPModeTunnel:
+		if err := createXDPTunnel(conn, nsPath, conf); err != nil {
+			return fmt.Errorf("failed to create XDP tunnel: %w", err)
+		}
+		return nil
+	default:
+		return fmt.Errorf("unknown XDP mode: %v", conf.XDP.Mode)
 	}
 
 	// Join the network namespace that we will be copying.
@@ -250,7 +260,7 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 			}
 		}
 
-		if conf.AFXDP {
+		if conf.XDP.Mode == config.XDPModeNS {
 			xdpSockFDs, err := createSocketXDP(iface)
 			if err != nil {
 				return fmt.Errorf("failed to create XDP socket: %v", err)
@@ -313,31 +323,8 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 		}
 	}
 
-	// Pass PCAP log file if present.
-	if conf.PCAP != "" {
-		args.PCAP = true
-		pcap, err := os.OpenFile(conf.PCAP, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0664)
-		if err != nil {
-			return fmt.Errorf("failed to open PCAP file %s: %v", conf.PCAP, err)
-		}
-		args.FilePayload.Files = append(args.FilePayload.Files, pcap)
-	}
-
-	// Pass the host's NAT table if requested.
-	if conf.ReproduceNftables || conf.ReproduceNAT {
-		var f *os.File
-		if conf.ReproduceNftables {
-			log.Infof("reproing nftables")
-			f, err = checkNftables()
-		} else if conf.ReproduceNAT {
-			log.Infof("reproing legacy tables")
-			f, err = writeNATBlob()
-		}
-		if err != nil {
-			return fmt.Errorf("failed to write NAT blob: %v", err)
-		}
-		args.NATBlob = true
-		args.FilePayload.Files = append(args.FilePayload.Files, f)
+	if err := pcapAndNAT(&args, conf); err != nil {
+		return err
 	}
 
 	log.Debugf("Setting up network, config: %+v", args)
@@ -536,6 +523,38 @@ func removeAddress(source netlink.Link, ipAndMask string) error {
 		return err
 	}
 	return netlink.AddrDel(source, addr)
+}
+
+func pcapAndNAT(args *boot.CreateLinksAndRoutesArgs, conf *config.Config) error {
+	// Pass PCAP log file if present.
+	if conf.PCAP != "" {
+		args.PCAP = true
+		pcap, err := os.OpenFile(conf.PCAP, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0664)
+		if err != nil {
+			return fmt.Errorf("failed to open PCAP file %s: %v", conf.PCAP, err)
+		}
+		args.FilePayload.Files = append(args.FilePayload.Files, pcap)
+	}
+
+	// Pass the host's NAT table if requested.
+	if conf.ReproduceNftables || conf.ReproduceNAT {
+		var f *os.File
+		var err error
+		if conf.ReproduceNftables {
+			log.Infof("reproing nftables")
+			f, err = checkNftables()
+		} else if conf.ReproduceNAT {
+			log.Infof("reproing legacy tables")
+			f, err = writeNATBlob()
+		}
+		if err != nil {
+			return fmt.Errorf("failed to write NAT blob: %v", err)
+		}
+		args.NATBlob = true
+		args.FilePayload.Files = append(args.FilePayload.Files, f)
+	}
+
+	return nil
 }
 
 // The below is a work around to generate iptables-legacy rules on machines

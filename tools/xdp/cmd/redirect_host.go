@@ -21,13 +21,13 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
 	"github.com/google/subcommands"
-	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/runsc/flag"
 )
 
@@ -43,19 +43,19 @@ func RedirectPinDir(iface string) string {
 // RedirectMapPath returns the path where the eBPF map will be pinned when
 // xdp_loader is run against iface.
 func RedirectMapPath(iface string) string {
-	return filepath.Join(RedirectPinDir(iface), "ip_map")
+	return filepath.Join(RedirectPinDir(iface), "redirect_ip_map")
 }
 
 // RedirectProgramPath returns the path where the eBPF program will be pinned
 // when xdp_loader is run against iface.
 func RedirectProgramPath(iface string) string {
-	return filepath.Join(RedirectPinDir(iface), "program")
+	return filepath.Join(RedirectPinDir(iface), "redirect_program")
 }
 
 // RedirectLinkPath returns the path where the eBPF link will be pinned when
 // xdp_loader is run against iface.
 func RedirectLinkPath(iface string) string {
-	return filepath.Join(RedirectPinDir(iface), "link")
+	return filepath.Join(RedirectPinDir(iface), "redirect_link")
 }
 
 //go:embed bpf/redirect_host_ebpf.o
@@ -107,20 +107,35 @@ func (rc *RedirectHostCommand) execute() error {
 		return fmt.Errorf("%v", err)
 	}
 
-	var (
-		pinDir      = RedirectPinDir(iface.Name)
-		mapPath     = RedirectMapPath(iface.Name)
-		programPath = RedirectProgramPath(iface.Name)
-		linkPath    = RedirectLinkPath(iface.Name)
-	)
+	return installProgramAndMap(installProgramAndMapOpts{
+		program:     redirectProgram,
+		iface:       iface,
+		unpin:       rc.unpin,
+		pinDir:      RedirectPinDir(iface.Name),
+		mapPath:     RedirectMapPath(iface.Name),
+		programPath: RedirectProgramPath(iface.Name),
+		linkPath:    RedirectLinkPath(iface.Name),
+	})
+}
 
+type installProgramAndMapOpts struct {
+	program     []byte
+	iface       *net.Interface
+	unpin       bool
+	pinDir      string
+	mapPath     string
+	programPath string
+	linkPath    string
+}
+
+func installProgramAndMap(opts installProgramAndMapOpts) error {
 	// User just wants to unpin things.
-	if rc.unpin {
-		return unpin(mapPath, programPath, linkPath)
+	if opts.unpin {
+		return unpin(opts.mapPath, opts.programPath, opts.linkPath)
 	}
 
 	// Load into the kernel.
-	spec, err := ebpf.LoadCollectionSpecFromReader(bytes.NewReader(redirectProgram))
+	spec, err := ebpf.LoadCollectionSpecFromReader(bytes.NewReader(opts.program))
 	if err != nil {
 		return fmt.Errorf("failed to load spec: %v", err)
 	}
@@ -141,39 +156,35 @@ func (rc *RedirectHostCommand) execute() error {
 		}
 	}()
 
-	attachedLink, cleanup, err := attach(objects.Program, iface)
+	attachedLink, cleanup, err := attach(objects.Program, opts.iface)
 	if err != nil {
 		return fmt.Errorf("failed to attach: %v", err)
 	}
 	defer cleanup()
 
 	// Create directory /sys/fs/bpf/<device name>/.
-	if err := os.Mkdir(pinDir, 0700); err != nil && !os.IsExist(err) {
-		return fmt.Errorf("failed to create directory for pinning at %s: %v", pinDir, err)
+	if err := os.Mkdir(opts.pinDir, 0700); err != nil && !os.IsExist(err) {
+		return fmt.Errorf("failed to create directory for pinning at %s: %v", opts.pinDir, err)
 	}
 
 	// Pin the map at /sys/fs/bpf/<device name>/ip_map.
-	if err := objects.SockMap.Pin(mapPath); err != nil {
-		return fmt.Errorf("failed to pin map at %s", mapPath)
+	if err := objects.SockMap.Pin(opts.mapPath); err != nil {
+		return fmt.Errorf("failed to pin map at %s", opts.mapPath)
 	}
-	log.Printf("Pinned map at %s", mapPath)
+	log.Printf("Pinned map at %s", opts.mapPath)
 
 	// Pin the program at /sys/fs/bpf/<device name>/program.
-	if err := objects.Program.Pin(programPath); err != nil {
-		return fmt.Errorf("failed to pin program at %s", programPath)
+	if err := objects.Program.Pin(opts.programPath); err != nil {
+		return fmt.Errorf("failed to pin program at %s", opts.programPath)
 	}
-	log.Printf("Pinned program at %s", programPath)
+	log.Printf("Pinned program at %s", opts.programPath)
 
 	// Make everything persistent by pinning the link. Otherwise, the XDP
 	// program would detach when this process exits.
-	if err := attachedLink.Pin(linkPath); err != nil {
-		return fmt.Errorf("failed to pin link at %s", linkPath)
+	if err := attachedLink.Pin(opts.linkPath); err != nil {
+		return fmt.Errorf("failed to pin link at %s", opts.linkPath)
 	}
-	log.Printf("Pinned link at %s", linkPath)
-
-	for false {
-		unix.Pause()
-	}
+	log.Printf("Pinned link at %s", opts.linkPath)
 
 	return nil
 }

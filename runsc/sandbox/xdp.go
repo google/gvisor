@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strings"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
@@ -50,7 +51,7 @@ import (
 // TODO(b/240191988): Merge redundant code with CreateLinksAndRoutes once
 // features are finalized.
 func createRedirectInterfacesAndRoutes(conn *urpc.Client, conf *config.Config) error {
-	args, iface, err := prepareRedirectInterfaceArgs(conf)
+	args, iface, err := prepareRedirectInterfaceArgs(boot.BindRunsc, conf)
 	if err != nil {
 		return fmt.Errorf("failed to generate redirect interface args: %w", err)
 	}
@@ -68,31 +69,8 @@ func createRedirectInterfacesAndRoutes(conn *urpc.Client, conf *config.Config) e
 	}
 	args.FilePayload.Files = append(args.FilePayload.Files, xdpSock)
 
-	// Pass PCAP log file if present.
-	if conf.PCAP != "" {
-		args.PCAP = true
-		pcap, err := os.OpenFile(conf.PCAP, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0664)
-		if err != nil {
-			return fmt.Errorf("failed to open PCAP file %s: %v", conf.PCAP, err)
-		}
-		args.FilePayload.Files = append(args.FilePayload.Files, pcap)
-	}
-
-	// Pass the host's NAT table if requested.
-	if conf.ReproduceNftables || conf.ReproduceNAT {
-		var f *os.File
-		if conf.ReproduceNftables {
-			log.Infof("reproing nftables")
-			f, err = checkNftables()
-		} else if conf.ReproduceNAT {
-			log.Infof("reproing legacy tables")
-			f, err = writeNATBlob()
-		}
-		if err != nil {
-			return fmt.Errorf("failed to write NAT blob: %v", err)
-		}
-		args.NATBlob = true
-		args.FilePayload.Files = append(args.FilePayload.Files, f)
+	if err := pcapAndNAT(&args, conf); err != nil {
+		return err
 	}
 
 	log.Infof("Setting up network, config: %+v", args)
@@ -108,6 +86,8 @@ func createRedirectInterfacesAndRoutes(conn *urpc.Client, conf *config.Config) e
 	if err != nil {
 		return fmt.Errorf("failed to load pinned map %s: %w", mapPath, err)
 	}
+	// TODO(b/240191988): Updating of pinned maps should be sychronized and
+	// check for the existence of the key.
 	mapKey := uint32(0)
 	mapVal := uint32(xdpSockFD)
 	if err := pinnedMap.Update(&mapKey, &mapVal, ebpf.UpdateAny); err != nil {
@@ -128,7 +108,7 @@ func createRedirectInterfacesAndRoutes(conn *urpc.Client, conf *config.Config) e
 // process two interfaces: the loopback and the interface we've been told to
 // bind to. This all takes place in the netns where the runsc binary is run,
 // *not* the netns passed to the container.
-func prepareRedirectInterfaceArgs(conf *config.Config) (boot.CreateLinksAndRoutesArgs, net.Interface, error) {
+func prepareRedirectInterfaceArgs(bind boot.BindOpt, conf *config.Config) (boot.CreateLinksAndRoutesArgs, net.Interface, error) {
 	ifaces, err := net.Interfaces()
 	if err != nil {
 		return boot.CreateLinksAndRoutesArgs{}, net.Interface{}, fmt.Errorf("querying interfaces: %w", err)
@@ -157,7 +137,7 @@ func prepareRedirectInterfaceArgs(conf *config.Config) (boot.CreateLinksAndRoute
 			continue
 		}
 
-		if iface.Name != conf.AFXDPRedirectHost {
+		if iface.Name != conf.XDP.IfaceName {
 			log.Infof("Skipping interface %q", iface.Name)
 			continue
 		}
@@ -237,7 +217,7 @@ func prepareRedirectInterfaceArgs(conf *config.Config) (boot.CreateLinksAndRoute
 			LinkAddress:       linkAddress,
 			Addresses:         []boot.IPWithPrefix{addr},
 			GvisorGROTimeout:  conf.GvisorGROTimeout,
-			Bind:              boot.BindRunsc,
+			Bind:              bind,
 		}
 		args.XDPLinks = append(args.XDPLinks, xdplink)
 		netIface = iface
@@ -291,6 +271,8 @@ func createSocketXDP(iface net.Interface) ([]*os.File, error) {
 
 	// Insert our AF_XDP socket into the BPF map that dictates where
 	// packets are redirected to.
+	// TODO(b/240191988): Updating of pinned maps should be sychronized and
+	// check for the existence of the key.
 	key := uint32(0)
 	val := uint32(fd)
 	if err := objects.SockMap.Update(&key, &val, 0 /* flags */); err != nil {
@@ -318,4 +300,242 @@ func createSocketXDP(iface net.Interface) ([]*os.File, error) {
 		os.NewFile(uintptr(sockMapFD), "sockmap-fd"), // The XDP map.
 		os.NewFile(uintptr(linkFD), "link-fd"),       // The XDP link.
 	}, nil
+}
+
+// TODO(b/240191988): Merge redundant code with CreateLinksAndRoutes once
+// features are finalized.
+// TODO(b/240191988): Cleanup / GC of pinned BPF objects.
+func createXDPTunnel(conn *urpc.Client, nsPath string, conf *config.Config) error {
+	// Get the setup for the sentry nic. We need the host neighbors and routes.
+	args, hostIface, err := prepareRedirectInterfaceArgs(boot.BindSentry, conf)
+	if err != nil {
+		return fmt.Errorf("failed to generate tunnel interface args: %w", err)
+	}
+
+	// Setup the XDP socket on the gVisor nic.
+	files, err := func() ([]*os.File, error) {
+		// Join the network namespace that we will be copying.
+		restore, err := joinNetNS(nsPath)
+		if err != nil {
+			return nil, err
+		}
+		defer restore()
+
+		// Create an XDP socket. The sentry will mmap memory for the various
+		// rings and bind to the device.
+		fd, err := unix.Socket(unix.AF_XDP, unix.SOCK_RAW, 0)
+		if err != nil {
+			return nil, fmt.Errorf("unable to create AF_XDP socket: %v", err)
+		}
+
+		// We also need to, before dropping privileges, attach a program to the
+		// device and insert our socket into its map.
+
+		// Load into the kernel.
+		spec, err := ebpf.LoadCollectionSpecFromReader(bytes.NewReader(bpf.AFXDPProgram))
+		if err != nil {
+			return nil, fmt.Errorf("failed to load spec: %v", err)
+		}
+
+		var objects struct {
+			Program *ebpf.Program `ebpf:"xdp_prog"`
+			SockMap *ebpf.Map     `ebpf:"sock_map"`
+		}
+		if err := spec.LoadAndAssign(&objects, nil); err != nil {
+			return nil, fmt.Errorf("failed to load program: %v", err)
+		}
+
+		// We assume there are two interfaces in the netns: a loopback and veth.
+		ifaces, err := net.Interfaces()
+		if err != nil {
+			return nil, fmt.Errorf("querying interfaces in ns: %w", err)
+		}
+
+		var iface *net.Interface
+		for _, netIface := range ifaces {
+			if netIface.Flags&net.FlagLoopback == 0 {
+				iface = &netIface
+				break
+			}
+		}
+		if iface == nil {
+			return nil, fmt.Errorf("unable to find non-loopback interface in the ns")
+		}
+		args.XDPLinks[0].InterfaceIndex = iface.Index
+
+		rawLink, err := link.AttachRawLink(link.RawLinkOptions{
+			Program: objects.Program,
+			Attach:  ebpf.AttachXDP,
+			Target:  iface.Index,
+			// By not setting the Flag field, the kernel will choose the
+			// fastest mode. In order those are:
+			// - Offloaded onto the NIC.
+			// - Running directly in the driver.
+			// - Generic mode, which works with any NIC/driver but lacks
+			//   much of the XDP performance boost.
+		})
+		if err != nil {
+			return nil, fmt.Errorf("failed to attach BPF program to interface %q: %v", iface.Name, err)
+		}
+
+		// Insert our AF_XDP socket into the BPF map that dictates where
+		// packets are redirected to.
+		// TODO(b/240191988): Updating of pinned maps should be
+		// sychronized and check for the existence of the key.
+		key := uint32(0)
+		val := uint32(fd)
+		if err := objects.SockMap.Update(&key, &val, 0 /* flags */); err != nil {
+			return nil, fmt.Errorf("failed to insert socket into BPF map: %v", err)
+		}
+
+		// We need to keep the Program, SockMap, and link FDs open until they
+		// can be passed to the sandbox process.
+		progFD, err := unix.Dup(objects.Program.FD())
+		if err != nil {
+			return nil, fmt.Errorf("failed to dup BPF program: %v", err)
+		}
+		sockMapFD, err := unix.Dup(objects.SockMap.FD())
+		if err != nil {
+			return nil, fmt.Errorf("failed to dup BPF map: %v", err)
+		}
+		linkFD, err := unix.Dup(rawLink.FD())
+		if err != nil {
+			return nil, fmt.Errorf("failed to dup BPF link: %v", err)
+		}
+
+		return []*os.File{
+			os.NewFile(uintptr(fd), "xdp-fd"),            // The socket.
+			os.NewFile(uintptr(progFD), "program-fd"),    // The XDP program.
+			os.NewFile(uintptr(sockMapFD), "sockmap-fd"), // The XDP map.
+			os.NewFile(uintptr(linkFD), "link-fd"),       // The XDP link.
+		}, nil
+	}()
+	if err != nil {
+		return fmt.Errorf("failed to create AF_XDP socket for container: %w", err)
+	}
+	args.FilePayload.Files = append(args.FilePayload.Files, files...)
+
+	// We're back in the parent netns. Get all interfaces.
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return fmt.Errorf("querying interfaces: %w", err)
+	}
+
+	// TODO(b/240191988): Find a better way to identify the other end of the veth.
+	var vethIface *net.Interface
+	for _, iface := range ifaces {
+		if strings.HasPrefix(iface.Name, "veth") {
+			vethIface = &iface
+			break
+		}
+	}
+	if vethIface == nil {
+		return fmt.Errorf("unable to find veth interface")
+	}
+
+	// Insert veth into host eBPF map.
+	hostMapPath := xdpcmd.TunnelHostMapPath(hostIface.Name)
+	pinnedHostMap, err := ebpf.LoadPinnedMap(hostMapPath, nil)
+	if err != nil {
+		return fmt.Errorf("failed to load pinned host map %s: %w", hostMapPath, err)
+	}
+	// TODO(b/240191988): Updating of pinned maps should be sychronized and
+	// check for the existence of the key.
+	mapKey := uint32(0)
+	mapVal := uint32(vethIface.Index)
+	if err := pinnedHostMap.Update(&mapKey, &mapVal, ebpf.UpdateAny); err != nil {
+		return fmt.Errorf("failed to insert veth into host map %s: %w", hostMapPath, err)
+	}
+
+	// Attach a program to the veth.
+	spec, err := ebpf.LoadCollectionSpecFromReader(bytes.NewReader(bpf.TunnelVethProgram))
+	if err != nil {
+		return fmt.Errorf("failed to load spec: %v", err)
+	}
+
+	var objects struct {
+		Program *ebpf.Program `ebpf:"xdp_veth_prog"`
+		DevMap  *ebpf.Map     `ebpf:"dev_map"`
+	}
+	if err := spec.LoadAndAssign(&objects, nil); err != nil {
+		return fmt.Errorf("failed to load program: %v", err)
+	}
+	defer func() {
+		if err := objects.Program.Close(); err != nil {
+			log.Infof("failed to close program: %v", err)
+		}
+		if err := objects.DevMap.Close(); err != nil {
+			log.Infof("failed to close sock map: %v", err)
+		}
+	}()
+
+	attached, err := link.AttachXDP(link.XDPOptions{
+		Program:   objects.Program,
+		Interface: vethIface.Index,
+		// By not setting the Flag field, the kernel will choose the
+		// fastest mode. In order those are:
+		// - Offloaded onto the NIC.
+		// - Running directly in the driver.
+		// - Generic mode, which works with any NIC/driver but lacks
+		//   much of the XDP performance boost.
+	})
+	if err != nil {
+		return fmt.Errorf("failed to attach: %w", err)
+	}
+
+	var (
+		vethPinDir      = xdpcmd.RedirectPinDir(vethIface.Name)
+		vethMapPath     = xdpcmd.TunnelVethMapPath(vethIface.Name)
+		vethProgramPath = xdpcmd.TunnelVethProgramPath(vethIface.Name)
+		vethLinkPath    = xdpcmd.TunnelVethLinkPath(vethIface.Name)
+	)
+
+	// Create directory /sys/fs/bpf/<device name>/.
+	if err := os.Mkdir(vethPinDir, 0700); err != nil && !os.IsExist(err) {
+		return fmt.Errorf("failed to create directory for pinning at %s: %v", vethPinDir, err)
+	}
+
+	// Pin the map at /sys/fs/bpf/<device name>/tunnel_host_map.
+	if err := objects.DevMap.Pin(vethMapPath); err != nil {
+		return fmt.Errorf("failed to pin map at %s", vethMapPath)
+	}
+	log.Infof("Pinned map at %s", vethMapPath)
+
+	// Pin the program at /sys/fs/bpf/<device name>/tunnel_host_program.
+	if err := objects.Program.Pin(vethProgramPath); err != nil {
+		return fmt.Errorf("failed to pin program at %s", vethProgramPath)
+	}
+	log.Infof("Pinned program at %s", vethProgramPath)
+
+	// Make everything persistent by pinning the link. Otherwise, the XDP
+	// program would detach when this process exits.
+	if err := attached.Pin(vethLinkPath); err != nil {
+		return fmt.Errorf("failed to pin link at %s", vethLinkPath)
+	}
+	log.Infof("Pinned link at %s", vethLinkPath)
+
+	// Insert host into veth eBPF map.
+	// TODO(b/240191988): We should be able to use the existing map instead
+	// of opening a pinned copy.
+	pinnedVethMap, err := ebpf.LoadPinnedMap(vethMapPath, nil)
+	if err != nil {
+		return fmt.Errorf("failed to load pinned veth map %s: %w", vethMapPath, err)
+	}
+	// TODO(b/240191988): Updating of pinned maps should be sychronized and
+	// check for the existence of the key.
+	mapKey = uint32(0)
+	mapVal = uint32(hostIface.Index)
+	if err := pinnedVethMap.Update(&mapKey, &mapVal, ebpf.UpdateAny); err != nil {
+		return fmt.Errorf("failed to insert host into veth map %s: %w", vethMapPath, err)
+	}
+
+	if err := pcapAndNAT(&args, conf); err != nil {
+		return err
+	}
+
+	log.Debugf("Setting up network, config: %+v", args)
+	if err := conn.Call(boot.NetworkCreateLinksAndRoutes, &args, nil); err != nil {
+		return fmt.Errorf("creating links and routes: %w", err)
+	}
+	return nil
 }

@@ -22,3 +22,9 @@ import _ "embed"
 //
 //go:embed af_xdp_ebpf.o
 var AFXDPProgram []byte
+
+// TunnelVethProgram is a BPF program that redirects all packets to exit via
+// another device.
+//
+//go:embed tunnel_veth_ebpf.o
+var TunnelVethProgram []byte

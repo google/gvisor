@@ -136,6 +136,35 @@ func optimizeUnconditionalJumps(insns []Instruction) ([]Instruction, bool) {
 	return insns, changed
 }
 
+// codeRemoval efficiently tracks indexes to remove from instructions.
+type codeRemoval struct {
+	insns    []Instruction
+	toRemove []int
+}
+
+// MarkRemoved adds a new instruction index to be removed.
+func (cr *codeRemoval) MarkRemoved(index int) {
+	if cr.toRemove == nil {
+		cr.toRemove = make([]int, 0, len(cr.insns))
+	}
+	cr.toRemove = append(cr.toRemove, index)
+}
+
+// Apply returns the set of instructions after removing marked indexes,
+// along with a boolean representing whether any instruction was removed.
+func (cr *codeRemoval) Apply() ([]Instruction, bool) {
+	if len(cr.toRemove) == 0 {
+		return cr.insns, false
+	}
+	sort.Ints(cr.toRemove)
+	for i := len(cr.toRemove) - 1; i >= 0; i-- {
+		pc := cr.toRemove[i]
+		cr.insns = append(cr.insns[:pc], cr.insns[pc+1:]...)
+		decrementJumps(cr.insns, pc)
+	}
+	return cr.insns, true
+}
+
 // decrementJumps decrements all jumps within `insns` that are jumping to an
 // instruction with index larger than `target`, the index of an
 // instruction that just got removed (i.e. `target` now points to the
@@ -172,21 +201,14 @@ func decrementJumps(insns []Instruction, target int) {
 // instructions forward. This may seem silly but it can happen due to other
 // optimizations in this file which decrement jump target indexes.
 func removeZeroInstructionJumps(insns []Instruction) ([]Instruction, bool) {
-	changed := false
-	for pc := 0; pc < len(insns); pc++ {
-		ins := insns[pc]
+	removal := codeRemoval{insns: insns}
+	for pc, ins := range insns {
 		if !ins.IsUnconditionalJump() || ins.K != 0 {
 			continue
 		}
-		insns = append(insns[:pc], insns[pc+1:]...)
-		decrementJumps(insns, pc)
-		changed = true
-
-		// Rewind back one instruction, in case the instruction now at `pc`
-		// is also a zero-instruction unconditional jump.
-		pc--
+		removal.MarkRemoved(pc)
 	}
-	return insns, changed
+	return removal.Apply()
 }
 
 // removeDeadCode removes instructions which are unreachable.
@@ -229,30 +251,14 @@ func removeDeadCode(insns []Instruction) ([]Instruction, bool) {
 		}
 	}
 
-	// Now scan for unreachable code.
-	var unreachable []int
-	for i := 0; i < len(reachable); i++ {
-		if !reachable[i] {
-			unreachable = append(unreachable, i)
+	// Now remove unreachable code.
+	removal := codeRemoval{insns: insns}
+	for pc := range insns {
+		if !reachable[pc] {
+			removal.MarkRemoved(pc)
 		}
 	}
-
-	// And finally cull unreachable code.
-	for u := 0; u < len(unreachable); u++ {
-		i := unreachable[u]
-		// Remove the instruction at this index:
-		insns = append(insns[:i], insns[i+1:]...)
-
-		// Rewrite all previous jumps which would have straddled over this instruction:
-		decrementJumps(insns, i)
-
-		// And decrement all future unreachable indexes, since we just shortened `insns` by one:
-		for u2 := u + 1; u2 < len(unreachable); u2++ {
-			unreachable[u2] = unreachable[u2] - 1
-		}
-	}
-
-	return insns, len(unreachable) > 0
+	return removal.Apply()
 }
 
 // optimizeJumpsToReturn replaces unconditional jumps that go to return
@@ -271,6 +277,70 @@ func optimizeJumpsToReturn(insns []Instruction) ([]Instruction, bool) {
 		changed = true
 	}
 	return insns, changed
+}
+
+// removeRedundantLoads removes some redundant load instructions
+// when the value in register A is already the same value as what is
+// being loaded.
+func removeRedundantLoads(insns []Instruction) ([]Instruction, bool) {
+	// reverseWalk maps instruction indexes I to the set of instruction indexes
+	// that, after their execution, may result in the control flow jumping to I.
+	reverseWalk := make([]map[int]struct{}, len(insns))
+	for pc := range insns {
+		reverseWalk[pc] = make(map[int]struct{})
+	}
+	for pc, ins := range insns {
+		if ins.IsReturn() {
+			continue // Return instructions are terminal.
+		}
+		if ins.IsJump() {
+			for _, offset := range ins.JumpOffsets() {
+				reverseWalk[pc+int(offset.Offset)+1][pc] = struct{}{}
+			}
+			continue
+		}
+		// All other instructions flow through.
+		reverseWalk[pc+1][pc] = struct{}{}
+	}
+
+	// Now look for redundant load instructions.
+	removal := codeRemoval{insns: insns}
+	for pc, ins := range insns {
+		if ins.OpCode&instructionClassMask != Ld {
+			continue
+		}
+		// Walk backwards until either we've reached the beginning of the program,
+		// or we've reached an operation which modifies register A.
+		lastModifiedA := -1
+		beforePCs := reverseWalk[pc]
+	walk:
+		for {
+			switch len(beforePCs) {
+			case 0:
+				// We've reached the beginning of the program without modifying A.
+				break walk
+			case 1:
+				var beforePC int
+				for bpc := range beforePCs { // Note: we know that this map only has one element.
+					beforePC = bpc
+				}
+				if !insns[beforePC].ModifiesRegisterA() {
+					beforePCs = reverseWalk[beforePC]
+					continue walk
+				}
+				lastModifiedA = beforePC
+				break walk
+			default:
+				// Multiple ways to get to `pc`.
+				// For simplicity, we only support the single-branch case right now.
+				break walk
+			}
+		}
+		if lastModifiedA != -1 && insns[pc].Equal(insns[lastModifiedA]) {
+			removal.MarkRemoved(pc)
+		}
+	}
+	return removal.Apply()
 }
 
 // jumpRewriteOperation rewrites a jump target.
@@ -587,6 +657,7 @@ func Optimize(insns []Instruction) []Instruction {
 		optimizeJumpsToReturn,
 		removeZeroInstructionJumps,
 		removeDeadCode,
+		removeRedundantLoads,
 		optimizeJumpsToSmallestSetOfReturns,
 	})
 }
