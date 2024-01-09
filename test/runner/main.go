@@ -651,6 +651,11 @@ func runTestCaseRunsc(testBin string, tc *gtest.TestCase, args []string, t *test
 		defer cleanup()
 	}
 
+	// Add cgroup mount to enable cgroups for all tests.
+	spec.Mounts = append(spec.Mounts, specs.Mount{
+		Destination: "/sys/fs/cgroup",
+		Type:        "cgroup",
+	})
 	if err := runRunsc(tc, spec); err != nil {
 		t.Errorf("test %q failed with error %v, want nil", tc.FullName(), err)
 	}
