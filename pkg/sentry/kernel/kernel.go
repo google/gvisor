@@ -1631,13 +1631,13 @@ func (ctx *supervisorContext) Value(key any) any {
 		// The supervisor context is global root.
 		return auth.NewRootCredentials(ctx.Kernel.rootUserNamespace)
 	case vfs.CtxRoot:
-		if ctx.Kernel.globalInit == nil {
+		if ctx.Kernel.globalInit == nil || ctx.Kernel.globalInit.Leader() == nil {
 			return vfs.VirtualDentry{}
 		}
 		root := ctx.Kernel.GlobalInit().Leader().MountNamespace().Root(ctx)
 		return root
 	case vfs.CtxMountNamespace:
-		if ctx.Kernel.globalInit == nil {
+		if ctx.Kernel.globalInit == nil || ctx.Kernel.globalInit.Leader() == nil {
 			return nil
 		}
 		mntns := ctx.Kernel.GlobalInit().Leader().MountNamespace()
