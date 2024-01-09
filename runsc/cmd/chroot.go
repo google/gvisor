@@ -130,6 +130,26 @@ func setUpChroot(pidns bool, spec *specs.Spec, conf *config.Config) error {
 	return pivotRoot(chroot)
 }
 
+// Mount the path that dest points to for TPU at chroot, the mounted path is returned in absolute form.
+func mountTPUSyslinkInChroot(chroot, dest, relativePath string, validator func(link string) bool) (string, error) {
+	src, err := os.Readlink(dest)
+	if err != nil {
+		return "", fmt.Errorf("error reading %v: %v", src, err)
+	}
+	// Ensure the link is in the form we expect.
+	if !validator(src) {
+		return "", fmt.Errorf("unexpected link %q -> %q", dest, src)
+	}
+	path, err := filepath.Abs(path.Join(filepath.Dir(dest), src, relativePath))
+	if err != nil {
+		return "", fmt.Errorf("error parsing path %q: %v", src, err)
+	}
+	if err := mountInChroot(chroot, path, path, "bind", unix.MS_BIND|unix.MS_RDONLY); err != nil {
+		return "", fmt.Errorf("error mounting %q in chroot: %v", dest, err)
+	}
+	return path, nil
+}
+
 func mountTPUDeviceInfoInChroot(chroot, devicePath, sysfsFormat, pciDeviceFormat string) error {
 	deviceNum, valid, err := util.ExtractTpuDeviceMinor(devicePath)
 	if err != nil {
@@ -147,21 +167,22 @@ func mountTPUDeviceInfoInChroot(chroot, devicePath, sysfsFormat, pciDeviceFormat
 	// and traversing up 2 directories.
 	// The sysDevicePath itself is a soft link to the deivce directory.
 	sysDevicePath := fmt.Sprintf(sysfsFormat, deviceNum)
-	sysDeviceLink, err := os.Readlink(sysDevicePath)
+	sysPCIDeviceDir, err := mountTPUSyslinkInChroot(chroot, sysDevicePath, "../..", func(link string) bool {
+		sysDeviceLinkMatcher := regexp.MustCompile(fmt.Sprintf(pciDeviceFormat, deviceNum))
+		return sysDeviceLinkMatcher.MatchString(link)
+	})
 	if err != nil {
-		return fmt.Errorf("error reading %q: %v", sysDeviceLink, err)
+		return err
 	}
-	// Ensure the link is in the form we expect.
-	sysDeviceLinkMatcher := regexp.MustCompile(fmt.Sprintf(pciDeviceFormat, deviceNum))
-	if !sysDeviceLinkMatcher.MatchString(sysDeviceLink) {
-		return fmt.Errorf("unexpected link %q -> %q, link should have %q format", sysDevicePath, sysDeviceLink, sysDeviceLinkMatcher.String())
-	}
-	sysPCIDeviceDir, err := filepath.Abs(path.Join(filepath.Dir(sysDevicePath), sysDeviceLink, "../.."))
-	if err != nil {
-		return fmt.Errorf("error parsing path %q: %v", sysDeviceLink, err)
-	}
-	if err := mountInChroot(chroot, sysPCIDeviceDir, sysPCIDeviceDir, "bind", unix.MS_BIND|unix.MS_RDONLY); err != nil {
-		return fmt.Errorf("error mounting %q in chroot: %v", sysDeviceLink, err)
+
+	// Mount the device's IOMMU group if available.
+	iommuGroupPath := path.Join(sysPCIDeviceDir, "iommu_group")
+	if _, err := os.Stat(iommuGroupPath); err == nil {
+		if _, err := mountTPUSyslinkInChroot(chroot, iommuGroupPath, "", func(link string) bool {
+			return fmt.Sprintf("../../../kernel/iommu_groups/%d", deviceNum) == link
+		}); err != nil {
+			return err
+		}
 	}
 	return nil
 }
