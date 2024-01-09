@@ -17,6 +17,7 @@ package gofer
 import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fsutil"
@@ -147,6 +148,30 @@ func (d *dentry) updateHandles(ctx context.Context, h handle, readable, writable
 	}
 }
 
+// Preconditions:
+//   - d.handleMu must be locked.
+//   - !d.isSynthetic().
+func (d *dentry) closeHostFDs() {
+	// We can use RacyLoad() because d.handleMu is locked.
+	if d.readFD.RacyLoad() >= 0 {
+		_ = unix.Close(int(d.readFD.RacyLoad()))
+	}
+	if d.writeFD.RacyLoad() >= 0 && d.readFD.RacyLoad() != d.writeFD.RacyLoad() {
+		_ = unix.Close(int(d.writeFD.RacyLoad()))
+	}
+	d.readFD = atomicbitops.FromInt32(-1)
+	d.writeFD = atomicbitops.FromInt32(-1)
+	d.mmapFD = atomicbitops.FromInt32(-1)
+
+	switch dt := d.impl.(type) {
+	case *directfsDentry:
+		if dt.controlFD >= 0 {
+			_ = unix.Close(dt.controlFD)
+			dt.controlFD = -1
+		}
+	}
+}
+
 // updateMetadataLocked updates the dentry's metadata fields. The h parameter
 // is optional. If it is not provided, an appropriate FD should be chosen to
 // stat the remote file.
@@ -213,6 +238,7 @@ func (d *dentry) setStatLocked(ctx context.Context, stat *linux.Statx) (uint32, 
 	}
 }
 
+// Precondition: d.handleMu must be locked.
 func (d *dentry) destroyImpl(ctx context.Context) {
 	switch dt := d.impl.(type) {
 	case *lisafsDentry:
