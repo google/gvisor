@@ -190,15 +190,15 @@ func LogPacket(prefix string, dir Direction, protocol tcpip.NetworkProtocolNumbe
 		panic(fmt.Sprintf("unrecognized direction: %d", dir))
 	}
 
-	pkt = trimmedClone(pkt)
-	defer pkt.DecRef()
+	clone := trimmedClone(pkt)
+	defer clone.DecRef()
 	switch protocol {
 	case header.IPv4ProtocolNumber:
-		if ok := parse.IPv4(pkt); !ok {
+		if ok := parse.IPv4(clone); !ok {
 			return
 		}
 
-		ipv4 := header.IPv4(pkt.NetworkHeader().Slice())
+		ipv4 := header.IPv4(clone.NetworkHeader().Slice())
 		fragmentOffset = ipv4.FragmentOffset()
 		moreFragments = ipv4.Flags()&header.IPv4FlagMoreFragments == header.IPv4FlagMoreFragments
 		src = ipv4.SourceAddress()
@@ -208,12 +208,12 @@ func LogPacket(prefix string, dir Direction, protocol tcpip.NetworkProtocolNumbe
 		id = uint32(ipv4.ID())
 
 	case header.IPv6ProtocolNumber:
-		proto, fragID, fragOffset, fragMore, ok := parse.IPv6(pkt)
+		proto, fragID, fragOffset, fragMore, ok := parse.IPv6(clone)
 		if !ok {
 			return
 		}
 
-		ipv6 := header.IPv6(pkt.NetworkHeader().Slice())
+		ipv6 := header.IPv6(clone.NetworkHeader().Slice())
 		src = ipv6.SourceAddress()
 		dst = ipv6.DestinationAddress()
 		transProto = uint8(proto)
@@ -223,11 +223,11 @@ func LogPacket(prefix string, dir Direction, protocol tcpip.NetworkProtocolNumbe
 		fragmentOffset = fragOffset
 
 	case header.ARPProtocolNumber:
-		if !parse.ARP(pkt) {
+		if !parse.ARP(clone) {
 			return
 		}
 
-		arp := header.ARP(pkt.NetworkHeader().Slice())
+		arp := header.ARP(clone.NetworkHeader().Slice())
 		log.Infof(
 			"%s%s arp %s (%s) -> %s (%s) valid:%t",
 			prefix,
@@ -250,7 +250,7 @@ func LogPacket(prefix string, dir Direction, protocol tcpip.NetworkProtocolNumbe
 	switch tcpip.TransportProtocolNumber(transProto) {
 	case header.ICMPv4ProtocolNumber:
 		transName = "icmp"
-		hdr, ok := pkt.Data().PullUp(header.ICMPv4MinimumSize)
+		hdr, ok := clone.Data().PullUp(header.ICMPv4MinimumSize)
 		if !ok {
 			break
 		}
@@ -287,7 +287,7 @@ func LogPacket(prefix string, dir Direction, protocol tcpip.NetworkProtocolNumbe
 
 	case header.ICMPv6ProtocolNumber:
 		transName = "icmp"
-		hdr, ok := pkt.Data().PullUp(header.ICMPv6MinimumSize)
+		hdr, ok := clone.Data().PullUp(header.ICMPv6MinimumSize)
 		if !ok {
 			break
 		}
@@ -322,11 +322,11 @@ func LogPacket(prefix string, dir Direction, protocol tcpip.NetworkProtocolNumbe
 
 	case header.UDPProtocolNumber:
 		transName = "udp"
-		if ok := parse.UDP(pkt); !ok {
+		if ok := parse.UDP(clone); !ok {
 			break
 		}
 
-		udp := header.UDP(pkt.TransportHeader().Slice())
+		udp := header.UDP(clone.TransportHeader().Slice())
 		if fragmentOffset == 0 {
 			srcPort = udp.SourcePort()
 			dstPort = udp.DestinationPort()
@@ -336,18 +336,18 @@ func LogPacket(prefix string, dir Direction, protocol tcpip.NetworkProtocolNumbe
 
 	case header.TCPProtocolNumber:
 		transName = "tcp"
-		if ok := parse.TCP(pkt); !ok {
+		if ok := parse.TCP(clone); !ok {
 			break
 		}
 
-		tcp := header.TCP(pkt.TransportHeader().Slice())
+		tcp := header.TCP(clone.TransportHeader().Slice())
 		if fragmentOffset == 0 {
 			offset := int(tcp.DataOffset())
 			if offset < header.TCPMinimumSize {
 				details += fmt.Sprintf("invalid packet: tcp data offset too small %d", offset)
 				break
 			}
-			if size := pkt.Data().Size() + len(tcp); offset > size && !moreFragments {
+			if size := clone.Data().Size() + len(tcp); offset > size && !moreFragments {
 				details += fmt.Sprintf("invalid packet: tcp data offset %d larger than tcp packet length %d", offset, size)
 				break
 			}

@@ -320,7 +320,21 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 			}
 
 			// Wrap linkEP in a sniffer to enable packet logging.
-			sniffEP := sniffer.New(packetsocket.New(linkEP))
+			var sniffEP stack.LinkEndpoint
+			if args.PCAP {
+				newFD, err := unix.Dup(int(args.FilePayload.Files[fdOffset].Fd()))
+				if err != nil {
+					return fmt.Errorf("failed to dup pcap FD: %v", err)
+				}
+				const packetTruncateSize = 4096
+				sniffEP, err = sniffer.NewWithWriter(packetsocket.New(linkEP), os.NewFile(uintptr(newFD), "pcap-file"), packetTruncateSize)
+				if err != nil {
+					return fmt.Errorf("failed to create PCAP logger: %v", err)
+				}
+				fdOffset++
+			} else {
+				sniffEP = sniffer.New(packetsocket.New(linkEP))
+			}
 
 			var qDisc stack.QueueingDiscipline
 			switch link.QDisc {
