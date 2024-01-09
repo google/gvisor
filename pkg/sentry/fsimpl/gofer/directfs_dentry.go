@@ -91,7 +91,8 @@ func (fs *filesystem) getDirectfsRootDentry(ctx context.Context, rootHostFD int,
 type directfsDentry struct {
 	dentry
 
-	// controlFD is the host FD to this file. controlFD is immutable.
+	// controlFD is the host FD to this file. controlFD is immutable until
+	// destruction, which is synchronized with dentry.handleMu.
 	controlFD int
 
 	// controlFDLisa is a lisafs control FD on this dentry.
@@ -401,9 +402,11 @@ func fchown(fd, uid, gid int) error {
 	return unix.Fchownat(fd, "", uid, gid, unix.AT_EMPTY_PATH|unix.AT_SYMLINK_NOFOLLOW)
 }
 
+// Precondition: d.handleMu must be locked.
 func (d *directfsDentry) destroy(ctx context.Context) {
 	if d.controlFD >= 0 {
 		_ = unix.Close(d.controlFD)
+		d.controlFD = -1
 	}
 	if d.controlFDLisa.Ok() {
 		d.controlFDLisa.Close(ctx, true /* flush */)
