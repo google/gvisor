@@ -51,6 +51,7 @@ func (tcpMarshaler) marshal(mr matcher) []byte {
 		DestinationPortEnd:   matcher.destinationPortEnd,
 		FlagMask:             matcher.flagMask,
 		FlagCompare:          matcher.flagCompare,
+		InverseFlags:         matcher.inverseFlags,
 	}
 	return marshalEntryMatch(matcherNameTCP, marshal.Marshal(&xttcp))
 }
@@ -67,7 +68,8 @@ func (tcpMarshaler) unmarshal(_ IDMapper, buf []byte, filter stack.IPHeaderFilte
 	matchData.UnmarshalUnsafe(buf)
 	nflog("parseMatchers: parsed XTTCP: %+v", matchData)
 
-	if matchData.Option != 0 || matchData.InverseFlags != 0 {
+	// Only support inverse dport/sport
+	if matchData.Option != 0 || matchData.InverseFlags > 2 {
 		return nil, fmt.Errorf("unsupported TCP matcher flags set")
 	}
 
@@ -82,6 +84,7 @@ func (tcpMarshaler) unmarshal(_ IDMapper, buf []byte, filter stack.IPHeaderFilte
 		destinationPortEnd:   matchData.DestinationPortEnd,
 		flagMask:             matchData.FlagMask,
 		flagCompare:          matchData.FlagCompare,
+		inverseFlags:         matchData.InverseFlags,
 	}, nil
 }
 
@@ -93,6 +96,7 @@ type TCPMatcher struct {
 	destinationPortEnd   uint16
 	flagMask             uint8
 	flagCompare          uint8
+	inverseFlags         uint8
 }
 
 // name implements matcher.name.
@@ -142,10 +146,18 @@ func (tm *TCPMatcher) Match(hook stack.Hook, pkt stack.PacketBufferPtr, _, _ str
 
 	// Check whether the source and destination ports are within the
 	// matching range.
-	if sourcePort := tcpHeader.SourcePort(); sourcePort < tm.sourcePortStart || tm.sourcePortEnd < sourcePort {
+	// Take into account inverseFlags for DSTPT & SRCPT only
+	sPort := tcpHeader.SourcePort()
+	sPortMatch := sPort < tm.sourcePortStart || tm.sourcePortEnd < sPort
+	sPortMatch = sPortMatch != (tm.inverseFlags&linux.XT_TCP_INV_SRCPT == linux.XT_TCP_INV_SRCPT)
+	if sPortMatch {
 		return false, false
 	}
-	if destinationPort := tcpHeader.DestinationPort(); destinationPort < tm.destinationPortStart || tm.destinationPortEnd < destinationPort {
+
+	dPort := tcpHeader.DestinationPort()
+	dPortMatch := dPort < tm.destinationPortStart || tm.destinationPortEnd < dPort
+	dPortMatch = dPortMatch != (tm.inverseFlags&linux.XT_TCP_INV_DSTPT == linux.XT_TCP_INV_DSTPT)
+	if dPortMatch {
 		return false, false
 	}
 
