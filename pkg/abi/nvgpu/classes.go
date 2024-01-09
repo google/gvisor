@@ -25,6 +25,7 @@ const (
 	NV01_DEVICE_0                    = 0x00000080
 	NV_MEMORY_FABRIC                 = 0x000000f8
 	NV20_SUBDEVICE_0                 = 0x00002080
+	NV50_P2P                         = 0x0000503b
 	NV50_THIRD_PARTY_P2P             = 0x0000503c
 	GT200_DEBUGGER                   = 0x000083de
 	GF100_SUBDEVICE_MASTER           = 0x000090e6
@@ -83,6 +84,40 @@ type NV0080_ALLOC_PARAMETERS struct {
 // +marshal
 type NV2080_ALLOC_PARAMETERS struct {
 	SubDeviceID uint32
+}
+
+// NV503B_ALLOC_PARAMETERS is the alloc params type for NV50_P2P, from
+// src/common/sdk/nvidia/inc/class/cl503b.h.
+//
+// +marshal
+type NV503B_ALLOC_PARAMETERS struct {
+	HSubDevice              Handle
+	HPeerSubDevice          Handle
+	SubDevicePeerIDMask     uint32
+	PeerSubDevicePeerIDMask uint32
+	MailboxBar1Addr         uint64
+	MailboxTotalSize        uint32
+	Flags                   uint32
+}
+
+// NV503B_BAR1_P2P_DMA_INFO from src/common/sdk/nvidia/inc/class/cl503b.h.
+//
+// +marshal
+type NV503B_BAR1_P2P_DMA_INFO struct {
+	DmaAddress uint64
+	DmaSize    uint64
+}
+
+// NV503B_ALLOC_PARAMETERS_V535 is the updated version of
+// NV503B_ALLOC_PARAMETERS since 535.43.02.
+//
+// +marshal
+type NV503B_ALLOC_PARAMETERS_V535 struct {
+	NV503B_ALLOC_PARAMETERS
+	SubDeviceEgmPeerIDMask     uint32
+	PeerSubDeviceEgmPeerIDMask uint32
+	L2pBar1P2PDmaInfo          NV503B_BAR1_P2P_DMA_INFO
+	P2lBar1P2PDmaInfo          NV503B_BAR1_P2P_DMA_INFO
 }
 
 // NV503C_ALLOC_PARAMETERS is the alloc params type for NV50_THIRD_PARTY_P2P,

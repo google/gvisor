@@ -282,6 +282,7 @@ func Init() {
 					nvgpu.NV01_EVENT_OS_EVENT:     rmAllocEventOSEvent,
 					nvgpu.NV01_DEVICE_0:           rmAllocSimple[nvgpu.NV0080_ALLOC_PARAMETERS],
 					nvgpu.NV20_SUBDEVICE_0:        rmAllocSimple[nvgpu.NV2080_ALLOC_PARAMETERS],
+					nvgpu.NV50_P2P:                rmAllocSimple[nvgpu.NV503B_ALLOC_PARAMETERS],
 					nvgpu.NV50_THIRD_PARTY_P2P:    rmAllocSimple[nvgpu.NV503C_ALLOC_PARAMETERS],
 					nvgpu.GT200_DEBUGGER:          rmAllocSimple[nvgpu.NV83DE_ALLOC_PARAMETERS],
 					nvgpu.FERMI_CONTEXT_SHARE_A:   rmAllocSimple[nvgpu.NV_CTXSHARE_ALLOCATION_PARAMETERS],
@@ -322,6 +323,7 @@ func Init() {
 			abi.useRmAllocParamsV535 = true
 			abi.controlCmd[nvgpu.NV_CONF_COMPUTE_CTRL_CMD_SYSTEM_GET_CAPABILITIES] = rmControlSimple
 			abi.allocationClass[nvgpu.NV_CONFIDENTIAL_COMPUTE] = rmAllocSimple[nvgpu.NV_CONFIDENTIAL_COMPUTE_ALLOC_PARAMS]
+			abi.allocationClass[nvgpu.NV50_P2P] = rmAllocSimple[nvgpu.NV503B_ALLOC_PARAMETERS_V535]
 			abi.allocationClass[nvgpu.NV_MEMORY_FABRIC] = rmAllocSimple[nvgpu.NV00F8_ALLOCATION_PARAMETERS_V535]
 			abi.uvmIoctl[nvgpu.UVM_MM_INITIALIZE] = uvmMMInitialize
 			return abi
