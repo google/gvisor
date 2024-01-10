@@ -94,6 +94,12 @@ static struct thread_context *thread_context_addr(uint32_t tcid) {
                                        ALLOCATED_SIZEOF_THREAD_CONTEXT_STRUCT);
 }
 
+uint32_t *__export_dispatcher_state;
+
+static enum dispatcher_state dispatcher_state() {
+  return (enum dispatcher_state) * __export_dispatcher_state;
+}
+
 void memcpy(uint8_t *dest, uint8_t *src, size_t n) {
   for (size_t i = 0; i < n; i += 1) {
     dest[i] = src[i];
@@ -377,11 +383,11 @@ struct thread_context *switch_context(struct sysmsg *sysmsg,
     atomic_store(&ctx->last_thread_id, sysmsg->thread_id);
     atomic_store(&ctx->state_changed_time, rdtsc());
     atomic_store(&ctx->state, new_context_state);
-    if (atomic_load(&ctx->sentry_fast_path) == 0) {
-      int ret = sys_futex(&ctx->state, FUTEX_WAKE, 1, NULL, NULL, 0);
-      if (ret < 0) {
-        panic(ret);
-      }
+    while (dispatcher_state() == DISPATCHER_STATE_SLOW) {
+      int ret =
+          sys_futex(__export_dispatcher_state, FUTEX_WAKE, 1, NULL, NULL, 0);
+      if (ret < 0) panic(ret);
+      if (ret == 1) break;
     }
   }
 

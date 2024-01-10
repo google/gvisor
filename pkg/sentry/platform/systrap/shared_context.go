@@ -19,7 +19,6 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
@@ -57,9 +56,11 @@ type sharedContext struct {
 
 	// sync is used by the context go-routine to wait for events from the
 	// dispatcher.
-	sync           syncevent.Waiter
-	startWaitingTS int64
-	kicked         bool
+	sync            syncevent.Waiter
+	startWaitingTS  int64
+	nextInterruptTS int64
+	sentInterrupt   bool
+	kicked          bool
 	// The task associated with the context fell asleep.
 	sleeping bool
 }
@@ -74,9 +75,9 @@ const (
 	sharedContextReady = syncevent.Set(1 << iota)
 	// sharedContextKicked indicates that a new stub thread should be woken up.
 	sharedContextKicked
-	// sharedContextSlowPath indicates that a context has to be waited for in the
-	// slow path.
-	sharedContextSlowPath
+	// sharedContextInterrupt indicates that the context has been running on
+	// the stub thread for too long and needs to be interrupted.
+	sharedContextInterrupt
 	// sharedContextDispatch indicates that a context go-routine has to start the wait loop.
 	sharedContextDispatch
 )
@@ -169,18 +170,6 @@ func (sc *sharedContext) threadID() uint32 {
 	return atomic.LoadUint32(&sc.shared.ThreadID)
 }
 
-// EnableSentryFastPath indicates that the polling mode is enabled for the
-// Sentry. It has to be called before putting the context into the context queue.
-func (sc *sharedContext) enableSentryFastPath() {
-	atomic.StoreUint32(&sc.shared.SentryFastPath, 1)
-}
-
-// DisableSentryFastPath indicates that the polling mode for the sentry is
-// disabled for the Sentry.
-func (sc *sharedContext) disableSentryFastPath() {
-	atomic.StoreUint32(&sc.shared.SentryFastPath, 0)
-}
-
 func (sc *sharedContext) isAcked() bool {
 	return atomic.LoadUint64(&sc.shared.AckedTime) != ackReset
 }
@@ -213,54 +202,66 @@ func (sc *sharedContext) getStateChangedTimeDiff() cpuTicks {
 	return cpuTicks(now - changedAt)
 }
 
-func (sc *sharedContext) resetLatencyMeasures() {
+func (sc *sharedContext) resetAfterSwitch() {
+	// Reset shared fields.
 	atomic.StoreUint64(&sc.shared.AckedTime, ackReset)
 	atomic.StoreUint64(&sc.shared.StateChangedTime, stateChangedReset)
+	// Reset non-shared fields.
+	sc.sentInterrupt = false
+	sc.kicked = false
 }
 
 const (
-	contextPreemptTimeoutNsec = 10 * 1000 * 1000 // 10ms
-	contextCheckupTimeoutSec  = 5
-	stuckContextTimeout       = 30 * time.Second
+	contextInitialPreemptTimeoutTicks = 60 * 1000 * 1000 // 30ms for 2GHz CPU
+	dispatcherPreemptTimeoutNsec      = contextInitialPreemptTimeoutTicks / 2
 )
 
-func (sc *sharedContext) sleepOnState(state sysmsg.ContextState) {
-	timeout := unix.Timespec{
-		Sec:  0,
-		Nsec: contextPreemptTimeoutNsec,
-	}
-	sentInterruptOnce := false
-	deadline := time.Now().Add(stuckContextTimeout)
-	for sc.state() == state {
-		errno := sc.shared.SleepOnState(state, &timeout)
-		if errno == 0 {
-			continue
-		}
-		if errno != unix.ETIMEDOUT {
-			panic(fmt.Sprintf("error waiting for state: %v", errno))
-		}
-		if time.Now().After(deadline) {
-			log.Warningf("Systrap task goroutine has been waiting on ThreadContext.State futex too long. ThreadContext: %v", sc)
-		}
-		if sentInterruptOnce {
-			log.Warningf("The context is still running: %v", sc)
-			continue
-		}
+func (sc *sharedContext) handleNeedInterrupt() {
+	const (
+		checkupTimeout = 10 * 1000 * 1000 * 1000 // 5s for 2GHz CPU
+		stuckTimeout   = 60 * 1000 * 1000 * 1000 // 30s for 2GHz CPU
+	)
 
-		if !sc.isAcked() || sc.subprocess.contextQueue.isEmpty() {
-			continue
-		}
-		sc.NotifyInterrupt()
-		sentInterruptOnce = true
-		timeout.Sec = contextCheckupTimeoutSec
-		timeout.Nsec = 0
+	if sc.nextInterruptTS-sc.startWaitingTS > stuckTimeout {
+		log.Warningf("Systrap task goroutine has been waiting on ThreadContext.State futex too long. ThreadContext: %+v", sc)
 	}
+
+	sc.nextInterruptTS += checkupTimeout
+	if sc.sentInterrupt {
+		log.Warningf("The context is still running: %+v", sc)
+		threadID := atomic.LoadUint32(&sc.shared.ThreadID)
+
+		sc.subprocess.sysmsgThreadsMu.Lock()
+		defer sc.subprocess.sysmsgThreadsMu.Unlock()
+
+		t, ok := sc.subprocess.sysmsgThreads[threadID]
+		if !ok {
+			panic(fmt.Sprintf("stuck context %d has invalid thread %d", sc.contextID, threadID))
+		}
+		err := atomic.LoadInt32(&t.msg.Err)
+		if err != 0 {
+			panic(fmt.Sprintf("stub thread %d failed: err 0x%x line %d: %s", t.thread.tid, err, atomic.LoadInt32(&t.msg.Line), t.msg))
+		}
+		return
+	}
+
+	if !sc.isAcked() || sc.subprocess.contextQueue.isEmpty() {
+		return
+	}
+	sc.NotifyInterrupt()
+	sc.sentInterrupt = true
 }
 
 type fastPathDispatcher struct {
 	// list is used only from the loop method and so it isn't protected by
 	// any lock.
 	list contextList
+
+	// state is a pointer to memory shared to all created stub threads.
+	// It is read-only to stubs, and updated only by the dispatcher to
+	// indicate whether the dispatcher is actively spinning or not; so it
+	// isn't protected by any lock.
+	state *sysmsg.DispatcherState
 
 	mu sync.Mutex
 
@@ -275,6 +276,17 @@ type fastPathDispatcher struct {
 
 var dispatcher fastPathDispatcher
 
+func (q *fastPathDispatcher) sleep() {
+	timeout := unix.Timespec{
+		Sec:  0,
+		Nsec: dispatcherPreemptTimeoutNsec,
+	}
+	errno := q.state.SleepOnState(sysmsg.DispatcherStateSlow, &timeout)
+	if errno != 0 && errno != unix.ETIMEDOUT {
+		panic(fmt.Sprintf("Failed to sleep on state with errno %d!", errno))
+	}
+}
+
 const (
 	// deepSleepTimeout is the timeout after which both stub threads and the
 	// dispatcher consider whether to stop polling. They need to have elapsed
@@ -285,8 +297,8 @@ const (
 	//
 	// The value is 20µs for 2GHz CPU. 40µs matches the sentry<->stub
 	// round trip in the pure deep sleep case.
-	deepSleepTimeout = uint64(40000)
-	handshakeTimeout = uint64(1000)
+	deepSleepTimeout = int64(40000)
+	handshakeTimeout = int64(1000)
 )
 
 // loop is processing contexts in the queue. Only one instance of it can be
@@ -318,6 +330,12 @@ func (q *fastPathDispatcher) loop(target *sharedContext) {
 		}
 
 		slowPath = !fpState.sentryFastPath() || slowPath
+		if slowPath {
+			// Indicate to stub threads that they have to use futex
+			// wake, but do one more pass to see if any contexts were
+			// already signaled.
+			q.state.Set(sysmsg.DispatcherStateSlow)
+		}
 		processed = 0
 		now := cputicks()
 		for ctx = q.list.Front(); ctx != nil; ctx = next {
@@ -325,14 +343,14 @@ func (q *fastPathDispatcher) loop(target *sharedContext) {
 
 			event := sharedContextReady
 			if ctx.state() == sysmsg.ContextStateNone {
-				if slowPath {
-					event = sharedContextSlowPath
-				} else if !ctx.kicked && uint64(now-ctx.startWaitingTS) > handshakeTimeout {
+				if !ctx.kicked && (slowPath || now-ctx.startWaitingTS > handshakeTimeout) {
 					if ctx.isAcked() {
 						ctx.kicked = true
 						continue
 					}
 					event = sharedContextKicked
+				} else if now >= ctx.nextInterruptTS {
+					event = sharedContextInterrupt
 				} else {
 					continue
 				}
@@ -348,18 +366,28 @@ func (q *fastPathDispatcher) loop(target *sharedContext) {
 		if processed != 0 {
 			startedSpinning = now
 			firstTimeout = false
+			if slowPath {
+				q.state.Set(sysmsg.DispatcherStateFast)
+				slowPath = false
+			}
+		} else if slowPath {
+			q.sleep()
+			q.state.Set(sysmsg.DispatcherStateFast)
+			continue
 		} else {
 			fpState.usedSentryFastPath.Store(true)
 		}
 		// If dispatcher has been spinning for too long, send this
 		// dispatcher to sleep.
-		if uint64(now-startedSpinning) > deepSleepTimeout {
+		if now-startedSpinning > deepSleepTimeout {
 			slowPath = firstTimeout
 			firstTimeout = true
 		}
 
 		yield()
 	}
+
+	q.state.Set(sysmsg.DispatcherStateFast)
 }
 
 func (q *fastPathDispatcher) waitFor(ctx *sharedContext) syncevent.Set {

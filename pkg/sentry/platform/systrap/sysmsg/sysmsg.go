@@ -246,10 +246,6 @@ type ThreadContext struct {
 	// to detect whether fpstate may have changed since the last time they ran a
 	// context.
 	LastThreadID uint32
-	// SentryFastPath is used to indicate to the stub thread that the sentry
-	// goroutine used for this thread context is busy-polling for a response
-	// instead of using FUTEX_WAIT.
-	SentryFastPath uint32
 	// AckedTime is used by sysmsg threads to signal to the sentry that this context
 	// has been picked up from the context queue and is actively being worked on.
 	// The stub thread puts down the timestamp at which it has started processing
@@ -264,6 +260,25 @@ type ThreadContext struct {
 	TLS uint64
 	// Debug is a variable to use to get visibility into the stub from the sentry.
 	Debug uint64
+}
+
+// DispatcherState is used to store a state of the dispatcher.
+type DispatcherState uint32
+
+const (
+	// DispatcherStateInvalid is the uninitialized state.
+	DispatcherStateInvalid DispatcherState = iota
+	// DispatcherStateFast indicates that the dispatcher is actively
+	// busy-looping waiting for a response.
+	DispatcherStateFast
+	// DispatcherStateSlow indicates that the dispatcher is sleeping on the
+	// dispatcher futex and must be woken.
+	DispatcherStateSlow
+)
+
+// Set atomicaly sets the state value.
+func (s *DispatcherState) Set(state DispatcherState) {
+	atomic.StoreUint32((*uint32)(s), uint32(state))
 }
 
 // LINT.ThenChange(sysmsg.h)
@@ -306,7 +321,7 @@ func (c *ThreadContext) String() string {
 	fmt.Fprintf(&b, " FPStateChanged %d Regs %+v", c.FPStateChanged, c.Regs)
 	fmt.Fprintf(&b, " Interrupt %d", c.Interrupt)
 	fmt.Fprintf(&b, " ThreadID %d LastThreadID %d", c.ThreadID, c.LastThreadID)
-	fmt.Fprintf(&b, " SentryFastPath %d Acked %d", c.SentryFastPath, c.AckedTime)
+	fmt.Fprintf(&b, " Acked %d", c.AckedTime)
 	fmt.Fprintf(&b, " signo: %d, siginfo: %+v", c.Signo, c.SignalInfo)
 	fmt.Fprintf(&b, " debug %d", atomic.LoadUint64(&c.Debug))
 	b.WriteString("}")

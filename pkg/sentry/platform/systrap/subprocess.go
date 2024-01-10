@@ -751,9 +751,9 @@ func (s *subprocess) switchToApp(c *context, ac *arch.Context64) (isSyscall bool
 	// Check if there's been an error.
 	threadID := ctx.threadID()
 	if threadID != invalidThreadID {
-		if sysThread, ok := s.sysmsgThreads[threadID]; ok && sysThread.msg.Err != 0 {
+		if sysThread, ok := s.sysmsgThreads[threadID]; ok && atomic.LoadInt32(&sysThread.msg.Err) != 0 {
 			msg := sysThread.msg
-			panic(fmt.Sprintf("stub thread %d failed: err 0x%x line %d: %s", sysThread.thread.tid, msg.Err, msg.Line, msg))
+			panic(fmt.Sprintf("stub thread %d failed: err 0x%x line %d: %s", sysThread.thread.tid, atomic.LoadInt32(&sysThread.msg.Err), atomic.LoadInt32(&sysThread.msg.Line), msg))
 		}
 		log.Warningf("systrap: found unexpected ThreadContext.ThreadID field, expected %d found %d", invalidThreadID, threadID)
 	}
@@ -786,45 +786,29 @@ func (s *subprocess) switchToApp(c *context, ac *arch.Context64) (isSyscall bool
 }
 
 func (s *subprocess) waitOnState(ctx *sharedContext) {
-	ctx.kicked = false
-	slowPath := false
 	if !s.contextQueue.fastPathEnabled() || atomic.LoadUint32(&s.contextQueue.numActiveThreads) == 0 {
 		ctx.kicked = s.kickSysmsgThread()
 	}
 	for curState := ctx.state(); curState == sysmsg.ContextStateNone; curState = ctx.state() {
-		if !slowPath {
-			events := dispatcher.waitFor(ctx)
-			if events&sharedContextKicked != 0 {
-				if ctx.kicked {
-					continue
-				}
-				if ctx.isAcked() {
-					ctx.kicked = true
-					continue
-				}
-				s.kickSysmsgThread()
+		events := dispatcher.waitFor(ctx)
+		if events&sharedContextKicked != 0 {
+			if ctx.kicked {
+				continue
+			}
+			if ctx.isAcked() {
 				ctx.kicked = true
 				continue
 			}
-			if events&sharedContextSlowPath != 0 {
-				ctx.disableSentryFastPath()
-				slowPath = true
-				continue
-			}
-		} else {
-			// If the context already received a handshake then it knows it's being
-			// worked on.
-			if !ctx.kicked && !ctx.isAcked() {
-				ctx.kicked = s.kickSysmsgThread()
-			}
-
-			ctx.sleepOnState(curState)
+			s.kickSysmsgThread()
+			ctx.kicked = true
+			continue
+		} else if events&sharedContextInterrupt != 0 {
+			ctx.handleNeedInterrupt()
 		}
 	}
 
 	ctx.recordLatency()
-	ctx.resetLatencyMeasures()
-	ctx.enableSentryFastPath()
+	ctx.resetAfterSwitch()
 }
 
 // canKickSysmsgThread returns true if a new thread can be kicked.

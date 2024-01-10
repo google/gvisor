@@ -103,6 +103,8 @@ func stubInit() {
 	// | sysmsg code                        |
 	// |--------stubSysmsgRuleStart---------|
 	// | precompiled sysmsg seccomp rules   |
+	// |--------global read-only data-------|
+	// | futex word for dispatcher deepsleep|
 	// |--------guard page------------------|
 	// |--------random gap------------------|
 	// |                                    |
@@ -130,7 +132,11 @@ func stubInit() {
 	stubSysmsgRulesLen = hostarch.PageSize * 4
 	mapLen += stubSysmsgRulesLen
 
+	stubGlobalReadOnlyData = mapLen
+	stubGlobalReadOnlyDataLen = hostarch.PageSize
+	mapLen += stubGlobalReadOnlyDataLen
 	stubROMapEnd = mapLen
+
 	// Add a guard page.
 	mapLen += hostarch.PageSize
 	stubSysmsgStack = mapLen
@@ -187,6 +193,7 @@ func stubInit() {
 		// space, and it will take a long, long time.
 		panic("failed to map stub")
 	}
+
 	// Randomize stubSysmsgStack address.
 	gap := uintptr(rand.Uint64()) * hostarch.PageSize % (maximumUserAddress - stubStart - mapLen)
 	stubSysmsgStack += uintptr(gap)
@@ -200,6 +207,7 @@ func stubInit() {
 
 	stubSysmsgStart += stubStart
 	stubSysmsgStack += stubStart
+	stubGlobalReadOnlyData += stubStart
 	stubROMapEnd += stubStart
 	stubContextQueueRegion += stubStart
 	stubSpinningThreadQueueAddr += stubStart
@@ -217,7 +225,7 @@ func stubInit() {
 
 	// Initialize stub globals
 	p := (*uint64)(unsafe.Pointer(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_deep_sleep_timeout)))
-	*p = deepSleepTimeout
+	*p = uint64(deepSleepTimeout)
 	p = (*uint64)(unsafe.Pointer(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_context_region)))
 	*p = uint64(stubContextRegion)
 	p = (*uint64)(unsafe.Pointer(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_stub_start)))
@@ -228,6 +236,8 @@ func stubInit() {
 	*p = uint64(stubContextQueueRegion)
 	p = (*uint64)(unsafe.Pointer(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_spinning_queue_addr)))
 	*p = uint64(stubSpinningThreadQueueAddr)
+	p = (*uint64)(unsafe.Pointer(stubSysmsgStart + uintptr(sysmsg.Sighandler_blob_offset____export_dispatcher_state)))
+	*p = uint64(stubGlobalReadOnlyData)
 
 	prepareSeccompRules(stubSysmsgStart, stubSysmsgRules, stubSysmsgRulesLen)
 
@@ -235,13 +245,24 @@ func stubInit() {
 	if _, _, errno := unix.RawSyscall(
 		unix.SYS_MPROTECT,
 		stubStart,
-		stubROMapEnd-stubStart,
+		stubROMapEnd-stubStart-stubGlobalReadOnlyDataLen,
 		unix.PROT_EXEC|unix.PROT_READ); errno != 0 {
 		panic("mprotect failed: " + errno.Error())
 	}
+	// Make the read-only data page shared and read-only.
+	if addr, _, _ := unix.RawSyscall6(
+		unix.SYS_MMAP,
+		stubGlobalReadOnlyData,
+		stubGlobalReadOnlyDataLen,
+		unix.PROT_READ,
+		unix.MAP_SHARED|unix.MAP_ANONYMOUS|unix.MAP_FIXED,
+		0 /* fd */, 0 /* offset */); addr != stubGlobalReadOnlyData {
+		panic("failed to remap stub read only data")
+	}
+	dispatcher.state = (*sysmsg.DispatcherState)(unsafe.Pointer(stubGlobalReadOnlyData))
 
 	// Set the end.
 	stubEnd = stubStart + mapLen + uintptr(gap)
-	log.Debugf("stubStart %x stubSysmsgStart %x stubSysmsgStack %x, stubContextQueue %x, stubThreadContextRegion %x, mapLen %x", stubStart, stubSysmsgStart, stubSysmsgStack, stubContextQueueRegion, stubContextRegion, mapLen)
+	log.Debugf("stubStart %x stubGlobalReadOnlyData %x stubSysmsgStart %x stubSysmsgStack %x, stubContextQueue %x, stubThreadContextRegion %x, mapLen %x", stubStart, stubGlobalReadOnlyData, stubSysmsgStart, stubSysmsgStack, stubContextQueueRegion, stubContextRegion, mapLen)
 	log.Debugf(archState.String())
 }

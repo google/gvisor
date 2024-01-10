@@ -22,9 +22,9 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 )
 
-// SleepOnState makes the caller sleep on the ThreadContext.State futex.
-func (c *ThreadContext) SleepOnState(curState ContextState, timeout *unix.Timespec) syscall.Errno {
-	_, _, errno := unix.Syscall6(unix.SYS_FUTEX, uintptr(unsafe.Pointer(&c.State)),
+// SleepOnState makes the caller sleep on the DispatcherState futex.
+func (s *DispatcherState) SleepOnState(curState DispatcherState, timeout *unix.Timespec) syscall.Errno {
+	_, _, errno := unix.Syscall6(unix.SYS_FUTEX, uintptr(unsafe.Pointer(s)),
 		linux.FUTEX_WAIT, uintptr(curState), uintptr(unsafe.Pointer(timeout)), 0, 0)
 	if errno == unix.EAGAIN || errno == unix.EINTR {
 		errno = 0

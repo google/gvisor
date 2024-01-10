@@ -87,6 +87,9 @@ var (
 	// The memory blob with precompiled seccomp rules.
 	stubSysmsgRules    uintptr
 	stubSysmsgRulesLen uintptr
+	// Global read-only data shared to all stub threads.
+	stubGlobalReadOnlyData    uintptr
+	stubGlobalReadOnlyDataLen uintptr
 
 	stubSpinningThreadQueueAddr uintptr
 	stubSpinningThreadQueueSize uintptr
