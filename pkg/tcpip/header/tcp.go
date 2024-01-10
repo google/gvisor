@@ -216,6 +216,11 @@ const (
 	// TCPHeaderMaximumSize is the maximum header size of a TCP packet.
 	TCPHeaderMaximumSize = TCPMinimumSize + TCPOptionsMaximumSize
 
+	// TCPTotalHeaderMaximumSize is the maximum size of headers from all layers in
+	// a TCP packet. This will need to be updated if we decide to support more
+	// layer 2 protocols or features like IP tunneling.
+	TCPTotalHeaderMaximumSize = TCPHeaderMaximumSize + IPv4MaximumHeaderSize + EthernetMaximumSize
+
 	// TCPProtocolNumber is TCP's transport protocol number.
 	TCPProtocolNumber tcpip.TransportProtocolNumber = 6
 

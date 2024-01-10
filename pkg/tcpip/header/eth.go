@@ -46,6 +46,9 @@ const (
 	// EthernetMinimumSize is the minimum size of a valid ethernet frame.
 	EthernetMinimumSize = 14
 
+	// EthernetMaximumSize is the maximum size of a valid ethernet frame.
+	EthernetMaximumSize = 18
+
 	// EthernetAddressSize is the size, in bytes, of an ethernet address.
 	EthernetAddressSize = 6
 
