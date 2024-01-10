@@ -122,6 +122,8 @@ syscall_test(
 syscall_test(
     add_host_connector = True,
     add_hostinet = True,
+    # TODO(b/318948806): lisafs.BoundSocketFD is leaked.
+    leak_check = False,
     one_sandbox = False,
     test = "//test/syscalls/linux:bind_external_test",
     # Shared mode tests replace /tmp which hides the files created for
@@ -132,6 +134,8 @@ syscall_test(
 syscall_test(
     add_host_uds = True,
     add_hostinet = True,
+    # TODO(b/318948806): lisafs.BoundSocketFD is leaked.
+    leak_check = False,
     one_sandbox = False,
     test = "//test/syscalls/linux:connect_external_test",
     # Shared mode tests replace /tmp which hides the files created for
@@ -1096,6 +1100,8 @@ syscall_test(
 )
 
 syscall_test(
+    # TODO(b/318948806): tun.tunEndpoint is leaked.
+    leak_check = False,
     test = "//test/syscalls/linux:tuntap_test",
 )
 
