@@ -112,6 +112,10 @@ type MountOptions struct {
 
 	// GetFilesystemOptions contains options to FilesystemType.GetFilesystem().
 	GetFilesystemOptions GetFilesystemOptions
+
+	// Locked determines whether to lock this mount so it cannot be unmounted by
+	// normal user processes.
+	Locked bool
 }
 
 // OpenOptions contains options to VirtualFilesystem.OpenAt() and

@@ -213,9 +213,11 @@ cc_library(
     deps = [
         ":cleanup",
         ":file_descriptor",
+        ":logging",
         ":posix_error",
         ":save_util",
         ":test_util",
+        "@com_google_absl//absl/strings:str_format",
         gtest,
         "@com_google_absl//absl/strings",
     ],

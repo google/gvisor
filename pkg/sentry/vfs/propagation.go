@@ -515,6 +515,7 @@ func (vfs *VirtualFilesystem) propagateUmount(mnts []*Mount) []*Mount {
 		umountRestore
 	)
 	var toUmount []*Mount
+	noChildren := make(map[*Mount]struct{})
 	// Processed contains all the mounts that the algorithm has processed so far.
 	// If the mount maps to umountRestore, it should be restored after processing
 	// all the mounts. This happens in cases where a mount was speculatively
@@ -565,7 +566,7 @@ func (vfs *VirtualFilesystem) propagateUmount(mnts []*Mount) []*Mount {
 			// encounters a parent that's been visited.
 		loop:
 			for {
-				if child.umounted {
+				if _, ok := noChildren[child]; ok || child.umounted {
 					break
 				}
 				// If there are any children that have mountpoint != parent's root then
@@ -574,15 +575,25 @@ func (vfs *VirtualFilesystem) propagateUmount(mnts []*Mount) []*Mount {
 					if gchild.point() == child.root {
 						continue
 					}
+					_, isProcessed := processed[gchild]
+					_, hasNoChildren := noChildren[gchild]
+					if isProcessed && hasNoChildren {
+						continue
+					}
 					processed[child] = umountRestore
 					break loop
 				}
-				vfs.umount(child)
-				toUmount = append(toUmount, child)
-				child = child.parent()
+				if child.locked {
+					processed[child] = umountRestore
+					noChildren[child] = struct{}{}
+				} else {
+					vfs.umount(child)
+					toUmount = append(toUmount, child)
+				}
 				// If this parent was a mount that had to be restored because it had
 				// children, it might be safe to umount now that its child is gone. If
 				// it has been visited then it's already being umounted.
+				child = child.parent()
 				if _, ok := processed[child]; !ok {
 					break
 				}
@@ -621,6 +632,25 @@ func (vfs *VirtualFilesystem) propagateUmount(mnts []*Mount) []*Mount {
 	vfs.mounts.seq.EndWrite()
 
 	return toUmount
+}
+
+// unlockPropagationMounts sets locked to false for every mount that a umount
+// of mnt propagates to. It is analogous to fs/pnode.c:propagate_mount_unlock()
+// in Linux.
+//
+// +checklocks:vfs.mountMu
+func (vfs *VirtualFilesystem) unlockPropagationMounts(mnt *Mount) {
+	parent := mnt.parent()
+	if parent == nil {
+		return
+	}
+	for m := nextPropMount(parent, parent); m != nil; m = nextPropMount(m, parent) {
+		child := vfs.mounts.Lookup(m, mnt.point())
+		if child == nil {
+			continue
+		}
+		child.locked = false
+	}
 }
 
 // peerUnderRoot iterates through mnt's peers until it finds a mount that is in
