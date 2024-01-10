@@ -1027,6 +1027,8 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		// A task with no parent starts out with no session keyring.
 		SessionKeyring: nil,
 	}
+	config.UTSNamespace.IncRef()
+	config.IPCNamespace.IncRef()
 	config.NetworkNamespace.IncRef()
 	t, err := k.tasks.NewTask(ctx, config)
 	if err != nil {
@@ -1381,13 +1383,11 @@ func (k *Kernel) RootUserNamespace() *auth.UserNamespace {
 
 // RootUTSNamespace returns the root UTSNamespace.
 func (k *Kernel) RootUTSNamespace() *UTSNamespace {
-	k.rootUTSNamespace.IncRef()
 	return k.rootUTSNamespace
 }
 
 // RootIPCNamespace takes a reference and returns the root IPCNamespace.
 func (k *Kernel) RootIPCNamespace() *IPCNamespace {
-	k.rootIPCNamespace.IncRef()
 	return k.rootIPCNamespace
 }
 
@@ -1750,6 +1750,8 @@ func (k *Kernel) Release() {
 	k.timekeeper.Destroy()
 	k.vdso.Release(ctx)
 	k.RootNetworkNamespace().DecRef(ctx)
+	k.rootIPCNamespace.DecRef(ctx)
+	k.rootUTSNamespace.DecRef(ctx)
 	k.cleaupDevGofers()
 }
 

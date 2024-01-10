@@ -17,6 +17,7 @@
 package main
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"flag"
@@ -63,10 +64,8 @@ var (
 	addHostConnector = flag.Bool("add-host-connector", false, "create goroutines that connect to bound UDS that will be created by sandbox")
 	addHostFIFO      = flag.Bool("add-host-fifo", false, "expose a tree of FIFO to test communication with the host")
 	ioUring          = flag.Bool("iouring", false, "Enables IO_URING API for asynchronous I/O")
-	// TODO(gvisor.dev/issue/4572): properly support leak checking for runsc, and
-	// set to true as the default for the test runner.
-	leakCheck  = flag.Bool("leak-check", false, "check for reference leaks")
-	waitForPid = flag.Duration("delay-for-debugger", 0, "Print out the sandbox PID and wait for the specified duration to start the test. This is useful for attaching a debugger to the runsc-sandbox process.")
+	leakCheck        = flag.Bool("leak-check", false, "check for reference leaks")
+	waitForPid       = flag.Duration("delay-for-debugger", 0, "Print out the sandbox PID and wait for the specified duration to start the test. This is useful for attaching a debugger to the runsc-sandbox process.")
 )
 
 const (
@@ -279,6 +278,7 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 	}
 
 	testLogDir := ""
+	runscLogDir := ""
 	if undeclaredOutputsDir, ok := unix.Getenv("TEST_UNDECLARED_OUTPUTS_DIR"); ok {
 		// Create log directory dedicated for this test.
 		testLogDir = filepath.Join(undeclaredOutputsDir, strings.Replace(name, "/", "_", -1))
@@ -290,8 +290,9 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 			return fmt.Errorf("could not create temp dir: %v", err)
 		}
 		debugLogDir += "/"
+		runscLogDir = debugLogDir + "/runsc.log"
 		log.Infof("runsc logs: %s", debugLogDir)
-		args = append(args, "-debug-log", debugLogDir)
+		args = append(args, "-debug-log", runscLogDir)
 		args = append(args, "-coverage-report", debugLogDir)
 
 		// Default -log sends messages to stderr which makes reading the test log
@@ -429,6 +430,76 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 		}
 	}
 	if err == nil && len(testLogDir) > 0 {
+		var warningsFound []string
+		f, err := os.Open(runscLogDir)
+		if err != nil {
+			return err
+		}
+		scanner := bufio.NewScanner(f)
+		for scanner.Scan() {
+			// This is trivial match for Google's log file format.
+			line := scanner.Text()
+			if len(line) >= 5 && line[:5] == "panic" {
+				warningsFound = append(warningsFound, strings.TrimSpace(line))
+			}
+			if len(line) >= 2 && (line[0] == 'E' || line[0] == 'W') && (line[1] >= '0' && line[1] <= '9') {
+				// Ignore a basic set of warnings that we've
+				// determined to be fine. We want these to stay
+				// as warnings, even if they are constant.
+				switch {
+				// Reasonable warnings, allowed during tests.
+				case strings.Contains(line, "Will try waiting on the sandbox process instead."):
+				case strings.Contains(line, "lisafs: batch closing FDs"):
+				case strings.Contains(line, "This is only safe in tests!"):
+				case strings.Contains(line, "Capability \"checkpoint_restore\" is not permitted, dropping it."):
+				case strings.Contains(line, "syscall filters less restrictive!"):
+				case strings.Contains(line, "Getdent64: skipping file"):
+				// Capability "perfmon" is not permitted, dropping it.
+				case strings.Contains(line, "is not permitted, dropping it."):
+				case strings.Contains(line, "sndPrepopulatedMsg failed"):
+				case strings.Contains(line, "PR_SET_NO_NEW_PRIVS is assumed to always be set."):
+				case strings.Contains(line, "TSC snapshot unavailable"):
+				case strings.Contains(line, "copy up failed to copy up contents"):
+				case strings.Contains(line, "populate failed for"):
+				case strings.Contains(line, "ASAN is enabled: syscall filters less restrictive"):
+				case strings.Contains(line, "MSAN is enabled: syscall filters less restrictive"):
+				case strings.Contains(line, "TSAN is enabled: syscall filters less restrictive"):
+				case strings.Contains(line, "Optional feature EnablePCID not supported"):
+				case strings.Contains(line, "Optional feature EnableSMEP not supported"):
+				case strings.Contains(line, "Optional feature EnableVPID not supported"):
+				case strings.Contains(line, "Optional feature GMPWithVPID not supported"):
+				case strings.Contains(line, "Optional feature ValidateGMPPF not supported"):
+				case strings.Contains(line, "Pass-through networking enabled"):
+				// Expected in some tests that create files as 0755,
+				// ex. /gvisor/test/syscalls/linux/exec.cc
+				case strings.Contains(line, "Opened a writable executable"):
+				// Expected in some tests, eg. /gvisor/test/syscalls/linux/sysret.cc
+				case strings.Contains(line, "invalid rip for 64 bit mode"):
+
+				// Ignore clock frequency adjustment messages.
+				case strings.Contains(line, "adjusted frequency from"):
+
+				// FIXME(b/70990997): URPC error: possible race?
+				case strings.Contains(line, "urpc: error decoding: bad file descriptor"):
+
+				// FIXME(b/147228315): GVISOR_PREEMPTION_INTERRUPT not yet supported on AMD.
+				case strings.Contains(line, "Optional feature PreemptionInterrupt not supported"):
+
+				// Ignore denied dirty timestamp writebacks. It occurs because,
+				// in tests, gofer doesn't have permission to change atime.
+				case strings.Contains(line, "gofer.dentry.destroyLocked: failed to close file with write dirty timestamps: operation not permitted"):
+				case strings.Contains(line, "Tsetattrclunk failed, losing FID"):
+				// gsys_get_timekeeping_params hasn't been implemented for ARM.
+				case strings.Contains(line, "Error retrieving TSC snapshot, unable to save TSC: function not implemented"):
+
+				default:
+					warningsFound = append(warningsFound, strings.TrimSpace(line))
+				}
+			}
+		}
+		if len(warningsFound) > 0 {
+			return fmt.Errorf("%s", warningsFound)
+		}
 		// If the test passed, then we erase the log directory. This speeds up
 		// uploading logs in continuous integration & saves on disk space.
 		os.RemoveAll(testLogDir)

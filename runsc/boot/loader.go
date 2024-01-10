@@ -618,6 +618,16 @@ func (l *Loader) Destroy() {
 	}
 	l.watchdog.Stop()
 
+	ctx := l.k.SupervisorContext()
+	for _, m := range l.sharedMounts {
+		m.DecRef(ctx)
+	}
+	for _, m := range l.cgroupMounts {
+		m.mount.DecRef(ctx)
+		m.root.DecRef(ctx)
+		m.fs.DecRef(ctx)
+	}
+
 	// Stop the control server. This will indirectly stop any
 	// long-running control operations that are in flight, e.g.
 	// profiling operations.
@@ -650,6 +660,8 @@ func (l *Loader) Destroy() {
 	}
 
 	l.stopProfiling()
+	// Check all references.
+	refs.OnExit()
 }
 
 func createPlatform(conf *config.Config, deviceFile *os.File) (platform.Platform, error) {
@@ -1007,6 +1019,11 @@ func (l *Loader) createContainerProcess(info *containerInfo) (*kernel.ThreadGrou
 	if err := setupContainerVFS(ctx, info, mntr, &info.procArgs); err != nil {
 		return nil, nil, err
 	}
+	defer func() {
+		for cg := range info.procArgs.InitialCgroups {
+			cg.Dentry.DecRef(ctx)
+		}
+	}()
 
 	// Add the HOME environment variable if it is not already set.
 	info.procArgs.Envv, err = user.MaybeAddExecUserHome(ctx, info.procArgs.MountNamespace,
@@ -1229,7 +1246,6 @@ func (l *Loader) waitContainer(cid string, waitStatus *uint32) error {
 	// sandbox is killed by a signal after the ContMgrWait request is completed.
 	if l.root.procArgs.ContainerID == cid {
 		// All sentry-created resources should have been released at this point.
-		refs.DoLeakCheck()
 		_ = coverage.Report()
 	}
 	return nil
@@ -1288,9 +1304,6 @@ func (l *Loader) WaitForStartSignal() {
 func (l *Loader) WaitExit() linux.WaitStatus {
 	// Wait for container.
 	l.k.WaitExited()
-
-	// Check all references.
-	refs.OnExit()
 
 	return l.k.GlobalInit().ExitStatus()
 }

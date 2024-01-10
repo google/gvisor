@@ -76,6 +76,7 @@ def _syscall_test(
         one_sandbox = True,
         fusefs = False,
         directfs = False,
+        leak_check = False,
         **kwargs):
     # Prepend "runsc" to non-native platform names.
     full_platform = platform if platform == "native" else "runsc_" + platform
@@ -151,6 +152,7 @@ def _syscall_test(
         "--one-sandbox=" + str(one_sandbox),
         "--iouring=" + str(iouring),
         "--directfs=" + str(directfs),
+        "--leak-check=" + str(leak_check),
     ]
 
     # Trace points are platform agnostic, so enable them for ptrace only.
@@ -185,6 +187,7 @@ def syscall_test(
         one_sandbox = True,
         iouring = False,
         allow_native = True,
+        leak_check = True,
         debug = True,
         container = None,
         tags = None,
@@ -244,6 +247,7 @@ def syscall_test(
             debug = debug,
             container = container,
             one_sandbox = one_sandbox,
+            leak_check = leak_check,
             **kwargs
         )
 
@@ -261,6 +265,7 @@ def syscall_test(
             container = container,
             one_sandbox = one_sandbox,
             overlay = True,
+            leak_check = leak_check,
             **kwargs
         )
     if add_hostinet:
@@ -277,6 +282,7 @@ def syscall_test(
             iouring = iouring,
             container = container,
             one_sandbox = one_sandbox,
+            leak_check = leak_check,
             **kwargs
         )
     if not use_tmpfs:
@@ -294,6 +300,7 @@ def syscall_test(
             container = container,
             one_sandbox = one_sandbox,
             file_access = "shared",
+            leak_check = leak_check,
             **kwargs
         )
     if add_fusefs:
@@ -309,5 +316,6 @@ def syscall_test(
             debug = debug,
             container = container,
             one_sandbox = one_sandbox,
+            leak_check = leak_check,
             **kwargs
         )

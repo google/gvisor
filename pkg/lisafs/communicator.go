@@ -66,7 +66,7 @@ type fdTracker struct {
 // DonateFD implements Communicator.DonateFD.
 func (d *fdTracker) DonateFD(fd int) {
 	// Try to make the FD non-blocking.
-	if err := unix.SetNonblock(fd, true); err != nil {
+	if err := unix.SetNonblock(fd, true); err != nil && err != unix.EBADF {
 		// This may fail if fd was opened with O_PATH, because fcntl(F_SETFL) fails
 		// with EBADF on O_PATH FDs.
 		log.Warningf("DonateFD: unix.SetNonblock() failed on FD %d: %v", fd, err)
