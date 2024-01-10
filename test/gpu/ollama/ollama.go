@@ -124,7 +124,13 @@ func (llm *Ollama) request(ctx context.Context, endpoint string, data []byte) ([
 		Image: "basic/busybox",
 		Links: []string{llm.container.MakeLink("llm")},
 	}, cmd...)
-	return []byte(out), err
+	if err != nil {
+		if out != "" {
+			return []byte(out), fmt.Errorf("command %q failed (%w): %v", strings.Join(cmd, " "), err, out)
+		}
+		return nil, fmt.Errorf("could not run command %q: %w", strings.Join(cmd, " "), err)
+	}
+	return []byte(out), nil
 }
 
 // jsonGet performs a JSON HTTP GET request.
