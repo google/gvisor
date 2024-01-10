@@ -565,7 +565,7 @@ func (c *containerMounter) createMountNamespace(ctx context.Context, conf *confi
 	// read-only tmpfs here. It simplifies creation of containers without
 	// leaking the root file system.
 	mns, err := c.k.VFS().NewMountNamespace(ctx, creds, "rootfs", "tmpfs",
-		&vfs.MountOptions{ReadOnly: true}, c.k)
+		&vfs.MountOptions{ReadOnly: true, Locked: true}, c.k)
 	if err != nil {
 		return nil, fmt.Errorf("setting up mount namespace: %w", err)
 	}

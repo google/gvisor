@@ -18,6 +18,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <functional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -126,6 +127,16 @@ inline PosixErrorOr<Cleanup> ForkAndExecveat(int32_t dirfd,
 // fn must be async-signal-safe. Use of ASSERT/EXPECT functions is prohibited.
 // Use TEST_CHECK variants instead.
 PosixErrorOr<int> InForkedProcess(const std::function<void()>& fn);
+
+// Sets up a new user and mount namespace in a forked subprocess using unshare,
+// then runs the parent function in the parent subprocess. Once that returns, it
+// runs the child function in the child process and returns the exit status of
+// the child process.
+//
+// All calls must be async-signal-safe in the child function. Use of
+// ASSERT/EXPECT functions is prohibited. Use TEST_CHECK variants instead.
+PosixErrorOr<int> InForkedUserMountNamespace(
+    const std::function<void()>& parent, const std::function<void()>& child);
 
 }  // namespace testing
 }  // namespace gvisor

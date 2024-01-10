@@ -2127,70 +2127,39 @@ TEST(MountTest, MountNamespacePropagation) {
 
 TEST(MountTest, MountNamespaceSlavesNewUserNamespace) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(GetAbsoluteTestTmpdir())));
+  const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
 
-  int sync_sks[2] = {};
-  ASSERT_THAT(socketpair(AF_UNIX, SOCK_SEQPACKET, 0, sync_sks),
-              SyscallSucceeds());
-
-  auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
-  auto const mnt = ASSERT_NO_ERRNO_AND_VALUE(
-      Mount("", dir.path(), kTmpfs, 0, "mode=0700", MNT_DETACH));
-  auto child_dir = JoinPath(dir.path(), "test");
-
+  const Cleanup dir_mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir.path(), kTmpfs, 0, "", MNT_DETACH));
   ASSERT_THAT(mount(NULL, dir.path().c_str(), NULL, MS_SHARED, NULL),
               SyscallSucceeds());
-  ASSERT_THAT(mkdir(child_dir.c_str(), 0700), SyscallSucceeds());
+  const TempPath child_dir =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(dir.path()));
 
-  int uid = geteuid();
-  int gid = getegid();
-  std::string umap_str = absl::StrFormat("0 %lu 1", uid);
-  std::string gmap_str = absl::StrFormat("0 %lu 1", gid);
+  const std::function<void()> parent = [&] {
+    TEST_CHECK_SUCCESS(
+        mount("child", child_dir.path().c_str(), kTmpfs, 0, NULL));
+    TEST_CHECK_SUCCESS(open(JoinPath(child_dir.path(), "foo").c_str(),
+                            O_CREAT | O_RDWR, 0777));
+  };
+  const std::function<void()> child = [&] {
+    TEST_CHECK_SUCCESS(access(JoinPath(child_dir.path(), "foo").c_str(), F_OK));
 
-  pid_t child = fork();
-  if (child == 0) {
-    close(sync_sks[0]);
-    chdir(dir.path().c_str());
-    TEST_CHECK(unshare(CLONE_NEWNS | CLONE_NEWUSER) == 0);
+    // These mount operations will not propagate to the other namespace
+    // because it is a slave mount.
+    TEST_CHECK_SUCCESS(umount2(child_dir.path().c_str(), MNT_DETACH));
+    TEST_CHECK_SUCCESS(
+        mount("test2", child_dir.path().c_str(), kTmpfs, 0, NULL));
+    TEST_CHECK_SUCCESS(
+        mknod(JoinPath(child_dir.path(), "boo").c_str(), 0777 | S_IFREG, 0));
 
-    // Setup uid and gid maps for child.
-    int fd = open("/proc/self/uid_map", O_WRONLY);
-    TEST_CHECK(fd > 0);
-    TEST_CHECK(write(fd, umap_str.c_str(), umap_str.size()) > 0);
-    TEST_CHECK(close(fd) == 0);
-
-    // setgroups isn't implemented in gVisor but is necessary for native tests.
-    fd = open("/proc/self/setgroups", O_WRONLY);
-    if (fd > 0) {
-      TEST_CHECK(write(fd, "deny", 4) > 0);
-      TEST_CHECK(close(fd) == 0);
-    }
-
-    fd = open("/proc/self/gid_map", O_WRONLY);
-    TEST_CHECK(fd > 0);
-    TEST_CHECK(write(fd, gmap_str.c_str(), gmap_str.size()) > 0);
-    TEST_CHECK(close(fd) == 0);
-
-    // Wait until uid and gid maps are setup.
-    TEST_CHECK(setuid(0) == 0);
-    TEST_CHECK(setgid(0) == 0);
-
-    // The child has been initialized. Kick the parent.
-    shutdown(sync_sks[1], SHUT_WR);
-    char s;
-    // Wait when the parent creates a test mount.
-    TEST_CHECK(read(sync_sks[1], &s, 1) == 0);
-    close(sync_sks[1]);
-
-    TEST_CHECK(access("test/foo", F_OK) == 0);
-
-    // These mount operations will not propagate to the other namespace because
-    // it is a slave mount.
-    TEST_CHECK(umount2("test", MNT_DETACH) == 0);
-    TEST_CHECK(mount("test2", "test", kTmpfs, 0, NULL) == 0);
-    TEST_CHECK(mknod(JoinPath("test", "boo").c_str(), 0777 | S_IFREG, 0) == 0);
+    TEST_CHECK_SUCCESS(umount2(child_dir.path().c_str(), MNT_DETACH));
+    // This should fail because the mount is locked.
+    TEST_CHECK_ERRNO(umount2(child_dir.path().c_str(), MNT_DETACH), EINVAL);
 
     // Check that there is a master entry in mountinfo.
-    fd = open("/proc/self/mountinfo", O_RDONLY);
+    int fd = open("/proc/self/mountinfo", O_RDONLY);
     TEST_CHECK(fd >= 0);
     std::string mountinfo;
     char child_mountinfo[0x8000];
@@ -2205,29 +2174,102 @@ TEST(MountTest, MountNamespaceSlavesNewUserNamespace) {
       }
     }
     TEST_CHECK(absl::StrContains(child_mountinfo, "master:"));
-
-    exit(0);
-  }
-  ASSERT_THAT(child, SyscallSucceeds());
-
-  close(sync_sks[1]);
-  char s;
-  // Wait when the child creates a user namespace.
-  ASSERT_THAT(read(sync_sks[0], &s, 1), SyscallSucceeds());
-  ASSERT_THAT(mount("child", child_dir.c_str(), "tmpfs", 0, NULL),
-              SyscallSucceeds());
-  EXPECT_NO_ERRNO(Open(JoinPath(child_dir, "foo"), O_CREAT | O_RDWR, 0777));
-  // The test mount has been created. Kick the child.
-  close(sync_sks[0]);
-
-  int status;
-  ASSERT_THAT(waitpid(child, &status, 0), SyscallSucceedsWithValue(child));
-  ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+  };
+  EXPECT_THAT(InForkedUserMountNamespace(parent, child),
+              IsPosixErrorOkAndHolds(0));
 
   // Check that the test mount is still here.
-  EXPECT_EQ(Open(JoinPath(child_dir, "boo"), O_RDWR).error().errno_value(),
-            ENOENT);
-  EXPECT_THAT(umount2(child_dir.c_str(), MNT_DETACH), SyscallSucceeds());
+  EXPECT_EQ(
+      Open(JoinPath(child_dir.path(), "boo"), O_RDWR).error().errno_value(),
+      ENOENT);
+  EXPECT_THAT(umount2(child_dir.path().c_str(), MNT_DETACH), SyscallSucceeds());
+}
+
+TEST(MountTest, LockedMountStopsNonRecBind) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(GetAbsoluteTestTmpdir())));
+
+  const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const Cleanup dir_mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", dir.path(), kTmpfs, 0, "", MNT_DETACH));
+  const TempPath child_dir =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(dir.path()));
+  const Cleanup child_mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", child_dir.path().c_str(), kTmpfs, 0, "", MNT_DETACH));
+
+  const std::function<void()> child_fn = [&] {
+    std::string foo_dir = JoinPath(dir.path(), "foo");
+    TEST_CHECK_SUCCESS(mkdir(foo_dir.c_str(), 0700));
+    TEST_CHECK_ERRNO(
+        mount(dir.path().c_str(), foo_dir.c_str(), "", MS_BIND, ""), EINVAL);
+    TEST_CHECK_SUCCESS(
+        mount(dir.path().c_str(), foo_dir.c_str(), "", MS_BIND | MS_REC, ""));
+  };
+  EXPECT_THAT(InForkedUserMountNamespace([] {}, child_fn),
+              IsPosixErrorOkAndHolds(0));
+}
+
+// This test checks that a mount tree that propagates from a more privileged
+// mount namespace cannot be partially unmounted. It must be unmounted as a
+// single unit as described in point 4 of the notes in
+// https://man7.org/linux/man-pages/man7/mount_namespaces.7.html. This test
+// also checks that unmounting a propagated mount tree does not reveal the
+// contents of overmounted filesystems from the more privileged mount namespace.
+TEST(MountTest, UmountPropagatedSubtreeFromPrivilegedNS) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(ASSERT_NO_ERRNO_AND_VALUE(IsOverlayfs(GetAbsoluteTestTmpdir())));
+
+  const TempPath dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  const Cleanup dir_mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount(dir.path(), dir.path(), "", MS_BIND, "", MNT_DETACH));
+  ASSERT_THAT(mount(NULL, dir.path().c_str(), NULL, MS_SHARED, NULL),
+              SyscallSucceeds());
+
+  const TempPath child_dir =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(dir.path()));
+  const TempPath sibling_dir =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(dir.path()));
+  const Cleanup child_mount = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", child_dir.path(), kTmpfs, 0, "", MNT_DETACH));
+  ASSERT_THAT(mount(NULL, child_dir.path().c_str(), NULL, MS_PRIVATE, NULL),
+              SyscallSucceeds());
+
+  const TempPath grandchild_dir =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(child_dir.path()));
+  ASSERT_THAT(open(JoinPath(grandchild_dir.path(), "foo").c_str(),
+                   O_CREAT | O_RDWR, 0777),
+              SyscallSucceeds());
+  const Cleanup grandchild_mnt = ASSERT_NO_ERRNO_AND_VALUE(
+      Mount("", grandchild_dir.path(), kTmpfs, 0, "", MNT_DETACH));
+  ASSERT_THAT(
+      mount(NULL, grandchild_dir.path().c_str(), NULL, MS_PRIVATE, NULL),
+      SyscallSucceeds());
+  const std::string grandsibling_dir =
+      JoinPath(sibling_dir.path(), Basename(grandchild_dir.path()));
+
+  const std::function<void()> parent = [&] {
+    TEST_CHECK_SUCCESS(mount(child_dir.path().c_str(),
+                             sibling_dir.path().c_str(), "", MS_BIND | MS_REC,
+                             ""));
+    TEST_CHECK_SUCCESS(
+        mount("", sibling_dir.path().c_str(), "", MS_PRIVATE | MS_REC, ""));
+  };
+  // You can umount an entire subtree that propagated from a more privileged
+  // mount namespace, but can't umount only part of the subtree.
+  const std::function<void()> child = [&] {
+    TEST_CHECK_ERRNO(umount2(grandsibling_dir.c_str(), MNT_DETACH), EINVAL);
+    int dirfd = open(sibling_dir.path().c_str(), O_RDONLY | O_DIRECTORY);
+    TEST_CHECK(dirfd >= 0);
+    TEST_CHECK_SUCCESS(umount2(sibling_dir.path().c_str(), MNT_DETACH));
+    // Check to ensure you cannot access an overmounted file with openat after
+    // the mount unit has been destroyed.
+    TEST_CHECK_ERRNO(
+        openat(dirfd, JoinPath(Basename(grandchild_dir.path()), "foo").c_str(),
+               O_RDONLY),
+        ENOENT);
+  };
+  EXPECT_THAT(InForkedUserMountNamespace(parent, child),
+              IsPosixErrorOkAndHolds(0));
 }
 
 TEST(MountTest, MountFailsOnPseudoFilesystemMountpoint) {

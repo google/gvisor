@@ -549,6 +549,62 @@ TEST(PivotRootTest, UnreachableNewRootFails) {
   EXPECT_THAT(InForkedProcess(rest), IsPosixErrorOkAndHolds(0));
 }
 
+TEST(PivotRootTest, LockedNewRootFails) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_CHROOT)));
+
+  auto root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  ASSERT_THAT(mount("", root.path().c_str(), "tmpfs", 0, "mode=0700"),
+              SyscallSucceeds());
+  auto new_root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(root.path()));
+  ASSERT_THAT(mount("", new_root.path().c_str(), "tmpfs", 0, "mode=0700"),
+              SyscallSucceeds());
+  const std::string new_root_path = JoinPath("/", Basename(new_root.path()));
+  auto put_old =
+      ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(new_root.path()));
+  const std::string put_old_path =
+      JoinPath(new_root_path, "/", Basename(put_old.path()));
+  ASSERT_THAT(mount("", put_old.path().c_str(), "tmpfs", 0, "mode=0700"),
+              SyscallSucceeds());
+
+  const std::function<void()> rest = [&] {
+    TEST_CHECK_SUCCESS(chroot(root.path().c_str()));
+    TEST_CHECK_ERRNO(
+        syscall(__NR_pivot_root, new_root_path.c_str(), put_old_path.c_str()),
+        EINVAL);
+  };
+  EXPECT_THAT(InForkedUserMountNamespace([] {}, rest),
+              IsPosixErrorOkAndHolds(0));
+}
+
+TEST(PivotRootTest, OldRootUnlocked) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_ADMIN)));
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(HaveCapability(CAP_SYS_CHROOT)));
+
+  auto root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
+  ASSERT_THAT(mount("", root.path().c_str(), "tmpfs", 0, "mode=0700"),
+              SyscallSucceeds());
+  auto new_root = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(root.path()));
+  const std::string new_root_path = JoinPath("/", Basename(new_root.path()));
+
+  // The root mount will be locked when pivot_root is called but the new_root
+  // and put_old mounts won't be.
+  const std::function<void()> rest = [&] {
+    TEST_CHECK_SUCCESS(chroot(root.path().c_str()));
+    TEST_CHECK_SUCCESS(mount("", new_root_path.c_str(), "tmpfs", 0, ""));
+    std::string put_old_path = JoinPath(new_root_path, "put_old");
+    TEST_CHECK_SUCCESS(mkdir(put_old_path.c_str(), 0700));
+    TEST_CHECK_SUCCESS(mount("", put_old_path.c_str(), "tmpfs", 0, ""));
+    TEST_CHECK_SUCCESS(
+        syscall(__NR_pivot_root, new_root_path.c_str(), put_old_path.c_str()));
+    // The old root is no longer locked and can be unmounted.
+    TEST_CHECK_SUCCESS(
+        umount2(JoinPath("/", Basename(put_old_path)).c_str(), MNT_DETACH));
+  };
+  EXPECT_THAT(InForkedUserMountNamespace([] {}, rest),
+              IsPosixErrorOkAndHolds(0));
+}
+
 }  // namespace
 
 }  // namespace testing
