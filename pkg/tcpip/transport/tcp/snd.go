@@ -953,7 +953,7 @@ func (s *sender) postXmit(dataSent bool, shouldScheduleProbe bool) {
 func (s *sender) sendData() {
 	limit := s.MaxPayloadSize
 	if s.gso {
-		limit = int(s.ep.gso.MaxSize - header.TCPHeaderMaximumSize)
+		limit = int(s.ep.gso.MaxSize - header.TCPTotalHeaderMaximumSize - 1)
 	}
 	end := s.SndUna.Add(s.SndWnd)
 
