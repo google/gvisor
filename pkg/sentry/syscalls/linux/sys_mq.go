@@ -57,6 +57,7 @@ func MqOpen(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr,
 	if err != nil {
 		return 0, nil, err
 	}
+	defer queue.DecRef(t)
 
 	fd, err := t.NewFDFrom(0, queue, kernel.FDFlags{
 		CloseOnExec: flag&linux.O_CLOEXEC != 0,

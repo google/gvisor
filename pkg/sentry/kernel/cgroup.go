@@ -404,6 +404,7 @@ func (r *CgroupRegistry) FindCgroup(ctx context.Context, ctype CgroupControllerT
 	if vfsfs == nil {
 		return Cgroup{}, fmt.Errorf("controller not active")
 	}
+	defer vfsfs.DecRef(ctx)
 
 	rootCG := vfsfs.Impl().(cgroupFS).RootCgroup()
 

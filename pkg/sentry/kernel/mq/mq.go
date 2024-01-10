@@ -170,6 +170,7 @@ func (r *Registry) FindOrCreate(ctx context.Context, opts OpenOpts, mode linux.F
 		if opts.Create && opts.Exclusive {
 			// "Both O_CREAT and O_EXCL were specified in oflag, but a queue
 			//  with this name already exists."
+			fd.DecRef(ctx)
 			return nil, linuxerr.EEXIST
 		}
 		return fd, nil

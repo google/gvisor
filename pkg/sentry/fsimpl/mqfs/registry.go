@@ -98,7 +98,7 @@ func (r *RegistryImpl) Get(ctx context.Context, name string, access mq.AccessTyp
 		return nil, false, linuxerr.EACCES
 	}
 
-	fd, err := r.newFD(qInode.queue, qInode, access, block, flags)
+	fd, err := r.newFD(ctx, qInode.queue, qInode, access, block, flags)
 	if err != nil {
 		return nil, false, err
 	}
@@ -113,7 +113,7 @@ func (r *RegistryImpl) New(ctx context.Context, name string, q *mq.Queue, access
 	if err != nil {
 		return nil, err
 	}
-	return r.newFD(q, qInode, access, block, flags)
+	return r.newFD(ctx, q, qInode, access, block, flags)
 }
 
 // Unlink implements mq.RegistryImpl.Unlink.
@@ -128,6 +128,7 @@ func (r *RegistryImpl) Unlink(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
+	defer inode.DecRef(ctx)
 	return root.Unlink(ctx, name, inode)
 }
 
@@ -138,7 +139,7 @@ func (r *RegistryImpl) Destroy(ctx context.Context) {
 }
 
 // newFD returns a new file description created using the given queue and inode.
-func (r *RegistryImpl) newFD(q *mq.Queue, inode *queueInode, access mq.AccessType, block bool, flags uint32) (*vfs.FileDescription, error) {
+func (r *RegistryImpl) newFD(ctx context.Context, q *mq.Queue, inode *queueInode, access mq.AccessType, block bool, flags uint32) (*vfs.FileDescription, error) {
 	view, err := mq.NewView(q, access, block)
 	if err != nil {
 		return nil, err
@@ -146,6 +147,7 @@ func (r *RegistryImpl) newFD(q *mq.Queue, inode *queueInode, access mq.AccessTyp
 
 	var dentry kernfs.Dentry
 	dentry.Init(&r.fs.Filesystem, inode)
+	defer dentry.DecRef(ctx)
 
 	fd := &queueFD{queue: view}
 	err = fd.Init(r.mount, &dentry, inode.queue, inode.Locks(), flags)
