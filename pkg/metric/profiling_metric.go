@@ -116,7 +116,7 @@ func StartProfilingMetrics(profilingMetrics string, profilingRate time.Duration)
 		return fmt.Errorf("a value for --profiling-metrics was not specified; also no conditionally compiled metrics found, consider compiling runsc with --go_tag=condmetric_profiling")
 	}
 
-	if !profilingMetricsStarted.CompareAndSwap(0, 1) {
+	if !profilingMetricsStarted.CompareAndSwap(false, true) {
 		return errors.New("profiling metrics have already been started")
 	}
 	s := snapshots{

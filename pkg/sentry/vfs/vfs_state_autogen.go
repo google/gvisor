@@ -1185,6 +1185,7 @@ func (mnt *Mount) StateFields() []string {
 		"leader",
 		"groupID",
 		"umounted",
+		"locked",
 		"writers",
 	}
 }
@@ -1212,7 +1213,8 @@ func (mnt *Mount) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(13, &mnt.leader)
 	stateSinkObject.Save(14, &mnt.groupID)
 	stateSinkObject.Save(15, &mnt.umounted)
-	stateSinkObject.Save(16, &mnt.writers)
+	stateSinkObject.Save(16, &mnt.locked)
+	stateSinkObject.Save(17, &mnt.writers)
 }
 
 // +checklocksignore
@@ -1232,7 +1234,8 @@ func (mnt *Mount) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(13, &mnt.leader)
 	stateSourceObject.Load(14, &mnt.groupID)
 	stateSourceObject.Load(15, &mnt.umounted)
-	stateSourceObject.Load(16, &mnt.writers)
+	stateSourceObject.Load(16, &mnt.locked)
+	stateSourceObject.Load(17, &mnt.writers)
 	stateSourceObject.LoadValue(5, new(VirtualDentry), func(y any) { mnt.loadKey(y.(VirtualDentry)) })
 	stateSourceObject.AfterLoad(mnt.afterLoad)
 }
@@ -1580,6 +1583,7 @@ func (m *MountOptions) StateFields() []string {
 		"Flags",
 		"ReadOnly",
 		"GetFilesystemOptions",
+		"Locked",
 	}
 }
 
@@ -1591,6 +1595,7 @@ func (m *MountOptions) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &m.Flags)
 	stateSinkObject.Save(1, &m.ReadOnly)
 	stateSinkObject.Save(2, &m.GetFilesystemOptions)
+	stateSinkObject.Save(3, &m.Locked)
 }
 
 func (m *MountOptions) afterLoad() {}
@@ -1600,6 +1605,7 @@ func (m *MountOptions) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &m.Flags)
 	stateSourceObject.Load(1, &m.ReadOnly)
 	stateSourceObject.Load(2, &m.GetFilesystemOptions)
+	stateSourceObject.Load(3, &m.Locked)
 }
 
 func (o *OpenOptions) StateTypeName() string {

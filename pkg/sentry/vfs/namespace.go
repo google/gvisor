@@ -188,6 +188,9 @@ func (vfs *VirtualFilesystem) CloneMountNamespace(
 	newns.root = newRoot
 	newns.root.ns = newns
 	vfs.commitChildren(ctx, newRoot)
+	if ns.Owner != newns.Owner {
+		vfs.lockMountTree(newRoot)
+	}
 	return newns, nil
 }
 
