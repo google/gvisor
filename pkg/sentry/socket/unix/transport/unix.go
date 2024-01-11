@@ -378,6 +378,9 @@ type Receiver interface {
 	// called while holding any endpoint locks.
 	CloseNotify()
 
+	// IsRecvClosed returns true if reception of additional messages is closed.
+	IsRecvClosed() bool
+
 	// Readable returns if messages should be attempted to be received. This
 	// includes when read has been shutdown.
 	Readable() bool
@@ -452,6 +455,11 @@ func (q *queueReceiver) CloseNotify() {
 // CloseRecv implements Receiver.CloseRecv.
 func (q *queueReceiver) CloseRecv() {
 	q.readQueue.Close()
+}
+
+// IsRecvClosed implements Receiver.IsRecvClosed.
+func (q *queueReceiver) IsRecvClosed() bool {
+	return q.readQueue.isClosed()
 }
 
 // Readable implements Receiver.Readable.
@@ -687,6 +695,9 @@ type ConnectedEndpoint interface {
 	// must not be called while holding any endpoint locks.
 	CloseNotify()
 
+	// IsSendClosed returns true if transmission of additional messages is closed.
+	IsSendClosed() bool
+
 	// Writable returns if messages should be attempted to be sent. This
 	// includes when write has been shutdown.
 	Writable() bool
@@ -780,6 +791,11 @@ func (e *connectedEndpoint) CloseNotify() {
 // CloseSend implements ConnectedEndpoint.CloseSend.
 func (e *connectedEndpoint) CloseSend() {
 	e.writeQueue.Close()
+}
+
+// IsSendClosed implements ConnectedEndpoint.IsSendClosed.
+func (e *connectedEndpoint) IsSendClosed() bool {
+	return e.writeQueue.isClosed()
 }
 
 // Writable implements ConnectedEndpoint.Writable.

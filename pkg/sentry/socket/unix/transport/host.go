@@ -82,6 +82,12 @@ type HostConnectedEndpoint struct {
 
 	// stype is the type of Unix socket.
 	stype linux.SockType
+
+	// rdShutdown is true if receptions have been shutdown with SHUT_RD.
+	rdShutdown atomicbitops.Bool
+
+	// wrShutdown is true if transmissions have been shutdown with SHUT_WR.
+	wrShutdown atomicbitops.Bool
 }
 
 // init performs initialization required for creating new
@@ -192,10 +198,16 @@ func (c *HostConnectedEndpoint) CloseSend() {
 		// net/unix/af_unix.c:unix_shutdown.
 		panic(fmt.Sprintf("failed write shutdown on host socket %+v: %v", c, err))
 	}
+	c.wrShutdown.Store(true)
 }
 
 // CloseNotify implements ConnectedEndpoint.CloseNotify.
 func (c *HostConnectedEndpoint) CloseNotify() {}
+
+// IsSendClosed implements ConnectedEndpoint.IsSendClosed.
+func (c *HostConnectedEndpoint) IsSendClosed() bool {
+	return c.wrShutdown.Load()
+}
 
 // Writable implements ConnectedEndpoint.Writable.
 func (c *HostConnectedEndpoint) Writable() bool {
@@ -294,6 +306,12 @@ func (c *HostConnectedEndpoint) CloseRecv() {
 		// net/unix/af_unix.c:unix_shutdown.
 		panic(fmt.Sprintf("failed read shutdown on host socket %+v: %v", c, err))
 	}
+	c.rdShutdown.Store(true)
+}
+
+// IsRecvClosed implements Receiver.IsRecvClosed.
+func (c *HostConnectedEndpoint) IsRecvClosed() bool {
+	return c.rdShutdown.Load()
 }
 
 // Readable implements Receiver.Readable.
