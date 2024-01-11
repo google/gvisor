@@ -18,7 +18,6 @@ go_library(
         "atomicbitops_arm64.s",
         "atomicbitops_float64.go",
         "atomicbitops_noasm.go",
-        "bool.go",
     ],
     visibility = ["//:sandbox"],
     deps = [
