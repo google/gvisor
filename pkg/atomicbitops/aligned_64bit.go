@@ -12,8 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build !arm && !mips && !mipsle && !386
-// +build !arm,!mips,!mipsle,!386
+// BUILD CONSTRAINTS INSERTED BY GENRULE
 
 package atomicbitops
 
@@ -28,9 +27,6 @@ import (
 // int64.
 //
 // The default value is zero.
-//
-// Don't add fields to this struct. It is important that it remain the same
-// size as its builtin analogue.
 //
 // See aligned_32bit_unsafe.go in this directory for justification.
 //
@@ -121,9 +117,6 @@ func (i *Int64) ptr() *int64 {
 // Uint64 is an atomic uint64 that is guaranteed to be 64-bit
 // aligned, even on 32-bit systems. On most architectures, it's just a regular
 // uint64.
-//
-// Don't add fields to this struct. It is important that it remain the same
-// size as its builtin analogue.
 //
 // See aligned_unsafe.go in this directory for justification.
 //

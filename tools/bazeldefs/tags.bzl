@@ -33,10 +33,6 @@ archs = [
     "_s390x",
     "_sparc64",
     "_x86",
-
-    # Pseudo-architectures to group by word side.
-    "_32bit",
-    "_64bit",
 ]
 
 oses = [
