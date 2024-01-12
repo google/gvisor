@@ -320,7 +320,7 @@ func (mld *mldState) initializeAll() {
 //
 // Precondition: mld.ep.mu must be locked.
 func (mld *mldState) sendQueuedReports() {
-	mld.genericMulticastProtocol.SendQueuedReportsLocked()
+	mld.genericMulticastProtocol.SendQueuedReports()
 }
 
 // setVersion sets the MLD version.

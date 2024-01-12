@@ -143,9 +143,7 @@ func (m *mockMulticastGroupProtocol) initializeGroups() {
 }
 
 func (m *mockMulticastGroupProtocol) sendQueuedReports() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.mu.genericMulticastGroup.SendQueuedReportsLocked()
+	m.mu.genericMulticastGroup.SendQueuedReports()
 }
 
 // Enabled implements ip.MulticastGroupProtocol.

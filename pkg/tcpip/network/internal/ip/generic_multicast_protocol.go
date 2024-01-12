@@ -480,11 +480,12 @@ func (g *GenericMulticastProtocolState) InitializeGroupsLocked() {
 	}
 }
 
-// SendQueuedReportsLocked attempts to send reports for groups that failed to
+// SendQueuedReports attempts to send reports for groups that failed to
 // send reports during their last attempt.
-//
-// Precondition: g.protocolMU must be locked.
-func (g *GenericMulticastProtocolState) SendQueuedReportsLocked() {
+func (g *GenericMulticastProtocolState) SendQueuedReports() {
+	g.protocolMU.Lock()
+	defer g.protocolMU.Unlock()
+
 	if g.stateChangedReportV2TimerSet {
 		return
 	}

@@ -598,7 +598,7 @@ func (igmp *igmpState) initializeAll() {
 //
 // +checklocks:igmp.ep.mu
 func (igmp *igmpState) sendQueuedReports() {
-	igmp.genericMulticastProtocol.SendQueuedReportsLocked()
+	igmp.genericMulticastProtocol.SendQueuedReports()
 }
 
 // setVersion sets the IGMP version.
