@@ -317,7 +317,7 @@ func (q *fastPathDispatcher) loop(target *sharedContext) {
 			break
 		}
 
-		slowPath = !fpState.sentryFastPath() || slowPath
+		slowPath = !fastpath.sentryFastPath() || slowPath
 		processed = 0
 		now := cputicks()
 		for ctx = q.list.Front(); ctx != nil; ctx = next {
@@ -349,7 +349,7 @@ func (q *fastPathDispatcher) loop(target *sharedContext) {
 			startedSpinning = now
 			firstTimeout = false
 		} else {
-			fpState.usedSentryFastPath.Store(true)
+			fastpath.usedSentryFastPath.Store(true)
 		}
 		// If dispatcher has been spinning for too long, send this
 		// dispatcher to sleep.
