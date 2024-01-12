@@ -241,7 +241,7 @@ type fastPathState struct {
 }
 
 var (
-	fpState = fastPathState{
+	fastpath = fastPathState{
 		stubFPBackoff:   fastPathBackoffMin,
 		sentryFPBackoff: fastPathBackoffMin,
 		curState:        sentryOffStubOff,
@@ -262,10 +262,10 @@ func controlFastPath() {
 	for {
 		time.Sleep(recordingPeriod)
 
-		fpState.curState(&fpState)
+		fastpath.curState(&fastpath)
 		// Reset FP trackers.
-		fpState.usedStubFastPath.Store(false)
-		fpState.usedSentryFastPath.Store(false)
+		fastpath.usedStubFastPath.Store(false)
+		fastpath.usedSentryFastPath.Store(false)
 	}
 }
 

@@ -701,7 +701,7 @@ func (s *subprocess) incAwakeContexts() {
 	if nr > uint32(maxSysmsgThreads) {
 		return
 	}
-	fpState.nrMaxAwakeStubThreads.Add(1)
+	fastpath.nrMaxAwakeStubThreads.Add(1)
 }
 
 func (s *subprocess) decAwakeContexts() {
@@ -709,7 +709,7 @@ func (s *subprocess) decAwakeContexts() {
 	if nr >= uint32(maxSysmsgThreads) {
 		return
 	}
-	fpState.nrMaxAwakeStubThreads.Add(^uint32(0))
+	fastpath.nrMaxAwakeStubThreads.Add(^uint32(0))
 }
 
 // switchToApp is called from the main SwitchToApp entrypoint.

@@ -100,7 +100,7 @@ func (q *contextQueue) queuedContexts() uint32 {
 func (q *contextQueue) add(ctx *sharedContext) {
 	ctx.startWaitingTS = cputicks()
 
-	if fpState.stubFastPath() {
+	if fastpath.stubFastPath() {
 		q.enableFastPath()
 	} else {
 		q.disableFastPath()
@@ -119,7 +119,7 @@ func (q *contextQueue) add(ctx *sharedContext) {
 	atomic.StoreUint64(&q.ringbuffer[next], v)
 
 	if atomic.SwapUint32(&q.usedFastPath, 0) != 0 {
-		fpState.usedStubFastPath.Store(true)
+		fastpath.usedStubFastPath.Store(true)
 	}
 }
 
