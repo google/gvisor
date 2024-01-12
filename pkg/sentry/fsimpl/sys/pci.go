@@ -43,7 +43,7 @@ var (
 	// Files allowlisted for host passthrough. These files are read-only.
 	sysDevicesFiles = map[string]any{
 		"vendor": nil, "device": nil, "subsystem_vendor": nil, "subsystem_device": nil,
-		"revision": nil, "class": nil, "numa_node": nil, "iommu_group": nil,
+		"revision": nil, "class": nil, "numa_node": nil,
 		"resource": nil, "pci_address": nil, "dev": nil, "driver_version": nil,
 		"reset_count": nil, "write_open_count": nil, "status": nil,
 		"is_device_owned": nil, "device_owner": nil, "framework_version": nil,
@@ -102,7 +102,7 @@ func (fs *filesystem) newPCIDevicesDir(ctx context.Context, creds *auth.Credenti
 
 // Recursively build out sysfs directories according to the allowlisted files,
 // directories, and symlinks defined in this package.
-func (fs *filesystem) mirrorPCIBusDeviceDir(ctx context.Context, creds *auth.Credentials, dir string) (map[string]kernfs.Inode, error) {
+func (fs *filesystem) mirrorPCIBusDeviceDir(ctx context.Context, creds *auth.Credentials, dir string, iommuGroups map[string]string) (map[string]kernfs.Inode, error) {
 	subs := map[string]kernfs.Inode{}
 	dents, err := hostDirEntries(dir)
 	if err != nil {
@@ -119,7 +119,7 @@ func (fs *filesystem) mirrorPCIBusDeviceDir(ctx context.Context, creds *auth.Cre
 			if match := sysDevicesDirRegex.MatchString(dent); !match {
 				continue
 			}
-			contents, err := fs.mirrorPCIBusDeviceDir(ctx, creds, dentPath)
+			contents, err := fs.mirrorPCIBusDeviceDir(ctx, creds, dentPath, iommuGroups)
 			if err != nil {
 				return nil, err
 			}
@@ -129,20 +129,42 @@ func (fs *filesystem) mirrorPCIBusDeviceDir(ctx context.Context, creds *auth.Cre
 				subs[dent] = fs.newHostFile(ctx, creds, defaultSysMode, dentPath)
 			}
 		case unix.S_IFLNK:
-			// Both the device and PCI address entries are links to the original PCI
-			// device directory that's at the same place earlier in the dir tree.
-			if match := pciDeviceRegex.MatchString(dent); !(match || dent == "device") {
+			linkContent := ""
+			switch {
+			case pciDeviceRegex.MatchString(dent) || dent == "device":
+				pciDeviceName, err := pciDeviceName(dir)
+				if err != nil {
+					return nil, err
+				}
+				// Both the device and PCI address entries are links to the original PCI
+				// device directory that's at the same place earlier in the dir tree.
+				linkContent = fmt.Sprintf("../../../%s", pciDeviceName)
+			case dent == "iommu_group":
+				pciDeviceName, err := pciDeviceName(dir)
+				if err != nil {
+					return nil, err
+				}
+				iommuGroupNum, exist := iommuGroups[pciDeviceName]
+				if !exist {
+					return nil, fmt.Errorf("no IOMMU group is found for device %v", pciDeviceName)
+				}
+				linkContent = fmt.Sprintf("../../../kernel/iommu_groups/%s", iommuGroupNum)
+			default:
 				continue
 			}
-			pciDeviceName := pciDeviceRegex.FindString(dir)
-			if pciDeviceName == "" {
-				return nil, fmt.Errorf("could not populate sysfs pci symlink %s", dir)
-			}
-			linkContent := fmt.Sprintf("../../../%s", pciDeviceName)
 			subs[dent] = kernfs.NewStaticSymlink(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linkContent)
 		}
 	}
 	return subs, nil
+}
+
+// Infer a PCI device's name from its path.
+func pciDeviceName(pciDevicePath string) (string, error) {
+	pciDeviceName := pciDeviceRegex.FindString(pciDevicePath)
+	if pciDeviceName == "" {
+		return "", fmt.Errorf("no valid device name for the device path at %v", pciDevicePath)
+	}
+	return pciDeviceName, nil
 }
 
 func hostFileMode(path string) (uint32, error) {
