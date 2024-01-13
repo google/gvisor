@@ -1362,8 +1362,8 @@ func (e *endpoint) Close() {
 
 // AddAndAcquirePermanentAddress implements stack.AddressableEndpoint.
 func (e *endpoint) AddAndAcquirePermanentAddress(addr tcpip.AddressWithPrefix, properties stack.AddressProperties) (stack.AddressEndpoint, tcpip.Error) {
-	e.mu.RLock()
-	defer e.mu.RUnlock()
+	e.mu.Lock()
+	defer e.mu.Unlock()
 
 	ep, err := e.addressableEndpointState.AddAndAcquireAddress(addr, properties, stack.Permanent)
 	if err == nil {
@@ -1374,7 +1374,7 @@ func (e *endpoint) AddAndAcquirePermanentAddress(addr tcpip.AddressWithPrefix, p
 
 // sendQueuedReports sends queued igmp reports.
 //
-// +checklocksread:e.mu
+// +checklocks:e.mu
 // +checklocksalias:e.igmp.ep.mu=e.mu
 func (e *endpoint) sendQueuedReports() {
 	e.igmp.sendQueuedReports()
