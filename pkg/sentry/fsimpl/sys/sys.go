@@ -124,7 +124,8 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	}
 
 	productName := ""
-	var busSub map[string]kernfs.Inode
+	busSub := make(map[string]kernfs.Inode)
+	kernelSub := kernelDir(ctx, fs, creds)
 	if opts.InternalData != nil {
 		idata := opts.InternalData.(*InternalData)
 		productName = idata.ProductName
@@ -151,11 +152,14 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			if err != nil {
 				return nil, nil, err
 			}
-			busSub = map[string]kernfs.Inode{
-				"pci": fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
-					"devices": fs.newDir(ctx, creds, defaultSysDirMode, pciDevicesSub),
-				}),
+			busSub["pci"] = fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
+				"devices": fs.newDir(ctx, creds, defaultSysDirMode, pciDevicesSub),
+			})
+			iommuGroups, err := fs.mirrorIOMMUGroups(ctx, creds, iommuGroupSysPath)
+			if err != nil {
+				return nil, nil, err
 			}
+			kernelSub["iommu_groups"] = fs.newDir(ctx, creds, defaultSysDirMode, iommuGroups)
 		}
 	}
 
@@ -180,7 +184,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		"devices":  fs.newDir(ctx, creds, defaultSysDirMode, devicesSub),
 		"firmware": fs.newDir(ctx, creds, defaultSysDirMode, nil),
 		"fs":       fs.newDir(ctx, creds, defaultSysDirMode, fsDirChildren),
-		"kernel":   kernelDir(ctx, fs, creds),
+		"kernel":   fs.newDir(ctx, creds, defaultSysDirMode, kernelSub),
 		"module":   fs.newDir(ctx, creds, defaultSysDirMode, nil),
 		"power":    fs.newDir(ctx, creds, defaultSysDirMode, nil),
 	})
@@ -231,20 +235,54 @@ func pciDeviceIOMMUGroups(iommuGroupsPath string) (map[string]string, error) {
 	return iommuGroups, nil
 }
 
-func kernelDir(ctx context.Context, fs *filesystem, creds *auth.Credentials) kernfs.Inode {
+func kernelDir(ctx context.Context, fs *filesystem, creds *auth.Credentials) map[string]kernfs.Inode {
 	// Set up /sys/kernel/debug/kcov. Technically, debugfs should be
 	// mounted at debug/, but for our purposes, it is sufficient to keep it
 	// in sys.
-	var children map[string]kernfs.Inode
+	children := make(map[string]kernfs.Inode)
 	if coverage.KcovSupported() {
 		log.Debugf("Set up /sys/kernel/debug/kcov")
-		children = map[string]kernfs.Inode{
-			"debug": fs.newDir(ctx, creds, linux.FileMode(0700), map[string]kernfs.Inode{
-				"kcov": fs.newKcovFile(ctx, creds),
-			}),
+		children["debug"] = fs.newDir(ctx, creds, linux.FileMode(0700), map[string]kernfs.Inode{
+			"kcov": fs.newKcovFile(ctx, creds),
+		})
+	}
+	return children
+}
+
+// Recursively build out IOMMU directories from the host.
+func (fs *filesystem) mirrorIOMMUGroups(ctx context.Context, creds *auth.Credentials, dir string) (map[string]kernfs.Inode, error) {
+	subs := map[string]kernfs.Inode{}
+	dents, err := hostDirEntries(dir)
+	if err != nil {
+		// TPU before v5 doesn't need IOMMU, skip the whole process for the backward compatibility when the directory can't be found.
+		if err == unix.ENOENT {
+			log.Debugf("Skip the path at %v which cannot be found.", dir)
+			return nil, nil
+		}
+		return nil, err
+	}
+	for _, dent := range dents {
+		absPath := path.Join(dir, dent)
+		mode, err := hostFileMode(absPath)
+		if err != nil {
+			return nil, err
+		}
+		switch mode {
+		case unix.S_IFDIR:
+			contents, err := fs.mirrorIOMMUGroups(ctx, creds, absPath)
+			if err != nil {
+				return nil, err
+			}
+			subs[dent] = fs.newDir(ctx, creds, defaultSysMode, contents)
+		case unix.S_IFREG:
+			subs[dent] = fs.newHostFile(ctx, creds, defaultSysMode, absPath)
+		case unix.S_IFLNK:
+			if pciDeviceRegex.MatchString(dent) {
+				subs[dent] = kernfs.NewStaticSymlink(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), fmt.Sprintf("../../../../devices/pci0000:00/%s", dent))
+			}
 		}
 	}
-	return fs.newDir(ctx, creds, defaultSysDirMode, children)
+	return subs, nil
 }
 
 // Release implements vfs.FilesystemImpl.Release.
