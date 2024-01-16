@@ -1,5 +1,5 @@
-load("//tools:defs.bzl", "bzl_library")
 load("//test/packetdrill:defs.bzl", "packetdrill_test")
+load("//tools:defs.bzl", "bzl_library")
 
 package(
     default_applicable_licenses = ["//:license"],

@@ -1,5 +1,5 @@
-load("//tools:defs.bzl", "go_library")
 load("//pkg/sync/locking:locking.bzl", "declare_mutex")
+load("//tools:defs.bzl", "go_library")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(

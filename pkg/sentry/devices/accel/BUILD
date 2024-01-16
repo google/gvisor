@@ -1,5 +1,5 @@
-load("//tools/go_generics:defs.bzl", "go_template_instance")
 load("//tools:defs.bzl", "go_library")
+load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 licenses(["notice"])
 

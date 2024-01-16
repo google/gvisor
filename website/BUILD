@@ -1,6 +1,6 @@
+load("//images:defs.bzl", "docker_image")
 load("//tools:defs.bzl", "bzl_library", "pkg_tar")
 load("//website:defs.bzl", "doc", "docs")
-load("//images:defs.bzl", "docker_image")
 
 package(
     default_applicable_licenses = ["//:license"],
