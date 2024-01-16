@@ -25,6 +25,7 @@ go_test(
     srcs = ["gonet_test.go"],
     library = ":gonet",
     deps = [
+        "//pkg/sync",
         "//pkg/tcpip",
         "//pkg/tcpip/header",
         "//pkg/tcpip/link/loopback",
