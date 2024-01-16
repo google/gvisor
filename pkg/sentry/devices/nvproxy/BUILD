@@ -1,5 +1,5 @@
-load("//tools:defs.bzl", "go_library", "go_test")
 load("//pkg/sync/locking:locking.bzl", "declare_mutex")
+load("//tools:defs.bzl", "go_library", "go_test")
 
 package(default_applicable_licenses = ["//:license"])
 

@@ -1,5 +1,5 @@
-load("//tools:defs.bzl", "bzl_library", "more_shards", "most_shards")
 load("//test/runtimes:defs.bzl", "runtime_test")
+load("//tools:defs.bzl", "bzl_library", "more_shards", "most_shards")
 
 package(
     default_applicable_licenses = ["//:license"],

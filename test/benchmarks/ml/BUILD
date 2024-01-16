@@ -1,5 +1,5 @@
-load("//tools:defs.bzl", "go_library")
 load("//test/benchmarks:defs.bzl", "benchmark_test")
+load("//tools:defs.bzl", "go_library")
 
 package(
     default_applicable_licenses = ["//:license"],
