@@ -561,6 +561,12 @@ func (e *connectionedEndpoint) Readiness(mask waiter.EventMask) waiter.EventMask
 		if mask&waiter.WritableEvents != 0 && e.connected.Writable() {
 			ready |= waiter.WritableEvents
 		}
+		if mask&(waiter.EventHUp|waiter.EventRdHUp) != 0 && e.receiver.IsRecvClosed() {
+			ready |= waiter.EventRdHUp
+			if mask&waiter.EventHUp != 0 && e.connected.IsSendClosed() {
+				ready |= waiter.EventHUp
+			}
+		}
 	case e.ListeningLocked():
 		if mask&waiter.ReadableEvents != 0 && (len(e.acceptedChan) > 0 || e.isBoundSocketReadable()) {
 			ready |= waiter.ReadableEvents

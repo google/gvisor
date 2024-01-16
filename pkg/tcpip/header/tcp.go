@@ -217,9 +217,13 @@ const (
 	TCPHeaderMaximumSize = TCPMinimumSize + TCPOptionsMaximumSize
 
 	// TCPTotalHeaderMaximumSize is the maximum size of headers from all layers in
-	// a TCP packet. This will need to be updated if we decide to support more
-	// layer 2 protocols or features like IP tunneling.
-	TCPTotalHeaderMaximumSize = TCPHeaderMaximumSize + IPv4MaximumHeaderSize + EthernetMaximumSize
+	// a TCP packet. It analogous to MAX_TCP_HEADER in Linux.
+	//
+	// TODO(b/319936470): Investigate why this needs to be at least 140 bytes. In
+	// Linux this value is at least 160, but in theory we should be able to use
+	// 138. In practice anything less than 140 starts to break GSO on gVNIC
+	// hardware.
+	TCPTotalHeaderMaximumSize = 160
 
 	// TCPProtocolNumber is TCP's transport protocol number.
 	TCPProtocolNumber tcpip.TransportProtocolNumber = 6

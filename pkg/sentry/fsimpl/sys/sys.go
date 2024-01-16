@@ -19,6 +19,7 @@ import (
 	"bytes"
 	"fmt"
 	"os"
+	"path"
 	"strconv"
 
 	"golang.org/x/sys/unix"
@@ -39,6 +40,7 @@ const (
 	defaultSysMode           = linux.FileMode(0444)
 	defaultSysDirMode        = linux.FileMode(0755)
 	defaultMaxCachedDentries = uint64(1000)
+	iommuGroupSysPath        = "/sys/kernel/iommu_groups/"
 )
 
 // FilesystemType implements vfs.FilesystemType.
@@ -127,7 +129,11 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		idata := opts.InternalData.(*InternalData)
 		productName = idata.ProductName
 		if idata.EnableTPUProxyPaths {
-			pciMainBusSub, err := fs.mirrorPCIBusDeviceDir(ctx, creds, pciMainBusDevicePath)
+			deviceToIommuGroup, err := pciDeviceIOMMUGroups(iommuGroupSysPath)
+			if err != nil {
+				return nil, nil, err
+			}
+			pciMainBusSub, err := fs.mirrorPCIBusDeviceDir(ctx, creds, pciMainBusDevicePath, deviceToIommuGroup)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -195,6 +201,34 @@ func cpuDir(ctx context.Context, fs *filesystem, creds *auth.Credentials) kernfs
 		children[fmt.Sprintf("cpu%d", i)] = fs.newDir(ctx, creds, linux.FileMode(0555), nil)
 	}
 	return fs.newDir(ctx, creds, defaultSysDirMode, children)
+}
+
+// Returns a map from a PCI device name to its IOMMU group if available.
+func pciDeviceIOMMUGroups(iommuGroupsPath string) (map[string]string, error) {
+	// IOMMU groups are organizd as iommu_group_path/$GROUP, where $GROUP is
+	// the IOMMU group number of which the device is a memeber.
+	iommuGroupNums, err := hostDirEntries(iommuGroupsPath)
+	if err != nil {
+		// When IOMMU is not enabled, skip the rest of the process.
+		if err == unix.ENOENT {
+			return nil, nil
+		}
+		return nil, err
+	}
+	// The returned map from PCI device name to its IOMMU group.
+	iommuGroups := map[string]string{}
+	for _, iommuGroupNum := range iommuGroupNums {
+		groupDevicesPath := path.Join(iommuGroupsPath, iommuGroupNum, "devices")
+		pciDeviceNames, err := hostDirEntries(groupDevicesPath)
+		if err != nil {
+			return nil, err
+		}
+		// An IOMMU group may include multiple devices.
+		for _, pciDeviceName := range pciDeviceNames {
+			iommuGroups[pciDeviceName] = iommuGroupNum
+		}
+	}
+	return iommuGroups, nil
 }
 
 func kernelDir(ctx context.Context, fs *filesystem, creds *auth.Credentials) kernfs.Inode {

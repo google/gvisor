@@ -79,6 +79,8 @@ func (c *HostConnectedEndpoint) StateFields() []string {
 		"fd",
 		"addr",
 		"stype",
+		"rdShutdown",
+		"wrShutdown",
 	}
 }
 
@@ -91,6 +93,8 @@ func (c *HostConnectedEndpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &c.fd)
 	stateSinkObject.Save(2, &c.addr)
 	stateSinkObject.Save(3, &c.stype)
+	stateSinkObject.Save(4, &c.rdShutdown)
+	stateSinkObject.Save(5, &c.wrShutdown)
 }
 
 // +checklocksignore
@@ -99,6 +103,8 @@ func (c *HostConnectedEndpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &c.fd)
 	stateSourceObject.Load(2, &c.addr)
 	stateSourceObject.Load(3, &c.stype)
+	stateSourceObject.Load(4, &c.rdShutdown)
+	stateSourceObject.Load(5, &c.wrShutdown)
 	stateSourceObject.AfterLoad(c.afterLoad)
 }
 
