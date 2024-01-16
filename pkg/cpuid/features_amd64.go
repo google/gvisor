@@ -127,6 +127,14 @@ func (f Feature) set(s ChangeableSet, on bool) {
 			}
 		}
 		s.Set(In{Eax: uint32(extendedFeatures)}, out)
+	case 7:
+		out := s.Query(In{Eax: uint32(extendedFeatureInfo)})
+		if on {
+			out.Edx |= f.bit()
+		} else {
+			out.Edx &^= f.bit()
+		}
+		s.Set(In{Eax: uint32(extendedFeatureInfo)}, out)
 	}
 }
 
@@ -170,6 +178,9 @@ func (f Feature) check(fs FeatureSet) bool {
 			return ((dx &^ block6DuplicateMask) & f.bit()) != 0
 		}
 		return false
+	case 7:
+		_, _, _, dx := fs.query(extendedFeatureInfo)
+		return (dx & f.bit()) != 0
 	default:
 		return false
 	}
@@ -389,6 +400,43 @@ const (
 	X86Feature3DNOW    Feature = 6*32 + 31
 )
 
+// Block 7 constants are the extended features bits in
+// CPUID.(EAX=07H,ECX=0):EDX.
+const (
+	_ Feature = 7*32 + iota // edx bit 0 is reserved.
+	_                       // edx bit 1 is reserved.
+	X86FeatureAVX512_4VNNIW
+	X86FeatureAVX512_4FMAPS
+	X86FeatureFSRM
+	_ // edx bit 5 is not used in Linux.
+	_ // edx bit 6 is reserved.
+	_ // edx bit 7 is reserved.
+	X86FeatureAVX512_VP2INTERSECT
+	X86FeatureSRBDS_CTRL
+	X86FeatureMD_CLEAR
+	X86FeatureRTM_ALWAYS_ABORT
+	_ // edx bit 12 is reserved.
+	X86FeatureTSX_FORCE_ABORT
+	X86FeatureSERIALIZE
+	X86FeatureHYBRID_CPU
+	X86FeatureTSXLDTRK
+	_ // edx bit 17 is reserved.
+	X86FeaturePCONFIG
+	X86FeatureARCH_LBR
+	X86FeatureIBT
+	_ // edx bit 21 is reserved.
+	X86FeatureAMX_BF16
+	X86FeatureAVX512_FP16
+	X86FeatureAMX_TILE
+	X86FeatureAMX_INT8
+	X86FeatureSPEC_CTRL
+	X86FeatureINTEL_STIBP
+	X86FeatureFLUSH_L1D
+	X86FeatureARCH_CAPABILITIES
+	X86FeatureCORE_CAPABILITIES
+	X86FeatureSPEC_CTRL_SSBD
+)
+
 // These are the extended floating point state features. They are used to
 // enumerate floating point features in XCR0, XSTATE_BV, etc.
 const (
@@ -569,6 +617,32 @@ var allFeatures = map[Feature]allFeatureInfo{
 	X86FeatureLM:       {"lm", true},
 	X86Feature3DNOWEXT: {"3dnowext", true},
 	X86Feature3DNOW:    {"3dnow", true},
+
+	// Block 7.
+	X86FeatureAVX512_4VNNIW:       {"avx512_4vnniw", true},
+	X86FeatureAVX512_4FMAPS:       {"avx512_4fmaps", true},
+	X86FeatureFSRM:                {"fsrm", true},
+	X86FeatureAVX512_VP2INTERSECT: {"avx512_vp2intersect", true},
+	X86FeatureSRBDS_CTRL:          {"srbds_ctrl", false},
+	X86FeatureMD_CLEAR:            {"md_clear", true},
+	X86FeatureRTM_ALWAYS_ABORT:    {"rtm_always_abort", false},
+	X86FeatureTSX_FORCE_ABORT:     {"tsx_force_abort", false},
+	X86FeatureSERIALIZE:           {"serialize", true},
+	X86FeatureHYBRID_CPU:          {"hybrid_cpu", false},
+	X86FeatureTSXLDTRK:            {"tsxldtrk", true},
+	X86FeaturePCONFIG:             {"pconfig", true},
+	X86FeatureARCH_LBR:            {"arch_lbr", true},
+	X86FeatureIBT:                 {"ibt", true},
+	X86FeatureAMX_BF16:            {"amx_bf16", true},
+	X86FeatureAVX512_FP16:         {"avx512_fp16", true},
+	X86FeatureAMX_TILE:            {"amx_tile", true},
+	X86FeatureAMX_INT8:            {"amx_int8", true},
+	X86FeatureSPEC_CTRL:           {"spec_ctrl", false},
+	X86FeatureINTEL_STIBP:         {"intel_stibp", false},
+	X86FeatureFLUSH_L1D:           {"flush_l1d", true},
+	X86FeatureARCH_CAPABILITIES:   {"arch_capabilities", true},
+	X86FeatureCORE_CAPABILITIES:   {"core_capabilities", false},
+	X86FeatureSPEC_CTRL_SSBD:      {"spec_ctrl_ssbd", false},
 }
 
 // linuxBlockOrder defines the order in which linux organizes the feature
@@ -576,7 +650,7 @@ var allFeatures = map[Feature]allFeatureInfo{
 // which doesn't match well here, so for the /proc/cpuinfo generation we simply
 // re-map the blocks to Linux's ordering and then go through the bits in each
 // block.
-var linuxBlockOrder = []block{1, 6, 0, 5, 2, 4, 3}
+var linuxBlockOrder = []block{1, 6, 0, 5, 2, 4, 3, 7}
 
 func archFlagOrder(fn func(Feature)) {
 	for _, b := range linuxBlockOrder {
