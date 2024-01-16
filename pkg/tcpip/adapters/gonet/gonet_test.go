@@ -25,6 +25,7 @@ import (
 	"time"
 
 	"golang.org/x/net/nettest"
+	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
 	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
@@ -1002,4 +1003,26 @@ func TestInterruptListender(t *testing.T) {
 
 func TestNetTest(t *testing.T) {
 	nettest.TestConn(t, makePipe)
+}
+
+// NOTE(gvisor.dev/issue/9885): Regression test.
+func TestDeadlineTimerAfterZeroValue(t *testing.T) {
+	timer := &deadlineTimer{}
+	timer.init()
+
+	wg := sync.WaitGroup{}
+	ch := timer.readCancel()
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		select {
+		case <-ch:
+		case <-time.After(1 * time.Second):
+			t.Fail()
+		}
+	}()
+	timer.SetReadDeadline(time.Now().Add(10 * time.Second))
+	timer.SetReadDeadline(time.Time{})
+	timer.SetReadDeadline(time.Unix(1, 0))
+	wg.Wait()
 }

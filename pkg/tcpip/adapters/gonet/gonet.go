@@ -179,6 +179,7 @@ func (d *deadlineTimer) setDeadline(cancelCh *chan struct{}, timer **time.Timer,
 	// "A zero value for t means I/O operations will not time out."
 	// - net.Conn.SetDeadline
 	if t.IsZero() {
+		*timer = nil
 		return
 	}
 
