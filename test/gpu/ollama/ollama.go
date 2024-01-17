@@ -356,7 +356,17 @@ type ConversationContext []int
 func (llm *Ollama) Prompt(ctx context.Context, prompt *Prompt) (*Response, error) {
 	resp, err := jsonPost[PromptJSON, ResponseJSON](ctx, llm, "/api/generate", prompt.json())
 	if err != nil {
-		return nil, err
+		if ctx.Err() != nil {
+			return nil, fmt.Errorf("%w (+ context err: %v)", err, ctx.Err())
+		}
+		serverLogs, logsErr := llm.container.Logs(ctx)
+		if logsErr != nil {
+			return nil, fmt.Errorf("%w (could not get server logs: %v)", err, logsErr)
+		}
+		if serverLogs != "" {
+			return nil, fmt.Errorf("%w; ollama server logs:\n%v\n(end of ollama server logs)", err, serverLogs)
+		}
+		return nil, fmt.Errorf("%w (server logs are empty)", err)
 	}
 	return &Response{data: resp}, nil
 }
