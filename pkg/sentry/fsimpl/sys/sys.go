@@ -58,9 +58,9 @@ type InternalData struct {
 	// EnableTPUProxyPaths is whether to populate sysfs paths used by hardware
 	// accelerators.
 	EnableTPUProxyPaths bool
-	// PCIDevicePathPrefix is a prefix for the PCI device paths. It is useful for
+	// TestSysfsPathPrefix is a prefix for the sysfs paths. It is useful for
 	// unit testing.
-	PCIDevicePathPrefix string
+	TestSysfsPathPrefix string
 }
 
 // filesystem implements vfs.FilesystemImpl.
@@ -133,11 +133,11 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		idata := opts.InternalData.(*InternalData)
 		productName = idata.ProductName
 		if idata.EnableTPUProxyPaths {
-			deviceToIommuGroup, err := pciDeviceIOMMUGroups(path.Join(idata.PCIDevicePathPrefix, iommuGroupSysPath))
+			deviceToIommuGroup, err := pciDeviceIOMMUGroups(path.Join(idata.TestSysfsPathPrefix, iommuGroupSysPath))
 			if err != nil {
 				return nil, nil, err
 			}
-			pciPath := path.Join(idata.PCIDevicePathPrefix, pciMainBusDevicePath)
+			pciPath := path.Join(idata.TestSysfsPathPrefix, pciMainBusDevicePath)
 			pciMainBusSub, err := fs.mirrorPCIBusDeviceDir(ctx, creds, pciPath, deviceToIommuGroup)
 			if err != nil {
 				return nil, nil, err
@@ -159,7 +159,8 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			busSub["pci"] = fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
 				"devices": fs.newDir(ctx, creds, defaultSysDirMode, pciDevicesSub),
 			})
-			iommuGroups, err := fs.mirrorIOMMUGroups(ctx, creds, iommuGroupSysPath)
+			iommuPath := path.Join(idata.TestSysfsPathPrefix, iommuGroupSysPath)
+			iommuGroups, err := fs.mirrorIOMMUGroups(ctx, creds, iommuPath)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -213,8 +214,8 @@ func cpuDir(ctx context.Context, fs *filesystem, creds *auth.Credentials) kernfs
 
 // Returns a map from a PCI device name to its IOMMU group if available.
 func pciDeviceIOMMUGroups(iommuGroupsPath string) (map[string]string, error) {
-	// IOMMU groups are organizd as iommu_group_path/$GROUP, where $GROUP is
-	// the IOMMU group number of which the device is a memeber.
+	// IOMMU groups are organized as iommu_group_path/$GROUP, where $GROUP is
+	// the IOMMU group number of which the device is a member.
 	iommuGroupNums, err := hostDirEntries(iommuGroupsPath)
 	if err != nil {
 		// When IOMMU is not enabled, skip the rest of the process.

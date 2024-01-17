@@ -44,7 +44,7 @@ func newTestSystem(t *testing.T, pciTestDir string) *testutil.System {
 		GetFilesystemOptions: vfs.GetFilesystemOptions{
 			InternalData: &sys.InternalData{
 				EnableTPUProxyPaths: pciTestDir != "",
-				PCIDevicePathPrefix: pciTestDir,
+				TestSysfsPathPrefix: pciTestDir,
 			},
 		},
 	}
@@ -114,8 +114,8 @@ func TestCgroupMountpointExists(t *testing.T) {
 // Check that sysfs creates the required PCI paths for V4 TPUs.
 func TestEnableTPUProxyPathsV4(t *testing.T) {
 	// Set up the fs tree that will be mirrored in the sentry.
-	pciTestDir := t.TempDir()
-	accelPath := path.Join(pciTestDir, "sys", "devices", "pci0000:00", "0000:00:04.0", "accel", "accel0")
+	sysfsTestDir := t.TempDir()
+	accelPath := path.Join(sysfsTestDir, "sys", "devices", "pci0000:00", "0000:00:04.0", "accel", "accel0")
 	if err := os.MkdirAll(accelPath, 0755); err != nil {
 		t.Fatalf("Failed to create accel directory: %v", err)
 	}
@@ -134,14 +134,14 @@ func TestEnableTPUProxyPathsV4(t *testing.T) {
 	if _, err := os.Create(path.Join(accelPath, "pci_address")); err != nil {
 		t.Fatalf("Failed to create pci_address: %v", err)
 	}
-	busPath := path.Join(pciTestDir, "sys", "bus", "pci", "devices")
+	busPath := path.Join(sysfsTestDir, "sys", "bus", "pci", "devices")
 	if err := os.MkdirAll(busPath, 0755); err != nil {
 		t.Fatalf("Failed to create bus directory: %v", err)
 	}
 	if err := os.Symlink(path.Join("..", "..", "..", "devices", "pci0000:00", "0000:00:04.0"), path.Join(busPath, "0000:00:04.0")); err != nil {
 		t.Fatalf("Failed to symlink bus directory: %v", err)
 	}
-	classAccelPath := path.Join(pciTestDir, "sys", "class", "accel")
+	classAccelPath := path.Join(sysfsTestDir, "sys", "class", "accel")
 	if err := os.MkdirAll(classAccelPath, 0755); err != nil {
 		t.Fatalf("Failed to create accel directory: %v", err)
 	}
@@ -149,7 +149,7 @@ func TestEnableTPUProxyPathsV4(t *testing.T) {
 		t.Fatalf("Failed to symlink accel directory: %v", err)
 	}
 
-	s := newTestSystem(t, pciTestDir)
+	s := newTestSystem(t, sysfsTestDir)
 	defer s.Destroy()
 
 	pop := s.PathOpAtRoot("/devices/pci0000:00")
@@ -171,5 +171,58 @@ func TestEnableTPUProxyPathsV4(t *testing.T) {
 	pop = s.PathOpAtRoot("/class/accel")
 	s.AssertAllDirentTypes(s.ListDirents(pop), map[string]testutil.DirentType{
 		"accel0": linux.DT_LNK,
+	})
+}
+
+func TestEnableTPUProxyPathsV5(t *testing.T) {
+	// Set up the fs tree that will be mirrored in the sentry.
+	sysfsTestDir := t.TempDir()
+	accelPath := path.Join(sysfsTestDir, "sys", "devices", "pci0000:00", "0000:00:04.0", "accel", "accel0")
+	if err := os.MkdirAll(accelPath, 0755); err != nil {
+		t.Fatalf("Failed to create accel directory: %v", err)
+	}
+	if err := os.Symlink(path.Join("..", "..", "..", "0000:00:04.0"), path.Join(accelPath, "0000:00:04.0")); err != nil {
+		t.Fatalf("Failed to symlink accel directory: %v", err)
+	}
+	if err := os.Symlink(path.Join("..", "..", "..", "0000:00:04.0"), path.Join(accelPath, "device")); err != nil {
+		t.Fatalf("Failed to symlink accel device directory: %v", err)
+	}
+	busPath := path.Join(sysfsTestDir, "sys", "bus", "pci", "devices")
+	if err := os.MkdirAll(busPath, 0755); err != nil {
+		t.Fatalf("Failed to create bus directory: %v", err)
+	}
+	if err := os.Symlink(path.Join("..", "..", "..", "devices", "pci0000:00", "0000:00:04.0"), path.Join(busPath, "0000:00:04.0")); err != nil {
+		t.Fatalf("Failed to symlink bus directory: %v", err)
+	}
+	classAccelPath := path.Join(sysfsTestDir, "sys", "class", "accel")
+	if err := os.MkdirAll(classAccelPath, 0755); err != nil {
+		t.Fatalf("Failed to create accel directory: %v", err)
+	}
+	if err := os.Symlink(path.Join("..", "..", "devices", "pci0000:00", "0000:00:04.0", "accel", "accel0"), path.Join(classAccelPath, "accel0")); err != nil {
+		t.Fatalf("Failed to symlink accel directory: %v", err)
+	}
+	iommuPath := path.Join(sysfsTestDir, "sys", "kernel", "iommu_groups", "0", "devices")
+	if err := os.MkdirAll(iommuPath, 0755); err != nil {
+		t.Fatalf("Failed to create iommu_groups directory: %v", err)
+	}
+	if err := os.Symlink(path.Join("..", "..", "..", "devices", "pci0000:00", "0000:00:04.0"), path.Join(iommuPath, "0000:00:04.0")); err != nil {
+		t.Fatalf("Failed to symlink bus directory: %v", err)
+	}
+	if err := os.Symlink(path.Join("..", "..", "..", "kernel", "iommu_groups", "0000:00:04.0"), path.Join(accelPath, "iommu_group")); err != nil {
+		t.Fatalf("Failed to symlink iommu_groups directory: %v", err)
+	}
+
+	s := newTestSystem(t, sysfsTestDir)
+	defer s.Destroy()
+
+	pop := s.PathOpAtRoot("/devices/pci0000:00/0000:00:04.0/accel/accel0")
+	s.AssertAllDirentTypes(s.ListDirents(pop), map[string]testutil.DirentType{
+		"0000:00:04.0": linux.DT_LNK,
+		"device":       linux.DT_LNK,
+		"iommu_group":  linux.DT_LNK,
+	})
+	pop = s.PathOpAtRoot("/kernel/iommu_groups/0/devices")
+	s.AssertAllDirentTypes(s.ListDirents(pop), map[string]testutil.DirentType{
+		"0000:00:04.0": linux.DT_LNK,
 	})
 }
