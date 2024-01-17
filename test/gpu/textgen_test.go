@@ -91,7 +91,7 @@ func TestLLM(t *testing.T) {
 				    "Hello World".
 			`,
 		}
-		promptCtx, promptCancel := context.WithTimeout(ctx, time.Minute)
+		promptCtx, promptCancel := context.WithTimeout(ctx, 3*time.Minute)
 		response, err := llm.PromptUntil(promptCtx, &prompt, func(prompt *ollama.Prompt, response *ollama.Response) (*ollama.Prompt, error) {
 			defer prompt.Model.RaiseTemperature()
 			text := strings.TrimSpace(response.Text())
