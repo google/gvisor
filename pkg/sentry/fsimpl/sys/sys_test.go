@@ -16,6 +16,8 @@ package sys_test
 
 import (
 	"fmt"
+	"os"
+	"path"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -27,7 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
-func newTestSystem(t *testing.T) *testutil.System {
+func newTestSystem(t *testing.T, pciTestDir string) *testutil.System {
 	k, err := testutil.Boot()
 	if err != nil {
 		t.Fatalf("Failed to create test kernel: %v", err)
@@ -38,7 +40,16 @@ func newTestSystem(t *testing.T) *testutil.System {
 		AllowUserMount: true,
 	})
 
-	mns, err := k.VFS().NewMountNamespace(ctx, creds, "", sys.Name, &vfs.MountOptions{}, nil)
+	mountOpts := &vfs.MountOptions{
+		GetFilesystemOptions: vfs.GetFilesystemOptions{
+			InternalData: &sys.InternalData{
+				EnableTPUProxyPaths: pciTestDir != "",
+				PCIDevicePathPrefix: pciTestDir,
+			},
+		},
+	}
+
+	mns, err := k.VFS().NewMountNamespace(ctx, creds, "", sys.Name, mountOpts, nil)
 	if err != nil {
 		t.Fatalf("Failed to create new mount namespace: %v", err)
 	}
@@ -46,7 +57,7 @@ func newTestSystem(t *testing.T) *testutil.System {
 }
 
 func TestReadCPUFile(t *testing.T) {
-	s := newTestSystem(t)
+	s := newTestSystem(t, "" /*pciTestDir*/)
 	defer s.Destroy()
 	k := kernel.KernelFromContext(s.Ctx)
 	maxCPUCores := k.ApplicationCores()
@@ -71,7 +82,7 @@ func TestReadCPUFile(t *testing.T) {
 }
 
 func TestSysRootContainsExpectedEntries(t *testing.T) {
-	s := newTestSystem(t)
+	s := newTestSystem(t, "" /*pciTestDir*/)
 	defer s.Destroy()
 	pop := s.PathOpAtRoot("/")
 	s.AssertAllDirentTypes(s.ListDirents(pop), map[string]testutil.DirentType{
@@ -90,7 +101,7 @@ func TestSysRootContainsExpectedEntries(t *testing.T) {
 
 func TestCgroupMountpointExists(t *testing.T) {
 	// Note: The mountpoint is only created if cgroups are available.
-	s := newTestSystem(t)
+	s := newTestSystem(t, "" /*pciTestDir*/)
 	defer s.Destroy()
 	pop := s.PathOpAtRoot("/fs")
 	s.AssertAllDirentTypes(s.ListDirents(pop), map[string]testutil.DirentType{
@@ -98,4 +109,67 @@ func TestCgroupMountpointExists(t *testing.T) {
 	})
 	pop = s.PathOpAtRoot("/fs/cgroup")
 	s.AssertAllDirentTypes(s.ListDirents(pop), map[string]testutil.DirentType{ /*empty*/ })
+}
+
+// Check that sysfs creates the required PCI paths for V4 TPUs.
+func TestEnableTPUProxyPathsV4(t *testing.T) {
+	// Set up the fs tree that will be mirrored in the sentry.
+	pciTestDir := t.TempDir()
+	accelPath := path.Join(pciTestDir, "sys", "devices", "pci0000:00", "0000:00:04.0", "accel", "accel0")
+	if err := os.MkdirAll(accelPath, 0755); err != nil {
+		t.Fatalf("Failed to create accel directory: %v", err)
+	}
+	if err := os.Symlink(path.Join("..", "..", "..", "0000:00:04.0"), path.Join(accelPath, "0000:00:04.0")); err != nil {
+		t.Fatalf("Failed to symlink accel directory: %v", err)
+	}
+	if err := os.Symlink(path.Join("..", "..", "..", "0000:00:04.0"), path.Join(accelPath, "device")); err != nil {
+		t.Fatalf("Failed to symlink accel device directory: %v", err)
+	}
+	if _, err := os.Create(path.Join(accelPath, "chip_model")); err != nil {
+		t.Fatalf("Failed to create chip_model: %v", err)
+	}
+	if _, err := os.Create(path.Join(accelPath, "device_owner")); err != nil {
+		t.Fatalf("Failed to create device_owner: %v", err)
+	}
+	if _, err := os.Create(path.Join(accelPath, "pci_address")); err != nil {
+		t.Fatalf("Failed to create pci_address: %v", err)
+	}
+	busPath := path.Join(pciTestDir, "sys", "bus", "pci", "devices")
+	if err := os.MkdirAll(busPath, 0755); err != nil {
+		t.Fatalf("Failed to create bus directory: %v", err)
+	}
+	if err := os.Symlink(path.Join("..", "..", "..", "devices", "pci0000:00", "0000:00:04.0"), path.Join(busPath, "0000:00:04.0")); err != nil {
+		t.Fatalf("Failed to symlink bus directory: %v", err)
+	}
+	classAccelPath := path.Join(pciTestDir, "sys", "class", "accel")
+	if err := os.MkdirAll(classAccelPath, 0755); err != nil {
+		t.Fatalf("Failed to create accel directory: %v", err)
+	}
+	if err := os.Symlink(path.Join("..", "..", "devices", "pci0000:00", "0000:00:04.0", "accel", "accel0"), path.Join(classAccelPath, "accel0")); err != nil {
+		t.Fatalf("Failed to symlink accel directory: %v", err)
+	}
+
+	s := newTestSystem(t, pciTestDir)
+	defer s.Destroy()
+
+	pop := s.PathOpAtRoot("/devices/pci0000:00")
+	s.AssertAllDirentTypes(s.ListDirents(pop), map[string]testutil.DirentType{
+		"0000:00:04.0": linux.DT_DIR,
+	})
+	pop = s.PathOpAtRoot("/devices/pci0000:00/0000:00:04.0/accel/accel0")
+	s.AssertAllDirentTypes(s.ListDirents(pop), map[string]testutil.DirentType{
+		"0000:00:04.0": linux.DT_LNK,
+		"device":       linux.DT_LNK,
+		"chip_model":   linux.DT_REG,
+		"device_owner": linux.DT_REG,
+		"pci_address":  linux.DT_REG,
+	})
+	pop = s.PathOpAtRoot("/bus/pci/devices")
+	s.AssertAllDirentTypes(s.ListDirents(pop), map[string]testutil.DirentType{
+		"0000:00:04.0": linux.DT_LNK,
+	})
+	pop = s.PathOpAtRoot("/class/accel")
+	s.AssertAllDirentTypes(s.ListDirents(pop), map[string]testutil.DirentType{
+		"accel0": linux.DT_LNK,
+	})
 }
