@@ -377,3 +377,30 @@ func ExpectedDriverChecksum(version DriverVersion) (string, bool) {
 	}
 	return abi.checksum, true
 }
+
+// SupportedIoctls returns the ioctl numbers that are supported by nvproxy at
+// a given version.
+func SupportedIoctls(version DriverVersion) (frontendIoctls map[uint32]struct{}, uvmIoctls map[uint32]struct{}, controlCmds map[uint32]struct{}, allocClasses map[uint32]struct{}, ok bool) {
+	abiCons, ok := abis[version]
+	if !ok {
+		return nil, nil, nil, nil, false
+	}
+	abi := abiCons.cons()
+	frontendIoctls = make(map[uint32]struct{})
+	for ioc := range abi.frontendIoctl {
+		frontendIoctls[ioc] = struct{}{}
+	}
+	uvmIoctls = make(map[uint32]struct{})
+	for ioc := range abi.uvmIoctl {
+		uvmIoctls[ioc] = struct{}{}
+	}
+	controlCmds = make(map[uint32]struct{})
+	for cmd := range abi.controlCmd {
+		controlCmds[cmd] = struct{}{}
+	}
+	allocClasses = make(map[uint32]struct{})
+	for class := range abi.allocationClass {
+		allocClasses[class] = struct{}{}
+	}
+	return
+}
