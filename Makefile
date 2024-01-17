@@ -293,7 +293,8 @@ cos-gpu-smoke-tests: gpu-smoke-images $(RUNTIME_BIN)
 # This is a superset of those needed for smoke tests.
 # It includes non-GPU images that are used as part of GPU tests,
 # e.g. busybox and python.
-gpu-images: gpu-smoke-images load-gpu_pytorch load-gpu_ollama load-basic_busybox load-basic_python
+# TODO(b/306706609): Add "load-gpu_ollama" and "load-basic_busybox" back here.
+gpu-images: gpu-smoke-images load-gpu_pytorch load-basic_python
 .PHONY: gpu-images
 
 gpu-all-tests: gpu-images gpu-smoke-tests $(RUNTIME_BIN)
