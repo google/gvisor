@@ -480,7 +480,7 @@ static void prep_fpstate_for_sigframe(void *buf, uint32_t user_size,
 
   sw_bytes->magic1 = FP_XSTATE_MAGIC1;
   sw_bytes->extended_size = user_size + FP_XSTATE_MAGIC2_SIZE;
-  sw_bytes->xfeatures = ~(0ULL);
+  sw_bytes->xfeatures = ~(0ULL) ^ (XCR0_AMX_MASK);
   sw_bytes->xstate_size = user_size;
   *(uint32_t *)(buf + user_size) = use_xsave ? FP_XSTATE_MAGIC2 : 0;
 }
