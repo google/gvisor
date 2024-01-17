@@ -58,6 +58,9 @@ type InternalData struct {
 	// EnableTPUProxyPaths is whether to populate sysfs paths used by hardware
 	// accelerators.
 	EnableTPUProxyPaths bool
+	// PCIDevicePathPrefix is a prefix for the PCI device paths. It is useful for
+	// unit testing.
+	PCIDevicePathPrefix string
 }
 
 // filesystem implements vfs.FilesystemImpl.
@@ -130,17 +133,18 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		idata := opts.InternalData.(*InternalData)
 		productName = idata.ProductName
 		if idata.EnableTPUProxyPaths {
-			deviceToIommuGroup, err := pciDeviceIOMMUGroups(iommuGroupSysPath)
+			deviceToIommuGroup, err := pciDeviceIOMMUGroups(path.Join(idata.PCIDevicePathPrefix, iommuGroupSysPath))
 			if err != nil {
 				return nil, nil, err
 			}
-			pciMainBusSub, err := fs.mirrorPCIBusDeviceDir(ctx, creds, pciMainBusDevicePath, deviceToIommuGroup)
+			pciPath := path.Join(idata.PCIDevicePathPrefix, pciMainBusDevicePath)
+			pciMainBusSub, err := fs.mirrorPCIBusDeviceDir(ctx, creds, pciPath, deviceToIommuGroup)
 			if err != nil {
 				return nil, nil, err
 			}
 			devicesSub["pci0000:00"] = fs.newDir(ctx, creds, defaultSysDirMode, pciMainBusSub)
 
-			deviceDirs, err := fs.newDeviceClassDir(ctx, creds, []string{accelDevice, vfioDevice})
+			deviceDirs, err := fs.newDeviceClassDir(ctx, creds, []string{accelDevice, vfioDevice}, pciPath)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -148,7 +152,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			for tpuDeviceType, symlinkDir := range deviceDirs {
 				classSub[tpuDeviceType] = fs.newDir(ctx, creds, defaultSysDirMode, symlinkDir)
 			}
-			pciDevicesSub, err := fs.newPCIDevicesDir(ctx, creds)
+			pciDevicesSub, err := fs.newBusPCIDevicesDir(ctx, creds, pciPath)
 			if err != nil {
 				return nil, nil, err
 			}
