@@ -66,6 +66,7 @@ func runSandboxedPython(ctx context.Context, logger testutil.Logger, code string
 // Then it asks it to write a unit test that verifies that
 // this text is a correct translation.
 func TestLLM(t *testing.T) {
+	t.Skip("Test is disabled until support for large images is better.")
 	ctx := context.Background()
 	// Run the LLM.
 	llmContainer := dockerutil.MakeContainer(ctx, t)
