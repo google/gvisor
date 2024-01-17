@@ -39,11 +39,11 @@ func TestNVOS21ParamsSize(t *testing.T) {
 
 // TestAllSupportedHashesPresent tests that all the supported versions in nvproxy have hash entries
 // in this tool's map. If you're here because of failures run:
-// `make sudo TARGETS=//tools/gpu:main ARGS="checksum"`and fix mismatches in supported drivers.
+// `make sudo TARGETS=//tools/gpu:main ARGS="validate_checksum"`and fix mismatches.
 func TestAllSupportedHashesPresent(t *testing.T) {
 	Init()
-	for version, checksum := range GetSupportedDriversAndChecksums() {
-		if checksum == "" {
+	for version, abi := range abis {
+		if abi.checksum == "" {
 			t.Errorf("unexpected empty value for driver %q", version.String())
 		}
 	}

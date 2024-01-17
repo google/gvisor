@@ -34,10 +34,15 @@ func TestVersionInstalled(t *testing.T) {
 	getFunction := func() (nvproxy.DriverVersion, error) { return version, nil }
 	downloadFunction := func(context.Context, string) (io.ReadCloser, error) { return nil, fmt.Errorf("should not get here") }
 	installer := &Installer{
-		requestedVersion:       version,
-		getSupportedDriverFunc: func() map[nvproxy.DriverVersion]string { return map[nvproxy.DriverVersion]string{version: checksum} },
-		getCurrentDriverFunc:   getFunction,
-		downloadFunction:       downloadFunction,
+		requestedVersion: version,
+		expectedChecksumFunc: func(v nvproxy.DriverVersion) (string, bool) {
+			if v == version {
+				return checksum, true
+			}
+			return "", false
+		},
+		getCurrentDriverFunc: getFunction,
+		downloadFunc:         downloadFunction,
 	}
 	if err := installer.MaybeInstall(ctx); err != nil {
 		t.Fatalf("Installation failed: %v", err)
@@ -50,10 +55,8 @@ func TestVersionNotSupported(t *testing.T) {
 	unsupportedVersion := nvproxy.NewDriverVersion(1, 2, 3)
 	installer := &Installer{
 		requestedVersion: unsupportedVersion,
-		getSupportedDriverFunc: func() map[nvproxy.DriverVersion]string {
-			return map[nvproxy.DriverVersion]string{
-				nvproxy.NewDriverVersion(2, 3, 4): "other version",
-			}
+		expectedChecksumFunc: func(v nvproxy.DriverVersion) (string, bool) {
+			return "", false
 		},
 	}
 	err := installer.MaybeInstall(ctx)
@@ -74,12 +77,13 @@ func TestShaMismatch(t *testing.T) {
 		getCurrentDriverFunc: func() (nvproxy.DriverVersion, error) {
 			return nvproxy.DriverVersion{}, nil
 		},
-		getSupportedDriverFunc: func() map[nvproxy.DriverVersion]string {
-			return map[nvproxy.DriverVersion]string{
-				version: "mismatched checksum",
+		expectedChecksumFunc: func(v nvproxy.DriverVersion) (string, bool) {
+			if v == version {
+				return "mismatch", true
 			}
+			return "", false
 		},
-		downloadFunction: func(context.Context, string) (io.ReadCloser, error) {
+		downloadFunc: func(context.Context, string) (io.ReadCloser, error) {
 			reader := bytes.NewReader([]byte("some content"))
 			return io.NopCloser(reader), nil
 		},
@@ -104,16 +108,17 @@ func TestDriverInstalls(t *testing.T) {
 		getCurrentDriverFunc: func() (nvproxy.DriverVersion, error) {
 			return nvproxy.DriverVersion{}, nil
 		},
-		getSupportedDriverFunc: func() map[nvproxy.DriverVersion]string {
-			return map[nvproxy.DriverVersion]string{
-				version: checksum,
+		expectedChecksumFunc: func(v nvproxy.DriverVersion) (string, bool) {
+			if v == version {
+				return checksum, true
 			}
+			return "", false
 		},
-		downloadFunction: func(context.Context, string) (io.ReadCloser, error) {
+		downloadFunc: func(context.Context, string) (io.ReadCloser, error) {
 			reader := bytes.NewReader(content)
 			return io.NopCloser(reader), nil
 		},
-		installFunction: func(_ string) error {
+		installFunc: func(_ string) error {
 			return nil
 		},
 	}
