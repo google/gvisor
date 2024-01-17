@@ -122,8 +122,8 @@ restored_gs:
 //   - the memory address of the thread_context is loaded in %rcx.
 .macro save_fpstate
   lea offsetof_thread_context_fpstate(%rcx), %rdi
-  movl $0xffffffff, %eax
-  movl $0xffffffff, %edx
+  movl $XCR0_EAX, %eax
+  movl $XCR0_EDX, %edx
   movl __export_arch_state+offsetof_arch_state_xsave_mode(%rip), %esi
   cmpl $XSAVE_MODE_XSAVEOPT, %esi
   jl use_xsave
@@ -153,8 +153,8 @@ fpu_saved:
   cmpl $XSAVE_MODE_FXSAVE, %eax
   jz use_fxrstor
 use_xrstor:
-  movl $0xffffffff, %eax
-  movl $0xffffffff, %edx
+  movl $XCR0_EAX, %eax
+  movl $XCR0_EDX, %edx
   xrstor (%rdi)
   jmp fpu_restored
 use_fxrstor:

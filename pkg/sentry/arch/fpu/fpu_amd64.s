@@ -22,6 +22,13 @@
 // FXSAVE/XSAVE area. (Intel SDM Vol. 1, Table 10-2 "Format of an FXSAVE Area")
 #define MXCSR_OFFSET	24
 
+// The value for XCR0 is defined to xsave/xrstor everything except for AMX
+// regions.
+// TODO(gvisor.dev/issues/9896): Implement AMX Support.
+#define XCR0_AMX_MASK ((1 << 17) | (1 << 18))
+#define XCR0_EAX      (0xffffffff ^ XCR0_AMX_MASK)
+#define XCR0_EDX      0xffffffff
+
 // initX86FPState initializes floating point state.
 //
 // func initX86FPState(data *FloatingPointData, useXsave bool)
@@ -66,8 +73,8 @@ TEXT ·initX86FPState(SB), $24-9
 	MOVL	$MXCSR_DEFAULT, MXCSR_OFFSET(DI)
 
 	// Initialize registers with XRSTOR.
-	MOVL	$0xffffffff, AX
-	MOVL	$0xffffffff, DX
+	MOVL	$XCR0_EAX, AX
+	MOVL	$XCR0_EDX, DX
 	BYTE $0x48; BYTE $0x0f; BYTE $0xae; BYTE $0x2f // XRSTOR64 0(DI)
 
 	// Now that all the state has been reset, write it back out to the

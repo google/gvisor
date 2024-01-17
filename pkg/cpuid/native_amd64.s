@@ -23,3 +23,16 @@ TEXT ·native(SB),NOSPLIT|NOFRAME,$0-24
 	MOVL CX, ret_Ecx+16(FP)
 	MOVL DX, ret_Edx+20(FP)
 	RET
+
+// xgetbv reads an extended control register.
+//
+// The code corresponds to:
+//
+// 	xgetbv
+//
+TEXT ·xgetbv(SB),NOSPLIT|NOFRAME,$0-16
+	MOVQ reg+0(FP), CX
+	BYTE $0x0f; BYTE $0x01; BYTE $0xd0;
+	MOVL AX, ret+8(FP)
+	MOVL DX, ret+12(FP)
+	RET
