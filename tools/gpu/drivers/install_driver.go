@@ -43,25 +43,23 @@ func init() {
 type Installer struct {
 	requestedVersion nvproxy.DriverVersion
 	// include functions so they can be mocked in tests.
-	getSupportedDriverFunc func() map[nvproxy.DriverVersion]string
-	getCurrentDriverFunc   func() (nvproxy.DriverVersion, error)
-	downloadFunction       func(context.Context, string) (io.ReadCloser, error)
-	installFunction        func(string) error
+	expectedChecksumFunc func(nvproxy.DriverVersion) (string, bool)
+	getCurrentDriverFunc func() (nvproxy.DriverVersion, error)
+	downloadFunc         func(context.Context, string) (io.ReadCloser, error)
+	installFunc          func(string) error
 }
 
 // NewInstaller returns a driver installer instance.
 func NewInstaller(requestedVersion string, latest bool) (*Installer, error) {
 	ret := &Installer{
-		getSupportedDriverFunc: nvproxy.GetSupportedDriversAndChecksums,
-		getCurrentDriverFunc:   getCurrentDriver,
-		downloadFunction:       DownloadDriver,
-		installFunction:        installDriver,
+		expectedChecksumFunc: nvproxy.ExpectedDriverChecksum,
+		getCurrentDriverFunc: getCurrentDriver,
+		downloadFunc:         DownloadDriver,
+		installFunc:          installDriver,
 	}
 	switch {
 	case latest:
-		for v := range ret.getSupportedDriverFunc() {
-			ret.requestedVersion = v.IsGreaterThan(ret.requestedVersion)
-		}
+		ret.requestedVersion = nvproxy.LatestDriver()
 	default:
 		d, err := nvproxy.DriverVersionFrom(requestedVersion)
 		if err != nil {
@@ -77,8 +75,7 @@ func NewInstaller(requestedVersion string, latest bool) (*Installer, error) {
 // driver currently installed does not match the requested version.
 func (i *Installer) MaybeInstall(ctx context.Context) error {
 	// If we don't support the driver, don't attempt to install it.
-	driver, supported := i.getRequestedDriver()
-	if !supported {
+	if _, ok := i.expectedChecksumFunc(i.requestedVersion); !ok {
 		return fmt.Errorf("requested driver %q is not supported", i.requestedVersion)
 	}
 
@@ -86,7 +83,7 @@ func (i *Installer) MaybeInstall(ctx context.Context) error {
 	if err != nil {
 		log.Warningf("failed to get current driver: %v", err)
 	}
-	if existingDriver.Equals(driver) {
+	if existingDriver.Equals(i.requestedVersion) {
 		log.Infof("Driver already installed: %s", i.requestedVersion)
 		return nil
 	}
@@ -100,7 +97,7 @@ func (i *Installer) MaybeInstall(ctx context.Context) error {
 	}
 
 	log.Infof("Downloading driver: %s", i.requestedVersion)
-	reader, err := i.downloadFunction(ctx, i.requestedVersion.String())
+	reader, err := i.downloadFunc(ctx, i.requestedVersion.String())
 	if err != nil {
 		return fmt.Errorf("failed to download driver: %w", err)
 	}
@@ -110,7 +107,7 @@ func (i *Installer) MaybeInstall(ctx context.Context) error {
 		return fmt.Errorf("failed to open driver file: %w", err)
 	}
 	defer os.Remove(f.Name())
-	if err := i.writeAndCheck(f, reader, driver); err != nil {
+	if err := i.writeAndCheck(f, reader); err != nil {
 		f.Close()
 		return fmt.Errorf("writeAndCheck: %w", err)
 	}
@@ -122,7 +119,7 @@ func (i *Installer) MaybeInstall(ctx context.Context) error {
 	}
 	log.Infof("Driver downloaded: %s", i.requestedVersion)
 	log.Infof("Installing driver: %s", i.requestedVersion)
-	if err := i.installFunction(f.Name()); err != nil {
+	if err := i.installFunc(f.Name()); err != nil {
 		return fmt.Errorf("failed to install driver: %w", err)
 	}
 	log.Infof("Installation Complete!")
@@ -140,7 +137,7 @@ func (i *Installer) uninstallDriver(ctx context.Context, driverVersion string) e
 	return nil
 }
 
-func (i *Installer) writeAndCheck(f *os.File, reader io.ReadCloser, driverVersion nvproxy.DriverVersion) error {
+func (i *Installer) writeAndCheck(f *os.File, reader io.ReadCloser) error {
 	checksum := sha256.New()
 	buf := make([]byte, 1024*1024)
 	for {
@@ -159,9 +156,12 @@ func (i *Installer) writeAndCheck(f *os.File, reader io.ReadCloser, driverVersio
 		}
 	}
 	gotChecksum := fmt.Sprintf("%x", checksum.Sum(nil))
-	wantChecksum := i.getSupportedDriverFunc()[driverVersion]
+	wantChecksum, ok := i.expectedChecksumFunc(i.requestedVersion)
+	if !ok {
+		return fmt.Errorf("requested driver %q is not supported", i.requestedVersion)
+	}
 	if gotChecksum != wantChecksum {
-		return fmt.Errorf("driver %q checksum mismatch: got %q, want %q", driverVersion, gotChecksum, wantChecksum)
+		return fmt.Errorf("driver %q checksum mismatch: got %q, want %q", i.requestedVersion, gotChecksum, wantChecksum)
 	}
 	return nil
 }
@@ -183,15 +183,6 @@ func getCurrentDriver() (nvproxy.DriverVersion, error) {
 	return nvproxy.DriverVersionFrom(strings.TrimSpace(string(out)))
 }
 
-func (i *Installer) getRequestedDriver() (nvproxy.DriverVersion, bool) {
-	for version := range i.getSupportedDriverFunc() {
-		if version == i.requestedVersion {
-			return version, true
-		}
-	}
-	return nvproxy.DriverVersion{}, false
-}
-
 // ListSupportedDrivers prints the driver to stderr in a format that can be
 // consumed by the Makefile to iterate tests across drivers.
 func ListSupportedDrivers(outfile string) error {
@@ -205,11 +196,10 @@ func ListSupportedDrivers(outfile string) error {
 		out = f
 	}
 
-	supportedDrivers := nvproxy.GetSupportedDriversAndChecksums()
-	list := make([]string, 0, len(supportedDrivers))
-	for version := range supportedDrivers {
+	var list []string
+	nvproxy.ForEachSupportDriver(func(version nvproxy.DriverVersion, checksum string) {
 		list = append(list, version.String())
-	}
+	})
 	if _, err := out.WriteString(strings.Join(list, " ") + "\n"); err != nil {
 		return fmt.Errorf("failed to write to outfile: %w", err)
 	}

@@ -27,12 +27,14 @@ import (
 )
 
 const (
-	installCmdStr       = "install"
-	installDescription  = "installs a driver on the host machine"
-	checksumCmdStr      = "checksum"
-	checksumDescription = "computes the sha256 checksum for a given driver version"
-	listCmdStr          = "list"
-	listDescription     = "lists the supported drivers"
+	installCmdStr               = "install"
+	installDescription          = "installs a driver on the host machine"
+	checksumCmdStr              = "checksum"
+	checksumDescription         = "computes the sha256 checksum for a given driver version"
+	validateChecksumCmdStr      = "validate_checksum"
+	validateChecksumDescription = "validates the checksum of all supported drivers"
+	listCmdStr                  = "list"
+	listDescription             = "lists the supported drivers"
 )
 
 var (
@@ -41,17 +43,22 @@ var (
 	latest     = installCmd.Bool("latest", false, "install the latest supported driver")
 	version    = installCmd.String("version", "", "version of the driver")
 
+	// Computes the sha256 checksum for a given driver's .run file from the nvidia site.
+	checksumCmd     = flag.NewFlagSet(checksumCmdStr, flag.ContinueOnError)
+	checksumVersion = checksumCmd.String("version", "", "version of the driver")
+
 	// Validates all supported driver's checksums of each driver's .run file from the nvidia site.
-	checksumCmd = flag.NewFlagSet(checksumCmdStr, flag.ContinueOnError)
+	validateChecksumCmd = flag.NewFlagSet(validateChecksumCmdStr, flag.ContinueOnError)
 
 	// The list command returns the list of supported drivers from this tool.
 	listCmd = flag.NewFlagSet(listCmdStr, flag.ContinueOnError)
 	outfile = listCmd.String("outfile", "", "if set, write the list output to this file")
 
 	commandSet = map[*flag.FlagSet]string{
-		installCmd:  installDescription,
-		checksumCmd: checksumDescription,
-		listCmd:     listDescription,
+		installCmd:          installDescription,
+		checksumCmd:         checksumDescription,
+		validateChecksumCmd: validateChecksumDescription,
+		listCmd:             listDescription,
 	}
 )
 
@@ -61,7 +68,7 @@ func printUsage() {
 
 Available commands:`
 	fmt.Println(usage)
-	for _, f := range []*flag.FlagSet{installCmd, checksumCmd, listCmd} {
+	for _, f := range []*flag.FlagSet{installCmd, checksumCmd, validateChecksumCmd, listCmd} {
 		fmt.Printf("%s	%s\n", f.Name(), commandSet[f])
 		f.PrintDefaults()
 	}
@@ -73,6 +80,7 @@ func main() {
 		printUsage()
 		os.Exit(1)
 	}
+	nvproxy.Init()
 	switch os.Args[1] {
 	case installCmdStr:
 		if err := installCmd.Parse(os.Args[2:]); err != nil {
@@ -94,18 +102,30 @@ func main() {
 			os.Exit(1)
 		}
 
-		for version, storedChecksum := range nvproxy.GetSupportedDriversAndChecksums() {
-			checksum, err := drivers.ChecksumDriver(ctx, version.String())
+		checksum, err := drivers.ChecksumDriver(ctx, *checksumVersion)
+		if err != nil {
+			log.Warningf("Failed to compute checksum: %v", err)
+			os.Exit(1)
+		}
+		fmt.Printf("Checksum: %q\n", checksum)
+	case validateChecksumCmdStr:
+		if err := validateChecksumCmd.Parse(os.Args[2:]); err != nil {
+			log.Warningf("%s failed with: %v", validateChecksumCmdStr, err)
+			os.Exit(1)
+		}
+
+		nvproxy.ForEachSupportDriver(func(version nvproxy.DriverVersion, checksum string) {
+			wantChecksum, err := drivers.ChecksumDriver(ctx, version.String())
 			if err != nil {
 				log.Warningf("error on version %q: %v", version.String(), err)
-				continue
+				return
 			}
-			if checksum != storedChecksum {
-				log.Warningf("Checksum Mismatch on driver %q got: %q want: %q", version.String(), storedChecksum, checksum)
-				continue
+			if checksum != wantChecksum {
+				log.Warningf("Checksum mismatch on driver %q got: %q want: %q", version.String(), checksum, wantChecksum)
+				return
 			}
 			log.Infof("Checksum matched on driver %q.", version.String())
-		}
+		})
 	case listCmdStr:
 		if err := listCmd.Parse(os.Args[2:]); err != nil {
 			log.Warningf("%s failed with: %v", listCmdStr, err)
