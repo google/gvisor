@@ -36,7 +36,6 @@ func BenchmarkTensorflowDashboard(b *testing.B) {
 // See: https://github.com/aymericdamien/TensorFlow-Examples
 func BenchmarkTensorflow(b *testing.B) {
 	workloads := map[string]string{
-		"GradientDecisionTree": "2_BasicModels/gradient_boosted_decision_tree.py",
 		"Kmeans":               "2_BasicModels/kmeans.py",
 		"LogisticRegression":   "2_BasicModels/logistic_regression.py",
 		"NearestNeighbor":      "2_BasicModels/nearest_neighbor.py",
