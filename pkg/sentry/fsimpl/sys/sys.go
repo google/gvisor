@@ -58,6 +58,9 @@ type InternalData struct {
 	// EnableTPUProxyPaths is whether to populate sysfs paths used by hardware
 	// accelerators.
 	EnableTPUProxyPaths bool
+	// TestSysfsPathPrefix is a prefix for the sysfs paths. It is useful for
+	// unit testing.
+	TestSysfsPathPrefix string
 }
 
 // filesystem implements vfs.FilesystemImpl.
@@ -130,17 +133,18 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		idata := opts.InternalData.(*InternalData)
 		productName = idata.ProductName
 		if idata.EnableTPUProxyPaths {
-			deviceToIommuGroup, err := pciDeviceIOMMUGroups(iommuGroupSysPath)
+			deviceToIommuGroup, err := pciDeviceIOMMUGroups(path.Join(idata.TestSysfsPathPrefix, iommuGroupSysPath))
 			if err != nil {
 				return nil, nil, err
 			}
-			pciMainBusSub, err := fs.mirrorPCIBusDeviceDir(ctx, creds, pciMainBusDevicePath, deviceToIommuGroup)
+			pciPath := path.Join(idata.TestSysfsPathPrefix, pciMainBusDevicePath)
+			pciMainBusSub, err := fs.mirrorPCIBusDeviceDir(ctx, creds, pciPath, deviceToIommuGroup)
 			if err != nil {
 				return nil, nil, err
 			}
 			devicesSub["pci0000:00"] = fs.newDir(ctx, creds, defaultSysDirMode, pciMainBusSub)
 
-			deviceDirs, err := fs.newDeviceClassDir(ctx, creds, []string{accelDevice, vfioDevice})
+			deviceDirs, err := fs.newDeviceClassDir(ctx, creds, []string{accelDevice, vfioDevice}, pciPath)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -148,14 +152,15 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			for tpuDeviceType, symlinkDir := range deviceDirs {
 				classSub[tpuDeviceType] = fs.newDir(ctx, creds, defaultSysDirMode, symlinkDir)
 			}
-			pciDevicesSub, err := fs.newPCIDevicesDir(ctx, creds)
+			pciDevicesSub, err := fs.newBusPCIDevicesDir(ctx, creds, pciPath)
 			if err != nil {
 				return nil, nil, err
 			}
 			busSub["pci"] = fs.newDir(ctx, creds, defaultSysDirMode, map[string]kernfs.Inode{
 				"devices": fs.newDir(ctx, creds, defaultSysDirMode, pciDevicesSub),
 			})
-			iommuGroups, err := fs.mirrorIOMMUGroups(ctx, creds, iommuGroupSysPath)
+			iommuPath := path.Join(idata.TestSysfsPathPrefix, iommuGroupSysPath)
+			iommuGroups, err := fs.mirrorIOMMUGroups(ctx, creds, iommuPath)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -209,8 +214,8 @@ func cpuDir(ctx context.Context, fs *filesystem, creds *auth.Credentials) kernfs
 
 // Returns a map from a PCI device name to its IOMMU group if available.
 func pciDeviceIOMMUGroups(iommuGroupsPath string) (map[string]string, error) {
-	// IOMMU groups are organizd as iommu_group_path/$GROUP, where $GROUP is
-	// the IOMMU group number of which the device is a memeber.
+	// IOMMU groups are organized as iommu_group_path/$GROUP, where $GROUP is
+	// the IOMMU group number of which the device is a member.
 	iommuGroupNums, err := hostDirEntries(iommuGroupsPath)
 	if err != nil {
 		// When IOMMU is not enabled, skip the rest of the process.

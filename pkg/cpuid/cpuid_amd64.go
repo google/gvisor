@@ -361,8 +361,22 @@ func (fs FeatureSet) Intel() bool {
 // If xSaveInfo isn't supported, cpuid will not fault but will
 // return bogus values.
 var (
-	xsaveSize    = native(In{Eax: uint32(xSaveInfo)}).Ebx
-	maxXsaveSize = native(In{Eax: uint32(xSaveInfo)}).Ecx
+	xsaveSize       = native(In{Eax: uint32(xSaveInfo)}).Ebx
+	maxXsaveSize    = native(In{Eax: uint32(xSaveInfo)}).Ecx
+	amxTileCfgSize  = native(In{Eax: uint32(xSaveInfo), Ecx: 17}).Eax
+	amxTileDataSize = native(In{Eax: uint32(xSaveInfo), Ecx: 18}).Eax
+)
+
+const (
+	// XCR0AMXMask are the bits that enable xsave to operate on AMX TILECFG
+	// and TILEDATA.
+	//
+	// Note: TILECFG and TILEDATA are always either both enabled or both
+	//       disabled.
+	//
+	// See Intel® 64 and IA-32 Architectures Software Developer’s Manual Vol.1
+	// section 13.3 for details.
+	XCR0AMXMask = uint64((1 << 17) | (1 << 18))
 )
 
 // ExtendedStateSize returns the number of bytes needed to save the "extended
@@ -370,13 +384,17 @@ var (
 // Extended state includes floating point registers, and other cpu state that's
 // not associated with the normal task context.
 //
+// We do not support enabling AMX within gVisor, therefore always exclude
+// AMXExtendedStateSize.
+// TODO(gvisor.dev/issues/9896): Implement AMX Support.
+//
 // Note: the return value matches the size of signal FP state frames.
 // Look at check_xstate_in_sigframe() in the kernel sources for more details.
 //
 //go:nosplit
 func (fs FeatureSet) ExtendedStateSize() (size, align uint) {
 	if fs.UseXsave() {
-		return uint(xsaveSize), 64
+		return uint(xsaveSize) - fs.AMXExtendedStateSize(), 64
 	}
 
 	// If we don't support xsave, we fall back to fxsave, which requires
@@ -384,7 +402,20 @@ func (fs FeatureSet) ExtendedStateSize() (size, align uint) {
 	return 512, 16
 }
 
+// AMXExtendedStateSize returns the number of bytes within the "extended state"
+// area that is used for AMX.
+func (fs FeatureSet) AMXExtendedStateSize() uint {
+	xcr0 := xgetbv(0)
+	if (xcr0 & XCR0AMXMask) != 0 {
+		return uint(amxTileCfgSize + amxTileDataSize)
+	}
+	return 0
+}
+
 // ValidXCR0Mask returns the valid bits in control register XCR0.
+//
+// Always exclude AMX bits, because we do not support it.
+// TODO(gvisor.dev/issues/9896): Implement AMX Support.
 //
 //go:nosplit
 func (fs FeatureSet) ValidXCR0Mask() uint64 {
@@ -392,7 +423,7 @@ func (fs FeatureSet) ValidXCR0Mask() uint64 {
 		return 0
 	}
 	ax, _, _, dx := fs.query(xSaveInfo)
-	return uint64(dx)<<32 | uint64(ax)
+	return (uint64(dx)<<32 | uint64(ax)) ^ XCR0AMXMask
 }
 
 // UseXsave returns the choice of fp state saving instruction.

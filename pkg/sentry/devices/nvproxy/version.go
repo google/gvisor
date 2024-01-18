@@ -71,25 +71,25 @@ func (v DriverVersion) Equals(other DriverVersion) bool {
 	return v.major == other.major && v.minor == other.minor && v.patch == other.patch
 }
 
-// IsGreaterThan returns the "greater" driver version.
-// IsGreaterThan returns true if v is more recent than other, assuming v and other are on the same
+// isGreaterThan returns true if v is greater than other.
+// isGreaterThan returns true if v is more recent than other, assuming v and other are on the same
 // dev branch.
-func (v DriverVersion) IsGreaterThan(other DriverVersion) DriverVersion {
+func (v DriverVersion) isGreaterThan(other DriverVersion) bool {
 	switch {
 	case v.major > other.major:
-		return v
+		return true
 	case other.major > v.major:
-		return other
+		return false
 	case v.minor > other.minor:
-		return v
+		return true
 	case other.minor > v.minor:
-		return other
+		return false
 	case v.patch > other.patch:
-		return v
+		return true
 	case other.patch > v.patch:
-		return other
+		return false
 	default:
-		return v
+		return true
 	}
 }
 
@@ -138,7 +138,7 @@ var abisOnce sync.Once
 // Note: runfileChecksum is the checksum of the .run file of the driver installer for linux from
 // nvidia.
 // To add a new version, add in support as normal and add the "addDriverABI" call for your version.
-// Run `make sudo TARGETS=//tools/gpu:main ARGS="checksum"` and fill in mismatches.
+// Run `make sudo TARGETS=//tools/gpu:main ARGS="checksum --version={}"` to get checksum.
 func addDriverABI(major, minor, patch int, runfileChecksum string, cons driverABIFunc) driverABIFunc {
 	if abis == nil {
 		abis = make(map[DriverVersion]abiConAndChecksum)
@@ -348,11 +348,59 @@ func Init() {
 	})
 }
 
-// GetSupportedDriversAndChecksums returns supported driver ABIs.
-func GetSupportedDriversAndChecksums() map[DriverVersion]string {
-	versions := make(map[DriverVersion]string, len(abis))
+// ForEachSupportDriver calls f on all supported drivers.
+// Precondition: Init() must have been called.
+func ForEachSupportDriver(f func(version DriverVersion, checksum string)) {
 	for version, abi := range abis {
-		versions[version] = abi.checksum
+		f(version, abi.checksum)
 	}
-	return versions
+}
+
+// LatestDriver returns the latest supported driver.
+// Precondition: Init() must have been called.
+func LatestDriver() DriverVersion {
+	var ret DriverVersion
+	for version := range abis {
+		if version.isGreaterThan(ret) {
+			ret = version
+		}
+	}
+	return ret
+}
+
+// ExpectedDriverChecksum returns the expected checksum for a given version.
+// Precondition: Init() must have been called.
+func ExpectedDriverChecksum(version DriverVersion) (string, bool) {
+	abi, ok := abis[version]
+	if !ok {
+		return "", false
+	}
+	return abi.checksum, true
+}
+
+// SupportedIoctls returns the ioctl numbers that are supported by nvproxy at
+// a given version.
+func SupportedIoctls(version DriverVersion) (frontendIoctls map[uint32]struct{}, uvmIoctls map[uint32]struct{}, controlCmds map[uint32]struct{}, allocClasses map[uint32]struct{}, ok bool) {
+	abiCons, ok := abis[version]
+	if !ok {
+		return nil, nil, nil, nil, false
+	}
+	abi := abiCons.cons()
+	frontendIoctls = make(map[uint32]struct{})
+	for ioc := range abi.frontendIoctl {
+		frontendIoctls[ioc] = struct{}{}
+	}
+	uvmIoctls = make(map[uint32]struct{})
+	for ioc := range abi.uvmIoctl {
+		uvmIoctls[ioc] = struct{}{}
+	}
+	controlCmds = make(map[uint32]struct{})
+	for cmd := range abi.controlCmd {
+		controlCmds[cmd] = struct{}{}
+	}
+	allocClasses = make(map[uint32]struct{})
+	for class := range abi.allocationClass {
+		allocClasses[class] = struct{}{}
+	}
+	return
 }

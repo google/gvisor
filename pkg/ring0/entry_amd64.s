@@ -88,6 +88,13 @@
 #define PTRACE_FS_BASE  168 // +checkoffset linux PtraceRegs.Fs_base
 #define PTRACE_GS_BASE  176 // +checkoffset linux PtraceRegs.Gs_base
 
+// The value for XCR0 is defined to xsave/xrstor everything except for AMX
+// regions.
+// TODO(gvisor.dev/issues/9896): Implement AMX Support.
+#define XCR0_AMX_MASK ((1 << 17) | (1 << 18))
+#define XCR0_EAX      (0xffffffff ^ XCR0_AMX_MASK)
+#define XCR0_EDX      0xffffffff
+
 // Saves a register set.
 //
 // This is a macro because it may need to executed in contents where a stack is
@@ -229,8 +236,8 @@ TEXT ·doSwitchToUser(SB),NOSPLIT,$16-48
 	// Use xrstor to restore all available fp state. For now, we restore
 	// everything unconditionally by setting the implicit operand edx:eax
 	// (the "requested feature bitmap") to all 1's.
-	MOVL $0xffffffff, AX
-	MOVL $0xffffffff, DX
+	MOVL $XCR0_EAX, AX
+	MOVL $XCR0_EDX, DX
 	BYTE $0x48; BYTE $0x0f; BYTE $0xae; BYTE $0x2f // XRSTOR64 0(DI)
 	JMP fprestore_done
 no_xrstor:
@@ -275,8 +282,8 @@ done_sysret_or_iret:
 	JZ no_xsave
 	// Use xsave/xsaveopt to save all extended state.
 	// We save everything unconditionally by setting RFBM to all 1's.
-	MOVL $0xffffffff, AX
-	MOVL $0xffffffff, DX
+	MOVL $XCR0_EAX, AX
+	MOVL $XCR0_EDX, DX
 	TESTB CX, CX
 	JZ no_xsaveopt
 	BYTE $0x48; BYTE $0x0f; BYTE $0xae; BYTE $0x37; // XSAVEOPT64 0(DI)
@@ -513,8 +520,8 @@ kernel:
 	JZ no_xsave
 	// Use xsave/xsaveopt to save all extended state.
 	// We save everything unconditionally by setting RFBM to all 1's.
-	MOVL $0xffffffff, AX
-	MOVL $0xffffffff, DX
+	MOVL $XCR0_EAX, AX
+	MOVL $XCR0_EDX, DX
 	TESTB CX, CX
 	JZ no_xsaveopt
 	BYTE $0x48; BYTE $0x0f; BYTE $0xae; BYTE $0x37; // XSAVEOPT64 0(DI)
@@ -645,8 +652,8 @@ kernel:
 	JZ no_xsave
 	// Use xsave/xsaveopt to save all extended state.
 	// We save everything unconditionally by setting RFBM to all 1's.
-	MOVL $0xffffffff, AX
-	MOVL $0xffffffff, DX
+	MOVL $XCR0_EAX, AX
+	MOVL $XCR0_EDX, DX
 	TESTB CX, CX
 	JZ no_xsaveopt
 	BYTE $0x48; BYTE $0x0f; BYTE $0xae; BYTE $0x37; // XSAVEOPT64 0(DI)

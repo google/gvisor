@@ -53,10 +53,12 @@ var (
 	}
 )
 
-// Creates TPU devices' symlinks under /sys/class/. TPU deivce type that are not present on host willl be ignored.
+// Creates TPU devices' symlinks under /sys/class/. TPU device types that are
+// not present on host will be ignored.
+//
 // TPU v4 symlinks are created at /sys/class/accel/accel#.
 // TPU v5 symlinks go to /sys/class/vfio-dev/vfio#.
-func (fs *filesystem) newDeviceClassDir(ctx context.Context, creds *auth.Credentials, tpuDeviceTypes []string) (map[string]map[string]kernfs.Inode, error) {
+func (fs *filesystem) newDeviceClassDir(ctx context.Context, creds *auth.Credentials, tpuDeviceTypes []string, pciMainBusDevicePath string) (map[string]map[string]kernfs.Inode, error) {
 	dirs := map[string]map[string]kernfs.Inode{}
 	pciDents, err := hostDirEntries(pciMainBusDevicePath)
 	if err != nil {
@@ -87,7 +89,7 @@ func (fs *filesystem) newDeviceClassDir(ctx context.Context, creds *auth.Credent
 }
 
 // Create /sys/bus/pci/devices symlinks.
-func (fs *filesystem) newPCIDevicesDir(ctx context.Context, creds *auth.Credentials) (map[string]kernfs.Inode, error) {
+func (fs *filesystem) newBusPCIDevicesDir(ctx context.Context, creds *auth.Credentials, pciMainBusDevicePath string) (map[string]kernfs.Inode, error) {
 	pciDevicesDir := map[string]kernfs.Inode{}
 	pciDents, err := hostDirEntries(pciMainBusDevicePath)
 	if err != nil {
