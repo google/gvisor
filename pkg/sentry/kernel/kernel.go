@@ -466,6 +466,7 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 	k.rootNetworkNamespace.SetInode(nsfs.NewInode(ctx, k.nsfsMount, k.rootNetworkNamespace))
 	k.rootIPCNamespace.SetInode(nsfs.NewInode(ctx, k.nsfsMount, k.rootIPCNamespace))
 	k.rootUTSNamespace.SetInode(nsfs.NewInode(ctx, k.nsfsMount, k.rootUTSNamespace))
+	k.tasks.Root.SetInode(nsfs.NewInode(ctx, k.nsfsMount, k.tasks.Root))
 
 	tmpfsOpts := vfs.GetFilesystemOptions{
 		InternalData: tmpfs.FilesystemOpts{
