@@ -384,17 +384,13 @@ const (
 // Extended state includes floating point registers, and other cpu state that's
 // not associated with the normal task context.
 //
-// We do not support enabling AMX within gVisor, therefore always exclude
-// AMXExtendedStateSize.
-// TODO(gvisor.dev/issues/9896): Implement AMX Support.
-//
 // Note: the return value matches the size of signal FP state frames.
 // Look at check_xstate_in_sigframe() in the kernel sources for more details.
 //
 //go:nosplit
 func (fs FeatureSet) ExtendedStateSize() (size, align uint) {
 	if fs.UseXsave() {
-		return uint(xsaveSize) - fs.AMXExtendedStateSize(), 64
+		return uint(xsaveSize), 64
 	}
 
 	// If we don't support xsave, we fall back to fxsave, which requires
@@ -423,7 +419,7 @@ func (fs FeatureSet) ValidXCR0Mask() uint64 {
 		return 0
 	}
 	ax, _, _, dx := fs.query(xSaveInfo)
-	return (uint64(dx)<<32 | uint64(ax)) ^ XCR0AMXMask
+	return (uint64(dx)<<32 | uint64(ax)) &^ XCR0AMXMask
 }
 
 // UseXsave returns the choice of fp state saving instruction.
