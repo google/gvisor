@@ -16,5 +16,5 @@
 
 set -e
 
-gem install sinatra
+gem install sinatra rackup
 ruby /src/ruby.rb
