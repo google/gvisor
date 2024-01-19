@@ -113,7 +113,7 @@ RUNTIME_DIR     ?= $(shell dirname $(shell mktemp -u))/$(RUNTIME)
 RUNTIME_BIN     ?= $(RUNTIME_DIR)/runsc
 RUNTIME_LOG_DIR ?= $(RUNTIME_DIR)/logs
 RUNTIME_LOGS    ?= $(RUNTIME_LOG_DIR)/runsc.log.%TEST%.%TIMESTAMP%.%COMMAND%
-RUNTIME_ARGS    ?=
+RUNTIME_ARGS    ?= -strace
 DOCKER_RELOAD_COMMAND ?= sudo systemctl reload docker
 
 SYSFS_GROUP_PATH := /sys/fs/cgroup
