@@ -437,7 +437,7 @@ TEST(CloneTest, NewUserNamespacePermitsAllOtherNamespaces) {
 
 // Clone with CLONE_SETTLS and a non-canonical TLS address is rejected.
 TEST(CloneTest, NonCanonicalTLS) {
-  constexpr uintptr_t kNonCanonical = 1ull << 48;
+  constexpr uintptr_t kNonCanonical = 1ull << 63;
 
   // We need a valid address for the stack pointer. We'll never actually execute
   // on this.
