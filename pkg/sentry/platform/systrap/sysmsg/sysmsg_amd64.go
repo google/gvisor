@@ -52,7 +52,8 @@ func (s *ArchState) Init() {
 	fs := cpuid.HostFeatureSet()
 
 	fpLenUint, _ := fs.ExtendedStateSize()
-	s.fpLen = uint32(fpLenUint)
+	// TODO(gvisor.dev/issues/9896): Implement AMX Support.
+	s.fpLen = uint32(fpLenUint - fs.AMXExtendedStateSize())
 	if fs.UseXsaveopt() {
 		s.xsaveMode = xsaveopt
 	} else if fs.UseXsave() {

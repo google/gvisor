@@ -70,8 +70,13 @@ const (
 func initX86FPState(data *byte, useXsave bool)
 
 func newX86FPStateSlice() State {
-	size, align := cpuid.HostFeatureSet().ExtendedStateSize()
-	capacity := size + FP_XSTATE_MAGIC2_SIZE
+	maxsize, align := cpuid.HostFeatureSet().ExtendedStateSize()
+	// We need capacity to be large enough to hold AMX bytes because of
+	// ptrace. PTRACE_SETREGSET/GETREGSET assume that AMX portions should
+	// always be used.
+	// TODO(gvisor.dev/issues/9896): Implement AMX Support.
+	capacity := maxsize + FP_XSTATE_MAGIC2_SIZE
+	size := maxsize - cpuid.HostFeatureSet().AMXExtendedStateSize()
 	// Always use at least 4096 bytes.
 	//
 	// For the KVM platform, this state is a fixed 4096 bytes, so make sure
@@ -129,6 +134,8 @@ func InitHostState() {
 		hostXCR0Mask = featureSet.ValidXCR0Mask()
 		hostUseXsave = featureSet.UseXsave()
 		hostFPSize, _ = featureSet.ExtendedStateSize()
+		// TODO(gvisor.dev/issues/9896): Implement AMX Support.
+		hostFPSize = hostFPSize - featureSet.AMXExtendedStateSize()
 	})
 }
 

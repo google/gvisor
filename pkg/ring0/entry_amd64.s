@@ -233,9 +233,7 @@ TEXT ·doSwitchToUser(SB),NOSPLIT,$16-48
 	MOVB ·hasXSAVE(SB), BX
 	TESTB BX, BX
 	JZ no_xrstor
-	// Use xrstor to restore all available fp state. For now, we restore
-	// everything unconditionally by setting the implicit operand edx:eax
-	// (the "requested feature bitmap") to all 1's.
+	// Use xrstor to restore all available fp state.
 	MOVL $XCR0_EAX, AX
 	MOVL $XCR0_EDX, DX
 	BYTE $0x48; BYTE $0x0f; BYTE $0xae; BYTE $0x2f // XRSTOR64 0(DI)
@@ -281,7 +279,6 @@ done_sysret_or_iret:
 	TESTB BX, BX
 	JZ no_xsave
 	// Use xsave/xsaveopt to save all extended state.
-	// We save everything unconditionally by setting RFBM to all 1's.
 	MOVL $XCR0_EAX, AX
 	MOVL $XCR0_EDX, DX
 	TESTB CX, CX
@@ -519,7 +516,6 @@ kernel:
 	TESTB BX, BX
 	JZ no_xsave
 	// Use xsave/xsaveopt to save all extended state.
-	// We save everything unconditionally by setting RFBM to all 1's.
 	MOVL $XCR0_EAX, AX
 	MOVL $XCR0_EDX, DX
 	TESTB CX, CX
@@ -651,7 +647,6 @@ kernel:
 	TESTB BX, BX
 	JZ no_xsave
 	// Use xsave/xsaveopt to save all extended state.
-	// We save everything unconditionally by setting RFBM to all 1's.
 	MOVL $XCR0_EAX, AX
 	MOVL $XCR0_EDX, DX
 	TESTB CX, CX
