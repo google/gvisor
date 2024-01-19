@@ -193,7 +193,7 @@ func (sc *sharedContext) isAcked() bool {
 func (sc *sharedContext) getAckedTimeDiff() cpuTicks {
 	ackedAt := atomic.LoadUint64(&sc.shared.AckedTime)
 	if ackedAt < uint64(sc.startWaitingTS) {
-		log.Warningf("likely memory tampering detected: found a condition where ackedAt (%d) < startWaitingTS (%d)", ackedAt, uint64(sc.startWaitingTS))
+		log.Infof("likely memory tampering detected: found a condition where ackedAt (%d) < startWaitingTS (%d)", ackedAt, uint64(sc.startWaitingTS))
 		return 0
 	}
 	return cpuTicks(ackedAt - uint64(sc.startWaitingTS))
@@ -207,7 +207,7 @@ func (sc *sharedContext) getStateChangedTimeDiff() cpuTicks {
 	changedAt := atomic.LoadUint64(&sc.shared.StateChangedTime)
 	now := uint64(cputicks())
 	if now < changedAt {
-		log.Warningf("likely memory tampering detected: found a condition where now (%d) < changedAt (%d)", now, changedAt)
+		log.Infof("likely memory tampering detected: found a condition where now (%d) < changedAt (%d)", now, changedAt)
 		return 0
 	}
 	return cpuTicks(now - changedAt)
