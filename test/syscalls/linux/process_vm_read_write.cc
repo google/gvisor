@@ -16,6 +16,7 @@
 #include <bits/types/siginfo_t.h>
 #include <bits/types/struct_iovec.h>
 #include <errno.h>
+#include <linux/futex.h>
 #include <string.h>
 #include <sys/types.h>
 #include <sys/uio.h>
@@ -23,9 +24,11 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <atomic>
 #include <climits>
 #include <csignal>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <iostream>
 #include <memory>
@@ -38,9 +41,11 @@
 #include "absl/cleanup/cleanup.h"
 #include "absl/strings/str_cat.h"
 #include "absl/strings/str_join.h"
+#include "test/util/cleanup.h"
 #include "test/util/logging.h"
 #include "test/util/posix_error.h"
 #include "test/util/test_util.h"
+#include "test/util/thread_util.h"
 
 namespace gvisor {
 namespace testing {
@@ -173,6 +178,38 @@ TEST_P(ProcessVMTest, TestReadvSameProcess) {
       process_vm_readv(getpid(), local.iovecs_.data(), local.iovecs_.size(),
                        remote.iovecs_.data(), remote.iovecs_.size(), 0),
       SyscallSucceedsWithValue(want_size));
+  EXPECT_TRUE(bytes_match(local, remote, want_size));
+}
+
+// TestReadvSameProcessDifferentThread calls process_vm_readv in the same
+// process, but with a different (non-leader) remote thread, with various
+// local/remote buffers.
+TEST_P(ProcessVMTest, TestReadvSameProcessDifferentThread) {
+  TestIovecs local(GetParam().local_data);
+  TestIovecs remote(GetParam().remote_data);
+
+  std::atomic<std::int32_t> sibling_tid{0};
+  std::atomic<std::uint32_t> sibling_exit{0};
+  ScopedThread t([&] {
+    sibling_tid.store(gettid());
+    syscall(SYS_futex, &sibling_tid, FUTEX_WAKE, 1);
+    while (sibling_exit.load() == 0) {
+      syscall(SYS_futex, &sibling_exit, FUTEX_WAIT, 0, nullptr);
+    }
+  });
+  Cleanup cleanup_t([&] {
+    sibling_exit.store(1);
+    syscall(SYS_futex, &sibling_exit, FUTEX_WAKE, 1);
+  });
+  while (sibling_tid.load() == 0) {
+    syscall(SYS_futex, &sibling_tid, FUTEX_WAIT, 0, nullptr);
+  }
+
+  auto want_size = std::min(remote.bytes_, local.bytes_);
+  EXPECT_THAT(process_vm_readv(sibling_tid.load(), local.iovecs_.data(),
+                               local.iovecs_.size(), remote.iovecs_.data(),
+                               remote.iovecs_.size(), 0),
+              SyscallSucceedsWithValue(want_size));
   EXPECT_TRUE(bytes_match(local, remote, want_size));
 }
 
