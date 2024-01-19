@@ -68,12 +68,8 @@ func processVMOp(t *kernel.Task, args arch.SyscallArguments, op processVMOpType)
 	// Local process is always the current task (t). Remote process is the
 	// pid specified in the syscall arguments. It is allowed to be the same
 	// as the caller process.
-	remoteThreadGroup := t.PIDNamespace().ThreadGroupWithID(pid)
-	if remoteThreadGroup == nil {
-		return 0, nil, linuxerr.ESRCH
-	}
-	remoteTask := remoteThreadGroup.Leader()
-	if remoteTask.ExitState() >= kernel.TaskExitInitiated {
+	remoteTask := t.PIDNamespace().TaskWithID(pid)
+	if remoteTask == nil {
 		return 0, nil, linuxerr.ESRCH
 	}
 
@@ -121,8 +117,13 @@ func processVMOp(t *kernel.Task, args arch.SyscallArguments, op processVMOpType)
 		// same as this process.
 		n, err = doProcessVMOpMaybeLocked(t, opArgs)
 	} else {
-		// Need to take remote process's task mutex.
+		// Need to take remote process's task mutex to pin
+		// remoteTask.MemoryManager().
 		remoteTask.WithMuLocked(func(*kernel.Task) {
+			if remoteTask.MemoryManager() == nil {
+				err = linuxerr.ESRCH
+				return
+			}
 			n, err = doProcessVMOpMaybeLocked(t, opArgs)
 		})
 	}
