@@ -12,20 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+// clang-format off
+// Contains types needed by later headers.
+#include <linux/types.h>
+// clang-format on
+#include <bpf/bpf_helpers.h>
 #include <linux/bpf.h>
 
 #define section(secname) __attribute__((section(secname), used))
 
 char __license[] section("license") = "Apache-2.0";
 
-// Helper functions are defined positionally in <linux/bpf.h>, and their
-// signatures are scattered throughout the kernel. They can be found via the
-// defining macro BPF_CALL_[0-5].
-// TODO(b/240191988): Use vmlinux instead of this.
-static int (*bpf_redirect_map)(void *bpf_map, __u32 iface_index,
-                               __u64 flags) = (void *)51;
-
-struct bpf_map_def {
+// Note: bpf_helpers.h includes a struct definition for bpf_map_def in some, but
+// not all, environments. Define our own equivalent struct to avoid issues with
+// multiple declarations.
+struct gvisor_bpf_map_def {
   unsigned int type;
   unsigned int key_size;
   unsigned int value_size;
@@ -34,7 +35,7 @@ struct bpf_map_def {
 };
 
 // A map of RX queue number to AF_XDP socket. We only ever use one key: 0.
-struct bpf_map_def section("maps") sock_map = {
+struct gvisor_bpf_map_def section("maps") sock_map = {
     .type = BPF_MAP_TYPE_XSKMAP,  // Note: "XSK" means AF_XDP socket.
     .key_size = sizeof(int),
     .value_size = sizeof(int),
