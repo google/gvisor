@@ -104,8 +104,6 @@ func (*dnatTargetMakerV4) unmarshal(buf []byte, filter stack.IPHeaderFilter) (ta
 		return nil, syserr.ErrInvalidArgument
 	}
 
-	// TODO(gvisor.dev/issue/5772): If the rule doesn't specify the source port,
-	// choose one automatically.
 	if nfRange.RangeIPV4.MinPort == 0 {
 		nflog("dnatTargetMakerV4: dnat target needs to specify a non-zero port")
 		return nil, syserr.ErrInvalidArgument
