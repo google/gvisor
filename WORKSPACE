@@ -96,7 +96,7 @@ go_download_sdk(
     # analysis. Without this fix, the nogo rules will often fail to run in
     # time on our continuous integration.
     patch = "//tools:go_types_memoize.patch",
-    patch_strip = 2,
+    patch_strip = 1,
     version = "1.23.2",
 )
 
