@@ -37,6 +37,8 @@ import (
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
+	"gvisor.dev/gvisor/pkg/state/pretty"
+	"gvisor.dev/gvisor/pkg/state/statefile"
 	"gvisor.dev/gvisor/pkg/test/testutil"
 	"gvisor.dev/gvisor/runsc/specutils"
 	"gvisor.dev/gvisor/test/runner/gtest"
@@ -66,6 +68,7 @@ var (
 	ioUring          = flag.Bool("iouring", false, "Enables IO_URING API for asynchronous I/O")
 	leakCheck        = flag.Bool("leak-check", false, "check for reference leaks")
 	waitForPid       = flag.Duration("delay-for-debugger", 0, "Print out the sandbox PID and wait for the specified duration to start the test. This is useful for attaching a debugger to the runsc-sandbox process.")
+	save             = flag.Bool("save", false, "enables save restore")
 )
 
 const (
@@ -198,6 +201,94 @@ func runTestCaseNative(testBin string, tc *gtest.TestCase, args []string, t *tes
 	}
 }
 
+func checkStateFile(file string) bool {
+	f, err := os.Open(file)
+	if err != nil {
+		log.Infof("Open error: %v", err)
+		return false
+	}
+	fi, err := f.Stat()
+	if err != nil {
+		log.Infof("Stat error: %v", err)
+		return false
+	}
+	if fi.Size() > 0 {
+		return false
+	}
+	os.Remove(file)
+	return true
+}
+
+func printAll(files []string) {
+	for i := 0; i < len(files); i++ {
+		file := files[i]
+		printOne(file, false, ".txt")
+		printOne(file, false, ".html")
+	}
+}
+
+func printOne(file string, html bool, postfix string) {
+	f, err := os.Open(file)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	r, m, err := statefile.NewReader(f, nil)
+	if err != nil {
+		return
+	}
+	w, err := os.Create(file + postfix)
+	if err != nil {
+		return
+	}
+	defer w.Close()
+	if html {
+		// Print just the HTML stream.
+		if err := pretty.PrintHTML(w, r); err != nil {
+			os.Remove(file + postfix)
+			return
+		}
+	} else {
+		// Print the metadata first.
+		if _, err := fmt.Fprintf(w, "%v\n", m); err != nil {
+			os.Remove(file + postfix)
+			return
+		}
+		// Then print the rest of the text.
+		if err := pretty.PrintText(w, r); err != nil {
+			os.Remove(file + postfix)
+			return
+		}
+	}
+}
+
+func remove(files []string) {
+	for _, file := range files {
+		os.Remove(file)
+	}
+}
+
+func prepareSave(args []string, undeclaredOutputsDir string, files []string, index int) ([]string, []string, error) {
+	// Create the state file.
+	tmp, err := os.CreateTemp(undeclaredOutputsDir, fmt.Sprintf("state.%v.", index))
+	if err != nil {
+		return args, files, fmt.Errorf("failed to create state file: %v", err)
+	}
+	// Pass the file path to the sandbox.
+	args = append(args, "-TESTONLY-state-file", tmp.Name())
+	files = append(files, tmp.Name())
+	return args, files, nil
+}
+
+func deleteSandbox(args []string, id string) error {
+	deleteArgs := append(args, "delete", "-force=true", id)
+	deleteCmd := exec.Command(specutils.ExePath, deleteArgs...)
+	if err := deleteCmd.Run(); err != nil {
+		return fmt.Errorf("delete error: %v", err)
+	}
+	return nil
+}
+
 // runRunsc runs spec in runsc in a standard test configuration.
 //
 // runsc logs will be saved to a path in TEST_UNDECLARED_OUTPUTS_DIR.
@@ -279,7 +370,12 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 
 	testLogDir := ""
 	runscLogDir := ""
-	if undeclaredOutputsDir, ok := unix.Getenv("TEST_UNDECLARED_OUTPUTS_DIR"); ok {
+	undeclaredOutputsDir := ""
+	files := []string{}
+	saveArgs := []string{}
+	var ok bool
+	undeclaredOutputsDir, ok = unix.Getenv("TEST_UNDECLARED_OUTPUTS_DIR")
+	if ok {
 		// Create log directory dedicated for this test.
 		testLogDir = filepath.Join(undeclaredOutputsDir, strings.Replace(name, "/", "_", -1))
 		if err := os.MkdirAll(testLogDir, 0755); err != nil {
@@ -299,6 +395,15 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 		// difficult. Instead, drop them when debug log is enabled given it's a
 		// better place for these messages.
 		args = append(args, "-log=/dev/null")
+
+		// Create the state file.
+		if *save {
+			saveArgs = args
+			args, files, err = prepareSave(args, undeclaredOutputsDir, files, 0)
+			if err != nil {
+				return fmt.Errorf("prepareSave error: %v", err)
+			}
+		}
 	}
 
 	// Current process doesn't have CAP_SYS_ADMIN, create user namespace and run
@@ -405,28 +510,73 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 		signal.Run()
 	}()
 
-	err = cmd.Run()
-	if *waitForPid != 0 {
+	if *save {
+		err = cmd.Run()
 		if err != nil {
-			return fmt.Errorf("could not start container: %v", err)
+			return fmt.Errorf("run error: %v", err)
 		}
-		waitArgs := append(args, "wait", id)
-		waitCmd := exec.Command(specutils.ExePath, waitArgs...)
-		waitCmd.SysProcAttr = sysProcAttr
-		waitCmd.Stderr = os.Stderr
 
-		buf := bytes.NewBuffer(nil)
-		waitCmd.Stdout = buf
-		err = waitCmd.Run()
-		wres := struct {
-			ID         string `json:"id"`
-			ExitStatus int    `json:"exitStatus"`
-		}{}
-		if err := json.NewDecoder(buf).Decode(&wres); err != nil {
-			return fmt.Errorf("could not decode wait result: %v", err)
+		// Restore the sandbox with the previous state file.
+		for i := 1; ; i++ {
+			// Check if the latest state file is valid.
+			if checkStateFile(files[i-1]) {
+				files = files[:i-1]
+				break
+			}
+
+			// Delete the existing sandbox.
+			if err := deleteSandbox(saveArgs, id); err != nil {
+				return fmt.Errorf("deleteSandbox error %v", err)
+			}
+
+			// Restore into new sandbox.
+			restoreArgs := saveArgs
+			restoreArgs, files, err = prepareSave(restoreArgs, undeclaredOutputsDir, files, i)
+			if err != nil {
+				return fmt.Errorf("prepareSave error: %v", err)
+			}
+			restoreArgs = append(restoreArgs, "restore", "--image-path", files[i-1], "--bundle", bundleDir, id)
+			restoreCmd := exec.Command(specutils.ExePath, restoreArgs...)
+			restoreCmd.SysProcAttr = sysProcAttr
+			if *container || *network == "host" || (restoreCmd.SysProcAttr.Cloneflags&unix.CLONE_NEWNET != 0) {
+				restoreCmd.SysProcAttr.Cloneflags |= unix.CLONE_NEWNET
+				restoreCmd.Path = getSetupContainerPath()
+				restoreCmd.Args = append([]string{restoreCmd.Path}, restoreCmd.Args...)
+			}
+			restoreCmd.Stdout = os.Stdout
+			restoreCmd.Stderr = os.Stderr
+			if err := restoreCmd.Run(); err != nil {
+				printAll(files)
+				defer remove(files)
+				return fmt.Errorf("after restore error: %v", err)
+			}
 		}
-		if wres.ExitStatus != 0 {
-			return fmt.Errorf("test failed with status: %d", wres.ExitStatus)
+		printAll(files)
+		defer remove(files)
+	} else {
+		err = cmd.Run()
+		if *waitForPid != 0 {
+			if err != nil {
+				return fmt.Errorf("could not start container: %v", err)
+			}
+			waitArgs := append(args, "wait", id)
+			waitCmd := exec.Command(specutils.ExePath, waitArgs...)
+			waitCmd.SysProcAttr = sysProcAttr
+			waitCmd.Stderr = os.Stderr
+
+			buf := bytes.NewBuffer(nil)
+			waitCmd.Stdout = buf
+			err = waitCmd.Run()
+			wres := struct {
+				ID         string `json:"id"`
+				ExitStatus int    `json:"exitStatus"`
+			}{}
+			if err := json.NewDecoder(buf).Decode(&wres); err != nil {
+				return fmt.Errorf("could not decode wait result: %v", err)
+			}
+			if wres.ExitStatus != 0 {
+				return fmt.Errorf("test failed with status: %d", wres.ExitStatus)
+			}
 		}
 	}
 	if err == nil && len(testLogDir) > 0 {
@@ -493,6 +643,16 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 				case strings.Contains(line, "Error retrieving TSC snapshot, unable to save TSC: function not implemented"):
 
 				default:
+					if *save {
+						// Ignore these warnings for S/R tests as we try to delete the sandbox
+						// after the sandbox has exited and before attempting to restore it.
+						if strings.Contains(line, "couldn't find container") ||
+							strings.Contains(line, "Container not found, creating new one, cid:") ||
+							strings.Contains(line, "Error sending signal") ||
+							strings.Contains(line, "Cannot signal container") {
+							continue
+						}
+					}
 					warningsFound = append(warningsFound, strings.TrimSpace(line))
 				}
 			}
@@ -674,6 +834,7 @@ func runTestCaseRunsc(testBin string, tc *gtest.TestCase, args []string, t *test
 		networkVar  = "GVISOR_NETWORK"
 		ioUringVar  = "IOURING_ENABLED"
 		fuseVar     = "GVISOR_FUSE_TEST"
+		saveVar     = "GVISOR_SAVE_TEST"
 	)
 	env := append(os.Environ(), platformVar+"="+*platform, networkVar+"="+*network)
 	if *platformSupport != "" {
@@ -688,6 +849,11 @@ func runTestCaseRunsc(testBin string, tc *gtest.TestCase, args []string, t *test
 		env = append(env, fuseVar+"=TRUE")
 	} else {
 		env = append(env, fuseVar+"=FALSE")
+	}
+	if *save {
+		env = append(env, saveVar+"=TRUE")
+	} else {
+		env = append(env, saveVar+"=FALSE")
 	}
 
 	// Remove shard env variables so that the gunit binary does not try to

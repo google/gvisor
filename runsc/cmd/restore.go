@@ -99,8 +99,13 @@ func (r *Restore) Execute(_ context.Context, f *flag.FlagSet, args ...any) subco
 	var cu cleanup.Cleanup
 	defer cu.Clean()
 
-	conf.RestoreFile = filepath.Join(r.imagePath, checkpointFileName)
-
+	// If TestOnlyStateFile is not empty, use it as the state file to restore the
+	// sandbox. This flag should only be used in tests.
+	if conf.TestOnlyStateFile != "" {
+		conf.RestoreFile = r.imagePath
+	} else {
+		conf.RestoreFile = filepath.Join(r.imagePath, checkpointFileName)
+	}
 	runArgs := container.Args{
 		ID:            id,
 		Spec:          nil,

@@ -348,6 +348,9 @@ type Config struct {
 	// ReproduceNftables attempts to scrape nftables routing rules if
 	// present, and reproduce them in the sandbox.
 	ReproduceNftables bool `flag:"reproduce-nftables"`
+
+	// TestOnlyStateFile stores the state file path for the save restore tests.
+	TestOnlyStateFile string `flag:"TESTONLY-state-file"`
 }
 
 func (c *Config) validate() error {

@@ -18,7 +18,9 @@ import (
 	"fmt"
 	"os"
 
+	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
 	"gvisor.dev/gvisor/pkg/sentry/state"
 	"gvisor.dev/gvisor/pkg/sentry/time"
@@ -26,6 +28,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/watchdog"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 	"gvisor.dev/gvisor/runsc/boot/pprof"
+	"gvisor.dev/gvisor/runsc/specutils"
 )
 
 type restorer struct {
@@ -34,18 +37,52 @@ type restorer struct {
 	deviceFile *os.File
 }
 
-func (r *restorer) restore(l *Loader) error {
-	// Save the current network stack to slap on top of the one that was restored.
-	curNetwork := l.k.RootNetworkNamespace().Stack()
-	if eps, ok := curNetwork.(*netstack.Stack); ok {
-		stack.StackFromEnv = eps.Stack // FIXME(b/36201077)
+func createNetworkNamespaceForRestore(l *Loader) (*inet.Namespace, error) {
+	// Create capabilities.
+	caps, err := specutils.Capabilities(l.root.conf.EnableRaw, l.root.spec.Process.Capabilities)
+	if err != nil {
+		return nil, fmt.Errorf("converting capabilities: %w", err)
 	}
 
+	// Convert the spec's additional GIDs to KGIDs.
+	extraKGIDs := make([]auth.KGID, 0, len(l.root.spec.Process.User.AdditionalGids))
+	for _, GID := range l.root.spec.Process.User.AdditionalGids {
+		extraKGIDs = append(extraKGIDs, auth.KGID(GID))
+	}
+
+	// Create credentials.
+	creds := auth.NewUserCredentials(
+		auth.KUID(l.root.spec.Process.User.UID),
+		auth.KGID(l.root.spec.Process.User.GID),
+		extraKGIDs,
+		caps,
+		auth.NewRootUserNamespace())
+
+	// Create root network namespace/stack.
+	netns, err := newRootNetworkNamespace(l.root.conf, l.k.Timekeeper(), l.k, creds.UserNamespace)
+	if err != nil {
+		return nil, fmt.Errorf("creating network: %w", err)
+	}
+	return netns, nil
+}
+
+func (r *restorer) restore(l *Loader) error {
 	p, err := createPlatform(l.root.conf, r.deviceFile)
 	if err != nil {
 		return fmt.Errorf("creating platform: %v", err)
 	}
-	// Replace the old kernel with a new one that will be restored into.
+	// Create root network namespace/stack.
+	netns, err := createNetworkNamespaceForRestore(l)
+	if err != nil {
+		return fmt.Errorf("creating network: %w", err)
+	}
+	if eps, ok := netns.Stack().(*netstack.Stack); ok {
+		stack.StackFromEnv = eps.Stack // FIXME(b/36201077)
+	}
+	// Release the kernel and replace it with a new one that will be restored into.
+	if l.k != nil {
+		l.k.Release()
+	}
 	l.k = &kernel.Kernel{
 		Platform: p,
 	}
@@ -79,7 +116,7 @@ func (r *restorer) restore(l *Loader) error {
 
 	// Load the state.
 	loadOpts := state.LoadOpts{Source: r.stateFile}
-	if err := loadOpts.Load(ctx, l.k, nil, curNetwork, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}); err != nil {
+	if err := loadOpts.Load(ctx, l.k, nil, netns.Stack(), time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}); err != nil {
 		return err
 	}
 

@@ -135,6 +135,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 	flagSet.String("TESTONLY-test-name-env", "", "TEST ONLY; do not ever use! Used for automated tests to improve logging.")
 	flagSet.Bool("TESTONLY-allow-packet-endpoint-write", false, "TEST ONLY; do not ever use! Used for tests to allow writes on packet sockets.")
 	flagSet.Bool("TESTONLY-afs-syscall-panic", false, "TEST ONLY; do not ever use! Used for tests exercising gVisor panic reporting.")
+	flagSet.String("TESTONLY-state-file", "", "TEST ONLY; path for state file.")
 }
 
 // overrideAllowlist lists all flags that can be changed using OCI

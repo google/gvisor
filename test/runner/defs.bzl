@@ -77,6 +77,7 @@ def _syscall_test(
         fusefs = False,
         directfs = False,
         leak_check = False,
+        save = False,
         **kwargs):
     # Prepend "runsc" to non-native platform names.
     full_platform = platform if platform == "native" else "runsc_" + platform
@@ -93,6 +94,8 @@ def _syscall_test(
         name += "_fuse"
     if directfs:
         name += "_directfs"
+    if save:
+        name += "_save"
 
     # Apply all tags.
     if tags == None:
@@ -153,6 +156,7 @@ def _syscall_test(
         "--iouring=" + str(iouring),
         "--directfs=" + str(directfs),
         "--leak-check=" + str(leak_check),
+        "--save=" + str(save),
     ]
 
     # Trace points are platform agnostic, so enable them for ptrace only.
@@ -191,6 +195,8 @@ def syscall_test(
         debug = True,
         container = None,
         tags = None,
+        #TODO(b/323000153): Change save to True after all the tests pass with S/R enabled.
+        save = False,
         **kwargs):
     """syscall_test is a macro that will create targets for all platforms.
 
@@ -210,6 +216,8 @@ def syscall_test(
       debug: enable debug output.
       container: Run the test in a container. If None, determined from other information.
       tags: starting test tags.
+      leak_check: enables leak check.
+      save: save restore test.
       **kwargs: additional test arguments.
     """
     if not tags:
@@ -319,3 +327,20 @@ def syscall_test(
             leak_check = leak_check,
             **kwargs
         )
+    for platform, platform_tags in all_platforms():
+        if save:
+            _syscall_test(
+                test = test,
+                platform = platform,
+                use_tmpfs = True,
+                save = True,
+                add_host_uds = add_host_uds,
+                add_host_connector = add_host_connector,
+                add_host_fifo = add_host_fifo,
+                tags = platform_tags,
+                debug = debug,
+                container = container,
+                one_sandbox = one_sandbox,
+                leak_check = leak_check,
+                **kwargs
+            )

@@ -61,6 +61,7 @@ syscall_test(
 )
 
 syscall_test(
+    save = True,
     test = "//test/syscalls/linux:brk_test",
 )
 
@@ -1175,10 +1176,12 @@ syscall_test(
 syscall_test(
     add_fusefs = True,
     add_overlay = True,
+    save = True,
     test = "//test/syscalls/linux:write_test",
 )
 
 syscall_test(
+    save = True,
     test = "//test/syscalls/linux:proc_net_unix_test",
 )
 

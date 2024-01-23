@@ -461,6 +461,15 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 		}
 	}
 
+	if conf.TestOnlyStateFile != "" {
+		f, err := os.OpenFile(conf.TestOnlyStateFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
+		if err != nil {
+			util.Fatalf("error in creating state file %v", err)
+		}
+		defer f.Close()
+		boot.EnableAutosave(l, f)
+	}
+
 	// Prepare metrics.
 	// This needs to happen after the kernel is initialized (such that all metrics are registered)
 	// but before the start-sync file is notified, as the parent process needs to query for

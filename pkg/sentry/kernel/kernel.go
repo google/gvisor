@@ -110,6 +110,16 @@ func (uc *UserCounters) decRLimitNProc() {
 	uc.rlimitNProc.Add(^uint64(0))
 }
 
+// CgroupMount contains the cgroup mount. These mounts are created for the root
+// container by default and are stored in the kernel.
+//
+// +stateify savable
+type CgroupMount struct {
+	Fs    *vfs.Filesystem
+	Root  *vfs.Dentry
+	Mount *vfs.Mount
+}
+
 // Kernel represents an emulated Linux kernel. It must be initialized by calling
 // Init() or LoadFrom().
 //
@@ -320,6 +330,12 @@ type Kernel struct {
 	// system. It is controller by cgroupfs. Nil if cgroupfs is unavailable on
 	// the system.
 	cgroupRegistry *CgroupRegistry
+
+	// cgroupMountsMap stores the cgroup mounts created for the root
+	// container. These mounts are then bind mounted for other application
+	// containers by creating their own container directories.
+	cgroupMountsMap   map[string]*CgroupMount
+	cgroupMountsMapMu cgroupMountsMutex `state:"nosave"`
 
 	// userCountersMap maps auth.KUID into a set of user counters.
 	userCountersMap   map[auth.KUID]*UserCounters
@@ -1735,12 +1751,32 @@ func (k *Kernel) CgroupRegistry() *CgroupRegistry {
 	return k.cgroupRegistry
 }
 
+// SetCgroupMounts sets the cgroup mounts in the kernel. These cgroup mounts
+// are created during the creation of root container process.
+func (k *Kernel) SetCgroupMounts(cgMnts map[string]*CgroupMount) {
+	k.cgroupMountsMapMu.Lock()
+	k.cgroupMountsMap = cgMnts
+	k.cgroupMountsMapMu.Unlock()
+}
+
+// ReleaseCgroupMounts releases the cgroup mounts.
+func (k *Kernel) ReleaseCgroupMounts(ctx context.Context) {
+	k.cgroupMountsMapMu.Lock()
+	for _, m := range k.cgroupMountsMap {
+		m.Mount.DecRef(ctx)
+		m.Root.DecRef(ctx)
+		m.Fs.DecRef(ctx)
+	}
+	k.cgroupMountsMapMu.Unlock()
+}
+
 // Release releases resources owned by k.
 //
 // Precondition: This should only be called after the kernel is fully
 // initialized, e.g. after k.Start() has been called.
 func (k *Kernel) Release() {
 	ctx := k.SupervisorContext()
+	k.ReleaseCgroupMounts(ctx)
 	k.hostMount.DecRef(ctx)
 	k.pipeMount.DecRef(ctx)
 	k.nsfsMount.DecRef(ctx)

@@ -172,7 +172,7 @@ type Loader struct {
 
 	// cgroupMounts is a map of cgroup mounts that can be reused across
 	// containers. It is mapped by cgroup controller name.
-	cgroupMounts map[string]*cgroupMount
+	cgroupMounts map[string]*kernel.CgroupMount
 
 	// productName is the value to show in
 	// /sys/devices/virtual/dmi/id/product_name.
@@ -624,11 +624,6 @@ func (l *Loader) Destroy() {
 	ctx := l.k.SupervisorContext()
 	for _, m := range l.sharedMounts {
 		m.DecRef(ctx)
-	}
-	for _, m := range l.cgroupMounts {
-		m.mount.DecRef(ctx)
-		m.root.DecRef(ctx)
-		m.fs.DecRef(ctx)
 	}
 
 	// Stop the control server. This will indirectly stop any
