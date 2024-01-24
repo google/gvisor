@@ -37,7 +37,7 @@ type savedDentryRW struct {
 
 // PrepareSave implements vfs.FilesystemImplSaveRestoreExtension.PrepareSave.
 func (fs *filesystem) PrepareSave(ctx context.Context) error {
-	if len(fs.iopts.UniqueID) == 0 {
+	if len(fs.iopts.UniqueID.Path) == 0 {
 		return fmt.Errorf("gofer.filesystem with no UniqueID cannot be saved")
 	}
 
@@ -176,10 +176,10 @@ func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRest
 	if fdmapv == nil {
 		return fmt.Errorf("no server FD map available")
 	}
-	fdmap := fdmapv.(map[string]int)
+	fdmap := fdmapv.(map[vfs.RestoreID]int)
 	fd, ok := fdmap[fs.iopts.UniqueID]
 	if !ok {
-		return fmt.Errorf("no server FD available for filesystem with unique ID %q", fs.iopts.UniqueID)
+		return fmt.Errorf("no server FD available for filesystem with unique ID %+v, map: %v", fs.iopts.UniqueID, fdmap)
 	}
 	fs.opts.fd = fd
 	fs.inoByKey = make(map[inoKey]uint64)

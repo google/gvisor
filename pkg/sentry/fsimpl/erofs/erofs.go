@@ -81,7 +81,7 @@ type filesystem struct {
 type InternalFilesystemOptions struct {
 	// If UniqueID is non-empty, it is an opaque string used to reassociate the
 	// filesystem with a new image FD during restoration from checkpoint.
-	UniqueID string
+	UniqueID vfs.RestoreID
 }
 
 // Name implements vfs.FilesystemType.Name.

@@ -38,7 +38,7 @@ func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRest
 	if fdmapv == nil {
 		return fmt.Errorf("no image FD map available")
 	}
-	fdmap := fdmapv.(map[string]int)
+	fdmap := fdmapv.(map[vfs.RestoreID]int)
 	fd, ok := fdmap[fs.iopts.UniqueID]
 	if !ok {
 		return fmt.Errorf("no image FD available for filesystem with unique ID %q", fs.iopts.UniqueID)
