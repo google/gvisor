@@ -2017,6 +2017,34 @@ func (r *resolveAbsSymlinkError) afterLoad() {}
 func (r *resolveAbsSymlinkError) StateLoad(stateSourceObject state.Source) {
 }
 
+func (f *RestoreID) StateTypeName() string {
+	return "pkg/sentry/vfs.RestoreID"
+}
+
+func (f *RestoreID) StateFields() []string {
+	return []string{
+		"ContainerName",
+		"Path",
+	}
+}
+
+func (f *RestoreID) beforeSave() {}
+
+// +checklocksignore
+func (f *RestoreID) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.ContainerName)
+	stateSinkObject.Save(1, &f.Path)
+}
+
+func (f *RestoreID) afterLoad() {}
+
+// +checklocksignore
+func (f *RestoreID) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &f.ContainerName)
+	stateSourceObject.Load(1, &f.Path)
+}
+
 func (vfs *VirtualFilesystem) StateTypeName() string {
 	return "pkg/sentry/vfs.VirtualFilesystem"
 }
@@ -2211,6 +2239,7 @@ func init() {
 	state.Register((*resolveMountRootOrJumpError)(nil))
 	state.Register((*resolveMountPointError)(nil))
 	state.Register((*resolveAbsSymlinkError)(nil))
+	state.Register((*RestoreID)(nil))
 	state.Register((*VirtualFilesystem)(nil))
 	state.Register((*PathOperation)(nil))
 	state.Register((*VirtualDentry)(nil))

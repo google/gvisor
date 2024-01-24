@@ -72,7 +72,7 @@ type filesystem struct {
 
 	// uniqueID is an opaque string used to reassociate the filesystem with its
 	// private MemoryFile during checkpoint and restore.
-	uniqueID string
+	uniqueID vfs.RestoreID
 
 	// mfp is used to provide mf, when privateMF == false. This is required to
 	// re-provide mf on restore. mfp is immutable.
@@ -159,7 +159,7 @@ type FilesystemOpts struct {
 
 	// If UniqueID is non-empty, it is an opaque string used to reassociate the
 	// filesystem with its private MemoryFile during checkpoint and restore.
-	UniqueID string
+	UniqueID vfs.RestoreID
 }
 
 // Default size limit mount option. It is immutable after initialization.
@@ -192,7 +192,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	}
 	mf := mfp.MemoryFile()
 	privateMF := false
-	uniqueID := ""
+	var uniqueID vfs.RestoreID
 	rootFileType := uint16(linux.S_IFDIR)
 	disableDefaultSizeLimit := false
 	newFSType := vfs.FilesystemType(&fstype)
@@ -225,7 +225,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 			allowXattrPrefix[xattr] = struct{}{}
 		}
 	}
-	if privateMF && uniqueID == "" {
+	if privateMF && len(uniqueID.Path) == 0 {
 		ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: privateMF requires uniqueID to be set")
 		return nil, nil, linuxerr.EINVAL
 	}

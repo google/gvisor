@@ -95,6 +95,8 @@ import (
 type containerInfo struct {
 	cid string
 
+	containerName string
+
 	conf *config.Config
 
 	// spec is the base configuration for the root container.
@@ -328,6 +330,7 @@ func New(args Args) (*Loader, error) {
 
 	info := containerInfo{
 		cid:                 args.ID,
+		containerName:       specutils.ContainerName(args.Spec),
 		conf:                args.Conf,
 		spec:                args.Spec,
 		goferMountConfs:     args.GoferMountConfs,
@@ -899,6 +902,7 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 
 	info := &containerInfo{
 		cid:                 cid,
+		containerName:       specutils.ContainerName(spec),
 		conf:                conf,
 		spec:                spec,
 		goferFDs:            goferFDs,
@@ -973,7 +977,7 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 func (l *Loader) createContainerProcess(info *containerInfo) (*kernel.ThreadGroup, *host.TTYFileDescription, error) {
 	// Create the FD map, which will set stdin, stdout, and stderr.
 	ctx := info.procArgs.NewContext(l.k)
-	fdTable, ttyFile, err := createFDTable(ctx, info.spec.Process.Terminal, info.stdioFDs, info.passFDs, info.spec.Process.User)
+	fdTable, ttyFile, err := createFDTable(ctx, info.spec.Process.Terminal, info.stdioFDs, info.passFDs, info.spec.Process.User, info.containerName)
 	if err != nil {
 		return nil, nil, fmt.Errorf("importing fds: %w", err)
 	}
@@ -1572,7 +1576,7 @@ func (l *Loader) ttyFromIDLocked(key execID) (*host.TTYFileDescription, error) {
 	return ep.tty, nil
 }
 
-func createFDTable(ctx context.Context, console bool, stdioFDs []*fd.FD, passFDs []fdMapping, user specs.User) (*kernel.FDTable, *host.TTYFileDescription, error) {
+func createFDTable(ctx context.Context, console bool, stdioFDs []*fd.FD, passFDs []fdMapping, user specs.User, containerName string) (*kernel.FDTable, *host.TTYFileDescription, error) {
 	if len(stdioFDs) != 3 {
 		return nil, nil, fmt.Errorf("stdioFDs should contain exactly 3 FDs (stdin, stdout, and stderr), but %d FDs received", len(stdioFDs))
 	}

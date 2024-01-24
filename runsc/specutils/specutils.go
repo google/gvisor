@@ -241,15 +241,7 @@ func fixSpec(spec *specs.Spec, bundleDir string, conf *config.Config) error {
 		}
 	}
 
-	// Check annotation to see if container name is available.
-	var containerName string
-	for key, val := range spec.Annotations {
-		if key == annotationContainerName {
-			containerName = val
-			log.Debugf("Container name: %q", containerName)
-			break
-		}
-	}
+	containerName := ContainerName(spec)
 	for annotation, val := range spec.Annotations {
 		if strings.HasPrefix(annotation, annotationFlagPrefix) {
 			// Override flags using annotation to allow customization per sandbox
@@ -757,4 +749,10 @@ func ResolveEnvs(envs ...[]string) ([]string, error) {
 // FaqErrorMsg returns an error message pointing to the FAQ.
 func FaqErrorMsg(anchor, msg string) string {
 	return fmt.Sprintf("%s; see https://gvisor.dev/faq#%s for more details", msg, anchor)
+}
+
+// ContainerName looks for an annotation in the spec with the container name. Returns empty string
+// if no annotation is found.
+func ContainerName(spec *specs.Spec) string {
+	return spec.Annotations[annotationContainerName]
 }

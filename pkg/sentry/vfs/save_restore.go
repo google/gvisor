@@ -15,6 +15,7 @@
 package vfs
 
 import (
+	"fmt"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/context"
@@ -132,4 +133,19 @@ func (epi *epollInterest) afterLoad() {
 	// Mark all epollInterests as ready after restore so that the next call to
 	// EpollInstance.ReadEvents() rechecks their readiness.
 	epi.waiter.NotifyEvent(waiter.EventMaskFromLinux(epi.mask))
+}
+
+// RestoreID is a unique ID that is used to identify resources between save/restore sessions.
+// Example of resources are host files, gofer connection for mount points, etc.
+//
+// +stateify savable
+type RestoreID struct {
+	// ContainerName is the name of the container that the resource belongs to.
+	ContainerName string
+	// Path is the path of the resource.
+	Path string
+}
+
+func (f RestoreID) String() string {
+	return fmt.Sprintf("%s:%s", f.ContainerName, f.Path)
 }

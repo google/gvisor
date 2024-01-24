@@ -48,7 +48,7 @@ func (fs *filesystem) PrepareSave(ctx context.Context) error {
 	if mfmapv == nil {
 		return fmt.Errorf("CtxFilesystemMemoryFileMap was not provided")
 	}
-	mfmap := mfmapv.(map[string]*pgalloc.MemoryFile)
+	mfmap := mfmapv.(map[vfs.RestoreID]*pgalloc.MemoryFile)
 	mfmap[fs.uniqueID] = fs.mf
 	return nil
 }
@@ -63,7 +63,7 @@ func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRest
 	if mfmapv == nil {
 		return fmt.Errorf("CtxFilesystemMemoryFileMap was not provided")
 	}
-	mfmap := mfmapv.(map[string]*pgalloc.MemoryFile)
+	mfmap := mfmapv.(map[vfs.RestoreID]*pgalloc.MemoryFile)
 	mf, ok := mfmap[fs.uniqueID]
 	if !ok {
 		return fmt.Errorf("memory file for %q not found in CtxFilesystemMemoryFileMap", fs.uniqueID)
