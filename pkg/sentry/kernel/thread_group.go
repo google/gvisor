@@ -325,7 +325,9 @@ func (tg *ThreadGroup) Release(ctx context.Context) {
 	// Disassociate from the tty if we have one.
 	if tg.tty != nil {
 		tg.tty.mu.Lock()
-		tg.tty.tg = nil
+		if tg.tty.tg == tg {
+			tg.tty.tg = nil
+		}
 		tg.tty.mu.Unlock()
 		tg.tty = nil
 	}

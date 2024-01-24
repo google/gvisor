@@ -27,15 +27,16 @@
 #include <termios.h>
 #include <unistd.h>
 
+#include <csignal>
 #include <iostream>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/base/macros.h"
 #include "absl/strings/str_cat.h"
 #include "absl/synchronization/notification.h"
 #include "absl/time/clock.h"
 #include "absl/time/time.h"
-#include "test/util/capability_util.h"
 #include "test/util/cleanup.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/fs_util.h"
@@ -1671,6 +1672,59 @@ TEST_F(JobControlTest, ReleaseTTYSignals) {
   EXPECT_THAT(waitpid(diff_pgrp_child, &wstatus, WNOHANG),
               SyscallSucceedsWithValue(0));
   EXPECT_THAT(kill(diff_pgrp_child, SIGKILL), SyscallSucceeds());
+}
+
+// Used by the child process spawned in
+// ControllingProcessPersistsAfterChildExists to track received signals.
+static int received2;
+
+void sig_handler2(int signum) { received2 |= signum; }
+
+// NOTE(gvisor.dev/issue/9898): Regression test. Tests that a TTY's controlling
+// process is not cleared when a non-controlling process exits.
+TEST_F(JobControlTest, ControllingProcessPersistsAfterChildExists) {
+  // Set the controlling process for the PTY.
+  ASSERT_THAT(ioctl(replica_.get(), TIOCSCTTY, 0), SyscallSucceeds());
+
+  // Fork a child, which does nothing and exits. We expect that this process
+  // is still the controlling process, so is capable of receiving signals.
+  ASSERT_NO_ERRNO(RunInChild([=]() {}));
+
+  // Install handler for SIGINT.
+  received2 = 0;
+  struct sigaction sa = {};
+  sa.sa_handler = sig_handler2;
+  sa.sa_flags = 0;
+  sigemptyset(&sa.sa_mask);
+  sigaddset(&sa.sa_mask, SIGINT);
+  ASSERT_THAT(sigaction(SIGINT, &sa, NULL), SyscallSucceeds());
+
+  // Send ^C.
+  constexpr char kInput = ControlCharacter('C');
+  ASSERT_THAT(WriteFd(master_.get(), &kInput, 1), SyscallSucceedsWithValue(1));
+
+  // Ensure we got the signal. Wait at most for kTimeout.
+  absl::Time end = absl::Now() + kTimeout;
+  while (received2 != SIGINT) {
+    absl::SleepFor(absl::Seconds(1));
+    if (end < absl::Now()) {
+      FAIL() << "Timed out waiting for SIGINT signal.";
+      break;
+    }
+  }
+
+  // Make sure we're ignoring SIGHUP, which will be sent to this process once we
+  // disconnect the TTY.
+  struct sigaction sighup_sa = {};
+  sighup_sa.sa_handler = SIG_IGN;
+  sighup_sa.sa_flags = 0;
+  sigemptyset(&sighup_sa.sa_mask);
+  struct sigaction old_sa;
+  EXPECT_THAT(sigaction(SIGHUP, &sighup_sa, &old_sa), SyscallSucceeds());
+
+  // Release the controlling terminal and restore the old SIGHUP handler.
+  EXPECT_THAT(ioctl(replica_.get(), TIOCNOTTY), SyscallSucceeds());
+  EXPECT_THAT(sigaction(SIGHUP, &old_sa, NULL), SyscallSucceeds());
 }
 
 TEST_F(JobControlTest, GetForegroundProcessGroup) {
