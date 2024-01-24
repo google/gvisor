@@ -19,6 +19,14 @@ const (
 	RM_GSS_LEGACY_MASK = 0x00008000
 )
 
+// From src/nvidia/inc/kernel/rmapi/param_copy.h:
+const (
+	// RMAPI_PARAM_COPY_MAX_PARAMS_SIZE is the size limit imposed while copying
+	// "embedded pointers" in rmapi parameter structs.
+	// See src/nvidia/src/kernel/rmapi/param_copy.c:rmapiParamsAcquire().
+	RMAPI_PARAM_COPY_MAX_PARAMS_SIZE = 1 * 1024 * 1024
+)
+
 // From src/common/sdk/nvidia/inc/ctrl/ctrlxxxx.h:
 
 // +marshal
@@ -95,12 +103,10 @@ const (
 	NV0080_CTRL_CMD_GPU_QUERY_SW_STATE_PERSISTENCE = 0x800288
 	NV0080_CTRL_CMD_GPU_GET_VIRTUALIZATION_MODE    = 0x800289
 	NV0080_CTRL_CMD_GPU_GET_CLASSLIST_V2           = 0x800292
-
-	NV0080_CTRL_GPU_CLASSLIST_MAX_SIZE = 160
 )
 
 // +marshal
-type NV0080_CTRL_CMD_GPU_GET_CLASSLIST_PARAMS struct {
+type NV0080_CTRL_GPU_GET_CLASSLIST_PARAMS struct {
 	NumClasses uint32
 	Pad        [4]byte
 	ClassList  P64

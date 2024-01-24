@@ -75,7 +75,7 @@ func ctrlClientSystemGetBuildVersionInvoke(fi *frontendIoctlState, ioctlParams *
 	return n, nil
 }
 
-func ctrlDevGpuGetClasslistInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters, ctrlParams *nvgpu.NV0080_CTRL_CMD_GPU_GET_CLASSLIST_PARAMS, classList []uint32) (uintptr, error) {
+func ctrlDevGpuGetClasslistInvoke(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters, ctrlParams *nvgpu.NV0080_CTRL_GPU_GET_CLASSLIST_PARAMS, classList []uint32) (uintptr, error) {
 	sentryCtrlParams := *ctrlParams
 	sentryCtrlParams.ClassList = p64FromPtr(unsafe.Pointer(&classList[0]))
 	n, err := rmControlInvoke(fi, ioctlParams, &sentryCtrlParams)
