@@ -402,7 +402,8 @@ type containerMounter struct {
 	containerID string
 
 	// sandboxID is the ID for the whole sandbox.
-	sandboxID string
+	sandboxID     string
+	containerName string
 
 	// cgroupMounts is a map of cgroup mounts that can be reused across
 	// containers. Key is the cgroup controller name string.
@@ -434,6 +435,7 @@ func newContainerMounter(info *containerInfo, k *kernel.Kernel, hints *PodMountH
 		productName:       productName,
 		containerID:       info.procArgs.ContainerID,
 		sandboxID:         sandboxID,
+		containerName:     info.containerName,
 		cgroupMounts:      cgroupMounts,
 	}
 }
@@ -519,7 +521,10 @@ func (c *containerMounter) createMountNamespace(ctx context.Context, conf *confi
 				InternalMount: true,
 				Data:          strings.Join(data, ","),
 				InternalData: gofer.InternalFilesystemOptions{
-					UniqueID: "/",
+					UniqueID: vfs.RestoreID{
+						ContainerName: c.containerName,
+						Path:          "/",
+					},
 				},
 			},
 		}
@@ -532,7 +537,10 @@ func (c *containerMounter) createMountNamespace(ctx context.Context, conf *confi
 				InternalMount: true,
 				Data:          fmt.Sprintf("ifd=%d", ioFD),
 				InternalData: erofs.InternalFilesystemOptions{
-					UniqueID: "/",
+					UniqueID: vfs.RestoreID{
+						ContainerName: c.containerName,
+						Path:          "/",
+					},
 				},
 			},
 		}
@@ -645,7 +653,7 @@ func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Co
 			return nil, nil, fmt.Errorf("failed to create memory file for overlay: %v", err)
 		}
 		tmpfsOpts.MemoryFile = mf
-		tmpfsOpts.UniqueID = dst
+		tmpfsOpts.UniqueID = vfs.RestoreID{ContainerName: c.containerName, Path: dst}
 	}
 	upperOpts.GetFilesystemOptions.InternalData = tmpfsOpts
 	upper, err := c.k.VFS().MountDisconnected(ctx, creds, "" /* source */, tmpfs.Name, &upperOpts)
@@ -829,7 +837,7 @@ func (c *containerMounter) prepareMounts() ([]mountInfo, error) {
 }
 
 func (c *containerMounter) mountSubmount(ctx context.Context, spec *specs.Spec, conf *config.Config, mns *vfs.MountNamespace, creds *auth.Credentials, submount *mountInfo) (*vfs.Mount, error) {
-	fsName, opts, err := getMountNameAndOptions(spec, conf, submount, c.productName)
+	fsName, opts, err := getMountNameAndOptions(spec, conf, submount, c.productName, c.containerName)
 	if err != nil {
 		return nil, fmt.Errorf("mountOptions failed: %w", err)
 	}
@@ -870,7 +878,7 @@ func (c *containerMounter) mountSubmount(ctx context.Context, spec *specs.Spec, 
 
 // getMountNameAndOptions retrieves the fsName, opts, and useOverlay values
 // used for mounts.
-func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo, productName string) (string, *vfs.MountOptions, error) {
+func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo, productName, containerName string) (string, *vfs.MountOptions, error) {
 	fsName := m.mount.Type
 	var (
 		mopts        = m.mount.Options
@@ -906,7 +914,7 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 			}
 			internalData = tmpfs.FilesystemOpts{
 				MemoryFile: mf,
-				UniqueID:   m.mount.Destination,
+				UniqueID:   vfs.RestoreID{ContainerName: containerName, Path: m.mount.Destination},
 				// If a mount is being overlaid with tmpfs, it should not be limited by
 				// the default tmpfs size limit.
 				DisableDefaultSizeLimit: true,
@@ -926,7 +934,10 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 		}
 		data = append(data, goferMountData(m.goferFD.Release(), getMountAccessType(conf, m.hint), conf)...)
 		internalData = gofer.InternalFilesystemOptions{
-			UniqueID: m.mount.Destination,
+			UniqueID: vfs.RestoreID{
+				ContainerName: containerName,
+				Path:          m.mount.Destination,
+			},
 		}
 
 	case cgroupfs.Name:
@@ -1204,7 +1215,7 @@ func (c *containerMounter) mountSharedMaster(ctx context.Context, spec *specs.Sp
 	// Mount the master using the options from the hint (mount annotations).
 	origOpts := mntInfo.mount.Options
 	mntInfo.mount.Options = mntInfo.hint.Mount.Options
-	fsName, opts, err := getMountNameAndOptions(spec, conf, mntInfo, c.productName)
+	fsName, opts, err := getMountNameAndOptions(spec, conf, mntInfo, c.productName, c.containerName)
 	mntInfo.mount.Options = origOpts
 	if err != nil {
 		return nil, err
@@ -1271,15 +1282,18 @@ func (c *containerMounter) makeMountPoint(ctx context.Context, creds *auth.Crede
 func (c *containerMounter) configureRestore(ctx context.Context) (context.Context, error) {
 	// Compare createMountNamespace(); rootfs always consumes a gofer FD and a
 	// filestore FD is consumed if the rootfs GoferMountConf indicates so.
-	fdmap := make(map[string]int)
-	fdmap["/"] = c.goferFDs.remove()
-	mfmap := make(map[string]*pgalloc.MemoryFile)
+	fdmap := make(map[vfs.RestoreID]int)
+
+	rootKey := vfs.RestoreID{ContainerName: c.containerName, Path: "/"}
+	fdmap[rootKey] = c.goferFDs.remove()
+
+	mfmap := make(map[vfs.RestoreID]*pgalloc.MemoryFile)
 	if rootfsConf := c.goferMountConfs[0]; rootfsConf.IsFilestorePresent() {
 		mf, err := createPrivateMemoryFile(c.goferFilestoreFDs.removeAsFD().ReleaseToFile("overlay-filestore"))
 		if err != nil {
 			return ctx, fmt.Errorf("failed to create private memory file for mount rootfs: %w", err)
 		}
-		mfmap["/"] = mf
+		mfmap[rootKey] = mf
 	}
 	// prepareMounts() consumes the remaining FDs for submounts.
 	mounts, err := c.prepareMounts()
@@ -1289,14 +1303,16 @@ func (c *containerMounter) configureRestore(ctx context.Context) (context.Contex
 	for i := range mounts {
 		submount := &mounts[i]
 		if submount.goferFD != nil {
-			fdmap[submount.mount.Destination] = submount.goferFD.Release()
+			key := vfs.RestoreID{ContainerName: c.containerName, Path: submount.mount.Destination}
+			fdmap[key] = submount.goferFD.Release()
 		}
 		if submount.filestoreFD != nil {
 			mf, err := createPrivateMemoryFile(submount.filestoreFD.ReleaseToFile("overlay-filestore"))
 			if err != nil {
 				return ctx, fmt.Errorf("failed to create private memory file for mount %q: %w", submount.mount.Destination, err)
 			}
-			mfmap[submount.mount.Destination] = mf
+			key := vfs.RestoreID{ContainerName: c.containerName, Path: submount.mount.Destination}
+			mfmap[key] = mf
 		}
 	}
 	return context.WithValue(context.WithValue(ctx, vfs.CtxRestoreFilesystemFDMap, fdmap), vfs.CtxFilesystemMemoryFileMap, mfmap), nil

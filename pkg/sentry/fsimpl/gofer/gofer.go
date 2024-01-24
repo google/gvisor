@@ -363,7 +363,7 @@ const (
 type InternalFilesystemOptions struct {
 	// If UniqueID is non-empty, it is an opaque string used to reassociate the
 	// filesystem with a new server FD during restoration from checkpoint.
-	UniqueID string
+	UniqueID vfs.RestoreID
 
 	// If LeakConnection is true, do not close the connection to the server
 	// when the Filesystem is released. This is necessary for deployments in
