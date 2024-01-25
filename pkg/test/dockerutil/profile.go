@@ -92,6 +92,9 @@ func (p *profile) createProcess(c *Container) error {
 		outputPath := filepath.Join(p.BasePath, fmt.Sprintf("%s.pprof", profileArg))
 		args = append(args, fmt.Sprintf("--profile-%s=%s", profileArg, outputPath))
 	}
+	if *trace {
+		args = append(args, fmt.Sprintf("--trace=%s", filepath.Join(p.BasePath, "sentry.trace")))
+	}
 	args = append(args, fmt.Sprintf("--duration=%s", p.Duration)) // Or until container exits.
 	args = append(args, fmt.Sprintf("--delay=%s", p.Duration))    // Ditto.
 	args = append(args, c.ID())
