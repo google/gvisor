@@ -56,6 +56,7 @@ var (
 	pprofCPU   = flag.Bool("pprof-cpu", false, "enables CPU profiling with runsc debug")
 	pprofHeap  = flag.Bool("pprof-heap", false, "enables heap profiling with runsc debug")
 	pprofMutex = flag.Bool("pprof-mutex", false, "enables mutex profiling with runsc debug")
+	trace      = flag.Bool("go-trace", false, "enables collecting a go trace with runsc debug")
 
 	// This matches the string "native.cgroupdriver=systemd" (including optional
 	// whitespace), which can be found in a docker daemon configuration file's
