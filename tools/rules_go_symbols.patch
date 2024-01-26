@@ -1,14 +1,14 @@
 diff --git a/go/private/rules/test.bzl b/go/private/rules/test.bzl
-index 17516ad7..76b6c68c 100644
+index 1283776a..bc868296 100644
 --- a/go/private/rules/test.bzl
 +++ b/go/private/rules/test.bzl
-@@ -117,9 +117,6 @@ def _go_test_impl(ctx):
+@@ -124,9 +124,6 @@ def _go_test_impl(ctx):
      )
-
+ 
      test_gc_linkopts = gc_linkopts(ctx)
 -    if not go.mode.debug:
 -        # Disable symbol table and DWARF generation for test binaries.
 -        test_gc_linkopts.extend(["-s", "-w"])
-
-     # Link in the run_dir global for bzltestutil
-     test_gc_linkopts.extend(["-X", "github.com/bazelbuild/rules_go/go/tools/bzltestutil.RunDir=" + run_dir])
+ 
+     # Link in the run_dir global for bzltestutil.
+     # We add "+initfirst/" to the package path so the package is initialized
