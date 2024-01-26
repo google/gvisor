@@ -28,6 +28,9 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 )
 
+func kvmSyscall6(trap, a1, a2, a3, a4, a5, a6 uintptr) uintptr
+func kvmSyscall(trap, a1, a2, a3 uintptr) uintptr
+
 //go:linkname throw runtime.throw
 func throw(s string)
 
@@ -91,8 +94,8 @@ func printHex(title []byte, val uint64) {
 	}
 	str[0] = ' '
 	str[17] = '\n'
-	unix.RawSyscall(unix.SYS_WRITE, uintptr(unix.Stderr), uintptr(unsafe.Pointer(&title[0])), uintptr(len(title)))
-	unix.RawSyscall(unix.SYS_WRITE, uintptr(unix.Stderr), uintptr(unsafe.Pointer(&str)), 18)
+	kvmSyscall(unix.SYS_WRITE, uintptr(unix.Stderr), uintptr(unsafe.Pointer(&title[0])), uintptr(len(title)))
+	kvmSyscall(unix.SYS_WRITE, uintptr(unix.Stderr), uintptr(unsafe.Pointer(&str)), 18)
 }
 
 // bluepillHandler is called from the signal stub.
