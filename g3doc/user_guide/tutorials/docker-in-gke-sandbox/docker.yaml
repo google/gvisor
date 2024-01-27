@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: docker-in-gvisor
+spec:
+  runtimeClassName: gvisor
+  containers:
+  - name: docker-in-gvisor
+    image: avagin/docker-in-gvisor:0.1
+    securityContext:
+      capabilities:
+        add: ["all"]
+    volumeMounts:
+      - name: docker
+        mountPath: /var/lib/docker
+  volumes:
+  - name: docker
+    emptyDir: {}
