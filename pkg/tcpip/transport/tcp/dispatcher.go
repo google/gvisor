@@ -129,7 +129,7 @@ func deliverAccepted(ep *endpoint) bool {
 
 // handleConnecting is responsible for TCP processing for an endpoint in one of
 // the connecting states.
-func (p *processor) handleConnecting(ep *endpoint) {
+func handleConnecting(ep *endpoint) {
 	if !ep.TryLock() {
 		return
 	}
@@ -172,7 +172,7 @@ func (p *processor) handleConnecting(ep *endpoint) {
 
 // handleConnected is responsible for TCP processing for an endpoint in one of
 // the connected states(StateEstablished, StateFinWait1 etc.)
-func (p *processor) handleConnected(ep *endpoint) {
+func handleConnected(ep *endpoint) {
 	if !ep.TryLock() {
 		return
 	}
@@ -200,7 +200,7 @@ func (p *processor) handleConnected(ep *endpoint) {
 		ep.waiterQueue.Notify(waiter.EventHUp | waiter.EventErr | waiter.ReadableEvents | waiter.WritableEvents)
 		return
 	case ep.EndpointState() == StateTimeWait:
-		p.startTimeWait(ep)
+		startTimeWait(ep)
 	}
 	ep.mu.Unlock()
 }
@@ -208,7 +208,7 @@ func (p *processor) handleConnected(ep *endpoint) {
 // startTimeWait starts a new goroutine to handle TIME-WAIT.
 //
 // +checklocks:ep.mu
-func (p *processor) startTimeWait(ep *endpoint) {
+func startTimeWait(ep *endpoint) {
 	// Disable close timer as we are now entering real TIME_WAIT.
 	if ep.finWait2Timer != nil {
 		ep.finWait2Timer.Stop()
@@ -221,7 +221,7 @@ func (p *processor) startTimeWait(ep *endpoint) {
 
 // handleTimeWait is responsible for TCP processing for an endpoint in TIME-WAIT
 // state.
-func (p *processor) handleTimeWait(ep *endpoint) {
+func handleTimeWait(ep *endpoint) {
 	if !ep.TryLock() {
 		return
 	}
@@ -251,7 +251,7 @@ func (p *processor) handleTimeWait(ep *endpoint) {
 
 // handleListen is responsible for TCP processing for an endpoint in LISTEN
 // state.
-func (p *processor) handleListen(ep *endpoint) {
+func handleListen(ep *endpoint) {
 	if !ep.TryLock() {
 		return
 	}
@@ -307,13 +307,13 @@ func (p *processor) start(wg *sync.WaitGroup) {
 				}
 				switch state := ep.EndpointState(); {
 				case state.connecting():
-					p.handleConnecting(ep)
+					handleConnecting(ep)
 				case state.connected() && state != StateTimeWait:
-					p.handleConnected(ep)
+					handleConnected(ep)
 				case state == StateTimeWait:
-					p.handleTimeWait(ep)
+					handleTimeWait(ep)
 				case state == StateListen:
-					p.handleListen(ep)
+					handleListen(ep)
 				case state == StateError || state == StateClose:
 					// Try to redeliver any still queued
 					// packets to another endpoint or send a
