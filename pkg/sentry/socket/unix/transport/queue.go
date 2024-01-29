@@ -167,7 +167,7 @@ func (q *queue) Enqueue(ctx context.Context, data [][]byte, c ControlMessages, f
 		b = b[n:]
 	}
 
-	notify = q.dataList.Front() == nil
+	notify = true
 	q.used += l
 	q.dataList.PushBack(&message{
 		Data:    v,
@@ -200,13 +200,11 @@ func (q *queue) Dequeue() (e *message, notify bool, err *syserr.Error) {
 		return nil, false, err
 	}
 
-	notify = !q.bufWritable()
-
 	e = q.dataList.Front()
 	q.dataList.Remove(e)
 	q.used -= e.Length()
 
-	notify = notify && q.bufWritable()
+	notify = q.bufWritable()
 
 	q.mu.Unlock()
 
