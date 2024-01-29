@@ -33,6 +33,7 @@ The following applications/images have been tested:
 *   python
 *   redis
 *   registry
+*   rust
 *   tomcat
 *   wordpress
 
