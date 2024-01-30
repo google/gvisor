@@ -94,7 +94,7 @@ type endpoint struct {
 }
 
 // NewEndpoint returns a new packet endpoint.
-func NewEndpoint(s *stack.Stack, cooked bool, netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) (tcpip.Endpoint, tcpip.Error) {
+func NewEndpoint(s *stack.Stack, cooked bool, netProto tcpip.NetworkProtocolNumber, waiterQueue *waiter.Queue) tcpip.Endpoint {
 	ep := &endpoint{
 		stack:         s,
 		cooked:        cooked,
@@ -115,10 +115,9 @@ func NewEndpoint(s *stack.Stack, cooked bool, netProto tcpip.NetworkProtocolNumb
 		ep.ops.SetReceiveBufferSize(int64(rs.Default), false /* notify */)
 	}
 
-	if err := s.RegisterPacketEndpoint(0, netProto, ep); err != nil {
-		return nil, err
-	}
-	return ep, nil
+	s.RegisterPacketEndpoint(0, netProto, ep)
+
+	return ep
 }
 
 // Abort implements stack.TransportEndpoint.Abort.
