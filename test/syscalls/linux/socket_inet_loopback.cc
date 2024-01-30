@@ -769,7 +769,9 @@ void TestHangupDuringConnect(const SocketInetTestParam& param,
         .fd = client.get(),
     };
     constexpr int kTimeout = 2000;
-    int n = poll(&pfd, 1, kTimeout);
+    // NB: poll indefinitely on Fuchsia to avoid timing out in Infra.
+    int n =
+        poll(&pfd, 1, GvisorPlatform() == Platform::kFuchsia ? -1 : kTimeout);
     ASSERT_GE(n, 0) << strerror(errno);
     ASSERT_EQ(n, 1);
     ASSERT_EQ(pfd.revents, POLLHUP | POLLERR);
