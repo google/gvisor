@@ -17,6 +17,7 @@
 #include <errno.h>
 #include <net/if.h>
 #include <stdio.h>
+#include <sys/epoll.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -27,8 +28,11 @@
 #include "gtest/gtest.h"
 #include "absl/strings/string_view.h"
 #include "test/syscalls/linux/unix_domain_socket_test_util.h"
+#include "test/util/epoll_util.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/memory_util.h"
+#include "test/util/posix_error.h"
+#include "test/util/save_util.h"
 #include "test/util/socket_util.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
@@ -278,6 +282,44 @@ TEST_P(UnixSocketPairTest, SendFromMmapBeyondEof) {
   auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
   ASSERT_THAT(send(sockets->first_fd(), m.ptr(), m.len(), 0),
               SyscallFailsWithErrno(EFAULT));
+}
+
+// Repro for b/322538038.
+TEST_P(UnixSocketPairTest, EpollEdgeTrigger) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  auto epollfd = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+  ASSERT_NO_ERRNO(RegisterEpollFD(epollfd.get(), sockets->second_fd(),
+                                  EPOLLIN | EPOLLET, sockets->second_fd()));
+
+  // Disable save/restore for this test since restoring a file description that
+  // is ready for I/O will re-arm epoll notifications, regardless of EPOLLET.
+  DisableSave ds;
+
+  // Write to the first end of the socketpair and expect the second end to
+  // become readable.
+  char buf = 8;
+  ASSERT_THAT(WriteFd(sockets->first_fd(), &buf, sizeof(buf)),
+              SyscallSucceedsWithValue(sizeof(buf)));
+  struct epoll_event ev;
+  ASSERT_THAT(RetryEINTR(epoll_wait)(epollfd.get(), &ev, 1, 1000 /* timeout */),
+              SyscallSucceedsWithValue(1));
+  EXPECT_EQ(ev.events, EPOLLIN);
+  EXPECT_EQ(ev.data.u64, sockets->second_fd());
+
+  // Expect another epoll_wait to return no events since the epoll interest is
+  // edge-triggered (registered with EPOLLET) rather than level-triggered.
+  EXPECT_THAT(RetryEINTR(epoll_wait)(epollfd.get(), &ev, 1, 1000 /* timeout */),
+              SyscallSucceedsWithValue(0));
+
+  // Write to the first end of the socketpair again and expect a second epoll
+  // notification, despite the second end having remained readable since the
+  // first write.
+  ASSERT_THAT(WriteFd(sockets->first_fd(), &buf, sizeof(buf)),
+              SyscallSucceedsWithValue(sizeof(buf)));
+  ASSERT_THAT(RetryEINTR(epoll_wait)(epollfd.get(), &ev, 1, 1000 /* timeout */),
+              SyscallSucceedsWithValue(1));
+  EXPECT_EQ(ev.events, EPOLLIN);
+  EXPECT_EQ(ev.data.u64, sockets->second_fd());
 }
 
 }  // namespace

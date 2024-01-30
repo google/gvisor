@@ -3484,8 +3484,11 @@ cc_library(
     ],
     deps = [
         ":unix_domain_socket_test_util",
+        "//test/util:epoll_util",
         "//test/util:file_descriptor",
         "//test/util:memory_util",
+        "//test/util:posix_error",
+        "//test/util:save_util",
         "//test/util:socket_util",
         "@com_google_absl//absl/strings",
         gtest,
