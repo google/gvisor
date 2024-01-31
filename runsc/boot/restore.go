@@ -77,6 +77,8 @@ func (r *restorer) restore(l *Loader) error {
 		return fmt.Errorf("configuring filesystem restore: %v", err)
 	}
 
+	l.watchdog.Start()
+
 	// Load the state.
 	loadOpts := state.LoadOpts{Source: r.stateFile}
 	if err := loadOpts.Load(ctx, l.k, nil, curNetwork, time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}); err != nil {

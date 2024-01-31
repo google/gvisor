@@ -786,6 +786,16 @@ func (c *Container) Processes() ([]*control.Process, error) {
 	return c.Sandbox.Processes(c.ID)
 }
 
+// DestroyMetadata destroys all the container state files.
+func (c *Container) DestroyMetadata() error {
+	if err := c.Saver.Destroy(); err != nil {
+		err = fmt.Errorf("deleting container state files: %v", err)
+		log.Warningf("%v", err)
+		return err
+	}
+	return nil
+}
+
 // Destroy stops all processes and frees all resources associated with the
 // container.
 func (c *Container) Destroy() error {
