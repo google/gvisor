@@ -167,6 +167,9 @@ func packetSocket(t *kernel.Task, epStack *Stack, stype linux.SockType, protocol
 	wq := &waiter.Queue{}
 	ep, err := epStack.Stack.NewPacketEndpoint(cooked, netProto, wq)
 	if err != nil {
+		if _, ok := err.(*tcpip.ErrNotPermitted); ok {
+			rawMissingLogger.Infof("A process tried to create a raw socket, which is disabled by default. Should the runtime config enable --net-raw?")
+		}
 		return nil, syserr.TranslateNetstackError(err)
 	}
 
