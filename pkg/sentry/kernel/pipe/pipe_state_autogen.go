@@ -96,6 +96,7 @@ func (fd *VFSPipeFD) StateFields() []string {
 		"DentryMetadataFileDescriptionImpl",
 		"LockFD",
 		"pipe",
+		"lastAddr",
 	}
 }
 
@@ -109,6 +110,7 @@ func (fd *VFSPipeFD) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &fd.DentryMetadataFileDescriptionImpl)
 	stateSinkObject.Save(3, &fd.LockFD)
 	stateSinkObject.Save(4, &fd.pipe)
+	stateSinkObject.Save(5, &fd.lastAddr)
 }
 
 func (fd *VFSPipeFD) afterLoad() {}
@@ -120,6 +122,7 @@ func (fd *VFSPipeFD) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(2, &fd.DentryMetadataFileDescriptionImpl)
 	stateSourceObject.Load(3, &fd.LockFD)
 	stateSourceObject.Load(4, &fd.pipe)
+	stateSourceObject.Load(5, &fd.lastAddr)
 }
 
 func init() {

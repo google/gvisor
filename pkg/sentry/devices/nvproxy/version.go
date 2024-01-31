@@ -269,6 +269,7 @@ func Init() {
 					nvgpu.NVA06C_CTRL_CMD_GPFIFO_SCHEDULE:                                  rmControlSimple,
 					nvgpu.NVA06C_CTRL_CMD_SET_TIMESLICE:                                    rmControlSimple,
 					nvgpu.NVA06C_CTRL_CMD_PREEMPT:                                          rmControlSimple,
+					nvgpu.NVA06F_CTRL_CMD_GPFIFO_SCHEDULE:                                  rmControlSimple,
 					nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_BUILD_VERSION:                         ctrlClientSystemGetBuildVersion,
 					nvgpu.NV0080_CTRL_CMD_FIFO_GET_CHANNELLIST:                             ctrlDevFIFOGetChannelList,
 					nvgpu.NV0080_CTRL_CMD_GPU_GET_CLASSLIST:                                ctrlDevGpuGetClasslist,
