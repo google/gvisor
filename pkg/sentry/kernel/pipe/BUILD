@@ -46,6 +46,7 @@ go_library(
         "//pkg/context",
         "//pkg/errors/linuxerr",
         "//pkg/hostarch",
+        "//pkg/log",
         "//pkg/marshal/primitive",
         "//pkg/safemem",
         "//pkg/sentry/arch",

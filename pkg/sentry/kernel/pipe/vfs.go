@@ -19,6 +19,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/safemem"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
@@ -165,6 +166,10 @@ type VFSPipeFD struct {
 	vfs.LockFD
 
 	pipe *Pipe
+
+	// lastAddr is the last hostarch.Addr at which a call to a
+	// VFSPipeFD.(usermem.IO) method ended. lastAddr is protected by pipe.mu.
+	lastAddr hostarch.Addr
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
@@ -268,13 +273,11 @@ func (fd *VFSPipeFD) SpliceToNonPipe(ctx context.Context, out *vfs.FileDescripti
 		n   int64
 		err error
 	)
+	fd.lastAddr = 0
 	if off == -1 {
 		n, err = out.Write(ctx, src, vfs.WriteOptions{})
 	} else {
 		n, err = out.PWrite(ctx, src, off, vfs.WriteOptions{})
-	}
-	if n > 0 {
-		fd.pipe.consumeLocked(n)
 	}
 
 	// Implementations of out.[P]Write() that ignore written data (e.g.
@@ -304,6 +307,7 @@ func (fd *VFSPipeFD) SpliceFromNonPipe(ctx context.Context, in *vfs.FileDescript
 		err error
 	)
 	fd.pipe.mu.Lock()
+	fd.lastAddr = 0
 	if off == -1 {
 		n, err = in.Read(ctx, dst, vfs.ReadOptions{})
 	} else {
@@ -318,14 +322,20 @@ func (fd *VFSPipeFD) SpliceFromNonPipe(ctx context.Context, in *vfs.FileDescript
 }
 
 // CopyIn implements usermem.IO.CopyIn. Note that it is the caller's
-// responsibility to call fd.pipe.consumeLocked() and
-// fd.pipe.Notify(waiter.WritableEvents) after the read is completed.
+// responsibility to call fd.pipe.Notify(waiter.WritableEvents) after the read
+// is completed.
 //
 // Preconditions: fd.pipe.mu must be locked.
 func (fd *VFSPipeFD) CopyIn(ctx context.Context, addr hostarch.Addr, dst []byte, opts usermem.IOOpts) (int, error) {
+	if addr != fd.lastAddr {
+		log.Traceback("Non-sequential VFSPipeFD.CopyIn: lastAddr=%#x addr=%#x", fd.lastAddr, addr)
+		return 0, linuxerr.EINVAL
+	}
 	n, err := fd.pipe.peekLocked(int64(len(dst)), func(srcs safemem.BlockSeq) (uint64, error) {
 		return safemem.CopySeq(safemem.BlockSeqOf(safemem.BlockFromSafeSlice(dst)), srcs)
 	})
+	fd.pipe.consumeLocked(n)
+	fd.lastAddr = addr + hostarch.Addr(n)
 	return int(n), err
 }
 
@@ -335,9 +345,14 @@ func (fd *VFSPipeFD) CopyIn(ctx context.Context, addr hostarch.Addr, dst []byte,
 //
 // Preconditions: fd.pipe.mu must be locked.
 func (fd *VFSPipeFD) CopyOut(ctx context.Context, addr hostarch.Addr, src []byte, opts usermem.IOOpts) (int, error) {
+	if addr != fd.lastAddr {
+		log.Traceback("Non-sequential VFSPipeFD.CopyOut: lastAddr=%#x addr=%#x", fd.lastAddr, addr)
+		return 0, linuxerr.EINVAL
+	}
 	n, err := fd.pipe.writeLocked(int64(len(src)), func(dsts safemem.BlockSeq) (uint64, error) {
 		return safemem.CopySeq(dsts, safemem.BlockSeqOf(safemem.BlockFromSafeSlice(src)))
 	})
+	fd.lastAddr = addr + hostarch.Addr(n)
 	return int(n), err
 }
 
@@ -345,9 +360,14 @@ func (fd *VFSPipeFD) CopyOut(ctx context.Context, addr hostarch.Addr, src []byte
 //
 // Preconditions: fd.pipe.mu must be locked.
 func (fd *VFSPipeFD) ZeroOut(ctx context.Context, addr hostarch.Addr, toZero int64, opts usermem.IOOpts) (int64, error) {
+	if addr != fd.lastAddr {
+		log.Traceback("Non-sequential VFSPipeFD.ZeroOut: lastAddr=%#x addr=%#x", fd.lastAddr, addr)
+		return 0, linuxerr.EINVAL
+	}
 	n, err := fd.pipe.writeLocked(toZero, func(dsts safemem.BlockSeq) (uint64, error) {
 		return safemem.ZeroSeq(dsts)
 	})
+	fd.lastAddr = addr + hostarch.Addr(n)
 	return n, err
 }
 
@@ -357,9 +377,25 @@ func (fd *VFSPipeFD) ZeroOut(ctx context.Context, addr hostarch.Addr, toZero int
 //
 // Preconditions: fd.pipe.mu must be locked.
 func (fd *VFSPipeFD) CopyInTo(ctx context.Context, ars hostarch.AddrRangeSeq, dst safemem.Writer, opts usermem.IOOpts) (int64, error) {
-	return fd.pipe.peekLocked(ars.NumBytes(), func(srcs safemem.BlockSeq) (uint64, error) {
-		return dst.WriteFromBlocks(srcs)
-	})
+	total := int64(0)
+	for !ars.IsEmpty() {
+		ar := ars.Head()
+		if ar.Start != fd.lastAddr {
+			log.Traceback("Non-sequential VFSPipeFD.CopyInTo: lastAddr=%#x addr=%#x", fd.lastAddr, ar.Start)
+			return total, linuxerr.EINVAL
+		}
+		n, err := fd.pipe.peekLocked(int64(ar.Length()), func(srcs safemem.BlockSeq) (uint64, error) {
+			return dst.WriteFromBlocks(srcs)
+		})
+		fd.pipe.consumeLocked(n)
+		fd.lastAddr = ar.Start + hostarch.Addr(n)
+		total += n
+		if err != nil {
+			return total, err
+		}
+		ars = ars.Tail()
+	}
+	return total, nil
 }
 
 // CopyOutFrom implements usermem.IO.CopyOutFrom. Note that it is the caller's
@@ -368,9 +404,24 @@ func (fd *VFSPipeFD) CopyInTo(ctx context.Context, ars hostarch.AddrRangeSeq, ds
 //
 // Preconditions: fd.pipe.mu must be locked.
 func (fd *VFSPipeFD) CopyOutFrom(ctx context.Context, ars hostarch.AddrRangeSeq, src safemem.Reader, opts usermem.IOOpts) (int64, error) {
-	return fd.pipe.writeLocked(ars.NumBytes(), func(dsts safemem.BlockSeq) (uint64, error) {
-		return src.ReadToBlocks(dsts)
-	})
+	total := int64(0)
+	for !ars.IsEmpty() {
+		ar := ars.Head()
+		if ar.Start != fd.lastAddr {
+			log.Traceback("Non-sequential VFSPipeFD.CopyOutFrom: lastAddr=%#x addr=%#x", fd.lastAddr, ar.Start)
+			return total, linuxerr.EINVAL
+		}
+		n, err := fd.pipe.writeLocked(int64(ar.Length()), func(dsts safemem.BlockSeq) (uint64, error) {
+			return src.ReadToBlocks(dsts)
+		})
+		fd.lastAddr = ar.Start + hostarch.Addr(n)
+		total += n
+		if err != nil {
+			return total, err
+		}
+		ars = ars.Tail()
+	}
+	return total, nil
 }
 
 // SwapUint32 implements usermem.IO.SwapUint32.
