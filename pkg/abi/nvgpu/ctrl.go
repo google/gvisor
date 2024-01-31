@@ -273,6 +273,11 @@ const (
 	NVA06C_CTRL_CMD_PREEMPT         = 0xa06c0105
 )
 
+// From src/common/sdk/nvidia/inc/ctrl/ctrla06f/ctrla06fgpfifo.h:
+const (
+	NVA06F_CTRL_CMD_GPFIFO_SCHEDULE = 0xa06f0103
+)
+
 // From src/common/sdk/nvidia/inc/ctrl/ctrlcb33.h:
 const (
 	NV_CONF_COMPUTE_CTRL_CMD_SYSTEM_GET_CAPABILITIES = 0xcb330101
