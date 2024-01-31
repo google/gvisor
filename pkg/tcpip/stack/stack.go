@@ -1840,10 +1840,7 @@ func (s *Stack) RegisterPacketEndpoint(nicID tcpip.NICID, netProto tcpip.Network
 	if nicID == 0 {
 		// Register with each NIC.
 		for _, nic := range s.nics {
-			if err := nic.registerPacketEndpoint(netProto, ep); err != nil {
-				s.unregisterPacketEndpointLocked(0, netProto, ep)
-				return err
-			}
+			nic.registerPacketEndpoint(netProto, ep)
 		}
 		return nil
 	}
@@ -1853,9 +1850,7 @@ func (s *Stack) RegisterPacketEndpoint(nicID tcpip.NICID, netProto tcpip.Network
 	if !ok {
 		return &tcpip.ErrUnknownNICID{}
 	}
-	if err := nic.registerPacketEndpoint(netProto, ep); err != nil {
-		return err
-	}
+	nic.registerPacketEndpoint(netProto, ep)
 
 	return nil
 }
