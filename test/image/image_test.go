@@ -64,6 +64,25 @@ func TestHelloWorld(t *testing.T) {
 	}
 }
 
+func TestRust(t *testing.T) {
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	// Run the basic container.
+	out, err := d.Run(ctx, dockerutil.RunOpts{
+		Image: "basic/rust",
+	})
+	if err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+
+	// Check the output.
+	if !strings.Contains(out, "Hello, World!") {
+		t.Fatalf("Container didn't say Hello, World!: got %s", out)
+	}
+}
+
 func runHTTPRequest(ip string, port int) error {
 	url := fmt.Sprintf("http://%s:%d/not-found", ip, port)
 	resp, err := http.Get(url)
