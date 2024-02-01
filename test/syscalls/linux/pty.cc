@@ -1152,6 +1152,23 @@ TEST_F(PtyTest, SwitchNoncanonToCanonNoNewlineBig) {
   ExpectFinished(replica_);
 }
 
+// If the canonical input buffer is empty, and we switch to non-canonical
+// mode, the input buffer should not be readable.
+TEST_F(PtyTest, SwitchCanonToNoncanonEmptyInput) {
+  constexpr char kInput[] = "";
+  ASSERT_THAT(WriteFd(master_.get(), kInput, sizeof(kInput)),
+              SyscallSucceedsWithValue(sizeof(kInput)));
+
+  DisableCanonical();
+
+  // Nothing available yet.
+  char buf[2] = {};
+  ASSERT_THAT(PollAndReadFd(replica_.get(), buf, 2, kTimeoutShort),
+              PosixErrorIs(ETIMEDOUT, ::testing::StrEq("Poll timed out")));
+
+  ExpectFinished(replica_);
+}
+
 // Tests that we can write over the 4095 noncanonical limit, then read out
 // everything.
 TEST_F(PtyTest, NoncanonBigWrite) {
