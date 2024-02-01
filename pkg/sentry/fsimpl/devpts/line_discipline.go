@@ -271,11 +271,8 @@ func (l *lineDiscipline) outputQueueWrite(ctx context.Context, src usermem.IOSeq
 	if err != nil {
 		return 0, err
 	}
-	if n > 0 {
-		l.masterWaiter.Notify(waiter.ReadableEvents)
-		return n, nil
-	}
-	return 0, linuxerr.ErrWouldBlock
+	l.masterWaiter.Notify(waiter.ReadableEvents)
+	return n, nil
 }
 
 // replicaOpen is called when a replica file descriptor is opened.
