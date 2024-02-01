@@ -44,6 +44,7 @@ java/nio/channels/spi/SelectorProvider/inheritedChannel/InheritedChannelTest.jav
 java/nio/channels/unixdomain/SocketOptions.java,,
 java/rmi/transport/checkLeaseInfoLeak/CheckLeaseLeak.java,,Broken test
 java/security/cert/CertPathBuilder/targetConstraints/BuildEEBasicConstraints.java,,Broken test
+java/security/cert/CertPathBuilder/akiExt/AKISerialNumber.java,b/323406905,
 java/security/cert/pkix/policyChanges/TestPolicy.java,,Broken test
 java/util/ResourceBundle/Control/MissingResourceCauseTestRun.java,,Broken test
 java/util/concurrent/locks/Lock/TimedAcquireLeak.java,,
