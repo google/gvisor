@@ -1384,6 +1384,26 @@ TEST_F(PtyTest, PartialBadBuffer) {
   EXPECT_THAT(munmap(addr, 2 * kPageSize), SyscallSucceeds()) << addr;
 }
 
+// Test that writing nothing to the PTY replica's output queue does not return
+// an error.
+TEST_F(PtyTest, ReplicaWriteNothingCanonical) {
+  constexpr char kInput[] = "";
+  EXPECT_THAT(WriteFd(replica_.get(), kInput, strlen(kInput)),
+              SyscallSucceedsWithValue(strlen(kInput)));
+
+  ExpectFinished(master_);
+}
+
+TEST_F(PtyTest, ReplicaWriteNothingNonCanonical) {
+  DisableCanonical();
+
+  constexpr char kInput[] = "";
+  EXPECT_THAT(WriteFd(replica_.get(), kInput, strlen(kInput)),
+              SyscallSucceedsWithValue(strlen(kInput)));
+
+  ExpectFinished(master_);
+}
+
 TEST_F(PtyTest, SimpleEcho) {
   constexpr char kInput[] = "Mr. Eko";
   EXPECT_THAT(WriteFd(master_.get(), kInput, strlen(kInput)),
