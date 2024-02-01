@@ -68,6 +68,8 @@ env:
   # Optional filter for syscall tests.
   SYSCALL_TEST_FILTERS: ''
 
+  # Allow to run jobs in parallel.
+  MAKEFLAGS: '-j 8'
 steps:
   # Run basic smoke tests before preceding to other tests.
   - <<: *common

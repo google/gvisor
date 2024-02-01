@@ -118,7 +118,7 @@ tag-%: ## Tag a local image.
 # pull forces the image to be pulled.
 pull = \
   $(call header,PULL $(1)) && \
-  docker pull $(DOCKER_PLATFORM_ARGS) $(call remote_image,$(1)):$(call tag,$(1)) >&2 && \
+  docker pull -q $(DOCKER_PLATFORM_ARGS) $(call remote_image,$(1)):$(call tag,$(1)) >&2 && \
   $(call local_tag,$(1)) && \
   $(call latest_tag,$(1))
 pull-%: register-cross ## Force a repull of the image.
