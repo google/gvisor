@@ -63,3 +63,21 @@ doc(
     subcategory = "Tutorials",
     weight = "50",
 )
+
+doc(
+    name = "docker_in_gvisor",
+    src = "docker-in-gvisor.md",
+    category = "User Guide",
+    permalink = "/docs/tutorials/docker-in-gvisor/",
+    subcategory = "Tutorials",
+    weight = "50",
+)
+
+doc(
+    name = "docker_in_gke_sandbox",
+    src = "docker-in-gke-sandbox.md",
+    category = "User Guide",
+    permalink = "/docs/tutorials/docker-in-gke-sandbox/",
+    subcategory = "Tutorials",
+    weight = "50",
+)
