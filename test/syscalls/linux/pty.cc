@@ -75,6 +75,10 @@ constexpr int kPtmxMinor = 2;
 // have to wait.
 constexpr absl::Duration kTimeout = absl::Seconds(20);
 
+// Similar to kTimeout, but shorter: This timeout is used for tests where
+// the expected behavior is to observe a timeout, which helps speed up tests.
+constexpr absl::Duration kTimeoutShort = absl::Seconds(2);
+
 // The maximum line size in bytes returned per read from a pty file.
 constexpr int kMaxLineSize = 4096;
 
@@ -866,7 +870,7 @@ TEST_F(PtyTest, TermiosIGNCR) {
   ASSERT_THAT(WriteFd(master_.get(), &c, 1), SyscallSucceedsWithValue(1));
 
   // Nothing to read.
-  ASSERT_THAT(PollAndReadFd(replica_.get(), &c, 1, kTimeout),
+  ASSERT_THAT(PollAndReadFd(replica_.get(), &c, 1, kTimeoutShort),
               PosixErrorIs(ETIMEDOUT, ::testing::StrEq("Poll timed out")));
 }
 
@@ -956,7 +960,7 @@ TEST_F(PtyTest, TermiosONOCR) {
   ASSERT_THAT(WriteFd(replica_.get(), &c, 1), SyscallSucceedsWithValue(1));
 
   // Nothing to read.
-  ASSERT_THAT(PollAndReadFd(master_.get(), &c, 1, kTimeout),
+  ASSERT_THAT(PollAndReadFd(master_.get(), &c, 1, kTimeoutShort),
               PosixErrorIs(ETIMEDOUT, ::testing::StrEq("Poll timed out")));
 
   // This time the column is greater than 0, so we should be able to read the CR
@@ -977,7 +981,7 @@ TEST_F(PtyTest, TermiosONOCR) {
   ASSERT_THAT(WriteFd(replica_.get(), &c, 1), SyscallSucceedsWithValue(1));
 
   // Nothing to read.
-  ASSERT_THAT(PollAndReadFd(master_.get(), &c, 1, kTimeout),
+  ASSERT_THAT(PollAndReadFd(master_.get(), &c, 1, kTimeoutShort),
               PosixErrorIs(ETIMEDOUT, ::testing::StrEq("Poll timed out")));
 }
 
@@ -1005,7 +1009,7 @@ TEST_F(PtyTest, VEOLTermination) {
   ASSERT_THAT(WriteFd(master_.get(), kInput, sizeof(kInput)),
               SyscallSucceedsWithValue(sizeof(kInput)));
   char buf[sizeof(kInput)] = {};
-  ASSERT_THAT(PollAndReadFd(replica_.get(), buf, sizeof(kInput), kTimeout),
+  ASSERT_THAT(PollAndReadFd(replica_.get(), buf, sizeof(kInput), kTimeoutShort),
               PosixErrorIs(ETIMEDOUT, ::testing::StrEq("Poll timed out")));
 
   // Set the EOL character to '=' and write it.
@@ -1054,7 +1058,7 @@ TEST_F(PtyTest, SwitchCanonToNoncanon) {
 
   // Nothing available yet.
   char buf[sizeof(kInput)] = {};
-  ASSERT_THAT(PollAndReadFd(replica_.get(), buf, sizeof(kInput), kTimeout),
+  ASSERT_THAT(PollAndReadFd(replica_.get(), buf, sizeof(kInput), kTimeoutShort),
               PosixErrorIs(ETIMEDOUT, ::testing::StrEq("Poll timed out")));
 
   DisableCanonical();
@@ -1189,7 +1193,7 @@ TEST_F(PtyTest, TermiosICANONNewline) {
   char buf[5] = {};
 
   // Nothing available yet.
-  ASSERT_THAT(PollAndReadFd(replica_.get(), buf, sizeof(input), kTimeout),
+  ASSERT_THAT(PollAndReadFd(replica_.get(), buf, sizeof(input), kTimeoutShort),
               PosixErrorIs(ETIMEDOUT, ::testing::StrEq("Poll timed out")));
 
   char delim = '\n';
@@ -1215,7 +1219,7 @@ TEST_F(PtyTest, TermiosICANONEOF) {
   char buf[4] = {};
 
   // Nothing available yet.
-  ASSERT_THAT(PollAndReadFd(replica_.get(), buf, sizeof(input), kTimeout),
+  ASSERT_THAT(PollAndReadFd(replica_.get(), buf, sizeof(input), kTimeoutShort),
               PosixErrorIs(ETIMEDOUT, ::testing::StrEq("Poll timed out")));
   char delim = ControlCharacter('D');
   ASSERT_THAT(WriteFd(master_.get(), &delim, 1), SyscallSucceedsWithValue(1));
