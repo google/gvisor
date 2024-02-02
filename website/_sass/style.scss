@@ -195,6 +195,79 @@ table th {
   margin-bottom: 0px;
 }
 
+.blog-content details {
+  margin-left: 2em;
+  margin-right: 2em;
+  border: 1px solid #ccc;
+  border-radius: 0.33em;
+  padding: 1em;
+  margin-bottom: 1em;
+}
+
+/* Override the top/bottom margins of whatever is inside. */
+/* We rely on the padding of the details element instead. */
+.blog-content details > summary:first-child,
+.blog-content details > summary:first-child > :first-child {
+  margin-top: 0px;
+}
+
+/* Remove bottom margin from last element of <details> */
+.blog-content details > :not(summary):last-child {
+  margin-bottom: 0px;
+}
+
+/* Remove bottom margin from last child of <summary> if <details> isn't open. */
+.blog-content details:not([open]) > summary > *:last-child {
+  margin-bottom: 0px;
+}
+
+.blog-content details > summary:first-child {
+  cursor: pointer;
+
+  /* No border when closed, added when opened: */
+  border-bottom: 0px;
+  margin-bottom: 0em;
+}
+
+.blog-content details[open] > summary:first-child {
+  border-bottom: 1px dashed #ccc;
+  margin-bottom: 1em;
+}
+
+/* Create CSS triangle and animate openining/closing: */
+
+.blog-content details > summary:first-child {
+  padding-left: 1em;
+  position: relative;
+}
+
+.blog-content details > summary:first-child:before {
+  content: '';
+  border-width: .4rem;
+  border-style: solid;
+  border-color: transparent transparent transparent #333;
+  position: absolute;
+  top: 0.5em;
+  left: 0px;
+  transform-origin: .2rem 50%;
+  transition: .25s transform ease;
+}
+
+.blog-content details:not([open]) > summary:before {
+  transform: rotate(0);
+}
+
+.blog-content details[open] > summary:before {
+  transform: rotate(90deg);
+}
+
+/* Add line above footnotes section if it is not empty. */
+.blog-content .footnotes:has(li) {
+  margin-top: 2em;
+  border-top: 1px dotted #ccc;
+  padding-top: 2em;
+}
+
 /* Reduce h2 margins in the big "solution" panels on the homepage. */
 .panel-solution h2 {
   margin-top: 1em;
