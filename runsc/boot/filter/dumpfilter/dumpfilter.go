@@ -32,6 +32,7 @@ import (
 var (
 	output        = flag.String("output", "fancy", "Output type: 'fancy' (human-readable with line numbers resolved), 'plain' (diffable but still human-readable output), 'bytecode' (dump raw bytecode)")
 	nvproxy       = flag.Bool("nvproxy", false, "Enable nvproxy in filter configuration")
+	optimize      = flag.Bool("optimize", true, "Enable seccomp optimizations")
 	denyAction    = flag.String("deny-action", "default", "What to do if the syscall matches the 'deny' ruleset (one of: errno, kill_process, kill_thread)")
 	defaultAction = flag.String("default-action", "default", "What to do if all the syscall rules fail to match (one of: errno, kill_process, kill_thread)")
 	badArchAction = flag.String("bad-arch-action", "default", "What to do if all the architecture field mismatches (one of: errno, kill_process, kill_thread)")
@@ -69,6 +70,7 @@ func main() {
 	rules, denyRules := config.Rules(opt)
 
 	seccompOpts := config.SeccompOptions(opt)
+	seccompOpts.Optimize = *optimize
 	seccompOpts.DefaultAction = action(*defaultAction)
 	seccompOpts.BadArchAction = action(*badArchAction)
 	insns, stats, err := seccomp.BuildProgram([]seccomp.RuleSet{
