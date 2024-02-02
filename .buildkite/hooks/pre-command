@@ -125,3 +125,17 @@ if test "${BUILDKITE_AGENT_META_DATA_QUEUE}" = "release"; then
 fi
 
 sudo sysctl -w kernel.print-fatal-signals=1
+
+pipeline_add_env() {
+  sed -i "/^env:/a\  $1: '$2'" .buildkite/pipeline.yaml
+}
+
+# Try to skip unaffected tests on pre-submits.
+# BUILDKITE_PIPELINE_ID is set only on the pipeline upload step.
+if [[ -n "${BUILDKITE_PIPELINE_ID}" && "${BUILDKITE_BRANCH}" =~ ^test/ ]]; then
+  # Skip load-all-images tests if the change doesn't affect images.
+  if ./tools/builkite-check-paths.sh images/ tools/images.mk Makefile; then
+    echo "Skip load-all-images tests"
+    pipeline_add_env SKIP_LOADING_IMAGES 1
+  fi
+fi
