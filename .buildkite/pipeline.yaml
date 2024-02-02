@@ -215,13 +215,17 @@ steps:
   - <<: *common
     <<: *source_test
     label: ":docker: Images (x86_64)"
-    command: make ARCH=x86_64 load-all-images
+    command: |
+      ./tools/builkite-check-paths.sh images/ tools/images.mk Makefile ||
+      make ARCH=x86_64 load-all-images
     agents:
       arch: "amd64"
   - <<: *common
     <<: *source_test
     label: ":docker: Images (aarch64)"
-    command: make ARCH=aarch64 load-all-images
+    command: |
+      ./tools/builkite-check-paths.sh images/ tools/images.mk Makefile ||
+      make ARCH=aarch64 load-all-images
     agents:
       arch: "arm64"
 

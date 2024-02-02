@@ -91,7 +91,7 @@ endif
 ##
 ## Development helpers and tooling.
 ##
-##   These targets faciliate local development by automatically
+##   These targets facilitate local development by automatically
 ##   installing and configuring a runtime. Several variables may
 ##   be used here to tweak the installation:
 ##     RUNTIME         - The name of the installed runtime (default: $BRANCH_NAME).
