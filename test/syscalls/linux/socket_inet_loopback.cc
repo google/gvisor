@@ -1202,7 +1202,10 @@ TEST_P(SocketInetLoopbackTest, TCPBacklogAcceptAll) {
         .fd = waiting_clients[i].get(),
         .events = POLLOUT,
     };
-    EXPECT_THAT(poll(&pfd, 1, kTimeout), SyscallSucceedsWithValue(1));
+    // NB: poll indefinitely on Fuchsia to avoid timing out in Infra.
+    EXPECT_THAT(
+        poll(&pfd, 1, GvisorPlatform() == Platform::kFuchsia ? -1 : kTimeout),
+        SyscallSucceedsWithValue(1));
     EXPECT_EQ(pfd.revents, POLLOUT);
     char c;
     EXPECT_THAT(RetryEINTR(send)(waiting_clients[i].get(), &c, sizeof(c), 0),
