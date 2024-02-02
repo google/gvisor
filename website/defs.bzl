@@ -170,6 +170,7 @@ include_in_menu: {include_in_menu}"""
         outputs = [tarball],
         progress_message = "Generating %s" % ctx.label,
         executable = builder,
+        toolchain = None,
     )
     return [DefaultInfo(
         files = depset([tarball]),

@@ -131,6 +131,16 @@ doc(
     permalink = "/blog/2023/06/27/directfs/",
 )
 
+doc(
+    name = "seccomp",
+    src = "2024-02-01-seccomp.md",
+    authors = [
+        "eperot",
+    ],
+    layout = "post",
+    permalink = "/blog/2024/02/01/seccomp/",
+)
+
 docs(
     name = "posts",
     deps = [
