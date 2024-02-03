@@ -27,6 +27,21 @@ import (
 // FuzzFilterOptimizationsResultInConsistentProgram tests that optimizations
 // do not affect the behavior of the generated seccomp-bpf program.
 func FuzzFilterOptimizationsResultInConsistentProgram(f *testing.F) {
+	fuzzFilterOptimizationsResultInConsistentProgram(f)
+}
+
+// TestFilterOptimizationsResultInConsistentProgram tests that optimizations
+// do not affect the behavior of the generated seccomp-bpf program, as a unit
+// test. Unlike the fuzz-based test, it only operates on a static corpus.
+// Still, it does enforce full branch coverage, so can be used as a quicker
+// way to verify functionality without running a fuzz test for an interminate
+// amount of time.
+func TestFilterOptimizationsResultInConsistentProgram(t *testing.T) {
+	fuzzFilterOptimizationsResultInConsistentProgram(&secfuzz.StaticCorpus{T: t})
+}
+
+func fuzzFilterOptimizationsResultInConsistentProgram(f secfuzz.FuzzLike) {
+	f.Helper()
 	filterOpts := config.Options{
 		Platform: (&systrap.Systrap{}).SeccompInfo(),
 	}

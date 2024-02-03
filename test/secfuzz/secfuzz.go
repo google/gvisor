@@ -44,10 +44,116 @@ type Fuzzee struct {
 	coverage [bpf.MaxInstructions]atomicbitops.Bool
 }
 
+// FuzzLike represents a fuzzer.
+// It is the subset of `testing.F` that secfuzz uses.
+type FuzzLike interface {
+	Helper()
+	Add(seed ...any)
+	Errorf(message string, values ...any)
+	Fatalf(message string, values ...any)
+	Logf(message string, values ...any)
+	Fuzz(fn any)
+}
+
+// Verify that `testing.F` implements `FuzzLike`.
+var _ FuzzLike = (*testing.F)(nil)
+
+// StaticCorpus allows a unit test to use secfuzz by using a static corpus.
+// This allows checking for coverage and consistency between programs,
+// but no new inputs beyond those explicitly added will be tested.
+type StaticCorpus struct {
+	T      *testing.T
+	corpus []linux.SeccompData
+}
+
+// Helper implements `FuzzLike.Helper`.
+func (s *StaticCorpus) Helper() {
+	s.T.Helper()
+}
+
+// unpack64Bits unpacks two 32-bit values into one unsigned 64-bit integer.
+func unpack64Bits(high, low any) uint64 {
+	return uint64(high.(uint32))<<32 | uint64(low.(uint32))
+}
+
+// Add implements `FuzzLike.Add`.
+func (s *StaticCorpus) Add(seed ...any) {
+	if len(seed) != 16 {
+		s.T.Fatalf("seed must have 16 components, got %d", len(seed))
+	}
+	s.corpus = append(s.corpus, linux.SeccompData{
+		Nr:   seed[0].(int32),
+		Arch: seed[1].(uint32),
+		Args: [6]uint64{
+			unpack64Bits(seed[2], seed[3]),
+			unpack64Bits(seed[4], seed[5]),
+			unpack64Bits(seed[6], seed[7]),
+			unpack64Bits(seed[8], seed[9]),
+			unpack64Bits(seed[10], seed[11]),
+			unpack64Bits(seed[12], seed[13]),
+		},
+		InstructionPointer: unpack64Bits(seed[14], seed[15]),
+	})
+}
+
+// Errorf implements `FuzzLike.Errorf`.
+func (s *StaticCorpus) Errorf(message string, values ...any) {
+	s.T.Helper()
+	s.T.Errorf(message, values...)
+}
+
+// Fatalf implements `FuzzLike.Fatalf`.
+func (s *StaticCorpus) Fatalf(message string, values ...any) {
+	s.T.Helper()
+	s.T.Fatalf(message, values...)
+}
+
+// Logf implements `FuzzLike.Logf`.
+func (s *StaticCorpus) Logf(message string, values ...any) {
+	s.T.Helper()
+	s.T.Logf(message, values...)
+}
+
+// Fuzz implements `FuzzLike.Fuzz`.
+func (s *StaticCorpus) Fuzz(fn any) {
+	s.T.Helper()
+	if len(s.corpus) == 0 {
+		s.T.Error("corpus is empty")
+	}
+	seccompFn := fn.(func(
+		t *testing.T,
+		nr int32,
+		arch uint32,
+		arg0High, arg0Low uint32,
+		arg1High, arg1Low uint32,
+		arg2High, arg2Low uint32,
+		arg3High, arg3Low uint32,
+		arg4High, arg4Low uint32,
+		arg5High, arg5Low uint32,
+		ripHigh, ripLow uint32))
+	for _, scData := range s.corpus {
+		seccompFn(
+			s.T,
+			int32(scData.Nr),
+			uint32(scData.Arch),
+			uint32(scData.Args[0]>>32), uint32(scData.Args[0]), // arg0
+			uint32(scData.Args[1]>>32), uint32(scData.Args[1]), // arg1
+			uint32(scData.Args[2]>>32), uint32(scData.Args[2]), // arg2
+			uint32(scData.Args[3]>>32), uint32(scData.Args[3]), // arg3
+			uint32(scData.Args[4]>>32), uint32(scData.Args[4]), // arg4
+			uint32(scData.Args[5]>>32), uint32(scData.Args[5]), // arg5
+			uint32(scData.InstructionPointer>>32), uint32(scData.InstructionPointer), // rip
+		)
+	}
+}
+
+// Verify that StaticCorpus implements `FuzzLike`.
+var _ FuzzLike = (*StaticCorpus)(nil)
+
 // DiffFuzzer fuzzes two seccomp programs.
 type DiffFuzzer struct {
 	// f is the Go fuzzer to use.
-	f *testing.F
+	f FuzzLike
 
 	// The two programs being differentially fuzzed.
 	fuzzee1, fuzzee2 *Fuzzee
@@ -152,7 +258,7 @@ func (df *DiffFuzzer) DeriveCorpusFromRuleSets(ruleSets []seccomp.RuleSet) {
 // NewDiffFuzzer creates a fuzzer that verifies that two seccomp-bpf programs
 // are equivalent by fuzzing both of them with the same inputs and checking
 // that they output the same result.
-func NewDiffFuzzer(f *testing.F, fuzzee1, fuzzee2 *Fuzzee) (*DiffFuzzer, error) {
+func NewDiffFuzzer(f FuzzLike, fuzzee1, fuzzee2 *Fuzzee) (*DiffFuzzer, error) {
 	f.Helper()
 	if len(fuzzee1.Instructions) > bpf.MaxInstructions {
 		return nil, fmt.Errorf("program %s has %d instructions, which exceeds the maximum of %d", fuzzee1.String(), len(fuzzee1.Instructions), bpf.MaxInstructions)
@@ -263,7 +369,7 @@ func (df *DiffFuzzer) Fuzz() {
 					df.f.Errorf("[NOT COVERED] % 4d: %s", pc, ins.String())
 				}
 			}
-			df.f.Error("\n")
+			df.f.Errorf("\n")
 		} else {
 			df.f.Logf("Program %s not fully covered (but coverage not enforced).", df.fuzzee1.String())
 		}
@@ -278,7 +384,7 @@ func (df *DiffFuzzer) Fuzz() {
 					df.f.Errorf("[NOT COVERED] % 4d: %s", pc, ins.String())
 				}
 			}
-			df.f.Error("\n")
+			df.f.Errorf("\n")
 		} else {
 			df.f.Logf("Program %s not fully covered (but coverage not enforced).", df.fuzzee2.String())
 		}
