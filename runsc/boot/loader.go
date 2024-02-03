@@ -170,10 +170,6 @@ type Loader struct {
 	// apply to the entire pod.
 	mountHints *PodMountHints
 
-	// cgroupMounts is a map of cgroup mounts that can be reused across
-	// containers. It is mapped by cgroup controller name.
-	cgroupMounts map[string]*cgroupMount
-
 	// productName is the value to show in
 	// /sys/devices/virtual/dmi/id/product_name.
 	productName string
@@ -304,6 +300,33 @@ type Args struct {
 // make sure stdioFDs are always the same on initial start and on restore
 const startingStdioFD = 256
 
+func getRootCredentials(spec *specs.Spec, conf *config.Config, userNs *auth.UserNamespace) *auth.Credentials {
+	// Create capabilities.
+	caps, err := specutils.Capabilities(conf.EnableRaw, spec.Process.Capabilities)
+	if err != nil {
+		return nil
+	}
+
+	// Convert the spec's additional GIDs to KGIDs.
+	extraKGIDs := make([]auth.KGID, 0, len(spec.Process.User.AdditionalGids))
+	for _, GID := range spec.Process.User.AdditionalGids {
+		extraKGIDs = append(extraKGIDs, auth.KGID(GID))
+	}
+
+	if userNs == nil {
+		userNs = auth.NewRootUserNamespace()
+	}
+	// Create credentials.
+	creds := auth.NewUserCredentials(
+		auth.KUID(spec.Process.User.UID),
+		auth.KGID(spec.Process.User.GID),
+		extraKGIDs,
+		caps,
+		userNs)
+
+	return creds
+}
+
 // New initializes a new kernel loader configured by spec.
 // New also handles setting up a kernel for restoring a container.
 func New(args Args) (*Loader, error) {
@@ -414,26 +437,10 @@ func New(args Args) (*Loader, error) {
 		return nil, fmt.Errorf("enabling strace: %w", err)
 	}
 
-	// Create capabilities.
-	caps, err := specutils.Capabilities(args.Conf.EnableRaw, args.Spec.Process.Capabilities)
-	if err != nil {
-		return nil, fmt.Errorf("converting capabilities: %w", err)
+	creds := getRootCredentials(args.Spec, args.Conf, nil /* UserNamespace */)
+	if creds == nil {
+		return nil, fmt.Errorf("getting root credentials")
 	}
-
-	// Convert the spec's additional GIDs to KGIDs.
-	extraKGIDs := make([]auth.KGID, 0, len(args.Spec.Process.User.AdditionalGids))
-	for _, GID := range args.Spec.Process.User.AdditionalGids {
-		extraKGIDs = append(extraKGIDs, auth.KGID(GID))
-	}
-
-	// Create credentials.
-	creds := auth.NewUserCredentials(
-		auth.KUID(args.Spec.Process.User.UID),
-		auth.KGID(args.Spec.Process.User.GID),
-		extraKGIDs,
-		caps,
-		auth.NewRootUserNamespace())
-
 	// Create root network namespace/stack.
 	netns, err := newRootNetworkNamespace(args.Conf, tk, k, creds.UserNamespace)
 	if err != nil {
@@ -624,11 +631,6 @@ func (l *Loader) Destroy() {
 	ctx := l.k.SupervisorContext()
 	for _, m := range l.sharedMounts {
 		m.DecRef(ctx)
-	}
-	for _, m := range l.cgroupMounts {
-		m.mount.DecRef(ctx)
-		m.root.DecRef(ctx)
-		m.fs.DecRef(ctx)
 	}
 
 	// Stop the control server. This will indirectly stop any
@@ -849,12 +851,6 @@ func (l *Loader) createSubcontainer(cid string, tty *fd.FD) error {
 // the newly created process. Used FDs are either closed or released. It's safe
 // for the caller to close any remaining files upon return.
 func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid string, stdioFDs, goferFDs, goferFilestoreFDs []*fd.FD, devGoferFD *fd.FD, goferMountConfs []GoferMountConf) error {
-	// Create capabilities.
-	caps, err := specutils.Capabilities(conf.EnableRaw, spec.Process.Capabilities)
-	if err != nil {
-		return fmt.Errorf("creating capabilities: %w", err)
-	}
-
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -863,23 +859,14 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 		return fmt.Errorf("trying to start a deleted container %q", cid)
 	}
 
-	// Convert the spec's additional GIDs to KGIDs.
-	extraKGIDs := make([]auth.KGID, 0, len(spec.Process.User.AdditionalGids))
-	for _, GID := range spec.Process.User.AdditionalGids {
-		extraKGIDs = append(extraKGIDs, auth.KGID(GID))
-	}
-
 	// Create credentials. We reuse the root user namespace because the
 	// sentry currently supports only 1 mount namespace, which is tied to a
 	// single user namespace. Thus we must run in the same user namespace
 	// to access mounts.
-	creds := auth.NewUserCredentials(
-		auth.KUID(spec.Process.User.UID),
-		auth.KGID(spec.Process.User.GID),
-		extraKGIDs,
-		caps,
-		l.k.RootUserNamespace())
-
+	creds := getRootCredentials(spec, conf, l.k.RootUserNamespace())
+	if creds == nil {
+		return fmt.Errorf("getting root credentials")
+	}
 	var pidns *kernel.PIDNamespace
 	if ns, ok := specutils.GetNS(specs.PIDNamespace, spec); ok {
 		if ns.Path != "" {
@@ -912,6 +899,7 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 		nvidiaUVMDevMajor:   l.root.nvidiaUVMDevMajor,
 		nvidiaDriverVersion: l.root.nvidiaDriverVersion,
 	}
+	var err error
 	info.procArgs, err = createProcessArgs(cid, spec, creds, l.k, pidns)
 	if err != nil {
 		return fmt.Errorf("creating new process: %w", err)
@@ -1019,7 +1007,7 @@ func (l *Loader) createContainerProcess(info *containerInfo) (*kernel.ThreadGrou
 	}
 	// We can share l.sharedMounts with containerMounter since l.mu is locked.
 	// Hence, mntr must only be used within this function (while l.mu is locked).
-	mntr := newContainerMounter(info, l.k, l.mountHints, l.sharedMounts, l.productName, l.sandboxID, l.cgroupMounts)
+	mntr := newContainerMounter(info, l.k, l.mountHints, l.sharedMounts, l.productName, l.sandboxID)
 	if err := setupContainerVFS(ctx, info, mntr, &info.procArgs); err != nil {
 		return nil, nil, err
 	}

@@ -110,6 +110,16 @@ func (uc *UserCounters) decRLimitNProc() {
 	uc.rlimitNProc.Add(^uint64(0))
 }
 
+// CgroupMount contains the cgroup mount. These mounts are created for the root
+// container by default and are stored in the kernel.
+//
+// +stateify savable
+type CgroupMount struct {
+	Fs    *vfs.Filesystem
+	Root  *vfs.Dentry
+	Mount *vfs.Mount
+}
+
 // Kernel represents an emulated Linux kernel. It must be initialized by calling
 // Init() or LoadFrom().
 //
@@ -320,6 +330,13 @@ type Kernel struct {
 	// system. It is controller by cgroupfs. Nil if cgroupfs is unavailable on
 	// the system.
 	cgroupRegistry *CgroupRegistry
+
+	// cgroupMountsMap maps the cgroup controller names to the cgroup mounts
+	// created for the root container. These mounts are then bind mounted
+	// for other application containers by creating their own container
+	// directories.
+	cgroupMountsMap   map[string]*CgroupMount
+	cgroupMountsMapMu cgroupMountsMutex `state:"nosave"`
 
 	// userCountersMap maps auth.KUID into a set of user counters.
 	userCountersMap   map[auth.KUID]*UserCounters
@@ -1735,12 +1752,46 @@ func (k *Kernel) CgroupRegistry() *CgroupRegistry {
 	return k.cgroupRegistry
 }
 
+// AddCgroupMount adds the cgroup mounts to the cgroupMountsMap. These cgroup
+// mounts are created during the creation of root container process and the
+// reference ownership is transferred to the kernel.
+func (k *Kernel) AddCgroupMount(ctl string, mnt *CgroupMount) {
+	k.cgroupMountsMapMu.Lock()
+	defer k.cgroupMountsMapMu.Unlock()
+
+	if k.cgroupMountsMap == nil {
+		k.cgroupMountsMap = make(map[string]*CgroupMount)
+	}
+	k.cgroupMountsMap[ctl] = mnt
+}
+
+// GetCgroupMount returns the cgroup mount for the given cgroup controller.
+func (k *Kernel) GetCgroupMount(ctl string) *CgroupMount {
+	k.cgroupMountsMapMu.Lock()
+	defer k.cgroupMountsMapMu.Unlock()
+
+	return k.cgroupMountsMap[ctl]
+}
+
+// releaseCgroupMounts releases the cgroup mounts.
+func (k *Kernel) releaseCgroupMounts(ctx context.Context) {
+	k.cgroupMountsMapMu.Lock()
+	defer k.cgroupMountsMapMu.Unlock()
+
+	for _, m := range k.cgroupMountsMap {
+		m.Mount.DecRef(ctx)
+		m.Root.DecRef(ctx)
+		m.Fs.DecRef(ctx)
+	}
+}
+
 // Release releases resources owned by k.
 //
 // Precondition: This should only be called after the kernel is fully
 // initialized, e.g. after k.Start() has been called.
 func (k *Kernel) Release() {
 	ctx := k.SupervisorContext()
+	k.releaseCgroupMounts(ctx)
 	k.hostMount.DecRef(ctx)
 	k.pipeMount.DecRef(ctx)
 	k.nsfsMount.DecRef(ctx)

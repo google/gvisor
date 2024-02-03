@@ -112,6 +112,13 @@ declare_mutex(
     prefix = "threadGroupTimer",
 )
 
+declare_mutex(
+    name = "cgroup_mounts_mutex",
+    out = "cgroup_mounts_mutex.go",
+    package = "kernel",
+    prefix = "cgroupMounts",
+)
+
 go_template_instance(
     name = "pending_signals_list",
     out = "pending_signals_list.go",
@@ -230,6 +237,7 @@ go_library(
         "atomicptr_bucket_unsafe.go",
         "atomicptr_descriptor_unsafe.go",
         "cgroup.go",
+        "cgroup_mounts_mutex.go",
         "cgroup_mutex.go",
         "context.go",
         "cpu_clock_mutex.go",
