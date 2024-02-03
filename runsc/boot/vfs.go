@@ -405,23 +405,13 @@ type containerMounter struct {
 	sandboxID     string
 	containerName string
 
-	// cgroupMounts is a map of cgroup mounts that can be reused across
-	// containers. Key is the cgroup controller name string.
-	cgroupMounts map[string]*cgroupMount
-
 	// cgroupsMounted indicates if cgroups are mounted in the container.
 	// This is used to set the InitialCgroups before starting the container
 	// process.
 	cgroupsMounted bool
 }
 
-type cgroupMount struct {
-	fs    *vfs.Filesystem
-	root  *vfs.Dentry
-	mount *vfs.Mount
-}
-
-func newContainerMounter(info *containerInfo, k *kernel.Kernel, hints *PodMountHints, sharedMounts map[string]*vfs.Mount, productName string, sandboxID string, cgroupMounts map[string]*cgroupMount) *containerMounter {
+func newContainerMounter(info *containerInfo, k *kernel.Kernel, hints *PodMountHints, sharedMounts map[string]*vfs.Mount, productName string, sandboxID string) *containerMounter {
 	return &containerMounter{
 		root:              info.spec.Root,
 		mounts:            compileMounts(info.spec, info.conf, info.procArgs.ContainerID),
@@ -436,7 +426,6 @@ func newContainerMounter(info *containerInfo, k *kernel.Kernel, hints *PodMountH
 		containerID:       info.procArgs.ContainerID,
 		sandboxID:         sandboxID,
 		containerName:     info.containerName,
-		cgroupMounts:      cgroupMounts,
 	}
 }
 
@@ -1107,10 +1096,9 @@ func (c *containerMounter) getSharedMount(ctx context.Context, spec *specs.Spec,
 }
 
 // mountCgroupMounts mounts the cgroups which are shared across all containers.
-// Postcondition: Initialized l.cgroupMounts on success.
+// Postcondition: Initialized k.cgroupMounts on success.
 func (l *Loader) mountCgroupMounts(conf *config.Config, creds *auth.Credentials) error {
 	ctx := l.k.SupervisorContext()
-	cgroupMounts := make(map[string]*cgroupMount)
 	for _, sopts := range kernel.CgroupCtrls {
 		mopts := &vfs.MountOptions{
 			GetFilesystemOptions: vfs.GetFilesystemOptions{
@@ -1127,13 +1115,12 @@ func (l *Loader) mountCgroupMounts(conf *config.Config, creds *auth.Credentials)
 		// Private so that mounts created by containers do not appear
 		// in other container's cgroup paths.
 		l.k.VFS().SetMountPropagation(mount, linux.MS_PRIVATE, false)
-		cgroupMounts[string(sopts)] = &cgroupMount{
-			fs:    fs,
-			root:  root,
-			mount: mount,
-		}
+		l.k.AddCgroupMount(string(sopts), &kernel.CgroupMount{
+			Fs:    fs,
+			Root:  root,
+			Mount: mount,
+		})
 	}
-	l.cgroupMounts = cgroupMounts
 	log.Infof("created cgroup mounts for controllers %v", kernel.CgroupCtrls)
 	return nil
 }
@@ -1169,12 +1156,12 @@ func (c *containerMounter) mountCgroupSubmounts(ctx context.Context, spec *specs
 	mountCtx := vfs.WithRoot(vfs.WithMountNamespace(ctx, mns), root)
 	for _, ctrl := range kernel.CgroupCtrls {
 		ctrlName := string(ctrl)
-		cgroupMnt, ok := c.cgroupMounts[ctrlName]
-		if !ok {
+		cgroupMnt := c.k.GetCgroupMount(ctrlName)
+		if cgroupMnt == nil {
 			return fmt.Errorf("cgroup mount for controller %s not found", ctrlName)
 		}
 
-		cgroupMntVD := vfs.MakeVirtualDentry(cgroupMnt.mount, cgroupMnt.root)
+		cgroupMntVD := vfs.MakeVirtualDentry(cgroupMnt.Mount, cgroupMnt.Root)
 		sourcePop := vfs.PathOperation{
 			Root:  cgroupMntVD,
 			Start: cgroupMntVD,
