@@ -8,7 +8,7 @@ important to note that, currently, only the host network driver is supported.
 This means that both 'docker run' and 'docker build' commands must be executed
 with the `--network=host` option.
 
-# How to run Docker in a gVisor container
+## How to run Docker in a gVisor container
 
 First, prepare a container image with pre-installed Docker:
 
