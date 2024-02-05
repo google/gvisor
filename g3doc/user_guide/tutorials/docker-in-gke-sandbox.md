@@ -1,4 +1,4 @@
-# Docker in gVisor
+# Docker in a GKE sandbox
 
 Docker is a platform designed to help developers build, share, and run container
 applications.
@@ -8,7 +8,7 @@ important to note that, currently, only the host network driver is supported.
 This means that both 'docker run' and 'docker build' commands must be executed
 with the `--network=host` option.
 
-# How to run Docker in a GKE Sandbox
+## How to run Docker in a GKE Sandbox
 
 First, install a GKE cluster (1.29.0 or higher) and deploy a node pool with
 gVisor enabled. You can view the full documentation [here][gke-sandbox-docs].
