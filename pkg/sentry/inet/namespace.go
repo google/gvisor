@@ -129,6 +129,12 @@ func (n *Namespace) RestoreRootStack(stack Stack) {
 	n.stack = stack
 }
 
+// ResetStack resets the stack in the network namespace to nil. This should
+// only be called when restoring kernel.
+func (n *Namespace) ResetStack() {
+	n.stack = nil
+}
+
 func (n *Namespace) init() {
 	// Root network namespace will have stack assigned later.
 	if n.isRoot {

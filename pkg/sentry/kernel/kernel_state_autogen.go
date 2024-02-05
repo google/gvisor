@@ -345,6 +345,37 @@ func (uc *UserCounters) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &uc.rlimitNProc)
 }
 
+func (c *CgroupMount) StateTypeName() string {
+	return "pkg/sentry/kernel.CgroupMount"
+}
+
+func (c *CgroupMount) StateFields() []string {
+	return []string{
+		"Fs",
+		"Root",
+		"Mount",
+	}
+}
+
+func (c *CgroupMount) beforeSave() {}
+
+// +checklocksignore
+func (c *CgroupMount) StateSave(stateSinkObject state.Sink) {
+	c.beforeSave()
+	stateSinkObject.Save(0, &c.Fs)
+	stateSinkObject.Save(1, &c.Root)
+	stateSinkObject.Save(2, &c.Mount)
+}
+
+func (c *CgroupMount) afterLoad() {}
+
+// +checklocksignore
+func (c *CgroupMount) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &c.Fs)
+	stateSourceObject.Load(1, &c.Root)
+	stateSourceObject.Load(2, &c.Mount)
+}
+
 func (k *Kernel) StateTypeName() string {
 	return "pkg/sentry/kernel.Kernel"
 }
@@ -386,6 +417,7 @@ func (k *Kernel) StateFields() []string {
 		"ptraceExceptions",
 		"YAMAPtraceScope",
 		"cgroupRegistry",
+		"cgroupMountsMap",
 		"userCountersMap",
 		"MaxFDLimit",
 	}
@@ -433,8 +465,9 @@ func (k *Kernel) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(32, &k.ptraceExceptions)
 	stateSinkObject.Save(33, &k.YAMAPtraceScope)
 	stateSinkObject.Save(34, &k.cgroupRegistry)
-	stateSinkObject.Save(35, &k.userCountersMap)
-	stateSinkObject.Save(36, &k.MaxFDLimit)
+	stateSinkObject.Save(35, &k.cgroupMountsMap)
+	stateSinkObject.Save(36, &k.userCountersMap)
+	stateSinkObject.Save(37, &k.MaxFDLimit)
 }
 
 func (k *Kernel) afterLoad() {}
@@ -475,8 +508,9 @@ func (k *Kernel) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(32, &k.ptraceExceptions)
 	stateSourceObject.Load(33, &k.YAMAPtraceScope)
 	stateSourceObject.Load(34, &k.cgroupRegistry)
-	stateSourceObject.Load(35, &k.userCountersMap)
-	stateSourceObject.Load(36, &k.MaxFDLimit)
+	stateSourceObject.Load(35, &k.cgroupMountsMap)
+	stateSourceObject.Load(36, &k.userCountersMap)
+	stateSourceObject.Load(37, &k.MaxFDLimit)
 	stateSourceObject.LoadValue(20, new([]tcpip.Endpoint), func(y any) { k.loadDanglingEndpoints(y.([]tcpip.Endpoint)) })
 }
 
@@ -2476,6 +2510,7 @@ func init() {
 	state.Register((*FSContextRefs)(nil))
 	state.Register((*IPCNamespace)(nil))
 	state.Register((*UserCounters)(nil))
+	state.Register((*CgroupMount)(nil))
 	state.Register((*Kernel)(nil))
 	state.Register((*privateMemoryFileMetadata)(nil))
 	state.Register((*SocketRecord)(nil))
