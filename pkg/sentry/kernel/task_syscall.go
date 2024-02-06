@@ -29,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/metric"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
+	"gvisor.dev/gvisor/pkg/sentry/platform"
 	"gvisor.dev/gvisor/pkg/sentry/seccheck"
 	pb "gvisor.dev/gvisor/pkg/sentry/seccheck/points/points_go_proto"
 )
@@ -477,6 +478,8 @@ func ExtractErrno(err error, sysno int) int {
 		return ExtractErrno(err.Err, sysno)
 	case *os.SyscallError:
 		return ExtractErrno(err.Err, sysno)
+	case *platform.ContextError:
+		return int(err.Errno)
 	default:
 		if errno, ok := linuxerr.TranslateError(err); ok {
 			return int(linuxerr.ToUnix(errno))

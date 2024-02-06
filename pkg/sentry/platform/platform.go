@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"os"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -275,6 +276,19 @@ type Context interface {
 	// PrepareSleep() is called when the tread switches to the
 	// interruptible sleep state.
 	PrepareSleep()
+}
+
+// ContextError is one of the possible errors returned by Context.Switch().
+type ContextError struct {
+	// Err is the underlying error.
+	Err error
+	// Errno is an approximation of what type of error this is supposed to
+	// be as defined by the linux errnos.
+	Errno unix.Errno
+}
+
+func (e *ContextError) Error() string {
+	return e.Err.Error()
 }
 
 var (
