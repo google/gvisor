@@ -138,7 +138,7 @@ static uint64_t get_fsbase(void) {
     int ret =
         __syscall(__NR_arch_prctl, ARCH_GET_FS, (long)&fsbase, 0, 0, 0, 0);
     if (ret) {
-      panic(ret);
+      panic(STUB_ERROR_ARCH_PRCTL, ret);
     }
   }
   return fsbase;
@@ -151,7 +151,7 @@ static void set_fsbase(uint64_t fsbase) {
   } else {
     int ret = __syscall(__NR_arch_prctl, ARCH_SET_FS, fsbase, 0, 0, 0, 0);
     if (ret) {
-      panic(ret);
+      panic(STUB_ERROR_ARCH_PRCTL, ret);
     }
   }
 }
@@ -198,7 +198,7 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
   void *sp = sysmsg_sp();
   struct sysmsg *sysmsg = sysmsg_addr(sp);
 
-  if (sysmsg != sysmsg->self) panic(0xdeaddead);
+  if (sysmsg != sysmsg->self) panic(STUB_ERROR_BAD_SYSMSG, 0);
   int32_t thread_state = atomic_load(&sysmsg->state);
   if (thread_state == THREAD_STATE_INITIALIZING) {
     // This thread was interrupted before it even had a context.
@@ -340,7 +340,7 @@ void __syshandler() {
   // SYSMSG_STATE_PREP is set to postpone interrupts. Look at
   // __export_sighandler for more details.
   int state = atomic_load(&sysmsg->state);
-  if (state != THREAD_STATE_PREP) panic(state);
+  if (state != THREAD_STATE_PREP) panic(STUB_ERROR_BAD_THREAD_STATE, 0);
 
   struct thread_context *ctx = sysmsg->context;
 
@@ -368,7 +368,7 @@ void __export_start(struct sysmsg *sysmsg, void *_ucontext) {
 
   asm volatile("movq %%gs:0, %0\n" : "=r"(sysmsg) : :);
   if (sysmsg->self != sysmsg) {
-    panic(0xdeaddead);
+    panic(STUB_ERROR_BAD_SYSMSG, 0);
   }
 
   struct thread_context *ctx =

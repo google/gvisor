@@ -92,7 +92,7 @@ static void ptregs_to_gregs(ucontext_t *ucontext,
 }
 
 void __export_start(struct sysmsg *sysmsg, void *_ucontext) {
-  panic(0x11111111);
+  panic(0x11111111, 0);
 }
 
 void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
@@ -100,7 +100,7 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
   void *sp = sysmsg_sp();
   struct sysmsg *sysmsg = sysmsg_addr(sp);
 
-  if (sysmsg != sysmsg->self) panic(0xdeaddead);
+  if (sysmsg != sysmsg->self) panic(STUB_ERROR_BAD_SYSMSG, 0);
   int32_t thread_state = atomic_load(&sysmsg->state);
 
   uint32_t ctx_state = CONTEXT_STATE_INVALID;
@@ -125,7 +125,8 @@ void __export_sighandler(int signo, siginfo_t *siginfo, void *_ucontext) {
   const uint64_t kSigframeMagicHeaderLen = sizeof(struct _aarch64_ctx);
   // Verify the header.
   if (((uint32_t *)&ucontext->uc_mcontext.__reserved)[0] != FPSIMD_MAGIC) {
-    panic(0xbadf);
+    panic(STUB_ERROR_FPSTATE_BAD_HEADER,
+          ((uint32_t *)&ucontext->uc_mcontext.__reserved)[0]);
   }
   uint8_t *fpStatePointer =
       (uint8_t *)&ucontext->uc_mcontext.__reserved + kSigframeMagicHeaderLen;

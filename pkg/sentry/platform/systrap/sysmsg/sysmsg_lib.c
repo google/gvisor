@@ -224,7 +224,7 @@ struct thread_context *queue_get_context(struct sysmsg *sysmsg) {
 
     atomic_add(&queue->start, 1);
     if (context_id > MAX_GUEST_CONTEXTS) {
-      panic(context_id);
+      panic(STUB_ERROR_BAD_CONTEXT_ID, context_id);
     }
     struct thread_context *ctx = thread_context_addr(context_id);
     sysmsg->context = ctx;
@@ -254,7 +254,8 @@ static struct thread_context *get_context_fast(struct sysmsg *sysmsg,
     }
 
     if (atomic_load(&queue->fast_path_disabled) != 0) {
-      if (!spinning_queue_remove_first(0)) panic(0);
+      if (!spinning_queue_remove_first(0))
+        panic(STUB_ERROR_SPINNING_QUEUE_DECREF, 0);
       break;
     }
 
@@ -265,7 +266,8 @@ static struct thread_context *get_context_fast(struct sysmsg *sysmsg,
       if (atomic_compare_exchange(&queue->num_active_threads,
                                   &nr_active_threads, nr_active_threads - 1)) {
         nr_active_threads -= 1;
-        if (!spinning_queue_remove_first(0)) panic(0);
+        if (!spinning_queue_remove_first(0))
+          panic(STUB_ERROR_SPINNING_QUEUE_DECREF, 0);
         *nr_active_threads_p = nr_active_threads;
         break;
       }
@@ -380,7 +382,7 @@ struct thread_context *switch_context(struct sysmsg *sysmsg,
     if (atomic_load(&ctx->sentry_fast_path) == 0) {
       int ret = sys_futex(&ctx->state, FUTEX_WAKE, 1, NULL, NULL, 0);
       if (ret < 0) {
-        panic(ret);
+        panic(STUB_ERROR_FUTEX, ret);
       }
     }
   }
