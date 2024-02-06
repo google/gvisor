@@ -25,8 +25,10 @@ import (
 	"strings"
 	"sync/atomic"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/sentry/platform"
 )
 
 // LINT.IfChange
@@ -154,6 +156,9 @@ type Msg struct {
 	// Err is the error value with which the {sig|sys}handler crashes the stub
 	// thread (see sysmsg.h:__panic).
 	Err int32
+	// ErrAdditional is an error value that gives additional information
+	// about the panic.
+	ErrAdditional int32
 	// Line is the code line on which the {sig|sys}handler crashed the stub thread
 	// (see sysmsg.h:panic).
 	Line int32
@@ -266,11 +271,37 @@ type ThreadContext struct {
 	Debug uint64
 }
 
+// StubError are values that represent known stub-thread failure modes.
+// Since these errors originate from the stub threads, look at
+// sysmsg.h:stub_error.
+type StubError int32
+
+const (
+	// StubErrorBadSysmsg indicates sysmsg->self did not match sysmsg.
+	StubErrorBadSysmsg StubError = 0x0bad0000 + iota
+	// StubErrorBadThreadState indicates sysmsg->state was invalid.
+	StubErrorBadThreadState
+	// StubErrorBadSpinningQueueDecref indicates stubs removed more threads
+	// from spinning queue than were put in.
+	StubErrorBadSpinningQueueDecref
+	// StubErrorArchPrctl indicates an error when calling arch_prctl.
+	StubErrorArchPrctl
+	// StubErrorFutex indicates an error when calling futex.
+	StubErrorFutex
+	// StubErrorBadContextID indicates a context received from the context
+	// queue was of unexpected value.
+	StubErrorBadContextID
+	// StubErrorFpStateBadHeader indicates that the floating point state
+	// header did not match the expected value.
+	StubErrorFpStateBadHeader
+)
+
 // LINT.ThenChange(sysmsg.h)
 
 // Init initializes the message.
 func (m *Msg) Init(threadID uint32) {
 	m.Err = 0
+	m.ErrAdditional = 0
 	m.Line = -1
 	m.ThreadID = threadID
 	m.Context = 0
@@ -284,6 +315,36 @@ func (c *ThreadContext) Init(initialThreadID uint32) {
 	c.SignalInfo = linux.SignalInfo{}
 	c.State = ContextStateNone
 	c.ThreadID = initialThreadID
+}
+
+// ConvertSysmsgErr converts m.Err to platform.ContextError.
+func (m *Msg) ConvertSysmsgErr() *platform.ContextError {
+	err := &platform.ContextError{
+		Errno: unix.EPERM,
+	}
+
+	const prefix = "systrap stub thread failure:"
+	suffix := fmt.Sprintf("(failed on line %d; %s)", atomic.LoadInt32(&m.Line), m.String())
+	switch StubError(atomic.LoadInt32(&m.Err)) {
+	case StubErrorBadSysmsg:
+		err.Err = fmt.Errorf("%s sysmsg->self did not match sysmsg during sig/sys-handler %s", prefix, suffix)
+	case StubErrorBadThreadState:
+		err.Err = fmt.Errorf("%s sysmsg->state was invalid during sys-handler %s", prefix, suffix)
+	case StubErrorBadSpinningQueueDecref:
+		err.Err = fmt.Errorf("%s imbalanced use of spinning queue %s", prefix, suffix)
+	case StubErrorArchPrctl:
+		err.Err = fmt.Errorf("%s arch_prctl error=0x%x %s", prefix, atomic.LoadInt32(&m.ErrAdditional), suffix)
+	case StubErrorFutex:
+		err.Err = fmt.Errorf("%s futex error=0x%x %s", prefix, atomic.LoadInt32(&m.ErrAdditional), suffix)
+	case StubErrorBadContextID:
+		err.Err = fmt.Errorf("%s unexpected context ID (%d) from context queue %s", prefix, atomic.LoadInt32(&m.ErrAdditional), suffix)
+	case StubErrorFpStateBadHeader:
+		err.Err = fmt.Errorf("%s FP state context magic header (%d) does not match expected FPSIMD_MAGIC %s", prefix, atomic.LoadInt32(&m.ErrAdditional), suffix)
+	default:
+		err.Err = fmt.Errorf("%s unknown reason (0x%x) (possible shared memory corruption) %s", prefix, atomic.LoadInt32(&m.Err), suffix)
+	}
+
+	return err
 }
 
 func (m *Msg) String() string {
