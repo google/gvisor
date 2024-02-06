@@ -1584,7 +1584,7 @@ func createFDTable(ctx context.Context, console bool, stdioFDs []*fd.FD, passFDs
 
 	k := kernel.KernelFromContext(ctx)
 	fdTable := k.NewFDTable()
-	ttyFile, err := fdimport.Import(ctx, fdTable, console, auth.KUID(user.UID), auth.KGID(user.GID), fdMap)
+	ttyFile, err := fdimport.Import(ctx, fdTable, console, auth.KUID(user.UID), auth.KGID(user.GID), fdMap, containerName)
 	if err != nil {
 		fdTable.DecRef(ctx)
 		return nil, nil, err

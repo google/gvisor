@@ -47,6 +47,16 @@ func MountNamespaceFromContext(ctx goContext.Context) *MountNamespace {
 	return nil
 }
 
+// RestoreFilesystemFDMapFromContext returns the RestoreFilesystemFDMap used
+// by ctx. If ctx is not associated with a RestoreFilesystemFDMap, returns nil.
+func RestoreFilesystemFDMapFromContext(ctx goContext.Context) map[RestoreID]int {
+	fdmap, ok := ctx.Value(CtxRestoreFilesystemFDMap).(map[RestoreID]int)
+	if !ok {
+		return nil
+	}
+	return fdmap
+}
+
 type mountNamespaceContext struct {
 	context.Context
 	mntns *MountNamespace
@@ -103,12 +113,4 @@ func (rc rootContext) Value(key any) any {
 	default:
 		return rc.Context.Value(key)
 	}
-}
-
-// FilesystemFDMapFromContext returns the CtxRestoreFilesystemFDMap from ctx.
-func FilesystemFDMapFromContext(ctx goContext.Context) map[RestoreID]int {
-	if v := ctx.Value(CtxRestoreFilesystemFDMap); v != nil {
-		return v.(map[RestoreID]int)
-	}
-	return nil
 }
