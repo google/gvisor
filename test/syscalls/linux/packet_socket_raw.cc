@@ -679,7 +679,7 @@ TEST_P(RawPacketMsgSizeTest, SendTooLong) {
               SyscallFailsWithErrno(EMSGSIZE));
 }
 
-// TODO(https://fxbug.dev/76957): Run this test on Fuchsia once splice is
+// TODO(https://fxbug.dev/42156918): Run this test on Fuchsia once splice is
 // available.
 #ifndef __Fuchsia__
 TEST_P(RawPacketMsgSizeTest, SpliceTooLong) {
