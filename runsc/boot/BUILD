@@ -8,6 +8,7 @@ package(
 go_library(
     name = "boot",
     srcs = [
+        "autosave.go",
         "compat.go",
         "compat_amd64.go",
         "compat_arm64.go",
