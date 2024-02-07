@@ -2575,7 +2575,7 @@ TEST_P(SimpleTcpSocketTest, SynRcvdOnListenerShutdown) {
 
       if (err == 0) {
         EXPECT_EQ(poll_fd.revents, POLLOUT
-        // TODO(https://fxbug.dev/73258): Remove when POLLWRNORM is correctly
+        // TODO(https://fxbug.dev/42152810): Remove when POLLWRNORM is correctly
         // asserted in Fuchsia.
 #if !defined(__Fuchsia__)
                                        | POLLWRNORM
@@ -2594,8 +2594,8 @@ TEST_P(SimpleTcpSocketTest, SynRcvdOnListenerShutdown) {
                     SyscallSucceedsWithValue(1));
 
         EXPECT_EQ(poll_fd.revents,
-        // TODO(https://fxbug.dev/76353): Remove when other signals are asserted
-        // together with POLLERR in Fuchsia.
+        // TODO(https://fxbug.dev/42156248): Remove when other signals are
+        // asserted together with POLLERR in Fuchsia.
 #if defined(__Fuchsia__)
                   POLLOUT
 #else
