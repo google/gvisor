@@ -16,8 +16,11 @@ go_binary(
     ],
     visibility = ["//:sandbox"],
     deps = [
+        "//pkg/cleanup",
         "//pkg/log",
         "//pkg/sentry/seccheck",
+        "//pkg/state/pretty",
+        "//pkg/state/statefile",
         "//pkg/test/testutil",
         "//runsc/specutils",
         "//test/runner/gtest",

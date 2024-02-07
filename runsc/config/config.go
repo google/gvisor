@@ -348,6 +348,10 @@ type Config struct {
 	// ReproduceNftables attempts to scrape nftables routing rules if
 	// present, and reproduce them in the sandbox.
 	ReproduceNftables bool `flag:"reproduce-nftables"`
+
+	// TestOnlyAutosaveImagePath if not empty enables auto save for syscall tests
+	// and stores the directory path to the saved state file.
+	TestOnlyAutosaveImagePath string `flag:"TESTONLY-autosave-image-path"`
 }
 
 func (c *Config) validate() error {
