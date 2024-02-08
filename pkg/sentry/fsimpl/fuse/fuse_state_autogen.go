@@ -180,6 +180,80 @@ func (fd *DeviceFD) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.LoadValue(5, new(int), func(y any) { fd.loadFullQueueCh(y.(int)) })
 }
 
+func (dir *directoryFD) StateTypeName() string {
+	return "pkg/sentry/fsimpl/fuse.directoryFD"
+}
+
+func (dir *directoryFD) StateFields() []string {
+	return []string{
+		"fileDescription",
+	}
+}
+
+func (dir *directoryFD) beforeSave() {}
+
+// +checklocksignore
+func (dir *directoryFD) StateSave(stateSinkObject state.Sink) {
+	dir.beforeSave()
+	stateSinkObject.Save(0, &dir.fileDescription)
+}
+
+func (dir *directoryFD) afterLoad() {}
+
+// +checklocksignore
+func (dir *directoryFD) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &dir.fileDescription)
+}
+
+func (fd *fileDescription) StateTypeName() string {
+	return "pkg/sentry/fsimpl/fuse.fileDescription"
+}
+
+func (fd *fileDescription) StateFields() []string {
+	return []string{
+		"vfsfd",
+		"FileDescriptionDefaultImpl",
+		"DentryMetadataFileDescriptionImpl",
+		"LockFD",
+		"Fh",
+		"Nonseekable",
+		"DirectIO",
+		"OpenFlag",
+		"off",
+	}
+}
+
+func (fd *fileDescription) beforeSave() {}
+
+// +checklocksignore
+func (fd *fileDescription) StateSave(stateSinkObject state.Sink) {
+	fd.beforeSave()
+	stateSinkObject.Save(0, &fd.vfsfd)
+	stateSinkObject.Save(1, &fd.FileDescriptionDefaultImpl)
+	stateSinkObject.Save(2, &fd.DentryMetadataFileDescriptionImpl)
+	stateSinkObject.Save(3, &fd.LockFD)
+	stateSinkObject.Save(4, &fd.Fh)
+	stateSinkObject.Save(5, &fd.Nonseekable)
+	stateSinkObject.Save(6, &fd.DirectIO)
+	stateSinkObject.Save(7, &fd.OpenFlag)
+	stateSinkObject.Save(8, &fd.off)
+}
+
+func (fd *fileDescription) afterLoad() {}
+
+// +checklocksignore
+func (fd *fileDescription) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &fd.vfsfd)
+	stateSourceObject.Load(1, &fd.FileDescriptionDefaultImpl)
+	stateSourceObject.Load(2, &fd.DentryMetadataFileDescriptionImpl)
+	stateSourceObject.Load(3, &fd.LockFD)
+	stateSourceObject.Load(4, &fd.Fh)
+	stateSourceObject.Load(5, &fd.Nonseekable)
+	stateSourceObject.Load(6, &fd.DirectIO)
+	stateSourceObject.Load(7, &fd.OpenFlag)
+	stateSourceObject.Load(8, &fd.off)
+}
+
 func (fsType *FilesystemType) StateTypeName() string {
 	return "pkg/sentry/fsimpl/fuse.FilesystemType"
 }
@@ -336,7 +410,6 @@ func (i *inode) StateFields() []string {
 		"fh",
 		"locks",
 		"watches",
-		"attrMu",
 		"ino",
 		"uid",
 		"gid",
@@ -370,17 +443,16 @@ func (i *inode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(12, &i.fh)
 	stateSinkObject.Save(13, &i.locks)
 	stateSinkObject.Save(14, &i.watches)
-	stateSinkObject.Save(15, &i.attrMu)
-	stateSinkObject.Save(16, &i.ino)
-	stateSinkObject.Save(17, &i.uid)
-	stateSinkObject.Save(18, &i.gid)
-	stateSinkObject.Save(19, &i.mode)
-	stateSinkObject.Save(20, &i.atime)
-	stateSinkObject.Save(21, &i.mtime)
-	stateSinkObject.Save(22, &i.ctime)
-	stateSinkObject.Save(23, &i.size)
-	stateSinkObject.Save(24, &i.nlink)
-	stateSinkObject.Save(25, &i.blockSize)
+	stateSinkObject.Save(15, &i.ino)
+	stateSinkObject.Save(16, &i.uid)
+	stateSinkObject.Save(17, &i.gid)
+	stateSinkObject.Save(18, &i.mode)
+	stateSinkObject.Save(19, &i.atime)
+	stateSinkObject.Save(20, &i.mtime)
+	stateSinkObject.Save(21, &i.ctime)
+	stateSinkObject.Save(22, &i.size)
+	stateSinkObject.Save(23, &i.nlink)
+	stateSinkObject.Save(24, &i.blockSize)
 }
 
 func (i *inode) afterLoad() {}
@@ -402,17 +474,16 @@ func (i *inode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(12, &i.fh)
 	stateSourceObject.Load(13, &i.locks)
 	stateSourceObject.Load(14, &i.watches)
-	stateSourceObject.Load(15, &i.attrMu)
-	stateSourceObject.Load(16, &i.ino)
-	stateSourceObject.Load(17, &i.uid)
-	stateSourceObject.Load(18, &i.gid)
-	stateSourceObject.Load(19, &i.mode)
-	stateSourceObject.Load(20, &i.atime)
-	stateSourceObject.Load(21, &i.mtime)
-	stateSourceObject.Load(22, &i.ctime)
-	stateSourceObject.Load(23, &i.size)
-	stateSourceObject.Load(24, &i.nlink)
-	stateSourceObject.Load(25, &i.blockSize)
+	stateSourceObject.Load(15, &i.ino)
+	stateSourceObject.Load(16, &i.uid)
+	stateSourceObject.Load(17, &i.gid)
+	stateSourceObject.Load(18, &i.mode)
+	stateSourceObject.Load(19, &i.atime)
+	stateSourceObject.Load(20, &i.mtime)
+	stateSourceObject.Load(21, &i.ctime)
+	stateSourceObject.Load(22, &i.size)
+	stateSourceObject.Load(23, &i.nlink)
+	stateSourceObject.Load(24, &i.blockSize)
 }
 
 func (r *inodeRefs) StateTypeName() string {
@@ -437,6 +508,40 @@ func (r *inodeRefs) StateSave(stateSinkObject state.Sink) {
 func (r *inodeRefs) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
 	stateSourceObject.AfterLoad(r.afterLoad)
+}
+
+func (fd *regularFileFD) StateTypeName() string {
+	return "pkg/sentry/fsimpl/fuse.regularFileFD"
+}
+
+func (fd *regularFileFD) StateFields() []string {
+	return []string{
+		"fileDescription",
+		"off",
+		"mappings",
+		"data",
+	}
+}
+
+func (fd *regularFileFD) beforeSave() {}
+
+// +checklocksignore
+func (fd *regularFileFD) StateSave(stateSinkObject state.Sink) {
+	fd.beforeSave()
+	stateSinkObject.Save(0, &fd.fileDescription)
+	stateSinkObject.Save(1, &fd.off)
+	stateSinkObject.Save(2, &fd.mappings)
+	stateSinkObject.Save(3, &fd.data)
+}
+
+func (fd *regularFileFD) afterLoad() {}
+
+// +checklocksignore
+func (fd *regularFileFD) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &fd.fileDescription)
+	stateSourceObject.Load(1, &fd.off)
+	stateSourceObject.Load(2, &fd.mappings)
+	stateSourceObject.Load(3, &fd.data)
 }
 
 func (l *requestList) StateTypeName() string {
@@ -535,41 +640,37 @@ func (r *Request) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(5, &r.noReply)
 }
 
-func (f *futureResponse) StateTypeName() string {
+func (fRes *futureResponse) StateTypeName() string {
 	return "pkg/sentry/fsimpl/fuse.futureResponse"
 }
 
-func (f *futureResponse) StateFields() []string {
+func (fRes *futureResponse) StateFields() []string {
 	return []string{
 		"opcode",
-		"ch",
 		"hdr",
 		"data",
 		"async",
 	}
 }
 
-func (f *futureResponse) beforeSave() {}
+func (fRes *futureResponse) beforeSave() {}
 
 // +checklocksignore
-func (f *futureResponse) StateSave(stateSinkObject state.Sink) {
-	f.beforeSave()
-	stateSinkObject.Save(0, &f.opcode)
-	stateSinkObject.Save(1, &f.ch)
-	stateSinkObject.Save(2, &f.hdr)
-	stateSinkObject.Save(3, &f.data)
-	stateSinkObject.Save(4, &f.async)
+func (fRes *futureResponse) StateSave(stateSinkObject state.Sink) {
+	fRes.beforeSave()
+	stateSinkObject.Save(0, &fRes.opcode)
+	stateSinkObject.Save(1, &fRes.hdr)
+	stateSinkObject.Save(2, &fRes.data)
+	stateSinkObject.Save(3, &fRes.async)
 }
 
-func (f *futureResponse) afterLoad() {}
-
 // +checklocksignore
-func (f *futureResponse) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &f.opcode)
-	stateSourceObject.Load(1, &f.ch)
-	stateSourceObject.Load(2, &f.hdr)
-	stateSourceObject.Load(3, &f.data)
-	stateSourceObject.Load(4, &f.async)
+func (fRes *futureResponse) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &fRes.opcode)
+	stateSourceObject.Load(1, &fRes.hdr)
+	stateSourceObject.Load(2, &fRes.data)
+	stateSourceObject.Load(3, &fRes.async)
+	stateSourceObject.AfterLoad(fRes.afterLoad)
 }
 
 func (r *Response) StateTypeName() string {
@@ -607,12 +708,15 @@ func init() {
 	state.Register((*connection)(nil))
 	state.Register((*fuseDevice)(nil))
 	state.Register((*DeviceFD)(nil))
+	state.Register((*directoryFD)(nil))
+	state.Register((*fileDescription)(nil))
 	state.Register((*FilesystemType)(nil))
 	state.Register((*filesystemOptions)(nil))
 	state.Register((*filesystem)(nil))
 	state.Register((*fileHandle)(nil))
 	state.Register((*inode)(nil))
 	state.Register((*inodeRefs)(nil))
+	state.Register((*regularFileFD)(nil))
 	state.Register((*requestList)(nil))
 	state.Register((*requestEntry)(nil))
 	state.Register((*Request)(nil))

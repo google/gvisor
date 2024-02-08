@@ -30,11 +30,12 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
+// +stateify savable
 type regularFileFD struct {
 	fileDescription
 
 	// offMu protects off.
-	offMu sync.Mutex
+	offMu sync.Mutex `state:"nosave"`
 
 	// off is the file offset.
 	// +checklocks:offMu

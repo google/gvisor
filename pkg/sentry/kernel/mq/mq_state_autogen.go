@@ -142,6 +142,90 @@ func (q *Queue) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(9, &q.byteCount)
 }
 
+func (r *ReaderWriter) StateTypeName() string {
+	return "pkg/sentry/kernel/mq.ReaderWriter"
+}
+
+func (r *ReaderWriter) StateFields() []string {
+	return []string{
+		"Queue",
+		"block",
+	}
+}
+
+func (r *ReaderWriter) beforeSave() {}
+
+// +checklocksignore
+func (r *ReaderWriter) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.Queue)
+	stateSinkObject.Save(1, &r.block)
+}
+
+func (r *ReaderWriter) afterLoad() {}
+
+// +checklocksignore
+func (r *ReaderWriter) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.Queue)
+	stateSourceObject.Load(1, &r.block)
+}
+
+func (r *Reader) StateTypeName() string {
+	return "pkg/sentry/kernel/mq.Reader"
+}
+
+func (r *Reader) StateFields() []string {
+	return []string{
+		"Queue",
+		"block",
+	}
+}
+
+func (r *Reader) beforeSave() {}
+
+// +checklocksignore
+func (r *Reader) StateSave(stateSinkObject state.Sink) {
+	r.beforeSave()
+	stateSinkObject.Save(0, &r.Queue)
+	stateSinkObject.Save(1, &r.block)
+}
+
+func (r *Reader) afterLoad() {}
+
+// +checklocksignore
+func (r *Reader) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &r.Queue)
+	stateSourceObject.Load(1, &r.block)
+}
+
+func (w *Writer) StateTypeName() string {
+	return "pkg/sentry/kernel/mq.Writer"
+}
+
+func (w *Writer) StateFields() []string {
+	return []string{
+		"Queue",
+		"block",
+	}
+}
+
+func (w *Writer) beforeSave() {}
+
+// +checklocksignore
+func (w *Writer) StateSave(stateSinkObject state.Sink) {
+	w.beforeSave()
+	stateSinkObject.Save(0, &w.Queue)
+	stateSinkObject.Save(1, &w.block)
+}
+
+func (w *Writer) afterLoad() {}
+
+// +checklocksignore
+func (w *Writer) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &w.Queue)
+	stateSourceObject.Load(1, &w.block)
+}
+
 func (m *Message) StateTypeName() string {
 	return "pkg/sentry/kernel/mq.Message"
 }
@@ -206,6 +290,9 @@ func init() {
 	state.Register((*msgEntry)(nil))
 	state.Register((*Registry)(nil))
 	state.Register((*Queue)(nil))
+	state.Register((*ReaderWriter)(nil))
+	state.Register((*Reader)(nil))
+	state.Register((*Writer)(nil))
 	state.Register((*Message)(nil))
 	state.Register((*Subscriber)(nil))
 }

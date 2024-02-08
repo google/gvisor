@@ -74,6 +74,80 @@ func (b *BPFInstruction) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(3, &b.K)
 }
 
+func (f *FUSEHeaderIn) StateTypeName() string {
+	return "pkg/abi/linux.FUSEHeaderIn"
+}
+
+func (f *FUSEHeaderIn) StateFields() []string {
+	return []string{
+		"Len",
+		"Opcode",
+		"Unique",
+		"NodeID",
+		"UID",
+		"GID",
+		"PID",
+	}
+}
+
+func (f *FUSEHeaderIn) beforeSave() {}
+
+// +checklocksignore
+func (f *FUSEHeaderIn) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.Len)
+	stateSinkObject.Save(1, &f.Opcode)
+	stateSinkObject.Save(2, &f.Unique)
+	stateSinkObject.Save(3, &f.NodeID)
+	stateSinkObject.Save(4, &f.UID)
+	stateSinkObject.Save(5, &f.GID)
+	stateSinkObject.Save(6, &f.PID)
+}
+
+func (f *FUSEHeaderIn) afterLoad() {}
+
+// +checklocksignore
+func (f *FUSEHeaderIn) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &f.Len)
+	stateSourceObject.Load(1, &f.Opcode)
+	stateSourceObject.Load(2, &f.Unique)
+	stateSourceObject.Load(3, &f.NodeID)
+	stateSourceObject.Load(4, &f.UID)
+	stateSourceObject.Load(5, &f.GID)
+	stateSourceObject.Load(6, &f.PID)
+}
+
+func (f *FUSEHeaderOut) StateTypeName() string {
+	return "pkg/abi/linux.FUSEHeaderOut"
+}
+
+func (f *FUSEHeaderOut) StateFields() []string {
+	return []string{
+		"Len",
+		"Error",
+		"Unique",
+	}
+}
+
+func (f *FUSEHeaderOut) beforeSave() {}
+
+// +checklocksignore
+func (f *FUSEHeaderOut) StateSave(stateSinkObject state.Sink) {
+	f.beforeSave()
+	stateSinkObject.Save(0, &f.Len)
+	stateSinkObject.Save(1, &f.Error)
+	stateSinkObject.Save(2, &f.Unique)
+}
+
+func (f *FUSEHeaderOut) afterLoad() {}
+
+// +checklocksignore
+func (f *FUSEHeaderOut) StateLoad(stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &f.Len)
+	stateSourceObject.Load(1, &f.Error)
+	stateSourceObject.Load(2, &f.Unique)
+}
+
 func (i *IOUringCqe) StateTypeName() string {
 	return "pkg/abi/linux.IOUringCqe"
 }
@@ -506,6 +580,8 @@ func (w *WindowSize) StateLoad(stateSourceObject state.Source) {
 func init() {
 	state.Register((*IOEvent)(nil))
 	state.Register((*BPFInstruction)(nil))
+	state.Register((*FUSEHeaderIn)(nil))
+	state.Register((*FUSEHeaderOut)(nil))
 	state.Register((*IOUringCqe)(nil))
 	state.Register((*IOUring)(nil))
 	state.Register((*IORings)(nil))
