@@ -745,7 +745,9 @@ func (s *subprocess) switchToApp(c *context, ac *arch.Context64) (isSyscall bool
 		s.incAwakeContexts()
 	}
 	ctx.setState(sysmsg.ContextStateNone)
-	s.contextQueue.add(ctx)
+	if err := s.contextQueue.add(ctx); err != nil {
+		return false, false, err
+	}
 	s.waitOnState(ctx)
 
 	// Check if there's been an error.
@@ -754,7 +756,7 @@ func (s *subprocess) switchToApp(c *context, ac *arch.Context64) (isSyscall bool
 		if sysThread, ok := s.sysmsgThreads[threadID]; ok && sysThread.msg.Err != 0 {
 			return false, false, sysThread.msg.ConvertSysmsgErr()
 		}
-		log.Warningf("systrap: found unexpected ThreadContext.ThreadID field, expected %d found %d", invalidThreadID, threadID)
+		return false, false, corruptedSharedMemoryErr(fmt.Sprintf("found unexpected ThreadContext.ThreadID field, expected %d found %d", invalidThreadID, threadID))
 	}
 
 	// Copy register state locally.
@@ -778,7 +780,7 @@ func (s *subprocess) switchToApp(c *context, ac *arch.Context64) (isSyscall bool
 		updateSyscallRegs(regs)
 		return true, shouldPatchSyscall, nil
 	} else if ctxState != sysmsg.ContextStateFault {
-		panic(fmt.Sprintf("unknown context state: %v", ctxState))
+		return false, false, corruptedSharedMemoryErr(fmt.Sprintf("unknown context state: %v", ctxState))
 	}
 
 	return false, false, nil

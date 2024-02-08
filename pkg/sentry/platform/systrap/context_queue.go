@@ -16,6 +16,8 @@ package systrap
 
 import (
 	"sync/atomic"
+
+	"gvisor.dev/gvisor/pkg/sentry/platform"
 )
 
 // LINT.IfChange
@@ -97,7 +99,7 @@ func (q *contextQueue) queuedContexts() uint32 {
 // add puts the the given ctx onto the context queue, and records a state of
 // the subprocess after insertion to see if there are more active stub threads
 // or more waiting contexts.
-func (q *contextQueue) add(ctx *sharedContext) {
+func (q *contextQueue) add(ctx *sharedContext) *platform.ContextError {
 	ctx.startWaitingTS = cputicks()
 
 	if fastpath.stubFastPath() {
@@ -110,8 +112,8 @@ func (q *contextQueue) add(ctx *sharedContext) {
 	next := atomic.AddUint32(&q.end, 1)
 	if (next % maxContextQueueEntries) ==
 		(atomic.LoadUint32(&q.start) % maxContextQueueEntries) {
-		// should be unreachable
-		panic("contextQueue is full")
+		// reachable only in case of corrupted memory
+		return corruptedSharedMemoryErr("context queue is full, indicates tampering with queue counters")
 	}
 	idx := next - 1
 	next = idx % maxContextQueueEntries
@@ -121,6 +123,7 @@ func (q *contextQueue) add(ctx *sharedContext) {
 	if atomic.SwapUint32(&q.usedFastPath, 0) != 0 {
 		fastpath.usedStubFastPath.Store(true)
 	}
+	return nil
 }
 
 func (q *contextQueue) disableFastPath() {
