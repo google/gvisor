@@ -267,7 +267,7 @@ TEST_P(SocketInetLoopbackIsolatedTest, TCPLinger2TimeoutAfterClose) {
   // across a S/R.
   {
     DisableSave ds;
-    constexpr int kTCPLingerTimeout = 5;
+    constexpr int kTCPLingerTimeout = 4;
     EXPECT_THAT(setsockopt(conn_fd.get(), IPPROTO_TCP, TCP_LINGER2,
                            &kTCPLingerTimeout, sizeof(kTCPLingerTimeout)),
                 SyscallSucceedsWithValue(0));
@@ -275,7 +275,7 @@ TEST_P(SocketInetLoopbackIsolatedTest, TCPLinger2TimeoutAfterClose) {
     // close the connecting FD to trigger FIN_WAIT2  on the connected fd.
     conn_fd.reset();
 
-    absl::SleepFor(absl::Seconds(kTCPLingerTimeout + 1));
+    absl::SleepFor(absl::Seconds(kTCPLingerTimeout + 2));
 
     // ds going out of scope will Re-enable S/R's since at this point the timer
     // must have fired and cleaned up the endpoint.
