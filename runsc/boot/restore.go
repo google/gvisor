@@ -76,6 +76,9 @@ func (r *restorer) restore(l *Loader) error {
 		return fmt.Errorf("creating platform: %v", err)
 	}
 
+	// Start the old watchdog before replacing it with a new one below.
+	l.watchdog.Start()
+
 	// Release the kernel and replace it with a new one that will be restored into.
 	if l.k != nil {
 		l.k.Release()

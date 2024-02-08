@@ -53,6 +53,8 @@ type Device struct {
 }
 
 // Flags set properties of a Device
+//
+// +stateify savable
 type Flags struct {
 	TUN          bool
 	TAP          bool

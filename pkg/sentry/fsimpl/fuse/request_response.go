@@ -137,7 +137,7 @@ func (conn *connection) NewRequest(creds *auth.Credentials, pid uint32, ino uint
 // +stateify savable
 type futureResponse struct {
 	opcode linux.FUSEOpcode
-	ch     chan struct{}
+	ch     chan struct{} `state:"nosave"`
 	hdr    *linux.FUSEHeaderOut
 	data   []byte
 

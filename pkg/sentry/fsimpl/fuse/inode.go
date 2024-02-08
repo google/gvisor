@@ -75,7 +75,7 @@ type inode struct {
 	watches vfs.Watches
 
 	// attrMu protects the attributes of this inode.
-	attrMu sync.Mutex
+	attrMu sync.Mutex `state:"nosave"`
 
 	// +checklocks:attrMu
 	ino atomicbitops.Uint64 // Stat data, not accessed for path walking.

@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
+// +stateify savable
 type directoryFD struct {
 	fileDescription
 }

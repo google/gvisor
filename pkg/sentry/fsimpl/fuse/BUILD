@@ -45,6 +45,7 @@ go_library(
         "regular_file.go",
         "request_list.go",
         "request_response.go",
+        "save_restore.go",
     ],
     marshal = True,
     visibility = ["//pkg/sentry:internal"],

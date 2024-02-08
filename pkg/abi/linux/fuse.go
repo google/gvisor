@@ -91,6 +91,7 @@ const (
 // FUSEHeaderIn is the header read by the daemon with each request.
 //
 // +marshal
+// +stateify savable
 type FUSEHeaderIn struct {
 	// Len specifies the total length of the data, including this header.
 	Len uint32
@@ -124,6 +125,7 @@ var SizeOfFUSEHeaderIn = uint32((*FUSEHeaderIn)(nil).SizeBytes())
 // reply; if they do not, this will be explicitly documented).
 //
 // +marshal
+// +stateify savable
 type FUSEHeaderOut struct {
 	// Len specifies the total length of the data, including this header.
 	Len uint32
