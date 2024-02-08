@@ -53,6 +53,7 @@ import (
 	"os"
 	"sync"
 
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	pkgcontext "gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -422,4 +423,11 @@ func createMemoryFile() (*pgalloc.MemoryFile, error) {
 		return nil, fmt.Errorf("error creating pgalloc.MemoryFile: %v", err)
 	}
 	return mf, nil
+}
+
+func corruptedSharedMemoryErr(additional string) *platform.ContextError {
+	return &platform.ContextError{
+		Err:   fmt.Errorf("systrap corrupted memory: %s", additional),
+		Errno: unix.EPERM,
+	}
 }
