@@ -308,6 +308,8 @@ type View interface {
 }
 
 // ReaderWriter provides a send and receive view into a queue.
+//
+// +stateify savable
 type ReaderWriter struct {
 	*Queue
 
@@ -315,6 +317,8 @@ type ReaderWriter struct {
 }
 
 // Reader provides a send-only view into a queue.
+//
+// +stateify savable
 type Reader struct {
 	*Queue
 
@@ -322,6 +326,8 @@ type Reader struct {
 }
 
 // Writer provides a receive-only view into a queue.
+//
+// +stateify savable
 type Writer struct {
 	*Queue
 

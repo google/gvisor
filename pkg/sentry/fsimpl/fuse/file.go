@@ -26,6 +26,8 @@ import (
 )
 
 // fileDescription implements vfs.FileDescriptionImpl for fuse.
+//
+// +stateify savable
 type fileDescription struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
