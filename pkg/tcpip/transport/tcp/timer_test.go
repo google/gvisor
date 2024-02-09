@@ -36,8 +36,8 @@ func TestCleanup(t *testing.T) {
 	tmr.enable(timerDurationSeconds * time.Second)
 	tmr.cleanup()
 
-	if want := (timer{}); tmr != want {
-		t.Errorf("got tmr = %+v, want = %+v", tmr, want)
+	if !tmr.isUninitialized() {
+		t.Errorf("got tmr.isUninitialized = false, want = true")
 	}
 
 	// The waker should not be asserted.
