@@ -20,6 +20,8 @@
 #include <signal.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
+#include <sys/poll.h>
+#include <sys/select.h>
 #include <sys/stat.h>
 #include <sys/sysmacros.h>
 #include <sys/types.h>
@@ -659,6 +661,49 @@ class PtyTest : public ::testing::Test {
   FileDescriptor master_;
   FileDescriptor replica_;
 };
+
+// NOTE(gvisor.dev/issue/9951): Regression test.
+TEST_F(PtyTest, ReplicaCloseNotify) {
+  // Open a second replica.
+  FileDescriptor replica2_ = ASSERT_NO_ERRNO_AND_VALUE(OpenReplica(master_));
+  fd_set read_set;
+  FD_ZERO(&read_set);
+  FD_SET(master_.get(), &read_set);
+  int max_fd = master_.get() + 1;
+
+  // Set timeout to 0.2 seconds.
+  struct timeval tv;
+  tv.tv_sec = 0;
+  tv.tv_usec = 200000;
+
+  // Ensure that there are no readable events.
+  FD_ZERO(&read_set);
+  FD_SET(master_.get(), &read_set);
+  EXPECT_THAT(select(max_fd, &read_set, NULL, NULL, &tv),
+              SyscallSucceedsWithValue(0));
+
+  // Close the second replica and no readable event should occur.
+  replica2_.reset();
+  FD_ZERO(&read_set);
+  FD_SET(master_.get(), &read_set);
+  EXPECT_THAT(select(max_fd, &read_set, NULL, NULL, &tv),
+              SyscallSucceedsWithValue(0));
+
+  // Close the last remaining replica and a readable event should occur.
+  replica_.reset();
+  FD_ZERO(&read_set);
+  FD_SET(master_.get(), &read_set);
+  EXPECT_THAT(select(max_fd, &read_set, NULL, NULL, &tv),
+              SyscallSucceedsWithValue(1));
+  EXPECT_TRUE(FD_ISSET(master_.get(), &read_set));
+
+  // Check that the right events are occurring.
+  struct pollfd pfd;
+  pfd.fd = master_.get();
+  pfd.events = POLLIN | POLLOUT | POLLRDHUP | POLLRDNORM | POLLWRNORM;
+  EXPECT_THAT(poll(&pfd, 1, 1), SyscallSucceedsWithValue(1));
+  EXPECT_EQ(POLLHUP | POLLOUT | POLLWRNORM, pfd.revents);
+}
 
 // Master to replica sanity test.
 TEST_F(PtyTest, WriteMasterToReplica) {

@@ -180,9 +180,14 @@ func (l *lineDiscipline) setWindowSize(t *kernel.Task, args arch.SyscallArgument
 }
 
 func (l *lineDiscipline) masterReadiness() waiter.EventMask {
-	// We don't have to lock a termios because the default master termios
-	// is immutable.
-	return l.inQueue.writeReadiness(&linux.MasterTermios) | l.outQueue.readReadiness(&linux.MasterTermios)
+	// The master termios is immutable so termiosMu is not needed.
+	res := l.inQueue.writeReadiness(&linux.MasterTermios) | l.outQueue.readReadiness(&linux.MasterTermios)
+	l.termiosMu.RLock()
+	if l.numReplicas == 0 {
+		res |= waiter.EventHUp
+	}
+	l.termiosMu.RUnlock()
+	return res
 }
 
 func (l *lineDiscipline) replicaReadiness() waiter.EventMask {
@@ -285,8 +290,12 @@ func (l *lineDiscipline) replicaOpen() {
 // replicaClose is called when a replica file descriptor is closed.
 func (l *lineDiscipline) replicaClose() {
 	l.termiosMu.Lock()
-	defer l.termiosMu.Unlock()
 	l.numReplicas--
+	notify := l.numReplicas == 0
+	l.termiosMu.Unlock()
+	if notify {
+		l.masterWaiter.Notify(waiter.EventHUp)
+	}
 }
 
 // transformer is a helper interface to make it easier to stateify queue.
