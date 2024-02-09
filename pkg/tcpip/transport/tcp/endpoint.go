@@ -914,7 +914,7 @@ func newEndpoint(s *stack.Stack, protocol *protocol, netProto tcpip.NetworkProto
 
 	// TODO(https://gvisor.dev/issues/7493): Defer creating the timer until TCP connection becomes
 	// established.
-	e.keepalive.timer.init(e.stack.Clock(), maybeFailTimerHandler(e, e.keepaliveTimerExpired))
+	e.keepalive.timer.init(e.stack.Clock(), timerHandler(e, e.keepaliveTimerExpired))
 
 	return e
 }

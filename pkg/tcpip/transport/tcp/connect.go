@@ -115,15 +115,14 @@ type handshake struct {
 	retransmitTimer *backoffTimer `state:"nosave"`
 }
 
-// maybeFailTimerHandler takes a handler function for a timer that may fail and
-// returns a function that will invoke the provided handler with the endpoint
-// mutex held. In addition the returned function will perform any cleanup that
-// maybe required if the timer handler returns an error and in case of no errors
-// will notify the processor if there are pending segments that need to be
-// processed.
-
+// timerHandler takes a handler function for a timer and returns a function that
+// will invoke the provided handler with the endpoint mutex held. In addition
+// the returned function will perform any cleanup that may be required if the
+// timer handler returns an error. In the case of no errors it will notify the
+// processor if there are pending segments that need to be processed.
+//
 // NOTE: e.mu is held for the duration of the call to f().
-func maybeFailTimerHandler(e *endpoint, f func() tcpip.Error) func() {
+func timerHandler(e *endpoint, f func() tcpip.Error) func() {
 	return func() {
 		e.mu.Lock()
 		if err := f(); err != nil {
@@ -154,27 +153,6 @@ func maybeFailTimerHandler(e *endpoint, f func() tcpip.Error) func() {
 	}
 }
 
-// timerHandler takes a handler function for a timer that never results in a
-// connection being aborted and returns a function that will invoke the provided
-// handler with the endpoint mutex held. In addition the returned function will
-// notify the processor if there are pending segments that need to be processed
-// once the handler function completes.
-//
-// NOTE: e.mu is held for the duration of the call to f()
-func timerHandler(e *endpoint, f func()) func() {
-	return func() {
-		e.mu.Lock()
-		f()
-		processor := e.protocol.dispatcher.selectProcessor(e.ID)
-		e.mu.Unlock()
-		// notify processor if there are pending segments to be
-		// processed.
-		if !e.segmentQueue.empty() {
-			processor.queueEndpoint(e)
-		}
-	}
-}
-
 // +checklocks:e.mu
 // +checklocksacquire:h.ep.mu
 func (e *endpoint) newHandshake() (h *handshake) {
@@ -190,7 +168,7 @@ func (e *endpoint) newHandshake() (h *handshake) {
 	e.h = h
 	// By the time handshake is created, e.ID is already initialized.
 	e.TSOffset = e.protocol.tsOffset(e.ID.LocalAddress, e.ID.RemoteAddress)
-	timer, err := newBackoffTimer(h.ep.stack.Clock(), InitialRTO, MaxRTO, maybeFailTimerHandler(e, h.retransmitHandlerLocked))
+	timer, err := newBackoffTimer(h.ep.stack.Clock(), InitialRTO, MaxRTO, timerHandler(e, h.retransmitHandlerLocked))
 	if err != nil {
 		panic(fmt.Sprintf("newBackOffTimer(_, %s, %s, _) failed: %s", InitialRTO, MaxRTO, err))
 	}
@@ -1315,7 +1293,7 @@ func (e *endpoint) keepaliveTimerExpired() tcpip.Error {
 	userTimeout := e.userTimeout
 
 	e.keepalive.Lock()
-	if !e.SocketOptions().GetKeepAlive() || e.keepalive.timer.isZero() || !e.keepalive.timer.checkExpiration() {
+	if !e.SocketOptions().GetKeepAlive() || e.keepalive.timer.isUninitialized() || !e.keepalive.timer.checkExpiration() {
 		e.keepalive.Unlock()
 		return nil
 	}
@@ -1348,7 +1326,7 @@ func (e *endpoint) keepaliveTimerExpired() tcpip.Error {
 func (e *endpoint) resetKeepaliveTimer(receivedData bool) {
 	e.keepalive.Lock()
 	defer e.keepalive.Unlock()
-	if e.keepalive.timer.isZero() {
+	if e.keepalive.timer.isUninitialized() {
 		if state := e.EndpointState(); !state.closed() {
 			panic(fmt.Sprintf("Unexpected state when the keepalive time is cleaned up, got %s, want %s or %s", state, StateClose, StateError))
 		}
