@@ -182,7 +182,9 @@ func forkStub(flags uintptr, instrs []bpf.Instruction) (*thread, error) {
 		if sig := t.wait(stopped); sig != unix.SIGSTOP {
 			return nil, fmt.Errorf("wait failed: expected SIGSTOP, got %v", sig)
 		}
-		t.attach()
+		if err := t.attach(); err != nil {
+			return nil, err
+		}
 		t.grabInitRegs()
 		_, err := t.syscallIgnoreInterrupt(&t.initRegs, unix.SYS_MUNMAP,
 			arch.SyscallArgument{Value: stubROMapEnd},
@@ -297,7 +299,12 @@ func (s *subprocess) createStub() (*thread, error) {
 	s.requests <- req
 
 	childT := <-req.done
-	childT.attach()
+	if childT == nil {
+		return nil, fmt.Errorf("createStub: failed to get clone")
+	}
+	if err := childT.attach(); err != nil {
+		return nil, err
+	}
 	childT.grabInitRegs()
 
 	return childT, nil

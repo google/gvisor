@@ -196,6 +196,16 @@ func (s *subprocess) initSyscallThread(ptraceThread *thread) error {
 	return nil
 }
 
+func handlePtraceSyscallRequestError(req any, format string, values ...any) {
+	switch req.(type) {
+	case requestThread:
+		req.(requestThread).thread <- nil
+	case requestStub:
+		req.(requestStub).done <- nil
+	}
+	log.Warningf("handlePtraceSyscallRequest failed: "+format, values...)
+}
+
 // handlePtraceSyscallRequest executes system calls that can't be run via
 // syscallThread without using ptrace. Look at the description of syscallThread
 // to get more details about its limitations.
@@ -204,18 +214,20 @@ func (s *subprocess) handlePtraceSyscallRequest(req any) {
 	defer s.syscallThreadMu.Unlock()
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	s.syscallThread.attach()
+	if err := s.syscallThread.attach(); err != nil {
+		handlePtraceSyscallRequestError(req, err.Error())
+		return
+	}
 	defer s.syscallThread.detach()
 
 	ptraceThread := s.syscallThread.thread
 
-	switch req.(type) {
+	switch r := req.(type) {
 	case requestThread:
-		r := req.(requestThread)
 		t, err := ptraceThread.clone()
 		if err != nil {
-			// Should not happen: not recoverable.
-			panic(fmt.Sprintf("error initializing first thread: %v", err))
+			handlePtraceSyscallRequestError(req, "error initializing thread: %v", err)
+			return
 		}
 
 		// Since the new thread was created with
@@ -225,7 +237,8 @@ func (s *subprocess) handlePtraceSyscallRequest(req any) {
 		// SIGSTOP before the SIGSTOP was delivered, in which
 		// case that signal would be delivered before SIGSTOP.)
 		if sig := t.wait(stopped); sig != unix.SIGSTOP {
-			panic(fmt.Sprintf("error waiting for new clone: expected SIGSTOP, got %v", sig))
+			handlePtraceSyscallRequestError(req, "error waiting for new clone: expected SIGSTOP, got %v", sig)
+			return
 		}
 
 		t.initRegs = ptraceThread.initRegs
@@ -239,17 +252,20 @@ func (s *subprocess) handlePtraceSyscallRequest(req any) {
 			arch.SyscallArgument{Value: 0},
 		)
 		if err != nil {
-			panic(fmt.Sprintf("prctl: %v", err))
+			handlePtraceSyscallRequestError(req, "prctl: %v", err)
+			return
 		}
 
 		id, ok := s.sysmsgStackPool.Get()
 		if !ok {
-			panic("unable to allocate a sysmsg stub thread")
+			handlePtraceSyscallRequestError(req, "unable to allocate a sysmsg stub thread")
+			return
 		}
 		t.sysmsgStackID = id
 
 		if _, _, e := unix.RawSyscall(unix.SYS_TGKILL, uintptr(t.tgid), uintptr(t.tid), uintptr(unix.SIGSTOP)); e != 0 {
-			panic(fmt.Sprintf("tkill failed: %v", e))
+			handlePtraceSyscallRequestError(req, "tkill failed: %v", e)
+			return
 		}
 
 		// Detach the thread.
@@ -258,10 +274,10 @@ func (s *subprocess) handlePtraceSyscallRequest(req any) {
 		// Return the thread.
 		r.thread <- t
 	case requestStub:
-		r := req.(requestStub)
 		t, err := ptraceThread.createStub()
 		if err != nil {
-			panic(fmt.Sprintf("unable to create a stub process: %s", err))
+			handlePtraceSyscallRequestError(req, "unable to create a stub process: %v", err)
+			return
 		}
 		r.done <- t
 
@@ -445,27 +461,10 @@ func (s *subprocess) release() {
 	globalPool.markAvailable(s)
 }
 
-// newThread creates a new traced thread.
-//
-// Precondition: the OS thread must be locked.
-func (s *subprocess) newThread() *thread {
-	// Ask the first thread to create a new one.
-	var r requestThread
-	r.thread = make(chan *thread)
-	s.requests <- r
-	t := <-r.thread
-
-	// Attach the subprocess to this one.
-	t.attach()
-
-	// Return the new thread, which is now bound.
-	return t
-}
-
 // attach attaches to the thread.
-func (t *thread) attach() {
+func (t *thread) attach() error {
 	if _, _, errno := unix.RawSyscall6(unix.SYS_PTRACE, unix.PTRACE_ATTACH, uintptr(t.tid), 0, 0, 0, 0); errno != 0 {
-		panic(fmt.Sprintf("unable to attach: %v", errno))
+		return fmt.Errorf("unable to attach: %v", errno)
 	}
 
 	// PTRACE_ATTACH sends SIGSTOP, and wakes the tracee if it was already
@@ -473,11 +472,12 @@ func (t *thread) attach() {
 	// newSubprocess), so we always expect to see signal-delivery-stop with
 	// SIGSTOP.
 	if sig := t.wait(stopped); sig != unix.SIGSTOP {
-		panic(fmt.Sprintf("wait failed: expected SIGSTOP, got %v", sig))
+		return fmt.Errorf("wait failed: expected SIGSTOP, got %v", sig)
 	}
 
 	// Initialize options.
 	t.init()
+	return nil
 }
 
 func (t *thread) grabInitRegs() {
@@ -975,10 +975,15 @@ func (s *subprocess) createSysmsgThread() error {
 	r.thread = make(chan *thread)
 	s.requests <- r
 	p := <-r.thread
+	if p == nil {
+		return fmt.Errorf("createSysmsgThread: failed to get clone")
+	}
 
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	p.attach()
+	if err := p.attach(); err != nil {
+		return err
+	}
 
 	// Skip SIGSTOP.
 	if _, _, errno := unix.RawSyscall6(unix.SYS_PTRACE, unix.PTRACE_CONT, uintptr(p.tid), 0, 0, 0, 0); errno != 0 {

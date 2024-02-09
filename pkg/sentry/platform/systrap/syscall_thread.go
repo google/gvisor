@@ -157,11 +157,14 @@ func (t *syscallThread) mapMessageIntoStub() error {
 }
 
 // attach attaches to the stub thread with ptrace and unlock signals.
-func (t *syscallThread) attach() {
-	t.thread.attach()
+func (t *syscallThread) attach() error {
+	if err := t.thread.attach(); err != nil {
+		return err
+	}
 	// We need to unblock signals, because the TRAP signal is used to run
 	// syscalls via ptrace.
 	t.unmaskAllSignalsAttached()
+	return nil
 }
 
 func (t *syscallThread) syscall(sysno uintptr, args ...arch.SyscallArgument) (uintptr, error) {
