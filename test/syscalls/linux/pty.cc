@@ -18,6 +18,7 @@
 #include <poll.h>
 #include <sched.h>
 #include <signal.h>
+#include <string.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/poll.h>
@@ -31,6 +32,7 @@
 
 #include <csignal>
 #include <iostream>
+#include <string>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -98,8 +100,8 @@ struct kernel_termios {
   cc_t c_cc[KERNEL_NCCS];
 };
 
-bool operator==(struct kernel_termios const& a,
-                struct kernel_termios const& b) {
+bool operator==(struct kernel_termios const &a,
+                struct kernel_termios const &b) {
   return memcmp(&a, &b, sizeof(a)) == 0;
 }
 
@@ -122,14 +124,14 @@ constexpr char FromControlCharacter(char c) { return c + 'A' - 1; }
 constexpr bool IsControlCharacter(char c) { return c <= 31; }
 
 struct Field {
-  const char* name;
+  const char *name;
   uint64_t mask;
   uint64_t value;
 };
 
 // ParseFields returns a string representation of value, using the names in
 // fields.
-std::string ParseFields(const Field* fields, size_t len, uint64_t value) {
+std::string ParseFields(const Field *fields, size_t len, uint64_t value) {
   bool first = true;
   std::string s;
   for (size_t i = 0; i < len; i++) {
@@ -293,7 +295,7 @@ std::string FormatCC(char c) {
   return absl::StrCat("\\x", absl::Hex(c));
 }
 
-std::ostream& operator<<(std::ostream& os, struct kernel_termios const& a) {
+std::ostream &operator<<(std::ostream &os, struct kernel_termios const &a) {
   os << "{ c_iflag = "
      << ParseFields(kIflagFields, ABSL_ARRAYSIZE(kIflagFields), a.c_iflag);
   os << ", c_oflag = "
@@ -357,7 +359,7 @@ struct kernel_termios DefaultTermios() {
 // Returns a partial read if some bytes were read.
 //
 // fd must be non-blocking.
-PosixErrorOr<size_t> PollAndReadFd(int fd, void* buf, size_t count,
+PosixErrorOr<size_t> PollAndReadFd(int fd, void *buf, size_t count,
                                    absl::Duration timeout) {
   absl::Time end = absl::Now() + timeout;
 
@@ -376,7 +378,7 @@ PosixErrorOr<size_t> PollAndReadFd(int fd, void* buf, size_t count,
     }
 
     ssize_t n =
-        ReadFd(fd, static_cast<char*>(buf) + completed, count - completed);
+        ReadFd(fd, static_cast<char *>(buf) + completed, count - completed);
     if (n < 0) {
       if (errno == EAGAIN) {
         // Linux sometimes returns EAGAIN from this read, despite the fact that
@@ -471,14 +473,14 @@ PosixErrorOr<int> WaitUntilReceived(int fd, int count) {
 }
 
 // Verifies that there is nothing left to read from fd.
-void ExpectFinished(const FileDescriptor& fd) {
+void ExpectFinished(const FileDescriptor &fd) {
   // Nothing more to read.
   char c;
   EXPECT_THAT(ReadFd(fd.get(), &c, 1), SyscallFailsWithErrno(EAGAIN));
 }
 
 // Verifies that we can read expected bytes from fd into buf.
-void ExpectReadable(const FileDescriptor& fd, int expected, char* buf) {
+void ExpectReadable(const FileDescriptor &fd, int expected, char *buf) {
   size_t n = ASSERT_NO_ERRNO_AND_VALUE(
       PollAndReadFd(fd.get(), buf, expected, kTimeout));
   EXPECT_EQ(expected, n);
@@ -655,6 +657,28 @@ class PtyTest : public ::testing::Test {
     EXPECT_THAT(ioctl(replica_.get(), TCGETS, &t), SyscallSucceeds());
     t.c_lflag |= ICANON;
     EXPECT_THAT(ioctl(replica_.get(), TCSETS, &t), SyscallSucceeds());
+  }
+
+  // Writes master_input to the master file descriptor and verifies that
+  // the replica and the echo output match what is expected.
+  void TestCanonicalIO(const char *master_input,
+                       const char *expected_replica_output,
+                       const char *expected_echo_output) {
+    ASSERT_THAT(WriteFd(master_.get(), master_input, strlen(master_input)),
+                SyscallSucceedsWithValue(strlen(master_input)));
+
+    std::string buf(strlen(expected_replica_output), '\0');
+    ASSERT_NO_ERRNO(
+        WaitUntilReceived(replica_.get(), strlen(expected_replica_output)));
+    ExpectReadable(replica_, strlen(expected_replica_output), &buf[0]);
+    EXPECT_STREQ(buf.c_str(), expected_replica_output);
+
+    std::string echo_buf(strlen(expected_echo_output), '\0');
+    ExpectReadable(master_, strlen(expected_echo_output), &echo_buf[0]);
+    EXPECT_STREQ(echo_buf.c_str(), expected_echo_output);
+
+    ExpectFinished(master_);
+    ExpectFinished(replica_);
   }
 
   // Master and replica ends of the PTY. Non-blocking.
@@ -1074,6 +1098,70 @@ TEST_F(PtyTest, VEOLTermination) {
   ExpectFinished(replica_);
 }
 
+// Tests that sending "backspace" to the master fd will be handled properly
+// in canonical mode
+TEST_F(PtyTest, CanonInputBackspace) {
+  constexpr char kInput[] = "gvisor\x7f\n";
+  constexpr char kExpectedOutput[] = "gviso\n";
+  constexpr char kEchoExpectedOutput[] = "gvisor\b \b\r\n";
+
+  TestCanonicalIO(kInput, kExpectedOutput, kEchoExpectedOutput);
+}
+
+// one backspace should delete the entire multibyte character when IUTF8 is set
+TEST_F(PtyTest, CanonInputBackspaceMultibyteCharacterWithIUTF8) {
+  struct kernel_termios t = DefaultTermios();
+  t.c_iflag |= IUTF8;
+  ASSERT_THAT(ioctl(replica_.get(), TCSETS, &t), SyscallSucceeds());
+
+  constexpr char kInput[] = "gviso\xc6\xa9\x7f\n";
+  constexpr char kExpectedOutput[] = "gviso\n";
+  constexpr char kEchoExpectedOutput[] = "gviso\xc6\xa9\b \b\r\n";
+
+  TestCanonicalIO(kInput, kExpectedOutput, kEchoExpectedOutput);
+}
+
+// one backspace should only delete one byte in a multibyte character
+// if IUTF8 is not set
+TEST_F(PtyTest, CanonInputBackspaceMultibyteCharacterWithoutIUTF8) {
+  constexpr char kInput[] = "gviso\xc6\xa9\x7f\n";
+  constexpr char kExpectedOutput[] = "gviso\xc6\n";
+  constexpr char kEchoExpectedOutput[] = "gviso\xc6\xa9\b \b\r\n";
+
+  TestCanonicalIO(kInput, kExpectedOutput, kEchoExpectedOutput);
+}
+
+// backspace should not partially delete a multibyte character when IUTF8 is set
+TEST_F(PtyTest, CanonInputBackspaceMultibyteCharacterPartialWithIUTF8) {
+  struct kernel_termios t = DefaultTermios();
+  t.c_iflag |= IUTF8;
+  ASSERT_THAT(ioctl(replica_.get(), TCSETS, &t), SyscallSucceeds());
+
+  constexpr char kInput[] = "\x80\x7f\n";
+  constexpr char kExpectedOutput[] = "\x80\n";
+  constexpr char kEchoExpectedOutput[] = "\x80\r\n";
+
+  TestCanonicalIO(kInput, kExpectedOutput, kEchoExpectedOutput);
+}
+
+// backspace can partially delete a multibyte character when IUTF8 is not set
+TEST_F(PtyTest, CanonInputBackspaceMultibyteCharacterPartialWithoutIUTF8) {
+  constexpr char kInput[] = "\x80\x7f\n";
+  constexpr char kExpectedOutput[] = "\n";
+  constexpr char kEchoExpectedOutput[] = "\x80\b \b\r\n";
+
+  TestCanonicalIO(kInput, kExpectedOutput, kEchoExpectedOutput);
+}
+
+// ^W, \x17, should erase a word
+TEST_F(PtyTest, CanonInputWordErase) {
+  constexpr char kInput[] = "hello hi\x17\n";
+  constexpr char kExpectedOutput[] = "hello \n";
+  constexpr char kEchoExpectedOutput[] = "hello hi\b \b\b \b\r\n";
+
+  TestCanonicalIO(kInput, kExpectedOutput, kEchoExpectedOutput);
+}
+
 // Tests that we can write more than the 4096 character limit, then a
 // terminating character, then read out just the first 4095 bytes plus the
 // terminator.
@@ -1363,7 +1451,7 @@ TEST_F(PtyTest, SwitchTwiceMultiline) {
   std::string kExpected = "GO\nBLUE\n!";
 
   // Write each line.
-  for (const std::string& input : kInputs) {
+  for (const std::string &input : kInputs) {
     ASSERT_THAT(WriteFd(master_.get(), input.c_str(), input.size()),
                 SyscallSucceedsWithValue(input.size()));
   }
@@ -1403,18 +1491,18 @@ TEST_F(PtyTest, QueueSize) {
 
 TEST_F(PtyTest, PartialBadBuffer) {
   // Allocate 2 pages.
-  void* addr = mmap(nullptr, 2 * kPageSize, PROT_READ | PROT_WRITE,
+  void *addr = mmap(nullptr, 2 * kPageSize, PROT_READ | PROT_WRITE,
                     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
   ASSERT_NE(addr, MAP_FAILED);
-  char* buf = reinterpret_cast<char*>(addr);
+  char *buf = reinterpret_cast<char *>(addr);
 
   // Guard the 2nd page for our read to run into.
   ASSERT_THAT(
-      mprotect(reinterpret_cast<void*>(buf + kPageSize), kPageSize, PROT_NONE),
+      mprotect(reinterpret_cast<void *>(buf + kPageSize), kPageSize, PROT_NONE),
       SyscallSucceeds());
 
   // Leave only one free byte in the buffer.
-  char* bad_buffer = buf + kPageSize - 1;
+  char *bad_buffer = buf + kPageSize - 1;
 
   // Write to the master.
   constexpr char kBuf[] = "hello\n";
