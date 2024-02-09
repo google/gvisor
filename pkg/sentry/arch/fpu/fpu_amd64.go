@@ -199,6 +199,7 @@ const (
 	// xstateBVOffset is the offset in bytes of the XSTATE_BV field in an x86
 	// XSAVE area.
 	xstateBVOffset = 512
+	xcompBVOffset  = 520
 
 	// xsaveHeaderZeroedOffset and xsaveHeaderZeroedBytes indicate parts of the
 	// XSAVE header that we coerce to zero: "Bytes 15:8 of the XSAVE header is
@@ -381,7 +382,11 @@ func (s *State) AfterLoad() {
 	}
 	if hostFeatureSet.UseXsave() {
 		if err := safecopy.CheckXstate(s.BytePointer()); err != nil {
-			panic(fmt.Sprintf("incompatible state: %s (%#v)", err, *s))
+			xcompBV := uint64(0)
+			if len(old) >= xcompBVOffset+8 {
+				xcompBV = hostarch.ByteOrder.Uint64(old[xcompBVOffset:])
+			}
+			panic(fmt.Sprintf("incompatible state: %s\nlen(old)=%d len(new)=%d supportedBV=%#x XSTATE_BV=%#x XCOMP_BV=%#x", err, len(old), len(*s), supportedBV, savedBV, xcompBV))
 		}
 	}
 }

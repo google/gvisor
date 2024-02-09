@@ -44,7 +44,7 @@ TEXT ·checkXstate(SB),NOSPLIT|NOFRAME,$0-26
 	MOVQ addr+0(FP), DI
 	MOVL $0xffffffff, AX
 	MOVL $0xffffffff, DX
-	XRSTOR (DI)
+	XRSTOR64 (DI)
 
 	// Restore MXCSR and the x87 control word.
 	LDMXCSR	mxcsr+20(FP)

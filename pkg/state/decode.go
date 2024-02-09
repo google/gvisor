@@ -691,7 +691,7 @@ func (ds *decodeState) Load(obj reflect.Value) {
 			}
 		}
 	}); err != nil {
-		Failf("error executing callbacks for %#v: %w", ods.obj.Interface(), err)
+		Failf("error executing callbacks: %w\nfor object %#v", err, ods.obj.Interface())
 	}
 
 	// Check if we have any remaining dependency cycles. If there are any
