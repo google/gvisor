@@ -16,6 +16,7 @@ package devpts
 
 import (
 	"bytes"
+	"unicode"
 	"unicode/utf8"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -459,6 +460,94 @@ func (*inputQueueTransformer) transform(l *lineDiscipline, q *queue, buf []byte)
 			l.terminal.replicaKTTY.SignalForegroundProcessGroup(kernel.SignalInfoPriv(linux.SIGTSTP))
 		case l.termios.ControlCharacters[linux.VQUIT]: // ctrl-\
 			l.terminal.replicaKTTY.SignalForegroundProcessGroup(kernel.SignalInfoPriv(linux.SIGQUIT))
+
+		// In canonical mode, some characters need to be handled specially; for example, backspace.
+		// This roughly aligns with n_tty.c:n_tty_receive_char_canon and n_tty.c:eraser
+		// cBytes[0] == ControlCharacters[linux.VKILL] is also handled by n_tty.c:eraser, but this isn't implemented
+		case l.termios.ControlCharacters[linux.VWERASE]:
+			if !l.termios.LEnabled(linux.IEXTEN) {
+				break
+			}
+			fallthrough
+		case l.termios.ControlCharacters[linux.VERASE]:
+			if !l.termios.LEnabled(linux.ICANON) {
+				break
+			}
+
+			c := cBytes[0]
+			killType := linux.VERASE
+			if c == l.termios.ControlCharacters[linux.VWERASE] {
+				killType = linux.VWERASE
+			}
+			seenAlphanumeric := false
+			for len(q.readBuf) > 0 {
+				// Erase a character. If IUTF8 is enabled, erase an entire multibyte unicode character.
+				var toErase byte
+				cnt := 0
+				isContinuationByte := true
+				for ; cnt < len(q.readBuf) && isContinuationByte; cnt++ {
+					toErase = q.readBuf[len(q.readBuf)-cnt-1]
+					isContinuationByte = l.termios.IEnabled(linux.IUTF8) && (toErase&0xc0) == 0x80
+				}
+				if isContinuationByte {
+					// Do not partially erase a multibyte unicode character.
+					break
+				}
+
+				// VWERASE will continue erasing characters until we encounter the first non-alphanumeric character
+				// that follows some alphanumeric character. We consider "_" to be alphanumeric.
+				if killType == linux.VWERASE {
+					if unicode.IsLetter(rune(toErase)) || unicode.IsDigit(rune(toErase)) || toErase == '_' {
+						seenAlphanumeric = true
+					} else if seenAlphanumeric {
+						break
+					}
+				}
+
+				q.readBuf = q.readBuf[:len(q.readBuf)-cnt]
+				if l.termios.LEnabled(linux.ECHO) {
+					if l.termios.LEnabled(linux.ECHOPRT) {
+						// Not implemented
+					} else if killType == linux.VERASE && !l.termios.LEnabled(linux.ECHOE) {
+						// Not implemented
+					} else if toErase == '\t' {
+						// Not implemented
+					} else {
+						const unicodeDelete byte = 0x7f
+						isCtrl := toErase < 0x20 || toErase == unicodeDelete
+						echoctl := l.termios.LEnabled(linux.ECHOCTL)
+
+						charsToDelete := 1
+						if isCtrl {
+							// echoctl controls how we echo control characters, which also determines how we delete them.
+							if echoctl {
+								// echoctl echoes control characters as ^X, so we need to erase two characters.
+								charsToDelete = 2
+							} else {
+								// if echoctl is disabled, we don't echo control characters so we don't have to erase anything.
+								charsToDelete = 0
+							}
+						}
+						for i := 0; i < charsToDelete; i++ {
+							// Linux's kernel does character deletion with this sequence
+							// of bytes, presumably because some older terminals don't erase
+							// characters with \b, so we need to "erase" the old character
+							// by writing a space over it.
+							l.outQueue.writeBytes([]byte{'\b', ' ', '\b'}, l)
+						}
+					}
+				}
+
+				// VERASE only erases a single character
+				if killType == linux.VERASE {
+					break
+				}
+			}
+
+			buf = buf[1:]
+			ret += 1
+			notifyEcho = true
+			continue
 		}
 
 		// In canonical mode, we discard non-terminating characters
