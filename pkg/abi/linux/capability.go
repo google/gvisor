@@ -227,6 +227,31 @@ const (
 	HighestCapabilityVersion = LINUX_CAPABILITY_VERSION_3
 )
 
+// Constants that are used by file capability extended attributes, defined
+// in Linux's include/uapi/linux/capability.h.
+const (
+	// VFS_CAP_REVISION_1 was the original file capability implementation,
+	// which supported 32-bit masks for file capabilities.
+	VFS_CAP_REVISION_1 = 0x01000000
+	// VFS_CAP_REVISION_2 allows for file capability masks that are 64
+	// bits in size, and was necessary as the number of supported
+	// capabilities grew beyond 32.
+	VFS_CAP_REVISION_2 = 0x02000000
+	// VFS_CAP_REVISION_3 are provided to support namespaced file capabilities.
+	// As with version 2 file capabilities, version 3 capability
+	// masks are 64 bits in size.  But in addition, the root user
+	// ID of namespace is encoded in the security.capability
+	// extended attribute.
+	VFS_CAP_REVISION_3    = 0x03000000
+	VFS_CAP_REVISION_MASK = 0xFF000000
+	// The encoded VFS_CAP_REVISION_1 data's number of bytes.
+	XATTR_CAPS_SZ_1 = 12
+	// The encoded VFS_CAP_REVISION_2 data's number of bytes.
+	XATTR_CAPS_SZ_2 = 20
+	// The encoded VFS_CAP_REVISION_3 data's number of bytes.
+	XATTR_CAPS_SZ_3 = 24
+)
+
 // CapUserHeader is equivalent to Linux's cap_user_header_t.
 //
 // +marshal
