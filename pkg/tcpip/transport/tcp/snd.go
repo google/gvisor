@@ -205,7 +205,7 @@ func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 		s.SndWndScale = uint8(sndWndScale)
 	}
 
-	s.resendTimer.init(s.ep.stack.Clock(), maybeFailTimerHandler(s.ep, s.retransmitTimerExpired))
+	s.resendTimer.init(s.ep.stack.Clock(), timerHandler(s.ep, s.retransmitTimerExpired))
 	s.reorderTimer.init(s.ep.stack.Clock(), timerHandler(s.ep, s.rc.reorderTimerExpired))
 	s.probeTimer.init(s.ep.stack.Clock(), timerHandler(s.ep, s.probeTimerExpired))
 
@@ -437,7 +437,7 @@ func (s *sender) resendSegment() {
 func (s *sender) retransmitTimerExpired() tcpip.Error {
 	// Check if the timer actually expired or if it's a spurious wake due
 	// to a previously orphaned runtime timer.
-	if s.resendTimer.isZero() || !s.resendTimer.checkExpiration() {
+	if s.resendTimer.isUninitialized() || !s.resendTimer.checkExpiration() {
 		return nil
 	}
 
