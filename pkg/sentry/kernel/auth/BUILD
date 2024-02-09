@@ -1,5 +1,5 @@
 load("//pkg/sync/locking:locking.bzl", "declare_mutex", "declare_rwmutex")
-load("//tools:defs.bzl", "go_library")
+load("//tools:defs.bzl", "go_library", "go_test")
 load("//tools/go_generics:defs.bzl", "go_template_instance")
 
 package(
@@ -101,4 +101,11 @@ go_library(
         "//pkg/sync",
         "//pkg/sync/locking",
     ],
+)
+
+go_test(
+    name = "auth_test",
+    srcs = ["capability_set_test.go"],
+    library = ":auth",
+    deps = ["//pkg/abi/linux"],
 )
