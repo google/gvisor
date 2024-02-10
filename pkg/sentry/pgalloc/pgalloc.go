@@ -183,6 +183,10 @@ type MemoryFile struct {
 	// notifications used to drive eviction. stopNotifyPressure is
 	// immutable.
 	stopNotifyPressure func()
+
+	// savable is true if this MemoryFile will be saved via SaveTo() during
+	// the kernel's SaveTo operation. savable is protected by mu.
+	savable bool
 }
 
 // MemoryFileOpts provides options to NewMemoryFile.

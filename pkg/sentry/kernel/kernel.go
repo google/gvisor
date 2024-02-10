@@ -603,6 +603,11 @@ func (k *Kernel) SaveTo(ctx context.Context, w wire.Writer) error {
 	if err := k.vfs.PrepareSave(vfsCtx); err != nil {
 		return err
 	}
+	// Mark all to-be-saved MemoryFiles as savable to inform kernel save below.
+	k.mf.MarkSavable()
+	for _, mf := range mfsToSave {
+		mf.MarkSavable()
+	}
 
 	// Save the CPUID FeatureSet before the rest of the kernel so we can
 	// verify its compatibility on restore before attempting to restore the

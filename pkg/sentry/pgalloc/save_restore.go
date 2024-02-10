@@ -115,6 +115,20 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w wire.Writer) error {
 	return nil
 }
 
+// MarkSavable marks f as savable.
+func (f *MemoryFile) MarkSavable() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.savable = true
+}
+
+// IsSavable returns true if f is savable.
+func (f *MemoryFile) IsSavable() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.savable
+}
+
 // LoadFrom loads MemoryFile state from the given stream.
 func (f *MemoryFile) LoadFrom(ctx context.Context, r wire.Reader) error {
 	// Load metadata.

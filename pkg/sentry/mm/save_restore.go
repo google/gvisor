@@ -18,6 +18,7 @@ import (
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 )
 
 // InvalidateUnsavable invokes memmap.Mappable.InvalidateUnsavable on all
@@ -38,7 +39,11 @@ func (mm *MemoryManager) InvalidateUnsavable(ctx context.Context) error {
 // beforeSave is invoked by stateify.
 func (mm *MemoryManager) beforeSave() {
 	for pseg := mm.pmas.FirstSegment(); pseg.Ok(); pseg = pseg.NextSegment() {
-		if pma := pseg.ValuePtr(); pma.file != mm.mf {
+		if pma := pseg.ValuePtr(); pma.file != nil {
+			if mf, ok := pma.file.(*pgalloc.MemoryFile); ok && mf.IsSavable() {
+				// If the MemoryFile will be saved, then its PMAs are preserved.
+				continue
+			}
 			// InvalidateUnsavable should have caused all such pmas to be
 			// invalidated.
 			panic(fmt.Sprintf("Can't save pma %#v with non-MemoryFile of type %T:\n%s", pseg.Range(), pma.file, mm))
