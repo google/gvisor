@@ -1987,14 +1987,18 @@ TEST(Inotify, Xattr) {
 TEST(Inotify, Exec) {
   const FileDescriptor fd =
       ASSERT_NO_ERRNO_AND_VALUE(InotifyInit1(IN_NONBLOCK));
-  const int wd = ASSERT_NO_ERRNO_AND_VALUE(
-      InotifyAddWatch(fd.get(), "/bin/true", IN_ALL_EVENTS));
+  // Create a new executable file instead of using /bin/true directly in case
+  // the test suite uses it at any point and generates extra events.
+  TempPath p = ASSERT_NO_ERRNO_AND_VALUE(
+      TempPath::CreateFileWith(GetAbsoluteTestTmpdir(), "#!/bin/true", 0755));
 
+  const int wd = ASSERT_NO_ERRNO_AND_VALUE(
+      InotifyAddWatch(fd.get(), p.path(), IN_ALL_EVENTS));
   // Perform exec.
   pid_t child = -1;
   int execve_errno = -1;
   auto kill = ASSERT_NO_ERRNO_AND_VALUE(
-      ForkAndExec("/bin/true", {}, {}, nullptr, &child, &execve_errno));
+      ForkAndExec(p.path(), {}, {}, nullptr, &child, &execve_errno));
   ASSERT_EQ(0, execve_errno);
 
   int status;
