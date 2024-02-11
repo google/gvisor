@@ -501,11 +501,7 @@ func (fd *FileDescription) handleReadv(t *kernel.Task, sqe *linux.IOUringSqe, fl
 		return 0, linuxerr.EINVAL
 	}
 
-	// AddressSpaceActive is set to true as we are doing this from the task goroutine.And this is a
-	// case as we currently don't support neither IOPOLL nor SQPOLL modes.
-	dst, err := t.IovecsIOSequence(hostarch.Addr(sqe.AddrOrSpliceOff), int(sqe.Len), usermem.IOOpts{
-		AddressSpaceActive: true,
-	})
+	dst, err := t.IovecsIOSequence(hostarch.Addr(sqe.AddrOrSpliceOff), int(sqe.Len), usermem.IOOpts{})
 	if err != nil {
 		return 0, err
 	}

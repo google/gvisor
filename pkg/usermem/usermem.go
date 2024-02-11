@@ -129,11 +129,6 @@ type IOOpts struct {
 	// by mmap(2) or mprotect(2) will be ignored. (Memory protections required
 	// by the target of the mapping are never ignored.)
 	IgnorePermissions bool
-
-	// If AddressSpaceActive is true, the IO implementation may assume that it
-	// has an active AddressSpace and can therefore use AddressSpace copying
-	// without performing activation. See mm/io.go for details.
-	AddressSpaceActive bool
 }
 
 // IOReadWriter is an io.ReadWriter that reads from / writes to addresses

@@ -576,9 +576,7 @@ func Getcpu(t *kernel.Task, sysno uintptr, args arch.SyscallArguments) (uintptr,
 	}
 	// We always return node 0.
 	if node != 0 {
-		if _, err := t.MemoryManager().ZeroOut(t, node, 4, usermem.IOOpts{
-			AddressSpaceActive: true,
-		}); err != nil {
+		if _, err := t.MemoryManager().ZeroOut(t, node, 4, usermem.IOOpts{}); err != nil {
 			return 0, nil, err
 		}
 	}

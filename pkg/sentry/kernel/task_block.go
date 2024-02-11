@@ -182,18 +182,16 @@ func (t *Task) block(C <-chan struct{}, timerChan <-chan struct{}) error {
 	}
 }
 
-// prepareSleep prepares to sleep.
+// prepareSleep is called immediately before the task goroutine blocks.
 func (t *Task) prepareSleep() {
 	t.assertTaskGoroutine()
 	t.p.PrepareSleep()
-	t.Deactivate()
 	t.accountTaskGoroutineEnter(TaskGoroutineBlockedInterruptible)
 }
 
-// completeSleep reactivates the address space.
+// completeSleep is called immediately after the task goroutine unblocks.
 func (t *Task) completeSleep() {
 	t.accountTaskGoroutineLeave(TaskGoroutineBlockedInterruptible)
-	t.Activate()
 }
 
 // Interrupted implements context.Context.Interrupted.
@@ -208,20 +206,15 @@ func (t *Task) Interrupted() bool {
 }
 
 // UninterruptibleSleepStart implements context.Context.UninterruptibleSleepStart.
-func (t *Task) UninterruptibleSleepStart(deactivate bool) {
+func (t *Task) UninterruptibleSleepStart() {
 	t.assertTaskGoroutine()
-	if deactivate {
-		t.Deactivate()
-	}
+	t.p.PrepareUninterruptibleSleep()
 	t.accountTaskGoroutineEnter(TaskGoroutineBlockedUninterruptible)
 }
 
 // UninterruptibleSleepFinish implements context.Context.UninterruptibleSleepFinish.
-func (t *Task) UninterruptibleSleepFinish(activate bool) {
+func (t *Task) UninterruptibleSleepFinish() {
 	t.accountTaskGoroutineLeave(TaskGoroutineBlockedUninterruptible)
-	if activate {
-		t.Activate()
-	}
 }
 
 // interrupted returns true if interrupt or interruptSelf has been called at

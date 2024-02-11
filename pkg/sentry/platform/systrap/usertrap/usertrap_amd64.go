@@ -111,7 +111,7 @@ func (s *State) newTrapLocked(ctx context.Context, mm memoryManager) (hostarch.A
 			// next unused trap.
 			s.nextTrap = 1
 			s.tableAddr = addr
-		} else if _, err := hdr.CopyIn(task.OwnCopyContext(usermem.IOOpts{AddressSpaceActive: false}), addr); err != nil {
+		} else if _, err := hdr.CopyIn(task.OwnCopyContext(usermem.IOOpts{}), addr); err != nil {
 			return 0, err
 		} else {
 			// Read an index of a next unused trap.
@@ -202,7 +202,7 @@ func (s *State) PatchSyscall(ctx context.Context, ac *arch.Context64, mm memoryM
 	patchAddr := ac.IP() - uintptr(len(jmpInst))
 
 	prevCode := make([]uint8, len(jmpInst))
-	if _, err := primitive.CopyUint8SliceIn(task.OwnCopyContext(usermem.IOOpts{AddressSpaceActive: false}), hostarch.Addr(patchAddr), prevCode); err != nil {
+	if _, err := primitive.CopyUint8SliceIn(task, hostarch.Addr(patchAddr), prevCode); err != nil {
 		return false, err
 	}
 
@@ -301,7 +301,7 @@ func (s *State) HandleFault(ctx context.Context, ac *arch.Context64, mm memoryMa
 
 	code := make([]uint8, len(jmpInst))
 	ip := ac.IP() - faultInstOffset
-	if _, err := primitive.CopyUint8SliceIn(task.OwnCopyContext(usermem.IOOpts{AddressSpaceActive: false}), hostarch.Addr(ip), code); err != nil {
+	if _, err := primitive.CopyUint8SliceIn(task, hostarch.Addr(ip), code); err != nil {
 		return err
 	}
 

@@ -63,17 +63,12 @@ type Blocker interface {
 	BlockWithTimeoutOn(waiter.Waitable, waiter.EventMask, time.Duration) (time.Duration, bool)
 
 	// UninterruptibleSleepStart indicates the beginning of an uninterruptible
-	// sleep state (equivalent to Linux's TASK_UNINTERRUPTIBLE). If deactivate
-	// is true and the Context represents a Task, the Task's AddressSpace is
-	// deactivated.
-	UninterruptibleSleepStart(deactivate bool)
+	// sleep state (equivalent to Linux's TASK_UNINTERRUPTIBLE).
+	UninterruptibleSleepStart()
 
 	// UninterruptibleSleepFinish indicates the end of an uninterruptible sleep
-	// state that was begun by a previous call to UninterruptibleSleepStart. If
-	// activate is true and the Context represents a Task, the Task's
-	// AddressSpace is activated. Normally activate is the same value as the
-	// deactivate parameter passed to UninterruptibleSleepStart.
-	UninterruptibleSleepFinish(activate bool)
+	// state that was begun by a previous call to UninterruptibleSleepStart.
+	UninterruptibleSleepFinish()
 }
 
 // NoTask is an implementation of Blocker that does not block.
@@ -147,10 +142,10 @@ func (nt *NoTask) BlockWithTimeoutOn(w waiter.Waitable, mask waiter.EventMask, d
 }
 
 // UninterruptibleSleepStart implmenents Blocker.UninterruptedSleepStart.
-func (*NoTask) UninterruptibleSleepStart(bool) {}
+func (*NoTask) UninterruptibleSleepStart() {}
 
 // UninterruptibleSleepFinish implmenents Blocker.UninterruptibleSleepFinish.
-func (*NoTask) UninterruptibleSleepFinish(bool) {}
+func (*NoTask) UninterruptibleSleepFinish() {}
 
 // Context represents a thread of execution (hereafter "goroutine" to reflect
 // Go idiosyncrasy). It carries state associated with the goroutine across API

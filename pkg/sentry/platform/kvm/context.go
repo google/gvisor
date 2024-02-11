@@ -127,5 +127,18 @@ func (c *context) FullStateChanged() {}
 // PullFullState implements platform.Context.PullFullState.
 func (c *context) PullFullState(as platform.AddressSpace, ac *arch.Context64) error { return nil }
 
-// PrepareSleep implements platform.Context.platform.Context.
+// PrepareSleep implements platform.Context.PrepareSleep.
 func (*context) PrepareSleep() {}
+
+// PrepareUninterruptibleSleep implements
+// platform.Context.PrepareUninterruptibleSleep.
+func (*context) PrepareUninterruptibleSleep() {}
+
+// PrepareStop implements platform.Context.PrepareStop.
+func (*context) PrepareStop() {}
+
+// PrepareExecve implements platform.Context.PrepareExecve.
+func (*context) PrepareExecve() {}
+
+// PrepareExit implements platform.Context.PrepareExit.
+func (*context) PrepareExit() {}
