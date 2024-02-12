@@ -47,7 +47,7 @@ type profile struct {
 // useful in this context to overwrite previous runs, and generate a
 // single profile result for the final test.
 func (c *Container) profileInit(image string) {
-	if !*pprofBlock && !*pprofCPU && !*pprofMutex && !*pprofHeap {
+	if !*pprofBlock && !*pprofCPU && !*pprofMutex && !*pprofHeap && !*trace {
 		return // Nothing to do.
 	}
 	c.profile = &profile{
