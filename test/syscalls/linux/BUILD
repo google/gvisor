@@ -1,5 +1,5 @@
 load("//tools:arch.bzl", "select_arch")
-load("//tools:defs.bzl", "cc_binary", "cc_library", "gbenchmark", "gtest", "select_system")
+load("//tools:defs.bzl", "cc_binary", "cc_library", "gbenchmark", "gtest", "select_gtest", "select_system")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -424,15 +424,14 @@ cc_binary(
         "//test/util:capability_util",
         "//test/util:file_descriptor",
         "//test/util:fs_util",
-        "@com_google_absl//absl/flags:flag",
-        "@com_google_absl//absl/synchronization",
-        gtest,
         "//test/util:posix_error",
         "//test/util:temp_path",
         "//test/util:test_main",
         "//test/util:test_util",
         "//test/util:thread_util",
-    ],
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/synchronization",
+    ] + select_gtest(),
 )
 
 cc_binary(
@@ -641,8 +640,6 @@ cc_binary(
         "//test/util:epoll_util",
         "//test/util:eventfd_util",
         "//test/util:file_descriptor",
-        "@com_google_absl//absl/synchronization",
-        gtest,
         "//test/util:posix_error",
         "//test/util:signal_util",
         "//test/util:socket_util",
@@ -650,7 +647,8 @@ cc_binary(
         "//test/util:test_main",
         "//test/util:test_util",
         "//test/util:thread_util",
-    ],
+        "@com_google_absl//absl/synchronization",
+    ] + select_gtest(),
 )
 
 cc_binary(

@@ -55,3 +55,6 @@ def cc_binary(name, static = False, tcmalloc = False, **kwargs):
         name = name,
         **kwargs
     )
+
+def select_gtest():
+    return [gtest]  # No select is needed.
