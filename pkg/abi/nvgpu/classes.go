@@ -218,6 +218,17 @@ type NV_CHANNEL_ALLOC_PARAMS struct {
 	SubProcessID        uint32
 }
 
+// NV_CHANNEL_ALLOC_PARAMS_V535 is the updated version of
+// NV_CHANNEL_ALLOC_PARAMS since 535.86.05.
+//
+// +marshal
+type NV_CHANNEL_ALLOC_PARAMS_V535 struct {
+	NV_CHANNEL_ALLOC_PARAMS
+	EncryptIv [CC_CHAN_ALLOC_IV_SIZE_DWORD]uint32
+	DecryptIv [CC_CHAN_ALLOC_IV_SIZE_DWORD]uint32
+	HmacNonce [CC_CHAN_ALLOC_NONCE_SIZE_DWORD]uint32
+}
+
 // NVB0B5_ALLOCATION_PARAMETERS is the alloc param type for TURING_DMA_COPY_A,
 // AMPERE_DMA_COPY_A, and AMPERE_DMA_COPY_B from
 // src/common/sdk/nvidia/inc/class/clb0b5sw.h.
