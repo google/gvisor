@@ -56,9 +56,9 @@ func (*PortForward) Synopsis() string {
 
 // Usage implements subcommands.Command.Usage.
 func (*PortForward) Usage() string {
-	return `port-forward CONTAINER_ID [LOCAL_PORT:]REMOTE_PORT - port forward to gvisor container.
+	return `port-forward CONTAINER_ID [LOCAL_PORT|UDS_PATH]:REMOTE_PORT - port forward to gvisor container.
 
-Port forwarding has two modes. Local mode opens a local port and forwards
+Port forwarding has two modes. Local mode opens a local port or unix domain socket (UDS) and forwards
 connections to another port inside the specified container. Stream mode
 forwards a single connection on a UDS to the specified port in the container.
 
@@ -68,6 +68,11 @@ The following will forward connections on local port 8080 to port 80 in the
 container named 'nginx':
 
 	# runsc port-forward nginx 8080:80
+
+The following will forward connections on UDS /tmp/payload.sock to port 80 in the
+container named 'nginx':
+
+	# runsc port-forward nginx /tmp/payload.sock:80
 
 The following will forward a single new connection on the unix domain socket at
 /tmp/pipe to port 80 in the container named 'nginx':
@@ -113,10 +118,8 @@ func (p *PortForward) Execute(ctx context.Context, f *flag.FlagSet, args ...any)
 		util.Fatalf("invalid port string %q", portStr)
 	}
 
-	localPort, err := strconv.Atoi(ports[0])
-	if err != nil {
-		util.Fatalf("invalid port string %q: %v", portStr, err)
-	}
+	localSocket := ports[0]
+
 	portNum, err := strconv.Atoi(ports[1])
 	if err != nil {
 		util.Fatalf("invalid port string %q: %v", portStr, err)
@@ -129,15 +132,13 @@ func (p *PortForward) Execute(ctx context.Context, f *flag.FlagSet, args ...any)
 	var wg sync.WaitGroup
 	ctx, cancel := context.WithCancel(ctx)
 	wg.Add(3)
-	go func(localPort, portNum int) {
+	go func(localSocket string, portNum int) {
 		defer cancel()
 		defer wg.Done()
-		// Print message to local user.
-		fmt.Printf("Forwarding local port %d to %d...\n", localPort, portNum)
-		if err := localForward(ctx, c, localPort, uint16(portNum)); err != nil {
+		if err := localForward(ctx, c, localSocket, uint16(portNum)); err != nil {
 			log.Warningf("port forwarding: %v", err)
 		}
-	}(localPort, portNum)
+	}(localSocket, portNum)
 
 	// Exit port forwarding if the container exits.
 	go func() {
@@ -164,8 +165,16 @@ func (p *PortForward) Execute(ctx context.Context, f *flag.FlagSet, args ...any)
 }
 
 // localForward starts port forwarding from the given local port.
-func localForward(ctx context.Context, c *container.Container, localPort int, containerPort uint16) error {
-	l, err := net.Listen("tcp", ":"+strconv.Itoa(localPort))
+func localForward(ctx context.Context, c *container.Container, localSocket string, containerPort uint16) error {
+	var l net.Listener
+	localTCPPort, err := strconv.Atoi(localSocket)
+	if err == nil {
+		fmt.Printf("Forwarding local TCP port %d to %d...\n", localTCPPort, containerPort)
+		l, err = net.Listen("tcp", ":"+strconv.Itoa(localTCPPort))
+	} else {
+		fmt.Printf("Forwarding UDS at %q to %d...\n", localSocket, containerPort)
+		l, err = net.Listen("unix", localSocket)
+	}
 	if err != nil {
 		return err
 	}
