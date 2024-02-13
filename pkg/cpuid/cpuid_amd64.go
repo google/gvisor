@@ -401,9 +401,11 @@ func (fs FeatureSet) ExtendedStateSize() (size, align uint) {
 // AMXExtendedStateSize returns the number of bytes within the "extended state"
 // area that is used for AMX.
 func (fs FeatureSet) AMXExtendedStateSize() uint {
-	xcr0 := xgetbv(0)
-	if (xcr0 & XCR0AMXMask) != 0 {
-		return uint(amxTileCfgSize + amxTileDataSize)
+	if fs.UseXsave() {
+		xcr0 := xgetbv(0)
+		if (xcr0 & XCR0AMXMask) != 0 {
+			return uint(amxTileCfgSize + amxTileDataSize)
+		}
 	}
 	return 0
 }
