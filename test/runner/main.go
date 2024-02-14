@@ -543,6 +543,8 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 
 			// Delete the existing sandbox.
 			if err := deleteSandbox(saveArgs, id); err != nil {
+				printAll(dirs)
+				removeAll(dirs)
 				return fmt.Errorf("deleteSandbox error %v", err)
 			}
 
@@ -550,6 +552,8 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 			restoreArgs := saveArgs
 			restoreArgs, dirs, err = prepareSave(restoreArgs, undeclaredOutputsDir, dirs, i)
 			if err != nil {
+				printAll(dirs)
+				removeAll(dirs)
 				return fmt.Errorf("prepareSave error: %v", err)
 			}
 			restoreArgs = append(restoreArgs, "restore", "--image-path", dirs[i-1], "--bundle", bundleDir, id)
@@ -568,8 +572,8 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 				return fmt.Errorf("after restore error: %v", err)
 			}
 		}
-		printAll(dirs)
-		defer removeAll(dirs)
+		// Do not output state files when the test succeeds.
+		removeAll(dirs)
 	} else {
 		err = cmd.Run()
 		if *waitForPid != 0 {

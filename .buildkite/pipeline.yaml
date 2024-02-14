@@ -274,7 +274,7 @@ steps:
   # All system call tests.
   - <<: *common
     label: ":toolbox: System call tests (AMD64)"
-    command: "make BAZEL_OPTIONS=--test_tag_filters=$SYSCALL_TEST_FILTERS syscall-tests"
+    command: make BAZEL_OPTIONS=--test_tag_filters=-allsave syscall-tests
     parallelism: 20
     agents:
       <<: *platform_specific_agents
@@ -283,7 +283,22 @@ steps:
   - <<: *common
     <<: *source_test
     label: ":muscle: System call tests (ARM64)"
-    command: make BAZEL_OPTIONS=--test_tag_filters=runsc_ptrace,runsc_systrap syscall-tests
+    command: make BAZEL_OPTIONS=--test_tag_filters=-allsave,runsc_ptrace,runsc_systrap syscall-tests
+    parallelism: 10
+    agents:
+      arch: "arm64"
+  # All S/R system call tests.
+  - <<: *common
+    <<: *source_test
+    label: ":muscle: System call save restore tests (AMD64)"
+    command: make BAZEL_OPTIONS=--test_tag_filters=save_restore syscall-tests
+    parallelism: 20
+    agents:
+      arch: "amd64"
+  - <<: *common
+    <<: *source_test
+    label: ":muscle: System call save restore tests (ARM64)"
+    command: make BAZEL_OPTIONS=--test_tag_filters=save_restore syscall-tests
     parallelism: 10
     agents:
       arch: "arm64"
