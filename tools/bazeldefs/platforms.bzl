@@ -42,3 +42,4 @@ platform_capabilities = {
 }
 
 default_platform = "systrap"
+save_restore_platforms = ["systrap"]

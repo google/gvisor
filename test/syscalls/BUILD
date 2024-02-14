@@ -61,7 +61,6 @@ syscall_test(
 )
 
 syscall_test(
-    save = True,
     test = "//test/syscalls/linux:brk_test",
 )
 
@@ -126,6 +125,8 @@ syscall_test(
     # TODO(b/318948806): lisafs.BoundSocketFD is leaked.
     leak_check = False,
     one_sandbox = False,
+    # Takes too long to run with S/R.
+    save = False,
     test = "//test/syscalls/linux:bind_external_test",
     # Shared mode tests replace /tmp which hides the files created for
     # add_host_connector. use_tmpfs makes shared mode be skipped.
@@ -138,6 +139,8 @@ syscall_test(
     # TODO(b/318948806): lisafs.BoundSocketFD is leaked.
     leak_check = False,
     one_sandbox = False,
+    # Takes too long to run with S/R.
+    save = False,
     test = "//test/syscalls/linux:connect_external_test",
     # Shared mode tests replace /tmp which hides the files created for
     # add_host_uds. use_tmpfs makes shared mode be skipped.
@@ -147,6 +150,8 @@ syscall_test(
 syscall_test(
     add_host_fifo = True,
     one_sandbox = False,
+    # Takes too long to run with S/R.
+    save = False,
     test = "//test/syscalls/linux:pipe_external_test",
     # Shared mode tests replace /tmp which hides the files created for
     # add_host_fifo. use_tmpfs makes shared mode be skipped.
@@ -272,6 +277,7 @@ syscall_test(
 
 syscall_test(
     add_overlay = True,
+    shard_count = most_shards,
     test = "//test/syscalls/linux:getdents_test",
 )
 
@@ -393,6 +399,8 @@ syscall_test(
 
 syscall_test(
     add_overlay = True,
+    # TODO(b/323000153): Enable S/R only for the overlay variant.
+    save = False,
     test = "//test/syscalls/linux:mount_test",
 )
 
@@ -516,6 +524,7 @@ syscall_test(
 
 syscall_test(
     size = "medium",
+    shard_count = most_shards,
     test = "//test/syscalls/linux:proc_test",
 )
 
@@ -757,6 +766,8 @@ syscall_test(
 syscall_test(
     size = "large",
     add_hostinet = True,
+    # Takes too long to run with S/R.
+    save = False,
     shard_count = most_shards,
     test = "//test/syscalls/linux:socket_inet_loopback_test",
 )
@@ -794,6 +805,7 @@ syscall_test(
 syscall_test(
     size = "medium",
     add_hostinet = True,
+    shard_count = most_shards,
     test = "//test/syscalls/linux:socket_ip_tcp_loopback_non_blocking_test",
 )
 
@@ -853,6 +865,8 @@ syscall_test(
 
 syscall_test(
     add_hostinet = True,
+    # FIXME(b/323000153): These tests fail with S/R, fix them and then enable.
+    save = False,
     test = "//test/syscalls/linux:socket_ipv4_udp_unbound_loopback_netlink_test",
 )
 
@@ -947,6 +961,8 @@ syscall_test(
 syscall_test(
     size = "large",
     add_hostinet = True,
+    # Takes too long to run with S/R.
+    save = False,
     shard_count = most_shards,
     test = "//test/syscalls/linux:socket_stress_test",
 )
@@ -958,6 +974,8 @@ syscall_test(
 
 syscall_test(
     flaky = 1,  # NOTE(b/116636318): Large sendmsg may stall a long time.
+    # Takes too long to run with S/R.
+    save = False,
     shard_count = more_shards,
     test = "//test/syscalls/linux:socket_unix_dgram_local_test",
 )
@@ -976,17 +994,23 @@ syscall_test(
 
 syscall_test(
     flaky = 1,  # NOTE(b/116636318): Large sendmsg may stall a long time.
+    # Takes too long to run with S/R.
+    save = False,
     shard_count = more_shards,
     test = "//test/syscalls/linux:socket_unix_seqpacket_local_test",
 )
 
 syscall_test(
     size = "medium",
+    shard_count = most_shards,
     test = "//test/syscalls/linux:socket_unix_stream_test",
 )
 
 syscall_test(
     size = "medium",
+    # TODO(b/323000153): Test fails with S/R enabled during restore of abstract
+    # sockets. Fix this and then enable S/R.
+    save = False,
     test = "//test/syscalls/linux:socket_unix_unbound_abstract_test",
 )
 
@@ -1022,6 +1046,8 @@ syscall_test(
 syscall_test(
     add_fusefs = True,
     add_overlay = True,
+    # TODO(b/323000153): Enable S/R only for the overlay variant.
+    save = False,
     test = "//test/syscalls/linux:stat_test",
 )
 
@@ -1033,6 +1059,7 @@ syscall_test(
 
 syscall_test(
     add_overlay = True,
+    save = False,
     test = "//test/syscalls/linux:sticky_test",
 )
 
@@ -1103,6 +1130,8 @@ syscall_test(
 syscall_test(
     # TODO(b/318948806): tun.tunEndpoint is leaked.
     leak_check = False,
+    # TODO(b/110961832): /dev/net/tun does not support S/R.
+    save = False,
     test = "//test/syscalls/linux:tuntap_test",
 )
 
@@ -1176,12 +1205,10 @@ syscall_test(
 syscall_test(
     add_fusefs = True,
     add_overlay = True,
-    save = True,
     test = "//test/syscalls/linux:write_test",
 )
 
 syscall_test(
-    save = True,
     test = "//test/syscalls/linux:proc_net_unix_test",
 )
 
@@ -1203,10 +1230,13 @@ syscall_test(
 )
 
 syscall_test(
+    save = False,
     test = "//test/syscalls/linux:deleted_test",
 )
 
 syscall_test(
     size = "small",
+    # FIXME(b/323000153): These tests fail with S/R, fix them and then enable.
+    save = False,
     test = "//test/syscalls/linux:close_range_test",
 )
