@@ -166,41 +166,75 @@ func (d *packetMMapDispatcher) readMMappedPacket() (*buffer.View, bool, tcpip.Er
 	return pkt, false, nil
 }
 
+// TODO: "RX Hash data available in user space"
+
 // dispatch reads packets from an mmaped ring buffer and dispatches them to the
 // network stack.
 func (d *packetMMapDispatcher) dispatch() (bool, tcpip.Error) {
-	pkt, stopped, err := d.readMMappedPacket()
-	if err != nil || stopped {
-		return false, err
-	}
-	var p tcpip.NetworkProtocolNumber
-	if d.e.hdrSize > 0 {
-		p = header.Ethernet(pkt.AsSlice()).Type()
-	} else {
-		// We don't get any indication of what the packet is, so try to guess
-		// if it's an IPv4 or IPv6 packet.
-		switch header.IPVersion(pkt.AsSlice()) {
-		case header.IPv4Version:
-			p = header.IPv4ProtocolNumber
-		case header.IPv6Version:
-			p = header.IPv6ProtocolNumber
-		default:
-			return true, nil
+	// Block until we can read packets.
+	hdr := tPacketHdr(d.ringBuffer[d.ringOffset*tpFrameSize:])
+	for hdr.tpStatus()&tpStatusUser == 0 {
+		stopped, errno := rawfile.BlockingPollUntilStopped(d.EFD, d.fd, unix.POLLIN|unix.POLLERR)
+		if errno != 0 {
+			if errno == unix.EINTR {
+				continue
+			}
+			return !stopped, rawfile.TranslateErrno(errno)
+		}
+		if stopped {
+			return false, nil
+		}
+		if hdr.tpStatus()&tpStatusCopy != 0 {
+			// This frame is truncated so skip it after flipping the
+			// buffer to the kernel.
+			hdr.setTPStatus(tpStatusKernel)
+			d.ringOffset = (d.ringOffset + 1) % tpFrameNR
+			hdr = (tPacketHdr)(d.ringBuffer[d.ringOffset*tpFrameSize:])
+			continue
 		}
 	}
 
-	pbuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
-		Payload: buffer.MakeWithView(pkt),
-	})
-	defer pbuf.DecRef()
-	if d.e.hdrSize > 0 {
-		if _, ok := pbuf.LinkHeader().Consume(d.e.hdrSize); !ok {
-			panic(fmt.Sprintf("LinkHeader().Consume(%d) must succeed", d.e.hdrSize))
-		}
-	}
+	// Get as many packets as possible before polling again.
+	// TODO: Status check is useless the first time around. Omit it.
 	d.e.mu.RLock()
-	dsp := d.e.dispatcher
+	dsp := d.e.dispatcher // TODO: does this ever change?
 	d.e.mu.RUnlock()
-	dsp.DeliverNetworkPacket(p, pbuf)
+	for ; hdr.tpStatus()&tpStatusUser != 0; hdr = tPacketHdr(d.ringBuffer[d.ringOffset*tpFrameSize:]) {
+		// Copy out the packet from the mmapped frame to a locally owned buffer.
+		view := buffer.NewView(int(hdr.tpSnapLen()))
+		view.Write(hdr.Payload())
+
+		// Release packets to kernel.
+		hdr.setTPStatus(tpStatusKernel)
+		d.ringOffset = (d.ringOffset + 1) % tpFrameNR
+
+		var p tcpip.NetworkProtocolNumber
+		if d.e.hdrSize > 0 {
+			p = header.Ethernet(view.AsSlice()).Type()
+		} else {
+			// We don't get any indication of what the packet is, so try to guess
+			// if it's an IPv4 or IPv6 packet.
+			switch header.IPVersion(view.AsSlice()) {
+			case header.IPv4Version:
+				p = header.IPv4ProtocolNumber
+			case header.IPv6Version:
+				p = header.IPv6ProtocolNumber
+			default:
+				return true, nil
+			}
+		}
+
+		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+			Payload: buffer.MakeWithView(view),
+		})
+		if d.e.hdrSize > 0 {
+			if _, ok := pkt.LinkHeader().Consume(d.e.hdrSize); !ok {
+				panic(fmt.Sprintf("LinkHeader().Consume(%d) must succeed", d.e.hdrSize))
+			}
+		}
+
+		dsp.DeliverNetworkPacket(p, pkt)
+		pkt.DecRef()
+	}
 	return true, nil
 }
