@@ -19,6 +19,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/platform"
 )
 
@@ -162,8 +163,7 @@ func (mm *MemoryManager) Deactivate() {
 	mm.activeMu.Unlock()
 }
 
-// mapASLocked maps addresses in ar into mm.as. If precommit is true, mappings
-// for all addresses in ar should be precommitted.
+// mapASLocked maps addresses in ar into mm.as.
 //
 // Preconditions:
 //   - mm.activeMu must be locked.
@@ -171,13 +171,15 @@ func (mm *MemoryManager) Deactivate() {
 //   - ar.Length() != 0.
 //   - ar must be page-aligned.
 //   - pseg == mm.pmas.LowerBoundSegment(ar.Start).
-func (mm *MemoryManager) mapASLocked(pseg pmaIterator, ar hostarch.AddrRange, precommit bool) error {
+func (mm *MemoryManager) mapASLocked(pseg pmaIterator, ar hostarch.AddrRange, platformEffect memmap.MMapPlatformEffect) error {
 	// By default, map entire pmas at a time, under the assumption that there
 	// is no cost to mapping more of a pma than necessary.
 	mapAR := hostarch.AddrRange{0, ^hostarch.Addr(hostarch.PageSize - 1)}
-	if precommit {
-		// When explicitly precommitting, only map ar, since overmapping may
-		// incur unexpected resource usage.
+	if platformEffect != memmap.PlatformEffectDefault {
+		// When explicitly committing, only map ar, since overmapping may incur
+		// unexpected resource usage. When explicitly populating, do the same
+		// since an underlying device file may be sensitive to the mapped
+		// range.
 		mapAR = ar
 	} else if mapUnit := mm.p.MapUnit(); mapUnit != 0 {
 		// Limit the range we map to ar, aligned to mapUnit.
@@ -205,7 +207,7 @@ func (mm *MemoryManager) mapASLocked(pseg pmaIterator, ar hostarch.AddrRange, pr
 			perms.Write = false
 		}
 		if perms.Any() { // MapFile precondition
-			if err := mm.as.MapFile(pmaMapAR.Start, pma.file, pseg.fileRangeOf(pmaMapAR), perms, precommit); err != nil {
+			if err := mm.as.MapFile(pmaMapAR.Start, pma.file, pseg.fileRangeOf(pmaMapAR), perms, platformEffect == memmap.PlatformEffectCommit); err != nil {
 				return err
 			}
 		}
