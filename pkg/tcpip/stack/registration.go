@@ -1023,11 +1023,13 @@ type NetworkDispatcher interface {
 	// DeliverNetworkPacket finds the appropriate network protocol endpoint
 	// and hands the packet over for further processing.
 	//
+	// TODO: Callers have to pass a valid index, and ideally also have set
+	// each pkt.NetworkProtocolNumber.
 	//
 	// If the link-layer has a header, the packet's link header must be populated.
 	//
 	// DeliverNetworkPacket may modify pkt.
-	DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer)
+	DeliverNetworkPacket(pkts PacketBufferList, dispatcherIdx int)
 
 	// DeliverLinkPacket delivers a packet to any interested packet endpoints.
 	//
@@ -1101,7 +1103,7 @@ type NetworkLinkEndpoint interface {
 	//
 	// Attach is called with a nil dispatcher when the endpoint's NIC is being
 	// removed.
-	Attach(dispatcher NetworkDispatcher)
+	Attach(dispatcher NetworkDispatcher) int
 
 	// IsAttached returns whether a NetworkDispatcher is attached to the
 	// endpoint.

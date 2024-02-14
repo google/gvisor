@@ -24,7 +24,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"time"
 
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
@@ -126,9 +125,8 @@ type Config struct {
 	// retains its old name of "software" GSO for API consistency.
 	GvisorGSO bool `flag:"software-gso"`
 
-	// GvisorGROTimeout sets gVisor's generic receive offload timeout. Zero
-	// bypasses GRO.
-	GvisorGROTimeout time.Duration `flag:"gvisor-gro"`
+	// GvisorGRO enables gVisor's generic receive offload.
+	GvisorGRO bool `flag:"gvisor-gro"`
 
 	// TXChecksumOffload indicates that TX Checksum Offload is enabled.
 	TXChecksumOffload bool `flag:"tx-checksum-offload"`

@@ -51,12 +51,12 @@ func (e *Endpoint) Init(child stack.LinkEndpoint, embedder stack.NetworkDispatch
 }
 
 // DeliverNetworkPacket implements stack.NetworkDispatcher.
-func (e *Endpoint) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
+func (e *Endpoint) DeliverNetworkPacket(pkts stack.PacketBufferList, index int) {
 	e.mu.RLock()
 	d := e.dispatcher
 	e.mu.RUnlock()
 	if d != nil {
-		d.DeliverNetworkPacket(protocol, pkt)
+		d.DeliverNetworkPacket(pkts, index)
 	}
 }
 
@@ -71,7 +71,7 @@ func (e *Endpoint) DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt *
 }
 
 // Attach implements stack.LinkEndpoint.
-func (e *Endpoint) Attach(dispatcher stack.NetworkDispatcher) {
+func (e *Endpoint) Attach(dispatcher stack.NetworkDispatcher) int {
 	e.mu.Lock()
 	e.dispatcher = dispatcher
 	e.mu.Unlock()
@@ -81,7 +81,7 @@ func (e *Endpoint) Attach(dispatcher stack.NetworkDispatcher) {
 	if dispatcher != nil {
 		pass = e.embedder
 	}
-	e.child.Attach(pass)
+	return e.child.Attach(pass)
 }
 
 // IsAttached implements stack.LinkEndpoint.

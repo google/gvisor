@@ -54,7 +54,7 @@ const (
 	tpFrameSize = 65536 + 128
 	tpBlockSize = tpFrameSize * 32
 	tpBlockNR   = 1
-	tpFrameNR   = (tpBlockSize * tpBlockNR) / tpFrameSize
+	tpFrameNR   = (tpBlockSize * tpBlockNR) / tpFrameSize // TODO: Mask
 )
 
 // tPacketAlign aligns the pointer v at a tPacketAlignment boundary. Direct
@@ -130,6 +130,8 @@ type packetMMapDispatcher struct {
 	// ringOffset is the current offset into the ring buffer where the next
 	// inbound packet will be placed by the kernel.
 	ringOffset int
+
+	pkts stack.PacketBufferList
 }
 
 func (*packetMMapDispatcher) release() {}
@@ -168,7 +170,7 @@ func (d *packetMMapDispatcher) readMMappedPacket() (*buffer.View, bool, tcpip.Er
 
 // dispatch reads packets from an mmaped ring buffer and dispatches them to the
 // network stack.
-func (d *packetMMapDispatcher) dispatch() (bool, tcpip.Error) {
+func (d *packetMMapDispatcher) dispatch(idx int) (bool, tcpip.Error) {
 	pkt, stopped, err := d.readMMappedPacket()
 	if err != nil || stopped {
 		return false, err
@@ -192,6 +194,7 @@ func (d *packetMMapDispatcher) dispatch() (bool, tcpip.Error) {
 	pbuf := stack.NewPacketBuffer(stack.PacketBufferOptions{
 		Payload: buffer.MakeWithView(pkt),
 	})
+	pbuf.NetworkProtocolNumber = p
 	defer pbuf.DecRef()
 	if d.e.hdrSize > 0 {
 		if _, ok := pbuf.LinkHeader().Consume(d.e.hdrSize); !ok {
@@ -201,6 +204,8 @@ func (d *packetMMapDispatcher) dispatch() (bool, tcpip.Error) {
 	d.e.mu.RLock()
 	dsp := d.e.dispatcher
 	d.e.mu.RUnlock()
-	dsp.DeliverNetworkPacket(p, pbuf)
+	var pkts stack.PacketBufferList
+	pkts.PushBack(pbuf)
+	dsp.DeliverNetworkPacket(pkts, idx)
 	return true, nil
 }

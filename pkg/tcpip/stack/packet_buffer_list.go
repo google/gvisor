@@ -13,6 +13,8 @@
 
 package stack
 
+// TODO: kill this?
+
 // PacketBufferList is a slice-backed list. All operations are O(1) unless
 // otherwise noted.
 //
