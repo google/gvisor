@@ -333,8 +333,15 @@ func Init() {
 
 		v535_54_03Checksum := "454764f57ea1b9e19166a370f78be10e71f0626438fb197f726dc3caf05b4082"
 		v535_54_03 := addDriverABI(535, 54, 03, v535_54_03Checksum, v535_43_02)
+		// 535.86.05 is an intermediate unqualified version from the main branch.
+		v535_86_05 := func() *driverABI {
+			abi := v535_54_03()
+			abi.allocationClass[nvgpu.TURING_CHANNEL_GPFIFO_A] = rmAllocSimple[nvgpu.NV_CHANNEL_ALLOC_PARAMS_V535]
+			abi.allocationClass[nvgpu.AMPERE_CHANNEL_GPFIFO_A] = rmAllocSimple[nvgpu.NV_CHANNEL_ALLOC_PARAMS_V535]
+			return abi
+		}
 		v535_104_05Checksum := "2f9d609d1da770beee757636635c46e7ed8253ade887b87c7a5482e33fcbedc9"
-		v535_104_05 := addDriverABI(535, 104, 05, v535_104_05Checksum, v535_54_03)
+		v535_104_05 := addDriverABI(535, 104, 05, v535_104_05Checksum, v535_86_05)
 
 		// 535.104.12 does not exist on the main branch. It branched off the main
 		// branch at 535.104.05.
@@ -344,9 +351,10 @@ func Init() {
 		// 535.113.01 is an intermediate unqualified version from the main branch.
 		v535_113_01 := v535_104_05
 
-		// 535.129.03 does not exist on the main branch. It branched off the main
+		// The following do not exist on the main branch. They branched off the main
 		// branch at 535.113.01.
-		_ = addDriverABI(535, 129, 03, "e6dca5626a2608c6bb2a046cfcb7c1af338b9e961a7dd90ac09bb8a126ff002e", v535_113_01)
+		v535_129_03 := addDriverABI(535, 129, 03, "e6dca5626a2608c6bb2a046cfcb7c1af338b9e961a7dd90ac09bb8a126ff002e", v535_113_01)
+		_ = addDriverABI(535, 154, 05, "7e95065caa6b82de926110f14827a61972eb12c200e863a29e9fb47866eaa898", v535_129_03)
 	})
 }
 
