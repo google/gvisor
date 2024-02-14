@@ -41,6 +41,11 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v3
 
+    - if: ${{ matrix.language == 'go' }}
+      uses: actions/setup-go@v3.5.0
+      with:
+        go-version-file: 'go.mod'
+
     # Initializes the CodeQL tools for scanning.
     - name: Initialize CodeQL
       uses: github/codeql-action/init@v2
