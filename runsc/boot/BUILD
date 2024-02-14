@@ -91,6 +91,7 @@ go_library(
         "//pkg/sentry/socket/netfilter",
         "//pkg/sentry/socket/netlink",
         "//pkg/sentry/socket/netlink/route",
+        "//pkg/sentry/socket/netlink/sockdiag",
         "//pkg/sentry/socket/netlink/uevent",
         "//pkg/sentry/socket/netstack",
         "//pkg/sentry/socket/unix",

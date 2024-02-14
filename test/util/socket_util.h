@@ -600,6 +600,17 @@ PosixErrorOr<int> MaybeLimitEphemeralPorts();
 // and returns a function to restore the original configuration.
 PosixErrorOr<std::function<PosixError()>> AllowMartianPacketsOnLoopback();
 
+PosixErrorOr<sockaddr_storage> InetLoopbackAddrZeroPort(int family);
+
+// Gets the port number from the address, assuming it is an IPv4 or IPv6 socket
+// address.
+absl::StatusOr<uint16_t> GetPort(const sockaddr_storage& addr);
+
+// Allocates a file descriptor that is bound to a local port but not listening.
+// Sets `addr` and `addrlen` to the bound address.
+PosixErrorOr<FileDescriptor> ReserveLocalPort(int family,
+                                              sockaddr_storage& addr,
+                                              socklen_t& addrlen);
 namespace internal {
 PosixErrorOr<int> TryPortAvailable(int port, AddressFamily family,
                                    SocketType type, bool reuse_addr);

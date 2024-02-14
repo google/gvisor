@@ -200,6 +200,13 @@ func (e *Endpoint) SetOwner(owner tcpip.PacketOwner) {
 	e.owner = owner
 }
 
+// Owner implements tcpip.Endpoint.Owner.
+func (e *Endpoint) Owner() tcpip.PacketOwner {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	return e.owner
+}
+
 // +checklocksread:e.mu
 func (e *Endpoint) calculateTTL(route *stack.Route) uint8 {
 	remoteAddress := route.RemoteAddress()

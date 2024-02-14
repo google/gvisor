@@ -168,6 +168,11 @@ func (e *endpoint) SetOwner(owner tcpip.PacketOwner) {
 	e.net.SetOwner(owner)
 }
 
+// Owner implements tcpip.Endpoint.Owner.
+func (e *endpoint) Owner() tcpip.PacketOwner {
+	return e.net.Owner()
+}
+
 // Read implements tcpip.Endpoint.Read.
 func (e *endpoint) Read(dst io.Writer, opts tcpip.ReadOptions) (tcpip.ReadResult, tcpip.Error) {
 	e.rcvMu.Lock()

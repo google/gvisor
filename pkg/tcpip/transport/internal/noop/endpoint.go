@@ -62,6 +62,11 @@ func (*endpoint) SetOwner(tcpip.PacketOwner) {
 	// No-op.
 }
 
+func (*endpoint) Owner() tcpip.PacketOwner {
+	var owner tcpip.PacketOwner
+	return owner
+}
+
 // Read implements tcpip.Endpoint.Read.
 func (*endpoint) Read(io.Writer, tcpip.ReadOptions) (tcpip.ReadResult, tcpip.Error) {
 	return tcpip.ReadResult{}, &tcpip.ErrNotPermitted{}
