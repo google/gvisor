@@ -53,6 +53,17 @@ export PARTITION=${BUILDKITE_PARALLEL_JOB:-0}
 PARTITION=$((${PARTITION}+1)) # 1-indexed, but PARALLEL_JOB is 0-indexed.
 export TOTAL_PARTITIONS=${BUILDKITE_PARALLEL_JOB_COUNT:-1}
 
+if [[ "${BUILDKITE_BRANCH}" =~ ^test/ ]]; then
+  # STABLE_VERSION depends on the most recent tag, so let's set the same tag
+  # for all tests changes to better utilize the bazel cache. We have to be sure
+  # that binaries depends only on code changes but not metadata such as commit
+  # id.
+
+  # LINT.IfChange
+  git tag -f buildkite-test-branch
+  # LINT.ThenChange(../../tools/make_release.sh)
+fi
+
 # Set the system-wide Docker runtime name after the BuildKite branch name.
 # Remove any slashes and other characters that are not supported in Docker
 # runtime names. The runtime name must be a single valid path component.

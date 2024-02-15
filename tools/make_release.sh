@@ -72,6 +72,11 @@ else
     # Note that a given commit can match any number of tags. We have to iterate
     # through all possible tags and produce associated artifacts.
     for tag in ${tags}; do
+      # LINT.IfChange
+      if [[ "$tag" == "buildkite-test-branch" ]]; then
+        continue
+      fi
+      # LINT.ThenChange(../.buildkite/hooks/pre-command)
       name=$(echo "${tag}" | cut -d'-' -f2)
       base=$(echo "${name}" | cut -d'.' -f1)
       # Install the "specific" release. This is the latest release with the
