@@ -194,12 +194,6 @@ func doProcessVMOpMaybeLocked(t *kernel.Task, args processVMOpArgs) (int, error)
 
 			start := 0
 			for bytes > start && 0 < len(writeIovecs) {
-				if t.Interrupted() {
-					if n == 0 {
-						return 0, linuxerr.EINTR
-					}
-					return n, nil
-				}
 				writeLength := int(writeIovecs[0].Length())
 				if writeLength > (bytes - start) {
 					writeLength = bytes - start
