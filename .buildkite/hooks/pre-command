@@ -64,13 +64,12 @@ if [[ "${BUILDKITE_BRANCH}" =~ ^test/ ]]; then
   # LINT.ThenChange(../../tools/make_release.sh)
 fi
 
-# Set the system-wide Docker runtime name after the BuildKite branch name.
-# Remove any slashes and other characters that are not supported in Docker
-# runtime names. The runtime name must be a single valid path component.
 # LINT.IfChange
-export RUNTIME="buildkite_runtime_${BUILDKITE_BRANCH}-${BUILDKITE_BUILD_ID}"
-export RUNTIME="$(echo "$RUNTIME" | sed -r 's~[^-_a-z0-9]+~_~g')"
+export RUNTIME="buildkite_runtime"
 # LINT.ThenChange(post-command)
+if [ -d "/tmp/${RUNTIME}/" ]; then
+  sudo rm -rf "/tmp/${RUNTIME}/"
+fi
 
 # If running in a container, set the reload command appropriately.
 if [[ -x /tmp/buildkite-reload-host-docker/reload ]]; then
