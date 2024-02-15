@@ -43,6 +43,7 @@
 #include "absl/strings/str_join.h"
 #include "test/util/cleanup.h"
 #include "test/util/logging.h"
+#include "test/util/memory_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
@@ -404,6 +405,24 @@ TEST(ProcessVMInvalidTest, PartialReadWrite) {
   EXPECT_THAT(
       RetryEINTR(process_vm_readv)(getpid(), iov, 2, corrupted_iov, 2, 0),
       SyscallSucceedsWithValue(iov_content_1.size()));
+}
+
+TEST(ProcessVMInvalidTest, AccessInvalidMemoryFailsWithEINVAL) {
+  auto const mapping =
+      ASSERT_NO_ERRNO_AND_VALUE(MmapAnon(kPageSize, PROT_NONE, MAP_PRIVATE));
+  struct iovec iov_none, iov_valid;
+  char buf[128];
+  iov_valid.iov_base = buf;
+  iov_valid.iov_len = sizeof(buf);
+  iov_none.iov_base = mapping.ptr();
+  iov_none.iov_len = mapping.len();
+
+  EXPECT_THAT(
+      RetryEINTR(process_vm_writev)(getpid(), &iov_none, 1, &iov_valid, 1, 0),
+      SyscallFailsWithErrno(EFAULT));
+  EXPECT_THAT(
+      RetryEINTR(process_vm_writev)(getpid(), &iov_valid, 1, &iov_none, 1, 0),
+      SyscallFailsWithErrno(EFAULT));
 }
 
 TEST(ProcessVMTest, WriteToZombie) {
