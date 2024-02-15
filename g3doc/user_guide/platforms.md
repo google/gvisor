@@ -11,9 +11,9 @@ more.
 
 ## Prerequisites
 
-If you intend to run the KVM platform, you will also to have KVM installed on
-your system. If you are running a Debian based system like Debian or Ubuntu you
-can usually do this by ensuring the module is loaded, and your user has
+If you intend to run the KVM platform, you will also need to have KVM installed
+on your system. If you are running a Debian based system like Debian or Ubuntu
+you can usually do this by ensuring the module is loaded, and your user has
 permissions to access the `/dev/kvm` device. Usually, this means that your user
 is in the `kvm` group.
 
