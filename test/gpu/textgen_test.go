@@ -128,7 +128,7 @@ func TestLLM(t *testing.T) {
 		)
 		promptCtx, promptCancel := context.WithTimeout(ctx, 3*time.Minute)
 		prompt := ollama.Prompt{
-			Model: ollama.ZeroTemperatureModel("codellama:7b"),
+			Model: ollama.ZeroTemperatureModel("codellama:7b-instruct"),
 			Query: fmt.Sprintf(`
 				Generate a Python function that takes a string and verifies that it
 				is a valid Chinese translation of the English phrase "Hello World".
