@@ -10,7 +10,7 @@ ENV PATH=$PATH:/usr/local/nvidia/bin:/bin/nvidia/bin
 RUN bash -c '                                  \
     ( ollama serve ) & serverpid="$!";         \
     sleep 5;                                   \
-    ollama pull codellama:7b &&                \
+    ollama pull codellama:7b-instruct &&       \
     ollama pull llama2-chinese:7b-chat &&      \
     kill "$serverpid" &&                       \
     wait "$serverpid"                          \
