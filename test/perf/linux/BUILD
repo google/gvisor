@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "cc_binary", "gbenchmark", "gtest")
+load("//tools:defs.bzl", "cc_binary", "gbenchmark", "select_gtest")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -18,9 +18,8 @@ cc_binary(
     srcs = [
         "getpid_benchmark.cc",
     ],
-    deps = [
+    deps = select_gtest() + [
         gbenchmark,
-        gtest,
         "//test/util:test_main",
     ],
 )
@@ -31,9 +30,8 @@ cc_binary(
     srcs = [
         "send_recv_benchmark.cc",
     ],
-    deps = [
+    deps = select_gtest() + [
         gbenchmark,
-        gtest,
         "//test/util:file_descriptor",
         "//test/util:logging",
         "//test/util:posix_error",
@@ -51,9 +49,8 @@ cc_binary(
     srcs = [
         "gettid_benchmark.cc",
     ],
-    deps = [
+    deps = select_gtest() + [
         gbenchmark,
-        gtest,
         "//test/util:test_main",
     ],
 )
@@ -64,9 +61,8 @@ cc_binary(
     srcs = [
         "sched_yield_benchmark.cc",
     ],
-    deps = [
+    deps = select_gtest() + [
         gbenchmark,
-        gtest,
         "//test/util:test_main",
         "//test/util:test_util",
     ],
@@ -78,9 +74,8 @@ cc_binary(
     srcs = [
         "clock_getres_benchmark.cc",
     ],
-    deps = [
+    deps = select_gtest() + [
         gbenchmark,
-        gtest,
         "//test/util:test_main",
     ],
 )
@@ -91,9 +86,8 @@ cc_binary(
     srcs = [
         "clock_gettime_benchmark.cc",
     ],
-    deps = [
+    deps = select_gtest() + [
         gbenchmark,
-        gtest,
         "//test/util:test_main",
         "@com_google_absl//absl/time",
     ],
@@ -105,9 +99,8 @@ cc_binary(
     srcs = [
         "open_benchmark.cc",
     ],
-    deps = [
+    deps = select_gtest() + [
         gbenchmark,
-        gtest,
         "//test/util:fs_util",
         "//test/util:logging",
         "//test/util:temp_path",
@@ -121,9 +114,8 @@ cc_binary(
     srcs = [
         "dup_benchmark.cc",
     ],
-    deps = [
+    deps = select_gtest() + [
         gbenchmark,
-        gtest,
         "//test/util:fs_util",
         "//test/util:logging",
         "//test/util:temp_path",
@@ -137,9 +129,8 @@ cc_binary(
     srcs = [
         "read_benchmark.cc",
     ],
-    deps = [
+    deps = select_gtest() + [
         gbenchmark,
-        gtest,
         "//test/util:fs_util",
         "//test/util:logging",
         "//test/util:temp_path",
@@ -154,9 +145,8 @@ cc_binary(
     srcs = [
         "randread_benchmark.cc",
     ],
-    deps = [
+    deps = select_gtest() + [
         gbenchmark,
-        gtest,
         "//test/util:file_descriptor",
         "//test/util:logging",
         "//test/util:temp_path",
@@ -172,9 +162,8 @@ cc_binary(
     srcs = [
         "write_benchmark.cc",
     ],
-    deps = [
+    deps = select_gtest() + [
         gbenchmark,
-        gtest,
         "//test/util:logging",
         "//test/util:temp_path",
         "//test/util:test_main",
@@ -188,9 +177,8 @@ cc_binary(
     srcs = [
         "seqwrite_benchmark.cc",
     ],
-    deps = [
+    deps = select_gtest() + [
         gbenchmark,
-        gtest,
         "//test/util:logging",
         "//test/util:temp_path",
         "//test/util:test_main",
@@ -205,9 +193,8 @@ cc_binary(
     srcs = [
         "pipe_benchmark.cc",
     ],
-    deps = [
+    deps = select_gtest() + [
         gbenchmark,
-        gtest,
         "//test/util:logging",
         "//test/util:test_main",
         "//test/util:test_util",
@@ -221,9 +208,8 @@ cc_binary(
     srcs = [
         "fork_benchmark.cc",
     ],
-    deps = [
+    deps = select_gtest() + [
         gbenchmark,
-        gtest,
         "//test/util:cleanup",
         "//test/util:file_descriptor",
         "//test/util:logging",
@@ -240,9 +226,8 @@ cc_binary(
     srcs = [
         "futex_benchmark.cc",
     ],
-    deps = [
+    deps = select_gtest() + [
         gbenchmark,
-        gtest,
         "//test/util:logging",
         "//test/util:test_main",
         "//test/util:thread_util",
@@ -256,9 +241,8 @@ cc_binary(
     srcs = [
         "epoll_benchmark.cc",
     ],
-    deps = [
+    deps = select_gtest() + [
         gbenchmark,
-        gtest,
         "//test/util:epoll_util",
         "//test/util:eventfd_util",
         "//test/util:file_descriptor",
@@ -275,9 +259,8 @@ cc_binary(
     srcs = [
         "poll_benchmark.cc",
     ],
-    deps = [
+    deps = select_gtest() + [
         gbenchmark,
-        gtest,
         "//test/util:eventfd_util",
         "//test/util:file_descriptor",
         "//test/util:posix_error",
@@ -293,9 +276,8 @@ cc_binary(
     srcs = [
         "select_benchmark.cc",
     ],
-    deps = [
+    deps = select_gtest() + [
         gbenchmark,
-        gtest,
         "//test/util:eventfd_util",
         "//test/util:file_descriptor",
         "//test/util:posix_error",
@@ -311,9 +293,8 @@ cc_binary(
     srcs = [
         "death_benchmark.cc",
     ],
-    deps = [
+    deps = select_gtest() + [
         gbenchmark,
-        gtest,
         "//test/util:logging",
         "//test/util:test_main",
     ],
@@ -325,9 +306,8 @@ cc_binary(
     srcs = [
         "mapping_benchmark.cc",
     ],
-    deps = [
+    deps = select_gtest() + [
         gbenchmark,
-        gtest,
         "//test/util:logging",
         "//test/util:memory_util",
         "//test/util:posix_error",
@@ -342,9 +322,8 @@ cc_binary(
     srcs = [
         "signal_benchmark.cc",
     ],
-    deps = [
+    deps = select_gtest() + [
         gbenchmark,
-        gtest,
         "//test/util:logging",
         "//test/util:test_main",
         "//test/util:test_util",
@@ -357,9 +336,8 @@ cc_binary(
     srcs = [
         "getdents_benchmark.cc",
     ],
-    deps = [
+    deps = select_gtest() + [
         gbenchmark,
-        gtest,
         "//test/util:file_descriptor",
         "//test/util:fs_util",
         "//test/util:temp_path",
@@ -374,9 +352,8 @@ cc_binary(
     srcs = [
         "sleep_benchmark.cc",
     ],
-    deps = [
+    deps = select_gtest() + [
         gbenchmark,
-        gtest,
         "//test/util:logging",
         "//test/util:test_main",
     ],
@@ -388,9 +365,8 @@ cc_binary(
     srcs = [
         "stat_benchmark.cc",
     ],
-    deps = [
+    deps = select_gtest() + [
         gbenchmark,
-        gtest,
         "//test/util:fs_util",
         "//test/util:temp_path",
         "//test/util:test_main",
@@ -405,9 +381,8 @@ cc_binary(
     srcs = [
         "unlink_benchmark.cc",
     ],
-    deps = [
+    deps = select_gtest() + [
         gbenchmark,
-        gtest,
         "//test/util:fs_util",
         "//test/util:temp_path",
         "//test/util:test_main",
@@ -421,9 +396,8 @@ cc_binary(
     srcs = [
         "open_read_close_benchmark.cc",
     ],
-    deps = [
+    deps = select_gtest() + [
         gbenchmark,
-        gtest,
         "//test/util:fs_util",
         "//test/util:logging",
         "//test/util:temp_path",

@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "cc_library", "cc_test", "coreutil", "default_net_util", "gbenchmark_internal", "gtest", "select_system")
+load("//tools:defs.bzl", "cc_library", "cc_test", "coreutil", "default_net_util", "gbenchmark_internal", "select_gtest", "select_system")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -43,13 +43,12 @@ cc_library(
     name = "file_descriptor",
     testonly = 1,
     hdrs = ["file_descriptor.h"],
-    deps = [
+    deps = select_gtest() + [
         ":logging",
         ":posix_error",
         ":save_util",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
-        gtest,
     ],
 )
 
@@ -79,7 +78,7 @@ cc_library(
     testonly = 1,
     srcs = ["proc_util.cc"],
     hdrs = ["proc_util.h"],
-    deps = [
+    deps = select_gtest() + [
         ":fs_util",
         ":posix_error",
         ":test_util",
@@ -87,7 +86,6 @@ cc_library(
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:optional",
-        gtest,
     ],
 )
 
@@ -95,11 +93,10 @@ cc_test(
     name = "proc_util_test",
     size = "small",
     srcs = ["proc_util_test.cc"],
-    deps = [
+    deps = select_gtest() + [
         ":proc_util",
         ":test_main",
         ":test_util",
-        gtest,
     ],
 )
 
@@ -114,13 +111,12 @@ cc_library(
     testonly = 1,
     srcs = ["fs_util.cc"],
     hdrs = ["fs_util.h"],
-    deps = [
+    deps = select_gtest() + [
         ":cleanup",
         ":file_descriptor",
         ":posix_error",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/time",
-        gtest,
     ],
 )
 
@@ -128,13 +124,12 @@ cc_test(
     name = "fs_util_test",
     size = "small",
     srcs = ["fs_util_test.cc"],
-    deps = [
+    deps = select_gtest() + [
         ":fs_util",
         ":posix_error",
         ":temp_path",
         ":test_main",
         ":test_util",
-        gtest,
     ],
 )
 
@@ -164,7 +159,7 @@ cc_library(
     testonly = 1,
     srcs = ["mount_util.cc"],
     hdrs = ["mount_util.h"],
-    deps = [
+    deps = select_gtest() + [
         ":cleanup",
         ":posix_error",
         ":temp_path",
@@ -172,7 +167,6 @@ cc_library(
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
-        gtest,
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -181,11 +175,10 @@ cc_test(
     name = "mount_util_test",
     size = "small",
     srcs = ["mount_util_test.cc"],
-    deps = [
+    deps = select_gtest() + [
         ":mount_util",
         ":test_main",
         ":test_util",
-        gtest,
     ],
 )
 
@@ -210,16 +203,15 @@ cc_library(
     testonly = 1,
     srcs = ["multiprocess_util.cc"],
     hdrs = ["multiprocess_util.h"],
-    deps = [
+    deps = select_gtest() + [
         ":cleanup",
         ":file_descriptor",
         ":logging",
         ":posix_error",
         ":save_util",
         ":test_util",
-        "@com_google_absl//absl/strings:str_format",
-        gtest,
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
     ],
 )
 
@@ -236,12 +228,11 @@ cc_library(
     testonly = 1,
     srcs = ["posix_error.cc"],
     hdrs = ["posix_error.h"],
-    deps = [
+    deps = select_gtest() + [
         ":logging",
         "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:variant",
-        gtest,
     ],
 )
 
@@ -249,10 +240,9 @@ cc_test(
     name = "posix_error_test",
     size = "small",
     srcs = ["posix_error_test.cc"],
-    deps = [
+    deps = select_gtest() + [
         ":posix_error",
         ":test_main",
-        gtest,
     ],
 )
 
@@ -272,12 +262,11 @@ cc_library(
     testonly = 1,
     srcs = ["signal_util.cc"],
     hdrs = ["signal_util.h"],
-    deps = [
+    deps = select_gtest() + [
         ":cleanup",
         ":file_descriptor",
         ":posix_error",
         ":test_util",
-        gtest,
     ],
 )
 
@@ -286,13 +275,12 @@ cc_library(
     testonly = 1,
     srcs = ["temp_path.cc"],
     hdrs = ["temp_path.h"],
-    deps = [
+    deps = select_gtest() + [
         ":fs_util",
         ":posix_error",
         ":test_util",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/time",
-        gtest,
     ],
 )
 
@@ -306,7 +294,7 @@ cc_library(
     ],
     hdrs = ["test_util.h"],
     defines = select_system(),
-    deps = coreutil() + [
+    deps = coreutil() + select_gtest() + [
         ":fs_util",
         ":logging",
         ":posix_error",
@@ -318,7 +306,6 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/time",
-        gtest,
         gbenchmark_internal,
     ],
 )
@@ -345,13 +332,12 @@ cc_library(
     testonly = 1,
     srcs = ["timer_util.cc"],
     hdrs = ["timer_util.h"],
-    deps = [
+    deps = select_gtest() + [
         ":cleanup",
         ":logging",
         ":posix_error",
         ":test_util",
         "@com_google_absl//absl/time",
-        gtest,
     ],
 )
 
@@ -359,10 +345,9 @@ cc_test(
     name = "test_util_test",
     size = "small",
     srcs = ["test_util_test.cc"],
-    deps = [
+    deps = select_gtest() + [
         ":test_main",
         ":test_util",
-        gtest,
     ],
 )
 
@@ -378,11 +363,10 @@ cc_library(
     testonly = 1,
     srcs = ["epoll_util.cc"],
     hdrs = ["epoll_util.h"],
-    deps = [
+    deps = select_gtest() + [
         ":file_descriptor",
         ":posix_error",
         ":save_util",
-        gtest,
     ],
 )
 
@@ -442,8 +426,7 @@ cc_library(
     ],
     hdrs = ["socket_util.h"],
     defines = select_system(),
-    deps = default_net_util() + [
-        gtest,
+    deps = default_net_util() + select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:posix_error",
         "//test/util:temp_path",
