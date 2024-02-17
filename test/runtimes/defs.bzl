@@ -78,7 +78,7 @@ def runtime_test(name, **kwargs):
         name = name,
         image = name,  # Resolved as images/runtimes/%s.
         tags = [
-            "local",
+            "no-sandbox",
             "manual",
         ],
         **kwargs
