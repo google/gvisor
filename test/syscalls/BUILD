@@ -92,12 +92,16 @@ syscall_test(
 syscall_test(
     add_fusefs = True,
     add_overlay = True,
+    # FIXME(b/323000153): Flaky with fuse + S/R.
+    save = False,
     test = "//test/syscalls/linux:chroot_test",
 )
 
 syscall_test(
     add_fusefs = True,
     add_overlay = True,
+    # FIXME(b/323000153): Flaky with fuse + S/R.
+    save = False,
     test = "//test/syscalls/linux:pivot_root_test",
     use_tmpfs = True,
 )
@@ -759,6 +763,8 @@ syscall_test(
 syscall_test(
     size = "large",
     add_overlay = True,
+    # Takes too long to run with S/R.
+    save = False,
     shard_count = most_shards,
     test = "//test/syscalls/linux:socket_filesystem_test",
 )
@@ -805,6 +811,8 @@ syscall_test(
 syscall_test(
     size = "medium",
     add_hostinet = True,
+    # Takes too long to run with S/R.
+    save = False,
     shard_count = most_shards,
     test = "//test/syscalls/linux:socket_ip_tcp_loopback_non_blocking_test",
 )
@@ -819,6 +827,8 @@ syscall_test(
 syscall_test(
     size = "medium",
     add_hostinet = True,
+    # Takes too long to run with S/R.
+    save = False,
     shard_count = most_shards,
     test = "//test/syscalls/linux:socket_ip_tcp_udp_generic_loopback_test",
 )
@@ -845,6 +855,8 @@ syscall_test(
 syscall_test(
     size = "medium",
     add_hostinet = True,
+    # Takes too long to run with S/R.
+    save = False,
     test = "//test/syscalls/linux:socket_ipv4_udp_unbound_loopback_test",
 )
 
@@ -1096,6 +1108,8 @@ syscall_test(
 syscall_test(
     size = "medium",
     add_hostinet = True,
+    # Takes too long to run with S/R.
+    save = False,
     shard_count = more_shards,
     test = "//test/syscalls/linux:tcp_socket_test",
 )
