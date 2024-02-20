@@ -108,7 +108,7 @@ void memcpy(uint8_t *dest, uint8_t *src, size_t n) {
 //
 // This queue is lock-less to be sure that any thread scheduled out
 // from CPU doesn't block others.
-#define SPINNING_QUEUE_SIZE 128
+#define SPINNING_QUEUE_SIZE 384
 
 // MAX_SPINNING_THREADS is half of SPINNING_QUEUE_SIZE to be sure that the tail
 // doesn't catch the head. More details are in spinning_queue_remove_first.
@@ -120,6 +120,7 @@ void memcpy(uint8_t *dest, uint8_t *src, size_t n) {
 #define MAX_RE_ENQUEUE 2
 
 struct spinning_queue {
+  uint32_t len;
   uint32_t start;
   uint32_t end;
   uint64_t start_times[SPINNING_QUEUE_SIZE];
@@ -134,19 +135,19 @@ static bool spinning_queue_push(uint8_t re_enqueue_times)
     __attribute__((warn_unused_result));
 static bool spinning_queue_push(uint8_t re_enqueue_times) {
   struct spinning_queue *queue = __export_spinning_queue_addr;
-  uint32_t idx, start, end;
+  uint32_t idx, end, len;
 
   BUILD_BUG_ON(sizeof(struct spinning_queue) > SPINNING_QUEUE_MEM_SIZE);
   if (re_enqueue_times >= MAX_RE_ENQUEUE) {
     return false;
   }
 
-  end = atomic_add(&queue->end, 1);
-  start = atomic_load(&queue->start);
-  if (end - start > MAX_SPINNING_THREADS) {
-    atomic_sub(&queue->end, 1);
+  len = atomic_add(&queue->len, 1);
+  if (len > MAX_SPINNING_THREADS) {
+    atomic_sub(&queue->len, 1);
     return false;
   }
+  end = atomic_add(&queue->end, 1);
 
   idx = end - 1;
   atomic_store(&queue->num_times_re_enqueued[idx % SPINNING_QUEUE_SIZE],
@@ -162,6 +163,7 @@ static void spinning_queue_pop() {
   struct spinning_queue *queue = __export_spinning_queue_addr;
 
   atomic_sub(&queue->end, 1);
+  atomic_sub(&queue->len, 1);
 }
 
 // spinning_queue_remove_first removes one thread from a queue that has been
@@ -195,6 +197,7 @@ static bool spinning_queue_remove_first(uint64_t timeout) {
     }
   }
 
+  atomic_sub(&queue->len, 1);
   if (timeout == 0) return true;
   return !spinning_queue_push(re_enqueue + 1);
 }
