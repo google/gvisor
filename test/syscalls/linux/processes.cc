@@ -19,7 +19,9 @@
 
 #include <algorithm>
 #include <cstring>
+#include <memory>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/flags/flag.h"
 #include "absl/strings/str_format.h"
@@ -28,6 +30,7 @@
 #include "absl/time/time.h"
 #include "test/util/capability_util.h"
 #include "test/util/multiprocess_util.h"
+#include "test/util/save_util.h"
 #include "test/util/test_util.h"
 #include "test/util/thread_util.h"
 
@@ -142,6 +145,29 @@ TEST(Processes, TheadSharesSamePID) {
   EXPECT_EQ(test_pid, pid_from_child);
 }
 
+TEST(Processes, ThousandsOfThreads) {
+  const DisableSave ds;  // Too many syscalls.
+  const int kThreadCount = 1000;
+  const int kSyscallsPerThread = 1000;
+  std::unique_ptr<ScopedThread> threads[kThreadCount];
+  int pipe_fds[2];
+  ASSERT_THAT(pipe(pipe_fds), SyscallSucceeds());
+
+  for (int i = 0; i < kThreadCount; i++) {
+    threads[i] = std::make_unique<ScopedThread>([&pipe_fds]() {
+      char c;
+      EXPECT_THAT(read(pipe_fds[0], &c, 1), SyscallSucceedsWithValue(0));
+      for (int j = 0; j < kSyscallsPerThread; j++) {
+        syscall(SYS_close, -1);
+      }
+    });
+  }
+  close(pipe_fds[1]);
+  for (int i = 0; i < kThreadCount; i++) {
+    threads[i]->Join();
+  }
+}
+
 // ExecSwapResult is used to carry PIDs and TIDs in ExecSwapThreadGroupLeader.
 struct ExecSwapResult {
   int pipe_fd;  // FD to write result data to.
@@ -181,8 +207,8 @@ struct ExecSwapArg {
 };
 
 // ExecSwapPostExec is the third part of the ExecSwapThreadGroupLeader test.
-// It is called after the test has fork()'d, clone()'d, and exec()'d into this.
-// It writes all the PIDs and TIDs from each part of the test to a pipe.
+// It is called after the test has fork()'d, clone()'d, and exec()'d into
+// this. It writes all the PIDs and TIDs from each part of the test to a pipe.
 int ExecSwapPostExec() {
   std::cerr << "Test exec'd." << std::endl;
   pid_t pid;
@@ -331,7 +357,8 @@ TEST(Processes, ExecSwapThreadGroupLeader) {
   EXPECT_NE(test_pid, fork_pid);
   EXPECT_EQ(fork_pid, result.pre_clone_pid);  // Sanity check.
 
-  // Before cloning, PID == TID, the child thread is leader of its thread group.
+  // Before cloning, PID == TID, the child thread is leader of its thread
+  // group.
   EXPECT_EQ(result.pre_clone_pid, result.pre_clone_tid);
 
   // PID should not change with clone.
