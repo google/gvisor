@@ -37,8 +37,11 @@ const (
 
 // Ollama is an ollama client.
 type Ollama struct {
-	container *dockerutil.Container
-	logger    testutil.Logger
+	// server is used to perform requests against the server.
+	server Server
+
+	// logger is used to log.
+	logger testutil.Logger
 
 	// ModelNames is the list of available model names.
 	ModelNames []string
@@ -49,19 +52,23 @@ type Ollama struct {
 	HasGPU bool
 }
 
+// Server performs requests against an ollama server.
+type Server interface {
+	// HTTPRequest performs an HTTP request against the ollama server.
+	// The request is a GET request if postData == nil, otherwise POST.
+	HTTPRequest(ctx context.Context, endpoint string, postData []byte) ([]byte, error)
+
+	// Logs retrieves logs from the server.
+	Logs(ctx context.Context) (string, error)
+}
+
 // New starts a new Ollama server in the given container,
 // then waits for it to serve and returns the client.
-func New(ctx context.Context, cont *dockerutil.Container, logger testutil.Logger) (*Ollama, error) {
+func New(ctx context.Context, server Server, logger testutil.Logger) (*Ollama, error) {
 	started := time.Now()
-	opts := dockerutil.GPURunOpts()
-	opts.Image = "gpu/ollama"
-	if err := cont.Spawn(ctx, opts); err != nil {
-		return nil, fmt.Errorf("could not start ollama: %v", err)
-	}
-	logger.Logf("Started ollama container in %v", time.Since(started))
 	llm := &Ollama{
-		container: cont,
-		logger:    logger,
+		logger: logger,
+		server: server,
 	}
 
 	// Wait until serving.
@@ -84,9 +91,12 @@ func New(ctx context.Context, cont *dockerutil.Container, logger testutil.Logger
 	// Load the first model.
 	// This is necessary to force ollama to load a model, without which
 	// we cannot detect if it is using the GPU or not.
+	// This may fail during the process of loading the first model, so we keep
+	// iterating for a while.
 	_, err = llm.Prompt(ctx, &Prompt{
-		Model: &Model{Name: llm.ModelNames[0]},
-		Query: curtQuery,
+		Model:     &Model{Name: llm.ModelNames[0]},
+		WarmFirst: false,
+		Query:     curtQuery,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("could not load first model %q: %w", llm.ModelNames[0], err)
@@ -94,7 +104,7 @@ func New(ctx context.Context, cont *dockerutil.Container, logger testutil.Logger
 	logger.Logf("Loaded first ollama model %q (%v since container start)", llm.ModelNames[0], time.Since(started))
 
 	// Now go over the logs and check if the GPU was used.
-	logs, err := llm.container.Logs(ctx)
+	logs, err := llm.server.Logs(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("could not get logs: %w", err)
 	}
@@ -110,19 +120,40 @@ func New(ctx context.Context, cont *dockerutil.Container, logger testutil.Logger
 	return llm, nil
 }
 
-// request makes an HTTP request to the ollama API.
-func (llm *Ollama) request(ctx context.Context, endpoint string, data []byte) ([]byte, error) {
-	if endpoint != "" && !strings.HasPrefix(endpoint, "/") {
-		return nil, fmt.Errorf("endpoint must be empty or start with '/', got %q", endpoint)
+// dockerServer implements `Server`. It interfaces with an ollama server
+// running in a local Docker container.
+type dockerServer struct {
+	container *dockerutil.Container
+	logger    testutil.Logger
+}
+
+// NewDocker returns a new Ollama client talking to an Ollama server that runs
+// in a local Docker container.
+func NewDocker(ctx context.Context, cont *dockerutil.Container, logger testutil.Logger) (*Ollama, error) {
+	opts := dockerutil.GPURunOpts()
+	opts.Image = "gpu/ollama"
+	started := time.Now()
+	if err := cont.Spawn(ctx, opts); err != nil {
+		return nil, fmt.Errorf("could not start ollama: %v", err)
 	}
+	logger.Logf("Ollama container started after %v", time.Since(started))
+	ds := &dockerServer{
+		container: cont,
+		logger:    logger,
+	}
+	return New(ctx, ds, logger)
+}
+
+// HTTPRequest implements `Server.HTTPRequest`.
+func (ds *dockerServer) HTTPRequest(ctx context.Context, endpoint string, data []byte) ([]byte, error) {
 	cmd := []string{"wget", "-qO-"}
 	if data != nil {
 		cmd = append(cmd, "--post-data", string(data))
 	}
 	cmd = append(cmd, fmt.Sprintf("http://llm:%d%s", Port, endpoint))
-	out, err := dockerutil.MakeContainer(ctx, llm.logger).Run(ctx, dockerutil.RunOpts{
+	out, err := dockerutil.MakeContainer(ctx, ds.logger).Run(ctx, dockerutil.RunOpts{
 		Image: "basic/busybox",
-		Links: []string{llm.container.MakeLink("llm")},
+		Links: []string{ds.container.MakeLink("llm")},
 	}, cmd...)
 	if err != nil {
 		if out != "" {
@@ -131,6 +162,19 @@ func (llm *Ollama) request(ctx context.Context, endpoint string, data []byte) ([
 		return nil, fmt.Errorf("could not run command %q: %w", strings.Join(cmd, " "), err)
 	}
 	return []byte(out), nil
+}
+
+// Logs implements `Server.Logs`.
+func (ds *dockerServer) Logs(ctx context.Context) (string, error) {
+	return ds.container.Logs(ctx)
+}
+
+// request makes an HTTP request to the ollama API.
+func (llm *Ollama) request(ctx context.Context, endpoint string, data []byte) ([]byte, error) {
+	if endpoint != "" && !strings.HasPrefix(endpoint, "/") {
+		return nil, fmt.Errorf("endpoint must be empty or start with '/', got %q", endpoint)
+	}
+	return llm.server.HTTPRequest(ctx, endpoint, data)
 }
 
 // jsonGet performs a JSON HTTP GET request.
@@ -155,7 +199,7 @@ func jsonPost[In, Out any](ctx context.Context, llm *Ollama, endpoint string, in
 	}
 	out, err := llm.request(ctx, endpoint, query)
 	if err != nil {
-		return resp, fmt.Errorf("POST %q(%v) failed: %w", endpoint, input, err)
+		return resp, fmt.Errorf("POST %q %v failed: %w", endpoint, string(query), err)
 	}
 	if err := json.Unmarshal(out, &resp); err != nil {
 		return resp, fmt.Errorf("malformed JSON response %q: %w", string(out), err)
@@ -230,6 +274,16 @@ func (m *Model) RaiseTemperature() {
 	m.Options[modelTemperatureOption] = min(1.0, temp.(float64)*2+.025)
 }
 
+// Copy returns a copy of the model.
+func (m *Model) Copy() *Model {
+	modelCopy := *m
+	modelCopy.Options = make(map[string]any, len(m.Options))
+	for k, v := range m.Options {
+		modelCopy.Options[k] = v
+	}
+	return &modelCopy
+}
+
 // ZeroTemperatureModel returns a Model with the given name and an initial
 // temperature setting of zero. This setting allows for consistent settings.
 func ZeroTemperatureModel(name string) *Model {
@@ -247,16 +301,101 @@ type Prompt struct {
 	Model *Model
 
 	// Query is the prompt string.
+	// Common leading whitespace will be removed.
 	Query string
 
 	// Context is the conversational context to follow up on, if any.
 	// This is returned from `Response`.
 	Context ConversationContext
+
+	// WarmFirst ensures the model is already loaded by issuing a small query
+	// beforehand. This is necessary for benchmarks to be accurate, but is
+	// unnecessary when just testing.
+	WarmFirst bool
+}
+
+// CleanQuery removes common whitespace from query lines, and all
+// leading/ending whitespace-only lines.
+// It is useful to be able to specify query string as indented strings
+// without breaking visual continuity in Go code.
+// For example (where dots are spaces):
+//
+// """\n
+// ..The Quick Brown Fox\n
+// ..Jumps Over\n
+// ....The Lazy Dog\n
+// ."""
+//
+// becomes:
+//
+// ""The Quick Brown Fox\n
+// Jumps Over\n
+// ..The Lazy Dog"""
+func (p *Prompt) CleanQuery() string {
+	lines := strings.Split(p.Query, "\n")
+
+	// Trim lines at the beginning and end that are only whitespace.
+	trimmedLines := make([]string, 0, len(lines))
+	startedNonWhitespace := false
+	var block []string
+	for _, line := range lines {
+		trimmedLine := strings.TrimSpace(line)
+		if !startedNonWhitespace && trimmedLine != "" {
+			startedNonWhitespace = true
+		}
+		if startedNonWhitespace {
+			block = append(block, line)
+		}
+		if trimmedLine != "" {
+			trimmedLines = append(trimmedLines, block...)
+			block = block[:0]
+		}
+	}
+
+	// Find longest common whitespace prefix.
+	if len(trimmedLines) == 0 {
+		return ""
+	}
+	trimmedFirstLine := strings.TrimSpace(trimmedLines[0])
+	common := []rune(trimmedLines[0][:strings.Index(trimmedLines[0], trimmedFirstLine)])
+	for ; len(common) > 0; common = common[:len(common)-1] {
+		allMatch := true
+		for _, line := range trimmedLines[1:] {
+			if strings.TrimSpace(line) == "" {
+				continue // Ignore whitespace-only or empty lines.
+			}
+			if !strings.HasPrefix(line, string(common)) {
+				allMatch = false
+				break
+			}
+		}
+		if allMatch {
+			break
+		}
+	}
+
+	// Remove it.
+	if len(common) > 0 {
+		for i, line := range trimmedLines {
+			trimmedLines[i] = strings.TrimPrefix(line, string(common))
+		}
+	}
+
+	return strings.Join(trimmedLines, "\n")
 }
 
 // String returns a human-friendly string representing this prompt.
 func (p *Prompt) String() string {
-	return fmt.Sprintf("[%v] %s", p.Model, p.Query)
+	return fmt.Sprintf("[%v] %s", p.Model, p.CleanQuery())
+}
+
+// WithHotterModel returns a copy of this prompt with the same model having
+// a higher temperature.
+func (p *Prompt) WithHotterModel() *Prompt {
+	promptCopy := *p
+	promptCopy.Model = p.Model.Copy()
+	promptCopy.Model.RaiseTemperature()
+	return &promptCopy
 }
 
 // PromptJSON encodes the JSON data for a query.
@@ -272,7 +411,7 @@ type PromptJSON struct {
 func (p *Prompt) json() PromptJSON {
 	return PromptJSON{
 		Model:   p.Model.Name,
-		Prompt:  p.Query,
+		Prompt:  p.CleanQuery(),
 		Stream:  false,
 		Context: p.Context,
 		Options: p.Model.Options,
@@ -345,28 +484,47 @@ func (r *Response) TokensPerSecond() float64 {
 	if !r.data.Done || r.EvalDuration() == 0 {
 		return 0
 	}
-	return float64(r.data.EvalCount) / r.EvalDuration().Seconds()
+	return float64(r.data.EvalCount) / float64(r.EvalDuration().Seconds())
 }
 
 // ConversationContext represents a conversational context.
 // It is returned by a response and may be passed to a follow-up prompt.
 type ConversationContext []int
 
+// withServerLogsErr adds server logs to `err` if possible.
+func (llm *Ollama) withServerLogsErr(ctx context.Context, err error) error {
+	if err == nil {
+		return nil
+	}
+	if ctx.Err() != nil {
+		return fmt.Errorf("%w (+ context err: %v)", err, ctx.Err())
+	}
+	serverLogs, logsErr := llm.server.Logs(ctx)
+	if logsErr != nil {
+		return fmt.Errorf("%w (could not get server logs: %v)", err, logsErr)
+	}
+	if serverLogs != "" {
+		return fmt.Errorf("%w; ollama server logs:\n%v\n(end of ollama server logs)", err, serverLogs)
+	}
+	return fmt.Errorf("%w (server logs are empty)", err)
+}
+
 // Prompt returns the result of prompting the given `model` with `prompt`.
 func (llm *Ollama) Prompt(ctx context.Context, prompt *Prompt) (*Response, error) {
+	if prompt.WarmFirst {
+		warmCtx, warmCancel := context.WithTimeout(ctx, 3*time.Minute)
+		_, err := jsonPost[PromptJSON, ResponseJSON](warmCtx, llm, "/api/generate", (&Prompt{
+			Model: prompt.Model,
+			Query: curtQuery,
+		}).json())
+		warmCancel()
+		if err != nil {
+			return nil, llm.withServerLogsErr(ctx, fmt.Errorf("warmup prompt for model %s failed: %w", prompt.Model.Name, err))
+		}
+	}
 	resp, err := jsonPost[PromptJSON, ResponseJSON](ctx, llm, "/api/generate", prompt.json())
 	if err != nil {
-		if ctx.Err() != nil {
-			return nil, fmt.Errorf("%w (+ context err: %v)", err, ctx.Err())
-		}
-		serverLogs, logsErr := llm.container.Logs(ctx)
-		if logsErr != nil {
-			return nil, fmt.Errorf("%w (could not get server logs: %v)", err, logsErr)
-		}
-		if serverLogs != "" {
-			return nil, fmt.Errorf("%w; ollama server logs:\n%v\n(end of ollama server logs)", err, serverLogs)
-		}
-		return nil, fmt.Errorf("%w (server logs are empty)", err)
+		return nil, llm.withServerLogsErr(ctx, fmt.Errorf("prompt (%s %q) request failed: %w", prompt.Model.Name, prompt.CleanQuery(), err))
 	}
 	return &Response{data: resp}, nil
 }
@@ -379,10 +537,18 @@ func (llm *Ollama) PromptUntil(ctx context.Context, prompt *Prompt, iterate func
 	var lastResponse *Response
 	var lastError error
 	attempts := 0
+	warmed := false
 	for ctx.Err() == nil {
 		response, err := llm.Prompt(ctx, prompt)
 		if err != nil {
 			return nil, fmt.Errorf("prompt request failed: %w", err)
+		}
+		if prompt.WarmFirst && !warmed {
+			// Future prompts do not need to specify the WarmFirst option.
+			promptCopy := *prompt
+			promptCopy.WarmFirst = false
+			prompt = &promptCopy
+			warmed = true
 		}
 		attempts++
 		newPrompt, err := iterate(prompt, response)
