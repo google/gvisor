@@ -21,6 +21,7 @@ import (
 	"os"
 	"runtime"
 	"strings"
+	"syscall"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -28,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netfilter"
+	"gvisor.dev/gvisor/pkg/sentry/socket/plugin"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/link/ethernet"
 	"gvisor.dev/gvisor/pkg/tcpip/link/fdbased"
@@ -73,6 +75,10 @@ var (
 type Network struct {
 	Stack  *stack.Stack
 	Kernel *kernel.Kernel
+
+	// PluginStack is a third-party network stack to use in place of
+	// netstack when non-nil.
+	PluginStack plugin.PluginStack
 }
 
 // Route represents a route in the network stack.
@@ -175,6 +181,13 @@ type CreateLinksAndRoutesArgs struct {
 	NATBlob bool
 }
 
+// InitPluginStackArgs are arguments to InitPluginStack.
+type InitPluginStackArgs struct {
+	urpc.FilePayload
+
+	InitStr string
+}
+
 // IPWithPrefix is an address with its subnet prefix length.
 type IPWithPrefix struct {
 	// Address is a network address.
@@ -203,6 +216,34 @@ func (r *Route) toTcpipRoute(id tcpip.NICID) (tcpip.Route, error) {
 		Gateway:     ipToAddress(r.Gateway),
 		NIC:         id,
 	}, nil
+}
+
+// InitPluginStack initializes plugin network stack.
+// It will invoke Init() that is registered by current plugin stack.
+func (n *Network) InitPluginStack(args *InitPluginStackArgs, _ *struct{}) error {
+	pluginStack := n.PluginStack
+	if pluginStack == nil {
+		return fmt.Errorf("plugin stack is not registered")
+	}
+
+	fdNum := len(args.FilePayload.Files)
+	fds := make([]int, fdNum)
+	for i := 0; i < fdNum; i++ {
+		oldFD := args.FilePayload.Files[i].Fd()
+		if newFD, err := syscall.Dup(int(oldFD)); err != nil {
+			return fmt.Errorf("failed to dup FD")
+		} else {
+			fds[i] = newFD
+		}
+	}
+
+	if err := pluginStack.Init(&plugin.InitStackArgs{
+		InitStr: args.InitStr,
+		FDs:     fds,
+	}); err != nil {
+		return err
+	}
+	return nil
 }
 
 // CreateLinksAndRoutes creates links and routes in a network stack.  It should

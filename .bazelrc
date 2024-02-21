@@ -24,7 +24,7 @@ build --stamp --workspace_status_command tools/workspace_status.sh
 build:race --@io_bazel_rules_go//go/config:race --@io_bazel_rules_go//go/config:pure=false
 test:race --@io_bazel_rules_go//go/config:race --@io_bazel_rules_go//go/config:pure=false
 
-build --@io_bazel_rules_go//go/config:pure
+build --@io_bazel_rules_go//go/config:pure=false
 test --@io_bazel_rules_go//go/config:pure
 
 # By default, exclude nogo targets from building. They will still be included
