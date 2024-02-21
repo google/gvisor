@@ -19,6 +19,10 @@ package cpuid
 
 import "gvisor.dev/gvisor/pkg/hostos"
 
+const (
+	intelP8136 = "Intel(R) Xeon(R) Platinum P-8136 CPU @ 2.00GHz"
+)
+
 func archSkipFeature(feature Feature, version hostos.Version) bool {
 	switch {
 	// Block 0.
@@ -53,6 +57,15 @@ func archSkipFeature(feature Feature, version hostos.Version) bool {
 	case feature == X86FeaturePERFCTR_LLC && version.AtLeast(4, 14):
 		// PERFCTR_LLC renamed in
 		// 910448bbed066ab1082b510eef1ae61bb792d854 (4.14).
+		return true
+	default:
+		return false
+	}
+}
+
+func skipFeatureByModel(feature Feature, model string) bool {
+	switch {
+	case model == intelP8136 && feature == X86FeatureARCH_CAPABILITIES:
 		return true
 	default:
 		return false
