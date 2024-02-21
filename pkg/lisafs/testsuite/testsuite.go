@@ -46,6 +46,9 @@ type Tester interface {
 	// SetUserGroupIDSupported returns true if the backing server supports
 	// changing UID/GID for files.
 	SetUserGroupIDSupported() bool
+
+	// BindSupported returns true if the backing server supports BindAt.
+	BindSupported() bool
 }
 
 // RunAllLocalFSTests runs all local FS tests as subtests.
@@ -606,6 +609,9 @@ func testMknod(ctx context.Context, t *testing.T, tester Tester, root lisafs.Cli
 }
 
 func testUDS(ctx context.Context, t *testing.T, tester Tester, root lisafs.ClientFD) {
+	if !tester.BindSupported() {
+		t.Skipf("server does not support BindAt RPC")
+	}
 	const name = "sock"
 	file, socket, stat := bind(ctx, t, root, name, unix.SOCK_STREAM)
 	defer closeFD(ctx, t, file)
