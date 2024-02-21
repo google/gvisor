@@ -155,7 +155,7 @@ func (l *lineDiscipline) setTermios(task *kernel.Task, args arch.SyscallArgument
 	if oldCanonEnabled && !l.termios.LEnabled(linux.ICANON) {
 		l.inQueue.mu.Lock()
 		l.inQueue.pushWaitBufLocked(l)
-		l.inQueue.readable = true
+		l.inQueue.readable = len(l.inQueue.readBuf) > 0
 		l.inQueue.mu.Unlock()
 		l.termiosMu.Unlock()
 		l.replicaWaiter.Notify(waiter.ReadableEvents)
