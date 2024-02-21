@@ -52,6 +52,8 @@ func GPUFunctionalityRequested(spec *specs.Spec, conf *config.Config) bool {
 		// nvproxy disabled.
 		return false
 	}
+	// In GKE, the nvidia_gpu device plugin injects NVIDIA devices into
+	// spec.Linux.Devices when GPUs are allocated to a container.
 	if spec.Linux != nil {
 		for _, dev := range spec.Linux.Devices {
 			if dev.Path == "/dev/nvidiactl" {
@@ -59,7 +61,25 @@ func GPUFunctionalityRequested(spec *specs.Spec, conf *config.Config) bool {
 			}
 		}
 	}
-	if !conf.NVProxyDocker {
+	return gpuFunctionalityRequestedViaHook(spec, conf)
+}
+
+// GPUFunctionalityRequestedViaHook returns true if the container should have
+// access to GPU functionality configured via nvidia-container-runtime-hook.
+// This hook is used by:
+// - Docker when using `--gpus` flag from the CLI.
+// - nvidia-container-runtime when using its legacy mode.
+func GPUFunctionalityRequestedViaHook(spec *specs.Spec, conf *config.Config) bool {
+	if !NVProxyEnabled(spec, conf) {
+		// nvproxy disabled.
+		return false
+	}
+	return gpuFunctionalityRequestedViaHook(spec, conf)
+}
+
+// Precondition: NVProxyEnabled(spec, conf).
+func gpuFunctionalityRequestedViaHook(spec *specs.Spec, conf *config.Config) bool {
+	if !isNvidiaHookPresent(spec, conf) {
 		return false
 	}
 	// In Docker mode, GPU access is only requested if NVIDIA_VISIBLE_DEVICES is
@@ -71,6 +91,19 @@ func GPUFunctionalityRequested(spec *specs.Spec, conf *config.Config) bool {
 	// A value of "none" means "no GPU device, but still access to driver
 	// functionality", so it is not a value we check for here.
 	return nvd != "" && nvd != "void"
+}
+
+func isNvidiaHookPresent(spec *specs.Spec, conf *config.Config) bool {
+	if conf.NVProxyDocker {
+		// This has the effect of injecting the nvidia-container-runtime-hook.
+		return true
+	}
+	for _, h := range spec.Hooks.Prestart {
+		if strings.HasSuffix(h.Path, "/nvidia-container-runtime-hook") {
+			return true
+		}
+	}
+	return false
 }
 
 // ParseNvidiaVisibleDevices parses NVIDIA_VISIBLE_DEVICES env var and returns

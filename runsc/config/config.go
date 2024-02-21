@@ -310,9 +310,9 @@ type Config struct {
 	// NVProxy enables support for Nvidia GPUs.
 	NVProxy bool `flag:"nvproxy"`
 
-	// NVProxyDocker exposes GPUs to containers based on the
-	// NVIDIA_VISIBLE_DEVICES container environment variable, as requested by
-	// containers or set by `docker --gpus`.
+	// NVProxyDocker is deprecated. Please use nvidia-container-runtime or
+	// `docker run --gpus` directly. For backward compatibility, this has the
+	// effect of injecting nvidia-container-runtime-hook as a prestart hook.
 	NVProxyDocker bool `flag:"nvproxy-docker"`
 
 	// TPUProxy enables support for TPUs.

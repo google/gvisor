@@ -1314,9 +1314,9 @@ func createDeviceFiles(ctx context.Context, creds *auth.Credentials, info *conta
 			}
 		}
 	}
-	if info.conf.NVProxyDocker && specutils.GPUFunctionalityRequested(info.spec, info.conf) {
-		// In Docker mode, devices are not injected into spec.Linux.Devices. So
-		// manually create appropriate device files.
+	if specutils.GPUFunctionalityRequestedViaHook(info.spec, info.conf) {
+		// When using nvidia-container-runtime-hook, devices are not injected into
+		// spec.Linux.Devices. So manually create appropriate device files.
 		mode := os.FileMode(0666)
 		nvidiaDevs := []specs.LinuxDevice{
 			specs.LinuxDevice{Path: "/dev/nvidiactl", Type: "c", Major: nvgpu.NV_MAJOR_DEVICE_NUMBER, Minor: nvgpu.NV_CONTROL_DEVICE_MINOR, FileMode: &mode},
