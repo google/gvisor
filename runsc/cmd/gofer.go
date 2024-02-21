@@ -219,7 +219,11 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 	// modes exactly as sent by the sandbox, which will have applied its own umask.
 	unix.Umask(0)
 
-	if err := fsgofer.OpenProcSelfFD(); err != nil {
+	procFDPath := procFDBindMount
+	if conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
+		procFDPath = "/proc/self/fd"
+	}
+	if err := fsgofer.OpenProcSelfFD(procFDPath); err != nil {
 		util.Fatalf("failed to open /proc/self/fd: %v", err)
 	}
 
@@ -358,6 +362,10 @@ func (g *Gofer) writeMounts(mounts []specs.Mount) error {
 	return nil
 }
 
+// Redhat distros don't allow to create bind-mounts in /proc/self directories.
+// It is protected by selinux rules.
+const procFDBindMount = "/proc/fs"
+
 func (g *Gofer) setupRootFS(spec *specs.Spec, conf *config.Config) error {
 	// Convert all shared mounts into slaves to be sure that nothing will be
 	// propagated outside of our namespace.
@@ -396,8 +404,8 @@ func (g *Gofer) setupRootFS(spec *specs.Spec, conf *config.Config) error {
 		}
 		// self/fd is bind-mounted, so that the FD return by
 		// OpenProcSelfFD() does not allow escapes with walking ".." .
-		if err := unix.Mount("/proc/proc/self/fd", "/proc/proc/self/fd",
-			"", unix.MS_RDONLY|unix.MS_BIND|unix.MS_NOEXEC, ""); err != nil {
+		if err := unix.Mount("/proc/proc/self/fd", "/proc"+procFDBindMount,
+			"", unix.MS_RDONLY|unix.MS_BIND|flags, ""); err != nil {
 			util.Fatalf("error mounting proc/self/fd: %v", err)
 		}
 		if err := copyFile("/proc/etc/localtime", "/etc/localtime"); err != nil {

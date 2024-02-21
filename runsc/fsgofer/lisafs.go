@@ -69,8 +69,8 @@ var procSelfFD *rwfd.FD
 
 // OpenProcSelfFD opens the /proc/self/fd directory, which will be used to
 // reopen file descriptors.
-func OpenProcSelfFD() error {
-	d, err := unix.Open("/proc/self/fd", unix.O_RDONLY|unix.O_DIRECTORY, 0)
+func OpenProcSelfFD(path string) error {
+	d, err := unix.Open(path, unix.O_RDONLY|unix.O_DIRECTORY, 0)
 	if err != nil {
 		return fmt.Errorf("error opening /proc/self/fd: %v", err)
 	}

@@ -42,7 +42,7 @@ import (
 func init() {
 	log.SetLevel(log.Debug)
 	rand.Seed(time.Now().UnixNano())
-	if err := fsgofer.OpenProcSelfFD(); err != nil {
+	if err := fsgofer.OpenProcSelfFD("/proc/self/fd"); err != nil {
 		panic(err)
 	}
 }
