@@ -289,16 +289,14 @@ steps:
       arch: "arm64"
   # All S/R system call tests.
   - <<: *common
-    <<: *source_test
-    if: build.branch == "master"
+    <<: *source_test_continuous
     label: ":muscle: System call save restore tests (AMD64)"
     command: make BAZEL_OPTIONS=--test_tag_filters=save_restore syscall-tests
     parallelism: 20
     agents:
       arch: "amd64"
   - <<: *common
-    <<: *source_test
-    if: build.branch == "master"
+    <<: *source_test_continuous
     label: ":muscle: System call save restore tests (ARM64)"
     command: make BAZEL_OPTIONS=--test_tag_filters=save_restore syscall-tests
     parallelism: 10
