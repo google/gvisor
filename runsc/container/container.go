@@ -297,8 +297,11 @@ func New(conf *config.Config, args Args) (*Container, error) {
 		if err != nil {
 			return nil, err
 		}
-		if !goferConfs[0].ShouldUseLisafs() && conf.NVProxyDocker {
-			return nil, fmt.Errorf("--nvproxy-docker cannot be used together with non-lisafs backed root mount")
+		if !goferConfs[0].ShouldUseLisafs() && specutils.GPUFunctionalityRequestedViaHook(args.Spec, conf) {
+			// nvidia-container-runtime-hook attempts to populate the container
+			// rootfs with NVIDIA libraries and devices. With EROFS, spec.Root.Path
+			// points to an empty directory and populating that has no effect.
+			return nil, fmt.Errorf("nvidia-container-runtime-hook cannot be used together with non-lisafs backed root mount")
 		}
 		c.GoferMountConfs = goferConfs
 		if err := nvProxyPreGoferHostSetup(args.Spec, conf); err != nil {
@@ -1820,14 +1823,14 @@ func logIDMappings(mappings []specs.LinuxIDMapping, idType string) {
 	}
 }
 
-// nvProxyPreGoferHostSetup sets up nvproxy on the host. It runs before any
-// Gofers start.
+// nvProxyPreGoferHostSetup does host setup work so that `nvidia-container-cli
+// configure` can be run in the future. It runs before any Gofers start.
 // It verifies that all the required dependencies are in place, loads kernel
 // modules, and ensures the correct device files exist and are accessible.
 // This should only be necessary once on the host. It should be run during the
 // root container setup sequence to make sure it has run at least once.
 func nvProxyPreGoferHostSetup(spec *specs.Spec, conf *config.Config) error {
-	if !conf.NVProxyDocker || !specutils.GPUFunctionalityRequested(spec, conf) {
+	if !specutils.GPUFunctionalityRequestedViaHook(spec, conf) {
 		return nil
 	}
 
@@ -1924,7 +1927,7 @@ func nvproxyLoadKernelModules() {
 // construction. For this reason, we don't need to parse
 // NVIDIA_VISIBLE_DEVICES or pass --device to nvidia-container-cli.
 func nvproxySetupAfterGoferUserns(spec *specs.Spec, conf *config.Config, goferCmd *exec.Cmd, goferDonations *donation.Agency) (func() error, error) {
-	if !conf.NVProxyDocker || !specutils.GPUFunctionalityRequested(spec, conf) {
+	if !specutils.GPUFunctionalityRequestedViaHook(spec, conf) {
 		return func() error { return nil }, nil
 	}
 
