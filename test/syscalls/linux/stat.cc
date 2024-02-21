@@ -635,6 +635,8 @@ TEST(SimpleStatTest, AnonDeviceAllocatesUniqueInodesAcrossSaveRestore) {
 #define SYS_statx 332
 #elif defined(__aarch64__)
 #define SYS_statx 291
+#elif defined(__riscv)
+#define SYS_statx 291
 #else
 #error "Unknown architecture"
 #endif
