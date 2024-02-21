@@ -127,7 +127,7 @@ func RegisterFlags(flagSet *flag.FlagSet) {
 
 	// Flags that control sandbox runtime behavior: accelerator related.
 	flagSet.Bool("nvproxy", false, "EXPERIMENTAL: enable support for Nvidia GPUs")
-	flagSet.Bool("nvproxy-docker", false, "Expose GPUs to containers based on NVIDIA_VISIBLE_DEVICES, as requested by the container or set by `docker --gpus`. Allows containers to self-serve GPU access and thus disabled by default for security. libnvidia-container must be installed on the host. No effect unless --nvproxy is enabled.")
+	flagSet.Bool("nvproxy-docker", false, "DEPRECATED: use nvidia-container-runtime or `docker run --gpus` directly. Or manually add nvidia-container-runtime-hook as a prestart hook and set up NVIDIA_VISIBLE_DEVICES container environment variable.")
 	flagSet.Bool("tpuproxy", false, "EXPERIMENTAL: enable support for TPU device passthrough.")
 
 	// Test flags, not to be used outside tests, ever.
