@@ -2,6 +2,8 @@
 FROM ollama/ollama:0.1.13
 
 ENV PATH=$PATH:/usr/local/nvidia/bin:/bin/nvidia/bin
+ENV OLLAMA_ORIGINS=*
+ENV OLLAMA_HOST=0.0.0.0:11434
 
 # Pre-install a few models.
 # Although these are the smallest possible model size (7B parameters),

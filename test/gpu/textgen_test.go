@@ -71,7 +71,7 @@ func TestLLM(t *testing.T) {
 	llmContainer := dockerutil.MakeContainer(ctx, t)
 	defer llmContainer.CleanUp(ctx)
 	startCtx, startCancel := context.WithTimeout(ctx, 3*time.Minute)
-	llm, err := ollama.New(startCtx, llmContainer, t)
+	llm, err := ollama.NewDocker(startCtx, llmContainer, t)
 	startCancel()
 	if err != nil {
 		t.Fatalf("Failed to start ollama: %v", err)
