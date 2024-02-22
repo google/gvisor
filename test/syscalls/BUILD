@@ -735,6 +735,8 @@ syscall_test(
 
 syscall_test(
     size = "large",
+    # Takes too long to run with S/R.
+    save = False,
     shard_count = most_shards,
     test = "//test/syscalls/linux:socket_abstract_test",
 )
