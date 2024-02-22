@@ -58,6 +58,14 @@ doc(
 )
 
 doc(
+    name = "gpu",
+    src = "gpu.md",
+    category = "User Guide",
+    permalink = "/docs/user_guide/gpu/",
+    weight = "51",
+)
+
+doc(
     name = "runtime_monitoring",
     src = "runtime_monitoring.md",
     category = "User Guide",
