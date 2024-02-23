@@ -28,7 +28,7 @@ import (
 
 func init() {
 	log.SetLevel(log.Debug)
-	if err := fsgofer.OpenProcSelfFD(); err != nil {
+	if err := fsgofer.OpenProcSelfFD("/proc/self/fd"); err != nil {
 		panic(err)
 	}
 }
