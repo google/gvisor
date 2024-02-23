@@ -100,7 +100,7 @@ func TestSingleByteReader(t *testing.T) {
 func TestReadFullToBlocks(t *testing.T) {
 	r := FromIOReader{singleByteReader{bytes.NewBufferString("foobar")}}
 	dsts := makeBlocks(make([]byte, 3), make([]byte, 3))
-	n, err := ReadFullToBlocks(r, BlockSeqFromSlice(dsts))
+	n, err := ReadFullToBlocks(r.ReadToBlocks, BlockSeqFromSlice(dsts))
 	// ReadFullToBlocks should call into FromIOReader => singleByteReader
 	// repeatedly until dsts is exhausted.
 	if wantN := uint64(6); n != wantN || err != nil {
@@ -187,7 +187,7 @@ func TestWriteFullToBlocks(t *testing.T) {
 	srcs := makeBlocks([]byte("foo"), []byte("bar"))
 	var dst bytes.Buffer
 	w := FromIOWriter{singleByteWriter{&dst}}
-	n, err := WriteFullFromBlocks(w, BlockSeqFromSlice(srcs))
+	n, err := WriteFullFromBlocks(w.WriteFromBlocks, BlockSeqFromSlice(srcs))
 	// WriteFullToBlocks should call into FromIOWriter => singleByteWriter
 	// repeatedly until srcs is exhausted.
 	if wantN := uint64(6); n != wantN || err != nil {

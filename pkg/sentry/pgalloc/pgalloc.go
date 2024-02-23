@@ -465,12 +465,12 @@ type AllocOpts struct {
 	// that will fill the allocated memory by invoking host system calls should
 	// pass AllocateOnly.
 	Mode AllocationMode
-	// If Reader is provided, the allocated memory is filled by calling
-	// ReadToBlocks() repeatedly until either length bytes are read or a non-nil
-	// error is returned. It returns the allocated memory, truncated down to the
-	// nearest page. If this is shorter than length bytes due to an error
-	// returned by ReadToBlocks(), it returns the partially filled fr and error.
-	Reader safemem.Reader
+	// If ReaderFunc is provided, the allocated memory is filled by calling it
+	// repeatedly until either length bytes are read or a non-nil error is
+	// returned. It returns the allocated memory, truncated down to the nearest
+	// page. If this is shorter than length bytes due to an error returned by
+	// ReaderFunc, it returns the partially filled fr and error.
+	ReaderFunc safemem.ReaderFunc
 }
 
 // Allocate returns a range of initially-zeroed pages of the given length with
@@ -514,7 +514,7 @@ func (f *MemoryFile) Allocate(length uint64, opts AllocOpts) (memmap.FileRange, 
 	default:
 		panic(fmt.Sprintf("unknown allocation mode: %d", opts.Mode))
 	}
-	if opts.Reader != nil {
+	if opts.ReaderFunc != nil {
 		if dsts.IsEmpty() {
 			dsts, err = f.MapInternal(fr, hostarch.Write)
 			if err != nil {
@@ -522,7 +522,7 @@ func (f *MemoryFile) Allocate(length uint64, opts AllocOpts) (memmap.FileRange, 
 				return memmap.FileRange{}, err
 			}
 		}
-		n, err := safemem.ReadFullToBlocks(opts.Reader, dsts)
+		n, err := safemem.ReadFullToBlocks(opts.ReaderFunc, dsts)
 		un := uint64(hostarch.Addr(n).RoundDown())
 		if un < length {
 			// Free unused memory and update fr to contain only the memory that is
