@@ -46,12 +46,13 @@ type Writer interface {
 	WriteFromBlocks(srcs BlockSeq) (uint64, error)
 }
 
-// ReadFullToBlocks repeatedly invokes r.ReadToBlocks until dsts.NumBytes()
-// bytes have been read or ReadToBlocks returns an error.
-func ReadFullToBlocks(r Reader, dsts BlockSeq) (uint64, error) {
+// ReadFullToBlocks repeatedly invokes r until dsts.NumBytes() bytes have been
+// read or r returns an error. Note that we avoid a Reader interface receiver
+// to avoid heap allocation.
+func ReadFullToBlocks(r ReaderFunc, dsts BlockSeq) (uint64, error) {
 	var done uint64
 	for !dsts.IsEmpty() {
-		n, err := r.ReadToBlocks(dsts)
+		n, err := r(dsts)
 		done += n
 		if err != nil {
 			return done, err
@@ -61,12 +62,13 @@ func ReadFullToBlocks(r Reader, dsts BlockSeq) (uint64, error) {
 	return done, nil
 }
 
-// WriteFullFromBlocks repeatedly invokes w.WriteFromBlocks until
-// srcs.NumBytes() bytes have been written or WriteFromBlocks returns an error.
-func WriteFullFromBlocks(w Writer, srcs BlockSeq) (uint64, error) {
+// WriteFullFromBlocks repeatedly invokes w until srcs.NumBytes() bytes have
+// been written or w returns an error. Note that we avoid a Writer interface
+// receiver to avoid heap allocation.
+func WriteFullFromBlocks(w WriterFunc, srcs BlockSeq) (uint64, error) {
 	var done uint64
 	for !srcs.IsEmpty() {
-		n, err := w.WriteFromBlocks(srcs)
+		n, err := w(srcs)
 		done += n
 		if err != nil {
 			return done, err
@@ -141,18 +143,6 @@ type ToIOReader struct {
 // Read implements io.Reader.Read.
 func (r ToIOReader) Read(dst []byte) (int, error) {
 	n, err := r.Reader.ReadToBlocks(BlockSeqOf(BlockFromSafeSlice(dst)))
-	return int(n), err
-}
-
-// ToIOWriter implements io.Writer for a (safemem.)Writer.
-type ToIOWriter struct {
-	Writer Writer
-}
-
-// Write implements io.Writer.Write.
-func (w ToIOWriter) Write(src []byte) (int, error) {
-	// io.Writer does not permit partial writes.
-	n, err := WriteFullFromBlocks(w.Writer, BlockSeqOf(BlockFromSafeSlice(src)))
 	return int(n), err
 }
 
