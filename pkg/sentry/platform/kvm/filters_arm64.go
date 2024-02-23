@@ -28,7 +28,7 @@ import (
 func (*KVM) archSyscallFilters() seccomp.SyscallRules {
 	return seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		unix.SYS_IOCTL: seccomp.PerArg{
-			seccomp.AnyValue{},
+			seccomp.NonNegativeFD{},
 			seccomp.EqualTo(KVM_SET_VCPU_EVENTS),
 		},
 	})
