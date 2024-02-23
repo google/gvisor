@@ -341,8 +341,12 @@ func Init() {
 			return abi
 		}
 		v535_104_05Checksum := "2f9d609d1da770beee757636635c46e7ed8253ade887b87c7a5482e33fcbedc9"
-		v535_104_05 := v535_86_05
-		addDriverABI(535, 104, 05, v535_104_05Checksum, v535_86_05)
+		v535_104_05 := addDriverABI(535, 104, 05, v535_104_05Checksum, v535_86_05)
+
+		// 535.104.12 does not exist on the main branch. It branched off the main
+		// branch at 535.104.05.
+		v535_104_12Checksum := "ffc2d89e233d2427edb1ff5f436028a94b3ef86e78f97e088e11d905c82e8001"
+		_ = addDriverABI(535, 104, 12, v535_104_12Checksum, v535_104_05)
 
 		// 535.113.01 is an intermediate unqualified version from the main branch.
 		v535_113_01 := v535_104_05
