@@ -219,7 +219,11 @@ func (g *Gofer) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomm
 	// modes exactly as sent by the sandbox, which will have applied its own umask.
 	unix.Umask(0)
 
-	if err := fsgofer.OpenProcSelfFD(); err != nil {
+	procFDPath := procFDBindMount
+	if conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
+		procFDPath = "/proc/self/fd"
+	}
+	if err := fsgofer.OpenProcSelfFD(procFDPath); err != nil {
 		util.Fatalf("failed to open /proc/self/fd: %v", err)
 	}
 
@@ -358,6 +362,10 @@ func (g *Gofer) writeMounts(mounts []specs.Mount) error {
 	return nil
 }
 
+// Redhat distros don't allow to create bind-mounts in /proc/self directories.
+// It is protected by selinux rules.
+const procFDBindMount = "/proc/fs"
+
 func (g *Gofer) setupRootFS(spec *specs.Spec, conf *config.Config) error {
 	// Convert all shared mounts into slaves to be sure that nothing will be
 	// propagated outside of our namespace.
@@ -375,36 +383,38 @@ func (g *Gofer) setupRootFS(spec *specs.Spec, conf *config.Config) error {
 		// We need a directory to construct a new root and we know that
 		// runsc can't start without /proc, so we can use it for this.
 		flags := uintptr(unix.MS_NOSUID | unix.MS_NODEV | unix.MS_NOEXEC)
-		if err := specutils.SafeMount("runsc-root", "/proc", "tmpfs", flags, "", procPath); err != nil {
+		if err := specutils.SafeMount("runsc-root", "/proc/fs", "tmpfs", flags, "", procPath); err != nil {
 			util.Fatalf("error mounting tmpfs: %v", err)
 		}
-
+		if err := unix.Mount("", "/proc/fs", "", unix.MS_UNBINDABLE, ""); err != nil {
+			util.Fatalf("error setting MS_UNBINDABLE")
+		}
 		// Prepare tree structure for pivot_root(2).
-		if err := os.Mkdir("/proc/proc", 0755); err != nil {
-			util.Fatalf("error creating /proc/proc: %v", err)
+		if err := os.Mkdir("/proc/fs/proc", 0755); err != nil {
+			util.Fatalf("error creating /proc/fs/proc: %v", err)
 		}
-		if err := os.Mkdir("/proc/root", 0755); err != nil {
-			util.Fatalf("error creating /proc/root: %v", err)
+		if err := os.Mkdir("/proc/fs/root", 0755); err != nil {
+			util.Fatalf("error creating /proc/fs/root: %v", err)
 		}
-		if err := os.Mkdir("/proc/etc", 0755); err != nil {
-			util.Fatalf("error creating /proc/etc: %v", err)
+		if err := os.Mkdir("/proc/fs/etc", 0755); err != nil {
+			util.Fatalf("error creating /proc/fs/etc: %v", err)
 		}
 		// This cannot use SafeMount because there's no available procfs. But we
-		// know that /proc is an empty tmpfs mount, so this is safe.
-		if err := unix.Mount("runsc-proc", "/proc/proc", "proc", flags|unix.MS_RDONLY, ""); err != nil {
-			util.Fatalf("error mounting proc: %v", err)
+		// know that /proc/fs is an empty tmpfs mount, so this is safe.
+		if err := unix.Mount("/proc", "/proc/fs/proc", "", flags|unix.MS_RDONLY|unix.MS_BIND|unix.MS_REC, ""); err != nil {
+			util.Fatalf("error mounting /proc/fs/proc: %v", err)
 		}
 		// self/fd is bind-mounted, so that the FD return by
 		// OpenProcSelfFD() does not allow escapes with walking ".." .
-		if err := unix.Mount("/proc/proc/self/fd", "/proc/proc/self/fd",
-			"", unix.MS_RDONLY|unix.MS_BIND|unix.MS_NOEXEC, ""); err != nil {
+		if err := unix.Mount("/proc/fs/proc/self/fd", "/proc/fs/"+procFDBindMount,
+			"", unix.MS_RDONLY|unix.MS_BIND|flags, ""); err != nil {
 			util.Fatalf("error mounting proc/self/fd: %v", err)
 		}
-		if err := copyFile("/proc/etc/localtime", "/etc/localtime"); err != nil {
+		if err := copyFile("/proc/fs/etc/localtime", "/etc/localtime"); err != nil {
 			log.Warningf("Failed to copy /etc/localtime: %v. UTC timezone will be used.", err)
 		}
-		root = "/proc/root"
-		procPath = "/proc/proc"
+		root = "/proc/fs/root"
+		procPath = "/proc/fs/proc"
 	}
 
 	rootfsConf := g.mountConfs[0]
@@ -461,7 +471,7 @@ func (g *Gofer) setupRootFS(spec *specs.Spec, conf *config.Config) error {
 	}
 
 	if !conf.TestOnlyAllowRunAsCurrentUserWithoutChroot {
-		if err := pivotRoot("/proc"); err != nil {
+		if err := pivotRoot("/proc/fs"); err != nil {
 			util.Fatalf("failed to change the root file system: %v", err)
 		}
 		if err := os.Chdir("/"); err != nil {
