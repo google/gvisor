@@ -104,7 +104,7 @@ func (h *handle) sync(ctx context.Context) error {
 
 type handleReadWriter struct {
 	ctx context.Context
-	h   *handle
+	h   handle
 	off uint64
 }
 
@@ -117,14 +117,14 @@ var handleReadWriterPool = sync.Pool{
 func getHandleReadWriter(ctx context.Context, h *handle, offset int64) *handleReadWriter {
 	rw := handleReadWriterPool.Get().(*handleReadWriter)
 	rw.ctx = ctx
-	rw.h = h
+	rw.h = *h
 	rw.off = uint64(offset)
 	return rw
 }
 
 func putHandleReadWriter(rw *handleReadWriter) {
 	rw.ctx = nil
-	rw.h = nil
+	rw.h = noHandle
 	handleReadWriterPool.Put(rw)
 }
 
