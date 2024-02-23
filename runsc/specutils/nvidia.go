@@ -98,9 +98,12 @@ func isNvidiaHookPresent(spec *specs.Spec, conf *config.Config) bool {
 		// This has the effect of injecting the nvidia-container-runtime-hook.
 		return true
 	}
-	for _, h := range spec.Hooks.Prestart {
-		if strings.HasSuffix(h.Path, "/nvidia-container-runtime-hook") {
-			return true
+
+	if spec.Hooks != nil {
+		for _, h := range spec.Hooks.Prestart {
+			if strings.HasSuffix(h.Path, "/nvidia-container-runtime-hook") {
+				return true
+			}
 		}
 	}
 	return false
