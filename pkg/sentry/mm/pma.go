@@ -371,11 +371,12 @@ func (mm *MemoryManager) getPMAsInternalLocked(ctx context.Context, vseg vmaIter
 						return pstart, pseg.PrevGap(), err
 					}
 					// Copy contents.
+					reader := safemem.BlockSeqReader{Blocks: mm.internalMappingsLocked(pseg, copyAR)}
 					fr, err := mm.mf.Allocate(uint64(copyAR.Length()), pgalloc.AllocOpts{
-						Kind:    usage.Anonymous,
-						Mode:    pgalloc.AllocateAndWritePopulate,
-						MemCgID: memCgID,
-						Reader:  &safemem.BlockSeqReader{mm.internalMappingsLocked(pseg, copyAR)},
+						Kind:       usage.Anonymous,
+						Mode:       pgalloc.AllocateAndWritePopulate,
+						MemCgID:    memCgID,
+						ReaderFunc: reader.ReadToBlocks,
 					})
 					if _, ok := err.(safecopy.BusError); ok {
 						// If we got SIGBUS during the copy, deliver SIGBUS to

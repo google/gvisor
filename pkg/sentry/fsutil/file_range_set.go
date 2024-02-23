@@ -129,7 +129,7 @@ func (s *FileRangeSet) Fill(ctx context.Context, required, optional memmap.Mappa
 			MemCgID: memCgID,
 		}
 		if readAt != nil {
-			opts.Reader = safemem.ReaderFunc(func(dsts safemem.BlockSeq) (uint64, error) {
+			opts.ReaderFunc = func(dsts safemem.BlockSeq) (uint64, error) {
 				var done uint64
 				for !dsts.IsEmpty() {
 					n, err := func() (uint64, error) {
@@ -167,7 +167,7 @@ func (s *FileRangeSet) Fill(ctx context.Context, required, optional memmap.Mappa
 					}
 				}
 				return done, nil
-			})
+			}
 		}
 		fr, err := mf.Allocate(gr.Length(), opts)
 

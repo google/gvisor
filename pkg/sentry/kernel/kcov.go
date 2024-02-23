@@ -99,7 +99,7 @@ func (kcov *Kcov) TaskWork(t *Task) {
 	}
 
 	// Read in the PC count.
-	if _, err := safemem.ReadFullToBlocks(rw, kcov.countBlock()); err != nil {
+	if _, err := safemem.ReadFullToBlocks(rw.ReadToBlocks, kcov.countBlock()); err != nil {
 		panic(fmt.Sprintf("Internal error reading count from kcov area: %v", err))
 	}
 
@@ -111,7 +111,7 @@ func (kcov *Kcov) TaskWork(t *Task) {
 	// output.
 	kcov.count += uint64(n / 8)
 	rw.off = 0
-	if _, err := safemem.WriteFullFromBlocks(rw, kcov.countBlock()); err != nil {
+	if _, err := safemem.WriteFullFromBlocks(rw.WriteFromBlocks, kcov.countBlock()); err != nil {
 		panic(fmt.Sprintf("Internal error writing count to kcov area: %v", err))
 	}
 
@@ -337,6 +337,6 @@ type kcovIOWriter struct {
 // Write implements io.Writer.Write.
 func (w *kcovIOWriter) Write(p []byte) (int, error) {
 	bs := safemem.BlockSeqOf(safemem.BlockFromSafeSlice(p))
-	n, err := safemem.WriteFullFromBlocks(w.rw, bs)
+	n, err := safemem.WriteFullFromBlocks(w.rw.WriteFromBlocks, bs)
 	return int(n), err
 }
