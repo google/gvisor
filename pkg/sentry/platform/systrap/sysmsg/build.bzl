@@ -24,7 +24,12 @@ def cc_pie_obj(name, srcs, outs):
               " -fno-builtin " +
               "-ffreestanding " +
               "-mgeneral-regs-only " +
-              "-g " +
+              # Set -g0 to omit debugging information because it contains
+              # absolute paths, which are volatile build information and results
+              # in Bazel being unable to properly cache the output. If debugging
+              # information is desired, the flags -fdebug-compilation-dir or
+              # -fdebug-prefix-map can be used.
+              "-g0 " +
               "-Wa,--noexecstack " +
               "-fno-asynchronous-unwind-tables " +
               "-fno-stack-protector " +
