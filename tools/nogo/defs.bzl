@@ -1,7 +1,7 @@
 """Nogo rules."""
 
-load("//tools/bazeldefs:go.bzl", "go_context", "go_embed_libraries", "go_importpath", "go_rule")
 load("//tools:arch.bzl", "arch_transition", "transition_allowlist")
+load("//tools/bazeldefs:go.bzl", "go_context", "go_embed_libraries", "go_importpath", "go_rule")
 
 NogoConfigInfo = provider(
     "information about a nogo configuration",
