@@ -245,15 +245,7 @@ func clockNanosleepUntil(t *kernel.Task, c ktime.Clock, end ktime.Time, rem host
 	if c == t.Kernel().MonotonicClock() {
 		err = t.BlockWithDeadline(nil, true, end)
 	} else {
-		notifier, tchan := ktime.NewChannelNotifier()
-		timer := ktime.NewTimer(c, notifier)
-		timer.Swap(ktime.Setting{
-			Period:  0,
-			Enabled: true,
-			Next:    end,
-		})
-		err = t.BlockWithTimer(nil, tchan)
-		timer.Destroy()
+		err = t.BlockWithDeadlineFrom(nil, c, true, end)
 	}
 
 	switch {
