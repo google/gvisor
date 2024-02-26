@@ -224,7 +224,9 @@ const (
 	stuckContextTimeout       = 30 * time.Second
 )
 
-func (sc *sharedContext) sleepOnState(state sysmsg.ContextState) {
+var errDeadSubprocess = fmt.Errorf("subprocess died")
+
+func (sc *sharedContext) sleepOnState(state sysmsg.ContextState) error {
 	timeout := unix.Timespec{
 		Sec:  0,
 		Nsec: contextPreemptTimeoutNsec,
@@ -238,6 +240,9 @@ func (sc *sharedContext) sleepOnState(state sysmsg.ContextState) {
 		}
 		if errno != unix.ETIMEDOUT {
 			panic(fmt.Sprintf("error waiting for state: %v", errno))
+		}
+		if !sc.subprocess.alive() {
+			return errDeadSubprocess
 		}
 		if time.Now().After(deadline) {
 			log.Warningf("Systrap task goroutine has been waiting on ThreadContext.State futex too long. ThreadContext: %v", sc)
@@ -255,6 +260,7 @@ func (sc *sharedContext) sleepOnState(state sysmsg.ContextState) {
 		timeout.Sec = contextCheckupTimeoutSec
 		timeout.Nsec = 0
 	}
+	return nil
 }
 
 type fastPathDispatcher struct {

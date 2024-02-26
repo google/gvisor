@@ -94,6 +94,12 @@ func (systrapSeccomp) SyscallFilters(vars precompiledseccomp.Values) seccomp.Sys
 		},
 		unix.SYS_TGKILL: seccomp.MatchAll{},
 		unix.SYS_WAIT4:  seccomp.MatchAll{},
+		unix.SYS_WAITID: seccomp.PerArg{
+			seccomp.EqualTo(unix.P_PID),
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
+			seccomp.EqualTo(unix.WEXITED | unix.WNOHANG | unix.WNOWAIT),
+		},
 		unix.SYS_SETPRIORITY: seccomp.PerArg{
 			seccomp.EqualTo(unix.PRIO_PROCESS),
 			seccomp.AnyValue{},

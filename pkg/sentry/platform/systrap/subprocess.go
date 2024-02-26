@@ -23,6 +23,7 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/pool"
@@ -169,6 +170,9 @@ type subprocess struct {
 	// contextQueue is a queue of all contexts that are ready to switch back to
 	// user mode.
 	contextQueue *contextQueue
+
+	// dead indicates whether the subprocess is alive or not.
+	dead atomicbitops.Bool
 }
 
 func (s *subprocess) initSyscallThread(ptraceThread *thread) error {
@@ -452,13 +456,18 @@ func (s *subprocess) unmap() {
 // globalPool. This has the added benefit of reducing creation time for new
 // subprocesses.
 func (s *subprocess) Release() {
+	if !s.alive() {
+		return
+	}
 	s.unmap()
 	s.DecRef(s.release)
 }
 
 // release returns the subprocess to the global pool.
 func (s *subprocess) release() {
-	globalPool.markAvailable(s)
+	if s.alive() {
+		globalPool.markAvailable(s)
+	}
 }
 
 // attach attaches to the thread.
@@ -748,7 +757,10 @@ func (s *subprocess) switchToApp(c *context, ac *arch.Context64) (isSyscall bool
 	if err := s.contextQueue.add(ctx); err != nil {
 		return false, false, err
 	}
-	s.waitOnState(ctx)
+
+	if err := s.waitOnState(ctx); err != nil {
+		return false, false, corruptedSharedMemoryErr(err.Error())
+	}
 
 	// Check if there's been an error.
 	threadID := ctx.threadID()
@@ -786,7 +798,7 @@ func (s *subprocess) switchToApp(c *context, ac *arch.Context64) (isSyscall bool
 	return false, false, nil
 }
 
-func (s *subprocess) waitOnState(ctx *sharedContext) {
+func (s *subprocess) waitOnState(ctx *sharedContext) error {
 	ctx.kicked = false
 	slowPath := false
 	if !s.contextQueue.fastPathEnabled() || atomic.LoadUint32(&s.contextQueue.numActiveThreads) == 0 {
@@ -819,13 +831,17 @@ func (s *subprocess) waitOnState(ctx *sharedContext) {
 				ctx.kicked = s.kickSysmsgThread()
 			}
 
-			ctx.sleepOnState(curState)
+			if err := ctx.sleepOnState(curState); err != nil {
+				return err
+			}
 		}
 	}
 
 	ctx.recordLatency()
 	ctx.resetLatencyMeasures()
 	ctx.enableSentryFastPath()
+
+	return nil
 }
 
 // canKickSysmsgThread returns true if a new thread can be kicked.
@@ -935,7 +951,7 @@ func (s *subprocess) Unmap(addr hostarch.Addr, length uint64) {
 		unix.SYS_MUNMAP,
 		arch.SyscallArgument{Value: uintptr(addr)},
 		arch.SyscallArgument{Value: uintptr(length)})
-	if err != nil {
+	if err != nil && err != errDeadSubprocess {
 		// We never expect this to happen.
 		panic(fmt.Sprintf("munmap(%x, %x)) failed: %v", addr, length, err))
 	}
