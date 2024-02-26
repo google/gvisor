@@ -102,15 +102,23 @@ func (t *Task) BlockWithDeadline(C <-chan struct{}, haveDeadline bool, deadline 
 	return err
 }
 
-// BlockWithTimer blocks t until an event is received from C or tchan, or t is
-// interrupted. It returns nil if an event is received from C, ETIMEDOUT if an
-// event is received from tchan, and linuxerr.ErrInterrupted if t is
-// interrupted.
+// BlockWithDeadlineFrom is similar to BlockWithDeadline, except it uses the
+// passed clock (instead of application monotonic clock).
 //
 // Most clients should use BlockWithDeadline or BlockWithTimeout instead.
 //
 // Preconditions: The caller must be running on the task goroutine.
-func (t *Task) BlockWithTimer(C <-chan struct{}, tchan <-chan struct{}) error {
+func (t *Task) BlockWithDeadlineFrom(C <-chan struct{}, clock ktime.Clock, haveDeadline bool, deadline ktime.Time) error {
+	if !haveDeadline {
+		return t.block(C, nil)
+	}
+	notifier, tchan := ktime.NewChannelNotifier()
+	timer := ktime.NewTimer(clock, notifier)
+	timer.Swap(ktime.Setting{
+		Enabled: true,
+		Next:    deadline,
+	})
+	defer timer.Destroy()
 	return t.block(C, tchan)
 }
 
