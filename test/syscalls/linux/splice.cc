@@ -921,14 +921,26 @@ TEST(SpliceTest, FromPipeWithConcurrentIo) {
   }
 }
 
-// Regression test for #9736.
-TEST(SpliceTest, FromEmptyPipeWithWriterToDevNull) {
+// Regression test for #9736 and #10046.
+TEST(SpliceTest, FromPipeWithWriterToDevNull) {
   int fds[2];
   ASSERT_THAT(pipe(fds), SyscallSucceeds());
   const FileDescriptor rfd(fds[0]);
   const FileDescriptor wfd(fds[1]);
   const FileDescriptor out_fd =
       ASSERT_NO_ERRNO_AND_VALUE(Open("/dev/null", O_WRONLY));
+
+  // Write one byte to the pipe and expect it to be successfully spliced to
+  // /dev/null.
+  constexpr char kSplicedByte = '.';
+  ASSERT_THAT(WriteFd(wfd.get(), &kSplicedByte, 1),
+              SyscallSucceedsWithValue(1));
+  ASSERT_THAT(
+      splice(rfd.get(), nullptr, out_fd.get(), nullptr, 1, SPLICE_F_NONBLOCK),
+      SyscallSucceedsWithValue(1));
+
+  // Expect that splicing from the pipe again fails with EAGAIN since the pipe
+  // is now empty.
   ASSERT_THAT(
       splice(rfd.get(), nullptr, out_fd.get(), nullptr, 1, SPLICE_F_NONBLOCK),
       SyscallFailsWithErrno(EAGAIN));
