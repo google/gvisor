@@ -66,7 +66,7 @@ func (p *Pipe) Read(ctx context.Context, dst usermem.IOSequence) (int64, error) 
 func (p *Pipe) read(count int64, f func(srcs safemem.BlockSeq) (uint64, error), removeFromSrc bool) (int64, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	n, err := p.peekLocked(count, f)
+	n, err := p.peekLocked(0, count, f)
 	if n > 0 && removeFromSrc {
 		p.consumeLocked(n)
 	}

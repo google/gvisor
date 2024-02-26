@@ -279,10 +279,13 @@ func (fd *VFSPipeFD) SpliceToNonPipe(ctx context.Context, out *vfs.FileDescripti
 	} else {
 		n, err = out.PWrite(ctx, src, off, vfs.WriteOptions{})
 	}
-
 	// Implementations of out.[P]Write() that ignore written data (e.g.
-	// /dev/null) may skip calling src.CopyIn[To]() and therefore miss getting
-	// ErrWouldBlock from Pipe.peekLocked().
+	// /dev/null) may skip calling src.CopyIn[To](), so:
+	//
+	// - We must call Pipe.consumeLocked() here rather than in fd.CopyIn[To]().
+	//
+	// - We must check if Pipe.peekLocked() would have returned ErrWouldBlock.
+	fd.pipe.consumeLocked(n)
 	if n == 0 && err == nil && fd.pipe.size == 0 && fd.pipe.HasWriters() {
 		err = linuxerr.ErrWouldBlock
 	}
@@ -331,10 +334,9 @@ func (fd *VFSPipeFD) CopyIn(ctx context.Context, addr hostarch.Addr, dst []byte,
 		log.Traceback("Non-sequential VFSPipeFD.CopyIn: lastAddr=%#x addr=%#x", fd.lastAddr, addr)
 		return 0, linuxerr.EINVAL
 	}
-	n, err := fd.pipe.peekLocked(int64(len(dst)), func(srcs safemem.BlockSeq) (uint64, error) {
+	n, err := fd.pipe.peekLocked(int64(addr), int64(len(dst)), func(srcs safemem.BlockSeq) (uint64, error) {
 		return safemem.CopySeq(safemem.BlockSeqOf(safemem.BlockFromSafeSlice(dst)), srcs)
 	})
-	fd.pipe.consumeLocked(n)
 	fd.lastAddr = addr + hostarch.Addr(n)
 	return int(n), err
 }
@@ -384,10 +386,9 @@ func (fd *VFSPipeFD) CopyInTo(ctx context.Context, ars hostarch.AddrRangeSeq, ds
 			log.Traceback("Non-sequential VFSPipeFD.CopyInTo: lastAddr=%#x addr=%#x", fd.lastAddr, ar.Start)
 			return total, linuxerr.EINVAL
 		}
-		n, err := fd.pipe.peekLocked(int64(ar.Length()), func(srcs safemem.BlockSeq) (uint64, error) {
+		n, err := fd.pipe.peekLocked(int64(ar.Start), int64(ar.Length()), func(srcs safemem.BlockSeq) (uint64, error) {
 			return dst.WriteFromBlocks(srcs)
 		})
-		fd.pipe.consumeLocked(n)
 		fd.lastAddr = ar.Start + hostarch.Addr(n)
 		total += n
 		if err != nil {
@@ -464,7 +465,7 @@ func spliceOrTee(ctx context.Context, dst, src *VFSPipeFD, count int64, removeFr
 
 	firstLocked, secondLocked := lockTwoPipes(dst.pipe, src.pipe)
 	n, err := dst.pipe.writeLocked(count, func(dsts safemem.BlockSeq) (uint64, error) {
-		n, err := src.pipe.peekLocked(int64(dsts.NumBytes()), func(srcs safemem.BlockSeq) (uint64, error) {
+		n, err := src.pipe.peekLocked(0, int64(dsts.NumBytes()), func(srcs safemem.BlockSeq) (uint64, error) {
 			return safemem.CopySeq(dsts, srcs)
 		})
 		if n > 0 && removeFromSrc {
