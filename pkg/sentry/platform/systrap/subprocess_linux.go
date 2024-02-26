@@ -40,7 +40,7 @@ func createStub() (*thread, error) {
 	// transitively) will be killed as well. It's simply not possible to
 	// safely handle a single stub getting killed: the exact state of
 	// execution is unknown and not recoverable.
-	return attachedThread(uintptr(unix.SIGKILL)|unix.CLONE_FILES, linux.SECCOMP_RET_TRAP)
+	return attachedThread(unix.CLONE_FILES|uintptr(unix.SIGCHLD), linux.SECCOMP_RET_TRAP)
 }
 
 // attachedThread returns a new attached thread.
@@ -57,13 +57,15 @@ func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, erro
 			Rules: seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 				unix.SYS_CLONE: seccomp.Or{
 					// Allow creation of new subprocesses (used by the master).
-					seccomp.PerArg{seccomp.EqualTo(unix.CLONE_FILES | unix.SIGKILL)},
+					seccomp.PerArg{seccomp.EqualTo(unix.CLONE_FILES | unix.CLONE_PARENT | unix.SIGCHLD)},
+					seccomp.PerArg{seccomp.EqualTo(unix.CLONE_FILES | unix.SIGCHLD)},
 					// Allow creation of new sysmsg thread.
 					seccomp.PerArg{seccomp.EqualTo(
 						unix.CLONE_FILES |
 							unix.CLONE_FS |
 							unix.CLONE_VM |
-							unix.CLONE_PTRACE)},
+							unix.CLONE_PTRACE |
+							linux.SIGKILL)},
 					// Allow creation of new threads within a single address space (used by address spaces).
 					seccomp.PerArg{seccomp.EqualTo(
 						unix.CLONE_FILES |
@@ -256,7 +258,7 @@ func (t *thread) createStub() (*thread, error) {
 	pid, err := t.syscallIgnoreInterrupt(
 		&regs,
 		unix.SYS_CLONE,
-		arch.SyscallArgument{Value: uintptr(unix.SIGKILL | unix.CLONE_FILES)},
+		arch.SyscallArgument{Value: uintptr(unix.CLONE_FILES | unix.CLONE_PARENT | uintptr(unix.SIGCHLD))},
 		arch.SyscallArgument{Value: 0},
 		arch.SyscallArgument{Value: 0},
 		arch.SyscallArgument{Value: 0},
@@ -272,15 +274,7 @@ func (t *thread) createStub() (*thread, error) {
 	// We unfortunately don't have a handy part of memory to write the wait
 	// status. If the wait succeeds, we'll assume that it was the SIGSTOP.
 	// If the child actually exited, the attach below will fail.
-	_, err = t.syscallIgnoreInterrupt(
-		&t.initRegs,
-		unix.SYS_WAIT4,
-		arch.SyscallArgument{Value: uintptr(pid)},
-		arch.SyscallArgument{Value: 0},
-		arch.SyscallArgument{Value: unix.WALL | unix.WUNTRACED},
-		arch.SyscallArgument{Value: 0},
-		arch.SyscallArgument{Value: 0},
-		arch.SyscallArgument{Value: 0})
+	_, err = unix.Wait4(int(pid), nil, unix.WALL|unix.WUNTRACED, nil)
 	if err != nil {
 		return nil, fmt.Errorf("waiting on stub process: %v", err)
 	}

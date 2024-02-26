@@ -134,7 +134,6 @@ func (t *thread) adjustInitRegsRip() {
 
 // Pass the expected PPID to the child via R15 when creating stub process.
 func initChildProcessPPID(initregs *arch.Registers, ppid int32) {
-	initregs.R15 = uint64(ppid)
 	// Rbx has to be set to 1 when creating stub process.
 	initregs.Rbx = _NEW_STUB
 }
