@@ -168,6 +168,9 @@ func (t *syscallThread) attach() error {
 }
 
 func (t *syscallThread) syscall(sysno uintptr, args ...arch.SyscallArgument) (uintptr, error) {
+	if t.subproc.dead.Load() {
+		return 0, errDeadSubprocess
+	}
 	sentryMsg := t.sentryMessage
 	stubMsg := t.stubMessage
 	sentryMsg.sysno = uint64(sysno)
