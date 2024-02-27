@@ -364,7 +364,7 @@
             <div class="panel panel-default" style="border:none;box-shadow:none;">
               <div class="panel-body">
                 <h2 style="color:#272261">
-                  <a href="blog/2023/06/20/gpu-pytorch-stable-diffusion/" class="feature-link">
+                  <a href="docs/user_guide/gpu/" class="feature-link">
                     GPU &amp; CUDA Support
                   </a>
                 </h2>
