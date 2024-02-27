@@ -319,6 +319,78 @@ int TestInvalidAbortClearsCS() {
   return 0;
 }
 
+// rseq.cpu_id_start is overwritten by RSEQ fence.
+int TestMembarrierResetsCpuIdStart() {
+  struct rseq r = {};
+  int ret = sys_rseq(&r, sizeof(r), 0, kRseqSignature);
+  if (sys_errno(ret) != 0) {
+    return 1;
+  }
+  ret = sys_membarrier(MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED_RSEQ, 0);
+  if (sys_errno(ret) != 0) {
+    return 1;
+  }
+  constexpr size_t kStackSize = 2 << 20;  // 2 MB
+  uintptr_t child_stack_start =
+      sys_mmap(nullptr, kStackSize, PROT_READ | PROT_WRITE,
+               MAP_PRIVATE | MAP_ANONYMOUS | MAP_STACK, -1, 0);
+  if (sys_errno(child_stack_start) != 0) {
+    return 1;
+  }
+  uintptr_t child_stack_end = child_stack_start + kStackSize;
+
+  // Set cpu_id_start to a negative value.
+  __atomic_store_n(&r.cpu_id_start, 0xffffffff, __ATOMIC_RELAXED);
+
+  // Start a thread to invoke the RSEQ fence.
+  uint32_t child_cleartid = 0;
+  bool fenced = false;
+  auto tid = clone(
+      +[](void* arg) {
+        int ret = sys_membarrier(MEMBARRIER_CMD_PRIVATE_EXPEDITED_RSEQ, 0);
+        if (sys_errno(ret) != 0) {
+          sys_exit_group(1);
+        }
+        __atomic_store_n(static_cast<bool*>(arg), true, __ATOMIC_RELAXED);
+        return 0;
+      },
+      child_stack_end,
+      CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD |
+          CLONE_CHILD_CLEARTID | CLONE_CHILD_SETTID,
+      &fenced, &child_cleartid);
+  if (sys_errno(tid) != 0) {
+    return 1;
+  }
+
+  // Expect that cpu_id_start will be overwritten with a real CPU number when
+  // the thread invokes the RSEQ fence.
+  while (true) {
+    if (__atomic_load_n(&fenced, __ATOMIC_ACQUIRE)) {
+      if (static_cast<int32_t>(
+              __atomic_load_n(&r.cpu_id_start, __ATOMIC_RELAXED)) < 0) {
+        return 1;
+      }
+      break;
+    }
+  }
+
+  // Wait for the thread to exit.
+  while (true) {
+    uint32_t cur_child_cleartid =
+        __atomic_load_n(&child_cleartid, __ATOMIC_RELAXED);
+    if (cur_child_cleartid == 0) {
+      break;
+    }
+    auto ret =
+        sys_futex(&child_cleartid, FUTEX_WAIT, cur_child_cleartid, nullptr);
+    if (ret != 0 && sys_errno(ret) != EAGAIN && sys_errno(ret) != EINTR) {
+      return 1;
+    }
+  }
+
+  return 0;
+}
+
 // Exit codes:
 //  0 - Pass
 //  1 - Fail
@@ -368,6 +440,9 @@ extern "C" int main(int argc, char** argv, char** envp) {
   }
   if (strcmp(argv[1], kRseqTestInvalidAbortClearsCS) == 0) {
     return TestInvalidAbortClearsCS();
+  }
+  if (strcmp(argv[1], kRseqTestMembarrierResetsCpuIdStart) == 0) {
+    return TestMembarrierResetsCpuIdStart();
   }
 
   return 3;

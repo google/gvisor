@@ -43,3 +43,43 @@ raw_syscall:
 
   .size  raw_syscall,.-raw_syscall
   .section  .note.GNU-stack,"",@progbits
+
+  .text
+  .globl  clone
+  .type   clone, @function
+
+clone:
+  // Initially:
+  // %rdi = fn
+  // %rsi = stack
+  // %edx = flags
+  // %rcx = arg
+  // %r8 = child_tid
+  push %rbx
+  push %r12
+  mov %rdi,%rbx
+  mov %rcx,%r12
+  mov %edx,%edi  // flags
+                 // stack already in %rsi
+  xor %edx,%edx  // parent_tid
+  mov %r8,%r10   // child_tid
+  xor %r9d,%r9d  // tls
+  mov $56,%rax   // SYS_clone
+  syscall        // clobbers %rcx, %r11
+  cmp $0,%rax
+  je child
+  pop %r12
+  pop %rbx
+  ret
+child:
+  mov %rsi,%rsp
+  xor %rbp,%rbp
+  mov %r12,%rdi
+  call *%rbx
+  mov %rax,%rdi
+  mov $60,%rax  // SYS_exit
+  syscall
+  hlt
+
+  .size  clone,.-clone
+  .section  .note.GNU-stack,"",@progbits
