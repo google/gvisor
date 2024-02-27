@@ -51,11 +51,12 @@ http_archive(
         "//tools:rules_go_symbols.patch",
         # Allow for patching of the go_sdk.
         "//tools:rules_go_sdk.patch",
+        "//tools:rules_go_facts.patch",
     ],
-    sha256 = "7c76d6236b28ff695aa28cf35f95de317a9472fd1fb14ac797c9bf684f09b37c",
+    sha256 = "80a98277ad1311dacd837f9b16db62887702e9f1d1c4c9f796d0121a46c8e184",
     urls = [
-        "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.44.2/rules_go-v0.44.2.zip",
-        "https://github.com/bazelbuild/rules_go/releases/download/v0.44.2/rules_go-v0.44.2.zip",
+        "https://mirror.bazel.build/github.com/bazelbuild/rules_go/releases/download/v0.46.0/rules_go-v0.46.0.zip",
+        "https://github.com/bazelbuild/rules_go/releases/download/v0.46.0/rules_go-v0.46.0.zip",
     ],
 )
 
@@ -95,7 +96,7 @@ go_download_sdk(
     # time on our continuous integration.
     patch = "//tools:go_types_memoize.patch",
     patch_strip = 2,
-    version = "1.21.6",
+    version = "1.22.0",
 )
 
 gazelle_dependencies()
@@ -113,8 +114,8 @@ go_repository(
 go_repository(
     name = "org_golang_x_sys",
     importpath = "golang.org/x/sys",
-    sum = "h1:xWw16ngr6ZMtmxDyKyIgsE93KNKz5HKmMa3b8ALHidU=",
-    version = "v0.16.0",
+    sum = "h1:25cE3gD+tdBA7lp7QfhuV+rJiE9YXTcS3VG1SqssI/Y=",
+    version = "v0.17.0",
 )
 
 go_repository(
