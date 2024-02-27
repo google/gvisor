@@ -43,3 +43,15 @@ raw_syscall:
 
   .size  raw_syscall,.-raw_syscall
   .section  .note.GNU-stack,"",@progbits
+
+  .text
+  .globl  clone
+  .type   clone, @function
+
+clone:
+  // TODO(b/326665974)
+  mov  x0,#-38  // ENOSYS
+  ret
+
+  .size  clone,.-clone
+  .section  .note.GNU-stack,"",@progbits

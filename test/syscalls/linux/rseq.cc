@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <errno.h>
+#include <linux/membarrier.h>
 #include <signal.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
@@ -195,6 +196,18 @@ TEST(RseqTest, InvalidAbortClearsCS) {
 
   RunChildTest(kRseqTestInvalidAbortClearsCS, 0);
 }
+
+// TODO(b/326665974): Implement clone() in rseq/start_arm64.S.
+#if defined(__x86_64__)
+TEST(RseqTest, MembarrierResetsCpuIdStart) {
+  SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(RSeqSupported()));
+  int cmds = syscall(SYS_membarrier, MEMBARRIER_CMD_QUERY, 0);
+  SKIP_IF(cmds < 0);
+  SKIP_IF((cmds & MEMBARRIER_CMD_PRIVATE_EXPEDITED_RSEQ) == 0);
+
+  RunChildTest(kRseqTestMembarrierResetsCpuIdStart, 0);
+}
+#endif
 
 }  // namespace
 

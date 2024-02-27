@@ -34,6 +34,8 @@ constexpr char kRseqTestAbortSignature[] = "abort-signature";
 constexpr char kRseqTestAbortPreCommit[] = "abort-precommit";
 constexpr char kRseqTestAbortClearsCS[] = "abort-clears-cs";
 constexpr char kRseqTestInvalidAbortClearsCS[] = "invalid-abort-clears-cs";
+constexpr char kRseqTestMembarrierResetsCpuIdStart[] =
+    "membarrier-resets-cpu-id-start";
 
 }  // namespace testing
 }  // namespace gvisor

@@ -201,26 +201,20 @@ func (app *runApp) execute(t *Task) taskRunState {
 	if t.rseqPreempted {
 		t.rseqPreempted = false
 		if t.rseqAddr != 0 || t.oldRSeqCPUAddr != 0 {
-			// Linux writes the CPU on every preemption. We only do
-			// so if it changed. Thus we may delay delivery of
-			// SIGSEGV if rseqAddr/oldRSeqCPUAddr is invalid.
-			cpu := int32(hostcpu.GetCPU())
-			if t.rseqCPU != cpu {
-				t.rseqCPU = cpu
-				if err := t.rseqCopyOutCPU(); err != nil {
-					t.Debugf("Failed to copy CPU to %#x for rseq: %v", t.rseqAddr, err)
-					t.forceSignal(linux.SIGSEGV, false)
-					t.SendSignal(SignalInfoPriv(linux.SIGSEGV))
-					// Re-enter the task run loop for signal delivery.
-					return (*runApp)(nil)
-				}
-				if err := t.oldRSeqCopyOutCPU(); err != nil {
-					t.Debugf("Failed to copy CPU to %#x for old rseq: %v", t.oldRSeqCPUAddr, err)
-					t.forceSignal(linux.SIGSEGV, false)
-					t.SendSignal(SignalInfoPriv(linux.SIGSEGV))
-					// Re-enter the task run loop for signal delivery.
-					return (*runApp)(nil)
-				}
+			t.rseqCPU = int32(hostcpu.GetCPU())
+			if err := t.rseqCopyOutCPU(); err != nil {
+				t.Debugf("Failed to copy CPU to %#x for rseq: %v", t.rseqAddr, err)
+				t.forceSignal(linux.SIGSEGV, false)
+				t.SendSignal(SignalInfoPriv(linux.SIGSEGV))
+				// Re-enter the task run loop for signal delivery.
+				return (*runApp)(nil)
+			}
+			if err := t.oldRSeqCopyOutCPU(); err != nil {
+				t.Debugf("Failed to copy CPU to %#x for old rseq: %v", t.oldRSeqCPUAddr, err)
+				t.forceSignal(linux.SIGSEGV, false)
+				t.SendSignal(SignalInfoPriv(linux.SIGSEGV))
+				// Re-enter the task run loop for signal delivery.
+				return (*runApp)(nil)
 			}
 		}
 		t.rseqInterrupt()
