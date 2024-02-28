@@ -27,7 +27,7 @@
 #if defined(__x86_64__)
 #define SYS_getdents64 217
 #elif defined(__aarch64__)
-#define SYS_getdents64 217
+#define SYS_getdents64 61
 #elif defined(__riscv)
 #define SYS_getdents64 61
 #else
