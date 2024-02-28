@@ -41,9 +41,10 @@ func (t *Task) BlockWithTimeout(C chan struct{}, haveTimeout bool, timeout time.
 		return timeout, t.block(C, nil)
 	}
 
-	start := t.Kernel().MonotonicClock().Now()
+	clock := t.Kernel().MonotonicClock()
+	start := clock.Now()
 	deadline := start.Add(timeout)
-	err := t.BlockWithDeadline(C, true, deadline)
+	err := t.BlockWithDeadlineFrom(C, clock, true, deadline)
 
 	// Timeout, explicitly return a remaining duration of 0.
 	if linuxerr.Equals(linuxerr.ETIMEDOUT, err) {
@@ -54,7 +55,7 @@ func (t *Task) BlockWithTimeout(C chan struct{}, haveTimeout bool, timeout time.
 	// return due to a timeout, we may have used up any of the remaining time
 	// since then. We cap the remaining timeout to 0 to make it easier to
 	// directly use the returned duration.
-	end := t.Kernel().MonotonicClock().Now()
+	end := clock.Now()
 	remainingTimeout := timeout - end.Sub(start)
 	if remainingTimeout < 0 {
 		remainingTimeout = 0
@@ -80,12 +81,22 @@ func (t *Task) BlockWithTimeoutOn(w waiter.Waitable, mask waiter.EventMask, time
 //
 // Preconditions: The caller must be running on the task goroutine.
 func (t *Task) BlockWithDeadline(C <-chan struct{}, haveDeadline bool, deadline ktime.Time) error {
+	return t.BlockWithDeadlineFrom(C, t.Kernel().MonotonicClock(), haveDeadline, deadline)
+}
+
+// BlockWithDeadlineFrom is similar to BlockWithDeadline, except it uses the
+// passed clock (instead of application monotonic clock).
+//
+// Most clients should use BlockWithDeadline or BlockWithTimeout instead.
+//
+// Preconditions: The caller must be running on the task goroutine.
+func (t *Task) BlockWithDeadlineFrom(C <-chan struct{}, clock ktime.Clock, haveDeadline bool, deadline ktime.Time) error {
 	if !haveDeadline {
 		return t.block(C, nil)
 	}
 
 	// Start the timeout timer.
-	t.blockingTimer.Swap(ktime.Setting{
+	t.blockingTimer.SetClock(clock, ktime.Setting{
 		Enabled: true,
 		Next:    deadline,
 	})
@@ -100,26 +111,6 @@ func (t *Task) BlockWithDeadline(C <-chan struct{}, haveDeadline bool, deadline 
 	}
 
 	return err
-}
-
-// BlockWithDeadlineFrom is similar to BlockWithDeadline, except it uses the
-// passed clock (instead of application monotonic clock).
-//
-// Most clients should use BlockWithDeadline or BlockWithTimeout instead.
-//
-// Preconditions: The caller must be running on the task goroutine.
-func (t *Task) BlockWithDeadlineFrom(C <-chan struct{}, clock ktime.Clock, haveDeadline bool, deadline ktime.Time) error {
-	if !haveDeadline {
-		return t.block(C, nil)
-	}
-	notifier, tchan := ktime.NewChannelNotifier()
-	timer := ktime.NewTimer(clock, notifier)
-	timer.Swap(ktime.Setting{
-		Enabled: true,
-		Next:    deadline,
-	})
-	defer timer.Destroy()
-	return t.block(C, tchan)
 }
 
 // Block implements context.Context.Block
