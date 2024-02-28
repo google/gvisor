@@ -24,21 +24,20 @@ import (
 // Iperf is for the client side of `iperf`.
 type Iperf struct {
 	Num      int // Number of bytes to send in KB.
-	Length   int // Length in KB.
 	Parallel int // Number of parallel threads.
 }
 
 // MakeCmd returns a iperf client command.
 func (i *Iperf) MakeCmd(host string, port int) []string {
 	cmd := []string{"iperf"}
-	cmd = append(cmd, "--format", "K")                    // Output in KBytes.
-	cmd = append(cmd, "--realtime")                       // Measured in realtime.
-	cmd = append(cmd, "--num", fmt.Sprintf("%dK", i.Num)) // Number of bytes to send in KB.
-	len := 128
-	if i.Length > 0 {
-		len = i.Length
+	cmd = append(cmd, "--format", "K") // Output in KBytes.
+	cmd = append(cmd, "--realtime")    // Measured in realtime.
+	cmd = append(cmd, "--len", "128K") // Length of data buffer per request.
+	n := i.Num
+	if i.Parallel > 0 {
+		n = i.Num / i.Parallel
 	}
-	cmd = append(cmd, "--len", fmt.Sprintf("%dK", len)) // Length in KB.
+	cmd = append(cmd, "--num", fmt.Sprintf("%dK", n)) // Number of requests to send.
 	cmd = append(cmd, "--client", host)
 	cmd = append(cmd, "--port", fmt.Sprintf("%d", port))
 	if i.Parallel > 0 {
@@ -55,7 +54,7 @@ func (i *Iperf) Report(b *testing.B, output string) {
 	if err != nil {
 		b.Fatalf("failed to parse bandwitdth from %s: %v", output, err)
 	}
-	b.SetBytes(int64(i.Length) * 1024) // Measure Bytes/sec for b.N, although below is iperf output.
+	b.SetBytes(128 * 1024) // Measure Bytes/sec for b.N, although below is iperf output.
 	ReportCustomMetric(b, bW*1024, "bandwidth" /*metric name*/, "bytes_per_second" /*unit*/)
 }
 
