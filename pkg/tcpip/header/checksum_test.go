@@ -17,6 +17,7 @@
 package header_test
 
 import (
+	"bytes"
 	"fmt"
 	"math/rand"
 	"sync"
@@ -87,6 +88,24 @@ func TestICMPv4Checksum(t *testing.T) {
 	testICMPChecksum(t, h.Checksum, func() uint16 {
 		return header.ICMPv4Checksum(h, b.Checksum(0))
 	}, want, fmt.Sprintf("header: {% x} data {% x}", h, b.Flatten()))
+}
+
+func TestICMPv4ChecksumUpdate(t *testing.T) {
+	const icmpIdent = 0
+
+	data := make([]byte, header.ICMPv4MinimumSize)
+	h := header.ICMPv4(data)
+	h.SetType(header.ICMPv4EchoReply)
+	h.SetCode(header.ICMPv4UnusedCode)
+	h.SetIdent(icmpIdent)
+	h.SetChecksum(^checksum.Checksum(data, 0))
+
+	updated := header.ICMPv4(bytes.Clone(data))
+	// Perform an incremental checksum update where we aren't actually changing the ID.
+	updated.SetIdentWithChecksumUpdate(icmpIdent)
+	if updated.Checksum() != h.Checksum() {
+		t.Errorf("got updated.Checksum() = %x, want = %x", updated.Checksum(), h.Checksum())
+	}
 }
 
 func TestICMPv6Checksum(t *testing.T) {

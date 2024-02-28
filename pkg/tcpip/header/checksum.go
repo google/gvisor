@@ -57,6 +57,9 @@ func checksumUpdate2ByteAlignedUint16(xsum, old, new uint16) uint16 {
 	//        checksum C, the new checksum C' is:
 	//
 	//                C' = C + (-m) + m' = C + (m' - m)
+	if old == new {
+		return xsum
+	}
 	return checksum.Combine(xsum, checksum.Combine(new, ^old))
 }
 
