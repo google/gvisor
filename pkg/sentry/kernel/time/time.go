@@ -421,8 +421,9 @@ func (s Setting) At(now Time) (Setting, uint64) {
 //
 // +stateify savable
 type Timer struct {
-	// clock is the time source. clock is immutable.
-	clock Clock
+	// clock is the time source. clock is protected by mu and clockSeq.
+	clockSeq sync.SeqCount `state:"nosave"`
+	clock    Clock
 
 	// listener is notified of expirations. listener is immutable.
 	listener Listener
@@ -519,11 +520,17 @@ func (t *Timer) runGoroutine() {
 // Tick requests that the Timer immediately check for expirations and
 // re-evaluate when it should next check for expirations.
 func (t *Timer) Tick() {
-	now := t.clock.Now()
+	// Optimistically read t.Clock().Now() before locking t.mu, as t.clock is
+	// unlikely to change.
+	unlockedClock := t.Clock()
+	now := unlockedClock.Now()
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.paused {
 		return
+	}
+	if t.clock != unlockedClock {
+		now = t.clock.Now()
 	}
 	s, exp := t.setting.At(now)
 	t.setting = s
@@ -576,11 +583,17 @@ func (t *Timer) Resume() {
 // Preconditions: The Timer must not be paused (since its Setting cannot
 // be advanced to the current time while it is paused.)
 func (t *Timer) Get() (Time, Setting) {
-	now := t.clock.Now()
+	// Optimistically read t.Clock().Now() before locking t.mu, as t.clock is
+	// unlikely to change.
+	unlockedClock := t.Clock()
+	now := unlockedClock.Now()
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.paused {
 		panic(fmt.Sprintf("Timer.Get called on paused Timer %p", t))
+	}
+	if t.clock != unlockedClock {
+		now = t.clock.Now()
 	}
 	s, exp := t.setting.At(now)
 	t.setting = s
@@ -613,11 +626,17 @@ func (t *Timer) Swap(s Setting) (Time, Setting) {
 //   - f cannot call any Timer methods since it is called with the Timer mutex
 //     locked.
 func (t *Timer) SwapAnd(s Setting, f func()) (Time, Setting) {
-	now := t.clock.Now()
+	// Optimistically read t.Clock().Now() before locking t.mu, as t.clock is
+	// unlikely to change.
+	unlockedClock := t.Clock()
+	now := unlockedClock.Now()
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	if t.paused {
 		panic(fmt.Sprintf("Timer.SwapAnd called on paused Timer %p", t))
+	}
+	if t.clock != unlockedClock {
+		now = t.clock.Now()
 	}
 	oldS, oldExp := t.setting.At(now)
 	if oldExp > 0 {
@@ -639,15 +658,23 @@ func (t *Timer) SwapAnd(s Setting, f func()) (Time, Setting) {
 	return now, oldS
 }
 
-// Atomically invokes f atomically with respect to expirations of t; that is, t
-// cannot generate expirations while f is being called.
-//
-// Preconditions: f cannot call any Timer methods since it is called with the
-// Timer mutex locked.
-func (t *Timer) Atomically(f func()) {
+// SetClock atomically changes a Timer's Clock and Setting.
+func (t *Timer) SetClock(c Clock, s Setting) {
+	var now Time
+	if s.Enabled {
+		now = c.Now()
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	f()
+	t.setting = s
+	if oldC := t.clock; oldC != c {
+		oldC.EventUnregister(&t.entry)
+		c.EventRegister(&t.entry)
+		t.clockSeq.BeginWrite()
+		t.clock = c
+		t.clockSeq.EndWrite()
+	}
+	t.resetKickerLocked(now)
 }
 
 // Preconditions: t.mu must be locked.
@@ -666,7 +693,7 @@ func (t *Timer) resetKickerLocked(now Time) {
 
 // Clock returns the Clock used by t.
 func (t *Timer) Clock() Clock {
-	return t.clock
+	return SeqAtomicLoadClock(&t.clockSeq, &t.clock)
 }
 
 // ChannelNotifier is a Listener that sends on a channel.
