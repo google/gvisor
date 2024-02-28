@@ -223,6 +223,7 @@ func Init() {
 					nvgpu.NV2080_CTRL_CMD_BUS_GET_PCI_BAR_INFO:                             rmControlSimple,
 					nvgpu.NV2080_CTRL_CMD_BUS_GET_INFO_V2:                                  rmControlSimple,
 					nvgpu.NV2080_CTRL_CMD_BUS_GET_PCIE_SUPPORTED_GPU_ATOMICS:               rmControlSimple,
+					nvgpu.NV2080_CTRL_CMD_BUS_GET_C2C_INFO:                                 rmControlSimple,
 					nvgpu.NV2080_CTRL_CMD_CE_GET_ALL_CAPS:                                  rmControlSimple,
 					nvgpu.NV2080_CTRL_CMD_FB_GET_INFO_V2:                                   rmControlSimple,
 					nvgpu.NV2080_CTRL_CMD_GPU_GET_INFO_V2:                                  rmControlSimple,
@@ -280,10 +281,14 @@ func Init() {
 				allocationClass: map[uint32]allocationClassHandler{
 					nvgpu.NV01_ROOT:               rmAllocSimple[nvgpu.Handle],
 					nvgpu.NV01_ROOT_NON_PRIV:      rmAllocSimple[nvgpu.Handle],
+					nvgpu.NV01_MEMORY_SYSTEM:      rmAllocSimple[nvgpu.NV_MEMORY_ALLOCATION_PARAMS],
+					nvgpu.NV01_MEMORY_LOCAL_USER:  rmAllocSimple[nvgpu.NV_MEMORY_ALLOCATION_PARAMS],
 					nvgpu.NV01_ROOT_CLIENT:        rmAllocSimple[nvgpu.Handle],
 					nvgpu.NV01_EVENT_OS_EVENT:     rmAllocEventOSEvent,
 					nvgpu.NV01_DEVICE_0:           rmAllocSimple[nvgpu.NV0080_ALLOC_PARAMETERS],
+					nvgpu.NV_MEMORY_FABRIC:        rmAllocSimple[nvgpu.NV00F8_ALLOCATION_PARAMETERS],
 					nvgpu.NV20_SUBDEVICE_0:        rmAllocSimple[nvgpu.NV2080_ALLOC_PARAMETERS],
+					nvgpu.NV50_MEMORY_VIRTUAL:     rmAllocSimple[nvgpu.NV_MEMORY_ALLOCATION_PARAMS],
 					nvgpu.NV50_P2P:                rmAllocSimple[nvgpu.NV503B_ALLOC_PARAMETERS],
 					nvgpu.NV50_THIRD_PARTY_P2P:    rmAllocSimple[nvgpu.NV503C_ALLOC_PARAMETERS],
 					nvgpu.GT200_DEBUGGER:          rmAllocSimple[nvgpu.NV83DE_ALLOC_PARAMETERS],
@@ -304,7 +309,6 @@ func Init() {
 					nvgpu.HOPPER_USERMODE_A:       rmAllocSimple[nvgpu.NV_HOPPER_USERMODE_A_PARAMS],
 					nvgpu.GF100_SUBDEVICE_MASTER:  rmAllocNoParams,
 					nvgpu.TURING_USERMODE_A:       rmAllocNoParams,
-					nvgpu.NV_MEMORY_FABRIC:        rmAllocSimple[nvgpu.NV00F8_ALLOCATION_PARAMETERS],
 				},
 			}
 		})
@@ -312,8 +316,8 @@ func Init() {
 		// 525.89.02 is an intermediate unqualified version from the main branch.
 		v525_89_02 := v525_60_13
 
-		// The following versions do not exist on the main branch. They branched off
-		// the main branch at 525.89.02.
+		// The following versions do not exist on the main branch. They branched
+		// off the main branch at 525.89.02.
 		v525_105_17Checksum := "c635a21a282c9b53485f19ebb64a0f4b536a968b94d4d97629e0bc547a58142a"
 		v525_105_17 := addDriverABI(525, 105, 17, v525_105_17Checksum, v525_89_02)
 		v525_125_06Checksum := "b5275689f4a833c37a507717ac8f0ee2f1f5cd2b7e236ffa70aad8dfb7455b9d"
@@ -351,10 +355,12 @@ func Init() {
 		// 535.113.01 is an intermediate unqualified version from the main branch.
 		v535_113_01 := v535_104_05
 
-		// The following do not exist on the main branch. They branched off the main
-		// branch at 535.113.01.
+		// The following do not exist on the main branch. They branched off the
+		// main branch at 535.113.01.
 		v535_129_03 := addDriverABI(535, 129, 03, "e6dca5626a2608c6bb2a046cfcb7c1af338b9e961a7dd90ac09bb8a126ff002e", v535_113_01)
 		_ = addDriverABI(535, 154, 05, "7e95065caa6b82de926110f14827a61972eb12c200e863a29e9fb47866eaa898", v535_129_03)
+
+		// TODO: Update NV_MEMORY_ALLOCATION_PARAMS when adding >=545.23.06.
 	})
 }
 
