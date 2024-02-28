@@ -19,12 +19,14 @@ const (
 	NV01_ROOT                        = 0x00000000
 	NV01_ROOT_NON_PRIV               = 0x00000001
 	NV01_MEMORY_SYSTEM               = 0x0000003e
+	NV01_MEMORY_LOCAL_USER           = 0x00000040
 	NV01_ROOT_CLIENT                 = 0x00000041
 	NV01_MEMORY_SYSTEM_OS_DESCRIPTOR = 0x00000071
 	NV01_EVENT_OS_EVENT              = 0x00000079
 	NV01_DEVICE_0                    = 0x00000080
 	NV_MEMORY_FABRIC                 = 0x000000f8
 	NV20_SUBDEVICE_0                 = 0x00002080
+	NV50_MEMORY_VIRTUAL              = 0x000050a0
 	NV50_P2P                         = 0x0000503b
 	NV50_THIRD_PARTY_P2P             = 0x0000503c
 	GT200_DEBUGGER                   = 0x000083de
@@ -84,6 +86,36 @@ type NV0080_ALLOC_PARAMETERS struct {
 // +marshal
 type NV2080_ALLOC_PARAMETERS struct {
 	SubDeviceID uint32
+}
+
+// NV_MEMORY_ALLOCATION_PARAMS is the alloc params type for various NV*_MEMORY*
+// allocation classes, from src/common/sdk/nvidia/inc/nvos.h.
+//
+// +marshal
+type NV_MEMORY_ALLOCATION_PARAMS struct {
+	Owner         uint32
+	Type          uint32
+	Flags         uint32
+	Width         uint32
+	Height        uint32
+	Pitch         int32
+	Attr          uint32
+	Attr2         uint32
+	Format        uint32
+	ComprCovg     uint32
+	ZcullCovg     uint32
+	_             uint32
+	RangeLo       uint64
+	RangeHi       uint64
+	Size          uint64
+	Alignment     uint64
+	Offset        uint64
+	Limit         uint64
+	Address       P64
+	CtagOffset    uint32
+	HVASpace      Handle
+	InternalFlags uint32
+	Tag           uint32
 }
 
 // NV503B_ALLOC_PARAMETERS is the alloc params type for NV50_P2P, from
