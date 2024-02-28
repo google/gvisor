@@ -132,6 +132,7 @@ const (
 	NV2080_CTRL_CMD_BUS_GET_PCI_BAR_INFO               = 0x20801803
 	NV2080_CTRL_CMD_BUS_GET_INFO_V2                    = 0x20801823
 	NV2080_CTRL_CMD_BUS_GET_PCIE_SUPPORTED_GPU_ATOMICS = 0x2080182a
+	NV2080_CTRL_CMD_BUS_GET_C2C_INFO                   = 0x2080182b
 )
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080ce.h:
