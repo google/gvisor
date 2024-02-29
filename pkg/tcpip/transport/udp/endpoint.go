@@ -530,6 +530,8 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 		e.stack.Stats().UDP.PacketSendErrors.Increment()
 		return 0, err
 	}
+	// Assume UDP is used for data transfer.
+	udpInfo.ctx.KickQDisc(true /* pingpong */)
 
 	// Track count of packets sent.
 	e.stack.Stats().UDP.PacketsSent.Increment()

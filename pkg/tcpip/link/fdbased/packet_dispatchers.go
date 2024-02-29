@@ -154,6 +154,8 @@ type readVDispatcher struct {
 
 	// buf is the iovec buffer that contains the packet contents.
 	buf *iovecBuffer
+
+	pkts stack.PacketBufferList
 }
 
 func newReadVDispatcher(fd int, e *endpoint) (linkDispatcher, error) {
@@ -176,7 +178,9 @@ func (d *readVDispatcher) release() {
 }
 
 // dispatch reads one packet from the file descriptor and dispatches it.
-func (d *readVDispatcher) dispatch() (bool, tcpip.Error) {
+func (d *readVDispatcher) dispatch(index int) (bool, tcpip.Error) {
+	defer d.pkts.Reset()
+
 	n, err := rawfile.BlockingReadvUntilStopped(d.EFD, d.fd, d.buf.nextIovecs())
 	if n <= 0 || err != nil {
 		return false, err
@@ -210,11 +214,13 @@ func (d *readVDispatcher) dispatch() (bool, tcpip.Error) {
 			return true, nil
 		}
 	}
+	pkt.NetworkProtocolNumber = p
+	d.pkts.PushBack(pkt)
 
 	d.e.mu.RLock()
 	dsp := d.e.dispatcher
 	d.e.mu.RUnlock()
-	dsp.DeliverNetworkPacket(p, pkt)
+	dsp.DeliverNetworkPacket(d.pkts, index)
 
 	return true, nil
 }
@@ -237,6 +243,8 @@ type recvMMsgDispatcher struct {
 	// array is passed as the parameter to recvmmsg call to retrieve
 	// potentially more than 1 packet per unix.
 	msgHdrs []rawfile.MMsgHdr
+
+	pkts stack.PacketBufferList
 }
 
 const (
@@ -272,7 +280,9 @@ func (d *recvMMsgDispatcher) release() {
 
 // recvMMsgDispatch reads more than one packet at a time from the file
 // descriptor and dispatches it.
-func (d *recvMMsgDispatcher) dispatch() (bool, tcpip.Error) {
+func (d *recvMMsgDispatcher) dispatch(index int) (bool, tcpip.Error) {
+	defer d.pkts.Reset()
+
 	// Fill message headers.
 	for k := range d.msgHdrs {
 		if d.msgHdrs[k].Msg.Iovlen > 0 {
@@ -289,21 +299,16 @@ func (d *recvMMsgDispatcher) dispatch() (bool, tcpip.Error) {
 	if nMsgs == -1 || err != nil {
 		return false, err
 	}
-	// Process each of received packets.
-	// Keep a list of packets so we can DecRef outside of the loop.
-	var pkts stack.PacketBufferList
 
 	d.e.mu.RLock()
-	dsp := d.e.dispatcher
+	dsp := d.e.dispatcher // TODO: Can this really change?
 	d.e.mu.RUnlock()
 
-	defer func() { pkts.DecRef() }()
 	for k := 0; k < nMsgs; k++ {
 		n := int(d.msgHdrs[k].Len)
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Payload: d.bufs[k].pullBuffer(n),
 		})
-		pkts.PushBack(pkt)
 
 		// Mark that this iovec has been processed.
 		d.msgHdrs[k].Msg.Iovlen = 0
@@ -334,9 +339,10 @@ func (d *recvMMsgDispatcher) dispatch() (bool, tcpip.Error) {
 				continue
 			}
 		}
-
-		dsp.DeliverNetworkPacket(p, pkt)
+		pkt.NetworkProtocolNumber = p
+		d.pkts.PushBack(pkt)
 	}
 
+	dsp.DeliverNetworkPacket(d.pkts, index)
 	return true, nil
 }

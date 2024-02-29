@@ -1651,16 +1651,27 @@ func (e *Endpoint) Write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 	// and opts.EndOfRecord are also ignored.
 
 	e.LockUser()
-	defer e.UnlockUser()
+
+	// Is this a bulk transfer or synchronous messaging? Bulk transfers
+	// don't wait for ACKs, but synchronous traffic will only send when all
+	// outstanding data is ACK'd.
+	pingpong := e.snd.SndUna == e.snd.SndNxt
 
 	// Return if either we didn't queue anything or if an error occurred while
 	// attempting to queue data.
 	nextSeg, n, err := e.queueSegment(p, opts)
 	if n == 0 || err != nil {
+		e.UnlockUser()
 		return 0, err
 	}
 
-	e.sendData(nextSeg)
+	e.sendDataWithDrain(nextSeg, false)
+	rt := e.route
+	e.UnlockUser()
+
+	// Don't hold the lock while draining the qdisc.
+	rt.KickQDisc(pingpong)
+
 	return int64(n), nil
 }
 

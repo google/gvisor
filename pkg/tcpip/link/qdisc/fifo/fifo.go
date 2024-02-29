@@ -145,6 +145,8 @@ func (d *discipline) WritePacket(pkt *stack.PacketBuffer) tcpip.Error {
 	return nil
 }
 
+func (*discipline) Kick(bool) {}
+
 func (d *discipline) Close() {
 	d.closed.Store(qDiscClosed)
 	for i := range d.dispatchers {

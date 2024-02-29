@@ -175,7 +175,10 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 // then nothing happens.
 //
 // Attach implements stack.LinkEndpoint.Attach.
-func (ep *endpoint) Attach(networkDispatcher stack.NetworkDispatcher) {
+//
+// TODO(b/240191988): This weird structure is unnecessary. We shouldn't return
+// so much and re-alloc things; we should just have a big for loop.
+func (ep *endpoint) Attach(networkDispatcher stack.NetworkDispatcher) int {
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
 	// nil means the NIC is being removed.
@@ -183,7 +186,7 @@ func (ep *endpoint) Attach(networkDispatcher stack.NetworkDispatcher) {
 		ep.stopFD.Stop()
 		ep.Wait()
 		ep.networkDispatcher = nil
-		return
+		return 1
 	}
 	if networkDispatcher != nil && ep.networkDispatcher == nil {
 		ep.networkDispatcher = networkDispatcher
@@ -204,6 +207,8 @@ func (ep *endpoint) Attach(networkDispatcher stack.NetworkDispatcher) {
 			}
 		}()
 	}
+	// TODO(b/240191988): Support multiple dispatchers.
+	return 1
 }
 
 // IsAttached implements stack.LinkEndpoint.IsAttached.
@@ -323,8 +328,16 @@ func (ep *endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error)
 	return pkts.Len(), nil
 }
 
+type QueueingNetworkDispatcher interface {
+	stack.NetworkDispatcher
+
+	QueueNetworkPackets(stack.PacketBufferList, int)
+	FinishDeliverNetworkPackets(int)
+}
+
 func (ep *endpoint) dispatch() (bool, tcpip.Error) {
 	var views []*buffer.View
+	var pkts stack.PacketBufferList
 
 	for {
 		stopped, errno := rawfile.BlockingPollUntilStopped(ep.stopFD.EFD, ep.fd, unix.POLLIN|unix.POLLERR)
@@ -338,12 +351,15 @@ func (ep *endpoint) dispatch() (bool, tcpip.Error) {
 			return true, nil
 		}
 
+		ep.mu.RLock()
+		disp := ep.networkDispatcher.(QueueingNetworkDispatcher)
+		ep.mu.RUnlock()
+
 		// Avoid the cost of the poll syscall if possible by peeking
 		// until there are no packets left.
 		for {
 			// We can receive multiple packets at once.
 			nReceived, rxIndex := ep.control.RX.Peek()
-
 			if nReceived == 0 {
 				break
 			}
@@ -359,7 +375,8 @@ func (ep *endpoint) dispatch() (bool, tcpip.Error) {
 				// buffer.
 				descriptor := ep.control.RX.Get(rxIndex + i)
 				data := ep.control.UMEM.Get(descriptor)
-				view := buffer.NewViewWithData(data)
+				view := buffer.NewView(len(data))
+				view.Write(data)
 				views = append(views, view)
 				ep.control.UMEM.FreeFrame(descriptor.Addr)
 			}
@@ -367,29 +384,30 @@ func (ep *endpoint) dispatch() (bool, tcpip.Error) {
 			ep.control.UMEM.Unlock()
 
 			// Process each packet.
-			ep.mu.RLock()
-			d := ep.networkDispatcher
-			ep.mu.RUnlock()
 			for i := uint32(0); i < nReceived; i++ {
 				view := views[i]
 				data := view.AsSlice()
 
-				netProto := header.Ethernet(data).Type()
-
 				// Wrap the packet in a PacketBuffer and send it up the stack.
 				pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
-					Payload: buffer.MakeWithView(view),
+					Payload:  buffer.MakeWithView(view),
+					NetProto: header.Ethernet(data).Type(),
 				})
 				// AF_XDP packets always have a link header.
 				if !ep.ParseHeader(pkt) {
 					panic("ParseHeader(_) must succeed")
 				}
-				d.DeliverNetworkPacket(netProto, pkt)
-				pkt.DecRef()
+				pkts.PushBack(pkt)
 			}
+
+			disp.QueueNetworkPackets(pkts, 0)
+			pkts.Reset()
+
 			// Tell the kernel that we're done with these
 			// descriptors in the RX queue.
 			ep.control.RX.Release(nReceived)
 		}
+
+		disp.FinishDeliverNetworkPackets(0)
 	}
 }

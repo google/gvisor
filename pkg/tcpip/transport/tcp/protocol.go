@@ -236,7 +236,7 @@ func replyWithReset(st *stack.Stack, s *segment, tos, ipv4TTL uint8, ipv6HopLimi
 		seq:    seq,
 		ack:    ack,
 		rcvWnd: 0,
-	}, p, stack.GSO{}, nil /* PacketOwner */)
+	}, p, stack.GSO{}, nil /* PacketOwner */, true /* drain */)
 }
 
 // SetOption implements stack.TransportProtocol.SetOption.

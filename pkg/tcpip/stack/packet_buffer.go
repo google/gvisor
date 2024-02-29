@@ -56,6 +56,8 @@ type PacketBufferOptions struct {
 	// OnRelease is a function to be run when the packet buffer is no longer
 	// referenced (released back to the pool).
 	OnRelease func()
+
+	NetProto tcpip.NetworkProtocolNumber
 }
 
 // A PacketBuffer contains all the data of a network packet.
@@ -166,6 +168,18 @@ type PacketBuffer struct {
 	// onRelease is a function to be run when the packet buffer is no longer
 	// referenced (released back to the pool).
 	onRelease func() `state:"nosave"`
+
+	// NoDrain indicates to a queueing discipline that this packet should
+	// not cause the queue to drain. This is useful, in particular, when a
+	// single large write is broken into many smaller packets. Throughput
+	// is lowered by pushing every individual packet, and it's probably not
+	// useful for the remote to get a small fraction of the payload a
+	// little bit earlier.
+	//
+	// When used, either the final packet in a batch should set this to
+	// false to ensure all packets are sent, or the caller should
+	// explicitly signal the queueing discipline to drain.
+	NoDrain bool
 }
 
 // NewPacketBuffer creates a new PacketBuffer with opts.
@@ -182,6 +196,7 @@ func NewPacketBuffer(opts PacketBufferOptions) *PacketBuffer {
 	}
 	pk.NetworkPacketInfo.IsForwardedPacket = opts.IsForwardedPacket
 	pk.onRelease = opts.OnRelease
+	pk.NetworkProtocolNumber = opts.NetProto // TODO: Now every endpoint has to do this, yeah?
 	pk.InitRefs()
 	return pk
 }
@@ -390,6 +405,7 @@ func (pk *PacketBuffer) Clone() *PacketBuffer {
 	newPk.RXChecksumValidated = pk.RXChecksumValidated
 	newPk.NetworkPacketInfo = pk.NetworkPacketInfo
 	newPk.tuple = pk.tuple
+	newPk.NoDrain = pk.NoDrain
 	newPk.InitRefs()
 	return newPk
 }
