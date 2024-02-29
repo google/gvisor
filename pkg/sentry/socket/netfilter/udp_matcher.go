@@ -99,7 +99,7 @@ func (*UDPMatcher) revision() uint8 {
 }
 
 // Match implements Matcher.Match.
-func (um *UDPMatcher) Match(hook stack.Hook, pkt stack.PacketBufferPtr, _, _ string) (bool, bool) {
+func (um *UDPMatcher) Match(hook stack.Hook, pkt *stack.PacketBuffer, _, _ string) (bool, bool) {
 	switch pkt.NetworkProtocolNumber {
 	case header.IPv4ProtocolNumber:
 		netHeader := header.IPv4(pkt.NetworkHeader().Slice())

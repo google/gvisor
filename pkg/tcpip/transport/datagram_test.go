@@ -168,8 +168,8 @@ func (e *mockEndpoint) Attach(d stack.NetworkDispatcher)      { e.disp = d }
 func (e *mockEndpoint) IsAttached() bool                      { return e.disp != nil }
 func (*mockEndpoint) Wait()                                   {}
 func (*mockEndpoint) ARPHardwareType() header.ARPHardwareType { return header.ARPHardwareNone }
-func (*mockEndpoint) AddHeader(stack.PacketBufferPtr)         {}
-func (*mockEndpoint) ParseHeader(stack.PacketBufferPtr) bool  { return true }
+func (*mockEndpoint) AddHeader(*stack.PacketBuffer)           {}
+func (*mockEndpoint) ParseHeader(*stack.PacketBuffer) bool    { return true }
 func (e *mockEndpoint) releasePackets() {
 	e.pkts.DecRef()
 	e.pkts = stack.PacketBufferList{}

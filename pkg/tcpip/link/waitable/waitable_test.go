@@ -39,11 +39,11 @@ type countedEndpoint struct {
 	dispatcher stack.NetworkDispatcher
 }
 
-func (e *countedEndpoint) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr) {
+func (e *countedEndpoint) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	e.dispatchCount++
 }
 
-func (*countedEndpoint) DeliverLinkPacket(tcpip.NetworkProtocolNumber, stack.PacketBufferPtr) {
+func (*countedEndpoint) DeliverLinkPacket(tcpip.NetworkProtocolNumber, *stack.PacketBuffer) {
 	panic("not implemented")
 }
 
@@ -88,12 +88,12 @@ func (*countedEndpoint) ARPHardwareType() header.ARPHardwareType {
 func (*countedEndpoint) Wait() {}
 
 // AddHeader implements stack.LinkEndpoint.AddHeader.
-func (*countedEndpoint) AddHeader(stack.PacketBufferPtr) {
+func (*countedEndpoint) AddHeader(*stack.PacketBuffer) {
 	panic("unimplemented")
 }
 
 // ParseHeader implements stack.LinkEndpoint.ParseHeader.
-func (*countedEndpoint) ParseHeader(stack.PacketBufferPtr) bool {
+func (*countedEndpoint) ParseHeader(*stack.PacketBuffer) bool {
 	panic("unimplemented")
 }
 

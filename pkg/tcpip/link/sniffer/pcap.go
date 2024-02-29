@@ -50,7 +50,7 @@ var _ encoding.BinaryMarshaler = (*pcapPacket)(nil)
 
 type pcapPacket struct {
 	timestamp     time.Time
-	packet        stack.PacketBufferPtr
+	packet        *stack.PacketBuffer
 	maxCaptureLen int
 }
 

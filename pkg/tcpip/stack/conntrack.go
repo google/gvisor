@@ -177,7 +177,7 @@ func (cn *conn) timedOut(now tcpip.MonotonicTime) bool {
 }
 
 // update the connection tracking state.
-func (cn *conn) update(pkt PacketBufferPtr, reply bool) {
+func (cn *conn) update(pkt *PacketBuffer, reply bool) {
 	cn.stateMu.Lock()
 	defer cn.stateMu.Unlock()
 
@@ -269,7 +269,7 @@ func v6NetAndTransHdr(icmpPayload []byte, minTransHdrLen int) (header.Network, [
 	return netHdr, transHdr[:minTransHdrLen]
 }
 
-func getEmbeddedNetAndTransHeaders(pkt PacketBufferPtr, netHdrLength int, getNetAndTransHdr netAndTransHeadersFunc, transProto tcpip.TransportProtocolNumber) (header.Network, header.ChecksummableTransport, bool) {
+func getEmbeddedNetAndTransHeaders(pkt *PacketBuffer, netHdrLength int, getNetAndTransHdr netAndTransHeadersFunc, transProto tcpip.TransportProtocolNumber) (header.Network, header.ChecksummableTransport, bool) {
 	switch transProto {
 	case header.TCPProtocolNumber:
 		if netAndTransHeader, ok := pkt.Data().PullUp(netHdrLength + header.TCPMinimumSize); ok {
@@ -285,7 +285,7 @@ func getEmbeddedNetAndTransHeaders(pkt PacketBufferPtr, netHdrLength int, getNet
 	return nil, nil, false
 }
 
-func getHeaders(pkt PacketBufferPtr) (netHdr header.Network, transHdr header.Transport, isICMPError bool, ok bool) {
+func getHeaders(pkt *PacketBuffer) (netHdr header.Network, transHdr header.Transport, isICMPError bool, ok bool) {
 	switch pkt.TransportProtocolNumber {
 	case header.TCPProtocolNumber:
 		if tcpHeader := header.TCP(pkt.TransportHeader().Slice()); len(tcpHeader) >= header.TCPMinimumSize {
@@ -373,7 +373,7 @@ func getTupleIDForRegularPacket(netHdr header.Network, netProto tcpip.NetworkPro
 	}
 }
 
-func getTupleIDForPacketInICMPError(pkt PacketBufferPtr, getNetAndTransHdr netAndTransHeadersFunc, netProto tcpip.NetworkProtocolNumber, netLen int, transProto tcpip.TransportProtocolNumber) (tupleID, bool) {
+func getTupleIDForPacketInICMPError(pkt *PacketBuffer, getNetAndTransHdr netAndTransHeadersFunc, netProto tcpip.NetworkProtocolNumber, netLen int, transProto tcpip.TransportProtocolNumber) (tupleID, bool) {
 	if netHdr, transHdr, ok := getEmbeddedNetAndTransHeaders(pkt, netLen, getNetAndTransHdr, transProto); ok {
 		return tupleID{
 			srcAddr:                   netHdr.DestinationAddress(),
@@ -396,7 +396,7 @@ const (
 	getTupleIDOKAndDontAllowNewConn
 )
 
-func getTupleIDForEchoPacket(pkt PacketBufferPtr, ident uint16, request bool) tupleID {
+func getTupleIDForEchoPacket(pkt *PacketBuffer, ident uint16, request bool) tupleID {
 	netHdr := pkt.Network()
 	tid := tupleID{
 		srcAddr:    netHdr.SourceAddress(),
@@ -414,7 +414,7 @@ func getTupleIDForEchoPacket(pkt PacketBufferPtr, ident uint16, request bool) tu
 	return tid
 }
 
-func getTupleID(pkt PacketBufferPtr) (tupleID, getTupleIDDisposition) {
+func getTupleID(pkt *PacketBuffer) (tupleID, getTupleIDDisposition) {
 	switch pkt.TransportProtocolNumber {
 	case header.TCPProtocolNumber:
 		if transHeader := header.TCP(pkt.TransportHeader().Slice()); len(transHeader) >= header.TCPMinimumSize {
@@ -504,7 +504,7 @@ func (ct *ConnTrack) init() {
 //
 // If the packet's protocol is trackable, the connection's state is updated to
 // match the contents of the packet.
-func (ct *ConnTrack) getConnAndUpdate(pkt PacketBufferPtr, skipChecksumValidation bool) *tuple {
+func (ct *ConnTrack) getConnAndUpdate(pkt *PacketBuffer, skipChecksumValidation bool) *tuple {
 	// Get or (maybe) create a connection.
 	t := func() *tuple {
 		var allowNewConn bool
@@ -725,7 +725,7 @@ type portOrIdentRange struct {
 //
 // Generally, only the first packet of a connection reaches this method; other
 // packets will be manipulated without needing to modify the connection.
-func (cn *conn) performNAT(pkt PacketBufferPtr, hook Hook, r *Route, portsOrIdents portOrIdentRange, natAddress tcpip.Address, dnat, changePort, changeAddress bool) {
+func (cn *conn) performNAT(pkt *PacketBuffer, hook Hook, r *Route, portsOrIdents portOrIdentRange, natAddress tcpip.Address, dnat, changePort, changeAddress bool) {
 	lastPortOrIdent := func() uint16 {
 		lastPortOrIdent := uint32(portsOrIdents.start) + portsOrIdents.size - 1
 		if lastPortOrIdent > math.MaxUint16 {
@@ -833,7 +833,7 @@ func (cn *conn) performNAT(pkt PacketBufferPtr, hook Hook, r *Route, portsOrIden
 // has had NAT performed on it.
 //
 // Returns true if the packet can skip the NAT table.
-func (cn *conn) handlePacket(pkt PacketBufferPtr, hook Hook, rt *Route) bool {
+func (cn *conn) handlePacket(pkt *PacketBuffer, hook Hook, rt *Route) bool {
 	netHdr, transHdr, isICMPError, ok := getHeaders(pkt)
 	if !ok {
 		return false

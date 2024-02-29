@@ -36,7 +36,7 @@ type icmpPacket struct {
 	icmpPacketEntry
 	senderAddress tcpip.FullAddress
 	packetInfo    tcpip.IPPacketInfo
-	data          stack.PacketBufferPtr
+	data          *stack.PacketBuffer
 	receivedAt    time.Time `state:".(int64)"`
 
 	// tosOrTClass stores either the Type of Service for IPv4 or the Traffic Class
@@ -696,7 +696,7 @@ func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 
 // HandlePacket is called by the stack when new packets arrive to this transport
 // endpoint.
-func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt stack.PacketBufferPtr) {
+func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketBuffer) {
 	// Only accept echo replies.
 	switch e.net.NetProto() {
 	case header.IPv4ProtocolNumber:
@@ -784,7 +784,7 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt stack.PacketBu
 }
 
 // HandleError implements stack.TransportEndpoint.
-func (*endpoint) HandleError(stack.TransportError, stack.PacketBufferPtr) {}
+func (*endpoint) HandleError(stack.TransportError, *stack.PacketBuffer) {}
 
 // State implements tcpip.Endpoint.State. The ICMP endpoint currently doesn't
 // expose internal socket state.

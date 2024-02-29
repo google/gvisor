@@ -143,7 +143,7 @@ func newTestContext(t *testing.T, mtu, bufferSize uint32, addr tcpip.LinkAddress
 	return c
 }
 
-func (c *testContext) DeliverNetworkPacket(proto tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr) {
+func (c *testContext) DeliverNetworkPacket(proto tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	c.mu.Lock()
 	c.packets = append(c.packets, packetInfo{
 		proto: proto,
@@ -154,7 +154,7 @@ func (c *testContext) DeliverNetworkPacket(proto tcpip.NetworkProtocolNumber, pk
 	c.packetCh <- struct{}{}
 }
 
-func (c *testContext) DeliverLinkPacket(tcpip.NetworkProtocolNumber, stack.PacketBufferPtr) {
+func (c *testContext) DeliverLinkPacket(tcpip.NetworkProtocolNumber, *stack.PacketBuffer) {
 	c.t.Fatal("DeliverLinkPacket not implemented")
 }
 

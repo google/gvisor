@@ -280,7 +280,7 @@ type genTCPOpts struct {
 }
 
 // genTCPPacket returns an initialized IPv4 TCP packet.
-func genTCPPacket(opts genTCPOpts) PacketBufferPtr {
+func genTCPPacket(opts genTCPOpts) *PacketBuffer {
 	// Get values from opts.
 	windowSize := uint16(50000)
 	if opts.windowSize != nil {

@@ -213,7 +213,7 @@ func (*fakeTransportEndpoint) GetRemoteAddress() (tcpip.FullAddress, tcpip.Error
 	return tcpip.FullAddress{}, nil
 }
 
-func (f *fakeTransportEndpoint) HandlePacket(id stack.TransportEndpointID, pkt stack.PacketBufferPtr) {
+func (f *fakeTransportEndpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketBuffer) {
 	// Increment the number of received packets.
 	f.proto.packetCount++
 	if f.acceptQueue == nil {
@@ -244,7 +244,7 @@ func (f *fakeTransportEndpoint) HandlePacket(id stack.TransportEndpointID, pkt s
 	f.acceptQueue = append(f.acceptQueue, ep)
 }
 
-func (f *fakeTransportEndpoint) HandleError(stack.TransportError, stack.PacketBufferPtr) {
+func (f *fakeTransportEndpoint) HandleError(stack.TransportError, *stack.PacketBuffer) {
 	// Increment the number of received control packets.
 	f.proto.controlCount++
 }
@@ -303,7 +303,7 @@ func (*fakeTransportProtocol) ParsePorts([]byte) (src, dst uint16, err tcpip.Err
 	return 0, 0, nil
 }
 
-func (*fakeTransportProtocol) HandleUnknownDestinationPacket(stack.TransportEndpointID, stack.PacketBufferPtr) stack.UnknownDestinationPacketDisposition {
+func (*fakeTransportProtocol) HandleUnknownDestinationPacket(stack.TransportEndpointID, *stack.PacketBuffer) stack.UnknownDestinationPacketDisposition {
 	return stack.UnknownDestinationPacketHandled
 }
 
@@ -343,7 +343,7 @@ func (*fakeTransportProtocol) Pause() {}
 func (*fakeTransportProtocol) Resume() {}
 
 // Parse implements TransportProtocol.Parse.
-func (*fakeTransportProtocol) Parse(pkt stack.PacketBufferPtr) bool {
+func (*fakeTransportProtocol) Parse(pkt *stack.PacketBuffer) bool {
 	if _, ok := pkt.TransportHeader().Consume(fakeTransHeaderLen); ok {
 		pkt.TransportProtocolNumber = fakeTransNumber
 		return true

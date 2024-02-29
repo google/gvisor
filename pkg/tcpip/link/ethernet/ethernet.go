@@ -59,7 +59,7 @@ func (e *Endpoint) MTU() uint32 {
 }
 
 // DeliverNetworkPacket implements stack.NetworkDispatcher.
-func (e *Endpoint) DeliverNetworkPacket(_ tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr) {
+func (e *Endpoint) DeliverNetworkPacket(_ tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	if !e.ParseHeader(pkt) {
 		return
 	}
@@ -103,7 +103,7 @@ func (e *Endpoint) ARPHardwareType() header.ARPHardwareType {
 }
 
 // AddHeader implements stack.LinkEndpoint.
-func (*Endpoint) AddHeader(pkt stack.PacketBufferPtr) {
+func (*Endpoint) AddHeader(pkt *stack.PacketBuffer) {
 	eth := header.Ethernet(pkt.LinkHeader().Push(header.EthernetMinimumSize))
 	fields := header.EthernetFields{
 		SrcAddr: pkt.EgressRoute.LocalLinkAddress,
@@ -114,7 +114,7 @@ func (*Endpoint) AddHeader(pkt stack.PacketBufferPtr) {
 }
 
 // ParseHeader implements stack.LinkEndpoint.
-func (*Endpoint) ParseHeader(pkt stack.PacketBufferPtr) bool {
+func (*Endpoint) ParseHeader(pkt *stack.PacketBuffer) bool {
 	_, ok := pkt.LinkHeader().Consume(header.EthernetMinimumSize)
 	return ok
 }

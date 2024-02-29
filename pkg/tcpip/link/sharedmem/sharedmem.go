@@ -340,7 +340,7 @@ func (e *endpoint) LinkAddress() tcpip.LinkAddress {
 }
 
 // AddHeader implements stack.LinkEndpoint.AddHeader.
-func (e *endpoint) AddHeader(pkt stack.PacketBufferPtr) {
+func (e *endpoint) AddHeader(pkt *stack.PacketBuffer) {
 	// Add ethernet header if needed.
 	if len(e.addr) == 0 {
 		return
@@ -354,13 +354,13 @@ func (e *endpoint) AddHeader(pkt stack.PacketBufferPtr) {
 	})
 }
 
-func (e *endpoint) parseHeader(pkt stack.PacketBufferPtr) bool {
+func (e *endpoint) parseHeader(pkt *stack.PacketBuffer) bool {
 	_, ok := pkt.LinkHeader().Consume(header.EthernetMinimumSize)
 	return ok
 }
 
 // ParseHeader implements stack.LinkEndpoint.ParseHeader.
-func (e *endpoint) ParseHeader(pkt stack.PacketBufferPtr) bool {
+func (e *endpoint) ParseHeader(pkt *stack.PacketBuffer) bool {
 	// Add ethernet header if needed.
 	if len(e.addr) == 0 {
 		return true
@@ -369,13 +369,13 @@ func (e *endpoint) ParseHeader(pkt stack.PacketBufferPtr) bool {
 	return e.parseHeader(pkt)
 }
 
-func (e *endpoint) AddVirtioNetHeader(pkt stack.PacketBufferPtr) {
+func (e *endpoint) AddVirtioNetHeader(pkt *stack.PacketBuffer) {
 	virtio := header.VirtioNetHeader(pkt.VirtioNetHeader().Push(header.VirtioNetHeaderSize))
 	virtio.Encode(&header.VirtioNetHeaderFields{})
 }
 
 // +checklocks:e.mu
-func (e *endpoint) writePacketLocked(r stack.RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr) tcpip.Error {
+func (e *endpoint) writePacketLocked(r stack.RouteInfo, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) tcpip.Error {
 	if e.virtioNetHeaderRequired {
 		e.AddVirtioNetHeader(pkt)
 	}

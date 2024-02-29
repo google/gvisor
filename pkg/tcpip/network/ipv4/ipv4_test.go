@@ -249,7 +249,7 @@ type packetOptions struct {
 	options       header.IPv4Options
 }
 
-func newICMPEchoPacket(t *testing.T, srcAddr, dstAddr tcpip.Address, ttl uint8, options packetOptions) (stack.PacketBufferPtr, []byte) {
+func newICMPEchoPacket(t *testing.T, srcAddr, dstAddr tcpip.Address, ttl uint8, options packetOptions) (*stack.PacketBuffer, []byte) {
 	const (
 		arbitraryICMPHeaderSequence = 123
 		randomIdent                 = 42
@@ -314,9 +314,9 @@ func max(a, b int) int {
 	return b
 }
 
-func checkFragements(t *testing.T, ep *channel.Endpoint, expectedFragments []fragmentInfo, requestPkt stack.PacketBufferPtr) {
+func checkFragements(t *testing.T, ep *channel.Endpoint, expectedFragments []fragmentInfo, requestPkt *stack.PacketBuffer) {
 	t.Helper()
-	var fragmentedPackets []stack.PacketBufferPtr
+	var fragmentedPackets []*stack.PacketBuffer
 	for i := 0; i < len(expectedFragments); i++ {
 		reply := ep.Read()
 		if reply.IsNil() {
@@ -1958,7 +1958,7 @@ func TestIPv4Sanity(t *testing.T) {
 // If withIPHeader is set to true, we will validate the fragmented packets' IP
 // headers against the source packet's IP header. If set to false, we validate
 // the fragmented packets' IP headers against each other.
-func compareFragments(packets []stack.PacketBufferPtr, sourcePacket stack.PacketBufferPtr, mtu uint32, wantFragments []fragmentInfo, proto tcpip.TransportProtocolNumber, withIPHeader bool, expectedAvailableHeaderBytes int) error {
+func compareFragments(packets []*stack.PacketBuffer, sourcePacket *stack.PacketBuffer, mtu uint32, wantFragments []fragmentInfo, proto tcpip.TransportProtocolNumber, withIPHeader bool, expectedAvailableHeaderBytes int) error {
 	// Make a complete array of the sourcePacket packet.
 	var source header.IPv4
 	buf := sourcePacket.ToBuffer()
@@ -3539,7 +3539,7 @@ func (*limitedMatcher) Name() string {
 }
 
 // Match implements Matcher.Match.
-func (lm *limitedMatcher) Match(stack.Hook, stack.PacketBufferPtr, string, string) (bool, bool) {
+func (lm *limitedMatcher) Match(stack.Hook, *stack.PacketBuffer, string, string) (bool, bool) {
 	if lm.limit == 0 {
 		return true, false
 	}

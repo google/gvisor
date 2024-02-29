@@ -80,7 +80,7 @@ func (gb *groBucket) full() bool {
 
 // insert inserts pkt into the bucket.
 // +checklocks:gb.mu
-func (gb *groBucket) insert(pkt PacketBufferPtr, ipHdr []byte, tcpHdr header.TCP, ep NetworkEndpoint) {
+func (gb *groBucket) insert(pkt *PacketBuffer, ipHdr []byte, tcpHdr header.TCP, ep NetworkEndpoint) {
 	groPkt := &gb.packetsPrealloc[gb.allocIdxs[gb.count]]
 	*groPkt = groPacket{
 		pkt:           pkt,
@@ -96,9 +96,9 @@ func (gb *groBucket) insert(pkt PacketBufferPtr, ipHdr []byte, tcpHdr header.TCP
 }
 
 // removeOldest removes the oldest packet from gb and returns the contained
-// PacketBufferPtr. gb must not be empty.
+// *PacketBuffer. gb must not be empty.
 // +checklocks:gb.mu
-func (gb *groBucket) removeOldest() PacketBufferPtr {
+func (gb *groBucket) removeOldest() *PacketBuffer {
 	pkt := gb.packets.Front()
 	gb.packets.Remove(pkt)
 	gb.count--
@@ -121,7 +121,7 @@ func (gb *groBucket) removeOne(pkt *groPacket) {
 // none exists. It also returns whether the groPkt should be flushed based on
 // differences between the two headers.
 // +checklocks:gb.mu
-func (gb *groBucket) findGROPacket4(pkt PacketBufferPtr, ipHdr header.IPv4, tcpHdr header.TCP, ep NetworkEndpoint) (*groPacket, bool) {
+func (gb *groBucket) findGROPacket4(pkt *PacketBuffer, ipHdr header.IPv4, tcpHdr header.TCP, ep NetworkEndpoint) (*groPacket, bool) {
 	for groPkt := gb.packets.Front(); groPkt != nil; groPkt = groPkt.Next() {
 		// Do the addresses match?
 		groIPHdr := header.IPv4(groPkt.ipHdr)
@@ -163,7 +163,7 @@ func (gb *groBucket) findGROPacket4(pkt PacketBufferPtr, ipHdr header.IPv4, tcpH
 // none exists. It also returns whether the groPkt should be flushed based on
 // differences between the two headers.
 // +checklocks:gb.mu
-func (gb *groBucket) findGROPacket6(pkt PacketBufferPtr, ipHdr header.IPv6, tcpHdr header.TCP, ep NetworkEndpoint) (*groPacket, bool) {
+func (gb *groBucket) findGROPacket6(pkt *PacketBuffer, ipHdr header.IPv6, tcpHdr header.TCP, ep NetworkEndpoint) (*groPacket, bool) {
 	for groPkt := gb.packets.Front(); groPkt != nil; groPkt = groPkt.Next() {
 		// Do the addresses match?
 		groIPHdr := header.IPv6(groPkt.ipHdr)
@@ -216,7 +216,7 @@ func (gb *groBucket) findGROPacket6(pkt PacketBufferPtr, ipHdr header.IPv6, tcpH
 }
 
 // +checklocks:gb.mu
-func (gb *groBucket) found(gd *groDispatcher, groPkt *groPacket, flushGROPkt bool, pkt PacketBufferPtr, ipHdr []byte, tcpHdr header.TCP, ep NetworkEndpoint, updateIPHdr func([]byte, int)) {
+func (gb *groBucket) found(gd *groDispatcher, groPkt *groPacket, flushGROPkt bool, pkt *PacketBuffer, ipHdr []byte, tcpHdr header.TCP, ep NetworkEndpoint, updateIPHdr func([]byte, int)) {
 	// Flush groPkt or merge the packets.
 	pktSize := pkt.Data().Size()
 	flags := tcpHdr.Flags()
@@ -301,7 +301,7 @@ type groPacket struct {
 	groPacketEntry
 
 	// pkt is the coalesced packet.
-	pkt PacketBufferPtr
+	pkt *PacketBuffer
 
 	// ipHdr is the IP (v4 or v6) header for the coalesced packet.
 	ipHdr []byte
@@ -410,7 +410,7 @@ func (gd *groDispatcher) setInterval(interval time.Duration) {
 }
 
 // dispatch sends pkt up the stack after it undergoes GRO coalescing.
-func (gd *groDispatcher) dispatch(pkt PacketBufferPtr, netProto tcpip.NetworkProtocolNumber, ep NetworkEndpoint) {
+func (gd *groDispatcher) dispatch(pkt *PacketBuffer, netProto tcpip.NetworkProtocolNumber, ep NetworkEndpoint) {
 	// If GRO is disabled simply pass the packet along.
 	if gd.getInterval() == 0 {
 		ep.HandlePacket(pkt)
@@ -428,7 +428,7 @@ func (gd *groDispatcher) dispatch(pkt PacketBufferPtr, netProto tcpip.NetworkPro
 	}
 }
 
-func (gd *groDispatcher) dispatch4(pkt PacketBufferPtr, ep NetworkEndpoint) {
+func (gd *groDispatcher) dispatch4(pkt *PacketBuffer, ep NetworkEndpoint) {
 	// Immediately get the IPv4 and TCP headers. We need a way to hash the
 	// packet into its bucket, which requires addresses and ports. Linux
 	// simply gets a hash passed by hardware, but we're not so lucky.
@@ -497,7 +497,7 @@ func (gd *groDispatcher) dispatch4(pkt PacketBufferPtr, ep NetworkEndpoint) {
 	bucket.found(gd, groPkt, flushGROPkt, pkt, ipHdr, tcpHdr, ep, updateIPv4Hdr)
 }
 
-func (gd *groDispatcher) dispatch6(pkt PacketBufferPtr, ep NetworkEndpoint) {
+func (gd *groDispatcher) dispatch6(pkt *PacketBuffer, ep NetworkEndpoint) {
 	// Immediately get the IPv6 and TCP headers. We need a way to hash the
 	// packet into its bucket, which requires addresses and ports. Linux
 	// simply gets a hash passed by hardware, but we're not so lucky.
@@ -627,7 +627,7 @@ func (gd *groDispatcher) flush() bool {
 // Returns true iff packets remain.
 func (gd *groDispatcher) flushSinceOrEqualTo(old time.Time) bool {
 	type pair struct {
-		pkt PacketBufferPtr
+		pkt *PacketBuffer
 		ep  NetworkEndpoint
 	}
 

@@ -116,7 +116,7 @@ func (r *InstalledRoute) SetLastUsedTimestamp(monotonicTime tcpip.MonotonicTime)
 // for the entry. For such routes, packets are added to an expiring queue until
 // a route is installed.
 type PendingRoute struct {
-	packets []stack.PacketBufferPtr
+	packets []*stack.PacketBuffer
 
 	// expiration is the timestamp at which the pending route should be expired.
 	//
@@ -265,7 +265,7 @@ func (r *RouteTable) cleanupPendingRoutes() {
 
 func (r *RouteTable) newPendingRoute() PendingRoute {
 	return PendingRoute{
-		packets:    make([]stack.PacketBufferPtr, 0, r.config.MaxPendingQueueSize),
+		packets:    make([]*stack.PacketBuffer, 0, r.config.MaxPendingQueueSize),
 		expiration: r.config.Clock.NowMonotonic().Add(DefaultPendingRouteExpiration),
 	}
 }
@@ -326,7 +326,7 @@ func (e GetRouteResultState) String() string {
 //
 // If the relevant pending route queue is at max capacity, then returns false.
 // Otherwise, returns true.
-func (r *RouteTable) GetRouteOrInsertPending(key stack.UnicastSourceAndMulticastDestination, pkt stack.PacketBufferPtr) (GetRouteResult, bool) {
+func (r *RouteTable) GetRouteOrInsertPending(key stack.UnicastSourceAndMulticastDestination, pkt *stack.PacketBuffer) (GetRouteResult, bool) {
 	r.installedMu.RLock()
 	defer r.installedMu.RUnlock()
 
@@ -374,7 +374,7 @@ func (r *RouteTable) getOrCreatePendingRouteRLocked(key stack.UnicastSourceAndMu
 // returned. The caller assumes ownership of these packets and is responsible
 // for forwarding and releasing them. If an installed route already exists for
 // the provided key, then it is overwritten.
-func (r *RouteTable) AddInstalledRoute(key stack.UnicastSourceAndMulticastDestination, route *InstalledRoute) []stack.PacketBufferPtr {
+func (r *RouteTable) AddInstalledRoute(key stack.UnicastSourceAndMulticastDestination, route *InstalledRoute) []*stack.PacketBuffer {
 	r.installedMu.Lock()
 	defer r.installedMu.Unlock()
 	r.installedRoutes[key] = route

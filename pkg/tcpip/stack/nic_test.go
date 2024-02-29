@@ -68,19 +68,19 @@ func (e *testIPv6Endpoint) MaxHeaderLength() uint16 {
 }
 
 // WritePacket implements NetworkEndpoint.WritePacket.
-func (*testIPv6Endpoint) WritePacket(*Route, NetworkHeaderParams, PacketBufferPtr) tcpip.Error {
+func (*testIPv6Endpoint) WritePacket(*Route, NetworkHeaderParams, *PacketBuffer) tcpip.Error {
 	return nil
 }
 
 // WriteHeaderIncludedPacket implements
 // NetworkEndpoint.WriteHeaderIncludedPacket.
-func (*testIPv6Endpoint) WriteHeaderIncludedPacket(*Route, PacketBufferPtr) tcpip.Error {
+func (*testIPv6Endpoint) WriteHeaderIncludedPacket(*Route, *PacketBuffer) tcpip.Error {
 	// Our tests don't use this so we don't support it.
 	return &tcpip.ErrNotSupported{}
 }
 
 // HandlePacket implements NetworkEndpoint.HandlePacket.
-func (*testIPv6Endpoint) HandlePacket(PacketBufferPtr) {}
+func (*testIPv6Endpoint) HandlePacket(*PacketBuffer) {}
 
 // Close implements NetworkEndpoint.Close.
 func (e *testIPv6Endpoint) Close() {
@@ -155,7 +155,7 @@ func (*testIPv6Protocol) Close() {}
 func (*testIPv6Protocol) Wait() {}
 
 // Parse implements NetworkProtocol.Parse.
-func (*testIPv6Protocol) Parse(PacketBufferPtr) (tcpip.TransportProtocolNumber, bool, bool) {
+func (*testIPv6Protocol) Parse(*PacketBuffer) (tcpip.TransportProtocolNumber, bool, bool) {
 	return 0, false, false
 }
 
