@@ -1111,7 +1111,7 @@ func (t *Task) waitCollectZombieLocked(target *Task, opts *WaitOptions, asPtrace
 	// will be reaped here.
 	if tracer := target.Tracer(); tracer != nil && tracer.tg == t.tg && target.exitTracerNotified {
 		target.exitTracerAcked = true
-		target.ptraceTracer.Store((*Task)(nil))
+		target.ptraceTracer.Store(nil)
 		delete(t.ptraceTracees, target)
 	}
 	if target.parent != nil && target.parent.tg == t.tg && target.exitParentNotified {
