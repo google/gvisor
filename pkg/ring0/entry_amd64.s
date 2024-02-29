@@ -88,12 +88,13 @@
 #define PTRACE_FS_BASE  168 // +checkoffset linux PtraceRegs.Fs_base
 #define PTRACE_GS_BASE  176 // +checkoffset linux PtraceRegs.Gs_base
 
-// The value for XCR0 is defined to xsave/xrstor everything except for AMX
-// regions.
-// TODO(gvisor.dev/issues/9896): Implement AMX Support.
-#define XCR0_AMX_MASK ((1 << 17) | (1 << 18))
-#define XCR0_EAX      (0xffffffff ^ XCR0_AMX_MASK)
-#define XCR0_EDX      0xffffffff
+// The value for XCR0 is defined to xsave/xrstor everything except for PKRU and
+// AMX regions.
+// TODO(gvisor.dev/issues/9896): Implement AMX support.
+// TODO(gvisor.dev/issues/10087): Implement PKRU support.
+#define XCR0_DISABLED_MASK ((1 << 9) | (1 << 17) | (1 << 18))
+#define XCR0_EAX (0xffffffff ^ XCR0_DISABLED_MASK)
+#define XCR0_EDX 0xffffffff
 
 // Saves a register set.
 //
