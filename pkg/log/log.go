@@ -250,7 +250,7 @@ func (l *BasicLogger) SetLevel(level Level) {
 var logMu sync.Mutex
 
 // log is the default logger.
-var log atomic.Value
+var log atomic.Pointer[T]
 
 // Log retrieves the global logger.
 func Log() *BasicLogger {

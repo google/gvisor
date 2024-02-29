@@ -153,7 +153,7 @@ type MemoryFile struct {
 	// operations. This allows MemoryFile.MapInternal to avoid locking in the
 	// common case where chunk mappings already exist.
 	mappingsMu mappingsMutex
-	mappings   atomic.Value
+	mappings   atomic.Pointer[T]
 
 	// destroyed is set by Destroy to instruct the reclaimer goroutine to
 	// release resources and exit. destroyed is protected by mu.
@@ -1404,7 +1404,7 @@ func (f *MemoryFile) runReclaim() {
 			}
 		}
 	}
-	// Similarly, invalidate f.mappings. (atomic.Value.Store(nil) panics.)
+	// Similarly, invalidate f.mappings. (atomic.Pointer[T].Store(nil) panics.)
 	f.mappings.Store([]uintptr{})
 	f.mu.Unlock()
 

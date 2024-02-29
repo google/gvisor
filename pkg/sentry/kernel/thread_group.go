@@ -238,7 +238,7 @@ type ThreadGroup struct {
 	execed bool
 
 	// oldRSeqCritical is the thread group's old rseq critical region.
-	oldRSeqCritical atomic.Value `state:".(*OldRSeqCriticalRegion)"`
+	oldRSeqCritical atomic.Pointer[T] `state:".(*OldRSeqCriticalRegion)"`
 
 	// tty is the thread group's controlling terminal. If nil, there is no
 	// controlling terminal.

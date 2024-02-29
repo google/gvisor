@@ -103,7 +103,7 @@ type Stack struct {
 
 	// If not nil, then any new endpoints will have this probe function
 	// invoked everytime they receive a TCP segment.
-	tcpProbeFunc atomic.Value // TCPProbeFunc
+	tcpProbeFunc atomic.Pointer[T] // TCPProbeFunc
 
 	// clock is used to generate user-visible times.
 	clock tcpip.Clock
@@ -1970,7 +1970,7 @@ func (s *Stack) GetTCPProbe() TCPProbeFunc {
 // have a probe attached. Endpoints already created will continue to invoke
 // TCP probe.
 func (s *Stack) RemoveTCPProbe() {
-	// This must be TCPProbeFunc(nil) because atomic.Value.Store(nil) panics.
+	// This must be TCPProbeFunc(nil) because atomic.Pointer[T].Store(nil) panics.
 	s.tcpProbeFunc.Store(TCPProbeFunc(nil))
 }
 

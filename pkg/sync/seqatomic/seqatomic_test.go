@@ -119,13 +119,13 @@ func BenchmarkSeqAtomicTryLoadIntUncontended(b *testing.B) {
 
 // For comparison:
 func BenchmarkAtomicValueLoadIntUncontended(b *testing.B) {
-	var a atomic.Value
+	var a atomic.Pointer[T]
 	const want = 42
 	a.Store(int(want))
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			if got := a.Load().(int); got != want {
-				b.Fatalf("atomic.Value.Load: got %v, wanted %v", got, want)
+				b.Fatalf("atomic.Pointer[T].Load: got %v, wanted %v", got, want)
 			}
 		}
 	})

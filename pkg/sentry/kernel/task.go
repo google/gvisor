@@ -411,7 +411,7 @@ type Task struct {
 
 	// logPrefix is a string containing the task's thread ID in the root PID
 	// namespace, and is prepended to log messages emitted by Task.Infof etc.
-	logPrefix atomic.Value `state:"nosave"`
+	logPrefix atomic.Pointer[T] `state:"nosave"`
 
 	// traceContext and traceTask are both used for tracing, and are
 	// updated along with the logPrefix in updateInfoLocked.
@@ -451,11 +451,11 @@ type Task struct {
 	// seccomp contains all seccomp-bpf syscall filters applicable to the task.
 	// The type of the atomic is *taskSeccomp.
 	// Writing needs to be protected by the signal mutex. Note that due to
-	// atomic.Value limitations (atomic.Value.Store(nil) panics), a nil
+	// atomic.Pointer[T] limitations (atomic.Pointer[T].Store(nil) panics), a nil
 	// seccomp is always represented as a typed nil (i.e. (*taskSeccomp)(nil)).
 	//
 	// seccomp is owned by the task goroutine.
-	seccomp atomic.Value `state:".(*taskSeccomp)"`
+	seccomp atomic.Pointer[T] `state:".(*taskSeccomp)"`
 
 	// If cleartid is non-zero, treat it as a pointer to a ThreadID in the
 	// task's virtual address space; when the task exits, set the pointed-to

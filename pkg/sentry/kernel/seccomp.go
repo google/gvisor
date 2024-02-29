@@ -268,7 +268,7 @@ func (ts *taskSeccomp) populateCache(t *Task) {
 //
 // Preconditions: The caller must be running on the task goroutine.
 func (t *Task) AppendSyscallFilter(p bpf.Program, syncAll bool) error {
-	// While syscallFilters are an atomic.Value we must take the mutex to prevent
+	// While syscallFilters are an atomic.Pointer[T] we must take the mutex to prevent
 	// our read-copy-update from happening while another task is syncing syscall
 	// filters to us, this keeps the filters in a consistent state.
 	t.tg.signalHandlers.mu.Lock()

@@ -13,10 +13,10 @@ import (
 // synchronization in cases where readers can work with stale data and
 // therefore do not need to block writers.
 //
-// Compared to sync/atomic.Value:
+// Compared to sync/atomic.Pointer[T]:
 //
 //   - Mutation of SeqCount-protected data does not require memory allocation,
-//     whereas atomic.Value generally does. This is a significant advantage when
+//     whereas atomic.Pointer[T] generally does. This is a significant advantage when
 //     writes are common.
 //
 //   - Atomic reads of SeqCount-protected data require copying. This is a
