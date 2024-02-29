@@ -164,7 +164,7 @@ func getEndpointAddr(protocol tcpip.NetworkProtocolNumber, addrType endpointAddr
 	}
 }
 
-func checkEchoRequest(t *testing.T, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr, srcAddr, dstAddr tcpip.Address, ttl uint8) {
+func checkEchoRequest(t *testing.T, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer, srcAddr, dstAddr tcpip.Address, ttl uint8) {
 	payload := stack.PayloadSince(pkt.NetworkHeader())
 	defer payload.Release()
 	switch protocol {
@@ -191,7 +191,7 @@ func checkEchoRequest(t *testing.T, protocol tcpip.NetworkProtocolNumber, pkt st
 	}
 }
 
-func checkEchoReply(t *testing.T, protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr, srcAddr, dstAddr tcpip.Address) {
+func checkEchoReply(t *testing.T, protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer, srcAddr, dstAddr tcpip.Address) {
 	payload := stack.PayloadSince(pkt.NetworkHeader())
 	defer payload.Release()
 	switch protocol {

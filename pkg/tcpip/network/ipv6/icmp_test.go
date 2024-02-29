@@ -86,7 +86,7 @@ func (*stubLinkEndpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.E
 
 func (*stubLinkEndpoint) Attach(stack.NetworkDispatcher) {}
 
-func (*stubLinkEndpoint) AddHeader(stack.PacketBufferPtr) {}
+func (*stubLinkEndpoint) AddHeader(*stack.PacketBuffer) {}
 
 func (*stubLinkEndpoint) Wait() {}
 
@@ -94,11 +94,11 @@ type stubDispatcher struct {
 	stack.TransportDispatcher
 }
 
-func (*stubDispatcher) DeliverTransportPacket(tcpip.TransportProtocolNumber, stack.PacketBufferPtr) stack.TransportPacketDisposition {
+func (*stubDispatcher) DeliverTransportPacket(tcpip.TransportProtocolNumber, *stack.PacketBuffer) stack.TransportPacketDisposition {
 	return stack.TransportPacketHandled
 }
 
-func (*stubDispatcher) DeliverRawPacket(tcpip.TransportProtocolNumber, stack.PacketBufferPtr) {
+func (*stubDispatcher) DeliverRawPacket(tcpip.TransportProtocolNumber, *stack.PacketBuffer) {
 	// No-op.
 }
 
@@ -137,7 +137,7 @@ func (*testInterface) Spoofing() bool {
 	return false
 }
 
-func (t *testInterface) WritePacket(r *stack.Route, pkt stack.PacketBufferPtr) tcpip.Error {
+func (t *testInterface) WritePacket(r *stack.Route, pkt *stack.PacketBuffer) tcpip.Error {
 	pkt.EgressRoute = r.Fields()
 	var pkts stack.PacketBufferList
 	pkts.PushBack(pkt)
@@ -145,7 +145,7 @@ func (t *testInterface) WritePacket(r *stack.Route, pkt stack.PacketBufferPtr) t
 	return err
 }
 
-func (t *testInterface) WritePacketToRemote(remoteLinkAddr tcpip.LinkAddress, pkt stack.PacketBufferPtr) tcpip.Error {
+func (t *testInterface) WritePacketToRemote(remoteLinkAddr tcpip.LinkAddress, pkt *stack.PacketBuffer) tcpip.Error {
 	pkt.EgressRoute.NetProto = pkt.NetworkProtocolNumber
 	pkt.EgressRoute.RemoteLinkAddress = remoteLinkAddr
 	var pkts stack.PacketBufferList

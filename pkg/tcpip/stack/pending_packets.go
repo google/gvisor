@@ -29,7 +29,7 @@ const (
 
 type pendingPacket struct {
 	routeInfo RouteInfo
-	pkt       PacketBufferPtr
+	pkt       *PacketBuffer
 }
 
 // packetsPendingLinkResolution is a queue of packets pending link resolution.
@@ -54,7 +54,7 @@ type packetsPendingLinkResolution struct {
 	}
 }
 
-func (f *packetsPendingLinkResolution) incrementOutgoingPacketErrors(pkt PacketBufferPtr) {
+func (f *packetsPendingLinkResolution) incrementOutgoingPacketErrors(pkt *PacketBuffer) {
 	f.nic.stack.stats.IP.OutgoingPacketErrors.Increment()
 
 	if ipEndpointStats, ok := f.nic.getNetworkEndpoint(pkt.NetworkProtocolNumber).Stats().(IPNetworkEndpointStats); ok {
@@ -113,7 +113,7 @@ func (f *packetsPendingLinkResolution) dequeue(ch <-chan struct{}, linkAddr tcpi
 // If the maximum number of pending resolutions is reached, the packets
 // associated with the oldest link resolution will be dequeued as if they failed
 // link resolution.
-func (f *packetsPendingLinkResolution) enqueue(r *Route, pkt PacketBufferPtr) tcpip.Error {
+func (f *packetsPendingLinkResolution) enqueue(r *Route, pkt *PacketBuffer) tcpip.Error {
 	f.mu.Lock()
 	// Make sure we attempt resolution while holding f's lock so that we avoid
 	// a race where link resolution completes before we enqueue the packets.

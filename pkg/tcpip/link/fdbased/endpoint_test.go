@@ -47,7 +47,7 @@ const (
 
 type packetInfo struct {
 	Proto    tcpip.NetworkProtocolNumber
-	Contents stack.PacketBufferPtr
+	Contents *stack.PacketBuffer
 }
 
 type packetContents struct {
@@ -61,7 +61,7 @@ func checkPacketInfoEqual(t *testing.T, got, want packetInfo) {
 	t.Helper()
 	if diff := cmp.Diff(
 		want, got,
-		cmp.Transformer("ExtractPacketBuffer", func(pk stack.PacketBufferPtr) *packetContents {
+		cmp.Transformer("ExtractPacketBuffer", func(pk *stack.PacketBuffer) *packetContents {
 			if pk.IsNil() {
 				return nil
 			}
@@ -132,12 +132,12 @@ func (c *context) cleanup() {
 	}
 }
 
-func (c *context) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr) {
+func (c *context) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	pkt.IncRef()
 	c.ch <- packetInfo{protocol, pkt}
 }
 
-func (c *context) DeliverLinkPacket(tcpip.NetworkProtocolNumber, stack.PacketBufferPtr) {
+func (c *context) DeliverLinkPacket(tcpip.NetworkProtocolNumber, *stack.PacketBuffer) {
 	c.t.Fatal("DeliverLinkPacket not implemented")
 }
 
@@ -567,15 +567,15 @@ func TestIovecBufferSkipVnetHdr(t *testing.T) {
 
 // fakeNetworkDispatcher delivers packets to pkts.
 type fakeNetworkDispatcher struct {
-	pkts []stack.PacketBufferPtr
+	pkts []*stack.PacketBuffer
 }
 
-func (d *fakeNetworkDispatcher) DeliverNetworkPacket(_ tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr) {
+func (d *fakeNetworkDispatcher) DeliverNetworkPacket(_ tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	pkt.IncRef()
 	d.pkts = append(d.pkts, pkt)
 }
 
-func (*fakeNetworkDispatcher) DeliverLinkPacket(tcpip.NetworkProtocolNumber, stack.PacketBufferPtr) {
+func (*fakeNetworkDispatcher) DeliverLinkPacket(tcpip.NetworkProtocolNumber, *stack.PacketBuffer) {
 	panic("not implemented")
 }
 

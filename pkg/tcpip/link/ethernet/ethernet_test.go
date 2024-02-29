@@ -33,18 +33,18 @@ var _ stack.NetworkDispatcher = (*testNetworkDispatcher)(nil)
 
 type deliveredPacket struct {
 	protocol tcpip.NetworkProtocolNumber
-	packet   stack.PacketBufferPtr
+	packet   *stack.PacketBuffer
 }
 
 type testNetworkDispatcher struct {
 	networkPackets []deliveredPacket
 }
 
-func (t *testNetworkDispatcher) DeliverNetworkPacket(proto tcpip.NetworkProtocolNumber, pb stack.PacketBufferPtr) {
+func (t *testNetworkDispatcher) DeliverNetworkPacket(proto tcpip.NetworkProtocolNumber, pb *stack.PacketBuffer) {
 	t.networkPackets = append(t.networkPackets, deliveredPacket{protocol: proto, packet: pb})
 }
 
-func (*testNetworkDispatcher) DeliverLinkPacket(tcpip.NetworkProtocolNumber, stack.PacketBufferPtr) {
+func (*testNetworkDispatcher) DeliverLinkPacket(tcpip.NetworkProtocolNumber, *stack.PacketBuffer) {
 	panic("not implemented")
 }
 

@@ -27,7 +27,7 @@ import (
 // pkt.Data.
 //
 // Returns true if the header was successfully parsed.
-func ARP(pkt stack.PacketBufferPtr) bool {
+func ARP(pkt *stack.PacketBuffer) bool {
 	_, ok := pkt.NetworkHeader().Consume(header.ARPSize)
 	if ok {
 		pkt.NetworkProtocolNumber = header.ARPProtocolNumber
@@ -39,7 +39,7 @@ func ARP(pkt stack.PacketBufferPtr) bool {
 // header with the IPv4 header.
 //
 // Returns true if the header was successfully parsed.
-func IPv4(pkt stack.PacketBufferPtr) bool {
+func IPv4(pkt *stack.PacketBuffer) bool {
 	hdr, ok := pkt.Data().PullUp(header.IPv4MinimumSize)
 	if !ok {
 		return false
@@ -71,7 +71,7 @@ func IPv4(pkt stack.PacketBufferPtr) bool {
 
 // IPv6 parses an IPv6 packet found in pkt.Data and populates pkt's network
 // header with the IPv6 header.
-func IPv6(pkt stack.PacketBufferPtr) (proto tcpip.TransportProtocolNumber, fragID uint32, fragOffset uint16, fragMore bool, ok bool) {
+func IPv6(pkt *stack.PacketBuffer) (proto tcpip.TransportProtocolNumber, fragID uint32, fragOffset uint16, fragMore bool, ok bool) {
 	hdr, ok := pkt.Data().PullUp(header.IPv6MinimumSize)
 	if !ok {
 		return 0, 0, 0, false, false
@@ -157,7 +157,7 @@ traverseExtensions:
 // header with the UDP header.
 //
 // Returns true if the header was successfully parsed.
-func UDP(pkt stack.PacketBufferPtr) bool {
+func UDP(pkt *stack.PacketBuffer) bool {
 	_, ok := pkt.TransportHeader().Consume(header.UDPMinimumSize)
 	pkt.TransportProtocolNumber = header.UDPProtocolNumber
 	return ok
@@ -167,7 +167,7 @@ func UDP(pkt stack.PacketBufferPtr) bool {
 // header with the TCP header.
 //
 // Returns true if the header was successfully parsed.
-func TCP(pkt stack.PacketBufferPtr) bool {
+func TCP(pkt *stack.PacketBuffer) bool {
 	// TCP header is variable length, peek at it first.
 	hdrLen := header.TCPMinimumSize
 	hdr, ok := pkt.Data().PullUp(hdrLen)
@@ -191,7 +191,7 @@ func TCP(pkt stack.PacketBufferPtr) bool {
 // if present.
 //
 // Returns true if an ICMPv4 header was successfully parsed.
-func ICMPv4(pkt stack.PacketBufferPtr) bool {
+func ICMPv4(pkt *stack.PacketBuffer) bool {
 	if _, ok := pkt.TransportHeader().Consume(header.ICMPv4MinimumSize); ok {
 		pkt.TransportProtocolNumber = header.ICMPv4ProtocolNumber
 		return true
@@ -203,7 +203,7 @@ func ICMPv4(pkt stack.PacketBufferPtr) bool {
 // if present.
 //
 // Returns true if an ICMPv6 header was successfully parsed.
-func ICMPv6(pkt stack.PacketBufferPtr) bool {
+func ICMPv6(pkt *stack.PacketBuffer) bool {
 	hdr, ok := pkt.Data().PullUp(header.ICMPv6MinimumSize)
 	if !ok {
 		return false

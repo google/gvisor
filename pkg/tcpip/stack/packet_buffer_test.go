@@ -393,12 +393,12 @@ func TestPacketHeaderConsumeThenPushPanics(t *testing.T) {
 func TestPacketBufferData(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
-		makePkt func(*testing.T) PacketBufferPtr
+		makePkt func(*testing.T) *PacketBuffer
 		data    string
 	}{
 		{
 			name: "inbound packet",
-			makePkt: func(*testing.T) PacketBufferPtr {
+			makePkt: func(*testing.T) *PacketBuffer {
 				pkt := NewPacketBuffer(PacketBufferOptions{
 					Payload: buf("aabbbbccccccDATA"),
 				})
@@ -411,7 +411,7 @@ func TestPacketBufferData(t *testing.T) {
 		},
 		{
 			name: "outbound packet",
-			makePkt: func(*testing.T) PacketBufferPtr {
+			makePkt: func(*testing.T) *PacketBuffer {
 				pkt := NewPacketBuffer(PacketBufferOptions{
 					ReserveHeaderBytes: 12,
 					Payload:            buf("DATA"),
@@ -580,7 +580,7 @@ type packetContents struct {
 	data      []byte
 }
 
-func checkPacketContents(t *testing.T, prefix string, pk PacketBufferPtr, want packetContents) {
+func checkPacketContents(t *testing.T, prefix string, pk *PacketBuffer, want packetContents) {
 	t.Helper()
 	// Headers.
 	checkPacketHeader(t, prefix+"pk.LinkHeader", pk.LinkHeader(), want.link)
@@ -620,7 +620,7 @@ func checkPacketContents(t *testing.T, prefix string, pk PacketBufferPtr, want p
 		concatViews(want.transport, want.data))
 }
 
-func checkInitialPacketBuffer(t *testing.T, pk PacketBufferPtr, opts PacketBufferOptions) {
+func checkInitialPacketBuffer(t *testing.T, pk *PacketBuffer, opts PacketBufferOptions) {
 	t.Helper()
 	reserved := opts.ReserveHeaderBytes
 	if got, want := pk.ReservedHeaderBytes(), reserved; got != want {
@@ -653,7 +653,7 @@ func checkViewEqual(t *testing.T, what string, got, want []byte) {
 	}
 }
 
-func checkData(t *testing.T, pkt PacketBufferPtr, want []byte) {
+func checkData(t *testing.T, pkt *PacketBuffer, want []byte) {
 	t.Helper()
 	if got := pkt.Data().AsRange().ToSlice(); !bytes.Equal(got, want) {
 		t.Errorf("pkt.Data().Slices() = 0x%x, want 0x%x", got, want)

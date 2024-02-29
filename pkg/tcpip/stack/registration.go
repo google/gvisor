@@ -120,12 +120,12 @@ type TransportEndpoint interface {
 	// transport endpoint. It sets the packet buffer's transport header.
 	//
 	// HandlePacket may modify the packet.
-	HandlePacket(TransportEndpointID, PacketBufferPtr)
+	HandlePacket(TransportEndpointID, *PacketBuffer)
 
 	// HandleError is called when the transport endpoint receives an error.
 	//
 	// HandleError takes may modify the packet buffer.
-	HandleError(TransportError, PacketBufferPtr)
+	HandleError(TransportError, *PacketBuffer)
 
 	// Abort initiates an expedited endpoint teardown. It puts the endpoint
 	// in a closed state and frees all resources associated with it. This
@@ -153,7 +153,7 @@ type RawTransportEndpoint interface {
 	// layer up.
 	//
 	// HandlePacket may modify the packet.
-	HandlePacket(PacketBufferPtr)
+	HandlePacket(*PacketBuffer)
 }
 
 // PacketEndpoint is the interface that needs to be implemented by packet
@@ -171,7 +171,7 @@ type PacketEndpoint interface {
 	// should construct its own ethernet header for applications.
 	//
 	// HandlePacket may modify pkt.
-	HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtocolNumber, pkt PacketBufferPtr)
+	HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtocolNumber, pkt *PacketBuffer)
 }
 
 // UnknownDestinationPacketDisposition enumerates the possible return values from
@@ -221,7 +221,7 @@ type TransportProtocol interface {
 	//
 	// HandleUnknownDestinationPacket may modify the packet if it handles
 	// the issue.
-	HandleUnknownDestinationPacket(TransportEndpointID, PacketBufferPtr) UnknownDestinationPacketDisposition
+	HandleUnknownDestinationPacket(TransportEndpointID, *PacketBuffer) UnknownDestinationPacketDisposition
 
 	// SetOption allows enabling/disabling protocol specific features.
 	// SetOption returns an error if the option is not supported or the
@@ -250,7 +250,7 @@ type TransportProtocol interface {
 	// Parse sets pkt.TransportHeader and trims pkt.Data appropriately. It does
 	// neither and returns false if pkt.Data is too small, i.e. pkt.Data.Size() <
 	// MinimumPacketSize()
-	Parse(pkt PacketBufferPtr) (ok bool)
+	Parse(pkt *PacketBuffer) (ok bool)
 }
 
 // TransportPacketDisposition is the result from attempting to deliver a packet
@@ -282,18 +282,18 @@ type TransportDispatcher interface {
 	// pkt.NetworkHeader must be set before calling DeliverTransportPacket.
 	//
 	// DeliverTransportPacket may modify the packet.
-	DeliverTransportPacket(tcpip.TransportProtocolNumber, PacketBufferPtr) TransportPacketDisposition
+	DeliverTransportPacket(tcpip.TransportProtocolNumber, *PacketBuffer) TransportPacketDisposition
 
 	// DeliverTransportError delivers an error to the appropriate transport
 	// endpoint.
 	//
 	// DeliverTransportError may modify the packet buffer.
-	DeliverTransportError(local, remote tcpip.Address, _ tcpip.NetworkProtocolNumber, _ tcpip.TransportProtocolNumber, _ TransportError, _ PacketBufferPtr)
+	DeliverTransportError(local, remote tcpip.Address, _ tcpip.NetworkProtocolNumber, _ tcpip.TransportProtocolNumber, _ TransportError, _ *PacketBuffer)
 
 	// DeliverRawPacket delivers a packet to any subscribed raw sockets.
 	//
 	// DeliverRawPacket does NOT take ownership of the packet buffer.
-	DeliverRawPacket(tcpip.TransportProtocolNumber, PacketBufferPtr)
+	DeliverRawPacket(tcpip.TransportProtocolNumber, *PacketBuffer)
 }
 
 // PacketLooping specifies where an outbound packet should be sent.
@@ -740,13 +740,13 @@ type NetworkInterface interface {
 	CheckLocalAddress(tcpip.NetworkProtocolNumber, tcpip.Address) bool
 
 	// WritePacketToRemote writes the packet to the given remote link address.
-	WritePacketToRemote(tcpip.LinkAddress, PacketBufferPtr) tcpip.Error
+	WritePacketToRemote(tcpip.LinkAddress, *PacketBuffer) tcpip.Error
 
 	// WritePacket writes a packet through the given route.
 	//
 	// WritePacket may modify the packet buffer. The packet buffer's
 	// network and transport header must be set.
-	WritePacket(*Route, PacketBufferPtr) tcpip.Error
+	WritePacket(*Route, *PacketBuffer) tcpip.Error
 
 	// HandleNeighborProbe processes an incoming neighbor probe (e.g. ARP
 	// request or NDP Neighbor Solicitation).
@@ -764,7 +764,7 @@ type NetworkInterface interface {
 type LinkResolvableNetworkEndpoint interface {
 	// HandleLinkResolutionFailure is called when link resolution prevents the
 	// argument from having been sent.
-	HandleLinkResolutionFailure(PacketBufferPtr)
+	HandleLinkResolutionFailure(*PacketBuffer)
 }
 
 // NetworkEndpoint is the interface that needs to be implemented by endpoints
@@ -802,17 +802,17 @@ type NetworkEndpoint interface {
 	// WritePacket writes a packet to the given destination address and
 	// protocol. It may modify pkt. pkt.TransportHeader must have
 	// already been set.
-	WritePacket(r *Route, params NetworkHeaderParams, pkt PacketBufferPtr) tcpip.Error
+	WritePacket(r *Route, params NetworkHeaderParams, pkt *PacketBuffer) tcpip.Error
 
 	// WriteHeaderIncludedPacket writes a packet that includes a network
 	// header to the given destination address. It may modify pkt.
-	WriteHeaderIncludedPacket(r *Route, pkt PacketBufferPtr) tcpip.Error
+	WriteHeaderIncludedPacket(r *Route, pkt *PacketBuffer) tcpip.Error
 
 	// HandlePacket is called by the link layer when new packets arrive to
 	// this network endpoint. It sets pkt.NetworkHeader.
 	//
 	// HandlePacket may modify pkt.
-	HandlePacket(pkt PacketBufferPtr)
+	HandlePacket(pkt *PacketBuffer)
 
 	// Close is called when the endpoint is removed from a stack.
 	Close()
@@ -911,7 +911,7 @@ type NetworkProtocol interface {
 	//	- Whether there is an encapsulated transport protocol payload (e.g. ARP
 	//		does not encapsulate anything).
 	//	- Whether pkt.Data was large enough to parse and set pkt.NetworkHeader.
-	Parse(pkt PacketBufferPtr) (proto tcpip.TransportProtocolNumber, hasTransportHdr bool, ok bool)
+	Parse(pkt *PacketBuffer) (proto tcpip.TransportProtocolNumber, hasTransportHdr bool, ok bool)
 }
 
 // UnicastSourceAndMulticastDestination is a tuple that represents a unicast
@@ -1027,14 +1027,14 @@ type NetworkDispatcher interface {
 	// If the link-layer has a header, the packet's link header must be populated.
 	//
 	// DeliverNetworkPacket may modify pkt.
-	DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt PacketBufferPtr)
+	DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer)
 
 	// DeliverLinkPacket delivers a packet to any interested packet endpoints.
 	//
 	// This method should be called with both incoming and outgoing packets.
 	//
 	// If the link-layer has a header, the packet's link header must be populated.
-	DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt PacketBufferPtr)
+	DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer)
 }
 
 // LinkEndpointCapabilities is the type associated with the capabilities
@@ -1123,10 +1123,10 @@ type NetworkLinkEndpoint interface {
 	ARPHardwareType() header.ARPHardwareType
 
 	// AddHeader adds a link layer header to the packet if required.
-	AddHeader(PacketBufferPtr)
+	AddHeader(*PacketBuffer)
 
 	// ParseHeader parses the link layer header to the packet.
-	ParseHeader(PacketBufferPtr) bool
+	ParseHeader(*PacketBuffer) bool
 }
 
 // QueueingDiscipline provides a queueing strategy for outgoing packets (e.g
@@ -1140,7 +1140,7 @@ type QueueingDiscipline interface {
 	// To participate in transparent bridging, a LinkEndpoint implementation
 	// should call eth.Encode with header.EthernetFields.SrcAddr set to
 	// pkg.EgressRoute.LocalLinkAddress if it is provided.
-	WritePacket(PacketBufferPtr) tcpip.Error
+	WritePacket(*PacketBuffer) tcpip.Error
 
 	Close()
 }
@@ -1161,7 +1161,7 @@ type InjectableLinkEndpoint interface {
 	LinkEndpoint
 
 	// InjectInbound injects an inbound packet.
-	InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt PacketBufferPtr)
+	InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer)
 
 	// InjectOutbound writes a fully formed outbound packet directly to the
 	// link.

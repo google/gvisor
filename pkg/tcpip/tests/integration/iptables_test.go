@@ -51,7 +51,7 @@ func (*inputIfNameMatcher) Name() string {
 	return "inputIfNameMatcher"
 }
 
-func (im *inputIfNameMatcher) Match(hook stack.Hook, _ stack.PacketBufferPtr, inNicName, _ string) (bool, bool) {
+func (im *inputIfNameMatcher) Match(hook stack.Hook, _ *stack.PacketBuffer, inNicName, _ string) (bool, bool) {
 	return (hook == stack.Input && im.name != "" && im.name == inNicName), false
 }
 
@@ -112,7 +112,7 @@ func genStackV4(t *testing.T) (*stack.Stack, *channel.Endpoint) {
 	return s, e
 }
 
-func genPacketV6() stack.PacketBufferPtr {
+func genPacketV6() *stack.PacketBuffer {
 	pktSize := header.IPv6MinimumSize + payloadSize
 	hdr := prependable.New(pktSize)
 	ip := header.IPv6(hdr.Prepend(pktSize))
@@ -127,7 +127,7 @@ func genPacketV6() stack.PacketBufferPtr {
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buf})
 }
 
-func genPacketV4() stack.PacketBufferPtr {
+func genPacketV4() *stack.PacketBuffer {
 	pktSize := header.IPv4MinimumSize + payloadSize
 	hdr := prependable.New(pktSize)
 	ip := header.IPv4(hdr.Prepend(pktSize))
@@ -153,7 +153,7 @@ func TestIPTablesStatsForInput(t *testing.T) {
 		name               string
 		setupStack         func(*testing.T) (*stack.Stack, *channel.Endpoint)
 		setupFilter        func(*testing.T, *stack.Stack)
-		genPacket          func() stack.PacketBufferPtr
+		genPacket          func() *stack.PacketBuffer
 		proto              tcpip.NetworkProtocolNumber
 		expectReceived     int
 		expectInputDropped int
@@ -366,7 +366,7 @@ func (*udpSourcePortMatcher) Name() string {
 	return "udpSourcePortMatcher"
 }
 
-func (m *udpSourcePortMatcher) Match(_ stack.Hook, pkt stack.PacketBufferPtr, _, _ string) (matches, hotdrop bool) {
+func (m *udpSourcePortMatcher) Match(_ stack.Hook, pkt *stack.PacketBuffer, _, _ string) (matches, hotdrop bool) {
 	udp := header.UDP(pkt.TransportHeader().Slice())
 	if len(udp) < header.UDPMinimumSize {
 		// Drop immediately as the packet is invalid.
@@ -3049,7 +3049,7 @@ type icmpv4Matcher struct {
 	icmpType header.ICMPv4Type
 }
 
-func (m *icmpv4Matcher) Match(_ stack.Hook, pkt stack.PacketBufferPtr, _, _ string) (matches bool, hotdrop bool) {
+func (m *icmpv4Matcher) Match(_ stack.Hook, pkt *stack.PacketBuffer, _, _ string) (matches bool, hotdrop bool) {
 	if pkt.NetworkProtocolNumber != header.IPv4ProtocolNumber {
 		return false, false
 	}
@@ -3065,7 +3065,7 @@ type icmpv6Matcher struct {
 	icmpType header.ICMPv6Type
 }
 
-func (m *icmpv6Matcher) Match(_ stack.Hook, pkt stack.PacketBufferPtr, _, _ string) (matches bool, hotdrop bool) {
+func (m *icmpv6Matcher) Match(_ stack.Hook, pkt *stack.PacketBuffer, _, _ string) (matches bool, hotdrop bool) {
 	if pkt.NetworkProtocolNumber != header.IPv6ProtocolNumber {
 		return false, false
 	}
@@ -3345,7 +3345,7 @@ func TestInvalidTransportHeader(t *testing.T) {
 	tests := []struct {
 		name       string
 		setupStack func(*testing.T) (*stack.Stack, *channel.Endpoint)
-		genPacket  func(int8) stack.PacketBufferPtr
+		genPacket  func(int8) *stack.PacketBuffer
 		offset     int8
 	}{
 		{
@@ -3413,7 +3413,7 @@ func TestInvalidTransportHeader(t *testing.T) {
 	}
 }
 
-func genTCP4(offset int8) stack.PacketBufferPtr {
+func genTCP4(offset int8) *stack.PacketBuffer {
 	pktSize := header.IPv4MinimumSize + header.TCPMinimumSize
 	hdr := prependable.New(pktSize)
 
@@ -3445,7 +3445,7 @@ func genTCP4(offset int8) stack.PacketBufferPtr {
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buf})
 }
 
-func genTCP6(offset int8) stack.PacketBufferPtr {
+func genTCP6(offset int8) *stack.PacketBuffer {
 	pktSize := header.IPv6MinimumSize + header.TCPMinimumSize
 	hdr := prependable.New(pktSize)
 
@@ -3471,7 +3471,7 @@ func genTCP6(offset int8) stack.PacketBufferPtr {
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buf})
 }
 
-func genUDP4(offset int8) stack.PacketBufferPtr {
+func genUDP4(offset int8) *stack.PacketBuffer {
 	pktSize := header.IPv4MinimumSize + header.UDPMinimumSize
 	hdr := prependable.New(pktSize)
 
@@ -3502,7 +3502,7 @@ func genUDP4(offset int8) stack.PacketBufferPtr {
 	return stack.NewPacketBuffer(stack.PacketBufferOptions{Payload: buf})
 }
 
-func genUDP6(offset int8) stack.PacketBufferPtr {
+func genUDP6(offset int8) *stack.PacketBuffer {
 	pktSize := header.IPv6MinimumSize + header.UDPMinimumSize
 	hdr := prependable.New(pktSize)
 

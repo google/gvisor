@@ -159,7 +159,7 @@ func (s *serverTx) fillPacket(pktBuffer buffer.Buffer, buffers []queue.RxBuffer)
 	return bufs, totalCopied
 }
 
-func (s *serverTx) transmit(pkt stack.PacketBufferPtr) bool {
+func (s *serverTx) transmit(pkt *stack.PacketBuffer) bool {
 	buffers := make([]queue.RxBuffer, 8)
 	buffers, totalCopied := s.fillPacket(pkt.ToBuffer(), buffers)
 	if totalCopied == 0 {

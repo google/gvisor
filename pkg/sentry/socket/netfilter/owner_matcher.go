@@ -120,7 +120,7 @@ func (*OwnerMatcher) revision() uint8 {
 }
 
 // Match implements Matcher.Match.
-func (om *OwnerMatcher) Match(hook stack.Hook, pkt stack.PacketBufferPtr, _, _ string) (bool, bool) {
+func (om *OwnerMatcher) Match(hook stack.Hook, pkt *stack.PacketBuffer, _, _ string) (bool, bool) {
 	// Support only for OUTPUT chain.
 	if hook != stack.Output {
 		return false, true

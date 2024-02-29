@@ -127,7 +127,7 @@ func (qd *queueDispatcher) dispatchLoop() {
 //   - pkt.EgressRoute
 //   - pkt.GSOOptions
 //   - pkt.NetworkProtocolNumber
-func (d *discipline) WritePacket(pkt stack.PacketBufferPtr) tcpip.Error {
+func (d *discipline) WritePacket(pkt *stack.PacketBuffer) tcpip.Error {
 	if d.closed.Load() == qDiscClosed {
 		return &tcpip.ErrClosedForSend{}
 	}
