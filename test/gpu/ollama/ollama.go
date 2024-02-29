@@ -16,10 +16,13 @@
 package ollama
 
 import (
+	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -54,9 +57,13 @@ type Ollama struct {
 
 // Server performs requests against an ollama server.
 type Server interface {
-	// HTTPRequest performs an HTTP request against the ollama server.
-	// The request is a GET request if postData == nil, otherwise POST.
-	HTTPRequest(ctx context.Context, endpoint string, postData []byte) ([]byte, error)
+	// InstrumentedRequest performs an instrumented HTTP request against the
+	// ollama server, using the `gpu/ollama_client` ollama image.
+	// `argvFn` takes in a `protocol://host:port` string and returns a
+	// command-line to use for making an instrumented HTTP request against the
+	// ollama server.
+	// InstrumentedRequest should return the logs from the request container.
+	InstrumentedRequest(ctx context.Context, argvFn func(hostPort string) []string) ([]byte, error)
 
 	// Logs retrieves logs from the server.
 	Logs(ctx context.Context) (string, error)
@@ -144,16 +151,13 @@ func NewDocker(ctx context.Context, cont *dockerutil.Container, logger testutil.
 	return New(ctx, ds, logger)
 }
 
-// HTTPRequest implements `Server.HTTPRequest`.
-func (ds *dockerServer) HTTPRequest(ctx context.Context, endpoint string, data []byte) ([]byte, error) {
-	cmd := []string{"wget", "-qO-"}
-	if data != nil {
-		cmd = append(cmd, "--post-data", string(data))
-	}
-	cmd = append(cmd, fmt.Sprintf("http://llm:%d%s", Port, endpoint))
+// InstrumentedRequest implements `Server.InstrumentedRequest`.
+func (ds *dockerServer) InstrumentedRequest(ctx context.Context, argvFn func(hostPort string) []string) ([]byte, error) {
+	const ollamaHost = "llm"
+	cmd := argvFn(fmt.Sprintf("http://%s:%d", ollamaHost, Port))
 	out, err := dockerutil.MakeContainer(ctx, ds.logger).Run(ctx, dockerutil.RunOpts{
-		Image: "basic/busybox",
-		Links: []string{ds.container.MakeLink("llm")},
+		Image: "gpu/ollama/client",
+		Links: []string{ds.container.MakeLink(ollamaHost)},
 	}, cmd...)
 	if err != nil {
 		if out != "" {
@@ -169,42 +173,115 @@ func (ds *dockerServer) Logs(ctx context.Context) (string, error) {
 	return ds.container.Logs(ctx)
 }
 
-// request makes an HTTP request to the ollama API.
-func (llm *Ollama) request(ctx context.Context, endpoint string, data []byte) ([]byte, error) {
+// ResponseMetrics are HTTP request metrics from an ollama API query.
+// These is the same JSON struct as defined in
+// `images/gpu/ollama/client/client.go`.
+type ResponseMetrics struct {
+	// ProgramStarted is the time when the program started.
+	ProgramStarted time.Time `json:"program_started"`
+	// RequestSent is the time when the HTTP request was sent.
+	RequestSent time.Time `json:"request_sent"`
+	// ResponseReceived is the time when the HTTP response headers were received.
+	ResponseReceived time.Time `json:"response_received"`
+	// FirstByteRead is the time when the first HTTP response body byte was read.
+	FirstByteRead time.Time `json:"first_byte_read"`
+	// LastByteRead is the time when the last HTTP response body byte was read.
+	LastByteRead time.Time `json:"last_byte_read"`
+}
+
+type apiResponse[T any] struct {
+	Response T
+	Metrics  ResponseMetrics
+}
+
+func makeAPIResponse[T any](rawResponse []byte) (*apiResponse[T], error) {
+	var respBytes bytes.Buffer
+	var resp apiResponse[T]
+	for _, line := range strings.Split(string(rawResponse), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		colonIndex := strings.Index(line, ":")
+		if colonIndex == -1 {
+			return nil, fmt.Errorf("malformed line: %q", line)
+		}
+		data := strings.TrimSpace(line[colonIndex+1:])
+		switch line[:colonIndex] {
+		case "FATAL":
+			return nil, fmt.Errorf("request failed: %s", data)
+		case "REQHEADER", "RESPHEADER":
+			// Do nothing with these.
+		case "BODY":
+			unquoted, err := strconv.Unquote(data)
+			if err != nil {
+				return nil, fmt.Errorf("malformed body line: %q", data)
+			}
+			respBytes.WriteString(unquoted)
+		case "STATS":
+			if err := json.Unmarshal([]byte(data), &resp.Metrics); err != nil {
+				return nil, fmt.Errorf("malformed stats line: %q", data)
+			}
+		default:
+			return nil, fmt.Errorf("malformed line: %q", line)
+		}
+	}
+	if respBytes.Len() == 0 {
+		return nil, fmt.Errorf("empty response")
+	}
+	if err := json.Unmarshal(respBytes.Bytes(), &resp.Response); err != nil {
+		return nil, fmt.Errorf("malformed JSON response %q: %w", string(respBytes.Bytes()), err)
+	}
+	return &resp, nil
+}
+
+// instrumentedRequest makes an HTTP request to the ollama API.
+// It returns the raw bytestream from the instrumented request logs.
+func (llm *Ollama) instrumentedRequest(ctx context.Context, method, endpoint string, data []byte) ([]byte, error) {
 	if endpoint != "" && !strings.HasPrefix(endpoint, "/") {
 		return nil, fmt.Errorf("endpoint must be empty or start with '/', got %q", endpoint)
 	}
-	return llm.server.HTTPRequest(ctx, endpoint, data)
+	argvFn := func(hostPort string) []string {
+		argv := []string{
+			"httpclient",
+			fmt.Sprintf("--method=%s", method),
+			fmt.Sprintf("--url=%s%s", hostPort, endpoint),
+		}
+		if data != nil {
+			argv = append(argv, fmt.Sprintf("--post_base64=%s", base64.StdEncoding.EncodeToString(data)))
+		}
+		if ctxDeadline, hasDeadline := ctx.Deadline(); hasDeadline {
+			argv = append(argv, fmt.Sprintf("--timeout=%v", time.Until(ctxDeadline)))
+		}
+		return argv
+	}
+	rawResponse, err := llm.server.InstrumentedRequest(ctx, argvFn)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", endpoint, err)
+	}
+	return rawResponse, nil
 }
 
 // jsonGet performs a JSON HTTP GET request.
-func jsonGet[Out any](ctx context.Context, llm *Ollama, endpoint string) (Out, error) {
-	var resp Out
-	out, err := llm.request(ctx, endpoint, nil)
+func jsonGet[Out any](ctx context.Context, llm *Ollama, endpoint string) (*apiResponse[Out], error) {
+	out, err := llm.instrumentedRequest(ctx, "GET", endpoint, nil)
 	if err != nil {
-		return resp, fmt.Errorf("GET %q failed: %w", endpoint, err)
+		return nil, fmt.Errorf("GET %q failed: %w", endpoint, err)
 	}
-	if err := json.Unmarshal(out, &resp); err != nil {
-		return resp, fmt.Errorf("malformed JSON response %q: %w", string(out), err)
-	}
-	return resp, nil
+	return makeAPIResponse[Out](out)
 }
 
 // jsonPost performs a JSON HTTP POST request.
-func jsonPost[In, Out any](ctx context.Context, llm *Ollama, endpoint string, input In) (Out, error) {
-	var resp Out
+func jsonPost[In, Out any](ctx context.Context, llm *Ollama, endpoint string, input In) (*apiResponse[Out], error) {
 	query, err := json.Marshal(input)
 	if err != nil {
-		return resp, fmt.Errorf("could not marshal input %v: %w", input, err)
+		return nil, fmt.Errorf("could not marshal input %v: %w", input, err)
 	}
-	out, err := llm.request(ctx, endpoint, query)
+	out, err := llm.instrumentedRequest(ctx, "POST", endpoint, query)
 	if err != nil {
-		return resp, fmt.Errorf("POST %q %v failed: %w", endpoint, string(query), err)
+		return nil, fmt.Errorf("POST %q %v failed: %w", endpoint, string(query), err)
 	}
-	if err := json.Unmarshal(out, &resp); err != nil {
-		return resp, fmt.Errorf("malformed JSON response %q: %w", string(out), err)
-	}
-	return resp, nil
+	return makeAPIResponse[Out](out)
 }
 
 // listModelNames lists the available model names.
@@ -221,8 +298,8 @@ func (llm *Ollama) listModelNames(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	modelNames := make([]string, len(models.Models))
-	for i, m := range models.Models {
+	modelNames := make([]string, len(models.Response.Models))
+	for i, m := range models.Response.Models {
 		modelNames[i] = m.Name
 	}
 	return modelNames, nil
@@ -231,11 +308,11 @@ func (llm *Ollama) listModelNames(ctx context.Context) ([]string, error) {
 // WaitUntilServing waits until ollama is serving, or the context expires.
 func (llm *Ollama) WaitUntilServing(ctx context.Context) error {
 	for ctx.Err() == nil {
-		out, err := llm.request(ctx, "/", nil)
+		out, err := llm.instrumentedRequest(ctx, "GET", "/", nil)
 		if err != nil {
 			continue
 		}
-		if string(out) == "Ollama is running" {
+		if strings.Contains(string(out), "Ollama is running") {
 			return nil
 		}
 	}
@@ -435,7 +512,8 @@ type ResponseJSON struct {
 
 // Response represents a response to a query from Ollama.
 type Response struct {
-	data ResponseJSON
+	data    ResponseJSON
+	metrics ResponseMetrics
 }
 
 // Done returns whether the response was completely generated.
@@ -526,7 +604,7 @@ func (llm *Ollama) Prompt(ctx context.Context, prompt *Prompt) (*Response, error
 	if err != nil {
 		return nil, llm.withServerLogsErr(ctx, fmt.Errorf("prompt (%s %q) request failed: %w", prompt.Model.Name, prompt.CleanQuery(), err))
 	}
-	return &Response{data: resp}, nil
+	return &Response{data: resp.Response, metrics: resp.Metrics}, nil
 }
 
 // PromptUntil repeatedly issues a prompt until `iterate` returns a nil error.
