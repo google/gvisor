@@ -23,14 +23,14 @@ import "gvisor.dev/gvisor/pkg/tcpip/stack"
 //
 // +stateify savable
 type packetBufferCircularList struct {
-	pbs  []stack.PacketBufferPtr
+	pbs  []*stack.PacketBuffer
 	head int
 	size int
 }
 
 // init initializes the list with the given size.
 func (pl *packetBufferCircularList) init(size int) {
-	pl.pbs = make([]stack.PacketBufferPtr, size)
+	pl.pbs = make([]*stack.PacketBuffer, size)
 }
 
 // length returns the number of elements in the list.
@@ -60,7 +60,7 @@ func (pl *packetBufferCircularList) isEmpty() bool {
 // Failing to do so may clobber existing entries.
 //
 //go:nosplit
-func (pl *packetBufferCircularList) pushBack(pb stack.PacketBufferPtr) {
+func (pl *packetBufferCircularList) pushBack(pb *stack.PacketBuffer) {
 	next := (pl.head + pl.size) % len(pl.pbs)
 	pl.pbs[next] = pb
 	pl.size++
@@ -69,7 +69,7 @@ func (pl *packetBufferCircularList) pushBack(pb stack.PacketBufferPtr) {
 // removeFront returns the first element of the list or nil.
 //
 //go:nosplit
-func (pl *packetBufferCircularList) removeFront() stack.PacketBufferPtr {
+func (pl *packetBufferCircularList) removeFront() *stack.PacketBuffer {
 	if pl.isEmpty() {
 		return nil
 	}

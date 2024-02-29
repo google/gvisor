@@ -2823,7 +2823,7 @@ func (e *endpoint) getRemoteAddress() tcpip.FullAddress {
 	}
 }
 
-func (*endpoint) HandlePacket(stack.TransportEndpointID, stack.PacketBufferPtr) {
+func (*endpoint) HandlePacket(stack.TransportEndpointID, *stack.PacketBuffer) {
 	// TCP HandlePacket is not required anymore as inbound packets first
 	// land at the Dispatcher which then can either deliver using the
 	// worker go routine or directly do the invoke the tcp processing inline
@@ -2841,7 +2841,7 @@ func (e *endpoint) enqueueSegment(s *segment) bool {
 	return true
 }
 
-func (e *endpoint) onICMPError(err tcpip.Error, transErr stack.TransportError, pkt stack.PacketBufferPtr) {
+func (e *endpoint) onICMPError(err tcpip.Error, transErr stack.TransportError, pkt *stack.PacketBuffer) {
 	// Update last error first.
 	e.lastErrorMu.Lock()
 	e.lastError = err
@@ -2898,7 +2898,7 @@ func (e *endpoint) onICMPError(err tcpip.Error, transErr stack.TransportError, p
 }
 
 // HandleError implements stack.TransportEndpoint.
-func (e *endpoint) HandleError(transErr stack.TransportError, pkt stack.PacketBufferPtr) {
+func (e *endpoint) HandleError(transErr stack.TransportError, pkt *stack.PacketBuffer) {
 	handlePacketTooBig := func(mtu uint32) {
 		e.sndQueueInfo.sndQueueMu.Lock()
 		update := false

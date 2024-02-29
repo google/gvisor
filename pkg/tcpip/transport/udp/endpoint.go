@@ -40,7 +40,7 @@ type udpPacket struct {
 	senderAddress      tcpip.FullAddress
 	destinationAddress tcpip.FullAddress
 	packetInfo         tcpip.IPPacketInfo
-	pkt                stack.PacketBufferPtr
+	pkt                *stack.PacketBuffer
 	receivedAt         time.Time `state:".(int64)"`
 	// tosOrTClass stores either the Type of Service for IPv4 or the Traffic Class
 	// for IPv6.
@@ -908,7 +908,7 @@ func (e *endpoint) Readiness(mask waiter.EventMask) waiter.EventMask {
 
 // HandlePacket is called by the stack when new packets arrive to this transport
 // endpoint.
-func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt stack.PacketBufferPtr) {
+func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt *stack.PacketBuffer) {
 	// Get the header then trim it from the view.
 	hdr := header.UDP(pkt.TransportHeader().Slice())
 	netHdr := pkt.Network()
@@ -1000,7 +1000,7 @@ func (e *endpoint) HandlePacket(id stack.TransportEndpointID, pkt stack.PacketBu
 	}
 }
 
-func (e *endpoint) onICMPError(err tcpip.Error, transErr stack.TransportError, pkt stack.PacketBufferPtr) {
+func (e *endpoint) onICMPError(err tcpip.Error, transErr stack.TransportError, pkt *stack.PacketBuffer) {
 	// Update last error first.
 	e.lastErrorMu.Lock()
 	e.lastError = err
@@ -1050,7 +1050,7 @@ func (e *endpoint) onICMPError(err tcpip.Error, transErr stack.TransportError, p
 }
 
 // HandleError implements stack.TransportEndpoint.
-func (e *endpoint) HandleError(transErr stack.TransportError, pkt stack.PacketBufferPtr) {
+func (e *endpoint) HandleError(transErr stack.TransportError, pkt *stack.PacketBuffer) {
 	// TODO(gvisor.dev/issues/5270): Handle all transport errors.
 	switch transErr.Kind() {
 	case stack.DestinationPortUnreachableTransportError:

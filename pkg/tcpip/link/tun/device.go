@@ -271,7 +271,7 @@ func (d *Device) Read() (*buffer.View, error) {
 }
 
 // encodePkt encodes packet for fd side.
-func (d *Device) encodePkt(pkt stack.PacketBufferPtr) *buffer.View {
+func (d *Device) encodePkt(pkt *stack.PacketBuffer) *buffer.View {
 	var view *buffer.View
 
 	// Packet information.
@@ -359,7 +359,7 @@ func (e *tunEndpoint) ARPHardwareType() header.ARPHardwareType {
 }
 
 // AddHeader implements stack.LinkEndpoint.AddHeader.
-func (e *tunEndpoint) AddHeader(pkt stack.PacketBufferPtr) {
+func (e *tunEndpoint) AddHeader(pkt *stack.PacketBuffer) {
 	if !e.isTap {
 		return
 	}

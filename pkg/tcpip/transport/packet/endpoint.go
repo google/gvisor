@@ -40,7 +40,7 @@ import (
 type packet struct {
 	packetEntry
 	// data holds the actual packet data, including any headers and payload.
-	data       stack.PacketBufferPtr
+	data       *stack.PacketBuffer
 	receivedAt time.Time `state:".(int64)"`
 	// senderAddr is the network address of the sender.
 	senderAddr tcpip.FullAddress
@@ -416,7 +416,7 @@ func (ep *endpoint) GetSockOptInt(opt tcpip.SockOptInt) (int, tcpip.Error) {
 }
 
 // HandlePacket implements stack.PacketEndpoint.HandlePacket.
-func (ep *endpoint) HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtocolNumber, pkt stack.PacketBufferPtr) {
+func (ep *endpoint) HandlePacket(nicID tcpip.NICID, netProto tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
 	ep.rcvMu.Lock()
 
 	// Drop the packet if our buffer is currently full.

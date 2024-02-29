@@ -97,7 +97,7 @@ type TimeoutHandler interface {
 	// OnReassemblyTimeout will be called with the first fragment (or nil, if the
 	// first fragment has not been received) of a packet whose reassembly has
 	// timed out.
-	OnReassemblyTimeout(pkt stack.PacketBufferPtr)
+	OnReassemblyTimeout(pkt *stack.PacketBuffer)
 }
 
 // NewFragmentation creates a new Fragmentation.
@@ -155,8 +155,8 @@ func NewFragmentation(blockSize uint16, highMemoryLimit, lowMemoryLimit int, rea
 // to be given here outside of the FragmentID struct because IPv6 should not use
 // the protocol to identify a fragment.
 func (f *Fragmentation) Process(
-	id FragmentID, first, last uint16, more bool, proto uint8, pkt stack.PacketBufferPtr) (
-	stack.PacketBufferPtr, uint8, bool, error) {
+	id FragmentID, first, last uint16, more bool, proto uint8, pkt *stack.PacketBuffer) (
+	*stack.PacketBuffer, uint8, bool, error) {
 	if first > last {
 		return nil, 0, false, fmt.Errorf("first=%d is greater than last=%d: %w", first, last, ErrInvalidArgs)
 	}
@@ -308,7 +308,7 @@ type PacketFragmenter struct {
 //
 // reserve is the number of bytes that should be reserved for the headers in
 // each generated fragment.
-func MakePacketFragmenter(pkt stack.PacketBufferPtr, fragmentPayloadLen uint32, reserve int) PacketFragmenter {
+func MakePacketFragmenter(pkt *stack.PacketBuffer, fragmentPayloadLen uint32, reserve int) PacketFragmenter {
 	// As per RFC 8200 Section 4.5, some IPv6 extension headers should not be
 	// repeated in each fragment. However we do not currently support any header
 	// of that kind yet, so the following computation is valid for both IPv4 and
@@ -339,7 +339,7 @@ func MakePacketFragmenter(pkt stack.PacketBufferPtr, fragmentPayloadLen uint32, 
 // Note that the returned packet will not have its network and link headers
 // populated, but space for them will be reserved. The transport header will be
 // stored in the packet's data.
-func (pf *PacketFragmenter) BuildNextFragment() (stack.PacketBufferPtr, int, int, bool) {
+func (pf *PacketFragmenter) BuildNextFragment() (*stack.PacketBuffer, int, int, bool) {
 	if pf.currentFragment >= pf.fragmentCount {
 		panic("BuildNextFragment should not be called again after the last fragment was returned")
 	}

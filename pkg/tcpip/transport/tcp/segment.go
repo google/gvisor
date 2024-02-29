@@ -59,7 +59,7 @@ type segment struct {
 	qFlags queueFlags
 	id     stack.TransportEndpointID `state:"manual"`
 
-	pkt stack.PacketBufferPtr
+	pkt *stack.PacketBuffer
 
 	sequenceNumber seqnum.Value
 	ackNumber      seqnum.Value
@@ -92,7 +92,7 @@ type segment struct {
 	lost bool
 }
 
-func newIncomingSegment(id stack.TransportEndpointID, clock tcpip.Clock, pkt stack.PacketBufferPtr) (*segment, error) {
+func newIncomingSegment(id stack.TransportEndpointID, clock tcpip.Clock, pkt *stack.PacketBuffer) (*segment, error) {
 	hdr := header.TCP(pkt.TransportHeader().Slice())
 	netHdr := pkt.Network()
 	csum, csumValid, ok := header.TCPValid(

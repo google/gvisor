@@ -137,7 +137,7 @@ func (*endpoint) GetSockOptInt(tcpip.SockOptInt) (int, tcpip.Error) {
 }
 
 // HandlePacket implements stack.RawTransportEndpoint.HandlePacket.
-func (*endpoint) HandlePacket(pkt stack.PacketBufferPtr) {
+func (*endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 	panic(fmt.Sprintf("unreachable: noop.endpoint should never be registered, but got packet: %+v", pkt))
 }
 
