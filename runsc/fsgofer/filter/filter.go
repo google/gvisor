@@ -53,6 +53,9 @@ func Install(opt Options) error {
 	// when not enabled.
 	s.Merge(instrumentationFilters())
 
+	// TODO(b/317993245): add HostFilesystem to Options.
+	s.Merge(xattrSyscalls)
+
 	return seccomp.Install(s, seccomp.DenyNewExecMappings, seccomp.DefaultProgramOptions())
 }
 

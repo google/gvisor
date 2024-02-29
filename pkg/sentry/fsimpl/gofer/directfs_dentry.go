@@ -423,6 +423,14 @@ func (d *directfsDentry) getHostChild(name string) (*dentry, error) {
 	return d.fs.newDirectfsDentry(childFD)
 }
 
+func (d *directfsDentry) getXattr(name string, size uint64) (string, error) {
+	data := make([]byte, size)
+	if _, err := unix.Fgetxattr(d.controlFD, name, data); err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
 // getCreatedChild opens the newly created child, sets its uid/gid, constructs
 // a disconnected dentry and returns it.
 func (d *directfsDentry) getCreatedChild(name string, uid, gid int, isDir bool) (*dentry, error) {
