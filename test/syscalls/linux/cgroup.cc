@@ -550,8 +550,11 @@ TEST(CPUAcctCgroup, HierarchicalAccounting) {
   Cgroup root = Cgroup::RootCgroup("/sys/fs/cgroup/cpuacct");
   Cgroup child = ASSERT_NO_ERRNO_AND_VALUE(root.CreateChild("child1"));
 
-  // Root should have non-zero CPU usage since the test itself will be running
-  // in the root cgroup.
+  // The test starts in the root cgroup, so its CPU usage should be accounted
+  // there. Since the granularity of cpuacct.usage is unspecified and the test
+  // may not have run for very long yet, wait for it to be accounted.
+  ASSERT_NO_ERRNO(
+      root.PollControlFileForChange("cpuacct.usage", absl::Seconds(5)));
   EXPECT_THAT(root.ReadIntegerControlFile("cpuacct.usage"),
               IsPosixErrorOkAndHolds(Gt(0)));
 
@@ -564,7 +567,7 @@ TEST(CPUAcctCgroup, HierarchicalAccounting) {
       ASSERT_NO_ERRNO_AND_VALUE(root.ReadIntegerControlFile("cpuacct.usage"));
   ASSERT_NO_ERRNO(child.Enter(getpid()));
   ASSERT_NO_ERRNO(
-      child.PollControlFileForChange("cpuacct.usage", absl::Seconds(60)));
+      child.PollControlFileForChange("cpuacct.usage", absl::Seconds(5)));
 
   EXPECT_THAT(child.ReadIntegerControlFile("cpuacct.usage"),
               IsPosixErrorOkAndHolds(Gt(0)));
@@ -577,7 +580,7 @@ TEST(CPUAcctCgroup, HierarchicalAccounting) {
   // Root should continue to gain usage after the move since child is a
   // subcgroup.
   ASSERT_NO_ERRNO(
-      child.PollControlFileForChange("cpuacct.usage", absl::Seconds(60)));
+      child.PollControlFileForChange("cpuacct.usage", absl::Seconds(5)));
   EXPECT_THAT(root.ReadIntegerControlFile("cpuacct.usage"),
               IsPosixErrorOkAndHolds(Ge(after_move)));
 }
@@ -592,7 +595,7 @@ TEST(CPUAcctCgroup, IndirectCharge) {
 
   ASSERT_NO_ERRNO(child1.Enter(getpid()));
   ASSERT_NO_ERRNO(
-      child1.PollControlFileForChange("cpuacct.usage", absl::Seconds(60)));
+      child1.PollControlFileForChange("cpuacct.usage", absl::Seconds(5)));
 
   // Only root and child1 should have usage.
   for (auto const& cg : {root, child1}) {
@@ -606,7 +609,7 @@ TEST(CPUAcctCgroup, IndirectCharge) {
 
   ASSERT_NO_ERRNO(child2a.Enter(getpid()));
   ASSERT_NO_ERRNO(
-      child2a.PollControlFileForChange("cpuacct.usage", absl::Seconds(60)));
+      child2a.PollControlFileForChange("cpuacct.usage", absl::Seconds(5)));
 
   const int64_t snapshot_root =
       ASSERT_NO_ERRNO_AND_VALUE(root.ReadIntegerControlFile("cpuacct.usage"));
@@ -618,7 +621,7 @@ TEST(CPUAcctCgroup, IndirectCharge) {
       child2a.ReadIntegerControlFile("cpuacct.usage"));
 
   ASSERT_NO_ERRNO(
-      child2a.PollControlFileForChange("cpuacct.usage", absl::Seconds(60)));
+      child2a.PollControlFileForChange("cpuacct.usage", absl::Seconds(5)));
 
   // Root, child2 and child2a should've accumulated new usage. Child1 should
   // not.
@@ -647,15 +650,15 @@ TEST(CPUAcctCgroup, NoDoubleAccounting) {
 
   ASSERT_NO_ERRNO(a.Enter(getpid()));
   ASSERT_NO_ERRNO(
-      a.PollControlFileForChange("cpuacct.usage", absl::Seconds(60)));
+      a.PollControlFileForChange("cpuacct.usage", absl::Seconds(5)));
 
   ASSERT_NO_ERRNO(b.Enter(getpid()));
   ASSERT_NO_ERRNO(
-      b.PollControlFileForChange("cpuacct.usage", absl::Seconds(60)));
+      b.PollControlFileForChange("cpuacct.usage", absl::Seconds(5)));
 
   ASSERT_NO_ERRNO(root.Enter(getpid()));
   ASSERT_NO_ERRNO(
-      root.PollControlFileForChange("cpuacct.usage", absl::Seconds(60)));
+      root.PollControlFileForChange("cpuacct.usage", absl::Seconds(5)));
 
   // The usage for parent, a & b should now be frozen, since they no longer have
   // any tasks. Root will continue to accumulate usage.
