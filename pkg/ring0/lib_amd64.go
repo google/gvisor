@@ -119,8 +119,8 @@ func Init(fs cpuid.FeatureSet) {
 	hasFSGSBASE = fs.HasFeature(cpuid.X86FeatureFSGSBase)
 	validXCR0Mask = uintptr(fs.ValidXCR0Mask())
 	if hasXSAVE {
-		XCR0AMXMask := uintptr((1 << 17) | (1 << 18))
-		localXCR0 = xgetbv(0) &^ XCR0AMXMask
+		XCR0DisabledMask := uintptr((1 << 9) | (1 << 17) | (1 << 18))
+		localXCR0 = xgetbv(0) &^ XCR0DisabledMask
 	}
 }
 
