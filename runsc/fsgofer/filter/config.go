@@ -233,5 +233,4 @@ var udsCreateSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule
 
 var xattrSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 	unix.SYS_FGETXATTR: seccomp.MatchAll{},
-	unix.SYS_FSETXATTR: seccomp.MatchAll{},
 })
