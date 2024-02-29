@@ -319,15 +319,13 @@ type Task struct {
 	goroutineStopped sync.WaitGroup `state:"nosave"`
 
 	// ptraceTracer is the task that is ptrace-attached to this one. If
-	// ptraceTracer is nil, this task is not being traced. Note that due to
-	// atomic.Value limitations (atomic.Value.Store(nil) panics), a nil
-	// ptraceTracer is always represented as a typed nil (i.e. (*Task)(nil)).
+	// ptraceTracer is nil, this task is not being traced.
 	//
 	// ptraceTracer is protected by the TaskSet mutex, and accessed with atomic
 	// operations. This allows paths that wouldn't otherwise lock the TaskSet
 	// mutex, notably the syscall path, to check if ptraceTracer is nil without
 	// additional synchronization.
-	ptraceTracer atomic.Value `state:".(*Task)"`
+	ptraceTracer atomic.Pointer[Task] `state:".(*Task)"`
 
 	// ptraceTracees is the set of tasks that this task is ptrace-attached to.
 	//
@@ -616,7 +614,7 @@ var (
 )
 
 func (t *Task) savePtraceTracer() *Task {
-	return t.ptraceTracer.Load().(*Task)
+	return t.ptraceTracer.Load()
 }
 
 func (t *Task) loadPtraceTracer(tracer *Task) {
