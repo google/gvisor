@@ -901,7 +901,9 @@ func (fd *controlFDLisa) Renamed() {
 
 // GetXattr implements lisafs.ControlFDImpl.GetXattr.
 func (fd *controlFDLisa) GetXattr(name string, size uint32, getValueBuf func(uint32) []byte) (uint16, error) {
-	return 0, unix.EOPNOTSUPP
+	data := getValueBuf(size)
+	xattrSize, err := unix.Fgetxattr(fd.hostFD, name, data)
+	return uint16(xattrSize), err
 }
 
 // SetXattr implements lisafs.ControlFDImpl.SetXattr.
