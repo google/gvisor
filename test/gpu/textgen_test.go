@@ -89,6 +89,7 @@ func TestLLM(t *testing.T) {
 				Translate the following text from English to Chinese:
 				    "Hello World".
 			`,
+			Preamble: ollama.DoNothing,
 		}
 		promptCtx, promptCancel := context.WithTimeout(ctx, 3*time.Minute)
 		response, err := llm.PromptUntil(promptCtx, &prompt, func(prompt *ollama.Prompt, response *ollama.Response) (*ollama.Prompt, error) {
@@ -146,6 +147,7 @@ func TestLLM(t *testing.T) {
 				the code works and do not provide usage examples.
 				Output a single block of Python code wrapped between %q marks.
 			`, markerString, codeBlockDelim),
+			Preamble: ollama.DoNothing,
 		}
 		response, err := llm.PromptUntil(promptCtx, &prompt, func(prompt *ollama.Prompt, response *ollama.Response) (*ollama.Prompt, error) {
 			defer prompt.Model.RaiseTemperature()

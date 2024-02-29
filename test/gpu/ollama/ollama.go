@@ -23,6 +23,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -49,6 +51,10 @@ type Ollama struct {
 
 	// ModelNames is the list of available model names.
 	ModelNames []string
+
+	// cheapModels is a list of models that are known to be cheap.
+	// A caller may set this to make forcefully unloading a model quicker.
+	cheapModels []*Model
 
 	// HasGPU is set depending on whether the LLM has GPU access.
 	// ollama supports running both on CPU and GPU, and detects this
@@ -102,9 +108,9 @@ func New(ctx context.Context, server Server, logger testutil.Logger) (*Ollama, e
 	// This may fail during the process of loading the first model, so we keep
 	// iterating for a while.
 	_, err = llm.Prompt(ctx, &Prompt{
-		Model:     &Model{Name: llm.ModelNames[0]},
-		WarmFirst: false,
-		Query:     curtQuery,
+		Model:    &Model{Name: llm.ModelNames[0]},
+		Preamble: DoNothing,
+		Query:    curtQuery,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("could not load first model %q: %w", llm.ModelNames[0], err)
@@ -126,6 +132,15 @@ func New(ctx context.Context, server Server, logger testutil.Logger) (*Ollama, e
 	}
 	logger.Logf("Ollama successfully initialized in a total of %v", time.Since(started))
 	return llm, nil
+}
+
+// SetCheapModels can be used to inform this Ollama client as to the list of
+// models it can use that are known to be cheap.
+// This is useful when forcefully unloading models by swapping them with
+// another one, to ensure that the one it is being swapped with is small.
+// Therefore, there should be at least two models specified here.
+func (llm *Ollama) SetCheapModels(cheapModels []*Model) {
+	llm.cheapModels = cheapModels
 }
 
 // dockerServer implements `Server`. It interfaces with an ollama server
@@ -410,6 +425,22 @@ func ZeroTemperatureModel(name string) *Model {
 	}
 }
 
+// Preamble dictates what to do before actually issuing a prompt.
+type Preamble int
+
+const (
+	// DoNothing means to do nothing when issuing a prompt.
+	DoNothing Preamble = iota
+
+	// WarmUp issues a short query to the same model before
+	// issuing a prompt. This ensures the model is warm.
+	WarmUp Preamble = iota
+
+	// Unload issues a short query with a different model before
+	// issuing a prompt. This ensures the model is cold.
+	Unload Preamble = iota
+)
+
 // Prompt is an ollama prompt.
 type Prompt struct {
 	// Model is the model to query.
@@ -423,10 +454,10 @@ type Prompt struct {
 	// This is returned from `Response`.
 	Context ConversationContext
 
-	// WarmFirst ensures the model is already loaded by issuing a small query
-	// beforehand. This is necessary for benchmarks to be accurate, but is
-	// unnecessary when just testing.
-	WarmFirst bool
+	// Preamble dictates what to do before actually issuing this prompt.
+	// This can be used to make sure the model is warm, or to make sure
+	// the model is cold.
+	Preamble Preamble
 }
 
 // CleanQuery removes common whitespace from query lines, and all
@@ -565,6 +596,11 @@ func (r *Response) Done() bool {
 	return r.data[len(r.data)-1].Done
 }
 
+// NumTokens returns the number of tokens in the response.
+func (r *Response) NumTokens() int {
+	return len(r.data)
+}
+
 // String returns the response text, if it is done.
 func (r *Response) String() string {
 	if len(r.data) == 0 {
@@ -594,6 +630,98 @@ func (r *Response) Text() string {
 		return ""
 	}
 	return r.String()
+}
+
+// TimeToFirstToken returns the time it took between the request starting
+// and the first token being received by the client.
+func (r *Response) TimeToFirstToken() time.Duration {
+	if !r.Done() {
+		return -1
+	}
+	return r.metrics.FirstByteRead.Sub(r.metrics.RequestSent)
+}
+
+// TimeToLastToken returns the time it took between the request starting
+// and the last token being received by the client.
+func (r *Response) TimeToLastToken() time.Duration {
+	if !r.Done() {
+		return -1
+	}
+	return r.metrics.LastByteRead.Sub(r.metrics.RequestSent)
+}
+
+// tokenIntervals returns the time between each token generation.
+func (r *Response) tokenIntervals() []time.Duration {
+	if !r.Done() || len(r.data) < 2 {
+		return nil
+	}
+	intervals := make([]time.Duration, len(r.data)-1)
+	for i := 0; i < len(r.data)-1; i++ {
+		intervals[i] = r.data[i+1].CreatedAt.Sub(r.data[i].CreatedAt)
+	}
+	return intervals
+}
+
+// OutputTokensPerSecond computes the average number of output tokens
+// generated per second.
+func (r *Response) OutputTokensPerSecond() float64 {
+	if !r.Done() || r.EvalDuration() == 0 {
+		return -1
+	}
+	return float64(r.data[len(r.data)-1].EvalCount) / float64(r.EvalDuration().Seconds())
+}
+
+// TimePerOutputTokenAverage computes the average time to generate an output
+// token.
+func (r *Response) TimePerOutputTokenAverage() time.Duration {
+	if !r.Done() {
+		return -1
+	}
+	intervals := r.tokenIntervals()
+	var sum time.Duration
+	for _, interval := range intervals {
+		sum += interval
+	}
+	return sum / time.Duration(len(intervals))
+}
+
+// TimePerOutputTokenQuantile computes a quantile of the time it takes to
+// generate an output token.
+func (r *Response) TimePerOutputTokenQuantile(quantile float64) time.Duration {
+	if quantile < 0.0 || quantile > 1.0 {
+		panic("quantile must be between 0.0 and 1.0 inclusively")
+	}
+	if !r.Done() || r.EvalDuration() == 0 {
+		return -1
+	}
+	intervals := r.tokenIntervals()
+	sort.Slice(intervals, func(i, j int) bool { return intervals[i] < intervals[j] })
+	return intervals[int(quantile*float64(len(intervals)-1))]
+}
+
+// TokenGenerationStdDev returns the standard deviation of the time between
+// token generations.
+func (r *Response) TokenGenerationStdDev() time.Duration {
+	intervals := r.tokenIntervals()
+	if len(intervals) == 0 {
+		return -1
+	}
+	if len(intervals) == 1 {
+		return 0
+	}
+
+	var sum time.Duration
+	for _, interval := range intervals {
+		sum += interval
+	}
+	mean := sum / time.Duration(len(intervals))
+	variance := 0.0
+	for _, interval := range intervals {
+		intervalMinusMean := float64((interval - mean).Nanoseconds())
+		variance += intervalMinusMean * intervalMinusMean
+	}
+	variance = variance / float64(len(intervals)-1)
+	return time.Duration(math.Sqrt(variance)) * time.Nanosecond
 }
 
 // TotalDuration returns the total response generation time.
@@ -628,14 +756,6 @@ func (r *Response) PromptEvalDuration() time.Duration {
 	return time.Duration(r.data[len(r.data)-1].PromptEvalNanos) * time.Nanosecond
 }
 
-// TokensPerSecond computes the number of tokens generated per second.
-func (r *Response) TokensPerSecond() float64 {
-	if !r.Done() || r.EvalDuration() == 0 {
-		return 0
-	}
-	return float64(r.data[len(r.data)-1].EvalCount) / float64(r.EvalDuration().Seconds())
-}
-
 // ConversationContext represents a conversational context.
 // It is returned by a response and may be passed to a follow-up prompt.
 type ConversationContext []int
@@ -658,9 +778,27 @@ func (llm *Ollama) withServerLogsErr(ctx context.Context, err error) error {
 	return fmt.Errorf("%w (server logs are empty)", err)
 }
 
+// getReplacementModel picks an available model other than `model`.
+// It tries to find a one that is marked cheap if possible.
+func (llm *Ollama) getReplacementModel(model *Model) (*Model, error) {
+	for _, cheapModel := range llm.cheapModels {
+		if cheapModel.Name != model.Name {
+			return cheapModel, nil
+		}
+	}
+	for _, otherModelName := range llm.ModelNames {
+		if otherModelName != model.Name {
+			return ZeroTemperatureModel(otherModelName), nil
+		}
+	}
+	return nil, fmt.Errorf("cannot find a replacement model to load instead of %q (available: %v; cheap: %v)", model.Name, llm.ModelNames, llm.cheapModels)
+}
+
 // Prompt returns the result of prompting the given `model` with `prompt`.
 func (llm *Ollama) Prompt(ctx context.Context, prompt *Prompt) (*Response, error) {
-	if prompt.WarmFirst {
+	switch prompt.Preamble {
+	case DoNothing: // Do nothing.
+	case WarmUp:
 		warmCtx, warmCancel := context.WithTimeout(ctx, 3*time.Minute)
 		_, err := jsonPost[PromptJSON, ResponseJSON](warmCtx, llm, "/api/generate", (&Prompt{
 			Model: prompt.Model,
@@ -669,6 +807,20 @@ func (llm *Ollama) Prompt(ctx context.Context, prompt *Prompt) (*Response, error
 		warmCancel()
 		if err != nil {
 			return nil, llm.withServerLogsErr(ctx, fmt.Errorf("warmup prompt for model %s failed: %w", prompt.Model.Name, err))
+		}
+	case Unload:
+		replacementModel, err := llm.getReplacementModel(prompt.Model)
+		if err != nil {
+			return nil, fmt.Errorf("cannot find a replacement model to load instead of %q to forcefully unload it: %w", prompt.Model.Name, err)
+		}
+		unloadCtx, unloadCancel := context.WithTimeout(ctx, 3*time.Minute)
+		_, err = jsonPost[PromptJSON, ResponseJSON](unloadCtx, llm, "/api/generate", (&Prompt{
+			Model: replacementModel,
+			Query: curtQuery,
+		}).json())
+		unloadCancel()
+		if err != nil {
+			return nil, llm.withServerLogsErr(ctx, fmt.Errorf("unload prompt for model %s failed: %w", replacementModel.Name, err))
 		}
 	}
 	resp, err := jsonPost[PromptJSON, ResponseJSON](ctx, llm, "/api/generate", prompt.json())
@@ -692,10 +844,10 @@ func (llm *Ollama) PromptUntil(ctx context.Context, prompt *Prompt, iterate func
 		if err != nil {
 			return nil, fmt.Errorf("prompt request failed: %w", err)
 		}
-		if prompt.WarmFirst && !warmed {
+		if prompt.Preamble == WarmUp && !warmed {
 			// Future prompts do not need to specify the WarmFirst option.
 			promptCopy := *prompt
-			promptCopy.WarmFirst = false
+			promptCopy.Preamble = DoNothing
 			prompt = &promptCopy
 			warmed = true
 		}
