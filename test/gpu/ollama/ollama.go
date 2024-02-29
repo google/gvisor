@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 	"time"
@@ -189,11 +190,28 @@ type ResponseMetrics struct {
 	LastByteRead time.Time `json:"last_byte_read"`
 }
 
+// apiResponse represents a JSON response from the ollama API.
 type apiResponse[T any] struct {
-	Response T
-	Metrics  ResponseMetrics
+	// Objects is the list of JSON objects in the response.
+	Objects []*T
+	// Metrics contains HTTP response metrics.
+	Metrics ResponseMetrics
 }
 
+// Obj returns the first object in the response, if there is a singular
+// object in the response.
+func (ar *apiResponse[T]) Obj() (*T, error) {
+	if len(ar.Objects) == 0 {
+		return nil, fmt.Errorf("no objects in response")
+	}
+	if len(ar.Objects) > 1 {
+		return nil, fmt.Errorf("multiple objects in response")
+	}
+	return ar.Objects[0], nil
+}
+
+// makeAPIResponse decodes a raw response from an instrumented HTTP request
+// into an `apiResponse` with deserialized JSON objects.
 func makeAPIResponse[T any](rawResponse []byte) (*apiResponse[T], error) {
 	var respBytes bytes.Buffer
 	var resp apiResponse[T]
@@ -226,11 +244,27 @@ func makeAPIResponse[T any](rawResponse []byte) (*apiResponse[T], error) {
 			return nil, fmt.Errorf("malformed line: %q", line)
 		}
 	}
-	if respBytes.Len() == 0 {
-		return nil, fmt.Errorf("empty response")
+	decoder := json.NewDecoder(&respBytes)
+	for {
+		var obj T
+		err := decoder.Decode(&obj)
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("malformed JSON response: %w", err)
+		}
+		resp.Objects = append(resp.Objects, &obj)
 	}
-	if err := json.Unmarshal(respBytes.Bytes(), &resp.Response); err != nil {
-		return nil, fmt.Errorf("malformed JSON response %q: %w", string(respBytes.Bytes()), err)
+	if len(resp.Objects) == 0 {
+		return nil, fmt.Errorf("response is empty")
+	}
+	leftoverBytes, err := io.ReadAll(decoder.Buffered())
+	if err != nil && err != io.EOF {
+		return nil, fmt.Errorf("could not read leftover bytes: %w", err)
+	}
+	if leftover := strings.TrimSpace(string(leftoverBytes)); leftover != "" {
+		return nil, fmt.Errorf("unprocessed bytes in response: %q", leftover)
 	}
 	return &resp, nil
 }
@@ -294,12 +328,16 @@ func (llm *Ollama) listModelNames(ctx context.Context) ([]string, error) {
 	type modelsList struct {
 		Models []model `json:"models"`
 	}
-	models, err := jsonGet[modelsList](ctx, llm, "/api/tags")
+	modelsResp, err := jsonGet[modelsList](ctx, llm, "/api/tags")
 	if err != nil {
 		return nil, err
 	}
-	modelNames := make([]string, len(models.Response.Models))
-	for i, m := range models.Response.Models {
+	models, err := modelsResp.Obj()
+	if err != nil {
+		return nil, fmt.Errorf("malformed model tags response: %w", err)
+	}
+	modelNames := make([]string, len(models.Models))
+	for i, m := range models.Models {
 		modelNames[i] = m.Name
 	}
 	return modelNames, nil
@@ -489,16 +527,19 @@ func (p *Prompt) json() PromptJSON {
 	return PromptJSON{
 		Model:   p.Model.Name,
 		Prompt:  p.CleanQuery(),
-		Stream:  false,
+		Stream:  true,
 		Context: p.Context,
 		Options: p.Model.Options,
 	}
 }
 
-// ResponseJSON is the JSON-format response from ollama about a prompt in
-// non-streamed mode.
+// ResponseJSON is the JSON-format response from ollama about a prompt.
+// Note that in `streamed` mode, the `Response` field contains a single token.
+// To recover the whole response, all `Response` fields must be concatenated
+// until the last `ResponseJSON`, identified as such by the `Done` field.
 type ResponseJSON struct {
 	Model           string              `json:"model"`
+	CreatedAt       time.Time           `json:"created_at"`
 	Response        string              `json:"response"`
 	Done            bool                `json:"done"`
 	TotalNanos      int                 `json:"total_duration"`
@@ -512,57 +553,87 @@ type ResponseJSON struct {
 
 // Response represents a response to a query from Ollama.
 type Response struct {
-	data    ResponseJSON
+	data    []*ResponseJSON
 	metrics ResponseMetrics
 }
 
 // Done returns whether the response was completely generated.
 func (r *Response) Done() bool {
-	return r.data.Done
+	if len(r.data) == 0 {
+		return false
+	}
+	return r.data[len(r.data)-1].Done
 }
 
 // String returns the response text, if it is done.
 func (r *Response) String() string {
-	if !r.data.Done {
-		if r.data.Response != "" {
-			return fmt.Sprintf("%s <NOT DONE>", r.data.Response)
+	if len(r.data) == 0 {
+		return "<EMPTY>"
+	}
+	var fullResponse strings.Builder
+	gotDone := false
+	for i, token := range r.data {
+		fullResponse.WriteString(token.Response)
+		if token.Done {
+			if i != len(r.data)-1 {
+				fullResponse.WriteString("<CORRUPT>")
+			}
+			gotDone = true
+			break
 		}
+	}
+	if !gotDone {
 		return "<NOT DONE>"
 	}
-	return r.data.Response
+	return fullResponse.String()
 }
 
 // Text returns the body of the response, if it is done.
 func (r *Response) Text() string {
-	return r.data.Response
+	if !r.Done() {
+		return ""
+	}
+	return r.String()
 }
 
 // TotalDuration returns the total response generation time.
 func (r *Response) TotalDuration() time.Duration {
-	return time.Duration(r.data.TotalNanos) * time.Nanosecond
+	if !r.Done() {
+		return time.Duration(0)
+	}
+	return time.Duration(r.data[len(r.data)-1].TotalNanos) * time.Nanosecond
 }
 
 // LoadDuration returns the load response generation time.
 func (r *Response) LoadDuration() time.Duration {
-	return time.Duration(r.data.LoadNanos) * time.Nanosecond
+	if !r.Done() {
+		return time.Duration(0)
+	}
+	return time.Duration(r.data[len(r.data)-1].LoadNanos) * time.Nanosecond
 }
 
 // EvalDuration returns the response evaluation time.
 func (r *Response) EvalDuration() time.Duration {
-	return time.Duration(r.data.EvalNanos) * time.Nanosecond
+	if !r.Done() {
+		return time.Duration(0)
+	}
+	return time.Duration(r.data[len(r.data)-1].EvalNanos) * time.Nanosecond
 }
 
 // PromptEvalDuration returns the prompt evaluation time.
 func (r *Response) PromptEvalDuration() time.Duration {
-	return time.Duration(r.data.PromptEvalNanos) * time.Nanosecond
+	if !r.Done() {
+		return time.Duration(0)
+	}
+	return time.Duration(r.data[len(r.data)-1].PromptEvalNanos) * time.Nanosecond
 }
 
 // TokensPerSecond computes the number of tokens generated per second.
 func (r *Response) TokensPerSecond() float64 {
-	if !r.data.Done || r.EvalDuration() == 0 {
+	if !r.Done() || r.EvalDuration() == 0 {
 		return 0
 	}
-	return float64(r.data.EvalCount) / float64(r.EvalDuration().Seconds())
+	return float64(r.data[len(r.data)-1].EvalCount) / float64(r.EvalDuration().Seconds())
 }
 
 // ConversationContext represents a conversational context.
@@ -604,7 +675,7 @@ func (llm *Ollama) Prompt(ctx context.Context, prompt *Prompt) (*Response, error
 	if err != nil {
 		return nil, llm.withServerLogsErr(ctx, fmt.Errorf("prompt (%s %q) request failed: %w", prompt.Model.Name, prompt.CleanQuery(), err))
 	}
-	return &Response{data: resp.Response, metrics: resp.Metrics}, nil
+	return &Response{data: resp.Objects, metrics: resp.Metrics}, nil
 }
 
 // PromptUntil repeatedly issues a prompt until `iterate` returns a nil error.
