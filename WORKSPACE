@@ -1424,6 +1424,13 @@ go_repository(
     version = "v0.6.2",
 )
 
+go_repository(
+    name = "com_github_google_go_github_v56",
+    importpath = "github.com/google/go-github/v56",
+    sum = "h1:TysL7dMa/r7wsQi44BjqlwaHvwlFlqkK8CtBWCX3gb4=",
+    version = "v56.0.0",
+)
+
 rules_proto_dependencies()
 
 rules_proto_toolchains()
