@@ -115,6 +115,7 @@ pkg_tar(
         "_config.yml",
         ":css",
         "//website/blog:index.html",
+        "//website/users:index.html",
     ] + glob([
         "assets/**",
         "_includes/**",

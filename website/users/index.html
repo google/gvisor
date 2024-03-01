@@ -1,0 +1,209 @@
+---
+title: Who's Using gVisor
+layout: base
+---
+
+<div class="container">
+  <div class="users-content">
+    <h1>{{ page.title }}</h1>
+    <div class="panel panel-default">
+      <div class="panel-body">
+          <strong>Note:</strong>
+          <span> Using gVisor? You can add yourself to this page,
+            contact <a href="mailto:gvisor-dev@googlegroups.com">
+              gvisor-dev@googlegroups.com</a>
+          </span>
+      </div>
+    </div> <!-- end panel -->
+    <p>This page lists companies that are known to use gVisor. This does not
+      constitute an endorsement.
+    </p>
+    <h1>Companies using gVisor</h1>
+    <hr>
+    <!-- Ant Group -->
+    <div class="row display-flex no-space">
+      <div class="col-md-12">
+        <h2>
+          <a href="https://www.antgroup.com/en" class="feature-link">
+              Ant Group
+          </a>
+        </h2>
+        <p class="info-users-text">Ant Group, develops online payment platforms.
+          The company offers a wide range of financial services to consumers and
+          businesses worldwide.
+        </p>
+        <div class="panel panel-default">
+          <div class="panel-body">
+              <p class="info-users-text"> At Ant Group, we are committed to
+                keeping online transactions safe and efficient. Continuously
+                improving security for potential system-level attacks is one
+                of many measures. As a container runtime, gVisor provides
+                container-native security without sacrificing resource
+                efficiency. Therefore, it has been on our radar since it was
+                released.
+              </p>
+          </div>
+        </div> <!-- end panel -->
+        <p class="info-users-text">Read Ant Group's blog post on running gVisor
+        in production at scale
+          (<a href="/blog/2021/12/02/running-gvisor-in-production-at-scale-in-ant/">source</a>).
+        </p>
+      </div>
+    </div>
+    <hr>
+    <!-- Blink -->
+    <div class="row display-flex no-space">
+      <div class="col-md-12">
+        <h2>
+          <a href="https://www.blinkops.com/" class="feature-link">
+            Blink
+          </a>
+        </h2>
+        <p class="info-text"> Blink is a company that specializes in security
+          automation and orchestration powered by generative AI.
+        </p>
+        <p class="info-users-text">Blink uses gVisor to run pods with full
+          isolation including system calls
+          (<a href="https://www.blinkops.com/blog/run-containers-securely-with-gvisor-on-eks">source</a>).
+        </p>
+      </div>
+    </div>
+    <hr>
+    <!-- Cloudflare -->
+    <div class="row display-flex no-space">
+      <div class="col-md-12">
+        <h2>
+          <a href="https://www.cloudflare.com" class="feature-link">
+            Cloudflare
+          </a>
+        </h2>
+        <p class="info-users-text"> Cloudflare is a content delivery network
+          (CDN) and cloud computing security company. It provides a range of
+          services to businesses of all sizes.
+        </p>
+        <div class="panel panel-default">
+          <div class="panel-body">
+              <p class="info-users-text">
+                It takes just a few seconds for a new gVisor container to
+                start up and begin executing meaningful work in a secure
+                sandbox with near native performance.
+                (<a href="https://blog.cloudflare.com/cloudflare-pages-build-improvements/">A
+                  new era for Cloudflare Pages builds</a>)
+              </p>
+          </div>
+        </div> <!-- end panel -->
+      </div>
+    </div>
+    <hr>
+    <!-- DigitalOcean -->
+    <div class="row display-flex no-space">
+      <div class="col-md-12">
+        <h2>
+          <a href="https://www.digitalocean.com/" class="feature-link">
+            DigitalOcean
+          </a>
+        </h2>
+        <p class="info-text"> DigitalOcean is a cloud computing provider that
+        offers cloud infrastructure services to developers and businesses.
+        </p>
+        <p class="info-users-text">DigitalOcean uses gVisor in
+          <a href="https://docs.digitalocean.com/products/app-platform/">App Platform</a>
+          as a container runtime sandbox
+          (<a href="https://docs.digitalocean.com/products/app-platform/details/limits/">source</a>).
+        </p>
+      </div>
+    </div>
+    <hr>
+    <!-- Google -->
+    <div class="row display-flex no-space">
+      <div class="col-md-8">
+        <h2>
+          <a href="https://www.google.com" class="feature-link">
+            Google
+          </a>
+        </h2>
+        <p class="info-text">gVisor was designed and developed to efficiently
+          isolate production workloads at scale for Google services. There are
+          millions of gVisor sandbox instances running daily. gVisor powers Google Cloud
+          offerings <a href="https://cloud.google.com/kubernetes-engine/docs/concepts/sandbox-pods">
+              GKE Sandbox</a>, <a href="https://cloud.google.com/run">Cloud Run</a>,
+              <a href="https://cloud.google.com/appengine">App Engine</a>, and more.
+        </p>
+      </div>
+      <div class="col-md-4">
+        <div>
+          <img
+            src="/assets/logos/logo_goog.png"
+            alt="Google logo"
+            title="Google logo"
+            class="img-responsive img-vert-center" />
+        </div>
+      </div>
+    </div>
+    <hr>
+    <!-- Grist -->
+    <div class="row display-flex no-space">
+      <div class="col-md-12">
+        <h2>
+          <a href="https://www.getgrist.com/" class="feature-link">
+            Grist
+          </a>
+        </h2>
+        <p class="info-text"> Grist combines the flexibility and familiarity of
+          spreadsheets with the power of databases.
+        </p>
+        <p class="info-users-text">Grist uses gVisor to isolate documents from each other and the network
+        (<a href="https://support.getgrist.com/self-managed/#how-do-i-sandbox-documents">source</a>).
+        </p>
+      </div>
+    </div>
+    <hr>
+    <!-- Modal -->
+    <div class="row display-flex no-space">
+      <div class="col-md-12">
+        <h2>
+          <a href="https://www.modal.com" class="feature-link">
+            Modal
+          </a>
+        </h2>
+        <p class="info-users-text"> Modal is a cloud platform that simplifies
+          the execution and management of various computing workloads for data
+          teams and application developers (particularly those working in the
+          field of generative AI).
+        </p>
+        <div class="panel panel-default">
+          <div class="panel-body">
+              <p class="info-users-text">
+                Compute jobs at Modal are containerized and virtualized using gVisor.
+                (<a href="https://modal.com/docs/guide/security">Security at Modal</a>).
+              </p>
+          </div>
+        </div> <!-- end panel -->
+        <p class="info-users-text">Modal labs tweeted about fully running on gVisor
+        (<a href="https://twitter.com/bernhardsson/status/1708929516955930699">source</a>).
+        </p>
+      </div>
+    </div>
+    <!-- Tailscale -->
+    <div class="row display-flex no-space">
+      <div class="col-md-12">
+        <h2>
+          <a href="https://tailscale.com" class="feature-link">
+            Tailscale
+          </a>
+        </h2>
+        <p class="info-users-text">Tailscale provides a mesh-based VPN service
+          designed to simplify secure networking between devices and servers.
+        </p>
+        <div class="panel panel-default">
+          <div class="panel-body">
+              <p class="info-users-text"> In userspace mode, Tailscale uses the
+                gVisor netstack library, implementing networking in userspace.
+                (<a href="https://tailscale.com/kb/1177/kernel-vs-userspace-routers">Kernel vs. netstack subnet routing &amp; exit nodes</a>).
+              </p>
+          </div>
+        </div> <!-- end panel -->
+      </div>
+    </div>
+  </div> <!-- end div with padding -->
+</div> <!-- end container -->
