@@ -121,6 +121,13 @@ li {
   margin-bottom: 30px;
 }
 
+.info-users-text {
+  margin: 0 0 0 0;
+  color: $text-color-secondary;
+  font-size: 16px;
+  line-height: 24px;
+}
+
 code {
   font-family: $code-font-family;
   font-size: 13px;
@@ -268,14 +275,44 @@ table th {
   padding-top: 2em;
 }
 
-/* Reduce h2 margins in the big "solution" panels on the homepage. */
+.users-content {
+  /* Shrink the container holding the users list on each side */
+  padding-left:15%;
+  padding-right:15%;
+}
+
+.row.display-flex {
+  /* Make responsive columns equal height using flex. */
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.row.display-flex > [class*='col-'] {
+  flex-grow: 1;
+}
+
+.no-space {
+  /* Remove component spacing by remove padding and margins. */
+  margin:0px auto;
+  padding:0px;
+}
+
+.img-vert-center {
+  /* Default img-vert-center to use block, larger screens will use position. */
+  margin: 0px;
+  display: block;
+  margin-left: auto;
+  margin-right:auto;
+}
+
 .panel-solution h2 {
+  /* Reduce h2 margins in the big "solution" panels on the homepage. */
   margin-top: 1em;
   margin-bottom: 1em;
 }
 
-/* Same, but also remove the top-margin for the "features" panels. */
 .panel-default h2 {
+  /* Same, but also remove the top-margin for the "features" panels. */
   margin-top: 0em;
   margin-bottom: 1em;
 }
@@ -305,6 +342,16 @@ table th {
   /* Set panel height tablets landscape. */
   .panel-solution {
     height: 330px;
+  }
+
+  /* Vertical center image in column on larger screens */
+  .img-vert-center {
+    margin: 0;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    -ms-transform: translate(-50%, -50%);
+    transform: translate(-50%, -50%);
   }
 }
 
