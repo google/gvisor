@@ -11,7 +11,7 @@ go_binary(
     nogo = False,
     deps = [
         "//tools/github/reviver",
-        "@com_github_google_go_github_v52//github:go_default_library",
+        "@com_github_google_go_github_v56//github:go_default_library",
         "@org_golang_x_oauth2//:go_default_library",
     ],
 )
