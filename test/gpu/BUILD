@@ -32,6 +32,7 @@ go_test(
 go_test(
     name = "textgen_test",
     srcs = ["textgen_test.go"],
+    embedsrcs = ["gvisor.png"],
     tags = [
         "local",
         "noguitar",

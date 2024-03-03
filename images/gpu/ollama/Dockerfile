@@ -12,8 +12,9 @@ ENV OLLAMA_HOST=0.0.0.0:11434
 RUN bash -c '                                  \
     ( ollama serve ) & serverpid="$!";         \
     sleep 5;                                   \
-    ollama pull codellama:7b-instruct &&       \
+    ollama pull codellama:7b-instruct  &&      \
     ollama pull llama2-chinese:7b-chat &&      \
+    ollama pull llava:7b-v1.6          &&      \
     kill "$serverpid" &&                       \
     wait "$serverpid"                          \
 '
