@@ -41,10 +41,12 @@ endif
 # runsc/testutil.MangleImage. Names are mangled in this way to ensure that all
 # tests are using locally-defined images (that are consistent and idempotent).
 REMOTE_IMAGE_PREFIX ?= gcr.io/gvisor-presubmit
-LOCAL_IMAGE_PREFIX ?= gvisor.dev/images
-ALL_IMAGES   := $(subst /,_,$(subst images/,,$(shell find images/ -name Dockerfile -o -name Dockerfile.$(ARCH) | xargs -n 1 dirname | uniq)))
-SUB_IMAGES   := $(foreach image,$(ALL_IMAGES),$(if $(findstring _,$(image)),$(image),))
-IMAGE_GROUPS := $(sort $(foreach image,$(SUB_IMAGES),$(firstword $(subst _, ,$(image)))))
+LOCAL_IMAGE_PREFIX  ?= gvisor.dev/images
+ALL_IMAGES          := $(subst /,_,$(subst images/,,$(shell find images/ -name Dockerfile -o -name Dockerfile.$(ARCH) | xargs -n 1 dirname | uniq)))
+NON_TEST_IMAGES     := gpu/ollama/bench
+TEST_IMAGES         := $(subst /,_,$(subst images/,,$(shell find images/ -name Dockerfile -o -name Dockerfile.$(ARCH) | xargs -n 1 dirname | uniq | grep -v $(NON_TEST_IMAGES))))
+SUB_IMAGES          := $(foreach image,$(ALL_IMAGES),$(if $(findstring _,$(image)),$(image),))
+IMAGE_GROUPS        := $(sort $(foreach image,$(SUB_IMAGES),$(firstword $(subst _, ,$(image)))))
 
 define expand_group =
 load-$(1): $$(patsubst $(1)_%, load-$(1)_%, $$(filter $(1)_%,$$(ALL_IMAGES)))
@@ -60,13 +62,25 @@ list-all-images: ## List all images.
 	@for image in $(ALL_IMAGES); do echo $${image}; done
 .PHONY: list-all-images
 
+list-all-test-images: ## List all test images.
+	@for image in $(TEST_IMAGES); do echo $${image}; done
+.PHONY: list-all-test-images
+
 load-all-images: ## Load all images.
 load-all-images: $(patsubst %,load-%,$(ALL_IMAGES))
 .PHONY: load-all-images
 
+load-all-test-images: ## Load all test images.
+load-all-test-images: $(patsubst %,load-%,$(TEST_IMAGES))
+.PHONY: load-all-test-images
+
 push-all-images: ## Push all images.
 push-all-images: $(patsubst %,push-%,$(ALL_IMAGES))
 .PHONY: push-all-images
+
+push-all-test-images: ## Push all images.
+push-all-test-images: $(patsubst %,push-%,$(TEST_IMAGES))
+.PHONY: push-all-test-images
 
 # path and dockerfile are used to extract the relevant path and dockerfile
 # (depending on what's available for the given architecture).

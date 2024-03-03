@@ -143,9 +143,9 @@ pipeline_add_env() {
 # Try to skip unaffected tests on pre-submits.
 # BUILDKITE_PIPELINE_ID is set only on the pipeline upload step.
 if [[ -n "${BUILDKITE_PIPELINE_ID}" && "${BUILDKITE_BRANCH}" =~ ^test/ ]]; then
-  # Skip load-all-images tests if the change doesn't affect images.
+  # Skip load-all-test-images tests if the change doesn't affect images.
   if ./tools/builkite-check-paths.sh images/ tools/images.mk Makefile; then
-    echo "Skip load-all-images tests"
+    echo "Skip load-all-test-images tests"
     pipeline_add_env SKIP_LOADING_IMAGES 1
   fi
 fi
