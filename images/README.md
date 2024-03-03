@@ -29,7 +29,7 @@ image infrastructure.
 
 The continuous integration system can either take fine-grained dependencies on
 single images via individual `load` targets, or pull all images via a single
-`load-all-images` invocation.
+`load-all-test-images` invocation.
 
 ## Adding new images
 
