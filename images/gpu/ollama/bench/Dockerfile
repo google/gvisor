@@ -6,7 +6,7 @@ ENV OLLAMA_ORIGINS=*
 ENV OLLAMA_HOST=0.0.0.0:11434
 
 # Pre-install models useful for benchmarking.
-# These are huge (total ~115 GiB), but necessary to benchmark
+# These are huge (total ~120 GiB), but necessary to benchmark
 # models of various sizes. They are in their own image file to
 # keep the test-only image lighter by comparison.
 RUN bash -c '                                  \
@@ -22,6 +22,7 @@ RUN bash -c '                                  \
     ollama pull gemma:2b-instruct      &&      \
     ollama pull gemma:7b-instruct      &&      \
     ollama pull llava:7b-v1.6          &&      \
+    ollama pull llava:34b-v1.6         &&      \
     kill "$serverpid" &&                       \
     wait "$serverpid"                          \
 '

@@ -436,9 +436,20 @@ type Prompt struct {
 	// Common leading whitespace will be removed.
 	Query string
 
+	// images is a set of attached images.
+	// Use AddImage to add an image.
+	images [][]byte
+
 	// Context is the conversational context to follow up on, if any.
 	// This is returned from `Response`.
 	Context ConversationContext
+}
+
+// AddImage attaches an image to the prompt.
+// Returns itself for chainability.
+func (p *Prompt) AddImage(data []byte) *Prompt {
+	p.images = append(p.images, data)
+	return p
 }
 
 // CleanQuery removes common whitespace from query lines, and all
@@ -529,6 +540,7 @@ func (p *Prompt) WithHotterModel() *Prompt {
 type PromptJSON struct {
 	Model     string              `json:"model"`
 	Prompt    string              `json:"prompt,omitempty"`
+	Images    []string            `json:"images"`
 	Stream    bool                `json:"stream"`
 	Context   ConversationContext `json:"context"`
 	Options   map[string]any      `json:"options"`
@@ -541,9 +553,14 @@ func (p *Prompt) json() PromptJSON {
 	if p.KeepModelAlive != 0 {
 		keepAlive = p.KeepModelAlive.String()
 	}
+	images := make([]string, len(p.images))
+	for i, image := range p.images {
+		images[i] = base64.StdEncoding.EncodeToString(image)
+	}
 	return PromptJSON{
 		Model:     p.Model.Name,
 		Prompt:    p.CleanQuery(),
+		Images:    images,
 		Stream:    true,
 		Context:   p.Context,
 		Options:   p.Model.Options,
