@@ -1,5 +1,5 @@
 # https://hub.docker.com/r/ollama/ollama
-FROM ollama/ollama:0.1.13
+FROM ollama/ollama:0.1.26
 
 ENV PATH=$PATH:/usr/local/nvidia/bin:/bin/nvidia/bin
 ENV OLLAMA_ORIGINS=*

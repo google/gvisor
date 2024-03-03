@@ -123,9 +123,9 @@ func New(ctx context.Context, server Server, logger testutil.Logger) (*Ollama, e
 		return nil, fmt.Errorf("could not get logs: %w", err)
 	}
 	switch {
-	case strings.Contains(logs, "check that you have installed GPU drivers"):
+	case strings.Contains(logs, "no GPU detected"):
 		llm.HasGPU = false
-	case strings.Contains(logs, "VRAM available"):
+	case strings.Contains(logs, "Nvidia GPU detected"):
 		llm.HasGPU = true
 	default:
 		return nil, fmt.Errorf("cannot determine whether ollama is using GPU from logs:\n%s", logs)

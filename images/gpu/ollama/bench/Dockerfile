@@ -1,5 +1,5 @@
 # https://hub.docker.com/r/ollama/ollama
-FROM ollama/ollama:0.1.18
+FROM ollama/ollama:0.1.26
 
 ENV PATH=$PATH:/usr/local/nvidia/bin:/bin/nvidia/bin
 ENV OLLAMA_ORIGINS=*
@@ -19,6 +19,8 @@ RUN bash -c '                                  \
     ollama pull llama2:70b-chat        &&      \
     ollama pull mistral:7b-instruct    &&      \
     ollama pull mixtral:instruct       &&      \
+    ollama pull gemma:2b-instruct      &&      \
+    ollama pull gemma:7b-instruct      &&      \
     kill "$serverpid" &&                       \
     wait "$serverpid"                          \
 '
