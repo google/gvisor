@@ -21,6 +21,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include "gtest/gtest.h"
 #include "absl/strings/string_view.h"
 #include "test/util/file_descriptor.h"
 #include "test/util/posix_error.h"
@@ -219,7 +220,7 @@ std::string JoinPathImpl(std::initializer_list<absl::string_view> paths);
 //
 // Usage:
 // std::string path = JoinPath("/foo", dirname, filename);
-// std::string path = JoinPath(FLAGS_test_srcdir, filename);
+// std::string path = JoinPath(::testing::SrcDir(), filename);
 //
 // 0, 1, 2-path specializations exist to optimize common cases.
 inline std::string JoinPath() { return std::string(); }
