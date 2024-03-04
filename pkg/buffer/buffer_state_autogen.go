@@ -3,6 +3,8 @@
 package buffer
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -28,10 +30,10 @@ func (b *Buffer) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &b.size)
 }
 
-func (b *Buffer) afterLoad() {}
+func (b *Buffer) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (b *Buffer) StateLoad(stateSourceObject state.Source) {
+func (b *Buffer) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &b.size)
 	stateSourceObject.LoadValue(0, new([]byte), func(y any) { b.loadData(y.([]byte)) })
 }
@@ -56,10 +58,10 @@ func (c *chunk) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &c.data)
 }
 
-func (c *chunk) afterLoad() {}
+func (c *chunk) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (c *chunk) StateLoad(stateSourceObject state.Source) {
+func (c *chunk) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.chunkRefs)
 	stateSourceObject.Load(1, &c.data)
 }
@@ -83,9 +85,9 @@ func (r *chunkRefs) StateSave(stateSinkObject state.Sink) {
 }
 
 // +checklocksignore
-func (r *chunkRefs) StateLoad(stateSourceObject state.Source) {
+func (r *chunkRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(r.afterLoad)
+	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
 }
 
 func (v *View) StateTypeName() string {
@@ -110,10 +112,10 @@ func (v *View) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &v.chunk)
 }
 
-func (v *View) afterLoad() {}
+func (v *View) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (v *View) StateLoad(stateSourceObject state.Source) {
+func (v *View) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &v.read)
 	stateSourceObject.Load(1, &v.write)
 	stateSourceObject.Load(2, &v.chunk)
@@ -139,10 +141,10 @@ func (l *viewList) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &l.tail)
 }
 
-func (l *viewList) afterLoad() {}
+func (l *viewList) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (l *viewList) StateLoad(stateSourceObject state.Source) {
+func (l *viewList) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.head)
 	stateSourceObject.Load(1, &l.tail)
 }
@@ -167,10 +169,10 @@ func (e *viewEntry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &e.prev)
 }
 
-func (e *viewEntry) afterLoad() {}
+func (e *viewEntry) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (e *viewEntry) StateLoad(stateSourceObject state.Source) {
+func (e *viewEntry) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.next)
 	stateSourceObject.Load(1, &e.prev)
 }

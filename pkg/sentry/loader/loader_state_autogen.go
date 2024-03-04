@@ -3,6 +3,8 @@
 package loader
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -34,10 +36,10 @@ func (v *VDSO) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &v.arch)
 }
 
-func (v *VDSO) afterLoad() {}
+func (v *VDSO) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (v *VDSO) StateLoad(stateSourceObject state.Source) {
+func (v *VDSO) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &v.ParamPage)
 	stateSourceObject.Load(1, &v.vdso)
 	stateSourceObject.Load(2, &v.os)
@@ -77,10 +79,10 @@ func (e *elfProgHeader) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(7, &e.Align)
 }
 
-func (e *elfProgHeader) afterLoad() {}
+func (e *elfProgHeader) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (e *elfProgHeader) StateLoad(stateSourceObject state.Source) {
+func (e *elfProgHeader) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.Type)
 	stateSourceObject.Load(1, &e.Flags)
 	stateSourceObject.Load(2, &e.Off)

@@ -1,6 +1,7 @@
 package proc
 
 import (
+	"context"
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -134,7 +135,7 @@ func (r *tasksInodeRefs) DecRef(destroy func()) {
 	}
 }
 
-func (r *tasksInodeRefs) afterLoad() {
+func (r *tasksInodeRefs) afterLoad(context.Context) {
 	if r.ReadRefs() > 0 {
 		refs.Register(r)
 	}

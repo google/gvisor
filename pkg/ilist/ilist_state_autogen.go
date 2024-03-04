@@ -3,6 +3,8 @@
 package ilist
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -26,10 +28,10 @@ func (l *List) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &l.tail)
 }
 
-func (l *List) afterLoad() {}
+func (l *List) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (l *List) StateLoad(stateSourceObject state.Source) {
+func (l *List) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.head)
 	stateSourceObject.Load(1, &l.tail)
 }
@@ -54,10 +56,10 @@ func (e *Entry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &e.prev)
 }
 
-func (e *Entry) afterLoad() {}
+func (e *Entry) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (e *Entry) StateLoad(stateSourceObject state.Source) {
+func (e *Entry) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.next)
 	stateSourceObject.Load(1, &e.prev)
 }

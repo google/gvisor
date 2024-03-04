@@ -3,6 +3,8 @@
 package linux
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -32,10 +34,10 @@ func (f *futexWaitRestartBlock) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(4, &f.mask)
 }
 
-func (f *futexWaitRestartBlock) afterLoad() {}
+func (f *futexWaitRestartBlock) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (f *futexWaitRestartBlock) StateLoad(stateSourceObject state.Source) {
+func (f *futexWaitRestartBlock) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.duration)
 	stateSourceObject.Load(1, &f.addr)
 	stateSourceObject.Load(2, &f.private)
@@ -65,10 +67,10 @@ func (p *pollRestartBlock) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &p.timeout)
 }
 
-func (p *pollRestartBlock) afterLoad() {}
+func (p *pollRestartBlock) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (p *pollRestartBlock) StateLoad(stateSourceObject state.Source) {
+func (p *pollRestartBlock) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &p.pfdAddr)
 	stateSourceObject.Load(1, &p.nfds)
 	stateSourceObject.Load(2, &p.timeout)
@@ -96,10 +98,10 @@ func (n *clockNanosleepRestartBlock) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &n.rem)
 }
 
-func (n *clockNanosleepRestartBlock) afterLoad() {}
+func (n *clockNanosleepRestartBlock) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (n *clockNanosleepRestartBlock) StateLoad(stateSourceObject state.Source) {
+func (n *clockNanosleepRestartBlock) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &n.c)
 	stateSourceObject.Load(1, &n.end)
 	stateSourceObject.Load(2, &n.rem)

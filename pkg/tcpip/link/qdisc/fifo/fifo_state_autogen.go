@@ -3,6 +3,8 @@
 package fifo
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -28,10 +30,10 @@ func (pl *packetBufferCircularList) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &pl.size)
 }
 
-func (pl *packetBufferCircularList) afterLoad() {}
+func (pl *packetBufferCircularList) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (pl *packetBufferCircularList) StateLoad(stateSourceObject state.Source) {
+func (pl *packetBufferCircularList) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &pl.pbs)
 	stateSourceObject.Load(1, &pl.head)
 	stateSourceObject.Load(2, &pl.size)

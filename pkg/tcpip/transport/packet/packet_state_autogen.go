@@ -3,6 +3,8 @@
 package packet
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -34,10 +36,10 @@ func (p *packet) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(4, &p.packetInfo)
 }
 
-func (p *packet) afterLoad() {}
+func (p *packet) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (p *packet) StateLoad(stateSourceObject state.Source) {
+func (p *packet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &p.packetEntry)
 	stateSourceObject.Load(1, &p.data)
 	stateSourceObject.Load(3, &p.senderAddr)
@@ -86,7 +88,7 @@ func (ep *endpoint) StateSave(stateSinkObject state.Sink) {
 }
 
 // +checklocksignore
-func (ep *endpoint) StateLoad(stateSourceObject state.Source) {
+func (ep *endpoint) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &ep.DefaultSocketOptionsHandler)
 	stateSourceObject.Load(1, &ep.waiterQueue)
 	stateSourceObject.Load(2, &ep.cooked)
@@ -100,7 +102,7 @@ func (ep *endpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(10, &ep.boundNetProto)
 	stateSourceObject.Load(11, &ep.boundNIC)
 	stateSourceObject.Load(12, &ep.lastError)
-	stateSourceObject.AfterLoad(ep.afterLoad)
+	stateSourceObject.AfterLoad(func() { ep.afterLoad(ctx) })
 }
 
 func (l *packetList) StateTypeName() string {
@@ -123,10 +125,10 @@ func (l *packetList) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &l.tail)
 }
 
-func (l *packetList) afterLoad() {}
+func (l *packetList) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (l *packetList) StateLoad(stateSourceObject state.Source) {
+func (l *packetList) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.head)
 	stateSourceObject.Load(1, &l.tail)
 }
@@ -151,10 +153,10 @@ func (e *packetEntry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &e.prev)
 }
 
-func (e *packetEntry) afterLoad() {}
+func (e *packetEntry) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (e *packetEntry) StateLoad(stateSourceObject state.Source) {
+func (e *packetEntry) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.next)
 	stateSourceObject.Load(1, &e.prev)
 }

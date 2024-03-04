@@ -3,6 +3,8 @@
 package usage
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -28,10 +30,10 @@ func (s *CPUStats) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &s.VoluntarySwitches)
 }
 
-func (s *CPUStats) afterLoad() {}
+func (s *CPUStats) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (s *CPUStats) StateLoad(stateSourceObject state.Source) {
+func (s *CPUStats) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.UserTime)
 	stateSourceObject.Load(1, &s.SysTime)
 	stateSourceObject.Load(2, &s.VoluntarySwitches)
@@ -67,10 +69,10 @@ func (i *IO) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(6, &i.BytesWriteCancelled)
 }
 
-func (i *IO) afterLoad() {}
+func (i *IO) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (i *IO) StateLoad(stateSourceObject state.Source) {
+func (i *IO) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.CharsRead)
 	stateSourceObject.Load(1, &i.CharsWritten)
 	stateSourceObject.Load(2, &i.ReadSyscalls)

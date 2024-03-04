@@ -3,6 +3,8 @@
 package ipv4
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -21,10 +23,10 @@ func (i *icmpv4DestinationUnreachableSockError) StateSave(stateSinkObject state.
 	i.beforeSave()
 }
 
-func (i *icmpv4DestinationUnreachableSockError) afterLoad() {}
+func (i *icmpv4DestinationUnreachableSockError) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (i *icmpv4DestinationUnreachableSockError) StateLoad(stateSourceObject state.Source) {
+func (i *icmpv4DestinationUnreachableSockError) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 }
 
 func (i *icmpv4DestinationHostUnreachableSockError) StateTypeName() string {
@@ -45,10 +47,10 @@ func (i *icmpv4DestinationHostUnreachableSockError) StateSave(stateSinkObject st
 	stateSinkObject.Save(0, &i.icmpv4DestinationUnreachableSockError)
 }
 
-func (i *icmpv4DestinationHostUnreachableSockError) afterLoad() {}
+func (i *icmpv4DestinationHostUnreachableSockError) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (i *icmpv4DestinationHostUnreachableSockError) StateLoad(stateSourceObject state.Source) {
+func (i *icmpv4DestinationHostUnreachableSockError) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.icmpv4DestinationUnreachableSockError)
 }
 
@@ -70,10 +72,10 @@ func (i *icmpv4DestinationNetUnreachableSockError) StateSave(stateSinkObject sta
 	stateSinkObject.Save(0, &i.icmpv4DestinationUnreachableSockError)
 }
 
-func (i *icmpv4DestinationNetUnreachableSockError) afterLoad() {}
+func (i *icmpv4DestinationNetUnreachableSockError) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (i *icmpv4DestinationNetUnreachableSockError) StateLoad(stateSourceObject state.Source) {
+func (i *icmpv4DestinationNetUnreachableSockError) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.icmpv4DestinationUnreachableSockError)
 }
 
@@ -95,10 +97,10 @@ func (i *icmpv4DestinationPortUnreachableSockError) StateSave(stateSinkObject st
 	stateSinkObject.Save(0, &i.icmpv4DestinationUnreachableSockError)
 }
 
-func (i *icmpv4DestinationPortUnreachableSockError) afterLoad() {}
+func (i *icmpv4DestinationPortUnreachableSockError) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (i *icmpv4DestinationPortUnreachableSockError) StateLoad(stateSourceObject state.Source) {
+func (i *icmpv4DestinationPortUnreachableSockError) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.icmpv4DestinationUnreachableSockError)
 }
 
@@ -120,10 +122,10 @@ func (i *icmpv4DestinationProtoUnreachableSockError) StateSave(stateSinkObject s
 	stateSinkObject.Save(0, &i.icmpv4DestinationUnreachableSockError)
 }
 
-func (i *icmpv4DestinationProtoUnreachableSockError) afterLoad() {}
+func (i *icmpv4DestinationProtoUnreachableSockError) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (i *icmpv4DestinationProtoUnreachableSockError) StateLoad(stateSourceObject state.Source) {
+func (i *icmpv4DestinationProtoUnreachableSockError) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.icmpv4DestinationUnreachableSockError)
 }
 
@@ -145,10 +147,10 @@ func (i *icmpv4SourceRouteFailedSockError) StateSave(stateSinkObject state.Sink)
 	stateSinkObject.Save(0, &i.icmpv4DestinationUnreachableSockError)
 }
 
-func (i *icmpv4SourceRouteFailedSockError) afterLoad() {}
+func (i *icmpv4SourceRouteFailedSockError) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (i *icmpv4SourceRouteFailedSockError) StateLoad(stateSourceObject state.Source) {
+func (i *icmpv4SourceRouteFailedSockError) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.icmpv4DestinationUnreachableSockError)
 }
 
@@ -170,10 +172,10 @@ func (i *icmpv4SourceHostIsolatedSockError) StateSave(stateSinkObject state.Sink
 	stateSinkObject.Save(0, &i.icmpv4DestinationUnreachableSockError)
 }
 
-func (i *icmpv4SourceHostIsolatedSockError) afterLoad() {}
+func (i *icmpv4SourceHostIsolatedSockError) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (i *icmpv4SourceHostIsolatedSockError) StateLoad(stateSourceObject state.Source) {
+func (i *icmpv4SourceHostIsolatedSockError) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.icmpv4DestinationUnreachableSockError)
 }
 
@@ -195,10 +197,10 @@ func (i *icmpv4DestinationHostUnknownSockError) StateSave(stateSinkObject state.
 	stateSinkObject.Save(0, &i.icmpv4DestinationUnreachableSockError)
 }
 
-func (i *icmpv4DestinationHostUnknownSockError) afterLoad() {}
+func (i *icmpv4DestinationHostUnknownSockError) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (i *icmpv4DestinationHostUnknownSockError) StateLoad(stateSourceObject state.Source) {
+func (i *icmpv4DestinationHostUnknownSockError) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.icmpv4DestinationUnreachableSockError)
 }
 
@@ -222,10 +224,10 @@ func (e *icmpv4FragmentationNeededSockError) StateSave(stateSinkObject state.Sin
 	stateSinkObject.Save(1, &e.mtu)
 }
 
-func (e *icmpv4FragmentationNeededSockError) afterLoad() {}
+func (e *icmpv4FragmentationNeededSockError) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (e *icmpv4FragmentationNeededSockError) StateLoad(stateSourceObject state.Source) {
+func (e *icmpv4FragmentationNeededSockError) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.icmpv4DestinationUnreachableSockError)
 	stateSourceObject.Load(1, &e.mtu)
 }

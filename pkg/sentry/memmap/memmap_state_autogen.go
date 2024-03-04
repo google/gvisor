@@ -3,6 +3,8 @@
 package memmap
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -26,10 +28,10 @@ func (fr *FileRange) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &fr.End)
 }
 
-func (fr *FileRange) afterLoad() {}
+func (fr *FileRange) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (fr *FileRange) StateLoad(stateSourceObject state.Source) {
+func (fr *FileRange) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fr.Start)
 	stateSourceObject.Load(1, &fr.End)
 }
@@ -54,10 +56,10 @@ func (mr *MappableRange) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &mr.End)
 }
 
-func (mr *MappableRange) afterLoad() {}
+func (mr *MappableRange) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (mr *MappableRange) StateLoad(stateSourceObject state.Source) {
+func (mr *MappableRange) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &mr.Start)
 	stateSourceObject.Load(1, &mr.End)
 }
@@ -84,10 +86,10 @@ func (r *MappingOfRange) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &r.Writable)
 }
 
-func (r *MappingOfRange) afterLoad() {}
+func (r *MappingOfRange) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (r *MappingOfRange) StateLoad(stateSourceObject state.Source) {
+func (r *MappingOfRange) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.MappingSpace)
 	stateSourceObject.Load(1, &r.AddrRange)
 	stateSourceObject.Load(2, &r.Writable)

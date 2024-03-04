@@ -1,6 +1,7 @@
 package kernfs
 
 import (
+	"context"
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -134,7 +135,7 @@ func (r *StaticDirectoryRefs) DecRef(destroy func()) {
 	}
 }
 
-func (r *StaticDirectoryRefs) afterLoad() {
+func (r *StaticDirectoryRefs) afterLoad(context.Context) {
 	if r.ReadRefs() > 0 {
 		refs.Register(r)
 	}

@@ -3,6 +3,8 @@
 package bitmap
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -26,10 +28,10 @@ func (b *Bitmap) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &b.bitBlock)
 }
 
-func (b *Bitmap) afterLoad() {}
+func (b *Bitmap) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (b *Bitmap) StateLoad(stateSourceObject state.Source) {
+func (b *Bitmap) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &b.numOnes)
 	stateSourceObject.Load(1, &b.bitBlock)
 }

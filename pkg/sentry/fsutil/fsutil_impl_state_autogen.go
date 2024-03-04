@@ -3,6 +3,8 @@
 package fsutil
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -26,10 +28,10 @@ func (s *DirtySet) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.SaveValue(0, rootValue)
 }
 
-func (s *DirtySet) afterLoad() {}
+func (s *DirtySet) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (s *DirtySet) StateLoad(stateSourceObject state.Source) {
+func (s *DirtySet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.LoadValue(0, new([]DirtyFlatSegment), func(y any) { s.loadRoot(y.([]DirtyFlatSegment)) })
 }
 
@@ -65,10 +67,10 @@ func (n *Dirtynode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(7, &n.children)
 }
 
-func (n *Dirtynode) afterLoad() {}
+func (n *Dirtynode) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (n *Dirtynode) StateLoad(stateSourceObject state.Source) {
+func (n *Dirtynode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &n.nrSegments)
 	stateSourceObject.Load(1, &n.parent)
 	stateSourceObject.Load(2, &n.parentIndex)
@@ -101,10 +103,10 @@ func (d *DirtyFlatSegment) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &d.Value)
 }
 
-func (d *DirtyFlatSegment) afterLoad() {}
+func (d *DirtyFlatSegment) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (d *DirtyFlatSegment) StateLoad(stateSourceObject state.Source) {
+func (d *DirtyFlatSegment) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.Start)
 	stateSourceObject.Load(1, &d.End)
 	stateSourceObject.Load(2, &d.Value)
@@ -130,10 +132,10 @@ func (s *FileRangeSet) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.SaveValue(0, rootValue)
 }
 
-func (s *FileRangeSet) afterLoad() {}
+func (s *FileRangeSet) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (s *FileRangeSet) StateLoad(stateSourceObject state.Source) {
+func (s *FileRangeSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.LoadValue(0, new([]FileRangeFlatSegment), func(y any) { s.loadRoot(y.([]FileRangeFlatSegment)) })
 }
 
@@ -169,10 +171,10 @@ func (n *FileRangenode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(7, &n.children)
 }
 
-func (n *FileRangenode) afterLoad() {}
+func (n *FileRangenode) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (n *FileRangenode) StateLoad(stateSourceObject state.Source) {
+func (n *FileRangenode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &n.nrSegments)
 	stateSourceObject.Load(1, &n.parent)
 	stateSourceObject.Load(2, &n.parentIndex)
@@ -205,10 +207,10 @@ func (f *FileRangeFlatSegment) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &f.Value)
 }
 
-func (f *FileRangeFlatSegment) afterLoad() {}
+func (f *FileRangeFlatSegment) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (f *FileRangeFlatSegment) StateLoad(stateSourceObject state.Source) {
+func (f *FileRangeFlatSegment) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.Start)
 	stateSourceObject.Load(1, &f.End)
 	stateSourceObject.Load(2, &f.Value)
@@ -234,10 +236,10 @@ func (s *FrameRefSet) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.SaveValue(0, rootValue)
 }
 
-func (s *FrameRefSet) afterLoad() {}
+func (s *FrameRefSet) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (s *FrameRefSet) StateLoad(stateSourceObject state.Source) {
+func (s *FrameRefSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.LoadValue(0, new([]FrameRefFlatSegment), func(y any) { s.loadRoot(y.([]FrameRefFlatSegment)) })
 }
 
@@ -273,10 +275,10 @@ func (n *FrameRefnode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(7, &n.children)
 }
 
-func (n *FrameRefnode) afterLoad() {}
+func (n *FrameRefnode) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (n *FrameRefnode) StateLoad(stateSourceObject state.Source) {
+func (n *FrameRefnode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &n.nrSegments)
 	stateSourceObject.Load(1, &n.parent)
 	stateSourceObject.Load(2, &n.parentIndex)
@@ -309,10 +311,10 @@ func (f *FrameRefFlatSegment) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &f.Value)
 }
 
-func (f *FrameRefFlatSegment) afterLoad() {}
+func (f *FrameRefFlatSegment) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (f *FrameRefFlatSegment) StateLoad(stateSourceObject state.Source) {
+func (f *FrameRefFlatSegment) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.Start)
 	stateSourceObject.Load(1, &f.End)
 	stateSourceObject.Load(2, &f.Value)

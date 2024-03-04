@@ -1,6 +1,7 @@
 package tun
 
 import (
+	"context"
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -134,7 +135,7 @@ func (r *tunEndpointRefs) DecRef(destroy func()) {
 	}
 }
 
-func (r *tunEndpointRefs) afterLoad() {
+func (r *tunEndpointRefs) afterLoad(context.Context) {
 	if r.ReadRefs() > 0 {
 		refs.Register(r)
 	}

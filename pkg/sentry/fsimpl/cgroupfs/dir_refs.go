@@ -1,6 +1,7 @@
 package cgroupfs
 
 import (
+	"context"
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -134,7 +135,7 @@ func (r *dirRefs) DecRef(destroy func()) {
 	}
 }
 
-func (r *dirRefs) afterLoad() {
+func (r *dirRefs) afterLoad(context.Context) {
 	if r.ReadRefs() > 0 {
 		refs.Register(r)
 	}

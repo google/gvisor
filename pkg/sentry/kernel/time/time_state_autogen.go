@@ -3,6 +3,8 @@
 package time
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -24,10 +26,10 @@ func (t *Time) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &t.ns)
 }
 
-func (t *Time) afterLoad() {}
+func (t *Time) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (t *Time) StateLoad(stateSourceObject state.Source) {
+func (t *Time) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.ns)
 }
 
@@ -53,10 +55,10 @@ func (s *Setting) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &s.Period)
 }
 
-func (s *Setting) afterLoad() {}
+func (s *Setting) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (s *Setting) StateLoad(stateSourceObject state.Source) {
+func (s *Setting) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.Enabled)
 	stateSourceObject.Load(1, &s.Next)
 	stateSourceObject.Load(2, &s.Period)
@@ -86,10 +88,10 @@ func (t *Timer) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &t.paused)
 }
 
-func (t *Timer) afterLoad() {}
+func (t *Timer) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (t *Timer) StateLoad(stateSourceObject state.Source) {
+func (t *Timer) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.clock)
 	stateSourceObject.Load(1, &t.listener)
 	stateSourceObject.Load(2, &t.setting)

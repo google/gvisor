@@ -3,6 +3,8 @@
 package auth
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -26,10 +28,10 @@ func (p *AtomicPtrCredentials) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.SaveValue(0, ptrValue)
 }
 
-func (p *AtomicPtrCredentials) afterLoad() {}
+func (p *AtomicPtrCredentials) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (p *AtomicPtrCredentials) StateLoad(stateSourceObject state.Source) {
+func (p *AtomicPtrCredentials) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.LoadValue(0, new(*Credentials), func(y any) { p.loadPtr(y.(*Credentials)) })
 }
 

@@ -3,6 +3,8 @@
 package mq
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -26,10 +28,10 @@ func (l *msgList) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &l.tail)
 }
 
-func (l *msgList) afterLoad() {}
+func (l *msgList) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (l *msgList) StateLoad(stateSourceObject state.Source) {
+func (l *msgList) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.head)
 	stateSourceObject.Load(1, &l.tail)
 }
@@ -54,10 +56,10 @@ func (e *msgEntry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &e.prev)
 }
 
-func (e *msgEntry) afterLoad() {}
+func (e *msgEntry) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (e *msgEntry) StateLoad(stateSourceObject state.Source) {
+func (e *msgEntry) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.next)
 	stateSourceObject.Load(1, &e.prev)
 }
@@ -82,10 +84,10 @@ func (r *Registry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &r.impl)
 }
 
-func (r *Registry) afterLoad() {}
+func (r *Registry) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (r *Registry) StateLoad(stateSourceObject state.Source) {
+func (r *Registry) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.userNS)
 	stateSourceObject.Load(1, &r.impl)
 }
@@ -126,10 +128,10 @@ func (q *Queue) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(9, &q.byteCount)
 }
 
-func (q *Queue) afterLoad() {}
+func (q *Queue) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (q *Queue) StateLoad(stateSourceObject state.Source) {
+func (q *Queue) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &q.ownerUID)
 	stateSourceObject.Load(1, &q.ownerGID)
 	stateSourceObject.Load(2, &q.mode)
@@ -162,10 +164,10 @@ func (r *ReaderWriter) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &r.block)
 }
 
-func (r *ReaderWriter) afterLoad() {}
+func (r *ReaderWriter) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (r *ReaderWriter) StateLoad(stateSourceObject state.Source) {
+func (r *ReaderWriter) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.Queue)
 	stateSourceObject.Load(1, &r.block)
 }
@@ -190,10 +192,10 @@ func (r *Reader) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &r.block)
 }
 
-func (r *Reader) afterLoad() {}
+func (r *Reader) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (r *Reader) StateLoad(stateSourceObject state.Source) {
+func (r *Reader) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.Queue)
 	stateSourceObject.Load(1, &r.block)
 }
@@ -218,10 +220,10 @@ func (w *Writer) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &w.block)
 }
 
-func (w *Writer) afterLoad() {}
+func (w *Writer) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (w *Writer) StateLoad(stateSourceObject state.Source) {
+func (w *Writer) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &w.Queue)
 	stateSourceObject.Load(1, &w.block)
 }
@@ -250,10 +252,10 @@ func (m *Message) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &m.Priority)
 }
 
-func (m *Message) afterLoad() {}
+func (m *Message) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (m *Message) StateLoad(stateSourceObject state.Source) {
+func (m *Message) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &m.msgEntry)
 	stateSourceObject.Load(1, &m.Text)
 	stateSourceObject.Load(2, &m.Size)
@@ -278,10 +280,10 @@ func (s *Subscriber) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &s.pid)
 }
 
-func (s *Subscriber) afterLoad() {}
+func (s *Subscriber) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (s *Subscriber) StateLoad(stateSourceObject state.Source) {
+func (s *Subscriber) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.pid)
 }
 

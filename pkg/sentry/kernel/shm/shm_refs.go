@@ -1,6 +1,7 @@
 package shm
 
 import (
+	"context"
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -134,7 +135,7 @@ func (r *ShmRefs) DecRef(destroy func()) {
 	}
 }
 
-func (r *ShmRefs) afterLoad() {
+func (r *ShmRefs) afterLoad(context.Context) {
 	if r.ReadRefs() > 0 {
 		refs.Register(r)
 	}

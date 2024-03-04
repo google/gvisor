@@ -3,6 +3,8 @@
 package erofs
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -60,10 +62,10 @@ func (sb *SuperBlock) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(18, &sb.Reserved)
 }
 
-func (sb *SuperBlock) afterLoad() {}
+func (sb *SuperBlock) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (sb *SuperBlock) StateLoad(stateSourceObject state.Source) {
+func (sb *SuperBlock) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &sb.Magic)
 	stateSourceObject.Load(1, &sb.Checksum)
 	stateSourceObject.Load(2, &sb.FeatureCompat)
@@ -103,10 +105,10 @@ func (i *Image) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &i.sb)
 }
 
-func (i *Image) afterLoad() {}
+func (i *Image) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (i *Image) StateLoad(stateSourceObject state.Source) {
+func (i *Image) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.sb)
 }
 
@@ -152,10 +154,10 @@ func (i *Inode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(12, &i.nlink)
 }
 
-func (i *Inode) afterLoad() {}
+func (i *Inode) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (i *Inode) StateLoad(stateSourceObject state.Source) {
+func (i *Inode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.image)
 	stateSourceObject.Load(1, &i.dataOff)
 	stateSourceObject.Load(2, &i.idataOff)

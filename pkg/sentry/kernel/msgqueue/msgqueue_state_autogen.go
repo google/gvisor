@@ -3,6 +3,8 @@
 package msgqueue
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -26,10 +28,10 @@ func (l *msgList) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &l.tail)
 }
 
-func (l *msgList) afterLoad() {}
+func (l *msgList) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (l *msgList) StateLoad(stateSourceObject state.Source) {
+func (l *msgList) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.head)
 	stateSourceObject.Load(1, &l.tail)
 }
@@ -54,10 +56,10 @@ func (e *msgEntry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &e.prev)
 }
 
-func (e *msgEntry) afterLoad() {}
+func (e *msgEntry) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (e *msgEntry) StateLoad(stateSourceObject state.Source) {
+func (e *msgEntry) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.next)
 	stateSourceObject.Load(1, &e.prev)
 }
@@ -80,10 +82,10 @@ func (r *Registry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &r.reg)
 }
 
-func (r *Registry) afterLoad() {}
+func (r *Registry) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (r *Registry) StateLoad(stateSourceObject state.Source) {
+func (r *Registry) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.reg)
 }
 
@@ -131,10 +133,10 @@ func (q *Queue) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(13, &q.receivePID)
 }
 
-func (q *Queue) afterLoad() {}
+func (q *Queue) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (q *Queue) StateLoad(stateSourceObject state.Source) {
+func (q *Queue) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &q.registry)
 	stateSourceObject.Load(1, &q.dead)
 	stateSourceObject.Load(2, &q.obj)
@@ -175,10 +177,10 @@ func (m *Message) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &m.Size)
 }
 
-func (m *Message) afterLoad() {}
+func (m *Message) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (m *Message) StateLoad(stateSourceObject state.Source) {
+func (m *Message) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &m.msgEntry)
 	stateSourceObject.Load(1, &m.Type)
 	stateSourceObject.Load(2, &m.Text)

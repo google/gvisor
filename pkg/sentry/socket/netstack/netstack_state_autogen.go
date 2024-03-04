@@ -3,6 +3,8 @@
 package netstack
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -54,10 +56,10 @@ func (s *sock) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(14, &s.sockOptInq)
 }
 
-func (s *sock) afterLoad() {}
+func (s *sock) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (s *sock) StateLoad(stateSourceObject state.Source) {
+func (s *sock) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.vfsfd)
 	stateSourceObject.Load(1, &s.FileDescriptionDefaultImpl)
 	stateSourceObject.Load(2, &s.DentryMetadataFileDescriptionImpl)
@@ -91,8 +93,8 @@ func (s *Stack) StateSave(stateSinkObject state.Sink) {
 }
 
 // +checklocksignore
-func (s *Stack) StateLoad(stateSourceObject state.Source) {
-	stateSourceObject.AfterLoad(s.afterLoad)
+func (s *Stack) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.AfterLoad(func() { s.afterLoad(ctx) })
 }
 
 func init() {

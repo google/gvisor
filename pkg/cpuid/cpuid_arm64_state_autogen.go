@@ -6,6 +6,8 @@
 package cpuid
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -39,10 +41,10 @@ func (fs *FeatureSet) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(6, &fs.cpuRevDec)
 }
 
-func (fs *FeatureSet) afterLoad() {}
+func (fs *FeatureSet) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (fs *FeatureSet) StateLoad(stateSourceObject state.Source) {
+func (fs *FeatureSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fs.hwCap)
 	stateSourceObject.Load(1, &fs.cpuFreqMHz)
 	stateSourceObject.Load(2, &fs.cpuImplHex)

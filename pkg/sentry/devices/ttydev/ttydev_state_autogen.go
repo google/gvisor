@@ -3,6 +3,8 @@
 package ttydev
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -21,10 +23,10 @@ func (t *ttyDevice) StateSave(stateSinkObject state.Sink) {
 	t.beforeSave()
 }
 
-func (t *ttyDevice) afterLoad() {}
+func (t *ttyDevice) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (t *ttyDevice) StateLoad(stateSourceObject state.Source) {
+func (t *ttyDevice) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 }
 
 func init() {

@@ -3,6 +3,8 @@
 package devpts
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -28,10 +30,10 @@ func (fstype *FilesystemType) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &fstype.root)
 }
 
-func (fstype *FilesystemType) afterLoad() {}
+func (fstype *FilesystemType) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (fstype *FilesystemType) StateLoad(stateSourceObject state.Source) {
+func (fstype *FilesystemType) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fstype.initErr)
 	stateSourceObject.Load(1, &fstype.fs)
 	stateSourceObject.Load(2, &fstype.root)
@@ -57,10 +59,10 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &fs.devMinor)
 }
 
-func (fs *filesystem) afterLoad() {}
+func (fs *filesystem) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (fs *filesystem) StateLoad(stateSourceObject state.Source) {
+func (fs *filesystem) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fs.Filesystem)
 	stateSourceObject.Load(1, &fs.devMinor)
 }
@@ -109,10 +111,10 @@ func (i *rootInode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(13, &i.nextIdx)
 }
 
-func (i *rootInode) afterLoad() {}
+func (i *rootInode) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (i *rootInode) StateLoad(stateSourceObject state.Source) {
+func (i *rootInode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.implStatFS)
 	stateSourceObject.Load(1, &i.InodeAlwaysValid)
 	stateSourceObject.Load(2, &i.InodeAttrs)
@@ -144,10 +146,10 @@ func (i *implStatFS) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 }
 
-func (i *implStatFS) afterLoad() {}
+func (i *implStatFS) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (i *implStatFS) StateLoad(stateSourceObject state.Source) {
+func (i *implStatFS) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 }
 
 func (l *lineDiscipline) StateTypeName() string {
@@ -184,10 +186,10 @@ func (l *lineDiscipline) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(8, &l.terminal)
 }
 
-func (l *lineDiscipline) afterLoad() {}
+func (l *lineDiscipline) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (l *lineDiscipline) StateLoad(stateSourceObject state.Source) {
+func (l *lineDiscipline) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.size)
 	stateSourceObject.Load(1, &l.inQueue)
 	stateSourceObject.Load(2, &l.outQueue)
@@ -214,10 +216,10 @@ func (o *outputQueueTransformer) StateSave(stateSinkObject state.Sink) {
 	o.beforeSave()
 }
 
-func (o *outputQueueTransformer) afterLoad() {}
+func (o *outputQueueTransformer) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (o *outputQueueTransformer) StateLoad(stateSourceObject state.Source) {
+func (o *outputQueueTransformer) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 }
 
 func (i *inputQueueTransformer) StateTypeName() string {
@@ -235,10 +237,10 @@ func (i *inputQueueTransformer) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 }
 
-func (i *inputQueueTransformer) afterLoad() {}
+func (i *inputQueueTransformer) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (i *inputQueueTransformer) StateLoad(stateSourceObject state.Source) {
+func (i *inputQueueTransformer) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 }
 
 func (mi *masterInode) StateTypeName() string {
@@ -275,10 +277,10 @@ func (mi *masterInode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(8, &mi.root)
 }
 
-func (mi *masterInode) afterLoad() {}
+func (mi *masterInode) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (mi *masterInode) StateLoad(stateSourceObject state.Source) {
+func (mi *masterInode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &mi.implStatFS)
 	stateSourceObject.Load(1, &mi.InodeAttrs)
 	stateSourceObject.Load(2, &mi.InodeNoopRefCount)
@@ -316,10 +318,10 @@ func (mfd *masterFileDescription) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(4, &mfd.t)
 }
 
-func (mfd *masterFileDescription) afterLoad() {}
+func (mfd *masterFileDescription) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (mfd *masterFileDescription) StateLoad(stateSourceObject state.Source) {
+func (mfd *masterFileDescription) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &mfd.vfsfd)
 	stateSourceObject.Load(1, &mfd.FileDescriptionDefaultImpl)
 	stateSourceObject.Load(2, &mfd.LockFD)
@@ -353,10 +355,10 @@ func (q *queue) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(4, &q.transformer)
 }
 
-func (q *queue) afterLoad() {}
+func (q *queue) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (q *queue) StateLoad(stateSourceObject state.Source) {
+func (q *queue) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &q.readBuf)
 	stateSourceObject.Load(1, &q.waitBuf)
 	stateSourceObject.Load(2, &q.waitBufLen)
@@ -400,10 +402,10 @@ func (ri *replicaInode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(9, &ri.t)
 }
 
-func (ri *replicaInode) afterLoad() {}
+func (ri *replicaInode) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (ri *replicaInode) StateLoad(stateSourceObject state.Source) {
+func (ri *replicaInode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &ri.implStatFS)
 	stateSourceObject.Load(1, &ri.InodeAttrs)
 	stateSourceObject.Load(2, &ri.InodeNoopRefCount)
@@ -440,10 +442,10 @@ func (rfd *replicaFileDescription) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &rfd.inode)
 }
 
-func (rfd *replicaFileDescription) afterLoad() {}
+func (rfd *replicaFileDescription) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (rfd *replicaFileDescription) StateLoad(stateSourceObject state.Source) {
+func (rfd *replicaFileDescription) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &rfd.vfsfd)
 	stateSourceObject.Load(1, &rfd.FileDescriptionDefaultImpl)
 	stateSourceObject.Load(2, &rfd.LockFD)
@@ -469,9 +471,9 @@ func (r *rootInodeRefs) StateSave(stateSinkObject state.Sink) {
 }
 
 // +checklocksignore
-func (r *rootInodeRefs) StateLoad(stateSourceObject state.Source) {
+func (r *rootInodeRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(r.afterLoad)
+	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
 }
 
 func (t *Terminal) StateTypeName() string {
@@ -498,10 +500,10 @@ func (t *Terminal) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &t.replicaKTTY)
 }
 
-func (t *Terminal) afterLoad() {}
+func (t *Terminal) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (t *Terminal) StateLoad(stateSourceObject state.Source) {
+func (t *Terminal) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.n)
 	stateSourceObject.Load(1, &t.ld)
 	stateSourceObject.Load(2, &t.masterKTTY)

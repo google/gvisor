@@ -3,6 +3,8 @@
 package inet
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -30,10 +32,10 @@ func (a *abstractEndpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &a.ns)
 }
 
-func (a *abstractEndpoint) afterLoad() {}
+func (a *abstractEndpoint) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (a *abstractEndpoint) StateLoad(stateSourceObject state.Source) {
+func (a *abstractEndpoint) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &a.ep)
 	stateSourceObject.Load(1, &a.socket)
 	stateSourceObject.Load(2, &a.name)
@@ -58,10 +60,10 @@ func (a *AbstractSocketNamespace) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &a.endpoints)
 }
 
-func (a *AbstractSocketNamespace) afterLoad() {}
+func (a *AbstractSocketNamespace) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (a *AbstractSocketNamespace) StateLoad(stateSourceObject state.Source) {
+func (a *AbstractSocketNamespace) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &a.endpoints)
 }
 
@@ -87,10 +89,10 @@ func (t *TCPBufferSize) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &t.Max)
 }
 
-func (t *TCPBufferSize) afterLoad() {}
+func (t *TCPBufferSize) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (t *TCPBufferSize) StateLoad(stateSourceObject state.Source) {
+func (t *TCPBufferSize) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.Min)
 	stateSourceObject.Load(1, &t.Default)
 	stateSourceObject.Load(2, &t.Max)
@@ -123,13 +125,13 @@ func (n *Namespace) StateSave(stateSinkObject state.Sink) {
 }
 
 // +checklocksignore
-func (n *Namespace) StateLoad(stateSourceObject state.Source) {
+func (n *Namespace) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &n.inode)
 	stateSourceObject.LoadWait(1, &n.creator)
 	stateSourceObject.Load(2, &n.isRoot)
 	stateSourceObject.Load(3, &n.userNS)
 	stateSourceObject.Load(4, &n.abstractSockets)
-	stateSourceObject.AfterLoad(n.afterLoad)
+	stateSourceObject.AfterLoad(func() { n.afterLoad(ctx) })
 }
 
 func (r *namespaceRefs) StateTypeName() string {
@@ -151,9 +153,9 @@ func (r *namespaceRefs) StateSave(stateSinkObject state.Sink) {
 }
 
 // +checklocksignore
-func (r *namespaceRefs) StateLoad(stateSourceObject state.Source) {
+func (r *namespaceRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(r.afterLoad)
+	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
 }
 
 func init() {

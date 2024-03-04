@@ -630,7 +630,7 @@ func (t *Task) loadSeccomp(seccompData *taskSeccomp) {
 }
 
 // afterLoad is invoked by stateify.
-func (t *Task) afterLoad() {
+func (t *Task) afterLoad(gocontext.Context) {
 	t.updateInfoLocked()
 	if ts := t.seccomp.Load().(*taskSeccomp); ts != nil {
 		ts.populateCache(t)

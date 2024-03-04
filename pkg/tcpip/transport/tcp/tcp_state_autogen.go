@@ -3,6 +3,8 @@
 package tcp
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -30,10 +32,10 @@ func (a *acceptQueue) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &a.capacity)
 }
 
-func (a *acceptQueue) afterLoad() {}
+func (a *acceptQueue) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (a *acceptQueue) StateLoad(stateSourceObject state.Source) {
+func (a *acceptQueue) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &a.pendingEndpoints)
 	stateSourceObject.Load(2, &a.capacity)
 	stateSourceObject.LoadValue(0, new([]*endpoint), func(y any) { a.loadEndpoints(y.([]*endpoint)) })
@@ -89,10 +91,10 @@ func (h *handshake) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(16, &h.sampleRTTWithTSOnly)
 }
 
-func (h *handshake) afterLoad() {}
+func (h *handshake) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (h *handshake) StateLoad(stateSourceObject state.Source) {
+func (h *handshake) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &h.ep)
 	stateSourceObject.Load(1, &h.listenEP)
 	stateSourceObject.Load(2, &h.state)
@@ -134,10 +136,10 @@ func (c *cubicState) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &c.s)
 }
 
-func (c *cubicState) afterLoad() {}
+func (c *cubicState) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (c *cubicState) StateLoad(stateSourceObject state.Source) {
+func (c *cubicState) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.TCPCubicState)
 	stateSourceObject.Load(1, &c.numCongestionEvents)
 	stateSourceObject.Load(2, &c.s)
@@ -163,10 +165,10 @@ func (s *SACKInfo) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &s.NumBlocks)
 }
 
-func (s *SACKInfo) afterLoad() {}
+func (s *SACKInfo) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (s *SACKInfo) StateLoad(stateSourceObject state.Source) {
+func (s *SACKInfo) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.Blocks)
 	stateSourceObject.Load(1, &s.NumBlocks)
 }
@@ -201,10 +203,10 @@ func (r *ReceiveErrors) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(6, &r.WantZeroRcvWindow)
 }
 
-func (r *ReceiveErrors) afterLoad() {}
+func (r *ReceiveErrors) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (r *ReceiveErrors) StateLoad(stateSourceObject state.Source) {
+func (r *ReceiveErrors) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.ReceiveErrors)
 	stateSourceObject.Load(1, &r.SegmentQueueDropped)
 	stateSourceObject.Load(2, &r.ChecksumErrors)
@@ -242,10 +244,10 @@ func (s *SendErrors) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(5, &s.Timeouts)
 }
 
-func (s *SendErrors) afterLoad() {}
+func (s *SendErrors) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (s *SendErrors) StateLoad(stateSourceObject state.Source) {
+func (s *SendErrors) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.SendErrors)
 	stateSourceObject.Load(1, &s.SegmentSendToNetworkFailed)
 	stateSourceObject.Load(2, &s.SynSendToNetworkFailed)
@@ -284,10 +286,10 @@ func (s *Stats) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(6, &s.WriteErrors)
 }
 
-func (s *Stats) afterLoad() {}
+func (s *Stats) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (s *Stats) StateLoad(stateSourceObject state.Source) {
+func (s *Stats) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.SegmentsReceived)
 	stateSourceObject.Load(1, &s.SegmentsSent)
 	stateSourceObject.Load(2, &s.FailedConnectionAttempts)
@@ -315,10 +317,10 @@ func (sq *sndQueueInfo) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &sq.TCPSndBufState)
 }
 
-func (sq *sndQueueInfo) afterLoad() {}
+func (sq *sndQueueInfo) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (sq *sndQueueInfo) StateLoad(stateSourceObject state.Source) {
+func (sq *sndQueueInfo) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &sq.TCPSndBufState)
 }
 
@@ -443,7 +445,7 @@ func (e *endpoint) StateSave(stateSinkObject state.Sink) {
 }
 
 // +checklocksignore
-func (e *endpoint) StateLoad(stateSourceObject state.Source) {
+func (e *endpoint) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.TCPEndpointStateInner)
 	stateSourceObject.Load(1, &e.TransportEndpointInfo)
 	stateSourceObject.Load(2, &e.DefaultSocketOptionsHandler)
@@ -496,7 +498,7 @@ func (e *endpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(50, &e.ops)
 	stateSourceObject.Load(51, &e.lastOutOfWindowAckTime)
 	stateSourceObject.LoadValue(11, new(EndpointState), func(y any) { e.loadState(y.(EndpointState)) })
-	stateSourceObject.AfterLoad(e.afterLoad)
+	stateSourceObject.AfterLoad(func() { e.afterLoad(ctx) })
 }
 
 func (k *keepalive) StateTypeName() string {
@@ -523,10 +525,10 @@ func (k *keepalive) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &k.unacked)
 }
 
-func (k *keepalive) afterLoad() {}
+func (k *keepalive) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (k *keepalive) StateLoad(stateSourceObject state.Source) {
+func (k *keepalive) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &k.idle)
 	stateSourceObject.Load(1, &k.interval)
 	stateSourceObject.Load(2, &k.count)
@@ -561,10 +563,10 @@ func (rc *rackControl) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(5, &rc.snd)
 }
 
-func (rc *rackControl) afterLoad() {}
+func (rc *rackControl) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (rc *rackControl) StateLoad(stateSourceObject state.Source) {
+func (rc *rackControl) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &rc.TCPRACKState)
 	stateSourceObject.Load(1, &rc.exitedRecovery)
 	stateSourceObject.Load(2, &rc.minRTT)
@@ -605,10 +607,10 @@ func (r *receiver) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(7, &r.lastRcvdAckTime)
 }
 
-func (r *receiver) afterLoad() {}
+func (r *receiver) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (r *receiver) StateLoad(stateSourceObject state.Source) {
+func (r *receiver) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.TCPReceiverState)
 	stateSourceObject.Load(1, &r.ep)
 	stateSourceObject.Load(2, &r.rcvWnd)
@@ -637,10 +639,10 @@ func (r *renoState) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &r.s)
 }
 
-func (r *renoState) afterLoad() {}
+func (r *renoState) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (r *renoState) StateLoad(stateSourceObject state.Source) {
+func (r *renoState) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.s)
 }
 
@@ -662,10 +664,10 @@ func (rr *renoRecovery) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &rr.s)
 }
 
-func (rr *renoRecovery) afterLoad() {}
+func (rr *renoRecovery) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (rr *renoRecovery) StateLoad(stateSourceObject state.Source) {
+func (rr *renoRecovery) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &rr.s)
 }
 
@@ -687,10 +689,10 @@ func (sr *sackRecovery) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &sr.s)
 }
 
-func (sr *sackRecovery) afterLoad() {}
+func (sr *sackRecovery) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (sr *sackRecovery) StateLoad(stateSourceObject state.Source) {
+func (sr *sackRecovery) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &sr.s)
 }
 
@@ -714,10 +716,10 @@ func (s *SACKScoreboard) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &s.maxSACKED)
 }
 
-func (s *SACKScoreboard) afterLoad() {}
+func (s *SACKScoreboard) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (s *SACKScoreboard) StateLoad(stateSourceObject state.Source) {
+func (s *SACKScoreboard) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.smss)
 	stateSourceObject.Load(1, &s.maxSACKED)
 }
@@ -780,10 +782,10 @@ func (s *segment) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(19, &s.lost)
 }
 
-func (s *segment) afterLoad() {}
+func (s *segment) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (s *segment) StateLoad(stateSourceObject state.Source) {
+func (s *segment) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.segmentEntry)
 	stateSourceObject.Load(1, &s.segmentRefs)
 	stateSourceObject.Load(2, &s.ep)
@@ -828,10 +830,10 @@ func (q *segmentQueue) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &q.frozen)
 }
 
-func (q *segmentQueue) afterLoad() {}
+func (q *segmentQueue) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (q *segmentQueue) StateLoad(stateSourceObject state.Source) {
+func (q *segmentQueue) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.LoadWait(0, &q.list)
 	stateSourceObject.Load(1, &q.ep)
 	stateSourceObject.Load(2, &q.frozen)
@@ -885,10 +887,10 @@ func (s *sender) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(15, &s.retransmitTS)
 }
 
-func (s *sender) afterLoad() {}
+func (s *sender) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (s *sender) StateLoad(stateSourceObject state.Source) {
+func (s *sender) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.TCPSenderState)
 	stateSourceObject.Load(1, &s.ep)
 	stateSourceObject.Load(2, &s.lr)
@@ -925,10 +927,10 @@ func (r *rtt) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &r.TCPRTTState)
 }
 
-func (r *rtt) afterLoad() {}
+func (r *rtt) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (r *rtt) StateLoad(stateSourceObject state.Source) {
+func (r *rtt) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.TCPRTTState)
 }
 
@@ -952,10 +954,10 @@ func (l *endpointList) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &l.tail)
 }
 
-func (l *endpointList) afterLoad() {}
+func (l *endpointList) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (l *endpointList) StateLoad(stateSourceObject state.Source) {
+func (l *endpointList) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.head)
 	stateSourceObject.Load(1, &l.tail)
 }
@@ -980,10 +982,10 @@ func (e *endpointEntry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &e.prev)
 }
 
-func (e *endpointEntry) afterLoad() {}
+func (e *endpointEntry) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (e *endpointEntry) StateLoad(stateSourceObject state.Source) {
+func (e *endpointEntry) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.next)
 	stateSourceObject.Load(1, &e.prev)
 }
@@ -1008,10 +1010,10 @@ func (l *segmentList) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &l.tail)
 }
 
-func (l *segmentList) afterLoad() {}
+func (l *segmentList) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (l *segmentList) StateLoad(stateSourceObject state.Source) {
+func (l *segmentList) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.head)
 	stateSourceObject.Load(1, &l.tail)
 }
@@ -1036,10 +1038,10 @@ func (e *segmentEntry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &e.prev)
 }
 
-func (e *segmentEntry) afterLoad() {}
+func (e *segmentEntry) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (e *segmentEntry) StateLoad(stateSourceObject state.Source) {
+func (e *segmentEntry) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.next)
 	stateSourceObject.Load(1, &e.prev)
 }
@@ -1063,9 +1065,9 @@ func (r *segmentRefs) StateSave(stateSinkObject state.Sink) {
 }
 
 // +checklocksignore
-func (r *segmentRefs) StateLoad(stateSourceObject state.Source) {
+func (r *segmentRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(r.afterLoad)
+	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
 }
 
 func init() {

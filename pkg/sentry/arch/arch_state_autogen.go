@@ -3,6 +3,8 @@
 package arch
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -34,10 +36,10 @@ func (m *MmapLayout) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(5, &m.MaxStackRand)
 }
 
-func (m *MmapLayout) afterLoad() {}
+func (m *MmapLayout) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (m *MmapLayout) StateLoad(stateSourceObject state.Source) {
+func (m *MmapLayout) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &m.MinAddr)
 	stateSourceObject.Load(1, &m.MaxAddr)
 	stateSourceObject.Load(2, &m.BottomUpBase)
@@ -66,10 +68,10 @@ func (a *AuxEntry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &a.Value)
 }
 
-func (a *AuxEntry) afterLoad() {}
+func (a *AuxEntry) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (a *AuxEntry) StateLoad(stateSourceObject state.Source) {
+func (a *AuxEntry) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &a.Key)
 	stateSourceObject.Load(1, &a.Value)
 }

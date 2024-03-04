@@ -3,6 +3,8 @@
 package futex
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -24,10 +26,10 @@ func (b *bucket) StateSave(stateSinkObject state.Sink) {
 	}
 }
 
-func (b *bucket) afterLoad() {}
+func (b *bucket) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (b *bucket) StateLoad(stateSourceObject state.Source) {
+func (b *bucket) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 }
 
 func (m *Manager) StateTypeName() string {
@@ -51,10 +53,10 @@ func (m *Manager) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &m.sharedBucket)
 }
 
-func (m *Manager) afterLoad() {}
+func (m *Manager) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (m *Manager) StateLoad(stateSourceObject state.Source) {
+func (m *Manager) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &m.sharedBucket)
 }
 
@@ -78,10 +80,10 @@ func (l *waiterList) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &l.tail)
 }
 
-func (l *waiterList) afterLoad() {}
+func (l *waiterList) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (l *waiterList) StateLoad(stateSourceObject state.Source) {
+func (l *waiterList) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.head)
 	stateSourceObject.Load(1, &l.tail)
 }
@@ -106,10 +108,10 @@ func (e *waiterEntry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &e.prev)
 }
 
-func (e *waiterEntry) afterLoad() {}
+func (e *waiterEntry) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (e *waiterEntry) StateLoad(stateSourceObject state.Source) {
+func (e *waiterEntry) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.next)
 	stateSourceObject.Load(1, &e.prev)
 }

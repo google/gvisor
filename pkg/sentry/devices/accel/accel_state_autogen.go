@@ -3,6 +3,8 @@
 package accel
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -26,10 +28,10 @@ func (r *DevAddrRange) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &r.End)
 }
 
-func (r *DevAddrRange) afterLoad() {}
+func (r *DevAddrRange) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (r *DevAddrRange) StateLoad(stateSourceObject state.Source) {
+func (r *DevAddrRange) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.Start)
 	stateSourceObject.Load(1, &r.End)
 }
@@ -54,10 +56,10 @@ func (s *DevAddrSet) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.SaveValue(0, rootValue)
 }
 
-func (s *DevAddrSet) afterLoad() {}
+func (s *DevAddrSet) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (s *DevAddrSet) StateLoad(stateSourceObject state.Source) {
+func (s *DevAddrSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.LoadValue(0, new([]DevAddrFlatSegment), func(y any) { s.loadRoot(y.([]DevAddrFlatSegment)) })
 }
 
@@ -93,10 +95,10 @@ func (n *DevAddrnode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(7, &n.children)
 }
 
-func (n *DevAddrnode) afterLoad() {}
+func (n *DevAddrnode) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (n *DevAddrnode) StateLoad(stateSourceObject state.Source) {
+func (n *DevAddrnode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &n.nrSegments)
 	stateSourceObject.Load(1, &n.parent)
 	stateSourceObject.Load(2, &n.parentIndex)
@@ -129,10 +131,10 @@ func (d *DevAddrFlatSegment) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &d.Value)
 }
 
-func (d *DevAddrFlatSegment) afterLoad() {}
+func (d *DevAddrFlatSegment) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (d *DevAddrFlatSegment) StateLoad(stateSourceObject state.Source) {
+func (d *DevAddrFlatSegment) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.Start)
 	stateSourceObject.Load(1, &d.End)
 	stateSourceObject.Load(2, &d.Value)
@@ -166,10 +168,10 @@ func (dev *tpuV4Device) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(5, &dev.owner)
 }
 
-func (dev *tpuV4Device) afterLoad() {}
+func (dev *tpuV4Device) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (dev *tpuV4Device) StateLoad(stateSourceObject state.Source) {
+func (dev *tpuV4Device) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &dev.mu)
 	stateSourceObject.Load(1, &dev.minor)
 	stateSourceObject.Load(2, &dev.lite)

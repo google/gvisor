@@ -3,6 +3,8 @@
 package fsutil
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -24,10 +26,10 @@ func (d *DirtyInfo) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &d.Keep)
 }
 
-func (d *DirtyInfo) afterLoad() {}
+func (d *DirtyInfo) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (d *DirtyInfo) StateLoad(stateSourceObject state.Source) {
+func (d *DirtyInfo) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.Keep)
 }
 
@@ -50,9 +52,9 @@ func (f *HostFileMapper) StateSave(stateSinkObject state.Sink) {
 }
 
 // +checklocksignore
-func (f *HostFileMapper) StateLoad(stateSourceObject state.Source) {
+func (f *HostFileMapper) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.refs)
-	stateSourceObject.AfterLoad(f.afterLoad)
+	stateSourceObject.AfterLoad(func() { f.afterLoad(ctx) })
 }
 
 func init() {

@@ -3,6 +3,8 @@
 package stack
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -25,9 +27,9 @@ func (r *addressStateRefs) StateSave(stateSinkObject state.Sink) {
 }
 
 // +checklocksignore
-func (r *addressStateRefs) StateLoad(stateSourceObject state.Source) {
+func (r *addressStateRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(r.afterLoad)
+	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
 }
 
 func (t *tuple) StateTypeName() string {
@@ -54,10 +56,10 @@ func (t *tuple) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &t.tupleID)
 }
 
-func (t *tuple) afterLoad() {}
+func (t *tuple) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (t *tuple) StateLoad(stateSourceObject state.Source) {
+func (t *tuple) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.tupleEntry)
 	stateSourceObject.Load(1, &t.conn)
 	stateSourceObject.Load(2, &t.reply)
@@ -92,10 +94,10 @@ func (ti *tupleID) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(5, &ti.netProto)
 }
 
-func (ti *tupleID) afterLoad() {}
+func (ti *tupleID) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (ti *tupleID) StateLoad(stateSourceObject state.Source) {
+func (ti *tupleID) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &ti.srcAddr)
 	stateSourceObject.Load(1, &ti.srcPortOrEchoRequestIdent)
 	stateSourceObject.Load(2, &ti.dstAddr)
@@ -138,10 +140,10 @@ func (cn *conn) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(8, &cn.lastUsed)
 }
 
-func (cn *conn) afterLoad() {}
+func (cn *conn) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (cn *conn) StateLoad(stateSourceObject state.Source) {
+func (cn *conn) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &cn.ct)
 	stateSourceObject.Load(1, &cn.original)
 	stateSourceObject.Load(2, &cn.reply)
@@ -177,10 +179,10 @@ func (ct *ConnTrack) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &ct.buckets)
 }
 
-func (ct *ConnTrack) afterLoad() {}
+func (ct *ConnTrack) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (ct *ConnTrack) StateLoad(stateSourceObject state.Source) {
+func (ct *ConnTrack) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &ct.seed)
 	stateSourceObject.Load(1, &ct.clock)
 	stateSourceObject.Load(2, &ct.rand)
@@ -205,10 +207,10 @@ func (bkt *bucket) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &bkt.tuples)
 }
 
-func (bkt *bucket) afterLoad() {}
+func (bkt *bucket) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (bkt *bucket) StateLoad(stateSourceObject state.Source) {
+func (bkt *bucket) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &bkt.tuples)
 }
 
@@ -232,10 +234,10 @@ func (l *groPacketList) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &l.tail)
 }
 
-func (l *groPacketList) afterLoad() {}
+func (l *groPacketList) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (l *groPacketList) StateLoad(stateSourceObject state.Source) {
+func (l *groPacketList) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.head)
 	stateSourceObject.Load(1, &l.tail)
 }
@@ -260,10 +262,10 @@ func (e *groPacketEntry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &e.prev)
 }
 
-func (e *groPacketEntry) afterLoad() {}
+func (e *groPacketEntry) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (e *groPacketEntry) StateLoad(stateSourceObject state.Source) {
+func (e *groPacketEntry) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.next)
 	stateSourceObject.Load(1, &e.prev)
 }
@@ -295,14 +297,14 @@ func (it *IPTables) StateSave(stateSinkObject state.Sink) {
 }
 
 // +checklocksignore
-func (it *IPTables) StateLoad(stateSourceObject state.Source) {
+func (it *IPTables) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &it.connections)
 	stateSourceObject.Load(1, &it.reaper)
 	stateSourceObject.Load(2, &it.mu)
 	stateSourceObject.Load(3, &it.v4Tables)
 	stateSourceObject.Load(4, &it.v6Tables)
 	stateSourceObject.Load(5, &it.modified)
-	stateSourceObject.AfterLoad(it.afterLoad)
+	stateSourceObject.AfterLoad(func() { it.afterLoad(ctx) })
 }
 
 func (table *Table) StateTypeName() string {
@@ -327,10 +329,10 @@ func (table *Table) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &table.Underflows)
 }
 
-func (table *Table) afterLoad() {}
+func (table *Table) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (table *Table) StateLoad(stateSourceObject state.Source) {
+func (table *Table) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &table.Rules)
 	stateSourceObject.Load(1, &table.BuiltinChains)
 	stateSourceObject.Load(2, &table.Underflows)
@@ -358,10 +360,10 @@ func (r *Rule) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &r.Target)
 }
 
-func (r *Rule) afterLoad() {}
+func (r *Rule) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (r *Rule) StateLoad(stateSourceObject state.Source) {
+func (r *Rule) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.Filter)
 	stateSourceObject.Load(1, &r.Matchers)
 	stateSourceObject.Load(2, &r.Target)
@@ -411,10 +413,10 @@ func (fl *IPHeaderFilter) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(13, &fl.OutputInterfaceInvert)
 }
 
-func (fl *IPHeaderFilter) afterLoad() {}
+func (fl *IPHeaderFilter) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (fl *IPHeaderFilter) StateLoad(stateSourceObject state.Source) {
+func (fl *IPHeaderFilter) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fl.Protocol)
 	stateSourceObject.Load(1, &fl.CheckProtocol)
 	stateSourceObject.Load(2, &fl.Dst)
@@ -451,10 +453,10 @@ func (l *neighborEntryList) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &l.tail)
 }
 
-func (l *neighborEntryList) afterLoad() {}
+func (l *neighborEntryList) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (l *neighborEntryList) StateLoad(stateSourceObject state.Source) {
+func (l *neighborEntryList) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.head)
 	stateSourceObject.Load(1, &l.tail)
 }
@@ -479,10 +481,10 @@ func (e *neighborEntryEntry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &e.prev)
 }
 
-func (e *neighborEntryEntry) afterLoad() {}
+func (e *neighborEntryEntry) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (e *neighborEntryEntry) StateLoad(stateSourceObject state.Source) {
+func (e *neighborEntryEntry) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.next)
 	stateSourceObject.Load(1, &e.prev)
 }
@@ -541,10 +543,10 @@ func (pk *PacketBuffer) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(18, &pk.tuple)
 }
 
-func (pk *PacketBuffer) afterLoad() {}
+func (pk *PacketBuffer) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (pk *PacketBuffer) StateLoad(stateSourceObject state.Source) {
+func (pk *PacketBuffer) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &pk.packetBufferRefs)
 	stateSourceObject.Load(1, &pk.buf)
 	stateSourceObject.Load(2, &pk.reserved)
@@ -586,10 +588,10 @@ func (h *headerInfo) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &h.length)
 }
 
-func (h *headerInfo) afterLoad() {}
+func (h *headerInfo) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (h *headerInfo) StateLoad(stateSourceObject state.Source) {
+func (h *headerInfo) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &h.offset)
 	stateSourceObject.Load(1, &h.length)
 }
@@ -612,10 +614,10 @@ func (d *PacketData) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &d.pk)
 }
 
-func (d *PacketData) afterLoad() {}
+func (d *PacketData) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (d *PacketData) StateLoad(stateSourceObject state.Source) {
+func (d *PacketData) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.pk)
 }
 
@@ -637,10 +639,10 @@ func (pl *PacketBufferList) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &pl.pbs)
 }
 
-func (pl *PacketBufferList) afterLoad() {}
+func (pl *PacketBufferList) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (pl *PacketBufferList) StateLoad(stateSourceObject state.Source) {
+func (pl *PacketBufferList) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &pl.pbs)
 }
 
@@ -663,9 +665,9 @@ func (r *packetBufferRefs) StateSave(stateSinkObject state.Sink) {
 }
 
 // +checklocksignore
-func (r *packetBufferRefs) StateLoad(stateSourceObject state.Source) {
+func (r *packetBufferRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(r.afterLoad)
+	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
 }
 
 func (t *TransportEndpointID) StateTypeName() string {
@@ -692,10 +694,10 @@ func (t *TransportEndpointID) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &t.RemoteAddress)
 }
 
-func (t *TransportEndpointID) afterLoad() {}
+func (t *TransportEndpointID) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (t *TransportEndpointID) StateLoad(stateSourceObject state.Source) {
+func (t *TransportEndpointID) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.LocalPort)
 	stateSourceObject.Load(1, &t.LocalAddress)
 	stateSourceObject.Load(2, &t.RemotePort)
@@ -722,10 +724,10 @@ func (n *NetworkPacketInfo) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &n.IsForwardedPacket)
 }
 
-func (n *NetworkPacketInfo) afterLoad() {}
+func (n *NetworkPacketInfo) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (n *NetworkPacketInfo) StateLoad(stateSourceObject state.Source) {
+func (n *NetworkPacketInfo) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &n.LocalAddressBroadcast)
 	stateSourceObject.Load(1, &n.IsForwardedPacket)
 }
@@ -766,10 +768,10 @@ func (g *GSO) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(5, &g.MaxSize)
 }
 
-func (g *GSO) afterLoad() {}
+func (g *GSO) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (g *GSO) StateLoad(stateSourceObject state.Source) {
+func (g *GSO) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &g.Type)
 	stateSourceObject.Load(1, &g.NeedsCsum)
 	stateSourceObject.Load(2, &g.CsumOffset)
@@ -806,10 +808,10 @@ func (r *routeInfo) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(5, &r.Loop)
 }
 
-func (r *routeInfo) afterLoad() {}
+func (r *routeInfo) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (r *routeInfo) StateLoad(stateSourceObject state.Source) {
+func (r *routeInfo) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.RemoteAddress)
 	stateSourceObject.Load(1, &r.LocalAddress)
 	stateSourceObject.Load(2, &r.LocalLinkAddress)
@@ -838,10 +840,10 @@ func (r *RouteInfo) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &r.RemoteLinkAddress)
 }
 
-func (r *RouteInfo) afterLoad() {}
+func (r *RouteInfo) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (r *RouteInfo) StateLoad(stateSourceObject state.Source) {
+func (r *RouteInfo) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.routeInfo)
 	stateSourceObject.Load(1, &r.RemoteLinkAddress)
 }
@@ -874,10 +876,10 @@ func (t *TransportEndpointInfo) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(5, &t.RegisterNICID)
 }
 
-func (t *TransportEndpointInfo) afterLoad() {}
+func (t *TransportEndpointInfo) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (t *TransportEndpointInfo) StateLoad(stateSourceObject state.Source) {
+func (t *TransportEndpointInfo) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.NetProto)
 	stateSourceObject.Load(1, &t.TransProto)
 	stateSourceObject.Load(2, &t.ID)
@@ -920,10 +922,10 @@ func (t *TCPCubicState) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(8, &t.WEst)
 }
 
-func (t *TCPCubicState) afterLoad() {}
+func (t *TCPCubicState) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (t *TCPCubicState) StateLoad(stateSourceObject state.Source) {
+func (t *TCPCubicState) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.WLastMax)
 	stateSourceObject.Load(1, &t.WMax)
 	stateSourceObject.Load(2, &t.T)
@@ -971,10 +973,10 @@ func (t *TCPRACKState) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(9, &t.RTTSeq)
 }
 
-func (t *TCPRACKState) afterLoad() {}
+func (t *TCPRACKState) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (t *TCPRACKState) StateLoad(stateSourceObject state.Source) {
+func (t *TCPRACKState) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.XmitTime)
 	stateSourceObject.Load(1, &t.EndSequence)
 	stateSourceObject.Load(2, &t.FACK)
@@ -1011,10 +1013,10 @@ func (t *TCPEndpointID) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &t.RemoteAddress)
 }
 
-func (t *TCPEndpointID) afterLoad() {}
+func (t *TCPEndpointID) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (t *TCPEndpointID) StateLoad(stateSourceObject state.Source) {
+func (t *TCPEndpointID) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.LocalPort)
 	stateSourceObject.Load(1, &t.LocalAddress)
 	stateSourceObject.Load(2, &t.RemotePort)
@@ -1049,10 +1051,10 @@ func (t *TCPFastRecoveryState) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(5, &t.RescueRxt)
 }
 
-func (t *TCPFastRecoveryState) afterLoad() {}
+func (t *TCPFastRecoveryState) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (t *TCPFastRecoveryState) StateLoad(stateSourceObject state.Source) {
+func (t *TCPFastRecoveryState) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.Active)
 	stateSourceObject.Load(1, &t.First)
 	stateSourceObject.Load(2, &t.Last)
@@ -1085,10 +1087,10 @@ func (t *TCPReceiverState) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &t.PendingBufUsed)
 }
 
-func (t *TCPReceiverState) afterLoad() {}
+func (t *TCPReceiverState) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (t *TCPReceiverState) StateLoad(stateSourceObject state.Source) {
+func (t *TCPReceiverState) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.RcvNxt)
 	stateSourceObject.Load(1, &t.RcvAcc)
 	stateSourceObject.Load(2, &t.RcvWndScale)
@@ -1117,10 +1119,10 @@ func (t *TCPRTTState) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &t.SRTTInited)
 }
 
-func (t *TCPRTTState) afterLoad() {}
+func (t *TCPRTTState) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (t *TCPRTTState) StateLoad(stateSourceObject state.Source) {
+func (t *TCPRTTState) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.SRTT)
 	stateSourceObject.Load(1, &t.RTTVar)
 	stateSourceObject.Load(2, &t.SRTTInited)
@@ -1188,10 +1190,10 @@ func (t *TCPSenderState) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(22, &t.SpuriousRecovery)
 }
 
-func (t *TCPSenderState) afterLoad() {}
+func (t *TCPSenderState) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (t *TCPSenderState) StateLoad(stateSourceObject state.Source) {
+func (t *TCPSenderState) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.LastSendTime)
 	stateSourceObject.Load(1, &t.DupAckCount)
 	stateSourceObject.Load(2, &t.SndCwnd)
@@ -1239,10 +1241,10 @@ func (t *TCPSACKInfo) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &t.MaxSACKED)
 }
 
-func (t *TCPSACKInfo) afterLoad() {}
+func (t *TCPSACKInfo) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (t *TCPSACKInfo) StateLoad(stateSourceObject state.Source) {
+func (t *TCPSACKInfo) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.Blocks)
 	stateSourceObject.Load(1, &t.ReceivedBlocks)
 	stateSourceObject.Load(2, &t.MaxSACKED)
@@ -1282,10 +1284,10 @@ func (r *RcvBufAutoTuneParams) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(8, &r.Disabled)
 }
 
-func (r *RcvBufAutoTuneParams) afterLoad() {}
+func (r *RcvBufAutoTuneParams) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (r *RcvBufAutoTuneParams) StateLoad(stateSourceObject state.Source) {
+func (r *RcvBufAutoTuneParams) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.MeasureTime)
 	stateSourceObject.Load(1, &r.CopiedBytes)
 	stateSourceObject.Load(2, &r.PrevCopiedBytes)
@@ -1319,10 +1321,10 @@ func (t *TCPRcvBufState) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &t.RcvClosed)
 }
 
-func (t *TCPRcvBufState) afterLoad() {}
+func (t *TCPRcvBufState) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (t *TCPRcvBufState) StateLoad(stateSourceObject state.Source) {
+func (t *TCPRcvBufState) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.RcvBufUsed)
 	stateSourceObject.Load(1, &t.RcvAutoParams)
 	stateSourceObject.Load(2, &t.RcvClosed)
@@ -1356,10 +1358,10 @@ func (t *TCPSndBufState) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(5, &t.AutoTuneSndBufDisabled)
 }
 
-func (t *TCPSndBufState) afterLoad() {}
+func (t *TCPSndBufState) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (t *TCPSndBufState) StateLoad(stateSourceObject state.Source) {
+func (t *TCPSndBufState) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.SndBufSize)
 	stateSourceObject.Load(1, &t.SndBufUsed)
 	stateSourceObject.Load(2, &t.SndClosed)
@@ -1392,10 +1394,10 @@ func (t *TCPEndpointStateInner) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &t.RecentTS)
 }
 
-func (t *TCPEndpointStateInner) afterLoad() {}
+func (t *TCPEndpointStateInner) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (t *TCPEndpointStateInner) StateLoad(stateSourceObject state.Source) {
+func (t *TCPEndpointStateInner) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.TSOffset)
 	stateSourceObject.Load(1, &t.SACKPermitted)
 	stateSourceObject.Load(2, &t.SendTSOk)
@@ -1434,10 +1436,10 @@ func (t *TCPEndpointState) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(7, &t.Sender)
 }
 
-func (t *TCPEndpointState) afterLoad() {}
+func (t *TCPEndpointState) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (t *TCPEndpointState) StateLoad(stateSourceObject state.Source) {
+func (t *TCPEndpointState) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.TCPEndpointStateInner)
 	stateSourceObject.Load(1, &t.ID)
 	stateSourceObject.Load(2, &t.SegTime)
@@ -1474,10 +1476,10 @@ func (ep *multiPortEndpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(4, &ep.endpoints)
 }
 
-func (ep *multiPortEndpoint) afterLoad() {}
+func (ep *multiPortEndpoint) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (ep *multiPortEndpoint) StateLoad(stateSourceObject state.Source) {
+func (ep *multiPortEndpoint) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &ep.demux)
 	stateSourceObject.Load(1, &ep.netProto)
 	stateSourceObject.Load(2, &ep.transProto)
@@ -1505,10 +1507,10 @@ func (l *tupleList) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &l.tail)
 }
 
-func (l *tupleList) afterLoad() {}
+func (l *tupleList) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (l *tupleList) StateLoad(stateSourceObject state.Source) {
+func (l *tupleList) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.head)
 	stateSourceObject.Load(1, &l.tail)
 }
@@ -1533,10 +1535,10 @@ func (e *tupleEntry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &e.prev)
 }
 
-func (e *tupleEntry) afterLoad() {}
+func (e *tupleEntry) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (e *tupleEntry) StateLoad(stateSourceObject state.Source) {
+func (e *tupleEntry) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.next)
 	stateSourceObject.Load(1, &e.prev)
 }

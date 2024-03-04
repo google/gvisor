@@ -3,6 +3,8 @@
 package uevent
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -21,10 +23,10 @@ func (p *Protocol) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
 }
 
-func (p *Protocol) afterLoad() {}
+func (p *Protocol) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (p *Protocol) StateLoad(stateSourceObject state.Source) {
+func (p *Protocol) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 }
 
 func init() {

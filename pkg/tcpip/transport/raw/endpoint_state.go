@@ -15,6 +15,7 @@
 package raw
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -33,7 +34,7 @@ func (p *rawPacket) loadReceivedAt(nsec int64) {
 }
 
 // afterLoad is invoked by stateify.
-func (e *endpoint) afterLoad() {
+func (e *endpoint) afterLoad(context.Context) {
 	stack.StackFromEnv.RegisterRestoredEndpoint(e)
 }
 

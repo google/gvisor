@@ -3,6 +3,8 @@
 package timerfd
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -36,10 +38,10 @@ func (tfd *TimerFileDescription) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(6, &tfd.val)
 }
 
-func (tfd *TimerFileDescription) afterLoad() {}
+func (tfd *TimerFileDescription) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (tfd *TimerFileDescription) StateLoad(stateSourceObject state.Source) {
+func (tfd *TimerFileDescription) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &tfd.vfsfd)
 	stateSourceObject.Load(1, &tfd.FileDescriptionDefaultImpl)
 	stateSourceObject.Load(2, &tfd.DentryMetadataFileDescriptionImpl)

@@ -3,6 +3,8 @@
 package signalfd
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -38,10 +40,10 @@ func (sfd *SignalFileDescription) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(7, &sfd.entry)
 }
 
-func (sfd *SignalFileDescription) afterLoad() {}
+func (sfd *SignalFileDescription) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (sfd *SignalFileDescription) StateLoad(stateSourceObject state.Source) {
+func (sfd *SignalFileDescription) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &sfd.vfsfd)
 	stateSourceObject.Load(1, &sfd.FileDescriptionDefaultImpl)
 	stateSourceObject.Load(2, &sfd.DentryMetadataFileDescriptionImpl)

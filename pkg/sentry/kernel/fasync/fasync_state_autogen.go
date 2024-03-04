@@ -3,6 +3,8 @@
 package fasync
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -38,10 +40,10 @@ func (a *FileAsync) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(7, &a.recipientT)
 }
 
-func (a *FileAsync) afterLoad() {}
+func (a *FileAsync) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (a *FileAsync) StateLoad(stateSourceObject state.Source) {
+func (a *FileAsync) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &a.e)
 	stateSourceObject.Load(1, &a.fd)
 	stateSourceObject.Load(2, &a.requester)

@@ -15,6 +15,7 @@
 package icmp
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -34,7 +35,7 @@ func (p *icmpPacket) loadReceivedAt(nsec int64) {
 }
 
 // afterLoad is invoked by stateify.
-func (e *endpoint) afterLoad() {
+func (e *endpoint) afterLoad(context.Context) {
 	stack.StackFromEnv.RegisterRestoredEndpoint(e)
 }
 

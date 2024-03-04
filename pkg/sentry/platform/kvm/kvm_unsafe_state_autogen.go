@@ -6,6 +6,8 @@
 package kvm
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -29,10 +31,10 @@ func (p *machineAtomicPtr) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.SaveValue(0, ptrValue)
 }
 
-func (p *machineAtomicPtr) afterLoad() {}
+func (p *machineAtomicPtr) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (p *machineAtomicPtr) StateLoad(stateSourceObject state.Source) {
+func (p *machineAtomicPtr) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.LoadValue(0, new(*machine), func(y any) { p.loadPtr(y.(*machine)) })
 }
 

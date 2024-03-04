@@ -3,6 +3,8 @@
 package ipc
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -38,10 +40,10 @@ func (o *Object) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(7, &o.Mode)
 }
 
-func (o *Object) afterLoad() {}
+func (o *Object) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (o *Object) StateLoad(stateSourceObject state.Source) {
+func (o *Object) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &o.UserNS)
 	stateSourceObject.Load(1, &o.ID)
 	stateSourceObject.Load(2, &o.Key)
@@ -76,10 +78,10 @@ func (r *Registry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &r.lastIDUsed)
 }
 
-func (r *Registry) afterLoad() {}
+func (r *Registry) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (r *Registry) StateLoad(stateSourceObject state.Source) {
+func (r *Registry) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.UserNS)
 	stateSourceObject.Load(1, &r.objects)
 	stateSourceObject.Load(2, &r.keysToIDs)

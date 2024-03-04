@@ -1,6 +1,7 @@
 package kernel
 
 import (
+	"context"
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -134,7 +135,7 @@ func (r *SessionRefs) DecRef(destroy func()) {
 	}
 }
 
-func (r *SessionRefs) afterLoad() {
+func (r *SessionRefs) afterLoad(context.Context) {
 	if r.ReadRefs() > 0 {
 		refs.Register(r)
 	}

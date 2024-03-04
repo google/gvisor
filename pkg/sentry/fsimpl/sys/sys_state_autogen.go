@@ -3,6 +3,8 @@
 package sys
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -25,9 +27,9 @@ func (r *dirRefs) StateSave(stateSinkObject state.Sink) {
 }
 
 // +checklocksignore
-func (r *dirRefs) StateLoad(stateSourceObject state.Source) {
+func (r *dirRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(r.afterLoad)
+	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
 }
 
 func (i *kcovInode) StateTypeName() string {
@@ -60,10 +62,10 @@ func (i *kcovInode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(6, &i.implStatFS)
 }
 
-func (i *kcovInode) afterLoad() {}
+func (i *kcovInode) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (i *kcovInode) StateLoad(stateSourceObject state.Source) {
+func (i *kcovInode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.InodeAttrs)
 	stateSourceObject.Load(1, &i.InodeNoopRefCount)
 	stateSourceObject.Load(2, &i.InodeNotAnonymous)
@@ -99,10 +101,10 @@ func (fd *kcovFD) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(4, &fd.kcov)
 }
 
-func (fd *kcovFD) afterLoad() {}
+func (fd *kcovFD) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (fd *kcovFD) StateLoad(stateSourceObject state.Source) {
+func (fd *kcovFD) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fd.FileDescriptionDefaultImpl)
 	stateSourceObject.Load(1, &fd.NoLockFD)
 	stateSourceObject.Load(2, &fd.vfsfd)
@@ -134,10 +136,10 @@ func (gf *groTimeoutFile) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &gf.stk)
 }
 
-func (gf *groTimeoutFile) afterLoad() {}
+func (gf *groTimeoutFile) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (gf *groTimeoutFile) StateLoad(stateSourceObject state.Source) {
+func (gf *groTimeoutFile) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &gf.implStatFS)
 	stateSourceObject.Load(1, &gf.DynamicBytesFile)
 	stateSourceObject.Load(2, &gf.idx)
@@ -159,10 +161,10 @@ func (fsType *FilesystemType) StateSave(stateSinkObject state.Sink) {
 	fsType.beforeSave()
 }
 
-func (fsType *FilesystemType) afterLoad() {}
+func (fsType *FilesystemType) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (fsType *FilesystemType) StateLoad(stateSourceObject state.Source) {
+func (fsType *FilesystemType) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 }
 
 func (i *InternalData) StateTypeName() string {
@@ -187,10 +189,10 @@ func (i *InternalData) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &i.TestSysfsPathPrefix)
 }
 
-func (i *InternalData) afterLoad() {}
+func (i *InternalData) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (i *InternalData) StateLoad(stateSourceObject state.Source) {
+func (i *InternalData) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.ProductName)
 	stateSourceObject.Load(1, &i.EnableTPUProxyPaths)
 	stateSourceObject.Load(2, &i.TestSysfsPathPrefix)
@@ -216,10 +218,10 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &fs.devMinor)
 }
 
-func (fs *filesystem) afterLoad() {}
+func (fs *filesystem) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (fs *filesystem) StateLoad(stateSourceObject state.Source) {
+func (fs *filesystem) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fs.Filesystem)
 	stateSourceObject.Load(1, &fs.devMinor)
 }
@@ -260,10 +262,10 @@ func (d *dir) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(9, &d.locks)
 }
 
-func (d *dir) afterLoad() {}
+func (d *dir) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (d *dir) StateLoad(stateSourceObject state.Source) {
+func (d *dir) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.dirRefs)
 	stateSourceObject.Load(1, &d.InodeAlwaysValid)
 	stateSourceObject.Load(2, &d.InodeAttrs)
@@ -298,10 +300,10 @@ func (c *cpuFile) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &c.maxCores)
 }
 
-func (c *cpuFile) afterLoad() {}
+func (c *cpuFile) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (c *cpuFile) StateLoad(stateSourceObject state.Source) {
+func (c *cpuFile) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.implStatFS)
 	stateSourceObject.Load(1, &c.DynamicBytesFile)
 	stateSourceObject.Load(2, &c.maxCores)
@@ -322,10 +324,10 @@ func (i *implStatFS) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 }
 
-func (i *implStatFS) afterLoad() {}
+func (i *implStatFS) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (i *implStatFS) StateLoad(stateSourceObject state.Source) {
+func (i *implStatFS) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 }
 
 func (s *staticFile) StateTypeName() string {
@@ -348,10 +350,10 @@ func (s *staticFile) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &s.StaticData)
 }
 
-func (s *staticFile) afterLoad() {}
+func (s *staticFile) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (s *staticFile) StateLoad(stateSourceObject state.Source) {
+func (s *staticFile) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.DynamicBytesFile)
 	stateSourceObject.Load(1, &s.StaticData)
 }
@@ -376,10 +378,10 @@ func (hf *hostFile) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &hf.hostPath)
 }
 
-func (hf *hostFile) afterLoad() {}
+func (hf *hostFile) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (hf *hostFile) StateLoad(stateSourceObject state.Source) {
+func (hf *hostFile) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &hf.DynamicBytesFile)
 	stateSourceObject.Load(1, &hf.hostPath)
 }

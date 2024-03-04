@@ -6,6 +6,8 @@
 package arch
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -29,10 +31,10 @@ func (c *Context64) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &c.sigFPState)
 }
 
-func (c *Context64) afterLoad() {}
+func (c *Context64) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (c *Context64) StateLoad(stateSourceObject state.Source) {
+func (c *Context64) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.State)
 	stateSourceObject.Load(1, &c.sigFPState)
 }

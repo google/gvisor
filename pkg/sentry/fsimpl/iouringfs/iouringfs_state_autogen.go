@@ -3,6 +3,8 @@
 package iouringfs
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -41,7 +43,7 @@ func (fd *FileDescription) StateSave(stateSinkObject state.Sink) {
 }
 
 // +checklocksignore
-func (fd *FileDescription) StateLoad(stateSourceObject state.Source) {
+func (fd *FileDescription) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fd.vfsfd)
 	stateSourceObject.Load(1, &fd.FileDescriptionDefaultImpl)
 	stateSourceObject.Load(2, &fd.DentryMetadataFileDescriptionImpl)
@@ -52,7 +54,7 @@ func (fd *FileDescription) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(7, &fd.running)
 	stateSourceObject.Load(8, &fd.ioRings)
 	stateSourceObject.Load(9, &fd.remap)
-	stateSourceObject.AfterLoad(fd.afterLoad)
+	stateSourceObject.AfterLoad(func() { fd.afterLoad(ctx) })
 }
 
 func (sqemf *sqEntriesFile) StateTypeName() string {
@@ -73,10 +75,10 @@ func (sqemf *sqEntriesFile) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &sqemf.fr)
 }
 
-func (sqemf *sqEntriesFile) afterLoad() {}
+func (sqemf *sqEntriesFile) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (sqemf *sqEntriesFile) StateLoad(stateSourceObject state.Source) {
+func (sqemf *sqEntriesFile) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &sqemf.fr)
 }
 
@@ -98,10 +100,10 @@ func (rbmf *ringsBufferFile) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &rbmf.fr)
 }
 
-func (rbmf *ringsBufferFile) afterLoad() {}
+func (rbmf *ringsBufferFile) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (rbmf *ringsBufferFile) StateLoad(stateSourceObject state.Source) {
+func (rbmf *ringsBufferFile) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &rbmf.fr)
 }
 

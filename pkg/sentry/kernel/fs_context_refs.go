@@ -1,6 +1,7 @@
 package kernel
 
 import (
+	"context"
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -134,7 +135,7 @@ func (r *FSContextRefs) DecRef(destroy func()) {
 	}
 }
 
-func (r *FSContextRefs) afterLoad() {
+func (r *FSContextRefs) afterLoad(context.Context) {
 	if r.ReadRefs() > 0 {
 		refs.Register(r)
 	}

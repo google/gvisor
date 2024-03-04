@@ -3,6 +3,8 @@
 package limits
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -26,10 +28,10 @@ func (l *Limit) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &l.Max)
 }
 
-func (l *Limit) afterLoad() {}
+func (l *Limit) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (l *Limit) StateLoad(stateSourceObject state.Source) {
+func (l *Limit) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.Cur)
 	stateSourceObject.Load(1, &l.Max)
 }
@@ -52,10 +54,10 @@ func (l *LimitSet) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &l.data)
 }
 
-func (l *LimitSet) afterLoad() {}
+func (l *LimitSet) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (l *LimitSet) StateLoad(stateSourceObject state.Source) {
+func (l *LimitSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.data)
 }
 

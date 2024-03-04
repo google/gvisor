@@ -24,17 +24,17 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/platform/interrupt"
 )
 
-// context is an implementation of the platform context.
+// platformContext is an implementation of the platform context.
 //
 // This is a thin wrapper around the machine.
-type context struct {
+type platformContext struct {
 	// machine is the parent machine, and is immutable.
 	machine *machine
 
-	// info is the linux.SignalInfo cached for this context.
+	// info is the linux.SignalInfo cached for this platformContext.
 	info linux.SignalInfo
 
-	// interrupt is the interrupt context.
+	// interrupt is the interrupt platformContext.
 	interrupt interrupt.Forwarder
 }
 
@@ -44,8 +44,8 @@ type tryCPUIDError struct{}
 // Error implements error.Error.
 func (tryCPUIDError) Error() string { return "cpuid emulation failed" }
 
-// Switch runs the provided context in the given address space.
-func (c *context) Switch(ctx pkgcontext.Context, mm platform.MemoryManager, ac *arch.Context64, _ int32) (*linux.SignalInfo, hostarch.AccessType, error) {
+// Switch runs the provided platformContext in the given address space.
+func (c *platformContext) Switch(ctx pkgcontext.Context, mm platform.MemoryManager, ac *arch.Context64, _ int32) (*linux.SignalInfo, hostarch.AccessType, error) {
 	as := mm.AddressSpace()
 	localAS := as.(*addressSpace)
 
@@ -114,18 +114,20 @@ restart:
 }
 
 // Interrupt interrupts the running context.
-func (c *context) Interrupt() {
+func (c *platformContext) Interrupt() {
 	c.interrupt.NotifyInterrupt()
 }
 
 // Release implements platform.Context.Release().
-func (c *context) Release() {}
+func (c *platformContext) Release() {}
 
 // FullStateChanged implements platform.Context.FullStateChanged.
-func (c *context) FullStateChanged() {}
+func (c *platformContext) FullStateChanged() {}
 
 // PullFullState implements platform.Context.PullFullState.
-func (c *context) PullFullState(as platform.AddressSpace, ac *arch.Context64) error { return nil }
+func (c *platformContext) PullFullState(as platform.AddressSpace, ac *arch.Context64) error {
+	return nil
+}
 
 // PrepareSleep implements platform.Context.platform.Context.
-func (*context) PrepareSleep() {}
+func (*platformContext) PrepareSleep() {}

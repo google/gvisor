@@ -3,6 +3,8 @@
 package control
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -28,10 +30,10 @@ func (c *scmCredentials) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &c.kgid)
 }
 
-func (c *scmCredentials) afterLoad() {}
+func (c *scmCredentials) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (c *scmCredentials) StateLoad(stateSourceObject state.Source) {
+func (c *scmCredentials) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.t)
 	stateSourceObject.Load(1, &c.kuid)
 	stateSourceObject.Load(2, &c.kgid)

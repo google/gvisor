@@ -8,6 +8,8 @@
 package atomicbitops
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -29,10 +31,10 @@ func (f *Float64) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &f.bits)
 }
 
-func (f *Float64) afterLoad() {}
+func (f *Float64) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (f *Float64) StateLoad(stateSourceObject state.Source) {
+func (f *Float64) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.bits)
 }
 

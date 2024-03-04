@@ -6,6 +6,8 @@
 package usertrap
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -24,10 +26,10 @@ func (s *State) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 }
 
-func (s *State) afterLoad() {}
+func (s *State) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (s *State) StateLoad(stateSourceObject state.Source) {
+func (s *State) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 }
 
 func init() {

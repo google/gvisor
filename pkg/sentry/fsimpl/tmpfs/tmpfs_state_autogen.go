@@ -3,6 +3,8 @@
 package tmpfs
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -26,10 +28,10 @@ func (l *dentryList) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &l.tail)
 }
 
-func (l *dentryList) afterLoad() {}
+func (l *dentryList) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (l *dentryList) StateLoad(stateSourceObject state.Source) {
+func (l *dentryList) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.head)
 	stateSourceObject.Load(1, &l.tail)
 }
@@ -54,10 +56,10 @@ func (e *dentryEntry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &e.prev)
 }
 
-func (e *dentryEntry) afterLoad() {}
+func (e *dentryEntry) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (e *dentryEntry) StateLoad(stateSourceObject state.Source) {
+func (e *dentryEntry) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.next)
 	stateSourceObject.Load(1, &e.prev)
 }
@@ -86,10 +88,10 @@ func (d *deviceFile) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &d.minor)
 }
 
-func (d *deviceFile) afterLoad() {}
+func (d *deviceFile) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (d *deviceFile) StateLoad(stateSourceObject state.Source) {
+func (d *deviceFile) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.inode)
 	stateSourceObject.Load(1, &d.kind)
 	stateSourceObject.Load(2, &d.major)
@@ -122,10 +124,10 @@ func (dir *directory) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(4, &dir.childList)
 }
 
-func (dir *directory) afterLoad() {}
+func (dir *directory) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (dir *directory) StateLoad(stateSourceObject state.Source) {
+func (dir *directory) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &dir.dentry)
 	stateSourceObject.Load(1, &dir.inode)
 	stateSourceObject.Load(2, &dir.childMap)
@@ -157,10 +159,10 @@ func (fd *directoryFD) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &fd.off)
 }
 
-func (fd *directoryFD) afterLoad() {}
+func (fd *directoryFD) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (fd *directoryFD) StateLoad(stateSourceObject state.Source) {
+func (fd *directoryFD) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fd.fileDescription)
 	stateSourceObject.Load(1, &fd.DirectoryFileDescriptionDefaultImpl)
 	stateSourceObject.Load(2, &fd.iter)
@@ -186,9 +188,9 @@ func (r *inodeRefs) StateSave(stateSinkObject state.Sink) {
 }
 
 // +checklocksignore
-func (r *inodeRefs) StateLoad(stateSourceObject state.Source) {
+func (r *inodeRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(r.afterLoad)
+	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
 }
 
 func (n *namedPipe) StateTypeName() string {
@@ -211,10 +213,10 @@ func (n *namedPipe) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &n.pipe)
 }
 
-func (n *namedPipe) afterLoad() {}
+func (n *namedPipe) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (n *namedPipe) StateLoad(stateSourceObject state.Source) {
+func (n *namedPipe) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &n.inode)
 	stateSourceObject.Load(1, &n.pipe)
 }
@@ -249,10 +251,10 @@ func (rf *regularFile) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(6, &rf.size)
 }
 
-func (rf *regularFile) afterLoad() {}
+func (rf *regularFile) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (rf *regularFile) StateLoad(stateSourceObject state.Source) {
+func (rf *regularFile) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &rf.inode)
 	stateSourceObject.Load(1, &rf.memoryUsageKind)
 	stateSourceObject.Load(2, &rf.mappings)
@@ -282,10 +284,10 @@ func (fd *regularFileFD) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &fd.off)
 }
 
-func (fd *regularFileFD) afterLoad() {}
+func (fd *regularFileFD) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (fd *regularFileFD) StateLoad(stateSourceObject state.Source) {
+func (fd *regularFileFD) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fd.fileDescription)
 	stateSourceObject.Load(1, &fd.off)
 }
@@ -310,10 +312,10 @@ func (s *socketFile) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &s.ep)
 }
 
-func (s *socketFile) afterLoad() {}
+func (s *socketFile) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (s *socketFile) StateLoad(stateSourceObject state.Source) {
+func (s *socketFile) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.inode)
 	stateSourceObject.Load(1, &s.ep)
 }
@@ -338,10 +340,10 @@ func (s *symlink) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &s.target)
 }
 
-func (s *symlink) afterLoad() {}
+func (s *symlink) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (s *symlink) StateLoad(stateSourceObject state.Source) {
+func (s *symlink) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.inode)
 	stateSourceObject.Load(1, &s.target)
 }
@@ -361,10 +363,10 @@ func (fstype *FilesystemType) StateSave(stateSinkObject state.Sink) {
 	fstype.beforeSave()
 }
 
-func (fstype *FilesystemType) afterLoad() {}
+func (fstype *FilesystemType) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (fstype *FilesystemType) StateLoad(stateSourceObject state.Source) {
+func (fstype *FilesystemType) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 }
 
 func (fs *filesystem) StateTypeName() string {
@@ -412,7 +414,7 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 }
 
 // +checklocksignore
-func (fs *filesystem) StateLoad(stateSourceObject state.Source) {
+func (fs *filesystem) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fs.vfsfs)
 	stateSourceObject.Load(1, &fs.privateMF)
 	stateSourceObject.Load(2, &fs.uniqueID)
@@ -427,7 +429,7 @@ func (fs *filesystem) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(11, &fs.maxSizeInPages)
 	stateSourceObject.Load(12, &fs.pagesUsed)
 	stateSourceObject.Load(13, &fs.allowXattrPrefix)
-	stateSourceObject.AfterLoad(fs.afterLoad)
+	stateSourceObject.AfterLoad(func() { fs.afterLoad(ctx) })
 }
 
 func (f *FilesystemOpts) StateTypeName() string {
@@ -464,10 +466,10 @@ func (f *FilesystemOpts) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(8, &f.UniqueID)
 }
 
-func (f *FilesystemOpts) afterLoad() {}
+func (f *FilesystemOpts) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (f *FilesystemOpts) StateLoad(stateSourceObject state.Source) {
+func (f *FilesystemOpts) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.RootFileType)
 	stateSourceObject.Load(1, &f.RootSymlinkTarget)
 	stateSourceObject.Load(2, &f.FilesystemType)
@@ -507,10 +509,10 @@ func (d *dentry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(4, &d.inode)
 }
 
-func (d *dentry) afterLoad() {}
+func (d *dentry) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (d *dentry) StateLoad(stateSourceObject state.Source) {
+func (d *dentry) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.vfsd)
 	stateSourceObject.Load(2, &d.name)
 	stateSourceObject.Load(3, &d.dentryEntry)
@@ -562,10 +564,10 @@ func (i *inode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(13, &i.impl)
 }
 
-func (i *inode) afterLoad() {}
+func (i *inode) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (i *inode) StateLoad(stateSourceObject state.Source) {
+func (i *inode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.fs)
 	stateSourceObject.Load(1, &i.refs)
 	stateSourceObject.Load(2, &i.xattrs)
@@ -604,10 +606,10 @@ func (fd *fileDescription) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &fd.LockFD)
 }
 
-func (fd *fileDescription) afterLoad() {}
+func (fd *fileDescription) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (fd *fileDescription) StateLoad(stateSourceObject state.Source) {
+func (fd *fileDescription) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fd.vfsfd)
 	stateSourceObject.Load(1, &fd.FileDescriptionDefaultImpl)
 	stateSourceObject.Load(2, &fd.LockFD)

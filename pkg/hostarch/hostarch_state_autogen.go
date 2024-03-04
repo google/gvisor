@@ -3,6 +3,8 @@
 package hostarch
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -28,10 +30,10 @@ func (a *AccessType) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &a.Execute)
 }
 
-func (a *AccessType) afterLoad() {}
+func (a *AccessType) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (a *AccessType) StateLoad(stateSourceObject state.Source) {
+func (a *AccessType) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &a.Read)
 	stateSourceObject.Load(1, &a.Write)
 	stateSourceObject.Load(2, &a.Execute)
@@ -65,10 +67,10 @@ func (r *AddrRange) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &r.End)
 }
 
-func (r *AddrRange) afterLoad() {}
+func (r *AddrRange) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (r *AddrRange) StateLoad(stateSourceObject state.Source) {
+func (r *AddrRange) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.Start)
 	stateSourceObject.Load(1, &r.End)
 }

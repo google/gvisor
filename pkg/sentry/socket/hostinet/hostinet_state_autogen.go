@@ -3,6 +3,8 @@
 package hostinet
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -44,10 +46,10 @@ func (s *Socket) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(10, &s.recvClosed)
 }
 
-func (s *Socket) afterLoad() {}
+func (s *Socket) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (s *Socket) StateLoad(stateSourceObject state.Source) {
+func (s *Socket) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.vfsfd)
 	stateSourceObject.Load(1, &s.FileDescriptionDefaultImpl)
 	stateSourceObject.Load(2, &s.LockFD)

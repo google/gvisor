@@ -3,6 +3,8 @@
 package memdev
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -21,10 +23,10 @@ func (f *fullDevice) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
 }
 
-func (f *fullDevice) afterLoad() {}
+func (f *fullDevice) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (f *fullDevice) StateLoad(stateSourceObject state.Source) {
+func (f *fullDevice) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 }
 
 func (fd *fullFD) StateTypeName() string {
@@ -51,10 +53,10 @@ func (fd *fullFD) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &fd.NoLockFD)
 }
 
-func (fd *fullFD) afterLoad() {}
+func (fd *fullFD) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (fd *fullFD) StateLoad(stateSourceObject state.Source) {
+func (fd *fullFD) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fd.vfsfd)
 	stateSourceObject.Load(1, &fd.FileDescriptionDefaultImpl)
 	stateSourceObject.Load(2, &fd.DentryMetadataFileDescriptionImpl)
@@ -76,10 +78,10 @@ func (n *nullDevice) StateSave(stateSinkObject state.Sink) {
 	n.beforeSave()
 }
 
-func (n *nullDevice) afterLoad() {}
+func (n *nullDevice) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (n *nullDevice) StateLoad(stateSourceObject state.Source) {
+func (n *nullDevice) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 }
 
 func (fd *nullFD) StateTypeName() string {
@@ -106,10 +108,10 @@ func (fd *nullFD) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &fd.NoLockFD)
 }
 
-func (fd *nullFD) afterLoad() {}
+func (fd *nullFD) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (fd *nullFD) StateLoad(stateSourceObject state.Source) {
+func (fd *nullFD) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fd.vfsfd)
 	stateSourceObject.Load(1, &fd.FileDescriptionDefaultImpl)
 	stateSourceObject.Load(2, &fd.DentryMetadataFileDescriptionImpl)
@@ -131,10 +133,10 @@ func (r *randomDevice) StateSave(stateSinkObject state.Sink) {
 	r.beforeSave()
 }
 
-func (r *randomDevice) afterLoad() {}
+func (r *randomDevice) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (r *randomDevice) StateLoad(stateSourceObject state.Source) {
+func (r *randomDevice) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 }
 
 func (fd *randomFD) StateTypeName() string {
@@ -163,10 +165,10 @@ func (fd *randomFD) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(4, &fd.off)
 }
 
-func (fd *randomFD) afterLoad() {}
+func (fd *randomFD) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (fd *randomFD) StateLoad(stateSourceObject state.Source) {
+func (fd *randomFD) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fd.vfsfd)
 	stateSourceObject.Load(1, &fd.FileDescriptionDefaultImpl)
 	stateSourceObject.Load(2, &fd.DentryMetadataFileDescriptionImpl)
@@ -189,10 +191,10 @@ func (z *zeroDevice) StateSave(stateSinkObject state.Sink) {
 	z.beforeSave()
 }
 
-func (z *zeroDevice) afterLoad() {}
+func (z *zeroDevice) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (z *zeroDevice) StateLoad(stateSourceObject state.Source) {
+func (z *zeroDevice) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 }
 
 func (fd *zeroFD) StateTypeName() string {
@@ -219,10 +221,10 @@ func (fd *zeroFD) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &fd.NoLockFD)
 }
 
-func (fd *zeroFD) afterLoad() {}
+func (fd *zeroFD) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (fd *zeroFD) StateLoad(stateSourceObject state.Source) {
+func (fd *zeroFD) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fd.vfsfd)
 	stateSourceObject.Load(1, &fd.FileDescriptionDefaultImpl)
 	stateSourceObject.Load(2, &fd.DentryMetadataFileDescriptionImpl)

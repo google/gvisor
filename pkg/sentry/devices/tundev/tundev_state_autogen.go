@@ -3,6 +3,8 @@
 package tundev
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -21,10 +23,10 @@ func (t *tunDevice) StateSave(stateSinkObject state.Sink) {
 	t.beforeSave()
 }
 
-func (t *tunDevice) afterLoad() {}
+func (t *tunDevice) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (t *tunDevice) StateLoad(stateSourceObject state.Source) {
+func (t *tunDevice) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 }
 
 func (fd *tunFD) StateTypeName() string {
@@ -53,10 +55,10 @@ func (fd *tunFD) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(4, &fd.device)
 }
 
-func (fd *tunFD) afterLoad() {}
+func (fd *tunFD) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (fd *tunFD) StateLoad(stateSourceObject state.Source) {
+func (fd *tunFD) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fd.vfsfd)
 	stateSourceObject.Load(1, &fd.FileDescriptionDefaultImpl)
 	stateSourceObject.Load(2, &fd.DentryMetadataFileDescriptionImpl)

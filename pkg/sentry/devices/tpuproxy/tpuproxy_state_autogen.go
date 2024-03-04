@@ -3,6 +3,8 @@
 package tpuproxy
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -26,10 +28,10 @@ func (dev *vfioDevice) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &dev.minor)
 }
 
-func (dev *vfioDevice) afterLoad() {}
+func (dev *vfioDevice) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (dev *vfioDevice) StateLoad(stateSourceObject state.Source) {
+func (dev *vfioDevice) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &dev.mu)
 	stateSourceObject.Load(1, &dev.minor)
 }

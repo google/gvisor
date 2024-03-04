@@ -15,6 +15,7 @@
 package tmpfs
 
 import (
+	goContext "context"
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/context"
@@ -23,7 +24,7 @@ import (
 )
 
 // afterLoad is called by stateify.
-func (fs *filesystem) afterLoad() {
+func (fs *filesystem) afterLoad(goContext.Context) {
 	if !fs.privateMF {
 		fs.mf = fs.mfp.MemoryFile()
 	}

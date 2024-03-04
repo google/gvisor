@@ -3,6 +3,8 @@
 package channel
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -24,10 +26,10 @@ func (n *NotificationHandle) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &n.n)
 }
 
-func (n *NotificationHandle) afterLoad() {}
+func (n *NotificationHandle) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (n *NotificationHandle) StateLoad(stateSourceObject state.Source) {
+func (n *NotificationHandle) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &n.n)
 }
 

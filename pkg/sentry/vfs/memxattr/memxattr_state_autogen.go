@@ -3,6 +3,8 @@
 package memxattr
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -24,10 +26,10 @@ func (x *SimpleExtendedAttributes) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &x.xattrs)
 }
 
-func (x *SimpleExtendedAttributes) afterLoad() {}
+func (x *SimpleExtendedAttributes) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (x *SimpleExtendedAttributes) StateLoad(stateSourceObject state.Source) {
+func (x *SimpleExtendedAttributes) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &x.xattrs)
 }
 

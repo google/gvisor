@@ -3,6 +3,8 @@
 package socket
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -60,10 +62,10 @@ func (i *IPControlMessages) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(17, &i.SockErr)
 }
 
-func (i *IPControlMessages) afterLoad() {}
+func (i *IPControlMessages) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (i *IPControlMessages) StateLoad(stateSourceObject state.Source) {
+func (i *IPControlMessages) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.HasTimestamp)
 	stateSourceObject.Load(2, &i.HasInq)
 	stateSourceObject.Load(3, &i.Inq)
@@ -104,10 +106,10 @@ func (to *SendReceiveTimeout) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &to.recv)
 }
 
-func (to *SendReceiveTimeout) afterLoad() {}
+func (to *SendReceiveTimeout) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (to *SendReceiveTimeout) StateLoad(stateSourceObject state.Source) {
+func (to *SendReceiveTimeout) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &to.send)
 	stateSourceObject.Load(1, &to.recv)
 }

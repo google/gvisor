@@ -3,6 +3,8 @@
 package udp
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -42,10 +44,10 @@ func (p *udpPacket) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(8, &p.ttlOrHopLimit)
 }
 
-func (p *udpPacket) afterLoad() {}
+func (p *udpPacket) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (p *udpPacket) StateLoad(stateSourceObject state.Source) {
+func (p *udpPacket) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &p.udpPacketEntry)
 	stateSourceObject.Load(1, &p.netProto)
 	stateSourceObject.Load(2, &p.senderAddress)
@@ -110,7 +112,7 @@ func (e *endpoint) StateSave(stateSinkObject state.Sink) {
 }
 
 // +checklocksignore
-func (e *endpoint) StateLoad(stateSourceObject state.Source) {
+func (e *endpoint) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.DefaultSocketOptionsHandler)
 	stateSourceObject.Load(1, &e.waiterQueue)
 	stateSourceObject.Load(2, &e.uniqueID)
@@ -130,7 +132,7 @@ func (e *endpoint) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(16, &e.frozen)
 	stateSourceObject.Load(17, &e.localPort)
 	stateSourceObject.Load(18, &e.remotePort)
-	stateSourceObject.AfterLoad(e.afterLoad)
+	stateSourceObject.AfterLoad(func() { e.afterLoad(ctx) })
 }
 
 func (l *udpPacketList) StateTypeName() string {
@@ -153,10 +155,10 @@ func (l *udpPacketList) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &l.tail)
 }
 
-func (l *udpPacketList) afterLoad() {}
+func (l *udpPacketList) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (l *udpPacketList) StateLoad(stateSourceObject state.Source) {
+func (l *udpPacketList) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.head)
 	stateSourceObject.Load(1, &l.tail)
 }
@@ -181,10 +183,10 @@ func (e *udpPacketEntry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &e.prev)
 }
 
-func (e *udpPacketEntry) afterLoad() {}
+func (e *udpPacketEntry) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (e *udpPacketEntry) StateLoad(stateSourceObject state.Source) {
+func (e *udpPacketEntry) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.next)
 	stateSourceObject.Load(1, &e.prev)
 }

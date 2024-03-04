@@ -3,6 +3,8 @@
 package eventfd
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -38,10 +40,10 @@ func (efd *EventFileDescription) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(7, &efd.hostfd)
 }
 
-func (efd *EventFileDescription) afterLoad() {}
+func (efd *EventFileDescription) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (efd *EventFileDescription) StateLoad(stateSourceObject state.Source) {
+func (efd *EventFileDescription) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &efd.vfsfd)
 	stateSourceObject.Load(1, &efd.FileDescriptionDefaultImpl)
 	stateSourceObject.Load(2, &efd.DentryMetadataFileDescriptionImpl)

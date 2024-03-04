@@ -3,6 +3,8 @@
 package pipefs
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -21,10 +23,10 @@ func (f *filesystemType) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
 }
 
-func (f *filesystemType) afterLoad() {}
+func (f *filesystemType) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (f *filesystemType) StateLoad(stateSourceObject state.Source) {
+func (f *filesystemType) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 }
 
 func (fs *filesystem) StateTypeName() string {
@@ -47,10 +49,10 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &fs.devMinor)
 }
 
-func (fs *filesystem) afterLoad() {}
+func (fs *filesystem) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (fs *filesystem) StateLoad(stateSourceObject state.Source) {
+func (fs *filesystem) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fs.Filesystem)
 	stateSourceObject.Load(1, &fs.devMinor)
 }
@@ -93,10 +95,10 @@ func (i *inode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(10, &i.ctime)
 }
 
-func (i *inode) afterLoad() {}
+func (i *inode) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (i *inode) StateLoad(stateSourceObject state.Source) {
+func (i *inode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.InodeAnonymous)
 	stateSourceObject.Load(1, &i.InodeNotDirectory)
 	stateSourceObject.Load(2, &i.InodeNotSymlink)

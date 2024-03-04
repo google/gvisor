@@ -3,6 +3,8 @@
 package memmap
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -26,10 +28,10 @@ func (s *MappingSet) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.SaveValue(0, rootValue)
 }
 
-func (s *MappingSet) afterLoad() {}
+func (s *MappingSet) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (s *MappingSet) StateLoad(stateSourceObject state.Source) {
+func (s *MappingSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.LoadValue(0, new([]MappingFlatSegment), func(y any) { s.loadRoot(y.([]MappingFlatSegment)) })
 }
 
@@ -65,10 +67,10 @@ func (n *Mappingnode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(7, &n.children)
 }
 
-func (n *Mappingnode) afterLoad() {}
+func (n *Mappingnode) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (n *Mappingnode) StateLoad(stateSourceObject state.Source) {
+func (n *Mappingnode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &n.nrSegments)
 	stateSourceObject.Load(1, &n.parent)
 	stateSourceObject.Load(2, &n.parentIndex)
@@ -101,10 +103,10 @@ func (m *MappingFlatSegment) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &m.Value)
 }
 
-func (m *MappingFlatSegment) afterLoad() {}
+func (m *MappingFlatSegment) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (m *MappingFlatSegment) StateLoad(stateSourceObject state.Source) {
+func (m *MappingFlatSegment) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &m.Start)
 	stateSourceObject.Load(1, &m.End)
 	stateSourceObject.Load(2, &m.Value)

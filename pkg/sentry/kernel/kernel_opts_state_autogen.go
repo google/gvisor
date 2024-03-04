@@ -6,6 +6,8 @@
 package kernel
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -24,10 +26,10 @@ func (s *SpecialOpts) StateSave(stateSinkObject state.Sink) {
 	s.beforeSave()
 }
 
-func (s *SpecialOpts) afterLoad() {}
+func (s *SpecialOpts) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (s *SpecialOpts) StateLoad(stateSourceObject state.Source) {
+func (s *SpecialOpts) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 }
 
 func init() {

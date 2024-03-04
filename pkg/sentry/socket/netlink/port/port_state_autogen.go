@@ -3,6 +3,8 @@
 package port
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -24,10 +26,10 @@ func (m *Manager) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &m.ports)
 }
 
-func (m *Manager) afterLoad() {}
+func (m *Manager) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (m *Manager) StateLoad(stateSourceObject state.Source) {
+func (m *Manager) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &m.ports)
 }
 

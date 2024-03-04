@@ -6,6 +6,8 @@
 package systrap
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -29,10 +31,10 @@ func (l *contextList) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &l.tail)
 }
 
-func (l *contextList) afterLoad() {}
+func (l *contextList) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (l *contextList) StateLoad(stateSourceObject state.Source) {
+func (l *contextList) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.head)
 	stateSourceObject.Load(1, &l.tail)
 }
@@ -57,10 +59,10 @@ func (e *contextEntry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &e.prev)
 }
 
-func (e *contextEntry) afterLoad() {}
+func (e *contextEntry) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (e *contextEntry) StateLoad(stateSourceObject state.Source) {
+func (e *contextEntry) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.next)
 	stateSourceObject.Load(1, &e.prev)
 }
@@ -84,9 +86,9 @@ func (r *subprocessRefs) StateSave(stateSinkObject state.Sink) {
 }
 
 // +checklocksignore
-func (r *subprocessRefs) StateLoad(stateSourceObject state.Source) {
+func (r *subprocessRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(r.afterLoad)
+	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
 }
 
 func init() {

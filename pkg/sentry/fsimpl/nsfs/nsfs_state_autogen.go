@@ -3,6 +3,8 @@
 package nsfs
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -25,9 +27,9 @@ func (r *inodeRefs) StateSave(stateSinkObject state.Sink) {
 }
 
 // +checklocksignore
-func (r *inodeRefs) StateLoad(stateSourceObject state.Source) {
+func (r *inodeRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(r.afterLoad)
+	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
 }
 
 func (f *filesystemType) StateTypeName() string {
@@ -45,10 +47,10 @@ func (f *filesystemType) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
 }
 
-func (f *filesystemType) afterLoad() {}
+func (f *filesystemType) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (f *filesystemType) StateLoad(stateSourceObject state.Source) {
+func (f *filesystemType) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 }
 
 func (fs *filesystem) StateTypeName() string {
@@ -71,10 +73,10 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &fs.devMinor)
 }
 
-func (fs *filesystem) afterLoad() {}
+func (fs *filesystem) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (fs *filesystem) StateLoad(stateSourceObject state.Source) {
+func (fs *filesystem) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fs.Filesystem)
 	stateSourceObject.Load(1, &fs.devMinor)
 }
@@ -113,10 +115,10 @@ func (i *Inode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(8, &i.mnt)
 }
 
-func (i *Inode) afterLoad() {}
+func (i *Inode) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (i *Inode) StateLoad(stateSourceObject state.Source) {
+func (i *Inode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.InodeAttrs)
 	stateSourceObject.Load(1, &i.InodeAnonymous)
 	stateSourceObject.Load(2, &i.InodeNotDirectory)
@@ -152,10 +154,10 @@ func (fd *namespaceFD) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &fd.inode)
 }
 
-func (fd *namespaceFD) afterLoad() {}
+func (fd *namespaceFD) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (fd *namespaceFD) StateLoad(stateSourceObject state.Source) {
+func (fd *namespaceFD) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fd.FileDescriptionDefaultImpl)
 	stateSourceObject.Load(1, &fd.LockFD)
 	stateSourceObject.Load(2, &fd.vfsfd)

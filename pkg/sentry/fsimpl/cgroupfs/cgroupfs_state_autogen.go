@@ -3,6 +3,8 @@
 package cgroupfs
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -28,10 +30,10 @@ func (c *controllerCommon) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &c.parent)
 }
 
-func (c *controllerCommon) afterLoad() {}
+func (c *controllerCommon) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (c *controllerCommon) StateLoad(stateSourceObject state.Source) {
+func (c *controllerCommon) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.ty)
 	stateSourceObject.Load(1, &c.fs)
 	stateSourceObject.Load(2, &c.parent)
@@ -61,10 +63,10 @@ func (c *cgroupInode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &c.ts)
 }
 
-func (c *cgroupInode) afterLoad() {}
+func (c *cgroupInode) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (c *cgroupInode) StateLoad(stateSourceObject state.Source) {
+func (c *cgroupInode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.dir)
 	stateSourceObject.Load(1, &c.id)
 	stateSourceObject.Load(2, &c.controllers)
@@ -89,10 +91,10 @@ func (d *cgroupProcsData) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &d.cgroupInode)
 }
 
-func (d *cgroupProcsData) afterLoad() {}
+func (d *cgroupProcsData) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (d *cgroupProcsData) StateLoad(stateSourceObject state.Source) {
+func (d *cgroupProcsData) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.cgroupInode)
 }
 
@@ -114,10 +116,10 @@ func (d *tasksData) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &d.cgroupInode)
 }
 
-func (d *tasksData) afterLoad() {}
+func (d *tasksData) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (d *tasksData) StateLoad(stateSourceObject state.Source) {
+func (d *tasksData) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.cgroupInode)
 }
 
@@ -136,10 +138,10 @@ func (fsType *FilesystemType) StateSave(stateSinkObject state.Sink) {
 	fsType.beforeSave()
 }
 
-func (fsType *FilesystemType) afterLoad() {}
+func (fsType *FilesystemType) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (fsType *FilesystemType) StateLoad(stateSourceObject state.Source) {
+func (fsType *FilesystemType) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 }
 
 func (i *InitialCgroup) StateTypeName() string {
@@ -170,10 +172,10 @@ func (i *InitialCgroup) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(5, &i.Mode)
 }
 
-func (i *InitialCgroup) afterLoad() {}
+func (i *InitialCgroup) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (i *InitialCgroup) StateLoad(stateSourceObject state.Source) {
+func (i *InitialCgroup) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.Path)
 	stateSourceObject.Load(1, &i.SetOwner)
 	stateSourceObject.Load(2, &i.UID)
@@ -202,10 +204,10 @@ func (i *InternalData) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &i.InitialCgroup)
 }
 
-func (i *InternalData) afterLoad() {}
+func (i *InternalData) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (i *InternalData) StateLoad(stateSourceObject state.Source) {
+func (i *InternalData) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.DefaultControlValues)
 	stateSourceObject.Load(1, &i.InitialCgroup)
 }
@@ -244,10 +246,10 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(8, &fs.effectiveRoot)
 }
 
-func (fs *filesystem) afterLoad() {}
+func (fs *filesystem) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (fs *filesystem) StateLoad(stateSourceObject state.Source) {
+func (fs *filesystem) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fs.Filesystem)
 	stateSourceObject.Load(1, &fs.devMinor)
 	stateSourceObject.Load(2, &fs.hierarchyID)
@@ -274,10 +276,10 @@ func (i *implStatFS) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 }
 
-func (i *implStatFS) afterLoad() {}
+func (i *implStatFS) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (i *implStatFS) StateLoad(stateSourceObject state.Source) {
+func (i *implStatFS) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 }
 
 func (d *dir) StateTypeName() string {
@@ -320,10 +322,10 @@ func (d *dir) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(11, &d.cgi)
 }
 
-func (d *dir) afterLoad() {}
+func (d *dir) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (d *dir) StateLoad(stateSourceObject state.Source) {
+func (d *dir) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.InodeAlwaysValid)
 	stateSourceObject.Load(1, &d.InodeAttrs)
 	stateSourceObject.Load(2, &d.InodeDirectoryNoNewChildren)
@@ -360,10 +362,10 @@ func (f *controllerFile) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &f.allowBackgroundAccess)
 }
 
-func (f *controllerFile) afterLoad() {}
+func (f *controllerFile) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (f *controllerFile) StateLoad(stateSourceObject state.Source) {
+func (f *controllerFile) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.DynamicBytesFile)
 	stateSourceObject.Load(1, &f.implStatFS)
 	stateSourceObject.Load(2, &f.allowBackgroundAccess)
@@ -389,10 +391,10 @@ func (f *staticControllerFile) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &f.StaticData)
 }
 
-func (f *staticControllerFile) afterLoad() {}
+func (f *staticControllerFile) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (f *staticControllerFile) StateLoad(stateSourceObject state.Source) {
+func (f *staticControllerFile) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.DynamicBytesFile)
 	stateSourceObject.Load(1, &f.StaticData)
 }
@@ -417,10 +419,10 @@ func (f *stubControllerFile) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &f.data)
 }
 
-func (f *stubControllerFile) afterLoad() {}
+func (f *stubControllerFile) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (f *stubControllerFile) StateLoad(stateSourceObject state.Source) {
+func (f *stubControllerFile) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.controllerFile)
 	stateSourceObject.Load(1, &f.data)
 }
@@ -453,10 +455,10 @@ func (c *cpuController) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(5, &c.shares)
 }
 
-func (c *cpuController) afterLoad() {}
+func (c *cpuController) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (c *cpuController) StateLoad(stateSourceObject state.Source) {
+func (c *cpuController) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.controllerCommon)
 	stateSourceObject.Load(1, &c.controllerStateless)
 	stateSourceObject.Load(2, &c.controllerNoResource)
@@ -489,10 +491,10 @@ func (c *cpuacctController) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &c.usage)
 }
 
-func (c *cpuacctController) afterLoad() {}
+func (c *cpuacctController) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (c *cpuacctController) StateLoad(stateSourceObject state.Source) {
+func (c *cpuacctController) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.controllerCommon)
 	stateSourceObject.Load(1, &c.controllerNoResource)
 	stateSourceObject.Load(2, &c.taskCommittedCharges)
@@ -517,10 +519,10 @@ func (c *cpuacctCgroup) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &c.cgroupInode)
 }
 
-func (c *cpuacctCgroup) afterLoad() {}
+func (c *cpuacctCgroup) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (c *cpuacctCgroup) StateLoad(stateSourceObject state.Source) {
+func (c *cpuacctCgroup) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.cgroupInode)
 }
 
@@ -542,10 +544,10 @@ func (d *cpuacctStatData) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &d.cpuacctCgroup)
 }
 
-func (d *cpuacctStatData) afterLoad() {}
+func (d *cpuacctStatData) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (d *cpuacctStatData) StateLoad(stateSourceObject state.Source) {
+func (d *cpuacctStatData) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.cpuacctCgroup)
 }
 
@@ -567,10 +569,10 @@ func (d *cpuacctUsageData) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &d.cpuacctCgroup)
 }
 
-func (d *cpuacctUsageData) afterLoad() {}
+func (d *cpuacctUsageData) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (d *cpuacctUsageData) StateLoad(stateSourceObject state.Source) {
+func (d *cpuacctUsageData) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.cpuacctCgroup)
 }
 
@@ -592,10 +594,10 @@ func (d *cpuacctUsageUserData) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &d.cpuacctCgroup)
 }
 
-func (d *cpuacctUsageUserData) afterLoad() {}
+func (d *cpuacctUsageUserData) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (d *cpuacctUsageUserData) StateLoad(stateSourceObject state.Source) {
+func (d *cpuacctUsageUserData) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.cpuacctCgroup)
 }
 
@@ -617,10 +619,10 @@ func (d *cpuacctUsageSysData) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &d.cpuacctCgroup)
 }
 
-func (d *cpuacctUsageSysData) afterLoad() {}
+func (d *cpuacctUsageSysData) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (d *cpuacctUsageSysData) StateLoad(stateSourceObject state.Source) {
+func (d *cpuacctUsageSysData) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.cpuacctCgroup)
 }
 
@@ -654,10 +656,10 @@ func (c *cpusetController) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(6, &c.mems)
 }
 
-func (c *cpusetController) afterLoad() {}
+func (c *cpusetController) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (c *cpusetController) StateLoad(stateSourceObject state.Source) {
+func (c *cpusetController) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.controllerCommon)
 	stateSourceObject.Load(1, &c.controllerStateless)
 	stateSourceObject.Load(2, &c.controllerNoResource)
@@ -685,10 +687,10 @@ func (d *cpusData) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &d.c)
 }
 
-func (d *cpusData) afterLoad() {}
+func (d *cpusData) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (d *cpusData) StateLoad(stateSourceObject state.Source) {
+func (d *cpusData) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.c)
 }
 
@@ -710,10 +712,10 @@ func (d *memsData) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &d.c)
 }
 
-func (d *memsData) afterLoad() {}
+func (d *memsData) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (d *memsData) StateLoad(stateSourceObject state.Source) {
+func (d *memsData) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.c)
 }
 
@@ -739,10 +741,10 @@ func (d *deviceID) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &d.minor)
 }
 
-func (d *deviceID) afterLoad() {}
+func (d *deviceID) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (d *deviceID) StateLoad(stateSourceObject state.Source) {
+func (d *deviceID) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.controllerType)
 	stateSourceObject.Load(1, &d.major)
 	stateSourceObject.Load(2, &d.minor)
@@ -774,10 +776,10 @@ func (c *devicesController) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(4, &c.deviceRules)
 }
 
-func (c *devicesController) afterLoad() {}
+func (c *devicesController) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (c *devicesController) StateLoad(stateSourceObject state.Source) {
+func (c *devicesController) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.controllerCommon)
 	stateSourceObject.Load(1, &c.controllerStateless)
 	stateSourceObject.Load(2, &c.controllerNoResource)
@@ -803,10 +805,10 @@ func (d *allowedDevicesData) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &d.c)
 }
 
-func (d *allowedDevicesData) afterLoad() {}
+func (d *allowedDevicesData) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (d *allowedDevicesData) StateLoad(stateSourceObject state.Source) {
+func (d *allowedDevicesData) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.c)
 }
 
@@ -828,10 +830,10 @@ func (d *deniedDevicesData) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &d.c)
 }
 
-func (d *deniedDevicesData) afterLoad() {}
+func (d *deniedDevicesData) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (d *deniedDevicesData) StateLoad(stateSourceObject state.Source) {
+func (d *deniedDevicesData) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.c)
 }
 
@@ -853,10 +855,10 @@ func (d *controlledDevicesData) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &d.c)
 }
 
-func (d *controlledDevicesData) afterLoad() {}
+func (d *controlledDevicesData) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (d *controlledDevicesData) StateLoad(stateSourceObject state.Source) {
+func (d *controlledDevicesData) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.c)
 }
 
@@ -879,9 +881,9 @@ func (r *dirRefs) StateSave(stateSinkObject state.Sink) {
 }
 
 // +checklocksignore
-func (r *dirRefs) StateLoad(stateSourceObject state.Source) {
+func (r *dirRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(r.afterLoad)
+	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
 }
 
 func (c *jobController) StateTypeName() string {
@@ -908,10 +910,10 @@ func (c *jobController) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &c.id)
 }
 
-func (c *jobController) afterLoad() {}
+func (c *jobController) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (c *jobController) StateLoad(stateSourceObject state.Source) {
+func (c *jobController) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.controllerCommon)
 	stateSourceObject.Load(1, &c.controllerStateless)
 	stateSourceObject.Load(2, &c.controllerNoResource)
@@ -948,10 +950,10 @@ func (c *memoryController) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(6, &c.memCg)
 }
 
-func (c *memoryController) afterLoad() {}
+func (c *memoryController) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (c *memoryController) StateLoad(stateSourceObject state.Source) {
+func (c *memoryController) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.controllerCommon)
 	stateSourceObject.Load(1, &c.controllerNoResource)
 	stateSourceObject.Load(2, &c.limitBytes)
@@ -979,10 +981,10 @@ func (memCg *memoryCgroup) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &memCg.cgroupInode)
 }
 
-func (memCg *memoryCgroup) afterLoad() {}
+func (memCg *memoryCgroup) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (memCg *memoryCgroup) StateLoad(stateSourceObject state.Source) {
+func (memCg *memoryCgroup) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &memCg.cgroupInode)
 }
 
@@ -1004,10 +1006,10 @@ func (d *memoryUsageInBytesData) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &d.memCg)
 }
 
-func (d *memoryUsageInBytesData) afterLoad() {}
+func (d *memoryUsageInBytesData) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (d *memoryUsageInBytesData) StateLoad(stateSourceObject state.Source) {
+func (d *memoryUsageInBytesData) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.memCg)
 }
 
@@ -1039,10 +1041,10 @@ func (c *pidsController) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(5, &c.max)
 }
 
-func (c *pidsController) afterLoad() {}
+func (c *pidsController) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (c *pidsController) StateLoad(stateSourceObject state.Source) {
+func (c *pidsController) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.controllerCommon)
 	stateSourceObject.Load(1, &c.isRoot)
 	stateSourceObject.Load(2, &c.pendingTotal)
@@ -1069,10 +1071,10 @@ func (d *pidsCurrentData) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &d.c)
 }
 
-func (d *pidsCurrentData) afterLoad() {}
+func (d *pidsCurrentData) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (d *pidsCurrentData) StateLoad(stateSourceObject state.Source) {
+func (d *pidsCurrentData) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.c)
 }
 
@@ -1094,10 +1096,10 @@ func (d *pidsMaxData) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &d.c)
 }
 
-func (d *pidsMaxData) afterLoad() {}
+func (d *pidsMaxData) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (d *pidsMaxData) StateLoad(stateSourceObject state.Source) {
+func (d *pidsMaxData) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.c)
 }
 

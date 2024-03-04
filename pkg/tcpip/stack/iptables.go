@@ -15,6 +15,7 @@
 package stack
 
 import (
+	"context"
 	"fmt"
 	"math/rand"
 	"reflect"
@@ -613,7 +614,7 @@ func (it *IPTables) beforeSave() {
 }
 
 // afterLoad is invoked by stateify.
-func (it *IPTables) afterLoad() {
+func (it *IPTables) afterLoad(context.Context) {
 	it.startReaper(reaperDelay)
 }
 

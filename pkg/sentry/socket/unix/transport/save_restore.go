@@ -14,10 +14,13 @@
 
 package transport
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+)
 
 // afterLoad is invoked by stateify.
-func (c *HostConnectedEndpoint) afterLoad() {
+func (c *HostConnectedEndpoint) afterLoad(context.Context) {
 	if err := c.initFromOptions(); err != nil {
 		panic(fmt.Sprintf("initFromOptions failed: %v", err))
 	}

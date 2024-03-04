@@ -3,6 +3,8 @@
 package devtmpfs
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -29,11 +31,11 @@ func (fst *FilesystemType) StateSave(stateSinkObject state.Sink) {
 }
 
 // +checklocksignore
-func (fst *FilesystemType) StateLoad(stateSourceObject state.Source) {
+func (fst *FilesystemType) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fst.initErr)
 	stateSourceObject.Load(1, &fst.fs)
 	stateSourceObject.Load(2, &fst.root)
-	stateSourceObject.AfterLoad(fst.afterLoad)
+	stateSourceObject.AfterLoad(func() { fst.afterLoad(ctx) })
 }
 
 func init() {

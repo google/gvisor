@@ -3,6 +3,8 @@
 package bpf
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/state"
 )
@@ -21,8 +23,8 @@ func (ins *Instruction) StateSave(stateSinkObject state.Sink) {
 }
 
 // +checklocksignore
-func (ins *Instruction) StateLoad(stateSourceObject state.Source) {
-	(*linux.BPFInstruction)(ins).StateLoad(stateSourceObject)
+func (ins *Instruction) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	(*linux.BPFInstruction)(ins).StateLoad(ctx, stateSourceObject)
 }
 
 func (p *Program) StateTypeName() string {
@@ -43,10 +45,10 @@ func (p *Program) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &p.instructions)
 }
 
-func (p *Program) afterLoad() {}
+func (p *Program) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (p *Program) StateLoad(stateSourceObject state.Source) {
+func (p *Program) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &p.instructions)
 }
 

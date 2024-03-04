@@ -1,6 +1,7 @@
 package transport
 
 import (
+	"context"
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -134,7 +135,7 @@ func (r *HostConnectedEndpointRefs) DecRef(destroy func()) {
 	}
 }
 
-func (r *HostConnectedEndpointRefs) afterLoad() {
+func (r *HostConnectedEndpointRefs) afterLoad(context.Context) {
 	if r.ReadRefs() > 0 {
 		refs.Register(r)
 	}

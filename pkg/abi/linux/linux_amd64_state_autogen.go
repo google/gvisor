@@ -6,6 +6,8 @@
 package linux
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -79,10 +81,10 @@ func (p *PtraceRegs) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(26, &p.Gs)
 }
 
-func (p *PtraceRegs) afterLoad() {}
+func (p *PtraceRegs) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (p *PtraceRegs) StateLoad(stateSourceObject state.Source) {
+func (p *PtraceRegs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &p.R15)
 	stateSourceObject.Load(1, &p.R14)
 	stateSourceObject.Load(2, &p.R13)

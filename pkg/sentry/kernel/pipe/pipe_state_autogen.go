@@ -3,6 +3,8 @@
 package pipe
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -45,7 +47,7 @@ func (p *Pipe) StateSave(stateSinkObject state.Sink) {
 }
 
 // +checklocksignore
-func (p *Pipe) StateLoad(stateSourceObject state.Source) {
+func (p *Pipe) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &p.queue)
 	stateSourceObject.Load(1, &p.isNamed)
 	stateSourceObject.Load(2, &p.readers)
@@ -57,7 +59,7 @@ func (p *Pipe) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(8, &p.size)
 	stateSourceObject.Load(9, &p.max)
 	stateSourceObject.Load(10, &p.hadWriter)
-	stateSourceObject.AfterLoad(p.afterLoad)
+	stateSourceObject.AfterLoad(func() { p.afterLoad(ctx) })
 }
 
 func (vp *VFSPipe) StateTypeName() string {
@@ -78,10 +80,10 @@ func (vp *VFSPipe) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &vp.pipe)
 }
 
-func (vp *VFSPipe) afterLoad() {}
+func (vp *VFSPipe) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (vp *VFSPipe) StateLoad(stateSourceObject state.Source) {
+func (vp *VFSPipe) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &vp.pipe)
 }
 
@@ -113,10 +115,10 @@ func (fd *VFSPipeFD) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(5, &fd.lastAddr)
 }
 
-func (fd *VFSPipeFD) afterLoad() {}
+func (fd *VFSPipeFD) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (fd *VFSPipeFD) StateLoad(stateSourceObject state.Source) {
+func (fd *VFSPipeFD) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fd.vfsfd)
 	stateSourceObject.Load(1, &fd.FileDescriptionDefaultImpl)
 	stateSourceObject.Load(2, &fd.DentryMetadataFileDescriptionImpl)

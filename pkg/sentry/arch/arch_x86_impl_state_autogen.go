@@ -7,6 +7,8 @@
 package arch
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -31,10 +33,10 @@ func (s *State) StateSave(stateSinkObject state.Sink) {
 }
 
 // +checklocksignore
-func (s *State) StateLoad(stateSourceObject state.Source) {
+func (s *State) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.Regs)
 	stateSourceObject.LoadWait(1, &s.fpState)
-	stateSourceObject.AfterLoad(s.afterLoad)
+	stateSourceObject.AfterLoad(func() { s.afterLoad(ctx) })
 }
 
 func init() {

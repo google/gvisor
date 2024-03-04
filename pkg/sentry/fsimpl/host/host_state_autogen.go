@@ -3,6 +3,8 @@
 package host
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -30,10 +32,10 @@ func (v *virtualOwner) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &v.mode)
 }
 
-func (v *virtualOwner) afterLoad() {}
+func (v *virtualOwner) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (v *virtualOwner) StateLoad(stateSourceObject state.Source) {
+func (v *virtualOwner) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &v.enabled)
 	stateSourceObject.Load(1, &v.uid)
 	stateSourceObject.Load(2, &v.gid)
@@ -97,7 +99,7 @@ func (i *inode) StateSave(stateSinkObject state.Sink) {
 }
 
 // +checklocksignore
-func (i *inode) StateLoad(stateSourceObject state.Source) {
+func (i *inode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.CachedMappable)
 	stateSourceObject.Load(1, &i.InodeNoStatFS)
 	stateSourceObject.Load(2, &i.InodeAnonymous)
@@ -119,7 +121,7 @@ func (i *inode) StateLoad(stateSourceObject state.Source) {
 	stateSourceObject.Load(18, &i.virtualOwner)
 	stateSourceObject.Load(19, &i.haveBuf)
 	stateSourceObject.Load(20, &i.buf)
-	stateSourceObject.AfterLoad(i.afterLoad)
+	stateSourceObject.AfterLoad(func() { i.afterLoad(ctx) })
 }
 
 func (f *filesystemType) StateTypeName() string {
@@ -137,10 +139,10 @@ func (f *filesystemType) StateSave(stateSinkObject state.Sink) {
 	f.beforeSave()
 }
 
-func (f *filesystemType) afterLoad() {}
+func (f *filesystemType) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (f *filesystemType) StateLoad(stateSourceObject state.Source) {
+func (f *filesystemType) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 }
 
 func (fs *filesystem) StateTypeName() string {
@@ -163,10 +165,10 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &fs.devMinor)
 }
 
-func (fs *filesystem) afterLoad() {}
+func (fs *filesystem) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (fs *filesystem) StateLoad(stateSourceObject state.Source) {
+func (fs *filesystem) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fs.Filesystem)
 	stateSourceObject.Load(1, &fs.devMinor)
 }
@@ -197,10 +199,10 @@ func (f *fileDescription) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(4, &f.offset)
 }
 
-func (f *fileDescription) afterLoad() {}
+func (f *fileDescription) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (f *fileDescription) StateLoad(stateSourceObject state.Source) {
+func (f *fileDescription) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.vfsfd)
 	stateSourceObject.Load(1, &f.FileDescriptionDefaultImpl)
 	stateSourceObject.Load(2, &f.LockFD)
@@ -227,9 +229,9 @@ func (r *inodeRefs) StateSave(stateSinkObject state.Sink) {
 }
 
 // +checklocksignore
-func (r *inodeRefs) StateLoad(stateSourceObject state.Source) {
+func (r *inodeRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(r.afterLoad)
+	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
 }
 
 func (t *TTYFileDescription) StateTypeName() string {
@@ -256,10 +258,10 @@ func (t *TTYFileDescription) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &t.termios)
 }
 
-func (t *TTYFileDescription) afterLoad() {}
+func (t *TTYFileDescription) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (t *TTYFileDescription) StateLoad(stateSourceObject state.Source) {
+func (t *TTYFileDescription) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &t.fileDescription)
 	stateSourceObject.Load(1, &t.session)
 	stateSourceObject.Load(2, &t.fgProcessGroup)

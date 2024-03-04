@@ -3,6 +3,8 @@
 package noop
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -26,10 +28,10 @@ func (ep *endpoint) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &ep.ops)
 }
 
-func (ep *endpoint) afterLoad() {}
+func (ep *endpoint) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (ep *endpoint) StateLoad(stateSourceObject state.Source) {
+func (ep *endpoint) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &ep.DefaultSocketOptionsHandler)
 	stateSourceObject.Load(1, &ep.ops)
 }

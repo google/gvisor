@@ -3,6 +3,8 @@
 package tun
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -28,10 +30,10 @@ func (d *Device) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(3, &d.flags)
 }
 
-func (d *Device) afterLoad() {}
+func (d *Device) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (d *Device) StateLoad(stateSourceObject state.Source) {
+func (d *Device) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &d.Queue)
 	stateSourceObject.Load(1, &d.endpoint)
 	stateSourceObject.Load(2, &d.notifyHandle)
@@ -60,10 +62,10 @@ func (f *Flags) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &f.NoPacketInfo)
 }
 
-func (f *Flags) afterLoad() {}
+func (f *Flags) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (f *Flags) StateLoad(stateSourceObject state.Source) {
+func (f *Flags) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.TUN)
 	stateSourceObject.Load(1, &f.TAP)
 	stateSourceObject.Load(2, &f.NoPacketInfo)
@@ -88,9 +90,9 @@ func (r *tunEndpointRefs) StateSave(stateSinkObject state.Sink) {
 }
 
 // +checklocksignore
-func (r *tunEndpointRefs) StateLoad(stateSourceObject state.Source) {
+func (r *tunEndpointRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(r.afterLoad)
+	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
 }
 
 func init() {

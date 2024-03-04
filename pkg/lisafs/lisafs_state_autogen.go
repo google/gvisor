@@ -3,6 +3,8 @@
 package lisafs
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -25,9 +27,9 @@ func (r *boundSocketFDRefs) StateSave(stateSinkObject state.Sink) {
 }
 
 // +checklocksignore
-func (r *boundSocketFDRefs) StateLoad(stateSourceObject state.Source) {
+func (r *boundSocketFDRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(r.afterLoad)
+	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
 }
 
 func (l *controlFDList) StateTypeName() string {
@@ -50,10 +52,10 @@ func (l *controlFDList) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &l.tail)
 }
 
-func (l *controlFDList) afterLoad() {}
+func (l *controlFDList) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (l *controlFDList) StateLoad(stateSourceObject state.Source) {
+func (l *controlFDList) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.head)
 	stateSourceObject.Load(1, &l.tail)
 }
@@ -78,10 +80,10 @@ func (e *controlFDEntry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &e.prev)
 }
 
-func (e *controlFDEntry) afterLoad() {}
+func (e *controlFDEntry) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (e *controlFDEntry) StateLoad(stateSourceObject state.Source) {
+func (e *controlFDEntry) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.next)
 	stateSourceObject.Load(1, &e.prev)
 }
@@ -105,9 +107,9 @@ func (r *controlFDRefs) StateSave(stateSinkObject state.Sink) {
 }
 
 // +checklocksignore
-func (r *controlFDRefs) StateLoad(stateSourceObject state.Source) {
+func (r *controlFDRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(r.afterLoad)
+	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
 }
 
 func (r *nodeRefs) StateTypeName() string {
@@ -129,9 +131,9 @@ func (r *nodeRefs) StateSave(stateSinkObject state.Sink) {
 }
 
 // +checklocksignore
-func (r *nodeRefs) StateLoad(stateSourceObject state.Source) {
+func (r *nodeRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(r.afterLoad)
+	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
 }
 
 func (l *openFDList) StateTypeName() string {
@@ -154,10 +156,10 @@ func (l *openFDList) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &l.tail)
 }
 
-func (l *openFDList) afterLoad() {}
+func (l *openFDList) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (l *openFDList) StateLoad(stateSourceObject state.Source) {
+func (l *openFDList) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &l.head)
 	stateSourceObject.Load(1, &l.tail)
 }
@@ -182,10 +184,10 @@ func (e *openFDEntry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &e.prev)
 }
 
-func (e *openFDEntry) afterLoad() {}
+func (e *openFDEntry) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (e *openFDEntry) StateLoad(stateSourceObject state.Source) {
+func (e *openFDEntry) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &e.next)
 	stateSourceObject.Load(1, &e.prev)
 }
@@ -209,9 +211,9 @@ func (r *openFDRefs) StateSave(stateSinkObject state.Sink) {
 }
 
 // +checklocksignore
-func (r *openFDRefs) StateLoad(stateSourceObject state.Source) {
+func (r *openFDRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(r.afterLoad)
+	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
 }
 
 func init() {

@@ -3,6 +3,8 @@
 package dev
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -21,10 +23,10 @@ func (fst *FilesystemType) StateSave(stateSinkObject state.Sink) {
 	fst.beforeSave()
 }
 
-func (fst *FilesystemType) afterLoad() {}
+func (fst *FilesystemType) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (fst *FilesystemType) StateLoad(stateSourceObject state.Source) {
+func (fst *FilesystemType) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 }
 
 func init() {

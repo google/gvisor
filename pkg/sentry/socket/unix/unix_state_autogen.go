@@ -3,6 +3,8 @@
 package unix
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -25,9 +27,9 @@ func (r *socketRefs) StateSave(stateSinkObject state.Sink) {
 }
 
 // +checklocksignore
-func (r *socketRefs) StateLoad(stateSourceObject state.Source) {
+func (r *socketRefs) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.refCount)
-	stateSourceObject.AfterLoad(r.afterLoad)
+	stateSourceObject.AfterLoad(func() { r.afterLoad(ctx) })
 }
 
 func (s *Socket) StateTypeName() string {
@@ -68,10 +70,10 @@ func (s *Socket) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(10, &s.abstractBound)
 }
 
-func (s *Socket) afterLoad() {}
+func (s *Socket) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (s *Socket) StateLoad(stateSourceObject state.Source) {
+func (s *Socket) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.vfsfd)
 	stateSourceObject.Load(1, &s.FileDescriptionDefaultImpl)
 	stateSourceObject.Load(2, &s.DentryMetadataFileDescriptionImpl)

@@ -1,6 +1,7 @@
 package vfs
 
 import (
+	"context"
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -134,7 +135,7 @@ func (r *FilesystemRefs) DecRef(destroy func()) {
 	}
 }
 
-func (r *FilesystemRefs) afterLoad() {
+func (r *FilesystemRefs) afterLoad(context.Context) {
 	if r.ReadRefs() > 0 {
 		refs.Register(r)
 	}

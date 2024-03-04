@@ -1,6 +1,7 @@
 package systrap
 
 import (
+	"context"
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -134,7 +135,7 @@ func (r *subprocessRefs) DecRef(destroy func()) {
 	}
 }
 
-func (r *subprocessRefs) afterLoad() {
+func (r *subprocessRefs) afterLoad(context.Context) {
 	if r.ReadRefs() > 0 {
 		refs.Register(r)
 	}

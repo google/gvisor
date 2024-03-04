@@ -385,7 +385,7 @@ func (ds *decodeState) decodeStruct(ods *objectDecodeState, obj reflect.Value, e
 	if sl, ok := obj.Addr().Interface().(SaverLoader); ok {
 		// Note: may be a registered empty struct which does not
 		// implement the saver/loader interfaces.
-		sl.StateLoad(Source{internal: od})
+		sl.StateLoad(ds.ctx, Source{internal: od})
 	}
 }
 

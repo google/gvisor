@@ -3,6 +3,8 @@
 package auth
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -48,10 +50,10 @@ func (c *Credentials) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(12, &c.UserNamespace)
 }
 
-func (c *Credentials) afterLoad() {}
+func (c *Credentials) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (c *Credentials) StateLoad(stateSourceObject state.Source) {
+func (c *Credentials) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &c.RealKUID)
 	stateSourceObject.Load(1, &c.EffectiveKUID)
 	stateSourceObject.Load(2, &c.SavedKUID)
@@ -89,10 +91,10 @@ func (i *IDMapEntry) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &i.Length)
 }
 
-func (i *IDMapEntry) afterLoad() {}
+func (i *IDMapEntry) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (i *IDMapEntry) StateLoad(stateSourceObject state.Source) {
+func (i *IDMapEntry) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.FirstID)
 	stateSourceObject.Load(1, &i.FirstParentID)
 	stateSourceObject.Load(2, &i.Length)
@@ -118,10 +120,10 @@ func (r *idMapRange) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &r.End)
 }
 
-func (r *idMapRange) afterLoad() {}
+func (r *idMapRange) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (r *idMapRange) StateLoad(stateSourceObject state.Source) {
+func (r *idMapRange) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &r.Start)
 	stateSourceObject.Load(1, &r.End)
 }
@@ -146,10 +148,10 @@ func (s *idMapSet) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.SaveValue(0, rootValue)
 }
 
-func (s *idMapSet) afterLoad() {}
+func (s *idMapSet) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (s *idMapSet) StateLoad(stateSourceObject state.Source) {
+func (s *idMapSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.LoadValue(0, new([]idMapFlatSegment), func(y any) { s.loadRoot(y.([]idMapFlatSegment)) })
 }
 
@@ -185,10 +187,10 @@ func (n *idMapnode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(7, &n.children)
 }
 
-func (n *idMapnode) afterLoad() {}
+func (n *idMapnode) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (n *idMapnode) StateLoad(stateSourceObject state.Source) {
+func (n *idMapnode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &n.nrSegments)
 	stateSourceObject.Load(1, &n.parent)
 	stateSourceObject.Load(2, &n.parentIndex)
@@ -221,10 +223,10 @@ func (i *idMapFlatSegment) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(2, &i.Value)
 }
 
-func (i *idMapFlatSegment) afterLoad() {}
+func (i *idMapFlatSegment) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (i *idMapFlatSegment) StateLoad(stateSourceObject state.Source) {
+func (i *idMapFlatSegment) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.Start)
 	stateSourceObject.Load(1, &i.End)
 	stateSourceObject.Load(2, &i.Value)
@@ -256,10 +258,10 @@ func (k *Key) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(4, &k.perms)
 }
 
-func (k *Key) afterLoad() {}
+func (k *Key) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (k *Key) StateLoad(stateSourceObject state.Source) {
+func (k *Key) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &k.ID)
 	stateSourceObject.Load(1, &k.Description)
 	stateSourceObject.Load(2, &k.kuid)
@@ -285,10 +287,10 @@ func (s *KeySet) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(0, &s.keys)
 }
 
-func (s *KeySet) afterLoad() {}
+func (s *KeySet) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (s *KeySet) StateLoad(stateSourceObject state.Source) {
+func (s *KeySet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &s.keys)
 }
 
@@ -322,10 +324,10 @@ func (ns *UserNamespace) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(6, &ns.gidMapToParent)
 }
 
-func (ns *UserNamespace) afterLoad() {}
+func (ns *UserNamespace) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (ns *UserNamespace) StateLoad(stateSourceObject state.Source) {
+func (ns *UserNamespace) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &ns.parent)
 	stateSourceObject.Load(1, &ns.owner)
 	stateSourceObject.Load(2, &ns.Keys)

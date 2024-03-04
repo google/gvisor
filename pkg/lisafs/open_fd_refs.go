@@ -1,6 +1,7 @@
 package lisafs
 
 import (
+	"context"
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -134,7 +135,7 @@ func (r *openFDRefs) DecRef(destroy func()) {
 	}
 }
 
-func (r *openFDRefs) afterLoad() {
+func (r *openFDRefs) afterLoad(context.Context) {
 	if r.ReadRefs() > 0 {
 		refs.Register(r)
 	}

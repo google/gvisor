@@ -1,6 +1,7 @@
 package mm
 
 import (
+	"context"
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -134,7 +135,7 @@ func (r *aioMappableRefs) DecRef(destroy func()) {
 	}
 }
 
-func (r *aioMappableRefs) afterLoad() {
+func (r *aioMappableRefs) afterLoad(context.Context) {
 	if r.ReadRefs() > 0 {
 		refs.Register(r)
 	}
