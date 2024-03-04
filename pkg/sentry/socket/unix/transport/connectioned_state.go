@@ -14,6 +14,8 @@
 
 package transport
 
+import "context"
+
 // saveAcceptedChan is invoked by stateify.
 func (e *connectionedEndpoint) saveAcceptedChan() []*connectionedEndpoint {
 	// If acceptedChan is nil (i.e. we are not listening) then we will save nil.
@@ -60,6 +62,6 @@ func (e *connectionedEndpoint) beforeSave() {
 }
 
 // afterLoad is invoked by stateify.
-func (e *connectionedEndpoint) afterLoad() {
+func (e *connectionedEndpoint) afterLoad(context.Context) {
 	e.ops.InitHandler(e, &stackHandler{}, getSendBufferLimits, getReceiveBufferLimits)
 }

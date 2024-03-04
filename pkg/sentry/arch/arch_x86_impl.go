@@ -19,6 +19,8 @@
 package arch
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/sentry/arch/fpu"
 )
 
@@ -35,6 +37,6 @@ type State struct {
 }
 
 // afterLoad is invoked by stateify.
-func (s *State) afterLoad() {
+func (s *State) afterLoad(context.Context) {
 	s.afterLoadFPState()
 }

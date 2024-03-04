@@ -15,6 +15,7 @@
 package vfs
 
 import (
+	goContext "context"
 	"fmt"
 	"sync/atomic"
 
@@ -122,14 +123,14 @@ func (vfs *VirtualFilesystem) loadMounts(mounts []*Mount) {
 func (mnt *Mount) loadKey(vd VirtualDentry) { mnt.setKey(vd) }
 
 // afterLoad is called by stateify.
-func (mnt *Mount) afterLoad() {
+func (mnt *Mount) afterLoad(goContext.Context) {
 	if mnt.refs.Load() != 0 {
 		refs.Register(mnt)
 	}
 }
 
 // afterLoad is called by stateify.
-func (epi *epollInterest) afterLoad() {
+func (epi *epollInterest) afterLoad(goContext.Context) {
 	// Mark all epollInterests as ready after restore so that the next call to
 	// EpollInstance.ReadEvents() rechecks their readiness.
 	epi.waiter.NotifyEvent(waiter.EventMaskFromLinux(epi.mask))

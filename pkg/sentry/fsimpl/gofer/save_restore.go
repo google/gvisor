@@ -15,6 +15,7 @@
 package gofer
 
 import (
+	goContext "context"
 	"fmt"
 	"io"
 
@@ -128,7 +129,7 @@ func (d *dentry) beforeSave() {
 }
 
 // afterLoad is invoked by stateify.
-func (d *dentry) afterLoad() {
+func (d *dentry) afterLoad(goContext.Context) {
 	d.readFD = atomicbitops.FromInt32(-1)
 	d.writeFD = atomicbitops.FromInt32(-1)
 	d.mmapFD = atomicbitops.FromInt32(-1)
@@ -138,12 +139,12 @@ func (d *dentry) afterLoad() {
 }
 
 // afterLoad is invoked by stateify.
-func (d *directfsDentry) afterLoad() {
+func (d *directfsDentry) afterLoad(goContext.Context) {
 	d.controlFD = -1
 }
 
 // afterLoad is invoked by stateify.
-func (d *dentryPlatformFile) afterLoad() {
+func (d *dentryPlatformFile) afterLoad(goContext.Context) {
 	if d.hostFileMapper.IsInited() {
 		// Ensure that we don't call d.hostFileMapper.Init() again.
 		d.hostFileMapperInitOnce.Do(func() {})
@@ -151,7 +152,7 @@ func (d *dentryPlatformFile) afterLoad() {
 }
 
 // afterLoad is invoked by stateify.
-func (fd *specialFileFD) afterLoad() {
+func (fd *specialFileFD) afterLoad(goContext.Context) {
 	fd.handle.fd = -1
 	if fd.hostFileMapper.IsInited() {
 		// Ensure that we don't call fd.hostFileMapper.Init() again.

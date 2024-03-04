@@ -15,18 +15,20 @@
 package kernfs
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/refs"
 )
 
 // afterLoad is invoked by stateify.
-func (d *Dentry) afterLoad() {
+func (d *Dentry) afterLoad(context.Context) {
 	if d.refs.Load() >= 0 {
 		refs.Register(d)
 	}
 }
 
 // afterLoad is invoked by stateify.
-func (i *inodePlatformFile) afterLoad() {
+func (i *inodePlatformFile) afterLoad(context.Context) {
 	if i.fileMapper.IsInited() {
 		// Ensure that we don't call i.fileMapper.Init() again.
 		i.fileMapperInitOnce.Do(func() {})

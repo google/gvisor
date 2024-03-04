@@ -17,6 +17,7 @@
 package refs_template
 
 import (
+	"context"
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -156,7 +157,7 @@ func (r *Refs) DecRef(destroy func()) {
 	}
 }
 
-func (r *Refs) afterLoad() {
+func (r *Refs) afterLoad(context.Context) {
 	if r.ReadRefs() > 0 {
 		refs.Register(r)
 	}

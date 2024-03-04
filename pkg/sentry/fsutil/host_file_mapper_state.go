@@ -14,7 +14,9 @@
 
 package fsutil
 
+import "context"
+
 // afterLoad is invoked by stateify.
-func (f *HostFileMapper) afterLoad() {
+func (f *HostFileMapper) afterLoad(context.Context) {
 	f.mappings = make(map[uint64]mapping)
 }

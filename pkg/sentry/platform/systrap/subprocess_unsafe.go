@@ -87,7 +87,7 @@ func saveFPState(ctx *sharedContext, ac *arch.Context64) {
 
 // restoreFPStateDecoupledContext writes FPState from c to the thread context
 // shared memory region if there is any need to do so.
-func restoreFPState(ctx *sharedContext, c *context, ac *arch.Context64) {
+func restoreFPState(ctx *sharedContext, c *platformContext, ac *arch.Context64) {
 	if !c.needRestoreFPState {
 		return
 	}

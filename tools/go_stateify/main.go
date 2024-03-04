@@ -237,6 +237,7 @@ func main() {
 		once.Do(func() {
 			// Emit the imports.
 			fmt.Fprint(outputFile, "import (\n")
+			fmt.Fprint(outputFile, " \"context\"\n")
 			if *statePkg != "" {
 				fmt.Fprintf(outputFile, "	\"%s\"\n", *statePkg)
 			}
@@ -443,7 +444,7 @@ func main() {
 						methodName: "afterLoad",
 					}]
 					if !hasAfterLoad && generateSaverLoader {
-						fmt.Fprintf(outputFile, "func (%s *%s) afterLoad() {}\n\n", recv, ts.Name.Name)
+						fmt.Fprintf(outputFile, "func (%s *%s) afterLoad(context.Context) {}\n\n", recv, ts.Name.Name)
 					}
 
 					// Generate the load method.
@@ -451,7 +452,7 @@ func main() {
 					// N.B. See the comment above for the save method.
 					if generateSaverLoader {
 						fmt.Fprintf(outputFile, "// +checklocksignore\n")
-						fmt.Fprintf(outputFile, "func (%s *%s) StateLoad(stateSourceObject %sSource) {\n", recv, ts.Name.Name, statePrefix)
+						fmt.Fprintf(outputFile, "func (%s *%s) StateLoad(ctx context.Context, stateSourceObject %sSource) {\n", recv, ts.Name.Name, statePrefix)
 						scanFields(x, scanFunctions{normal: emitLoad, wait: emitLoadWait})
 						scanFields(x, scanFunctions{value: emitLoadValue})
 						if hasAfterLoad {
@@ -459,7 +460,7 @@ func main() {
 							// AfterLoad is called, the object encodes a dependency on
 							// referred objects (i.e. fields). This means that afterLoad
 							// will not be called until the other afterLoads are called.
-							fmt.Fprintf(outputFile, "	stateSourceObject.AfterLoad(%s.afterLoad)\n", recv)
+							fmt.Fprintf(outputFile, "	stateSourceObject.AfterLoad(func () { %s.afterLoad(ctx) })\n", recv)
 						}
 						fmt.Fprintf(outputFile, "}\n\n")
 					}
@@ -504,8 +505,8 @@ func main() {
 							fmt.Fprintf(outputFile, "	(*%s)(%s).StateSave(stateSinkObject)\n", typeName, recv)
 							fmt.Fprintf(outputFile, "}\n\n")
 							fmt.Fprintf(outputFile, "// +checklocksignore\n")
-							fmt.Fprintf(outputFile, "func (%s *%s) StateLoad(stateSourceObject %sSource) {\n", recv, ts.Name.Name, statePrefix)
-							fmt.Fprintf(outputFile, "	(*%s)(%s).StateLoad(stateSourceObject)\n", typeName, recv)
+							fmt.Fprintf(outputFile, "func (%s *%s) StateLoad(ctx context.Context, stateSourceObject %sSource) {\n", recv, ts.Name.Name, statePrefix)
+							fmt.Fprintf(outputFile, "	(*%s)(%s).StateLoad(ctx, stateSourceObject)\n", typeName, recv)
 							fmt.Fprintf(outputFile, "}\n\n")
 						}
 					}

@@ -14,7 +14,9 @@
 
 package transport
 
+import "context"
+
 // afterLoad is invoked by stateify.
-func (e *connectionlessEndpoint) afterLoad() {
+func (e *connectionlessEndpoint) afterLoad(context.Context) {
 	e.ops.InitHandler(e, &stackHandler{}, getSendBufferLimits, getReceiveBufferLimits)
 }

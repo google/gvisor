@@ -15,6 +15,8 @@
 package tests
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/state"
 )
 
@@ -28,7 +30,7 @@ func (t *truncatingUint8) StateSave(m state.Sink) {
 	m.Save(0, &t.save)
 }
 
-func (t *truncatingUint8) StateLoad(m state.Source) {
+func (t *truncatingUint8) StateLoad(_ context.Context, m state.Source) {
 	m.Load(0, &t.load)
 	t.save = uint64(t.load)
 	t.load = 0
@@ -46,7 +48,7 @@ func (t *truncatingUint16) StateSave(m state.Sink) {
 	m.Save(0, &t.save)
 }
 
-func (t *truncatingUint16) StateLoad(m state.Source) {
+func (t *truncatingUint16) StateLoad(_ context.Context, m state.Source) {
 	m.Load(0, &t.load)
 	t.save = uint64(t.load)
 	t.load = 0
@@ -64,7 +66,7 @@ func (t *truncatingUint32) StateSave(m state.Sink) {
 	m.Save(0, &t.save)
 }
 
-func (t *truncatingUint32) StateLoad(m state.Source) {
+func (t *truncatingUint32) StateLoad(_ context.Context, m state.Source) {
 	m.Load(0, &t.load)
 	t.save = uint64(t.load)
 	t.load = 0
@@ -82,7 +84,7 @@ func (t *truncatingInt8) StateSave(m state.Sink) {
 	m.Save(0, &t.save)
 }
 
-func (t *truncatingInt8) StateLoad(m state.Source) {
+func (t *truncatingInt8) StateLoad(_ context.Context, m state.Source) {
 	m.Load(0, &t.load)
 	t.save = int64(t.load)
 	t.load = 0
@@ -100,7 +102,7 @@ func (t *truncatingInt16) StateSave(m state.Sink) {
 	m.Save(0, &t.save)
 }
 
-func (t *truncatingInt16) StateLoad(m state.Source) {
+func (t *truncatingInt16) StateLoad(_ context.Context, m state.Source) {
 	m.Load(0, &t.load)
 	t.save = int64(t.load)
 	t.load = 0
@@ -118,7 +120,7 @@ func (t *truncatingInt32) StateSave(m state.Sink) {
 	m.Save(0, &t.save)
 }
 
-func (t *truncatingInt32) StateLoad(m state.Source) {
+func (t *truncatingInt32) StateLoad(_ context.Context, m state.Source) {
 	m.Load(0, &t.load)
 	t.save = int64(t.load)
 	t.load = 0
@@ -136,7 +138,7 @@ func (t *truncatingFloat32) StateSave(m state.Sink) {
 	m.Save(0, &t.save)
 }
 
-func (t *truncatingFloat32) StateLoad(m state.Source) {
+func (t *truncatingFloat32) StateLoad(_ context.Context, m state.Source) {
 	m.Load(0, &t.load)
 	t.save = float64(t.load)
 	t.load = 0
@@ -154,7 +156,7 @@ func (t *truncatingComplex64) StateSave(m state.Sink) {
 	m.Save(0, &t.save)
 }
 
-func (t *truncatingComplex64) StateLoad(m state.Source) {
+func (t *truncatingComplex64) StateLoad(_ context.Context, m state.Source) {
 	m.Load(0, &t.load)
 	t.save = complex128(t.load)
 	t.load = 0

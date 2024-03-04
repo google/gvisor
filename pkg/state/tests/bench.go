@@ -14,11 +14,13 @@
 
 package tests
 
+import "context"
+
 // +stateify savable
 type benchStruct struct {
 	B *benchStruct // Must be exported for gob.
 }
 
-func (b *benchStruct) afterLoad() {
+func (b *benchStruct) afterLoad(context.Context) {
 	// Do nothing, just force scheduling.
 }

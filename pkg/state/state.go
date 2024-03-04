@@ -211,7 +211,7 @@ type SaverLoader interface {
 	StateSave(Sink)
 
 	// StateLoad loads the state of the object.
-	StateLoad(Source)
+	StateLoad(context.Context, Source)
 }
 
 // Source is used for Type.StateLoad.

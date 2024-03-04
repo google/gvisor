@@ -15,6 +15,7 @@
 package nvproxy
 
 import (
+	goContext "context"
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/nvgpu"
@@ -30,7 +31,7 @@ func (n *nvproxy) beforeSave() {
 	n.objsLive = nil
 }
 
-func (n *nvproxy) afterLoad() {
+func (n *nvproxy) afterLoad(goContext.Context) {
 	Init()
 	abiCons, ok := abis[n.version]
 	if !ok {

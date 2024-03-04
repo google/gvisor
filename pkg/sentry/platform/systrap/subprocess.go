@@ -133,8 +133,8 @@ type subprocess struct {
 	mu sync.Mutex
 
 	// faultedContexts is the set of contexts for which it's possible that
-	// context.lastFaultSP == this subprocess.
-	faultedContexts map[*context]struct{}
+	// platformContext.lastFaultSP == this subprocess.
+	faultedContexts map[*platformContext]struct{}
 
 	// sysmsgStackPool is a pool of available sysmsg stacks.
 	sysmsgStackPool pool.Pool
@@ -309,7 +309,7 @@ func newSubprocess(create func() (*thread, error), memoryFile *pgalloc.MemoryFil
 	// Ready.
 	sp := &subprocess{
 		requests:          requests,
-		faultedContexts:   make(map[*context]struct{}),
+		faultedContexts:   make(map[*platformContext]struct{}),
 		sysmsgStackPool:   pool.Pool{Start: 0, Limit: maxSystemThreads},
 		threadContextPool: pool.Pool{Start: 0, Limit: maxGuestContexts},
 		memoryFile:        memoryFile,
@@ -726,7 +726,7 @@ func (s *subprocess) decAwakeContexts() {
 // This function returns true on a system call, false on a signal.
 // The second return value is true if a syscall instruction can be replaced on
 // a function call.
-func (s *subprocess) switchToApp(c *context, ac *arch.Context64) (isSyscall bool, shouldPatchSyscall bool, err *platform.ContextError) {
+func (s *subprocess) switchToApp(c *platformContext, ac *arch.Context64) (isSyscall bool, shouldPatchSyscall bool, err *platform.ContextError) {
 	// Reset necessary registers.
 	regs := &ac.StateData().Regs
 	s.resetSysemuRegs(regs)
@@ -957,7 +957,7 @@ func (s *subprocess) Unmap(addr hostarch.Addr, length uint64) {
 	}
 }
 
-func (s *subprocess) PullFullState(c *context, ac *arch.Context64) error {
+func (s *subprocess) PullFullState(c *platformContext, ac *arch.Context64) error {
 	if !c.sharedContext.isActiveInSubprocess(s) {
 		panic("Attempted to PullFullState for context that is not used in subprocess")
 	}
@@ -1140,7 +1140,7 @@ func (s *subprocess) PostFork() {
 // activateContext activates the context in this subprocess.
 // No-op if the context is already active within the subprocess; if not,
 // deactivates it from its last subprocess.
-func (s *subprocess) activateContext(c *context) error {
+func (s *subprocess) activateContext(c *platformContext) error {
 	if !c.sharedContext.isActiveInSubprocess(s) {
 		c.sharedContext.release()
 		c.sharedContext = nil

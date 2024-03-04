@@ -177,7 +177,7 @@ func (k *KVM) NewAddressSpace(any) (platform.AddressSpace, <-chan struct{}, erro
 
 // NewContext returns an interruptible context.
 func (k *KVM) NewContext(pkgcontext.Context) platform.Context {
-	return &context{
+	return &platformContext{
 		machine: k.machine,
 	}
 }

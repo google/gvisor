@@ -15,6 +15,8 @@
 package inet
 
 import (
+	goContext "context"
+
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/nsfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
@@ -151,7 +153,7 @@ func (n *Namespace) init() {
 }
 
 // afterLoad is invoked by stateify.
-func (n *Namespace) afterLoad() {
+func (n *Namespace) afterLoad(goContext.Context) {
 	n.init()
 }
 

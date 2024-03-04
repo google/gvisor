@@ -15,6 +15,7 @@
 package udp
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -34,7 +35,7 @@ func (p *udpPacket) loadReceivedAt(nsec int64) {
 }
 
 // afterLoad is invoked by stateify.
-func (e *endpoint) afterLoad() {
+func (e *endpoint) afterLoad(context.Context) {
 	stack.StackFromEnv.RegisterRestoredEndpoint(e)
 }
 

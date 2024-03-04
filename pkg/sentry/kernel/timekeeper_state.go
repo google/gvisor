@@ -15,6 +15,8 @@
 package kernel
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/sentry/time"
 )
 
@@ -36,6 +38,6 @@ func (t *Timekeeper) beforeSave() {
 }
 
 // afterLoad is invoked by stateify.
-func (t *Timekeeper) afterLoad() {
+func (t *Timekeeper) afterLoad(context.Context) {
 	t.restored = make(chan struct{})
 }

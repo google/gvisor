@@ -15,6 +15,7 @@
 package packet
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -40,7 +41,7 @@ func (ep *endpoint) beforeSave() {
 }
 
 // afterLoad is invoked by stateify.
-func (ep *endpoint) afterLoad() {
+func (ep *endpoint) afterLoad(context.Context) {
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
 
