@@ -133,7 +133,7 @@ func (t *Task) ClearRSeq(addr hostarch.Addr, length, signature uint32) error {
 // OldRSeqCriticalRegion returns a copy of t's thread group's current
 // old restartable sequence.
 func (t *Task) OldRSeqCriticalRegion() OldRSeqCriticalRegion {
-	return *t.tg.oldRSeqCritical.Load().(*OldRSeqCriticalRegion)
+	return *t.tg.oldRSeqCritical.Load()
 }
 
 // SetOldRSeqCriticalRegion replaces t's thread group's old restartable
@@ -387,7 +387,7 @@ func (t *Task) rseqAddrInterrupt() {
 
 // Preconditions: The caller must be running on the task goroutine.
 func (t *Task) oldRSeqInterrupt() {
-	r := t.tg.oldRSeqCritical.Load().(*OldRSeqCriticalRegion)
+	r := t.tg.oldRSeqCritical.Load()
 	if ip := t.Arch().IP(); r.CriticalSection.Contains(hostarch.Addr(ip)) {
 		t.Debugf("Interrupted rseq critical section at %#x; restarting at %#x", ip, r.Restart)
 		t.Arch().SetIP(uintptr(r.Restart))

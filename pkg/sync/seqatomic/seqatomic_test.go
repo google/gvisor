@@ -118,14 +118,15 @@ func BenchmarkSeqAtomicTryLoadIntUncontended(b *testing.B) {
 }
 
 // For comparison:
-func BenchmarkAtomicValueLoadIntUncontended(b *testing.B) {
-	var a atomic.Value
+func BenchmarkAtomicPointerLoadIntUncontended(b *testing.B) {
+	var a atomic.Pointer[int]
 	const want = 42
-	a.Store(int(want))
+	value := int(want)
+	a.Store(&value)
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
-			if got := a.Load().(int); got != want {
-				b.Fatalf("atomic.Value.Load: got %v, wanted %v", got, want)
+			if got := a.Load(); *got != want {
+				b.Fatalf("atomic.Pointer[int].Load: got %v, wanted %v", got, want)
 			}
 		}
 	})
