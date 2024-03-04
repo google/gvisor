@@ -10,6 +10,7 @@ go_library(
         "device.go",
         "seccomp_filter.go",
         "tpu.go",
+        "vfio.go",
     ],
     visibility = [
         "//pkg/sentry:internal",
@@ -19,6 +20,7 @@ go_library(
         "//pkg/context",
         "//pkg/devutil",
         "//pkg/errors/linuxerr",
+        "//pkg/fdnotifier",
         "//pkg/log",
         "//pkg/seccomp",
         "//pkg/sentry/arch",
