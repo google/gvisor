@@ -323,12 +323,12 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 	// "If fork/clone and execve are allowed by @prog, any child processes will
 	// be constrained to the same filters and system call ABI as the parent." -
 	// Documentation/prctl/seccomp_filter.txt
-	if ts := t.seccomp.Load().(*taskSeccomp); ts != nil {
+	if ts := t.seccomp.Load(); ts != nil {
 		seccompCopy := ts.copy()
 		seccompCopy.populateCache(nt)
 		nt.seccomp.Store(seccompCopy)
 	} else {
-		nt.seccomp.Store((*taskSeccomp)(nil))
+		nt.seccomp.Store(nil)
 	}
 	if args.Flags&linux.CLONE_VFORK != 0 {
 		nt.vforkParent = t
