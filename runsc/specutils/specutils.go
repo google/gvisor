@@ -35,6 +35,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bits"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/devices/tpuproxy"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/runsc/config"
 	"gvisor.dev/gvisor/runsc/flag"
@@ -577,6 +578,19 @@ func TPUProxyIsEnabled(spec *specs.Spec, conf *config.Config) bool {
 	return ret
 }
 
+// VFIOFunctionalityRequested returns true if the container should have access
+// to VFIO functionality.
+func VFIOFunctionalityRequested(dev *specs.LinuxDevice) bool {
+	return strings.HasPrefix(dev.Path, filepath.Dir(tpuproxy.VFIOPath))
+}
+
+// AcceleratorFunctionalityRequested returns true if the container should have
+// access to compute accelerators. Compute accelerators are different from GPUs
+// by using a different major number and different device char files.
+func AcceleratorFunctionalityRequested(dev *specs.LinuxDevice) bool {
+	return strings.HasPrefix(dev.Path, "/dev/accel")
+}
+
 // TPUFunctionalityRequested returns true if the container should have access
 // to TPU functionality.
 func TPUFunctionalityRequested(spec *specs.Spec, conf *config.Config) bool {
@@ -585,7 +599,7 @@ func TPUFunctionalityRequested(spec *specs.Spec, conf *config.Config) bool {
 	}
 	if spec.Linux != nil {
 		for _, dev := range spec.Linux.Devices {
-			if strings.HasPrefix(dev.Path, "/dev/accel") {
+			if AcceleratorFunctionalityRequested(&dev) || VFIOFunctionalityRequested(&dev) {
 				return true
 			}
 		}

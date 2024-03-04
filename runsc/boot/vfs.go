@@ -1433,6 +1433,9 @@ func tpuProxyRegisterDevices(info *containerInfo, vfsObj *vfs.VirtualFilesystem)
 			}
 		}
 	}
+	if err := tpuproxy.RegisterVfioDevice(vfsObj); err != nil {
+		return fmt.Errorf("registering vfio driver: %w", err)
+	}
 	return nil
 }
 

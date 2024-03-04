@@ -19,6 +19,7 @@ go_library(
         "//pkg/abi/linux",
         "//pkg/bits",
         "//pkg/log",
+        "//pkg/sentry/devices/tpuproxy",
         "//pkg/sentry/kernel/auth",
         "//runsc/config",
         "//runsc/flag",
