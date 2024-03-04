@@ -14,8 +14,10 @@
 
 package devtmpfs
 
+import "context"
+
 // afterLoad is invoked by stateify.
-func (fst *FilesystemType) afterLoad() {
+func (fst *FilesystemType) afterLoad(context.Context) {
 	if fst.fs != nil {
 		// Ensure that we don't create another filesystem.
 		fst.initOnce.Do(func() {})

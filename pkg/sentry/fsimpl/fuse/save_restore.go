@@ -14,6 +14,8 @@
 
 package fuse
 
-func (fRes *futureResponse) afterLoad() {
+import "context"
+
+func (fRes *futureResponse) afterLoad(context.Context) {
 	fRes.ch = make(chan struct{})
 }

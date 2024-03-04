@@ -14,6 +14,8 @@
 
 package tests
 
+import "context"
+
 // +stateify savable
 type genericContainer struct {
 	v any
@@ -24,7 +26,7 @@ type afterLoadStruct struct {
 	v int `state:"nosave"`
 }
 
-func (a *afterLoadStruct) afterLoad() {
+func (a *afterLoadStruct) afterLoad(context.Context) {
 	a.v++
 }
 
@@ -51,7 +53,7 @@ type badCycleStruct struct {
 	b *badCycleStruct `state:"wait"`
 }
 
-func (b *badCycleStruct) afterLoad() {
+func (b *badCycleStruct) afterLoad(context.Context) {
 	if b.b != b {
 		// This is not executable, since AfterLoad requires that the
 		// object and all dependencies are complete. This should cause

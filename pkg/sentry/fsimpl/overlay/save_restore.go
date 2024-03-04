@@ -15,10 +15,12 @@
 package overlay
 
 import (
+	"context"
+
 	"gvisor.dev/gvisor/pkg/refs"
 )
 
-func (d *dentry) afterLoad() {
+func (d *dentry) afterLoad(context.Context) {
 	if d.refs.Load() != -1 {
 		refs.Register(d)
 	}

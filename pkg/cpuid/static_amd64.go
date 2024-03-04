@@ -17,6 +17,8 @@
 
 package cpuid
 
+import "context"
+
 // Static is a static CPUID function.
 //
 // +stateify savable
@@ -90,7 +92,7 @@ func (s Static) ToFeatureSet() FeatureSet {
 }
 
 // afterLoad calls normalize.
-func (s Static) afterLoad() {
+func (s Static) afterLoad(context.Context) {
 	s.normalize()
 }
 

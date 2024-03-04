@@ -14,6 +14,8 @@
 
 package iouringfs
 
+import "context"
+
 // beforeSave is invoked by stateify.
 func (fd *FileDescription) beforeSave() {
 	if fd.running.Load() != 0 {
@@ -22,7 +24,7 @@ func (fd *FileDescription) beforeSave() {
 }
 
 // afterLoad is invoked by stateify.
-func (fd *FileDescription) afterLoad() {
+func (fd *FileDescription) afterLoad(context.Context) {
 	// Remap shared buffers.
 	fd.remap = true
 	fd.runC = make(chan struct{}, 1)

@@ -18,6 +18,7 @@
 package tests
 
 import (
+	"context"
 	"testing"
 
 	"gvisor.dev/gvisor/pkg/state"
@@ -44,7 +45,7 @@ type fakerWithSaverLoader struct {
 
 func (f *fakerWithSaverLoader) StateSave(m state.Sink) {}
 
-func (f *fakerWithSaverLoader) StateLoad(m state.Source) {}
+func (f *fakerWithSaverLoader) StateLoad(_ context.Context, m state.Source) {}
 
 // fakerOther calls itself .. uh, itself?
 type fakerOther string
@@ -91,7 +92,7 @@ func (f *fakerOtherSaverLoader) StateFields() []string {
 
 func (f *fakerOtherSaverLoader) StateSave(m state.Sink) {}
 
-func (f *fakerOtherSaverLoader) StateLoad(m state.Source) {}
+func (f *fakerOtherSaverLoader) StateLoad(_ context.Context, m state.Source) {}
 
 func newFakerOtherSaverLoader(name string) *fakerOtherSaverLoader {
 	f := fakerOtherSaverLoader(name)

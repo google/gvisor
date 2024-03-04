@@ -14,7 +14,9 @@
 
 package mm
 
+import "context"
+
 // afterLoad is invoked by stateify.
-func (ctx *AIOContext) afterLoad() {
-	ctx.requestReady = make(chan struct{}, 1)
+func (aio *AIOContext) afterLoad(context.Context) {
+	aio.requestReady = make(chan struct{}, 1)
 }

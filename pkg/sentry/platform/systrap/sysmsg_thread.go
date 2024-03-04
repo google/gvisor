@@ -44,7 +44,7 @@ type sysmsgThread struct {
 	msg *sysmsg.Msg
 
 	// context is the last context that ran on this thread.
-	context *context
+	context *platformContext
 
 	// stackRange is a sysmsg stack in the memory file.
 	stackRange memmap.FileRange

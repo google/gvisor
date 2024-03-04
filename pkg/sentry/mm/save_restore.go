@@ -15,6 +15,7 @@
 package mm
 
 import (
+	goContext "context"
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/context"
@@ -52,7 +53,7 @@ func (mm *MemoryManager) beforeSave() {
 }
 
 // afterLoad is invoked by stateify.
-func (mm *MemoryManager) afterLoad() {
+func (mm *MemoryManager) afterLoad(goContext.Context) {
 	mm.mf = mm.mfp.MemoryFile()
 	mm.haveASIO = mm.p.SupportsAddressSpaceIO()
 	for pseg := mm.pmas.FirstSegment(); pseg.Ok(); pseg = pseg.NextSegment() {
