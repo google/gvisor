@@ -16,32 +16,41 @@ package tpuproxy
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/devutil"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
 const (
-	tpuDeviceGroupName = "vfio"
+	// VFIO_MINOR is the VFIO minor number from include/linux/miscdevice.h.
+	VFIO_MINOR = 196
+	// VFIOPath is the path to a VFIO device, it is ususally used to
+	// construct a VFIO container.
+	VFIOPath = "/dev/vfio/vfio"
+
+	tpuDeviceGroupName  = "vfio"
+	vfioDeviceGroupName = "vfio"
 )
 
-// vfioDevice implements vfs.Device for /dev/vfio/[0-9]+
+// device implements TPU's vfs.Device for /dev/vfio/[0-9]+
 //
 // +stateify savable
-type vfioDevice struct {
+type tpuDevice struct {
 	mu sync.Mutex
 
 	minor uint32
 }
 
 // Open implememnts vfs.Device.Open.
-func (dev *vfioDevice) Open(ctx context.Context, mnt *vfs.Mount, d *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
+func (dev *tpuDevice) Open(ctx context.Context, mnt *vfs.Mount, d *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
 	devClient := devutil.GoferClientFromContext(ctx)
 	if devClient == nil {
 		log.Warningf("devutil.CtxDevGoferClient is not set")
@@ -49,13 +58,13 @@ func (dev *vfioDevice) Open(ctx context.Context, mnt *vfs.Mount, d *vfs.Dentry, 
 	}
 	dev.mu.Lock()
 	defer dev.mu.Unlock()
-	devName := fmt.Sprintf("/dev/vfio/%d", dev.minor)
+	devName := fmt.Sprintf("vfio/%d", dev.minor)
 	hostFD, err := devClient.OpenAt(ctx, devName, opts.Flags)
 	if err != nil {
 		ctx.Warningf("vfioDevice: failed to open host %s: %v", devName, err)
 		return nil, err
 	}
-	fd := &vfioFD{
+	fd := &tpuFD{
 		hostFD: int32(hostFD),
 		device: dev,
 	}
@@ -68,11 +77,56 @@ func (dev *vfioDevice) Open(ctx context.Context, mnt *vfs.Mount, d *vfs.Dentry, 
 	return &fd.vfsfd, nil
 }
 
+// device implements vfs.Device for /dev/vfio/vfio.
+type vfioDevice struct {
+	mu sync.Mutex
+}
+
+// Open implements vfs.Device.Open.
+func (dev *vfioDevice) Open(ctx context.Context, mnt *vfs.Mount, d *vfs.Dentry, opts vfs.OpenOptions) (*vfs.FileDescription, error) {
+	client := devutil.GoferClientFromContext(ctx)
+	if client == nil {
+		log.Warningf("devutil.CtxDevGoferClient is not set")
+		return nil, linuxerr.ENOENT
+	}
+
+	dev.mu.Lock()
+	defer dev.mu.Unlock()
+	name := fmt.Sprintf("vfio/%s", filepath.Base(VFIOPath))
+	hostFd, err := client.OpenAt(ctx, name, opts.Flags)
+	if err != nil {
+		ctx.Warningf("failed to open host file %s: %v", name, err)
+		return nil, err
+	}
+	fd := &vfioFd{
+		hostFd: int32(hostFd),
+		device: dev,
+	}
+	if err := fd.vfsfd.Init(fd, opts.Flags, mnt, d, &vfs.FileDescriptionOptions{
+		UseDentryMetadata: true,
+	}); err != nil {
+		unix.Close(hostFd)
+		return nil, err
+	}
+	if err := fdnotifier.AddFD(int32(hostFd), &fd.queue); err != nil {
+		unix.Close(hostFd)
+		return nil, err
+	}
+	return &fd.vfsfd, nil
+}
+
 // RegisterTPUDevice registers devices implemented by this package in vfsObj.
 func RegisterTPUDevice(vfsObj *vfs.VirtualFilesystem, minor uint32) error {
-	return vfsObj.RegisterDevice(vfs.CharDevice, linux.VFIO_MAJOR, minor, &vfioDevice{
+	return vfsObj.RegisterDevice(vfs.CharDevice, linux.VFIO_MAJOR, minor, &tpuDevice{
 		minor: minor,
 	}, &vfs.RegisterDeviceOptions{
 		GroupName: tpuDeviceGroupName,
+	})
+}
+
+// RegisterVfioDevice registers VFIO devices that are implemented by this pacakge in vfsObj.
+func RegisterVfioDevice(vfsObj *vfs.VirtualFilesystem) error {
+	return vfsObj.RegisterDevice(vfs.CharDevice, linux.MISC_MAJOR, VFIO_MINOR, &vfioDevice{}, &vfs.RegisterDeviceOptions{
+		GroupName: vfioDeviceGroupName,
 	})
 }

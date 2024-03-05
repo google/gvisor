@@ -8,34 +8,34 @@ import (
 	"gvisor.dev/gvisor/pkg/state"
 )
 
-func (dev *vfioDevice) StateTypeName() string {
-	return "pkg/sentry/devices/tpuproxy.vfioDevice"
+func (dev *tpuDevice) StateTypeName() string {
+	return "pkg/sentry/devices/tpuproxy.tpuDevice"
 }
 
-func (dev *vfioDevice) StateFields() []string {
+func (dev *tpuDevice) StateFields() []string {
 	return []string{
 		"mu",
 		"minor",
 	}
 }
 
-func (dev *vfioDevice) beforeSave() {}
+func (dev *tpuDevice) beforeSave() {}
 
 // +checklocksignore
-func (dev *vfioDevice) StateSave(stateSinkObject state.Sink) {
+func (dev *tpuDevice) StateSave(stateSinkObject state.Sink) {
 	dev.beforeSave()
 	stateSinkObject.Save(0, &dev.mu)
 	stateSinkObject.Save(1, &dev.minor)
 }
 
-func (dev *vfioDevice) afterLoad(context.Context) {}
+func (dev *tpuDevice) afterLoad(context.Context) {}
 
 // +checklocksignore
-func (dev *vfioDevice) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+func (dev *tpuDevice) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &dev.mu)
 	stateSourceObject.Load(1, &dev.minor)
 }
 
 func init() {
-	state.Register((*vfioDevice)(nil))
+	state.Register((*tpuDevice)(nil))
 }

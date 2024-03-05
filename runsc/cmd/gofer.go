@@ -30,6 +30,7 @@ import (
 	specs "github.com/opencontainers/runtime-spec/specs-go"
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/sentry/devices/tpuproxy"
 	"gvisor.dev/gvisor/pkg/unet"
 	"gvisor.dev/gvisor/runsc/boot"
 	"gvisor.dev/gvisor/runsc/cmd/util"
@@ -538,13 +539,19 @@ func shouldExposeNvidiaDevice(path string) bool {
 	return nvidiaDevPathReg.MatchString(path)
 }
 
+// shouldExposeVfioDevice returns true if path refers to an VFIO device
+// which shuold be exposed to the container.
+func shouldExposeVFIODevice(path string) bool {
+	return strings.HasPrefix(path, filepath.Dir(tpuproxy.VFIOPath))
+}
+
 // shouldExposeTpuDevice returns true if path refers to a TPU device which
 // should be exposed to the container.
 //
 // Precondition: tpuproxy is enabled.
 func shouldExposeTpuDevice(path string) bool {
 	_, valid, _ := util.ExtractTpuDeviceMinor(path)
-	return valid
+	return valid || shouldExposeVFIODevice(path)
 }
 
 func (g *Gofer) setupDev(spec *specs.Spec, conf *config.Config, root, procPath string) error {
