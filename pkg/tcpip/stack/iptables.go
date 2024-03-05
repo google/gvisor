@@ -561,8 +561,7 @@ func (it *IPTables) checkNAT(table Table, hook Hook, pkt *PacketBuffer, r *Route
 	//
 	// If the packet was already NATed, the connection must be NATed.
 	if !natDone {
-		t.conn.maybePerformNoopNAT(dnat)
-		_ = t.conn.handlePacket(pkt, hook, r)
+		t.conn.maybePerformNoopNAT(pkt, hook, r, dnat)
 	}
 
 	return true

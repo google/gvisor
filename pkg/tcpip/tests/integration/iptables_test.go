@@ -2928,6 +2928,208 @@ func TestSNATHandlePortOrIdentConflicts(t *testing.T) {
 	}
 }
 
+func TestSNATLocallyGeneratedTrafficPorts(t *testing.T) {
+	s := stack.New(stack.Options{
+		NetworkProtocols:   []stack.NetworkProtocolFactory{ipv4.NewProtocol, ipv6.NewProtocol},
+		TransportProtocols: []stack.TransportProtocolFactory{udp.NewProtocol},
+	})
+	defer s.Destroy()
+
+	ep1 := channel.New(1, header.IPv4MinimumMTU, "")
+	ep2 := channel.New(1, header.IPv4MinimumMTU, "")
+	utils.SetupRouterStack(t, s, ep1, ep2)
+
+	// Configure Masquerade NAT on the router stack.
+	ipt := s.IPTables()
+	table := stack.Table{
+		Rules: []stack.Rule{
+			// Prerouting
+			{
+				Target: &stack.AcceptTarget{},
+			},
+
+			// Input
+			{
+				Target: &stack.AcceptTarget{},
+			},
+
+			// Forward
+			{
+				Target: &stack.AcceptTarget{},
+			},
+
+			// Output
+			{
+				Target: &stack.AcceptTarget{},
+			},
+
+			// Postrouting
+			{
+				Filter: stack.IPHeaderFilter{
+					Protocol:        udp.ProtocolNumber,
+					CheckProtocol:   true,
+					OutputInterface: utils.RouterNIC2Name,
+				},
+				Target: &stack.MasqueradeTarget{NetworkProtocol: ipv4.ProtocolNumber},
+			},
+			{
+				Target: &stack.AcceptTarget{},
+			},
+		},
+		BuiltinChains: [stack.NumHooks]int{
+			stack.Prerouting:  0,
+			stack.Input:       1,
+			stack.Forward:     2,
+			stack.Output:      3,
+			stack.Postrouting: 4,
+		},
+	}
+	ipt.ForceReplaceTable(stack.NATID, table, false /* ipv6 */)
+
+	routerNIC2Addr := utils.RouterNIC2IPv4Addr.AddressWithPrefix.Address
+	ep1Addr := utils.Host1IPv4Addr.AddressWithPrefix.Address
+	var ep1Port uint16 = 1234
+	ep2Addr := utils.Host2IPv4Addr.AddressWithPrefix.Address
+	var ep2Port uint16 = 2345
+
+	// Inject an incoming packet on NIC1 destined to an address that will be
+	// routed out of NIC2. Expect that we can read the packet on ep2 coming from
+	// the stack's address assigned on NIC2, because it should have performed
+	// Masquerade NAT on the forwarded traffic.
+	ep1.InjectInbound(ipv4.ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Payload: buffer.MakeWithData(udpv4Packet(ep1Addr, ep2Addr, ep1Port, ep2Port, 0 /* dataSize */)),
+	}))
+	pkt := ep2.Read()
+	if pkt.IsNil() {
+		t.Fatal("expected to read a packet on ep2")
+	}
+	pktView := stack.PayloadSince(pkt.NetworkHeader())
+	defer pktView.Release()
+	pkt.DecRef()
+	checker.IPv4(t, pktView,
+		checker.SrcAddr(routerNIC2Addr),
+		checker.DstAddr(ep2Addr),
+		checker.UDP(
+			checker.SrcPort(ep1Port),
+			checker.DstPort(ep2Port),
+		),
+	)
+
+	// Now bind a UDP socket on the stack itself to the same port used by the
+	// previous packet, and send a packet to the same address.
+	var wq waiter.Queue
+	we, ch := waiter.NewChannelEntry(waiter.ReadableEvents)
+	wq.EventRegister(&we)
+	defer wq.EventUnregister(&we)
+
+	ep, err := s.NewEndpoint(udp.ProtocolNumber, ipv4.ProtocolNumber, &wq)
+	if err != nil {
+		t.Fatalf("s.NewEndpoint(%d, %d, _): %s", udp.ProtocolNumber, ipv4.ProtocolNumber, err)
+	}
+	defer ep.Close()
+
+	srcAddr := tcpip.FullAddress{Addr: routerNIC2Addr, Port: ep1Port}
+	if err := ep.Bind(srcAddr); err != nil {
+		t.Fatalf("ep.Bind(%#v): %s", srcAddr, err)
+	}
+	dstAddr := tcpip.FullAddress{Addr: ep2Addr, Port: ep2Port}
+	if err := ep.Connect(dstAddr); err != nil {
+		t.Fatalf("ep.Connect(%#v): %s", dstAddr, err)
+	}
+
+	data := []byte{1, 2, 3, 4}
+	var r bytes.Reader
+	r.Reset(data)
+	var wOpts tcpip.WriteOptions
+	n, err := ep.Write(&r, wOpts)
+	if err != nil {
+		t.Fatalf("ep.Write(_, %#v): %s", wOpts, err)
+	}
+	if want := int64(len(data)); n != want {
+		t.Fatalf("got ep.Write(_, %#v) = (%d, _), want = (%d, _)", wOpts, n, want)
+	}
+
+	// The router should perform source port remapping for the locally generated
+	// traffic so that it does not conflict with the existing conntrack entry, so
+	// ep2 should observe the traffic as coming from the router's address, but
+	// *not* from the same port as the traffic from ep1 before.
+	pkt = ep2.Read()
+	if pkt.IsNil() {
+		t.Fatal("expected to read a packet on ep2")
+	}
+	pktView = stack.PayloadSince(pkt.NetworkHeader())
+	defer pktView.Release()
+	pkt.DecRef()
+	checker.IPv4(t, pktView,
+		checker.SrcAddr(routerNIC2Addr),
+		checker.DstAddr(ep2Addr),
+		checker.UDP(
+			checker.DstPort(ep2Port),
+			checker.Payload(data),
+		),
+	)
+	gotPort := header.UDP(header.IPv4(pktView.AsSlice()).Payload()).SourcePort()
+	if gotPort == ep1Port {
+		t.Errorf("got src port == ep1Port (%d), should be remapped to avoid conflict", gotPort)
+	}
+
+	// We should also be able to reply on either connection, by injecting inbound
+	// traffic on ep2 destined to the router.
+	//
+	// Traffic destined to the port originally used in the traffic injected on ep1
+	// should go to ep1.
+	ep2.InjectInbound(ipv4.ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Payload: buffer.MakeWithData(udpv4Packet(ep2Addr, routerNIC2Addr, ep2Port, ep1Port, 0 /* dataSize */)),
+	}))
+	pkt = ep1.Read()
+	if pkt.IsNil() {
+		t.Fatal("expected to read a packet on ep2")
+	}
+	pktView = stack.PayloadSince(pkt.NetworkHeader())
+	defer pktView.Release()
+	pkt.DecRef()
+	checker.IPv4(t, pktView,
+		checker.SrcAddr(ep2Addr),
+		checker.DstAddr(ep1Addr),
+		checker.UDP(
+			checker.SrcPort(ep2Port),
+			checker.DstPort(ep1Port),
+		),
+	)
+
+	// And traffic destined to the remapped source port chosen by conntrack for
+	// the socket bound on the stack should go to the socket.
+	reply := udpv4Packet(ep2Addr, routerNIC2Addr, ep2Port, gotPort, 0 /* dataSize */)
+	reply = append(reply, data...)
+	ep2.InjectInbound(ipv4.ProtocolNumber, stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Payload: buffer.MakeWithData(reply),
+	}))
+	var buf bytes.Buffer
+	var res tcpip.ReadResult
+	for {
+		var err tcpip.Error
+		res, err = ep.Read(&buf, tcpip.ReadOptions{})
+		if _, ok := err.(*tcpip.ErrWouldBlock); ok {
+			<-ch
+			continue
+		}
+		if err != nil {
+			t.Fatalf("ep.Read(_, {}): %s", err)
+		}
+		break
+	}
+	if diff := cmp.Diff(
+		tcpip.ReadResult{
+			Count: 0,
+			Total: 0,
+		},
+		res,
+		checker.IgnoreCmpPath("ControlMessages"),
+	); diff != "" {
+		t.Errorf("ep.Read: unexpected result (-want +got):\n%s", diff)
+	}
+}
+
 func TestLocallyRoutedPackets(t *testing.T) {
 	const nicID = 1
 

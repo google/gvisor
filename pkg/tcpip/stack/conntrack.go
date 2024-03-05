@@ -695,20 +695,41 @@ func (cn *conn) finalize() bool {
 	}
 }
 
-func (cn *conn) maybePerformNoopNAT(dnat bool) {
+// If NAT has not been configured for this connection, either mark the
+// connection as configured for "no-op NAT", in the case of DNAT, or, in the
+// case of SNAT, perform source port remapping so that source ports used by
+// locally-generated traffic do not conflict with ports occupied by existing NAT
+// bindings.
+//
+// Note that in the typical case this is also a no-op, because `snatAction`
+// will do nothing if the original tuple is already unique.
+func (cn *conn) maybePerformNoopNAT(pkt *PacketBuffer, hook Hook, r *Route, dnat bool) {
 	cn.mu.Lock()
-	defer cn.mu.Unlock()
-
 	var manip *manipType
 	if dnat {
 		manip = &cn.destinationManip
 	} else {
 		manip = &cn.sourceManip
 	}
-
-	if *manip == manipNotPerformed {
-		*manip = manipPerformedNoop
+	if *manip != manipNotPerformed {
+		cn.mu.Unlock()
+		_ = cn.handlePacket(pkt, hook, r)
+		return
 	}
+	if dnat {
+		*manip = manipPerformedNoop
+		cn.mu.Unlock()
+		_ = cn.handlePacket(pkt, hook, r)
+		return
+	}
+	cn.mu.Unlock()
+
+	// At this point, we know that NAT has not yet been performed on this
+	// connection, and the DNAT case has been handled with a no-op. For SNAT, we
+	// simply perform source port remapping to ensure that source ports for
+	// locally generated traffic do not clash with ports used by existing NAT
+	// bindings.
+	_, _ = snatAction(pkt, hook, r, 0, tcpip.Address{}, true /* changePort */, false /* changeAddress */)
 }
 
 type portOrIdentRange struct {
@@ -774,7 +795,12 @@ func (cn *conn) performNAT(pkt *PacketBuffer, hook Hook, r *Route, portsOrIdents
 	// Does the current port/ident fit in the range?
 	if portsOrIdents.start <= *portOrIdent && *portOrIdent <= lastPortOrIdent {
 		// Yes, is the current reply tuple unique?
-		if other := cn.ct.connForTID(cn.reply.tupleID); other == nil {
+		//
+		// Or, does the reply tuple refer to the same connection as the current one that
+		// we are NATing? This would apply, for example, to a self-connected socket,
+		// where the original and reply tuples are identical.
+		other := cn.ct.connForTID(cn.reply.tupleID)
+		if other == nil || other.conn == cn {
 			// Yes! No need to change the port.
 			return
 		}
