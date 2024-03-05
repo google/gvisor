@@ -29,6 +29,10 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
+const (
+	vfioDev = "vfio-dev"
+)
+
 func newTestSystem(t *testing.T, pciTestDir string) *testutil.System {
 	k, err := testutil.Boot()
 	if err != nil {
@@ -174,55 +178,92 @@ func TestEnableTPUProxyPathsV4(t *testing.T) {
 	})
 }
 
+type PCIDeviceInfo struct {
+	// IOMMU group.
+	group      string
+	pciPath    string
+	pciAddress string
+	name       string
+}
+
+func (dev PCIDeviceInfo) path() string {
+	return path.Join(dev.pciPath, dev.pciAddress, vfioDev, dev.name)
+}
+
 func TestEnableTPUProxyPathsV5(t *testing.T) {
 	// Set up the fs tree that will be mirrored in the sentry.
 	sysfsTestDir := t.TempDir()
-	accelPath := path.Join(sysfsTestDir, "sys", "devices", "pci0000:00", "0000:00:04.0", "accel", "accel0")
-	if err := os.MkdirAll(accelPath, 0755); err != nil {
-		t.Fatalf("Failed to create accel directory: %v", err)
-	}
-	if err := os.Symlink(path.Join("..", "..", "..", "0000:00:04.0"), path.Join(accelPath, "0000:00:04.0")); err != nil {
-		t.Fatalf("Failed to symlink accel directory: %v", err)
-	}
-	if err := os.Symlink(path.Join("..", "..", "..", "0000:00:04.0"), path.Join(accelPath, "device")); err != nil {
-		t.Fatalf("Failed to symlink accel device directory: %v", err)
+	pciPath := path.Join(sysfsTestDir, "sys", "devices", "pci0000:00")
+	if err := os.MkdirAll(pciPath, 0755); err != nil {
+		t.Fatalf("Failed to create PCI directory: %v", err)
 	}
 	busPath := path.Join(sysfsTestDir, "sys", "bus", "pci", "devices")
 	if err := os.MkdirAll(busPath, 0755); err != nil {
 		t.Fatalf("Failed to create bus directory: %v", err)
 	}
-	if err := os.Symlink(path.Join("..", "..", "..", "devices", "pci0000:00", "0000:00:04.0"), path.Join(busPath, "0000:00:04.0")); err != nil {
-		t.Fatalf("Failed to symlink bus directory: %v", err)
-	}
-	classAccelPath := path.Join(sysfsTestDir, "sys", "class", "accel")
-	if err := os.MkdirAll(classAccelPath, 0755); err != nil {
-		t.Fatalf("Failed to create accel directory: %v", err)
-	}
-	if err := os.Symlink(path.Join("..", "..", "devices", "pci0000:00", "0000:00:04.0", "accel", "accel0"), path.Join(classAccelPath, "accel0")); err != nil {
-		t.Fatalf("Failed to symlink accel directory: %v", err)
-	}
-	iommuPath := path.Join(sysfsTestDir, "sys", "kernel", "iommu_groups", "0", "devices")
-	if err := os.MkdirAll(iommuPath, 0755); err != nil {
-		t.Fatalf("Failed to create iommu_groups directory: %v", err)
-	}
-	if err := os.Symlink(path.Join("..", "..", "..", "devices", "pci0000:00", "0000:00:04.0"), path.Join(iommuPath, "0000:00:04.0")); err != nil {
-		t.Fatalf("Failed to symlink bus directory: %v", err)
-	}
-	if err := os.Symlink(path.Join("..", "..", "..", "kernel", "iommu_groups", "0000:00:04.0"), path.Join(accelPath, "iommu_group")); err != nil {
-		t.Fatalf("Failed to symlink iommu_groups directory: %v", err)
+	sysClassPath := path.Join(sysfsTestDir, "sys", "class", vfioDev)
+	if err := os.MkdirAll(sysClassPath, 0755); err != nil {
+		t.Fatalf("Failed to create class directory: %v", err)
 	}
 
+	devices := []PCIDeviceInfo{
+		PCIDeviceInfo{
+			group:      "0",
+			pciPath:    pciPath,
+			pciAddress: "0000:00:04.0",
+			name:       "vfio0",
+		},
+		PCIDeviceInfo{
+			group:      "1",
+			pciPath:    pciPath,
+			pciAddress: "0000:00:05.0",
+			name:       "vfio1",
+		},
+	}
+	for _, device := range devices {
+		devicePath := device.path()
+		if err := os.MkdirAll(devicePath, 0755); err != nil {
+			t.Fatalf("Failed to create PCI device directory: %v", err)
+		}
+		if err := os.Symlink(path.Join("..", "..", "..", device.pciAddress), path.Join(devicePath, "device")); err != nil {
+			t.Fatalf("Failed to symlink device directory: %v", err)
+		}
+		if err := os.Symlink(path.Join("..", "..", "..", "devices", "pci0000:00", device.pciAddress), path.Join(busPath, device.pciAddress)); err != nil {
+			t.Fatalf("Failed to symlink bus directory: %v", err)
+		}
+		if err := os.Symlink(path.Join("..", "..", "devices", "pci0000:00", device.pciAddress, vfioDev, device.name), path.Join(sysClassPath, device.name)); err != nil {
+			t.Fatalf("Failed to symlink class directory: %v", err)
+		}
+		iommuPath := path.Join(sysfsTestDir, "sys", "kernel", "iommu_groups", device.group, "devices")
+		if err := os.MkdirAll(iommuPath, 0755); err != nil {
+			t.Fatalf("Failed to create iommu_groups directory: %v", err)
+		}
+		if err := os.Symlink(path.Join("..", "..", "..", "..", "devices", "pci0000:00", device.pciAddress), path.Join(iommuPath, device.pciAddress)); err != nil {
+			t.Fatalf("Failed to symlink iommu_group devices directory: %v", err)
+		}
+		if err := os.Symlink(path.Join("..", "..", "..", "kernel", "iommu_groups", device.group), path.Join(pciPath, device.pciAddress, "iommu_group")); err != nil {
+			t.Fatalf("Failed to symlink iommu_groups directory: %v", err)
+		}
+	}
 	s := newTestSystem(t, sysfsTestDir)
 	defer s.Destroy()
 
-	pop := s.PathOpAtRoot("/devices/pci0000:00/0000:00:04.0/accel/accel0")
-	s.AssertAllDirentTypes(s.ListDirents(pop), map[string]testutil.DirentType{
-		"0000:00:04.0": linux.DT_LNK,
-		"device":       linux.DT_LNK,
-		"iommu_group":  linux.DT_LNK,
-	})
-	pop = s.PathOpAtRoot("/kernel/iommu_groups/0/devices")
-	s.AssertAllDirentTypes(s.ListDirents(pop), map[string]testutil.DirentType{
-		"0000:00:04.0": linux.DT_LNK,
-	})
+	for _, device := range devices {
+		// Validate PCI device symlinks.
+		pop := s.PathOpAtRoot(path.Join("devices", "pci0000:00", device.pciAddress))
+		s.AssertAllDirentTypes(s.ListDirents(pop), map[string]testutil.DirentType{
+			"iommu_group": linux.DT_LNK,
+			vfioDev:       linux.DT_DIR,
+		})
+		// Validate VFIO device symlinks.
+		pop = s.PathOpAtRoot(path.Join("devices", "pci0000:00", device.pciAddress, vfioDev, device.name))
+		s.AssertAllDirentTypes(s.ListDirents(pop), map[string]testutil.DirentType{
+			"device": linux.DT_LNK,
+		})
+		// Validate $IOMMU_GROUP/devices.
+		pop = s.PathOpAtRoot(path.Join("kernel", "iommu_groups", string(device.group), "devices"))
+		s.AssertAllDirentTypes(s.ListDirents(pop), map[string]testutil.DirentType{
+			device.pciAddress: linux.DT_LNK,
+		})
+	}
 }
