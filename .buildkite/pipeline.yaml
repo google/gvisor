@@ -215,13 +215,13 @@ steps:
   - <<: *common
     label: ":docker: Images (x86_64)"
     if: build.env("SKIP_LOADING_IMAGES") == null && build.env("STAGED_BINARIES") == null
-    command: make ARCH=x86_64 load-all-test-images
+    command: make ARCH=x86_64 -j 8 load-all-test-images
     agents:
       arch: "amd64"
   - <<: *common
     label: ":docker: Images (aarch64)"
     if: build.env("SKIP_LOADING_IMAGES") == null && build.env("STAGED_BINARIES") == null
-    command: make ARCH=aarch64 load-all-test-images
+    command: make ARCH=aarch64 -j 8 load-all-test-images
     agents:
       arch: "arm64"
 
