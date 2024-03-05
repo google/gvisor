@@ -21,6 +21,7 @@
 #include "absl/time/time.h"
 #include "test/syscalls/linux/socket_inet_loopback_test_params.h"
 #include "test/util/capability_util.h"
+#include "test/util/save_util.h"
 #include "test/util/socket_util.h"
 #include "test/util/test_util.h"
 
@@ -134,7 +135,7 @@ TEST_P(SocketInetLoopbackIsolatedTest, TCPPassiveCloseNoTimeWaitReuseTest) {
 // trigger FIN_WAIT2 state for the closed endpoint. Then it binds the same local
 // IP/port on a new socket and tries to connect. The connect should fail w/
 // an EADDRINUSE. Then we wait till the FIN_WAIT2 timeout is over and try the
-// connect again with a new socket and this time it should succeed.
+// bind/connect again with a new socket and this time it should succeed.
 //
 // TCP timers are not S/R today, this can cause this test to be flaky when run
 // under random S/R due to timer being reset on a restore.
@@ -142,6 +143,11 @@ TEST_P(SocketInetLoopbackIsolatedTest, TCPFinWait2Test) {
   SocketInetTestParam const& param = GetParam();
   TestAddress const& listener = param.listener;
   TestAddress const& connector = param.connector;
+
+  // Disable cooperative saves after this point. As a save between the first
+  // bind/connect and the second one can cause the linger timeout timer to
+  // be restarted causing the final bind/connect to fail.
+  DisableSave ds;
 
   // Create the listening socket.
   const FileDescriptor listen_fd = ASSERT_NO_ERRNO_AND_VALUE(
@@ -194,11 +200,6 @@ TEST_P(SocketInetLoopbackIsolatedTest, TCPFinWait2Test) {
   const FileDescriptor conn_fd2 = ASSERT_NO_ERRNO_AND_VALUE(
       Socket(connector.family(), SOCK_STREAM, IPPROTO_TCP));
 
-  // Disable cooperative saves after this point. As a save between the first
-  // bind/connect and the second one can cause the linger timeout timer to
-  // be restarted causing the final bind/connect to fail.
-  DisableSave ds;
-
   ASSERT_THAT(bind(conn_fd2.get(), AsSockAddr(&conn_bound_addr), conn_addrlen),
               SyscallFailsWithErrno(EADDRINUSE));
 
@@ -206,7 +207,8 @@ TEST_P(SocketInetLoopbackIsolatedTest, TCPFinWait2Test) {
   // save/restore tests.
   absl::SleepFor(absl::Seconds(kTCPLingerTimeout + 2));
 
-  ds.reset();
+  ASSERT_THAT(bind(conn_fd2.get(), AsSockAddr(&conn_bound_addr), conn_addrlen),
+              SyscallSucceeds());
 
   ASSERT_THAT(
       RetryEINTR(connect)(conn_fd2.get(), AsSockAddr(&conn_addr), conn_addrlen),

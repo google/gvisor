@@ -3212,6 +3212,7 @@ cc_binary(
         ":socket_inet_loopback_test_params",
         ":socket_netlink_util",
         "//test/util:capability_util",
+        "//test/util:save_util",
         "//test/util:socket_util",
         "//test/util:test_main",
         "//test/util:test_util",
