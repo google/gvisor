@@ -166,8 +166,13 @@ load-%: register-cross ## Pull or build an image locally.
 # push pushes the remote image, after either pulling (to validate that the tag
 # already exists) or building manually. Note that this generic rule will match
 # the fully-expanded remote image tag.
+#
+# Images with sizes greater than 10GB are not pushed.
 push-%: load-% ## Push a given image.
-	@docker image push $(call remote_image,$*):$(call tag,$*) >&2
+	size=$$(docker inspect --format '{{ .Size }}') && \
+	if [ "$${size}" -le "$$((10<<9))" ]; then \
+		@docker image push $(call remote_image,$*):$(call tag,$*) >&2; \
+	fi
 
 # register-cross registers the necessary qemu binaries for cross-compilation.
 # This may be used by any target that may execute containers that are not the
