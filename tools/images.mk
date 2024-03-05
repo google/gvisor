@@ -132,7 +132,7 @@ tag-%: ## Tag a local image.
 # pull forces the image to be pulled.
 pull = \
   $(call header,PULL $(1)) && \
-  docker pull $(DOCKER_PLATFORM_ARGS) $(call remote_image,$(1)):$(call tag,$(1)) >&2 && \
+  docker pull -q $(DOCKER_PLATFORM_ARGS) $(call remote_image,$(1)):$(call tag,$(1)) >&2 && \
   $(call local_tag,$(1)) && \
   $(call latest_tag,$(1))
 pull-%: register-cross ## Force a repull of the image.
@@ -167,7 +167,7 @@ load-%: register-cross ## Pull or build an image locally.
 # already exists) or building manually. Note that this generic rule will match
 # the fully-expanded remote image tag.
 push-%: load-% ## Push a given image.
-	@docker image push $(call remote_image,$*):$(call tag,$*) >&2
+	@docker image push -q $(call remote_image,$*):$(call tag,$*) >&2
 
 # register-cross registers the necessary qemu binaries for cross-compilation.
 # This may be used by any target that may execute containers that are not the
