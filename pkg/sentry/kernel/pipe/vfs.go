@@ -178,6 +178,9 @@ func (fd *VFSPipeFD) Release(context.Context) {
 	if fd.vfsfd.IsReadable() {
 		fd.pipe.rClose()
 		event |= waiter.WritableEvents
+		if !fd.pipe.HasReaders() {
+			event |= waiter.EventErr
+		}
 	}
 	if fd.vfsfd.IsWritable() {
 		fd.pipe.wClose()

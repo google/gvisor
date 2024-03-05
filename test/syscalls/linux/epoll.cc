@@ -594,6 +594,29 @@ TEST(EpollTest, PipeReaderHupAfterWriterClosed) {
   EXPECT_EQ(result[0].data.u64, kMagicConstant);
 }
 
+TEST(EpollTest, PipeWriterErrAfterReaderClosed) {
+  auto epollfd = ASSERT_NO_ERRNO_AND_VALUE(NewEpollFD());
+  int pipefds[2];
+  ASSERT_THAT(pipe(pipefds), SyscallSucceeds());
+  FileDescriptor rfd(pipefds[0]);
+  FileDescriptor wfd(pipefds[1]);
+
+  ASSERT_NO_ERRNO(
+      RegisterEpollFD(epollfd.get(), wfd.get(), EPOLLERR, kMagicConstant));
+  struct epoll_event result[kFDsPerEpoll];
+  // Initially, wfd should not generate any events of interest.
+  ASSERT_THAT(epoll_wait(epollfd.get(), result, kFDsPerEpoll, 0),
+              SyscallSucceedsWithValue(0));
+  // Close the read end of the pipe.
+  rfd.reset();
+  // wfd should now generate EPOLLERR, which EPOLL_CTL_ADD unconditionally adds
+  // to the set of events of interest.
+  ASSERT_THAT(epoll_wait(epollfd.get(), result, kFDsPerEpoll, 0),
+              SyscallSucceedsWithValue(1));
+  EXPECT_EQ(result[0].events, EPOLLERR);
+  EXPECT_EQ(result[0].data.u64, kMagicConstant);
+}
+
 TEST(EpollTest, DoubleLayerEpoll) {
   int pipefds[2];
   ASSERT_THAT(pipe2(pipefds, O_NONBLOCK), SyscallSucceeds());
