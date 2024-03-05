@@ -237,7 +237,9 @@ func TestNATedConnectionReap(t *testing.T) {
 }
 
 // TestNATAlwaysPerformed tests that a connection will have a noop-NAT
-// performed on it when no rule matches its associated packet.
+// performed on it when no rule matches its associated packet. (Note that SNAT
+// is performed on all connections to ensure that ports used by locally
+// generated traffic do not clash with ports used by forwarded traffic.
 func TestNATAlwaysPerformed(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -317,8 +319,8 @@ func TestNATAlwaysPerformed(t *testing.T) {
 			conn.mu.RLock()
 			srcManip := conn.sourceManip
 			conn.mu.RUnlock()
-			if srcManip != manipPerformedNoop {
-				t.Errorf("got destManip = %d, want = %d", destManip, manipPerformedNoop)
+			if srcManip != manipPerformed {
+				t.Errorf("got srcManip = %d, want = %d", srcManip, manipPerformed)
 			}
 		})
 	}
