@@ -41,11 +41,11 @@ func (ep *endpoint) beforeSave() {
 }
 
 // afterLoad is invoked by stateify.
-func (ep *endpoint) afterLoad(context.Context) {
+func (ep *endpoint) afterLoad(ctx context.Context) {
 	ep.mu.Lock()
 	defer ep.mu.Unlock()
 
-	ep.stack = stack.StackFromEnv
+	ep.stack = stack.RestoreStackFromContext(ctx)
 	ep.ops.InitHandler(ep, ep.stack, tcpip.GetStackSendBufferLimits, tcpip.GetStackReceiveBufferLimits)
 
 	if err := ep.stack.RegisterPacketEndpoint(ep.boundNIC, ep.boundNetProto, ep); err != nil {
