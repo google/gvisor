@@ -253,7 +253,6 @@ go_library(
         "route_mutex.go",
         "route_stack_mutex.go",
         "stack.go",
-        "stack_global_state.go",
         "stack_mutex.go",
         "stack_options.go",
         "state_conn_mutex.go",
