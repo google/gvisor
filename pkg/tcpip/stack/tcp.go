@@ -15,6 +15,7 @@
 package stack
 
 import (
+	"context"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/atomicbitops"
@@ -23,6 +24,19 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/internal/tcp"
 	"gvisor.dev/gvisor/pkg/tcpip/seqnum"
 )
+
+// contextID is this package's type for context.Context.Value keys.
+type contextID int
+
+const (
+	// CtxRestoreStack is a Context.Value key for the stack to be used in restore.
+	CtxRestoreStack contextID = iota
+)
+
+// RestoreStackFromContext returns the stack to be used during restore.
+func RestoreStackFromContext(ctx context.Context) *Stack {
+	return ctx.Value(CtxRestoreStack).(*Stack)
+}
 
 // TCPProbeFunc is the expected function type for a TCP probe function to be
 // passed to stack.AddTCPProbe.

@@ -35,8 +35,8 @@ func (p *icmpPacket) loadReceivedAt(nsec int64) {
 }
 
 // afterLoad is invoked by stateify.
-func (e *endpoint) afterLoad(context.Context) {
-	stack.StackFromEnv.RegisterRestoredEndpoint(e)
+func (e *endpoint) afterLoad(ctx context.Context) {
+	stack.RestoreStackFromContext(ctx).RegisterRestoredEndpoint(e)
 }
 
 // beforeSave is invoked by stateify.
