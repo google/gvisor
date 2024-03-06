@@ -42,13 +42,8 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 	},
 	unix.SYS_EXIT:       seccomp.MatchAll{},
 	unix.SYS_EXIT_GROUP: seccomp.MatchAll{},
-	unix.SYS_FALLOCATE: seccomp.PerArg{
-		seccomp.AnyValue{},
-		seccomp.EqualTo(0),
-	},
-	unix.SYS_FCHMOD:   seccomp.MatchAll{},
-	unix.SYS_FCHMODAT: seccomp.MatchAll{},
-	unix.SYS_FCHOWNAT: seccomp.MatchAll{},
+	unix.SYS_FCHMOD:     seccomp.MatchAll{},
+	unix.SYS_FCHOWNAT:   seccomp.MatchAll{},
 	unix.SYS_FCNTL: seccomp.Or{
 		seccomp.PerArg{
 			seccomp.AnyValue{},
@@ -68,10 +63,8 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 			seccomp.EqualTo(unix.F_ADD_SEALS),
 		},
 	},
-	unix.SYS_FSTAT:     seccomp.MatchAll{},
-	unix.SYS_FSTATFS:   seccomp.MatchAll{},
-	unix.SYS_FSYNC:     seccomp.MatchAll{},
-	unix.SYS_FTRUNCATE: seccomp.MatchAll{},
+	unix.SYS_FSTAT: seccomp.MatchAll{},
+	unix.SYS_FSYNC: seccomp.MatchAll{},
 	unix.SYS_FUTEX: seccomp.Or{
 		seccomp.PerArg{
 			seccomp.AnyValue{},
@@ -108,17 +101,13 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		seccomp.EqualTo(0),
 		seccomp.EqualTo(0),
 	},
-	unix.SYS_GETDENTS64:   seccomp.MatchAll{},
 	unix.SYS_GETPID:       seccomp.MatchAll{},
 	unix.SYS_GETRANDOM:    seccomp.MatchAll{},
 	unix.SYS_GETTID:       seccomp.MatchAll{},
 	unix.SYS_GETTIMEOFDAY: seccomp.MatchAll{},
-	unix.SYS_LINKAT:       seccomp.MatchAll{},
 	unix.SYS_LSEEK:        seccomp.MatchAll{},
 	unix.SYS_MADVISE:      seccomp.MatchAll{},
 	unix.SYS_MEMFD_CREATE: seccomp.MatchAll{}, // Used by flipcall.PacketWindowAllocator.Init().
-	unix.SYS_MKDIRAT:      seccomp.MatchAll{},
-	unix.SYS_MKNODAT:      seccomp.MatchAll{},
 	unix.SYS_MMAP: seccomp.Or{
 		seccomp.PerArg{
 			seccomp.AnyValue{},
@@ -139,15 +128,14 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 			seccomp.EqualTo(unix.MAP_PRIVATE | unix.MAP_ANONYMOUS | unix.MAP_FIXED),
 		},
 	},
-	unix.SYS_MPROTECT:   seccomp.MatchAll{},
-	unix.SYS_MUNMAP:     seccomp.MatchAll{},
-	unix.SYS_NANOSLEEP:  seccomp.MatchAll{},
-	unix.SYS_OPENAT:     seccomp.MatchAll{},
-	unix.SYS_PPOLL:      seccomp.MatchAll{},
-	unix.SYS_PREAD64:    seccomp.MatchAll{},
-	unix.SYS_PWRITE64:   seccomp.MatchAll{},
-	unix.SYS_READ:       seccomp.MatchAll{},
-	unix.SYS_READLINKAT: seccomp.MatchAll{},
+	unix.SYS_MPROTECT:  seccomp.MatchAll{},
+	unix.SYS_MUNMAP:    seccomp.MatchAll{},
+	unix.SYS_NANOSLEEP: seccomp.MatchAll{},
+	unix.SYS_OPENAT:    seccomp.MatchAll{},
+	unix.SYS_PPOLL:     seccomp.MatchAll{},
+	unix.SYS_PREAD64:   seccomp.MatchAll{},
+	unix.SYS_PWRITE64:  seccomp.MatchAll{},
+	unix.SYS_READ:      seccomp.MatchAll{},
 	unix.SYS_RECVMSG: seccomp.Or{
 		seccomp.PerArg{
 			seccomp.AnyValue{},
@@ -160,7 +148,6 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 			seccomp.EqualTo(unix.MSG_DONTWAIT | unix.MSG_TRUNC | unix.MSG_PEEK),
 		},
 	},
-	unix.SYS_RENAMEAT:        seccomp.MatchAll{},
 	unix.SYS_RESTART_SYSCALL: seccomp.MatchAll{},
 	// May be used by the runtime during panic().
 	unix.SYS_RT_SIGACTION:   seccomp.MatchAll{},
@@ -192,13 +179,10 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 		seccomp.EqualTo(unix.SOCK_SEQPACKET | unix.SOCK_CLOEXEC),
 		seccomp.EqualTo(0),
 	},
-	unix.SYS_SYMLINKAT: seccomp.MatchAll{},
 	unix.SYS_TGKILL: seccomp.PerArg{
 		seccomp.EqualTo(uint64(os.Getpid())),
 	},
-	unix.SYS_UNLINKAT:  seccomp.MatchAll{},
-	unix.SYS_UTIMENSAT: seccomp.MatchAll{},
-	unix.SYS_WRITE:     seccomp.MatchAll{},
+	unix.SYS_WRITE: seccomp.MatchAll{},
 })
 
 var udsCommonSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
@@ -231,6 +215,28 @@ var udsCreateSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule
 	unix.SYS_LISTEN:  seccomp.MatchAll{},
 })
 
-var xattrSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
-	unix.SYS_FGETXATTR: seccomp.MatchAll{},
+var lisafsFilters = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
+	unix.SYS_FALLOCATE: seccomp.PerArg{
+		seccomp.AnyValue{},
+		seccomp.EqualTo(0),
+	},
+	unix.SYS_FCHMODAT:   seccomp.MatchAll{},
+	unix.SYS_FGETXATTR:  seccomp.MatchAll{},
+	unix.SYS_FSTATFS:    seccomp.MatchAll{},
+	unix.SYS_GETDENTS64: seccomp.MatchAll{},
+	unix.SYS_LINKAT: seccomp.PerArg{
+		seccomp.NonNegativeFD{},
+		seccomp.AnyValue{},
+		seccomp.NonNegativeFD{},
+		seccomp.AnyValue{},
+		seccomp.EqualTo(0),
+	},
+	unix.SYS_MKDIRAT:    seccomp.MatchAll{},
+	unix.SYS_MKNODAT:    seccomp.MatchAll{},
+	unix.SYS_READLINKAT: seccomp.MatchAll{},
+	unix.SYS_RENAMEAT:   seccomp.MatchAll{},
+	unix.SYS_SYMLINKAT:  seccomp.MatchAll{},
+	unix.SYS_FTRUNCATE:  seccomp.MatchAll{},
+	unix.SYS_UNLINKAT:   seccomp.MatchAll{},
+	unix.SYS_UTIMENSAT:  seccomp.MatchAll{},
 })
