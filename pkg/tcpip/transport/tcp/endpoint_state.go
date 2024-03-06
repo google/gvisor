@@ -114,13 +114,13 @@ func (e *endpoint) afterLoad(ctx context.Context) {
 	// RacyLoad() can be used because we are initializing e.
 	e.origEndpointState = e.state.RacyLoad()
 	// Restore the endpoint to InitialState as it will be moved to
-	// its origEndpointState during Resume.
+	// its origEndpointState during Restore.
 	e.state = atomicbitops.FromUint32(uint32(StateInitial))
 	stack.RestoreStackFromContext(ctx).RegisterRestoredEndpoint(e)
 }
 
-// Resume implements tcpip.ResumableEndpoint.Resume.
-func (e *endpoint) Resume(s *stack.Stack) {
+// Restore implements tcpip.RestoredEndpoint.Restore.
+func (e *endpoint) Restore(s *stack.Stack) {
 	if !e.EndpointState().closed() {
 		e.keepalive.timer.init(s.Clock(), timerHandler(e, e.keepaliveTimerExpired))
 	}
