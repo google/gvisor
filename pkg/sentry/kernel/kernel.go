@@ -627,7 +627,7 @@ func (k *Kernel) SaveTo(ctx context.Context, w wire.Writer) error {
 		netstackPauseStart := time.Now()
 		log.Infof("Pausing root network namespace")
 		k.rootNetworkNamespace.Stack().Pause()
-		defer k.rootNetworkNamespace.Stack().Resume()
+		defer k.rootNetworkNamespace.Stack().Restore()
 		log.Infof("Pausing root network namespace took [%s].", time.Since(netstackPauseStart))
 	}
 
@@ -740,7 +740,7 @@ func (k *Kernel) LoadFrom(ctx context.Context, r wire.Reader, timeReady chan str
 	}
 
 	if net != nil {
-		net.Resume()
+		net.Restore()
 	}
 
 	if err := k.vfs.CompleteRestore(ctx, vfsOpts); err != nil {

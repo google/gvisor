@@ -44,8 +44,8 @@ func (e *endpoint) beforeSave() {
 	e.freeze()
 }
 
-// Resume implements tcpip.ResumableEndpoint.Resume.
-func (e *endpoint) Resume(s *stack.Stack) {
+// Restore implements tcpip.RestoredEndpoint.Restore.
+func (e *endpoint) Restore(s *stack.Stack) {
 	e.thaw()
 
 	e.mu.Lock()

@@ -255,7 +255,7 @@ func (*fakeTransportEndpoint) State() uint32 {
 
 func (*fakeTransportEndpoint) ModerateRecvBuf(copied int) {}
 
-func (*fakeTransportEndpoint) Resume(*stack.Stack) {}
+func (*fakeTransportEndpoint) Restore(*stack.Stack) {}
 
 func (*fakeTransportEndpoint) Wait() {}
 

@@ -474,9 +474,9 @@ func (s *Stack) Pause() {
 	s.Stack.Pause()
 }
 
-// Resume implements inet.Stack.Resume.
-func (s *Stack) Resume() {
-	s.Stack.Resume()
+// Restore implements inet.Stack.Restore.
+func (s *Stack) Restore() {
+	s.Stack.Restore()
 }
 
 // RegisteredEndpoints implements inet.Stack.RegisteredEndpoints.

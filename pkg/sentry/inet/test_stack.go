@@ -152,8 +152,8 @@ func (s *TestStack) RouteTable() []Route {
 // Pause implements Stack.
 func (s *TestStack) Pause() {}
 
-// Resume implements Stack.
-func (s *TestStack) Resume() {}
+// Restore implements Stack.
+func (s *TestStack) Restore() {}
 
 // RegisteredEndpoints implements Stack.
 func (s *TestStack) RegisteredEndpoints() []stack.TransportEndpoint {
