@@ -58,6 +58,7 @@ syscall_test(
 
 syscall_test(
     size = "large",
+    timeout = "long",
     debug = False,
     # Takes too long to run with S/R.
     save = False,
