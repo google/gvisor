@@ -326,8 +326,8 @@ func (s *Stack) RouteTable() []inet.Route {
 // Pause implements inet.Stack.Pause.
 func (*Stack) Pause() {}
 
-// Resume implements inet.Stack.Resume.
-func (*Stack) Resume() {}
+// Restore implements inet.Stack.Restore.
+func (*Stack) Restore() {}
 
 // RegisteredEndpoints implements inet.Stack.RegisteredEndpoints.
 func (*Stack) RegisteredEndpoints() []stack.TransportEndpoint { return nil }

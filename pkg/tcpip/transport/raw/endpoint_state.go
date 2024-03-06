@@ -43,8 +43,8 @@ func (e *endpoint) beforeSave() {
 	e.setReceiveDisabled(true)
 }
 
-// Resume implements tcpip.ResumableEndpoint.Resume.
-func (e *endpoint) Resume(s *stack.Stack) {
+// Restore implements tcpip.RestoredEndpoint.Restore.
+func (e *endpoint) Restore(s *stack.Stack) {
 	e.net.Resume(s)
 
 	e.setReceiveDisabled(false)
