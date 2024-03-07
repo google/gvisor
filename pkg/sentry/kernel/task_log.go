@@ -37,21 +37,21 @@ const (
 // Infof logs an formatted info message by calling log.Infof.
 func (t *Task) Infof(fmt string, v ...any) {
 	if log.IsLogging(log.Info) {
-		log.InfofAtDepth(1, t.logPrefix.Load().(string)+fmt, v...)
+		log.InfofAtDepth(1, *t.logPrefix.Load()+fmt, v...)
 	}
 }
 
 // Warningf logs a warning string by calling log.Warningf.
 func (t *Task) Warningf(fmt string, v ...any) {
 	if log.IsLogging(log.Warning) {
-		log.WarningfAtDepth(1, t.logPrefix.Load().(string)+fmt, v...)
+		log.WarningfAtDepth(1, *t.logPrefix.Load()+fmt, v...)
 	}
 }
 
 // Debugf creates a debug string that includes the task ID.
 func (t *Task) Debugf(fmt string, v ...any) {
 	if log.IsLogging(log.Debug) {
-		log.DebugfAtDepth(1, t.logPrefix.Load().(string)+fmt, v...)
+		log.DebugfAtDepth(1, *t.logPrefix.Load()+fmt, v...)
 	}
 }
 
@@ -196,9 +196,11 @@ func (t *Task) updateInfoLocked() {
 	pid := t.tg.pidns.tgids[t.tg]
 	tid := t.tg.pidns.tids[t]
 	if rootPID == pid && rootTID == tid {
-		t.logPrefix.Store(fmt.Sprintf("[% 4d:% 4d] ", pid, tid))
+		prefix := fmt.Sprintf("[% 4d:% 4d] ", pid, tid)
+		t.logPrefix.Store(&prefix)
 	} else {
-		t.logPrefix.Store(fmt.Sprintf("[% 4d(%4d):% 4d(%4d)] ", rootPID, pid, rootTID, tid))
+		prefix := fmt.Sprintf("[% 4d(%4d):% 4d(%4d)] ", rootPID, pid, rootTID, tid)
+		t.logPrefix.Store(&prefix)
 	}
 
 	t.rebuildTraceContext(rootTID)

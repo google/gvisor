@@ -139,7 +139,7 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r wire.Reader) error {
 		return err
 	}
 	newMappings := make([]uintptr, f.fileSize>>chunkShift)
-	f.mappings.Store(newMappings)
+	f.mappings.Store(&newMappings)
 	if _, err := state.Load(ctx, r, &f.usage); err != nil {
 		return err
 	}

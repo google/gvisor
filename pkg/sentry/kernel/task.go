@@ -411,7 +411,7 @@ type Task struct {
 
 	// logPrefix is a string containing the task's thread ID in the root PID
 	// namespace, and is prepended to log messages emitted by Task.Infof etc.
-	logPrefix atomic.Value `state:"nosave"`
+	logPrefix atomic.Pointer[string] `state:"nosave"`
 
 	// traceContext and traceTask are both used for tracing, and are
 	// updated along with the logPrefix in updateInfoLocked.
@@ -450,12 +450,10 @@ type Task struct {
 
 	// seccomp contains all seccomp-bpf syscall filters applicable to the task.
 	// The type of the atomic is *taskSeccomp.
-	// Writing needs to be protected by the signal mutex. Note that due to
-	// atomic.Value limitations (atomic.Value.Store(nil) panics), a nil
-	// seccomp is always represented as a typed nil (i.e. (*taskSeccomp)(nil)).
+	// Writing needs to be protected by the signal mutex.
 	//
 	// seccomp is owned by the task goroutine.
-	seccomp atomic.Value `state:".(*taskSeccomp)"`
+	seccomp atomic.Pointer[taskSeccomp] `state:".(*taskSeccomp)"`
 
 	// If cleartid is non-zero, treat it as a pointer to a ThreadID in the
 	// task's virtual address space; when the task exits, set the pointed-to
@@ -622,7 +620,7 @@ func (t *Task) loadPtraceTracer(tracer *Task) {
 }
 
 func (t *Task) saveSeccomp() *taskSeccomp {
-	return t.seccomp.Load().(*taskSeccomp)
+	return t.seccomp.Load()
 }
 
 func (t *Task) loadSeccomp(seccompData *taskSeccomp) {
@@ -632,7 +630,7 @@ func (t *Task) loadSeccomp(seccompData *taskSeccomp) {
 // afterLoad is invoked by stateify.
 func (t *Task) afterLoad(gocontext.Context) {
 	t.updateInfoLocked()
-	if ts := t.seccomp.Load().(*taskSeccomp); ts != nil {
+	if ts := t.seccomp.Load(); ts != nil {
 		ts.populateCache(t)
 	}
 	t.interruptChan = make(chan struct{}, 1)
