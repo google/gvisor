@@ -141,7 +141,7 @@ func (t *Task) checkSeccompSyscall(sysno int32, args arch.SyscallArguments, ip h
 
 func (t *Task) evaluateSyscallFilters(sysno int32, args arch.SyscallArguments, ip hostarch.Addr) uint32 {
 	ret := uint32(linux.SECCOMP_RET_ALLOW)
-	ts := t.seccomp.Load().(*taskSeccomp)
+	ts := t.seccomp.Load()
 	if ts == nil {
 		return ret
 	}
@@ -280,7 +280,7 @@ func (t *Task) AppendSyscallFilter(p bpf.Program, syncAll bool) error {
 	totalLength := p.Length()
 	newSeccomp := &taskSeccomp{}
 
-	if ts := t.seccomp.Load().(*taskSeccomp); ts != nil {
+	if ts := t.seccomp.Load(); ts != nil {
 		for _, f := range ts.filters {
 			totalLength += f.Length() + 4
 		}
@@ -313,7 +313,7 @@ func (t *Task) AppendSyscallFilter(p bpf.Program, syncAll bool) error {
 // seccomp syscall filtering mode, appropriate for both prctl(PR_GET_SECCOMP)
 // and /proc/[pid]/status.
 func (t *Task) SeccompMode() int {
-	if ts := t.seccomp.Load().(*taskSeccomp); ts != nil && len(ts.filters) > 0 {
+	if ts := t.seccomp.Load(); ts != nil && len(ts.filters) > 0 {
 		return linux.SECCOMP_MODE_FILTER
 	}
 	return linux.SECCOMP_MODE_NONE

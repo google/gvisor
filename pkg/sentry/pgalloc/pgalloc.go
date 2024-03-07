@@ -153,7 +153,7 @@ type MemoryFile struct {
 	// operations. This allows MemoryFile.MapInternal to avoid locking in the
 	// common case where chunk mappings already exist.
 	mappingsMu mappingsMutex
-	mappings   atomic.Value
+	mappings   atomic.Pointer[[]uintptr]
 
 	// destroyed is set by Destroy to instruct the reclaimer goroutine to
 	// release resources and exit. destroyed is protected by mu.
@@ -351,7 +351,7 @@ func NewMemoryFile(file *os.File, opts MemoryFileOpts) (*MemoryFile, error) {
 		file:      file,
 		evictable: make(map[EvictableMemoryUser]*evictableMemoryUserInfo),
 	}
-	f.mappings.Store(make([]uintptr, 0))
+	f.mappings.Store(&[]uintptr{})
 	f.reclaimCond.L = &f.mu
 
 	if f.opts.DelayedEviction == DelayedEvictionEnabled && f.opts.UseHostMemcgPressure {
@@ -567,10 +567,10 @@ func (f *MemoryFile) allocate(length uint64, opts *AllocOpts) (memmap.FileRange,
 		}
 		f.fileSize = newFileSize
 		f.mappingsMu.Lock()
-		oldMappings := f.mappings.Load().([]uintptr)
+		oldMappings := *f.mappings.Load()
 		newMappings := make([]uintptr, newFileSize>>chunkShift)
 		copy(newMappings, oldMappings)
-		f.mappings.Store(newMappings)
+		f.mappings.Store(&newMappings)
 		f.mappingsMu.Unlock()
 	}
 
@@ -962,7 +962,7 @@ func (f *MemoryFile) MapInternal(fr memmap.FileRange, at hostarch.AccessType) (s
 // forEachMappingSlice invokes fn on a sequence of byte slices that
 // collectively map all bytes in fr.
 func (f *MemoryFile) forEachMappingSlice(fr memmap.FileRange, fn func([]byte)) error {
-	mappings := f.mappings.Load().([]uintptr)
+	mappings := *f.mappings.Load()
 	for chunkStart := fr.Start &^ chunkMask; chunkStart < fr.End; chunkStart += chunkSize {
 		chunk := int(chunkStart >> chunkShift)
 		m := atomic.LoadUintptr(&mappings[chunk])
@@ -991,7 +991,7 @@ func (f *MemoryFile) getChunkMapping(chunk int) ([]uintptr, uintptr, error) {
 	defer f.mappingsMu.Unlock()
 	// Another thread may have replaced f.mappings altogether due to file
 	// expansion.
-	mappings := f.mappings.Load().([]uintptr)
+	mappings := *f.mappings.Load()
 	// Another thread may have already mapped the chunk.
 	if m := mappings[chunk]; m != 0 {
 		return mappings, m, nil
@@ -1395,7 +1395,7 @@ func (f *MemoryFile) runReclaim() {
 	f.file = nil
 	f.mappingsMu.Lock()
 	defer f.mappingsMu.Unlock()
-	mappings := f.mappings.Load().([]uintptr)
+	mappings := *f.mappings.Load()
 	for i, m := range mappings {
 		if m != 0 {
 			_, _, errno := unix.Syscall(unix.SYS_MUNMAP, m, chunkSize, 0)
@@ -1404,8 +1404,8 @@ func (f *MemoryFile) runReclaim() {
 			}
 		}
 	}
-	// Similarly, invalidate f.mappings. (atomic.Value.Store(nil) panics.)
-	f.mappings.Store([]uintptr{})
+	// Similarly, invalidate f.mappings
+	f.mappings.Store(nil)
 	f.mu.Unlock()
 
 	// This must be called without holding f.mu to avoid circular lock
