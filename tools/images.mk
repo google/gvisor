@@ -168,7 +168,7 @@ load-%: register-cross ## Pull or build an image locally.
 # tag.
 push-%:
 	gcloud artifacts docker images describe  $(call remote_image,$*):$(call tag,$*) >&2 || \
-	docker image push $(call remote_image,$*):$(call tag,$*) >&2
+	( $(call rebuild,$*) && docker image push $(call remote_image,$*):$(call tag,$*) >&2 )
 
 # register-cross registers the necessary qemu binaries for cross-compilation.
 # This may be used by any target that may execute containers that are not the
