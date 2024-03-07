@@ -74,6 +74,10 @@ load-all-test-images: ## Load all test images.
 load-all-test-images: $(patsubst %,load-%,$(TEST_IMAGES))
 .PHONY: load-all-test-images
 
+test-all-test-images: ## Test all test images.
+test-all-test-images: $(patsubst %,test-%,$(TEST_IMAGES))
+.PHONY: test-all-test-images
+
 push-all-images: ## Push all images.
 push-all-images: $(patsubst %,push-%,$(ALL_IMAGES))
 .PHONY: push-all-images
@@ -129,10 +133,13 @@ tag-%: ## Tag a local image.
 	@$(call header,TAG $*)
 	@$(call local_tag,$*) && $(call latest_tag,$*)
 
+image_manifest = \
+	docker run --rm gcr.io/go-containerregistry/crane manifest $(call remote_image,$(1)):$(call tag,$(1))
+
 # pull forces the image to be pulled.
 pull = \
   $(call header,PULL $(1)) && \
-  docker pull -q $(DOCKER_PLATFORM_ARGS) $(call remote_image,$(1)):$(call tag,$(1)) >&2 && \
+  docker pull $(DOCKER_PLATFORM_ARGS) $(call remote_image,$(1)):$(call tag,$(1)) >&2 && \
   $(call local_tag,$(1)) && \
   $(call latest_tag,$(1))
 pull-%: register-cross ## Force a repull of the image.
@@ -163,11 +170,14 @@ rebuild-%: register-cross ## Force rebuild an image locally.
 load-%: register-cross ## Pull or build an image locally.
 	@($(call pull,$*)) || ($(call rebuild,$*))
 
+test-%: register-cross ## Build an image locally if the remote doesn't exist.
+	@($(call image_manifest,$*)) >&2 || ($(call rebuild,$*))
+
 # push pushes the remote image, after validating that the tag doesn't exist
 # yet. Note that this generic rule will match the fully-expanded remote image
 # tag.
 push-%:
-	gcloud artifacts docker images describe  $(call remote_image,$*):$(call tag,$*) >&2 || \
+	$(call image_manifest,$*) >&2 || \
 	( $(call rebuild,$*) && docker image push $(call remote_image,$*):$(call tag,$*) >&2 )
 
 # register-cross registers the necessary qemu binaries for cross-compilation.
