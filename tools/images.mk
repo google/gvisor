@@ -163,11 +163,12 @@ rebuild-%: register-cross ## Force rebuild an image locally.
 load-%: register-cross ## Pull or build an image locally.
 	@($(call pull,$*)) || ($(call rebuild,$*))
 
-# push pushes the remote image, after either pulling (to validate that the tag
-# already exists) or building manually. Note that this generic rule will match
-# the fully-expanded remote image tag.
-push-%: load-% ## Push a given image.
-	@docker image push -q $(call remote_image,$*):$(call tag,$*) >&2
+# push pushes the remote image, after validating that the tag doesn't exist
+# yet. Note that this generic rule will match the fully-expanded remote image
+# tag.
+push-%:
+	gcloud artifacts docker images describe  $(call remote_image,$*):$(call tag,$*) >&2 || \
+	docker image push $(call remote_image,$*):$(call tag,$*) >&2
 
 # register-cross registers the necessary qemu binaries for cross-compilation.
 # This may be used by any target that may execute containers that are not the
