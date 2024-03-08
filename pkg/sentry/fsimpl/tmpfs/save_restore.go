@@ -23,11 +23,29 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
-// afterLoad is called by stateify.
-func (fs *filesystem) afterLoad(goContext.Context) {
-	if !fs.privateMF {
-		fs.mf = fs.mfp.MemoryFile()
+// saveMf is called by stateify.
+func (fs *filesystem) saveMf() string {
+	if !fs.mf.IsSavable() {
+		panic(fmt.Sprintf("Can't save tmpfs filesystem because its MemoryFile is not savable: %v", fs.mf))
 	}
+	return fs.mf.RestoreID()
+}
+
+// loadMf is called by stateify.
+func (fs *filesystem) loadMf(ctx goContext.Context, restoreID string) {
+	if restoreID == "" {
+		fs.mf = pgalloc.MemoryFileFromContext(ctx)
+		return
+	}
+	mfmap := pgalloc.MemoryFileMapFromContext(ctx)
+	if mfmap == nil {
+		panic("CtxMemoryFileMap was not provided")
+	}
+	mf, ok := mfmap[restoreID]
+	if !ok {
+		panic(fmt.Sprintf("Memory file for %q not found in CtxMemoryFileMap", restoreID))
+	}
+	fs.mf = mf
 }
 
 // saveParent is called by stateify.
@@ -42,34 +60,23 @@ func (d *dentry) loadParent(_ goContext.Context, parent *dentry) {
 
 // PrepareSave implements vfs.FilesystemImplSaveRestoreExtension.PrepareSave.
 func (fs *filesystem) PrepareSave(ctx context.Context) error {
-	if !fs.privateMF {
+	restoreID := fs.mf.RestoreID()
+	if restoreID == "" {
 		return nil
 	}
 	mfmap := pgalloc.MemoryFileMapFromContext(ctx)
 	if mfmap == nil {
 		return fmt.Errorf("CtxMemoryFileMap was not provided")
 	}
-	if _, ok := mfmap[fs.uniqueID.String()]; ok {
-		return fmt.Errorf("memory file for %q already exists in CtxMemoryFileMap", fs.uniqueID)
+	if _, ok := mfmap[restoreID]; ok {
+		return fmt.Errorf("memory file for %q already exists in CtxMemoryFileMap", restoreID)
 	}
-	mfmap[fs.uniqueID.String()] = fs.mf
+	mfmap[restoreID] = fs.mf
 	return nil
 }
 
 // CompleteRestore implements
 // vfs.FilesystemImplSaveRestoreExtension.CompleteRestore.
 func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRestoreOptions) error {
-	if !fs.privateMF {
-		return nil
-	}
-	mfmap := pgalloc.MemoryFileMapFromContext(ctx)
-	if mfmap == nil {
-		return fmt.Errorf("CtxMemoryFileMap was not provided")
-	}
-	mf, ok := mfmap[fs.uniqueID.String()]
-	if !ok {
-		return fmt.Errorf("memory file for %q not found in CtxMemoryFileMap", fs.uniqueID)
-	}
-	fs.mf = mf
 	return nil
 }

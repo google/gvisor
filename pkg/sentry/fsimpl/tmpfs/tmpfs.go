@@ -63,20 +63,8 @@ type filesystem struct {
 	vfsfs vfs.Filesystem
 
 	// mf is used to allocate memory that stores regular file contents. mf is
-	// immutable, except it may to changed during restore.
-	mf *pgalloc.MemoryFile `state:"nosave"`
-
-	// privateMF indicates whether mf is private to this tmpfs mount. If so,
-	// tmpfs takes ownership of mf. privateMF is immutable.
-	privateMF bool
-
-	// uniqueID is an opaque string used to reassociate the filesystem with its
-	// private MemoryFile during checkpoint and restore.
-	uniqueID vfs.RestoreID
-
-	// mfp is used to provide mf, when privateMF == false. This is required to
-	// re-provide mf on restore. mfp is immutable.
-	mfp pgalloc.MemoryFileProvider
+	// immutable, except it is changed during restore.
+	mf *pgalloc.MemoryFile `state:".(string)"`
 
 	// clock is a realtime clock used to set timestamps in file operations.
 	clock time.Clock
@@ -156,10 +144,6 @@ type FilesystemOpts struct {
 	// AllowXattrPrefix is a set of xattr namespace prefixes that this
 	// tmpfs mount will allow.
 	AllowXattrPrefix []string
-
-	// If UniqueID is non-empty, it is an opaque string used to reassociate the
-	// filesystem with its private MemoryFile during checkpoint and restore.
-	UniqueID vfs.RestoreID
 }
 
 // Default size limit mount option. It is immutable after initialization.
@@ -186,13 +170,10 @@ func getDefaultSizeLimit(disable bool) uint64 {
 
 // GetFilesystem implements vfs.FilesystemType.GetFilesystem.
 func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.VirtualFilesystem, creds *auth.Credentials, _ string, opts vfs.GetFilesystemOptions) (*vfs.Filesystem, *vfs.Dentry, error) {
-	mfp := pgalloc.MemoryFileProviderFromContext(ctx)
-	if mfp == nil {
-		panic("MemoryFileProviderFromContext returned nil")
+	mf := pgalloc.MemoryFileFromContext(ctx)
+	if mf == nil {
+		panic("CtxMemoryFile returned nil")
 	}
-	mf := mfp.MemoryFile()
-	privateMF := false
-	var uniqueID vfs.RestoreID
 	rootFileType := uint16(linux.S_IFDIR)
 	disableDefaultSizeLimit := false
 	newFSType := vfs.FilesystemType(&fstype)
@@ -218,16 +199,10 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		disableDefaultSizeLimit = tmpfsOpts.DisableDefaultSizeLimit
 		if tmpfsOpts.MemoryFile != nil {
 			mf = tmpfsOpts.MemoryFile
-			privateMF = true
 		}
-		uniqueID = tmpfsOpts.UniqueID
 		for _, xattr := range tmpfsOpts.AllowXattrPrefix {
 			allowXattrPrefix[xattr] = struct{}{}
 		}
-	}
-	if privateMF && len(uniqueID.Path) == 0 {
-		ctx.Warningf("tmpfs.FilesystemType.GetFilesystem: privateMF requires uniqueID to be set")
-		return nil, nil, linuxerr.EINVAL
 	}
 
 	mopts := vfs.GenericParseMountOptions(opts.Data)
@@ -311,9 +286,6 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	}
 	fs := filesystem{
 		mf:               mf,
-		privateMF:        privateMF,
-		uniqueID:         uniqueID,
-		mfp:              mfp,
 		clock:            clock,
 		devMinor:         devMinor,
 		mopts:            opts.Data,
@@ -351,7 +323,9 @@ func (fs *filesystem) Release(ctx context.Context) {
 		fs.root.releaseChildrenLocked(ctx)
 	}
 	fs.mu.Unlock()
-	if fs.privateMF {
+	if fs.mf.RestoreID() != "" {
+		// If RestoreID is set, then this is a private MemoryFile which needs to be
+		// destroyed since this tmpfs is the only user.
 		fs.mf.Destroy()
 	}
 }
