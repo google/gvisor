@@ -1,0 +1,45 @@
+#!/bin/bash
+
+set -euo pipefail
+
+quiet_stderr=false
+for arg; do
+  if [[ "$arg" == '--out' ]] || echo "$arg" | grep -qE '^--out='; then
+    echo 'Cannot specify --out parameter; the image file will be written to stdout.' >&2
+    exit 1
+  fi
+  if [[ "$arg" == '--quiet_stderr' ]]; then
+    quiet_stderr=true
+  fi
+done
+
+# Try to find out pixel size of the shell.
+terminal_pixel_width=0
+terminal_pixel_height=0
+if [[ -t 1 ]]; then
+  echo -e -n '\e[14t'; IFS=';' read -rs -t 0.5 -d 't' rest height width <$(tty)
+  terminal_pixel_width="$width"
+  terminal_pixel_height="$height"
+fi
+
+out_dir="$(mktemp -d)"
+
+set +e
+  /generate_image.py \
+    --out="$out_dir/out_image" \
+    --terminal_pixel_width="$terminal_pixel_width" \
+    --terminal_pixel_height="$terminal_pixel_height" \
+    "$@" \
+    1>/dev/null \
+    2>"$out_dir/stderr"
+  return_code="$?"
+set -e
+
+if [[ "$return_code" == 0 ]]; then
+  cat "$out_dir/out_image"
+fi
+if [[ "$return_code" != 0 ]] || [[ "$quiet_stderr" == false ]]; then
+  cat "$out_dir/stderr" >&2
+fi
+rm -rf "$out_dir"
+exit "$return_code"
