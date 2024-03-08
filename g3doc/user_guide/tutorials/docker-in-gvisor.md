@@ -21,27 +21,16 @@ Since Docker requires root privileges and a full set of capabilities, a gVisor
 sandbox needs to be started in privileged mode:
 
 ```shell
-$ docker run --runtime runsc -it --rm --privileged docker-in-gvisor bash
+$ docker run --runtime runsc -d --rm --privileged --name docker-in-gvisor docker-in-gvisor
 ```
 
-All following commands have to be executed inside a gVsior sandbox.
+Now, we can build and run Docker containers.
 
-For the Docker daemon to operate correctly, the devices cgroup must be mounted
-using the following commands:
+Let's enter in the gvisor sandbox and run some docker commands:
 
 ```shell
-mount -t tmpfs cgroups /sys/fs/cgroup
-mkdir /sys/fs/cgroup/devices
-mount -t cgroup -o devices devices /sys/fs/cgroup/devices
+docker exec -it docker-in-gvisor bash
 ```
-
-Afterwards, the daemon can be started with the following command:
-
-```shell
-/usr/bin/dockerd --bridge=none --iptables=false --ip6tables=false
-```
-
-Now, we can build and run Docker containers
 
 ```shell
 $ mkdir whalesay && cd whalesay
