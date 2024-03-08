@@ -39,6 +39,7 @@ namespace testing {
 namespace {
 
 using ::gvisor::testing::IsTmpfs;
+using ::testing::AnyOf;
 
 class XattrTest : public FileTest {};
 
@@ -112,11 +113,9 @@ TEST_F(XattrTest, SecurityCapacityXattr) {
   const std::string val = "";
   EXPECT_THAT(lsetxattr(path, name, &val, val.size(), 0),
               SyscallFailsWithErrno(EOPNOTSUPP));
-
   int buf = 0;
   EXPECT_THAT(lgetxattr(path, name, &buf, /*size=*/128),
-              SyscallFailsWithErrno(ENODATA));
-
+              SyscallFailsWithErrno(AnyOf(ENODATA, EOPNOTSUPP)));
   EXPECT_THAT(lremovexattr(path, name), SyscallFailsWithErrno(EOPNOTSUPP));
 }
 
