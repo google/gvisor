@@ -61,15 +61,3 @@ go_test(
         "//pkg/test/testutil",
     ],
 )
-
-go_test(
-    name = "imagegen_test",
-    srcs = ["imagegen_test.go"],
-    tags = [
-        "local",
-        "noguitar",
-        "notap",
-    ],
-    visibility = ["//:sandbox"],
-    deps = ["//test/gpu/stablediffusion"],
-)
