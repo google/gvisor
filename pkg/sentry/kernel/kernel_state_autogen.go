@@ -1668,6 +1668,7 @@ func (image *TaskImage) StateFields() []string {
 		"MemoryManager",
 		"fu",
 		"st",
+		"fileCaps",
 	}
 }
 
@@ -1683,6 +1684,7 @@ func (image *TaskImage) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &image.Arch)
 	stateSinkObject.Save(2, &image.MemoryManager)
 	stateSinkObject.Save(3, &image.fu)
+	stateSinkObject.Save(5, &image.fileCaps)
 }
 
 func (image *TaskImage) afterLoad(context.Context) {}
@@ -1693,6 +1695,7 @@ func (image *TaskImage) StateLoad(ctx context.Context, stateSourceObject state.S
 	stateSourceObject.Load(1, &image.Arch)
 	stateSourceObject.Load(2, &image.MemoryManager)
 	stateSourceObject.Load(3, &image.fu)
+	stateSourceObject.Load(5, &image.fileCaps)
 	stateSourceObject.LoadValue(4, new(syscallTableInfo), func(y any) { image.loadSt(y.(syscallTableInfo)) })
 }
 

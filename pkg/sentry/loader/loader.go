@@ -38,6 +38,10 @@ import (
 	"gvisor.dev/gvisor/pkg/usermem"
 )
 
+const (
+	securityCapability = linux.XATTR_SECURITY_PREFIX + "capability"
+)
+
 // LoadArgs holds specifications for an executable file to be loaded.
 type LoadArgs struct {
 	// MemoryManager is the memory manager to load the executable into.
@@ -236,6 +240,18 @@ func loadExecutable(ctx context.Context, args LoadArgs) (loadedELF, *arch.Contex
 	return loadedELF{}, nil, nil, nil, linuxerr.ELOOP
 }
 
+// ImageInfo represents the information for the loaded image.
+type ImageInfo struct {
+	// The target operating system of the image.
+	OS abi.OS
+	// AMD64 context.
+	Arch *arch.Context64
+	// The base name of the binary.
+	Name string
+	// The binary's file capability.
+	FileCaps string
+}
+
 // Load loads args.File into a MemoryManager. If args.File is nil, the path
 // args.Filename is resolved and loaded instead.
 //
@@ -245,18 +261,25 @@ func loadExecutable(ctx context.Context, args LoadArgs) (loadedELF, *arch.Contex
 // Preconditions:
 //   - The Task MemoryManager is empty.
 //   - Load is called on the Task goroutine.
-func Load(ctx context.Context, args LoadArgs, extraAuxv []arch.AuxEntry, vdso *VDSO) (abi.OS, *arch.Context64, string, *syserr.Error) {
+func Load(ctx context.Context, args LoadArgs, extraAuxv []arch.AuxEntry, vdso *VDSO) (ImageInfo, *syserr.Error) {
 	// Load the executable itself.
 	loaded, ac, file, newArgv, err := loadExecutable(ctx, args)
 	if err != nil {
-		return 0, nil, "", syserr.NewDynamic(fmt.Sprintf("failed to load %s: %v", args.Filename, err), syserr.FromError(err).ToLinux())
+		return ImageInfo{}, syserr.NewDynamic(fmt.Sprintf("failed to load %s: %v", args.Filename, err), syserr.FromError(err).ToLinux())
 	}
 	defer file.DecRef(ctx)
+	xattr, err := file.GetXattr(ctx, &vfs.GetXattrOptions{Name: securityCapability, Size: linux.XATTR_CAPS_SZ_3})
+	switch {
+	case linuxerr.Equals(linuxerr.ENODATA, err), linuxerr.Equals(linuxerr.ENOTSUP, err):
+		xattr = ""
+	case err != nil:
+		return ImageInfo{}, syserr.NewDynamic(fmt.Sprintf("failed to read file capabilities of %s: %v", args.Filename, err), syserr.FromError(err).ToLinux())
+	}
 
 	// Load the VDSO.
 	vdsoAddr, err := loadVDSO(ctx, args.MemoryManager, vdso, loaded)
 	if err != nil {
-		return 0, nil, "", syserr.NewDynamic(fmt.Sprintf("error loading VDSO: %v", err), syserr.FromError(err).ToLinux())
+		return ImageInfo{}, syserr.NewDynamic(fmt.Sprintf("error loading VDSO: %v", err), syserr.FromError(err).ToLinux())
 	}
 
 	// Setup the heap. brk starts at the next page after the end of the
@@ -264,29 +287,29 @@ func Load(ctx context.Context, args LoadArgs, extraAuxv []arch.AuxEntry, vdso *V
 	// loaded.end is available for its use.
 	e, ok := loaded.end.RoundUp()
 	if !ok {
-		return 0, nil, "", syserr.NewDynamic(fmt.Sprintf("brk overflows: %#x", loaded.end), errno.ENOEXEC)
+		return ImageInfo{}, syserr.NewDynamic(fmt.Sprintf("brk overflows: %#x", loaded.end), errno.ENOEXEC)
 	}
 	args.MemoryManager.BrkSetup(ctx, e)
 
 	// Allocate our stack.
 	stack, err := allocStack(ctx, args.MemoryManager, ac)
 	if err != nil {
-		return 0, nil, "", syserr.NewDynamic(fmt.Sprintf("Failed to allocate stack: %v", err), syserr.FromError(err).ToLinux())
+		return ImageInfo{}, syserr.NewDynamic(fmt.Sprintf("Failed to allocate stack: %v", err), syserr.FromError(err).ToLinux())
 	}
 
 	// Push the original filename to the stack, for AT_EXECFN.
 	if _, err := stack.PushNullTerminatedByteSlice([]byte(args.Filename)); err != nil {
-		return 0, nil, "", syserr.NewDynamic(fmt.Sprintf("Failed to push exec filename: %v", err), syserr.FromError(err).ToLinux())
+		return ImageInfo{}, syserr.NewDynamic(fmt.Sprintf("Failed to push exec filename: %v", err), syserr.FromError(err).ToLinux())
 	}
 	execfn := stack.Bottom
 
 	// Push 16 random bytes on the stack which AT_RANDOM will point to.
 	var b [16]byte
 	if _, err := rand.Read(b[:]); err != nil {
-		return 0, nil, "", syserr.NewDynamic(fmt.Sprintf("Failed to read random bytes: %v", err), syserr.FromError(err).ToLinux())
+		return ImageInfo{}, syserr.NewDynamic(fmt.Sprintf("Failed to read random bytes: %v", err), syserr.FromError(err).ToLinux())
 	}
 	if _, err = stack.PushNullTerminatedByteSlice(b[:]); err != nil {
-		return 0, nil, "", syserr.NewDynamic(fmt.Sprintf("Failed to push random bytes: %v", err), syserr.FromError(err).ToLinux())
+		return ImageInfo{}, syserr.NewDynamic(fmt.Sprintf("Failed to push random bytes: %v", err), syserr.FromError(err).ToLinux())
 	}
 	random := stack.Bottom
 
@@ -311,7 +334,7 @@ func Load(ctx context.Context, args LoadArgs, extraAuxv []arch.AuxEntry, vdso *V
 
 	sl, err := stack.Load(newArgv, args.Envv, auxv)
 	if err != nil {
-		return 0, nil, "", syserr.NewDynamic(fmt.Sprintf("Failed to load stack: %v", err), syserr.FromError(err).ToLinux())
+		return ImageInfo{}, syserr.NewDynamic(fmt.Sprintf("Failed to load stack: %v", err), syserr.FromError(err).ToLinux())
 	}
 
 	m := args.MemoryManager
@@ -331,5 +354,10 @@ func Load(ctx context.Context, args LoadArgs, extraAuxv []arch.AuxEntry, vdso *V
 		name = name[:linux.TASK_COMM_LEN-1]
 	}
 
-	return loaded.os, ac, name, nil
+	return ImageInfo{
+		OS:       loaded.os,
+		Arch:     ac,
+		Name:     name,
+		FileCaps: xattr,
+	}, nil
 }

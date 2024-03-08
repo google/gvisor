@@ -325,7 +325,7 @@ func CheckXattrPermissions(creds *auth.Credentials, ats AccessTypes, mode linux.
 		}
 	case strings.HasPrefix(name, linux.XATTR_SECURITY_PREFIX):
 		if ats.MayRead() {
-			return linuxerr.ENODATA
+			return nil
 		}
 		return linuxerr.EOPNOTSUPP
 	}
