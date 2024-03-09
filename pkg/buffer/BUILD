@@ -21,7 +21,7 @@ go_template_instance(
     name = "view_list",
     out = "view_list.go",
     package = "buffer",
-    prefix = "view",
+    prefix = "View",
     template = "//pkg/ilist:generic_list",
     types = {
         "Element": "*View",

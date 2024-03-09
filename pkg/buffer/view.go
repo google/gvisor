@@ -48,7 +48,7 @@ var viewPool = sync.Pool{
 //
 // +stateify savable
 type View struct {
-	viewEntry `state:"nosave"`
+	ViewEntry `state:"nosave"`
 	read      int
 	write     int
 	chunk     *chunk
