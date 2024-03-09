@@ -15,6 +15,7 @@
 package loader
 
 import (
+	"context"
 	"debug/elf"
 )
 
@@ -40,7 +41,7 @@ func (v *VDSO) savePhdrs() []elfProgHeader {
 }
 
 // loadPhdrs is invoked by stateify.
-func (v *VDSO) loadPhdrs(s []elfProgHeader) {
+func (v *VDSO) loadPhdrs(_ context.Context, s []elfProgHeader) {
 	v.phdrs = make([]elf.ProgHeader, 0, len(s))
 	for _, h := range s {
 		v.phdrs = append(v.phdrs, elf.ProgHeader(h))

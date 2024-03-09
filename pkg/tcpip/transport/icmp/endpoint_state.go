@@ -30,7 +30,7 @@ func (p *icmpPacket) saveReceivedAt() int64 {
 }
 
 // loadReceivedAt is invoked by stateify.
-func (p *icmpPacket) loadReceivedAt(nsec int64) {
+func (p *icmpPacket) loadReceivedAt(_ context.Context, nsec int64) {
 	p.receivedAt = time.Unix(0, nsec)
 }
 

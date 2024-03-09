@@ -14,6 +14,10 @@
 
 package tcp
 
+import (
+	"context"
+)
+
 // saveOptions is invoked by stateify.
 func (s *segment) saveOptions() []byte {
 	// We cannot save s.options directly as it may point to s.data's trimmed
@@ -23,7 +27,7 @@ func (s *segment) saveOptions() []byte {
 }
 
 // loadOptions is invoked by stateify.
-func (s *segment) loadOptions(options []byte) {
+func (s *segment) loadOptions(_ context.Context, options []byte) {
 	// NOTE: We cannot point s.options back into s.data's trimmed tail. But
 	// it is OK as they do not need to aliased. Plus, options is already
 	// allocated so there is no cost here.

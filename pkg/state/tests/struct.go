@@ -14,6 +14,10 @@
 
 package tests
 
+import (
+	"context"
+)
+
 type unregisteredEmptyStruct struct{}
 
 // typeOnlyEmptyStruct just implements the state.Type interface.
@@ -82,7 +86,7 @@ func (ifv *innerFieldValue) saveV() *savedFieldValue {
 	return &savedFieldValue{ifv.v}
 }
 
-func (ifv *innerFieldValue) loadV(sfv *savedFieldValue) {
+func (ifv *innerFieldValue) loadV(_ context.Context, sfv *savedFieldValue) {
 	ifv.v = sfv.v
 }
 

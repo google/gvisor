@@ -14,10 +14,14 @@
 
 package fuse
 
+import (
+	"context"
+)
+
 func (fd *DeviceFD) saveFullQueueCh() int {
 	return cap(fd.fullQueueCh)
 }
 
-func (fd *DeviceFD) loadFullQueueCh(capacity int) {
+func (fd *DeviceFD) loadFullQueueCh(_ context.Context, capacity int) {
 	fd.fullQueueCh = make(chan struct{}, capacity)
 }

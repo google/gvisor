@@ -39,7 +39,7 @@ func (v *valueLoadStruct) saveV() int64 {
 	return int64(v.v) // Save as int64.
 }
 
-func (v *valueLoadStruct) loadV(value int64) {
+func (v *valueLoadStruct) loadV(_ context.Context, value int64) {
 	v.v = int(value) // Load as int.
 }
 

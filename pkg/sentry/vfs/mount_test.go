@@ -80,7 +80,7 @@ const enableComparativeBenchmarks = false
 
 func newBenchMount() *Mount {
 	mount := &Mount{}
-	mount.loadKey(VirtualDentry{&Mount{}, &Dentry{}})
+	mount.setKey(VirtualDentry{&Mount{}, &Dentry{}})
 	return mount
 }
 

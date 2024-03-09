@@ -15,6 +15,7 @@
 package erofs
 
 import (
+	goContext "context"
 	"fmt"
 	"os"
 
@@ -62,6 +63,6 @@ func (d *dentry) saveParent() *dentry {
 }
 
 // loadParent is called by stateify.
-func (d *dentry) loadParent(parent *dentry) {
+func (d *dentry) loadParent(_ goContext.Context, parent *dentry) {
 	d.parent.Store(parent)
 }

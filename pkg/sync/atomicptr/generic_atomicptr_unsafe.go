@@ -8,6 +8,7 @@
 package seqatomic
 
 import (
+	"context"
 	"sync/atomic"
 	"unsafe"
 )
@@ -31,7 +32,7 @@ func (p *AtomicPtr) savePtr() *Value {
 	return p.Load()
 }
 
-func (p *AtomicPtr) loadPtr(v *Value) {
+func (p *AtomicPtr) loadPtr(_ context.Context, v *Value) {
 	p.Store(v)
 }
 

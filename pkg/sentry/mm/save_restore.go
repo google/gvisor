@@ -113,7 +113,7 @@ func (v *vma) saveRealPerms() int {
 	return b
 }
 
-func (v *vma) loadRealPerms(b int) {
+func (v *vma) loadRealPerms(_ goContext.Context, b int) {
 	if b&vmaRealPermsRead > 0 {
 		v.realPerms.Read = true
 	}

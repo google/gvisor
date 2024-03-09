@@ -615,7 +615,7 @@ func (t *Task) savePtraceTracer() *Task {
 	return t.ptraceTracer.Load()
 }
 
-func (t *Task) loadPtraceTracer(tracer *Task) {
+func (t *Task) loadPtraceTracer(_ gocontext.Context, tracer *Task) {
 	t.ptraceTracer.Store(tracer)
 }
 
@@ -623,7 +623,7 @@ func (t *Task) saveSeccomp() *taskSeccomp {
 	return t.seccomp.Load()
 }
 
-func (t *Task) loadSeccomp(seccompData *taskSeccomp) {
+func (t *Task) loadSeccomp(_ gocontext.Context, seccompData *taskSeccomp) {
 	t.seccomp.Store(seccompData)
 }
 

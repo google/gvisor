@@ -15,6 +15,7 @@
 package socket
 
 import (
+	"context"
 	"time"
 )
 
@@ -22,6 +23,6 @@ func (i *IPControlMessages) saveTimestamp() int64 {
 	return i.Timestamp.UnixNano()
 }
 
-func (i *IPControlMessages) loadTimestamp(nsec int64) {
+func (i *IPControlMessages) loadTimestamp(_ context.Context, nsec int64) {
 	i.Timestamp = time.Unix(0, nsec)
 }
