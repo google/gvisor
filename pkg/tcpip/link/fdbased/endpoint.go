@@ -642,8 +642,16 @@ func (e *endpoint) sendBatch(batchFDInfo fdInfo, pkts []*stack.PacketBuffer) (in
 				vnetHdrBuf = vnetHdr.marshal()
 			}
 
-			views := pkt.AsSlices()
-			numIovecs := len(views)
+			views, offset := pkt.AsViewList()
+			var skipped int
+			var view *buffer.View
+			for view = views.Front(); view != nil && offset >= view.Size(); view = view.Next() {
+				offset -= view.Size()
+				skipped++
+			}
+
+			// We've made it to the usable views.
+			numIovecs := views.Len() - skipped
 			if len(vnetHdrBuf) != 0 {
 				numIovecs++
 			}
@@ -665,8 +673,10 @@ func (e *endpoint) sendBatch(batchFDInfo fdInfo, pkts []*stack.PacketBuffer) (in
 			// they will escape this loop iteration via mmsgHdrs.
 			iovecs := make([]unix.Iovec, 0, numIovecs)
 			iovecs = rawfile.AppendIovecFromBytes(iovecs, vnetHdrBuf, numIovecs)
-			for _, v := range views {
-				iovecs = rawfile.AppendIovecFromBytes(iovecs, v, numIovecs)
+			// At most one slice has a non-zero offset.
+			iovecs = rawfile.AppendIovecFromBytes(iovecs, view.AsSlice()[offset:], numIovecs)
+			for view = view.Next(); view != nil; view = view.Next() {
+				iovecs = rawfile.AppendIovecFromBytes(iovecs, view.AsSlice(), numIovecs)
 			}
 
 			var mmsgHdr rawfile.MMsgHdr
