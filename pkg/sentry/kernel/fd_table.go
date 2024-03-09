@@ -15,6 +15,7 @@
 package kernel
 
 import (
+	goContext "context"
 	"fmt"
 	"math"
 	"strings"
@@ -101,7 +102,7 @@ func (f *FDTable) saveDescriptorTable() map[int32]descriptor {
 	return m
 }
 
-func (f *FDTable) loadDescriptorTable(m map[int32]descriptor) {
+func (f *FDTable) loadDescriptorTable(_ goContext.Context, m map[int32]descriptor) {
 	ctx := context.Background()
 	f.initNoLeakCheck() // Initialize table.
 	f.fdBitmap = bitmap.New(uint32(math.MaxUint16))

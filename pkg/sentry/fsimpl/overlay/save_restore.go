@@ -32,6 +32,6 @@ func (d *dentry) saveParent() *dentry {
 }
 
 // loadParent is called by stateify.
-func (d *dentry) loadParent(parent *dentry) {
+func (d *dentry) loadParent(_ context.Context, parent *dentry) {
 	d.parent.Store(parent)
 }

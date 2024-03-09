@@ -15,6 +15,7 @@
 package fuse
 
 import (
+	goContext "context"
 	"sync"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -193,7 +194,7 @@ func (conn *connection) saveInitializedChan() bool {
 	}
 }
 
-func (conn *connection) loadInitializedChan(closed bool) {
+func (conn *connection) loadInitializedChan(_ goContext.Context, closed bool) {
 	conn.initializedChan = make(chan struct{}, 1)
 	if closed {
 		close(conn.initializedChan)

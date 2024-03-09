@@ -15,6 +15,7 @@
 package netstack
 
 import (
+	"context"
 	"time"
 )
 
@@ -24,7 +25,7 @@ func (s *sock) saveTimestamp() int64 {
 	return s.timestamp.UnixNano()
 }
 
-func (s *sock) loadTimestamp(nsec int64) {
+func (s *sock) loadTimestamp(_ context.Context, nsec int64) {
 	s.readMu.Lock()
 	defer s.readMu.Unlock()
 	s.timestamp = time.Unix(0, nsec)

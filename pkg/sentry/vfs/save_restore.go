@@ -109,7 +109,7 @@ func (vfs *VirtualFilesystem) saveMounts() []*Mount {
 func (mnt *Mount) saveKey() VirtualDentry { return mnt.getKey() }
 
 // loadMounts is called by stateify.
-func (vfs *VirtualFilesystem) loadMounts(mounts []*Mount) {
+func (vfs *VirtualFilesystem) loadMounts(_ goContext.Context, mounts []*Mount) {
 	if mounts == nil {
 		return
 	}
@@ -120,7 +120,7 @@ func (vfs *VirtualFilesystem) loadMounts(mounts []*Mount) {
 }
 
 // loadKey is called by stateify.
-func (mnt *Mount) loadKey(vd VirtualDentry) { mnt.setKey(vd) }
+func (mnt *Mount) loadKey(_ goContext.Context, vd VirtualDentry) { mnt.setKey(vd) }
 
 // afterLoad is called by stateify.
 func (mnt *Mount) afterLoad(goContext.Context) {

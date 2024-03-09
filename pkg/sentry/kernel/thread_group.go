@@ -15,6 +15,7 @@
 package kernel
 
 import (
+	goContext "context"
 	"sync/atomic"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -293,7 +294,7 @@ func (tg *ThreadGroup) saveOldRSeqCritical() *OldRSeqCriticalRegion {
 }
 
 // loadOldRSeqCritical is invoked by stateify.
-func (tg *ThreadGroup) loadOldRSeqCritical(r *OldRSeqCriticalRegion) {
+func (tg *ThreadGroup) loadOldRSeqCritical(_ goContext.Context, r *OldRSeqCriticalRegion) {
 	tg.oldRSeqCritical.Store(r)
 }
 

@@ -14,12 +14,16 @@
 
 package buffer
 
+import (
+	"context"
+)
+
 // saveData is invoked by stateify.
 func (b *Buffer) saveData() []byte {
 	return b.Flatten()
 }
 
 // loadData is invoked by stateify.
-func (b *Buffer) loadData(data []byte) {
+func (b *Buffer) loadData(_ context.Context, data []byte) {
 	*b = MakeWithData(data)
 }

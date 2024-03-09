@@ -69,7 +69,7 @@ func (a *acceptQueue) saveEndpoints() []*endpoint {
 }
 
 // loadEndpoints is invoked by stateify.
-func (a *acceptQueue) loadEndpoints(acceptedEndpoints []*endpoint) {
+func (a *acceptQueue) loadEndpoints(_ context.Context, acceptedEndpoints []*endpoint) {
 	for _, ep := range acceptedEndpoints {
 		a.endpoints.PushBack(ep)
 	}
@@ -90,7 +90,7 @@ var connectingLoading sync.WaitGroup
 // Bound endpoint loading happens last.
 
 // loadState is invoked by stateify.
-func (e *endpoint) loadState(epState EndpointState) {
+func (e *endpoint) loadState(_ context.Context, epState EndpointState) {
 	// This is to ensure that the loading wait groups include all applicable
 	// endpoints before any asynchronous calls to the Wait() methods.
 	// For restore purposes we treat TimeWait like a connected endpoint.
