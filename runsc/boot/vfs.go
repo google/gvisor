@@ -637,7 +637,7 @@ func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Co
 	}
 	if filestoreFD != nil {
 		// Create memory file for disk-backed overlays.
-		mf, err := createPrivateMemoryFile(filestoreFD.ReleaseToFile("overlay-filestore"))
+		mf, err := createPrivateMemoryFile(filestoreFD.ReleaseToFile("overlay-filestore"), vfs.RestoreID{ContainerName: c.containerName, Path: dst})
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to create memory file for overlay: %v", err)
 		}
@@ -897,7 +897,7 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 			return "", nil, err
 		}
 		if m.filestoreFD != nil {
-			mf, err := createPrivateMemoryFile(m.filestoreFD.ReleaseToFile("tmpfs-filestore"))
+			mf, err := createPrivateMemoryFile(m.filestoreFD.ReleaseToFile("tmpfs-filestore"), vfs.RestoreID{ContainerName: containerName, Path: m.mount.Destination})
 			if err != nil {
 				return "", nil, fmt.Errorf("failed to create memory file for tmpfs: %v", err)
 			}
@@ -986,7 +986,7 @@ func parseKeyValue(s string) (string, string, bool) {
 	return strings.TrimSpace(tokens[0]), strings.TrimSpace(tokens[1]), true
 }
 
-func createPrivateMemoryFile(file *os.File) (*pgalloc.MemoryFile, error) {
+func createPrivateMemoryFile(file *os.File, restoreID vfs.RestoreID) (*pgalloc.MemoryFile, error) {
 	mfOpts := pgalloc.MemoryFileOpts{
 		// Private memory files are usually backed by files on disk. Ideally we
 		// would confirm with fstatfs(2) but that is prohibited by seccomp.
@@ -997,6 +997,8 @@ func createPrivateMemoryFile(file *os.File) (*pgalloc.MemoryFile, error) {
 		// pgalloc.IMAWorkAroundForMemFile() uses. Users of private memory files
 		// are expected to have performed the work around outside the sandbox.
 		DisableIMAWorkAround: true,
+		// Private memory files need to be restored correctly using this ID.
+		RestoreID: restoreID.String(),
 	}
 	return pgalloc.NewMemoryFile(file, mfOpts)
 }
@@ -1274,13 +1276,13 @@ func (c *containerMounter) configureRestore(ctx context.Context) (context.Contex
 	rootKey := vfs.RestoreID{ContainerName: c.containerName, Path: "/"}
 	fdmap[rootKey] = c.goferFDs.remove()
 
-	mfmap := make(map[vfs.RestoreID]*pgalloc.MemoryFile)
+	mfmap := make(map[string]*pgalloc.MemoryFile)
 	if rootfsConf := c.goferMountConfs[0]; rootfsConf.IsFilestorePresent() {
-		mf, err := createPrivateMemoryFile(c.goferFilestoreFDs.removeAsFD().ReleaseToFile("overlay-filestore"))
+		mf, err := createPrivateMemoryFile(c.goferFilestoreFDs.removeAsFD().ReleaseToFile("overlay-filestore"), rootKey)
 		if err != nil {
 			return ctx, fmt.Errorf("failed to create private memory file for mount rootfs: %w", err)
 		}
-		mfmap[rootKey] = mf
+		mfmap[rootKey.String()] = mf
 	}
 	// prepareMounts() consumes the remaining FDs for submounts.
 	mounts, err := c.prepareMounts()
@@ -1294,15 +1296,15 @@ func (c *containerMounter) configureRestore(ctx context.Context) (context.Contex
 			fdmap[key] = submount.goferFD.Release()
 		}
 		if submount.filestoreFD != nil {
-			mf, err := createPrivateMemoryFile(submount.filestoreFD.ReleaseToFile("overlay-filestore"))
+			key := vfs.RestoreID{ContainerName: c.containerName, Path: submount.mount.Destination}
+			mf, err := createPrivateMemoryFile(submount.filestoreFD.ReleaseToFile("overlay-filestore"), key)
 			if err != nil {
 				return ctx, fmt.Errorf("failed to create private memory file for mount %q: %w", submount.mount.Destination, err)
 			}
-			key := vfs.RestoreID{ContainerName: c.containerName, Path: submount.mount.Destination}
-			mfmap[key] = mf
+			mfmap[key.String()] = mf
 		}
 	}
-	return context.WithValue(context.WithValue(ctx, vfs.CtxRestoreFilesystemFDMap, fdmap), vfs.CtxFilesystemMemoryFileMap, mfmap), nil
+	return context.WithValue(context.WithValue(ctx, vfs.CtxRestoreFilesystemFDMap, fdmap), pgalloc.CtxMemoryFileMap, mfmap), nil
 }
 
 func createDeviceFiles(ctx context.Context, creds *auth.Credentials, info *containerInfo, vfsObj *vfs.VirtualFilesystem, root vfs.VirtualDentry) error {

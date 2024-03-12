@@ -345,10 +345,10 @@ func (v *vma) copy() vma {
 //
 // +stateify savable
 type pma struct {
-	// file is the file mapped by this pma. Only pmas for which file ==
-	// MemoryManager.mfp.MemoryFile() may be saved. pmas hold a reference to
-	// the corresponding file range while they exist.
-	file memmap.File `state:"nosave"`
+	// file is the file mapped by this pma. Only pmas for which file is of type
+	// pgalloc.MemoryFile may be saved. pmas hold a reference to the
+	// corresponding file range while they exist.
+	file memmap.File `state:".(string)"`
 
 	// off is the offset into file at which this pma begins.
 	off uint64
