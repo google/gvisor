@@ -107,11 +107,15 @@ type inode struct {
 	// When the reference count reaches zero, the host fd is closed.
 	inodeRefs
 
-	// hostFD contains the host fd that this file was originally created from,
-	// which must be available at time of restore.
+	// hostFD contains the host fd that this file was originally created from.
+	// It must be available at time of restore by being set to the same value or
+	// remapped using restoreKey and vfs.CtxRestoreFilesystemFDMap in the context.
 	//
 	// This field is initialized at creation time and is immutable.
 	hostFD int
+
+	// restoreKey is used to identify the `hostFD` after a restore is performed.
+	restoreKey vfs.RestoreID
 
 	// ino is an inode number unique within this filesystem.
 	//
@@ -167,7 +171,7 @@ type inode struct {
 	buf     []byte
 }
 
-func newInode(ctx context.Context, fs *filesystem, hostFD int, savable bool, fileType linux.FileMode, isTTY bool, readonly bool) (*inode, error) {
+func newInode(ctx context.Context, fs *filesystem, hostFD int, savable bool, restoreKey vfs.RestoreID, fileType linux.FileMode, isTTY bool, readonly bool) (*inode, error) {
 	// Determine if hostFD is seekable.
 	_, err := unix.Seek(hostFD, 0, linux.SEEK_CUR)
 	seekable := !linuxerr.Equals(linuxerr.ESPIPE, err)
@@ -179,14 +183,15 @@ func newInode(ctx context.Context, fs *filesystem, hostFD int, savable bool, fil
 	}
 
 	i := &inode{
-		hostFD:    hostFD,
-		ino:       fs.NextIno(),
-		ftype:     uint16(fileType),
-		epollable: isEpollable(hostFD),
-		seekable:  seekable,
-		isTTY:     isTTY,
-		savable:   savable,
-		readonly:  readonly,
+		hostFD:     hostFD,
+		ino:        fs.NextIno(),
+		ftype:      uint16(fileType),
+		epollable:  isEpollable(hostFD),
+		seekable:   seekable,
+		isTTY:      isTTY,
+		savable:    savable,
+		restoreKey: restoreKey,
+		readonly:   readonly,
 	}
 	i.InitRefs()
 	i.CachedMappable.Init(hostFD)
@@ -207,9 +212,13 @@ func newInode(ctx context.Context, fs *filesystem, hostFD int, savable bool, fil
 // NewFDOptions contains options to NewFD.
 type NewFDOptions struct {
 	// If Savable is true, the host file descriptor may be saved/restored by
-	// numeric value; the sandbox API requires a corresponding host FD with the
-	// same numeric value to be provided at time of restore.
+	// numeric value. RestoreKey is used to map the FD after restore.
 	Savable bool
+
+	// RestoreKey is only used when Savable==true. It uniquely identifies the
+	// host FD so that a mapping to the corresponding FD can be provided during
+	// restore.
+	RestoreKey vfs.RestoreID
 
 	// If IsTTY is true, the file descriptor is a TTY.
 	IsTTY bool
@@ -272,7 +281,7 @@ func NewFD(ctx context.Context, mnt *vfs.Mount, hostFD int, opts *NewFDOptions) 
 	}
 
 	fileType := linux.FileMode(stat.Mode).FileType()
-	i, err := newInode(ctx, fs, hostFD, opts.Savable, fileType, opts.IsTTY, opts.Readonly)
+	i, err := newInode(ctx, fs, hostFD, opts.Savable, opts.RestoreKey, fileType, opts.IsTTY, opts.Readonly)
 	if err != nil {
 		return nil, err
 	}

@@ -19,6 +19,7 @@ import (
 	"os"
 
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/socket/hostinet"
@@ -116,6 +117,16 @@ func (r *restorer) restore(l *Loader) error {
 	ctx, err = mntr.configureRestore(ctx)
 	if err != nil {
 		return fmt.Errorf("configuring filesystem restore: %v", err)
+	}
+
+	fdmap := vfs.RestoreFilesystemFDMapFromContext(ctx)
+	for appFD, fd := range r.container.stdioFDs {
+		key := host.MakeRestoreID(r.container.containerName, appFD)
+		fdmap[key] = fd.Release()
+	}
+	for _, customFD := range r.container.passFDs {
+		key := host.MakeRestoreID(r.container.containerName, customFD.guest)
+		fdmap[key] = customFD.host.FD()
 	}
 
 	// Load the state.
