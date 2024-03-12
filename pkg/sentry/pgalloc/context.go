@@ -15,7 +15,7 @@
 package pgalloc
 
 import (
-	"gvisor.dev/gvisor/pkg/context"
+	"context"
 )
 
 // contextID is this package's type for context.Context.Value keys.
@@ -30,6 +30,10 @@ const (
 
 	// CtxMemoryCgroupID is the memory cgroup id which the task belongs to.
 	CtxMemoryCgroupID
+
+	// CtxMemoryFileMap is a Context.Value key for mapping
+	// MemoryFileOpts.RestoreID to *MemoryFile. This is used for save/restore.
+	CtxMemoryFileMap
 )
 
 // MemoryFileFromContext returns the MemoryFile used by ctx, or nil if no such
@@ -41,8 +45,8 @@ func MemoryFileFromContext(ctx context.Context) *MemoryFile {
 	return nil
 }
 
-// MemoryFileProviderFromContext returns the MemoryFileProvider used by ctx, or nil if no such
-// MemoryFileProvider exists.
+// MemoryFileProviderFromContext returns the MemoryFileProvider used by ctx, or
+// nil if no such MemoryFileProvider exists.
 func MemoryFileProviderFromContext(ctx context.Context) MemoryFileProvider {
 	if v := ctx.Value(CtxMemoryFileProvider); v != nil {
 		return v.(MemoryFileProvider)
@@ -57,4 +61,13 @@ func MemoryCgroupIDFromContext(ctx context.Context) uint32 {
 		return v.(uint32)
 	}
 	return 0
+}
+
+// MemoryFileMapFromContext returns the memory file map used by ctx, or nil if
+// no such map exists.
+func MemoryFileMapFromContext(ctx context.Context) map[string]*MemoryFile {
+	if v := ctx.Value(CtxMemoryFileMap); v != nil {
+		return v.(map[string]*MemoryFile)
+	}
+	return nil
 }

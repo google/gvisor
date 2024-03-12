@@ -129,6 +129,11 @@ func (f *MemoryFile) IsSavable() bool {
 	return f.savable
 }
 
+// RestoreID returns the restore ID for f.
+func (f *MemoryFile) RestoreID() string {
+	return f.opts.RestoreID
+}
+
 // LoadFrom loads MemoryFile state from the given stream.
 func (f *MemoryFile) LoadFrom(ctx context.Context, r wire.Reader) error {
 	// Load metadata.
