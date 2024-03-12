@@ -102,10 +102,10 @@ TEST_F(OpenTest, OCreateDirectory) {
   ASSERT_THAT(open(dir.path().c_str(), O_RDONLY | O_CREAT, 0666),
               SyscallFailsWithErrno(EISDIR));
   // Trailing separator on existing directory.
-  ASSERT_THAT(open(dir.path().append("/").c_str(), O_RDONLY | O_CREAT, 0666),
+  ASSERT_THAT(open((dir.path() + "/").c_str(), O_RDONLY | O_CREAT, 0666),
               SyscallFailsWithErrno(EISDIR));
   // Trailing separator on non-existing directory.
-  ASSERT_THAT(open(JoinPath(dir.path(), "non-existent").append("/").c_str(),
+  ASSERT_THAT(open((JoinPath(dir.path(), "non-existent") + "/").c_str(),
                    O_RDONLY | O_CREAT, 0666),
               SyscallFailsWithErrno(EISDIR));
   // "." special case.

@@ -118,7 +118,7 @@ class TempPath {
   std::string release();
 
   // Returns the path this TempPath represents.
-  std::string path() const { return path_; }
+  std::string const& path() const { return path_; }
 
  private:
   template <typename F>

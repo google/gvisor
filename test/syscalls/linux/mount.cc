@@ -2045,15 +2045,16 @@ TEST(MountTest, MountNamespace) {
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const mount = ASSERT_NO_ERRNO_AND_VALUE(
       Mount("", dir.path(), kTmpfs, 0, "mode=0700", 0));
-  EXPECT_NO_ERRNO(Open(JoinPath(dir.path(), "foo"), O_CREAT | O_RDWR, 0777));
+  auto const file_path = JoinPath(dir.path(), "foo");
+  EXPECT_NO_ERRNO(Open(file_path, O_CREAT | O_RDWR, 0777));
 
   pid_t child = fork();
   if (child == 0) {
     // Create a new mount namespace and umount the test mount from it.
-    TEST_CHECK(unshare(CLONE_NEWNS) == 0);
-    TEST_CHECK(access(JoinPath(dir.path(), "foo").c_str(), F_OK) == 0);
-    TEST_CHECK(umount2(dir.path().c_str(), MNT_DETACH) == 0);
-    exit(0);
+    TEST_PCHECK(unshare(CLONE_NEWNS) == 0);
+    TEST_PCHECK(access(file_path.c_str(), F_OK) == 0);
+    TEST_PCHECK(umount2(dir.path().c_str(), MNT_DETACH) == 0);
+    _exit(0);
   }
   ASSERT_THAT(child, SyscallSucceeds());
   int status;
@@ -2061,7 +2062,7 @@ TEST(MountTest, MountNamespace) {
   ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
 
   // Check that the test mount is still here.
-  EXPECT_NO_ERRNO(Open(JoinPath(dir.path(), "foo"), O_RDWR));
+  EXPECT_NO_ERRNO(Open(file_path, O_RDWR));
 }
 
 TEST(MountTest, MountNamespaceSetns) {
@@ -2070,17 +2071,18 @@ TEST(MountTest, MountNamespaceSetns) {
   auto const dir = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDir());
   auto const mnt = ASSERT_NO_ERRNO_AND_VALUE(
       Mount("", dir.path(), kTmpfs, 0, "mode=0700", MNT_DETACH));
-  EXPECT_NO_ERRNO(Open(JoinPath(dir.path(), "foo"), O_CREAT | O_RDWR, 0777));
+  auto const file_path = JoinPath(dir.path(), "foo");
+  EXPECT_NO_ERRNO(Open(file_path, O_CREAT | O_RDWR, 0777));
   const FileDescriptor nsfd =
       ASSERT_NO_ERRNO_AND_VALUE(Open("/proc/thread-self/ns/mnt", O_RDONLY));
 
   pid_t child = fork();
   if (child == 0) {
-    TEST_CHECK(unshare(CLONE_NEWNS) == 0);
-    TEST_CHECK(umount2(dir.path().c_str(), MNT_DETACH) == 0);
-    ASSERT_THAT(setns(nsfd.get(), CLONE_NEWNS), SyscallSucceedsWithValue(0));
-    TEST_CHECK(access(JoinPath(dir.path(), "foo").c_str(), F_OK) == 0);
-    exit(0);
+    TEST_PCHECK(unshare(CLONE_NEWNS) == 0);
+    TEST_PCHECK(umount2(dir.path().c_str(), MNT_DETACH) == 0);
+    TEST_PCHECK(setns(nsfd.get(), CLONE_NEWNS) == 0);
+    TEST_PCHECK(access(file_path.c_str(), F_OK) == 0);
+    _exit(0);
   }
   ASSERT_THAT(child, SyscallSucceeds());
   int status;
@@ -2095,25 +2097,26 @@ TEST(MountTest, MountNamespacePropagation) {
   auto const mnt = ASSERT_NO_ERRNO_AND_VALUE(
       Mount("", dir.path(), kTmpfs, 0, "mode=0700", MNT_DETACH));
   auto child_dir = JoinPath(dir.path(), "test");
+  auto const file_path = JoinPath(child_dir, "foo");
+  auto const file2_path = JoinPath(child_dir, "boo");
 
   ASSERT_THAT(mount(NULL, dir.path().c_str(), NULL, MS_SHARED, NULL),
               SyscallSucceeds());
   ASSERT_THAT(mkdir(child_dir.c_str(), 0700), SyscallSucceeds());
   ASSERT_THAT(mount("child", child_dir.c_str(), kTmpfs, 0, NULL),
               SyscallSucceeds());
-  EXPECT_NO_ERRNO(Open(JoinPath(child_dir, "foo"), O_CREAT | O_RDWR, 0777));
+  EXPECT_NO_ERRNO(Open(file_path, O_CREAT | O_RDWR, 0777));
 
   pid_t child = fork();
   if (child == 0) {
-    TEST_CHECK(unshare(CLONE_NEWNS) == 0);
-    TEST_CHECK(access(JoinPath(child_dir, "foo").c_str(), F_OK) == 0);
+    TEST_PCHECK(unshare(CLONE_NEWNS) == 0);
+    TEST_PCHECK(access(file_path.c_str(), F_OK) == 0);
     // The test mount has to be umounted from the second mount namespace too.
-    TEST_CHECK(umount2(child_dir.c_str(), MNT_DETACH) == 0);
+    TEST_PCHECK(umount2(child_dir.c_str(), MNT_DETACH) == 0);
     // The new mount has to be propagated to the second mount namespace.
-    TEST_CHECK(mount("test2", child_dir.c_str(), kTmpfs, 0, NULL) == 0);
-    TEST_CHECK(mknod(JoinPath(child_dir, "boo").c_str(), 0777 | S_IFREG, 0) ==
-               0);
-    exit(0);
+    TEST_PCHECK(mount("test2", child_dir.c_str(), kTmpfs, 0, NULL) == 0);
+    TEST_PCHECK(mknod(file2_path.c_str(), 0777 | S_IFREG, 0) == 0);
+    _exit(0);
   }
   ASSERT_THAT(child, SyscallSucceeds());
   int status;
@@ -2121,7 +2124,7 @@ TEST(MountTest, MountNamespacePropagation) {
   ASSERT_TRUE(WIFEXITED(status) && WEXITSTATUS(status) == 0);
 
   // Check that the test mount is still here.
-  EXPECT_NO_ERRNO(Open(JoinPath(child_dir, "boo"), O_RDWR));
+  EXPECT_NO_ERRNO(Open(file2_path, O_RDWR));
   EXPECT_THAT(umount2(child_dir.c_str(), MNT_DETACH), SyscallSucceeds());
 }
 
@@ -2136,12 +2139,13 @@ TEST(MountTest, MountNamespaceSlavesNewUserNamespace) {
               SyscallSucceeds());
   const TempPath child_dir =
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(dir.path()));
+  const std::string file_path = JoinPath(child_dir.path(), "foo");
+  const std::string file2_path = JoinPath(child_dir.path(), "boo");
 
   const std::function<void()> parent = [&] {
     TEST_CHECK_SUCCESS(
         mount("child", child_dir.path().c_str(), kTmpfs, 0, NULL));
-    TEST_CHECK_SUCCESS(open(JoinPath(child_dir.path(), "foo").c_str(),
-                            O_CREAT | O_RDWR, 0777));
+    TEST_CHECK_SUCCESS(open(file_path.c_str(), O_CREAT | O_RDWR, 0777));
   };
   const std::function<void()> child = [&] {
     TEST_CHECK_SUCCESS(access(JoinPath(child_dir.path(), "foo").c_str(), F_OK));
@@ -2151,8 +2155,7 @@ TEST(MountTest, MountNamespaceSlavesNewUserNamespace) {
     TEST_CHECK_SUCCESS(umount2(child_dir.path().c_str(), MNT_DETACH));
     TEST_CHECK_SUCCESS(
         mount("test2", child_dir.path().c_str(), kTmpfs, 0, NULL));
-    TEST_CHECK_SUCCESS(
-        mknod(JoinPath(child_dir.path(), "boo").c_str(), 0777 | S_IFREG, 0));
+    TEST_CHECK_SUCCESS(mknod(file2_path.c_str(), 0777 | S_IFREG, 0));
 
     TEST_CHECK_SUCCESS(umount2(child_dir.path().c_str(), MNT_DETACH));
     // This should fail because the mount is locked.
@@ -2161,7 +2164,6 @@ TEST(MountTest, MountNamespaceSlavesNewUserNamespace) {
     // Check that there is a master entry in mountinfo.
     int fd = open("/proc/self/mountinfo", O_RDONLY);
     TEST_CHECK(fd >= 0);
-    std::string mountinfo;
     char child_mountinfo[0x8000];
     int size = 0;
     while (true) {
@@ -2179,9 +2181,7 @@ TEST(MountTest, MountNamespaceSlavesNewUserNamespace) {
               IsPosixErrorOkAndHolds(0));
 
   // Check that the test mount is still here.
-  EXPECT_EQ(
-      Open(JoinPath(child_dir.path(), "boo"), O_RDWR).error().errno_value(),
-      ENOENT);
+  EXPECT_EQ(Open(file2_path, O_RDWR).error().errno_value(), ENOENT);
   EXPECT_THAT(umount2(child_dir.path().c_str(), MNT_DETACH), SyscallSucceeds());
 }
 
@@ -2196,9 +2196,9 @@ TEST(MountTest, LockedMountStopsNonRecBind) {
       ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateDirIn(dir.path()));
   const Cleanup child_mount = ASSERT_NO_ERRNO_AND_VALUE(
       Mount("", child_dir.path().c_str(), kTmpfs, 0, "", MNT_DETACH));
+  const std::string foo_dir = JoinPath(dir.path(), "foo");
 
   const std::function<void()> child_fn = [&] {
-    std::string foo_dir = JoinPath(dir.path(), "foo");
     TEST_CHECK_SUCCESS(mkdir(foo_dir.c_str(), 0700));
     TEST_CHECK_ERRNO(
         mount(dir.path().c_str(), foo_dir.c_str(), "", MS_BIND, ""), EINVAL);
@@ -2256,17 +2256,16 @@ TEST(MountTest, UmountPropagatedSubtreeFromPrivilegedNS) {
   };
   // You can umount an entire subtree that propagated from a more privileged
   // mount namespace, but can't umount only part of the subtree.
+  const std::string file_path =
+      JoinPath(Basename(grandchild_dir.path()), "foo");
   const std::function<void()> child = [&] {
     TEST_CHECK_ERRNO(umount2(grandsibling_dir.c_str(), MNT_DETACH), EINVAL);
     int dirfd = open(sibling_dir.path().c_str(), O_RDONLY | O_DIRECTORY);
-    TEST_CHECK(dirfd >= 0);
+    TEST_PCHECK(dirfd >= 0);
     TEST_CHECK_SUCCESS(umount2(sibling_dir.path().c_str(), MNT_DETACH));
     // Check to ensure you cannot access an overmounted file with openat after
     // the mount unit has been destroyed.
-    TEST_CHECK_ERRNO(
-        openat(dirfd, JoinPath(Basename(grandchild_dir.path()), "foo").c_str(),
-               O_RDONLY),
-        ENOENT);
+    TEST_CHECK_ERRNO(openat(dirfd, file_path.c_str(), O_RDONLY), ENOENT);
   };
   EXPECT_THAT(InForkedUserMountNamespace(parent, child),
               IsPosixErrorOkAndHolds(0));
