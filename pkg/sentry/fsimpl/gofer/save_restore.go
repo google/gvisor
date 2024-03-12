@@ -178,7 +178,7 @@ func (d *dentry) loadParent(_ goContext.Context, parent *dentry) {
 // CompleteRestore implements
 // vfs.FilesystemImplSaveRestoreExtension.CompleteRestore.
 func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRestoreOptions) error {
-	fdmap := vfs.FilesystemFDMapFromContext(ctx)
+	fdmap := vfs.RestoreFilesystemFDMapFromContext(ctx)
 	if fdmap == nil {
 		return fmt.Errorf("no server FD map available")
 	}
