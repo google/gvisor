@@ -404,9 +404,15 @@ func (c *Config) Log() {
 		st := obj.Type()
 		for i := 0; i < st.NumField(); i++ {
 			f := st.Field(i)
-			val := obj.Field(i).String()
-			if val == "" {
+			var val any
+			if strVal := obj.Field(i).String(); strVal == "" {
 				val = "(empty)"
+			} else if !f.IsExported() {
+				// Cannot convert to `interface{}` for non-exported fields,
+				// so just use `strVal`.
+				val = fmt.Sprintf("%s (unexported)", strVal)
+			} else {
+				val = obj.Field(i).Interface()
 			}
 			if flagName, hasFlag := f.Tag.Lookup("flag"); hasFlag {
 				log.Debugf("Config.%s (--%s): %v", f.Name, flagName, val)
