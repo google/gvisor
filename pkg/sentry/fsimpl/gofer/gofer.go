@@ -833,15 +833,17 @@ type dentry struct {
 	children map[string]*dentry
 
 	// If this dentry represents a directory, negativeChildrenCache cache
-	// names of negative children.
+	// names of negative children. negativeChildrenCache is not saved since
+	// dentry.prepareSaveRecursive() drops all negative children.
 	//
 	// +checklocks:childrenMu
-	negativeChildrenCache stringFixedCache
-	// If this dentry represents a directory, negativeChildren is the number
-	// of negative children cached in dentry.children
+	negativeChildrenCache stringFixedCache `state:"nosave"`
+	// If this dentry represents a directory, negativeChildren is the number of
+	// negative children cached in dentry.children. negativeChildren is not
+	// saved since dentry.prepareSaveRecursive() drops all negative children.
 	//
 	// +checklocks:childrenMu
-	negativeChildren int
+	negativeChildren int `state:"nosave"`
 
 	// If this dentry represents a directory, syntheticChildren is the number
 	// of child dentries for which dentry.isSynthetic() == true.
@@ -857,9 +859,9 @@ type dentry struct {
 	// childrenSet share the same lifecycle.
 	//
 	// +checklocks:childrenMu
-	dirents []vfs.Dirent
+	dirents []vfs.Dirent `state:"nosave"`
 	// +checklocks:childrenMu
-	childrenSet map[string]struct{}
+	childrenSet map[string]struct{} `state:"nosave"`
 
 	// Cached metadata; protected by metadataMu.
 	// To access:

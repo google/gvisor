@@ -111,11 +111,16 @@ func (d *dentry) prepareSaveRecursive(ctx context.Context) error {
 	}
 	d.childrenMu.Lock()
 	defer d.childrenMu.Unlock()
-	for _, child := range d.children {
-		if child != nil {
-			if err := child.prepareSaveRecursive(ctx); err != nil {
-				return err
-			}
+	for childName, child := range d.children {
+		if child == nil {
+			// Unsaved filesystem state may change across save/restore. Remove
+			// negative entries from d.children to ensure that files created
+			// after save are visible after restore.
+			delete(d.children, childName)
+			continue
+		}
+		if err := child.prepareSaveRecursive(ctx); err != nil {
+			return err
 		}
 	}
 	return nil
