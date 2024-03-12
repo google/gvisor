@@ -2,6 +2,7 @@ package memmap
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 )
 
@@ -1986,7 +1987,7 @@ func (s *MappingSet) saveRoot() []MappingFlatSegment {
 	return fs
 }
 
-func (s *MappingSet) loadRoot(fs []MappingFlatSegment) {
+func (s *MappingSet) loadRoot(_ context.Context, fs []MappingFlatSegment) {
 	if err := s.ImportSlice(fs); err != nil {
 		panic(err)
 	}

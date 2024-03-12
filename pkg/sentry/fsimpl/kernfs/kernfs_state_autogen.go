@@ -771,7 +771,7 @@ func (d *Dentry) StateLoad(ctx context.Context, stateSourceObject state.Source) 
 	stateSourceObject.Load(8, &d.children)
 	stateSourceObject.Load(9, &d.inode)
 	stateSourceObject.Load(10, &d.deleted)
-	stateSourceObject.LoadValue(4, new(*Dentry), func(y any) { d.loadParent(y.(*Dentry)) })
+	stateSourceObject.LoadValue(4, new(*Dentry), func(y any) { d.loadParent(ctx, y.(*Dentry)) })
 	stateSourceObject.AfterLoad(func() { d.afterLoad(ctx) })
 }
 

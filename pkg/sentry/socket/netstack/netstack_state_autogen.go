@@ -74,7 +74,7 @@ func (s *sock) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(11, &s.sockOptTimestamp)
 	stateSourceObject.Load(12, &s.timestampValid)
 	stateSourceObject.Load(14, &s.sockOptInq)
-	stateSourceObject.LoadValue(13, new(int64), func(y any) { s.loadTimestamp(y.(int64)) })
+	stateSourceObject.LoadValue(13, new(int64), func(y any) { s.loadTimestamp(ctx, y.(int64)) })
 }
 
 func (s *Stack) StateTypeName() string {

@@ -36,7 +36,7 @@ func (d *dentry) saveParent() *dentry {
 }
 
 // loadParent is called by stateify.
-func (d *dentry) loadParent(parent *dentry) {
+func (d *dentry) loadParent(_ goContext.Context, parent *dentry) {
 	d.parent.Store(parent)
 }
 
@@ -45,12 +45,14 @@ func (fs *filesystem) PrepareSave(ctx context.Context) error {
 	if !fs.privateMF {
 		return nil
 	}
-	mfmapv := ctx.Value(vfs.CtxFilesystemMemoryFileMap)
-	if mfmapv == nil {
-		return fmt.Errorf("CtxFilesystemMemoryFileMap was not provided")
+	mfmap := pgalloc.MemoryFileMapFromContext(ctx)
+	if mfmap == nil {
+		return fmt.Errorf("CtxMemoryFileMap was not provided")
 	}
-	mfmap := mfmapv.(map[vfs.RestoreID]*pgalloc.MemoryFile)
-	mfmap[fs.uniqueID] = fs.mf
+	if _, ok := mfmap[fs.uniqueID.String()]; ok {
+		return fmt.Errorf("memory file for %q already exists in CtxMemoryFileMap", fs.uniqueID)
+	}
+	mfmap[fs.uniqueID.String()] = fs.mf
 	return nil
 }
 
@@ -60,14 +62,13 @@ func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRest
 	if !fs.privateMF {
 		return nil
 	}
-	mfmapv := ctx.Value(vfs.CtxFilesystemMemoryFileMap)
-	if mfmapv == nil {
-		return fmt.Errorf("CtxFilesystemMemoryFileMap was not provided")
+	mfmap := pgalloc.MemoryFileMapFromContext(ctx)
+	if mfmap == nil {
+		return fmt.Errorf("CtxMemoryFileMap was not provided")
 	}
-	mfmap := mfmapv.(map[vfs.RestoreID]*pgalloc.MemoryFile)
-	mf, ok := mfmap[fs.uniqueID]
+	mf, ok := mfmap[fs.uniqueID.String()]
 	if !ok {
-		return fmt.Errorf("memory file for %q not found in CtxFilesystemMemoryFileMap", fs.uniqueID)
+		return fmt.Errorf("memory file for %q not found in CtxMemoryFileMap", fs.uniqueID)
 	}
 	fs.mf = mf
 	return nil

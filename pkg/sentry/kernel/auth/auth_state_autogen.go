@@ -152,7 +152,7 @@ func (s *idMapSet) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (s *idMapSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new([]idMapFlatSegment), func(y any) { s.loadRoot(y.([]idMapFlatSegment)) })
+	stateSourceObject.LoadValue(0, new([]idMapFlatSegment), func(y any) { s.loadRoot(ctx, y.([]idMapFlatSegment)) })
 }
 
 func (n *idMapnode) StateTypeName() string {

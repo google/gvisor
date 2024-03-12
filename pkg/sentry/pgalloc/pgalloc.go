@@ -216,6 +216,10 @@ type MemoryFileOpts struct {
 
 	// DiskBackedFile indicates that the MemoryFile is backed by a file on disk.
 	DiskBackedFile bool
+
+	// RestoreID is an opaque string used to reassociate the MemoryFile with its
+	// replacement during restore.
+	RestoreID string
 }
 
 // DelayedEvictionType is the type of MemoryFileOpts.DelayedEviction.

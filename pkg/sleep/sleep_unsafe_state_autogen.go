@@ -38,7 +38,7 @@ func (s *Sleeper) afterLoad(context.Context) {}
 func (s *Sleeper) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &s.localList)
 	stateSourceObject.Load(2, &s.allWakers)
-	stateSourceObject.LoadValue(0, new(*Waker), func(y any) { s.loadSharedList(y.(*Waker)) })
+	stateSourceObject.LoadValue(0, new(*Waker), func(y any) { s.loadSharedList(ctx, y.(*Waker)) })
 }
 
 func (w *Waker) StateTypeName() string {
@@ -71,7 +71,7 @@ func (w *Waker) afterLoad(context.Context) {}
 func (w *Waker) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(1, &w.next)
 	stateSourceObject.Load(2, &w.allWakersNext)
-	stateSourceObject.LoadValue(0, new(wakerState), func(y any) { w.loadS(y.(wakerState)) })
+	stateSourceObject.LoadValue(0, new(wakerState), func(y any) { w.loadS(ctx, y.(wakerState)) })
 }
 
 func init() {

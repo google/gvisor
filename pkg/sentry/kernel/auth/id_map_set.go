@@ -2,6 +2,7 @@ package auth
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 )
 
@@ -1986,7 +1987,7 @@ func (s *idMapSet) saveRoot() []idMapFlatSegment {
 	return fs
 }
 
-func (s *idMapSet) loadRoot(fs []idMapFlatSegment) {
+func (s *idMapSet) loadRoot(_ context.Context, fs []idMapFlatSegment) {
 	if err := s.ImportSlice(fs); err != nil {
 		panic(err)
 	}

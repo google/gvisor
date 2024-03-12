@@ -16,8 +16,12 @@
 package tpuproxy
 
 import (
+	"fmt"
+
+	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
+	"gvisor.dev/gvisor/pkg/fdnotifier"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -35,24 +39,37 @@ type tpuFD struct {
 
 	hostFD int32
 	device *tpuDevice
+	queue  waiter.Queue
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
 func (fd *tpuFD) Release(context.Context) {
+	fdnotifier.RemoveFD(fd.hostFD)
+	fd.queue.Notify(waiter.EventHUp)
+	unix.Close(int(fd.hostFD))
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
 func (fd *tpuFD) EventRegister(e *waiter.Entry) error {
+	fd.queue.EventRegister(e)
+	if err := fdnotifier.UpdateFD(fd.hostFD); err != nil {
+		fd.queue.EventUnregister(e)
+		return err
+	}
 	return nil
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
 func (fd *tpuFD) EventUnregister(e *waiter.Entry) {
+	fd.queue.EventUnregister(e)
+	if err := fdnotifier.UpdateFD(fd.hostFD); err != nil {
+		panic(fmt.Sprint("UpdateFD:", err))
+	}
 }
 
 // Readiness implements waiter.Waitable.Readiness.
 func (fd *tpuFD) Readiness(mask waiter.EventMask) waiter.EventMask {
-	return waiter.EventErr
+	return fdnotifier.NonBlockingPoll(fd.hostFD, mask)
 }
 
 // Epollable implements vfs.FileDescriptionImpl.Epollable.

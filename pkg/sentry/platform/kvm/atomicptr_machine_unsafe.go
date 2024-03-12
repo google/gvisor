@@ -1,6 +1,7 @@
 package kvm
 
 import (
+	"context"
 	"sync/atomic"
 	"unsafe"
 )
@@ -21,7 +22,7 @@ func (p *machineAtomicPtr) savePtr() *machine {
 	return p.Load()
 }
 
-func (p *machineAtomicPtr) loadPtr(v *machine) {
+func (p *machineAtomicPtr) loadPtr(_ context.Context, v *machine) {
 	p.Store(v)
 }
 

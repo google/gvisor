@@ -32,7 +32,7 @@ func (p *descriptorBucketSliceAtomicPtr) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (p *descriptorBucketSliceAtomicPtr) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(*descriptorBucketSlice), func(y any) { p.loadPtr(y.(*descriptorBucketSlice)) })
+	stateSourceObject.LoadValue(0, new(*descriptorBucketSlice), func(y any) { p.loadPtr(ctx, y.(*descriptorBucketSlice)) })
 }
 
 func (p *descriptorBucketAtomicPtr) StateTypeName() string {
@@ -59,7 +59,7 @@ func (p *descriptorBucketAtomicPtr) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (p *descriptorBucketAtomicPtr) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(*descriptorBucket), func(y any) { p.loadPtr(y.(*descriptorBucket)) })
+	stateSourceObject.LoadValue(0, new(*descriptorBucket), func(y any) { p.loadPtr(ctx, y.(*descriptorBucket)) })
 }
 
 func (p *descriptorAtomicPtr) StateTypeName() string {
@@ -86,7 +86,7 @@ func (p *descriptorAtomicPtr) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (p *descriptorAtomicPtr) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new(*descriptor), func(y any) { p.loadPtr(y.(*descriptor)) })
+	stateSourceObject.LoadValue(0, new(*descriptor), func(y any) { p.loadPtr(ctx, y.(*descriptor)) })
 }
 
 func init() {

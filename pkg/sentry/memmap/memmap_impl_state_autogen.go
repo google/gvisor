@@ -32,7 +32,7 @@ func (s *MappingSet) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (s *MappingSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new([]MappingFlatSegment), func(y any) { s.loadRoot(y.([]MappingFlatSegment)) })
+	stateSourceObject.LoadValue(0, new([]MappingFlatSegment), func(y any) { s.loadRoot(ctx, y.([]MappingFlatSegment)) })
 }
 
 func (n *Mappingnode) StateTypeName() string {

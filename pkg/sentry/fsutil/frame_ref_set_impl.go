@@ -6,6 +6,7 @@ import (
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 )
 
@@ -1990,7 +1991,7 @@ func (s *FrameRefSet) saveRoot() []FrameRefFlatSegment {
 	return fs
 }
 
-func (s *FrameRefSet) loadRoot(fs []FrameRefFlatSegment) {
+func (s *FrameRefSet) loadRoot(_ context.Context, fs []FrameRefFlatSegment) {
 	if err := s.ImportSlice(fs); err != nil {
 		panic(err)
 	}

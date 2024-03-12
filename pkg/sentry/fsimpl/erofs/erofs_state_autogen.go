@@ -116,8 +116,6 @@ func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(7, &fs.inodeBuckets)
 }
 
-func (fs *filesystem) afterLoad(context.Context) {}
-
 // +checklocksignore
 func (fs *filesystem) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fs.vfsfs)
@@ -128,6 +126,7 @@ func (fs *filesystem) StateLoad(ctx context.Context, stateSourceObject state.Sou
 	stateSourceObject.Load(5, &fs.image)
 	stateSourceObject.Load(6, &fs.mf)
 	stateSourceObject.Load(7, &fs.inodeBuckets)
+	stateSourceObject.AfterLoad(func() { fs.afterLoad(ctx) })
 }
 
 func (i *InternalFilesystemOptions) StateTypeName() string {
@@ -259,7 +258,7 @@ func (d *dentry) StateLoad(ctx context.Context, stateSourceObject state.Source) 
 	stateSourceObject.Load(3, &d.name)
 	stateSourceObject.Load(4, &d.inode)
 	stateSourceObject.Load(5, &d.childMap)
-	stateSourceObject.LoadValue(2, new(*dentry), func(y any) { d.loadParent(y.(*dentry)) })
+	stateSourceObject.LoadValue(2, new(*dentry), func(y any) { d.loadParent(ctx, y.(*dentry)) })
 }
 
 func (fd *fileDescription) StateTypeName() string {

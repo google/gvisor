@@ -1393,7 +1393,7 @@ func (c *ReceivableControlMessages) StateLoad(ctx context.Context, stateSourceOb
 	stateSourceObject.Load(16, &c.HasOriginalDstAddress)
 	stateSourceObject.Load(17, &c.OriginalDstAddress)
 	stateSourceObject.Load(18, &c.SockErr)
-	stateSourceObject.LoadValue(0, new(int64), func(y any) { c.loadTimestamp(y.(int64)) })
+	stateSourceObject.LoadValue(0, new(int64), func(y any) { c.loadTimestamp(ctx, y.(int64)) })
 }
 
 func (l *LinkPacketInfo) StateTypeName() string {

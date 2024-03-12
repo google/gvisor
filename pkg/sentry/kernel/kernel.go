@@ -522,10 +522,10 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 
 // +stateify savable
 type privateMemoryFileMetadata struct {
-	owners []vfs.RestoreID
+	owners []string
 }
 
-func savePrivateMFs(ctx context.Context, w wire.Writer, mfsToSave map[vfs.RestoreID]*pgalloc.MemoryFile) error {
+func savePrivateMFs(ctx context.Context, w wire.Writer, mfsToSave map[string]*pgalloc.MemoryFile) error {
 	var meta privateMemoryFileMetadata
 	// Generate the order in which private memory files are saved.
 	for fsID := range mfsToSave {
@@ -550,10 +550,7 @@ func loadPrivateMFs(ctx context.Context, r wire.Reader) error {
 	if _, err := state.Load(ctx, r, &meta); err != nil {
 		return err
 	}
-	var mfmap map[vfs.RestoreID]*pgalloc.MemoryFile
-	if mfmapv := ctx.Value(vfs.CtxFilesystemMemoryFileMap); mfmapv != nil {
-		mfmap = mfmapv.(map[vfs.RestoreID]*pgalloc.MemoryFile)
-	}
+	mfmap := pgalloc.MemoryFileMapFromContext(ctx)
 	// Ensure that it is consistent with CtxFilesystemMemoryFileMap.
 	if len(mfmap) != len(meta.owners) {
 		return fmt.Errorf("inconsistent private memory files on restore: savedMFOwners = %v, CtxFilesystemMemoryFileMap = %v", meta.owners, mfmap)
@@ -595,8 +592,8 @@ func (k *Kernel) SaveTo(ctx context.Context, w wire.Writer) error {
 	}
 
 	// Capture all private memory files.
-	mfsToSave := make(map[vfs.RestoreID]*pgalloc.MemoryFile)
-	vfsCtx := context.WithValue(ctx, vfs.CtxFilesystemMemoryFileMap, mfsToSave)
+	mfsToSave := make(map[string]*pgalloc.MemoryFile)
+	vfsCtx := context.WithValue(ctx, pgalloc.CtxMemoryFileMap, mfsToSave)
 	// Prepare filesystems for saving. This must be done after
 	// invalidateUnsavableMappings(), since dropping memory mappings may
 	// affect filesystem state (e.g. page cache reference counts).

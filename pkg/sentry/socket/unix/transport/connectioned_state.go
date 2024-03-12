@@ -42,7 +42,7 @@ func (e *connectionedEndpoint) saveAcceptedChan() []*connectionedEndpoint {
 }
 
 // loadAcceptedChan is invoked by stateify.
-func (e *connectionedEndpoint) loadAcceptedChan(acceptedSlice []*connectionedEndpoint) {
+func (e *connectionedEndpoint) loadAcceptedChan(_ context.Context, acceptedSlice []*connectionedEndpoint) {
 	// If acceptedSlice is nil, then acceptedChan should also be nil.
 	if acceptedSlice != nil {
 		// Otherwise, create a new channel with the same capacity as acceptedSlice.

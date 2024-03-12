@@ -15,6 +15,8 @@
 package vfs
 
 import (
+	goContext "context"
+
 	"gvisor.dev/gvisor/pkg/context"
 )
 
@@ -32,17 +34,13 @@ const (
 	// mapping filesystem unique IDs (cf. gofer.InternalFilesystemOptions.UniqueID)
 	// to host FDs.
 	CtxRestoreFilesystemFDMap
-
-	// CtxFilesystemMemoryFileMap is a Context.Value key for mapping tmpfs unique
-	// IDs to private memory files. This is used for save/restore.
-	CtxFilesystemMemoryFileMap
 )
 
 // MountNamespaceFromContext returns the MountNamespace used by ctx. If ctx is
 // not associated with a MountNamespace, MountNamespaceFromContext returns nil.
 //
 // A reference is taken on the returned MountNamespace.
-func MountNamespaceFromContext(ctx context.Context) *MountNamespace {
+func MountNamespaceFromContext(ctx goContext.Context) *MountNamespace {
 	if v := ctx.Value(CtxMountNamespace); v != nil {
 		return v.(*MountNamespace)
 	}
@@ -76,7 +74,7 @@ func WithMountNamespace(ctx context.Context, mntns *MountNamespace) context.Cont
 // RootFromContext returns the VFS root used by ctx. It takes a reference on
 // the returned VirtualDentry. If ctx does not have a specific VFS root,
 // RootFromContext returns a zero-value VirtualDentry.
-func RootFromContext(ctx context.Context) VirtualDentry {
+func RootFromContext(ctx goContext.Context) VirtualDentry {
 	if v := ctx.Value(CtxRoot); v != nil {
 		return v.(VirtualDentry)
 	}
@@ -105,4 +103,12 @@ func (rc rootContext) Value(key any) any {
 	default:
 		return rc.Context.Value(key)
 	}
+}
+
+// FilesystemFDMapFromContext returns the CtxRestoreFilesystemFDMap from ctx.
+func FilesystemFDMapFromContext(ctx goContext.Context) map[RestoreID]int {
+	if v := ctx.Value(CtxRestoreFilesystemFDMap); v != nil {
+		return v.(map[RestoreID]int)
+	}
+	return nil
 }

@@ -2,6 +2,7 @@ package state
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 )
 
@@ -1986,7 +1987,7 @@ func (s *addrSet) saveRoot() []addrFlatSegment {
 	return fs
 }
 
-func (s *addrSet) loadRoot(fs []addrFlatSegment) {
+func (s *addrSet) loadRoot(_ context.Context, fs []addrFlatSegment) {
 	if err := s.ImportSlice(fs); err != nil {
 		panic(err)
 	}

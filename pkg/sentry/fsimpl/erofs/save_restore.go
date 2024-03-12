@@ -15,45 +15,31 @@
 package erofs
 
 import (
+	"context"
 	"fmt"
 	"os"
 
-	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/erofs"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
-// Compile-time assertion that filesystem implements vfs.FilesystemImplSaveRestoreExtension.
-var _ = vfs.FilesystemImplSaveRestoreExtension((*filesystem)(nil))
-
-// PrepareSave implements vfs.FilesystemImplSaveRestoreExtension.PrepareSave.
-func (fs *filesystem) PrepareSave(ctx context.Context) error {
-	return nil
-}
-
-// CompleteRestore implements
-// vfs.FilesystemImplSaveRestoreExtension.CompleteRestore.
-func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRestoreOptions) error {
-	fdmapv := ctx.Value(vfs.CtxRestoreFilesystemFDMap)
-	if fdmapv == nil {
-		return fmt.Errorf("no image FD map available")
-	}
-	fdmap := fdmapv.(map[vfs.RestoreID]int)
+// afterLoad is called by stateify.
+func (fs *filesystem) afterLoad(ctx context.Context) {
+	fdmap := vfs.FilesystemFDMapFromContext(ctx)
 	fd, ok := fdmap[fs.iopts.UniqueID]
 	if !ok {
-		return fmt.Errorf("no image FD available for filesystem with unique ID %q", fs.iopts.UniqueID)
+		panic(fmt.Sprintf("no image FD available for filesystem with unique ID %q", fs.iopts.UniqueID))
 	}
 	newImage, err := erofs.OpenImage(os.NewFile(uintptr(fd), "EROFS image file"))
 	if err != nil {
-		return err
+		panic(fmt.Sprintf("erofs.OpenImage failed: %v", err))
 	}
 	if got, want := newImage.SuperBlock(), fs.image.SuperBlock(); got != want {
-		return fmt.Errorf("superblock mismatch detected on restore, got %+v, expected %+v", got, want)
+		panic(fmt.Sprintf("superblock mismatch detected on restore, got %+v, expected %+v", got, want))
 	}
 	// We need to update the image in place, as there are other pointers
 	// pointing to this image as well.
 	*fs.image = *newImage
-	return nil
 }
 
 // saveParent is called by stateify.
@@ -62,6 +48,6 @@ func (d *dentry) saveParent() *dentry {
 }
 
 // loadParent is called by stateify.
-func (d *dentry) loadParent(parent *dentry) {
+func (d *dentry) loadParent(_ context.Context, parent *dentry) {
 	d.parent.Store(parent)
 }

@@ -147,7 +147,7 @@ func (s *LockSet) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (s *LockSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new([]LockFlatSegment), func(y any) { s.loadRoot(y.([]LockFlatSegment)) })
+	stateSourceObject.LoadValue(0, new([]LockFlatSegment), func(y any) { s.loadRoot(ctx, y.([]LockFlatSegment)) })
 }
 
 func (n *Locknode) StateTypeName() string {

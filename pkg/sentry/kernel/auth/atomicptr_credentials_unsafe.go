@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"sync/atomic"
 	"unsafe"
 )
@@ -21,7 +22,7 @@ func (p *AtomicPtrCredentials) savePtr() *Credentials {
 	return p.Load()
 }
 
-func (p *AtomicPtrCredentials) loadPtr(v *Credentials) {
+func (p *AtomicPtrCredentials) loadPtr(_ context.Context, v *Credentials) {
 	p.Store(v)
 }
 

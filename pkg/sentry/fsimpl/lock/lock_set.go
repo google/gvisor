@@ -2,6 +2,7 @@ package lock
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 )
 
@@ -1986,7 +1987,7 @@ func (s *LockSet) saveRoot() []LockFlatSegment {
 	return fs
 }
 
-func (s *LockSet) loadRoot(fs []LockFlatSegment) {
+func (s *LockSet) loadRoot(_ context.Context, fs []LockFlatSegment) {
 	if err := s.ImportSlice(fs); err != nil {
 		panic(err)
 	}

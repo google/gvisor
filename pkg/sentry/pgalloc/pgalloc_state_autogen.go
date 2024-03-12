@@ -60,7 +60,7 @@ func (s *evictableRangeSet) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (s *evictableRangeSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new([]evictableRangeFlatSegment), func(y any) { s.loadRoot(y.([]evictableRangeFlatSegment)) })
+	stateSourceObject.LoadValue(0, new([]evictableRangeFlatSegment), func(y any) { s.loadRoot(ctx, y.([]evictableRangeFlatSegment)) })
 }
 
 func (n *evictableRangenode) StateTypeName() string {
@@ -198,7 +198,7 @@ func (s *reclaimSet) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (s *reclaimSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new([]reclaimFlatSegment), func(y any) { s.loadRoot(y.([]reclaimFlatSegment)) })
+	stateSourceObject.LoadValue(0, new([]reclaimFlatSegment), func(y any) { s.loadRoot(ctx, y.([]reclaimFlatSegment)) })
 }
 
 func (n *reclaimnode) StateTypeName() string {
@@ -302,7 +302,7 @@ func (s *usageSet) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (s *usageSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new([]usageFlatSegment), func(y any) { s.loadRoot(y.([]usageFlatSegment)) })
+	stateSourceObject.LoadValue(0, new([]usageFlatSegment), func(y any) { s.loadRoot(ctx, y.([]usageFlatSegment)) })
 }
 
 func (n *usagenode) StateTypeName() string {

@@ -14,7 +14,11 @@
 
 package kernel
 
-import "gvisor.dev/gvisor/pkg/abi/linux"
+import (
+	"context"
+
+	"gvisor.dev/gvisor/pkg/abi/linux"
+)
 
 // +stateify savable
 type savedPendingSignal struct {
@@ -37,7 +41,7 @@ func (p *pendingSignals) saveSignals() []savedPendingSignal {
 }
 
 // loadSignals is invoked by stateify.
-func (p *pendingSignals) loadSignals(pending []savedPendingSignal) {
+func (p *pendingSignals) loadSignals(_ context.Context, pending []savedPendingSignal) {
 	for _, sps := range pending {
 		p.enqueue(sps.si, sps.timer)
 	}

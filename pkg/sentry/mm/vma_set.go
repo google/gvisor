@@ -6,6 +6,7 @@ import (
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 )
 
@@ -1990,7 +1991,7 @@ func (s *vmaSet) saveRoot() []vmaFlatSegment {
 	return fs
 }
 
-func (s *vmaSet) loadRoot(fs []vmaFlatSegment) {
+func (s *vmaSet) loadRoot(_ context.Context, fs []vmaFlatSegment) {
 	if err := s.ImportSlice(fs); err != nil {
 		panic(err)
 	}

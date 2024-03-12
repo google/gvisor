@@ -6,6 +6,7 @@ import (
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 )
 
@@ -1990,7 +1991,7 @@ func (s *FileRangeSet) saveRoot() []FileRangeFlatSegment {
 	return fs
 }
 
-func (s *FileRangeSet) loadRoot(fs []FileRangeFlatSegment) {
+func (s *FileRangeSet) loadRoot(_ context.Context, fs []FileRangeFlatSegment) {
 	if err := s.ImportSlice(fs); err != nil {
 		panic(err)
 	}

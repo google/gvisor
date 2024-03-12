@@ -6,6 +6,7 @@ import (
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 )
 
@@ -1990,7 +1991,7 @@ func (s *pmaSet) saveRoot() []pmaFlatSegment {
 	return fs
 }
 
-func (s *pmaSet) loadRoot(fs []pmaFlatSegment) {
+func (s *pmaSet) loadRoot(_ context.Context, fs []pmaFlatSegment) {
 	if err := s.ImportSlice(fs); err != nil {
 		panic(err)
 	}

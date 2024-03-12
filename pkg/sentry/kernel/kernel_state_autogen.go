@@ -194,7 +194,7 @@ func (f *FDTable) afterLoad(context.Context) {}
 func (f *FDTable) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &f.FDTableRefs)
 	stateSourceObject.Load(1, &f.k)
-	stateSourceObject.LoadValue(2, new(map[int32]descriptor), func(y any) { f.loadDescriptorTable(y.(map[int32]descriptor)) })
+	stateSourceObject.LoadValue(2, new(map[int32]descriptor), func(y any) { f.loadDescriptorTable(ctx, y.(map[int32]descriptor)) })
 }
 
 func (r *FDTableRefs) StateTypeName() string {
@@ -513,7 +513,7 @@ func (k *Kernel) StateLoad(ctx context.Context, stateSourceObject state.Source) 
 	stateSourceObject.Load(35, &k.cgroupMountsMap)
 	stateSourceObject.Load(36, &k.userCountersMap)
 	stateSourceObject.Load(37, &k.MaxFDLimit)
-	stateSourceObject.LoadValue(20, new([]tcpip.Endpoint), func(y any) { k.loadDanglingEndpoints(y.([]tcpip.Endpoint)) })
+	stateSourceObject.LoadValue(20, new([]tcpip.Endpoint), func(y any) { k.loadDanglingEndpoints(ctx, y.([]tcpip.Endpoint)) })
 }
 
 func (p *privateMemoryFileMetadata) StateTypeName() string {
@@ -596,7 +596,7 @@ func (p *pendingSignals) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (p *pendingSignals) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new([]savedPendingSignal), func(y any) { p.loadSignals(y.([]savedPendingSignal)) })
+	stateSourceObject.LoadValue(0, new([]savedPendingSignal), func(y any) { p.loadSignals(ctx, y.([]savedPendingSignal)) })
 }
 
 func (p *pendingSignalQueue) StateTypeName() string {
@@ -1469,8 +1469,8 @@ func (t *Task) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(64, &t.memCgID)
 	stateSourceObject.Load(65, &t.userCounters)
 	stateSourceObject.Load(66, &t.sessionKeyring)
-	stateSourceObject.LoadValue(32, new(*Task), func(y any) { t.loadPtraceTracer(y.(*Task)) })
-	stateSourceObject.LoadValue(48, new(*taskSeccomp), func(y any) { t.loadSeccomp(y.(*taskSeccomp)) })
+	stateSourceObject.LoadValue(32, new(*Task), func(y any) { t.loadPtraceTracer(ctx, y.(*Task)) })
+	stateSourceObject.LoadValue(48, new(*taskSeccomp), func(y any) { t.loadSeccomp(ctx, y.(*taskSeccomp)) })
 	stateSourceObject.AfterLoad(func() { t.afterLoad(ctx) })
 }
 
@@ -1696,7 +1696,7 @@ func (image *TaskImage) StateLoad(ctx context.Context, stateSourceObject state.S
 	stateSourceObject.Load(2, &image.MemoryManager)
 	stateSourceObject.Load(3, &image.fu)
 	stateSourceObject.Load(5, &image.fileCaps)
-	stateSourceObject.LoadValue(4, new(syscallTableInfo), func(y any) { image.loadSt(y.(syscallTableInfo)) })
+	stateSourceObject.LoadValue(4, new(syscallTableInfo), func(y any) { image.loadSt(ctx, y.(syscallTableInfo)) })
 }
 
 func (l *taskList) StateTypeName() string {
@@ -2136,7 +2136,7 @@ func (tg *ThreadGroup) StateLoad(ctx context.Context, stateSourceObject state.So
 	stateSourceObject.Load(31, &tg.oomScoreAdj)
 	stateSourceObject.Load(32, &tg.isChildSubreaper)
 	stateSourceObject.Load(33, &tg.hasChildSubreaper)
-	stateSourceObject.LoadValue(29, new(*OldRSeqCriticalRegion), func(y any) { tg.loadOldRSeqCritical(y.(*OldRSeqCriticalRegion)) })
+	stateSourceObject.LoadValue(29, new(*OldRSeqCriticalRegion), func(y any) { tg.loadOldRSeqCritical(ctx, y.(*OldRSeqCriticalRegion)) })
 }
 
 func (l *itimerRealListener) StateTypeName() string {

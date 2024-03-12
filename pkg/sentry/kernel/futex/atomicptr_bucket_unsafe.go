@@ -1,6 +1,7 @@
 package futex
 
 import (
+	"context"
 	"sync/atomic"
 	"unsafe"
 )
@@ -21,7 +22,7 @@ func (p *AtomicPtrBucket) savePtr() *bucket {
 	return p.Load()
 }
 
-func (p *AtomicPtrBucket) loadPtr(v *bucket) {
+func (p *AtomicPtrBucket) loadPtr(_ context.Context, v *bucket) {
 	p.Store(v)
 }
 

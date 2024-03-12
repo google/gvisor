@@ -2,6 +2,7 @@ package pgalloc
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 )
 
@@ -1986,7 +1987,7 @@ func (s *evictableRangeSet) saveRoot() []evictableRangeFlatSegment {
 	return fs
 }
 
-func (s *evictableRangeSet) loadRoot(fs []evictableRangeFlatSegment) {
+func (s *evictableRangeSet) loadRoot(_ context.Context, fs []evictableRangeFlatSegment) {
 	if err := s.ImportSlice(fs); err != nil {
 		panic(err)
 	}

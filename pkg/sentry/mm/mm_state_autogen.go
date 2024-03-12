@@ -237,6 +237,8 @@ func (mm *MemoryManager) StateFields() []string {
 	}
 }
 
+func (mm *MemoryManager) beforeSave() {}
+
 // +checklocksignore
 func (mm *MemoryManager) StateSave(stateSinkObject state.Sink) {
 	mm.beforeSave()
@@ -350,7 +352,7 @@ func (v *vma) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(7, &v.id)
 	stateSourceObject.Load(8, &v.hint)
 	stateSourceObject.Load(9, &v.lastFault)
-	stateSourceObject.LoadValue(2, new(int), func(y any) { v.loadRealPerms(y.(int)) })
+	stateSourceObject.LoadValue(2, new(int), func(y any) { v.loadRealPerms(ctx, y.(int)) })
 }
 
 func (p *pma) StateTypeName() string {
@@ -359,6 +361,7 @@ func (p *pma) StateTypeName() string {
 
 func (p *pma) StateFields() []string {
 	return []string{
+		"file",
 		"off",
 		"translatePerms",
 		"effectivePerms",
@@ -373,24 +376,28 @@ func (p *pma) beforeSave() {}
 // +checklocksignore
 func (p *pma) StateSave(stateSinkObject state.Sink) {
 	p.beforeSave()
-	stateSinkObject.Save(0, &p.off)
-	stateSinkObject.Save(1, &p.translatePerms)
-	stateSinkObject.Save(2, &p.effectivePerms)
-	stateSinkObject.Save(3, &p.maxPerms)
-	stateSinkObject.Save(4, &p.needCOW)
-	stateSinkObject.Save(5, &p.private)
+	var fileValue string
+	fileValue = p.saveFile()
+	stateSinkObject.SaveValue(0, fileValue)
+	stateSinkObject.Save(1, &p.off)
+	stateSinkObject.Save(2, &p.translatePerms)
+	stateSinkObject.Save(3, &p.effectivePerms)
+	stateSinkObject.Save(4, &p.maxPerms)
+	stateSinkObject.Save(5, &p.needCOW)
+	stateSinkObject.Save(6, &p.private)
 }
 
 func (p *pma) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (p *pma) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &p.off)
-	stateSourceObject.Load(1, &p.translatePerms)
-	stateSourceObject.Load(2, &p.effectivePerms)
-	stateSourceObject.Load(3, &p.maxPerms)
-	stateSourceObject.Load(4, &p.needCOW)
-	stateSourceObject.Load(5, &p.private)
+	stateSourceObject.Load(1, &p.off)
+	stateSourceObject.Load(2, &p.translatePerms)
+	stateSourceObject.Load(3, &p.effectivePerms)
+	stateSourceObject.Load(4, &p.maxPerms)
+	stateSourceObject.Load(5, &p.needCOW)
+	stateSourceObject.Load(6, &p.private)
+	stateSourceObject.LoadValue(0, new(string), func(y any) { p.loadFile(ctx, y.(string)) })
 }
 
 func (s *pmaSet) StateTypeName() string {
@@ -417,7 +424,7 @@ func (s *pmaSet) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (s *pmaSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new([]pmaFlatSegment), func(y any) { s.loadRoot(y.([]pmaFlatSegment)) })
+	stateSourceObject.LoadValue(0, new([]pmaFlatSegment), func(y any) { s.loadRoot(ctx, y.([]pmaFlatSegment)) })
 }
 
 func (n *pmanode) StateTypeName() string {
@@ -579,7 +586,7 @@ func (s *vmaSet) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (s *vmaSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new([]vmaFlatSegment), func(y any) { s.loadRoot(y.([]vmaFlatSegment)) })
+	stateSourceObject.LoadValue(0, new([]vmaFlatSegment), func(y any) { s.loadRoot(ctx, y.([]vmaFlatSegment)) })
 }
 
 func (n *vmanode) StateTypeName() string {

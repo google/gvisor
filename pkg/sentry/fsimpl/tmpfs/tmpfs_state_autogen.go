@@ -517,7 +517,7 @@ func (d *dentry) StateLoad(ctx context.Context, stateSourceObject state.Source) 
 	stateSourceObject.Load(2, &d.name)
 	stateSourceObject.Load(3, &d.dentryEntry)
 	stateSourceObject.Load(4, &d.inode)
-	stateSourceObject.LoadValue(1, new(*dentry), func(y any) { d.loadParent(y.(*dentry)) })
+	stateSourceObject.LoadValue(1, new(*dentry), func(y any) { d.loadParent(ctx, y.(*dentry)) })
 }
 
 func (i *inode) StateTypeName() string {

@@ -18,6 +18,7 @@
 package cpuid
 
 import (
+	"context"
 	"fmt"
 	"io"
 )
@@ -56,7 +57,7 @@ func (fs *FeatureSet) saveFunction() Static {
 }
 
 // loadFunction saves the function as a static query.
-func (fs *FeatureSet) loadFunction(s Static) {
+func (fs *FeatureSet) loadFunction(_ context.Context, s Static) {
 	fs.Function = s
 }
 

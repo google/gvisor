@@ -553,7 +553,7 @@ func (d *dentry) StateLoad(ctx context.Context, stateSourceObject state.Source) 
 	stateSourceObject.Load(37, &d.locks)
 	stateSourceObject.Load(38, &d.watches)
 	stateSourceObject.Load(39, &d.impl)
-	stateSourceObject.LoadValue(3, new(*dentry), func(y any) { d.loadParent(y.(*dentry)) })
+	stateSourceObject.LoadValue(3, new(*dentry), func(y any) { d.loadParent(ctx, y.(*dentry)) })
 	stateSourceObject.AfterLoad(func() { d.afterLoad(ctx) })
 }
 

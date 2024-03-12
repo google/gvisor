@@ -32,7 +32,7 @@ func (s *DirtySet) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (s *DirtySet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new([]DirtyFlatSegment), func(y any) { s.loadRoot(y.([]DirtyFlatSegment)) })
+	stateSourceObject.LoadValue(0, new([]DirtyFlatSegment), func(y any) { s.loadRoot(ctx, y.([]DirtyFlatSegment)) })
 }
 
 func (n *Dirtynode) StateTypeName() string {
@@ -136,7 +136,7 @@ func (s *FileRangeSet) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (s *FileRangeSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new([]FileRangeFlatSegment), func(y any) { s.loadRoot(y.([]FileRangeFlatSegment)) })
+	stateSourceObject.LoadValue(0, new([]FileRangeFlatSegment), func(y any) { s.loadRoot(ctx, y.([]FileRangeFlatSegment)) })
 }
 
 func (n *FileRangenode) StateTypeName() string {
@@ -240,7 +240,7 @@ func (s *FrameRefSet) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (s *FrameRefSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new([]FrameRefFlatSegment), func(y any) { s.loadRoot(y.([]FrameRefFlatSegment)) })
+	stateSourceObject.LoadValue(0, new([]FrameRefFlatSegment), func(y any) { s.loadRoot(ctx, y.([]FrameRefFlatSegment)) })
 }
 
 func (n *FrameRefnode) StateTypeName() string {

@@ -98,7 +98,7 @@ func (conn *connection) StateLoad(ctx context.Context, stateSourceObject state.S
 	stateSourceObject.Load(20, &conn.bigWrites)
 	stateSourceObject.Load(21, &conn.dontMask)
 	stateSourceObject.Load(22, &conn.noOpen)
-	stateSourceObject.LoadValue(3, new(bool), func(y any) { conn.loadInitializedChan(y.(bool)) })
+	stateSourceObject.LoadValue(3, new(bool), func(y any) { conn.loadInitializedChan(ctx, y.(bool)) })
 }
 
 func (f *fuseDevice) StateTypeName() string {
@@ -179,7 +179,7 @@ func (fd *DeviceFD) StateLoad(ctx context.Context, stateSourceObject state.Sourc
 	stateSourceObject.Load(9, &fd.completions)
 	stateSourceObject.Load(10, &fd.writeBuf)
 	stateSourceObject.Load(11, &fd.conn)
-	stateSourceObject.LoadValue(5, new(int), func(y any) { fd.loadFullQueueCh(y.(int)) })
+	stateSourceObject.LoadValue(5, new(int), func(y any) { fd.loadFullQueueCh(ctx, y.(int)) })
 }
 
 func (dir *directoryFD) StateTypeName() string {

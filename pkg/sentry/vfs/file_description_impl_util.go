@@ -16,6 +16,7 @@ package vfs
 
 import (
 	"bytes"
+	goContext "context"
 	"io"
 	"math"
 
@@ -289,7 +290,7 @@ func (fd *DynamicBytesFileDescriptionImpl) saveBuf() []byte {
 	return fd.buf.Bytes()
 }
 
-func (fd *DynamicBytesFileDescriptionImpl) loadBuf(p []byte) {
+func (fd *DynamicBytesFileDescriptionImpl) loadBuf(_ goContext.Context, p []byte) {
 	fd.buf.Write(p)
 }
 

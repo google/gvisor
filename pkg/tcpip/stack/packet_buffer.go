@@ -276,6 +276,9 @@ func (pk *PacketBuffer) Data() PacketData {
 }
 
 // AsSlices returns the underlying storage of the whole packet.
+//
+// Note that AsSlices can allocate a lot. In hot paths it may be preferable to
+// iterate over a PacketBuffer's data via AsViewList.
 func (pk *PacketBuffer) AsSlices() [][]byte {
 	var views [][]byte
 	offset := pk.headerOffset()
@@ -283,6 +286,12 @@ func (pk *PacketBuffer) AsSlices() [][]byte {
 		views = append(views, v.AsSlice())
 	})
 	return views
+}
+
+// AsViewList returns the list of Views backing the PacketBuffer along with the
+// header offset into them. Users may not save or modify the ViewList returned.
+func (pk *PacketBuffer) AsViewList() (buffer.ViewList, int) {
+	return pk.buf.AsViewList(), pk.headerOffset()
 }
 
 // ToBuffer returns a caller-owned copy of the underlying storage of the whole

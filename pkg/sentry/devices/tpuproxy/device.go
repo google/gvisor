@@ -74,6 +74,10 @@ func (dev *tpuDevice) Open(ctx context.Context, mnt *vfs.Mount, d *vfs.Dentry, o
 		unix.Close(hostFD)
 		return nil, err
 	}
+	if err := fdnotifier.AddFD(int32(hostFD), &fd.queue); err != nil {
+		unix.Close(hostFD)
+		return nil, err
+	}
 	return &fd.vfsfd, nil
 }
 

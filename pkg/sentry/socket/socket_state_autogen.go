@@ -83,7 +83,7 @@ func (i *IPControlMessages) StateLoad(ctx context.Context, stateSourceObject sta
 	stateSourceObject.Load(15, &i.IPv6PacketInfo)
 	stateSourceObject.Load(16, &i.OriginalDstAddress)
 	stateSourceObject.Load(17, &i.SockErr)
-	stateSourceObject.LoadValue(1, new(int64), func(y any) { i.loadTimestamp(y.(int64)) })
+	stateSourceObject.LoadValue(1, new(int64), func(y any) { i.loadTimestamp(ctx, y.(int64)) })
 }
 
 func (to *SendReceiveTimeout) StateTypeName() string {

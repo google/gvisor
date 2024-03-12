@@ -893,7 +893,7 @@ func (vfs *VirtualFilesystem) disconnectLocked(mnt *Mount) VirtualDentry {
 		delete(mnt.ns.mountpoints, vd.dentry)
 	}
 	vfs.mounts.removeSeqed(mnt)
-	mnt.loadKey(VirtualDentry{}) // Clear mnt.key.
+	mnt.setKey(VirtualDentry{}) // Clear mnt.key.
 	vfsmpmounts := vfs.mountpoints[vd.dentry]
 	delete(vfsmpmounts, mnt)
 	if len(vfsmpmounts) == 0 {

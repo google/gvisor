@@ -1,6 +1,7 @@
 package kernel
 
 import (
+	"context"
 	"sync/atomic"
 	"unsafe"
 )
@@ -21,7 +22,7 @@ func (p *descriptorBucketSliceAtomicPtr) savePtr() *descriptorBucketSlice {
 	return p.Load()
 }
 
-func (p *descriptorBucketSliceAtomicPtr) loadPtr(v *descriptorBucketSlice) {
+func (p *descriptorBucketSliceAtomicPtr) loadPtr(_ context.Context, v *descriptorBucketSlice) {
 	p.Store(v)
 }
 

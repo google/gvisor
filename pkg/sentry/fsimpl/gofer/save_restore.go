@@ -166,18 +166,17 @@ func (d *dentry) saveParent() *dentry {
 }
 
 // loadParent is called by stateify.
-func (d *dentry) loadParent(parent *dentry) {
+func (d *dentry) loadParent(_ goContext.Context, parent *dentry) {
 	d.parent.Store(parent)
 }
 
 // CompleteRestore implements
 // vfs.FilesystemImplSaveRestoreExtension.CompleteRestore.
 func (fs *filesystem) CompleteRestore(ctx context.Context, opts vfs.CompleteRestoreOptions) error {
-	fdmapv := ctx.Value(vfs.CtxRestoreFilesystemFDMap)
-	if fdmapv == nil {
+	fdmap := vfs.FilesystemFDMapFromContext(ctx)
+	if fdmap == nil {
 		return fmt.Errorf("no server FD map available")
 	}
-	fdmap := fdmapv.(map[vfs.RestoreID]int)
 	fd, ok := fdmap[fs.iopts.UniqueID]
 	if !ok {
 		return fmt.Errorf("no server FD available for filesystem with unique ID %+v, map: %v", fs.iopts.UniqueID, fdmap)

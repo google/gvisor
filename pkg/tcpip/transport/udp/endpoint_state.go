@@ -30,7 +30,7 @@ func (p *udpPacket) saveReceivedAt() int64 {
 }
 
 // loadReceivedAt is invoked by stateify.
-func (p *udpPacket) loadReceivedAt(nsec int64) {
+func (p *udpPacket) loadReceivedAt(_ context.Context, nsec int64) {
 	p.receivedAt = time.Unix(0, nsec)
 }
 

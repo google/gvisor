@@ -60,7 +60,7 @@ func (s *DevAddrSet) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (s *DevAddrSet) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.LoadValue(0, new([]DevAddrFlatSegment), func(y any) { s.loadRoot(y.([]DevAddrFlatSegment)) })
+	stateSourceObject.LoadValue(0, new([]DevAddrFlatSegment), func(y any) { s.loadRoot(ctx, y.([]DevAddrFlatSegment)) })
 }
 
 func (n *DevAddrnode) StateTypeName() string {

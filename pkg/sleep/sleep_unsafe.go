@@ -68,6 +68,7 @@
 package sleep
 
 import (
+	"context"
 	"sync/atomic"
 	"unsafe"
 
@@ -129,7 +130,7 @@ func (s *Sleeper) saveSharedList() *Waker {
 }
 
 // loadSharedList is invoked by stateify.
-func (s *Sleeper) loadSharedList(w *Waker) {
+func (s *Sleeper) loadSharedList(_ context.Context, w *Waker) {
 	atomic.StorePointer(&s.sharedList, unsafe.Pointer(w))
 }
 
@@ -408,7 +409,7 @@ func (w *Waker) saveS() wakerState {
 }
 
 // loadS is invoked by stateify.
-func (w *Waker) loadS(ws wakerState) {
+func (w *Waker) loadS(_ context.Context, ws wakerState) {
 	if ws.asserted {
 		atomic.StorePointer(&w.s, unsafe.Pointer(&assertedSleeper))
 	} else {

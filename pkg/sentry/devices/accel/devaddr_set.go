@@ -2,6 +2,7 @@ package accel
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 )
 
@@ -1986,7 +1987,7 @@ func (s *DevAddrSet) saveRoot() []DevAddrFlatSegment {
 	return fs
 }
 
-func (s *DevAddrSet) loadRoot(fs []DevAddrFlatSegment) {
+func (s *DevAddrSet) loadRoot(_ context.Context, fs []DevAddrFlatSegment) {
 	if err := s.ImportSlice(fs); err != nil {
 		panic(err)
 	}

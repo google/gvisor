@@ -6,6 +6,7 @@ import (
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 )
 
@@ -1990,7 +1991,7 @@ func (s *DirtySet) saveRoot() []DirtyFlatSegment {
 	return fs
 }
 
-func (s *DirtySet) loadRoot(fs []DirtyFlatSegment) {
+func (s *DirtySet) loadRoot(_ context.Context, fs []DirtyFlatSegment) {
 	if err := s.ImportSlice(fs); err != nil {
 		panic(err)
 	}
