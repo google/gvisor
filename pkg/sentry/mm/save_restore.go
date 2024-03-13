@@ -38,9 +38,14 @@ func (mm *MemoryManager) InvalidateUnsavable(ctx context.Context) error {
 }
 
 // afterLoad is invoked by stateify.
-func (mm *MemoryManager) afterLoad(goContext.Context) {
-	mm.mf = mm.mfp.MemoryFile()
+func (mm *MemoryManager) afterLoad(ctx goContext.Context) {
+	mm.mf = pgalloc.MemoryFileFromContext(ctx)
 	mm.haveASIO = mm.p.SupportsAddressSpaceIO()
+}
+
+// afterLoad is invoked by stateify.
+func (m *SpecialMappable) afterLoad(ctx goContext.Context) {
+	m.mf = pgalloc.MemoryFileFromContext(ctx)
 }
 
 const (

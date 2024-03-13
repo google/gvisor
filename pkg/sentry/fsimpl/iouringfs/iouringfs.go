@@ -50,7 +50,7 @@ type FileDescription struct {
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.NoLockFD
 
-	mfp pgalloc.MemoryFileProvider
+	mf *pgalloc.MemoryFile `state:"nosave"`
 
 	rbmf  ringsBufferFile
 	sqemf sqEntriesFile
@@ -95,9 +95,9 @@ func New(ctx context.Context, vfsObj *vfs.VirtualFilesystem, entries uint32, par
 	vd := vfsObj.NewAnonVirtualDentry("[io_uring]")
 	defer vd.DecRef(ctx)
 
-	mfp := pgalloc.MemoryFileProviderFromContext(ctx)
-	if mfp == nil {
-		panic(fmt.Sprintf("context.Context %T lacks non-nil value for key %T", ctx, pgalloc.CtxMemoryFileProvider))
+	mf := pgalloc.MemoryFileFromContext(ctx)
+	if mf == nil {
+		panic(fmt.Sprintf("context.Context %T lacks non-nil value for key %T", ctx, pgalloc.CtxMemoryFile))
 	}
 
 	numSqEntries, ok := roundUpPowerOfTwo(entries)
@@ -123,7 +123,6 @@ func New(ctx context.Context, vfsObj *vfs.VirtualFilesystem, entries uint32, par
 		numSqEntries*uint32((*linux.IORingIndex)(nil).SizeBytes()))
 	ringsBufferSize = uint64(hostarch.Addr(ringsBufferSize).MustRoundUp())
 
-	mf := mfp.MemoryFile()
 	memCgID := pgalloc.MemoryCgroupIDFromContext(ctx)
 	rbfr, err := mf.Allocate(ringsBufferSize, pgalloc.AllocOpts{Kind: usage.Anonymous, MemCgID: memCgID})
 	if err != nil {
@@ -139,7 +138,7 @@ func New(ctx context.Context, vfsObj *vfs.VirtualFilesystem, entries uint32, par
 	}
 
 	iouringfd := &FileDescription{
-		mfp: mfp,
+		mf: mf,
 		rbmf: ringsBufferFile{
 			fr: rbfr,
 		},
@@ -215,18 +214,15 @@ func New(ctx context.Context, vfsObj *vfs.VirtualFilesystem, entries uint32, par
 
 // Release implements vfs.FileDescriptionImpl.Release.
 func (fd *FileDescription) Release(ctx context.Context) {
-	mf := pgalloc.MemoryFileProviderFromContext(ctx).MemoryFile()
-	mf.DecRef(fd.rbmf.fr)
-	mf.DecRef(fd.sqemf.fr)
+	fd.mf.DecRef(fd.rbmf.fr)
+	fd.mf.DecRef(fd.sqemf.fr)
 }
 
 // mapSharedBuffers caches internal mappings for the ring's shared memory
 // regions.
 func (fd *FileDescription) mapSharedBuffers() error {
-	mf := fd.mfp.MemoryFile()
-
 	// Mapping for the IORings header struct.
-	rb, err := mf.MapInternal(fd.rbmf.fr, hostarch.ReadWrite)
+	rb, err := fd.mf.MapInternal(fd.rbmf.fr, hostarch.ReadWrite)
 	if err != nil {
 		return err
 	}
@@ -242,7 +238,7 @@ func (fd *FileDescription) mapSharedBuffers() error {
 	fd.cqesBuf.init(cqes)
 
 	// Mapping for the SQEs array.
-	sqes, err := mf.MapInternal(fd.sqemf.fr, hostarch.ReadWrite)
+	sqes, err := fd.mf.MapInternal(fd.sqemf.fr, hostarch.ReadWrite)
 	if err != nil {
 		return err
 	}
@@ -572,7 +568,7 @@ func (sqemf *sqEntriesFile) Translate(ctx context.Context, required, optional me
 		return []memmap.Translation{
 			{
 				Source: source,
-				File:   pgalloc.MemoryFileProviderFromContext(ctx).MemoryFile(),
+				File:   pgalloc.MemoryFileFromContext(ctx),
 				Offset: sqemf.fr.Start + source.Start,
 				Perms:  at,
 			},
@@ -618,7 +614,7 @@ func (rbmf *ringsBufferFile) Translate(ctx context.Context, required, optional m
 		return []memmap.Translation{
 			{
 				Source: source,
-				File:   pgalloc.MemoryFileProviderFromContext(ctx).MemoryFile(),
+				File:   pgalloc.MemoryFileFromContext(ctx),
 				Offset: rbmf.fr.Start + source.Start,
 				Perms:  at,
 			},

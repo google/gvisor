@@ -14,7 +14,11 @@
 
 package iouringfs
 
-import "context"
+import (
+	"context"
+
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
+)
 
 // beforeSave is invoked by stateify.
 func (fd *FileDescription) beforeSave() {
@@ -24,7 +28,8 @@ func (fd *FileDescription) beforeSave() {
 }
 
 // afterLoad is invoked by stateify.
-func (fd *FileDescription) afterLoad(context.Context) {
+func (fd *FileDescription) afterLoad(ctx context.Context) {
+	fd.mf = pgalloc.MemoryFileFromContext(ctx)
 	// Remap shared buffers.
 	fd.remap = true
 	fd.runC = make(chan struct{}, 1)

@@ -246,18 +246,18 @@ func (aio *AIOContext) Drain() {
 type aioMappable struct {
 	aioMappableRefs
 
-	mfp pgalloc.MemoryFileProvider
-	fr  memmap.FileRange
+	mf *pgalloc.MemoryFile `state:"nosave"`
+	fr memmap.FileRange
 }
 
 var aioRingBufferSize = uint64(hostarch.Addr(linux.AIORingSize).MustRoundUp())
 
-func newAIOMappable(ctx context.Context, mfp pgalloc.MemoryFileProvider) (*aioMappable, error) {
-	fr, err := mfp.MemoryFile().Allocate(aioRingBufferSize, pgalloc.AllocOpts{Kind: usage.Anonymous, MemCgID: pgalloc.MemoryCgroupIDFromContext(ctx)})
+func newAIOMappable(ctx context.Context, mf *pgalloc.MemoryFile) (*aioMappable, error) {
+	fr, err := mf.Allocate(aioRingBufferSize, pgalloc.AllocOpts{Kind: usage.Anonymous, MemCgID: pgalloc.MemoryCgroupIDFromContext(ctx)})
 	if err != nil {
 		return nil, err
 	}
-	m := aioMappable{mfp: mfp, fr: fr}
+	m := aioMappable{mf: mf, fr: fr}
 	m.InitRefs()
 	return &m, nil
 }
@@ -265,7 +265,7 @@ func newAIOMappable(ctx context.Context, mfp pgalloc.MemoryFileProvider) (*aioMa
 // DecRef implements refs.RefCounter.DecRef.
 func (m *aioMappable) DecRef(ctx context.Context) {
 	m.aioMappableRefs.DecRef(func() {
-		m.mfp.MemoryFile().DecRef(m.fr)
+		m.mf.DecRef(m.fr)
 	})
 }
 
@@ -346,7 +346,7 @@ func (m *aioMappable) Translate(ctx context.Context, required, optional memmap.M
 		return []memmap.Translation{
 			{
 				Source: source,
-				File:   m.mfp.MemoryFile(),
+				File:   m.mf,
 				Offset: m.fr.Start + source.Start,
 				Perms:  hostarch.AnyAccess,
 			},
@@ -368,7 +368,7 @@ func (mm *MemoryManager) NewAIOContext(ctx context.Context, events uint32) (uint
 	// libaio peeks inside looking for a magic number. This function allocates
 	// a page per context and keeps it set to zeroes to ensure it will not
 	// match AIO_RING_MAGIC and make libaio happy.
-	m, err := newAIOMappable(ctx, mm.mfp)
+	m, err := newAIOMappable(ctx, mm.mf)
 	if err != nil {
 		return 0, err
 	}
