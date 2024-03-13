@@ -97,9 +97,9 @@ type Timekeeper struct {
 // NewTimekeeper does not take ownership of paramPage.
 //
 // SetClocks must be called on the returned Timekeeper before it is usable.
-func NewTimekeeper(mfp pgalloc.MemoryFileProvider, paramPage memmap.FileRange) *Timekeeper {
+func NewTimekeeper(mf *pgalloc.MemoryFile, paramPage memmap.FileRange) *Timekeeper {
 	t := Timekeeper{
-		params: NewVDSOParamPage(mfp, paramPage),
+		params: NewVDSOParamPage(mf, paramPage),
 	}
 	t.realtimeClock = &timekeeperClock{tk: &t, c: sentrytime.Realtime}
 	t.monotonicClock = &timekeeperClock{tk: &t, c: sentrytime.Monotonic}

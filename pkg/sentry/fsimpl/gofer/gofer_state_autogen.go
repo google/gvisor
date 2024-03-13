@@ -212,7 +212,6 @@ func (fs *filesystem) StateTypeName() string {
 func (fs *filesystem) StateFields() []string {
 	return []string{
 		"vfsfs",
-		"mfp",
 		"opts",
 		"iopts",
 		"clock",
@@ -233,37 +232,34 @@ func (fs *filesystem) beforeSave() {}
 func (fs *filesystem) StateSave(stateSinkObject state.Sink) {
 	fs.beforeSave()
 	stateSinkObject.Save(0, &fs.vfsfs)
-	stateSinkObject.Save(1, &fs.mfp)
-	stateSinkObject.Save(2, &fs.opts)
-	stateSinkObject.Save(3, &fs.iopts)
-	stateSinkObject.Save(4, &fs.clock)
-	stateSinkObject.Save(5, &fs.devMinor)
-	stateSinkObject.Save(6, &fs.root)
-	stateSinkObject.Save(7, &fs.dentryCache)
-	stateSinkObject.Save(8, &fs.syncableDentries)
-	stateSinkObject.Save(9, &fs.specialFileFDs)
-	stateSinkObject.Save(10, &fs.lastIno)
-	stateSinkObject.Save(11, &fs.savedDentryRW)
-	stateSinkObject.Save(12, &fs.released)
+	stateSinkObject.Save(1, &fs.opts)
+	stateSinkObject.Save(2, &fs.iopts)
+	stateSinkObject.Save(3, &fs.clock)
+	stateSinkObject.Save(4, &fs.devMinor)
+	stateSinkObject.Save(5, &fs.root)
+	stateSinkObject.Save(6, &fs.dentryCache)
+	stateSinkObject.Save(7, &fs.syncableDentries)
+	stateSinkObject.Save(8, &fs.specialFileFDs)
+	stateSinkObject.Save(9, &fs.lastIno)
+	stateSinkObject.Save(10, &fs.savedDentryRW)
+	stateSinkObject.Save(11, &fs.released)
 }
-
-func (fs *filesystem) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (fs *filesystem) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &fs.vfsfs)
-	stateSourceObject.Load(1, &fs.mfp)
-	stateSourceObject.Load(2, &fs.opts)
-	stateSourceObject.Load(3, &fs.iopts)
-	stateSourceObject.Load(4, &fs.clock)
-	stateSourceObject.Load(5, &fs.devMinor)
-	stateSourceObject.Load(6, &fs.root)
-	stateSourceObject.Load(7, &fs.dentryCache)
-	stateSourceObject.Load(8, &fs.syncableDentries)
-	stateSourceObject.Load(9, &fs.specialFileFDs)
-	stateSourceObject.Load(10, &fs.lastIno)
-	stateSourceObject.Load(11, &fs.savedDentryRW)
-	stateSourceObject.Load(12, &fs.released)
+	stateSourceObject.Load(1, &fs.opts)
+	stateSourceObject.Load(2, &fs.iopts)
+	stateSourceObject.Load(3, &fs.clock)
+	stateSourceObject.Load(4, &fs.devMinor)
+	stateSourceObject.Load(5, &fs.root)
+	stateSourceObject.Load(6, &fs.dentryCache)
+	stateSourceObject.Load(7, &fs.syncableDentries)
+	stateSourceObject.Load(8, &fs.specialFileFDs)
+	stateSourceObject.Load(9, &fs.lastIno)
+	stateSourceObject.Load(10, &fs.savedDentryRW)
+	stateSourceObject.Load(11, &fs.released)
+	stateSourceObject.AfterLoad(func() { fs.afterLoad(ctx) })
 }
 
 func (f *filesystemOptions) StateTypeName() string {

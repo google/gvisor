@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/refs"
 	"gvisor.dev/gvisor/pkg/safemem"
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
@@ -131,6 +132,11 @@ func (d *dentry) beforeSave() {
 	if d.vfsd.IsDead() {
 		panic(fmt.Sprintf("gofer.dentry(%q).beforeSave: deleted and invalidated dentries can't be restored", genericDebugPathname(d)))
 	}
+}
+
+// afterLoad is invoked by stateify.
+func (fs *filesystem) afterLoad(ctx goContext.Context) {
+	fs.mf = pgalloc.MemoryFileFromContext(ctx)
 }
 
 // afterLoad is invoked by stateify.

@@ -424,13 +424,13 @@ func New(args Args) (*Loader, error) {
 	// Create VDSO.
 	//
 	// Pass k as the platform since it is savable, unlike the actual platform.
-	vdso, err := loader.PrepareVDSO(k)
+	vdso, err := loader.PrepareVDSO(k.MemoryFile())
 	if err != nil {
 		return nil, fmt.Errorf("creating vdso: %w", err)
 	}
 
 	// Create timekeeper.
-	tk := kernel.NewTimekeeper(k, vdso.ParamPage.FileRange())
+	tk := kernel.NewTimekeeper(k.MemoryFile(), vdso.ParamPage.FileRange())
 	tk.SetClocks(time.NewCalibratedClocks())
 
 	if err := enableStrace(args.Conf); err != nil {

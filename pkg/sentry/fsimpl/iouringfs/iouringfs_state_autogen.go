@@ -18,7 +18,6 @@ func (fd *FileDescription) StateFields() []string {
 		"FileDescriptionDefaultImpl",
 		"DentryMetadataFileDescriptionImpl",
 		"NoLockFD",
-		"mfp",
 		"rbmf",
 		"sqemf",
 		"running",
@@ -34,12 +33,11 @@ func (fd *FileDescription) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(1, &fd.FileDescriptionDefaultImpl)
 	stateSinkObject.Save(2, &fd.DentryMetadataFileDescriptionImpl)
 	stateSinkObject.Save(3, &fd.NoLockFD)
-	stateSinkObject.Save(4, &fd.mfp)
-	stateSinkObject.Save(5, &fd.rbmf)
-	stateSinkObject.Save(6, &fd.sqemf)
-	stateSinkObject.Save(7, &fd.running)
-	stateSinkObject.Save(8, &fd.ioRings)
-	stateSinkObject.Save(9, &fd.remap)
+	stateSinkObject.Save(4, &fd.rbmf)
+	stateSinkObject.Save(5, &fd.sqemf)
+	stateSinkObject.Save(6, &fd.running)
+	stateSinkObject.Save(7, &fd.ioRings)
+	stateSinkObject.Save(8, &fd.remap)
 }
 
 // +checklocksignore
@@ -48,12 +46,11 @@ func (fd *FileDescription) StateLoad(ctx context.Context, stateSourceObject stat
 	stateSourceObject.Load(1, &fd.FileDescriptionDefaultImpl)
 	stateSourceObject.Load(2, &fd.DentryMetadataFileDescriptionImpl)
 	stateSourceObject.Load(3, &fd.NoLockFD)
-	stateSourceObject.Load(4, &fd.mfp)
-	stateSourceObject.Load(5, &fd.rbmf)
-	stateSourceObject.Load(6, &fd.sqemf)
-	stateSourceObject.Load(7, &fd.running)
-	stateSourceObject.Load(8, &fd.ioRings)
-	stateSourceObject.Load(9, &fd.remap)
+	stateSourceObject.Load(4, &fd.rbmf)
+	stateSourceObject.Load(5, &fd.sqemf)
+	stateSourceObject.Load(6, &fd.running)
+	stateSourceObject.Load(7, &fd.ioRings)
+	stateSourceObject.Load(8, &fd.remap)
 	stateSourceObject.AfterLoad(func() { fd.afterLoad(ctx) })
 }
 

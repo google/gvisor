@@ -101,7 +101,6 @@ func (m *aioMappable) StateTypeName() string {
 func (m *aioMappable) StateFields() []string {
 	return []string{
 		"aioMappableRefs",
-		"mfp",
 		"fr",
 	}
 }
@@ -112,17 +111,14 @@ func (m *aioMappable) beforeSave() {}
 func (m *aioMappable) StateSave(stateSinkObject state.Sink) {
 	m.beforeSave()
 	stateSinkObject.Save(0, &m.aioMappableRefs)
-	stateSinkObject.Save(1, &m.mfp)
-	stateSinkObject.Save(2, &m.fr)
+	stateSinkObject.Save(1, &m.fr)
 }
-
-func (m *aioMappable) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (m *aioMappable) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &m.aioMappableRefs)
-	stateSourceObject.Load(1, &m.mfp)
-	stateSourceObject.Load(2, &m.fr)
+	stateSourceObject.Load(1, &m.fr)
+	stateSourceObject.AfterLoad(func() { m.afterLoad(ctx) })
 }
 
 func (r *aioMappableRefs) StateTypeName() string {
@@ -212,7 +208,6 @@ func (mm *MemoryManager) StateTypeName() string {
 func (mm *MemoryManager) StateFields() []string {
 	return []string{
 		"p",
-		"mfp",
 		"layout",
 		"users",
 		"vmas",
@@ -249,55 +244,53 @@ func (mm *MemoryManager) StateSave(stateSinkObject state.Sink) {
 		state.Failf("captureInvalidations is %#v, expected zero", &mm.captureInvalidations)
 	}
 	stateSinkObject.Save(0, &mm.p)
-	stateSinkObject.Save(1, &mm.mfp)
-	stateSinkObject.Save(2, &mm.layout)
-	stateSinkObject.Save(3, &mm.users)
-	stateSinkObject.Save(4, &mm.vmas)
-	stateSinkObject.Save(5, &mm.brk)
-	stateSinkObject.Save(6, &mm.usageAS)
-	stateSinkObject.Save(7, &mm.lockedAS)
-	stateSinkObject.Save(8, &mm.dataAS)
-	stateSinkObject.Save(9, &mm.defMLockMode)
-	stateSinkObject.Save(10, &mm.pmas)
-	stateSinkObject.Save(11, &mm.curRSS)
-	stateSinkObject.Save(12, &mm.maxRSS)
-	stateSinkObject.Save(13, &mm.dumpability)
-	stateSinkObject.Save(14, &mm.argv)
-	stateSinkObject.Save(15, &mm.envv)
-	stateSinkObject.Save(16, &mm.auxv)
-	stateSinkObject.Save(17, &mm.executable)
-	stateSinkObject.Save(18, &mm.aioManager)
-	stateSinkObject.Save(19, &mm.sleepForActivation)
-	stateSinkObject.Save(20, &mm.vdsoSigReturnAddr)
-	stateSinkObject.Save(21, &mm.membarrierPrivateEnabled)
-	stateSinkObject.Save(22, &mm.membarrierRSeqEnabled)
+	stateSinkObject.Save(1, &mm.layout)
+	stateSinkObject.Save(2, &mm.users)
+	stateSinkObject.Save(3, &mm.vmas)
+	stateSinkObject.Save(4, &mm.brk)
+	stateSinkObject.Save(5, &mm.usageAS)
+	stateSinkObject.Save(6, &mm.lockedAS)
+	stateSinkObject.Save(7, &mm.dataAS)
+	stateSinkObject.Save(8, &mm.defMLockMode)
+	stateSinkObject.Save(9, &mm.pmas)
+	stateSinkObject.Save(10, &mm.curRSS)
+	stateSinkObject.Save(11, &mm.maxRSS)
+	stateSinkObject.Save(12, &mm.dumpability)
+	stateSinkObject.Save(13, &mm.argv)
+	stateSinkObject.Save(14, &mm.envv)
+	stateSinkObject.Save(15, &mm.auxv)
+	stateSinkObject.Save(16, &mm.executable)
+	stateSinkObject.Save(17, &mm.aioManager)
+	stateSinkObject.Save(18, &mm.sleepForActivation)
+	stateSinkObject.Save(19, &mm.vdsoSigReturnAddr)
+	stateSinkObject.Save(20, &mm.membarrierPrivateEnabled)
+	stateSinkObject.Save(21, &mm.membarrierRSeqEnabled)
 }
 
 // +checklocksignore
 func (mm *MemoryManager) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &mm.p)
-	stateSourceObject.Load(1, &mm.mfp)
-	stateSourceObject.Load(2, &mm.layout)
-	stateSourceObject.Load(3, &mm.users)
-	stateSourceObject.Load(4, &mm.vmas)
-	stateSourceObject.Load(5, &mm.brk)
-	stateSourceObject.Load(6, &mm.usageAS)
-	stateSourceObject.Load(7, &mm.lockedAS)
-	stateSourceObject.Load(8, &mm.dataAS)
-	stateSourceObject.Load(9, &mm.defMLockMode)
-	stateSourceObject.Load(10, &mm.pmas)
-	stateSourceObject.Load(11, &mm.curRSS)
-	stateSourceObject.Load(12, &mm.maxRSS)
-	stateSourceObject.Load(13, &mm.dumpability)
-	stateSourceObject.Load(14, &mm.argv)
-	stateSourceObject.Load(15, &mm.envv)
-	stateSourceObject.Load(16, &mm.auxv)
-	stateSourceObject.Load(17, &mm.executable)
-	stateSourceObject.Load(18, &mm.aioManager)
-	stateSourceObject.Load(19, &mm.sleepForActivation)
-	stateSourceObject.Load(20, &mm.vdsoSigReturnAddr)
-	stateSourceObject.Load(21, &mm.membarrierPrivateEnabled)
-	stateSourceObject.Load(22, &mm.membarrierRSeqEnabled)
+	stateSourceObject.Load(1, &mm.layout)
+	stateSourceObject.Load(2, &mm.users)
+	stateSourceObject.Load(3, &mm.vmas)
+	stateSourceObject.Load(4, &mm.brk)
+	stateSourceObject.Load(5, &mm.usageAS)
+	stateSourceObject.Load(6, &mm.lockedAS)
+	stateSourceObject.Load(7, &mm.dataAS)
+	stateSourceObject.Load(8, &mm.defMLockMode)
+	stateSourceObject.Load(9, &mm.pmas)
+	stateSourceObject.Load(10, &mm.curRSS)
+	stateSourceObject.Load(11, &mm.maxRSS)
+	stateSourceObject.Load(12, &mm.dumpability)
+	stateSourceObject.Load(13, &mm.argv)
+	stateSourceObject.Load(14, &mm.envv)
+	stateSourceObject.Load(15, &mm.auxv)
+	stateSourceObject.Load(16, &mm.executable)
+	stateSourceObject.Load(17, &mm.aioManager)
+	stateSourceObject.Load(18, &mm.sleepForActivation)
+	stateSourceObject.Load(19, &mm.vdsoSigReturnAddr)
+	stateSourceObject.Load(20, &mm.membarrierPrivateEnabled)
+	stateSourceObject.Load(21, &mm.membarrierRSeqEnabled)
 	stateSourceObject.AfterLoad(func() { mm.afterLoad(ctx) })
 }
 
@@ -511,7 +504,6 @@ func (m *SpecialMappable) StateTypeName() string {
 func (m *SpecialMappable) StateFields() []string {
 	return []string{
 		"SpecialMappableRefs",
-		"mfp",
 		"fr",
 		"name",
 	}
@@ -523,19 +515,16 @@ func (m *SpecialMappable) beforeSave() {}
 func (m *SpecialMappable) StateSave(stateSinkObject state.Sink) {
 	m.beforeSave()
 	stateSinkObject.Save(0, &m.SpecialMappableRefs)
-	stateSinkObject.Save(1, &m.mfp)
-	stateSinkObject.Save(2, &m.fr)
-	stateSinkObject.Save(3, &m.name)
+	stateSinkObject.Save(1, &m.fr)
+	stateSinkObject.Save(2, &m.name)
 }
-
-func (m *SpecialMappable) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (m *SpecialMappable) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &m.SpecialMappableRefs)
-	stateSourceObject.Load(1, &m.mfp)
-	stateSourceObject.Load(2, &m.fr)
-	stateSourceObject.Load(3, &m.name)
+	stateSourceObject.Load(1, &m.fr)
+	stateSourceObject.Load(2, &m.name)
+	stateSourceObject.AfterLoad(func() { m.afterLoad(ctx) })
 }
 
 func (r *SpecialMappableRefs) StateTypeName() string {

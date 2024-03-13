@@ -134,7 +134,7 @@ type FilesystemOpts struct {
 	MaxFilenameLen int
 
 	// MemoryFile is the memory file that will be used to store file data. If
-	// this is nil, then MemoryFileProviderFromContext() is used.
+	// this is nil, then MemoryFileFromContext() is used.
 	MemoryFile *pgalloc.MemoryFile
 
 	// DisableDefaultSizeLimit disables setting a default size limit. In Linux,

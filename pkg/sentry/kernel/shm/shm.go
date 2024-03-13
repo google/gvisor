@@ -34,6 +34,7 @@
 package shm
 
 import (
+	goContext "context"
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
@@ -201,9 +202,9 @@ func (r *Registry) FindOrCreate(ctx context.Context, pid int32, key ipc.Key, siz
 //
 // Precondition: Caller must hold r.mu.
 func (r *Registry) newShmLocked(ctx context.Context, pid int32, key ipc.Key, creator *auth.Credentials, mode linux.FileMode, size uint64) (*Shm, error) {
-	mfp := pgalloc.MemoryFileProviderFromContext(ctx)
-	if mfp == nil {
-		panic(fmt.Sprintf("context.Context %T lacks non-nil value for key %T", ctx, pgalloc.CtxMemoryFileProvider))
+	mf := pgalloc.MemoryFileFromContext(ctx)
+	if mf == nil {
+		panic(fmt.Sprintf("context.Context %T lacks non-nil value for key %T", ctx, pgalloc.CtxMemoryFile))
 	}
 	devID, ok := deviceIDFromContext(ctx)
 	if !ok {
@@ -211,13 +212,13 @@ func (r *Registry) newShmLocked(ctx context.Context, pid int32, key ipc.Key, cre
 	}
 
 	effectiveSize := uint64(hostarch.Addr(size).MustRoundUp())
-	fr, err := mfp.MemoryFile().Allocate(effectiveSize, pgalloc.AllocOpts{Kind: usage.Anonymous, MemCgID: pgalloc.MemoryCgroupIDFromContext(ctx)})
+	fr, err := mf.Allocate(effectiveSize, pgalloc.AllocOpts{Kind: usage.Anonymous, MemCgID: pgalloc.MemoryCgroupIDFromContext(ctx)})
 	if err != nil {
 		return nil, err
 	}
 
 	shm := &Shm{
-		mfp:           mfp,
+		mf:            mf,
 		registry:      r,
 		devID:         devID,
 		size:          size,
@@ -331,7 +332,7 @@ type Shm struct {
 	// via MappingIdentity.
 	ShmRefs
 
-	mfp pgalloc.MemoryFileProvider
+	mf *pgalloc.MemoryFile `state:"nosave"`
 
 	// registry points to the shm registry containing this segment. Immutable.
 	registry *Registry
@@ -377,6 +378,11 @@ type Shm struct {
 	// in the registry and can no longer be attached. When the last user
 	// detaches from the segment, it is destroyed.
 	pendingDestruction bool
+}
+
+// afterLoad is invoked by stateify.
+func (s *Shm) afterLoad(ctx goContext.Context) {
+	s.mf = pgalloc.MemoryFileFromContext(ctx)
 }
 
 // ID returns object's ID.
@@ -436,7 +442,7 @@ func (s *Shm) InodeID() uint64 {
 // Precondition: Caller must not hold s.mu.
 func (s *Shm) DecRef(ctx context.Context) {
 	s.ShmRefs.DecRef(func() {
-		s.mfp.MemoryFile().DecRef(s.fr)
+		s.mf.DecRef(s.fr)
 		s.registry.remove(s)
 	})
 }
@@ -498,7 +504,7 @@ func (s *Shm) Translate(ctx context.Context, required, optional memmap.MappableR
 		return []memmap.Translation{
 			{
 				Source: source,
-				File:   s.mfp.MemoryFile(),
+				File:   s.mf,
 				Offset: s.fr.Start + source.Start,
 				Perms:  hostarch.AnyAccess,
 			},

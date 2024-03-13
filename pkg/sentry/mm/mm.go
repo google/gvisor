@@ -57,8 +57,7 @@ type MapsCallbackFunc func(start, end hostarch.Addr, permissions hostarch.Access
 // +stateify savable
 type MemoryManager struct {
 	// p and mfp are immutable.
-	p   platform.Platform
-	mfp pgalloc.MemoryFileProvider
+	p platform.Platform
 
 	// mf is the cached result of mfp.MemoryFile().
 	//

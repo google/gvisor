@@ -31,7 +31,7 @@ import (
 type SpecialMappable struct {
 	SpecialMappableRefs
 
-	mfp  pgalloc.MemoryFileProvider
+	mf   *pgalloc.MemoryFile `state:"nosave"`
 	fr   memmap.FileRange
 	name string
 }
@@ -41,8 +41,8 @@ type SpecialMappable struct {
 // SpecialMappable will use the given name in /proc/[pid]/maps.
 //
 // Preconditions: fr.Length() != 0.
-func NewSpecialMappable(name string, mfp pgalloc.MemoryFileProvider, fr memmap.FileRange) *SpecialMappable {
-	m := SpecialMappable{mfp: mfp, fr: fr, name: name}
+func NewSpecialMappable(name string, mf *pgalloc.MemoryFile, fr memmap.FileRange) *SpecialMappable {
+	m := SpecialMappable{mf: mf, fr: fr, name: name}
 	m.InitRefs()
 	return &m
 }
@@ -50,7 +50,7 @@ func NewSpecialMappable(name string, mfp pgalloc.MemoryFileProvider, fr memmap.F
 // DecRef implements refs.RefCounter.DecRef.
 func (m *SpecialMappable) DecRef(ctx context.Context) {
 	m.SpecialMappableRefs.DecRef(func() {
-		m.mfp.MemoryFile().DecRef(m.fr)
+		m.mf.DecRef(m.fr)
 	})
 }
 
@@ -99,7 +99,7 @@ func (m *SpecialMappable) Translate(ctx context.Context, required, optional memm
 		return []memmap.Translation{
 			{
 				Source: source,
-				File:   m.mfp.MemoryFile(),
+				File:   m.mf,
 				Offset: m.fr.Start + source.Start,
 				Perms:  hostarch.AnyAccess,
 			},
@@ -115,14 +115,8 @@ func (m *SpecialMappable) InvalidateUnsavable(ctx context.Context) error {
 	return nil
 }
 
-// MemoryFileProvider returns the MemoryFileProvider whose MemoryFile stores
-// the SpecialMappable's contents.
-func (m *SpecialMappable) MemoryFileProvider() pgalloc.MemoryFileProvider {
-	return m.mfp
-}
-
-// FileRange returns the offsets into MemoryFileProvider().MemoryFile() that
-// store the SpecialMappable's contents.
+// FileRange returns the offsets into m.mf that stores the SpecialMappable's
+// contents.
 func (m *SpecialMappable) FileRange() memmap.FileRange {
 	return m.fr
 }

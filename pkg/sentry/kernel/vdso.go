@@ -15,6 +15,7 @@
 package kernel
 
 import (
+	"context"
 	"fmt"
 
 	"gvisor.dev/gvisor/pkg/hostarch"
@@ -57,9 +58,9 @@ type vdsoParams struct {
 //
 // +stateify savable
 type VDSOParamPage struct {
-	// The parameter page is fr, allocated from mfp.MemoryFile().
-	mfp pgalloc.MemoryFileProvider
-	fr  memmap.FileRange
+	// The parameter page is fr, allocated from mf.
+	mf *pgalloc.MemoryFile `state:"nosave"`
+	fr memmap.FileRange
 
 	// seq is the current sequence count written to the page.
 	//
@@ -78,17 +79,22 @@ type VDSOParamPage struct {
 	copyScratchBuffer []byte
 }
 
+// afterLoad is invoked by stateify.
+func (v *VDSOParamPage) afterLoad(ctx context.Context) {
+	v.mf = pgalloc.MemoryFileFromContext(ctx)
+}
+
 // NewVDSOParamPage returns a VDSOParamPage.
 //
 // Preconditions:
-//   - fr is a single page allocated from mfp.MemoryFile(). VDSOParamPage does
-//     not take ownership of fr; it must remain allocated for the lifetime of the
+//   - fr is a single page allocated from mf. VDSOParamPage does not take
+//     ownership of fr; it must remain allocated for the lifetime of the
 //     VDSOParamPage.
 //   - VDSOParamPage must be the only writer to fr.
-//   - mfp.MemoryFile().MapInternal(fr) must return a single safemem.Block.
-func NewVDSOParamPage(mfp pgalloc.MemoryFileProvider, fr memmap.FileRange) *VDSOParamPage {
+//   - mf.MapInternal(fr) must return a single safemem.Block.
+func NewVDSOParamPage(mf *pgalloc.MemoryFile, fr memmap.FileRange) *VDSOParamPage {
 	return &VDSOParamPage{
-		mfp:               mfp,
+		mf:                mf,
 		fr:                fr,
 		copyScratchBuffer: make([]byte, (*vdsoParams)(nil).SizeBytes()),
 	}
@@ -96,7 +102,7 @@ func NewVDSOParamPage(mfp pgalloc.MemoryFileProvider, fr memmap.FileRange) *VDSO
 
 // access returns a mapping of the param page.
 func (v *VDSOParamPage) access() (safemem.Block, error) {
-	bs, err := v.mfp.MemoryFile().MapInternal(v.fr, hostarch.ReadWrite)
+	bs, err := v.mf.MapInternal(v.fr, hostarch.ReadWrite)
 	if err != nil {
 		return safemem.Block{}, err
 	}

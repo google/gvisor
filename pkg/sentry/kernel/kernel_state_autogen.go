@@ -2475,7 +2475,6 @@ func (v *VDSOParamPage) StateTypeName() string {
 
 func (v *VDSOParamPage) StateFields() []string {
 	return []string{
-		"mfp",
 		"fr",
 		"seq",
 		"copyScratchBuffer",
@@ -2487,20 +2486,17 @@ func (v *VDSOParamPage) beforeSave() {}
 // +checklocksignore
 func (v *VDSOParamPage) StateSave(stateSinkObject state.Sink) {
 	v.beforeSave()
-	stateSinkObject.Save(0, &v.mfp)
-	stateSinkObject.Save(1, &v.fr)
-	stateSinkObject.Save(2, &v.seq)
-	stateSinkObject.Save(3, &v.copyScratchBuffer)
+	stateSinkObject.Save(0, &v.fr)
+	stateSinkObject.Save(1, &v.seq)
+	stateSinkObject.Save(2, &v.copyScratchBuffer)
 }
-
-func (v *VDSOParamPage) afterLoad(context.Context) {}
 
 // +checklocksignore
 func (v *VDSOParamPage) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &v.mfp)
-	stateSourceObject.Load(1, &v.fr)
-	stateSourceObject.Load(2, &v.seq)
-	stateSourceObject.Load(3, &v.copyScratchBuffer)
+	stateSourceObject.Load(0, &v.fr)
+	stateSourceObject.Load(1, &v.seq)
+	stateSourceObject.Load(2, &v.copyScratchBuffer)
+	stateSourceObject.AfterLoad(func() { v.afterLoad(ctx) })
 }
 
 func init() {
