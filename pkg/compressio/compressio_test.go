@@ -219,31 +219,30 @@ func benchmark(b *testing.B, compress bool, hash bool, blockSize uint32) {
 	b.StopTimer()
 	b.SetBytes(benchDataSize)
 	data := initTest(b, benchDataSize)
-	compIters := b.N
-	decompIters := b.N
-	if compress {
-		decompIters = 0
-	} else {
-		compIters = 0
-	}
 	key := hashKey
 	if !hash {
 		key = nil
 	}
-	doTest(b, testOpts{
-		Name:         fmt.Sprintf("compress=%t, hash=%t, len(data)=%d, blockSize=%d", compress, hash, len(data), blockSize),
-		Data:         data,
-		PreCompress:  b.StartTimer,
-		PostCompress: b.StopTimer,
+	opts := testOpts{
+		Name: fmt.Sprintf("compress=%t, hash=%t, len(data)=%d, blockSize=%d", compress, hash, len(data), blockSize),
+		Data: data,
 		NewWriter: func(b *bytes.Buffer) (io.Writer, error) {
 			return NewWriter(b, key, blockSize, flate.BestSpeed)
 		},
 		NewReader: func(b *bytes.Buffer) (io.Reader, error) {
 			return NewReader(b, key)
 		},
-		CompressIters:   compIters,
-		DecompressIters: decompIters,
-	})
+	}
+	if compress {
+		opts.PreCompress = b.StartTimer
+		opts.PostCompress = b.StopTimer
+		opts.CompressIters = b.N
+	} else {
+		opts.PreDecompress = b.StartTimer
+		opts.PostDecompress = b.StopTimer
+		opts.DecompressIters = b.N
+	}
+	doTest(b, opts)
 }
 
 func BenchmarkCompressNoHash64K(b *testing.B) {
