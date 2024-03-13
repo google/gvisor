@@ -95,7 +95,7 @@ func (v DriverVersion) isGreaterThan(other DriverVersion) bool {
 
 type frontendIoctlHandler func(fi *frontendIoctlState) (uintptr, error)
 type controlCmdHandler func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS54Parameters) (uintptr, error)
-type allocationClassHandler func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64ParametersV535, isNVOS64 bool) (uintptr, error)
+type allocationClassHandler func(fi *frontendIoctlState, ioctlParams *nvgpu.NVOS64Parameters, isNVOS64 bool) (uintptr, error)
 type uvmIoctlHandler func(ui *uvmIoctlState) (uintptr, error)
 
 // A driverABIFunc constructs and returns a driverABI.
@@ -126,8 +126,6 @@ type driverABI struct {
 	uvmIoctl        map[uint32]uvmIoctlHandler
 	controlCmd      map[uint32]controlCmdHandler
 	allocationClass map[uint32]allocationClassHandler
-
-	useRmAllocParamsV535 bool
 }
 
 // abis is a global map containing all supported Nvidia driver ABIs. This is
@@ -151,9 +149,8 @@ func addDriverABI(major, minor, patch int, runfileChecksum string, cons driverAB
 // Init initializes abis global map.
 func Init() {
 	abisOnce.Do(func() {
-		v525_60_13Checksum := "dce1c184f9f038be72237ccd29c66bb151077f6037f1c158c83d582bd2dba8ca"
-		v525_60_13 := addDriverABI(525, 60, 13, v525_60_13Checksum, func() *driverABI {
-			// 525.60.13 is the earliest driver version supported by nvproxy. Since
+		v535_104_05 := addDriverABI(535, 104, 05, "2f9d609d1da770beee757636635c46e7ed8253ade887b87c7a5482e33fcbedc9", func() *driverABI {
+			// 535.104.05 is the earliest driver version supported by nvproxy. Since
 			// there is no parent to inherit from, the driverABI needs to be constructed
 			// with the entirety of the nvproxy functionality at this version.
 			return &driverABI{
@@ -195,6 +192,7 @@ func Init() {
 					nvgpu.UVM_ALLOC_SEMAPHORE_POOL:           uvmIoctlSimple[nvgpu.UVM_ALLOC_SEMAPHORE_POOL_PARAMS],
 					nvgpu.UVM_VALIDATE_VA_RANGE:              uvmIoctlSimple[nvgpu.UVM_VALIDATE_VA_RANGE_PARAMS],
 					nvgpu.UVM_CREATE_EXTERNAL_RANGE:          uvmIoctlSimple[nvgpu.UVM_CREATE_EXTERNAL_RANGE_PARAMS],
+					nvgpu.UVM_MM_INITIALIZE:                  uvmMMInitialize,
 				},
 				controlCmd: map[uint32]controlCmdHandler{
 					nvgpu.NV0000_CTRL_CMD_CLIENT_GET_ADDR_SPACE_TYPE:        rmControlSimple,
@@ -268,6 +266,7 @@ func Init() {
 					nvgpu.NV90E6_CTRL_CMD_MASTER_GET_VIRTUAL_FUNCTION_ERROR_CONT_INTR_MASK: rmControlSimple,
 					nvgpu.NVC36F_CTRL_GET_CLASS_ENGINEID:                                   rmControlSimple,
 					nvgpu.NVC36F_CTRL_CMD_GPFIFO_GET_WORK_SUBMIT_TOKEN:                     rmControlSimple,
+					nvgpu.NV_CONF_COMPUTE_CTRL_CMD_SYSTEM_GET_CAPABILITIES:                 rmControlSimple,
 					nvgpu.NVA06C_CTRL_CMD_GPFIFO_SCHEDULE:                                  rmControlSimple,
 					nvgpu.NVA06C_CTRL_CMD_SET_TIMESLICE:                                    rmControlSimple,
 					nvgpu.NVA06C_CTRL_CMD_PREEMPT:                                          rmControlSimple,
@@ -305,6 +304,7 @@ func Init() {
 					nvgpu.AMPERE_COMPUTE_A:        rmAllocSimple[nvgpu.NV_GR_ALLOCATION_PARAMETERS],
 					nvgpu.AMPERE_COMPUTE_B:        rmAllocSimple[nvgpu.NV_GR_ALLOCATION_PARAMETERS],
 					nvgpu.ADA_COMPUTE_A:           rmAllocSimple[nvgpu.NV_GR_ALLOCATION_PARAMETERS],
+					nvgpu.NV_CONFIDENTIAL_COMPUTE: rmAllocSimple[nvgpu.NV_CONFIDENTIAL_COMPUTE_ALLOC_PARAMS],
 					nvgpu.HOPPER_COMPUTE_A:        rmAllocSimple[nvgpu.NV_GR_ALLOCATION_PARAMETERS],
 					nvgpu.HOPPER_USERMODE_A:       rmAllocSimple[nvgpu.NV_HOPPER_USERMODE_A_PARAMS],
 					nvgpu.GF100_SUBDEVICE_MASTER:  rmAllocNoParams,
@@ -313,44 +313,9 @@ func Init() {
 			}
 		})
 
-		// 525.89.02 is an intermediate unqualified version from the main branch.
-		v525_89_02 := v525_60_13
-
-		// The following versions do not exist on the main branch. They branched
-		// off the main branch at 525.89.02.
-		v525_105_17Checksum := "c635a21a282c9b53485f19ebb64a0f4b536a968b94d4d97629e0bc547a58142a"
-		v525_105_17 := addDriverABI(525, 105, 17, v525_105_17Checksum, v525_89_02)
-		v525_125_06Checksum := "b5275689f4a833c37a507717ac8f0ee2f1f5cd2b7e236ffa70aad8dfb7455b9d"
-		_ = addDriverABI(525, 125, 06, v525_125_06Checksum, v525_105_17)
-
-		// 535.43.02 is an intermediate unqualified version from the main branch.
-		v535_43_02 := func() *driverABI {
-			abi := v525_89_02()
-			abi.useRmAllocParamsV535 = true
-			abi.controlCmd[nvgpu.NV_CONF_COMPUTE_CTRL_CMD_SYSTEM_GET_CAPABILITIES] = rmControlSimple
-			abi.allocationClass[nvgpu.NV_CONFIDENTIAL_COMPUTE] = rmAllocSimple[nvgpu.NV_CONFIDENTIAL_COMPUTE_ALLOC_PARAMS]
-			abi.allocationClass[nvgpu.NV50_P2P] = rmAllocSimple[nvgpu.NV503B_ALLOC_PARAMETERS_V535]
-			abi.allocationClass[nvgpu.NV_MEMORY_FABRIC] = rmAllocSimple[nvgpu.NV00F8_ALLOCATION_PARAMETERS_V535]
-			abi.uvmIoctl[nvgpu.UVM_MM_INITIALIZE] = uvmMMInitialize
-			return abi
-		}
-
-		v535_54_03Checksum := "454764f57ea1b9e19166a370f78be10e71f0626438fb197f726dc3caf05b4082"
-		v535_54_03 := addDriverABI(535, 54, 03, v535_54_03Checksum, v535_43_02)
-		// 535.86.05 is an intermediate unqualified version from the main branch.
-		v535_86_05 := func() *driverABI {
-			abi := v535_54_03()
-			abi.allocationClass[nvgpu.TURING_CHANNEL_GPFIFO_A] = rmAllocSimple[nvgpu.NV_CHANNEL_ALLOC_PARAMS_V535]
-			abi.allocationClass[nvgpu.AMPERE_CHANNEL_GPFIFO_A] = rmAllocSimple[nvgpu.NV_CHANNEL_ALLOC_PARAMS_V535]
-			return abi
-		}
-		v535_104_05Checksum := "2f9d609d1da770beee757636635c46e7ed8253ade887b87c7a5482e33fcbedc9"
-		v535_104_05 := addDriverABI(535, 104, 05, v535_104_05Checksum, v535_86_05)
-
 		// 535.104.12 does not exist on the main branch. It branched off the main
 		// branch at 535.104.05.
-		v535_104_12Checksum := "ffc2d89e233d2427edb1ff5f436028a94b3ef86e78f97e088e11d905c82e8001"
-		_ = addDriverABI(535, 104, 12, v535_104_12Checksum, v535_104_05)
+		_ = addDriverABI(535, 104, 12, "ffc2d89e233d2427edb1ff5f436028a94b3ef86e78f97e088e11d905c82e8001", v535_104_05)
 
 		// 535.113.01 is an intermediate unqualified version from the main branch.
 		v535_113_01 := v535_104_05
