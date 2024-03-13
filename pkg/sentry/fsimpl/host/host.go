@@ -108,11 +108,11 @@ type inode struct {
 	inodeRefs
 
 	// hostFD contains the host fd that this file was originally created from.
-	// It must be available at time of restore by being set to the same value or
-	// remapped using restoreKey and vfs.CtxRestoreFilesystemFDMap in the context.
+	// Upon restore, it must be remapped using restoreKey and vfs.CtxRestoreFilesystemFDMap
+	// from the restore context.
 	//
 	// This field is initialized at creation time and is immutable.
-	hostFD int
+	hostFD int `state:"nosave"`
 
 	// restoreKey is used to identify the `hostFD` after a restore is performed.
 	restoreKey vfs.RestoreID
