@@ -1464,5 +1464,47 @@ TEST_P(TCPSocketPairTest, ResetWithSoLingerZeroTimeoutOption) {
               SyscallSucceedsWithValue(sizeof(buf)));
 }
 
+TEST_P(TCPSocketPairTest, WaitTillMSSWithCorkOption) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  ASSERT_THAT(setsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_CORK,
+                         &kSockOptOn, sizeof(kSockOptOn)),
+              SyscallSucceeds());
+
+  constexpr int kTCPMaxSeg = 1024;
+  EXPECT_THAT(setsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_MAXSEG,
+                         &kTCPMaxSeg, sizeof(kTCPMaxSeg)),
+              SyscallSucceedsWithValue(0));
+
+  // Use the buffer size which is guaranteed to be >= MSS.
+  char buffer[1024] = {};
+  EXPECT_THAT(RetryEINTR(send)(sockets->first_fd(), buffer, sizeof(buffer), 0),
+              SyscallSucceedsWithValue(sizeof(buffer)));
+
+  char buf[1024] = {};
+  EXPECT_THAT(RetryEINTR(recv)(sockets->second_fd(), buf, sizeof(buf), 0),
+              SyscallSucceedsWithValue(sizeof(buf)));
+}
+
+TEST_P(TCPSocketPairTest, WaitTillTimeoutWithCorkOption) {
+  auto sockets = ASSERT_NO_ERRNO_AND_VALUE(NewSocketPair());
+  ASSERT_THAT(setsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_CORK,
+                         &kSockOptOn, sizeof(kSockOptOn)),
+              SyscallSucceeds());
+
+  constexpr int kTCPMaxSeg = 1024;
+  EXPECT_THAT(setsockopt(sockets->first_fd(), IPPROTO_TCP, TCP_MAXSEG,
+                         &kTCPMaxSeg, sizeof(kTCPMaxSeg)),
+              SyscallSucceedsWithValue(0));
+
+  // Use buffer size less than MSS.
+  char buffer[512] = {};
+  EXPECT_THAT(RetryEINTR(send)(sockets->first_fd(), buffer, sizeof(buffer), 0),
+              SyscallSucceedsWithValue(sizeof(buffer)));
+
+  char buf[512] = {};
+  EXPECT_THAT(RetryEINTR(recv)(sockets->second_fd(), buf, sizeof(buf), 0),
+              SyscallSucceedsWithValue(sizeof(buf)));
+}
+
 }  // namespace testing
 }  // namespace gvisor
