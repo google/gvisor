@@ -425,6 +425,8 @@ func (d *lisafsDentry) link(ctx context.Context, target *lisafsDentry, name stri
 	if err != nil {
 		return nil, err
 	}
+	// TODO(gvisor.dev/issue/6739): Hard linked dentries should share the same
+	// inode fields.
 	return d.newChildDentry(ctx, &linkInode, name)
 }
 
