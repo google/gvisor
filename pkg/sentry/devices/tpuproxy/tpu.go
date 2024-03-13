@@ -40,7 +40,7 @@ type tpuFD struct {
 	hostFD     int32
 	device     *tpuDevice
 	queue      waiter.Queue
-	memmapFile tpuFdMemmapFile
+	memmapFile tpuFDMemmapFile
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
