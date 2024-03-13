@@ -25,9 +25,12 @@ import (
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
+	"gvisor.dev/gvisor/pkg/safemem"
+	"gvisor.dev/gvisor/pkg/sentry/memmap"
 	"gvisor.dev/gvisor/pkg/sentry/usage"
 	"gvisor.dev/gvisor/pkg/state"
 	"gvisor.dev/gvisor/pkg/state/wire"
+	"gvisor.dev/gvisor/pkg/sync"
 )
 
 // SaveTo writes f's state to the given stream.
@@ -149,27 +152,42 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r wire.Reader) error {
 		return err
 	}
 
-	// Try to map committed chunks concurrently: For any given chunk, either
-	// this loop or the following one will mmap the chunk first and cache it in
-	// f.mappings for the other, but this loop is likely to run ahead of the
-	// other since it doesn't do any work between mmaps. The rest of this
-	// function doesn't mutate f.usage, so it's safe to iterate concurrently.
-	mapperDone := make(chan struct{})
+	// Try to mmap chunks and populate pages in parallel while data is being
+	// loaded. The rest of this function doesn't mutate f.usage, so it's safe
+	// to iterate concurrently.
+	var mapperWG sync.WaitGroup
 	mapperCanceled := atomicbitops.FromInt32(0)
-	go func() { // S/R-SAFE: see comment
-		defer func() { close(mapperDone) }()
-		for seg := f.usage.FirstSegment(); seg.Ok(); seg = seg.NextSegment() {
-			if mapperCanceled.Load() != 0 {
-				return
+	if !f.usage.IsEmpty() {
+		approxBytes := f.usage.LastSegment().End()
+		mapperMax := uint64(runtime.GOMAXPROCS(0))
+		approxBytesPerMapper := hostarch.MustHugePageRoundUp((approxBytes + mapperMax - 1) / mapperMax)
+		for i := uint64(0); i < mapperMax; i++ {
+			mapperRange := memmap.FileRange{
+				Start: i * approxBytesPerMapper,
+				End:   (i + 1) * approxBytesPerMapper,
 			}
-			if seg.Value().knownCommitted {
-				f.forEachMappingSlice(seg.Range(), func(s []byte) {})
-			}
+			mapperWG.Add(1)
+			go func() { // S/R-SAFE: mapperWG
+				defer mapperWG.Done()
+				for seg := f.usage.LowerBoundSegment(mapperRange.Start); seg.Ok() && seg.Start() < mapperRange.End; seg = seg.NextSegment() {
+					if mapperCanceled.Load() != 0 {
+						return
+					}
+					if seg.Value().knownCommitted {
+						f.forEachMappingSlice(seg.Range().Intersect(mapperRange), func(s []byte) {
+							// mlock() and munlock() will acquire the mmap lock
+							// for writing to set/unset VMAs as mlocked, making
+							// tryPopulateMlock() unsuitable for this purpose.
+							tryPopulateMadv(safemem.BlockFromSafeSlice(s))
+						})
+					}
+				}
+			}()
 		}
-	}()
+	}
 	defer func() {
 		mapperCanceled.Store(1)
-		<-mapperDone
+		mapperWG.Wait()
 	}()
 
 	// Load committed pages.
