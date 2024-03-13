@@ -1,4 +1,4 @@
-// Copyright 2023 The gVisor Authors.
+// Copyright 2024 The gVisor Authors.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,16 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package nvgpu
+// The package implements VFIOuserspace driver interface.
 
-import "unsafe"
+package linux
 
-// GetPointer implements RmAllocParamType.GetPointer.
-func (n *NVOS21Parameters) GetPointer() uintptr {
-	return uintptr(unsafe.Pointer(n))
-}
+// For IOCTLs requests from include/uapi/linux/vfio.h.
+const (
+	VFIO_TYPE = ';'
+	VFIO_BASE = 100
 
-// GetPointer implements RmAllocParamType.GetPointer.
-func (n *NVOS64Parameters) GetPointer() uintptr {
-	return uintptr(unsafe.Pointer(n))
-}
+	// VFIO extensions.
+	VFIO_TYPE1_IOMMU     = 1
+	VFIO_SPAPR_TCE_IOMMU = 2
+	VFIO_TYPE1v2_IOMMU   = 3
+)
+
+// IOCTLs for VFIO file descriptor from include/uapi/linux/vfio.h.
+var (
+	VFIO_CHECK_EXTENSION     = IO(VFIO_TYPE, VFIO_BASE+1)
+	VFIO_GROUP_SET_CONTAINER = IO(VFIO_TYPE, VFIO_BASE+4)
+)

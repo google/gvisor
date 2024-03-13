@@ -118,20 +118,6 @@ type NV_MEMORY_ALLOCATION_PARAMS struct {
 	Tag           uint32
 }
 
-// NV503B_ALLOC_PARAMETERS is the alloc params type for NV50_P2P, from
-// src/common/sdk/nvidia/inc/class/cl503b.h.
-//
-// +marshal
-type NV503B_ALLOC_PARAMETERS struct {
-	HSubDevice              Handle
-	HPeerSubDevice          Handle
-	SubDevicePeerIDMask     uint32
-	PeerSubDevicePeerIDMask uint32
-	MailboxBar1Addr         uint64
-	MailboxTotalSize        uint32
-	Flags                   uint32
-}
-
 // NV503B_BAR1_P2P_DMA_INFO from src/common/sdk/nvidia/inc/class/cl503b.h.
 //
 // +marshal
@@ -140,12 +126,18 @@ type NV503B_BAR1_P2P_DMA_INFO struct {
 	DmaSize    uint64
 }
 
-// NV503B_ALLOC_PARAMETERS_V535 is the updated version of
-// NV503B_ALLOC_PARAMETERS since 535.43.02.
+// NV503B_ALLOC_PARAMETERS is the alloc params type for NV50_P2P, from
+// src/common/sdk/nvidia/inc/class/cl503b.h.
 //
 // +marshal
-type NV503B_ALLOC_PARAMETERS_V535 struct {
-	NV503B_ALLOC_PARAMETERS
+type NV503B_ALLOC_PARAMETERS struct {
+	HSubDevice                 Handle
+	HPeerSubDevice             Handle
+	SubDevicePeerIDMask        uint32
+	PeerSubDevicePeerIDMask    uint32
+	MailboxBar1Addr            uint64
+	MailboxTotalSize           uint32
+	Flags                      uint32
 	SubDeviceEgmPeerIDMask     uint32
 	PeerSubDeviceEgmPeerIDMask uint32
 	L2pBar1P2PDmaInfo          NV503B_BAR1_P2P_DMA_INFO
@@ -248,17 +240,9 @@ type NV_CHANNEL_ALLOC_PARAMS struct {
 	ECCErrorNotifierMem NV_MEMORY_DESC_PARAMS
 	ProcessID           uint32
 	SubProcessID        uint32
-}
-
-// NV_CHANNEL_ALLOC_PARAMS_V535 is the updated version of
-// NV_CHANNEL_ALLOC_PARAMS since 535.86.05.
-//
-// +marshal
-type NV_CHANNEL_ALLOC_PARAMS_V535 struct {
-	NV_CHANNEL_ALLOC_PARAMS
-	EncryptIv [CC_CHAN_ALLOC_IV_SIZE_DWORD]uint32
-	DecryptIv [CC_CHAN_ALLOC_IV_SIZE_DWORD]uint32
-	HmacNonce [CC_CHAN_ALLOC_NONCE_SIZE_DWORD]uint32
+	EncryptIv           [CC_CHAN_ALLOC_IV_SIZE_DWORD]uint32
+	DecryptIv           [CC_CHAN_ALLOC_IV_SIZE_DWORD]uint32
+	HmacNonce           [CC_CHAN_ALLOC_NONCE_SIZE_DWORD]uint32
 }
 
 // NVB0B5_ALLOCATION_PARAMETERS is the alloc param type for TURING_DMA_COPY_A,
@@ -303,18 +287,6 @@ type nv00f8Map struct {
 //
 // +marshal
 type NV00F8_ALLOCATION_PARAMETERS struct {
-	Alignment  uint64
-	AllocSize  uint64
-	PageSize   uint32
-	AllocFlags uint32
-	Map        nv00f8Map
-}
-
-// NV00F8_ALLOCATION_PARAMETERS_V535 is the updated version of
-// NV00F8_ALLOCATION_PARAMETERS since 535.43.02.
-//
-// +marshal
-type NV00F8_ALLOCATION_PARAMETERS_V535 struct {
 	Alignment  uint64
 	AllocSize  uint64
 	PageSize   uint64

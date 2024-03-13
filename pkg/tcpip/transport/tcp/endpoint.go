@@ -1184,6 +1184,7 @@ func (e *endpoint) cleanupLocked() {
 		e.snd.resendTimer.cleanup()
 		e.snd.probeTimer.cleanup()
 		e.snd.reorderTimer.cleanup()
+		e.snd.corkTimer.cleanup()
 	}
 
 	if e.finWait2Timer != nil {
@@ -1762,6 +1763,7 @@ func (e *endpoint) OnCorkOptionSet(v bool) {
 	if !v {
 		e.LockUser()
 		defer e.UnlockUser()
+		e.snd.corkTimer.disable()
 		// Handle the corked data.
 		if e.EndpointState().connected() {
 			e.sendData(nil /* next */)

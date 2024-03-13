@@ -19,10 +19,14 @@ import (
 	"fmt"
 
 	"golang.org/x/sys/unix"
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
+	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -80,5 +84,32 @@ func (fd *tpuFD) Epollable() bool {
 
 // Ioctl implements vfs.FileDescriptionImpl.Ioctl.
 func (fd *tpuFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
+	cmd := args[1].Uint()
+
+	t := kernel.TaskFromContext(ctx)
+	if t == nil {
+		panic("Ioctl should be called from a task context")
+	}
+	switch cmd {
+	case linux.VFIO_GROUP_SET_CONTAINER:
+		return fd.setContainer(ctx, t, args[2].Pointer())
+	}
 	return 0, linuxerr.ENOSYS
+}
+
+func (fd *tpuFD) setContainer(ctx context.Context, t *kernel.Task, arg hostarch.Addr) (uintptr, error) {
+	var vfioContainerFd int32
+	if _, err := primitive.CopyInt32In(t, arg, &vfioContainerFd); err != nil {
+		return 0, err
+	}
+	vfioContainerFile, _ := t.FDTable().Get(vfioContainerFd)
+	if vfioContainerFile == nil {
+		return 0, linuxerr.EBADF
+	}
+	defer vfioContainerFile.DecRef(ctx)
+	vfioContainer, ok := vfioContainerFile.Impl().(*vfioFd)
+	if !ok {
+		return 0, linuxerr.EINVAL
+	}
+	return ioctlInvokePtrArg(fd.hostFD, linux.VFIO_GROUP_SET_CONTAINER, &vfioContainer.hostFd)
 }
