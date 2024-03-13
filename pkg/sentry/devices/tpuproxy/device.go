@@ -117,6 +117,7 @@ func (dev *vfioDevice) Open(ctx context.Context, mnt *vfs.Mount, d *vfs.Dentry, 
 		unix.Close(hostFd)
 		return nil, err
 	}
+	fd.memmapFile.fd = fd
 	return &fd.vfsfd, nil
 }
 

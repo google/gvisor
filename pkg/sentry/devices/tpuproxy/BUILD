@@ -12,6 +12,7 @@ go_library(
         "tpu.go",
         "tpu_mmap.go",
         "vfio.go",
+        "vfio_mmap.go",
     ],
     visibility = [
         "//pkg/sentry:internal",
