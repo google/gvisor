@@ -479,6 +479,11 @@ func (s *Stack) Restore() {
 	s.Stack.Restore()
 }
 
+// Resume implements inet.Stack.Resume.
+func (s *Stack) Resume() {
+	s.Stack.Resume()
+}
+
 // RegisteredEndpoints implements inet.Stack.RegisteredEndpoints.
 func (s *Stack) RegisteredEndpoints() []stack.TransportEndpoint {
 	return s.Stack.RegisteredEndpoints()

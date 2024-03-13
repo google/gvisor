@@ -84,6 +84,9 @@ type Stack interface {
 	// Pause pauses the network stack before save.
 	Pause()
 
+	// Resume resumes the network stack after save.
+	Resume()
+
 	// Restore restarts the network stack after restore.
 	Restore()
 

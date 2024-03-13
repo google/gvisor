@@ -329,6 +329,9 @@ func (*Stack) Pause() {}
 // Restore implements inet.Stack.Restore.
 func (*Stack) Restore() {}
 
+// Resume implements inet.Stack.Resume.
+func (*Stack) Resume() {}
+
 // RegisteredEndpoints implements inet.Stack.RegisteredEndpoints.
 func (*Stack) RegisteredEndpoints() []stack.TransportEndpoint { return nil }
 

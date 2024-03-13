@@ -57,6 +57,8 @@ func (e *endpoint) beforeSave() {
 	default:
 		panic(fmt.Sprintf("endpoint in unknown state %v", e.EndpointState()))
 	}
+
+	e.stack.RegisterResumableEndpoint(e)
 }
 
 // saveEndpoints is invoked by stateify.
@@ -269,4 +271,9 @@ func (e *endpoint) Restore(s *stack.Stack) {
 		e.stack.CompleteTransportEndpointCleanup(e)
 		tcpip.DeleteDanglingEndpoint(e)
 	}
+}
+
+// Resume implements tcpip.ResumableEndpoint.Resume.
+func (e *endpoint) Resume() {
+	e.segmentQueue.thaw()
 }
