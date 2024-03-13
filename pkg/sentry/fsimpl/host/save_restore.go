@@ -73,11 +73,10 @@ func (i *inode) beforeSave() {
 func (i *inode) afterLoad(ctx context.Context) {
 	fdmap := vfs.RestoreFilesystemFDMapFromContext(ctx)
 	fd, ok := fdmap[i.restoreKey]
-	if ok {
-		// Remap FD if a new mapping is provided. Otherwise, keep the old FD and
-		// expect that caller will use the same FDs numbers.
-		i.hostFD = fd
+	if !ok {
+		panic(fmt.Sprintf("no host FD available for %+v, map: %v", i.restoreKey, fdmap))
 	}
+	i.hostFD = fd
 
 	if i.epollable {
 		if err := unix.SetNonblock(i.hostFD, true); err != nil {
