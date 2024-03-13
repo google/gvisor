@@ -130,6 +130,7 @@ func (e *endpoint) Restore(s *stack.Stack) {
 		snd.resendTimer.init(s.Clock(), timerHandler(e, e.snd.retransmitTimerExpired))
 		snd.reorderTimer.init(s.Clock(), timerHandler(e, e.snd.rc.reorderTimerExpired))
 		snd.probeTimer.init(s.Clock(), timerHandler(e, e.snd.probeTimerExpired))
+		snd.corkTimer.init(s.Clock(), timerHandler(e, e.snd.corkTimerExpired))
 	}
 	e.stack = s
 	e.protocol = protocolFromStack(s)
@@ -196,6 +197,11 @@ func (e *endpoint) Restore(s *stack.Stack) {
 			e.timeWaitTimer = e.stack.Clock().AfterFunc(e.getTimeWaitDuration(), e.timeWaitTimerExpired)
 		}
 
+		if e.ops.GetCorkOption() {
+			// Rearm the timer if TCP_CORK is enabled which will
+			// drain all the segments in the queue after restore.
+			e.snd.corkTimer.enable(MinRTO)
+		}
 		e.mu.Unlock()
 		connectedLoading.Done()
 	case epState == StateListen:

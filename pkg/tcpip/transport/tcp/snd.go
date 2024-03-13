@@ -151,6 +151,13 @@ type sender struct {
 	// segment after entering an RTO for the first time as described in
 	// RFC3522 Section 3.2.
 	retransmitTS uint32
+
+	// startCork start corking the segments.
+	startCork bool
+
+	// corkTimer is used to drain the segments which are held when TCP_CORK
+	// option is enabled.
+	corkTimer timer `state:"nosave"`
 }
 
 // rtt is a synchronization wrapper used to appease stateify. See the comment
@@ -208,6 +215,7 @@ func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 	s.resendTimer.init(s.ep.stack.Clock(), timerHandler(s.ep, s.retransmitTimerExpired))
 	s.reorderTimer.init(s.ep.stack.Clock(), timerHandler(s.ep, s.rc.reorderTimerExpired))
 	s.probeTimer.init(s.ep.stack.Clock(), timerHandler(s.ep, s.probeTimerExpired))
+	s.corkTimer.init(s.ep.stack.Clock(), timerHandler(s.ep, s.corkTimerExpired))
 
 	s.ep.AssertLockHeld(ep)
 	s.updateMaxPayloadSize(int(ep.route.MTU()), 0)
@@ -776,10 +784,20 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 				}
 				// With TCP_CORK, hold back until minimum of the available
 				// send space and MSS.
-				// TODO(gvisor.dev/issue/2833): Drain the held segments after a
-				// timeout.
-				if seg.payloadSize() < s.MaxPayloadSize && s.ep.ops.GetCorkOption() {
-					return false
+				if s.ep.ops.GetCorkOption() {
+					if seg.payloadSize() < s.MaxPayloadSize {
+						if !s.startCork {
+							s.startCork = true
+							// Enable the timer for
+							// 200ms, after which
+							// the segments are drained.
+							s.corkTimer.enable(MinRTO)
+						}
+						return false
+					}
+					// Disable the TCP_CORK timer.
+					s.startCork = false
+					s.corkTimer.disable()
 				}
 			}
 		}
@@ -1723,4 +1741,25 @@ func (s *sender) updateWriteNext(seg *segment) {
 		seg.IncRef()
 	}
 	s.writeNext = seg
+}
+
+// corkTimerExpired drains all the segments when TCP_CORK is enabled.
+// +checklocks:s.ep.mu
+func (s *sender) corkTimerExpired() tcpip.Error {
+	// Check if the timer actually expired or if it's a spurious wake due
+	// to a previously orphaned runtime timer.
+	if s.corkTimer.isUninitialized() || !s.corkTimer.checkExpiration() {
+		return nil
+	}
+
+	// Assign sequence number and flags to the segment.
+	seg := s.writeNext
+	if seg == nil {
+		return nil
+	}
+	seg.sequenceNumber = s.SndNxt
+	seg.flags = header.TCPFlagAck | header.TCPFlagPsh
+	// Drain all the segments.
+	s.sendData()
+	return nil
 }
