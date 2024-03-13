@@ -280,7 +280,8 @@ func (pk *PacketBuffer) Data() PacketData {
 // Note that AsSlices can allocate a lot. In hot paths it may be preferable to
 // iterate over a PacketBuffer's data via AsViewList.
 func (pk *PacketBuffer) AsSlices() [][]byte {
-	var views [][]byte
+	vl := pk.buf.AsViewList()
+	views := make([][]byte, 0, vl.Len())
 	offset := pk.headerOffset()
 	pk.buf.SubApply(offset, int(pk.buf.Size())-offset, func(v *buffer.View) {
 		views = append(views, v.AsSlice())
