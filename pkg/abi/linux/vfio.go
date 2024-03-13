@@ -20,9 +20,15 @@ package linux
 const (
 	VFIO_TYPE = ';'
 	VFIO_BASE = 100
+
+	// VFIO extensions.
+	VFIO_TYPE1_IOMMU     = 1
+	VFIO_SPAPR_TCE_IOMMU = 2
+	VFIO_TYPE1v2_IOMMU   = 3
 )
 
 // IOCTLs for VFIO file descriptor from include/uapi/linux/vfio.h.
 var (
+	VFIO_CHECK_EXTENSION     = IO(VFIO_TYPE, VFIO_BASE+1)
 	VFIO_GROUP_SET_CONTAINER = IO(VFIO_TYPE, VFIO_BASE+4)
 )
