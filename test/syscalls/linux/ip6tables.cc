@@ -15,6 +15,8 @@
 #include <linux/capability.h>
 #include <sys/socket.h>
 
+#include <cstring>
+
 #include "gtest/gtest.h"
 #include "test/syscalls/linux/iptables.h"
 #include "test/util/capability_util.h"
@@ -191,7 +193,8 @@ TEST(IP6TablesTest, InitialEntries) {
         reinterpret_cast<char*>(entries->entrytable) + entry_offset);
 
     // ipv6 should be zeroed.
-    struct ip6t_ip6 zeroed = {};
+    struct ip6t_ip6 zeroed;
+    memset(&zeroed, 0, sizeof(zeroed));
     ASSERT_EQ(memcmp(static_cast<void*>(&zeroed),
                      static_cast<void*>(&entry->ipv6), sizeof(zeroed)),
               0);

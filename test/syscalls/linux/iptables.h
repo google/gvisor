@@ -221,6 +221,9 @@ enum SockOpts6 {
 
 // ip6t_ip6 specifies basic matching criteria that can be applied by examining
 // only the IP header of a packet.
+// Must be POD so that it can be zero-initialized using memset() because
+// initializing by "{}" leaves it partially uninitialized for paddings and
+// nested unions.
 struct ip6t_ip6 {
   // Source IP address.
   struct in6_addr src;
