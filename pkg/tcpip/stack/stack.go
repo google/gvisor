@@ -851,6 +851,10 @@ type NICOptions struct {
 
 	// GROTimeout specifies the GRO timeout. Zero bypasses GRO.
 	GROTimeout time.Duration
+
+	// DeliverLinkPackets specifies whether the NIC is responsible for
+	// delivering raw packets to packet sockets.
+	DeliverLinkPackets bool
 }
 
 // CreateNICWithOptions creates a NIC with the provided id, LinkEndpoint, and
