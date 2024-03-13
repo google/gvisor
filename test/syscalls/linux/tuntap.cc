@@ -26,6 +26,7 @@
 #include <sys/types.h>
 
 #include <cstddef>
+#include <cstring>
 
 #include "gmock/gmock.h"
 #include "gtest/gtest.h"
@@ -220,13 +221,15 @@ TEST_F(TuntapTest, CreateFixedNameInterface) {
 
   FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(kDevNetTun, O_RDWR));
 
-  struct ifreq ifr_set = {};
+  struct ifreq ifr_set;
+  memset(&ifr_set, 0, sizeof(ifr_set));
   ifr_set.ifr_flags = IFF_TAP;
   strncpy(ifr_set.ifr_name, kTapName, IFNAMSIZ);
   EXPECT_THAT(ioctl(fd.get(), TUNSETIFF, &ifr_set),
               SyscallSucceedsWithValue(0));
 
-  struct ifreq ifr_get = {};
+  struct ifreq ifr_get;
+  memset(&ifr_get, 0, sizeof(ifr_get));
   EXPECT_THAT(ioctl(fd.get(), TUNGETIFF, &ifr_get),
               SyscallSucceedsWithValue(0));
 
