@@ -642,7 +642,6 @@ func (c *containerMounter) configureOverlay(ctx context.Context, conf *config.Co
 			return nil, nil, fmt.Errorf("failed to create memory file for overlay: %v", err)
 		}
 		tmpfsOpts.MemoryFile = mf
-		tmpfsOpts.UniqueID = vfs.RestoreID{ContainerName: c.containerName, Path: dst}
 	}
 	upperOpts.GetFilesystemOptions.InternalData = tmpfsOpts
 	upper, err := c.k.VFS().MountDisconnected(ctx, creds, "" /* source */, tmpfs.Name, &upperOpts)
@@ -903,7 +902,6 @@ func getMountNameAndOptions(spec *specs.Spec, conf *config.Config, m *mountInfo,
 			}
 			internalData = tmpfs.FilesystemOpts{
 				MemoryFile: mf,
-				UniqueID:   vfs.RestoreID{ContainerName: containerName, Path: m.mount.Destination},
 				// If a mount is being overlaid with tmpfs, it should not be limited by
 				// the default tmpfs size limit.
 				DisableDefaultSizeLimit: true,
