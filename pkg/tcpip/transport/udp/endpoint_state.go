@@ -42,6 +42,7 @@ func (e *endpoint) afterLoad(ctx context.Context) {
 // beforeSave is invoked by stateify.
 func (e *endpoint) beforeSave() {
 	e.freeze()
+	e.stack.RegisterResumableEndpoint(e)
 }
 
 // Restore implements tcpip.RestoredEndpoint.Restore.
@@ -75,4 +76,9 @@ func (e *endpoint) Restore(s *stack.Stack) {
 	default:
 		panic(fmt.Sprintf("unhandled state = %s", state))
 	}
+}
+
+// Resume implements tcpip.ResumableEndpoint.Resume.
+func (e *endpoint) Resume() {
+	e.thaw()
 }

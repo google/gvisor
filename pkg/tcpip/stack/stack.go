@@ -57,6 +57,12 @@ type RestoredEndpoint interface {
 	Restore(*Stack)
 }
 
+// ResumableEndpoint is an endpoint that needs to be resumed after save.
+type ResumableEndpoint interface {
+	// Resume resumes an endpoint.
+	Resume()
+}
+
 // uniqueIDGenerator is a default unique ID generator.
 type uniqueIDGenerator atomicbitops.Uint64
 
@@ -118,6 +124,10 @@ type Stack struct {
 	// restoredEndpoints is a list of endpoints that need to be restored if the
 	// stack is being restored.
 	restoredEndpoints []RestoredEndpoint
+
+	// resumableEndpoints is a list of endpoints that need to be resumed
+	// after save.
+	resumableEndpoints []ResumableEndpoint
 
 	// icmpRateLimiter is a global rate limiter for all ICMP messages generated
 	// by the stack.
@@ -1715,14 +1725,24 @@ func (s *Stack) UnregisterRawTransportEndpoint(netProto tcpip.NetworkProtocolNum
 // this stack.
 func (s *Stack) RegisterRestoredEndpoint(e RestoredEndpoint) {
 	s.mu.Lock()
+	defer s.mu.Unlock()
+
 	s.restoredEndpoints = append(s.restoredEndpoints, e)
-	s.mu.Unlock()
+}
+
+// RegisterResumableEndpoint records e as an endpoint that has to be resumed.
+func (s *Stack) RegisterResumableEndpoint(e ResumableEndpoint) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	s.resumableEndpoints = append(s.resumableEndpoints, e)
 }
 
 // RegisteredEndpoints returns all endpoints which are currently registered.
 func (s *Stack) RegisteredEndpoints() []TransportEndpoint {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
 	var es []TransportEndpoint
 	for _, e := range s.demux.protocol {
 		es = append(es, e.transportEndpoints()...)
@@ -1733,11 +1753,12 @@ func (s *Stack) RegisteredEndpoints() []TransportEndpoint {
 // CleanupEndpoints returns endpoints currently in the cleanup state.
 func (s *Stack) CleanupEndpoints() []TransportEndpoint {
 	s.cleanupEndpointsMu.Lock()
+	defer s.cleanupEndpointsMu.Unlock()
+
 	es := make([]TransportEndpoint, 0, len(s.cleanupEndpoints))
 	for e := range s.cleanupEndpoints {
 		es = append(es, e)
 	}
-	s.cleanupEndpointsMu.Unlock()
 	return es
 }
 
@@ -1745,10 +1766,11 @@ func (s *Stack) CleanupEndpoints() []TransportEndpoint {
 // for restoring a stack after a save.
 func (s *Stack) RestoreCleanupEndpoints(es []TransportEndpoint) {
 	s.cleanupEndpointsMu.Lock()
+	defer s.cleanupEndpointsMu.Unlock()
+
 	for _, e := range es {
 		s.cleanupEndpoints[e] = struct{}{}
 	}
-	s.cleanupEndpointsMu.Unlock()
 }
 
 // Close closes all currently registered transport endpoints.
@@ -1822,6 +1844,21 @@ func (s *Stack) Restore() {
 	s.mu.Unlock()
 	for _, e := range eps {
 		e.Restore(s)
+	}
+	// Now resume any protocol level background workers.
+	for _, p := range s.transportProtocols {
+		p.proto.Resume()
+	}
+}
+
+// Resume resumes the stack after a save.
+func (s *Stack) Resume() {
+	s.mu.Lock()
+	eps := s.resumableEndpoints
+	s.resumableEndpoints = nil
+	s.mu.Unlock()
+	for _, e := range eps {
+		e.Resume()
 	}
 	// Now resume any protocol level background workers.
 	for _, p := range s.transportProtocols {

@@ -38,6 +38,7 @@ func (ep *endpoint) beforeSave() {
 	ep.rcvMu.Lock()
 	defer ep.rcvMu.Unlock()
 	ep.rcvDisabled = true
+	ep.stack.RegisterResumableEndpoint(ep)
 }
 
 // afterLoad is invoked by stateify.
@@ -55,4 +56,11 @@ func (ep *endpoint) afterLoad(ctx context.Context) {
 	ep.rcvMu.Lock()
 	ep.rcvDisabled = false
 	ep.rcvMu.Unlock()
+}
+
+// Resume implements tcpip.ResumableEndpoint.Resume.
+func (ep *endpoint) Resume() {
+	ep.rcvMu.Lock()
+	defer ep.rcvMu.Unlock()
+	ep.rcvDisabled = false
 }

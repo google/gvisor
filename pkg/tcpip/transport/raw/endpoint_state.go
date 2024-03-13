@@ -41,6 +41,7 @@ func (e *endpoint) afterLoad(ctx context.Context) {
 // beforeSave is invoked by stateify.
 func (e *endpoint) beforeSave() {
 	e.setReceiveDisabled(true)
+	e.stack.RegisterResumableEndpoint(e)
 }
 
 // Restore implements tcpip.RestoredEndpoint.Restore.
@@ -57,4 +58,9 @@ func (e *endpoint) Restore(s *stack.Stack) {
 			panic(fmt.Sprintf("e.stack.RegisterRawTransportEndpoint(%d, %d, _): %s", netProto, e.transProto, err))
 		}
 	}
+}
+
+// Resume implements tcpip.ResumableEndpoint.Resume.
+func (e *endpoint) Resume() {
+	e.setReceiveDisabled(false)
 }
