@@ -31,8 +31,7 @@ import (
 
 func testMemoryManager(ctx context.Context) *MemoryManager {
 	p := platform.FromContext(ctx)
-	mfp := pgalloc.MemoryFileProviderFromContext(ctx)
-	mm := NewMemoryManager(p, mfp, false)
+	mm := NewMemoryManager(p, pgalloc.MemoryFileFromContext(ctx), false)
 	mm.layout = arch.MmapLayout{
 		MinAddr:      p.MinUserAddress(),
 		MaxAddr:      p.MaxUserAddress(),

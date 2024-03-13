@@ -120,8 +120,6 @@ func (t *Task) contextValue(key any, isTaskGoroutine bool) any {
 		return t.memCgID.Load()
 	case pgalloc.CtxMemoryFile:
 		return t.k.mf
-	case pgalloc.CtxMemoryFileProvider:
-		return t.k
 	case platform.CtxPlatform:
 		return t.k
 	case shm.CtxDeviceID:

@@ -213,19 +213,3 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r wire.Reader) error {
 
 	return nil
 }
-
-// MemoryFileProvider provides the MemoryFile method.
-//
-// This type exists to work around a save/restore defect. The only object in a
-// saved object graph that S/R allows to be replaced at time of restore is the
-// starting point of the restore, kernel.Kernel. However, the MemoryFile
-// changes between save and restore as well, so objects that need persistent
-// access to the MemoryFile must instead store a pointer to the Kernel and call
-// Kernel.MemoryFile() as required. In most cases, depending on the kernel
-// package directly would create a package dependency loop, so the stored
-// pointer must instead be a MemoryProvider interface object. Correspondingly,
-// kernel.Kernel is the only implementation of this interface.
-type MemoryFileProvider interface {
-	// MemoryFile returns the Kernel MemoryFile.
-	MemoryFile() *MemoryFile
-}

@@ -27,7 +27,7 @@ import (
 func TestDestroyIdempotent(t *testing.T) {
 	ctx := contexttest.Context(t)
 	fs := filesystem{
-		mfp:      pgalloc.MemoryFileProviderFromContext(ctx),
+		mf:       pgalloc.MemoryFileFromContext(ctx),
 		inoByKey: make(map[inoKey]uint64),
 		clock:    time.RealtimeClockFromContext(ctx),
 		// Test relies on no dentry being held in the cache.
