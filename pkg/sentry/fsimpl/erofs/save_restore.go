@@ -25,7 +25,7 @@ import (
 
 // afterLoad is called by stateify.
 func (fs *filesystem) afterLoad(ctx context.Context) {
-	fdmap := vfs.FilesystemFDMapFromContext(ctx)
+	fdmap := vfs.RestoreFilesystemFDMapFromContext(ctx)
 	fd, ok := fdmap[fs.iopts.UniqueID]
 	if !ok {
 		panic(fmt.Sprintf("no image FD available for filesystem with unique ID %q", fs.iopts.UniqueID))

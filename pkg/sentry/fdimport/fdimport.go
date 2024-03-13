@@ -31,7 +31,7 @@ import (
 // sets up TTY for sentry stdin, stdout, and stderr FDs. Used FDs are either
 // closed or released. It's safe for the caller to close any remaining files
 // upon return.
-func Import(ctx context.Context, fdTable *kernel.FDTable, console bool, uid auth.KUID, gid auth.KGID, fds map[int]*fd.FD) (*host.TTYFileDescription, error) {
+func Import(ctx context.Context, fdTable *kernel.FDTable, console bool, uid auth.KUID, gid auth.KGID, fds map[int]*fd.FD, containerName string) (*host.TTYFileDescription, error) {
 	k := kernel.KernelFromContext(ctx)
 	if k == nil {
 		return nil, fmt.Errorf("cannot find kernel from context")
@@ -62,6 +62,7 @@ func Import(ctx context.Context, fdTable *kernel.FDTable, console bool, uid auth
 		}
 		var appFile *vfs.FileDescription
 
+		fdOpts.RestoreKey = host.MakeRestoreID(containerName, appFD)
 		if console && appFD < 3 {
 			// Import the file as a host TTY file.
 			if ttyFile == nil {
