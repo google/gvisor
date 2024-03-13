@@ -108,11 +108,10 @@ void memcpy(uint8_t *dest, uint8_t *src, size_t n) {
 //
 // This queue is lock-less to be sure that any thread scheduled out
 // from CPU doesn't block others.
-#define SPINNING_QUEUE_SIZE 384
-
-// MAX_SPINNING_THREADS is half of SPINNING_QUEUE_SIZE to be sure that the tail
-// doesn't catch the head. More details are in spinning_queue_remove_first.
-#define MAX_SPINNING_THREADS (SPINNING_QUEUE_SIZE / 2)
+//
+// The size of the queue must be a divisor of 2^32, because queue indexes are
+// calculated as modules of uint32 values.
+#define SPINNING_QUEUE_SIZE 256
 
 // MAX_RE_ENQUEUE defines the amount of time a given entry in the spinning queue
 // needs to reach timeout in order to be removed. Re-enqueuing a timeout is done
@@ -143,7 +142,7 @@ static bool spinning_queue_push(uint8_t re_enqueue_times) {
   }
 
   len = atomic_add(&queue->len, 1);
-  if (len > MAX_SPINNING_THREADS) {
+  if (len > SPINNING_QUEUE_SIZE) {
     atomic_sub(&queue->len, 1);
     return false;
   }
@@ -177,22 +176,22 @@ static bool spinning_queue_remove_first(uint64_t timeout)
 static bool spinning_queue_remove_first(uint64_t timeout) {
   struct spinning_queue *queue = __export_spinning_queue_addr;
   uint64_t ts;
-  uint32_t idx;
   uint8_t re_enqueue = 0;
 
   while (1) {
-    idx = atomic_load(&queue->start);
-    ts = atomic_load(&queue->start_times[idx % SPINNING_QUEUE_SIZE]);
-    if (ts == 0 && timeout == 0) continue;
-    if (ts == 0 || rdtsc() - ts < timeout) return false;
+    uint32_t idx, qidx;
 
-    // The current thread is still in a queue and the length of the queue is
-    // twice of the maximum number of threads, so we can zero the element and be
-    // sure that nobody is trying to set it in a  non-zero value.
-    atomic_store(&queue->start_times[idx % SPINNING_QUEUE_SIZE], 0);
-    re_enqueue =
-        atomic_load(&queue->num_times_re_enqueued[idx % SPINNING_QUEUE_SIZE]);
-    if (atomic_compare_exchange(&queue->start, &idx, idx + 1)) {
+    idx = atomic_load(&queue->start);
+    qidx = idx % SPINNING_QUEUE_SIZE;
+    ts = atomic_load(&queue->start_times[qidx]);
+
+    if (ts == 0) continue;
+    if (rdtsc() - ts < timeout) return false;
+    if (idx != atomic_load(&queue->start)) continue;  // Lose the race.
+
+    re_enqueue = atomic_load(&queue->num_times_re_enqueued[qidx]);
+    if (atomic_compare_exchange(&queue->start_times[qidx], &ts, 0)) {
+      atomic_add(&queue->start, 1);
       break;
     }
   }
