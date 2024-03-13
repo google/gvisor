@@ -25,26 +25,26 @@ import (
 )
 
 // ConfigureMMap implements vfs.FileDescriptionImpl.ConfigureMMap.
-func (fd *tpuFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
+func (fd *vfioFd) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
 	return vfs.GenericConfigureMMap(&fd.vfsfd, fd, opts)
 }
 
 // AddMapping implements memmap.Mappable.AddMapping.
-func (fd *tpuFD) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
+func (fd *vfioFd) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
 	return nil
 }
 
 // RemoveMapping implements memmap.Mappable.RemoveMapping.
-func (fd *tpuFD) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
+func (fd *vfioFd) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
 }
 
 // CopyMapping implements memmap.Mappable.CopyMapping.
-func (fd *tpuFD) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR hostarch.AddrRange, offset uint64, writable bool) error {
+func (fd *vfioFd) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR hostarch.AddrRange, offset uint64, writable bool) error {
 	return nil
 }
 
 // Translate implements memmap.Mappable.Translate.
-func (fd *tpuFD) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
+func (fd *vfioFd) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
 	return []memmap.Translation{
 		{
 			Source: optional,
@@ -56,29 +56,29 @@ func (fd *tpuFD) Translate(ctx context.Context, required, optional memmap.Mappab
 }
 
 // InvalidateUnsavable implements memmap.Mappable.InvalidateUnsavable.
-func (fd *tpuFD) InvalidateUnsavable(ctx context.Context) error {
+func (fd *vfioFd) InvalidateUnsavable(ctx context.Context) error {
 	return nil
 }
 
-type tpuFDMemmapFile struct {
-	fd *tpuFD
+type vfioFDMemmapFile struct {
+	fd *vfioFd
 }
 
 // IncRef implements memmap.File.IncRef.
-func (mf *tpuFDMemmapFile) IncRef(memmap.FileRange, uint32) {
+func (mf *vfioFDMemmapFile) IncRef(memmap.FileRange, uint32) {
 }
 
 // DecRef implements memmap.File.DecRef.
-func (mf *tpuFDMemmapFile) DecRef(fr memmap.FileRange) {
+func (mf *vfioFDMemmapFile) DecRef(fr memmap.FileRange) {
 }
 
 // MapInternal implements memmap.File.MapInternal.
-func (mf *tpuFDMemmapFile) MapInternal(fr memmap.FileRange, at hostarch.AccessType) (safemem.BlockSeq, error) {
-	log.Traceback("tpuproxy: rejecting tpuFdMemmapFile.MapInternal")
+func (mf *vfioFDMemmapFile) MapInternal(fr memmap.FileRange, at hostarch.AccessType) (safemem.BlockSeq, error) {
+	log.Traceback("tpuproxy: rejecting vfioFdMemmapFile.MapInternal")
 	return safemem.BlockSeq{}, linuxerr.EINVAL
 }
 
 // FD implements memmap.File.FD.
-func (mf *tpuFDMemmapFile) FD() int {
-	return int(mf.fd.hostFD)
+func (mf *vfioFDMemmapFile) FD() int {
+	return int(mf.fd.hostFd)
 }

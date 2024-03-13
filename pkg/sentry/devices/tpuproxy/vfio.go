@@ -34,9 +34,10 @@ type vfioFd struct {
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.NoLockFD
 
-	hostFd int32
-	device *vfioDevice
-	queue  waiter.Queue
+	hostFd     int32
+	device     *vfioDevice
+	queue      waiter.Queue
+	memmapFile vfioFDMemmapFile
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.

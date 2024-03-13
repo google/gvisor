@@ -32,7 +32,6 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/link/ethernet"
 	"gvisor.dev/gvisor/pkg/tcpip/link/fdbased"
 	"gvisor.dev/gvisor/pkg/tcpip/link/loopback"
-	"gvisor.dev/gvisor/pkg/tcpip/link/packetsocket"
 	"gvisor.dev/gvisor/pkg/tcpip/link/qdisc/fifo"
 	"gvisor.dev/gvisor/pkg/tcpip/link/sniffer"
 	"gvisor.dev/gvisor/pkg/tcpip/link/xdp"
@@ -170,6 +169,9 @@ type CreateLinksAndRoutesArgs struct {
 	// PCAP indicates that FilePayload also contains a PCAP log file.
 	PCAP bool
 
+	// LogPackets indicates that packets should be logged.
+	LogPackets bool
+
 	// NATBlob indicates whether FilePayload also contains an iptables NAT
 	// ruleset.
 	NATBlob bool
@@ -249,12 +251,13 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 		nicID++
 		nicids[link.Name] = nicID
 
-		linkEP := packetsocket.New(ethernet.New(loopback.New()))
+		linkEP := ethernet.New(loopback.New())
 
 		log.Infof("Enabling loopback interface %q with id %d on addresses %+v", link.Name, nicID, link.Addresses)
 		opts := stack.NICOptions{
-			Name:       link.Name,
-			GROTimeout: link.GvisorGROTimeout,
+			Name:               link.Name,
+			GROTimeout:         link.GvisorGROTimeout,
+			DeliverLinkPackets: true,
 		}
 		if err := n.createNICWithAddrs(nicID, linkEP, opts, link.Addresses); err != nil {
 			return err
@@ -319,21 +322,20 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 				return err
 			}
 
-			// Wrap linkEP in a sniffer to enable packet logging.
-			var sniffEP stack.LinkEndpoint
+			// Setup packet logging if requested.
 			if args.PCAP {
 				newFD, err := unix.Dup(int(args.FilePayload.Files[fdOffset].Fd()))
 				if err != nil {
 					return fmt.Errorf("failed to dup pcap FD: %v", err)
 				}
 				const packetTruncateSize = 4096
-				sniffEP, err = sniffer.NewWithWriter(packetsocket.New(linkEP), os.NewFile(uintptr(newFD), "pcap-file"), packetTruncateSize)
+				linkEP, err = sniffer.NewWithWriter(linkEP, os.NewFile(uintptr(newFD), "pcap-file"), packetTruncateSize)
 				if err != nil {
 					return fmt.Errorf("failed to create PCAP logger: %v", err)
 				}
 				fdOffset++
-			} else {
-				sniffEP = sniffer.New(packetsocket.New(linkEP))
+			} else if args.LogPackets {
+				linkEP = sniffer.New(linkEP)
 			}
 
 			var qDisc stack.QueueingDiscipline
@@ -341,16 +343,17 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 			case config.QDiscNone:
 			case config.QDiscFIFO:
 				log.Infof("Enabling FIFO QDisc on %q", link.Name)
-				qDisc = fifo.New(sniffEP, runtime.GOMAXPROCS(0), 1000)
+				qDisc = fifo.New(linkEP, runtime.GOMAXPROCS(0), 1000)
 			}
 
 			log.Infof("Enabling interface %q with id %d on addresses %+v (%v) w/ %d channels", link.Name, nicID, link.Addresses, mac, link.NumChannels)
 			opts := stack.NICOptions{
-				Name:       link.Name,
-				QDisc:      qDisc,
-				GROTimeout: link.GvisorGROTimeout,
+				Name:               link.Name,
+				QDisc:              qDisc,
+				GROTimeout:         link.GvisorGROTimeout,
+				DeliverLinkPackets: true,
 			}
-			if err := n.createNICWithAddrs(nicID, sniffEP, opts, link.Addresses); err != nil {
+			if err := n.createNICWithAddrs(nicID, linkEP, opts, link.Addresses); err != nil {
 				return err
 			}
 
@@ -398,6 +401,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 			}
 		}
 
+		// Setup packet logging if requested.
 		mac := tcpip.LinkAddress(link.LinkAddress)
 		linkEP, err := xdp.New(&xdp.Options{
 			FD:                fd,
@@ -411,21 +415,19 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 			return err
 		}
 
-		// Wrap linkEP in a sniffer to enable packet logging.
-		var sniffEP stack.LinkEndpoint
 		if args.PCAP {
 			newFD, err := unix.Dup(int(args.FilePayload.Files[fdOffset].Fd()))
 			if err != nil {
 				return fmt.Errorf("failed to dup pcap FD: %v", err)
 			}
 			const packetTruncateSize = 4096
-			sniffEP, err = sniffer.NewWithWriter(packetsocket.New(linkEP), os.NewFile(uintptr(newFD), "pcap-file"), packetTruncateSize)
+			linkEP, err = sniffer.NewWithWriter(linkEP, os.NewFile(uintptr(newFD), "pcap-file"), packetTruncateSize)
 			if err != nil {
 				return fmt.Errorf("failed to create PCAP logger: %v", err)
 			}
 			fdOffset++
-		} else {
-			sniffEP = sniffer.New(packetsocket.New(linkEP))
+		} else if args.LogPackets {
+			linkEP = sniffer.New(linkEP)
 		}
 
 		var qDisc stack.QueueingDiscipline
@@ -433,16 +435,17 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 		case config.QDiscNone:
 		case config.QDiscFIFO:
 			log.Infof("Enabling FIFO QDisc on %q", link.Name)
-			qDisc = fifo.New(sniffEP, runtime.GOMAXPROCS(0), 1000)
+			qDisc = fifo.New(linkEP, runtime.GOMAXPROCS(0), 1000)
 		}
 
 		log.Infof("Enabling interface %q with id %d on addresses %+v (%v) w/ %d channels", link.Name, nicID, link.Addresses, mac, link.NumChannels)
 		opts := stack.NICOptions{
-			Name:       link.Name,
-			QDisc:      qDisc,
-			GROTimeout: link.GvisorGROTimeout,
+			Name:               link.Name,
+			QDisc:              qDisc,
+			GROTimeout:         link.GvisorGROTimeout,
+			DeliverLinkPackets: true,
 		}
-		if err := n.createNICWithAddrs(nicID, sniffEP, opts, link.Addresses); err != nil {
+		if err := n.createNICWithAddrs(nicID, linkEP, opts, link.Addresses); err != nil {
 			return err
 		}
 

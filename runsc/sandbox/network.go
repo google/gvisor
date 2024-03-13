@@ -526,6 +526,9 @@ func removeAddress(source netlink.Link, ipAndMask string) error {
 }
 
 func pcapAndNAT(args *boot.CreateLinksAndRoutesArgs, conf *config.Config) error {
+	// Possibly enable packet logging.
+	args.LogPackets = conf.LogPackets
+
 	// Pass PCAP log file if present.
 	if conf.PCAP != "" {
 		args.PCAP = true

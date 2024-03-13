@@ -79,6 +79,13 @@ type nic struct {
 	qDisc QueueingDiscipline
 
 	gro groDispatcher
+
+	// deliverLinkPackets specifies whether this NIC delivers packets to
+	// packet sockets. It is immutable.
+	//
+	// deliverLinkPackets is off by default because some users already
+	// deliver link packets by explicitly calling nic.DeliverLinkPackets.
+	deliverLinkPackets bool
 }
 
 // makeNICStats initializes the NIC statistics and associates them to the global
@@ -174,6 +181,7 @@ func newNIC(stack *Stack, id tcpip.NICID, ep LinkEndpoint, opts NICOptions) *nic
 		linkAddrResolvers:         make(map[tcpip.NetworkProtocolNumber]*linkResolver),
 		duplicateAddressDetectors: make(map[tcpip.NetworkProtocolNumber]DuplicateAddressDetector),
 		qDisc:                     qDisc,
+		deliverLinkPackets:        opts.DeliverLinkPackets,
 	}
 	nic.linkResQueue.init(nic)
 
@@ -396,6 +404,11 @@ func (n *nic) writeRawPacketWithLinkHeaderInPayload(pkt *PacketBuffer) tcpip.Err
 func (n *nic) writeRawPacket(pkt *PacketBuffer) tcpip.Error {
 	// Always an outgoing packet.
 	pkt.PktType = tcpip.PacketOutgoing
+
+	if n.deliverLinkPackets {
+		n.DeliverLinkPacket(pkt.NetworkProtocolNumber, pkt)
+	}
+
 	if err := n.qDisc.WritePacket(pkt); err != nil {
 		if _, ok := err.(*tcpip.ErrNoBufferSpace); ok {
 			n.stats.txPacketsDroppedNoBufferSpace.Increment()
@@ -734,6 +747,10 @@ func (n *nic) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *Pa
 	}
 
 	pkt.RXChecksumValidated = n.NetworkLinkEndpoint.Capabilities()&CapabilityRXChecksumOffload != 0
+
+	if n.deliverLinkPackets {
+		n.DeliverLinkPacket(protocol, pkt)
+	}
 
 	n.gro.dispatch(pkt, protocol, networkEndpoint)
 }
