@@ -94,13 +94,27 @@ type segment struct {
 
 func newIncomingSegment(id stack.TransportEndpointID, clock tcpip.Clock, pkt *stack.PacketBuffer) (*segment, error) {
 	hdr := header.TCP(pkt.TransportHeader().Slice())
-	netHdr := pkt.Network()
+	var srcAddr tcpip.Address
+	var dstAddr tcpip.Address
+	switch netProto := pkt.NetworkProtocolNumber; netProto {
+	case header.IPv4ProtocolNumber:
+		hdr := header.IPv4(pkt.NetworkHeader().Slice())
+		srcAddr = hdr.SourceAddress()
+		dstAddr = hdr.DestinationAddress()
+	case header.IPv6ProtocolNumber:
+		hdr := header.IPv6(pkt.NetworkHeader().Slice())
+		srcAddr = hdr.SourceAddress()
+		dstAddr = hdr.DestinationAddress()
+	default:
+		panic(fmt.Sprintf("unknown network protocol number %d", netProto))
+	}
+
 	csum, csumValid, ok := header.TCPValid(
 		hdr,
 		func() uint16 { return pkt.Data().Checksum() },
 		uint16(pkt.Data().Size()),
-		netHdr.SourceAddress(),
-		netHdr.DestinationAddress(),
+		srcAddr,
+		dstAddr,
 		pkt.RXChecksumValidated)
 	if !ok {
 		return nil, fmt.Errorf("header data offset does not respect size constraints: %d < offset < %d, got offset=%d", header.TCPMinimumSize, len(hdr), hdr.DataOffset())

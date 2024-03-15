@@ -57,7 +57,6 @@ func (i *inode) StateFields() []string {
 		"InodeWatches",
 		"locks",
 		"inodeRefs",
-		"hostFD",
 		"restoreKey",
 		"ino",
 		"ftype",
@@ -85,19 +84,18 @@ func (i *inode) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(6, &i.InodeWatches)
 	stateSinkObject.Save(7, &i.locks)
 	stateSinkObject.Save(8, &i.inodeRefs)
-	stateSinkObject.Save(9, &i.hostFD)
-	stateSinkObject.Save(10, &i.restoreKey)
-	stateSinkObject.Save(11, &i.ino)
-	stateSinkObject.Save(12, &i.ftype)
-	stateSinkObject.Save(13, &i.epollable)
-	stateSinkObject.Save(14, &i.seekable)
-	stateSinkObject.Save(15, &i.isTTY)
-	stateSinkObject.Save(16, &i.savable)
-	stateSinkObject.Save(17, &i.readonly)
-	stateSinkObject.Save(18, &i.queue)
-	stateSinkObject.Save(19, &i.virtualOwner)
-	stateSinkObject.Save(20, &i.haveBuf)
-	stateSinkObject.Save(21, &i.buf)
+	stateSinkObject.Save(9, &i.restoreKey)
+	stateSinkObject.Save(10, &i.ino)
+	stateSinkObject.Save(11, &i.ftype)
+	stateSinkObject.Save(12, &i.epollable)
+	stateSinkObject.Save(13, &i.seekable)
+	stateSinkObject.Save(14, &i.isTTY)
+	stateSinkObject.Save(15, &i.savable)
+	stateSinkObject.Save(16, &i.readonly)
+	stateSinkObject.Save(17, &i.queue)
+	stateSinkObject.Save(18, &i.virtualOwner)
+	stateSinkObject.Save(19, &i.haveBuf)
+	stateSinkObject.Save(20, &i.buf)
 }
 
 // +checklocksignore
@@ -111,19 +109,18 @@ func (i *inode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(6, &i.InodeWatches)
 	stateSourceObject.Load(7, &i.locks)
 	stateSourceObject.Load(8, &i.inodeRefs)
-	stateSourceObject.Load(9, &i.hostFD)
-	stateSourceObject.Load(10, &i.restoreKey)
-	stateSourceObject.Load(11, &i.ino)
-	stateSourceObject.Load(12, &i.ftype)
-	stateSourceObject.Load(13, &i.epollable)
-	stateSourceObject.Load(14, &i.seekable)
-	stateSourceObject.Load(15, &i.isTTY)
-	stateSourceObject.Load(16, &i.savable)
-	stateSourceObject.Load(17, &i.readonly)
-	stateSourceObject.Load(18, &i.queue)
-	stateSourceObject.Load(19, &i.virtualOwner)
-	stateSourceObject.Load(20, &i.haveBuf)
-	stateSourceObject.Load(21, &i.buf)
+	stateSourceObject.Load(9, &i.restoreKey)
+	stateSourceObject.Load(10, &i.ino)
+	stateSourceObject.Load(11, &i.ftype)
+	stateSourceObject.Load(12, &i.epollable)
+	stateSourceObject.Load(13, &i.seekable)
+	stateSourceObject.Load(14, &i.isTTY)
+	stateSourceObject.Load(15, &i.savable)
+	stateSourceObject.Load(16, &i.readonly)
+	stateSourceObject.Load(17, &i.queue)
+	stateSourceObject.Load(18, &i.virtualOwner)
+	stateSourceObject.Load(19, &i.haveBuf)
+	stateSourceObject.Load(20, &i.buf)
 	stateSourceObject.AfterLoad(func() { i.afterLoad(ctx) })
 }
 
