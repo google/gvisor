@@ -88,6 +88,8 @@ func (fd *vfioFd) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args
 	switch cmd {
 	case linux.VFIO_CHECK_EXTENSION:
 		return fd.checkExtension(extension(args[2].Int()))
+	case linux.VFIO_SET_IOMMU:
+		return fd.setIOMMU(extension(args[2].Int()))
 	}
 	return 0, linuxerr.ENOSYS
 }
@@ -100,6 +102,21 @@ func (fd *vfioFd) checkExtension(ext extension) (uintptr, error) {
 		ret, err := ioctlInvoke[int32](fd.hostFd, linux.VFIO_CHECK_EXTENSION, int32(ext))
 		if err != nil {
 			log.Warningf("check VFIO extension %s: %v", ext, err)
+			return 0, err
+		}
+		return ret, nil
+	}
+	return 0, linuxerr.EINVAL
+}
+
+// Set the iommu to the given type.  The type must be supported by an iommu
+// driver as verified by calling VFIO_CHECK_EXTENSION using the same type.
+func (fd *vfioFd) setIOMMU(ext extension) (uintptr, error) {
+	switch ext {
+	case linux.VFIO_TYPE1_IOMMU, linux.VFIO_SPAPR_TCE_IOMMU, linux.VFIO_TYPE1v2_IOMMU:
+		ret, err := ioctlInvoke[int32](fd.hostFd, linux.VFIO_SET_IOMMU, int32(ext))
+		if err != nil {
+			log.Warningf("set the IOMMU group to %s: %v", ext, err)
 			return 0, err
 		}
 		return ret, nil

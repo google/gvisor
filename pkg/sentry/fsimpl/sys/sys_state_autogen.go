@@ -278,6 +278,31 @@ func (d *dir) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(9, &d.locks)
 }
 
+func (d *cgroupDir) StateTypeName() string {
+	return "pkg/sentry/fsimpl/sys.cgroupDir"
+}
+
+func (d *cgroupDir) StateFields() []string {
+	return []string{
+		"dir",
+	}
+}
+
+func (d *cgroupDir) beforeSave() {}
+
+// +checklocksignore
+func (d *cgroupDir) StateSave(stateSinkObject state.Sink) {
+	d.beforeSave()
+	stateSinkObject.Save(0, &d.dir)
+}
+
+func (d *cgroupDir) afterLoad(context.Context) {}
+
+// +checklocksignore
+func (d *cgroupDir) StateLoad(ctx context.Context, stateSourceObject state.Source) {
+	stateSourceObject.Load(0, &d.dir)
+}
+
 func (c *cpuFile) StateTypeName() string {
 	return "pkg/sentry/fsimpl/sys.cpuFile"
 }
@@ -395,6 +420,7 @@ func init() {
 	state.Register((*InternalData)(nil))
 	state.Register((*filesystem)(nil))
 	state.Register((*dir)(nil))
+	state.Register((*cgroupDir)(nil))
 	state.Register((*cpuFile)(nil))
 	state.Register((*implStatFS)(nil))
 	state.Register((*staticFile)(nil))
