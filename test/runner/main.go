@@ -70,6 +70,7 @@ var (
 	leakCheck        = flag.Bool("leak-check", false, "check for reference leaks")
 	waitForPid       = flag.Duration("delay-for-debugger", 0, "Print out the sandbox PID and wait for the specified duration to start the test. This is useful for attaching a debugger to the runsc-sandbox process.")
 	save             = flag.Bool("save", false, "enables save restore")
+	saveResume       = flag.Bool("save-resume", false, "enables save resume")
 )
 
 const (
@@ -405,14 +406,17 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 		args = append(args, "-log=/dev/null")
 
 		// Create the state file.
-		if *save {
+		if *save || *saveResume {
 			saveArgs = args
 			args, dirs, err = prepareSave(args, undeclaredOutputsDir, dirs, 0)
 			if err != nil {
 				return fmt.Errorf("prepareSave error: %v", err)
 			}
+			if *saveResume {
+				args = append(args, "-TESTONLY-autosave-resume=true")
+			}
 		}
-	} else if *save {
+	} else if *save || *saveResume {
 		// TEST_UNDECLARED_OUTPUTS_DIR directory should be present with S/R to create
 		// the state file.
 		return fmt.Errorf("TEST_UNDECLARED_OUTPUTS_DIR is not set with S/R enabled")
@@ -573,6 +577,14 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 			}
 		}
 		// Do not output state files when the test succeeds.
+		removeAll(dirs)
+	} else if *saveResume {
+		err = cmd.Run()
+		if err != nil {
+			printAll(dirs)
+			removeAll(dirs)
+			return fmt.Errorf("run error: %v", err)
+		}
 		removeAll(dirs)
 	} else {
 		err = cmd.Run()

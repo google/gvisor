@@ -1258,6 +1258,7 @@ func (s *Sandbox) Checkpoint(cid string, f *os.File, options statefile.Options) 
 		FilePayload: urpc.FilePayload{
 			Files: []*os.File{f},
 		},
+		Resume: options.Resume,
 	}
 
 	if err := s.call(boot.ContMgrCheckpoint, &opt, nil); err != nil {

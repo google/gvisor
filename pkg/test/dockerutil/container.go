@@ -333,6 +333,11 @@ func (c *Container) Restore(ctx context.Context, name string) error {
 	return c.client.ContainerStart(ctx, c.id, types.ContainerStartOptions{CheckpointID: name})
 }
 
+// CheckpointResume is analogous to 'docker checkpoint'.
+func (c *Container) CheckpointResume(ctx context.Context, name string) error {
+	return c.client.CheckpointCreate(ctx, c.Name, types.CheckpointCreateOptions{CheckpointID: name, Exit: false})
+}
+
 // Logs is analogous 'docker logs'.
 func (c *Container) Logs(ctx context.Context) (string, error) {
 	var out bytes.Buffer

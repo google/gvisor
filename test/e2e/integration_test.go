@@ -1110,3 +1110,32 @@ func TestBlockHostUds(t *testing.T) {
 		t.Errorf("err should be non-nil and output should contain %q, but got err = %v and output = %q", want, err, got)
 	}
 }
+
+// Checkpoint the container and continue running.
+func TestCheckpointResume(t *testing.T) {
+	if !testutil.IsCheckpointSupported() {
+		t.Skip("Checkpoint is not supported.")
+	}
+	dockerutil.EnsureDockerExperimentalEnabled()
+
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	// Start the container.
+	if err := d.Spawn(ctx, dockerutil.RunOpts{
+		Image: "basic/alpine",
+	}, "sh", "-c", "sleep 10 | cat"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+
+	// Create a snapshot and continue running.
+	if err := d.CheckpointResume(ctx, "test"); err != nil {
+		t.Fatalf("docker checkpoint failed: %v", err)
+	}
+
+	// Container finished executing after taking a snapshot without error.
+	if err := d.Wait(ctx); err != nil {
+		t.Fatalf("wait failed: %v", err)
+	}
+}

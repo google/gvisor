@@ -78,6 +78,7 @@ def _syscall_test(
         directfs = False,
         leak_check = False,
         save = False,
+        save_resume = False,
         **kwargs):
     # Prepend "runsc" to non-native platform names.
     full_platform = platform if platform == "native" else "runsc_" + platform
@@ -96,6 +97,8 @@ def _syscall_test(
         name += "_directfs"
     if save:
         name += "_save"
+    if save_resume:
+        name += "_save_resume"
 
     # Apply all tags.
     if tags == None:
@@ -106,10 +109,13 @@ def _syscall_test(
     tags = list(tags)
     tags += [full_platform, "file_" + file_access]
 
-    if save:
+    if save or save_resume:
         tags.append("allsave")
         if platform in save_restore_platforms:
-            tags.append("save_restore")
+            if save:
+                tags.append("save_restore")
+            if save_resume:
+                tags.append("save_resume")
 
     # Hash this target into one of 15 buckets. This can be used to
     # randomly split targets between different workflows.
@@ -162,6 +168,7 @@ def _syscall_test(
         "--directfs=" + str(directfs),
         "--leak-check=" + str(leak_check),
         "--save=" + str(save),
+        "--save-resume=" + str(save_resume),
     ]
 
     # Trace points are platform agnostic, so enable them for ptrace only.
@@ -201,6 +208,7 @@ def syscall_test_variants(
         container = None,
         tags = None,
         save = False,
+        save_resume = False,
         size = "medium",
         timeout = None,
         **kwargs):
@@ -226,6 +234,7 @@ def syscall_test_variants(
       save: save restore test.
       size: test size.
       timeout: timeout for the test.
+      save_resume: save resume test.
       **kwargs: additional test arguments.
     """
     for platform, platform_tags in all_platforms():
@@ -246,6 +255,7 @@ def syscall_test_variants(
             one_sandbox = one_sandbox,
             leak_check = leak_check,
             save = save,
+            save_resume = save_resume,
             size = size,
             timeout = timeout,
             **kwargs
@@ -268,12 +278,13 @@ def syscall_test_variants(
             leak_check = leak_check,
             save = save,
             size = size,
+            save_resume = save_resume,
             timeout = timeout,
             **kwargs
         )
 
     # TODO(b/192114729): hostinet is not supported with S/R.
-    if add_hostinet and not save:
+    if add_hostinet and not (save or save_resume):
         _syscall_test(
             test = test,
             platform = default_platform,
@@ -289,6 +300,7 @@ def syscall_test_variants(
             one_sandbox = one_sandbox,
             leak_check = leak_check,
             save = save,
+            save_resume = save_resume,
             size = size,
             timeout = timeout,
             **kwargs
@@ -310,6 +322,7 @@ def syscall_test_variants(
             file_access = "shared",
             leak_check = leak_check,
             save = save,
+            save_resume = save_resume,
             size = size,
             timeout = timeout,
             **kwargs
@@ -330,6 +343,7 @@ def syscall_test_variants(
             leak_check = leak_check,
             save = save,
             size = size,
+            save_resume = save_resume,
             timeout = timeout,
             **kwargs
         )
@@ -352,6 +366,7 @@ def syscall_test(
         container = None,
         tags = None,
         save = True,
+        save_resume = True,
         size = "medium",
         **kwargs):
     """syscall_test is a macro that will create targets for all platforms.
@@ -374,6 +389,7 @@ def syscall_test(
       tags: starting test tags.
       leak_check: enables leak check.
       save: save restore test.
+      save_resume: save resume test.
       size: test size.
       **kwargs: additional test arguments.
     """
@@ -414,6 +430,7 @@ def syscall_test(
         container,
         tags,
         False,  # save, generate all tests without save variant.
+        False,  # save_resume, generate all tests without save_resume variant.
         size,
         **kwargs
     )
@@ -440,6 +457,33 @@ def syscall_test(
             container,
             tags,
             True,  # save, generate all tests with save variant.
+            False,  # save_resume, generate all tests without save_resume variant.
+            "large",  # size, use size as large by default for all S/R tests.
+            "long",  # timeout, use long timeout for S/R tests.
+            **kwargs
+        )
+
+    # Add save resume variant to all other variants generated above.
+    if save_resume:
+        syscall_test_variants(
+            test,
+            use_tmpfs,
+            add_fusefs,
+            add_overlay,
+            add_host_uds,
+            add_host_connector,
+            add_host_fifo,
+            add_hostinet,
+            add_directfs,
+            one_sandbox,
+            iouring,
+            allow_native,
+            leak_check,
+            debug,
+            container,
+            tags,
+            False,  # save, generate all tests without save variant.
+            True,  # save_resume, generate all tests with save_resume variant.
             "large",  # size, use size as large by default for all S/R tests.
             "long",  # timeout, use long timeout for S/R tests.
             **kwargs

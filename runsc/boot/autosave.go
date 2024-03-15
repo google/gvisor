@@ -27,8 +27,36 @@ import (
 	"gvisor.dev/gvisor/pkg/sync"
 )
 
+func checkResume(f *os.File) error {
+	// Check state file size is greater than zero and
+	// clear the state file before returning.
+	st, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("stat error %v", err)
+	}
+
+	size := st.Size()
+	if size <= 0 {
+		return fmt.Errorf("state file size is zero")
+	}
+	if err := f.Truncate(0); err != nil {
+		return fmt.Errorf("error in truncating %v", err)
+	}
+	f.Seek(0, 0)
+
+	newSt, err := f.Stat()
+	if err != nil {
+		return fmt.Errorf("stat error %v", err)
+	}
+	if sz := newSt.Size(); sz != 0 {
+		return fmt.Errorf("state file size is not zero")
+	}
+
+	return nil
+}
+
 // EnableAutosave enables auto save restore in syscall tests.
-func EnableAutosave(l *Loader, f *os.File) error {
+func EnableAutosave(l *Loader, f *os.File, isResume bool) error {
 	var once sync.Once // Used by target.
 	target := func(k *kernel.Kernel) {
 		once.Do(func() {
@@ -37,6 +65,7 @@ func EnableAutosave(l *Loader, f *os.File) error {
 			saveOpts := state.SaveOpts{
 				Destination: f,
 				Key:         nil,
+				Resume:      isResume,
 				Callback: func(err error) {
 					t1, _ := state.CPUTime()
 					log.Infof("Save CPU usage: %s", (t1 - t).String())
@@ -48,8 +77,15 @@ func EnableAutosave(l *Loader, f *os.File) error {
 						k.SetSaveError(err)
 					}
 
-					// Kill the sandbox.
-					k.Kill(linux.WaitStatusExit(0))
+					if isResume {
+						if err := checkResume(f); err != nil {
+							log.Warningf("Save resume failed: exiting... %v", err)
+							k.SetSaveError(err)
+						}
+					} else {
+						// Kill the sandbox.
+						k.Kill(linux.WaitStatusExit(0))
+					}
 				},
 			}
 			saveOpts.Save(k.SupervisorContext(), k, l.watchdog)

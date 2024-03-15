@@ -56,6 +56,9 @@ type SaveOpts struct {
 
 	// Callback is called prior to unpause, with any save error.
 	Callback func(err error)
+
+	// Resume indicates if the statefile is used for save-resume.
+	Resume bool
 }
 
 // Save saves the system state.
@@ -92,8 +95,10 @@ func (opts SaveOpts) Save(ctx context.Context, k *kernel.Kernel, w *watchdog.Wat
 			err = ErrStateFile{err}
 		}
 
-		if closeErr := wc.Close(); err == nil && closeErr != nil {
-			err = ErrStateFile{closeErr}
+		if !opts.Resume {
+			if closeErr := wc.Close(); err == nil && closeErr != nil {
+				err = ErrStateFile{closeErr}
+			}
 		}
 	}
 	opts.Callback(err)
