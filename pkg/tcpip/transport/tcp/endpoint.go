@@ -3228,12 +3228,10 @@ func (e *endpoint) SocketOptions() *tcpip.SocketOptions {
 }
 
 // GetTCPSendBufferLimits is used to get send buffer size limits for TCP.
-func GetTCPSendBufferLimits(s tcpip.StackHandler) tcpip.SendBufferSizeOption {
-	var ss tcpip.TCPSendBufferSizeRangeOption
-	if err := s.TransportProtocolOption(header.TCPProtocolNumber, &ss); err != nil {
-		panic(fmt.Sprintf("s.TransportProtocolOption(%d, %#v) = %s", header.TCPProtocolNumber, ss, err))
-	}
-
+func GetTCPSendBufferLimits(sh tcpip.StackHandler) tcpip.SendBufferSizeOption {
+	// This type assertion is safe because only the TCP stack calls this
+	// function.
+	ss := sh.(*stack.Stack).TCPSendBufferLimits()
 	return tcpip.SendBufferSizeOption{
 		Min:     ss.Min,
 		Default: ss.Default,

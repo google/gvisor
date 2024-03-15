@@ -480,6 +480,13 @@ func (p *protocol) Option(option tcpip.GettableTransportProtocolOption) tcpip.Er
 	}
 }
 
+// SendBufferSize implements stack.SendBufSizeProto.
+func (p *protocol) SendBufferSize() tcpip.TCPSendBufferSizeRangeOption {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return p.sendBufferSize
+}
+
 // Close implements stack.TransportProtocol.Close.
 func (p *protocol) Close() {
 	p.dispatcher.close()
