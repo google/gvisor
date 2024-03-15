@@ -36,6 +36,11 @@ import (
 	"gvisor.dev/gvisor/runsc/specutils"
 )
 
+const (
+	noCap           = "0000000000000000"
+	netAdminOnlyCap = "0000000000001000"
+)
+
 // Test that exec uses the exact same capability set as the container.
 func TestExecCapabilities(t *testing.T) {
 	ctx := context.Background()
@@ -45,29 +50,104 @@ func TestExecCapabilities(t *testing.T) {
 	// Start the container.
 	if err := d.Spawn(ctx, dockerutil.RunOpts{
 		Image: "basic/alpine",
-	}, "sh", "-c", "cat /proc/self/status; sleep 100"); err != nil {
+	}, "sh", "-c", "cat /proc/self/status; sleep 200"); err != nil {
 		t.Fatalf("docker run failed: %v", err)
 	}
 
 	// Check that capability.
-	matches, err := d.WaitForOutputSubmatch(ctx, "CapEff:\t([0-9a-f]+)\n", 5*time.Second)
-	if err != nil {
-		t.Fatalf("WaitForOutputSubmatch() timeout: %v", err)
-	}
-	if len(matches) != 2 {
-		t.Fatalf("There should be a match for the whole line and the capability bitmask")
-	}
-	want := fmt.Sprintf("CapEff:\t%s\n", matches[1])
-	t.Log("Root capabilities:", want)
+	caps := []string{"CapInh", "CapPrm", "CapEff", "CapBnd"}
+	// Expected capabilities for non-root usres.
+	wantCaps := map[string]string{}
+	// For the root user.
+	for _, cap := range caps {
+		pattern := fmt.Sprintf("%s:\t([0-9a-f]+)\n", cap)
+		matches, err := d.WaitForOutputSubmatch(ctx, pattern, 5*time.Second)
+		if err != nil {
+			t.Fatalf("WaitForOutputSubmatch() timeout: %v", err)
+		}
+		if len(matches) != 2 {
+			t.Fatalf("There should be a match for the whole line and the capability bitmask")
+		}
+		want := fmt.Sprintf("%s:\t%s\n", cap, matches[1])
+		t.Log("root capabilities:", want)
 
-	// Now check that exec'd process capabilities match the root.
-	got, err := d.Exec(ctx, dockerutil.ExecOpts{}, "grep", "CapEff:", "/proc/self/status")
+		// Now check that exec'd process capabilities match the root.
+		got, err := d.Exec(ctx, dockerutil.ExecOpts{}, "grep", fmt.Sprintf("%s:", cap), "/proc/self/status")
+		if err != nil {
+			t.Fatalf("docker exec failed: %v", err)
+		}
+		if got != want {
+			t.Errorf("wrong %s, got: %q, want: %q", cap, got, want)
+		}
+		// CapBnd and CpaInh are unchanged, other capabilities will
+		// be tranformed for non-root users.
+		wantCaps[cap] = fmt.Sprintf("%s:\t%s\n", cap, noCap)
+		if cap == "CapBnd" || cap == "CapInh" {
+			wantCaps[cap] = got
+		}
+	}
+	gid, uid, groupname, username := "1001", "1002", "gvisor-test", "gvisor-test"
+	// Add a new group.
+	if _, err := d.Exec(ctx, dockerutil.ExecOpts{}, "addgroup", groupname, "--gid", gid); err != nil {
+		t.Fatalf("failed to create a new group: %v", err)
+	}
+	// Add a new user.
+	if _, err := d.Exec(ctx, dockerutil.ExecOpts{}, "adduser", "--no-create-home", "--disabled-password", "--gecos", "", "--ingroup", groupname, username); err != nil {
+		t.Fatalf("failed to create a new user: %v", err)
+	}
+	for cap, want := range wantCaps {
+		got, err := d.Exec(ctx, dockerutil.ExecOpts{User: uid}, "grep", fmt.Sprintf("%s:", cap), "/proc/self/status")
+		if err != nil {
+			t.Fatalf("docker exec failed: %v", err)
+		}
+		t.Logf("%s: %v", cap, got)
+		// Format the matched capability.
+		if got != want {
+			t.Errorf("wrong %s, got: %q, want: %q", cap, got, want)
+		}
+	}
+}
+
+func TestFileCap(t *testing.T) {
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	// Start the container.
+	if err := d.Spawn(ctx, dockerutil.RunOpts{
+		Image:  "basic/filecap",
+		CapAdd: []string{"NET_ADMIN"},
+	}, "sh", "-c", "cat /proc/self/status; sleep 100"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+	output, err := d.Exec(ctx, dockerutil.ExecOpts{User: "1001"}, "/mnt/cat", "/proc/self/status")
 	if err != nil {
 		t.Fatalf("docker exec failed: %v", err)
 	}
-	t.Logf("CapEff: %v", got)
-	if got != want {
-		t.Errorf("wrong capabilities, got: %q, want: %q", got, want)
+	expectedCaps := fmt.Sprintf("CapInh:\t%s\nCapPrm:\t%s\nCapEff:\t%s\n", noCap, netAdminOnlyCap, netAdminOnlyCap)
+	if !strings.Contains(output, expectedCaps) {
+		t.Fatalf("can't find expected caps:\n %v, output: %v", expectedCaps, output)
+	}
+}
+
+func TestNoExpectedFileCap(t *testing.T) {
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	// Start the container.
+	if err := d.Spawn(ctx, dockerutil.RunOpts{
+		Image:  "basic/filecap",
+		CapAdd: []string{"NET_RAW"},
+	}, "sh", "-c", "cat /proc/self/status; sleep 100"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+	output, err := d.Exec(ctx, dockerutil.ExecOpts{User: "1001"}, "/mnt/cat", "/proc/self/status")
+	if err == nil {
+		t.Fatalf("error not present")
+	}
+	if !strings.Contains(output, "operation not permitted") {
+		t.Fatalf("expected error: operation not permitted, got: %v", err)
 	}
 }
 
@@ -107,7 +187,6 @@ func TestExecPrivileged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to convert capabilities %q: %v", matches[1], err)
 	}
-	t.Logf("Container capabilities: %#x", containerCaps)
 
 	// Expect no capabilities, unless raw sockets configured.
 	var wantContainerCaps uint64
@@ -126,7 +205,6 @@ func TestExecPrivileged(t *testing.T) {
 	if err != nil {
 		t.Fatalf("docker exec failed: %v", err)
 	}
-	t.Logf("Exec CapEff: %v", got)
 	wantCaps := specutils.AllCapabilitiesUint64()
 	if !testutil.IsRunningWithNetRaw() {
 		wantCaps &= ^bits.MaskOf64(int(linux.CAP_NET_RAW))

@@ -20,6 +20,7 @@ import (
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/bits"
+	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 )
 
 // A CapabilitySet is a set of capabilities implemented as a bitset. The zero
@@ -69,20 +70,48 @@ func VfsCapDataOf(data []byte) (VfsCapData, error) {
 	// slice.
 	version := capData.MagicEtc & linux.VFS_CAP_REVISION_MASK
 	switch {
-	case version == linux.VFS_CAP_REVISION_3 && size == linux.XATTR_CAPS_SZ_3:
+	case version == linux.VFS_CAP_REVISION_3 && size >= linux.XATTR_CAPS_SZ_3:
 		// Like version 2 file capabilities, version 3 capability
 		// masks are 64 bits in size.  In addition, version 3 has
 		// the root user ID of namespace, which is encoded in the
 		// security.capability extended attribute.
 		capData.RootID = binary.LittleEndian.Uint32(data[20:24])
 		fallthrough
-	case version == linux.VFS_CAP_REVISION_2 && size == linux.XATTR_CAPS_SZ_2:
+	case version == linux.VFS_CAP_REVISION_2 && size >= linux.XATTR_CAPS_SZ_2:
 		capData.Permitted += CapabilitySet(binary.LittleEndian.Uint32(data[12:16])) << 32
 		capData.Inheritable += CapabilitySet(binary.LittleEndian.Uint32(data[16:20])) << 32
 	default:
 		return VfsCapData{}, fmt.Errorf("VFS_CAP_REVISION_%v with cap data size %v is not supported", version, size)
 	}
 	return capData, nil
+}
+
+// CapsFromVfsCaps returns a copy of the given creds with new capability sets
+// by applying the file capability that is specified by capData.
+func CapsFromVfsCaps(capData VfsCapData, creds *Credentials) (*Credentials, error) {
+	// If the real or effective user ID of the process is root,
+	// the file inheritable and permitted sets are ignored from
+	// `Capabilities and execution of programs by root` at capabilities(7).
+	if root := creds.UserNamespace.MapToKUID(RootUID); creds.EffectiveKUID == root || creds.RealKUID == root {
+		return creds, nil
+	}
+	// The credentials object is immutable.
+	newCreds := creds.Fork()
+	effective := (capData.MagicEtc & linux.VFS_CAP_FLAGS_EFFECTIVE) > 0
+	newCreds.PermittedCaps = (capData.Permitted & creds.BoundingCaps) |
+		(capData.Inheritable & creds.InheritableCaps)
+	// P'(effective) = effective ? P'(permitted) : P'(ambient).
+	// The ambient capabilities has not supported yet in gVisor,
+	// set effective capabilities to 0 when effective bit is false.
+	newCreds.EffectiveCaps = 0
+	if effective {
+		newCreds.EffectiveCaps = newCreds.PermittedCaps
+	}
+	// Insufficient to execute correctly.
+	if (capData.Permitted & ^newCreds.PermittedCaps) != 0 {
+		return nil, linuxerr.EPERM
+	}
+	return newCreds, nil
 }
 
 // TaskCapabilities represents all the capability sets for a task. Each of these
