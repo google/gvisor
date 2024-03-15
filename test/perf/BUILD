@@ -146,6 +146,17 @@ syscall_test(
 syscall_test(
     size = "large",
     debug = False,
+    tags = [
+        # Uses too much memory to run automatically.
+        "local",
+        "manual",
+    ],
+    test = "//test/perf/linux:save_benchmark",
+)
+
+syscall_test(
+    size = "large",
+    debug = False,
     # Takes too long to run with S/R.
     save = False,
     test = "//test/perf/linux:sched_yield_benchmark",
