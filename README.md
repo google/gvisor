@@ -6,7 +6,7 @@
 [![gVisor chat](https://badges.gitter.im/gvisor/community.png)](https://gitter.im/gvisor/community)
 [![code search](https://img.shields.io/badge/code-search-blue)](https://cs.opensource.google/gvisor/gvisor)
 
-## What is gVisor?
+## What Is gVisor?
 
 **gVisor** is an application kernel, written in Go, that implements a
 substantial portion of the Linux system surface. It includes an
@@ -15,7 +15,7 @@ isolation boundary between the application and the host kernel. The `runsc`
 runtime integrates with Docker and Kubernetes, making it simple to run sandboxed
 containers.
 
-## Why does gVisor exist?
+## Why Does gVisor Exist?
 
 Containers are not a [**sandbox**][sandbox]. While containers have
 revolutionized how we develop, package, and deploy applications, using them to
@@ -41,7 +41,7 @@ made available to a container.
 User documentation and technical architecture, including quick start guides, can
 be found at [gvisor.dev][gvisor-dev].
 
-## Installing from source
+## Installing From Source
 
 gVisor builds on x86_64 and ARM64. Other architectures may become available in
 the future.
