@@ -30,5 +30,6 @@ const (
 // IOCTLs for VFIO file descriptor from include/uapi/linux/vfio.h.
 var (
 	VFIO_CHECK_EXTENSION     = IO(VFIO_TYPE, VFIO_BASE+1)
+	VFIO_SET_IOMMU           = IO(VFIO_TYPE, VFIO_BASE+2)
 	VFIO_GROUP_SET_CONTAINER = IO(VFIO_TYPE, VFIO_BASE+4)
 )
