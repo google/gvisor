@@ -150,6 +150,14 @@ TEST(Cgroup, Statfs) {
   }
 }
 
+TEST(Cgroup, StatfsCgroupDir) {
+  SKIP_IF(!CgroupsAvailable());
+
+  struct statfs st;
+  EXPECT_THAT(statfs("/sys/fs/cgroup", &st), SyscallSucceeds());
+  EXPECT_EQ(st.f_type, TMPFS_MAGIC);
+}
+
 TEST(Cgroup, CgroupsCannotMountTwice) {
   SKIP_IF(!CgroupsAvailable());
 

@@ -113,7 +113,7 @@ func (fsType FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	// cgroupfs, but the kernel creates the mountpoint. For the sentry, the
 	// launcher mounts cgroupfs.
 	if k.CgroupRegistry() != nil {
-		fsDirChildren["cgroup"] = fs.newDir(ctx, creds, defaultSysDirMode, nil)
+		fsDirChildren["cgroup"] = fs.newCgroupDir(ctx, creds, defaultSysDirMode, nil)
 	}
 
 	classSub := map[string]kernfs.Inode{
@@ -327,6 +327,15 @@ func (fs *filesystem) newDir(ctx context.Context, creds *auth.Credentials, mode 
 	return d
 }
 
+func (fs *filesystem) newCgroupDir(ctx context.Context, creds *auth.Credentials, mode linux.FileMode, contents map[string]kernfs.Inode) kernfs.Inode {
+	d := &cgroupDir{}
+	d.InodeAttrs.Init(ctx, creds, linux.UNNAMED_MAJOR, fs.devMinor, fs.NextIno(), linux.ModeDirectory|0755)
+	d.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
+	d.InitRefs()
+	d.IncLinks(d.OrderedChildren.Populate(contents))
+	return d
+}
+
 // SetStat implements kernfs.Inode.SetStat not allowing inode attributes to be changed.
 func (*dir) SetStat(context.Context, *vfs.Filesystem, *auth.Credentials, vfs.SetStatOptions) error {
 	return linuxerr.EPERM
@@ -353,6 +362,18 @@ func (d *dir) DecRef(ctx context.Context) {
 // StatFS implements kernfs.Inode.StatFS.
 func (d *dir) StatFS(ctx context.Context, fs *vfs.Filesystem) (linux.Statfs, error) {
 	return vfs.GenericStatFS(linux.SYSFS_MAGIC), nil
+}
+
+// cgroupDir implements kernfs.Inode.
+//
+// +stateify savable
+type cgroupDir struct {
+	dir
+}
+
+// StatFS implements kernfs.Inode.StatFS.
+func (d *cgroupDir) StatFS(ctx context.Context, fs *vfs.Filesystem) (linux.Statfs, error) {
+	return vfs.GenericStatFS(linux.TMPFS_MAGIC), nil
 }
 
 // cpuFile implements kernfs.Inode.
