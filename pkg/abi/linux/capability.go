@@ -230,6 +230,8 @@ const (
 // Constants that are used by file capability extended attributes, defined
 // in Linux's include/uapi/linux/capability.h.
 const (
+	// The flag decides the value of effective file capabilit
+	VFS_CAP_FLAGS_EFFECTIVE = 0x000001
 	// VFS_CAP_REVISION_1 was the original file capability implementation,
 	// which supported 32-bit masks for file capabilities.
 	VFS_CAP_REVISION_1 = 0x01000000

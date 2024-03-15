@@ -1019,9 +1019,18 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 	if se != nil {
 		return nil, 0, errors.New(se.String())
 	}
-
-	// Take a reference on the FDTable, which will be transferred to
-	// TaskSet.NewTask().
+	var capData auth.VfsCapData
+	if len(image.FileCaps()) != 0 {
+		var err error
+		capData, err = auth.VfsCapDataOf([]byte(image.FileCaps()))
+		if err != nil {
+			return nil, 0, err
+		}
+	}
+	creds, err := auth.CapsFromVfsCaps(capData, args.Credentials)
+	if err != nil {
+		return nil, 0, err
+	}
 	args.FDTable.IncRef()
 
 	// Create the task.
@@ -1031,7 +1040,7 @@ func (k *Kernel) CreateProcess(args CreateProcessArgs) (*ThreadGroup, ThreadID, 
 		TaskImage:        image,
 		FSContext:        fsContext,
 		FDTable:          args.FDTable,
-		Credentials:      args.Credentials,
+		Credentials:      creds,
 		NetworkNamespace: k.RootNetworkNamespace(),
 		AllowedCPUMask:   sched.NewFullCPUSet(k.applicationCores),
 		UTSNamespace:     args.UTSNamespace,
