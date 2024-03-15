@@ -2,7 +2,7 @@
 
 [TOC]
 
-> Note: gVisor supports only x86\_64 and requires Linux 4.14.77+
+> Note: gVisor supports x86\_64 and ARM64, and requires Linux 4.14.77+
 > ([older Linux](./networking.md#gso)).
 
 ## Install latest release {#install-latest}
