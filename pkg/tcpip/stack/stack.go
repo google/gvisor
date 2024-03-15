@@ -495,6 +495,16 @@ func (s *Stack) TransportProtocolOption(transport tcpip.TransportProtocolNumber,
 	return transProtoState.proto.Option(option)
 }
 
+// SendBufSizeProto is a protocol that can return its send buffer size.
+type SendBufSizeProto interface {
+	SendBufferSize() tcpip.TCPSendBufferSizeRangeOption
+}
+
+// TCPSendBufferLimits returns the TCP send buffer size limit.
+func (s *Stack) TCPSendBufferLimits() tcpip.TCPSendBufferSizeRangeOption {
+	return s.transportProtocols[header.TCPProtocolNumber].proto.(SendBufSizeProto).SendBufferSize()
+}
+
 // SetTransportProtocolHandler sets the per-stack default handler for the given
 // protocol.
 //
