@@ -2696,6 +2696,15 @@ TEST_P(SimpleTcpSocketTest, EpollListeningSocket) {
   save_and_connect_thread.Join();
 }
 
+TEST_P(SimpleTcpSocketTest, SetTCPCorkOff) {
+  int fd;
+  ASSERT_THAT(fd = socket(GetParam(), SOCK_STREAM, IPPROTO_TCP),
+              SyscallSucceeds());
+
+  ASSERT_THAT(
+      setsockopt(fd, IPPROTO_TCP, TCP_CORK, &kSockOptOff, sizeof(kSockOptOff)),
+      SyscallSucceeds());
+}
 #endif  // __linux__
 
 INSTANTIATE_TEST_SUITE_P(AllInetTests, SimpleTcpSocketTest,
