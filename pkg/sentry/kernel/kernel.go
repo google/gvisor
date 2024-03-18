@@ -715,7 +715,17 @@ func (k *Kernel) LoadFrom(ctx context.Context, r wire.Reader, timeReady chan str
 
 	// rootNetworkNamespace should be populated after loading the state file.
 	// Restore the root network stack.
-	k.rootNetworkNamespace.RestoreRootStack(net)
+	//k.rootNetworkNamespace.RestoreRootStack(net)
+
+	log.Infof("Saved Network stack: %+v", k.rootNetworkNamespace.Stack())
+	log.Infof("Network stack: %+v", net)
+
+	if k.rootNetworkNamespace.Stack() != nil {
+		log.Infof("Saved Network stack: %+v", k.rootNetworkNamespace.Stack().Interfaces())
+		log.Infof("Network stack: %+v", net.Interfaces())
+	} else {
+		log.Infof("Network stack is nil")
+	}
 
 	// Load the memory files' state.
 	memoryStart := time.Now()

@@ -76,6 +76,8 @@ var netRawMissingLogger = log.BasicRateLimitedLogger(time.Minute)
 // table.
 //
 // LOCK ORDERING: mu > routeMu.
+//
+// +stateify savable
 type Stack struct {
 	transportProtocols map[tcpip.TransportProtocolNumber]*transportProtocolState
 	networkProtocols   map[tcpip.NetworkProtocolNumber]NetworkProtocol
