@@ -24,7 +24,7 @@ import (
 type segmentQueue struct {
 	mu     sync.Mutex  `state:"nosave"`
 	list   segmentList `state:"wait"`
-	ep     *endpoint
+	ep     *Endpoint
 	frozen bool
 }
 

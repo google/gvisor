@@ -30,7 +30,7 @@ import (
 // +stateify savable
 type receiver struct {
 	stack.TCPReceiverState
-	ep *endpoint
+	ep *Endpoint
 
 	// rcvWnd is the non-scaled receive window last advertised to the peer.
 	rcvWnd seqnum.Size
@@ -52,7 +52,7 @@ type receiver struct {
 	lastRcvdAckTime tcpip.MonotonicTime
 }
 
-func newReceiver(ep *endpoint, irs seqnum.Value, rcvWnd seqnum.Size, rcvWndScale uint8) *receiver {
+func newReceiver(ep *Endpoint, irs seqnum.Value, rcvWnd seqnum.Size, rcvWndScale uint8) *receiver {
 	return &receiver{
 		ep: ep,
 		TCPReceiverState: stack.TCPReceiverState{
