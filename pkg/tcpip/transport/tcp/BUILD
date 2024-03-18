@@ -36,8 +36,8 @@ go_template_instance(
     prefix = "endpoint",
     template = "//pkg/ilist:generic_list",
     types = {
-        "Element": "*endpoint",
-        "Linker": "*endpoint",
+        "Element": "*Endpoint",
+        "Linker": "*Endpoint",
     },
 )
 
