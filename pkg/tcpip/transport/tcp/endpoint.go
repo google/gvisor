@@ -1763,7 +1763,9 @@ func (e *endpoint) OnCorkOptionSet(v bool) {
 	if !v {
 		e.LockUser()
 		defer e.UnlockUser()
-		e.snd.corkTimer.disable()
+		if e.snd != nil {
+			e.snd.corkTimer.disable()
+		}
 		// Handle the corked data.
 		if e.EndpointState().connected() {
 			e.sendData(nil /* next */)
