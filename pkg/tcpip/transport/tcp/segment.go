@@ -55,7 +55,7 @@ type segment struct {
 	segmentEntry
 	segmentRefs
 
-	ep     *endpoint
+	ep     *Endpoint
 	qFlags queueFlags
 	id     stack.TransportEndpointID `state:"manual"`
 
@@ -182,7 +182,7 @@ func (s *segment) merge(oth *segment) {
 // setOwner sets the owning endpoint for this segment. Its required
 // to be called to ensure memory accounting for receive/send buffer
 // queues is done properly.
-func (s *segment) setOwner(ep *endpoint, qFlags queueFlags) {
+func (s *segment) setOwner(ep *Endpoint, qFlags queueFlags) {
 	switch qFlags {
 	case recvQ:
 		ep.updateReceiveMemUsed(s.segMemSize())

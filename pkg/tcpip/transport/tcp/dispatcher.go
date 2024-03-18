@@ -35,7 +35,7 @@ type epQueue struct {
 }
 
 // enqueue adds e to the queue if the endpoint is not already on the queue.
-func (q *epQueue) enqueue(e *endpoint) {
+func (q *epQueue) enqueue(e *Endpoint) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 	e.pendingProcessingMu.Lock()
@@ -50,7 +50,7 @@ func (q *epQueue) enqueue(e *endpoint) {
 
 // dequeue removes and returns the first element from the queue if available,
 // returns nil otherwise.
-func (q *epQueue) dequeue() *endpoint {
+func (q *epQueue) dequeue() *Endpoint {
 	q.mu.Lock()
 	if e := q.list.Front(); e != nil {
 		q.list.Remove(e)
@@ -87,7 +87,7 @@ func (p *processor) close() {
 	p.closeWaker.Assert()
 }
 
-func (p *processor) queueEndpoint(ep *endpoint) {
+func (p *processor) queueEndpoint(ep *Endpoint) {
 	// Queue an endpoint for processing by the processor goroutine.
 	p.epQ.enqueue(ep)
 	p.newEndpointWaker.Assert()
@@ -97,7 +97,7 @@ func (p *processor) queueEndpoint(ep *endpoint) {
 // of its associated listening endpoint.
 //
 // +checklocks:ep.mu
-func deliverAccepted(ep *endpoint) bool {
+func deliverAccepted(ep *Endpoint) bool {
 	lEP := ep.h.listenEP
 	lEP.acceptMu.Lock()
 
@@ -129,7 +129,7 @@ func deliverAccepted(ep *endpoint) bool {
 
 // handleConnecting is responsible for TCP processing for an endpoint in one of
 // the connecting states.
-func handleConnecting(ep *endpoint) {
+func handleConnecting(ep *Endpoint) {
 	if !ep.TryLock() {
 		return
 	}
@@ -172,7 +172,7 @@ func handleConnecting(ep *endpoint) {
 
 // handleConnected is responsible for TCP processing for an endpoint in one of
 // the connected states(StateEstablished, StateFinWait1 etc.)
-func handleConnected(ep *endpoint) {
+func handleConnected(ep *Endpoint) {
 	if !ep.TryLock() {
 		return
 	}
@@ -208,7 +208,7 @@ func handleConnected(ep *endpoint) {
 // startTimeWait starts a new goroutine to handle TIME-WAIT.
 //
 // +checklocks:ep.mu
-func startTimeWait(ep *endpoint) {
+func startTimeWait(ep *Endpoint) {
 	// Disable close timer as we are now entering real TIME_WAIT.
 	if ep.finWait2Timer != nil {
 		ep.finWait2Timer.Stop()
@@ -221,7 +221,7 @@ func startTimeWait(ep *endpoint) {
 
 // handleTimeWait is responsible for TCP processing for an endpoint in TIME-WAIT
 // state.
-func handleTimeWait(ep *endpoint) {
+func handleTimeWait(ep *Endpoint) {
 	if !ep.TryLock() {
 		return
 	}
@@ -251,7 +251,7 @@ func handleTimeWait(ep *endpoint) {
 
 // handleListen is responsible for TCP processing for an endpoint in LISTEN
 // state.
-func handleListen(ep *endpoint) {
+func handleListen(ep *Endpoint) {
 	if !ep.TryLock() {
 		return
 	}
@@ -418,7 +418,7 @@ func (d *dispatcher) queuePacket(stackEP stack.TransportEndpoint, id stack.Trans
 		return
 	}
 
-	ep := stackEP.(*endpoint)
+	ep := stackEP.(*Endpoint)
 
 	s, err := newIncomingSegment(id, clock, pkt)
 	if err != nil {

@@ -88,7 +88,7 @@ type lossRecovery interface {
 // +stateify savable
 type sender struct {
 	stack.TCPSenderState
-	ep *endpoint
+	ep *Endpoint
 
 	// lr is the loss recovery algorithm used by the sender.
 	lr lossRecovery
@@ -171,7 +171,7 @@ type rtt struct {
 }
 
 // +checklocks:ep.mu
-func newSender(ep *endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint16, sndWndScale int) *sender {
+func newSender(ep *Endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint16, sndWndScale int) *sender {
 	// The sender MUST reduce the TCP data length to account for any IP or
 	// TCP options that it is including in the packets that it sends.
 	// See: https://tools.ietf.org/html/rfc6691#section-2
