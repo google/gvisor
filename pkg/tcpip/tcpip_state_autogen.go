@@ -1223,6 +1223,7 @@ func (m *AddressMask) StateTypeName() string {
 func (m *AddressMask) StateFields() []string {
 	return []string{
 		"mask",
+		"length",
 	}
 }
 
@@ -1232,6 +1233,7 @@ func (m *AddressMask) beforeSave() {}
 func (m *AddressMask) StateSave(stateSinkObject state.Sink) {
 	m.beforeSave()
 	stateSinkObject.Save(0, &m.mask)
+	stateSinkObject.Save(1, &m.length)
 }
 
 func (m *AddressMask) afterLoad(context.Context) {}
@@ -1239,6 +1241,7 @@ func (m *AddressMask) afterLoad(context.Context) {}
 // +checklocksignore
 func (m *AddressMask) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &m.mask)
+	stateSourceObject.Load(1, &m.length)
 }
 
 func (f *FullAddress) StateTypeName() string {
