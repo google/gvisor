@@ -251,12 +251,12 @@ func (f *Fragmentation) release(r *reassembler, timedOut bool) {
 	if h := f.timeoutHandler; timedOut && h != nil {
 		h.OnReassemblyTimeout(r.pkt)
 	}
-	if !r.pkt.IsNil() {
+	if r.pkt != nil {
 		r.pkt.DecRef()
 		r.pkt = nil
 	}
 	for _, h := range r.holes {
-		if !h.pkt.IsNil() {
+		if h.pkt != nil {
 			h.pkt.DecRef()
 			h.pkt = nil
 		}

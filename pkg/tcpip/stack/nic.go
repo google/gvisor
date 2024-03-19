@@ -759,12 +759,12 @@ func (n *nic) DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt *Packe
 	// Deliver to interested packet endpoints without holding NIC lock.
 	var packetEPPkt *PacketBuffer
 	defer func() {
-		if !packetEPPkt.IsNil() {
+		if packetEPPkt != nil {
 			packetEPPkt.DecRef()
 		}
 	}()
 	deliverPacketEPs := func(ep PacketEndpoint) {
-		if packetEPPkt.IsNil() {
+		if packetEPPkt == nil {
 			// Packet endpoints hold the full packet.
 			//
 			// We perform a deep copy because higher-level endpoints may point to

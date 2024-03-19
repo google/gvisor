@@ -816,7 +816,7 @@ func (p *protocol) OnReassemblyTimeout(pkt *stack.PacketBuffer) {
 	//
 	//   If fragment zero is not available then no time exceeded need be sent at
 	//   all.
-	if !pkt.IsNil() {
+	if pkt != nil {
 		p.returnError(&icmpReasonReassemblyTimeout{}, pkt, true /* deliveredLocally */)
 	}
 }

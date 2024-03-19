@@ -180,7 +180,7 @@ func (e *Endpoint) ReadContext(ctx context.Context) *stack.PacketBuffer {
 // Drain removes all outbound packets from the channel and counts them.
 func (e *Endpoint) Drain() int {
 	c := 0
-	for pkt := e.Read(); !pkt.IsNil(); pkt = e.Read() {
+	for pkt := e.Read(); pkt != nil; pkt = e.Read() {
 		pkt.DecRef()
 		c++
 	}
@@ -254,7 +254,7 @@ func (e *Endpoint) LinkAddress() tcpip.LinkAddress {
 // Multiple concurrent calls are permitted.
 func (e *Endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
 	n := 0
-	for _, pkt := range pkts.AsSlice() {
+	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
 		if err := e.q.Write(pkt); err != nil {
 			if _, ok := err.(*tcpip.ErrNoBufferSpace); !ok && n == 0 {
 				return 0, err
