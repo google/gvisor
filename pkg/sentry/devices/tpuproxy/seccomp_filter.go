@@ -65,6 +65,10 @@ func Filters() seccomp.SyscallRules {
 				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(linux.VFIO_SET_IOMMU),
 			},
+			seccomp.PerArg{
+				seccomp.NonNegativeFD{},
+				seccomp.EqualTo(linux.VFIO_GROUP_GET_DEVICE_FD),
+			},
 		},
 	})
 }
