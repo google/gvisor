@@ -138,7 +138,7 @@ type worker struct {
 }
 
 // work is the main work routine; see worker.
-func (w *worker) work(compress bool, level int) {
+func (w *worker) work(compress, uncompressed bool, level int) {
 	defer close(w.output)
 
 	var h hash.Hash
@@ -153,21 +153,28 @@ func (w *worker) work(compress bool, level int) {
 				mw = io.MultiWriter(mw, h)
 			}
 
-			// Encode this slice.
-			fw, err := flate.NewWriter(mw, level)
-			if err != nil {
-				w.output <- result{c, err}
-				continue
-			}
+			if uncompressed {
+				if _, err := io.CopyN(mw, c.uncompressed, int64(c.uncompressed.Len())); err != nil {
+					w.output <- result{c, err}
+					continue
+				}
+			} else {
+				// Encode this slice.
+				fw, err := flate.NewWriter(mw, level)
+				if err != nil {
+					w.output <- result{c, err}
+					continue
+				}
 
-			// Encode the input.
-			if _, err := io.CopyN(fw, c.uncompressed, int64(c.uncompressed.Len())); err != nil {
-				w.output <- result{c, err}
-				continue
-			}
-			if err := fw.Close(); err != nil {
-				w.output <- result{c, err}
-				continue
+				// Encode the input.
+				if _, err := io.CopyN(fw, c.uncompressed, int64(c.uncompressed.Len())); err != nil {
+					w.output <- result{c, err}
+					continue
+				}
+				if err := fw.Close(); err != nil {
+					w.output <- result{c, err}
+					continue
+				}
 			}
 
 			// Write the hash, if enabled.
@@ -193,13 +200,21 @@ func (w *worker) work(compress bool, level int) {
 				}
 			}
 
-			// Decode this slice.
-			fr := flate.NewReader(c.compressed)
+			if uncompressed {
+				// Copy from input to output without decompression.
+				if _, err := io.Copy(c.uncompressed, c.compressed); err != nil {
+					w.output <- result{c, err}
+					continue
+				}
+			} else {
+				// Decode this slice.
+				fr := flate.NewReader(c.compressed)
 
-			// Decode the input.
-			if _, err := io.Copy(c.uncompressed, fr); err != nil {
-				w.output <- result{c, err}
-				continue
+				// Decode the input.
+				if _, err := io.Copy(c.uncompressed, fr); err != nil {
+					w.output <- result{c, err}
+					continue
+				}
 			}
 		}
 
@@ -279,7 +294,7 @@ type pool struct {
 // init initializes the worker pool.
 //
 // This should only be called once.
-func (p *pool) init(key []byte, workers int, compress bool, level int) {
+func (p *pool) init(key []byte, workers int, compress bool, uncompressed bool, level int) {
 	if key != nil {
 		p.hashPool = &hashPool{key: key}
 	}
@@ -290,7 +305,7 @@ func (p *pool) init(key []byte, workers int, compress bool, level int) {
 			input:    make(chan *chunk, 1),
 			output:   make(chan result, 1),
 		}
-		go p.workers[i].work(compress, level) // S/R-SAFE: In save path only.
+		go p.workers[i].work(compress, uncompressed, level) // S/R-SAFE: In save path only.
 	}
 	runtime.SetFinalizer(p, (*pool).stop)
 }
@@ -372,12 +387,16 @@ var _ io.Reader = (*Reader)(nil)
 // hash values computed from the compressed bytes. See package comments for
 // details.
 func NewReader(in io.Reader, key []byte) (*Reader, error) {
+	return newReader(in, key, false /* uncompressed */)
+}
+
+func newReader(in io.Reader, key []byte, uncompressed bool) (*Reader, error) {
 	r := &Reader{
 		in: in,
 	}
 
 	// Use double buffering for read.
-	r.init(key, 2*runtime.GOMAXPROCS(0), false, 0)
+	r.init(key, 2*runtime.GOMAXPROCS(0), false, uncompressed, 0)
 
 	if _, err := io.ReadFull(in, r.scratch[:4]); err != nil {
 		return nil, err
@@ -601,6 +620,10 @@ var _ io.Writer = (*Writer)(nil)
 // buffered (in the form of read-ahead, or buffered writes), and is limited to
 // O(chunkSize * [1+GOMAXPROCS]).
 func NewWriter(out io.Writer, key []byte, chunkSize uint32, level int) (*Writer, error) {
+	return newWriter(out, key, chunkSize, false /* uncompressed */, level)
+}
+
+func newWriter(out io.Writer, key []byte, chunkSize uint32, uncompressed bool, level int) (*Writer, error) {
 	w := &Writer{
 		pool: pool{
 			chunkSize: chunkSize,
@@ -608,7 +631,7 @@ func NewWriter(out io.Writer, key []byte, chunkSize uint32, level int) (*Writer,
 		},
 		out: out,
 	}
-	w.init(key, 1+runtime.GOMAXPROCS(0), true, level)
+	w.init(key, 1+runtime.GOMAXPROCS(0), true, uncompressed, level)
 
 	binary.BigEndian.PutUint32(w.scratch[:], chunkSize)
 	if _, err := w.out.Write(w.scratch[:4]); err != nil {
