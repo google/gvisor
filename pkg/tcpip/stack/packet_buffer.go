@@ -103,6 +103,8 @@ type PacketBufferOptions struct {
 type PacketBuffer struct {
 	_ sync.NoCopy
 
+	PacketBufferEntry
+
 	packetBufferRefs
 
 	// buf is the underlying buffer for the packet. See struct level docs for
@@ -373,6 +375,7 @@ func (pk *PacketBuffer) headerView(typ headerType) buffer.View {
 func (pk *PacketBuffer) Clone() *PacketBuffer {
 	newPk := pkPool.Get().(*PacketBuffer)
 	newPk.reset()
+	newPk.PacketBufferEntry = pk.PacketBufferEntry
 	newPk.buf = pk.buf.Clone()
 	newPk.reserved = pk.reserved
 	newPk.pushed = pk.pushed
@@ -469,9 +472,18 @@ func (pk *PacketBuffer) DeepCopyForForwarding(reservedHeaderBytes int) *PacketBu
 	return newPk
 }
 
-// IsNil returns whether the pointer is logically nil.
-func (pk *PacketBuffer) IsNil() bool {
-	return pk == nil
+// DecRef decreases the reference count on each PacketBuffer
+// stored in the PacketBufferList.
+func (pk *PacketBufferList) DecRef() {
+	// Using a while-loop here (instead of for-loop) because DecRef() can cause
+	// the pb to be recycled. If it is recycled during execution of this loop,
+	// there is a possibility of a data race during a call to pb.Next().
+	pb := pk.Front()
+	for pb != nil {
+		next := pb.Next()
+		pb.DecRef()
+		pb = next
+	}
 }
 
 // headerInfo stores metadata about a header in a packet.

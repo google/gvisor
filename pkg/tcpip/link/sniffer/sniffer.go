@@ -163,7 +163,7 @@ func (e *endpoint) dumpPacket(dir Direction, protocol tcpip.NetworkProtocolNumbe
 // higher-level protocols to write packets; it just logs the packet and
 // forwards the request to the lower endpoint.
 func (e *endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) {
-	for _, pkt := range pkts.AsSlice() {
+	for pkt := pkts.Front(); pkt != nil; pkt = pkt.Next() {
 		e.dumpPacket(DirectionSend, pkt.NetworkProtocolNumber, pkt)
 	}
 	return e.Endpoint.WritePackets(pkts)
