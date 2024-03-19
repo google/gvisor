@@ -225,6 +225,8 @@ func (t *Task) Clone(args *linux.CloneArgs) (ThreadID, *SyscallControl, error) {
 		pidns = t.childPIDNamespace
 	} else if args.Flags&linux.CLONE_NEWPID != 0 {
 		pidns = pidns.NewChild(userns)
+		inode := nsfs.NewInode(t, t.k.nsfsMount, pidns)
+		pidns.SetInode(inode)
 	}
 
 	tg := t.tg
@@ -604,7 +606,9 @@ func (t *Task) Unshare(flags int32) error {
 		if !haveCapSysAdmin {
 			return linuxerr.EPERM
 		}
-		t.childPIDNamespace = t.tg.pidns.NewChild(t.UserNamespace())
+		pidns := t.tg.pidns.NewChild(t.UserNamespace())
+		pidns.SetInode(nsfs.NewInode(t, t.k.nsfsMount, pidns))
+		t.childPIDNamespace = pidns
 	}
 	if flags&linux.CLONE_NEWNET != 0 {
 		if !haveCapSysAdmin {
