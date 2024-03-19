@@ -266,10 +266,9 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 	if opts.SaveRestore {
 		caps |= stack.CapabilitySaveRestore
 	}
-
-	if opts.DisconnectOk {
-		caps |= stack.CapabilityDisconnectOk
-	}
+    
+	// Ensures that all active tcp connections can be disconnected.
+	caps |= stack.CapabilityDisconnectOk
 
 	if len(opts.FDs) == 0 {
 		return nil, fmt.Errorf("opts.FD is empty, at least one FD must be specified")
