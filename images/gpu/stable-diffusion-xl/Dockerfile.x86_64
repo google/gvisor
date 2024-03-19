@@ -1,0 +1,35 @@
+FROM nvidia/cuda:12.3.1-devel-ubuntu22.04
+
+RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install --yes \
+      python3 \
+      python3-distutils \
+      python3-pip \
+      clang \
+      wget \
+      vim \
+      git \
+      libgl1 \
+      libglib2.0-0 \
+      libgl1-mesa-glx \
+      golang
+
+RUN python3 -m pip install --ignore-installed \
+      diffusers \
+      transformers \
+      accelerate \
+      xformers \
+      invisible-watermark
+
+RUN go install \
+      github.com/TheZoraiz/ascii-image-converter@d05a757c5e02ab23e97b6f6fca4e1fbeb10ab559 && \
+      mv "$HOME/go/bin/ascii-image-converter" /usr/bin/
+
+COPY download_checkpoints.py /tmp
+RUN chmod +x /tmp/download_checkpoints.py && \
+      /tmp/download_checkpoints.py && \
+      rm /tmp/download_checkpoints.py
+
+COPY generate_image generate_image.py /
+RUN chmod 555 /generate_image /generate_image.py
+ENV PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+ENTRYPOINT ["/generate_image"]
