@@ -180,7 +180,7 @@ func (e *Endpoint) ReadContext(ctx context.Context) *stack.PacketBuffer {
 // Drain removes all outbound packets from the channel and counts them.
 func (e *Endpoint) Drain() int {
 	c := 0
-	for pkt := e.Read(); !pkt.IsNil(); pkt = e.Read() {
+	for pkt := e.Read(); pkt != nil; pkt = e.Read() {
 		pkt.DecRef()
 		c++
 	}
