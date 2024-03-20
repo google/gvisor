@@ -93,6 +93,10 @@ func (fd *tpuFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args 
 	switch cmd {
 	case linux.VFIO_GROUP_SET_CONTAINER:
 		return fd.setContainer(ctx, t, args[2].Pointer())
+	case linux.VFIO_GROUP_GET_DEVICE_FD:
+		ret, cleanup, err := fd.getPciDeviceFd(t, args[2].Pointer())
+		defer cleanup()
+		return ret, err
 	}
 	return 0, linuxerr.ENOSYS
 }
@@ -111,5 +115,91 @@ func (fd *tpuFD) setContainer(ctx context.Context, t *kernel.Task, arg hostarch.
 	if !ok {
 		return 0, linuxerr.EINVAL
 	}
-	return ioctlInvokePtrArg(fd.hostFD, linux.VFIO_GROUP_SET_CONTAINER, &vfioContainer.hostFd)
+	return IOCTLInvokePtrArg[uint32](fd.hostFD, linux.VFIO_GROUP_SET_CONTAINER, &vfioContainer.hostFd)
+}
+
+// It will be the caller's responsibility to call the returned cleanup function.
+func (fd *tpuFD) getPciDeviceFd(t *kernel.Task, arg hostarch.Addr) (uintptr, func(), error) {
+	pciAddress, err := t.CopyInString(arg, hostarch.PageSize)
+	if err != nil {
+		return 0, func() {}, err
+	}
+	hostFD, err := IOCTLInvokePtrArg[uint32](fd.hostFD, linux.VFIO_GROUP_GET_DEVICE_FD, &pciAddress)
+	if err != nil {
+		return 0, func() {}, err
+	}
+	pciDevFD := &pciDeviceFd{
+		hostFd: int32(hostFD),
+	}
+	cleanup := func() {
+		unix.Close(int(hostFD))
+	}
+	// See drivers/vfio/group.c:vfio_device_open_file(), the PCI device
+	// is accessed for both reads and writes.
+	vd := t.Kernel().VFS().NewAnonVirtualDentry("[vfio-device]")
+	if err := pciDevFD.vfsfd.Init(pciDevFD, linux.O_RDWR, vd.Mount(), vd.Dentry(), &vfs.FileDescriptionOptions{
+		UseDentryMetadata: true,
+	}); err != nil {
+		return 0, cleanup, err
+	}
+	if err := fdnotifier.AddFD(int32(hostFD), &fd.queue); err != nil {
+		return 0, cleanup, err
+	}
+	newFD, err := t.NewFDFrom(0, &pciDevFD.vfsfd, kernel.FDFlags{})
+	if err != nil {
+		return 0, cleanup, err
+	}
+	return uintptr(newFD), func() {}, nil
+}
+
+// pciDeviceFD implements vfs.FileDescriptionImpl for TPU's PCI device.
+type pciDeviceFd struct {
+	vfsfd vfs.FileDescription
+	vfs.FileDescriptionDefaultImpl
+	vfs.DentryMetadataFileDescriptionImpl
+	vfs.NoLockFD
+
+	hostFd     int32
+	queue      waiter.Queue
+	memmapFile tpuFDMemmapFile
+}
+
+// Release implements vfs.FileDescriptionImpl.Release.
+func (fd *pciDeviceFd) Release(context.Context) {
+	fdnotifier.RemoveFD(fd.hostFd)
+	fd.queue.Notify(waiter.EventHUp)
+	unix.Close(int(fd.hostFd))
+}
+
+// EventRegister implements waiter.Waitable.EventRegister.
+func (fd *pciDeviceFd) EventRegister(e *waiter.Entry) error {
+	fd.queue.EventRegister(e)
+	if err := fdnotifier.UpdateFD(fd.hostFd); err != nil {
+		fd.queue.EventUnregister(e)
+		return err
+	}
+	return nil
+}
+
+// EventUnregister implements waiter.Waitable.EventUnregister.
+func (fd *pciDeviceFd) EventUnregister(e *waiter.Entry) {
+	fd.queue.EventUnregister(e)
+	if err := fdnotifier.UpdateFD(fd.hostFd); err != nil {
+		panic(fmt.Sprint("UpdateFD:", err))
+	}
+}
+
+// Readiness implements waiter.Waitable.Readiness.
+func (fd *pciDeviceFd) Readiness(mask waiter.EventMask) waiter.EventMask {
+	return fdnotifier.NonBlockingPoll(fd.hostFd, mask)
+}
+
+// Epollable implements vfs.FileDescriptionImpl.Epollable.
+func (fd *pciDeviceFd) Epollable() bool {
+	return true
+}
+
+// Ioctl implements vfs.FileDescriptionImpl.Ioctl.
+func (fd *pciDeviceFd) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
+	return 0, linuxerr.ENOSYS
 }

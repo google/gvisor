@@ -21,11 +21,14 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-func ioctlInvokePtrArg[Params any](hostFd int32, cmd uint32, params *Params) (uintptr, error) {
-	return ioctlInvoke[uintptr](hostFd, cmd, uintptr(unsafe.Pointer(params)))
+// IOCTLInvokePtrArg makes ioctl syscalls with the command of the integer type
+// and the pointer to any given params.
+func IOCTLInvokePtrArg[Cmd constraints.Integer, Params any](hostFd int32, cmd Cmd, params *Params) (uintptr, error) {
+	return IOCTLInvoke[Cmd, uintptr](hostFd, cmd, uintptr(unsafe.Pointer(params)))
 }
 
-func ioctlInvoke[Arg constraints.Integer](hostFd int32, cmd uint32, arg Arg) (uintptr, error) {
+// IOCTLInvoke makes ioctl syscalls with the arg of the integer type.
+func IOCTLInvoke[Cmd, Arg constraints.Integer](hostFd int32, cmd Cmd, arg Arg) (uintptr, error) {
 	n, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(hostFd), uintptr(cmd), uintptr(arg))
 	if errno != 0 {
 		return n, errno
