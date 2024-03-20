@@ -103,5 +103,6 @@ func newXDPEndpoint(ifaceName string, mac net.HardwareAddr) (stack.LinkEndpoint,
 		TXChecksumOffload: false,
 		RXChecksumOffload: true,
 		InterfaceIndex:    iface.Index,
+		Bind:              true,
 	})
 }
