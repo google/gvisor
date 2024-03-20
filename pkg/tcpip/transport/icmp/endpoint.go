@@ -412,7 +412,7 @@ func send4(s *stack.Stack, ctx *network.WriteContext, ident uint16, data *buffer
 	}
 
 	pkt := ctx.TryNewPacketBuffer(header.ICMPv4MinimumSize+int(maxHeaderLength), buffer.Buffer{})
-	if pkt.IsNil() {
+	if pkt == nil {
 		return &tcpip.ErrWouldBlock{}
 	}
 	defer pkt.DecRef()
@@ -454,7 +454,7 @@ func send6(s *stack.Stack, ctx *network.WriteContext, ident uint16, data *buffer
 	}
 
 	pkt := ctx.TryNewPacketBuffer(header.ICMPv6MinimumSize+int(maxHeaderLength), buffer.Buffer{})
-	if pkt.IsNil() {
+	if pkt == nil {
 		return &tcpip.ErrWouldBlock{}
 	}
 	defer pkt.DecRef()

@@ -944,7 +944,7 @@ func TestForwardingHook(t *testing.T) {
 					}
 
 					p := e2.Read()
-					if (!p.IsNil()) != expectTransmitPacket {
+					if (p != nil) != expectTransmitPacket {
 						t.Fatalf("got e2.Read() = %#v, want = (_ == nil) = %t", p, expectTransmitPacket)
 					}
 					if expectTransmitPacket {
@@ -1186,16 +1186,16 @@ func TestFilteringEchoPacketsWithLocalForwarding(t *testing.T) {
 
 					expectPacket := subTest.expectResult == noneDropped
 					p := e1.Read()
-					if (!p.IsNil()) != expectPacket {
+					if (p != nil) != expectPacket {
 						t.Errorf("got e1.Read() = %#v, want = (_ == nil) = %t", p, expectPacket)
 					}
-					if !p.IsNil() {
+					if p != nil {
 						payload := stack.PayloadSince(p.NetworkHeader())
 						defer payload.Release()
 						test.checker(t, payload)
 						p.DecRef()
 					}
-					if p := e2.Read(); !p.IsNil() {
+					if p := e2.Read(); p != nil {
 						t.Errorf("got e1.Read() = %#v, want = nil)", p)
 						p.DecRef()
 					}
@@ -1544,7 +1544,7 @@ func TestNATEcho(t *testing.T) {
 									Payload: buffer.MakeWithData(test.echoPkt(natTypeTest.requestSrc, natTypeTest.requestDst, false /* reply */)),
 								}))
 								pkt := ep1.Read()
-								if pkt.IsNil() {
+								if pkt == nil {
 									t.Fatal("expected to read a packet on ep1")
 								}
 								payload := stack.PayloadSince(pkt.NetworkHeader())
@@ -1563,7 +1563,7 @@ func TestNATEcho(t *testing.T) {
 									Payload: buffer.MakeWithData(test.echoPkt(natTypeTest.expectedRequestDst, natTypeTest.expectedRequestSrc, true /* reply */)),
 								}))
 								pkt := ep2.Read()
-								if pkt.IsNil() {
+								if pkt == nil {
 									t.Fatal("expected to read a packet on ep2")
 								}
 								payload := stack.PayloadSince(pkt.NetworkHeader())
@@ -2537,7 +2537,7 @@ func TestNATICMPError(t *testing.T) {
 
 									{
 										pkt := ep1.Read()
-										if pkt.IsNil() {
+										if pkt == nil {
 											t.Fatal("expected to read a packet on ep1")
 										}
 										pktView := stack.PayloadSince(pkt.NetworkHeader())
@@ -2558,7 +2558,7 @@ func TestNATICMPError(t *testing.T) {
 
 									pkt := ep2.Read()
 									expectResponse := icmpType.expectResponse && trimTest.expectNATedICMP
-									if (!pkt.IsNil()) != expectResponse {
+									if (pkt != nil) != expectResponse {
 										t.Fatalf("got ep2.Read() = %#v, want = (_ == nil) = %t", pkt, expectResponse)
 									}
 									if !expectResponse {
@@ -2907,7 +2907,7 @@ func TestSNATHandlePortOrIdentConflicts(t *testing.T) {
 													}))
 
 													pkt := ep1.Read()
-													if pkt.IsNil() {
+													if pkt == nil {
 														t.Fatal("expected to read a packet on ep1")
 													}
 													pktView := stack.PayloadSince(pkt.NetworkHeader())
@@ -3000,7 +3000,7 @@ func TestSNATLocallyGeneratedTrafficPorts(t *testing.T) {
 		Payload: buffer.MakeWithData(udpv4Packet(ep1Addr, ep2Addr, ep1Port, ep2Port, 0 /* dataSize */)),
 	}))
 	pkt := ep2.Read()
-	if pkt.IsNil() {
+	if pkt == nil {
 		t.Fatal("expected to read a packet on ep2")
 	}
 	pktView := stack.PayloadSince(pkt.NetworkHeader())
@@ -3054,7 +3054,7 @@ func TestSNATLocallyGeneratedTrafficPorts(t *testing.T) {
 	// ep2 should observe the traffic as coming from the router's address, but
 	// *not* from the same port as the traffic from ep1 before.
 	pkt = ep2.Read()
-	if pkt.IsNil() {
+	if pkt == nil {
 		t.Fatal("expected to read a packet on ep2")
 	}
 	pktView = stack.PayloadSince(pkt.NetworkHeader())
@@ -3082,7 +3082,7 @@ func TestSNATLocallyGeneratedTrafficPorts(t *testing.T) {
 		Payload: buffer.MakeWithData(udpv4Packet(ep2Addr, routerNIC2Addr, ep2Port, ep1Port, 0 /* dataSize */)),
 	}))
 	pkt = ep1.Read()
-	if pkt.IsNil() {
+	if pkt == nil {
 		t.Fatal("expected to read a packet on ep2")
 	}
 	pktView = stack.PayloadSince(pkt.NetworkHeader())
@@ -3518,7 +3518,7 @@ func TestRejectWith(t *testing.T) {
 
 							{
 								pkt := ep1.Read()
-								if pkt.IsNil() {
+								if pkt == nil {
 									t.Fatal("expected to read a packet on ep1")
 								}
 								payload := stack.PayloadSince(pkt.NetworkHeader())

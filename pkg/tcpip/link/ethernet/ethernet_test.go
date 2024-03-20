@@ -193,7 +193,7 @@ func TestWritePacketToRemoteAddHeader(t *testing.T) {
 
 	{
 		pkt := c.Read()
-		if pkt.IsNil() {
+		if pkt == nil {
 			t.Fatal("expected to read a packet")
 		}
 

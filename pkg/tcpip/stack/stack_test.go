@@ -4800,7 +4800,7 @@ func TestFindRouteWithForwarding(t *testing.T) {
 				t.Errorf("got %d unexpected packets from ep1", n)
 			}
 			pkt := ep2.Read()
-			if pkt.IsNil() {
+			if pkt == nil {
 				t.Fatal("packet not sent through ep2")
 			}
 			defer pkt.DecRef()
@@ -5366,7 +5366,7 @@ func TestWritePacketToRemote(t *testing.T) {
 			}
 
 			pkt := e.Read()
-			if got, want := !pkt.IsNil(), true; got != want {
+			if got, want := pkt != nil, true; got != want {
 				t.Fatalf("e.Read() = %t, want %t", got, want)
 			}
 			defer pkt.DecRef()
@@ -5388,7 +5388,7 @@ func TestWritePacketToRemote(t *testing.T) {
 			t.Fatalf("s.WritePacketToRemote(_, _, _, _) = %s, want = %s", err, &tcpip.ErrUnknownDevice{})
 		}
 		pkt := e.Read()
-		if got, want := !pkt.IsNil(), false; got != want {
+		if got, want := pkt != nil, false; got != want {
 			t.Fatalf("e.Read() = %t, %v; want %t", got, pkt, want)
 		}
 	})

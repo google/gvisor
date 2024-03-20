@@ -469,11 +469,6 @@ func (pk *PacketBuffer) DeepCopyForForwarding(reservedHeaderBytes int) *PacketBu
 	return newPk
 }
 
-// IsNil returns whether the pointer is logically nil.
-func (pk *PacketBuffer) IsNil() bool {
-	return pk == nil
-}
-
 // headerInfo stores metadata about a header in a packet.
 //
 // +stateify savable

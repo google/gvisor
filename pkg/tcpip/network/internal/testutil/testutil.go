@@ -234,7 +234,7 @@ func ValidateIGMPv3RecordsAcrossReports(t *testing.T, e *channel.Endpoint, srcAd
 
 	for len(expectedRecords) != 0 {
 		p := e.Read()
-		if p.IsNil() {
+		if p == nil {
 			t.Fatalf("expected IGMP message with expectedRecords = %#v", expectedRecords)
 		}
 		v := stack.PayloadSince(p.NetworkHeader())
@@ -265,7 +265,7 @@ func ValidMultipleIGMPv2ReportLeaves(t *testing.T, e *channel.Endpoint, srcAddr 
 
 	for len(expectedGroups) != 0 {
 		p := e.Read()
-		if p.IsNil() {
+		if p == nil {
 			t.Fatalf("expected IGMP message with expectedGroups = %#v", expectedGroups)
 		}
 		v := stack.PayloadSince(p.NetworkHeader())
@@ -334,7 +334,7 @@ func ValidateMLDv2RecordsAcrossReports(t *testing.T, e *channel.Endpoint, srcAdd
 
 	for len(expectedRecords) != 0 {
 		p := e.Read()
-		if p.IsNil() {
+		if p == nil {
 			t.Fatalf("expected MLD Message with expectedRecords = %#v", expectedRecords)
 		}
 		v := stack.PayloadSince(p.NetworkHeader())
@@ -365,7 +365,7 @@ func ValidMultipleMLDv1ReportLeaves(t *testing.T, e *channel.Endpoint, srcAddr t
 
 	for len(expectedGroups) != 0 {
 		p := e.Read()
-		if p.IsNil() {
+		if p == nil {
 			t.Fatalf("expected MLD Message with expectedGroups = %#v", expectedGroups)
 		}
 		v := stack.PayloadSince(p.NetworkHeader())

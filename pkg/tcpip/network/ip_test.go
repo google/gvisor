@@ -1799,7 +1799,7 @@ func TestWriteHeaderIncludedPacket(t *testing.T) {
 					}
 
 					pkt := e.Read()
-					if pkt.IsNil() {
+					if pkt == nil {
 						t.Fatal("expected a packet to be written")
 					}
 					test.checker(t, pkt, subTest.srcAddr)
@@ -2055,7 +2055,7 @@ func TestICMPInclusionSize(t *testing.T) {
 			})
 			v := test.injector(e, test.srcAddress, payload)
 			pkt := e.Read()
-			if pkt.IsNil() {
+			if pkt == nil {
 				t.Fatal("expected a packet to be written")
 			}
 			if got, want := pkt.Size(), test.replyLength; got != want {

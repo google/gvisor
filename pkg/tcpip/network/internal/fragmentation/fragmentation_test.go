@@ -117,7 +117,7 @@ func TestFragmentationProcess(t *testing.T) {
 				defer in.pkt.DecRef()
 				defer c.out[i].buf.Release()
 				resPkt, proto, done, err := f.Process(in.id, in.first, in.last, in.more, in.proto, in.pkt)
-				if !resPkt.IsNil() {
+				if resPkt != nil {
 					defer resPkt.DecRef()
 				}
 				if err != nil {
@@ -267,7 +267,7 @@ func TestReassemblingTimeout(t *testing.T) {
 					p := pkt(len(frag.data), frag.data)
 					defer p.DecRef()
 					pkt, _, done, err := f.Process(FragmentID{}, frag.first, frag.last, frag.more, protocol, p)
-					if !pkt.IsNil() {
+					if pkt != nil {
 						pkt.DecRef()
 					}
 					if err != nil {
@@ -450,7 +450,7 @@ func TestErrors(t *testing.T) {
 			f := NewFragmentation(test.blockSize, HighFragThreshold, LowFragThreshold, reassembleTimeout, c, nil)
 			resPkt, _, done, err := f.Process(FragmentID{}, test.first, test.last, test.more, 0, p0)
 
-			if !resPkt.IsNil() {
+			if resPkt != nil {
 				resPkt.DecRef()
 			}
 			if !errors.Is(err, test.err) {
@@ -689,11 +689,11 @@ func TestTimeoutHandler(t *testing.T) {
 				f.release(r, true)
 			}
 			switch {
-			case !handler.pkt.IsNil() && test.wantPkt.IsNil():
+			case handler.pkt != nil && test.wantPkt == nil:
 				t.Errorf("got handler.pkt = not nil (pkt.Data = %x), want = nil", handler.pkt.Data().AsRange().ToSlice())
-			case handler.pkt.IsNil() && !test.wantPkt.IsNil():
+			case handler.pkt == nil && test.wantPkt != nil:
 				t.Errorf("got handler.pkt = nil, want = not nil (pkt.Data = %x)", test.wantPkt.Data().AsRange().ToSlice())
-			case !handler.pkt.IsNil() && !test.wantPkt.IsNil():
+			case handler.pkt != nil && test.wantPkt != nil:
 				if diff := cmp.Diff(test.wantPkt.Data().AsRange().ToSlice(), handler.pkt.Data().AsRange().ToSlice()); diff != "" {
 					t.Errorf("pkt.Data mismatch (-want, +got):\n%s", diff)
 				}

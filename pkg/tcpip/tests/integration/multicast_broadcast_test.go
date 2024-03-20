@@ -146,7 +146,7 @@ func TestPingMulticastBroadcast(t *testing.T) {
 
 			test.rxICMP(e, test.srcAddr, test.dstAddr, ttl)
 			pkt := e.Read()
-			if pkt.IsNil() {
+			if pkt == nil {
 				t.Fatal("expected ICMP response")
 			}
 			defer pkt.DecRef()

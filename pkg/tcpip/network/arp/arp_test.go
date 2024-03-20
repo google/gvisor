@@ -319,7 +319,7 @@ func TestDirectRequest(t *testing.T) {
 				// No packets should be sent after receiving an invalid ARP request.
 				// There is no need to perform a blocking read here, since packets are
 				// sent in the same function that handles ARP requests.
-				if pkt := c.linkEP.Read(); !pkt.IsNil() {
+				if pkt := c.linkEP.Read(); pkt != nil {
 					t.Errorf("unexpected packet sent: %+v", pkt)
 				}
 				if got, want := c.s.Stats().ARP.RequestsReceivedUnknownTargetAddress.Value(), requestsRecvUnknownAddr+1; got != want {
@@ -338,7 +338,7 @@ func TestDirectRequest(t *testing.T) {
 
 			// Verify an ARP response was sent.
 			pi := c.linkEP.Read()
-			if pi.IsNil() {
+			if pi == nil {
 				t.Fatal("expected ARP response to be sent, got none")
 			}
 
@@ -714,7 +714,7 @@ func TestLinkAddressRequest(t *testing.T) {
 			}
 
 			pkt := linkEP.Read()
-			if pkt.IsNil() {
+			if pkt == nil {
 				t.Fatal("expected to send a link address request")
 			}
 
@@ -773,7 +773,7 @@ func TestDADARPRequestPacket(t *testing.T) {
 
 	clock.RunImmediatelyScheduledJobs()
 	pkt := e.Read()
-	if pkt.IsNil() {
+	if pkt == nil {
 		t.Fatal("expected to send an ARP request")
 	}
 

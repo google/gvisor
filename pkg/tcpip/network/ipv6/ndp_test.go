@@ -479,7 +479,7 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 					t.Fatalf("got invalid = %d, want = 1", got)
 				}
 
-				if p := e.Read(); !p.IsNil() {
+				if p := e.Read(); p != nil {
 					t.Fatalf("unexpected response to an invalid NS = %+v", p)
 				}
 
@@ -494,7 +494,7 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 			if test.performsLinkResolution {
 				c.clock.RunImmediatelyScheduledJobs()
 				p := e.Read()
-				if p.IsNil() {
+				if p == nil {
 					t.Fatal("expected an NDP NS response")
 				}
 
@@ -557,7 +557,7 @@ func TestNeighborSolicitationResponse(t *testing.T) {
 
 			c.clock.RunImmediatelyScheduledJobs()
 			p := e.Read()
-			if p.IsNil() {
+			if p == nil {
 				t.Fatal("expected an NDP NA response")
 			}
 			defer p.DecRef()
@@ -1312,7 +1312,7 @@ func TestCheckDuplicateAddress(t *testing.T) {
 	checkDADMsg := func() {
 		clock.RunImmediatelyScheduledJobs()
 		p := e.Read()
-		if p.IsNil() {
+		if p == nil {
 			t.Fatalf("expected %d-th DAD message", dadPacketsSent)
 		}
 		defer p.DecRef()
@@ -1391,7 +1391,7 @@ func TestCheckDuplicateAddress(t *testing.T) {
 	}
 
 	// Should have no more packets.
-	if p := e.Read(); !p.IsNil() {
+	if p := e.Read(); p != nil {
 		t.Errorf("got unexpected packet = %#v", p)
 	}
 }

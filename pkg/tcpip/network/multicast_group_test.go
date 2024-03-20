@@ -221,7 +221,7 @@ func checkInitialIPv6Groups(t *testing.T, e *channel.Endpoint, s *stack.Stack, c
 
 	reportCounter++
 	iptestutil.CheckMLDv2Stats(t, s, 0, 0, reportCounter)
-	if p := e.Read(); p.IsNil() {
+	if p := e.Read(); p == nil {
 		t.Fatal("expected a report message to be sent")
 	} else {
 		v := stack.PayloadSince(p.NetworkHeader())
@@ -238,7 +238,7 @@ func checkInitialIPv6Groups(t *testing.T, e *channel.Endpoint, s *stack.Stack, c
 	for i := 0; i < 2; i++ {
 		reportCounter++
 		iptestutil.CheckMLDv2Stats(t, s, 0, 0, reportCounter)
-		if p := e.Read(); p.IsNil() {
+		if p := e.Read(); p == nil {
 			t.Fatal("expected a report message to be sent")
 		} else {
 			v := stack.PayloadSince(p.NetworkHeader())
@@ -252,7 +252,7 @@ func checkInitialIPv6Groups(t *testing.T, e *channel.Endpoint, s *stack.Stack, c
 
 	// Should not send any more packets.
 	clock.Advance(time.Hour)
-	if p := e.Read(); !p.IsNil() {
+	if p := e.Read(); p != nil {
 		t.Fatalf("sent unexpected packet = %#v", p)
 	}
 
@@ -387,7 +387,7 @@ func TestMGPDisabled(t *testing.T) {
 				t.Fatalf("got sentReportStat.Value() = %d, want = 0", got)
 			}
 			clock.Advance(time.Hour)
-			if p := e.Read(); !p.IsNil() {
+			if p := e.Read(); p != nil {
 				t.Fatalf("sent unexpected packet, stack with disabled MGP sent packet = %#v", p)
 			}
 
@@ -400,7 +400,7 @@ func TestMGPDisabled(t *testing.T) {
 				t.Fatalf("got sentReportStat.Value() = %d, want = 0", got)
 			}
 			clock.Advance(time.Hour)
-			if p := e.Read(); !p.IsNil() {
+			if p := e.Read(); p != nil {
 				t.Fatalf("sent unexpected packet, stack with disabled IGMP sent packet = %#v", p)
 			}
 
@@ -411,7 +411,7 @@ func TestMGPDisabled(t *testing.T) {
 				t.Fatalf("got receivedQueryStat(_).Value() = %d, want = 1", got)
 			}
 			clock.Advance(time.Hour)
-			if p := e.Read(); !p.IsNil() {
+			if p := e.Read(); p != nil {
 				t.Fatalf("sent unexpected packet, stack with disabled IGMP sent packet = %+v", p)
 			}
 		})
@@ -626,7 +626,7 @@ func TestMGPJoinGroup(t *testing.T) {
 					}
 					reportCounter++
 					subTest.checkStats(t, s, reportCounter, leaveCounter, reportV2Counter)
-					if p := e.Read(); p.IsNil() {
+					if p := e.Read(); p == nil {
 						t.Fatal("expected a report message to be sent")
 					} else {
 						subTest.validateReport(t, p)
@@ -639,13 +639,13 @@ func TestMGPJoinGroup(t *testing.T) {
 					// Verify the second report is sent by the maximum unsolicited response
 					// interval.
 					p := e.Read()
-					if !p.IsNil() {
+					if p != nil {
 						t.Fatalf("sent unexpected packet, expected report only after advancing the clock = %#v", p)
 					}
 					clock.Advance(test.maxUnsolicitedResponseDelay)
 					reportCounter++
 					subTest.checkStats(t, s, reportCounter, leaveCounter, reportV2Counter)
-					if p := e.Read(); p.IsNil() {
+					if p := e.Read(); p == nil {
 						t.Fatal("expected a report message to be sent")
 					} else {
 						subTest.validateReport(t, p)
@@ -654,7 +654,7 @@ func TestMGPJoinGroup(t *testing.T) {
 
 					// Should not send any more packets.
 					clock.Advance(time.Hour)
-					if p := e.Read(); !p.IsNil() {
+					if p := e.Read(); p != nil {
 						t.Fatalf("sent unexpected packet = %#v", p)
 					}
 				})
@@ -794,7 +794,7 @@ func TestMGPLeaveGroup(t *testing.T) {
 					}
 					reportCounter++
 					subTest.checkStats(t, s, reportCounter, leaveCounter, reportV2Counter)
-					if p := e.Read(); p.IsNil() {
+					if p := e.Read(); p == nil {
 						t.Fatal("expected a report message to be sent")
 					} else {
 						subTest.validateReport(t, p)
@@ -811,7 +811,7 @@ func TestMGPLeaveGroup(t *testing.T) {
 					for i := subTest.leaveCount; i > 0; i-- {
 						leaveCounter++
 						subTest.checkStats(t, s, reportCounter, leaveCounter, reportV2Counter)
-						if p := e.Read(); p.IsNil() {
+						if p := e.Read(); p == nil {
 							t.Fatal("expected a leave message to be sent")
 						} else {
 							subTest.validateLeave(t, p)
@@ -822,7 +822,7 @@ func TestMGPLeaveGroup(t *testing.T) {
 
 					// Should not send any more packets.
 					clock.Advance(time.Hour)
-					if p := e.Read(); !p.IsNil() {
+					if p := e.Read(); p != nil {
 						t.Fatalf("sent unexpected packet = %#v", p)
 					}
 				})
@@ -1001,7 +1001,7 @@ func TestMGPQueryMessages(t *testing.T) {
 							for i := 0; i < maxUnsolicitedReports; i++ {
 								reportCounter++
 								subTest.checkStats(t, s, reportCounter, leaveCounter, reportV2Counter)
-								if p := e.Read(); p.IsNil() {
+								if p := e.Read(); p == nil {
 									t.Fatalf("expected %d-th report message to be sent", i)
 								} else {
 									subTest.validateReport(t, p, false /* queryResponse */)
@@ -1015,7 +1015,7 @@ func TestMGPQueryMessages(t *testing.T) {
 
 							// Should not send any more packets until a query.
 							clock.Advance(time.Hour)
-							if p := e.Read(); !p.IsNil() {
+							if p := e.Read(); p != nil {
 								t.Fatalf("sent unexpected packet = %#v", p)
 							}
 
@@ -1024,7 +1024,7 @@ func TestMGPQueryMessages(t *testing.T) {
 							// targeted at the host.
 							const maxRespTime = 100
 							subTest.rxQuery(e, maxRespTime, addrTest.multicastAddr)
-							if p := e.Read(); !p.IsNil() {
+							if p := e.Read(); p != nil {
 								t.Fatalf("sent unexpected packet = %#v", p)
 							}
 
@@ -1032,7 +1032,7 @@ func TestMGPQueryMessages(t *testing.T) {
 								clock.Advance(test.maxRespTimeToDuration(maxRespTime))
 								reportCounter++
 								subTest.checkStats(t, s, reportCounter, leaveCounter, reportV2Counter)
-								if p := e.Read(); p.IsNil() {
+								if p := e.Read(); p == nil {
 									t.Fatal("expected a report message to be sent")
 								} else {
 									subTest.validateReport(t, p, true /* queryResponse */)
@@ -1042,7 +1042,7 @@ func TestMGPQueryMessages(t *testing.T) {
 
 							// Should not send any more packets.
 							clock.Advance(time.Hour)
-							if p := e.Read(); !p.IsNil() {
+							if p := e.Read(); p != nil {
 								t.Fatalf("sent unexpected packet = %#v", p)
 							}
 						})
@@ -1181,7 +1181,7 @@ func TestMGPReportMessages(t *testing.T) {
 					}
 					reportCounter++
 					subTest.checkStats(t, s, reportCounter, leaveCounter, reportV2Counter)
-					if p := e.Read(); p.IsNil() {
+					if p := e.Read(); p == nil {
 						t.Fatal("expected a report message to be sent")
 					} else {
 						subTest.validateReport(t, p)
@@ -1197,7 +1197,7 @@ func TestMGPReportMessages(t *testing.T) {
 					clock.Advance(time.Hour)
 					subTest.enterVersion(e)
 					subTest.checkStats(t, s, reportCounter, leaveCounter, reportV2Counter)
-					if p := e.Read(); !p.IsNil() {
+					if p := e.Read(); p != nil {
 						t.Errorf("sent unexpected packet = %#v", p)
 					}
 					if t.Failed() {
@@ -1212,7 +1212,7 @@ func TestMGPReportMessages(t *testing.T) {
 					for i := subTest.leaveCount; i > 0; i-- {
 						leaveCounter++
 						subTest.checkStats(t, s, reportCounter, leaveCounter, reportV2Counter)
-						if p := e.Read(); p.IsNil() {
+						if p := e.Read(); p == nil {
 							t.Fatal("expected a leave message to be sent")
 						} else {
 							subTest.validateLeave(t, p)
@@ -1224,7 +1224,7 @@ func TestMGPReportMessages(t *testing.T) {
 					// Should not send any more packets.
 					clock.Advance(time.Hour)
 					subTest.checkStats(t, s, reportCounter, leaveCounter, reportV2Counter)
-					if p := e.Read(); !p.IsNil() {
+					if p := e.Read(); p != nil {
 						t.Fatalf("sent unexpected packet = %#v", p)
 					}
 				})
@@ -1402,7 +1402,7 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 						}
 						reportCounter++
 						subTest.checkStats(t, s, reportCounter, leaveCounter, reportV2Counter)
-						if p := e.Read(); p.IsNil() {
+						if p := e.Read(); p == nil {
 							t.Fatalf("expected a report message to be sent for %s", a)
 						} else {
 							subTest.validateReport(t, p, a)
@@ -1449,7 +1449,7 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 					}
 					reportV2Counter++
 					subTest.checkStats(t, s, reportCounter, leaveCounter, reportV2Counter)
-					if p := e.Read(); p.IsNil() {
+					if p := e.Read(); p == nil {
 						t.Fatal("expected leave message to be sent")
 					} else {
 						p.DecRef()
@@ -1459,7 +1459,7 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 							t.Fatalf("LeaveGroup(%d, nic, %s): %s", test.protoNum, a, err)
 						}
 						subTest.checkStats(t, s, reportCounter, leaveCounter, reportV2Counter)
-						if p := e.Read(); !p.IsNil() {
+						if p := e.Read(); p != nil {
 							t.Fatalf("leaving group %s on disabled NIC sent unexpected packet = %#v", a, p)
 						}
 					}
@@ -1467,7 +1467,7 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 						t.Fatalf("JoinGroup(%d, %d, %s): %s", test.protoNum, nicID, test.finalMulticastAddr, err)
 					}
 					subTest.checkStats(t, s, reportCounter, leaveCounter, reportV2Counter)
-					if p := e.Read(); !p.IsNil() {
+					if p := e.Read(); p != nil {
 						t.Fatalf("joining group %s on disabled NIC sent unexpected packet = %#v", test.finalMulticastAddr, p)
 					}
 
@@ -1487,7 +1487,7 @@ func TestMGPWithNICLifecycle(t *testing.T) {
 
 					// Should not send any more packets.
 					clock.Advance(time.Hour)
-					if p := e.Read(); !p.IsNil() {
+					if p := e.Read(); p != nil {
 						t.Fatalf("sent unexpected packet = %#v", p)
 					}
 				})
@@ -1695,7 +1695,7 @@ func TestMGPCoalescedQueryResponseRecords(t *testing.T) {
 						}
 						reportV2Counter++
 						test.checkStats(t, s, reportV2Counter)
-						if p := e.Read(); p.IsNil() {
+						if p := e.Read(); p == nil {
 							t.Fatal("expected a report message to be sent")
 						} else {
 							test.validateReport(t, p, addr)
@@ -1708,13 +1708,13 @@ func TestMGPCoalescedQueryResponseRecords(t *testing.T) {
 						// Verify the second report is sent by the maximum unsolicited response
 						// interval.
 						p := e.Read()
-						if !p.IsNil() {
+						if p != nil {
 							t.Fatalf("sent unexpected packet, expected report only after advancing the clock = %#v", p)
 						}
 						clock.Advance(test.maxUnsolicitedResponseDelay)
 						reportV2Counter++
 						test.checkStats(t, s, reportV2Counter)
-						if p := e.Read(); p.IsNil() {
+						if p := e.Read(); p == nil {
 							t.Fatal("expected a report message to be sent")
 						} else {
 							test.validateReport(t, p, addr)
@@ -1724,7 +1724,7 @@ func TestMGPCoalescedQueryResponseRecords(t *testing.T) {
 
 					// Should not send any more packets.
 					clock.Advance(time.Hour)
-					if p := e.Read(); !p.IsNil() {
+					if p := e.Read(); p != nil {
 						t.Fatalf("sent unexpected packet = %#v", p)
 					}
 					test.checkStats(t, s, reportV2Counter)
