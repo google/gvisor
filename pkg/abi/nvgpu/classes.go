@@ -26,6 +26,7 @@ const (
 	NV01_DEVICE_0                    = 0x00000080
 	NV_MEMORY_FABRIC                 = 0x000000f8
 	NV20_SUBDEVICE_0                 = 0x00002080
+	NV2081_BINAPI                    = 0x00002081
 	NV50_MEMORY_VIRTUAL              = 0x000050a0
 	NV50_P2P                         = 0x0000503b
 	NV50_THIRD_PARTY_P2P             = 0x0000503c
@@ -49,6 +50,14 @@ const (
 	NV_CONFIDENTIAL_COMPUTE          = 0x0000cb33
 	HOPPER_COMPUTE_A                 = 0x0000cbc0
 )
+
+// NV2081_ALLOC_PARAMETERS is the alloc params type for NV2081_BINAPI, from
+// src/common/sdk/nvidia/inc/class/cl2081.h.
+//
+// +marshal
+type NV2081_ALLOC_PARAMETERS struct {
+	Reserved uint32
+}
 
 // NV0005_ALLOC_PARAMETERS is the alloc params type for NV01_EVENT_OS_EVENT,
 // from src/common/sdk/nvidia/inc/class/cl0005.h.
@@ -116,6 +125,16 @@ type NV_MEMORY_ALLOCATION_PARAMS struct {
 	HVASpace      Handle
 	InternalFlags uint32
 	Tag           uint32
+}
+
+// NV_MEMORY_ALLOCATION_PARAMS_V545 is the updated version of
+// NV_MEMORY_ALLOCATION_PARAMS since 545.23.06.
+//
+// +marshal
+type NV_MEMORY_ALLOCATION_PARAMS_V545 struct {
+	NV_MEMORY_ALLOCATION_PARAMS
+	NumaNode int32
+	_        uint32
 }
 
 // NV503B_BAR1_P2P_DMA_INFO from src/common/sdk/nvidia/inc/class/cl503b.h.
