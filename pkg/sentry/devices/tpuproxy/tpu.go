@@ -124,7 +124,14 @@ func (fd *tpuFD) getPciDeviceFd(t *kernel.Task, arg hostarch.Addr) (uintptr, fun
 	if err != nil {
 		return 0, func() {}, err
 	}
-	hostFD, err := IOCTLInvokePtrArg[uint32](fd.hostFD, linux.VFIO_GROUP_GET_DEVICE_FD, &pciAddress)
+	// Build a NUL-terminated slice of bytes containing the PCI address.
+	pciAddressBytes, err := unix.ByteSliceFromString(pciAddress)
+	if err != nil {
+		return 0, func() {}, err
+	}
+	// Pass the address of the PCI address' first byte which can be
+	// recognized by the IOCTL syscall.
+	hostFD, err := IOCTLInvokePtrArg[uint32](fd.hostFD, linux.VFIO_GROUP_GET_DEVICE_FD, &pciAddressBytes[0])
 	if err != nil {
 		return 0, func() {}, err
 	}
