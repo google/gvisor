@@ -26,13 +26,14 @@ const NV_IOCTL_MAGIC = uint32('F')
 // Note that these are only the IOC_NR part of the ioctl command.
 const (
 	// From kernel-open/common/inc/nv-ioctl-numbers.h:
-	NV_IOCTL_BASE            = 200
-	NV_ESC_CARD_INFO         = NV_IOCTL_BASE + 0
-	NV_ESC_REGISTER_FD       = NV_IOCTL_BASE + 1
-	NV_ESC_ALLOC_OS_EVENT    = NV_IOCTL_BASE + 6
-	NV_ESC_FREE_OS_EVENT     = NV_IOCTL_BASE + 7
-	NV_ESC_CHECK_VERSION_STR = NV_IOCTL_BASE + 10
-	NV_ESC_SYS_PARAMS        = NV_IOCTL_BASE + 14
+	NV_IOCTL_BASE             = 200
+	NV_ESC_CARD_INFO          = NV_IOCTL_BASE + 0
+	NV_ESC_REGISTER_FD        = NV_IOCTL_BASE + 1
+	NV_ESC_ALLOC_OS_EVENT     = NV_IOCTL_BASE + 6
+	NV_ESC_FREE_OS_EVENT      = NV_IOCTL_BASE + 7
+	NV_ESC_CHECK_VERSION_STR  = NV_IOCTL_BASE + 10
+	NV_ESC_SYS_PARAMS         = NV_IOCTL_BASE + 14
+	NV_ESC_WAIT_OPEN_COMPLETE = NV_IOCTL_BASE + 18
 
 	// From kernel-open/common/inc/nv-ioctl-numa.h:
 	NV_ESC_NUMA_INFO = NV_IOCTL_BASE + 15
@@ -99,6 +100,15 @@ type RMAPIVersion struct {
 // +marshal
 type IoctlSysParams struct {
 	MemblockSize uint64
+}
+
+// IoctlWaitOpenComplete is nv_ioctl_wait_open_complete_t, the parameter type
+// for NV_ESC_WAIT_OPEN_COMPLETE.
+//
+// +marshal
+type IoctlWaitOpenComplete struct {
+	Rc            int32
+	AdapterStatus uint32
 }
 
 // IoctlNVOS02ParametersWithFD is nv_ioctl_nvos2_parameters_with_fd, the
@@ -400,6 +410,7 @@ var (
 	SizeofIoctlFreeOSEvent            = uint32((*IoctlFreeOSEvent)(nil).SizeBytes())
 	SizeofRMAPIVersion                = uint32((*RMAPIVersion)(nil).SizeBytes())
 	SizeofIoctlSysParams              = uint32((*IoctlSysParams)(nil).SizeBytes())
+	SizeofIoctlWaitOpenComplete       = uint32((*IoctlWaitOpenComplete)(nil).SizeBytes())
 	SizeofIoctlNVOS02ParametersWithFD = uint32((*IoctlNVOS02ParametersWithFD)(nil).SizeBytes())
 	SizeofNVOS00Parameters            = uint32((*NVOS00Parameters)(nil).SizeBytes())
 	SizeofNVOS21Parameters            = uint32((*NVOS21Parameters)(nil).SizeBytes())

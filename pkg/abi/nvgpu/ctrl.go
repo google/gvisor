@@ -52,6 +52,8 @@ const (
 	NV0000_CTRL_CMD_GPU_GET_PCI_INFO      = 0x21b
 	NV0000_CTRL_CMD_GPU_QUERY_DRAIN_STATE = 0x279
 	NV0000_CTRL_CMD_GPU_GET_MEMOP_ENABLE  = 0x27b
+	NV0000_CTRL_CMD_GPU_ASYNC_ATTACH_ID   = 0x289
+	NV0000_CTRL_CMD_GPU_WAIT_ATTACH_ID    = 0x290
 )
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl0000/ctrl0000syncgpuboost.h:
@@ -65,6 +67,7 @@ const (
 	NV0000_CTRL_CMD_SYSTEM_GET_P2P_CAPS        = 0x127
 	NV0000_CTRL_CMD_SYSTEM_GET_FABRIC_STATUS   = 0x136
 	NV0000_CTRL_CMD_SYSTEM_GET_P2P_CAPS_MATRIX = 0x13a
+	NV0000_CTRL_CMD_SYSTEM_GET_FEATURES        = 0x1f0
 )
 
 // +marshal
@@ -124,6 +127,11 @@ type NV0080_CTRL_GR_ROUTE_INFO struct {
 // From src/common/sdk/nvidia/inc/ctrl/ctrl0080/ctrl0080host.h:
 const (
 	NV0080_CTRL_CMD_HOST_GET_CAPS_V2 = 0x801402
+)
+
+// From src/common/sdk/nvidia/inc/ctrl/ctrl0080/ctrl0080perf.h:
+const (
+	NV0080_CTRL_CMD_PERF_CUDA_LIMIT_SET_CONTROL = 0x801909
 )
 
 // From src/common/sdk/nvidia/inc/ctrl/ctrl2080/ctrl2080bus.h:
