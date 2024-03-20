@@ -98,7 +98,7 @@ func TestWriteRaw(t *testing.T) {
 				t.Errorf("got ep.Write(..) = %d, want = %d", n, want)
 			}
 			pkt := chEP.Read()
-			if pkt.IsNil() {
+			if pkt == nil {
 				t.Fatal("Packet wasn't written out")
 			}
 			defer pkt.DecRef()

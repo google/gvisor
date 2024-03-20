@@ -97,7 +97,7 @@ func (qd *queueDispatcher) dispatchLoop() {
 		case &qd.newPacketWaker:
 		case &qd.closeWaker:
 			qd.mu.Lock()
-			for p := qd.queue.removeFront(); !p.IsNil(); p = qd.queue.removeFront() {
+			for p := qd.queue.removeFront(); p != nil; p = qd.queue.removeFront() {
 				p.DecRef()
 			}
 			qd.queue.decRef()
@@ -107,7 +107,7 @@ func (qd *queueDispatcher) dispatchLoop() {
 			panic("unknown waker")
 		}
 		qd.mu.Lock()
-		for pkt := qd.queue.removeFront(); !pkt.IsNil(); pkt = qd.queue.removeFront() {
+		for pkt := qd.queue.removeFront(); pkt != nil; pkt = qd.queue.removeFront() {
 			batch.PushBack(pkt)
 			if batch.Len() < BatchSize && !qd.queue.isEmpty() {
 				continue

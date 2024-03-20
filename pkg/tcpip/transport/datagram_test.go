@@ -1097,7 +1097,7 @@ func TestIPv6PacketInfo(t *testing.T) {
 
 					{
 						p := e1.Read()
-						if p.IsNil() {
+						if p == nil {
 							t.Fatal("packet didn't arrive at ep1")
 						}
 
@@ -1107,7 +1107,7 @@ func TestIPv6PacketInfo(t *testing.T) {
 						)
 					}
 
-					if p := e2.Read(); !p.IsNil() {
+					if p := e2.Read(); p != nil {
 						t.Errorf("unexpected packet from ep2 = %#v", p)
 					}
 				})

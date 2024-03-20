@@ -377,7 +377,7 @@ func (e *endpoint) write(p tcpip.Payloader, opts tcpip.WriteOptions) (int64, tcp
 	}
 
 	pkt := ctx.TryNewPacketBuffer(int(ctx.PacketInfo().MaxHeaderLength), payload.Clone())
-	if pkt.IsNil() {
+	if pkt == nil {
 		return 0, &tcpip.ErrWouldBlock{}
 	}
 	defer pkt.DecRef()

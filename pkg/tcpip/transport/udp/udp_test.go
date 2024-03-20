@@ -591,7 +591,7 @@ func testWriteAndVerifyInternal(c *context.Context, flow context.TestFlow, setDe
 	// Received the packet and check the payload.
 
 	p := c.LinkEP.Read()
-	if p.IsNil() {
+	if p == nil {
 		c.T.Fatalf("Packet wasn't written out")
 	}
 	defer p.DecRef()
@@ -1553,7 +1553,7 @@ func TestV4UnknownDestination(t *testing.T) {
 				}
 			}
 			if !tc.icmpRequired {
-				if p := c.LinkEP.Read(); !p.IsNil() {
+				if p := c.LinkEP.Read(); p != nil {
 					t.Fatalf("unexpected packet received: %+v", p)
 				}
 				return
@@ -1561,7 +1561,7 @@ func TestV4UnknownDestination(t *testing.T) {
 
 			// ICMP required.
 			p := c.LinkEP.Read()
-			if p.IsNil() {
+			if p == nil {
 				t.Fatalf("packet wasn't written out")
 			}
 
@@ -1650,7 +1650,7 @@ func TestV6UnknownDestination(t *testing.T) {
 				}
 			}
 			if !tc.icmpRequired {
-				if p := c.LinkEP.Read(); !p.IsNil() {
+				if p := c.LinkEP.Read(); p != nil {
 					t.Fatalf("unexpected packet received: %+v", p)
 				}
 				return
@@ -1658,7 +1658,7 @@ func TestV6UnknownDestination(t *testing.T) {
 
 			// ICMP required.
 			p := c.LinkEP.Read()
-			if p.IsNil() {
+			if p == nil {
 				t.Fatalf("packet wasn't written out")
 			}
 
@@ -2212,7 +2212,7 @@ func TestChecksumWithZeroValueOnesComplementSum(t *testing.T) {
 		}
 
 		pkt := c.LinkEP.Read()
-		if pkt.IsNil() {
+		if pkt == nil {
 			t.Fatal("Packet wasn't written out")
 		}
 
@@ -2249,7 +2249,7 @@ func TestChecksumWithZeroValueOnesComplementSum(t *testing.T) {
 
 	{
 		pkt := c.LinkEP.Read()
-		if pkt.IsNil() {
+		if pkt == nil {
 			t.Fatal("Packet wasn't written out")
 		}
 		defer pkt.DecRef()

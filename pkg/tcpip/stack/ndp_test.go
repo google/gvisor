@@ -683,7 +683,7 @@ func TestDADResolve(t *testing.T) {
 			// Validate the sent Neighbor Solicitation messages.
 			for i := uint8(0); i < test.dupAddrDetectTransmits; i++ {
 				p := e.Read()
-				if p.IsNil() {
+				if p == nil {
 					t.Fatal("packet didn't arrive")
 				}
 
@@ -1466,10 +1466,10 @@ func TestDynamicConfigurationsDisabled(t *testing.T) {
 						t.Errorf("got v6Stats.ICMP.PacketsSent.RouterSolicit.Value() = %d, want = %d", got, want)
 					}
 					if handleRAsDisabled {
-						if p := e.Read(); !p.IsNil() {
+						if p := e.Read(); p != nil {
 							t.Errorf("unexpectedly got a packet = %#v", p)
 						}
-					} else if p := e.Read(); p.IsNil() {
+					} else if p := e.Read(); p == nil {
 						t.Error("expected router solicitation packet")
 					} else if p.NetworkProtocolNumber != header.IPv6ProtocolNumber {
 						t.Errorf("got Proto = %d, want = %d", p.NetworkProtocolNumber, header.IPv6ProtocolNumber)
@@ -5805,7 +5805,7 @@ func TestRouterSolicitation(t *testing.T) {
 
 						clock.Advance(timeout)
 						p := e.Read()
-						if p.IsNil() {
+						if p == nil {
 							t.Fatal("expected router solicitation packet")
 						}
 						defer p.DecRef()
@@ -5834,7 +5834,7 @@ func TestRouterSolicitation(t *testing.T) {
 						t.Helper()
 
 						clock.Advance(timeout)
-						if p := e.Read(); !p.IsNil() {
+						if p := e.Read(); p != nil {
 							t.Fatalf("unexpectedly got a packet = %#v", p)
 						}
 					}
@@ -5996,7 +5996,7 @@ func TestStopStartSolicitingRouters(t *testing.T) {
 
 				clock.Advance(timeout)
 				p := e.Read()
-				if p.IsNil() {
+				if p == nil {
 					t.Fatal("timed out waiting for packet")
 				}
 
@@ -6029,11 +6029,11 @@ func TestStopStartSolicitingRouters(t *testing.T) {
 			// Stop soliciting routers.
 			test.stopFn(t, s, true /* first */)
 			clock.Advance(delay)
-			if p := e.Read(); !p.IsNil() {
+			if p := e.Read(); p != nil {
 				p.DecRef()
 				// A single RS may have been sent before solicitations were stopped.
 				clock.Advance(interval)
-				if pb := e.Read(); !pb.IsNil() {
+				if pb := e.Read(); pb != nil {
 					t.Fatal("should not have sent more than one RS message")
 				}
 			}
@@ -6042,7 +6042,7 @@ func TestStopStartSolicitingRouters(t *testing.T) {
 			// do nothing.
 			test.stopFn(t, s, false /* first */)
 			clock.Advance(delay)
-			if pb := e.Read(); !pb.IsNil() {
+			if pb := e.Read(); pb != nil {
 				t.Fatal("unexpectedly got a packet after router solicitation has been stopepd")
 			}
 
@@ -6057,7 +6057,7 @@ func TestStopStartSolicitingRouters(t *testing.T) {
 			waitForPkt(clock, interval)
 			waitForPkt(clock, interval)
 			clock.Advance(interval)
-			if pb := e.Read(); !pb.IsNil() {
+			if pb := e.Read(); pb != nil {
 				t.Fatal("unexpectedly got an extra packet after sending out the expected RSs")
 			}
 
@@ -6065,7 +6065,7 @@ func TestStopStartSolicitingRouters(t *testing.T) {
 			// nothing.
 			test.startFn(t, s)
 			clock.Advance(interval)
-			if pb := e.Read(); !pb.IsNil() {
+			if pb := e.Read(); pb != nil {
 				t.Fatal("unexpectedly got a packet after finishing router solicitations")
 			}
 		})

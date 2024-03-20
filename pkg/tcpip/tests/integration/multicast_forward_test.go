@@ -462,7 +462,7 @@ func TestAddMulticastRoute(t *testing.T) {
 						injectPacket(incomingEp, protocol, srcAddr, dstAddr, packetTTL)
 						p := incomingEp.Read()
 
-						if !p.IsNil() {
+						if p != nil {
 							// An ICMP error should never be sent in response to a multicast packet.
 							t.Fatalf("got incomingEp.Read() = %#v, want = nil", p)
 						}
@@ -501,7 +501,7 @@ func TestAddMulticastRoute(t *testing.T) {
 
 				p := outgoingEp.Read()
 
-				if (!p.IsNil()) != test.expectForward {
+				if (p != nil) != test.expectForward {
 					t.Fatalf("got outgoingEp.Read() = %#v, want = (_ == nil) = %t", p, test.expectForward)
 				}
 
@@ -697,7 +697,7 @@ func TestMulticastRouteLastUsedTime(t *testing.T) {
 				injectPacket(incomingEp, protocol, srcAddr, dstAddr, packetTTL)
 				p := incomingEp.Read()
 
-				if !p.IsNil() {
+				if p != nil {
 					t.Fatalf("Expected no ICMP packet through incoming NIC, instead found: %#v", p)
 				}
 
@@ -861,7 +861,7 @@ func TestRemoveMulticastRoute(t *testing.T) {
 				injectPacket(incomingEp, protocol, srcAddr, dstAddr, packetTTL)
 				p := incomingEp.Read()
 
-				if !p.IsNil() {
+				if p != nil {
 					// An ICMP error should never be sent in response to a multicast
 					// packet.
 					t.Errorf("expected no ICMP packet through incoming NIC, instead found: %#v", p)
@@ -877,7 +877,7 @@ func TestRemoveMulticastRoute(t *testing.T) {
 				// If the route was successfully removed, then the packet should not be
 				// forwarded.
 				expectForward := test.wantErr != nil
-				if (!p.IsNil()) != expectForward {
+				if (p != nil) != expectForward {
 					t.Fatalf("got outgoingEp.Read() = %#v, want = (_ == nil) = %t", p, expectForward)
 				}
 
@@ -1138,7 +1138,7 @@ func TestMulticastForwarding(t *testing.T) {
 				injectPacket(incomingEp, protocol, srcAddr, dstAddr, test.ttl)
 				p := incomingEp.Read()
 
-				if !p.IsNil() {
+				if p != nil {
 					// An ICMP error should never be sent in response to a multicast packet.
 					t.Fatalf("expected no ICMP packet through incoming NIC, instead found: %#v", p)
 				}
@@ -1153,7 +1153,7 @@ func TestMulticastForwarding(t *testing.T) {
 
 					expectForward := contains(nicID, test.expectedForwardingInterfaces)
 
-					if (!p.IsNil()) != expectForward {
+					if (p != nil) != expectForward {
 						t.Fatalf("got outgoingEp.Read() = %#v, want = (_ == nil) = %t", p, expectForward)
 					}
 
@@ -1170,7 +1170,7 @@ func TestMulticastForwarding(t *testing.T) {
 
 				p = otherEp.Read()
 
-				if (!p.IsNil()) != test.joinMulticastGroup {
+				if (p != nil) != test.joinMulticastGroup {
 					t.Fatalf("got otherEp.Read() = %#v, want = (_ == nil) = %t", p, test.joinMulticastGroup)
 				}
 

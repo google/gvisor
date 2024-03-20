@@ -319,7 +319,7 @@ func checkFragements(t *testing.T, ep *channel.Endpoint, expectedFragments []fra
 	var fragmentedPackets []*stack.PacketBuffer
 	for i := 0; i < len(expectedFragments); i++ {
 		reply := ep.Read()
-		if reply.IsNil() {
+		if reply == nil {
 			t.Fatal("Expected ICMP Echo fragment through outgoing NIC")
 		}
 		fragmentedPackets = append(fragmentedPackets, reply)
@@ -563,7 +563,7 @@ func TestForwarding(t *testing.T) {
 			reply := incomingEndpoint.Read()
 
 			if test.icmpError != nil {
-				if reply.IsNil() {
+				if reply == nil {
 					t.Fatalf("Expected ICMP packet type %d through incoming NIC", test.icmpError.icmpType)
 				}
 
@@ -581,7 +581,7 @@ func TestForwarding(t *testing.T) {
 					),
 				)
 				reply.DecRef()
-			} else if !reply.IsNil() {
+			} else if reply != nil {
 				t.Fatalf("Expected no ICMP packet through incoming NIC, instead found: %#v", reply)
 			}
 
@@ -592,7 +592,7 @@ func TestForwarding(t *testing.T) {
 
 			if test.expectPacketForwarded {
 				reply := outgoingEndpoint.Read()
-				if reply.IsNil() {
+				if reply == nil {
 					t.Fatal("Expected ICMP Echo packet through outgoing NIC")
 				}
 
@@ -612,7 +612,7 @@ func TestForwarding(t *testing.T) {
 				)
 				reply.DecRef()
 			} else {
-				if reply := outgoingEndpoint.Read(); !reply.IsNil() {
+				if reply := outgoingEndpoint.Read(); reply != nil {
 					t.Fatalf("Expected no ICMP Echo packet through outgoing NIC, instead found: %#v", reply)
 				}
 			}
@@ -753,7 +753,7 @@ func TestFragmentForwarding(t *testing.T) {
 			reply := incomingEndpoint.Read()
 
 			if test.icmpError != nil {
-				if reply.IsNil() {
+				if reply == nil {
 					t.Fatalf("Expected ICMP packet type %d through incoming NIC", test.icmpError.icmpType)
 				}
 
@@ -771,7 +771,7 @@ func TestFragmentForwarding(t *testing.T) {
 					),
 				)
 				reply.DecRef()
-			} else if !reply.IsNil() {
+			} else if reply != nil {
 				t.Fatalf("Expected no ICMP packet through incoming NIC, instead found: %#v", reply)
 			}
 
@@ -783,7 +783,7 @@ func TestFragmentForwarding(t *testing.T) {
 			if len(test.expectedFragmentsForwarded) > 0 {
 				checkFragements(t, outgoingEndpoint, test.expectedFragmentsForwarded, requestPkt)
 			} else {
-				if reply := outgoingEndpoint.Read(); !reply.IsNil() {
+				if reply := outgoingEndpoint.Read(); reply != nil {
 					t.Errorf("Expected no ICMP Echo packet through outgoing NIC, instead found: %#v", reply)
 				}
 			}
@@ -919,7 +919,7 @@ func TestMulticastFragmentForwarding(t *testing.T) {
 			incomingEndpoint.InjectInbound(header.IPv4ProtocolNumber, requestPkt)
 			reply := incomingEndpoint.Read()
 
-			if !reply.IsNil() {
+			if reply != nil {
 				// An ICMP error should never be sent in response to a multicast packet.
 				t.Errorf("Expected no ICMP packet through incoming NIC, instead found: %#v", reply)
 			}
@@ -932,7 +932,7 @@ func TestMulticastFragmentForwarding(t *testing.T) {
 			if len(test.expectedFragmentsForwarded) > 0 {
 				checkFragements(t, outgoingEndpoint, test.expectedFragmentsForwarded, requestPkt)
 			} else {
-				if reply := outgoingEndpoint.Read(); !reply.IsNil() {
+				if reply := outgoingEndpoint.Read(); reply != nil {
 					t.Errorf("Expected no ICMP Echo packet through outgoing NIC, instead found: %#v", reply)
 				}
 			}
@@ -1084,7 +1084,7 @@ func TestMulticastForwardingOptions(t *testing.T) {
 			incomingEndpoint.InjectInbound(header.IPv4ProtocolNumber, requestPkt)
 			reply := incomingEndpoint.Read()
 
-			if !reply.IsNil() {
+			if reply != nil {
 				// An ICMP error should never be sent in response to a multicast packet.
 				t.Errorf("Expected no ICMP packet through incoming NIC, instead found: %#v", reply)
 			}
@@ -1096,7 +1096,7 @@ func TestMulticastForwardingOptions(t *testing.T) {
 
 			if test.expectPacketForwarded {
 				reply := outgoingEndpoint.Read()
-				if reply.IsNil() {
+				if reply == nil {
 					t.Fatal("Expected ICMP Echo packet through outgoing NIC")
 				}
 
@@ -1116,7 +1116,7 @@ func TestMulticastForwardingOptions(t *testing.T) {
 				)
 				reply.DecRef()
 			} else {
-				if reply := outgoingEndpoint.Read(); !reply.IsNil() {
+				if reply := outgoingEndpoint.Read(); reply != nil {
 					t.Fatalf("Expected no ICMP Echo packet through outgoing NIC, instead found: %#v", reply)
 				}
 			}
@@ -1837,7 +1837,7 @@ func TestIPv4Sanity(t *testing.T) {
 			defer requestPkt.DecRef()
 			e.InjectInbound(header.IPv4ProtocolNumber, requestPkt)
 			reply := e.Read()
-			if reply.IsNil() {
+			if reply == nil {
 				if test.shouldFail {
 					if test.expectErrorICMP {
 						t.Fatalf("ICMP error response (type %d, code %d) missing", test.ICMPType, test.ICMPCode)
@@ -2812,12 +2812,12 @@ func TestFragmentReassemblyTimeout(t *testing.T) {
 
 			reply := e.Read()
 			if !test.expectICMP {
-				if !reply.IsNil() {
+				if reply != nil {
 					t.Fatalf("unexpected ICMP error message received: %#v", reply)
 				}
 				return
 			}
-			if reply.IsNil() {
+			if reply == nil {
 				t.Fatal("expected ICMP error message missing")
 			}
 			if firstFragmentSent.Size() == 0 {
@@ -3605,7 +3605,7 @@ func TestPacketQueuing(t *testing.T) {
 			},
 			checkResp: func(t *testing.T, e *channel.Endpoint) {
 				p := e.Read()
-				if p.IsNil() {
+				if p == nil {
 					t.Fatalf("timed out waiting for packet")
 				}
 				defer p.DecRef()
@@ -3653,7 +3653,7 @@ func TestPacketQueuing(t *testing.T) {
 			},
 			checkResp: func(t *testing.T, e *channel.Endpoint) {
 				p := e.Read()
-				if p.IsNil() {
+				if p == nil {
 					t.Fatalf("timed out waiting for packet")
 				}
 				defer p.DecRef()
@@ -3707,7 +3707,7 @@ func TestPacketQueuing(t *testing.T) {
 			{
 				clock.RunImmediatelyScheduledJobs()
 				p := e.Read()
-				if p.IsNil() {
+				if p == nil {
 					t.Fatalf("timed out waiting for packet")
 				}
 				if p.NetworkProtocolNumber != arp.ProtocolNumber {
@@ -3952,7 +3952,7 @@ func TestIcmpRateLimit(t *testing.T) {
 			},
 			check: func(t *testing.T, e *channel.Endpoint, round int) {
 				p := e.Read()
-				if p.IsNil() {
+				if p == nil {
 					t.Fatalf("expected echo response, no packet read in endpoint in round %d", round)
 				}
 				defer p.DecRef()
@@ -3994,13 +3994,13 @@ func TestIcmpRateLimit(t *testing.T) {
 			check: func(t *testing.T, e *channel.Endpoint, round int) {
 				p := e.Read()
 				if round >= icmpBurst {
-					if !p.IsNil() {
+					if p != nil {
 						t.Errorf("got packet %x in round %d, expected ICMP rate limit to stop it", p.Data().AsRange().ToSlice(), round)
 						p.DecRef()
 					}
 					return
 				}
-				if p.IsNil() {
+				if p == nil {
 					t.Fatalf("expected unreachable in round %d, no packet read in endpoint", round)
 				}
 				defer p.DecRef()

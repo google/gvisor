@@ -76,10 +76,10 @@ type testNetworkDispatcher struct {
 }
 
 func (t *testNetworkDispatcher) reset() {
-	if pkt := t.linkPacket.pkt; !pkt.IsNil() {
+	if pkt := t.linkPacket.pkt; pkt != nil {
 		pkt.DecRef()
 	}
-	if pkt := t.networkPacket.pkt; !pkt.IsNil() {
+	if pkt := t.networkPacket.pkt; pkt != nil {
 		pkt.DecRef()
 	}
 

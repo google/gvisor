@@ -527,7 +527,7 @@ func routeICMPv6Packet(t *testing.T, clock *faketime.ManualClock, args routeArgs
 
 	clock.RunImmediatelyScheduledJobs()
 	pi := args.src.Read()
-	if pi.IsNil() {
+	if pi == nil {
 		t.Fatal("packet didn't arrive")
 	}
 	defer pi.DecRef()
@@ -1347,7 +1347,7 @@ func TestLinkAddressRequest(t *testing.T) {
 			}
 
 			pkt := linkEP.Read()
-			if pkt.IsNil() {
+			if pkt == nil {
 				t.Fatal("expected to send a link address request")
 			}
 			defer pkt.DecRef()
@@ -1431,7 +1431,7 @@ func TestPacketQueing(t *testing.T) {
 			},
 			checkResp: func(t *testing.T, e *channel.Endpoint) {
 				p := e.Read()
-				if p.IsNil() {
+				if p == nil {
 					t.Fatalf("timed out waiting for packet")
 				}
 				defer p.DecRef()
@@ -1482,7 +1482,7 @@ func TestPacketQueing(t *testing.T) {
 			},
 			checkResp: func(t *testing.T, e *channel.Endpoint) {
 				p := e.Read()
-				if p.IsNil() {
+				if p == nil {
 					t.Fatalf("timed out waiting for packet")
 				}
 				defer p.DecRef()
@@ -1537,7 +1537,7 @@ func TestPacketQueing(t *testing.T) {
 			{
 				c.clock.RunImmediatelyScheduledJobs()
 				p := e.Read()
-				if p.IsNil() {
+				if p == nil {
 					t.Fatalf("timed out waiting for packet")
 				}
 				if p.NetworkProtocolNumber != ProtocolNumber {

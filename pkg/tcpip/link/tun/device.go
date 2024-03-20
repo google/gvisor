@@ -262,7 +262,7 @@ func (d *Device) Read() (*buffer.View, error) {
 	}
 
 	pkt := endpoint.Read()
-	if pkt.IsNil() {
+	if pkt == nil {
 		return nil, linuxerr.ErrWouldBlock
 	}
 	v := d.encodePkt(pkt)

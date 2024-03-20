@@ -630,7 +630,7 @@ func TestForwardingWithLinkResolutionFailure(t *testing.T) {
 
 			for i := 0; i < int(nudConfigs.MaxMulticastProbes); i++ {
 				request := outgoingEndpoint.Read()
-				if request.IsNil() {
+				if request == nil {
 					t.Fatal("expected ARP packet through outgoing NIC")
 				}
 
@@ -646,7 +646,7 @@ func TestForwardingWithLinkResolutionFailure(t *testing.T) {
 			// link resolution fails, and this dequeue is what triggers the ICMP
 			// error.
 			reply := incomingEndpoint.Read()
-			if reply.IsNil() {
+			if reply == nil {
 				t.Fatal("expected ICMP packet through incoming NIC")
 			}
 
@@ -658,7 +658,7 @@ func TestForwardingWithLinkResolutionFailure(t *testing.T) {
 			// Since link resolution failed, we don't expect the packet to be
 			// forwarded.
 			forwardedPacket := outgoingEndpoint.Read()
-			if !forwardedPacket.IsNil() {
+			if forwardedPacket != nil {
 				t.Fatalf("expected no ICMP Echo packet through outgoing NIC, instead found: %#v", forwardedPacket)
 			}
 

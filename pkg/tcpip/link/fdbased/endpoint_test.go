@@ -62,7 +62,7 @@ func checkPacketInfoEqual(t *testing.T, got, want packetInfo) {
 	if diff := cmp.Diff(
 		want, got,
 		cmp.Transformer("ExtractPacketBuffer", func(pk *stack.PacketBuffer) *packetContents {
-			if pk.IsNil() {
+			if pk == nil {
 				return nil
 			}
 			return &packetContents{
