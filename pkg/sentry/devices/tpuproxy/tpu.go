@@ -115,7 +115,7 @@ func (fd *tpuFD) setContainer(ctx context.Context, t *kernel.Task, arg hostarch.
 	if !ok {
 		return 0, linuxerr.EINVAL
 	}
-	return ioctlInvokePtrArg(fd.hostFD, linux.VFIO_GROUP_SET_CONTAINER, &vfioContainer.hostFd)
+	return IOCTLInvokePtrArg[uint32](fd.hostFD, linux.VFIO_GROUP_SET_CONTAINER, &vfioContainer.hostFd)
 }
 
 // It will be the caller's responsibility to call the returned cleanup function.
@@ -124,7 +124,7 @@ func (fd *tpuFD) getPciDeviceFd(t *kernel.Task, arg hostarch.Addr) (uintptr, fun
 	if err != nil {
 		return 0, func() {}, err
 	}
-	hostFD, err := ioctlInvokePtrArg(fd.hostFD, linux.VFIO_GROUP_GET_DEVICE_FD, &pciAddress)
+	hostFD, err := IOCTLInvokePtrArg[uint32](fd.hostFD, linux.VFIO_GROUP_GET_DEVICE_FD, &pciAddress)
 	if err != nil {
 		return 0, func() {}, err
 	}

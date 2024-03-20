@@ -23,6 +23,7 @@ import (
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/hostarch"
+	"gvisor.dev/gvisor/pkg/sentry/devices/tpuproxy"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/eventfd"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/memmap"
@@ -103,7 +104,7 @@ func gasketMapBufferIoctl(ctx context.Context, t *kernel.Task, hostFd int32, fd 
 	}
 	sentryIoctlParams := userIoctlParams
 	sentryIoctlParams.HostAddress = uint64(m)
-	n, err := ioctlInvokePtrArg(hostFd, gasket.GASKET_IOCTL_MAP_BUFFER, &sentryIoctlParams)
+	n, err := tpuproxy.IOCTLInvokePtrArg[gasket.Ioctl](hostFd, gasket.GASKET_IOCTL_MAP_BUFFER, &sentryIoctlParams)
 	if err != nil {
 		return n, err
 	}
@@ -150,7 +151,7 @@ func gasketUnmapBufferIoctl(ctx context.Context, t *kernel.Task, hostFd int32, f
 
 	sentryIoctlParams := userIoctlParams
 	sentryIoctlParams.HostAddress = 0 // clobber this value, it's unused.
-	n, err := ioctlInvokePtrArg(hostFd, gasket.GASKET_IOCTL_UNMAP_BUFFER, &sentryIoctlParams)
+	n, err := tpuproxy.IOCTLInvokePtrArg[gasket.Ioctl](hostFd, gasket.GASKET_IOCTL_UNMAP_BUFFER, &sentryIoctlParams)
 	if err != nil {
 		return n, err
 	}
@@ -210,7 +211,7 @@ func gasketInterruptMappingIoctl(ctx context.Context, t *kernel.Task, hostFd int
 
 	sentryIoctlParams := userIoctlParams
 	sentryIoctlParams.EventFD = uint64(eventfd)
-	n, err := ioctlInvokePtrArg(hostFd, gasket.GASKET_IOCTL_REGISTER_INTERRUPT, &sentryIoctlParams)
+	n, err := tpuproxy.IOCTLInvokePtrArg[gasket.Ioctl](hostFd, gasket.GASKET_IOCTL_REGISTER_INTERRUPT, &sentryIoctlParams)
 	if err != nil {
 		return n, err
 	}
