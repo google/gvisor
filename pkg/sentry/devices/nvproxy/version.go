@@ -210,6 +210,7 @@ func Init() {
 					nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_P2P_CAPS:               rmControlSimple,
 					nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_FABRIC_STATUS:          rmControlSimple,
 					nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_P2P_CAPS_MATRIX:        rmControlSimple,
+					nvgpu.NV0000_CTRL_CMD_SYSTEM_GET_FEATURES:               rmControlSimple,
 					nvgpu.NV0080_CTRL_CMD_FB_GET_CAPS_V2:                    rmControlSimple,
 					nvgpu.NV0080_CTRL_CMD_GPU_GET_NUM_SUBDEVICES:            rmControlSimple,
 					nvgpu.NV0080_CTRL_CMD_GPU_QUERY_SW_STATE_PERSISTENCE:    rmControlSimple,
@@ -284,6 +285,7 @@ func Init() {
 					nvgpu.NV01_MEMORY_LOCAL_USER:  rmAllocSimple[nvgpu.NV_MEMORY_ALLOCATION_PARAMS],
 					nvgpu.NV01_ROOT_CLIENT:        rmAllocSimple[nvgpu.Handle],
 					nvgpu.NV01_EVENT_OS_EVENT:     rmAllocEventOSEvent,
+					nvgpu.NV2081_BINAPI:           rmAllocSimple[nvgpu.NV2081_ALLOC_PARAMETERS],
 					nvgpu.NV01_DEVICE_0:           rmAllocSimple[nvgpu.NV0080_ALLOC_PARAMETERS],
 					nvgpu.NV_MEMORY_FABRIC:        rmAllocSimple[nvgpu.NV00F8_ALLOCATION_PARAMETERS],
 					nvgpu.NV20_SUBDEVICE_0:        rmAllocSimple[nvgpu.NV2080_ALLOC_PARAMETERS],
@@ -325,7 +327,34 @@ func Init() {
 		v535_129_03 := addDriverABI(535, 129, 03, "e6dca5626a2608c6bb2a046cfcb7c1af338b9e961a7dd90ac09bb8a126ff002e", v535_113_01)
 		_ = addDriverABI(535, 154, 05, "7e95065caa6b82de926110f14827a61972eb12c200e863a29e9fb47866eaa898", v535_129_03)
 
-		// TODO: Update NV_MEMORY_ALLOCATION_PARAMS when adding >=545.23.06.
+		// 545.23.06 is an intermediate unqualified version from the main branch.
+		v545_23_06 := func() *driverABI {
+			abi := v535_113_01()
+			abi.allocationClass[nvgpu.NV01_MEMORY_SYSTEM] = rmAllocSimple[nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545]
+			abi.allocationClass[nvgpu.NV01_MEMORY_LOCAL_USER] = rmAllocSimple[nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545]
+			abi.allocationClass[nvgpu.NV50_MEMORY_VIRTUAL] = rmAllocSimple[nvgpu.NV_MEMORY_ALLOCATION_PARAMS_V545]
+			return abi
+		}
+
+		// 550.40.07 is an intermediate unqualified version from the main branch.
+		v550_40_07 := func() *driverABI {
+			abi := v545_23_06()
+			abi.frontendIoctl[nvgpu.NV_ESC_WAIT_OPEN_COMPLETE] = frontendIoctlSimple // nv_ioctl_wait_open_complete_t
+			abi.controlCmd[nvgpu.NV0000_CTRL_CMD_GPU_ASYNC_ATTACH_ID] = rmControlSimple
+			abi.controlCmd[nvgpu.NV0000_CTRL_CMD_GPU_WAIT_ATTACH_ID] = rmControlSimple
+			abi.controlCmd[nvgpu.NV0080_CTRL_CMD_PERF_CUDA_LIMIT_SET_CONTROL] = rmControlSimple // NV0080_CTRL_PERF_CUDA_LIMIT_CONTROL_PARAMS
+			// NV2081_BINAPI forwards all control commands to the GSP in
+			// src/nvidia/src/kernel/rmapi/binary_api.c:binapiControl_IMPL().
+			abi.controlCmd[(nvgpu.NV2081_BINAPI<<16)|0x0108] = rmControlSimple
+			return abi
+		}
+
+		_ = addDriverABI(550, 54, 14, "8c497ff1cfc7c310fb875149bc30faa4fd26d2237b2cba6cd2e8b0780157cfe3", func() *driverABI {
+			abi := v550_40_07()
+			abi.uvmIoctl[nvgpu.UVM_ALLOC_SEMAPHORE_POOL] = uvmIoctlSimple[nvgpu.UVM_ALLOC_SEMAPHORE_POOL_PARAMS_V550]
+			abi.uvmIoctl[nvgpu.UVM_MAP_EXTERNAL_ALLOCATION] = uvmIoctlHasRMCtrlFD[nvgpu.UVM_MAP_EXTERNAL_ALLOCATION_PARAMS_V550]
+			return abi
+		})
 	})
 }
 

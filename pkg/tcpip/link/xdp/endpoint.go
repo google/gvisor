@@ -301,8 +301,14 @@ func (ep *endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error)
 		// Copy packets into UMEM frame.
 		frame := ep.control.UMEM.Get(batch[i])
 		offset := 0
-		for _, buf := range pkt.AsSlices() {
-			offset += copy(frame[offset:], buf)
+		var view *buffer.View
+		views, pktOffset := pkt.AsViewList()
+		for view = views.Front(); view != nil && pktOffset >= view.Size(); view = view.Next() {
+			pktOffset -= view.Size()
+		}
+		offset += copy(frame[offset:], view.AsSlice()[pktOffset:])
+		for view = view.Next(); view != nil; view = view.Next() {
+			offset += copy(frame[offset:], view.AsSlice())
 		}
 		ep.control.TX.Set(index+uint32(i), batch[i])
 	}
@@ -385,7 +391,5 @@ func (ep *endpoint) dispatch() (bool, tcpip.Error) {
 			// descriptors in the RX queue.
 			ep.control.RX.Release(nReceived)
 		}
-
-		return true, nil
 	}
 }

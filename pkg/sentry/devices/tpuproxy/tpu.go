@@ -32,6 +32,15 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
+var (
+	// vfioDeviceInfoFlags contains all available flags for
+	// IOCTL command VFIO_DEVICE_GET_INFO.
+	vfioDeviceInfoFlags uint32 = linux.VFIO_DEVICE_FLAGS_RESET | linux.VFIO_DEVICE_FLAGS_PCI |
+		linux.VFIO_DEVICE_FLAGS_PLATFORM | linux.VFIO_DEVICE_FLAGS_AMBA |
+		linux.VFIO_DEVICE_FLAGS_CCW | linux.VFIO_DEVICE_FLAGS_AP | linux.VFIO_DEVICE_FLAGS_FSL_MC |
+		linux.VFIO_DEVICE_FLAGS_CAPS | linux.VFIO_DEVICE_FLAGS_CDX
+)
+
 // tpuFD implements vfs.FileDescriptionImpl for /dev/vfio/[0-9]+
 //
 // tpuFD is not savable until TPU save/restore is needed.
@@ -135,8 +144,8 @@ func (fd *tpuFD) getPciDeviceFd(t *kernel.Task, arg hostarch.Addr) (uintptr, fun
 	if err != nil {
 		return 0, func() {}, err
 	}
-	pciDevFD := &pciDeviceFd{
-		hostFd: int32(hostFD),
+	pciDevFD := &pciDeviceFD{
+		hostFD: int32(hostFD),
 	}
 	cleanup := func() {
 		unix.Close(int(hostFD))
@@ -160,28 +169,28 @@ func (fd *tpuFD) getPciDeviceFd(t *kernel.Task, arg hostarch.Addr) (uintptr, fun
 }
 
 // pciDeviceFD implements vfs.FileDescriptionImpl for TPU's PCI device.
-type pciDeviceFd struct {
+type pciDeviceFD struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.NoLockFD
 
-	hostFd     int32
+	hostFD     int32
 	queue      waiter.Queue
 	memmapFile tpuFDMemmapFile
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
-func (fd *pciDeviceFd) Release(context.Context) {
-	fdnotifier.RemoveFD(fd.hostFd)
+func (fd *pciDeviceFD) Release(context.Context) {
+	fdnotifier.RemoveFD(fd.hostFD)
 	fd.queue.Notify(waiter.EventHUp)
-	unix.Close(int(fd.hostFd))
+	unix.Close(int(fd.hostFD))
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (fd *pciDeviceFd) EventRegister(e *waiter.Entry) error {
+func (fd *pciDeviceFD) EventRegister(e *waiter.Entry) error {
 	fd.queue.EventRegister(e)
-	if err := fdnotifier.UpdateFD(fd.hostFd); err != nil {
+	if err := fdnotifier.UpdateFD(fd.hostFD); err != nil {
 		fd.queue.EventUnregister(e)
 		return err
 	}
@@ -189,24 +198,59 @@ func (fd *pciDeviceFd) EventRegister(e *waiter.Entry) error {
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
-func (fd *pciDeviceFd) EventUnregister(e *waiter.Entry) {
+func (fd *pciDeviceFD) EventUnregister(e *waiter.Entry) {
 	fd.queue.EventUnregister(e)
-	if err := fdnotifier.UpdateFD(fd.hostFd); err != nil {
+	if err := fdnotifier.UpdateFD(fd.hostFD); err != nil {
 		panic(fmt.Sprint("UpdateFD:", err))
 	}
 }
 
 // Readiness implements waiter.Waitable.Readiness.
-func (fd *pciDeviceFd) Readiness(mask waiter.EventMask) waiter.EventMask {
-	return fdnotifier.NonBlockingPoll(fd.hostFd, mask)
+func (fd *pciDeviceFD) Readiness(mask waiter.EventMask) waiter.EventMask {
+	return fdnotifier.NonBlockingPoll(fd.hostFD, mask)
 }
 
 // Epollable implements vfs.FileDescriptionImpl.Epollable.
-func (fd *pciDeviceFd) Epollable() bool {
+func (fd *pciDeviceFD) Epollable() bool {
 	return true
 }
 
 // Ioctl implements vfs.FileDescriptionImpl.Ioctl.
-func (fd *pciDeviceFd) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
+func (fd *pciDeviceFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
+	cmd := args[1].Uint()
+
+	t := kernel.TaskFromContext(ctx)
+	if t == nil {
+		panic("Ioctl should be called from a task context")
+	}
+	switch cmd {
+	case linux.VFIO_DEVICE_GET_INFO:
+		return fd.vfioDeviceInfo(ctx, t, args[2].Pointer())
+	}
 	return 0, linuxerr.ENOSYS
+}
+
+func (fd *pciDeviceFD) vfioDeviceInfo(ctx context.Context, t *kernel.Task, arg hostarch.Addr) (uintptr, error) {
+	var deviceInfo linux.VFIODeviceInfo
+	if _, err := deviceInfo.CopyIn(t, arg); err != nil {
+		return 0, err
+	}
+	// Callers must set VFIODevice.Argsz.
+	if deviceInfo.Argsz == 0 {
+		return 0, linuxerr.EINVAL
+	}
+	if deviceInfo.Flags&^vfioDeviceInfoFlags != 0 {
+		return 0, linuxerr.EINVAL
+	}
+	ret, err := IOCTLInvokePtrArg[uint32](fd.hostFD, linux.VFIO_DEVICE_GET_INFO, &deviceInfo)
+	if err != nil {
+		return 0, err
+	}
+	// gVisor is not supposed to change any device information that is
+	// returned from the host since gVisor doesn't own the device.
+	// Passing the device info back to the caller will be just fine.
+	if _, err := deviceInfo.CopyOut(t, arg); err != nil {
+		return 0, err
+	}
+	return ret, nil
 }

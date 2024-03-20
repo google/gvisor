@@ -148,6 +148,27 @@ func (p *UVM_MAP_EXTERNAL_ALLOCATION_PARAMS) SetRMCtrlFD(fd int32) {
 }
 
 // +marshal
+type UVM_MAP_EXTERNAL_ALLOCATION_PARAMS_V550 struct {
+	Base               uint64
+	Length             uint64
+	Offset             uint64
+	PerGPUAttributes   [UVM_MAX_GPUS_V2]UvmGpuMappingAttributes
+	GPUAttributesCount uint64
+	RMCtrlFD           int32
+	HClient            Handle
+	HMemory            Handle
+	RMStatus           uint32
+}
+
+func (p *UVM_MAP_EXTERNAL_ALLOCATION_PARAMS_V550) GetRMCtrlFD() int32 {
+	return p.RMCtrlFD
+}
+
+func (p *UVM_MAP_EXTERNAL_ALLOCATION_PARAMS_V550) SetRMCtrlFD(fd int32) {
+	p.RMCtrlFD = fd
+}
+
+// +marshal
 type UVM_FREE_PARAMS struct {
 	Base     uint64
 	Length   uint64
@@ -216,6 +237,16 @@ type UVM_ALLOC_SEMAPHORE_POOL_PARAMS struct {
 }
 
 // +marshal
+type UVM_ALLOC_SEMAPHORE_POOL_PARAMS_V550 struct {
+	Base               uint64
+	Length             uint64
+	PerGPUAttributes   [UVM_MAX_GPUS_V2]UvmGpuMappingAttributes
+	GPUAttributesCount uint64
+	RMStatus           uint32
+	Pad0               [4]byte
+}
+
+// +marshal
 type UVM_VALIDATE_VA_RANGE_PARAMS struct {
 	Base     uint64
 	Length   uint64
@@ -239,7 +270,10 @@ type UVM_MM_INITIALIZE_PARAMS struct {
 
 // From kernel-open/nvidia-uvm/uvm_types.h:
 
-const UVM_MAX_GPUS = NV_MAX_DEVICES
+const (
+	UVM_MAX_GPUS    = NV_MAX_DEVICES
+	UVM_MAX_GPUS_V2 = NV_MAX_DEVICES * NV_MAX_SUBDEVICES
+)
 
 // +marshal
 type UvmGpuMappingAttributes struct {

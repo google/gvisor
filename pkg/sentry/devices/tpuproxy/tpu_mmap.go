@@ -84,26 +84,26 @@ func (mf *tpuFDMemmapFile) FD() int {
 }
 
 // ConfigureMMap implements vfs.FileDescriptionImpl.ConfigureMMap.
-func (fd *pciDeviceFd) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
+func (fd *pciDeviceFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
 	return vfs.GenericConfigureMMap(&fd.vfsfd, fd, opts)
 }
 
 // AddMapping implements memmap.Mappable.AddMapping.
-func (fd *pciDeviceFd) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
+func (fd *pciDeviceFD) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
 	return nil
 }
 
 // RemoveMapping implements memmap.Mappable.RemoveMapping.
-func (fd *pciDeviceFd) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
+func (fd *pciDeviceFD) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
 }
 
 // CopyMapping implements memmap.Mappable.CopyMapping.
-func (fd *pciDeviceFd) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR hostarch.AddrRange, offset uint64, writable bool) error {
+func (fd *pciDeviceFD) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR hostarch.AddrRange, offset uint64, writable bool) error {
 	return nil
 }
 
 // Translate implements memmap.Mappable.Translate.
-func (fd *pciDeviceFd) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
+func (fd *pciDeviceFD) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
 	return []memmap.Translation{
 		{
 			Source: optional,
@@ -115,12 +115,12 @@ func (fd *pciDeviceFd) Translate(ctx context.Context, required, optional memmap.
 }
 
 // InvalidateUnsavable implements memmap.Mappable.InvalidateUnsavable.
-func (fd *pciDeviceFd) InvalidateUnsavable(ctx context.Context) error {
+func (fd *pciDeviceFD) InvalidateUnsavable(ctx context.Context) error {
 	return nil
 }
 
 type pciDeviceFdMemmapFile struct {
-	fd *pciDeviceFd
+	fd *pciDeviceFD
 }
 
 // IncRef implements memmap.File.IncRef.
@@ -139,5 +139,5 @@ func (mf *pciDeviceFdMemmapFile) MapInternal(fr memmap.FileRange, at hostarch.Ac
 
 // FD implements memmap.File.FD.
 func (mf *pciDeviceFdMemmapFile) FD() int {
-	return int(mf.fd.hostFd)
+	return int(mf.fd.hostFD)
 }
