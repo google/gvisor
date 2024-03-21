@@ -286,7 +286,7 @@ func parseCPUQuota(cpuMax string) (float64, error) {
 
 }
 
-// CPUUsage returns the total CPU usage of the cgroup.
+// CPUUsage returns the total CPU usage of the cgroup in nanoseconds.
 func (c *cgroupV2) CPUUsage() (uint64, error) {
 	cpuStat, err := getValue(c.MakePath(""), "cpu.stat")
 	if err != nil {
@@ -300,7 +300,7 @@ func (c *cgroupV2) CPUUsage() (uint64, error) {
 			return 0, err
 		}
 		if key == "usage_usec" {
-			return value, nil
+			return value * 1000, nil
 		}
 	}
 

@@ -643,7 +643,7 @@ func (c *cgroupV1) CPUQuota() (float64, error) {
 	return float64(quota) / float64(period), nil
 }
 
-// CPUUsage returns the total CPU usage of the cgroup.
+// CPUUsage returns the total CPU usage of the cgroup in nanoseconds.
 func (c *cgroupV1) CPUUsage() (uint64, error) {
 	path := c.MakePath("cpuacct")
 	usage, err := getValue(path, "cpuacct.usage")
