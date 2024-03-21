@@ -17,6 +17,7 @@ package dockerutil
 
 import (
 	"flag"
+	"fmt"
 	"os"
 
 	"github.com/docker/docker/api/types/container"
@@ -45,10 +46,16 @@ func GPURunOpts() RunOpts {
 	// COS has specific settings since it has a custom installer for GPU drivers.
 	// See: https://cloud.google.com/container-optimized-os/docs/how-to/run-gpus#install-driver
 	devices := []container.DeviceMapping{}
-	nvidia0Device := "/dev/nvidia0"
-	nvidiaUvmDevice := "/dev/nvidia-uvm"
-	nvidiactlDevice := "/dev/nvidiactl"
-	for _, device := range []string{nvidia0Device, nvidiaUvmDevice, nvidiactlDevice} {
+	var nvidiaDevices []string
+	for i := 0; true; i++ {
+		devicePath := fmt.Sprintf("/dev/nvidia%d", i)
+		if _, err := os.Stat(devicePath); err != nil {
+			break
+		}
+		nvidiaDevices = append(nvidiaDevices, devicePath)
+	}
+	nvidiaDevices = append(nvidiaDevices, "/dev/nvidia-uvm", "/dev/nvidiactl")
+	for _, device := range nvidiaDevices {
 		devices = append(devices, container.DeviceMapping{
 			PathOnHost:        device,
 			PathInContainer:   device,
@@ -88,4 +95,17 @@ func GPURunOpts() RunOpts {
 		Mounts:  mounts,
 		Devices: devices,
 	}
+}
+
+// NumGPU crudely estimates the number of NVIDIA GPUs on the host.
+func NumGPU() int {
+	numGPU := 0
+	for {
+		_, err := os.Stat(fmt.Sprintf("/dev/nvidia%d", numGPU))
+		if err != nil {
+			break
+		}
+		numGPU++
+	}
+	return numGPU
 }
