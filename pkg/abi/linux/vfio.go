@@ -49,13 +49,26 @@ const (
 	VFIO_DEVICE_FLAGS_CDX
 )
 
+// VFIO region info flags.
+const (
+	// Region supports read.
+	VFIO_REGION_INFO_FLAG_READ = 1 << iota
+	// Region supports write.
+	VFIO_REGION_INFO_FLAG_WRITE
+	// Region supports mmap.
+	VFIO_REGION_INFO_FLAG_MMAP
+	// Info supports caps.
+	VFIO_REGION_INFO_FLAG_CAPS
+)
+
 // IOCTLs for VFIO file descriptor from include/uapi/linux/vfio.h.
 var (
-	VFIO_CHECK_EXTENSION     = IO(VFIO_TYPE, VFIO_BASE+1)
-	VFIO_SET_IOMMU           = IO(VFIO_TYPE, VFIO_BASE+2)
-	VFIO_GROUP_SET_CONTAINER = IO(VFIO_TYPE, VFIO_BASE+4)
-	VFIO_GROUP_GET_DEVICE_FD = IO(VFIO_TYPE, VFIO_BASE+6)
-	VFIO_DEVICE_GET_INFO     = IO(VFIO_TYPE, VFIO_BASE+7)
+	VFIO_CHECK_EXTENSION        = IO(VFIO_TYPE, VFIO_BASE+1)
+	VFIO_SET_IOMMU              = IO(VFIO_TYPE, VFIO_BASE+2)
+	VFIO_GROUP_SET_CONTAINER    = IO(VFIO_TYPE, VFIO_BASE+4)
+	VFIO_GROUP_GET_DEVICE_FD    = IO(VFIO_TYPE, VFIO_BASE+6)
+	VFIO_DEVICE_GET_INFO        = IO(VFIO_TYPE, VFIO_BASE+7)
+	VFIO_DEVICE_GET_REGION_INFO = IO(VFIO_TYPE, VFIO_BASE+8)
 )
 
 // VFIODeviceInfo is analogous to vfio_device_info
@@ -72,4 +85,20 @@ type VFIODeviceInfo struct {
 	// Offset within info struct of first cap.
 	CapOffset uint32
 	pad       uint32
+}
+
+// VFIORegionInfo is analogous to vfio_region_info
+// from include/uapi/linux/vfio.h.
+//
+// +marshal
+type VFIORegionInfo struct {
+	Argsz uint32
+	Flags uint32
+	Index uint32
+	// Offset within info struct of first cap.
+	capOffset uint32
+	// Region size in bytes.
+	Size uint64
+	// Region offset from start of device fd.
+	Offset uint64
 }

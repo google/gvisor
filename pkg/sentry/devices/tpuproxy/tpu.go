@@ -224,18 +224,42 @@ func (fd *pciDeviceFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr,
 		panic("Ioctl should be called from a task context")
 	}
 	switch cmd {
+	// TODO(b/299303493): consider making VFIO's GET_INFO commands more generic.
 	case linux.VFIO_DEVICE_GET_INFO:
 		return fd.vfioDeviceInfo(ctx, t, args[2].Pointer())
+	case linux.VFIO_DEVICE_GET_REGION_INFO:
+		return fd.vfioRegionInfo(ctx, t, args[2].Pointer())
 	}
 	return 0, linuxerr.ENOSYS
 }
 
+// Retrieve the host TPU device's region information, which could be used by
+// vfio driver to setup mappings.
+func (fd *pciDeviceFD) vfioRegionInfo(ctx context.Context, t *kernel.Task, arg hostarch.Addr) (uintptr, error) {
+	var regionInfo linux.VFIORegionInfo
+	if _, err := regionInfo.CopyIn(t, arg); err != nil {
+		return 0, err
+	}
+	if regionInfo.Argsz == 0 {
+		return 0, linuxerr.EINVAL
+	}
+	ret, err := IOCTLInvokePtrArg[uint32](fd.hostFD, linux.VFIO_DEVICE_GET_REGION_INFO, &regionInfo)
+	if err != nil {
+		return 0, err
+	}
+	if _, err := regionInfo.CopyOut(t, arg); err != nil {
+		return 0, err
+	}
+	return ret, nil
+}
+
+// Retrieve the host TPU device's information.
 func (fd *pciDeviceFD) vfioDeviceInfo(ctx context.Context, t *kernel.Task, arg hostarch.Addr) (uintptr, error) {
 	var deviceInfo linux.VFIODeviceInfo
 	if _, err := deviceInfo.CopyIn(t, arg); err != nil {
 		return 0, err
 	}
-	// Callers must set VFIODevice.Argsz.
+	// Callers must set VFIODeviceInfo.Argsz.
 	if deviceInfo.Argsz == 0 {
 		return 0, linuxerr.EINVAL
 	}
