@@ -18,6 +18,7 @@ import (
 	"bytes"
 	"fmt"
 	"net"
+	"runtime"
 
 	"github.com/cilium/ebpf"
 	"github.com/cilium/ebpf/link"
@@ -74,7 +75,7 @@ func newXDPEndpoint(ifaceName string, mac net.HardwareAddr) (stack.LinkEndpoint,
 		return nil, fmt.Errorf("failed to load program: %v", err)
 	}
 
-	_, err = link.AttachRawLink(link.RawLinkOptions{
+	rawLink, err := link.AttachRawLink(link.RawLinkOptions{
 		Program: objects.Program,
 		Attach:  ebpf.AttachXDP,
 		Target:  iface.Index,
@@ -96,6 +97,17 @@ func newXDPEndpoint(ifaceName string, mac net.HardwareAddr) (stack.LinkEndpoint,
 	if err := objects.SockMap.Update(&key, &val, 0 /* flags */); err != nil {
 		return nil, fmt.Errorf("failed to insert socket into BPF map: %v", err)
 	}
+
+	// Ensure that none of the XDP bits are removed by GC'ing the
+	// os.File-wrapped descriptors.
+	for i, fd := range []int{fd, objects.Program.FD(), objects.SockMap.FD(), rawLink.FD()} {
+		if _, err := unix.Dup(fd); err != nil {
+			return nil, fmt.Errorf("failed to dup fd with index %d (%d): %v", i, fd, err)
+		}
+	}
+
+	runtime.KeepAlive(objects)
+	runtime.KeepAlive(rawLink)
 
 	return xdp.New(&xdp.Options{
 		FD:                fd,
