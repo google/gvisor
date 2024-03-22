@@ -229,6 +229,8 @@ func (fd *pciDeviceFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr,
 		return fd.vfioDeviceInfo(ctx, t, args[2].Pointer())
 	case linux.VFIO_DEVICE_GET_REGION_INFO:
 		return fd.vfioRegionInfo(ctx, t, args[2].Pointer())
+	case linux.VFIO_DEVICE_GET_IRQ_INFO:
+		return fd.vfioIrqInfo(ctx, t, args[2].Pointer())
 	}
 	return 0, linuxerr.ENOSYS
 }
@@ -274,6 +276,26 @@ func (fd *pciDeviceFD) vfioDeviceInfo(ctx context.Context, t *kernel.Task, arg h
 	// returned from the host since gVisor doesn't own the device.
 	// Passing the device info back to the caller will be just fine.
 	if _, err := deviceInfo.CopyOut(t, arg); err != nil {
+		return 0, err
+	}
+	return ret, nil
+}
+
+// Retrieve the device's interrupt information.
+func (fd *pciDeviceFD) vfioIrqInfo(ctx context.Context, t *kernel.Task, arg hostarch.Addr) (uintptr, error) {
+	var irqInfo linux.VFIOIrqInfo
+	if _, err := irqInfo.CopyIn(t, arg); err != nil {
+		return 0, err
+	}
+	// Callers must set the payload's size.
+	if irqInfo.Argsz == 0 {
+		return 0, linuxerr.EINVAL
+	}
+	ret, err := IOCTLInvokePtrArg[uint32](fd.hostFD, linux.VFIO_DEVICE_GET_IRQ_INFO, &irqInfo)
+	if err != nil {
+		return 0, err
+	}
+	if _, err := irqInfo.CopyOut(t, arg); err != nil {
 		return 0, err
 	}
 	return ret, nil
