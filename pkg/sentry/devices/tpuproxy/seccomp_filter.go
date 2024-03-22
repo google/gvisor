@@ -77,6 +77,14 @@ func Filters() seccomp.SyscallRules {
 				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(linux.VFIO_DEVICE_GET_REGION_INFO),
 			},
+			seccomp.PerArg{
+				seccomp.NonNegativeFD{},
+				seccomp.EqualTo(linux.VFIO_DEVICE_GET_IRQ_INFO),
+			},
+			seccomp.PerArg{
+				seccomp.NonNegativeFD{},
+				seccomp.EqualTo(linux.VFIO_DEVICE_SET_IRQS),
+			},
 		},
 	})
 }

@@ -26,10 +26,17 @@ import (
 	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/eventfd"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
+)
+
+const (
+	// A value of -1 can be used to either de-assign interrupts if already
+	// assigned or skip un-assigned interrupts.
+	disableInterrupt = -1
 )
 
 var (
@@ -39,6 +46,8 @@ var (
 		linux.VFIO_DEVICE_FLAGS_PLATFORM | linux.VFIO_DEVICE_FLAGS_AMBA |
 		linux.VFIO_DEVICE_FLAGS_CCW | linux.VFIO_DEVICE_FLAGS_AP | linux.VFIO_DEVICE_FLAGS_FSL_MC |
 		linux.VFIO_DEVICE_FLAGS_CAPS | linux.VFIO_DEVICE_FLAGS_CDX
+	// vfioIrqSetFlags includes all available flags for IOCTL comamnd VFIO_DEVICE_SET_IRQS
+	vfioIrqSetFlags uint32 = linux.VFIO_IRQ_SET_DATA_TYPE_MASK | linux.VFIO_IRQ_SET_ACTION_TYPE_MASK
 )
 
 // tpuFD implements vfs.FileDescriptionImpl for /dev/vfio/[0-9]+
@@ -229,6 +238,10 @@ func (fd *pciDeviceFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr,
 		return fd.vfioDeviceInfo(ctx, t, args[2].Pointer())
 	case linux.VFIO_DEVICE_GET_REGION_INFO:
 		return fd.vfioRegionInfo(ctx, t, args[2].Pointer())
+	case linux.VFIO_DEVICE_GET_IRQ_INFO:
+		return fd.vfioIrqInfo(ctx, t, args[2].Pointer())
+	case linux.VFIO_DEVICE_SET_IRQS:
+		return fd.vfioSetIrqs(ctx, t, args[2].Pointer())
 	}
 	return 0, linuxerr.ENOSYS
 }
@@ -277,4 +290,103 @@ func (fd *pciDeviceFD) vfioDeviceInfo(ctx context.Context, t *kernel.Task, arg h
 		return 0, err
 	}
 	return ret, nil
+}
+
+// Retrieve the device's interrupt information.
+func (fd *pciDeviceFD) vfioIrqInfo(ctx context.Context, t *kernel.Task, arg hostarch.Addr) (uintptr, error) {
+	var irqInfo linux.VFIOIrqInfo
+	if _, err := irqInfo.CopyIn(t, arg); err != nil {
+		return 0, err
+	}
+	// Callers must set the payload's size.
+	if irqInfo.Argsz == 0 {
+		return 0, linuxerr.EINVAL
+	}
+	ret, err := IOCTLInvokePtrArg[uint32](fd.hostFD, linux.VFIO_DEVICE_GET_IRQ_INFO, &irqInfo)
+	if err != nil {
+		return 0, err
+	}
+	if _, err := irqInfo.CopyOut(t, arg); err != nil {
+		return 0, err
+	}
+	return ret, nil
+}
+
+func (fd *pciDeviceFD) vfioSetIrqs(ctx context.Context, t *kernel.Task, arg hostarch.Addr) (uintptr, error) {
+	var irqSet linux.VFIOIrqSet
+	if _, err := irqSet.CopyIn(t, arg); err != nil {
+		return 0, err
+	}
+	// Callers must set the payload's size.
+	if irqSet.Argsz == 0 {
+		return 0, linuxerr.EINVAL
+	}
+	// Invalidate unknown flags.
+	if irqSet.Flags&^vfioIrqSetFlags != 0 {
+		return 0, linuxerr.EINVAL
+	}
+	// See drivers/vfio/vfio_main.c:vfio_set_irqs_validate_and_prepare,
+	// VFIO uses the data type at the request's flags to determine
+	// the memory layout of data field.
+	//
+	// The struct vfio_irq_set includes a flexible array member, it
+	// allocates an array for a continuous trunk of memory to back
+	// a vfio_irq_set object. In order to mirror that behavior, gVisor
+	// would allocate a slice to store the underlying bytes
+	// and pass that through to its host.
+	switch irqSet.Flags & linux.VFIO_IRQ_SET_DATA_TYPE_MASK {
+	// VFIO_IRQ_SET_DATA_NONE indicates there is no data field for
+	// the IOCTL command.
+	// It works with VFIO_IRQ_SET_ACTION_MASK, VFIO_IRQ_SET_ACTION_UNMASK,
+	// or VFIO_IRQ_SET_ACTION_TRIGGER to mask an interrupt, unmask an
+	// interrupt,  and trigger an interrupt unconditionally.
+	case linux.VFIO_IRQ_SET_DATA_NONE:
+		// When there is no data, passing through the given payload
+		// works just fine.
+		return IOCTLInvokePtrArg[uint32](fd.hostFD, linux.VFIO_DEVICE_SET_IRQS, &irqSet)
+	// VFIO_IRQ_SET_DATA_BOOL indicates that the data field is an array of uint8.
+	// The action will be performed if the corresponding boolean is true.
+	case linux.VFIO_IRQ_SET_DATA_BOOL:
+		payloadSize := uint32(irqSet.Size()) + irqSet.Count
+		payload := make([]uint8, payloadSize)
+		if _, err := primitive.CopyUint8SliceIn(t, arg, payload); err != nil {
+			return 0, err
+		}
+		return IOCTLInvokePtrArg[uint32](fd.hostFD, linux.VFIO_DEVICE_SET_IRQS, &payload[0])
+	// VFIO_IRQ_SET_DATA_EVENTFD indicates that the data field is an array
+	// of int32 (or event file descriptors). These descriptors will be
+	// signalled when an action in the flags happens.
+	case linux.VFIO_IRQ_SET_DATA_EVENTFD:
+		payloadSize := uint32(irqSet.Size())/4 + irqSet.Count
+		payload := make([]int32, payloadSize)
+		if _, err := primitive.CopyInt32SliceIn(t, arg, payload); err != nil {
+			return 0, err
+		}
+		// Transform the input FDs to host FDs.
+		for i := 0; i < int(irqSet.Count); i++ {
+			index := len(payload) - 1 - i
+			fd := payload[index]
+			// Skip non-event FD.
+			if fd == disableInterrupt {
+				continue
+			}
+			eventFileGeneric, _ := t.FDTable().Get(fd)
+			if eventFileGeneric == nil {
+				return 0, linuxerr.EBADF
+			}
+			defer eventFileGeneric.DecRef(ctx)
+			eventFile, ok := eventFileGeneric.Impl().(*eventfd.EventFileDescription)
+			if !ok {
+				return 0, linuxerr.EINVAL
+			}
+			eventfd, err := eventFile.HostFD()
+			if err != nil {
+				return 0, err
+			}
+			payload[index] = int32(eventfd)
+		}
+		return IOCTLInvokePtrArg[uint32](fd.hostFD, linux.VFIO_DEVICE_SET_IRQS, &payload[0])
+	}
+	// No data type is specified or multiple data types are specified.
+	return 0, linuxerr.EINVAL
 }
