@@ -241,7 +241,7 @@ if args.format in (Format.PNG, Format.JPEG):
   image.save(args.out, args.format)
 else:
   buf = io.BytesIO()
-  image.save(buf, format=Format.PNG)
+  image.save(buf, format=Format.PNG.value)
   image_bytes = buf.getvalue()
   time_done = datetime.datetime.now(datetime.timezone.utc)
   with open(args.out, 'wb') as f:
