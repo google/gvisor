@@ -14,6 +14,7 @@ go_library(
         "//pkg/context",
         "//pkg/sentry/kernel",
         "//pkg/sentry/socket/netlink",
+        "//pkg/sentry/socket/netlink/nlmsg",
         "//pkg/syserr",
     ],
 )
