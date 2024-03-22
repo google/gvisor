@@ -79,6 +79,7 @@ go_library(
         "uio.go",
         "utsname.go",
         "vfio.go",
+        "vfio_unsafe.go",
         "wait.go",
         "xattr.go",
     ],
