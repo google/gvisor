@@ -348,7 +348,7 @@ type Endpoint struct {
 	stack.TransportEndpointInfo
 	tcpip.DefaultSocketOptionsHandler
 
-	// endpointEntry is used to queue endpoints for processing to the
+	// EndpointEntry is used to queue endpoints for processing to the
 	// a given tcp processor goroutine.
 	//
 	// Precondition: epQueue.mu must be held to read/write this field..
@@ -595,6 +595,11 @@ type Endpoint struct {
 	// listenCtx is used by listening endpoints to store state used while listening for
 	// connections. Nil otherwise.
 	listenCtx *listenContext `state:"nosave"`
+
+	// limRdr is reused to avoid allocations.
+	//
+	// +checklocks:mu
+	limRdr *io.LimitedReader `state:"nosave"`
 }
 
 // UniqueID implements stack.TransportEndpoint.UniqueID.
@@ -864,6 +869,7 @@ func newEndpoint(s *stack.Stack, protocol *protocol, netProto tcpip.NetworkProto
 		txHash:        s.InsecureRNG().Uint32(),
 		windowClamp:   DefaultReceiveBufferSize,
 		maxSynRetries: DefaultSynRetries,
+		limRdr:        &io.LimitedReader{},
 	}
 	e.ops.InitHandler(e, e.stack, GetTCPSendBufferLimits, GetTCPReceiveBufferLimits)
 	e.ops.SetMulticastLoop(true)
@@ -1560,7 +1566,13 @@ func (e *Endpoint) readFromPayloader(p tcpip.Payloader, opts tcpip.WriteOptions,
 	// This is not possible if atomic is set, because we can't allow the
 	// available buffer space to be consumed by some other caller while we
 	// are copying data in.
+	limRdr := e.limRdr
 	if !opts.Atomic {
+		defer func() {
+			e.limRdr = limRdr
+		}()
+		e.limRdr = nil
+
 		e.sndQueueInfo.sndQueueMu.Unlock()
 		defer e.sndQueueInfo.sndQueueMu.Lock()
 
@@ -1576,7 +1588,7 @@ func (e *Endpoint) readFromPayloader(p tcpip.Payloader, opts tcpip.WriteOptions,
 	if avail == 0 {
 		return payload, nil
 	}
-	if _, err := payload.WriteFromReader(p, int64(avail)); err != nil {
+	if _, err := payload.WriteFromReaderAndLimitedReader(p, int64(avail), limRdr); err != nil {
 		payload.Release()
 		return buffer.Buffer{}, &tcpip.ErrBadBuffer{}
 	}
