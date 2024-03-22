@@ -132,12 +132,12 @@ func (c *vCPU) setTSC(value uint64) error {
 //
 //go:nosplit
 func (c *vCPU) setUserRegisters(uregs *userRegs) unix.Errno {
-	if _, _, errno := unix.RawSyscall(
+	if ret := kvmSyscall(
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		KVM_SET_REGS,
-		uintptr(unsafe.Pointer(uregs))); errno != 0 {
-		return errno
+		uintptr(unsafe.Pointer(uregs))); ret != 0 {
+		return unix.Errno(-int(ret))
 	}
 	return 0
 }
@@ -148,24 +148,24 @@ func (c *vCPU) setUserRegisters(uregs *userRegs) unix.Errno {
 //
 //go:nosplit
 func (c *vCPU) getUserRegisters(uregs *userRegs) unix.Errno {
-	if _, _, errno := unix.RawSyscall( // escapes: no.
+	if ret := kvmSyscall( // escapes: no.
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		KVM_GET_REGS,
-		uintptr(unsafe.Pointer(uregs))); errno != 0 {
-		return errno
+		uintptr(unsafe.Pointer(uregs))); ret != 0 {
+		return unix.Errno(-int(ret))
 	}
 	return 0
 }
 
 // setSystemRegisters sets system registers.
 func (c *vCPU) setSystemRegisters(sregs *systemRegs) error {
-	if _, _, errno := unix.RawSyscall(
+	if ret := kvmSyscall(
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		KVM_SET_SREGS,
-		uintptr(unsafe.Pointer(sregs))); errno != 0 {
-		return fmt.Errorf("error setting system registers: %v", errno)
+		uintptr(unsafe.Pointer(sregs))); ret != 0 {
+		return fmt.Errorf("error setting system registers: %v", unix.Errno(-int(ret)))
 	}
 	return nil
 }
@@ -174,12 +174,12 @@ func (c *vCPU) setSystemRegisters(sregs *systemRegs) error {
 //
 //go:nosplit
 func (c *vCPU) getSystemRegisters(sregs *systemRegs) unix.Errno {
-	if _, _, errno := unix.RawSyscall(
+	if ret := kvmSyscall(
 		unix.SYS_IOCTL,
 		uintptr(c.fd),
 		KVM_GET_SREGS,
-		uintptr(unsafe.Pointer(sregs))); errno != 0 {
-		return errno
+		uintptr(unsafe.Pointer(sregs))); ret != 0 {
+		return unix.Errno(-int(ret))
 	}
 	return 0
 }
