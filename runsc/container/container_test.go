@@ -1189,6 +1189,80 @@ func TestCheckpointRestore(t *testing.T) {
 	}
 }
 
+func testCheckpointResume(t *testing.T, conf *config.Config, newSpecWithScript func(string) *specs.Spec) {
+	dir, err := ioutil.TempDir(testutil.TmpDir(), "checkpoint-test")
+	if err != nil {
+		t.Fatalf("ioutil.TempDir failed: %v", err)
+	}
+	defer os.RemoveAll(dir)
+	if err := os.Chmod(dir, 0777); err != nil {
+		t.Fatalf("error chmoding file: %q, %v", dir, err)
+	}
+
+	outputPath := filepath.Join(dir, "output")
+	outputFile, err := createWriteableOutputFile(outputPath)
+	if err != nil {
+		t.Fatalf("error creating output file: %v", err)
+	}
+	defer outputFile.Close()
+
+	script := fmt.Sprintf("i=0; while true; do echo $i >> %q; sleep 1; i=$((i+1)); done", outputPath)
+	spec := newSpecWithScript(script)
+	_, bundleDir, cleanup, err := testutil.SetupContainer(spec, conf)
+	if err != nil {
+		t.Fatalf("error setting up container: %v", err)
+	}
+	defer cleanup()
+
+	// Create and start the container.
+	args := Args{
+		ID:        testutil.RandomContainerID(),
+		Spec:      spec,
+		BundleDir: bundleDir,
+	}
+	cont, err := New(conf, args)
+	if err != nil {
+		t.Fatalf("error creating container: %v", err)
+	}
+	defer cont.Destroy()
+	if err := cont.Start(conf); err != nil {
+		t.Fatalf("error starting container: %v", err)
+	}
+
+	// Set the image path, which is where the checkpoint image will be saved.
+	imagePath := filepath.Join(dir, "test-image-file")
+	defer os.RemoveAll(imagePath)
+
+	// Create the image file and open for writing.
+	file, err := os.OpenFile(imagePath, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0644)
+	if err != nil {
+		t.Fatalf("error opening new file at imagePath: %v", err)
+	}
+	defer file.Close()
+
+	// Checkpoint running container; save state into new file.
+	if err := cont.Checkpoint(file, statefile.Options{Compression: statefile.CompressionLevelFlateBestSpeed, Resume: true}); err != nil {
+		t.Fatalf("error checkpointing container to empty file: %v", err)
+	}
+
+	// Wait until application has ran.
+	if err := waitForFileNotEmpty(outputFile); err != nil {
+		t.Fatalf("Failed to wait for output file: %v", err)
+	}
+}
+
+// TestCheckpointResume does the checkpoint/resume test on each platform.
+func TestCheckpointResume(t *testing.T) {
+	// Skip overlay because test requires writing to host file.
+	for name, conf := range configs(t, true /* noOverlay */) {
+		t.Run(name, func(t *testing.T) {
+			testCheckpointResume(t, conf, func(script string) *specs.Spec {
+				return testutil.NewSpecWithArgs("bash", "-c", script)
+			})
+		})
+	}
+}
+
 // TestUnixDomainSockets checks that Checkpoint/Restore works in cases
 // with filesystem Unix Domain Socket use.
 func TestUnixDomainSockets(t *testing.T) {

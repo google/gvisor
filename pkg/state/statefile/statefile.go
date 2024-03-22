@@ -105,6 +105,10 @@ const (
 type Options struct {
 	// Compression is an image compression type/level.
 	Compression CompressionLevel
+
+	// Resume indicates if the sandbox process should continue running
+	// after checkpointing.
+	Resume bool
 }
 
 // WriteToMetadata save options to the metadata storage.  Method returns the
