@@ -69,6 +69,33 @@ const (
 	VFIO_IRQ_INFO_NORESIZE
 )
 
+// VFIOIrqSet flags.
+const (
+	VFIO_IRQ_SET_DATA_NONE = 1 << iota
+	VFIO_IRQ_SET_DATA_BOOL
+	VFIO_IRQ_SET_DATA_EVENTFD
+	VFIO_IRQ_SET_ACTION_MASK
+	VFIO_IRQ_SET_ACTION_UNMASK
+	VFIO_IRQ_SET_ACTION_TRIGGER
+
+	VFIO_IRQ_SET_DATA_TYPE_MASK = VFIO_IRQ_SET_DATA_NONE |
+		VFIO_IRQ_SET_DATA_BOOL |
+		VFIO_IRQ_SET_DATA_EVENTFD
+	VFIO_IRQ_SET_ACTION_TYPE_MASK = VFIO_IRQ_SET_ACTION_MASK |
+		VFIO_IRQ_SET_ACTION_UNMASK |
+		VFIO_IRQ_SET_ACTION_TRIGGER
+)
+
+// VFIOIrqSet index.
+const (
+	VFIO_PCI_INTX_IRQ_INDEX = iota
+	VFIO_PCI_MSI_IRQ_INDEX
+	VFIO_PCI_MSIX_IRQ_INDEX
+	VFIO_PCI_ERR_IRQ_INDEX
+	VFIO_PCI_REQ_IRQ_INDEX
+	VFIO_PCI_NUM_IRQS
+)
+
 // IOCTLs for VFIO file descriptor from include/uapi/linux/vfio.h.
 var (
 	VFIO_CHECK_EXTENSION        = IO(VFIO_TYPE, VFIO_BASE+1)
@@ -78,6 +105,7 @@ var (
 	VFIO_DEVICE_GET_INFO        = IO(VFIO_TYPE, VFIO_BASE+7)
 	VFIO_DEVICE_GET_REGION_INFO = IO(VFIO_TYPE, VFIO_BASE+8)
 	VFIO_DEVICE_GET_IRQ_INFO    = IO(VFIO_TYPE, VFIO_BASE+9)
+	VFIO_DEVICE_SET_IRQS        = IO(VFIO_TYPE, VFIO_BASE+10)
 )
 
 // VFIODeviceInfo is analogous to vfio_device_info
@@ -120,5 +148,19 @@ type VFIOIrqInfo struct {
 	Argsz uint32
 	Flags uint32
 	Index uint32
+	Count uint32
+}
+
+// VFIOIrqSet is analogous to vfio_irq_set
+// from include/uapi/linux/vfio.h.
+// The last field `data` from vfio_irq_set is omitted which is an
+// flexible array member. It will be handled separately.
+//
+// +marshal
+type VFIOIrqSet struct {
+	Argsz uint32
+	Flags uint32
+	Index uint32
+	Start uint32
 	Count uint32
 }

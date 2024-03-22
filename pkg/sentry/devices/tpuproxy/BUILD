@@ -30,6 +30,7 @@ go_library(
         "//pkg/safemem",
         "//pkg/seccomp",
         "//pkg/sentry/arch",
+        "//pkg/sentry/fsimpl/eventfd",
         "//pkg/sentry/kernel",
         "//pkg/sentry/memmap",
         "//pkg/sentry/vfs",
