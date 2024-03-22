@@ -539,6 +539,12 @@ type IOSequenceReadWriter struct {
 	s   IOSequence
 }
 
+// Init initializes the IOSequence.
+func (rw *IOSequenceReadWriter) Init(ctx context.Context, src IOSequence) {
+	rw.ctx = ctx
+	rw.s = src
+}
+
 // Read implements io.Reader.Read.
 func (rw *IOSequenceReadWriter) Read(dst []byte) (int, error) {
 	n, err := rw.s.CopyIn(rw.ctx, dst)

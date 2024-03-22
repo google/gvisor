@@ -492,6 +492,18 @@ func (b *Buffer) Merge(other *Buffer) {
 // WriteFromReader writes to the buffer from an io.Reader. A maximum read size
 // of MaxChunkSize is enforced to prevent allocating views from the heap.
 func (b *Buffer) WriteFromReader(r io.Reader, count int64) (int64, error) {
+	return b.WriteFromReaderAndLimitedReader(r, count, nil)
+}
+
+// WriteFromReaderAndLimitedReader is the same as WriteFromReader, but
+// optimized to avoid allocations if a LimitedReader is passed in.
+//
+// This function clobbers the values of lr.
+func (b *Buffer) WriteFromReaderAndLimitedReader(r io.Reader, count int64, lr *io.LimitedReader) (int64, error) {
+	if lr == nil {
+		lr = &io.LimitedReader{}
+	}
+
 	var done int64
 	for done < count {
 		vsize := count - done
@@ -499,8 +511,9 @@ func (b *Buffer) WriteFromReader(r io.Reader, count int64) (int64, error) {
 			vsize = MaxChunkSize
 		}
 		v := NewView(int(vsize))
-		lr := io.LimitedReader{R: r, N: vsize}
-		n, err := io.Copy(v, &lr)
+		lr.R = r
+		lr.N = vsize
+		n, err := io.Copy(v, lr)
 		b.Append(v)
 		done += n
 		if err == io.EOF {
