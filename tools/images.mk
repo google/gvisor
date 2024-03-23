@@ -167,8 +167,13 @@ rebuild-%: register-cross ## Force rebuild an image locally.
 # load will either pull the "remote" or build it locally. This is the preferred
 # entrypoint, as it should never fail. The local tag should always be set after
 # this returns (either by the pull or the build).
+# If the image is not available for the current architecture, it is not loaded.
 load-%: register-cross ## Pull or build an image locally.
-	@($(call pull,$*)) || ($(call rebuild,$*))
+	@if [ -f "$(call path,$*)/$(call dockerfile,$*)" ]; then \
+	  ($(call pull,$*)) || ($(call rebuild,$*)); \
+	else \
+	  echo "Image $* is not available on $$(uname -m), ignoring it." >&2; \
+	fi
 
 test-%: register-cross ## Build an image locally if the remote doesn't exist.
 	@($(call image_manifest,$*)) >&2 || ($(call rebuild,$*))
