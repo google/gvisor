@@ -366,6 +366,11 @@ type sock struct {
 
 	namespace *inet.Namespace
 
+	mu sync.Mutex `state:"nosave"`
+	// readWriter is an optimization to avoid allocations.
+	// +checklocks:mu
+	readWriter usermem.IOSequenceReadWriter `state:"nosave"`
+
 	// readMu protects access to the below fields.
 	readMu sync.Mutex `state:"nosave"`
 
@@ -482,8 +487,17 @@ func (s *sock) Write(ctx context.Context, src usermem.IOSequence, opts vfs.Write
 		return 0, linuxerr.EOPNOTSUPP
 	}
 
-	r := src.Reader(ctx)
-	n, err := s.Endpoint.Write(r, tcpip.WriteOptions{})
+	var n int64
+	var err tcpip.Error
+	switch s.Endpoint.(type) {
+	case *tcp.Endpoint:
+		s.mu.Lock()
+		s.readWriter.Init(ctx, src)
+		n, err = s.Endpoint.Write(&s.readWriter, tcpip.WriteOptions{})
+		s.mu.Unlock()
+	default:
+		n, err = s.Endpoint.Write(src.Reader(ctx), tcpip.WriteOptions{})
+	}
 	if _, ok := err.(*tcpip.ErrWouldBlock); ok {
 		return 0, linuxerr.ErrWouldBlock
 	}
@@ -2670,19 +2684,30 @@ func (s *sock) nonBlockingRead(ctx context.Context, dst usermem.IOSequence, peek
 	// bytes of data to be discarded, rather than passed back in a
 	// caller-supplied  buffer.
 	var w io.Writer
+	var res tcpip.ReadResult
+	var err tcpip.Error
+
+	s.readMu.Lock()
+	defer s.readMu.Unlock()
+
 	if !isPacket && trunc {
 		w = &tcpip.LimitedWriter{
 			W: ioutil.Discard,
 			N: dst.NumBytes(),
 		}
+		res, err = s.Endpoint.Read(w, readOptions)
 	} else {
-		w = dst.Writer(ctx)
+		switch s.Endpoint.(type) {
+		case *tcp.Endpoint:
+			s.mu.Lock()
+			s.readWriter.Init(ctx, dst)
+			res, err = s.Endpoint.Read(&s.readWriter, readOptions)
+			s.mu.Unlock()
+		default:
+			res, err = s.Endpoint.Read(dst.Writer(ctx), readOptions)
+		}
 	}
 
-	s.readMu.Lock()
-	defer s.readMu.Unlock()
-
-	res, err := s.Endpoint.Read(w, readOptions)
 	if _, ok := err.(*tcpip.ErrBadBuffer); ok && dst.NumBytes() == 0 {
 		err = nil
 	}

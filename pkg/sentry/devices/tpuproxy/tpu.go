@@ -242,6 +242,9 @@ func (fd *pciDeviceFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr,
 		return fd.vfioIrqInfo(ctx, t, args[2].Pointer())
 	case linux.VFIO_DEVICE_SET_IRQS:
 		return fd.vfioSetIrqs(ctx, t, args[2].Pointer())
+	case linux.VFIO_DEVICE_RESET:
+		// VFIO_DEVICE_RESET is just a simple IOCTL command that carries no data.
+		return IOCTLInvoke[uint32, uintptr](fd.hostFD, linux.VFIO_DEVICE_RESET, 0)
 	}
 	return 0, linuxerr.ENOSYS
 }
