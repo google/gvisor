@@ -292,6 +292,20 @@ inline uint64_t ms_elapsed(const struct timespec& begin,
 
 namespace internal {
 
+// RAII class to restore errno. Used because malloc/new are not guaranteed to
+// preserve errno.
+class ErrnoRestorer {
+ public:
+  ErrnoRestorer() : saved_errno_(errno) {}
+  ~ErrnoRestorer() { errno = saved_errno_; }
+
+  ErrnoRestorer(const ErrnoRestorer&) = delete;
+  ErrnoRestorer& operator=(const ErrnoRestorer&) = delete;
+
+ private:
+  int saved_errno_;
+};
+
 template <typename Container>
 class ElementOfMatcher {
  public:
@@ -337,6 +351,8 @@ class SyscallSuccessMatcher {
 
   template <typename T>
   operator ::testing::Matcher<T>() const {
+    ErrnoRestorer errno_restorer;
+
     // E is one of three things:
     // - T, or a type losslessly and implicitly convertible to T.
     // - A monomorphic Matcher<T>.
@@ -393,6 +409,7 @@ class AnySuccessValueMatcher {
  public:
   template <typename T>
   operator ::testing::Matcher<T>() const {
+    ErrnoRestorer errno_restorer;
     return ::testing::MakeMatcher(new Impl<T>());
   }
 
@@ -473,6 +490,7 @@ class SpecificErrnoMatcher : public ::testing::MatcherInterface<int> {
 };
 
 inline ::testing::Matcher<int> SpecificErrno(int const expected) {
+  ErrnoRestorer errno_restorer;
   return ::testing::MakeMatcher(new SpecificErrnoMatcher(expected));
 }
 
