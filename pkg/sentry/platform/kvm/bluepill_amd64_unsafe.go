@@ -141,3 +141,111 @@ func bluepillReadyStopGuest(c *vCPU) bool {
 func bluepillArchHandleExit(c *vCPU, context unsafe.Pointer) {
 	c.die(bluepillArchContext(context), "unknown")
 }
+
+func (c *vCPU) switchToUser(switchOpts ring0.SwitchOpts) (vector ring0.Vector) {
+	redpill()
+	{
+		regs := c.CPU.Registers()
+		regs.Eflags &^= uint64(ring0.KernelFlagsClear)
+		regs.Eflags |= ring0.KernelFlagsSet
+		regs.Cs = uint64(ring0.Kcode)
+		regs.Ds = uint64(ring0.Udata)
+		regs.Es = uint64(ring0.Udata)
+		regs.Ss = uint64(ring0.Kdata)
+		regs.Rsp = c.SwitchOptsStackTop()
+		regs.Rip = uint64(ring0.AddrOfDoSwitchToUserLoop())
+		regs.Rsi = uint64(uintptr(unsafe.Pointer(&c.CPU)))
+	}
+
+	userCR3 := switchOpts.PageTables.CR3(!switchOpts.Flush, switchOpts.UserPCID)
+	c.KernelCR3(switchOpts.KernelPCID)
+
+	// Sanitize registers.
+	regs := switchOpts.Registers
+	regs.Eflags &= ^uint64(ring0.UserFlagsClear)
+	regs.Eflags |= ring0.UserFlagsSet
+	regs.Cs = uint64(ring0.Ucode64) // Required for iret.
+	regs.Ss = uint64(ring0.Udata)   // Ditto.
+
+	// Perform the switch.
+	needIRET := uint64(0)
+	if switchOpts.FullRestore {
+		needIRET = 1
+	}
+
+	c.SwitchOptsRegs = regs
+	c.SwitchOptsFPU = switchOpts.FloatingPointState.BytePointer()
+	c.SwitchOptsNeedIRET = needIRET
+	c.SwitchOptsUserCR3 = userCR3
+
+	// Mark this as guest mode.
+	switch c.state.Swap(vCPUGuest | vCPUUser) {
+	case vCPUUser: // Expected case.
+	case vCPUUser | vCPUWaiter:
+		c.notify()
+	default:
+		throw("invalid state")
+	}
+
+	for {
+		entersyscall()
+		_, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(c.fd), KVM_RUN, 0) // escapes: no.
+		exitsyscall()
+		switch errno {
+		case 0: // Expected case.
+		default:
+			throw("run failed")
+		}
+
+		switch c.runData.exitReason {
+		case _KVM_EXIT_HLT:
+			c.hltSanityCheck()
+			goto done
+		case _KVM_EXIT_EXCEPTION:
+			c.die(nil, "exception")
+			return
+		case _KVM_EXIT_IO:
+			c.die(nil, "I/O")
+			return
+		case _KVM_EXIT_INTERNAL_ERROR:
+			// An internal error is typically thrown when emulation
+			// fails. This can occur via the MMIO path below (and
+			// it might fail because we have multiple regions that
+			// are not mapped). We would actually prefer that no
+			// emulation occur, and don't mind at all if it fails.
+		case _KVM_EXIT_HYPERCALL:
+			c.die(nil, "hypercall")
+			return
+		case _KVM_EXIT_DEBUG:
+			c.die(nil, "debug")
+			return
+		case _KVM_EXIT_MMIO:
+			c.die(nil, "exit_mmio")
+			return
+		case _KVM_EXIT_IRQ_WINDOW_OPEN:
+			//bluepillStopGuest(c)
+		case _KVM_EXIT_SHUTDOWN:
+			c.die(nil, "shutdown")
+			return
+		case _KVM_EXIT_FAIL_ENTRY:
+			c.die(nil, "entry failed")
+			return
+		default:
+			bluepillArchHandleExit(c, nil)
+			return
+		}
+	}
+done:
+	// Return to the vCPUReady state; notify any waiters.
+	user := c.state.Load() & vCPUUser
+	switch c.state.Swap(user) {
+	case user | vCPUGuest: // Expected case.
+	case user | vCPUGuest | vCPUWaiter:
+		c.notify()
+	default:
+		throw("invalid state")
+	}
+	vector = c.SwitchOptsVector
+	return
+}
+

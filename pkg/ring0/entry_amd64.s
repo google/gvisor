@@ -16,8 +16,8 @@
 #include "textflag.h"
 
 // CPU offsets.
-#define CPU_REGISTERS    72  // +checkoffset . CPU.registers
-#define CPU_FPU_STATE    288 // +checkoffset . CPU.floatingPointState
+#define CPU_REGISTERS    392  // +checkoffset . CPU.registers
+#define CPU_FPU_STATE    608 // +checkoffset . CPU.floatingPointState
 #define CPU_ARCH_STATE   16  // +checkoffset . CPU.CPUArchState
 #define CPU_ERROR_CODE   CPU_ARCH_STATE+0  // +checkoffset . CPUArchState.errorCode
 #define CPU_ERROR_TYPE   CPU_ARCH_STATE+8  // +checkoffset . CPUArchState.errorType
@@ -27,7 +27,15 @@
 #define CPU_APP_GS_BASE        CPU_ARCH_STATE+40 // +checkoffset . CPUArchState.appGsBase
 #define CPU_HAS_XSAVE    CPU_ARCH_STATE+48 // +checkoffset . CPUArchState.hasXSAVE
 #define CPU_HAS_XSAVEOPT CPU_ARCH_STATE+49 // +checkoffset . CPUArchState.hasXSAVEOPT
-#define CPU_HAS_FSGSBASE CPU_ARCH_STATE+50 // +checkoffset . CPUArchState.hasFSGSBASE
+#define CPU_HAS_FSGSBASE CPU_ARCH_STATE+50 // +checkoffset . CPUArchState.hasFSGSBASE //
+#define CPU_SWITCH_OPTS_NEED_IRET CPU_ARCH_STATE+56 // +checkoffset . CPUArchState.SwitchOptsNeedIRET
+#define CPU_SWITCH_OPTS_REGS CPU_ARCH_STATE+64 // +checkoffset . CPUArchState.SwitchOptsRegs
+#define CPU_SWITCH_OPTS_FPU CPU_ARCH_STATE+72 // +checkoffset . CPUArchState.SwitchOptsFPU
+#define CPU_SWITCH_OPTS_USER_CR3 CPU_ARCH_STATE+80 // +checkoffset . CPUArchState.SwitchOptsUserCR3
+#define CPU_SWITCH_OPTS_VECTOR CPU_ARCH_STATE+88 // +checkoffset . CPUArchState.SwitchOptsVector
+#define CPU_SWITCH_OPTS_FAULT_ADDR CPU_ARCH_STATE+96 // +checkoffset . CPUArchState.SwitchOptsFaultAddr
+#define CPU_SWITCH_OPTS_ERROR_CODE CPU_ARCH_STATE+104 // +checkoffset . CPUArchState.SwitchOptsErrorCode
+#define CPU_SWITCH_OPTS_ERROR_TYPE CPU_ARCH_STATE+112 // +checkoffset . CPUArchState.SwitchOptsErrorType
 
 #define ENTRY_SCRATCH0   256 // +checkoffset . kernelEntry.scratch0
 #define ENTRY_STACK_TOP  264 // +checkoffset . kernelEntry.stackTop
@@ -213,6 +221,115 @@ TEXT ·jumpToUser(SB),NOSPLIT|NOFRAME,$0
 	ANDQ BX, AX // Future return value.
 	MOVQ AX, 0(SP)
 	RET
+
+// See kernel_amd64.go.
+//
+// The 16-byte frame size is for the saved values of MXCSR and the x87 control
+// word.
+TEXT ·doSwitchToUserLoop(SB),NOSPLIT,$16
+	// We are passed pointers to heap objects, but do not store them in our
+	// local frame.
+	// NO_LOCAL_POINTERS
+
+	MOVQ SI, 0(SP)
+	// MXCSR and the x87 control word are the only floating point state
+	// that is callee-save and thus we must save.
+	//STMXCSR mxcsr-0(SP)
+	//FSTCW cw-8(SP)
+
+	// Restore application floating point state.
+	// MOVQ cpu+0(FP), SI
+	MOVQ CPU_SWITCH_OPTS_FPU(SI), DI
+	MOVB ·hasXSAVE(SB), BX
+	TESTB BX, BX
+	JZ no_xrstor
+	// Use xrstor to restore all available fp staCPU_SWITCH_OPT_REGS(SI)$XCR0_EAX, AX
+	MOVL $XCR0_EAX, AX
+	MOVL $XCR0_EDX, DX
+	BYTE $0x48; BYTE $0x0f; BYTE $0xae; BYTE $0x2f // XRSTOR64 0(DI)
+	JMP fprestore_done
+no_xrstor:
+	// Fall back to fxrstor if xsave is not available.
+	FXRSTOR64 0(DI)
+fprestore_done:
+
+	// Set application GS.
+	MOVQ CPU_SWITCH_OPTS_REGS(SI), R8
+	SWAP_GS()
+	MOVQ PTRACE_GS_BASE(R8), AX
+	CMPQ AX, CPU_APP_GS_BASE(SI)
+	JE skip_gs
+	MOVQ AX, CPU_APP_GS_BASE(SI)
+	PUSHQ AX
+	CALL ·writeGS(SB)
+	POPQ AX
+skip_gs:
+	// Call sysret() or iret().
+	MOVQ CPU_SWITCH_OPTS_USER_CR3(SI), CX
+	MOVQ CPU_SWITCH_OPTS_NEED_IRET(SI), R9
+	ADDQ $-32, SP
+	MOVQ SI, 0(SP)  // cpu
+	MOVQ R8, 8(SP)  // regs
+	MOVQ CX, 16(SP) // userCR3
+	TESTQ R9, R9
+	JNZ do_iret
+	CALL ·sysret(SB)
+	JMP done_sysret_or_iret
+do_iret:
+	CALL ·iret(SB)
+done_sysret_or_iret:
+	MOVQ 24(SP), AX // vector
+	ADDQ $32, SP
+	MOVQ 0(SP), SI
+	MOVQ AX, CPU_SWITCH_OPTS_VECTOR(SI)
+
+	BYTE $0x0f; BYTE $0x20; BYTE $0xd3; // MOV CR2, RBX
+	MOVQ BX, CPU_SWITCH_OPTS_FAULT_ADDR(SI)
+	MOVQ CPU_ERROR_CODE(SI), BX
+	MOVQ BX, CPU_SWITCH_OPTS_ERROR_CODE(SI)
+	MOVQ CPU_ERROR_TYPE(SI), BX
+	MOVQ BX, CPU_SWITCH_OPTS_ERROR_TYPE(SI)
+
+	// Save application floating point state.
+	MOVQ CPU_SWITCH_OPTS_FPU(SI), DI
+	MOVB ·hasXSAVE(SB), BX
+	MOVB ·hasXSAVEOPT(SB), CX
+	TESTB BX, BX
+	JZ no_xsave
+	// Use xsave/xsaveopt to save all extended state.
+	MOVL $XCR0_EAX, AX
+	MOVL $XCR0_EDX, DX
+	TESTB CX, CX
+	JZ no_xsaveopt
+	BYTE $0x48; BYTE $0x0f; BYTE $0xae; BYTE $0x37; // XSAVEOPT64 0(DI)
+	JMP fpsave_done
+no_xsaveopt:
+	BYTE $0x48; BYTE $0x0f; BYTE $0xae; BYTE $0x27; // XSAVE64 0(DI)
+	JMP fpsave_done
+no_xsave:
+	FXSAVE64 0(DI)
+fpsave_done:
+
+
+        MOVQ $0xffffffffffffffff, AX 
+	SYSCALL
+	// Restore MXCSR and the x87 control word after one of the two floating
+	// point save cases above, to ensure the application versions are saved
+	// before being clobbered here.
+	LDMXCSR mxcsr-0(SP)
+
+	// FLDCW is a "waiting" x87 instruction, meaning it checks for pending
+	// unmasked exceptions before executing. Thus if userspace has unmasked
+	// an exception and has one pending, it can be raised by FLDCW even
+	// though the new control word will mask exceptions. To prevent this,
+	// we must first clear pending exceptions (which will be restored by
+	// XRSTOR, et al).
+	BYTE $0xDB; BYTE $0xE2; // FNCLEX
+	FLDCW cw-8(SP)
+
+	RET
+
+ADDR_OF_FUNC(·AddrOfDoSwitchToUserLoop(SB), ·doSwitchToUserLoop(SB));
 
 // See kernel_amd64.go.
 //
