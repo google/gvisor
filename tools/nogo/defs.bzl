@@ -418,9 +418,6 @@ nogo_test = rule(
             default = "//tools/nogo:target",
             cfg = arch_transition,
         ),
-        "_allowlist_function_transition": attr.label(
-            default = transition_allowlist,
-        ),
     },
     test = True,
 )

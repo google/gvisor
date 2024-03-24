@@ -55,8 +55,5 @@ arch_genrule = rule(
             doc = "Template for the output files.",
             mandatory = True,
         ),
-        "_allowlist_function_transition": attr.label(
-            default = _transition_allowlist,
-        ),
     },
 )
