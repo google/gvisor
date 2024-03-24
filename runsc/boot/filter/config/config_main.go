@@ -50,15 +50,15 @@ var allowedSyscalls = seccomp.MakeSyscallRules(map[uintptr]seccomp.SyscallRule{
 	unix.SYS_FCHMOD:     seccomp.MatchAll{},
 	unix.SYS_FCNTL: seccomp.Or{
 		seccomp.PerArg{
-			seccomp.AnyValue{},
+			seccomp.NonNegativeFD{},
 			seccomp.EqualTo(unix.F_GETFL),
 		},
 		seccomp.PerArg{
-			seccomp.AnyValue{},
+			seccomp.NonNegativeFD{},
 			seccomp.EqualTo(unix.F_SETFL),
 		},
 		seccomp.PerArg{
-			seccomp.AnyValue{},
+			seccomp.NonNegativeFD{},
 			seccomp.EqualTo(unix.F_GETFD),
 		},
 	},
