@@ -274,10 +274,6 @@ func newMachine(vm int) (*machine, error) {
 	m.upperSharedPageTables.MarkReadOnlyShared()
 	m.kernel.PageTables = pagetables.NewWithUpper(newAllocator(), m.upperSharedPageTables, ring0.KernelStartAddress)
 
-	// Install seccomp rules to trap runtime mmap system calls. They will
-	// be handled by seccompMmapHandler.
-	seccompMmapRules(m)
-
 	// Apply the physical mappings. Note that these mappings may point to
 	// guest physical addresses that are not actually available. These
 	// physical pages are mapped on demand, see kernel_unsafe.go.
@@ -292,6 +288,11 @@ func newMachine(vm int) (*machine, error) {
 		return true // Keep iterating.
 	})
 
+	func() {
+		for _, r := range physicalRegions {
+			m.mapPhysical(r.physical, r.length, physicalRegions)
+		}
+	}()
 	// Ensure that the currently mapped virtual regions are actually
 	// available in the VM. Note that this doesn't guarantee no future
 	// faults, however it should guarantee that everything is available to
