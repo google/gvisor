@@ -393,3 +393,31 @@ func (fd *pciDeviceFD) vfioSetIrqs(ctx context.Context, t *kernel.Task, arg host
 	// No data type is specified or multiple data types are specified.
 	return 0, linuxerr.EINVAL
 }
+
+// PRead implements vfs.FileDescriptionImpl.PRead.
+func (fd *pciDeviceFD) PRead(ctx context.Context, dst usermem.IOSequence, offset int64, opts vfs.ReadOptions) (int64, error) {
+	if offset < 0 {
+		return 0, linuxerr.EINVAL
+	}
+	buf := make([]byte, dst.NumBytes())
+	_, err := unix.Pread(int(fd.hostFD), buf, offset)
+	if err != nil {
+		return 0, err
+	}
+	n, err := dst.CopyOut(ctx, buf)
+	return int64(n), err
+}
+
+// PWrite implements vfs.FileDescriptionImpl.PWrite.
+func (fd *pciDeviceFD) PWrite(ctx context.Context, src usermem.IOSequence, offset int64, opts vfs.WriteOptions) (int64, error) {
+	if offset < 0 {
+		return 0, linuxerr.EINVAL
+	}
+	buf := make([]byte, src.NumBytes())
+	_, err := src.CopyIn(ctx, buf)
+	if err != nil {
+		return 0, err
+	}
+	n, err := unix.Pwrite(int(fd.hostFD), buf, offset)
+	return int64(n), err
+}
