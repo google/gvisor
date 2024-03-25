@@ -72,14 +72,18 @@ PRE_BAZEL_INIT ?=
 ##   to control which flags are passed:
 ##
 ##     STARTUP_OPTIONS - Startup options passed to Bazel.
+##     BAZEL_TEST_OUTPUT - Test output policy; shown on failures only by
+##                         default, set to "streamed" to show test logs as
+##                         they happen.
 ##
 STARTUP_OPTIONS    :=
 BAZEL_OPTIONS      ?=
 BAZEL_REMOTE_CACHE ?=
 BAZEL              := bazel $(STARTUP_OPTIONS)
 BASE_OPTIONS       := --color=no --curses=no $(BAZEL_REMOTE_CACHE)
+BAZEL_TEST_OUTPUT  ?= errors
 TEST_OPTIONS       += $(BASE_OPTIONS) \
-  --test_output=errors \
+  --test_output=$(BAZEL_TEST_OUTPUT) \
   --keep_going \
   --verbose_failures=true \
   --build_event_json_file=.build_events.json
