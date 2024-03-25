@@ -52,6 +52,8 @@ func Filters() seccomp.SyscallRules {
 			seccomp.AnyValue{},
 			seccomp.EqualTo(0),
 		},
+		unix.SYS_PREAD64:  seccomp.MatchAll{},
+		unix.SYS_PWRITE64: seccomp.MatchAll{},
 		unix.SYS_IOCTL: seccomp.Or{
 			seccomp.PerArg{
 				seccomp.NonNegativeFD{},
