@@ -25,7 +25,6 @@ import (
 
 // TestStableDiffusionXL generates an image with Stable Diffusion XL.
 func TestStableDiffusionXL(t *testing.T) {
-	t.Skip("TODO(b/306706609): Fix this test.")
 	ctx := context.Background()
 	sdxl := stablediffusion.NewDockerXL(t)
 	generateCtx, generateCancel := context.WithTimeout(ctx, 15*time.Minute)
