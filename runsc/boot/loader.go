@@ -514,7 +514,7 @@ func New(args Args) (*Loader, error) {
 	dogOpts.TaskTimeoutAction = args.Conf.WatchdogAction
 	dog := watchdog.New(k, dogOpts)
 
-	procArgs, err := createProcessArgs(args.ID, args.Spec, creds, k, k.RootPIDNamespace())
+	procArgs, err := createProcessArgs(args.ID, args.Spec, args.Conf, creds, k, k.RootPIDNamespace())
 	if err != nil {
 		return nil, fmt.Errorf("creating init process for root container: %w", err)
 	}
@@ -582,9 +582,9 @@ func New(args Args) (*Loader, error) {
 }
 
 // createProcessArgs creates args that can be used with kernel.CreateProcess.
-func createProcessArgs(id string, spec *specs.Spec, creds *auth.Credentials, k *kernel.Kernel, pidns *kernel.PIDNamespace) (kernel.CreateProcessArgs, error) {
+func createProcessArgs(id string, spec *specs.Spec, conf *config.Config, creds *auth.Credentials, k *kernel.Kernel, pidns *kernel.PIDNamespace) (kernel.CreateProcessArgs, error) {
 	// Create initial limits.
-	ls, err := createLimitSet(spec)
+	ls, err := createLimitSet(spec, specutils.TPUProxyIsEnabled(spec, conf))
 	if err != nil {
 		return kernel.CreateProcessArgs{}, fmt.Errorf("creating limits: %w", err)
 	}
@@ -899,7 +899,7 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 		nvidiaDriverVersion: l.root.nvidiaDriverVersion,
 	}
 	var err error
-	info.procArgs, err = createProcessArgs(cid, spec, creds, l.k, pidns)
+	info.procArgs, err = createProcessArgs(cid, spec, conf, creds, l.k, pidns)
 	if err != nil {
 		return fmt.Errorf("creating new process: %w", err)
 	}
@@ -1196,7 +1196,7 @@ func (l *Loader) executeAsync(args *control.ExecArgs) (kernel.ThreadID, error) {
 	}
 	args.PIDNamespace = tg.PIDNamespace()
 
-	args.Limits, err = createLimitSet(l.root.spec)
+	args.Limits, err = createLimitSet(l.root.spec, specutils.TPUProxyIsEnabled(l.root.spec, l.root.conf))
 	if err != nil {
 		return 0, fmt.Errorf("creating limits: %w", err)
 	}
