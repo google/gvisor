@@ -301,13 +301,21 @@ func (fs *filesystem) newRoot(ctx context.Context, creds *auth.Credentials, mode
 	return &d
 }
 
-func (fs *filesystem) newInode(ctx context.Context, nodeID uint64, attr linux.FUSEAttr) kernfs.Inode {
+func (fs *filesystem) newInode(ctx context.Context, nodeID uint64, out linux.FUSEEntryOut) kernfs.Inode {
+	attr := out.Attr
 	i := &inode{fs: fs, nodeID: nodeID}
+	entryTime := time.FromTimespec(linux.Timespec{Sec: int64(out.EntryValid), Nsec: int64(out.EntryValidNSec)})
+	i.entryTime = fs.clock.Now().AddTime(entryTime)
+
 	creds := auth.Credentials{EffectiveKGID: auth.KGID(attr.UID), EffectiveKUID: auth.KUID(attr.UID)}
+
 	i.attrMu.Lock()
 	i.init(&creds, linux.UNNAMED_MAJOR, fs.devMinor, nodeID, linux.FileMode(attr.Mode), attr.Nlink)
 	i.size.Store(attr.Size)
+	attrTime := time.FromTimespec(linux.Timespec{Sec: int64(out.AttrValid), Nsec: int64(out.AttrValidNSec)})
+	i.attrTime = fs.clock.Now().AddTime(attrTime)
 	i.attrMu.Unlock()
+
 	i.OrderedChildren.Init(kernfs.OrderedChildrenOptions{})
 	i.InitRefs()
 	return i
