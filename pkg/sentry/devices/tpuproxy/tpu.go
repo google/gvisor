@@ -27,6 +27,7 @@ import (
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/eventfd"
+	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
@@ -174,6 +175,8 @@ func (fd *tpuFD) getPciDeviceFd(t *kernel.Task, arg hostarch.Addr) (uintptr, fun
 	if err != nil {
 		return 0, cleanup, err
 	}
+	// Initialize a mapping that is backed by a host FD.
+	pciDevFD.CachedMappable.Init(int(hostFD))
 	return uintptr(newFD), func() {}, nil
 }
 
@@ -183,10 +186,10 @@ type pciDeviceFD struct {
 	vfs.FileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.NoLockFD
+	kernfs.CachedMappable
 
-	hostFD     int32
-	queue      waiter.Queue
-	memmapFile tpuFDMemmapFile
+	hostFD int32
+	queue  waiter.Queue
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
