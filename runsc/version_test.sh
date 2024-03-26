@@ -19,7 +19,7 @@ set -euf -x -o pipefail
 readonly runsc="$1"
 readonly version=$($runsc --version)
 
-# Version should should not match VERSION, which is the default and which
+# Version should not match VERSION, which is the default and which
 # will also appear if something is wrong with workspace_status.sh script.
 if [[ $version =~ "VERSION" ]]; then
   echo "FAIL: Got bad version $version"
