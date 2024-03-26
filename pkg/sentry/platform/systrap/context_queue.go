@@ -96,7 +96,7 @@ func (q *contextQueue) queuedContexts() uint32 {
 	return (atomic.LoadUint32(&q.end) + maxContextQueueEntries - atomic.LoadUint32(&q.start)) % maxContextQueueEntries
 }
 
-// add puts the the given ctx onto the context queue, and records a state of
+// add puts the given ctx onto the context queue, and records a state of
 // the subprocess after insertion to see if there are more active stub threads
 // or more waiting contexts.
 func (q *contextQueue) add(ctx *sharedContext) *platform.ContextError {

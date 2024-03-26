@@ -742,7 +742,7 @@ type inodeRefs interface {
 
 type inodeMetadata interface {
 	// CheckPermissions checks that creds may access this inode for the
-	// requested access type, per the the rules of
+	// requested access type, per the rules of
 	// fs/namei.c:generic_permission().
 	CheckPermissions(ctx context.Context, creds *auth.Credentials, ats vfs.AccessTypes) error
 
