@@ -1292,6 +1292,11 @@ func (e *Endpoint) handleSegmentLocked(s *segment) (cont bool, err tcpip.Error) 
 func (e *Endpoint) keepaliveTimerExpired() tcpip.Error {
 	userTimeout := e.userTimeout
 
+	// If the route is not ready or already cleaned up, then we don't need to
+	// send keepalives.
+	if e.route == nil {
+		return nil
+	}
 	e.keepalive.Lock()
 	if !e.SocketOptions().GetKeepAlive() || e.keepalive.timer.isUninitialized() || !e.keepalive.timer.checkExpiration() {
 		e.keepalive.Unlock()
