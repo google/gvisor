@@ -52,24 +52,20 @@ func Filters() seccomp.SyscallRules {
 			seccomp.AnyValue{},
 			seccomp.EqualTo(0),
 		},
+		unix.SYS_MMAP: seccomp.PerArg{
+			seccomp.AnyValue{},
+			seccomp.AnyValue{},
+			seccomp.EqualTo(linux.PROT_READ | linux.PROT_WRITE),
+			seccomp.EqualTo(linux.MAP_SHARED | linux.MAP_LOCKED),
+			seccomp.NonNegativeFD{},
+		},
+		unix.SYS_MUNMAP:   seccomp.MatchAll{},
 		unix.SYS_PREAD64:  seccomp.MatchAll{},
 		unix.SYS_PWRITE64: seccomp.MatchAll{},
 		unix.SYS_IOCTL: seccomp.Or{
 			seccomp.PerArg{
 				seccomp.NonNegativeFD{},
-				seccomp.EqualTo(linux.VFIO_GROUP_SET_CONTAINER),
-			},
-			seccomp.PerArg{
-				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(linux.VFIO_CHECK_EXTENSION),
-			},
-			seccomp.PerArg{
-				seccomp.NonNegativeFD{},
-				seccomp.EqualTo(linux.VFIO_SET_IOMMU),
-			},
-			seccomp.PerArg{
-				seccomp.NonNegativeFD{},
-				seccomp.EqualTo(linux.VFIO_GROUP_GET_DEVICE_FD),
 			},
 			seccomp.PerArg{
 				seccomp.NonNegativeFD{},
@@ -86,6 +82,22 @@ func Filters() seccomp.SyscallRules {
 			seccomp.PerArg{
 				seccomp.NonNegativeFD{},
 				seccomp.EqualTo(linux.VFIO_DEVICE_SET_IRQS),
+			},
+			seccomp.PerArg{
+				seccomp.NonNegativeFD{},
+				seccomp.EqualTo(linux.VFIO_GROUP_GET_DEVICE_FD),
+			},
+			seccomp.PerArg{
+				seccomp.NonNegativeFD{},
+				seccomp.EqualTo(linux.VFIO_GROUP_SET_CONTAINER),
+			},
+			seccomp.PerArg{
+				seccomp.NonNegativeFD{},
+				seccomp.EqualTo(linux.VFIO_IOMMU_MAP_DMA),
+			},
+			seccomp.PerArg{
+				seccomp.NonNegativeFD{},
+				seccomp.EqualTo(linux.VFIO_SET_IOMMU),
 			},
 		},
 	})
