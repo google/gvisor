@@ -143,7 +143,6 @@ func bluepillArchHandleExit(c *vCPU, context unsafe.Pointer) {
 }
 
 func (c *vCPU) switchToUser(switchOpts ring0.SwitchOpts) (vector ring0.Vector) {
-	redpill()
 	{
 		regs := c.CPU.Registers()
 		regs.Eflags &^= uint64(ring0.KernelFlagsClear)

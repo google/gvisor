@@ -68,6 +68,7 @@ func (m *machine) initArchState() error {
 
 	bluepill(c)
 	ring0.SetCPUIDFaulting(true)
+	redpill()
 
 	return nil
 }
@@ -284,7 +285,6 @@ func nonCanonical(addr uint64, signal int32, info *linux.SignalInfo) (hostarch.A
 //
 //go:nosplit
 func (c *vCPU) fault(signal int32, info *linux.SignalInfo) (hostarch.AccessType, error) {
-	//	bluepill(c) // Probably no-op, but may not be.
 	faultAddr := c.SwitchOptsFaultAddr                              //ring0.ReadCR2()
 	code, user := c.SwitchOptsErrorCode, c.SwitchOptsErrorType != 0 // c.ErrorCode()
 	if !user {
