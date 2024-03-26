@@ -113,12 +113,16 @@ func (d *defs) initDefaults() error {
 	return nil
 }
 
-func createLimitSet(spec *specs.Spec) (*limits.LimitSet, error) {
+func createLimitSet(spec *specs.Spec, enableTPUProxy bool) (*limits.LimitSet, error) {
 	ls, err := defaults.get()
 	if err != nil {
 		return nil, err
 	}
-
+	// Set RLIMIT_MEMLOCK's default value to unlimited when TPUProxy is enabled.
+	// The value will be overwritten if the exact rlimit is provided.
+	if enableTPUProxy {
+		ls.SetUnchecked(limits.MemoryLocked, limits.Limit{Cur: limits.Infinity, Max: limits.Infinity})
+	}
 	// Then apply overwrites on top of defaults.
 	for _, rl := range spec.Process.Rlimits {
 		lt, ok := limits.FromLinuxResourceName[rl.Type]
