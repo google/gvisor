@@ -58,7 +58,7 @@ type queue struct {
 	// so readable must be checked.
 	readable bool
 
-	// transform is the the queue's function for transforming bytes
+	// transform is the queue's function for transforming bytes
 	// entering the queue. For example, transform might convert all '\r's
 	// entering the queue to '\n's.
 	transformer

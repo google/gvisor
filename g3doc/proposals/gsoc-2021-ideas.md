@@ -87,7 +87,7 @@ new syscalls:
 
 An `io_uring` request is effectively an opcode specifying the I/O operation to
 perform, and corresponding arguments. The opcodes and arguments closely relate
-to the the corresponding synchronous I/O syscall. In addition, there are some
+to the corresponding synchronous I/O syscall. In addition, there are some
 `io_uring`-specific arguments that specify things like how to process requests,
 how to interpret the arguments and communicate the status of the ring buffers.
 

@@ -258,7 +258,7 @@ func TestUDPICMPErrorPropagation(t *testing.T) {
 					if errDetect.useValidConn {
 						// connClean is a UDP socket on the test runner that was not
 						// involved in the generation of the ICMP error. As such,
-						// interactions between it and the the DUT should be independent of
+						// interactions between it and the DUT should be independent of
 						// the ICMP error at least at the port level.
 						connClean := dut.Net.NewUDPIPv4(t, testbench.UDP{DstPort: &remotePort}, testbench.UDP{SrcPort: &remotePort})
 						defer connClean.Close(t)
