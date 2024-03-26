@@ -85,6 +85,9 @@ func (dev *tpuDevice) Open(ctx context.Context, mnt *vfs.Mount, d *vfs.Dentry, o
 // device implements vfs.Device for /dev/vfio/vfio.
 type vfioDevice struct {
 	mu sync.Mutex
+
+	// +checklocks:mu
+	devAddrSet DevAddrSet
 }
 
 // Open implements vfs.Device.Open.

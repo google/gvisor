@@ -29,6 +29,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/eventfd"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -423,4 +424,58 @@ func (fd *pciDeviceFD) PWrite(ctx context.Context, src usermem.IOSequence, offse
 	}
 	n, err := unix.Pwrite(int(fd.hostFD), buf, offset)
 	return int64(n), err
+}
+
+// DevAddrSet tracks device address ranges that have been mapped.
+type devAddrSetFuncs struct{}
+
+func (devAddrSetFuncs) MinKey() uint64 {
+	return 0
+}
+
+func (devAddrSetFuncs) MaxKey() uint64 {
+	return ^uint64(0)
+}
+
+func (devAddrSetFuncs) ClearValue(val *mm.PinnedRange) {
+	*val = mm.PinnedRange{}
+}
+
+func (devAddrSetFuncs) Merge(r1 DevAddrRange, v1 mm.PinnedRange, r2 DevAddrRange, v2 mm.PinnedRange) (mm.PinnedRange, bool) {
+	// Do we have the same backing file?
+	if v1.File != v2.File {
+		return mm.PinnedRange{}, false
+	}
+
+	// Do we have contiguous offsets in the backing file?
+	if v1.Offset+uint64(v1.Source.Length()) != v2.Offset {
+		return mm.PinnedRange{}, false
+	}
+
+	// Are the virtual addresses contiguous?
+	//
+	// This check isn't strictly needed because 'mm.PinnedRange.Source'
+	// is only used to track the size of the pinned region (this is
+	// because the virtual address range can be unmapped or remapped
+	// elsewhere). Regardless we require this for simplicity.
+	if v1.Source.End != v2.Source.Start {
+		return mm.PinnedRange{}, false
+	}
+
+	// Extend v1 to account for the adjacent PinnedRange.
+	v1.Source.End = v2.Source.End
+	return v1, true
+}
+
+func (devAddrSetFuncs) Split(r DevAddrRange, val mm.PinnedRange, split uint64) (mm.PinnedRange, mm.PinnedRange) {
+	n := split - r.Start
+
+	left := val
+	left.Source.End = left.Source.Start + hostarch.Addr(n)
+
+	right := val
+	right.Source.Start += hostarch.Addr(n)
+	right.Offset += n
+
+	return left, right
 }
