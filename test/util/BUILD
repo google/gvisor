@@ -439,3 +439,11 @@ cc_library(
         "@com_google_absl//absl/types:optional",
     ],
 )
+
+cc_library(
+    name = "errno_safe_allocator",
+    testonly = 1,
+    srcs = [
+        "errno_safe_allocator.cc",
+    ],
+)

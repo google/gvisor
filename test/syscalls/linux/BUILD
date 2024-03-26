@@ -182,6 +182,7 @@ cc_binary(
     testonly = 1,
     srcs = ["clock_nanosleep.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:cleanup",
         "//test/util:posix_error",
@@ -199,6 +200,7 @@ cc_binary(
     testonly = 1,
     srcs = ["32bit.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:memory_util",
         "//test/util:platform_util",
@@ -214,6 +216,7 @@ cc_binary(
     testonly = 1,
     srcs = ["accept_bind.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":unix_domain_socket_test_util",
         "//test/util:file_descriptor",
@@ -228,6 +231,7 @@ cc_binary(
     testonly = 1,
     srcs = ["accept_bind_stream.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":unix_domain_socket_test_util",
         "//test/util:file_descriptor",
@@ -242,6 +246,7 @@ cc_binary(
     testonly = 1,
     srcs = ["access.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:fs_util",
@@ -256,6 +261,7 @@ cc_binary(
     testonly = 1,
     srcs = ["affinity.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:cleanup",
         "//test/util:fs_util",
@@ -275,6 +281,7 @@ cc_binary(
         "file_base.h",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:cleanup",
         "//test/util:file_descriptor",
@@ -294,6 +301,7 @@ cc_binary(
     testonly = 1,
     srcs = ["alarm.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:logging",
@@ -309,6 +317,7 @@ cc_binary(
     testonly = 1,
     srcs = ["bad.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:test_main",
         "//test/util:test_util",
@@ -320,6 +329,7 @@ cc_binary(
     testonly = 1,
     srcs = ["bind.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":unix_domain_socket_test_util",
         "//test/util:socket_util",
@@ -333,6 +343,7 @@ cc_binary(
     testonly = 1,
     srcs = ["socket.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:socket_util",
@@ -347,6 +358,7 @@ cc_binary(
     testonly = 1,
     srcs = ["socket_capability.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:file_descriptor",
@@ -361,6 +373,7 @@ cc_binary(
     testonly = 1,
     srcs = ["brk.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = [
         "//test/util:test_main",
         "//test/util:test_util",
@@ -372,6 +385,7 @@ cc_binary(
     testonly = 1,
     srcs = ["chdir.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:temp_path",
@@ -385,6 +399,7 @@ cc_binary(
     testonly = 1,
     srcs = ["chmod.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:file_descriptor",
@@ -400,6 +415,7 @@ cc_binary(
     testonly = 1,
     srcs = ["chown.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     # We require additional UIDs for this test, so don't include the bazel
     # sandbox as standard.
     tags = ["no-sandbox"],
@@ -422,6 +438,7 @@ cc_binary(
     testonly = 1,
     srcs = ["sticky.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:file_descriptor",
@@ -439,6 +456,7 @@ cc_binary(
     testonly = 1,
     srcs = ["chroot.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:cleanup",
@@ -460,6 +478,7 @@ cc_binary(
     testonly = 1,
     srcs = ["pivot_root.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:cleanup",
@@ -482,6 +501,7 @@ cc_binary(
     testonly = 1,
     srcs = ["clock_getres.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:test_main",
         "//test/util:test_util",
@@ -493,6 +513,7 @@ cc_binary(
     testonly = 1,
     srcs = ["clock_gettime.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:test_main",
         "//test/util:test_util",
@@ -506,6 +527,7 @@ cc_binary(
     testonly = 1,
     srcs = ["concurrency.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         gbenchmark,
         "//test/util:platform_util",
@@ -522,6 +544,7 @@ cc_binary(
     testonly = 1,
     srcs = ["bind_external.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:fs_util",
@@ -536,6 +559,7 @@ cc_binary(
     testonly = 1,
     srcs = ["connect_external.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:fs_util",
@@ -550,6 +574,7 @@ cc_binary(
     testonly = 1,
     srcs = ["pipe_external.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:fs_util",
@@ -563,6 +588,7 @@ cc_binary(
     testonly = 1,
     srcs = ["creat.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:fs_util",
         "//test/util:temp_path",
@@ -576,6 +602,7 @@ cc_binary(
     testonly = 1,
     srcs = ["dev.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:test_main",
@@ -588,6 +615,7 @@ cc_binary(
     testonly = 1,
     srcs = ["dup.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:eventfd_util",
@@ -607,6 +635,7 @@ cc_binary(
     testonly = 1,
     srcs = ["epoll.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:epoll_util",
         "//test/util:eventfd_util",
@@ -627,6 +656,7 @@ cc_binary(
     testonly = 1,
     srcs = ["eventfd.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:epoll_util",
         "//test/util:eventfd_util",
@@ -641,6 +671,7 @@ cc_binary(
     testonly = 1,
     srcs = ["exceptions.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:logging",
         "//test/util:platform_util",
@@ -655,6 +686,7 @@ cc_binary(
     testonly = 1,
     srcs = ["getcpu.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:test_main",
         "//test/util:test_util",
@@ -667,6 +699,7 @@ cc_binary(
     testonly = 1,
     srcs = ["getcpu.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:test_main",
         "//test/util:test_util",
@@ -679,6 +712,7 @@ cc_binary(
     testonly = 1,
     srcs = ["getrusage.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:logging",
         "//test/util:memory_util",
@@ -695,6 +729,7 @@ cc_binary(
     testonly = 1,
     srcs = ["exec_binary.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:cleanup",
         "//test/util:file_descriptor",
@@ -725,6 +760,7 @@ cc_binary(
         ":priority_execve",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:fs_util",
@@ -744,6 +780,7 @@ cc_binary(
     testonly = 1,
     srcs = ["exit.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:multiprocess_util",
@@ -760,6 +797,7 @@ cc_binary(
     testonly = 1,
     srcs = ["fallocate.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":file_base",
         "//test/util:cleanup",
@@ -780,6 +818,7 @@ cc_binary(
     testonly = 1,
     srcs = ["fault.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:test_main",
         "//test/util:test_util",
@@ -791,6 +830,7 @@ cc_binary(
     testonly = 1,
     srcs = ["fchdir.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:temp_path",
@@ -804,6 +844,7 @@ cc_binary(
     testonly = 1,
     srcs = ["fcntl.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:cleanup",
@@ -836,6 +877,7 @@ cc_binary(
         "flock.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:epoll_util",
         "//test/util:eventfd_util",
@@ -857,6 +899,7 @@ cc_binary(
     testonly = 1,
     srcs = ["fork.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:logging",
@@ -873,6 +916,7 @@ cc_binary(
     testonly = 1,
     srcs = ["fpsig_fork.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:logging",
         "//test/util:test_main",
@@ -889,6 +933,7 @@ cc_binary(
         default = [],
     ),
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:test_main",
         "//test/util:test_util",
@@ -901,6 +946,7 @@ cc_binary(
     testonly = 1,
     srcs = ["fpsig_nested.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:test_main",
         "//test/util:test_util",
@@ -913,6 +959,7 @@ cc_binary(
     testonly = 1,
     srcs = ["sync_file_range.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:temp_path",
@@ -926,6 +973,7 @@ cc_binary(
     testonly = 1,
     srcs = ["fsync.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:temp_path",
@@ -939,6 +987,7 @@ cc_binary(
     testonly = 1,
     srcs = ["futex.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:cleanup",
         "//test/util:file_descriptor",
@@ -960,6 +1009,7 @@ cc_binary(
     testonly = 1,
     srcs = ["getdents.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:eventfd_util",
         "//test/util:file_descriptor",
@@ -979,6 +1029,7 @@ cc_binary(
     testonly = 1,
     srcs = ["getrandom.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:test_main",
         "//test/util:test_util",
@@ -990,6 +1041,7 @@ cc_binary(
     testonly = 1,
     srcs = ["inotify.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = [
         "//test/util:epoll_util",
         "//test/util:file_descriptor",
@@ -1012,6 +1064,7 @@ cc_binary(
     testonly = 1,
     srcs = ["ioctl.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":ip_socket_test_util",
         ":unix_domain_socket_test_util",
@@ -1028,6 +1081,7 @@ cc_binary(
     testonly = 1,
     srcs = ["io_uring.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:file_descriptor",
@@ -1059,6 +1113,7 @@ cc_binary(
         "iptables.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":iptables_types",
         "//test/util:capability_util",
@@ -1076,6 +1131,7 @@ cc_binary(
         "ip6tables.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":iptables_types",
         "//test/util:capability_util",
@@ -1091,6 +1147,7 @@ cc_binary(
     testonly = 1,
     srcs = ["itimer.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:logging",
@@ -1110,6 +1167,7 @@ cc_binary(
     testonly = 1,
     srcs = ["kcov.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:file_descriptor",
@@ -1124,6 +1182,7 @@ cc_binary(
     testonly = 1,
     srcs = ["keys.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:posix_error",
         "//test/util:test_main",
@@ -1140,6 +1199,7 @@ cc_binary(
     testonly = 1,
     srcs = ["kill.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:file_descriptor",
@@ -1159,6 +1219,7 @@ cc_binary(
     testonly = 1,
     srcs = ["link.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:file_descriptor",
@@ -1178,6 +1239,7 @@ cc_binary(
     testonly = 1,
     srcs = ["lseek.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:temp_path",
@@ -1191,6 +1253,7 @@ cc_binary(
     testonly = 1,
     srcs = ["madvise.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:logging",
@@ -1208,6 +1271,7 @@ cc_binary(
     testonly = 1,
     srcs = ["membarrier.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:cleanup",
         "//test/util:logging",
@@ -1225,6 +1289,7 @@ cc_binary(
     testonly = 1,
     srcs = ["mempolicy.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:cleanup",
         "//test/util:memory_util",
@@ -1240,6 +1305,7 @@ cc_binary(
     testonly = 1,
     srcs = ["mincore.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:memory_util",
         "//test/util:posix_error",
@@ -1253,6 +1319,7 @@ cc_binary(
     testonly = 1,
     srcs = ["mkdir.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:fs_util",
@@ -1268,6 +1335,7 @@ cc_binary(
     testonly = 1,
     srcs = ["mknod.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:temp_path",
@@ -1282,6 +1350,7 @@ cc_binary(
     testonly = 1,
     srcs = ["fifo.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:signal_util",
@@ -1298,6 +1367,7 @@ cc_binary(
     testonly = 1,
     srcs = ["mlock.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:cleanup",
@@ -1314,6 +1384,7 @@ cc_binary(
     testonly = 1,
     srcs = ["mmap.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:cleanup",
         "//test/util:file_descriptor",
@@ -1332,6 +1403,7 @@ cc_binary(
     testonly = 1,
     srcs = ["mount.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:cleanup",
@@ -1359,6 +1431,7 @@ cc_binary(
     testonly = 1,
     srcs = ["mremap.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:logging",
@@ -1377,6 +1450,7 @@ cc_binary(
     testonly = 1,
     srcs = ["msync.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:memory_util",
@@ -1392,6 +1466,7 @@ cc_binary(
     testonly = 1,
     srcs = ["munmap.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:test_main",
         "//test/util:test_util",
@@ -1406,6 +1481,7 @@ cc_binary(
         "open.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:cleanup",
@@ -1426,6 +1502,7 @@ cc_binary(
     testonly = 1,
     srcs = ["open_create.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:file_descriptor",
@@ -1443,6 +1520,7 @@ cc_binary(
     testonly = 1,
     srcs = ["packet_socket_dgram.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":ip_socket_test_util",
         ":unix_domain_socket_test_util",
@@ -1463,6 +1541,7 @@ cc_binary(
     testonly = 1,
     srcs = ["packet_socket_raw.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":ip_socket_test_util",
         ":unix_domain_socket_test_util",
@@ -1483,6 +1562,7 @@ cc_binary(
     testonly = 1,
     srcs = ["packet_socket.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":ip_socket_test_util",
         "//test/util:capability_util",
@@ -1497,6 +1577,7 @@ cc_binary(
     testonly = 1,
     srcs = ["pty.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:cleanup",
@@ -1522,6 +1603,7 @@ cc_binary(
     testonly = 1,
     srcs = ["pty_root.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:file_descriptor",
@@ -1539,6 +1621,7 @@ cc_binary(
     # Android does not support preadv or pwritev in r22.
     srcs = select_system(linux = ["partial_bad_buffer.cc"]),
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:fs_util",
@@ -1556,6 +1639,7 @@ cc_binary(
     testonly = 1,
     srcs = ["pause.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:signal_util",
         "//test/util:test_main",
@@ -1571,6 +1655,7 @@ cc_binary(
     testonly = 1,
     srcs = ["ping_socket.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":ip_socket_test_util",
         "//test/util:file_descriptor",
@@ -1588,6 +1673,7 @@ cc_binary(
     testonly = 1,
     srcs = ["pipe.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:fs_util",
@@ -1611,6 +1697,7 @@ cc_binary(
         "-Wno-unknown-warning-option",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":base_poll_test",
         "//test/util:eventfd_util",
@@ -1629,6 +1716,7 @@ cc_binary(
     testonly = 1,
     srcs = ["ppoll.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":base_poll_test",
         "//test/util:signal_util",
@@ -1646,6 +1734,7 @@ cc_binary(
         default = [],
     ),
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:test_main",
@@ -1659,6 +1748,7 @@ cc_binary(
     srcs = ["prctl.cc"],
     data = ["//test/cmd/test_app"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:cleanup",
@@ -1676,6 +1766,7 @@ cc_binary(
     testonly = 1,
     srcs = ["prctl_setuid.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:logging",
@@ -1692,6 +1783,7 @@ cc_binary(
     testonly = 1,
     srcs = ["pread64.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:temp_path",
@@ -1705,6 +1797,7 @@ cc_binary(
     testonly = 1,
     srcs = ["preadv.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:logging",
@@ -1726,6 +1819,7 @@ cc_binary(
         "preadv2.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:posix_error",
@@ -1742,6 +1836,7 @@ cc_binary(
     testonly = 1,
     srcs = ["priority.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:fs_util",
@@ -1757,6 +1852,7 @@ cc_binary(
     testonly = 1,
     srcs = ["proc.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:cleanup",
@@ -1789,6 +1885,7 @@ cc_binary(
     testonly = 1,
     srcs = ["proc_isolated.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:fs_util",
         "//test/util:test_main",
@@ -1802,6 +1899,7 @@ cc_binary(
     testonly = 1,
     srcs = ["proc_net.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:file_descriptor",
@@ -1819,6 +1917,7 @@ cc_binary(
     testonly = 1,
     srcs = ["proc_pid_oomscore.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = [
         "//test/util:fs_util",
         "//test/util:test_main",
@@ -1832,6 +1931,7 @@ cc_binary(
     testonly = 1,
     srcs = ["proc_pid_smaps.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:fs_util",
@@ -1852,6 +1952,7 @@ cc_binary(
     testonly = 1,
     srcs = ["proc_pid_uid_gid_map.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:cleanup",
@@ -1873,6 +1974,7 @@ cc_binary(
     testonly = 1,
     srcs = ["pselect.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":base_poll_test",
         "//test/util:signal_util",
@@ -1887,6 +1989,7 @@ cc_binary(
     testonly = 1,
     srcs = ["ptrace.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:file_descriptor",
@@ -1911,6 +2014,7 @@ cc_binary(
     testonly = 1,
     srcs = ["pwrite64.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:temp_path",
         "//test/util:test_main",
@@ -1925,6 +2029,7 @@ cc_binary(
         "pwritev2.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":file_base",
         "//test/util:file_descriptor",
@@ -1941,6 +2046,7 @@ cc_binary(
     testonly = 1,
     srcs = ["raw_socket_hdrincl.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":unix_domain_socket_test_util",
         "//test/util:capability_util",
@@ -1959,6 +2065,7 @@ cc_binary(
     srcs = ["raw_socket.cc"],
     defines = select_system(),
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":ip_socket_test_util",
         ":unix_domain_socket_test_util",
@@ -1976,6 +2083,7 @@ cc_binary(
     testonly = 1,
     srcs = ["raw_socket_icmp.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":unix_domain_socket_test_util",
         "//test/util:capability_util",
@@ -1992,6 +2100,7 @@ cc_binary(
     testonly = 1,
     srcs = ["read.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:cleanup",
         "//test/util:file_descriptor",
@@ -2007,6 +2116,7 @@ cc_binary(
     testonly = 1,
     srcs = ["readahead.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:socket_util",
@@ -2026,6 +2136,7 @@ cc_binary(
         "readv_common.h",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:posix_error",
@@ -2046,6 +2157,7 @@ cc_binary(
         "readv_socket.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:posix_error",
@@ -2061,6 +2173,7 @@ cc_binary(
     testonly = 1,
     srcs = ["rename.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:cleanup",
@@ -2079,6 +2192,7 @@ cc_binary(
     testonly = 1,
     srcs = ["rlimits.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = [
         "//test/util:capability_util",
         "//test/util:proc_util",
@@ -2096,6 +2210,7 @@ cc_binary(
     srcs = ["rseq.cc"],
     data = ["//test/syscalls/linux/rseq"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/syscalls/linux/rseq:lib",
         "//test/util:logging",
@@ -2111,6 +2226,7 @@ cc_binary(
     testonly = 1,
     srcs = ["rtsignal.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:cleanup",
         "//test/util:logging",
@@ -2125,6 +2241,7 @@ cc_binary(
     testonly = 1,
     srcs = ["sched.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:test_main",
         "//test/util:test_util",
@@ -2136,6 +2253,7 @@ cc_binary(
     testonly = 1,
     srcs = ["sched_yield.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:test_main",
         "//test/util:test_util",
@@ -2147,6 +2265,7 @@ cc_binary(
     testonly = 1,
     srcs = ["seccomp.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:logging",
         "//test/util:memory_util",
@@ -2165,6 +2284,7 @@ cc_binary(
     testonly = 1,
     srcs = ["select.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":base_poll_test",
         "//test/util:file_descriptor",
@@ -2183,6 +2303,7 @@ cc_binary(
     testonly = 1,
     srcs = ["sendfile.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:eventfd_util",
         "//test/util:file_descriptor",
@@ -2202,6 +2323,7 @@ cc_binary(
     testonly = 1,
     srcs = ["sendfile_socket.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":ip_socket_test_util",
         ":unix_domain_socket_test_util",
@@ -2221,6 +2343,7 @@ cc_binary(
     testonly = 1,
     srcs = ["setgid.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:cleanup",
@@ -2239,6 +2362,7 @@ cc_binary(
     testonly = 1,
     srcs = ["setns.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:file_descriptor",
@@ -2253,6 +2377,7 @@ cc_binary(
     testonly = 1,
     srcs = ["splice.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:memory_util",
@@ -2273,6 +2398,7 @@ cc_binary(
     testonly = 1,
     srcs = ["sigaction.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:test_main",
         "//test/util:test_util",
@@ -2287,6 +2413,7 @@ cc_binary(
         ":sigaltstack_check",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:cleanup",
         "//test/util:fs_util",
@@ -2308,6 +2435,7 @@ cc_binary(
         riscv64 = [],
     ),
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:logging",
         "//test/util:signal_util",
@@ -2324,6 +2452,7 @@ cc_binary(
     testonly = 1,
     srcs = ["signalfd.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:logging",
@@ -2341,6 +2470,7 @@ cc_binary(
     testonly = 1,
     srcs = ["sigprocmask.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:signal_util",
         "//test/util:test_main",
@@ -2353,6 +2483,7 @@ cc_binary(
     testonly = 1,
     srcs = ["sigstop.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:multiprocess_util",
         "//test/util:posix_error",
@@ -2368,6 +2499,7 @@ cc_binary(
     testonly = 1,
     srcs = ["sigtimedwait.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:logging",
@@ -2406,6 +2538,7 @@ cc_binary(
         "socket_generic_stress.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":ip_socket_test_util",
         "//test/util:file_descriptor",
@@ -2678,6 +2811,7 @@ cc_binary(
         "socket_abstract.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = [
         ":socket_generic_test_cases",
         ":socket_unix_cmsg_test_cases",
@@ -2696,6 +2830,7 @@ cc_binary(
         "socket_unix_abstract_nonblock.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = [
         ":socket_non_blocking_test_cases",
         ":unix_domain_socket_test_util",
@@ -2710,6 +2845,7 @@ cc_binary(
     testonly = 1,
     srcs = ["socket_unix_dgram_local.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = [
         ":socket_non_stream_test_cases",
         ":socket_unix_dgram_test_cases",
@@ -2726,6 +2862,7 @@ cc_binary(
     testonly = 1,
     srcs = ["socket_unix_dgram_non_blocking.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":unix_domain_socket_test_util",
         "//test/util:socket_util",
@@ -2741,6 +2878,7 @@ cc_binary(
         "socket_unix_seqpacket_local.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = [
         ":socket_non_stream_test_cases",
         ":socket_unix_non_stream_test_cases",
@@ -2757,6 +2895,7 @@ cc_binary(
     testonly = 1,
     srcs = ["socket_unix_stream.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":unix_domain_socket_test_util",
         "//test/util:socket_util",
@@ -2773,6 +2912,7 @@ cc_binary(
         "socket_ip_tcp_generic_loopback.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = [
         ":ip_socket_test_util",
         ":socket_ip_tcp_generic_test_cases",
@@ -2789,6 +2929,7 @@ cc_binary(
         "socket_ip_tcp_udp_generic.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":ip_socket_test_util",
         "//test/util:socket_util",
@@ -2804,6 +2945,7 @@ cc_binary(
         "socket_ip_tcp_loopback.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = [
         ":ip_socket_test_util",
         ":socket_generic_test_cases",
@@ -2820,6 +2962,7 @@ cc_binary(
         "socket_ip_tcp_loopback_nonblock.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = [
         ":ip_socket_test_util",
         ":socket_non_blocking_test_cases",
@@ -2836,6 +2979,7 @@ cc_binary(
         "socket_ip_udp_loopback.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = [
         ":ip_socket_test_util",
         ":socket_generic_test_cases",
@@ -2854,6 +2998,7 @@ cc_binary(
         "socket_ipv4_udp_unbound_external_networking_test.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = [
         ":ip_socket_test_util",
         ":socket_ipv4_udp_unbound_external_networking_test_cases",
@@ -2870,6 +3015,7 @@ cc_binary(
         "socket_ipv6_udp_unbound_external_networking_test.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = [
         ":ip_socket_test_util",
         ":socket_ipv6_udp_unbound_external_networking_test_cases",
@@ -2886,6 +3032,7 @@ cc_binary(
         "socket_bind_to_device.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":ip_socket_test_util",
         ":socket_bind_to_device_util",
@@ -2904,6 +3051,7 @@ cc_binary(
         "socket_bind_to_device_sequence.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":ip_socket_test_util",
         ":socket_bind_to_device_util",
@@ -2923,6 +3071,7 @@ cc_binary(
         "socket_bind_to_device_distribution.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":ip_socket_test_util",
         ":socket_bind_to_device_util",
@@ -2941,6 +3090,7 @@ cc_binary(
         "socket_ip_udp_loopback_nonblock.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = [
         ":ip_socket_test_util",
         ":socket_non_blocking_test_cases",
@@ -2957,6 +3107,7 @@ cc_binary(
         "socket_ipv4_udp_unbound_loopback.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = [
         ":ip_socket_test_util",
         ":socket_ipv4_udp_unbound_test_cases",
@@ -2971,6 +3122,7 @@ cc_binary(
         "socket_ipv4_datagram_based_socket_unbound_loopback.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = [
         ":ip_socket_test_util",
         ":socket_ipv4_datagram_based_socket_unbound_test_cases",
@@ -2985,6 +3137,7 @@ cc_binary(
         "socket_ipv6_unbound.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":ip_socket_test_util",
         "//test/util:socket_util",
@@ -3000,6 +3153,7 @@ cc_binary(
         "socket_ipv6_udp_unbound_loopback.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = [
         ":ip_socket_test_util",
         ":socket_ipv6_udp_unbound_test_cases",
@@ -3016,6 +3170,7 @@ cc_binary(
         "socket_ipv4_udp_unbound_loopback_nogotsan.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":ip_socket_test_util",
         "//test/util:socket_util",
@@ -3032,6 +3187,7 @@ cc_binary(
         "socket_ipv4_udp_unbound_loopback_netlink.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = [
         ":ip_socket_test_util",
         ":socket_ipv4_udp_unbound_netlink_test_cases",
@@ -3048,6 +3204,7 @@ cc_binary(
         "socket_ipv6_udp_unbound_loopback_netlink.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = [
         ":ip_socket_test_util",
         ":socket_ipv6_udp_unbound_netlink_test_cases",
@@ -3064,6 +3221,7 @@ cc_binary(
         "socket_ip_unbound.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":ip_socket_test_util",
         "//test/util:socket_util",
@@ -3079,6 +3237,7 @@ cc_binary(
         "socket_ip_unbound_netlink.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":ip_socket_test_util",
         ":socket_netlink_route_util",
@@ -3096,6 +3255,7 @@ cc_binary(
         "socket_unix_domain.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = [
         ":socket_generic_test_cases",
         ":unix_domain_socket_test_util",
@@ -3112,6 +3272,7 @@ cc_binary(
         "socket_unix_pair_nonblock.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = [
         ":socket_non_blocking_test_cases",
         ":unix_domain_socket_test_util",
@@ -3128,6 +3289,7 @@ cc_binary(
         "socket_filesystem.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = [
         ":socket_generic_test_cases",
         ":socket_unix_cmsg_test_cases",
@@ -3146,6 +3308,7 @@ cc_binary(
         "socket_unix_filesystem_nonblock.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = [
         ":socket_non_blocking_test_cases",
         ":unix_domain_socket_test_util",
@@ -3169,6 +3332,7 @@ cc_binary(
     testonly = 1,
     srcs = ["socket_inet_loopback.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":ip_socket_test_util",
         ":socket_inet_loopback_test_params",
@@ -3190,6 +3354,7 @@ cc_binary(
     testonly = 1,
     srcs = ["socket_inet_loopback_nogotsan.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":ip_socket_test_util",
         ":socket_inet_loopback_test_params",
@@ -3208,6 +3373,7 @@ cc_binary(
     testonly = 1,
     srcs = ["socket_inet_loopback_isolated.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":socket_inet_loopback_test_params",
         ":socket_netlink_util",
@@ -3225,6 +3391,7 @@ cc_binary(
     testonly = 1,
     srcs = ["socket_netlink.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:posix_error",
@@ -3239,6 +3406,7 @@ cc_binary(
     testonly = 1,
     srcs = ["socket_netlink_route.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":socket_netlink_route_util",
         ":socket_netlink_util",
@@ -3259,6 +3427,7 @@ cc_binary(
     testonly = 1,
     srcs = ["socket_netlink_uevent.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":socket_netlink_util",
         "//test/util:file_descriptor",
@@ -3432,6 +3601,7 @@ cc_binary(
         "socket_unix_stream_local.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = [
         ":socket_stream_test_cases",
         ":unix_domain_socket_test_util",
@@ -3448,6 +3618,7 @@ cc_binary(
         "socket_unix_stream_blocking_local.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = [
         ":socket_stream_blocking_test_cases",
         ":unix_domain_socket_test_util",
@@ -3464,6 +3635,7 @@ cc_binary(
         "socket_ip_tcp_loopback_blocking.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = [
         ":ip_socket_test_util",
         ":socket_stream_blocking_test_cases",
@@ -3480,6 +3652,7 @@ cc_binary(
         "socket_unix_stream_nonblock_local.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = [
         ":socket_stream_nonblocking_test_cases",
         ":unix_domain_socket_test_util",
@@ -3494,6 +3667,7 @@ cc_binary(
     testonly = 1,
     srcs = ["socket_unix_unbound_dgram.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":unix_domain_socket_test_util",
         "//test/util:socket_util",
@@ -3507,6 +3681,7 @@ cc_binary(
     testonly = 1,
     srcs = ["socket_unix_unbound_abstract.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":unix_domain_socket_test_util",
         "//test/util:capability_util",
@@ -3523,6 +3698,7 @@ cc_binary(
     testonly = 1,
     srcs = ["socket_unix_unbound_filesystem.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":unix_domain_socket_test_util",
         "//test/util:file_descriptor",
@@ -3539,6 +3715,7 @@ cc_binary(
         "socket_unix_blocking_local.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":socket_blocking_test_cases",
         ":unix_domain_socket_test_util",
@@ -3555,6 +3732,7 @@ cc_binary(
         "socket_ip_loopback_blocking.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":ip_socket_test_util",
         ":socket_blocking_test_cases",
@@ -3571,6 +3749,7 @@ cc_binary(
         "socket_unix_non_stream_blocking_local.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":socket_non_stream_blocking_test_cases",
         ":unix_domain_socket_test_util",
@@ -3587,6 +3766,7 @@ cc_binary(
         "socket_ip_udp_loopback_blocking.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":ip_socket_test_util",
         ":socket_non_stream_blocking_test_cases",
@@ -3603,6 +3783,7 @@ cc_binary(
         "socket_unix_pair.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":socket_unix_cmsg_test_cases",
         ":socket_unix_test_cases",
@@ -3618,6 +3799,7 @@ cc_binary(
     testonly = 1,
     srcs = ["socket_unix_unbound_seqpacket.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":unix_domain_socket_test_util",
         "//test/util:socket_util",
@@ -3631,6 +3813,7 @@ cc_binary(
     testonly = 1,
     srcs = ["socket_unix_unbound_stream.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":unix_domain_socket_test_util",
         "//test/util:socket_util",
@@ -3644,6 +3827,7 @@ cc_binary(
     testonly = 1,
     srcs = ["socket_netdevice.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":socket_netlink_util",
         "//test/util:file_descriptor",
@@ -3662,6 +3846,7 @@ cc_binary(
         "stat.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:cleanup",
         "//test/util:file_descriptor",
@@ -3680,6 +3865,7 @@ cc_binary(
     testonly = 1,
     srcs = ["stat_times.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:temp_path",
@@ -3697,6 +3883,7 @@ cc_binary(
         "statfs.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:file_descriptor",
@@ -3715,6 +3902,7 @@ cc_binary(
     testonly = 1,
     srcs = ["symlink.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:file_descriptor",
@@ -3732,6 +3920,7 @@ cc_binary(
     # Android does not support syncfs in r22.
     srcs = select_system(linux = ["sync.cc"]),
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:temp_path",
         "//test/util:test_main",
@@ -3744,6 +3933,7 @@ cc_binary(
     testonly = 1,
     srcs = ["sysinfo.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:test_main",
         "//test/util:test_util",
@@ -3756,6 +3946,7 @@ cc_binary(
     testonly = 1,
     srcs = ["syslog.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:test_main",
         "//test/util:test_util",
@@ -3767,6 +3958,7 @@ cc_binary(
     testonly = 1,
     srcs = ["sysret.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:logging",
         "//test/util:test_main",
@@ -3780,6 +3972,7 @@ cc_binary(
     srcs = ["tcp_socket.cc"],
     defines = select_system(),
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:posix_error",
@@ -3797,6 +3990,7 @@ cc_binary(
     testonly = 1,
     srcs = ["tgkill.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:signal_util",
         "//test/util:test_main",
@@ -3810,6 +4004,7 @@ cc_binary(
     testonly = 1,
     srcs = ["time.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:proc_util",
         "//test/util:test_main",
@@ -3822,6 +4017,7 @@ cc_binary(
     testonly = 1,
     srcs = ["timerfd.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = [
         "//test/util:file_descriptor",
         "//test/util:posix_error",
@@ -3836,6 +4032,7 @@ cc_binary(
     testonly = 1,
     srcs = ["timers.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         gbenchmark,
         "//test/util:cleanup",
@@ -3856,6 +4053,7 @@ cc_binary(
     testonly = 1,
     srcs = ["tkill.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:logging",
         "//test/util:test_main",
@@ -3869,6 +4067,7 @@ cc_binary(
     testonly = 1,
     srcs = ["truncate.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":file_base",
         "//test/util:capability_util",
@@ -3886,6 +4085,7 @@ cc_binary(
     testonly = 1,
     srcs = ["tuntap.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":socket_netlink_route_util",
         "//test/util:capability_util",
@@ -3904,6 +4104,7 @@ cc_binary(
     testonly = 1,
     srcs = ["tuntap_hostinet.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:test_main",
         "//test/util:test_util",
@@ -3916,6 +4117,7 @@ cc_binary(
     srcs = ["udp_socket.cc"],
     defines = select_system(),
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":ip_socket_test_util",
         ":unix_domain_socket_test_util",
@@ -3938,6 +4140,7 @@ cc_binary(
     srcs = ["udp_raw_socket.cc"],
     defines = select_system(),
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:file_descriptor",
@@ -3953,6 +4156,7 @@ cc_binary(
     testonly = 1,
     srcs = ["udp_bind.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:socket_util",
@@ -3969,6 +4173,7 @@ cc_binary(
         "-Wno-unknown-warning-option",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:cleanup",
@@ -3988,6 +4193,7 @@ cc_binary(
     testonly = 1,
     srcs = ["uname.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:test_main",
@@ -4002,6 +4208,7 @@ cc_binary(
     testonly = 1,
     srcs = ["unlink.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:file_descriptor",
@@ -4018,6 +4225,7 @@ cc_binary(
     testonly = 1,
     srcs = ["unshare.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:test_main",
         "//test/util:test_util",
@@ -4032,6 +4240,7 @@ cc_binary(
     # Android does not support futimesat in r22.
     srcs = select_system(linux = ["utimes.cc"]),
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = [
         "//test/util:file_descriptor",
         "//test/util:fs_util",
@@ -4047,6 +4256,7 @@ cc_binary(
     testonly = 1,
     srcs = ["vdso.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:fs_util",
         "//test/util:posix_error",
@@ -4062,6 +4272,7 @@ cc_binary(
     testonly = 1,
     srcs = ["vfork.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:logging",
         "//test/util:multiprocess_util",
@@ -4077,6 +4288,7 @@ cc_binary(
     testonly = 1,
     srcs = ["wait.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:cleanup",
         "//test/util:file_descriptor",
@@ -4099,6 +4311,7 @@ cc_binary(
     testonly = 1,
     srcs = ["write.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:cleanup",
         "//test/util:temp_path",
@@ -4113,6 +4326,7 @@ cc_binary(
     testonly = 1,
     srcs = ["memory_accounting.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:fs_util",
         "//test/util:posix_error",
@@ -4128,6 +4342,7 @@ cc_binary(
     testonly = 1,
     srcs = ["network_namespace.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":ip_socket_test_util",
         "//test/util:capability_util",
@@ -4147,6 +4362,7 @@ cc_binary(
         "-lrt",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = [
         "//test/util:capability_util",
         "//test/util:cleanup",
@@ -4165,6 +4381,7 @@ cc_binary(
     # Android does not support XSI semaphores in r22.
     srcs = select_system(linux = ["semaphore.cc"]),
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:test_main",
@@ -4182,6 +4399,7 @@ cc_binary(
     testonly = 1,
     srcs = ["shm.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = [
         "//test/util:multiprocess_util",
         "//test/util:posix_error",
@@ -4197,6 +4415,7 @@ cc_binary(
     testonly = 1,
     srcs = ["msgqueue.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = [
         "//test/util:capability_util",
         "//test/util:signal_util",
@@ -4213,6 +4432,7 @@ cc_binary(
     testonly = 1,
     srcs = ["fadvise64.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:temp_path",
@@ -4226,6 +4446,7 @@ cc_binary(
     testonly = 1,
     srcs = ["vdso_clock_gettime.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:test_main",
         "//test/util:test_util",
@@ -4239,6 +4460,7 @@ cc_binary(
     testonly = 1,
     srcs = ["vsyscall.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:proc_util",
         "//test/util:test_main",
@@ -4251,6 +4473,7 @@ cc_binary(
     testonly = 1,
     srcs = ["proc_net_unix.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":unix_domain_socket_test_util",
         "//test/util:cleanup",
@@ -4268,6 +4491,7 @@ cc_binary(
     testonly = 1,
     srcs = ["memfd.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:fs_util",
@@ -4284,6 +4508,7 @@ cc_binary(
     testonly = 1,
     srcs = ["proc_net_tcp.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":ip_socket_test_util",
         "//test/util:file_descriptor",
@@ -4298,6 +4523,7 @@ cc_binary(
     testonly = 1,
     srcs = ["proc_net_udp.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         ":ip_socket_test_util",
         "//test/util:file_descriptor",
@@ -4312,6 +4538,7 @@ cc_binary(
     testonly = 1,
     srcs = ["processes.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:multiprocess_util",
@@ -4334,6 +4561,7 @@ cc_binary(
         "xattr.cc",
     ],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:file_descriptor",
@@ -4352,6 +4580,7 @@ cc_binary(
     testonly = 1,
     srcs = ["cgroup.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:capability_util",
         "//test/util:cgroup_util",
@@ -4377,6 +4606,7 @@ cc_binary(
     testonly = 1,
     srcs = ["deleted.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:file_descriptor",
         "//test/util:fs_util",
@@ -4391,6 +4621,7 @@ cc_binary(
     testonly = 1,
     srcs = ["close_range.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:cleanup",
         "//test/util:file_descriptor",
@@ -4408,6 +4639,7 @@ cc_binary(
     testonly = 1,
     srcs = ["fuse.cc"],
     linkstatic = 1,
+    malloc = "//test/util:errno_safe_allocator",
     # We require additional UIDs for this test, so don't include the bazel
     # sandbox as standard.
     deps = select_gtest() + [
@@ -4431,8 +4663,7 @@ cc_binary(
     testonly = 1,
     srcs = ["process_vm_read_write.cc"],
     linkstatic = 1,
-    # tcmalloc isn't fork-safe.
-    tcmalloc = False,
+    malloc = "//test/util:errno_safe_allocator",
     deps = select_gtest() + [
         "//test/util:cleanup",
         "//test/util:logging",
