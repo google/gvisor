@@ -29,6 +29,13 @@ declare_rwmutex(
 )
 
 declare_rwmutex(
+    name = "bridge_mutex",
+    out = "bridge_mutex.go",
+    package = "stack",
+    prefix = "bridge",
+)
+
+declare_rwmutex(
     name = "route_stack_mutex",
     out = "route_stack_mutex.go",
     package = "stack",
@@ -213,6 +220,8 @@ go_library(
         "address_state_refs.go",
         "addressable_endpoint_state.go",
         "addressable_endpoint_state_mutex.go",
+        "bridge.go",
+        "bridge_mutex.go",
         "bucket_mutex.go",
         "cleanup_endpoints_mutex.go",
         "conn_mutex.go",

@@ -44,6 +44,7 @@ go_library(
         "//pkg/refs",
         "//pkg/sentry/fsimpl/nsfs",
         "//pkg/sentry/kernel/auth",
+        "//pkg/sentry/socket/netlink/nlmsg",
         "//pkg/sentry/socket/unix/transport",
         "//pkg/sync",
         "//pkg/sync/locking",

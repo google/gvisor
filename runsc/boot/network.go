@@ -248,7 +248,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 
 	// Loopback normally appear before other interfaces.
 	for _, link := range args.LoopbackLinks {
-		nicID++
+		nicID = tcpip.NICID(n.Stack.UniqueID())
 		nicids[link.Name] = nicID
 
 		linkEP := ethernet.New(loopback.New())
@@ -510,7 +510,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 // createNICWithAddrs creates a NIC in the network stack and adds the given
 // addresses.
 func (n *Network) createNICWithAddrs(id tcpip.NICID, ep stack.LinkEndpoint, opts stack.NICOptions, addrs []IPWithPrefix) error {
-	if err := n.Stack.CreateNICWithOptions(id, ep, opts); err != nil {
+	if _, err := n.Stack.CreateNICWithOptions(id, ep, opts); err != nil {
 		return fmt.Errorf("CreateNICWithOptions(%d, _, %+v) failed: %v", id, opts, err)
 	}
 

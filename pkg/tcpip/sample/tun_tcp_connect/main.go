@@ -142,7 +142,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	if err := s.CreateNIC(1, sniffer.New(linkEP)); err != nil {
+	if _, err := s.CreateNIC(1, sniffer.New(linkEP)); err != nil {
 		log.Fatal(err)
 	}
 

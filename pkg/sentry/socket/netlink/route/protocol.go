@@ -26,6 +26,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink"
+	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/syserr"
 )
 
@@ -69,7 +70,7 @@ func (p *Protocol) CanSend() bool {
 }
 
 // dumpLinks handles RTM_GETLINK dump requests.
-func (p *Protocol) dumpLinks(ctx context.Context, msg *netlink.Message, ms *netlink.MessageSet) *syserr.Error {
+func (p *Protocol) dumpLinks(ctx context.Context, msg *nlmsg.Message, ms *nlmsg.MessageSet) *syserr.Error {
 	// NLM_F_DUMP + RTM_GETLINK messages are supposed to include an
 	// ifinfomsg. However, Linux <3.9 only checked for rtgenmsg, and some
 	// userspace applications (including glibc) still include rtgenmsg.
@@ -101,7 +102,7 @@ func (p *Protocol) dumpLinks(ctx context.Context, msg *netlink.Message, ms *netl
 }
 
 // getLinks handles RTM_GETLINK requests.
-func (p *Protocol) getLink(ctx context.Context, msg *netlink.Message, ms *netlink.MessageSet) *syserr.Error {
+func (p *Protocol) getLink(ctx context.Context, msg *nlmsg.Message, ms *nlmsg.MessageSet) *syserr.Error {
 	stack := inet.StackFromContext(ctx)
 	if stack == nil {
 		// No network devices.
@@ -161,74 +162,17 @@ func (p *Protocol) getLink(ctx context.Context, msg *netlink.Message, ms *netlin
 	return nil
 }
 
-func (p *Protocol) newLink(ctx context.Context, msg *netlink.Message, ms *netlink.MessageSet) *syserr.Error {
+func (p *Protocol) newLink(ctx context.Context, msg *nlmsg.Message, ms *nlmsg.MessageSet) *syserr.Error {
 	stack := inet.StackFromContext(ctx)
 	if stack == nil {
 		// No network stack.
 		return syserr.ErrProtocolNotSupported
 	}
-
-	var ifinfomsg linux.InterfaceInfoMessage
-	attrs, ok := msg.GetData(&ifinfomsg)
-	if !ok {
-		return syserr.ErrInvalidArgument
-	}
-	for !attrs.Empty() {
-		// The index is unspecified, search by the interface name.
-		ahdr, value, rest, ok := attrs.ParseFirst()
-		if !ok {
-			return syserr.ErrInvalidArgument
-		}
-		attrs = rest
-		switch ahdr.Type {
-		case linux.IFLA_IFNAME:
-			if len(value) < 1 {
-				return syserr.ErrInvalidArgument
-			}
-			if ifinfomsg.Index != 0 {
-				// Device name changing isn't supported yet.
-				return syserr.ErrNotSupported
-			}
-			ifname := string(value[:len(value)-1])
-			for idx, ifa := range stack.Interfaces() {
-				if ifname == ifa.Name {
-					ifinfomsg.Index = idx
-					break
-				}
-			}
-		default:
-			ctx.Warningf("unexpected attribute: %x", ahdr.Type)
-			return syserr.ErrNotSupported
-		}
-	}
-	if ifinfomsg.Index == 0 {
-		return syserr.ErrNoDevice
-	}
-
-	flags := msg.Header().Flags
-	if flags&linux.NLM_F_EXCL != 0 {
-		return syserr.ErrExists
-	}
-	if flags&linux.NLM_F_REPLACE != 0 {
-		return syserr.ErrExists
-	}
-
-	if ifinfomsg.Flags != 0 || ifinfomsg.Change != 0 {
-		if ifinfomsg.Change & ^uint32(linux.IFF_UP) != 0 {
-			ctx.Warningf("Unsupported ifi_change flags: %x", ifinfomsg.Change)
-			return syserr.ErrInvalidArgument
-		}
-		if ifinfomsg.Flags & ^uint32(linux.IFF_UP) != 0 {
-			ctx.Warningf("Unsupported ifi_flags: %x", ifinfomsg.Change)
-			return syserr.ErrInvalidArgument
-		}
-		// Netstack interfaces are always up.
-	}
-	return nil
+	return stack.SetInterface(ctx, msg)
 }
 
 // delLink handles RTM_DELLINK requests.
-func (p *Protocol) delLink(ctx context.Context, msg *netlink.Message, ms *netlink.MessageSet) *syserr.Error {
+func (p *Protocol) delLink(ctx context.Context, msg *nlmsg.Message, ms *nlmsg.MessageSet) *syserr.Error {
 	stack := inet.StackFromContext(ctx)
 	if stack == nil {
 		// No network stack.
@@ -270,7 +214,7 @@ func (p *Protocol) delLink(ctx context.Context, msg *netlink.Message, ms *netlin
 
 // addNewLinkMessage appends RTM_NEWLINK message for the given interface into
 // the message set.
-func addNewLinkMessage(ms *netlink.MessageSet, idx int32, i inet.Interface) {
+func addNewLinkMessage(ms *nlmsg.MessageSet, idx int32, i inet.Interface) {
 	m := ms.AddMessage(linux.NetlinkMessageHeader{
 		Type: linux.RTM_NEWLINK,
 	})
@@ -298,7 +242,7 @@ func addNewLinkMessage(ms *netlink.MessageSet, idx int32, i inet.Interface) {
 }
 
 // dumpAddrs handles RTM_GETADDR dump requests.
-func (p *Protocol) dumpAddrs(ctx context.Context, msg *netlink.Message, ms *netlink.MessageSet) *syserr.Error {
+func (p *Protocol) dumpAddrs(ctx context.Context, msg *nlmsg.Message, ms *nlmsg.MessageSet) *syserr.Error {
 	// RTM_GETADDR dump requests need not contain anything more than the
 	// netlink header and 1 byte protocol family common to all
 	// NETLINK_ROUTE requests.
@@ -416,7 +360,7 @@ func fillRoute(routes []inet.Route, addr []byte) (inet.Route, *syserr.Error) {
 }
 
 // parseForDestination parses a message as format of RouteMessage-RtAttr-dst.
-func parseForDestination(msg *netlink.Message) ([]byte, *syserr.Error) {
+func parseForDestination(msg *nlmsg.Message) ([]byte, *syserr.Error) {
 	var rtMsg linux.RouteMessage
 	attrs, ok := msg.GetData(&rtMsg)
 	if !ok {
@@ -437,7 +381,7 @@ func parseForDestination(msg *netlink.Message) ([]byte, *syserr.Error) {
 }
 
 // dumpRoutes handles RTM_GETROUTE requests.
-func (p *Protocol) dumpRoutes(ctx context.Context, msg *netlink.Message, ms *netlink.MessageSet) *syserr.Error {
+func (p *Protocol) dumpRoutes(ctx context.Context, msg *nlmsg.Message, ms *nlmsg.MessageSet) *syserr.Error {
 	// RTM_GETROUTE dump requests need not contain anything more than the
 	// netlink header and 1 byte protocol family common to all
 	// NETLINK_ROUTE requests.
@@ -512,7 +456,7 @@ func (p *Protocol) dumpRoutes(ctx context.Context, msg *netlink.Message, ms *net
 }
 
 // newAddr handles RTM_NEWADDR requests.
-func (p *Protocol) newAddr(ctx context.Context, msg *netlink.Message, ms *netlink.MessageSet) *syserr.Error {
+func (p *Protocol) newAddr(ctx context.Context, msg *nlmsg.Message, ms *nlmsg.MessageSet) *syserr.Error {
 	stack := inet.StackFromContext(ctx)
 	if stack == nil {
 		// No network stack.
@@ -562,7 +506,7 @@ func (p *Protocol) newAddr(ctx context.Context, msg *netlink.Message, ms *netlin
 }
 
 // delAddr handles RTM_DELADDR requests.
-func (p *Protocol) delAddr(ctx context.Context, msg *netlink.Message, ms *netlink.MessageSet) *syserr.Error {
+func (p *Protocol) delAddr(ctx context.Context, msg *nlmsg.Message, ms *nlmsg.MessageSet) *syserr.Error {
 	stack := inet.StackFromContext(ctx)
 	if stack == nil {
 		// No network stack.
@@ -608,7 +552,7 @@ func (p *Protocol) delAddr(ctx context.Context, msg *netlink.Message, ms *netlin
 }
 
 // ProcessMessage implements netlink.Protocol.ProcessMessage.
-func (p *Protocol) ProcessMessage(ctx context.Context, msg *netlink.Message, ms *netlink.MessageSet) *syserr.Error {
+func (p *Protocol) ProcessMessage(ctx context.Context, msg *nlmsg.Message, ms *nlmsg.MessageSet) *syserr.Error {
 	hdr := msg.Header()
 
 	// All messages start with a 1 byte protocol family.

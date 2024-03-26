@@ -66,7 +66,7 @@ func newLoopbackStack() (*stack.Stack, tcpip.Error) {
 		TransportProtocols: []stack.TransportProtocolFactory{tcp.NewProtocol, udp.NewProtocol},
 	})
 
-	if err := s.CreateNIC(NICID, loopback.New()); err != nil {
+	if _, err := s.CreateNIC(NICID, loopback.New()); err != nil {
 		return nil, err
 	}
 

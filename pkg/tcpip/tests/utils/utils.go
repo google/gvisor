@@ -247,7 +247,7 @@ func SetupRouterStack(t *testing.T, s *stack.Stack, ep1, ep2 stack.LinkEndpoint)
 		},
 	} {
 		opts := stack.NICOptions{Name: setup.nicName}
-		if err := s.CreateNICWithOptions(setup.nicID, setup.ep, opts); err != nil {
+		if _, err := s.CreateNICWithOptions(setup.nicID, setup.ep, opts); err != nil {
 			t.Fatalf("s.CreateNICWithOptions(%d, _, %#v): %s", setup.nicID, opts, err)
 		}
 
@@ -289,13 +289,13 @@ func SetupRoutedStacks(t *testing.T, host1Stack, routerStack, host2Stack *stack.
 
 	{
 		opts := stack.NICOptions{Name: Host1NICName}
-		if err := host1Stack.CreateNICWithOptions(Host1NICID, NewEthernetEndpoint(host1NIC), opts); err != nil {
+		if _, err := host1Stack.CreateNICWithOptions(Host1NICID, NewEthernetEndpoint(host1NIC), opts); err != nil {
 			t.Fatalf("host1Stack.CreateNICWithOptions(%d, _, %#v): %s", Host1NICID, opts, err)
 		}
 	}
 	{
 		opts := stack.NICOptions{Name: Host2NICName}
-		if err := host2Stack.CreateNICWithOptions(Host2NICID, NewEthernetEndpoint(host2NIC), opts); err != nil {
+		if _, err := host2Stack.CreateNICWithOptions(Host2NICID, NewEthernetEndpoint(host2NIC), opts); err != nil {
 			t.Fatalf("host2Stack.CreateNICWithOptions(%d, _, %#v): %s", Host2NICID, opts, err)
 		}
 	}

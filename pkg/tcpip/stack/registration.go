@@ -758,6 +758,8 @@ type NetworkInterface interface {
 	// HandleNeighborConfirmation processes an incoming neighbor confirmation
 	// (e.g. ARP reply or NDP Neighbor Advertisement).
 	HandleNeighborConfirmation(tcpip.NetworkProtocolNumber, tcpip.Address, tcpip.LinkAddress, ReachabilityConfirmationFlags) tcpip.Error
+
+	SetCoordinator(mid tcpip.NICID) tcpip.Error
 }
 
 // LinkResolvableNetworkEndpoint handles link resolution events.

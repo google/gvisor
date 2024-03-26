@@ -112,7 +112,7 @@ func NewWithOptions(t *testing.T, transportProtocols []stack.TransportProtocolFa
 	if testing.Verbose() {
 		wep = sniffer.New(ep)
 	}
-	if err := s.CreateNIC(NICID, wep); err != nil {
+	if _, err := s.CreateNIC(NICID, wep); err != nil {
 		t.Fatalf("CreateNIC(%d, _): %s", NICID, err)
 	}
 

@@ -1080,3 +1080,25 @@ func (n *nic) multicastForwarding(protocol tcpip.NetworkProtocolNumber) (bool, t
 
 	return ep.MulticastForwarding(), nil
 }
+
+type coordinatorNIC interface {
+	AddNIC(n *nic) tcpip.Error
+}
+
+// SetCordinator sets a coordinator device.
+func (n *nic) SetCoordinator(mid tcpip.NICID) tcpip.Error {
+	s := n.stack
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	m, ok := s.nics[mid]
+	if !ok {
+		return &tcpip.ErrNoSuchFile{}
+	}
+	b, ok := m.NetworkLinkEndpoint.(coordinatorNIC)
+	if !ok {
+		return &tcpip.ErrNotSupported{}
+	}
+	return b.AddNIC(n)
+
+}

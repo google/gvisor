@@ -865,27 +865,41 @@ type NICOptions struct {
 	// DeliverLinkPackets specifies whether the NIC is responsible for
 	// delivering raw packets to packet sockets.
 	DeliverLinkPackets bool
+
+	Master tcpip.NICID
 }
 
-// CreateNICWithOptions creates a NIC with the provided id, LinkEndpoint, and
+// GetNICByID return a network device associated with the specified ID.
+func (s *Stack) GetNICByID(id tcpip.NICID) (*nic, tcpip.Error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	n, ok := s.nics[id]
+	if !ok {
+		return nil, &tcpip.ErrNoSuchFile{}
+	}
+	return n, nil
+}
+
+// CreateNICWithOptions creates a nic with the provided id, LinkEndpoint, and
 // NICOptions. See the documentation on type NICOptions for details on how
 // NICs can be configured.
 //
 // LinkEndpoint.Attach will be called to bind ep with a NetworkDispatcher.
-func (s *Stack) CreateNICWithOptions(id tcpip.NICID, ep LinkEndpoint, opts NICOptions) tcpip.Error {
+func (s *Stack) CreateNICWithOptions(id tcpip.NICID, ep LinkEndpoint, opts NICOptions) (NetworkInterface, tcpip.Error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	// Make sure id is unique.
 	if _, ok := s.nics[id]; ok {
-		return &tcpip.ErrDuplicateNICID{}
+		return nil, &tcpip.ErrDuplicateNICID{}
 	}
 
 	// Make sure name is unique, unless unnamed.
 	if opts.Name != "" {
 		for _, n := range s.nics {
 			if n.Name() == opts.Name {
-				return &tcpip.ErrDuplicateNICID{}
+				return nil, &tcpip.ErrDuplicateNICID{}
 			}
 		}
 	}
@@ -898,15 +912,15 @@ func (s *Stack) CreateNICWithOptions(id tcpip.NICID, ep LinkEndpoint, opts NICOp
 	}
 	s.nics[id] = n
 	if !opts.Disabled {
-		return n.enable()
+		return n, n.enable()
 	}
 
-	return nil
+	return n, nil
 }
 
 // CreateNIC creates a NIC with the provided id and LinkEndpoint and calls
 // LinkEndpoint.Attach to bind ep with a NetworkDispatcher.
-func (s *Stack) CreateNIC(id tcpip.NICID, ep LinkEndpoint) tcpip.Error {
+func (s *Stack) CreateNIC(id tcpip.NICID, ep LinkEndpoint) (NetworkInterface, tcpip.Error) {
 	return s.CreateNICWithOptions(id, ep, NICOptions{})
 }
 
