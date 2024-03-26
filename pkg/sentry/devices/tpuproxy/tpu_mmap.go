@@ -85,59 +85,6 @@ func (mf *tpuFDMemmapFile) FD() int {
 
 // ConfigureMMap implements vfs.FileDescriptionImpl.ConfigureMMap.
 func (fd *pciDeviceFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
+	fd.CachedMappable.InitFileMapperOnce()
 	return vfs.GenericConfigureMMap(&fd.vfsfd, fd, opts)
-}
-
-// AddMapping implements memmap.Mappable.AddMapping.
-func (fd *pciDeviceFD) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
-	return nil
-}
-
-// RemoveMapping implements memmap.Mappable.RemoveMapping.
-func (fd *pciDeviceFD) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
-}
-
-// CopyMapping implements memmap.Mappable.CopyMapping.
-func (fd *pciDeviceFD) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR hostarch.AddrRange, offset uint64, writable bool) error {
-	return nil
-}
-
-// Translate implements memmap.Mappable.Translate.
-func (fd *pciDeviceFD) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
-	return []memmap.Translation{
-		{
-			Source: optional,
-			File:   &fd.memmapFile,
-			Offset: optional.Start,
-			Perms:  at,
-		},
-	}, nil
-}
-
-// InvalidateUnsavable implements memmap.Mappable.InvalidateUnsavable.
-func (fd *pciDeviceFD) InvalidateUnsavable(ctx context.Context) error {
-	return nil
-}
-
-type pciDeviceFdMemmapFile struct {
-	fd *pciDeviceFD
-}
-
-// IncRef implements memmap.File.IncRef.
-func (mf *pciDeviceFdMemmapFile) IncRef(memmap.FileRange, uint32) {
-}
-
-// DecRef implements memmap.File.DecRef.
-func (mf *pciDeviceFdMemmapFile) DecRef(fr memmap.FileRange) {
-}
-
-// MapInternal implements memmap.File.MapInternal.
-func (mf *pciDeviceFdMemmapFile) MapInternal(fr memmap.FileRange, at hostarch.AccessType) (safemem.BlockSeq, error) {
-	log.Traceback("tpuproxy: rejecting pciDeviceFdMemmapFile.MapInternal")
-	return safemem.BlockSeq{}, linuxerr.EINVAL
-}
-
-// FD implements memmap.File.FD.
-func (mf *pciDeviceFdMemmapFile) FD() int {
-	return int(mf.fd.hostFD)
 }
