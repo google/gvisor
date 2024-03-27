@@ -20,6 +20,7 @@ go_library(
         "//pkg/sentry/kernel",
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/socket/netlink",
+        "//pkg/sentry/socket/netlink/nlmsg",
         "//pkg/syserr",
     ],
 )

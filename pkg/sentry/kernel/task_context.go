@@ -108,6 +108,8 @@ func (t *Task) contextValue(key any, isTaskGoroutine bool) any {
 		return t.k.getDevGoferClient(t.containerID)
 	case inet.CtxStack:
 		return t.NetworkContext()
+	case inet.CtxNamespaceByFD:
+		return t.NetworkNamespaceByFD
 	case ktime.CtxRealtimeClock:
 		return t.k.RealtimeClock()
 	case limits.CtxLimits:
