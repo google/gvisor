@@ -1,7 +1,7 @@
 """Meta and miscellaneous rules."""
 
-load("@bazel_skylib//rules:build_test.bzl", _build_test = "build_test")
 load("@bazel_skylib//:bzl_library.bzl", _bzl_library = "bzl_library")
+load("@bazel_skylib//rules:build_test.bzl", _build_test = "build_test")
 load("@bazel_skylib//rules:common_settings.bzl", _BuildSettingInfo = "BuildSettingInfo", _bool_flag = "bool_flag")
 
 build_test = _build_test
