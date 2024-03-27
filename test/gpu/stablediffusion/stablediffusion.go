@@ -149,6 +149,43 @@ func (i *XLImage) Image() (image.Image, error) {
 	return png.Decode(base64.NewDecoder(base64.StdEncoding, bytes.NewBufferString(strings.Join(i.data.ImagePNGBase64, ""))))
 }
 
+// TotalDuration returns the total time taken to generate the image.
+func (i *XLImage) TotalDuration() time.Duration {
+	return i.data.Done.Sub(i.data.Start)
+}
+
+// ColdBaseDuration returns time taken to run the base image generation model
+// the first time the image was generated (i.e. the model was cold).
+func (i *XLImage) ColdBaseDuration() time.Duration {
+	return i.data.ColdBaseDone.Sub(i.data.ColdStartImage)
+}
+
+// ColdRefinerDuration returns time taken to run the refiner model
+// the first time the image was generated (i.e. the model was cold).
+// Returns -1 if the refiner was not run.
+func (i *XLImage) ColdRefinerDuration() time.Duration {
+	if !i.Prompt.UseRefiner {
+		return -1
+	}
+	return i.data.ColdRefinerDone.Sub(i.data.ColdBaseDone)
+}
+
+// WarmBaseDuration returns time taken to run the base image generation model
+// the second time the image was generated (i.e. the model was warm).
+func (i *XLImage) WarmBaseDuration() time.Duration {
+	return i.data.WarmBaseDone.Sub(i.data.WarmStartImage)
+}
+
+// WarmRefinerDuration returns time taken to run the refiner model
+// the second time the image was generated (i.e. the model was warm).
+// Returns -1 if the refiner was not run.
+func (i *XLImage) WarmRefinerDuration() time.Duration {
+	if !i.Prompt.UseRefiner {
+		return -1
+	}
+	return i.data.WarmRefinerDone.Sub(i.data.WarmBaseDone)
+}
+
 // Generate generates an image with Stable Diffusion XL.
 func (xl *XL) Generate(ctx context.Context, prompt *XLPrompt) (*XLImage, error) {
 	argv := []string{
