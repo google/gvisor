@@ -606,3 +606,146 @@ func (c *Container) CleanUp(ctx context.Context) {
 	// Forget all mounts.
 	c.mounts = nil
 }
+
+// ContainerPool represents a pool of reusable containers.
+// Callers may request a container from the pool, and must release it back
+// when they are done with it.
+//
+// This is useful for large tests which can `exec` individual test cases
+// inside the same set of reusable containers, to avoid the cost of creating
+// and destroying containers for each test.
+//
+// It also supports reserving the whole pool ("exclusive"), which locks out
+// all other callers from getting any other container from the pool.
+// This is useful for tests where running in parallel may induce unexpected
+// errors which running serially would not cause. This allows the test to
+// first try to run in parallel, and then re-run failing tests exclusively
+// to make sure their failure is not due to parallel execution.
+type ContainerPool struct {
+	// numContainers is the total number of containers in the pool, whether
+	// reserved or not.
+	numContainers int
+
+	// containersCh is the main container queue channel.
+	// It is buffered with as many items as there are total containers in the
+	// pool (i.e. `numContainers`).
+	containersCh chan *Container
+
+	// exclusiveLockCh is a lock-like channel for exclusive locking.
+	// It is buffered with a single element seeded in it.
+	// Whichever goroutine claims this element now holds the exclusive lock.
+	exclusiveLockCh chan struct{}
+
+	// containersExclusiveCh is an alternative container queue channel.
+	// It is preferentially written to over containerCh, but is unbuffered.
+	// A goroutine may only listen on this channel if they hold the exclusive
+	// lock.
+	// This allows exclusive locking to get released containers preferentially
+	// over non-exclusive waiters, to avoid needless starvation.
+	containersExclusiveCh chan *Container
+
+	// shutdownCh is always empty, and is closed when the pool is shutting down.
+	shutdownCh chan struct{}
+}
+
+// NewContainerPool returns a new ContainerPool holding the given set of
+// containers.
+func NewContainerPool(containers []*Container) *ContainerPool {
+	if len(containers) == 0 {
+		panic("cannot create an empty pool")
+	}
+	containersCh := make(chan *Container, len(containers))
+	for _, c := range containers {
+		containersCh <- c
+	}
+	exclusiveCh := make(chan struct{}, 1)
+	exclusiveCh <- struct{}{}
+	return &ContainerPool{
+		containersCh:          containersCh,
+		exclusiveLockCh:       exclusiveCh,
+		containersExclusiveCh: make(chan *Container),
+		shutdownCh:            make(chan struct{}),
+		numContainers:         len(containers),
+	}
+}
+
+// releaseFn returns a function to release a container back to the pool.
+func (cp *ContainerPool) releaseFn(c *Container) func() {
+	return func() {
+		// Preferentially release to the exclusive channel.
+		select {
+		case cp.containersExclusiveCh <- c:
+			return
+		default:
+			// Otherwise, release to either channel.
+			select {
+			case cp.containersExclusiveCh <- c:
+			case cp.containersCh <- c:
+			}
+		}
+	}
+}
+
+// Get returns a free container and a function to release it back to the pool.
+func (cp *ContainerPool) Get(ctx context.Context) (*Container, func(), error) {
+	select {
+	case c := <-cp.containersCh:
+		return c, cp.releaseFn(c), nil
+	case <-cp.shutdownCh:
+		return nil, func() {}, errors.New("pool's closed")
+	case <-ctx.Done():
+		return nil, func() {}, ctx.Err()
+	}
+}
+
+// GetExclusive ensures all pooled containers are in the pool, reserves all
+// of them, and returns one of them, along with a function to release them all
+// back to the pool.
+func (cp *ContainerPool) GetExclusive(ctx context.Context) (*Container, func(), error) {
+	select {
+	case <-cp.exclusiveLockCh:
+		// Proceed.
+	case <-cp.shutdownCh:
+		return nil, func() {}, errors.New("pool's closed")
+	case <-ctx.Done():
+		return nil, func() {}, ctx.Err()
+	}
+	var reserved *Container
+	releaseFuncs := make([]func(), 0, cp.numContainers)
+	releaseAll := func() {
+		for i := len(releaseFuncs) - 1; i >= 0; i-- {
+			releaseFuncs[i]()
+		}
+		cp.exclusiveLockCh <- struct{}{}
+	}
+	for i := 0; i < cp.numContainers; i++ {
+		var got *Container
+		select {
+		case c := <-cp.containersExclusiveCh:
+			got = c
+		case c := <-cp.containersCh:
+			got = c
+		case <-cp.shutdownCh:
+			releaseAll()
+			return nil, func() {}, errors.New("pool's closed")
+		case <-ctx.Done():
+			releaseAll()
+			return nil, func() {}, ctx.Err()
+		}
+		releaseFuncs = append(releaseFuncs, cp.releaseFn(got))
+		if reserved == nil {
+			reserved = got
+		}
+	}
+	return reserved, releaseAll, nil
+}
+
+// CleanUp waits for all containers to be back into the pool, and cleans up
+// each container as soon as it gets back in the pool.
+func (cp *ContainerPool) CleanUp(ctx context.Context) {
+	close(cp.shutdownCh)
+	for i := 0; i < cp.numContainers; i++ {
+		c := <-cp.containersCh
+		c.CleanUp(ctx)
+	}
+}
