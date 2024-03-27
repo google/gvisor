@@ -96,6 +96,20 @@ const (
 	VFIO_PCI_NUM_IRQS
 )
 
+// VFIOIommuType1DmaMap flags.
+const (
+	// Readable from device.
+	VFIO_DMA_MAP_FLAG_READ = 1 << iota
+	// Writable from device.
+	VFIO_DMA_MAP_FLAG_WRITE
+	// Update the device's virtual address.
+	VFIO_DMA_MAP_FLAG_VADDR
+)
+
+const (
+	VFIO_DMA_UNMAP_FLAG_GET_DIRTY_BITMAP = 1
+)
+
 // IOCTLs for VFIO file descriptor from include/uapi/linux/vfio.h.
 var (
 	VFIO_CHECK_EXTENSION        = IO(VFIO_TYPE, VFIO_BASE+1)
@@ -107,6 +121,8 @@ var (
 	VFIO_DEVICE_GET_IRQ_INFO    = IO(VFIO_TYPE, VFIO_BASE+9)
 	VFIO_DEVICE_SET_IRQS        = IO(VFIO_TYPE, VFIO_BASE+10)
 	VFIO_DEVICE_RESET           = IO(VFIO_TYPE, VFIO_BASE+11)
+	VFIO_IOMMU_MAP_DMA          = IO(VFIO_TYPE, VFIO_BASE+13)
+	VFIO_IOMMU_UNMAP_DMA        = IO(VFIO_TYPE, VFIO_BASE+14)
 )
 
 // VFIODeviceInfo is analogous to vfio_device_info
@@ -164,4 +180,35 @@ type VFIOIrqSet struct {
 	Index uint32
 	Start uint32
 	Count uint32
+}
+
+// VFIOIommuType1DmaMap is analogous to vfio_iommu_type1_dma_map
+// from include/uapi/linux/vfio.h.
+//
+// +marshal
+type VFIOIommuType1DmaMap struct {
+	Argsz uint32
+	Flags uint32
+	// Process virtual address.
+	Vaddr uint64
+	// IO virtual address.
+	IOVa uint64
+	// Size of mapping in bytes.
+	Size uint64
+}
+
+// VFIOIommuType1DmaUnmap is analogous to vfio_iommu_type1_dma_unmap
+// from include/uapi/linux/vfio.h.
+//
+// +marshal
+type VFIOIommuType1DmaUnmap struct {
+	Argsz uint32
+	Flags uint32
+	// IO virtual address.
+	IOVa uint64
+	// Size of mapping in bytes.
+	Size uint64
+	// The `data` field from vfio_iommu_type1_dma_unmap is omitted. The
+	// field is a flexible array member, and is needed only the flag
+	// VFIO_DMA_UNMAP_FLAG_GET_DIRTY_BITMAP is enabled.
 }
