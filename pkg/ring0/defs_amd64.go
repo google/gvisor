@@ -157,6 +157,7 @@ type CPUArchState struct {
 	SwitchOptsFaultAddr uintptr
 	SwitchOptsErrorCode uintptr
 	SwitchOptsErrorType uintptr
+	SwitchOptsInterrupted uint64
 	SwitchOptsStack     [256]byte
 }
 

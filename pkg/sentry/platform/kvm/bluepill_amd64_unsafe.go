@@ -19,6 +19,7 @@ package kvm
 
 import (
 	"unsafe"
+	"sync/atomic"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/ring0"
@@ -176,6 +177,7 @@ func (c *vCPU) switchToUser(switchOpts ring0.SwitchOpts) (vector ring0.Vector) {
 	c.SwitchOptsFPU = switchOpts.FloatingPointState.BytePointer()
 	c.SwitchOptsNeedIRET = needIRET
 	c.SwitchOptsUserCR3 = userCR3
+	atomic.StoreUint64(&c.SwitchOptsInterrupted, 0)
 
 	// Mark this as guest mode.
 	switch c.state.Swap(vCPUGuest | vCPUUser) {
@@ -187,11 +189,33 @@ func (c *vCPU) switchToUser(switchOpts ring0.SwitchOpts) (vector ring0.Vector) {
 	}
 
 	for {
-		entersyscall()
-		_, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(c.fd), KVM_RUN, 0) // escapes: no.
-		exitsyscall()
+		_, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(c.fd), KVM_RUN, 0) // escapes: no.
 		switch errno {
 		case 0: // Expected case.
+		case unix.EINTR:
+			// Check whether the current state of the vCPU is ready
+			// for interrupt injection. Because we don't have a
+			// PIC, we can't inject an interrupt while they are
+			// masked. We need to request a window if it's not
+			// ready.
+			if bluepillReadyStopGuest(c) {
+				// Force injection below; the vCPU is ready.
+				c.runData.exitReason = _KVM_EXIT_IRQ_WINDOW_OPEN
+			} else {
+				c.runData.requestInterruptWindow = 1
+				continue // Rerun vCPU.
+			}
+		case unix.EFAULT:
+			// If a fault is not serviceable due to the host
+			// backing pages having page permissions, instead of an
+			// MMIO exit we receive EFAULT from the run ioctl. We
+			// always inject an NMI here since we may be in kernel
+			// mode and have interrupts disabled.
+			bluepillSigBus(c)
+			continue // Rerun vCPU.
+		case unix.ENOSYS:
+			bluepillHandleEnosys(c)
+			continue
 		default:
 			throw("run failed")
 		}
@@ -222,7 +246,7 @@ func (c *vCPU) switchToUser(switchOpts ring0.SwitchOpts) (vector ring0.Vector) {
 			c.die(nil, "exit_mmio")
 			return
 		case _KVM_EXIT_IRQ_WINDOW_OPEN:
-			//bluepillStopGuest(c)
+			bluepillStopGuest(c)
 		case _KVM_EXIT_SHUTDOWN:
 			c.die(nil, "shutdown")
 			return

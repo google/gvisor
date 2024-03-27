@@ -16,8 +16,8 @@
 #include "textflag.h"
 
 // CPU offsets.
-#define CPU_REGISTERS    392  // +checkoffset . CPU.registers
-#define CPU_FPU_STATE    608 // +checkoffset . CPU.floatingPointState
+#define CPU_REGISTERS    400  // +checkoffset . CPU.registers
+#define CPU_FPU_STATE    616 // +checkoffset . CPU.floatingPointState
 #define CPU_ARCH_STATE   16  // +checkoffset . CPU.CPUArchState
 #define CPU_ERROR_CODE   CPU_ARCH_STATE+0  // +checkoffset . CPUArchState.errorCode
 #define CPU_ERROR_TYPE   CPU_ARCH_STATE+8  // +checkoffset . CPUArchState.errorType
@@ -36,6 +36,7 @@
 #define CPU_SWITCH_OPTS_FAULT_ADDR CPU_ARCH_STATE+96 // +checkoffset . CPUArchState.SwitchOptsFaultAddr
 #define CPU_SWITCH_OPTS_ERROR_CODE CPU_ARCH_STATE+104 // +checkoffset . CPUArchState.SwitchOptsErrorCode
 #define CPU_SWITCH_OPTS_ERROR_TYPE CPU_ARCH_STATE+112 // +checkoffset . CPUArchState.SwitchOptsErrorType
+#define CPU_SWITCH_OPTS_INT CPU_ARCH_STATE+120 // +checkoffset . CPUArchState.SwitchOptsInterrupted
 
 #define ENTRY_SCRATCH0   256 // +checkoffset . kernelEntry.scratch0
 #define ENTRY_STACK_TOP  264 // +checkoffset . kernelEntry.stackTop
@@ -237,6 +238,9 @@ TEXT ·doSwitchToUserLoop(SB),NOSPLIT,$16
 	//STMXCSR mxcsr-0(SP)
 	//FSTCW cw-8(SP)
 
+	CMPB CPU_SWITCH_OPTS_INT(SI), $1
+	JE interrupted
+
 	// Restore application floating point state.
 	// MOVQ cpu+0(FP), SI
 	MOVQ CPU_SWITCH_OPTS_FPU(SI), DI
@@ -313,19 +317,9 @@ fpsave_done:
 
         MOVQ $0xffffffffffffffff, AX 
 	SYSCALL
-	// Restore MXCSR and the x87 control word after one of the two floating
-	// point save cases above, to ensure the application versions are saved
-	// before being clobbered here.
-	LDMXCSR mxcsr-0(SP)
-
-	// FLDCW is a "waiting" x87 instruction, meaning it checks for pending
-	// unmasked exceptions before executing. Thus if userspace has unmasked
-	// an exception and has one pending, it can be raised by FLDCW even
-	// though the new control word will mask exceptions. To prevent this,
-	// we must first clear pending exceptions (which will be restored by
-	// XRSTOR, et al).
-	BYTE $0xDB; BYTE $0xE2; // FNCLEX
-	FLDCW cw-8(SP)
+interrupted:
+	MOVQ $20, CPU_SWITCH_OPTS_VECTOR(SI)
+	JMP fpsave_done
 
 	RET
 
