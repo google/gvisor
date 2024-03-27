@@ -19,12 +19,16 @@ import (
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/abi/linux"
+	"gvisor.dev/gvisor/pkg/cleanup"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
 	"gvisor.dev/gvisor/pkg/fdnotifier"
+	"gvisor.dev/gvisor/pkg/hostarch"
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/arch"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/memmap"
+	"gvisor.dev/gvisor/pkg/sentry/mm"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 	"gvisor.dev/gvisor/pkg/usermem"
 	"gvisor.dev/gvisor/pkg/waiter"
@@ -90,6 +94,8 @@ func (fd *vfioFd) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args
 		return fd.checkExtension(extension(args[2].Int()))
 	case linux.VFIO_SET_IOMMU:
 		return fd.setIOMMU(extension(args[2].Int()))
+	case linux.VFIO_IOMMU_MAP_DMA:
+		return fd.iommuMapDma(ctx, t, args[2].Pointer())
 	}
 	return 0, linuxerr.ENOSYS
 }
@@ -122,6 +128,85 @@ func (fd *vfioFd) setIOMMU(ext extension) (uintptr, error) {
 		return ret, nil
 	}
 	return 0, linuxerr.EINVAL
+}
+
+func (fd *vfioFd) iommuMapDma(ctx context.Context, t *kernel.Task, arg hostarch.Addr) (uintptr, error) {
+	var dmaMap linux.VFIOIommuType1DmaMap
+	if _, err := dmaMap.CopyIn(t, arg); err != nil {
+		return 0, err
+	}
+	tmm := t.MemoryManager()
+	ar, ok := tmm.CheckIORange(hostarch.Addr(dmaMap.Vaddr), int64(dmaMap.Size))
+	if !ok {
+		return 0, linuxerr.EFAULT
+	}
+	if !ar.IsPageAligned() || (dmaMap.Size/hostarch.PageSize) == 0 {
+		return 0, linuxerr.EINVAL
+	}
+	// See comments at pkg/sentry/devices/accel/gasket.go, line 57-60.
+	devAddr := dmaMap.IOVa
+	devAddr &^= (hostarch.PageSize - 1)
+
+	devar := DevAddrRange{
+		devAddr,
+		devAddr + dmaMap.Size,
+	}
+	if !devar.WellFormed() {
+		return 0, linuxerr.EINVAL
+	}
+	// Reserve a range in the address space.
+	m, _, errno := unix.RawSyscall6(unix.SYS_MMAP, 0 /* addr */, uintptr(ar.Length()), unix.PROT_NONE, unix.MAP_PRIVATE|unix.MAP_ANONYMOUS, ^uintptr(0), 0)
+	if errno != 0 {
+		return 0, errno
+	}
+	cu := cleanup.Make(func() {
+		unix.RawSyscall(unix.SYS_MUNMAP, m, uintptr(ar.Length()), 0)
+	})
+	defer cu.Clean()
+	// Mirror application mappings into the reserved range.
+	prs, err := t.MemoryManager().Pin(ctx, ar, hostarch.ReadWrite, false)
+	cu.Add(func() {
+		mm.Unpin(prs)
+	})
+	if err != nil {
+		return 0, err
+	}
+	sentryAddr := uintptr(m)
+	for _, pr := range prs {
+		ims, err := pr.File.MapInternal(memmap.FileRange{Start: pr.Offset, End: pr.Offset + uint64(pr.Source.Length())}, hostarch.ReadWrite)
+		if err != nil {
+			return 0, err
+		}
+		for !ims.IsEmpty() {
+			im := ims.Head()
+			if _, _, errno := unix.RawSyscall6(unix.SYS_MREMAP, im.Addr(), 0, uintptr(im.Len()), linux.MREMAP_MAYMOVE|linux.MREMAP_FIXED, sentryAddr, 0); errno != 0 {
+				return 0, errno
+			}
+			sentryAddr += uintptr(im.Len())
+			ims = ims.Tail()
+		}
+	}
+	// Replace Vaddr with the host's virtual address.
+	dmaMap.Vaddr = uint64(m)
+	n, err := IOCTLInvokePtrArg[uint32](fd.hostFd, linux.VFIO_IOMMU_MAP_DMA, &dmaMap)
+	if err != nil {
+		return n, err
+	}
+	cu.Release()
+	// Unmap the reserved range, which is no longer required.
+	unix.RawSyscall(unix.SYS_MUNMAP, m, uintptr(ar.Length()), 0)
+
+	fd.device.mu.Lock()
+	defer fd.device.mu.Unlock()
+	for _, pr := range prs {
+		rlen := uint64(pr.Source.Length())
+		fd.device.devAddrSet.InsertRange(DevAddrRange{
+			devAddr,
+			devAddr + rlen,
+		}, pr)
+		devAddr += rlen
+	}
+	return n, nil
 }
 
 // VFIO extension.
