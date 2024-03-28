@@ -19,10 +19,9 @@
 
 namespace {
 void* errno_safe_malloc(size_t size) {
-  int original_errno = errno;
   void* result = malloc(size);
   if (result != nullptr) {
-    errno = original_errno;
+    errno = EINVAL;
   }
   return result;
 }
