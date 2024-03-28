@@ -56,6 +56,8 @@ type PacketBufferOptions struct {
 	// OnRelease is a function to be run when the packet buffer is no longer
 	// referenced (released back to the pool).
 	OnRelease func()
+
+	NetProto tcpip.NetworkProtocolNumber
 }
 
 // A PacketBuffer contains all the data of a network packet.
@@ -182,6 +184,7 @@ func NewPacketBuffer(opts PacketBufferOptions) *PacketBuffer {
 	}
 	pk.NetworkPacketInfo.IsForwardedPacket = opts.IsForwardedPacket
 	pk.onRelease = opts.OnRelease
+	pk.NetworkProtocolNumber = opts.NetProto // TODO: Now every endpoint has to do this, yeah?
 	pk.InitRefs()
 	return pk
 }

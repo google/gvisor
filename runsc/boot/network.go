@@ -21,7 +21,6 @@ import (
 	"os"
 	"runtime"
 	"strings"
-	"time"
 
 	"golang.org/x/sys/unix"
 	"gvisor.dev/gvisor/pkg/hostos"
@@ -100,7 +99,7 @@ type FDBasedLink struct {
 	Routes            []Route
 	GSOMaxSize        uint32
 	GvisorGSOEnabled  bool
-	GvisorGROTimeout  time.Duration
+	GvisorGRO         bool
 	TXChecksumOffload bool
 	RXChecksumOffload bool
 	LinkAddress       net.HardwareAddr
@@ -136,7 +135,7 @@ type XDPLink struct {
 	LinkAddress       net.HardwareAddr
 	QDisc             config.QueueingDiscipline
 	Neighbors         []Neighbor
-	GvisorGROTimeout  time.Duration
+	GvisorGRO         bool
 	Bind              BindOpt
 
 	// NumChannels controls how many underlying FDs are to be used to
@@ -146,10 +145,10 @@ type XDPLink struct {
 
 // LoopbackLink configures a loopback link.
 type LoopbackLink struct {
-	Name             string
-	Addresses        []IPWithPrefix
-	Routes           []Route
-	GvisorGROTimeout time.Duration
+	Name      string
+	Addresses []IPWithPrefix
+	Routes    []Route
+	GvisorGRO bool
 }
 
 // CreateLinksAndRoutesArgs are arguments to CreateLinkAndRoutes.
@@ -256,7 +255,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 		log.Infof("Enabling loopback interface %q with id %d on addresses %+v", link.Name, nicID, link.Addresses)
 		opts := stack.NICOptions{
 			Name:               link.Name,
-			GROTimeout:         link.GvisorGROTimeout,
+			GRO:                link.GvisorGRO,
 			DeliverLinkPackets: true,
 		}
 		if err := n.createNICWithAddrs(nicID, linkEP, opts, link.Addresses); err != nil {
@@ -350,7 +349,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 			opts := stack.NICOptions{
 				Name:               link.Name,
 				QDisc:              qDisc,
-				GROTimeout:         link.GvisorGROTimeout,
+				GRO:                link.GvisorGRO,
 				DeliverLinkPackets: true,
 			}
 			if err := n.createNICWithAddrs(nicID, linkEP, opts, link.Addresses); err != nil {
@@ -442,7 +441,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 		opts := stack.NICOptions{
 			Name:               link.Name,
 			QDisc:              qDisc,
-			GROTimeout:         link.GvisorGROTimeout,
+			GRO:                link.GvisorGRO,
 			DeliverLinkPackets: true,
 		}
 		if err := n.createNICWithAddrs(nicID, linkEP, opts, link.Addresses); err != nil {

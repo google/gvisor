@@ -198,17 +198,22 @@ func (e *Endpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber, pkt *stac
 	e.mu.RLock()
 	d := e.dispatcher
 	e.mu.RUnlock()
+	var pkts stack.PacketBufferList
+	pkts.PushBack(pkt)
 	if d != nil {
-		d.DeliverNetworkPacket(protocol, pkt)
+		d.DeliverNetworkPacket(pkts, 0)
 	}
 }
 
 // Attach saves the stack network-layer dispatcher for use later when packets
 // are injected.
-func (e *Endpoint) Attach(dispatcher stack.NetworkDispatcher) {
+// TODO: Not sure this is right, although if InjectInbound always takes 1
+// packet then we don't need to lock
+func (e *Endpoint) Attach(dispatcher stack.NetworkDispatcher) int {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.dispatcher = dispatcher
+	return 1
 }
 
 // IsAttached implements stack.LinkEndpoint.IsAttached.
