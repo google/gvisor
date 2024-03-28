@@ -1023,11 +1023,13 @@ type NetworkDispatcher interface {
 	// DeliverNetworkPacket finds the appropriate network protocol endpoint
 	// and hands the packet over for further processing.
 	//
+	// TODO: Callers have to pass a valid index, and ideally also have set
+	// each pkt.NetworkProtocolNumber.
 	//
 	// If the link-layer has a header, the packet's link header must be populated.
 	//
 	// DeliverNetworkPacket may modify pkt.
-	DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer)
+	DeliverNetworkPacket(pkts PacketBufferList, dispatcherIdx int)
 
 	// DeliverLinkPacket delivers a packet to any interested packet endpoints.
 	//
@@ -1101,7 +1103,7 @@ type NetworkLinkEndpoint interface {
 	//
 	// Attach is called with a nil dispatcher when the endpoint's NIC is being
 	// removed.
-	Attach(dispatcher NetworkDispatcher)
+	Attach(dispatcher NetworkDispatcher) int
 
 	// IsAttached returns whether a NetworkDispatcher is attached to the
 	// endpoint.
@@ -1141,6 +1143,14 @@ type QueueingDiscipline interface {
 	// should call eth.Encode with header.EthernetFields.SrcAddr set to
 	// pkg.EgressRoute.LocalLinkAddress if it is provided.
 	WritePacket(*PacketBuffer) tcpip.Error
+
+	// Kick signals the QueueingDiscipline that it might want to drain the
+	// queue. The pingpong argument indicates whether the caller believes
+	// the connection is "pingpongs" back and forth: e.g. each side sends
+	// data only after receving a response from the other side. This is in
+	// contrast to bulk data transfers where the sender sends data without
+	// waiting for a response.
+	Kick(pingpong bool)
 
 	Close()
 }

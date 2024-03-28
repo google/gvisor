@@ -733,29 +733,31 @@ func (s *Stack) SetPortRange(start uint16, end uint16) tcpip.Error {
 
 // GROTimeout returns the GRO timeout.
 func (s *Stack) GROTimeout(nicID tcpip.NICID) (time.Duration, tcpip.Error) {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	panic("TODO: remove")
+	// s.mu.RLock()
+	// defer s.mu.RUnlock()
 
-	nic, ok := s.nics[nicID]
-	if !ok {
-		return 0, &tcpip.ErrUnknownNICID{}
-	}
+	// nic, ok := s.nics[nicID]
+	// if !ok {
+	// 	return 0, &tcpip.ErrUnknownNICID{}
+	// }
 
-	return nic.gro.getInterval(), nil
+	// return nic.gro.getInterval(), nil
 }
 
 // SetGROTimeout sets the GRO timeout.
 func (s *Stack) SetGROTimeout(nicID tcpip.NICID, timeout time.Duration) tcpip.Error {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	panic("TODO: remove")
+	// s.mu.RLock()
+	// defer s.mu.RUnlock()
 
-	nic, ok := s.nics[nicID]
-	if !ok {
-		return &tcpip.ErrUnknownNICID{}
-	}
+	// nic, ok := s.nics[nicID]
+	// if !ok {
+	// 	return &tcpip.ErrUnknownNICID{}
+	// }
 
-	nic.gro.setInterval(timeout)
-	return nil
+	// nic.gro.setInterval(timeout)
+	// return nil
 }
 
 // SetRouteTable assigns the route table to be used by this stack. It
@@ -859,12 +861,12 @@ type NICOptions struct {
 	// QDisc is the queue discipline to use for this NIC.
 	QDisc QueueingDiscipline
 
-	// GROTimeout specifies the GRO timeout. Zero bypasses GRO.
-	GROTimeout time.Duration
-
 	// DeliverLinkPackets specifies whether the NIC is responsible for
 	// delivering raw packets to packet sockets.
 	DeliverLinkPackets bool
+
+	// GRO indicates whether GRO is enabled on the NIC.
+	GRO bool
 }
 
 // CreateNICWithOptions creates a NIC with the provided id, LinkEndpoint, and

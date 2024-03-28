@@ -47,7 +47,7 @@ helper_dir="$(dirname "$0")"
 netstack_opts=
 disable_linux_gso=
 disable_linux_gro=
-gro=0
+gro=false
 num_client_threads=1
 sniff=false
 xdp=false
@@ -173,9 +173,7 @@ while [[ $# -gt 0 ]]; do
       disable_linux_gro=1
       ;;
     --gro)
-      shift
-      [[ "$#" -le 0 ]] && echo "no GRO timeout provided" && exit 1
-      gro=$1
+      gro=true
       ;;
     --ipv6)
       client_addr=fd::1
@@ -234,7 +232,7 @@ while [[ $# -gt 0 ]]; do
       echo " --num-client-threads  number of parallel client threads to run"
       echo " --disable-linux-gso   disable segmentation offload (TSO, GSO, GRO) in the Linux network stack"
       echo " --disable-linux-gro   disable GRO in the Linux network stack"
-      echo " --gro                 set gVisor GRO timeout"
+      echo " --gro                 enable gVisor GRO"
       echo " --ipv6                use ipv6 for benchmarks"
       echo " --iperf-binary        name of the iperf binary to call"
       echo " --sniff               sniff and output packet logs"

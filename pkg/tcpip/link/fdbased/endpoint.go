@@ -57,7 +57,7 @@ import (
 // NetworkDispatcher.
 type linkDispatcher interface {
 	Stop()
-	dispatch() (bool, tcpip.Error)
+	dispatch(idx int) (stopped bool, err tcpip.Error)
 	release()
 }
 
@@ -407,7 +407,7 @@ func isSocketFD(fd int) (bool, error) {
 // then nothing happens.
 //
 // Attach implements stack.LinkEndpoint.Attach.
-func (e *endpoint) Attach(dispatcher stack.NetworkDispatcher) {
+func (e *endpoint) Attach(dispatcher stack.NetworkDispatcher) int {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	// nil means the NIC is being removed.
@@ -417,7 +417,7 @@ func (e *endpoint) Attach(dispatcher stack.NetworkDispatcher) {
 		}
 		e.Wait()
 		e.dispatcher = nil
-		return
+		return 0
 	}
 	if dispatcher != nil && e.dispatcher == nil {
 		e.dispatcher = dispatcher
@@ -427,11 +427,13 @@ func (e *endpoint) Attach(dispatcher stack.NetworkDispatcher) {
 		for i := range e.inboundDispatchers {
 			e.wg.Add(1)
 			go func(i int) { // S/R-SAFE: See above.
-				e.dispatchLoop(e.inboundDispatchers[i])
+				e.dispatchLoop(e.inboundDispatchers[i], i)
 				e.wg.Done()
 			}(i)
 		}
+		return len(e.inboundDispatchers)
 	}
+	return 0
 }
 
 // IsAttached implements stack.LinkEndpoint.IsAttached.
@@ -760,9 +762,10 @@ func (e *endpoint) InjectOutbound(dest tcpip.Address, packet *buffer.View) tcpip
 
 // dispatchLoop reads packets from the file descriptor in a loop and dispatches
 // them to the network stack.
-func (e *endpoint) dispatchLoop(inboundDispatcher linkDispatcher) tcpip.Error {
+func (e *endpoint) dispatchLoop(inboundDispatcher linkDispatcher, index int) tcpip.Error {
 	for {
-		cont, err := inboundDispatcher.dispatch()
+		// TODO: Inline
+		cont, err := inboundDispatcher.dispatch(index)
 		if err != nil || !cont {
 			if e.closed != nil {
 				e.closed(err)
@@ -803,10 +806,11 @@ type InjectableEndpoint struct {
 
 // Attach saves the stack network-layer dispatcher for use later when packets
 // are injected.
-func (e *InjectableEndpoint) Attach(dispatcher stack.NetworkDispatcher) {
+func (e *InjectableEndpoint) Attach(dispatcher stack.NetworkDispatcher) int {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.dispatcher = dispatcher
+	return 1
 }
 
 // InjectInbound injects an inbound packet. If the endpoint is not attached, the
@@ -815,8 +819,10 @@ func (e *InjectableEndpoint) InjectInbound(protocol tcpip.NetworkProtocolNumber,
 	e.mu.RLock()
 	d := e.dispatcher
 	e.mu.RUnlock()
+	var pkts stack.PacketBufferList
+	pkts.PushBack(pkt)
 	if d != nil {
-		d.DeliverNetworkPacket(protocol, pkt)
+		d.DeliverNetworkPacket(pkts, 1)
 	}
 }
 

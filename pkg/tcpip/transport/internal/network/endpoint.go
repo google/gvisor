@@ -235,6 +235,11 @@ func (c *WriteContext) MTU() uint32 {
 	return c.route.MTU()
 }
 
+// KickQDisc signals the queueing discipline to drain its queue.
+func (c *WriteContext) KickQDisc(pingpong bool) {
+	c.route.KickQDisc(pingpong)
+}
+
 // Release releases held resources.
 func (c *WriteContext) Release() {
 	c.route.Release()

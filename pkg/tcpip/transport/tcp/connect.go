@@ -801,7 +801,7 @@ func (e *Endpoint) sendSynTCP(r *stack.Route, tf tcpFields, opts header.TCPSynOp
 	// We ignore SYN send errors and let the callers re-attempt send.
 	p := stack.NewPacketBuffer(stack.PacketBufferOptions{ReserveHeaderBytes: header.TCPMinimumSize + int(r.MaxHeaderLength()) + len(tf.opts)})
 	defer p.DecRef()
-	if err := e.sendTCP(r, tf, p, stack.GSO{}); err != nil {
+	if err := e.sendTCP(r, tf, p, stack.GSO{}, true /* drain */); err != nil {
 		e.stats.SendErrors.SynSendToNetworkFailed.Increment()
 	}
 	putOptions(tf.opts)
@@ -809,9 +809,9 @@ func (e *Endpoint) sendSynTCP(r *stack.Route, tf tcpFields, opts header.TCPSynOp
 }
 
 // This method takes ownership of pkt.
-func (e *Endpoint) sendTCP(r *stack.Route, tf tcpFields, pkt *stack.PacketBuffer, gso stack.GSO) tcpip.Error {
+func (e *Endpoint) sendTCP(r *stack.Route, tf tcpFields, pkt *stack.PacketBuffer, gso stack.GSO, drain bool) tcpip.Error {
 	tf.txHash = e.txHash
-	if err := sendTCP(r, tf, pkt, gso, e.owner); err != nil {
+	if err := sendTCP(r, tf, pkt, gso, e.owner, drain); err != nil {
 		e.stats.SendErrors.SegmentSendToNetworkFailed.Increment()
 		return err
 	}
@@ -848,7 +848,7 @@ func buildTCPHdr(r *stack.Route, tf tcpFields, pkt *stack.PacketBuffer, gso stac
 	}
 }
 
-func sendTCPBatch(r *stack.Route, tf tcpFields, pkt *stack.PacketBuffer, gso stack.GSO, owner tcpip.PacketOwner) tcpip.Error {
+func sendTCPBatch(r *stack.Route, tf tcpFields, pkt *stack.PacketBuffer, gso stack.GSO, owner tcpip.PacketOwner, drain bool) tcpip.Error {
 	optLen := len(tf.opts)
 	if tf.rcvWnd > math.MaxUint16 {
 		tf.rcvWnd = math.MaxUint16
@@ -875,6 +875,7 @@ func sendTCPBatch(r *stack.Route, tf tcpFields, pkt *stack.PacketBuffer, gso sta
 			splitPkt.Data().ReadFromPacketData(pkt.Data(), packetSize)
 			pkt = splitPkt
 		}
+		pkt.NoDrain = !drain
 		pkt.Hash = tf.txHash
 		pkt.Owner = owner
 
@@ -899,15 +900,19 @@ func sendTCPBatch(r *stack.Route, tf tcpFields, pkt *stack.PacketBuffer, gso sta
 // sendTCP sends a TCP segment with the provided options via the provided
 // network endpoint and under the provided identity. This method takes
 // ownership of pkt.
-func sendTCP(r *stack.Route, tf tcpFields, pkt *stack.PacketBuffer, gso stack.GSO, owner tcpip.PacketOwner) tcpip.Error {
+func sendTCP(r *stack.Route, tf tcpFields, pkt *stack.PacketBuffer, gso stack.GSO, owner tcpip.PacketOwner, drain bool) tcpip.Error {
 	if tf.rcvWnd > math.MaxUint16 {
 		tf.rcvWnd = math.MaxUint16
 	}
 
 	if r.Loop()&stack.PacketLoop == 0 && gso.Type == stack.GSOGvisor && int(gso.MSS) < pkt.Data().Size() {
-		return sendTCPBatch(r, tf, pkt, gso, owner)
+		return sendTCPBatch(r, tf, pkt, gso, owner, drain)
 	}
 
+	// The annoying positive/negative difference between drain and NoDrain
+	// is for compatibility. Draining was the default before NoDrain was
+	// added, but it's easier for callers to use the positive drain.
+	pkt.NoDrain = !drain
 	pkt.GSOOptions = gso
 	pkt.Hash = tf.txHash
 	pkt.Owner = owner
@@ -967,12 +972,12 @@ func (e *Endpoint) makeOptions(sackBlocks []header.SACKBlock) []byte {
 func (e *Endpoint) sendEmptyRaw(flags header.TCPFlags, seq, ack seqnum.Value, rcvWnd seqnum.Size) tcpip.Error {
 	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{})
 	defer pkt.DecRef()
-	return e.sendRaw(pkt, flags, seq, ack, rcvWnd)
+	return e.sendRaw(pkt, flags, seq, ack, rcvWnd, true /* drain */)
 }
 
 // sendRaw sends a TCP segment to the endpoint's peer. This method takes
 // ownership of pkt. pkt must not have any headers set.
-func (e *Endpoint) sendRaw(pkt *stack.PacketBuffer, flags header.TCPFlags, seq, ack seqnum.Value, rcvWnd seqnum.Size) tcpip.Error {
+func (e *Endpoint) sendRaw(pkt *stack.PacketBuffer, flags header.TCPFlags, seq, ack seqnum.Value, rcvWnd seqnum.Size, drain bool) tcpip.Error {
 	var sackBlocks []header.SACKBlock
 	if e.EndpointState() == StateEstablished && e.rcv.pendingRcvdSegments.Len() > 0 && (flags&header.TCPFlagAck != 0) {
 		sackBlocks = e.sack.Blocks[:e.sack.NumBlocks]
@@ -989,12 +994,18 @@ func (e *Endpoint) sendRaw(pkt *stack.PacketBuffer, flags header.TCPFlags, seq, 
 		ack:    ack,
 		rcvWnd: rcvWnd,
 		opts:   options,
-	}, pkt, e.gso)
+	}, pkt, e.gso, drain)
 }
 
 // +checklocks:e.mu
 // +checklocksalias:e.snd.ep.mu=e.mu
 func (e *Endpoint) sendData(next *segment) {
+	e.sendDataWithDrain(next, true)
+}
+
+// +checklocks:e.mu
+// +checklocksalias:e.snd.ep.mu=e.mu
+func (e *Endpoint) sendDataWithDrain(next *segment, drain bool) {
 	// Initialize the next segment to write if it's currently nil.
 	if e.snd.writeNext == nil {
 		if next == nil {
@@ -1004,7 +1015,7 @@ func (e *Endpoint) sendData(next *segment) {
 	}
 
 	// Push out any new packets.
-	e.snd.sendData()
+	e.snd.sendDataWithDrain(drain)
 }
 
 // resetConnectionLocked puts the endpoint in an error state with the given

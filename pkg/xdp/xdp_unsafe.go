@@ -111,13 +111,30 @@ func (tq *TXQueue) init(off unix.XDPMmapOffsets, opts Opts) {
 
 // kick notifies the kernel that there are packets to transmit.
 func (tq *TXQueue) kick() error {
-	if tq.flags.RacyLoad()&unix.XDP_RING_NEED_WAKEUP == 0 {
+	if tq.flags.Load()&unix.XDP_RING_NEED_WAKEUP == 0 {
 		return nil
 	}
 
 	var msg unix.Msghdr
-	if _, _, errno := unix.Syscall6(unix.SYS_SENDMSG, uintptr(tq.sockfd), uintptr(unsafe.Pointer(&msg)), unix.MSG_DONTWAIT|unix.MSG_NOSIGNAL, 0, 0, 0); errno != 0 {
+	if _, _, errno := unix.RawSyscall6(unix.SYS_SENDMSG, uintptr(tq.sockfd), uintptr(unsafe.Pointer(&msg)), unix.MSG_DONTWAIT|unix.MSG_NOSIGNAL, 0, 0, 0); errno != 0 {
 		return fmt.Errorf("failed to kick TX queue via sendmsg: errno %d", errno)
 	}
 	return nil
 }
+
+func (fq *FillQueue) NeedWakeup() bool {
+	return fq.flags.RacyLoad()&unix.XDP_RING_NEED_WAKEUP != 0
+}
+
+// kick notifies the kernel that there are packets to be filled.
+// func (fq *FillQueue) kick() error {
+// 	if fq.flags.RacyLoad()&unix.XDP_RING_NEED_WAKEUP == 0 {
+// 		return nil
+// 	}
+
+// 	var msg unix.Msghdr
+// 	if _, _, errno := unix.RawSyscall6(unix.SYS_SENDMSG, uintptr(fq.sockfd), uintptr(unsafe.Pointer(&msg)), unix.MSG_DONTWAIT|unix.MSG_NOSIGNAL, 0, 0, 0); errno != 0 {
+// 		return fmt.Errorf("failed to kick fill queue via poll: errno %d", errno)
+// 	}
+// 	return nil
+// }

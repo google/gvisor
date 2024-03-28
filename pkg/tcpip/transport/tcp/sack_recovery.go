@@ -64,7 +64,7 @@ func (sr *sackRecovery) handleSACKRecovery(limit int, end seqnum.Value) (dataSen
 			//
 			// We pass s.smss as the limit as the Step 2) requires that
 			// new data sent should be of size s.smss or less.
-			if sent := snd.maybeSendSegment(nextSeg, limit, end); !sent {
+			if sent := snd.maybeSendSegment(nextSeg, limit, end, true /* drain */); !sent {
 				return dataSent
 			}
 			dataSent = true
@@ -82,7 +82,7 @@ func (sr *sackRecovery) handleSACKRecovery(limit int, end seqnum.Value) (dataSen
 		// transmitted in (C.1)."
 		snd.Outstanding++
 		dataSent = true
-		snd.sendSegment(nextSeg)
+		snd.sendSegment(nextSeg, true /* drain */)
 
 		segEnd := nextSeg.sequenceNumber.Add(nextSeg.logicalLen())
 		if rescueRtx {

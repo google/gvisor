@@ -24,7 +24,6 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
-	"time"
 
 	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/refs"
@@ -126,9 +125,8 @@ type Config struct {
 	// retains its old name of "software" GSO for API consistency.
 	GvisorGSO bool `flag:"software-gso"`
 
-	// GvisorGROTimeout sets gVisor's generic receive offload timeout. Zero
-	// bypasses GRO.
-	GvisorGROTimeout time.Duration `flag:"gvisor-gro"`
+	// GvisorGRO enables gVisor's generic receive offload.
+	GvisorGRO bool `flag:"gvisor-gro"`
 
 	// TXChecksumOffload indicates that TX Checksum Offload is enabled.
 	TXChecksumOffload bool `flag:"tx-checksum-offload"`
@@ -623,8 +621,19 @@ const (
 	// QDiscNone disables any queueing for the underlying FD.
 	QDiscNone QueueingDiscipline = iota
 
-	// QDiscFIFO applies a simple fifo based queue to the underlying FD.
+	// QDiscFIFO applies an asynchronous fifo based queue to the underlying
+	// FD.
 	QDiscFIFO
+
+	// QDiscFIFOSync applies a usually-synchronous fifo based queue to the
+	// underlying FD.
+	QDiscFIFOSync
+)
+
+const (
+	qdiscNone     = "none"
+	qdiscFIFO     = "fifo"
+	qdiscFIFOSync = "fifo_sync"
 )
 
 func queueingDisciplinePtr(v QueueingDiscipline) *QueueingDiscipline {
@@ -634,10 +643,12 @@ func queueingDisciplinePtr(v QueueingDiscipline) *QueueingDiscipline {
 // Set implements flag.Value. Set(String()) should be idempotent.
 func (q *QueueingDiscipline) Set(v string) error {
 	switch v {
-	case "none":
+	case qdiscNone:
 		*q = QDiscNone
-	case "fifo":
+	case qdiscFIFO:
 		*q = QDiscFIFO
+	case qdiscFIFOSync:
+		*q = QDiscFIFOSync
 	default:
 		return fmt.Errorf("invalid qdisc %q", v)
 	}
@@ -653,9 +664,11 @@ func (q *QueueingDiscipline) Get() any {
 func (q QueueingDiscipline) String() string {
 	switch q {
 	case QDiscNone:
-		return "none"
+		return qdiscNone
 	case QDiscFIFO:
-		return "fifo"
+		return qdiscFIFO
+	case QDiscFIFOSync:
+		return qdiscFIFOSync
 	}
 	panic(fmt.Sprintf("Invalid qdisc %d", q))
 }

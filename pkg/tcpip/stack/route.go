@@ -500,6 +500,11 @@ func (r *Route) WritePacket(params NetworkHeaderParams, pkt *PacketBuffer) tcpip
 	return r.outgoingNIC.getNetworkEndpoint(r.NetProto()).WritePacket(r, params, pkt)
 }
 
+// KickQDisc signals the queueing discipline to drain its queue.
+func (r *Route) KickQDisc(pingpong bool) {
+	r.outgoingNIC.qDisc.Kick(pingpong)
+}
+
 // WriteHeaderIncludedPacket writes a packet already containing a network
 // header through the given route.
 func (r *Route) WriteHeaderIncludedPacket(pkt *PacketBuffer) tcpip.Error {

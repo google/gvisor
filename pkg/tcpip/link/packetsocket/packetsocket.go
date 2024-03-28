@@ -40,10 +40,12 @@ func New(lower stack.LinkEndpoint) stack.LinkEndpoint {
 }
 
 // DeliverNetworkPacket implements stack.NetworkDispatcher.
-func (e *endpoint) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *stack.PacketBuffer) {
-	e.Endpoint.DeliverLinkPacket(protocol, pkt)
+func (e *endpoint) DeliverNetworkPacket(pkts stack.PacketBufferList, index int) {
+	for _, pkt := range pkts.AsSlice() {
+		e.Endpoint.DeliverLinkPacket(pkt.NetworkProtocolNumber, pkt)
+	}
 
-	e.Endpoint.DeliverNetworkPacket(protocol, pkt)
+	e.Endpoint.DeliverNetworkPacket(pkts, index)
 }
 
 // WritePackets implements stack.LinkEndpoint.

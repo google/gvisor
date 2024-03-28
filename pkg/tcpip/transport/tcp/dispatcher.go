@@ -203,6 +203,10 @@ func handleConnected(ep *Endpoint) {
 		startTimeWait(ep)
 	}
 	ep.mu.Unlock()
+
+	// If there's data enqueued to be sent, then traffic is not
+	// synchronous.
+	ep.route.KickQDisc(false /* pingpong */)
 }
 
 // startTimeWait starts a new goroutine to handle TIME-WAIT.

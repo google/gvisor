@@ -9,6 +9,7 @@ go_library(
     name = "fifo",
     srcs = [
         "fifo.go",
+        "fifo_sync.go",
         "packet_buffer_circular_list.go",
     ],
     visibility = ["//visibility:public"],

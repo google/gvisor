@@ -78,14 +78,14 @@ type nic struct {
 
 	qDisc QueueingDiscipline
 
-	gro groDispatcher
-
 	// deliverLinkPackets specifies whether this NIC delivers packets to
 	// packet sockets. It is immutable.
 	//
 	// deliverLinkPackets is off by default because some users already
 	// deliver link packets by explicitly calling nic.DeliverLinkPackets.
 	deliverLinkPackets bool
+
+	gro []groDispatcher
 }
 
 // makeNICStats initializes the NIC statistics and associates them to the global
@@ -154,6 +154,9 @@ func (qDisc *delegatingQueueingDiscipline) WritePacket(pkt *PacketBuffer) tcpip.
 	return err
 }
 
+// Kick implements QueueingDiscipline.Kick.
+func (*delegatingQueueingDiscipline) Kick(bool) {}
+
 // newNIC returns a new NIC using the default NDP configurations from stack.
 func newNIC(stack *Stack, id tcpip.NICID, ep LinkEndpoint, opts NICOptions) *nic {
 	// TODO(b/141011931): Validate a LinkEndpoint (ep) is valid. For
@@ -210,8 +213,13 @@ func newNIC(stack *Stack, id tcpip.NICID, ep LinkEndpoint, opts NICOptions) *nic
 		}
 	}
 
-	nic.gro.init(opts.GROTimeout)
-	nic.NetworkLinkEndpoint.Attach(nic)
+	nDispatchers := nic.NetworkLinkEndpoint.Attach(nic)
+
+	// TODO: remove opts.grotimeout
+	nic.gro = make([]groDispatcher, nDispatchers)
+	for i := 0; i < nDispatchers; i++ {
+		nic.gro[i].init(opts.GRO, nic.networkEndpoints[header.IPv4ProtocolNumber], nic.networkEndpoints[header.IPv6ProtocolNumber])
+	}
 
 	return nic
 }
@@ -316,9 +324,6 @@ func (n *nic) remove() tcpip.Error {
 	}
 
 	n.enableDisableMu.Unlock()
-
-	// Shutdown GRO.
-	n.gro.close()
 
 	// Drain and drop any packets pending link resolution.
 	// We must not hold n.enableDisableMu here.
@@ -728,31 +733,65 @@ func (n *nic) isInGroup(addr tcpip.Address) bool {
 // DeliverNetworkPacket finds the appropriate network protocol endpoint and
 // hands the packet over for further processing. This function is called when
 // the NIC receives a packet from the link endpoint.
-func (n *nic) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) {
+func (n *nic) DeliverNetworkPacket(pkts PacketBufferList, dispatcherIdx int) {
 	enabled := n.Enabled()
 	// If the NIC is not yet enabled, don't receive any packets.
 	if !enabled {
-		n.stats.disabledRx.packets.Increment()
-		n.stats.disabledRx.bytes.IncrementBy(uint64(pkt.Data().Size()))
+		n.stats.disabledRx.packets.IncrementBy(uint64(pkts.Len()))
+		for _, pkt := range pkts.AsSlice() {
+			n.stats.disabledRx.bytes.IncrementBy(uint64(pkt.Data().Size()))
+		}
 		return
 	}
 
-	n.stats.rx.packets.Increment()
-	n.stats.rx.bytes.IncrementBy(uint64(pkt.Data().Size()))
+	validated := n.NetworkLinkEndpoint.Capabilities()&CapabilityRXChecksumOffload != 0
 
-	networkEndpoint := n.getNetworkEndpoint(protocol)
-	if networkEndpoint == nil {
-		n.stats.unknownL3ProtocolRcvdPacketCounts.Increment(uint64(protocol))
+	n.stats.rx.packets.IncrementBy(uint64(pkts.Len()))
+	for _, pkt := range pkts.AsSlice() {
+		n.stats.rx.bytes.IncrementBy(uint64(pkt.Data().Size()))
+		pkt.RXChecksumValidated = validated
+
+		// TODO: Take a list
+		if n.deliverLinkPackets {
+			n.DeliverLinkPacket(pkt.NetworkProtocolNumber, pkt)
+		}
+	}
+
+	// TODO: Worry about false sharing here?
+	n.gro[dispatcherIdx].dispatch(pkts, n)
+}
+
+// QueueNetworkPackets
+func (n *nic) QueueNetworkPackets(pkts PacketBufferList, dispatcherIdx int) {
+	enabled := n.Enabled()
+	// If the NIC is not yet enabled, don't receive any packets.
+	if !enabled {
+		n.stats.disabledRx.packets.IncrementBy(uint64(pkts.Len()))
+		for _, pkt := range pkts.AsSlice() {
+			n.stats.disabledRx.bytes.IncrementBy(uint64(pkt.Data().Size()))
+		}
 		return
 	}
 
-	pkt.RXChecksumValidated = n.NetworkLinkEndpoint.Capabilities()&CapabilityRXChecksumOffload != 0
+	validated := n.NetworkLinkEndpoint.Capabilities()&CapabilityRXChecksumOffload != 0
 
-	if n.deliverLinkPackets {
-		n.DeliverLinkPacket(protocol, pkt)
+	n.stats.rx.packets.IncrementBy(uint64(pkts.Len()))
+	for _, pkt := range pkts.AsSlice() {
+		n.stats.rx.bytes.IncrementBy(uint64(pkt.Data().Size()))
+		pkt.RXChecksumValidated = validated
+
+		// TODO: Take a list
+		if n.deliverLinkPackets {
+			n.DeliverLinkPacket(pkt.NetworkProtocolNumber, pkt)
+		}
 	}
 
-	n.gro.dispatch(pkt, protocol, networkEndpoint)
+	// TODO: Worry about false sharing here?
+	n.gro[dispatcherIdx].dispatchWithFlush(pkts, n, false)
+}
+
+func (n *nic) FinishDeliverNetworkPackets(dispatcherIdx int) {
+	n.gro[dispatcherIdx].flush()
 }
 
 func (n *nic) DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) {

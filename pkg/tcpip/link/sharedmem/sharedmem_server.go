@@ -145,7 +145,7 @@ func (e *serverEndpoint) Wait() {
 
 // Attach implements stack.LinkEndpoint.Attach. It launches the goroutine that
 // reads packets from the rx queue.
-func (e *serverEndpoint) Attach(dispatcher stack.NetworkDispatcher) {
+func (e *serverEndpoint) Attach(dispatcher stack.NetworkDispatcher) int {
 	e.mu.Lock()
 	if !e.workerStarted && e.stopRequested.Load() == 0 {
 		e.workerStarted = true
@@ -170,6 +170,7 @@ func (e *serverEndpoint) Attach(dispatcher stack.NetworkDispatcher) {
 		go e.dispatchLoop(dispatcher) // S/R-SAFE: see above.
 	}
 	e.mu.Unlock()
+	return 1
 }
 
 // IsAttached implements stack.LinkEndpoint.IsAttached.
@@ -345,7 +346,10 @@ func (e *serverEndpoint) dispatchLoop(d stack.NetworkDispatcher) {
 			}
 		}
 		// Send packet up the stack.
-		d.DeliverNetworkPacket(proto, pkt)
+		pkt.NetworkProtocolNumber = proto
+		var pkts stack.PacketBufferList
+		pkts.PushBack(pkt)
+		d.DeliverNetworkPacket(pkts, 0)
 		pkt.DecRef()
 	}
 

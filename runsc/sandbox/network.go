@@ -77,7 +77,7 @@ func setupNetwork(conn *urpc.Client, pid int, conf *config.Config) error {
 
 func createDefaultLoopbackInterface(conf *config.Config, conn *urpc.Client) error {
 	link := boot.DefaultLoopbackLink
-	link.GvisorGROTimeout = conf.GvisorGROTimeout
+	link.GvisorGRO = conf.GvisorGRO
 	if err := conn.Call(boot.NetworkCreateLinksAndRoutes, &boot.CreateLinksAndRoutesArgs{
 		LoopbackLinks: []boot.LoopbackLink{link},
 	}, nil); err != nil {
@@ -277,7 +277,7 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 				Neighbors:         neighbors,
 				LinkAddress:       linkAddress,
 				Addresses:         addresses,
-				GvisorGROTimeout:  conf.GvisorGROTimeout,
+				GvisorGRO:         conf.GvisorGRO,
 			})
 		} else {
 			link := boot.FDBasedLink{
@@ -317,7 +317,7 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 				link.GSOMaxSize = stack.GvisorGSOMaxSize
 				link.GvisorGSOEnabled = true
 			}
-			link.GvisorGROTimeout = conf.GvisorGROTimeout
+			link.GvisorGRO = conf.GvisorGRO
 
 			args.FDBasedLinks = append(args.FDBasedLinks, link)
 		}
@@ -429,8 +429,8 @@ func createSocket(iface net.Interface, ifaceLink netlink.Link, enableGSO bool) (
 // interface.
 func loopbackLink(conf *config.Config, iface net.Interface, addrs []net.Addr) (boot.LoopbackLink, error) {
 	link := boot.LoopbackLink{
-		Name:             iface.Name,
-		GvisorGROTimeout: conf.GvisorGROTimeout,
+		Name:      iface.Name,
+		GvisorGRO: conf.GvisorGRO,
 	}
 	for _, addr := range addrs {
 		ipNet, ok := addr.(*net.IPNet)

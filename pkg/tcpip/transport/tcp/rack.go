@@ -195,7 +195,7 @@ func (s *sender) probeTimerExpired() tcpip.Error {
 
 	var dataSent bool
 	if s.writeNext != nil && s.writeNext.xmitCount == 0 && s.Outstanding < s.SndCwnd {
-		dataSent = s.maybeSendSegment(s.writeNext, int(s.ep.scoreboard.SMSS()), s.SndUna.Add(s.SndWnd))
+		dataSent = s.maybeSendSegment(s.writeNext, int(s.ep.scoreboard.SMSS()), s.SndUna.Add(s.SndWnd), true /* drain */)
 		if dataSent {
 			s.Outstanding += s.pCount(s.writeNext, s.MaxPayloadSize)
 			s.updateWriteNext(s.writeNext.Next())
@@ -219,7 +219,7 @@ func (s *sender) probeTimerExpired() tcpip.Error {
 		}
 
 		if highestSeqXmit != nil {
-			dataSent = s.maybeSendSegment(highestSeqXmit, int(s.ep.scoreboard.SMSS()), s.SndUna.Add(s.SndWnd))
+			dataSent = s.maybeSendSegment(highestSeqXmit, int(s.ep.scoreboard.SMSS()), s.SndUna.Add(s.SndWnd), true /* drain */)
 			if dataSent {
 				s.rc.tlpRxtOut = true
 				s.rc.tlpHighRxt = s.SndNxt
@@ -441,7 +441,7 @@ func (rc *rackControl) DoRecovery(_ *segment, fastRetransmit bool) {
 			break
 		}
 
-		if sent := snd.maybeSendSegment(seg, int(snd.ep.scoreboard.SMSS()), snd.SndUna.Add(snd.SndWnd)); !sent {
+		if sent := snd.maybeSendSegment(seg, int(snd.ep.scoreboard.SMSS()), snd.SndUna.Add(snd.SndWnd), true /* drain */); !sent {
 			break
 		}
 		dataSent = true

@@ -428,7 +428,7 @@ func (s *sender) resendSegment() {
 		// to the highest sequence number in the retransmitted segment.
 		s.FastRecovery.HighRxt = seg.sequenceNumber.Add(seqnum.Size(seg.payloadSize())) - 1
 		s.FastRecovery.RescueRxt = seg.sequenceNumber.Add(seqnum.Size(seg.payloadSize())) - 1
-		s.sendSegment(seg)
+		s.sendSegment(seg, true /* drain */)
 		s.ep.stack.Stats().TCP.FastRetransmit.Increment()
 		s.ep.stats.SendErrors.FastRetransmit.Increment()
 
@@ -734,7 +734,7 @@ func (s *sender) NextSeg(nextSegHint *segment) (nextSeg, hint *segment, rescueRt
 // lower of the specified limit value or the receivers window size specified by
 // end.
 // +checklocks:s.ep.mu
-func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (sent bool) {
+func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value, drain bool) (sent bool) {
 	// We abuse the flags field to determine if we have already
 	// assigned a sequence number to this segment.
 	if !s.isAssignedSequenceNumber(seg) {
@@ -893,7 +893,7 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 		segEnd = seg.sequenceNumber.Add(seqnum.Size(seg.payloadSize()))
 	}
 
-	s.sendSegment(seg)
+	s.sendSegment(seg, drain)
 
 	// Update sndNxt if we actually sent new data (as opposed to
 	// retransmitting some previously sent data).
@@ -969,6 +969,11 @@ func (s *sender) postXmit(dataSent bool, shouldScheduleProbe bool) {
 // when the send window opens up.
 // +checklocks:s.ep.mu
 func (s *sender) sendData() {
+	s.sendDataWithDrain(true)
+}
+
+// +checklocks:s.ep.mu
+func (s *sender) sendDataWithDrain(drain bool) {
 	limit := s.MaxPayloadSize
 	if s.gso {
 		limit = int(s.ep.gso.MaxSize - header.TCPTotalHeaderMaximumSize - 1)
@@ -997,7 +1002,7 @@ func (s *sender) sendData() {
 			s.updateWriteNext(seg.Next())
 			continue
 		}
-		if sent := s.maybeSendSegment(seg, limit, end); !sent {
+		if sent := s.maybeSendSegment(seg, limit, end, drain); !sent {
 			break
 		}
 		dataSent = true
@@ -1646,12 +1651,12 @@ func (s *sender) handleRcvdSegment(rcvdSeg *segment) {
 	// that the window opened up, or the congestion window was inflated due
 	// to a duplicate ack during fast recovery. This will also re-enable
 	// the retransmit timer if needed.
-	s.sendData()
+	s.sendDataWithDrain(false)
 }
 
 // sendSegment sends the specified segment.
 // +checklocks:s.ep.mu
-func (s *sender) sendSegment(seg *segment) tcpip.Error {
+func (s *sender) sendSegment(seg *segment, drain bool) tcpip.Error {
 	if seg.xmitCount > 0 {
 		s.ep.stack.Stats().TCP.Retransmits.Increment()
 		s.ep.stats.SendErrors.Retransmits.Increment()
@@ -1663,7 +1668,7 @@ func (s *sender) sendSegment(seg *segment) tcpip.Error {
 	seg.xmitCount++
 	seg.lost = false
 
-	err := s.sendSegmentFromPacketBuffer(seg.pkt, seg.flags, seg.sequenceNumber)
+	err := s.sendSegmentFromPacketBuffer(seg.pkt, seg.flags, seg.sequenceNumber, drain)
 
 	// Every time a packet containing data is sent (including a
 	// retransmission), if SACK is enabled and we are retransmitting data
@@ -1686,7 +1691,7 @@ func (s *sender) sendSegment(seg *segment) tcpip.Error {
 // flags and sequence number.
 // +checklocks:s.ep.mu
 // +checklocksalias:s.ep.rcv.ep.mu=s.ep.mu
-func (s *sender) sendSegmentFromPacketBuffer(pkt *stack.PacketBuffer, flags header.TCPFlags, seq seqnum.Value) tcpip.Error {
+func (s *sender) sendSegmentFromPacketBuffer(pkt *stack.PacketBuffer, flags header.TCPFlags, seq seqnum.Value, drain bool) tcpip.Error {
 	s.LastSendTime = s.ep.stack.Clock().NowMonotonic()
 	if seq == s.RTTMeasureSeqNum {
 		s.RTTMeasureTime = s.LastSendTime
@@ -1702,7 +1707,7 @@ func (s *sender) sendSegmentFromPacketBuffer(pkt *stack.PacketBuffer, flags head
 	pkt = pkt.Clone()
 	defer pkt.DecRef()
 
-	return s.ep.sendRaw(pkt, flags, seq, rcvNxt, rcvWnd)
+	return s.ep.sendRaw(pkt, flags, seq, rcvNxt, rcvWnd, drain)
 }
 
 // sendEmptySegment sends a new empty segment, flags and sequence number.

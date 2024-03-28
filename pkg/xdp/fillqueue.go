@@ -89,6 +89,7 @@ func (fq *FillQueue) free(toReserve uint32) uint32 {
 // Notify updates the producer such that it is visible to the kernel.
 func (fq *FillQueue) Notify() {
 	fq.producer.Store(fq.cachedProducer)
+	// fq.kick() // DO I NEED THIS?
 }
 
 // Set sets the fill queue's descriptor at index to addr.

@@ -42,10 +42,11 @@ func New() stack.LinkEndpoint {
 
 // Attach implements stack.LinkEndpoint.Attach. It just saves the stack network-
 // layer dispatcher for later use when packets need to be dispatched.
-func (e *endpoint) Attach(dispatcher stack.NetworkDispatcher) {
+func (e *endpoint) Attach(dispatcher stack.NetworkDispatcher) int {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.dispatcher = dispatcher
+	return 1
 }
 
 // IsAttached implements stack.LinkEndpoint.IsAttached.
@@ -87,6 +88,9 @@ func (e *endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) 
 	e.mu.RLock()
 	d := e.dispatcher
 	e.mu.RUnlock()
+	// TODO: stack.SingleBufferList() to get these w/o alloc. Or have nic
+	// have both single-and-multi packet versions? <--- DO THIS
+	var newPkts stack.PacketBufferList
 	for _, pkt := range pkts.AsSlice() {
 		// In order to properly loop back to the inbound side we must create a
 		// fresh packet that only contains the underlying payload with no headers
@@ -94,10 +98,12 @@ func (e *endpoint) WritePackets(pkts stack.PacketBufferList) (int, tcpip.Error) 
 		newPkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Payload: pkt.ToBuffer(),
 		})
+		newPkts.PushBack(newPkt)
 		if d != nil {
-			d.DeliverNetworkPacket(pkt.NetworkProtocolNumber, newPkt)
+			// TODO: We're doing single packets, which avoids GRO.
+			d.DeliverNetworkPacket(newPkts, 0)
 		}
-		newPkt.DecRef()
+		newPkts.Reset()
 	}
 	return pkts.Len(), nil
 }
