@@ -17,6 +17,7 @@
 package atomicptrmap
 
 import (
+	"math/rand"
 	"sync/atomic"
 	"unsafe"
 
@@ -56,7 +57,7 @@ type defaultHasher struct {
 // Init initializes the Hasher.
 func (h *defaultHasher) Init() {
 	h.fn = sync.MapKeyHasher(map[Key]*Value(nil))
-	h.seed = sync.RandUintptr()
+	h.seed = uintptr(rand.Uint64())
 }
 
 // Hash returns the hash value for the given Key.

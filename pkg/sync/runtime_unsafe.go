@@ -73,27 +73,6 @@ func Goready(gp uintptr, traceskip int, wakep bool) {
 	}
 }
 
-// Rand32 returns a non-cryptographically-secure random uint32.
-func Rand32() uint32 {
-	return fastrand()
-}
-
-// Rand64 returns a non-cryptographically-secure random uint64.
-func Rand64() uint64 {
-	return uint64(fastrand())<<32 | uint64(fastrand())
-}
-
-//go:linkname fastrand runtime.fastrand
-func fastrand() uint32
-
-// RandUintptr returns a non-cryptographically-secure random uintptr.
-func RandUintptr() uintptr {
-	if unsafe.Sizeof(uintptr(0)) == 4 {
-		return uintptr(Rand32())
-	}
-	return uintptr(Rand64())
-}
-
 // MapKeyHasher returns a hash function for pointers of m's key type.
 //
 // Preconditions: m must be a map.
