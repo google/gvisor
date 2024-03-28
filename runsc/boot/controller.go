@@ -98,6 +98,8 @@ const (
 
 	// ContMgrMount mounts a filesystem in a container.
 	ContMgrMount = "containerManager.Mount"
+
+	ContMgrContainerRuntimeState = "containerManager.ContainerRuntimeState"
 )
 
 const (
@@ -725,5 +727,11 @@ func (cm *containerManager) Mount(args *MountArgs, _ *struct{}) error {
 	}
 	log.Infof("Mounted %q to %q type: %s, internal-options: %q, in container %q", source, dest, fstype, opts.GetFilesystemOptions.Data, args.ContainerID)
 	cu.Release()
+	return nil
+}
+
+func (cm *containerManager) ContainerRuntimeState(cid *string, state *ContainerRuntimeState) error {
+	log.Debugf("containerManager.ContainerRuntimeState: cid: %s", cid)
+	*state = cm.l.containerRuntimeState(*cid)
 	return nil
 }

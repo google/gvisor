@@ -91,6 +91,15 @@ import (
 	_ "gvisor.dev/gvisor/pkg/sentry/socket/unix"
 )
 
+type ContainerRuntimeState int
+
+const (
+	RuntimeStateInvalid ContainerRuntimeState = iota
+	RuntimeStateCreating
+	RuntimeStateRunning
+	RuntimeStateStopped
+)
+
 type containerInfo struct {
 	cid string
 
@@ -543,6 +552,7 @@ func New(args Args) (*Loader, error) {
 		}
 	}
 
+	k.RegisterContainerName(args.ID, info.containerName)
 	eid := execID{cid: args.ID}
 	l := &Loader{
 		k:             k,
@@ -954,6 +964,7 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 		})
 	}
 
+	l.k.RegisterContainerName(cid, info.containerName)
 	l.k.StartProcess(ep.tg)
 	// No more failures from this point on.
 	cu.Release()
@@ -1715,4 +1726,20 @@ func (l *Loader) pidsCount(cid string) (int, error) {
 		return 0, err
 	}
 	return l.k.TaskSet().Root.NumTasksPerContainer(cid), nil
+}
+
+func (l *Loader) containerRuntimeState(cid string) ContainerRuntimeState {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	exec, ok := l.processes[execID{cid: cid}]
+	if !ok {
+		return RuntimeStateStopped
+	}
+	if exec.tg == nil {
+		return RuntimeStateCreating
+	}
+	if exec.tg.Leader().ExitState() == kernel.TaskExitNone {
+		return RuntimeStateRunning
+	}
+	return RuntimeStateStopped
 }
