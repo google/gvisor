@@ -12,6 +12,7 @@ go_library(
         "sh.go",
         "testutil.go",
         "testutil_runfiles.go",
+        "tree.go",
     ],
     visibility = ["//:sandbox"],
     deps = [
