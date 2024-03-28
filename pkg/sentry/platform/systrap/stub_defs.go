@@ -25,3 +25,4 @@ const _NEW_STUB = 1
 
 // _NEW_STUB is the value of the BX register when the syscall loop is executed.
 const _RUN_SYSCALL_LOOP = 5
+const _RUN_SECCOMP_LOOP = 6
