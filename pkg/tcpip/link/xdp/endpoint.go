@@ -359,7 +359,8 @@ func (ep *endpoint) dispatch() (bool, tcpip.Error) {
 				// buffer.
 				descriptor := ep.control.RX.Get(rxIndex + i)
 				data := ep.control.UMEM.Get(descriptor)
-				view := buffer.NewViewWithData(data)
+				view := buffer.NewView(len(data))
+				view.Write(data)
 				views = append(views, view)
 				ep.control.UMEM.FreeFrame(descriptor.Addr)
 			}
