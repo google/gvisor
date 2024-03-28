@@ -2077,6 +2077,9 @@ func (vfs *VirtualFilesystem) StateSave(stateSinkObject state.Sink) {
 	var mountsValue []*Mount
 	mountsValue = vfs.saveMounts()
 	stateSinkObject.SaveValue(0, mountsValue)
+	var mountPromisesValue map[VirtualDentry]*mountPromise
+	mountPromisesValue = vfs.saveMountPromises()
+	stateSinkObject.SaveValue(11, mountPromisesValue)
 	stateSinkObject.Save(1, &vfs.mountpoints)
 	stateSinkObject.Save(2, &vfs.lastMountID)
 	stateSinkObject.Save(3, &vfs.anonMount)
@@ -2087,7 +2090,6 @@ func (vfs *VirtualFilesystem) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(8, &vfs.fsTypes)
 	stateSinkObject.Save(9, &vfs.filesystems)
 	stateSinkObject.Save(10, &vfs.groupIDBitmap)
-	stateSinkObject.Save(11, &vfs.mountPromises)
 	stateSinkObject.Save(12, &vfs.toDecRef)
 }
 
@@ -2105,9 +2107,9 @@ func (vfs *VirtualFilesystem) StateLoad(ctx context.Context, stateSourceObject s
 	stateSourceObject.Load(8, &vfs.fsTypes)
 	stateSourceObject.Load(9, &vfs.filesystems)
 	stateSourceObject.Load(10, &vfs.groupIDBitmap)
-	stateSourceObject.Load(11, &vfs.mountPromises)
 	stateSourceObject.Load(12, &vfs.toDecRef)
 	stateSourceObject.LoadValue(0, new([]*Mount), func(y any) { vfs.loadMounts(ctx, y.([]*Mount)) })
+	stateSourceObject.LoadValue(11, new(map[VirtualDentry]*mountPromise), func(y any) { vfs.loadMountPromises(ctx, y.(map[VirtualDentry]*mountPromise)) })
 }
 
 func (p *PathOperation) StateTypeName() string {
