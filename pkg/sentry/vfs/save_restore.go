@@ -108,6 +108,16 @@ func (vfs *VirtualFilesystem) saveMounts() []*Mount {
 // saveKey is called by stateify.
 func (mnt *Mount) saveKey() VirtualDentry { return mnt.getKey() }
 
+// saveMountPromises is called by stateify.
+func (vfs *VirtualFilesystem) saveMountPromises() map[VirtualDentry]*mountPromise {
+	m := make(map[VirtualDentry]*mountPromise)
+	vfs.mountPromises.Range(func(key any, val any) bool {
+		m[key.(VirtualDentry)] = val.(*mountPromise)
+		return true
+	})
+	return m
+}
+
 // loadMounts is called by stateify.
 func (vfs *VirtualFilesystem) loadMounts(_ goContext.Context, mounts []*Mount) {
 	if mounts == nil {
@@ -121,6 +131,13 @@ func (vfs *VirtualFilesystem) loadMounts(_ goContext.Context, mounts []*Mount) {
 
 // loadKey is called by stateify.
 func (mnt *Mount) loadKey(_ goContext.Context, vd VirtualDentry) { mnt.setKey(vd) }
+
+// loadMountPromises is called by stateify.
+func (vfs *VirtualFilesystem) loadMountPromises(_ goContext.Context, mps map[VirtualDentry]*mountPromise) {
+	for vd, mp := range mps {
+		vfs.mountPromises.Store(vd, mp)
+	}
+}
 
 // afterLoad is called by stateify.
 func (mnt *Mount) afterLoad(goContext.Context) {
