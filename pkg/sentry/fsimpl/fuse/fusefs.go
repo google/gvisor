@@ -53,7 +53,7 @@ type filesystemOptions struct {
 	// gid of the mount owner.
 	gid auth.KGID
 
-	// rootMode specifies the the file mode of the filesystem's root.
+	// rootMode specifies the file mode of the filesystem's root.
 	rootMode linux.FileMode
 
 	// maxActiveRequests specifies the maximum number of active requests that can

@@ -30,7 +30,7 @@ const (
 	ndpRSOptionsOffset = 4
 )
 
-// Options returns an NDPOptions of the the options body.
+// Options returns an NDPOptions of the options body.
 func (b NDPRouterSolicit) Options() NDPOptions {
 	return NDPOptions(b[ndpRSOptionsOffset:])
 }

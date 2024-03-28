@@ -1596,7 +1596,7 @@ func TestQueuedPackets(t *testing.T) {
 				t.Errorf("mockMulticastGroupProtocol mismatch (-want +got):\n%s", diff)
 			}
 
-			// Receiving a report should should transition us into the idle member state,
+			// Receiving a report should transition us into the idle member state,
 			// even if we had a packet queued. We should no longer have any packets to
 			// send.
 			mgp.handleReport(addr1)

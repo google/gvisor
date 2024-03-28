@@ -1532,7 +1532,7 @@ func manglePath(p string) string {
 	return r.Replace(p)
 }
 
-// superBlockOpts returns the super block options string for the the mount at
+// superBlockOpts returns the super block options string for the mount at
 // the given path.
 func superBlockOpts(mountPath string, mnt *Mount) string {
 	// Compose super block options by combining global mount flags with

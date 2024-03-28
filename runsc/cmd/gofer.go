@@ -700,7 +700,7 @@ func adjustMountOptions(conf *config.Config, path string, opts []string) ([]stri
 // setFlags sets sync FD flags on the given FlagSet.
 func (g *goferSyncFDs) setFlags(f *flag.FlagSet) {
 	f.IntVar(&g.nvproxyFD, "sync-nvproxy-fd", -1, "file descriptor that the gofer waits on until nvproxy setup is done")
-	f.IntVar(&g.usernsFD, "sync-userns-fd", -1, "file descriptor the the gofer waits on until userns mappings are set up")
+	f.IntVar(&g.usernsFD, "sync-userns-fd", -1, "file descriptor the gofer waits on until userns mappings are set up")
 	f.IntVar(&g.procMountFD, "proc-mount-sync-fd", -1, "file descriptor that the gofer writes to when /proc isn't needed anymore and can be unmounted")
 }
 

@@ -46,7 +46,7 @@ func (b NDPNeighborSolicit) SetTargetAddress(addr tcpip.Address) {
 	copy(b[ndpNSTargetAddessOffset:][:IPv6AddressSize], addr.AsSlice())
 }
 
-// Options returns an NDPOptions of the the options body.
+// Options returns an NDPOptions of the options body.
 func (b NDPNeighborSolicit) Options() NDPOptions {
 	return NDPOptions(b[ndpNSOptionsOffset:])
 }
