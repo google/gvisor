@@ -13,6 +13,8 @@
 // limitations under the License.
 
 // Package kvm provides a kvm-based implementation of the platform interface.
+//
+// +checkalignedignore
 package kvm
 
 import (
