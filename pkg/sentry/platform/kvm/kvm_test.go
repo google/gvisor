@@ -66,6 +66,7 @@ func kvmTest(t testHarness, setup func(*KVM), fn func(*vCPU) bool) {
 			k.machine.Put(c)
 		}
 	}()
+	redpill()
 	for {
 		c = k.machine.Get()
 		if !fn(c) {
@@ -189,6 +190,7 @@ func TestApplicationSyscall(t *testing.T) {
 }
 
 func TestApplicationFault(t *testing.T) {
+	t.Logf("%x", testutil.AddrOfTouch())
 	applicationTest(t, true, testutil.AddrOfTouch(), func(c *vCPU, regs *arch.Registers, pt *pagetables.PageTables) bool {
 		testutil.SetTouchTarget(regs, nil) // Cause fault.
 		var si linux.SignalInfo
@@ -198,6 +200,7 @@ func TestApplicationFault(t *testing.T) {
 			PageTables:         pt,
 			FullRestore:        true,
 		}, &si); err == platform.ErrContextInterrupt {
+			t.Logf("==============")
 			return true // Retry.
 		} else if err != platform.ErrContextSignal || si.Signo != int32(unix.SIGSEGV) {
 			t.Errorf("application fault with full restore got (%v, %v), expected (%v, SIGSEGV)", err, si, platform.ErrContextSignal)

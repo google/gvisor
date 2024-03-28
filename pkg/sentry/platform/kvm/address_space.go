@@ -182,7 +182,7 @@ func (as *addressSpace) MapFile(addr hostarch.Addr, f memmap.File, fr memmap.Fil
 		}
 
 		// See bluepill_allocator.go.
-		bluepill(as.pageTables.Allocator.(*allocator).cpu)
+		// bluepill(as.pageTables.Allocator.(*allocator).cpu)
 
 		// Perform the mapping.
 		prev := as.mapLocked(addr, hostMapEntry{
@@ -216,7 +216,7 @@ func (as *addressSpace) Unmap(addr hostarch.Addr, length uint64) {
 	// See above & bluepill_allocator.go.
 	as.pageTables.Allocator.(*allocator).cpu = as.machine.Get()
 	defer as.machine.Put(as.pageTables.Allocator.(*allocator).cpu)
-	bluepill(as.pageTables.Allocator.(*allocator).cpu)
+	//bluepill(as.pageTables.Allocator.(*allocator).cpu)
 
 	if prev := as.unmapLocked(addr, length); prev {
 		// Invalidate all active vCPUs.

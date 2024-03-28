@@ -220,3 +220,5 @@ func (m *machine) getMaxVCPU() {
 		}
 	}
 }
+
+func (c *vCPU) interrupted() {}

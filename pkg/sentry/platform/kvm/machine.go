@@ -672,6 +672,7 @@ func (c *vCPU) bounce(forceGuestExit bool) {
 				break // Retry.
 			}
 			for {
+				c.interrupted()
 				// We need to spin here until the signal is
 				// delivered, because Tgkill can return EAGAIN
 				// under memory pressure. Since we already

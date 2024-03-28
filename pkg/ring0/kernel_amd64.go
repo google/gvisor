@@ -154,6 +154,11 @@ func (c *CPU) StackTop() uint64 {
 	return uint64(kernelAddr(&c.stack[0])) + uint64(len(c.stack))
 }
 
+//go:nosplit
+func (c *CPU) SwitchOptsStackTop() uint64 {
+	return uint64(reflect.ValueOf(&c.SwitchOptsStack[0]).Pointer()) + 256 - 32
+}
+
 // IDT returns the CPU's IDT base and limit.
 //
 //go:nosplit
