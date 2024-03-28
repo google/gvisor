@@ -40,6 +40,12 @@ func TestHostFeatureFlags(t *testing.T) {
 	// Extract all cpuinfo flags.
 	cpuinfoBytes, _ := ioutil.ReadFile("/proc/cpuinfo")
 	cpuinfo := string(cpuinfoBytes)
+	modelRE := regexp.MustCompile(`(?m)^model name\s*:\s*(.*)\n`)
+	modelList := modelRE.FindStringSubmatch(cpuinfo)
+	if len(modelList) != 2 {
+		t.Fatalf("Unable to model name flags from %q", cpuinfo)
+	}
+	model := modelList[1]
 	re := regexp.MustCompile(`(?m)^flags\s+: (.*)$`)
 	m := re.FindStringSubmatch(cpuinfo)
 	if len(m) != 2 {
@@ -56,6 +62,11 @@ func TestHostFeatureFlags(t *testing.T) {
 		// Special cases not consistently visible. We don't mind if
 		// they are exposed in earlier versions.
 		if archSkipFeature(feature, version) {
+			continue
+		}
+
+		// Special cases not consistently visible on all CPU models.
+		if skipFeatureByModel(feature, model) {
 			continue
 		}
 
