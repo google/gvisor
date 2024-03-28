@@ -491,7 +491,7 @@ func (gd *groDispatcher) dispatch4(pkt *PacketBuffer, ep NetworkEndpoint) {
 	}
 
 	// Now we can get the bucket for the packet.
-	bucket := &gd.buckets[gd.bucketForPacket(ipHdr, tcpHdr)&groNBucketsMask]
+	bucket := &gd.buckets[gd.bucketForPacket4(ipHdr, tcpHdr)&groNBucketsMask]
 	bucket.mu.Lock()
 	groPkt, flushGROPkt := bucket.findGROPacket4(pkt, ipHdr, tcpHdr, ep)
 	bucket.found(gd, groPkt, flushGROPkt, pkt, ipHdr, tcpHdr, ep, updateIPv4Hdr)
@@ -589,13 +589,30 @@ func (gd *groDispatcher) dispatch6(pkt *PacketBuffer, ep NetworkEndpoint) {
 	}
 
 	// Now we can get the bucket for the packet.
-	bucket := &gd.buckets[gd.bucketForPacket(ipHdr, tcpHdr)&groNBucketsMask]
+	bucket := &gd.buckets[gd.bucketForPacket6(ipHdr, tcpHdr)&groNBucketsMask]
 	bucket.mu.Lock()
 	groPkt, flushGROPkt := bucket.findGROPacket6(pkt, ipHdr, tcpHdr, ep)
 	bucket.found(gd, groPkt, flushGROPkt, pkt, ipHdr, tcpHdr, ep, updateIPv6Hdr)
 }
 
-func (gd *groDispatcher) bucketForPacket(ipHdr header.Network, tcpHdr header.TCP) int {
+func (gd *groDispatcher) bucketForPacket4(ipHdr header.IPv4, tcpHdr header.TCP) int {
+	// TODO(b/256037250): Use jenkins or checksum. Write a test to print
+	// distribution.
+	var sum int
+	srcAddr := ipHdr.SourceAddress()
+	for _, val := range srcAddr.AsSlice() {
+		sum += int(val)
+	}
+	dstAddr := ipHdr.DestinationAddress()
+	for _, val := range dstAddr.AsSlice() {
+		sum += int(val)
+	}
+	sum += int(tcpHdr.SourcePort())
+	sum += int(tcpHdr.DestinationPort())
+	return sum
+}
+
+func (gd *groDispatcher) bucketForPacket6(ipHdr header.IPv6, tcpHdr header.TCP) int {
 	// TODO(b/256037250): Use jenkins or checksum. Write a test to print
 	// distribution.
 	var sum int
