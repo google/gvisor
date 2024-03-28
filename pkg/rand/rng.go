@@ -75,7 +75,7 @@ func (rg *RNG) Int63n(n int64) int64 {
 	//  - The remaining 20% map to the themselves - 2 * (maximum int64),
 	//    i.e. the first half of possible output values.
 	//
-	// And thus 60% of results map the the first half of possible output
+	// And thus 60% of results map the first half of possible output
 	// values, and 40% map the second half. Oops!
 	//
 	// We use the same trick as Go to deal with this: shave off the last

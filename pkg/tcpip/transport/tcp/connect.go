@@ -97,7 +97,7 @@ type handshake struct {
 	// hit.
 	deferAccept time.Duration
 
-	// acked is true if the the final ACK for a 3-way handshake has
+	// acked is true if the final ACK for a 3-way handshake has
 	// been received. This is required to stop retransmitting the
 	// original SYN-ACK when deferAccept is enabled.
 	acked bool
