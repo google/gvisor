@@ -2912,7 +2912,6 @@ cc_binary(
         "socket_ip_tcp_generic_loopback.cc",
     ],
     linkstatic = 1,
-    malloc = "//test/util:errno_safe_allocator",
     deps = [
         ":ip_socket_test_util",
         ":socket_ip_tcp_generic_test_cases",
