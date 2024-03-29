@@ -15,9 +15,8 @@ runsc run <container id>
 ```
 
 To checkpoint the container, the `--image-path` flag must be provided. This is
-the directory path within which the checkpoint state-file will be created. The
-file will be called `checkpoint.img` and necessary directories will be created
-if they do not yet exist.
+the directory path within which the checkpoint related files will be created.
+All necessary directories will be created if they do not yet exist.
 
 > Note: Two checkpoints cannot be saved to the same directory; every image-path
 > provided must be unique.
@@ -41,9 +40,10 @@ their processes after committing a checkpoint.)
 runsc checkpoint --image-path=<path> --leave-running <container id>
 ```
 
-To restore, provide the image path to the `checkpoint.img` file created during
-the checkpoint. Because containers stop by default after checkpointing, restore
-needs to happen in a new container (restore is a command which parallels start).
+To restore, provide the image path to the directory containing all the files
+created during the checkpoint. Because containers stop by default after
+checkpointing, restore needs to happen in a new container (restore is a command
+which parallels start).
 
 ```bash
 runsc create <container id>

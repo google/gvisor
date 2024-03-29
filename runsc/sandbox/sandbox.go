@@ -24,6 +24,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -441,20 +442,30 @@ func (s *Sandbox) StartSubcontainer(spec *specs.Spec, conf *config.Config, cid s
 }
 
 // Restore sends the restore call for a container in the sandbox.
-func (s *Sandbox) Restore(conf *config.Config, cid string, filename string) error {
+func (s *Sandbox) Restore(conf *config.Config, cid string, imagePath string) error {
 	log.Debugf("Restore sandbox %q", s.ID)
 
-	rf, err := os.Open(filename)
+	stateFileName := path.Join(imagePath, boot.CheckpointStateFileName)
+	sf, err := os.Open(stateFileName)
 	if err != nil {
-		return fmt.Errorf("opening restore file %q failed: %v", filename, err)
+		return fmt.Errorf("opening state file %q failed: %v", stateFileName, err)
 	}
-	defer rf.Close()
+	defer sf.Close()
 
 	opt := boot.RestoreOpts{
 		FilePayload: urpc.FilePayload{
-			Files: []*os.File{rf},
+			Files: []*os.File{sf},
 		},
-		SandboxID: s.ID,
+	}
+
+	// If the image file exists, we must pass it in.
+	pagesFileName := path.Join(imagePath, boot.CheckpointPagesFileName)
+	if pf, err := os.Open(pagesFileName); err == nil {
+		defer pf.Close()
+		opt.HavePagesFile = true
+		opt.FilePayload.Files = append(opt.FilePayload.Files, pf)
+	} else if !os.IsNotExist(err) {
+		return fmt.Errorf("opening restore image file %q failed: %v", pagesFileName, err)
 	}
 
 	// If the platform needs a device FD we must pass it in.
@@ -462,6 +473,7 @@ func (s *Sandbox) Restore(conf *config.Config, cid string, filename string) erro
 		return err
 	} else if deviceFile != nil {
 		defer deviceFile.Close()
+		opt.HaveDeviceFile = true
 		opt.FilePayload.Files = append(opt.FilePayload.Files, deviceFile)
 	}
 
@@ -1251,13 +1263,35 @@ func (s *Sandbox) SignalProcess(cid string, pid int32, sig unix.Signal, fgProces
 
 // Checkpoint sends the checkpoint call for a container in the sandbox.
 // The statefile will be written to f.
-func (s *Sandbox) Checkpoint(cid string, f *os.File, options statefile.Options) error {
+func (s *Sandbox) Checkpoint(cid string, imagePath string, options statefile.Options) error {
 	log.Debugf("Checkpoint sandbox %q, options %+v", s.ID, options)
+
+	stateFilePath := filepath.Join(imagePath, boot.CheckpointStateFileName)
+	sf, err := os.OpenFile(stateFilePath, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0644)
+	if err != nil {
+		return fmt.Errorf("creating checkpoint state file %q: %w", stateFilePath, err)
+	}
+	defer sf.Close()
+
 	opt := control.SaveOpts{
 		Metadata: options.WriteToMetadata(map[string]string{}),
 		FilePayload: urpc.FilePayload{
-			Files: []*os.File{f},
+			Files: []*os.File{sf},
 		},
+	}
+
+	// When there is no compression, MemoryFile contents are page-aligned.
+	// It is beneficial to store them separately so certain optimizations can be
+	// applied during restore.
+	if options.Compression == statefile.CompressionLevelNone {
+		pagesFilePath := filepath.Join(imagePath, boot.CheckpointPagesFileName)
+		pf, err := os.OpenFile(pagesFilePath, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0644)
+		if err != nil {
+			return fmt.Errorf("creating checkpoint pages file %q: %w", pagesFilePath, err)
+		}
+		defer pf.Close()
+		opt.FilePayload.Files = append(opt.FilePayload.Files, pf)
+		opt.HavePagesFile = true
 	}
 
 	if err := s.call(boot.ContMgrCheckpoint, &opt, nil); err != nil {

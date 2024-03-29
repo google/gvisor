@@ -18,7 +18,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 
 	"github.com/google/subcommands"
 	"golang.org/x/sys/unix"
@@ -30,9 +29,6 @@ import (
 	"gvisor.dev/gvisor/runsc/flag"
 	"gvisor.dev/gvisor/runsc/specutils"
 )
-
-// File containing the container's saved image/state within the given image-path's directory.
-const checkpointFileName = "checkpoint.img"
 
 // Checkpoint implements subcommands.Command for the "checkpoint" command.
 type Checkpoint struct {
@@ -92,16 +88,7 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...any) su
 		util.Fatalf("making directories at path provided: %v", err)
 	}
 
-	fullImagePath := filepath.Join(c.imagePath, checkpointFileName)
-
-	// Create the image file and open for writing.
-	file, err := os.OpenFile(fullImagePath, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0644)
-	if err != nil {
-		util.Fatalf("os.OpenFile(%q) failed: %v", fullImagePath, err)
-	}
-	defer file.Close()
-
-	if err := cont.Checkpoint(file, statefile.Options{Compression: c.compression.Level()}); err != nil {
+	if err := cont.Checkpoint(c.imagePath, statefile.Options{Compression: c.compression.Level()}); err != nil {
 		util.Fatalf("checkpoint failed: %v", err)
 	}
 
@@ -148,7 +135,7 @@ func (c *Checkpoint) Execute(_ context.Context, f *flag.FlagSet, args ...any) su
 	}
 	defer cont.Destroy()
 
-	if err := cont.Restore(conf, fullImagePath); err != nil {
+	if err := cont.Restore(conf, c.imagePath); err != nil {
 		util.Fatalf("starting container: %v", err)
 	}
 

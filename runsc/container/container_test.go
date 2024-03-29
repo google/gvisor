@@ -1063,26 +1063,15 @@ func testCheckpointRestore(t *testing.T, conf *config.Config, newSpecWithScript 
 		t.Fatalf("error starting container: %v", err)
 	}
 
-	// Set the image path, which is where the checkpoint image will be saved.
-	imagePath := filepath.Join(dir, "test-image-file")
-
-	// Create the image file and open for writing.
-	file, err := os.OpenFile(imagePath, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0644)
-	if err != nil {
-		t.Fatalf("error opening new file at imagePath: %v", err)
-	}
-	defer file.Close()
-
 	// Wait until application has ran.
 	if err := waitForFileNotEmpty(outputFile); err != nil {
 		t.Fatalf("Failed to wait for output file: %v", err)
 	}
 
 	// Checkpoint running container; save state into new file.
-	if err := cont.Checkpoint(file, statefile.Options{Compression: statefile.CompressionLevelFlateBestSpeed}); err != nil {
+	if err := cont.Checkpoint(dir, statefile.Options{Compression: statefile.CompressionLevelFlateBestSpeed}); err != nil {
 		t.Fatalf("error checkpointing container to empty file: %v", err)
 	}
-	defer os.RemoveAll(imagePath)
 
 	lastNum, err := readOutputNum(outputPath, -1)
 	if err != nil {
@@ -1112,7 +1101,7 @@ func testCheckpointRestore(t *testing.T, conf *config.Config, newSpecWithScript 
 	}
 	defer cont2.Destroy()
 
-	if err := cont2.Restore(conf, imagePath); err != nil {
+	if err := cont2.Restore(conf, dir); err != nil {
 		t.Fatalf("error restoring container: %v", err)
 	}
 
@@ -1155,7 +1144,7 @@ func testCheckpointRestore(t *testing.T, conf *config.Config, newSpecWithScript 
 	}
 	defer cont3.Destroy()
 
-	if err := cont3.Restore(conf, imagePath); err != nil {
+	if err := cont3.Restore(conf, dir); err != nil {
 		t.Fatalf("error restoring container: %v", err)
 	}
 
@@ -1251,24 +1240,13 @@ func TestUnixDomainSockets(t *testing.T) {
 				t.Fatalf("error starting container: %v", err)
 			}
 
-			// Set the image path, the location where the checkpoint image will be saved.
-			imagePath := filepath.Join(dir, "test-image-file")
-
-			// Create the image file and open for writing.
-			file, err := os.OpenFile(imagePath, os.O_CREATE|os.O_EXCL|os.O_RDWR, 0644)
-			if err != nil {
-				t.Fatalf("error opening new file at imagePath: %v", err)
-			}
-			defer file.Close()
-			defer os.RemoveAll(imagePath)
-
 			// Wait until application has ran.
 			if err := waitForFileNotEmpty(outputFile); err != nil {
 				t.Fatalf("Failed to wait for output file: %v", err)
 			}
 
 			// Checkpoint running container; save state into new file.
-			if err := cont.Checkpoint(file, statefile.Options{Compression: statefile.CompressionLevelFlateBestSpeed}); err != nil {
+			if err := cont.Checkpoint(dir, statefile.Options{Compression: statefile.CompressionLevelFlateBestSpeed}); err != nil {
 				t.Fatalf("error checkpointing container to empty file: %v", err)
 			}
 
@@ -1300,7 +1278,7 @@ func TestUnixDomainSockets(t *testing.T) {
 			}
 			defer contRestore.Destroy()
 
-			if err := contRestore.Restore(conf, imagePath); err != nil {
+			if err := contRestore.Restore(conf, dir); err != nil {
 				t.Fatalf("error restoring container: %v", err)
 			}
 

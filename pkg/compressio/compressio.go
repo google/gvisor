@@ -53,6 +53,7 @@ import (
 	"errors"
 	"hash"
 	"io"
+	"os"
 	"runtime"
 
 	"gvisor.dev/gvisor/pkg/sync"
@@ -358,7 +359,7 @@ type Reader struct {
 	pool
 
 	// in is the source.
-	in io.Reader
+	in *os.File
 
 	// scratch is a temporary buffer used for marshalling. This is declared
 	// unfront here to avoid reallocation.
@@ -371,7 +372,7 @@ var _ io.Reader = (*Reader)(nil)
 // is assumed to contain expected hash values, which will be compared against
 // hash values computed from the compressed bytes. See package comments for
 // details.
-func NewReader(in io.Reader, key []byte) (*Reader, error) {
+func NewReader(in *os.File, key []byte) (*Reader, error) {
 	r := &Reader{
 		in: in,
 	}
@@ -581,7 +582,7 @@ type Writer struct {
 	pool
 
 	// out is the underlying writer.
-	out io.Writer
+	out *os.File
 
 	// closed indicates whether the file has been closed.
 	closed bool
@@ -600,7 +601,7 @@ var _ io.Writer = (*Writer)(nil)
 // The recommended chunkSize is on the order of 1M. Extra memory may be
 // buffered (in the form of read-ahead, or buffered writes), and is limited to
 // O(chunkSize * [1+GOMAXPROCS]).
-func NewWriter(out io.Writer, key []byte, chunkSize uint32, level int) (*Writer, error) {
+func NewWriter(out *os.File, key []byte, chunkSize uint32, level int) (*Writer, error) {
 	w := &Writer{
 		pool: pool{
 			chunkSize: chunkSize,
@@ -791,9 +792,8 @@ func (w *Writer) Close() error {
 		return err
 	}
 
-	// Close the underlying writer (if necessary).
-	if closer, ok := w.out.(io.Closer); ok {
-		return closer.Close()
-	}
+	// Close the underlying writer.
+	w.out.Close()
+
 	return nil
 }

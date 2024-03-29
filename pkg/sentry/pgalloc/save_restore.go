@@ -31,7 +31,7 @@ import (
 )
 
 // SaveTo writes f's state to the given stream.
-func (f *MemoryFile) SaveTo(ctx context.Context, w wire.Writer) error {
+func (f *MemoryFile) SaveTo(ctx context.Context, w wire.Writer, pw io.Writer) error {
 	// Wait for reclaim.
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -102,7 +102,7 @@ func (f *MemoryFile) SaveTo(ctx context.Context, w wire.Writer) error {
 			if ioErr != nil {
 				return
 			}
-			_, ioErr = w.Write(s)
+			_, ioErr = pw.Write(s)
 		})
 		if ioErr != nil {
 			return ioErr
@@ -135,7 +135,7 @@ func (f *MemoryFile) RestoreID() string {
 }
 
 // LoadFrom loads MemoryFile state from the given stream.
-func (f *MemoryFile) LoadFrom(ctx context.Context, r wire.Reader) error {
+func (f *MemoryFile) LoadFrom(ctx context.Context, r wire.Reader, pr io.Reader) error {
 	// Load metadata.
 	if _, err := state.Load(ctx, r, &f.fileSize); err != nil {
 		return err
@@ -196,7 +196,7 @@ func (f *MemoryFile) LoadFrom(ctx context.Context, r wire.Reader) error {
 			if ioErr != nil {
 				return
 			}
-			_, ioErr = io.ReadFull(r, s)
+			_, ioErr = io.ReadFull(pr, s)
 		})
 		if ioErr != nil {
 			return ioErr

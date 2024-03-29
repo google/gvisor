@@ -22,6 +22,7 @@ import (
 	"encoding/binary"
 	"hash"
 	"io"
+	"os"
 )
 
 // nocompressio provides data storage that does not use data compression but
@@ -73,7 +74,7 @@ const (
 // NewSimpleReader returns a new (uncompressed) reader. If key is non-nil, the data stream
 // is assumed to contain expected hash values. See package comments for
 // details.
-func NewSimpleReader(in io.Reader, key []byte) (*SimpleReader, error) {
+func NewSimpleReader(in *os.File, key []byte) (*SimpleReader, error) {
 	r := &SimpleReader{
 		in:  bufio.NewReaderSize(in, defaultBufSize),
 		key: key,
@@ -174,7 +175,7 @@ func (r *SimpleReader) Read(p []byte) (int, error) {
 // SimpleWriter is a writer that does not compress.
 type SimpleWriter struct {
 	// base is the underlying writer.
-	base io.Writer
+	base *os.File
 
 	// out is a buffered writer.
 	out *bufio.Writer
@@ -192,7 +193,7 @@ var _ io.Closer = (*SimpleWriter)(nil)
 // NewSimpleWriter returns a new non-compressing writer. If key is non-nil, hash values are
 // generated and written out for compressed bytes. See package comments for
 // details.
-func NewSimpleWriter(out io.Writer, key []byte) (*SimpleWriter, error) {
+func NewSimpleWriter(out *os.File, key []byte) (*SimpleWriter, error) {
 	return &SimpleWriter{
 		base: out,
 		out:  bufio.NewWriterSize(out, defaultBufSize),
@@ -271,10 +272,8 @@ func (w *SimpleWriter) Close() error {
 		return err
 	}
 
-	// Close the underlying writer (if necessary).
-	if closer, ok := w.base.(io.Closer); ok {
-		return closer.Close()
-	}
+	// Close the underlying writer.
+	w.base.Close()
 
 	w.out = nil
 	w.base = nil

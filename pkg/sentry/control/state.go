@@ -16,6 +16,7 @@ package control
 
 import (
 	"errors"
+	"fmt"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/log"
@@ -43,17 +44,24 @@ type SaveOpts struct {
 	// Metadata is the set of metadata to prepend to the state file.
 	Metadata map[string]string `json:"metadata"`
 
-	// FilePayload contains the destination for the state.
+	// HavePagesFile indicates whether the checkpoint pages file is provided.
+	HavePagesFile bool `json:"have_pages_file"`
+
+	// FilePayload contains the following:
+	// 1. checkpoint state file.
+	// 2. optional checkpoint pages file.
 	urpc.FilePayload
 }
 
 // Save saves the running system.
 func (s *State) Save(o *SaveOpts, _ *struct{}) error {
-	// Create an output stream.
-	if len(o.FilePayload.Files) != 1 {
-		return ErrInvalidFiles
+	wantFiles := 1
+	if o.HavePagesFile {
+		wantFiles++
 	}
-	defer o.FilePayload.Files[0].Close()
+	if gotFiles := len(o.FilePayload.Files); gotFiles != wantFiles {
+		return fmt.Errorf("got %d files, wanted %d", gotFiles, wantFiles)
+	}
 
 	// Save to the first provided stream.
 	saveOpts := state.SaveOpts{
@@ -70,6 +78,11 @@ func (s *State) Save(o *SaveOpts, _ *struct{}) error {
 			}
 			s.Kernel.Kill(linux.WaitStatusExit(0))
 		},
+	}
+	defer saveOpts.Destination.Close()
+	if o.HavePagesFile {
+		saveOpts.PagesFile = o.FilePayload.Files[1]
+		defer saveOpts.PagesFile.Close()
 	}
 	return saveOpts.Save(s.Kernel.SupervisorContext(), s.Kernel, s.Watchdog)
 }

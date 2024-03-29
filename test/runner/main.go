@@ -276,12 +276,6 @@ func prepareSave(args []string, undeclaredOutputsDir string, dirs []string, inde
 	if err != nil {
 		return args, dirs, fmt.Errorf("failed to create state file directory: %v", err)
 	}
-	// Create the state/checkpoint file.
-	fName := filepath.Join(dir, checkpointFile)
-	_, err = os.Create(fName)
-	if err != nil {
-		return args, dirs, fmt.Errorf("failed to create state file: %v", err)
-	}
 	// Pass the directory path of the state file to the sandbox.
 	args = append(args, "-TESTONLY-autosave-image-path", dir)
 	dirs = append(dirs, dir)

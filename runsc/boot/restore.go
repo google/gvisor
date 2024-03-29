@@ -32,9 +32,19 @@ import (
 	"gvisor.dev/gvisor/runsc/boot/pprof"
 )
 
+const (
+	// CheckpointStateFileName is the file within the given image-path's
+	// directory which contains the container's saved state.
+	CheckpointStateFileName = "checkpoint.img"
+	// CheckpointPagesFileName is the file within the given image-path's
+	// directory containing the container's MemoryFile pages.
+	CheckpointPagesFileName = "pages.img"
+)
+
 type restorer struct {
 	container  *containerInfo
 	stateFile  *os.File
+	pagesFile  *os.File
 	deviceFile *os.File
 }
 
@@ -130,7 +140,7 @@ func (r *restorer) restore(l *Loader) error {
 	}
 
 	// Load the state.
-	loadOpts := state.LoadOpts{Source: r.stateFile}
+	loadOpts := state.LoadOpts{Source: r.stateFile, PagesFile: r.pagesFile}
 	if err := loadOpts.Load(ctx, l.k, nil, netns.Stack(), time.NewCalibratedClocks(), &vfs.CompleteRestoreOptions{}); err != nil {
 		return err
 	}

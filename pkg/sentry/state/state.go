@@ -18,6 +18,7 @@ package state
 import (
 	"fmt"
 	"io"
+	"os"
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -46,7 +47,10 @@ func (e ErrStateFile) Error() string {
 // SaveOpts contains save-related options.
 type SaveOpts struct {
 	// Destination is the save target.
-	Destination io.Writer
+	Destination *os.File
+
+	// PagesFile is the file in which all MemoryFile pages are stored.
+	PagesFile *os.File
 
 	// Key is used for state integrity check.
 	Key []byte
@@ -82,8 +86,12 @@ func (opts SaveOpts) Save(ctx context.Context, k *kernel.Kernel, w *watchdog.Wat
 	if err != nil {
 		err = ErrStateFile{err}
 	} else {
+		pw := io.Writer(wc)
+		if opts.PagesFile != nil {
+			pw = opts.PagesFile
+		}
 		// Save the kernel.
-		err = k.SaveTo(ctx, wc)
+		err = k.SaveTo(ctx, wc, pw)
 
 		// ENOSPC is a state file error. This error can only come from
 		// writing the state file, and not from fs.FileOperations.Fsync
@@ -103,7 +111,10 @@ func (opts SaveOpts) Save(ctx context.Context, k *kernel.Kernel, w *watchdog.Wat
 // LoadOpts contains load-related options.
 type LoadOpts struct {
 	// Destination is the load source.
-	Source io.Reader
+	Source *os.File
+
+	// PagesFile is the file in which all MemoryFile pages are stored.
+	PagesFile *os.File
 
 	// Key is used for state integrity check.
 	Key []byte
@@ -118,7 +129,11 @@ func (opts LoadOpts) Load(ctx context.Context, k *kernel.Kernel, timeReady chan 
 	}
 
 	previousMetadata = m
+	pr := io.Reader(r)
+	if opts.PagesFile != nil {
+		pr = opts.PagesFile
+	}
 
 	// Restore the Kernel object graph.
-	return k.LoadFrom(ctx, r, timeReady, n, clocks, vfsOpts)
+	return k.LoadFrom(ctx, r, pr, timeReady, n, clocks, vfsOpts)
 }

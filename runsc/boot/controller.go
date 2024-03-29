@@ -443,12 +443,13 @@ func (cm *containerManager) PortForward(opts *PortForwardOpts, _ *struct{}) erro
 
 // RestoreOpts contains options related to restoring a container's file system.
 type RestoreOpts struct {
-	// FilePayload contains the state file to be restored, followed by the
-	// platform device file if necessary.
+	// FilePayload contains the state file to be restored, followed in order by:
+	// 1. checkpoint state file.
+	// 2. optional checkpoint pages file.
+	// 3. optional platform device file.
 	urpc.FilePayload
-
-	// SandboxID contains the ID of the sandbox.
-	SandboxID string
+	HavePagesFile  bool
+	HaveDeviceFile bool
 }
 
 // Restore loads a container from a statefile.
@@ -458,29 +459,40 @@ type RestoreOpts struct {
 func (cm *containerManager) Restore(o *RestoreOpts, _ *struct{}) error {
 	log.Debugf("containerManager.Restore")
 
+	if len(o.Files) == 0 {
+		return fmt.Errorf("at least one file must be passed to Restore")
+	}
+	fileIdx := 0
+
 	r := restorer{container: &cm.l.root}
-	switch numFiles := len(o.Files); numFiles {
-	case 2:
+	r.stateFile = o.Files[fileIdx]
+	fileIdx++
+	defer r.stateFile.Close()
+	if info, err := r.stateFile.Stat(); err != nil {
+		return err
+	} else if info.Size() == 0 {
+		return fmt.Errorf("statefile cannot be empty")
+	}
+
+	if o.HavePagesFile {
+		r.pagesFile = o.Files[fileIdx]
+		fileIdx++
+		defer r.pagesFile.Close()
+	}
+
+	if o.HaveDeviceFile {
 		// The device file is donated to the platform.
 		// Can't take ownership away from os.File. dup them to get a new FD.
-		fd, err := unix.Dup(int(o.Files[1].Fd()))
+		fd, err := unix.Dup(int(o.Files[fileIdx].Fd()))
 		if err != nil {
 			return fmt.Errorf("failed to dup file: %v", err)
 		}
 		r.deviceFile = os.NewFile(uintptr(fd), "platform device")
-		fallthrough
-	case 1:
-		r.stateFile = o.Files[0]
-		if info, err := r.stateFile.Stat(); err != nil {
-			return err
-		} else if info.Size() == 0 {
-			return fmt.Errorf("file cannot be empty")
-		}
+		fileIdx++
+	}
 
-	case 0:
-		return fmt.Errorf("at least one file must be passed to Restore")
-	default:
-		return fmt.Errorf("at most two files may be passed to Restore")
+	if fileIdx < len(o.Files) {
+		return fmt.Errorf("more files passed to Restore than expected")
 	}
 
 	// Pause the kernel while we build a new one.

@@ -462,7 +462,7 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 	}
 
 	if conf.TestOnlyAutosaveImagePath != "" {
-		fName := filepath.Join(conf.TestOnlyAutosaveImagePath, checkpointFileName)
+		fName := filepath.Join(conf.TestOnlyAutosaveImagePath, boot.CheckpointStateFileName)
 		f, err := os.OpenFile(fName, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0666)
 		if err != nil {
 			util.Fatalf("error in creating state file %v", err)

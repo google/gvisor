@@ -53,6 +53,7 @@ import (
 	"fmt"
 	"hash"
 	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -162,7 +163,7 @@ func writeMetadataLen(w io.Writer, val uint64) error {
 // NewWriter returns a state data writer for a statefile.
 //
 // Note that the returned WriteCloser must be closed.
-func NewWriter(w io.Writer, key []byte, metadata map[string]string) (WriteCloser, error) {
+func NewWriter(w *os.File, key []byte, metadata map[string]string) (WriteCloser, error) {
 	if metadata == nil {
 		metadata = make(map[string]string)
 	}
@@ -309,7 +310,7 @@ func metadata(r io.Reader, h hash.Hash) (map[string]string, error) {
 }
 
 // NewReader returns a reader for a statefile.
-func NewReader(r io.Reader, key []byte) (wire.Reader, map[string]string, error) {
+func NewReader(r *os.File, key []byte) (wire.Reader, map[string]string, error) {
 	// Read the metadata with the hash.
 	h := hmac.New(sha256.New, key)
 	metadata, err := metadata(r, h)
