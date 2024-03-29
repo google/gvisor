@@ -2668,15 +2668,19 @@ func (a AddressWithPrefix) Subnet() Subnet {
 	addrLen := a.Address.length
 	if a.PrefixLen <= 0 {
 		return Subnet{
-			address: AddrFromSlice(bytes.Repeat([]byte{0}, addrLen)),
-			mask:    MaskFromBytes(bytes.Repeat([]byte{0}, addrLen)),
+			address: Address{length: addrLen},
+			mask:    AddressMask{length: addrLen},
 		}
 	}
 	if a.PrefixLen >= addrLen*8 {
-		return Subnet{
+		sub := Subnet{
 			address: a.Address,
-			mask:    MaskFromBytes(bytes.Repeat([]byte{0xff}, addrLen)),
+			mask:    AddressMask{length: addrLen},
 		}
+		for i := 0; i < addrLen; i++ {
+			sub.mask.mask[i] = 0xff
+		}
+		return sub
 	}
 
 	sa := Address{length: addrLen}

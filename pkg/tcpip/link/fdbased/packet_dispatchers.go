@@ -237,6 +237,9 @@ type recvMMsgDispatcher struct {
 	// array is passed as the parameter to recvmmsg call to retrieve
 	// potentially more than 1 packet per unix.
 	msgHdrs []rawfile.MMsgHdr
+
+	// pkts is reused to avoid allocations.
+	pkts stack.PacketBufferList
 }
 
 const (
@@ -290,20 +293,18 @@ func (d *recvMMsgDispatcher) dispatch() (bool, tcpip.Error) {
 		return false, err
 	}
 	// Process each of received packets.
-	// Keep a list of packets so we can DecRef outside of the loop.
-	var pkts stack.PacketBufferList
 
 	d.e.mu.RLock()
 	dsp := d.e.dispatcher
 	d.e.mu.RUnlock()
 
-	defer func() { pkts.DecRef() }()
+	defer d.pkts.Reset()
 	for k := 0; k < nMsgs; k++ {
 		n := int(d.msgHdrs[k].Len)
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
 			Payload: d.bufs[k].pullBuffer(n),
 		})
-		pkts.PushBack(pkt)
+		d.pkts.PushBack(pkt)
 
 		// Mark that this iovec has been processed.
 		d.msgHdrs[k].Msg.Iovlen = 0
