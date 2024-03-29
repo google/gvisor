@@ -25,26 +25,26 @@ import (
 )
 
 // ConfigureMMap implements vfs.FileDescriptionImpl.ConfigureMMap.
-func (fd *vfioFd) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
+func (fd *vfioFD) ConfigureMMap(ctx context.Context, opts *memmap.MMapOpts) error {
 	return vfs.GenericConfigureMMap(&fd.vfsfd, fd, opts)
 }
 
 // AddMapping implements memmap.Mappable.AddMapping.
-func (fd *vfioFd) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
+func (fd *vfioFD) AddMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) error {
 	return nil
 }
 
 // RemoveMapping implements memmap.Mappable.RemoveMapping.
-func (fd *vfioFd) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
+func (fd *vfioFD) RemoveMapping(ctx context.Context, ms memmap.MappingSpace, ar hostarch.AddrRange, offset uint64, writable bool) {
 }
 
 // CopyMapping implements memmap.Mappable.CopyMapping.
-func (fd *vfioFd) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR hostarch.AddrRange, offset uint64, writable bool) error {
+func (fd *vfioFD) CopyMapping(ctx context.Context, ms memmap.MappingSpace, srcAR, dstAR hostarch.AddrRange, offset uint64, writable bool) error {
 	return nil
 }
 
 // Translate implements memmap.Mappable.Translate.
-func (fd *vfioFd) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
+func (fd *vfioFD) Translate(ctx context.Context, required, optional memmap.MappableRange, at hostarch.AccessType) ([]memmap.Translation, error) {
 	return []memmap.Translation{
 		{
 			Source: optional,
@@ -56,12 +56,12 @@ func (fd *vfioFd) Translate(ctx context.Context, required, optional memmap.Mappa
 }
 
 // InvalidateUnsavable implements memmap.Mappable.InvalidateUnsavable.
-func (fd *vfioFd) InvalidateUnsavable(ctx context.Context) error {
+func (fd *vfioFD) InvalidateUnsavable(ctx context.Context) error {
 	return nil
 }
 
 type vfioFDMemmapFile struct {
-	fd *vfioFd
+	fd *vfioFD
 }
 
 // IncRef implements memmap.File.IncRef.
@@ -80,5 +80,5 @@ func (mf *vfioFDMemmapFile) MapInternal(fr memmap.FileRange, at hostarch.AccessT
 
 // FD implements memmap.File.FD.
 func (mf *vfioFDMemmapFile) FD() int {
-	return int(mf.fd.hostFd)
+	return int(mf.fd.hostFD)
 }

@@ -122,20 +122,20 @@ func (fd *tpuFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args 
 }
 
 func (fd *tpuFD) setContainer(ctx context.Context, t *kernel.Task, arg hostarch.Addr) (uintptr, error) {
-	var vfioContainerFd int32
-	if _, err := primitive.CopyInt32In(t, arg, &vfioContainerFd); err != nil {
+	var vfioContainerFD int32
+	if _, err := primitive.CopyInt32In(t, arg, &vfioContainerFD); err != nil {
 		return 0, err
 	}
-	vfioContainerFile, _ := t.FDTable().Get(vfioContainerFd)
+	vfioContainerFile, _ := t.FDTable().Get(vfioContainerFD)
 	if vfioContainerFile == nil {
 		return 0, linuxerr.EBADF
 	}
 	defer vfioContainerFile.DecRef(ctx)
-	vfioContainer, ok := vfioContainerFile.Impl().(*vfioFd)
+	vfioContainer, ok := vfioContainerFile.Impl().(*vfioFD)
 	if !ok {
 		return 0, linuxerr.EINVAL
 	}
-	return IOCTLInvokePtrArg[uint32](fd.hostFD, linux.VFIO_GROUP_SET_CONTAINER, &vfioContainer.hostFd)
+	return IOCTLInvokePtrArg[uint32](fd.hostFD, linux.VFIO_GROUP_SET_CONTAINER, &vfioContainer.hostFD)
 }
 
 // It will be the caller's responsibility to call the returned cleanup function.
