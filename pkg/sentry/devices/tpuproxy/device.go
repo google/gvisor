@@ -101,23 +101,23 @@ func (dev *vfioDevice) Open(ctx context.Context, mnt *vfs.Mount, d *vfs.Dentry, 
 	dev.mu.Lock()
 	defer dev.mu.Unlock()
 	name := fmt.Sprintf("vfio/%s", filepath.Base(VFIOPath))
-	hostFd, err := client.OpenAt(ctx, name, opts.Flags)
+	hostFD, err := client.OpenAt(ctx, name, opts.Flags)
 	if err != nil {
 		ctx.Warningf("failed to open host file %s: %v", name, err)
 		return nil, err
 	}
-	fd := &vfioFd{
-		hostFd: int32(hostFd),
+	fd := &vfioFD{
+		hostFD: int32(hostFD),
 		device: dev,
 	}
 	if err := fd.vfsfd.Init(fd, opts.Flags, mnt, d, &vfs.FileDescriptionOptions{
 		UseDentryMetadata: true,
 	}); err != nil {
-		unix.Close(hostFd)
+		unix.Close(hostFD)
 		return nil, err
 	}
-	if err := fdnotifier.AddFD(int32(hostFd), &fd.queue); err != nil {
-		unix.Close(hostFd)
+	if err := fdnotifier.AddFD(int32(hostFD), &fd.queue); err != nil {
+		unix.Close(hostFD)
 		return nil, err
 	}
 	fd.memmapFile.fd = fd

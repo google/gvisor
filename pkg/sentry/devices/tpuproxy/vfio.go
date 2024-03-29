@@ -35,29 +35,29 @@ import (
 )
 
 // deviceFD implements vfs.FileDescriptionImpl for /dev/vfio/vfio.
-type vfioFd struct {
+type vfioFD struct {
 	vfsfd vfs.FileDescription
 	vfs.FileDescriptionDefaultImpl
 	vfs.DentryMetadataFileDescriptionImpl
 	vfs.NoLockFD
 
-	hostFd     int32
+	hostFD     int32
 	device     *vfioDevice
 	queue      waiter.Queue
 	memmapFile vfioFDMemmapFile
 }
 
 // Release implements vfs.FileDescriptionImpl.Release.
-func (fd *vfioFd) Release(context.Context) {
-	fdnotifier.RemoveFD(fd.hostFd)
+func (fd *vfioFD) Release(context.Context) {
+	fdnotifier.RemoveFD(fd.hostFD)
 	fd.queue.Notify(waiter.EventHUp)
-	unix.Close(int(fd.hostFd))
+	unix.Close(int(fd.hostFD))
 }
 
 // EventRegister implements waiter.Waitable.EventRegister.
-func (fd *vfioFd) EventRegister(e *waiter.Entry) error {
+func (fd *vfioFD) EventRegister(e *waiter.Entry) error {
 	fd.queue.EventRegister(e)
-	if err := fdnotifier.UpdateFD(fd.hostFd); err != nil {
+	if err := fdnotifier.UpdateFD(fd.hostFD); err != nil {
 		fd.queue.EventUnregister(e)
 		return err
 	}
@@ -65,25 +65,25 @@ func (fd *vfioFd) EventRegister(e *waiter.Entry) error {
 }
 
 // EventUnregister implements waiter.Waitable.EventUnregister.
-func (fd *vfioFd) EventUnregister(e *waiter.Entry) {
+func (fd *vfioFD) EventUnregister(e *waiter.Entry) {
 	fd.queue.EventUnregister(e)
-	if err := fdnotifier.UpdateFD(fd.hostFd); err != nil {
+	if err := fdnotifier.UpdateFD(fd.hostFD); err != nil {
 		panic(fmt.Sprint("UpdateFD:", err))
 	}
 }
 
 // Readiness implements waiter.Waitable.Readiness.
-func (fd *vfioFd) Readiness(mask waiter.EventMask) waiter.EventMask {
-	return fdnotifier.NonBlockingPoll(fd.hostFd, mask)
+func (fd *vfioFD) Readiness(mask waiter.EventMask) waiter.EventMask {
+	return fdnotifier.NonBlockingPoll(fd.hostFD, mask)
 }
 
 // Epollable implements vfs.FileDescriptionImpl.Epollable.
-func (fd *vfioFd) Epollable() bool {
+func (fd *vfioFD) Epollable() bool {
 	return true
 }
 
 // Ioctl implements vfs.FileDescriptionImpl.Ioctl.
-func (fd *vfioFd) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
+func (fd *vfioFD) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args arch.SyscallArguments) (uintptr, error) {
 	cmd := args[1].Uint()
 	t := kernel.TaskFromContext(ctx)
 	if t == nil {
@@ -96,16 +96,18 @@ func (fd *vfioFd) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args
 		return fd.setIOMMU(extension(args[2].Int()))
 	case linux.VFIO_IOMMU_MAP_DMA:
 		return fd.iommuMapDma(ctx, t, args[2].Pointer())
+	case linux.VFIO_IOMMU_UNMAP_DMA:
+		return fd.iommuUnmapDma(ctx, t, args[2].Pointer())
 	}
 	return 0, linuxerr.ENOSYS
 }
 
 // checkExtension returns a positive integer when the given VFIO extension
 // is supported, otherwise, it returns 0.
-func (fd *vfioFd) checkExtension(ext extension) (uintptr, error) {
+func (fd *vfioFD) checkExtension(ext extension) (uintptr, error) {
 	switch ext {
 	case linux.VFIO_TYPE1_IOMMU, linux.VFIO_SPAPR_TCE_IOMMU, linux.VFIO_TYPE1v2_IOMMU:
-		ret, err := IOCTLInvoke[uint32, int32](fd.hostFd, linux.VFIO_CHECK_EXTENSION, int32(ext))
+		ret, err := IOCTLInvoke[uint32, int32](fd.hostFD, linux.VFIO_CHECK_EXTENSION, int32(ext))
 		if err != nil {
 			log.Warningf("check VFIO extension %s: %v", ext, err)
 			return 0, err
@@ -117,10 +119,10 @@ func (fd *vfioFd) checkExtension(ext extension) (uintptr, error) {
 
 // Set the iommu to the given type.  The type must be supported by an iommu
 // driver as verified by calling VFIO_CHECK_EXTENSION using the same type.
-func (fd *vfioFd) setIOMMU(ext extension) (uintptr, error) {
+func (fd *vfioFD) setIOMMU(ext extension) (uintptr, error) {
 	switch ext {
 	case linux.VFIO_TYPE1_IOMMU, linux.VFIO_SPAPR_TCE_IOMMU, linux.VFIO_TYPE1v2_IOMMU:
-		ret, err := IOCTLInvoke[uint32, int32](fd.hostFd, linux.VFIO_SET_IOMMU, int32(ext))
+		ret, err := IOCTLInvoke[uint32, int32](fd.hostFD, linux.VFIO_SET_IOMMU, int32(ext))
 		if err != nil {
 			log.Warningf("set the IOMMU group to %s: %v", ext, err)
 			return 0, err
@@ -130,7 +132,7 @@ func (fd *vfioFd) setIOMMU(ext extension) (uintptr, error) {
 	return 0, linuxerr.EINVAL
 }
 
-func (fd *vfioFd) iommuMapDma(ctx context.Context, t *kernel.Task, arg hostarch.Addr) (uintptr, error) {
+func (fd *vfioFD) iommuMapDma(ctx context.Context, t *kernel.Task, arg hostarch.Addr) (uintptr, error) {
 	var dmaMap linux.VFIOIommuType1DmaMap
 	if _, err := dmaMap.CopyIn(t, arg); err != nil {
 		return 0, err
@@ -188,7 +190,7 @@ func (fd *vfioFd) iommuMapDma(ctx context.Context, t *kernel.Task, arg hostarch.
 	}
 	// Replace Vaddr with the host's virtual address.
 	dmaMap.Vaddr = uint64(m)
-	n, err := IOCTLInvokePtrArg[uint32](fd.hostFd, linux.VFIO_IOMMU_MAP_DMA, &dmaMap)
+	n, err := IOCTLInvokePtrArg[uint32](fd.hostFD, linux.VFIO_IOMMU_MAP_DMA, &dmaMap)
 	if err != nil {
 		return n, err
 	}
@@ -205,6 +207,34 @@ func (fd *vfioFd) iommuMapDma(ctx context.Context, t *kernel.Task, arg hostarch.
 			devAddr + rlen,
 		}, pr)
 		devAddr += rlen
+	}
+	return n, nil
+}
+
+func (fd *vfioFD) iommuUnmapDma(ctx context.Context, t *kernel.Task, arg hostarch.Addr) (uintptr, error) {
+	var dmaUnmap linux.VFIOIommuType1DmaUnmap
+	if _, err := dmaUnmap.CopyIn(t, arg); err != nil {
+		return 0, err
+	}
+	if dmaUnmap.Flags&linux.VFIO_DMA_UNMAP_FLAG_GET_DIRTY_BITMAP != 0 {
+		// VFIO_DMA_UNMAP_FALGS_GET_DIRTY_BITMAP is not used by libtpu for
+		// gVisor working with TPU.
+		return 0, linuxerr.ENOSYS
+	}
+	n, err := IOCTLInvokePtrArg[uint32](fd.hostFD, linux.VFIO_IOMMU_MAP_DMA, &dmaUnmap)
+	if err != nil {
+		return 0, nil
+	}
+	fd.device.mu.Lock()
+	defer fd.device.mu.Unlock()
+	s := &fd.device.devAddrSet
+	r := DevAddrRange{Start: dmaUnmap.IOVa, End: dmaUnmap.IOVa + dmaUnmap.Size}
+	seg := s.LowerBoundSegment(r.Start)
+	for seg.Ok() && seg.Start() < r.End {
+		seg = s.Isolate(seg, r)
+		mm.Unpin([]mm.PinnedRange{seg.Value()})
+		gap := s.Remove(seg)
+		seg = gap.NextSegment()
 	}
 	return n, nil
 }
