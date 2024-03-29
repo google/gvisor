@@ -96,6 +96,8 @@ func (fd *vfioFd) Ioctl(ctx context.Context, uio usermem.IO, sysno uintptr, args
 		return fd.setIOMMU(extension(args[2].Int()))
 	case linux.VFIO_IOMMU_MAP_DMA:
 		return fd.iommuMapDma(ctx, t, args[2].Pointer())
+	case linux.VFIO_IOMMU_UNMAP_DMA:
+		return fd.iommuUnmapDma(ctx, t, args[2].Pointer())
 	}
 	return 0, linuxerr.ENOSYS
 }
@@ -205,6 +207,34 @@ func (fd *vfioFd) iommuMapDma(ctx context.Context, t *kernel.Task, arg hostarch.
 			devAddr + rlen,
 		}, pr)
 		devAddr += rlen
+	}
+	return n, nil
+}
+
+func (fd *vfioFd) iommuUnmapDma(ctx context.Context, t *kernel.Task, arg hostarch.Addr) (uintptr, error) {
+	var dmaUnmap linux.VFIOIommuType1DmaUnmap
+	if _, err := dmaUnmap.CopyIn(t, arg); err != nil {
+		return 0, err
+	}
+	if dmaUnmap.Flags&linux.VFIO_DMA_UNMAP_FLAG_GET_DIRTY_BITMAP != 0 {
+		// VFIO_DMA_UNMAP_FALGS_GET_DIRTY_BITMAP is not used by libtpu for
+		// gVisor working with TPU.
+		return 0, linuxerr.ENOSYS
+	}
+	n, err := IOCTLInvokePtrArg[uint32](fd.hostFd, linux.VFIO_IOMMU_MAP_DMA, &dmaUnmap)
+	if err != nil {
+		return 0, nil
+	}
+	fd.device.mu.Lock()
+	defer fd.device.mu.Unlock()
+	s := &fd.device.devAddrSet
+	r := DevAddrRange{Start: dmaUnmap.IOVa, End: dmaUnmap.IOVa + dmaUnmap.Size}
+	seg := s.LowerBoundSegment(r.Start)
+	for seg.Ok() && seg.Start() < r.End {
+		seg = s.Isolate(seg, r)
+		mm.Unpin([]mm.PinnedRange{seg.Value()})
+		gap := s.Remove(seg)
+		seg = gap.NextSegment()
 	}
 	return n, nil
 }
