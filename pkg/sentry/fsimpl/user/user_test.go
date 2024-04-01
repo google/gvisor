@@ -209,3 +209,74 @@ func TestFindHomeInPasswd(t *testing.T) {
 		})
 	}
 }
+
+// TestGetExecUIDGIDFromUser tests the GetExecUIDGIDFromUser function.
+func TestGetExecUIDGIDFromUser(t *testing.T) {
+	tests := map[string]struct {
+		user           string
+		passwdContents string
+		passwdMode     linux.FileMode
+		expectedUID    auth.KUID
+		expectedGID    auth.KGID
+	}{
+		"success": {
+			user:           "user0",
+			passwdContents: "user0::1000:1111::/home/user0:/bin/sh",
+			passwdMode:     linux.S_IFREG | 0666,
+			expectedUID:    1000,
+			expectedGID:    1111,
+		},
+		"no_user": {
+			user:           "user1",
+			passwdContents: "user0::1000:1111::/home/user0:/bin/sh",
+			passwdMode:     linux.S_IFREG | 0666,
+			expectedUID:    0,
+			expectedGID:    0,
+		},
+	}
+
+	for name, tc := range tests {
+		t.Run(name, func(t *testing.T) {
+			ctx := contexttest.Context(t)
+			creds := auth.CredentialsFromContext(ctx)
+
+			// Create VFS.
+			vfsObj := vfs.VirtualFilesystem{}
+			if err := vfsObj.Init(ctx); err != nil {
+				t.Fatalf("VFS init: %v", err)
+			}
+			vfsObj.MustRegisterFilesystemType("tmpfs", tmpfs.FilesystemType{}, &vfs.RegisterFilesystemTypeOptions{
+				AllowUserMount: true,
+			})
+			mns, err := vfsObj.NewMountNamespace(ctx, creds, "", "tmpfs", &vfs.MountOptions{}, nil)
+			if err != nil {
+				t.Fatalf("failed to create tmpfs root mount: %v", err)
+			}
+			defer mns.DecRef(ctx)
+			root := mns.Root(ctx)
+			defer root.DecRef(ctx)
+
+			if err := createEtcPasswd(ctx, &vfsObj, creds, root, tc.passwdContents, tc.passwdMode); err != nil {
+				t.Fatalf("createEtcPasswd failed: %v", err)
+			}
+
+			gotUID, gotGID, err := GetExecUIDGIDFromUser(ctx, mns, tc.user)
+			switch name {
+			case "success":
+				if err != nil {
+					t.Fatalf("failed to get UID and GID from user: %v %v", tc.user, err)
+				}
+			case "no_user":
+				if err == nil {
+					t.Fatalf("retrieved UID and GID when user %v is not in /etc/passwd: %v", tc.user, err)
+				}
+			}
+			if gotUID != tc.expectedUID {
+				t.Fatalf("expectedUID %v, gotUID: %v", tc.expectedUID, gotUID)
+			}
+			if gotGID != tc.expectedGID {
+				t.Fatalf("expectedGID %v, gotGID: %v", tc.expectedGID, gotGID)
+			}
+		})
+	}
+}
