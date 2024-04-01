@@ -175,7 +175,7 @@ type subprocess struct {
 	dead atomicbitops.Bool
 }
 
-func (s *subprocess) initSyscallThread(ptraceThread *thread) error {
+func (s *subprocess) initSyscallThread(ptraceThread *thread, seccompNotify bool) error {
 	s.syscallThreadMu.Lock()
 	defer s.syscallThreadMu.Unlock()
 
@@ -190,7 +190,7 @@ func (s *subprocess) initSyscallThread(ptraceThread *thread) error {
 		thread:  ptraceThread,
 	}
 
-	if err := t.init(); err != nil {
+	if err := t.init(seccompNotify); err != nil {
 		panic(fmt.Sprintf("failed to create a syscall thread"))
 	}
 	s.syscallThread = &t
@@ -293,7 +293,13 @@ func (s *subprocess) handlePtraceSyscallRequest(req any) {
 // This will either be a newly created subprocess, or one from the global pool.
 // The create function will be called in the latter case, which is guaranteed
 // to happen with the runtime thread locked.
-func newSubprocess(create func() (*thread, error), memoryFile *pgalloc.MemoryFile) (*subprocess, error) {
+//
+// seccompNotify indicates a ways of comunications with syscall threads.
+// If it is false, futex-s are used. Otherwise, seccomp-unotify is used.
+// seccomp-unotify can't be used for the source pool process, because it is a
+// parent of all other stub processes, but only one filter can be installed
+// with SECCOMP_FILTER_FLAG_NEW_LISTENER.
+func newSubprocess(create func() (*thread, error), memoryFile *pgalloc.MemoryFile, seccompNotify bool) (*subprocess, error) {
 	if sp := globalPool.fetchAvailable(); sp != nil {
 		sp.subprocessRefs.InitRefs()
 		sp.usertrap = usertrap.New()
@@ -326,7 +332,7 @@ func newSubprocess(create func() (*thread, error), memoryFile *pgalloc.MemoryFil
 	}
 	sp.sysmsgInitRegs = ptraceThread.initRegs
 
-	if err := sp.initSyscallThread(ptraceThread); err != nil {
+	if err := sp.initSyscallThread(ptraceThread, seccompNotify); err != nil {
 		return nil, err
 	}
 
@@ -467,6 +473,10 @@ func (s *subprocess) Release() {
 func (s *subprocess) release() {
 	if s.alive() {
 		globalPool.markAvailable(s)
+		return
+	}
+	if s.syscallThread != nil && s.syscallThread.seccompNotify != nil {
+		s.syscallThread.seccompNotify.Close()
 	}
 }
 
@@ -522,9 +532,16 @@ const (
 	killed
 )
 
+// Debugf logs with the debugging severity.
 func (t *thread) Debugf(format string, v ...any) {
-	prefix := fmt.Sprintf("%8d:", t.tid)
+	prefix := fmt.Sprintf("%8d: ", t.tid)
 	log.DebugfAtDepth(1, prefix+format, v...)
+}
+
+// Warningf logs with the warning severity.
+func (t *thread) Warningf(format string, v ...any) {
+	prefix := fmt.Sprintf("%8d: ", t.tid)
+	log.WarningfAtDepth(1, prefix+format, v...)
 }
 
 func (t *thread) dumpAndPanic(message string) {
@@ -611,7 +628,12 @@ func (t *thread) wait(outcome waitOutcome) unix.Signal {
 	}
 }
 
-// destroy kills the thread.
+// kill killes the thread;
+func (t *thread) kill() {
+	unix.Tgkill(int(t.tgid), int(t.tid), unix.Signal(unix.SIGKILL))
+}
+
+// destroy kills and waits the thread.
 //
 // Note that this should not be used in the general case; the death of threads
 // will typically cause the death of the parent. This is a utility method for
@@ -686,6 +708,7 @@ func (t *thread) syscallIgnoreInterrupt(
 	args ...arch.SyscallArgument) (uintptr, error) {
 	for {
 		regs := createSyscallRegs(initRegs, sysno, args...)
+		t.Debugf("%d %#v", sysno, args)
 		rval, err := t.syscall(&regs)
 		switch err {
 		case ERESTARTSYS:

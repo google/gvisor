@@ -89,3 +89,26 @@ func futexWaitWake(futexAddr *uint32, futexValue uint32) error {
 
 	return nil
 }
+
+func (t *syscallThread) waitResp() unix.Errno {
+	req := linux.SeccompNotif{}
+	// unix.RawSyscall is used intentionally here. All syscalls are
+	// non-blocking and should be short, but we want to receive
+	// golang preempt signals to handle unexpected deaths of
+	// syscall threads.
+	_, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(t.seccompNotify.Fd()),
+		uintptr(linux.SECCOMP_IOCTL_NOTIF_RECV),
+		uintptr(unsafe.Pointer(&req)))
+	if errno != 0 {
+		return errno
+	}
+	t.seccompNotifyResp.ID = req.ID
+	return 0
+}
+
+func (t *syscallThread) sendReq() unix.Errno {
+	_, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(t.seccompNotify.Fd()),
+		uintptr(linux.SECCOMP_IOCTL_NOTIF_SEND),
+		uintptr(unsafe.Pointer(&t.seccompNotifyResp)))
+	return errno
+}

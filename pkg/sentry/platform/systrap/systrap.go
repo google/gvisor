@@ -86,8 +86,10 @@ var (
 	stubContextRegion    uintptr
 	stubContextRegionLen uintptr
 	// The memory blob with precompiled seccomp rules.
-	stubSysmsgRules    uintptr
-	stubSysmsgRulesLen uintptr
+	stubSysmsgRules     uintptr
+	stubSysmsgRulesLen  uintptr
+	stubSyscallRules    uintptr
+	stubSyscallRulesLen uintptr
 
 	stubSpinningThreadQueueAddr uintptr
 	stubSpinningThreadQueueSize uintptr
@@ -329,7 +331,7 @@ func New() (*Systrap, error) {
 
 		// Create the source process for the global pool. This must be
 		// done before initializing any other processes.
-		source, err := newSubprocess(createStub, mf)
+		source, err := newSubprocess(createStub, mf, false)
 		if err != nil {
 			// Should never happen.
 			panic("unable to initialize systrap source: " + err.Error())
@@ -374,7 +376,7 @@ func (*Systrap) MaxUserAddress() hostarch.Addr {
 
 // NewAddressSpace returns a new subprocess.
 func (p *Systrap) NewAddressSpace(any) (platform.AddressSpace, <-chan struct{}, error) {
-	as, err := newSubprocess(globalPool.source.createStub, p.memoryFile)
+	as, err := newSubprocess(globalPool.source.createStub, p.memoryFile, true)
 	return as, nil, err
 }
 
