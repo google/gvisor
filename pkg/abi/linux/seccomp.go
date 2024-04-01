@@ -25,9 +25,20 @@ const (
 	SECCOMP_RET_ACTION      = 0x7fff0000
 	SECCOMP_RET_DATA        = 0x0000ffff
 
-	SECCOMP_SET_MODE_FILTER   = 1
-	SECCOMP_FILTER_FLAG_TSYNC = 1
-	SECCOMP_GET_ACTION_AVAIL  = 2
+	SECCOMP_SET_MODE_FILTER  = 1
+	SECCOMP_GET_ACTION_AVAIL = 2
+	SECCOMP_GET_NOTIF_SIZES  = 3
+
+	SECCOMP_FILTER_FLAG_TSYNC        = 1
+	SECCOMP_FILTER_FLAG_NEW_LISTENER = 1 << 3
+
+	SECCOMP_USER_NOTIF_FLAG_CONTINUE = 1
+
+	SECCOMP_IOCTL_NOTIF_RECV      = 0xc0502100
+	SECCOMP_IOCTL_NOTIF_SEND      = 0xc0182101
+	SECCOMP_IOCTL_NOTIF_SET_FLAGS = 0x40082104
+
+	SECCOMP_USER_NOTIF_FD_SYNC_WAKE_UP = 1
 )
 
 // BPFAction is an action for a BPF filter.
@@ -40,6 +51,7 @@ const (
 	SECCOMP_RET_TRAP         BPFAction = 0x00030000
 	SECCOMP_RET_ERRNO        BPFAction = 0x00050000
 	SECCOMP_RET_TRACE        BPFAction = 0x7ff00000
+	SECCOMP_RET_USER_NOTIF   BPFAction = 0x7fc00000
 	SECCOMP_RET_ALLOW        BPFAction = 0x7fff0000
 )
 
@@ -65,6 +77,8 @@ func (a BPFAction) String() string {
 		return fmt.Sprintf("trace (data=%#x)", data)
 	case SECCOMP_RET_ALLOW:
 		return "allow"
+	case SECCOMP_RET_USER_NOTIF:
+		return "unotify"
 	}
 	return fmt.Sprintf("invalid action: %#x", a)
 }
@@ -111,6 +125,35 @@ type SeccompData struct {
 
 	// Args contains the first 6 system call arguments.
 	Args [6]uint64
+}
+
+// SeccompNotifResp is equivalent to struct seccomp_notif_resp.
+//
+// +marshal
+type SeccompNotifResp struct {
+	ID    uint64
+	Val   int64
+	Error int32
+	Flags uint32
+}
+
+// SeccompNotifSizes is equivalent to struct seccomp_notif_sizes.
+//
+// +marshal
+type SeccompNotifSizes struct {
+	Notif      uint16
+	Notif_resp uint16
+	Data       uint16
+}
+
+// SeccompNotif is equivalent to struct seccomp_notif.
+//
+// +marshal
+type SeccompNotif struct {
+	ID    uint64
+	Pid   int32
+	Flags uint32
+	Data  SeccompData
 }
 
 // String returns a human-friendly representation of this `SeccompData`.
