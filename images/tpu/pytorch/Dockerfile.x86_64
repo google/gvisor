@@ -1,0 +1,3 @@
+FROM python:3.10
+
+RUN pip install torch~=2.2.0 torch_xla[tpu]~=2.2.0 torchvision -f https://storage.googleapis.com/libtpu-releases/index.html
