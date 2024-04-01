@@ -14,6 +14,10 @@
 
 package tcp
 
+import (
+	"time"
+)
+
 // renoState stores the variables related to TCP New Reno congestion
 // control algorithm.
 //
@@ -69,7 +73,7 @@ func (r *renoState) reduceSlowStartThreshold() {
 // Update updates the congestion state based on the number of packets that
 // were acknowledged.
 // Update implements congestionControl.Update.
-func (r *renoState) Update(packetsAcked int) {
+func (r *renoState) Update(packetsAcked int, _ time.Duration) {
 	if r.s.SndCwnd < r.s.Ssthresh {
 		packetsAcked = r.updateSlowStart(packetsAcked)
 		if packetsAcked == 0 {

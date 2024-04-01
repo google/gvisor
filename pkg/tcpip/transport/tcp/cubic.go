@@ -18,8 +18,52 @@ import (
 	"math"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
 )
+
+// effectivelyInfinity is an initialization value used for round-trip times
+// that are then set using minDuration.  It is equal to approximately 100
+// years: large enough that it will always be greater than a real TCP
+// round-trip time, and small enough that it fits in time.Duration.
+const effectivelyInfinity = 876000 * time.Hour
+
+// c.f. RFC 9406 Section 4.3.  RTT = round-trip time.
+const (
+	// The delay increase sensitivity is determined by minRTTThresh and
+	// maxRTTThresh. Smaller values of minRTTThresh may cause spurious exits
+	// from slow start. Larger values of maxRTTThresh may result in slow start
+	// not exiting until loss is encountered for connections on large RTT paths.
+	minRTTThresh = 4 * time.Millisecond
+	maxRTTThresh = 16 * time.Millisecond
+
+	// minRTTDivisor is a fraction of RTT to compute the delay threshold. A
+	// smaller value would mean a larger threshold and thus less sensitivity to
+	// delay increase, and vice versa.
+	minRTTDivisor = 8
+
+	// nRTTSample is the minimum number of RTT samples in the round before
+	// considering whether to exit the round due to increased RTT.
+	nRTTSample = 8
+
+	// ackDelta is the maximum time between ACKs for them to be considered part
+	// of the same ACK Train during HyStart
+	ackDelta = 2 * time.Millisecond
+)
+
+func minDuration(a, b time.Duration) time.Duration {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func maxDuration(a, b time.Duration) time.Duration {
+	if a < b {
+		return b
+	}
+	return a
+}
 
 // cubicState stores the variables related to TCP CUBIC congestion
 // control algorithm state.
@@ -39,11 +83,19 @@ type cubicState struct {
 // newCubicCC returns a partially initialized cubic state with the constants
 // beta and c set and t set to current time.
 func newCubicCC(s *sender) *cubicState {
+	now := s.ep.stack.Clock().NowMonotonic()
 	return &cubicState{
 		TCPCubicState: stack.TCPCubicState{
-			T:    s.ep.stack.Clock().NowMonotonic(),
+			T:    now,
 			Beta: 0.7,
 			C:    0.4,
+			// by this point, the sender has initialized it's initial sequence
+			// number.
+			EndSeq:     s.SndNxt,
+			LastRTT:    effectivelyInfinity,
+			CurrRTT:    effectivelyInfinity,
+			LastAck:    now,
+			RoundStart: now,
 		},
 		s: s,
 	}
@@ -64,6 +116,56 @@ func (c *cubicState) enterCongestionAvoidance() {
 		c.WLastMax = c.WMax
 		c.WMax = float64(c.s.SndCwnd)
 	}
+}
+
+// updateHyStart tracks packet round-trip time (rtt) to find a safe threshold
+// to exit slow start without triggering packet loss.  It updates the SSThresh
+// and sets FoundThresh when it does.
+func (c *cubicState) updateHyStart(rtt time.Duration) {
+	if rtt < 0 {
+		// negative indicates unknown
+		return
+	}
+	now := c.s.ep.stack.Clock().NowMonotonic()
+	if c.EndSeq.LessThan(c.s.SndUna) {
+		c.beginHyStartRound(now)
+	}
+	// ACK train
+	if now.Sub(c.LastAck) < ackDelta && // ensures acks are part of the same "train"
+		c.LastRTT < effectivelyInfinity {
+		c.LastAck = now
+		thresh := c.LastRTT / 2
+		if now.Sub(c.RoundStart) > thresh {
+			c.s.Ssthresh = c.s.SndCwnd
+		}
+	}
+
+	// Delay increase
+	c.CurrRTT = minDuration(c.CurrRTT, rtt)
+	c.SampleCount++
+
+	if c.SampleCount >= nRTTSample &&
+		c.LastRTT < effectivelyInfinity {
+		// i.e. LastRTT/minRTTDivisor, but clamped to minRTTThresh & maxRTTThresh
+		thresh := maxDuration(
+			minRTTThresh,
+			minDuration(maxRTTThresh, c.LastRTT/minRTTDivisor),
+		)
+		if c.CurrRTT >= (c.LastRTT + thresh) {
+			// Triggered HyStart safe exit threshold
+			c.s.Ssthresh = c.s.SndCwnd
+		}
+	}
+}
+
+// resetHyStartRound begins a new HyStart round
+func (c *cubicState) beginHyStartRound(now tcpip.MonotonicTime) {
+	c.EndSeq = c.s.SndNxt
+	c.SampleCount = 0
+	c.LastRTT = c.CurrRTT
+	c.CurrRTT = effectivelyInfinity
+	c.LastAck = now
+	c.RoundStart = now
 }
 
 // updateSlowStart will update the congestion window as per the slow-start
@@ -92,7 +194,10 @@ func (c *cubicState) updateSlowStart(packetsAcked int) int {
 // Update updates cubic's internal state variables. It must be called on every
 // ACK received.
 // Refer: https://tools.ietf.org/html/rfc8312#section-4
-func (c *cubicState) Update(packetsAcked int) {
+func (c *cubicState) Update(packetsAcked int, rtt time.Duration) {
+	if c.s.Ssthresh == InitialSsthresh && c.s.SndCwnd < c.s.Ssthresh {
+		c.updateHyStart(rtt)
+	}
 	if c.s.SndCwnd < c.s.Ssthresh {
 		packetsAcked = c.updateSlowStart(packetsAcked)
 		if packetsAcked == 0 {
