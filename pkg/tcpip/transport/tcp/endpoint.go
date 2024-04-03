@@ -2974,11 +2974,11 @@ func (e *Endpoint) updateSndBufferUsage(v int) {
 	notify = notify && e.sndQueueInfo.SndBufUsed < int(newSndBufSz)>>1
 	e.sndQueueInfo.sndQueueMu.Unlock()
 
-	if notify {
-		// Set the new send buffer size calculated from auto tuning.
-		e.ops.SetSendBufferSize(newSndBufSz, false /* notify */)
-		e.waiterQueue.Notify(waiter.WritableEvents)
-	}
+	// if notify {
+	// Set the new send buffer size calculated from auto tuning.
+	e.ops.SetSendBufferSize(newSndBufSz, false /* notify */)
+	e.waiterQueue.Notify(waiter.WritableEvents)
+	// }
 }
 
 // readyToRead is called by the protocol goroutine when a new segment is ready

@@ -369,10 +369,22 @@ func (c *Context) GetPacketWithTimeout(timeout time.Duration) *buffer.View {
 // addresses.
 func (c *Context) GetPacket() *buffer.View {
 	c.t.Helper()
-
-	p := c.GetPacketWithTimeout(5 * time.Second)
-	if p == nil {
+	return c.getPacket(5*time.Second, func() {
 		c.t.Fatalf("Packet wasn't written out")
+	})
+}
+
+func (c *Context) MaybeGetPacket(to time.Duration) *buffer.View {
+	c.t.Helper()
+	return c.getPacket(to, func() {})
+}
+
+func (c *Context) getPacket(to time.Duration, onNil func()) *buffer.View {
+	c.t.Helper()
+
+	p := c.GetPacketWithTimeout(to)
+	if p == nil {
+		onNil()
 		return nil
 	}
 
