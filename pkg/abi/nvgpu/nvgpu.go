@@ -68,3 +68,8 @@ type RS_SHARE_POLICY struct {
 	Action     uint8
 	Pad        [1]byte
 }
+
+// NvUUID is defined in src/common/inc/nvCpuUuid.h.
+//
+// +marshal
+type NvUUID [16]uint8
