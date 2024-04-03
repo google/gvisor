@@ -1,6 +1,6 @@
 """Defines a rule for runtime test targets."""
 
-load("//tools:defs.bzl", "go_test")
+load("//tools:defs.bzl", "go_test", "local_test_tags")
 
 def _runtime_test_impl(ctx):
     # Construct arguments.
@@ -80,8 +80,7 @@ def runtime_test(name, **kwargs):
         tags = [
             "no-sandbox",
             "manual",
-            "notap",
-        ],
+        ] + local_test_tags,
         **kwargs
     )
 
