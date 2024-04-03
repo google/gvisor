@@ -197,7 +197,7 @@ TEST(RseqTest, InvalidAbortClearsCS) {
   RunChildTest(kRseqTestInvalidAbortClearsCS, 0);
 }
 
-// TODO(b/326665974): Implement clone() in rseq/start_arm64.S.
+// NOTE(b/326665974): Needs implementation of clone() in rseq/start_arm64.S.
 #if defined(__x86_64__)
 TEST(RseqTest, MembarrierResetsCpuIdStart) {
   SKIP_IF(!ASSERT_NO_ERRNO_AND_VALUE(RSeqSupported()));

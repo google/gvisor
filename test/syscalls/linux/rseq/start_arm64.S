@@ -49,7 +49,7 @@ raw_syscall:
   .type   clone, @function
 
 clone:
-  // TODO(b/326665974)
+  // NOTE(b/326665974): implement me
   mov  x0,#-38  // ENOSYS
   ret
 
