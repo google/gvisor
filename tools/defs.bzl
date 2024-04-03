@@ -10,7 +10,7 @@ load("//tools/bazeldefs:defs.bzl", _BuildSettingInfo = "BuildSettingInfo", _bool
 load("//tools/bazeldefs:go.bzl", _gazelle = "gazelle", _go_binary = "go_binary", _go_grpc_and_proto_libraries = "go_grpc_and_proto_libraries", _go_library = "go_library", _go_path = "go_path", _go_proto_library = "go_proto_library", _go_test = "go_test", _gotsan_flag_values = "gotsan_flag_values", _gotsan_values = "gotsan_values", _select_goarch = "select_goarch", _select_goos = "select_goos")
 load("//tools/bazeldefs:pkg.bzl", _pkg_deb = "pkg_deb", _pkg_tar = "pkg_tar")
 load("//tools/bazeldefs:platforms.bzl", _default_platform = "default_platform", _platform_capabilities = "platform_capabilities", _platforms = "platforms", _save_restore_platforms = "save_restore_platforms")
-load("//tools/bazeldefs:tags.bzl", "go_suffixes")
+load("//tools/bazeldefs:tags.bzl", _go_suffixes = "go_suffixes", _local_test_tags = "local_test_tags")
 load("//tools/go_marshal:defs.bzl", "go_marshal", "marshal_deps", "marshal_test_deps")
 load("//tools/go_stateify:defs.bzl", "go_stateify")
 load("//tools/nogo:defs.bzl", "nogo_test")
@@ -63,6 +63,9 @@ default_platform = _default_platform
 platforms = _platforms
 platform_capabilities = _platform_capabilities
 save_restore_platforms = _save_restore_platforms
+
+# Tags.
+local_test_tags = _local_test_tags
 
 def go_binary(name, nogo = True, pure = False, static = False, x_defs = None, **kwargs):
     """Wraps the standard go_binary.
@@ -121,7 +124,7 @@ def calculate_sets(srcs):
         if not file.endswith(".go"):
             continue
         target = ""
-        for suffix in go_suffixes:
+        for suffix in _go_suffixes:
             if file.endswith(suffix + ".go"):
                 target = suffix
         if not target in result:

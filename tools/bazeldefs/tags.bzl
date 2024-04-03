@@ -59,3 +59,6 @@ generic = [
 # combinations, but not so much that it will cause issues. We can probably add
 # quite a few more variants before this becomes a genuine problem.
 go_suffixes = explode(explode(archs, oses), generic)
+
+# Tags for tests that are run locally.
+local_test_tags = ["notap"]
