@@ -113,16 +113,21 @@ func (fs *Filesystem) revalidateChildLocked(ctx context.Context, vfsObj *vfs.Vir
 	if child != nil {
 		// Cached dentry exists, revalidate.
 		if !child.inode.Valid(ctx) {
-			delete(parent.children, name)
-			if child.inode.Keep() {
-				// Drop the ref owned by kernfs.
-				fs.deferDecRef(child)
+			childInode, err := parent.inode.Lookup(ctx, name)
+			if err != nil {
+				delete(parent.children, child.name)
+				if child.inode.Keep() {
+					fs.deferDecRef(child)
+				}
+				rcs := vfsObj.InvalidateDentry(ctx, child.VFSDentry())
+				for _, rc := range rcs {
+					fs.deferDecRef(rc)
+				}
+				return nil, err
 			}
-			rcs := vfsObj.InvalidateDentry(ctx, child.VFSDentry())
-			for _, rc := range rcs {
-				fs.deferDecRef(rc)
-			}
-			child = nil
+			fs.deferDecRef(child.inode)
+			child.inode = childInode
+			return child, nil
 		}
 	}
 	if child == nil {
