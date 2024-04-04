@@ -16,7 +16,6 @@ package netstack
 
 import (
 	"fmt"
-	"time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -515,15 +514,4 @@ func (s *Stack) PortRange() (uint16, uint16) {
 // SetPortRange implements inet.Stack.SetPortRange.
 func (s *Stack) SetPortRange(start uint16, end uint16) error {
 	return syserr.TranslateNetstackError(s.Stack.SetPortRange(start, end)).ToError()
-}
-
-// GROTimeout implements inet.Stack.GROTimeout.
-func (s *Stack) GROTimeout(nicID int32) (time.Duration, error) {
-	timeout, err := s.Stack.GROTimeout(tcpip.NICID(nicID))
-	return timeout, syserr.TranslateNetstackError(err).ToError()
-}
-
-// SetGROTimeout implements inet.Stack.SetGROTimeout.
-func (s *Stack) SetGROTimeout(nicID int32, timeout time.Duration) error {
-	return syserr.TranslateNetstackError(s.Stack.SetGROTimeout(tcpip.NICID(nicID), timeout)).ToError()
 }

@@ -112,40 +112,6 @@ func (fd *kcovFD) StateLoad(ctx context.Context, stateSourceObject state.Source)
 	stateSourceObject.Load(4, &fd.kcov)
 }
 
-func (gf *groTimeoutFile) StateTypeName() string {
-	return "pkg/sentry/fsimpl/sys.groTimeoutFile"
-}
-
-func (gf *groTimeoutFile) StateFields() []string {
-	return []string{
-		"implStatFS",
-		"DynamicBytesFile",
-		"idx",
-		"stk",
-	}
-}
-
-func (gf *groTimeoutFile) beforeSave() {}
-
-// +checklocksignore
-func (gf *groTimeoutFile) StateSave(stateSinkObject state.Sink) {
-	gf.beforeSave()
-	stateSinkObject.Save(0, &gf.implStatFS)
-	stateSinkObject.Save(1, &gf.DynamicBytesFile)
-	stateSinkObject.Save(2, &gf.idx)
-	stateSinkObject.Save(3, &gf.stk)
-}
-
-func (gf *groTimeoutFile) afterLoad(context.Context) {}
-
-// +checklocksignore
-func (gf *groTimeoutFile) StateLoad(ctx context.Context, stateSourceObject state.Source) {
-	stateSourceObject.Load(0, &gf.implStatFS)
-	stateSourceObject.Load(1, &gf.DynamicBytesFile)
-	stateSourceObject.Load(2, &gf.idx)
-	stateSourceObject.Load(3, &gf.stk)
-}
-
 func (fsType *FilesystemType) StateTypeName() string {
 	return "pkg/sentry/fsimpl/sys.FilesystemType"
 }
@@ -415,7 +381,6 @@ func init() {
 	state.Register((*dirRefs)(nil))
 	state.Register((*kcovInode)(nil))
 	state.Register((*kcovFD)(nil))
-	state.Register((*groTimeoutFile)(nil))
 	state.Register((*FilesystemType)(nil))
 	state.Register((*InternalData)(nil))
 	state.Register((*filesystem)(nil))

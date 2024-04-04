@@ -398,7 +398,6 @@ func (i *inode) StateTypeName() string {
 func (i *inode) StateFields() []string {
 	return []string{
 		"inodeRefs",
-		"InodeAlwaysValid",
 		"InodeNotAnonymous",
 		"InodeNotSymlink",
 		"InodeWatches",
@@ -406,6 +405,7 @@ func (i *inode) StateFields() []string {
 		"CachedMappable",
 		"fs",
 		"nodeID",
+		"entryTime",
 		"attrVersion",
 		"attrTime",
 		"link",
@@ -431,14 +431,14 @@ func (i *inode) beforeSave() {}
 func (i *inode) StateSave(stateSinkObject state.Sink) {
 	i.beforeSave()
 	stateSinkObject.Save(0, &i.inodeRefs)
-	stateSinkObject.Save(1, &i.InodeAlwaysValid)
-	stateSinkObject.Save(2, &i.InodeNotAnonymous)
-	stateSinkObject.Save(3, &i.InodeNotSymlink)
-	stateSinkObject.Save(4, &i.InodeWatches)
-	stateSinkObject.Save(5, &i.OrderedChildren)
-	stateSinkObject.Save(6, &i.CachedMappable)
-	stateSinkObject.Save(7, &i.fs)
-	stateSinkObject.Save(8, &i.nodeID)
+	stateSinkObject.Save(1, &i.InodeNotAnonymous)
+	stateSinkObject.Save(2, &i.InodeNotSymlink)
+	stateSinkObject.Save(3, &i.InodeWatches)
+	stateSinkObject.Save(4, &i.OrderedChildren)
+	stateSinkObject.Save(5, &i.CachedMappable)
+	stateSinkObject.Save(6, &i.fs)
+	stateSinkObject.Save(7, &i.nodeID)
+	stateSinkObject.Save(8, &i.entryTime)
 	stateSinkObject.Save(9, &i.attrVersion)
 	stateSinkObject.Save(10, &i.attrTime)
 	stateSinkObject.Save(11, &i.link)
@@ -462,14 +462,14 @@ func (i *inode) afterLoad(context.Context) {}
 // +checklocksignore
 func (i *inode) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(0, &i.inodeRefs)
-	stateSourceObject.Load(1, &i.InodeAlwaysValid)
-	stateSourceObject.Load(2, &i.InodeNotAnonymous)
-	stateSourceObject.Load(3, &i.InodeNotSymlink)
-	stateSourceObject.Load(4, &i.InodeWatches)
-	stateSourceObject.Load(5, &i.OrderedChildren)
-	stateSourceObject.Load(6, &i.CachedMappable)
-	stateSourceObject.Load(7, &i.fs)
-	stateSourceObject.Load(8, &i.nodeID)
+	stateSourceObject.Load(1, &i.InodeNotAnonymous)
+	stateSourceObject.Load(2, &i.InodeNotSymlink)
+	stateSourceObject.Load(3, &i.InodeWatches)
+	stateSourceObject.Load(4, &i.OrderedChildren)
+	stateSourceObject.Load(5, &i.CachedMappable)
+	stateSourceObject.Load(6, &i.fs)
+	stateSourceObject.Load(7, &i.nodeID)
+	stateSourceObject.Load(8, &i.entryTime)
 	stateSourceObject.Load(9, &i.attrVersion)
 	stateSourceObject.Load(10, &i.attrTime)
 	stateSourceObject.Load(11, &i.link)
