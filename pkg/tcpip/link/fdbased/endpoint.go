@@ -228,6 +228,9 @@ type Options struct {
 
 	// InterfaceIndex is the interface index of the underlying device.
 	InterfaceIndex int
+
+	// GRO enables generic receive offload.
+	GRO bool
 }
 
 // fanoutID is used for AF_PACKET based endpoints to enable PACKET_FANOUT

@@ -331,7 +331,7 @@ func runRunsc(tc *gtest.TestCase, spec *specs.Spec) error {
 		"-watchdog-action=panic",
 		"-platform", *platform,
 		"-file-access", *fileAccess,
-		"-gvisor-gro=200000ns",
+		"-gvisor-gro",
 	}
 
 	if *network == "host" && !testutil.TestEnvSupportsNetAdmin {
