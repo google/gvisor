@@ -270,8 +270,9 @@ func newSender(ep *Endpoint, iss, irs seqnum.Value, sndWnd seqnum.Size, mss uint
 // returns a handle to it. It also initializes the sndCwnd and sndSsThresh to
 // their initial values.
 func (s *sender) initCongestionControl(congestionControlName tcpip.CongestionControlOption) congestionControl {
-	s.SndCwnd = InitialCwnd
 	s.Ssthresh = InitialSsthresh
+	s.SndCwnd = InitialCwnd
+	s.ep.stack.Stats().TCP.CongestionWindow.Set(uint64(s.SndCwnd))
 
 	switch congestionControlName {
 	case ccCubic:
@@ -1019,6 +1020,7 @@ func (s *sender) sendData() {
 	if !s.FastRecovery.Active && s.state != tcpip.RTORecovery && s.ep.stack.Clock().NowMonotonic().Sub(s.LastSendTime) > s.RTO {
 		if s.SndCwnd > InitialCwnd {
 			s.SndCwnd = InitialCwnd
+			s.ep.stack.Stats().TCP.CongestionWindow.Set(uint64(s.SndCwnd))
 		}
 	}
 
@@ -1060,6 +1062,7 @@ func (s *sender) enterRecovery() {
 	// We inflate the cwnd by 3 to account for the 3 packets which triggered
 	// the 3 duplicate ACKs and are now not in flight.
 	s.SndCwnd = s.Ssthresh + 3
+	s.ep.stack.Stats().TCP.CongestionWindow.Set(uint64(s.SndCwnd))
 	s.SackedOut = 0
 	s.DupAckCount = 0
 	s.FastRecovery.First = s.SndUna
@@ -1095,6 +1098,7 @@ func (s *sender) leaveRecovery() {
 
 	// Deflate cwnd. It had been artificially inflated when new dups arrived.
 	s.SndCwnd = s.Ssthresh
+	s.ep.stack.Stats().TCP.CongestionWindow.Set(uint64(s.SndCwnd))
 	s.cc.PostRecovery()
 }
 

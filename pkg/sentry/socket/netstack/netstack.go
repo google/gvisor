@@ -78,6 +78,15 @@ func statCounterValue(cm *tcpip.StatCounter) func(...*metric.FieldValue) uint64 
 	}
 }
 
+// networkMetricValue returns a function usable as callback function when defining a gVisor Sentry
+// metric that contains the value counted by the StatCounter.
+// This avoids a dependency loop in the tcpip package.
+func networkMetricValue(nm *tcpip.NetworkMetric) func(...*metric.FieldValue) uint64 {
+	return func(...*metric.FieldValue) uint64 {
+		return nm.Get()
+	}
+}
+
 func mustCreateMetric(name, description string) *tcpip.StatCounter {
 	var cm tcpip.StatCounter
 	metric.MustRegisterCustomUint64Metric(name, true /* cumulative */, false /* sync */, description, statCounterValue(&cm))
@@ -88,6 +97,12 @@ func mustCreateGauge(name, description string) *tcpip.StatCounter {
 	var cm tcpip.StatCounter
 	metric.MustRegisterCustomUint64Metric(name, false /* cumulative */, false /* sync */, description, statCounterValue(&cm))
 	return &cm
+}
+
+func mustCreateNetworkMetric(name, description string) *tcpip.NetworkMetric {
+	var nm tcpip.NetworkMetric
+	metric.MustRegisterCustomUint64Metric(name, false /* cumulative */, false /* sync */, description, networkMetricValue(&nm))
+	return &nm
 }
 
 // Metrics contains metrics exported by netstack.
@@ -291,6 +306,7 @@ var Metrics = tcpip.Stats{
 		SpuriousRecovery:                   mustCreateMetric("/netstack/tcp/spurious_recovery", "Number of times the connection entered loss recovery spuriously."),
 		SpuriousRTORecovery:                mustCreateMetric("/netstack/tcp/spurious_rto_recovery", "Number of times the connection entered RTO spuriously."),
 		ForwardMaxInFlightDrop:             mustCreateMetric("/netstack/tcp/forward_max_in_flight_drop", "Number of connection requests dropped due to exceeding in-flight limit."),
+		CongestionWindow:                   mustCreateNetworkMetric("/netstack/tcp/congestion_window", "Congestion window."),
 	},
 	UDP: tcpip.UDPStats{
 		PacketsReceived:          mustCreateMetric("/netstack/udp/packets_received", "Number of UDP datagrams received via HandlePacket."),
