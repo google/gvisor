@@ -78,8 +78,6 @@ type nic struct {
 
 	qDisc QueueingDiscipline
 
-	gro groDispatcher
-
 	// deliverLinkPackets specifies whether this NIC delivers packets to
 	// packet sockets. It is immutable.
 	//
@@ -210,7 +208,6 @@ func newNIC(stack *Stack, id tcpip.NICID, ep LinkEndpoint, opts NICOptions) *nic
 		}
 	}
 
-	nic.gro.init(opts.GROTimeout)
 	nic.NetworkLinkEndpoint.Attach(nic)
 
 	return nic
@@ -316,9 +313,6 @@ func (n *nic) remove() tcpip.Error {
 	}
 
 	n.enableDisableMu.Unlock()
-
-	// Shutdown GRO.
-	n.gro.close()
 
 	// Drain and drop any packets pending link resolution.
 	// We must not hold n.enableDisableMu here.
@@ -752,7 +746,7 @@ func (n *nic) DeliverNetworkPacket(protocol tcpip.NetworkProtocolNumber, pkt *Pa
 		n.DeliverLinkPacket(protocol, pkt)
 	}
 
-	n.gro.dispatch(pkt, protocol, networkEndpoint)
+	networkEndpoint.HandlePacket(pkt)
 }
 
 func (n *nic) DeliverLinkPacket(protocol tcpip.NetworkProtocolNumber, pkt *PacketBuffer) {

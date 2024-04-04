@@ -216,7 +216,7 @@ func prepareRedirectInterfaceArgs(bind boot.BindOpt, conf *config.Config) (boot.
 			Neighbors:         neighbors,
 			LinkAddress:       linkAddress,
 			Addresses:         []boot.IPWithPrefix{addr},
-			GvisorGROTimeout:  conf.GvisorGROTimeout,
+			GvisorGRO:         conf.GvisorGRO,
 			Bind:              bind,
 		}
 		args.XDPLinks = append(args.XDPLinks, xdplink)

@@ -102,6 +102,9 @@ type Options struct {
 	// Bind is true when we're responsible for binding the AF_XDP socket to
 	// a device. When false, another process is expected to bind for us.
 	Bind bool
+
+	// GRO enables generic receive offload.
+	GRO bool
 }
 
 // New creates a new endpoint from an AF_XDP socket.

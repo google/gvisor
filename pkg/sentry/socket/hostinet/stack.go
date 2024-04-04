@@ -22,7 +22,6 @@ import (
 	"reflect"
 	"strconv"
 	"strings"
-	"time"
 
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -355,15 +354,4 @@ func (*Stack) PortRange() (uint16, uint16) {
 // SetPortRange implements inet.Stack.SetPortRange.
 func (*Stack) SetPortRange(uint16, uint16) error {
 	return linuxerr.EACCES
-}
-
-// GROTimeout implements inet.Stack.GROTimeout.
-func (s *Stack) GROTimeout(NICID int32) (time.Duration, error) {
-	return 0, nil
-}
-
-// SetGROTimeout implements inet.Stack.SetGROTimeout.
-func (s *Stack) SetGROTimeout(NICID int32, timeout time.Duration) error {
-	// We don't support setting the hostinet GRO timeout.
-	return linuxerr.EINVAL
 }

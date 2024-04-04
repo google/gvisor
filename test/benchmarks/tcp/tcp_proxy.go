@@ -64,7 +64,7 @@ var (
 	cubic              = flag.Bool("cubic", false, "enable use of CUBIC congestion control for netstack")
 	gso                = flag.Int("gso", 0, "GSO maximum size")
 	swgso              = flag.Bool("swgso", false, "gVisor-level GSO")
-	gro                = flag.Duration("gro", 0, "gVisor-level GRO timeout")
+	gro                = flag.Bool("gro", false, "gVisor-level GRO")
 	clientTCPProbeFile = flag.String("client_tcp_probe_file", "", "if specified, installs a tcp probe to dump endpoint state to the specified file.")
 	serverTCPProbeFile = flag.String("server_tcp_probe_file", "", "if specified, installs a tcp probe to dump endpoint state to the specified file.")
 	cpuprofile         = flag.String("cpuprofile", "", "write cpu profile to the specified file.")
@@ -228,7 +228,7 @@ func newNetstackImpl(mode string) (impl, error) {
 			// regenerate valid checksums after GRO.
 			TXChecksumOffload: false,
 			RXChecksumOffload: true,
-			//PacketDispatchMode: fdbased.RecvMMsg,
+			// PacketDispatchMode: fdbased.RecvMMsg,
 			PacketDispatchMode: fdbased.PacketMMap,
 			GSOMaxSize:         uint32(*gso),
 			GvisorGSOEnabled:   *swgso,
@@ -243,7 +243,7 @@ func newNetstackImpl(mode string) (impl, error) {
 	}
 
 	qDisc := fifo.New(ep, runtime.GOMAXPROCS(0), 1000)
-	opts := stack.NICOptions{QDisc: qDisc, GROTimeout: *gro}
+	opts := stack.NICOptions{QDisc: qDisc}
 	if err := s.CreateNICWithOptions(nicID, ep, opts); err != nil {
 		return nil, fmt.Errorf("error creating NIC %q: %v", *iface, err)
 	}
