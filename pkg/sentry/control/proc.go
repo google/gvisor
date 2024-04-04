@@ -266,9 +266,8 @@ func (proc *Proc) execAsync(args *ExecArgs) (*kernel.ThreadGroup, kernel.ThreadI
 		initArgs.Filename = resolved
 	}
 
-	// TODO(gvisor.dev/issue/1956): Container name is not really needed because
-	// exec processes are not restored, but add it for completeness.
-	ttyFile, err := fdimport.Import(ctx, fdTable, args.StdioIsPty, args.KUID, args.KGID, fdMap, "")
+	containerName := proc.Kernel.ContainerNameGivenID(args.ContainerID)
+	ttyFile, err := fdimport.Import(ctx, fdTable, args.StdioIsPty, args.KUID, args.KGID, fdMap, containerName)
 	if err != nil {
 		return nil, 0, nil, err
 	}
