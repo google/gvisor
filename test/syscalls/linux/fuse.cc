@@ -16,17 +16,22 @@
 #include <linux/capability.h>
 #include <stdio.h>
 #include <sys/mount.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
+#include <cerrno>
 #include <cstdint>
-#include <cstring>
+#include <cstdlib>
 #include <string>
+#include <vector>
 
+#include "gmock/gmock.h"
 #include "gtest/gtest.h"
 #include "absl/strings/str_format.h"
-#include "test/util/capability_util.h"
+#include "absl/strings/string_view.h"
 #include "test/util/file_descriptor.h"
-#include "test/util/mount_util.h"
+#include "test/util/fs_util.h"
+#include "test/util/linux_capability_util.h"
 #include "test/util/posix_error.h"
 #include "test/util/temp_path.h"
 #include "test/util/test_util.h"
@@ -62,6 +67,24 @@ TEST(FuseTest, RejectBadInit) {
 
   ASSERT_THAT(write(fd.get(), reinterpret_cast<char*>(&resp), sizeof(resp)),
               SyscallFailsWithErrno(EINVAL));
+}
+
+TEST(FuseTest, LookupUpdatesInode) {
+  SKIP_IF(absl::NullSafeStringView(getenv("GVISOR_FUSE_TEST")) != "TRUE");
+  const std::string kFileData = "May thy knife chip and shatter.\n";
+  TempPath path = ASSERT_NO_ERRNO_AND_VALUE(TempPath::CreateFileWith(
+      GetAbsoluteTestTmpdir(), kFileData, TempPath::kDefaultFileMode));
+
+  FileDescriptor fd = ASSERT_NO_ERRNO_AND_VALUE(Open(path.path(), O_RDONLY));
+  std::vector<char> buf(kFileData.size());
+  ASSERT_THAT(ReadFd(fd.get(), buf.data(), kFileData.size()),
+              SyscallSucceedsWithValue(kFileData.size()));
+
+  ASSERT_THAT(unlink(JoinPath("/fuse", Basename(path.path())).c_str()),
+              SyscallSucceeds());
+
+  EXPECT_THAT(access(path.path().c_str(), O_RDONLY),
+              SyscallFailsWithErrno(ENOENT));
 }
 
 }  // namespace

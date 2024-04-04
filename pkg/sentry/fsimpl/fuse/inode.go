@@ -17,9 +17,10 @@ package fuse
 import (
 	"fmt"
 	"sync"
-	"time"
+	gotime "time"
 
 	"gvisor.dev/gvisor/pkg/abi/linux"
+
 	"gvisor.dev/gvisor/pkg/atomicbitops"
 	"gvisor.dev/gvisor/pkg/context"
 	"gvisor.dev/gvisor/pkg/errors/linuxerr"
@@ -29,6 +30,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/kernfs"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
+	"gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/vfs"
 )
 
@@ -44,7 +46,6 @@ type fileHandle struct {
 // +stateify savable
 type inode struct {
 	inodeRefs
-	kernfs.InodeAlwaysValid
 	kernfs.InodeNotAnonymous
 	kernfs.InodeNotSymlink
 	kernfs.InodeWatches
@@ -58,11 +59,14 @@ type inode struct {
 	// and the sentry. Immutable.
 	nodeID uint64
 
+	// entryTime is the time at which the entry becomes invalid.
+	entryTime time.Time
+
 	// attrVersion is the version of the last attribute change.
 	attrVersion atomicbitops.Uint64
 
-	// attrTime is the time until the attributes are valid.
-	attrTime uint64
+	// attrTime is the time at which the attributes become invalid.
+	attrTime time.Time
 
 	// link is result of following a symbolic link.
 	link string
@@ -189,6 +193,11 @@ func (i *inode) init(creds *auth.Credentials, devMajor, devMinor uint32, nodeid 
 	i.ctime.Store(now)
 }
 
+func (i *inode) updateEntryTime(entrySec, entryNSec int64) {
+	entryTime := time.FromTimespec(linux.Timespec{Sec: entrySec, Nsec: entryNSec})
+	i.entryTime = i.fs.clock.Now().AddTime(entryTime)
+}
+
 // CheckPermissions implements kernfs.Inode.CheckPermissions.
 func (i *inode) CheckPermissions(ctx context.Context, creds *auth.Credentials, ats vfs.AccessTypes) error {
 	// Since FUSE operations are ultimately backed by a userspace process (the
@@ -219,7 +228,7 @@ func (i *inode) CheckPermissions(ctx context.Context, creds *auth.Credentials, a
 	refreshed := false
 	opts := vfs.StatOptions{Mask: linux.STATX_MODE | linux.STATX_UID | linux.STATX_GID}
 	if i.fs.opts.defaultPermissions || (ats.MayExec() && i.filemode().FileType() == linux.S_IFREG) {
-		if uint64(i.fs.clock.Now().Nanoseconds()) > i.attrTime {
+		if i.fs.clock.Now().After(i.attrTime) {
 			refreshed = true
 			if _, err := i.getAttr(ctx, i.fs.VFSFilesystem(), opts, 0, 0); err != nil {
 				return err
@@ -365,6 +374,10 @@ func (i *inode) Open(ctx context.Context, rp *vfs.ResolvingPath, d *kernfs.Dentr
 	return &fd.vfsfd, nil
 }
 
+func (i *inode) Valid(ctx context.Context) bool {
+	return i.entryTime.After(i.fs.clock.Now())
+}
+
 // Lookup implements kernfs.Inode.Lookup.
 func (i *inode) Lookup(ctx context.Context, name string) (kernfs.Inode, error) {
 	in := linux.FUSELookupIn{Name: linux.CString(name)}
@@ -508,7 +521,7 @@ func (i *inode) newEntry(ctx context.Context, name string, fileType linux.FileMo
 	if opcode != linux.FUSE_LOOKUP && ((out.Attr.Mode&linux.S_IFMT)^uint32(fileType) != 0 || out.NodeID == 0 || out.NodeID == linux.FUSE_ROOT_ID) {
 		return nil, linuxerr.EIO
 	}
-	child := i.fs.newInode(ctx, out.NodeID, out.Attr)
+	child := i.fs.newInode(ctx, out.NodeID, out.FUSEEntryOut)
 	if opcode == linux.FUSE_CREATE {
 		// File handler is returned by fuse server at a time of file create.
 		// Save it temporary in a created child, so Open could return it when invoked
@@ -544,7 +557,7 @@ func (i *inode) Readlink(ctx context.Context, mnt *vfs.Mount) (string, error) {
 		}
 		i.link = string(res.data[res.hdr.SizeBytes():])
 		if !mnt.Options().ReadOnly {
-			i.attrTime = 0
+			i.attrTime = time.ZeroTime
 		}
 	}
 	return i.link, nil
@@ -554,7 +567,7 @@ func (i *inode) Readlink(ctx context.Context, mnt *vfs.Mount) (string, error) {
 //
 // +checklocks:i.attrMu
 func (i *inode) getFUSEAttr() linux.FUSEAttr {
-	ns := time.Second.Nanoseconds()
+	ns := gotime.Second.Nanoseconds()
 	return linux.FUSEAttr{
 		Ino:       i.nodeID,
 		UID:       i.uid.Load(),
@@ -666,7 +679,7 @@ func (i *inode) getAttr(ctx context.Context, fs *vfs.Filesystem, opts vfs.StatOp
 		return i.getFUSEAttr(), nil
 	}
 	i.fs.conn.mu.Unlock()
-	i.updateAttrs(out.Attr, out.AttrValid)
+	i.updateAttrs(out.Attr, int64(out.AttrValid), int64(out.AttrValidNsec))
 	return out.Attr, nil
 }
 
@@ -809,16 +822,16 @@ func (i *inode) setAttr(ctx context.Context, fs *vfs.Filesystem, creds *auth.Cre
 	if err := res.UnmarshalPayload(&out); err != nil {
 		return err
 	}
-	i.updateAttrs(out.Attr, out.AttrValid)
+	i.updateAttrs(out.Attr, int64(out.AttrValid), int64(out.AttrValidNsec))
 	return nil
 }
 
 // +checklocks:i.attrMu
-func (i *inode) updateAttrs(attr linux.FUSEAttr, attrTimeout uint64) {
+func (i *inode) updateAttrs(attr linux.FUSEAttr, validSec, validNSec int64) {
 	i.fs.conn.mu.Lock()
 	i.attrVersion.Store(i.fs.conn.attributeVersion.Add(1))
 	i.fs.conn.mu.Unlock()
-	i.attrTime = attrTimeout
+	i.attrTime = i.fs.clock.Now().AddTime(time.FromTimespec(linux.Timespec{Sec: validSec, Nsec: validNSec}))
 
 	i.ino.Store(attr.Ino)
 
