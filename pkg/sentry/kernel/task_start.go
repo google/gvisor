@@ -84,7 +84,7 @@ type TaskConfig struct {
 	// MountNamespace is the MountNamespace of the new task.
 	MountNamespace *vfs.MountNamespace
 
-	// RSeqAddr is a pointer to the the userspace linux.RSeq structure.
+	// RSeqAddr is a pointer to the userspace linux.RSeq structure.
 	RSeqAddr hostarch.Addr
 
 	// RSeqSignature is the signature that the rseq abort IP must be signed

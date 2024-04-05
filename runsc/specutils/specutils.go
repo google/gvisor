@@ -254,7 +254,7 @@ func fixSpec(spec *specs.Spec, bundleDir string, conf *config.Config) error {
 			}
 		} else if len(containerName) > 0 {
 			// If we know the container name, then check to see if seccomp
-			// instructions were given to the the container.
+			// instructions were given to the container.
 			if annotation == annotationSeccomp+containerName && val == annotationSeccompRuntimeDefault {
 				// Container seccomp rules are redundant when using gVisor, so remove
 				// them when seccomp is set to RuntimeDefault.
