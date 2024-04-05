@@ -198,7 +198,7 @@ func (b NDPRouterAdvert) RetransTimer() time.Duration {
 	return time.Millisecond * time.Duration(binary.BigEndian.Uint32(b[ndpRARetransTimerOffset:]))
 }
 
-// Options returns an NDPOptions of the the options body.
+// Options returns an NDPOptions of the options body.
 func (b NDPRouterAdvert) Options() NDPOptions {
 	return NDPOptions(b[ndpRAOptionsOffset:])
 }
