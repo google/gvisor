@@ -104,7 +104,7 @@ func (b NDPNeighborAdvert) SetOverrideFlag(f bool) {
 	}
 }
 
-// Options returns an NDPOptions of the the options body.
+// Options returns an NDPOptions of the options body.
 func (b NDPNeighborAdvert) Options() NDPOptions {
 	return NDPOptions(b[ndpNAOptionsOffset:])
 }

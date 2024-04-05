@@ -303,7 +303,7 @@ func (b *Bitmap) ToSlice() []uint32 {
 	return bitmapSlice
 }
 
-// GetNumOnes return the the number of ones in the Bitmap.
+// GetNumOnes return the number of ones in the Bitmap.
 func (b *Bitmap) GetNumOnes() uint32 {
 	return b.numOnes
 }
