@@ -647,6 +647,11 @@ func (s *Sandbox) connError(err error) error {
 // createSandboxProcess starts the sandbox as a subprocess by running the "boot"
 // command, passing in the bundle dir.
 func (s *Sandbox) createSandboxProcess(conf *config.Config, args *Args, startSyncFile *os.File) error {
+	// Ensure we don't leak FDs to the sandbox process.
+	if err := SetCloExeOnAllFDs(); err != nil {
+		return fmt.Errorf("setting CLOEXEC on all FDs: %w", err)
+	}
+
 	donations := donation.Agency{}
 	defer donations.Close()
 
@@ -1702,4 +1707,44 @@ func (s *Sandbox) Mount(cid, fstype, src, dest string) error {
 		FilePayload: urpc.FilePayload{Files: files},
 	}
 	return s.call(boot.ContMgrMount, &args, nil)
+}
+
+var setCloseExecOnce sync.Once
+
+// SetCloExeOnAllFDs sets CLOEXEC on all FDs in /proc/self/fd. This avoids
+// leaking inherited FDs from the parent (caller) to subprocesses created.
+func SetCloExeOnAllFDs() (retErr error) {
+	// Sufficient to do this only once per runsc invocation. Avoid double work.
+	setCloseExecOnce.Do(func() {
+		dents, err := os.ReadDir("/proc/self/fd")
+		if err != nil {
+			retErr = fmt.Errorf("failed to read /proc/self/fd: %w", err)
+			return
+		}
+		for _, dent := range dents {
+			fd, err := strconv.Atoi(dent.Name())
+			if err != nil {
+				retErr = fmt.Errorf("failed to convert /proc/self/fd entry %q to int: %w", dent.Name(), err)
+				return
+			}
+			flags, _, errno := unix.RawSyscall(unix.SYS_FCNTL, uintptr(fd), unix.F_GETFD, 0)
+			if errno == unix.EBADF {
+				// Ignore EBADF, which is possible for the dir FD used for getdents(2).
+				continue
+			}
+			if errno != 0 {
+				retErr = fmt.Errorf("error getting FD %d: %w", fd, errno)
+				return
+			}
+			if flags&unix.FD_CLOEXEC != 0 {
+				continue
+			}
+			flags |= unix.FD_CLOEXEC
+			if _, _, errno := unix.RawSyscall(unix.SYS_FCNTL, uintptr(fd), unix.F_SETFD, flags); errno != 0 {
+				retErr = fmt.Errorf("error setting CLOEXEC: %v", errno)
+				return
+			}
+		}
+	})
+	return
 }
