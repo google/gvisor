@@ -1709,42 +1709,50 @@ func (s *Sandbox) Mount(cid, fstype, src, dest string) error {
 	return s.call(boot.ContMgrMount, &args, nil)
 }
 
-var setCloseExecOnce sync.Once
+func setCloExeOnAllFDs() error {
+	f, err := os.Open("/proc/self/fd")
+	if err != nil {
+		return fmt.Errorf("failed to open /proc/self/fd: %w", err)
 
-// SetCloExeOnAllFDs sets CLOEXEC on all FDs in /proc/self/fd. This avoids
-// leaking inherited FDs from the parent (caller) to subprocesses created.
-func SetCloExeOnAllFDs() (retErr error) {
-	// Sufficient to do this only once per runsc invocation. Avoid double work.
-	setCloseExecOnce.Do(func() {
-		dents, err := os.ReadDir("/proc/self/fd")
-		if err != nil {
-			retErr = fmt.Errorf("failed to read /proc/self/fd: %w", err)
-			return
+	}
+	defer f.Close()
+	for {
+		dents, err := f.Readdirnames(256)
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			return fmt.Errorf("failed to read /proc/self/fd: %w", err)
 		}
 		for _, dent := range dents {
-			fd, err := strconv.Atoi(dent.Name())
+			fd, err := strconv.Atoi(dent)
 			if err != nil {
-				retErr = fmt.Errorf("failed to convert /proc/self/fd entry %q to int: %w", dent.Name(), err)
-				return
+				return fmt.Errorf("failed to convert /proc/self/fd entry %q to int: %w", dent, err)
 			}
-			flags, _, errno := unix.RawSyscall(unix.SYS_FCNTL, uintptr(fd), unix.F_GETFD, 0)
-			if errno == unix.EBADF {
-				// Ignore EBADF, which is possible for the dir FD used for getdents(2).
+			if fd == int(f.Fd()) {
 				continue
 			}
+			flags, _, errno := unix.RawSyscall(unix.SYS_FCNTL, uintptr(fd), unix.F_GETFD, 0)
 			if errno != 0 {
-				retErr = fmt.Errorf("error getting FD %d: %w", fd, errno)
-				return
+				return fmt.Errorf("error getting descriptor flags: %w", errno)
 			}
 			if flags&unix.FD_CLOEXEC != 0 {
 				continue
 			}
 			flags |= unix.FD_CLOEXEC
 			if _, _, errno := unix.RawSyscall(unix.SYS_FCNTL, uintptr(fd), unix.F_SETFD, flags); errno != 0 {
-				retErr = fmt.Errorf("error setting CLOEXEC: %v", errno)
-				return
+				return fmt.Errorf("error setting CLOEXEC: %w", errno)
 			}
 		}
-	})
+	}
+	return nil
+}
+
+var setCloseExecOnce sync.Once
+
+// SetCloExeOnAllFDs sets CLOEXEC on all FDs in /proc/self/fd. This avoids
+// leaking inherited FDs from the parent (caller) to subprocesses created.
+func SetCloExeOnAllFDs() (retErr error) {
+	// Sufficient to do this only once per runsc invocation. Avoid double work.
+	setCloseExecOnce.Do(func() { retErr = setCloExeOnAllFDs() })
 	return
 }
