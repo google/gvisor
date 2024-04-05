@@ -66,7 +66,7 @@ type linkDispatcher interface {
 type PacketDispatchMode int
 
 // BatchSize is the number of packets to write in each syscall. It is 47
-// because when GvisorGSO is in use then a single 65KB TCP segment can get
+// because when GVisorGSO is in use then a single 65KB TCP segment can get
 // split into 46 segments of 1420 bytes and a single 216 byte segment.
 const BatchSize = 47
 
@@ -201,8 +201,8 @@ type Options struct {
 	// disabled.
 	GSOMaxSize uint32
 
-	// GvisorGSOEnabled indicates whether Gvisor GSO is enabled or not.
-	GvisorGSOEnabled bool
+	// GVisorGSOEnabled indicates whether Gvisor GSO is enabled or not.
+	GVisorGSOEnabled bool
 
 	// PacketDispatchMode specifies the type of inbound dispatcher to be
 	// used for this endpoint.
@@ -315,8 +315,8 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 		e.fds = append(e.fds, fdInfo{fd: fd, isSocket: isSocket})
 		if isSocket {
 			if opts.GSOMaxSize != 0 {
-				if opts.GvisorGSOEnabled {
-					e.gsoKind = stack.GvisorGSOSupported
+				if opts.GVisorGSOEnabled {
+					e.gsoKind = stack.GVisorGSOSupported
 				} else {
 					e.gsoKind = stack.HostGSOSupported
 				}

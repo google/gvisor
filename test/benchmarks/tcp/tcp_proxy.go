@@ -231,7 +231,7 @@ func newNetstackImpl(mode string) (impl, error) {
 			// PacketDispatchMode: fdbased.RecvMMsg,
 			PacketDispatchMode: fdbased.PacketMMap,
 			GSOMaxSize:         uint32(*gso),
-			GvisorGSOEnabled:   *swgso,
+			GVisorGSOEnabled:   *swgso,
 		})
 	}
 	if err != nil {

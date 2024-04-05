@@ -98,8 +98,8 @@ type FDBasedLink struct {
 	Addresses         []IPWithPrefix
 	Routes            []Route
 	GSOMaxSize        uint32
-	GvisorGSOEnabled  bool
-	GvisorGRO         bool
+	GVisorGSOEnabled  bool
+	GVisorGRO         bool
 	TXChecksumOffload bool
 	RXChecksumOffload bool
 	LinkAddress       net.HardwareAddr
@@ -135,7 +135,7 @@ type XDPLink struct {
 	LinkAddress       net.HardwareAddr
 	QDisc             config.QueueingDiscipline
 	Neighbors         []Neighbor
-	GvisorGRO         bool
+	GVisorGRO         bool
 	Bind              BindOpt
 
 	// NumChannels controls how many underlying FDs are to be used to
@@ -148,7 +148,7 @@ type LoopbackLink struct {
 	Name      string
 	Addresses []IPWithPrefix
 	Routes    []Route
-	GvisorGRO bool
+	GVisorGRO bool
 }
 
 // CreateLinksAndRoutesArgs are arguments to CreateLinkAndRoutes.
@@ -312,10 +312,10 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 				Address:            mac,
 				PacketDispatchMode: dispatchMode,
 				GSOMaxSize:         link.GSOMaxSize,
-				GvisorGSOEnabled:   link.GvisorGSOEnabled,
+				GVisorGSOEnabled:   link.GVisorGSOEnabled,
 				TXChecksumOffload:  link.TXChecksumOffload,
 				RXChecksumOffload:  link.RXChecksumOffload,
-				GRO:                link.GvisorGRO,
+				GRO:                link.GVisorGRO,
 			})
 			if err != nil {
 				return err
@@ -408,7 +408,7 @@ func (n *Network) CreateLinksAndRoutes(args *CreateLinksAndRoutesArgs, _ *struct
 			RXChecksumOffload: link.RXChecksumOffload,
 			InterfaceIndex:    link.InterfaceIndex,
 			Bind:              link.Bind == BindSentry,
-			GRO:               link.GvisorGRO,
+			GRO:               link.GVisorGRO,
 		})
 		if err != nil {
 			return err

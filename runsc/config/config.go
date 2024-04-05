@@ -121,12 +121,12 @@ type Config struct {
 	// HostGSO indicates that host segmentation offload is enabled.
 	HostGSO bool `flag:"gso"`
 
-	// GvisorGSO indicates that gVisor segmentation offload is enabled. The flag
+	// GVisorGSO indicates that gVisor segmentation offload is enabled. The flag
 	// retains its old name of "software" GSO for API consistency.
-	GvisorGSO bool `flag:"software-gso"`
+	GVisorGSO bool `flag:"software-gso"`
 
-	// GvisorGRO enables gVisor's generic receive offload.
-	GvisorGRO bool `flag:"gvisor-gro"`
+	// GVisorGRO enables gVisor's generic receive offload.
+	GVisorGRO bool `flag:"gvisor-gro"`
 
 	// TXChecksumOffload indicates that TX Checksum Offload is enabled.
 	TXChecksumOffload bool `flag:"tx-checksum-offload"`

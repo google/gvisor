@@ -77,7 +77,7 @@ func setupNetwork(conn *urpc.Client, pid int, conf *config.Config) error {
 
 func createDefaultLoopbackInterface(conf *config.Config, conn *urpc.Client) error {
 	link := boot.DefaultLoopbackLink
-	link.GvisorGRO = conf.GvisorGRO
+	link.GVisorGRO = conf.GVisorGRO
 	if err := conn.Call(boot.NetworkCreateLinksAndRoutes, &boot.CreateLinksAndRoutesArgs{
 		LoopbackLinks: []boot.LoopbackLink{link},
 	}, nil); err != nil {
@@ -277,7 +277,7 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 				Neighbors:         neighbors,
 				LinkAddress:       linkAddress,
 				Addresses:         addresses,
-				GvisorGRO:         conf.GvisorGRO,
+				GVisorGRO:         conf.GVisorGRO,
 			})
 		} else {
 			link := boot.FDBasedLink{
@@ -312,12 +312,12 @@ func createInterfacesAndRoutesFromNS(conn *urpc.Client, nsPath string, conf *con
 				args.FilePayload.Files = append(args.FilePayload.Files, socketEntry.deviceFile)
 			}
 
-			if link.GSOMaxSize == 0 && conf.GvisorGSO {
+			if link.GSOMaxSize == 0 && conf.GVisorGSO {
 				// Host GSO is disabled. Let's enable gVisor GSO.
-				link.GSOMaxSize = stack.GvisorGSOMaxSize
-				link.GvisorGSOEnabled = true
+				link.GSOMaxSize = stack.GVisorGSOMaxSize
+				link.GVisorGSOEnabled = true
 			}
-			link.GvisorGRO = conf.GvisorGRO
+			link.GVisorGRO = conf.GVisorGRO
 
 			args.FDBasedLinks = append(args.FDBasedLinks, link)
 		}
@@ -430,7 +430,7 @@ func createSocket(iface net.Interface, ifaceLink netlink.Link, enableGSO bool) (
 func loopbackLink(conf *config.Config, iface net.Interface, addrs []net.Addr) (boot.LoopbackLink, error) {
 	link := boot.LoopbackLink{
 		Name:      iface.Name,
-		GvisorGRO: conf.GvisorGRO,
+		GVisorGRO: conf.GVisorGRO,
 	}
 	for _, addr := range addrs {
 		ipNet, ok := addr.(*net.IPNet)

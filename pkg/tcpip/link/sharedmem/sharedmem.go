@@ -515,5 +515,5 @@ func (e *endpoint) GSOMaxSize() uint32 {
 
 // SupportsGSO implements stack.GSOEndpoint.
 func (e *endpoint) SupportedGSO() stack.SupportedGSO {
-	return stack.GvisorGSOSupported
+	return stack.GVisorGSOSupported
 }
