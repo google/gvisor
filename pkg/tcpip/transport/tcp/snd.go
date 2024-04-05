@@ -907,9 +907,17 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 // +checklocks:s.ep.mu
 func (s *sender) sendZeroWindowProbe() {
 	s.unackZeroWindowProbes++
-	// Send a zero window probe with sequence number pointing to
-	// the last acknowledged byte.
-	s.sendEmptySegment(header.TCPFlagAck, s.SndUna-1)
+
+	// Zero window probes must contain at least one byte, otherwise the
+	// receiver isn't obligated to respond. See RFC 9293 3.8.6.1.
+	seg := s.writeNext
+	if seg.payloadSize() > 1 {
+		s.splitSeg(seg, 1)
+	}
+	// We call sendSegmentFromPacketBuffer rather than sendSegment in order
+	// to not trigger congestion control.
+	s.sendSegmentFromPacketBuffer(seg.pkt, seg.flags, seg.sequenceNumber)
+
 	// Rearm the timer to continue probing.
 	s.resendTimer.enable(s.RTO)
 }
