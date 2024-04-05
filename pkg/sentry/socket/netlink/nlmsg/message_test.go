@@ -22,7 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/marshal"
 	"gvisor.dev/gvisor/pkg/marshal/primitive"
-	"gvisor.dev/gvisor/pkg/sentry/socket/netlink"
+	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 )
 
 func TestParseMessage(t *testing.T) {
@@ -160,7 +160,7 @@ func TestParseMessage(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
-		msg, rest, ok := netlink.ParseMessage(test.input)
+		msg, rest, ok := nlmsg.ParseMessage(test.input)
 		if ok != test.ok {
 			t.Errorf("%v: got ok = %v, want = %v", test.desc, ok, test.ok)
 			continue
@@ -277,7 +277,7 @@ func TestAttrView(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
-		attrs := netlink.AttrsView(test.input)
+		attrs := nlmsg.AttrsView(test.input)
 
 		// Test ParseFirst().
 		hdr, value, rest, ok := attrs.ParseFirst()

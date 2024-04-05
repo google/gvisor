@@ -1,4 +1,4 @@
-load("//tools:defs.bzl", "go_library", "go_test")
+load("//tools:defs.bzl", "go_library")
 
 package(
     default_applicable_licenses = ["//:license"],
@@ -8,7 +8,6 @@ package(
 go_library(
     name = "netlink",
     srcs = [
-        "message.go",
         "provider.go",
         "socket.go",
     ],
@@ -16,7 +15,6 @@ go_library(
     deps = [
         "//pkg/abi/linux",
         "//pkg/abi/linux/errno",
-        "//pkg/bits",
         "//pkg/context",
         "//pkg/errors/linuxerr",
         "//pkg/hostarch",
@@ -28,6 +26,7 @@ go_library(
         "//pkg/sentry/kernel/auth",
         "//pkg/sentry/kernel/time",
         "//pkg/sentry/socket",
+        "//pkg/sentry/socket/netlink/nlmsg",
         "//pkg/sentry/socket/netlink/port",
         "//pkg/sentry/socket/unix",
         "//pkg/sentry/socket/unix/transport",
@@ -36,19 +35,5 @@ go_library(
         "//pkg/syserr",
         "//pkg/usermem",
         "//pkg/waiter",
-    ],
-)
-
-go_test(
-    name = "netlink_test",
-    size = "small",
-    srcs = [
-        "message_test.go",
-    ],
-    deps = [
-        ":netlink",
-        "//pkg/abi/linux",
-        "//pkg/marshal",
-        "//pkg/marshal/primitive",
     ],
 )

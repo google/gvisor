@@ -32,6 +32,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/kernel/auth"
 	ktime "gvisor.dev/gvisor/pkg/sentry/kernel/time"
 	"gvisor.dev/gvisor/pkg/sentry/socket"
+	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/nlmsg"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netlink/port"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix"
 	"gvisor.dev/gvisor/pkg/sentry/socket/unix/transport"
@@ -650,7 +651,7 @@ func (kernelSCM) Credentials(*kernel.Task) (kernel.ThreadID, auth.UID, auth.GID)
 var kernelCreds = &kernelSCM{}
 
 // sendResponse sends the response messages in ms back to userspace.
-func (s *Socket) sendResponse(ctx context.Context, ms *MessageSet) *syserr.Error {
+func (s *Socket) sendResponse(ctx context.Context, ms *nlmsg.MessageSet) *syserr.Error {
 	// Linux combines multiple netlink messages into a single datagram.
 	bufs := make([][]byte, 0, len(ms.Messages))
 	for _, m := range ms.Messages {
@@ -677,12 +678,12 @@ func (s *Socket) sendResponse(ctx context.Context, ms *MessageSet) *syserr.Error
 	}
 
 	// N.B. multi-part messages should still send NLMSG_DONE even if
-	// MessageSet contains no messages.
+	// nlmsg.MessageSet contains no messages.
 	//
 	// N.B. NLMSG_DONE is always sent in a different datagram. See
 	// net/netlink/af_netlink.c:netlink_dump.
 	if ms.Multi {
-		m := NewMessage(linux.NetlinkMessageHeader{
+		m := nlmsg.NewMessage(linux.NetlinkMessageHeader{
 			Type:   linux.NLMSG_DONE,
 			Flags:  linux.NLM_F_MULTI,
 			Seq:    ms.Seq,
@@ -704,7 +705,7 @@ func (s *Socket) sendResponse(ctx context.Context, ms *MessageSet) *syserr.Error
 	return nil
 }
 
-func dumpErrorMessage(hdr linux.NetlinkMessageHeader, ms *MessageSet, err *syserr.Error) {
+func dumpErrorMessage(hdr linux.NetlinkMessageHeader, ms *nlmsg.MessageSet, err *syserr.Error) {
 	m := ms.AddMessage(linux.NetlinkMessageHeader{
 		Type: linux.NLMSG_ERROR,
 	})
@@ -714,7 +715,7 @@ func dumpErrorMessage(hdr linux.NetlinkMessageHeader, ms *MessageSet, err *syser
 	})
 }
 
-func dumpAckMessage(hdr linux.NetlinkMessageHeader, ms *MessageSet) {
+func dumpAckMessage(hdr linux.NetlinkMessageHeader, ms *nlmsg.MessageSet) {
 	m := ms.AddMessage(linux.NetlinkMessageHeader{
 		Type: linux.NLMSG_ERROR,
 	})
@@ -728,7 +729,7 @@ func dumpAckMessage(hdr linux.NetlinkMessageHeader, ms *MessageSet) {
 // handler for final handling.
 func (s *Socket) processMessages(ctx context.Context, buf []byte) *syserr.Error {
 	for len(buf) > 0 {
-		msg, rest, ok := ParseMessage(buf)
+		msg, rest, ok := nlmsg.ParseMessage(buf)
 		if !ok {
 			// Linux ignores messages that are too short. See
 			// net/netlink/af_netlink.c:netlink_rcv_skb.
@@ -742,7 +743,7 @@ func (s *Socket) processMessages(ctx context.Context, buf []byte) *syserr.Error 
 			continue
 		}
 
-		ms := NewMessageSet(s.portID, hdr.Seq)
+		ms := nlmsg.NewMessageSet(s.portID, hdr.Seq)
 		if err := s.protocol.ProcessMessage(ctx, msg, ms); err != nil {
 			dumpErrorMessage(hdr, ms, err)
 		} else if hdr.Flags&linux.NLM_F_ACK == linux.NLM_F_ACK {
