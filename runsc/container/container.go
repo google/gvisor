@@ -1199,6 +1199,11 @@ func (c *Container) createGoferProcess(spec *specs.Spec, conf *config.Config, bu
 		return []*os.File{ioFile}, nil, nil, nil
 	}
 
+	// Ensure we don't leak FDs to the gofer process.
+	if err := sandbox.SetCloExeOnAllFDs(); err != nil {
+		return nil, nil, nil, fmt.Errorf("setting CLOEXEC on all FDs: %w", err)
+	}
+
 	donations := donation.Agency{}
 	defer donations.Close()
 
