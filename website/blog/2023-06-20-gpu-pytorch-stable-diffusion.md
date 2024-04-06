@@ -52,8 +52,10 @@ Diffusion) are packaged using the more secure [safetensors] format, **the
 majority of models available online today are distributed using the
 [Pickle format], which can execute arbitrary Python code** upon deserialization.
 As such, even when using trustworthy software, using Pickle-formatted models may
-still be risky. gVisor provides a layer of protection around this process which
-helps protect the host machine.
+still be risky (**Edited 2024-04-04:
+[this exact vulnerability vector was found in Hugging Face's Inference API](https://www.wiz.io/blog/wiz-and-hugging-face-address-risks-to-ai-infrastructure)**).
+gVisor provides a layer of protection around this process which helps protect
+the host machine.
 
 Third, **machine learning applications are typically not I/O heavy**, which
 means they tend not to experience a significant performance overhead. The
