@@ -25,6 +25,7 @@ go_library(
         "//pkg/tcpip/link/rawfile",
         "//pkg/tcpip/link/stopfd",
         "//pkg/tcpip/stack",
+        "//pkg/tcpip/stack/gro",
         "@org_golang_x_sys//unix:go_default_library",
     ],
 )
