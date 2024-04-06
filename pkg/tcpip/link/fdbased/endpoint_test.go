@@ -590,7 +590,7 @@ func TestDispatchPacketFormat(t *testing.T) {
 		},
 		{
 			name:          "recvMMsgDispatcher",
-			newDispatcher: newRecvMMsgDispatcher,
+			newDispatcher: func(fd int, e *endpoint) (linkDispatcher, error) { return newRecvMMsgDispatcher(fd, e, &Options{}) },
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

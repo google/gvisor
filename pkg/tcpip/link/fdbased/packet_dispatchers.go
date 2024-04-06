@@ -25,6 +25,7 @@ import (
 	"gvisor.dev/gvisor/pkg/tcpip/link/rawfile"
 	"gvisor.dev/gvisor/pkg/tcpip/link/stopfd"
 	"gvisor.dev/gvisor/pkg/tcpip/stack"
+	"gvisor.dev/gvisor/pkg/tcpip/stack/gro"
 )
 
 // BufConfig defines the shape of the buffer used to read packets from the NIC.
@@ -240,6 +241,9 @@ type recvMMsgDispatcher struct {
 
 	// pkts is reused to avoid allocations.
 	pkts stack.PacketBufferList
+
+	// gro coalesces incoming packets to increase throughput.
+	gro gro.GRO
 }
 
 const (
@@ -248,7 +252,7 @@ const (
 	MaxMsgsPerRecv = 8
 )
 
-func newRecvMMsgDispatcher(fd int, e *endpoint) (linkDispatcher, error) {
+func newRecvMMsgDispatcher(fd int, e *endpoint, opts *Options) (linkDispatcher, error) {
 	stopFD, err := stopfd.New()
 	if err != nil {
 		return nil, err
@@ -264,6 +268,8 @@ func newRecvMMsgDispatcher(fd int, e *endpoint) (linkDispatcher, error) {
 	for i := range d.bufs {
 		d.bufs[i] = newIovecBuffer(BufConfig, skipsVnetHdr)
 	}
+	d.gro.Init(opts.GRO)
+
 	return d, nil
 }
 
@@ -292,13 +298,16 @@ func (d *recvMMsgDispatcher) dispatch() (bool, tcpip.Error) {
 	if nMsgs == -1 || err != nil {
 		return false, err
 	}
+
 	// Process each of received packets.
 
 	d.e.mu.RLock()
 	dsp := d.e.dispatcher
 	d.e.mu.RUnlock()
 
+	d.gro.Dispatcher = dsp
 	defer d.pkts.Reset()
+
 	for k := 0; k < nMsgs; k++ {
 		n := int(d.msgHdrs[k].Len)
 		pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
@@ -336,8 +345,17 @@ func (d *recvMMsgDispatcher) dispatch() (bool, tcpip.Error) {
 			}
 		}
 
-		dsp.DeliverNetworkPacket(p, pkt)
+		// Only use GRO if there's more than one packet.
+		if nMsgs > 1 {
+			pkt.NetworkProtocolNumber = p
+			pkt.RXChecksumValidated = d.e.caps&stack.CapabilityRXChecksumOffload != 0
+			d.gro.Enqueue(pkt)
+		} else {
+			dsp.DeliverNetworkPacket(p, pkt)
+			return true, nil
+		}
 	}
+	d.gro.Flush()
 
 	return true, nil
 }

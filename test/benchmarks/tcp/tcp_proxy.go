@@ -226,12 +226,13 @@ func newNetstackImpl(mode string) (impl, error) {
 			// peer. But we do want to disable checksum verification as veth
 			// devices do perform GRO and the linux host kernel may not
 			// regenerate valid checksums after GRO.
-			TXChecksumOffload: false,
-			RXChecksumOffload: true,
-			// PacketDispatchMode: fdbased.RecvMMsg,
-			PacketDispatchMode: fdbased.PacketMMap,
-			GSOMaxSize:         uint32(*gso),
-			GVisorGSOEnabled:   *swgso,
+			TXChecksumOffload:  false,
+			RXChecksumOffload:  true,
+			PacketDispatchMode: fdbased.RecvMMsg,
+			// PacketDispatchMode: fdbased.PacketMMap,
+			GSOMaxSize:       uint32(*gso),
+			GVisorGSOEnabled: *swgso,
+			GRO:              *gro,
 		})
 	}
 	if err != nil {
