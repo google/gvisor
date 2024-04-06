@@ -404,3 +404,19 @@ cc_binary(
         "//test/util:test_main",
     ],
 )
+
+cc_binary(
+    name = "save_benchmark",
+    testonly = 1,
+    srcs = [
+        "save_benchmark.cc",
+    ],
+    deps = select_gtest() + [
+        gbenchmark,
+        "//test/util:logging",
+        "//test/util:memory_util",
+        "//test/util:save_util",
+        "//test/util:test_main",
+        "//test/util:test_util",
+    ],
+)
