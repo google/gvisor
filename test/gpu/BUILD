@@ -73,3 +73,18 @@ go_test(
     visibility = ["//:sandbox"],
     deps = ["//test/gpu/stablediffusion"],
 )
+
+go_test(
+    name = "vllm_test",
+    timeout = "long",
+    srcs = ["vllm_test.go"],
+    tags = [
+        "local",
+        "noguitar",
+        "notap",
+    ],
+    deps = [
+        "//pkg/test/dockerutil",
+        "@com_github_docker_docker//api/types/mount:go_default_library",
+    ],
+)
