@@ -3197,7 +3197,7 @@ func (e *Endpoint) initHostGSO() {
 func (e *Endpoint) initGSO() {
 	if e.route.HasHostGSOCapability() {
 		e.initHostGSO()
-	} else if e.route.HasGvisorGSOCapability() {
+	} else if e.route.HasGVisorGSOCapability() {
 		e.gso = stack.GSO{
 			MaxSize:   e.route.GSOMaxSize(),
 			Type:      stack.GSOGvisor,

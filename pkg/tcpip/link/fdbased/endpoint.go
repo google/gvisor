@@ -66,7 +66,7 @@ type linkDispatcher interface {
 type PacketDispatchMode int
 
 // BatchSize is the number of packets to write in each syscall. It is 47
-// because when GvisorGSO is in use then a single 65KB TCP segment can get
+// because when GVisorGSO is in use then a single 65KB TCP segment can get
 // split into 46 segments of 1420 bytes and a single 216 byte segment.
 const BatchSize = 47
 
@@ -201,8 +201,8 @@ type Options struct {
 	// disabled.
 	GSOMaxSize uint32
 
-	// GvisorGSOEnabled indicates whether Gvisor GSO is enabled or not.
-	GvisorGSOEnabled bool
+	// GVisorGSOEnabled indicates whether Gvisor GSO is enabled or not.
+	GVisorGSOEnabled bool
 
 	// PacketDispatchMode specifies the type of inbound dispatcher to be
 	// used for this endpoint.
@@ -315,8 +315,8 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 		e.fds = append(e.fds, fdInfo{fd: fd, isSocket: isSocket})
 		if isSocket {
 			if opts.GSOMaxSize != 0 {
-				if opts.GvisorGSOEnabled {
-					e.gsoKind = stack.GvisorGSOSupported
+				if opts.GVisorGSOEnabled {
+					e.gsoKind = stack.GVisorGSOSupported
 				} else {
 					e.gsoKind = stack.HostGSOSupported
 				}
@@ -324,7 +324,7 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 			}
 		}
 
-		inboundDispatcher, err := createInboundDispatcher(e, fd, isSocket, fid)
+		inboundDispatcher, err := createInboundDispatcher(e, fd, isSocket, fid, opts)
 		if err != nil {
 			return nil, fmt.Errorf("createInboundDispatcher(...) = %v", err)
 		}
@@ -334,7 +334,7 @@ func New(opts *Options) (stack.LinkEndpoint, error) {
 	return e, nil
 }
 
-func createInboundDispatcher(e *endpoint, fd int, isSocket bool, fID int32) (linkDispatcher, error) {
+func createInboundDispatcher(e *endpoint, fd int, isSocket bool, fID int32, opts *Options) (linkDispatcher, error) {
 	// By default use the readv() dispatcher as it works with all kinds of
 	// FDs (tap/tun/unix domain sockets and af_packet).
 	inboundDispatcher, err := newReadVDispatcher(fd, e)
@@ -385,7 +385,7 @@ func createInboundDispatcher(e *endpoint, fd int, isSocket bool, fID int32) (lin
 			// If the provided FD is a socket then we optimize
 			// packet reads by using recvmmsg() instead of read() to
 			// read packets in a batch.
-			inboundDispatcher, err = newRecvMMsgDispatcher(fd, e)
+			inboundDispatcher, err = newRecvMMsgDispatcher(fd, e, opts)
 			if err != nil {
 				return nil, fmt.Errorf("newRecvMMsgDispatcher(%d, %+v) = %v", fd, e, err)
 			}
@@ -413,6 +413,7 @@ func isSocketFD(fd int) (bool, error) {
 func (e *endpoint) Attach(dispatcher stack.NetworkDispatcher) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+
 	// nil means the NIC is being removed.
 	if dispatcher == nil && e.dispatcher != nil {
 		for _, dispatcher := range e.inboundDispatchers {

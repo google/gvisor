@@ -94,6 +94,21 @@ func (systrapSeccomp) SyscallFilters(vars precompiledseccomp.Values) seccomp.Sys
 		},
 		unix.SYS_TGKILL: seccomp.MatchAll{},
 		unix.SYS_WAIT4:  seccomp.MatchAll{},
+		unix.SYS_IOCTL: seccomp.Or{
+			seccomp.PerArg{
+				seccomp.NonNegativeFD{},
+				seccomp.EqualTo(linux.SECCOMP_IOCTL_NOTIF_RECV),
+			},
+			seccomp.PerArg{
+				seccomp.NonNegativeFD{},
+				seccomp.EqualTo(linux.SECCOMP_IOCTL_NOTIF_SEND),
+			},
+			seccomp.PerArg{
+				seccomp.NonNegativeFD{},
+				seccomp.EqualTo(linux.SECCOMP_IOCTL_NOTIF_SET_FLAGS),
+				seccomp.EqualTo(linux.SECCOMP_USER_NOTIF_FD_SYNC_WAKE_UP),
+			},
+		},
 		unix.SYS_WAITID: seccomp.PerArg{
 			seccomp.EqualTo(unix.P_PID),
 			seccomp.AnyValue{},

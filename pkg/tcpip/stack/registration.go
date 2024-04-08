@@ -1370,9 +1370,9 @@ const (
 	// non-networking data layer.
 	HostGSOSupported
 
-	// GvisorGSOSupported indicates that segmentation offloading may be performed
+	// GVisorGSOSupported indicates that segmentation offloading may be performed
 	// in gVisor.
-	GvisorGSOSupported
+	GVisorGSOSupported
 )
 
 // GSOEndpoint provides access to GSO properties.
@@ -1384,6 +1384,6 @@ type GSOEndpoint interface {
 	SupportedGSO() SupportedGSO
 }
 
-// GvisorGSOMaxSize is a maximum allowed size of a software GSO segment.
+// GVisorGSOMaxSize is a maximum allowed size of a software GSO segment.
 // This isn't a hard limit, because it is never set into packet headers.
-const GvisorGSOMaxSize = 1 << 16
+const GVisorGSOMaxSize = 1 << 16

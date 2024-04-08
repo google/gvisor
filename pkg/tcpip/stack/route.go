@@ -311,10 +311,10 @@ func (r *Route) RequiresTXTransportChecksum() bool {
 	return r.outgoingNIC.NetworkLinkEndpoint.Capabilities()&CapabilityTXChecksumOffload == 0
 }
 
-// HasGvisorGSOCapability returns true if the route supports gVisor GSO.
-func (r *Route) HasGvisorGSOCapability() bool {
+// HasGVisorGSOCapability returns true if the route supports gVisor GSO.
+func (r *Route) HasGVisorGSOCapability() bool {
 	if gso, ok := r.outgoingNIC.NetworkLinkEndpoint.(GSOEndpoint); ok {
-		return gso.SupportedGSO() == GvisorGSOSupported
+		return gso.SupportedGSO() == GVisorGSOSupported
 	}
 	return false
 }

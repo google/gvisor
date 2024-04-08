@@ -12,7 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package netlink
+// Package nlmsg provides helpers to parse and construct netlink messages.
+package nlmsg
 
 import (
 	"fmt"
@@ -268,6 +269,23 @@ func (v AttrsView) ParseFirst() (hdr linux.NetlinkAttrHeader, value []byte, rest
 	return hdr, value, AttrsView(b), ok
 }
 
+// Parse parses netlink attributes.
+func (v AttrsView) Parse() (map[uint16]BytesView, bool) {
+	attrs := make(map[uint16]BytesView)
+	attrsView := v
+	for !attrsView.Empty() {
+		// The index is unspecified, search by the interface name.
+		ahdr, value, rest, ok := attrsView.ParseFirst()
+		if !ok {
+			return nil, false
+		}
+		attrsView = rest
+		attrs[ahdr.Type] = BytesView(value)
+	}
+	return attrs, true
+
+}
+
 // BytesView supports extracting data from a byte slice with bounds checking.
 type BytesView []byte
 
@@ -280,4 +298,27 @@ func (v *BytesView) Extract(n int) ([]byte, bool) {
 	extracted := (*v)[:n]
 	*v = (*v)[n:]
 	return extracted, true
+}
+
+// String converts the raw attribute value to string.
+func (v *BytesView) String() string {
+	b := []byte(*v)
+	if len(b) == 0 {
+		return ""
+	}
+	if b[len(b)-1] == 0 {
+		b = b[:len(b)-1]
+	}
+	return string(b)
+}
+
+// Uint32 converts the raw attribute value to uint32.
+func (v *BytesView) Uint32() (uint32, bool) {
+	attr := []byte(*v)
+	val := primitive.Uint32(0)
+	if len(attr) != val.SizeBytes() {
+		return 0, false
+	}
+	val.UnmarshalBytes(attr)
+	return uint32(val), true
 }

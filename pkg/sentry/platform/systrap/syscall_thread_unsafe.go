@@ -89,3 +89,29 @@ func futexWaitWake(futexAddr *uint32, futexValue uint32) error {
 
 	return nil
 }
+
+func (t *syscallThread) kickSeccompNotify() unix.Errno {
+	_, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(t.seccompNotify.Fd()),
+		uintptr(linux.SECCOMP_IOCTL_NOTIF_SEND),
+		uintptr(unsafe.Pointer(&t.seccompNotifyResp)))
+	return errno
+}
+
+func (t *syscallThread) waitForSeccompNotify() error {
+	for {
+		req := linux.SeccompNotif{}
+		_, _, errno := unix.RawSyscall(unix.SYS_IOCTL, uintptr(t.seccompNotify.Fd()),
+			uintptr(linux.SECCOMP_IOCTL_NOTIF_RECV),
+			uintptr(unsafe.Pointer(&req)))
+		if errno == 0 {
+			t.seccompNotifyResp.ID = req.ID
+			break
+		}
+		if errno == unix.EINTR && t.subproc.alive() {
+			continue
+		}
+		t.thread.kill()
+		return fmt.Errorf("failed getting response from syscall thread : %w", errno)
+	}
+	return nil
+}
