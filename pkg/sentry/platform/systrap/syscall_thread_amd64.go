@@ -36,7 +36,11 @@ func (t *syscallThread) detach() {
 	regs.Rsp = 0
 	regs.R12 = uint64(t.stubAddr)
 	regs.R13 = uint64(t.sentryMessage.state + 1)
-	regs.Rbx = _RUN_SYSCALL_LOOP
+	if t.seccompNotify != nil {
+		regs.Rbx = _RUN_SECCOMP_LOOP
+	} else {
+		regs.Rbx = _RUN_SYSCALL_LOOP
+	}
 	// Skip the syscall instruction.
 	regs.Rip += arch.SyscallWidth
 	if err := p.setRegs(&regs); err != nil {
@@ -47,4 +51,10 @@ func (t *syscallThread) detach() {
 		panic(fmt.Sprintf("tkill failed: %v", e))
 	}
 	runtime.UnlockOSThread()
+
+	if t.seccompNotify != nil {
+		if err := t.waitForSeccompNotify(); err != nil {
+			panic(fmt.Sprintf("%s", err))
+		}
+	}
 }

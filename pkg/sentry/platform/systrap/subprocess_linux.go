@@ -120,11 +120,19 @@ func attachedThread(flags uintptr, defaultAction linux.BPFAction) (*thread, erro
 					seccomp.AnyValue{},
 					seccomp.EqualTo(unix.SIGSTOP),
 				},
-				unix.SYS_GETTID: seccomp.MatchAll{},
-				seccomp.SYS_SECCOMP: seccomp.PerArg{
-					seccomp.EqualTo(linux.SECCOMP_SET_MODE_FILTER),
-					seccomp.EqualTo(0),
-					seccomp.AnyValue{},
+				unix.SYS_GETTID:     seccomp.MatchAll{},
+				unix.SYS_EXIT_GROUP: seccomp.MatchAll{},
+				seccomp.SYS_SECCOMP: seccomp.Or{
+					seccomp.PerArg{
+						seccomp.EqualTo(linux.SECCOMP_SET_MODE_FILTER),
+						seccomp.EqualTo(0),
+						seccomp.AnyValue{},
+					},
+					seccomp.PerArg{
+						seccomp.EqualTo(linux.SECCOMP_SET_MODE_FILTER),
+						seccomp.EqualTo(linux.SECCOMP_FILTER_FLAG_NEW_LISTENER),
+						seccomp.AnyValue{},
+					},
 				},
 			}),
 			Action: linux.SECCOMP_RET_ALLOW,
