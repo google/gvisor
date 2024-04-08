@@ -34,7 +34,6 @@ import (
 // opportunity for coalescing.
 // TODO(b/256037250): We're doing some header parsing here, which presents the
 // opportunity to skip it later.
-// TODO(b/256037250): Can we pass a packet list up the stack too?
 
 const (
 	// groNBuckets is the number of GRO buckets.
@@ -198,8 +197,9 @@ func (gb *groBucket) findGROPacket6(pkt *stack.PacketBuffer, ipHdr header.IPv6, 
 	return nil, false
 }
 
-func (gb *groBucket) found(gd *GRO, groPkt *groPacket, flushGROPkt bool, pkt *stack.PacketBuffer, ipHdr []byte, tcpHdr header.TCP, updateIPHdr func([]byte, int)) {
+func (gb *groBucket) found(gd *GRO, groPkt *groPacket, flushGROPkt bool, pkt *stack.PacketBuffer, ipHdr []byte, tcpHdr header.TCP, updateIPHdr func([]byte, int)) *stack.PacketBuffer {
 	// Flush groPkt or merge the packets.
+	var toFlush *stack.PacketBuffer
 	pktSize := pkt.Data().Size()
 	flags := tcpHdr.Flags()
 	dataOff := tcpHdr.DataOffset()
@@ -208,8 +208,7 @@ func (gb *groBucket) found(gd *GRO, groPkt *groPacket, flushGROPkt bool, pkt *st
 		// Flush the existing GRO packet.
 		pkt := groPkt.pkt
 		gb.removeOne(groPkt)
-		gd.handlePacket(pkt)
-		pkt.DecRef()
+		toFlush = pkt
 		groPkt = nil
 	} else if groPkt != nil {
 		// Merge pkt in to GRO packet.
@@ -242,25 +241,23 @@ func (gb *groBucket) found(gd *GRO, groPkt *groPacket, flushGROPkt bool, pkt *st
 		// A merge occurred and we need to flush groPkt.
 		pkt := groPkt.pkt
 		gb.removeOne(groPkt)
-		gd.handlePacket(pkt)
-		pkt.DecRef()
+		toFlush = pkt
 	case flush && groPkt == nil:
 		// No merge occurred and the incoming packet needs to be flushed.
-		gd.handlePacket(pkt)
+		toFlush = pkt
 	case !flush && groPkt == nil:
 		// New flow and we don't need to flush. Insert pkt into GRO.
 		if gb.full() {
 			// Head is always the oldest packet
-			toFlush := gb.removeOldest()
+			toFlush = gb.removeOldest()
 			gb.insert(pkt.IncRef(), ipHdr, tcpHdr)
-			gd.handlePacket(toFlush)
-			toFlush.DecRef()
 		} else {
 			gb.insert(pkt.IncRef(), ipHdr, tcpHdr)
 		}
 	default:
 		// A merge occurred and we don't need to flush anything.
 	}
+	return toFlush
 }
 
 // A groPacket is packet undergoing GRO. It may be several packets coalesced
@@ -306,6 +303,7 @@ func (pk *groPacket) payloadSize() int {
 type GRO struct {
 	enabled bool
 	buckets [groNBuckets]groBucket
+	toFlush map[int]*stack.PacketBufferList
 
 	Dispatcher stack.NetworkDispatcher
 }
@@ -339,6 +337,16 @@ func (gd *GRO) Enqueue(pkt *stack.PacketBuffer) {
 		gd.dispatch6(pkt)
 	default:
 		gd.handlePacket(pkt)
+	}
+}
+
+func (gd *GRO) queueFlushable(pkt *stack.PacketBuffer, hash int) {
+	if pkts, ok := gd.toFlush[hash]; ok {
+		pkts.PushBack(pkt)
+	} else {
+		pkts := &stack.PacketBufferList{}
+		pkts.PushBack(pkt)
+		gd.toFlush[hash] = pkts
 	}
 }
 
@@ -405,9 +413,11 @@ func (gd *GRO) dispatch4(pkt *stack.PacketBuffer) {
 	}
 
 	// Now we can get the bucket for the packet.
-	bucket := &gd.buckets[gd.bucketForPacket4(ipHdr, tcpHdr)&groNBucketsMask]
+	hash := gd.hashForPacket4(ipHdr, tcpHdr)
+	bucket := &gd.buckets[hash&groNBucketsMask]
 	groPkt, flushGROPkt := bucket.findGROPacket4(pkt, ipHdr, tcpHdr)
-	bucket.found(gd, groPkt, flushGROPkt, pkt, ipHdr, tcpHdr, updateIPv4Hdr)
+	toFlush := bucket.found(gd, groPkt, flushGROPkt, pkt, ipHdr, tcpHdr, updateIPv4Hdr)
+	gd.queueFlushable(toFlush, hash)
 }
 
 func (gd *GRO) dispatch6(pkt *stack.PacketBuffer) {
@@ -502,12 +512,14 @@ func (gd *GRO) dispatch6(pkt *stack.PacketBuffer) {
 	}
 
 	// Now we can get the bucket for the packet.
-	bucket := &gd.buckets[gd.bucketForPacket6(ipHdr, tcpHdr)&groNBucketsMask]
+	hash := gd.hashForPacket6(ipHdr, tcpHdr)
+	bucket := &gd.buckets[hash&groNBucketsMask]
 	groPkt, flushGROPkt := bucket.findGROPacket6(pkt, ipHdr, tcpHdr)
-	bucket.found(gd, groPkt, flushGROPkt, pkt, ipHdr, tcpHdr, updateIPv6Hdr)
+	flushing := bucket.found(gd, groPkt, flushGROPkt, pkt, ipHdr, tcpHdr, updateIPv6Hdr)
+	gd.queueFlushable(flushing, hash)
 }
 
-func (gd *GRO) bucketForPacket4(ipHdr header.IPv4, tcpHdr header.TCP) int {
+func (gd *GRO) hashForPacket4(ipHdr header.IPv4, tcpHdr header.TCP) int {
 	// TODO(b/256037250): Use jenkins or checksum. Write a test to print
 	// distribution.
 	var sum int
@@ -524,7 +536,7 @@ func (gd *GRO) bucketForPacket4(ipHdr header.IPv4, tcpHdr header.TCP) int {
 	return sum
 }
 
-func (gd *GRO) bucketForPacket6(ipHdr header.IPv6, tcpHdr header.TCP) int {
+func (gd *GRO) hashForPacket6(ipHdr header.IPv6, tcpHdr header.TCP) int {
 	// TODO(b/256037250): Use jenkins or checksum. Write a test to print
 	// distribution.
 	var sum int
@@ -546,11 +558,23 @@ func (gd *GRO) Flush() {
 	for i := range gd.buckets {
 		for groPkt := gd.buckets[i].packets.Front(); groPkt != nil; groPkt = groPkt.Next() {
 			pkt := groPkt.pkt
+			var hash int
+			if pkt.NetworkProtocolNumber == header.IPv4ProtocolNumber {
+				hash = gd.hashForPacket4(groPkt.ipHdr, groPkt.tcpHdr)
+			} else if pkt.NetworkProtocolNumber == header.IPv6ProtocolNumber {
+				hash = gd.hashForPacket6(groPkt.ipHdr, groPkt.tcpHdr)
+			}
 			gd.buckets[i].removeOne(groPkt)
-			gd.handlePacket(pkt)
-			pkt.DecRef()
+			gd.queueFlushable(pkt, hash)
 		}
 	}
+	for _, pkts := range gd.toFlush {
+		for _, pkt := range pkts.AsSlice() {
+			gd.Dispatcher.DeliverNetworkPacket(pkt.NetworkProtocolNumber, pkt)
+		}
+		pkts.Reset()
+	}
+	clear(gd.toFlush)
 }
 
 func (gd *GRO) handlePacket(pkt *stack.PacketBuffer) {
