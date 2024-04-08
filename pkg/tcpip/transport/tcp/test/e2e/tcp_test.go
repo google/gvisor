@@ -2914,7 +2914,7 @@ func TestZeroWindowSend(t *testing.T) {
 	defer b.Release()
 	iss := seqnum.Value(context.TestInitialSequenceNumber).Add(1)
 	checker.IPv4(t, b,
-		checker.PayloadLen(header.TCPMinimumSize),
+		checker.PayloadLen(header.TCPMinimumSize+1),
 		checker.TCP(
 			checker.DstPort(context.TestPort),
 			checker.TCPSeqNum(uint32(c.IRS)),
