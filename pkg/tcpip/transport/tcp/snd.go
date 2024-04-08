@@ -20,6 +20,7 @@ import (
 	"sort"
 	"time"
 
+	"gvisor.dev/gvisor/pkg/buffer"
 	"gvisor.dev/gvisor/pkg/sync"
 	"gvisor.dev/gvisor/pkg/tcpip"
 	"gvisor.dev/gvisor/pkg/tcpip/header"
@@ -904,12 +905,25 @@ func (s *sender) maybeSendSegment(seg *segment, limit int, end seqnum.Value) (se
 	return true
 }
 
+// zeroProbeJunk is data sent during zero window probes. Its value is
+// irrelevant; since the sequence number has already been acknowledged it will
+// be discarded. It's only here to avoid allocating.
+var zeroProbeJunk = []byte{0}
+
 // +checklocks:s.ep.mu
 func (s *sender) sendZeroWindowProbe() {
 	s.unackZeroWindowProbes++
-	// Send a zero window probe with sequence number pointing to
-	// the last acknowledged byte.
-	s.sendEmptySegment(header.TCPFlagAck, s.SndUna-1)
+
+	// Send a zero window probe with sequence number pointing to the last
+	// acknowledged byte. Note that, like Linux, this isn't quite what RFC
+	// 9293 3.8.6.1 describes: we don't send the next byte in the stream,
+	// we re-send an ACKed byte to goad the receiver into responding.
+	pkt := stack.NewPacketBuffer(stack.PacketBufferOptions{
+		Payload: buffer.MakeWithData(zeroProbeJunk),
+	})
+	defer pkt.DecRef()
+	s.sendSegmentFromPacketBuffer(pkt, header.TCPFlagAck, s.SndUna-1)
+
 	// Rearm the timer to continue probing.
 	s.resendTimer.enable(s.RTO)
 }
