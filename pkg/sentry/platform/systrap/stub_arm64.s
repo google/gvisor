@@ -22,6 +22,7 @@
 #define SIGKILL		 9   // +checkconst unix SIGKILL
 #define SIGSTOP		 19  // +checkconst unix SIGSTOP
 #define SYS_PRCTL	 167 // +checkconst unix SYS_PRCTL
+#define SYS_EXIT_GROUP   94  // +checkconst unix SYS_EXIT_GROUP
 #define PR_SET_PDEATHSIG 1   // +checkconst unix PR_SET_PDEATHSIG
 
 #define SYS_FUTEX	 98 // +checkconst unix SYS_FUTEX
@@ -30,6 +31,7 @@
 
 #define NEW_STUB	 1 // +checkconst . _NEW_STUB
 #define RUN_SYSCALL_LOOP 5 // +checkconst . _RUN_SYSCALL_LOOP
+#define RUN_SECCOMP_LOOP 6 // +checkconst . _RUN_SECCOMP_LOOP
 
 // syscallSentryMessage offsets.
 #define SENTRY_MESSAGE_STATE 0  // +checkoffset . syscallSentryMessage.state
@@ -98,6 +100,8 @@ begin:
 	CMP $RUN_SYSCALL_LOOP, R9
 	BEQ syscall_loop
 
+	CMP $RUN_SECCOMP_LOOP, R9
+	BEQ seccomp_loop
 done:
 	// Notify the Sentry that syscall exited.
 	BRK $3
@@ -189,6 +193,23 @@ wake_up_sentry:
 
 	ADDW $1, R13, R13
 	JMP syscall_loop
+seccomp_loop:
+	// SYS_EXIT_GROUP triggers seccomp notifications.
+	MOVD $SYS_EXIT_GROUP, R8
+	SVC
+
+	MOVD SENTRY_MESSAGE_SYSNO(R12), R8
+	MOVD SENTRY_MESSAGE_ARG0(R12), R0
+	MOVD SENTRY_MESSAGE_ARG1(R12), R1
+	MOVD SENTRY_MESSAGE_ARG2(R12), R2
+	MOVD SENTRY_MESSAGE_ARG3(R12), R3
+	MOVD SENTRY_MESSAGE_ARG4(R12), R4
+	MOVD SENTRY_MESSAGE_ARG5(R12), R5
+	SVC
+
+	// stubMessage->ret = ret
+	MOVD R0, (STUB_MESSAGE_OFFSET + STUB_MESSAGE_RET)(R12)
+	JMP seccomp_loop
 
 // func addrOfInitStubProcess() uintptr
 TEXT ·addrOfInitStubProcess(SB), $0-8
