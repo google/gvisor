@@ -1266,26 +1266,23 @@ func (c *containerMounter) makeMountPoint(ctx context.Context, creds *auth.Crede
 
 // configureRestore returns an updated context.Context including filesystem
 // state used by restore defined by conf.
-func (c *containerMounter) configureRestore(ctx context.Context) (context.Context, error) {
+func (c *containerMounter) configureRestore(fdmap map[vfs.RestoreID]int, mfmap map[string]*pgalloc.MemoryFile) error {
 	// Compare createMountNamespace(); rootfs always consumes a gofer FD and a
 	// filestore FD is consumed if the rootfs GoferMountConf indicates so.
-	fdmap := make(map[vfs.RestoreID]int)
-
 	rootKey := vfs.RestoreID{ContainerName: c.containerName, Path: "/"}
 	fdmap[rootKey] = c.goferFDs.remove()
 
-	mfmap := make(map[string]*pgalloc.MemoryFile)
 	if rootfsConf := c.goferMountConfs[0]; rootfsConf.IsFilestorePresent() {
 		mf, err := createPrivateMemoryFile(c.goferFilestoreFDs.removeAsFD().ReleaseToFile("overlay-filestore"), rootKey)
 		if err != nil {
-			return ctx, fmt.Errorf("failed to create private memory file for mount rootfs: %w", err)
+			return fmt.Errorf("failed to create private memory file for mount rootfs: %w", err)
 		}
 		mfmap[rootKey.String()] = mf
 	}
 	// prepareMounts() consumes the remaining FDs for submounts.
 	mounts, err := c.prepareMounts()
 	if err != nil {
-		return ctx, err
+		return err
 	}
 	for i := range mounts {
 		submount := &mounts[i]
@@ -1297,12 +1294,12 @@ func (c *containerMounter) configureRestore(ctx context.Context) (context.Contex
 			key := vfs.RestoreID{ContainerName: c.containerName, Path: submount.mount.Destination}
 			mf, err := createPrivateMemoryFile(submount.filestoreFD.ReleaseToFile("overlay-filestore"), key)
 			if err != nil {
-				return ctx, fmt.Errorf("failed to create private memory file for mount %q: %w", submount.mount.Destination, err)
+				return fmt.Errorf("failed to create private memory file for mount %q: %w", submount.mount.Destination, err)
 			}
 			mfmap[key.String()] = mf
 		}
 	}
-	return context.WithValue(context.WithValue(ctx, vfs.CtxRestoreFilesystemFDMap, fdmap), pgalloc.CtxMemoryFileMap, mfmap), nil
+	return nil
 }
 
 func createDeviceFiles(ctx context.Context, creds *auth.Credentials, info *containerInfo, vfsObj *vfs.VirtualFilesystem, root vfs.VirtualDentry) error {
