@@ -1110,3 +1110,105 @@ func TestBlockHostUds(t *testing.T) {
 		t.Errorf("err should be non-nil and output should contain %q, but got err = %v and output = %q", want, err, got)
 	}
 }
+
+func readLogs(logs string, position int) (int, error) {
+	if len(logs) == 0 {
+		return 0, fmt.Errorf("error no content was read")
+	}
+
+	nums := strings.Split(logs, "\n")
+	if position >= len(nums) {
+		return 0, fmt.Errorf("position %v is not within the length of content %v", position, nums)
+	}
+	if position == -1 {
+		// Expectation of newline at the end of last position.
+		position = len(nums) - 2
+	}
+	num, err := strconv.Atoi(nums[position])
+	if err != nil {
+		return 0, fmt.Errorf("error getting number from file: %v", err)
+	}
+
+	return num, nil
+}
+
+func checkLogs(logs string, oldPos int) error {
+	if len(logs) == 0 {
+		return fmt.Errorf("error no content was read")
+	}
+
+	nums := strings.Split(logs, "\n")
+	// Expectation of newline at the end of last position.
+	if oldPos >= len(nums)-2 {
+		return fmt.Errorf("oldPos %v is not within the length of content %v", oldPos, nums)
+	}
+	for i := oldPos + 1; i < len(nums)-1; i++ {
+		num, err := strconv.Atoi(nums[i])
+		if err != nil {
+			return fmt.Errorf("error getting number from file: %v", err)
+		}
+		if num != oldPos+1 {
+			return fmt.Errorf("error in save/resume, numbers not in order, previous: %d, next: %d", oldPos, num)
+		}
+		oldPos++
+	}
+	return nil
+}
+
+// Checkpoint the container and continue running.
+func TestCheckpointResume(t *testing.T) {
+	if !testutil.IsCheckpointSupported() {
+		t.Skip("Checkpoint is not supported.")
+	}
+	dockerutil.EnsureDockerExperimentalEnabled()
+
+	ctx := context.Background()
+	d := dockerutil.MakeContainer(ctx, t)
+	defer d.CleanUp(ctx)
+
+	// Start the container.
+	if err := d.Spawn(ctx, dockerutil.RunOpts{
+		Image: "basic/alpine",
+	}, "sh", "-c", "i=0; while true; do echo \"$i\"; i=\"$(expr \"$i\" + 1)\"; sleep .01; done"); err != nil {
+		t.Fatalf("docker run failed: %v", err)
+	}
+
+	time.Sleep(2 * time.Second)
+
+	// Get the logs before checkpointing.
+	logs, err := d.Logs(ctx)
+	if err != nil {
+		t.Fatalf("docker logs failed: %v", err)
+	}
+
+	// Get the last position of the logs printed.
+	pos, err := readLogs(logs, -1)
+	if err != nil {
+		t.Fatalf("readLogs failed: %v", err)
+	}
+
+	// Create a snapshot and continue running.
+	if err := d.CheckpointResume(ctx, "test"); err != nil {
+		t.Fatalf("docker checkpoint failed: %v", err)
+	}
+
+	var newLogs string
+	// Wait for the container to resume running and print new logs.
+	if err := testutil.Poll(func() error {
+		// Get the logs after checkpointing to check if the container resumed.
+		newLogs, err = d.Logs(ctx)
+		if err != nil {
+			t.Fatalf("docker logs failed: %v", err)
+		}
+		return nil
+	}, defaultWait); err != nil {
+		t.Fatalf("container read logs failed after resume: %v", err)
+	}
+
+	if err := checkLogs(newLogs, pos); err != nil {
+		t.Fatalf("checkLogs failed: %v", err)
+	}
+	if err := d.Kill(ctx); err != nil {
+		t.Fatalf("docker kill failed: %v", err)
+	}
+}
