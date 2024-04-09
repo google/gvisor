@@ -543,7 +543,6 @@ func New(args Args) (*Loader, error) {
 		}
 	}
 
-	k.RegisterContainerName(args.ID, info.containerName)
 	eid := execID{cid: args.ID}
 	l := &Loader{
 		k:             k,
@@ -955,7 +954,6 @@ func (l *Loader) startSubcontainer(spec *specs.Spec, conf *config.Config, cid st
 		})
 	}
 
-	l.k.RegisterContainerName(cid, info.containerName)
 	l.k.StartProcess(ep.tg)
 	// No more failures from this point on.
 	cu.Release()
