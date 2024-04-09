@@ -348,9 +348,6 @@ type Kernel struct {
 	// devGofers maps container ID to its device gofer client.
 	devGofers   map[string]*devutil.GoferClient `state:"nosave"`
 	devGofersMu sync.Mutex                      `state:"nosave"`
-
-	// cid -> name.
-	containerNames map[string]string
 }
 
 // InitKernelArgs holds arguments to Init.
@@ -457,7 +454,6 @@ func (k *Kernel) Init(args InitKernelArgs) error {
 		args.MaxFDLimit = MaxFdLimit
 	}
 	k.MaxFDLimit.Store(args.MaxFDLimit)
-	k.containerNames = make(map[string]string)
 
 	ctx := k.SupervisorContext()
 	if err := k.vfs.Init(ctx); err != nil {
@@ -1959,14 +1955,4 @@ func (k *Kernel) cleaupDevGofers() {
 		client.Close()
 	}
 	k.devGofers = nil
-}
-
-// RegisterContainerName registers a container name for a given container ID.
-func (k *Kernel) RegisterContainerName(cid, containerName string) {
-	k.containerNames[cid] = containerName
-}
-
-// ContainerNameGivenID returns the container name for a given container ID.
-func (k *Kernel) ContainerNameGivenID(cid string) string {
-	return k.containerNames[cid]
 }
