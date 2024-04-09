@@ -350,7 +350,7 @@ type Kernel struct {
 	devGofersMu sync.Mutex                      `state:"nosave"`
 
 	// cid -> name.
-	containerNames map[string]string
+	containerNames map[string]string `state:"nosave"`
 }
 
 // InitKernelArgs holds arguments to Init.
