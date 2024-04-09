@@ -45,6 +45,10 @@ type SaveOpts struct {
 
 	// FilePayload contains the destination for the state.
 	urpc.FilePayload
+
+	// Resume indicates if the sandbox process should continue running
+	// after checkpointing.
+	Resume bool
 }
 
 // Save saves the running system.
@@ -68,7 +72,9 @@ func (s *State) Save(o *SaveOpts, _ *struct{}) error {
 				log.Warningf("Save failed: exiting...")
 				s.Kernel.SetSaveError(err)
 			}
-			s.Kernel.Kill(linux.WaitStatusExit(0))
+			if !o.Resume {
+				s.Kernel.Kill(linux.WaitStatusExit(0))
+			}
 		},
 	}
 	return saveOpts.Save(s.Kernel.SupervisorContext(), s.Kernel, s.Watchdog)
