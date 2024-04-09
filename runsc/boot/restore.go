@@ -22,6 +22,7 @@ import (
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
+	"gvisor.dev/gvisor/pkg/sentry/pgalloc"
 	"gvisor.dev/gvisor/pkg/sentry/socket/hostinet"
 	"gvisor.dev/gvisor/pkg/sentry/socket/netstack"
 	"gvisor.dev/gvisor/pkg/sentry/state"
@@ -114,12 +115,12 @@ func (r *restorer) restore(l *Loader) error {
 
 	// TODO(b/298078576): Need to process hints here probably
 	mntr := newContainerMounter(&l.root, l.k, l.mountHints, l.sharedMounts, l.productName, l.sandboxID)
-	ctx, err = mntr.configureRestore(ctx)
-	if err != nil {
+
+	fdmap := make(map[vfs.RestoreID]int)
+	mfmap := make(map[string]*pgalloc.MemoryFile)
+	if err := mntr.configureRestore(fdmap, mfmap); err != nil {
 		return fmt.Errorf("configuring filesystem restore: %v", err)
 	}
-
-	fdmap := vfs.RestoreFilesystemFDMapFromContext(ctx)
 	for appFD, fd := range r.container.stdioFDs {
 		key := host.MakeRestoreID(r.container.containerName, appFD)
 		fdmap[key] = fd.Release()
@@ -128,6 +129,8 @@ func (r *restorer) restore(l *Loader) error {
 		key := host.MakeRestoreID(r.container.containerName, customFD.guest)
 		fdmap[key] = customFD.host.FD()
 	}
+	ctx = context.WithValue(ctx, vfs.CtxRestoreFilesystemFDMap, fdmap)
+	ctx = context.WithValue(ctx, pgalloc.CtxMemoryFileMap, mfmap)
 
 	// Load the state.
 	loadOpts := state.LoadOpts{Source: r.stateFile}
