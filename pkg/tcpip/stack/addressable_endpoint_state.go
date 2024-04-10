@@ -537,16 +537,20 @@ func (a *AddressableEndpointState) acquirePrimaryAddressRLocked(remoteAddr, srcH
 // If there is no matching address, a temporary address will be returned if
 // allowTemp is true.
 //
+// If readOnly is true, the address will be returned without an extra reference.
+// In this case it is not safe to modify the endpoint, only read attributes like
+// subnet.
+//
 // Regardless how the address was obtained, it will be acquired before it is
 // returned.
-func (a *AddressableEndpointState) AcquireAssignedAddressOrMatching(localAddr tcpip.Address, f func(AddressEndpoint) bool, allowTemp bool, tempPEB PrimaryEndpointBehavior) AddressEndpoint {
+func (a *AddressableEndpointState) AcquireAssignedAddressOrMatching(localAddr tcpip.Address, f func(AddressEndpoint) bool, allowTemp bool, tempPEB PrimaryEndpointBehavior, readOnly bool) AddressEndpoint {
 	lookup := func() *addressState {
 		if addrState, ok := a.endpoints[localAddr]; ok {
 			if !addrState.IsAssigned(allowTemp) {
 				return nil
 			}
 
-			if !addrState.TryIncRef() {
+			if !readOnly && !addrState.TryIncRef() {
 				panic(fmt.Sprintf("failed to increase the reference count for address = %s", addrState.addr))
 			}
 
@@ -555,7 +559,10 @@ func (a *AddressableEndpointState) AcquireAssignedAddressOrMatching(localAddr tc
 
 		if f != nil {
 			for _, addrState := range a.endpoints {
-				if addrState.IsAssigned(allowTemp) && f(addrState) && addrState.TryIncRef() {
+				if addrState.IsAssigned(allowTemp) && f(addrState) {
+					if !readOnly && !addrState.TryIncRef() {
+						continue
+					}
 					return addrState
 				}
 			}
@@ -614,12 +621,22 @@ func (a *AddressableEndpointState) AcquireAssignedAddressOrMatching(localAddr tc
 	if ep == nil {
 		return nil
 	}
+	if readOnly {
+		if ep.addressableEndpointState == a {
+			// Checklocks doesn't understand that we are logically guaranteed to have
+			// ep.mu locked already. We need to use checklocksignore to appease the
+			// analyzer.
+			ep.addressableEndpointState.decAddressRefLocked(ep) // +checklocksignore
+		} else {
+			ep.DecRef()
+		}
+	}
 	return ep
 }
 
 // AcquireAssignedAddress implements AddressableEndpoint.
-func (a *AddressableEndpointState) AcquireAssignedAddress(localAddr tcpip.Address, allowTemp bool, tempPEB PrimaryEndpointBehavior) AddressEndpoint {
-	return a.AcquireAssignedAddressOrMatching(localAddr, nil, allowTemp, tempPEB)
+func (a *AddressableEndpointState) AcquireAssignedAddress(localAddr tcpip.Address, allowTemp bool, tempPEB PrimaryEndpointBehavior, readOnly bool) AddressEndpoint {
+	return a.AcquireAssignedAddressOrMatching(localAddr, nil, allowTemp, tempPEB, readOnly)
 }
 
 // AcquireOutgoingPrimaryAddress implements AddressableEndpoint.

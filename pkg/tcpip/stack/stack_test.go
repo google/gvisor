@@ -130,11 +130,10 @@ func (f *fakeNetworkEndpoint) HandlePacket(pkt *stack.PacketBuffer) {
 	netHdr := pkt.NetworkHeader().Slice()
 
 	dst := tcpip.AddrFromSlice(netHdr[dstAddrOffset:][:header.IPv4AddressSize])
-	addressEndpoint := f.AcquireAssignedAddress(dst, f.nic.Promiscuous(), stack.CanBePrimaryEndpoint)
+	addressEndpoint := f.AcquireAssignedAddress(dst, f.nic.Promiscuous(), stack.CanBePrimaryEndpoint, true /* readOnly */)
 	if addressEndpoint == nil {
 		return
 	}
-	addressEndpoint.DecRef()
 
 	f.proto.packetCount[int(dst.AsSlice()[0])%len(f.proto.packetCount)]++
 
