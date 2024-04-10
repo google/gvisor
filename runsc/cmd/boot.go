@@ -468,7 +468,8 @@ func (b *Boot) Execute(_ context.Context, f *flag.FlagSet, args ...any) subcomma
 			util.Fatalf("error in creating state file %v", err)
 		}
 		defer f.Close()
-		boot.EnableAutosave(l, f)
+
+		boot.EnableAutosave(l, f, conf.TestOnlyAutosaveResume)
 	}
 
 	// Prepare metrics.
