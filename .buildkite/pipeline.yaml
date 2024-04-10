@@ -302,6 +302,21 @@ steps:
     parallelism: 10
     agents:
       arch: "arm64"
+  # All Save Resume system call tests.
+  - <<: *common
+    <<: *source_test
+    label: ":muscle: System call save resume tests (AMD64)"
+    command: make BAZEL_OPTIONS=--test_tag_filters=save_resume syscall-tests
+    parallelism: 20
+    agents:
+      arch: "amd64"
+  - <<: *common
+    <<: *source_test
+    label: ":muscle: System call save resume tests (ARM64)"
+    command: make BAZEL_OPTIONS=--test_tag_filters=save_resume syscall-tests
+    parallelism: 10
+    agents:
+      arch: "arm64"
 
   # Integration tests.
   - <<: *common
