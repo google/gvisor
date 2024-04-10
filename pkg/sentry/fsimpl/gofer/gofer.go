@@ -81,6 +81,7 @@ const (
 	moptDfltUID                  = "dfltuid"
 	moptDfltGID                  = "dfltgid"
 	moptCache                    = "cache"
+	moptDcache                   = "dcache"
 	moptForcePageCache           = "force_page_cache"
 	moptLimitHostFDTranslation   = "limit_host_fd_translation"
 	moptOverlayfsStaleRead       = "overlayfs_stale_read"
@@ -99,7 +100,7 @@ const (
 )
 
 // SupportedMountOptions is the set of mount options that can be set externally.
-var SupportedMountOptions = []string{moptOverlayfsStaleRead, moptDisableFileHandleSharing}
+var SupportedMountOptions = []string{moptOverlayfsStaleRead, moptDisableFileHandleSharing, moptDcache}
 
 const (
 	defaultMaxCachedDentries  = 1000
@@ -143,6 +144,9 @@ func (cache *stringFixedCache) add(name string) string {
 
 // +stateify savable
 type dentryCache struct {
+	// maxCachedDentries is the maximum number of cacheable dentries.
+	// maxCachedDentries is immutable.
+	maxCachedDentries uint64
 	// mu protects the below fields.
 	mu sync.Mutex `state:"nosave"`
 	// dentries contains all dentries with 0 references. Due to race conditions,
@@ -150,8 +154,6 @@ type dentryCache struct {
 	dentries dentryList
 	// dentriesLen is the number of dentries in dentries.
 	dentriesLen uint64
-	// maxCachedDentries is the maximum number of cacheable dentries.
-	maxCachedDentries uint64
 }
 
 // SetDentryCacheSize sets the size of the global gofer dentry cache.
@@ -166,7 +168,7 @@ func SetDentryCacheSize(size int) {
 	globalDentryCache = &dentryCache{maxCachedDentries: uint64(size)}
 }
 
-// globalDentryCache is a global cache of dentries across all gofers.
+// globalDentryCache is a global cache of dentries across all gofer clients.
 var globalDentryCache *dentryCache
 
 // Valid values for "trans" mount option.
@@ -250,6 +252,10 @@ type filesystemOptions struct {
 	interop InteropMode // derived from the "cache" mount option
 	dfltuid auth.KUID
 	dfltgid auth.KGID
+
+	// dcache is the maximum number of dentries that can be cached. This is
+	// effective only if globalDentryCache is not being used.
+	dcache uint64
 
 	// If forcePageCache is true, host FDs may not be used for application
 	// memory mappings even if available; instead, the client must perform its
@@ -439,6 +445,20 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 		}
 	}
 
+	// Parse the dentry cache size.
+	fsopts.dcache = defaultMaxCachedDentries
+	if dcacheStr, ok := mopts[moptDcache]; ok {
+		delete(mopts, moptDcache)
+		dcache, err := strconv.ParseInt(dcacheStr, 10, 64)
+		if err != nil {
+			ctx.Warningf("gofer.FilesystemType.GetFilesystem: invalid dcache: %s=%s", moptDcache, dcacheStr)
+			return nil, nil, linuxerr.EINVAL
+		}
+		if dcache >= 0 {
+			fsopts.dcache = uint64(dcache)
+		}
+	}
+
 	// Parse the default UID and GID.
 	fsopts.dfltuid = _V9FS_DEFUID
 	if dfltuidstr, ok := mopts[moptDfltUID]; ok {
@@ -534,7 +554,7 @@ func (fstype FilesystemType) GetFilesystem(ctx context.Context, vfsObj *vfs.Virt
 	if globalDentryCache != nil {
 		fs.dentryCache = globalDentryCache
 	} else {
-		fs.dentryCache = &dentryCache{maxCachedDentries: defaultMaxCachedDentries}
+		fs.dentryCache = &dentryCache{maxCachedDentries: fsopts.dcache}
 	}
 
 	fs.vfsfs.Init(vfsObj, &fstype, fs)
