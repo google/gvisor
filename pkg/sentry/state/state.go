@@ -56,6 +56,9 @@ type SaveOpts struct {
 
 	// Callback is called prior to unpause, with any save error.
 	Callback func(err error)
+
+	// Resume indicates if the statefile is used for save-resume.
+	Resume bool
 }
 
 // Save saves the system state.
