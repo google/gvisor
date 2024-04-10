@@ -153,8 +153,7 @@ func (e *endpoint) checkLocalAddress(addr tcpip.Address) bool {
 		return true
 	}
 
-	if addressEndpoint := e.AcquireAssignedAddress(addr, false, stack.NeverPrimaryEndpoint); addressEndpoint != nil {
-		addressEndpoint.DecRef()
+	if addressEndpoint := e.AcquireAssignedAddress(addr, false, stack.NeverPrimaryEndpoint, true /* readOnly */); addressEndpoint != nil {
 		return true
 	}
 	return false

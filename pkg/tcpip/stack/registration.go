@@ -668,10 +668,11 @@ type AddressableEndpoint interface {
 	// that is considered bound to the endpoint, optionally creating a temporary
 	// endpoint if requested and no existing address exists.
 	//
-	// The returned endpoint's reference count is incremented.
+	// The returned endpoint's reference count is incremented if readOnly is
+	// false.
 	//
 	// Returns nil if the specified address is not local to this endpoint.
-	AcquireAssignedAddress(localAddr tcpip.Address, allowTemp bool, tempPEB PrimaryEndpointBehavior) AddressEndpoint
+	AcquireAssignedAddress(localAddr tcpip.Address, allowTemp bool, tempPEB PrimaryEndpointBehavior, readOnly bool) AddressEndpoint
 
 	// AcquireOutgoingPrimaryAddress returns a primary address that may be used as
 	// a source address when sending packets to the passed remote address.

@@ -1105,10 +1105,8 @@ func (e *endpoint) HandlePacket(pkt *stack.PacketBuffer) {
 		}
 
 		if e.protocol.stack.HandleLocal() {
-			addressEndpoint := e.AcquireAssignedAddress(header.IPv6(pkt.NetworkHeader().Slice()).SourceAddress(), e.nic.Promiscuous(), stack.CanBePrimaryEndpoint)
+			addressEndpoint := e.AcquireAssignedAddress(header.IPv6(pkt.NetworkHeader().Slice()).SourceAddress(), e.nic.Promiscuous(), stack.CanBePrimaryEndpoint, true /* readOnly */)
 			if addressEndpoint != nil {
-				addressEndpoint.DecRef()
-
 				// The source address is one of our own, so we never should have gotten
 				// a packet like this unless HandleLocal is false or our NIC is the
 				// loopback interface.
@@ -1348,8 +1346,7 @@ func (e *endpoint) handleValidatedPacket(h header.IPv6, pkt *stack.PacketBuffer,
 
 	// The destination address should be an address we own for us to receive the
 	// packet. Otherwise, attempt to forward the packet.
-	if addressEndpoint := e.AcquireAssignedAddress(dstAddr, e.nic.Promiscuous(), stack.CanBePrimaryEndpoint); addressEndpoint != nil {
-		addressEndpoint.DecRef()
+	if addressEndpoint := e.AcquireAssignedAddress(dstAddr, e.nic.Promiscuous(), stack.CanBePrimaryEndpoint, true /* readOnly */); addressEndpoint != nil {
 		e.deliverPacketLocally(h, pkt, inNICName)
 	} else if e.Forwarding() {
 		e.handleForwardingError(e.forwardUnicastPacket(pkt))
@@ -2036,18 +2033,18 @@ func (e *endpoint) MainAddress() tcpip.AddressWithPrefix {
 }
 
 // AcquireAssignedAddress implements stack.AddressableEndpoint.
-func (e *endpoint) AcquireAssignedAddress(localAddr tcpip.Address, allowTemp bool, tempPEB stack.PrimaryEndpointBehavior) stack.AddressEndpoint {
+func (e *endpoint) AcquireAssignedAddress(localAddr tcpip.Address, allowTemp bool, tempPEB stack.PrimaryEndpointBehavior, readOnly bool) stack.AddressEndpoint {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
-	return e.acquireAddressOrCreateTempLocked(localAddr, allowTemp, tempPEB)
+	return e.acquireAddressOrCreateTempLocked(localAddr, allowTemp, tempPEB, readOnly)
 }
 
 // acquireAddressOrCreateTempLocked is like AcquireAssignedAddress but with
 // locking requirements.
 //
 // Precondition: e.mu must be write locked.
-func (e *endpoint) acquireAddressOrCreateTempLocked(localAddr tcpip.Address, allowTemp bool, tempPEB stack.PrimaryEndpointBehavior) stack.AddressEndpoint {
-	return e.mu.addressableEndpointState.AcquireAssignedAddress(localAddr, allowTemp, tempPEB)
+func (e *endpoint) acquireAddressOrCreateTempLocked(localAddr tcpip.Address, allowTemp bool, tempPEB stack.PrimaryEndpointBehavior, readOnly bool) stack.AddressEndpoint {
+	return e.mu.addressableEndpointState.AcquireAssignedAddress(localAddr, allowTemp, tempPEB, readOnly)
 }
 
 // AcquireOutgoingPrimaryAddress implements stack.AddressableEndpoint.
@@ -2369,8 +2366,7 @@ func (p *protocol) findEndpointWithAddress(addr tcpip.Address) *endpoint {
 	defer p.mu.RUnlock()
 
 	for _, e := range p.mu.eps {
-		if addressEndpoint := e.AcquireAssignedAddress(addr, false /* allowTemp */, stack.NeverPrimaryEndpoint); addressEndpoint != nil {
-			addressEndpoint.DecRef()
+		if addressEndpoint := e.AcquireAssignedAddress(addr, false /* allowTemp */, stack.NeverPrimaryEndpoint, true /* readOnly */); addressEndpoint != nil {
 			return e
 		}
 	}

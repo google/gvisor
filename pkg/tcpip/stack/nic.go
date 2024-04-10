@@ -505,7 +505,7 @@ func (n *nic) getAddressOrCreateTempInner(protocol tcpip.NetworkProtocolNumber, 
 		return nil
 	}
 
-	return addressableEndpoint.AcquireAssignedAddress(address, createTemp, peb)
+	return addressableEndpoint.AcquireAssignedAddress(address, createTemp, peb, false)
 }
 
 // addAddress adds a new address to n, so that it starts accepting packets
