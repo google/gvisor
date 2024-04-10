@@ -1321,6 +1321,7 @@ func (t *Task) StateFields() []string {
 		"memCgID",
 		"userCounters",
 		"sessionKeyring",
+		"Origin",
 	}
 }
 
@@ -1400,6 +1401,7 @@ func (t *Task) StateSave(stateSinkObject state.Sink) {
 	stateSinkObject.Save(64, &t.memCgID)
 	stateSinkObject.Save(65, &t.userCounters)
 	stateSinkObject.Save(66, &t.sessionKeyring)
+	stateSinkObject.Save(67, &t.Origin)
 }
 
 // +checklocksignore
@@ -1469,6 +1471,7 @@ func (t *Task) StateLoad(ctx context.Context, stateSourceObject state.Source) {
 	stateSourceObject.Load(64, &t.memCgID)
 	stateSourceObject.Load(65, &t.userCounters)
 	stateSourceObject.Load(66, &t.sessionKeyring)
+	stateSourceObject.Load(67, &t.Origin)
 	stateSourceObject.LoadValue(32, new(*Task), func(y any) { t.loadPtraceTracer(ctx, y.(*Task)) })
 	stateSourceObject.LoadValue(48, new(*taskSeccomp), func(y any) { t.loadSeccomp(ctx, y.(*taskSeccomp)) })
 	stateSourceObject.AfterLoad(func() { t.afterLoad(ctx) })

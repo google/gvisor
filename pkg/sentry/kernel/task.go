@@ -36,6 +36,17 @@ import (
 	"gvisor.dev/gvisor/pkg/waiter"
 )
 
+// TaskOrigin indicates how the task was initially created.
+type TaskOrigin int
+
+const (
+	// OriginUnknown indicates that task creation source is not known (or not important).
+	OriginUnknown TaskOrigin = iota
+
+	// OriginExec indicates that task was created due to an exec request inside a container.
+	OriginExec
+)
+
 // Task represents a thread of execution in the untrusted app.  It
 // includes registers and any thread-specific state that you would
 // normally expect.
@@ -596,6 +607,9 @@ type Task struct {
 	//
 	// +checklocks:mu
 	sessionKeyring *auth.Key
+
+	// Origin is the origin of the task.
+	Origin TaskOrigin
 }
 
 // Task related metrics

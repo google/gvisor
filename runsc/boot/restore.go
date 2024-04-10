@@ -18,7 +18,9 @@ import (
 	"fmt"
 	"os"
 
+	"gvisor.dev/gvisor/pkg/abi/linux"
 	"gvisor.dev/gvisor/pkg/context"
+	"gvisor.dev/gvisor/pkg/log"
 	"gvisor.dev/gvisor/pkg/sentry/fsimpl/host"
 	"gvisor.dev/gvisor/pkg/sentry/inet"
 	"gvisor.dev/gvisor/pkg/sentry/kernel"
@@ -160,6 +162,16 @@ func (r *restorer) restore(l *Loader) error {
 	if tasks[0].ContainerID() != l.sandboxID { // There must be at least 1 task.
 		for _, task := range tasks {
 			task.RestoreContainerID(l.sandboxID)
+		}
+	}
+
+	// Kill all processes that have been exec'd since they cannot be properly
+	// restored, since the caller is no longer connected.
+	for _, tg := range l.k.RootPIDNamespace().ThreadGroups() {
+		if tg.Leader().Origin == kernel.OriginExec {
+			if err := l.k.SendExternalSignalThreadGroup(tg, &linux.SignalInfo{Signo: int32(linux.SIGKILL)}); err != nil {
+				log.Warningf("Failed to kill exec process after restore: %v", err)
+			}
 		}
 	}
 
