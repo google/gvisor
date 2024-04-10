@@ -1757,6 +1757,11 @@ func (fs *filesystem) MountOptions() string {
 		{moptDfltGID, fs.opts.dfltgid},
 	}
 
+	if globalDentryCache != nil {
+		optsKV = append(optsKV, mopt{moptDcache, fmt.Sprintf("%d-global", globalDentryCache.maxCachedDentries)})
+	} else {
+		optsKV = append(optsKV, mopt{moptDcache, fs.opts.dcache})
+	}
 	switch fs.opts.interop {
 	case InteropModeExclusive:
 		optsKV = append(optsKV, mopt{moptCache, cacheFSCache})
